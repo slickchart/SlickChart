@@ -5,6 +5,7 @@
 <link rel="stylesheet" href="https://cdn.jsdelivr.net/npm/@tabler/icons-webfont@3.19.0/dist/tabler-icons.min.css">
 <style>
 *{box-sizing:border-box;margin:0;padding:0;}
+:focus-visible{outline:2px solid var(--accent);outline-offset:2px;border-radius:4px;}
 :root{
   --accent:#C8A882;--accent-2:#2C5F8A;--accent-ink:#1a1208;
   --accent-tint:#2a231b;--accent-tint2:#3c3227;
@@ -71,8 +72,8 @@ body{font-family:-apple-system,BlinkMacSystemFont,'Segoe UI',sans-serif;backgrou
 .modal-bg{position:absolute;top:0;left:0;right:0;bottom:60px;background:rgba(0,0,0,.75);z-index:100;display:flex;align-items:flex-end;}
 
 .swipe-wrap{position:relative;overflow:hidden;border-radius:12px;margin:0 16px 10px;}
-.swipe-card{transition:transform .2s;touch-action:pan-y;}
-.swipe-reveal{position:absolute;right:0;top:0;bottom:0;width:80px;background:#2a0f0f;display:flex;flex-direction:column;align-items:center;justify-content:center;gap:4px;cursor:pointer;border-radius:0 12px 12px 0;}
+.swipe-card{transition:transform .2s;touch-action:pan-y;position:relative;z-index:1;}
+.swipe-reveal{position:absolute;right:0;top:0;bottom:0;width:80px;z-index:0;background:#2a0f0f;display:flex;flex-direction:column;align-items:center;justify-content:center;gap:4px;cursor:pointer;border-radius:0 12px 12px 0;}
 .swipe-reveal i{font-size:18px;color:#e87070;}
 .swipe-reveal span{font-size:10px;color:#e87070;font-weight:600;letter-spacing:.04em;}
 .modal{background:#1a1a1a;border:1px solid #2a2a2a;border-radius:16px 16px 0 0;width:100%;padding:20px 16px;max-height:80%;overflow-y:auto;}
@@ -428,14 +429,20 @@ let checkinCfg={
   chairComfortLabel:'Comfort',
   chairComfortOn:true,
   extraNotes:true,
+  autoSend:{on:true,when:'1 day'},
 };
 
 let formQs=[
   {id:1,label:'Full name',type:'Short text',required:true},
   {id:2,label:'Date of birth',type:'Date',required:true},
+  {id:8,label:'Phone number',type:'Short text',required:true},
+  {id:9,label:'Email',type:'Short text',required:false},
+  {id:10,label:'How did you hear about us?',type:'Short text',required:false},
   {id:3,label:'Primary skin concerns',type:'Multiple choice',required:true,options:['Acne','Hyperpigmentation','Aging','Dryness','Sensitivity','Redness']},
   {id:4,label:'Known allergies or sensitivities',type:'Long text',required:true},
   {id:5,label:'Are you pregnant or nursing?',type:'Yes / No',required:true},
+  {id:11,label:'Current medications',type:'Long text',required:false},
+  {id:12,label:'Medical conditions',type:'Long text',required:false},
   {id:6,label:'Current skincare products',type:'Long text',required:false},
   {id:7,label:'I consent to treatment & confirm my information is accurate',type:'Signature',required:true},
 ];
@@ -453,6 +460,8 @@ let courses=[
   {id:'c3',title:'Gua Sha & Facial Massage',icon:'ti-hand-stop',bg:'#1e1633',ic:'#a891ec',bdg:'bp',status:'Draft',price:'$19',modules:4,duration:'30 min',enrolled:0,revenue:0,progress:15,desc:'A step-by-step video guide clients can follow at home between appointments.'},
 ];
 
+// Products & services synced live from the provider's own Square item library
+let squareCatalog={retail:[],services:[],syncedAt:0};
 let affiliateLinks=[
   {id:'a1',name:'C E Ferulic',brand:'SkinCeuticals',icon:'💧',url:'skinceuticals.com/ref/jessica',amazon:'amazon.com/dp/ceferulic',site:'glowingskinstudio.com/shop/ce-ferulic',siteCode:'GLOW10',urlCode:'JESSICA15',clicks:84,earnings:126,commission:'15%',active:true},
   {id:'a2',name:'UV Defense SPF 50',brand:'EltaMD',icon:'☀️',url:'eltamd.com/ref/jessica',amazon:'amazon.com/dp/eltamd-uv',site:'glowingskinstudio.com/shop/uv-defense',clicks:61,earnings:48.80,commission:'8%',active:true,inOffice:true},
@@ -629,8 +638,97 @@ function saveClients(){try{localStorage.setItem('sc_clients',JSON.stringify(CL))
 function loadClients(){try{const raw=localStorage.getItem('sc_clients');if(!raw)return;const saved=JSON.parse(raw);if(!saved||typeof saved!=='object')return;Object.keys(CL).forEach(k=>delete CL[k]);Object.keys(saved).forEach(k=>{CL[k]=saved[k];});}catch(e){}}
 function _hasDemoClients(){return !!(CL.maya||CL.sophie||CL.priya);}
 function removeDemoClients(){['maya','sophie','priya'].forEach(k=>{delete CL[k];});saveClients();if(typeof proToast==='function')proToast('Demo clients removed');nav('clients');}
+// ── One sample client (Maya) to show off the AI brief + the client demo app ──
+function _mayaSeed(){
+  return {name:'Maya Rodriguez',initials:'MR',bg:'#2e1c10',tc:'var(--accent)',
+    skin:'Combination · Sensitive',concerns:'Hyperpigmentation, dullness',allergies:'Fragrance, retinol',fitz:'III',
+    pregnancy:'No',medications:'None',conditions:'Mild rosacea — managed',
+    phone:'(510) 555-0142',email:'maya.r@example.com',
+    lastVisit:'Jun 10, 2026',nextVisit:'Jul 17 · 10:00 AM',treatment:'Hydrafacial',
+    sessions:4,seriesTotal:6,touchUpDate:'Jul 22, 2026',demo:true,
+    signedForms:['New client intake & consent'],
+    submittedForms:[{formId:'intake',title:'New client intake & consent',date:'Jun 10, 2026',signed:true,flagged:[],
+      answers:{1:'Maya Rodriguez',2:'1992-03-14',8:'(510) 555-0142',9:'maya.r@example.com',10:'Instagram',3:'Hyperpigmentation',4:'Fragrance, retinol',5:'No',11:'None',12:'Mild rosacea — managed',6:'Vitamin C serum AM, mineral SPF 50'}}]
+  };
+}
+function _seedMayaOnce(){
+  try{
+    if(localStorage.getItem('sc_maya_seeded'))return;   // only ever seed once
+    localStorage.setItem('sc_maya_seeded','1');
+    if(!CL.maya){CL.maya=_mayaSeed();try{applyProfessionConfig();}catch(e){}saveClients();}
+  }catch(e){}
+}
 function deleteClient(id){if(!CL[id])return;const nm=(CL[id].name||'this client');if(!confirm('Remove '+nm+' from SlickChart?\n\nThis removes their chart from this app only. It does NOT affect their record in Square.'))return;delete CL[id];saveClients();if(typeof proToast==='function')proToast(nm+' removed');nav('clients');}
-function loadBizInfo(){try{const raw=localStorage.getItem('sc_bizinfo');if(raw){const d=JSON.parse(raw)||{};Object.keys(d).forEach(k=>{bizInfo[k]=d[k];});}const wn=localStorage.getItem('sc_wsname');if(wn)workspace.name=wn;else if(bizInfo.name)workspace.name=bizInfo.name;}catch(e){}}
+function _bizLoc(){return [bizInfo.city,bizInfo.state].filter(Boolean).join(', ')||'';}
+function loadBizInfo(){try{const raw=localStorage.getItem('sc_bizinfo');if(raw){const d=JSON.parse(raw)||{};Object.keys(d).forEach(k=>{bizInfo[k]=d[k];});}const wn=localStorage.getItem('sc_wsname');if(wn)workspace.name=wn;else if(bizInfo.name)workspace.name=bizInfo.name;if(_bizLoc())workspace.location=_bizLoc();}catch(e){}}
+function _a11yEnhance(){try{document.querySelectorAll('[onclick]:not(button):not(a):not(input):not(select):not(textarea):not([role])').forEach(el=>{el.setAttribute('role','button');if(!el.hasAttribute('tabindex'))el.setAttribute('tabindex','0');});}catch(e){}}
+try{document.addEventListener('keydown',function(e){const t=e.target;if((e.key==='Enter'||e.key===' ')&&t&&t.getAttribute&&t.getAttribute('role')==='button'&&t.hasAttribute('onclick')&&!['BUTTON','A','INPUT','SELECT','TEXTAREA'].includes(t.tagName)){e.preventDefault();t.click();}});}catch(e){}
+// ── Cloud sync (database + login). Falls back to local-only until configured. ──
+function saveProfessions(){try{localStorage.setItem('sc_professions',JSON.stringify(selectedProfessions));}catch(e){}}
+function loadProfessions(){try{const raw=localStorage.getItem('sc_professions');if(raw){const a=JSON.parse(raw);if(Array.isArray(a)&&a.length)selectedProfessions=a;}}catch(e){}}
+const _SYNC_SKIP={sc_token:1,sc_sqkey:1,sc_bus:1};
+function _syncable(k){return typeof k==='string'&&k.indexOf('sc_')===0&&!_SYNC_SKIP[k];}
+const Cloud={
+  enabled:false,
+  token:(function(){try{return localStorage.getItem('sc_token')||'';}catch(e){return '';}})(),
+  _origSet:null,_queue:{},_timer:null,
+  async status(){try{const r=await fetch('/api/cloud-status');const j=await r.json();this.enabled=!!(j&&j.enabled);}catch(e){this.enabled=false;}return this.enabled;},
+  async login(pw){const r=await fetch('/api/login',{method:'POST',headers:{'Content-Type':'application/json'},body:JSON.stringify({password:pw})});let j={};try{j=await r.json();}catch(e){}if(!r.ok)throw new Error((j&&j.error)||'Login failed');this.token=j.token;try{localStorage.setItem('sc_token',this.token);}catch(e){}return true;},
+  logout(){this.token='';try{localStorage.removeItem('sc_token');}catch(e){}},
+  async pull(){if(!this.token)return -1;let r;try{r=await fetch('/api/store',{headers:{'Authorization':'Bearer '+this.token}});}catch(e){return -1;}if(r.status===401){this.logout();return -1;}let j={};try{j=await r.json();}catch(e){}const data=(j&&j.data)||{};const set=this._origSet||localStorage.setItem.bind(localStorage);const keys=Object.keys(data);keys.forEach(k=>{try{set(k,data[k]);}catch(e){}});return keys.length;},
+  pushAllLocal(){const items={};try{for(let i=0;i<localStorage.length;i++){const k=localStorage.key(i);if(_syncable(k))items[k]=localStorage.getItem(k);}}catch(e){}if(this.token&&Object.keys(items).length)return fetch('/api/store',{method:'PUT',headers:{'Content-Type':'application/json','Authorization':'Bearer '+this.token},body:JSON.stringify({items})}).catch(()=>{});},
+  push(k,v){if(!this.enabled||!this.token)return;this._queue[k]=v;clearTimeout(this._timer);this._timer=setTimeout(()=>this._flush(),700);},
+  _flush(){if(!this.token)return;const items=this._queue;this._queue={};if(!Object.keys(items).length)return;fetch('/api/store',{method:'PUT',headers:{'Content-Type':'application/json','Authorization':'Bearer '+this.token},body:JSON.stringify({items})}).catch(()=>{});}
+};
+(function(){try{const _set=localStorage.setItem.bind(localStorage);Cloud._origSet=_set;localStorage.setItem=function(k,v){_set(k,v);try{if(_syncable(k))Cloud.push(k,v);}catch(e){}};}catch(e){}})();
+function _reloadAll(){try{
+  loadProfessions();applyProfessionConfig();
+  if(typeof loadCustomResources==='function')loadCustomResources();
+  if(typeof loadAi==='function')loadAi();
+  if(typeof loadForms==='function')loadForms();
+  loadBizInfo();loadClients();_seedMayaOnce();if(typeof _demoCheckinSeed==='function')_demoCheckinSeed();
+  if(typeof loadWorkspace==='function')loadWorkspace();
+  if(typeof loadSquareCatalog==='function'){loadSquareCatalog();_mergeSquareRetail();}
+  if(typeof loadCheckinCfg==='function')loadCheckinCfg();
+  if(typeof loadCiDismissed==='function')loadCiDismissed();
+  if(typeof _ciRestoreOnce==='function')_ciRestoreOnce();
+  if(typeof loadVcState==='function')loadVcState();
+  if(typeof loadPartners==='function')loadPartners();
+  if(typeof loadRoutines==='function')loadRoutines();
+  if(typeof loadVisionEndpoint==='function')loadVisionEndpoint();
+}catch(e){}}
+async function _cloudInit(){
+  await Cloud.status();
+  if(!Cloud.enabled){nav('home');return;}      // local-only mode — behaves exactly as before
+  if(!Cloud.token){renderLogin();return;}      // database is on but no session — sign in
+  try{const n=await Cloud.pull();if(n===0)await Cloud.pushAllLocal();_reloadAll();}catch(e){}
+  nav('home');
+}
+function renderLogin(err){
+  const old=document.getElementById('login-screen');if(old)old.remove();
+  const ov=document.createElement('div');ov.id='login-screen';
+  ov.style.cssText='position:fixed;inset:0;z-index:99999;background:#0d0d0d;display:flex;align-items:center;justify-content:center;padding:24px;';
+  ov.innerHTML=`<div style="width:100%;max-width:340px;">
+    <div style="display:flex;align-items:center;gap:9px;margin-bottom:6px;"><i class="ti ti-sparkles" style="font-size:24px;color:var(--accent);"></i><span style="font-size:22px;font-weight:600;color:#f0f0f0;">SlickChart</span></div>
+    <div style="font-size:13px;color:#888;margin-bottom:22px;">Log in to your practice.</div>
+    <label class="fl-lbl" for="login-pw">Password</label>
+    <input id="login-pw" type="password" autocomplete="current-password" aria-label="Password" onkeydown="if(event.key==='Enter')doLogin()" style="width:100%;background:#161616;border:1px solid #2a2a2a;border-radius:10px;padding:12px 14px;font-size:15px;color:#f0f0f0;outline:none;margin-bottom:6px;box-sizing:border-box;">
+    <div id="login-err" role="alert" style="font-size:12px;color:#e87070;min-height:16px;margin-bottom:10px;">${err||''}</div>
+    <button onclick="doLogin()" style="width:100%;background:var(--accent);color:var(--accent-ink);border:none;border-radius:10px;padding:13px;font-size:15px;font-weight:600;cursor:pointer;font-family:inherit;">Log in</button>
+  </div>`;
+  document.body.appendChild(ov);
+  setTimeout(()=>{const i=document.getElementById('login-pw');if(i&&i.focus)try{i.focus();}catch(e){}},40);
+}
+function doLogin(){
+  const el=document.getElementById('login-pw');const pw=el?el.value:'';
+  const errEl=document.getElementById('login-err');if(errEl)errEl.textContent='';
+  Cloud.login(pw).then(async()=>{
+    try{const n=await Cloud.pull();if(n===0)await Cloud.pushAllLocal();_reloadAll();}catch(e){}
+    const ov=document.getElementById('login-screen');if(ov)ov.remove();
+    nav('home');
+  }).catch(e=>{const er=document.getElementById('login-err');if(er)er.textContent=(e&&e.message)||'Login failed';});
+}
+function cloudLogout(){if(!confirm('Log out of SlickChart on this device? Your data stays saved in the cloud.'))return;Cloud.logout();try{location.reload();}catch(e){nav('home');}}
 function applyProfessionConfig(){
   const profs=getActiveProfessions();
   const hasHair=profs.some(p=>p.id==='hair');
@@ -881,7 +979,10 @@ let bizInfo={
   ownerName:'Jessica Lee, LE',
   email:'jessica@glowingskinstudio.com',
   phone:'(510) 882-4401',
-  address:'2810 Telegraph Ave, Oakland CA 94609',
+  address:'2810 Telegraph Ave',
+  city:'Oakland',
+  state:'CA',
+  zip:'94609',
   license:'LE123456',
   website:'glowingskinstudio.com',
   instagram:'@glowingskinstudio',
@@ -925,6 +1026,7 @@ function nav(screen,data){
     'checkin-settings':renderCheckinSettings,'checkin-preview':renderCheckinPreview,
     'form-builder':()=>renderFormBuilder(data),'form-preview':()=>renderFormPreview(data),'form-docs':()=>renderFormDocs(data),'sign-form':()=>renderSignOnDevice(data&&data.fid,data&&data.cid),
     client:()=>renderClient(data),brief:()=>renderBrief(data),room:()=>renderRoom(data),
+    'client-forms':()=>renderClientForms(data),
     rebook:()=>renderRebook(data),notes:()=>renderNotes(data),photos:()=>renderPhotos(data),
     'session-summary':()=>renderSessionSummary(data),
     'summary-history':()=>renderSummaryHistory(data),
@@ -1038,8 +1140,27 @@ function renderHome(){
   ${(function(){
     const flagged=Object.entries(CL).filter(([id,c])=>c.flaggedContra);
     const reviews=Object.entries(CL).filter(([id,c])=>c.submittedForms&&c.submittedForms.length&&!c.flaggedContra);
-    if(!flagged.length&&!reviews.length)return '';
+    const nudges=(typeof _needsCheckin==='function')?_needsCheckin():[];
+    if(!flagged.length&&!reviews.length&&!nudges.length)return '';
     let h='<div class="sh"><h2>Needs your attention</h2></div>';
+    h+=nudges.map(([id,c])=>{
+      const hrs=_hoursUntilVisit(c);
+      const when=(hrs==null)?'':(hrs<0?('appt was '+Math.round(-hrs*60)+' min ago'):(hrs<1?('in '+Math.max(1,Math.round(hrs*60))+' min'):('in '+(Math.round(hrs*10)/10)+'h')));
+      return `<div class="swipe-wrap" style="margin:0 16px 8px;">
+      <div class="swipe-card ci-nudge-card" style="background:#1a1308;border:1px solid #3a2a10;border-radius:12px;overflow:hidden;">
+        <div style="padding:11px 13px;display:flex;align-items:center;gap:11px;">
+          <div style="width:38px;height:38px;border-radius:9px;background:#2a1e08;display:flex;align-items:center;justify-content:center;flex-shrink:0;"><i class="ti ti-clock-exclamation" style="font-size:18px;color:var(--accent);"></i></div>
+          <div style="flex:1;min-width:0;cursor:pointer;" onclick="nav('client','${id}')">
+            <div style="font-size:14px;font-weight:600;color:#ecd7a8;">${c.name.split(' ')[0]} hasn't done their check-in</div>
+            <div style="font-size:12px;color:#c2a86a;margin-top:1px;overflow:hidden;text-overflow:ellipsis;white-space:nowrap;">${c.treatment||'Visit'} · ${c.nextVisit}${when?' · '+when:''}</div>
+          </div>
+          <button onclick="event.stopPropagation();sendCheckin('${id}')" style="flex-shrink:0;background:var(--accent);color:var(--accent-ink);border:none;border-radius:8px;padding:7px 11px;font-size:12px;font-weight:600;cursor:pointer;font-family:inherit;display:inline-flex;align-items:center;gap:5px;"><i class="ti ti-message" style="font-size:13px;"></i> Send</button>
+        </div>
+      </div>
+      <div class="swipe-reveal" style="background:#0f2a1a;" onclick="dismissCheckinNudge('${id}')" aria-label="Dismiss ${c.name.split(' ')[0]} check-in reminder">
+        <i class="ti ti-check" aria-hidden="true" style="color:#4ec49a;"></i><span style="color:#4ec49a;">DONE</span>
+      </div>
+    </div>`;}).join('');
     h+=flagged.map(([id,c])=>`<div onclick="nav('client','${id}')" style="margin:0 16px 8px;background:#2a0f0f;border:1px solid #5a2020;border-radius:12px;padding:11px 13px;display:flex;align-items:center;gap:11px;cursor:pointer;">
       <div style="width:38px;height:38px;border-radius:9px;background:#3a1414;display:flex;align-items:center;justify-content:center;flex-shrink:0;"><i class="ti ti-alert-triangle" style="font-size:18px;color:#e87070;"></i></div>
       <div style="flex:1;min-width:0;"><div style="font-size:14px;font-weight:600;color:#f0c8c8;">${c.name.split(' ')[0]} flagged ${c.flaggedContra.items.length} item${c.flaggedContra.items.length>1?'s':''} on intake</div><div style="font-size:12px;color:#c99;margin-top:1px;overflow:hidden;text-overflow:ellipsis;white-space:nowrap;">${c.flaggedContra.items.join(', ')}</div></div>
@@ -1062,6 +1183,7 @@ function renderHome(){
   <div style="display:flex;gap:8px;padding:0 16px 16px;">
     ${[['Clients','8','#f0f0f0','ti-users'],['Appointments','12','#4ec49a','ti-calendar']].map(([l,v,c,icon])=>`<div style="flex:1;background:#161616;border-radius:10px;padding:10px 12px;"><div style="display:flex;align-items:center;gap:4px;margin-bottom:4px;"><i class="ti ${icon}" style="font-size:11px;color:#999;"></i><span style="font-size:11px;color:#999;">${l}</span></div><div style="font-size:18px;font-weight:500;color:${c};">${v}</div></div>`).join('')}
   </div>`;
+  setTimeout(()=>{try{document.querySelectorAll('.ci-nudge-card').forEach((el,i)=>{if(typeof initSwipe==='function')initSwipe(el,i);});}catch(e){}},0);
 }
 
 // ── CLIENTS ──
@@ -1112,16 +1234,35 @@ function renderClient(id){
     <button class="btng" onclick="nav('photos','${id}')"><i class="ti ti-camera" style="color:var(--accent);"></i> Photos</button>
     <button class="btng" onclick="nav('rebook','${id}')"><i class="ti ti-calendar-plus" style="color:#a891ec;"></i> Rebook</button>
   </div>
+  <div style="padding:0 16px 14px;">
+    <button class="btng" onclick="sendCheckin('${id}')" style="width:100%;justify-content:center;"><i class="ti ti-message" style="color:#4ec49a;"></i> Send pre-visit check-in</button>
+    <button onclick="nav('checkin-settings')" style="display:block;width:100%;text-align:center;background:none;border:none;cursor:pointer;font-family:inherit;font-size:11px;color:#777;margin-top:6px;padding:2px;">${(checkinCfg.autoSend&&checkinCfg.autoSend.on)?('Auto-send: '+checkinCfg.autoSend.when+' before each visit · edit'):'Auto-send is off · edit'}</button>
+  </div>
   <div class="sh" style="display:flex;align-items:center;justify-content:space-between;"><h2>Client details</h2><button onclick="editVitals('${id}')" style="border:1px solid var(--accent-a30,#3d2d10);background:var(--accent-tint);color:var(--accent);cursor:pointer;padding:4px 11px;border-radius:20px;font-size:11px;font-weight:600;font-family:inherit;display:inline-flex;align-items:center;gap:4px;margin-right:16px;"><i class="ti ti-pencil" style="font-size:11px;"></i> Edit</button></div>
   <div style="padding:0 16px;">
-    ${_vitalsConfig().map(f=>`<div class="fr"><span class="fl">${f.label}</span><span class="fv"${f.key==='concerns'?' style="font-size:12px;"':''}>${c[f.key]||'—'}</span></div>`).join('')}
+    ${_vitalsConfig().filter(f=>!f.med||(c[f.key]&&String(c[f.key]).trim()&&c[f.key]!=='—')).map(f=>`<div class="fr"><span class="fl">${f.label}</span><span class="fv"${f.key==='concerns'?' style="font-size:12px;"':''}>${c[f.key]||'—'}</span></div>`).join('')}
   </div>
-  ${(c.submittedForms&&c.submittedForms.length)?`<div class="sh"><h2>Submitted forms</h2></div>
-  <div style="padding:0 16px 6px;">${c.submittedForms.map((sf,i)=>`<button onclick="viewSubmittedForm('${id}',${i})" style="width:100%;background:#1a1a1a;border:1px solid #2a2a2a;border-radius:12px;padding:11px 13px;display:flex;align-items:center;gap:11px;margin-bottom:8px;cursor:pointer;font-family:inherit;text-align:left;">
-    <div style="width:36px;height:36px;border-radius:9px;background:${sf.flagged&&sf.flagged.length?'#2a0f0f':'var(--accent-tint)'};display:flex;align-items:center;justify-content:center;flex-shrink:0;"><i class="ti ti-${sf.flagged&&sf.flagged.length?'alert-triangle':'clipboard-check'}" style="font-size:17px;color:${sf.flagged&&sf.flagged.length?'#e87070':'var(--accent)'};"></i></div>
-    <div style="flex:1;min-width:0;"><div style="font-size:13px;font-weight:500;color:#e0e0e0;">${sf.title}</div><div style="font-size:11px;color:#999;">${sf.date} · ${sf.signed?'Signed ✓':'Unsigned'}${sf.flagged&&sf.flagged.length?` · ${sf.flagged.length} flagged`:''}</div></div>
-    <i class="ti ti-chevron-right" style="font-size:16px;color:#888;"></i>
-  </button>`).join('')}</div>`:''}
+  ${(function(){const sug=(typeof _suggestedFormsFor==='function')?_suggestedFormsFor(c):[];if(!sug.length)return '';return `
+  <div class="sh"><h2>Suggested for this visit</h2></div>
+  <div style="padding:0 16px 6px;">
+    <div style="background:linear-gradient(135deg,#13102a,#1a1338);border:1px solid #2d2360;border-radius:12px;padding:12px 14px;">
+      <div style="display:flex;align-items:flex-start;gap:7px;margin-bottom:4px;"><i class="ti ti-bulb" aria-hidden="true" style="font-size:15px;color:#a891ec;margin-top:1px;flex-shrink:0;"></i><span style="font-size:12px;color:#cfc4f5;line-height:1.45;">Booked for <b style="color:#efeaff;">${c.treatment||'a visit'}</b> — you may want to send:</span></div>
+      ${sug.map(k=>`<div style="display:flex;align-items:center;gap:8px;padding:9px 0 2px;">
+        <i class="ti ti-file-text" aria-hidden="true" style="font-size:15px;color:#a891ec;flex-shrink:0;"></i>
+        <span style="flex:1;min-width:0;font-size:13px;color:#e8e3fb;">${formTmpls[k].name}</span>
+        <button onclick="renderSignOnDevice('${k}','${id}')" class="btng" style="padding:5px 10px;font-size:11px;border-radius:7px;">Sign here</button>
+        <button onclick="shareFormLink('${k}','${id}')" class="btng" style="padding:5px 10px;font-size:11px;border-radius:7px;">Send link</button>
+      </div>`).join('')}
+    </div>
+  </div>`;})()}
+  <div class="sh"><h2>Forms &amp; documents</h2></div>
+  <div style="padding:0 16px 6px;">
+    <button onclick="nav('client-forms','${id}')" style="width:100%;background:#1a1a1a;border:1px solid ${c.flaggedContra?'#5a2020':'#2a2a2a'};border-radius:12px;padding:12px 14px;display:flex;align-items:center;gap:11px;cursor:pointer;font-family:inherit;text-align:left;">
+      <div style="width:38px;height:38px;border-radius:9px;background:${c.flaggedContra?'#2a0f0f':'var(--accent-tint)'};display:flex;align-items:center;justify-content:center;flex-shrink:0;"><i class="ti ti-folder" aria-hidden="true" style="font-size:18px;color:${c.flaggedContra?'#e87070':'var(--accent)'};"></i></div>
+      <div style="flex:1;min-width:0;">${(function(){const subs=c.submittedForms||[];const extra=(c.signedForms||[]).filter(x=>!subs.some(s=>s.title===x)).length;const n=subs.length+extra;return `<div style="font-size:13px;font-weight:500;color:#e0e0e0;">${n} form${n===1?'':'s'} on file</div><div style="font-size:11px;color:#999;">${n?'Intakes, consents &amp; signed forms — tap to view':'Send an intake or consent to get started'}</div>`;})()}</div>
+      <i class="ti ti-chevron-right" aria-hidden="true" style="font-size:16px;color:#888;"></i>
+    </button>
+  </div>
   <div class="sh"><h2>Session summaries</h2></div>
   <div style="padding:0 16px 6px;">
     <button onclick="nav('summary-history','${id}')" style="width:100%;background:#1a1a1a;border:1px solid #2a2a2a;border-radius:12px;padding:12px 14px;display:flex;align-items:center;gap:11px;cursor:pointer;font-family:inherit;text-align:left;">
@@ -1232,6 +1373,115 @@ function viewSubmittedForm(id,i){
   </div>`;
   (document.querySelector('.shell')||document.body).appendChild(ov);
 }
+// ── Per-client forms storage: intakes, consents, signed forms ──
+// ── Suggest forms to send based on the booked treatment ──
+function _suggestedFormsFor(c){
+  if(!c||typeof formTmpls==='undefined')return [];
+  const t=String(c.treatment||'').toLowerCase();
+  const have=new Set([...((c.submittedForms||[]).map(s=>s.title)),...((c.signedForms||[])||[])]);
+  const out=[];
+  const add=k=>{const f=formTmpls[k];if(f&&f.name&&out.indexOf(k)<0&&!have.has(f.name))out.push(k);};
+  if(/peel/.test(t))add('peel');
+  if(/micro|needl/.test(t))add('micro');
+  if(/dermaplan/.test(t))add('derma');
+  if(/lash lift/.test(t))add('lash-lift');
+  if(/lash.*tint|tint.*lash/.test(t))add('lash-tint');
+  if(/lash|extension set|lash fill/.test(t)){add('lash');add('lash-intake');add('consent-lash');}
+  if(/lamination|\blam\b/.test(t))add('brow-lam');
+  if(/microblad|pmu|powder brow|ombre|combo brow|nano/.test(t))add('brow-pmu');
+  if(/brow.*tint|tint.*brow|henna/.test(t))add('brow-tint');
+  if(/wax|brazilian|bikini/.test(t))add('wax-consent');
+  if(/color|balayage|highlight|gloss|toner|bleach|foil/.test(t))add('hair-color');
+  if(/perm|relax|keratin|smoothing|chemical straighten/.test(t)){add('hair-chemical');add('barber-chemical');}
+  if(/extension/.test(t))add('hair-extension');
+  if(/razor|straight shave|hot.?towel/.test(t))add('barber-razor');
+  if(/massage|deep tissue|swedish|sports|prenatal massage/.test(t))add('massage-consent');
+  if(/acrylic|\bgel\b|dip|full set|enhancement|nail/.test(t))add('nail-consent');
+  if(/makeup|bridal|glam|mua/.test(t))add('makeup-screen');
+  // if there's no intake or consent on file at all, suggest the profession's intake + consent
+  const hasIntakeOrConsent=[...have].some(n=>/intake|consent/i.test(n));
+  if(!hasIntakeOrConsent){
+    const ik=(typeof _ncIntakeFormId==='function')?_ncIntakeFormId():'intake';
+    const ck=(typeof _ncConsentId==='function')?_ncConsentId():'consent-esty';
+    if(ik)add(ik);if(ck)add(ck);
+  }
+  return out.slice(0,3);
+}
+function renderClientForms(id){
+  setNav('clients');
+  const c=CL[id];if(!c){nav('clients');return;}
+  document.getElementById('tt').textContent='Forms & documents';
+  const subs=c.submittedForms||[];
+  const subTitles=subs.map(s=>s.title);
+  const signedOnly=(c.signedForms||[]).filter(n=>subTitles.indexOf(n)<0);
+  const card=(inner,onclick,danger)=>`<button ${onclick?`onclick="${onclick}"`:'disabled'} style="width:100%;background:#1a1a1a;border:1px solid ${danger?'#5a2020':'#2a2a2a'};border-radius:12px;padding:11px 13px;display:flex;align-items:center;gap:11px;margin-bottom:8px;cursor:${onclick?'pointer':'default'};font-family:inherit;text-align:left;">${inner}</button>`;
+  S.innerHTML=`
+  <div style="padding:12px 16px 0;"><button class="back" onclick="nav('client','${id}')"><i class="ti ti-arrow-left"></i> ${c.name.split(' ')[0]}</button></div>
+  <div style="padding:10px 16px 0;display:flex;align-items:center;gap:10px;">${av(c,40)}<div><div style="font-size:16px;font-weight:600;color:#f0f0f0;">Forms &amp; documents</div><div style="font-size:12px;color:#999;">${subs.length+signedOnly.length} on file for ${c.name.split(' ')[0]}</div></div></div>
+  <div style="padding:14px 16px 0;">
+    <button onclick="openClientFormSender('${id}')" class="btnp" style="width:100%;border-radius:10px;margin-bottom:16px;"><i class="ti ti-send"></i> Send a form to ${c.name.split(' ')[0]}</button>
+    ${subs.length?`<div style="font-size:11px;font-weight:600;color:#777;text-transform:uppercase;letter-spacing:.06em;margin-bottom:9px;">Completed &amp; signed</div>`+subs.map((sf,i)=>card(
+      `<div style="width:36px;height:36px;border-radius:9px;background:${sf.flagged&&sf.flagged.length?'#2a0f0f':'var(--accent-tint)'};display:flex;align-items:center;justify-content:center;flex-shrink:0;"><i class="ti ti-${sf.flagged&&sf.flagged.length?'alert-triangle':(sf.signed?'clipboard-check':'clipboard-text')}" aria-hidden="true" style="font-size:17px;color:${sf.flagged&&sf.flagged.length?'#e87070':'var(--accent)'};"></i></div>
+       <div style="flex:1;min-width:0;"><div style="font-size:13px;font-weight:500;color:#e0e0e0;">${sf.title}</div><div style="font-size:11px;color:#999;">${sf.date} · ${sf.signed?'Signed ✓':'Unsigned'}${sf.flagged&&sf.flagged.length?` · ${sf.flagged.length} flagged`:''}</div></div>
+       <i class="ti ti-chevron-right" aria-hidden="true" style="font-size:16px;color:#888;"></i>`,
+      `viewSubmittedForm('${id}',${i})`, sf.flagged&&sf.flagged.length)).join(''):''}
+    ${signedOnly.length?`<div style="font-size:11px;font-weight:600;color:#777;text-transform:uppercase;letter-spacing:.06em;margin:6px 0 9px;">Signed consents</div>`+signedOnly.map(n=>{const fk=Object.keys(formTmpls).find(k=>formTmpls[k].name===n);return card(
+      `<div style="width:36px;height:36px;border-radius:9px;background:var(--accent-tint);display:flex;align-items:center;justify-content:center;flex-shrink:0;"><i class="ti ti-signature" aria-hidden="true" style="font-size:17px;color:var(--accent);"></i></div>
+       <div style="flex:1;min-width:0;"><div style="font-size:13px;font-weight:500;color:#e0e0e0;">${n}</div><div style="font-size:11px;color:#999;">Signed ✓</div></div>${fk?'<i class="ti ti-chevron-right" aria-hidden="true" style="font-size:16px;color:#888;"></i>':''}`,
+      fk?`nav('form-preview','${fk}')`:'');}).join(''):''}
+    ${(!subs.length&&!signedOnly.length)?`<div style="background:#1a1a1a;border:1px dashed #2a2a2a;border-radius:12px;padding:26px 16px;display:flex;flex-direction:column;align-items:center;gap:8px;text-align:center;"><i class="ti ti-folder-open" aria-hidden="true" style="font-size:26px;color:#666;"></i><div style="font-size:13px;color:#bbb;font-weight:500;">No forms on file yet</div><div style="font-size:12px;color:#888;line-height:1.5;max-width:260px;">Intakes, consents, and signed forms for ${c.name.split(' ')[0]} are stored here. Send one above to get started.</div></div>`:''}
+  </div>`;
+}
+function openClientFormSender(id){
+  const c=CL[id];if(!c)return;
+  const keys=Object.keys(formTmpls);
+  const ov=document.createElement('div');ov.id='sendform-sheet';
+  ov.style.cssText='position:absolute;inset:0;z-index:9999;background:rgba(0,0,0,.6);display:flex;align-items:flex-end;justify-content:center;';
+  ov.onclick=e=>{if(e.target===ov)ov.remove();};
+  ov.innerHTML=`<div style="background:#161616;border-top:1px solid #2a2a2a;width:100%;border-radius:18px 18px 0 0;padding:18px 16px 24px;max-height:86%;overflow:auto;">
+    <div style="display:flex;align-items:center;justify-content:space-between;margin-bottom:4px;"><div style="font-size:15px;font-weight:600;color:#f0f0f0;min-width:0;">Send a form to ${c.name.split(' ')[0]}</div><button onclick="this.closest('#sendform-sheet').remove()" aria-label="Close" style="border:none;background:none;font-size:20px;color:#888;cursor:pointer;line-height:1;flex-shrink:0;">✕</button></div>
+    <div style="font-size:12px;color:#999;margin-bottom:14px;">Pick a form, then sign on this device or send a link.</div>
+    ${keys.map(k=>`<div style="background:#1a1a1a;border:1px solid #2a2a2a;border-radius:12px;padding:11px 13px;margin-bottom:8px;">
+      <div style="font-size:13px;font-weight:500;color:#e0e0e0;margin-bottom:8px;">${formTmpls[k].name}</div>
+      <div style="display:flex;gap:8px;">
+        <button onclick="this.closest('#sendform-sheet').remove();renderSignOnDevice('${k}','${id}')" class="btng" style="flex:1;border-radius:8px;padding:8px;font-size:12px;"><i class="ti ti-device-tablet" aria-hidden="true" style="font-size:13px;"></i> Sign here</button>
+        <button onclick="this.closest('#sendform-sheet').remove();shareFormLink('${k}','${id}')" class="btng" style="flex:1;border-radius:8px;padding:8px;font-size:12px;"><i class="ti ti-link" aria-hidden="true" style="font-size:13px;"></i> Send link</button>
+      </div>
+    </div>`).join('')}
+  </div>`;
+  (document.querySelector('.shell')||document.body).appendChild(ov);
+}
+// ── AI helper: routes through the serverless proxy (/api/ai) so the browser
+//    never holds a key. Throws if AI isn't configured, so callers can fall back. ──
+async function _aiComplete(messages,maxTokens,model){
+  const headers={'Content-Type':'application/json'};
+  try{const tok=(typeof Cloud!=='undefined'&&Cloud&&Cloud.token)||(localStorage.getItem&&localStorage.getItem('sc_token'))||'';if(tok)headers['Authorization']='Bearer '+tok;}catch(e){}
+  const res=await fetch('/api/ai',{method:'POST',headers,body:JSON.stringify({messages,max_tokens:maxTokens||1000,model:model||'claude-sonnet-4-6'})});
+  if(!res.ok)throw new Error('ai-http-'+res.status);
+  const data=await res.json().catch(()=>({}));
+  if(!data||data.enabled===false)throw new Error('ai-disabled');
+  if(data.error)throw new Error(data.error);
+  return (data.content||[]).map(b=>b.text||'').join('');
+}
+// Chart-based brief used when AI isn't set up — so the brief always loads.
+function _localBrief(id,c){
+  const first=(c.name||'Client').split(' ')[0];
+  const clean=v=>(v&&String(v).trim()&&v!=='—')?String(v).trim():'';
+  const homecare=(typeof getClientHomecare==='function'?getClientHomecare(id):[])||[];
+  const watch=[];
+  const al=clean(c.allergies); if(al&&!/^none/i.test(al))watch.push('Allergies / sensitivities: '+al+'.');
+  if(/^yes/i.test(clean(c.pregnancy)))watch.push('Pregnant or nursing — avoid contraindicated actives and treatments.');
+  const cond=clean(c.conditions); if(cond)watch.push('Medical: '+cond+'.');
+  const meds=clean(c.medications); if(meds&&!/^none/i.test(meds))watch.push('Medications: '+meds+'.');
+  const last=clean(c.lastVisit)?('Last seen '+c.lastVisit+(clean(c.treatment)?' for '+c.treatment+'.':'.')):'No prior visit on file — treat as a first appointment.';
+  return [
+    {icon:'ti-clock',color:'var(--accent)',label:'Last session',detail:last},
+    {icon:'ti-alert-triangle',color:'#e87070',label:'Watch for',detail:watch.length?watch.join(' '):'Nothing flagged on the chart. Confirm there are no new allergies, medications, or changes since the last visit.'},
+    {icon:'ti-target',color:'#4ec49a',label:'Focus today',detail:(clean(c.treatment)||'Today\u2019s service')+(clean(c.concerns)?' — work on '+c.concerns+'.':'.')},
+    {icon:'ti-pill',color:'#5ba3e8',label:'Active homecare',detail:homecare.length?homecare.slice(0,4).join(', ')+'.':('No homecare on file yet — set a routine on '+first+'\u2019s profile.')},
+    {icon:'ti-star',color:'#a891ec',label:'Client goals',detail:clean(c.concerns)?clean(c.concerns)+'.':('Confirm '+first+'\u2019s goals at the start of the session.')},
+  ];
+}
 function renderBrief(id){
   setNav('clients');
   const c=CL[id];
@@ -1266,8 +1516,21 @@ async function loadBrief(id, c){
 
   const isHair=selectedProfessions.includes('hair');
   const isBarber=selectedProfessions.includes('barber')&&!selectedProfessions.includes('esty')&&!selectedProfessions.includes('hair');
+  const isHairBarber=(selectedProfessions.includes('hair')||selectedProfessions.includes('barber'))&&!selectedProfessions.includes('esty');
   const profTitle=isHair?'Hair Stylist':isBarber?'Barber':'Licensed Esthetician';
-  const clientContext=`Provider: Jessica Lee, ${profTitle} at Glowing Skin Studio, Oakland CA
+  const isDemo=(id==='maya'||id==='sophie'||id==='priya');
+  const _bSums=(typeof sessionSummaries!=='undefined'&&sessionSummaries[id])||[];
+  const _bHc=(typeof getClientHomecare==='function'?getClientHomecare(id):[])||[];
+  const _bLines=[];
+  if(_bSums.length){_bLines.push('Session history:');_bSums.slice(0,6).forEach(s=>_bLines.push('- '+(s.date||'')+': '+(s.treatment||'Session')));}
+  else _bLines.push('No prior sessions recorded yet — this may be an early visit.');
+  if(c.conditions&&String(c.conditions).trim())_bLines.push('Medical conditions: '+c.conditions);
+  if(c.medications&&String(c.medications).trim())_bLines.push('Medications: '+c.medications);
+  if(c.pregnancy&&String(c.pregnancy).trim())_bLines.push('Pregnant / nursing: '+c.pregnancy);
+  if(c.notes&&String(c.notes).trim())_bLines.push('Provider notes: '+c.notes);
+  if(_bHc.length)_bLines.push('Active homecare: '+_bHc.join(', '));
+  const realHistory=_bLines.join('\n');
+  const clientContext=`Provider: ${bizInfo.ownerName||'Provider'}, ${profTitle} at ${bizInfo.name}${_bizLoc()?', '+_bizLoc():''}
 
 CLIENT CHART — ${c.name}
 Skin type: ${c.skin}
@@ -1277,7 +1540,7 @@ Allergies / contraindications: ${c.allergies}
 Treatment today: ${c.treatment}
 Last visit: ${c.lastVisit}
 Next visit: ${c.nextVisit}
-${isHairBarber?
+${isDemo?(isHairBarber?
     (id==='maya'?`Session notes:
 - Feb 18: Consultation. Goal: balayage + gloss, warm honey tones. Virgin hair, no prior color.
 - Apr 2: First balayage. Good lift to level 9. Wella 8/73 toner. Client loved result.
@@ -1307,10 +1570,10 @@ Active homecare: Barrier repair moisturizer AM/PM, mineral SPF 30+. No actives.`
 :`Session notes:
 - Jun 1: New client. Oily acne-prone T-zone. Open comedones.
 - Jun 15: BHA treatment. Good extraction. Pores visibly tighter.
-Active homecare: BHA exfoliant 2-3x/week, oil-free moisturizer, SPF 50+.`)}`;
+Active homecare: BHA exfoliant 2-3x/week, oil-free moisturizer, SPF 50+.`)):realHistory}`;
 
 
-  const prompt=`You are an expert esthetician assistant helping Jessica prepare for her upcoming client appointment. Based on the client chart below, write a concise pre-appointment brief with exactly 5 sections. Return ONLY valid JSON — no markdown, no explanation, just the array:
+  const prompt=`You are an expert assistant helping ${bizInfo.ownerName||'the provider'} prepare for an upcoming client appointment. Based on the client chart below, write a concise pre-appointment brief with exactly 5 sections. Return ONLY valid JSON — no markdown, no explanation, just the array:
 
 [
   {"icon":"ti-clock","color":"var(--accent)","label":"Last session","detail":"..."},
@@ -1324,17 +1587,18 @@ Each detail: 1-2 sentences, specific, actionable. Reference dates, product names
 
 ${clientContext}`;
 
+  let sections=null,aiUsed=false;
   try {
-    const res=await fetch('https://api.anthropic.com/v1/messages',{
-      method:'POST',
-      headers:{'Content-Type':'application/json'},
-      body:JSON.stringify({model:'claude-sonnet-4-6',max_tokens:1000,messages:[{role:'user',content:prompt}]})
-    });
-    const data=await res.json();
-    const text=data.content?.map(b=>b.text||'').join('');
-    const clean=text.replace(/```json|```/g,'').trim();
-    const sections=JSON.parse(clean);
-    el.innerHTML=sections.map((s,i)=>`
+    const text=await _aiComplete([{role:'user',content:prompt}],1000);
+    const clean=(text||'').replace(/```json|```/g,'').trim();
+    const parsed=JSON.parse(clean);
+    if(Array.isArray(parsed)&&parsed.length){sections=parsed;aiUsed=true;}
+  } catch(err){ /* AI off or unavailable — fall back to a chart-based brief so it always loads */ }
+  if(!sections)sections=_localBrief(id,c);
+  const srcBadge=aiUsed
+    ? `<div style="display:inline-flex;align-items:center;gap:5px;font-size:10px;font-weight:600;color:#a891ec;background:#1e1633;border:1px solid #2d2360;border-radius:20px;padding:3px 9px;margin-bottom:11px;"><i class="ti ti-sparkles" style="font-size:11px;"></i> Written by Claude</div>`
+    : `<div style="display:inline-flex;align-items:center;gap:5px;font-size:10px;font-weight:600;color:#999;background:#161616;border:1px solid #2a2a2a;border-radius:20px;padding:3px 9px;margin-bottom:11px;"><i class="ti ti-clipboard-text" style="font-size:11px;"></i> Built from chart</div>`;
+  el.innerHTML=srcBadge+sections.map((s,i)=>`
     <div style="margin-bottom:${i<sections.length-1?'10':'0'}px;padding-bottom:${i<sections.length-1?'10':'0'}px;border-bottom:${i<sections.length-1?'1px solid #1e1a3a':'none'};">
       <div style="display:flex;align-items:center;gap:6px;margin-bottom:4px;">
         <i class="ti ${s.icon}" style="font-size:13px;color:${s.color};"></i>
@@ -1346,16 +1610,7 @@ ${clientContext}`;
       <button class="btnp" style="flex:2;border-radius:8px;padding:9px;" onclick="nav('room','${id}')"><i class="ti ti-armchair"></i> Start Session</button>
       <button class="btng" style="flex:1;min-width:44px;min-height:44px;" onclick="nav('rebook','${id}')" aria-label="Rebook"><i class="ti ti-calendar-plus" aria-hidden="true"></i></button>
     </div>`;
-    if(regen)regen.style.pointerEvents='auto';
-  } catch(err){
-    el.innerHTML=`
-    <div style="background:#2a0f0f;border:1px solid #4a1515;border-radius:10px;padding:12px;margin-bottom:12px;">
-      <div style="font-size:13px;color:#e87070;margin-bottom:4px;font-weight:500;">Couldn't generate brief</div>
-      <div style="font-size:12px;color:#999;line-height:1.5;">Check your connection or API access and try again.</div>
-    </div>
-    <button onclick="loadBrief('${id}',CL['${id}'])" class="btng" style="width:100%;border-radius:8px;"><i class="ti ti-refresh"></i> Try again</button>`;
-    if(regen)regen.style.pointerEvents='auto';
-  }
+  if(regen)regen.style.pointerEvents='auto';
 }
 
 function renderRoom(id){
@@ -1387,12 +1642,6 @@ function renderRoom(id){
     <div style="background:#111;border:1px solid #1e1e1e;border-radius:12px;padding:12px 14px;">
       <div style="font-size:12px;color:#999;text-transform:uppercase;letter-spacing:.07em;margin-bottom:8px;">Session notes</div>
       <textarea id="rnotes" aria-label="Session notes" placeholder="Observations, reactions, adjustments..." style="width:100%;background:#0f0f0f;border:1px solid #2a2a2a;border-radius:8px;padding:9px 12px;font-size:13px;color:#ccc;height:76px;resize:none;font-family:inherit;line-height:1.5;outline:none;"></textarea>
-      <div style="margin-top:7px;display:flex;flex-wrap:wrap;gap:5px;">
-        ${((selectedProfessions.includes('hair')||selectedProfessions.includes('barber'))&&!selectedProfessions.includes('esty')
-          ?isBrowOnly?['Symmetry achieved','Client approved shape','Added extra shading','Touch-up needed','Client loved it']:['Clean result','Extra toning time','Adjusted formula','Patch test done','Client loved it']
-          :['Client comfortable','No reactivity','Extra extraction','Adjusted pressure']
-        ).map(t=>`<button onclick="addTag(this,'${t}')" style="background:#161616;border:1px solid #2a2a2a;border-radius:20px;padding:4px 10px;font-size:11px;color:#666;cursor:pointer;">${t}</button>`).join('')}
-      </div>
     </div>
   </div><div style="height:14px;"></div>`;
 }
@@ -1448,7 +1697,6 @@ function filterProtocols(q){const el=document.getElementById('proto-list');if(el
 function pickRoomProtocol(i){roomProtocol=i;const s=document.getElementById('proto-search');if(s)s.remove();const el=document.getElementById('room-protocol');if(el)el.innerHTML=_roomProtocolHTML();if(typeof proToast==='function')proToast('Protocol switched');}
 function toggleRoomStep(i){const k=roomProtocol+'-'+i;roomStepsDone[k]=!roomStepsDone[k];const el=document.getElementById('room-protocol');if(el)el.innerHTML=_roomProtocolHTML();}
 
-function addTag(btn,t){const ta=document.getElementById('rnotes');if(ta)ta.value+=(ta.value?', ':'')+t;btn.style.background='var(--accent)';btn.style.color='var(--accent-ink)';btn.style.borderColor='var(--accent)';}
 function _roomPhotosHTML(id){
   const before=_capturedFor(id,'before'),after=_capturedFor(id,'after');
   const hasB=before.length,hasA=after.length;
@@ -1483,6 +1731,9 @@ function _vitalsConfig(){
     {key:'concerns',label:'Concerns',ph:'What they want to work on'},
     {key:'allergies',label:'Allergies / sensitivities',ph:'e.g. Fragrance, retinol — or None known'},
     {key:'fitz',label:v.secondary,ph:v.secondaryPh},
+    {key:'pregnancy',label:'Pregnant / nursing',ph:'Yes / No',med:true},
+    {key:'medications',label:'Medications',ph:'e.g. None, or list',med:true},
+    {key:'conditions',label:'Medical conditions',ph:'Anything relevant to treatment',med:true},
     {key:'lastVisit',label:'Last visit',ph:'e.g. Jun 10, 2026'},
     {key:'nextVisit',label:'Next visit',ph:'e.g. Jul 8 · 11:00 AM'},
   ];
@@ -1516,8 +1767,11 @@ function saveVitals(id){
 function _vitalForQuestion(label){
   const l=(label||'').toLowerCase();
   if(/allerg|sensitiv/.test(l)) return 'allergies';
+  if(/pregnan|nursing|breastfeed/.test(l)) return 'pregnancy';
+  if(/medication|prescription|currently taking|on any med|taking any med/.test(l)) return 'medications';
+  if(/medical (history|condition)|health condition|chronic|underlying condition|skin\s+condition/.test(l)) return 'conditions';
   if(/fitzpatrick|skin tone|undertone/.test(l)) return 'fitz';
-  if(/(skin|hair|lash|nail|brow)\s*(type|condition|texture)|natural\s+(hair|lash|brow)|skin\s*type\s*&?\s*tone/.test(l)) return 'skin';
+  if(/(skin|hair|lash|nail|brow)\s*(type|texture)|natural\s+(hair|lash|brow)|skin\s*type\s*&?\s*tone/.test(l)) return 'skin';
   if(/concern|goal|occasion|look|areas you want|cut style|preferred\s+(cut|style|finish|look)|work on|enhancement/.test(l)) return 'concerns';
   return null;
 }
@@ -1541,7 +1795,11 @@ function changeTreatment(id,screen){
     <div style="width:36px;height:4px;background:#333;border-radius:2px;margin:0 auto 14px;"></div>
     <div style="font-size:16px;font-weight:600;color:#f0f0f0;margin-bottom:3px;">Change treatment</div>
     <div style="font-size:12px;color:#999;margin-bottom:14px;line-height:1.5;">Things come up — update the booked treatment for ${c.name.split(' ')[0]}. This carries across the appointment, notes, and client summary.</div>
-    <input id="treatment-input" value="${(c.treatment||'').replace(/"/g,'&quot;')}" placeholder="Treatment name…" style="width:100%;background:#111;border:1px solid #333;border-radius:9px;padding:11px 12px;font-size:15px;color:#f0f0f0;font-family:inherit;box-sizing:border-box;margin-bottom:16px;outline:none;">
+    <input id="treatment-input" value="${(c.treatment||'').replace(/"/g,'&quot;')}" placeholder="Treatment name…" style="width:100%;background:#111;border:1px solid #333;border-radius:9px;padding:11px 12px;font-size:15px;color:#f0f0f0;font-family:inherit;box-sizing:border-box;margin-bottom:${(squareCatalog.services&&squareCatalog.services.length)?'12px':'16px'};outline:none;">
+    ${(squareCatalog.services&&squareCatalog.services.length)?`<div style="font-size:11px;color:#999;margin-bottom:7px;">Your Square services — tap to use</div>
+    <div style="display:flex;flex-wrap:wrap;gap:6px;margin-bottom:16px;max-height:118px;overflow-y:auto;">
+      ${squareCatalog.services.slice(0,24).map((s,si)=>`<button onclick="_pickTreatmentService(${si})" style="background:#111;border:1px solid #333;color:#ccc;border-radius:20px;padding:6px 11px;font-size:12px;cursor:pointer;font-family:inherit;white-space:nowrap;">${String(s.name||'').replace(/&/g,'&amp;').replace(/</g,'&lt;')}</button>`).join('')}
+    </div>`:''}
     <div style="display:flex;gap:8px;">
       <button onclick="document.getElementById('treatment-modal').remove()" style="flex:1;background:#222;border:1px solid #333;border-radius:10px;padding:11px;font-size:14px;color:#ccc;cursor:pointer;">Cancel</button>
       <button onclick="saveTreatment('${id}','${screen||'client'}')" style="flex:2;background:var(--accent);border:none;border-radius:10px;padding:11px;font-size:14px;font-weight:600;color:var(--accent-ink);cursor:pointer;">Save treatment</button>
@@ -1550,6 +1808,7 @@ function changeTreatment(id,screen){
   (document.querySelector('.shell')||document.body).appendChild(m);
   setTimeout(()=>{const i=document.getElementById('treatment-input');if(i)i.focus();},50);
 }
+function _pickTreatmentService(i){const s=(squareCatalog.services||[])[i];const inp=document.getElementById('treatment-input');if(s&&inp)inp.value=s.name;}
 function saveTreatment(id,screen){
   const inp=document.getElementById('treatment-input');const v=(inp&&inp.value||'').trim();
   if(v)CL[id].treatment=v;
@@ -1702,7 +1961,7 @@ function renderNewNoteTemplate(clientId){
   <div id="nt-secs" style="padding:0 16px;">${noteEditSecs.map((s,i)=>ntSecHTML(s,i)).join('')}</div>
   <button onclick="addNtSec()" style="width:calc(100% - 32px);margin:0 16px 16px;border:1.5px dashed #2a2a2a;border-radius:10px;padding:11px;display:flex;align-items:center;justify-content:center;gap:8px;font-size:13px;color:#aaa;background:none;cursor:pointer;"><i class="ti ti-plus"></i> Add a section</button>`;
 }
-function ntSecHTML(s,i){return`<div style="background:#1a1a1a;border:1px solid #2a2a2a;border-radius:10px;margin-bottom:8px;overflow:hidden;" id="ns-${s.id}"><div style="padding:10px 12px;display:flex;align-items:center;gap:8px;"><div style="width:10px;height:10px;border-radius:50%;background:${s.color};"></div><input value="${s.label}" style="flex:1;border:none;background:none;font-size:14px;font-weight:500;color:#e0e0e0;outline:none;font-family:inherit;" oninput="noteEditSecs[${i}].label=this.value"><button onclick="rmNtSec('${s.id}')" class="icon-btn" aria-label="Delete"><i class="ti ti-trash" aria-hidden="true" style="color:#e87070;font-size:16px;"></i></button></div></div>`;}
+function ntSecHTML(s,i){return`<div style="background:#1a1a1a;border:1px solid #2a2a2a;border-radius:10px;margin-bottom:8px;overflow:hidden;" id="ns-${s.id}"><div style="padding:10px 12px;display:flex;align-items:center;gap:8px;"><div style="width:10px;height:10px;border-radius:50%;background:${s.color};"></div><input aria-label="Section label" value="${s.label}" style="flex:1;border:none;background:none;font-size:14px;font-weight:500;color:#e0e0e0;outline:none;font-family:inherit;" oninput="noteEditSecs[${i}].label=this.value"><button onclick="rmNtSec('${s.id}')" class="icon-btn" aria-label="Delete"><i class="ti ti-trash" aria-hidden="true" style="color:#e87070;font-size:16px;"></i></button></div></div>`;}
 function addNtSec(){const colors=['#e87070','#5ba3e8','#4ec49a','var(--accent)','#a891ec'];const s={id:'ne'+Date.now(),label:'New section',color:colors[noteEditSecs.length%colors.length]};noteEditSecs.push(s);const list=document.getElementById('nt-secs');if(!list)return;const d=document.createElement('div');d.innerHTML=ntSecHTML(s,noteEditSecs.length-1);list.appendChild(d.firstChild);}
 function rmNtSec(id){noteEditSecs=noteEditSecs.filter(s=>s.id!==id);const el=document.getElementById('ns-'+id);if(el)el.remove();}
 function saveNoteTemplate(clientId){const name=document.getElementById('nt-name')?.value||'My custom format';customNoteTemplates.push({id:'ct'+Date.now(),name,bdg:'ba',col:'var(--accent-tint)',ic:'var(--accent)',desc:`Custom · ${noteEditSecs.length} sections`,sections:noteEditSecs.map(s=>({...s,ph:''}))});nav('notes',clientId);}
@@ -1832,14 +2091,14 @@ function _renderPhotosView(id,c,_passed){
       <div style="display:flex;align-items:center;gap:8px;">
         <div style="flex:1;">
           <div style="font-size:10px;color:#999;margin-bottom:4px;">Before</div>
-          <select onchange="compareLeft=parseInt(this.value);_renderPhotosView('${id}',CL['${id}'],photoSessions['${id}']||[])" style="width:100%;background:#1a1a1a;border:1px solid #2a2a2a;border-radius:8px;padding:7px 9px;font-size:12px;color:#e0e0e0;cursor:pointer;">
+          <select aria-label="Choose before photo" onchange="compareLeft=parseInt(this.value);_renderPhotosView('${id}',CL['${id}'],photoSessions['${id}']||[])" style="width:100%;background:#1a1a1a;border:1px solid #2a2a2a;border-radius:8px;padding:7px 9px;font-size:12px;color:#e0e0e0;cursor:pointer;">
             ${sessions.map((s,i)=>`<option value="${i}" ${i===compareLeft?'selected':''}>${s.date}${s.virtual?' · Virtual Consult':''}</option>`).join('')}
           </select>
         </div>
         <div style="color:#555;font-size:16px;flex-shrink:0;padding-top:16px;">→</div>
         <div style="flex:1;">
           <div style="font-size:10px;color:#999;margin-bottom:4px;">After</div>
-          <select onchange="compareRight=parseInt(this.value);_renderPhotosView('${id}',CL['${id}'],photoSessions['${id}']||[])" style="width:100%;background:#1a1a1a;border:1px solid #2a2a2a;border-radius:8px;padding:7px 9px;font-size:12px;color:#e0e0e0;cursor:pointer;">
+          <select aria-label="Choose after photo" onchange="compareRight=parseInt(this.value);_renderPhotosView('${id}',CL['${id}'],photoSessions['${id}']||[])" style="width:100%;background:#1a1a1a;border:1px solid #2a2a2a;border-radius:8px;padding:7px 9px;font-size:12px;color:#e0e0e0;cursor:pointer;">
             ${sessions.map((s,i)=>`<option value="${i}" ${i===compareRight?'selected':''}>${s.date}${s.virtual?' · Virtual Consult':''}</option>`).join('')}
           </select>
         </div>
@@ -2015,7 +2274,7 @@ function renderSessionSummary(id){
     <div style="background:linear-gradient(135deg,var(--accent-tint),var(--accent-ink));padding:18px 16px 16px;">
       <div style="display:flex;align-items:center;gap:10px;margin-bottom:12px;">
         <div style="width:36px;height:36px;background:var(--accent);border-radius:9px;display:flex;align-items:center;justify-content:center;"><i class="ti ti-sparkles" aria-hidden="true" style="font-size:16px;color:var(--accent-ink);"></i></div>
-        <div><div style="font-size:14px;font-weight:500;color:#f0f0f0;">Glowing Skin Studio</div><div style="font-size:11px;color:var(--accent);">Jessica Lee, LE</div></div>
+        <div><div style="font-size:14px;font-weight:500;color:#f0f0f0;">${bizInfo.name}</div><div style="font-size:11px;color:var(--accent);">${bizInfo.ownerName}</div></div>
       </div>
       <div style="font-size:18px;font-weight:500;color:#f0f0f0;margin-bottom:2px;">Your session summary ✨</div>
       <div style="font-size:12px;color:#999;">Jun 26, 2026 · ${c.treatment}</div>
@@ -2087,8 +2346,8 @@ function renderSessionSummary(id){
     </div>`:''}
 
     <div style="background:#161616;padding:12px 16px;display:flex;align-items:center;justify-content:space-between;border-top:1px solid #222;">
-      <div style="font-size:11px;color:#666;">Glowing Skin Studio · Oakland, CA</div>
-      <div style="font-size:11px;color:#666;">glowingskinstudio.com</div>
+      <div style="font-size:11px;color:#666;">${bizInfo.name}${_bizLoc()?' · '+_bizLoc():''}</div>
+      <div style="font-size:11px;color:#666;">${bizInfo.website||''}</div>
     </div>
   </div>
 
@@ -2350,6 +2609,7 @@ function applyProfessions(){
     }
   });
   applyProfessionConfig();
+  saveProfessions();
   nav('home');
   setTimeout(()=>{
     S.insertAdjacentHTML('afterbegin',`<div id="prof-toast" style="position:absolute;top:16px;left:50%;transform:translateX(-50%);background:#0a2019;border:1px solid #4ec49a;border-radius:10px;padding:10px 16px;font-size:13px;color:#4ec49a;display:flex;align-items:center;gap:7px;z-index:999;white-space:nowrap;"><i class="ti ti-check" aria-hidden="true"></i> Workspace configured for ${selectedProfessions.length} profession${selectedProfessions.length>1?'s':''}!</div>`);
@@ -2838,7 +3098,6 @@ function _vcProfile(){
     questions:['Can I start using retinol now?','Which SPF should I use post-laser?','Is my jawline texture normal?']
   };
 }
-function _vcPhotoGrid(labels,stamp,small){const cols=['#2e1c10','#0a2019','#0d1e33'],ics=['var(--accent)','#4ec49a','#5ba3e8'];return labels.map((label,i)=>`<div style="border-radius:8px;background:${cols[i%3]};aspect-ratio:3/4;display:flex;align-items:center;justify-content:center;position:relative;"><i class="ti ti-user-circle" style="font-size:${small?24:28}px;color:${ics[i%3]};opacity:.4;"></i><span style="position:absolute;top:5px;right:5px;font-size:9px;background:rgba(0,0,0,.62);color:#fff;font-weight:600;padding:1px 5px;border-radius:3px;">${stamp}</span><span style="position:absolute;bottom:5px;left:5px;font-size:11px;background:rgba(0,0,0,.6);color:#ccc;padding:2px 5px;border-radius:3px;">${label}</span></div>`).join('');}
 function renderVirtualClient(id){
   setNav('clients');
   const c=CL[id];
@@ -3212,7 +3471,6 @@ function confirmSendForm(fid,cid){
   closeSendProd();
   proToast(`Sent ${tmpl.name}${guides.length?` + ${guides.length} guide${guides.length>1?'s':''}`:''} to ${c?c.name.split(' ')[0]:'client'}`);
 }
-function _docInput(id,ph,val){return `<input id="${id}" placeholder="${ph}" value="${(val||'').replace(/"/g,'&quot;')}" style="width:100%;background:#111;border:1px solid #333;border-radius:8px;padding:9px 11px;font-size:13px;color:#e0e0e0;font-family:inherit;box-sizing:border-box;">`;}
 function renderFormDocs(fid){
   setNav('forms');
   const tmpl=formTmpls[fid]||{name:'Form'};
@@ -3309,6 +3567,7 @@ function renderCheckinSettings(){
   setNav('forms');
   document.getElementById('tt').textContent='Edit check-in';
   if(!checkinCfg.snacks)checkinCfg.snacks=['🍫 Dark chocolate','🫐 Fresh berries','🚫 No snack'];
+  if(!checkinCfg.autoSend)checkinCfg.autoSend={on:true,when:'1 day'};
   S.innerHTML=`
   <div style="padding:12px 16px 0;display:flex;align-items:center;justify-content:space-between;">
     <button class="back" onclick="nav('forms')"><i class="ti ti-arrow-left"></i> Forms</button>
@@ -3318,6 +3577,21 @@ function renderCheckinSettings(){
     </div>
   </div>
   <div style="margin:10px 16px;background:#0d1e33;border:1px solid #1a3a5c;border-radius:10px;padding:10px 12px;display:flex;gap:8px;"><i class="ti ti-info-circle" style="font-size:14px;color:#5ba3e8;flex-shrink:0;margin-top:1px;"></i><span style="font-size:12px;color:#5ba3e8;line-height:1.5;">Toggle options on/off or remove them. Clients only see what you enable.</span></div>
+
+  <div class="sh"><h2>Automatic sending</h2></div>
+  <div style="background:#1a1a1a;border:1px solid #2a2a2a;border-radius:12px;margin:0 16px 8px;overflow:hidden;">
+    <div style="display:flex;align-items:center;gap:8px;padding:11px 12px;${checkinCfg.autoSend.on?'border-bottom:1px solid #1e1e1e;':''}">
+      <div style="flex:1;min-width:0;"><div style="font-size:13px;color:#e0e0e0;">Send check-in automatically</div><div style="font-size:11px;color:#999;margin-top:2px;">Before each upcoming appointment</div></div>
+      ${togBtn(checkinCfg.autoSend.on,'checkinCfg.autoSend.on=!checkinCfg.autoSend.on;renderCheckinSettings()','Toggle automatic check-in')}
+    </div>
+    ${checkinCfg.autoSend.on?`<div style="padding:11px 12px;">
+      <div style="font-size:12px;color:#999;margin-bottom:8px;">When to send</div>
+      <div style="display:flex;flex-wrap:wrap;gap:6px;">
+        ${['2 hours','1 day','2 days','3 days'].map(w=>`<button onclick="checkinCfg.autoSend.when='${w}';renderCheckinSettings()" class="btng" style="padding:6px 12px;font-size:12px;${checkinCfg.autoSend.when===w?'border-color:var(--accent);color:var(--accent);background:var(--accent-a08);':''}">${w} before</button>`).join('')}
+      </div>
+    </div>`:''}
+  </div>
+  <div style="margin:0 16px 12px;background:#0d1e33;border:1px solid #1a3a5c;border-radius:10px;padding:10px 12px;display:flex;gap:8px;"><i class="ti ti-info-circle" style="font-size:13px;color:#5ba3e8;flex-shrink:0;margin-top:1px;"></i><span style="font-size:11px;color:#7fb5e8;line-height:1.5;">${checkinCfg.autoSend.on?`Once your texting is connected, check-ins send on their own <b>${checkinCfg.autoSend.when} before</b> each visit. Until then, send with one tap from a client's profile.`:'Automatic sending is off. You can still send a check-in any time from a client\u2019s profile.'}</span></div>
 
   <div class="sh"><h2>Health & skin questions</h2></div>
   <div style="background:#1a1a1a;border:1px solid #2a2a2a;border-radius:12px;margin:0 16px 10px;overflow:hidden;">
@@ -3370,14 +3644,14 @@ function renderCheckinSettings(){
       <input id="chair-label-input" value="${checkinCfg.chairComfortLabel||'Comfort'}" aria-label="Section name" onchange="checkinCfg.chairComfortLabel=this.value" style="background:none;border:none;font-size:11px;font-weight:600;color:#666;text-transform:uppercase;letter-spacing:.07em;font-family:inherit;cursor:text;outline:none;width:140px;" onblur="renderCheckinSettings()">
       <span style="font-size:10px;color:#555;">← tap to rename</span>
     </div>
-    <button onclick="confirm({title:'Remove this section',body:'Remove the \\'${checkinCfg.chairComfortLabel||'Comfort'}\\' section from the check-in? Clients won\\'t see it.',action:'Remove'},'()=>{checkinCfg.chairComfortOn=false;renderCheckinSettings()}')" style="border:none;background:none;color:#555;font-size:11px;cursor:pointer;display:flex;align-items:center;gap:3px;"><i class="ti ti-trash" style="font-size:12px;"></i> Remove section</button>
+    <button onclick="confirmModal({title:'Remove this section',body:'Remove the \\'${checkinCfg.chairComfortLabel||'Comfort'}\\' section from the check-in? Clients won\\'t see it.',action:'Remove'},'()=>{checkinCfg.chairComfortOn=false;renderCheckinSettings()}')" style="border:none;background:none;color:#555;font-size:11px;cursor:pointer;display:flex;align-items:center;gap:3px;"><i class="ti ti-trash" style="font-size:12px;"></i> Remove section</button>
   </div>
   <div style="padding:0 16px 5px;font-size:11px;color:#777;">Heated controls — client picks a level for each</div>
   <div style="background:#1a1a1a;border:1px solid #2a2a2a;border-radius:12px;margin:0 16px 10px;overflow:hidden;">
     <div style="padding:8px 12px;">
       ${(checkinCfg.heat||[]).map((h,i)=>`<div style="display:flex;align-items:center;gap:8px;padding:7px 0;${i<(checkinCfg.heat.length-1)?'border-bottom:1px solid #1e1e1e;':''}">
         <i class="ti ti-temperature" aria-hidden="true" style="font-size:15px;color:#e8a070;flex-shrink:0;"></i>
-        <input value="${h.label}" onchange="checkinCfg.heat[${i}].label=this.value" style="flex:1;background:none;border:none;font-size:13px;color:#e0e0e0;font-family:inherit;cursor:text;outline:none;" onblur="renderCheckinSettings()">
+        <input aria-label="Heat option label" value="${h.label}" onchange="checkinCfg.heat[${i}].label=this.value" style="flex:1;background:none;border:none;font-size:13px;color:#e0e0e0;font-family:inherit;cursor:text;outline:none;" onblur="renderCheckinSettings()">
         <span style="font-size:11px;color:#666;">${(h.levels||['Off','Low','Med','High']).join(' · ')}</span>
         ${togBtn(h.on!==false,'checkinCfg.heat['+i+'].on=!(checkinCfg.heat['+i+'].on!==false);renderCheckinSettings()','Toggle '+h.label)}
         <button onclick="checkinCfg.heat.splice(${i},1);renderCheckinSettings()" class="icon-btn" aria-label="Remove ${h.label}" style="color:#999;min-width:36px;min-height:36px;"><i class="ti ti-trash" aria-hidden="true" style="font-size:15px;"></i></button>
@@ -3389,8 +3663,8 @@ function renderCheckinSettings(){
   <div style="background:#1a1a1a;border:1px solid #2a2a2a;border-radius:12px;margin:0 16px 10px;overflow:hidden;">
     <div style="padding:10px 12px;">
       ${checkinCfg.blankets.map((b,i)=>`<div style="display:flex;align-items:center;gap:8px;padding:6px 0;border-bottom:1px solid #1e1e1e;">
-        <input value="${b.emoji}" onchange="checkinCfg.blankets[${i}].emoji=this.value" style="width:32px;background:none;border:none;font-size:16px;text-align:center;font-family:inherit;cursor:text;outline:none;">
-        <input value="${b.label}" onchange="checkinCfg.blankets[${i}].label=this.value" style="flex:1;background:none;border:none;font-size:13px;color:#e0e0e0;font-family:inherit;cursor:text;outline:none;" onblur="renderCheckinSettings()">
+        <input aria-label="Blanket emoji" value="${b.emoji}" onchange="checkinCfg.blankets[${i}].emoji=this.value" style="width:32px;background:none;border:none;font-size:16px;text-align:center;font-family:inherit;cursor:text;outline:none;">
+        <input aria-label="Blanket option label" value="${b.label}" onchange="checkinCfg.blankets[${i}].label=this.value" style="flex:1;background:none;border:none;font-size:13px;color:#e0e0e0;font-family:inherit;cursor:text;outline:none;" onblur="renderCheckinSettings()">
         <button onclick="checkinCfg.blankets.splice(${i},1);renderCheckinSettings()" class="icon-btn" aria-label="Remove ${b.label}" style="color:#999;min-width:36px;min-height:36px;"><i class="ti ti-trash" aria-hidden="true" style="font-size:15px;"></i></button>
       </div>`).join('')}
       <button onclick="checkinCfg.blankets.push({id:'bl'+Date.now(),emoji:'🛋️',label:'New option'});renderCheckinSettings()" style="border:none;background:none;color:var(--accent);font-size:13px;cursor:pointer;margin-top:8px;">+ Add option</button>
@@ -3764,7 +4038,7 @@ function _qRowHTML(q){
       <button onclick="this.closest('.qrow').remove()" class="icon-btn" aria-label="Delete question"><i class="ti ti-trash" aria-hidden="true" style="color:#e87070;font-size:16px;"></i></button>
     </div>
     <div style="border-top:1px solid #1e1e1e;padding:8px 12px;display:flex;align-items:center;gap:10px;">
-      <select class="q-type" onchange="_changeQType(this)" style="background:#111;border:1px solid #2f2f2f;border-radius:7px;padding:5px 8px;font-size:12px;color:#ccc;font-family:inherit;">${_formTypeOptions(q.type)}</select>
+      <select aria-label="Question type" class="q-type" onchange="_changeQType(this)" style="background:#111;border:1px solid #2f2f2f;border-radius:7px;padding:5px 8px;font-size:12px;color:#ccc;font-family:inherit;">${_formTypeOptions(q.type)}</select>
       <label style="display:flex;align-items:center;gap:6px;font-size:11px;color:#aaa;cursor:pointer;margin-left:auto;"><input type="checkbox" class="q-req" ${q.required?'checked':''} style="width:15px;height:15px;accent-color:var(--accent);"> Required</label>
     </div>
     ${isContra?`<div style="border-top:1px solid #1e1e1e;padding:9px 12px;"><div style="font-size:11px;color:#888;margin-bottom:5px;display:flex;align-items:center;gap:5px;"><i class="ti ti-alert-triangle" style="font-size:12px;color:#e87070;"></i> Contraindications — one per line · clients confirm these right before signing</div><textarea class="q-items" placeholder="One contraindication per line…" style="width:100%;background:#111;border:1px solid #2f2f2f;border-radius:7px;padding:8px 9px;font-size:12px;color:#ccc;font-family:inherit;line-height:1.6;height:118px;resize:none;box-sizing:border-box;outline:none;">${(q.items||[]).join('\n').replace(/</g,'&lt;')}</textarea></div>`:''}
@@ -3848,7 +4122,7 @@ function _formQHTML(q){
       <ul style="margin:0;padding-left:18px;">${(q.items||[]).map(it=>`<li style="font-size:12.5px;color:#e6cccc;line-height:1.75;">${it}</li>`).join('')}</ul>
       <div style="font-size:12px;color:#d6a8a8;line-height:1.5;margin-top:9px;border-top:1px solid #4a1c1c;padding-top:8px;">By signing below, you confirm you've read and understood the above.</div>
     </div>`;}
-  return `<div style="margin-bottom:14px;padding-bottom:14px;border-bottom:1px solid #1e1e1e;"><div style="font-size:13px;font-weight:500;color:#e0e0e0;margin-bottom:6px;">${q.label} <span style="font-size:12px;color:${q.required?'#e87070':'#444'};">${q.required?'Required':'Optional'}</span></div>${q.type==='Short text'?'<input class="fi" placeholder="Your answer...">'  :''}${q.type==='Long text'?'<textarea class="fi" style="height:64px;resize:none;" placeholder="Your answer..."></textarea>':''} ${q.type==='Yes / No'?'<div style="display:flex;gap:8px;"><button class="btng" style="flex:1;">Yes</button><button class="btng" style="flex:1;">No</button></div>':''} ${q.type==='Date'?'<input type="date" class="fi">':''} ${(q.type==='Multiple choice'||q.type==='Single select')&&q.options?`<div style="display:flex;flex-wrap:wrap;gap:6px;">${q.options.map(o=>`<button class="btng" style="padding:6px 12px;font-size:12px;">${o}</button>`).join('')}</div>`:''} ${q.type==='Signature'?`<div style="border:1px dashed #2a2a2a;border-radius:8px;padding:20px;text-align:center;background:#161616;"><i class="ti ti-writing" style="font-size:22px;color:#888;display:block;margin-bottom:6px;"></i><span style="font-size:12px;color:#888;">Tap to sign</span></div>`:''}</div>`;
+  return `<div style="margin-bottom:14px;padding-bottom:14px;border-bottom:1px solid #1e1e1e;"><div style="font-size:13px;font-weight:500;color:#e0e0e0;margin-bottom:6px;">${q.label} <span style="font-size:12px;color:${q.required?'#e87070':'#444'};">${q.required?'Required':'Optional'}</span></div>${q.type==='Short text'?'<input class="fi" placeholder="Your answer...">'  :''}${q.type==='Long text'?'<textarea class="fi" style="height:64px;resize:none;" placeholder="Your answer..."></textarea>':''} ${q.type==='Yes / No'?'<div style="display:flex;gap:8px;"><button class="btng" style="flex:1;">Yes</button><button class="btng" style="flex:1;">No</button></div>':''} ${q.type==='Date'?'<input type="date" class="fi" aria-label="Date">':''} ${(q.type==='Multiple choice'||q.type==='Single select')&&q.options?`<div style="display:flex;flex-wrap:wrap;gap:6px;">${q.options.map(o=>`<button class="btng" style="padding:6px 12px;font-size:12px;">${o}</button>`).join('')}</div>`:''} ${q.type==='Signature'?`<div style="border:1px dashed #2a2a2a;border-radius:8px;padding:20px;text-align:center;background:#161616;"><i class="ti ti-writing" style="font-size:22px;color:#888;display:block;margin-bottom:6px;"></i><span style="font-size:12px;color:#888;">Tap to sign</span></div>`:''}</div>`;
 }
 function _formHasSignature(fid){const t=formTmpls[fid];return !!(t&&t.qs&&t.qs.some(q=>q.type==='Signature'));}
 function renderFormPreview(tid){
@@ -3920,14 +4194,135 @@ function submitSignOnDevice(fid,cid){
   const tmpl=formTmpls[fid]||{name:'Form'};
   if(cid&&CL[cid]){
     CL[cid].signedForms=CL[cid].signedForms||[];if(CL[cid].signedForms.indexOf(tmpl.name)<0)CL[cid].signedForms.push(tmpl.name);
+    // capture the answers entered on device (same source the vitals mapping uses)
+    const ans={};
+    if(tmpl&&tmpl.qs)tmpl.qs.forEach(q=>{if(q.type==='Signature'||q.type==='Contraindications')return;const el=document.getElementById('sd-'+(q.id!=null?q.id:''));let v=(el&&('value' in el)&&el.value)?el.value:((window._sdAns||{})['sd-'+(q.id!=null?q.id:'')]);if(v!=null&&String(v).trim())ans[q.id]=v;});
     // fill the chart vitals from the answers just entered (same mapping the wizard uses)
-    _applyIntakeVitals(CL[cid],fid,q=>{const el=document.getElementById('sd-'+(q.id!=null?q.id:''));if(el&&('value' in el)&&el.value)return el.value;return (window._sdAns||{})['sd-'+(q.id!=null?q.id:'')];});
+    _applyIntakeVitals(CL[cid],fid,q=>ans[q.id]);
+    // store the signed form on the client's file so it lives in Forms & documents
+    CL[cid].submittedForms=CL[cid].submittedForms||[];
+    if(!CL[cid].submittedForms.some(sf=>sf.formId===fid&&sf.signed))CL[cid].submittedForms.unshift({formId:fid,title:tmpl.name,answers:ans,flagged:[],date:'Today',signed:true});
+    try{if(typeof saveClients==='function')saveClients();}catch(e){}
   }
   proToast(`${tmpl.name} signed ✓`);
   if(cid&&CL[cid])nav('client',cid);else nav('forms');
 }
 // ── SHARE A FORM AS A LINK (no app needed) ──
 function _formToken(fid,cid){return (fid+(cid?'-'+cid:'')+'-'+Date.now().toString(36)).replace(/[^a-z0-9-]/gi,'');}
+// ── One-tap pre-visit check-in text: opens the phone's Messages app pre-filled ──
+// ── Pre-visit check-in "needs attention" nudges ──
+// Format a near-future time label like "Jun 30 · 3:45 PM" (used for demo appointments)
+function _soonVisitLabel(minsAhead){
+  const d=new Date(Date.now()+(minsAhead||0)*60000);
+  const mon=['Jan','Feb','Mar','Apr','May','Jun','Jul','Aug','Sep','Oct','Nov','Dec'][d.getMonth()];
+  let h=d.getHours();const ap=h>=12?'PM':'AM';h=h%12||12;const mm=(d.getMinutes()<10?'0':'')+d.getMinutes();
+  return mon+' '+d.getDate()+' · '+h+':'+mm+' '+ap;
+}
+// Parse a nextVisit string into hours-from-now (null if unscheduled/unparseable)
+function _hoursUntilVisit(c){
+  const s=String((c&&c.nextVisit)||'');
+  if(!s||/not scheduled/i.test(s))return null;
+  const m=s.match(/([A-Za-z]{3,})\s+(\d{1,2}).*?(\d{1,2}):(\d{2})\s*(AM|PM)/i);
+  if(!m)return null;
+  const mons={jan:0,feb:1,mar:2,apr:3,may:4,jun:5,jul:6,aug:7,sep:8,oct:9,nov:10,dec:11};
+  const mo=mons[m[1].slice(0,3).toLowerCase()];if(mo==null)return null;
+  let h=parseInt(m[3],10);const ap=m[5].toUpperCase();if(ap==='PM'&&h<12)h+=12;if(ap==='AM'&&h===12)h=0;
+  const now=new Date();const day=parseInt(m[2],10),min=parseInt(m[4],10);
+  let d=new Date(now.getFullYear(),mo,day,h,min,0);
+  if((d-now)/86400000 < -60)d=new Date(now.getFullYear()+1,mo,day,h,min,0);
+  return (d-now)/3600000;
+}
+function _checkinDone(id,c){
+  if(c&&c.checkinDone)return true;
+  try{if(typeof checkins!=='undefined'&&Array.isArray(checkins)&&checkins.some(ci=>ci&&ci.clientId===id))return true;}catch(e){}
+  return false;
+}
+let _ciDismissed={};
+function loadCiDismissed(){try{const r=localStorage.getItem('sc_ci_dismissed');if(r)_ciDismissed=JSON.parse(r)||{};}catch(e){}}
+function saveCiDismissed(){try{localStorage.setItem('sc_ci_dismissed',JSON.stringify(_ciDismissed));}catch(e){}}
+// One-time: restore an accidentally-dismissed sample Maya check-in nudge
+function _ciRestoreOnce(){
+  try{
+    if(localStorage.getItem('sc_ci_restore1'))return;
+    localStorage.setItem('sc_ci_restore1','1');
+    let changed=false;
+    Object.keys(_ciDismissed).forEach(k=>{if(k.indexOf('maya|')===0){delete _ciDismissed[k];changed=true;}});
+    if(changed)saveCiDismissed();
+  }catch(e){}
+}
+// Clients within 2h of their appointment who still haven't completed the check-in (and not dismissed)
+function _needsCheckin(){
+  return Object.entries(CL).filter(([id,c])=>{
+    if(!c||_checkinDone(id,c))return false;
+    if(_ciDismissed[id+'|'+((c.nextVisit)||'')])return false;
+    const h=_hoursUntilVisit(c);
+    return h!=null && h<=2 && h>=-2;
+  });
+}
+let _lastCiDismiss=null;
+function dismissCheckinNudge(id){
+  const c=CL[id];const key=id+'|'+((c&&c.nextVisit)||'');
+  _ciDismissed[key]=true;saveCiDismissed();_lastCiDismiss=key;
+  _ciUndoToast(((c&&c.name)?c.name.split(' ')[0]:'Reminder')+' cleared');
+  if(document.getElementById('home-screen'))renderHome();
+}
+function undoLastCheckinDismiss(){
+  if(_lastCiDismiss){delete _ciDismissed[_lastCiDismiss];saveCiDismissed();_lastCiDismiss=null;}
+  const t=document.getElementById('ci-undo-toast');if(t)t.remove();
+  if(document.getElementById('home-screen'))renderHome();
+}
+function _ciUndoToast(msg){
+  const old=document.getElementById('ci-undo-toast');if(old)old.remove();
+  const t=document.createElement('div');t.id='ci-undo-toast';
+  t.style.cssText='position:absolute;bottom:88px;left:50%;transform:translateX(-50%);background:#161616;border:1px solid #333;color:#e0e0e0;border-radius:10px;padding:9px 12px 9px 14px;font-size:13px;z-index:600;display:flex;align-items:center;gap:12px;box-shadow:0 6px 24px rgba(0,0,0,.4);white-space:nowrap;';
+  t.innerHTML=`<span>${msg}</span><button onclick="undoLastCheckinDismiss()" style="background:none;border:none;color:var(--accent);font-weight:700;font-size:13px;cursor:pointer;font-family:inherit;padding:0;">Undo</button>`;
+  (document.querySelector('.shell')||document.body).appendChild(t);
+  setTimeout(()=>{if(t&&t.parentNode)t.remove();},5000);
+}
+// Demo helper: keep the sample Maya's appointment "soon" so the check-in nudge is visible,
+// but never touch a real future appointment or a client who already completed their check-in.
+function _demoCheckinSeed(){
+  try{
+    if(!CL.maya||CL.maya.checkinDone)return;
+    const h=_hoursUntilVisit(CL.maya);
+    const isPlaceholder=CL.maya.nextVisit==='Jul 17 · 10:00 AM';
+    const isStalePast=(h!=null && h < -3);
+    if(isPlaceholder||isStalePast){
+      CL.maya.nextVisit=_soonVisitLabel(95);
+      if(typeof saveClients==='function')saveClients();
+    }
+  }catch(e){}
+}
+function sendCheckin(id){
+  const c=CL[id];if(!c)return;
+  const first=(c.name||'there').split(' ')[0];
+  const phone=String(c.phone||'').trim();
+  const origin=(typeof location!=='undefined'&&location.origin&&location.origin.indexOf('http')===0)?location.origin:'https://slick-chart.vercel.app';
+  const link=origin+'/client';
+  const visit=(c.nextVisit&&c.nextVisit!=='Not scheduled'&&c.nextVisit!=='—')?(' before your '+String(c.nextVisit).split('·')[0].trim()+' visit'):'';
+  const signoff=(typeof bizInfo!=='undefined'&&bizInfo&&(bizInfo.ownerName||bizInfo.name))?(' – '+(bizInfo.ownerName||bizInfo.name)):'';
+  const msg=`Hi ${first}! Please take 2 minutes to complete your pre-visit check-in${visit} so I'm all set for you: ${link}${signoff}`;
+  window._ciMsg=msg;
+  const telDigits=phone.replace(/[^0-9+]/g,'');
+  const smsHref='sms:'+telDigits+'?&body='+encodeURIComponent(msg);
+  const esc=s=>String(s).replace(/&/g,'&amp;').replace(/</g,'&lt;').replace(/>/g,'&gt;');
+  const ov=document.createElement('div');ov.id='checkin-sheet';
+  ov.style.cssText='position:absolute;inset:0;z-index:9999;background:rgba(0,0,0,.6);display:flex;align-items:flex-end;justify-content:center;';
+  ov.onclick=e=>{if(e.target===ov)ov.remove();};
+  ov.innerHTML=`<div style="background:#161616;border-top:1px solid #2a2a2a;width:100%;border-radius:18px 18px 0 0;padding:18px;">
+    <div style="display:flex;align-items:center;gap:10px;margin-bottom:12px;">
+      <div style="width:38px;height:38px;border-radius:9px;background:#0a2019;display:flex;align-items:center;justify-content:center;flex-shrink:0;"><i class="ti ti-message" style="font-size:18px;color:#4ec49a;"></i></div>
+      <div style="flex:1;min-width:0;"><div style="font-size:15px;font-weight:600;color:#f0f0f0;">Send pre-visit check-in</div><div style="font-size:12px;color:#999;">${phone?('To '+esc(c.name)+' · '+esc(phone)):'No phone number on file'}</div></div>
+      <button onclick="this.closest('#checkin-sheet').remove()" aria-label="Close" style="border:none;background:none;font-size:20px;color:#888;cursor:pointer;line-height:1;">✕</button>
+    </div>
+    <div style="background:#111;border:1px solid #2a2a2a;border-radius:10px;padding:11px 13px;margin-bottom:12px;font-size:13px;color:#cfcfcf;line-height:1.55;">${esc(msg)}</div>
+    ${phone
+      ?`<a href="${smsHref}" onclick="setTimeout(function(){var s=document.getElementById('checkin-sheet');if(s)s.remove();},300)" class="btnp" style="display:flex;align-items:center;justify-content:center;gap:7px;border-radius:10px;padding:12px;text-decoration:none;margin-bottom:8px;"><i class="ti ti-send"></i> Open Messages</a>`
+      :`<div style="background:#1a1308;border:1px solid #3a2a10;border-radius:10px;padding:10px 12px;margin-bottom:8px;font-size:12px;color:#caa86a;line-height:1.5;">Add ${esc(first)}&#39;s phone number on their chart (Client details → Edit) to text in one tap. You can still copy the message below.</div>`}
+    <button onclick="_copyText(window._ciMsg,this)" class="btng" style="width:100%;justify-content:center;border-radius:10px;padding:11px;"><i class="ti ti-copy"></i> Copy message</button>
+  </div>`;
+  (document.querySelector('.shell')||document.body).appendChild(ov);
+}
 function shareFormLink(fid,cid){
   const tmpl=formTmpls[fid]||{name:'Form'};
   const link='https://slickchart.app/sign/'+_formToken(fid,cid);
@@ -3962,6 +4357,35 @@ function renderMessages(){
   <div id="msg-tab-content"></div>`;
   showMsgTab('inbox');
 }
+// Swipe-to-delete for automation cards (touch + mouse). Slides the card left to
+// reveal the DELETE button behind it.
+function initSwipe(card,i){
+  if(!card||card._swipeInit)return;card._swipeInit=true;
+  const W=80;
+  let startX=0,startY=0,dx=0,dragging=false,opened=false,decided=false,horiz=false;
+  const setX=x=>{card.style.transform='translateX('+x+'px)';};
+  const open=()=>{opened=true;card.style.transition='transform .2s';card.style.transform='translateX(-'+W+'px)';};
+  const close=()=>{opened=false;card.style.transition='transform .2s';card.style.transform='translateX(0px)';};
+  const closeOthers=()=>{try{document.querySelectorAll('.swipe-card').forEach(el=>{if(el!==card){el.style.transition='transform .2s';el.style.transform='translateX(0px)';if(el._setClosed)el._setClosed();}});}catch(e){}};
+  card._setClosed=()=>{opened=false;};
+  const onStart=(x,y)=>{startX=x;startY=y;dx=opened?-W:0;dragging=true;decided=false;horiz=false;card.style.transition='none';};
+  const onMove=(x,y)=>{
+    if(!dragging)return;
+    const mx=x-startX,my=y-startY;
+    if(!decided){if(Math.abs(mx)>6||Math.abs(my)>6){decided=true;horiz=Math.abs(mx)>Math.abs(my);}else return;}
+    if(!horiz){dragging=false;card.style.transition='transform .2s';setX(opened?-W:0);return;}
+    let nx=(opened?-W:0)+mx;if(nx>0)nx=0;if(nx<-W-20)nx=-W-20;dx=nx;setX(nx);
+  };
+  const onEnd=()=>{
+    if(!dragging)return;dragging=false;
+    if(!horiz){card.style.transition='transform .2s';return;}
+    if(dx<-W/2){closeOthers();open();}else{close();}
+  };
+  card.addEventListener('touchstart',e=>{if(e.touches&&e.touches[0])onStart(e.touches[0].clientX,e.touches[0].clientY);},{passive:true});
+  card.addEventListener('touchmove',e=>{if(e.touches&&e.touches[0])onMove(e.touches[0].clientX,e.touches[0].clientY);},{passive:true});
+  card.addEventListener('touchend',onEnd);card.addEventListener('touchcancel',onEnd);
+  card.addEventListener('mousedown',e=>{onStart(e.clientX,e.clientY);const mm=ev=>onMove(ev.clientX,ev.clientY);const mu=()=>{onEnd();document.removeEventListener('mousemove',mm);document.removeEventListener('mouseup',mu);};document.addEventListener('mousemove',mm);document.addEventListener('mouseup',mu);});
+}
 function showMsgTab(tab){
   ['inbox','autos'].forEach(t=>{const el=document.getElementById('msg-tab-'+t);if(el)el.classList.toggle('active',t===tab);});
   const content=document.getElementById('msg-tab-content');if(!content)return;
@@ -3987,7 +4411,7 @@ function showMsgTab(tab){
           <span style="font-size:11px;color:#555;">swipe to delete →</span>
         </div>
       </div>
-      <div class="swipe-reveal" onclick="confirm({title:'Delete automation',body:'Delete \\'${a.name}\\'? It will stop sending immediately.',action:'Delete'},'()=>{autos.splice(${i},1);showMsgTab(\\'autos\\')}')" aria-label="Delete ${a.name}">
+      <div class="swipe-reveal" onclick="confirmModal({title:'Delete automation',body:'Delete \\'${a.name}\\'? It will stop sending immediately.',action:'Delete'},'()=>{autos.splice(${i},1);showMsgTab(\\'autos\\')}')" aria-label="Delete ${a.name}">
         <i class="ti ti-trash" aria-hidden="true"></i>
         <span>DELETE</span>
       </div>
@@ -4001,9 +4425,9 @@ function renderChat(id){
   document.getElementById('tt').textContent=c.name;
   S.innerHTML=`
   <div style="padding:10px 16px;border-bottom:1px solid #1e1e1e;display:flex;align-items:center;gap:10px;background:#161616;">
-    <button class="back" onclick="nav('messages')"><i class="ti ti-arrow-left"></i></button>${av(c,36)}
+    <button class="back" onclick="nav('messages')" aria-label="Back to messages"><i class="ti ti-arrow-left"></i></button>${av(c,36)}
     <div style="flex:1;"><div style="font-size:14px;font-weight:500;color:#f0f0f0;">${c.name}</div><div style="font-size:11px;color:#999;">${c.treatment}</div></div>
-    <button onclick="nav('client','${id}')" style="border:none;background:none;color:#aaa;font-size:18px;cursor:pointer;"><i class="ti ti-user-circle"></i></button>
+    <button onclick="nav('client','${id}')" aria-label="View client profile" style="border:none;background:none;color:#aaa;font-size:18px;cursor:pointer;"><i class="ti ti-user-circle"></i></button>
   </div>
   <div id="chat-body" style="padding:12px 16px;display:flex;flex-direction:column;gap:10px;padding-bottom:80px;">
     ${(msgStore[id]||[]).map(m=>{const imgs=m.imgs&&m.imgs.length?m.imgs:(m.img?[m.img]:[]);return`<div style="align-self:${m.from==='me'?'flex-end':'flex-start'};max-width:80%;">${m.text?`<div class="${m.from==='me'?'bub-me':'bub-them'}">${m.text}</div>`:''}${imgs.length?`<div style="display:flex;flex-wrap:wrap;gap:4px;${m.text?'margin-top:4px;':''}justify-content:${m.from==='me'?'flex-end':'flex-start'};">${imgs.map(src=>`<img src="${src}" alt="shared photo" onclick="openPhoto(this.src)" style="width:${imgs.length>1?'92px':'180px'};height:${imgs.length>1?'92px':'auto'};${imgs.length>1?'object-fit:cover;':''}border-radius:12px;display:block;border:1px solid #2a2a2a;cursor:zoom-in;">`).join('')}</div>`:''}<div style="font-size:12px;color:#999;margin-top:3px;${m.from==='me'?'text-align:right;':''}">${m.time}</div></div>`;}).join('')}
@@ -4079,7 +4503,7 @@ function renderDocDetail(id){
     </div>
     <div style="font-size:11px;font-weight:500;color:#aaa;text-transform:uppercase;letter-spacing:.07em;margin-bottom:8px;">Renewal reminders</div>
     <div style="background:#1a1a1a;border:1px solid #2a2a2a;border-radius:12px;margin-bottom:14px;">${[['90 days before',true],['30 days before',true],['On expiry day',false]].map(([l,on])=>`<div style="display:flex;justify-content:space-between;align-items:center;padding:8px 14px;border-bottom:1px solid #1e1e1e;"><span style="font-size:13px;color:#e0e0e0;">${l}</span>${togBtn(on,'','Reminder')}</div>`).join('')}</div>
-    <div style="display:flex;gap:8px;margin-bottom:20px;"><button class="btng" style="flex:1;" onclick="nav('edit-doc','${d.id}')"><i class="ti ti-pencil"></i> Edit</button><button onclick="confirm({title:'Delete document',body:'This will permanently remove this document from your vault. This can\'t be undone.',action:'Delete'},'()=>{docs=docs.filter(x=>x.id!==\'${d.id}\');nav(\'vault\')}')" style="flex:1;background:#2a0f0f;border:1px solid #5a1e1e;border-radius:10px;padding:9px;font-size:13px;color:#e87070;cursor:pointer;"><i class="ti ti-trash"></i> Delete</button></div>
+    <div style="display:flex;gap:8px;margin-bottom:20px;"><button class="btng" style="flex:1;" onclick="nav('edit-doc','${d.id}')"><i class="ti ti-pencil"></i> Edit</button><button onclick="confirmModal({title:'Delete document',body:'This will permanently remove this document from your vault. This can\'t be undone.',action:'Delete'},'()=>{docs=docs.filter(x=>x.id!==\'${d.id}\');nav(\'vault\')}')" style="flex:1;background:#2a0f0f;border:1px solid #5a1e1e;border-radius:10px;padding:9px;font-size:13px;color:#e87070;cursor:pointer;"><i class="ti ti-trash"></i> Delete</button></div>
   </div>`;
 }
 function renderEditDoc(id){
@@ -4088,10 +4512,10 @@ function renderEditDoc(id){
   S.innerHTML=`
   <div style="padding:12px 16px 0;display:flex;align-items:center;justify-content:space-between;"><button class="back" onclick="nav('doc-detail','${id}')"><i class="ti ti-arrow-left"></i> Back</button><button onclick="nav('doc-detail','${id}')" style="background:var(--accent);color:var(--accent-ink);border:none;border-radius:8px;padding:6px 14px;font-size:12px;font-weight:500;cursor:pointer;">Save</button></div>
   <div style="padding:14px 16px 0;">
-    <span class="fl-lbl">Document name</span><input class="fi" value="${d.name}" style="margin-bottom:12px;">
-    <span class="fl-lbl">Document number</span><input class="fi" value="${d.number}" style="margin-bottom:12px;">
-    <span class="fl-lbl">Issuing authority</span><input class="fi" value="${d.issuer}" style="margin-bottom:12px;">
-    <div style="display:flex;gap:8px;margin-bottom:14px;"><div style="flex:1;"><span class="fl-lbl">Issued</span><input class="fi" value="${d.issued}" style="margin:0;"></div><div style="flex:1;"><span class="fl-lbl">Expires</span><input class="fi" value="${d.expires||''}" placeholder="None" style="margin:0;"></div></div>
+    <span class="fl-lbl">Document name</span><input aria-label="Document name" class="fi" value="${d.name}" style="margin-bottom:12px;">
+    <span class="fl-lbl">Document number</span><input aria-label="Document number" class="fi" value="${d.number}" style="margin-bottom:12px;">
+    <span class="fl-lbl">Issuing authority</span><input aria-label="Document issuer" class="fi" value="${d.issuer}" style="margin-bottom:12px;">
+    <div style="display:flex;gap:8px;margin-bottom:14px;"><div style="flex:1;"><span class="fl-lbl">Issued</span><input aria-label="Issue date" class="fi" value="${d.issued}" style="margin:0;"></div><div style="flex:1;"><span class="fl-lbl">Expires</span><input class="fi" value="${d.expires||''}" placeholder="None" style="margin:0;"></div></div>
   </div>`;
 }
 function renderUploadDoc(){
@@ -4319,7 +4743,7 @@ function renderCourseDetail(id){
     </div>
     <div style="display:flex;gap:8px;margin-bottom:20px;">
       <button class="btnp" style="flex:2;border-radius:8px;"><i class="ti ti-share"></i> Share enrollment link</button>
-      <button class="btng" style="flex:1;" onclick="nav('course-builder','${c.id}')"><i class="ti ti-pencil"></i></button>
+      <button class="btng" style="flex:1;" onclick="nav('course-builder','${c.id}')" aria-label="Edit course"><i class="ti ti-pencil"></i></button>
     </div>
   </div>`;
 }
@@ -4336,12 +4760,12 @@ function renderCourseBuilder(id){
     <span class="fl-lbl">Course title</span><input class="fi" value="${c?c.title:''}" placeholder="e.g. Barrier Repair Masterclass" style="margin-bottom:12px;">
     <span class="fl-lbl">Description</span><textarea class="fi" style="height:72px;resize:none;margin-bottom:12px;" placeholder="What will clients learn?">${c?c.desc:''}</textarea>
     <div style="display:flex;gap:8px;margin-bottom:12px;">
-      <div style="flex:1;"><span class="fl-lbl">Price</span><input class="fi" value="${c?c.price:'$29'}" style="margin:0;"></div>
-      <div style="flex:1;"><span class="fl-lbl">Status</span><select class="fi" style="margin:0;"><option ${c&&c.status==='Draft'?'selected':''}>Draft</option><option ${c&&c.status==='Published'?'selected':''}>Published</option></select></div>
+      <div style="flex:1;"><span class="fl-lbl">Price</span><input aria-label="Price" class="fi" value="${c?c.price:'$29'}" style="margin:0;"></div>
+      <div style="flex:1;"><span class="fl-lbl">Status</span><select class="fi" aria-label="Select option" style="margin:0;"><option ${c&&c.status==='Draft'?'selected':''}>Draft</option><option ${c&&c.status==='Published'?'selected':''}>Published</option></select></div>
     </div>
     <span class="fl-lbl">Modules</span>
     <div style="background:#1a1a1a;border:1px solid #2a2a2a;border-radius:12px;overflow:hidden;margin-bottom:10px;">
-      ${(c?Array.from({length:c.modules}):[0,1,2]).map((_, idx)=>`<div style="display:flex;align-items:center;gap:10px;padding:10px 12px;border-bottom:1px solid #1e1e1e;"><i class="ti ti-grip-vertical" style="font-size:15px;color:#666;"></i><div class="snum">${idx+1}</div><input value="${['Introduction','Core content','Wrap-up & next steps'][idx]||'Module '+(idx+1)}" style="flex:1;border:none;background:none;font-size:13px;color:#e0e0e0;outline:none;font-family:inherit;"><button style="border:none;background:none;color:#999;cursor:pointer;"><i class="ti ti-trash" style="color:#e87070;"></i></button></div>`).join('')}
+      ${(c?Array.from({length:c.modules}):[0,1,2]).map((_, idx)=>`<div style="display:flex;align-items:center;gap:10px;padding:10px 12px;border-bottom:1px solid #1e1e1e;"><i class="ti ti-grip-vertical" style="font-size:15px;color:#666;"></i><div class="snum">${idx+1}</div><input aria-label="Module name" value="${['Introduction','Core content','Wrap-up & next steps'][idx]||'Module '+(idx+1)}" style="flex:1;border:none;background:none;font-size:13px;color:#e0e0e0;outline:none;font-family:inherit;"><button aria-label="Remove module" style="border:none;background:none;color:#999;cursor:pointer;"><i class="ti ti-trash" style="color:#e87070;"></i></button></div>`).join('')}
     </div>
     <button style="width:100%;border:1.5px dashed #2a2a2a;border-radius:10px;padding:11px;display:flex;align-items:center;justify-content:center;gap:8px;font-size:13px;color:#aaa;background:none;cursor:pointer;margin-bottom:16px;"><i class="ti ti-plus"></i> Add a module</button>
     <button class="btnp" style="border-radius:8px;margin-bottom:20px;" onclick="nav('learn')"><i class="ti ti-check"></i> Save course</button>
@@ -4571,8 +4995,13 @@ function renderAccount(){
   S.innerHTML=`
   <div style="padding:20px 16px 0;display:flex;flex-direction:column;align-items:center;gap:10px;">
     <div style="width:72px;height:72px;border-radius:50%;background:#2e2318;display:flex;align-items:center;justify-content:center;font-size:26px;font-weight:500;color:var(--accent);">JL</div>
-    <div style="text-align:center;"><div style="font-size:18px;font-weight:500;color:#f0f0f0;">${bizInfo.ownerName}</div><div style="font-size:13px;color:#999;">${bizInfo.name} · Oakland, CA</div><div style="font-size:12px;color:var(--accent);">${bizInfo.email}</div></div>
+    <div style="text-align:center;"><div style="font-size:18px;font-weight:500;color:#f0f0f0;">${bizInfo.ownerName}</div><div style="font-size:13px;color:#999;">${bizInfo.name}${_bizLoc()?' · '+_bizLoc():''}</div><div style="font-size:12px;color:var(--accent);">${bizInfo.email}</div></div>
   </div>
+  ${(typeof Cloud!=='undefined'&&Cloud.token)?`<div style="margin:14px 16px 0;background:#0a2019;border:1px solid #1a4a38;border-radius:12px;padding:11px 13px;display:flex;align-items:center;gap:10px;">
+    <i class="ti ti-cloud-check" aria-hidden="true" style="font-size:18px;color:#4ec49a;flex-shrink:0;"></i>
+    <div style="flex:1;min-width:0;"><div style="font-size:13px;font-weight:600;color:#cdeede;">Cloud sync on</div><div style="font-size:11px;color:#7fbfa5;">Saved to your database &amp; synced across devices.</div></div>
+    <button onclick="cloudLogout()" style="background:#13241c;border:1px solid #1a4a38;color:#7fbfa5;border-radius:8px;padding:6px 11px;font-size:11px;font-weight:600;cursor:pointer;flex-shrink:0;font-family:inherit;">Log out</button>
+  </div>`:''}
   <div class="sh" style="margin-top:14px;"><h2>Account settings</h2></div>
   <div style="padding:0 16px;margin-bottom:20px;"><div style="background:#1a1a1a;border:1px solid #2a2a2a;border-radius:12px;overflow:hidden;">
     ${[
@@ -4621,6 +5050,7 @@ function finishOnboarding(){
   bizInfo.name=onboardData.biz.name||bizInfo.name;
   bizInfo.ownerName=onboardData.biz.owner||bizInfo.ownerName;
   if(onboardData.biz.name)workspace.name=onboardData.biz.name;
+  saveProfessions();
   try{localStorage.setItem('sc_bizinfo',JSON.stringify(bizInfo));localStorage.setItem('sc_wsname',workspace.name);}catch(e){}
   try{applyProfessionConfig();}catch(e){}
   SlickBridge.setAvailability(normalizeAvail(onboardData.avail));   // feeds the client booking flow (per-day)
@@ -4645,6 +5075,32 @@ function proToast(msg){
   t.innerHTML=`<i class="ti ti-check" style="font-size:14px;"></i>${msg}`;
   (document.querySelector('.shell')||document.body).appendChild(t);
   setTimeout(()=>t.remove(),2800);
+}
+// Alias some screens/handlers call instead of proToast
+function showToast(msg){return proToast(msg);}
+// Optional in-app notification (guarded callers); routes to the provider notify feed
+function pushNotify(o){try{if(typeof providerSystemNotify==='function')providerSystemNotify((o&&o.title)||'Notification',(o&&o.body)||'');}catch(e){}}
+// Styled confirmation modal used by delete/remove buttons: confirmModal({title,body,action}, fnOrString)
+function confirmModal(opts,action){
+  opts=opts||{};
+  const run=()=>{try{if(typeof action==='function')action();else if(typeof action==='string'){const f=eval('('+action+')');if(typeof f==='function')f();}}catch(e){}};
+  const danger=/delete|remove|stop|permanently|won['’]t/i.test(((opts.action||'')+' '+(opts.title||'')+' '+(opts.body||'')));
+  const esc=s=>String(s==null?'':s);
+  const ov=document.createElement('div');ov.id='confirm-modal';
+  ov.style.cssText='position:absolute;inset:0;z-index:99999;background:rgba(0,0,0,.65);display:flex;align-items:center;justify-content:center;padding:24px;';
+  ov.onclick=e=>{if(e.target===ov)ov.remove();};
+  ov.innerHTML=`<div style="background:#1a1a1a;border:1px solid #2a2a2a;border-radius:16px;padding:20px;max-width:340px;width:100%;box-shadow:0 12px 40px rgba(0,0,0,.5);">
+    <div style="font-size:16px;font-weight:600;color:#f0f0f0;margin-bottom:8px;">${esc(opts.title||'Are you sure?')}</div>
+    <div style="font-size:13px;color:#aaa;line-height:1.55;margin-bottom:18px;">${esc(opts.body||'')}</div>
+    <div style="display:flex;gap:8px;">
+      <button id="_cf-cancel" class="btng" style="flex:1;border-radius:10px;padding:11px;">Cancel</button>
+      <button id="_cf-ok" style="flex:1;border:none;border-radius:10px;padding:11px;font-size:14px;font-weight:600;cursor:pointer;font-family:inherit;background:${danger?'#3a1414':'var(--accent)'};color:${danger?'#ff9b9b':'var(--accent-ink)'};">${esc(opts.action||'Confirm')}</button>
+    </div>
+  </div>`;
+  (document.querySelector('.shell')||document.body).appendChild(ov);
+  const ok=ov.querySelector('#_cf-ok'),cancel=ov.querySelector('#_cf-cancel');
+  if(cancel)cancel.onclick=()=>ov.remove();
+  if(ok)ok.onclick=()=>{ov.remove();run();};
 }
 
 // ── Recommend a product to a client (from the Shop product list) ──
@@ -4857,9 +5313,9 @@ function renderOnboard(){
       </div>
       <span class="fl-lbl">Hours</span>
       <div style="display:flex;gap:10px;align-items:center;margin-top:8px;">
-        <select class="fi" onchange="onboardData.avail.start=this.value" style="flex:1;">${startOpts.map(([v,l])=>`<option value="${v}"${onboardData.avail.start===v?' selected':''}>${l}</option>`).join('')}</select>
+        <select aria-label="Opening time" class="fi" onchange="onboardData.avail.start=this.value" style="flex:1;">${startOpts.map(([v,l])=>`<option value="${v}"${onboardData.avail.start===v?' selected':''}>${l}</option>`).join('')}</select>
         <span style="font-size:13px;color:#666;">to</span>
-        <select class="fi" onchange="onboardData.avail.end=this.value" style="flex:1;">${endOpts.map(([v,l])=>`<option value="${v}"${onboardData.avail.end===v?' selected':''}>${l}</option>`).join('')}</select>
+        <select aria-label="Closing time" class="fi" onchange="onboardData.avail.end=this.value" style="flex:1;">${endOpts.map(([v,l])=>`<option value="${v}"${onboardData.avail.end===v?' selected':''}>${l}</option>`).join('')}</select>
       </div>
       <div style="margin-top:18px;background:#0a2019;border:1px solid #1a4a38;border-radius:11px;padding:12px 13px;display:flex;gap:9px;align-items:flex-start;">
         <i class="ti ti-calendar-check" style="font-size:14px;color:#4ec49a;flex-shrink:0;margin-top:1px;"></i>
@@ -5146,9 +5602,9 @@ function renderBranding(){
       </div>
     </div>
 
-    <span class="fl-lbl">Business tagline</span><input class="fi" value="Where your skin comes first." style="margin-bottom:12px;">
+    <span class="fl-lbl">Business tagline</span><input aria-label="Business tagline" class="fi" value="Where your skin comes first." style="margin-bottom:12px;">
     <span class="fl-lbl">Welcome message</span>
-    <textarea class="fi" style="height:72px;resize:none;line-height:1.5;margin-bottom:12px;">Welcome! I'm so excited to see you. Please take a moment to fill this out so I can make your experience perfect. ✨</textarea>
+    <textarea class="fi" aria-label="Welcome message" style="height:72px;resize:none;line-height:1.5;margin-bottom:12px;">Welcome! I'm so excited to see you. Please take a moment to fill this out so I can make your experience perfect. ✨</textarea>
     <span class="fl-lbl" style="margin-bottom:8px;display:block;">Show branding on</span>
     <div style="background:#1a1a1a;border:1px solid #2a2a2a;border-radius:10px;margin-bottom:16px;">${['Client intake forms','Consent & waiver forms','Pre-visit check-in','Virtual consultation reviews','Partner intro emails'].map(lbl=>`<div style="display:flex;justify-content:space-between;align-items:center;padding:8px 14px;border-bottom:1px solid #1e1e1e;"><span style="font-size:13px;color:#e0e0e0;">${lbl}</span><button class="tog on" role="switch" aria-checked="true" disabled><span class="tok" aria-hidden="true"></span></button></div>`).join('')}</div>
     <button class="btnp" style="border-radius:9px;margin-bottom:22px;" onclick="saveBranding()"><i class="ti ti-check"></i> Save branding</button>
@@ -5174,7 +5630,6 @@ function halfHourOptions(){
   }}
   return out;
 }
-function fmtTimeLabel(v){const o=halfHourOptions().find(x=>x.v===v);return o?o.l:v;}
 let bizHours=null;
 function toggleBizDay(k){bizHours[k].open=!bizHours[k].open;const c=document.getElementById('biz-hours');if(c)c.innerHTML=bizHoursRows();}
 function setBizHour(k,which,v){bizHours[k][which]=v;}
@@ -5202,9 +5657,10 @@ function copyHoursToAll(){
 }
 function saveBizInfo(){
   const g=id=>{const e=document.getElementById(id);return e?e.value:undefined;};
-  const map={name:'bi-name',ownerName:'bi-owner',email:'bi-email',phone:'bi-phone',address:'bi-address',license:'bi-license',website:'bi-website',instagram:'bi-instagram'};
+  const map={name:'bi-name',ownerName:'bi-owner',email:'bi-email',phone:'bi-phone',address:'bi-address',city:'bi-city',state:'bi-state',zip:'bi-zip',license:'bi-license',website:'bi-website',instagram:'bi-instagram'};
   Object.keys(map).forEach(k=>{const v=g(map[k]);if(v!==undefined)bizInfo[k]=v;});
   if(bizInfo.name)workspace.name=bizInfo.name;
+  if(_bizLoc())workspace.location=_bizLoc();
   try{localStorage.setItem('sc_bizinfo',JSON.stringify(bizInfo));localStorage.setItem('sc_wsname',workspace.name);}catch(e){}
   SlickBridge.setAvailability(bizHours);
   proToast('Business info & hours saved ✨');
@@ -5220,7 +5676,12 @@ function renderBizInfo(){
     <span class="fl-lbl">Owner name & title</span><input id="bi-owner" class="fi" value="${bizInfo.ownerName}" aria-label="Owner name and title" style="margin-bottom:12px;">
     <span class="fl-lbl">Email</span><input id="bi-email" class="fi" value="${bizInfo.email}" aria-label="Email address" style="margin-bottom:12px;">
     <span class="fl-lbl">Phone</span><input id="bi-phone" class="fi" value="${bizInfo.phone}" aria-label="Phone number" style="margin-bottom:12px;">
-    <span class="fl-lbl">Address</span><input id="bi-address" class="fi" value="${bizInfo.address}" aria-label="Business address" style="margin-bottom:12px;">
+    <span class="fl-lbl">Street address</span><input id="bi-address" class="fi" value="${bizInfo.address}" aria-label="Street address" style="margin-bottom:12px;">
+    <div style="display:flex;gap:8px;">
+      <div style="flex:2;min-width:0;"><span class="fl-lbl">City</span><input id="bi-city" class="fi" value="${bizInfo.city||''}" aria-label="City" style="margin-bottom:12px;width:100%;box-sizing:border-box;"></div>
+      <div style="flex:1;min-width:0;"><span class="fl-lbl">State</span><input id="bi-state" class="fi" value="${bizInfo.state||''}" aria-label="State" style="margin-bottom:12px;width:100%;box-sizing:border-box;"></div>
+      <div style="flex:1;min-width:0;"><span class="fl-lbl">ZIP</span><input id="bi-zip" class="fi" value="${bizInfo.zip||''}" aria-label="ZIP code" style="margin-bottom:12px;width:100%;box-sizing:border-box;"></div>
+    </div>
     <span class="fl-lbl">License / certification #</span><input id="bi-license" class="fi" value="${bizInfo.license}" aria-label="License or certification number" style="margin-bottom:12px;">
     <span class="fl-lbl">Website</span><input id="bi-website" class="fi" value="${bizInfo.website}" aria-label="Website URL" style="margin-bottom:12px;">
     <span class="fl-lbl">Instagram</span><input id="bi-instagram" class="fi" value="${bizInfo.instagram}" aria-label="Instagram handle" style="margin-bottom:18px;">
@@ -5287,6 +5748,22 @@ function renderIntegrations(){
 }
 
 // ── Square live sync (talks to /api/square/* on the same Vercel deployment) ──
+function loadSquareCatalog(){try{const r=localStorage.getItem('sc_square_catalog');if(r){const d=JSON.parse(r)||{};squareCatalog={retail:d.retail||[],services:d.services||[],syncedAt:d.syncedAt||0};}}catch(e){}}
+function saveSquareCatalog(){try{localStorage.setItem('sc_square_catalog',JSON.stringify(squareCatalog));}catch(e){}}
+// Merge synced Square retail products into the shared product library so they show up
+// everywhere products are picked (client recs, routines, aftercare, client summary).
+function _mergeSquareRetail(){
+  try{
+    (squareCatalog.retail||[]).forEach(p=>{
+      const id='sq_'+String(p.id).toLowerCase().replace(/[^a-z0-9]/g,'').slice(0,14);
+      const priceLabel=(p.price!=null)?('$'+(Math.round(p.price*100)/100)):'';
+      const brand=[p.category||'',priceLabel].filter(Boolean).join(' · ')||'Your product';
+      const existing=affiliateLinks.find(a=>a.id===id);
+      const rec={id,name:p.name,brand,icon:'🛍️',image:p.image||'',url:'',active:true,inOffice:true,source:'square',price:p.price,squareId:p.id};
+      if(existing)Object.assign(existing,rec);else affiliateLinks.push(rec);
+    });
+  }catch(e){}
+}
 function _sqKey(force){
   let k=sessionStorage.getItem('sc_sqkey')||'';
   if(force||!k){
@@ -5323,6 +5800,9 @@ function renderSquareSync(){
   <div style="display:flex;gap:8px;padding:0 16px 6px;">
     <button onclick="_sqLoadCustomers()" style="flex:1;background:var(--accent);color:var(--accent-ink);border:none;border-radius:10px;padding:12px;font-size:13px;font-weight:600;cursor:pointer;font-family:inherit;"><i class="ti ti-users"></i> Import clients</button>
     <button onclick="_sqLoadAppointments()" style="flex:1;background:#1a1a1a;color:#e0e0e0;border:1px solid #2a2a2a;border-radius:10px;padding:12px;font-size:13px;font-weight:600;cursor:pointer;font-family:inherit;"><i class="ti ti-calendar"></i> Upcoming</button>
+  </div>
+  <div style="padding:0 16px 6px;">
+    <button onclick="_sqLoadCatalog()" style="width:100%;background:#1a1a1a;color:#e0e0e0;border:1px solid #2a2a2a;border-radius:10px;padding:12px;font-size:13px;font-weight:600;cursor:pointer;font-family:inherit;"><i class="ti ti-shopping-bag" style="color:var(--accent);"></i> Products &amp; services</button>
   </div>
   <div style="padding:0 16px;"><button onclick="_sqKey(true);proToast('Access key updated')" style="background:none;border:none;color:#777;font-size:11px;cursor:pointer;padding:4px 0;"><i class="ti ti-key" style="font-size:11px;"></i> Change access key</button></div>
   <div id="sq-results" style="padding:6px 16px 20px;"></div>`;
@@ -5403,6 +5883,28 @@ async function _sqLoadAppointments(){
   }catch(e){out.innerHTML=_sqError(e.message);}
 }
 
+async function _sqLoadCatalog(){
+  const out=document.getElementById('sq-results');if(!out)return;
+  out.innerHTML=`<div style="padding:20px;text-align:center;color:#888;font-size:13px;">Loading products &amp; services from Square…</div>`;
+  try{
+    const data=await _sqFetch('/api/square/catalog');
+    const retail=data.retail||[];const services=data.services||[];
+    squareCatalog={retail,services,syncedAt:Date.now()};
+    saveSquareCatalog();_mergeSquareRetail();
+    if(!retail.length&&!services.length){out.innerHTML=`<div style="padding:20px;text-align:center;color:#888;font-size:13px;">No products or services found in your Square catalog.</div>`;return;}
+    const priceStr=p=>p.price==null?'':('$'+(Math.round(p.price*100)/100)+((p.priceMax!=null&&p.priceMax!==p.price)?('–$'+(Math.round(p.priceMax*100)/100)):''));
+    const card=(p,kind)=>`<div style="background:#161616;border:1px solid #242424;border-radius:11px;padding:11px 13px;margin-bottom:8px;display:flex;align-items:center;gap:11px;">
+      <div style="width:36px;height:36px;border-radius:9px;background:#2e1c10;display:flex;align-items:center;justify-content:center;flex-shrink:0;overflow:hidden;">${p.image?`<img src="${p.image}" alt="" style="width:100%;height:100%;object-fit:cover;">`:`<i class="ti ${kind==='service'?'ti-sparkles':'ti-shopping-bag'}" style="font-size:17px;color:var(--accent);"></i>`}</div>
+      <div style="flex:1;min-width:0;"><div style="font-size:14px;font-weight:600;color:#e8e8e8;overflow:hidden;text-overflow:ellipsis;white-space:nowrap;">${p.name}</div><div style="font-size:11px;color:#888;overflow:hidden;text-overflow:ellipsis;white-space:nowrap;">${[p.category,priceStr(p)].filter(Boolean).join(' · ')||'—'}</div></div>
+    </div>`;
+    out.innerHTML=`
+      <div style="background:#0f2a1e;border:1px solid #1c4030;border-radius:10px;padding:10px 13px;margin:6px 0 12px;font-size:12px;color:#8fd3b4;line-height:1.5;"><i class="ti ti-check" style="color:#4ec49a;"></i> Synced ${retail.length} product${retail.length===1?'':'s'} and ${services.length} service${services.length===1?'':'s'}. Products now appear when recommending products &amp; building routines; services appear when changing a client's treatment.</div>
+      ${services.length?`<div style="font-size:12px;color:#999;font-weight:600;margin:4px 0 8px;">Services (${services.length})</div>`+services.map(p=>card(p,'service')).join(''):''}
+      ${retail.length?`<div style="font-size:12px;color:#999;font-weight:600;margin:12px 0 8px;">Retail products (${retail.length})</div>`+retail.map(p=>card(p,'retail')).join(''):''}`;
+    if(typeof proToast==='function')proToast('Catalog synced from Square');
+  }catch(e){out.innerHTML=_sqError(e.message);}
+}
+
 // ── PROTOCOLS ──
 function renderProtocols(){
   setNav('more');
@@ -5420,7 +5922,7 @@ function renderProtocols(){
     </div>
     <div style="border-top:1px solid #1e1e1e;padding:8px 14px;display:flex;gap:8px;">
       <button onclick="nav('protocol-apply','${p.id}')" style="border:none;background:none;font-size:12px;color:var(--accent);cursor:pointer;flex:1;text-align:left;"><i class="ti ti-user-check" style="font-size:12px;"></i> Apply to client</button>
-      <button onclick="confirm({title:'Remove protocol',body:'Remove \'${p.name}\' from your library? This can\'t be undone.',action:'Remove'},'()=>{protocols.splice(${i},1);renderProtocols()}')" style="border:none;background:none;font-size:12px;color:#e87070;cursor:pointer;"><i class="ti ti-trash" style="font-size:12px;"></i></button>
+      <button onclick="confirmModal({title:'Remove protocol',body:'Remove \'${p.name}\' from your library? This can\'t be undone.',action:'Remove'},'()=>{protocols.splice(${i},1);renderProtocols()}')" style="border:none;background:none;font-size:12px;color:#e87070;cursor:pointer;"><i class="ti ti-trash" style="font-size:12px;"></i></button>
     </div>
   </div>`).join('')+_noRes('protocols-noresults','No protocols match your search.')}
   <div style="margin:4px 16px 10px;background:#1a1a1a;border:1.5px dashed #2a2a2a;border-radius:12px;padding:14px;display:flex;flex-direction:column;align-items:center;gap:5px;cursor:pointer;" onclick="nav('new-protocol')"><i class="ti ti-plus" style="font-size:20px;color:#777;"></i><span style="font-size:14px;color:#aaa;">Save a new protocol</span></div>`;
@@ -5493,19 +5995,26 @@ try{
   getMergedNotes().forEach(name=>{const key=name.toLowerCase().replace(/[^a-z]/g,'');if(!noteTemplates[key]){noteTemplates[key]={id:key,name,bdg:'bm',col:'#222',ic:'#aaa',desc:`${name} format`,sections:[{id:key+'1',label:name,color:'#aaa',ph:'Write your notes here...'}]};}});
   loadCustomResources();  // restore any guides the provider added
   loadAi();  // restore the AI on/off preference
+  loadProfessions();  // restore the provider's selected profession(s)
   applyProfessionConfig();
   loadBizInfo();  // restore the provider's own business name & details
   loadClients();  // restore the curated client list (demos removed, Square imports kept)
+  _seedMayaOnce();  // bring back one sample client (Maya) for the AI brief + client demo app
+  if(typeof _demoCheckinSeed==='function')_demoCheckinSeed();  // give sample Maya a today appointment so the check-in nudge is visible
+  try{if(typeof MutationObserver!=='undefined'){new MutationObserver(()=>_a11yEnhance()).observe(document.body,{childList:true,subtree:true});_a11yEnhance();}}catch(e){}
   loadForms();  // restore any saved form edits / custom forms / connected guides from a previous session
   loadWorkspace();  // restore recommended products, reasons, custom products, and routines
+  if(typeof loadSquareCatalog==='function'){loadSquareCatalog();_mergeSquareRetail();}  // bring in synced Square retail products
   loadCheckinCfg();  // restore the saved check-in config
+  if(typeof loadCiDismissed==='function')loadCiDismissed();
+  if(typeof _ciRestoreOnce==='function')_ciRestoreOnce();  // restore dismissed check-in nudges
   loadVcState();  // restore virtual-consult invites + submissions
   loadPartners();  // restore any edits to partner discounts / contact info
   loadRoutines();  // restore saved routine templates
   loadVisionEndpoint();  // restore the configured vision analysis endpoint (if any)
   if(!localStorage.getItem('sc_onboarded'))localStorage.setItem('sc_onboarded','1');  // open straight into the configured workspace
 }catch(e){}
-nav('home');
+_cloudInit();
 
 // ── CALENDAR ──
 // ════════════════════════════════════════════════════════════════
@@ -5538,12 +6047,6 @@ function addConfirmedAppt(b){
   confirmedAppts.unshift({client:b.client,tx:b.treatment,date:b.date,dateLabel:fmtBookingDate(b),time:b.time,ic:'#4ec49a'});
 }
 // ── Image helpers (downscale uploads to a shareable data URL, or accept a link) ──
-function _pickImage(cb){
-  const inp=document.createElement('input');
-  inp.type='file';inp.accept='image/*';
-  inp.onchange=()=>{const f=inp.files&&inp.files[0];if(f)_downscaleImg(f,cb);};
-  inp.click();
-}
 function _pickImages(cb){
   const inp=document.createElement('input');
   inp.type='file';inp.accept='image/*';inp.multiple=true;
@@ -5773,6 +6276,7 @@ SlickBridge.on('booking-request',b=>{
 
 SlickBridge.on('checkin-submitted',ci=>{
   checkins.unshift({...ci,read:false});
+  if(ci.clientId&&CL[ci.clientId]){CL[ci.clientId].checkinDone=true;try{if(typeof saveClients==='function')saveClients();}catch(e){}}
   pushCheckinNotif(ci);
   providerSystemNotify('Pre-visit check-in',`${ci.client} · ${ci.treatment} · ${ci.dateLabel}`);
   if(document.getElementById('home-screen'))renderHome();
@@ -5790,6 +6294,7 @@ SlickBridge.on('form-completed',d=>{
   if(d.signed){c.signedForms=c.signedForms||[];if(c.signedForms.indexOf(title)<0)c.signedForms.push(title);}
   const flagged=(d.flagged&&d.flagged.length)?d.flagged.slice():null;
   if(flagged)c.flaggedContra={form:title,items:flagged,date:d.date||'Today'};
+  try{if(typeof saveClients==='function')saveClients();}catch(e){}
   const nm=c.name.split(' ')[0];
   const fl=flagged?` ⚠ Flagged: ${flagged.join(', ')}.`:'';
   notifFeed.unshift({id:'nf'+Date.now()+Math.random().toString(36).slice(2,4),type:'form',
@@ -5929,24 +6434,28 @@ function _ncProf(){const p=(selectedProfessions&&selectedProfessions[0])||'esty'
 function _ncSteps(){return ['Contact','Intake','Notes','Consent'];}
 function _ncConsentId(){const id=_ncProf().id;return formTmpls['consent-'+id]?'consent-'+id:'consent-esty';}
 function _ncIntakeFormId(){const id=_ncProf().id;const fid=id+'-intake';return formTmpls[fid]?fid:(formTmpls['intake']?'intake':null);}
-function _ncIntakeQs(){const fid=_ncIntakeFormId();const t=fid&&formTmpls[fid];if(!t)return [];return t.qs.filter(q=>q.type!=='Signature'&&q.type!=='Contraindications'&&!/full name/i.test(q.label||'')&&!/date of birth/i.test(q.label||''));}
+function _ncIntakeQs(){const fid=_ncIntakeFormId();const t=fid&&formTmpls[fid];if(!t)return [];return t.qs.filter(q=>{if(q.type==='Signature'||q.type==='Contraindications')return false;const l=(q.label||'').toLowerCase();if(/full name|^name$/.test(l))return false;if(/date of birth|^dob$/.test(l))return false;if(/phone|mobile number/.test(l))return false;if(/e-?mail/.test(l))return false;if(/how did you hear|referred by|referral|hear about us/.test(l))return false;return true;});}
 function _ncQHTML(q,i){
   const id='nc-iq-'+(q.id!=null?q.id:i);const val=newClientData[id]||'';
   const lab=`<div style="font-size:13px;font-weight:500;color:#e0e0e0;margin-bottom:6px;">${q.label} ${q.required?'<span style="font-size:11px;color:#e87070;">Required</span>':'<span style="font-size:11px;color:#555;">Optional</span>'}</div>`;
   const esc=String(val).replace(/"/g,'&quot;');const escT=String(val).replace(/</g,'&lt;');
   let field='';
-  if(q.type==='Long text')field=`<textarea class="fi" id="${id}" style="height:60px;resize:none;line-height:1.5;" placeholder="Answer…">${escT}</textarea>`;
-  else if(q.type==='Date')field=`<input class="fi" type="date" id="${id}" value="${esc}">`;
+  if(q.type==='Long text')field=`<textarea class="fi" id="${id}" aria-label="${q.label}" oninput="newClientData['${id}']=this.value" style="height:60px;resize:none;line-height:1.5;" placeholder="Answer…">${escT}</textarea>`;
+  else if(q.type==='Date')field=`<input class="fi" type="date" id="${id}" aria-label="${q.label}" value="${esc}" onchange="newClientData['${id}']=this.value">`;
   else if(q.type==='Yes / No')field=`<div style="display:flex;gap:8px;">${['Yes','No'].map(o=>`<button onclick="newClientData['${id}']='${o}';renderNCStep()" class="btng" style="flex:1;${val===o?'border-color:var(--accent);color:var(--accent);background:var(--accent-a08);':''}">${o}</button>`).join('')}</div>`;
-  else if((q.type==='Multiple choice'||q.type==='Single select')&&q.options)field=`<div style="display:flex;flex-wrap:wrap;gap:6px;">${q.options.map(o=>`<button onclick="newClientData['${id}']='${String(o).replace(/'/g,'\\u0027')}';renderNCStep()" class="btng" style="padding:6px 12px;font-size:12px;${val===o?'border-color:var(--accent);color:var(--accent);background:var(--accent-a08);':''}">${o}</button>`).join('')}</div>`;
-  else field=`<input class="fi" id="${id}" value="${esc}" placeholder="Answer…">`;
+  else if((q.type==='Multiple choice'||q.type==='Single select')&&q.options){
+    const isCustom=val&&q.options.indexOf(val)<0;
+    field=`<div style="display:flex;flex-wrap:wrap;gap:6px;">${q.options.map(o=>`<button onclick="newClientData['${id}']='${String(o).replace(/'/g,'\\u0027')}';renderNCStep()" class="btng" style="padding:6px 12px;font-size:12px;${val===o?'border-color:var(--accent);color:var(--accent);background:var(--accent-a08);':''}">${o}</button>`).join('')}</div>
+    <input class="fi" id="${id}-other" aria-label="${q.label} — type your own" oninput="newClientData['${id}']=this.value" value="${isCustom?esc:''}" placeholder="Or type your own…" style="margin-top:8px;font-size:13px;">`;
+  }
+  else field=`<input class="fi" id="${id}" aria-label="${q.label}" value="${esc}" oninput="newClientData['${id}']=this.value" placeholder="Answer…">`;
   return `<div style="margin-bottom:14px;">${lab}${field}</div>`;
 }
 function renderNewClient(){setNav('clients');newClientStep=0;newClientData={};_ncDeliver='app';renderNCStep();}
 function _ncReadStep(){
   const get=id=>{const el=document.getElementById(id);return el?(el.value):undefined;};
   ['nc-name','nc-phone','nc-email','nc-dob','nc-ref','nc-conditions','nc-meds','nc-notes'].forEach(id=>{const v=get(id);if(v!==undefined)newClientData[id]=v;});
-  (document.querySelectorAll?document.querySelectorAll('[id^=nc-iq-]'):[]).forEach(el=>{if(el&&el.id&&('value' in el))newClientData[el.id]=el.value;});
+  (document.querySelectorAll?document.querySelectorAll('[id^=nc-iq-]'):[]).forEach(el=>{if(!el||!el.id||!('value' in el))return;const m=el.id.match(/^(nc-iq-.+?)-other$/);if(m){if(el.value!=='')newClientData[m[1]]=el.value;}else newClientData[el.id]=el.value;});
 }
 function ncNext(){_ncReadStep();if(newClientStep===0&&!(newClientData['nc-name']||'').trim()){proToast('Add the client\u2019s name to continue');return;}if(newClientStep<_ncSteps().length-1){newClientStep++;renderNCStep();}}
 function ncBack(){_ncReadStep();if(newClientStep>0){newClientStep--;renderNCStep();}else nav('clients');}
@@ -5966,7 +6475,7 @@ function renderNCStep(){
     <span class="fl-lbl">Phone number</span><input class="fi" id="nc-phone" placeholder="(555) 000-0000" value="${v('nc-phone')}" style="margin-bottom:12px;">
     <span class="fl-lbl">Email</span><input class="fi" id="nc-email" placeholder="email@example.com" value="${v('nc-email')}" style="margin-bottom:12px;">
     <span class="fl-lbl">Date of birth</span><input class="fi" type="date" id="nc-dob" value="${v('nc-dob')}" style="margin-bottom:12px;">
-    <span class="fl-lbl">Referred by</span><input class="fi" id="nc-ref" placeholder="Instagram, Google, word of mouth…" value="${v('nc-ref')}" style="margin-bottom:8px;">`;
+    <span class="fl-lbl">How did you hear about us?</span><input class="fi" id="nc-ref" placeholder="Instagram, Google, word of mouth…" value="${v('nc-ref')}" style="margin-bottom:8px;">`;
   } else if(newClientStep===1){
     const qs=_ncIntakeQs();const fid=_ncIntakeFormId();
     body=`${head(pr.name+' intake')}
@@ -5976,10 +6485,11 @@ function renderNCStep(){
     </div>
     ${qs.length?qs.map((q,i)=>_ncQHTML(q,i)).join(''):`<div style="font-size:13px;color:#888;text-align:center;padding:16px;">No intake questions yet. <button onclick="nav('form-builder','${fid}')" style="background:none;border:none;color:var(--accent);font-size:13px;cursor:pointer;text-decoration:underline;">Add some</button></div>`}`;
   } else if(newClientStep===2){
+    const intakeHasMed=_ncIntakeQs().some(q=>/medical|medication|condition/i.test(q.label||''));
     body=`${head('Notes')}
     <div style="font-size:12px;color:#888;margin:-8px 0 14px;line-height:1.5;">Anything else for the chart (optional).</div>
-    <span class="fl-lbl">Medical conditions / medications</span><textarea class="fi" id="nc-conditions" style="height:58px;resize:none;margin-bottom:12px;line-height:1.5;" placeholder="Anything relevant to treatment…">${tv('nc-conditions')}</textarea>
-    <span class="fl-lbl">Additional notes</span><textarea class="fi" id="nc-notes" style="height:58px;resize:none;margin-bottom:8px;line-height:1.5;" placeholder="Preferences, reminders, internal notes…">${tv('nc-notes')}</textarea>`;
+    ${intakeHasMed?'':`<span class="fl-lbl">Medical conditions / medications</span><textarea class="fi" id="nc-conditions" style="height:58px;resize:none;margin-bottom:12px;line-height:1.5;" placeholder="Anything relevant to treatment…">${tv('nc-conditions')}</textarea>`}
+    <span class="fl-lbl">Additional notes <span style="color:#666;font-weight:400;">· internal only</span></span><textarea class="fi" id="nc-notes" style="height:58px;resize:none;margin-bottom:8px;line-height:1.5;" placeholder="Preferences, reminders, internal notes…">${tv('nc-notes')}</textarea>`;
   } else {
     const name=(newClientData['nc-name']||'New client');
     const cid=_ncConsentId();const tmpl=formTmpls[cid];
@@ -6019,12 +6529,15 @@ function finishNewClient(){
   const fid=_ncIntakeFormId();
   CL[id]={name,initials,bg:col[0],tc:col[1],
     phone:newClientData['nc-phone']||'',email:newClientData['nc-email']||'',
-    skin:'—',concerns:newClientData['nc-conditions']||'—',
+    skin:'—',concerns:'—',
     allergies:'None noted',fitz:'—',
     lastVisit:'—',nextVisit:'Not scheduled',treatment:'New client',sessions:0,seriesTotal:0,touchUpDate:'—',
-    conditions:newClientData['nc-conditions']||'',notes:newClientData['nc-notes']||''};
+    conditions:'',notes:newClientData['nc-notes']||''};
   // fill vitals from the intake answers (same mapping the client-completed form uses)
   if(fid)_applyIntakeVitals(CL[id],fid,q=>newClientData['nc-iq-'+(q.id!=null?q.id:'')]);
+  // if this profession's form doesn't ask about conditions, fall back to the Notes field
+  if((!CL[id].conditions||!String(CL[id].conditions).trim())&&newClientData['nc-conditions'])CL[id].conditions=newClientData['nc-conditions'];
+  try{if(typeof saveClients==='function')saveClients();}catch(e){}
   const cid=_ncConsentId();const mode=_ncDeliver;const first=name.split(' ')[0];
   newClientStep=0;newClientData={};_ncDeliver='app';
   if(mode==='device'){proToast(first+' added');renderSignOnDevice(cid,id);return;}
@@ -6147,7 +6660,7 @@ function renderStaffDetail(id){
   S.innerHTML=`
   <div style="padding:12px 16px 0;display:flex;align-items:center;justify-content:space-between;">
     <button class="back" onclick="nav('studio')"><i class="ti ti-arrow-left"></i> Studio</button>
-    ${s.role!=='Owner'?`<button onclick="confirm({title:'Remove staff member',body:'Remove ${s.name} from the studio? Their client records will be archived.',action:'Remove'},'()=>{}')" style="border:none;background:none;color:#e87070;font-size:13px;cursor:pointer;"><i class="ti ti-user-minus" style="font-size:13px;"></i></button>`:''}
+    ${s.role!=='Owner'?`<button onclick="confirmModal({title:'Remove staff member',body:'Remove ${s.name} from the studio? Their client records will be archived.',action:'Remove'},'()=>{}')" style="border:none;background:none;color:#e87070;font-size:13px;cursor:pointer;"><i class="ti ti-user-minus" style="font-size:13px;"></i></button>`:''}
   </div>
 
   <div style="padding:14px 16px 0;display:flex;flex-direction:column;align-items:center;gap:8px;text-align:center;">
@@ -6244,7 +6757,7 @@ function renderInviteStaff(){
       <div style="font-size:12px;font-weight:500;color:#aaa;margin-bottom:6px;">Or share invite link</div>
       <div style="display:flex;gap:8px;align-items:center;">
         <div style="flex:1;background:#111;border:1px solid #333;border-radius:8px;padding:8px 12px;font-size:12px;color:#666;overflow:hidden;text-overflow:ellipsis;white-space:nowrap;">slickchart.app/join/gss-x7k29m</div>
-        <button class="btng" style="flex-shrink:0;padding:8px 12px;" onclick="showToast('Invite link copied!')"><i class="ti ti-copy" aria-hidden="true"></i></button>
+        <button class="btng" style="flex-shrink:0;padding:8px 12px;" onclick="showToast('Invite link copied!')" aria-label="Copy invite link"><i class="ti ti-copy" aria-hidden="true"></i></button>
       </div>
     </div>
   </div>`;
@@ -6394,7 +6907,7 @@ function renderSubscriptionBilling(){
         <div style="flex:1;"><div style="font-size:13px;color:#e0e0e0;">${date}</div></div>
         <span style="font-size:13px;font-weight:500;color:#f0f0f0;">${amt}</span>
         <span class="bdg bg" style="font-size:12px;">${status}</span>
-        <button style="border:none;background:none;color:#999;cursor:pointer;"><i class="ti ti-download" style="font-size:14px;"></i></button>
+        <button aria-label="Download" style="border:none;background:none;color:#999;cursor:pointer;"><i class="ti ti-download" style="font-size:14px;"></i></button>
       </div>`).join('')}
     </div>
     <div class="sh" style="padding:0 0 7px;margin-top:4px;"><h2>Manage plan</h2></div>
@@ -6464,7 +6977,7 @@ function renderEditPartner(i){
     <span class="fl-lbl">Website</span><input class="fi" id="ep-web" value="${p.website}" style="margin-bottom:16px;">
     <div style="display:flex;gap:8px;margin-bottom:20px;">
       <button class="btnp" style="flex:1;border-radius:8px;" onclick="saveEditPartner(${i})"><i class="ti ti-check"></i> Save changes</button>
-      <button onclick="removePartner(${i})" style="background:#2a0f0f;color:#e87070;border:1px solid #4a1515;border-radius:8px;padding:10px 14px;font-size:13px;cursor:pointer;"><i class="ti ti-trash"></i></button>
+      <button onclick="removePartner(${i})" aria-label="Remove partner" style="background:#2a0f0f;color:#e87070;border:1px solid #4a1515;border-radius:8px;padding:10px 14px;font-size:13px;cursor:pointer;"><i class="ti ti-trash"></i></button>
     </div>
   </div>`;
 }
@@ -6571,7 +7084,7 @@ function renderAutoForm(a,idx){
       <div style="font-size:11px;color:#aaa;text-transform:uppercase;letter-spacing:.07em;margin-bottom:6px;">Preview</div>
       <div style="font-size:13px;color:#ccc;line-height:1.7;">Hi Maya! Just checking in after your recent appointment ✨. How is your skin feeling? Let me know if you have any questions!<br><br>— Jessica</div>
     </div>
-    ${idx>=0?`<button onclick="confirm({title:'Delete automation',body:'Delete this automation? It won\'t send any more messages.',action:'Delete'},'()=>{autos.splice(${idx},1);nav(\'messages\')}')" style="width:100%;border:none;border-radius:8px;padding:10px;font-size:13px;color:#e87070;background:#2a0f0f;cursor:pointer;margin-bottom:10px;"><i class="ti ti-trash" aria-hidden="true" style="font-size:13px;"></i> Delete automation</button>`:''}
+    ${idx>=0?`<button onclick="confirmModal({title:'Delete automation',body:'Delete this automation? It won\'t send any more messages.',action:'Delete'},'()=>{autos.splice(${idx},1);nav(\'messages\')}')" style="width:100%;border:none;border-radius:8px;padding:10px;font-size:13px;color:#e87070;background:#2a0f0f;cursor:pointer;margin-bottom:10px;"><i class="ti ti-trash" aria-hidden="true" style="font-size:13px;"></i> Delete automation</button>`:''}
     <div style="height:16px;"></div>
   </div>`;
 }
@@ -6782,14 +7295,8 @@ function deleteResource(id){
 // ── AI ASSIST (uses the in-app model when available; falls back to a built-in library offline) ──
 async function _aiJSON(prompt,fallbackFn){
   try{
-    const ctl=new AbortController();const to=setTimeout(()=>ctl.abort(),9000);
-    const r=await fetch('https://api.anthropic.com/v1/messages',{method:'POST',headers:{'Content-Type':'application/json'},signal:ctl.signal,
-      body:JSON.stringify({model:'claude-sonnet-4-6',max_tokens:1000,messages:[{role:'user',content:prompt}]})});
-    clearTimeout(to);
-    if(!r.ok)throw new Error('http '+r.status);
-    const d=await r.json();
-    const text=(d.content||[]).map(b=>b.text||'').join('').trim();
-    return JSON.parse(text.replace(/```json|```/g,'').trim());
+    const text=await _aiComplete([{role:'user',content:prompt}],1000);
+    return JSON.parse((text||'').replace(/```json|```/g,'').trim());
   }catch(e){return fallbackFn?fallbackFn():null;}
 }
 function _profName(){const p=(selectedProfessions&&selectedProfessions[0])||'esty';const m={esty:'esthetician',hair:'hair stylist',barber:'barber',brow:'brow artist',makeup:'makeup artist',massage:'massage therapist',lash:'lash technician',nail:'nail technician',wax:'waxer'};return m[p]||'beauty professional';}
