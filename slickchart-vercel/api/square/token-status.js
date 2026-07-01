@@ -1,0 +1,41 @@
+// GET /api/square/token-status
+// Introspects the seller's Square access token (Square's RetrieveTokenStatus)
+// and reports, in plain language, which permissions it has — so the app can show
+// a green/red "ready to book" checklist without the seller touching any dev tools.
+import { squareFetch, requireAuth } from '../../lib/square.js';
+
+// The permissions live booking needs, with a human label for each.
+const REQUIRED = [
+  { scope: 'APPOINTMENTS_WRITE',                  label: 'Create appointments' },
+  { scope: 'APPOINTMENTS_BUSINESS_SETTINGS_READ', label: 'Read your staff & booking setup' },
+  { scope: 'CUSTOMERS_READ',                      label: 'Look up clients' },
+  { scope: 'CUSTOMERS_WRITE',                     label: 'Add new clients' },
+  { scope: 'ITEMS_READ',                          label: 'Read your services & prices' },
+  { scope: 'MERCHANT_PROFILE_READ',               label: 'Find your location' }
+];
+
+export default async function handler(req, res) {
+  if (req.method !== 'GET') { res.status(405).json({ error: 'Method not allowed' }); return; }
+  if (!requireAuth(req, res)) return;
+
+  try {
+    // POST /oauth2/token/status returns the granted scopes for the token in use.
+    const data = await squareFetch('/oauth2/token/status', { method: 'POST' });
+    const scopes = Array.isArray(data.scopes) ? data.scopes : [];
+
+    const checks = REQUIRED.map(r => ({ scope: r.scope, label: r.label, ok: scopes.includes(r.scope) }));
+    const ready = checks.every(c => c.ok);
+
+    res.status(200).json({
+      ready,
+      checks,
+      // If Square can't return a scope list (rare), say so instead of showing
+      // everything as "missing" — that would be misleading.
+      inconclusive: scopes.length === 0,
+      expiresAt: data.expires_at || null,
+      merchantId: data.merchant_id || null
+    });
+  } catch (e) {
+    res.status(e.status || 500).json({ error: e.message, details: e.squareErrors || null });
+  }
+}
