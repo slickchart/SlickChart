@@ -2439,8 +2439,8 @@ function openBuyOptionsP(aid){
   const p=affiliateLinks.find(x=>x.id===aid);if(!p)return;
   const rows=[];
   const blk=(html,code)=>`<div style="margin-bottom:8px;">${html}${code?_codeLine(code):''}</div>`;
-  if(p.inOffice)rows.push(blk(`<div style="display:flex;align-items:center;gap:12px;padding:12px 14px;border:1px solid var(--accent);background:var(--accent-tint);border-radius:10px;"><i class="ti ti-building-store" style="font-size:18px;color:var(--accent);"></i><div style="flex:1;"><div style="font-size:13px;font-weight:500;color:#f0f0f0;">Buy in office</div><div style="font-size:11px;color:#999;">Client picks up at their visit</div></div></div>`,''));
-  if(p.site)rows.push(blk(`<a href="https://${p.site}" target="_blank" rel="noopener" style="display:flex;align-items:center;gap:12px;padding:12px 14px;border:1px solid #2a2a2a;border-radius:10px;text-decoration:none;"><i class="ti ti-shopping-bag" style="font-size:18px;color:var(--accent);"></i><div style="flex:1;min-width:0;"><div style="font-size:13px;font-weight:500;color:#e0e0e0;">Buy from your store</div><div style="font-size:11px;color:#999;word-break:break-all;">${p.site}</div></div></a>`,p.siteCode));
+  if(p.site)rows.push(blk(`<a href="https://${p.site}" target="_blank" rel="noopener" style="display:flex;align-items:center;gap:12px;padding:12px 14px;border:1px solid var(--accent);background:var(--accent-tint);border-radius:10px;text-decoration:none;"><i class="ti ti-shopping-bag" style="font-size:18px;color:var(--accent);"></i><div style="flex:1;min-width:0;"><div style="font-size:13px;font-weight:500;color:#f0f0f0;">Buy from your store</div><div style="font-size:11px;color:#999;word-break:break-all;">${p.site}</div></div></a>`,p.siteCode));
+  if(p.inOffice)rows.push(blk(`<div style="display:flex;align-items:center;gap:12px;padding:12px 14px;border:1px solid #2a2a2a;border-radius:10px;"><i class="ti ti-building-store" style="font-size:18px;color:var(--accent);"></i><div style="flex:1;"><div style="font-size:13px;font-weight:500;color:#e0e0e0;">Buy in office</div><div style="font-size:11px;color:#999;">Client picks up at their visit</div></div></div>`,''));
   if(p.url)rows.push(blk(`<a href="https://${p.url}" target="_blank" rel="noopener" style="display:flex;align-items:center;gap:12px;padding:12px 14px;border:1px solid #2a2a2a;border-radius:10px;text-decoration:none;"><i class="ti ti-external-link" style="font-size:18px;color:var(--accent);"></i><div style="flex:1;min-width:0;"><div style="font-size:13px;font-weight:500;color:#e0e0e0;">Shop at ${p.brand||'brand site'}</div><div style="font-size:11px;color:#999;word-break:break-all;">${p.url}</div></div></a>`,p.urlCode));
   const amz=amazonBuyUrl(p);
   if(amz)rows.push(blk(`<a href="https://${amz}" target="_blank" rel="noopener" style="display:flex;align-items:center;gap:12px;padding:12px 14px;border:1px solid #2a2a2a;border-radius:10px;text-decoration:none;"><i class="ti ti-brand-amazon" style="font-size:18px;color:var(--accent);"></i><div style="flex:1;min-width:0;"><div style="font-size:13px;font-weight:500;color:#e0e0e0;">${_amazonIsStore(amz)?'Shop in your Amazon store':'Buy on Amazon'}</div><div style="font-size:11px;color:#999;word-break:break-all;">${amz}</div></div></a>`,p.amazonCode));
@@ -5750,17 +5750,35 @@ function renderIntegrations(){
 // ── Square live sync (talks to /api/square/* on the same Vercel deployment) ──
 function loadSquareCatalog(){try{const r=localStorage.getItem('sc_square_catalog');if(r){const d=JSON.parse(r)||{};squareCatalog={retail:d.retail||[],services:d.services||[],syncedAt:d.syncedAt||0};}}catch(e){}}
 function saveSquareCatalog(){try{localStorage.setItem('sc_square_catalog',JSON.stringify(squareCatalog));}catch(e){}}
+// The provider's Square Online shop URL (default "Buy" destination for their products)
+function _shopUrl(){return String((typeof bizInfo!=='undefined'&&bizInfo.shopUrl)||'').trim().replace(/^https?:\/\//i,'').replace(/\/+$/,'');}
+function _saveShopUrl(v){
+  if(typeof bizInfo==='undefined')return;
+  bizInfo.shopUrl=String(v||'').trim().replace(/^https?:\/\//i,'').replace(/\/+$/,'');
+  try{localStorage.setItem('sc_bizinfo',JSON.stringify(bizInfo));}catch(e){}
+  const shop=bizInfo.shopUrl;
+  affiliateLinks.forEach(a=>{if(a.source==='square'&&shop&&!a.site)a.site=shop;});
+  if(typeof persistWorkspace==='function')persistWorkspace();
+  if(typeof proToast==='function')proToast(shop?'Shop URL saved — set as default Buy':'Shop URL cleared');
+}
 // Merge synced Square retail products into the shared product library so they show up
 // everywhere products are picked (client recs, routines, aftercare, client summary).
+// Non-destructive: refreshes Square catalog data but preserves any purchase links you add.
 function _mergeSquareRetail(){
   try{
+    const shop=_shopUrl();
     (squareCatalog.retail||[]).forEach(p=>{
       const id='sq_'+String(p.id).toLowerCase().replace(/[^a-z0-9]/g,'').slice(0,14);
       const priceLabel=(p.price!=null)?('$'+(Math.round(p.price*100)/100)):'';
       const brand=[p.category||'',priceLabel].filter(Boolean).join(' · ')||'Your product';
       const existing=affiliateLinks.find(a=>a.id===id);
-      const rec={id,name:p.name,brand,icon:'🛍️',image:p.image||'',url:'',active:true,inOffice:true,source:'square',price:p.price,squareId:p.id};
-      if(existing)Object.assign(existing,rec);else affiliateLinks.push(rec);
+      if(existing){
+        existing.name=p.name;existing.price=p.price;existing.brand=brand;existing.source='square';existing.squareId=p.id;
+        if(p.image)existing.image=p.image;
+        if(shop&&!existing.site)existing.site=shop;   // default Buy = your Square shop
+      }else{
+        affiliateLinks.push({id,name:p.name,brand,icon:'🛍️',image:p.image||'',site:shop||'',url:'',amazon:'',active:true,inOffice:true,source:'square',price:p.price,squareId:p.id});
+      }
     });
   }catch(e){}
 }
@@ -5803,6 +5821,10 @@ function renderSquareSync(){
   </div>
   <div style="padding:0 16px 6px;">
     <button onclick="_sqLoadCatalog()" style="width:100%;background:#1a1a1a;color:#e0e0e0;border:1px solid #2a2a2a;border-radius:10px;padding:12px;font-size:13px;font-weight:600;cursor:pointer;font-family:inherit;"><i class="ti ti-shopping-bag" style="color:var(--accent);"></i> Products &amp; services</button>
+  </div>
+  <div style="padding:2px 16px 6px;">
+    <span style="font-size:11px;color:#999;">Your Square Online shop link — the default <b>Buy</b> for your products</span>
+    <input id="sq-shop-url" value="${((typeof bizInfo!=='undefined'&&bizInfo.shopUrl)||'').replace(/"/g,'&quot;')}" placeholder="yourshop.square.site" onchange="_saveShopUrl(this.value)" style="width:100%;margin-top:5px;background:#111;border:1px solid #2a2a2a;border-radius:9px;padding:10px 12px;font-size:13px;color:#e0e0e0;font-family:inherit;box-sizing:border-box;outline:none;">
   </div>
   <div style="padding:0 16px;"><button onclick="_sqKey(true);proToast('Access key updated')" style="background:none;border:none;color:#777;font-size:11px;cursor:pointer;padding:4px 0;"><i class="ti ti-key" style="font-size:11px;"></i> Change access key</button></div>
   <div id="sq-results" style="padding:6px 16px 20px;"></div>`;
