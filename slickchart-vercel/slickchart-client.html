@@ -7,6 +7,7 @@
 <link rel="stylesheet" href="https://cdn.jsdelivr.net/npm/@tabler/icons-webfont@3.19.0/dist/tabler-icons.min.css">
 <style>
 *{box-sizing:border-box;margin:0;padding:0;}
+:focus-visible{outline:2px solid var(--accent);outline-offset:2px;border-radius:4px;}
 :root{
   --accent:#C8A882;--accent-2:#2C5F8A;--accent-ink:#1a1208;
   --accent-tint:#2a231b;--accent-tint2:#3c3227;
@@ -924,6 +925,23 @@ let photoRight=3;  // index for "after"
 let photoAngle='Front';
 let sliderPct=50;  // drag position 0-100
 let sliderDragging=false;
+// Drag-to-compare before/after slider (touch + mouse)
+function startSlider(e){
+  const wrap=document.getElementById('compare-wrap');if(!wrap)return;
+  if(e&&e.cancelable&&e.preventDefault)e.preventDefault();
+  sliderDragging=true;
+  const rect=wrap.getBoundingClientRect();
+  const before=wrap.children[1],divider=wrap.children[2];
+  const apply=cx=>{let pct=((cx-rect.left)/rect.width)*100;pct=Math.max(0,Math.min(100,pct));sliderPct=pct;
+    if(before&&before.style)before.style.clipPath='inset(0 '+(100-pct)+'% 0 0)';
+    if(divider&&divider.style)divider.style.left=pct+'%';};
+  const ptX=ev=>(ev.touches&&ev.touches[0])?ev.touches[0].clientX:ev.clientX;
+  const mv=ev=>{if(ev&&ev.cancelable&&ev.preventDefault)ev.preventDefault();apply(ptX(ev));};
+  const up=()=>{sliderDragging=false;document.removeEventListener('mousemove',mv);document.removeEventListener('mouseup',up);document.removeEventListener('touchmove',mv);document.removeEventListener('touchend',up);document.removeEventListener('touchcancel',up);};
+  document.addEventListener('mousemove',mv);document.addEventListener('mouseup',up);
+  document.addEventListener('touchmove',mv,{passive:false});document.addEventListener('touchend',up);document.addEventListener('touchcancel',up);
+  apply(ptX(e));
+}
 
 // Recommended products
 const products=[
@@ -938,6 +956,9 @@ function setNav(id){
   if(el){el.classList.add('active');el.setAttribute('aria-current','page');}
 }
 
+function _a11yEnhance(){try{document.querySelectorAll('[onclick]:not(button):not(a):not(input):not(select):not(textarea):not([role])').forEach(el=>{el.setAttribute('role','button');if(!el.hasAttribute('tabindex'))el.setAttribute('tabindex','0');});}catch(e){}}
+try{document.addEventListener('keydown',function(e){const t=e.target;if((e.key==='Enter'||e.key===' ')&&t&&t.getAttribute&&t.getAttribute('role')==='button'&&t.hasAttribute('onclick')&&!['BUTTON','A','INPUT','SELECT','TEXTAREA'].includes(t.tagName)){e.preventDefault();t.click();}});}catch(e){}
+try{if(typeof MutationObserver!=='undefined'){new MutationObserver(()=>_a11yEnhance()).observe(document.body,{childList:true,subtree:true});_a11yEnhance();}}catch(e){}
 function nav(screen){
   document.getElementById('tt').textContent='SlickChart';
   const routes={
@@ -1241,72 +1262,8 @@ function renderNotifSettings(){
 }
 
 
-function openClientPhotoUpload(){
-  const existing=document.getElementById('client-photo-modal');if(existing)existing.remove();
-  const m=document.createElement('div');
-  m.id='client-photo-modal';
-  m.style.cssText='position:absolute;inset:0;background:rgba(0,0,0,.5);z-index:200;display:flex;align-items:flex-end;';
-  m.innerHTML=`
-  <div style="background:#fff;border-radius:20px 20px 0 0;width:100%;padding:20px 16px 32px;box-shadow:0 -4px 30px rgba(0,0,0,.12);">
-    <div style="width:36px;height:4px;background:#e8ddd3;border-radius:2px;margin:0 auto 16px;"></div>
-    <div style="font-size:16px;font-weight:600;color:#1a1a1a;margin-bottom:4px;">Submit photos for your next visit</div>
-    <div style="font-size:13px;color:#b8a898;margin-bottom:18px;">${client.providerFirst} will review them before your appointment. Up to 3 angles.</div>
 
-    <label for="client-file-input">
-      <div id="client-upload-area" style="border:2px dashed #e8ddd3;border-radius:12px;padding:28px 16px;text-align:center;cursor:pointer;margin-bottom:14px;background:#faf7f4;">
-        <i class="ti ti-camera-plus" aria-hidden="true" style="font-size:32px;color:#c4b9ae;display:block;margin-bottom:10px;"></i>
-        <div style="font-size:14px;font-weight:600;color:#1a1a1a;margin-bottom:4px;">Tap to take or upload photos</div>
-        <div style="font-size:12px;color:#b8a898;">Front, side, and close-up recommended</div>
-      </div>
-      <input type="file" id="client-file-input" accept="image/*" multiple capture="environment" style="display:none;" onchange="handleClientPhotoSelect(this)">
-    </label>
 
-    <div id="client-photo-preview" style="display:none;margin-bottom:14px;">
-      <div id="client-thumbs" style="display:flex;gap:8px;margin-bottom:8px;overflow-x:auto;scrollbar-width:none;"></div>
-    </div>
-
-    <div style="background:var(--accent-lt);border-radius:10px;padding:10px 13px;margin-bottom:16px;display:flex;gap:7px;align-items:flex-start;">
-      <i class="ti ti-lock" aria-hidden="true" style="font-size:13px;color:var(--accent);flex-shrink:0;margin-top:1px;"></i>
-      <span style="font-size:12px;color:#8b6b4a;line-height:1.5;">Photos are only visible to you and ${client.provider}. They're never shared without your permission.</span>
-    </div>
-
-    <div style="display:flex;gap:8px;">
-      <button onclick="document.getElementById('client-photo-modal').remove()" style="flex:1;background:#faf7f4;border:1.5px solid #e8ddd3;border-radius:10px;padding:12px;font-size:14px;color:#9a8a7e;cursor:pointer;font-weight:600;">Cancel</button>
-      <button id="client-upload-btn" onclick="submitClientPhotos()" disabled style="flex:2;background:var(--accent);border:none;border-radius:10px;padding:12px;font-size:14px;font-weight:600;color:#fff;cursor:pointer;opacity:.5;">Send to ${client.providerFirst}</button>
-    </div>
-  </div>`;
-  document.querySelector('.shell').appendChild(m);
-}
-
-function handleClientPhotoSelect(input){
-  const files=Array.from(input.files).slice(0,3);
-  if(!files.length)return;
-  const thumbs=document.getElementById('client-thumbs');
-  const preview=document.getElementById('client-photo-preview');
-  const btn=document.getElementById('client-upload-btn');
-  const area=document.getElementById('client-upload-area');
-  if(thumbs){
-    thumbs.innerHTML='';
-    files.forEach(file=>{
-      const reader=new FileReader();
-      reader.onload=e=>{
-        const d=document.createElement('div');
-        d.style.cssText='width:80px;height:80px;border-radius:10px;overflow:hidden;flex-shrink:0;border:2px solid var(--accent);';
-        d.innerHTML=`<img src="${e.target.result}" style="width:100%;height:100%;object-fit:cover;">`;
-        thumbs.appendChild(d);
-      };
-      reader.readAsDataURL(file);
-    });
-  }
-  if(preview)preview.style.display='block';
-  if(btn){btn.disabled=false;btn.style.opacity='1';}
-  if(area){area.style.borderColor='var(--accent)';area.innerHTML=`<i class="ti ti-check" aria-hidden="true" style="font-size:28px;color:var(--accent);display:block;margin-bottom:8px;"></i><div style="font-size:14px;font-weight:600;color:var(--accent);">${files.length} photo${files.length>1?'s':''} ready</div>`;}
-}
-
-function submitClientPhotos(){
-  document.getElementById('client-photo-modal')?.remove();
-  showToast(`Photos sent to ${client.providerFirst}! ✓`);
-}
 
 function renderJourney(){
   setNav('journey');
@@ -1325,7 +1282,7 @@ function renderJourney(){
   <div style="margin:0 16px 14px;background:linear-gradient(135deg,var(--accent-tint),var(--accent-tint2));border-radius:14px;padding:14px 16px;">
     <div style="display:flex;align-items:center;gap:11px;">
       <div style="width:42px;height:42px;border-radius:11px;background:var(--accent);display:flex;align-items:center;justify-content:center;flex-shrink:0;"><i class="ti ti-calendar-heart" aria-hidden="true" style="font-size:20px;color:#fff;"></i></div>
-      <div style="flex:1;min-width:0;font-size:13px;color:#5a4a3a;line-height:1.45;">${client.nextDate?`Your next ${client.treatment} is <strong style="color:#1a1a1a;">${client.nextDate}</strong> — keep up your aftercare until then.`:`It's about time for your touch-up — book your next visit to keep results going.`}</div>
+      <div style="flex:1;min-width:0;font-size:13px;color:var(--accent-lt2);line-height:1.45;">${client.nextDate?`Your next ${client.treatment} is <strong style="color:#fff;">${client.nextDate}</strong> — keep up your aftercare until then.`:`It's about time for your touch-up — book your next visit to keep results going.`}</div>
       <button onclick="${client.nextDate?"openCalModal()":"nav('home')"}" style="background:var(--accent);color:#fff;border:none;border-radius:8px;padding:7px 12px;font-size:11px;font-weight:700;cursor:pointer;flex-shrink:0;white-space:nowrap;">${client.nextDate?'Add to cal':'Book'}</button>
     </div>
   </div>
@@ -1387,14 +1344,14 @@ function renderJourney(){
       <div style="display:flex;gap:8px;margin-bottom:6px;">
         <div style="flex:1;">
           <div style="font-size:10px;color:#b8a898;font-weight:600;text-transform:uppercase;letter-spacing:.06em;margin-bottom:5px;">Before</div>
-          <select onchange="photoLeft=parseInt(this.value);renderJourney()" style="width:100%;background:#faf7f4;border:1.5px solid #e8ddd3;border-radius:8px;padding:7px 10px;font-size:12px;color:#1a1a1a;cursor:pointer;font-weight:500;">
+          <select aria-label="Choose before photo" onchange="photoLeft=parseInt(this.value);renderJourney()" style="width:100%;background:#faf7f4;border:1.5px solid #e8ddd3;border-radius:8px;padding:7px 10px;font-size:12px;color:#1a1a1a;cursor:pointer;font-weight:500;">
             ${progressSessions.map((s,i)=>`<option value="${i}" ${i===photoLeft?'selected':''}>${s.date}</option>`).join('')}
           </select>
         </div>
         <div style="display:flex;align-items:flex-end;padding-bottom:2px;color:#b8a898;font-size:18px;">→</div>
         <div style="flex:1;">
           <div style="font-size:10px;color:#b8a898;font-weight:600;text-transform:uppercase;letter-spacing:.06em;margin-bottom:5px;">After</div>
-          <select onchange="photoRight=parseInt(this.value);renderJourney()" style="width:100%;background:#faf7f4;border:1.5px solid #e8ddd3;border-radius:8px;padding:7px 10px;font-size:12px;color:#1a1a1a;cursor:pointer;font-weight:500;">
+          <select aria-label="Choose after photo" onchange="photoRight=parseInt(this.value);renderJourney()" style="width:100%;background:#faf7f4;border:1.5px solid #e8ddd3;border-radius:8px;padding:7px 10px;font-size:12px;color:#1a1a1a;cursor:pointer;font-weight:500;">
             ${progressSessions.map((s,i)=>`<option value="${i}" ${i===photoRight?'selected':''}>${s.date}</option>`).join('')}
           </select>
         </div>
@@ -1794,12 +1751,6 @@ function _ciFlagged(){
 }
 
 // ── Image helpers (downscale uploads to a shareable data URL, or accept a link) ──
-function _pickImage(cb){
-  const inp=document.createElement('input');
-  inp.type='file';inp.accept='image/*';
-  inp.onchange=()=>{const f=inp.files&&inp.files[0];if(f)_downscaleImg(f,cb);};
-  inp.click();
-}
 function _pickImages(cb){
   const inp=document.createElement('input');
   inp.type='file';inp.accept='image/*';inp.multiple=true;
@@ -2102,9 +2053,9 @@ let _buyProducts=[];
 function openBuyOptions(i){
   const p=_buyProducts[i];if(!p)return;
   const rows=[];
-  const cline=code=>code?`<div style="display:flex;align-items:center;gap:8px;margin-top:5px;padding:8px 11px;background:var(--accent-tint);border:1px dashed var(--accent);border-radius:10px;"><i class="ti ti-discount-2" aria-hidden="true" style="font-size:15px;color:var(--accent);flex-shrink:0;"></i><div style="flex:1;min-width:0;font-size:12px;color:#6b5d52;">Use <b style="color:var(--accent);letter-spacing:.03em;">${code}</b> at checkout</div><button onclick="event.preventDefault();event.stopPropagation();copyCode('${(code||'').replace(/'/g,"\\'")}')" style="border:1.5px solid var(--accent);background:none;color:var(--accent);border-radius:7px;padding:5px 11px;font-size:11px;font-weight:700;cursor:pointer;flex-shrink:0;">Copy</button></div>`:'';
+  const cline=code=>code?`<div style="display:flex;align-items:center;gap:8px;margin-top:5px;padding:8px 11px;background:var(--accent-a20);border:1px dashed var(--accent);border-radius:10px;"><i class="ti ti-discount-2" aria-hidden="true" style="font-size:15px;color:var(--accent);flex-shrink:0;"></i><div style="flex:1;min-width:0;font-size:12px;color:#6b5d52;">Use <b style="color:var(--accent);letter-spacing:.03em;">${code}</b> at checkout</div><button onclick="event.preventDefault();event.stopPropagation();copyCode('${(code||'').replace(/'/g,"\\'")}')" style="border:1.5px solid var(--accent);background:none;color:var(--accent);border-radius:7px;padding:5px 11px;font-size:11px;font-weight:700;cursor:pointer;flex-shrink:0;">Copy</button></div>`:'';
   const blk=(html,code)=>`<div style="margin-bottom:8px;">${html}${cline(code)}</div>`;
-  if(p.inOffice)rows.push(blk(`<button onclick="closeBuySheet();nav('messages')" style="display:flex;width:100%;text-align:left;align-items:center;gap:12px;padding:12px 14px;border:1.5px solid var(--accent);background:var(--accent-tint);border-radius:12px;cursor:pointer;font-family:inherit;">
+  if(p.inOffice)rows.push(blk(`<button onclick="closeBuySheet();nav('messages')" style="display:flex;width:100%;text-align:left;align-items:center;gap:12px;padding:12px 14px;border:1.5px solid var(--accent);background:var(--accent-a20);border-radius:12px;cursor:pointer;font-family:inherit;">
     <i class="ti ti-building-store" aria-hidden="true" style="font-size:18px;color:var(--accent);"></i><div style="flex:1;"><div style="font-size:13px;font-weight:600;color:#1a1a1a;">Buy in office</div><div style="font-size:11px;color:#b8a898;">Pick up at your next visit · tap to message ${client.providerFirst}</div></div><i class="ti ti-chevron-right" aria-hidden="true" style="color:#c4b9ae;"></i></button>`,''));
   if(p.site)rows.push(blk(`<a href="https://${p.site}" target="_blank" rel="noopener" onclick="closeBuySheet()" style="display:flex;align-items:center;gap:12px;padding:12px 14px;border:1.5px solid #f0ebe4;border-radius:12px;text-decoration:none;">
     <i class="ti ti-shopping-bag" aria-hidden="true" style="font-size:18px;color:var(--accent);"></i><div style="flex:1;min-width:0;"><div style="font-size:13px;font-weight:600;color:#1a1a1a;">Buy from ${client.studio}</div><div style="font-size:11px;color:#b8a898;word-break:break-all;">${p.site}</div></div><i class="ti ti-chevron-right" aria-hidden="true" style="color:#c4b9ae;"></i></a>`,p.siteCode));
@@ -2290,7 +2241,6 @@ function renderLatestSummary(){
 }
 
 // ── MAGIC-LINK LANDING (no app / no login needed) ──
-function _signClientForm(fid){const jess=client.providers.find(p=>p.id==='jess');if(!jess||!jess.forms)return;const f=jess.forms.find(x=>x.id===fid);if(f)f.status='Completed ✓';if(currentScreen==='welcome')renderMagicLanding();}
 // ── Client fills out the form for real: answers + contraindication flags + signature ──
 let _cfPadInk=false;
 function _cfField(q){
