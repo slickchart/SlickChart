@@ -762,6 +762,8 @@ function _handleAuthParams(){
     const v=p.get('verify'), r=p.get('reset');
     if(v){Cloud.verifyEmail(v).then(ok=>{if(typeof proToast==='function')proToast(ok?'Email verified \u2713':'That verification link has expired');});try{const u=new URL(location.href);u.searchParams.delete('verify');history.replaceState({},'',u);}catch(e){}}
     if(r){_resetToken=r;_loginMode='newpw';try{const u=new URL(location.href);u.searchParams.delete('reset');history.replaceState({},'',u);}catch(e){}renderLogin();return true;}
+    const sq=p.get('sq');
+    if(sq){const reason=p.get('reason');setTimeout(()=>{if(typeof proToast==='function')proToast(sq==='connected'?'Square connected \u2713':'Square connection failed'+(reason?': '+reason:''));},500);try{const u=new URL(location.href);u.searchParams.delete('sq');u.searchParams.delete('reason');history.replaceState({},'',u);}catch(e){}}
   }catch(e){}
   return false;
 }
@@ -5630,7 +5632,7 @@ function renderAccount(){
     ].map(([icon,bg,ic,name,desc,screen])=>`<div class="nr" style="padding:11px 14px;" ${screen?`onclick="nav('${screen}')"`:''}><div style="width:38px;height:38px;border-radius:10px;background:${bg};display:flex;align-items:center;justify-content:center;flex-shrink:0;"><i class="ti ${icon}" style="font-size:18px;color:${ic};"></i></div><div style="flex:1;"><div style="font-size:14px;font-weight:500;color:#e0e0e0;">${name}</div><div style="font-size:12px;color:#999;">${desc}</div></div><i aria-hidden="true" class="ti ti-chevron-right" style="font-size:16px;color:#888;"></i></div>`).join('')}
   </div>
   <button onclick="_doLogout()" style="width:100%;border:1px solid #555;background:none;border-radius:10px;padding:11px;font-size:14px;color:#bbb;cursor:pointer;margin-top:10px;font-family:inherit;">Sign out</button>
-  <div style="text-align:center;padding:14px;font-size:11px;color:#888;">SlickChart · Version 1.0.1</div></div>`;
+  <div style="text-align:center;padding:14px;font-size:11px;color:#888;">SlickChart · Version 1.0.2</div></div>`;
 }
 
 
@@ -6421,9 +6423,11 @@ function _sqKey(force){
 }
 async function _sqFetch(path,opts){
   opts=opts||{};
-  const key=_sqKey(false);
-  if(!key){const e=new Error('No access key entered.');e.code='nokey';throw e;}
-  const headers={'x-slickchart-key':key};
+  const headers={};
+  const tok=(typeof Cloud!=='undefined'&&Cloud&&Cloud.token)||'';
+  if(tok)headers['Authorization']='Bearer '+tok;                 // identifies the provider → uses THEIR Square
+  let key='';try{key=sessionStorage.getItem('sc_sqkey')||'';}catch(e){}
+  if(key)headers['x-slickchart-key']=key;                        // optional legacy shared-key fallback
   const init={method:opts.method||'GET',headers};
   if(opts.body!==undefined){headers['Content-Type']='application/json';init.body=JSON.stringify(opts.body);}
   let resp;
@@ -6434,9 +6438,35 @@ async function _sqFetch(path,opts){
     e.code='network';throw e;
   }
   let data={};try{data=await resp.json();}catch(_){}
-  if(resp.status===401){sessionStorage.removeItem('sc_sqkey');const e=new Error(data.error||'Wrong access key.');e.code='auth';throw e;}
+  if(resp.status===401){const e=new Error(data.error||'Square isn\u2019t connected yet.');e.code=(data&&data.code==='nosquare')?'nosquare':'auth';throw e;}
   if(!resp.ok){const e=new Error(data.error||('Request failed ('+resp.status+')'));throw e;}
   return data;
+}
+async function _sqConnect(){
+  const tok=(typeof Cloud!=='undefined'&&Cloud&&Cloud.token)||'';
+  if(!tok){proToast('Please log in first');return;}
+  try{
+    const r=await fetch('/api/square/connect',{headers:{'Authorization':'Bearer '+tok}});
+    const j=await r.json();
+    if(!r.ok||!j.url){proToast((j&&j.error)||'Could not start Square connection');return;}
+    location.href=j.url;
+  }catch(e){proToast('Could not reach Square');}
+}
+async function _sqDisconnect(){
+  const tok=(typeof Cloud!=='undefined'&&Cloud&&Cloud.token)||'';
+  try{await fetch('/api/square/connection',{method:'DELETE',headers:tok?{'Authorization':'Bearer '+tok}:{}});}catch(e){}
+  proToast('Square disconnected');
+  if(typeof nav==='function')nav('square-guide');
+}
+async function _sqConnState(){
+  const tok=(typeof Cloud!=='undefined'&&Cloud&&Cloud.token)||'';
+  try{const r=await fetch('/api/square/connection',{headers:tok?{'Authorization':'Bearer '+tok}:{}});return await r.json();}catch(e){return null;}
+}
+async function _sqRenderConnState(){
+  const el=document.getElementById('sqg-oauth-body');if(!el)return;
+  const st=await _sqConnState();
+  if(st&&st.oauth){el.innerHTML='<div style="display:flex;align-items:center;justify-content:space-between;gap:10px;"><span style="font-size:12px;color:#4ec49a;font-weight:600;"><i class="ti ti-check" style="font-size:12px;"></i> Connected to Square'+(st.merchantId?(' \u00b7 '+st.merchantId):'')+'</span><button onclick="_sqDisconnect()" style="background:none;border:1px solid #3a1a1a;color:#a85a5a;border-radius:8px;padding:6px 11px;font-size:11px;font-weight:600;cursor:pointer;font-family:inherit;">Disconnect</button></div>';}
+  else if(st&&!st.oauthConfigured){el.innerHTML='<div style="font-size:12px;color:#caa86a;line-height:1.5;">One-tap connect isn\u2019t enabled on this deployment yet. The owner needs to add <span style="font-family:monospace;">SQUARE_APP_ID</span> and <span style="font-family:monospace;">SQUARE_APP_SECRET</span> in Vercel (see setup guide). You can still use the manual access-token steps below.</div>';}
 }
 function _sqStatusBadge(label,ok){return `<span style="display:inline-flex;align-items:center;gap:4px;font-size:11px;font-weight:600;padding:3px 9px;border-radius:20px;background:${ok?'#0f2a1e':'#2a0f0f'};color:${ok?'#4ec49a':'#e87070'};"><i class="ti ${ok?'ti-check':'ti-x'}" style="font-size:12px;"></i> ${label}</span>`;}
 function _sqGuideToggle(id){
@@ -6464,7 +6494,13 @@ function renderSquareGuide(){
   <div style="padding:10px 16px 0;">
     <div style="font-size:19px;font-weight:600;color:#f0f0f0;margin-bottom:4px;">Connect your Square</div>
     <div style="font-size:13px;color:#999;line-height:1.5;margin-bottom:14px;">A one-time setup, about 15 minutes. Once it's done, SlickChart automatically pulls in your clients, your upcoming appointments, and your products &amp; prices — and keeps your own shop as the default place clients buy.</div>
-    <div id="sqg-status" style="background:#161616;border:1px solid #242424;border-radius:12px;padding:12px 14px;font-size:12px;color:#999;margin-bottom:18px;">Checking what's set up…</div>
+    <div id="sqg-status" style="background:#161616;border:1px solid #242424;border-radius:12px;padding:12px 14px;font-size:12px;color:#999;margin-bottom:14px;">Checking what's set up…</div>
+    <div id="sqg-oauth" style="background:#0a1f16;border:1px solid #1c4030;border-radius:12px;padding:14px;margin-bottom:18px;">
+      <div style="display:flex;align-items:center;gap:8px;margin-bottom:6px;"><i class="ti ti-plug-connected" style="font-size:16px;color:#4ec49a;"></i><span style="font-size:14px;font-weight:600;color:#f0f0f0;">Connect your Square account</span></div>
+      <div style="font-size:12px;color:#9fbfae;line-height:1.5;margin-bottom:11px;">The easy way \u2014 sign in with Square and approve access. No tokens to copy, and each provider connects their <b>own</b> Square account.</div>
+      <div id="sqg-oauth-body"><button onclick="_sqConnect()" style="width:100%;background:#4ec49a;color:#06231a;border:none;border-radius:9px;padding:11px;font-size:13px;font-weight:700;cursor:pointer;font-family:inherit;"><i class="ti ti-plug" style="font-size:14px;"></i> Connect with Square</button></div>
+    </div>
+    <div style="font-size:11px;font-weight:600;color:#aaa;text-transform:uppercase;letter-spacing:.06em;margin:0 0 10px;">Or set it up manually (advanced)</div>
     <div style="background:#161616;border:1px solid #242424;border-radius:12px;padding:14px;margin-bottom:18px;">
       <div style="display:flex;align-items:center;gap:8px;margin-bottom:6px;"><i class="ti ti-calendar-check" style="font-size:16px;color:var(--accent);"></i><span style="font-size:14px;font-weight:600;color:#f0f0f0;">Ready to take live bookings?</span></div>
       <div style="font-size:12px;color:#999;line-height:1.5;margin-bottom:11px;">Check that your Square access token has the permissions needed to create appointments and clients — one tap, no developer tools.</div>
@@ -6486,6 +6522,7 @@ function renderSquareGuide(){
     <div style="height:26px;"></div>
   </div>`;
   _sqGuideStatus();
+  _sqRenderConnState();
 }
 async function _sqCheckPerms(){
   const out=document.getElementById('sqperm-result');const btn=document.getElementById('sqperm-btn');
@@ -6519,6 +6556,11 @@ function renderSquareSync(){
     <div><div style="font-size:17px;font-weight:600;color:#f0f0f0;">Square</div><div style="font-size:12px;color:#999;">Live sync · your own Square account</div></div>
   </div>
   <div id="sq-status" style="margin:0 16px 12px;background:#161616;border:1px solid #242424;border-radius:12px;padding:12px 14px;font-size:12px;color:#999;">Checking connection…</div>
+  <div id="sqg-oauth" style="margin:0 16px 14px;background:#0a1f16;border:1px solid #1c4030;border-radius:12px;padding:14px;">
+    <div style="display:flex;align-items:center;gap:8px;margin-bottom:6px;"><i class="ti ti-plug-connected" style="font-size:16px;color:#4ec49a;"></i><span style="font-size:14px;font-weight:600;color:#f0f0f0;">Connect your Square account</span></div>
+    <div style="font-size:12px;color:#9fbfae;line-height:1.5;margin-bottom:11px;">Sign in with Square and approve access \u2014 no tokens to copy. Each provider connects their <b>own</b> Square account.</div>
+    <div id="sqg-oauth-body"><button onclick="_sqConnect()" style="width:100%;background:#4ec49a;color:#06231a;border:none;border-radius:9px;padding:11px;font-size:13px;font-weight:700;cursor:pointer;font-family:inherit;"><i class="ti ti-plug" style="font-size:14px;"></i> Connect with Square</button></div>
+  </div>
   <div style="padding:0 16px 10px;"><button onclick="nav('square-guide')" style="width:100%;background:var(--accent-tint);color:var(--accent);border:1px solid var(--accent);border-radius:10px;padding:11px;font-size:13px;font-weight:600;cursor:pointer;font-family:inherit;display:flex;align-items:center;justify-content:center;gap:7px;"><i class="ti ti-help-circle" style="font-size:15px;"></i> New to this? Step-by-step setup guide</button></div>
   <div style="display:flex;gap:8px;padding:0 16px 6px;">
     <button onclick="_sqLoadCustomers()" style="flex:1;background:var(--accent);color:var(--accent-ink);border:none;border-radius:10px;padding:12px;font-size:13px;font-weight:600;cursor:pointer;font-family:inherit;"><i class="ti ti-users"></i> Import clients</button>
@@ -6534,6 +6576,7 @@ function renderSquareSync(){
   <div style="padding:0 16px;"><button onclick="_sqKey(true);proToast('Access key updated')" style="background:none;border:none;color:#777;font-size:11px;cursor:pointer;padding:4px 0;"><i class="ti ti-key" style="font-size:11px;"></i> Change access key</button></div>
   <div id="sq-results" style="padding:6px 16px 20px;"></div>`;
   _sqCheckStatus();
+  _sqRenderConnState();
 }
 async function _sqCheckStatus(){
   const el=document.getElementById('sq-status');if(!el)return;
