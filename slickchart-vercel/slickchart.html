@@ -693,7 +693,7 @@ const Cloud={
   _origSet:null,_queue:{},_timer:null,
   async status(){try{const r=await fetch('/api/cloud-status');const j=await r.json();this.enabled=!!(j&&j.enabled);}catch(e){this.enabled=false;}return this.enabled;},
   async login(email,pw){const r=await fetch('/api/login',{method:'POST',headers:{'Content-Type':'application/json'},body:JSON.stringify({email,password:pw})});let j={};try{j=await r.json();}catch(e){}if(!r.ok)throw new Error((j&&j.error)||'Login failed');this.token=j.token;try{localStorage.setItem('sc_token',this.token);if(j.email)localStorage.setItem('sc_login_email',j.email);}catch(e){}return j;},
-  async signup(email,pw,name){const r=await fetch('/api/signup',{method:'POST',headers:{'Content-Type':'application/json'},body:JSON.stringify({email,password:pw,name})});let j={};try{j=await r.json();}catch(e){}if(!r.ok)throw new Error((j&&j.error)||'Sign up failed');this.token=j.token;try{localStorage.setItem('sc_token',this.token);if(j.email)localStorage.setItem('sc_login_email',j.email);}catch(e){}return j;},
+  async signup(email,pw,name,optIn){const r=await fetch('/api/signup',{method:'POST',headers:{'Content-Type':'application/json'},body:JSON.stringify({email,password:pw,name,optIn:!!optIn})});let j={};try{j=await r.json();}catch(e){}if(!r.ok)throw new Error((j&&j.error)||'Sign up failed');this.token=j.token;try{localStorage.setItem('sc_token',this.token);if(j.email)localStorage.setItem('sc_login_email',j.email);}catch(e){}return j;},
   async requestReset(email){try{await fetch('/api/request-reset',{method:'POST',headers:{'Content-Type':'application/json'},body:JSON.stringify({email})});}catch(e){}return true;},
   async resetPw(token,pw){const r=await fetch('/api/reset',{method:'POST',headers:{'Content-Type':'application/json'},body:JSON.stringify({token,password:pw})});let j={};try{j=await r.json();}catch(e){}if(!r.ok)throw new Error((j&&j.error)||'Reset failed');return true;},
   async verifyEmail(token){try{const r=await fetch('/api/verify?token='+encodeURIComponent(token));return r.ok;}catch(e){return false;}},
@@ -800,6 +800,7 @@ function renderLogin(err){
       <label class="fl-lbl" for="login-pw">${t('password')}</label>
       <input id="login-pw" type="password" autocomplete="${signup?'new-password':'current-password'}" onkeydown="if(event.key==='Enter'){${signup?'doSignup()':'doLogin()'}}" style="width:100%;background:#161616;border:1px solid #2a2a2a;border-radius:10px;padding:12px 14px;font-size:15px;color:#f0f0f0;outline:none;margin-bottom:6px;box-sizing:border-box;">
       ${signup?`<div style="font-size:11px;color:#777;margin-bottom:6px;">${t('min8')}</div>`:`<div style="text-align:right;margin-bottom:6px;"><button onclick="_setLoginMode('reset')" style="background:none;border:none;color:#888;cursor:pointer;font-family:inherit;font-size:12px;">${t('forgot')}</button></div>`}
+      ${signup?`<label style="display:flex;align-items:flex-start;gap:8px;margin-bottom:12px;cursor:pointer;"><input type="checkbox" id="login-optin" checked style="margin-top:2px;width:16px;height:16px;accent-color:var(--accent);flex-shrink:0;"><span style="font-size:12px;color:#999;line-height:1.5;">Email me occasional product updates &amp; tips (about every 2 weeks). Unsubscribe anytime.</span></label>`:''}
       <div id="login-err" role="alert" style="font-size:12px;color:#e87070;min-height:16px;margin-bottom:10px;">${err||''}</div>
       <button onclick="${signup?'doSignup()':'doLogin()'}" style="${btn}">${signup?t('create_account'):t('log_in')}</button>
       <div style="text-align:center;margin-top:16px;font-size:13px;color:#888;">${signup?t('have_account'):t('new_here')} <button onclick="_setLoginMode('${signup?'login':'signup'}')" style="background:none;border:none;color:var(--accent);font-weight:600;cursor:pointer;font-family:inherit;font-size:13px;">${signup?t('login_link'):t('create_link')}</button></div>`;
@@ -823,8 +824,9 @@ function doLogin(){
 }
 function doSignup(){
   const email=_loginVal('login-email');const pw=(document.getElementById('login-pw')||{}).value||'';const name=_loginVal('login-name');
+  const optIn=!!((document.getElementById('login-optin')||{}).checked);
   const er=document.getElementById('login-err');if(er)er.textContent='';
-  Cloud.signup(email,pw,name).then(async()=>{
+  Cloud.signup(email,pw,name,optIn).then(async()=>{
     try{await Cloud.pushAllLocal();}catch(e){}
     try{if(name&&typeof bizInfo!=='undefined'){if(!bizInfo.ownerName||bizInfo.ownerName==='Jessica Lee, LE')bizInfo.ownerName=name;if(typeof saveBizInfo==='function')saveBizInfo();if(typeof _syncProviderAvatar==='function')_syncProviderAvatar();}}catch(e){}
     const ov=document.getElementById('login-screen');if(ov)ov.remove();nav('home');
@@ -1165,7 +1167,7 @@ function nav(screen,data){
   // track history for the global back button (skip when we're navigating back)
   if(!_navBacking){if(_navCur&&(_navCur.screen!==screen||_navCur.data!==data)){_navStack.push(_navCur);if(_navStack.length>40)_navStack.shift();}}
   _navCur={screen,data};
-  const titles={home:'Home',clients:'Clients',forms:'Forms',messages:'Messages',pro:'Pro',more:'More',account:'Account',branding:'Branding',shop:'Shop',partners:'Partners',learn:'Learn',virtual:'Virtual Consultations',protocols:'Protocols',vault:'My Docs',inventory:'Inventory',vendors:'Vendors',calendar:'Calendar',room:'Session','data-setup':'Get set up','import-clients':'Import clients','import-products':'Import products','switch-app':'Switch apps','connect-calendar':'Sync calendar','checkout':'Take payment'};
+  const titles={home:'Home',clients:'Clients',forms:'Forms',messages:'Messages',pro:'Pro',more:'More',account:'Account',branding:'Branding',shop:'Shop',partners:'Partners',learn:'Learn',virtual:'Virtual Consultations',protocols:'Protocols',vault:'My Docs',inventory:'Inventory',vendors:'Vendors',calendar:'Calendar',room:'Session','data-setup':'Get set up','import-clients':'Import clients','import-products':'Import products','switch-app':'Switch apps','connect-calendar':'Sync calendar','checkout':'Take payment','whats-new':"What’s new",'feedback-inbox':'Feedback inbox'};
   document.getElementById('tt').textContent='SlickChart';
   document.title='SlickChart' + (titles[screen] ? ' — '+titles[screen] : '');
   if(timerInt&&screen!=='room'){clearInterval(timerInt);timerInt=null;}
@@ -1211,7 +1213,7 @@ function nav(screen,data){
     'invite-staff':renderInviteStaff,
     calendar:renderCalendar,
     requests:renderRequests,
-    'data-setup':renderDataSetup,'import-clients':renderImportClients,'import-products':renderImportProducts,'switch-app':renderSwitchApp,'connect-calendar':renderConnectCalendar,
+    'data-setup':renderDataSetup,'import-clients':renderImportClients,'import-products':renderImportProducts,'switch-app':renderSwitchApp,'connect-calendar':renderConnectCalendar,'whats-new':renderWhatsNew,'feedback-inbox':renderFeedbackInbox,
     checkins:renderCheckins,
     'checkin-detail':()=>renderCheckinDetail(data),
     'add-partner':renderAddPartner,
@@ -5819,6 +5821,7 @@ function confirmSendResource(ri,cid){
 // Beta feedback (reachable from onboarding + settings)
 function openBetaFeedback(){
   const old=document.getElementById('beta-fb');if(old)old.remove();
+  _betaRating=0;
   const m=document.createElement('div');m.id='beta-fb';
   m.style.cssText='position:absolute;inset:0;z-index:500;display:flex;flex-direction:column;justify-content:flex-end;';
   m.innerHTML=`
@@ -5827,8 +5830,9 @@ function openBetaFeedback(){
     <div style="width:36px;height:4px;background:#2a2a2a;border-radius:2px;margin:0 auto 16px;"></div>
     <div style="display:flex;align-items:center;gap:8px;margin-bottom:6px;"><span style="background:var(--accent-tint);color:var(--accent);font-size:10px;font-weight:700;padding:3px 8px;border-radius:6px;letter-spacing:.04em;">BETA</span><span style="font-size:16px;font-weight:600;color:#f0f0f0;">Share feedback</span></div>
     <div style="font-size:13px;color:#888;margin-bottom:14px;line-height:1.5;">You're an early tester — tell us what's working and what's not. It goes straight to the team.</div>
+    <div style="display:flex;gap:10px;justify-content:center;margin-bottom:14px;">${[['1','😕'],['2','😐'],['3','🙂'],['4','😃'],['5','🤩']].map(([n,e])=>`<button id="fbr-${n}" onclick="_setBetaRating(${n})" style="background:none;border:none;font-size:26px;cursor:pointer;opacity:.3;transition:opacity .1s;">${e}</button>`).join('')}</div>
     <textarea id="beta-fb-text" placeholder="What would make SlickChart better for you?" style="width:100%;height:110px;background:#0f0f0f;border:1px solid #2a2a2a;border-radius:10px;padding:11px;font-size:13px;color:#e0e0e0;resize:none;font-family:inherit;line-height:1.5;outline:none;margin-bottom:12px;"></textarea>
-    <button onclick="document.getElementById('beta-fb').remove();proToast('Thanks! Your feedback was sent. 💛');" class="btnp" style="border-radius:10px;"><i class="ti ti-send"></i> Send feedback</button>
+    <button onclick="_sendBetaFeedback()" class="btnp" style="border-radius:10px;"><i class="ti ti-send"></i> Send feedback</button>
     <button onclick="document.getElementById('beta-fb').remove()" style="width:100%;margin-top:9px;background:none;border:none;font-size:14px;color:#666;cursor:pointer;padding:6px;">Cancel</button>
   </div>`;
   document.querySelector('.shell').appendChild(m);
@@ -6564,6 +6568,62 @@ async function _coDoCharge(id,cardId){
   }catch(e){_coErr(e.message||'The charge did not go through.',_coRecon(e));}
 }
 
+
+// ── Beta ops: feedback capture, "What's new" changelog ──
+let _betaRating=0;
+function _setBetaRating(n){_betaRating=n;['1','2','3','4','5'].forEach(k=>{const el=document.getElementById('fbr-'+k);if(el)el.style.opacity=(parseInt(k,10)<=n)?'1':'.3';});}
+async function _sendBetaFeedback(){
+  const txt=((document.getElementById('beta-fb-text')||{}).value)||'';
+  if(!txt.trim()&&!_betaRating){proToast('Tell us a little first');return;}
+  try{const tok=(typeof Cloud!=='undefined'&&Cloud&&Cloud.token)||'';await fetch('/api/feedback',{method:'POST',headers:Object.assign({'Content-Type':'application/json'},tok?{'Authorization':'Bearer '+tok}:{}),body:JSON.stringify({rating:_betaRating||undefined,message:txt})});}catch(e){}
+  const m=document.getElementById('beta-fb');if(m)m.remove();_betaRating=0;proToast('Thanks! Your feedback was sent. \ud83d\udc9b');
+}
+let _news=[];
+async function _checkNews(){
+  try{
+    const tok=(typeof Cloud!=='undefined'&&Cloud&&Cloud.token)||'';
+    const r=await fetch('/api/announcements',{headers:tok?{'Authorization':'Bearer '+tok}:{}});
+    const j=await r.json();_news=j.items||[];window._newsCanPost=!!j.canPost;
+    let seen=0;try{seen=parseInt(localStorage.getItem('sc_seen_news')||'0',10);}catch(e){}
+    window._newsUnread=_news.some(n=>n.ts>seen);
+  }catch(e){}
+}
+function _newsSeen(){try{if(_news[0])localStorage.setItem('sc_seen_news',String(_news[0].ts));}catch(e){}window._newsUnread=false;}
+
+function renderFeedbackInbox(){
+  setNav('more');document.getElementById('tt').textContent='Feedback inbox';
+  S.innerHTML=`<div style="padding:14px 16px 4px;"><div style="font-size:13px;color:#999;line-height:1.5;">What your beta testers submitted \u2014 newest first.</div></div><div id="fbin" style="padding:12px 16px;color:#888;font-size:13px;">Loading feedback\u2026</div>`;
+  _loadFeedbackInbox();
+}
+async function _loadFeedbackInbox(){
+  const el=document.getElementById('fbin');if(!el)return;
+  try{
+    const tok=(typeof Cloud!=='undefined'&&Cloud&&Cloud.token)||'';
+    const r=await fetch('/api/feedback',{headers:tok?{'Authorization':'Bearer '+tok}:{}});
+    if(r.status===403){el.innerHTML='<div style="color:#e8a060;font-size:13px;">This inbox is owner-only.</div>';return;}
+    const j=await r.json();const items=j.items||[];
+    if(!items.length){el.innerHTML='<div style="text-align:center;color:#888;font-size:13px;padding:26px;background:#161616;border:1px solid #242424;border-radius:12px;">No feedback yet.</div>';return;}
+    const emo=['','\ud83d\ude15','\ud83d\ude10','\ud83d\ude42','\ud83d\ude03','\ud83e\udd29'];
+    const fmt=ts=>{try{return new Date(ts).toLocaleDateString('en-US',{month:'short',day:'numeric'});}catch(e){return '';}};
+    el.innerHTML='<div style="font-size:12px;color:#999;margin-bottom:10px;">'+items.length+' response'+(items.length===1?'':'s')+'</div>'+items.map(f=>'<div style="background:#161616;border:1px solid #242424;border-radius:12px;padding:12px 14px;margin-bottom:10px;"><div style="display:flex;justify-content:space-between;align-items:center;margin-bottom:5px;"><span style="font-size:18px;">'+(emo[f.rating]||'\ud83d\udcac')+'</span><span style="font-size:11px;color:#777;">'+fmt(f.ts)+'</span></div>'+(f.message?'<div style="font-size:13px;color:#ddd;line-height:1.6;white-space:pre-wrap;">'+String(f.message).replace(/</g,'&lt;')+'</div>':'<div style="font-size:12px;color:#777;font-style:italic;">(rating only)</div>')+(f.email?'<div style="font-size:11px;color:#666;margin-top:6px;">'+String(f.email).replace(/</g,'&lt;')+'</div>':'')+'</div>').join('');
+  }catch(e){el.innerHTML='<div style="color:#e8a060;font-size:13px;">Could not load feedback right now.</div>';}
+}
+
+function renderWhatsNew(){
+  setNav('more');document.getElementById('tt').textContent="What\u2019s new";
+  const fmt=ts=>{try{return new Date(ts).toLocaleDateString('en-US',{month:'short',day:'numeric',year:'numeric'});}catch(e){return '';}};
+  const composer=window._newsCanPost?`<div style="margin:0 16px 14px;background:#161616;border:1px solid #242424;border-radius:12px;padding:14px;"><div style="font-size:12px;font-weight:600;color:var(--accent);margin-bottom:8px;">Post an update (owner)</div><input id="an-title" class="fi" placeholder="Title \u2014 e.g. New: Google Calendar sync" style="margin-bottom:8px;"><textarea id="an-body" class="fi" placeholder="What changed, and what to try" style="height:70px;resize:vertical;margin-bottom:8px;"></textarea><button class="btnp" style="width:100%;border-radius:9px;" onclick="_postAnnouncement()"><i class="ti ti-send"></i> Publish update</button></div>`:'';
+  const list=_news.length?_news.map(n=>`<div style="margin:0 16px 12px;background:#161616;border:1px solid #242424;border-radius:12px;padding:14px;"><div style="font-size:11px;color:#777;margin-bottom:4px;">${fmt(n.ts)}</div><div style="font-size:14px;font-weight:600;color:#f0f0f0;margin-bottom:5px;">${String(n.title||'').replace(/</g,'&lt;')}</div>${n.body?`<div style="font-size:13px;color:#bbb;line-height:1.6;white-space:pre-wrap;">${String(n.body).replace(/</g,'&lt;')}</div>`:''}</div>`).join(''):`<div style="margin:14px 16px;text-align:center;color:#888;font-size:13px;padding:26px 16px;background:#161616;border:1px solid #242424;border-radius:12px;">No updates yet \u2014 check back soon.</div>`;
+  S.innerHTML=`<div style="padding:14px 16px 6px;"><div style="font-size:13px;color:#999;line-height:1.5;">Everything new in SlickChart \u2014 many of these come straight from beta-tester feedback. \ud83d\udc9b</div></div>${composer}${list}<div style="height:20px;"></div>`;
+  _newsSeen();
+}
+async function _postAnnouncement(){
+  const t=((document.getElementById('an-title')||{}).value)||'';const b=((document.getElementById('an-body')||{}).value)||'';
+  if(!t.trim()){proToast('Add a title');return;}
+  try{const tok=(typeof Cloud!=='undefined'&&Cloud&&Cloud.token)||'';const r=await fetch('/api/announcements',{method:'POST',headers:{'Content-Type':'application/json','Authorization':'Bearer '+tok},body:JSON.stringify({title:t,body:b})});const j=await r.json();if(!r.ok)throw new Error(j.error||'Failed');proToast('Update published \u2713');await _checkNews();renderWhatsNew();}catch(e){proToast(e.message||'Could not publish');}
+}
+setTimeout(()=>{try{_checkNews();}catch(e){}},1500);
+
 function renderConnectCalendar(){
   setNav('account');document.getElementById('tt').textContent='Sync calendar';
   S.innerHTML=`
@@ -7067,11 +7127,13 @@ function renderMore(){
   })()}
   <div class="sh"><h2>Beta program</h2></div>
   <div style="background:#1a1a1a;border:1px solid #2a2a2a;border-radius:12px;margin:0 16px 20px;overflow:hidden;">
+    <div onclick="nav('whats-new')" style="display:flex;align-items:center;gap:11px;padding:13px 14px;border-bottom:1px solid #222;cursor:pointer;"><div style="width:38px;height:38px;border-radius:10px;background:#0a2019;display:flex;align-items:center;justify-content:center;flex-shrink:0;position:relative;"><i class="ti ti-sparkles" style="font-size:18px;color:#4ec49a;"></i>${window._newsUnread?'<span style="position:absolute;top:-3px;right:-3px;width:10px;height:10px;background:#e87070;border-radius:50%;border:2px solid #1a1a1a;"></span>':''}</div><div style="flex:1;"><div style="font-size:14px;font-weight:500;color:#e0e0e0;">What’s new</div><div style="font-size:12px;color:${window._newsUnread?'var(--accent)':'#999'};">${window._newsUnread?'New updates':'Latest updates & changes'}</div></div><i class="ti ti-chevron-right" style="font-size:16px;color:#888;"></i></div>
     <div onclick="openBetaFeedback()" style="display:flex;align-items:center;gap:11px;padding:13px 14px;border-bottom:1px solid #222;cursor:pointer;">
       <div style="width:38px;height:38px;border-radius:10px;background:var(--accent-tint);display:flex;align-items:center;justify-content:center;flex-shrink:0;"><i class="ti ti-message-2" style="font-size:18px;color:var(--accent);"></i></div>
       <div style="flex:1;"><div style="font-size:14px;font-weight:500;color:#e0e0e0;">Share feedback</div><div style="font-size:12px;color:#999;">Tell us what to build next</div></div>
       <i class="ti ti-chevron-right" style="font-size:16px;color:#888;"></i>
     </div>
+    ${window._newsCanPost?`<div onclick="nav('feedback-inbox')" style="display:flex;align-items:center;gap:11px;padding:13px 14px;border-bottom:1px solid #222;cursor:pointer;"><div style="width:38px;height:38px;border-radius:10px;background:#1e1633;display:flex;align-items:center;justify-content:center;flex-shrink:0;"><i class="ti ti-inbox" style="font-size:18px;color:#a891ec;"></i></div><div style="flex:1;"><div style="font-size:14px;font-weight:500;color:#e0e0e0;">Feedback inbox</div><div style="font-size:12px;color:#999;">Read what your testers submitted</div></div><i class="ti ti-chevron-right" style="font-size:16px;color:#888;"></i></div>`:''}
     <div onclick="replayOnboarding()" style="display:flex;align-items:center;gap:11px;padding:13px 14px;cursor:pointer;">
       <div style="width:38px;height:38px;border-radius:10px;background:#0d1e33;display:flex;align-items:center;justify-content:center;flex-shrink:0;"><i class="ti ti-refresh" style="font-size:18px;color:#5ba3e8;"></i></div>
       <div style="flex:1;"><div style="font-size:14px;font-weight:500;color:#e0e0e0;">Replay setup tour</div><div style="font-size:12px;color:#999;">Revisit the welcome & setup steps</div></div>
