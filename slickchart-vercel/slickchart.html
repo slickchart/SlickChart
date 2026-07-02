@@ -1165,7 +1165,7 @@ function nav(screen,data){
   // track history for the global back button (skip when we're navigating back)
   if(!_navBacking){if(_navCur&&(_navCur.screen!==screen||_navCur.data!==data)){_navStack.push(_navCur);if(_navStack.length>40)_navStack.shift();}}
   _navCur={screen,data};
-  const titles={home:'Home',clients:'Clients',forms:'Forms',messages:'Messages',pro:'Pro',more:'More',account:'Account',branding:'Branding',shop:'Shop',partners:'Partners',learn:'Learn',virtual:'Virtual Consultations',protocols:'Protocols',vault:'My Docs',inventory:'Inventory',vendors:'Vendors',calendar:'Calendar',room:'Session'};
+  const titles={home:'Home',clients:'Clients',forms:'Forms',messages:'Messages',pro:'Pro',more:'More',account:'Account',branding:'Branding',shop:'Shop',partners:'Partners',learn:'Learn',virtual:'Virtual Consultations',protocols:'Protocols',vault:'My Docs',inventory:'Inventory',vendors:'Vendors',calendar:'Calendar',room:'Session','data-setup':'Get set up','import-clients':'Import clients','import-products':'Import products'};
   document.getElementById('tt').textContent='SlickChart';
   document.title='SlickChart' + (titles[screen] ? ' — '+titles[screen] : '');
   if(timerInt&&screen!=='room'){clearInterval(timerInt);timerInt=null;}
@@ -1211,6 +1211,7 @@ function nav(screen,data){
     'invite-staff':renderInviteStaff,
     calendar:renderCalendar,
     requests:renderRequests,
+    'data-setup':renderDataSetup,'import-clients':renderImportClients,'import-products':renderImportProducts,
     checkins:renderCheckins,
     'checkin-detail':()=>renderCheckinDetail(data),
     'add-partner':renderAddPartner,
@@ -5136,7 +5137,7 @@ function renderUploadDoc(){
     <button class="btnp" style="border-radius:8px;margin-bottom:20px;" onclick="nav('vault')"><i class="ti ti-check"></i> Save document</button>
   </div>`;
 }
-function renderInventory(){
+function renderInventory(){try{_applyImportedProducts();}catch(e){}
   setNav('pro');
   document.getElementById('tt').textContent='Inventory';
   S.innerHTML=`
@@ -5389,7 +5390,7 @@ function renderCourseBuilder(id){
 }
 
 // ── SHOP ──
-function renderShop(){
+function renderShop(){try{_applyImportedProducts();}catch(e){}
   setNav('more');
   document.getElementById('tt').textContent='Shop';
   S.innerHTML=`<div id="stab-content"></div>`;
@@ -5632,7 +5633,7 @@ function renderAccount(){
     ].map(([icon,bg,ic,name,desc,screen])=>`<div class="nr" style="padding:11px 14px;" ${screen?`onclick="nav('${screen}')"`:''}><div style="width:38px;height:38px;border-radius:10px;background:${bg};display:flex;align-items:center;justify-content:center;flex-shrink:0;"><i class="ti ${icon}" style="font-size:18px;color:${ic};"></i></div><div style="flex:1;"><div style="font-size:14px;font-weight:500;color:#e0e0e0;">${name}</div><div style="font-size:12px;color:#999;">${desc}</div></div><i aria-hidden="true" class="ti ti-chevron-right" style="font-size:16px;color:#888;"></i></div>`).join('')}
   </div>
   <button onclick="_doLogout()" style="width:100%;border:1px solid #555;background:none;border-radius:10px;padding:11px;font-size:14px;color:#bbb;cursor:pointer;margin-top:10px;font-family:inherit;">Sign out</button>
-  <div style="text-align:center;padding:14px;font-size:11px;color:#888;">SlickChart · Version 1.0.2</div></div>`;
+  <div style="text-align:center;padding:14px;font-size:11px;color:#888;">SlickChart · Version 1.0.3</div></div>`;
 }
 
 
@@ -5672,8 +5673,8 @@ function finishOnboarding(){
   SlickBridge.setAvailability(normalizeAvail(onboardData.avail));   // feeds the client booking flow (per-day)
   localStorage.setItem('sc_onboarded','1');
   closeOnboard();
-  nav('home');
-  setTimeout(()=>proToast('You\'re all set — welcome to SlickChart! ✨'),200);
+  nav('data-setup');
+  setTimeout(()=>proToast('You\'re all set — let\'s bring your data in ✨'),200);
 }
 
 function onboardToggleProf(id){
@@ -6343,11 +6344,131 @@ function renderNotifications(){
     </div>`).join('')}
   <div style="height:16px;"></div>`;
 }
+
+// ── Bring-your-data-in: bulk CSV import for providers switching from another system ──
+let _csvKind='clients';
+let _importedProducts=(function(){try{return JSON.parse(localStorage.getItem('sc_imported_products')||'[]');}catch(e){return [];}})();
+function _applyImportedProducts(){try{(_importedProducts||[]).forEach(pr=>{if(!affiliateLinks.some(a=>(a.name||'').toLowerCase()===(pr.name||'').toLowerCase()))affiliateLinks.push(pr);});}catch(e){}}
+function _parseCSV(text){
+  const rows=[];let i=0,field='',row=[],inQ=false;text=String(text||'').replace(/\r\n?/g,'\n');
+  while(i<text.length){const ch=text[i];
+    if(inQ){if(ch==='"'){if(text[i+1]==='"'){field+='"';i++;}else{inQ=false;}}else{field+=ch;}}
+    else{if(ch==='"'){inQ=true;}else if(ch===','){row.push(field);field='';}else if(ch==='\n'){row.push(field);rows.push(row);row=[];field='';}else{field+=ch;}}
+    i++;
+  }
+  if(field.length||row.length){row.push(field);rows.push(row);}
+  return rows.filter(r=>r.length&&r.some(c=>String(c).trim()!==''));
+}
+function _mapClientRows(rows){
+  if(rows.length<2)return [];
+  const H=rows[0].map(h=>String(h).trim().toLowerCase());
+  const find=re=>H.findIndex(h=>re.test(h));
+  const iFirst=find(/first|given/), iLast=find(/last|family|surname/);
+  const iName=H.findIndex(h=>h.includes('name')&&!/first|last|given|family|user|file/.test(h));
+  const iEmail=find(/e-?mail/), iPhone=find(/phone|mobile|cell/), iBday=find(/birth|dob/), iNotes=find(/note|concern|comment/);
+  const out=[];
+  for(let r=1;r<rows.length;r++){const c=rows[r];
+    let name='';
+    if(iFirst>=0||iLast>=0)name=[(c[iFirst]||''),(c[iLast]||'')].join(' ').trim();
+    if(!name&&iName>=0)name=String(c[iName]||'').trim();
+    if(!name&&iEmail<0&&iPhone<0)name=String(c[0]||'').trim();
+    if(!name)continue;
+    out.push({name,email:iEmail>=0?String(c[iEmail]||'').trim():'',phone:iPhone>=0?String(c[iPhone]||'').trim():'',birthday:iBday>=0?String(c[iBday]||'').trim():'',notes:iNotes>=0?String(c[iNotes]||'').trim():''});
+  }
+  return out;
+}
+function _mapProductRows(rows){
+  if(rows.length<2)return [];
+  const H=rows[0].map(h=>String(h).trim().toLowerCase());
+  const find=re=>H.findIndex(h=>re.test(h));
+  const iName=H.findIndex(h=>h.includes('name')&&!/brand|user|file/.test(h)), iBrand=find(/brand|maker|line/), iUrl=find(/url|link|web|site/);
+  const out=[];
+  for(let r=1;r<rows.length;r++){const c=rows[r];const name=iName>=0?String(c[iName]||'').trim():String(c[0]||'').trim();if(!name)continue;
+    out.push({name,brand:iBrand>=0?String(c[iBrand]||'').trim():'',url:iUrl>=0?String(c[iUrl]||'').trim():''});}
+  return out;
+}
+function _makeClientFromRow(row){
+  const parts=String(row.name).trim().split(/\s+/);
+  const initials=((parts[0]||'?')[0]+((parts[1]||'')[0]||'')).toUpperCase();
+  return {name:row.name,initials,bg:'#2e1c10',tc:'var(--accent)',skin:'\u2014',concerns:row.notes||'\u2014',allergies:'None on file',fitz:'\u2014',lastVisit:'\u2014',nextVisit:'Not scheduled',treatment:'New client',sessions:0,seriesTotal:0,email:row.email||'',phone:row.phone||'',birthday:(typeof _normBirthday==='function'?_normBirthday(row.birthday):(row.birthday||''))||'',source:'import'};
+}
+function _importClientsFromRows(rows){
+  let n=0;(rows||[]).forEach((row,k)=>{
+    const dup=Object.values(CL).some(c=>c.name.toLowerCase()===row.name.toLowerCase()||(row.email&&c.email&&c.email.toLowerCase()===row.email.toLowerCase()));
+    if(dup)return;
+    const base=(row.email||row.name).toLowerCase().replace(/[^a-z0-9]/g,'').slice(0,14)||('row'+k);
+    let id='imp_'+base,x=1;while(CL[id]){id='imp_'+base+(x++);}
+    CL[id]=_makeClientFromRow(row);n++;
+  });
+  if(typeof saveClients==='function')saveClients();
+  return n;
+}
+function _importProductsFromRows(rows){
+  let n=0;(rows||[]).forEach(row=>{
+    const dup=affiliateLinks.some(a=>(a.name||'').toLowerCase()===row.name.toLowerCase())||_importedProducts.some(a=>(a.name||'').toLowerCase()===row.name.toLowerCase());
+    if(dup)return;
+    _importedProducts.push({id:'ip'+Date.now().toString(36)+Math.floor(Math.random()*1e4).toString(36),name:row.name,brand:row.brand||'',icon:'\ud83e\uddf4',url:(row.url||'').replace(/^https?:\/\//,''),active:true,imported:true});n++;
+  });
+  try{localStorage.setItem('sc_imported_products',JSON.stringify(_importedProducts));}catch(e){}
+  _applyImportedProducts();
+  return n;
+}
+function _csvFile(input){const f=input&&input.files&&input.files[0];if(!f)return;const rd=new FileReader();rd.onload=()=>{const ta=document.getElementById('csv-text');if(ta)ta.value=String(rd.result||'');_csvPreview();};rd.readAsText(f);}
+function _csvPreviewHTML(n,noun,sample,fn){
+  if(!n)return '<div style="font-size:12px;color:#e8a060;padding:10px 2px;line-height:1.5;">Couldn\u2019t find any '+noun+'s. Make sure the first row is column headers (like Name, Email, Phone).</div>';
+  return '<div style="background:#0a2019;border:1px solid #1c4030;border-radius:10px;padding:12px 14px;margin-top:10px;"><div style="font-size:13px;font-weight:600;color:#4ec49a;margin-bottom:6px;">Found '+n+' '+noun+(n===1?'':'s')+'</div><div style="font-size:12px;color:#9fbfae;line-height:1.7;margin-bottom:10px;">'+sample.map(x=>'\u2022 '+String(x).replace(/</g,'&lt;')).join('<br>')+(n>5?('<br>\u2026and '+(n-5)+' more'):'')+'</div><button onclick="'+fn+'" style="width:100%;background:var(--accent);color:var(--accent-ink);border:none;border-radius:9px;padding:11px;font-size:13px;font-weight:700;cursor:pointer;font-family:inherit;">Import '+n+' '+noun+(n===1?'':'s')+'</button></div>';
+}
+function _csvPreview(){
+  const ta=document.getElementById('csv-text');const out=document.getElementById('csv-preview');if(!out)return;
+  const rows=_parseCSV(ta?ta.value:'');
+  if(rows.length<2){out.innerHTML='';return;}
+  if(_csvKind==='products'){const m=_mapProductRows(rows);window._csvProdRows=m;out.innerHTML=_csvPreviewHTML(m.length,'product',m.slice(0,5).map(x=>x.name+(x.brand?(' \u00b7 '+x.brand):'')),'_csvDoImportProducts()');}
+  else{const m=_mapClientRows(rows);window._csvRows=m;out.innerHTML=_csvPreviewHTML(m.length,'client',m.slice(0,5).map(x=>x.name+(x.email?(' \u00b7 '+x.email):'')),'_csvDoImport()');}
+}
+function _csvDoImport(){const n=_importClientsFromRows(window._csvRows||[]);proToast(n?('Imported '+n+' client'+(n===1?'':'s')+' \u2713'):'Those clients are already in SlickChart');nav('clients');}
+function _csvDoImportProducts(){const n=_importProductsFromRows(window._csvProdRows||[]);proToast(n?('Imported '+n+' product'+(n===1?'':'s')+' \u2713'):'Those products are already here');nav('shop');}
+function _csvImportScreen(kind){
+  _csvKind=kind;const isProd=kind==='products';
+  setNav('account');document.getElementById('tt').textContent=isProd?'Import products':'Import clients';
+  const ph=isProd?'Name, Brand, Link&#10;C E Ferulic, SkinCeuticals, skinceuticals.com':'Name, Email, Phone, Birthday&#10;Maya Rodriguez, maya@email.com, 415-555-0100, 1994-03-15';
+  const lead=isProd
+    ?'Upload a <b>CSV</b> of the products you sell or recommend. We look for columns like Name, Brand, and Link.'
+    :'Export your clients from your old booking system, spreadsheet, or CRM as a <b>CSV</b> file, then upload it here. SlickChart auto-detects columns like Name, Email, Phone, and Birthday.';
+  S.innerHTML=`
+  <div style="padding:14px 16px 4px;">
+    <div style="font-size:15px;font-weight:600;color:#f0f0f0;margin-bottom:6px;">${isProd?'Import your product list':'Bring your clients over'}</div>
+    <div style="font-size:13px;color:#999;line-height:1.55;margin-bottom:14px;">${lead}</div>
+    <label style="display:block;width:100%;background:var(--accent);color:var(--accent-ink);border-radius:10px;padding:12px;font-size:14px;font-weight:700;text-align:center;cursor:pointer;font-family:inherit;margin-bottom:10px;box-sizing:border-box;"><i class="ti ti-upload" style="font-size:15px;"></i> Choose a CSV file<input type="file" accept=".csv,text/csv,text/plain" onchange="_csvFile(this)" style="display:none;"></label>
+    <div style="font-size:12px;color:#777;text-align:center;margin-bottom:10px;">or paste it below</div>
+    <textarea id="csv-text" oninput="_csvPreview()" placeholder="${ph}" style="width:100%;height:120px;background:#111;border:1px solid #2a2a2a;border-radius:10px;padding:11px 12px;font-size:12px;color:#e0e0e0;font-family:monospace;box-sizing:border-box;outline:none;resize:vertical;"></textarea>
+    <div id="csv-preview"></div>
+    ${isProd?'':'<div style="font-size:11px;color:#777;line-height:1.6;margin-top:14px;background:#161616;border:1px solid #242424;border-radius:10px;padding:11px 13px;"><b style="color:#aaa;">Tip:</b> Almost every system can export a CSV \u2014 look for \u201cExport\u201d in your clients list. The first row should be the column names. We\u2019ll skip anyone already in SlickChart.</div>'}
+  </div><div style="height:20px;"></div>`;
+}
+function renderImportClients(){_csvImportScreen('clients');}
+function renderImportProducts(){_csvImportScreen('products');}
+function renderDataSetup(){
+  setNav('account');document.getElementById('tt').textContent='Get set up';
+  const card=(icon,ic,bg,title,desc,onclick)=>`<div onclick="${onclick}" style="margin:0 16px 12px;background:#161616;border:1px solid #242424;border-radius:12px;padding:14px;display:flex;align-items:center;gap:12px;cursor:pointer;"><div style="width:44px;height:44px;border-radius:10px;background:${bg};display:flex;align-items:center;justify-content:center;flex-shrink:0;"><i class="ti ${icon}" style="font-size:22px;color:${ic};"></i></div><div style="flex:1;min-width:0;"><div style="font-size:14px;font-weight:600;color:#e0e0e0;">${title}</div><div style="font-size:12px;color:#999;margin-top:2px;line-height:1.45;">${desc}</div></div><i class="ti ti-chevron-right" style="font-size:16px;color:#888;flex-shrink:0;"></i></div>`;
+  S.innerHTML=`
+  <div style="padding:14px 16px 4px;"><div style="font-size:19px;font-weight:600;color:#f0f0f0;margin-bottom:4px;">Let\u2019s get your practice set up</div><div style="font-size:13px;color:#999;line-height:1.5;">Bring in your clients and products, and choose how you take bookings \u2014 in any order.</div></div>
+  <div class="sh"><h2>Bring your data in</h2></div>
+  ${card('ti-users','#4ec49a','#0a2019','Import clients from a file','Moving from another system? Upload a spreadsheet (CSV) of your clients.',"nav('import-clients')")}
+  ${card('ti-shopping-bag','var(--accent)','var(--accent-tint)','Import your product list','Upload a CSV of the products you sell or recommend.',"nav('import-products')")}
+  ${card('ti-user-plus','#a891ec','#1e1633','Add clients one by one','Prefer to add them manually? Start a new client profile.',"nav('new-client')")}
+  <div class="sh"><h2>How you take bookings</h2></div>
+  ${card('ti-brand-square','#000','#fff','I use Square','Connect Square to auto-sync clients, appointments &amp; products.',"nav('square-guide')")}
+  ${card('ti-calendar-check','#5ba3e8','#0d1e33','I book myself (no Square)','Clients request times in their app; you confirm the request and add it to your own calendar.',"nav('requests')")}
+  <div style="margin:4px 16px 20px;background:#0d1e33;border:1px solid #1a3a5c;border-radius:10px;padding:11px 13px;font-size:12px;color:#8fc0ea;line-height:1.55;"><i class="ti ti-info-circle" style="font-size:13px;"></i> No Square? No problem. SlickChart works fully on its own \u2014 charting, forms, photos, messaging, product recommendations, and booking requests. Square is optional.</div>
+  <div style="height:20px;"></div>`;
+}
+
 function renderIntegrations(){
   document.getElementById('tt').textContent='Integrations';
   S.innerHTML=`
   
   <div style="margin:10px 16px;background:#0d1e33;border:1px solid #1a3a5c;border-radius:10px;padding:10px 12px;font-size:12px;color:#5ba3e8;line-height:1.5;">Connect your tools to keep everything in sync — appointments, payments, and marketing in one place.</div>
+  <div onclick="nav('data-setup')" style="margin:0 16px 12px;background:linear-gradient(135deg,#0a2019,#0d2a1e);border:1px solid #1c4030;border-radius:12px;padding:13px 14px;display:flex;align-items:center;gap:12px;cursor:pointer;"><div style="width:44px;height:44px;border-radius:10px;background:#0f3324;display:flex;align-items:center;justify-content:center;flex-shrink:0;"><i class="ti ti-upload" style="font-size:22px;color:#4ec49a;"></i></div><div style="flex:1;min-width:0;"><div style="font-size:14px;font-weight:600;color:#e0e0e0;">Get set up / bring your data in</div><div style="font-size:12px;color:#9fbfae;margin-top:1px;">Import clients &amp; products, choose how you book</div></div><i class="ti ti-chevron-right" style="font-size:16px;color:#888;flex-shrink:0;"></i></div>
   <div onclick="nav('square-sync')" style="margin:0 16px 12px;background:linear-gradient(135deg,#161616,#1c1c1c);border:1px solid #2a2a2a;border-radius:12px;padding:13px 14px;display:flex;align-items:center;gap:12px;cursor:pointer;">
     <div style="width:44px;height:44px;border-radius:10px;background:#fff;display:flex;align-items:center;justify-content:center;flex-shrink:0;"><i class="ti ti-brand-square" style="font-size:22px;color:#000;"></i></div>
     <div style="flex:1;min-width:0;"><div style="font-size:14px;font-weight:600;color:#e0e0e0;">Square — live sync</div><div style="font-size:12px;color:#999;margin-top:1px;">Pull in your real clients &amp; upcoming appointments</div></div>
@@ -6493,14 +6614,14 @@ function renderSquareGuide(){
   
   <div style="padding:10px 16px 0;">
     <div style="font-size:19px;font-weight:600;color:#f0f0f0;margin-bottom:4px;">Connect your Square</div>
-    <div style="font-size:13px;color:#999;line-height:1.5;margin-bottom:14px;">A one-time setup, about 15 minutes. Once it's done, SlickChart automatically pulls in your clients, your upcoming appointments, and your products &amp; prices — and keeps your own shop as the default place clients buy.</div>
+    <div style="font-size:13px;color:#999;line-height:1.5;margin-bottom:14px;">Connect your Square so SlickChart can pull in your clients, upcoming appointments, and products &amp; prices — and keep your own shop as the default place clients buy. The easy way takes about a minute.</div>
     <div id="sqg-status" style="background:#161616;border:1px solid #242424;border-radius:12px;padding:12px 14px;font-size:12px;color:#999;margin-bottom:14px;">Checking what's set up…</div>
     <div id="sqg-oauth" style="background:#0a1f16;border:1px solid #1c4030;border-radius:12px;padding:14px;margin-bottom:18px;">
       <div style="display:flex;align-items:center;gap:8px;margin-bottom:6px;"><i class="ti ti-plug-connected" style="font-size:16px;color:#4ec49a;"></i><span style="font-size:14px;font-weight:600;color:#f0f0f0;">Connect your Square account</span></div>
       <div style="font-size:12px;color:#9fbfae;line-height:1.5;margin-bottom:11px;">The easy way \u2014 sign in with Square and approve access. No tokens to copy, and each provider connects their <b>own</b> Square account.</div>
       <div id="sqg-oauth-body"><button onclick="_sqConnect()" style="width:100%;background:#4ec49a;color:#06231a;border:none;border-radius:9px;padding:11px;font-size:13px;font-weight:700;cursor:pointer;font-family:inherit;"><i class="ti ti-plug" style="font-size:14px;"></i> Connect with Square</button></div>
     </div>
-    <div style="font-size:11px;font-weight:600;color:#aaa;text-transform:uppercase;letter-spacing:.06em;margin:0 0 10px;">Or set it up manually (advanced)</div>
+    <div style="background:#0d1e14;border:1px solid #163a2a;border-radius:12px;padding:13px 14px;margin-bottom:16px;"><div style="font-size:12px;font-weight:700;color:#4ec49a;text-transform:uppercase;letter-spacing:.05em;margin-bottom:8px;">The easy way (recommended)</div><div style="font-size:13px;color:#cfe4d8;line-height:1.6;">1. Tap <b>Connect with Square</b> above.<br>2. Sign in to Square and approve access.<br>3. You\u2019re brought right back — connected. Tap <b>Import clients</b> on the Square sync screen to pull your data in.<br><span style="color:#8fbfa6;">No tokens to copy, nothing to set up in Vercel.</span></div></div><button onclick="_sqGuideToggle('manual')" style="width:100%;display:flex;align-items:center;gap:8px;background:none;border:none;border-top:1px solid #242424;color:#aaa;font-size:11px;font-weight:600;text-transform:uppercase;letter-spacing:.06em;text-align:left;padding:12px 2px;cursor:pointer;font-family:inherit;"><i id="sqg-chev-manual" class="ti ti-chevron-right" style="font-size:13px;color:var(--accent);transition:transform .15s;"></i><span style="flex:1;">Set it up manually instead (advanced / self-hosting)</span></button><div id="sqg-manual" style="display:none;">
     <div style="background:#161616;border:1px solid #242424;border-radius:12px;padding:14px;margin-bottom:18px;">
       <div style="display:flex;align-items:center;gap:8px;margin-bottom:6px;"><i class="ti ti-calendar-check" style="font-size:16px;color:var(--accent);"></i><span style="font-size:14px;font-weight:600;color:#f0f0f0;">Ready to take live bookings?</span></div>
       <div style="font-size:12px;color:#999;line-height:1.5;margin-bottom:11px;">Check that your Square access token has the permissions needed to create appointments and clients — one tap, no developer tools.</div>
@@ -6513,6 +6634,7 @@ function renderSquareGuide(){
     ${step('4','Come back and check the badges',`Return to Square sync. The status card up top should show <b>Access token ✓</b>, <b>Access key ✓</b>, and <b>Production</b>. If any is red, revisit that step and redeploy.`,`<button onclick="nav('square-sync')" style="margin-top:9px;background:#1a1a1a;border:1px solid #2a2a2a;color:#e0e0e0;border-radius:8px;padding:8px 13px;font-size:12px;font-weight:600;cursor:pointer;font-family:inherit;"><i class="ti ti-arrow-left" style="font-size:12px;"></i> Back to Square sync</button>`)}
     ${step('5','Enter your access key',`Tap a sync button (like <b>Import clients</b>). The first time, SlickChart asks for your access key — paste the same <b>APP_SHARED_SECRET</b> you set in step 2. It's remembered for the rest of your visit.`,'')}
     ${step('6','Pull everything in',`Tap <b>Import clients</b>, <b>Upcoming</b>, and <b>Products &amp; services</b> to bring your Square data in. Then paste your <b>shop link</b> (like <span style="font-family:monospace;color:#d8c4a8;">yourshop.square.site</span>) so product <b>Buy</b> buttons point to your own store.`,`<button onclick="nav('square-sync')" style="margin-top:9px;background:var(--accent);border:none;color:var(--accent-ink);border-radius:8px;padding:8px 14px;font-size:12px;font-weight:700;cursor:pointer;font-family:inherit;">Go to Square sync</button>`)}
+    </div>
     <div style="font-size:11px;font-weight:600;color:#aaa;text-transform:uppercase;letter-spacing:.06em;margin:10px 0 2px;">Common questions</div>
     ${faq('t1','The "Access token" badge is red',`Your <span style="font-family:monospace;">SQUARE_ACCESS_TOKEN</span> isn't set, or has a typo or stray space. Re-check it in Vercel → Environment Variables, then redeploy.`)}
     ${faq('t2','The "Access key" badge is red',`Your <span style="font-family:monospace;">APP_SHARED_SECRET</span> isn't set in Vercel. Add it, redeploy, then enter the same value in-app when asked.`)}
