@@ -40,7 +40,7 @@ export default async function handler(req, res) {
       customerId = c.customer && c.customer.id;
     }
     // 2) itemized order
-    const order = await sf('/v2/orders', { method: 'POST', body: { idempotency_key: 'sc-o-' + Date.now(), order: { location_id: locationId, customer_id: customerId, line_items: orderLineItems } } });
+    const order = await sf('/v2/orders', { method: 'POST', body: { idempotency_key: 'sc-o-' + Date.now(), order: { location_id: locationId, customer_id: customerId, line_items: orderLineItems, pricing_options: { auto_apply_taxes: true } } } });
     const orderId = order.order && order.order.id;
     const total = order.order && order.order.total_money ? order.order.total_money.amount / 100 : null;
     // 3) invoice
