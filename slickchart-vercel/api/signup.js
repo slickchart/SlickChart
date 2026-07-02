@@ -1,8 +1,9 @@
-// POST /api/signup   body: { email, password, name }
-// Creates a provider account and returns a session token scoped to that provider.
-// Each provider's data is isolated in the kv table by owner = provider id.
+// POST /api/signup  { email, password, name }
+// Creates a provider account (unverified), emails a verification link, and
+// returns a session token so they can start using the app right away.
 import { sql, ensureProvidersTable, dbEnabled } from '../lib/db.js';
-import { signToken, hashPassword } from '../lib/auth.js';
+import { signToken, hashPassword, makeToken } from '../lib/auth.js';
+import { sendEmail, appOrigin } from '../lib/email.js';
 import crypto from 'crypto';
 
 export default async function handler(req, res) {
@@ -15,7 +16,6 @@ export default async function handler(req, res) {
   const email = String(b.email || '').trim().toLowerCase();
   const password = String(b.password || '');
   const name = String(b.name || '').trim();
-
   if (!email || !/.+@.+\..+/.test(email)) { res.status(400).json({ error: 'Please enter a valid email address.' }); return; }
   if (password.length < 8) { res.status(400).json({ error: 'Password must be at least 8 characters.' }); return; }
 
@@ -26,11 +26,23 @@ export default async function handler(req, res) {
     if (existing.length) { res.status(409).json({ error: 'An account with that email already exists — try logging in.' }); return; }
 
     const id = 'p_' + crypto.randomBytes(8).toString('hex');
-    const pass_hash = hashPassword(password);
-    await q`INSERT INTO providers (id, email, name, pass_hash) VALUES (${id}, ${email}, ${name}, ${pass_hash})`;
+    await q`INSERT INTO providers (id, email, name, pass_hash, verified) VALUES (${id}, ${email}, ${name}, ${hashPassword(password)}, false)`;
+
+    // Email verification link (valid 24h)
+    const vtoken = makeToken();
+    await q`INSERT INTO auth_tokens (token, provider_id, kind, expires_at) VALUES (${vtoken}, ${id}, 'verify', now() + interval '24 hours')`;
+    const link = appOrigin(req) + '/slickchart?verify=' + vtoken;
+    try {
+      await sendEmail({
+        to: email,
+        subject: 'Verify your SlickChart email',
+        text: 'Welcome to SlickChart! Verify your email: ' + link,
+        html: '<p>Welcome to SlickChart!</p><p><a href="' + link + '">Verify your email</a> (link expires in 24 hours).</p>'
+      });
+    } catch (e) { /* don't block signup on email failure */ }
 
     const token = signToken({ u: id, e: email }, secret);
-    res.status(200).json({ token, name, email });
+    res.status(200).json({ token, name, email, verified: false });
   } catch (e) {
     res.status(e.status || 500).json({ error: e.message });
   }
