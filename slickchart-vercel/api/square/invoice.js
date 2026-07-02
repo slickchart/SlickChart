@@ -1,7 +1,8 @@
 // POST /api/square/invoice
 // Body: { name, email, customerId?, dueDate?, requestTip?, lineItems?:[{name,price,quantity,variationId?,taxable?}], amount?, title? }
-// Builds a Square customer (if needed), an itemized order (auto-applying the seller's taxes,
-// but blocking taxes on lines marked taxable:false), an invoice (tip prompt optional), and publishes it.
+// The Invoices API forbids orders that use auto_apply_taxes, so we attach the seller's
+// ENABLED catalog taxes explicitly and reference them only on taxable lines (so a line
+// toggled "No tax" — e.g. a gift — is excluded). Then create + publish an emailed invoice.
 import { squareFetch as _sqf, sqContext, resolveLocationId } from '../../lib/square.js';
 
 export default async function handler(req, res) {
@@ -16,16 +17,18 @@ export default async function handler(req, res) {
   try {
     const locationId = await resolveLocationId(ctx.token, ctx.locationId);
 
-    // If any line is tax-exempt, fetch the seller's tax IDs so we can block them per-line.
-    let taxIds = [];
-    if (items.some(li => li.taxable === false)) {
-      try {
-        const cat = await sf('/v2/catalog/list?types=TAX');
-        taxIds = (cat.objects || []).filter(o => o.type === 'TAX' && !o.is_deleted).map(o => o.id);
-      } catch (e) { taxIds = []; }
-    }
+    // Seller's enabled catalog taxes (scope LINE_ITEM so we can exempt individual lines).
+    let catTaxes = [];
+    try {
+      const cat = await sf('/v2/catalog/list?types=TAX');
+      catTaxes = (cat.objects || [])
+        .filter(o => o.type === 'TAX' && !o.is_deleted && o.tax_data && o.tax_data.enabled)
+        .map((o, i) => ({ uid: 'tax-' + i, catalog_object_id: o.id, scope: 'LINE_ITEM' }));
+    } catch (e) { catTaxes = []; }
 
-    // Build order line items — itemized (preferred) or a single amount (fallback).
+    const applyTaxes = (idx) => catTaxes.map(t => ({ uid: 'at-' + idx + '-' + t.uid, tax_uid: t.uid }));
+
+    // Build line items; apply taxes only to taxable lines.
     let orderLineItems;
     if (items.length) {
       orderLineItems = items.map((li, idx) => {
@@ -33,15 +36,15 @@ export default async function handler(req, res) {
         const line = li.variationId
           ? { catalog_object_id: li.variationId, quantity: qty }
           : { name: String(li.name || 'Item').slice(0, 500), quantity: qty, base_price_money: { amount: Math.round(parseFloat(li.price) * 100), currency: 'USD' } };
-        if (li.taxable === false && taxIds.length) {
-          line.pricing_blocklists = { blocked_taxes: taxIds.map((tid, i) => ({ uid: 'blk-' + idx + '-' + i, tax_catalog_object_id: tid })) };
-        }
+        if (li.taxable !== false && catTaxes.length) line.applied_taxes = applyTaxes(idx);
         return line;
       });
     } else {
       const amount = Math.round(parseFloat(b.amount) * 100);
       if (!amount || amount <= 0) { res.status(400).json({ error: 'Add at least one line item or an amount.' }); return; }
-      orderLineItems = [{ name: String(b.title || 'Service'), quantity: '1', base_price_money: { amount, currency: 'USD' } }];
+      const line = { name: String(b.title || 'Service'), quantity: '1', base_price_money: { amount, currency: 'USD' } };
+      if (catTaxes.length) line.applied_taxes = applyTaxes(0);
+      orderLineItems = [line];
     }
 
     // resolve/create the Square customer
@@ -57,15 +60,16 @@ export default async function handler(req, res) {
       customerId = c.customer && c.customer.id;
     }
 
-    // itemized order (Square auto-applies the seller's catalog taxes to taxable lines)
-    const order = await sf('/v2/orders', { method: 'POST', body: { idempotency_key: 'sc-o-' + Date.now(), order: { location_id: locationId, customer_id: customerId, line_items: orderLineItems, pricing_options: { auto_apply_taxes: true } } } });
+    // order with EXPLICIT taxes (auto_apply_taxes is not allowed for invoice orders)
+    const orderBody = { location_id: locationId, customer_id: customerId, line_items: orderLineItems };
+    if (catTaxes.length) orderBody.taxes = catTaxes;
+    const order = await sf('/v2/orders', { method: 'POST', body: { idempotency_key: 'sc-o-' + Date.now(), order: orderBody } });
     const orderId = order.order && order.order.id;
     const total = order.order && order.order.total_money ? order.order.total_money.amount / 100 : null;
     const taxCollected = order.order && order.order.total_tax_money ? order.order.total_tax_money.amount / 100 : 0;
 
-    // invoice (tip prompt only when requested)
-    const pr = { request_type: 'BALANCE', tipping_enabled: !!b.requestTip };
-    if (b.dueDate) pr.due_date = b.dueDate;
+    // invoice — always include a due_date (Square requires it); tip prompt optional
+    const pr = { request_type: 'BALANCE', tipping_enabled: !!b.requestTip, due_date: b.dueDate || new Date().toISOString().slice(0, 10) };
     const inv = await sf('/v2/invoices', { method: 'POST', body: { idempotency_key: 'sc-i-' + Date.now(), invoice: { location_id: locationId, order_id: orderId, primary_recipient: { customer_id: customerId }, delivery_method: 'EMAIL', accepted_payment_methods: { card: true }, payment_requests: [pr] } } });
     const invoice = inv.invoice;
     const pub = await sf('/v2/invoices/' + invoice.id + '/publish', { method: 'POST', body: { version: invoice.version, idempotency_key: 'sc-pub-' + Date.now() } });
