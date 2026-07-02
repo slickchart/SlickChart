@@ -1165,7 +1165,7 @@ function nav(screen,data){
   // track history for the global back button (skip when we're navigating back)
   if(!_navBacking){if(_navCur&&(_navCur.screen!==screen||_navCur.data!==data)){_navStack.push(_navCur);if(_navStack.length>40)_navStack.shift();}}
   _navCur={screen,data};
-  const titles={home:'Home',clients:'Clients',forms:'Forms',messages:'Messages',pro:'Pro',more:'More',account:'Account',branding:'Branding',shop:'Shop',partners:'Partners',learn:'Learn',virtual:'Virtual Consultations',protocols:'Protocols',vault:'My Docs',inventory:'Inventory',vendors:'Vendors',calendar:'Calendar',room:'Session','data-setup':'Get set up','import-clients':'Import clients','import-products':'Import products','switch-app':'Switch apps','connect-calendar':'Sync calendar'};
+  const titles={home:'Home',clients:'Clients',forms:'Forms',messages:'Messages',pro:'Pro',more:'More',account:'Account',branding:'Branding',shop:'Shop',partners:'Partners',learn:'Learn',virtual:'Virtual Consultations',protocols:'Protocols',vault:'My Docs',inventory:'Inventory',vendors:'Vendors',calendar:'Calendar',room:'Session','data-setup':'Get set up','import-clients':'Import clients','import-products':'Import products','switch-app':'Switch apps','connect-calendar':'Sync calendar','checkout':'Take payment'};
   document.getElementById('tt').textContent='SlickChart';
   document.title='SlickChart' + (titles[screen] ? ' — '+titles[screen] : '');
   if(timerInt&&screen!=='room'){clearInterval(timerInt);timerInt=null;}
@@ -1225,6 +1225,7 @@ function nav(screen,data){
     'edit-resource':()=>renderEditResource(data),
     'add-vendor':renderAddVendor,
     'edit-vendor':()=>renderAddVendor(data),
+    'checkout':()=>renderCheckout(data),
     'edit-partner':()=>renderEditPartner(data),
   };
   const fn=routes[screen];
@@ -1541,6 +1542,7 @@ function renderClient(id){
     <button onclick="nav('checkin-settings')" style="display:block;width:100%;text-align:center;background:none;border:none;cursor:pointer;font-family:inherit;font-size:11px;color:#777;margin-top:6px;padding:2px;">${(checkinCfg.autoSend&&checkinCfg.autoSend.on)?('Auto-send: '+checkinCfg.autoSend.when+' before each visit · edit'):'Auto-send is off · edit'}</button>
   </div>
   <div style="padding:0 16px 14px;"><button class="btng" onclick="inviteClientToApp('${id}')" style="width:100%;justify-content:center;"><i class="ti ti-device-mobile" style="color:#a891ec;"></i> ${c.appInvited?'App invite sent ✓ · resend':'Invite to the app'}</button></div>
+  <div style="padding:0 16px 14px;"><button class="btnp" onclick="nav('checkout','${id}')" style="width:100%;justify-content:center;border-radius:10px;"><i class="ti ti-cash"></i> Take payment</button></div>
   <div class="sh" style="display:flex;align-items:center;justify-content:space-between;"><h2>Client details</h2><button onclick="editVitals('${id}')" style="border:1px solid var(--accent-a30,#3d2d10);background:var(--accent-tint);color:var(--accent);cursor:pointer;padding:4px 11px;border-radius:20px;font-size:11px;font-weight:600;font-family:inherit;display:inline-flex;align-items:center;gap:4px;margin-right:16px;"><i class="ti ti-pencil" style="font-size:11px;"></i> Edit</button></div>
   <div style="padding:0 16px;">
     ${_vitalsConfig().filter(f=>!f.med||(c[f.key]&&String(c[f.key]).trim()&&c[f.key]!=='—')).map(f=>`<div class="fr"><span class="fl">${f.label}</span><span class="fv"${f.key==='concerns'?' style="font-size:12px;"':''}>${c[f.key]||'—'}</span></div>`).join('')}
@@ -6492,6 +6494,76 @@ async function _loadCalFeedUrl(){
     box.innerHTML='<div style="font-size:11px;color:#777;margin-bottom:6px;">Your private calendar link</div><div style="font-size:11px;color:#bbb;word-break:break-all;font-family:monospace;line-height:1.5;">'+j.url+'</div><button onclick="_copyText(\''+j.url+'\',this)" class="btnp" style="width:100%;border-radius:9px;padding:10px;margin-top:10px;"><i class="ti ti-copy"></i> Copy link</button>';
   }catch(e){box.innerHTML='<span style="color:#e8a060;">Could not reach the server. This works once deployed to Vercel.</span>';}
 }
+
+// ── Take payment (via the provider's own connected Square) ──
+function _coVal(x){const el=document.getElementById(x);return el?el.value.trim():'';}
+function _coErr(msg,reconnect){const el=document.getElementById('co-result');if(!el)return;el.innerHTML='<div style="background:#2a0f0f;border:1px solid #4a1515;border-radius:10px;padding:11px 13px;font-size:12px;color:#e8a0a0;line-height:1.5;">'+String(msg).replace(/</g,'&lt;')+(reconnect?' <button onclick="nav(\'square-guide\')" style="background:none;border:none;color:#f0c0c0;text-decoration:underline;cursor:pointer;font-family:inherit;font-size:12px;">Reconnect Square</button>':'')+'</div>';}
+function _coBusy(t){const el=document.getElementById('co-result');if(el)el.innerHTML='<div style="text-align:center;color:#888;font-size:12px;padding:8px;">'+t+'</div>';}
+function _coRecon(e){return e&&(e.code==='reconnect'||e.code==='nosquare');}
+function renderCheckout(id){
+  const c=CL[id];if(!c){nav('clients');return;}
+  setNav('clients');document.getElementById('tt').textContent='Take payment';
+  S.innerHTML=`
+  <div style="padding:14px 16px 4px;">
+    <div style="display:flex;align-items:center;gap:10px;margin-bottom:14px;">${av(c,40)}<div><div style="font-size:15px;font-weight:600;color:#f0f0f0;">${c.name}</div><div style="font-size:12px;color:#999;">${c.email||c.phone||'No contact on file'}</div></div></div>
+    <span class="fl-lbl">Amount</span>
+    <div style="display:flex;align-items:center;gap:8px;margin-bottom:12px;"><span style="font-size:20px;color:#999;">$</span><input class="fi" id="co-amt" inputmode="decimal" placeholder="0.00" style="margin:0;font-size:18px;"></div>
+    <span class="fl-lbl">What it is for</span>
+    <input class="fi" id="co-desc" value="${(c.treatment&&c.treatment!=='New client')?String(c.treatment).replace(/"/g,'&quot;'):''}" placeholder="e.g. Hydrafacial" style="margin-bottom:16px;">
+    <div id="co-result" style="margin-bottom:14px;"></div>
+    <button class="btnp" onclick="_coLink('${id}')" style="width:100%;border-radius:10px;margin-bottom:9px;"><i class="ti ti-link"></i> Send payment link</button>
+    <button class="btng" onclick="_coInvoice('${id}')" style="width:100%;border-radius:10px;margin-bottom:9px;justify-content:center;"><i class="ti ti-file-invoice"></i> Send invoice by email</button>
+    <button class="btng" onclick="_coCharge('${id}')" style="width:100%;border-radius:10px;justify-content:center;"><i class="ti ti-credit-card"></i> Charge card on file</button>
+    <div style="margin-top:14px;font-size:11px;color:#777;line-height:1.6;background:#161616;border:1px solid #242424;border-radius:10px;padding:11px 13px;"><i class="ti ti-lock" style="font-size:11px;"></i> Payments run securely through your connected Square. Card details are entered on Square\u2019s checkout or your Square reader \u2014 never stored in SlickChart.</div>
+  </div><div style="height:20px;"></div>`;
+}
+async function _coLink(id){
+  const c=CL[id];const amt=_coVal('co-amt');const name=_coVal('co-desc')||'Service';
+  if(!parseFloat(amt))return _coErr('Enter an amount first.');
+  _coBusy('Creating payment link\u2026');
+  try{
+    const d=await _sqFetch('/api/square/payment-link',{method:'POST',body:{amount:amt,name,email:c.email||'',phone:c.phone||''}});
+    if(!d.url)throw new Error('No link was returned.');
+    const msg='Hi '+c.name.split(' ')[0]+'! Your payment link for '+name+' ($'+amt+'): '+d.url;
+    const el=document.getElementById('co-result');
+    el.innerHTML='<div style="background:#0a2019;border:1px solid #1c4030;border-radius:10px;padding:12px 14px;"><div style="font-size:12px;color:#4ec49a;font-weight:600;margin-bottom:8px;">Payment link ready</div><div style="font-size:11px;color:#bbb;word-break:break-all;font-family:monospace;margin-bottom:10px;">'+d.url+'</div><div style="display:grid;grid-template-columns:1fr 1fr;gap:8px;"><button onclick="_copyText(\''+d.url+'\',this)" class="btnp" style="border-radius:8px;padding:9px;">Copy link</button><button onclick="location.href=\'sms:?&body='+encodeURIComponent(msg)+'\'" class="btng" style="border-radius:8px;padding:9px;">Text it</button></div></div>';
+  }catch(e){_coErr(e.message||'Could not create the link.',_coRecon(e));}
+}
+async function _coInvoice(id){
+  const c=CL[id];const amt=_coVal('co-amt');const title=_coVal('co-desc')||'Service';
+  if(!parseFloat(amt))return _coErr('Enter an amount first.');
+  if(!c.email)return _coErr('Add a client email to send an invoice (or use a payment link).');
+  _coBusy('Creating and sending invoice\u2026');
+  try{
+    await _sqFetch('/api/square/invoice',{method:'POST',body:{amount:amt,title,name:c.name,email:c.email}});
+    const el=document.getElementById('co-result');
+    el.innerHTML='<div style="background:#0a2019;border:1px solid #1c4030;border-radius:10px;padding:12px 14px;font-size:13px;color:#4ec49a;font-weight:600;"><i class="ti ti-check"></i> Invoice sent to '+c.email+'</div>';
+  }catch(e){_coErr(e.message||'Could not send the invoice.',_coRecon(e));}
+}
+async function _coCharge(id){
+  const c=CL[id];const amt=_coVal('co-amt');
+  if(!parseFloat(amt))return _coErr('Enter an amount first.');
+  if(!c.squareId)return _coErr('This client is not linked to Square yet. Import them from Square, or use a payment link or invoice.');
+  _coBusy('Checking saved cards\u2026');
+  try{
+    const d=await _sqFetch('/api/square/charge-card?customerId='+encodeURIComponent(c.squareId));
+    const cards=d.cards||[];
+    if(!cards.length)return _coErr('No saved card for '+c.name.split(' ')[0]+'. Use a payment link or invoice instead.');
+    const el=document.getElementById('co-result');
+    el.innerHTML='<div style="background:#161616;border:1px solid #242424;border-radius:10px;padding:12px 14px;"><div style="font-size:12px;color:#aaa;margin-bottom:8px;">Charge $'+amt+' to a saved card:</div>'+cards.map(cd=>'<button onclick="_coDoCharge(\''+id+'\',\''+cd.id+'\')" class="btng" style="width:100%;justify-content:space-between;margin-bottom:6px;border-radius:8px;"><span>'+((cd.brand||'Card'))+' \u00b7\u00b7\u00b7\u00b7 '+(cd.last4||'')+'</span><span style="color:var(--accent);">Charge \u2192</span></button>').join('')+'</div>';
+  }catch(e){_coErr(e.message||'Could not load saved cards.',_coRecon(e));}
+}
+async function _coDoCharge(id,cardId){
+  const c=CL[id];const amt=_coVal('co-amt');const note=_coVal('co-desc')||'SlickChart';
+  _coBusy('Charging\u2026');
+  try{
+    const d=await _sqFetch('/api/square/charge-card',{method:'POST',body:{customerId:c.squareId,cardId,amount:amt,note}});
+    const el=document.getElementById('co-result');
+    el.innerHTML='<div style="background:#0a2019;border:1px solid #1c4030;border-radius:10px;padding:12px 14px;font-size:13px;color:#4ec49a;font-weight:600;"><i class="ti ti-check"></i> Charged $'+amt+' \u2014 '+(d.status||'done')+'</div>';
+    if(typeof proToast==='function')proToast('Payment complete \u2713');
+  }catch(e){_coErr(e.message||'The charge did not go through.',_coRecon(e));}
+}
+
 function renderConnectCalendar(){
   setNav('account');document.getElementById('tt').textContent='Sync calendar';
   S.innerHTML=`
