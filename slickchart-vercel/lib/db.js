@@ -38,3 +38,35 @@ export async function ensureTable() {
   )`;
   _ready = true;
 }
+
+// Provider accounts for multi-tenant login. Each provider's app data lives in the
+// kv table keyed by owner = provider id, so accounts are isolated automatically.
+let _provReady = false;
+export async function ensureProvidersTable() {
+  if (_provReady) return;
+  const q = sql();
+  await q`CREATE TABLE IF NOT EXISTS providers (
+    id text PRIMARY KEY,
+    email text UNIQUE NOT NULL,
+    name text,
+    pass_hash text NOT NULL,
+    verified boolean DEFAULT false,
+    created_at timestamptz DEFAULT now()
+  )`;
+  await q`ALTER TABLE providers ADD COLUMN IF NOT EXISTS verified boolean DEFAULT false`;
+  // One-time tokens for email verification and password resets.
+  await q`CREATE TABLE IF NOT EXISTS auth_tokens (
+    token text PRIMARY KEY,
+    provider_id text NOT NULL,
+    kind text NOT NULL,
+    expires_at timestamptz NOT NULL,
+    created_at timestamptz DEFAULT now()
+  )`;
+  // Failed-login log for rate limiting.
+  await q`CREATE TABLE IF NOT EXISTS login_attempts (
+    id bigserial PRIMARY KEY,
+    email text NOT NULL,
+    ts timestamptz DEFAULT now()
+  )`;
+  _provReady = true;
+}
