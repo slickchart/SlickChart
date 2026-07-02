@@ -68,5 +68,39 @@ export async function ensureProvidersTable() {
     email text NOT NULL,
     ts timestamptz DEFAULT now()
   )`;
+  // Interest log for "request live sync" on booking apps we don't yet integrate.
+  await q`CREATE TABLE IF NOT EXISTS sync_requests (
+    id bigserial PRIMARY KEY,
+    app text NOT NULL,
+    provider_id text,
+    ts timestamptz DEFAULT now()
+  )`;
+  // Beta feedback from providers.
+  await q`CREATE TABLE IF NOT EXISTS feedback (
+    id bigserial PRIMARY KEY,
+    provider_id text,
+    email text,
+    rating int,
+    message text,
+    ts timestamptz DEFAULT now()
+  )`;
+  // "What's new" announcements shown in-app to all providers.
+  await q`CREATE TABLE IF NOT EXISTS announcements (
+    id bigserial PRIMARY KEY,
+    title text NOT NULL,
+    body text,
+    ts timestamptz DEFAULT now()
+  )`;
+  await q`ALTER TABLE providers ADD COLUMN IF NOT EXISTS marketing_opt_in boolean DEFAULT false`;
+  // Per-provider Square OAuth connections (tokens stored encrypted).
+  await q`CREATE TABLE IF NOT EXISTS square_connections (
+    provider_id text PRIMARY KEY,
+    access_token text,
+    refresh_token text,
+    expires_at timestamptz,
+    merchant_id text,
+    location_id text,
+    updated_at timestamptz DEFAULT now()
+  )`;
   _provReady = true;
 }

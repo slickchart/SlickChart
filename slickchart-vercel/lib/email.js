@@ -14,6 +14,21 @@ export async function sendEmail({ to, subject, html, text }) {
   return r.json();
 }
 
+export async function addToAudience(email, name) {
+  const key = process.env.RESEND_API_KEY || '';
+  const aud = process.env.RESEND_AUDIENCE_ID || '';
+  if (!key || !aud) { return { skipped: true }; }
+  try {
+    const parts = String(name || '').trim().split(/\s+/);
+    const r = await fetch('https://api.resend.com/audiences/' + aud + '/contacts', {
+      method: 'POST',
+      headers: { 'Authorization': 'Bearer ' + key, 'Content-Type': 'application/json' },
+      body: JSON.stringify({ email, first_name: parts[0] || undefined, last_name: parts.slice(1).join(' ') || undefined, unsubscribed: false })
+    });
+    return r.ok ? r.json() : { error: r.status };
+  } catch (e) { return { error: String(e && e.message || e) }; }
+}
+
 export function appOrigin(req) {
   const host = (req.headers['x-forwarded-host'] || req.headers.host || 'slick-chart.vercel.app');
   const proto = (req.headers['x-forwarded-proto'] || 'https');
