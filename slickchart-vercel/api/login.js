@@ -1,8 +1,6 @@
-// POST /api/login   body: { email, password }  (email optional for legacy owner login)
-// - If an email is given, verifies it against a provider account (email + password).
-// - If no email is given, falls back to the legacy single APP_PASSWORD ("owner").
-// Returns a signed session token scoped to that account.
-import { signToken, verifyPassword } from '../lib/auth.js';
+// POST /api/login  { email, password }  (email omitted => legacy APP_PASSWORD owner)
+// Verifies against a provider account, rate-limited to stop brute-forcing.
+import { signToken, verifyPassword, tooManyAttempts, recordAttempt, clearAttempts } from '../lib/auth.js';
 import { sql, ensureProvidersTable, dbEnabled } from '../lib/db.js';
 
 export default async function handler(req, res) {
@@ -14,33 +12,33 @@ export default async function handler(req, res) {
   const email = String(b.email || '').trim().toLowerCase();
   const password = String(b.password || '');
 
-  // 1) Provider account (email + password)
   if (email && dbEnabled()) {
     try {
       await ensureProvidersTable();
       const q = sql();
-      const rows = await q`SELECT id, name, email, pass_hash FROM providers WHERE email = ${email}`;
-      if (rows.length && verifyPassword(password, rows[0].pass_hash)) {
-        const token = signToken({ u: rows[0].id, e: email }, secret);
-        res.status(200).json({ token, name: rows[0].name || '', email });
+      if (await tooManyAttempts(q, email)) {
+        res.status(429).json({ error: 'Too many attempts. Please wait a few minutes and try again.' });
         return;
       }
-      if (rows.length) { res.status(401).json({ error: 'Incorrect password.' }); return; }
-      res.status(401).json({ error: 'No account found with that email. Create one to get started.' });
+      const rows = await q`SELECT id, name, email, pass_hash, verified FROM providers WHERE email = ${email}`;
+      if (rows.length && verifyPassword(password, rows[0].pass_hash)) {
+        await clearAttempts(q, email);
+        const token = signToken({ u: rows[0].id, e: email }, secret);
+        res.status(200).json({ token, name: rows[0].name || '', email, verified: !!rows[0].verified });
+        return;
+      }
+      await recordAttempt(q, email);
+      res.status(401).json({ error: rows.length ? 'Incorrect password.' : 'No account found with that email. Create one to get started.' });
       return;
-    } catch (e) {
-      res.status(e.status || 500).json({ error: e.message });
-      return;
-    }
+    } catch (e) { res.status(e.status || 500).json({ error: e.message }); return; }
   }
 
-  // 2) Legacy single-password owner login (keeps existing deployment working)
+  // Legacy single-password owner login
   const expected = process.env.APP_PASSWORD || '';
   if (expected && password === expected) {
     const token = signToken({ u: 'owner' }, secret);
-    res.status(200).json({ token, name: '', email: '' });
+    res.status(200).json({ token, name: '', email: '', verified: true });
     return;
   }
-
   res.status(401).json({ error: expected ? 'Incorrect password.' : 'Enter your email and password to log in.' });
 }
