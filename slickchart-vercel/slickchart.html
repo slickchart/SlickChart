@@ -654,6 +654,35 @@ const barberAffiliateLinks=[
 // ── PROFESSION SWITCH HELPER ──
 // Switches active note templates, checkin config, protocols, and affiliate links to match selected profession
 function saveClients(){try{localStorage.setItem('sc_clients',JSON.stringify(CL));}catch(e){}}
+function _editClientDetails(id){
+  const c=CL[id]; if(!c)return;
+  const ex=document.getElementById('cl-edit'); if(ex)ex.remove();
+  const val=v=>String(v==null?'':v).replace(/"/g,'&quot;');
+  const m=document.createElement('div'); m.id='cl-edit'; m.style.cssText='position:fixed;top:0;bottom:0;left:50%;transform:translateX(-50%);width:390px;max-width:100%;z-index:9999;background:rgba(0,0,0,.6);display:flex;flex-direction:column;justify-content:flex-end;'; m.onclick=e=>{if(e.target===m)m.remove();};
+  m.innerHTML='<div style="background:#161616;border-top:1px solid #2a2a2a;border-radius:16px 16px 0 0;padding:18px;max-height:92%;overflow:auto;"><div style="width:36px;height:4px;background:#2a2a2a;border-radius:2px;margin:0 auto 14px;"></div><div style="font-size:15px;font-weight:600;color:#f0f0f0;margin-bottom:12px;">Edit client details</div>'
+    +'<span class="fl-lbl">Name</span><input class="fi" id="cd-name" value="'+val(c.name)+'" style="margin-bottom:10px;">'
+    +'<span class="fl-lbl">Email</span><input class="fi" id="cd-email" type="email" autocapitalize="off" value="'+val(c.email)+'" placeholder="name@email.com" style="margin-bottom:10px;">'
+    +'<span class="fl-lbl">Phone</span><input class="fi" id="cd-phone" type="tel" value="'+val(c.phone)+'" placeholder="(555) 123-4567" style="margin-bottom:10px;">'
+    +'<span class="fl-lbl">Date of birth</span><input class="fi" id="cd-dob" type="date" value="'+val(c.birthday)+'" style="margin-bottom:14px;color-scheme:dark;">'
+    +'<button class="btnp" style="width:100%;border-radius:10px;" onclick="_saveClientDetails(\''+id+'\')"><i class="ti ti-check"></i> Save details</button>'
+    +'<button onclick="document.getElementById(\'cl-edit\').remove()" style="width:100%;margin-top:8px;background:none;border:none;color:#777;font-size:13px;cursor:pointer;font-family:inherit;padding:6px;">Cancel</button></div>';
+  (document.querySelector('.shell')||document.body).appendChild(m);
+}
+function _saveClientDetails(id){
+  const c=CL[id]; if(!c)return;
+  const g=x=>{const e=document.getElementById(x);return e?String(e.value||'').trim():'';};
+  const nm=g('cd-name');
+  if(nm){c.name=nm;const parts=nm.split(/\s+/);let ini=((parts[0]||'')[0]||'')+((parts[1]||'')[0]||'');if(!ini)ini=nm[0]||'?';c.initials=ini.toUpperCase();}
+  c.email=g('cd-email'); c.phone=g('cd-phone');
+  const dob=g('cd-dob'); if(dob)c.birthday=dob;
+  saveClients();
+  if(typeof Cloud!=='undefined'&&Cloud&&Cloud.pushAllLocal){try{Cloud.pushAllLocal();}catch(e){}}
+  const m=document.getElementById('cl-edit'); if(m)m.remove();
+  if(typeof proToast==='function')proToast('Details saved');
+  if(typeof document.getElementById('tt')!=='undefined'){}
+  renderClient(id);
+}
+
 function loadClients(){try{const raw=localStorage.getItem('sc_clients');if(!raw)return;const saved=JSON.parse(raw);if(!saved||typeof saved!=='object')return;Object.keys(CL).forEach(k=>delete CL[k]);Object.keys(saved).forEach(k=>{CL[k]=saved[k];});}catch(e){}}
 function _hasDemoClients(){return !!(CL.maya||CL.sophie||CL.priya);}
 function removeDemoClients(){['maya','sophie','priya'].forEach(k=>{delete CL[k];});saveClients();if(typeof proToast==='function')proToast('Demo clients removed');nav('clients');}
@@ -1502,7 +1531,7 @@ function _downloadClientFile(id){
 function exportClientFile(id){
   const c=CL[id]; if(!c)return;
   const ov=document.createElement('div'); ov.id='export-sheet';
-  ov.style.cssText='position:absolute;inset:0;z-index:9999;background:rgba(0,0,0,.6);display:flex;align-items:flex-end;justify-content:center;';
+  ov.style.cssText='position:fixed;top:0;bottom:0;left:50%;transform:translateX(-50%);width:390px;max-width:100%;z-index:9999;background:rgba(0,0,0,.6);display:flex;align-items:flex-end;justify-content:center;';
   ov.onclick=e=>{if(e.target===ov)ov.remove();};
   const first=_fileEsc(c.name.split(' ')[0]);
   ov.innerHTML=`<div style="background:#1a1a1a;border:1px solid #2a2a2a;border-radius:18px 18px 0 0;width:100%;padding:16px 16px 26px;">`+
@@ -1523,7 +1552,8 @@ function renderClient(id){
   S.innerHTML=`
   <div id="client-screen-${id}" hidden></div>
   <div style="padding:12px 16px 0;display:flex;align-items:center;justify-content:space-between;"><button onclick="exportClientFile('${id}')" aria-label="Export or print client file" style="background:var(--accent-tint);border:1px solid var(--accent-a30,#3d2d10);color:var(--accent);border-radius:8px;padding:5px 11px;font-size:11px;font-weight:600;cursor:pointer;display:inline-flex;align-items:center;gap:5px;font-family:inherit;"><i class="ti ti-file-download" style="font-size:13px;"></i> Export file</button><button onclick="deleteClient('${id}')" aria-label="Remove client" style="background:none;border:1px solid #3a1a1a;color:#a85a5a;border-radius:8px;padding:5px 10px;font-size:11px;font-weight:600;cursor:pointer;display:inline-flex;align-items:center;gap:5px;font-family:inherit;"><i class="ti ti-trash" style="font-size:12px;"></i> Remove</button></div>
-  <div style="padding:14px 16px 0;display:flex;flex-direction:column;align-items:center;gap:8px;">${av(c,64)}<div style="text-align:center;"><div style="font-size:18px;font-weight:500;color:#f0f0f0;">${c.name}</div><div style="font-size:13px;color:#666;display:inline-flex;align-items:center;gap:6px;">${c.treatment} <button onclick="changeTreatment('${id}','client')" style="border:1px solid var(--accent-a30,#3d2d10);background:var(--accent-tint);color:var(--accent);cursor:pointer;padding:3px 9px;border-radius:20px;line-height:1;display:inline-flex;align-items:center;gap:3px;font-size:11px;font-weight:600;font-family:inherit;"><i class="ti ti-pencil" style="font-size:11px;"></i> Edit</button></div></div></div>
+  <div style="padding:14px 16px 0;display:flex;flex-direction:column;align-items:center;gap:8px;">${av(c,64)}<div style="text-align:center;"><div style="font-size:18px;font-weight:500;color:#f0f0f0;">${c.name}</div><div style="font-size:13px;color:#666;display:inline-flex;align-items:center;gap:6px;">${c.treatment} <button onclick="_editClientDetails('${id}')" style="border:1px solid var(--accent-a30,#3d2d10);background:var(--accent-tint);color:var(--accent);cursor:pointer;padding:3px 9px;border-radius:20px;line-height:1;display:inline-flex;align-items:center;gap:3px;font-size:11px;font-weight:600;font-family:inherit;"><i class="ti ti-pencil" style="font-size:11px;"></i> Edit</button></div></div></div>
+  <div style="margin:14px 16px 0;background:#161616;border:1px solid #242424;border-radius:12px;padding:12px 14px;"><div style="display:flex;justify-content:space-between;align-items:center;margin-bottom:8px;"><span style="font-size:11px;color:#888;text-transform:uppercase;letter-spacing:.06em;">Contact</span><button onclick="_editClientDetails('${id}')" style="background:var(--accent-tint);border:1px solid var(--accent-a30,#3d2d10);color:var(--accent);border-radius:8px;padding:4px 10px;font-size:11px;font-weight:600;cursor:pointer;font-family:inherit;"><i class="ti ti-pencil" style="font-size:11px;"></i> Edit</button></div><div style="font-size:13px;color:#ccc;line-height:1.9;"><div><i class="ti ti-mail" style="color:#666;margin-right:7px;"></i>${c.email?String(c.email).replace(/</g,'&lt;'):'<span style="color:#777;">No email</span>'}</div><div><i class="ti ti-phone" style="color:#666;margin-right:7px;"></i>${c.phone?String(c.phone).replace(/</g,'&lt;'):'<span style="color:#777;">No phone</span>'}</div><div><i class="ti ti-cake" style="color:#666;margin-right:7px;"></i>${c.birthday?String(c.birthday):'<span style="color:#777;">No date of birth</span>'}</div></div></div>
   ${c.flaggedContra?`<div style="margin:12px 16px 0;background:#2a0f0f;border:1px solid #5a2020;border-radius:12px;padding:12px 14px;">
     <div style="display:flex;align-items:center;gap:8px;margin-bottom:6px;"><i class="ti ti-alert-triangle" style="font-size:16px;color:#e87070;"></i><span style="font-size:13px;font-weight:700;color:#f0c8c8;">Flagged on intake — review before the visit</span></div>
     <div style="font-size:11px;color:#c99;margin-bottom:7px;">${c.name.split(' ')[0]} marked these on "${c.flaggedContra.form}" (${c.flaggedContra.date}):</div>
@@ -1668,7 +1698,7 @@ function viewSubmittedForm(id,i){
   if(tmpl&&tmpl.qs){tmpl.qs.forEach(q=>{if(q.type==='Signature'||q.type==='Contraindications')return;const a=sf.answers[q.id];if(a!=null&&String(a).trim())rows.push([q.label,String(a)]);});}
   else{Object.keys(sf.answers||{}).forEach(k=>rows.push([k,String(sf.answers[k])]));}
   const ov=document.createElement('div');ov.id='subform-sheet';
-  ov.style.cssText='position:absolute;inset:0;z-index:9999;background:rgba(0,0,0,.6);display:flex;align-items:center;justify-content:center;padding:24px 16px;box-sizing:border-box;';
+  ov.style.cssText='position:fixed;top:0;bottom:0;left:50%;transform:translateX(-50%);width:390px;max-width:100%;z-index:9999;background:rgba(0,0,0,.6);display:flex;align-items:center;justify-content:center;padding:24px 16px;box-sizing:border-box;';
   ov.onclick=e=>{if(e.target===ov)ov.remove();};
   ov.innerHTML=`<div style="background:#161616;border:1px solid #2a2a2a;width:100%;border-radius:16px;padding:18px 16px 24px;max-height:86%;overflow:auto;">
     <div style="display:flex;align-items:center;justify-content:space-between;margin-bottom:4px;"><div style="font-size:15px;font-weight:600;color:#f0f0f0;min-width:0;overflow:hidden;text-overflow:ellipsis;">${sf.title}</div><button onclick="this.closest('#subform-sheet').remove()" aria-label="Close" style="border:none;background:none;font-size:20px;color:#888;cursor:pointer;line-height:1;flex-shrink:0;">✕</button></div>
@@ -1789,7 +1819,7 @@ function openClientFormSender(id){
   const c=CL[id];if(!c)return;
   const keys=Object.keys(formTmpls);
   const ov=document.createElement('div');ov.id='sendform-sheet';
-  ov.style.cssText='position:absolute;inset:0;z-index:9999;background:rgba(0,0,0,.6);display:flex;align-items:center;justify-content:center;padding:24px 16px;box-sizing:border-box;';
+  ov.style.cssText='position:fixed;top:0;bottom:0;left:50%;transform:translateX(-50%);width:390px;max-width:100%;z-index:9999;background:rgba(0,0,0,.6);display:flex;align-items:center;justify-content:center;padding:24px 16px;box-sizing:border-box;';
   ov.onclick=e=>{if(e.target===ov)ov.remove();};
   ov.innerHTML=`<div style="background:#161616;border:1px solid #2a2a2a;width:100%;border-radius:16px;padding:18px 16px 24px;max-height:86%;overflow:auto;">
     <div style="display:flex;align-items:center;justify-content:space-between;margin-bottom:4px;"><div style="font-size:15px;font-weight:600;color:#f0f0f0;min-width:0;">Send a form to ${c.name.split(' ')[0]}</div><button onclick="this.closest('#sendform-sheet').remove()" aria-label="Close" style="border:none;background:none;font-size:20px;color:#888;cursor:pointer;line-height:1;flex-shrink:0;">✕</button></div>
@@ -2037,7 +2067,7 @@ function _protocolRows(q){
 function openProtocolSearch(){
   const old=document.getElementById('proto-search');if(old)old.remove();
   const ov=document.createElement('div');ov.id='proto-search';
-  ov.style.cssText='position:absolute;inset:0;z-index:9999;background:rgba(0,0,0,.6);display:flex;align-items:center;justify-content:center;padding:24px 16px;box-sizing:border-box;';
+  ov.style.cssText='position:fixed;top:0;bottom:0;left:50%;transform:translateX(-50%);width:390px;max-width:100%;z-index:9999;background:rgba(0,0,0,.6);display:flex;align-items:center;justify-content:center;padding:24px 16px;box-sizing:border-box;';
   ov.onclick=e=>{if(e.target===ov)ov.remove();};
   ov.innerHTML=`<div style="background:#161616;border:1px solid #2a2a2a;width:100%;border-radius:16px;padding:16px;max-height:84%;display:flex;flex-direction:column;">
     <div style="display:flex;align-items:center;justify-content:space-between;margin-bottom:4px;"><div style="font-size:15px;font-weight:600;color:#f0f0f0;">Switch protocol</div><button onclick="this.closest('#proto-search').remove()" aria-label="Close" style="border:none;background:none;font-size:20px;color:#888;cursor:pointer;line-height:1;">✕</button></div>
@@ -2097,7 +2127,7 @@ function editVitals(id){
   const c=CL[id];if(!c)return;
   const fields=_vitalsConfig();
   const m=document.createElement('div');m.id='vitals-modal';
-  m.style.cssText='position:absolute;inset:0;background:rgba(0,0,0,.7);z-index:400;display:flex;align-items:center;justify-content:center;padding:24px 16px;box-sizing:border-box;';
+  m.style.cssText='position:fixed;top:0;bottom:0;left:50%;transform:translateX(-50%);width:390px;max-width:100%;background:rgba(0,0,0,.7);z-index:400;display:flex;align-items:center;justify-content:center;padding:24px 16px;box-sizing:border-box;';
   m.onclick=e=>{if(e.target===m)m.remove();};
   m.innerHTML=`<div style="background:#1a1a1a;border:1px solid #2a2a2a;border-radius:16px;width:100%;max-height:88%;overflow:auto;padding:18px 16px 26px;">
     <div style="width:36px;height:4px;background:#333;border-radius:2px;margin:0 auto 14px;"></div>
@@ -2144,7 +2174,7 @@ function _applyIntakeVitals(chart,formId,getAns){
 function changeTreatment(id,screen){
   const c=CL[id];if(!c)return;
   const m=document.createElement('div');m.id='treatment-modal';
-  m.style.cssText='position:absolute;inset:0;background:rgba(0,0,0,.7);z-index:400;display:flex;align-items:center;justify-content:center;padding:24px 16px;box-sizing:border-box;';
+  m.style.cssText='position:fixed;top:0;bottom:0;left:50%;transform:translateX(-50%);width:390px;max-width:100%;background:rgba(0,0,0,.7);z-index:400;display:flex;align-items:center;justify-content:center;padding:24px 16px;box-sizing:border-box;';
   m.onclick=e=>{if(e.target===m)m.remove();};
   m.innerHTML=`<div style="background:#1a1a1a;border:1px solid #2a2a2a;border-radius:16px;width:100%;padding:18px 16px 26px;">
     <div style="width:36px;height:4px;background:#333;border-radius:2px;margin:0 auto 14px;"></div>
@@ -2880,7 +2910,7 @@ function openBuyOptionsP(aid){
   if(amz)rows.push(blk(`<a href="https://${amz}" target="_blank" rel="noopener" style="display:flex;align-items:center;gap:12px;padding:12px 14px;border:1px solid #2a2a2a;border-radius:10px;text-decoration:none;"><i class="ti ti-brand-amazon" style="font-size:18px;color:var(--accent);"></i><div style="flex:1;min-width:0;"><div style="font-size:13px;font-weight:500;color:#e0e0e0;">${_amazonIsStore(amz)?'Shop in your Amazon store':'Buy on Amazon'}</div><div style="font-size:11px;color:#999;word-break:break-all;">${amz}</div></div></a>`,p.amazonCode));
   if(!rows.length)return;
   const ov=document.createElement('div');ov.id='buy-sheet';
-  ov.style.cssText='position:absolute;inset:0;z-index:9999;background:rgba(0,0,0,.6);display:flex;align-items:center;justify-content:center;padding:24px 16px;box-sizing:border-box;';
+  ov.style.cssText='position:fixed;top:0;bottom:0;left:50%;transform:translateX(-50%);width:390px;max-width:100%;z-index:9999;background:rgba(0,0,0,.6);display:flex;align-items:center;justify-content:center;padding:24px 16px;box-sizing:border-box;';
   ov.onclick=e=>{if(e.target===ov)closeBuySheet();};
   ov.innerHTML=`<div style="background:#161616;border:1px solid #2a2a2a;width:100%;border-radius:16px;padding:16px;">
     <div style="display:flex;align-items:center;gap:10px;margin-bottom:6px;"><span style="font-size:22px;">${p.icon}</span><div style="flex:1;"><div style="font-size:15px;font-weight:500;color:#f0f0f0;">${p.name}</div><div style="font-size:12px;color:#999;">${p.brand||''}</div></div><button onclick="closeBuySheet()" aria-label="Close" style="border:none;background:none;font-size:20px;color:#888;cursor:pointer;line-height:1;">✕</button></div>
@@ -2977,7 +3007,7 @@ function shareSummaryLink(id){
   const linkUrl='glowingskin.app/m/'+id+'-'+Math.random().toString(36).slice(2,8);
   const row=(onclick,icon,title,sub)=>`<button onclick="${onclick}" style="display:flex;width:100%;align-items:center;gap:11px;padding:12px 14px;border:1px solid #2a2a2a;background:#1a1a1a;border-radius:10px;margin-bottom:8px;cursor:pointer;text-align:left;"><i class="ti ${icon}" style="font-size:18px;color:var(--accent);"></i><div style="flex:1;min-width:0;"><div style="font-size:13px;font-weight:500;color:#e0e0e0;">${title}</div><div style="font-size:11px;color:#999;">${sub}</div></div></button>`;
   const ov=document.createElement('div');ov.id='send-prod-sheet';
-  ov.style.cssText='position:absolute;inset:0;z-index:9999;background:rgba(0,0,0,.6);display:flex;align-items:center;justify-content:center;padding:24px 16px;box-sizing:border-box;';
+  ov.style.cssText='position:fixed;top:0;bottom:0;left:50%;transform:translateX(-50%);width:390px;max-width:100%;z-index:9999;background:rgba(0,0,0,.6);display:flex;align-items:center;justify-content:center;padding:24px 16px;box-sizing:border-box;';
   ov.onclick=e=>{if(e.target===ov)closeSendProd();};
   ov.innerHTML=`<div style="background:#161616;border:1px solid #2a2a2a;width:100%;border-radius:16px;padding:16px;max-height:82%;overflow:auto;">
     <div style="display:flex;align-items:center;gap:10px;margin-bottom:6px;"><div style="width:38px;height:38px;border-radius:10px;background:var(--accent-tint);display:flex;align-items:center;justify-content:center;flex-shrink:0;"><i class="ti ti-link" style="font-size:18px;color:var(--accent);"></i></div><div style="flex:1;min-width:0;"><div style="font-size:15px;font-weight:500;color:#f0f0f0;">Send ${c.name.split(' ')[0]} a link</div><div style="font-size:12px;color:#999;">They get their recap + routine — no app or login</div></div><button onclick="closeSendProd()" aria-label="Close" style="border:none;background:none;font-size:20px;color:#888;cursor:pointer;line-height:1;">✕</button></div>
@@ -3166,7 +3196,7 @@ function openPhotoUpload(clientId){
   const existing=document.getElementById('photo-upload-modal');if(existing)existing.remove();
   const m=document.createElement('div');
   m.id='photo-upload-modal';
-  m.style.cssText='position:absolute;inset:0;background:rgba(0,0,0,.75);z-index:300;display:flex;align-items:center;justify-content:center;padding:24px 16px;box-sizing:border-box;';
+  m.style.cssText='position:fixed;top:0;bottom:0;left:50%;transform:translateX(-50%);width:390px;max-width:100%;background:rgba(0,0,0,.75);z-index:300;display:flex;align-items:center;justify-content:center;padding:24px 16px;box-sizing:border-box;';
   m.innerHTML=`
   <div style="background:#1a1a1a;border:1px solid #2a2a2a;border-radius:16px;width:100%;padding:20px 16px 28px;">
     <div style="width:36px;height:4px;background:#333;border-radius:2px;margin:0 auto 16px;"></div>
@@ -3337,7 +3367,7 @@ function renderVcInbox(){
 function _vcInvitePicker(){
   const avail=Object.keys(CL).filter(id=>_vcStatus(id)==='none');
   const m=document.createElement('div');m.id='vc-invite-modal';
-  m.style.cssText='position:absolute;inset:0;background:rgba(0,0,0,.7);z-index:400;display:flex;align-items:center;justify-content:center;padding:24px 16px;box-sizing:border-box;';
+  m.style.cssText='position:fixed;top:0;bottom:0;left:50%;transform:translateX(-50%);width:390px;max-width:100%;background:rgba(0,0,0,.7);z-index:400;display:flex;align-items:center;justify-content:center;padding:24px 16px;box-sizing:border-box;';
   m.onclick=e=>{if(e.target===m)m.remove();};
   m.innerHTML=`<div style="background:#1a1a1a;border:1px solid #2a2a2a;border-radius:16px;width:100%;max-height:80%;overflow:auto;padding:18px 16px 26px;">
     <div style="width:36px;height:4px;background:#333;border-radius:2px;margin:0 auto 14px;"></div>
@@ -3916,7 +3946,7 @@ function sendFormToClient(fid){
   const tmpl=formTmpls[fid];if(!tmpl)return;
   const guides=formGuideList(fid);
   const ov=document.createElement('div');ov.id='send-prod-sheet';
-  ov.style.cssText='position:absolute;inset:0;z-index:9999;background:rgba(0,0,0,.6);display:flex;align-items:center;justify-content:center;padding:24px 16px;box-sizing:border-box;';
+  ov.style.cssText='position:fixed;top:0;bottom:0;left:50%;transform:translateX(-50%);width:390px;max-width:100%;z-index:9999;background:rgba(0,0,0,.6);display:flex;align-items:center;justify-content:center;padding:24px 16px;box-sizing:border-box;';
   ov.onclick=e=>{if(e.target===ov)closeSendProd();};
   ov.innerHTML=`<div style="background:#161616;border:1px solid #2a2a2a;width:100%;border-radius:16px;padding:16px;max-height:82%;overflow:auto;">
     <div style="display:flex;align-items:center;gap:10px;margin-bottom:10px;"><div style="width:38px;height:38px;border-radius:9px;background:var(--accent-tint);display:flex;align-items:center;justify-content:center;flex-shrink:0;"><i class="ti ti-file-text" style="font-size:18px;color:var(--accent);"></i></div><div style="flex:1;min-width:0;"><div style="font-size:15px;font-weight:500;color:#f0f0f0;">Send ${tmpl.name}</div><div style="font-size:12px;color:#999;">Choose how the client completes it</div></div><button onclick="closeSendProd()" aria-label="Close" style="border:none;background:none;font-size:20px;color:#888;cursor:pointer;line-height:1;">✕</button></div>
@@ -4849,7 +4879,7 @@ function undoLastCheckinDismiss(){
 function _ciUndoToast(msg){
   const old=document.getElementById('ci-undo-toast');if(old)old.remove();
   const t=document.createElement('div');t.id='ci-undo-toast';
-  t.style.cssText='position:absolute;bottom:88px;left:50%;transform:translateX(-50%);background:#161616;border:1px solid #333;color:#e0e0e0;border-radius:10px;padding:9px 12px 9px 14px;font-size:13px;z-index:600;display:flex;align-items:center;gap:12px;box-shadow:0 6px 24px rgba(0,0,0,.4);white-space:nowrap;';
+  t.style.cssText='position:fixed;bottom:88px;left:50%;transform:translateX(-50%);background:#161616;border:1px solid #333;color:#e0e0e0;border-radius:10px;padding:9px 12px 9px 14px;font-size:13px;z-index:600;display:flex;align-items:center;gap:12px;box-shadow:0 6px 24px rgba(0,0,0,.4);white-space:nowrap;';
   t.innerHTML=`<span>${msg}</span><button onclick="undoLastCheckinDismiss()" style="background:none;border:none;color:var(--accent);font-weight:700;font-size:13px;cursor:pointer;font-family:inherit;padding:0;">Undo</button>`;
   (document.querySelector('.shell')||document.body).appendChild(t);
   setTimeout(()=>{if(t&&t.parentNode)t.remove();},5000);
@@ -4882,7 +4912,7 @@ function sendCheckin(id){
   const smsHref='sms:'+telDigits+'?&body='+encodeURIComponent(msg);
   const esc=s=>String(s).replace(/&/g,'&amp;').replace(/</g,'&lt;').replace(/>/g,'&gt;');
   const ov=document.createElement('div');ov.id='checkin-sheet';
-  ov.style.cssText='position:absolute;inset:0;z-index:9999;background:rgba(0,0,0,.6);display:flex;align-items:center;justify-content:center;padding:24px 16px;box-sizing:border-box;';
+  ov.style.cssText='position:fixed;top:0;bottom:0;left:50%;transform:translateX(-50%);width:390px;max-width:100%;z-index:9999;background:rgba(0,0,0,.6);display:flex;align-items:center;justify-content:center;padding:24px 16px;box-sizing:border-box;';
   ov.onclick=e=>{if(e.target===ov)ov.remove();};
   ov.innerHTML=`<div style="background:#161616;border:1px solid #2a2a2a;width:100%;border-radius:16px;padding:18px;">
     <div style="display:flex;align-items:center;gap:10px;margin-bottom:12px;">
@@ -4912,7 +4942,7 @@ function inviteClientToApp(id){
   const msg='Hi '+first+'! '+who+' invited you to SlickChart'+(biz?(' \u2014 '+biz):'')+'. See your visit summary, aftercare, forms, and rebook anytime: '+link;
   const enc=encodeURIComponent(msg);
   const ov=document.createElement('div');ov.id='invite-sheet';
-  ov.style.cssText='position:absolute;inset:0;z-index:9999;background:rgba(0,0,0,.6);display:flex;align-items:center;justify-content:center;padding:24px 16px;box-sizing:border-box;';
+  ov.style.cssText='position:fixed;top:0;bottom:0;left:50%;transform:translateX(-50%);width:390px;max-width:100%;z-index:9999;background:rgba(0,0,0,.6);display:flex;align-items:center;justify-content:center;padding:24px 16px;box-sizing:border-box;';
   ov.onclick=e=>{if(e.target===ov)ov.remove();};
   ov.innerHTML=`<div style="background:#161616;border:1px solid #2a2a2a;width:100%;border-radius:16px;padding:18px;">
     <div style="display:flex;align-items:center;gap:10px;margin-bottom:12px;"><div style="width:38px;height:38px;border-radius:9px;background:#1e1633;display:flex;align-items:center;justify-content:center;flex-shrink:0;"><i class="ti ti-device-mobile" style="font-size:18px;color:#a891ec;"></i></div><div style="flex:1;min-width:0;"><div style="font-size:15px;font-weight:600;color:#f0f0f0;">Invite ${first} to the app</div><div style="font-size:12px;color:#999;">Opens in any browser \u00b7 installable on their phone</div></div><button onclick="this.closest('#invite-sheet').remove()" aria-label="Close" style="border:none;background:none;font-size:20px;color:#888;cursor:pointer;line-height:1;">\u2715</button></div>
@@ -4929,7 +4959,7 @@ function shareFormLink(fid,cid){
   const tmpl=formTmpls[fid]||{name:'Form'};
   const link='https://slickchart.app/sign/'+_formToken(fid,cid);
   const ov=document.createElement('div');ov.id='link-sheet';
-  ov.style.cssText='position:absolute;inset:0;z-index:9999;background:rgba(0,0,0,.6);display:flex;align-items:center;justify-content:center;padding:24px 16px;box-sizing:border-box;';
+  ov.style.cssText='position:fixed;top:0;bottom:0;left:50%;transform:translateX(-50%);width:390px;max-width:100%;z-index:9999;background:rgba(0,0,0,.6);display:flex;align-items:center;justify-content:center;padding:24px 16px;box-sizing:border-box;';
   ov.onclick=e=>{if(e.target===ov)ov.remove();};
   ov.innerHTML=`<div style="background:#161616;border:1px solid #2a2a2a;width:100%;border-radius:16px;padding:18px;">
     <div style="display:flex;align-items:center;gap:10px;margin-bottom:10px;"><div style="width:38px;height:38px;border-radius:9px;background:var(--accent-tint);display:flex;align-items:center;justify-content:center;flex-shrink:0;"><i class="ti ti-link" style="font-size:18px;color:var(--accent);"></i></div><div style="flex:1;min-width:0;"><div style="font-size:15px;font-weight:600;color:#f0f0f0;">Share ${tmpl.name}</div><div style="font-size:12px;color:#999;">They open it in any browser — no app needed</div></div><button onclick="this.closest('#link-sheet').remove()" aria-label="Close" style="border:none;background:none;font-size:20px;color:#888;cursor:pointer;line-height:1;">✕</button></div>
@@ -5545,7 +5575,7 @@ function sendRoutineToClient(){
   const nt=document.getElementById('routine-note');if(nt)routineDraft.note=nt.value;
   if(!routineDraft.items.length){if(typeof proToast==='function')proToast('Add at least one product first');return;}
   const ov=document.createElement('div');ov.id='send-prod-sheet';
-  ov.style.cssText='position:absolute;inset:0;z-index:9999;background:rgba(0,0,0,.6);display:flex;align-items:center;justify-content:center;padding:24px 16px;box-sizing:border-box;';
+  ov.style.cssText='position:fixed;top:0;bottom:0;left:50%;transform:translateX(-50%);width:390px;max-width:100%;z-index:9999;background:rgba(0,0,0,.6);display:flex;align-items:center;justify-content:center;padding:24px 16px;box-sizing:border-box;';
   ov.onclick=e=>{if(e.target===ov)closeSendProd();};
   ov.innerHTML=`<div style="background:#161616;border:1px solid #2a2a2a;width:100%;border-radius:16px;padding:16px;max-height:82%;overflow:auto;">
     <div style="display:flex;align-items:center;gap:10px;margin-bottom:12px;"><div style="width:38px;height:38px;border-radius:9px;background:var(--accent-tint);display:flex;align-items:center;justify-content:center;flex-shrink:0;"><i class="ti ti-list-check" style="font-size:18px;color:var(--accent);"></i></div><div style="flex:1;min-width:0;"><div style="font-size:15px;font-weight:500;color:#f0f0f0;">Send ${(routineDraft.name||'routine').replace(/</g,'&lt;')}</div><div style="font-size:12px;color:#999;">${routineDraft.items.length} product${routineDraft.items.length>1?'s':''} · pick a client</div></div><button onclick="closeSendProd()" aria-label="Close" style="border:none;background:none;font-size:20px;color:#888;cursor:pointer;line-height:1;">✕</button></div>
@@ -5576,7 +5606,7 @@ function confirmSendRoutine(cid){
 function sendCourseToClient(courseId){
   const co=courses.find(x=>x.id===courseId);if(!co)return;
   const ov=document.createElement('div');ov.id='send-prod-sheet';
-  ov.style.cssText='position:absolute;inset:0;z-index:9999;background:rgba(0,0,0,.6);display:flex;align-items:center;justify-content:center;padding:24px 16px;box-sizing:border-box;';
+  ov.style.cssText='position:fixed;top:0;bottom:0;left:50%;transform:translateX(-50%);width:390px;max-width:100%;z-index:9999;background:rgba(0,0,0,.6);display:flex;align-items:center;justify-content:center;padding:24px 16px;box-sizing:border-box;';
   ov.onclick=e=>{if(e.target===ov)closeSendProd();};
   ov.innerHTML=`<div style="background:#161616;border:1px solid #2a2a2a;width:100%;border-radius:16px;padding:16px;max-height:82%;overflow:auto;">
     <div style="display:flex;align-items:center;gap:10px;margin-bottom:6px;"><div style="width:38px;height:38px;border-radius:9px;background:${co.bg};display:flex;align-items:center;justify-content:center;flex-shrink:0;"><i class="ti ${co.icon}" style="font-size:18px;color:${co.ic};"></i></div><div style="flex:1;min-width:0;"><div style="font-size:15px;font-weight:500;color:#f0f0f0;">Send ${co.title}</div><div style="font-size:12px;color:#999;">Pick a client — they get a link to access it</div></div><button onclick="closeSendProd()" aria-label="Close" style="border:none;background:none;font-size:20px;color:#888;cursor:pointer;line-height:1;">✕</button></div>
@@ -5699,7 +5729,7 @@ function onboardToggleDay(d){onboardData.avail.days[d]=!onboardData.avail.days[d
 function proToast(msg){
   const old=document.getElementById('pro-toast');if(old)old.remove();
   const t=document.createElement('div');t.id='pro-toast';
-  t.style.cssText='position:absolute;bottom:88px;left:50%;transform:translateX(-50%);background:#0a2019;border:1px solid #4ec49a;color:#4ec49a;border-radius:10px;padding:10px 16px;font-size:13px;z-index:600;white-space:nowrap;display:flex;align-items:center;gap:7px;box-shadow:0 6px 24px rgba(0,0,0,.4);';
+  t.style.cssText='position:fixed;bottom:88px;left:50%;transform:translateX(-50%);background:#0a2019;border:1px solid #4ec49a;color:#4ec49a;border-radius:10px;padding:10px 16px;font-size:13px;z-index:600;white-space:nowrap;display:flex;align-items:center;gap:7px;box-shadow:0 6px 24px rgba(0,0,0,.4);';
   t.innerHTML=`<i class="ti ti-check" style="font-size:14px;"></i>${msg}`;
   (document.querySelector('.shell')||document.body).appendChild(t);
   setTimeout(()=>t.remove(),2800);
@@ -5715,7 +5745,7 @@ function confirmModal(opts,action){
   const danger=/delete|remove|stop|permanently|won['’]t/i.test(((opts.action||'')+' '+(opts.title||'')+' '+(opts.body||'')));
   const esc=s=>String(s==null?'':s);
   const ov=document.createElement('div');ov.id='confirm-modal';
-  ov.style.cssText='position:absolute;inset:0;z-index:99999;background:rgba(0,0,0,.65);display:flex;align-items:center;justify-content:center;padding:24px;';
+  ov.style.cssText='position:fixed;top:0;bottom:0;left:50%;transform:translateX(-50%);width:390px;max-width:100%;z-index:99999;background:rgba(0,0,0,.65);display:flex;align-items:center;justify-content:center;padding:24px;';
   ov.onclick=e=>{if(e.target===ov)ov.remove();};
   ov.innerHTML=`<div style="background:#1a1a1a;border:1px solid #2a2a2a;border-radius:16px;padding:20px;max-width:340px;width:100%;box-shadow:0 12px 40px rgba(0,0,0,.5);">
     <div style="font-size:16px;font-weight:600;color:#f0f0f0;margin-bottom:8px;">${esc(opts.title||'Are you sure?')}</div>
@@ -5735,7 +5765,7 @@ function confirmModal(opts,action){
 function sendProductToClient(aid){
   const p=affiliateLinks.find(x=>x.id===aid);if(!p)return;
   const ov=document.createElement('div');ov.id='send-prod-sheet';
-  ov.style.cssText='position:absolute;inset:0;z-index:9999;background:rgba(0,0,0,.6);display:flex;align-items:center;justify-content:center;padding:24px 16px;box-sizing:border-box;';
+  ov.style.cssText='position:fixed;top:0;bottom:0;left:50%;transform:translateX(-50%);width:390px;max-width:100%;z-index:9999;background:rgba(0,0,0,.6);display:flex;align-items:center;justify-content:center;padding:24px 16px;box-sizing:border-box;';
   ov.onclick=e=>{if(e.target===ov)closeSendProd();};
   ov.innerHTML=`<div style="background:#161616;border:1px solid #2a2a2a;width:100%;border-radius:16px;padding:16px;max-height:82%;overflow:auto;">
     <div style="display:flex;align-items:center;gap:10px;margin-bottom:10px;"><span style="font-size:22px;">${p.icon}</span><div style="flex:1;min-width:0;"><div style="font-size:15px;font-weight:500;color:#f0f0f0;">Recommend ${p.name}</div><div style="font-size:12px;color:#999;">Add it to a client's recommendations</div></div><button onclick="closeSendProd()" aria-label="Close" style="border:none;background:none;font-size:20px;color:#888;cursor:pointer;line-height:1;">✕</button></div>
@@ -5774,7 +5804,7 @@ function sendBundleToClient(bi){
   const b=shopBundles[bi];if(!b)return;
   const prods=_bundleProducts(b);
   const ov=document.createElement('div');ov.id='send-prod-sheet';
-  ov.style.cssText='position:absolute;inset:0;z-index:9999;background:rgba(0,0,0,.6);display:flex;align-items:center;justify-content:center;padding:24px 16px;box-sizing:border-box;';
+  ov.style.cssText='position:fixed;top:0;bottom:0;left:50%;transform:translateX(-50%);width:390px;max-width:100%;z-index:9999;background:rgba(0,0,0,.6);display:flex;align-items:center;justify-content:center;padding:24px 16px;box-sizing:border-box;';
   ov.onclick=e=>{if(e.target===ov)closeSendProd();};
   ov.innerHTML=`<div style="background:#161616;border:1px solid #2a2a2a;width:100%;border-radius:16px;padding:16px;max-height:82%;overflow:auto;">
     <div style="display:flex;align-items:center;gap:10px;margin-bottom:6px;"><div style="width:38px;height:38px;border-radius:10px;background:${b.col};display:flex;align-items:center;justify-content:center;font-size:20px;flex-shrink:0;">${b.icon}</div><div style="flex:1;min-width:0;"><div style="font-size:15px;font-weight:500;color:#f0f0f0;">Send ${b.name}</div><div style="font-size:12px;color:#999;">${prods.length} product${prods.length===1?'':'s'} → a client's recommendations</div></div><button onclick="closeSendProd()" aria-label="Close" style="border:none;background:none;font-size:20px;color:#888;cursor:pointer;line-height:1;">✕</button></div>
@@ -5804,7 +5834,7 @@ function confirmSendBundle(bi,cid){
 function sendResourceToClient(ri){
   const r=resources[ri];if(!r)return;
   const ov=document.createElement('div');ov.id='send-prod-sheet';
-  ov.style.cssText='position:absolute;inset:0;z-index:9999;background:rgba(0,0,0,.6);display:flex;align-items:center;justify-content:center;padding:24px 16px;box-sizing:border-box;';
+  ov.style.cssText='position:fixed;top:0;bottom:0;left:50%;transform:translateX(-50%);width:390px;max-width:100%;z-index:9999;background:rgba(0,0,0,.6);display:flex;align-items:center;justify-content:center;padding:24px 16px;box-sizing:border-box;';
   ov.onclick=e=>{if(e.target===ov)closeSendProd();};
   ov.innerHTML=`<div style="background:#161616;border:1px solid #2a2a2a;width:100%;border-radius:16px;padding:16px;max-height:82%;overflow:auto;">
     <div style="display:flex;align-items:center;gap:10px;margin-bottom:10px;"><span style="font-size:24px;">${r.icon}</span><div style="flex:1;min-width:0;"><div style="font-size:15px;font-weight:500;color:#f0f0f0;">Send ${r.title}</div><div style="font-size:12px;color:#999;">${r.cat} · appears on the client's link</div></div><button onclick="closeSendProd()" aria-label="Close" style="border:none;background:none;font-size:20px;color:#888;cursor:pointer;line-height:1;">✕</button></div>
@@ -5830,7 +5860,7 @@ function openBetaFeedback(){
   const old=document.getElementById('beta-fb');if(old)old.remove();
   _betaRating=0;
   const m=document.createElement('div');m.id='beta-fb';
-  m.style.cssText='position:absolute;inset:0;z-index:500;display:flex;flex-direction:column;justify-content:flex-end;';
+  m.style.cssText='position:fixed;top:0;bottom:0;left:50%;transform:translateX(-50%);width:390px;max-width:100%;z-index:500;display:flex;flex-direction:column;justify-content:flex-end;';
   m.innerHTML=`
   <div onclick="document.getElementById('beta-fb').remove()" style="flex:1;background:rgba(0,0,0,.55);"></div>
   <div style="background:#161616;border-radius:16px;padding:20px 16px 28px;border-top:1px solid #2a2a2a;">
@@ -5850,7 +5880,7 @@ function renderOnboard(){
   const existing=document.getElementById('onboard-overlay');if(existing)existing.remove();
   const m=document.createElement('div');
   m.id='onboard-overlay';
-  m.style.cssText='position:absolute;inset:0;background:#111;z-index:400;display:flex;flex-direction:column;overflow-y:auto;';
+  m.style.cssText='position:fixed;top:0;bottom:0;left:50%;transform:translateX(-50%);width:390px;max-width:100%;background:#111;z-index:400;display:flex;flex-direction:column;overflow-y:auto;';
 
   const dots=`<div style="display:flex;justify-content:center;gap:6px;margin:8px 0 18px;">
     ${ONBOARD_STEPS.map((_,i)=>`<div style="width:${i===onboardStep?22:7}px;height:7px;border-radius:4px;background:${i<=onboardStep?'var(--accent)':'#2a2a2a'};transition:all .25s;"></div>`).join('')}
@@ -6489,7 +6519,7 @@ function _addToCalendar(title,dateStr,timeStr){
   const ics=['BEGIN:VCALENDAR','VERSION:2.0','PRODID:-//SlickChart//EN','BEGIN:VEVENT','UID:sc-'+Date.now()+'@slickchart','DTSTART:'+st.stamp,'DTEND:'+es,'SUMMARY:'+String(title).replace(/([,;])/g,'\\$1'),'END:VEVENT','END:VCALENDAR'].join('\r\n');
   const gcal='https://calendar.google.com/calendar/render?action=TEMPLATE&text='+encodeURIComponent(title)+'&dates='+st.stamp+'/'+es;
   const ov=document.createElement('div');ov.id='cal-add-sheet';
-  ov.style.cssText='position:absolute;inset:0;z-index:9999;background:rgba(0,0,0,.6);display:flex;align-items:center;justify-content:center;padding:24px 16px;box-sizing:border-box;';
+  ov.style.cssText='position:fixed;top:0;bottom:0;left:50%;transform:translateX(-50%);width:390px;max-width:100%;z-index:9999;background:rgba(0,0,0,.6);display:flex;align-items:center;justify-content:center;padding:24px 16px;box-sizing:border-box;';
   ov.onclick=ev=>{if(ev.target===ov)ov.remove();};
   ov.innerHTML='<div style="background:#161616;border:1px solid #2a2a2a;width:100%;border-radius:16px;padding:18px;"><div style="font-size:15px;font-weight:600;color:#f0f0f0;margin-bottom:4px;">Add to calendar</div><div style="font-size:12px;color:#999;margin-bottom:14px;">'+String(title).replace(/</g,'&lt;')+'</div><a href="'+gcal+'" target="_blank" rel="noopener" onclick="var s=this.closest(\'#cal-add-sheet\');if(s)s.remove();" class="btnp" style="display:block;text-align:center;text-decoration:none;border-radius:9px;padding:11px;margin-bottom:8px;"><i class="ti ti-brand-google"></i> Google Calendar</a><a href="data:text/calendar;charset=utf-8,'+encodeURIComponent(ics)+'" download="appointment.ics" onclick="var s=this.closest(\'#cal-add-sheet\');if(s)s.remove();" class="btng" style="display:block;text-align:center;text-decoration:none;border-radius:9px;padding:11px;"><i class="ti ti-brand-apple"></i> Apple / download .ics</a></div>';
   (document.querySelector('.shell')||document.body).appendChild(ov);
@@ -6678,7 +6708,7 @@ function _coRenderItems(){
 function _coMenuOpen(){_coEnsureMenu().then(()=>_coMenuShow());}
 function _coMenuShow(){
   let ov=document.getElementById('co-menu');
-  if(!ov){ov=document.createElement('div');ov.id='co-menu';ov.style.cssText='position:absolute;inset:0;z-index:9999;background:rgba(0,0,0,.6);display:flex;flex-direction:column;justify-content:flex-end;';ov.onclick=e=>{if(e.target===ov)ov.remove();};(document.querySelector('.shell')||document.body).appendChild(ov);}
+  if(!ov){ov=document.createElement('div');ov.id='co-menu';ov.style.cssText='position:fixed;top:0;bottom:0;left:50%;transform:translateX(-50%);width:390px;max-width:100%;z-index:9999;background:rgba(0,0,0,.6);display:flex;flex-direction:column;justify-content:flex-end;';ov.onclick=e=>{if(e.target===ov)ov.remove();};(document.querySelector('.shell')||document.body).appendChild(ov);}
   ov.innerHTML='<div style="background:#161616;border-top:1px solid #2a2a2a;border-radius:16px 16px 0 0;padding:16px 16px 0;max-height:78%;display:flex;flex-direction:column;"><div style="width:36px;height:4px;background:#2a2a2a;border-radius:2px;margin:0 auto 12px;flex-shrink:0;"></div><div style="font-size:15px;font-weight:600;color:#f0f0f0;margin-bottom:10px;flex-shrink:0;">Add from your menu</div><input id="co-menu-q" oninput="_coMenuFilter(this.value)" placeholder="Search services &amp; products" style="width:100%;background:#111;border:1px solid #2a2a2a;border-radius:9px;padding:10px 12px;font-size:13px;color:#e0e0e0;font-family:inherit;outline:none;margin-bottom:10px;box-sizing:border-box;flex-shrink:0;"><div id="co-menu-list" style="overflow:auto;flex:1;min-height:60px;"></div><div style="flex-shrink:0;border-top:1px solid #242424;padding:10px 0 16px;background:#161616;"><div id="co-menu-count" style="font-size:11px;color:#777;text-align:center;margin-bottom:8px;"></div><button onclick="document.getElementById(\'co-menu\').remove()" style="width:100%;background:var(--accent);color:var(--accent-ink);border:none;border-radius:9px;padding:12px;font-size:14px;font-weight:700;cursor:pointer;font-family:inherit;">Done</button></div></div>';
   _coMenuExpanded=false;
   _coMenuFilter('');
@@ -6875,7 +6905,7 @@ function _payOpen(idv){
   const ex=document.getElementById('pay-detail'); if(ex)ex.remove();
   const col={paid:'#4ec49a',unpaid:'#e8b060',partial:'#5ba3e8',refunded:'#999',canceled:'#777'}[p.status]||'#999';
   const itemsHtml=(p.items&&p.items.length)?('<div style="margin:12px 0 4px;">'+p.items.map(it=>`<div style="display:flex;justify-content:space-between;font-size:13px;color:#ccc;padding:5px 0;border-bottom:1px solid #1e1e1e;"><span>${((it.qty||1)>1?(it.qty+'\u00d7 '):'')+String(it.name).replace(/</g,'&lt;')}</span><span>$${((+it.price||0)*(it.qty||1)).toFixed(2)}</span></div>`).join('')+'</div>'):(p.note?('<div style="font-size:13px;color:#aaa;margin:10px 0 4px;">'+String(p.note).replace(/</g,'&lt;')+'</div>'):'');
-  const m=document.createElement('div'); m.id='pay-detail'; m.style.cssText='position:absolute;inset:0;z-index:9999;background:rgba(0,0,0,.6);display:flex;flex-direction:column;justify-content:flex-end;'; m.onclick=e=>{if(e.target===m)m.remove();};
+  const m=document.createElement('div'); m.id='pay-detail'; m.style.cssText='position:fixed;top:0;bottom:0;left:50%;transform:translateX(-50%);width:390px;max-width:100%;z-index:9999;background:rgba(0,0,0,.6);display:flex;flex-direction:column;justify-content:flex-end;'; m.onclick=e=>{if(e.target===m)m.remove();};
   m.innerHTML='<div style="background:#161616;border-top:1px solid #2a2a2a;border-radius:16px 16px 0 0;padding:18px;max-height:88%;overflow:auto;"><div style="width:36px;height:4px;background:#2a2a2a;border-radius:2px;margin:0 auto 14px;"></div>'
     +'<div style="display:flex;justify-content:space-between;align-items:flex-start;"><div><div style="font-size:20px;font-weight:700;color:#f0f0f0;">$'+(+p.amount||0).toFixed(2)+'</div><div style="font-size:13px;color:#999;margin-top:2px;">'+String(p.clientName||'\u2014').replace(/</g,'&lt;')+' \u00b7 '+(p.date||'').slice(0,10)+' \u00b7 '+(p.method||'')+'</div></div><span style="font-size:12px;font-weight:700;color:'+col+';text-transform:capitalize;">'+p.status+'</span></div>'
     +itemsHtml
@@ -6937,7 +6967,7 @@ function _payExportCSV(){
 function _payLogOpen(){
   const ex=document.getElementById('pay-log');if(ex)ex.remove();
   const opts=Object.entries(CL).map(([cid,c])=>`<option value="${cid}">${String(c.name||'').replace(/</g,'&lt;')}</option>`).join('');
-  const m=document.createElement('div');m.id='pay-log';m.style.cssText='position:absolute;inset:0;z-index:9999;background:rgba(0,0,0,.6);display:flex;flex-direction:column;justify-content:flex-end;';m.onclick=e=>{if(e.target===m)m.remove();};
+  const m=document.createElement('div');m.id='pay-log';m.style.cssText='position:fixed;top:0;bottom:0;left:50%;transform:translateX(-50%);width:390px;max-width:100%;z-index:9999;background:rgba(0,0,0,.6);display:flex;flex-direction:column;justify-content:flex-end;';m.onclick=e=>{if(e.target===m)m.remove();};
   m.innerHTML='<div style="background:#161616;border-top:1px solid #2a2a2a;border-radius:16px 16px 0 0;padding:18px;max-height:88%;overflow:auto;"><div style="width:36px;height:4px;background:#2a2a2a;border-radius:2px;margin:0 auto 14px;"></div><div style="font-size:15px;font-weight:600;color:#f0f0f0;margin-bottom:12px;">Log a payment</div><span class="fl-lbl">Client</span><select class="fi" id="pl-client" style="margin-bottom:10px;">'+opts+'</select><div style="display:flex;gap:10px;"><div style="flex:1;"><span class="fl-lbl">Amount</span><input class="fi" id="pl-amt" inputmode="decimal" placeholder="0.00" style="margin-bottom:10px;"></div><div style="flex:1;"><span class="fl-lbl">Date</span><input type="date" class="fi" id="pl-date" value="'+_todayISO()+'" style="margin-bottom:10px;color-scheme:dark;"></div></div><div style="display:flex;gap:10px;"><div style="flex:1;"><span class="fl-lbl">Method</span><select class="fi" id="pl-method" style="margin-bottom:10px;"><option>Cash</option><option>Venmo</option><option>Zelle</option><option>Card</option><option>Stripe</option><option>Square</option><option>Other</option></select></div><div style="flex:1;"><span class="fl-lbl">Status</span><select class="fi" id="pl-status" style="margin-bottom:10px;"><option value="paid">Paid</option><option value="unpaid">Unpaid</option><option value="partial">Partial</option></select></div></div><span class="fl-lbl">Note (optional)</span><input class="fi" id="pl-note" placeholder="e.g. Hydrafacial + serum" style="margin-bottom:14px;"><button class="btnp" style="width:100%;border-radius:10px;" onclick="_payLogSave()"><i class="ti ti-check"></i> Save payment</button><button onclick="document.getElementById(\'pay-log\').remove()" style="width:100%;margin-top:8px;background:none;border:none;color:#777;font-size:13px;cursor:pointer;font-family:inherit;padding:6px;">Cancel</button></div>';
   (document.querySelector('.shell')||document.body).appendChild(m);
 }
@@ -7959,7 +7989,7 @@ function openLocalQuickAdd(){
   const txs=['Hydrafacial','Chemical Peel','Brightening Facial','Microneedling','Dermaplaning','LED Therapy','Consultation'];
   const m=document.createElement('div');
   m.id='qa-modal';
-  m.style.cssText='position:absolute;inset:0;z-index:300;display:flex;flex-direction:column;justify-content:flex-end;';
+  m.style.cssText='position:fixed;top:0;bottom:0;left:50%;transform:translateX(-50%);width:390px;max-width:100%;z-index:300;display:flex;flex-direction:column;justify-content:flex-end;';
   m.innerHTML=`
   <div onclick="document.getElementById('qa-modal').remove()" style="flex:1;background:rgba(0,0,0,.5);"></div>
   <div style="background:#161616;border-radius:16px;padding:20px 16px 28px;border-top:1px solid #2a2a2a;">
@@ -7993,7 +8023,7 @@ function openSquareBook(prefill){
   prefill=prefill||{};
   const existing=document.getElementById('qa-modal');if(existing)existing.remove();
   const m=document.createElement('div');m.id='qa-modal';
-  m.style.cssText='position:absolute;inset:0;z-index:300;display:flex;flex-direction:column;justify-content:center;padding:24px 16px;box-sizing:border-box;';
+  m.style.cssText='position:fixed;top:0;bottom:0;left:50%;transform:translateX(-50%);width:390px;max-width:100%;z-index:300;display:flex;flex-direction:column;justify-content:center;padding:24px 16px;box-sizing:border-box;';
   m.innerHTML=`<div onclick="document.getElementById('qa-modal').remove()" style="position:absolute;inset:0;background:rgba(0,0,0,.5);"></div>
   <div style="position:relative;background:#161616;border-radius:16px;padding:20px 16px 22px;border:1px solid #2a2a2a;max-height:88%;overflow:auto;">
     <div style="display:flex;align-items:center;gap:8px;margin-bottom:14px;"><div style="font-size:16px;font-weight:600;color:#f0f0f0;">Book in Square</div><span style="display:inline-flex;align-items:center;gap:4px;font-size:10px;font-weight:700;color:#4ec49a;background:#0a2019;border:1px solid #1a4a38;padding:2px 8px;border-radius:20px;"><span style="width:6px;height:6px;border-radius:50%;background:#4ec49a;"></span>LIVE</span></div>
