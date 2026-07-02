@@ -16,9 +16,21 @@ export async function sendEmail({ to, subject, html, text }) {
 
 export async function addToAudience(email, name) {
   const key = process.env.RESEND_API_KEY || '';
-  const aud = process.env.RESEND_AUDIENCE_ID || '';
-  if (!key || !aud) { return { skipped: true }; }
+  if (!key) { return { skipped: true }; }
   try {
+    // Use RESEND_AUDIENCE_ID if provided; otherwise auto-pick the account's
+    // default (first) audience so no ID needs to be configured by hand.
+    let aud = process.env.RESEND_AUDIENCE_ID || '';
+    if (!aud) {
+      const list = await fetch('https://api.resend.com/audiences', {
+        headers: { 'Authorization': 'Bearer ' + key }
+      });
+      if (!list.ok) { return { error: 'audiences ' + list.status }; }
+      const j = await list.json();
+      const arr = (j && (j.data || j.audiences || j)) || [];
+      aud = Array.isArray(arr) && arr[0] ? (arr[0].id || arr[0].audience_id) : '';
+      if (!aud) { return { skipped: true, reason: 'no-audience' }; }
+    }
     const parts = String(name || '').trim().split(/\s+/);
     const r = await fetch('https://api.resend.com/audiences/' + aud + '/contacts', {
       method: 'POST',
