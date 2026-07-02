@@ -35,6 +35,10 @@ nav.nav{position:absolute;bottom:0;left:0;right:0;background:#fff;border-top:1px
 .card{background:#fff;border:1px solid #f0ebe4;border-radius:14px;margin:0 16px 10px;padding:16px;cursor:pointer;}
 .card:focus-visible{outline:2px solid var(--accent);outline-offset:2px;}
 .sh{padding:14px 16px 7px;}
+.swipe-card{transition:transform .2s;touch-action:pan-y;position:relative;z-index:1;}
+.swipe-reveal{position:absolute;right:0;top:0;bottom:0;width:80px;z-index:0;background:#e6f4ec;display:flex;flex-direction:column;align-items:center;justify-content:center;gap:4px;cursor:pointer;border-radius:0 13px 13px 0;}
+.swipe-reveal i{font-size:18px;color:#2e9e6b;}
+.swipe-reveal span{font-size:10px;color:#2e9e6b;font-weight:700;letter-spacing:.04em;}
 .sh h2{font-size:11px;font-weight:600;color:#b8a898;text-transform:uppercase;letter-spacing:.08em;}
 .btnp{background:var(--accent);color:#fff;border:none;border-radius:10px;padding:12px 16px;font-size:14px;font-weight:500;cursor:pointer;display:flex;align-items:center;justify-content:center;gap:6px;width:100%;}
 .btnp:focus-visible{outline:2px solid #9a7d5e;outline-offset:2px;}
@@ -81,6 +85,7 @@ nav.nav{position:absolute;bottom:0;left:0;right:0;background:#fff;border-top:1px
 <div class="shell">
   <div class="sb"><span>9:41</span><span class="ic"><i class="ti ti-wifi"></i><i class="ti ti-battery-3"></i></span></div>
   <div class="topbar">
+    <button id="topbar-back" onclick="navBack()" aria-label="Go back" style="display:none;align-items:center;gap:3px;background:var(--accent-a20);border:1px solid var(--accent-a30);cursor:pointer;height:30px;padding:0 11px 0 8px;border-radius:8px;flex-shrink:0;margin-left:-2px;font-family:inherit;"><i class="ti ti-chevron-left" aria-hidden="true" style="font-size:17px;color:#8b6b4a;"></i><span style="font-size:13px;font-weight:600;color:#8b6b4a;">Back</span></button>
     <div class="logo"><i class="ti ti-sparkles" aria-hidden="true"></i></div>
     <span id="tt">SlickChart</span>
     <button onclick="nav('notifications')" id="client-notif-bell" aria-label="Notifications" style="position:relative;background:none;border:none;cursor:pointer;width:34px;height:34px;display:flex;align-items:center;justify-content:center;margin-left:auto;margin-right:2px;">
@@ -249,6 +254,34 @@ function showPushBanner(n,onclick){
   setTimeout(()=>{if(el.parentNode){el.style.transform='translateY(-130%)';setTimeout(()=>el.remove(),350);}},5200);
 }
 
+function initSwipe(card,i){
+  if(!card||card._swipeInit)return;card._swipeInit=true;
+  const W=80;
+  let startX=0,startY=0,dx=0,dragging=false,opened=false,decided=false,horiz=false;
+  const setX=x=>{card.style.transform='translateX('+x+'px)';};
+  const open=()=>{opened=true;card.style.transition='transform .2s';card.style.transform='translateX(-'+W+'px)';};
+  const close=()=>{opened=false;card.style.transition='transform .2s';card.style.transform='translateX(0px)';};
+  const closeOthers=()=>{try{document.querySelectorAll('.swipe-card').forEach(el=>{if(el!==card){el.style.transition='transform .2s';el.style.transform='translateX(0px)';if(el._setClosed)el._setClosed();}});}catch(e){}};
+  card._setClosed=()=>{opened=false;};
+  const onStart=(x,y)=>{startX=x;startY=y;dx=opened?-W:0;dragging=true;decided=false;horiz=false;card.style.transition='none';};
+  const onMove=(x,y)=>{
+    if(!dragging)return;
+    const mx=x-startX,my=y-startY;
+    if(!decided){if(Math.abs(mx)>6||Math.abs(my)>6){decided=true;horiz=Math.abs(mx)>Math.abs(my);}else return;}
+    if(!horiz){dragging=false;card.style.transition='transform .2s';setX(opened?-W:0);return;}
+    let nx=(opened?-W:0)+mx;if(nx>0)nx=0;if(nx<-W-20)nx=-W-20;dx=nx;setX(nx);
+  };
+  const onEnd=()=>{
+    if(!dragging)return;dragging=false;
+    if(!horiz){card.style.transition='transform .2s';return;}
+    if(dx<-W/2){closeOthers();open();}else{close();}
+  };
+  card.addEventListener('touchstart',e=>{if(e.touches&&e.touches[0])onStart(e.touches[0].clientX,e.touches[0].clientY);},{passive:true});
+  card.addEventListener('touchmove',e=>{if(e.touches&&e.touches[0])onMove(e.touches[0].clientX,e.touches[0].clientY);},{passive:true});
+  card.addEventListener('touchend',onEnd);card.addEventListener('touchcancel',onEnd);
+  card.addEventListener('mousedown',e=>{onStart(e.clientX,e.clientY);const mm=ev=>onMove(ev.clientX,ev.clientY);const mu=()=>{onEnd();document.removeEventListener('mousemove',mm);document.removeEventListener('mouseup',mu);};document.addEventListener('mousemove',mm);document.addEventListener('mouseup',mu);});
+}
+function clearClientNotif(id){const i=clientNotifs.findIndex(n=>n.id===id);if(i>=0)clientNotifs.splice(i,1);updateClientBadge();renderClientNotifs();}
 function renderClientNotifs(){
   setNav('home');
   document.getElementById('tt').textContent='Notifications';
@@ -256,7 +289,8 @@ function renderClientNotifs(){
   const unread=clientNotifs.filter(n=>!n.read);
   const read=clientNotifs.filter(n=>n.read);
   const card=n=>`
-    <div onclick="markClientRead('${n.id}');renderClientNotifs()" style="background:#fff;border:1.5px solid ${n.read?'#f0ebe4':'#e8d9c4'};border-radius:13px;margin:0 16px 8px;padding:12px 13px;display:flex;gap:11px;align-items:flex-start;cursor:pointer;${n.read?'':'box-shadow:0 1px 8px rgba(200,168,130,.12);'}">
+    <div style="position:relative;overflow:hidden;margin:0 16px 8px;border-radius:13px;">
+      <div class="swipe-card" onclick="markClientRead('${n.id}');renderClientNotifs()" style="background:#fff;border:1.5px solid ${n.read?'#f0ebe4':'#e8d9c4'};border-radius:13px;padding:12px 13px;display:flex;gap:11px;align-items:flex-start;cursor:pointer;${n.read?'':'box-shadow:0 1px 8px rgba(200,168,130,.12);'}">
       <div style="position:relative;flex-shrink:0;">
         <div style="width:38px;height:38px;border-radius:10px;background:${n.col};display:flex;align-items:center;justify-content:center;">
           <i class="ti ${n.icon}" aria-hidden="true" style="font-size:18px;color:${n.ic};"></i>
@@ -268,10 +302,11 @@ function renderClientNotifs(){
         ${n.body?`<div style="font-size:12px;color:#9a8a7e;line-height:1.5;margin-bottom:3px;">${n.body}</div>`:''}
         <div style="font-size:11px;color:#c4b9ae;">${n.time}</div>
       </div>
+      </div>
+      <div class="swipe-reveal" onclick="event.stopPropagation();clearClientNotif('${n.id}')" aria-label="Clear notification"><i class="ti ti-check" aria-hidden="true"></i><span>DONE</span></div>
     </div>`;
   S.innerHTML=`
-  <div style="padding:12px 16px 0;display:flex;align-items:center;justify-content:space-between;">
-    <button class="back" onclick="nav('home')"><i class="ti ti-arrow-left"></i> Home</button>
+  <div style="padding:12px 16px 0;display:flex;align-items:center;justify-content:flex-end;">
     ${unread.length>0?`<button onclick="clientNotifs.forEach(n=>n.read=true);updateClientBadge();renderClientNotifs()" style="border:none;background:none;font-size:12px;color:var(--accent);cursor:pointer;font-weight:600;">Mark all read</button>`:''}
   </div>
   <div style="padding:8px 16px 4px;"><div id="page-heading" tabindex="-1" style="font-size:20px;font-weight:600;color:#1a1a1a;">Notifications</div></div>
@@ -288,6 +323,7 @@ function renderClientNotifs(){
   <div style="padding:0 16px 24px;">
     <button onclick="nav('notif-settings')" style="width:100%;background:#faf7f4;border:1.5px solid #f0ebe4;border-radius:11px;padding:12px;font-size:13px;color:#6b5d52;cursor:pointer;font-weight:600;display:flex;align-items:center;justify-content:center;gap:7px;"><i class="ti ti-settings" aria-hidden="true"></i> Notification settings</button>
   </div>`;
+  setTimeout(()=>{try{document.querySelectorAll('.swipe-card').forEach((el,i)=>{if(typeof initSwipe==='function')initSwipe(el,i);});}catch(e){}},0);
 }
 
 /* ════════════════════════════════════════════════════════════════
@@ -742,7 +778,7 @@ function openProviderSheet(){
   m.style.cssText='position:absolute;inset:0;z-index:300;display:flex;flex-direction:column;justify-content:flex-end;';
   m.innerHTML=`
   <div onclick="closeProviderSheet()" style="flex:1;background:rgba(0,0,0,.4);"></div>
-  <div style="background:#fff;border-radius:20px 20px 0 0;padding:18px 16px 28px;box-shadow:0 -4px 30px rgba(0,0,0,.12);max-height:80%;overflow-y:auto;">
+  <div style="background:#fff;border-radius:16px;padding:18px 16px 28px;box-shadow:0 -4px 30px rgba(0,0,0,.12);max-height:80%;overflow-y:auto;">
     <div style="width:36px;height:4px;background:#e8ddd3;border-radius:2px;margin:0 auto 16px;"></div>
     <div style="font-size:16px;font-weight:700;color:#1a1a1a;margin-bottom:3px;">Your providers</div>
     <div style="font-size:13px;color:#b8a898;margin-bottom:16px;">Switch between the practices you visit — all in one login.</div>
@@ -822,7 +858,7 @@ function renderCalModal(){
   m.style.cssText='position:absolute;inset:0;z-index:200;display:flex;flex-direction:column;justify-content:flex-end;';
   m.innerHTML=`
   <div onclick="closeCalModal()" style="flex:1;background:rgba(0,0,0,.4);"></div>
-  <div style="background:#fff;border-radius:20px 20px 0 0;padding:20px 16px 32px;box-shadow:0 -4px 30px rgba(0,0,0,.12);">
+  <div style="background:#fff;border-radius:16px;padding:20px 16px 32px;box-shadow:0 -4px 30px rgba(0,0,0,.12);">
     <div style="width:36px;height:4px;background:#e8ddd3;border-radius:2px;margin:0 auto 18px;"></div>
     <div style="font-size:16px;font-weight:600;color:#1a1a1a;margin-bottom:4px;">Add to calendar</div>
     <div style="font-size:13px;color:#b8a898;margin-bottom:18px;">${client.treatment} · ${client.nextDate} at ${client.nextTime}</div>
@@ -959,6 +995,8 @@ function setNav(id){
 function _a11yEnhance(){try{document.querySelectorAll('[onclick]:not(button):not(a):not(input):not(select):not(textarea):not([role])').forEach(el=>{el.setAttribute('role','button');if(!el.hasAttribute('tabindex'))el.setAttribute('tabindex','0');});}catch(e){}}
 try{document.addEventListener('keydown',function(e){const t=e.target;if((e.key==='Enter'||e.key===' ')&&t&&t.getAttribute&&t.getAttribute('role')==='button'&&t.hasAttribute('onclick')&&!['BUTTON','A','INPUT','SELECT','TEXTAREA'].includes(t.tagName)){e.preventDefault();t.click();}});}catch(e){}
 try{if(typeof MutationObserver!=='undefined'){new MutationObserver(()=>_a11yEnhance()).observe(document.body,{childList:true,subtree:true});_a11yEnhance();}}catch(e){}
+let _navStack=[],_navCur=null,_navBacking=false;
+function navBack(){if(_navStack.length){const prev=_navStack.pop();_navBacking=true;nav(prev);_navBacking=false;}}
 function nav(screen){
   document.getElementById('tt').textContent='SlickChart';
   const routes={
@@ -974,8 +1012,12 @@ function nav(screen){
   };
   const fn=routes[screen];
   if(fn){
+    if(!_navBacking){if(_navCur&&_navCur!==screen){_navStack.push(_navCur);if(_navStack.length>40)_navStack.shift();}}
+    _navCur=screen;
     currentScreen=screen;
     fn();
+    if(screen==='home'||screen==='welcome')_navStack.length=0;
+    const bb=document.getElementById('topbar-back');if(bb)bb.style.display=(_navStack.length&&screen!=='checkin'&&screen!=='welcome')?'flex':'none';
     S.scrollTop=0;
     requestAnimationFrame(()=>{
       const heading=S.querySelector('#page-heading,[role="heading"]');
@@ -1179,7 +1221,7 @@ function renderNotifSettings(){
         <div style="font-size:13px;font-weight:600;color:#1a1a1a;">${label}</div>
         ${sub?`<div style="font-size:11px;color:#b8a898;margin-top:1px;">${sub}</div>`:''}
       </div>
-      <button role="switch" aria-checked="${on}" aria-label="Toggle ${label}" onclick="toggleNotif('${key}')" style="width:44px;height:26px;border-radius:13px;border:none;background:${on?'var(--accent)':'#e8ddd3'};position:relative;cursor:pointer;flex-shrink:0;">
+      <button role="switch" aria-checked="${on}" aria-label="Toggle ${label}" onclick="toggleNotif('${key}')" style="width:44px;height:26px;border-radius:13px;border:none;-webkit-appearance:none;appearance:none;padding:0;margin:0;box-sizing:border-box;background:${on?'var(--accent)':'#e8ddd3'};position:relative;cursor:pointer;flex-shrink:0;">
         <span aria-hidden="true" style="position:absolute;top:3px;left:${on?'21':'3'}px;width:20px;height:20px;border-radius:50%;background:#fff;box-shadow:0 1px 3px rgba(0,0,0,.15);transition:left .15s;"></span>
       </button>
     </div>`;
@@ -1194,7 +1236,7 @@ function renderNotifSettings(){
 
   S.innerHTML=`
   <div style="padding:12px 16px 0;">
-    <button class="back" onclick="nav('profile')"><i class="ti ti-arrow-left"></i> Profile</button>
+    
   </div>
 
   ${off?`
@@ -1531,7 +1573,7 @@ function sendClientMsg(imgArg){
   if(inp){inp.value='';inp.style.height='auto';}
   renderMessages();
   setTimeout(()=>{
-    messages.push({from:'provider',text:`Thanks Maya! ${imgs.length?'Got your '+(imgs.length>1?'photos':'photo')+' — ':''}I'll take a look and get back to you shortly. 🌿`,time:'Just now'});
+    messages.push({from:'provider',text:`Thanks ${client.name.split(' ')[0]}! ${imgs.length?'Got your '+(imgs.length>1?'photos':'photo')+' — ':''}I'll take a look and get back to you shortly. 🌿`,time:'Just now'});
     if(document.getElementById('chat-body'))renderMessages();
   },1400);
 }
@@ -1940,7 +1982,7 @@ function renderRebook(){
 
   S.innerHTML=`
   <div style="padding:12px 16px 0;">
-    <button class="back" onclick="nav('home')" aria-label="Back to home"><i class="ti ti-arrow-left"></i> Home</button>
+    
   </div>
   <div style="padding:10px 16px 6px;">
     <div id="page-heading" tabindex="-1" style="font-size:18px;font-weight:600;color:#1a1a1a;margin-bottom:2px;">Request an appointment</div>
@@ -2066,9 +2108,9 @@ function openBuyOptions(i){
     <i class="ti ti-brand-amazon" aria-hidden="true" style="font-size:18px;color:var(--accent);"></i><div style="flex:1;min-width:0;"><div style="font-size:13px;font-weight:600;color:#1a1a1a;">${/\/(shop|stores)\//i.test(amz)?(client.providerFirst+"'s Amazon store"):'Buy on Amazon'}</div><div style="font-size:11px;color:#b8a898;word-break:break-all;">${amz}</div></div><i class="ti ti-chevron-right" aria-hidden="true" style="color:#c4b9ae;"></i></a>`,p.amazonCode));
   if(!rows.length)return;
   const ov=document.createElement('div');ov.id='buy-sheet';
-  ov.style.cssText='position:absolute;inset:0;z-index:9999;background:rgba(0,0,0,.4);display:flex;align-items:flex-end;justify-content:center;';
+  ov.style.cssText='position:absolute;inset:0;z-index:9999;background:rgba(0,0,0,.4);display:flex;align-items:center;justify-content:center;padding:24px 16px;box-sizing:border-box;';
   ov.onclick=e=>{if(e.target===ov)closeBuySheet();};
-  ov.innerHTML=`<div style="background:#fff;width:100%;border-radius:18px 18px 0 0;padding:16px;box-shadow:0 -8px 30px rgba(0,0,0,.18);">
+  ov.innerHTML=`<div style="background:#fff;width:100%;border-radius:16px;padding:16px;box-shadow:0 -8px 30px rgba(0,0,0,.18);">
     <div style="display:flex;align-items:center;gap:10px;margin-bottom:12px;"><span style="font-size:22px;">${p.icon}</span><div style="flex:1;"><div style="font-size:15px;font-weight:700;color:#1a1a1a;">${p.name}</div><div style="font-size:12px;color:#b8a898;">${p.brand||''}</div></div><button onclick="closeBuySheet()" aria-label="Close" style="border:none;background:none;font-size:20px;color:#b8a898;cursor:pointer;line-height:1;">✕</button></div>
     <div style="font-size:11px;color:#b8a898;text-transform:uppercase;letter-spacing:.06em;font-weight:600;margin-bottom:8px;">Where to buy</div>
     ${rows.join('')}
@@ -2118,7 +2160,7 @@ function renderVirtualSubmit(){
   setNav('journey');
   document.getElementById('tt').textContent='Virtual consult';
   if(!vcInvite){
-    S.innerHTML=`<div style="padding:12px 16px 0;"><button class="back" onclick="nav('journey')"><i class="ti ti-arrow-left"></i> Journey</button></div>
+    S.innerHTML=`
     <div style="padding:40px 24px;text-align:center;">
       <div style="width:60px;height:60px;border-radius:16px;background:#f3eefc;display:flex;align-items:center;justify-content:center;margin:0 auto 14px;"><i class="ti ti-lock" style="font-size:28px;color:#8b6fc7;"></i></div>
       <div style="font-size:16px;font-weight:700;color:#1a1a1a;margin-bottom:6px;">No active invite</div>
@@ -2130,7 +2172,7 @@ function renderVirtualSubmit(){
   const tile=(label,kind)=>{const slot=_vcSubmitState[kind][label];const added=slot&&slot.src;return `<button onclick="_vcCapture('${kind}','${label.replace(/'/g,"\\'")}')" style="border-radius:10px;background:${added?'#000':'#faf7f4'};border:1.5px ${added?'solid var(--accent)':'dashed #d8ccbe'};aspect-ratio:3/4;display:flex;flex-direction:column;align-items:center;justify-content:center;gap:5px;cursor:pointer;position:relative;font-family:inherit;padding:0;overflow:hidden;">${added?`<img src="${slot.src}" alt="${label}" style="width:100%;height:100%;object-fit:cover;"><span style="position:absolute;top:4px;right:4px;background:var(--accent);color:#fff;border-radius:50%;width:18px;height:18px;display:flex;align-items:center;justify-content:center;"><i class="ti ti-check" style="font-size:11px;"></i></span><span style="position:absolute;bottom:0;left:0;right:0;background:linear-gradient(transparent,rgba(0,0,0,.7));color:#fff;font-size:9px;font-weight:600;padding:8px 4px 3px;text-align:center;">${label}</span>`:`<i class="ti ti-camera-plus" style="font-size:22px;color:#c4b9ae;"></i><span style="font-size:10px;color:#9a8a7e;font-weight:600;text-align:center;line-height:1.2;padding:0 4px;">${label}</span>`}</button>`;};
   const photoCount=Object.values(_vcSubmitState.photos).filter(p=>p&&p.src).length;
   S.innerHTML=`
-  <div style="padding:12px 16px 0;"><button class="back" onclick="nav('journey')"><i class="ti ti-arrow-left"></i> Journey</button></div>
+  
   <div style="padding:10px 16px 0;">
     <div style="font-size:19px;font-weight:700;color:#1a1a1a;margin-bottom:3px;">${inv.title}</div>
     <div style="font-size:13px;color:#b8a898;line-height:1.5;margin-bottom:6px;">${client.providerFirst} invited you to a virtual consult.</div>
@@ -2175,7 +2217,7 @@ function renderLatestSummary(){
   const products=(s&&s.products&&s.products.length)?s.products:(activeProvider().products||[]);
   S.innerHTML=`
   <div id="summary-screen"></div>
-  <div style="padding:12px 16px 0;display:flex;align-items:center;justify-content:space-between;"><button class="back" onclick="nav('${backTo}')"><i class="ti ti-arrow-left"></i> ${backLbl}</button>${summaries.length>1?`<span style="font-size:12px;color:#b8a898;">${_summaryIdx===0?'Latest':'#'+(summaries.length-_summaryIdx)} of ${summaries.length}</span>`:''}</div>
+  <div style="padding:12px 16px 0;display:flex;align-items:center;justify-content:flex-end;">${summaries.length>1?`<span style="font-size:12px;color:#b8a898;">${_summaryIdx===0?'Latest':'#'+(summaries.length-_summaryIdx)} of ${summaries.length}</span>`:''}</div>
 
   <!-- Header card -->
   <div style="margin:10px 16px 12px;background:linear-gradient(135deg,var(--accent-tint),var(--accent-tint2));border-radius:16px;padding:18px 16px;">
@@ -2264,9 +2306,9 @@ function reviewClientForm(fid){
   const ans=(f.qs||[]).filter(q=>q.type!=='Signature'&&q.type!=='Contraindications');
   const hasContra=f.contra&&f.contra.length;
   const ov=document.createElement('div');ov.id='form-review-sheet';
-  ov.style.cssText='position:absolute;inset:0;z-index:9999;background:rgba(0,0,0,.45);display:flex;align-items:flex-end;justify-content:center;';
+  ov.style.cssText='position:absolute;inset:0;z-index:9999;background:rgba(0,0,0,.45);display:flex;align-items:center;justify-content:center;padding:24px 16px;box-sizing:border-box;';
   ov.onclick=e=>{if(e.target===ov)ov.remove();};
-  ov.innerHTML=`<div style="background:#fff;width:100%;border-radius:18px 18px 0 0;padding:18px 18px 24px;max-height:90%;overflow:auto;">
+  ov.innerHTML=`<div style="background:#fff;width:100%;border-radius:16px;padding:18px 18px 24px;max-height:90%;overflow:auto;">
     <div style="display:flex;align-items:center;justify-content:space-between;margin-bottom:4px;"><div style="font-size:16px;font-weight:700;color:#1a1a1a;min-width:0;overflow:hidden;text-overflow:ellipsis;">${f.title}</div><button onclick="this.closest('#form-review-sheet').remove()" aria-label="Close" style="border:none;background:none;font-size:20px;color:#b8a898;cursor:pointer;line-height:1;flex-shrink:0;">✕</button></div>
     <div style="font-size:12px;color:#b8a898;margin-bottom:16px;">Please complete and sign before your appointment.</div>
     ${ans.map(_cfField).join('')}
@@ -2429,7 +2471,7 @@ function renderMagicLanding(){
     </div>
   </div>
 
-  <button onclick="window.print()" class="no-print" style="width:calc(100% - 32px);margin:2px 16px 12px;background:#fff;border:1.5px solid #e8ddd3;border-radius:12px;padding:12px;font-size:14px;font-weight:600;color:var(--accent);cursor:pointer;display:flex;align-items:center;justify-content:center;gap:7px;"><i class="ti ti-download" aria-hidden="true" style="font-size:16px;"></i> Save a copy (PDF)</button>
+  <button onclick="exportMyRecords()" class="no-print" style="width:calc(100% - 32px);margin:2px 16px 12px;background:#fff;border:1.5px solid #e8ddd3;border-radius:12px;padding:12px;font-size:14px;font-weight:600;color:var(--accent);cursor:pointer;display:flex;align-items:center;justify-content:center;gap:7px;"><i class="ti ti-download" aria-hidden="true" style="font-size:16px;"></i> Download my records</button>
 
   <!-- Add to home screen (optional upsell) -->
   <div style="margin:0 16px 12px;background:var(--accent-lt);border-radius:12px;padding:12px 14px;display:flex;align-items:flex-start;gap:10px;">
@@ -2443,6 +2485,116 @@ function renderMagicLanding(){
 }
 
 // ── PROFILE ──
+function _myEsc(s){return String(s==null?'':s).replace(/&/g,'&amp;').replace(/</g,'&lt;').replace(/>/g,'&gt;');}
+// Build a clean, printable document of the client's own signed forms + treatment info.
+function _buildMyRecordsHTML(){
+  const p=(typeof activeProvider==='function')?activeProvider():(client.providers&&client.providers[0])||{};
+  const accent=(p.brand&&p.brand.primary)||'#8a6a3a';
+  const studio=_myEsc(p.studio||'SlickChart');
+  const prov=_myEsc(p.name||'');
+  const now=new Date();
+  const dateStr=now.toLocaleDateString(undefined,{year:'numeric',month:'long',day:'numeric'})+' \u00b7 '+now.toLocaleTimeString(undefined,{hour:'numeric',minute:'2-digit'});
+  // ---- treatment summary ----
+  const sumRows=[];
+  const push=(l,v)=>{ if(v!=null&&String(v).trim()) sumRows.push([l,String(v)]); };
+  push('Provider', p.name);
+  push('Treatment', p.treatment||client.treatment);
+  if(p.session!=null) push('Progress', 'Session '+p.session+(p.totalSessions?(' of '+p.totalSessions):''));
+  if(p.nextDate) push('Next appointment', p.nextDate+(p.nextTime?(' \u00b7 '+p.nextTime):''));
+  const sumHTML=sumRows.map(([l,v])=>`<tr><td class="l">${_myEsc(l)}</td><td class="v">${_myEsc(v)}</td></tr>`).join('');
+  // ---- signed forms ----
+  const forms=(p.forms||[]).filter(f=>(f.status||'').toLowerCase().indexOf('complet')>=0);
+  let formsHTML='';
+  if(forms.length){
+    formsHTML=forms.map(f=>{
+      const qa=[];
+      (f.qs||[]).forEach(q=>{if(q.type==='Signature'||q.type==='Contraindications')return;const a=f.answers&&f.answers[q.id];if(a!=null&&String(a).trim())qa.push([q.label,String(a)]);});
+      const qaHTML=qa.length?`<table class="qa">${qa.map(([l,v])=>`<tr><td class="l">${_myEsc(l)}</td><td class="v">${_myEsc(v)}</td></tr>`).join('')}</table>`:'';
+      const flg=(f.flagged&&f.flagged.length)?`<div class="flag"><div class="flag-h">Noted for your provider</div><ul>${f.flagged.map(it=>`<li>${_myEsc(it)}</li>`).join('')}</ul></div>`:'';
+      const consent=f.consent?`<div class="consent">\u201c${_myEsc(f.consent)}\u201d</div>`:'';
+      return `<div class="form"><div class="form-h">${_myEsc(f.title)}</div><div class="muted">${_myEsc(f.date||'')} \u00b7 Signed \u2713</div>${consent}${flg}${qaHTML}</div>`;
+    }).join('');
+  } else {
+    formsHTML='<div class="muted">No signed forms yet. Any forms your provider sends will appear here once you complete them.</div>';
+  }
+  // ---- aftercare (handy for the client to keep) ----
+  let careHTML='';
+  if(p.aftercare&&p.aftercare.length){
+    careHTML=p.aftercare.map(blk=>`<div class="care"><div class="care-h">${_myEsc(blk.when)}</div><ul>${(blk.items||[]).map(it=>`<li>${_myEsc(it)}</li>`).join('')}</ul></div>`).join('');
+  }
+  const avoidHTML=(p.avoid&&p.avoid.length)?`<div class="care"><div class="care-h">Things to avoid</div><ul>${p.avoid.map(it=>`<li>${_myEsc(it)}</li>`).join('')}</ul></div>`:'';
+
+  return `<!doctype html><html><head><meta charset="utf-8"><meta name="viewport" content="width=device-width, initial-scale=1">`+
+  `<title>${_myEsc(client.name)} \u2014 My Records</title>`+
+  `<style>`+
+    `*{box-sizing:border-box;}`+
+    `body{font-family:-apple-system,BlinkMacSystemFont,'Segoe UI',Roboto,Helvetica,Arial,sans-serif;color:#1a1a1a;margin:0;padding:32px 28px;line-height:1.5;font-size:13px;}`+
+    `.top{display:flex;justify-content:space-between;align-items:flex-start;border-bottom:3px solid ${accent};padding-bottom:14px;margin-bottom:6px;}`+
+    `.biz{font-size:18px;font-weight:700;}.owner{font-size:12px;color:#666;margin-top:2px;}`+
+    `.doc{font-size:11px;color:#888;text-align:right;}.doc b{display:block;font-size:13px;color:#1a1a1a;}`+
+    `h1{font-size:22px;margin:16px 0 12px;}`+
+    `h2{font-size:12px;text-transform:uppercase;letter-spacing:.05em;color:${accent};border-bottom:1px solid #e5ddd0;padding-bottom:5px;margin:22px 0 10px;}`+
+    `table{width:100%;border-collapse:collapse;}`+
+    `td.l{width:38%;color:#666;padding:5px 10px 5px 0;vertical-align:top;font-weight:600;}`+
+    `td.v{padding:5px 0;vertical-align:top;}tr+tr td{border-top:1px solid #f0ece4;}`+
+    `.form{border:1px solid #e5ddd0;border-radius:8px;padding:12px 14px;margin:10px 0;page-break-inside:avoid;}`+
+    `.form-h{font-weight:700;font-size:14px;margin-bottom:2px;}.muted{color:#999;font-style:italic;}`+
+    `.consent{font-size:12px;color:#555;font-style:italic;margin:8px 0;}`+
+    `.qa{margin-top:8px;}table.qa td.l{width:42%;}`+
+    `.flag{background:#fff7ec;border:1px solid #f0d8b0;border-radius:8px;padding:10px 12px;margin:8px 0;}`+
+    `.flag-h{font-weight:700;color:#a06a00;margin-bottom:4px;}.flag ul{margin:0;padding-left:18px;}.flag li{color:#7a5200;margin:2px 0;}`+
+    `.care{border:1px solid #e5ddd0;border-radius:8px;padding:10px 14px;margin:8px 0;page-break-inside:avoid;}`+
+    `.care-h{font-weight:700;margin-bottom:4px;}.care ul{margin:0;padding-left:18px;}.care li{margin:2px 0;color:#444;}`+
+    `.foot{margin-top:28px;border-top:1px solid #e5ddd0;padding-top:10px;font-size:10px;color:#aaa;text-align:center;}`+
+    `@media print{body{padding:0 6px;}h2{page-break-after:avoid;}}`+
+  `</style></head><body>`+
+    `<div class="top"><div><div class="biz">${studio}</div>${prov?`<div class="owner">${prov}</div>`:''}</div>`+
+      `<div class="doc"><b>My Records</b>Generated ${_myEsc(dateStr)}</div></div>`+
+    `<h1>${_myEsc(client.name)}</h1>`+
+    `<h2>Treatment summary</h2><table>${sumHTML||'<tr><td class="v muted">No treatment info yet.</td></tr>'}</table>`+
+    `<h2>My signed forms</h2>${formsHTML}`+
+    ((careHTML||avoidHTML)?`<h2>Aftercare</h2>${avoidHTML}${careHTML}`:'')+
+    `<div class="foot">Your personal copy \u00b7 ${studio} \u00b7 Generated by SlickChart on ${_myEsc(dateStr)}</div>`+
+  `</body></html>`;
+}
+function _printMyRecords(){
+  const html=_buildMyRecordsHTML(); if(!html)return;
+  const f=document.createElement('iframe');
+  f.setAttribute('aria-hidden','true');
+  f.style.cssText='position:fixed;right:0;bottom:0;width:0;height:0;border:0;opacity:0;';
+  document.body.appendChild(f);
+  try{
+    const doc=f.contentWindow.document;
+    doc.open();doc.write(html);doc.close();
+    setTimeout(()=>{try{f.contentWindow.focus();f.contentWindow.print();}catch(e){}setTimeout(()=>{try{f.remove();}catch(e){}},2000);},350);
+  }catch(e){try{f.remove();}catch(_){}if(typeof showToast==='function')showToast('Could not open print \u2014 try Download instead');}
+}
+function _downloadMyRecords(){
+  const html=_buildMyRecordsHTML(); if(!html)return;
+  try{
+    const blob=new Blob([html],{type:'text/html'});
+    const url=URL.createObjectURL(blob);
+    const a=document.createElement('a');
+    a.href=url; a.download=(client.name||'my').replace(/[^\w]+/g,'-').replace(/^-|-$/g,'')+'-records.html';
+    document.body.appendChild(a); a.click();
+    setTimeout(()=>{try{URL.revokeObjectURL(url);a.remove();}catch(e){}},1500);
+    if(typeof showToast==='function')showToast('Downloaded \u2713');
+  }catch(e){ if(typeof showToast==='function')showToast('Could not download \u2014 try Print instead'); }
+}
+function exportMyRecords(){
+  const ov=document.createElement('div'); ov.id='myrec-sheet';
+  ov.style.cssText='position:fixed;inset:0;z-index:9999;background:rgba(0,0,0,.45);display:flex;align-items:flex-end;justify-content:center;';
+  ov.onclick=e=>{if(e.target===ov)ov.remove();};
+  ov.innerHTML=`<div style="background:#fff;border-radius:18px 18px 0 0;width:100%;max-width:440px;padding:16px 16px 26px;box-shadow:0 -4px 24px rgba(0,0,0,.15);">`+
+    `<div style="width:36px;height:4px;background:#e0d5c8;border-radius:2px;margin:0 auto 14px;"></div>`+
+    `<div style="font-size:16px;font-weight:700;color:#1a1a1a;margin-bottom:3px;">Download my records</div>`+
+    `<div style="font-size:12px;color:#8a7d70;margin-bottom:16px;line-height:1.5;">A clean copy of your signed forms and treatment info \u2014 ready to print or save.</div>`+
+    `<button onclick="this.closest('#myrec-sheet').remove();_printMyRecords()" style="width:100%;background:var(--accent);color:#fff;border:none;border-radius:12px;padding:14px;font-size:14px;font-weight:700;cursor:pointer;font-family:inherit;display:flex;align-items:center;justify-content:center;gap:8px;margin-bottom:9px;"><i class="ti ti-printer" style="font-size:17px;"></i> Print / Save as PDF</button>`+
+    `<button onclick="this.closest('#myrec-sheet').remove();_downloadMyRecords()" style="width:100%;background:#f5f0ea;color:#1a1a1a;border:1px solid #e8ddd3;border-radius:12px;padding:14px;font-size:14px;font-weight:700;cursor:pointer;font-family:inherit;display:flex;align-items:center;justify-content:center;gap:8px;"><i class="ti ti-download" style="font-size:17px;"></i> Download as file</button>`+
+  `</div>`;
+  document.body.appendChild(ov);
+}
+
 function renderProfile(){
   setNav('home');
   document.getElementById('tt').textContent='My profile';
@@ -2512,10 +2664,10 @@ function editField(key, label, currentVal){
   const existing=document.getElementById('edit-field-modal');if(existing)existing.remove();
   const m=document.createElement('div');
   m.id='edit-field-modal';
-  m.style.cssText='position:absolute;inset:0;background:rgba(0,0,0,.4);z-index:200;display:flex;align-items:flex-end;';
+  m.style.cssText='position:absolute;inset:0;background:rgba(0,0,0,.4);z-index:200;display:flex;align-items:center;justify-content:center;padding:24px 16px;box-sizing:border-box;';
   const isLong=key==='concerns'||key==='allergies';
   m.innerHTML=`
-  <div style="background:#fff;border-radius:20px 20px 0 0;width:100%;padding:20px 16px 32px;box-shadow:0 -4px 30px rgba(0,0,0,.12);">
+  <div style="background:#fff;border-radius:16px;width:100%;padding:20px 16px 32px;box-shadow:0 -4px 30px rgba(0,0,0,.12);">
     <div style="width:36px;height:4px;background:#e8ddd3;border-radius:2px;margin:0 auto 16px;"></div>
     <div style="font-size:16px;font-weight:600;color:#1a1a1a;margin-bottom:14px;">Edit ${label}</div>
     ${isLong
@@ -2548,7 +2700,7 @@ function renderClientAISettings(){
   setNav('home');
   document.getElementById('tt').textContent='AI features';
   S.innerHTML=`
-  <div style="padding:12px 16px 0;"><button class="back" onclick="nav('profile')"><i class="ti ti-arrow-left"></i> Profile</button></div>
+  
 
   <div style="margin:14px 16px 6px;background:${clientAiEnabled?'#f5f0ff':'#faf7f4'};border:1.5px solid ${clientAiEnabled?'#d4c4f8':'#e8ddd3'};border-radius:14px;padding:16px;">
     <div style="display:flex;align-items:center;gap:12px;">
@@ -2559,7 +2711,7 @@ function renderClientAISettings(){
         <div style="font-size:15px;font-weight:600;color:#1a1a1a;margin-bottom:3px;">AI features</div>
         <div style="font-size:12px;color:${clientAiEnabled?'#7a5cb8':'#b8a898'};line-height:1.5;">${clientAiEnabled?'On — personalized skin insights from your provider':'Off — standard experience, no AI-generated content'}</div>
       </div>
-      <button role="switch" aria-checked="${clientAiEnabled}" aria-label="Toggle AI features" onclick="clientAiEnabled=!clientAiEnabled;renderClientAISettings()" style="width:44px;height:26px;border-radius:13px;border:none;background:${clientAiEnabled?'var(--accent)':'#e8ddd3'};position:relative;cursor:pointer;flex-shrink:0;">
+      <button role="switch" aria-checked="${clientAiEnabled}" aria-label="Toggle AI features" onclick="clientAiEnabled=!clientAiEnabled;renderClientAISettings()" style="width:44px;height:26px;border-radius:13px;border:none;-webkit-appearance:none;appearance:none;padding:0;margin:0;box-sizing:border-box;background:${clientAiEnabled?'var(--accent)':'#e8ddd3'};position:relative;cursor:pointer;flex-shrink:0;">
         <span aria-hidden="true" style="position:absolute;top:3px;left:${clientAiEnabled?'21':'3'}px;width:20px;height:20px;border-radius:50%;background:#fff;box-shadow:0 1px 3px rgba(0,0,0,.15);transition:left .15s;"></span>
       </button>
     </div>
@@ -2656,6 +2808,7 @@ document.addEventListener('DOMContentLoaded', function() {
     el.addEventListener('click', function() { nav(el.getAttribute('data-nav')); });
   });
   updateClientBadge();
+  try{document.title='SlickChart — '+client.name;}catch(e){}
   // connected provider reflects any brand Jessica saved in the provider app
   try{const jp=client.providers.find(p=>p.id==='jess');const sb=loadClientBrand();if(jp&&sb)jp.brand=sb;}catch(e){}
   try{loadVirtualConsults();}catch(e){}
