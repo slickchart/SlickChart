@@ -55,9 +55,10 @@ body{font-family:-apple-system,BlinkMacSystemFont,'Segoe UI',sans-serif;backgrou
 .pill{flex-shrink:0;padding:6px 14px;border-radius:20px;font-size:12px;border:1px solid #666;color:#ccc;background:none;cursor:pointer;white-space:nowrap;min-height:36px;}
 .pill.active{background:var(--accent);color:var(--accent-ink);border-color:var(--accent);}
 .pill:focus-visible{outline:2px solid var(--accent);outline-offset:2px;}
-.tog{width:44px;height:26px;border-radius:13px;position:relative;flex-shrink:0;cursor:pointer;}
-.tog.on{background:var(--accent);}.tog.off{background:#555;}
-.tok{width:20px;height:20px;border-radius:50%;background:white;position:absolute;top:3px;transition:left .15s;}
+.tog{width:44px;height:26px;border-radius:13px;position:relative;flex-shrink:0;cursor:pointer;border:none;margin:0;padding:0;-webkit-appearance:none;appearance:none;box-sizing:border-box;display:inline-block;vertical-align:middle;transition:background .18s;}
+.tog.on{background:var(--accent);}.tog.off{background:#3a3a3a;}
+.tog:disabled{opacity:.45;cursor:default;}
+.tok{width:20px;height:20px;border-radius:50%;background:#fff;position:absolute;top:3px;transition:left .18s;box-shadow:0 1px 2.5px rgba(0,0,0,.4);}
 .tog.on .tok{left:21px;}.tog.off .tok{left:3px;}
 .tog:focus-visible{outline:2px solid var(--accent);outline-offset:2px;border-radius:13px;}
 .fi{width:100%;background:#1a1a1a;border:1px solid #444;border-radius:10px;padding:9px 12px;font-size:14px;color:#e0e0e0;font-family:inherit;}
@@ -97,7 +98,7 @@ body{font-family:-apple-system,BlinkMacSystemFont,'Segoe UI',sans-serif;backgrou
       <i class="ti ti-building" aria-hidden="true" style="font-size:12px;"></i>
       <span id="ws-toggle-label">Studio</span>
     </button>
-    <button class="av" onclick="nav('account')" aria-label="Account settings">JL</button>
+    <button class="av" id="prov-av" onclick="nav('account')" aria-label="Account settings">JL</button>
   </div>
   <main class="scr" id="S" aria-live="polite" aria-label="App content"></main>
   <nav class="nav" aria-label="Main navigation">
@@ -188,14 +189,14 @@ const allProfessions=[
   {id:'brow',name:'Brow artist',icon:'🎨',bg:'#1e0d33',ic:'#c084fc',badge:'bp',badgeLabel:'Brows',
     sub:'Microblading, nanobrows, lamination, tints, waxing',
     notes:['Brow record','PMU record','Free form','Custom'],
-    forms:['New brow client intake','PMU consent & waiver','Brow lamination consent','Portfolio photo release'],
+    forms:['New brow client intake','PMU consent & waiver','Brow lamination consent','Photo release'],
     terms:['Last brow service','Blood thinners','Skin type','Fitzpatrick','Keloid history','Retinol use'],
     recordSections:['Mapping notes','Shape & arch design','Pigment used (brand/color/code)','Technique applied','Skin observations','Healing instructions','Touch-up date'],
     checkinLabel:'Brow & health questions',built:true},
   {id:'makeup',name:'Makeup artist',icon:'💄',bg:'#2a0f1a',ic:'#e87070',badge:'br',badgeLabel:'Beauty',
     sub:'Bridal, editorial, special effects, everyday glam',
     notes:['Service record','Free form','Custom'],
-    forms:['MUA client intake','Skin & allergy screen','Sanitation consent','Portfolio photo release','Bridal contract'],
+    forms:['MUA client intake','Skin & allergy screen','Sanitation consent','Photo release','Bridal contract'],
     terms:['Skin type & tone','Product allergies','Eye sensitivity','Preferred finish','Occasion / look'],
     recordSections:['Look description','Products & shades used','Skin prep applied','Client feedback','Photo release confirmed','Repeat look notes'],
     checkinLabel:'Skin & preference questions',built:false},
@@ -240,7 +241,14 @@ const allProfessions=[
     forms:['Nutrition intake','Food sensitivity screen','Health history','Goal setting form'],
     terms:['Current diet','Digestion concerns','Energy levels','Lab results'],
     recordSections:['Dietary assessment','Biometrics','Goal progress','Supplement plan'],
-    checkinLabel:'Health & nutrition questions',built:false},
+    checkinLabel:'Health & nutrition questions',built:true},
+  {id:'contour',name:'Body contouring',icon:'🪐',bg:'#1e1633',ic:'#a891ec',badge:'bp',badgeLabel:'Body',
+    sub:'Non-invasive fat reduction, skin tightening, lymphatic',
+    notes:['Treatment record','SOAP','Free form','Custom'],
+    forms:['Body contouring intake','Cavitation & RF consent','Lymphatic drainage consent','Photo release'],
+    terms:['Target areas','Medical conditions','Recent surgeries','Metal implants / pacemaker','Weight & measurement goals'],
+    recordSections:['Areas treated','Device / modality used','Settings / intensity','Measurements (before/after)','Client response','Next session plan'],
+    checkinLabel:'Health & readiness questions',built:true},
   {id:'coach',name:'Health / fitness coach',icon:'🏃',bg:'var(--accent-tint)',ic:'var(--accent)',badge:'ba',badgeLabel:'Wellness',
     sub:'Personal training, wellness coaching, movement',
     notes:['SOAP','DAP','Training record','Free form','Custom'],
@@ -686,7 +694,7 @@ function _reloadAll(){try{
   if(typeof loadCustomResources==='function')loadCustomResources();
   if(typeof loadAi==='function')loadAi();
   if(typeof loadForms==='function')loadForms();
-  loadBizInfo();loadClients();_seedMayaOnce();if(typeof _demoCheckinSeed==='function')_demoCheckinSeed();
+  loadBizInfo();_syncProviderAvatar();loadClients();_seedMayaOnce();if(typeof _demoCheckinSeed==='function')_demoCheckinSeed();
   if(typeof loadWorkspace==='function')loadWorkspace();
   if(typeof loadSquareCatalog==='function'){loadSquareCatalog();_mergeSquareRetail();}
   if(typeof loadCheckinCfg==='function')loadCheckinCfg();
@@ -1005,6 +1013,23 @@ function setNav(id){
 function av(c,sz=40){
   return`<div aria-hidden="true" style="width:${sz}px;height:${sz}px;border-radius:50%;background:${c.bg};display:flex;align-items:center;justify-content:center;font-size:${sz>50?22:13}px;font-weight:500;color:${c.tc};flex-shrink:0;">${c.initials}</div>`;
 }
+// Provider's own initials, derived from their name (not hardcoded).
+function _providerInitials(){
+  const n=((typeof bizInfo!=='undefined'&&bizInfo&&(bizInfo.ownerName||bizInfo.name))||'').trim();
+  if(!n)return 'SC';
+  const base=n.split(',')[0].trim();           // drop credentials like ", LE"
+  const words=base.split(/\s+/).filter(Boolean);
+  if(words.length>=2&&words[0]&&words[1])return (words[0][0]+words[1][0]).toUpperCase();
+  return (base.slice(0,2)||'SC').toUpperCase();
+}
+function _syncProviderAvatar(){try{const el=document.getElementById('prov-av');if(el)el.textContent=_providerInitials();}catch(e){}}
+function _providerFirstName(){
+  const n=((typeof bizInfo!=='undefined'&&bizInfo&&(bizInfo.ownerName||bizInfo.name))||'').trim();
+  if(!n)return '';
+  const base=n.split(',')[0].trim();
+  return base.split(/\s+/)[0]||'';
+}
+function _greeting(){const h=new Date().getHours();return h<12?'Good morning':h<18?'Good afternoon':'Good evening';}
 let _navStack=[],_navCur=null,_navBacking=false;
 function navBack(){if(_navStack.length){const prev=_navStack.pop();_navBacking=true;nav(prev.screen,prev.data);_navBacking=false;}}
 function nav(screen,data){
@@ -1027,6 +1052,7 @@ function nav(screen,data){
     'form-builder':()=>renderFormBuilder(data),'form-preview':()=>renderFormPreview(data),'form-docs':()=>renderFormDocs(data),'sign-form':()=>renderSignOnDevice(data&&data.fid,data&&data.cid),
     client:()=>renderClient(data),brief:()=>renderBrief(data),room:()=>renderRoom(data),
     'client-forms':()=>renderClientForms(data),
+    'flagged-intakes':renderFlaggedIntakes,
     rebook:()=>renderRebook(data),notes:()=>renderNotes(data),photos:()=>renderPhotos(data),
     'session-summary':()=>renderSessionSummary(data),
     'summary-history':()=>renderSummaryHistory(data),
@@ -1102,41 +1128,54 @@ function renderHome(){
   <div id="home-screen"></div>
   <div style="padding:20px 16px 8px;">
     <div style="display:flex;justify-content:space-between;align-items:flex-start;">
-      <div><div id="page-heading" style="font-size:22px;font-weight:500;color:#f0f0f0;margin-bottom:2px;" tabindex="-1">Good morning, Jessica 👋</div>
+      <div><div id="page-heading" style="font-size:22px;font-weight:500;color:#f0f0f0;margin-bottom:2px;" tabindex="-1">${_greeting()}${_providerFirstName()?', '+_providerFirstName():''} 👋</div>
       <div style="font-size:14px;color:#666;">Thursday, June 26</div></div>
       <button onclick="nav('calendar')" aria-label="Open calendar" style="background:#161616;border:none;border-radius:10px;padding:8px 12px;font-size:12px;color:var(--accent);cursor:pointer;display:flex;align-items:center;gap:5px;min-width:44px;min-height:44px;"><i class="ti ti-calendar" aria-hidden="true" style="font-size:16px;"></i></button>
     </div>
   </div>
   <div style="display:flex;gap:8px;padding:0 16px;margin-bottom:10px;">
-    ${(function(){const fc=Object.values(CL).filter(c=>c.flaggedContra).length;const third=fc?["Flagged intakes",String(fc),"review before visit","#e87070"]:["Docs expiring","2","need renewal","#e87070"];return [["Today's appts","4","2 remaining","#f0f0f0"],["Unread messages","1","from Priya","var(--accent)"],third];})().map(([l,v,s,c])=>`<div style="flex:1;background:#161616;border-radius:10px;padding:10px 12px;"><div style="font-size:11px;color:#999;margin-bottom:4px;">${l}</div><div style="font-size:22px;font-weight:500;color:${c};">${v}</div><div style="font-size:11px;color:#999;">${s}</div></div>`).join('')}
+    ${(function(){
+      const todayN=_apptsToday().length;const rem=_apptsRemainingToday();
+      const ut=threads.filter(t=>t.unread);const um=ut.length;
+      const umSub=um?('from '+((CL[ut[0].id]&&CL[ut[0].id].name)?CL[ut[0].id].name.split(' ')[0]:ut[0].id)):'all caught up';
+      const fc=Object.values(CL).filter(c=>c.flaggedContra).length;const dr=_docsNeedRenewal();
+      const third=fc?["Flagged intakes",String(fc),"review before visit","#e87070","flagged-intakes"]
+        :dr?["Docs expiring",String(dr),"need renewal","#e87070","vault"]
+        :["Documents","OK","all current","#4ec49a","vault"];
+      return [
+        ["Today's appts",String(todayN),(rem!=null?rem+" remaining":(todayN?"scheduled":"none today")),"#f0f0f0","calendar"],
+        ["Unread messages",String(um),umSub,"var(--accent)","messages"],
+        third
+      ];
+    })().map(([l,v,s,c,scr])=>`<button onclick="nav('${scr}')" aria-label="${l}: ${v}, ${s}" style="flex:1;background:#161616;border:1px solid #232323;border-radius:10px;padding:10px 12px;cursor:pointer;font-family:inherit;text-align:left;"><div style="font-size:11px;color:#999;margin-bottom:4px;">${l}</div><div style="font-size:22px;font-weight:500;color:${c};">${v}</div><div style="font-size:11px;color:#999;">${s}</div></button>`).join('')}
   </div>
-  ${pendingRequests().length?`
-  <div onclick="nav('requests')" style="margin:2px 16px 12px;background:linear-gradient(135deg,#0a2019,#0d2a20);border:1px solid #1a4a38;border-radius:12px;padding:12px 14px;display:flex;align-items:center;gap:11px;cursor:pointer;">
+  ${pendingRequests().length&&!_homeDismissed.has('req')?_swipeTile(`
+  <div onclick="nav('requests')" style="margin:0;background:linear-gradient(135deg,#0a2019,#0d2a20);border:1px solid #1a4a38;border-radius:12px;padding:12px 14px;display:flex;align-items:center;gap:11px;cursor:pointer;">
     <div style="width:40px;height:40px;border-radius:10px;background:#0f3528;display:flex;align-items:center;justify-content:center;flex-shrink:0;position:relative;">
       <i class="ti ti-calendar-plus" style="font-size:20px;color:#4ec49a;"></i>
       <span style="position:absolute;top:-4px;right:-4px;min-width:18px;height:18px;padding:0 4px;background:#e87070;border-radius:9px;font-size:10px;font-weight:700;color:#fff;display:flex;align-items:center;justify-content:center;border:2px solid #0a2019;">${pendingRequests().length}</span>
     </div>
     <div style="flex:1;"><div style="font-size:14px;font-weight:600;color:#e8fff5;">New booking request${pendingRequests().length>1?'s':''}</div><div style="font-size:12px;color:#7fbfa5;margin-top:1px;">${pendingRequests()[0].client} · ${pendingRequests()[0].treatment} — tap to review</div></div>
     <i class="ti ti-chevron-right" style="font-size:18px;color:#4ec49a;"></i>
-  </div>`:''}
-  ${newCheckins.length?`
-  <div onclick="nav('checkins')" style="margin:2px 16px 12px;background:linear-gradient(135deg,#0a2019,#0d2a20);border:1px solid #1a4a38;border-radius:12px;padding:12px 14px;display:flex;align-items:center;gap:11px;cursor:pointer;">
+  </div>`,'req'):''}
+  ${newCheckins.length&&!_homeDismissed.has('cin')?_swipeTile(`
+  <div onclick="nav('checkins')" style="margin:0;background:linear-gradient(135deg,#0a2019,#0d2a20);border:1px solid #1a4a38;border-radius:12px;padding:12px 14px;display:flex;align-items:center;gap:11px;cursor:pointer;">
     <div style="width:40px;height:40px;border-radius:10px;background:#0f3528;display:flex;align-items:center;justify-content:center;flex-shrink:0;position:relative;">
       <i class="ti ti-clipboard-check" style="font-size:20px;color:#4ec49a;"></i>
       <span style="position:absolute;top:-4px;right:-4px;min-width:18px;height:18px;padding:0 4px;background:#e87070;border-radius:9px;font-size:10px;font-weight:700;color:#fff;display:flex;align-items:center;justify-content:center;border:2px solid #0a2019;">${newCheckins.length}</span>
     </div>
     <div style="flex:1;"><div style="font-size:14px;font-weight:600;color:#e8fff5;">New pre-visit check-in${newCheckins.length>1?'s':''}</div><div style="font-size:12px;color:#7fbfa5;margin-top:1px;">${newCheckins[0].client}${(newCheckins[0].flagged&&newCheckins[0].flagged.length)?` · ${newCheckins[0].flagged.length} flagged`:''} — tap to review</div></div>
     <i class="ti ti-chevron-right" style="font-size:18px;color:#4ec49a;"></i>
-  </div>`:''}
-  ${_vcPendingCount()?`
-  <div onclick="nav('vc-inbox')" style="margin:2px 16px 12px;background:linear-gradient(135deg,#13102a,#1a1338);border:1px solid #2d2360;border-radius:12px;padding:12px 14px;display:flex;align-items:center;gap:11px;cursor:pointer;">
+  </div>`,'cin'):''}
+  ${_vcPendingCount()&&!_homeDismissed.has('vc')?_swipeTile(`
+  <div onclick="nav('vc-inbox')" style="margin:0;background:linear-gradient(135deg,#13102a,#1a1338);border:1px solid #2d2360;border-radius:12px;padding:12px 14px;display:flex;align-items:center;gap:11px;cursor:pointer;">
     <div style="width:40px;height:40px;border-radius:10px;background:#1e1633;display:flex;align-items:center;justify-content:center;flex-shrink:0;position:relative;">
       <i class="ti ti-scan" style="font-size:20px;color:#a891ec;"></i>
       <span style="position:absolute;top:-4px;right:-4px;min-width:18px;height:18px;padding:0 4px;background:#a891ec;border-radius:9px;font-size:10px;font-weight:700;color:#1a1338;display:flex;align-items:center;justify-content:center;border:2px solid #13102a;">${_vcPendingCount()}</span>
     </div>
     <div style="flex:1;"><div style="font-size:14px;font-weight:600;color:#efeaff;">Virtual consult${_vcPendingCount()>1?'s':''} to review</div><div style="font-size:12px;color:#a394cc;margin-top:1px;">Client photos submitted — tap to review &amp; send notes</div></div>
     <i class="ti ti-chevron-right" style="font-size:18px;color:#a891ec;"></i>
-  </div>`:''}
+  </div>`,'vc'):''}
   ${(function(){
     const flagged=Object.entries(CL).filter(([id,c])=>c.flaggedContra);
     const reviews=Object.entries(CL).filter(([id,c])=>c.submittedForms&&c.submittedForms.length&&!c.flaggedContra);
@@ -1161,29 +1200,29 @@ function renderHome(){
         <i class="ti ti-check" aria-hidden="true" style="color:#4ec49a;"></i><span style="color:#4ec49a;">DONE</span>
       </div>
     </div>`;}).join('');
-    h+=flagged.map(([id,c])=>`<div onclick="nav('client','${id}')" style="margin:0 16px 8px;background:#2a0f0f;border:1px solid #5a2020;border-radius:12px;padding:11px 13px;display:flex;align-items:center;gap:11px;cursor:pointer;">
+    h+=flagged.filter(([id])=>!_homeDismissed.has('flag-'+id)).map(([id,c])=>_swipeTile(`<div onclick="nav('client','${id}')" style="margin:0;background:#2a0f0f;border:1px solid #5a2020;border-radius:12px;padding:11px 13px;display:flex;align-items:center;gap:11px;cursor:pointer;">
       <div style="width:38px;height:38px;border-radius:9px;background:#3a1414;display:flex;align-items:center;justify-content:center;flex-shrink:0;"><i class="ti ti-alert-triangle" style="font-size:18px;color:#e87070;"></i></div>
       <div style="flex:1;min-width:0;"><div style="font-size:14px;font-weight:600;color:#f0c8c8;">${c.name.split(' ')[0]} flagged ${c.flaggedContra.items.length} item${c.flaggedContra.items.length>1?'s':''} on intake</div><div style="font-size:12px;color:#c99;margin-top:1px;overflow:hidden;text-overflow:ellipsis;white-space:nowrap;">${c.flaggedContra.items.join(', ')}</div></div>
       <i class="ti ti-chevron-right" style="font-size:18px;color:#e87070;"></i>
-    </div>`).join('');
-    h+=reviews.map(([id,c])=>`<div onclick="nav('client','${id}')" style="margin:0 16px 8px;background:#0f1f17;border:1px solid #1c4030;border-radius:12px;padding:11px 13px;display:flex;align-items:center;gap:11px;cursor:pointer;">
+    </div>`,'flag-'+id)).join('');
+    h+=reviews.filter(([id])=>!_homeDismissed.has('rev-'+id)).map(([id,c])=>_swipeTile(`<div onclick="nav('client','${id}')" style="margin:0;background:#0f1f17;border:1px solid #1c4030;border-radius:12px;padding:11px 13px;display:flex;align-items:center;gap:11px;cursor:pointer;">
       <div style="width:38px;height:38px;border-radius:9px;background:#123226;display:flex;align-items:center;justify-content:center;flex-shrink:0;"><i class="ti ti-clipboard-check" style="font-size:18px;color:#4ec49a;"></i></div>
       <div style="flex:1;min-width:0;"><div style="font-size:14px;font-weight:600;color:#cdeede;">${c.name.split(' ')[0]} completed ${c.submittedForms[0].title}</div><div style="font-size:12px;color:#7fbfa5;margin-top:1px;">Answers on file — tap to review</div></div>
       <i class="ti ti-chevron-right" style="font-size:18px;color:#4ec49a;"></i>
-    </div>`).join('');
+    </div>`,'rev-'+id)).join('');
     return h;
   })()}
   <div class="sh"><h2>Up next</h2></div>
   ${Object.entries(CL).slice(0,2).map(([id,c])=>`
   <div class="card" onclick="nav('client','${id}')"><div class="row">${av(c)}<div style="flex:1;"><div style="font-size:15px;font-weight:500;color:#f0f0f0;">${c.name}</div><div style="font-size:12px;color:#999;margin-top:2px;">${c.nextVisit} · ${c.treatment}</div></div><span class="bdg ${id==='maya'?'bg':'ba'}" style="font-size:12px;">${id==='maya'?'Confirmed':'Form pending'}</span></div></div>`).join('')}
   <div class="sh"><h2>Recent activity</h2></div>
-  ${[['ti-file-check','#0a2019','#4ec49a','Consent form signed','Priya Patel · 2h ago'],['ti-microphone','#1e1633','#a891ec','AI voice note saved','Maya Rodriguez · Yesterday'],['ti-camera','var(--accent-tint)','var(--accent)','Before/after photos added','Maya Rodriguez · Yesterday']].map(([icon,bg,ic,name,sub])=>`
-  <div class="card"><div class="row"><div style="width:32px;height:32px;border-radius:8px;background:${bg};display:flex;align-items:center;justify-content:center;flex-shrink:0;"><i class="ti ${icon}" style="font-size:15px;color:${ic};"></i></div><div><div style="font-size:14px;color:#e0e0e0;">${name}</div><div style="font-size:12px;color:#999;">${sub}</div></div></div></div>`).join('')}
-  <div class="sh"><h2>This week</h2></div>
+  ${[['ti-file-check','#0a2019','#4ec49a','Consent form signed','Priya Patel · 2h ago','client-forms','priya'],['ti-microphone','#1e1633','#a891ec','AI voice note saved','Maya Rodriguez · Yesterday','notes','maya'],['ti-camera','var(--accent-tint)','var(--accent)','Before/after photos added','Maya Rodriguez · Yesterday','photos','maya']].map(([icon,bg,ic,name,sub,scr,cid])=>`
+  <div class="card" onclick="${CL[cid]?`nav('${scr}','${cid}')`:`nav('clients')`}" style="cursor:pointer;"><div class="row"><div style="width:32px;height:32px;border-radius:8px;background:${bg};display:flex;align-items:center;justify-content:center;flex-shrink:0;"><i class="ti ${icon}" style="font-size:15px;color:${ic};"></i></div><div style="flex:1;min-width:0;"><div style="font-size:14px;color:#e0e0e0;">${name}</div><div style="font-size:12px;color:#999;">${sub}</div></div><i class="ti ti-chevron-right" aria-hidden="true" style="font-size:16px;color:#888;flex-shrink:0;"></i></div></div>`).join('')}
+  <div class="sh" style="display:flex;align-items:center;justify-content:space-between;"><h2>This week</h2>${_apptsLive()?'<span style="display:inline-flex;align-items:center;gap:4px;font-size:10px;font-weight:700;color:#4ec49a;background:#0a2019;border:1px solid #1a4a38;padding:2px 8px;border-radius:20px;letter-spacing:.04em;"><span style="width:6px;height:6px;border-radius:50%;background:#4ec49a;"></span>LIVE</span>':''}</div>
   <div style="display:flex;gap:8px;padding:0 16px 16px;">
-    ${[['Clients','8','#f0f0f0','ti-users'],['Appointments','12','#4ec49a','ti-calendar']].map(([l,v,c,icon])=>`<div style="flex:1;background:#161616;border-radius:10px;padding:10px 12px;"><div style="display:flex;align-items:center;gap:4px;margin-bottom:4px;"><i class="ti ${icon}" style="font-size:11px;color:#999;"></i><span style="font-size:11px;color:#999;">${l}</span></div><div style="font-size:18px;font-weight:500;color:${c};">${v}</div></div>`).join('')}
+    ${(()=>{const cw=new Set(_apptsThisWeek().map(a=>a.client)).size;const aw=_apptsThisWeek().length;return [['Clients',cw,'#f0f0f0','ti-users','clients'],['Appointments',aw,'#4ec49a','ti-calendar','calendar']].map(([l,v,c,icon,scr])=>`<button onclick="nav('${scr}')" aria-label="${l} this week: ${v}. View ${l.toLowerCase()}." style="flex:1;background:#161616;border:1px solid #232323;border-radius:10px;padding:10px 12px;cursor:pointer;font-family:inherit;text-align:left;"><div style="display:flex;align-items:center;gap:4px;margin-bottom:4px;"><i class="ti ${icon}" style="font-size:11px;color:#999;"></i><span style="font-size:11px;color:#999;">${l}</span><i class="ti ti-chevron-right" aria-hidden="true" style="font-size:12px;color:#666;margin-left:auto;"></i></div><div style="font-size:18px;font-weight:500;color:${c};">${v}</div></button>`).join('');})()}
   </div>`;
-  setTimeout(()=>{try{document.querySelectorAll('.ci-nudge-card').forEach((el,i)=>{if(typeof initSwipe==='function')initSwipe(el,i);});}catch(e){}},0);
+  setTimeout(()=>{try{document.querySelectorAll('.swipe-card').forEach((el,i)=>{if(typeof initSwipe==='function')initSwipe(el,i);});}catch(e){}try{_loadSquareAppts();}catch(e){}},0);
 }
 
 // ── CLIENTS ──
@@ -1210,6 +1249,137 @@ function renderClients(){
   }
   ${_noRes('clients-noresults','No clients match your search.')}`;
 }
+function _fileEsc(s){return String(s==null?'':s).replace(/&/g,'&amp;').replace(/</g,'&lt;').replace(/>/g,'&gt;');}
+// Build a clean, printable standalone HTML document of a client's whole file.
+function _buildClientFileHTML(id){
+  const c=CL[id]; if(!c) return '';
+  const biz=(typeof bizInfo!=='undefined'&&bizInfo)?bizInfo:{};
+  const bizName=_fileEsc(biz.name||'SlickChart');
+  const owner=_fileEsc(biz.ownerName||'');
+  const now=new Date();
+  const dateStr=now.toLocaleDateString(undefined,{year:'numeric',month:'long',day:'numeric'})+' \u00b7 '+now.toLocaleTimeString(undefined,{hour:'numeric',minute:'2-digit'});
+  // ---- profile ----
+  const rows=[];
+  const push=(l,v)=>{ if(v!=null&&String(v).trim()&&String(v).trim()!=='\u2014') rows.push([l,String(v)]); };
+  push('Treatment', c.treatment);
+  (typeof _vitalsConfig==='function'?_vitalsConfig():[]).forEach(f=>push(f.label, c[f.key]));
+  if(c.sessions!=null) push('Sessions', c.sessions + (c.seriesTotal?(' of '+c.seriesTotal):''));
+  push('Touch-up due', c.touchUpDate);
+  const profileHTML = rows.map(([l,v])=>`<tr><td class="l">${_fileEsc(l)}</td><td class="v">${_fileEsc(v)}</td></tr>`).join('');
+  // ---- flagged contraindications ----
+  let flaggedHTML='';
+  if(c.flaggedContra){
+    flaggedHTML=`<div class="flag"><div class="flag-h">\u26a0 Flagged on intake \u2014 review before treatment</div>`+
+      `<div class="sub">Marked on \u201c${_fileEsc(c.flaggedContra.form)}\u201d (${_fileEsc(c.flaggedContra.date)}):</div>`+
+      `<ul>${c.flaggedContra.items.map(it=>`<li>${_fileEsc(it)}</li>`).join('')}</ul></div>`;
+  }
+  // ---- forms on file ----
+  let formsHTML='';
+  const sfs=(c.submittedForms||[]);
+  if(sfs.length){
+    formsHTML=sfs.map(sf=>{
+      const tmpl=(typeof formTmpls!=='undefined')?formTmpls[sf.formId]:null;
+      const qa=[];
+      if(tmpl&&tmpl.qs){tmpl.qs.forEach(q=>{if(q.type==='Signature'||q.type==='Contraindications')return;const a=sf.answers&&sf.answers[q.id];if(a!=null&&String(a).trim())qa.push([q.label,String(a)]);});}
+      else{Object.keys(sf.answers||{}).forEach(k=>qa.push([k,String(sf.answers[k])]));}
+      const qaHTML=qa.length?`<table class="qa">${qa.map(([l,v])=>`<tr><td class="l">${_fileEsc(l)}</td><td class="v">${_fileEsc(v)}</td></tr>`).join('')}</table>`:'<div class="muted">No written answers recorded.</div>';
+      const flg=(sf.flagged&&sf.flagged.length)?`<div class="flag sm"><div class="flag-h">\u26a0 Flagged</div><ul>${sf.flagged.map(it=>`<li>${_fileEsc(it)}</li>`).join('')}</ul></div>`:'';
+      return `<div class="form"><div class="form-h">${_fileEsc(sf.title)}</div><div class="muted">${_fileEsc(sf.date||'')} \u00b7 ${sf.signed?'Signed by client \u2713':'Not signed'}</div>${flg}${qaHTML}</div>`;
+    }).join('');
+  }
+  const sfTitles=new Set(sfs.map(s=>s.title));
+  const extraSigned=(c.signedForms||[]).filter(n=>!sfTitles.has(n));
+  if(extraSigned.length){
+    formsHTML+=`<div class="form"><div class="form-h">Other signed forms</div><ul>${extraSigned.map(n=>`<li>${_fileEsc(n)}</li>`).join('')}</ul></div>`;
+  }
+  if(!formsHTML) formsHTML='<div class="muted">No forms on file yet.</div>';
+  // ---- treatment notes (SOAP record) ----
+  let notesHTML='';
+  try{
+    const sn=(typeof savedNotes!=='undefined')?savedNotes:null;
+    if(sn&&sn.soap){
+      const labels={s1:'Subjective',s2:'Objective',s3:'Assessment',s4:'Plan'};
+      const parts=Object.keys(sn.soap).map(k=>[labels[k]||k, sn.soap[k]]).filter(x=>x[1]&&String(x[1]).trim());
+      if(parts.length) notesHTML=`<table class="qa">${parts.map(([l,v])=>`<tr><td class="l">${_fileEsc(l)}</td><td class="v">${_fileEsc(v)}</td></tr>`).join('')}</table>`;
+    }
+  }catch(e){}
+  if(!notesHTML) notesHTML='<div class="muted">No treatment notes recorded.</div>';
+
+  return `<!doctype html><html><head><meta charset="utf-8"><meta name="viewport" content="width=device-width, initial-scale=1">`+
+  `<title>${_fileEsc(c.name)} \u2014 Client File</title>`+
+  `<style>`+
+    `*{box-sizing:border-box;}`+
+    `body{font-family:-apple-system,BlinkMacSystemFont,'Segoe UI',Roboto,Helvetica,Arial,sans-serif;color:#1a1a1a;margin:0;padding:32px 28px;line-height:1.5;font-size:13px;}`+
+    `.top{display:flex;justify-content:space-between;align-items:flex-start;border-bottom:2px solid #1a1a1a;padding-bottom:14px;margin-bottom:6px;}`+
+    `.biz{font-size:18px;font-weight:700;}.owner{font-size:12px;color:#666;margin-top:2px;}`+
+    `.doc{font-size:11px;color:#888;text-align:right;}.doc b{display:block;font-size:13px;color:#1a1a1a;}`+
+    `h1{font-size:22px;margin:16px 0 2px;}.treat{color:#666;font-size:13px;margin-bottom:16px;}`+
+    `h2{font-size:12px;text-transform:uppercase;letter-spacing:.05em;color:#8a6a3a;border-bottom:1px solid #e5ddd0;padding-bottom:5px;margin:22px 0 10px;}`+
+    `table{width:100%;border-collapse:collapse;}`+
+    `td.l{width:38%;color:#666;padding:5px 10px 5px 0;vertical-align:top;font-weight:600;}`+
+    `td.v{padding:5px 0;vertical-align:top;}tr+tr td{border-top:1px solid #f0ece4;}`+
+    `.flag{background:#fdf0f0;border:1px solid #e8c0c0;border-radius:8px;padding:12px 14px;margin:10px 0;}`+
+    `.flag.sm{margin:8px 0;}.flag-h{font-weight:700;color:#a33;margin-bottom:5px;}.flag .sub{color:#955;font-size:12px;margin-bottom:4px;}.flag ul{margin:4px 0 0;padding-left:18px;}.flag li{color:#733;margin:2px 0;}`+
+    `.form{border:1px solid #e5ddd0;border-radius:8px;padding:12px 14px;margin:10px 0;page-break-inside:avoid;}`+
+    `.form-h{font-weight:700;font-size:14px;margin-bottom:2px;}.muted{color:#999;font-style:italic;}`+
+    `.qa{margin-top:8px;}table.qa td.l{width:42%;}`+
+    `.foot{margin-top:28px;border-top:1px solid #e5ddd0;padding-top:10px;font-size:10px;color:#aaa;text-align:center;}`+
+    `@media print{body{padding:0 6px;}h2{page-break-after:avoid;}}`+
+  `</style></head><body>`+
+    `<div class="top"><div><div class="biz">${bizName}</div>${owner?`<div class="owner">${owner}</div>`:''}</div>`+
+      `<div class="doc"><b>Client File</b>Generated ${_fileEsc(dateStr)}</div></div>`+
+    `<h1>${_fileEsc(c.name)}</h1><div class="treat">${_fileEsc(c.treatment||'')}</div>`+
+    flaggedHTML+
+    `<h2>Client details</h2><table>${profileHTML||'<tr><td class="v muted">No details on file.</td></tr>'}</table>`+
+    `<h2>Forms &amp; documents</h2>${formsHTML}`+
+    `<h2>Treatment notes</h2>${notesHTML}`+
+    `<div class="foot">Confidential client record \u00b7 ${bizName} \u00b7 Generated by SlickChart on ${_fileEsc(dateStr)}</div>`+
+  `</body></html>`;
+}
+// Print via a hidden iframe (reliable on mobile Safari, no popup blocker).
+function _printClientFile(id){
+  const html=_buildClientFileHTML(id); if(!html)return;
+  const f=document.createElement('iframe');
+  f.setAttribute('aria-hidden','true');
+  f.style.cssText='position:fixed;right:0;bottom:0;width:0;height:0;border:0;opacity:0;';
+  document.body.appendChild(f);
+  try{
+    const doc=f.contentWindow.document;
+    doc.open();doc.write(html);doc.close();
+    setTimeout(()=>{try{f.contentWindow.focus();f.contentWindow.print();}catch(e){}setTimeout(()=>{try{f.remove();}catch(e){}},2000);},350);
+  }catch(e){try{f.remove();}catch(_){}if(typeof proToast==='function')proToast('Could not open print \u2014 try Download instead');}
+}
+// Download the file as a standalone .html the provider can open, print, or keep.
+function _downloadClientFile(id){
+  const c=CL[id]; if(!c)return;
+  const html=_buildClientFileHTML(id); if(!html)return;
+  try{
+    const blob=new Blob([html],{type:'text/html'});
+    const url=URL.createObjectURL(blob);
+    const a=document.createElement('a');
+    a.href=url; a.download=(c.name||'client').replace(/[^\w]+/g,'-').replace(/^-|-$/g,'')+'-file.html';
+    document.body.appendChild(a); a.click();
+    setTimeout(()=>{try{URL.revokeObjectURL(url);a.remove();}catch(e){}},1500);
+    if(typeof proToast==='function')proToast('File downloaded \u2713');
+  }catch(e){ if(typeof proToast==='function')proToast('Could not download \u2014 try Print instead'); }
+}
+// Little chooser sheet: Print / Save as PDF, or Download.
+function exportClientFile(id){
+  const c=CL[id]; if(!c)return;
+  const ov=document.createElement('div'); ov.id='export-sheet';
+  ov.style.cssText='position:absolute;inset:0;z-index:9999;background:rgba(0,0,0,.6);display:flex;align-items:flex-end;justify-content:center;';
+  ov.onclick=e=>{if(e.target===ov)ov.remove();};
+  const first=_fileEsc(c.name.split(' ')[0]);
+  ov.innerHTML=`<div style="background:#1a1a1a;border:1px solid #2a2a2a;border-radius:18px 18px 0 0;width:100%;padding:16px 16px 26px;">`+
+    `<div style="width:36px;height:4px;background:#333;border-radius:2px;margin:0 auto 14px;"></div>`+
+    `<div style="font-size:16px;font-weight:600;color:#f0f0f0;margin-bottom:3px;">Export ${first}'s file</div>`+
+    `<div style="font-size:12px;color:#999;margin-bottom:16px;line-height:1.5;">A clean copy of their profile, forms, flagged notes and treatment record \u2014 ready to print or save.</div>`+
+    `<button onclick="this.closest('#export-sheet').remove();_printClientFile('${id}')" style="width:100%;background:var(--accent);color:var(--accent-ink);border:none;border-radius:12px;padding:14px;font-size:14px;font-weight:600;cursor:pointer;font-family:inherit;display:flex;align-items:center;justify-content:center;gap:8px;margin-bottom:9px;"><i class="ti ti-printer" style="font-size:17px;"></i> Print / Save as PDF</button>`+
+    `<button onclick="this.closest('#export-sheet').remove();_downloadClientFile('${id}')" style="width:100%;background:#242424;color:#e0e0e0;border:1px solid #333;border-radius:12px;padding:14px;font-size:14px;font-weight:600;cursor:pointer;font-family:inherit;display:flex;align-items:center;justify-content:center;gap:8px;"><i class="ti ti-download" style="font-size:17px;"></i> Download as file</button>`+
+  `</div>`;
+  (document.querySelector('.shell')||document.body).appendChild(ov);
+}
+
 function renderClient(id){
   setNav('clients');
   _recEditCtx='profile';
@@ -1217,7 +1387,7 @@ function renderClient(id){
   document.getElementById('tt').textContent=c.name;
   S.innerHTML=`
   <div id="client-screen-${id}" hidden></div>
-  <div style="padding:12px 16px 0;display:flex;align-items:center;justify-content:space-between;"><button class="back" onclick="nav('clients')"><i class="ti ti-arrow-left"></i> Clients</button><button onclick="deleteClient('${id}')" aria-label="Remove client" style="background:none;border:1px solid #3a1a1a;color:#a85a5a;border-radius:8px;padding:5px 10px;font-size:11px;font-weight:600;cursor:pointer;display:inline-flex;align-items:center;gap:5px;font-family:inherit;"><i class="ti ti-trash" style="font-size:12px;"></i> Remove</button></div>
+  <div style="padding:12px 16px 0;display:flex;align-items:center;justify-content:space-between;"><button onclick="exportClientFile('${id}')" aria-label="Export or print client file" style="background:var(--accent-tint);border:1px solid var(--accent-a30,#3d2d10);color:var(--accent);border-radius:8px;padding:5px 11px;font-size:11px;font-weight:600;cursor:pointer;display:inline-flex;align-items:center;gap:5px;font-family:inherit;"><i class="ti ti-file-download" style="font-size:13px;"></i> Export file</button><button onclick="deleteClient('${id}')" aria-label="Remove client" style="background:none;border:1px solid #3a1a1a;color:#a85a5a;border-radius:8px;padding:5px 10px;font-size:11px;font-weight:600;cursor:pointer;display:inline-flex;align-items:center;gap:5px;font-family:inherit;"><i class="ti ti-trash" style="font-size:12px;"></i> Remove</button></div>
   <div style="padding:14px 16px 0;display:flex;flex-direction:column;align-items:center;gap:8px;">${av(c,64)}<div style="text-align:center;"><div style="font-size:18px;font-weight:500;color:#f0f0f0;">${c.name}</div><div style="font-size:13px;color:#666;display:inline-flex;align-items:center;gap:6px;">${c.treatment} <button onclick="changeTreatment('${id}','client')" style="border:1px solid var(--accent-a30,#3d2d10);background:var(--accent-tint);color:var(--accent);cursor:pointer;padding:3px 9px;border-radius:20px;line-height:1;display:inline-flex;align-items:center;gap:3px;font-size:11px;font-weight:600;font-family:inherit;"><i class="ti ti-pencil" style="font-size:11px;"></i> Edit</button></div></div></div>
   ${c.flaggedContra?`<div style="margin:12px 16px 0;background:#2a0f0f;border:1px solid #5a2020;border-radius:12px;padding:12px 14px;">
     <div style="display:flex;align-items:center;gap:8px;margin-bottom:6px;"><i class="ti ti-alert-triangle" style="font-size:16px;color:#e87070;"></i><span style="font-size:13px;font-weight:700;color:#f0c8c8;">Flagged on intake — review before the visit</span></div>
@@ -1398,6 +1568,10 @@ function _suggestedFormsFor(c){
   if(/massage|deep tissue|swedish|sports|prenatal massage/.test(t))add('massage-consent');
   if(/acrylic|\bgel\b|dip|full set|enhancement|nail/.test(t))add('nail-consent');
   if(/makeup|bridal|glam|mua/.test(t))add('makeup-screen');
+  if(/gut|digest|sensitiv|allerg|intoleran/.test(t))add('nutrition-sensitivity');
+  if(/goal|weight|coaching|habit|meal plan|macro/.test(t))add('nutrition-goals');
+  if(/cavitation|ultrasonic|radiofreq|\brf\b|skin tighten|sculpt/.test(t))add('contour-cavitation');
+  if(/lymphatic|drainage/.test(t))add('contour-lymphatic');
   // if there's no intake or consent on file at all, suggest the profession's intake + consent
   const hasIntakeOrConsent=[...have].some(n=>/intake|consent/i.test(n));
   if(!hasIntakeOrConsent){
@@ -1406,6 +1580,47 @@ function _suggestedFormsFor(c){
     if(ik)add(ik);if(ck)add(ck);
   }
   return out.slice(0,3);
+}
+function renderFlaggedIntakes(){
+  document.getElementById('tt').textContent='Flagged intakes';
+  const flagged=Object.entries(CL).filter(([id,c])=>c.flaggedContra);
+  if(!flagged.length){
+    S.innerHTML=`<div style="display:flex;flex-direction:column;align-items:center;justify-content:center;padding:64px 24px;text-align:center;">
+      <div style="width:64px;height:64px;border-radius:50%;background:#0f2a1a;display:flex;align-items:center;justify-content:center;margin-bottom:14px;"><i class="ti ti-clipboard-check" style="font-size:30px;color:#4ec49a;"></i></div>
+      <div style="font-size:16px;font-weight:600;color:#f0f0f0;margin-bottom:5px;">No flagged intakes</div>
+      <div style="font-size:13px;color:#999;max-width:250px;line-height:1.6;">When a client marks a contraindication on their intake form, it shows up here so you can review it before their visit.</div>
+    </div>`;
+    return;
+  }
+  const rows=flagged.map(([id,c])=>{
+    const fi=(c.submittedForms||[]).findIndex(f=>f.flagged&&f.flagged.length);
+    const open=fi>=0?`viewSubmittedForm('${id}',${fi})`:`nav('client-forms','${id}')`;
+    const items=c.flaggedContra.items;
+    return `<div style="margin:0 16px 10px;background:#2a0f0f;border:1px solid #5a2020;border-radius:14px;overflow:hidden;">
+      <div style="padding:13px 15px;display:flex;align-items:center;gap:11px;">
+        ${av(c,42)}
+        <div style="flex:1;min-width:0;">
+          <div style="font-size:15px;font-weight:600;color:#f5d5d5;">${c.name}</div>
+          <div style="font-size:12px;color:#c99;margin-top:1px;overflow:hidden;text-overflow:ellipsis;white-space:nowrap;">${c.flaggedContra.form} \u00b7 ${c.flaggedContra.date}${c.nextVisit?' \u00b7 next '+c.nextVisit:''}</div>
+        </div>
+        <div style="width:34px;height:34px;border-radius:9px;background:#3a1414;display:flex;align-items:center;justify-content:center;flex-shrink:0;"><i class="ti ti-alert-triangle" aria-hidden="true" style="font-size:18px;color:#e87070;"></i></div>
+      </div>
+      <div style="padding:0 15px 13px;">
+        <div style="font-size:11px;text-transform:uppercase;letter-spacing:.05em;color:#c07a7a;margin-bottom:6px;">Flagged ${items.length} item${items.length>1?'s':''}</div>
+        <ul style="margin:0 0 12px;padding-left:18px;">${items.map(it=>`<li style="font-size:13px;color:#e6cccc;line-height:1.7;">${it}</li>`).join('')}</ul>
+        <div style="display:flex;gap:8px;">
+          <button onclick="${open}" style="flex:1;background:var(--accent);color:var(--accent-ink);border:none;border-radius:10px;padding:11px;font-size:13px;font-weight:600;cursor:pointer;font-family:inherit;display:inline-flex;align-items:center;justify-content:center;gap:6px;"><i class="ti ti-file-text" aria-hidden="true" style="font-size:15px;"></i> View intake form</button>
+          <button onclick="nav('client','${id}')" style="background:#1a1a1a;border:1px solid #3a2a2a;color:#e0c0c0;border-radius:10px;padding:11px 15px;font-size:13px;font-weight:500;cursor:pointer;font-family:inherit;">Chart</button>
+        </div>
+      </div>
+    </div>`;
+  }).join('');
+  S.innerHTML=`
+  <div style="padding:14px 16px 8px;">
+    <div style="font-size:13px;color:#c99;display:flex;align-items:flex-start;gap:7px;line-height:1.5;"><i class="ti ti-alert-triangle" aria-hidden="true" style="color:#e87070;margin-top:2px;"></i><span>${flagged.length} client${flagged.length>1?'s':''} flagged something on intake. Review before the visit \u2014 tap to open the form.</span></div>
+  </div>
+  ${rows}
+  <div style="height:16px;"></div>`;
 }
 function renderClientForms(id){
   setNav('clients');
@@ -1416,7 +1631,7 @@ function renderClientForms(id){
   const signedOnly=(c.signedForms||[]).filter(n=>subTitles.indexOf(n)<0);
   const card=(inner,onclick,danger)=>`<button ${onclick?`onclick="${onclick}"`:'disabled'} style="width:100%;background:#1a1a1a;border:1px solid ${danger?'#5a2020':'#2a2a2a'};border-radius:12px;padding:11px 13px;display:flex;align-items:center;gap:11px;margin-bottom:8px;cursor:${onclick?'pointer':'default'};font-family:inherit;text-align:left;">${inner}</button>`;
   S.innerHTML=`
-  <div style="padding:12px 16px 0;"><button class="back" onclick="nav('client','${id}')"><i class="ti ti-arrow-left"></i> ${c.name.split(' ')[0]}</button></div>
+  
   <div style="padding:10px 16px 0;display:flex;align-items:center;gap:10px;">${av(c,40)}<div><div style="font-size:16px;font-weight:600;color:#f0f0f0;">Forms &amp; documents</div><div style="font-size:12px;color:#999;">${subs.length+signedOnly.length} on file for ${c.name.split(' ')[0]}</div></div></div>
   <div style="padding:14px 16px 0;">
     <button onclick="openClientFormSender('${id}')" class="btnp" style="width:100%;border-radius:10px;margin-bottom:16px;"><i class="ti ti-send"></i> Send a form to ${c.name.split(' ')[0]}</button>
@@ -1487,8 +1702,7 @@ function renderBrief(id){
   const c=CL[id];
   document.getElementById('tt').textContent='AI client brief';
   S.innerHTML=`
-  <div style="padding:12px 16px 0;display:flex;justify-content:space-between;align-items:center;">
-    <button class="back" onclick="nav('client','${id}')"><i class="ti ti-arrow-left"></i> ${c.name.split(' ')[0]}</button>
+  <div style="padding:12px 16px 0;display:flex;justify-content:flex-end;align-items:center;">
     <button onclick="nav('room','${id}')" style="border:none;background:#0a2019;color:#4ec49a;border-radius:8px;padding:6px 12px;font-size:12px;cursor:pointer;"><i class="ti ti-armchair" style="font-size:12px;"></i> Session</button>
   </div>
   <div style="padding:12px 16px 0;"><div class="row" style="gap:10px;">${av(c,38)}<div><div style="font-size:15px;font-weight:500;color:#f0f0f0;">${c.name}</div><div style="font-size:12px;color:#999;">${c.nextVisit} · ${c.treatment}</div>${selectedProfessions.includes('brow')&&!selectedProfessions.includes('esty')&&c.touchUpDate?`<div style="font-size:12px;color:#c084fc;margin-top:2px;display:flex;align-items:center;gap:4px;"><i class="ti ti-calendar-check" style="font-size:11px;"></i> Touch-up: ${c.touchUpDate}</div>`:''}</div></div></div></div>
@@ -1902,7 +2116,7 @@ function renderNotes(id){
   const fromRoom=_notesFrom==='room';
   document.getElementById('tt').textContent='Treatment notes';
   S.innerHTML=`
-  <div style="padding:12px 16px 0;"><button class="back" onclick="nav('${fromRoom?'room':'client'}','${id}')"><i class="ti ti-arrow-left"></i> ${fromRoom?'Session':c.name.split(' ')[0]}</button></div>
+  
   <div style="padding:10px 16px 4px;font-size:18px;font-weight:500;color:#f0f0f0;">${c.name}</div>
   <div style="padding:0 16px;font-size:13px;color:#999;margin-bottom:8px;">Jun 26, 2026 · ${c.treatment}</div>
   <div class="tab-bar"><button class="tab active" id="tnp">Provider notes</button><button class="tab" id="tnc" onclick="_summaryFrom='${fromRoom?'room':'notes'}';nav('session-summary','${id}')">Client summary</button></div>
@@ -1969,13 +2183,13 @@ function switchNoteTab(id){
   const c=CL[id];
   document.getElementById('tnp').classList.remove('active');
   document.getElementById('tnc').classList.add('active');
-  document.getElementById('ncontent').innerHTML=`<div style="padding:12px 16px 0;"><div style="background:#0a2019;border-radius:8px;padding:8px 12px;font-size:12px;color:#4ec49a;margin-bottom:12px;display:flex;gap:6px;align-items:center;"><i class="ti ti-eye" style="font-size:12px;"></i> This is what ${c.name.split(' ')[0]} sees</div><div style="font-size:14px;font-weight:500;color:#f0f0f0;margin-bottom:4px;">Your session summary</div><div style="font-size:13px;color:#999;margin-bottom:12px;">Jun 26, 2026 · ${c.treatment} with Jessica</div><div style="background:#161616;border:1px solid #2a2a2a;border-radius:10px;padding:12px;font-size:13px;color:#ccc;line-height:1.7;margin-bottom:12px;">${(selectedProfessions.includes('hair')||selectedProfessions.includes('barber'))&&!selectedProfessions.includes('esty')?'Your colour came out beautifully — excellent lift and the gloss is really showing through. See you in 8 weeks! ✨':'Your skin looked radiant after today\'s treatment! We focused on deep cleansing and brightening. Your hyperpigmentation has visibly improved — keep up that SPF! 🌿'}</div><div style="font-size:11px;font-weight:500;color:#aaa;text-transform:uppercase;letter-spacing:.07em;margin-bottom:6px;">${(selectedProfessions.includes('hair')||selectedProfessions.includes('barber'))&&!selectedProfessions.includes('esty')?'Aftercare reminders':'Homecare reminders'}</div><div style="display:flex;flex-wrap:wrap;gap:6px;margin-bottom:12px;">${getClientHomecare(id).slice(0,4).map(t=>`<span style="font-size:12px;padding:4px 10px;border-radius:20px;border:1px solid #666;color:#ccc;">${t}</span>`).join('')}</div>${(clientRecs[id]||[]).length>0?`<div style="font-size:11px;font-weight:500;color:#aaa;text-transform:uppercase;letter-spacing:.07em;margin-bottom:8px;">Recommended for you</div>${(clientRecs[id]||[]).map(aid=>{const a=affiliateLinks.find(x=>x.id===aid);if(!a)return'';return`<div style="background:#1a1a1a;border:1px solid #2a2a2a;border-radius:10px;padding:11px 12px;display:flex;align-items:center;gap:10px;margin-bottom:8px;"><span style="font-size:18px;">${a.icon}</span><div style="flex:1;min-width:0;"><div style="font-size:13px;font-weight:500;color:#e0e0e0;">${a.name}</div><div style="font-size:11px;color:#999;">${a.brand}</div></div>${(a.url||a.site||a.inOffice||amazonBuyUrl(a))?`<button onclick="openBuyOptionsP('${a.id}')" style="background:var(--accent);color:var(--accent-ink);border:none;border-radius:7px;padding:6px 11px;font-size:11px;font-weight:500;cursor:pointer;white-space:nowrap;">Buy</button>`:''}</div>`;}).join('')}`:''}<div style="font-size:11px;font-weight:500;color:#aaa;text-transform:uppercase;letter-spacing:.07em;margin-bottom:6px;">Next appointment</div><div style="background:#161616;border:1px solid #2a2a2a;border-radius:10px;padding:12px;display:flex;align-items:center;gap:8px;font-size:13px;color:#ccc;"><i class="ti ti-calendar" style="font-size:16px;color:var(--accent);"></i> Jul 17, 2026 · 10:00 AM · ${c.treatment}</div></div>`;
+  document.getElementById('ncontent').innerHTML=`<div style="padding:12px 16px 0;"><div style="background:#0a2019;border-radius:8px;padding:8px 12px;font-size:12px;color:#4ec49a;margin-bottom:12px;display:flex;gap:6px;align-items:center;"><i class="ti ti-eye" style="font-size:12px;"></i> This is what ${c.name.split(' ')[0]} sees</div><div style="font-size:14px;font-weight:500;color:#f0f0f0;margin-bottom:4px;">Your session summary</div><div style="font-size:13px;color:#999;margin-bottom:12px;">Jun 26, 2026 · ${c.treatment} with ${_providerFirstName()}</div><div style="background:#161616;border:1px solid #2a2a2a;border-radius:10px;padding:12px;font-size:13px;color:#ccc;line-height:1.7;margin-bottom:12px;">${(selectedProfessions.includes('hair')||selectedProfessions.includes('barber'))&&!selectedProfessions.includes('esty')?'Your colour came out beautifully — excellent lift and the gloss is really showing through. See you in 8 weeks! ✨':'Your skin looked radiant after today\'s treatment! We focused on deep cleansing and brightening. Your hyperpigmentation has visibly improved — keep up that SPF! 🌿'}</div><div style="font-size:11px;font-weight:500;color:#aaa;text-transform:uppercase;letter-spacing:.07em;margin-bottom:6px;">${(selectedProfessions.includes('hair')||selectedProfessions.includes('barber'))&&!selectedProfessions.includes('esty')?'Aftercare reminders':'Homecare reminders'}</div><div style="display:flex;flex-wrap:wrap;gap:6px;margin-bottom:12px;">${getClientHomecare(id).slice(0,4).map(t=>`<span style="font-size:12px;padding:4px 10px;border-radius:20px;border:1px solid #666;color:#ccc;">${t}</span>`).join('')}</div>${(clientRecs[id]||[]).length>0?`<div style="font-size:11px;font-weight:500;color:#aaa;text-transform:uppercase;letter-spacing:.07em;margin-bottom:8px;">Recommended for you</div>${(clientRecs[id]||[]).map(aid=>{const a=affiliateLinks.find(x=>x.id===aid);if(!a)return'';return`<div style="background:#1a1a1a;border:1px solid #2a2a2a;border-radius:10px;padding:11px 12px;display:flex;align-items:center;gap:10px;margin-bottom:8px;"><span style="font-size:18px;">${a.icon}</span><div style="flex:1;min-width:0;"><div style="font-size:13px;font-weight:500;color:#e0e0e0;">${a.name}</div><div style="font-size:11px;color:#999;">${a.brand}</div></div>${(a.url||a.site||a.inOffice||amazonBuyUrl(a))?`<button onclick="openBuyOptionsP('${a.id}')" style="background:var(--accent);color:var(--accent-ink);border:none;border-radius:7px;padding:6px 11px;font-size:11px;font-weight:500;cursor:pointer;white-space:nowrap;">Buy</button>`:''}</div>`;}).join('')}`:''}<div style="font-size:11px;font-weight:500;color:#aaa;text-transform:uppercase;letter-spacing:.07em;margin-bottom:6px;">Next appointment</div><div style="background:#161616;border:1px solid #2a2a2a;border-radius:10px;padding:12px;display:flex;align-items:center;gap:8px;font-size:13px;color:#ccc;"><i class="ti ti-calendar" style="font-size:16px;color:var(--accent);"></i> Jul 17, 2026 · 10:00 AM · ${c.treatment}</div></div>`;
 }
 function renderNoteFormats(id){
   setNav('clients');
   document.getElementById('tt').textContent='Note format';
   S.innerHTML=`
-  <div style="padding:12px 16px 0;"><button class="back" onclick="nav('notes','${id}')"><i class="ti ti-arrow-left"></i> Notes</button></div>
+  
   <div style="padding:10px 16px 6px;font-size:13px;color:#999;">Choose a format for your provider notes.</div>
   <div class="sh"><h2>Built-in formats</h2></div>
   ${Object.values(noteTemplates).map(t=>`
@@ -1996,8 +2210,7 @@ function renderWriteNote(id){
   const c=CL[id];const t=noteTemplates[activeNoteTemplate]||noteTemplates.soap;
   document.getElementById('tt').textContent='Write note';
   S.innerHTML=`
-  <div style="padding:12px 16px 0;display:flex;align-items:center;justify-content:space-between;">
-    <button class="back" onclick="nav('notes','${id}')"><i class="ti ti-arrow-left"></i> Notes</button>
+  <div style="padding:12px 16px 0;display:flex;align-items:center;justify-content:flex-end;">
     <div style="display:flex;gap:8px;"><span class="bdg ${t.bdg}" style="font-size:12px;">${t.name}</span><button style="border:none;background:var(--accent);border-radius:8px;padding:6px 14px;font-size:12px;color:var(--accent-ink);cursor:pointer;font-weight:500;" onclick="nav('notes','${id}')">Save</button></div>
   </div>
   <div style="padding:6px 16px 10px;font-size:12px;color:#999;">${c.name} · Jun 26, 2026 · ${c.treatment}</div>
@@ -2011,8 +2224,7 @@ function renderNewNoteTemplate(clientId){
   document.getElementById('tt').textContent='New format';
   noteEditSecs=[{id:'ne1',label:'Section 1',color:'#e87070'},{id:'ne2',label:'Section 2',color:'#5ba3e8'}];
   S.innerHTML=`
-  <div style="padding:12px 16px 0;display:flex;align-items:center;justify-content:space-between;">
-    <button class="back" onclick="nav('note-formats','${clientId}')"><i class="ti ti-arrow-left"></i> Formats</button>
+  <div style="padding:12px 16px 0;display:flex;align-items:center;justify-content:flex-end;">
     <button onclick="saveNoteTemplate('${clientId}')" style="background:var(--accent);color:var(--accent-ink);border:none;border-radius:8px;padding:6px 14px;font-size:12px;font-weight:500;cursor:pointer;">Save</button>
   </div>
   <div style="padding:12px 16px 0;">
@@ -2082,8 +2294,7 @@ function _renderPhotosView(id,c,_passed){
   ];
 
   S.innerHTML=`
-  <div style="padding:12px 16px 0;display:flex;align-items:center;justify-content:space-between;">
-    <button class="back" onclick="nav('client','${id}')"><i class="ti ti-arrow-left"></i> ${c.name.split(' ')[0]}</button>
+  <div style="padding:12px 16px 0;display:flex;align-items:center;justify-content:flex-end;">
     <div style="display:flex;gap:6px;">
       <button onclick="takePhoto('${id}','',()=>nav('photos','${id}'))" aria-label="Take photo now" style="background:var(--accent);color:var(--accent-ink);border:none;border-radius:8px;padding:7px 11px;font-size:12px;font-weight:600;cursor:pointer;display:flex;align-items:center;gap:5px;"><i class="ti ti-camera" aria-hidden="true" style="font-size:14px;"></i> Take photo</button>
       <button onclick="openPhotoUpload('${id}')" style="background:#161616;color:#ccc;border:1px solid #2a2a2a;border-radius:8px;padding:7px 11px;font-size:12px;font-weight:500;cursor:pointer;display:flex;align-items:center;gap:5px;"><i class="ti ti-photo-plus" aria-hidden="true" style="font-size:13px;"></i> Add</button>
@@ -2305,8 +2516,7 @@ function renderSessionSummary(id){
 
 
   S.innerHTML=`
-  <div style="padding:12px 16px 0;display:flex;align-items:center;justify-content:space-between;">
-    <button class="back" onclick="nav('${_summaryFrom==='notes'?'notes':'room'}','${id}')"><i class="ti ti-arrow-left"></i> ${_summaryFrom==='notes'?'Notes':'Session'}</button>
+  <div style="padding:12px 16px 0;display:flex;align-items:center;justify-content:flex-end;">
     <div style="display:flex;gap:8px;">
       <button onclick="changeTreatment('${id}','session-summary')" style="border:1px solid #555;background:none;border-radius:8px;padding:6px 12px;font-size:12px;color:#ccc;cursor:pointer;"><i class="ti ti-pencil" aria-hidden="true" style="font-size:12px;"></i> Edit treatment</button>
       <button onclick="nav('rebook','${id}')" style="border:1px solid #555;background:none;border-radius:8px;padding:6px 12px;font-size:12px;color:#ccc;cursor:pointer;"><i class="ti ti-calendar-plus" aria-hidden="true" style="font-size:12px;"></i> Rebook</button>
@@ -2343,7 +2553,7 @@ function renderSessionSummary(id){
 
     ${summaryToggles.note?`<div style="padding:14px 16px;border-bottom:1px solid #222;">
       <div style="display:flex;align-items:center;justify-content:space-between;margin-bottom:8px;gap:8px;flex-wrap:wrap;">
-        <div style="font-size:12px;color:#aaa;text-transform:uppercase;letter-spacing:.07em;font-weight:500;">A note from Jessica</div>
+        <div style="font-size:12px;color:#aaa;text-transform:uppercase;letter-spacing:.07em;font-weight:500;">A note from ${_providerFirstName()}</div>
         <div style="display:flex;align-items:center;gap:8px;">
           ${aiEnabled?`<button id="ai-friendly-btn" onclick="aiClientFriendly('${id}',this)" style="border:1px solid var(--accent);background:var(--accent-tint);color:var(--accent);font-size:11px;font-weight:600;cursor:pointer;border-radius:20px;padding:4px 10px;display:flex;align-items:center;gap:4px;font-family:inherit;"><i class="ti ti-sparkles" style="font-size:12px;"></i> Make client-friendly</button>`:''}
           <button onclick="editSummaryNote('${id}')" style="border:none;background:none;color:var(--accent);font-size:12px;cursor:pointer;display:flex;align-items:center;gap:4px;"><i class="ti ti-pencil" aria-hidden="true" style="font-size:12px;"></i> Edit</button>
@@ -2578,7 +2788,7 @@ function renderSummaryHistory(id){
   const c=CL[id];const list=sessionSummaries[id]||[];
   document.getElementById('tt').textContent='Session summaries';
   S.innerHTML=`
-  <div style="padding:12px 16px 0;"><button class="back" onclick="nav('client','${id}')"><i class="ti ti-arrow-left"></i> ${c.name.split(' ')[0]}</button></div>
+  
   <div style="padding:10px 16px 4px;display:flex;align-items:center;justify-content:space-between;"><div style="font-size:15px;font-weight:500;color:#f0f0f0;">${c.name}</div><span class="bdg ba" style="font-size:12px;">${list.length} summar${list.length===1?'y':'ies'}</span></div>
   ${_searchBar('Search summaries…','.summary-card','summaries-noresults')}
   ${list.length===0?emptyState({icon:'ti-file-text',title:'No summaries yet',body:'When you finish a session and send a summary, it is saved here in their client file.'}):list.map((s,i)=>`
@@ -2600,7 +2810,7 @@ function sendSummary(id){
   if(t){t.preview='Your session summary is ready ✨';t.unread=false;}
   if(!msgStore[id])msgStore[id]=[];
   const parts=['homecare routine','recommended products','next appointment'].filter((_,i)=>[summaryToggles.homecare,summaryToggles.products,summaryToggles.appointment][i]);
-  msgStore[id].push({from:'me',text:`Hi ${c.name.split(' ')[0]}! Your session summary from today is ready — including your ${parts.join(', ')}. See you next time! ✨\n\n— Jessica`,time:'Just now'});
+  msgStore[id].push({from:'me',text:`Hi ${c.name.split(' ')[0]}! Your session summary from today is ready — including your ${parts.join(', ')}. See you next time! ✨\n\n— ${_providerFirstName()}`,time:'Just now'});
   // Send the actual summary content to the connected client's app so it replaces their summary screen
   _postSummaryData(id);
   _storeSummary(id);
@@ -2707,8 +2917,7 @@ function renderProfessionSettings(){
   document.getElementById('tt').textContent='My profession';
   const active=getActiveProfessions();
   S.innerHTML=`
-  <div style="padding:12px 16px 0;display:flex;align-items:center;justify-content:space-between;">
-    <button class="back" onclick="nav('account')"><i class="ti ti-arrow-left"></i> Account</button>
+  <div style="padding:12px 16px 0;display:flex;align-items:center;justify-content:flex-end;">
     <button onclick="nav('onboarding')" style="border:1px solid #555;background:none;border-radius:8px;padding:6px 12px;font-size:12px;color:#ccc;cursor:pointer;"><i class="ti ti-pencil" aria-hidden="true" style="font-size:12px;"></i> Change</button>
   </div>
 
@@ -2756,8 +2965,7 @@ function renderProfessionDetail(id){
   const p=allProfessions.find(x=>x.id===id);if(!p)return;
   const isActive=selectedProfessions.includes(id);
   S.innerHTML=`
-  <div style="padding:12px 16px 0;display:flex;align-items:center;justify-content:space-between;">
-    <button class="back" onclick="nav('profession-settings')"><i class="ti ti-arrow-left"></i> My profession</button>
+  <div style="padding:12px 16px 0;display:flex;align-items:center;justify-content:flex-end;">
     <button onclick="${isActive?`if(selectedProfessions.length>1){selectedProfessions=selectedProfessions.filter(x=>x!=='${id}');nav('profession-settings')}`:`selectedProfessions.push('${id}');applyProfessions()`}" style="border:none;background:${isActive?'#2a0f0f':'var(--accent)'};color:${isActive?'#e87070':'var(--accent-ink)'};border-radius:8px;padding:6px 13px;font-size:12px;font-weight:500;cursor:pointer;">${isActive?'Remove':'Add to workspace'}</button>
   </div>
   <div style="padding:16px 16px 0;display:flex;flex-direction:column;align-items:center;gap:8px;text-align:center;">
@@ -2915,7 +3123,7 @@ function renderRebook(id){
   document.getElementById('tt').textContent='Smart rebook';
   const recs=id==='maya'?[{lbl:'Ideal · Hydrafacial follow-up',date:'Jul 17, 2026',weeks:3,reason:'Completing series on schedule. PIH protocol benefits from consistent 3-week cadence.',hi:true},{lbl:'Extended · if skin needs rest',date:'Jul 24, 2026',weeks:4,reason:'Alternative if barrier shows stress post-brightening booster.',hi:false}]:[{lbl:'Ideal · next treatment window',date:'Jul 10, 2026',weeks:2,reason:'Based on treatment type and recovery period.',hi:true},{lbl:'Alternative window',date:'Jul 22, 2026',weeks:4,reason:'Slightly longer rest if needed.',hi:false}];
   S.innerHTML=`
-  <div style="padding:12px 16px 0;"><button class="back" onclick="nav('client','${id}')"><i class="ti ti-arrow-left"></i> ${c.name.split(' ')[0]}</button></div>
+  
   <div style="padding:12px 16px 0;"><div style="font-size:16px;font-weight:500;color:#f0f0f0;margin-bottom:2px;">Smart rebook</div><div style="font-size:13px;color:#666;margin-bottom:10px;">AI-suggested windows based on treatment type and session history.</div></div>
   ${recs.map(r=>`<div style="margin:0 16px 10px;background:${r.hi?'#13102a':'#1a1a1a'};border:1px solid ${r.hi?'#3d2d7a':'#2a2a2a'};border-radius:12px;overflow:hidden;">
     <div style="padding:12px 14px;border-bottom:1px solid ${r.hi?'#2d2360':'#222'};">
@@ -2975,7 +3183,7 @@ function renderVcInbox(){
   const section=(title,st)=>{const items=rows.filter(r=>r.status===st);if(!items.length)return '';return `<div class="sh"><h2>${title}${st==='needs-review'?` <span style="color:var(--accent);">(${items.length})</span>`:''}</h2></div>${items.map(card).join('')}`;};
   S.innerHTML=`
   <div id="vc-inbox-screen"></div>
-  <div style="padding:12px 16px 0;"><button class="back" onclick="nav('clients')"><i class="ti ti-arrow-left"></i> Clients</button></div>
+  
   <div style="padding:10px 16px 4px;display:flex;align-items:flex-start;justify-content:space-between;gap:10px;">
     <div><div style="font-size:18px;font-weight:600;color:#f0f0f0;">Virtual consults</div><div style="font-size:12px;color:#999;margin-top:2px;">${needs?needs+' waiting on your review':'All caught up'}</div></div>
     <button onclick="_vcInvitePicker()" style="border:1px solid var(--accent);background:var(--accent-tint);color:var(--accent);border-radius:9px;padding:7px 12px;font-size:12px;font-weight:600;cursor:pointer;font-family:inherit;white-space:nowrap;flex-shrink:0;"><i class="ti ti-mail-share" style="font-size:12px;"></i> Invite</button>
@@ -3114,6 +3322,39 @@ function _metricCardsHTML(metrics){return metrics.map(([label,val,note,col,bg])=
 //                                        terminology?:[[clientSays, proTerm], …],
 //                                        summary?:string }
 // Until the endpoint is set, analysis falls back to on-device pixel measurements.
+// Downscale a photo and return it as an Anthropic image content block (keeps the
+// request small enough for the serverless limit and cheaper on vision tokens).
+function _imgToBlock(dataURL,maxDim){return new Promise(res=>{
+  try{
+    if(!dataURL){return res(null);}
+    const img=new Image();
+    img.onload=()=>{
+      let w=img.width,h=img.height;const m=maxDim||1024;
+      if(w>m||h>m){if(w>=h){h=Math.round(h*m/w);w=m;}else{w=Math.round(w*m/h);h=m;}}
+      const cv=document.createElement('canvas');cv.width=w;cv.height=h;
+      const ctx=cv.getContext('2d');ctx.drawImage(img,0,0,w,h);
+      let out;try{out=cv.toDataURL('image/jpeg',0.82);}catch(e){return res(null);}
+      res({type:'image',source:{type:'base64',media_type:'image/jpeg',data:(out.split(',')[1]||'')}});
+    };
+    img.onerror=()=>res(null);img.src=dataURL;
+  }catch(e){res(null);}
+});}
+// Analyze submitted consult photos with the built-in AI (Claude vision) via /api/ai.
+async function _aiVisionAnalyze(images,kind,goals){
+  const list=(images||[]).slice(0,4);const blocks=[];
+  for(const im of list){const b=await _imgToBlock(im&&im.src,1024);if(b){blocks.push({type:'text',text:((im&&im.label)||'Photo')+':'});blocks.push(b);}}
+  if(!blocks.length)return null;
+  const kindWord=kind==='hair'?'hair & style':kind==='brow'?'brow':kind==='lash'?'lash':'skin';
+  const prof=(typeof _profName==='function'?_profName():'esthetics')||'esthetics';
+  blocks.push({type:'text',text:`You are assisting a licensed ${prof} professional preparing for a client's virtual consultation. From the client's photos, give brief, cosmetic, strictly NON-diagnostic ${kindWord} observations to help the provider prepare — never diagnose medical conditions, diseases, or name any illness.${goals?(' The client stated goal: '+goals+'.'):''} Respond with ONLY valid JSON, no preamble or markdown, exactly: {"metrics":[{"label":"2-3 word aspect","value":"short value","detail":"one specific sentence"}],"terminology":[{"phrase":"a phrase the client might use","meaning":"professional meaning"}],"summary":"2-3 sentence prep summary for the provider"}. Give 3-4 metrics. Base everything only on what is visible; if unsure, say so.`});
+  let out;try{out=await _aiComplete([{role:'user',content:blocks}],1200);}catch(e){return null;}
+  let obj;try{obj=JSON.parse(String(out||'').replace(/```json/gi,'').replace(/```/g,'').trim());}catch(e){return null;}
+  if(!obj||!Array.isArray(obj.metrics)||!obj.metrics.length)return null;
+  const pal=[['#5ba3e8','#0d1e33'],['var(--accent)','var(--accent-tint)'],['#4ec49a','#0a2019'],['#a891ec','#1e1633']];
+  const metrics=obj.metrics.slice(0,4).map((mm,i)=>[String(mm.label||''),String(mm.value||''),String(mm.detail||''),pal[i%4][0],pal[i%4][1]]);
+  const terminology=Array.isArray(obj.terminology)?obj.terminology.map(t=>[String(t.phrase||''),String(t.meaning||'')]).filter(x=>x[0]):null;
+  return {metrics,terminology:terminology&&terminology.length?terminology:null,summary:String(obj.summary||''),source:'ai'};
+}
 async function analyzeVirtualConsult(images,kind,goals){
   const endpoint=(typeof window!=='undefined'&&window.SLICKCHART_VISION_ENDPOINT)||null;
   if(endpoint&&images&&images.length){
@@ -3122,11 +3363,15 @@ async function analyzeVirtualConsult(images,kind,goals){
       if(res.ok){const data=await res.json();if(data&&Array.isArray(data.metrics)&&data.metrics.length)return{metrics:data.metrics,terminology:Array.isArray(data.terminology)?data.terminology:null,summary:data.summary||'',source:'server'};}
     }catch(e){/* fall through to on-device measurement */}
   }
+  if(typeof aiEnabled!=='undefined'&&aiEnabled&&images&&images.length){
+    const air=await _aiVisionAnalyze(images,kind,goals);
+    if(air)return air;
+  }
   const m=await _imgMeasures((images&&images[0]||{}).src);
   if(m)return{metrics:_metricsFromMeasures(kind,m),measures:m,terminology:null,summary:'',source:'on-device'};
   return{metrics:_vcProfile().metrics,terminology:null,summary:'',source:'sample'};
 }
-function _vcSourceLabel(src){return src==='server'?'AI vision analysis':src==='on-device'?'Measured from photo':'Sample analysis';}
+function _vcSourceLabel(src){return (src==='ai'||src==='server')?'AI vision analysis':src==='on-device'?'Measured from photo':'Sample analysis';}
 function loadVisionEndpoint(){try{const u=localStorage.getItem('sc_vision_endpoint');if(u&&typeof window!=='undefined')window.SLICKCHART_VISION_ENDPOINT=u;}catch(e){}}
 function saveVisionEndpoint(){const el=document.getElementById('vision-endpoint');const u=(el&&el.value||'').trim();if(typeof window!=='undefined')window.SLICKCHART_VISION_ENDPOINT=u||null;try{if(u)localStorage.setItem('sc_vision_endpoint',u);else localStorage.removeItem('sc_vision_endpoint');}catch(e){}if(typeof proToast==='function')proToast(u?'Vision endpoint connected':'Vision endpoint cleared — using on-device analysis');renderAISettings();}
 function _imgMeasures(dataURL){return new Promise(res=>{
@@ -3204,8 +3449,7 @@ function renderVirtualClient(id){
   const initialSummary=(cached&&cached.summary)||'';
   S.innerHTML=`
   <div id="virtual-client-screen"></div>
-  <div style="padding:12px 16px 0;display:flex;align-items:center;justify-content:space-between;">
-    <button class="back" onclick="${back}"><i class="ti ti-arrow-left"></i> ${backLbl}</button>
+  <div style="padding:12px 16px 0;display:flex;align-items:center;justify-content:flex-end;">
     <button style="border:none;background:var(--accent);border-radius:8px;padding:6px 14px;font-size:12px;color:var(--accent-ink);cursor:pointer;font-weight:500;" onclick="sendVcReview('${id}');${back}">Send review</button>
   </div>
   <div style="padding:10px 16px 0;display:flex;align-items:center;gap:10px;">${av(c,40)}<div><div style="font-size:15px;font-weight:500;color:#f0f0f0;">${c.name}</div><div style="font-size:12px;color:#999;">Submitted ${vcStamp} · ${c.concerns}</div></div></div>
@@ -3281,8 +3525,7 @@ function renderPartnerDetail(i){
   const p=partners[i];
   document.getElementById('tt').textContent=p.name;
   S.innerHTML=`
-  <div style="padding:12px 16px 0;display:flex;align-items:center;justify-content:space-between;">
-    <button class="back" onclick="nav('partners')"><i class="ti ti-arrow-left"></i> Partners</button>
+  <div style="padding:12px 16px 0;display:flex;align-items:center;justify-content:flex-end;">
     <div style="display:flex;gap:8px;">
       <button onclick="nav('edit-partner',${i})" style="background:none;border:1px solid #2a2a2a;border-radius:8px;padding:6px 12px;font-size:12px;color:#888;cursor:pointer;"><i class="ti ti-pencil" style="font-size:12px;"></i> Edit</button>
       <button onclick="nav('partner-intro',${i})" style="background:var(--accent);color:var(--accent-ink);border:none;border-radius:8px;padding:6px 13px;font-size:12px;font-weight:500;cursor:pointer;"><i class="ti ti-send" style="font-size:12px;"></i> Send intro</button>
@@ -3325,7 +3568,7 @@ Website: ${p.website}
 
 I think you'd really benefit from working together.
 
-— Jessica ✨`;
+— ${_providerFirstName()} ✨`;
 }
 function sendPartnerIntro(i){
   const p=partners[i];
@@ -3340,8 +3583,7 @@ function renderPartnerIntro(i){
   const p=partners[i];
   document.getElementById('tt').textContent='Send intro';
   S.innerHTML=`
-  <div style="padding:12px 16px 0;display:flex;align-items:center;justify-content:space-between;">
-    <button class="back" onclick="nav('partner-detail',${i})"><i class="ti ti-arrow-left"></i> ${p.name.split(',')[0]}</button>
+  <div style="padding:12px 16px 0;display:flex;align-items:center;justify-content:flex-end;">
     <button onclick="sendPartnerIntro(${i})" style="background:var(--accent);color:var(--accent-ink);border:none;border-radius:8px;padding:6px 14px;font-size:12px;font-weight:500;cursor:pointer;">Send</button>
   </div>
   <div style="padding:10px 16px 0;">
@@ -3359,7 +3601,7 @@ function renderPartnerIntro(i){
     <span class="fl-lbl">Message</span>
     <div style="background:#161616;border:1px solid #2a2a2a;border-bottom:none;border-radius:12px 12px 0 0;padding:10px 14px;font-size:12px;color:#999;line-height:1.8;">
       <div>To: <span id="intro-to" style="color:#ccc;">Select a client above</span></div>
-      <div>From: Jessica Lee, LE</div>
+      <div>From: ${bizInfo.ownerName}</div>
       <div>Cc: <span style="color:var(--accent);">${p.name} · ${p.email}</span></div>
     </div>
     <textarea id="intro-msg" class="fi" style="height:300px;resize:vertical;line-height:1.7;border-radius:0 0 12px 12px;margin-bottom:6px;">${_introMessage(p)}</textarea>
@@ -3471,10 +3713,20 @@ function renderForms(){
       {icon:'ti-clipboard-text',bg:'#0d1e33',ic:'#5ba3e8',name:'Nail intake & consent',sub:'Intake + service consent in one',id:'nail-intake'},
       {icon:'ti-file-description',bg:'#2a0f1a',ic:'#e87070',name:'Acrylic / gel consent',sub:'Contraindications + aftercare built in',id:'nail-consent'},
     ]],
+    nutrition:['Nutrition',[
+      {icon:'ti-clipboard-text',bg:'#0a2019',ic:'#4ec49a',name:'Nutrition intake & consent',sub:'Diet, goals & health history in one',id:'nutrition-intake'},
+      {icon:'ti-alert-triangle',bg:'#2a0f1a',ic:'#e87070',name:'Food sensitivity & allergy screen',sub:'Allergies, intolerances & flags',id:'nutrition-sensitivity'},
+      {icon:'ti-target',bg:'#0a2019',ic:'#4ec49a',name:'Goal-setting & lifestyle',sub:'Goals, activity & readiness',id:'nutrition-goals'},
+    ]],
+    contour:['Body contouring',[
+      {icon:'ti-clipboard-text',bg:'#1e1633',ic:'#a891ec',name:'Body contouring intake & consent',sub:'Goals, health history & consent',id:'contour-intake'},
+      {icon:'ti-wave-sine',bg:'#2a0f1a',ic:'#e87070',name:'Cavitation & RF consent',sub:'Contraindications built in',id:'contour-cavitation'},
+      {icon:'ti-ripple',bg:'#1e1633',ic:'#a891ec',name:'Lymphatic drainage consent',sub:'Contraindications built in',id:'contour-lymphatic'},
+    ]],
   };
-  let sections=['esty','wax','brow','lash','hair','barber','makeup','massage','nail'].filter(p=>has(p)&&F[p]);
+  let sections=['esty','wax','brow','lash','hair','barber','makeup','massage','nail','nutrition','contour'].filter(p=>has(p)&&F[p]);
   if(!sections.length)sections=['esty'];
-  const photoCard={icon:'ti-photo',bg:'var(--accent-tint)',ic:'var(--accent)',name:'Portfolio photo release',sub:'3 questions · consent to share photos',id:'photo'};
+  const photoCard={icon:'ti-photo',bg:'var(--accent-tint)',ic:'var(--accent)',name:'Photo release',sub:'Consent to share photos · auto-added to new client intake',id:'photo'};
   const checkinSub=sections.length>1?`Auto-sends before every appointment · Covers your ${sections.length} disciplines`:'Auto-sends before every appointment · Fully customizable';
 
   S.innerHTML=`
@@ -3563,8 +3815,7 @@ function renderFormDocs(fid){
   document.getElementById('tt').textContent='Connect guides';
   const attached=formGuides[fid]||[];
   S.innerHTML=`
-  <div style="padding:12px 16px 0;display:flex;align-items:center;justify-content:space-between;gap:10px;">
-    <button class="back" onclick="nav('forms')"><i class="ti ti-arrow-left"></i> Forms</button>
+  <div style="padding:12px 16px 0;display:flex;align-items:center;justify-content:flex-end;gap:10px;">
     <button onclick="nav('add-resource')" style="background:var(--accent-tint);color:var(--accent);border:1px solid var(--accent);border-radius:8px;padding:6px 12px;font-size:12px;font-weight:600;cursor:pointer;display:flex;align-items:center;gap:4px;white-space:nowrap;"><i class="ti ti-plus" style="font-size:13px;"></i> New guide</button>
   </div>
   <div style="padding:10px 16px 4px;"><div style="font-size:16px;font-weight:600;color:#f0f0f0;">${tmpl.name}</div><div style="font-size:12px;color:#999;margin-top:3px;line-height:1.5;">Connect guides from your Learn library — whatever you attach is sent to the client along with this form.</div></div>
@@ -3655,8 +3906,7 @@ function renderCheckinSettings(){
   if(!checkinCfg.snacks)checkinCfg.snacks=['🍫 Dark chocolate','🫐 Fresh berries','🚫 No snack'];
   if(!checkinCfg.autoSend)checkinCfg.autoSend={on:true,when:'1 day'};
   S.innerHTML=`
-  <div style="padding:12px 16px 0;display:flex;align-items:center;justify-content:space-between;">
-    <button class="back" onclick="nav('forms')"><i class="ti ti-arrow-left"></i> Forms</button>
+  <div style="padding:12px 16px 0;display:flex;align-items:center;justify-content:flex-end;">
     <div style="display:flex;gap:8px;">
       <button onclick="nav('checkin-preview')" style="border:1px solid #555;background:none;border-radius:8px;padding:6px 12px;font-size:12px;color:#ccc;cursor:pointer;"><i class="ti ti-eye" style="font-size:12px;"></i> Preview</button>
       <button onclick="saveCheckinCfg()" style="border:none;background:var(--accent);border-radius:8px;padding:6px 14px;font-size:12px;color:var(--accent-ink);cursor:pointer;font-weight:500;">Save</button>
@@ -3768,7 +4018,7 @@ function renderCheckinPreview(){
   setNav('forms');
   document.getElementById('tt').textContent='Client preview';
   S.innerHTML=`
-  <div style="padding:12px 16px 0;"><button class="back" onclick="nav('checkin-settings')"><i class="ti ti-arrow-left"></i> Check-in editor</button></div>
+  
   <div style="margin:10px 16px;background:#2a0f1a;border:1px solid #5a1e1e;border-radius:8px;padding:8px 12px;display:flex;align-items:center;gap:6px;"><i class="ti ti-eye" style="font-size:14px;color:#e87070;"></i><span style="font-size:12px;color:#e87070;font-weight:500;">Exactly what your clients see</span></div>
   <div style="margin:0 16px;background:#1a1a1a;border:1px solid #2a2a2a;border-radius:12px;overflow:hidden;">
     <div style="padding:14px;border-bottom:1px solid #1e1e1e;"><div style="font-size:18px;font-weight:500;color:#f0f0f0;margin-bottom:2px;">Hi Maya! 👋</div><div style="font-size:13px;color:#666;margin-bottom:10px;">Quick check-in before your appointment.</div></div>
@@ -3862,7 +4112,7 @@ const formTmpls={
     {id:705,label:'Budget range',type:'Single select',required:false,options:['Under $200','$200\u2013$400','$400\u2013$600','$600+']},
     {id:706,label:'Client signature',type:'Signature',required:true},
   ]},
-  'hair-photo':{name:'Portfolio photo release',qs:[
+  'hair-photo':{name:'Photo release',qs:[
     {id:801,label:'Full name',type:'Short text',required:true},
     {id:802,label:'I consent to before & after photos being taken',type:'Yes / No',required:true},
     {id:803,label:'I consent to photos being shared on social media and portfolio',type:'Yes / No',required:true},
@@ -3890,7 +4140,7 @@ const formTmpls={
     {id:'barberchem-ci',type:'Contraindications',label:'Contraindications — review before signing',required:true,items:['Scalp sores, irritation, or open skin','Sensitivity or allergy to chemical treatments','Recent conflicting scalp / hair service']},
     {id:1104,label:'I\u2019ve read the contraindications above and consent to treatment',type:'Signature',required:true},
   ]},
-  'barber-photo':{name:'Portfolio photo release',qs:[
+  'barber-photo':{name:'Photo release',qs:[
     {id:1201,label:'Full name',type:'Short text',required:true},
     {id:1202,label:'I consent to before & after photos being taken',type:'Yes / No',required:true},
     {id:1203,label:'I consent to photos being shared on social media and portfolio',type:'Yes / No',required:true},
@@ -3923,7 +4173,7 @@ const formTmpls={
     {id:'browlam-ci',type:'Contraindications',label:'Contraindications — review before signing',required:true,items:['Known sensitivity to perming solution or tint','No patch test in the last 48 hours','Active irritation, eczema, or breakout near the brows','Brow tint or wax done too recently (last few days)','Used retinol near the brows in the last 2 weeks']},
     {id:2205,label:'I\u2019ve read the contraindications above and consent to treatment',type:'Signature',required:true},
   ]},
-  'brow-photo':{name:'Portfolio photo release',qs:[
+  'brow-photo':{name:'Photo release',qs:[
     {id:2301,label:'Full name',type:'Short text',required:true},
     {id:2302,label:'I consent to before & after photos being taken',type:'Yes / No',required:true},
     {id:2303,label:'I consent to photos being shared on social media and portfolio',type:'Yes / No',required:true},
@@ -3967,10 +4217,10 @@ const formTmpls={
     {id:'lashtint-ci',type:'Contraindications',label:'Contraindications — review before signing',required:true,items:['Known dye or tint allergy','No patch test in the last 48 hours','Active eye irritation or infection']},
     {id:2704,label:'I\u2019ve read the contraindications above and consent to treatment',type:'Signature',required:true},
   ]},
-  photo:{name:'Portfolio photo release',qs:[
+  photo:{name:'Photo release',qs:[
     {id:2801,label:'Full name',type:'Short text',required:true},
     {id:2802,label:'I consent to before & after photos being taken',type:'Yes / No',required:true},
-    {id:2803,label:'I consent to photos being shared on social media and portfolio',type:'Yes / No',required:false},
+    {id:2803,label:'I consent to photos being shared on social media and portfolio',type:'Yes / No',required:true},
   ]},
   // ── MAKEUP ARTIST FORMS ──
   'makeup-intake':{name:'MUA client intake & consent',qs:[
@@ -3989,7 +4239,7 @@ const formTmpls={
     {id:'makeup-ci',type:'Contraindications',label:'Contraindications — review before signing',required:true,items:['Active cold sores, conjunctivitis, or eye infection','Known allergy to cosmetics, latex, or lash adhesive','Recent peel, laser, or sunburn on the area','Open lesions, rashes, or broken skin','Recent injectables (please allow proper healing time)']},
     {id:3204,label:'I\u2019ve read the contraindications above and consent to service',type:'Signature',required:true},
   ]},
-  'makeup-photo':{name:'Portfolio photo release',qs:[
+  'makeup-photo':{name:'Photo release',qs:[
     {id:3301,label:'Full name',type:'Short text',required:true},
     {id:3302,label:'I consent to before & after photos being taken',type:'Yes / No',required:true},
     {id:3303,label:'I consent to photos being shared on social media and portfolio',type:'Yes / No',required:true},
@@ -4084,8 +4334,99 @@ const formTmpls={
     {id:'cn-ci',type:'Contraindications',label:'Contraindications — review before signing',required:true,items:['Nail or skin infection (fungal or bacterial)','Open cuts or broken skin around the nail','Known allergy to acrylic, gel, or monomers','Very thin, damaged, or lifting nails']},
     {id:'cn2',label:'I\u2019ve read the above and consent to service',type:'Signature',required:true},
   ]},
+  // -- NUTRITIONIST FORMS --
+  'nutrition-intake':{name:'Nutrition intake & consent',qs:[
+    {id:4001,label:'Full name',type:'Short text',required:true},
+    {id:4002,label:'Date of birth',type:'Date',required:true},
+    {id:4003,label:'What are your main health & nutrition goals?',type:'Long text',required:true},
+    {id:4004,label:'Describe a typical day of eating',type:'Long text',required:true},
+    {id:4005,label:'Any digestive concerns? (bloating, reflux, irregularity)',type:'Long text',required:false},
+    {id:4006,label:'Food allergies or intolerances',type:'Long text',required:true},
+    {id:4007,label:'Current medical conditions',type:'Long text',required:true},
+    {id:4008,label:'Medications & supplements you take',type:'Long text',required:false},
+    {id:4009,label:'Typical energy through the day',type:'Single select',required:false,options:['Steady','Afternoon crash','Low all day','Up and down']},
+    {id:4010,label:'Average hours of sleep',type:'Short text',required:false},
+    {id:4011,label:'I understand nutrition coaching does not replace medical care, and my information is accurate',type:'Signature',required:true},
+  ]},
+  'nutrition-sensitivity':{name:'Food sensitivity & allergy screen',qs:[
+    {id:4101,label:'Full name',type:'Short text',required:true},
+    {id:4102,label:'Known food allergies',type:'Long text',required:true},
+    {id:4103,label:'Suspected intolerances (dairy, gluten, etc.)',type:'Long text',required:false},
+    {id:4104,label:'Ever had a severe allergic reaction (anaphylaxis)?',type:'Yes / No',required:true},
+    {id:'nutri-ci',type:'Contraindications',label:'Please flag any that apply',required:true,items:['History of anaphylaxis or severe food reactions','Diagnosed eating disorder (current or past)','Pregnancy or breastfeeding','Diabetes or a blood-sugar condition','Kidney, liver, or heart condition','Currently on a doctor-supervised medical diet']},
+    {id:4105,label:'I confirm the above is accurate to the best of my knowledge',type:'Signature',required:true},
+  ]},
+  'nutrition-goals':{name:'Goal-setting & lifestyle',qs:[
+    {id:4201,label:'Full name',type:'Short text',required:true},
+    {id:4202,label:'Primary goal',type:'Single select',required:true,options:['Weight loss','Muscle gain','More energy','Gut health','Better habits','Manage a condition']},
+    {id:4203,label:'What does success look like in 12 weeks?',type:'Long text',required:true},
+    {id:4204,label:'Biggest barrier right now',type:'Long text',required:false},
+    {id:4205,label:'Activity level',type:'Single select',required:false,options:['Sedentary','Lightly active','Active','Very active']},
+    {id:4206,label:'Stress level lately',type:'Single select',required:false,options:['Low','Moderate','High']},
+    {id:4207,label:'I am ready to commit to the plan we set together',type:'Signature',required:true},
+  ]},
+  'consent-nutrition':{name:'Nutrition coaching consent',qs:[
+    {id:'cnu1',label:'Full name',type:'Short text',required:true},
+    {id:'cnu-ci',type:'Contraindications',label:'Please review before signing',required:true,items:['Diagnosed eating disorder (current or past)','Pregnancy or breastfeeding','Diabetes or a condition needing medical supervision','Kidney, liver, or heart condition','Currently on a doctor-prescribed diet']},
+    {id:'cnu2',label:'I understand coaching is educational and does not replace medical advice, and I consent to proceed',type:'Signature',required:true},
+  ]},
+  // -- BODY CONTOURING FORMS --
+  'contour-intake':{name:'Body contouring intake & consent',qs:[
+    {id:4301,label:'Full name',type:'Short text',required:true},
+    {id:4302,label:'Date of birth',type:'Date',required:true},
+    {id:4303,label:'Target areas for treatment',type:'Long text',required:true},
+    {id:4304,label:'Your body goals',type:'Long text',required:true},
+    {id:4305,label:'Current medical conditions',type:'Long text',required:true},
+    {id:4306,label:'Recent surgeries or procedures',type:'Long text',required:false},
+    {id:4307,label:'Are you pregnant or breastfeeding?',type:'Yes / No',required:true},
+    {id:4308,label:'Do you have a pacemaker or metal implants?',type:'Yes / No',required:true},
+    {id:4309,label:'Current medications',type:'Long text',required:false},
+    {id:'contour-ci',type:'Contraindications',label:'Contraindications - review before signing',required:true,items:['Pregnant or breastfeeding','Pacemaker, defibrillator, or metal implants in the area','Liver, kidney, or heart condition','Cancer, current or recent, or undergoing treatment','Blood-clotting disorder or on blood thinners','Active infection, open wounds, or hernia in the area','Recent surgery in the treatment area']},
+    {id:4310,label:'I understand results vary, this is not weight loss, and I consent to treatment',type:'Signature',required:true},
+  ]},
+  'contour-cavitation':{name:'Cavitation & RF consent',qs:[
+    {id:4401,label:'Full name',type:'Short text',required:true},
+    {id:4402,label:'Are you pregnant or breastfeeding?',type:'Yes / No',required:true},
+    {id:4403,label:'Pacemaker or metal implants in the area?',type:'Yes / No',required:true},
+    {id:4404,label:'Any liver or kidney condition?',type:'Yes / No',required:true},
+    {id:'cav-ci',type:'Contraindications',label:'Contraindications - review before signing',required:true,items:['Pregnant or breastfeeding','Pacemaker, defibrillator, or metal implants in the area','Liver or kidney disease','Cancer or undergoing cancer treatment','Blood-clotting disorder or on blood thinners','Active infection or open skin in the area']},
+    {id:4405,label:'I understand hydration is required and I consent to treatment',type:'Signature',required:true},
+  ]},
+  'contour-lymphatic':{name:'Lymphatic drainage consent',qs:[
+    {id:4501,label:'Full name',type:'Short text',required:true},
+    {id:4502,label:'Any surgery in the last 6 weeks?',type:'Yes / No',required:true},
+    {id:4503,label:'History of blood clots, DVT, or circulatory issues?',type:'Yes / No',required:true},
+    {id:4504,label:'Any kidney or heart condition?',type:'Yes / No',required:true},
+    {id:'lymph-ci',type:'Contraindications',label:'Contraindications - review before signing',required:true,items:['Blood clots, DVT, or circulatory disorder','Congestive heart failure or kidney failure','Active infection, fever, or feeling unwell','Cancer, current or recent, without clearance','Recent surgery without medical clearance']},
+    {id:4505,label:'I confirm the above and consent to treatment',type:'Signature',required:true},
+  ]},
+  'consent-contour':{name:'Body contouring consent',qs:[
+    {id:'cco1',label:'Full name',type:'Short text',required:true},
+    {id:'cco-ci',type:'Contraindications',label:'Contraindications - review before signing',required:true,items:['Pregnant or breastfeeding','Pacemaker, defibrillator, or metal implants in the area','Liver, kidney, or heart condition','Cancer, current or recent, or undergoing treatment','Blood-clotting disorder or on blood thinners','Active infection or open skin in the area']},
+    {id:'cco2',label:'I understand results vary and consent to treatment',type:'Signature',required:true},
+  ]},
   new:{name:'',qs:[]},
 };
+// ── Photo release is bundled into every "intake & consent" form automatically ──
+// (renamed from "Portfolio photo release"). Both consents are required, and they
+// slot in just before the signature so the client signs everything at once.
+(function bundlePhotoRelease(){
+  try{
+    const rel=[
+      {id:'pr-taken',label:'I consent to before & after photos being taken',type:'Yes / No',required:true},
+      {id:'pr-share',label:'I consent to photos being shared on social media and portfolio',type:'Yes / No',required:true}
+    ];
+    Object.keys(formTmpls).forEach(k=>{
+      if(k==='photo'||/-photo$/.test(k))return;                 // skip the standalone photo-release forms
+      const t=formTmpls[k];
+      if(!t||!Array.isArray(t.qs)||!/intake/i.test(t.name||''))return;
+      if(t.qs.some(q=>q.id==='pr-taken'||q.id==='pr-share'))return; // never double-add
+      const sig=t.qs.findIndex(q=>q.type==='Signature');
+      const at=sig>=0?sig:t.qs.length;
+      t.qs.splice(at,0,...rel.map(q=>({...q})));
+    });
+  }catch(e){}
+})();
 // Guides from the Learn library that ride along with each form when sent to a client.
 // Keyed by form id → array of guide ids (see guideTemplatesByProf).
 let formGuides={
@@ -4105,6 +4446,12 @@ let formGuides={
   'massage-consent':['g-massage-care'],
   'nail-consent':['g-nail-gel'],
   'makeup-screen':['g-makeup-removal'],
+  'nutrition-intake':['g-nutrition-plate'],
+  'nutrition-sensitivity':['g-nutrition-gut'],
+  'nutrition-goals':['g-nutrition-prep'],
+  'contour-intake':['g-contour-prep','g-contour-after'],
+  'contour-cavitation':['g-contour-after','g-contour-lymph'],
+  'contour-lymphatic':['g-contour-lymph'],
 };
 function formGuideList(fid){return (formGuides[fid]||[]).map(id=>_findGuide(id)).filter(Boolean);}
 const typeIcons={'Short text':'ti-text-size','Long text':'ti-align-left','Yes / No':'ti-toggle-left','Multiple choice':'ti-checks','Single select':'ti-circle-dot','Date':'ti-calendar','Contraindications':'ti-alert-triangle','Signature':'ti-writing','File upload':'ti-upload'};
@@ -4135,8 +4482,7 @@ function renderFormBuilder(tid){
   const tmpl=formTmpls[tid]||formTmpls.new;
   document.getElementById('tt').textContent=tid==='new'?'New form':'Edit form';
   S.innerHTML=`
-  <div style="padding:12px 16px 0;display:flex;align-items:center;justify-content:space-between;">
-    <button class="back" onclick="nav('forms')"><i class="ti ti-arrow-left"></i> Forms</button>
+  <div style="padding:12px 16px 0;display:flex;align-items:center;justify-content:flex-end;">
     <div style="display:flex;gap:8px;"><button onclick="saveFormBuilder('${tid}',true)" style="border:1px solid #2a2a2a;background:none;border-radius:8px;padding:6px 12px;font-size:12px;color:#888;cursor:pointer;"><i class="ti ti-eye" style="font-size:12px;"></i> Preview</button><button onclick="saveFormBuilder('${tid}')" style="border:none;background:var(--accent);border-radius:8px;padding:6px 14px;font-size:12px;color:var(--accent-ink);cursor:pointer;font-weight:600;">Save</button></div>
   </div>
   <div style="padding:12px 16px 0;"><input id="form-name-input" class="fi" value="${(tmpl.name||'').replace(/"/g,'&quot;')}" placeholder="Form name..." style="font-size:15px;font-weight:500;margin-bottom:8px;"></div>
@@ -4216,7 +4562,7 @@ function renderFormPreview(tid){
   const tmpl=formTmpls[tid]||{name:'New form',qs:[]};
   document.getElementById('tt').textContent='Preview';
   S.innerHTML=`
-  <div style="padding:12px 16px 0;"><button class="back" onclick="nav('form-builder','${tid}')"><i class="ti ti-arrow-left"></i> Back to editor</button></div>
+  
   <div style="margin:10px 16px;background:#2a0f1a;border:1px solid #5a1e1e;border-radius:8px;padding:8px 12px;"><i class="ti ti-eye" style="font-size:13px;color:#e87070;"></i><span style="font-size:12px;color:#e87070;font-weight:500;"> Client-facing preview</span></div>
   <div style="padding:0 16px;"><div style="font-size:17px;font-weight:500;color:#f0f0f0;margin-bottom:4px;">${tmpl.name||'Untitled form'}</div><div style="font-size:13px;color:#999;margin-bottom:14px;">Please complete before your appointment.</div>
   ${tmpl.qs.map(_formQHTML).join('')}
@@ -4247,7 +4593,7 @@ function renderSignOnDevice(fid,cid){
   const sig=tmpl.qs.find(q=>q.type==='Signature');
   const fields=tmpl.qs.filter(q=>q.type!=='Signature').map(_sdQHTML).join('');
   S.innerHTML=`
-  <div style="padding:12px 16px 0;"><button class="back" onclick="${cid?`nav('client','${cid}')`:"nav('forms')"}"><i class="ti ti-arrow-left"></i> Back</button></div>
+  
   <div style="margin:10px 16px;background:var(--accent-a08);border:1px solid var(--accent);border-radius:10px;padding:9px 12px;display:flex;align-items:center;gap:8px;"><i class="ti ti-device-tablet" aria-hidden="true" style="font-size:15px;color:var(--accent);"></i><span style="font-size:12px;color:var(--accent);font-weight:500;">Hand the device to ${c?c.name.split(' ')[0]:'your client'} to review &amp; sign</span></div>
   <div style="padding:0 16px;">
     <div style="font-size:17px;font-weight:600;color:#f0f0f0;margin-bottom:4px;">${tmpl.name}</div>
@@ -4346,6 +4692,11 @@ function _needsCheckin(){
   });
 }
 let _lastCiDismiss=null;
+let _homeDismissed=new Set();
+function _dismissTile(k){_homeDismissed.add(k);renderHome();}
+function _swipeTile(inner,key){
+  return `<div class="swipe-wrap"><div class="swipe-card">${inner}</div><div class="swipe-reveal" style="background:#0f2a1a;" onclick="event.stopPropagation();_dismissTile('${key}')" aria-label="Clear this tile"><i class="ti ti-check" aria-hidden="true" style="color:#4ec49a;"></i><span style="color:#4ec49a;">DONE</span></div></div>`;
+}
 function dismissCheckinNudge(id){
   const c=CL[id];const key=id+'|'+((c&&c.nextVisit)||'');
   _ciDismissed[key]=true;saveCiDismissed();_lastCiDismiss=key;
@@ -4479,7 +4830,7 @@ function showMsgTab(tab){
     content.innerHTML=`
     <div style="padding:12px 16px 8px;display:flex;align-items:center;justify-content:space-between;"><span style="font-size:13px;color:#999;">${threads.filter(t=>t.unread).length} unread</span><button style="background:var(--accent);color:var(--accent-ink);border:none;border-radius:8px;padding:7px 12px;font-size:12px;font-weight:500;cursor:pointer;"><i class="ti ti-edit" style="font-size:13px;"></i> New message</button></div>
     ${_searchBar('Search messages by client…','.thread-card','msgs-noresults')}
-    ${threads.map(t=>{const c=CL[t.id];return`<div onclick="nav('chat','${t.id}')" class="thread-card" data-search="${(((c&&c.name)||'')+' '+(t.preview||'')).toLowerCase().replace(/[^a-z0-9 ]/g,' ')}" style="display:flex;align-items:center;gap:12px;padding:12px 16px;border-bottom:1px solid #1e1e1e;cursor:pointer;"><div style="position:relative;">${av(c,44)}${t.unread?`<div style="position:absolute;top:0;right:0;width:10px;height:10px;border-radius:50%;background:var(--accent);border:2px solid #111;"></div>`:''}</div><div style="flex:1;min-width:0;"><div style="font-size:14px;font-weight:${t.unread?500:400};color:#f0f0f0;">${c.name}</div><div style="font-size:12px;color:${t.unread?'#aaa':'#555'};overflow:hidden;text-overflow:ellipsis;white-space:nowrap;">${t.preview}</div></div><div style="text-align:right;"><div style="font-size:11px;color:#999;">${t.time}</div>${t.unread?`<div style="width:8px;height:8px;border-radius:50%;background:var(--accent);margin:4px 0 0 auto;"></div>`:''}</div></div>`}).join('')}
+    ${[...threads].sort((a,b)=>(b.unread?1:0)-(a.unread?1:0)).map(t=>{const c=CL[t.id];return`<div onclick="nav('chat','${t.id}')" class="thread-card" data-search="${(((c&&c.name)||'')+' '+(t.preview||'')).toLowerCase().replace(/[^a-z0-9 ]/g,' ')}" style="display:flex;align-items:center;gap:12px;padding:12px 16px;border-bottom:1px solid #1e1e1e;cursor:pointer;"><div style="position:relative;">${av(c,44)}${t.unread?`<div style="position:absolute;top:0;right:0;width:10px;height:10px;border-radius:50%;background:var(--accent);border:2px solid #111;"></div>`:''}</div><div style="flex:1;min-width:0;"><div style="font-size:14px;font-weight:${t.unread?500:400};color:#f0f0f0;">${c.name}</div><div style="font-size:12px;color:${t.unread?'#aaa':'#555'};overflow:hidden;text-overflow:ellipsis;white-space:nowrap;">${t.preview}</div></div><div style="text-align:right;"><div style="font-size:11px;color:#999;">${t.time}</div>${t.unread?`<div style="width:8px;height:8px;border-radius:50%;background:var(--accent);margin:4px 0 0 auto;"></div>`:''}</div></div>`}).join('')}
     ${_noRes('msgs-noresults','No conversations match your search.')}`;
   } else {
     content.innerHTML=`
@@ -4511,7 +4862,7 @@ function renderChat(id){
   document.getElementById('tt').textContent=c.name;
   S.innerHTML=`
   <div style="padding:10px 16px;border-bottom:1px solid #1e1e1e;display:flex;align-items:center;gap:10px;background:#161616;">
-    <button class="back" onclick="nav('messages')" aria-label="Back to messages"><i class="ti ti-arrow-left"></i></button>${av(c,36)}
+    ${av(c,36)}
     <div style="flex:1;"><div style="font-size:14px;font-weight:500;color:#f0f0f0;">${c.name}</div><div style="font-size:11px;color:#999;">${c.treatment}</div></div>
     <button onclick="nav('client','${id}')" aria-label="View client profile" style="border:none;background:none;color:#aaa;font-size:18px;cursor:pointer;"><i class="ti ti-user-circle"></i></button>
   </div>
@@ -4560,7 +4911,7 @@ function renderVault(){
   const urgent=docs.filter(d=>d.status==='urgent');
   const filtered=activeDocCat==='All'?docs:docs.filter(d=>d.cat===activeDocCat);
   S.innerHTML=`
-  <div style="padding:12px 16px 8px;display:flex;justify-content:space-between;align-items:center;"><button class="back" onclick="nav('pro')"><i class="ti ti-arrow-left"></i> Pro</button><button onclick="nav('upload-doc')" style="background:var(--accent);color:var(--accent-ink);border:none;border-radius:8px;padding:7px 12px;font-size:12px;font-weight:500;cursor:pointer;"><i class="ti ti-upload" style="font-size:12px;"></i> Upload doc</button></div>
+  <div style="padding:12px 16px 8px;display:flex;justify-content:flex-end;align-items:center;"><button onclick="nav('upload-doc')" style="background:var(--accent);color:var(--accent-ink);border:none;border-radius:8px;padding:7px 12px;font-size:12px;font-weight:500;cursor:pointer;"><i class="ti ti-upload" style="font-size:12px;"></i> Upload doc</button></div>
   ${urgent.length?`<div style="background:#2a0f0f;border:1px solid #5a1e1e;border-radius:10px;margin:0 16px 10px;padding:10px 12px;display:flex;gap:8px;"><i class="ti ti-alert-circle" style="font-size:14px;color:#e87070;"></i><div><div style="font-size:12px;font-weight:500;color:#e87070;">${urgent.length} docs need attention</div></div></div>`:''}
   <div style="display:flex;gap:8px;padding:0 16px;margin-bottom:10px;">${[['Total',docs.length,'#f0f0f0'],['Valid',docs.filter(d=>d.status==='ok').length,'#4ec49a'],['Expiring',docs.filter(d=>d.status==='soon').length,'var(--accent)'],['Urgent',docs.filter(d=>d.status==='urgent').length,'#e87070']].map(([l,v,c])=>`<div style="flex:1;background:#161616;border-radius:10px;padding:9px 12px;text-align:center;"><div style="font-size:18px;font-weight:500;color:${c};">${v}</div><div style="font-size:11px;color:#999;">${l}</div></div>`).join('')}</div>
   <div class="pill-row" style="margin-bottom:10px;">${docCats.map(c=>`<button class="pill ${activeDocCat===c?'active':''}" onclick="activeDocCat='${c}';renderVault()">${c}</button>`).join('')}</div>
@@ -4573,11 +4924,19 @@ function renderVault(){
   ${_noRes('docs-noresults','No documents match your search.')}
   <div onclick="nav('upload-doc')" style="margin:4px 16px 16px;background:#1a1a1a;border:1.5px dashed #2a2a2a;border-radius:12px;padding:16px;display:flex;flex-direction:column;align-items:center;gap:6px;cursor:pointer;"><i class="ti ti-upload" style="font-size:22px;color:#777;"></i><span style="font-size:14px;color:#aaa;">Upload a new document</span></div>`;
 }
+function toggleDocReminder(id,key){
+  const dd=(typeof docs!=='undefined')&&docs.find(x=>x.id===id);
+  if(!dd)return;
+  if(!dd.reminders)dd.reminders={d90:true,d30:true,d0:false};
+  dd.reminders[key]=!(dd.reminders[key]!==false);
+  if(typeof persistWorkspace==='function'){try{persistWorkspace();}catch(e){}}
+  renderDocDetail(id);
+}
 function renderDocDetail(id){
   setNav('pro');const d=docs.find(x=>x.id===id);if(!d)return;
   document.getElementById('tt').textContent=d.name;
   S.innerHTML=`
-  <div style="padding:12px 16px 0;display:flex;align-items:center;justify-content:space-between;"><button class="back" onclick="nav('vault')"><i class="ti ti-arrow-left"></i> My docs</button><button onclick="nav('edit-doc','${d.id}')" style="border:none;background:none;font-size:12px;color:var(--accent);cursor:pointer;"><i class="ti ti-pencil" style="font-size:12px;"></i> Edit</button></div>
+  <div style="padding:12px 16px 0;display:flex;align-items:center;justify-content:flex-end;"><button onclick="nav('edit-doc','${d.id}')" style="border:none;background:none;font-size:12px;color:var(--accent);cursor:pointer;"><i class="ti ti-pencil" style="font-size:12px;"></i> Edit</button></div>
   <div style="padding:14px 16px 0;display:flex;flex-direction:column;align-items:center;gap:10px;text-align:center;"><div style="width:64px;height:64px;border-radius:16px;background:${d.col};display:flex;align-items:center;justify-content:center;"><i class="ti ${d.icon}" style="font-size:28px;color:${d.ic};"></i></div><div><div style="font-size:17px;font-weight:500;color:#f0f0f0;">${d.name}</div><div style="font-size:13px;color:#999;">${d.issuer}</div></div><span class="bdg ${d.bdg}">${d.status==='urgent'?'Renew now':d.status==='soon'?'Expiring soon':d.status==='ok'?'Valid':'No expiration'}</span></div>
   ${d.status==='urgent'?`<div style="background:#2a0f0f;border:1px solid #5a1e1e;border-radius:10px;margin:12px 16px;padding:10px 12px;display:flex;gap:8px;align-items:center;"><i class="ti ti-alert-circle" style="font-size:14px;color:#e87070;"></i><span style="font-size:12px;color:#e87070;font-weight:500;">${d.lbl} — renew as soon as possible.</span></div>`:''}
   <div style="padding:0 16px;">
@@ -4588,7 +4947,7 @@ function renderDocDetail(id){
       <div class="fr" style="padding:8px 14px;border:none;"><span class="fl">Expires</span><span class="fv">${d.expires||'No expiration'}</span></div>
     </div>
     <div style="font-size:11px;font-weight:500;color:#aaa;text-transform:uppercase;letter-spacing:.07em;margin-bottom:8px;">Renewal reminders</div>
-    <div style="background:#1a1a1a;border:1px solid #2a2a2a;border-radius:12px;margin-bottom:14px;">${[['90 days before',true],['30 days before',true],['On expiry day',false]].map(([l,on])=>`<div style="display:flex;justify-content:space-between;align-items:center;padding:8px 14px;border-bottom:1px solid #1e1e1e;"><span style="font-size:13px;color:#e0e0e0;">${l}</span>${togBtn(on,'','Reminder')}</div>`).join('')}</div>
+    <div style="background:#1a1a1a;border:1px solid #2a2a2a;border-radius:12px;margin-bottom:14px;">${(()=>{const rem=d.reminders||{d90:true,d30:true,d0:false};return [['90 days before','d90'],['30 days before','d30'],['On expiry day','d0']].map(([l,k])=>`<div style="display:flex;justify-content:space-between;align-items:center;padding:8px 14px;border-bottom:1px solid #1e1e1e;"><span style="font-size:13px;color:#e0e0e0;">${l}</span>${togBtn(rem[k]!==false,"toggleDocReminder('"+d.id+"','"+k+"')",'Reminder '+l)}</div>`).join('');})()}</div>
     <div style="display:flex;gap:8px;margin-bottom:20px;"><button class="btng" style="flex:1;" onclick="nav('edit-doc','${d.id}')"><i class="ti ti-pencil"></i> Edit</button><button onclick="confirmModal({title:'Delete document',body:'This will permanently remove this document from your vault. This can\'t be undone.',action:'Delete'},'()=>{docs=docs.filter(x=>x.id!==\'${d.id}\');nav(\'vault\')}')" style="flex:1;background:#2a0f0f;border:1px solid #5a1e1e;border-radius:10px;padding:9px;font-size:13px;color:#e87070;cursor:pointer;"><i class="ti ti-trash"></i> Delete</button></div>
   </div>`;
 }
@@ -4596,7 +4955,7 @@ function renderEditDoc(id){
   setNav('pro');const d=docs.find(x=>x.id===id);if(!d)return;
   document.getElementById('tt').textContent='Edit document';
   S.innerHTML=`
-  <div style="padding:12px 16px 0;display:flex;align-items:center;justify-content:space-between;"><button class="back" onclick="nav('doc-detail','${id}')"><i class="ti ti-arrow-left"></i> Back</button><button onclick="nav('doc-detail','${id}')" style="background:var(--accent);color:var(--accent-ink);border:none;border-radius:8px;padding:6px 14px;font-size:12px;font-weight:500;cursor:pointer;">Save</button></div>
+  <div style="padding:12px 16px 0;display:flex;align-items:center;justify-content:flex-end;"><button onclick="nav('doc-detail','${id}')" style="background:var(--accent);color:var(--accent-ink);border:none;border-radius:8px;padding:6px 14px;font-size:12px;font-weight:500;cursor:pointer;">Save</button></div>
   <div style="padding:14px 16px 0;">
     <span class="fl-lbl">Document name</span><input aria-label="Document name" class="fi" value="${d.name}" style="margin-bottom:12px;">
     <span class="fl-lbl">Document number</span><input aria-label="Document number" class="fi" value="${d.number}" style="margin-bottom:12px;">
@@ -4608,7 +4967,7 @@ function renderUploadDoc(){
   setNav('pro');
   document.getElementById('tt').textContent='Upload document';
   S.innerHTML=`
-  <div style="padding:12px 16px 0;"><button class="back" onclick="nav('vault')"><i class="ti ti-arrow-left"></i> My docs</button></div>
+  
   <div style="padding:14px 16px 0;">
     <div style="border:1.5px dashed var(--accent);border-radius:12px;padding:26px 16px;display:flex;flex-direction:column;align-items:center;gap:7px;cursor:pointer;background:var(--accent-a08);margin-bottom:16px;"><i class="ti ti-cloud-upload" style="font-size:28px;color:var(--accent);"></i><span style="font-size:14px;font-weight:500;color:#e0e0e0;">Tap to upload a file</span><span style="font-size:12px;color:#999;">PDF, JPG, or PNG · Max 25MB</span></div>
     <span class="fl-lbl">Document name</span><input class="fi" placeholder="e.g. Esthetician License..." style="margin-bottom:12px;">
@@ -4622,7 +4981,7 @@ function renderInventory(){
   setNav('pro');
   document.getElementById('tt').textContent='Inventory';
   S.innerHTML=`
-  <div style="padding:12px 16px 0;display:flex;align-items:center;justify-content:space-between;"><button class="back" onclick="nav('pro')"><i class="ti ti-arrow-left"></i> Pro</button><button style="background:var(--accent);color:var(--accent-ink);border:none;border-radius:8px;padding:7px 12px;font-size:12px;font-weight:500;cursor:pointer;">+ Add item</button></div>
+  <div style="padding:12px 16px 0;display:flex;align-items:center;justify-content:flex-end;"><button style="background:var(--accent);color:var(--accent-ink);border:none;border-radius:8px;padding:7px 12px;font-size:12px;font-weight:500;cursor:pointer;">+ Add item</button></div>
   <div style="display:flex;gap:8px;padding:10px 16px;">${[['Total',inv.length,'#f0f0f0'],['Low',inv.filter(i=>i.qty<=i.low&&i.qty>0).length,'var(--accent)'],['Out',inv.filter(i=>i.qty===0).length,'#e87070']].map(([l,v,c])=>`<div style="flex:1;background:#161616;border-radius:10px;padding:9px 12px;"><div style="font-size:20px;font-weight:500;color:${c};">${v}</div><div style="font-size:11px;color:#999;">${l}</div></div>`).join('')}</div>
   ${_searchBar('Search inventory by item or brand…','.inv-card','inv-noresults')}
   ${inv.map((item,i)=>{const pct=Math.min(100,Math.round(item.qty/item.max*100));const col=item.qty===0?'#e87070':item.qty<=item.low?'var(--accent)':'#4ec49a';const lbl=item.qty===0?'Out of stock':item.qty<=item.low?`Low · ${item.qty} left`:`In stock · ${item.qty}`;
@@ -4641,7 +5000,7 @@ function renderVendors(){
   setNav('pro');
   document.getElementById('tt').textContent='Vendor directory';
   S.innerHTML=`
-  <div style="padding:12px 16px 8px;display:flex;justify-content:space-between;align-items:center;"><button class="back" onclick="nav('pro')"><i class="ti ti-arrow-left"></i> Pro</button><button onclick="nav('add-vendor')" style="background:var(--accent);color:var(--accent-ink);border:none;border-radius:8px;padding:7px 12px;font-size:12px;font-weight:500;cursor:pointer;">+ Add vendor</button></div>
+  <div style="padding:12px 16px 8px;display:flex;justify-content:flex-end;align-items:center;"><button onclick="nav('add-vendor')" style="background:var(--accent);color:var(--accent-ink);border:none;border-radius:8px;padding:7px 12px;font-size:12px;font-weight:500;cursor:pointer;">+ Add vendor</button></div>
   ${vendors.length===0
     ? emptyState({icon:'ti-building-warehouse',title:'No vendors yet',body:'Track your brand reps, ordering portals, and account notes all in one place.',action:'Add first vendor',screen:'add-vendor'})
     : _searchBar('Search vendors by name, category, or rep…','.vendor-card','vendors-noresults')+vendors.map((v,i)=>`
@@ -4658,7 +5017,7 @@ function renderVendorDetail(i){
   setNav('pro');const v=vendors[i];
   document.getElementById('tt').textContent=v.name;
   S.innerHTML=`
-  <div style="padding:12px 16px 0;"><button class="back" onclick="nav('vendors')"><i class="ti ti-arrow-left"></i> Vendors</button></div>
+  
   <div style="padding:14px 16px;display:flex;flex-direction:column;align-items:center;gap:8px;"><div style="width:64px;height:64px;border-radius:16px;background:${v.bg};border:1px solid #2a2a2a;display:flex;align-items:center;justify-content:center;font-size:22px;font-weight:500;color:${v.tc};">${v.init}</div><div style="text-align:center;"><div style="font-size:18px;font-weight:500;color:#f0f0f0;">${v.name}</div><div style="font-size:13px;color:#999;">${v.cat}</div></div></div>
   <div style="display:grid;grid-template-columns:1fr 1fr;gap:8px;padding:0 16px 14px;"><button class="btng" ${v.phone&&v.phone!=='—'?`onclick="location.href='tel:${v.phone}'"`:''}><i class="ti ti-phone" style="color:var(--accent);"></i> Call</button><button class="btng" ${v.email&&v.email!=='—'?`onclick="location.href='mailto:${v.email}'"`:''}><i class="ti ti-mail" style="color:var(--accent);"></i> Email</button><button class="btng"><i class="ti ti-world" style="color:var(--accent);"></i> Website</button><button class="btng"><i class="ti ti-login" style="color:var(--accent);"></i> Portal</button></div>
   <div style="padding:0 16px;"><div class="fr"><span class="fl">Sales rep</span><span class="fv">${v.rep}</span></div><div class="fr"><span class="fl">Phone</span>${v.phone&&v.phone!=='—'?`<a href="tel:${v.phone}" class="fv" style="text-decoration:none;">${v.phone}</a>`:`<span class="fv">—</span>`}</div><div class="fr"><span class="fl">Email</span>${v.email&&v.email!=='—'?`<a href="mailto:${v.email}" style="font-size:12px;color:var(--accent);text-decoration:none;word-break:break-all;">${v.email}</a>`:`<span class="fv">—</span>`}</div><div class="fr"><span class="fl">Portal</span><span style="font-size:12px;color:var(--accent);">${v.portal}</span></div><div class="fr"><span class="fl">Notes</span><span class="fv" style="font-size:12px;">${v.notes}</span></div></div>`;
@@ -4722,6 +5081,20 @@ const guideTemplatesByProf={
     {id:'g-nail-gel',icon:'💅',title:'Gel & acrylic aftercare',cat:'Aftercare',url:'',shared:0,tips:['Cuticle oil daily','Gloves for cleaning & dishes','Don\u2019t pick or peel the product','Nails aren\u2019t tools','Fill every 2\u20133 weeks','Book proper removal — no peeling']},
     {id:'g-nail-natural',icon:'💅',title:'Natural nail strengthening',cat:'Aftercare',url:'',shared:0,tips:['Cuticle oil daily','Hydrating hand cream','Biotin if your provider suggests it','File in one direction','Take breaks between enhancements']},
     {id:'g-nail-hand',icon:'🧴',title:'Cuticle & hand care',cat:'Education',url:'',shared:0,tips:['Moisturize often','SPF on the backs of your hands','Push cuticles back gently — don\u2019t cut','Gloves in cold weather & cleaning','Weekly soak + oil']},
+  ],
+  nutrition:[
+    {id:'g-nutrition-plate',icon:'\U0001F957',title:'Building a balanced plate',cat:'Education',url:'',shared:0,tips:['Half the plate veggies & fruit','A palm of protein each meal','Smart carbs: whole grains, beans, starchy veg','A thumb of healthy fats','Color variety means nutrient variety','Slow down and enjoy it']},
+    {id:'g-nutrition-gut',icon:'\U0001F9A0',title:'Gut health & the skin connection',cat:'Education',url:'',shared:0,tips:['Fiber feeds good bacteria','Add fermented foods (yogurt, kimchi, kefir)','Stay hydrated','Limit ultra-processed foods & added sugar','Chew well and eat mindfully','A calmer gut often means calmer skin']},
+    {id:'g-nutrition-hydration',icon:'\U0001F4A7',title:'Hydration made simple',cat:'Education',url:'',shared:0,tips:['Start the day with a glass of water','Keep a bottle in sight','Add fruit or herbs for flavor','Water-rich foods count too','More when active or in the heat','Pale-yellow is a good sign']},
+    {id:'g-nutrition-labels',icon:'\U0001F3F7',title:'Reading food labels',cat:'Education',url:'',shared:0,tips:['Check the serving size first','Scan for added sugars','Aim for higher fiber','Watch sodium on packaged foods','Shorter ingredient lists are usually better','Context matters more than any single number']},
+    {id:'g-nutrition-prep',icon:'\U0001F371',title:'Meal prep starter',cat:'Prep',url:'',shared:0,tips:['Pick 2 proteins & 2 veggies for the week','Batch-cook a grain','Wash & chop produce ahead','Portion snacks to grab and go','Keep it simple the first few weeks','Leftovers are your friend']},
+    {id:'g-nutrition-antiinflam',icon:'\U0001FAD0',title:'Anti-inflammatory foods',cat:'Education',url:'',shared:0,tips:['Berries & leafy greens','Fatty fish (salmon, sardines)','Olive oil & nuts','Turmeric & ginger','Limit fried & heavily processed foods','Consistency beats perfection']},
+  ],
+  contour:[
+    {id:'g-contour-prep',icon:'\U0001F4CB',title:'Before your session',cat:'Prep',url:'',shared:0,tips:['Hydrate well the day before & day of','Eat a light meal a couple hours before','Avoid alcohol for 24-48 hours prior','Skip caffeine right before if possible','Wear comfortable clothing','Arrive with clean skin, no lotions or oils']},
+    {id:'g-contour-after',icon:'\U0001F4A7',title:'After your session',cat:'Aftercare',url:'',shared:0,tips:['Drink lots of water for 24-72 hours','Light movement or a walk supports lymph flow','Keep meals light & low-sodium','Avoid alcohol for 24-48 hours','Warm, not hot, showers','Mild redness or tenderness can be normal']},
+    {id:'g-contour-lymph',icon:'\U0001F30A',title:'Lymphatic support at home',cat:'Education',url:'',shared:0,tips:['Hydrate consistently','Gentle dry brushing toward the heart','Walk daily to keep lymph moving','Reduce salt & processed foods','Deep breathing helps circulation','Elevate legs when resting']},
+    {id:'g-contour-results',icon:'\U0001F4C8',title:'Realistic results & timeline',cat:'Education',url:'',shared:0,tips:['This is contouring, not weight loss','Results build over a series of sessions','Hydration & diet make a big difference','Take before photos & measurements','Consistency between sessions matters','Maintain with healthy habits']},
   ],
 };
 let customResources=[];   // provider-added guides (persisted)
@@ -4813,8 +5186,7 @@ function renderCourseDetail(id){
   const c=courses.find(x=>x.id===id)||courses[0];
   document.getElementById('tt').textContent=c.title;
   S.innerHTML=`
-  <div style="padding:12px 16px 0;display:flex;align-items:center;justify-content:space-between;">
-    <button class="back" onclick="nav('learn')"><i class="ti ti-arrow-left"></i> Learn</button>
+  <div style="padding:12px 16px 0;display:flex;align-items:center;justify-content:flex-end;">
     <button onclick="nav('course-builder','${c.id}')" style="border:none;background:none;font-size:12px;color:var(--accent);cursor:pointer;"><i class="ti ti-pencil" style="font-size:12px;"></i> Edit</button>
   </div>
   <div style="height:100px;background:${c.bg};display:flex;align-items:center;justify-content:center;margin:10px 16px;border-radius:12px;"><i class="ti ${c.icon}" style="font-size:44px;color:${c.ic};"></i></div>
@@ -4838,8 +5210,7 @@ function renderCourseBuilder(id){
   document.getElementById('tt').textContent=id==='new'?'New course':'Edit course';
   const c=id==='new'?null:courses.find(x=>x.id===id);
   S.innerHTML=`
-  <div style="padding:12px 16px 0;display:flex;align-items:center;justify-content:space-between;">
-    <button class="back" onclick="nav('learn')"><i class="ti ti-arrow-left"></i> Learn</button>
+  <div style="padding:12px 16px 0;display:flex;align-items:center;justify-content:flex-end;">
     <button onclick="nav('learn')" style="background:var(--accent);color:var(--accent-ink);border:none;border-radius:8px;padding:6px 14px;font-size:12px;font-weight:500;cursor:pointer;">Save</button>
   </div>
   <div style="padding:14px 16px 0;">
@@ -4960,7 +5331,7 @@ function renderRoutineBuilder(){
   const sent=currentSentRoutines();
   const sentEntries=Object.keys(sent).filter(cid=>CL[cid]);
   S.innerHTML=`
-  <div style="padding:12px 16px 0;"><button class="back" onclick="nav('shop')"><i class="ti ti-arrow-left"></i> Shop</button></div>
+  
   <div style="padding:10px 16px 0;">
     <div style="font-size:18px;font-weight:600;color:#f0f0f0;margin-bottom:2px;">Build a routine</div>
     <div style="font-size:12px;color:#999;margin-bottom:14px;line-height:1.5;">Name it, choose products, add a note your client sees — then send it or save it as a reusable template.</div>
@@ -5055,8 +5426,7 @@ function renderShopBundle(i){
   const b=shopBundles[i];
   document.getElementById('tt').textContent=b.name;
   S.innerHTML=`
-  <div style="padding:12px 16px 0;display:flex;align-items:center;justify-content:space-between;">
-    <button class="back" onclick="nav('shop')"><i class="ti ti-arrow-left"></i> Shop</button>
+  <div style="padding:12px 16px 0;display:flex;align-items:center;justify-content:flex-end;">
     <button style="border:none;background:none;font-size:12px;color:var(--accent);cursor:pointer;"><i class="ti ti-pencil" style="font-size:12px;"></i> Edit</button>
   </div>
   <div style="padding:14px 16px 0;display:flex;flex-direction:column;align-items:center;gap:8px;text-align:center;">
@@ -5080,7 +5450,7 @@ function renderAccount(){
   document.getElementById('tt').textContent='Account';
   S.innerHTML=`
   <div style="padding:20px 16px 0;display:flex;flex-direction:column;align-items:center;gap:10px;">
-    <div style="width:72px;height:72px;border-radius:50%;background:#2e2318;display:flex;align-items:center;justify-content:center;font-size:26px;font-weight:500;color:var(--accent);">JL</div>
+    <div style="width:72px;height:72px;border-radius:50%;background:#2e2318;display:flex;align-items:center;justify-content:center;font-size:26px;font-weight:500;color:var(--accent);">${_providerInitials()}</div>
     <div style="text-align:center;"><div style="font-size:18px;font-weight:500;color:#f0f0f0;">${bizInfo.ownerName}</div><div style="font-size:13px;color:#999;">${bizInfo.name}${_bizLoc()?' · '+_bizLoc():''}</div><div style="font-size:12px;color:var(--accent);">${bizInfo.email}</div></div>
   </div>
   ${(typeof Cloud!=='undefined'&&Cloud.token)?`<div style="margin:14px 16px 0;background:#0a2019;border:1px solid #1a4a38;border-radius:12px;padding:11px 13px;display:flex;align-items:center;gap:10px;">
@@ -5134,7 +5504,7 @@ function onboardNext(){
 }
 function finishOnboarding(){
   bizInfo.name=onboardData.biz.name||bizInfo.name;
-  bizInfo.ownerName=onboardData.biz.owner||bizInfo.ownerName;
+  bizInfo.ownerName=onboardData.biz.owner||bizInfo.ownerName;_syncProviderAvatar();
   if(onboardData.biz.name)workspace.name=onboardData.biz.name;
   saveProfessions();
   try{localStorage.setItem('sc_bizinfo',JSON.stringify(bizInfo));localStorage.setItem('sc_wsname',workspace.name);}catch(e){}
@@ -5455,14 +5825,15 @@ function renderNotifFeed(){
   </div>
   ${unread.length>0?`
   <div class="sh"><h2>New</h2></div>
-  ${unread.map(n=>notifCard(n)).join('')}`:''}
+  ${unread.map(n=>notifRow(n)).join('')}`:''}
   ${read.length>0?`
   <div class="sh"><h2>Earlier</h2></div>
-  ${read.map(n=>notifCard(n)).join('')}`:''}
+  ${read.map(n=>notifRow(n)).join('')}`:''}
   <div style="height:16px;"></div>`;
+  setTimeout(()=>{try{document.querySelectorAll('.swipe-card').forEach((el,i)=>{if(typeof initSwipe==='function')initSwipe(el,i);});}catch(e){}},0);
 }
-function notifCard(n){
-  return`<div onclick="markRead('${n.id}');${n.action==='client'?`nav('client','${n.data}')`:n.action==='chat'?`nav('chat','${n.data}')`:n.action==='checkin'?`nav('checkin-detail','${n.data}')`:n.action==='vault'?`nav('vault')`:n.action==='inventory'?`nav('inventory')`:n.action==='requests'?`nav('requests')`:n.action==='home'?`nav('home')`:''}" style="background:#1a1a1a;border:1px solid ${n.read?'#2a2a2a':'var(--accent-tint2)'};border-radius:12px;margin:0 16px 8px;overflow:hidden;cursor:pointer;${n.read?'':'background:#1e1a10;'}">
+function notifCard(n,bare){
+  return`<div onclick="markRead('${n.id}');${n.action==='client'?`nav('client','${n.data}')`:n.action==='chat'?`nav('chat','${n.data}')`:n.action==='checkin'?`nav('checkin-detail','${n.data}')`:n.action==='vault'?`nav('vault')`:n.action==='inventory'?`nav('inventory')`:n.action==='requests'?`nav('requests')`:n.action==='home'?`nav('home')`:''}" style="background:#1a1a1a;border:1px solid ${n.read?'#2a2a2a':'var(--accent-tint2)'};border-radius:12px;${bare?'':'margin:0 16px 8px;'}overflow:hidden;cursor:pointer;${n.read?'':'background:#1e1a10;'}">
     <div style="padding:12px 14px;display:flex;align-items:flex-start;gap:10px;">
       <div style="position:relative;flex-shrink:0;">
         <div style="width:40px;height:40px;border-radius:10px;background:${n.col};display:flex;align-items:center;justify-content:center;">
@@ -5478,6 +5849,15 @@ function notifCard(n){
     </div>
   </div>`;
 }
+function notifRow(n){
+  return`<div style="position:relative;overflow:hidden;margin:0 16px 8px;border-radius:12px;">
+    <div class="swipe-card">${notifCard(n,true)}</div>
+    <div class="swipe-reveal" style="background:#0f2a1a;border-radius:0 12px 12px 0;" onclick="event.stopPropagation();clearNotif('${n.id}')" aria-label="Clear notification">
+      <i class="ti ti-check" aria-hidden="true" style="color:#4ec49a;"></i><span style="color:#4ec49a;">DONE</span>
+    </div>
+  </div>`;
+}
+function clearNotif(id){const i=notifFeed.findIndex(n=>n.id===id);if(i>=0)notifFeed.splice(i,1);updateBadge();renderNotifFeed();}
 function markRead(id){
   const n=notifFeed.find(x=>x.id===id);
   if(n)n.read=true;
@@ -5493,7 +5873,7 @@ function renderAISettings(){
   document.getElementById('tt').textContent='AI features';
   const _ve=(typeof window!=='undefined'&&window.SLICKCHART_VISION_ENDPOINT)||'';
   S.innerHTML=`
-  <div style="padding:12px 16px 0;"><button class="back" onclick="nav('account')"><i class="ti ti-arrow-left"></i> Account</button></div>
+  
 
   <!-- Master toggle -->
   <div style="margin:14px 16px 6px;background:${aiEnabled?'linear-gradient(135deg,#1e1633,#13102a)':'#1a1a1a'};border:1px solid ${aiEnabled?'#2d2360':'#2a2a2a'};border-radius:14px;padding:16px;">
@@ -5534,12 +5914,16 @@ function renderAISettings(){
   </div>
 
   <!-- Vision model endpoint -->
-  <div class="sh"><h2>Vision analysis</h2></div>
+  <div class="sh"><h2>Photo analysis</h2></div>
   <div style="background:#1a1a1a;border:1px solid #2a2a2a;border-radius:12px;margin:0 16px 12px;padding:14px;">
-    <div style="display:flex;align-items:center;gap:8px;margin-bottom:8px;"><i class="ti ti-cpu" style="font-size:15px;color:#a891ec;"></i><span style="font-size:13px;font-weight:500;color:#e0e0e0;">Virtual consult photo analysis</span><span style="margin-left:auto;font-size:11px;font-weight:600;padding:2px 9px;border-radius:20px;${_ve?'background:#0a2019;color:#4ec49a;':'background:#1e1633;color:#a891ec;'}">${_ve?'AI vision connected':'On-device measurements'}</span></div>
-    <div style="font-size:12px;color:#888;line-height:1.5;margin-bottom:11px;">Paste your hosted vision endpoint to run full AI analysis on submitted photos. Leave blank to use on-device pixel measurements. Your API key stays on the server — never in the app.</div>
-    <input id="vision-endpoint" value="${_ve.replace(/"/g,'&quot;')}" placeholder="https://your-server.com/api/vision" style="width:100%;background:#111;border:1px solid #333;border-radius:9px;padding:10px 12px;font-size:13px;color:#f0f0f0;font-family:inherit;box-sizing:border-box;outline:none;margin-bottom:10px;">
-    <button onclick="saveVisionEndpoint()" style="width:100%;background:var(--accent);border:none;border-radius:9px;padding:10px;font-size:13px;font-weight:600;color:var(--accent-ink);cursor:pointer;font-family:inherit;">Save endpoint</button>
+    <div style="display:flex;align-items:center;gap:8px;margin-bottom:8px;"><i class="ti ti-cpu" style="font-size:15px;color:#a891ec;"></i><span style="font-size:13px;font-weight:500;color:#e0e0e0;">Virtual consult photo analysis</span><span style="margin-left:auto;font-size:11px;font-weight:600;padding:2px 9px;border-radius:20px;${_ve?'background:#1e1633;color:#a891ec;':(aiEnabled?'background:#0a2019;color:#4ec49a;':'background:#1a1a1a;color:#777;border:1px solid #333;')}">${_ve?'Custom endpoint':(aiEnabled?'Built-in AI vision':'AI off')}</span></div>
+    <div style="font-size:12px;color:#888;line-height:1.5;margin-bottom:4px;">Submitted consult photos are now analyzed by your built-in AI (Claude vision) whenever AI features are on and your API key is set — no extra setup needed. It gives cosmetic, non-diagnostic observations for you to review before finalizing.</div>
+    <div style="border-top:1px solid #242424;margin-top:11px;padding-top:11px;">
+      <div style="font-size:11px;color:#777;text-transform:uppercase;letter-spacing:.06em;margin-bottom:7px;">Advanced — custom endpoint (optional)</div>
+      <div style="font-size:12px;color:#888;line-height:1.5;margin-bottom:9px;">Paste a hosted vision endpoint to use your own service instead. When set, it overrides the built-in AI.</div>
+      <input id="vision-endpoint" value="${_ve.replace(/"/g,'&quot;')}" placeholder="https://your-server.com/api/vision" style="width:100%;background:#111;border:1px solid #333;border-radius:9px;padding:10px 12px;font-size:13px;color:#f0f0f0;font-family:inherit;box-sizing:border-box;outline:none;margin-bottom:10px;">
+      <button onclick="saveVisionEndpoint()" style="width:100%;background:#222;border:1px solid #333;border-radius:9px;padding:10px;font-size:13px;font-weight:600;color:#ccc;cursor:pointer;font-family:inherit;">Save endpoint</button>
+    </div>
   </div>
 
   <!-- What stays on -->
@@ -5658,7 +6042,7 @@ function renderBranding(){
   document.getElementById('tt').textContent='Branding & logo';
   const p=brandColors.primary,s=brandColors.secondary;
   S.innerHTML=`
-  <div style="padding:12px 16px 0;display:flex;align-items:center;justify-content:space-between;"><button class="back" onclick="nav('account')"><i class="ti ti-arrow-left"></i> Account</button><button onclick="saveBranding()" style="border:none;background:var(--accent);border-radius:8px;padding:6px 14px;font-size:12px;color:var(--accent-ink);cursor:pointer;font-weight:600;">Save</button></div>
+  <div style="padding:12px 16px 0;display:flex;align-items:center;justify-content:flex-end;"><button onclick="saveBranding()" style="border:none;background:var(--accent);border-radius:8px;padding:6px 14px;font-size:12px;color:var(--accent-ink);cursor:pointer;font-weight:600;">Save</button></div>
   <div style="margin:10px 16px;background:#0d1e33;border:1px solid #1a3a5c;border-radius:10px;padding:10px 12px;font-size:12px;color:#5ba3e8;line-height:1.5;">Your branding appears on all client-facing forms, check-ins, emails, and virtual consultations.</div>
   <div style="padding:0 16px;">
     <div style="font-size:13px;font-weight:500;color:#e0e0e0;margin-bottom:8px;">Business logo</div>
@@ -5723,7 +6107,7 @@ function bizHoursRows(){
   const opts=(sel)=>halfHourOptions().map(o=>`<option value="${o.v}"${o.v===sel?' selected':''}>${o.l}</option>`).join('');
   return DAY_DEFS.map(([k,label])=>{const d=bizHours[k];return`
   <div style="display:flex;align-items:center;gap:9px;padding:9px 12px;border-bottom:1px solid #1e1e1e;">
-    <button onclick="toggleBizDay('${k}')" role="switch" aria-checked="${d.open}" aria-label="${label} open" style="width:38px;height:23px;border-radius:12px;border:none;background:${d.open?'var(--accent)':'#2a2a2a'};position:relative;cursor:pointer;flex-shrink:0;">
+    <button onclick="toggleBizDay('${k}')" role="switch" aria-checked="${d.open}" aria-label="${label} open" style="width:38px;height:23px;border-radius:12px;border:none;-webkit-appearance:none;appearance:none;padding:0;margin:0;box-sizing:border-box;background:${d.open?'var(--accent)':'#2a2a2a'};position:relative;cursor:pointer;flex-shrink:0;">
       <span aria-hidden="true" style="position:absolute;top:3px;left:${d.open?'18':'3'}px;width:17px;height:17px;border-radius:50%;background:#fff;transition:left .15s;"></span>
     </button>
     <span style="width:34px;font-size:13px;font-weight:600;color:${d.open?'#e0e0e0':'#666'};flex-shrink:0;">${label.slice(0,3)}</span>
@@ -5749,6 +6133,7 @@ function saveBizInfo(){
   if(_bizLoc())workspace.location=_bizLoc();
   try{localStorage.setItem('sc_bizinfo',JSON.stringify(bizInfo));localStorage.setItem('sc_wsname',workspace.name);}catch(e){}
   SlickBridge.setAvailability(bizHours);
+  _syncProviderAvatar();
   proToast('Business info & hours saved ✨');
 }
 
@@ -5756,7 +6141,7 @@ function renderBizInfo(){
   document.getElementById('tt').textContent='Business info';
   bizHours=normalizeAvail(SlickBridge.getAvailability());
   S.innerHTML=`
-  <div style="padding:12px 16px 0;display:flex;align-items:center;justify-content:space-between;"><button class="back" onclick="nav('account')"><i class="ti ti-arrow-left"></i> Account</button><button onclick="saveBizInfo()" style="background:var(--accent);color:var(--accent-ink);border:none;border-radius:8px;padding:6px 14px;font-size:12px;font-weight:600;cursor:pointer;">Save</button></div>
+  <div style="padding:12px 16px 0;display:flex;align-items:center;justify-content:flex-end;"><button onclick="saveBizInfo()" style="background:var(--accent);color:var(--accent-ink);border:none;border-radius:8px;padding:6px 14px;font-size:12px;font-weight:600;cursor:pointer;">Save</button></div>
   <div style="padding:14px 16px 0;">
     <span class="fl-lbl">Business name</span><input id="bi-name" class="fi" value="${bizInfo.name}" aria-label="Business name" style="margin-bottom:12px;">
     <span class="fl-lbl">Owner name & title</span><input id="bi-owner" class="fi" value="${bizInfo.ownerName}" aria-label="Owner name and title" style="margin-bottom:12px;">
@@ -5785,7 +6170,7 @@ function renderBizInfo(){
 function renderNotifications(){
   document.getElementById('tt').textContent='Notifications';
   S.innerHTML=`
-  <div style="padding:12px 16px 0;"><button class="back" onclick="nav('account')"><i class="ti ti-arrow-left"></i> Account</button></div>
+  
   <div style="margin:10px 16px;background:#0d1e33;border:1px solid #1a3a5c;border-radius:10px;padding:10px 12px;font-size:12px;color:#5ba3e8;">Notifications are sent via push notification and email. You can customize below.</div>
   ${[
     {section:'Client activity',items:[['newCheckin','New check-in submitted','Before appointments'],['formSigned','Consent form signed','When a client signs'],['photoUploaded','Photos uploaded','Virtual consultation']]},
@@ -5801,7 +6186,7 @@ function renderNotifications(){
 function renderIntegrations(){
   document.getElementById('tt').textContent='Integrations';
   S.innerHTML=`
-  <div style="padding:12px 16px 0;"><button class="back" onclick="nav('account')"><i class="ti ti-arrow-left"></i> Account</button></div>
+  
   <div style="margin:10px 16px;background:#0d1e33;border:1px solid #1a3a5c;border-radius:10px;padding:10px 12px;font-size:12px;color:#5ba3e8;line-height:1.5;">Connect your tools to keep everything in sync — appointments, payments, and marketing in one place.</div>
   <div onclick="nav('square-sync')" style="margin:0 16px 12px;background:linear-gradient(135deg,#161616,#1c1c1c);border:1px solid #2a2a2a;border-radius:12px;padding:13px 14px;display:flex;align-items:center;gap:12px;cursor:pointer;">
     <div style="width:44px;height:44px;border-radius:10px;background:#fff;display:flex;align-items:center;justify-content:center;flex-shrink:0;"><i class="ti ti-brand-square" style="font-size:22px;color:#000;"></i></div>
@@ -5876,12 +6261,16 @@ function _sqKey(force){
   }
   return k||'';
 }
-async function _sqFetch(path){
+async function _sqFetch(path,opts){
+  opts=opts||{};
   const key=_sqKey(false);
   if(!key){const e=new Error('No access key entered.');e.code='nokey';throw e;}
+  const headers={'x-slickchart-key':key};
+  const init={method:opts.method||'GET',headers};
+  if(opts.body!==undefined){headers['Content-Type']='application/json';init.body=JSON.stringify(opts.body);}
   let resp;
   try{
-    resp=await fetch(path,{headers:{'x-slickchart-key':key}});
+    resp=await fetch(path,init);
   }catch(netErr){
     const e=new Error("Couldn't reach the Square sync service. This works once the app is deployed to Vercel (it won't work from a file opened directly on your computer).");
     e.code='network';throw e;
@@ -5913,11 +6302,17 @@ function renderSquareGuide(){
   const step=(n,title,body,extra)=>`<div style="display:flex;gap:12px;margin-bottom:15px;"><div style="width:26px;height:26px;border-radius:50%;background:var(--accent);color:var(--accent-ink);font-size:13px;font-weight:700;display:flex;align-items:center;justify-content:center;flex-shrink:0;">${n}</div><div style="flex:1;min-width:0;"><div style="font-size:14px;font-weight:600;color:#f0f0f0;margin-bottom:4px;">${title}</div><div style="font-size:13px;color:#bdbdbd;line-height:1.55;">${body}</div>${extra||''}</div></div>`;
   const faq=(id,q,a)=>`<div style="border-top:1px solid #242424;"><button onclick="_sqGuideToggle('${id}')" style="width:100%;display:flex;align-items:center;gap:8px;background:none;border:none;color:#e0e0e0;font-size:13px;font-weight:500;text-align:left;padding:12px 2px;cursor:pointer;font-family:inherit;"><i id="sqg-chev-${id}" class="ti ti-chevron-right" style="font-size:14px;color:var(--accent);transition:transform .15s;"></i><span style="flex:1;">${q}</span></button><div id="sqg-${id}" style="display:none;font-size:12px;color:#999;line-height:1.6;padding:0 2px 12px 24px;">${a}</div></div>`;
   S.innerHTML=`
-  <div style="padding:12px 16px 0;"><button class="back" onclick="nav('square-sync')"><i class="ti ti-arrow-left"></i> Square sync</button></div>
+  
   <div style="padding:10px 16px 0;">
     <div style="font-size:19px;font-weight:600;color:#f0f0f0;margin-bottom:4px;">Connect your Square</div>
     <div style="font-size:13px;color:#999;line-height:1.5;margin-bottom:14px;">A one-time setup, about 15 minutes. Once it's done, SlickChart automatically pulls in your clients, your upcoming appointments, and your products &amp; prices — and keeps your own shop as the default place clients buy.</div>
     <div id="sqg-status" style="background:#161616;border:1px solid #242424;border-radius:12px;padding:12px 14px;font-size:12px;color:#999;margin-bottom:18px;">Checking what's set up…</div>
+    <div style="background:#161616;border:1px solid #242424;border-radius:12px;padding:14px;margin-bottom:18px;">
+      <div style="display:flex;align-items:center;gap:8px;margin-bottom:6px;"><i class="ti ti-calendar-check" style="font-size:16px;color:var(--accent);"></i><span style="font-size:14px;font-weight:600;color:#f0f0f0;">Ready to take live bookings?</span></div>
+      <div style="font-size:12px;color:#999;line-height:1.5;margin-bottom:11px;">Check that your Square access token has the permissions needed to create appointments and clients — one tap, no developer tools.</div>
+      <button onclick="_sqCheckPerms()" id="sqperm-btn" style="width:100%;background:var(--accent);color:var(--accent-ink);border:none;border-radius:9px;padding:11px;font-size:13px;font-weight:700;cursor:pointer;font-family:inherit;"><i class="ti ti-shield-check" style="font-size:14px;"></i> Check my Square permissions</button>
+      <div id="sqperm-result" style="margin-top:12px;"></div>
+    </div>
     ${step('1','Get your Square access token',`Go to <b>developer.squareup.com</b> and sign in with your Square login. Click <b>Create app</b>, name it "SlickChart", and open it. At the top switch to the <b>Production</b> tab (not Sandbox), then under <b>Credentials</b> copy the <b>Access token</b> — it starts with <span style="font-family:monospace;color:#d8c4a8;">EAAA…</span>`,`<div style="margin-top:8px;background:#0d1e33;border:1px solid #1a3a5c;border-radius:9px;padding:9px 11px;font-size:12px;color:#6fb0ea;line-height:1.5;"><i class="ti ti-lock" style="font-size:12px;"></i> Treat this token like a password — it's private access to your Square. Only ever paste it into Vercel.</div>`)}
     ${step('2','Add three secrets in Vercel',`In Vercel → your <b>slick-chart</b> project → <b>Settings → Environment Variables</b>, add these three:`,`<div style="margin-top:8px;background:#111;border:1px solid #242424;border-radius:9px;overflow:hidden;font-size:12px;"><div style="padding:9px 11px;border-bottom:1px solid #202020;"><span style="font-family:monospace;color:var(--accent);">SQUARE_ACCESS_TOKEN</span><div style="color:#999;margin-top:2px;">the token you just copied</div></div><div style="padding:9px 11px;border-bottom:1px solid #202020;"><span style="font-family:monospace;color:var(--accent);">APP_SHARED_SECRET</span><div style="color:#999;margin-top:2px;">a password you make up — this is your <b>access key</b> for step 5. Save it in your keys note.</div></div><div style="padding:9px 11px;"><span style="font-family:monospace;color:var(--accent);">SQUARE_ENV</span><div style="color:#999;margin-top:2px;">set to <b>production</b> so it pulls your real Square data, not test data</div></div></div>`)}
     ${step('3','Redeploy so the secrets switch on',`In Vercel → <b>Deployments</b> → the <b>⋯</b> menu on the newest one → <b>Redeploy</b>. New secrets only take effect after a redeploy.`,'')}
@@ -5934,10 +6329,33 @@ function renderSquareGuide(){
   </div>`;
   _sqGuideStatus();
 }
+async function _sqCheckPerms(){
+  const out=document.getElementById('sqperm-result');const btn=document.getElementById('sqperm-btn');
+  if(!out)return;
+  out.innerHTML=`<div style="text-align:center;color:#888;font-size:12px;padding:10px;">Checking your Square permissions…</div>`;
+  if(btn){btn.disabled=true;btn.style.opacity='.6';}
+  try{
+    const data=await _sqFetch('/api/square/token-status');
+    if(btn){btn.disabled=false;btn.style.opacity='1';}
+    if(data.inconclusive){
+      out.innerHTML=`<div style="background:#1a1308;border:1px solid #3a2a10;border-radius:10px;padding:11px 12px;font-size:12px;color:#caa86a;line-height:1.5;">Square didn't return a permission list for this token. Try a live action like <b>Import clients</b> — if that works you're connected. If booking later fails, re-check the permissions on your Square token.</div>`;
+      return;
+    }
+    const rows=(data.checks||[]).map((c,i,arr)=>`<div style="display:flex;align-items:center;gap:9px;padding:9px 0;${i<arr.length-1?'border-bottom:1px solid #202020;':''}"><i class="ti ${c.ok?'ti-circle-check':'ti-circle-x'}" aria-hidden="true" style="font-size:16px;color:${c.ok?'#4ec49a':'#e87070'};flex-shrink:0;"></i><span style="flex:1;font-size:13px;color:#e0e0e0;">${c.label}</span><span style="font-size:10px;font-weight:700;color:${c.ok?'#4ec49a':'#e87070'};font-family:monospace;">${c.ok?'OK':'MISSING'}</span></div>`).join('');
+    const banner=data.ready
+      ?`<div style="background:#0a2019;border:1px solid #1a4a38;border-radius:10px;padding:11px 12px;margin-bottom:9px;display:flex;align-items:center;gap:9px;"><i class="ti ti-circle-check" style="font-size:18px;color:#4ec49a;"></i><div style="font-size:13px;font-weight:600;color:#7fe0b8;">You're ready to take live bookings ✓</div></div>`
+      :`<div style="background:#2a0f0f;border:1px solid #5a1e1e;border-radius:10px;padding:11px 12px;margin-bottom:9px;"><div style="font-size:13px;font-weight:600;color:#e89090;margin-bottom:3px;">Not quite ready yet</div><div style="font-size:12px;color:#c98080;line-height:1.5;">Add the missing permissions below to your Square access token, then redeploy and check again.</div></div>`;
+    out.innerHTML=banner+`<div style="background:#111;border:1px solid #242424;border-radius:10px;padding:2px 12px;">${rows}</div>`+(data.ready?'':`<div style="font-size:11px;color:#888;line-height:1.5;margin-top:9px;">These come from the Square access token you set in Vercel. If items are missing, make sure Square <b>Appointments</b> is active on your account, then regenerate or re-authorize your token with those permissions.</div>`);
+  }catch(e){
+    if(btn){btn.disabled=false;btn.style.opacity='1';}
+    const msg=e.code==='nokey'?'Enter your access key first — tap a sync button on the Square sync screen, then come back.':e.code==='network'?'This check works once the app is deployed to Vercel.':(e.message||'Could not check your permissions.');
+    out.innerHTML=`<div style="background:#2a0f0f;border:1px solid #5a1e1e;border-radius:10px;padding:11px 12px;font-size:12px;color:#e89090;line-height:1.5;">${msg}</div>`;
+  }
+}
 function renderSquareSync(){
   document.getElementById('tt').textContent='Square sync';
   S.innerHTML=`
-  <div style="padding:12px 16px 0;"><button class="back" onclick="nav('integrations')"><i class="ti ti-arrow-left"></i> Integrations</button></div>
+  
   <div style="margin:10px 16px 12px;display:flex;align-items:center;gap:12px;">
     <div style="width:48px;height:48px;border-radius:12px;background:#fff;display:flex;align-items:center;justify-content:center;flex-shrink:0;"><i class="ti ti-brand-square" style="font-size:26px;color:#000;"></i></div>
     <div><div style="font-size:17px;font-weight:600;color:#f0f0f0;">Square</div><div style="font-size:12px;color:#999;">Live sync · your own Square account</div></div>
@@ -6082,7 +6500,7 @@ function renderProtocolDetail(id){
   setNav('more');const p=protocols.find(x=>x.id===id);if(!p)return;
   document.getElementById('tt').textContent=p.name;
   S.innerHTML=`
-  <div style="padding:12px 16px 0;display:flex;align-items:center;justify-content:space-between;"><button class="back" onclick="nav('protocols')"><i class="ti ti-arrow-left"></i> Protocols</button><button onclick="nav('protocol-apply','${id}')" style="background:var(--accent);color:var(--accent-ink);border:none;border-radius:8px;padding:6px 13px;font-size:12px;font-weight:500;cursor:pointer;">Apply to client</button></div>
+  <div style="padding:12px 16px 0;display:flex;align-items:center;justify-content:flex-end;"><button onclick="nav('protocol-apply','${id}')" style="background:var(--accent);color:var(--accent-ink);border:none;border-radius:8px;padding:6px 13px;font-size:12px;font-weight:500;cursor:pointer;">Apply to client</button></div>
   <div style="padding:14px 16px;display:flex;align-items:center;gap:12px;"><div style="width:52px;height:52px;border-radius:12px;background:${p.col};display:flex;align-items:center;justify-content:center;"><i class="ti ${p.icon}" style="font-size:24px;color:${p.ic};"></i></div><div><div style="font-size:17px;font-weight:500;color:#f0f0f0;">${p.name}</div><div style="font-size:12px;color:#999;">${p.steps.length} steps · ~${p.steps.reduce((a,s)=>a+parseInt(s.d),0)} min</div></div></div>
   <div style="padding:0 16px;">${p.steps.map((s,i)=>`<div style="display:flex;align-items:flex-start;gap:10px;padding:10px 0;border-bottom:1px solid #1e1e1e;"><div class="snum">${i+1}</div><div><div style="font-size:13px;font-weight:500;color:#e0e0e0;">${s.t} <span style="font-size:11px;color:#999;font-weight:400;">· ${s.d}</span></div><div style="font-size:12px;color:#999;">${s.n}</div></div></div>`).join('')}</div>`;
 }
@@ -6090,7 +6508,7 @@ function renderProtocolApply(pid){
   setNav('more');
   document.getElementById('tt').textContent='Apply protocol';
   S.innerHTML=`
-  <div style="padding:12px 16px 0;"><button class="back" onclick="nav('protocol-detail','${pid}')"><i class="ti ti-arrow-left"></i> Back</button></div>
+  
   <div style="padding:12px 16px 0;"><div style="font-size:13px;color:#666;margin-bottom:14px;">Choose a client to apply this protocol in a session.</div>
   ${Object.entries(CL).map(([id,c])=>`<div onclick="nav('room','${id}')" style="display:flex;align-items:center;gap:12px;padding:11px 0;border-bottom:1px solid #1e1e1e;cursor:pointer;">${av(c,40)}<div style="flex:1;"><div style="font-size:14px;font-weight:500;color:#e0e0e0;">${c.name}</div><div style="font-size:12px;color:#999;">${c.nextVisit}</div></div><span style="font-size:12px;color:var(--accent);">Apply →</span></div>`).join('')}</div>`;
 }
@@ -6098,7 +6516,7 @@ function renderNewProtocol(){
   setNav('more');
   document.getElementById('tt').textContent='New protocol';
   S.innerHTML=`
-  <div style="padding:12px 16px 0;display:flex;align-items:center;justify-content:space-between;"><button class="back" onclick="nav('protocols')"><i class="ti ti-arrow-left"></i> Protocols</button><button style="background:var(--accent);color:var(--accent-ink);border:none;border-radius:8px;padding:6px 13px;font-size:12px;font-weight:500;cursor:pointer;">Save</button></div>
+  <div style="padding:12px 16px 0;display:flex;align-items:center;justify-content:flex-end;"><button style="background:var(--accent);color:var(--accent-ink);border:none;border-radius:8px;padding:6px 13px;font-size:12px;font-weight:500;cursor:pointer;">Save</button></div>
   <div style="padding:14px 16px 0;"><input class="fi" placeholder="Protocol name..." style="font-size:15px;font-weight:500;margin-bottom:14px;"><div style="font-size:11px;color:#aaa;text-transform:uppercase;letter-spacing:.07em;margin-bottom:10px;">Steps</div>
   ${['Cleanse','Exfoliate','Treat','Mask','Finish'].map((s,i)=>`<div style="display:flex;align-items:center;gap:8px;margin-bottom:8px;"><div class="snum">${i+1}</div><input placeholder="${s}..." class="fi" style="flex:1;margin:0;"><input placeholder="min" class="fi" style="width:54px;margin:0;text-align:center;"></div>`).join('')}
   <button class="btng" style="width:100%;margin-top:6px;border-style:dashed;"><i class="ti ti-plus"></i> Add step</button></div><div style="height:20px;"></div>`;
@@ -6148,7 +6566,7 @@ try{
   loadAi();  // restore the AI on/off preference
   loadProfessions();  // restore the provider's selected profession(s)
   applyProfessionConfig();
-  loadBizInfo();  // restore the provider's own business name & details
+  loadBizInfo();_syncProviderAvatar();  // restore the provider's own business name & details
   loadClients();  // restore the curated client list (demos removed, Square imports kept)
   _seedMayaOnce();  // bring back one sample client (Maya) for the AI brief + client demo app
   if(typeof _demoCheckinSeed==='function')_demoCheckinSeed();  // give sample Maya a today appointment so the check-in nudge is visible
@@ -6256,7 +6674,7 @@ function renderCheckins(){
   setNav('home');
   document.getElementById('tt').textContent='Pre-visit check-ins';
   S.innerHTML=`<div id="checkins-screen"></div>
-  <div style="padding:12px 16px 0;"><button class="back" onclick="nav('home')"><i class="ti ti-arrow-left"></i> Home</button></div>
+  
   <div style="padding:10px 16px 4px;">
     <div id="page-heading" tabindex="-1" style="font-size:18px;font-weight:600;color:#f0f0f0;">Pre-visit check-ins</div>
     <div style="font-size:13px;color:#999;">What clients share before they arrive.</div>
@@ -6285,11 +6703,11 @@ function renderCheckinDetail(id){
   setNav('home');
   const ci=checkins.find(x=>x.id===id);
   document.getElementById('tt').textContent='Check-in';
-  if(!ci){S.innerHTML=`<div id="checkin-detail-screen"></div><div style="padding:12px 16px 0;"><button class="back" onclick="nav('checkins')"><i class="ti ti-arrow-left"></i> Check-ins</button></div><div style="padding:30px 16px;color:#666;">Check-in not found.</div>`;return;}
+  if(!ci){S.innerHTML=`<div id="checkin-detail-screen"></div><div style="padding:30px 16px;color:#666;">Check-in not found.</div>`;return;}
   markCheckinRead(id);
   const first=ci.client.split(' ')[0];
   S.innerHTML=`<div id="checkin-detail-screen"></div>
-  <div style="padding:12px 16px 0;"><button class="back" onclick="nav('checkins')"><i class="ti ti-arrow-left"></i> Check-ins</button></div>
+  
   <div style="margin:10px 16px 12px;background:linear-gradient(135deg,#0a2019,#0d2a20);border:1px solid #1a4a38;border-radius:14px;padding:16px;">
     <div id="page-heading" tabindex="-1" style="font-size:18px;font-weight:600;color:#e8fff5;">${ci.client}</div>
     <div style="font-size:13px;color:#7fbfa5;margin-top:2px;">${ci.treatment} · ${ci.dateLabel} at ${ci.time}</div>
@@ -6393,8 +6811,7 @@ function renderRequests(){
   const done=decidedRequests();
   const statusChip=s=>({confirmed:['#0a2019','#4ec49a','Confirmed'],declined:['#2a0f0f','#e87070','Declined'],suggested:['var(--accent-tint)','var(--accent)','Time suggested']}[s]||['#1a1a1a','#999',s]);
   S.innerHTML=`
-  <div id="requests-screen" style="padding:12px 16px 0;display:flex;align-items:center;justify-content:space-between;">
-    <button class="back" onclick="nav('home')"><i class="ti ti-arrow-left"></i> Home</button>
+  <div id="requests-screen" style="padding:12px 16px 0;display:flex;align-items:center;justify-content:flex-end;">
   </div>
   <div style="padding:8px 16px 4px;"><div id="page-heading" tabindex="-1" style="font-size:20px;font-weight:500;color:#f0f0f0;">Booking requests</div>
     <div style="font-size:13px;color:#999;margin-top:2px;">${pend.length} pending · clients request, you confirm.</div>
@@ -6473,12 +6890,7 @@ SlickBridge.on('virtual-consult-submitted',d=>{
 });
 
 
-function renderCalendar(){
-  setNav('home');
-  document.getElementById('tt').textContent='Calendar';
-  const days=['Sun','Mon','Tue','Wed','Thu','Fri','Sat'];
-  const today=26;
-  const appts=[
+const _apptsData=[
     {day:24,time:'10:00 AM',client:'Maya Rodriguez',tx:'Hydrafacial',dur:60,col:'var(--accent-tint)',ic:'var(--accent)'},
     {day:24,time:'12:30 PM',client:'Sophie Turner',tx:'Chemical Peel',dur:75,col:'#0d1e33',ic:'#5ba3e8'},
     {day:26,time:'10:00 AM',client:'Maya Rodriguez',tx:'Hydrafacial',dur:60,col:'var(--accent-tint)',ic:'var(--accent)'},
@@ -6486,24 +6898,63 @@ function renderCalendar(){
     {day:26,time:'3:00 PM',client:'Priya Patel',tx:'LED Therapy',dur:45,col:'#0a2019',ic:'#4ec49a'},
     {day:27,time:'11:00 AM',client:'Priya Patel',tx:'Consult',dur:30,col:'#0a2019',ic:'#4ec49a'},
     {day:8,time:'11:00 AM',client:'Priya Patel',tx:'LED Therapy',dur:45,col:'#0a2019',ic:'#4ec49a'},
-  ];
+];
+let squareAppts=null;        // null until first attempt; array of live appts when Square is connected
+let _sqApptsState='idle';    // idle | loading | ok | error | off (no key yet)
+// The current calendar week, Sunday 00:00 to next Sunday 00:00.
+function _weekRange(){const now=new Date();const start=new Date(now);start.setHours(0,0,0,0);start.setDate(start.getDate()-start.getDay());const end=new Date(start);end.setDate(end.getDate()+7);return {start,end};}
+// Pull upcoming bookings from Square (next 14 days). Falls back to demo data on any issue.
+async function _loadSquareAppts(force){
+  if(_sqApptsState==='loading')return;
+  let hasKey='';try{hasKey=sessionStorage.getItem('sc_sqkey')||'';}catch(e){}
+  if(!hasKey){_sqApptsState='off';return;}                 // not connected yet — keep sample data
+  if(!force&&(_sqApptsState==='ok'||_sqApptsState==='error'))return; // already attempted
+  _sqApptsState='loading';
+  try{
+    const data=await _sqFetch('/api/square/appointments?days=14');
+    const pal=[['var(--accent-tint)','var(--accent)'],['#0d1e33','#5ba3e8'],['#0a2019','#4ec49a'],['#1e1633','#a891ec']];
+    const esc=s=>String(s||'').replace(/</g,'&lt;').replace(/>/g,'&gt;');
+    squareAppts=(data.appointments||[]).map((a,i)=>{const d=a.startAt?new Date(a.startAt):null;return {id:a.id,at:d,client:esc(a.customerName)||'Client',tx:'Appointment',dur:a.durationMinutes||60,col:pal[i%pal.length][0],ic:pal[i%pal.length][1]};}).filter(a=>a.at&&!isNaN(a.at));
+    _sqApptsState='ok';
+  }catch(e){_sqApptsState='error';squareAppts=null;}
+  // Refresh the visible screen if it shows appointments (without touching nav history).
+  try{if(_navCur&&_navCur.screen==='home')renderHome();else if(_navCur&&_navCur.screen==='calendar')renderCalendar();}catch(e){}
+}
+function _apptsLive(){return _sqApptsState==='ok'&&Array.isArray(squareAppts);}
+function _apptsThisWeek(){
+  if(Array.isArray(squareAppts)){const {start,end}=_weekRange();return squareAppts.filter(a=>a.at>=start&&a.at<end);}
+  return _apptsData.filter(a=>a.day>=22&&a.day<=28);
+}
+function _apptsToday(){
+  if(_apptsLive()){const t=new Date();return squareAppts.filter(a=>a.at.getFullYear()===t.getFullYear()&&a.at.getMonth()===t.getMonth()&&a.at.getDate()===t.getDate());}
+  return _apptsData.filter(a=>a.day===26);
+}
+function _apptsRemainingToday(){if(_apptsLive()){const now=new Date();return _apptsToday().filter(a=>a.at>now).length;}return null;}
+function _docsNeedRenewal(){const soon=new Date(Date.now()+120*86400000);return (typeof docs!=='undefined'?docs:[]).filter(d=>{if(!d.expires)return false;const e=new Date(d.expires);return !isNaN(e)&&e<=soon;}).length;}
+function renderCalendar(){
+  setNav('home');
+  document.getElementById('tt').textContent='Calendar';
+  _loadSquareAppts();
+  const live=_apptsLive();
+  const days=['Sun','Mon','Tue','Wed','Thu','Fri','Sat'];
+  const today=26;
+  const appts=_apptsData;
   const weekDates=[22,23,24,25,26,27,28];
   const todayAppts=appts.filter(a=>a.day===today);
   const pend=pendingRequests();
-  S.innerHTML=`
-  <div style="padding:10px 16px 0;display:flex;align-items:center;justify-content:space-between;">
-    <button class="back" onclick="nav('home')"><i class="ti ti-arrow-left"></i> Home</button>
-    <button onclick="openQuickAdd()" style="background:var(--accent);color:var(--accent-ink);border:none;border-radius:8px;padding:7px 12px;font-size:12px;font-weight:500;cursor:pointer;"><i class="ti ti-plus" style="font-size:12px;"></i> New appointment</button>
+  const _grp={};if(live)squareAppts.forEach(a=>{const k=a.at.toDateString();(_grp[k]=_grp[k]||[]).push(a);});
+  const _gk=Object.keys(_grp).sort((x,y)=>new Date(x)-new Date(y));
+  const liveMiddle=`
+  <div style="padding:10px 16px 4px;display:flex;align-items:center;gap:8px;">
+    <span style="font-size:16px;font-weight:500;color:#f0f0f0;">Upcoming</span>
+    <span style="display:inline-flex;align-items:center;gap:4px;font-size:10px;font-weight:700;color:#4ec49a;background:#0a2019;border:1px solid #1a4a38;padding:2px 8px;border-radius:20px;letter-spacing:.04em;"><span style="width:6px;height:6px;border-radius:50%;background:#4ec49a;"></span>LIVE FROM SQUARE</span>
+    <button onclick="_loadSquareAppts(true)" aria-label="Refresh appointments" style="margin-left:auto;background:none;border:none;color:var(--accent);font-size:12px;font-weight:600;cursor:pointer;font-family:inherit;"><i class="ti ti-refresh" style="font-size:12px;"></i> Refresh</button>
   </div>
-  ${pend.length?`
-  <div onclick="nav('requests')" style="margin:10px 16px 2px;background:linear-gradient(135deg,#0a2019,#0d2a20);border:1px solid #1a4a38;border-radius:12px;padding:12px 14px;display:flex;align-items:center;gap:11px;cursor:pointer;">
-    <div style="width:38px;height:38px;border-radius:10px;background:#0f3528;display:flex;align-items:center;justify-content:center;flex-shrink:0;position:relative;">
-      <i class="ti ti-calendar-plus" style="font-size:19px;color:#4ec49a;"></i>
-      <span style="position:absolute;top:-4px;right:-4px;min-width:18px;height:18px;padding:0 4px;background:#e87070;border-radius:9px;font-size:10px;font-weight:700;color:#fff;display:flex;align-items:center;justify-content:center;border:2px solid #0a2019;">${pend.length}</span>
-    </div>
-    <div style="flex:1;"><div style="font-size:13px;font-weight:600;color:#e8fff5;">${pend.length} booking request${pend.length>1?'s':''} waiting</div><div style="font-size:12px;color:#7fbfa5;margin-top:1px;">Tap to review and confirm</div></div>
-    <i class="ti ti-chevron-right" style="font-size:18px;color:#4ec49a;"></i>
-  </div>`:''}
+  ${_gk.length?`<div style="font-size:12px;color:#999;padding:0 16px 6px;">${squareAppts.length} appointment${squareAppts.length===1?'':'s'} · next 14 days</div>`+_gk.map(k=>{const d=new Date(k);const lbl=d.toLocaleDateString('en-US',{weekday:'long',month:'short',day:'numeric'});return `
+    <div style="padding:8px 16px 4px;font-size:13px;font-weight:600;color:#cfcfcf;">${lbl}<span style="color:#777;font-weight:400;"> · ${_grp[k].length}</span></div>
+    ${_grp[k].map(a=>`<div style="margin:0 16px 8px;background:#1a1a1a;border:1px solid #2a2a2a;border-radius:12px;overflow:hidden;display:flex;"><div style="width:4px;background:${a.ic};flex-shrink:0;"></div><div style="padding:11px 13px;flex:1;display:flex;justify-content:space-between;align-items:flex-start;"><div><div style="font-size:13px;font-weight:500;color:#e0e0e0;">${a.client}</div><div style="font-size:12px;color:#999;margin-top:2px;">${a.dur} min</div></div><div style="font-size:13px;font-weight:500;color:#f0f0f0;">${a.at.toLocaleTimeString('en-US',{hour:'numeric',minute:'2-digit'})}</div></div></div>`).join('')}
+  `;}).join(''):`<div style="margin:14px 16px;text-align:center;color:#999;font-size:13px;padding:26px 16px;background:#161616;border:1px solid #242424;border-radius:12px;">No upcoming appointments in the next 14 days.<div style="font-size:12px;color:#666;margin-top:6px;">New Square bookings will appear here automatically.</div></div>`}`;
+  const demoMiddle=`
   <div style="padding:10px 16px 4px;font-size:16px;font-weight:500;color:#f0f0f0;">June 2026</div>
   <div style="display:grid;grid-template-columns:repeat(7,1fr);gap:2px;padding:0 16px;margin-bottom:10px;">
     ${days.map(d=>`<div style="text-align:center;font-size:12px;color:#999;padding:4px 0;">${d}</div>`).join('')}
@@ -6528,7 +6979,21 @@ function renderCalendar(){
       <i aria-hidden="true" class="ti ti-plus" style="font-size:20px;color:#888;"></i>
       <span style="font-size:14px;color:#aaa;">Add appointment on Jun 26</span>
     </div>
+  </div>`;
+  S.innerHTML=`
+  <div style="padding:10px 16px 0;display:flex;align-items:center;justify-content:flex-end;">
+    <button onclick="openQuickAdd()" style="background:var(--accent);color:var(--accent-ink);border:none;border-radius:8px;padding:7px 12px;font-size:12px;font-weight:500;cursor:pointer;"><i class="ti ti-plus" style="font-size:12px;"></i> New appointment</button>
   </div>
+  ${pend.length?`
+  <div onclick="nav('requests')" style="margin:10px 16px 2px;background:linear-gradient(135deg,#0a2019,#0d2a20);border:1px solid #1a4a38;border-radius:12px;padding:12px 14px;display:flex;align-items:center;gap:11px;cursor:pointer;">
+    <div style="width:38px;height:38px;border-radius:10px;background:#0f3528;display:flex;align-items:center;justify-content:center;flex-shrink:0;position:relative;">
+      <i class="ti ti-calendar-plus" style="font-size:19px;color:#4ec49a;"></i>
+      <span style="position:absolute;top:-4px;right:-4px;min-width:18px;height:18px;padding:0 4px;background:#e87070;border-radius:9px;font-size:10px;font-weight:700;color:#fff;display:flex;align-items:center;justify-content:center;border:2px solid #0a2019;">${pend.length}</span>
+    </div>
+    <div style="flex:1;"><div style="font-size:13px;font-weight:600;color:#e8fff5;">${pend.length} booking request${pend.length>1?'s':''} waiting</div><div style="font-size:12px;color:#7fbfa5;margin-top:1px;">Tap to review and confirm</div></div>
+    <i class="ti ti-chevron-right" style="font-size:18px;color:#4ec49a;"></i>
+  </div>`:''}
+  ${live?liveMiddle:demoMiddle}
   ${confirmedAppts.length?`
   <div style="border-top:1px solid #1e1e1e;padding:12px 16px 6px;"><div style="font-size:13px;font-weight:500;color:#f0f0f0;display:flex;align-items:center;gap:6px;"><i class="ti ti-calendar-plus" style="font-size:14px;color:#4ec49a;"></i> Newly booked from requests</div></div>
   ${confirmedAppts.map(a=>`
@@ -6542,7 +7007,14 @@ function renderCalendar(){
 }
 
 // Quick-add appointment modal
+let _sqBookOpts=null;
+// "New appointment" → book in Square when connected, otherwise the local sheet.
 function openQuickAdd(){
+  let hasKey='';try{hasKey=sessionStorage.getItem('sc_sqkey')||'';}catch(e){}
+  if(hasKey){openSquareBook();return;}
+  openLocalQuickAdd();
+}
+function openLocalQuickAdd(){
   const existing=document.getElementById('qa-modal');if(existing)existing.remove();
   const times=['9:00 AM','10:00 AM','11:00 AM','12:00 PM','1:00 PM','2:00 PM','3:00 PM','4:00 PM'];
   const txs=['Hydrafacial','Chemical Peel','Brightening Facial','Microneedling','Dermaplaning','LED Therapy','Consultation'];
@@ -6575,6 +7047,67 @@ function saveQuickAdd(){
   confirmedAppts.unshift({client:name,tx,date,dateLabel:lbl,time,ic:'var(--accent)'});
   const m=document.getElementById('qa-modal');if(m)m.remove();
   renderCalendar();
+}
+// Create a REAL appointment in Square. Loads the seller's live services + team
+// members, then books via /api/square/book. Falls back to a local appointment.
+function openSquareBook(prefill){
+  prefill=prefill||{};
+  const existing=document.getElementById('qa-modal');if(existing)existing.remove();
+  const m=document.createElement('div');m.id='qa-modal';
+  m.style.cssText='position:absolute;inset:0;z-index:300;display:flex;flex-direction:column;justify-content:center;padding:24px 16px;box-sizing:border-box;';
+  m.innerHTML=`<div onclick="document.getElementById('qa-modal').remove()" style="position:absolute;inset:0;background:rgba(0,0,0,.5);"></div>
+  <div style="position:relative;background:#161616;border-radius:16px;padding:20px 16px 22px;border:1px solid #2a2a2a;max-height:88%;overflow:auto;">
+    <div style="display:flex;align-items:center;gap:8px;margin-bottom:14px;"><div style="font-size:16px;font-weight:600;color:#f0f0f0;">Book in Square</div><span style="display:inline-flex;align-items:center;gap:4px;font-size:10px;font-weight:700;color:#4ec49a;background:#0a2019;border:1px solid #1a4a38;padding:2px 8px;border-radius:20px;"><span style="width:6px;height:6px;border-radius:50%;background:#4ec49a;"></span>LIVE</span></div>
+    <div id="sqbook-body" style="text-align:center;color:#888;font-size:13px;padding:20px;">Loading your Square services…</div>
+  </div>`;
+  document.querySelector('.shell').appendChild(m);
+  _sqFetch('/api/square/booking-options').then(opts=>{
+    _sqBookOpts=opts;const body=document.getElementById('sqbook-body');if(!body)return;
+    if(!opts.services||!opts.services.length){
+      body.style.textAlign='left';body.style.padding='0';
+      body.innerHTML=`<div style="color:#e0e0e0;font-size:13px;line-height:1.5;margin-bottom:14px;">No bookable services found in your Square Appointments. Add services in Square (and mark them bookable), or add this appointment locally for now.</div><button class="btng" style="width:100%;" onclick="openLocalQuickAdd()">Add appointment locally</button>`;return;
+    }
+    const tms=opts.teamMembers||[];
+    const svcOpts=opts.services.map((s,i)=>`<option value="${i}">${s.name}${s.durationMinutes?(' · '+s.durationMinutes+' min'):''}${s.price!=null?(' · $'+s.price):''}</option>`).join('');
+    const today=new Date().toISOString().slice(0,10);
+    body.style.textAlign='left';body.style.padding='0';
+    body.innerHTML=`
+      <span class="fl-lbl">Client name</span><input class="fi" id="sqb-name" placeholder="Client name" value="${(prefill.client||'').replace(/"/g,'&quot;')}" style="margin-bottom:10px;">
+      <span class="fl-lbl">Client email <span style="color:#666;font-weight:400;">(optional — matches or creates them in Square)</span></span><input class="fi" id="sqb-email" type="email" placeholder="name@email.com" value="${(prefill.email||'').replace(/"/g,'&quot;')}" style="margin-bottom:10px;">
+      <span class="fl-lbl">Service</span><select class="fi" id="sqb-svc" style="margin-bottom:10px;">${svcOpts}</select>
+      ${tms.length>1?`<span class="fl-lbl">With</span><select class="fi" id="sqb-tm" style="margin-bottom:10px;">${tms.map(t=>`<option value="${t.id}">${t.name}</option>`).join('')}</select>`:''}
+      <div style="display:flex;gap:10px;margin-bottom:14px;">
+        <div style="flex:1;"><span class="fl-lbl">Date</span><input type="date" class="fi" id="sqb-date" value="${prefill.date||today}" style="color-scheme:dark;"></div>
+        <div style="flex:1;"><span class="fl-lbl">Time</span><input type="time" class="fi" id="sqb-time" value="${prefill.time||'10:00'}" style="color-scheme:dark;"></div>
+      </div>
+      <div id="sqb-err" style="display:none;color:#e87070;font-size:12px;margin-bottom:10px;line-height:1.5;"></div>
+      <button class="btnp" id="sqb-go" style="border-radius:10px;" onclick="_sqDoBook()"><i class="ti ti-calendar-plus"></i> Book in Square</button>
+      <button onclick="openLocalQuickAdd()" style="width:100%;margin-top:9px;background:none;border:none;font-size:13px;color:#888;cursor:pointer;font-family:inherit;">Add locally instead</button>`;
+  }).catch(e=>{
+    const body=document.getElementById('sqbook-body');if(body){body.style.textAlign='left';body.style.padding='0';body.innerHTML=`<div style="color:#e87070;font-size:13px;margin-bottom:14px;line-height:1.5;">${e.message||'Could not load Square services.'}</div><button class="btng" style="width:100%;" onclick="openLocalQuickAdd()">Add appointment locally</button>`;}
+  });
+}
+function _sqDoBook(){
+  const val=id=>{const el=document.getElementById(id);return el?el.value:'';};
+  const name=(val('sqb-name')||'').trim(),email=(val('sqb-email')||'').trim();
+  const svc=_sqBookOpts&&_sqBookOpts.services[parseInt(val('sqb-svc')||'0',10)];
+  const date=val('sqb-date'),time=val('sqb-time');
+  const tmEl=document.getElementById('sqb-tm');const tms=(_sqBookOpts&&_sqBookOpts.teamMembers)||[];
+  const teamMemberId=tmEl?tmEl.value:((svc&&svc.teamMemberIds&&svc.teamMemberIds[0])||(tms[0]&&tms[0].id)||'');
+  const err=document.getElementById('sqb-err');const showErr=msg=>{if(err){err.style.display='block';err.textContent=msg;}};
+  if(err)err.style.display='none';
+  if(!name)return showErr('Enter a client name.');
+  if(!svc)return showErr('Pick a service.');
+  if(!teamMemberId)return showErr('No bookable team member found in Square — add one in Square Appointments first.');
+  if(!date||!time)return showErr('Pick a date and time.');
+  let startAt;try{const d=new Date(date+'T'+time+':00');if(isNaN(d))throw 0;startAt=d.toISOString();}catch(e){return showErr('That date or time looks invalid.');}
+  const btn=document.getElementById('sqb-go');if(btn){btn.disabled=true;btn.innerHTML='<i class="ti ti-loader"></i> Booking…';}
+  _sqFetch('/api/square/book',{method:'POST',body:{serviceVariationId:svc.variationId,serviceVariationVersion:svc.variationVersion,durationMinutes:svc.durationMinutes,startAt:startAt,teamMemberId:teamMemberId,customerName:name,customerEmail:email}}).then(()=>{
+    const m=document.getElementById('qa-modal');if(m)m.remove();
+    if(typeof proToast==='function')proToast('Booked in Square ✓');
+    _loadSquareAppts(true);
+    if(_navCur&&_navCur.screen==='calendar')renderCalendar();
+  }).catch(e=>{if(btn){btn.disabled=false;btn.innerHTML='<i class="ti ti-calendar-plus"></i> Book in Square';}showErr(e.message||'Could not create the booking in Square.');});
 }
 
 // ── NEW CLIENT ──
@@ -6664,7 +7197,7 @@ function renderNCStep(){
   const isLast=newClientStep===steps.length-1;
   const lastLabel={device:'<i class="ti ti-device-tablet"></i> Add & sign now',link:'<i class="ti ti-link"></i> Add & get link',app:'<i class="ti ti-check"></i> Add & send consent',none:'<i class="ti ti-check"></i> Add client'}[_ncDeliver];
   S.innerHTML=`
-  <div style="padding:12px 16px 0;"><button class="back" onclick="${newClientStep===0?"nav('clients')":'ncBack()'}"><i class="ti ti-arrow-left"></i> ${newClientStep===0?'Clients':'Back'}</button></div>
+  
   <div style="padding:12px 16px 0;">
     ${body}
     <button class="btnp" style="border-radius:8px;margin:8px 0 20px;" onclick="${isLast?'finishNewClient()':'ncNext()'}">${isLast?lastLabel:'<i class="ti ti-arrow-right"></i> Next: '+steps[newClientStep+1]}</button>
@@ -6701,7 +7234,7 @@ function finishNewClient(){
 function renderPasswordSecurity(){
   document.getElementById('tt').textContent='Password & security';
   S.innerHTML=`
-  <div style="padding:12px 16px 0;"><button class="back" onclick="nav('account')"><i class="ti ti-arrow-left"></i> Account</button></div>
+  
   <div style="padding:14px 16px 0;">
     <div class="sh" style="padding:0 0 7px;"><h2>Change password</h2></div>
     <div style="background:#1a1a1a;border:1px solid #2a2a2a;border-radius:12px;padding:14px;margin-bottom:16px;">
@@ -6809,8 +7342,7 @@ function renderStaffDetail(id){
   const days=['Mon','Tue','Wed','Thu','Fri','Sat','Sun'];
   const dayKeys=['mon','tue','wed','thu','fri','sat','sun'];
   S.innerHTML=`
-  <div style="padding:12px 16px 0;display:flex;align-items:center;justify-content:space-between;">
-    <button class="back" onclick="nav('studio')"><i class="ti ti-arrow-left"></i> Studio</button>
+  <div style="padding:12px 16px 0;display:flex;align-items:center;justify-content:flex-end;">
     ${s.role!=='Owner'?`<button onclick="confirmModal({title:'Remove staff member',body:'Remove ${s.name} from the studio? Their client records will be archived.',action:'Remove'},'()=>{}')" style="border:none;background:none;color:#e87070;font-size:13px;cursor:pointer;"><i class="ti ti-user-minus" style="font-size:13px;"></i></button>`:''}
   </div>
 
@@ -6868,7 +7400,7 @@ function renderInviteStaff(){
   document.getElementById('tt').textContent='Invite staff';
   const roles=['Esthetician','Nail Technician','Lash Technician','Massage Therapist','Barber','Hair Stylist','Front Desk','Manager'];
   S.innerHTML=`
-  <div style="padding:12px 16px 0;"><button class="back" onclick="nav('studio')"><i class="ti ti-arrow-left"></i> Studio</button></div>
+  
   <div style="padding:12px 16px 6px;">
     <div style="font-size:18px;font-weight:600;color:#f0f0f0;margin-bottom:4px;">Invite a team member</div>
     <div style="font-size:13px;color:#666;line-height:1.6;">They'll receive an email to create their account and join ${workspace.name}.</div>
@@ -6949,7 +7481,7 @@ function renderRevenue(){
     {name:'Sophie Turner',service:'Brightening Facial',date:'Jun 15',amount:'$120',tip:'$18'},
   ];
   S.innerHTML=`
-  <div style="padding:12px 16px 0;"><button class="back" onclick="nav('pro')"><i class="ti ti-arrow-left"></i> Pro</button></div>
+  
 
   <!-- Month selector pills -->
   <div class="pill-row" style="margin:10px 0 0;">
@@ -7029,7 +7561,7 @@ function renderRevenue(){
 function renderSubscriptionBilling(){
   document.getElementById('tt').textContent='Subscription & billing';
   S.innerHTML=`
-  <div style="padding:12px 16px 0;"><button class="back" onclick="nav('account')"><i class="ti ti-arrow-left"></i> Account</button></div>
+  
   <div style="margin:12px 16px;background:linear-gradient(135deg,var(--accent-tint),var(--accent-ink));border:1px solid var(--accent-a44);border-radius:14px;padding:18px;">
     <div style="display:flex;align-items:center;justify-content:space-between;margin-bottom:12px;">
       <div>
@@ -7076,8 +7608,7 @@ function renderAddPartner(){
   const icons=[['ti-salad','#0a2019','#4ec49a'],['ti-run','#2a1a00','var(--accent)'],['ti-needle','#1e1633','#a891ec'],['ti-heart','#2a0f0f','#e87070'],['ti-leaf','#0a1f0a','#4ec49a'],['ti-stethoscope','#0d1e33','#5ba3e8'],['ti-yoga','var(--accent-tint)','var(--accent)'],['ti-flask','#1e1633','#a891ec']];
   let selIcon=0;
   S.innerHTML=`
-  <div style="padding:12px 16px 0;display:flex;align-items:center;justify-content:space-between;">
-    <button class="back" onclick="nav('partners')"><i class="ti ti-arrow-left"></i> Partners</button>
+  <div style="padding:12px 16px 0;display:flex;align-items:center;justify-content:flex-end;">
     <button onclick="savePartner()" style="background:var(--accent);color:var(--accent-ink);border:none;border-radius:8px;padding:6px 14px;font-size:12px;font-weight:500;cursor:pointer;">Save</button>
   </div>
   <div style="padding:14px 16px 0;">
@@ -7114,8 +7645,7 @@ function renderEditPartner(i){
   const p=partners[i];
   document.getElementById('tt').textContent='Edit partner';
   S.innerHTML=`
-  <div style="padding:12px 16px 0;display:flex;align-items:center;justify-content:space-between;">
-    <button class="back" onclick="nav('partner-detail',${i})"><i class="ti ti-arrow-left"></i> ${p.name.split(',')[0]}</button>
+  <div style="padding:12px 16px 0;display:flex;align-items:center;justify-content:flex-end;">
     <button onclick="saveEditPartner(${i})" style="background:var(--accent);color:var(--accent-ink);border:none;border-radius:8px;padding:6px 14px;font-size:12px;font-weight:500;cursor:pointer;">Save</button>
   </div>
   <div style="padding:14px 16px 0;">
@@ -7181,8 +7711,7 @@ function renderAutoForm(a,idx){
   const existingTime=a&&a.specificTime?a.specificTime:'09:00';
   const existingRepeat=a&&a.repeatEvery?a.repeatEvery:'once';
   S.innerHTML=`
-  <div style="padding:12px 16px 0;display:flex;align-items:center;justify-content:space-between;">
-    <button class="back" onclick="nav('messages')"><i class="ti ti-arrow-left"></i> Automations</button>
+  <div style="padding:12px 16px 0;display:flex;align-items:center;justify-content:flex-end;">
     <button onclick="saveAuto(${idx})" style="background:var(--accent);color:var(--accent-ink);border:none;border-radius:8px;padding:6px 14px;font-size:12px;font-weight:500;cursor:pointer;">Save</button>
   </div>
   <div style="padding:14px 16px 0;">
@@ -7226,7 +7755,7 @@ function renderAutoForm(a,idx){
     </div>
 
     <span class="fl-lbl">Message</span>
-    <textarea class="fi" id="auto-msg" aria-label="Message body" style="height:110px;resize:none;line-height:1.6;margin-bottom:10px;" placeholder="Hi {client_name}! ✨">${a?`Hi {client_name}! Just checking in after your recent ${a.name.toLowerCase().includes('birthday')?'birthday 🎂':'appointment ✨'}. How is your skin feeling? Let me know if you have any questions!\n\n— Jessica`:'Hi {client_name}! '}</textarea>
+    <textarea class="fi" id="auto-msg" aria-label="Message body" style="height:110px;resize:none;line-height:1.6;margin-bottom:10px;" placeholder="Hi {client_name}! ✨">${a?`Hi {client_name}! Just checking in after your recent ${a.name.toLowerCase().includes('birthday')?'birthday 🎂':'appointment ✨'}. How is your skin feeling? Let me know if you have any questions!\n\n— ${_providerFirstName()}`:'Hi {client_name}! '}</textarea>
     <div style="background:#1a1a1a;border:1px solid #2a2a2a;border-radius:8px;padding:8px 12px;margin-bottom:14px;">
       <div style="font-size:11px;color:#999;margin-bottom:5px;">Available variables</div>
       <div style="display:flex;flex-wrap:wrap;gap:5px;">${['{client_name}','{appointment_date}','{treatment_name}','{business_name}'].map(v=>`<span onclick="const ta=document.getElementById('auto-msg');ta.value+=v;" style="font-size:11px;background:#222;color:var(--accent);padding:3px 8px;border-radius:5px;cursor:pointer;">${v}</span>`).join('')}</div>
@@ -7265,8 +7794,7 @@ function renderAddAffiliate(ei){
   document.getElementById('tt').textContent=editing?'Edit product':'Add product';
   const commissions=['—','5%','8%','10%','12%','15%','20%'];
   S.innerHTML=`
-  <div style="padding:12px 16px 0;display:flex;align-items:center;justify-content:space-between;">
-    <button class="back" onclick="nav('shop')"><i class="ti ti-arrow-left"></i> Shop</button>
+  <div style="padding:12px 16px 0;display:flex;align-items:center;justify-content:flex-end;">
     <button onclick="saveAffiliate(${editing?ei:'undefined'})" style="background:var(--accent);color:var(--accent-ink);border:none;border-radius:8px;padding:6px 14px;font-size:12px;font-weight:500;cursor:pointer;">Save</button>
   </div>
   <div style="padding:14px 16px 0;">
@@ -7317,8 +7845,7 @@ function renderAmazonStore(){
   setNav('more');
   document.getElementById('tt').textContent='Amazon store';
   S.innerHTML=`
-  <div style="padding:12px 16px 0;display:flex;align-items:center;justify-content:space-between;">
-    <button class="back" onclick="nav('shop')"><i class="ti ti-arrow-left"></i> Shop</button>
+  <div style="padding:12px 16px 0;display:flex;align-items:center;justify-content:flex-end;">
     <button onclick="saveAmazonStore()" style="background:var(--accent);color:var(--accent-ink);border:none;border-radius:8px;padding:6px 14px;font-size:12px;font-weight:500;cursor:pointer;">Save</button>
   </div>
   <div style="padding:14px 16px 0;">
@@ -7341,8 +7868,7 @@ function renderAddBundle(){
   setNav('more');
   document.getElementById('tt').textContent='New bundle';
   S.innerHTML=`
-  <div style="padding:12px 16px 0;display:flex;align-items:center;justify-content:space-between;">
-    <button class="back" onclick="nav('shop')"><i class="ti ti-arrow-left"></i> Shop</button>
+  <div style="padding:12px 16px 0;display:flex;align-items:center;justify-content:flex-end;">
     <button onclick="saveBundle()" style="background:var(--accent);color:var(--accent-ink);border:none;border-radius:8px;padding:6px 14px;font-size:12px;font-weight:500;cursor:pointer;">Save</button>
   </div>
   <div style="padding:14px 16px 0;">
@@ -7378,8 +7904,7 @@ function renderAddResource(){
   _newResType={icon:'📄',cat:'Aftercare'};
   const types=[['📄','Aftercare','#0d1e33','#5ba3e8','Aftercare'],['🎥','Video','#0a2019','#4ec49a','Video'],['📋','Prep','var(--accent-tint)','var(--accent)','Prep'],['🌿','Education','#1e1633','#a891ec','Education']];
   S.innerHTML=`
-  <div style="padding:12px 16px 0;display:flex;align-items:center;justify-content:space-between;">
-    <button class="back" onclick="nav('learn')"><i class="ti ti-arrow-left"></i> Learn</button>
+  <div style="padding:12px 16px 0;display:flex;align-items:center;justify-content:flex-end;">
     <button onclick="saveResource()" style="background:var(--accent);color:var(--accent-ink);border:none;border-radius:8px;padding:6px 14px;font-size:12px;font-weight:600;cursor:pointer;">Save</button>
   </div>
   <div style="padding:14px 16px 0;">
@@ -7403,8 +7928,7 @@ function renderEditResource(id){
   _newResType={icon:g.icon||'📄',cat:g.cat||'Aftercare'};
   const types=[['📄','Aftercare','#0d1e33','#5ba3e8','Aftercare'],['🎥','Video','#0a2019','#4ec49a','Video'],['📋','Prep','var(--accent-tint)','var(--accent)','Prep'],['🌿','Education','#1e1633','#a891ec','Education']];
   S.innerHTML=`
-  <div style="padding:12px 16px 0;display:flex;align-items:center;justify-content:space-between;">
-    <button class="back" onclick="nav('learn')"><i class="ti ti-arrow-left"></i> Learn</button>
+  <div style="padding:12px 16px 0;display:flex;align-items:center;justify-content:flex-end;">
     <button onclick="saveEditResource('${id}')" style="background:var(--accent);color:var(--accent-ink);border:none;border-radius:8px;padding:6px 14px;font-size:12px;font-weight:600;cursor:pointer;">Save</button>
   </div>
   <div style="padding:14px 16px 0;">
@@ -7536,8 +8060,7 @@ function renderAddVendor(){
   document.getElementById('tt').textContent='Add vendor';
   const cats=['Skincare','SPF','Clinical','Supplies','Equipment','Other'];
   S.innerHTML=`
-  <div style="padding:12px 16px 0;display:flex;align-items:center;justify-content:space-between;">
-    <button class="back" onclick="nav('vendors')"><i class="ti ti-arrow-left"></i> Vendors</button>
+  <div style="padding:12px 16px 0;display:flex;align-items:center;justify-content:flex-end;">
     <button onclick="saveVendor()" style="background:var(--accent);color:var(--accent-ink);border:none;border-radius:8px;padding:6px 14px;font-size:12px;font-weight:500;cursor:pointer;">Save</button>
   </div>
   <div style="padding:14px 16px 0;">
