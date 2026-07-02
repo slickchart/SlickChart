@@ -6876,12 +6876,53 @@ function renderReports(){
   <div style="padding:2px 16px 6px;font-size:11px;color:#777;line-height:1.5;">Sales tax is listed separately \u2014 it\u2019s a liability you collect for your state, not revenue. SlickChart tracks income, not expenses, so pair this with your expense records for a full P&amp;L.</div>
   <div class="sh"><h2>Export for your CPA / bookkeeper</h2></div>
   <div style="padding:0 16px 24px;display:flex;flex-direction:column;gap:8px;">
-    ${_reportExportBtn('ti-file-text','Income summary','_reportExportSummary()')}
+    ${_reportExportBtn('ti-file-invoice','Income statement + ledger (PDF / print)','_reportPDF()')}
+    ${_reportExportBtn('ti-file-text','Income summary (CSV)','_reportExportSummary()')}
     ${_reportExportBtn('ti-receipt-2','Sales tax report','_reportExportTax()')}
     ${_reportExportBtn('ti-wallet','Payment reconciliation','_reportExportMethods()')}
     ${_reportExportBtn('ti-list-details','Transaction detail (line-by-line)','_reportExportDetail()')}
   </div>`;
 }
+
+// ── Formatted P&L / transaction statement (print → Save as PDF) ──
+function _reportDocHTML(r,d){
+  const esc=x=>String(x==null?'':x).replace(/[&<>]/g,m=>({'&':'&amp;','<':'&lt;','>':'&gt;'}[m]));
+  const M=n=>'$'+(Math.round((n||0)*100)/100).toLocaleString('en-US',{minimumFractionDigits:2,maximumFractionDigits:2});
+  const addr=[bizInfo.address,[bizInfo.city,bizInfo.state].filter(Boolean).join(', '),bizInfo.zip].filter(Boolean).join(', ');
+  const inRange=p=>{const dd=(p.date||'').slice(0,10);return dd>=r.from&&dd<=r.to;};
+  const txns=(_payments||[]).filter(inRange).slice().sort((a,b)=>String(a.date).localeCompare(String(b.date)));
+  const txRows=txns.map(p=>{const total=parseFloat(p.amount)||0;const tax=parseFloat(p.taxAmount)||0;let cat='';if(p.items&&p.items.length){cat=[...new Set(p.items.map(it=>it.kind==='product'?'Retail':(it.kind==='service'?'Service':'Other')))].join('+');}else cat=p.category||'';return '<tr><td>'+esc(p.date||'')+'</td><td>'+esc(p.clientName||'')+'</td><td>'+esc(p.note||'')+'</td><td>'+esc(cat)+'</td><td class="r">'+M(total-tax)+'</td><td class="r">'+M(tax)+'</td><td class="r">'+M(total)+'</td><td>'+esc(p.method||'')+'</td><td>'+esc(p.status||'')+'</td></tr>';}).join('');
+  const methods=Object.entries(d.byMethod).sort((a,b)=>b[1]-a[1]).map(function(e){return '<tr><td>'+esc(e[0])+'</td><td class="r">'+M(e[1])+'</td></tr>';}).join('');
+  return '<!doctype html><html><head><meta charset="utf-8"><title>Income Statement '+esc(d.from)+'</title><style>'
+    +'*{box-sizing:border-box;}body{font-family:-apple-system,Segoe UI,Helvetica,Arial,sans-serif;color:#111;margin:0;padding:30px 34px;font-size:12px;line-height:1.5;}'
+    +'h1{font-size:20px;margin:0 0 2px;}h2{font-size:12px;margin:22px 0 6px;text-transform:uppercase;letter-spacing:.05em;color:#444;border-bottom:1px solid #ccc;padding-bottom:4px;}'
+    +'.biz{font-size:12px;color:#333;}.muted{color:#666;}.meta{color:#555;font-size:11px;}'
+    +'table{width:100%;border-collapse:collapse;margin-top:2px;}td,th{padding:5px 6px;text-align:left;}.r{text-align:right;white-space:nowrap;}'
+    +'.sum td{border-bottom:1px solid #eee;}.sum tr:last-child td{border-bottom:none;}.tot td{border-top:2px solid #333;font-weight:700;}'
+    +'.ledger th{background:#f2f2f2;border-bottom:1px solid #ccc;font-size:11px;}.ledger td{border-bottom:1px solid #eee;font-size:11px;}.ledger tr:nth-child(even) td{background:#fafafa;}'
+    +'.foot{margin-top:22px;font-size:10px;color:#777;line-height:1.5;border-top:1px solid #ddd;padding-top:10px;}@media print{body{padding:0;}@page{margin:15mm;}}'
+    +'</style></head><body>'
+    +'<div style="display:flex;justify-content:space-between;align-items:flex-start;"><div><h1>'+esc(bizInfo.name||'Business')+'</h1><div class="biz">'+esc(bizInfo.ownerName||'')+'</div><div class="muted">'+esc(addr)+'</div><div class="muted">'+esc([bizInfo.phone,bizInfo.email].filter(Boolean).join(' \u00b7 '))+'</div></div>'
+    +'<div style="text-align:right;"><div style="font-size:15px;font-weight:700;">Income Statement</div><div class="meta">'+esc(r.label)+'</div><div class="meta">'+esc(d.from)+' \u2013 '+esc(d.to)+'</div><div class="meta">Generated '+esc(_todayISO())+'</div></div></div>'
+    +'<h2>Revenue (cash basis)</h2><table class="sum"><tr><td>Services</td><td class="r">'+M(d.services)+'</td></tr><tr><td>Retail / products</td><td class="r">'+M(d.retail)+'</td></tr>'+(d.other>0?'<tr><td>Other</td><td class="r">'+M(d.other)+'</td></tr>':'')+'<tr class="tot"><td>Total revenue</td><td class="r">'+M(d.revenue)+'</td></tr></table>'
+    +'<h2>Collections &amp; sales tax</h2><table class="sum"><tr><td>Sales tax collected <span class="muted">(liability, not revenue)</span></td><td class="r">'+M(d.tax)+'</td></tr><tr class="tot"><td>Total collected</td><td class="r">'+M(d.total)+'</td></tr><tr><td>Outstanding (A/R)</td><td class="r">'+M(d.ar)+'</td></tr><tr><td class="muted">Paid transactions</td><td class="r muted">'+d.count+'</td></tr><tr><td class="muted">Average ticket</td><td class="r muted">'+M(d.avg)+'</td></tr></table>'
+    +'<h2>Payment method reconciliation</h2><table class="sum">'+(methods||'<tr><td class="muted">No payments in this period.</td><td></td></tr>')+'</table>'
+    +'<h2>Transaction ledger</h2><table class="ledger"><thead><tr><th>Date</th><th>Client</th><th>Description</th><th>Category</th><th class="r">Subtotal</th><th class="r">Tax</th><th class="r">Total</th><th>Method</th><th>Status</th></tr></thead><tbody>'+(txRows||'<tr><td colspan="9" class="muted">No transactions in this period.</td></tr>')+'</tbody></table>'
+    +'<div class="foot">Prepared by SlickChart \u00b7 cash basis (paid transactions). Sales tax is shown separately as a liability collected on behalf of the taxing authority, not as revenue. SlickChart tracks income only; business expenses are not included \u2014 pair this with your expense records for a complete profit &amp; loss statement.</div>'
+    +'</body></html>';
+}
+function _reportPDF(){
+  const r=_reportRange(_reportKey);const d=_reportData(r.from,r.to);const html=_reportDocHTML(r,d);
+  try{
+    let f=document.getElementById('_pdfframe');if(f)f.remove();
+    f=document.createElement('iframe');f.id='_pdfframe';f.style.cssText='position:fixed;right:0;bottom:0;width:0;height:0;border:0;opacity:0;';
+    document.body.appendChild(f);
+    const doc=f.contentWindow.document;doc.open();doc.write(html);doc.close();
+    setTimeout(function(){try{f.contentWindow.focus();f.contentWindow.print();}catch(e){const w=window.open('','_blank');if(w){w.document.write(html);w.document.close();}}},350);
+  }catch(e){const w=window.open('','_blank');if(w){w.document.write(html);w.document.close();}}
+  if(typeof proToast==='function')proToast('Opening print \u2014 choose \u201cSave as PDF\u201d');
+}
+
 function _reportExportSummary(){const r=_reportRange(_reportKey);const d=_reportData(r.from,r.to);const f=n=>(Math.round((n||0)*100)/100).toFixed(2);const rows=[['SlickChart \u2014 Income Summary'],['Period',r.label],['From',d.from],['To',d.to],['Basis','Cash (paid transactions)'],[''],['Category','Amount'],['Services revenue',f(d.services)],['Retail revenue',f(d.retail)],['Other revenue',f(d.other)],['Total revenue',f(d.revenue)],[''],['Sales tax collected (liability)',f(d.tax)],['Total collected',f(d.total)],[''],['Outstanding (A/R)',f(d.ar)],['Paid transactions',String(d.count)],['Average ticket',f(d.avg)]];_downloadCSV('slickchart-income-summary-'+d.from+'.csv',rows);if(typeof proToast==='function')proToast('Income summary exported');}
 function _reportExportTax(){const r=_reportRange(_reportKey);const d=_reportData(r.from,r.to);const f=n=>(Math.round((n||0)*100)/100).toFixed(2);const rows=[['SlickChart \u2014 Sales Tax Report'],['Period',r.label],['From',d.from],['To',d.to],[''],['Revenue (ex-tax)',f(d.revenue)],['Sales tax collected',f(d.tax)],['Total collected',f(d.total)]];_downloadCSV('slickchart-sales-tax-'+d.from+'.csv',rows);if(typeof proToast==='function')proToast('Sales tax report exported');}
 function _reportExportMethods(){const r=_reportRange(_reportKey);const d=_reportData(r.from,r.to);const f=n=>(Math.round((n||0)*100)/100).toFixed(2);const rows=[['SlickChart \u2014 Payment Reconciliation'],['Period',r.label+' ('+d.from+' to '+d.to+')'],[''],['Method','Amount collected']].concat(Object.entries(d.byMethod).sort((a,b)=>b[1]-a[1]).map(([m,v])=>[m,f(v)])).concat([['Total',f(d.total)]]);_downloadCSV('slickchart-reconciliation-'+d.from+'.csv',rows);if(typeof proToast==='function')proToast('Reconciliation exported');}
