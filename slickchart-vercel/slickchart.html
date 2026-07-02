@@ -2,6 +2,17 @@
 <html lang="en">
 <head>
 <meta charset="UTF-8">
+<meta name="viewport" content="width=device-width, initial-scale=1, viewport-fit=cover">
+<meta name="theme-color" content="#0d0d0d">
+<link rel="manifest" href="/manifest.webmanifest">
+<meta name="apple-mobile-web-app-capable" content="yes">
+<meta name="mobile-web-app-capable" content="yes">
+<meta name="apple-mobile-web-app-status-bar-style" content="black-translucent">
+<meta name="apple-mobile-web-app-title" content="SlickChart">
+<link rel="apple-touch-icon" href="/apple-touch-icon.png">
+<link rel="icon" type="image/png" sizes="192x192" href="/icon-192.png">
+
+<title>SlickChart</title>
 <link rel="stylesheet" href="https://cdn.jsdelivr.net/npm/@tabler/icons-webfont@3.19.0/dist/tabler-icons.min.css">
 <style>
 *{box-sizing:border-box;margin:0;padding:0;}
@@ -681,7 +692,11 @@ const Cloud={
   token:(function(){try{return localStorage.getItem('sc_token')||'';}catch(e){return '';}})(),
   _origSet:null,_queue:{},_timer:null,
   async status(){try{const r=await fetch('/api/cloud-status');const j=await r.json();this.enabled=!!(j&&j.enabled);}catch(e){this.enabled=false;}return this.enabled;},
-  async login(pw){const r=await fetch('/api/login',{method:'POST',headers:{'Content-Type':'application/json'},body:JSON.stringify({password:pw})});let j={};try{j=await r.json();}catch(e){}if(!r.ok)throw new Error((j&&j.error)||'Login failed');this.token=j.token;try{localStorage.setItem('sc_token',this.token);}catch(e){}return true;},
+  async login(email,pw){const r=await fetch('/api/login',{method:'POST',headers:{'Content-Type':'application/json'},body:JSON.stringify({email,password:pw})});let j={};try{j=await r.json();}catch(e){}if(!r.ok)throw new Error((j&&j.error)||'Login failed');this.token=j.token;try{localStorage.setItem('sc_token',this.token);if(j.email)localStorage.setItem('sc_login_email',j.email);}catch(e){}return j;},
+  async signup(email,pw,name){const r=await fetch('/api/signup',{method:'POST',headers:{'Content-Type':'application/json'},body:JSON.stringify({email,password:pw,name})});let j={};try{j=await r.json();}catch(e){}if(!r.ok)throw new Error((j&&j.error)||'Sign up failed');this.token=j.token;try{localStorage.setItem('sc_token',this.token);if(j.email)localStorage.setItem('sc_login_email',j.email);}catch(e){}return j;},
+  async requestReset(email){try{await fetch('/api/request-reset',{method:'POST',headers:{'Content-Type':'application/json'},body:JSON.stringify({email})});}catch(e){}return true;},
+  async resetPw(token,pw){const r=await fetch('/api/reset',{method:'POST',headers:{'Content-Type':'application/json'},body:JSON.stringify({token,password:pw})});let j={};try{j=await r.json();}catch(e){}if(!r.ok)throw new Error((j&&j.error)||'Reset failed');return true;},
+  async verifyEmail(token){try{const r=await fetch('/api/verify?token='+encodeURIComponent(token));return r.ok;}catch(e){return false;}},
   logout(){this.token='';try{localStorage.removeItem('sc_token');}catch(e){}},
   async pull(){if(!this.token)return -1;let r;try{r=await fetch('/api/store',{headers:{'Authorization':'Bearer '+this.token}});}catch(e){return -1;}if(r.status===401){this.logout();return -1;}let j={};try{j=await r.json();}catch(e){}const data=(j&&j.data)||{};const set=this._origSet||localStorage.setItem.bind(localStorage);const keys=Object.keys(data);keys.forEach(k=>{try{set(k,data[k]);}catch(e){}});return keys.length;},
   pushAllLocal(){const items={};try{for(let i=0;i<localStorage.length;i++){const k=localStorage.key(i);if(_syncable(k))items[k]=localStorage.getItem(k);}}catch(e){}if(this.token&&Object.keys(items).length)return fetch('/api/store',{method:'PUT',headers:{'Content-Type':'application/json','Authorization':'Bearer '+this.token},body:JSON.stringify({items})}).catch(()=>{});},
@@ -694,7 +709,7 @@ function _reloadAll(){try{
   if(typeof loadCustomResources==='function')loadCustomResources();
   if(typeof loadAi==='function')loadAi();
   if(typeof loadForms==='function')loadForms();
-  loadBizInfo();_syncProviderAvatar();loadClients();_seedMayaOnce();if(typeof _demoCheckinSeed==='function')_demoCheckinSeed();
+  loadBizInfo();_syncProviderAvatar();loadClients();_seedMayaOnce();_seedBirthdays();if(typeof _demoCheckinSeed==='function')_demoCheckinSeed();
   if(typeof loadWorkspace==='function')loadWorkspace();
   if(typeof loadSquareCatalog==='function'){loadSquareCatalog();_mergeSquareRetail();}
   if(typeof loadCheckinCfg==='function')loadCheckinCfg();
@@ -706,35 +721,122 @@ function _reloadAll(){try{
   if(typeof loadVisionEndpoint==='function')loadVisionEndpoint();
 }catch(e){}}
 async function _cloudInit(){
+  if(_handleAuthParams())return;
   await Cloud.status();
   if(!Cloud.enabled){nav('home');return;}      // local-only mode — behaves exactly as before
   if(!Cloud.token){renderLogin();return;}      // database is on but no session — sign in
   try{const n=await Cloud.pull();if(n===0)await Cloud.pushAllLocal();_reloadAll();}catch(e){}
   nav('home');
 }
+// ── Internationalization (i18n) ──────────────────────────────────────────────
+// Square operates in English, Spanish, French, and Japanese markets. We localize
+// the universal entry & account surfaces here. Clinical content (forms, consents,
+// contraindications, notes) stays in English for now — those need native-speaker
+// review before going live in another language, so the layer is built to accept
+// them in phases without touching this code.
+const I18N={
+  en:{sub_login:'Log in to your practice.',sub_signup:'Create your practice account.',email:'Email',password:'Password',name:'Your name',log_in:'Log in',create_account:'Create account',forgot:'Forgot password?',min8:'At least 8 characters.',new_here:'New here?',have_account:'Already have an account?',create_link:'Create an account',login_link:'Log in',reset_sub:'Reset your password \u2014 we\u2019ll email you a secure link.',send_reset:'Send reset link',back_login:'Back to log in',newpw_sub:'Choose a new password.',new_password:'New password',set_password:'Set new password',check_email:'Check your email',sent_body:'If an account exists for {email}, we\u2019ve sent a password-reset link. It expires in 1 hour.',pw_updated:'Password updated \u2014 log in with your new password.',name_ph:'e.g. Jordan Ellis',language:'Language'},
+  es:{sub_login:'Inicia sesi\u00f3n en tu negocio.',sub_signup:'Crea la cuenta de tu negocio.',email:'Correo electr\u00f3nico',password:'Contrase\u00f1a',name:'Tu nombre',log_in:'Iniciar sesi\u00f3n',create_account:'Crear cuenta',forgot:'\u00bfOlvidaste tu contrase\u00f1a?',min8:'Al menos 8 caracteres.',new_here:'\u00bfNuevo aqu\u00ed?',have_account:'\u00bfYa tienes una cuenta?',create_link:'Crear una cuenta',login_link:'Iniciar sesi\u00f3n',reset_sub:'Restablece tu contrase\u00f1a: te enviaremos un enlace seguro por correo.',send_reset:'Enviar enlace',back_login:'Volver a iniciar sesi\u00f3n',newpw_sub:'Elige una nueva contrase\u00f1a.',new_password:'Nueva contrase\u00f1a',set_password:'Guardar contrase\u00f1a',check_email:'Revisa tu correo',sent_body:'Si existe una cuenta para {email}, te enviamos un enlace para restablecer la contrase\u00f1a. Caduca en 1 hora.',pw_updated:'Contrase\u00f1a actualizada: inicia sesi\u00f3n con tu nueva contrase\u00f1a.',name_ph:'p. ej. Jordan Ellis',language:'Idioma'},
+  fr:{sub_login:'Connectez-vous \u00e0 votre activit\u00e9.',sub_signup:'Cr\u00e9ez le compte de votre activit\u00e9.',email:'E-mail',password:'Mot de passe',name:'Votre nom',log_in:'Se connecter',create_account:'Cr\u00e9er un compte',forgot:'Mot de passe oubli\u00e9\u00a0?',min8:'Au moins 8 caract\u00e8res.',new_here:'Nouveau\u00a0?',have_account:'Vous avez d\u00e9j\u00e0 un compte\u00a0?',create_link:'Cr\u00e9er un compte',login_link:'Se connecter',reset_sub:'R\u00e9initialisez votre mot de passe : nous vous enverrons un lien s\u00e9curis\u00e9 par e-mail.',send_reset:'Envoyer le lien',back_login:'Retour \u00e0 la connexion',newpw_sub:'Choisissez un nouveau mot de passe.',new_password:'Nouveau mot de passe',set_password:'Enregistrer',check_email:'V\u00e9rifiez vos e-mails',sent_body:'Si un compte existe pour {email}, nous avons envoy\u00e9 un lien de r\u00e9initialisation. Il expire dans 1 heure.',pw_updated:'Mot de passe mis \u00e0 jour \u2014 connectez-vous avec votre nouveau mot de passe.',name_ph:'ex. Jordan Ellis',language:'Langue'},
+  ja:{sub_login:'\u3042\u306a\u305f\u306e\u30b5\u30ed\u30f3\u306b\u30ed\u30b0\u30a4\u30f3\u3002',sub_signup:'\u3042\u306a\u305f\u306e\u30b5\u30ed\u30f3\u306e\u30a2\u30ab\u30a6\u30f3\u30c8\u3092\u4f5c\u6210\u3002',email:'\u30e1\u30fc\u30eb\u30a2\u30c9\u30ec\u30b9',password:'\u30d1\u30b9\u30ef\u30fc\u30c9',name:'\u304a\u540d\u524d',log_in:'\u30ed\u30b0\u30a4\u30f3',create_account:'\u30a2\u30ab\u30a6\u30f3\u30c8\u4f5c\u6210',forgot:'\u30d1\u30b9\u30ef\u30fc\u30c9\u3092\u304a\u5fd8\u308c\u3067\u3059\u304b\uff1f',min8:'8\u6587\u5b57\u4ee5\u4e0a\u3002',new_here:'\u306f\u3058\u3081\u3066\u306e\u65b9\u306f',have_account:'\u3059\u3067\u306b\u30a2\u30ab\u30a6\u30f3\u30c8\u3092\u304a\u6301\u3061\u3067\u3059\u304b\uff1f',create_link:'\u30a2\u30ab\u30a6\u30f3\u30c8\u3092\u4f5c\u6210',login_link:'\u30ed\u30b0\u30a4\u30f3',reset_sub:'\u30d1\u30b9\u30ef\u30fc\u30c9\u3092\u518d\u8a2d\u5b9a\u3057\u307e\u3059\u3002\u5b89\u5168\u306a\u30ea\u30f3\u30af\u3092\u30e1\u30fc\u30eb\u3067\u304a\u9001\u308a\u3057\u307e\u3059\u3002',send_reset:'\u30ea\u30f3\u30af\u3092\u9001\u4fe1',back_login:'\u30ed\u30b0\u30a4\u30f3\u306b\u623b\u308b',newpw_sub:'\u65b0\u3057\u3044\u30d1\u30b9\u30ef\u30fc\u30c9\u3092\u5165\u529b\u3057\u3066\u304f\u3060\u3055\u3044\u3002',new_password:'\u65b0\u3057\u3044\u30d1\u30b9\u30ef\u30fc\u30c9',set_password:'\u30d1\u30b9\u30ef\u30fc\u30c9\u3092\u4fdd\u5b58',check_email:'\u30e1\u30fc\u30eb\u3092\u3054\u78ba\u8a8d\u304f\u3060\u3055\u3044',sent_body:'{email} \u306e\u30a2\u30ab\u30a6\u30f3\u30c8\u304c\u3042\u308b\u5834\u5408\u3001\u30d1\u30b9\u30ef\u30fc\u30c9\u518d\u8a2d\u5b9a\u30ea\u30f3\u30af\u3092\u9001\u4fe1\u3057\u307e\u3057\u305f\u30021\u6642\u9593\u3067\u6709\u52b9\u671f\u9650\u304c\u5207\u308c\u307e\u3059\u3002',pw_updated:'\u30d1\u30b9\u30ef\u30fc\u30c9\u3092\u66f4\u65b0\u3057\u307e\u3057\u305f\u3002\u65b0\u3057\u3044\u30d1\u30b9\u30ef\u30fc\u30c9\u3067\u30ed\u30b0\u30a4\u30f3\u3057\u3066\u304f\u3060\u3055\u3044\u3002',name_ph:'\u4f8b\uff1aJordan Ellis',language:'\u8a00\u8a9e'}
+};
+const _LANGS=[['en','English'],['es','Espa\u00f1ol'],['fr','Fran\u00e7ais'],['ja','\u65e5\u672c\u8a9e']];
+function _detectLang(){
+  try{const saved=localStorage.getItem('sc_lang');if(saved&&I18N[saved])return saved;}catch(e){}
+  try{const n=((typeof navigator!=='undefined'&&(navigator.language||(navigator.languages&&navigator.languages[0])))||'en').slice(0,2).toLowerCase();if(I18N[n])return n;}catch(e){}
+  return 'en';
+}
+let _lang=_detectLang();
+function t(k,vars){let str=(I18N[_lang]&&I18N[_lang][k])||I18N.en[k]||k;if(vars)Object.keys(vars).forEach(v=>{str=str.replace('{'+v+'}',vars[v]);});return str;}
+function _langOptions(){return _LANGS.map(([c,l])=>`<option value="${c}"${_lang===c?' selected':''}>${l}</option>`).join('');}
+function _setLang(l){if(!I18N[l])return;_lang=l;try{localStorage.setItem('sc_lang',l);}catch(e){}
+  if(document.getElementById('login-screen')){renderLogin();return;}
+  try{const cur=(typeof _navCur!=='undefined'&&_navCur&&_navCur.screen)||'account';nav(cur,(typeof _navCur!=='undefined'&&_navCur)?_navCur.data:undefined);}catch(e){}
+}
+let _loginMode='login';let _resetToken='';let _resetSentTo='';
+function _setLoginMode(m){_loginMode=m;renderLogin();}
+function _prefillEmail(){try{return localStorage.getItem('sc_login_email')||'';}catch(e){return '';}}
+function _handleAuthParams(){
+  try{
+    const p=new URLSearchParams(location.search);
+    const v=p.get('verify'), r=p.get('reset');
+    if(v){Cloud.verifyEmail(v).then(ok=>{if(typeof proToast==='function')proToast(ok?'Email verified \u2713':'That verification link has expired');});try{const u=new URL(location.href);u.searchParams.delete('verify');history.replaceState({},'',u);}catch(e){}}
+    if(r){_resetToken=r;_loginMode='newpw';try{const u=new URL(location.href);u.searchParams.delete('reset');history.replaceState({},'',u);}catch(e){}renderLogin();return true;}
+  }catch(e){}
+  return false;
+}
 function renderLogin(err){
   const old=document.getElementById('login-screen');if(old)old.remove();
+  const mode=_loginMode; const signup=mode==='signup';
   const ov=document.createElement('div');ov.id='login-screen';
-  ov.style.cssText='position:fixed;inset:0;z-index:99999;background:#0d0d0d;display:flex;align-items:center;justify-content:center;padding:24px;';
+  ov.style.cssText='position:fixed;inset:0;z-index:99999;background:#0d0d0d;display:flex;align-items:center;justify-content:center;padding:24px;overflow:auto;';
+  const ic='width:100%;background:#161616;border:1px solid #2a2a2a;border-radius:10px;padding:12px 14px;font-size:15px;color:#f0f0f0;outline:none;margin-bottom:12px;box-sizing:border-box;';
+  const btn='width:100%;background:var(--accent);color:var(--accent-ink);border:none;border-radius:10px;padding:13px;font-size:15px;font-weight:600;cursor:pointer;font-family:inherit;';
+  const langPicker=`<div style="text-align:center;margin-top:20px;"><select aria-label="${t('language')}" onchange="_setLang(this.value)" style="background:#161616;border:1px solid #2a2a2a;color:#999;border-radius:8px;padding:6px 26px 6px 10px;font-size:12px;font-family:inherit;">${_langOptions()}</select></div>`;
+  let inner;
+  if(mode==='sent'){
+    inner=`<div style="font-size:20px;font-weight:600;color:#f0f0f0;margin-bottom:8px;">${t('check_email')}</div><div style="font-size:13px;color:#aaa;line-height:1.6;margin-bottom:20px;">${t('sent_body',{email:'<b style=\"color:#ddd;\">'+_resetSentTo+'</b>'})}</div><button onclick="_setLoginMode('login')" style="${btn}">${t('back_login')}</button>`;
+  } else if(mode==='reset'){
+    inner=`<div style="font-size:13px;color:#888;margin-bottom:22px;">${t('reset_sub')}</div>
+      <label class="fl-lbl" for="login-email">${t('email')}</label>
+      <input id="login-email" type="email" autocomplete="email" value="${_prefillEmail()}" onkeydown="if(event.key==='Enter')doRequestReset()" style="${ic}">
+      <div id="login-err" role="alert" style="font-size:12px;color:#e87070;min-height:16px;margin-bottom:10px;">${err||''}</div>
+      <button onclick="doRequestReset()" style="${btn}">${t('send_reset')}</button>
+      <div style="text-align:center;margin-top:16px;font-size:13px;color:#888;"><button onclick="_setLoginMode('login')" style="background:none;border:none;color:var(--accent);font-weight:600;cursor:pointer;font-family:inherit;font-size:13px;">${t('back_login')}</button></div>`;
+  } else if(mode==='newpw'){
+    inner=`<div style="font-size:13px;color:#888;margin-bottom:22px;">${t('newpw_sub')}</div>
+      <label class="fl-lbl" for="login-pw">${t('new_password')}</label>
+      <input id="login-pw" type="password" autocomplete="new-password" onkeydown="if(event.key==='Enter')doResetPw()" style="${ic}">
+      <div style="font-size:11px;color:#777;margin-bottom:6px;">${t('min8')}</div>
+      <div id="login-err" role="alert" style="font-size:12px;color:#e87070;min-height:16px;margin-bottom:10px;">${err||''}</div>
+      <button onclick="doResetPw()" style="${btn}">${t('set_password')}</button>`;
+  } else {
+    inner=`<div style="font-size:13px;color:#888;margin-bottom:22px;">${signup?t('sub_signup'):t('sub_login')}</div>
+      ${signup?`<label class="fl-lbl" for="login-name">${t('name')}</label><input id="login-name" autocomplete="name" placeholder="${t('name_ph')}" style="${ic}">`:''}
+      <label class="fl-lbl" for="login-email">${t('email')}</label>
+      <input id="login-email" type="email" autocomplete="email" value="${_prefillEmail()}" onkeydown="if(event.key==='Enter'){document.getElementById('login-pw').focus()}" style="${ic}">
+      <label class="fl-lbl" for="login-pw">${t('password')}</label>
+      <input id="login-pw" type="password" autocomplete="${signup?'new-password':'current-password'}" onkeydown="if(event.key==='Enter'){${signup?'doSignup()':'doLogin()'}}" style="width:100%;background:#161616;border:1px solid #2a2a2a;border-radius:10px;padding:12px 14px;font-size:15px;color:#f0f0f0;outline:none;margin-bottom:6px;box-sizing:border-box;">
+      ${signup?`<div style="font-size:11px;color:#777;margin-bottom:6px;">${t('min8')}</div>`:`<div style="text-align:right;margin-bottom:6px;"><button onclick="_setLoginMode('reset')" style="background:none;border:none;color:#888;cursor:pointer;font-family:inherit;font-size:12px;">${t('forgot')}</button></div>`}
+      <div id="login-err" role="alert" style="font-size:12px;color:#e87070;min-height:16px;margin-bottom:10px;">${err||''}</div>
+      <button onclick="${signup?'doSignup()':'doLogin()'}" style="${btn}">${signup?t('create_account'):t('log_in')}</button>
+      <div style="text-align:center;margin-top:16px;font-size:13px;color:#888;">${signup?t('have_account'):t('new_here')} <button onclick="_setLoginMode('${signup?'login':'signup'}')" style="background:none;border:none;color:var(--accent);font-weight:600;cursor:pointer;font-family:inherit;font-size:13px;">${signup?t('login_link'):t('create_link')}</button></div>`;
+  }
   ov.innerHTML=`<div style="width:100%;max-width:340px;">
-    <div style="display:flex;align-items:center;gap:9px;margin-bottom:6px;"><i class="ti ti-sparkles" style="font-size:24px;color:var(--accent);"></i><span style="font-size:22px;font-weight:600;color:#f0f0f0;">SlickChart</span></div>
-    <div style="font-size:13px;color:#888;margin-bottom:22px;">Log in to your practice.</div>
-    <label class="fl-lbl" for="login-pw">Password</label>
-    <input id="login-pw" type="password" autocomplete="current-password" aria-label="Password" onkeydown="if(event.key==='Enter')doLogin()" style="width:100%;background:#161616;border:1px solid #2a2a2a;border-radius:10px;padding:12px 14px;font-size:15px;color:#f0f0f0;outline:none;margin-bottom:6px;box-sizing:border-box;">
-    <div id="login-err" role="alert" style="font-size:12px;color:#e87070;min-height:16px;margin-bottom:10px;">${err||''}</div>
-    <button onclick="doLogin()" style="width:100%;background:var(--accent);color:var(--accent-ink);border:none;border-radius:10px;padding:13px;font-size:15px;font-weight:600;cursor:pointer;font-family:inherit;">Log in</button>
+    <div style="display:flex;align-items:center;gap:9px;margin-bottom:12px;"><i class="ti ti-sparkles" style="font-size:24px;color:var(--accent);"></i><span style="font-size:22px;font-weight:600;color:#f0f0f0;">SlickChart</span></div>
+    ${inner}
+    ${langPicker}
   </div>`;
   document.body.appendChild(ov);
-  setTimeout(()=>{const i=document.getElementById('login-pw');if(i&&i.focus)try{i.focus();}catch(e){}},40);
+  setTimeout(()=>{const f=mode==='newpw'?'login-pw':(mode==='signup'?'login-name':((_prefillEmail()&&mode==='login')?'login-pw':'login-email'));const i=document.getElementById(f);if(i&&i.focus)try{i.focus();}catch(e){}},40);
 }
+function _loginVal(id){const el=document.getElementById(id);return el?el.value.trim():'';}
 function doLogin(){
-  const el=document.getElementById('login-pw');const pw=el?el.value:'';
-  const errEl=document.getElementById('login-err');if(errEl)errEl.textContent='';
-  Cloud.login(pw).then(async()=>{
+  const email=_loginVal('login-email');const pw=(document.getElementById('login-pw')||{}).value||'';
+  const er=document.getElementById('login-err');if(er)er.textContent='';
+  Cloud.login(email,pw).then(async()=>{
     try{const n=await Cloud.pull();if(n===0)await Cloud.pushAllLocal();_reloadAll();}catch(e){}
-    const ov=document.getElementById('login-screen');if(ov)ov.remove();
-    nav('home');
+    const ov=document.getElementById('login-screen');if(ov)ov.remove();nav('home');
   }).catch(e=>{const er=document.getElementById('login-err');if(er)er.textContent=(e&&e.message)||'Login failed';});
+}
+function doSignup(){
+  const email=_loginVal('login-email');const pw=(document.getElementById('login-pw')||{}).value||'';const name=_loginVal('login-name');
+  const er=document.getElementById('login-err');if(er)er.textContent='';
+  Cloud.signup(email,pw,name).then(async()=>{
+    try{await Cloud.pushAllLocal();}catch(e){}
+    try{if(name&&typeof bizInfo!=='undefined'){if(!bizInfo.ownerName||bizInfo.ownerName==='Jessica Lee, LE')bizInfo.ownerName=name;if(typeof saveBizInfo==='function')saveBizInfo();if(typeof _syncProviderAvatar==='function')_syncProviderAvatar();}}catch(e){}
+    const ov=document.getElementById('login-screen');if(ov)ov.remove();nav('home');
+  }).catch(e=>{const er=document.getElementById('login-err');if(er)er.textContent=(e&&e.message)||'Sign up failed';});
+}
+function doRequestReset(){
+  const email=_loginVal('login-email');const er=document.getElementById('login-err');if(er)er.textContent='';
+  if(!email){if(er)er.textContent='Enter your email.';return;}
+  Cloud.requestReset(email).then(()=>{_resetSentTo=email;_loginMode='sent';renderLogin();});
+}
+function doResetPw(){
+  const pw=(document.getElementById('login-pw')||{}).value||'';const er=document.getElementById('login-err');if(er)er.textContent='';
+  if(pw.length<8){if(er)er.textContent=t('min8');return;}
+  Cloud.resetPw(_resetToken,pw).then(()=>{_resetToken='';_loginMode='login';renderLogin();const e2=document.getElementById('login-err');if(e2){e2.style.color='#4ec49a';e2.textContent=t('pw_updated');}}).catch(e=>{const er=document.getElementById('login-err');if(er)er.textContent=(e&&e.message)||'Reset failed';});
 }
 function cloudLogout(){if(!confirm('Log out of SlickChart on this device? Your data stays saved in the cloud.'))return;Cloud.logout();try{location.reload();}catch(e){nav('home');}}
 function applyProfessionConfig(){
@@ -1030,6 +1132,30 @@ function _providerFirstName(){
   return base.split(/\s+/)[0]||'';
 }
 function _greeting(){const h=new Date().getHours();return h<12?'Good morning':h<18?'Good afternoon':'Good evening';}
+// ── Birthdays (from Square sync or intake date-of-birth) ──
+function _normBirthday(s){
+  if(!s)return ''; s=String(s).trim();
+  let m=s.match(/(\d{4})-(\d{2})-(\d{2})/); if(m)return m[1]+'-'+m[2]+'-'+m[3];
+  m=s.match(/(\d{2})-(\d{2})$/); if(m)return '0000-'+m[1]+'-'+m[2];
+  m=s.match(/^(\d{1,2})[\/](\d{1,2})[\/](\d{2,4})$/); if(m)return (m[3].length===2?'20'+m[3]:m[3])+'-'+String(m[1]).padStart(2,'0')+'-'+String(m[2]).padStart(2,'0');
+  const d=new Date(s); if(!isNaN(d))return d.getFullYear()+'-'+String(d.getMonth()+1).padStart(2,'0')+'-'+String(d.getDate()).padStart(2,'0');
+  return '';
+}
+function _bdayMonthDay(b){const n=_normBirthday(b);if(!n)return null;const p=n.split('-');const m=parseInt(p[1],10),d=parseInt(p[2],10);if(!m||!d)return null;return {m,d};}
+function _bdayLabel(b){const md=_bdayMonthDay(b);if(!md)return '';return ['','Jan','Feb','Mar','Apr','May','Jun','Jul','Aug','Sep','Oct','Nov','Dec'][md.m]+' '+md.d;}
+function _upcomingBirthdays(days){days=days||30;const today=new Date();today.setHours(0,0,0,0);const out=[];
+  Object.entries(CL).forEach(([id,c])=>{const md=_bdayMonthDay(c&&c.birthday);if(!md)return;
+    let next=new Date(today.getFullYear(),md.m-1,md.d);if(next<today)next=new Date(today.getFullYear()+1,md.m-1,md.d);
+    const inDays=Math.round((next-today)/86400000); if(inDays<=days)out.push({id,name:c.name,label:_bdayLabel(c.birthday),inDays});});
+  out.sort((a,b)=>a.inDays-b.inDays);return out;}
+function _seedBirthdays(){try{const b={maya:'1994-03-15',sophie:'1990-07-10',priya:'1988-07-22'};Object.keys(b).forEach(k=>{if(CL[k]&&!CL[k].birthday)CL[k].birthday=b[k];});}catch(e){}}
+// pull a date-of-birth answer off a signed form onto the client record
+function _captureBirthday(c,formId,answers){try{const t=formTmpls[formId];if(!t||!t.qs||!answers||!c)return;const q=t.qs.find(q=>/date of birth|^dob$/i.test(q.label||''));if(q&&answers[q.id]&&!c.birthday)c.birthday=_normBirthday(answers[q.id]);}catch(e){}}
+function _birthdayPanelHTML(){
+  const up=_upcomingBirthdays(45);
+  const rows=up.length?up.slice(0,8).map(u=>`<div style="display:flex;align-items:center;justify-content:space-between;padding:7px 0;border-bottom:1px solid #14241c;"><span style="font-size:13px;color:#dfeee6;">${u.name}</span><span style="font-size:12px;color:#4ec49a;font-weight:600;">${u.label} \u00b7 ${u.inDays===0?'today \ud83c\udf82':u.inDays+'d'}</span></div>`).join(''):'<div style="font-size:12px;color:#7fae95;line-height:1.5;">No birthdays on file yet \u2014 they show up here once clients are imported from Square or complete an intake with their date of birth.</div>';
+  return `<div style="background:#0a2019;border:1px solid #1c4030;border-radius:10px;padding:12px 14px;margin-bottom:14px;"><div style="font-size:11px;color:#4ec49a;text-transform:uppercase;letter-spacing:.07em;margin-bottom:8px;display:flex;align-items:center;gap:6px;"><i class="ti ti-cake" aria-hidden="true"></i> Upcoming birthdays \u00b7 next 45 days</div>${rows}</div>`;
+}
 let _navStack=[],_navCur=null,_navBacking=false;
 function navBack(){if(_navStack.length){const prev=_navStack.pop();_navBacking=true;nav(prev.screen,prev.data);_navBacking=false;}}
 function nav(screen,data){
@@ -1061,6 +1187,7 @@ function nav(screen,data){
     'vendor-detail':()=>renderVendorDetail(data),
     'protocol-detail':()=>renderProtocolDetail(data),'protocol-apply':()=>renderProtocolApply(data),
     'new-protocol':renderNewProtocol,
+    'edit-protocol':()=>renderNewProtocol(data),
     'note-formats':()=>renderNoteFormats(data),'write-note':()=>renderWriteNote(data),
     'new-note-template':()=>renderNewNoteTemplate(data),
     'virtual-client':()=>renderVirtualClient(data),
@@ -1093,6 +1220,7 @@ function nav(screen,data){
     'add-resource':renderAddResource,
     'edit-resource':()=>renderEditResource(data),
     'add-vendor':renderAddVendor,
+    'edit-vendor':()=>renderAddVendor(data),
     'edit-partner':()=>renderEditPartner(data),
   };
   const fn=routes[screen];
@@ -1408,6 +1536,7 @@ function renderClient(id){
     <button class="btng" onclick="sendCheckin('${id}')" style="width:100%;justify-content:center;"><i class="ti ti-message" style="color:#4ec49a;"></i> Send pre-visit check-in</button>
     <button onclick="nav('checkin-settings')" style="display:block;width:100%;text-align:center;background:none;border:none;cursor:pointer;font-family:inherit;font-size:11px;color:#777;margin-top:6px;padding:2px;">${(checkinCfg.autoSend&&checkinCfg.autoSend.on)?('Auto-send: '+checkinCfg.autoSend.when+' before each visit · edit'):'Auto-send is off · edit'}</button>
   </div>
+  <div style="padding:0 16px 14px;"><button class="btng" onclick="inviteClientToApp('${id}')" style="width:100%;justify-content:center;"><i class="ti ti-device-mobile" style="color:#a891ec;"></i> ${c.appInvited?'App invite sent ✓ · resend':'Invite to the app'}</button></div>
   <div class="sh" style="display:flex;align-items:center;justify-content:space-between;"><h2>Client details</h2><button onclick="editVitals('${id}')" style="border:1px solid var(--accent-a30,#3d2d10);background:var(--accent-tint);color:var(--accent);cursor:pointer;padding:4px 11px;border-radius:20px;font-size:11px;font-weight:600;font-family:inherit;display:inline-flex;align-items:center;gap:4px;margin-right:16px;"><i class="ti ti-pencil" style="font-size:11px;"></i> Edit</button></div>
   <div style="padding:0 16px;">
     ${_vitalsConfig().filter(f=>!f.med||(c[f.key]&&String(c[f.key]).trim()&&c[f.key]!=='—')).map(f=>`<div class="fr"><span class="fl">${f.label}</span><span class="fv"${f.key==='concerns'?' style="font-size:12px;"':''}>${c[f.key]||'—'}</span></div>`).join('')}
@@ -4633,7 +4762,7 @@ function submitSignOnDevice(fid,cid){
     _applyIntakeVitals(CL[cid],fid,q=>ans[q.id]);
     // store the signed form on the client's file so it lives in Forms & documents
     CL[cid].submittedForms=CL[cid].submittedForms||[];
-    if(!CL[cid].submittedForms.some(sf=>sf.formId===fid&&sf.signed))CL[cid].submittedForms.unshift({formId:fid,title:tmpl.name,answers:ans,flagged:[],date:'Today',signed:true});
+    if(!CL[cid].submittedForms.some(sf=>sf.formId===fid&&sf.signed))CL[cid].submittedForms.unshift({formId:fid,title:tmpl.name,answers:ans,flagged:[],date:'Today',signed:true});_captureBirthday(CL[cid],fid,ans);
     try{if(typeof saveClients==='function')saveClients();}catch(e){}
   }
   proToast(`${tmpl.name} signed ✓`);
@@ -4757,6 +4886,33 @@ function sendCheckin(id){
       ?`<a href="${smsHref}" onclick="setTimeout(function(){var s=document.getElementById('checkin-sheet');if(s)s.remove();},300)" class="btnp" style="display:flex;align-items:center;justify-content:center;gap:7px;border-radius:10px;padding:12px;text-decoration:none;margin-bottom:8px;"><i class="ti ti-send"></i> Open Messages</a>`
       :`<div style="background:#1a1308;border:1px solid #3a2a10;border-radius:10px;padding:10px 12px;margin-bottom:8px;font-size:12px;color:#caa86a;line-height:1.5;">Add ${esc(first)}&#39;s phone number on their chart (Client details → Edit) to text in one tap. You can still copy the message below.</div>`}
     <button onclick="_copyText(window._ciMsg,this)" class="btng" style="width:100%;justify-content:center;border-radius:10px;padding:11px;"><i class="ti ti-copy"></i> Copy message</button>
+  </div>`;
+  (document.querySelector('.shell')||document.body).appendChild(ov);
+}
+function _clientAppLink(id){
+  const base=(typeof location!=='undefined'&&location.origin&&location.origin.indexOf('http')===0)?location.origin:'https://slick-chart.vercel.app';
+  return base+'/client';
+}
+function _markInvited(id){if(CL[id]){CL[id].appInvited=true;try{if(typeof saveClients==='function')saveClients();}catch(e){}}}
+function inviteClientToApp(id){
+  const c=CL[id];if(!c)return;
+  const first=c.name.split(' ')[0];
+  const who=(typeof _providerFirstName==='function'&&_providerFirstName())?_providerFirstName():'Your provider';
+  const biz=(typeof bizInfo!=='undefined'&&bizInfo&&bizInfo.name)?bizInfo.name:'';
+  const link=_clientAppLink(id);
+  const msg='Hi '+first+'! '+who+' invited you to SlickChart'+(biz?(' \u2014 '+biz):'')+'. See your visit summary, aftercare, forms, and rebook anytime: '+link;
+  const enc=encodeURIComponent(msg);
+  const ov=document.createElement('div');ov.id='invite-sheet';
+  ov.style.cssText='position:absolute;inset:0;z-index:9999;background:rgba(0,0,0,.6);display:flex;align-items:center;justify-content:center;padding:24px 16px;box-sizing:border-box;';
+  ov.onclick=e=>{if(e.target===ov)ov.remove();};
+  ov.innerHTML=`<div style="background:#161616;border:1px solid #2a2a2a;width:100%;border-radius:16px;padding:18px;">
+    <div style="display:flex;align-items:center;gap:10px;margin-bottom:12px;"><div style="width:38px;height:38px;border-radius:9px;background:#1e1633;display:flex;align-items:center;justify-content:center;flex-shrink:0;"><i class="ti ti-device-mobile" style="font-size:18px;color:#a891ec;"></i></div><div style="flex:1;min-width:0;"><div style="font-size:15px;font-weight:600;color:#f0f0f0;">Invite ${first} to the app</div><div style="font-size:12px;color:#999;">Opens in any browser \u00b7 installable on their phone</div></div><button onclick="this.closest('#invite-sheet').remove()" aria-label="Close" style="border:none;background:none;font-size:20px;color:#888;cursor:pointer;line-height:1;">\u2715</button></div>
+    <div style="background:#111;border:1px solid #2a2a2a;border-radius:10px;padding:11px 12px;margin-bottom:12px;font-size:12.5px;color:#bbb;line-height:1.55;">${msg.replace(/</g,'&lt;')}</div>
+    <div style="display:grid;grid-template-columns:1fr 1fr;gap:8px;margin-bottom:8px;">
+      <button onclick="_copyText('${link}',this);_markInvited('${id}')" class="btnp" style="border-radius:9px;padding:11px;"><i class="ti ti-copy"></i> Copy link</button>
+      <button onclick="location.href='sms:?&body=${enc}';_markInvited('${id}');this.closest('#invite-sheet').remove();" class="btng" style="border-radius:9px;padding:11px;"><i class="ti ti-message"></i> Text it</button>
+    </div>
+    <button onclick="location.href='mailto:${(c.email||'').replace(/'/g,'')}?subject=${encodeURIComponent('Join me on SlickChart')}&body=${enc}';_markInvited('${id}');this.closest('#invite-sheet').remove();" class="btng" style="width:100%;border-radius:9px;padding:11px;justify-content:center;"><i class="ti ti-mail"></i> Email it</button>
   </div>`;
   (document.querySelector('.shell')||document.body).appendChild(ov);
 }
@@ -5017,7 +5173,7 @@ function renderVendorDetail(i){
   setNav('pro');const v=vendors[i];
   document.getElementById('tt').textContent=v.name;
   S.innerHTML=`
-  
+  <div style="padding:12px 16px 0;display:flex;align-items:center;justify-content:flex-end;gap:8px;"><button onclick="nav('edit-vendor',${i})" style="background:var(--accent-tint);border:1px solid var(--accent-a30,#3d2d10);color:var(--accent);border-radius:8px;padding:6px 12px;font-size:12px;font-weight:600;cursor:pointer;font-family:inherit;display:inline-flex;align-items:center;gap:5px;"><i class="ti ti-pencil" style="font-size:12px;"></i> Edit</button><button onclick="deleteVendor(${i})" style="background:none;border:1px solid #3a1a1a;color:#a85a5a;border-radius:8px;padding:6px 12px;font-size:12px;font-weight:600;cursor:pointer;font-family:inherit;display:inline-flex;align-items:center;gap:5px;"><i class="ti ti-trash" style="font-size:12px;"></i> Delete</button></div>
   <div style="padding:14px 16px;display:flex;flex-direction:column;align-items:center;gap:8px;"><div style="width:64px;height:64px;border-radius:16px;background:${v.bg};border:1px solid #2a2a2a;display:flex;align-items:center;justify-content:center;font-size:22px;font-weight:500;color:${v.tc};">${v.init}</div><div style="text-align:center;"><div style="font-size:18px;font-weight:500;color:#f0f0f0;">${v.name}</div><div style="font-size:13px;color:#999;">${v.cat}</div></div></div>
   <div style="display:grid;grid-template-columns:1fr 1fr;gap:8px;padding:0 16px 14px;"><button class="btng" ${v.phone&&v.phone!=='—'?`onclick="location.href='tel:${v.phone}'"`:''}><i class="ti ti-phone" style="color:var(--accent);"></i> Call</button><button class="btng" ${v.email&&v.email!=='—'?`onclick="location.href='mailto:${v.email}'"`:''}><i class="ti ti-mail" style="color:var(--accent);"></i> Email</button><button class="btng"><i class="ti ti-world" style="color:var(--accent);"></i> Website</button><button class="btng"><i class="ti ti-login" style="color:var(--accent);"></i> Portal</button></div>
   <div style="padding:0 16px;"><div class="fr"><span class="fl">Sales rep</span><span class="fv">${v.rep}</span></div><div class="fr"><span class="fl">Phone</span>${v.phone&&v.phone!=='—'?`<a href="tel:${v.phone}" class="fv" style="text-decoration:none;">${v.phone}</a>`:`<span class="fv">—</span>`}</div><div class="fr"><span class="fl">Email</span>${v.email&&v.email!=='—'?`<a href="mailto:${v.email}" style="font-size:12px;color:var(--accent);text-decoration:none;word-break:break-all;">${v.email}</a>`:`<span class="fv">—</span>`}</div><div class="fr"><span class="fl">Portal</span><span style="font-size:12px;color:var(--accent);">${v.portal}</span></div><div class="fr"><span class="fl">Notes</span><span class="fv" style="font-size:12px;">${v.notes}</span></div></div>`;
@@ -5453,6 +5609,7 @@ function renderAccount(){
     <div style="width:72px;height:72px;border-radius:50%;background:#2e2318;display:flex;align-items:center;justify-content:center;font-size:26px;font-weight:500;color:var(--accent);">${_providerInitials()}</div>
     <div style="text-align:center;"><div style="font-size:18px;font-weight:500;color:#f0f0f0;">${bizInfo.ownerName}</div><div style="font-size:13px;color:#999;">${bizInfo.name}${_bizLoc()?' · '+_bizLoc():''}</div><div style="font-size:12px;color:var(--accent);">${bizInfo.email}</div></div>
   </div>
+  <div style="padding:12px 16px 0;"><div style="display:flex;align-items:center;justify-content:space-between;background:#1a1a1a;border:1px solid #2a2a2a;border-radius:12px;padding:11px 14px;"><span style="font-size:13px;color:#e0e0e0;display:inline-flex;align-items:center;gap:8px;"><i class="ti ti-language" aria-hidden="true" style="color:var(--accent);"></i> ${t('language')}</span><select aria-label="${t('language')}" onchange="_setLang(this.value)" style="background:#161616;border:1px solid #2a2a2a;color:#e0e0e0;border-radius:8px;padding:6px 26px 6px 10px;font-size:13px;font-family:inherit;">${_langOptions()}</select></div></div>
   ${(typeof Cloud!=='undefined'&&Cloud.token)?`<div style="margin:14px 16px 0;background:#0a2019;border:1px solid #1a4a38;border-radius:12px;padding:11px 13px;display:flex;align-items:center;gap:10px;">
     <i class="ti ti-cloud-check" aria-hidden="true" style="font-size:18px;color:#4ec49a;flex-shrink:0;"></i>
     <div style="flex:1;min-width:0;"><div style="font-size:13px;font-weight:600;color:#cdeede;">Cloud sync on</div><div style="font-size:11px;color:#7fbfa5;">Saved to your database &amp; synced across devices.</div></div>
@@ -6416,7 +6573,7 @@ function _sqMakeClient(c){
   return {name:c.name||'(no name)',initials,bg:'#2e1c10',tc:'var(--accent)',
     skin:'—',concerns:'—',allergies:'None on file',fitz:'—',
     lastVisit:'—',nextVisit:'Not scheduled',treatment:'New client',sessions:0,seriesTotal:0,
-    email:c.email||'',phone:c.phone||'',squareId:c.id,source:'square'};
+    email:c.email||'',phone:c.phone||'',birthday:_normBirthday(c.birthday),squareId:c.id,source:'square'};
 }
 function _sqImportOne(i){
   const c=(window._sqCust||[])[i];if(!c)return;
@@ -6500,7 +6657,7 @@ function renderProtocolDetail(id){
   setNav('more');const p=protocols.find(x=>x.id===id);if(!p)return;
   document.getElementById('tt').textContent=p.name;
   S.innerHTML=`
-  <div style="padding:12px 16px 0;display:flex;align-items:center;justify-content:flex-end;"><button onclick="nav('protocol-apply','${id}')" style="background:var(--accent);color:var(--accent-ink);border:none;border-radius:8px;padding:6px 13px;font-size:12px;font-weight:500;cursor:pointer;">Apply to client</button></div>
+  <div style="padding:12px 16px 0;display:flex;align-items:center;justify-content:flex-end;gap:8px;"><button onclick="nav('edit-protocol','${id}')" style="background:var(--accent-tint);border:1px solid var(--accent-a30,#3d2d10);color:var(--accent);border-radius:8px;padding:6px 12px;font-size:12px;font-weight:600;cursor:pointer;display:inline-flex;align-items:center;gap:5px;"><i class="ti ti-pencil" style="font-size:12px;"></i> Edit</button><button onclick="nav('protocol-apply','${id}')" style="background:var(--accent);color:var(--accent-ink);border:none;border-radius:8px;padding:6px 13px;font-size:12px;font-weight:500;cursor:pointer;">Apply to client</button></div>
   <div style="padding:14px 16px;display:flex;align-items:center;gap:12px;"><div style="width:52px;height:52px;border-radius:12px;background:${p.col};display:flex;align-items:center;justify-content:center;"><i class="ti ${p.icon}" style="font-size:24px;color:${p.ic};"></i></div><div><div style="font-size:17px;font-weight:500;color:#f0f0f0;">${p.name}</div><div style="font-size:12px;color:#999;">${p.steps.length} steps · ~${p.steps.reduce((a,s)=>a+parseInt(s.d),0)} min</div></div></div>
   <div style="padding:0 16px;">${p.steps.map((s,i)=>`<div style="display:flex;align-items:flex-start;gap:10px;padding:10px 0;border-bottom:1px solid #1e1e1e;"><div class="snum">${i+1}</div><div><div style="font-size:13px;font-weight:500;color:#e0e0e0;">${s.t} <span style="font-size:11px;color:#999;font-weight:400;">· ${s.d}</span></div><div style="font-size:12px;color:#999;">${s.n}</div></div></div>`).join('')}</div>`;
 }
@@ -6512,15 +6669,55 @@ function renderProtocolApply(pid){
   <div style="padding:12px 16px 0;"><div style="font-size:13px;color:#666;margin-bottom:14px;">Choose a client to apply this protocol in a session.</div>
   ${Object.entries(CL).map(([id,c])=>`<div onclick="nav('room','${id}')" style="display:flex;align-items:center;gap:12px;padding:11px 0;border-bottom:1px solid #1e1e1e;cursor:pointer;">${av(c,40)}<div style="flex:1;"><div style="font-size:14px;font-weight:500;color:#e0e0e0;">${c.name}</div><div style="font-size:12px;color:#999;">${c.nextVisit}</div></div><span style="font-size:12px;color:var(--accent);">Apply →</span></div>`).join('')}</div>`;
 }
-function renderNewProtocol(){
+let _protoDraft={name:'',steps:[]};
+function renderNewProtocol(editId){
   setNav('more');
-  document.getElementById('tt').textContent='New protocol';
-  S.innerHTML=`
-  <div style="padding:12px 16px 0;display:flex;align-items:center;justify-content:flex-end;"><button style="background:var(--accent);color:var(--accent-ink);border:none;border-radius:8px;padding:6px 13px;font-size:12px;font-weight:500;cursor:pointer;">Save</button></div>
-  <div style="padding:14px 16px 0;"><input class="fi" placeholder="Protocol name..." style="font-size:15px;font-weight:500;margin-bottom:14px;"><div style="font-size:11px;color:#aaa;text-transform:uppercase;letter-spacing:.07em;margin-bottom:10px;">Steps</div>
-  ${['Cleanse','Exfoliate','Treat','Mask','Finish'].map((s,i)=>`<div style="display:flex;align-items:center;gap:8px;margin-bottom:8px;"><div class="snum">${i+1}</div><input placeholder="${s}..." class="fi" style="flex:1;margin:0;"><input placeholder="min" class="fi" style="width:54px;margin:0;text-align:center;"></div>`).join('')}
-  <button class="btng" style="width:100%;margin-top:6px;border-style:dashed;"><i class="ti ti-plus"></i> Add step</button></div><div style="height:20px;"></div>`;
+  const editing=(editId!=null)&&protocols.find(x=>x.id===editId);
+  document.getElementById('tt').textContent=editing?'Edit protocol':'New protocol';
+  if(editing){_protoDraft={id:editing.id,name:editing.name,icon:editing.icon,col:editing.col,ic:editing.ic,steps:(editing.steps||[]).map(x=>({t:x.t,d:x.d,n:x.n}))};}
+  else{_protoDraft={name:'',steps:[{t:'',d:'',n:''},{t:'',d:'',n:''},{t:'',d:'',n:''}]};}
+  _renderProtoForm();
 }
+function _renderProtoForm(){
+  const val=x=>String(x==null?'':x).replace(/&/g,'&amp;').replace(/</g,'&lt;').replace(/>/g,'&gt;').replace(/"/g,'&quot;');
+  const editing=_protoDraft.id!=null;
+  S.innerHTML=`
+  <div style="padding:12px 16px 0;display:flex;align-items:center;justify-content:flex-end;"><button onclick="saveProtocol()" style="background:var(--accent);color:var(--accent-ink);border:none;border-radius:8px;padding:6px 13px;font-size:12px;font-weight:500;cursor:pointer;">Save</button></div>
+  <div style="padding:14px 16px 0;">
+    <span class="fl-lbl">Protocol name</span>
+    <input class="fi" id="pr-name" placeholder="e.g. Brightening Facial Protocol" value="${val(_protoDraft.name)}" oninput="_protoDraft.name=this.value" style="font-size:15px;font-weight:500;margin-bottom:14px;">
+    <div style="font-size:11px;color:#aaa;text-transform:uppercase;letter-spacing:.07em;margin-bottom:10px;">Steps</div>
+    ${_protoDraft.steps.map((s,i)=>`<div style="background:#161616;border:1px solid #242424;border-radius:10px;padding:10px 11px;margin-bottom:9px;">
+      <div style="display:flex;align-items:center;gap:8px;margin-bottom:7px;"><div class="snum">${i+1}</div>
+        <input class="fi" placeholder="Step name" value="${val(s.t)}" oninput="_protoDraft.steps[${i}].t=this.value" style="flex:1;margin:0;">
+        <input class="fi" placeholder="min" inputmode="numeric" value="${val(s.d).replace(/[^0-9]/g,'')}" oninput="_protoDraft.steps[${i}].d=this.value?this.value+' min':''" style="width:52px;margin:0;text-align:center;">
+        ${_protoDraft.steps.length>1?`<button onclick="_rmProtoStep(${i})" aria-label="Remove step" style="background:none;border:none;color:#a85a5a;cursor:pointer;font-size:18px;padding:2px 4px;line-height:1;">\u00d7</button>`:''}
+      </div>
+      <input class="fi" placeholder="Notes \u2014 products, timing, technique" value="${val(s.n)}" oninput="_protoDraft.steps[${i}].n=this.value" style="margin:0;font-size:12px;">
+    </div>`).join('')}
+    <button class="btng" style="width:100%;margin-top:2px;border-style:dashed;" onclick="_addProtoStep()"><i class="ti ti-plus"></i> Add step</button>
+    ${editing?`<button onclick="deleteProtocol('${_protoDraft.id}')" style="width:100%;border:none;border-radius:8px;padding:11px;font-size:13px;color:#e87070;background:#2a0f0f;cursor:pointer;margin-top:14px;font-family:inherit;"><i class="ti ti-trash" style="font-size:13px;"></i> Delete protocol</button>`:''}
+  </div><div style="height:20px;"></div>`;
+}
+function _addProtoStep(){_readProtoForm();_protoDraft.steps.push({t:'',d:'',n:''});_renderProtoForm();}
+function _rmProtoStep(i){_readProtoForm();_protoDraft.steps.splice(i,1);_renderProtoForm();}
+function _readProtoForm(){const n=document.getElementById('pr-name');if(n)_protoDraft.name=n.value;}
+function saveProtocol(){
+  const name=(_protoDraft.name||'').trim();
+  if(!name){proToast('Give your protocol a name first');return;}
+  const steps=_protoDraft.steps.map(s=>({t:(s.t||'').trim(),d:(s.d||'').trim()||'5 min',n:(s.n||'').trim()})).filter(s=>s.t);
+  if(!steps.length){proToast('Add at least one step');return;}
+  if(_protoDraft.id!=null){
+    const pr=protocols.find(x=>x.id===_protoDraft.id);
+    if(pr){pr.name=name;pr.steps=steps;}
+    proToast('Protocol updated \u2713');nav('protocol-detail',_protoDraft.id);
+  }else{
+    const id='p'+Date.now().toString(36);
+    protocols.push({id,name,icon:'ti-clipboard-list',col:'#0a2019',ic:'#4ec49a',steps});
+    proToast('Protocol saved \u2713');nav('protocol-detail',id);
+  }
+}
+function deleteProtocol(id){const pr=protocols.find(x=>x.id===id);if(!pr)return;confirmModal({title:'Delete protocol',body:'Delete "'+(pr.name||'this protocol')+'"? This cannot be undone.',action:'Delete'},"()=>{const ix=protocols.findIndex(x=>x.id==='"+id+"');if(ix>=0)protocols.splice(ix,1);nav('protocols')}");}
 
 // ── MORE ──
 function renderMore(){
@@ -6856,7 +7053,7 @@ SlickBridge.on('form-completed',d=>{
   const cid=d.clientId||'maya';const c=CL[cid];if(!c)return;
   const title=d.title||(formTmpls[d.formId]&&formTmpls[d.formId].name)||'Form';
   c.submittedForms=c.submittedForms||[];
-  c.submittedForms.unshift({formId:d.formId,title,answers:d.answers||{},flagged:d.flagged||[],date:d.date||'Today',signed:!!d.signed});
+  c.submittedForms.unshift({formId:d.formId,title,answers:d.answers||{},flagged:d.flagged||[],date:d.date||'Today',signed:!!d.signed});_captureBirthday(c,d.formId,d.answers||{});
   // fill the chart vitals from the client's answers (same mapping the in-app flow uses)
   if(d.formId&&formTmpls[d.formId])_applyIntakeVitals(c,d.formId,q=>(d.answers||{})[q.id]);
   if(d.signed){c.signedForms=c.signedForms||[];if(c.signedForms.indexOf(title)<0)c.signedForms.push(title);}
@@ -7191,11 +7388,12 @@ function renderNCStep(){
     ${opt('device','ti-device-tablet','Sign on this device','Hand them your phone to sign right now')}
     ${opt('link','ti-link','Send a link','They sign in any browser — no app needed')}
     ${opt('app','ti-send','Send to their app','Delivered to their SlickChart client app')}
+    ${opt('invite','ti-device-mobile','Invite to the app','Send a link so they can join their client app')}
     ${opt('none','ti-clock','Skip for now','Just add the client; send consent later')}
     <button onclick="nav('form-preview','${cid}')" style="width:100%;background:none;border:1px solid #2a2a2a;border-radius:9px;padding:9px;font-size:12px;color:#aaa;cursor:pointer;margin:4px 0 0;"><i class="ti ti-eye" style="font-size:12px;"></i> Preview consent</button>`;
   }
   const isLast=newClientStep===steps.length-1;
-  const lastLabel={device:'<i class="ti ti-device-tablet"></i> Add & sign now',link:'<i class="ti ti-link"></i> Add & get link',app:'<i class="ti ti-check"></i> Add & send consent',none:'<i class="ti ti-check"></i> Add client'}[_ncDeliver];
+  const lastLabel={device:'<i class="ti ti-device-tablet"></i> Add & sign now',link:'<i class="ti ti-link"></i> Add & get link',app:'<i class="ti ti-check"></i> Add & send consent',invite:'<i class="ti ti-device-mobile"></i> Add & invite',none:'<i class="ti ti-check"></i> Add client'}[_ncDeliver];
   S.innerHTML=`
   
   <div style="padding:12px 16px 0;">
@@ -7226,6 +7424,7 @@ function finishNewClient(){
   newClientStep=0;newClientData={};_ncDeliver='app';
   if(mode==='device'){proToast(first+' added');renderSignOnDevice(cid,id);return;}
   if(mode==='link'){proToast(first+' added');nav('clients');shareFormLink(cid,id);return;}
+  if(mode==='invite'){proToast(first+' added');nav('clients');inviteClientToApp(id);return;}
   proToast(first+' added'+(mode==='app'?' · consent sent':''));
   nav('clients');
 }
@@ -7754,6 +7953,7 @@ function renderAutoForm(a,idx){
       </div>
     </div>
 
+    ${(a&&/birthday/i.test((a.name||'')+' '+(a.trigger||'')))?_birthdayPanelHTML():''}
     <span class="fl-lbl">Message</span>
     <textarea class="fi" id="auto-msg" aria-label="Message body" style="height:110px;resize:none;line-height:1.6;margin-bottom:10px;" placeholder="Hi {client_name}! ✨">${a?`Hi {client_name}! Just checking in after your recent ${a.name.toLowerCase().includes('birthday')?'birthday 🎂':'appointment ✨'}. How is your skin feeling? Let me know if you have any questions!\n\n— ${_providerFirstName()}`:'Hi {client_name}! '}</textarea>
     <div style="background:#1a1a1a;border:1px solid #2a2a2a;border-radius:8px;padding:8px 12px;margin-bottom:14px;">
@@ -8055,39 +8255,52 @@ function saveResource(){
 }
 
 // ── ADD VENDOR ──
-function renderAddVendor(){
+function renderAddVendor(editIdx){
   setNav('pro');
-  document.getElementById('tt').textContent='Add vendor';
+  const editing=(editIdx!=null&&vendors[editIdx]);
+  const v=editing?vendors[editIdx]:{};
+  document.getElementById('tt').textContent=editing?'Edit vendor':'Add vendor';
   const cats=['Skincare','SPF','Clinical','Supplies','Equipment','Other'];
+  const val=x=>String(x==null?'':x).replace(/&/g,'&amp;').replace(/</g,'&lt;').replace(/>/g,'&gt;').replace(/"/g,'&quot;');
+  const clean=x=>(x&&x!=='\u2014')?x:'';
+  const arg=editing?editIdx:'null';
   S.innerHTML=`
   <div style="padding:12px 16px 0;display:flex;align-items:center;justify-content:flex-end;">
-    <button onclick="saveVendor()" style="background:var(--accent);color:var(--accent-ink);border:none;border-radius:8px;padding:6px 14px;font-size:12px;font-weight:500;cursor:pointer;">Save</button>
+    <button onclick="saveVendor(${arg})" style="background:var(--accent);color:var(--accent-ink);border:none;border-radius:8px;padding:6px 14px;font-size:12px;font-weight:500;cursor:pointer;">Save</button>
   </div>
   <div style="padding:14px 16px 0;">
-    <span class="fl-lbl">Brand name</span><input class="fi" id="vn-name" aria-label="Brand name" placeholder="e.g. iS Clinical" style="margin-bottom:12px;">
+    <span class="fl-lbl">Brand name</span><input class="fi" id="vn-name" aria-label="Brand name" placeholder="e.g. iS Clinical" value="${val(v.name)}" style="margin-bottom:12px;">
     <span class="fl-lbl">Category</span>
-    <select class="fi" id="vn-cat" style="margin-bottom:12px;">${cats.map(c=>`<option>${c}</option>`).join('')}</select>
-    <span class="fl-lbl">Sales rep name</span><input class="fi" id="vn-rep" aria-label="Sales rep name" placeholder="Rep's full name" style="margin-bottom:12px;">
-    <span class="fl-lbl">Rep phone</span><input class="fi" id="vn-phone" aria-label="Rep phone" placeholder="(415) 000-0000" style="margin-bottom:12px;">
-    <span class="fl-lbl">Rep email</span><input class="fi" id="vn-email" placeholder="rep@brand.com" style="margin-bottom:12px;">
-    <span class="fl-lbl">Professional portal URL</span><input class="fi" id="vn-portal" aria-label="Professional portal URL" placeholder="pro.brand.com" style="margin-bottom:12px;">
+    <select class="fi" id="vn-cat" style="margin-bottom:12px;">${cats.map(c=>`<option${v.cat===c?' selected':''}>${c}</option>`).join('')}</select>
+    <span class="fl-lbl">Sales rep name</span><input class="fi" id="vn-rep" aria-label="Sales rep name" placeholder="Rep's full name" value="${val(clean(v.rep))}" style="margin-bottom:12px;">
+    <span class="fl-lbl">Rep phone</span><input class="fi" id="vn-phone" aria-label="Rep phone" placeholder="(415) 000-0000" value="${val(clean(v.phone))}" style="margin-bottom:12px;">
+    <span class="fl-lbl">Rep email</span><input class="fi" id="vn-email" placeholder="rep@brand.com" value="${val(clean(v.email))}" style="margin-bottom:12px;">
+    <span class="fl-lbl">Professional portal URL</span><input class="fi" id="vn-portal" aria-label="Professional portal URL" placeholder="pro.brand.com" value="${val(clean(v.portal))}" style="margin-bottom:12px;">
     <span class="fl-lbl">Notes</span>
-    <textarea class="fi" id="vn-notes" style="height:72px;resize:none;margin-bottom:16px;" placeholder="Min order amounts, shipping notes, account details..."></textarea>
-    <button class="btnp" style="border-radius:8px;margin-bottom:20px;" onclick="saveVendor()"><i class="ti ti-check"></i> Add vendor</button>
+    <textarea class="fi" id="vn-notes" style="height:72px;resize:none;margin-bottom:16px;" placeholder="Min order amounts, shipping notes, account details...">${val(v.notes)}</textarea>
+    <button class="btnp" style="border-radius:8px;margin-bottom:20px;" onclick="saveVendor(${arg})"><i class="ti ti-check"></i> ${editing?'Save changes':'Add vendor'}</button>
   </div>`;
 }
-function saveVendor(){
-  const name=document.getElementById('vn-name')?.value||'New Vendor';
-  const cat=document.getElementById('vn-cat')?.value||'Skincare';
-  const rep=document.getElementById('vn-rep')?.value||'—';
-  const phone=document.getElementById('vn-phone')?.value||'—';
-  const email=document.getElementById('vn-email')?.value||'—';
-  const portal=document.getElementById('vn-portal')?.value||'—';
-  const notes=document.getElementById('vn-notes')?.value||'';
-  const initials=name.split(' ').map(w=>w[0]).join('').slice(0,2).toUpperCase();
-  vendors.push({name,init:initials,bg:'#1a1a1a',tc:'#e0e0e0',cat,rep,phone,email,portal,notes});
-  nav('vendors');
+function saveVendor(editIdx){
+  const g=id=>{const el=document.getElementById(id);return el?el.value.trim():'';};
+  const name=g('vn-name')||'New Vendor';
+  const cat=g('vn-cat')||'Skincare';
+  const rep=g('vn-rep')||'\u2014';
+  const phone=g('vn-phone')||'\u2014';
+  const email=g('vn-email')||'\u2014';
+  const portal=g('vn-portal')||'\u2014';
+  const notes=g('vn-notes')||'';
+  const initials=name.split(' ').map(w=>w[0]).filter(Boolean).join('').slice(0,2).toUpperCase();
+  if(editIdx!=null&&vendors[editIdx]){
+    const v=vendors[editIdx];v.name=name;v.init=initials;v.cat=cat;v.rep=rep;v.phone=phone;v.email=email;v.portal=portal;v.notes=notes;
+    proToast('Vendor updated \u2713');nav('vendor-detail',editIdx);
+  }else{
+    vendors.push({name,init:initials,bg:'#1a1a1a',tc:'#e0e0e0',cat,rep,phone,email,portal,notes});
+    nav('vendors');
+  }
 }
+function deleteVendor(i){const v=vendors[i];if(!v)return;confirmModal({title:'Delete vendor',body:'Remove '+(v.name||'this vendor')+' from your directory? This cannot be undone.',action:'Delete'},"()=>{vendors.splice("+i+",1);nav('vendors')}");}
 </script>
+<script>if('serviceWorker' in navigator){window.addEventListener('load',function(){navigator.serviceWorker.register('/sw.js').catch(function(){});});}</script>
 </body>
 </html>
