@@ -2,7 +2,7 @@
 // Introspects the seller's Square access token (Square's RetrieveTokenStatus)
 // and reports, in plain language, which permissions it has — so the app can show
 // a green/red "ready to book" checklist without the seller touching any dev tools.
-import { squareFetch, requireAuth } from '../../lib/square.js';
+import { squareFetch as _sqf, sqContext } from '../../lib/square.js';
 
 // The permissions live booking needs, with a human label for each.
 const REQUIRED = [
@@ -16,11 +16,12 @@ const REQUIRED = [
 
 export default async function handler(req, res) {
   if (req.method !== 'GET') { res.status(405).json({ error: 'Method not allowed' }); return; }
-  if (!requireAuth(req, res)) return;
+  const ctx = await sqContext(req, res); if (!ctx) return;
+  const sf = (p, o) => _sqf(p, o, ctx.token);
 
   try {
     // POST /oauth2/token/status returns the granted scopes for the token in use.
-    const data = await squareFetch('/oauth2/token/status', { method: 'POST' });
+    const data = await sf('/oauth2/token/status', { method: 'POST' });
     const scopes = Array.isArray(data.scopes) ? data.scopes : [];
 
     const checks = REQUIRED.map(r => ({ scope: r.scope, label: r.label, ok: scopes.includes(r.scope) }));

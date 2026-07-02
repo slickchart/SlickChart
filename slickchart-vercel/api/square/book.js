@@ -10,11 +10,12 @@
 // from the chosen date + time before calling.
 //
 // Requires the token to have "Appointments (write)" + "Customers (write/read)".
-import { squareFetch, requireAuth, resolveLocationId } from '../../lib/square.js';
+import { squareFetch as _sqf, sqContext, resolveLocationId } from '../../lib/square.js';
 
 export default async function handler(req, res) {
   if (req.method !== 'POST') { res.status(405).json({ error: 'Method not allowed' }); return; }
-  if (!requireAuth(req, res)) return;
+  const ctx = await sqContext(req, res); if (!ctx) return;
+  const sf = (p, o) => _sqf(p, o, ctx.token);
 
   try {
     const body = (req.body && typeof req.body === 'object') ? req.body : JSON.parse(req.body || '{}');
@@ -26,7 +27,7 @@ export default async function handler(req, res) {
       return;
     }
 
-    const locationId = await resolveLocationId();
+    const locationId = await resolveLocationId(ctx.token, ctx.locationId);
     if (!locationId) { res.status(400).json({ error: 'No Square location found for this account.' }); return; }
 
     // ── Resolve the customer: use the given id, else find by email, else create ──
@@ -36,7 +37,7 @@ export default async function handler(req, res) {
       const email = (body.customerEmail || '').trim();
       if (email) {
         try {
-          const found = await squareFetch('/v2/customers/search', {
+          const found = await sf('/v2/customers/search', {
             method: 'POST',
             body: { limit: 1, query: { filter: { email_address: { exact: email } } } }
           });
@@ -45,7 +46,7 @@ export default async function handler(req, res) {
       }
       if (!customerId) {
         const parts = name.split(/\s+/).filter(Boolean);
-        const created = await squareFetch('/v2/customers', {
+        const created = await sf('/v2/customers', {
           method: 'POST',
           body: {
             given_name: parts[0] || name || 'Client',
@@ -66,7 +67,7 @@ export default async function handler(req, res) {
     };
     if (body.serviceVariationVersion != null) segment.service_variation_version = body.serviceVariationVersion;
 
-    const result = await squareFetch('/v2/bookings', {
+    const result = await sf('/v2/bookings', {
       method: 'POST',
       body: {
         idempotency_key: 'sc-' + Date.now() + '-' + Math.random().toString(36).slice(2, 10),

@@ -7,14 +7,15 @@
 // to have "Items (read)" + "Appointments (read)" permissions. If Appointments
 // isn't set up, `services`/`teamMembers` come back empty and the app falls back
 // to its own local booking instead of erroring.
-import { squareFetch, requireAuth, resolveLocationId } from '../../lib/square.js';
+import { squareFetch as _sqf, sqContext, resolveLocationId } from '../../lib/square.js';
 
 export default async function handler(req, res) {
   if (req.method !== 'GET') { res.status(405).json({ error: 'Method not allowed' }); return; }
-  if (!requireAuth(req, res)) return;
+  const ctx = await sqContext(req, res); if (!ctx) return;
+  const sf = (p, o) => _sqf(p, o, ctx.token);
 
   try {
-    const locationId = await resolveLocationId();
+    const locationId = await resolveLocationId(ctx.token, ctx.locationId);
 
     // ── 1) Bookable services (APPOINTMENTS_SERVICE items → their variations) ──
     const objects = [];
@@ -22,7 +23,7 @@ export default async function handler(req, res) {
     do {
       const qs = new URLSearchParams({ types: 'ITEM' });
       if (cursor) qs.set('cursor', cursor);
-      const data = await squareFetch('/v2/catalog/list?' + qs.toString());
+      const data = await sf('/v2/catalog/list?' + qs.toString());
       (data.objects || []).forEach(o => objects.push(o));
       cursor = data.cursor || '';
       guard++;
@@ -55,7 +56,7 @@ export default async function handler(req, res) {
     try {
       const qs = new URLSearchParams({ bookable_only: 'true' });
       if (locationId) qs.set('location_id', locationId);
-      const tm = await squareFetch('/v2/bookings/team-member-booking-profiles?' + qs.toString());
+      const tm = await sf('/v2/bookings/team-member-booking-profiles?' + qs.toString());
       teamMembers = (tm.team_member_booking_profiles || [])
         .filter(p => p.team_member_id)
         .map(p => ({ id: p.team_member_id, name: p.display_name || 'Team member' }));

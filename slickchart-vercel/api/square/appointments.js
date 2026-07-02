@@ -5,14 +5,15 @@
 // Requires: the seller uses Square Appointments, and your token/app has the
 // "Appointments (read)" permission. If you don't use Square Appointments, this
 // endpoint will return a Square permission error — the customers import still works.
-import { squareFetch, requireAuth, resolveLocationId } from '../../lib/square.js';
+import { squareFetch as _sqf, sqContext, resolveLocationId } from '../../lib/square.js';
 
 export default async function handler(req, res) {
   if (req.method !== 'GET') { res.status(405).json({ error: 'Method not allowed' }); return; }
-  if (!requireAuth(req, res)) return;
+  const ctx = await sqContext(req, res); if (!ctx) return;
+  const sf = (p, o) => _sqf(p, o, ctx.token);
 
   try {
-    const locationId = await resolveLocationId();
+    const locationId = await resolveLocationId(ctx.token, ctx.locationId);
     if (!locationId) { res.status(400).json({ error: 'No Square location found for this account.' }); return; }
 
     const now = new Date();
@@ -26,7 +27,7 @@ export default async function handler(req, res) {
       limit: '100'
     });
 
-    const data = await squareFetch('/v2/bookings?' + qs.toString());
+    const data = await sf('/v2/bookings?' + qs.toString());
     const bookings = (data.bookings || []).filter(isLive);
 
     // Resolve customer names (one lookup per unique customer, in parallel).
@@ -34,7 +35,7 @@ export default async function handler(req, res) {
     const names = {};
     await Promise.all(ids.map(async (id) => {
       try {
-        const cd = await squareFetch('/v2/customers/' + id);
+        const cd = await sf('/v2/customers/' + id);
         if (cd.customer) {
           names[id] = [cd.customer.given_name, cd.customer.family_name].filter(Boolean).join(' ').trim()
             || cd.customer.email_address || 'Client';

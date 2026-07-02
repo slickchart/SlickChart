@@ -3,7 +3,7 @@
 // returns a session token so they can start using the app right away.
 import { sql, ensureProvidersTable, dbEnabled } from '../lib/db.js';
 import { signToken, hashPassword, makeToken } from '../lib/auth.js';
-import { sendEmail, appOrigin } from '../lib/email.js';
+import { sendEmail, appOrigin, addToAudience } from '../lib/email.js';
 import crypto from 'crypto';
 
 export default async function handler(req, res) {
@@ -26,7 +26,8 @@ export default async function handler(req, res) {
     if (existing.length) { res.status(409).json({ error: 'An account with that email already exists — try logging in.' }); return; }
 
     const id = 'p_' + crypto.randomBytes(8).toString('hex');
-    await q`INSERT INTO providers (id, email, name, pass_hash, verified) VALUES (${id}, ${email}, ${name}, ${hashPassword(password)}, false)`;
+    await q`INSERT INTO providers (id, email, name, pass_hash, verified, marketing_opt_in) VALUES (${id}, ${email}, ${name}, ${hashPassword(password)}, false, ${!!b.optIn})`;
+    if (b.optIn) { try { await addToAudience(email, name); } catch (e) { /* non-fatal */ } }
 
     // Email verification link (valid 24h)
     const vtoken = makeToken();

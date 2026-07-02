@@ -2,11 +2,12 @@
 // Lists your Square item library (products + services), resolves category names
 // and image URLs, splits retail vs services, and returns a clean payload for
 // SlickChart to import. Requires the token to have the "Items (read)" permission.
-import { squareFetch, requireAuth } from '../../lib/square.js';
+import { squareFetch as _sqf, sqContext } from '../../lib/square.js';
 
 export default async function handler(req, res) {
   if (req.method !== 'GET') { res.status(405).json({ error: 'Method not allowed' }); return; }
-  if (!requireAuth(req, res)) return;
+  const ctx = await sqContext(req, res); if (!ctx) return;
+  const sf = (p, o) => _sqf(p, o, ctx.token);
 
   try {
     const objects = [];
@@ -15,7 +16,7 @@ export default async function handler(req, res) {
     do {
       const qs = new URLSearchParams({ types: 'ITEM,CATEGORY,IMAGE' });
       if (cursor) qs.set('cursor', cursor);
-      const data = await squareFetch('/v2/catalog/list?' + qs.toString());
+      const data = await sf('/v2/catalog/list?' + qs.toString());
       (data.objects || []).forEach(o => objects.push(o));
       cursor = data.cursor || '';
       guard++;

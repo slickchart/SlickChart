@@ -1,11 +1,12 @@
 // GET /api/square/customers
 // Lists customers from your Square account (handles pagination) and returns a
 // clean, normalized array for SlickChart to import.
-import { squareFetch, requireAuth } from '../../lib/square.js';
+import { squareFetch as _sqf, sqContext } from '../../lib/square.js';
 
 export default async function handler(req, res) {
   if (req.method !== 'GET') { res.status(405).json({ error: 'Method not allowed' }); return; }
-  if (!requireAuth(req, res)) return;
+  const ctx = await sqContext(req, res); if (!ctx) return;
+  const sf = (p, o) => _sqf(p, o, ctx.token);
 
   try {
     const customers = [];
@@ -15,7 +16,7 @@ export default async function handler(req, res) {
     do {
       const qs = new URLSearchParams({ limit: '100' });
       if (cursor) qs.set('cursor', cursor);
-      const data = await squareFetch('/v2/customers?' + qs.toString());
+      const data = await sf('/v2/customers?' + qs.toString());
       (data.customers || []).forEach(c => customers.push(normalize(c)));
       cursor = data.cursor || '';
       guard++;
