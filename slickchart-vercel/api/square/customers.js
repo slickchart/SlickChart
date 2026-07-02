@@ -38,6 +38,7 @@ function normalize(c) {
     email: c.email_address || '',
     phone: c.phone_number || '',
     note: c.note || '',
+    birthday: c.birthday || '',
     createdAt: c.created_at || ''
   };
 }
