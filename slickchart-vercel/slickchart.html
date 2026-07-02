@@ -1167,7 +1167,7 @@ function nav(screen,data){
   // track history for the global back button (skip when we're navigating back)
   if(!_navBacking){if(_navCur&&(_navCur.screen!==screen||_navCur.data!==data)){_navStack.push(_navCur);if(_navStack.length>40)_navStack.shift();}}
   _navCur={screen,data};
-  const titles={home:'Home',clients:'Clients',forms:'Forms',messages:'Messages',pro:'Pro',more:'More',account:'Account',branding:'Branding',shop:'Shop',partners:'Partners',learn:'Learn',virtual:'Virtual Consultations',protocols:'Protocols',vault:'My Docs',inventory:'Inventory',vendors:'Vendors',calendar:'Calendar',room:'Session','data-setup':'Get set up','import-clients':'Import clients','import-products':'Import products','switch-app':'Switch apps','connect-calendar':'Sync calendar','checkout':'Take payment','whats-new':"What’s new",'feedback-inbox':'Feedback inbox'};
+  const titles={home:'Home',clients:'Clients',forms:'Forms',messages:'Messages',pro:'Pro',more:'More',account:'Account',branding:'Branding',shop:'Shop',partners:'Partners',learn:'Learn',virtual:'Virtual Consultations',protocols:'Protocols',vault:'My Docs',inventory:'Inventory',vendors:'Vendors',calendar:'Calendar',room:'Session','data-setup':'Get set up','import-clients':'Import clients','import-products':'Import products','switch-app':'Switch apps','connect-calendar':'Sync calendar','checkout':'Take payment','whats-new':"What’s new",'feedback-inbox':'Feedback inbox','payments':'Payments'};
   document.getElementById('tt').textContent='SlickChart';
   document.title='SlickChart' + (titles[screen] ? ' — '+titles[screen] : '');
   if(timerInt&&screen!=='room'){clearInterval(timerInt);timerInt=null;}
@@ -1213,7 +1213,7 @@ function nav(screen,data){
     'invite-staff':renderInviteStaff,
     calendar:renderCalendar,
     requests:renderRequests,
-    'data-setup':renderDataSetup,'import-clients':renderImportClients,'import-products':renderImportProducts,'switch-app':renderSwitchApp,'connect-calendar':renderConnectCalendar,'whats-new':renderWhatsNew,'feedback-inbox':renderFeedbackInbox,
+    'data-setup':renderDataSetup,'import-clients':renderImportClients,'import-products':renderImportProducts,'switch-app':renderSwitchApp,'connect-calendar':renderConnectCalendar,'whats-new':renderWhatsNew,'feedback-inbox':renderFeedbackInbox,'payments':renderPayments,
     checkins:renderCheckins,
     'checkin-detail':()=>renderCheckinDetail(data),
     'add-partner':renderAddPartner,
@@ -1544,6 +1544,7 @@ function renderClient(id){
     <button onclick="nav('checkin-settings')" style="display:block;width:100%;text-align:center;background:none;border:none;cursor:pointer;font-family:inherit;font-size:11px;color:#777;margin-top:6px;padding:2px;">${(checkinCfg.autoSend&&checkinCfg.autoSend.on)?('Auto-send: '+checkinCfg.autoSend.when+' before each visit · edit'):'Auto-send is off · edit'}</button>
   </div>
   <div style="padding:0 16px 14px;"><button class="btng" onclick="inviteClientToApp('${id}')" style="width:100%;justify-content:center;"><i class="ti ti-device-mobile" style="color:#a891ec;"></i> ${c.appInvited?'App invite sent ✓ · resend':'Invite to the app'}</button></div>
+  ${(function(){var _b=_clientBalance(id);return _b>0?'<div style="padding:0 16px 8px;"><div style="background:#2a1a0a;border:1px solid #4a3510;border-radius:9px;padding:8px 12px;font-size:12px;color:#e8b060;display:flex;justify-content:space-between;"><span>Balance due</span><b>$'+_b.toFixed(2)+'</b></div></div>':'';})()}
   <div style="padding:0 16px 14px;"><button class="btnp" onclick="nav('checkout','${id}')" style="width:100%;justify-content:center;border-radius:10px;"><i class="ti ti-cash"></i> Take payment</button></div>
   <div class="sh" style="display:flex;align-items:center;justify-content:space-between;"><h2>Client details</h2><button onclick="editVitals('${id}')" style="border:1px solid var(--accent-a30,#3d2d10);background:var(--accent-tint);color:var(--accent);cursor:pointer;padding:4px 11px;border-radius:20px;font-size:11px;font-weight:600;font-family:inherit;display:inline-flex;align-items:center;gap:4px;margin-right:16px;"><i class="ti ti-pencil" style="font-size:11px;"></i> Edit</button></div>
   <div style="padding:0 16px;">
@@ -6507,13 +6508,15 @@ function _coRecon(e){return e&&(e.code==='reconnect'||e.code==='nosquare');}
 function renderCheckout(id){
   const c=CL[id];if(!c){nav('clients');return;}
   setNav('clients');document.getElementById('tt').textContent='Take payment';
+  _coItems=[];
   S.innerHTML=`
   <div style="padding:14px 16px 4px;">
     <div style="display:flex;align-items:center;gap:10px;margin-bottom:14px;">${av(c,40)}<div><div style="font-size:15px;font-weight:600;color:#f0f0f0;">${c.name}</div><div style="font-size:12px;color:#999;">${c.email||c.phone||'No contact on file'}</div></div></div>
     <span class="fl-lbl">Amount</span>
     <div style="display:flex;align-items:center;gap:8px;margin-bottom:12px;"><span style="font-size:20px;color:#999;">$</span><input class="fi" id="co-amt" inputmode="decimal" placeholder="0.00" style="margin:0;font-size:18px;"></div>
     <span class="fl-lbl">What it is for</span>
-    <input class="fi" id="co-desc" value="${(c.treatment&&c.treatment!=='New client')?String(c.treatment).replace(/"/g,'&quot;'):''}" placeholder="e.g. Hydrafacial" style="margin-bottom:16px;">
+    <input class="fi" id="co-desc" value="${(c.treatment&&c.treatment!=='New client')?String(c.treatment).replace(/"/g,'&quot;'):''}" placeholder="e.g. Hydrafacial" style="margin-bottom:14px;">
+    <div style="margin-bottom:14px;"><span class="fl-lbl">Line items <span style="color:#666;font-weight:400;">— optional, for detailed invoices</span></span><div id="co-items"></div><div style="display:flex;gap:8px;margin-top:6px;"><button onclick="_coMenuOpen()" style="flex:1;background:#161616;border:1px solid #2a2a2a;color:#cfe4d8;border-radius:8px;padding:9px;font-size:12px;font-weight:600;cursor:pointer;font-family:inherit;"><i class="ti ti-list-search"></i> Add from menu</button><button onclick="_coAddCustom()" style="flex:1;background:#161616;border:1px solid #2a2a2a;color:#cfe4d8;border-radius:8px;padding:9px;font-size:12px;font-weight:600;cursor:pointer;font-family:inherit;"><i class="ti ti-plus"></i> Custom line</button></div></div>
     <div id="co-result" style="margin-bottom:14px;"></div>
     <button class="btnp" onclick="_coLink('${id}')" style="width:100%;border-radius:10px;margin-bottom:9px;"><i class="ti ti-link"></i> Send payment link</button>
     <button class="btng" onclick="_coInvoice('${id}')" style="width:100%;border-radius:10px;margin-bottom:9px;justify-content:center;"><i class="ti ti-file-invoice"></i> Send invoice by email</button>
@@ -6625,6 +6628,165 @@ async function _postAnnouncement(){
   try{const tok=(typeof Cloud!=='undefined'&&Cloud&&Cloud.token)||'';const r=await fetch('/api/announcements',{method:'POST',headers:{'Content-Type':'application/json','Authorization':'Bearer '+tok},body:JSON.stringify({title:t,body:b})});const j=await r.json();if(!r.ok)throw new Error(j.error||'Failed');proToast('Update published \u2713');await _checkNews();renderWhatsNew();}catch(e){proToast(e.message||'Could not publish');}
 }
 setTimeout(()=>{try{_checkNews();}catch(e){}},1500);
+
+
+// ── Payments: itemized invoicing menu, ledger, and Payments hub ──
+function _todayISO(){try{return new Date().toISOString().slice(0,10);}catch(e){return '';}}
+let _payments=(function(){try{return JSON.parse(localStorage.getItem('sc_payments')||'[]');}catch(e){return [];}})();
+function _savePayments(){try{localStorage.setItem('sc_payments',JSON.stringify(_payments));}catch(e){}}
+function _clientBalance(cid){return _payments.filter(p=>p.clientId===cid&&(p.status==='unpaid'||p.status==='partial')).reduce((a,p)=>a+(parseFloat(p.amount)||0),0);}
+function _addPayment(p){p.id=p.id||('pay_'+Date.now().toString(36)+Math.random().toString(36).slice(2,6));_payments.unshift(p);_savePayments();return p;}
+
+// Line-item builder (pulls the provider's Square services + products, plus local products)
+let _coItems=[];
+let _coMenu=null;
+function _coFlatten(d){
+  const out=[];
+  const add=(arr,kind)=>{(arr||[]).forEach(it=>{const vars=(it.variations&&it.variations.length)?it.variations:[{id:null,name:'',price:it.price}];vars.forEach(v=>{const nm=(v.name&&!/^regular$/i.test(v.name))?(it.name+' \u2014 '+v.name):it.name;out.push({name:nm,price:(v.price!=null?v.price:it.price)||0,variationId:v.id||null,kind});});});};
+  add(d.services,'service');add(d.retail,'product');
+  return out;
+}
+async function _coEnsureMenu(){
+  if(_coMenu)return _coMenu;
+  let sq=[];try{const d=await _sqFetch('/api/square/catalog');sq=_coFlatten(d);}catch(e){sq=[];}
+  const local=[];try{(affiliateLinks||[]).forEach(a=>{if(a&&a.name)local.push({name:a.name,price:a.price||0,variationId:null,kind:'product'});});}catch(e){}
+  const seen={};const merged=[];sq.concat(local).forEach(m=>{const k=(m.name||'').toLowerCase();if(k&&!seen[k]){seen[k]=1;merged.push(m);}});
+  _coMenu=merged;return _coMenu;
+}
+function _coValidItems(){return _coItems.filter(it=>it.variationId||(it.name&&(+it.price)>0));}
+function _coSubtotal(){return _coItems.reduce((a,it)=>a+((+it.price||0)*(it.qty||1)),0);}
+function _coSyncAmt(){const a=document.getElementById('co-amt');if(a&&_coValidItems().length)a.value=_coSubtotal().toFixed(2);}
+function _coQty(i,dv){if(_coItems[i]){_coItems[i].qty=Math.max(1,(_coItems[i].qty||1)+dv);_coRenderItems();}}
+function _coAddCustom(){_coItems.push({name:'',price:0,qty:1,variationId:null});_coRenderItems();}
+function _coRenderItems(){
+  const el=document.getElementById('co-items');if(!el)return;
+  if(!_coItems.length){el.innerHTML='';return;}
+  el.innerHTML=_coItems.map((it,i)=>`<div style="display:flex;align-items:center;gap:8px;background:#161616;border:1px solid #242424;border-radius:9px;padding:8px 10px;margin-bottom:6px;"><div style="flex:1;min-width:0;">${it.variationId?`<div style="font-size:13px;color:#e0e0e0;">${String(it.name).replace(/</g,'&lt;')}</div><div style="font-size:11px;color:#4ec49a;">$${(+it.price||0).toFixed(2)}</div>`:`<input value="${String(it.name||'').replace(/"/g,'&quot;')}" oninput="_coItems[${i}].name=this.value" placeholder="Item name" style="width:100%;background:none;border:none;border-bottom:1px solid #2a2a2a;color:#e0e0e0;font-size:13px;font-family:inherit;outline:none;padding-bottom:2px;"><div style="display:flex;align-items:center;gap:3px;margin-top:4px;"><span style="color:#777;font-size:11px;">$</span><input value="${it.price||''}" inputmode="decimal" oninput="_coItems[${i}].price=parseFloat(this.value)||0;_coSyncAmt()" placeholder="0.00" style="width:60px;background:#111;border:1px solid #2a2a2a;border-radius:6px;padding:3px 6px;color:#e0e0e0;font-size:12px;font-family:inherit;"></div>`}</div><div style="display:flex;align-items:center;gap:5px;"><button onclick="_coQty(${i},-1)" style="width:24px;height:24px;border-radius:6px;background:#222;border:none;color:#ccc;cursor:pointer;font-size:14px;">\u2212</button><span style="min-width:16px;text-align:center;font-size:13px;color:#e0e0e0;">${it.qty||1}</span><button onclick="_coQty(${i},1)" style="width:24px;height:24px;border-radius:6px;background:#222;border:none;color:#ccc;cursor:pointer;font-size:14px;">+</button></div><button onclick="_coItems.splice(${i},1);_coRenderItems()" style="background:none;border:none;color:#a85a5a;cursor:pointer;font-size:14px;padding:2px;"><i class="ti ti-x"></i></button></div>`).join('')+`<div style="text-align:right;font-size:13px;font-weight:700;color:#4ec49a;margin-top:2px;">Subtotal: $${_coSubtotal().toFixed(2)}</div>`;
+  _coSyncAmt();
+}
+function _coMenuOpen(){_coEnsureMenu().then(()=>_coMenuRender(''));}
+function _coMenuRender(q){
+  let ov=document.getElementById('co-menu');
+  if(!ov){ov=document.createElement('div');ov.id='co-menu';ov.style.cssText='position:absolute;inset:0;z-index:9999;background:rgba(0,0,0,.6);display:flex;flex-direction:column;justify-content:flex-end;';ov.onclick=e=>{if(e.target===ov)ov.remove();};(document.querySelector('.shell')||document.body).appendChild(ov);}
+  const all=_coMenu||[];const list=all.filter(m=>!q||m.name.toLowerCase().includes(q.toLowerCase()));
+  ov.innerHTML='<div style="background:#161616;border-top:1px solid #2a2a2a;border-radius:16px 16px 0 0;padding:16px;max-height:80%;display:flex;flex-direction:column;"><div style="width:36px;height:4px;background:#2a2a2a;border-radius:2px;margin:0 auto 12px;"></div><div style="font-size:15px;font-weight:600;color:#f0f0f0;margin-bottom:10px;">Add from your menu</div><input id="co-menu-q" value="'+String(q).replace(/"/g,"&quot;")+'" oninput="_coMenuRender(this.value)" placeholder="Search services & products" style="width:100%;background:#111;border:1px solid #2a2a2a;border-radius:9px;padding:10px 12px;font-size:13px;color:#e0e0e0;font-family:inherit;outline:none;margin-bottom:10px;box-sizing:border-box;">'+(list.length?('<div style="overflow:auto;">'+list.map(m=>`<div onclick="_coPick(${all.indexOf(m)})" style="display:flex;justify-content:space-between;align-items:center;padding:11px 6px;border-bottom:1px solid #1e1e1e;cursor:pointer;"><span style="font-size:13px;color:#e0e0e0;">${String(m.name).replace(/</g,'&lt;')}<span style="font-size:10px;color:#777;margin-left:6px;">${m.kind}</span></span><span style="font-size:13px;color:#4ec49a;">${m.price?('$'+(+m.price).toFixed(2)):'\u2014'}</span></div>`).join('')+'</div>'):'<div style="color:#888;font-size:13px;padding:16px;text-align:center;">'+((_coMenu&&_coMenu.length)?'No matches.':'No menu found. Connect Square, or use \u201cCustom line\u201d.')+'</div>')+'<button onclick="document.getElementById(\'co-menu\').remove()" style="width:100%;margin-top:10px;background:#1a1a1a;border:1px solid #2a2a2a;color:#aaa;border-radius:9px;padding:10px;font-size:13px;cursor:pointer;font-family:inherit;">Done</button></div>';
+  const qi=document.getElementById('co-menu-q');if(qi&&qi.focus){try{qi.focus();}catch(e){}}
+}
+function _coPick(i){const m=(_coMenu||[])[i];if(!m)return;_coItems.push({name:m.name,price:+m.price||0,qty:1,variationId:m.variationId||null});_coRenderItems();_coMenuRender((document.getElementById('co-menu-q')||{}).value||'');}
+
+// Redefined checkout actions: use the line-item subtotal when present, and log every payment to the ledger.
+async function _coLink(id){
+  const c=CL[id];const items=_coValidItems();const amt=items.length?_coSubtotal():parseFloat(_coVal('co-amt'));
+  const name=_coVal('co-desc')||(items.length?(items.length+' items'):'Service');
+  if(!amt||amt<=0)return _coErr('Add line items or an amount first.');
+  _coBusy('Creating payment link\u2026');
+  try{
+    const d=await _sqFetch('/api/square/payment-link',{method:'POST',body:{amount:amt,name,email:c.email||'',phone:c.phone||''}});
+    if(!d.url)throw new Error('No link was returned.');
+    _addPayment({clientId:id,clientName:c.name,amount:amt,method:'Square',status:'unpaid',date:_todayISO(),note:'Payment link',source:'square',publicUrl:d.url});
+    const msg='Hi '+c.name.split(' ')[0]+'! Your payment link for '+name+' ($'+amt+'): '+d.url;
+    document.getElementById('co-result').innerHTML='<div style="background:#0a2019;border:1px solid #1c4030;border-radius:10px;padding:12px 14px;"><div style="font-size:12px;color:#4ec49a;font-weight:600;margin-bottom:8px;">Payment link ready \u00b7 logged in Payments</div><div style="font-size:11px;color:#bbb;word-break:break-all;font-family:monospace;margin-bottom:10px;">'+d.url+'</div><div style="display:grid;grid-template-columns:1fr 1fr;gap:8px;"><button onclick="_copyText(\''+d.url+'\',this)" class="btnp" style="border-radius:8px;padding:9px;">Copy link</button><button onclick="location.href=\'sms:?&body='+encodeURIComponent(msg)+'\'" class="btng" style="border-radius:8px;padding:9px;">Text it</button></div></div>';
+  }catch(e){_coErr(e.message||'Could not create the link.',_coRecon(e));}
+}
+async function _coInvoice(id){
+  const c=CL[id];const items=_coValidItems();const amt=items.length?_coSubtotal():parseFloat(_coVal('co-amt'));const title=_coVal('co-desc')||'Service';
+  if(!items.length && (!amt||amt<=0))return _coErr('Add line items or an amount first.');
+  if(!c.email)return _coErr('Add a client email to send an invoice (or use a payment link).');
+  _coBusy('Creating and sending invoice\u2026');
+  try{
+    const body=items.length?{name:c.name,email:c.email,lineItems:items.map(it=>({name:it.name,price:it.price,quantity:it.qty||1,variationId:it.variationId||undefined}))}:{amount:amt,title,name:c.name,email:c.email};
+    const d=await _sqFetch('/api/square/invoice',{method:'POST',body});
+    _addPayment({clientId:id,clientName:c.name,amount:(d.total!=null?d.total:amt)||0,method:'Square',status:'unpaid',date:_todayISO(),note:'Invoice'+(items.length?(' \u00b7 '+items.length+' items'):''),source:'square',squareInvoiceId:d.invoiceId,publicUrl:d.url});
+    document.getElementById('co-result').innerHTML='<div style="background:#0a2019;border:1px solid #1c4030;border-radius:10px;padding:12px 14px;font-size:13px;color:#4ec49a;font-weight:600;"><i class="ti ti-check"></i> Invoice sent to '+c.email+' \u00b7 logged in Payments</div>';
+  }catch(e){_coErr(e.message||'Could not send the invoice.',_coRecon(e));}
+}
+async function _coCharge(id){
+  const c=CL[id];const items=_coValidItems();const amt=items.length?_coSubtotal():parseFloat(_coVal('co-amt'));
+  if(!amt||amt<=0)return _coErr('Add line items or an amount first.');
+  if(!c.squareId)return _coErr('This client is not linked to Square yet. Import them from Square, or use a payment link or invoice.');
+  _coBusy('Checking saved cards\u2026');
+  try{
+    const d=await _sqFetch('/api/square/charge-card?customerId='+encodeURIComponent(c.squareId));
+    const cards=d.cards||[];
+    if(!cards.length)return _coErr('No saved card for '+c.name.split(' ')[0]+'. Use a payment link or invoice instead.');
+    document.getElementById('co-result').innerHTML='<div style="background:#161616;border:1px solid #242424;border-radius:10px;padding:12px 14px;"><div style="font-size:12px;color:#aaa;margin-bottom:8px;">Charge $'+amt.toFixed(2)+' to a saved card:</div>'+cards.map(cd=>'<button onclick="_coDoCharge(\''+id+'\',\''+cd.id+'\')" class="btng" style="width:100%;justify-content:space-between;margin-bottom:6px;border-radius:8px;"><span>'+((cd.brand||'Card'))+' \u00b7\u00b7\u00b7\u00b7 '+(cd.last4||'')+'</span><span style="color:var(--accent);">Charge \u2192</span></button>').join('')+'</div>';
+  }catch(e){_coErr(e.message||'Could not load saved cards.',_coRecon(e));}
+}
+async function _coDoCharge(id,cardId){
+  const c=CL[id];const items=_coValidItems();const amt=items.length?_coSubtotal():parseFloat(_coVal('co-amt'));const note=_coVal('co-desc')||'SlickChart';
+  _coBusy('Charging\u2026');
+  try{
+    const d=await _sqFetch('/api/square/charge-card',{method:'POST',body:{customerId:c.squareId,cardId,amount:amt,note}});
+    _addPayment({clientId:id,clientName:c.name,amount:amt,method:'Square',status:'paid',date:_todayISO(),note:note+' (card on file)',source:'square'});
+    document.getElementById('co-result').innerHTML='<div style="background:#0a2019;border:1px solid #1c4030;border-radius:10px;padding:12px 14px;font-size:13px;color:#4ec49a;font-weight:600;"><i class="ti ti-check"></i> Charged $'+amt.toFixed(2)+' \u2014 '+(d.status||'done')+' \u00b7 logged in Payments</div>';
+    if(typeof proToast==='function')proToast('Payment complete \u2713');
+  }catch(e){_coErr(e.message||'The charge did not go through.',_coRecon(e));}
+}
+
+// Payments hub
+function renderPayments(){
+  setNav('more');document.getElementById('tt').textContent='Payments';
+  const out=_payments.filter(p=>p.status==='unpaid'||p.status==='partial');
+  const paid=_payments.filter(p=>p.status==='paid');
+  const sum=arr=>arr.reduce((a,p)=>a+(parseFloat(p.amount)||0),0);
+  const ym=new Date().toISOString().slice(0,7);
+  const monthPaid=sum(paid.filter(p=>String(p.date||'').slice(0,7)===ym));
+  const chip=s=>({paid:['#0a2019','#4ec49a','Paid'],unpaid:['#2a1a0a','#e8b060','Unpaid'],partial:['#0d1e33','#5ba3e8','Partial'],refunded:['#1a1a1a','#999','Refunded'],canceled:['#1a1a1a','#777','Canceled']}[s]||['#1a1a1a','#999',s]);
+  const row=p=>{const cs=chip(p.status);return `<div style="background:#161616;border:1px solid #242424;border-radius:11px;padding:11px 13px;margin:0 16px 8px;"><div style="display:flex;justify-content:space-between;align-items:center;"><div style="min-width:0;"><div style="font-size:14px;font-weight:600;color:#f0f0f0;">$${(parseFloat(p.amount)||0).toFixed(2)} <span style="font-size:11px;color:#888;font-weight:400;">\u00b7 ${p.method||''}</span></div><div style="font-size:12px;color:#999;margin-top:1px;">${String(p.clientName||'\u2014').replace(/</g,'&lt;')} \u00b7 ${(p.date||'').slice(0,10)}</div></div><span style="font-size:10px;font-weight:700;padding:3px 9px;border-radius:20px;background:${cs[0]};color:${cs[1]};">${cs[2]}</span></div>${p.note?`<div style="font-size:11px;color:#777;margin-top:5px;">${String(p.note).replace(/</g,'&lt;')}</div>`:''}<div style="display:flex;gap:12px;margin-top:8px;align-items:center;">${p.status!=='paid'?`<button onclick="_payMarkPaid('${p.id}')" style="background:none;border:none;color:#4ec49a;font-size:12px;font-weight:600;cursor:pointer;font-family:inherit;padding:0;"><i class="ti ti-check"></i> Mark paid</button>`:''}${p.publicUrl?`<a href="${p.publicUrl}" target="_blank" rel="noopener" style="color:#5ba3e8;font-size:12px;font-weight:600;text-decoration:none;"><i class="ti ti-external-link"></i> View</a>`:''}<button onclick="_payDelete('${p.id}')" style="background:none;border:none;color:#a85a5a;font-size:12px;cursor:pointer;font-family:inherit;padding:0;margin-left:auto;">Remove</button></div></div>`;};
+  S.innerHTML=`
+  <div style="padding:10px 16px 4px;display:flex;gap:8px;flex-wrap:wrap;">
+    <button onclick="_payLogOpen()" style="flex:1;background:var(--accent);color:var(--accent-ink);border:none;border-radius:9px;padding:10px;font-size:12px;font-weight:700;cursor:pointer;font-family:inherit;min-width:110px;"><i class="ti ti-plus"></i> Log a payment</button>
+    <button onclick="_paySyncSquare()" style="flex:1;background:#161616;border:1px solid #2a2a2a;color:#cfe4d8;border-radius:9px;padding:10px;font-size:12px;font-weight:600;cursor:pointer;font-family:inherit;min-width:110px;"><i class="ti ti-refresh"></i> Sync from Square</button>
+    <button onclick="_payExportCSV()" style="background:#161616;border:1px solid #2a2a2a;color:#aaa;border-radius:9px;padding:10px 12px;font-size:12px;font-weight:600;cursor:pointer;font-family:inherit;"><i class="ti ti-download"></i> CSV</button>
+  </div>
+  <div style="display:flex;gap:8px;padding:8px 16px 6px;">
+    <div style="flex:1;background:#2a1a0a;border:1px solid #4a3510;border-radius:11px;padding:11px 13px;"><div style="font-size:11px;color:#c99a5a;">Outstanding</div><div style="font-size:18px;font-weight:600;color:#e8b060;">$${sum(out).toFixed(2)}</div></div>
+    <div style="flex:1;background:#0a2019;border:1px solid #1c4030;border-radius:11px;padding:11px 13px;"><div style="font-size:11px;color:#6fae90;">Collected this month</div><div style="font-size:18px;font-weight:600;color:#4ec49a;">$${monthPaid.toFixed(2)}</div></div>
+  </div>
+  ${out.length?`<div class="sh"><h2>Outstanding</h2></div>${out.map(row).join('')}`:''}
+  ${paid.length?`<div class="sh"><h2>Paid</h2></div>${paid.slice(0,50).map(row).join('')}`:''}
+  ${(!_payments.length)?`<div style="margin:14px 16px;text-align:center;color:#888;font-size:13px;padding:26px 16px;background:#161616;border:1px solid #242424;border-radius:12px;">No payments yet. Send an invoice from a client\u2019s chart, or tap <b>Log a payment</b> to record cash, Venmo, or anything else.</div>`:''}
+  <div style="height:20px;"></div>`;
+}
+function _payMarkPaid(idv){const p=_payments.find(x=>x.id===idv);if(p){p.status='paid';_savePayments();}if(typeof _navCur!=='undefined'&&_navCur&&_navCur.screen==='payments')renderPayments();}
+function _payDelete(idv){const i=_payments.findIndex(x=>x.id===idv);if(i>=0){_payments.splice(i,1);_savePayments();}if(typeof _navCur!=='undefined'&&_navCur&&_navCur.screen==='payments')renderPayments();}
+function _payExportCSV(){
+  const rows=[['Date','Client','Amount','Method','Status','Note']].concat(_payments.map(p=>[p.date||'',p.clientName||'',(parseFloat(p.amount)||0).toFixed(2),p.method||'',p.status||'',p.note||'']));
+  const csv=rows.map(r=>r.map(c=>{c=String(c);return /[",\n]/.test(c)?'"'+c.replace(/"/g,'""')+'"':c;}).join(',')).join('\r\n');
+  try{const a=document.createElement('a');a.href='data:text/csv;charset=utf-8,'+encodeURIComponent(csv);a.download='slickchart-payments.csv';(document.querySelector('.shell')||document.body).appendChild(a);a.click();a.remove();}catch(e){}
+  if(typeof proToast==='function')proToast('Exported '+_payments.length+' payments');
+}
+function _payLogOpen(){
+  const ex=document.getElementById('pay-log');if(ex)ex.remove();
+  const opts=Object.entries(CL).map(([cid,c])=>`<option value="${cid}">${String(c.name||'').replace(/</g,'&lt;')}</option>`).join('');
+  const m=document.createElement('div');m.id='pay-log';m.style.cssText='position:absolute;inset:0;z-index:9999;background:rgba(0,0,0,.6);display:flex;flex-direction:column;justify-content:flex-end;';m.onclick=e=>{if(e.target===m)m.remove();};
+  m.innerHTML='<div style="background:#161616;border-top:1px solid #2a2a2a;border-radius:16px 16px 0 0;padding:18px;max-height:88%;overflow:auto;"><div style="width:36px;height:4px;background:#2a2a2a;border-radius:2px;margin:0 auto 14px;"></div><div style="font-size:15px;font-weight:600;color:#f0f0f0;margin-bottom:12px;">Log a payment</div><span class="fl-lbl">Client</span><select class="fi" id="pl-client" style="margin-bottom:10px;">'+opts+'</select><div style="display:flex;gap:10px;"><div style="flex:1;"><span class="fl-lbl">Amount</span><input class="fi" id="pl-amt" inputmode="decimal" placeholder="0.00" style="margin-bottom:10px;"></div><div style="flex:1;"><span class="fl-lbl">Date</span><input type="date" class="fi" id="pl-date" value="'+_todayISO()+'" style="margin-bottom:10px;color-scheme:dark;"></div></div><div style="display:flex;gap:10px;"><div style="flex:1;"><span class="fl-lbl">Method</span><select class="fi" id="pl-method" style="margin-bottom:10px;"><option>Cash</option><option>Venmo</option><option>Zelle</option><option>Card</option><option>Stripe</option><option>Square</option><option>Other</option></select></div><div style="flex:1;"><span class="fl-lbl">Status</span><select class="fi" id="pl-status" style="margin-bottom:10px;"><option value="paid">Paid</option><option value="unpaid">Unpaid</option><option value="partial">Partial</option></select></div></div><span class="fl-lbl">Note (optional)</span><input class="fi" id="pl-note" placeholder="e.g. Hydrafacial + serum" style="margin-bottom:14px;"><button class="btnp" style="width:100%;border-radius:10px;" onclick="_payLogSave()"><i class="ti ti-check"></i> Save payment</button><button onclick="document.getElementById(\'pay-log\').remove()" style="width:100%;margin-top:8px;background:none;border:none;color:#777;font-size:13px;cursor:pointer;font-family:inherit;padding:6px;">Cancel</button></div>';
+  (document.querySelector('.shell')||document.body).appendChild(m);
+}
+function _payLogSave(){
+  const g=idv=>{const e=document.getElementById(idv);return e?e.value:'';};
+  const cid=g('pl-client');const c=CL[cid]||{};const amt=parseFloat(g('pl-amt'));
+  if(!amt||amt<=0){if(typeof proToast==='function')proToast('Enter an amount');return;}
+  _addPayment({clientId:cid,clientName:c.name||'Client',amount:amt,method:g('pl-method')||'Cash',status:g('pl-status')||'paid',date:g('pl-date')||_todayISO(),note:g('pl-note')||'',source:'manual'});
+  const m=document.getElementById('pay-log');if(m)m.remove();
+  if(typeof _navCur!=='undefined'&&_navCur&&_navCur.screen==='payments')renderPayments();
+  if(typeof proToast==='function')proToast('Payment logged \u2713');
+}
+async function _paySyncSquare(){
+  if(typeof proToast==='function')proToast('Syncing from Square\u2026');
+  try{
+    const d=await _sqFetch('/api/square/invoices');
+    (d.invoices||[]).forEach(sv=>{
+      const e=_payments.find(p=>p.squareInvoiceId===sv.id);
+      const st=(sv.status==='paid')?'paid':(sv.status==='partial'?'partial':(sv.status==='canceled'||sv.status==='refunded')?sv.status:'unpaid');
+      if(e){e.status=st;if(sv.total!=null)e.amount=sv.total;if(sv.publicUrl)e.publicUrl=sv.publicUrl;}
+      else if(sv.status!=='draft'){_addPayment({clientId:'',clientName:sv.client||'Client',amount:sv.total||0,method:'Square',status:st,date:(sv.createdAt||'').slice(0,10)||_todayISO(),note:'Square invoice',source:'square',squareInvoiceId:sv.id,publicUrl:sv.publicUrl});}
+    });
+    _savePayments();
+    if(typeof _navCur!=='undefined'&&_navCur&&_navCur.screen==='payments')renderPayments();
+    if(typeof proToast==='function')proToast('Synced from Square \u2713');
+  }catch(e){if(typeof proToast==='function')proToast(_coRecon(e)?'Reconnect Square to sync':(e.message||'Could not sync'));}
+}
 
 function renderConnectCalendar(){
   setNav('account');document.getElementById('tt').textContent='Sync calendar';
@@ -7128,6 +7290,8 @@ function renderMore(){
     ];
     return items.map(([icon,bg,ic,name,desc,screen,badge])=>`<div class="card" onclick="nav('${screen}')"><div class="row"><div style="width:44px;height:44px;border-radius:10px;background:${bg};display:flex;align-items:center;justify-content:center;flex-shrink:0;"><i class="ti ${icon}" style="font-size:20px;color:${ic};"></i></div><div style="flex:1;"><div style="font-size:14px;font-weight:500;color:#e0e0e0;">${name}</div><div style="font-size:12px;color:${badge?'var(--accent)':'#999'};">${desc}</div></div>${badge?`<span style="background:var(--accent);color:var(--accent-ink);font-size:12px;font-weight:700;min-width:20px;height:20px;border-radius:10px;display:flex;align-items:center;justify-content:center;padding:0 6px;flex-shrink:0;">${badge}</span>`:`<i aria-hidden="true" class="ti ti-chevron-right" style="font-size:16px;color:#888;flex-shrink:0;"></i>`}</div></div>`).join('');
   })()}
+  <div class="sh"><h2>Business</h2></div>
+  <div style="background:#1a1a1a;border:1px solid #2a2a2a;border-radius:12px;margin:0 16px 20px;overflow:hidden;"><div onclick="nav('payments')" style="display:flex;align-items:center;gap:11px;padding:13px 14px;cursor:pointer;"><div style="width:38px;height:38px;border-radius:10px;background:#0a2019;display:flex;align-items:center;justify-content:center;flex-shrink:0;"><i class="ti ti-cash" style="font-size:18px;color:#4ec49a;"></i></div><div style="flex:1;"><div style="font-size:14px;font-weight:500;color:#e0e0e0;">Payments</div><div style="font-size:12px;color:#999;">Invoices, balances &amp; records</div></div><i class="ti ti-chevron-right" style="font-size:16px;color:#888;"></i></div></div>
   <div class="sh"><h2>Beta program</h2></div>
   <div style="background:#1a1a1a;border:1px solid #2a2a2a;border-radius:12px;margin:0 16px 20px;overflow:hidden;">
     <div onclick="nav('whats-new')" style="display:flex;align-items:center;gap:11px;padding:13px 14px;border-bottom:1px solid #222;cursor:pointer;"><div style="width:38px;height:38px;border-radius:10px;background:#0a2019;display:flex;align-items:center;justify-content:center;flex-shrink:0;position:relative;"><i class="ti ti-sparkles" style="font-size:18px;color:#4ec49a;"></i>${window._newsUnread?'<span style="position:absolute;top:-3px;right:-3px;width:10px;height:10px;background:#e87070;border-radius:50%;border:2px solid #1a1a1a;"></span>':''}</div><div style="flex:1;"><div style="font-size:14px;font-weight:500;color:#e0e0e0;">What’s new</div><div style="font-size:12px;color:${window._newsUnread?'var(--accent)':'#999'};">${window._newsUnread?'New updates':'Latest updates & changes'}</div></div><i class="ti ti-chevron-right" style="font-size:16px;color:#888;"></i></div>
