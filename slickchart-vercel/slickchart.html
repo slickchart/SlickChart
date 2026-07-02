@@ -1165,7 +1165,7 @@ function nav(screen,data){
   // track history for the global back button (skip when we're navigating back)
   if(!_navBacking){if(_navCur&&(_navCur.screen!==screen||_navCur.data!==data)){_navStack.push(_navCur);if(_navStack.length>40)_navStack.shift();}}
   _navCur={screen,data};
-  const titles={home:'Home',clients:'Clients',forms:'Forms',messages:'Messages',pro:'Pro',more:'More',account:'Account',branding:'Branding',shop:'Shop',partners:'Partners',learn:'Learn',virtual:'Virtual Consultations',protocols:'Protocols',vault:'My Docs',inventory:'Inventory',vendors:'Vendors',calendar:'Calendar',room:'Session','data-setup':'Get set up','import-clients':'Import clients','import-products':'Import products'};
+  const titles={home:'Home',clients:'Clients',forms:'Forms',messages:'Messages',pro:'Pro',more:'More',account:'Account',branding:'Branding',shop:'Shop',partners:'Partners',learn:'Learn',virtual:'Virtual Consultations',protocols:'Protocols',vault:'My Docs',inventory:'Inventory',vendors:'Vendors',calendar:'Calendar',room:'Session','data-setup':'Get set up','import-clients':'Import clients','import-products':'Import products','switch-app':'Switch apps','connect-calendar':'Sync calendar'};
   document.getElementById('tt').textContent='SlickChart';
   document.title='SlickChart' + (titles[screen] ? ' — '+titles[screen] : '');
   if(timerInt&&screen!=='room'){clearInterval(timerInt);timerInt=null;}
@@ -1211,7 +1211,7 @@ function nav(screen,data){
     'invite-staff':renderInviteStaff,
     calendar:renderCalendar,
     requests:renderRequests,
-    'data-setup':renderDataSetup,'import-clients':renderImportClients,'import-products':renderImportProducts,
+    'data-setup':renderDataSetup,'import-clients':renderImportClients,'import-products':renderImportProducts,'switch-app':renderSwitchApp,'connect-calendar':renderConnectCalendar,
     checkins:renderCheckins,
     'checkin-detail':()=>renderCheckinDetail(data),
     'add-partner':renderAddPartner,
@@ -6447,6 +6447,98 @@ function _csvImportScreen(kind){
 }
 function renderImportClients(){_csvImportScreen('clients');}
 function renderImportProducts(){_csvImportScreen('products');}
+
+async function _requestLiveSync(app){try{const k='sc_sync_requests';const cur=JSON.parse(localStorage.getItem(k)||'[]');if(cur.indexOf(app)<0)cur.push(app);localStorage.setItem(k,JSON.stringify(cur));}catch(e){}try{const tok=(typeof Cloud!=='undefined'&&Cloud&&Cloud.token)||'';await fetch('/api/sync-request',{method:'POST',headers:Object.assign({'Content-Type':'application/json'},tok?{'Authorization':'Bearer '+tok}:{}),body:JSON.stringify({app})});}catch(e){}proToast('Thanks \u2014 we\u2019ll prioritize '+app+' live sync');if(typeof _navCur!=='undefined'&&_navCur&&_navCur.screen==='switch-app')renderSwitchApp();}
+async function _loadSyncCounts(){try{const r=await fetch('/api/sync-request');const j=await r.json();const c=(j&&j.counts)||{};document.querySelectorAll('[data-synccount]').forEach(el=>{const app=el.getAttribute('data-synccount');if(c[app])el.textContent=' \u00b7 '+c[app]+' interested';});}catch(e){}}
+
+// ── Google / Apple Calendar sync via iCalendar (ICS) ──
+function _icsStamp(dateStr,timeStr){
+  let base=/^\d{4}-\d{2}-\d{2}$/.test(String(dateStr))?dateStr:(String(dateStr)+' '+new Date().getFullYear());
+  let d=new Date(base+' '+(timeStr||'9:00 AM'));
+  if(isNaN(d))d=new Date(String(dateStr)+' '+(timeStr||'9:00 AM'));
+  if(isNaN(d))return null;
+  const p=n=>String(n).padStart(2,'0');
+  return {d,stamp:d.getFullYear()+p(d.getMonth()+1)+p(d.getDate())+'T'+p(d.getHours())+p(d.getMinutes())+'00'};
+}
+function _rebuildCalendarFeed(){
+  try{
+    const src=(typeof manualAppts!=='undefined'?manualAppts:[]).concat(typeof confirmedAppts!=='undefined'?confirmedAppts:[]);
+    const events=[];const p=n=>String(n).padStart(2,'0');
+    src.forEach((a,i)=>{const st=_icsStamp(a.date,a.time);if(!st)return;const e=new Date(st.d.getTime()+3600000);const es=e.getFullYear()+p(e.getMonth()+1)+p(e.getDate())+'T'+p(e.getHours())+p(e.getMinutes())+'00';events.push({uid:'sc-'+(a.date||'')+'-'+i+'@slickchart',title:(a.tx?a.tx+' \u2014 ':'')+(a.client||'Appointment'),start:st.stamp,end:es,notes:''});});
+    localStorage.setItem('sc_calendar_feed',JSON.stringify(events));
+  }catch(e){}
+}
+function _addToCalendarByIndex(i){const a=(window._calAdded||[])[i];if(!a)return;_addToCalendar((a.tx?a.tx+' \u2014 ':'')+(a.client||'Appointment'),a.date,a.time);}
+function _addToCalendar(title,dateStr,timeStr){
+  const st=_icsStamp(dateStr,timeStr);if(!st){proToast('Add a date & time first');return;}
+  const p=n=>String(n).padStart(2,'0');const e=new Date(st.d.getTime()+3600000);
+  const es=e.getFullYear()+p(e.getMonth()+1)+p(e.getDate())+'T'+p(e.getHours())+p(e.getMinutes())+'00';
+  const ics=['BEGIN:VCALENDAR','VERSION:2.0','PRODID:-//SlickChart//EN','BEGIN:VEVENT','UID:sc-'+Date.now()+'@slickchart','DTSTART:'+st.stamp,'DTEND:'+es,'SUMMARY:'+String(title).replace(/([,;])/g,'\\$1'),'END:VEVENT','END:VCALENDAR'].join('\r\n');
+  const gcal='https://calendar.google.com/calendar/render?action=TEMPLATE&text='+encodeURIComponent(title)+'&dates='+st.stamp+'/'+es;
+  const ov=document.createElement('div');ov.id='cal-add-sheet';
+  ov.style.cssText='position:absolute;inset:0;z-index:9999;background:rgba(0,0,0,.6);display:flex;align-items:center;justify-content:center;padding:24px 16px;box-sizing:border-box;';
+  ov.onclick=ev=>{if(ev.target===ov)ov.remove();};
+  ov.innerHTML='<div style="background:#161616;border:1px solid #2a2a2a;width:100%;border-radius:16px;padding:18px;"><div style="font-size:15px;font-weight:600;color:#f0f0f0;margin-bottom:4px;">Add to calendar</div><div style="font-size:12px;color:#999;margin-bottom:14px;">'+String(title).replace(/</g,'&lt;')+'</div><a href="'+gcal+'" target="_blank" rel="noopener" onclick="var s=this.closest(\'#cal-add-sheet\');if(s)s.remove();" class="btnp" style="display:block;text-align:center;text-decoration:none;border-radius:9px;padding:11px;margin-bottom:8px;"><i class="ti ti-brand-google"></i> Google Calendar</a><a href="data:text/calendar;charset=utf-8,'+encodeURIComponent(ics)+'" download="appointment.ics" onclick="var s=this.closest(\'#cal-add-sheet\');if(s)s.remove();" class="btng" style="display:block;text-align:center;text-decoration:none;border-radius:9px;padding:11px;"><i class="ti ti-brand-apple"></i> Apple / download .ics</a></div>';
+  (document.querySelector('.shell')||document.body).appendChild(ov);
+}
+async function _loadCalFeedUrl(){
+  const box=document.getElementById('cal-feed-box');if(!box)return;
+  const tok=(typeof Cloud!=='undefined'&&Cloud&&Cloud.token)||'';
+  if(!tok){box.innerHTML='<span style="color:#e8a060;">Log in to get your private calendar link.</span>';return;}
+  try{
+    const r=await fetch('/api/calendar-url',{headers:{'Authorization':'Bearer '+tok}});
+    const j=await r.json();
+    if(!r.ok||!j.url){box.innerHTML='<span style="color:#e8a060;">'+((j&&j.error)||'Could not create your link.')+'</span>';return;}
+    box.innerHTML='<div style="font-size:11px;color:#777;margin-bottom:6px;">Your private calendar link</div><div style="font-size:11px;color:#bbb;word-break:break-all;font-family:monospace;line-height:1.5;">'+j.url+'</div><button onclick="_copyText(\''+j.url+'\',this)" class="btnp" style="width:100%;border-radius:9px;padding:10px;margin-top:10px;"><i class="ti ti-copy"></i> Copy link</button>';
+  }catch(e){box.innerHTML='<span style="color:#e8a060;">Could not reach the server. This works once deployed to Vercel.</span>';}
+}
+function renderConnectCalendar(){
+  setNav('account');document.getElementById('tt').textContent='Sync calendar';
+  S.innerHTML=`
+  <div style="padding:14px 16px 4px;">
+    <div style="font-size:15px;font-weight:600;color:#f0f0f0;margin-bottom:6px;">Sync to Google &amp; Apple Calendar</div>
+    <div style="font-size:13px;color:#999;line-height:1.55;margin-bottom:14px;">Subscribe once and your SlickChart appointments appear in your Google or Apple calendar automatically \u2014 and stay updated. This is one-way (SlickChart \u2192 your calendar).</div>
+    <div id="cal-feed-box" style="background:#161616;border:1px solid #242424;border-radius:12px;padding:13px 14px;margin-bottom:16px;font-size:12px;color:#999;">Preparing your private calendar link\u2026</div>
+    <div style="font-size:11px;font-weight:600;color:#aaa;text-transform:uppercase;letter-spacing:.06em;margin:6px 0 8px;">Google Calendar</div>
+    <div style="font-size:13px;color:#cfcfcf;line-height:1.7;background:#161616;border:1px solid #242424;border-radius:10px;padding:12px 14px;margin-bottom:12px;">On a computer, open Google Calendar \u2192 beside <b>Other calendars</b> click <b>+</b> \u2192 <b>From URL</b> \u2192 paste your link \u2192 <b>Add calendar</b>.</div>
+    <div style="font-size:11px;font-weight:600;color:#aaa;text-transform:uppercase;letter-spacing:.06em;margin:6px 0 8px;">Apple Calendar</div>
+    <div style="font-size:13px;color:#cfcfcf;line-height:1.7;background:#161616;border:1px solid #242424;border-radius:10px;padding:12px 14px;margin-bottom:14px;"><b>iPhone/iPad:</b> Settings \u2192 Calendar \u2192 Accounts \u2192 Add Account \u2192 Other \u2192 <b>Add Subscribed Calendar</b> \u2192 paste your link.<br><b>Mac:</b> Calendar app \u2192 File \u2192 <b>New Calendar Subscription</b> \u2192 paste your link.</div>
+    <div style="background:#0d1e33;border:1px solid #1a3a5c;border-radius:10px;padding:11px 13px;font-size:12px;color:#8fc0ea;line-height:1.55;"><i class="ti ti-info-circle" style="font-size:13px;"></i> Subscribed calendars refresh on Google/Apple\u2019s own schedule (often a few hours). For an instant add, use <b>Add to calendar</b> on any appointment.</div>
+  </div><div style="height:20px;"></div>`;
+  _loadCalFeedUrl();
+}
+
+function renderSwitchApp(){
+  setNav('account');document.getElementById('tt').textContent='Switch apps';
+  let _reqd=[];try{_reqd=JSON.parse(localStorage.getItem('sc_sync_requests')||'[]');}catch(e){}
+  const APPS=[
+    {name:'Square',note:'Full two-way live sync \u2014 clients, appointments & products.',mode:'connect'},
+    {name:'Booksy',note:'Import clients now. Live sync is possible (Booksy approval required).',mode:'import',sync:true},
+    {name:'Calendly',note:'Import clients now. Live sync is possible on request.',mode:'import',sync:true},
+    {name:'Acuity Scheduling',note:'Import clients now. Live sync is possible on request.',mode:'import',sync:true},
+    {name:'GlossGenius',note:'No live connection available \u2014 export your clients to CSV and import here.',mode:'import'},
+    {name:'Vagaro',note:'No live connection available \u2014 export your clients to CSV and import here.',mode:'import'},
+    {name:'Schedulicity',note:'No live connection available \u2014 export your clients to CSV and import here.',mode:'import'},
+    {name:'MassageBook',note:'No live connection available \u2014 export your clients to CSV and import here.',mode:'import'},
+    {name:'Another app or spreadsheet',note:'Anything that exports a CSV works.',mode:'import'}
+  ];
+  S.innerHTML=`
+  <div style="padding:14px 16px 4px;"><div style="font-size:15px;font-weight:600;color:#f0f0f0;margin-bottom:6px;">Coming from another booking app?</div><div style="font-size:13px;color:#999;line-height:1.55;margin-bottom:8px;">Bring your clients over in minutes. Almost every app lets you export your client list as a <b>CSV</b> \u2014 import it here, then take bookings through SlickChart\u2019s request inbox or keep your current calendar. Nothing has to change overnight.</div></div>
+  ${APPS.map(a=>`<div style="margin:0 16px 10px;background:#161616;border:1px solid #242424;border-radius:12px;padding:13px 14px;">
+    <div style="display:flex;align-items:center;gap:10px;"><div style="width:36px;height:36px;border-radius:9px;background:${a.mode==='connect'?'#fff':'#1e2b25'};display:flex;align-items:center;justify-content:center;flex-shrink:0;"><i class="ti ${a.mode==='connect'?'ti-brand-square':'ti-calendar'}" style="font-size:18px;color:${a.mode==='connect'?'#000':'#4ec49a'};"></i></div>
+      <div style="flex:1;min-width:0;"><div style="font-size:14px;font-weight:600;color:#e0e0e0;">${a.name}</div><div style="font-size:12px;color:#999;margin-top:1px;line-height:1.4;">${a.note}${a.sync?`<span data-synccount="${a.name}" style="color:#4ec49a;"></span>`:''}</div></div></div>
+    <div style="display:flex;gap:8px;margin-top:10px;">
+      ${a.mode==='connect'
+        ?`<button onclick="nav('square-guide')" style="flex:1;background:var(--accent);color:var(--accent-ink);border:none;border-radius:8px;padding:9px;font-size:12px;font-weight:700;cursor:pointer;font-family:inherit;">Connect ${a.name}</button>`
+        :`<button onclick="nav('import-clients')" style="flex:1;background:var(--accent);color:var(--accent-ink);border:none;border-radius:8px;padding:9px;font-size:12px;font-weight:700;cursor:pointer;font-family:inherit;">Import clients (CSV)</button>`}
+      ${a.sync?`<button onclick="_requestLiveSync('${a.name}')" style="background:${_reqd.indexOf(a.name)>=0?'#0f3324':'#1a1a1a'};border:1px solid ${_reqd.indexOf(a.name)>=0?'#1c4030':'#2a2a2a'};color:#9fbfae;border-radius:8px;padding:9px 12px;font-size:12px;font-weight:600;cursor:pointer;font-family:inherit;white-space:nowrap;">${_reqd.indexOf(a.name)>=0?'Requested \u2713':'Request live sync'}</button>`:''}
+    </div>
+  </div>`).join('')}
+  <div style="margin:6px 16px 20px;background:#0d1e33;border:1px solid #1a3a5c;border-radius:10px;padding:11px 13px;font-size:12px;color:#8fc0ea;line-height:1.55;"><i class="ti ti-info-circle" style="font-size:13px;"></i> Tip: in your old app, look for <b>Clients</b> or <b>Customers</b> \u2192 <b>Export</b> to download a CSV. The first row should be column names (Name, Email, Phone). We\u2019ll skip anyone already in SlickChart.</div>
+  <div style="height:20px;"></div>`;
+  _loadSyncCounts();
+}
+
 function renderDataSetup(){
   setNav('account');document.getElementById('tt').textContent='Get set up';
   const card=(icon,ic,bg,title,desc,onclick)=>`<div onclick="${onclick}" style="margin:0 16px 12px;background:#161616;border:1px solid #242424;border-radius:12px;padding:14px;display:flex;align-items:center;gap:12px;cursor:pointer;"><div style="width:44px;height:44px;border-radius:10px;background:${bg};display:flex;align-items:center;justify-content:center;flex-shrink:0;"><i class="ti ${icon}" style="font-size:22px;color:${ic};"></i></div><div style="flex:1;min-width:0;"><div style="font-size:14px;font-weight:600;color:#e0e0e0;">${title}</div><div style="font-size:12px;color:#999;margin-top:2px;line-height:1.45;">${desc}</div></div><i class="ti ti-chevron-right" style="font-size:16px;color:#888;flex-shrink:0;"></i></div>`;
@@ -6456,9 +6548,11 @@ function renderDataSetup(){
   ${card('ti-users','#4ec49a','#0a2019','Import clients from a file','Moving from another system? Upload a spreadsheet (CSV) of your clients.',"nav('import-clients')")}
   ${card('ti-shopping-bag','var(--accent)','var(--accent-tint)','Import your product list','Upload a CSV of the products you sell or recommend.',"nav('import-products')")}
   ${card('ti-user-plus','#a891ec','#1e1633','Add clients one by one','Prefer to add them manually? Start a new client profile.',"nav('new-client')")}
+  ${card('ti-arrows-exchange','#5ba3e8','#0d1e33','Switching from another app?','Booksy, GlossGenius, Vagaro, Calendly and more — see how to bring your data over.',"nav('switch-app')")}
   <div class="sh"><h2>How you take bookings</h2></div>
   ${card('ti-brand-square','#000','#fff','I use Square','Connect Square to auto-sync clients, appointments &amp; products.',"nav('square-guide')")}
-  ${card('ti-calendar-check','#5ba3e8','#0d1e33','I book myself (no Square)','Clients request times in their app; you confirm the request and add it to your own calendar.',"nav('requests')")}
+  ${card('ti-calendar-check','#5ba3e8','#0d1e33','I book myself (no Square)','See your in-app calendar, confirm client booking requests, and add appointments yourself.',"nav('calendar')")}
+  ${card('ti-calendar-share','#4ec49a','#0a2019','Sync to Google &amp; Apple Calendar','Subscribe once so your SlickChart appointments show up in your phone calendar automatically.',"nav('connect-calendar')")}
   <div style="margin:4px 16px 20px;background:#0d1e33;border:1px solid #1a3a5c;border-radius:10px;padding:11px 13px;font-size:12px;color:#8fc0ea;line-height:1.55;"><i class="ti ti-info-circle" style="font-size:13px;"></i> No Square? No problem. SlickChart works fully on its own \u2014 charting, forms, photos, messaging, product recommendations, and booking requests. Square is optional.</div>
   <div style="height:20px;"></div>`;
 }
@@ -6954,7 +7048,9 @@ _cloudInit();
 // Requests arrive from the client app via SlickBridge. Confirming
 // pushes the appointment onto the calendar and notifies the client.
 // ════════════════════════════════════════════════════════════════
-let confirmedAppts=[];           // appts confirmed via the booking flow
+let confirmedAppts=[];           // appts confirmed via the booking flow (session; re-seeded from bookings)
+let manualAppts=(function(){try{return JSON.parse(localStorage.getItem('sc_manual_appts')||'[]');}catch(e){return [];}})();
+function _saveManualAppts(){try{localStorage.setItem('sc_manual_appts',JSON.stringify(manualAppts));}catch(e){}}
 let suggestOpenFor=null;         // id of request whose "suggest" panel is open
 
 function pendingRequests(){return SlickBridge.getBookings().filter(b=>b.status==='pending');}
@@ -6977,6 +7073,7 @@ function seedDemoRequestOnce(){
 
 function addConfirmedAppt(b){
   confirmedAppts.unshift({client:b.client,tx:b.treatment,date:b.date,dateLabel:fmtBookingDate(b),time:b.time,ic:'#4ec49a'});
+  try{_rebuildCalendarFeed();}catch(e){}
 }
 // ── Image helpers (downscale uploads to a shareable data URL, or accept a link) ──
 function _pickImages(cb){
@@ -7302,6 +7399,7 @@ function renderCalendar(){
   const days=['Sun','Mon','Tue','Wed','Thu','Fri','Sat'];
   const today=26;
   const appts=_apptsData;
+  const _added=manualAppts.concat(confirmedAppts);window._calAdded=_added;
   const weekDates=[22,23,24,25,26,27,28];
   const todayAppts=appts.filter(a=>a.day===today);
   const pend=pendingRequests();
@@ -7344,7 +7442,8 @@ function renderCalendar(){
     </div>
   </div>`;
   S.innerHTML=`
-  <div style="padding:10px 16px 0;display:flex;align-items:center;justify-content:flex-end;">
+  <div style="padding:10px 16px 0;display:flex;align-items:center;justify-content:space-between;gap:8px;">
+    <button onclick="nav('connect-calendar')" style="background:#161616;border:1px solid #2a2a2a;color:#9fbfae;border-radius:8px;padding:7px 11px;font-size:12px;font-weight:600;cursor:pointer;font-family:inherit;"><i class="ti ti-calendar-share" style="font-size:12px;"></i> Sync to Google/Apple</button>
     <button onclick="openQuickAdd()" style="background:var(--accent);color:var(--accent-ink);border:none;border-radius:8px;padding:7px 12px;font-size:12px;font-weight:500;cursor:pointer;"><i class="ti ti-plus" style="font-size:12px;"></i> New appointment</button>
   </div>
   ${pend.length?`
@@ -7357,14 +7456,14 @@ function renderCalendar(){
     <i class="ti ti-chevron-right" style="font-size:18px;color:#4ec49a;"></i>
   </div>`:''}
   ${live?liveMiddle:demoMiddle}
-  ${confirmedAppts.length?`
-  <div style="border-top:1px solid #1e1e1e;padding:12px 16px 6px;"><div style="font-size:13px;font-weight:500;color:#f0f0f0;display:flex;align-items:center;gap:6px;"><i class="ti ti-calendar-plus" style="font-size:14px;color:#4ec49a;"></i> Newly booked from requests</div></div>
-  ${confirmedAppts.map(a=>`
+  ${_added.length?`
+  <div style="border-top:1px solid #1e1e1e;padding:12px 16px 6px;"><div style="font-size:13px;font-weight:500;color:#f0f0f0;display:flex;align-items:center;gap:6px;"><i class="ti ti-calendar-plus" style="font-size:14px;color:#4ec49a;"></i> Your booked appointments</div></div>
+  ${_added.map((a,i)=>`
   <div style="margin:0 16px 10px;background:#1a1a1a;border:1px solid #1a3a2c;border-radius:12px;overflow:hidden;display:flex;">
     <div style="width:4px;background:${a.ic};flex-shrink:0;"></div>
     <div style="padding:11px 13px;flex:1;display:flex;justify-content:space-between;align-items:flex-start;">
       <div><div style="font-size:13px;font-weight:500;color:#e0e0e0;">${a.client}</div><div style="font-size:12px;color:#999;margin-top:2px;">${a.tx} · ${a.dateLabel||a.date}</div></div>
-      <div style="font-size:13px;font-weight:500;color:#f0f0f0;">${a.time}</div>
+      <div style="text-align:right;"><div style="font-size:13px;font-weight:500;color:#f0f0f0;">${a.time}</div><button onclick="_addToCalendarByIndex(${i})" style="margin-top:4px;background:none;border:none;color:var(--accent);font-size:11px;cursor:pointer;font-family:inherit;"><i class="ti ti-calendar-plus" style="font-size:11px;"></i> Add to calendar</button></div>
     </div>
   </div>`).join('')}`:''}`;
 }
@@ -7407,7 +7506,7 @@ function saveQuickAdd(){
   const date=document.getElementById('qa-date')?.value||'2026-06-26';
   const time=document.getElementById('qa-time')?.value||'10:00 AM';
   let lbl=date;try{lbl=new Date(date+'T12:00:00').toLocaleDateString('en-US',{weekday:'long',month:'long',day:'numeric'});}catch(e){}
-  confirmedAppts.unshift({client:name,tx,date,dateLabel:lbl,time,ic:'var(--accent)'});
+  manualAppts.unshift({client:name,tx,date,dateLabel:lbl,time,ic:'var(--accent)'});_saveManualAppts();try{_rebuildCalendarFeed();}catch(e){}
   const m=document.getElementById('qa-modal');if(m)m.remove();
   renderCalendar();
 }
