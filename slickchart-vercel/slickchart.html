@@ -6676,7 +6676,6 @@ function _addPayment(p){p.id=p.id||('pay_'+Date.now().toString(36)+Math.random()
 // Line-item builder (pulls the provider's Square services + products, plus local products)
 let _coItems=[];
 let _coMenu=null;
-let _coMenuExpanded=false;
 function _coFlatten(d){
   const out=[];
   const add=(arr,kind)=>{(arr||[]).forEach(it=>{const vars=(it.variations&&it.variations.length)?it.variations:[{id:null,name:'',price:it.price}];vars.forEach(v=>{const nm=(v.name&&!/^regular$/i.test(v.name))?(it.name+' \u2014 '+v.name):it.name;out.push({name:nm,price:(v.price!=null?v.price:it.price)||0,variationId:v.id||null,kind});});});};
@@ -6710,25 +6709,16 @@ function _coMenuShow(){
   let ov=document.getElementById('co-menu');
   if(!ov){ov=document.createElement('div');ov.id='co-menu';ov.style.cssText='position:fixed;top:0;bottom:0;left:0;right:0;margin:0 auto;width:390px;max-width:100%;z-index:9999;background:rgba(0,0,0,.6);display:flex;flex-direction:column;justify-content:flex-end;';ov.onclick=e=>{if(e.target===ov)ov.remove();};(document.querySelector('.shell')||document.body).appendChild(ov);}
   ov.innerHTML='<div style="background:#161616;border-top:1px solid #2a2a2a;border-radius:16px 16px 0 0;padding:16px 16px 0;max-height:78%;display:flex;flex-direction:column;"><div style="width:36px;height:4px;background:#2a2a2a;border-radius:2px;margin:0 auto 12px;flex-shrink:0;"></div><div style="font-size:15px;font-weight:600;color:#f0f0f0;margin-bottom:10px;flex-shrink:0;">Add from your menu</div><input id="co-menu-q" oninput="_coMenuFilter(this.value)" placeholder="Search services &amp; products" style="width:100%;background:#111;border:1px solid #2a2a2a;border-radius:9px;padding:10px 12px;font-size:13px;color:#e0e0e0;font-family:inherit;outline:none;margin-bottom:10px;box-sizing:border-box;flex-shrink:0;"><div id="co-menu-list" style="overflow:auto;flex:1;min-height:60px;"></div><div style="flex-shrink:0;border-top:1px solid #242424;padding:10px 0 16px;background:#161616;"><div id="co-menu-added" style="font-size:12px;color:#4ec49a;text-align:center;margin-bottom:6px;font-weight:600;min-height:16px;"></div><div id="co-menu-count" style="font-size:11px;color:#777;text-align:center;margin-bottom:8px;"></div><button onclick="document.getElementById(\'co-menu\').remove()" style="width:100%;background:var(--accent);color:var(--accent-ink);border:none;border-radius:9px;padding:12px;font-size:14px;font-weight:700;cursor:pointer;font-family:inherit;">Done</button></div></div>';
-  _coMenuExpanded=false;
   _coMenuFilter('');
   const qi=document.getElementById('co-menu-q');if(qi){try{qi.focus();}catch(e){}}
 }
 function _coMenuFilter(q){
   const el=document.getElementById('co-menu-list');if(!el)return;
-  const all=_coMenu||[];const matches=all.filter(m=>!q||String(m.name).toLowerCase().includes(String(q).toLowerCase()));
-  const CAP=10;const capped=(!_coMenuExpanded && matches.length>CAP);const list=capped?matches.slice(0,CAP):matches;
+  const all=_coMenu||[];const list=all.filter(m=>!q||String(m.name).toLowerCase().includes(String(q).toLowerCase()));
   el.innerHTML=list.length?list.map(m=>`<div onclick="_coPick(${all.indexOf(m)})" style="display:flex;justify-content:space-between;align-items:center;gap:10px;padding:11px 6px;border-bottom:1px solid #1e1e1e;cursor:pointer;"><span style="font-size:13px;color:#e0e0e0;">${String(m.name).replace(/</g,'&lt;')} <span style="font-size:10px;color:${m.kind==='service'?'#4ec49a':'#777'};">${m.kind}</span></span><span style="font-size:13px;color:${(+m.price)>0?'#4ec49a':'#c99a5a'};white-space:nowrap;">${(+m.price)>0?('$'+(+m.price).toFixed(2)):'set price'}</span></div>`).join(''):('<div style="color:#888;font-size:13px;padding:16px;text-align:center;">'+((_coMenu&&_coMenu.length)?'No matches.':'No Square menu found. Add a custom line, or connect Square.')+'</div>');
   const cnt=document.getElementById('co-menu-count');
-  if(cnt){
-    if(capped){cnt.innerHTML='Showing '+CAP+' of '+matches.length+' \u00b7 <span onclick="_coMenuExpand()" style="color:var(--accent);cursor:pointer;font-weight:600;">Show all '+matches.length+'</span>';}
-    else if(matches.length>CAP){cnt.innerHTML='Showing all '+matches.length+' \u00b7 <span onclick="_coMenuCollapse()" style="color:var(--accent);cursor:pointer;font-weight:600;">Show less</span>';}
-    else if(matches.length){cnt.textContent=matches.length+(matches.length===1?' match':' matches');}
-    else{cnt.textContent='';}
-  }
+  if(cnt){cnt.textContent=q?(list.length+(list.length===1?' match':' matches')):(all.length+' services & products \u2014 scroll or search');}
 }
-function _coMenuExpand(){_coMenuExpanded=true;_coMenuFilter((document.getElementById('co-menu-q')||{}).value||'');}
-function _coMenuCollapse(){_coMenuExpanded=false;const el=document.getElementById('co-menu-list');if(el)el.scrollTop=0;_coMenuFilter((document.getElementById('co-menu-q')||{}).value||'');}
 function _coPick(i){const m=(_coMenu||[])[i];if(!m)return;_coItems.push({name:m.name,price:+m.price||0,qty:1,variationId:m.variationId||null});_coRenderItems();var _a=document.getElementById('co-menu-added');if(_a){var _n=_coItems.length;_a.textContent='\u2713 Added \u00b7 '+_n+' item'+(_n===1?'':'s')+' \u00b7 $'+_coSubtotal().toFixed(2);}try{var _rows=document.querySelectorAll('#co-menu-list > div');var _r=_rows&&_rows[i];if(_r){var _bg=_r.style.background;_r.style.background='#12301f';setTimeout(function(){_r.style.background=_bg||'';},260);}}catch(e){}}
 
 
