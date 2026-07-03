@@ -41,7 +41,17 @@ export default async function handler(req, res){
       let you=p.e?String(p.e).toLowerCase():null;
       if(!you && p.u){ try{ const r=await q`SELECT email FROM providers WHERE id=${p.u}`; you=(r[0]&&r[0].email)?String(r[0].email).toLowerCase():null; }catch(e){} }
       if(!owner || you!==owner){ res.status(403).json({ error:'Owner only' }); return; }
-      const rows = await q`SELECT email, name, profession, extract(epoch from created_at)*1000 AS ts FROM waitlist ORDER BY created_at DESC LIMIT 1000`;
+      const rows = await q`SELECT email, name, profession, extract(epoch from created_at)*1000 AS ts FROM waitlist ORDER BY created_at DESC LIMIT 5000`;
+      const fmt = (req.query && req.query.format) || (/format=csv/.test(req.url||'') ? 'csv' : '');
+      if (fmt === 'csv') {
+        const esc = v => '"' + String(v == null ? '' : v).replace(/"/g, '""') + '"';
+        const head = 'Email,Name,Profession,Joined\n';
+        const body = rows.map(r => [r.email, r.name, r.profession, new Date(Number(r.ts)).toISOString().slice(0,10)].map(esc).join(',')).join('\n');
+        res.setHeader('Content-Type', 'text/csv; charset=utf-8');
+        res.setHeader('Content-Disposition', 'attachment; filename="slickchart-waitlist.csv"');
+        res.status(200).send(head + body);
+        return;
+      }
       res.status(200).json({ ok:true, count:rows.length, items: rows.map(r=>({ email:r.email, name:r.name, profession:r.profession, ts:Math.round(Number(r.ts)) })) });
       return;
     }

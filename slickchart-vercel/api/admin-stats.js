@@ -44,11 +44,14 @@ export default async function handler(req, res) {
         count(*) FILTER (WHERE last_used_at  > now() - interval '30 days')::int AS active30
       FROM square_connections`)[0] || {};
 
+    let waitlistCount = 0;
+    try { const w = await q`SELECT count(*)::int AS n FROM waitlist`; waitlistCount = (w[0] && w[0].n) || 0; } catch (e) {}
     const total = pv.total || 0, connected = sq.connected || 0;
     res.status(200).json({
       ok: true,
       generatedAt: new Date().toISOString(),
       providers: { total, new7: pv.new7 || 0, new30: pv.new30 || 0 },
+      waitlist: { count: waitlistCount },
       square: {
         connected,
         merchants: sq.merchants || 0,
