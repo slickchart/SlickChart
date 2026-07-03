@@ -35,6 +35,19 @@ export default async function handler(req, res) {
       out.bookings.anyLocation = { count: (d.bookings || []).length, locationIds: [...new Set((d.bookings || []).map(b => b.location_id))] };
     } catch (e) { out.bookings.anyLocation = { error: e.message }; }
 
+    // Per-location booking counts (14-day window each) — reveals exactly where bookings live.
+    out.bookings.perLocation = {};
+    try {
+      const now2 = new Date(); const end2 = new Date(now2.getTime() + 14 * 86400000);
+      for (const l of out.locations) {
+        try {
+          const qs = new URLSearchParams({ location_id: l.id, start_at_min: now2.toISOString(), start_at_max: end2.toISOString(), limit: '100' });
+          const d = await sf('/v2/bookings?' + qs.toString());
+          out.bookings.perLocation[(l.name || l.id)] = (d.bookings || []).length;
+        } catch (e) { out.bookings.perLocation[(l.name || l.id)] = 'err:' + e.message.slice(0, 40); }
+      }
+    } catch (e) {}
+
     // invoices at the resolved location
     try {
       const d = await sf('/v2/invoices/search', { method: 'POST', body: { query: { filter: { location_ids: [locationId] } }, limit: 100 } });
