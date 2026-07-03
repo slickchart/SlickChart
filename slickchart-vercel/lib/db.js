@@ -102,5 +102,7 @@ export async function ensureProvidersTable() {
     location_id text,
     updated_at timestamptz DEFAULT now()
   )`;
+  await q`ALTER TABLE square_connections ADD COLUMN IF NOT EXISTS connected_at timestamptz DEFAULT now()`;
+  await q`ALTER TABLE square_connections ADD COLUMN IF NOT EXISTS last_used_at timestamptz`;
   _provReady = true;
 }

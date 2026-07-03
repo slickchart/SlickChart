@@ -100,10 +100,11 @@ export async function storeConnection(providerId, resp) {
   await ensureProvidersTable();
   let locationId = null;
   try { locationId = await resolveLocationId(resp.access_token, null); } catch (e) {}
-  await q`INSERT INTO square_connections (provider_id, access_token, refresh_token, expires_at, merchant_id, location_id, updated_at)
-    VALUES (${providerId}, ${encrypt(resp.access_token)}, ${encrypt(resp.refresh_token)}, ${resp.expires_at || null}, ${resp.merchant_id || null}, ${locationId}, now())
+  await q`INSERT INTO square_connections (provider_id, access_token, refresh_token, expires_at, merchant_id, location_id, connected_at, updated_at)
+    VALUES (${providerId}, ${encrypt(resp.access_token)}, ${encrypt(resp.refresh_token)}, ${resp.expires_at || null}, ${resp.merchant_id || null}, ${locationId}, now(), now())
     ON CONFLICT (provider_id) DO UPDATE SET access_token=EXCLUDED.access_token, refresh_token=EXCLUDED.refresh_token,
-      expires_at=EXCLUDED.expires_at, merchant_id=EXCLUDED.merchant_id, location_id=COALESCE(EXCLUDED.location_id, square_connections.location_id), updated_at=now()`;
+      expires_at=EXCLUDED.expires_at, merchant_id=EXCLUDED.merchant_id, location_id=COALESCE(EXCLUDED.location_id, square_connections.location_id),
+      connected_at=COALESCE(square_connections.connected_at, now()), updated_at=now()`;
   return { locationId, merchantId: resp.merchant_id || null };
 }
 export async function disconnect(providerId) {
@@ -150,7 +151,10 @@ export async function sqContext(req, res) {
   if (providerId) {
     try {
       const conn = await getConnection(providerId);
-      if (conn && conn.token) return { token: conn.token, locationId: conn.locationId, providerId };
+      if (conn && conn.token) {
+        try { const q = sql(); q`UPDATE square_connections SET last_used_at=now() WHERE provider_id=${providerId} AND (last_used_at IS NULL OR last_used_at < now() - interval '1 hour')`.catch(() => {}); } catch (e) {}
+        return { token: conn.token, locationId: conn.locationId, providerId };
+      }
     } catch (e) { /* fall through to legacy */ }
   }
   // Legacy fallback: shared key + deployment env token (original single-tenant setup)
