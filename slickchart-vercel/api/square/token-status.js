@@ -7,6 +7,7 @@ import { squareFetch as _sqf, sqContext } from '../../lib/square.js';
 // The permissions live booking needs, with a human label for each.
 const REQUIRED = [
   { scope: 'APPOINTMENTS_READ',                   label: 'Read your appointments' },
+  { scope: 'APPOINTMENTS_ALL_READ',               label: 'Read ALL your bookings (seller)' },
   { scope: 'APPOINTMENTS_WRITE',                  label: 'Create appointments' },
   { scope: 'INVOICES_READ',                       label: 'Read your invoices' },
   { scope: 'INVOICES_WRITE',                      label: 'Send invoices' },
