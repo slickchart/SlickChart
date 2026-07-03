@@ -5008,6 +5008,26 @@ function _assembleClientData(id){
 }
 let _syncingClients=false,_clientSyncTimer=null;
 function _scheduleClientSync(){ if(_clientSyncTimer)clearTimeout(_clientSyncTimer); _clientSyncTimer=setTimeout(function(){_syncClientsToServer({});},2500); }
+// Sync only the given client ids (fast path for invites) instead of the whole roster.
+async function _syncSpecificClientsToServer(ids,opts){
+  opts=opts||{};
+  const tok=(typeof Cloud!=='undefined'&&Cloud&&Cloud.token)||'';
+  if(!tok){ if(opts.toast)proToast('Sign in to sync your clients'); return null; }
+  const list=(ids||[]).filter(id=>CL[id]).map(id=>({id:id,name:CL[id].name||'',email:CL[id].email||'',data:_assembleClientData(id)}));
+  if(!list.length)return {ok:true,clients:[]};
+  try{
+    const r=await fetch('/api/clients',{method:'POST',headers:{'Content-Type':'application/json','Authorization':'Bearer '+tok},body:JSON.stringify({clients:list})});
+    const j=await r.json();
+    if(j&&j.ok&&Array.isArray(j.clients)){
+      j.clients.forEach(function(sc){ if(CL[sc.id])CL[sc.id]._token=sc.token; });
+      try{saveClients({noSync:true});}catch(e){}
+      if(opts.toast)proToast('Your clients are synced');
+      return j;
+    }
+    if(opts.toast)proToast((j&&j.error)||'Could not sync right now');
+    return j||{ok:false,error:'Could not sync'};
+  }catch(e){ if(opts.toast)proToast('Could not reach the server'); return {ok:false,error:'Could not reach the server'}; }
+}
 async function _syncClientsToServer(opts){
   opts=opts||{};
   const tok=(typeof Cloud!=='undefined'&&Cloud&&Cloud.token)||'';
@@ -5052,8 +5072,12 @@ async function _doBulkInvite(){
   const tok=(typeof Cloud!=='undefined'&&Cloud&&Cloud.token)||''; if(!tok){proToast('Please sign in first');return;}
   const ids=Object.keys(CL).filter(id=>CL[id].email&&window._inviteSel[id]);
   if(!ids.length){proToast('Select at least one client');return;}
-  proToast('Preparing personal links\u2026');
-  await _syncClientsToServer({});
+  proToast('Preparing personal links\u2026',0);
+  var _slowTimer=setTimeout(function(){
+    if(document.getElementById('pro-toast'))proToast('Still working \u2014 this can take a few extra seconds if it\u2019s been a while\u2026',0);
+  },4000);
+  await _syncSpecificClientsToServer(ids,{});
+  clearTimeout(_slowTimer);
   try{
     const r=await fetch('/api/client-invite',{method:'POST',headers:{'Content-Type':'application/json','Authorization':'Bearer '+tok},body:JSON.stringify({ids:ids,studio:((typeof bizInfo!=='undefined'&&bizInfo&&bizInfo.name)||''),from:((typeof _providerFirstName==='function'&&_providerFirstName())||'Your provider'),origin:location.origin})});
     const j=await r.json();
@@ -5076,7 +5100,7 @@ function inviteClientToApp(id){
     var _slowTimer=setTimeout(function(){
       if(document.getElementById('pro-toast'))proToast('Still working \u2014 this can take a few extra seconds if it\u2019s been a while\u2026',0);
     },4000);
-    _syncClientsToServer({}).then(function(j){
+    _syncSpecificClientsToServer([id],{}).then(function(j){
       clearTimeout(_slowTimer);
       if(c._token){
         const t=document.getElementById('pro-toast');if(t)t.remove();
