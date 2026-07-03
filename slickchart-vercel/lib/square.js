@@ -17,7 +17,7 @@ export function squareConfig() {
     token: process.env.SQUARE_ACCESS_TOKEN || '',        // legacy single-token fallback
     appId: process.env.SQUARE_APP_ID || '',
     appSecret: process.env.SQUARE_APP_SECRET || '',
-    version: process.env.SQUARE_VERSION || '',
+    version: process.env.SQUARE_VERSION || '2026-05-20',
     locationId: process.env.SQUARE_LOCATION_ID || ''
   };
 }
@@ -25,7 +25,8 @@ export function squareConfig() {
 // The permissions SlickChart needs from each seller.
 export const SQUARE_SCOPES = [
   'MERCHANT_PROFILE_READ', 'CUSTOMERS_READ', 'CUSTOMERS_WRITE',
-  'ITEMS_READ', 'APPOINTMENTS_READ', 'APPOINTMENTS_WRITE', 'APPOINTMENTS_BUSINESS_SETTINGS_READ',
+  'ITEMS_READ',
+  'APPOINTMENTS_READ', 'APPOINTMENTS_WRITE', 'APPOINTMENTS_ALL_READ', 'APPOINTMENTS_ALL_WRITE', 'APPOINTMENTS_BUSINESS_SETTINGS_READ',
   'PAYMENTS_WRITE', 'PAYMENTS_READ', 'ORDERS_WRITE', 'ORDERS_READ', 'INVOICES_WRITE', 'INVOICES_READ'
 ].join('+');
 
