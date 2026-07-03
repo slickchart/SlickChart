@@ -28,8 +28,7 @@ export default async function handler(req, res) {
   try {
     const all = await listClients(provider);
     const targets = all.filter(c => c.email && (!ids || ids.includes(c.id)));
-    let sent = 0;
-    for (const c of targets) {
+    const results = await Promise.allSettled(targets.map(async (c) => {
       const link = origin + '/client?c=' + encodeURIComponent(c.token);
       const first = esc((c.name || 'there').split(' ')[0]);
       const who = esc(fromName) + (studio ? (' at ' + esc(studio)) : '');
@@ -45,8 +44,9 @@ export default async function handler(req, res) {
         <p style="font-size:12px;color:#888;line-height:1.6;">This link is private and just for you. Please don't share it. If you weren't expecting this, you can ignore this email.</p>
       </div>`;
       const text = `Hi ${(c.name || 'there').split(' ')[0]}, ${fromName}${studio ? (' at ' + studio) : ''} set up your personal client space. Open it: ${link}`;
-      try { await sendEmail({ to: c.email, subject, html, text }); sent++; } catch (e) { /* skip one failed send */ }
-    }
+      await sendEmail({ to: c.email, subject, html, text });
+    }));
+    const sent = results.filter(r => r.status === 'fulfilled').length;
     await markInvited(provider, targets.map(c => c.id));
     res.status(200).json({ ok: true, sent, total: targets.length, noEmail: all.length - targets.length });
   } catch (e) { res.status(e.status || 500).json({ error: e.message }); }
