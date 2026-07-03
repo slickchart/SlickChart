@@ -20,8 +20,9 @@ export default async function handler(req, res) {
     const days = Math.min(Math.max(parseInt(req.query.days || '14', 10) || 14, 1), 31);
     const end = new Date(now.getTime() + days * 86400000);
 
+    // Query upcoming bookings across ALL locations (a seller may have their
+    // Appointments set up under a different location than the resolved default).
     const qs = new URLSearchParams({
-      location_id: locationId,
       start_at_min: now.toISOString(),
       start_at_max: end.toISOString(),
       limit: '100'
