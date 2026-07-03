@@ -1,0 +1,737 @@
+<!DOCTYPE html>
+<html lang="en">
+<head>
+<meta charset="UTF-8">
+<title>SlickChart Client App — Walkthrough</title>
+<link rel="stylesheet" href="https://cdn.jsdelivr.net/npm/@tabler/icons-webfont@3.19.0/dist/tabler-icons.min.css">
+<style>
+@import url('https://fonts.googleapis.com/css2?family=Inter:wght@400;500;600;700&family=IBM+Plex+Mono:wght@500&display=swap');
+
+*{box-sizing:border-box;margin:0;padding:0;}
+:root{
+  --accent:#C8A882;--accent-2:#2C5F8A;--accent-ink:#1a1208;
+  --accent-tint:#2a231b;--accent-tint2:#3c3227;
+  --accent-lt:#f5ede3;--accent-lt2:#f5e6d3;
+  --accent-a30:rgba(200,168,130,.19);
+  --font-body:'Inter',-apple-system,BlinkMacSystemFont,'Segoe UI',sans-serif;
+  --font-mono:'IBM Plex Mono', ui-monospace, monospace;
+}
+body{
+  font-family:var(--font-body);
+  background:radial-gradient(ellipse at 50% -10%, #2a2318 0%, #16110a 60%);
+  min-height:100vh;
+  display:flex; flex-direction:column; align-items:center; justify-content:center;
+  gap:18px;
+  padding:32px 16px;
+}
+.top-label{
+  font-family:var(--font-mono); font-size:11px; letter-spacing:.16em; text-transform:uppercase;
+  color:#9c8265; text-align:center;
+}
+
+.device-wrap{ display:flex; flex-direction:column; align-items:center; gap:14px; }
+
+/* ================= REAL APP REPLICA ================= */
+.shell{
+  width:min(390px,90vw);
+  background:#fff;
+  border-radius:24px;
+  border:1px solid #e8e0d8;
+  overflow:hidden;
+  height:min(760px,78vh,155vw);
+  display:flex; flex-direction:column;
+  position:relative;
+  box-shadow:0 30px 70px -20px rgba(0,0,0,.55), 0 0 0 1px rgba(0,0,0,.04);
+}
+.sb{background:#fff;padding:10px 20px 6px;display:flex;justify-content:space-between;align-items:center;flex-shrink:0;}
+.sb span{font-size:13px;font-weight:500;color:#1a1a1a;}
+.sb .ic{display:flex;gap:6px;font-size:13px;color:#1a1a1a;}
+.topbar{background:#fff;padding:10px 16px 13px;border-bottom:1px solid #f0ebe4;display:flex;align-items:center;gap:10px;flex-shrink:0;}
+.logo{width:30px;height:30px;background:var(--accent);border-radius:8px;display:flex;align-items:center;justify-content:center;flex-shrink:0;}
+.logo i{font-size:15px;color:#fff;}
+#tt{font-size:17px;font-weight:600;color:#1a1a1a;flex:1;transition:opacity .15s;}
+.avatar{width:32px;height:32px;border-radius:50%;background:var(--accent-lt2);display:flex;align-items:center;justify-content:center;font-size:12px;font-weight:700;color:var(--accent);border:1.5px solid #e8d5c0;flex-shrink:0;}
+
+main.scr{flex:1;overflow:hidden;position:relative;}
+.screen{
+  position:absolute; inset:0;
+  overflow-y:auto;
+  padding-bottom:20px;
+  opacity:0; transform:translateY(6px);
+  transition:opacity .28s ease, transform .28s ease;
+  pointer-events:none;
+}
+.screen.on{ opacity:1; transform:translateY(0); pointer-events:auto; }
+.screen::-webkit-scrollbar{display:none;}
+
+nav.nav{position:absolute;bottom:0;left:0;right:0;background:#fff;border-top:1px solid #f0ebe4;display:flex;padding:6px 0 12px;z-index:20;}
+.ni{flex:1;display:flex;flex-direction:column;align-items:center;gap:2px;padding:5px 0;min-height:44px;justify-content:center;position:relative;transition:transform .12s;}
+.ni i{font-size:18px;color:#c4b9ae;}
+.ni span{font-size:10px;color:#c4b9ae;font-weight:500;}
+.ni.active i,.ni.active span{color:var(--accent);}
+.ni.press{ transform:scale(0.88); }
+.tapdot{
+  position:absolute; width:38px; height:38px; border-radius:50%;
+  background:rgba(200,168,130,.35);
+  top:50%; left:50%; transform:translate(-50%,-50%) scale(0);
+  pointer-events:none;
+}
+.ni.press .tapdot{ animation:tapripple .5s ease-out; }
+@keyframes tapripple{ 0%{transform:translate(-50%,-50%) scale(0); opacity:1;} 100%{transform:translate(-50%,-50%) scale(1.4); opacity:0;} }
+
+.card{background:#fff;border:1.5px solid #f0ebe4;border-radius:14px;margin:0 16px 12px;padding:14px 16px;}
+.sh{padding:14px 16px 8px;}
+.sh h2{font-size:11px;font-weight:700;color:#b8a898;text-transform:uppercase;letter-spacing:.08em;}
+.btnp{background:var(--accent);color:#fff;border:none;border-radius:10px;padding:11px 16px;font-size:13px;font-weight:600;display:flex;align-items:center;justify-content:center;gap:6px;width:100%;}
+.pill{flex-shrink:0;padding:5px 12px;border-radius:20px;font-size:11.5px;border:1.5px solid #e8ddd3;color:#9a8a7e;background:#fff;white-space:nowrap;font-weight:500;}
+.pill.active{background:var(--accent);color:#fff;border-color:var(--accent);}
+.check-circle{width:22px;height:22px;border-radius:50%;border:1.5px solid #e8ddd3;display:flex;align-items:center;justify-content:center;flex-shrink:0;transition:background .2s,border-color .2s;}
+.check-circle.done{background:var(--accent);border-color:var(--accent);}
+.check-circle.done i{color:#fff;font-size:12px;}
+
+/* ---------- caption strip, OUTSIDE the app so the UI itself stays pristine ---------- */
+.caption-bar{
+  width:min(390px,90vw);
+  background:rgba(243,236,223,0.05);
+  border:1px solid rgba(243,236,223,0.14);
+  border-radius:14px;
+  padding:13px 16px;
+  min-height:56px;
+}
+.caption-bar .eyebrow{ font-family:var(--font-mono); font-size:10px; letter-spacing:.12em; text-transform:uppercase; color:#C8A882; margin-bottom:4px;}
+.caption-bar .line{ font-family:var(--font-body); font-size:13px; color:#F3ECDF; opacity:.85; line-height:1.5;}
+
+.controls{ display:flex; gap:10px; }
+.btn{
+  font-family:var(--font-mono); font-size:11px; letter-spacing:.06em;
+  color:#F3ECDF; background:transparent; border:1px solid rgba(243,236,223,.14);
+  border-radius:20px; padding:8px 16px; cursor:pointer;
+}
+.btn:hover{ border-color:#C8A882; color:#C8A882; }
+</style>
+</head>
+<body>
+
+<div class="top-label">Client App Walkthrough · Home → Journey → Homecare → Book</div>
+
+<div class="device-wrap">
+  <div class="shell">
+    <div class="sb">
+      <span id="clock">9:41</span>
+      <div class="ic"><i class="ti ti-wifi"></i><i class="ti ti-battery-4"></i></div>
+    </div>
+    <div class="topbar">
+      <div class="logo"><i class="ti ti-sparkles"></i></div>
+      <div id="tt">Bloom Aesthetics</div>
+      <div class="avatar">MR</div>
+    </div>
+    <main class="scr" id="scr"></main>
+    <nav class="nav" id="navbar">
+      <button class="ni active" id="ni-home"><i class="ti ti-home"></i><span>Home</span><span class="tapdot"></span></button>
+      <button class="ni" id="ni-journey"><i class="ti ti-chart-line"></i><span>Journey</span><span class="tapdot"></span></button>
+      <button class="ni" id="ni-homecare"><i class="ti ti-droplet"></i><span>Homecare</span><span class="tapdot"></span></button>
+      <button class="ni" id="ni-messages"><i class="ti ti-message-circle"></i><span>Messages</span><span class="tapdot"></span></button>
+      <button class="ni" id="ni-shop"><i class="ti ti-shopping-bag"></i><span>Shop</span><span class="tapdot"></span></button>
+    </nav>
+  </div>
+
+  <div class="caption-bar">
+    <div class="eyebrow" id="capEyebrow">01 — Home</div>
+    <div class="line" id="capLine">This is exactly what your client sees the morning after booking.</div>
+  </div>
+
+  <div class="controls">
+    <button class="btn" id="playBtn">Pause</button>
+    <button class="btn" id="replayBtn">Replay</button>
+  </div>
+</div>
+
+<script>
+/* ---------------- screen markup, styled to match the real client app ---------------- */
+
+function homeScreen(){
+  return `
+  <div style="padding:12px 16px 10px;">
+    <div style="font-size:13px;color:#b8a898;margin-bottom:2px;">Good morning ✨</div>
+    <div style="font-size:24px;font-weight:600;color:#1a1a1a;">Maya</div>
+  </div>
+  <div style="margin:0 16px 14px;background:linear-gradient(135deg,var(--accent-tint),var(--accent-tint2));border-radius:16px;padding:18px 16px;">
+    <div style="display:flex;align-items:center;gap:16px;">
+      <div style="flex:1;">
+        <div style="font-size:11px;font-weight:600;color:var(--accent);text-transform:uppercase;letter-spacing:.08em;margin-bottom:6px;">Next appointment</div>
+        <div style="font-size:21px;font-weight:600;color:var(--accent-lt2);margin-bottom:2px;">Thursday, Jul 9</div>
+        <div style="font-size:13px;color:#b89a6e;">2:00 PM · Signature Facial</div>
+        <div style="margin-top:10px;"><div style="display:inline-block;background:var(--accent-a30);border-radius:6px;padding:4px 10px;font-size:12px;color:var(--accent);font-weight:600;">7 days away</div></div>
+      </div>
+      <div style="flex-shrink:0;position:relative;width:64px;height:64px;">
+        <svg width="64" height="64" style="transform:rotate(-90deg);">
+          <circle cx="32" cy="32" r="26" fill="none" stroke="rgba(200,168,130,.2)" stroke-width="4"/>
+          <circle cx="32" cy="32" r="26" fill="none" stroke="var(--accent)" stroke-width="4" stroke-linecap="round" stroke-dasharray="95 68"/>
+        </svg>
+        <div style="position:absolute;inset:0;display:flex;flex-direction:column;align-items:center;justify-content:center;">
+          <div style="font-size:20px;font-weight:700;color:var(--accent);line-height:1;">7</div>
+          <div style="font-size:9px;color:#b89a6e;font-weight:600;">DAYS</div>
+        </div>
+      </div>
+    </div>
+    <button style="width:100%;margin-top:14px;background:rgba(200,168,130,.15);border:1px solid rgba(200,168,130,.3);border-radius:10px;padding:10px;display:flex;align-items:center;justify-content:center;gap:7px;">
+      <i class="ti ti-calendar-plus" style="font-size:15px;color:var(--accent);"></i>
+      <span style="font-size:13px;font-weight:600;color:var(--accent);">Add to calendar</span>
+    </button>
+  </div>
+
+  <div class="card" style="cursor:pointer;">
+    <div style="display:flex;align-items:center;justify-content:space-between;">
+      <div><div style="font-size:13px;font-weight:600;color:#1a1a1a;margin-bottom:2px;">Today's routine</div>
+      <div style="font-size:12px;color:#b8a898;">2 of 3 steps done</div></div>
+      <div style="width:40px;height:40px;position:relative;">
+        <svg width="40" height="40"><circle cx="20" cy="20" r="16" fill="none" stroke="#f0ebe4" stroke-width="3"/><circle cx="20" cy="20" r="16" fill="none" stroke="var(--accent)" stroke-width="3" stroke-dasharray="67 33" stroke-linecap="round" transform="rotate(-90 20 20)"/></svg>
+        <div style="position:absolute;inset:0;display:flex;align-items:center;justify-content:center;font-size:10px;font-weight:700;color:var(--accent);">67%</div>
+      </div>
+    </div>
+  </div>
+
+  <div class="card" style="cursor:pointer;display:flex;align-items:center;gap:12px;">
+    <div style="width:42px;height:42px;background:var(--accent-lt);border-radius:10px;display:flex;align-items:center;justify-content:center;flex-shrink:0;"><i class="ti ti-clipboard-check" style="font-size:20px;color:var(--accent);"></i></div>
+    <div style="flex:1;"><div style="font-size:13px;font-weight:600;color:#1a1a1a;">Pre-visit check-in</div>
+    <div style="font-size:12px;color:#b8a898;">Quick prep so Priya is ready for Thursday</div></div>
+    <span style="font-size:11px;font-weight:700;color:var(--accent);background:var(--accent-lt);padding:4px 10px;border-radius:20px;flex-shrink:0;">Start</span>
+  </div>
+
+  <div class="card" style="cursor:pointer;display:flex;align-items:center;gap:12px;">
+    <div style="width:42px;height:42px;background:var(--accent-lt);border-radius:10px;display:flex;align-items:center;justify-content:center;flex-shrink:0;"><i class="ti ti-file-text" style="font-size:20px;color:var(--accent);"></i></div>
+    <div style="flex:1;"><div style="font-size:13px;font-weight:600;color:#1a1a1a;">Latest summary</div>
+    <div style="font-size:12px;color:#b8a898;">Signature Facial · from Priya</div></div>
+    <i class="ti ti-chevron-right" style="font-size:16px;color:#c4b9ae;"></i>
+  </div>
+
+  <div class="sh"><h2>Quick actions</h2></div>
+  <div style="display:grid;grid-template-columns:1fr 1fr;gap:8px;padding:0 16px 24px;">
+    <div style="background:var(--accent-lt);border:1.5px solid #e8d5c030;border-radius:12px;padding:14px;">
+      <i class="ti ti-chart-line" style="font-size:22px;color:var(--accent);display:block;margin-bottom:8px;"></i>
+      <div style="font-size:13px;font-weight:600;color:#1a1a1a;">My journey</div><div style="font-size:11px;color:#9a8a7e;margin-top:2px;">Your progress</div>
+    </div>
+    <div style="background:#f0f5ff;border:1.5px solid #5ba3e830;border-radius:12px;padding:14px;">
+      <i class="ti ti-message-circle" style="font-size:22px;color:#5ba3e8;display:block;margin-bottom:8px;"></i>
+      <div style="font-size:13px;font-weight:600;color:#1a1a1a;">Message Priya</div><div style="font-size:11px;color:#9a8a7e;margin-top:2px;">Ask a question</div>
+    </div>
+    <div style="background:#f5f0ff;border:1.5px solid #a891ec30;border-radius:12px;padding:14px;">
+      <i class="ti ti-shopping-bag" style="font-size:22px;color:#a891ec;display:block;margin-bottom:8px;"></i>
+      <div style="font-size:13px;font-weight:600;color:#1a1a1a;">Recommended</div><div style="font-size:11px;color:#9a8a7e;margin-top:2px;">Products for you</div>
+    </div>
+    <div style="background:#f0fff5;border:1.5px solid #4ec49a30;border-radius:12px;padding:14px;">
+      <i class="ti ti-calendar-plus" style="font-size:22px;color:#4ec49a;display:block;margin-bottom:8px;"></i>
+      <div style="font-size:13px;font-weight:600;color:#1a1a1a;">Book appointment</div><div style="font-size:11px;color:#9a8a7e;margin-top:2px;">Request a visit</div>
+    </div>
+  </div>`;
+}
+
+function messagesScreen(){
+  return `
+  <div style="padding:10px 16px;border-bottom:1px solid #f0ebe4;display:flex;align-items:center;gap:10px;background:#fff;">
+    <div style="width:38px;height:38px;border-radius:50%;background:var(--accent-lt2);display:flex;align-items:center;justify-content:center;font-size:12px;font-weight:700;color:var(--accent);border:1.5px solid #e8d0b8;">PR</div>
+    <div style="flex:1;"><div style="font-size:14px;font-weight:600;color:#1a1a1a;">Priya</div>
+    <div style="font-size:11px;color:#b8a898;">Bloom Aesthetics · Typically replies same day</div></div>
+    <div style="width:8px;height:8px;border-radius:50%;background:#4ec49a;"></div>
+  </div>
+  <div id="chatBody" style="padding:14px 16px;display:flex;flex-direction:column;gap:10px;">
+    <div style="text-align:center;font-size:11px;color:#b8a898;background:#faf7f4;border-radius:20px;padding:4px 12px;align-self:center;">Jun 30</div>
+    <div style="align-self:flex-start;max-width:82%;">
+      <div class="bub-them">Hi Maya! Excited to see you Thursday — how's your skin feeling after last visit?</div>
+      <div style="font-size:10px;color:#c4b9ae;margin-top:3px;">9:14 AM</div>
+    </div>
+  </div>
+  <div id="chatInputRow" style="position:absolute;bottom:68px;left:0;right:0;background:#fff;border-top:1px solid #f0ebe4;padding:8px 12px;display:flex;align-items:flex-end;gap:6px;">
+    <div style="width:36px;height:36px;border-radius:50%;background:#faf7f4;border:1.5px solid #e8ddd3;flex-shrink:0;"></div>
+    <div id="chatInput" style="flex:1;background:#faf7f4;border:1.5px solid #e8ddd3;border-radius:20px;padding:9px 14px;font-size:13px;color:#1a1a1a;min-height:18px;"></div>
+    <button style="width:36px;height:36px;border-radius:50%;background:var(--accent);border:none;display:flex;align-items:center;justify-content:center;flex-shrink:0;"><i class="ti ti-send" style="font-size:15px;color:#fff;"></i></button>
+  </div>`;
+}
+
+function shopProductCard(icon,name,brand,why,idx,opts){
+  return `<div class="shop-card" data-i="${idx}" style="background:#fff;border:1.5px solid #f0ebe4;border-radius:14px;margin:0 16px 10px;overflow:hidden;">
+    <div style="padding:14px 16px;">
+      <div style="display:flex;align-items:flex-start;gap:12px;margin-bottom:10px;">
+        <span style="font-size:28px;line-height:1;">${icon}</span>
+        <div style="flex:1;min-width:0;">
+          <div style="font-size:15px;font-weight:600;color:#1a1a1a;">${name}</div>
+          <div style="font-size:12px;color:#b8a898;">${brand}</div>
+          <div style="font-size:11px;color:var(--accent);font-weight:600;margin-top:3px;display:flex;align-items:center;gap:3px;"><i class="ti ti-building-store" style="font-size:12px;"></i> Available in office</div>
+        </div>
+        <button class="heart-btn" data-i="${idx}" style="width:34px;height:34px;border-radius:50%;border:1.5px solid #e8ddd3;background:#fff;display:flex;align-items:center;justify-content:center;flex-shrink:0;">
+          <svg viewBox="0 0 24 24" width="17" height="17" fill="none" stroke="#b8a898" stroke-width="1.8" stroke-linecap="round" stroke-linejoin="round"><path d="M12 21.35l-1.45-1.32C5.4 15.36 2 12.28 2 8.5 2 5.42 4.42 3 7.5 3c1.74 0 3.41.81 4.5 2.09C13.09 3.81 14.76 3 16.5 3 19.58 3 22 5.42 22 8.5c0 3.78-3.4 6.86-8.55 11.54L12 21.35z"/></svg>
+        </button>
+      </div>
+      <div style="background:#faf7f4;border-radius:9px;padding:10px 12px;margin-bottom:12px;">
+        <div style="font-size:11px;font-weight:600;color:#b8a898;text-transform:uppercase;letter-spacing:.06em;margin-bottom:4px;">Why Priya recommends this</div>
+        <div style="font-size:13px;color:#6b5d52;line-height:1.6;">${why}</div>
+      </div>
+      <button class="buy-btn" data-i="${idx}" style="width:100%;display:flex;align-items:center;justify-content:center;gap:7px;background:var(--accent);color:#fff;border:none;border-radius:10px;padding:11px;font-size:14px;font-weight:600;transition:transform .15s;"><i class="ti ti-shopping-bag" style="font-size:15px;"></i> Buy · ${opts} ways to get it</button>
+    </div>
+  </div>`;
+}
+
+const buyOptions = {
+  0: { icon:'🧴', name:'Barrier Repair Cream', brand:'Rooted Botanicals',
+    rows:[
+      {icon:'ti-building-store',title:'Buy in office',sub:'Pick up at your next visit · tap to message Priya',highlight:true},
+      {icon:'ti-shopping-bag',title:"Buy from Bloom Aesthetics",sub:'bloomaesthetics.com/shop/barrier-cream',code:'MAYA10'},
+      {icon:'ti-external-link',title:'Shop at Rooted Botanicals',sub:'rootedbotanicals.com/barrier-repair',code:''},
+      {icon:'ti-brand-amazon',title:'Buy on Amazon',sub:'amzn.to/priya-skincare',code:'PRIYASKIN'},
+    ]
+  }
+};
+
+function buySheetHTML(p){
+  const cline = code => code ? `<div style="display:flex;align-items:center;gap:8px;margin-top:5px;padding:8px 11px;background:var(--accent-a30);border:1px dashed var(--accent);border-radius:10px;">
+      <i class="ti ti-discount-2" style="font-size:15px;color:var(--accent);flex-shrink:0;"></i>
+      <div style="flex:1;min-width:0;font-size:12px;color:#6b5d52;">Use <b style="color:var(--accent);letter-spacing:.03em;">${code}</b> at checkout</div>
+      <button class="copy-code-btn" style="border:1.5px solid var(--accent);background:none;color:var(--accent);border-radius:7px;padding:5px 11px;font-size:11px;font-weight:700;">Copy</button>
+    </div>` : '';
+  const rows = p.rows.map(r=>`
+    <div style="margin-bottom:8px;">
+      <div style="display:flex;align-items:center;gap:12px;padding:12px 14px;border:1.5px solid ${r.highlight?'var(--accent)':'#f0ebe4'};background:${r.highlight?'var(--accent-a30)':'#fff'};border-radius:12px;">
+        <i class="ti ${r.icon}" style="font-size:18px;color:var(--accent);flex-shrink:0;"></i>
+        <div style="flex:1;min-width:0;">
+          <div style="font-size:13px;font-weight:600;color:#1a1a1a;">${r.title}</div>
+          <div style="font-size:11px;color:#b8a898;word-break:break-all;">${r.sub}</div>
+        </div>
+        <i class="ti ti-chevron-right" style="color:#c4b9ae;flex-shrink:0;"></i>
+      </div>
+      ${cline(r.code)}
+    </div>`).join('');
+  return `<div id="buySheetCard" style="background:#fff;width:100%;border-radius:16px 16px 0 0;padding:16px;box-shadow:0 -8px 30px rgba(0,0,0,.18);position:absolute;left:0;right:0;bottom:0;">
+    <div style="display:flex;align-items:center;gap:10px;margin-bottom:12px;">
+      <span style="font-size:22px;">${p.icon}</span>
+      <div style="flex:1;"><div style="font-size:15px;font-weight:700;color:#1a1a1a;">${p.name}</div><div style="font-size:12px;color:#b8a898;">${p.brand}</div></div>
+      <span id="closeSheetX" style="font-size:20px;color:#b8a898;line-height:1;">✕</span>
+    </div>
+    <div style="font-size:11px;color:#b8a898;text-transform:uppercase;letter-spacing:.06em;font-weight:600;margin-bottom:8px;">Where to buy</div>
+    ${rows}
+  </div>`;
+}
+
+function shopScreen(){
+  return `
+  <div style="padding:14px 16px 12px;"><div style="font-size:17px;font-weight:700;color:#1a1a1a;">Priya's Shop</div></div>
+  <div style="display:flex;gap:4px;margin:0 16px 14px;background:#f4efe9;border-radius:11px;padding:4px;">
+    <button style="flex:1;border:none;border-radius:8px;padding:8px 4px;font-size:12px;font-weight:600;background:#fff;color:var(--accent);box-shadow:0 1px 2px rgba(0,0,0,.08);">Recommended</button>
+    <button style="flex:1;border:none;border-radius:8px;padding:8px 4px;font-size:12px;font-weight:600;background:transparent;color:#a8957f;">Saved</button>
+    <button style="flex:1;border:none;border-radius:8px;padding:8px 4px;font-size:12px;font-weight:600;background:transparent;color:#a8957f;">History</button>
+  </div>
+  <div style="margin:0 16px 12px;background:var(--accent-lt);border-radius:10px;padding:10px 13px;display:flex;gap:8px;align-items:flex-start;">
+    <i class="ti ti-heart" style="font-size:14px;color:var(--accent);flex-shrink:0;margin-top:1px;"></i>
+    <span style="font-size:12px;color:#8b6b4a;line-height:1.5;">Curated specifically for hydration &amp; barrier repair.</span>
+  </div>
+  ${shopProductCard('🧴','Barrier Repair Cream','Rooted Botanicals',"Keeps the barrier calm between visits — apply nightly.",0,4)}
+  ${shopProductCard('💧','Hydrating Serum','Rooted Botanicals',"Locks in moisture right after cleansing, AM and PM.",1,3)}
+  <div style="height:6px;"></div>
+  <div id="sheetOverlay" style="position:absolute;inset:0;background:rgba(0,0,0,0);pointer-events:none;transition:background .25s;"></div>`;
+}
+
+function journeyScreen(){
+  return `
+  <div style="padding:14px 16px 8px;">
+    <div style="font-size:15px;font-weight:600;color:#1a1a1a;margin-bottom:2px;">Your journey</div>
+    <div style="font-size:13px;color:#b8a898;">Photos and progress from your visits with Priya</div>
+  </div>
+  <div class="card" style="background:#fff;padding:0;overflow:hidden;">
+    <div style="padding:12px 16px 0;">
+      <div style="font-size:12px;font-weight:700;color:#b8a898;text-transform:uppercase;letter-spacing:.07em;margin-bottom:10px;">Before &amp; after</div>
+      <div style="display:flex;gap:0;margin-bottom:2px;">
+        <button style="padding:7px 12px;font-size:12px;font-weight:600;border:none;background:none;color:var(--accent);border-bottom:2px solid var(--accent);">Front</button>
+        <button style="padding:7px 12px;font-size:12px;font-weight:600;border:none;background:none;color:#b8a898;border-bottom:2px solid transparent;">Left</button>
+        <button style="padding:7px 12px;font-size:12px;font-weight:600;border:none;background:none;color:#b8a898;border-bottom:2px solid transparent;">Right</button>
+      </div>
+    </div>
+    <div style="padding:12px 14px 14px;">
+      <div id="compareWrap" style="position:relative;border-radius:10px;overflow:hidden;aspect-ratio:3/4;background:linear-gradient(160deg,#e9d9c8,#f5ede3);">
+        <div style="position:absolute;inset:0;display:flex;align-items:center;justify-content:center;"><i class="ti ti-user-circle" style="font-size:60px;color:#d9b98a;"></i></div>
+        <div id="compareBefore" style="position:absolute;inset:0;clip-path:inset(0 50% 0 0);background:linear-gradient(160deg,#f2c9b8,#f7ded2);display:flex;align-items:center;justify-content:center;">
+          <i class="ti ti-user-circle" style="font-size:60px;color:#e0a488;"></i>
+        </div>
+        <div id="compareLine" style="position:absolute;top:0;bottom:0;left:50%;width:2px;background:#fff;transform:translateX(-50%);box-shadow:0 0 8px rgba(0,0,0,.3);">
+          <div style="position:absolute;top:50%;left:50%;transform:translate(-50%,-50%);width:32px;height:32px;background:#fff;border-radius:50%;box-shadow:0 2px 8px rgba(0,0,0,.2);display:flex;align-items:center;justify-content:center;"><i class="ti ti-arrows-left-right" style="font-size:14px;color:#9a8a7e;"></i></div>
+        </div>
+        <div style="position:absolute;top:8px;left:8px;background:rgba(255,255,255,.9);border-radius:5px;padding:2px 8px;"><span id="beforeLabel" style="font-size:10px;color:#9a7a5e;font-weight:700;">Before · Mar 21</span></div>
+        <div style="position:absolute;top:8px;right:8px;background:var(--accent);border-radius:5px;padding:2px 8px;"><span id="afterLabel" style="font-size:10px;color:#fff;font-weight:700;">After · Jun 30</span></div>
+      </div>
+      <div style="text-align:center;font-size:12px;color:#b8a898;margin-top:8px;">← Drag to compare →</div>
+    </div>
+    <div style="padding:0 14px 14px;">
+      <div style="font-size:10px;color:#b8a898;font-weight:600;text-transform:uppercase;letter-spacing:.06em;margin-bottom:6px;">Compare any two visits</div>
+      <div id="dateRow" style="display:flex;gap:6px;">
+        ${[['Mar 21',0],['May 03',1],['Jun 12',2],['Jun 30',3]].map(([d,i])=>`
+        <button class="date-chip" data-i="${i}" style="flex:1;background:${i===3?'var(--accent)':i===0?'var(--accent-lt)':'#faf7f4'};border:1.5px solid ${i===3?'var(--accent)':i===0?'#d4a870':'#e8ddd3'};border-radius:8px;padding:7px 4px;text-align:center;">
+          <div style="font-size:10px;font-weight:700;color:${i===3?'#fff':i===0?'#9a7a5e':'#b8a898'};">${d}</div>
+          <div class="date-chip-role" style="font-size:9px;color:${i===3?'rgba(255,255,255,.8)':i===0?'#b89a6e':'#c4b9ae'};">${i===3?'After':i===0?'Before':'·'}</div>
+        </button>`).join('')}
+      </div>
+    </div>
+  </div>
+
+  <div class="sh"><h2>Priya's observations</h2></div>
+  <div style="padding:0 16px 6px;font-size:12px;color:#b8a898;line-height:1.5;">Priya's notes from each visit, in her own words.</div>
+  <div style="background:#fff;border:1.5px solid var(--accent);border-radius:14px;margin:0 16px 10px;overflow:hidden;">
+    <div style="padding:12px 14px;display:flex;align-items:center;gap:10px;background:#fdf8f4;">
+      <div style="width:36px;height:36px;border-radius:9px;background:var(--accent);display:flex;align-items:center;justify-content:center;flex-shrink:0;"><i class="ti ti-sparkles" style="font-size:15px;color:#fff;"></i></div>
+      <div style="flex:1;"><div style="font-size:13px;font-weight:600;color:#1a1a1a;">Jun 30</div></div>
+      <span style="font-size:11px;background:var(--accent);color:#fff;padding:3px 9px;border-radius:20px;font-weight:600;">Latest</span>
+    </div>
+    <div style="padding:4px 14px 12px;">
+      <div style="display:flex;align-items:flex-start;gap:9px;padding:8px 0;border-bottom:1px solid #f5f0eb;"><i class="ti ti-droplet" style="font-size:14px;color:#5ba3e8;flex-shrink:0;margin-top:1px;"></i><span style="font-size:13px;color:#4a3c34;line-height:1.6;">Hydration noticeably improved since last visit.</span></div>
+      <div style="display:flex;align-items:flex-start;gap:9px;padding:8px 0;">
+        <i class="ti ti-circle-check" style="font-size:14px;color:#4ec49a;flex-shrink:0;margin-top:1px;"></i><span style="font-size:13px;color:#4a3c34;line-height:1.6;">Redness down — barrier repair cream is working.</span></div>
+    </div>
+  </div>
+  <div style="background:#fff;border:1.5px solid #f0ebe4;border-radius:14px;margin:0 16px 10px;overflow:hidden;">
+    <div style="padding:12px 14px;display:flex;align-items:center;gap:10px;">
+      <div style="width:36px;height:36px;border-radius:9px;background:var(--accent-lt);display:flex;align-items:center;justify-content:center;flex-shrink:0;"><i class="ti ti-notes" style="font-size:15px;color:var(--accent);"></i></div>
+      <div style="flex:1;"><div style="font-size:13px;font-weight:600;color:#1a1a1a;">Jun 12</div></div>
+    </div>
+    <div style="padding:4px 14px 12px;">
+      <div style="display:flex;align-items:flex-start;gap:9px;padding:8px 0;"><i class="ti ti-droplet" style="font-size:14px;color:#5ba3e8;flex-shrink:0;margin-top:1px;"></i><span style="font-size:13px;color:#4a3c34;line-height:1.6;">Continuing the current protocol, no changes needed.</span></div>
+    </div>
+  </div>
+  <div style="height:8px;"></div>`;
+}
+
+function homecareScreen(){
+  const steps=[
+    {icon:'🧼',name:'Gentle cleanser',time:'AM & PM',tip:'Lukewarm water only — no hot water on healing skin.',done:true},
+    {icon:'💧',name:'Hydrating serum',time:'AM & PM',tip:'Two drops, pat gently into damp skin.',done:true},
+    {icon:'🧴',name:'Barrier repair cream',time:'PM only',tip:'Apply as the last step before bed.',done:true},
+    {icon:'☀️',name:'SPF 30+',time:'AM only',tip:'Reapply if you\u2019re outside past noon.',done:false},
+    {icon:'🌙',name:'Silk pillowcase',time:'Nightly',tip:'Reduces friction while your skin is still settling.',done:false},
+  ];
+  return `
+  <div style="padding:14px 16px 8px;display:flex;align-items:center;justify-content:space-between;">
+    <div><div style="font-size:15px;font-weight:600;color:#1a1a1a;">Today's routine</div>
+    <div style="font-size:13px;color:#b8a898;">3 of 5 done · from Priya</div></div>
+    <div style="width:44px;height:44px;position:relative;">
+      <svg width="44" height="44"><circle cx="22" cy="22" r="18" fill="none" stroke="#f0ebe4" stroke-width="3.5"/><circle cx="22" cy="22" r="18" fill="none" stroke="var(--accent)" stroke-width="3.5" stroke-dasharray="68 45" stroke-linecap="round" transform="rotate(-90 22 22)"/></svg>
+      <div style="position:absolute;inset:0;display:flex;align-items:center;justify-content:center;font-size:12px;font-weight:700;color:var(--accent);">60%</div>
+    </div>
+  </div>
+  <div style="margin:0 16px 14px;background:#fff8f0;border:1.5px solid #f0dcc8;border-radius:12px;padding:12px 14px;">
+    <div style="font-size:12px;font-weight:700;color:#9a6a3a;text-transform:uppercase;letter-spacing:.07em;margin-bottom:7px;">Avoid right now</div>
+    <div style="display:flex;flex-wrap:wrap;gap:6px;">
+      <span style="font-size:12px;padding:4px 10px;border-radius:20px;background:#fff0e5;color:#8b5c2e;border:1px solid #e8c4a0;">Retinol</span>
+      <span style="font-size:12px;padding:4px 10px;border-radius:20px;background:#fff0e5;color:#8b5c2e;border:1px solid #e8c4a0;">Direct sun</span>
+      <span style="font-size:12px;padding:4px 10px;border-radius:20px;background:#fff0e5;color:#8b5c2e;border:1px solid #e8c4a0;">Exfoliants</span>
+    </div>
+  </div>
+  ${steps.map((s,i)=>`
+  <div style="background:#fff;border:1.5px solid #f0ebe4;border-radius:12px;margin:0 16px 8px;overflow:hidden;">
+    <div style="padding:12px 14px;display:flex;align-items:center;gap:12px;">
+      <button class="check-circle hc-step ${s.done?'done':''}" data-i="${i}">${s.done?'<i class="ti ti-check"></i>':''}</button>
+      <span style="font-size:22px;">${s.icon}</span>
+      <div style="flex:1;"><div style="font-size:13px;font-weight:600;color:${s.done?'#b8a898':'#1a1a1a'};${s.done?'text-decoration:line-through;':''}">${s.name}</div>
+      <div style="font-size:11px;color:#b8a898;font-weight:500;">${s.time}</div></div>
+    </div>
+    <div style="padding:0 14px 12px 52px;font-size:12px;color:#9a8a7e;line-height:1.6;">${s.tip}</div>
+  </div>`).join('')}
+  <div style="margin:6px 16px 20px;background:#faf7f4;border-radius:12px;padding:14px;display:flex;gap:10px;">
+    <div style="width:32px;height:32px;border-radius:50%;background:var(--accent-lt2);display:flex;align-items:center;justify-content:center;font-size:11px;font-weight:700;color:var(--accent);flex-shrink:0;border:1.5px solid #e8d0b8;">PR</div>
+    <div><div style="font-size:12px;font-weight:600;color:#1a1a1a;margin-bottom:4px;">Note from Priya</div>
+    <div style="font-size:13px;color:#6b5d52;line-height:1.6;">Skin's responding well — keep the SPF consistent and I'll see you Thursday.</div></div>
+  </div>`;
+}
+
+function rebookScreen(){
+  return `
+  <div style="padding:14px 16px 8px;">
+    <div style="font-size:15px;font-weight:600;color:#1a1a1a;margin-bottom:2px;">Book appointment</div>
+    <div style="font-size:13px;color:#b8a898;">Request a time with Priya</div>
+  </div>
+  <div class="sh"><h2>Preferred date</h2></div>
+  <div style="display:flex;gap:8px;padding:0 16px 6px;overflow-x:auto;">
+    <span class="pill">Thu Jul 9</span><span class="pill active">Fri Jul 10</span><span class="pill">Sat Jul 11</span><span class="pill">Mon Jul 13</span>
+  </div>
+  <div class="sh"><h2>Preferred time</h2></div>
+  <div style="display:flex;gap:8px;padding:0 16px 14px;flex-wrap:wrap;">
+    <span class="pill">9:00 AM</span><span class="pill active">2:00 PM</span><span class="pill">4:30 PM</span>
+  </div>
+  <div class="card">
+    <div style="font-size:12px;font-weight:700;color:#b8a898;text-transform:uppercase;letter-spacing:.07em;margin-bottom:8px;">Anything to add?</div>
+    <div style="height:56px;background:#faf7f4;border:1.5px solid #e8ddd3;border-radius:10px;"></div>
+  </div>
+  <div style="padding:4px 16px 20px;">
+    <button class="btnp"><i class="ti ti-calendar-plus"></i> Submit request</button>
+  </div>`;
+}
+
+/* ---------------- sequence ---------------- */
+const seqFinal = [
+  { nav:'home',     dur:6400, title:'Bloom Aesthetics', eyebrow:'01 — Home',     line:"This is exactly what your client sees the morning after booking.", build:homeScreen, after: animateHomeScroll },
+  { nav:'journey',  dur:8600, title:'My journey',        eyebrow:'02 — Journey',  line:"Drag to compare, or tap any two visit dates — then scroll for every note.", build:journeyScreen, after: animateJourney },
+  { nav:'homecare', dur:6600, title:'Your routine',      eyebrow:'03 — Homecare', line:"Today's routine, checked off in real time, all the way down.", build:homecareScreen, after: animateHomecare },
+  { nav:'messages', dur:5600, title:'Priya',             eyebrow:'04 — Messages', line:"Clients text your studio, not your personal number.", build:messagesScreen, after: animateMessages },
+  { nav:'shop',     dur:8200, title:'Shop',              eyebrow:'05 — Shop',     line:"Tap Buy to see every way to purchase — in office, your site, brand site, or Amazon.", build:shopScreen, after: animateShop },
+  { nav:'home',     dur:3600, title:'Book appointment',  eyebrow:'06 — Book again', line:"One tap from any screen, and they're back on your calendar.", build:rebookScreen, customNav:true },
+  { nav:'home',     dur:5000, title:'Bloom Aesthetics',  eyebrow:'',              line:"That's Home, Journey, Homecare, Messages, and Shop — all live in the current beta.", build:homeScreen },
+];
+
+function smoothScrollEl(el, toFraction, dur){
+  return new Promise(resolve=>{
+    if(!el){ resolve(); return; }
+    const start = performance.now();
+    const from = el.scrollTop;
+    const to = (el.scrollHeight - el.clientHeight) * toFraction;
+    function step(t){
+      const p = Math.min(1,(t-start)/dur);
+      const eased = p<0.5 ? 2*p*p : 1-Math.pow(-2*p+2,2)/2;
+      el.scrollTop = from + (to-from)*eased;
+      if(p<1) requestAnimationFrame(step); else resolve();
+    }
+    requestAnimationFrame(step);
+  });
+}
+
+function animateSlider(){
+  const line = document.getElementById('compareLine');
+  const before = document.getElementById('compareBefore');
+  if(!line || !before) return Promise.resolve();
+  return new Promise(resolve=>{
+    const target = 78;
+    const start = performance.now();
+    function step(t){
+      const p = Math.min(1,(t-start)/1500);
+      const eased = 1-Math.pow(1-p,3);
+      const val = 50 + (target-50)*eased;
+      line.style.left = val+'%';
+      before.style.clipPath = `inset(0 ${100-val}% 0 0)`;
+      if(p<1) requestAnimationFrame(step); else resolve();
+    }
+    requestAnimationFrame(step);
+  });
+}
+
+function selectDateChip(idx, role){
+  const chips = document.querySelectorAll('.date-chip');
+  chips.forEach(c=>{
+    const i = +c.dataset.i;
+    const nameEl = c.querySelector('div:first-child');
+    const roleEl = c.querySelector('.date-chip-role');
+    if(i===idx){
+      c.style.background = 'var(--accent)'; c.style.borderColor='var(--accent)';
+      nameEl.style.color = '#fff'; roleEl.style.color='rgba(255,255,255,.8)'; roleEl.textContent = role;
+    } else if(c.dataset.locked==='1'){
+      c.style.background='var(--accent-lt)'; c.style.borderColor='#d4a870';
+      nameEl.style.color='#9a7a5e'; roleEl.style.color='#b89a6e';
+    } else {
+      c.style.background='#faf7f4'; c.style.borderColor='#e8ddd3';
+      nameEl.style.color='#b8a898'; roleEl.style.color='#c4b9ae'; roleEl.textContent='·';
+    }
+  });
+}
+
+async function animateJourney(){
+  await sleep(500);
+  await animateSlider();
+  await sleep(700);
+  // tap "Jun 12" to compare a different date instead of Jun 30
+  const chip = document.querySelector('.date-chip[data-i="2"]');
+  if(chip){
+    chip.style.transition = 'transform .15s';
+    chip.style.transform = 'scale(0.93)';
+    setTimeout(()=>{ chip.style.transform=''; }, 220);
+    document.querySelectorAll('.date-chip[data-i="0"]').forEach(c=>c.dataset.locked='1');
+    selectDateChip(2, 'After');
+    document.getElementById('afterLabel').textContent = 'After · Jun 12';
+    const line = document.getElementById('compareLine');
+    const before = document.getElementById('compareBefore');
+    if(line && before){
+      const start = performance.now();
+      await new Promise(resolve=>{
+        function step(t){
+          const p = Math.min(1,(t-start)/900);
+          const val = 78 + (55-78)*p;
+          line.style.left = val+'%';
+          before.style.clipPath = `inset(0 ${100-val}% 0 0)`;
+          if(p<1) requestAnimationFrame(step); else resolve();
+        }
+        requestAnimationFrame(step);
+      });
+    }
+  }
+  await sleep(900);
+  await smoothScrollEl(screenEls['journey'], 1, 2000);
+}
+
+function sleep(ms){ return new Promise(r=>setTimeout(r,ms)); }
+
+async function animateHomecare(){
+  await sleep(1200);
+  const btn = document.querySelector('.hc-step[data-i="3"]');
+  if(btn){ btn.classList.add('done'); btn.innerHTML = '<i class="ti ti-check"></i>'; }
+  await sleep(1000);
+  await smoothScrollEl(screenEls['homecare'], 1, 2400);
+}
+
+function animateHomeScroll(){
+  setTimeout(()=>{ smoothScrollEl(screenEls['home'], 1, 2200); }, 900);
+}
+
+async function animateMessages(){
+  const inputEl = document.getElementById('chatInput');
+  const bodyEl = document.getElementById('chatBody');
+  if(!inputEl || !bodyEl) return;
+  const full = "Feeling great, no redness at all!";
+  await sleep(700);
+  for(let i=1;i<=full.length;i++){
+    inputEl.textContent = full.slice(0,i);
+    await sleep(45);
+  }
+  await sleep(350);
+  inputEl.textContent = '';
+  const bub = document.createElement('div');
+  bub.style.cssText = 'align-self:flex-end;max-width:82%;';
+  bub.innerHTML = `<div class="bub-me">${full}</div><div style="font-size:10px;color:#c4b9ae;margin-top:3px;text-align:right;">Just now</div>`;
+  bodyEl.appendChild(bub);
+  bodyEl.scrollTop = bodyEl.scrollHeight;
+  await sleep(1300);
+  const reply = document.createElement('div');
+  reply.style.cssText = 'align-self:flex-start;max-width:82%;';
+  reply.innerHTML = `<div class="bub-them">So glad to hear it! See you Thursday at 2. 🌿</div><div style="font-size:10px;color:#c4b9ae;margin-top:3px;">Just now</div>`;
+  bodyEl.appendChild(reply);
+  bodyEl.scrollTop = bodyEl.scrollHeight;
+}
+
+function removeBuySheet(){
+  const ov = document.getElementById('buySheetOverlay');
+  if(ov) ov.remove();
+}
+
+async function animateShop(){
+  await sleep(700);
+  // save the second product
+  const heart = document.querySelector('.heart-btn[data-i="1"]');
+  if(heart){
+    heart.style.borderColor = 'var(--accent)';
+    heart.style.background = 'var(--accent-lt)';
+    heart.querySelector('svg').setAttribute('fill','var(--accent)');
+    heart.querySelector('svg').setAttribute('stroke','var(--accent)');
+  }
+  await sleep(900);
+  // tap Buy on the first product to open "where to buy"
+  const buyBtn = document.querySelector('.buy-btn[data-i="0"]');
+  if(buyBtn){ buyBtn.style.transform='scale(0.96)'; setTimeout(()=>buyBtn.style.transform='',180); }
+  await sleep(300);
+  const shell = document.querySelector('.shell');
+  const overlay = document.createElement('div');
+  overlay.id = 'buySheetOverlay';
+  overlay.style.cssText = 'position:absolute;inset:0;background:rgba(0,0,0,0);z-index:60;overflow:hidden;transition:background .3s;';
+  overlay.innerHTML = buySheetHTML(buyOptions[0]);
+  shell.appendChild(overlay);
+  const card = overlay.querySelector('#buySheetCard');
+  card.style.transform = 'translateY(100%)';
+  card.style.transition = 'transform .32s ease';
+  requestAnimationFrame(()=>{
+    overlay.style.background = 'rgba(0,0,0,.4)';
+    requestAnimationFrame(()=>{ card.style.transform='translateY(0)'; });
+  });
+  await sleep(1400);
+  // highlight the discount code + fake "copy"
+  const copyBtn = overlay.querySelector('.copy-code-btn');
+  if(copyBtn){
+    copyBtn.textContent = 'Copied ✓';
+    copyBtn.style.background = 'var(--accent)';
+    copyBtn.style.color = '#fff';
+  }
+  await sleep(1600);
+}
+
+const scrEl = document.getElementById('scr');
+const ttEl = document.getElementById('tt');
+const capEyebrow = document.getElementById('capEyebrow');
+const capLine = document.getElementById('capLine');
+const navBtns = { home:'ni-home', journey:'ni-journey', homecare:'ni-homecare', messages:'ni-messages', shop:'ni-shop' };
+
+let step = 0, playing = true, timer = null;
+let screenEls = {};
+
+function ensureScreen(key, builder){
+  if(!screenEls[key]){
+    const d = document.createElement('div');
+    d.className = 'screen';
+    d.innerHTML = builder();
+    scrEl.appendChild(d);
+    screenEls[key] = d;
+  }
+  return screenEls[key];
+}
+
+function setActiveNav(key){
+  Object.values(navBtns).forEach(id=>document.getElementById(id).classList.remove('active'));
+  if(navBtns[key]) document.getElementById(navBtns[key]).classList.add('active');
+}
+
+function pressNav(key, cb){
+  const id = navBtns[key];
+  if(!id){ cb(); return; }
+  const btn = document.getElementById(id);
+  btn.classList.add('press');
+  setTimeout(()=>{ btn.classList.remove('press'); cb(); }, 260);
+}
+
+function showStep(i){
+  const s = seqFinal[i];
+  const isLast = i === seqFinal.length - 1;
+  const key = s.nav + (s.customNav || isLast ? ':' + i : '');
+  const doSwitch = ()=>{
+    removeBuySheet();
+    Object.values(screenEls).forEach(el=>el.classList.remove('on'));
+    const el = ensureScreen(key, s.build);
+    if(isLast) el.scrollTop = 0;
+    void el.offsetWidth;
+    el.classList.add('on');
+    ttEl.style.opacity = 0;
+    setTimeout(()=>{ ttEl.textContent = s.title; ttEl.style.opacity = 1; }, 150);
+    setActiveNav(s.nav);
+    if(s.eyebrow){ capEyebrow.textContent = s.eyebrow; capLine.textContent = s.line; }
+    if(s.after) setTimeout(s.after, 250);
+  };
+  if(!s.customNav){ pressNav(s.nav, doSwitch); } else { doSwitch(); }
+}
+
+function schedule(){
+  clearTimeout(timer);
+  timer = setTimeout(()=>{
+    if(step === seqFinal.length-1){ playing=false; document.getElementById('playBtn').textContent='Play'; return; }
+    step++;
+    showStep(step);
+    schedule();
+  }, seqFinal[step].dur);
+}
+
+document.getElementById('playBtn').addEventListener('click', ()=>{
+  playing = !playing;
+  document.getElementById('playBtn').textContent = playing ? 'Pause' : 'Play';
+  if(playing) schedule(); else clearTimeout(timer);
+});
+document.getElementById('replayBtn').addEventListener('click', ()=>{
+  clearTimeout(timer);
+  screenEls = {};
+  scrEl.innerHTML = '';
+  step = 0;
+  playing = true;
+  document.getElementById('playBtn').textContent = 'Pause';
+  showStep(0);
+  schedule();
+});
+
+showStep(0);
+schedule();
+
+/* live clock in status bar, purely cosmetic realism */
+function tickClock(){
+  const now = new Date();
+  let h = now.getHours()%12; if(h===0)h=12;
+  const m = now.getMinutes().toString().padStart(2,'0');
+  document.getElementById('clock').textContent = h+':'+m;
+}
+tickClock(); setInterval(tickClock, 30000);
+</script>
+</body>
+</html>
