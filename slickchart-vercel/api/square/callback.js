@@ -2,7 +2,7 @@
 // Square redirects the seller here after they approve. We verify the signed state,
 // exchange the code for tokens, store them (encrypted) for that provider, then send
 // them back into the app.
-import { exchangeCode, storeConnection } from '../../lib/square.js';
+import { exchangeCode, storeConnection, getConnection } from '../../lib/square.js';
 import { verifyToken } from '../../lib/auth.js';
 import { appOrigin } from '../../lib/email.js';
 
@@ -27,6 +27,18 @@ export default async function handler(req, res) {
     await storeConnection(payload.u, tokens);
     backTo(res, origin, { sq: 'connected' });
   } catch (e) {
+    // Mobile browsers sometimes fire this callback twice. The first request claims the
+    // one-time code and connects successfully; the duplicate then gets "already claimed".
+    // If a working connection now exists for this provider, treat it as success.
+    const msg = (e.message || '').toLowerCase();
+    const dup = msg.includes('already claimed') || msg.includes('already been used') || msg.includes('authorization_code');
+    if (dup) {
+      await new Promise(r => setTimeout(r, 700)); // let the winning request finish saving
+      try {
+        const c = await getConnection(payload.u);
+        if (c && c.token) { backTo(res, origin, { sq: 'connected' }); return; }
+      } catch (_) { /* fall through to error */ }
+    }
     backTo(res, origin, { sq: 'error', reason: (e.message || 'exchange_failed').slice(0, 80) });
   }
 }
