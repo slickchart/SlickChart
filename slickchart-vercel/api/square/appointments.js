@@ -1,11 +1,9 @@
 // GET /api/square/appointments?days=14
 // Lists UPCOMING bookings from Square Appointments for the next N days (default
-// 14, max 31) and resolves each booking's customer name. Returns a clean array.
-//
-// Requires: the seller uses Square Appointments, and your token/app has the
-// "Appointments (read)" permission. If you don't use Square Appointments, this
-// endpoint will return a Square permission error — the customers import still works.
-import { squareFetch as _sqf, sqContext, resolveLocationId } from '../../lib/square.js';
+// 14, max 31). Queries EVERY location on the account (a seller may have their
+// Appointments set up under a location other than the resolved default, including
+// an inactive one), then resolves each booking's customer name.
+import { squareFetch as _sqf, sqContext } from '../../lib/square.js';
 
 export default async function handler(req, res) {
   if (req.method !== 'GET') { res.status(405).json({ error: 'Method not allowed' }); return; }
@@ -13,23 +11,35 @@ export default async function handler(req, res) {
   const sf = (p, o) => _sqf(p, o, ctx.token);
 
   try {
-    const locationId = await resolveLocationId(ctx.token, ctx.locationId);
-    if (!locationId) { res.status(400).json({ error: 'No Square location found for this account.' }); return; }
-
     const now = new Date();
     const days = Math.min(Math.max(parseInt(req.query.days || '14', 10) || 14, 1), 31);
     const end = new Date(now.getTime() + days * 86400000);
+    const startMin = now.toISOString();
+    const startMax = end.toISOString();
 
-    // Query upcoming bookings across ALL locations (a seller may have their
-    // Appointments set up under a different location than the resolved default).
-    const qs = new URLSearchParams({
-      start_at_min: now.toISOString(),
-      start_at_max: end.toISOString(),
-      limit: '100'
-    });
+    // Every location on the account.
+    let locIds = [];
+    try {
+      const loc = await sf('/v2/locations');
+      locIds = (loc.locations || []).map(l => l.id).filter(Boolean);
+    } catch (e) { /* fall back to unfiltered query below */ }
 
-    const data = await sf('/v2/bookings?' + qs.toString());
-    const bookings = (data.bookings || []).filter(isLive);
+    // Collect bookings from each location (and an unfiltered pass as a safety net).
+    let raw = [];
+    const seen = new Set();
+    const pull = async (qs) => {
+      try {
+        const d = await sf('/v2/bookings?' + qs.toString());
+        for (const b of (d.bookings || [])) { if (b && b.id && !seen.has(b.id)) { seen.add(b.id); raw.push(b); } }
+      } catch (e) { /* skip a location/pass that errors */ }
+    };
+    for (const lid of locIds) {
+      await pull(new URLSearchParams({ location_id: lid, start_at_min: startMin, start_at_max: startMax, limit: '100' }));
+    }
+    // Unfiltered safety net (covers any location we didn't enumerate).
+    await pull(new URLSearchParams({ start_at_min: startMin, start_at_max: startMax, limit: '100' }));
+
+    const bookings = raw.filter(isLive);
 
     // Resolve customer names (one lookup per unique customer, in parallel).
     const ids = [...new Set(bookings.map(b => b.customer_id).filter(Boolean))];
@@ -51,6 +61,7 @@ export default async function handler(req, res) {
           id: b.id,
           startAt: b.start_at || '',
           status: b.status || '',
+          locationId: b.location_id || '',
           customerId: b.customer_id || '',
           customerName: names[b.customer_id] || 'Client',
           durationMinutes: seg.duration_minutes || null,
@@ -60,7 +71,7 @@ export default async function handler(req, res) {
       })
       .sort((a, b) => (a.startAt || '').localeCompare(b.startAt || ''));
 
-    res.status(200).json({ locationId, count: appointments.length, appointments });
+    res.status(200).json({ count: appointments.length, appointments });
   } catch (e) {
     res.status(e.status || 500).json({ error: e.message, details: e.squareErrors || null });
   }
