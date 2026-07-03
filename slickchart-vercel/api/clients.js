@@ -27,8 +27,7 @@ export default async function handler(req, res) {
     if (req.method === 'POST') {
       const body = req.body || {};
       const list = Array.isArray(body.clients) ? body.clients : [];
-      const out = [];
-      for (const c of list.slice(0, 2000)) { out.push(await upsertClient(provider, c)); }
+      const out = await Promise.all(list.slice(0, 2000).map(c => upsertClient(provider, c)));
       res.status(200).json({ ok: true, saved: out.length, clients: out });
       return;
     }
