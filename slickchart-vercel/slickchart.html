@@ -24,7 +24,8 @@
   --accent-a20:rgba(200,168,130,.125);--accent-a44:rgba(200,168,130,.27);
 }
 body{font-family:-apple-system,BlinkMacSystemFont,'Segoe UI',sans-serif;background:#0f0f0f;display:flex;justify-content:center;padding:24px 0 48px;}
-.shell{width:390px;background:#111;border-radius:24px;border:1px solid #222;overflow:hidden;min-height:720px;display:flex;flex-direction:column;position:relative;}
+.shell{width:390px;max-width:100%;background:#111;border-radius:24px;border:1px solid #222;overflow:hidden;height:calc(100vh - 72px);max-height:900px;min-height:560px;display:flex;flex-direction:column;position:relative;}
+  @media(max-width:480px){body{padding:0;}.shell{height:100dvh;max-height:none;min-height:0;border-radius:0;border:none;}}
 .sb{background:#161616;padding:10px 20px 6px;display:flex;justify-content:space-between;align-items:center;flex-shrink:0;}
 .sb span{font-size:13px;font-weight:500;color:#e8e8e8;}
 .sb .ic{display:flex;gap:6px;font-size:12px;color:#e8e8e8;}
@@ -33,7 +34,7 @@ body{font-family:-apple-system,BlinkMacSystemFont,'Segoe UI',sans-serif;backgrou
 .logo i{font-size:15px;color:#fff;}
 #tt{font-size:17px;font-weight:500;color:#f0f0f0;flex:1;}
 .av{width:30px;height:30px;border-radius:50%;background:#2e2318;display:flex;align-items:center;justify-content:center;font-size:11px;font-weight:500;color:var(--accent);cursor:pointer;}
-.scr{flex:1;overflow-y:auto;padding-bottom:68px;}
+.scr{flex:1;min-height:0;overflow-y:auto;padding-bottom:68px;-webkit-overflow-scrolling:touch;}
 .scr::-webkit-scrollbar{display:none;}
 .nav{position:absolute;bottom:0;left:0;right:0;background:#161616;border-top:1px solid #222;display:flex;padding:6px 0 10px;}
 .ni{flex:1;display:flex;flex-direction:column;align-items:center;gap:2px;cursor:pointer;padding:3px 0;border:none;background:none;min-height:44px;justify-content:center;}
@@ -700,8 +701,10 @@ function _mayaSeed(){
   };
 }
 const _SAMPLE_IDS=['maya','sophie','priya'];
+const _SAMPLE_DOC_IDS=(typeof docs!=='undefined')?docs.map(d=>d.id):[];
+const _SAMPLE_DOCS_BACKUP=(typeof docs!=='undefined')?docs.slice():[];
 function _sampleHidden(){try{return localStorage.getItem('sc_hide_sample')==='1';}catch(e){return false;}}
-function _purgeSample(){_SAMPLE_IDS.forEach(id=>{try{delete CL[id];}catch(e){}});}
+function _purgeSample(){_SAMPLE_IDS.forEach(id=>{try{delete CL[id];}catch(e){}});try{docs=docs.filter(d=>_SAMPLE_DOC_IDS.indexOf(d.id)<0);}catch(e){}}
 function _todayLabel(){try{return new Date().toLocaleDateString('en-US',{weekday:'long',month:'long',day:'numeric'});}catch(e){return '';}}
 function _clearSampleData(){
   try{localStorage.setItem('sc_hide_sample','1');}catch(e){}
@@ -713,6 +716,7 @@ function _clearSampleData(){
 function _restoreSampleData(){
   try{localStorage.removeItem('sc_hide_sample');}catch(e){}
   if(typeof _seedMayaOnce==='function')_seedMayaOnce();
+  try{_SAMPLE_DOCS_BACKUP.forEach(sd=>{if(!docs.some(d=>d.id===sd.id))docs.push(sd);});}catch(e){}
   if(typeof proToast==='function')proToast('Sample data restored');
   nav('home');
 }
@@ -5135,6 +5139,94 @@ function renderPro(){
 }
 
 // ── VAULT ──
+function saveDocs(){try{localStorage.setItem('sc_docs',JSON.stringify(docs));}catch(e){if(typeof proToast==='function')proToast('Storage is full — try a smaller file');}}
+function loadDocs(){try{const raw=localStorage.getItem('sc_docs');if(raw){const a=JSON.parse(raw);if(Array.isArray(a))docs=a;}}catch(e){}}
+function _downloadDoc(id){
+  const d=docs.find(x=>x.id===id);if(!d||!d.file)return;
+  const ext=d.fileType==='pdf'?'pdf':'jpg';
+  const fname=(d.fileName||((d.name||'document').replace(/[^a-z0-9]+/gi,'_')+'.'+ext));
+  try{
+    const parts=String(d.file).split(',');const meta=parts[0]||'';const b64=parts[1]||'';
+    const mime=(meta.match(/data:([^;]+)/)||[])[1]||(d.fileType==='pdf'?'application/pdf':'image/jpeg');
+    const bin=atob(b64);const arr=new Uint8Array(bin.length);for(let i=0;i<bin.length;i++)arr[i]=bin.charCodeAt(i);
+    const url=URL.createObjectURL(new Blob([arr],{type:mime}));
+    const a=document.createElement('a');a.href=url;a.download=fname;document.body.appendChild(a);a.click();a.remove();
+    setTimeout(()=>{try{URL.revokeObjectURL(url);}catch(e){}},2000);
+    if(typeof proToast==='function')proToast('Downloading '+fname);
+  }catch(e){
+    try{const w=window.open();if(w){w.document.title=fname;w.document.write('<iframe src="'+d.file+'" style="border:0;width:100%;height:100vh"></iframe>');}}catch(_){}
+    if(typeof proToast==='function')proToast('Opened the file — use your browser to save it');
+  }
+}
+function _parseDate(s){if(!s)return null;const d=new Date(s);return isNaN(d)?null:d;}
+function _docStatus(expires){
+  if(!expires||/^(none|n\/a|no)$/i.test(String(expires).trim()))return {status:'none',lbl:'No expiration'};
+  const d=_parseDate(expires);if(!d)return {status:'none',lbl:String(expires)};
+  const days=Math.round((d-new Date())/86400000);
+  const md=d.toLocaleDateString('en-US',{month:'short',year:'numeric'});
+  if(days<0)return {status:'urgent',lbl:'Expired '+md};
+  if(days<=30)return {status:'urgent',lbl:'Expires in '+days+' day'+(days===1?'':'s')};
+  if(days<=90)return {status:'soon',lbl:'Expires '+md};
+  return {status:'ok',lbl:'Valid \u00b7 Exp. '+md};
+}
+function _docVisual(cat){
+  const m={License:{icon:'ti-certificate',col:'#0d1e33',ic:'#5ba3e8'},Insurance:{icon:'ti-shield',col:'#0a2019',ic:'#4ec49a'},Permits:{icon:'ti-receipt',col:'var(--accent-tint)',ic:'var(--accent)'},Business:{icon:'ti-file-invoice',col:'#1e1633',ic:'#a891ec'},Certifications:{icon:'ti-heart-plus',col:'#2a0f0f',ic:'#e87070'}};
+  return m[cat]||{icon:'ti-file-text',col:'#161616',ic:'#888'};
+}
+function _bdgFor(st){return st==='urgent'?'br':st==='soon'?'ba':st==='ok'?'bg':'bm';}
+const _DOC_TEMPLATES={
+  _general:[{name:'Business License',cat:'Business',hint:'City or county'},{name:'General Liability Insurance',cat:'Insurance',hint:'Your insurer'},{name:'EIN Confirmation Letter',cat:'Business',hint:'IRS'},{name:"Seller's Permit / Resale Certificate",cat:'Permits',hint:'State tax authority'},{name:'CPR / First Aid Certificate',cat:'Certifications',hint:'Red Cross / AHA'}],
+  esty:[{name:'Esthetician License',cat:'License',hint:'State cosmetology board'},{name:'Establishment License',cat:'License',hint:'State board'},{name:'Professional Liability Insurance',cat:'Insurance',hint:'ABMP / ASCP'},{name:'Bloodborne Pathogens Certificate',cat:'Certifications',hint:'OSHA-approved course'}],
+  hair:[{name:'Cosmetology License',cat:'License',hint:'State board'},{name:'Salon / Establishment License',cat:'License',hint:'State board'},{name:'Professional Liability Insurance',cat:'Insurance',hint:'Your insurer'}],
+  barber:[{name:'Barber License',cat:'License',hint:'State board'},{name:'Barbershop License',cat:'License',hint:'State board'},{name:'Professional Liability Insurance',cat:'Insurance',hint:'Your insurer'}],
+  nail:[{name:'Nail Technician License',cat:'License',hint:'State board'},{name:'Establishment License',cat:'License',hint:'State board'},{name:'Professional Liability Insurance',cat:'Insurance',hint:'Your insurer'}],
+  lash:[{name:'Lash Extension Certification',cat:'Certifications',hint:'Training provider'},{name:'Esthetician / Cosmetology License',cat:'License',hint:'If required in your state'},{name:'Professional Liability Insurance',cat:'Insurance',hint:'Your insurer'}],
+  brow:[{name:'Brow / Microblading Certification',cat:'Certifications',hint:'Training provider'},{name:'Bloodborne Pathogens Certificate',cat:'Certifications',hint:'If microblading'},{name:'Professional Liability Insurance',cat:'Insurance',hint:'Your insurer'}],
+  wax:[{name:'Esthetician / Waxing License',cat:'License',hint:'State board'},{name:'Professional Liability Insurance',cat:'Insurance',hint:'Your insurer'}],
+  makeup:[{name:'Makeup Artistry Certification',cat:'Certifications',hint:'Training provider'},{name:'Professional Liability Insurance',cat:'Insurance',hint:'Your insurer'}],
+  massage:[{name:'Massage Therapy License (LMT)',cat:'License',hint:'State board'},{name:'Professional Liability Insurance',cat:'Insurance',hint:'ABMP / AMTA'},{name:'CPR / First Aid Certificate',cat:'Certifications',hint:'Red Cross / AHA'}],
+  nutrition:[{name:'Nutritionist / Dietitian Credential',cat:'Certifications',hint:'RD, CN, or CNS'},{name:'Professional Liability Insurance',cat:'Insurance',hint:'Your insurer'},{name:'Business License',cat:'Business',hint:'City / county'}],
+  contour:[{name:'Body Contouring Certification',cat:'Certifications',hint:'Training provider'},{name:'Professional Liability Insurance',cat:'Insurance',hint:'Your insurer'}],
+  coach:[{name:'Coaching Certification',cat:'Certifications',hint:'Credentialing body'},{name:'Professional Liability Insurance',cat:'Insurance',hint:'Your insurer'}]
+};
+function _suggestedDocs(){
+  const have=new Set(docs.map(d=>(d.name||'').toLowerCase().trim()));
+  const out=[],seen=new Set();
+  const add=t=>{const k=t.name.toLowerCase();if(!have.has(k)&&!seen.has(k)){seen.add(k);out.push(t);}};
+  (selectedProfessions||[]).forEach(p=>{(_DOC_TEMPLATES[p]||[]).forEach(add);});
+  _DOC_TEMPLATES._general.forEach(add);
+  return out;
+}
+function _addSuggested(i){const s=_suggestedDocs()[i];if(s)renderUploadDoc(s);}
+function _docPickFile(input){
+  const f=input&&input.files&&input.files[0];if(!f)return;
+  if(f.size>8*1024*1024){if(typeof proToast==='function')proToast('That file is over 8MB — please pick a smaller one');return;}
+  const isPdf=/pdf/i.test(f.type)||/\.pdf$/i.test(f.name||'');
+  const r=new FileReader();
+  if(isPdf){r.onload=()=>{window._docDraft={data:String(r.result||''),type:'pdf',fname:f.name||'document.pdf'};_renderDocFilePreview();};r.readAsDataURL(f);}
+  else{r.onload=()=>{const img=new Image();img.onload=()=>{let w=img.width,ht=img.height,max=1600;if(w>max||ht>max){const s=Math.min(max/w,max/ht);w=Math.round(w*s);ht=Math.round(ht*s);}const c=document.createElement('canvas');c.width=w;c.height=ht;c.getContext('2d').drawImage(img,0,0,w,ht);let data;try{data=c.toDataURL('image/jpeg',0.82);}catch(e){data=String(r.result||'');}window._docDraft={data:data,type:'image',fname:f.name||'photo.jpg'};_renderDocFilePreview();};img.onerror=()=>{window._docDraft={data:String(r.result||''),type:'image',fname:f.name||'photo'};_renderDocFilePreview();};img.src=String(r.result||'');};r.readAsDataURL(f);}
+}
+function _renderDocFilePreview(){const el=document.getElementById('doc-file-preview');if(!el||!window._docDraft)return;el.innerHTML=window._docDraft.type==='image'?('<img src="'+window._docDraft.data+'" alt="Attached document" style="max-width:100%;max-height:200px;border-radius:10px;display:block;margin:0 auto;">'):('<div style="display:flex;align-items:center;gap:8px;color:#e0e0e0;font-size:13px;background:#161616;border:1px solid #2a2a2a;border-radius:10px;padding:11px 13px;"><i class="ti ti-file-type-pdf" style="font-size:22px;color:#e87070;"></i> '+(window._docDraft.fname||'PDF attached')+'</div>');}
+function _saveNewDoc(){
+  const g=id=>{const el=document.getElementById(id);return el?el.value.trim():'';};
+  const name=g('doc-name');if(!name){if(typeof proToast==='function')proToast('Please add a document name');return;}
+  const cat=g('doc-cat')||'License',issuer=g('doc-issuer'),number=g('doc-number'),issuedR=g('doc-issued'),expiresR=g('doc-expires');
+  const st=_docStatus(expiresR),vis=_docVisual(cat);
+  const fmt=s=>{const d=_parseDate(s);return d?d.toLocaleDateString('en-US',{month:'short',day:'numeric',year:'numeric'}):s;};
+  const doc={id:'doc'+Date.now(),name:name,issuer:issuer,number:number,issued:issuedR?fmt(issuedR):'',expires:expiresR?fmt(expiresR):null,cat:cat,icon:vis.icon,col:vis.col,ic:vis.ic,status:st.status,lbl:st.lbl,bdg:_bdgFor(st.status)};
+  if(window._docDraft){doc.file=window._docDraft.data;doc.fileType=window._docDraft.type;doc.fileName=window._docDraft.fname;}
+  docs.unshift(doc);saveDocs();window._docDraft=null;
+  if(typeof proToast==='function')proToast('Document saved');nav('doc-detail',doc.id);
+}
+function _saveEditDoc(id){
+  const d=docs.find(x=>x.id===id);if(!d)return;
+  const g=i=>{const el=document.getElementById(i);return el?el.value.trim():'';};
+  d.name=g('doc-name')||d.name;d.cat=g('doc-cat')||d.cat;d.issuer=g('doc-issuer');d.number=g('doc-number');d.issued=g('doc-issued');d.expires=g('doc-expires')||null;
+  const st=_docStatus(d.expires);d.status=st.status;d.lbl=st.lbl;d.bdg=_bdgFor(st.status);
+  const vis=_docVisual(d.cat);if(!d.icon)d.icon=vis.icon;if(!d.col)d.col=vis.col;if(!d.ic)d.ic=vis.ic;
+  if(window._docDraft){d.file=window._docDraft.data;d.fileType=window._docDraft.type;d.fileName=window._docDraft.fname;window._docDraft=null;}
+  saveDocs();if(typeof proToast==='function')proToast('Saved');nav('doc-detail',id);
+}
 function renderVault(){
   setNav('pro');
   document.getElementById('tt').textContent='My docs';
@@ -5152,6 +5244,8 @@ function renderVault(){
     <div style="border-top:1px solid #1e1e1e;padding:8px 14px;display:flex;justify-content:space-between;"><span style="font-size:12px;color:${d.status==='urgent'?'#e87070':d.status==='soon'?'var(--accent)':d.status==='ok'?'#4ec49a':'#555'};">${d.lbl}</span><span class="bdg ${d.bdg}" style="font-size:12px;">${d.status==='urgent'?'Renew now':d.status==='soon'?'Expiring soon':d.status==='ok'?'Valid':'No expiry'}</span></div>
   </div>`).join('')}
   ${_noRes('docs-noresults','No documents match your search.')}
+  ${docs.length===0?'<div style="text-align:center;color:#888;font-size:13px;padding:22px 16px 6px;line-height:1.6;">No documents yet.<br>Add your licenses, insurance, permits, and certifications here.</div>':''}
+  ${(()=>{const sug=_suggestedDocs();if(!sug.length)return '';return '<div class="sh" style="margin-top:10px;"><h2 style="font-size:15px;">Suggested for your work</h2></div><div style="font-size:12px;color:#999;padding:0 16px 8px;">Common documents for your profession. Tap one to add yours.</div>'+sug.slice(0,8).map((t,i)=>`<div onclick="_addSuggested(${i})" style="margin:0 16px 8px;background:#161616;border:1px dashed #2f2f2f;border-radius:12px;padding:11px 13px;display:flex;align-items:center;gap:11px;cursor:pointer;"><div style="width:34px;height:34px;border-radius:9px;background:#1e1e1e;display:flex;align-items:center;justify-content:center;flex-shrink:0;"><i class="ti ti-plus" style="font-size:16px;color:var(--accent);"></i></div><div style="flex:1;min-width:0;"><div style="font-size:13px;font-weight:500;color:#e0e0e0;">${t.name}</div><div style="font-size:11px;color:#999;">${t.cat}${t.hint?' · '+t.hint:''}</div></div><i class="ti ti-chevron-right" style="font-size:15px;color:#888;"></i></div>`).join('');})()}
   <div onclick="nav('upload-doc')" style="margin:4px 16px 16px;background:#1a1a1a;border:1.5px dashed #2a2a2a;border-radius:12px;padding:16px;display:flex;flex-direction:column;align-items:center;gap:6px;cursor:pointer;"><i class="ti ti-upload" style="font-size:22px;color:#777;"></i><span style="font-size:14px;color:#aaa;">Upload a new document</span></div>`;
 }
 function toggleDocReminder(id,key){
@@ -5168,6 +5262,10 @@ function renderDocDetail(id){
   S.innerHTML=`
   <div style="padding:12px 16px 0;display:flex;align-items:center;justify-content:flex-end;"><button onclick="nav('edit-doc','${d.id}')" style="border:none;background:none;font-size:12px;color:var(--accent);cursor:pointer;"><i class="ti ti-pencil" style="font-size:12px;"></i> Edit</button></div>
   <div style="padding:14px 16px 0;display:flex;flex-direction:column;align-items:center;gap:10px;text-align:center;"><div style="width:64px;height:64px;border-radius:16px;background:${d.col};display:flex;align-items:center;justify-content:center;"><i class="ti ${d.icon}" style="font-size:28px;color:${d.ic};"></i></div><div><div style="font-size:17px;font-weight:500;color:#f0f0f0;">${d.name}</div><div style="font-size:13px;color:#999;">${d.issuer}</div></div><span class="bdg ${d.bdg}">${d.status==='urgent'?'Renew now':d.status==='soon'?'Expiring soon':d.status==='ok'?'Valid':'No expiration'}</span></div>
+  ${d.file?`<div style="padding:14px 16px 0;">
+    ${d.fileType==='image'?`<img src="${d.file}" alt="Document photo" style="width:100%;border-radius:12px;display:block;margin-bottom:10px;">`:`<a href="${d.file}" target="_blank" rel="noopener" style="display:flex;align-items:center;gap:10px;background:#1a1a1a;border:1px solid #2a2a2a;border-radius:12px;padding:14px;color:#e0e0e0;text-decoration:none;margin-bottom:10px;"><i class="ti ti-file-type-pdf" style="font-size:24px;color:#e87070;"></i><div style="flex:1;font-size:14px;">${d.fileName||'Open PDF'}<div style="font-size:12px;color:#999;">Tap to view</div></div><i class="ti ti-external-link" style="font-size:16px;color:#888;"></i></a>`}
+    <button onclick="_downloadDoc('${d.id}')" style="width:100%;background:#161616;border:1px solid #2a2a2a;color:#e0e0e0;border-radius:10px;padding:11px;font-size:13px;font-weight:600;cursor:pointer;font-family:inherit;display:flex;align-items:center;justify-content:center;gap:6px;"><i class="ti ti-download" style="font-size:15px;color:var(--accent);"></i> Download ${d.fileType==='pdf'?'PDF':'photo'}</button>
+  </div>`:''}
   ${d.status==='urgent'?`<div style="background:#2a0f0f;border:1px solid #5a1e1e;border-radius:10px;margin:12px 16px;padding:10px 12px;display:flex;gap:8px;align-items:center;"><i class="ti ti-alert-circle" style="font-size:14px;color:#e87070;"></i><span style="font-size:12px;color:#e87070;font-weight:500;">${d.lbl} — renew as soon as possible.</span></div>`:''}
   <div style="padding:0 16px;">
     <div style="background:#1a1a1a;border:1px solid #2a2a2a;border-radius:12px;overflow:hidden;margin:14px 0;">
@@ -5178,33 +5276,45 @@ function renderDocDetail(id){
     </div>
     <div style="font-size:11px;font-weight:500;color:#aaa;text-transform:uppercase;letter-spacing:.07em;margin-bottom:8px;">Renewal reminders</div>
     <div style="background:#1a1a1a;border:1px solid #2a2a2a;border-radius:12px;margin-bottom:14px;">${(()=>{const rem=d.reminders||{d90:true,d30:true,d0:false};return [['90 days before','d90'],['30 days before','d30'],['On expiry day','d0']].map(([l,k])=>`<div style="display:flex;justify-content:space-between;align-items:center;padding:8px 14px;border-bottom:1px solid #1e1e1e;"><span style="font-size:13px;color:#e0e0e0;">${l}</span>${togBtn(rem[k]!==false,"toggleDocReminder('"+d.id+"','"+k+"')",'Reminder '+l)}</div>`).join('');})()}</div>
-    <div style="display:flex;gap:8px;margin-bottom:20px;"><button class="btng" style="flex:1;" onclick="nav('edit-doc','${d.id}')"><i class="ti ti-pencil"></i> Edit</button><button onclick="confirmModal({title:'Delete document',body:'This will permanently remove this document from your vault. This can\'t be undone.',action:'Delete'},'()=>{docs=docs.filter(x=>x.id!==\'${d.id}\');nav(\'vault\')}')" style="flex:1;background:#2a0f0f;border:1px solid #5a1e1e;border-radius:10px;padding:9px;font-size:13px;color:#e87070;cursor:pointer;"><i class="ti ti-trash"></i> Delete</button></div>
+    <div style="display:flex;gap:8px;margin-bottom:20px;"><button class="btng" style="flex:1;" onclick="nav('edit-doc','${d.id}')"><i class="ti ti-pencil"></i> Edit</button><button onclick="confirmModal({title:'Delete document',body:'This will permanently remove this document from your vault. This can\'t be undone.',action:'Delete'},'()=>{docs=docs.filter(x=>x.id!==\'${d.id}\');saveDocs();nav(\'vault\')}')" style="flex:1;background:#2a0f0f;border:1px solid #5a1e1e;border-radius:10px;padding:9px;font-size:13px;color:#e87070;cursor:pointer;"><i class="ti ti-trash"></i> Delete</button></div>
   </div>`;
 }
 function renderEditDoc(id){
   setNav('pro');const d=docs.find(x=>x.id===id);if(!d)return;
-  document.getElementById('tt').textContent='Edit document';
+  document.getElementById('tt').textContent='Edit document';window._docDraft=null;
+  const esc=s=>String(s||'').replace(/"/g,'&quot;');
   S.innerHTML=`
-  <div style="padding:12px 16px 0;display:flex;align-items:center;justify-content:flex-end;"><button onclick="nav('doc-detail','${id}')" style="background:var(--accent);color:var(--accent-ink);border:none;border-radius:8px;padding:6px 14px;font-size:12px;font-weight:500;cursor:pointer;">Save</button></div>
   <div style="padding:14px 16px 0;">
-    <span class="fl-lbl">Document name</span><input aria-label="Document name" class="fi" value="${d.name}" style="margin-bottom:12px;">
-    <span class="fl-lbl">Document number</span><input aria-label="Document number" class="fi" value="${d.number}" style="margin-bottom:12px;">
-    <span class="fl-lbl">Issuing authority</span><input aria-label="Document issuer" class="fi" value="${d.issuer}" style="margin-bottom:12px;">
-    <div style="display:flex;gap:8px;margin-bottom:14px;"><div style="flex:1;"><span class="fl-lbl">Issued</span><input aria-label="Issue date" class="fi" value="${d.issued}" style="margin:0;"></div><div style="flex:1;"><span class="fl-lbl">Expires</span><input class="fi" value="${d.expires||''}" placeholder="None" style="margin:0;"></div></div>
+    <span class="fl-lbl">Document name</span><input id="doc-name" class="fi" value="${esc(d.name)}" style="margin-bottom:12px;">
+    <span class="fl-lbl">Category</span><select id="doc-cat" class="fi" style="margin-bottom:12px;">${docCats.filter(c=>c!=='All').map(c=>`<option value="${c}" ${d.cat===c?'selected':''}>${c}</option>`).join('')}</select>
+    <span class="fl-lbl">Issuing authority</span><input id="doc-issuer" class="fi" value="${esc(d.issuer)}" style="margin-bottom:12px;">
+    <span class="fl-lbl">Document number</span><input id="doc-number" class="fi" value="${esc(d.number)}" style="margin-bottom:12px;">
+    <div style="display:flex;gap:8px;margin-bottom:14px;"><div style="flex:1;"><span class="fl-lbl">Issued</span><input id="doc-issued" class="fi" value="${esc(d.issued)}" placeholder="e.g. Jan 15, 2024" style="margin:0;"></div><div style="flex:1;"><span class="fl-lbl">Expires</span><input id="doc-expires" class="fi" value="${esc(d.expires)}" placeholder="None" style="margin:0;"></div></div>
+    <label style="display:block;border:1.5px dashed #2a2a2a;border-radius:10px;padding:13px;text-align:center;cursor:pointer;margin-bottom:8px;color:#aaa;font-size:13px;"><i class="ti ti-upload" style="font-size:15px;"></i> ${d.file?'Replace attached file':'Attach a photo or PDF'}<input type="file" accept="image/*,application/pdf" onchange="_docPickFile(this)" style="display:none;"></label>
+    <div id="doc-file-preview" style="margin-bottom:14px;"></div>
+    <button class="btnp" style="border-radius:8px;margin-bottom:20px;" onclick="_saveEditDoc('${id}')"><i class="ti ti-check"></i> Save changes</button>
   </div>`;
 }
-function renderUploadDoc(){
-  setNav('pro');
-  document.getElementById('tt').textContent='Upload document';
+function renderUploadDoc(prefill){
+  setNav('pro');document.getElementById('tt').textContent='Add document';
+  window._docDraft=null;const pc=(prefill&&prefill.cat)||'License';
   S.innerHTML=`
-  
   <div style="padding:14px 16px 0;">
-    <div style="border:1.5px dashed var(--accent);border-radius:12px;padding:26px 16px;display:flex;flex-direction:column;align-items:center;gap:7px;cursor:pointer;background:var(--accent-a08);margin-bottom:16px;"><i class="ti ti-cloud-upload" style="font-size:28px;color:var(--accent);"></i><span style="font-size:14px;font-weight:500;color:#e0e0e0;">Tap to upload a file</span><span style="font-size:12px;color:#999;">PDF, JPG, or PNG · Max 25MB</span></div>
-    <span class="fl-lbl">Document name</span><input class="fi" placeholder="e.g. Esthetician License..." style="margin-bottom:12px;">
-    <span class="fl-lbl">Category</span><div style="display:flex;flex-wrap:wrap;gap:6px;margin-bottom:12px;">${docCats.filter(c=>c!=='All').map((c,i)=>`<button class="pill ${i===0?'active':''}" onclick="this.parentElement.querySelectorAll('.pill').forEach(p=>p.classList.remove('active'));this.classList.add('active')">${c}</button>`).join('')}</div>
-    <span class="fl-lbl">Issuing authority</span><input class="fi" placeholder="e.g. CA Board, IRS..." style="margin-bottom:12px;">
-    <div style="display:flex;gap:8px;margin-bottom:12px;"><div style="flex:1;"><span class="fl-lbl">Date issued</span><input class="fi" placeholder="MM/DD/YYYY" style="margin:0;"></div><div style="flex:1;"><span class="fl-lbl">Expiration</span><input class="fi" placeholder="MM/DD/YYYY or none" style="margin:0;"></div></div>
-    <button class="btnp" style="border-radius:8px;margin-bottom:20px;" onclick="nav('vault')"><i class="ti ti-check"></i> Save document</button>
+    ${prefill&&prefill.name?`<div style="background:var(--accent-tint);border:1px solid var(--accent-a20);border-radius:10px;padding:9px 12px;margin-bottom:14px;font-size:12px;color:var(--accent);display:flex;align-items:center;gap:7px;"><i class="ti ti-sparkles" style="font-size:14px;"></i> Suggested for your work — fill in your details below.</div>`:''}
+    <label style="display:block;border:1.5px dashed var(--accent);border-radius:12px;padding:22px 16px;text-align:center;cursor:pointer;background:var(--accent-a08);margin-bottom:8px;">
+      <i class="ti ti-cloud-upload" style="font-size:26px;color:var(--accent);"></i>
+      <div style="font-size:14px;font-weight:500;color:#e0e0e0;margin-top:6px;">Tap to upload a photo or PDF</div>
+      <div style="font-size:12px;color:#999;">JPG, PNG, or PDF · up to 8MB</div>
+      <input type="file" accept="image/*,application/pdf" onchange="_docPickFile(this)" style="display:none;">
+    </label>
+    <div id="doc-file-preview" style="margin-bottom:14px;"></div>
+    <span class="fl-lbl">Document name</span><input id="doc-name" class="fi" value="${prefill&&prefill.name?String(prefill.name).replace(/"/g,'&quot;'):''}" placeholder="e.g. Esthetician License" style="margin-bottom:12px;">
+    <span class="fl-lbl">Category</span><select id="doc-cat" class="fi" style="margin-bottom:12px;">${docCats.filter(c=>c!=='All').map(c=>`<option value="${c}" ${pc===c?'selected':''}>${c}</option>`).join('')}</select>
+    <span class="fl-lbl">Issuing authority</span><input id="doc-issuer" class="fi" value="${prefill&&prefill.hint?String(prefill.hint).replace(/"/g,'&quot;'):''}" placeholder="e.g. CA Board, IRS" style="margin-bottom:12px;">
+    <span class="fl-lbl">Document number (optional)</span><input id="doc-number" class="fi" placeholder="License or policy number" style="margin-bottom:12px;">
+    <div style="display:flex;gap:8px;margin-bottom:6px;"><div style="flex:1;"><span class="fl-lbl">Date issued</span><input id="doc-issued" type="date" class="fi" style="margin:0;"></div><div style="flex:1;"><span class="fl-lbl">Expiration</span><input id="doc-expires" type="date" class="fi" style="margin:0;"></div></div>
+    <div style="font-size:11px;color:#888;margin:0 0 16px;">Leave expiration blank if this document doesn't expire. We'll remind you before it lapses.</div>
+    <button class="btnp" style="border-radius:8px;margin-bottom:20px;" onclick="_saveNewDoc()"><i class="ti ti-check"></i> Save document</button>
   </div>`;
 }
 function renderInventory(){try{_applyImportedProducts();}catch(e){}
@@ -7846,6 +7956,7 @@ try{
   applyProfessionConfig();
   loadBizInfo();_syncProviderAvatar();  // restore the provider's own business name & details
   loadClients();  // restore the curated client list (demos removed, Square imports kept)
+  loadDocs();  // restore the provider's saved documents (licenses, insurance, etc.)
   if(!_sampleHidden()){_seedMayaOnce();}else{_purgeSample();}  // sample Maya only when sample data is on
   if(!_sampleHidden()&&typeof _demoCheckinSeed==='function')_demoCheckinSeed();
   try{if(typeof MutationObserver!=='undefined'){new MutationObserver(()=>_a11yEnhance()).observe(document.body,{childList:true,subtree:true});_a11yEnhance();}}catch(e){}
