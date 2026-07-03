@@ -699,6 +699,23 @@ function _mayaSeed(){
       answers:{1:'Maya Rodriguez',2:'1992-03-14',8:'(510) 555-0142',9:'maya.r@example.com',10:'Instagram',3:'Hyperpigmentation',4:'Fragrance, retinol',5:'No',11:'None',12:'Mild rosacea — managed',6:'Vitamin C serum AM, mineral SPF 50'}}]
   };
 }
+const _SAMPLE_IDS=['maya','sophie','priya'];
+function _sampleHidden(){try{return localStorage.getItem('sc_hide_sample')==='1';}catch(e){return false;}}
+function _purgeSample(){_SAMPLE_IDS.forEach(id=>{try{delete CL[id];}catch(e){}});}
+function _todayLabel(){try{return new Date().toLocaleDateString('en-US',{weekday:'long',month:'long',day:'numeric'});}catch(e){return '';}}
+function _clearSampleData(){
+  try{localStorage.setItem('sc_hide_sample','1');}catch(e){}
+  _purgeSample();
+  try{const raw=localStorage.getItem('sc_clients');if(raw){const o=JSON.parse(raw)||{};_SAMPLE_IDS.forEach(id=>delete o[id]);localStorage.setItem('sc_clients',JSON.stringify(o));}}catch(e){}
+  if(typeof proToast==='function')proToast('Sample data removed');
+  nav('home');
+}
+function _restoreSampleData(){
+  try{localStorage.removeItem('sc_hide_sample');}catch(e){}
+  if(typeof _seedMayaOnce==='function')_seedMayaOnce();
+  if(typeof proToast==='function')proToast('Sample data restored');
+  nav('home');
+}
 function _seedMayaOnce(){
   try{
     if(localStorage.getItem('sc_maya_seeded'))return;   // only ever seed once
@@ -738,7 +755,7 @@ function _reloadAll(){try{
   if(typeof loadCustomResources==='function')loadCustomResources();
   if(typeof loadAi==='function')loadAi();
   if(typeof loadForms==='function')loadForms();
-  loadBizInfo();_syncProviderAvatar();loadClients();_seedMayaOnce();_seedBirthdays();if(typeof _demoCheckinSeed==='function')_demoCheckinSeed();
+  loadBizInfo();_syncProviderAvatar();loadClients();if(!_sampleHidden()){_seedMayaOnce();}else{_purgeSample();}_seedBirthdays();if(!_sampleHidden()&&typeof _demoCheckinSeed==='function')_demoCheckinSeed();
   if(typeof loadWorkspace==='function')loadWorkspace();
   if(typeof loadSquareCatalog==='function'){loadSquareCatalog();_mergeSquareRetail();}
   if(typeof loadCheckinCfg==='function')loadCheckinCfg();
@@ -1293,7 +1310,7 @@ function renderHome(){
   <div style="padding:20px 16px 8px;">
     <div style="display:flex;justify-content:space-between;align-items:flex-start;">
       <div><div id="page-heading" style="font-size:22px;font-weight:500;color:#f0f0f0;margin-bottom:2px;" tabindex="-1">${_greeting()}${_providerFirstName()?', '+_providerFirstName():''} 👋</div>
-      <div style="font-size:14px;color:#666;">Thursday, June 26</div></div>
+      <div style="font-size:14px;color:#666;">${_todayLabel()}</div></div>
       <button onclick="nav('calendar')" aria-label="Open calendar" style="background:#161616;border:none;border-radius:10px;padding:8px 12px;font-size:12px;color:var(--accent);cursor:pointer;display:flex;align-items:center;gap:5px;min-width:44px;min-height:44px;"><i class="ti ti-calendar" aria-hidden="true" style="font-size:16px;"></i></button>
     </div>
   </div>
@@ -1377,10 +1394,22 @@ function renderHome(){
     return h;
   })()}
   <div class="sh"><h2>Up next</h2></div>
-  ${Object.entries(CL).slice(0,2).map(([id,c])=>`
-  <div class="card" onclick="nav('client','${id}')"><div class="row">${av(c)}<div style="flex:1;"><div style="font-size:15px;font-weight:500;color:#f0f0f0;">${c.name}</div><div style="font-size:12px;color:#999;margin-top:2px;">${c.nextVisit} · ${c.treatment}</div></div><span class="bdg ${id==='maya'?'bg':'ba'}" style="font-size:12px;">${id==='maya'?'Confirmed':'Form pending'}</span></div></div>`).join('')}
-  <div class="sh"><h2>Recent activity</h2></div>
-  ${[['ti-file-check','#0a2019','#4ec49a','Consent form signed','Priya Patel · 2h ago','client-forms','priya'],['ti-microphone','#1e1633','#a891ec','AI voice note saved','Maya Rodriguez · Yesterday','notes','maya'],['ti-camera','var(--accent-tint)','var(--accent)','Before/after photos added','Maya Rodriguez · Yesterday','photos','maya']].map(([icon,bg,ic,name,sub,scr,cid])=>`
+  ${(()=>{
+    if(_apptsLive()){
+      const now=new Date();
+      const up=squareAppts.filter(a=>a.at&&a.at>=new Date(now.getTime()-3600000)).slice(0,3);
+      if(!up.length)return '<div class="card"><div style="padding:18px 16px;text-align:center;color:#999;font-size:13px;">No upcoming appointments in the next 14 days.<div style="font-size:12px;color:#666;margin-top:4px;">New Square bookings appear here automatically.</div></div></div>';
+      return up.map(a=>{
+        const ini=String(a.client||'Client').trim().split(/\s+/).map(w=>w[0]||'').slice(0,2).join('').toUpperCase()||'C';
+        const when=a.at.toLocaleDateString('en-US',{weekday:'short',month:'short',day:'numeric'})+' · '+a.at.toLocaleTimeString('en-US',{hour:'numeric',minute:'2-digit'});
+        return '<div class="card" onclick="nav(\'calendar\')"><div class="row"><div style="width:38px;height:38px;border-radius:50%;background:#2e1c10;color:var(--accent);display:flex;align-items:center;justify-content:center;font-weight:600;font-size:13px;flex-shrink:0;">'+ini+'</div><div style="flex:1;min-width:0;"><div style="font-size:15px;font-weight:500;color:#f0f0f0;">'+a.client+'</div><div style="font-size:12px;color:#999;margin-top:2px;">'+when+(a.dur?' · '+a.dur+' min':'')+'</div></div><span class="bdg bg" style="font-size:12px;">Confirmed</span></div></div>';
+      }).join('');
+    }
+    return Object.entries(CL).slice(0,2).map(([id,c])=>`
+  <div class="card" onclick="nav('client','${id}')"><div class="row">${av(c)}<div style="flex:1;"><div style="font-size:15px;font-weight:500;color:#f0f0f0;">${c.name}</div><div style="font-size:12px;color:#999;margin-top:2px;">${c.nextVisit} · ${c.treatment}</div></div><span class="bdg ${id==='maya'?'bg':'ba'}" style="font-size:12px;">${id==='maya'?'Confirmed':'Form pending'}</span></div></div>`).join('');
+  })()}
+  ${_sampleHidden()?'':'<div class="sh"><h2>Recent activity</h2></div>'}
+  ${(_sampleHidden()?[]:[['ti-file-check','#0a2019','#4ec49a','Consent form signed','Priya Patel · 2h ago','client-forms','priya'],['ti-microphone','#1e1633','#a891ec','AI voice note saved','Maya Rodriguez · Yesterday','notes','maya'],['ti-camera','var(--accent-tint)','var(--accent)','Before/after photos added','Maya Rodriguez · Yesterday','photos','maya']]).map(([icon,bg,ic,name,sub,scr,cid])=>`
   <div class="card" onclick="${CL[cid]?`nav('${scr}','${cid}')`:`nav('clients')`}" style="cursor:pointer;"><div class="row"><div style="width:32px;height:32px;border-radius:8px;background:${bg};display:flex;align-items:center;justify-content:center;flex-shrink:0;"><i class="ti ${icon}" style="font-size:15px;color:${ic};"></i></div><div style="flex:1;min-width:0;"><div style="font-size:14px;color:#e0e0e0;">${name}</div><div style="font-size:12px;color:#999;">${sub}</div></div><i class="ti ti-chevron-right" aria-hidden="true" style="font-size:16px;color:#888;flex-shrink:0;"></i></div></div>`).join('')}
   <div class="sh" style="display:flex;align-items:center;justify-content:space-between;"><h2>This week</h2>${_apptsLive()?'<span style="display:inline-flex;align-items:center;gap:4px;font-size:10px;font-weight:700;color:#4ec49a;background:#0a2019;border:1px solid #1a4a38;padding:2px 8px;border-radius:20px;letter-spacing:.04em;"><span style="width:6px;height:6px;border-radius:50%;background:#4ec49a;"></span>LIVE</span>':''}</div>
   <div style="display:flex;gap:8px;padding:0 16px 16px;">
@@ -7777,6 +7806,12 @@ function renderMore(){
     ];
     return items.map(([icon,bg,ic,name,desc,screen,badge])=>`<div class="card" onclick="nav('${screen}')"><div class="row"><div style="width:44px;height:44px;border-radius:10px;background:${bg};display:flex;align-items:center;justify-content:center;flex-shrink:0;"><i class="ti ${icon}" style="font-size:20px;color:${ic};"></i></div><div style="flex:1;"><div style="font-size:14px;font-weight:500;color:#e0e0e0;">${name}</div><div style="font-size:12px;color:${badge?'var(--accent)':'#999'};">${desc}</div></div>${badge?`<span style="background:var(--accent);color:var(--accent-ink);font-size:12px;font-weight:700;min-width:20px;height:20px;border-radius:10px;display:flex;align-items:center;justify-content:center;padding:0 6px;flex-shrink:0;">${badge}</span>`:`<i aria-hidden="true" class="ti ti-chevron-right" style="font-size:16px;color:#888;flex-shrink:0;"></i>`}</div></div>`).join('');
   })()}
+  <div class="sh"><h2>Your data</h2></div>
+  <div style="background:#1a1a1a;border:1px solid #2a2a2a;border-radius:12px;margin:0 16px 20px;overflow:hidden;">
+    ${_sampleHidden()
+      ?`<div onclick="_restoreSampleData()" style="display:flex;align-items:center;gap:11px;padding:13px 14px;cursor:pointer;"><div style="width:38px;height:38px;border-radius:10px;background:#1e1633;display:flex;align-items:center;justify-content:center;flex-shrink:0;"><i class="ti ti-history" style="font-size:18px;color:#a891ec;"></i></div><div style="flex:1;"><div style="font-size:14px;font-weight:500;color:#e0e0e0;">Restore sample data</div><div style="font-size:12px;color:#999;">Bring back the example client &amp; activity</div></div><i class="ti ti-chevron-right" style="font-size:16px;color:#888;"></i></div>`
+      :`<div onclick="_clearSampleData()" style="display:flex;align-items:center;gap:11px;padding:13px 14px;cursor:pointer;"><div style="width:38px;height:38px;border-radius:10px;background:#2a0f0f;display:flex;align-items:center;justify-content:center;flex-shrink:0;"><i class="ti ti-eraser" style="font-size:18px;color:#e87070;"></i></div><div style="flex:1;"><div style="font-size:14px;font-weight:500;color:#e0e0e0;">Remove sample data</div><div style="font-size:12px;color:#999;">Clear the example client &amp; activity, keep your real data</div></div><i class="ti ti-chevron-right" style="font-size:16px;color:#888;"></i></div>`}
+  </div>
   <div class="sh"><h2>Beta program</h2></div>
   <div style="background:#1a1a1a;border:1px solid #2a2a2a;border-radius:12px;margin:0 16px 20px;overflow:hidden;">
     <div onclick="nav('whats-new')" style="display:flex;align-items:center;gap:11px;padding:13px 14px;border-bottom:1px solid #222;cursor:pointer;"><div style="width:38px;height:38px;border-radius:10px;background:#0a2019;display:flex;align-items:center;justify-content:center;flex-shrink:0;position:relative;"><i class="ti ti-sparkles" style="font-size:18px;color:#4ec49a;"></i>${window._newsUnread?'<span style="position:absolute;top:-3px;right:-3px;width:10px;height:10px;background:#e87070;border-radius:50%;border:2px solid #1a1a1a;"></span>':''}</div><div style="flex:1;"><div style="font-size:14px;font-weight:500;color:#e0e0e0;">What’s new</div><div style="font-size:12px;color:${window._newsUnread?'var(--accent)':'#999'};">${window._newsUnread?'New updates':'Latest updates & changes'}</div></div><i class="ti ti-chevron-right" style="font-size:16px;color:#888;"></i></div>
@@ -7798,7 +7833,7 @@ function renderMore(){
 (function hydrateConfirmed(){
   try{SlickBridge.getBookings().filter(b=>b.status==='confirmed').forEach(b=>addConfirmedAppt(b));}catch(e){}
 })();
-seedDemoRequestOnce();
+if(!_sampleHidden())seedDemoRequestOnce();
 seedCheckinCfgOnce();
 applyTheme();
 updateBadge();
@@ -7811,8 +7846,8 @@ try{
   applyProfessionConfig();
   loadBizInfo();_syncProviderAvatar();  // restore the provider's own business name & details
   loadClients();  // restore the curated client list (demos removed, Square imports kept)
-  _seedMayaOnce();  // bring back one sample client (Maya) for the AI brief + client demo app
-  if(typeof _demoCheckinSeed==='function')_demoCheckinSeed();  // give sample Maya a today appointment so the check-in nudge is visible
+  if(!_sampleHidden()){_seedMayaOnce();}else{_purgeSample();}  // sample Maya only when sample data is on
+  if(!_sampleHidden()&&typeof _demoCheckinSeed==='function')_demoCheckinSeed();
   try{if(typeof MutationObserver!=='undefined'){new MutationObserver(()=>_a11yEnhance()).observe(document.body,{childList:true,subtree:true});_a11yEnhance();}}catch(e){}
   loadForms();  // restore any saved form edits / custom forms / connected guides from a previous session
   loadWorkspace();  // restore recommended products, reasons, custom products, and routines
