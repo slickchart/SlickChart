@@ -19,7 +19,7 @@ export default async function handler(req, res) {
     out.usingLocationId = locationId;
 
     // bookings: next 14 and next 60 days (any location match), to see if it's a window issue
-    for (const days of [14, 60]) {
+    for (const days of [14, 30]) {
       try {
         const now = new Date(); const end = new Date(now.getTime() + days * 86400000);
         const qs = new URLSearchParams({ location_id: locationId, start_at_min: now.toISOString(), start_at_max: end.toISOString(), limit: '100' });
@@ -29,11 +29,11 @@ export default async function handler(req, res) {
     }
     // bookings across ALL locations (no location filter) — reveals a location mismatch
     try {
-      const now = new Date(); const end = new Date(now.getTime() + 60 * 86400000);
+      const now = new Date(); const end = new Date(now.getTime() + 30 * 86400000);
       const qs = new URLSearchParams({ start_at_min: now.toISOString(), start_at_max: end.toISOString(), limit: '100' });
       const d = await sf('/v2/bookings?' + qs.toString());
-      out.bookings.anyLocationNext60 = { count: (d.bookings || []).length, locationIds: [...new Set((d.bookings || []).map(b => b.location_id))] };
-    } catch (e) { out.bookings.anyLocationNext60 = { error: e.message }; }
+      out.bookings.anyLocation = { count: (d.bookings || []).length, locationIds: [...new Set((d.bookings || []).map(b => b.location_id))] };
+    } catch (e) { out.bookings.anyLocation = { error: e.message }; }
 
     // invoices at the resolved location
     try {
