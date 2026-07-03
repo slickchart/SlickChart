@@ -1579,6 +1579,7 @@ function sendClientMsg(imgArg){
   const imgs=Array.isArray(imgArg)?imgArg:(imgArg?[imgArg]:[]);
   if(!text&&!imgs.length)return;
   messages.push({from:'me',text,imgs,time:'Just now'});
+  try{if(client._real){_clientSubmit('message',{text:text,photos:imgs.length});}}catch(e){}
   if(inp){inp.value='';inp.style.height='auto';}
   renderMessages();
   setTimeout(()=>{
@@ -2066,6 +2067,7 @@ function submitRebook(){
     created:Date.now(),
   };
   lastBookingId=booking.id;
+  try{if(client._real)_clientSubmit('booking',{treatment:booking.treatment,date:booking.date,dateLabel:booking.dateLabel,time:booking.time,note:booking.note,client:client.name});}catch(e){}
   if(prov.connected){
     // real cross-app flow → lands in the provider app's inbox
     SlickBridge.upsertBooking(booking);
@@ -2813,11 +2815,58 @@ SlickBridge.on('client-message',m=>{
     title:`New message from ${fromName}`,body:preview,onclick:()=>{client.activeProviderId='jess';applyActiveProvider();nav('messages');}});
 });
 
+function _getClientToken(){ try{ return new URLSearchParams(location.search).get('c')||''; }catch(e){ return ''; } }
+function _clientSubmit(kind,payload){
+  try{
+    var tok=client._token; if(!tok)return Promise.resolve(null);
+    return fetch('/api/client-submit',{method:'POST',headers:{'Content-Type':'application/json'},body:JSON.stringify({t:tok,kind:kind,payload:payload||{}})}).then(function(r){return r.json();}).catch(function(){return null;});
+  }catch(e){ return Promise.resolve(null); }
+}
+function _clientLinkError(msg){
+  var S=document.getElementById('S');
+  if(S)S.innerHTML='<div style="padding:64px 26px;text-align:center;color:#9a8a7e;"><div style="font-size:30px;margin-bottom:12px;">\u{1F517}</div><div style="font-size:16px;font-weight:600;color:#8b6b4a;margin-bottom:7px;">This link isn\u2019t working</div><div style="font-size:13px;line-height:1.6;max-width:280px;margin:0 auto;">'+(msg||'The link may be invalid or was removed. Please ask your provider to resend your invite.')+'</div></div>';
+  var nv=document.querySelector('.nav'); if(nv)nv.style.display='none';
+}
+function _applyRealClientData(j){
+  var d=(j.client&&j.client.data)||{};
+  client.name=j.client.name||client.name;
+  client.initials=(client.name||'?').trim().split(/\s+/).map(function(w){return w[0]||'';}).slice(0,2).join('').toUpperCase();
+  var p=client.providers.find(function(x){return x.id==='jess';})||client.providers[0];
+  if(d.studio)p.studio=d.studio;
+  if(d.providerName){p.name=d.providerName;p.first=String(d.providerName).split(' ')[0]||p.first;p.initials=String(d.providerName).trim().split(/\s+/).map(function(w){return w[0]||'';}).slice(0,2).join('').toUpperCase();}
+  if(d.brand)p.brand=d.brand;
+  var prof=d.profile||{};
+  p.treatment=prof.treatment||'';
+  p.summaryNote=(Array.isArray(d.summaries)&&d.summaries[0]&&d.summaries[0].note)||'';
+  p.homecare=(Array.isArray(d.aftercare)?d.aftercare:[]).map(function(s){return {key:s,icon:'\u2728',time:'',tip:'',done:false};});
+  p.products=Array.isArray(d.products)?d.products:[];
+  p.summaries=Array.isArray(d.summaries)?d.summaries:[];
+  // no fabricated data in real mode
+  p.avoid=[];p.aftercare=[];p.progress=[];p.observations=[];p.thread=[];p.homecareNote='';p.seriesLabel='';
+  p.session=1;p.totalSessions=1;p.studioAddress='';p.studioPhone='';p.connected=false;p.unread=0;
+  var nv=String(prof.nextVisit||'').split('\u00b7');
+  p.nextDate=(nv[0]||'').trim();p.nextTime=(nv[1]||'').trim();
+  var iso; try{ if(prof.nextVisit){ var dd=new Date(String(prof.nextVisit).replace('\u00b7','')+' '+(new Date().getFullYear())); if(!isNaN(dd))iso=dd.toISOString(); } }catch(e){}
+  p.apptISO=iso||new Date(Date.now()+14*86400000).toISOString();
+  p.nextDateISO='';p.nextTimeISO='';p.durationMins=60;
+  client._forms=Array.isArray(d.forms)?d.forms:[];
+}
+function _bootRealClient(token){
+  client._token=token;
+  var S=document.getElementById('S');
+  if(S)S.innerHTML='<div style="padding:70px 24px;text-align:center;color:#9a8a7e;"><div style="font-size:30px;margin-bottom:12px;">\u2728</div><div style="font-size:14px;">Loading your space\u2026</div></div>';
+  fetch('/api/client-data?t='+encodeURIComponent(token)).then(function(r){return r.json();}).then(function(j){
+    if(j&&j.ok&&j.client){ _applyRealClientData(j); client._real=true; try{document.title='SlickChart \u2014 '+client.name;}catch(e){} applyActiveProvider(); nav('home'); }
+    else{ _clientLinkError(j&&j.error); }
+  }).catch(function(){ _clientLinkError(); });
+}
 document.addEventListener('DOMContentLoaded', function() {
   document.querySelectorAll('[data-nav]').forEach(function(el) {
     el.addEventListener('click', function() { nav(el.getAttribute('data-nav')); });
   });
   updateClientBadge();
+  var _ctok=_getClientToken();
+  if(_ctok){ _bootRealClient(_ctok); return; }
   try{document.title='SlickChart — '+client.name;}catch(e){}
   // connected provider reflects any brand Jessica saved in the provider app
   try{const jp=client.providers.find(p=>p.id==='jess');const sb=loadClientBrand();if(jp&&sb)jp.brand=sb;}catch(e){}
