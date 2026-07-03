@@ -6,10 +6,13 @@ import { squareFetch as _sqf, sqContext } from '../../lib/square.js';
 
 // The permissions live booking needs, with a human label for each.
 const REQUIRED = [
+  { scope: 'APPOINTMENTS_READ',                   label: 'Read your appointments' },
   { scope: 'APPOINTMENTS_WRITE',                  label: 'Create appointments' },
-  { scope: 'APPOINTMENTS_BUSINESS_SETTINGS_READ', label: 'Read your staff & booking setup' },
+  { scope: 'INVOICES_READ',                       label: 'Read your invoices' },
+  { scope: 'INVOICES_WRITE',                      label: 'Send invoices' },
+  { scope: 'ORDERS_READ',                         label: 'Read your sales' },
+  { scope: 'PAYMENTS_READ',                       label: 'Read your payments' },
   { scope: 'CUSTOMERS_READ',                      label: 'Look up clients' },
-  { scope: 'CUSTOMERS_WRITE',                     label: 'Add new clients' },
   { scope: 'ITEMS_READ',                          label: 'Read your services & prices' },
   { scope: 'MERCHANT_PROFILE_READ',               label: 'Find your location' }
 ];
@@ -33,6 +36,7 @@ export default async function handler(req, res) {
       // If Square can't return a scope list (rare), say so instead of showing
       // everything as "missing" — that would be misleading.
       inconclusive: scopes.length === 0,
+      grantedScopes: scopes,
       expiresAt: data.expires_at || null,
       merchantId: data.merchant_id || null
     });
