@@ -14,7 +14,11 @@ export default async function handler(req, res) {
     const now = new Date();
     const days = Math.min(Math.max(parseInt(req.query.days || '14', 10) || 14, 1), 31);
     const end = new Date(now.getTime() + days * 86400000);
-    const startMin = now.toISOString();
+    // Look back a full day from now (not just "now") so appointments earlier today
+    // stay in the list even after their start time passes — the provider may still
+    // need to open them later to finish session notes. Client-side filtering already
+    // narrows this down to the correct local "today" for display.
+    const startMin = new Date(now.getTime() - 24 * 3600000).toISOString();
     const startMax = end.toISOString();
 
     // Every location on the account.
