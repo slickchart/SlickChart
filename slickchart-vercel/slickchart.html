@@ -1429,6 +1429,11 @@ function renderClients(){
   S.innerHTML=`
   ${_searchBar('Search clients by name or treatment…','.client-card','clients-noresults')}
   <button class="btnp" style="margin:0 16px 10px;width:calc(100% - 32px);border-radius:10px;" onclick="nav('new-client')"><i class="ti ti-plus"></i> New client intake</button>
+  <button onclick="nav('invite-clients')" style="display:flex;align-items:center;gap:11px;width:calc(100% - 32px);box-sizing:border-box;margin:0 16px 10px;background:linear-gradient(135deg,#0a2019,#0d2a1e);border:1px solid #1c4030;border-radius:12px;padding:12px 14px;cursor:pointer;font-family:inherit;text-align:left;">
+    <div style="width:42px;height:42px;border-radius:10px;background:#0f3324;display:flex;align-items:center;justify-content:center;flex-shrink:0;"><i class="ti ti-send" style="font-size:20px;color:#4ec49a;"></i></div>
+    <div style="flex:1;min-width:0;"><div style="font-size:14px;font-weight:500;color:#e0f5ea;">Invite clients to their app</div><div style="font-size:12px;color:#7fbfa5;">Send each client their own private link</div></div>
+    <i class="ti ti-chevron-right" style="font-size:16px;color:#4ec49a;flex-shrink:0;"></i>
+  </button>
   <button onclick="nav('vc-inbox')" style="display:flex;align-items:center;gap:11px;width:calc(100% - 32px);box-sizing:border-box;margin:0 16px 14px;background:linear-gradient(135deg,#13102a,#1a1338);border:1px solid #2d2360;border-radius:12px;padding:12px 14px;cursor:pointer;font-family:inherit;text-align:left;">
     <div style="width:42px;height:42px;border-radius:10px;background:#1e1633;display:flex;align-items:center;justify-content:center;flex-shrink:0;"><i class="ti ti-scan" style="font-size:20px;color:#a891ec;"></i></div>
     <div style="flex:1;min-width:0;"><div style="font-size:14px;font-weight:500;color:#efeaff;">Virtual consults</div><div style="font-size:12px;color:#a394cc;">Invite clients, review photos &amp; AI analysis</div></div>
@@ -4996,9 +5001,9 @@ async function _syncClientsToServer(opts){
       if(opts.toast)proToast('Your clients are synced');
       return j;
     }
-    if(opts.toast)proToast('Could not sync right now');
-    return null;
-  }catch(e){ if(opts.toast)proToast('Could not reach the server'); return null; }
+    if(opts.toast)proToast((j&&j.error)||'Could not sync right now');
+    return j||{ok:false,error:'Could not sync'};
+  }catch(e){ if(opts.toast)proToast('Could not reach the server'); return {ok:false,error:'Could not reach the server'}; }
   finally{ _syncingClients=false; }
 }
 function renderInviteClients(){
@@ -5042,7 +5047,16 @@ function _clientAppLink(id){
 function _markInvited(id){if(CL[id]){CL[id].appInvited=true;try{if(typeof saveClients==='function')saveClients();}catch(e){}}}
 function inviteClientToApp(id){
   const c=CL[id];if(!c)return;
-  if(!c._token){proToast('Preparing link\u2026');_syncClientsToServer({}).then(function(){inviteClientToApp(id);});return;}
+  if(!c._token){
+    var _tok=(typeof Cloud!=='undefined'&&Cloud&&Cloud.token)||'';
+    if(!_tok){ proToast('Please sign in to your SlickChart account first'); return; }
+    proToast('Preparing link\u2026');
+    _syncClientsToServer({}).then(function(j){
+      if(c._token){ inviteClientToApp(id); }
+      else { proToast((j&&j.error)||'Could not prepare the link \u2014 please try again'); }
+    });
+    return;
+  }
   const first=c.name.split(' ')[0];
   const who=(typeof _providerFirstName==='function'&&_providerFirstName())?_providerFirstName():'Your provider';
   const biz=(typeof bizInfo!=='undefined'&&bizInfo&&bizInfo.name)?bizInfo.name:'';
