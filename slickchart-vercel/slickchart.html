@@ -777,6 +777,7 @@ async function _cloudInit(){
   if(!Cloud.token){renderLogin();return;}      // database is on but no session — sign in
   try{const n=await Cloud.pull();if(n===0)await Cloud.pushAllLocal();_reloadAll();}catch(e){}
   nav('home');
+  try{syncClientEvents();}catch(e){}
 }
 // ── Internationalization (i18n) ──────────────────────────────────────────────
 // Square operates in English, Spanish, French, and Japanese markets. We localize
@@ -5141,6 +5142,7 @@ function initSwipe(card,i){
   card.addEventListener('mousedown',e=>{onStart(e.clientX,e.clientY);const mm=ev=>onMove(ev.clientX,ev.clientY);const mu=()=>{onEnd();document.removeEventListener('mousemove',mm);document.removeEventListener('mouseup',mu);};document.addEventListener('mousemove',mm);document.addEventListener('mouseup',mu);});
 }
 function showMsgTab(tab){
+  if(tab==='inbox'){try{syncClientEvents();}catch(e){}}
   ['inbox','autos'].forEach(t=>{const el=document.getElementById('msg-tab-'+t);if(el)el.classList.toggle('active',t===tab);});
   const content=document.getElementById('msg-tab-content');if(!content)return;
   if(tab==='inbox'){
@@ -6291,6 +6293,7 @@ function renderOnboard(){
 }
 
 function renderNotifFeed(){
+  try{syncClientEvents();}catch(e){}
   document.getElementById('tt').textContent='Notifications';
   const unread=notifFeed.filter(n=>!n.read);
   const read=notifFeed.filter(n=>n.read);
@@ -8133,6 +8136,65 @@ function fmtBookingDate(b){
   try{return new Date(b.date+'T12:00:00').toLocaleDateString('en-US',{weekday:'long',month:'long',day:'numeric'});}catch(e){return b.date;}
 }
 
+// ── Real client submissions (bookings & messages sent from the live client app) ──
+// The client app posts these to /api/client-submit, which logs them server-side.
+// We poll them here and feed them into the same booking/chat UI used by the demo.
+function _seenEventIds(){try{return JSON.parse(localStorage.getItem('sc_seen_events')||'[]');}catch(e){return [];}}
+function _markEventSeen(id){try{const a=_seenEventIds();if(a.indexOf(id)<0){a.push(id);if(a.length>1000)a.splice(0,a.length-1000);localStorage.setItem('sc_seen_events',JSON.stringify(a));}}catch(e){}}
+let _syncingEvents=false;
+async function syncClientEvents(){
+  if(_syncingEvents)return;
+  const tok=(typeof Cloud!=='undefined'&&Cloud&&Cloud.token)||'';
+  if(!tok)return;
+  _syncingEvents=true;
+  try{
+    const r=await fetch('/api/clients',{headers:{'Authorization':'Bearer '+tok}});
+    const j=await r.json();
+    if(!(j&&j.ok&&Array.isArray(j.events))){_syncingEvents=false;return;}
+    const seen=_seenEventIds();
+    const fresh=j.events.filter(e=>seen.indexOf(e.id)<0).reverse(); // oldest first so newest ends up on top
+    let touchedRequests=false,touchedMsgs=false,touchedNotif=false;
+    const msgClientIds=[];
+    fresh.forEach(ev=>{
+      _markEventSeen(ev.id);
+      const payload=ev.payload||{};
+      const cid=ev.client_id;
+      const c=CL[cid];
+      const name=payload.client||(c&&c.name)||'A client';
+      if(ev.kind==='booking'){
+        const b={id:ev.id,clientId:cid,client:name,treatment:payload.treatment||'Appointment',
+          date:payload.date||'',dateLabel:payload.dateLabel||'',time:payload.time||'',
+          note:payload.note||'',status:'pending',created:ev.created_at||Date.now()};
+        SlickBridge.upsertBooking(b);
+        pushBookingNotif({title:'New appointment request',body:`${name} requested ${b.treatment} on ${fmtBookingDate(b)} at ${b.time}.`});
+        providerSystemNotify('New appointment request',`${name} \u00b7 ${b.treatment} \u00b7 ${fmtBookingDate(b)} ${b.time}`);
+        touchedRequests=true;touchedNotif=true;
+      }else if(ev.kind==='message'){
+        if(!msgStore[cid])msgStore[cid]=[];
+        const preview=payload.text||'Sent a message';
+        msgStore[cid].push({from:'them',text:payload.text||'',imgs:[],time:'Just now'});
+        const th=threads.find(x=>x.id===cid);
+        if(th){th.preview=preview;th.time='Just now';th.unread=true;}
+        else{threads.unshift({id:cid,preview,time:'Just now',unread:true});}
+        notifFeed.unshift({id:'evn'+ev.id,type:'message',icon:'ti-message-circle',col:'#0d1e33',ic:'#5ba3e8',
+          title:'New message',body:`${name}: "${preview}"`,time:'Just now',read:false,action:'chat',data:cid});
+        providerSystemNotify('New message',`${name}: ${preview}`);
+        touchedMsgs=true;touchedNotif=true;msgClientIds.push(cid);
+      }
+    });
+    if(touchedNotif)updateBadge();
+    if(touchedRequests&&document.getElementById('requests-screen'))renderRequests();
+    if(touchedMsgs){
+      if(document.getElementById('msg-tab-inbox')&&document.getElementById('msg-tab-inbox').classList.contains('active'))showMsgTab('inbox');
+      try{if(typeof _navCur!=='undefined'&&_navCur&&_navCur.screen==='chat'&&msgClientIds.indexOf(_navCur.data)>=0)renderChat(_navCur.data);}catch(e){}
+    }
+    if(touchedNotif&&document.getElementById('notif-feed-screen'))renderNotifFeed();
+    if((touchedRequests||touchedMsgs)&&document.getElementById('home-screen'))renderHome();
+  }catch(e){}
+  _syncingEvents=false;
+}
+setInterval(()=>{try{syncClientEvents();}catch(e){}},45000);
+
 function seedDemoRequestOnce(){
   if(localStorage.getItem('sc_demo_seeded'))return;
   if(SlickBridge.getBookings().length>0){localStorage.setItem('sc_demo_seeded','1');return;}
@@ -8338,6 +8400,7 @@ function requestCard(b){
 
 function renderRequests(){
   setNav('home');
+  try{syncClientEvents();}catch(e){}
   document.getElementById('tt').textContent='Booking requests';
   const pend=pendingRequests();
   const done=decidedRequests();
