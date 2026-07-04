@@ -1,7 +1,7 @@
 // POST /api/signup  { email, password, name }
 // Creates a provider account (unverified), emails a verification link, and
 // returns a session token so they can start using the app right away.
-import { sql, ensureProvidersTable, dbEnabled } from '../lib/db.js';
+import { sql, ensureProvidersTable, dbEnabled, hasActiveSubscription } from '../lib/db.js';
 import { signToken, hashPassword, makeToken } from '../lib/auth.js';
 import { sendEmail, appOrigin, addToAudience, welcomeEmailHtml, welcomeEmailText } from '../lib/email.js';
 import crypto from 'crypto';
@@ -18,6 +18,22 @@ export default async function handler(req, res) {
   const name = String(b.name || '').trim();
   if (!email || !/.+@.+\..+/.test(email)) { res.status(400).json({ error: 'Please enter a valid email address.' }); return; }
   if (password.length < 8) { res.status(400).json({ error: 'Password must be at least 8 characters.' }); return; }
+
+  // Payment gate — off by default so this can be deployed and tested safely
+  // before it's actually enforced. Set REQUIRE_PAYMENT=true in Vercel once the
+  // Stripe webhook is confirmed working.
+  if ((process.env.REQUIRE_PAYMENT || '').toLowerCase() === 'true') {
+    try {
+      const paid = await hasActiveSubscription(email);
+      if (!paid) {
+        res.status(402).json({
+          error: 'This email hasn\u2019t completed checkout yet. Please subscribe first, then come back and create your account with the same email.',
+          checkoutUrl: process.env.STRIPE_PAYMENT_LINK || ''
+        });
+        return;
+      }
+    } catch (e) { res.status(500).json({ error: 'Could not verify payment status. Please try again.' }); return; }
+  }
 
   try {
     await ensureProvidersTable();
