@@ -1038,6 +1038,7 @@ function nav(screen){
     summary:renderLatestSummary,checkin:renderCheckin,
     'virtual-submit':renderVirtualSubmit,
     welcome:renderMagicLanding,
+    'fill-form':renderFillForm,
   };
   const fn=routes[screen];
   if(fn){
@@ -1173,6 +1174,19 @@ function renderHome(){
       ${activeProvider().checkinDone?`<i class="ti ti-circle-check-filled" aria-hidden="true" style="font-size:22px;color:#4ec49a;flex-shrink:0;"></i>`:`<span style="font-size:11px;font-weight:700;color:var(--accent);background:var(--accent-lt);padding:4px 10px;border-radius:20px;flex-shrink:0;">Start</span>`}
     </div>
   </div>
+
+  <!-- Pending forms from provider -->
+  ${(activeProvider().pendingForms||[]).map(pf=>`
+  <div style="margin:0 16px 14px;background:#fff;border:1.5px solid #f0ebe4;border-radius:14px;overflow:hidden;cursor:pointer;" onclick="_fillFormId='${pf.formId}';nav('fill-form')" role="button" aria-label="${pf.title}">
+    <div style="padding:12px 16px;display:flex;align-items:center;gap:12px;">
+      <div style="width:42px;height:42px;background:#f3eefc;border-radius:10px;display:flex;align-items:center;justify-content:center;flex-shrink:0;"><i class="ti ti-file-text" aria-hidden="true" style="font-size:20px;color:#8b6fc7;"></i></div>
+      <div style="flex:1;min-width:0;">
+        <div style="font-size:13px;font-weight:600;color:#1a1a1a;">${pf.title}</div>
+        <div style="font-size:12px;color:#b8a898;">${client.providerFirst} needs this before your visit</div>
+      </div>
+      <span style="font-size:11px;font-weight:700;color:#8b6fc7;background:#f3eefc;padding:4px 10px;border-radius:20px;flex-shrink:0;">Start</span>
+    </div>
+  </div>`).join('')}
 
   <!-- Latest summary shortcut -->
   <div style="margin:0 16px 14px;background:#fff;border:1.5px solid #f0ebe4;border-radius:14px;overflow:hidden;cursor:pointer;" onclick="_summaryIdx=0;_summaryFrom='home';nav('summary')" role="button" aria-label="View latest session summary">
@@ -1781,6 +1795,89 @@ function _comfortStepFromCfg(cfg){
   return{title:cfg.chairComfortLabel||'Comfort',id:'comfort',questions:qs};
 }
 
+// ── Generic form filling (real forms a provider has actually assigned) ──
+let _fillFormId='';
+function _pendingForm(){return (activeProvider().pendingForms||[]).find(pf=>pf.formId===_fillFormId);}
+function renderFillForm(){
+  const pf=_pendingForm();
+  if(!pf){ nav('home'); return; }
+  document.getElementById('tt').textContent=pf.title;
+  const qs=pf.qs||[];
+  S.innerHTML=`
+  <div style="padding:14px 16px 4px;"><div id="page-heading" tabindex="-1" style="font-size:20px;font-weight:600;color:#1a1a1a;">${pf.title}</div><div style="font-size:13px;color:#b8a898;margin-top:2px;">Sent by ${client.providerFirst}</div></div>
+  <div style="padding:6px 16px 20px;">
+    ${qs.map((q,i)=>_fillFormFieldHTML(q,i)).join('')}
+    <button onclick="_submitFillForm()" class="btnp" style="width:100%;border-radius:12px;padding:13px;margin-top:8px;">Submit to ${client.providerFirst}</button>
+  </div>`;
+}
+function _fillFormFieldHTML(q,i){
+  const req=q.required?' <span style="color:var(--accent);">*</span>':'';
+  const label=`<div style="font-size:13px;font-weight:600;color:#3a2f28;margin-bottom:7px;">${q.label}${req}</div>`;
+  const wrapStyle='margin-bottom:18px;';
+  if(q.type==='Contraindications'){
+    return `<div style="${wrapStyle}background:#fff8f0;border:1px solid #f0dcc0;border-radius:12px;padding:12px 14px;">
+      <div style="font-size:12px;font-weight:700;color:#a06a2a;text-transform:uppercase;letter-spacing:.04em;margin-bottom:8px;">${q.label}</div>
+      ${(q.items||[]).map((it,ii)=>`<label style="display:flex;align-items:flex-start;gap:8px;padding:6px 0;cursor:pointer;"><input type="checkbox" id="ff-${i}-${ii}" style="margin-top:3px;width:16px;height:16px;accent-color:var(--accent);flex-shrink:0;"><span style="font-size:13px;color:#5a4a3a;line-height:1.5;">${it}</span></label>`).join('')}
+    </div>`;
+  }
+  if(q.type==='Signature'){
+    return `<div style="${wrapStyle}">${label}<input id="ff-${i}" type="text" placeholder="Type your full name to sign" style="width:100%;background:#faf7f4;border:1px solid #e8ddd3;border-radius:10px;padding:12px;font-size:15px;font-family:'Brush Script MT',cursive;color:#3a2f28;box-sizing:border-box;"><div style="font-size:11px;color:#b8a898;margin-top:4px;">Typing your name here serves as your signature.</div></div>`;
+  }
+  if(q.type==='Yes / No'){
+    return `<div style="${wrapStyle}">${label}<div style="display:flex;gap:8px;"><button type="button" onclick="_ffSetChoice(${i},'Yes',this)" class="ff-choice" data-i="${i}" style="flex:1;padding:10px;border-radius:9px;border:1.5px solid #e8ddd3;background:#faf7f4;font-size:13px;font-weight:600;color:#5a4a3a;cursor:pointer;">Yes</button><button type="button" onclick="_ffSetChoice(${i},'No',this)" class="ff-choice" data-i="${i}" style="flex:1;padding:10px;border-radius:9px;border:1.5px solid #e8ddd3;background:#faf7f4;font-size:13px;font-weight:600;color:#5a4a3a;cursor:pointer;">No</button></div><input type="hidden" id="ff-${i}" value=""></div>`;
+  }
+  if(q.type==='Single select'){
+    return `<div style="${wrapStyle}">${label}<div style="display:flex;flex-direction:column;gap:6px;">${(q.options||[]).map((o,oi)=>`<button type="button" onclick="_ffSetChoice(${i},'${o.replace(/'/g,"\\'")}',this)" class="ff-choice" data-i="${i}" style="text-align:left;padding:10px 12px;border-radius:9px;border:1.5px solid #e8ddd3;background:#faf7f4;font-size:13px;color:#5a4a3a;cursor:pointer;">${o}</button>`).join('')}</div><input type="hidden" id="ff-${i}" value=""></div>`;
+  }
+  if(q.type==='Multiple choice'){
+    return `<div style="${wrapStyle}">${label}${(q.options||[]).map((o,oi)=>`<label style="display:flex;align-items:center;gap:8px;padding:5px 0;cursor:pointer;"><input type="checkbox" id="ff-${i}-${oi}" style="width:16px;height:16px;accent-color:var(--accent);"><span style="font-size:13px;color:#5a4a3a;">${o}</span></label>`).join('')}</div>`;
+  }
+  if(q.type==='Long text'){
+    return `<div style="${wrapStyle}">${label}<textarea id="ff-${i}" style="width:100%;height:80px;resize:none;background:#faf7f4;border:1px solid #e8ddd3;border-radius:10px;padding:11px;font-size:14px;color:#3a2f28;font-family:inherit;box-sizing:border-box;line-height:1.5;"></textarea></div>`;
+  }
+  if(q.type==='Date'){
+    return `<div style="${wrapStyle}">${label}<input id="ff-${i}" type="date" style="width:100%;background:#faf7f4;border:1px solid #e8ddd3;border-radius:10px;padding:11px;font-size:14px;color:#3a2f28;box-sizing:border-box;"></div>`;
+  }
+  // Short text (default)
+  return `<div style="${wrapStyle}">${label}<input id="ff-${i}" type="text" style="width:100%;background:#faf7f4;border:1px solid #e8ddd3;border-radius:10px;padding:11px;font-size:14px;color:#3a2f28;box-sizing:border-box;"></div>`;
+}
+function _ffSetChoice(i,val,btn){
+  const hid=document.getElementById('ff-'+i);if(hid)hid.value=val;
+  const group=document.querySelectorAll(`.ff-choice[data-i="${i}"]`);
+  group.forEach(b=>{b.style.borderColor='#e8ddd3';b.style.background='#faf7f4';b.style.color='#5a4a3a';});
+  if(btn){btn.style.borderColor='var(--accent)';btn.style.background='var(--accent-lt)';btn.style.color='var(--accent)';}
+}
+function _submitFillForm(){
+  const pf=_pendingForm();if(!pf)return;
+  const qs=pf.qs||[];
+  const answers={};const flagged=[];let signed=false;
+  let missingRequired=false;
+  qs.forEach((q,i)=>{
+    if(q.type==='Contraindications'){
+      const checked=(q.items||[]).map((it,ii)=>({it,el:document.getElementById(`ff-${i}-${ii}`)})).filter(x=>x.el&&x.el.checked).map(x=>x.it);
+      answers[q.id]=checked;
+      flagged.push(...checked);
+    }else if(q.type==='Multiple choice'){
+      const checked=(q.options||[]).map((o,oi)=>({o,el:document.getElementById(`ff-${i}-${oi}`)})).filter(x=>x.el&&x.el.checked).map(x=>x.o);
+      answers[q.id]=checked;
+      if(q.required&&!checked.length)missingRequired=true;
+    }else{
+      const el=document.getElementById('ff-'+i);
+      const val=el?el.value.trim():'';
+      answers[q.id]=val;
+      if(q.type==='Signature'&&val)signed=true;
+      if(q.required&&!val)missingRequired=true;
+    }
+  });
+  if(missingRequired){ if(typeof proToast==='function')proToast('Please fill in the required fields'); return; }
+  const dateLabel=new Date().toLocaleDateString('en-US',{month:'short',day:'numeric',year:'numeric'});
+  try{ if(client._real) _clientSubmit('form',{formId:pf.formId,title:pf.title,answers,flagged,signed,date:dateLabel}); }catch(e){}
+  // Remove it from the pending list locally right away so it doesn't linger after submitting.
+  const p=activeProvider();
+  p.pendingForms=(p.pendingForms||[]).filter(x=>x.formId!==pf.formId);
+  if(typeof proToast==='function')proToast('Sent \u2713');
+  nav('home');
+}
 function renderCheckin(){
   setNav('home');
   document.getElementById('tt').textContent='Pre-visit check-in';
@@ -2937,6 +3034,7 @@ function _applyRealClientData(j){
   p.apptISO=iso||new Date(Date.now()+14*86400000).toISOString();
   p.nextDateISO='';p.nextTimeISO='';p.durationMins=60;
   client._forms=Array.isArray(d.forms)?d.forms:[];
+  p.pendingForms=Array.isArray(d.pendingForms)?d.pendingForms:[];
   client._realAvailability=(d.availability&&typeof d.availability==='object')?d.availability:null;
 }
 function _bootRealClient(token){
