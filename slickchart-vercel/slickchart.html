@@ -339,6 +339,12 @@ let msgStore={
   sophie:[{from:'me',text:'Hi Sophie! Reminder — your chemical peel consent form is still waiting for your signature before tomorrow. 💌',time:'Yesterday'},{from:'them',text:'Oh gosh I totally forgot! Signing now 🙈',time:'Yesterday'},{from:'me',text:'No worries at all! See you tomorrow at 12:30 PM ✨',time:'Yesterday'}],
 };
 
+function saveMessages(){try{localStorage.setItem('sc_msgstore',JSON.stringify(msgStore));localStorage.setItem('sc_threads',JSON.stringify(threads));}catch(e){}}
+function loadMessages(){
+  try{const raw=localStorage.getItem('sc_msgstore');if(raw){const parsed=JSON.parse(raw);if(parsed&&typeof parsed==='object'){Object.keys(msgStore).forEach(k=>delete msgStore[k]);Object.keys(parsed).forEach(k=>{msgStore[k]=parsed[k];});}}}catch(e){}
+  try{const raw=localStorage.getItem('sc_threads');if(raw){const arr=JSON.parse(raw);if(Array.isArray(arr)){threads.length=0;arr.forEach(t=>threads.push(t));}}}catch(e){}
+}
+
 const noteTemplates={
   soap:{id:'soap',name:'SOAP',bdg:'bb',col:'#0d1e33',ic:'#5ba3e8',desc:'Subjective · Objective · Assessment · Plan',sections:[
     {id:'s1',label:'S — Subjective',color:'#e87070',ph:"Client's reported concerns, symptoms, and history."},
@@ -712,6 +718,14 @@ function _purgeSample(){
   try{if(typeof notifFeed!=='undefined')notifFeed=notifFeed.filter(n=>_SAMPLE_NOTIF_IDS.indexOf(n.id)<0);}catch(e){}
   try{if(typeof checkins!=='undefined')checkins=checkins.filter(c=>_SAMPLE_CHECKIN_IDS.indexOf(c.id)<0);}catch(e){}
   try{if(typeof _payments!=='undefined'){const before=_payments.length;_payments=_payments.filter(p=>_SAMPLE_IDS.indexOf(p.clientId)<0);if(_payments.length!==before&&typeof _savePayments==='function')_savePayments();}}catch(e){}
+  try{
+    if(typeof threads!=='undefined'&&typeof msgStore!=='undefined'){
+      let changed=false;
+      for(let i=threads.length-1;i>=0;i--){ if(_SAMPLE_IDS.indexOf(threads[i].id)>=0){ threads.splice(i,1); changed=true; } }
+      _SAMPLE_IDS.forEach(id=>{ if(msgStore[id]){ delete msgStore[id]; changed=true; } });
+      if(changed&&typeof saveMessages==='function')saveMessages();
+    }
+  }catch(e){}
   try{if(typeof updateBadge==='function')updateBadge();}catch(e){}
 }
 function _todayLabel(){try{return new Date().toLocaleDateString('en-US',{weekday:'long',month:'long',day:'numeric'});}catch(e){return '';}}
@@ -768,7 +782,7 @@ function _reloadAll(){try{
   if(typeof loadCustomResources==='function')loadCustomResources();
   if(typeof loadAi==='function')loadAi();
   if(typeof loadForms==='function')loadForms();
-  loadBizInfo();_syncProviderAvatar();loadClients();if(!_sampleHidden()){_seedMayaOnce();}else{_purgeSample();}_seedBirthdays();if(!_sampleHidden()&&typeof _demoCheckinSeed==='function')_demoCheckinSeed();
+  loadBizInfo();_syncProviderAvatar();loadClients();loadMessages();if(!_sampleHidden()){_seedMayaOnce();}else{_purgeSample();}_seedBirthdays();if(!_sampleHidden()&&typeof _demoCheckinSeed==='function')_demoCheckinSeed();
   if(typeof loadWorkspace==='function')loadWorkspace();
   if(typeof loadSquareCatalog==='function'){loadSquareCatalog();_mergeSquareRetail();}
   if(typeof loadCheckinCfg==='function')loadCheckinCfg();
@@ -1411,16 +1425,19 @@ function renderHome(){
   ${(()=>{
     if(_apptsLive()){
       const now=new Date();
+      const todayStr=now.toDateString();
+      const tomorrowStr=new Date(now.getTime()+86400000).toDateString();
       const up=squareAppts.filter(a=>a.at&&a.at>=new Date(now.getTime()-3600000)).slice(0,3);
-      if(!up.length)return '<div class="card"><div style="padding:18px 16px;text-align:center;color:#999;font-size:13px;">No upcoming appointments in the next 14 days.<div style="font-size:12px;color:#666;margin-top:4px;">New Square bookings appear here automatically.</div></div></div>';
-      return up.map(a=>{
+      if(!up.length)return '<div class="card"><div style="padding:18px 16px;text-align:center;color:#999;font-size:13px;">Nothing else on the books right now.<div style="font-size:12px;color:#666;margin-top:4px;">New bookings will show up here automatically.</div></div></div>';
+      const firstIsToday=up[0].at.toDateString()===todayStr;
+      const dayLabel=!firstIsToday?`<div style="padding:0 16px 8px;font-size:12px;color:#888;">Nothing left today \u2014 ${up[0].at.toDateString()===tomorrowStr?'tomorrow\u2019s':'next up,'} booked:</div>`:'';
+      return dayLabel+up.map(a=>{
         const ini=String(a.client||'Client').trim().split(/\s+/).map(w=>w[0]||'').slice(0,2).join('').toUpperCase()||'C';
         const when=a.at.toLocaleDateString('en-US',{weekday:'short',month:'short',day:'numeric'})+' · '+a.at.toLocaleTimeString('en-US',{hour:'numeric',minute:'2-digit'});
         return '<div class="card" onclick="nav(\'calendar\')"><div class="row"><div style="width:38px;height:38px;border-radius:50%;background:#2e1c10;color:var(--accent);display:flex;align-items:center;justify-content:center;font-weight:600;font-size:13px;flex-shrink:0;">'+ini+'</div><div style="flex:1;min-width:0;"><div style="font-size:15px;font-weight:500;color:#f0f0f0;">'+a.client+'</div><div style="font-size:12px;color:#999;margin-top:2px;">'+when+(a.dur?' · '+a.dur+' min':'')+'</div></div><span class="bdg bg" style="font-size:12px;">Confirmed</span></div></div>';
       }).join('');
     }
-    return Object.entries(CL).slice(0,2).map(([id,c])=>`
-  <div class="card" onclick="nav('client','${id}')"><div class="row">${av(c)}<div style="flex:1;"><div style="font-size:15px;font-weight:500;color:#f0f0f0;">${c.name}</div><div style="font-size:12px;color:#999;margin-top:2px;">${c.nextVisit} · ${c.treatment}</div></div><span class="bdg ${id==='maya'?'bg':'ba'}" style="font-size:12px;">${id==='maya'?'Confirmed':'Form pending'}</span></div></div>`).join('');
+    return '<div class="card"><div style="padding:18px 16px;text-align:center;color:#999;font-size:13px;">Connect Square, or add appointments yourself, to see what\u2019s coming up.<div style="font-size:12px;color:#666;margin-top:4px;"><a href="#" onclick="nav(\'data-setup\');return false;" style="color:var(--accent);">Get set up \u2192</a></div></div></div>';
   })()}
   ${_sampleHidden()?'':'<div class="sh"><h2>Recent activity</h2></div>'}
   ${(_sampleHidden()?[]:[['ti-file-check','#0a2019','#4ec49a','Consent form signed','Priya Patel · 2h ago','client-forms','priya'],['ti-microphone','#1e1633','#a891ec','AI voice note saved','Maya Rodriguez · Yesterday','notes','maya'],['ti-camera','var(--accent-tint)','var(--accent)','Before/after photos added','Maya Rodriguez · Yesterday','photos','maya']]).map(([icon,bg,ic,name,sub,scr,cid])=>`
@@ -3039,6 +3056,7 @@ function sendSummary(id){
   if(!msgStore[id])msgStore[id]=[];
   const parts=['homecare routine','recommended products','next appointment'].filter((_,i)=>[summaryToggles.homecare,summaryToggles.products,summaryToggles.appointment][i]);
   msgStore[id].push({from:'me',text:`Hi ${c.name.split(' ')[0]}! Your session summary from today is ready — including your ${parts.join(', ')}. See you next time! ✨\n\n— ${_providerFirstName()}`,time:'Just now'});
+  try{saveMessages();}catch(e){}
   // Send the actual summary content to the connected client's app so it replaces their summary screen
   _postSummaryData(id);
   _storeSummary(id);
@@ -3385,6 +3403,7 @@ function inviteVirtualConsult(id){
   try{SlickBridge.post('virtual-consult-invite',{providerId:'jess',clientId:id,kind:v.kind,title:v.title,fee:vcFee});}catch(e){}
   if(!msgStore[id])msgStore[id]=[];
   msgStore[id].push({from:'me',text:`I'd love to do a virtual ${v.kind==='skin'?'skin':v.kind} consult before your next visit — I've sent an invite to your app. Upload a few photos and I'll send my notes back. ✨`,time:'Just now'});
+  try{saveMessages();}catch(e){}
   if(typeof proToast==='function')proToast('Virtual consult invite sent to '+c.name.split(' ')[0]);
   renderClient(id);
 }
@@ -5258,6 +5277,7 @@ function sendMsg(id,imgArg){
   const t=threads.find(x=>x.id===id);if(t)t.preview=text||('📷 '+(imgs.length>1?imgs.length+' photos':'Photo'));
   if(!msgStore[id])msgStore[id]=[];
   msgStore[id].push({from:'me',text,imgs,time:'Just now'});
+  try{saveMessages();}catch(e){}
   if(inp)inp.value='';
   renderChat(id);
   // Maya is the client using the companion app — push the message to her in real time
@@ -8262,6 +8282,7 @@ async function syncClientEvents(){
       }
     });
     if(touchedNotif)updateBadge();
+    if(touchedMsgs)try{saveMessages();}catch(e){}
     if(touchedRequests&&document.getElementById('requests-screen'))renderRequests();
     if(touchedMsgs){
       if(document.getElementById('msg-tab-inbox')&&document.getElementById('msg-tab-inbox').classList.contains('active'))showMsgTab('inbox');
@@ -8655,6 +8676,13 @@ function renderCalendar(){
       <span style="font-size:14px;color:#aaa;">Add appointment on Jun 26</span>
     </div>
   </div>`;
+  const notConnectedMiddle=`
+  <div style="margin:14px 16px;text-align:center;color:#999;font-size:13px;padding:30px 20px;background:#161616;border:1px solid #242424;border-radius:12px;">
+    <i class="ti ti-calendar-off" style="font-size:26px;color:#555;"></i>
+    <div style="margin-top:8px;">No appointments to show yet.</div>
+    <div style="font-size:12px;color:#666;margin-top:4px;line-height:1.5;">Connect Square to sync your real schedule, or add appointments yourself.</div>
+    <button onclick="nav('data-setup')" style="margin-top:12px;background:var(--accent);color:var(--accent-ink);border:none;border-radius:9px;padding:9px 16px;font-size:12px;font-weight:600;cursor:pointer;">Get set up \u2192</button>
+  </div>`;
   S.innerHTML=`
   <div style="padding:10px 16px 0;display:flex;align-items:center;justify-content:space-between;gap:8px;">
     <button onclick="nav('connect-calendar')" style="background:#161616;border:1px solid #2a2a2a;color:#9fbfae;border-radius:8px;padding:7px 11px;font-size:12px;font-weight:600;cursor:pointer;font-family:inherit;"><i class="ti ti-calendar-share" style="font-size:12px;"></i> Sync to Google/Apple</button>
@@ -8669,7 +8697,7 @@ function renderCalendar(){
     <div style="flex:1;"><div style="font-size:13px;font-weight:600;color:#e8fff5;">${pend.length} booking request${pend.length>1?'s':''} waiting</div><div style="font-size:12px;color:#7fbfa5;margin-top:1px;">Tap to review and confirm</div></div>
     <i class="ti ti-chevron-right" style="font-size:18px;color:#4ec49a;"></i>
   </div>`:''}
-  ${live?liveMiddle:demoMiddle}
+  ${live?liveMiddle:(_sampleHidden()?notConnectedMiddle:demoMiddle)}
   ${_added.length?`
   <div style="border-top:1px solid #1e1e1e;padding:12px 16px 6px;"><div style="font-size:13px;font-weight:500;color:#f0f0f0;display:flex;align-items:center;gap:6px;"><i class="ti ti-calendar-plus" style="font-size:14px;color:#4ec49a;"></i> Your booked appointments</div></div>
   ${_added.map((a,i)=>`
