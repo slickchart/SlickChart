@@ -1096,7 +1096,7 @@ const Cloud={
     return this.enabled;
   },
   async login(email,pw){const r=await fetch('/api/login',{method:'POST',headers:{'Content-Type':'application/json'},body:JSON.stringify({email,password:pw})});let j={};try{j=await r.json();}catch(e){}if(!r.ok)throw new Error((j&&j.error)||'Login failed');this.token=j.token;try{localStorage.setItem('sc_token',this.token);if(j.email)localStorage.setItem('sc_login_email',j.email);}catch(e){}return j;},
-  async signup(email,pw,name,optIn){const r=await fetch('/api/signup',{method:'POST',headers:{'Content-Type':'application/json'},body:JSON.stringify({email,password:pw,name,optIn:!!optIn})});let j={};try{j=await r.json();}catch(e){}if(!r.ok)throw new Error((j&&j.error)||'Sign up failed');this.token=j.token;try{localStorage.setItem('sc_token',this.token);if(j.email)localStorage.setItem('sc_login_email',j.email);}catch(e){}return j;},
+  async signup(email,pw,name,optIn){const r=await fetch('/api/signup',{method:'POST',headers:{'Content-Type':'application/json'},body:JSON.stringify({email,password:pw,name,optIn:!!optIn})});let j={};try{j=await r.json();}catch(e){}if(!r.ok){const err=new Error((j&&j.error)||'Sign up failed');err.checkoutUrl=j&&j.checkoutUrl;throw err;}this.token=j.token;try{localStorage.setItem('sc_token',this.token);if(j.email)localStorage.setItem('sc_login_email',j.email);}catch(e){}return j;},
   async requestReset(email){try{await fetch('/api/request-reset',{method:'POST',headers:{'Content-Type':'application/json'},body:JSON.stringify({email})});}catch(e){}return true;},
   async resetPw(token,pw){const r=await fetch('/api/reset',{method:'POST',headers:{'Content-Type':'application/json'},body:JSON.stringify({token,password:pw})});let j={};try{j=await r.json();}catch(e){}if(!r.ok)throw new Error((j&&j.error)||'Reset failed');return true;},
   async verifyEmail(token){try{const r=await fetch('/api/verify?token='+encodeURIComponent(token));return r.ok;}catch(e){return false;}},
@@ -1251,7 +1251,13 @@ function doSignup(){
     try{await Cloud.pushAllLocal();}catch(e){}
     try{if(name&&typeof bizInfo!=='undefined'){if(!bizInfo.ownerName||bizInfo.ownerName==='Jessica Lee, LE')bizInfo.ownerName=name;if(typeof saveBizInfo==='function')saveBizInfo();if(typeof _syncProviderAvatar==='function')_syncProviderAvatar();}}catch(e){}
     const ov=document.getElementById('login-screen');if(ov)ov.remove();nav('home');
-  }).catch(e=>{const er=document.getElementById('login-err');if(er)er.textContent=(e&&e.message)||'Sign up failed';});
+  }).catch(e=>{
+    const er=document.getElementById('login-err');
+    if(er){
+      if(e&&e.checkoutUrl){er.innerHTML=(e.message||'Sign up failed')+' <a href="'+e.checkoutUrl+'" style="color:var(--accent);text-decoration:underline;">Subscribe now &rarr;</a>';}
+      else{er.textContent=(e&&e.message)||'Sign up failed';}
+    }
+  });
 }
 function doRequestReset(){
   const email=_loginVal('login-email');const er=document.getElementById('login-err');if(er)er.textContent='';
@@ -10069,44 +10075,64 @@ function renderRevenue(){
 function renderSubscriptionBilling(){
   document.getElementById('tt').textContent='Subscription & billing';
   S.innerHTML=`
-  
+  <div id="billing-body" style="padding:40px 16px;text-align:center;color:#888;font-size:13px;">Loading your billing info\u2026</div>`;
+  _loadBillingStatus();
+}
+async function _loadBillingStatus(){
+  const box=document.getElementById('billing-body');if(!box)return;
+  const tok=(typeof Cloud!=='undefined'&&Cloud&&Cloud.token)||'';
+  if(!tok){box.innerHTML='<div style="padding:40px 16px;text-align:center;color:#888;font-size:13px;">Sign in to see your billing info.</div>';return;}
+  try{
+    const r=await fetch('/api/billing-status',{headers:{'Authorization':'Bearer '+tok}});
+    const j=await r.json();
+    const sub=(j&&j.subscription)||null;
+    box.innerHTML=_billingHTML(sub);
+  }catch(e){
+    box.innerHTML='<div style="padding:40px 16px;text-align:center;color:#888;font-size:13px;">Could not load billing info. Try again in a moment.</div>';
+  }
+}
+function _billingHTML(sub){
+  const active=sub&&(sub.status==='active');
+  const pastDue=sub&&sub.status==='past_due';
+  const statusLabel=active?'Active':pastDue?'Payment failed':sub?'Canceled':'No subscription found';
+  const statusColor=active?'bg':pastDue?'br':'bm';
+  const amount=sub&&sub.plan_amount?('$'+(sub.plan_amount/100).toFixed(2)+'/month'):'$10.00/month';
+  const nextDate=sub&&sub.current_period_end?new Date(sub.current_period_end).toLocaleDateString('en-US',{month:'short',day:'numeric',year:'numeric'}):'\u2014';
+  return `
   <div style="margin:12px 16px;background:linear-gradient(135deg,var(--accent-tint),var(--accent-ink));border:1px solid var(--accent-a44);border-radius:14px;padding:18px;">
     <div style="display:flex;align-items:center;justify-content:space-between;margin-bottom:12px;">
       <div>
-        <div style="font-size:11px;color:#888;text-transform:uppercase;letter-spacing:.07em;margin-bottom:3px;">Current plan</div>
-        <div style="font-size:22px;font-weight:500;color:var(--accent);">Pro</div>
+        <div style="font-size:11px;color:#888;text-transform:uppercase;letter-spacing:.07em;margin-bottom:3px;">SlickChart Provider</div>
+        <div style="font-size:22px;font-weight:500;color:var(--accent);">${amount}</div>
       </div>
-      <span class="bdg bg" style="font-size:11px;">Active</span>
+      <span class="bdg ${statusColor}" style="font-size:11px;">${statusLabel}</span>
     </div>
-    <div style="font-size:13px;color:#999;margin-bottom:14px;">Everything you need to run your practice.</div>
-    <div style="display:flex;flex-wrap:wrap;gap:6px;">
-      ${['Unlimited clients','AI client briefs','Virtual consults','Course builder','Affiliate shop','Partner intros'].map(f=>`<div style="background:var(--accent-a20);border:1px solid var(--accent-a44);border-radius:6px;padding:4px 9px;font-size:11px;color:var(--accent);">${f}</div>`).join('')}
-    </div>
+    <div style="font-size:13px;color:#999;">Everything included \u2014 no higher tiers.</div>
   </div>
   <div style="padding:0 16px;">
-    <div class="sh" style="padding:0 0 7px;"><h2>Billing</h2></div>
+    ${sub?`
     <div style="background:#1a1a1a;border:1px solid #2a2a2a;border-radius:12px;overflow:hidden;margin-bottom:14px;">
-      <div class="fr" style="padding:10px 14px;"><span class="fl">Next billing date</span><span class="fv">Jul 26, 2026</span></div>
-      <div class="fr" style="padding:10px 14px;"><span class="fl">Amount</span><span class="fv" style="color:#4ec49a;">$49/month</span></div>
-      <div class="fr" style="padding:10px 14px;border:none;"><span class="fl">Payment method</span><span class="fv">Visa ···· 4821</span></div>
+      <div class="fr" style="padding:10px 14px;"><span class="fl">Status</span><span class="fv">${statusLabel}</span></div>
+      <div class="fr" style="padding:10px 14px;border:none;"><span class="fl">${pastDue?'Retry date':'Next billing date'}</span><span class="fv">${nextDate}</span></div>
     </div>
-    <button class="btng" style="width:100%;margin-bottom:10px;"><i class="ti ti-credit-card" style="color:var(--accent);"></i> Update payment method</button>
-    <div class="sh" style="padding:0 0 7px;margin-top:8px;"><h2>Invoices</h2></div>
-    <div style="background:#1a1a1a;border:1px solid #2a2a2a;border-radius:12px;overflow:hidden;margin-bottom:14px;">
-      ${[['Jun 26, 2026','$49.00','Paid'],['May 26, 2026','$49.00','Paid'],['Apr 26, 2026','$49.00','Paid']].map(([date,amt,status])=>`
-      <div style="display:flex;align-items:center;gap:10px;padding:10px 14px;border-bottom:1px solid #1e1e1e;">
-        <div style="flex:1;"><div style="font-size:13px;color:#e0e0e0;">${date}</div></div>
-        <span style="font-size:13px;font-weight:500;color:#f0f0f0;">${amt}</span>
-        <span class="bdg bg" style="font-size:12px;">${status}</span>
-        <button aria-label="Download" style="border:none;background:none;color:#999;cursor:pointer;"><i class="ti ti-download" style="font-size:14px;"></i></button>
-      </div>`).join('')}
+    <button class="btng" style="width:100%;margin-bottom:10px;" onclick="_openBillingPortal()"><i class="ti ti-credit-card" style="color:var(--accent);"></i> Manage billing, payment method &amp; invoices</button>
+    <div style="font-size:11px;color:#777;text-align:center;padding:0 8px;">Opens Stripe's secure billing portal \u2014 update your card, download invoices, or cancel from there.</div>
+    `:`
+    <div style="background:#1a1a1a;border:1px solid #2a2a2a;border-radius:12px;padding:16px;text-align:center;color:#999;font-size:13px;margin-bottom:14px;">
+      We don't have a billing record for this account yet. If you believe this is a mistake, reach out and we'll sort it out.
     </div>
-    <div class="sh" style="padding:0 0 7px;margin-top:4px;"><h2>Manage plan</h2></div>
-    <div style="background:#1a1a1a;border:1px solid #2a2a2a;border-radius:12px;overflow:hidden;margin-bottom:20px;">
-      <div style="padding:11px 14px;border-bottom:1px solid #1e1e1e;"><button style="border:none;background:none;font-size:13px;color:#5ba3e8;cursor:pointer;">Switch to annual billing (save 20%)</button></div>
-      <div style="padding:11px 14px;"><button style="border:none;background:none;font-size:13px;color:#e87070;cursor:pointer;">Cancel subscription</button></div>
-    </div>
+    `}
   </div>`;
+}
+async function _openBillingPortal(){
+  const tok=(typeof Cloud!=='undefined'&&Cloud&&Cloud.token)||'';
+  if(!tok)return;
+  try{
+    const r=await fetch('/api/create-portal-session',{method:'POST',headers:{'Authorization':'Bearer '+tok}});
+    const j=await r.json();
+    if(j&&j.url){window.location.href=j.url;}
+    else{proToast((j&&j.error)||'Could not open billing portal');}
+  }catch(e){proToast('Could not open billing portal');}
 }
 
 // ── ADD PARTNER ──
