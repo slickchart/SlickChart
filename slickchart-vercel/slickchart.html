@@ -1126,9 +1126,26 @@ function _reloadAll(){try{
 async function _cloudInit(){
   if(_handleAuthParams())return;
   await Cloud.status();
-  if(!Cloud.enabled){nav('home');return;}      // local-only mode — behaves exactly as before
+  if(!Cloud.enabled){
+    // No database configured at all — this is a local-only, single-device setup.
+    // There's no real account to onboard into, so open straight into the
+    // pre-configured workspace instead of showing the wizard.
+    if(!localStorage.getItem('sc_onboarded'))localStorage.setItem('sc_onboarded','1');
+    nav('home');return;
+  }
   if(!Cloud.token){renderLogin();return;}      // database is on but no session — sign in
-  try{const n=await Cloud.pull();if(n===0)await Cloud.pushAllLocal();_reloadAll();}catch(e){}
+  try{
+    const n=await Cloud.pull();
+    if(n===0){
+      await Cloud.pushAllLocal();
+    }else if(!localStorage.getItem('sc_onboarded')){
+      // Real saved data already exists in the cloud — this is an existing
+      // provider on a new device, not a brand-new signup, so don't make them
+      // redo the wizard just because this browser has never seen them before.
+      localStorage.setItem('sc_onboarded','1');
+    }
+    _reloadAll();
+  }catch(e){}
   nav('home');
   try{syncClientEvents();}catch(e){}
 }
@@ -8848,7 +8865,6 @@ try{
   loadPartners();  // restore any edits to partner discounts / contact info
   loadRoutines();  // restore saved routine templates
   loadVisionEndpoint();  // restore the configured vision analysis endpoint (if any)
-  if(!localStorage.getItem('sc_onboarded'))localStorage.setItem('sc_onboarded','1');  // open straight into the configured workspace
 }catch(e){}
 _cloudInit();
 
