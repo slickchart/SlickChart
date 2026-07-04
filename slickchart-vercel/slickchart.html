@@ -692,7 +692,13 @@ function _saveClientDetails(id){
 
 function loadClients(){try{const raw=localStorage.getItem('sc_clients');if(!raw)return;const saved=JSON.parse(raw);if(!saved||typeof saved!=='object')return;Object.keys(CL).forEach(k=>delete CL[k]);Object.keys(saved).forEach(k=>{CL[k]=saved[k];});}catch(e){}}
 function _hasDemoClients(){return !!(CL.maya||CL.sophie||CL.priya);}
-function removeDemoClients(){['maya','sophie','priya'].forEach(k=>{delete CL[k];});saveClients();if(typeof proToast==='function')proToast('Demo clients removed');nav('clients');}
+function removeDemoClients(){
+  try{localStorage.setItem('sc_hide_sample','1');}catch(e){}
+  _purgeSample();
+  try{const raw=localStorage.getItem('sc_clients');if(raw){const o=JSON.parse(raw)||{};['maya','sophie','priya'].forEach(id=>delete o[id]);localStorage.setItem('sc_clients',JSON.stringify(o));}}catch(e){}
+  if(typeof proToast==='function')proToast('Demo clients removed');
+  nav('clients');
+}
 // ── One sample client (Maya) to show off the AI brief + the client demo app ──
 function _mayaSeed(){
   return {name:'Maya Rodriguez',initials:'MR',bg:'#2e1c10',tc:'var(--accent)',
@@ -1241,7 +1247,7 @@ function nav(screen,data){
   // track history for the global back button (skip when we're navigating back)
   if(!_navBacking){if(_navCur&&(_navCur.screen!==screen||_navCur.data!==data)){_navStack.push(_navCur);if(_navStack.length>40)_navStack.shift();}}
   _navCur={screen,data};
-  const titles={home:'Home',clients:'Clients',forms:'Forms',messages:'Messages',pro:'Pro',more:'More',account:'Account',branding:'Branding',shop:'Shop',partners:'Partners',learn:'Learn',virtual:'Virtual Consultations',protocols:'Protocols',vault:'My Docs',inventory:'Inventory',vendors:'Vendors',calendar:'Calendar',room:'Session','data-setup':'Get set up','import-clients':'Import clients','import-products':'Import products','switch-app':'Switch apps','connect-calendar':'Sync calendar','checkout':'Take payment','whats-new':"What’s new",'feedback-inbox':'Feedback inbox','beta-stats':'Beta stats','payments':'Payments','build-invoice':'Build invoice','service-menu':'Service menu','export-data':'Export data','reports':'Reports'};
+  const titles={home:'Home',clients:'Clients',forms:'Forms',messages:'Messages',pro:'Pro',more:'More',account:'Account',branding:'Branding',shop:'Shop',partners:'Partners',learn:'Learn',virtual:'Virtual Consultations',protocols:'Protocols',vault:'My Docs',inventory:'Inventory',vendors:'Vendors',calendar:'Calendar','today-appts':"Today's appointments",room:'Session','data-setup':'Get set up','import-clients':'Import clients','import-products':'Import products','switch-app':'Switch apps','connect-calendar':'Sync calendar','checkout':'Take payment','whats-new':"What’s new",'feedback-inbox':'Feedback inbox','beta-stats':'Beta stats','payments':'Payments','build-invoice':'Build invoice','service-menu':'Service menu','export-data':'Export data','reports':'Reports'};
   document.getElementById('tt').textContent='SlickChart';
   document.title='SlickChart' + (titles[screen] ? ' — '+titles[screen] : '');
   if(timerInt&&screen!=='room'){clearInterval(timerInt);timerInt=null;}
@@ -1286,6 +1292,7 @@ function nav(screen,data){
     'staff-detail':()=>renderStaffDetail(data),
     'invite-staff':renderInviteStaff,
     calendar:renderCalendar,
+    'today-appts':renderTodayAppts,
     requests:renderRequests,
     'data-setup':renderDataSetup,'invite-clients':renderInviteClients,'import-clients':renderImportClients,'import-products':renderImportProducts,'switch-app':renderSwitchApp,'connect-calendar':renderConnectCalendar,'whats-new':renderWhatsNew,'feedback-inbox':renderFeedbackInbox,'beta-stats':renderBetaStats,'payments':renderPayments,'build-invoice':renderBuildInvoice,'service-menu':renderServiceMenu,'export-data':renderExportCenter,'reports':renderReports,
     checkins:renderCheckins,
@@ -1352,7 +1359,7 @@ function renderHome(){
         :dr?["Docs expiring",String(dr),"need renewal","#e87070","vault"]
         :["Documents","OK","all current","#4ec49a","vault"];
       return [
-        ["Today's appts",String(todayN),(rem!=null?rem+" remaining":(todayN?"scheduled":"none today")),"#f0f0f0","calendar"],
+        ["Today's appts",String(todayN),(rem!=null?rem+" remaining":(todayN?"scheduled":"none today")),"#f0f0f0","today-appts"],
         ["Unread messages",String(um),umSub,"var(--accent)","messages"],
         third
       ];
@@ -2400,13 +2407,14 @@ function renderNotes(id){
       </div>
     </div>
     <div class="sh"><h2>Previous sessions</h2></div>
-    ${((selectedProfessions.includes('hair')||selectedProfessions.includes('barber'))&&!selectedProfessions.includes('esty')
-      ?[['Jun 10, 2026','Session 4 · Balayage Refresh','colorRecord'],['May 15, 2026','Session 3 · Toner + Trim','serviceRecord'],['Apr 2, 2026','Session 2 · Balayage','colorRecord'],['Feb 18, 2026','Session 1 · Consultation','freeform']]
-      :[['May 15, 2026','Session 3 · Chemical Peel','soap'],['Apr 2, 2026','Session 2 · Hydrafacial','dap'],['Feb 18, 2026','Session 1 · Consultation','freeform']]
-    ).map(([date,lbl,tid])=>{
-      const t=noteTemplates[tid]||noteTemplates.soap;
-      return`<div class="card"><div class="row"><div style="width:36px;height:36px;border-radius:9px;background:${t.col};display:flex;align-items:center;justify-content:center;"><i class="ti ti-notes" style="font-size:15px;color:${t.ic};"></i></div><div style="flex:1;"><div style="font-size:14px;font-weight:500;color:#e0e0e0;">${date}</div><div style="font-size:12px;color:#999;">${lbl}</div></div><span class="bdg ${t.bdg}" style="font-size:12px;">${t.name}</span></div></div>`;
-    }).join('')}
+    ${(()=>{
+      const hist=sessionSummaries[id]||[];
+      if(!hist.length)return `<div style="margin:0 16px 10px;background:#161616;border:1px dashed #2a2a2a;border-radius:10px;padding:16px;text-align:center;color:#888;font-size:12px;">No previous sessions on file yet \u2014 they'll appear here once you send a session summary.</div>`;
+      return hist.slice(0,4).map(s=>{
+        const t=noteTemplates[activeNoteTemplate]||noteTemplates.soap;
+        return `<div class="card" onclick="nav('summary-history','${id}')"><div class="row"><div style="width:36px;height:36px;border-radius:9px;background:${t.col};display:flex;align-items:center;justify-content:center;"><i class="ti ti-notes" style="font-size:15px;color:${t.ic};"></i></div><div style="flex:1;"><div style="font-size:14px;font-weight:500;color:#e0e0e0;">${s.date}</div><div style="font-size:12px;color:#999;">${s.treatment||'Session'}</div></div></div></div>`;
+      }).join('')+(hist.length>4?`<div style="padding:0 16px 4px;"><button onclick="nav('summary-history','${id}')" style="border:none;background:none;color:var(--accent);font-size:12px;font-weight:600;cursor:pointer;padding:4px 0;">View all ${hist.length} \u2192</button></div>`:'');
+    })()}
     <div style="padding:8px 16px 22px;">
       <button onclick="_summaryFrom='${fromRoom?'room':'notes'}';nav('session-summary','${id}')" style="width:100%;background:var(--accent);color:var(--accent-ink);border:none;border-radius:10px;padding:13px;font-size:14px;font-weight:600;cursor:pointer;font-family:inherit;display:flex;align-items:center;justify-content:center;gap:7px;"><i class="ti ti-sparkles"></i> ${fromRoom?'End session & review summary':'Preview client summary'}</button>
     </div>
@@ -2416,7 +2424,13 @@ function switchNoteTab(id){
   const c=CL[id];
   document.getElementById('tnp').classList.remove('active');
   document.getElementById('tnc').classList.add('active');
-  document.getElementById('ncontent').innerHTML=`<div style="padding:12px 16px 0;"><div style="background:#0a2019;border-radius:8px;padding:8px 12px;font-size:12px;color:#4ec49a;margin-bottom:12px;display:flex;gap:6px;align-items:center;"><i class="ti ti-eye" style="font-size:12px;"></i> This is what ${c.name.split(' ')[0]} sees</div><div style="font-size:14px;font-weight:500;color:#f0f0f0;margin-bottom:4px;">Your session summary</div><div style="font-size:13px;color:#999;margin-bottom:12px;">Jun 26, 2026 · ${c.treatment} with ${_providerFirstName()}</div><div style="background:#161616;border:1px solid #2a2a2a;border-radius:10px;padding:12px;font-size:13px;color:#ccc;line-height:1.7;margin-bottom:12px;">${(selectedProfessions.includes('hair')||selectedProfessions.includes('barber'))&&!selectedProfessions.includes('esty')?'Your colour came out beautifully — excellent lift and the gloss is really showing through. See you in 8 weeks! ✨':'Your skin looked radiant after today\'s treatment! We focused on deep cleansing and brightening. Your hyperpigmentation has visibly improved — keep up that SPF! 🌿'}</div><div style="font-size:11px;font-weight:500;color:#aaa;text-transform:uppercase;letter-spacing:.07em;margin-bottom:6px;">${(selectedProfessions.includes('hair')||selectedProfessions.includes('barber'))&&!selectedProfessions.includes('esty')?'Aftercare reminders':'Homecare reminders'}</div><div style="display:flex;flex-wrap:wrap;gap:6px;margin-bottom:12px;">${getClientHomecare(id).slice(0,4).map(t=>`<span style="font-size:12px;padding:4px 10px;border-radius:20px;border:1px solid #666;color:#ccc;">${t}</span>`).join('')}</div>${(clientRecs[id]||[]).length>0?`<div style="font-size:11px;font-weight:500;color:#aaa;text-transform:uppercase;letter-spacing:.07em;margin-bottom:8px;">Recommended for you</div>${(clientRecs[id]||[]).map(aid=>{const a=affiliateLinks.find(x=>x.id===aid);if(!a)return'';return`<div style="background:#1a1a1a;border:1px solid #2a2a2a;border-radius:10px;padding:11px 12px;display:flex;align-items:center;gap:10px;margin-bottom:8px;"><span style="font-size:18px;">${a.icon}</span><div style="flex:1;min-width:0;"><div style="font-size:13px;font-weight:500;color:#e0e0e0;">${a.name}</div><div style="font-size:11px;color:#999;">${a.brand}</div></div>${(a.url||a.site||a.inOffice||amazonBuyUrl(a))?`<button onclick="openBuyOptionsP('${a.id}')" style="background:var(--accent);color:var(--accent-ink);border:none;border-radius:7px;padding:6px 11px;font-size:11px;font-weight:500;cursor:pointer;white-space:nowrap;">Buy</button>`:''}</div>`;}).join('')}`:''}<div style="font-size:11px;font-weight:500;color:#aaa;text-transform:uppercase;letter-spacing:.07em;margin-bottom:6px;">Next appointment</div><div style="background:#161616;border:1px solid #2a2a2a;border-radius:10px;padding:12px;display:flex;align-items:center;gap:8px;font-size:13px;color:#ccc;"><i class="ti ti-calendar" style="font-size:16px;color:var(--accent);"></i> Jul 17, 2026 · 10:00 AM · ${c.treatment}</div></div>`;
+  const isHairBarber=(selectedProfessions.includes('hair')||selectedProfessions.includes('barber'))&&!selectedProfessions.includes('esty');
+  const draftNote=(summaryNoteDraft[id]!=null?summaryNoteDraft[id]:'').trim();
+  const liveNote=_activeNotesText();
+  const previewNote=draftNote||liveNote||(isHairBarber?'Add a note about today\'s color/service for '+c.name.split(' ')[0]+'.':'Add a note about today\'s visit for '+c.name.split(' ')[0]+'.');
+  const todayLbl=_todayLabel()||'Today';
+  const nextApptLine=(c.nextVisit&&c.nextVisit!=='Not scheduled')?(c.nextVisit+(c.treatment?' \u00b7 '+c.treatment:'')):'Not yet scheduled';
+  document.getElementById('ncontent').innerHTML=`<div style="padding:12px 16px 0;"><div style="background:#0a2019;border-radius:8px;padding:8px 12px;font-size:12px;color:#4ec49a;margin-bottom:12px;display:flex;gap:6px;align-items:center;"><i class="ti ti-eye" style="font-size:12px;"></i> This is what ${c.name.split(' ')[0]} sees</div><div style="font-size:14px;font-weight:500;color:#f0f0f0;margin-bottom:4px;">Your session summary</div><div style="font-size:13px;color:#999;margin-bottom:12px;">${todayLbl} · ${c.treatment} with ${_providerFirstName()}</div><div style="background:#161616;border:1px solid #2a2a2a;border-radius:10px;padding:12px;font-size:13px;color:#ccc;line-height:1.7;margin-bottom:12px;">${previewNote.replace(/</g,'&lt;')}</div><div style="font-size:11px;font-weight:500;color:#aaa;text-transform:uppercase;letter-spacing:.07em;margin-bottom:6px;">${isHairBarber?'Aftercare reminders':'Homecare reminders'}</div><div style="display:flex;flex-wrap:wrap;gap:6px;margin-bottom:12px;">${getClientHomecare(id).slice(0,4).map(t=>`<span style="font-size:12px;padding:4px 10px;border-radius:20px;border:1px solid #666;color:#ccc;">${t}</span>`).join('')}</div>${(clientRecs[id]||[]).length>0?`<div style="font-size:11px;font-weight:500;color:#aaa;text-transform:uppercase;letter-spacing:.07em;margin-bottom:8px;">Recommended for you</div>${(clientRecs[id]||[]).map(aid=>{const a=affiliateLinks.find(x=>x.id===aid);if(!a)return'';return`<div style="background:#1a1a1a;border:1px solid #2a2a2a;border-radius:10px;padding:11px 12px;display:flex;align-items:center;gap:10px;margin-bottom:8px;"><span style="font-size:18px;">${a.icon}</span><div style="flex:1;min-width:0;"><div style="font-size:13px;font-weight:500;color:#e0e0e0;">${a.name}</div><div style="font-size:11px;color:#999;">${a.brand}</div></div>${(a.url||a.site||a.inOffice||amazonBuyUrl(a))?`<button onclick="openBuyOptionsP('${a.id}')" style="background:var(--accent);color:var(--accent-ink);border:none;border-radius:7px;padding:6px 11px;font-size:11px;font-weight:500;cursor:pointer;white-space:nowrap;">Buy</button>`:''}</div>`;}).join('')}`:''}<div style="font-size:11px;font-weight:500;color:#aaa;text-transform:uppercase;letter-spacing:.07em;margin-bottom:6px;">Next appointment</div><div style="background:#161616;border:1px solid #2a2a2a;border-radius:10px;padding:12px;display:flex;align-items:center;gap:8px;font-size:13px;color:#ccc;"><i class="ti ti-calendar" style="font-size:16px;color:var(--accent);"></i> ${nextApptLine}</div></div>`;
 }
 function renderNoteFormats(id){
   setNav('clients');
@@ -2742,16 +2756,17 @@ function renderSessionSummary(id){
   document.getElementById('tt').textContent='Session summary';
   const isHairBarberSummary=(selectedProfessions.includes('hair')||selectedProfessions.includes('barber'))&&!selectedProfessions.includes('esty')&&!selectedProfessions.includes('brow');
   const homecare=getClientHomecare(id);
-  const nextDate=id==='maya'?'Jul 17, 2026':id==='sophie'?'Jul 10, 2026':'Jul 8, 2026';
-  const nextTime=id==='maya'?'10:00 AM':id==='sophie'?'12:30 PM':'11:00 AM';
+  const _isDemoClient=(id==='maya'||id==='sophie'||id==='priya');
+  const nextDate=_isDemoClient?(id==='maya'?'Jul 17, 2026':id==='sophie'?'Jul 10, 2026':'Jul 8, 2026'):((c.nextVisit&&c.nextVisit!=='Not scheduled')?c.nextVisit:'');
+  const nextTime=_isDemoClient?(id==='maya'?'10:00 AM':id==='sophie'?'12:30 PM':'11:00 AM'):'';
   const notes=_activeNotesText();
-  const improvement=isHairBarberSummary
+  const improvement=_isDemoClient?(isHairBarberSummary
     ?(id==='maya'?'Colour is vibrant and the balayage placement looks perfect — great lift without brassiness.'
       :id==='sophie'?'Keratin treatment took beautifully. Frizz completely eliminated and shine is incredible.'
       :'Shape is clean and the texture is exactly right — curls are defined and bouncy.')
     :(id==='maya'?'Hyperpigmentation is responding beautifully to the Vitamin C series — jawline is visibly clearer.'
       :id==='sophie'?'Barrier is strengthening. Redness reduced this session.'
-      :'T-zone congestion improving. Pores looking tighter.');
+      :'T-zone congestion improving. Pores looking tighter.')):'';
 
 
   S.innerHTML=`
@@ -2803,7 +2818,7 @@ function renderSessionSummary(id){
           <button onclick="editSummaryNote('${id}')" style="border:none;background:none;color:var(--accent);font-size:12px;cursor:pointer;display:flex;align-items:center;gap:4px;"><i class="ti ti-pencil" aria-hidden="true" style="font-size:12px;"></i> Edit</button>
         </div>
       </div>
-      <div id="summary-note" style="font-size:13px;color:#ccc;line-height:1.8;">${(summaryNoteDraft[id]!=null?summaryNoteDraft[id]:(improvement+(notes?'\n\n'+notes:''))).replace(/\n/g,'<br>')}</div>
+      <div id="summary-note" style="font-size:13px;color:#ccc;line-height:1.8;">${(summaryNoteDraft[id]!=null?summaryNoteDraft[id]:((improvement+(notes?'\n\n'+notes:''))||'Tap Edit to add a note about today\'s visit.')).replace(/\n/g,'<br>')}</div>
     </div>`:''}
 
     ${summaryToggles.metrics?`<div style="padding:14px 16px;border-bottom:1px solid #222;">
@@ -2855,7 +2870,7 @@ function renderSessionSummary(id){
       <div style="font-size:12px;color:#aaa;text-transform:uppercase;letter-spacing:.07em;font-weight:500;margin-bottom:10px;">Next appointment</div>
       <div style="background:#161616;border-radius:10px;padding:12px 14px;display:flex;align-items:center;gap:10px;margin-bottom:10px;">
         <div style="width:36px;height:36px;background:var(--accent-tint);border-radius:9px;display:flex;align-items:center;justify-content:center;flex-shrink:0;"><i class="ti ti-calendar" aria-hidden="true" style="font-size:16px;color:var(--accent);"></i></div>
-        <div><div style="font-size:14px;font-weight:500;color:#f0f0f0;">${nextDate}</div><div style="font-size:12px;color:#999;">${nextTime} · ${c.treatment}</div></div>
+        <div><div style="font-size:14px;font-weight:500;color:#f0f0f0;">${nextDate||'Not yet scheduled'}</div><div style="font-size:12px;color:#999;">${nextTime?nextTime+' · ':''}${c.treatment}</div></div>
       </div>
       <div style="display:flex;gap:8px;">
         <button class="btng" style="flex:1;border-radius:8px;"><i class="ti ti-calendar" aria-hidden="true"></i> Add to calendar</button>
@@ -3367,7 +3382,8 @@ function savePhotos(){
 function renderRebook(id){
   setNav('clients');const c=CL[id]||Object.values(CL)[0]||{};
   document.getElementById('tt').textContent='Smart rebook';
-  const recs=id==='maya'?[{lbl:'Ideal · Hydrafacial follow-up',date:'Jul 17, 2026',weeks:3,reason:'Completing series on schedule. PIH protocol benefits from consistent 3-week cadence.',hi:true},{lbl:'Extended · if skin needs rest',date:'Jul 24, 2026',weeks:4,reason:'Alternative if barrier shows stress post-brightening booster.',hi:false}]:[{lbl:'Ideal · next treatment window',date:'Jul 10, 2026',weeks:2,reason:'Based on treatment type and recovery period.',hi:true},{lbl:'Alternative window',date:'Jul 22, 2026',weeks:4,reason:'Slightly longer rest if needed.',hi:false}];
+  const _fmtWeeksOut=(wk)=>{const d=new Date();d.setDate(d.getDate()+wk*7);return d.toLocaleDateString('en-US',{month:'short',day:'numeric',year:'numeric'});};
+  const recs=id==='maya'?[{lbl:'Ideal · Hydrafacial follow-up',date:'Jul 17, 2026',weeks:3,reason:'Completing series on schedule. PIH protocol benefits from consistent 3-week cadence.',hi:true},{lbl:'Extended · if skin needs rest',date:'Jul 24, 2026',weeks:4,reason:'Alternative if barrier shows stress post-brightening booster.',hi:false}]:[{lbl:'Ideal · next treatment window',date:_fmtWeeksOut(2),weeks:2,reason:'Based on treatment type and recovery period.',hi:true},{lbl:'Alternative window',date:_fmtWeeksOut(4),weeks:4,reason:'Slightly longer rest if needed.',hi:false}];
   S.innerHTML=`
   
   <div style="padding:12px 16px 0;"><div style="font-size:16px;font-weight:500;color:#f0f0f0;margin-bottom:2px;">Smart rebook</div><div style="font-size:13px;color:#666;margin-bottom:10px;">AI-suggested windows based on treatment type and session history.</div></div>
@@ -3518,12 +3534,13 @@ function switchVTab(tab){
       </div>
     </div>`;
   } else {
+    const _demoReviews=[{id:'priya',date:'Jun 20, 2026',note:'Recommended BHA exfoliant 2-3x weekly. Avoid heavy oils on T-zone. Niacinamide serum for pore refinement.'},{id:'sophie',date:'Jun 12, 2026',note:'Barrier repair priority. No actives for 2 weeks. Centella-based moisturizer morning and evening.'},{id:'maya',date:'Jun 1, 2026',note:'PIH responding well. Vitamin C working — continue. SPF compliance is showing. Ready to introduce AHA in 3 weeks.'}].filter(item=>CL[item.id]);
     content.innerHTML=`
-    <div class="sh"><h2>Completed reviews · 3</h2></div>
-    ${[{id:'priya',date:'Jun 20, 2026',note:'Recommended BHA exfoliant 2-3x weekly. Avoid heavy oils on T-zone. Niacinamide serum for pore refinement.'},{id:'sophie',date:'Jun 12, 2026',note:'Barrier repair priority. No actives for 2 weeks. Centella-based moisturizer morning and evening.'},{id:'maya',date:'Jun 1, 2026',note:'PIH responding well. Vitamin C working — continue. SPF compliance is showing. Ready to introduce AHA in 3 weeks.'}].map(item=>{const c=CL[item.id];return`<div onclick="_vcBack='virtual';nav('virtual-client','${item.id}')" style="background:#1a1a1a;border:1px solid #2a2a2a;border-radius:12px;margin:0 16px 10px;overflow:hidden;cursor:pointer;">
+    <div class="sh"><h2>Completed reviews \u00b7 ${_demoReviews.length}</h2></div>
+    ${_demoReviews.length?_demoReviews.map(item=>{const c=CL[item.id];return`<div onclick="_vcBack='virtual';nav('virtual-client','${item.id}')" style="background:#1a1a1a;border:1px solid #2a2a2a;border-radius:12px;margin:0 16px 10px;overflow:hidden;cursor:pointer;">
       <div style="padding:12px 14px;display:flex;align-items:center;gap:12px;">${av(c,40)}<div style="flex:1;"><div style="font-size:14px;font-weight:500;color:#f0f0f0;">${c.name}</div><div style="font-size:12px;color:#999;">Reviewed ${item.date}</div></div><span class="bdg bg" style="font-size:12px;">Sent</span></div>
       <div style="border-top:1px solid #1e1e1e;padding:10px 14px;font-size:12px;color:#888;line-height:1.6;">${item.note}</div>
-    </div>`}).join('')}`;
+    </div>`}).join(''):`<div style="margin:0 16px 10px;background:#161616;border:1px dashed #2a2a2a;border-radius:10px;padding:16px;text-align:center;color:#888;font-size:12px;">No completed reviews yet \u2014 they'll show up here once you review a client's virtual consult submission.</div>`}`;
   }
 }
 // Maps real pixel measurements (from the actual submitted photo) into profession-aware analysis cards.
@@ -8635,6 +8652,38 @@ function _apptsToday(){
   return _apptsData.filter(a=>a.day===26);
 }
 function _apptsRemainingToday(){if(_apptsLive()){const now=new Date();return _apptsToday().filter(a=>a.at>now).length;}return null;}
+function renderTodayAppts(){
+  setNav('home');
+  document.getElementById('tt').textContent="Today's appointments";
+  _loadSquareAppts();
+  const live=_apptsLive();
+  const today=_apptsToday();
+  const now=new Date();
+  S.innerHTML=`
+  <div style="padding:10px 16px 4px;">
+    <div id="page-heading" tabindex="-1" style="font-size:19px;font-weight:600;color:#f0f0f0;margin-bottom:2px;">Today's appointments</div>
+    <div style="font-size:13px;color:#999;">${today.length} appointment${today.length===1?'':'s'} today \u00b7 stays here all day so you can go back and finish notes anytime.</div>
+    ${live?`<button onclick="_loadSquareAppts(true);renderTodayAppts()" style="margin-top:8px;background:none;border:none;color:var(--accent);font-size:12px;font-weight:600;cursor:pointer;font-family:inherit;padding:0;"><i class="ti ti-refresh" style="font-size:12px;"></i> Refresh</button>`:''}
+  </div>
+  ${!today.length?`
+  <div style="margin:14px 16px;text-align:center;color:#999;font-size:13px;padding:30px 20px;background:#161616;border:1px solid #242424;border-radius:12px;">
+    <i class="ti ti-calendar-off" style="font-size:26px;color:#555;"></i>
+    <div style="margin-top:8px;">${live?'Nothing on the books for today.':'No appointments to show yet.'}</div>
+    ${live?'':'<div style="font-size:12px;color:#666;margin-top:4px;line-height:1.5;">Connect Square to sync your real schedule, or add appointments yourself.</div>'}
+  </div>`:today.map(a=>{
+    const cid=live?_clientIdByName(a.client):null;
+    const past=live&&a.at<now;
+    const timeLbl=live?a.at.toLocaleTimeString('en-US',{hour:'numeric',minute:'2-digit'}):(a.time||'');
+    return `<div ${cid?`onclick="nav('client','${cid}')" style="cursor:pointer;"`:''} style="margin:0 16px 10px;background:#1a1a1a;border:1px solid #2a2a2a;border-radius:12px;overflow:hidden;display:flex;${past?'opacity:.7;':''}">
+      <div style="width:4px;background:${a.ic||'var(--accent)'};flex-shrink:0;"></div>
+      <div style="padding:11px 13px;flex:1;display:flex;justify-content:space-between;align-items:flex-start;">
+        <div><div style="font-size:14px;font-weight:500;color:#e0e0e0;">${a.client}</div><div style="font-size:12px;color:#999;margin-top:2px;">${a.tx&&a.tx!=='Appointment'?a.tx+' \u00b7 ':''}${a.dur||a.durationMinutes||''} min${past?' \u00b7 done':''}</div></div>
+        <div style="display:flex;align-items:center;gap:6px;"><div style="font-size:13px;font-weight:500;color:#f0f0f0;">${timeLbl}</div>${cid?`<i class="ti ti-chevron-right" style="font-size:14px;color:#666;"></i>`:''}</div>
+      </div>
+    </div>`;
+  }).join('')}
+  <div style="height:20px;"></div>`;
+}
 function _docsNeedRenewal(){const soon=new Date(Date.now()+120*86400000);return (typeof docs!=='undefined'?docs:[]).filter(d=>{if(!d.expires)return false;const e=new Date(d.expires);return !isNaN(e)&&e<=soon;}).length;}
 function renderCalendar(){
   setNav('home');
