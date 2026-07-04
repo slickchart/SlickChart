@@ -175,7 +175,7 @@ function providerSystemNotify(title,body){
   }catch(e){}
 }
 let timerInt=null,timerSec=0,timerOn=false;
-let roomProtocol=0,roomStepsDone={};
+let roomProtocol=0,roomStepsDone={},roomProtocolOff=false;
 let activeDocCat='All',activeNoteTemplate='soap';
 let activeVirtualTab='queue';
 let activeLearnTab='resources';
@@ -2624,6 +2624,7 @@ ${clientContext}`;
 
 function renderRoom(id){
   setNav('room');
+  roomProtocolOff=false;
   const c=CL[id]||Object.values(CL)[0]||{};
   const isBrowOnly=selectedProfessions.includes('brow')&&!selectedProfessions.includes('esty')&&!selectedProfessions.includes('hair')&&!selectedProfessions.includes('barber');
   document.getElementById('tt').textContent='';
@@ -2641,10 +2642,26 @@ function renderRoom(id){
     </div>
     <div style="background:#111;border:1px solid #1e1e1e;border-radius:12px;padding:12px 14px;margin-bottom:10px;">
       <div style="font-size:12px;color:#999;text-transform:uppercase;letter-spacing:.07em;margin-bottom:8px;">Alerts</div>
-      ${c.flaggedContra?c.flaggedContra.items.map(it=>`<div style="display:flex;align-items:flex-start;gap:8px;padding:8px 10px;background:#2a0f0f;border:1px solid #5a2020;border-radius:8px;margin-bottom:6px;"><i class="ti ti-alert-triangle" style="font-size:13px;color:#e87070;flex-shrink:0;margin-top:1px;"></i><div><div style="font-size:12px;font-weight:600;color:#e87070;">${it}</div><div style="font-size:11px;color:#666;">Flagged by client on intake</div></div></div>`).join(''):''}
-      ${id==='maya'?`${(selectedProfessions.includes('hair')||selectedProfessions.includes('barber'))&&!selectedProfessions.includes('esty')
-  ?`<div style="display:flex;align-items:flex-start;gap:8px;padding:8px 10px;background:#2a0f0f;border-radius:8px;margin-bottom:6px;"><i class="ti ti-alert-triangle" style="font-size:13px;color:#e87070;flex-shrink:0;margin-top:1px;"></i><div><div style="font-size:12px;font-weight:500;color:#e87070;">Ammonia-based color</div><div style="font-size:11px;color:#666;">Confirmed allergy — ammonia-free only</div></div></div>`
-  :`<div style="display:flex;align-items:flex-start;gap:8px;padding:8px 10px;background:#2a0f0f;border-radius:8px;margin-bottom:6px;"><i class="ti ti-alert-triangle" style="font-size:13px;color:#e87070;flex-shrink:0;margin-top:1px;"></i><div><div style="font-size:12px;font-weight:500;color:#e87070;">Avoid fragrance</div><div style="font-size:11px;color:#666;">Check all product labels</div></div></div><div style="display:flex;align-items:flex-start;gap:8px;padding:8px 10px;background:#2a0f0f;border-radius:8px;"><i class="ti ti-x" style="font-size:13px;color:#e87070;"></i><div><div style="font-size:12px;font-weight:500;color:#e87070;">No retinol products</div><div style="font-size:11px;color:#666;">Reintroduce Aug 10 at earliest</div></div></div>`}`:`<div style="display:flex;align-items:center;gap:8px;padding:8px 10px;background:#0d1e33;border-radius:8px;"><i class="ti ti-info-circle" style="font-size:13px;color:#5ba3e8;"></i><div style="font-size:12px;color:#5ba3e8;">No known allergies — proceed per standard protocol</div></div>`}
+      ${(function(){
+        const rows=[];
+        // Flagged contraindications from an intake / check-in
+        if(c.flaggedContra&&Array.isArray(c.flaggedContra.items)){
+          c.flaggedContra.items.forEach(it=>rows.push(`<div style="display:flex;align-items:flex-start;gap:8px;padding:8px 10px;background:#2a0f0f;border:1px solid #5a2020;border-radius:8px;margin-bottom:6px;"><i class="ti ti-alert-triangle" style="font-size:13px;color:#e87070;flex-shrink:0;margin-top:1px;"></i><div><div style="font-size:12px;font-weight:600;color:#e87070;">${it}</div><div style="font-size:11px;color:#666;">Flagged by client${c.flaggedContra.form?' on '+c.flaggedContra.form.toLowerCase():' on intake'}</div></div></div>`));
+        }
+        // A real, non-empty allergy on the chart is itself an alert
+        const al=String(c.allergies||'').trim();
+        const hasAllergy=al&&!/^(none|n\/?a|no known|na|-|—)\b/i.test(al);
+        if(hasAllergy){
+          rows.push(`<div style="display:flex;align-items:flex-start;gap:8px;padding:8px 10px;background:#2a0f0f;border:1px solid #5a2020;border-radius:8px;margin-bottom:6px;"><i class="ti ti-alert-triangle" style="font-size:13px;color:#e87070;flex-shrink:0;margin-top:1px;"></i><div><div style="font-size:12px;font-weight:600;color:#e87070;">Allergies / sensitivities</div><div style="font-size:11px;color:#c8a0a0;line-height:1.4;">${al.replace(/</g,'&lt;')}</div></div></div>`);
+        }
+        // Medications & conditions are worth surfacing here too when present
+        const meds=String(c.medications||'').trim();
+        if(meds&&!/^(none|n\/?a|no|na|-|—)\b/i.test(meds))rows.push(`<div style="display:flex;align-items:flex-start;gap:8px;padding:8px 10px;background:#1a1206;border:1px solid #4a3510;border-radius:8px;margin-bottom:6px;"><i class="ti ti-pill" style="font-size:13px;color:#e8b060;flex-shrink:0;margin-top:1px;"></i><div><div style="font-size:12px;font-weight:600;color:#e8b060;">Medications</div><div style="font-size:11px;color:#c8b088;line-height:1.4;">${meds.replace(/</g,'&lt;')}</div></div></div>`);
+        const cond=String(c.conditions||'').trim();
+        if(cond&&!/^(none|n\/?a|no|na|-|—)\b/i.test(cond))rows.push(`<div style="display:flex;align-items:flex-start;gap:8px;padding:8px 10px;background:#1a1206;border:1px solid #4a3510;border-radius:8px;margin-bottom:6px;"><i class="ti ti-clipboard-heart" style="font-size:13px;color:#e8b060;flex-shrink:0;margin-top:1px;"></i><div><div style="font-size:12px;font-weight:600;color:#e8b060;">Medical conditions</div><div style="font-size:11px;color:#c8b088;line-height:1.4;">${cond.replace(/</g,'&lt;')}</div></div></div>`);
+        if(rows.length)return rows.join('');
+        return `<div style="display:flex;align-items:center;gap:8px;padding:8px 10px;background:#0d1e33;border-radius:8px;"><i class="ti ti-info-circle" style="font-size:13px;color:#5ba3e8;"></i><div style="font-size:12px;color:#5ba3e8;">No known allergies or flags — proceed per standard protocol</div></div>`;
+      })()}
     </div>
     <div style="background:#111;border:1px solid #1e1e1e;border-radius:12px;padding:12px 14px;margin-bottom:10px;" id="room-photos">${_roomPhotosHTML(id)}</div>
     <div style="background:#111;border:1px solid #1e1e1e;border-radius:12px;padding:12px 14px;margin-bottom:10px;" id="room-protocol">${_roomProtocolHTML()}</div>
@@ -2658,6 +2675,15 @@ function renderRoom(id){
   </div><div style="height:14px;"></div>`;
 }
 function _roomProtocolHTML(){
+  // When the provider turns protocols off for this appointment, collapse the
+  // section to a single line with a quick way to bring it back — useful for
+  // visits (touch-ups, consults, quick services) where a step checklist isn't needed.
+  if(roomProtocolOff){
+    return `<div style="display:flex;align-items:center;justify-content:space-between;gap:8px;">
+      <span style="display:flex;align-items:center;gap:8px;font-size:12px;color:#777;"><i class="ti ti-list-check" style="font-size:14px;color:#555;"></i> Protocol checklist off for this session</span>
+      <button onclick="toggleRoomProtocol()" style="border:1px solid #2a2a2a;background:#161616;color:var(--accent);border-radius:7px;padding:5px 11px;font-size:11px;font-weight:600;cursor:pointer;font-family:inherit;">Turn on</button>
+    </div>`;
+  }
   const list=(typeof protocols!=='undefined'&&protocols.length)?protocols:[];
   if(!list.length)return '<div style="font-size:12px;color:#777;">No protocols for this service.</div>';
   if(roomProtocol>=list.length)roomProtocol=0;
@@ -2666,7 +2692,10 @@ function _roomProtocolHTML(){
   const total=p.steps.length;
   return `<div style="display:flex;align-items:center;justify-content:space-between;margin-bottom:9px;">
     <div style="font-size:12px;color:#999;text-transform:uppercase;letter-spacing:.07em;">Protocol</div>
-    <div style="font-size:11px;color:${done===total?'#4ec49a':'#888'};font-weight:600;">${done}/${total} steps${done===total?' ✓':''}</div>
+    <div style="display:flex;align-items:center;gap:10px;">
+      <div style="font-size:11px;color:${done===total?'#4ec49a':'#888'};font-weight:600;">${done}/${total} steps${done===total?' ✓':''}</div>
+      <button onclick="toggleRoomProtocol()" style="border:none;background:none;color:#777;font-size:11px;cursor:pointer;font-family:inherit;display:flex;align-items:center;gap:3px;"><i class="ti ti-eye-off" style="font-size:12px;"></i> Turn off</button>
+    </div>
   </div>
   <button onclick="openProtocolSearch()" style="width:100%;display:flex;align-items:center;justify-content:space-between;gap:8px;background:#161616;border:1px solid #2a2a2a;border-radius:10px;padding:10px 12px;margin-bottom:12px;cursor:pointer;font-family:inherit;">
     <span style="display:flex;align-items:center;gap:9px;min-width:0;"><i class="ti ${p.icon}" style="font-size:16px;color:${p.ic};flex-shrink:0;"></i><span style="font-size:13px;font-weight:600;color:#e0e0e0;overflow:hidden;text-overflow:ellipsis;white-space:nowrap;">${p.name}</span></span>
@@ -2679,6 +2708,11 @@ function _roomProtocolHTML(){
       ${s.n?`<div style="font-size:11px;color:#888;line-height:1.5;margin-top:2px;">${s.n}</div>`:''}
     </div>
   </div>`;}).join('')}`;
+}
+function toggleRoomProtocol(){
+  roomProtocolOff=!roomProtocolOff;
+  const el=document.getElementById('room-protocol');if(el)el.innerHTML=_roomProtocolHTML();
+  if(typeof proToast==='function')proToast(roomProtocolOff?'Protocol checklist hidden for this session':'Protocol checklist on');
 }
 function _protocolRows(q){
   const list=(typeof protocols!=='undefined'&&protocols.length)?protocols:[];
@@ -2884,31 +2918,40 @@ function startVoiceNote(id){
     return;
   }
   const rec=new SR();rec.continuous=true;rec.interimResults=true;rec.lang='en-US';_voiceRec=rec;
-  // Text that's already been finalized in PREVIOUS recognition sessions. Some mobile
-  // browsers (notably Android Chrome) auto-stop after a pause and fire onend; when we
-  // restart, e.results resets to empty. We bank finalized text here so a restart
-  // doesn't wipe what was already said.
-  _voiceCommitted='';
   _voiceStopping=false;
-  // Rebuild the CURRENT session's transcript from scratch on every event rather than
-  // appending just the "new" piece. With continuous recognition, browsers re-fire
-  // onresult with the full growing results list, and appending incrementally makes
-  // finalized words pile up and repeat ("today today Ginger today Ginger skin…").
+  // Android Chrome (and some others) have a nasty habit with continuous dictation:
+  // instead of each spoken phrase becoming one stable final result, they re-emit
+  // the SAME utterance repeatedly as separate, ever-growing final segments. Naively
+  // joining all final results then produces the classic cascade:
+  //   "today today today Ginger today Ginger skin was a little bit …"
+  //
+  // The reliable fix is to treat each result index as a SLOT and always overwrite
+  // that slot with its latest transcript, then join the slots. A given phrase keeps
+  // updating its own slot instead of piling onto the end, so growth/repeats collapse
+  // back into the single intended sentence.
+  const slots=[];
+  let slotBase=0; // shifts forward after each auto-restart so new results don't overwrite old slots
+  let maxIdx=-1;
   rec.onresult=(e)=>{
-    let fin='',interim='';
-    for(let i=0;i<e.results.length;i++){
-      const t=e.results[i][0].transcript;
-      if(e.results[i].isFinal)fin+=t+' ';else interim+=t;
+    for(let i=e.resultIndex;i<e.results.length;i++){
+      const idx=slotBase+i;
+      slots[idx]={text:e.results[i][0].transcript,final:e.results[i].isFinal};
+      if(idx>maxIdx)maxIdx=idx;
     }
-    _voiceText=(_voiceCommitted+' '+fin).trim();
+    const parts=slots.filter(Boolean).map(s=>s.text.trim()).filter(Boolean);
+    _voiceText=parts.join(' ').replace(/\s+/g,' ').trim();
     const el=document.getElementById('voice-transcript');
-    if(el)el.textContent=((_voiceText+' '+interim).trim())||'Listening…';
+    if(el)el.textContent=_voiceText||'Listening…';
   };
-  // If the browser ends the session on its own but the user hasn't tapped Stop,
-  // bank what we have and seamlessly restart so long notes aren't cut off.
+  // If the browser stops on its own before the user taps Stop, restart so long
+  // notes aren't cut off. We advance slotBase past everything captured so far, so
+  // the restarted session (whose resultIndex resets to 0) writes into fresh slots
+  // instead of clobbering earlier text.
   rec.onend=()=>{
-    _voiceCommitted=(_voiceText||'').trim();
-    if(!_voiceStopping&&_voiceRec===rec){ try{rec.start();}catch(e){} }
+    if(!_voiceStopping&&_voiceRec===rec){
+      slotBase=maxIdx+1;
+      try{rec.start();}catch(e){}
+    }
   };
   rec.onerror=(e)=>{const el=document.getElementById('voice-transcript');if(el){if(e.error==='not-allowed'||e.error==='service-not-allowed')el.textContent='Microphone access was blocked. Allow the mic for this site in your browser, then try again.';else if(e.error==='no-speech')el.textContent='Nothing came through — try speaking again.';}};
   try{rec.start();}catch(e){}
