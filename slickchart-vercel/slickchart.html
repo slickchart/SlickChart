@@ -1078,7 +1078,23 @@ const Cloud={
   enabled:false,
   token:(function(){try{return localStorage.getItem('sc_token')||'';}catch(e){return '';}})(),
   _origSet:null,_queue:{},_timer:null,
-  async status(){try{const r=await fetch('/api/cloud-status');const j=await r.json();this.enabled=!!(j&&j.enabled);}catch(e){this.enabled=false;}return this.enabled;},
+  async status(){
+    // A single flaky request here shouldn't quietly bounce a real visitor into
+    // local demo mode instead of showing them login/signup — so retry a couple
+    // times (with a short pause) before actually giving up.
+    for(let attempt=0;attempt<3;attempt++){
+      try{
+        const r=await fetch('/api/cloud-status');
+        const j=await r.json();
+        this.enabled=!!(j&&j.enabled);
+        return this.enabled;
+      }catch(e){
+        if(attempt<2)await new Promise(res=>setTimeout(res,400));
+      }
+    }
+    this.enabled=false;
+    return this.enabled;
+  },
   async login(email,pw){const r=await fetch('/api/login',{method:'POST',headers:{'Content-Type':'application/json'},body:JSON.stringify({email,password:pw})});let j={};try{j=await r.json();}catch(e){}if(!r.ok)throw new Error((j&&j.error)||'Login failed');this.token=j.token;try{localStorage.setItem('sc_token',this.token);if(j.email)localStorage.setItem('sc_login_email',j.email);}catch(e){}return j;},
   async signup(email,pw,name,optIn){const r=await fetch('/api/signup',{method:'POST',headers:{'Content-Type':'application/json'},body:JSON.stringify({email,password:pw,name,optIn:!!optIn})});let j={};try{j=await r.json();}catch(e){}if(!r.ok)throw new Error((j&&j.error)||'Sign up failed');this.token=j.token;try{localStorage.setItem('sc_token',this.token);if(j.email)localStorage.setItem('sc_login_email',j.email);}catch(e){}return j;},
   async requestReset(email){try{await fetch('/api/request-reset',{method:'POST',headers:{'Content-Type':'application/json'},body:JSON.stringify({email})});}catch(e){}return true;},
