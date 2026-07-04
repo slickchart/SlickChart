@@ -502,7 +502,7 @@ let formQs=[
   {id:8,label:'Phone number',type:'Short text',required:true},
   {id:9,label:'Email',type:'Short text',required:false},
   {id:10,label:'How did you hear about us?',type:'Short text',required:false},
-  {id:3,label:'Primary skin concerns',type:'Multiple choice',required:true,options:['Acne','Hyperpigmentation','Aging','Dryness','Sensitivity','Redness']},
+  {id:3,label:'Primary skin concerns or goals',type:'Long text',required:true},
   {id:4,label:'Known allergies or sensitivities',type:'Long text',required:true},
   {id:5,label:'Are you pregnant or nursing?',type:'Yes / No',required:true},
   {id:11,label:'Current medications',type:'Long text',required:false},
@@ -2296,7 +2296,7 @@ function viewSubmittedForm(id,i){
   const c=CL[id];if(!c||!c.submittedForms||!c.submittedForms[i])return;
   const sf=c.submittedForms[i];const tmpl=formTmpls[sf.formId];
   const rows=[];
-  if(tmpl&&tmpl.qs){tmpl.qs.forEach(q=>{if(q.type==='Signature'||q.type==='Contraindications')return;const a=sf.answers[q.id];if(a!=null&&String(a).trim())rows.push([q.label,String(a)]);});}
+  if(tmpl&&tmpl.qs){tmpl.qs.forEach(q=>{if(q.type==='Signature'||q.type==='Contraindications')return;const a=sf.answers[q.id];if(a!=null&&String(a).trim())rows.push([q.label,q.type==='Date'?_fmtDOB(String(a)):String(a)]);});}
   else{Object.keys(sf.answers||{}).forEach(k=>rows.push([k,String(sf.answers[k])]));}
   const ov=document.createElement('div');ov.id='subform-sheet';
   ov.style.cssText='position:fixed;top:0;bottom:0;left:0;right:0;margin:0 auto;width:390px;max-width:100%;z-index:9999;background:rgba(0,0,0,.6);display:flex;align-items:center;justify-content:center;padding:24px 16px;box-sizing:border-box;';
@@ -4571,6 +4571,8 @@ function renderForms(){
   <div style="padding:0 16px 4px;"><div style="position:relative;"><i class="ti ti-search" aria-hidden="true" style="position:absolute;left:11px;top:50%;transform:translateY(-50%);font-size:15px;color:#777;"></i><input id="forms-search" oninput="filterForms(this.value)" placeholder="Search forms…" style="width:100%;background:#161616;border:1px solid #2a2a2a;border-radius:10px;padding:9px 11px 9px 34px;font-size:13px;color:#e0e0e0;font-family:inherit;box-sizing:border-box;outline:none;"></div></div>
   <div id="forms-extras">
   <div class="sh"><h2>Pre-visit</h2></div>
+  <div class="card" style="border-color:var(--accent);" onclick="sendFirstVisitPackagePicker()"><div class="row"><div style="width:42px;height:42px;border-radius:10px;background:var(--accent-tint);display:flex;align-items:center;justify-content:center;"><i class="ti ti-rocket" style="font-size:20px;color:var(--accent);"></i></div><div style="flex:1;"><div style="font-size:14px;font-weight:500;color:#e0e0e0;">First-visit package</div><div style="font-size:12px;color:#999;margin-top:2px;">Invite to app + intake form, in one tap</div></div></div></div>
+  <div class="card" onclick="nav('bundles')"><div class="row"><div style="width:42px;height:42px;border-radius:10px;background:#1e1633;display:flex;align-items:center;justify-content:center;"><i class="ti ti-package" style="font-size:20px;color:#a891ec;"></i></div><div style="flex:1;"><div style="font-size:14px;font-weight:500;color:#e0e0e0;">Bundles</div><div style="font-size:12px;color:#999;margin-top:2px;">Group forms &amp; guides to send together</div></div><i aria-hidden="true" class="ti ti-chevron-right" style="font-size:16px;color:#888;"></i></div></div>
   <div class="card" style="border-color:var(--accent);" onclick="nav('checkin-settings')"><div class="row"><div style="width:42px;height:42px;border-radius:10px;background:#2a0f1a;display:flex;align-items:center;justify-content:center;"><i class="ti ti-checklist" style="font-size:20px;color:#e87070;"></i></div><div style="flex:1;"><div style="font-size:14px;font-weight:500;color:#e0e0e0;">Pre-visit check-in</div><div style="font-size:12px;color:#999;margin-top:2px;">${checkinSub}</div><div style="margin-top:5px;display:flex;gap:5px;"><span class="bdg bg" style="font-size:12px;">Auto-send on</span><span class="bdg br" style="font-size:12px;">Customizable</span></div></div><i aria-hidden="true" class="ti ti-chevron-right" style="font-size:16px;color:#888;"></i></div></div>
   <div style="margin:2px 16px 0;padding:9px 12px;background:#0d1e33;border:1px solid #1a3a5c;border-radius:10px;display:flex;gap:8px;"><i class="ti ti-info-circle" style="font-size:14px;color:#5ba3e8;flex-shrink:0;margin-top:1px;"></i><span style="font-size:12px;color:#5ba3e8;line-height:1.5;">Connect aftercare guides from your Learn library to any form — they're sent to the client together in one tap.</span></div>
   </div>
@@ -4611,27 +4613,40 @@ function _searchBar(placeholder,cardSel,noResId){
   return `<div style="padding:14px 16px 6px;"><div style="position:relative;"><i class="ti ti-search" aria-hidden="true" style="position:absolute;left:11px;top:50%;transform:translateY(-50%);font-size:15px;color:#777;"></i><input oninput="searchList(this.value,'${cardSel}','${noResId||''}')" placeholder="${placeholder}" style="width:100%;background:#161616;border:1px solid #2a2a2a;border-radius:10px;padding:9px 11px 9px 34px;font-size:13px;color:#e0e0e0;font-family:inherit;box-sizing:border-box;outline:none;"></div></div>`;
 }
 function _noRes(id,msg){return `<div id="${id}" style="display:none;padding:30px 16px;text-align:center;color:#777;font-size:13px;">${msg}</div>`;}
+// Shared by every "pick a client to send to" sheet — matches by name.
+function _matchClients(q){
+  q=(q||'').toLowerCase().trim();
+  return Object.keys(CL).filter(cid=>!q||(CL[cid].name||'').toLowerCase().includes(q));
+}
 function sendFormToClient(fid){
   const tmpl=formTmpls[fid];if(!tmpl)return;
   const guides=formGuideList(fid);
   const ov=document.createElement('div');ov.id='send-prod-sheet';
   ov.style.cssText='position:fixed;top:0;bottom:0;left:0;right:0;margin:0 auto;width:390px;max-width:100%;z-index:9999;background:rgba(0,0,0,.6);display:flex;align-items:center;justify-content:center;padding:24px 16px;box-sizing:border-box;';
   ov.onclick=e=>{if(e.target===ov)closeSendProd();};
-  ov.innerHTML=`<div style="background:#161616;border:1px solid #2a2a2a;width:100%;border-radius:16px;padding:16px;max-height:82%;overflow:auto;">
+  ov.innerHTML=`<div style="background:#161616;border:1px solid #2a2a2a;width:100%;border-radius:16px;padding:16px;max-height:82%;display:flex;flex-direction:column;">
     <div style="display:flex;align-items:center;gap:10px;margin-bottom:10px;"><div style="width:38px;height:38px;border-radius:9px;background:var(--accent-tint);display:flex;align-items:center;justify-content:center;flex-shrink:0;"><i class="ti ti-file-text" style="font-size:18px;color:var(--accent);"></i></div><div style="flex:1;min-width:0;"><div style="font-size:15px;font-weight:500;color:#f0f0f0;">Send ${tmpl.name}</div><div style="font-size:12px;color:#999;">Choose how the client completes it</div></div><button onclick="closeSendProd()" aria-label="Close" style="border:none;background:none;font-size:20px;color:#888;cursor:pointer;line-height:1;">✕</button></div>
-    ${guides.length?`<div style="font-size:11px;color:#999;background:#1a1a1a;border:1px solid #2a2a2a;border-radius:9px;padding:8px 11px;margin-bottom:10px;line-height:1.5;">Also sends ${guides.length} guide${guides.length>1?'s':''}: ${guides.map(g=>g.icon+' '+g.title).join(' · ')}</div>`:''}
-    <div style="display:flex;gap:8px;margin-bottom:12px;">
+    ${guides.length?`<div style="font-size:11px;color:#999;background:#1a1a1a;border:1px solid #2a2a2a;border-radius:9px;padding:8px 11px;margin-bottom:10px;line-height:1.5;flex-shrink:0;">Also sends ${guides.length} guide${guides.length>1?'s':''}: ${guides.map(g=>g.icon+' '+g.title).join(' · ')}</div>`:''}
+    <div style="display:flex;gap:8px;margin-bottom:12px;flex-shrink:0;">
       ${_formHasSignature(fid)?`<button onclick="closeSendProd();nav('sign-form',{fid:'${fid}'})" style="flex:1;display:flex;flex-direction:column;align-items:center;gap:5px;padding:12px 8px;border:1px solid var(--accent);background:var(--accent-a08);border-radius:11px;cursor:pointer;font-family:inherit;"><i class="ti ti-device-tablet" style="font-size:19px;color:var(--accent);"></i><span style="font-size:11.5px;font-weight:600;color:var(--accent);text-align:center;">Sign on this device</span></button>`:''}
     </div>
-    <div style="font-size:11px;font-weight:600;color:#777;text-transform:uppercase;letter-spacing:.06em;margin-bottom:8px;">Send to a client's app</div>
-    ${Object.keys(CL).map(cid=>{const c=CL[cid];return`<button onclick="confirmSendForm('${fid}','${cid}')" style="display:flex;width:100%;align-items:center;gap:10px;padding:11px 12px;border:1px solid #2a2a2a;background:#1a1a1a;border-radius:10px;margin-bottom:8px;cursor:pointer;text-align:left;">
-      <div style="width:36px;height:36px;border-radius:9px;background:${c.bg};display:flex;align-items:center;justify-content:center;font-size:13px;font-weight:500;color:${c.tc};flex-shrink:0;">${c.initials}</div>
-      <div style="flex:1;min-width:0;"><div style="font-size:13px;font-weight:500;color:#e0e0e0;">${c.name}</div></div>
-      <i class="ti ti-send" style="font-size:16px;color:var(--accent);"></i>
-    </button>`;}).join('')}
+    <div style="font-size:11px;font-weight:600;color:#777;text-transform:uppercase;letter-spacing:.06em;margin-bottom:8px;flex-shrink:0;">Send to a client's app</div>
+    <div style="position:relative;margin-bottom:10px;flex-shrink:0;"><i class="ti ti-search" aria-hidden="true" style="position:absolute;left:11px;top:50%;transform:translateY(-50%);font-size:14px;color:#777;"></i><input id="sfc-q" oninput="_renderSendFormClients('${fid}',this.value)" placeholder="Search clients…" style="width:100%;background:#111;border:1px solid #2a2a2a;border-radius:9px;padding:8px 11px 8px 32px;font-size:13px;color:#e0e0e0;font-family:inherit;box-sizing:border-box;outline:none;"></div>
+    <div id="sfc-list" style="overflow:auto;">${_sendFormClientRows(fid,'')}</div>
   </div>`;
   (document.querySelector('.shell')||document.body).appendChild(ov);
+  setTimeout(()=>{const i=document.getElementById('sfc-q');if(i&&i.focus)try{i.focus();}catch(e){}},30);
 }
+function _sendFormClientRows(fid,q){
+  const matches=_matchClients(q);
+  if(!matches.length)return `<div style="padding:20px;text-align:center;color:#888;font-size:12px;">No clients match "${(q||'').replace(/</g,'&lt;')}"</div>`;
+  return matches.map(cid=>{const c=CL[cid];return`<button onclick="confirmSendForm('${fid}','${cid}')" style="display:flex;width:100%;align-items:center;gap:10px;padding:11px 12px;border:1px solid #2a2a2a;background:#1a1a1a;border-radius:10px;margin-bottom:8px;cursor:pointer;text-align:left;">
+    <div style="width:36px;height:36px;border-radius:9px;background:${c.bg};display:flex;align-items:center;justify-content:center;font-size:13px;font-weight:500;color:${c.tc};flex-shrink:0;">${c.initials}</div>
+    <div style="flex:1;min-width:0;"><div style="font-size:13px;font-weight:500;color:#e0e0e0;">${c.name}</div></div>
+    <i class="ti ti-send" style="font-size:16px;color:var(--accent);"></i>
+  </button>`;}).join('');
+}
+function _renderSendFormClients(fid,q){const el=document.getElementById('sfc-list');if(el)el.innerHTML=_sendFormClientRows(fid,q);}
 function confirmSendForm(fid,cid){
   const tmpl=formTmpls[fid];if(!tmpl)return;
   const guides=formGuideList(fid);
@@ -4700,16 +4715,24 @@ function sendBundlePicker(bid){
   const ov=document.createElement('div');ov.id='send-bundle-sheet';
   ov.style.cssText='position:fixed;top:0;bottom:0;left:0;right:0;margin:0 auto;width:390px;max-width:100%;z-index:9999;background:rgba(0,0,0,.6);display:flex;align-items:center;justify-content:center;padding:24px 16px;box-sizing:border-box;';
   ov.onclick=e=>{if(e.target===ov)ov.remove();};
-  ov.innerHTML=`<div style="background:#161616;border:1px solid #2a2a2a;width:100%;border-radius:16px;padding:16px;max-height:82%;overflow:auto;">
-    <div style="display:flex;align-items:center;gap:10px;margin-bottom:12px;"><div style="width:38px;height:38px;border-radius:9px;background:#1e1633;display:flex;align-items:center;justify-content:center;flex-shrink:0;"><i class="ti ti-package" style="font-size:18px;color:#a891ec;"></i></div><div style="flex:1;min-width:0;"><div style="font-size:15px;font-weight:500;color:#f0f0f0;">Send ${b.name}</div><div style="font-size:12px;color:#999;">${_bundleItemCount(b)} item${_bundleItemCount(b)===1?'':'s'} \u2014 choose a client</div></div><button onclick="this.closest('#send-bundle-sheet').remove()" aria-label="Close" style="border:none;background:none;font-size:20px;color:#888;cursor:pointer;line-height:1;">\u2715</button></div>
-    ${Object.keys(CL).map(cid=>{const c=CL[cid];return`<button onclick="this.closest('#send-bundle-sheet').remove();sendBundleToClient('${bid}','${cid}')" style="display:flex;width:100%;align-items:center;gap:10px;padding:11px 12px;border:1px solid #2a2a2a;background:#1a1a1a;border-radius:10px;margin-bottom:8px;cursor:pointer;text-align:left;">
-      <div style="width:36px;height:36px;border-radius:9px;background:${c.bg};display:flex;align-items:center;justify-content:center;font-size:13px;font-weight:500;color:${c.tc};flex-shrink:0;">${c.initials}</div>
-      <div style="flex:1;min-width:0;"><div style="font-size:13px;font-weight:500;color:#e0e0e0;">${c.name}</div></div>
-      <i class="ti ti-send" style="font-size:16px;color:var(--accent);"></i>
-    </button>`;}).join('')}
+  ov.innerHTML=`<div style="background:#161616;border:1px solid #2a2a2a;width:100%;border-radius:16px;padding:16px;max-height:82%;display:flex;flex-direction:column;">
+    <div style="display:flex;align-items:center;gap:10px;margin-bottom:12px;flex-shrink:0;"><div style="width:38px;height:38px;border-radius:9px;background:#1e1633;display:flex;align-items:center;justify-content:center;flex-shrink:0;"><i class="ti ti-package" style="font-size:18px;color:#a891ec;"></i></div><div style="flex:1;min-width:0;"><div style="font-size:15px;font-weight:500;color:#f0f0f0;">Send ${b.name}</div><div style="font-size:12px;color:#999;">${_bundleItemCount(b)} item${_bundleItemCount(b)===1?'':'s'} \u2014 choose a client</div></div><button onclick="this.closest('#send-bundle-sheet').remove()" aria-label="Close" style="border:none;background:none;font-size:20px;color:#888;cursor:pointer;line-height:1;">\u2715</button></div>
+    <div style="position:relative;margin-bottom:10px;flex-shrink:0;"><i class="ti ti-search" aria-hidden="true" style="position:absolute;left:11px;top:50%;transform:translateY(-50%);font-size:14px;color:#777;"></i><input id="sbp-q" oninput="_renderSendBundleClients('${bid}',this.value)" placeholder="Search clients…" style="width:100%;background:#111;border:1px solid #2a2a2a;border-radius:9px;padding:8px 11px 8px 32px;font-size:13px;color:#e0e0e0;font-family:inherit;box-sizing:border-box;outline:none;"></div>
+    <div id="sbp-list" style="overflow:auto;">${_sendBundleClientRows(bid,'')}</div>
   </div>`;
   (document.querySelector('.shell')||document.body).appendChild(ov);
+  setTimeout(()=>{const i=document.getElementById('sbp-q');if(i&&i.focus)try{i.focus();}catch(e){}},30);
 }
+function _sendBundleClientRows(bid,q){
+  const matches=_matchClients(q);
+  if(!matches.length)return `<div style="padding:20px;text-align:center;color:#888;font-size:12px;">No clients match "${(q||'').replace(/</g,'&lt;')}"</div>`;
+  return matches.map(cid=>{const c=CL[cid];return`<button onclick="this.closest('#send-bundle-sheet').remove();sendBundleToClient('${bid}','${cid}')" style="display:flex;width:100%;align-items:center;gap:10px;padding:11px 12px;border:1px solid #2a2a2a;background:#1a1a1a;border-radius:10px;margin-bottom:8px;cursor:pointer;text-align:left;">
+    <div style="width:36px;height:36px;border-radius:9px;background:${c.bg};display:flex;align-items:center;justify-content:center;font-size:13px;font-weight:500;color:${c.tc};flex-shrink:0;">${c.initials}</div>
+    <div style="flex:1;min-width:0;"><div style="font-size:13px;font-weight:500;color:#e0e0e0;">${c.name}</div></div>
+    <i class="ti ti-send" style="font-size:16px;color:var(--accent);"></i>
+  </button>`;}).join('');
+}
+function _renderSendBundleClients(bid,q){const el=document.getElementById('sbp-list');if(el)el.innerHTML=_sendBundleClientRows(bid,q);}
 // Real send: assigns every form + resource in the bundle to the client, then
 // either invites them (if new) or shares their real link — works identically
 // whether the client already has the app or not.
@@ -5900,6 +5923,28 @@ function _clientAppLink(id){
   return tok?(base+'/client/'+encodeURIComponent(tok)):(base+'/client');
 }
 function _markInvited(id){if(CL[id]){CL[id].appInvited=true;try{if(typeof saveClients==='function')saveClients();}catch(e){}}}
+function sendFirstVisitPackagePicker(){
+  const ov=document.createElement('div');ov.id='send-fvp-sheet';
+  ov.style.cssText='position:fixed;top:0;bottom:0;left:0;right:0;margin:0 auto;width:390px;max-width:100%;z-index:9999;background:rgba(0,0,0,.6);display:flex;align-items:center;justify-content:center;padding:24px 16px;box-sizing:border-box;';
+  ov.onclick=e=>{if(e.target===ov)ov.remove();};
+  ov.innerHTML=`<div style="background:#161616;border:1px solid #2a2a2a;width:100%;border-radius:16px;padding:16px;max-height:82%;display:flex;flex-direction:column;">
+    <div style="display:flex;align-items:center;gap:10px;margin-bottom:12px;flex-shrink:0;"><div style="width:38px;height:38px;border-radius:9px;background:var(--accent-tint);display:flex;align-items:center;justify-content:center;flex-shrink:0;"><i class="ti ti-rocket" style="font-size:18px;color:var(--accent);"></i></div><div style="flex:1;min-width:0;"><div style="font-size:15px;font-weight:500;color:#f0f0f0;">Send first-visit package</div><div style="font-size:12px;color:#999;">Invite + intake form \u2014 choose a client</div></div><button onclick="this.closest('#send-fvp-sheet').remove()" aria-label="Close" style="border:none;background:none;font-size:20px;color:#888;cursor:pointer;line-height:1;">\u2715</button></div>
+    <div style="position:relative;margin-bottom:10px;flex-shrink:0;"><i class="ti ti-search" aria-hidden="true" style="position:absolute;left:11px;top:50%;transform:translateY(-50%);font-size:14px;color:#777;"></i><input id="fvp-q" oninput="_renderFvpClients(this.value)" placeholder="Search clients…" style="width:100%;background:#111;border:1px solid #2a2a2a;border-radius:9px;padding:8px 11px 8px 32px;font-size:13px;color:#e0e0e0;font-family:inherit;box-sizing:border-box;outline:none;"></div>
+    <div id="fvp-list" style="overflow:auto;">${_fvpClientRows('')}</div>
+  </div>`;
+  (document.querySelector('.shell')||document.body).appendChild(ov);
+  setTimeout(()=>{const i=document.getElementById('fvp-q');if(i&&i.focus)try{i.focus();}catch(e){}},30);
+}
+function _fvpClientRows(q){
+  const matches=_matchClients(q);
+  if(!matches.length)return `<div style="padding:20px;text-align:center;color:#888;font-size:12px;">No clients match "${(q||'').replace(/</g,'&lt;')}"</div>`;
+  return matches.map(cid=>{const c=CL[cid];return`<button onclick="this.closest('#send-fvp-sheet').remove();sendFirstVisitPackage('${cid}')" style="display:flex;width:100%;align-items:center;gap:10px;padding:11px 12px;border:1px solid #2a2a2a;background:#1a1a1a;border-radius:10px;margin-bottom:8px;cursor:pointer;text-align:left;">
+    <div style="width:36px;height:36px;border-radius:9px;background:${c.bg};display:flex;align-items:center;justify-content:center;font-size:13px;font-weight:500;color:${c.tc};flex-shrink:0;">${c.initials}</div>
+    <div style="flex:1;min-width:0;"><div style="font-size:13px;font-weight:500;color:#e0e0e0;">${c.name}</div>${c.appInvited?'<div style="font-size:11px;color:#999;">Already invited</div>':''}</div>
+    <i class="ti ti-send" style="font-size:16px;color:var(--accent);"></i>
+  </button>`;}).join('');
+}
+function _renderFvpClients(q){const el=document.getElementById('fvp-list');if(el)el.innerHTML=_fvpClientRows(q);}
 function sendFirstVisitPackage(id){
   const c=CL[id];if(!c)return;
   const intakeFid=(typeof _ncIntakeFormId==='function')?_ncIntakeFormId():null;
@@ -6606,6 +6651,7 @@ function switchLearnTab(tab){
         <div style="font-size:13px;color:#999;flex:1;">Guides to share with clients — fully editable, and connectable to any form.</div>
         <button onclick="nav('add-resource')" style="background:var(--accent);color:var(--accent-ink);border:none;border-radius:8px;padding:7px 12px;font-size:12px;font-weight:600;cursor:pointer;display:flex;align-items:center;gap:4px;white-space:nowrap;flex-shrink:0;"><i class="ti ti-plus" style="font-size:13px;"></i> Add guide</button>
       </div>
+      <div onclick="nav('bundles')" style="display:flex;align-items:center;gap:10px;background:#1e1633;border:1px solid #3d2d7a;border-radius:11px;padding:11px 13px;margin-bottom:14px;cursor:pointer;"><div style="width:34px;height:34px;border-radius:9px;background:#2a1f4d;display:flex;align-items:center;justify-content:center;flex-shrink:0;"><i class="ti ti-package" style="font-size:17px;color:#a891ec;"></i></div><div style="flex:1;min-width:0;"><div style="font-size:13px;font-weight:600;color:#e8e3fb;">Bundles</div><div style="font-size:11.5px;color:#a897d0;">Group guides &amp; forms to send together</div></div><i class="ti ti-chevron-right" style="font-size:15px;color:#8a7ab5;"></i></div>
       ${_searchBar('Search guides…','.resource-card','res-noresults').replace('padding:14px 16px 6px;','padding:0 0 10px;')}
       ${resources.map((r,ri)=>`<div class="resource-card" data-search="${((r.title||'')+' '+(r.cat||'')).toLowerCase().replace(/[^a-z0-9 ]/g,' ')}" style="background:#1a1a1a;border:1px solid #2a2a2a;border-radius:12px;margin-bottom:10px;overflow:hidden;">
         <div style="padding:12px 14px;display:flex;align-items:center;gap:12px;">
@@ -9393,6 +9439,9 @@ async function syncClientEvents(){
           try{
             if(typeof _applyIntakeVitals==='function'&&payload.formId){
               _applyIntakeVitals(c,payload.formId,q=>(payload.answers||{})[q.id]);
+            }
+            if(typeof _captureBirthday==='function'&&payload.formId){
+              _captureBirthday(c,payload.formId,payload.answers||{});
             }
           }catch(e){}
           if(payload.signed){c.signedForms=c.signedForms||[];if(c.signedForms.indexOf(title)<0)c.signedForms.push(title);}
