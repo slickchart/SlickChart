@@ -2,6 +2,7 @@
 // GET  /api/waitlist                                  → owner-only: { count, items }
 import { sql, ensureProvidersTable, dbEnabled } from '../lib/db.js';
 import { verifyToken } from '../lib/auth.js';
+import { addToAudience } from '../lib/email.js';
 
 function claims(req){ const s=process.env.SESSION_SECRET||''; const h=req.headers['authorization']||''; const t=h.startsWith('Bearer ')?h.slice(7):''; return (s&&t?verifyToken(t,s):null)||{}; }
 
@@ -30,6 +31,7 @@ export default async function handler(req, res){
       const profession = String(b.profession||'').trim().slice(0,120) || null;
       await q`INSERT INTO waitlist (email, name, profession) VALUES (${email}, ${name}, ${profession})
         ON CONFLICT (email) DO UPDATE SET name=COALESCE(EXCLUDED.name, waitlist.name), profession=COALESCE(EXCLUDED.profession, waitlist.profession)`;
+      try { await addToAudience(email, name); } catch (e) { /* don't block the signup on this */ }
       const c = (await q`SELECT count(*)::int AS n FROM waitlist`)[0];
       res.status(200).json({ ok:true, count:(c&&c.n)||0 });
       return;
