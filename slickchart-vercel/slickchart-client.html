@@ -1061,6 +1061,20 @@ try{document.addEventListener('keydown',function(e){const t=e.target;if((e.key==
 try{if(typeof MutationObserver!=='undefined'){new MutationObserver(()=>_a11yEnhance()).observe(document.body,{childList:true,subtree:true});_a11yEnhance();}}catch(e){}
 let _navStack=[],_navCur=null,_navBacking=false;
 function navBack(){if(_navStack.length){const prev=_navStack.pop();_navBacking=true;nav(prev);_navBacking=false;}}
+// ── Viewing a real guide/resource a provider shared ──
+let _viewGuideId='';
+function renderViewGuide(){
+  const pg=(activeProvider().pendingGuides||[]).find(g=>g.guideId===_viewGuideId);
+  if(!pg){ nav('home'); return; }
+  document.getElementById('tt').textContent=pg.title;
+  S.innerHTML=`
+  <div style="padding:20px 16px 4px;text-align:center;"><div style="font-size:40px;margin-bottom:8px;">${pg.icon||'\ud83d\udcda'}</div><div id="page-heading" tabindex="-1" style="font-size:19px;font-weight:600;color:#1a1a1a;">${pg.title}</div>${pg.cat?`<div style="font-size:12px;color:#b8a898;margin-top:2px;">${pg.cat}</div>`:''}</div>
+  <div style="padding:16px;">
+    ${(pg.tips&&pg.tips.length)?`<div style="background:#fff;border:1.5px solid #f0ebe4;border-radius:14px;padding:14px;margin-bottom:14px;">${pg.tips.map(t=>`<div style="display:flex;gap:9px;padding:7px 0;"><i class="ti ti-sparkles" aria-hidden="true" style="font-size:14px;color:var(--accent);flex-shrink:0;margin-top:2px;"></i><span style="font-size:13.5px;color:#3a2f28;line-height:1.55;">${t}</span></div>`).join('')}</div>`:''}
+    ${pg.url?`<a href="${/^https?:\/\//.test(pg.url)?pg.url:('https://'+pg.url)}" target="_blank" rel="noopener" class="btnp" style="display:flex;width:100%;box-sizing:border-box;border-radius:12px;padding:13px;text-decoration:none;justify-content:center;"><i class="ti ti-external-link"></i> Open full guide</a>`:''}
+    ${(!pg.tips||!pg.tips.length)&&!pg.url?`<div style="text-align:center;color:#b8a898;font-size:13px;padding:20px;">${client.providerFirst} shared this with you.</div>`:''}
+  </div>`;
+}
 function nav(screen){
   document.getElementById('tt').textContent='SlickChart';
   const routes={
@@ -1074,6 +1088,7 @@ function nav(screen){
     'virtual-submit':renderVirtualSubmit,
     welcome:renderMagicLanding,
     'fill-form':renderFillForm,
+    'view-guide':renderViewGuide,
   };
   const fn=routes[screen];
   if(fn){
@@ -1221,6 +1236,19 @@ function renderHome(){
         <div style="font-size:12px;color:#b8a898;">${client.providerFirst} needs this before your visit</div>
       </div>
       <span style="font-size:11px;font-weight:700;color:#8b6fc7;background:#f3eefc;padding:4px 10px;border-radius:20px;flex-shrink:0;">Start</span>
+    </div>
+  </div>`).join('')}
+
+  <!-- Pending guides from provider -->
+  ${(activeProvider().pendingGuides||[]).map(pg=>`
+  <div style="margin:0 16px 14px;background:#fff;border:1.5px solid #f0ebe4;border-radius:14px;overflow:hidden;cursor:pointer;" onclick="_viewGuideId='${pg.guideId}';nav('view-guide')" role="button" aria-label="${pg.title}">
+    <div style="padding:12px 16px;display:flex;align-items:center;gap:12px;">
+      <div style="width:42px;height:42px;background:var(--accent-lt);border-radius:10px;display:flex;align-items:center;justify-content:center;flex-shrink:0;font-size:19px;">${pg.icon||'\ud83d\udcda'}</div>
+      <div style="flex:1;min-width:0;">
+        <div style="font-size:13px;font-weight:600;color:#1a1a1a;">${pg.title}</div>
+        <div style="font-size:12px;color:#b8a898;">${client.providerFirst} shared this with you</div>
+      </div>
+      <span style="font-size:11px;font-weight:700;color:var(--accent);background:var(--accent-lt);padding:4px 10px;border-radius:20px;flex-shrink:0;">View</span>
     </div>
   </div>`).join('')}
 
@@ -3078,6 +3106,7 @@ function _applyRealClientData(j){
   p.nextDateISO='';p.nextTimeISO='';p.durationMins=60;
   client._forms=Array.isArray(d.forms)?d.forms:[];
   p.pendingForms=Array.isArray(d.pendingForms)?d.pendingForms:[];
+  p.pendingGuides=Array.isArray(d.pendingGuides)?d.pendingGuides:[];
   client._realAvailability=(d.availability&&typeof d.availability==='object')?d.availability:null;
 }
 function _bootRealClient(token){
