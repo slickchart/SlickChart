@@ -1231,6 +1231,21 @@ function _normBirthday(s){
 }
 function _bdayMonthDay(b){const n=_normBirthday(b);if(!n)return null;const p=n.split('-');const m=parseInt(p[1],10),d=parseInt(p[2],10);if(!m||!d)return null;return {m,d};}
 function _bdayLabel(b){const md=_bdayMonthDay(b);if(!md)return '';return ['','Jan','Feb','Mar','Apr','May','Jun','Jul','Aug','Sep','Oct','Nov','Dec'][md.m]+' '+md.d;}
+// Display formatting only — the stored values stay as-is (raw digits / ISO date) so nothing else that reads them breaks.
+function _fmtPhone(p){
+  if(!p)return '';
+  let d=String(p).replace(/\D/g,'');
+  if(d.length===11&&d[0]==='1')d=d.slice(1);
+  if(d.length===10)return '('+d.slice(0,3)+') '+d.slice(3,6)+'-'+d.slice(6);
+  return String(p);
+}
+function _fmtDOB(b){
+  if(!b)return '';
+  const n=_normBirthday(b)||String(b);
+  const m=n.match(/^(\d{4})-(\d{2})-(\d{2})/);
+  if(!m||m[1]==='0000')return String(b);
+  return parseInt(m[2],10)+'/'+parseInt(m[3],10)+'/'+m[1];
+}
 function _upcomingBirthdays(days){days=days||30;const today=new Date();today.setHours(0,0,0,0);const out=[];
   Object.entries(CL).forEach(([id,c])=>{const md=_bdayMonthDay(c&&c.birthday);if(!md)return;
     let next=new Date(today.getFullYear(),md.m-1,md.d);if(next<today)next=new Date(today.getFullYear()+1,md.m-1,md.d);
@@ -1680,7 +1695,7 @@ function renderClient(id){
   <div id="client-screen-${id}" hidden></div>
   <div style="padding:12px 16px 0;display:flex;align-items:center;justify-content:space-between;"><button onclick="exportClientFile('${id}')" aria-label="Export or print client file" style="background:var(--accent-tint);border:1px solid var(--accent-a30,#3d2d10);color:var(--accent);border-radius:8px;padding:5px 11px;font-size:11px;font-weight:600;cursor:pointer;display:inline-flex;align-items:center;gap:5px;font-family:inherit;"><i class="ti ti-file-download" style="font-size:13px;"></i> Export file</button><button onclick="deleteClient('${id}')" aria-label="Remove client" style="background:none;border:1px solid #3a1a1a;color:#a85a5a;border-radius:8px;padding:5px 10px;font-size:11px;font-weight:600;cursor:pointer;display:inline-flex;align-items:center;gap:5px;font-family:inherit;"><i class="ti ti-trash" style="font-size:12px;"></i> Remove</button></div>
   <div style="padding:14px 16px 0;display:flex;flex-direction:column;align-items:center;gap:8px;">${av(c,64)}<div style="text-align:center;"><div style="font-size:18px;font-weight:500;color:#f0f0f0;">${c.name}</div><div style="font-size:13px;color:#666;display:inline-flex;align-items:center;gap:6px;">${c.treatment} <button onclick="_editClientDetails('${id}')" style="border:1px solid var(--accent-a30,#3d2d10);background:var(--accent-tint);color:var(--accent);cursor:pointer;padding:3px 9px;border-radius:20px;line-height:1;display:inline-flex;align-items:center;gap:3px;font-size:11px;font-weight:600;font-family:inherit;"><i class="ti ti-pencil" style="font-size:11px;"></i> Edit</button></div></div></div>
-  <div style="margin:14px 16px 0;background:#161616;border:1px solid #242424;border-radius:12px;padding:12px 14px;"><div style="display:flex;justify-content:space-between;align-items:center;margin-bottom:8px;"><span style="font-size:11px;color:#888;text-transform:uppercase;letter-spacing:.06em;">Contact</span><button onclick="_editClientDetails('${id}')" style="background:var(--accent-tint);border:1px solid var(--accent-a30,#3d2d10);color:var(--accent);border-radius:8px;padding:4px 10px;font-size:11px;font-weight:600;cursor:pointer;font-family:inherit;"><i class="ti ti-pencil" style="font-size:11px;"></i> Edit</button></div><div style="font-size:13px;color:#ccc;line-height:1.9;"><div><i class="ti ti-mail" style="color:#666;margin-right:7px;"></i>${c.email?String(c.email).replace(/</g,'&lt;'):'<span style="color:#777;">No email</span>'}</div><div><i class="ti ti-phone" style="color:#666;margin-right:7px;"></i>${c.phone?String(c.phone).replace(/</g,'&lt;'):'<span style="color:#777;">No phone</span>'}</div><div><i class="ti ti-cake" style="color:#666;margin-right:7px;"></i>${c.birthday?String(c.birthday):'<span style="color:#777;">No date of birth</span>'}</div></div></div>
+  <div style="margin:14px 16px 0;background:#161616;border:1px solid #242424;border-radius:12px;padding:12px 14px;"><div style="display:flex;justify-content:space-between;align-items:center;margin-bottom:8px;"><span style="font-size:11px;color:#888;text-transform:uppercase;letter-spacing:.06em;">Contact</span><button onclick="_editClientDetails('${id}')" style="background:var(--accent-tint);border:1px solid var(--accent-a30,#3d2d10);color:var(--accent);border-radius:8px;padding:4px 10px;font-size:11px;font-weight:600;cursor:pointer;font-family:inherit;"><i class="ti ti-pencil" style="font-size:11px;"></i> Edit</button></div><div style="font-size:13px;color:#ccc;line-height:1.9;"><div><i class="ti ti-mail" style="color:#666;margin-right:7px;"></i>${c.email?String(c.email).replace(/</g,'&lt;'):'<span style="color:#777;">No email</span>'}</div><div><i class="ti ti-phone" style="color:#666;margin-right:7px;"></i>${c.phone?_fmtPhone(c.phone).replace(/</g,'&lt;'):'<span style="color:#777;">No phone</span>'}</div><div><i class="ti ti-cake" style="color:#666;margin-right:7px;"></i>${c.birthday?_fmtDOB(c.birthday):'<span style="color:#777;">No date of birth</span>'}</div></div></div>
   ${c.flaggedContra?`<div style="margin:12px 16px 0;background:#2a0f0f;border:1px solid #5a2020;border-radius:12px;padding:12px 14px;">
     <div style="display:flex;align-items:center;gap:8px;margin-bottom:6px;"><i class="ti ti-alert-triangle" style="font-size:16px;color:#e87070;"></i><span style="font-size:13px;font-weight:700;color:#f0c8c8;">Flagged on intake — review before the visit</span></div>
     <div style="font-size:11px;color:#c99;margin-bottom:7px;">${c.name.split(' ')[0]} marked these on "${c.flaggedContra.form}" (${c.flaggedContra.date}):</div>
@@ -5068,7 +5083,7 @@ function sendCheckin(id){
   ov.innerHTML=`<div style="background:#161616;border:1px solid #2a2a2a;width:100%;border-radius:16px;padding:18px;">
     <div style="display:flex;align-items:center;gap:10px;margin-bottom:12px;">
       <div style="width:38px;height:38px;border-radius:9px;background:#0a2019;display:flex;align-items:center;justify-content:center;flex-shrink:0;"><i class="ti ti-message" style="font-size:18px;color:#4ec49a;"></i></div>
-      <div style="flex:1;min-width:0;"><div style="font-size:15px;font-weight:600;color:#f0f0f0;">Send pre-visit check-in</div><div style="font-size:12px;color:#999;">${phone?('To '+esc(c.name)+' · '+esc(phone)):'No phone number on file'}</div></div>
+      <div style="flex:1;min-width:0;"><div style="font-size:15px;font-weight:600;color:#f0f0f0;">Send pre-visit check-in</div><div style="font-size:12px;color:#999;">${phone?('To '+esc(c.name)+' · '+esc(_fmtPhone(phone))):'No phone number on file'}</div></div>
       <button onclick="this.closest('#checkin-sheet').remove()" aria-label="Close" style="border:none;background:none;font-size:20px;color:#888;cursor:pointer;line-height:1;">✕</button>
     </div>
     <div style="background:#111;border:1px solid #2a2a2a;border-radius:10px;padding:11px 13px;margin-bottom:12px;font-size:13px;color:#cfcfcf;line-height:1.55;">${esc(msg)}</div>
