@@ -60,10 +60,10 @@ export function welcomeEmailHtml({ name, link }) {
     </div>
 
     <div style="padding:28px 6px 6px;">
-      <p style="font-size:16px;line-height:1.6;margin:0 0 16px;">Hi ${esc(first)},</p>
+      <p style="font-size:16px;line-height:1.7;margin:0 0 16px;">Hi ${esc(first)},</p>
       <p style="font-size:16px;line-height:1.7;margin:0 0 16px;"><strong>Welcome to SlickChart, and genuinely, thank you.</strong> You just joined an exclusive group of providers helping build something new for our industry, and I don't take that lightly.</p>
-      <p style="font-size:15px;line-height:1.7;color:#3a3a3a;margin:0 0 16px;">I'm Ashley, a solo esthetician. I built SlickChart myself, from my own treatment room, because the software made for our industry never felt like it was actually made <em>for us</em>. So this isn't a corporate product with a beauty-industry paint job. It's built by a provider, for providers, from the ground up.</p>
-      <p style="font-size:15px;line-height:1.7;color:#3a3a3a;margin:0 0 20px;">As a founding beta provider, you're not just a customer, you're a collaborator. Every question you ask, every rough edge you point out, and every "it would be great if it also did ___" makes this better, faster than I could ever manage building it alone. This app is going to get amazing, and you're one of the people making that happen.</p>
+      <p style="font-size:16px;line-height:1.7;color:#3a3a3a;margin:0 0 16px;">I'm Ashley, a solo esthetician. I built SlickChart myself, from my own treatment room, because the software made for our industry never felt like it was actually made <em>for us</em>. So this isn't a corporate product with a beauty-industry paint job. It's built by a provider, for providers, from the ground up.</p>
+      <p style="font-size:16px;line-height:1.7;color:#3a3a3a;margin:0 0 20px;">As a founding beta provider, you're not just a customer, you're a collaborator. Every question you ask, every rough edge you point out, and every "it would be great if it also did ___" makes this better, faster than I could ever manage building it alone. This app is going to get amazing, and you're one of the people making that happen.</p>
 
       <div style="text-align:center;margin:26px 0;">
         <a href="${link}" style="background:#cd9a52;color:#1a1206;text-decoration:none;font-weight:700;padding:14px 28px;border-radius:10px;display:inline-block;font-size:15px;">Verify your email &amp; get started</a>
@@ -92,8 +92,8 @@ export function welcomeEmailHtml({ name, link }) {
         </p>
       </div>
 
-      <p style="font-size:14px;line-height:1.7;color:#3a3a3a;margin:0 0 6px;">Something confusing, broken, or missing? Just reply to this email, or tap <strong>Share beta feedback</strong> right in the app. I read every single one myself.</p>
-      <p style="font-size:15px;line-height:1.7;margin:22px 0 0;">Thank you for being here from the start.<br>With love,<br><strong>Ashley</strong><br><span style="color:#888;font-size:13px;">Founder, SlickChart · Botanical Aesthetics</span></p>
+      <p style="font-size:16px;line-height:1.7;color:#3a3a3a;margin:0 0 6px;">Something confusing, broken, or missing? Just reply to this email, or tap <strong>Share beta feedback</strong> right in the app. I read every single one myself.</p>
+      <p style="font-size:16px;line-height:1.7;margin:22px 0 0;">Thank you for being here from the start.<br>With love,<br><strong>Ashley</strong><br><span style="color:#888;font-size:13px;">Founder, SlickChart · Botanical Aesthetics</span></p>
     </div>
   </div>`;
 }
