@@ -7379,6 +7379,7 @@ function renderAccountBilling(){
   renderSubscriptionBilling();const _bill=S.innerHTML;
   document.getElementById('tt').textContent='Security & billing';
   S.innerHTML=_sec+'<div class="sh" style="margin-top:10px;padding-top:8px;border-top:1px solid #222;"><h2>Subscription & billing</h2></div>'+_bill;
+  _loadSessions(); // re-run against the final DOM — same reason as below
   _loadBillingStatus(); // re-run against the final DOM — the call inside renderSubscriptionBilling() above targeted a node that just got replaced
 }
 
@@ -9778,15 +9779,43 @@ function renderPasswordSecurity(){
       </div>
     </div>
     <div class="sh" style="padding:0 0 7px;"><h2>Active sessions</h2></div>
-    <div style="background:#1a1a1a;border:1px solid #2a2a2a;border-radius:12px;overflow:hidden;margin-bottom:20px;">
-      ${[['iPhone 15 Pro · iOS 18','Oakland, CA · Now','#4ec49a'],['MacBook Pro · Chrome','Oakland, CA · 2 days ago','#555'],['iPad Air · Safari','Oakland, CA · 5 days ago','#555']].map(([device,loc,col])=>`
-      <div style="display:flex;align-items:center;gap:10px;padding:11px 14px;border-bottom:1px solid #1e1e1e;">
-        <i class="ti ti-device-mobile" style="font-size:16px;color:#999;"></i>
-        <div style="flex:1;"><div style="font-size:13px;color:#e0e0e0;">${device}</div><div style="font-size:11px;color:${col};">${loc}</div></div>
-        <button style="border:none;background:none;font-size:12px;color:#e87070;cursor:pointer;">Revoke</button>
-      </div>`).join('')}
-    </div>
+    <div id="sessions-body" style="background:#1a1a1a;border:1px solid #2a2a2a;border-radius:12px;overflow:hidden;margin-bottom:20px;padding:16px;text-align:center;color:#888;font-size:12px;">Loading\u2026</div>
   </div>`;
+  _loadSessions();
+}
+function _fmtAgo(iso){
+  if(!iso)return '';
+  const d=new Date(iso),now=new Date(),mins=Math.round((now-d)/60000);
+  if(mins<2)return 'Now';
+  if(mins<60)return mins+' min ago';
+  const hrs=Math.round(mins/60);if(hrs<24)return hrs+(hrs===1?' hour ago':' hours ago');
+  const days=Math.round(hrs/24);return days+(days===1?' day ago':' days ago');
+}
+async function _loadSessions(){
+  const box=document.getElementById('sessions-body');if(!box)return;
+  const tok=(typeof Cloud!=='undefined'&&Cloud&&Cloud.token)||'';
+  if(!tok){box.innerHTML='Sign in to see your sessions.';return;}
+  try{
+    const r=await fetch('/api/sessions',{headers:{'Authorization':'Bearer '+tok}});
+    const j=await r.json();
+    const list=(j&&j.sessions)||[];
+    if(!list.length){box.innerHTML='<div style="padding:4px 0;">No session activity recorded yet.</div>';return;}
+    box.innerHTML=list.filter(s=>!s.revoked).map(s=>`
+      <div style="display:flex;align-items:center;gap:10px;padding:11px 14px;border-bottom:1px solid #1e1e1e;text-align:left;">
+        <i class="ti ti-device-mobile" style="font-size:16px;color:#999;"></i>
+        <div style="flex:1;"><div style="font-size:13px;color:#e0e0e0;">${s.device||'Unknown device'}</div><div style="font-size:11px;color:${s.isCurrent?'#4ec49a':'#777'};">${s.location||'Unknown location'} \u00b7 ${s.isCurrent?'This device \u00b7 Now':_fmtAgo(s.lastSeen)}</div></div>
+        ${s.isCurrent?'':`<button onclick="_revokeSession('${s.id}')" style="border:none;background:none;font-size:12px;color:#e87070;cursor:pointer;">Revoke</button>`}
+      </div>`).join('');
+  }catch(e){box.innerHTML='Could not load sessions.';}
+}
+async function _revokeSession(id){
+  const tok=(typeof Cloud!=='undefined'&&Cloud&&Cloud.token)||'';
+  if(!tok)return;
+  try{
+    await fetch('/api/sessions',{method:'POST',headers:{'Content-Type':'application/json','Authorization':'Bearer '+tok},body:JSON.stringify({id})});
+    _loadSessions();
+    proToast('Session signed out');
+  }catch(e){proToast('Could not revoke that session');}
 }
 
 // ── SUBSCRIPTION & BILLING ──
