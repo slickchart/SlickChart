@@ -2253,7 +2253,7 @@ function renderClient(id){
   <div class="sh"><h2>Recommended products</h2></div>
   <div style="padding:0 16px 4px;display:flex;align-items:center;justify-content:space-between;">
     <span style="font-size:12px;color:#999;">What ${c.name.split(' ')[0]} sees in their shop.</span>
-    <button onclick="toggleSummaryProdPicker()" style="border:none;background:none;color:var(--accent);font-size:13px;cursor:pointer;display:flex;align-items:center;gap:3px;"><i class="ti ti-plus" aria-hidden="true" style="font-size:13px;"></i> Add</button>
+    <button onclick="toggleSummaryProdPicker('${id}')" style="border:none;background:none;color:var(--accent);font-size:13px;cursor:pointer;display:flex;align-items:center;gap:3px;"><i class="ti ti-plus" aria-hidden="true" style="font-size:13px;"></i> Add</button>
   </div>
   <div style="padding:0 16px;">${_recPickerHTML(id)}</div>
   ${(clientRecs[id]||[]).length===0?`<div style="background:#1a1a1a;border:1px dashed #2a2a2a;border-radius:12px;margin:0 16px 10px;padding:20px;display:flex;flex-direction:column;align-items:center;gap:6px;"><i class="ti ti-shopping-bag" aria-hidden="true" style="font-size:22px;color:#666;"></i><span style="font-size:12px;color:#999;">No products recommended yet — tap Add.</span></div>`:''}
@@ -3694,14 +3694,22 @@ async function aiClientFriendly(id,btn){
 
 let _recEditCtx='summary';
 function _rerenderRecs(id){persistWorkspace();if(_recEditCtx==='profile')renderClient(id);else renderSessionSummary(id);}
+function _recPickerRows(id,q){
+  q=(q||'').toLowerCase().trim();
+  const list=affiliateLinks.filter(a=>a.active&&!(clientRecs[id]||[]).includes(a.id)&&(!q||((a.name||'')+' '+(a.brand||'')).toLowerCase().includes(q)));
+  if(!list.length)return `<div style="padding:16px;text-align:center;color:#888;font-size:12px;">${q?'No products match "'+q.replace(/</g,'&lt;')+'"':'No more products to add'}</div>`;
+  return list.map(a=>`<div onclick="addSummaryProd('${id}','${a.id}')" style="display:flex;align-items:center;gap:10px;padding:9px 12px;border-bottom:1px solid #1e1e1e;cursor:pointer;">
+      <span aria-hidden="true" style="font-size:18px;">${a.icon}</span>
+      <div style="flex:1;min-width:0;"><div style="font-size:13px;color:#e0e0e0;">${a.name}</div><div style="font-size:11px;color:#999;">${a.brand||''}</div></div>
+      <i class="ti ti-plus" aria-hidden="true" style="font-size:14px;color:var(--accent);"></i>
+    </div>`).join('');
+}
+function _renderRecPickerList(id,q){const el=document.getElementById('summary-prod-list');if(el)el.innerHTML=_recPickerRows(id,q);}
 function _recPickerHTML(id){
   return `<div id="summary-prod-picker" style="display:none;background:#161616;border:1px solid #2a2a2a;border-radius:10px;overflow:hidden;margin-bottom:10px;">
-    ${affiliateLinks.filter(a=>a.active&&!(clientRecs[id]||[]).includes(a.id)).map(a=>`<div onclick="addSummaryProd('${id}','${a.id}')" style="display:flex;align-items:center;gap:10px;padding:9px 12px;border-bottom:1px solid #1e1e1e;cursor:pointer;">
-      <span aria-hidden="true" style="font-size:18px;">${a.icon}</span>
-      <div style="flex:1;"><div style="font-size:13px;color:#e0e0e0;">${a.name}</div><div style="font-size:11px;color:#999;">${a.brand}</div></div>
-      <i class="ti ti-plus" aria-hidden="true" style="font-size:14px;color:var(--accent);"></i>
-    </div>`).join('')}
-    <div onclick="const f=document.getElementById('cust-prod-form');f.style.display=f.style.display==='none'?'block':'none';" style="padding:10px 12px;display:flex;align-items:center;gap:8px;cursor:pointer;color:var(--accent);font-size:13px;background:#12120f;"><i class="ti ti-sparkles" aria-hidden="true" style="font-size:15px;"></i> Create a custom product</div>
+    <div style="position:relative;padding:8px;border-bottom:1px solid #1e1e1e;"><i class="ti ti-search" aria-hidden="true" style="position:absolute;left:18px;top:50%;transform:translateY(-50%);font-size:14px;color:#777;"></i><input id="summary-prod-q" oninput="_renderRecPickerList('${id}',this.value)" placeholder="Search products or brands…" style="width:100%;background:#0f0f0f;border:1px solid #2a2a2a;border-radius:8px;padding:8px 10px 8px 30px;font-size:13px;color:#e0e0e0;font-family:inherit;box-sizing:border-box;outline:none;"></div>
+    <div id="summary-prod-list" style="max-height:172px;overflow-y:auto;">${_recPickerRows(id,'')}</div>
+    <div onclick="const f=document.getElementById('cust-prod-form');f.style.display=f.style.display==='none'?'block':'none';" style="padding:10px 12px;display:flex;align-items:center;gap:8px;cursor:pointer;color:var(--accent);font-size:13px;background:#12120f;border-top:1px solid #1e1e1e;"><i class="ti ti-sparkles" aria-hidden="true" style="font-size:15px;"></i> Create a custom product</div>
     <div id="cust-prod-form" style="display:none;padding:10px 12px 12px;">
       <input id="cust-name" placeholder="Product name *" style="width:100%;background:#111;border:1px solid #333;border-radius:7px;padding:8px 10px;font-size:12px;color:#e0e0e0;font-family:inherit;margin-bottom:6px;box-sizing:border-box;">
       <div style="display:flex;gap:6px;margin-bottom:6px;">
@@ -3718,7 +3726,16 @@ function _recPickerHTML(id){
     </div>
   </div>`;
 }
-function toggleSummaryProdPicker(){const p=document.getElementById('summary-prod-picker');if(p)p.style.display=p.style.display==='none'?'block':'none';}
+function toggleSummaryProdPicker(id){
+  const p=document.getElementById('summary-prod-picker');if(!p)return;
+  const opening=p.style.display==='none';
+  p.style.display=opening?'block':'none';
+  if(opening){
+    const q=document.getElementById('summary-prod-q');if(q)q.value='';
+    _renderRecPickerList(id,''); // rebuild list (products may have changed) then focus search
+    setTimeout(()=>{const i=document.getElementById('summary-prod-q');if(i&&i.focus)try{i.focus();}catch(e){}},30);
+  }
+}
 function addSummaryProd(id,aid){if(!clientRecs[id])clientRecs[id]=[];if(!clientRecs[id].includes(aid))clientRecs[id].push(aid);_rerenderRecs(id);}
 function removeSummaryProd(id,aid){clientRecs[id]=(clientRecs[id]||[]).filter(x=>x!==aid);_rerenderRecs(id);}
 let custProdSeq=0;
