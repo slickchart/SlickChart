@@ -311,7 +311,8 @@ let inv=[
   {name:'Chemical Peel Solution 30%',brand:'GlyMed Plus',cat:'Supplies',icon:'⚗️',qty:2,low:2,max:4,cost:68},
   {name:'Disposable Gloves (Box)',brand:'Generic',cat:'Supplies',icon:'🧤',qty:8,low:3,max:10,cost:12},
 ];
-
+function saveInv(){try{localStorage.setItem('sc_inventory',JSON.stringify(inv));}catch(e){}}
+function loadInv(){try{const raw=localStorage.getItem('sc_inventory');if(raw){const arr=JSON.parse(raw);if(Array.isArray(arr)){inv.length=0;arr.forEach(x=>inv.push(x));}}}catch(e){}}
 let partners=[
   {name:'Kara Nguyen, RD',type:'Registered Dietitian',icon:'ti-salad',bg:'#0a2019',ic:'#4ec49a',discount:'10% off initial consult',bdg:'bt',email:'kara@knutrition.com',phone:'(415) 882-9901',website:'knutrition.com',desc:'Gut-skin connection specialist. Clients who work with Kara alongside facials see dramatically faster barrier recovery.'},
   {name:'FitLife Studio',type:'Personal Training & Yoga',icon:'ti-run',bg:'#2a1a00',ic:'var(--accent)',discount:'First class free',bdg:'ba',email:'hello@fitlifestudio.com',phone:'(510) 334-2201',website:'fitlifestudio.com',desc:'Oakland-based studio with a strong focus on stress reduction and lymphatic movement — perfect post-facial complement.'},
@@ -788,7 +789,7 @@ function _reloadAll(){try{
   if(typeof loadCustomResources==='function')loadCustomResources();
   if(typeof loadAi==='function')loadAi();
   if(typeof loadForms==='function')loadForms();
-  loadBizInfo();_syncProviderAvatar();loadClients();loadMessages();if(!_sampleHidden()){_seedMayaOnce();}else{_purgeSample();}_seedBirthdays();if(!_sampleHidden()&&typeof _demoCheckinSeed==='function')_demoCheckinSeed();
+  loadBizInfo();_syncProviderAvatar();loadClients();loadMessages();loadInv();if(!_sampleHidden()){_seedMayaOnce();}else{_purgeSample();}_seedBirthdays();if(!_sampleHidden()&&typeof _demoCheckinSeed==='function')_demoCheckinSeed();
   if(typeof loadWorkspace==='function')loadWorkspace();
   if(typeof loadSquareCatalog==='function'){loadSquareCatalog();_mergeSquareRetail();}
   if(typeof loadCheckinCfg==='function')loadCheckinCfg();
@@ -1247,7 +1248,7 @@ function nav(screen,data){
   // track history for the global back button (skip when we're navigating back)
   if(!_navBacking){if(_navCur&&(_navCur.screen!==screen||_navCur.data!==data)){_navStack.push(_navCur);if(_navStack.length>40)_navStack.shift();}}
   _navCur={screen,data};
-  const titles={home:'Home',clients:'Clients',forms:'Forms',messages:'Messages',pro:'Pro',more:'More',account:'Account',branding:'Branding',shop:'Shop',partners:'Partners',learn:'Learn',virtual:'Virtual Consultations',protocols:'Protocols',vault:'My Docs',inventory:'Inventory',vendors:'Vendors',calendar:'Calendar','today-appts':"Today's appointments",room:'Session','data-setup':'Get set up','import-clients':'Import clients','import-products':'Import products','switch-app':'Switch apps','connect-calendar':'Sync calendar','checkout':'Take payment','whats-new':"What’s new",'feedback-inbox':'Feedback inbox','beta-stats':'Beta stats','payments':'Payments','build-invoice':'Build invoice','service-menu':'Service menu','export-data':'Export data','reports':'Reports'};
+  const titles={home:'Home',clients:'Clients',forms:'Forms',messages:'Messages',pro:'Pro',more:'More',account:'Account',branding:'Branding',shop:'Shop',partners:'Partners',learn:'Learn',virtual:'Virtual Consultations',protocols:'Protocols',vault:'My Docs',inventory:'Inventory',vendors:'Vendors',calendar:'Calendar','today-appts':"Today's appointments",'week-appts':"This week's appointments",'week-clients':"This week's clients",room:'Session','data-setup':'Get set up','import-clients':'Import clients','import-products':'Import products','switch-app':'Switch apps','connect-calendar':'Sync calendar','checkout':'Take payment','whats-new':"What’s new",'feedback-inbox':'Feedback inbox','beta-stats':'Beta stats','payments':'Payments','build-invoice':'Build invoice','service-menu':'Service menu','export-data':'Export data','reports':'Reports'};
   document.getElementById('tt').textContent='SlickChart';
   document.title='SlickChart' + (titles[screen] ? ' — '+titles[screen] : '');
   if(timerInt&&screen!=='room'){clearInterval(timerInt);timerInt=null;}
@@ -1258,6 +1259,7 @@ function nav(screen,data){
     shop:renderShop,partners:renderPartners,learn:renderLearn,virtual:renderVirtual,'vc-inbox':renderVcInbox,'routine-builder':renderRoutineBuilder,
     protocols:renderProtocols,automations:()=>{renderMessages();setTimeout(()=>showMsgTab('autos'),0);},
     vault:renderVault,inventory:renderInventory,vendors:renderVendors,
+    'add-inventory-item':()=>renderAddInventoryItem(data),
     'upload-doc':renderUploadDoc,
     'checkin-settings':renderCheckinSettings,'checkin-preview':renderCheckinPreview,
     'form-builder':()=>renderFormBuilder(data),'form-preview':()=>renderFormPreview(data),'form-docs':()=>renderFormDocs(data),'sign-form':()=>renderSignOnDevice(data&&data.fid,data&&data.cid),
@@ -1293,6 +1295,8 @@ function nav(screen,data){
     'invite-staff':renderInviteStaff,
     calendar:renderCalendar,
     'today-appts':renderTodayAppts,
+    'week-appts':renderWeekAppts,
+    'week-clients':renderWeekClients,
     requests:renderRequests,
     'data-setup':renderDataSetup,'invite-clients':renderInviteClients,'import-clients':renderImportClients,'import-products':renderImportProducts,'switch-app':renderSwitchApp,'connect-calendar':renderConnectCalendar,'whats-new':renderWhatsNew,'feedback-inbox':renderFeedbackInbox,'beta-stats':renderBetaStats,'payments':renderPayments,'build-invoice':renderBuildInvoice,'service-menu':renderServiceMenu,'export-data':renderExportCenter,'reports':renderReports,
     checkins:renderCheckins,
@@ -1441,7 +1445,8 @@ function renderHome(){
       return dayLabel+up.map(a=>{
         const ini=String(a.client||'Client').trim().split(/\s+/).map(w=>w[0]||'').slice(0,2).join('').toUpperCase()||'C';
         const when=a.at.toLocaleDateString('en-US',{weekday:'short',month:'short',day:'numeric'})+' · '+a.at.toLocaleTimeString('en-US',{hour:'numeric',minute:'2-digit'});
-        return '<div class="card" onclick="nav(\'calendar\')"><div class="row"><div style="width:38px;height:38px;border-radius:50%;background:#2e1c10;color:var(--accent);display:flex;align-items:center;justify-content:center;font-weight:600;font-size:13px;flex-shrink:0;">'+ini+'</div><div style="flex:1;min-width:0;"><div style="font-size:15px;font-weight:500;color:#f0f0f0;">'+a.client+'</div><div style="font-size:12px;color:#999;margin-top:2px;">'+when+(a.dur?' · '+a.dur+' min':'')+'</div></div><span class="bdg bg" style="font-size:12px;">Confirmed</span></div></div>';
+        const cid=_clientIdByName(a.client);
+        return '<div class="card" onclick="nav(\''+(cid?'client':'calendar')+'\''+(cid?",'"+cid+"'":'')+')"><div class="row"><div style="width:38px;height:38px;border-radius:50%;background:#2e1c10;color:var(--accent);display:flex;align-items:center;justify-content:center;font-weight:600;font-size:13px;flex-shrink:0;">'+ini+'</div><div style="flex:1;min-width:0;"><div style="font-size:15px;font-weight:500;color:#f0f0f0;">'+a.client+'</div><div style="font-size:12px;color:#999;margin-top:2px;">'+when+(a.dur?' · '+a.dur+' min':'')+'</div></div><span class="bdg bg" style="font-size:12px;">Confirmed</span></div></div>';
       }).join('');
     }
     return '<div class="card"><div style="padding:18px 16px;text-align:center;color:#999;font-size:13px;">Connect Square, or add appointments yourself, to see what\u2019s coming up.<div style="font-size:12px;color:#666;margin-top:4px;"><a href="#" onclick="nav(\'data-setup\');return false;" style="color:var(--accent);">Get set up \u2192</a></div></div></div>';
@@ -1451,7 +1456,7 @@ function renderHome(){
   <div class="card" onclick="${CL[cid]?`nav('${scr}','${cid}')`:`nav('clients')`}" style="cursor:pointer;"><div class="row"><div style="width:32px;height:32px;border-radius:8px;background:${bg};display:flex;align-items:center;justify-content:center;flex-shrink:0;"><i class="ti ${icon}" style="font-size:15px;color:${ic};"></i></div><div style="flex:1;min-width:0;"><div style="font-size:14px;color:#e0e0e0;">${name}</div><div style="font-size:12px;color:#999;">${sub}</div></div><i class="ti ti-chevron-right" aria-hidden="true" style="font-size:16px;color:#888;flex-shrink:0;"></i></div></div>`).join('')}
   <div class="sh" style="display:flex;align-items:center;justify-content:space-between;"><h2>This week</h2>${_apptsLive()?'<span style="display:inline-flex;align-items:center;gap:4px;font-size:10px;font-weight:700;color:#4ec49a;background:#0a2019;border:1px solid #1a4a38;padding:2px 8px;border-radius:20px;letter-spacing:.04em;"><span style="width:6px;height:6px;border-radius:50%;background:#4ec49a;"></span>LIVE</span>':''}</div>
   <div style="display:flex;gap:8px;padding:0 16px 16px;">
-    ${(()=>{const cw=new Set(_apptsThisWeek().map(a=>a.client)).size;const aw=_apptsThisWeek().length;return [['Clients',cw,'#f0f0f0','ti-users','clients'],['Appointments',aw,'#4ec49a','ti-calendar','calendar']].map(([l,v,c,icon,scr])=>`<button onclick="nav('${scr}')" aria-label="${l} this week: ${v}. View ${l.toLowerCase()}." style="flex:1;background:#161616;border:1px solid #232323;border-radius:10px;padding:10px 12px;cursor:pointer;font-family:inherit;text-align:left;"><div style="display:flex;align-items:center;gap:4px;margin-bottom:4px;"><i class="ti ${icon}" style="font-size:11px;color:#999;"></i><span style="font-size:11px;color:#999;">${l}</span><i class="ti ti-chevron-right" aria-hidden="true" style="font-size:12px;color:#666;margin-left:auto;"></i></div><div style="font-size:18px;font-weight:500;color:${c};">${v}</div></button>`).join('');})()}
+    ${(()=>{const cw=new Set(_apptsThisWeek().map(a=>a.client)).size;const aw=_apptsThisWeek().length;return [['Clients',cw,'#f0f0f0','ti-users','week-clients'],['Appointments',aw,'#4ec49a','ti-calendar','week-appts']].map(([l,v,c,icon,scr])=>`<button onclick="nav('${scr}')" aria-label="${l} this week: ${v}. View ${l.toLowerCase()}." style="flex:1;background:#161616;border:1px solid #232323;border-radius:10px;padding:10px 12px;cursor:pointer;font-family:inherit;text-align:left;"><div style="display:flex;align-items:center;gap:4px;margin-bottom:4px;"><i class="ti ${icon}" style="font-size:11px;color:#999;"></i><span style="font-size:11px;color:#999;">${l}</span><i class="ti ti-chevron-right" aria-hidden="true" style="font-size:12px;color:#666;margin-left:auto;"></i></div><div style="font-size:18px;font-weight:500;color:${c};">${v}</div></button>`).join('');})()}
   </div>`;
   setTimeout(()=>{try{document.querySelectorAll('.swipe-card').forEach((el,i)=>{if(typeof initSwipe==='function')initSwipe(el,i);});}catch(e){}try{_loadSquareAppts();}catch(e){}},0);
 }
@@ -5504,20 +5509,106 @@ function renderInventory(){try{_applyImportedProducts();}catch(e){}
   setNav('pro');
   document.getElementById('tt').textContent='Inventory';
   S.innerHTML=`
-  <div style="padding:12px 16px 0;display:flex;align-items:center;justify-content:flex-end;"><button style="background:var(--accent);color:var(--accent-ink);border:none;border-radius:8px;padding:7px 12px;font-size:12px;font-weight:500;cursor:pointer;">+ Add item</button></div>
+  <div style="padding:12px 16px 0;display:flex;align-items:center;justify-content:flex-end;"><button onclick="nav('add-inventory-item')" style="background:var(--accent);color:var(--accent-ink);border:none;border-radius:8px;padding:7px 12px;font-size:12px;font-weight:500;cursor:pointer;">+ Add item</button></div>
   <div style="display:flex;gap:8px;padding:10px 16px;">${[['Total',inv.length,'#f0f0f0'],['Low',inv.filter(i=>i.qty<=i.low&&i.qty>0).length,'var(--accent)'],['Out',inv.filter(i=>i.qty===0).length,'#e87070']].map(([l,v,c])=>`<div style="flex:1;background:#161616;border-radius:10px;padding:9px 12px;"><div style="font-size:20px;font-weight:500;color:${c};">${v}</div><div style="font-size:11px;color:#999;">${l}</div></div>`).join('')}</div>
   ${_searchBar('Search inventory by item or brand…','.inv-card','inv-noresults')}
-  ${inv.map((item,i)=>{const pct=Math.min(100,Math.round(item.qty/item.max*100));const col=item.qty===0?'#e87070':item.qty<=item.low?'var(--accent)':'#4ec49a';const lbl=item.qty===0?'Out of stock':item.qty<=item.low?`Low · ${item.qty} left`:`In stock · ${item.qty}`;
+  ${inv.length===0?emptyState({icon:'ti-package',title:'No items yet',body:'Add the products and supplies you keep on hand to track stock and reorder easily.',action:'Add first item',screen:'add-inventory-item'}):inv.map((item,i)=>{const pct=Math.min(100,Math.round(item.qty/item.max*100));const col=item.qty===0?'#e87070':item.qty<=item.low?'var(--accent)':'#4ec49a';const lbl=item.qty===0?'Out of stock':item.qty<=item.low?`Low · ${item.qty} left`:`In stock · ${item.qty}`;
+  const vend=(item.vendorIdx!=null&&vendors[item.vendorIdx])?vendors[item.vendorIdx]:null;
+  const reorderUrl=(item.reorderUrl||'').trim()||(vend&&vend.portal?('https://'+String(vend.portal).replace(/^https?:\/\//,'')):'');
+  const reorderFrom=vend?vend.name:(item.vendorName||'').trim();
   return`<div class="inv-card" data-search="${((item.name||'')+' '+(item.brand||'')).toLowerCase().replace(/[^a-z0-9 ]/g,' ')}" style="background:#1a1a1a;border:1px solid #2a2a2a;border-radius:12px;margin:0 16px 10px;padding:11px 13px;">
-    <div class="row" style="margin-bottom:8px;"><div style="font-size:20px;">${item.icon}</div><div style="flex:1;"><div style="font-size:13px;font-weight:500;color:#e0e0e0;">${item.name}</div><div style="font-size:11px;color:#999;">${item.brand}</div></div><span class="bdg" style="background:${item.qty===0?'#2a0f0f':item.qty<=item.low?'var(--accent-tint)':'#0a2019'};color:${col};font-size:12px;">${lbl}</span></div>
-    <div style="display:flex;align-items:center;gap:10px;">
-      <button onclick="inv[${i}].qty=Math.max(0,inv[${i}].qty-1);renderInventory()" style="width:26px;height:26px;border-radius:50%;border:1px solid #2a2a2a;background:#161616;color:#888;cursor:pointer;font-size:15px;display:flex;align-items:center;justify-content:center;">−</button>
+    <div class="row" style="margin-bottom:8px;">
+      <div style="font-size:20px;">${item.icon||'📦'}</div>
+      <div style="flex:1;min-width:0;"><div style="font-size:13px;font-weight:500;color:#e0e0e0;">${item.name}</div><div style="font-size:11px;color:#999;">${item.brand||''}</div></div>
+      <span class="bdg" style="background:${item.qty===0?'#2a0f0f':item.qty<=item.low?'var(--accent-tint)':'#0a2019'};color:${col};font-size:12px;">${lbl}</span>
+      <button onclick="nav('add-inventory-item',${i})" aria-label="Edit ${item.name}" style="border:none;background:none;color:#888;cursor:pointer;padding:4px;margin-left:2px;"><i class="ti ti-pencil" style="font-size:14px;"></i></button>
+    </div>
+    <div style="display:flex;align-items:center;gap:10px;margin-bottom:${reorderFrom||reorderUrl?'10px':'0'};">
+      <button onclick="inv[${i}].qty=Math.max(0,inv[${i}].qty-1);saveInv();renderInventory()" style="width:26px;height:26px;border-radius:50%;border:1px solid #2a2a2a;background:#161616;color:#888;cursor:pointer;font-size:15px;display:flex;align-items:center;justify-content:center;">−</button>
       <span style="font-size:14px;font-weight:500;color:#e0e0e0;min-width:20px;text-align:center;">${item.qty}</span>
-      <button onclick="inv[${i}].qty+=1;renderInventory()" style="width:26px;height:26px;border-radius:50%;border:1px solid #2a2a2a;background:#161616;color:#888;cursor:pointer;font-size:15px;display:flex;align-items:center;justify-content:center;">+</button>
+      <button onclick="inv[${i}].qty+=1;saveInv();renderInventory()" style="width:26px;height:26px;border-radius:50%;border:1px solid #2a2a2a;background:#161616;color:#888;cursor:pointer;font-size:15px;display:flex;align-items:center;justify-content:center;">+</button>
       <div style="flex:1;"><div style="height:5px;border-radius:3px;background:#111;overflow:hidden;"><div style="height:100%;width:${pct}%;background:${col};border-radius:3px;"></div></div></div>
     </div>
+    ${(reorderFrom||reorderUrl)?`<div style="border-top:1px solid #242424;padding-top:9px;display:flex;align-items:center;gap:8px;">
+      <div style="flex:1;min-width:0;font-size:11px;color:#888;"><i class="ti ti-truck-delivery" style="font-size:12px;"></i> ${reorderFrom?('Reorder from '+reorderFrom):'Reorder link on file'}</div>
+      ${reorderUrl?`<a href="${reorderUrl.match(/^https?:\/\//)?reorderUrl:'https://'+reorderUrl}" target="_blank" rel="noopener" style="background:var(--accent-tint);color:var(--accent);border:1px solid var(--accent);border-radius:7px;padding:5px 11px;font-size:11px;font-weight:700;text-decoration:none;white-space:nowrap;"><i class="ti ti-shopping-cart" style="font-size:11px;"></i> Reorder</a>`:(vend&&vend.phone?`<a href="tel:${vend.phone}" style="background:#161616;border:1px solid #2a2a2a;color:#cfe4d8;border-radius:7px;padding:5px 11px;font-size:11px;font-weight:600;text-decoration:none;white-space:nowrap;"><i class="ti ti-phone" style="font-size:11px;"></i> Call</a>`:'')}
+    </div>`:`<div style="border-top:1px solid #242424;padding-top:9px;"><button onclick="nav('add-inventory-item',${i})" style="border:none;background:none;color:var(--accent);font-size:11px;font-weight:600;cursor:pointer;padding:0;"><i class="ti ti-plus" style="font-size:11px;"></i> Add reorder info</button></div>`}
   </div>`}).join('')}
   ${_noRes('inv-noresults','No items match your search.')}`;
+}
+function deleteInventoryItem(i){
+  const item=inv[i];if(!item)return;
+  confirmModal({title:'Remove item',body:'Remove "'+(item.name||'this item')+'" from your inventory?',action:'Delete'},'()=>{inv.splice('+i+',1);saveInv();nav(\'inventory\')}');
+}
+function renderAddInventoryItem(i){
+  setNav('pro');
+  const editing=i!=null&&inv[i];
+  const item=editing?inv[i]:{name:'',brand:'',cat:'Retail',icon:'📦',qty:0,low:2,max:10,cost:'',vendorIdx:null,vendorName:'',reorderUrl:''};
+  document.getElementById('tt').textContent=editing?'Edit item':'Add item';
+  S.innerHTML=`
+  <div style="padding:14px 16px 4px;">
+    <span class="fl-lbl">Icon (emoji)</span>
+    <input class="fi" id="ii-icon" value="${(item.icon||'').replace(/"/g,'&quot;')}" placeholder="📦" style="width:70px;text-align:center;font-size:18px;margin-bottom:12px;">
+    <span class="fl-lbl">Item name</span>
+    <input class="fi" id="ii-name" value="${(item.name||'').replace(/"/g,'&quot;')}" placeholder="e.g. Vitamin C Serum" style="margin-bottom:12px;">
+    <span class="fl-lbl">Brand</span>
+    <input class="fi" id="ii-brand" value="${(item.brand||'').replace(/"/g,'&quot;')}" placeholder="e.g. SkinCeuticals" style="margin-bottom:12px;">
+    <span class="fl-lbl">Category</span>
+    <select class="fi" id="ii-cat" style="margin-bottom:12px;">
+      ${['Retail','Supplies'].map(c=>`<option value="${c}"${item.cat===c?' selected':''}>${c}</option>`).join('')}
+    </select>
+    <div style="display:flex;gap:10px;margin-bottom:12px;">
+      <div style="flex:1;"><span class="fl-lbl">On hand</span><input class="fi" id="ii-qty" type="number" min="0" value="${item.qty}"></div>
+      <div style="flex:1;"><span class="fl-lbl">Low at</span><input class="fi" id="ii-low" type="number" min="0" value="${item.low}"></div>
+      <div style="flex:1;"><span class="fl-lbl">Max / full</span><input class="fi" id="ii-max" type="number" min="1" value="${item.max}"></div>
+    </div>
+    <span class="fl-lbl">Cost per unit ($, optional)</span>
+    <input class="fi" id="ii-cost" type="number" min="0" step="0.01" value="${item.cost||''}" placeholder="0.00" style="margin-bottom:16px;">
+
+    <div class="sh" style="padding-left:0;"><h2>Where to reorder</h2></div>
+    <span class="fl-lbl">Pick one of your vendors (optional)</span>
+    <select class="fi" id="ii-vendor" onchange="_iiVendorPick(this.value)" style="margin-bottom:12px;">
+      <option value="">— None / use custom link below —</option>
+      ${vendors.map((v,vi)=>`<option value="${vi}"${item.vendorIdx===vi?' selected':''}>${v.name}</option>`).join('')}
+    </select>
+    <span class="fl-lbl">Or reorder from (name)</span>
+    <input class="fi" id="ii-vendorname" value="${(item.vendorName||'').replace(/"/g,'&quot;')}" placeholder="e.g. Amazon, local supplier" style="margin-bottom:12px;">
+    <span class="fl-lbl">Reorder link (optional)</span>
+    <input class="fi" id="ii-reorderurl" value="${(item.reorderUrl||'').replace(/"/g,'&quot;')}" placeholder="yourshop.com/reorder-link" style="margin-bottom:6px;">
+    <div style="font-size:11px;color:#888;line-height:1.5;margin-bottom:18px;">Picking a vendor auto-fills their ordering portal here \u2014 feel free to paste a more specific product link instead.</div>
+
+    <button onclick="saveInventoryItem(${editing?i:'null'})" class="btnp" style="border-radius:10px;margin-bottom:8px;"><i class="ti ti-check"></i> ${editing?'Save changes':'Add item'}</button>
+    ${editing?`<button onclick="deleteInventoryItem(${i})" style="width:100%;background:none;border:1px solid #3a1a1a;color:#a85a5a;border-radius:10px;padding:11px;font-size:14px;font-weight:500;cursor:pointer;font-family:inherit;"><i class="ti ti-trash"></i> Remove item</button>`:''}
+  </div>`;
+}
+function _iiVendorPick(vi){
+  const nameEl=document.getElementById('ii-vendorname');const urlEl=document.getElementById('ii-reorderurl');
+  if(vi===''||vi==null){return;}
+  const v=vendors[+vi];if(!v)return;
+  if(nameEl)nameEl.value=v.name;
+  if(urlEl&&v.portal)urlEl.value=v.portal;
+}
+function saveInventoryItem(i){
+  const g=id=>{const el=document.getElementById(id);return el?el.value.trim():'';};
+  const vendorSel=document.getElementById('ii-vendor');
+  const vendorIdx=(vendorSel&&vendorSel.value!=='')?parseInt(vendorSel.value,10):null;
+  const item={
+    name:g('ii-name')||'New item',
+    brand:g('ii-brand'),
+    cat:g('ii-cat')||'Retail',
+    icon:g('ii-icon')||'📦',
+    qty:Math.max(0,parseInt(g('ii-qty'),10)||0),
+    low:Math.max(0,parseInt(g('ii-low'),10)||0),
+    max:Math.max(1,parseInt(g('ii-max'),10)||1),
+    cost:parseFloat(g('ii-cost'))||0,
+    vendorIdx:(vendorIdx!=null&&vendors[vendorIdx])?vendorIdx:null,
+    vendorName:g('ii-vendorname'),
+    reorderUrl:g('ii-reorderurl'),
+  };
+  if(i!=null&&inv[i])inv[i]=item;else inv.push(item);
+  saveInv();
+  if(typeof proToast==='function')proToast(i!=null?'Item updated \u2713':'Item added \u2713');
+  nav('inventory');
 }
 function renderVendors(){
   setNav('pro');
@@ -8652,6 +8743,72 @@ function _apptsToday(){
   return _apptsData.filter(a=>a.day===26);
 }
 function _apptsRemainingToday(){if(_apptsLive()){const now=new Date();return _apptsToday().filter(a=>a.at>now).length;}return null;}
+function renderWeekAppts(){
+  setNav('home');
+  document.getElementById('tt').textContent="This week's appointments";
+  _loadSquareAppts();
+  const live=_apptsLive();
+  const week=_apptsThisWeek();
+  const grp={};
+  week.forEach(a=>{
+    const k=live?a.at.toDateString():('day'+a.day);
+    (grp[k]=grp[k]||[]).push(a);
+  });
+  const keys=live?Object.keys(grp).sort((x,y)=>new Date(x)-new Date(y)):Object.keys(grp);
+  S.innerHTML=`
+  <div style="padding:10px 16px 4px;">
+    <div id="page-heading" tabindex="-1" style="font-size:19px;font-weight:600;color:#f0f0f0;margin-bottom:2px;">This week's appointments</div>
+    <div style="font-size:13px;color:#999;">${week.length} appointment${week.length===1?'':'s'} this week</div>
+    ${live?`<button onclick="_loadSquareAppts(true);renderWeekAppts()" style="margin-top:8px;background:none;border:none;color:var(--accent);font-size:12px;font-weight:600;cursor:pointer;font-family:inherit;padding:0;"><i class="ti ti-refresh" style="font-size:12px;"></i> Refresh</button>`:''}
+  </div>
+  ${!week.length?`
+  <div style="margin:14px 16px;text-align:center;color:#999;font-size:13px;padding:30px 20px;background:#161616;border:1px solid #242424;border-radius:12px;">
+    <i class="ti ti-calendar-off" style="font-size:26px;color:#555;"></i>
+    <div style="margin-top:8px;">${live?'Nothing on the books this week.':'No appointments to show yet.'}</div>
+    ${live?'':'<div style="font-size:12px;color:#666;margin-top:4px;line-height:1.5;">Connect Square to sync your real schedule, or add appointments yourself.</div>'}
+  </div>`:keys.map(k=>{
+    const items=grp[k];
+    const dayLbl=live?new Date(k).toLocaleDateString('en-US',{weekday:'long',month:'short',day:'numeric'}):(()=>{const dn=['Sun','Mon','Tue','Wed','Thu','Fri','Sat'];const dd=[22,23,24,25,26,27,28];const i=dd.indexOf(items[0]&&items[0].day);return i>=0?dn[i]+' Jun '+items[0].day:'';})();
+    return `<div style="padding:8px 16px 4px;font-size:13px;font-weight:600;color:#cfcfcf;">${dayLbl}<span style="color:#777;font-weight:400;"> \u00b7 ${items.length}</span></div>`+
+      items.map(a=>{
+        const cid=live?_clientIdByName(a.client):null;
+        const timeLbl=live?a.at.toLocaleTimeString('en-US',{hour:'numeric',minute:'2-digit'}):(a.time||'');
+        return `<div ${cid?`onclick="nav('client','${cid}')" style="cursor:pointer;"`:''} style="margin:0 16px 8px;background:#1a1a1a;border:1px solid #2a2a2a;border-radius:12px;overflow:hidden;display:flex;">
+          <div style="width:4px;background:${a.ic||'var(--accent)'};flex-shrink:0;"></div>
+          <div style="padding:11px 13px;flex:1;display:flex;justify-content:space-between;align-items:flex-start;">
+            <div><div style="font-size:14px;font-weight:500;color:#e0e0e0;">${a.client}</div><div style="font-size:12px;color:#999;margin-top:2px;">${a.dur||a.durationMinutes||''} min</div></div>
+            <div style="display:flex;align-items:center;gap:6px;"><div style="font-size:13px;font-weight:500;color:#f0f0f0;">${timeLbl}</div>${cid?`<i class="ti ti-chevron-right" style="font-size:14px;color:#666;"></i>`:''}</div>
+          </div>
+        </div>`;
+      }).join('');
+  }).join('')}
+  <div style="height:20px;"></div>`;
+}
+function renderWeekClients(){
+  setNav('home');
+  document.getElementById('tt').textContent="This week's clients";
+  _loadSquareAppts();
+  const live=_apptsLive();
+  const week=_apptsThisWeek();
+  const seen=new Set();
+  const names=[];
+  week.forEach(a=>{if(!seen.has(a.client)){seen.add(a.client);names.push(a.client);}});
+  S.innerHTML=`
+  <div style="padding:10px 16px 4px;">
+    <div id="page-heading" tabindex="-1" style="font-size:19px;font-weight:600;color:#f0f0f0;margin-bottom:2px;">This week's clients</div>
+    <div style="font-size:13px;color:#999;">${names.length} client${names.length===1?'':'s'} with appointments this week</div>
+  </div>
+  ${!names.length?`
+  <div style="margin:14px 16px;text-align:center;color:#999;font-size:13px;padding:30px 20px;background:#161616;border:1px solid #242424;border-radius:12px;">
+    <i class="ti ti-users" style="font-size:26px;color:#555;"></i>
+    <div style="margin-top:8px;">${live?'No clients scheduled this week.':'No appointments to show yet.'}</div>
+  </div>`:names.map(name=>{
+    const cid=_clientIdByName(name);
+    const c=cid?CL[cid]:null;
+    return `<div ${cid?`onclick="nav('client','${cid}')" style="cursor:pointer;"`:''} class="card"><div class="row">${c?av(c):`<div style="width:40px;height:40px;border-radius:50%;background:#2a2a2a;display:flex;align-items:center;justify-content:center;font-size:13px;font-weight:600;color:#999;flex-shrink:0;">${initialsOf(name)}</div>`}<div style="flex:1;min-width:0;"><div style="font-size:15px;font-weight:500;color:#f0f0f0;">${name}</div>${!cid?'<div style="font-size:11px;color:#888;margin-top:1px;">No matching chart on file</div>':''}</div>${cid?'<i class="ti ti-chevron-right" style="font-size:16px;color:#888;"></i>':''}</div></div>`;
+  }).join('')}
+  <div style="height:20px;"></div>`;
+}
 function renderTodayAppts(){
   setNav('home');
   document.getElementById('tt').textContent="Today's appointments";
