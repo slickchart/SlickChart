@@ -1780,6 +1780,7 @@ function nav(screen,data){
     'checkin-settings':renderCheckinSettings,'checkin-preview':renderCheckinPreview,
     'form-builder':()=>renderFormBuilder(data),'form-preview':()=>renderFormPreview(data),'form-docs':()=>renderFormDocs(data),'sign-form':()=>renderSignOnDevice(data&&data.fid,data&&data.cid),
     bundles:renderBundles,'edit-bundle':()=>renderEditBundle(data),
+    help:renderHelp,'help-article':()=>renderHelpArticle(data),
     client:()=>renderClient(data),brief:()=>renderBrief(data),room:()=>renderRoom(data),
     'client-forms':()=>renderClientForms(data),
     'flagged-intakes':renderFlaggedIntakes,
@@ -6892,6 +6893,7 @@ function renderAccount(){
   <div style="padding:0 16px;margin-bottom:20px;"><div style="background:#1a1a1a;border:1px solid #2a2a2a;border-radius:12px;overflow:hidden;">
     ${[
       ['ti-plug','#1e1633','#a891ec','Integrations','Square, calendar & shop connections','integrations'],
+      ['ti-help-circle','#0d1e33','#5ba3e8','Help','Search how-tos & troubleshooting','help'],
       ['ti-package','#1e1633','#a891ec','Form & guide bundles','Group items to send together','bundles'],
       ['ti-stethoscope','#0a2019','#4ec49a','My profession','Note formats, forms & terminology','profession-settings'],
       ['ti-building','#0d1e33','#5ba3e8','Business & branding','Info, logo, colors & client-facing look','business-branding'],
@@ -9136,6 +9138,91 @@ function saveProtocol(){
 function deleteProtocol(id){const pr=protocols.find(x=>x.id===id);if(!pr)return;confirmModal({title:'Delete protocol',body:'Delete "'+(pr.name||'this protocol')+'"? This cannot be undone.',action:'Delete'},"()=>{const ix=protocols.findIndex(x=>x.id==='"+id+"');if(ix>=0)protocols.splice(ix,1);nav('protocols')}");}
 
 // ── MORE ──
+// ── Help center ──
+const helpArticles=[
+  // Getting started
+  {id:'gs-onboard',cat:'Getting started',title:'Replaying the setup walkthrough',kw:'onboarding setup walkthrough tour replay first steps',body:`If you want to see the guided setup again — profession, business info, availability — go to Settings → Your data → "Replay setup walkthrough". This won't erase anything you've already entered; it just re-opens the tour.`},
+  {id:'gs-sample',cat:'Getting started',title:'Removing the sample client & data',kw:'sample demo maya fake test data remove clear delete',body:`Your account starts with a sample client (Maya) so you can explore features safely. Once you're ready to go live, go to Settings → Your data → "Remove sample data". This clears the example client and activity but keeps everything real you've already added. You can restore it later from the same screen if you want it back.`},
+  {id:'gs-profession',cat:'Getting started',title:'Changing your profession or services',kw:'profession specialty esthetician massage hair barber change switch',body:`Your profession controls your note formats, forms, and terminology throughout the app. Go to Settings → My profession to change it. If you offer more than one type of service, you can select multiple professions there.`},
+
+  // Clients
+  {id:'cl-add',cat:'Clients',title:'Adding a new client',kw:'add new client create contact',body:`Tap Clients → the + button. You can fill in as much or as little as you know — name and one contact method (email or phone) is enough to get started. You can always fill in the rest later from their profile.`},
+  {id:'cl-invite',cat:'Clients',title:'Inviting a client to their own app',kw:'invite client app link send personal',body:`Open a client's profile and tap "Invite to the app". This creates their own private link where they can see summaries, aftercare, forms, and rebook. You can copy the link, text it, or email it directly from that screen. Nothing shows on their end until you actually send it.`},
+  {id:'cl-first-visit',cat:'Clients',title:'The first-visit package',kw:'first visit package bundle intake invite new client',body:`For a brand-new client, tap "Send first-visit package" on their profile. This invites them to the app and sends your intake form in one step. Their pre-visit check-in becomes available automatically once they're in — no separate step needed for that part.`},
+  {id:'cl-forms',cat:'Clients',title:'Sending forms and consents',kw:'form intake consent waiver send sign',body:`From a client's profile, open "Forms & documents" or use "Suggested for this visit" if one shows up based on their treatment. You can have them sign right on your device, or send it to their app / by link — either way it lands in their real account and you'll see their answers once submitted.`},
+  {id:'cl-bundles',cat:'Clients',title:'Bundling forms & guides together',kw:'bundle group forms guides together multiple send once',body:`If you often send the same group of items together (like an intake + waiver + aftercare guide), create a Bundle: Settings → Form & guide bundles → New bundle. Pick what belongs in it, then send the whole bundle to any client in one tap, to their app or by link.`},
+  {id:'cl-checkin',cat:'Clients',title:'Pre-visit check-ins',kw:'checkin check-in pre-visit reminder text',body:`Once a client is invited, a pre-visit check-in is automatically available in their app before every appointment — no need to send it manually. "Send pre-visit check-in" on their profile just sends a text reminder pointing them to it. You can also turn on auto-send reminders in Settings → Notifications.`},
+
+  // Sessions & notes
+  {id:'ses-start',cat:'Sessions & notes',title:'Starting a session',kw:'start session room protocol begin appointment',body:`Tap "Start Session" from a client's profile or the home screen. This opens the session room with their vitals, any allergy alerts, a protocol checklist for the treatment, before/after photo capture, and a shortcut to session notes — everything you need in one place during the visit.`},
+  {id:'ses-photos',cat:'Sessions & notes',title:'Before & after photos',kw:'photo before after capture progress compare',body:`In the session room, tap "Take before" and "Take after" to capture progress photos. They're automatically timestamped so they line up correctly for progress comparisons later, viewable from the client's Photos tab.`},
+  {id:'ses-notes',cat:'Sessions & notes',title:'Writing treatment notes',kw:'notes write treatment date change edit soap',body:`Open Notes from a session or client profile, then "Edit" to write your note. The session date is editable — useful if you're catching up on notes from a previous day. Notes save for real the moment you tap Save, and show up under that client's Previous sessions using the date you chose.`},
+  {id:'ses-voice',cat:'Sessions & notes',title:'AI voice notes',kw:'voice note dictate ai transcribe speak',body:`If AI features are turned on (Settings → AI features), you can dictate your notes instead of typing — tap "Start voice note" from the Notes screen and it transcribes into your note format automatically.`},
+  {id:'ses-summary',cat:'Sessions & notes',title:'Sending a session summary',kw:'summary send client review end session',body:`At the end of a session, tap "End session & review summary" to preview exactly what your client will see — their note, aftercare reminders, and any product recommendations — before sending it to their app.`},
+
+  // Branding
+  {id:'br-logo',cat:'Branding',title:'Adding your logo, colors & tagline',kw:'logo brand color tagline welcome message upload',body:`Settings → Business & branding. Upload a logo (it's automatically resized, no need to compress it yourself), pick your brand colors, and set a tagline and welcome message. Everything here shows up on client-facing forms, check-ins, and their app the moment you save it.`},
+  {id:'br-sync',cat:'Branding',title:'Why branding might not show up on another device',kw:'branding not showing sync device phone computer refresh',body:`Branding is saved to your account, not just your browser, so it should follow you across devices automatically. If it's not appearing somewhere, try reopening the branding screen and tapping Save again to force a refresh, and make sure you're signed into the same account everywhere.`},
+
+  // Messaging
+  {id:'msg-inbox',cat:'Messaging & notifications',title:'Messaging your clients',kw:'message chat inbox reply client text',body:`Messages tab shows your full conversation history with each real client, and updates both ways — when you reply, they see it in their app, and their replies show up for you automatically.`},
+  {id:'msg-auto',cat:'Messaging & notifications',title:'Automated messages',kw:'automation automated message reminder schedule',body:`Messages → Automations lets you set up messages that go out automatically, like appointment reminders or check-in requests, on a schedule you choose.`},
+
+  // Billing & account
+  {id:'bill-plan',cat:'Billing & account',title:'Managing your subscription',kw:'billing subscription plan payment card cancel',body:`Settings → Security & billing shows your current plan and lets you open the billing portal to update your card, view invoices, or change your plan.`},
+  {id:'bill-sessions',cat:'Billing & account',title:'Active sessions & signing out other devices',kw:'active sessions device sign out logout security',body:`Settings → Security & billing → Active sessions shows every device currently signed into your account, with location and last-active time. You can revoke any session you don't recognize.`},
+
+  // Security
+  {id:'sec-2fa',cat:'Security',title:'Turning on two-factor authentication',kw:'2fa two factor authenticator security totp code',body:`Settings → Security & billing → Two-factor authentication. Scan the QR code with an authenticator app (Google Authenticator, Authy, 1Password, etc.) or enter the code manually, then confirm with the 6-digit code it shows you. Once on, you'll need a code from your app every time you log in.`},
+
+  // Integrations
+  {id:'int-square',cat:'Integrations',title:'Connecting Square',kw:'square connect integration sync pos calendar',body:`Settings → Integrations → Square → "Connect with Square". This links your own Square account for appointments and payments. If you hit a redirect error while connecting, it usually means the exact web address you're using isn't registered in Square's developer settings yet — that's a quick fix on Square's side.`},
+
+  // Troubleshooting
+  {id:'ts-link',cat:'Troubleshooting',title:'A client says their link isn\u2019t working',kw:'link broken not working error client cant open',body:`Ask them to try opening it again — links are unique to each client and don't expire. If it still fails, try resending it from their profile ("Invite to the app" or resend a form), which refreshes their access without changing their existing data.`},
+  {id:'ts-slow',cat:'Troubleshooting',title:'The app feels slow or something looks stuck',kw:'slow loading stuck frozen refresh not updating',body:`Try refreshing the page first. If something you saved doesn't seem to have taken effect, wait a few seconds and refresh again — saves sync in the background and can take a moment on a slow connection.`},
+];
+function _searchHelp(q){
+  q=(q||'').toLowerCase().trim();
+  if(!q)return helpArticles;
+  return helpArticles.filter(a=>a.title.toLowerCase().includes(q)||a.kw.toLowerCase().includes(q)||a.body.toLowerCase().includes(q));
+}
+function renderHelp(){
+  document.getElementById('tt').textContent='Help';
+  S.innerHTML=`
+  <div style="padding:12px 16px 8px;">
+    <div style="position:relative;"><i class="ti ti-search" aria-hidden="true" style="position:absolute;left:12px;top:50%;transform:translateY(-50%);font-size:16px;color:#777;"></i><input id="help-q" oninput="_renderHelpResults(this.value)" placeholder="Search for anything…" style="width:100%;background:#161616;border:1px solid #2a2a2a;border-radius:11px;padding:11px 12px 11px 36px;font-size:14px;color:#e0e0e0;font-family:inherit;box-sizing:border-box;outline:none;"></div>
+  </div>
+  <div id="help-results"></div>
+  <div style="margin:10px 16px 20px;background:#0d1e33;border:1px solid #1a3a5c;border-radius:10px;padding:11px 13px;font-size:12px;color:#5ba3e8;line-height:1.5;">Can't find what you need? Use "Share feedback" in More to ask us directly.</div>`;
+  _renderHelpResults('');
+}
+function _renderHelpResults(q){
+  const box=document.getElementById('help-results');if(!box)return;
+  const results=_searchHelp(q);
+  if(!results.length){ box.innerHTML=`<div style="margin:0 16px;padding:24px;text-align:center;color:#888;font-size:13px;">No results for "${(q||'').replace(/</g,'&lt;')}"</div>`; return; }
+  if(q&&q.trim()){
+    box.innerHTML=`<div style="padding:0 16px;">${results.map(a=>_helpRowHTML(a)).join('')}</div>`;
+    return;
+  }
+  const cats=[...new Set(helpArticles.map(a=>a.cat))];
+  box.innerHTML=cats.map(cat=>`<div class="sh"><h2>${cat}</h2></div><div style="padding:0 16px;">${helpArticles.filter(a=>a.cat===cat).map(a=>_helpRowHTML(a)).join('')}</div>`).join('');
+}
+function _helpRowHTML(a){
+  return `<div class="card" onclick="nav('help-article','${a.id}')"><div class="row"><div style="width:36px;height:36px;border-radius:9px;background:var(--accent-tint);display:flex;align-items:center;justify-content:center;flex-shrink:0;"><i class="ti ti-help-circle" style="font-size:17px;color:var(--accent);"></i></div><div style="flex:1;min-width:0;"><div style="font-size:13.5px;font-weight:500;color:#e0e0e0;">${a.title}</div></div><i class="ti ti-chevron-right" style="font-size:15px;color:#888;"></i></div></div>`;
+}
+function renderHelpArticle(id){
+  const a=helpArticles.find(x=>x.id===id);
+  if(!a){ nav('help'); return; }
+  document.getElementById('tt').textContent=a.cat;
+  S.innerHTML=`
+  <div style="padding:16px;">
+    <div style="font-size:11px;font-weight:700;color:var(--accent);text-transform:uppercase;letter-spacing:.05em;margin-bottom:6px;">${a.cat}</div>
+    <div id="page-heading" tabindex="-1" style="font-size:19px;font-weight:600;color:#f0f0f0;margin-bottom:12px;line-height:1.35;">${a.title}</div>
+    <div style="font-size:14px;color:#ccc;line-height:1.7;">${a.body}</div>
+  </div>
+  <div style="padding:0 16px 20px;"><button onclick="nav('help')" style="border:1px solid #2a2a2a;background:#1a1a1a;color:#e0e0e0;border-radius:9px;padding:10px 16px;font-size:13px;cursor:pointer;"><i class="ti ti-arrow-left" style="font-size:13px;"></i> Back to Help</button></div>`;
+}
 function renderMore(){
   if(typeof window!=='undefined'&&window._newsCanPost===undefined){try{_checkNews();}catch(e){}}
   setNav('more');
@@ -9145,6 +9232,7 @@ function renderMore(){
   ${(()=>{
     const isHairBarberOnly=(selectedProfessions.includes('hair')||selectedProfessions.includes('barber'))&&!selectedProfessions.includes('esty');
     const items=[
+      ['ti-help-circle','#0d1e33','#5ba3e8','Help','Search how-tos & troubleshooting','help',0],
       ['ti-heart-handshake','#0a2019','#4ec49a','Partners','Trusted referral network','partners',0],
       ['ti-school','#1e1633','#a891ec','Learn','Course builder & guides','learn',0],
     ];
