@@ -1095,7 +1095,7 @@ const Cloud={
     this.enabled=false;
     return this.enabled;
   },
-  async login(email,pw){const r=await fetch('/api/login',{method:'POST',headers:{'Content-Type':'application/json'},body:JSON.stringify({email,password:pw})});let j={};try{j=await r.json();}catch(e){}if(!r.ok)throw new Error((j&&j.error)||'Login failed');this.token=j.token;try{localStorage.setItem('sc_token',this.token);if(j.email)localStorage.setItem('sc_login_email',j.email);}catch(e){}return j;},
+  async login(email,pw,totpCode){const r=await fetch('/api/login',{method:'POST',headers:{'Content-Type':'application/json'},body:JSON.stringify({email,password:pw,totpCode})});let j={};try{j=await r.json();}catch(e){}if(!r.ok||!j.token){const err=new Error((j&&j.error)||(j&&j.requiresTotp?'Enter your authenticator code':'Login failed'));err.requiresTotp=!!(j&&j.requiresTotp);throw err;}this.token=j.token;try{localStorage.setItem('sc_token',this.token);if(j.email)localStorage.setItem('sc_login_email',j.email);localStorage.setItem('sc_totp_enabled',j.totpEnabled?'1':'0');}catch(e){}return j;},
   async signup(email,pw,name,optIn){const r=await fetch('/api/signup',{method:'POST',headers:{'Content-Type':'application/json'},body:JSON.stringify({email,password:pw,name,optIn:!!optIn})});let j={};try{j=await r.json();}catch(e){}if(!r.ok){const err=new Error((j&&j.error)||'Sign up failed');err.checkoutUrl=j&&j.checkoutUrl;throw err;}this.token=j.token;try{localStorage.setItem('sc_token',this.token);if(j.email)localStorage.setItem('sc_login_email',j.email);}catch(e){}return j;},
   async requestReset(email){try{await fetch('/api/request-reset',{method:'POST',headers:{'Content-Type':'application/json'},body:JSON.stringify({email})});}catch(e){}return true;},
   async resetPw(token,pw){const r=await fetch('/api/reset',{method:'POST',headers:{'Content-Type':'application/json'},body:JSON.stringify({token,password:pw})});let j={};try{j=await r.json();}catch(e){}if(!r.ok)throw new Error((j&&j.error)||'Reset failed');return true;},
@@ -1174,7 +1174,7 @@ function _setLang(l){if(!I18N[l])return;_lang=l;try{localStorage.setItem('sc_lan
   if(document.getElementById('login-screen')){renderLogin();return;}
   try{const cur=(typeof _navCur!=='undefined'&&_navCur&&_navCur.screen)||'account';nav(cur,(typeof _navCur!=='undefined'&&_navCur)?_navCur.data:undefined);}catch(e){}
 }
-let _loginMode='login';let _resetToken='';let _resetSentTo='';
+let _loginMode='login';let _resetToken='';let _resetSentTo='';let _pendingTotpEmail='';let _pendingTotpPw='';
 function _setLoginMode(m){_loginMode=m;renderLogin();}
 function _prefillEmail(){try{return localStorage.getItem('sc_login_email')||'';}catch(e){return '';}}
 function _handleAuthParams(){
@@ -1213,6 +1213,13 @@ function renderLogin(err){
       <div style="font-size:11px;color:#777;margin-bottom:6px;">${t('min8')}</div>
       <div id="login-err" role="alert" style="font-size:12px;color:#e87070;min-height:16px;margin-bottom:10px;">${err||''}</div>
       <button onclick="doResetPw()" style="${btn}">${t('set_password')}</button>`;
+  } else if(mode==='totp'){
+    inner=`<div style="font-size:20px;font-weight:600;color:#f0f0f0;margin-bottom:8px;">Two-factor code</div><div style="font-size:13px;color:#aaa;line-height:1.6;margin-bottom:20px;">Enter the 6-digit code from your authenticator app.</div>
+      <label class="fl-lbl" for="login-totp">Code</label>
+      <input id="login-totp" inputmode="numeric" autocomplete="one-time-code" maxlength="6" placeholder="000000" onkeydown="if(event.key==='Enter')doLoginTotp()" style="${ic};letter-spacing:.3em;font-size:20px;text-align:center;">
+      <div id="login-err" role="alert" style="font-size:12px;color:#e87070;min-height:16px;margin-bottom:10px;">${err||''}</div>
+      <button onclick="doLoginTotp()" style="${btn}">Verify &amp; log in</button>
+      <div style="text-align:center;margin-top:16px;font-size:13px;color:#888;"><button onclick="_setLoginMode('login')" style="background:none;border:none;color:var(--accent);font-weight:600;cursor:pointer;font-family:inherit;font-size:13px;">${t('back_login')}</button></div>`;
   } else {
     inner=`<div style="font-size:13px;color:#888;margin-bottom:22px;">${signup?t('sub_signup'):t('sub_login')}</div>
       ${signup?`<label class="fl-lbl" for="login-name">${t('name')}</label><input id="login-name" autocomplete="name" placeholder="${t('name_ph')}" style="${ic}">`:''}
@@ -1232,7 +1239,7 @@ function renderLogin(err){
     ${langPicker}
   </div>`;
   document.body.appendChild(ov);
-  setTimeout(()=>{const f=mode==='newpw'?'login-pw':(mode==='signup'?'login-name':((_prefillEmail()&&mode==='login')?'login-pw':'login-email'));const i=document.getElementById(f);if(i&&i.focus)try{i.focus();}catch(e){}},40);
+  setTimeout(()=>{const f=mode==='totp'?'login-totp':mode==='newpw'?'login-pw':(mode==='signup'?'login-name':((_prefillEmail()&&mode==='login')?'login-pw':'login-email'));const i=document.getElementById(f);if(i&&i.focus)try{i.focus();}catch(e){}},40);
 }
 function _loginVal(id){const el=document.getElementById(id);return el?el.value.trim():'';}
 function doLogin(){
@@ -1241,7 +1248,19 @@ function doLogin(){
   Cloud.login(email,pw).then(async()=>{
     try{const n=await Cloud.pull();if(n===0)await Cloud.pushAllLocal();_reloadAll();}catch(e){}
     const ov=document.getElementById('login-screen');if(ov)ov.remove();nav('home');
-  }).catch(e=>{const er=document.getElementById('login-err');if(er)er.textContent=(e&&e.message)||'Login failed';});
+  }).catch(e=>{
+    if(e&&e.requiresTotp){_pendingTotpEmail=email;_pendingTotpPw=pw;_setLoginMode('totp');return;}
+    const er=document.getElementById('login-err');if(er)er.textContent=(e&&e.message)||'Login failed';
+  });
+}
+function doLoginTotp(){
+  const code=(document.getElementById('login-totp')||{}).value||'';
+  const er=document.getElementById('login-err');if(er)er.textContent='';
+  Cloud.login(_pendingTotpEmail,_pendingTotpPw,code).then(async()=>{
+    try{const n=await Cloud.pull();if(n===0)await Cloud.pushAllLocal();_reloadAll();}catch(e){}
+    _pendingTotpEmail='';_pendingTotpPw='';
+    const ov=document.getElementById('login-screen');if(ov)ov.remove();nav('home');
+  }).catch(e=>{const er=document.getElementById('login-err');if(er)er.textContent=(e&&e.message)||'Invalid code';});
 }
 function doSignup(){
   const email=_loginVal('login-email');const pw=(document.getElementById('login-pw')||{}).value||'';const name=_loginVal('login-name');
@@ -1584,12 +1603,12 @@ let bizInfo={
 };
 
 let integrations=[
-  {name:'Square',icon:'ti-brand-square',bg:'#1a1a1a',ic:'#e0e0e0',desc:'Point of sale & appointments',connected:true},
-  {name:'Google Calendar',icon:'ti-calendar',bg:'#0d1e33',ic:'#5ba3e8',desc:'Two-way calendar sync',connected:true},
-  {name:'Shopify',icon:'ti-building-store',bg:'#0a2019',ic:'#4ec49a',desc:'Online store & retail',connected:false},
-  {name:'Instagram',icon:'ti-brand-instagram',bg:'#2a1a00',ic:'var(--accent)',desc:'Share before/after photos',connected:false},
-  {name:'Mailchimp',icon:'ti-mail',bg:'#2a0f0f',ic:'#e87070',desc:'Email marketing & newsletters',connected:false},
-  {name:'Zapier',icon:'ti-bolt',bg:'#1e1633',ic:'#a891ec',desc:'Connect to 5000+ apps',connected:false},
+  {name:'Square',icon:'ti-brand-square',bg:'#1a1a1a',ic:'#e0e0e0',desc:'Point of sale & appointments'},
+  {name:'Google Calendar',icon:'ti-calendar',bg:'#0d1e33',ic:'#5ba3e8',desc:'Two-way calendar sync'},
+  {name:'Shopify',icon:'ti-building-store',bg:'#0a2019',ic:'#4ec49a',desc:'Online store & retail'},
+  {name:'Instagram',icon:'ti-brand-instagram',bg:'#2a1a00',ic:'var(--accent)',desc:'Share before/after photos'},
+  {name:'Mailchimp',icon:'ti-mail',bg:'#2a0f0f',ic:'#e87070',desc:'Email marketing & newsletters'},
+  {name:'Zapier',icon:'ti-bolt',bg:'#1e1633',ic:'#a891ec',desc:'Connect to 5000+ apps'},
 ];
 
 function setNav(id){
@@ -7266,17 +7285,34 @@ function brandColorBlock(which,label,sub,presets){
     </div>
   </div>`;
 }
-function saveBranding(){saveBrandColors();applyTheme();proToast('Branding saved ✨');}
+function saveBranding(){
+  const tEl=document.getElementById('brand-tagline'),wEl=document.getElementById('brand-welcome');
+  if(tEl)brandColors.tagline=tEl.value.trim();
+  if(wEl)brandColors.welcomeMessage=wEl.value.trim();
+  saveBrandColors();applyTheme();proToast('Branding saved ✨');
+}
 
 function renderBranding(){
   document.getElementById('tt').textContent='Branding & logo';
   const p=brandColors.primary,s=brandColors.secondary;
+  const tagline=brandColors.tagline||'';
+  const welcome=brandColors.welcomeMessage||`Welcome! I'm so excited to see you. Please take a moment to fill this out so I can make your experience perfect. \u2728`;
   S.innerHTML=`
   <div style="padding:12px 16px 0;display:flex;align-items:center;justify-content:flex-end;"><button onclick="saveBranding()" style="border:none;background:var(--accent);border-radius:8px;padding:6px 14px;font-size:12px;color:var(--accent-ink);cursor:pointer;font-weight:600;">Save</button></div>
   <div style="margin:10px 16px;background:#0d1e33;border:1px solid #1a3a5c;border-radius:10px;padding:10px 12px;font-size:12px;color:#5ba3e8;line-height:1.5;">Your branding appears on all client-facing forms, check-ins, emails, and virtual consultations.</div>
   <div style="padding:0 16px;">
     <div style="font-size:13px;font-weight:500;color:#e0e0e0;margin-bottom:8px;">Business logo</div>
-    <div style="border:1.5px dashed var(--accent);border-radius:10px;padding:20px;display:flex;flex-direction:column;align-items:center;gap:6px;cursor:pointer;background:var(--accent-a08);margin-bottom:18px;"><i class="ti ti-cloud-upload" style="font-size:26px;color:var(--accent);"></i><span style="font-size:13px;font-weight:500;color:#e0e0e0;">Upload your logo</span><span style="font-size:11px;color:#999;">PNG or SVG · Transparent background</span></div>
+    ${brandColors.logoDataUrl?`
+    <div style="display:flex;align-items:center;gap:12px;margin-bottom:18px;">
+      <div style="width:64px;height:64px;border-radius:12px;background:#fff;border:1px solid #2a2a2a;display:flex;align-items:center;justify-content:center;overflow:hidden;flex-shrink:0;"><img src="${brandColors.logoDataUrl}" alt="Your logo" style="max-width:100%;max-height:100%;object-fit:contain;"></div>
+      <div style="display:flex;flex-direction:column;gap:6px;">
+        <button onclick="_uploadLogo()" style="border:1px solid #2a2a2a;background:#1a1a1a;color:#e0e0e0;border-radius:8px;padding:7px 12px;font-size:12px;cursor:pointer;">Replace</button>
+        <button onclick="_removeLogo()" style="border:none;background:none;color:#e87070;font-size:12px;cursor:pointer;text-align:left;">Remove logo</button>
+      </div>
+    </div>
+    `:`
+    <div onclick="_uploadLogo()" style="border:1.5px dashed var(--accent);border-radius:10px;padding:20px;display:flex;flex-direction:column;align-items:center;gap:6px;cursor:pointer;background:var(--accent-a08);margin-bottom:18px;"><i class="ti ti-cloud-upload" style="font-size:26px;color:var(--accent);"></i><span style="font-size:13px;font-weight:500;color:#e0e0e0;">Upload your logo</span><span style="font-size:11px;color:#999;">PNG or SVG \u00b7 Transparent background</span></div>
+    `}
 
     <div style="display:flex;align-items:baseline;justify-content:space-between;margin-bottom:9px;">
       <span class="fl-lbl" style="margin:0;">Brand colors</span>
@@ -7285,15 +7321,18 @@ function renderBranding(){
     ${brandColorBlock('primary','Primary','Buttons, highlights & key actions',['#C8A882','#2C5F8A','#3B6D11','#993556','#534AB7','#085041','#1A1A1A','#854F0B'])}
     ${brandColorBlock('secondary','Secondary','Accents, tags & links',['#2C5F8A','#C8A882','#5BA3E8','#A891EC','#4EC49A','#E87070','#9A8A7E','#D98A3D'])}
 
+    <span class="fl-lbl">Business tagline</span><input id="brand-tagline" aria-label="Business tagline" class="fi" value="${String(tagline).replace(/"/g,'&quot;')}" placeholder="Where your skin comes first." oninput="_updateBrandPreview()" style="margin-bottom:12px;">
+    <span class="fl-lbl">Welcome message</span>
+    <textarea id="brand-welcome" class="fi" aria-label="Welcome message" oninput="_updateBrandPreview()" style="height:72px;resize:none;line-height:1.5;margin-bottom:12px;">${welcome}</textarea>
+
     <div style="font-size:13px;font-weight:500;color:#e0e0e0;margin:14px 0 8px;">Live preview</div>
     <div style="border-radius:14px;overflow:hidden;margin-bottom:18px;border:1px solid #2a2a2a;box-shadow:0 6px 20px rgba(0,0,0,.25);">
       <div id="bc-prev-bar" style="height:56px;background:linear-gradient(135deg,${p},${s});display:flex;align-items:center;gap:9px;padding:0 14px;">
-        <div style="width:32px;height:32px;border-radius:9px;background:rgba(255,255,255,.92);display:flex;align-items:center;justify-content:center;flex-shrink:0;"><i class="ti ti-sparkles" id="bc-prev-logo" style="font-size:17px;color:${p};"></i></div>
-        <span style="font-size:15px;font-weight:700;color:#fff;text-shadow:0 1px 2px rgba(0,0,0,.15);">${bizInfo.name}</span>
+        <div style="width:32px;height:32px;border-radius:9px;background:rgba(255,255,255,.92);display:flex;align-items:center;justify-content:center;flex-shrink:0;overflow:hidden;">${brandColors.logoDataUrl?`<img src="${brandColors.logoDataUrl}" alt="" style="max-width:100%;max-height:100%;object-fit:contain;">`:`<i class="ti ti-sparkles" id="bc-prev-logo" style="font-size:17px;color:${p};"></i>`}</div>
+        <div style="min-width:0;"><span style="font-size:15px;font-weight:700;color:#fff;text-shadow:0 1px 2px rgba(0,0,0,.15);display:block;white-space:nowrap;overflow:hidden;text-overflow:ellipsis;">${bizInfo.name}</span>${tagline?`<span id="bc-prev-tagline" style="font-size:10.5px;color:rgba(255,255,255,.85);display:block;white-space:nowrap;overflow:hidden;text-overflow:ellipsis;">${tagline}</span>`:'<span id="bc-prev-tagline" style="display:none;"></span>'}</div>
       </div>
       <div style="padding:15px 14px;background:#fff;">
-        <div style="font-size:14px;color:#1a1a1a;font-weight:700;margin-bottom:3px;">Welcome back, Maya 👋</div>
-        <div style="font-size:12px;color:#888;margin-bottom:13px;">This is how clients see your brand.</div>
+        <div id="bc-prev-welcome" style="font-size:13px;color:#444;line-height:1.5;margin-bottom:13px;">${welcome}</div>
         <div style="display:flex;align-items:center;gap:9px;">
           <button id="bc-prev-btn" style="background:${p};color:#fff;border:none;border-radius:9px;padding:10px 16px;font-size:13px;font-weight:600;cursor:default;">Book appointment</button>
           <span id="bc-prev-tag" style="background:${_hexA(s,0.16)};color:${s};font-size:12px;font-weight:700;padding:6px 12px;border-radius:20px;">New</span>
@@ -7301,14 +7340,25 @@ function renderBranding(){
         <div style="margin-top:11px;font-size:12px;"><span style="color:#888;">Already a member? </span><a id="bc-prev-link" style="color:${s};font-weight:700;text-decoration:none;cursor:pointer;">Sign in</a></div>
       </div>
     </div>
-
-    <span class="fl-lbl">Business tagline</span><input aria-label="Business tagline" class="fi" value="Where your skin comes first." style="margin-bottom:12px;">
-    <span class="fl-lbl">Welcome message</span>
-    <textarea class="fi" aria-label="Welcome message" style="height:72px;resize:none;line-height:1.5;margin-bottom:12px;">Welcome! I'm so excited to see you. Please take a moment to fill this out so I can make your experience perfect. ✨</textarea>
     <span class="fl-lbl" style="margin-bottom:8px;display:block;">Show branding on</span>
-    <div style="background:#1a1a1a;border:1px solid #2a2a2a;border-radius:10px;margin-bottom:16px;">${['Client intake forms','Consent & waiver forms','Pre-visit check-in','Virtual consultation reviews','Partner intro emails'].map(lbl=>`<div style="display:flex;justify-content:space-between;align-items:center;padding:8px 14px;border-bottom:1px solid #1e1e1e;"><span style="font-size:13px;color:#e0e0e0;">${lbl}</span><button class="tog on" role="switch" aria-checked="true" disabled><span class="tok" aria-hidden="true"></span></button></div>`).join('')}</div>
+    <div style="background:#1a1a1a;border:1px solid #2a2a2a;border-radius:10px;margin-bottom:8px;">${['Client intake forms','Consent & waiver forms','Pre-visit check-in','Virtual consultation reviews','Partner intro emails'].map(lbl=>`<div style="display:flex;justify-content:space-between;align-items:center;padding:8px 14px;border-bottom:1px solid #1e1e1e;"><span style="font-size:13px;color:#e0e0e0;">${lbl}</span><i class="ti ti-check" style="color:#4ec49a;font-size:15px;"></i></div>`).join('')}</div>
+    <div style="font-size:11px;color:#777;padding:0 2px 16px;">Your branding always shows everywhere a client sees you \u2014 this isn't a per-item toggle yet.</div>
     <button class="btnp" style="border-radius:9px;margin-bottom:22px;" onclick="saveBranding()"><i class="ti ti-check"></i> Save branding</button>
   </div>`;
+}
+function _updateBrandPreview(){
+  const tag=(document.getElementById('brand-tagline')||{}).value||'';
+  const wel=(document.getElementById('brand-welcome')||{}).value||'';
+  const tEl=document.getElementById('bc-prev-tagline');if(tEl){tEl.style.display=tag?'block':'none';tEl.textContent=tag;}
+  const wEl=document.getElementById('bc-prev-welcome');if(wEl)wEl.textContent=wel;
+}
+function _uploadLogo(){
+  _pickLogo(dataUrl=>{brandColors.logoDataUrl=dataUrl;saveBrandColors();renderBranding();proToast('Logo added \u2014 tap Save branding to publish it');});
+}
+function _removeLogo(){
+  confirmModal({title:'Remove your logo?',body:'Clients will see your initials instead until you upload a new one.',action:'Remove'},()=>{
+    delete brandColors.logoDataUrl;saveBrandColors();renderBranding();
+  });
 }
 // ── BUSINESS HOURS (per-day, drives client booking availability) ──
 const DAY_DEFS=[['mon','Monday'],['tue','Tuesday'],['wed','Wednesday'],['thu','Thursday'],['fri','Friday'],['sat','Saturday'],['sun','Sunday']];
@@ -7380,6 +7430,7 @@ function renderAccountBilling(){
   document.getElementById('tt').textContent='Security & billing';
   S.innerHTML=_sec+'<div class="sh" style="margin-top:10px;padding-top:8px;border-top:1px solid #222;"><h2>Subscription & billing</h2></div>'+_bill;
   _loadSessions(); // re-run against the final DOM — same reason as below
+  _loadTotpState(); // re-run against the final DOM — same reason as below
   _loadBillingStatus(); // re-run against the final DOM — the call inside renderSubscriptionBilling() above targeted a node that just got replaced
 }
 
@@ -8351,34 +8402,36 @@ function renderIntegrations(){
   
   <div style="margin:10px 16px;background:#0d1e33;border:1px solid #1a3a5c;border-radius:10px;padding:10px 12px;font-size:12px;color:#5ba3e8;line-height:1.5;">Connect your tools to keep everything in sync — appointments, payments, and marketing in one place.</div>
   <div onclick="nav('data-setup')" style="margin:0 16px 12px;background:linear-gradient(135deg,#0a2019,#0d2a1e);border:1px solid #1c4030;border-radius:12px;padding:13px 14px;display:flex;align-items:center;gap:12px;cursor:pointer;"><div style="width:44px;height:44px;border-radius:10px;background:#0f3324;display:flex;align-items:center;justify-content:center;flex-shrink:0;"><i class="ti ti-upload" style="font-size:22px;color:#4ec49a;"></i></div><div style="flex:1;min-width:0;"><div style="font-size:14px;font-weight:600;color:#e0e0e0;">Get set up / bring your data in</div><div style="font-size:12px;color:#9fbfae;margin-top:1px;">Import clients &amp; products, choose how you book</div></div><i class="ti ti-chevron-right" style="font-size:16px;color:#888;flex-shrink:0;"></i></div>
-  <div onclick="nav('square-sync')" style="margin:0 16px 12px;background:linear-gradient(135deg,#161616,#1c1c1c);border:1px solid #2a2a2a;border-radius:12px;padding:13px 14px;display:flex;align-items:center;gap:12px;cursor:pointer;">
-    <div style="width:44px;height:44px;border-radius:10px;background:#fff;display:flex;align-items:center;justify-content:center;flex-shrink:0;"><i class="ti ti-brand-square" style="font-size:22px;color:#000;"></i></div>
-    <div style="flex:1;min-width:0;"><div style="font-size:14px;font-weight:600;color:#e0e0e0;">Square — live sync</div><div style="font-size:12px;color:#999;margin-top:1px;">Pull in your real clients &amp; upcoming appointments</div></div>
-    <span style="font-size:11px;font-weight:700;color:var(--accent-ink);background:var(--accent);padding:5px 11px;border-radius:20px;flex-shrink:0;">Open</span>
-  </div>
   <div class="sh"><h2>Connected</h2></div>
-  ${integrations.filter(i=>i.connected).map((intg,idx)=>`
-  <div style="background:#1a1a1a;border:1px solid #2a2a2a;border-radius:12px;margin:0 16px 10px;overflow:hidden;">
+  <div id="integ-square-card" style="background:#1a1a1a;border:1px solid #2a2a2a;border-radius:12px;margin:0 16px 10px;overflow:hidden;">
+    <div style="padding:12px 14px;display:flex;align-items:center;gap:12px;">
+      <div style="width:44px;height:44px;border-radius:10px;background:#fff;display:flex;align-items:center;justify-content:center;flex-shrink:0;"><i class="ti ti-brand-square" style="font-size:22px;color:#000;"></i></div>
+      <div style="flex:1;min-width:0;"><div style="font-size:14px;font-weight:500;color:#e0e0e0;">Square</div><div style="font-size:12px;color:#999;">Point of sale &amp; appointments</div></div>
+      <span id="integ-square-badge" style="font-size:11px;color:#888;">Checking\u2026</span>
+    </div>
+    <div style="border-top:1px solid #1e1e1e;padding:8px 14px;">
+      <button onclick="nav('square-sync')" style="border:none;background:none;font-size:12px;color:var(--accent);cursor:pointer;"><i class="ti ti-settings" style="font-size:12px;"></i> Manage</button>
+    </div>
+  </div>
+  <div class="sh"><h2>Coming soon</h2></div>
+  ${integrations.filter(i=>i.name!=='Square').map(intg=>`
+  <div style="background:#1a1a1a;border:1px solid #2a2a2a;border-radius:12px;margin:0 16px 10px;overflow:hidden;opacity:.7;">
     <div style="padding:12px 14px;display:flex;align-items:center;gap:12px;">
       <div style="width:44px;height:44px;border-radius:10px;background:${intg.bg};display:flex;align-items:center;justify-content:center;"><i class="ti ${intg.icon}" style="font-size:20px;color:${intg.ic};"></i></div>
       <div style="flex:1;"><div style="font-size:14px;font-weight:500;color:#e0e0e0;">${intg.name}</div><div style="font-size:12px;color:#999;">${intg.desc}</div></div>
-      <span class="bdg bg" style="font-size:12px;">Connected</span>
-    </div>
-    <div style="border-top:1px solid #1e1e1e;padding:8px 14px;display:flex;gap:10px;">
-      <button style="border:none;background:none;font-size:12px;color:#aaa;cursor:pointer;"><i class="ti ti-settings" style="font-size:12px;"></i> Settings</button>
-      <button onclick="integrations[${integrations.indexOf(intg)}].connected=false;renderIntegrations()" style="border:none;background:none;font-size:12px;color:#e87070;cursor:pointer;"><i class="ti ti-unlink" style="font-size:12px;"></i> Disconnect</button>
-    </div>
-  </div>`).join('')}
-  <div class="sh"><h2>Available</h2></div>
-  ${integrations.filter(i=>!i.connected).map((intg,idx)=>`
-  <div style="background:#1a1a1a;border:1px solid #2a2a2a;border-radius:12px;margin:0 16px 10px;overflow:hidden;">
-    <div style="padding:12px 14px;display:flex;align-items:center;gap:12px;">
-      <div style="width:44px;height:44px;border-radius:10px;background:${intg.bg};display:flex;align-items:center;justify-content:center;"><i class="ti ${intg.icon}" style="font-size:20px;color:${intg.ic};"></i></div>
-      <div style="flex:1;"><div style="font-size:14px;font-weight:500;color:#e0e0e0;">${intg.name}</div><div style="font-size:12px;color:#999;">${intg.desc}</div></div>
-      <button onclick="integrations[${integrations.indexOf(intg)}].connected=true;renderIntegrations()" style="background:var(--accent);color:var(--accent-ink);border:none;border-radius:8px;padding:6px 12px;font-size:12px;font-weight:500;cursor:pointer;">Connect</button>
+      <span style="font-size:11px;font-weight:600;color:#999;background:#111;border:1px solid #2a2a2a;padding:5px 11px;border-radius:20px;flex-shrink:0;">Coming soon</span>
     </div>
   </div>`).join('')}
   <div style="height:16px;"></div>`;
+  _loadIntegSquareStatus();
+}
+async function _loadIntegSquareStatus(){
+  const badge=document.getElementById('integ-square-badge');if(!badge)return;
+  try{
+    const st=await _sqConnState();
+    if(st&&st.oauth){badge.textContent='Connected';badge.style.color='#4ec49a';}
+    else{badge.textContent='Not connected';badge.style.color='#999';}
+  }catch(e){badge.textContent='Not connected';}
 }
 
 // ── Square live sync (talks to /api/square/* on the same Vercel deployment) ──
@@ -9029,6 +9082,22 @@ function _pickImages(cb){
     const files=Array.from(inp.files||[]);if(!files.length)return;
     const out=[];let done=0;
     files.forEach((f,idx)=>_downscaleImg(f,src=>{out[idx]=src;if(++done===files.length)cb(out.filter(Boolean));}));
+  };
+  inp.click();
+}
+// Logos need their real format preserved (PNG/SVG transparency), unlike photos
+// which are fine getting flattened to JPEG — so this reads the file as-is
+// rather than re-encoding through a canvas.
+function _pickLogo(cb){
+  const inp=document.createElement('input');
+  inp.type='file';inp.accept='image/png,image/svg+xml,image/jpeg,image/webp';
+  inp.onchange=()=>{
+    const f=(inp.files||[])[0];if(!f)return;
+    if(f.size>3*1024*1024){proToast('Please choose an image under 3MB');return;}
+    const r=new FileReader();
+    r.onload=e=>cb(e.target.result);
+    r.onerror=()=>proToast('Could not read that file');
+    r.readAsDataURL(f);
   };
   inp.click();
 }
@@ -9766,22 +9835,93 @@ function renderPasswordSecurity(){
       <button class="btnp" style="border-radius:8px;">Update password</button>
     </div>
     <div class="sh" style="padding:0 0 7px;"><h2>Two-factor authentication</h2></div>
-    <div style="background:#1a1a1a;border:1px solid #2a2a2a;border-radius:12px;overflow:hidden;margin-bottom:16px;">
-      <div style="display:flex;align-items:center;gap:12px;padding:13px 14px;border-bottom:1px solid #1e1e1e;">
-        <div style="width:38px;height:38px;border-radius:9px;background:#0a2019;display:flex;align-items:center;justify-content:center;"><i class="ti ti-device-mobile" style="font-size:18px;color:#4ec49a;"></i></div>
-        <div style="flex:1;"><div style="font-size:13px;font-weight:500;color:#e0e0e0;">Authenticator app</div><div style="font-size:12px;color:#999;">Google Authenticator, Authy</div></div>
-        <button class="tog off" role="switch" aria-checked="false" disabled><span class="tok" aria-hidden="true"></span></button>
-      </div>
-      <div style="display:flex;align-items:center;gap:12px;padding:13px 14px;">
-        <div style="width:38px;height:38px;border-radius:9px;background:#0d1e33;display:flex;align-items:center;justify-content:center;"><i class="ti ti-message" style="font-size:18px;color:#5ba3e8;"></i></div>
-        <div style="flex:1;"><div style="font-size:13px;font-weight:500;color:#e0e0e0;">SMS verification</div><div style="font-size:12px;color:#999;">Text your phone</div></div>
-        <button class="tog on" role="switch" aria-checked="true" disabled><span class="tok" aria-hidden="true"></span></button>
-      </div>
-    </div>
+    <div id="totp-body" style="background:#1a1a1a;border:1px solid #2a2a2a;border-radius:12px;overflow:hidden;margin-bottom:8px;padding:14px;color:#888;font-size:12px;">Loading\u2026</div>
+    <div style="font-size:11px;color:#777;padding:0 2px 16px;">SMS verification isn't available yet \u2014 it needs a paid SMS provider connected first. Authenticator apps (Google Authenticator, Authy, 1Password, etc.) are free and fully supported above.</div>
+
     <div class="sh" style="padding:0 0 7px;"><h2>Active sessions</h2></div>
     <div id="sessions-body" style="background:#1a1a1a;border:1px solid #2a2a2a;border-radius:12px;overflow:hidden;margin-bottom:20px;padding:16px;text-align:center;color:#888;font-size:12px;">Loading\u2026</div>
   </div>`;
   _loadSessions();
+  _loadTotpState();
+}
+// ── Real two-factor authentication (TOTP) ──
+async function _loadTotpState(){
+  const box=document.getElementById('totp-body');if(!box)return;
+  let enabled=false;try{enabled=localStorage.getItem('sc_totp_enabled')==='1';}catch(e){}
+  box.innerHTML=enabled?`
+    <div style="display:flex;align-items:center;gap:12px;padding:13px 14px;">
+      <div style="width:38px;height:38px;border-radius:9px;background:#0a2019;display:flex;align-items:center;justify-content:center;"><i class="ti ti-shield-check" style="font-size:18px;color:#4ec49a;"></i></div>
+      <div style="flex:1;"><div style="font-size:13px;font-weight:500;color:#e0e0e0;">Authenticator app</div><div style="font-size:12px;color:#4ec49a;">Enabled \u2014 required at login</div></div>
+      <button onclick="_beginDisableTotp()" style="border:none;background:none;font-size:12px;color:#e87070;cursor:pointer;">Turn off</button>
+    </div>`:`
+    <div style="display:flex;align-items:center;gap:12px;padding:13px 14px;">
+      <div style="width:38px;height:38px;border-radius:9px;background:#0d1e33;display:flex;align-items:center;justify-content:center;"><i class="ti ti-device-mobile" style="font-size:18px;color:#5ba3e8;"></i></div>
+      <div style="flex:1;"><div style="font-size:13px;font-weight:500;color:#e0e0e0;">Authenticator app</div><div style="font-size:12px;color:#999;">Not enabled</div></div>
+      <button onclick="_beginTotpEnroll()" style="background:var(--accent);color:var(--accent-ink);border:none;border-radius:8px;padding:6px 12px;font-size:12px;font-weight:600;cursor:pointer;">Turn on</button>
+    </div>`;
+}
+async function _beginTotpEnroll(){
+  const tok=(typeof Cloud!=='undefined'&&Cloud&&Cloud.token)||'';
+  if(!tok)return;
+  const box=document.getElementById('totp-body');if(box)box.innerHTML='<div style="padding:14px;color:#888;font-size:12px;">Generating your code\u2026</div>';
+  try{
+    const r=await fetch('/api/totp-setup',{method:'POST',headers:{'Authorization':'Bearer '+tok}});
+    const j=await r.json();
+    if(!(j&&j.ok)){if(box)box.innerHTML='<div style="padding:14px;color:#e87070;font-size:12px;">'+((j&&j.error)||'Could not start setup')+'</div>';return;}
+    if(box)box.innerHTML=`
+      <div style="padding:16px;text-align:center;">
+        <div style="font-size:13px;color:#ccc;margin-bottom:12px;">Scan this with Google Authenticator, Authy, or 1Password:</div>
+        <img src="${j.qrUrl}" alt="QR code for two-factor setup" style="width:180px;height:180px;border-radius:10px;background:#fff;padding:8px;margin-bottom:12px;">
+        <div style="font-size:11px;color:#888;margin-bottom:4px;">Can't scan? Enter this code manually:</div>
+        <div style="font-size:13px;font-family:monospace;color:#e0e0e0;background:#111;border:1px solid #2a2a2a;border-radius:8px;padding:8px;margin-bottom:16px;word-break:break-all;">${j.secret}</div>
+        <div style="font-size:12px;color:#ccc;margin-bottom:8px;text-align:left;">Enter the 6-digit code your app shows now:</div>
+        <input id="totp-confirm-code" inputmode="numeric" maxlength="6" placeholder="000000" style="width:100%;background:#111;border:1px solid #2a2a2a;border-radius:8px;padding:10px;font-size:18px;letter-spacing:.3em;text-align:center;color:#f0f0f0;margin-bottom:10px;box-sizing:border-box;">
+        <div id="totp-confirm-err" style="font-size:12px;color:#e87070;min-height:16px;margin-bottom:8px;"></div>
+        <button onclick="_confirmTotpEnroll()" class="btnp" style="border-radius:8px;width:100%;margin-bottom:8px;">Confirm & turn on</button>
+        <button onclick="_loadTotpState()" style="border:none;background:none;color:#888;font-size:12px;cursor:pointer;">Cancel</button>
+      </div>`;
+  }catch(e){if(box)box.innerHTML='<div style="padding:14px;color:#e87070;font-size:12px;">Could not reach the server.</div>';}
+}
+async function _confirmTotpEnroll(){
+  const tok=(typeof Cloud!=='undefined'&&Cloud&&Cloud.token)||'';
+  const code=(document.getElementById('totp-confirm-code')||{}).value||'';
+  const err=document.getElementById('totp-confirm-err');
+  if(!tok||!code)return;
+  try{
+    const r=await fetch('/api/totp-verify',{method:'POST',headers:{'Content-Type':'application/json','Authorization':'Bearer '+tok},body:JSON.stringify({code})});
+    const j=await r.json();
+    if(j&&j.ok&&j.enabled){
+      try{localStorage.setItem('sc_totp_enabled','1');}catch(e){}
+      proToast('Two-factor authentication is on \u2713');
+      _loadTotpState();
+    }else if(err){err.textContent=(j&&j.error)||'Incorrect code';}
+  }catch(e){if(err)err.textContent='Could not reach the server';}
+}
+function _beginDisableTotp(){
+  const box=document.getElementById('totp-body');if(!box)return;
+  box.innerHTML=`
+    <div style="padding:16px;">
+      <div style="font-size:12px;color:#ccc;margin-bottom:8px;">Enter your current authenticator code to confirm turning this off:</div>
+      <input id="totp-disable-code" inputmode="numeric" maxlength="6" placeholder="000000" style="width:100%;background:#111;border:1px solid #2a2a2a;border-radius:8px;padding:10px;font-size:18px;letter-spacing:.3em;text-align:center;color:#f0f0f0;margin-bottom:10px;box-sizing:border-box;">
+      <div id="totp-disable-err" style="font-size:12px;color:#e87070;min-height:16px;margin-bottom:8px;"></div>
+      <button onclick="_confirmDisableTotp()" style="width:100%;background:#3a1414;color:#ff9b9b;border:none;border-radius:8px;padding:10px;font-size:13px;font-weight:600;cursor:pointer;margin-bottom:8px;">Turn off two-factor</button>
+      <button onclick="_loadTotpState()" style="border:none;background:none;color:#888;font-size:12px;cursor:pointer;width:100%;">Cancel</button>
+    </div>`;
+}
+async function _confirmDisableTotp(){
+  const tok=(typeof Cloud!=='undefined'&&Cloud&&Cloud.token)||'';
+  const code=(document.getElementById('totp-disable-code')||{}).value||'';
+  const err=document.getElementById('totp-disable-err');
+  if(!tok||!code)return;
+  try{
+    const r=await fetch('/api/totp-verify',{method:'POST',headers:{'Content-Type':'application/json','Authorization':'Bearer '+tok},body:JSON.stringify({code,disable:true})});
+    const j=await r.json();
+    if(j&&j.ok){
+      try{localStorage.setItem('sc_totp_enabled','0');}catch(e){}
+      proToast('Two-factor authentication is off');
+      _loadTotpState();
+    }else if(err){err.textContent=(j&&j.error)||'Incorrect code';}
+  }catch(e){if(err)err.textContent='Could not reach the server';}
 }
 function _fmtAgo(iso){
   if(!iso)return '';
