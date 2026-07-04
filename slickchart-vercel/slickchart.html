@@ -2868,13 +2868,14 @@ function renderProductRecs(clientId){
 }
 
 let _voiceRec=null,_voiceText='',_voiceClientId=null,_notesFrom='profile',_summaryFrom='room';
+let _voiceCommitted='',_voiceStopping=false;
 function _voiceKeyframes(){if(!document.getElementById('voice-kf')){const st=document.createElement('style');st.id='voice-kf';st.textContent='@keyframes vpulse{0%,100%{opacity:1;transform:scale(1)}50%{opacity:.35;transform:scale(.7)}}.voice-pulse{animation:vpulse 1s infinite;}';document.head.appendChild(st);}}
 function _voiceOverlay(html){
   let ov=document.getElementById('voice-overlay');
   if(!ov){ov=document.createElement('div');ov.id='voice-overlay';ov.style.cssText='position:fixed;inset:0;background:rgba(0,0,0,.72);z-index:9999;display:flex;align-items:center;justify-content:center;padding:24px 16px;box-sizing:border-box;';document.body.appendChild(ov);ov.addEventListener('click',e=>{if(e.target===ov)_voiceClose();});}
   ov.innerHTML=`<div style="width:100%;max-width:440px;background:#161616;border:1px solid #2a2a2a;border-radius:16px;padding:18px 18px 26px;box-sizing:border-box;">${html}</div>`;
 }
-function _voiceClose(){const ov=document.getElementById('voice-overlay');if(ov)ov.remove();try{if(_voiceRec)_voiceRec.stop();}catch(e){}_voiceRec=null;}
+function _voiceClose(){_voiceStopping=true;const ov=document.getElementById('voice-overlay');if(ov)ov.remove();try{if(_voiceRec)_voiceRec.stop();}catch(e){}_voiceRec=null;}
 function startVoiceNote(id){
   _voiceClientId=id;_voiceText='';_voiceKeyframes();
   const SR=window.SpeechRecognition||window.webkitSpeechRecognition;
@@ -2883,12 +2884,38 @@ function startVoiceNote(id){
     return;
   }
   const rec=new SR();rec.continuous=true;rec.interimResults=true;rec.lang='en-US';_voiceRec=rec;
-  rec.onresult=(e)=>{let fin='',interim='';for(let i=e.resultIndex;i<e.results.length;i++){const t=e.results[i][0].transcript;if(e.results[i].isFinal)fin+=t;else interim+=t;}if(fin)_voiceText=(_voiceText+' '+fin).trim();const el=document.getElementById('voice-transcript');if(el)el.textContent=((_voiceText+' '+interim).trim())||'Listening…';};
+  // Text that's already been finalized in PREVIOUS recognition sessions. Some mobile
+  // browsers (notably Android Chrome) auto-stop after a pause and fire onend; when we
+  // restart, e.results resets to empty. We bank finalized text here so a restart
+  // doesn't wipe what was already said.
+  _voiceCommitted='';
+  _voiceStopping=false;
+  // Rebuild the CURRENT session's transcript from scratch on every event rather than
+  // appending just the "new" piece. With continuous recognition, browsers re-fire
+  // onresult with the full growing results list, and appending incrementally makes
+  // finalized words pile up and repeat ("today today Ginger today Ginger skin…").
+  rec.onresult=(e)=>{
+    let fin='',interim='';
+    for(let i=0;i<e.results.length;i++){
+      const t=e.results[i][0].transcript;
+      if(e.results[i].isFinal)fin+=t+' ';else interim+=t;
+    }
+    _voiceText=(_voiceCommitted+' '+fin).trim();
+    const el=document.getElementById('voice-transcript');
+    if(el)el.textContent=((_voiceText+' '+interim).trim())||'Listening…';
+  };
+  // If the browser ends the session on its own but the user hasn't tapped Stop,
+  // bank what we have and seamlessly restart so long notes aren't cut off.
+  rec.onend=()=>{
+    _voiceCommitted=(_voiceText||'').trim();
+    if(!_voiceStopping&&_voiceRec===rec){ try{rec.start();}catch(e){} }
+  };
   rec.onerror=(e)=>{const el=document.getElementById('voice-transcript');if(el){if(e.error==='not-allowed'||e.error==='service-not-allowed')el.textContent='Microphone access was blocked. Allow the mic for this site in your browser, then try again.';else if(e.error==='no-speech')el.textContent='Nothing came through — try speaking again.';}};
   try{rec.start();}catch(e){}
   _voiceOverlay(`<div style="display:flex;align-items:center;gap:8px;margin-bottom:10px;"><span class="voice-pulse" style="width:11px;height:11px;border-radius:50%;background:#e05555;display:inline-block;"></span><span style="font-size:15px;font-weight:600;color:#f0f0f0;">Listening…</span></div><div style="font-size:12px;color:#999;margin-bottom:8px;line-height:1.5;">Speak your notes out loud. Tap <b>Stop</b> when you're done, then review before saving.</div><div id="voice-transcript" style="min-height:90px;max-height:210px;overflow-y:auto;background:#0f0f0f;border:1px solid #2a2a2a;border-radius:10px;padding:11px;font-size:14px;color:#ddd;line-height:1.6;">Listening…</div><div style="display:flex;gap:8px;margin-top:12px;"><button onclick="_voiceStop()" style="flex:1;background:#e05555;color:#fff;border:none;border-radius:10px;padding:12px;font-size:13px;font-weight:600;cursor:pointer;font-family:inherit;"><i class="ti ti-player-stop"></i> Stop</button><button onclick="_voiceClose()" style="background:#1a1a1a;border:1px solid #2a2a2a;color:#ccc;border-radius:10px;padding:12px 16px;font-size:13px;cursor:pointer;font-family:inherit;">Cancel</button></div>`);
 }
 function _voiceStop(){
+  _voiceStopping=true;
   try{if(_voiceRec)_voiceRec.stop();}catch(e){}_voiceRec=null;
   const txt=(_voiceText||'').trim().replace(/</g,'&lt;');
   _voiceOverlay(`<div style="font-size:15px;font-weight:600;color:#f0f0f0;margin-bottom:8px;">Review your note</div><textarea id="voice-ta" style="width:100%;height:140px;background:#0f0f0f;border:1px solid #2a2a2a;border-radius:10px;padding:11px;font-size:14px;color:#ddd;font-family:inherit;line-height:1.6;resize:none;outline:none;box-sizing:border-box;">${txt}</textarea><div style="display:flex;gap:8px;margin-top:12px;"><button onclick="_voiceSave(document.getElementById('voice-ta').value)" style="flex:1;background:var(--accent);color:var(--accent-ink);border:none;border-radius:10px;padding:12px;font-size:13px;font-weight:600;cursor:pointer;font-family:inherit;"><i class="ti ti-check"></i> Save to notes</button><button onclick="startVoiceNote(_voiceClientId)" style="background:#1a1a1a;border:1px solid #2a2a2a;color:#ccc;border-radius:10px;padding:12px 14px;font-size:13px;cursor:pointer;font-family:inherit;"><i class="ti ti-refresh"></i> Redo</button></div>`);
