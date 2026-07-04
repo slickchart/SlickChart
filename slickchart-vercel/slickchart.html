@@ -3090,6 +3090,34 @@ function _activeNotesText(){
   const s=(store&&store[activeNoteTemplate])||{};
   return (tmpl.sections||[]).map(sec=>{const v=String(s[sec.id]||'').trim();return (v&&v!=='No notes yet.')?v:'';}).filter(Boolean).join('<br>');
 }
+// Turn the provider's clinical notes into a gently cleaned-up summary the client
+// reads — WITHOUT AI and WITHOUT risking garbled text. It only removes obvious
+// leading section labels (e.g. "S — Subjective:", "Plan:") and expands a few
+// unambiguous whole-word abbreviations. It deliberately does NOT try to rewrite
+// sentences; for a fuller warm rewrite the provider uses "Make client-friendly"
+// (AI) or edits by hand.
+function _clientFriendlyFromNotes(id,c){
+  let raw=_activeNotesText().replace(/<br\s*\/?>/gi,'\n').replace(/&lt;/g,'<').trim();
+  if(!raw)return '';
+  const lines=raw.split(/\n+/).map(l=>l.trim()).filter(Boolean).map(line=>{
+    // Strip a leading SOAP/section label only when it's clearly a label followed by
+    // a separator, e.g. "S — Subjective:", "O:", "Plan -", "Homecare:".
+    let t=line
+      .replace(/^\s*[A-Z]\s*[—\-–]\s*(subjective|objective|assessment|plan)\b\s*[:\-–—]?\s*/i,'')
+      .replace(/^\s*[SOAP]\s*[:\-–—]\s+/,'')
+      .replace(/^\s*(subjective|objective|assessment|plan|formula|processing time|toner applied|result notes?|treatment performed|products used|homecare( plan)?|next visit notes?|skin observations?)\s*[:\-–—]\s+/i,'');
+    // Only expand standalone, unambiguous abbreviations (whole word, spaces around).
+    t=t.replace(/(^|\s)SPF(\s|$)/g,'$1sunscreen$2')
+       .replace(/(^|\s)Tx(\s|$)/gi,'$1treatment$2')
+       .replace(/(^|\s)Rx(\s|$)/gi,'$1prescription$2');
+    t=t.replace(/\s{2,}/g,' ').trim();
+    if(t&&!/[.!?]$/.test(t))t+='.';
+    return t?(t.charAt(0).toUpperCase()+t.slice(1)):'';
+  }).filter(Boolean);
+  if(!lines.length)return '';
+  const first=((c&&c.name)||'').split(' ')[0];
+  return (first?`Here's a recap of your visit, ${first}: `:'Here\u2019s a recap of your visit: ')+lines.join(' ');
+}
 // Short one-line preview of the current notes, for the session room's Notes step.
 function _noteSummaryPreview(){
   const t=_activeNotesText().replace(/<br>/g,' ').replace(/&lt;/g,'<').replace(/\s+/g,' ').trim();
@@ -3548,9 +3576,11 @@ function renderSessionSummary(id){
   const isHairBarberSummary=(selectedProfessions.includes('hair')||selectedProfessions.includes('barber'))&&!selectedProfessions.includes('esty')&&!selectedProfessions.includes('brow');
   const homecare=getClientHomecare(id);
   const _isDemoClient=(id==='maya'||id==='sophie'||id==='priya');
-  const nextDate=_isDemoClient?(id==='maya'?'Jul 17, 2026':id==='sophie'?'Jul 10, 2026':'Jul 8, 2026'):((c.nextVisit&&c.nextVisit!=='Not scheduled')?c.nextVisit:'');
-  const nextTime=_isDemoClient?(id==='maya'?'10:00 AM':id==='sophie'?'12:30 PM':'11:00 AM'):'';
+  const _nextAppt=(typeof _nextApptForClient==='function')?_nextApptForClient(id):null;
+  const nextDate=_isDemoClient?(id==='maya'?'Jul 17, 2026':id==='sophie'?'Jul 10, 2026':'Jul 8, 2026'):(_nextAppt?_nextAppt.dateLabel:'');
+  const nextTime=_isDemoClient?(id==='maya'?'10:00 AM':id==='sophie'?'12:30 PM':'11:00 AM'):(_nextAppt?_nextAppt.time:'');
   const notes=_activeNotesText();
+  const friendly=(typeof _clientFriendlyFromNotes==='function')?_clientFriendlyFromNotes(id,c):'';
   const improvement=_isDemoClient?(isHairBarberSummary
     ?(id==='maya'?'Colour is vibrant and the balayage placement looks perfect — great lift without brassiness.'
       :id==='sophie'?'Keratin treatment took beautifully. Frizz completely eliminated and shine is incredible.'
@@ -3558,18 +3588,21 @@ function renderSessionSummary(id){
     :(id==='maya'?'Hyperpigmentation is responding beautifully to the Vitamin C series — jawline is visibly clearer.'
       :id==='sophie'?'Barrier is strengthening. Redness reduced this session.'
       :'T-zone congestion improving. Pores looking tighter.')):'';
-  // What actually goes in the note: a manual edit wins; then a real client-friendly
-  // rewrite; then, for the demo clients only, the scripted improvement copy; then the
-  // provider's own notes; else a prompt to add one. We never fabricate content for a
-  // real client — if there are no notes, we say so plainly.
+  // What actually goes in the client's note: a manual edit wins; then, for demo
+  // clients, the scripted copy; then a client-FRIENDLY auto-rewrite of the real
+  // provider notes; else a prompt. We never dump raw clinical shorthand on the
+  // client, and we never fabricate content that wasn't in the notes.
   const _noteContent=(summaryNoteDraft[id]!=null)
     ? summaryNoteDraft[id]
     : (_isDemoClient
         ? (improvement+(notes?'\n\n'+notes:''))
-        : (notes || 'Tap Edit to write a note about today\u2019s visit, or use \u201cMake client-friendly\u201d to turn your treatment notes into a warm summary.'));
+        : (friendly || 'Tap Edit to write a note about today\u2019s visit, or use \u201cMake client-friendly\u201d to turn your treatment notes into a warm summary.'));
 
 
   S.innerHTML=`
+  <div style="padding:10px 16px 0;font-size:15px;font-weight:600;color:#f0f0f0;">${c.name}</div>
+  <div style="padding:0 16px;font-size:12px;color:#999;margin-bottom:8px;">${c.treatment||''}</div>
+  <div class="tab-bar"><button class="tab" id="tsp" onclick="_notesFrom='${_summaryFrom==='room'?'room':'profile'}';nav('notes','${id}')">Provider notes</button><button class="tab active" id="tsc">Client summary</button></div>
   <div style="padding:12px 16px 0;display:flex;align-items:center;justify-content:flex-end;">
     <div style="display:flex;gap:8px;">
       <button onclick="changeTreatment('${id}','session-summary')" style="border:1px solid #555;background:none;border-radius:8px;padding:6px 12px;font-size:12px;color:#ccc;cursor:pointer;"><i class="ti ti-pencil" aria-hidden="true" style="font-size:12px;"></i> Edit treatment</button>
@@ -4105,9 +4138,55 @@ function shareSummaryLink(id){
 function confirmSendLink(id,channel){
   _postSummaryData(id);   // populate the client's link view with the latest recap + routine
   if(id==='maya'){try{SlickBridge.post('magic-link',{clientId:'maya',providerId:'jess'});}catch(e){}}
+  const c=CL[id];const f=(c.name||'there').split(' ')[0];
+  // Build the real shareable link for this client using the canonical helper.
+  let link='';
+  try{ link=(typeof _clientAppLink==='function')?_clientAppLink(id):''; }catch(e){}
+  if(!link){ link=(c&&c._token)?('https://slickchart.app/client/'+c._token):('https://slickchart.app/client/'+id); }
+  const msg=`Hi ${f}! Here's your visit summary and aftercare from today: ${link}`;
+  if(channel==='copy'){
+    _copyToClipboard(link,'Link copied');
+    closeSendProd();
+    return;
+  }
+  if(channel==='text'){
+    // Opens the device's SMS app pre-filled. Include the client's number if we have it.
+    const num=(c&&c.phone)?String(c.phone).replace(/[^\d+]/g,''):'';
+    const sms='sms:'+num+(/(iphone|ipad|ipod|mac)/i.test(navigator.userAgent||'')?'&':'?')+'body='+encodeURIComponent(msg);
+    _openExternal(sms);
+    closeSendProd();
+    proToast('Opening your messages…');
+    return;
+  }
+  if(channel==='email'){
+    const to=(c&&c.email)?encodeURIComponent(c.email):'';
+    const subject=encodeURIComponent('Your visit summary from '+(bizInfo.name||'your appointment'));
+    const body=encodeURIComponent(msg+'\n\nSee you next time!\n— '+(_providerFirstName()||''));
+    _openExternal('mailto:'+to+'?subject='+subject+'&body='+body);
+    closeSendProd();
+    proToast('Opening your email…');
+    return;
+  }
   closeSendProd();
-  const c=CL[id];const f=c.name.split(' ')[0];
-  proToast(channel==='copy'?'Link copied':channel==='email'?('Link emailed to '+f):('Link texted to '+f));
+}
+// Reliable clipboard copy with a graceful fallback for older/embedded browsers.
+function _copyToClipboard(text,okMsg){
+  const done=()=>{if(typeof proToast==='function')proToast(okMsg||'Copied');};
+  try{
+    if(navigator.clipboard&&navigator.clipboard.writeText){navigator.clipboard.writeText(text).then(done).catch(()=>_copyFallback(text,done));return;}
+  }catch(e){}
+  _copyFallback(text,done);
+}
+function _copyFallback(text,done){
+  try{
+    const ta=document.createElement('textarea');ta.value=text;ta.style.cssText='position:fixed;top:-1000px;left:-1000px;';
+    document.body.appendChild(ta);ta.focus();ta.select();
+    document.execCommand('copy');document.body.removeChild(ta);done&&done();
+  }catch(e){if(typeof proToast==='function')proToast('Could not copy — long-press the link to copy it');}
+}
+// Navigate to an sms:/mailto: URL in a way that works inside the PWA shell.
+function _openExternal(url){
+  try{window.location.href=url;}catch(e){try{window.open(url,'_blank');}catch(_){}}
 }
 
 // ── ONBOARDING / PROFESSION PICKER ──
@@ -9829,6 +9908,39 @@ let suggestOpenFor=null;         // id of request whose "suggest" panel is open
 function pendingRequests(){return SlickBridge.getBookings().filter(b=>b.status==='pending');}
 function decidedRequests(){return SlickBridge.getBookings().filter(b=>b.status!=='pending').slice(0,6);}
 function initialsOf(name){return (name||'?').split(' ').map(w=>w[0]).join('').slice(0,2).toUpperCase();}
+// Find the real next upcoming appointment for a client, across every source we have:
+// live Square appts, confirmed bookings, and manually-added appts. Returns
+// {dateLabel,time,treatment} or null. Falls back to the client's stored nextVisit.
+function _nextApptForClient(id){
+  const c=CL[id];if(!c)return null;
+  const name=(c.name||'').trim().toLowerCase();
+  const now=new Date();now.setHours(0,0,0,0);
+  const cands=[];
+  // Live Square appointments (have real Date objects in .at)
+  try{
+    if(typeof squareAppts!=='undefined'&&Array.isArray(squareAppts)){
+      squareAppts.forEach(a=>{if(a.at&&(a.client||'').trim().toLowerCase()===name&&a.at>=now){
+        cands.push({at:a.at,dateLabel:a.at.toLocaleDateString('en-US',{month:'short',day:'numeric',year:'numeric'}),time:a.at.toLocaleTimeString('en-US',{hour:'numeric',minute:'2-digit'}),treatment:(a.tx&&a.tx!=='Appointment')?a.tx:(c.treatment||'')});
+      }});
+    }
+  }catch(e){}
+  // Confirmed + manual bookings (have date strings + dateLabel/time)
+  try{
+    const more=(typeof confirmedAppts!=='undefined'?confirmedAppts:[]).concat(typeof manualAppts!=='undefined'?manualAppts:[]);
+    more.forEach(b=>{
+      if((b.client||'').trim().toLowerCase()!==name)return;
+      let at=null;try{at=b.date?new Date(b.date+'T12:00:00'):null;}catch(e){}
+      if(at&&!isNaN(at)&&at>=now){cands.push({at,dateLabel:b.dateLabel||at.toLocaleDateString('en-US',{month:'short',day:'numeric',year:'numeric'}),time:b.time||'',treatment:b.tx||b.treatment||c.treatment||''});}
+    });
+  }catch(e){}
+  if(cands.length){cands.sort((x,y)=>x.at-y.at);return cands[0];}
+  // Fallback: the client's stored nextVisit string, if it's a real scheduled value
+  if(c.nextVisit&&c.nextVisit!=='Not scheduled'){
+    const parts=c.nextVisit.split('·').map(s=>s.trim());
+    return {dateLabel:parts[0]||c.nextVisit,time:parts[1]||'',treatment:c.treatment||''};
+  }
+  return null;
+}
 function _clientIdByName(name){
   if(!name)return null;
   const norm=String(name).trim().toLowerCase();
