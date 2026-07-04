@@ -3,7 +3,7 @@
 // returns a session token so they can start using the app right away.
 import { sql, ensureProvidersTable, dbEnabled } from '../lib/db.js';
 import { signToken, hashPassword, makeToken } from '../lib/auth.js';
-import { sendEmail, appOrigin, addToAudience } from '../lib/email.js';
+import { sendEmail, appOrigin, addToAudience, welcomeEmailHtml, welcomeEmailText } from '../lib/email.js';
 import crypto from 'crypto';
 
 export default async function handler(req, res) {
@@ -36,9 +36,9 @@ export default async function handler(req, res) {
     try {
       await sendEmail({
         to: email,
-        subject: 'Verify your SlickChart email',
-        text: 'Welcome to SlickChart! Verify your email: ' + link,
-        html: '<p>Welcome to SlickChart!</p><p><a href="' + link + '">Verify your email</a> (link expires in 24 hours).</p>'
+        subject: `Welcome to SlickChart, ${name ? name.split(' ')[0] : 'friend'} — let's build this together`,
+        text: welcomeEmailText({ name, link }),
+        html: welcomeEmailHtml({ name, link })
       });
     } catch (e) { /* don't block signup on email failure */ }
 
