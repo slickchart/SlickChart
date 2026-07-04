@@ -39,6 +39,16 @@ export async function ensureTable() {
   _ready = true;
 }
 
+// Fetch one KV value for an owner — used to look up shared, provider-level
+// data (like branding) without needing it duplicated inside every client's
+// own data blob, which doesn't scale as a client list grows.
+export async function getKVValue(owner, key) {
+  await ensureTable();
+  const q = sql();
+  const rows = await q`SELECT v FROM kv WHERE owner = ${owner} AND k = ${key}`;
+  return rows[0] ? rows[0].v : null;
+}
+
 // Provider accounts for multi-tenant login. Each provider's app data lives in the
 // kv table keyed by owner = provider id, so accounts are isolated automatically.
 let _provReady = false;
@@ -54,6 +64,8 @@ export async function ensureProvidersTable() {
     created_at timestamptz DEFAULT now()
   )`;
   await q`ALTER TABLE providers ADD COLUMN IF NOT EXISTS verified boolean DEFAULT false`;
+  await q`ALTER TABLE providers ADD COLUMN IF NOT EXISTS totp_secret text`;
+  await q`ALTER TABLE providers ADD COLUMN IF NOT EXISTS totp_enabled boolean DEFAULT false`;
   // One-time tokens for email verification and password resets.
   await q`CREATE TABLE IF NOT EXISTS auth_tokens (
     token text PRIMARY KEY,
