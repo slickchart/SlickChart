@@ -62,3 +62,62 @@ export async function recordAttempt(q, email) {
 export async function clearAttempts(q, email) {
   await q`DELETE FROM login_attempts WHERE email = ${email}`;
 }
+
+// ── Real session tracking ──
+// Turns a raw User-Agent string into a short, friendly device label. This is
+// deliberately simple pattern-matching rather than a full UA-parsing library.
+export function friendlyDevice(ua) {
+  const s = String(ua || '');
+  let device = 'Unknown device';
+  if (/iPhone/i.test(s)) device = 'iPhone';
+  else if (/iPad/i.test(s)) device = 'iPad';
+  else if (/Android/i.test(s)) device = 'Android device';
+  else if (/Macintosh/i.test(s)) device = 'Mac';
+  else if (/Windows/i.test(s)) device = 'Windows PC';
+  let browser = '';
+  if (/Edg\//i.test(s)) browser = 'Edge';
+  else if (/OPR\//i.test(s)) browser = 'Opera';
+  else if (/Chrome\//i.test(s) && !/Chromium/i.test(s)) browser = 'Chrome';
+  else if (/CriOS/i.test(s)) browser = 'Chrome';
+  else if (/FxiOS/i.test(s) || /Firefox\//i.test(s)) browser = 'Firefox';
+  else if (/Safari\//i.test(s)) browser = 'Safari';
+  return browser ? `${device} \u00b7 ${browser}` : device;
+}
+
+// Vercel provides approximate geo headers on every request for free — no
+// external lookup needed.
+export function friendlyLocation(req) {
+  const city = req.headers['x-vercel-ip-city'] ? decodeURIComponent(req.headers['x-vercel-ip-city']) : '';
+  const region = req.headers['x-vercel-ip-country-region'] || '';
+  const country = req.headers['x-vercel-ip-country'] || '';
+  if (city && region) return `${city}, ${region}`;
+  if (city && country) return `${city}, ${country}`;
+  return country || 'Unknown location';
+}
+
+function reqIp(req) {
+  const fwd = req.headers['x-forwarded-for'] || '';
+  return String(fwd).split(',')[0].trim() || (req.socket && req.socket.remoteAddress) || '';
+}
+
+// Creates a real session row and returns its id, to be embedded in the JWT
+// payload as `sid` so it can later be looked up and revoked.
+export async function createSession(q, providerId, req) {
+  const id = 's_' + crypto.randomBytes(12).toString('hex');
+  const device = friendlyDevice(req.headers['user-agent']);
+  const location = friendlyLocation(req);
+  const ip = reqIp(req);
+  await q`INSERT INTO sessions (id, provider_id, device, location, ip) VALUES (${id}, ${providerId}, ${device}, ${location}, ${ip})`;
+  return id;
+}
+
+// Checked on requests that should honor revocation (not every endpoint needs
+// this — see api/store.js, the main data-sync endpoint, for where it matters most).
+export async function isSessionValid(q, sid) {
+  if (!sid) return true; // tokens issued before this feature existed have no sid — don't lock those users out
+  const rows = await q`SELECT revoked FROM sessions WHERE id = ${sid}`;
+  if (!rows.length) return true; // unknown/legacy session id — fail open rather than break existing logins
+  if (rows[0].revoked) return false;
+  try { await q`UPDATE sessions SET last_seen_at = now() WHERE id = ${sid}`; } catch (e) { /* non-fatal */ }
+  return true;
+}
