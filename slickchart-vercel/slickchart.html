@@ -8442,7 +8442,7 @@ async function syncClientEvents(){
     if(!(j&&j.ok&&Array.isArray(j.events))){_syncingEvents=false;return;}
     const seen=_seenEventIds();
     const fresh=j.events.filter(e=>seen.indexOf(e.id)<0).reverse(); // oldest first so newest ends up on top
-    let touchedRequests=false,touchedMsgs=false,touchedNotif=false;
+    let touchedRequests=false,touchedMsgs=false,touchedNotif=false,touchedCheckins=false,touchedForms=false;
     const msgClientIds=[];
     fresh.forEach(ev=>{
       _markEventSeen(ev.id);
@@ -8469,17 +8469,48 @@ async function syncClientEvents(){
           title:'New message',body:`${name}: "${preview}"`,time:'Just now',read:false,action:'chat',data:cid});
         providerSystemNotify('New message',`${name}: ${preview}`);
         touchedMsgs=true;touchedNotif=true;msgClientIds.push(cid);
+      }else if(ev.kind==='checkin'){
+        const ci={id:ev.id,providerId:'me',clientId:cid,client:name,dateLabel:payload.dateLabel||'',time:payload.time||'',
+          treatment:payload.treatment||'',groups:payload.groups||[],flagged:payload.flagged||[],notes:payload.notes||'',
+          photos:[],read:false};
+        checkins.unshift(ci);
+        if(c){c.checkinDone=true;try{saveClients();}catch(e){}}
+        const fl=(ci.flagged&&ci.flagged.length)?` Flagged: ${ci.flagged.join(', ')}.`:'';
+        notifFeed.unshift({id:'evc'+ev.id,type:'checkin',icon:'ti-clipboard-check',col:'#0a2019',ic:'#4ec49a',
+          title:'Pre-visit check-in',body:`${name} completed a check-in${ci.dateLabel?' for '+ci.dateLabel:''}.${fl}`,
+          time:'Just now',read:false,action:'checkin',data:ci.id});
+        providerSystemNotify('Pre-visit check-in',`${name} \u00b7 ${ci.treatment||''} \u00b7 ${ci.dateLabel||''}`);
+        touchedCheckins=true;touchedNotif=true;
+      }else if(ev.kind==='form'){
+        if(c){
+          const title=payload.title||'Form';
+          c.submittedForms=c.submittedForms||[];
+          c.submittedForms.unshift({formId:payload.formId,title,answers:payload.answers||{},flagged:payload.flagged||[],date:payload.date||'Today',signed:!!payload.signed});
+          if(payload.signed){c.signedForms=c.signedForms||[];if(c.signedForms.indexOf(title)<0)c.signedForms.push(title);}
+          const flagged=(payload.flagged&&payload.flagged.length)?payload.flagged.slice():null;
+          if(flagged)c.flaggedContra={form:title,items:flagged,date:payload.date||'Today'};
+          try{saveClients();}catch(e){}
+          const fl=flagged?` \u26a0 Flagged: ${flagged.join(', ')}.`:'';
+          notifFeed.unshift({id:'evf'+ev.id,type:'form',icon:flagged?'ti-alert-triangle':'ti-clipboard-check',col:flagged?'#2a0f0f':'#0a2019',ic:flagged?'#e87070':'#4ec49a',
+            title:flagged?'Intake flagged for review':'Form completed',body:`${name} completed ${title}.${fl}`,
+            time:'Just now',read:false,action:'client',data:cid});
+          providerSystemNotify(flagged?'Intake flagged for review':'Form completed',`${name} \u00b7 ${title}${fl}`);
+          touchedForms=true;touchedNotif=true;
+        }
       }
     });
     if(touchedNotif)updateBadge();
     if(touchedMsgs)try{saveMessages();}catch(e){}
+    if(touchedCheckins)try{if(typeof persistCheckins==='function')persistCheckins();}catch(e){}
     if(touchedRequests&&document.getElementById('requests-screen'))renderRequests();
     if(touchedMsgs){
       if(document.getElementById('msg-tab-inbox')&&document.getElementById('msg-tab-inbox').classList.contains('active'))showMsgTab('inbox');
       try{if(typeof _navCur!=='undefined'&&_navCur&&_navCur.screen==='chat'&&msgClientIds.indexOf(_navCur.data)>=0)renderChat(_navCur.data);}catch(e){}
     }
+    if(touchedCheckins&&document.getElementById('checkins-screen'))renderCheckins();
+    if(touchedForms){try{if(typeof _navCur!=='undefined'&&_navCur&&_navCur.screen==='client')renderClient(_navCur.data);}catch(e){}}
     if(touchedNotif&&document.getElementById('notif-feed-screen'))renderNotifFeed();
-    if((touchedRequests||touchedMsgs)&&document.getElementById('home-screen'))renderHome();
+    if((touchedRequests||touchedMsgs||touchedCheckins||touchedForms)&&document.getElementById('home-screen'))renderHome();
   }catch(e){}
   _syncingEvents=false;
 }
