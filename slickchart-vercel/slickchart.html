@@ -1096,7 +1096,7 @@ function _reloadAll(){try{
   if(typeof loadCustomResources==='function')loadCustomResources();
   if(typeof loadAi==='function')loadAi();
   if(typeof loadForms==='function')loadForms();
-  loadBizInfo();_syncProviderAvatar();loadClients();loadMessages();loadInv();loadVendors();_loadPersistenceSweep();if(!_sampleHidden()){_seedMayaOnce();}else{_purgeSample();}_seedBirthdays();if(!_sampleHidden()&&typeof _demoCheckinSeed==='function')_demoCheckinSeed();
+  loadBizInfo();_syncProviderAvatar();loadClients();loadMessages();loadInv();loadVendors();_loadPersistenceSweep();_loadHomeDismissed();if(!_sampleHidden()){_seedMayaOnce();}else{_purgeSample();}_seedBirthdays();if(!_sampleHidden()&&typeof _demoCheckinSeed==='function')_demoCheckinSeed();
   if(typeof loadWorkspace==='function')loadWorkspace();
   if(typeof loadSquareCatalog==='function'){loadSquareCatalog();_mergeSquareRetail();}
   if(typeof loadCheckinCfg==='function')loadCheckinCfg();
@@ -1792,16 +1792,16 @@ function renderHome(){
       ];
     })().map(([l,v,s,c,scr])=>`<button onclick="nav('${scr}')" aria-label="${l}: ${v}, ${s}" style="flex:1;background:#161616;border:1px solid #232323;border-radius:10px;padding:10px 12px;cursor:pointer;font-family:inherit;text-align:left;"><div style="font-size:11px;color:#999;margin-bottom:4px;">${l}</div><div style="font-size:22px;font-weight:500;color:${c};">${v}</div><div style="font-size:11px;color:#999;">${s}</div></button>`).join('')}
   </div>
-  ${pendingRequests().length&&!_homeDismissed.has('req')?_swipeTile(`
+  ${(()=>{const unseenReq=pendingRequests().filter(b=>!b.seen);return unseenReq.length?_swipeTile(`
   <div onclick="nav('requests')" style="margin:0;background:linear-gradient(135deg,#0a2019,#0d2a20);border:1px solid #1a4a38;border-radius:12px;padding:12px 14px;display:flex;align-items:center;gap:11px;cursor:pointer;">
     <div style="width:40px;height:40px;border-radius:10px;background:#0f3528;display:flex;align-items:center;justify-content:center;flex-shrink:0;position:relative;">
       <i class="ti ti-calendar-plus" style="font-size:20px;color:#4ec49a;"></i>
-      <span style="position:absolute;top:-4px;right:-4px;min-width:18px;height:18px;padding:0 4px;background:#e87070;border-radius:9px;font-size:10px;font-weight:700;color:#fff;display:flex;align-items:center;justify-content:center;border:2px solid #0a2019;">${pendingRequests().length}</span>
+      <span style="position:absolute;top:-4px;right:-4px;min-width:18px;height:18px;padding:0 4px;background:#e87070;border-radius:9px;font-size:10px;font-weight:700;color:#fff;display:flex;align-items:center;justify-content:center;border:2px solid #0a2019;">${unseenReq.length}</span>
     </div>
-    <div style="flex:1;"><div style="font-size:14px;font-weight:600;color:#e8fff5;">New booking request${pendingRequests().length>1?'s':''}</div><div style="font-size:12px;color:#7fbfa5;margin-top:1px;">${pendingRequests()[0].client} · ${pendingRequests()[0].treatment} — tap to review</div></div>
+    <div style="flex:1;"><div style="font-size:14px;font-weight:600;color:#e8fff5;">New booking request${unseenReq.length>1?'s':''}</div><div style="font-size:12px;color:#7fbfa5;margin-top:1px;">${unseenReq[0].client} · ${unseenReq[0].treatment} — tap to review</div></div>
     <i class="ti ti-chevron-right" style="font-size:18px;color:#4ec49a;"></i>
-  </div>`,'req'):''}
-  ${newCheckins.length&&!_homeDismissed.has('cin')?_swipeTile(`
+  </div>`,'req','_dismissReqTile()'):'';})()}
+  ${newCheckins.length?_swipeTile(`
   <div onclick="nav('checkins')" style="margin:0;background:linear-gradient(135deg,#0a2019,#0d2a20);border:1px solid #1a4a38;border-radius:12px;padding:12px 14px;display:flex;align-items:center;gap:11px;cursor:pointer;">
     <div style="width:40px;height:40px;border-radius:10px;background:#0f3528;display:flex;align-items:center;justify-content:center;flex-shrink:0;position:relative;">
       <i class="ti ti-clipboard-check" style="font-size:20px;color:#4ec49a;"></i>
@@ -1809,7 +1809,7 @@ function renderHome(){
     </div>
     <div style="flex:1;"><div style="font-size:14px;font-weight:600;color:#e8fff5;">New pre-visit check-in${newCheckins.length>1?'s':''}</div><div style="font-size:12px;color:#7fbfa5;margin-top:1px;">${newCheckins[0].client}${(newCheckins[0].flagged&&newCheckins[0].flagged.length)?` · ${newCheckins[0].flagged.length} flagged`:''} — tap to review</div></div>
     <i class="ti ti-chevron-right" style="font-size:18px;color:#4ec49a;"></i>
-  </div>`,'cin'):''}
+  </div>`,'cin','_dismissCinTile()'):''}
   ${_vcPendingCount()&&!_homeDismissed.has('vc')?_swipeTile(`
   <div onclick="nav('vc-inbox')" style="margin:0;background:linear-gradient(135deg,#13102a,#1a1338);border:1px solid #2d2360;border-radius:12px;padding:12px 14px;display:flex;align-items:center;gap:11px;cursor:pointer;">
     <div style="width:40px;height:40px;border-radius:10px;background:#1e1633;display:flex;align-items:center;justify-content:center;flex-shrink:0;position:relative;">
@@ -5429,9 +5429,25 @@ function _needsCheckin(){
 }
 let _lastCiDismiss=null;
 let _homeDismissed=new Set();
-function _dismissTile(k){_homeDismissed.add(k);renderHome();}
-function _swipeTile(inner,key){
-  return `<div class="swipe-wrap"><div class="swipe-card">${inner}</div><div class="swipe-reveal" style="background:#0f2a1a;" onclick="event.stopPropagation();_dismissTile('${key}')" aria-label="Clear this tile"><i class="ti ti-check" aria-hidden="true" style="color:#4ec49a;"></i><span style="color:#4ec49a;">DONE</span></div></div>`;
+function _loadHomeDismissed(){try{const raw=localStorage.getItem('sc_home_dismissed');if(raw){const arr=JSON.parse(raw);if(Array.isArray(arr))_homeDismissed=new Set(arr);}}catch(e){}}
+function _saveHomeDismissed(){try{localStorage.setItem('sc_home_dismissed',JSON.stringify([..._homeDismissed]));}catch(e){}}
+function _dismissTile(k){_homeDismissed.add(k);_saveHomeDismissed();renderHome();}
+// "Swipe to clear" on the Home banners for bookings/check-ins now genuinely marks them
+// seen (persisted), instead of just hiding the summary card for the current session —
+// which is why they used to reappear on every refresh even after being swiped away.
+function _dismissReqTile(){
+  const list=SlickBridge.getBookings();
+  let changed=false;
+  list.forEach(b=>{if(b.status==='pending'&&!b.seen){b.seen=true;changed=true;}});
+  if(changed)SlickBridge.setBookings(list);
+  renderHome();
+}
+function _dismissCinTile(){
+  unreadCheckins().forEach(c=>markCheckinRead(c.id));
+  renderHome();
+}
+function _swipeTile(inner,key,customAction){
+  return `<div class="swipe-wrap"><div class="swipe-card">${inner}</div><div class="swipe-reveal" style="background:#0f2a1a;" onclick="event.stopPropagation();${customAction||`_dismissTile('${key}')`}" aria-label="Clear this tile"><i class="ti ti-check" aria-hidden="true" style="color:#4ec49a;"></i><span style="color:#4ec49a;">DONE</span></div></div>`;
 }
 function dismissCheckinNudge(id){
   const c=CL[id];const key=id+'|'+((c&&c.nextVisit)||'');
@@ -6967,6 +6983,7 @@ function renderOnboard(){
       <div style="width:100%;max-width:300px;background:#1a1a1a;border:1px solid #2a2a2a;border-radius:12px;padding:14px;text-align:left;">
         <div style="font-size:12px;font-weight:600;color:var(--accent);margin-bottom:9px;letter-spacing:.04em;">FIRST STEPS</div>
         ${[['ti-user-plus','Add your first client'],['ti-send','Invite your clients to their app'],['ti-calendar','Review your calendar']].map(([ic,t])=>`<div style="display:flex;align-items:center;gap:9px;padding:5px 0;"><i class="ti ${ic}" style="font-size:15px;color:#888;"></i><span style="font-size:13px;color:#ccc;">${t}</span></div>`).join('')}
+        <div onclick="finishOnboarding('more')" style="display:flex;align-items:center;gap:9px;padding:5px 0;cursor:pointer;"><i class="ti ti-eraser" style="font-size:15px;color:#888;"></i><span style="font-size:13px;color:#ccc;">Remove sample data once you're ready</span><i class="ti ti-chevron-right" style="font-size:13px;color:#666;margin-left:auto;"></i></div>
       </div>
       <button onclick="openBetaFeedback()" style="margin-top:16px;background:none;border:1px solid var(--accent-tint2);color:var(--accent);border-radius:9px;padding:9px 16px;font-size:13px;font-weight:600;cursor:pointer;display:inline-flex;align-items:center;gap:6px;"><i class="ti ti-message-2" style="font-size:14px;"></i> Share beta feedback</button>
     </div>`;
@@ -9017,7 +9034,7 @@ function pushCheckinNotif(ci){
     time:'Just now',read:false,action:'checkin',data:ci.id});
   updateBadge();
 }
-function markCheckinRead(id){const c=checkins.find(x=>x.id===id);if(c)c.read=true;updateBadge();}
+function markCheckinRead(id){const c=checkins.find(x=>x.id===id);if(c){c.read=true;try{if(typeof persistCheckins==='function')persistCheckins();}catch(e){}}updateBadge();}
 
 function renderCheckins(){
   setNav('home');
