@@ -1028,6 +1028,10 @@ const _SAMPLE_DOCS_BACKUP=(typeof docs!=='undefined')?docs.slice():[];
 function _sampleHidden(){try{return localStorage.getItem('sc_hide_sample')==='1';}catch(e){return false;}}
 const _SAMPLE_NOTIF_IDS=['n1','n2','n3','n4','n5','n6','n7'];
 const _SAMPLE_CHECKIN_IDS=['ci_demo1'];
+// Demo/affiliate products that ship with the app as examples — these are sample
+// data too and should come and go with the rest of it.
+const _SAMPLE_PRODUCT_IDS=['a1','a2','a3','a4'];
+const _SAMPLE_PRODUCTS_BACKUP=(typeof affiliateLinks!=='undefined')?affiliateLinks.filter(a=>_SAMPLE_PRODUCT_IDS.indexOf(a.id)>=0).map(a=>Object.assign({},a)):[];
 function _purgeSample(){
   _SAMPLE_IDS.forEach(id=>{try{delete CL[id];}catch(e){}});
   try{docs=docs.filter(d=>_SAMPLE_DOC_IDS.indexOf(d.id)<0);}catch(e){}
@@ -1043,6 +1047,19 @@ function _purgeSample(){
     }
   }catch(e){}
   try{if(typeof updateBadge==='function')updateBadge();}catch(e){}
+  // Remove the demo/affiliate products too, plus any recommendations pointing to them.
+  try{
+    if(typeof affiliateLinks!=='undefined'){
+      const before=affiliateLinks.length;
+      affiliateLinks=affiliateLinks.filter(a=>_SAMPLE_PRODUCT_IDS.indexOf(a.id)<0);
+      if(affiliateLinks.length!==before&&typeof persistWorkspace==='function')persistWorkspace();
+    }
+    if(typeof clientRecs!=='undefined'){
+      let changed=false;
+      Object.keys(clientRecs).forEach(cid=>{const b=clientRecs[cid].length;clientRecs[cid]=clientRecs[cid].filter(aid=>_SAMPLE_PRODUCT_IDS.indexOf(aid)<0);if(clientRecs[cid].length!==b)changed=true;});
+      if(changed&&typeof persistClientRecs==='function')persistClientRecs();
+    }
+  }catch(e){}
 }
 function _todayLabel(){try{return new Date().toLocaleDateString('en-US',{weekday:'long',month:'long',day:'numeric'});}catch(e){return '';}}
 function _clearSampleData(){
@@ -1056,6 +1073,13 @@ function _restoreSampleData(){
   try{localStorage.removeItem('sc_hide_sample');}catch(e){}
   if(typeof _seedMayaOnce==='function')_seedMayaOnce();
   try{_SAMPLE_DOCS_BACKUP.forEach(sd=>{if(!docs.some(d=>d.id===sd.id))docs.push(sd);});}catch(e){}
+  try{
+    if(typeof affiliateLinks!=='undefined'){
+      let changed=false;
+      _SAMPLE_PRODUCTS_BACKUP.forEach(sp=>{if(!affiliateLinks.some(a=>a.id===sp.id)){affiliateLinks.push(Object.assign({},sp));changed=true;}});
+      if(changed&&typeof persistWorkspace==='function')persistWorkspace();
+    }
+  }catch(e){}
   if(typeof proToast==='function')proToast('Sample data restored');
   nav('home');
 }
@@ -9556,6 +9580,11 @@ try{
   try{if(typeof MutationObserver!=='undefined'){new MutationObserver(()=>_a11yEnhance()).observe(document.body,{childList:true,subtree:true});_a11yEnhance();}}catch(e){}
   loadForms();  // restore any saved form edits / custom forms / connected guides from a previous session
   loadWorkspace();  // restore recommended products, reasons, custom products, and routines
+  // Products live in the initial declaration, so they re-seed every reload. If sample
+  // data is hidden, strip the demo ones again now that everything's loaded.
+  if(_sampleHidden()){try{
+    if(typeof affiliateLinks!=='undefined')affiliateLinks=affiliateLinks.filter(a=>_SAMPLE_PRODUCT_IDS.indexOf(a.id)<0);
+  }catch(e){}}
   if(typeof loadSquareCatalog==='function'){loadSquareCatalog();_mergeSquareRetail();}  // bring in synced Square retail products
   loadCheckinCfg();  // restore the saved check-in config
   if(typeof loadCiDismissed==='function')loadCiDismissed();
