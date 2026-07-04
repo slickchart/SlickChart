@@ -743,6 +743,19 @@ const client={
 // Sync the active provider's details into the flat fields the app reads everywhere
 let APPT=new Date('2026-07-17T10:00:00');
 let messages=[];
+function _saveClientMessages(){
+  try{
+    const map={};
+    (client.providers||[]).forEach(p=>{map[p.id]=p.thread||[];});
+    localStorage.setItem('sc_client_messages',JSON.stringify(map));
+  }catch(e){}
+}
+function _loadClientMessagesInto(p){
+  try{
+    const raw=localStorage.getItem('sc_client_messages');
+    if(raw){const map=JSON.parse(raw);if(map&&Array.isArray(map[p.id])&&map[p.id].length)p.thread=map[p.id];}
+  }catch(e){}
+}
 function activeProvider(){return client.providers.find(p=>p.id===client.activeProviderId)||client.providers[0];}
 function recomputeCountdown(){
   const msLeft=APPT-TODAY;
@@ -759,6 +772,7 @@ function applyActiveProvider(){
   client.nextDate=p.nextDate;client.nextTime=p.nextTime;
   client.nextDateISO=p.nextDateISO;client.nextTimeISO=p.nextTimeISO;client.durationMins=p.durationMins;
   APPT=new Date(p.apptISO);
+  try{if(typeof _loadClientMessagesInto==='function')_loadClientMessagesInto(p);}catch(e){}
   messages=p.thread;
   // per-provider homecare checklist (seed from the routine's done flags once)
   if(!p.checked)p.checked=Object.fromEntries((p.homecare||[]).map(s=>[s.key,!!s.done]));
@@ -1597,6 +1611,7 @@ function sendClientMsg(imgArg){
   const imgs=Array.isArray(imgArg)?imgArg:(imgArg?[imgArg]:[]);
   if(!text&&!imgs.length)return;
   messages.push({from:'me',text,imgs,time:'Just now'});
+  try{_saveClientMessages();}catch(e){}
   try{if(client._real){_clientSubmit('message',{text:text,photos:imgs.length});}}catch(e){}
   if(inp){inp.value='';inp.style.height='auto';}
   renderMessages();
@@ -2819,6 +2834,7 @@ SlickBridge.on('client-message',m=>{
   const imgs=m.imgs&&m.imgs.length?m.imgs:(m.img?[m.img]:[]);
   if(jess){
     jess.thread.push({from:'provider',text:m.text||'',imgs,time:'Just now'});
+    try{_saveClientMessages();}catch(e){}
     const viewing=client.activeProviderId==='jess'&&document.getElementById('chat-body');
     if(!viewing)jess.unread=(jess.unread||0)+1;
     if(client.activeProviderId==='jess'){messages=jess.thread;if(viewing)renderMessages();}
