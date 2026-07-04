@@ -116,6 +116,18 @@ export async function ensureProvidersTable() {
     current_period_end timestamptz,
     updated_at timestamptz DEFAULT now()
   )`;
+  // Real login sessions — one row per device/browser that's logged in, so the
+  // Security screen can show genuine activity and "Revoke" can actually work.
+  await q`CREATE TABLE IF NOT EXISTS sessions (
+    id text PRIMARY KEY,
+    provider_id text NOT NULL,
+    device text,
+    location text,
+    ip text,
+    created_at timestamptz DEFAULT now(),
+    last_seen_at timestamptz DEFAULT now(),
+    revoked boolean DEFAULT false
+  )`;
   _provReady = true;
 }
 
