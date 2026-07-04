@@ -19,7 +19,7 @@ function esc(s) {
 
 export default async function handler(req, res) {
   let html = loadHtml();
-  const token = (req.query && req.query.c) || '';
+  const token = (req.query && (req.query.token || req.query.c)) || '';
   let name = '';
   try {
     if (token && dbEnabled()) {
