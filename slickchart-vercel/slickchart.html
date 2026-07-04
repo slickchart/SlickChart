@@ -502,7 +502,7 @@ let formQs=[
   {id:8,label:'Phone number',type:'Short text',required:true},
   {id:9,label:'Email',type:'Short text',required:false},
   {id:10,label:'How did you hear about us?',type:'Short text',required:false},
-  {id:3,label:'Primary skin concerns or goals',type:'Long text',required:true},
+  {id:3,label:'Primary skin concern/goal',type:'Long text',required:true},
   {id:4,label:'Known allergies or sensitivities',type:'Long text',required:true},
   {id:5,label:'Are you pregnant or nursing?',type:'Yes / No',required:true},
   {id:11,label:'Current medications',type:'Long text',required:false},
@@ -1782,6 +1782,7 @@ function nav(screen,data){
     'form-builder':()=>renderFormBuilder(data),'form-preview':()=>renderFormPreview(data),'form-docs':()=>renderFormDocs(data),'sign-form':()=>renderSignOnDevice(data&&data.fid,data&&data.cid),
     bundles:renderBundles,'edit-bundle':()=>renderEditBundle(data),
     'nc-next-step':()=>renderNCNextStep(data),'provider-fill-intake':()=>renderProviderFillIntake(data),
+    'edit-suggested-forms':renderEditSuggestedForms,
     help:renderHelp,'help-article':()=>renderHelpArticle(data),
     client:()=>renderClient(data),brief:()=>renderBrief(data),room:()=>renderRoom(data),
     'client-forms':()=>renderClientForms(data),
@@ -2180,19 +2181,22 @@ function renderClient(id){
   <div class="sh" style="display:flex;align-items:center;justify-content:space-between;"><h2>Client details</h2><button onclick="editVitals('${id}')" style="border:1px solid var(--accent-a30,#3d2d10);background:var(--accent-tint);color:var(--accent);cursor:pointer;padding:4px 11px;border-radius:20px;font-size:11px;font-weight:600;font-family:inherit;display:inline-flex;align-items:center;gap:4px;margin-right:16px;"><i class="ti ti-pencil" style="font-size:11px;"></i> Edit</button></div>
   <div style="padding:0 16px;">
     ${_vitalsConfig().filter(f=>!f.med||(c[f.key]&&String(c[f.key]).trim()&&c[f.key]!=='—')).map(f=>`<div class="fr"><span class="fl">${f.label}</span><span class="fv"${f.key==='concerns'?' style="font-size:12px;"':''}>${c[f.key]||'—'}</span></div>`).join('')}
+    ${c.photoConsent?`<div class="fr"><span class="fl">Photo consent</span><span class="fv" style="font-size:12px;">${c.photoConsent.beforeAfter?'\u2713 Before/after':'\u2717 Before/after'} \u00b7 ${c.photoConsent.socialMedia?'\u2713 Social/portfolio':'\u2717 Social/portfolio'}</span></div>`:''}
   </div>
-  ${(function(){const sug=(typeof _suggestedFormsFor==='function')?_suggestedFormsFor(c):[];if(!sug.length)return '';return `
-  <div class="sh"><h2>Suggested for this visit</h2></div>
+  ${(function(){const sug=(typeof _suggestedFormsFor==='function')?_suggestedFormsFor(c):[];if(!sug.length)return '';
+    if(!window._sugChecked)window._sugChecked={};
+    sug.forEach(k=>{if(window._sugChecked[k]===undefined)window._sugChecked[k]=true;});
+    return `
+  <div class="sh" style="display:flex;align-items:center;justify-content:space-between;"><h2>Suggested for this visit</h2><button onclick="nav('edit-suggested-forms')" style="border:none;background:none;color:var(--accent);font-size:11px;cursor:pointer;">Edit</button></div>
   <div style="padding:0 16px 6px;">
     <div style="background:linear-gradient(135deg,#13102a,#1a1338);border:1px solid #2d2360;border-radius:12px;padding:12px 14px;">
       <div style="display:flex;align-items:flex-start;gap:7px;margin-bottom:4px;"><i class="ti ti-bulb" aria-hidden="true" style="font-size:15px;color:#a891ec;margin-top:1px;flex-shrink:0;"></i><span style="font-size:12px;color:#cfc4f5;line-height:1.45;">Booked for <b style="color:#efeaff;">${c.treatment||'a visit'}</b> — you may want to send:</span></div>
-      ${sug.map(k=>`<div style="display:flex;align-items:center;gap:8px;padding:9px 0 2px;">
-        <i class="ti ti-file-text" aria-hidden="true" style="font-size:15px;color:#a891ec;flex-shrink:0;"></i>
+      ${sug.map(k=>`<label style="display:flex;align-items:center;gap:9px;padding:9px 0 2px;cursor:pointer;">
+        <input type="checkbox" ${window._sugChecked[k]?'checked':''} onchange="window._sugChecked['${k}']=this.checked" style="width:16px;height:16px;accent-color:var(--accent);flex-shrink:0;">
         <span style="flex:1;min-width:0;font-size:13px;color:#e8e3fb;">${formTmpls[k].name}</span>
         <button onclick="renderSignOnDevice('${k}','${id}')" class="btng" style="padding:5px 10px;font-size:11px;border-radius:7px;">Sign here</button>
-        <button onclick="shareFormLink('${k}','${id}')" class="btng" style="padding:5px 10px;font-size:11px;border-radius:7px;">Send link</button>
-      </div>`).join('')}
-      ${sug.length>1?`<button onclick="_sendAdHocBundle('${id}',${JSON.stringify(sug)})" class="btnp" style="width:100%;border-radius:8px;padding:9px;margin-top:10px;font-size:12.5px;"><i class="ti ti-package"></i> Send all ${sug.length} together</button>`:''}
+      </label>`).join('')}
+      <button onclick="_sendCheckedSuggestions('${id}',${JSON.stringify(sug)})" class="btnp" style="width:100%;border-radius:8px;padding:9px;margin-top:10px;font-size:12.5px;"><i class="ti ti-send"></i> Send selected</button>
     </div>
   </div>`;})()}
   <div class="sh"><h2>Forms &amp; documents</h2></div>
@@ -2315,10 +2319,17 @@ function viewSubmittedForm(id,i){
 }
 // ── Per-client forms storage: intakes, consents, signed forms ──
 // ── Suggest forms to send based on the booked treatment ──
+function loadSuggestedFormsOverride(){try{const s=localStorage.getItem('sc_suggested_forms');if(s)return JSON.parse(s);}catch(e){}return null;}
+function saveSuggestedFormsOverride(){try{localStorage.setItem('sc_suggested_forms',JSON.stringify(suggestedFormsOverride||[]));}catch(e){}}
+let suggestedFormsOverride=loadSuggestedFormsOverride();
 function _suggestedFormsFor(c){
   if(!c||typeof formTmpls==='undefined')return [];
-  const t=String(c.treatment||'').toLowerCase();
   const have=new Set([...((c.submittedForms||[]).map(s=>s.title)),...((c.signedForms||[])||[])]);
+  // A provider-customized list always wins over the keyword guesswork below.
+  if(Array.isArray(suggestedFormsOverride)&&suggestedFormsOverride.length){
+    return suggestedFormsOverride.filter(k=>{const f=formTmpls[k];return f&&f.name&&!have.has(f.name);}).slice(0,6);
+  }
+  const t=String(c.treatment||'').toLowerCase();
   const out=[];
   const add=k=>{const f=formTmpls[k];if(f&&f.name&&out.indexOf(k)<0&&!have.has(f.name))out.push(k);};
   if(/peel/.test(t))add('peel');
@@ -2350,6 +2361,20 @@ function _suggestedFormsFor(c){
     if(ik)add(ik);if(ck)add(ck);
   }
   return out.slice(0,3);
+}
+function renderEditSuggestedForms(){
+  document.getElementById('tt').textContent='Suggested forms';
+  const active=Array.isArray(suggestedFormsOverride)?suggestedFormsOverride:[];
+  S.innerHTML=`
+  <div style="margin:10px 16px;background:#0d1e33;border:1px solid #1a3a5c;border-radius:10px;padding:10px 12px;font-size:12px;color:#5ba3e8;line-height:1.5;">Pick the forms you want suggested on every client's profile under "Suggested for this visit." Leave nothing checked to go back to automatic suggestions based on their treatment.</div>
+  <div style="padding:0 16px 6px;">${Object.keys(formTmpls).map(fid=>`<label style="display:flex;align-items:center;gap:10px;padding:10px 0;cursor:pointer;border-bottom:1px solid #1e1e1e;"><input type="checkbox" ${active.includes(fid)?'checked':''} onchange="_toggleSuggestedForm('${fid}')" style="width:17px;height:17px;accent-color:var(--accent);flex-shrink:0;"><span style="font-size:13px;color:#e0e0e0;">${formTmpls[fid].name}</span></label>`).join('')}</div>
+  <div style="padding:16px;"><button onclick="nav('client')" style="width:100%;background:var(--accent);color:var(--accent-ink);border:none;border-radius:10px;padding:12px;font-size:14px;font-weight:600;cursor:pointer;font-family:inherit;">Done</button></div>`;
+}
+function _toggleSuggestedForm(fid){
+  if(!Array.isArray(suggestedFormsOverride))suggestedFormsOverride=[];
+  const i=suggestedFormsOverride.indexOf(fid);
+  if(i>=0)suggestedFormsOverride.splice(i,1);else suggestedFormsOverride.push(fid);
+  saveSuggestedFormsOverride();
 }
 function renderFlaggedIntakes(){
   document.getElementById('tt').textContent='Flagged intakes';
@@ -2763,6 +2788,21 @@ function _vitalForQuestion(label){
   if(/(skin|hair|lash|nail|brow)\s*(type|texture)|natural\s+(hair|lash|brow)|skin\s*type\s*&?\s*tone/.test(l)) return 'skin';
   if(/concern|goal|occasion|look|areas you want|cut style|preferred\s+(cut|style|finish|look)|work on|enhancement/.test(l)) return 'concerns';
   return null;
+}
+function _isPhotoReleaseForm(fid){return fid==='photo'||/-photo$/.test(fid||'');}
+function _capturePhotoConsent(c,formId,answers){
+  try{
+    if(!_isPhotoReleaseForm(formId)||!c)return;
+    const t=formTmpls[formId];if(!t||!t.qs)return;
+    const findAns=re=>{const q=t.qs.find(q=>re.test(q.label||''));return q?answers[q.id]:undefined;};
+    const beforeAfter=findAns(/before\s*&?\s*after photos/i);
+    const social=findAns(/social media|portfolio/i);
+    c.photoConsent={
+      beforeAfter:beforeAfter!=null?/yes/i.test(String(beforeAfter)):undefined,
+      socialMedia:social!=null?/yes/i.test(String(social)):undefined,
+      date:new Date().toLocaleDateString('en-US',{month:'short',day:'numeric',year:'numeric'})
+    };
+  }catch(e){}
 }
 function _applyIntakeVitals(chart,formId,getAns){
   const t=formTmpls[formId]; if(!t||!t.qs||!chart) return chart;
@@ -4685,6 +4725,14 @@ function _sendFormClientRows(fid,q){
   </div>`;}).join('');
 }
 function _renderSendFormClients(fid,q){const el=document.getElementById('sfc-list');if(el)el.innerHTML=_sendFormClientRows(fid,q);}
+// Sends only the suggestions the provider actually checked — one form uses
+// the normal single-form share, several use the same bundle mechanism.
+function _sendCheckedSuggestions(id,sug){
+  const checked=(sug||[]).filter(k=>window._sugChecked&&window._sugChecked[k]);
+  if(!checked.length){proToast('Check at least one form to send');return;}
+  if(checked.length===1){shareFormLink(checked[0],id);return;}
+  _sendAdHocBundle(id,checked);
+}
 function _isIntakeForm(fid){return fid==='intake'||/-intake$/.test(fid||'');}
 function confirmSendForm(fid,cid){
   const tmpl=formTmpls[fid];if(!tmpl)return;
@@ -5680,7 +5728,7 @@ function submitSignOnDevice(fid,cid){
     _applyIntakeVitals(CL[cid],fid,q=>ans[q.id]);
     // store the signed form on the client's file so it lives in Forms & documents
     CL[cid].submittedForms=CL[cid].submittedForms||[];
-    if(!CL[cid].submittedForms.some(sf=>sf.formId===fid&&sf.signed))CL[cid].submittedForms.unshift({formId:fid,title:tmpl.name,answers:ans,flagged:[],date:'Today',signed:true});_captureBirthday(CL[cid],fid,ans);
+    if(!CL[cid].submittedForms.some(sf=>sf.formId===fid&&sf.signed))CL[cid].submittedForms.unshift({formId:fid,title:tmpl.name,answers:ans,flagged:[],date:'Today',signed:true});_captureBirthday(CL[cid],fid,ans);_capturePhotoConsent(CL[cid],fid,ans);
     try{if(typeof saveClients==='function')saveClients();}catch(e){}
   }
   proToast(`${tmpl.name} signed ✓`);
@@ -9516,6 +9564,9 @@ async function syncClientEvents(){
             if(typeof _captureBirthday==='function'&&payload.formId){
               _captureBirthday(c,payload.formId,payload.answers||{});
             }
+            if(typeof _capturePhotoConsent==='function'&&payload.formId){
+              _capturePhotoConsent(c,payload.formId,payload.answers||{});
+            }
           }catch(e){}
           if(payload.signed){c.signedForms=c.signedForms||[];if(c.signedForms.indexOf(title)<0)c.signedForms.push(title);}
           const flagged=(payload.flagged&&payload.flagged.length)?payload.flagged.slice():null;
@@ -10491,6 +10542,7 @@ function _pfiSave(id,fid){
   });
   try{_applyIntakeVitals(c,fid,q=>answers[q.id]);}catch(e){}
   try{_captureBirthday(c,fid,answers);}catch(e){}
+  try{_capturePhotoConsent(c,fid,answers);}catch(e){}
   c.submittedForms=c.submittedForms||[];
   c.submittedForms.unshift({formId:fid,title:t.name,answers,flagged,date:'Today',signed:false,filledBy:'provider'});
   if(flagged.length)c.flaggedContra={form:t.name,items:flagged.slice(),date:'Today'};
