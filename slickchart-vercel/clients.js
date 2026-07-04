@@ -1,131 +1,47 @@
-// Server-side client records: each client gets a unique, unguessable link token
-// that maps to their own private data blob (summaries, aftercare, forms, photos,
-// booking availability, branding). Client submissions (forms, booking requests,
-// messages) are logged as events for the provider to see.
-import crypto from 'crypto';
-import { sql } from './db.js';
+// Provider-authed: sync the provider's client list + per-client data blobs up to
+// the server (POST), and read them back with link tokens & invite status (GET).
+import { verifyToken } from '../lib/auth.js';
+import { dbEnabled } from '../lib/db.js';
+import { ensureClientTables, upsertClient, listClients, listEvents } from '../lib/clients.js';
 
-let _ready = false;
-export async function ensureClientTables() {
-  if (_ready) return;
-  const q = sql();
-  await q`CREATE TABLE IF NOT EXISTS clients (
-    id text PRIMARY KEY,
-    provider_id text NOT NULL,
-    token text UNIQUE NOT NULL,
-    name text,
-    email text,
-    phone text,
-    data jsonb DEFAULT '{}'::jsonb,
-    invited_at bigint,
-    opened_at bigint,
-    created_at bigint,
-    updated_at bigint
-  )`;
-  await q`CREATE INDEX IF NOT EXISTS clients_provider_idx ON clients(provider_id)`;
-  await q`CREATE TABLE IF NOT EXISTS client_events (
-    id text PRIMARY KEY,
-    client_id text NOT NULL,
-    provider_id text NOT NULL,
-    kind text NOT NULL,
-    payload jsonb DEFAULT '{}'::jsonb,
-    seen int DEFAULT 0,
-    created_at bigint
-  )`;
-  await q`CREATE INDEX IF NOT EXISTS client_events_provider_idx ON client_events(provider_id)`;
-  // Client-owned preferences (notification settings, homecare check-off state,
-  // engagement streaks, dismissed banners) — kept in their own table, separate
-  // from the provider-written `clients.data` blob, so a provider re-syncing
-  // their client list can never accidentally wipe out what the client set.
-  await q`CREATE TABLE IF NOT EXISTS client_prefs (
-    client_id text PRIMARY KEY,
-    prefs jsonb DEFAULT '{}'::jsonb,
-    updated_at bigint
-  )`;
-  _ready = true;
+function providerId(req) {
+  const s = process.env.SESSION_SECRET || '';
+  const h = req.headers['authorization'] || '';
+  const t = h.startsWith('Bearer ') ? h.slice(7) : '';
+  const c = (s && t) ? verifyToken(t, s) : null;
+  return c && c.u;
 }
 
-export async function getClientPrefs(clientId) {
-  const q = sql();
-  const rows = await q`SELECT prefs FROM client_prefs WHERE client_id=${clientId}`;
-  return (rows[0] && rows[0].prefs) || {};
-}
-export async function saveClientPrefs(clientId, prefs) {
-  const q = sql();
-  const now = Date.now();
-  await q`INSERT INTO client_prefs (client_id, prefs, updated_at) VALUES (${clientId}, ${JSON.stringify(prefs || {})}::jsonb, ${now})
-    ON CONFLICT (client_id) DO UPDATE SET prefs=EXCLUDED.prefs, updated_at=EXCLUDED.updated_at`;
-}
-
-// A random, URL-safe token that's effectively impossible to guess.
-export function genToken() { return crypto.randomBytes(16).toString('base64url'); }
-
-// Create or update a client for a provider. Keeps the existing link token so a
-// client's link never changes once issued.
-export async function upsertClient(providerId, c) {
-  const q = sql();
-  const now = Date.now();
-  const id = String((c && c.id) || ('c_' + genToken().slice(0, 10)));
-  const data = JSON.stringify((c && c.data) || {});
-  const rows = await q`SELECT token FROM clients WHERE id=${id} AND provider_id=${providerId}`;
-  let token = rows[0] && rows[0].token;
-  if (!token) {
-    token = genToken();
-    await q`INSERT INTO clients (id, provider_id, token, name, email, phone, data, created_at, updated_at)
-      VALUES (${id}, ${providerId}, ${token}, ${(c && c.name) || ''}, ${(c && c.email) || ''}, ${(c && c.phone) || ''}, ${data}::jsonb, ${now}, ${now})
-      ON CONFLICT (id) DO NOTHING`;
-  } else {
-    await q`UPDATE clients SET name=${(c && c.name) || ''}, email=${(c && c.email) || ''}, phone=${(c && c.phone) || ''}, data=${data}::jsonb, updated_at=${now}
-      WHERE id=${id} AND provider_id=${providerId}`;
+export default async function handler(req, res) {
+  if (!dbEnabled()) { res.status(200).json({ ok: false, clients: [] }); return; }
+  const provider = providerId(req);
+  if (!provider) { res.status(401).json({ error: 'Not signed in' }); return; }
+  await ensureClientTables();
+  try {
+    if (req.method === 'GET') {
+      const clients = await listClients(provider);
+      const events = await listEvents(provider);
+      res.status(200).json({ ok: true, clients, events });
+      return;
+    }
+    if (req.method === 'POST') {
+      const body = req.body || {};
+      const list = Array.isArray(body.clients) ? body.clients : [];
+      // One malformed client's data (e.g. an oversized field) shouldn't take
+      // down the whole sync for every other client — settle each individually.
+      const settled = await Promise.allSettled(list.slice(0, 2000).map(c => upsertClient(provider, c)));
+      const out = [];
+      const failed = [];
+      settled.forEach((r, i) => {
+        if (r.status === 'fulfilled') out.push(r.value);
+        else { failed.push({ id: list[i] && list[i].id, error: r.reason && r.reason.message }); console.error('[clients] upsert failed for', list[i] && list[i].id, ':', r.reason && r.reason.message); }
+      });
+      res.status(200).json({ ok: true, saved: out.length, clients: out, failed: failed.length ? failed : undefined });
+      return;
+    }
+    res.status(405).json({ error: 'Method not allowed' });
+  } catch (e) {
+    console.error('[clients]', req.method, 'failed:', e && e.message, e && e.stack);
+    res.status(e.status || 500).json({ error: e.message });
   }
-  return { id, token, name: (c && c.name) || '', email: (c && c.email) || '' };
-}
-
-export async function listClients(providerId) {
-  const q = sql();
-  return await q`SELECT id, token, name, email, phone, invited_at, opened_at, updated_at
-    FROM clients WHERE provider_id=${providerId} ORDER BY lower(name)`;
-}
-
-export async function getClientByToken(token) {
-  const q = sql();
-  const rows = await q`SELECT * FROM clients WHERE token=${token}`;
-  return rows[0] || null;
-}
-
-export async function markOpened(token) {
-  const q = sql();
-  await q`UPDATE clients SET opened_at=${Date.now()} WHERE token=${token} AND opened_at IS NULL`;
-}
-
-export async function markInvited(providerId, ids) {
-  if (!ids || !ids.length) return;
-  const q = sql();
-  const now = Date.now();
-  for (const id of ids) {
-    await q`UPDATE clients SET invited_at=${now} WHERE id=${id} AND provider_id=${providerId}`;
-  }
-}
-
-export async function logEvent(providerId, clientId, kind, payload) {
-  const q = sql();
-  const id = 'ev_' + genToken().slice(0, 12);
-  await q`INSERT INTO client_events (id, client_id, provider_id, kind, payload, created_at)
-    VALUES (${id}, ${clientId}, ${providerId}, ${kind}, ${JSON.stringify(payload || {})}::jsonb, ${Date.now()})`;
-  return id;
-}
-
-export async function listEvents(providerId) {
-  const q = sql();
-  return await q`SELECT id, client_id, kind, payload, seen, created_at
-    FROM client_events WHERE provider_id=${providerId} ORDER BY created_at DESC LIMIT 500`;
-}
-
-// Full two-way message thread for one client (client-submitted + provider-sent),
-// oldest first — this is the real message history behind the client app's chat.
-export async function listClientMessages(clientId, providerId) {
-  const q = sql();
-  return await q`SELECT id, kind, payload, created_at FROM client_events
-    WHERE client_id=${clientId} AND provider_id=${providerId} AND kind IN ('message','provider_message')
-    ORDER BY created_at ASC LIMIT 500`;
 }
