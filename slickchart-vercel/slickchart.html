@@ -1105,7 +1105,29 @@ const Cloud={
   async pull(){if(!this.token)return -1;let r;try{r=await fetch('/api/store',{headers:{'Authorization':'Bearer '+this.token}});}catch(e){return -1;}if(r.status===401){this.logout();return -1;}let j={};try{j=await r.json();}catch(e){}const data=(j&&j.data)||{};const set=this._origSet||localStorage.setItem.bind(localStorage);const keys=Object.keys(data);keys.forEach(k=>{try{set(k,data[k]);}catch(e){}});return keys.length;},
   pushAllLocal(){const items={};try{for(let i=0;i<localStorage.length;i++){const k=localStorage.key(i);if(_syncable(k))items[k]=localStorage.getItem(k);}}catch(e){}if(this.token&&Object.keys(items).length)return fetch('/api/store',{method:'PUT',headers:{'Content-Type':'application/json','Authorization':'Bearer '+this.token},body:JSON.stringify({items})}).catch(()=>{});},
   push(k,v){if(!this.enabled||!this.token)return;this._queue[k]=v;clearTimeout(this._timer);this._timer=setTimeout(()=>this._flush(),700);},
-  _flush(){if(!this.token)return;const items=this._queue;this._queue={};if(!Object.keys(items).length)return;fetch('/api/store',{method:'PUT',headers:{'Content-Type':'application/json','Authorization':'Bearer '+this.token},body:JSON.stringify({items})}).catch(()=>{});}
+  _flush(retryCount){
+    if(!this.token)return;
+    const items=this._queue;this._queue={};
+    if(!Object.keys(items).length)return;
+    fetch('/api/store',{method:'PUT',headers:{'Content-Type':'application/json','Authorization':'Bearer '+this.token},body:JSON.stringify({items})})
+      .then(r=>{
+        if(!r.ok){
+          console.error('[Cloud sync] save failed with status',r.status);
+          // A failed save must not just vanish — put these items back in the
+          // queue and retry once, then actually tell the person if it still fails.
+          if(!(retryCount>0)){Object.assign(this._queue,items);clearTimeout(this._timer);this._timer=setTimeout(()=>this._flush(1),1500);}
+          else if(typeof proToast==='function'){
+            const tooBig=r.status===413;
+            proToast(tooBig?'Could not save — that file is too large. Try a smaller image.':'Could not save your changes — check your connection and try again.',0);
+          }
+        }
+      })
+      .catch(e=>{
+        console.error('[Cloud sync] save failed:',e&&e.message);
+        if(!(retryCount>0)){Object.assign(this._queue,items);clearTimeout(this._timer);this._timer=setTimeout(()=>this._flush(1),1500);}
+        else if(typeof proToast==='function')proToast('Could not save your changes — check your connection and try again.',0);
+      });
+  },
 };
 (function(){try{const _set=localStorage.setItem.bind(localStorage);Cloud._origSet=_set;localStorage.setItem=function(k,v){_set(k,v);try{if(_syncable(k))Cloud.push(k,v);}catch(e){}};}catch(e){}})();
 function _reloadAll(){try{
@@ -5689,16 +5711,29 @@ async function _syncClientsToServer(opts){
   try{
     const list=Object.keys(CL).map(id=>({id:id,name:CL[id].name||'',email:CL[id].email||'',data:_assembleClientData(id)}));
     const r=await fetch('/api/clients',{method:'POST',headers:{'Content-Type':'application/json','Authorization':'Bearer '+tok},body:JSON.stringify({clients:list})});
-    const j=await r.json();
-    if(j&&j.ok&&Array.isArray(j.clients)){
+    let j={};try{j=await r.json();}catch(e){}
+    if(r.ok&&j&&j.ok&&Array.isArray(j.clients)){
       j.clients.forEach(function(sc){ if(CL[sc.id])CL[sc.id]._token=sc.token; });
       try{saveClients({noSync:true});}catch(e){}
       if(opts.toast)proToast('Your clients are synced');
       return j;
     }
-    if(opts.toast)proToast((j&&j.error)||'Could not sync right now');
+    console.error('[client sync] failed, status',r.status,j&&j.error);
+    // A failed sync here means real client data (forms, branding, everything)
+    // never reached the database — retry once in the background before giving up,
+    // and surface it if this was a user-initiated sync (opts.toast).
+    if(!opts._retried){ setTimeout(()=>_syncClientsToServer(Object.assign({},opts,{_retried:true})),2000); }
+    else if(opts.toast){
+      const tooBig=r.status===413;
+      proToast(tooBig?'Could not sync — your data is too large right now. Try a smaller logo/photo.':((j&&j.error)||'Could not sync right now'));
+    }
     return j||{ok:false,error:'Could not sync'};
-  }catch(e){ if(opts.toast)proToast('Could not reach the server'); return {ok:false,error:'Could not reach the server'}; }
+  }catch(e){
+    console.error('[client sync] failed:',e&&e.message);
+    if(!opts._retried){ setTimeout(()=>_syncClientsToServer(Object.assign({},opts,{_retried:true})),2000); }
+    else if(opts.toast)proToast('Could not reach the server');
+    return {ok:false,error:'Could not reach the server'};
+  }
   finally{ _syncingClients=false; }
 }
 function renderInviteClients(){
@@ -5741,7 +5776,7 @@ async function _doBulkInvite(){
 function _clientAppLink(id){
   const base=(typeof location!=='undefined'&&location.origin&&location.origin.indexOf('http')===0)?location.origin:'https://slick-chart.vercel.app';
   const tok=CL[id]&&CL[id]._token;
-  return tok?(base+'/client?c='+encodeURIComponent(tok)):(base+'/client');
+  return tok?(base+'/client/'+encodeURIComponent(tok)):(base+'/client');
 }
 function _markInvited(id){if(CL[id]){CL[id].appInvited=true;try{if(typeof saveClients==='function')saveClients();}catch(e){}}}
 function sendFirstVisitPackage(id){
@@ -9175,16 +9210,40 @@ function _pickImages(cb){
   inp.click();
 }
 // Logos need their real format preserved (PNG/SVG transparency), unlike photos
-// which are fine getting flattened to JPEG — so this reads the file as-is
-// rather than re-encoding through a canvas.
+// which are fine getting flattened to JPEG — so this resizes down to a sane
+// size via canvas (keeping alpha), rather than storing whatever huge file was
+// picked, which could blow past the size limit on a single sync request and
+// fail to save at all.
 function _pickLogo(cb){
   const inp=document.createElement('input');
   inp.type='file';inp.accept='image/png,image/svg+xml,image/jpeg,image/webp';
   inp.onchange=()=>{
     const f=(inp.files||[])[0];if(!f)return;
-    if(f.size>3*1024*1024){proToast('Please choose an image under 3MB');return;}
+    if(f.size>8*1024*1024){proToast('Please choose an image under 8MB');return;}
+    if(f.type==='image/svg+xml'){
+      // SVGs are already tiny/vector — no need to rasterize, just read as-is.
+      const r=new FileReader();
+      r.onload=e=>cb(e.target.result);
+      r.onerror=()=>proToast('Could not read that file');
+      r.readAsDataURL(f);
+      return;
+    }
     const r=new FileReader();
-    r.onload=e=>cb(e.target.result);
+    r.onload=e=>{
+      const img=new Image();
+      img.onload=()=>{
+        const max=320; // plenty for a header/avatar-sized logo
+        let w=img.width,h=img.height;
+        if(w>max||h>max){const s=max/Math.max(w,h);w=Math.round(w*s);h=Math.round(h*s);}
+        try{
+          const c=document.createElement('canvas');c.width=w;c.height=h;
+          c.getContext('2d').drawImage(img,0,0,w,h);
+          cb(c.toDataURL('image/png')); // PNG keeps transparency, unlike JPEG
+        }catch(err){cb(e.target.result);}
+      };
+      img.onerror=()=>cb(e.target.result);
+      img.src=e.target.result;
+    };
     r.onerror=()=>proToast('Could not read that file');
     r.readAsDataURL(f);
   };
