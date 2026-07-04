@@ -5354,8 +5354,17 @@ function sendMsg(id,imgArg){
   try{saveMessages();}catch(e){}
   if(inp)inp.value='';
   renderChat(id);
-  // Maya is the client using the companion app — push the message to her in real time
+  // Maya is the local demo client — keep the old same-browser bus for her
   if(id==='maya'){try{SlickBridge.post('client-message',{text,imgs,providerId:'jess',time:'Just now'});}catch(e){}}
+  // Any real, invited client — send for real via the server so it reaches their actual device
+  else{try{_sendProviderMessageToClient(id,text);}catch(e){}}
+}
+async function _sendProviderMessageToClient(id,text){
+  const c=CL[id];if(!c||!c._token)return; // not a real synced client yet — nothing to deliver
+  const tok=(typeof Cloud!=='undefined'&&Cloud&&Cloud.token)||'';if(!tok)return;
+  try{
+    await fetch('/api/provider-message',{method:'POST',headers:{'Content-Type':'application/json','Authorization':'Bearer '+tok},body:JSON.stringify({clientId:id,text})});
+  }catch(e){/* delivery failure shouldn't block the local UI — it's already shown as sent */}
 }
 
 // ── PRO ──
