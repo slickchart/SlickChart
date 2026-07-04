@@ -2928,11 +2928,12 @@ function removeClientProd(clientId,aid){
 function renderProductRecs(clientId){
   const el=document.getElementById('prod-recs');if(!el)return;
   const recs=clientRecs[clientId]||[];
-  el.innerHTML=recs.length===0?`<div style="background:#161616;border:1px dashed #2a2a2a;border-radius:10px;padding:14px;display:flex;flex-direction:column;align-items:center;gap:5px;"><i class="ti ti-shopping-bag" style="font-size:20px;color:#666;"></i><span style="font-size:12px;color:#999;">No products recommended yet</span></div>`:recs.map(aid=>{const a=affiliateLinks.find(x=>x.id===aid);if(!a)return'';return`<div style="background:#1a1a1a;border:1px solid #2a2a2a;border-radius:10px;padding:10px 12px;display:flex;align-items:center;gap:10px;margin-bottom:8px;"><span style="font-size:20px;">${a.icon}</span><div style="flex:1;min-width:0;"><div style="font-size:13px;font-weight:500;color:#e0e0e0;">${a.name}</div><div style="font-size:11px;color:#999;">${a.brand}</div></div>${a.url?`<a href="https://${a.url}" style="background:var(--accent);color:var(--accent-ink);border:none;border-radius:7px;padding:5px 10px;font-size:11px;font-weight:500;cursor:pointer;text-decoration:none;white-space:nowrap;">Buy →</a>`:''}<button onclick="removeClientProd('${clientId}','${a.id}')" class="icon-btn" aria-label="Remove product"><i class="ti ti-x" aria-hidden="true" style="font-size:14px;"></i></button></div>`;}).join('');
+  const cnt=document.getElementById('prod-count');if(cnt)cnt.textContent=recs.length?('· '+recs.length):'';
+  el.innerHTML=recs.length===0?`<div style="background:#161616;border:1px dashed #2a2a2a;border-radius:10px;padding:14px;display:flex;flex-direction:column;align-items:center;gap:5px;"><i class="ti ti-shopping-bag" style="font-size:20px;color:#666;"></i><span style="font-size:12px;color:#999;">No products recommended yet</span></div>`:recs.map(aid=>{const a=affiliateLinks.find(x=>x.id===aid);if(!a)return'';return`<div style="background:#1a1a1a;border:1px solid #2a2a2a;border-radius:10px;padding:8px 12px;display:flex;align-items:center;gap:10px;margin-bottom:6px;"><span style="font-size:18px;">${a.icon}</span><div style="flex:1;min-width:0;"><div style="font-size:13px;font-weight:500;color:#e0e0e0;overflow:hidden;text-overflow:ellipsis;white-space:nowrap;">${a.name}</div><div style="font-size:11px;color:#999;">${a.brand}</div></div><button onclick="removeClientProd('${clientId}','${a.id}')" class="icon-btn" aria-label="Remove product"><i class="ti ti-x" aria-hidden="true" style="font-size:14px;"></i></button></div>`;}).join('');
 }
 
 let _voiceRec=null,_voiceText='',_voiceClientId=null,_notesFrom='profile',_summaryFrom='room';
-let _voiceCommitted='',_voiceStopping=false;
+let _voiceStopping=false;
 function _voiceKeyframes(){if(!document.getElementById('voice-kf')){const st=document.createElement('style');st.id='voice-kf';st.textContent='@keyframes vpulse{0%,100%{opacity:1;transform:scale(1)}50%{opacity:.35;transform:scale(.7)}}.voice-pulse{animation:vpulse 1s infinite;}';document.head.appendChild(st);}}
 function _voiceOverlay(html){
   let ov=document.getElementById('voice-overlay');
@@ -2949,38 +2950,39 @@ function startVoiceNote(id){
   }
   const rec=new SR();rec.continuous=true;rec.interimResults=true;rec.lang='en-US';_voiceRec=rec;
   _voiceStopping=false;
-  // Android Chrome (and some others) have a nasty habit with continuous dictation:
-  // instead of each spoken phrase becoming one stable final result, they re-emit
-  // the SAME utterance repeatedly as separate, ever-growing final segments. Naively
-  // joining all final results then produces the classic cascade:
-  //   "today today today Ginger today Ginger skin was a little bit …"
+  // Transcript handling. The screenshot bug ("today today today Ginger today
+  // Ginger skin was a little bit…") came from growing interim results being
+  // APPENDED on each event instead of replacing the prior interim. The fix:
+  // on every event, rebuild the whole transcript straight from e.results, which
+  // always holds the current best transcript for every segment. Never accumulate
+  // across events, and never auto-restart mid-utterance (the restart was what
+  // fragmented the results and reintroduced the duplication).
   //
-  // The reliable fix is to treat each result index as a SLOT and always overwrite
-  // that slot with its latest transcript, then join the slots. A given phrase keeps
-  // updating its own slot instead of piling onto the end, so growth/repeats collapse
-  // back into the single intended sentence.
-  const slots=[];
-  let slotBase=0; // shifts forward after each auto-restart so new results don't overwrite old slots
-  let maxIdx=-1;
+  // finalizedText holds only segments the engine has marked final and that have
+  // scrolled out of the live results window, so nothing is lost if the browser
+  // trims e.results over a long dictation.
+  let finalizedText='';
+  let lastResultCount=0;
   rec.onresult=(e)=>{
-    for(let i=e.resultIndex;i<e.results.length;i++){
-      const idx=slotBase+i;
-      slots[idx]={text:e.results[i][0].transcript,final:e.results[i].isFinal};
-      if(idx>maxIdx)maxIdx=idx;
+    // If the results window shrank (browser trimmed old finals), bank what we had.
+    // Otherwise just rebuild live from the current window.
+    let live='';
+    for(let i=0;i<e.results.length;i++){
+      live+=e.results[i][0].transcript+' ';
     }
-    const parts=slots.filter(Boolean).map(s=>s.text.trim()).filter(Boolean);
-    _voiceText=parts.join(' ').replace(/\s+/g,' ').trim();
+    _voiceText=(finalizedText+' '+live).replace(/\s+/g,' ').trim();
+    lastResultCount=e.results.length;
     const el=document.getElementById('voice-transcript');
     if(el)el.textContent=_voiceText||'Listening…';
   };
-  // If the browser stops on its own before the user taps Stop, restart so long
-  // notes aren't cut off. We advance slotBase past everything captured so far, so
-  // the restarted session (whose resultIndex resets to 0) writes into fresh slots
-  // instead of clobbering earlier text.
+  // Do NOT auto-restart. A deliberate restart mid-speech is exactly what caused
+  // the duplicated, growing text. If the browser ends on its own, we simply stop;
+  // the user still has everything captured so far and can tap Redo to add more.
   rec.onend=()=>{
-    if(!_voiceStopping&&_voiceRec===rec){
-      slotBase=maxIdx+1;
-      try{rec.start();}catch(e){}
+    const el=document.getElementById('voice-transcript');
+    if(el&&!_voiceStopping){
+      // Surface a gentle hint rather than silently restarting.
+      if(_voiceText)el.textContent=_voiceText;
     }
   };
   rec.onerror=(e)=>{const el=document.getElementById('voice-transcript');if(el){if(e.error==='not-allowed'||e.error==='service-not-allowed')el.textContent='Microphone access was blocked. Allow the mic for this site in your browser, then try again.';else if(e.error==='no-speech')el.textContent='Nothing came through — try speaking again.';}};
@@ -3054,21 +3056,24 @@ function renderNotes(id){
     </div>
     <div style="padding:0 16px;margin-bottom:4px;">
       <div style="display:flex;align-items:center;justify-content:space-between;margin-bottom:8px;">
-        <div style="font-size:11px;font-weight:500;color:#aaa;text-transform:uppercase;letter-spacing:.07em;">Recommended products</div>
+        <div style="font-size:11px;font-weight:500;color:#aaa;text-transform:uppercase;letter-spacing:.07em;">Recommended products <span id="prod-count" style="color:var(--accent);">${(clientRecs[id]||[]).length?'· '+(clientRecs[id]||[]).length:''}</span></div>
         <button onclick="toggleProductPicker('${id}')" id="prod-add-btn" style="border:none;background:none;font-size:12px;color:var(--accent);cursor:pointer;display:flex;align-items:center;gap:3px;"><i class="ti ti-plus" style="font-size:12px;"></i> Add</button>
       </div>
-      <div id="prod-picker" style="display:none;background:#161616;border:1px solid #2a2a2a;border-radius:10px;overflow:hidden;margin-bottom:10px;">
-        <div style="position:relative;padding:8px;border-bottom:1px solid #1e1e1e;"><i class="ti ti-search" aria-hidden="true" style="position:absolute;left:18px;top:50%;transform:translateY(-50%);font-size:14px;color:#777;"></i><input id="prod-picker-q" oninput="_renderProdPickerList('${id}',this.value)" placeholder="Search products or brands…" style="width:100%;background:#0f0f0f;border:1px solid #2a2a2a;border-radius:8px;padding:8px 10px 8px 30px;font-size:13px;color:#e0e0e0;font-family:inherit;box-sizing:border-box;outline:none;"></div>
-        <div id="prod-picker-list">${_prodPickerRows(id,'')}</div>
-      </div>
+      <!-- Added products stay ANCHORED at the top so you can always see what's on the list while adding more -->
       <div id="prod-recs">
         ${(clientRecs[id]||[]).length===0?`<div style="background:#161616;border:1px dashed #2a2a2a;border-radius:10px;padding:14px;display:flex;flex-direction:column;align-items:center;gap:5px;"><i class="ti ti-shopping-bag" style="font-size:20px;color:#666;"></i><span style="font-size:12px;color:#999;">No products recommended yet</span></div>`:''}
-        ${(clientRecs[id]||[]).map(aid=>{const a=affiliateLinks.find(x=>x.id===aid);if(!a)return'';return`<div style="background:#1a1a1a;border:1px solid #2a2a2a;border-radius:10px;padding:10px 12px;display:flex;align-items:center;gap:10px;margin-bottom:8px;">
-          <span style="font-size:20px;">${a.icon}</span>
-          <div style="flex:1;min-width:0;"><div style="font-size:13px;font-weight:500;color:#e0e0e0;">${a.name}</div><div style="font-size:11px;color:#999;">${a.brand}</div></div>
-          ${a.url?`<a href="https://${a.url}" style="background:var(--accent);color:var(--accent-ink);border:none;border-radius:7px;padding:5px 10px;font-size:11px;font-weight:500;cursor:pointer;text-decoration:none;white-space:nowrap;">Buy →</a>`:''}
+        ${(clientRecs[id]||[]).map(aid=>{const a=affiliateLinks.find(x=>x.id===aid);if(!a)return'';return`<div style="background:#1a1a1a;border:1px solid #2a2a2a;border-radius:10px;padding:8px 12px;display:flex;align-items:center;gap:10px;margin-bottom:6px;">
+          <span style="font-size:18px;">${a.icon}</span>
+          <div style="flex:1;min-width:0;"><div style="font-size:13px;font-weight:500;color:#e0e0e0;overflow:hidden;text-overflow:ellipsis;white-space:nowrap;">${a.name}</div><div style="font-size:11px;color:#999;">${a.brand}</div></div>
           <button onclick="removeClientProd('${id}','${a.id}')" class="icon-btn" aria-label="Remove product"><i class="ti ti-x" aria-hidden="true" style="font-size:14px;"></i></button>
         </div>`;}).join('')}
+      </div>
+      <!-- Compact, height-capped picker that scrolls internally instead of stretching the page -->
+      <div id="prod-picker" style="display:none;background:#161616;border:1px solid #2a2a2a;border-radius:10px;overflow:hidden;margin-top:8px;">
+        <div style="position:relative;padding:8px;border-bottom:1px solid #1e1e1e;"><i class="ti ti-search" aria-hidden="true" style="position:absolute;left:18px;top:50%;transform:translateY(-50%);font-size:14px;color:#777;"></i><input id="prod-picker-q" oninput="_renderProdPickerList('${id}',this.value)" placeholder="Search products or brands…" style="width:100%;background:#0f0f0f;border:1px solid #2a2a2a;border-radius:8px;padding:8px 10px 8px 30px;font-size:13px;color:#e0e0e0;font-family:inherit;box-sizing:border-box;outline:none;"></div>
+        <div id="prod-picker-list" style="max-height:172px;overflow-y:auto;">${_prodPickerRows(id,'')}</div>
+        <div style="padding:8px;border-top:1px solid #1e1e1e;"><button onclick="toggleProductPicker('${id}')" style="width:100%;background:#0f0f0f;border:1px solid #2a2a2a;color:#ccc;border-radius:8px;padding:8px;font-size:12px;font-weight:600;cursor:pointer;font-family:inherit;">Done adding</button></div>
+      </div>
       </div>
     </div>
     <div class="sh"><h2>Previous sessions</h2></div>
