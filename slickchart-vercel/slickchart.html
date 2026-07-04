@@ -1781,6 +1781,7 @@ function nav(screen,data){
     'checkin-settings':renderCheckinSettings,'checkin-preview':renderCheckinPreview,
     'form-builder':()=>renderFormBuilder(data),'form-preview':()=>renderFormPreview(data),'form-docs':()=>renderFormDocs(data),'sign-form':()=>renderSignOnDevice(data&&data.fid,data&&data.cid),
     bundles:renderBundles,'edit-bundle':()=>renderEditBundle(data),
+    'nc-next-step':()=>renderNCNextStep(data),'provider-fill-intake':()=>renderProviderFillIntake(data),
     help:renderHelp,'help-article':()=>renderHelpArticle(data),
     client:()=>renderClient(data),brief:()=>renderBrief(data),room:()=>renderRoom(data),
     'client-forms':()=>renderClientForms(data),
@@ -1986,7 +1987,7 @@ function renderClients(){
   document.getElementById('tt').textContent='Clients';
   S.innerHTML=`
   ${_searchBar('Search clients by name or treatment…','.client-card','clients-noresults')}
-  <button class="btnp" style="margin:0 16px 10px;width:calc(100% - 32px);border-radius:10px;" onclick="nav('new-client')"><i class="ti ti-plus"></i> New client intake</button>
+  <button class="btnp" style="margin:0 16px 10px;width:calc(100% - 32px);border-radius:10px;" onclick="nav('new-client')"><i class="ti ti-plus"></i> New client</button>
   <button onclick="nav('invite-clients')" style="display:flex;align-items:center;gap:11px;width:calc(100% - 32px);box-sizing:border-box;margin:0 16px 10px;background:linear-gradient(135deg,#0a2019,#0d2a1e);border:1px solid #1c4030;border-radius:12px;padding:12px 14px;cursor:pointer;font-family:inherit;text-align:left;">
     <div style="width:42px;height:42px;border-radius:10px;background:#0f3324;display:flex;align-items:center;justify-content:center;flex-shrink:0;"><i class="ti ti-send" style="font-size:20px;color:#4ec49a;"></i></div>
     <div style="flex:1;min-width:0;"><div style="font-size:14px;font-weight:500;color:#e0f5ea;">Invite clients to their app</div><div style="font-size:12px;color:#7fbfa5;">Send each client their own private link</div></div>
@@ -4640,27 +4641,32 @@ function sendFormToClient(fid){
 function _sendFormClientRows(fid,q){
   const matches=_matchClients(q);
   if(!matches.length)return `<div style="padding:20px;text-align:center;color:#888;font-size:12px;">No clients match "${(q||'').replace(/</g,'&lt;')}"</div>`;
-  return matches.map(cid=>{const c=CL[cid];return`<button onclick="confirmSendForm('${fid}','${cid}')" style="display:flex;width:100%;align-items:center;gap:10px;padding:11px 12px;border:1px solid #2a2a2a;background:#1a1a1a;border-radius:10px;margin-bottom:8px;cursor:pointer;text-align:left;">
-    <div style="width:36px;height:36px;border-radius:9px;background:${c.bg};display:flex;align-items:center;justify-content:center;font-size:13px;font-weight:500;color:${c.tc};flex-shrink:0;">${c.initials}</div>
-    <div style="flex:1;min-width:0;"><div style="font-size:13px;font-weight:500;color:#e0e0e0;">${c.name}</div></div>
-    <i class="ti ti-send" style="font-size:16px;color:var(--accent);"></i>
-  </button>`;}).join('');
+  return matches.map(cid=>{const c=CL[cid];return`<div style="display:flex;align-items:center;gap:8px;margin-bottom:8px;">
+    <button onclick="confirmSendForm('${fid}','${cid}')" style="display:flex;flex:1;min-width:0;align-items:center;gap:10px;padding:11px 12px;border:1px solid #2a2a2a;background:#1a1a1a;border-radius:10px;cursor:pointer;text-align:left;">
+      <div style="width:36px;height:36px;border-radius:9px;background:${c.bg};display:flex;align-items:center;justify-content:center;font-size:13px;font-weight:500;color:${c.tc};flex-shrink:0;">${c.initials}</div>
+      <div style="flex:1;min-width:0;"><div style="font-size:13px;font-weight:500;color:#e0e0e0;overflow:hidden;text-overflow:ellipsis;white-space:nowrap;">${c.name}</div><div style="font-size:10.5px;color:#888;">To their app</div></div>
+    </button>
+    <button onclick="closeSendProd();shareFormLink('${fid}','${cid}')" aria-label="Send a link to ${c.name}" title="Send a link" style="width:42px;height:42px;flex-shrink:0;border:1px solid #2a2a2a;background:#1a1a1a;border-radius:10px;display:flex;align-items:center;justify-content:center;cursor:pointer;color:var(--accent);">
+      <i class="ti ti-link" style="font-size:17px;"></i>
+    </button>
+  </div>`;}).join('');
 }
 function _renderSendFormClients(fid,q){const el=document.getElementById('sfc-list');if(el)el.innerHTML=_sendFormClientRows(fid,q);}
+function _isIntakeForm(fid){return fid==='intake'||/-intake$/.test(fid||'');}
 function confirmSendForm(fid,cid){
   const tmpl=formTmpls[fid];if(!tmpl)return;
   const guides=formGuideList(fid);
   const ci=(tmpl.qs||[]).find(q=>q.type==='Contraindications');
   const sig=(tmpl.qs||[]).find(q=>q.type==='Signature');
   const c=CL[cid];
+  const sendIds=_isIntakeForm(fid)?_withPhotoRelease(fid):[fid];
   if(cid==='maya'){
     try{SlickBridge.post('form-shared',{providerId:'jess',clientId:'maya',form:{id:fid,title:tmpl.name,docs:guides.map(g=>({title:g.title,kind:g.cat})),qs:(tmpl.qs||[]).map(q=>({id:q.id,label:q.label,type:q.type,required:q.required,options:q.options,items:q.items})),contra:ci?ci.items:[],consent:sig?sig.label:''}});}catch(e){}
     guides.forEach(g=>{try{SlickBridge.post('resource-shared',{providerId:'jess',clientId:'maya',resource:{title:g.title,icon:g.icon,cat:g.cat,url:g.url||'',tips:g.tips||[]}});}catch(e){}});
   }else if(c){
-    // Real client: actually assign the form to them so it appears the next
+    // Real client: actually assign the form(s) to them so they appear the next
     // time they open their app, instead of just claiming it was sent.
-    if(!Array.isArray(c.pendingForms))c.pendingForms=[];
-    if(!c.pendingForms.some(pf=>pf.formId===fid))c.pendingForms.push({formId:fid,assignedAt:Date.now()});
+    _assignFormsToClient(c,sendIds);
     try{saveClients();}catch(e){}
     if(!c._token){
       closeSendProd();
@@ -4669,7 +4675,8 @@ function confirmSendForm(fid,cid){
     }
   }
   closeSendProd();
-  proToast(`Sent ${tmpl.name}${guides.length?` + ${guides.length} guide${guides.length>1?'s':''}`:''} to ${c?c.name.split(' ')[0]:'client'}`);
+  const extra=sendIds.length>1?` + ${sendIds.length-1} more`:'';
+  proToast(`Sent ${tmpl.name}${extra}${guides.length?` + ${guides.length} guide${guides.length>1?'s':''}`:''} to ${c?c.name.split(' ')[0]:'client'}`);
 }
 // ── Bundle management: group forms + resources to send together ──
 function renderBundles(){
@@ -4726,11 +4733,12 @@ function sendBundlePicker(bid){
 function _sendBundleClientRows(bid,q){
   const matches=_matchClients(q);
   if(!matches.length)return `<div style="padding:20px;text-align:center;color:#888;font-size:12px;">No clients match "${(q||'').replace(/</g,'&lt;')}"</div>`;
-  return matches.map(cid=>{const c=CL[cid];return`<button onclick="this.closest('#send-bundle-sheet').remove();sendBundleToClient('${bid}','${cid}')" style="display:flex;width:100%;align-items:center;gap:10px;padding:11px 12px;border:1px solid #2a2a2a;background:#1a1a1a;border-radius:10px;margin-bottom:8px;cursor:pointer;text-align:left;">
-    <div style="width:36px;height:36px;border-radius:9px;background:${c.bg};display:flex;align-items:center;justify-content:center;font-size:13px;font-weight:500;color:${c.tc};flex-shrink:0;">${c.initials}</div>
-    <div style="flex:1;min-width:0;"><div style="font-size:13px;font-weight:500;color:#e0e0e0;">${c.name}</div></div>
-    <i class="ti ti-send" style="font-size:16px;color:var(--accent);"></i>
-  </button>`;}).join('');
+  return matches.map(cid=>{const c=CL[cid];return`<div style="display:flex;align-items:center;gap:8px;margin-bottom:8px;">
+    <button onclick="this.closest('#send-bundle-sheet').remove();sendBundleToClient('${bid}','${cid}')" style="display:flex;flex:1;min-width:0;align-items:center;gap:10px;padding:11px 12px;border:1px solid #2a2a2a;background:#1a1a1a;border-radius:10px;cursor:pointer;text-align:left;">
+      <div style="width:36px;height:36px;border-radius:9px;background:${c.bg};display:flex;align-items:center;justify-content:center;font-size:13px;font-weight:500;color:${c.tc};flex-shrink:0;">${c.initials}</div>
+      <div style="flex:1;min-width:0;"><div style="font-size:13px;font-weight:500;color:#e0e0e0;overflow:hidden;text-overflow:ellipsis;white-space:nowrap;">${c.name}</div></div>
+    </button>
+  </div>`;}).join('');
 }
 function _renderSendBundleClients(bid,q){const el=document.getElementById('sbp-list');if(el)el.innerHTML=_sendBundleClientRows(bid,q);}
 // Real send: assigns every form + resource in the bundle to the client, then
@@ -5945,16 +5953,28 @@ function _fvpClientRows(q){
   </button>`;}).join('');
 }
 function _renderFvpClients(q){const el=document.getElementById('fvp-list');if(el)el.innerHTML=_fvpClientRows(q);}
+// Any "new client intake" send should automatically include the photo release
+// too, since providers routinely need it for before/after photos and it was
+// previously just labeled as auto-included without actually happening.
+function _withPhotoRelease(formIds){
+  const list=Array.isArray(formIds)?formIds.slice():[formIds];
+  if(formTmpls.photo&&!list.includes('photo'))list.push('photo');
+  return list;
+}
+function _assignFormsToClient(c,formIds){
+  if(!Array.isArray(c.pendingForms))c.pendingForms=[];
+  (formIds||[]).forEach(fid=>{ if(formTmpls[fid]&&!c.pendingForms.some(pf=>pf.formId===fid))c.pendingForms.push({formId:fid,assignedAt:Date.now()}); });
+}
 function sendFirstVisitPackage(id){
   const c=CL[id];if(!c)return;
   const intakeFid=(typeof _ncIntakeFormId==='function')?_ncIntakeFormId():null;
   if(intakeFid&&formTmpls[intakeFid]){
-    if(!Array.isArray(c.pendingForms))c.pendingForms=[];
-    if(!c.pendingForms.some(pf=>pf.formId===intakeFid))c.pendingForms.push({formId:intakeFid,assignedAt:Date.now()});
+    _assignFormsToClient(c,_withPhotoRelease(intakeFid));
     try{saveClients();}catch(e){}
   }
   // The invite sheet itself handles the actual send/share step — this just
-  // makes sure the intake form is already waiting for them the moment they open the app.
+  // makes sure the intake form (+ photo release) is already waiting for them
+  // the moment they open the app.
   inviteClientToApp(id);
 }
 function inviteClientToApp(id){
@@ -6028,8 +6048,8 @@ function _shareClientLinkSheet(id,opts){
 function shareFormLink(fid,cid){
   const tmpl=formTmpls[fid];if(!tmpl)return;
   const c=CL[cid];if(!c)return;
-  if(!Array.isArray(c.pendingForms))c.pendingForms=[];
-  if(!c.pendingForms.some(pf=>pf.formId===fid))c.pendingForms.push({formId:fid,assignedAt:Date.now()});
+  const sendIds=_isIntakeForm(fid)?_withPhotoRelease(fid):[fid];
+  _assignFormsToClient(c,sendIds);
   try{saveClients();}catch(e){}
   if(!c._token){ inviteClientToApp(cid); return; }
   const first=c.name.split(' ')[0];
@@ -6038,7 +6058,7 @@ function shareFormLink(fid,cid){
     title:'Send '+tmpl.name,
     icon:'ti-file-text',iconBg:'var(--accent-tint)',iconColor:'var(--accent)',
     subject:tmpl.name+' \u2014 please complete',
-    msg:'Hi '+first+'! '+who+' sent you '+tmpl.name+' to fill out: '+_clientAppLink(cid)
+    msg:'Hi '+first+'! '+who+' sent you '+tmpl.name+(sendIds.length>1?' (+ a couple more quick items)':'')+' to fill out: '+_clientAppLink(cid)
   });
 }
 function _copyText(t,btn){
@@ -7409,7 +7429,7 @@ function renderNotifFeed(){
   setTimeout(()=>{try{document.querySelectorAll('.swipe-card').forEach((el,i)=>{if(typeof initSwipe==='function')initSwipe(el,i);});}catch(e){}},0);
 }
 function notifCard(n,bare){
-  return`<div onclick="markRead('${n.id}');${n.action==='client'?`nav('client','${n.data}')`:n.action==='chat'?`nav('chat','${n.data}')`:n.action==='checkin'?`nav('checkin-detail','${n.data}')`:n.action==='vault'?`nav('vault')`:n.action==='inventory'?`nav('inventory')`:n.action==='requests'?`nav('requests')`:n.action==='home'?`nav('home')`:''}" style="background:#1a1a1a;border:1px solid ${n.read?'#2a2a2a':'var(--accent-tint2)'};border-radius:12px;${bare?'':'margin:0 16px 8px;'}overflow:hidden;cursor:pointer;${n.read?'':'background:#1e1a10;'}">
+  return`<div onclick="markRead('${n.id}');${n.action==='client'?`nav('client','${n.data}')`:n.action==='form'?`openFormNotif('${n.data}','${n.formEvId||''}')`:n.action==='chat'?`nav('chat','${n.data}')`:n.action==='checkin'?`nav('checkin-detail','${n.data}')`:n.action==='vault'?`nav('vault')`:n.action==='inventory'?`nav('inventory')`:n.action==='requests'?`nav('requests')`:n.action==='home'?`nav('home')`:''}" style="background:#1a1a1a;border:1px solid ${n.read?'#2a2a2a':'var(--accent-tint2)'};border-radius:12px;${bare?'':'margin:0 16px 8px;'}overflow:hidden;cursor:pointer;${n.read?'':'background:#1e1a10;'}">
     <div style="padding:12px 14px;display:flex;align-items:flex-start;gap:10px;">
       <div style="position:relative;flex-shrink:0;">
         <div style="width:40px;height:40px;border-radius:10px;background:${n.col};display:flex;align-items:center;justify-content:center;">
@@ -7434,6 +7454,16 @@ function notifRow(n){
   </div>`;
 }
 function clearNotif(id){const i=notifFeed.findIndex(n=>n.id===id);if(i>=0)notifFeed.splice(i,1);updateBadge();renderNotifFeed();}
+// Opens the client's profile and immediately shows the specific form
+// submission a notification was about, instead of just the general profile.
+function openFormNotif(cid,evId){
+  nav('client',cid);
+  setTimeout(()=>{
+    const c=CL[cid];if(!c||!Array.isArray(c.submittedForms))return;
+    const i=c.submittedForms.findIndex(sf=>sf.evId===evId);
+    if(i>=0&&typeof viewSubmittedForm==='function')viewSubmittedForm(cid,i);
+  },60);
+}
 function markRead(id){
   const n=notifFeed.find(x=>x.id===id);
   if(n)n.read=true;
@@ -9430,7 +9460,7 @@ async function syncClientEvents(){
         if(c){
           const title=payload.title||'Form';
           c.submittedForms=c.submittedForms||[];
-          c.submittedForms.unshift({formId:payload.formId,title,answers:payload.answers||{},flagged:payload.flagged||[],date:payload.date||'Today',signed:!!payload.signed});
+          c.submittedForms.unshift({formId:payload.formId,title,answers:payload.answers||{},flagged:payload.flagged||[],date:payload.date||'Today',signed:!!payload.signed,evId:ev.id});
           if(Array.isArray(c.pendingForms))c.pendingForms=c.pendingForms.filter(pf=>pf.formId!==payload.formId);
           // Map the real answers onto the actual chart fields (allergies, medications,
           // conditions, skin type, etc.) — this used to only happen for the manual
@@ -9451,7 +9481,7 @@ async function syncClientEvents(){
           const fl=flagged?` \u26a0 Flagged: ${flagged.join(', ')}.`:'';
           notifFeed.unshift({id:'evf'+ev.id,type:'form',icon:flagged?'ti-alert-triangle':'ti-clipboard-check',col:flagged?'#2a0f0f':'#0a2019',ic:flagged?'#e87070':'#4ec49a',
             title:flagged?'Intake flagged for review':'Form completed',body:`${name} completed ${title}.${fl}`,
-            time:'Just now',read:false,action:'client',data:cid});
+            time:'Just now',read:false,action:'form',data:cid,formEvId:ev.id});
           providerSystemNotify(flagged?'Intake flagged for review':'Form completed',`${name} \u00b7 ${title}${fl}`);
           touchedForms=true;touchedNotif=true;
         }
@@ -10171,7 +10201,63 @@ function _ncQHTML(q,i){
   else field=`<input class="fi" id="${id}" aria-label="${q.label}" value="${esc}" oninput="newClientData['${id}']=this.value" placeholder="Answer…">`;
   return `<div style="margin-bottom:14px;">${lab}${field}</div>`;
 }
-function renderNewClient(){setNav('clients');newClientStep=0;newClientData={};_ncDeliver='app';renderNCStep();}
+function renderNewClient(){setNav('clients');newClientData={};renderNCBasicStep();}
+function renderNCBasicStep(){
+  setNav('clients');
+  document.getElementById('tt').textContent='Add client';
+  const v=id=>String(newClientData[id]||'').replace(/"/g,'&quot;');
+  S.innerHTML=`
+  <div style="padding:14px 16px 4px;"><div id="page-heading" tabindex="-1" style="font-size:19px;font-weight:600;color:#f0f0f0;">Add a client</div><div style="font-size:13px;color:#999;margin-top:3px;line-height:1.5;">Just the basics for now \u2014 you'll choose how to handle their intake next.</div></div>
+  <div style="padding:8px 16px;">
+    <span class="fl-lbl">Client name</span><input class="fi" id="nc-name" placeholder="Full name" value="${v('nc-name')}" style="margin-bottom:12px;">
+    <span class="fl-lbl">Phone number</span><input class="fi" id="nc-phone" placeholder="(555) 000-0000" value="${v('nc-phone')}" style="margin-bottom:12px;">
+    <span class="fl-lbl">Email</span><input class="fi" id="nc-email" placeholder="email@example.com" value="${v('nc-email')}" style="margin-bottom:12px;">
+    <span class="fl-lbl">Date of birth</span><input class="fi" type="date" id="nc-dob" value="${v('nc-dob')}" style="margin-bottom:12px;">
+    <span class="fl-lbl">How did you hear about us?</span><input class="fi" id="nc-ref" placeholder="Instagram, Google, word of mouth…" value="${v('nc-ref')}" style="margin-bottom:8px;">
+    <button class="btnp" style="border-radius:8px;margin:8px 0 20px;" onclick="ncSaveBasic()"><i class="ti ti-check"></i> Save client</button>
+  </div>`;
+}
+function ncSaveBasic(){
+  const get=id=>{const el=document.getElementById(id);return el?el.value:'';};
+  const name=(get('nc-name')||'').trim();
+  if(!name){proToast('Add the client\u2019s name to continue');return;}
+  const id='c'+Date.now();
+  const initials=name.split(/\s+/).map(w=>w[0]||'').join('').slice(0,2).toUpperCase()||'NC';
+  const palette=[['#1e1633','#a891ec'],['#0a2019','#4ec49a'],['#0d1e33','#5ba3e8'],['#2a0f1a','#e87070'],['#2e1c10','var(--accent)']];
+  const col=palette[Object.keys(CL).length%palette.length];
+  CL[id]={name,initials,bg:col[0],tc:col[1],
+    phone:get('nc-phone')||'',email:get('nc-email')||'',birthday:get('nc-dob')||'',
+    skin:'—',concerns:'—',allergies:'None noted',fitz:'—',
+    lastVisit:'—',nextVisit:'Not scheduled',treatment:'New client',sessions:0,seriesTotal:0,touchUpDate:'—',
+    conditions:'',notes:''};
+  try{if(typeof saveClients==='function')saveClients();}catch(e){}
+  proToast(name.split(' ')[0]+' added');
+  nav('nc-next-step',id);
+}
+function renderNCNextStep(id){
+  const c=CL[id];if(!c){nav('clients');return;}
+  document.getElementById('tt').textContent='Client intake';
+  S.innerHTML=`
+  <div style="padding:20px 16px 4px;text-align:center;">
+    <div style="width:56px;height:56px;border-radius:50%;background:#0a2019;display:flex;align-items:center;justify-content:center;margin:0 auto 12px;"><i class="ti ti-circle-check" style="font-size:28px;color:#4ec49a;"></i></div>
+    <div id="page-heading" tabindex="-1" style="font-size:18px;font-weight:600;color:#f0f0f0;">${c.name} added</div>
+    <div style="font-size:13px;color:#999;margin-top:4px;line-height:1.5;">Now, how do you want to handle their intake?</div>
+  </div>
+  <div style="padding:16px;">
+    <button onclick="nav('provider-fill-intake','${id}')" style="display:flex;width:100%;align-items:flex-start;gap:11px;padding:14px;border:1px solid var(--accent);background:var(--accent-a08);border-radius:12px;margin-bottom:10px;cursor:pointer;text-align:left;font-family:inherit;">
+      <i class="ti ti-device-tablet" style="font-size:19px;color:var(--accent);flex-shrink:0;margin-top:1px;"></i>
+      <span style="flex:1;"><span style="font-size:14px;font-weight:600;color:#f0f0f0;display:block;">Fill it out myself</span><span style="font-size:12px;color:#999;display:block;margin-top:2px;">Answer the intake questions right now, on this device</span></span>
+    </button>
+    <button onclick="sendFirstVisitPackage('${id}');nav('clients');" style="display:flex;width:100%;align-items:flex-start;gap:11px;padding:14px;border:1px solid #2a2a2a;background:#1a1a1a;border-radius:12px;margin-bottom:10px;cursor:pointer;text-align:left;font-family:inherit;">
+      <i class="ti ti-send" style="font-size:19px;color:#a891ec;flex-shrink:0;margin-top:1px;"></i>
+      <span style="flex:1;"><span style="font-size:14px;font-weight:600;color:#f0f0f0;display:block;">Send it to ${c.name.split(' ')[0]}</span><span style="font-size:12px;color:#999;display:block;margin-top:2px;">Invites them to the app + sends the intake &amp; photo release</span></span>
+    </button>
+    <button onclick="nav('client','${id}')" style="display:flex;width:100%;align-items:center;gap:11px;padding:12px 14px;border:none;background:none;cursor:pointer;text-align:left;font-family:inherit;">
+      <i class="ti ti-clock" style="font-size:17px;color:#888;flex-shrink:0;"></i>
+      <span style="font-size:13px;color:#999;">Skip for now \u2014 just go to their profile</span>
+    </button>
+  </div>`;
+}
 function _ncReadStep(){
   const get=id=>{const el=document.getElementById(id);return el?(el.value):undefined;};
   ['nc-name','nc-phone','nc-email','nc-dob','nc-ref','nc-conditions','nc-meds','nc-notes'].forEach(id=>{const v=get(id);if(v!==undefined)newClientData[id]=v;});
@@ -10268,6 +10354,81 @@ function finishNewClient(){
   nav('clients');
 }
 
+// ── Provider fills the intake themselves, on behalf of the client ──
+let _pfiData={};
+function _pfiQs(fid){
+  const t=formTmpls[fid];if(!t)return [];
+  return t.qs.filter(q=>{
+    if(q.type==='Signature')return false;
+    const l=(q.label||'').toLowerCase();
+    if(/full name|^name$/.test(l))return false;
+    if(/date of birth|^dob$/.test(l))return false;
+    if(/phone|mobile number/.test(l))return false;
+    if(/e-?mail/.test(l))return false;
+    if(/how did you hear|referred by|referral|hear about us/.test(l))return false;
+    return true;
+  });
+}
+function _pfiQHTML(q,i){
+  const id='pfi-'+i;
+  if(q.type==='Contraindications'){
+    return `<div style="margin-bottom:14px;background:#1a1a1a;border:1px solid #2a2a2a;border-radius:11px;padding:12px 13px;">
+      <div style="font-size:12px;font-weight:600;color:#e8a060;text-transform:uppercase;letter-spacing:.04em;margin-bottom:8px;">${q.label}</div>
+      ${(q.items||[]).map((it,ii)=>`<label style="display:flex;align-items:flex-start;gap:8px;padding:6px 0;cursor:pointer;"><input type="checkbox" id="${id}-${ii}" onchange="_pfiData['${id}']=_pfiCollectChecked('${id}',${(q.items||[]).length})" style="margin-top:3px;width:16px;height:16px;accent-color:var(--accent);flex-shrink:0;"><span style="font-size:13px;color:#ddd;line-height:1.5;">${it}</span></label>`).join('')}
+    </div>`;
+  }
+  const val=_pfiData[id]||'';
+  const lab=`<div style="font-size:13px;font-weight:500;color:#e0e0e0;margin-bottom:6px;">${q.label} ${q.required?'<span style="font-size:11px;color:#e87070;">Required</span>':'<span style="font-size:11px;color:#555;">Optional</span>'}</div>`;
+  const esc=String(val).replace(/"/g,'&quot;');const escT=String(val).replace(/</g,'&lt;');
+  let field='';
+  if(q.type==='Long text')field=`<textarea class="fi" id="${id}" aria-label="${q.label}" oninput="_pfiData['${id}']=this.value" style="height:60px;resize:none;line-height:1.5;" placeholder="Answer…">${escT}</textarea>`;
+  else if(q.type==='Date')field=`<input class="fi" type="date" id="${id}" aria-label="${q.label}" value="${esc}" onchange="_pfiData['${id}']=this.value">`;
+  else if(q.type==='Yes / No')field=`<div style="display:flex;gap:8px;">${['Yes','No'].map(o=>`<button onclick="_pfiData['${id}']='${o}';_renderPfiQs()" class="btng" style="flex:1;${val===o?'border-color:var(--accent);color:var(--accent);background:var(--accent-a08);':''}">${o}</button>`).join('')}</div>`;
+  else field=`<input class="fi" id="${id}" aria-label="${q.label}" value="${esc}" oninput="_pfiData['${id}']=this.value" placeholder="Answer…">`;
+  return `<div style="margin-bottom:14px;">${lab}${field}</div>`;
+}
+function _pfiCollectChecked(id,n){
+  const out=[];for(let i=0;i<n;i++){const el=document.getElementById(id+'-'+i);if(el&&el.checked)out.push(i);}return out;
+}
+function renderProviderFillIntake(id){
+  const c=CL[id];if(!c){nav('clients');return;}
+  const fid=(typeof _ncIntakeFormId==='function')?_ncIntakeFormId():null;
+  if(!fid){proToast('No intake form is set up for your profession yet');nav('client',id);return;}
+  _pfiData={};
+  document.getElementById('tt').textContent='Fill intake';
+  S.innerHTML=`
+  <div style="padding:12px 16px 0;">
+    <div style="font-size:13px;color:#999;margin-bottom:12px;">Filling out ${formTmpls[fid].name} for <b style="color:#ccc;">${c.name}</b>.</div>
+    <div id="pfi-qs">${_pfiQs(fid).map((q,i)=>_pfiQHTML(q,i)).join('')}</div>
+    <button class="btnp" style="border-radius:8px;margin:8px 0 22px;" onclick="_pfiSave('${id}','${fid}')"><i class="ti ti-check"></i> Save intake</button>
+  </div>`;
+}
+function _renderPfiQs(){
+  const fid=(typeof _ncIntakeFormId==='function')?_ncIntakeFormId():null;if(!fid)return;
+  const box=document.getElementById('pfi-qs');if(box)box.innerHTML=_pfiQs(fid).map((q,i)=>_pfiQHTML(q,i)).join('');
+}
+function _pfiSave(id,fid){
+  const c=CL[id];const t=formTmpls[fid];if(!c||!t)return;
+  const qs=_pfiQs(fid);
+  const answers={};const flagged=[];
+  qs.forEach((q,i)=>{
+    if(q.type==='Contraindications'){
+      const idxs=_pfiData['pfi-'+i]||[];
+      const checked=idxs.map(ii=>(q.items||[])[ii]).filter(Boolean);
+      answers[q.id]=checked;flagged.push(...checked);
+    }else{
+      answers[q.id]=_pfiData['pfi-'+i]||'';
+    }
+  });
+  try{_applyIntakeVitals(c,fid,q=>answers[q.id]);}catch(e){}
+  try{_captureBirthday(c,fid,answers);}catch(e){}
+  c.submittedForms=c.submittedForms||[];
+  c.submittedForms.unshift({formId:fid,title:t.name,answers,flagged,date:'Today',signed:false,filledBy:'provider'});
+  if(flagged.length)c.flaggedContra={form:t.name,items:flagged.slice(),date:'Today'};
+  try{saveClients();}catch(e){}
+  proToast('Intake saved \u2713');
+  nav('client',id);
+}
 // ── PASSWORD & SECURITY ──
 function renderPasswordSecurity(){
   document.getElementById('tt').textContent='Password & security';
