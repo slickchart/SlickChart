@@ -104,5 +104,31 @@ export async function ensureProvidersTable() {
   )`;
   await q`ALTER TABLE square_connections ADD COLUMN IF NOT EXISTS connected_at timestamptz DEFAULT now()`;
   await q`ALTER TABLE square_connections ADD COLUMN IF NOT EXISTS last_used_at timestamptz`;
+  // Real Stripe payment status per email — this is the source of truth for
+  // whether someone is allowed to have an account, and for the in-app billing
+  // screen. Populated only by the Stripe webhook, never by the app itself.
+  await q`CREATE TABLE IF NOT EXISTS subscriptions (
+    email text PRIMARY KEY,
+    stripe_customer_id text,
+    stripe_subscription_id text,
+    status text NOT NULL DEFAULT 'inactive',
+    plan_amount int,
+    current_period_end timestamptz,
+    updated_at timestamptz DEFAULT now()
+  )`;
   _provReady = true;
+}
+
+// Shared check: does this email have an active (paid, or free-coupon) subscription?
+// A 100%-off Stripe coupon still produces a real completed checkout, so this
+// naturally covers both paying customers and coded free testers the same way.
+export async function getSubscription(email) {
+  await ensureProvidersTable();
+  const q = sql();
+  const rows = await q`SELECT * FROM subscriptions WHERE email=${String(email || '').trim().toLowerCase()}`;
+  return rows[0] || null;
+}
+export async function hasActiveSubscription(email) {
+  const s = await getSubscription(email);
+  return !!(s && (s.status === 'active' || s.status === 'trialing'));
 }
