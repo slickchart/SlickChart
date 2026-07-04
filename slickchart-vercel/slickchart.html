@@ -3116,6 +3116,30 @@ function _renderPhotosView(id,c,_passed){
     ${(isHairBarber||isBrowOnly)?`<button class="pill ${activeAngle==='Inspiration'?'active':''}" onclick="activeAngle='Inspiration';_renderPhotosView('${id}',CL['${id}'],photoSessions['${id}']||[])">${isBrowOnly?'💡 Inspo':'💡 Inspiration'}</button>`:''}
   </div>
 
+  <!-- All photos, grouped by category — separate from the angle-based progress comparison below -->
+  ${(()=>{
+    const all=capturedPhotos[id]||[];
+    if(!all.length)return '';
+    const ref=[],ba=[];
+    all.forEach((p,i)=>{(p.phase==='before'||p.phase==='after'?ba:ref).push([p,i]);});
+    const photoBlock=(p,i)=>`<div style="position:relative;">${_capturedThumb(p,84)}
+      <div style="display:flex;gap:3px;margin-top:4px;">
+        <button onclick="_setPhotoCategory('${id}',${i},'reference')" style="flex:1;font-size:9px;padding:3px 2px;border-radius:5px;border:1px solid ${p.phase==='reference'?'#5ba3e8':'#2a2a2a'};background:${p.phase==='reference'?'#0d1e33':'#161616'};color:${p.phase==='reference'?'#5ba3e8':'#888'};cursor:pointer;">Ref</button>
+        <button onclick="_setPhotoCategory('${id}',${i},'before')" style="flex:1;font-size:9px;padding:3px 2px;border-radius:5px;border:1px solid ${p.phase==='before'?'#888':'#2a2a2a'};background:${p.phase==='before'?'#2a2a2a':'#161616'};color:${p.phase==='before'?'#fff':'#888'};cursor:pointer;">Before</button>
+        <button onclick="_setPhotoCategory('${id}',${i},'after')" style="flex:1;font-size:9px;padding:3px 2px;border-radius:5px;border:1px solid ${p.phase==='after'?'var(--accent)':'#2a2a2a'};background:${p.phase==='after'?'var(--accent-a08)':'#161616'};color:${p.phase==='after'?'var(--accent)':'#888'};cursor:pointer;">After</button>
+      </div>
+    </div>`;
+    return `
+    <div class="sh"><h2>Reference photos</h2></div>
+    <div style="display:flex;gap:8px;overflow-x:auto;padding:0 16px 4px;scrollbar-width:none;">
+      ${ref.length?ref.map(([p,i])=>photoBlock(p,i)).join(''):'<div style="color:#777;font-size:12px;padding:8px 0;">None yet — general reference &amp; inspiration photos land here.</div>'}
+    </div>
+    <div class="sh"><h2>Before &amp; after</h2></div>
+    <div style="display:flex;gap:8px;overflow-x:auto;padding:0 16px 12px;scrollbar-width:none;">
+      ${ba.length?ba.map(([p,i])=>photoBlock(p,i)).join(''):'<div style="color:#777;font-size:12px;padding:8px 0;">None yet — captured during a session.</div>'}
+    </div>`;
+  })()}
+
   ${isBrowOnly?`
   <!-- Healing stage tracker -->
   <div style="margin:0 16px 12px;background:#1e0d33;border:1px solid #3d1a66;border-radius:12px;padding:12px 14px;">
@@ -3842,7 +3866,7 @@ function takePhoto(clientId,phase,after){
     const f=inp.files&&inp.files[0];const ts=Date.now();
     const save=url=>{
       if(!capturedPhotos[clientId])capturedPhotos[clientId]=[];
-      capturedPhotos[clientId].push({url:url||'',ts,phase:phase||'',angle:(typeof activeAngle!=='undefined'&&activeAngle!=='Inspiration')?activeAngle:'Front'});
+      capturedPhotos[clientId].push({url:url||'',ts,phase:phase||'reference',angle:(typeof activeAngle!=='undefined'&&activeAngle!=='Inspiration')?activeAngle:'Front'});
       proToast((phase?phase.charAt(0).toUpperCase()+phase.slice(1)+' photo':'Photo')+' captured · '+_photoStamp(ts));
       if(after)after();
     };
@@ -3851,8 +3875,15 @@ function takePhoto(clientId,phase,after){
   inp.click();
 }
 function _capturedFor(clientId,phase){return (capturedPhotos[clientId]||[]).filter(p=>!phase||p.phase===phase);}
+// Lets a provider re-tag any photo as Reference or Before/After after the fact.
+function _setPhotoCategory(clientId,idx,cat){
+  const list=capturedPhotos[clientId];if(!list||!list[idx])return;
+  list[idx].phase=cat;
+  try{if(typeof persistCapturedPhotos==='function')persistCapturedPhotos();}catch(e){}
+  _renderPhotosView(clientId,CL[clientId],photoSessions[clientId]||[]);
+}
 // Thumbnail with a baked-in date + time stamp and optional before/after badge
-function _capturedThumb(p,size){size=size||72;const d=new Date(p.ts);const dateShort=d.toLocaleDateString('en-US',{month:'short',day:'numeric'});const time=d.toLocaleTimeString('en-US',{hour:'numeric',minute:'2-digit'});return `<div style="width:${size}px;height:${Math.round(size*1.25)}px;border-radius:9px;overflow:hidden;flex-shrink:0;position:relative;background:${p.url?'#000':'#2e1c10'};">${p.url?`<img src="${p.url}" alt="Captured ${dateShort}" style="width:100%;height:100%;object-fit:cover;">`:`<div style="width:100%;height:100%;display:flex;align-items:center;justify-content:center;"><i class="ti ti-photo" aria-hidden="true" style="font-size:22px;color:var(--accent);opacity:.5;"></i></div>`}<div style="position:absolute;bottom:0;left:0;right:0;background:linear-gradient(transparent,rgba(0,0,0,.82));padding:9px 5px 4px;"><div style="font-size:9px;color:#fff;font-weight:600;line-height:1.2;">${dateShort}</div><div style="font-size:8px;color:rgba(255,255,255,.72);">${time}</div></div>${p.phase?`<div style="position:absolute;top:4px;left:4px;background:${p.phase==='before'?'rgba(0,0,0,.72)':'var(--accent)'};color:${p.phase==='before'?'#fff':'var(--accent-ink)'};font-size:8px;font-weight:700;padding:1px 5px;border-radius:4px;text-transform:uppercase;letter-spacing:.03em;">${p.phase}</div>`:''}</div>`;}
+function _capturedThumb(p,size){size=size||72;const d=new Date(p.ts);const dateShort=d.toLocaleDateString('en-US',{month:'short',day:'numeric'});const time=d.toLocaleTimeString('en-US',{hour:'numeric',minute:'2-digit'});const badgeBg=p.phase==='before'?'rgba(0,0,0,.72)':p.phase==='after'?'var(--accent)':'#0d1e33';const badgeColor=p.phase==='before'?'#fff':p.phase==='after'?'var(--accent-ink)':'#5ba3e8';return `<div style="width:${size}px;height:${Math.round(size*1.25)}px;border-radius:9px;overflow:hidden;flex-shrink:0;position:relative;background:${p.url?'#000':'#2e1c10'};">${p.url?`<img src="${p.url}" alt="Captured ${dateShort}" style="width:100%;height:100%;object-fit:cover;">`:`<div style="width:100%;height:100%;display:flex;align-items:center;justify-content:center;"><i class="ti ti-photo" aria-hidden="true" style="font-size:22px;color:var(--accent);opacity:.5;"></i></div>`}<div style="position:absolute;bottom:0;left:0;right:0;background:linear-gradient(transparent,rgba(0,0,0,.82));padding:9px 5px 4px;"><div style="font-size:9px;color:#fff;font-weight:600;line-height:1.2;">${dateShort}</div><div style="font-size:8px;color:rgba(255,255,255,.72);">${time}</div></div>${p.phase?`<div style="position:absolute;top:4px;left:4px;background:${badgeBg};color:${badgeColor};font-size:8px;font-weight:700;padding:1px 5px;border-radius:4px;text-transform:uppercase;letter-spacing:.03em;">${p.phase}</div>`:''}</div>`;}
 function openPhotoUpload(clientId){
   uploadModalClientId=clientId;
   _pendingPhotos=[];_uploadAngle='Front';
@@ -3936,7 +3967,7 @@ function savePhotos(){
   // commit each selected/captured photo with an auto date-stamp + chosen angle
   if(cid&&_pendingPhotos.length){
     if(!capturedPhotos[cid])capturedPhotos[cid]=[];
-    _pendingPhotos.forEach(p=>capturedPhotos[cid].push({url:p.url,ts:p.ts||Date.now(),phase:'',angle:_uploadAngle}));
+    _pendingPhotos.forEach(p=>capturedPhotos[cid].push({url:p.url,ts:p.ts||Date.now(),phase:'reference',angle:_uploadAngle}));
   }
   _pendingPhotos=[];_uploadAngle='Front';
   document.getElementById('photo-upload-modal')?.remove();
@@ -9451,6 +9482,14 @@ async function syncClientEvents(){
           // as a real alert on the client's chart, not just sit inside the check-in
           // record where it's easy to miss before a session.
           if(ci.flagged&&ci.flagged.length)c.flaggedContra={form:'Pre-visit check-in',items:ci.flagged.slice(),date:ci.dateLabel||'Today'};
+          // Photos a client sends need to actually land in their photo chart, not
+          // just sit inside this one check-in record where they're easy to miss.
+          if(ciPhotos.length){
+            if(!capturedPhotos[cid])capturedPhotos[cid]=[];
+            const baseTs=Date.now();
+            ciPhotos.forEach((url,i)=>capturedPhotos[cid].push({url,ts:baseTs+i,phase:'reference',angle:'',source:'checkin'}));
+            try{if(typeof persistCapturedPhotos==='function')persistCapturedPhotos();}catch(e){}
+          }
           try{saveClients();}catch(e){}
         }
         const fl=(ci.flagged&&ci.flagged.length)?` Flagged: ${ci.flagged.join(', ')}.`:'';
@@ -10241,8 +10280,10 @@ function ncSaveBasic(){
   proToast(name.split(' ')[0]+' added');
   nav('nc-next-step',id);
 }
+let _ncNextChecks={invite:true,intake:true};
 function renderNCNextStep(id){
   const c=CL[id];if(!c){nav('clients');return;}
+  _ncNextChecks={invite:true,intake:true};
   document.getElementById('tt').textContent='Client intake';
   S.innerHTML=`
   <div style="padding:20px 16px 4px;text-align:center;">
@@ -10251,19 +10292,34 @@ function renderNCNextStep(id){
     <div style="font-size:13px;color:#999;margin-top:4px;line-height:1.5;">Now, how do you want to handle their intake?</div>
   </div>
   <div style="padding:16px;">
-    <button onclick="nav('provider-fill-intake','${id}')" style="display:flex;width:100%;align-items:flex-start;gap:11px;padding:14px;border:1px solid var(--accent);background:var(--accent-a08);border-radius:12px;margin-bottom:10px;cursor:pointer;text-align:left;font-family:inherit;">
+    <button onclick="nav('provider-fill-intake','${id}')" style="display:flex;width:100%;align-items:flex-start;gap:11px;padding:14px;border:1px solid var(--accent);background:var(--accent-a08);border-radius:12px;margin-bottom:16px;cursor:pointer;text-align:left;font-family:inherit;">
       <i class="ti ti-device-tablet" style="font-size:19px;color:var(--accent);flex-shrink:0;margin-top:1px;"></i>
       <span style="flex:1;"><span style="font-size:14px;font-weight:600;color:#f0f0f0;display:block;">Fill it out myself</span><span style="font-size:12px;color:#999;display:block;margin-top:2px;">Answer the intake questions right now, on this device</span></span>
     </button>
-    <button onclick="sendFirstVisitPackage('${id}');nav('clients');" style="display:flex;width:100%;align-items:flex-start;gap:11px;padding:14px;border:1px solid #2a2a2a;background:#1a1a1a;border-radius:12px;margin-bottom:10px;cursor:pointer;text-align:left;font-family:inherit;">
-      <i class="ti ti-send" style="font-size:19px;color:#a891ec;flex-shrink:0;margin-top:1px;"></i>
-      <span style="flex:1;"><span style="font-size:14px;font-weight:600;color:#f0f0f0;display:block;">Send it to ${c.name.split(' ')[0]}</span><span style="font-size:12px;color:#999;display:block;margin-top:2px;">Invites them to the app + sends the intake &amp; photo release</span></span>
-    </button>
-    <button onclick="nav('client','${id}')" style="display:flex;width:100%;align-items:center;gap:11px;padding:12px 14px;border:none;background:none;cursor:pointer;text-align:left;font-family:inherit;">
-      <i class="ti ti-clock" style="font-size:17px;color:#888;flex-shrink:0;"></i>
+    <div style="font-size:11px;font-weight:600;color:#777;text-transform:uppercase;letter-spacing:.06em;margin-bottom:8px;">Or send to ${c.name.split(' ')[0]} \u2014 pick any</div>
+    <label style="display:flex;align-items:flex-start;gap:10px;padding:12px 13px;border:1px solid #2a2a2a;background:#1a1a1a;border-radius:11px;margin-bottom:8px;cursor:pointer;">
+      <input type="checkbox" id="ncn-invite" checked onchange="_ncNextChecks.invite=this.checked" style="margin-top:2px;width:17px;height:17px;accent-color:var(--accent);flex-shrink:0;">
+      <span style="flex:1;"><span style="font-size:13px;font-weight:600;color:#e0e0e0;display:block;">Invite to the app</span><span style="font-size:11px;color:#999;display:block;margin-top:2px;">So they can see summaries, aftercare &amp; rebook anytime</span></span>
+    </label>
+    <label style="display:flex;align-items:flex-start;gap:10px;padding:12px 13px;border:1px solid #2a2a2a;background:#1a1a1a;border-radius:11px;margin-bottom:14px;cursor:pointer;">
+      <input type="checkbox" id="ncn-intake" checked onchange="_ncNextChecks.intake=this.checked" style="margin-top:2px;width:17px;height:17px;accent-color:var(--accent);flex-shrink:0;">
+      <span style="flex:1;"><span style="font-size:13px;font-weight:600;color:#e0e0e0;display:block;">Send intake form</span><span style="font-size:11px;color:#999;display:block;margin-top:2px;">Includes the photo release automatically</span></span>
+    </label>
+    <button onclick="_ncNextContinue('${id}')" class="btnp" style="width:100%;border-radius:10px;padding:12px;margin-bottom:10px;">Continue</button>
+    <button onclick="nav('client','${id}')" style="display:flex;width:100%;align-items:center;justify-content:center;gap:8px;padding:8px 14px;border:none;background:none;cursor:pointer;text-align:center;font-family:inherit;">
       <span style="font-size:13px;color:#999;">Skip for now \u2014 just go to their profile</span>
     </button>
   </div>`;
+}
+function _ncNextContinue(id){
+  const c=CL[id];if(!c)return;
+  const {invite,intake}=_ncNextChecks;
+  if(!invite&&!intake){ nav('client',id); return; }
+  if(intake){
+    const intakeFid=(typeof _ncIntakeFormId==='function')?_ncIntakeFormId():null;
+    if(intakeFid&&formTmpls[intakeFid]){ _assignFormsToClient(c,_withPhotoRelease(intakeFid)); try{saveClients();}catch(e){} }
+  }
+  if(invite||intake){ inviteClientToApp(id); } // sending the intake needs an invite link to deliver to, same as inviting on its own
 }
 function _ncReadStep(){
   const get=id=>{const el=document.getElementById(id);return el?(el.value):undefined;};
