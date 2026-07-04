@@ -5763,7 +5763,12 @@ function _assembleClientData(id){
   const c=CL[id]||{};
   const studio=(typeof bizInfo!=='undefined'&&bizInfo&&bizInfo.name)||'';
   const providerName=(typeof _providerFirstName==='function'&&_providerFirstName())||'';
-  const brand=(typeof brandColors!=='undefined'&&brandColors)||{primary:'#C8A882',secondary:'#2C5F8A'};
+  // NOTE: branding is intentionally NOT included here anymore. It used to be
+  // embedded in every single client's data blob, which meant the sync payload
+  // grew with the client list and could exceed the server's size limit once a
+  // provider had more than a few clients (this caused real 413 errors). The
+  // client app now fetches branding directly from the provider's shared store
+  // (see api/client-data.js), so it only ever needs to be sent once, not N times.
   const aftercare=((typeof getClientHomecare==='function'?getClientHomecare(id):[])||[]);
   let availability=null;
   try{availability=(typeof SlickBridge!=='undefined'&&SlickBridge.getAvailability)?SlickBridge.getAvailability():null;}catch(e){}
@@ -5783,7 +5788,7 @@ function _assembleClientData(id){
     const g=(typeof _findGuide==='function')?_findGuide(pg.guideId):null;if(!g)return null;
     return {guideId:pg.guideId,title:g.title||'Guide',icon:g.icon||'📄',cat:g.cat||'',url:g.url||'',tips:Array.isArray(g.tips)?g.tips:[]};
   }).filter(Boolean);
-  return {studio,providerName,brand,profile:{skin:c.skin||'',concerns:c.concerns||'',allergies:c.allergies||'',fitz:c.fitz||'',treatment:c.treatment||'',lastVisit:c.lastVisit||'',nextVisit:c.nextVisit||''},summaries,aftercare,products,forms,pendingForms,pendingGuides,photos:Array.isArray(c.photos)?c.photos:[],booking:{canRequest:true},availability};
+  return {studio,providerName,profile:{skin:c.skin||'',concerns:c.concerns||'',allergies:c.allergies||'',fitz:c.fitz||'',treatment:c.treatment||'',lastVisit:c.lastVisit||'',nextVisit:c.nextVisit||''},summaries,aftercare,products,forms,pendingForms,pendingGuides,photos:Array.isArray(c.photos)?c.photos:[],booking:{canRequest:true},availability};
 }
 let _syncingClients=false,_clientSyncTimer=null;
 function _scheduleClientSync(){ if(_clientSyncTimer)clearTimeout(_clientSyncTimer); _clientSyncTimer=setTimeout(function(){_syncClientsToServer({});},2500); }
@@ -7565,18 +7570,10 @@ function saveBranding(){
   if(tEl)brandColors.tagline=tEl.value.trim();
   if(wEl)brandColors.welcomeMessage=wEl.value.trim();
   saveBrandColors();applyTheme();_syncHeaderLogo();
-  // Branding is the kind of save someone expects to just work, and might close
-  // the tab right after — so push it to already-invited clients immediately
-  // rather than relying on the usual few-second debounced background sync.
-  if(typeof _syncClientsToServer==='function'){
-    proToast('Saving\u2026',0);
-    _syncClientsToServer({toast:false}).then(j=>{
-      if(j&&j.ok)proToast('Branding saved \u2713');
-      else proToast('Could not reach the server \u2014 your branding is saved on this device but hasn\u2019t reached your clients yet. Try again in a moment.',0);
-    });
-  }else{
-    proToast('Branding saved ✨');
-  }
+  // Branding now reaches clients by being looked up directly from this shared
+  // store (see api/client-data.js) — no need to push it into every client's
+  // own record anymore, so saveBrandColors() alone is enough here.
+  proToast('Branding saved \u2713');
 }
 
 function renderBranding(){
@@ -7640,14 +7637,11 @@ function _updateBrandPreview(){
   const wEl=document.getElementById('bc-prev-welcome');if(wEl)wEl.textContent=wel;
 }
 function _uploadLogo(){
-  _pickLogo(dataUrl=>{brandColors.logoDataUrl=dataUrl;saveBrandColors();_syncHeaderLogo();renderBranding();proToast('Logo saved \u2713');
-    try{if(typeof _scheduleClientSync==='function')_scheduleClientSync();}catch(e){}
-  });
+  _pickLogo(dataUrl=>{brandColors.logoDataUrl=dataUrl;saveBrandColors();_syncHeaderLogo();renderBranding();proToast('Logo saved \u2713');});
 }
 function _removeLogo(){
   confirmModal({title:'Remove your logo?',body:'Clients will see your initials instead until you upload a new one.',action:'Remove'},()=>{
     delete brandColors.logoDataUrl;saveBrandColors();_syncHeaderLogo();renderBranding();
-    try{if(typeof _scheduleClientSync==='function')_scheduleClientSync();}catch(e){}
   });
 }
 // ── BUSINESS HOURS (per-day, drives client booking availability) ──
