@@ -46,3 +46,89 @@ export function appOrigin(req) {
   const proto = (req.headers['x-forwarded-proto'] || 'https');
   return proto + '://' + host;
 }
+
+// The welcome + thank-you email new providers get right after signing up.
+// Written to do three things: verify their email (functional), thank them for
+// joining the founding beta, and set the tone that this is a provider-built
+// app they're helping shape, not a finished product being handed to them.
+export function welcomeEmailHtml({ name, link }) {
+  const first = String(name || '').trim().split(/\s+/)[0] || 'there';
+  return `<div style="font-family:-apple-system,Segoe UI,Roboto,sans-serif;max-width:560px;margin:0 auto;padding:8px;color:#1a1a1a;">
+    <div style="background:#14100c;border-radius:14px;padding:28px 24px;text-align:center;color:#f4ede2;">
+      <div style="font-size:22px;font-weight:700;margin-bottom:4px;">SlickChart</div>
+      <div style="font-size:13px;color:#a99b86;letter-spacing:.04em;text-transform:uppercase;">Founding Beta</div>
+    </div>
+
+    <div style="padding:28px 6px 6px;">
+      <p style="font-size:16px;line-height:1.6;margin:0 0 16px;">Hi ${esc(first)},</p>
+      <p style="font-size:16px;line-height:1.7;margin:0 0 16px;"><strong>Welcome to SlickChart, and genuinely, thank you.</strong> You just joined an exclusive group of providers helping build something new for our industry, and I don't take that lightly.</p>
+      <p style="font-size:15px;line-height:1.7;color:#3a3a3a;margin:0 0 16px;">I'm Ashley, a solo esthetician. I built SlickChart myself, from my own treatment room, because the software made for our industry never felt like it was actually made <em>for us</em>. So this isn't a corporate product with a beauty-industry paint job. It's built by a provider, for providers, from the ground up.</p>
+      <p style="font-size:15px;line-height:1.7;color:#3a3a3a;margin:0 0 20px;">As a founding beta provider, you're not just a customer, you're a collaborator. Every question you ask, every rough edge you point out, and every "it would be great if it also did ___" makes this better, faster than I could ever manage building it alone. This app is going to get amazing, and you're one of the people making that happen.</p>
+
+      <div style="text-align:center;margin:26px 0;">
+        <a href="${link}" style="background:#cd9a52;color:#1a1206;text-decoration:none;font-weight:700;padding:14px 28px;border-radius:10px;display:inline-block;font-size:15px;">Verify your email &amp; get started</a>
+        <div style="font-size:12px;color:#999;margin-top:10px;">This link expires in 24 hours.</div>
+      </div>
+
+      <div style="background:#faf7f3;border-radius:12px;padding:18px 20px;margin:0 0 20px;">
+        <div style="font-size:12px;font-weight:700;color:#9a7a4a;text-transform:uppercase;letter-spacing:.06em;margin-bottom:10px;">What's included, all of it, no higher tier</div>
+        <table role="presentation" style="width:100%;border-collapse:collapse;font-size:14px;line-height:1.6;color:#3a3a3a;">
+          <tr><td style="padding:4px 0;">✨</td><td style="padding:4px 0 4px 8px;">Client charting, notes, and before &amp; after photos</td></tr>
+          <tr><td style="padding:4px 0;">📋</td><td style="padding:4px 0 4px 8px;">Digital intake, consent, and consult forms</td></tr>
+          <tr><td style="padding:4px 0;">💬</td><td style="padding:4px 0 4px 8px;">A private client app, with real two-way messaging</td></tr>
+          <tr><td style="padding:4px 0;">💳</td><td style="padding:4px 0 4px 8px;">Payments and invoicing, with or without Square</td></tr>
+          <tr><td style="padding:4px 0;">🤖</td><td style="padding:4px 0 4px 8px;">AI voice notes and session summaries (fully optional)</td></tr>
+        </table>
+      </div>
+
+      <div style="margin:0 0 20px;">
+        <div style="font-size:12px;font-weight:700;color:#9a7a4a;text-transform:uppercase;letter-spacing:.06em;margin-bottom:10px;">Getting started</div>
+        <p style="font-size:14px;line-height:1.8;color:#3a3a3a;margin:0;">
+          1. Verify your email above, then log in on your phone<br>
+          2. The guided setup walks you through your business info, hours, and profession<br>
+          3. Add or import your clients, whenever you're ready<br>
+          4. Invite them to their own private client app, one tap each<br>
+          5. Remove the sample data once your real clients are in
+        </p>
+      </div>
+
+      <p style="font-size:14px;line-height:1.7;color:#3a3a3a;margin:0 0 6px;">Something confusing, broken, or missing? Just reply to this email, or tap <strong>Share beta feedback</strong> right in the app. I read every single one myself.</p>
+      <p style="font-size:15px;line-height:1.7;margin:22px 0 0;">Thank you for being here from the start.<br>With love,<br><strong>Ashley</strong><br><span style="color:#888;font-size:13px;">Founder, SlickChart · Botanical Aesthetics</span></p>
+    </div>
+  </div>`;
+}
+export function welcomeEmailText({ name, link }) {
+  const first = String(name || '').trim().split(/\s+/)[0] || 'there';
+  return `Hi ${first},
+
+Welcome to SlickChart, and genuinely, thank you. You just joined an exclusive group of providers helping build something new for our industry.
+
+I'm Ashley, a solo esthetician. I built SlickChart myself, from my own treatment room, because the software made for our industry never felt like it was actually made for us.
+
+As a founding beta provider, you're a collaborator, not just a customer. Every question, every rough edge you flag, makes this better, faster than I could manage alone.
+
+Verify your email to get started (link expires in 24 hours):
+${link}
+
+What's included, all of it, no higher tier:
+- Client charting, notes, and before & after photos
+- Digital intake, consent, and consult forms
+- A private client app, with real two-way messaging
+- Payments and invoicing, with or without Square
+- AI voice notes and session summaries (fully optional)
+
+Getting started:
+1. Verify your email above, then log in on your phone
+2. The guided setup walks you through your business info, hours, and profession
+3. Add or import your clients, whenever you're ready
+4. Invite them to their own private client app, one tap each
+5. Remove the sample data once your real clients are in
+
+Something confusing, broken, or missing? Just reply to this email, or tap "Share beta feedback" in the app. I read every one myself.
+
+Thank you for being here from the start.
+With love,
+Ashley
+Founder, SlickChart · Botanical Aesthetics`;
+}
+function esc(s) { return String(s == null ? '' : s).replace(/[&<>"']/g, c => ({ '&': '&amp;', '<': '&lt;', '>': '&gt;', '"': '&quot;', "'": '&#39;' }[c])); }
