@@ -444,7 +444,7 @@ function getClientHomecare(id){
   const defaults=only('makeup')?defaultMakeupHomecare:only('massage')?defaultMassageHomecare:only('lash')?defaultLashHomecare:
     only('nail')?defaultNailHomecare:only('wax')?defaultWaxHomecare:only('coach')?defaultCoachHomecare:
     isBrowOnlyHC?defaultBrowHomecare:isBarberOnly?defaultBarberHomecare:isHairBarber?defaultHairHomecare:defaultEstyHomecare;
-  clientHomecare[id]=[...(defaults[id]||defaults.maya)];
+  clientHomecare[id]=[...(defaults[id]||(id==='maya'||id==='sophie'||id==='priya'?defaults.maya:[]))];
   return clientHomecare[id];
 }
 
@@ -508,6 +508,7 @@ let formQs=[
   {id:11,label:'Current medications',type:'Long text',required:false},
   {id:12,label:'Medical conditions',type:'Long text',required:false},
   {id:6,label:'Current skincare products',type:'Long text',required:false},
+  {id:13,type:'Contraindications',label:'Please check any that apply to you',required:false,items:['Known allergy to skincare ingredients or adhesives','Pregnant or breastfeeding','Used Accutane / isotretinoin in the last 6 months','Active cold sores, open lesions, or infection','Recent sunburn or sunless tan','Taking blood thinners','History of keloid scarring']},
   {id:7,label:'I consent to treatment & confirm my information is accurate',type:'Signature',required:true},
 ];
 let nextQId=20;
@@ -9365,7 +9366,14 @@ async function syncClientEvents(){
           treatment:payload.treatment||'',groups:payload.groups||[],flagged:payload.flagged||[],notes:payload.notes||'',
           photos:[],read:false};
         checkins.unshift(ci);
-        if(c){c.checkinDone=true;try{saveClients();}catch(e){}}
+        if(c){
+          c.checkinDone=true;
+          // A flagged check-in is exactly the kind of thing that needs to show up
+          // as a real alert on the client's chart, not just sit inside the check-in
+          // record where it's easy to miss before a session.
+          if(ci.flagged&&ci.flagged.length)c.flaggedContra={form:'Pre-visit check-in',items:ci.flagged.slice(),date:ci.dateLabel||'Today'};
+          try{saveClients();}catch(e){}
+        }
         const fl=(ci.flagged&&ci.flagged.length)?` Flagged: ${ci.flagged.join(', ')}.`:'';
         notifFeed.unshift({id:'evc'+ev.id,type:'checkin',icon:'ti-clipboard-check',col:'#0a2019',ic:'#4ec49a',
           title:'Pre-visit check-in',body:`${name} completed a check-in${ci.dateLabel?' for '+ci.dateLabel:''}.${fl}`,
@@ -9378,6 +9386,15 @@ async function syncClientEvents(){
           c.submittedForms=c.submittedForms||[];
           c.submittedForms.unshift({formId:payload.formId,title,answers:payload.answers||{},flagged:payload.flagged||[],date:payload.date||'Today',signed:!!payload.signed});
           if(Array.isArray(c.pendingForms))c.pendingForms=c.pendingForms.filter(pf=>pf.formId!==payload.formId);
+          // Map the real answers onto the actual chart fields (allergies, medications,
+          // conditions, skin type, etc.) — this used to only happen for the manual
+          // "add new client" wizard, never for a real client's own form submission,
+          // so none of this ever reached the chart, the AI brief, or session alerts.
+          try{
+            if(typeof _applyIntakeVitals==='function'&&payload.formId){
+              _applyIntakeVitals(c,payload.formId,q=>(payload.answers||{})[q.id]);
+            }
+          }catch(e){}
           if(payload.signed){c.signedForms=c.signedForms||[];if(c.signedForms.indexOf(title)<0)c.signedForms.push(title);}
           const flagged=(payload.flagged&&payload.flagged.length)?payload.flagged.slice():null;
           if(flagged)c.flaggedContra={form:title,items:flagged,date:payload.date||'Today'};
