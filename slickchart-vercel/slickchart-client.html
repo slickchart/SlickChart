@@ -2887,10 +2887,51 @@ function _bootRealClient(token){
   var S=document.getElementById('S');
   if(S)S.innerHTML='<div style="padding:70px 24px;text-align:center;color:#9a8a7e;"><div style="font-size:30px;margin-bottom:12px;">\u2728</div><div style="font-size:14px;">Loading your space\u2026</div></div>';
   fetch('/api/client-data?t='+encodeURIComponent(token)).then(function(r){return r.json();}).then(function(j){
-    if(j&&j.ok&&j.client){ _applyRealClientData(j); client._real=true; try{document.title='SlickChart \u2014 '+client.name;}catch(e){} applyActiveProvider(); nav('home'); }
+    if(j&&j.ok&&j.client){
+      _applyRealClientData(j); client._real=true; try{document.title='SlickChart \u2014 '+client.name;}catch(e){} applyActiveProvider(); nav('home');
+      try{_loadMsgSeenIds();_fetchRealMessages(true);}catch(e){}
+    }
     else{ _clientLinkError(j&&j.error); }
   }).catch(function(){ _clientLinkError(); });
 }
+// ── Real message history (both directions), synced from the server ──
+let _msgSeenIds=[];
+function _loadMsgSeenIds(){try{_msgSeenIds=JSON.parse(localStorage.getItem('sc_seen_msg_ids')||'[]');}catch(e){_msgSeenIds=[];}}
+function _markMsgSeen(id){if(_msgSeenIds.indexOf(id)<0){_msgSeenIds.push(id);if(_msgSeenIds.length>500)_msgSeenIds.splice(0,_msgSeenIds.length-500);try{localStorage.setItem('sc_seen_msg_ids',JSON.stringify(_msgSeenIds));}catch(e){}}}
+function _fmtMsgTime(ts){
+  try{
+    const d=new Date(ts);const now=new Date();
+    if(d.toDateString()===now.toDateString())return d.toLocaleTimeString('en-US',{hour:'numeric',minute:'2-digit'});
+    return d.toLocaleDateString('en-US',{month:'short',day:'numeric'});
+  }catch(e){return 'Just now';}
+}
+async function _fetchRealMessages(initial){
+  if(!client._real||!client._token)return;
+  try{
+    const r=await fetch('/api/client-messages?t='+encodeURIComponent(client._token));
+    const j=await r.json();
+    if(!(j&&j.ok&&Array.isArray(j.messages)))return;
+    const jess=client.providers.find(function(p){return p.id==='jess';})||client.providers[0];
+    if(initial){
+      jess.thread=j.messages.map(function(m){return {from:m.from==='provider'?'provider':'me',text:m.text,time:_fmtMsgTime(m.ts)};});
+      j.messages.forEach(function(m){_markMsgSeen(m.id);});
+      if(client.activeProviderId===jess.id)messages=jess.thread;
+      try{_saveClientMessages();}catch(e){}
+      if(document.getElementById('chat-body'))renderMessages();
+    }else{
+      const newOnes=j.messages.filter(function(m){return m.from==='provider'&&_msgSeenIds.indexOf(m.id)<0;});
+      if(!newOnes.length)return;
+      const viewing=client.activeProviderId===jess.id&&document.getElementById('chat-body');
+      newOnes.forEach(function(m){_markMsgSeen(m.id);jess.thread.push({from:'provider',text:m.text,time:_fmtMsgTime(m.ts)});});
+      if(!viewing)jess.unread=(jess.unread||0)+newOnes.length;
+      else messages=jess.thread;
+      try{_saveClientMessages();}catch(e){}
+      if(viewing)renderMessages();
+      else if(document.getElementById('home-screen')&&typeof renderHome==='function')renderHome();
+    }
+  }catch(e){}
+}
+setInterval(function(){try{_fetchRealMessages(false);}catch(e){}},20000);
 document.addEventListener('DOMContentLoaded', function() {
   document.querySelectorAll('[data-nav]').forEach(function(el) {
     el.addEventListener('click', function() { nav(el.getAttribute('data-nav')); });
