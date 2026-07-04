@@ -945,7 +945,42 @@ function loadEng(){
   if(!_eng.guides)_eng.guides={};
   if(!_eng.care)_eng.care={};
 }
-function saveEng(){try{localStorage.setItem('sc_client_engage',JSON.stringify(_eng));}catch(e){}}
+function saveEng(){try{localStorage.setItem('sc_client_engage',JSON.stringify(_eng));}catch(e){}_syncClientPrefsToServer();}
+
+// ── Real database persistence for client-owned settings ──
+// localStorage is kept only as an instant-load cache now; the server is the
+// actual source of truth, so settings survive a cleared browser or a new device.
+let _prefsSyncTimer=null;
+function _collectClientPrefs(){
+  let welcomeDismissed=[];try{welcomeDismissed=JSON.parse(localStorage.getItem('sc_welcome_dismissed')||'[]');}catch(e){}
+  const installDismissed=(function(){try{return localStorage.getItem('sc_install_dismissed')==='1';}catch(e){return false;}})();
+  return {notif:loadNotifPrefs(),eng:_eng,welcomeDismissed,installDismissed};
+}
+function _syncClientPrefsToServer(){
+  if(!client._real||!client._token)return; // nothing to sync in local/demo mode
+  clearTimeout(_prefsSyncTimer);
+  _prefsSyncTimer=setTimeout(()=>{
+    fetch('/api/client-prefs?t='+encodeURIComponent(client._token),{
+      method:'PUT',headers:{'Content-Type':'application/json'},
+      body:JSON.stringify({prefs:_collectClientPrefs()})
+    }).catch(e=>console.error('[client prefs] save failed:',e&&e.message));
+  },900);
+}
+async function _loadClientPrefsFromServer(){
+  if(!client._real||!client._token)return;
+  try{
+    const r=await fetch('/api/client-prefs?t='+encodeURIComponent(client._token));
+    const j=await r.json();
+    if(!(j&&j.ok&&j.prefs&&Object.keys(j.prefs).length))return; // nothing saved server-side yet — keep local defaults
+    const p=j.prefs;
+    if(p.notif)saveNotifPrefs(p.notif);
+    if(p.eng){_eng=Object.assign(_eng,p.eng);try{localStorage.setItem('sc_client_engage',JSON.stringify(_eng));}catch(e){}
+      if(_eng.day===_engToday())Object.keys(homecareChecked).forEach(k=>{homecareChecked[k]=!!(_eng.steps||{})[k];});
+    }
+    if(Array.isArray(p.welcomeDismissed))try{localStorage.setItem('sc_welcome_dismissed',JSON.stringify(p.welcomeDismissed));}catch(e){}
+    if(typeof p.installDismissed==='boolean')try{localStorage.setItem('sc_install_dismissed',p.installDismissed?'1':'0');}catch(e){}
+  }catch(e){ console.error('[client prefs] load failed:',e&&e.message); /* fall back to whatever's cached locally */ }
+}
 function _engStreakLive(){return _eng.lastDoneDay===_engToday()||_eng.lastDoneDay===_engYesterday();}
 function _engSteps(){return (activeProvider().homecare||[]);}
 function _engProgress(){const s=_engSteps();const total=s.length;const done=s.filter(x=>homecareChecked[x.key]).length;return {total,done,pct:total?Math.round(done/total*100):0};}
@@ -1075,6 +1110,7 @@ function _dismissWelcome(key){
   let dismissed=[];try{dismissed=JSON.parse(localStorage.getItem('sc_welcome_dismissed')||'[]');}catch(e){}
   if(!dismissed.includes(key))dismissed.push(key);
   try{localStorage.setItem('sc_welcome_dismissed',JSON.stringify(dismissed));}catch(e){}
+  _syncClientPrefsToServer();
   if(document.getElementById('page-heading'))renderHome();
 }
 function renderHome(){
@@ -1231,6 +1267,7 @@ function loadNotifPrefs(){
 }
 function saveNotifPrefs(prefs){
   try{localStorage.setItem('notif_prefs',JSON.stringify(prefs));}catch(e){}
+  _syncClientPrefsToServer();
 }
 function toggleNotif(key){
   const p=loadNotifPrefs();
@@ -3050,6 +3087,7 @@ function _bootRealClient(token){
   fetch('/api/client-data?t='+encodeURIComponent(token)).then(function(r){return r.json();}).then(function(j){
     if(j&&j.ok&&j.client){
       _applyRealClientData(j); client._real=true; try{document.title='SlickChart \u2014 '+client.name;}catch(e){} applyActiveProvider(); nav('home');
+      try{_loadClientPrefsFromServer().then(function(){ if(document.getElementById('page-heading'))renderHome(); });}catch(e){}
       try{_loadMsgSeenIds();_fetchRealMessages(true);}catch(e){}
     }
     else{ _clientLinkError(j&&j.error); }
@@ -3130,7 +3168,7 @@ function _clientInstall(){
     if(standalone) return;
     if(localStorage.getItem('sc_install_dismissed')==='1') return;
     var deferred=null;
-    function dismiss(){ try{localStorage.setItem('sc_install_dismissed','1');}catch(e){} var b=document.getElementById('sc-install'); if(b)b.remove(); }
+    function dismiss(){ try{localStorage.setItem('sc_install_dismissed','1');}catch(e){} _syncClientPrefsToServer(); var b=document.getElementById('sc-install'); if(b)b.remove(); }
     function banner(kind){
       if(document.getElementById('sc-install')) return;
       var b=document.createElement('div'); b.id='sc-install';
