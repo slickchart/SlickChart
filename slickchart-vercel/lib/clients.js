@@ -99,3 +99,12 @@ export async function listEvents(providerId) {
   return await q`SELECT id, client_id, kind, payload, seen, created_at
     FROM client_events WHERE provider_id=${providerId} ORDER BY created_at DESC LIMIT 500`;
 }
+
+// Full two-way message thread for one client (client-submitted + provider-sent),
+// oldest first — this is the real message history behind the client app's chat.
+export async function listClientMessages(clientId, providerId) {
+  const q = sql();
+  return await q`SELECT id, kind, payload, created_at FROM client_events
+    WHERE client_id=${clientId} AND provider_id=${providerId} AND kind IN ('message','provider_message')
+    ORDER BY created_at ASC LIMIT 500`;
+}
