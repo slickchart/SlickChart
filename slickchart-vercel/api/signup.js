@@ -40,7 +40,7 @@ export default async function handler(req, res) {
         text: welcomeEmailText({ name, link }),
         html: welcomeEmailHtml({ name, link })
       });
-    } catch (e) { /* don't block signup on email failure */ }
+    } catch (e) { console.error('[signup] welcome email failed:', e && e.message || e); /* don't block signup on email failure */ }
 
     const token = signToken({ u: id, e: email }, secret);
     res.status(200).json({ token, name, email, verified: false });
