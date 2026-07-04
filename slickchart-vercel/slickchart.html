@@ -5015,6 +5015,8 @@ function _assembleClientData(id){
   const providerName=(typeof _providerFirstName==='function'&&_providerFirstName())||'';
   const brand=(typeof brandColors!=='undefined'&&brandColors)||{primary:'#C8A882',secondary:'#2C5F8A'};
   const aftercare=((typeof getClientHomecare==='function'?getClientHomecare(id):[])||[]);
+  let availability=null;
+  try{availability=(typeof SlickBridge!=='undefined'&&SlickBridge.getAvailability)?SlickBridge.getAvailability():null;}catch(e){}
   let products=[];
   try{
     const recIds=(typeof clientRecs!=='undefined'&&clientRecs[id])||[];
@@ -5023,7 +5025,7 @@ function _assembleClientData(id){
   let summaries=Array.isArray(c.summaries)?c.summaries:[];
   if(!summaries.length&&c.treatment){summaries=[{date:c.lastVisit||'',title:c.treatment,note:('Your '+c.treatment+' visit'+(c.lastVisit?(' on '+c.lastVisit):'')+'.'),products:products.map(p=>p.name)}];}
   const forms=(Array.isArray(c.submittedForms)?c.submittedForms.map(f=>({title:f.title||'Form',status:f.signed?'signed':'submitted',date:f.date||''})):[]);
-  return {studio,providerName,brand,profile:{skin:c.skin||'',concerns:c.concerns||'',allergies:c.allergies||'',fitz:c.fitz||'',treatment:c.treatment||'',lastVisit:c.lastVisit||'',nextVisit:c.nextVisit||''},summaries,aftercare,products,forms,photos:Array.isArray(c.photos)?c.photos:[],booking:{canRequest:true}};
+  return {studio,providerName,brand,profile:{skin:c.skin||'',concerns:c.concerns||'',allergies:c.allergies||'',fitz:c.fitz||'',treatment:c.treatment||'',lastVisit:c.lastVisit||'',nextVisit:c.nextVisit||''},summaries,aftercare,products,forms,photos:Array.isArray(c.photos)?c.photos:[],booking:{canRequest:true},availability};
 }
 let _syncingClients=false,_clientSyncTimer=null;
 function _scheduleClientSync(){ if(_clientSyncTimer)clearTimeout(_clientSyncTimer); _clientSyncTimer=setTimeout(function(){_syncClientsToServer({});},2500); }
@@ -7489,8 +7491,9 @@ function _biSaveUnpaid(){
 // Payments hub
 function renderPayments(){
   setNav('payments');document.getElementById('tt').textContent='Payments';
-  const out=_payments.filter(p=>p.status==='unpaid'||p.status==='partial');
-  const paid=_payments.filter(p=>p.status==='paid');
+  const byDateDesc=(a,b)=>String(b.date||'').localeCompare(String(a.date||''));
+  const out=_payments.filter(p=>p.status==='unpaid'||p.status==='partial').sort(byDateDesc);
+  const paid=_payments.filter(p=>p.status==='paid').sort(byDateDesc);
   const sum=arr=>arr.reduce((a,p)=>a+(parseFloat(p.amount)||0),0);
   const ym=new Date().toISOString().slice(0,7);
   const monthPaid=sum(paid.filter(p=>String(p.date||'').slice(0,7)===ym));
@@ -7512,6 +7515,7 @@ function renderPayments(){
   ${paid.length?`<div class="sh"><h2>Paid</h2></div>${paid.slice(0,50).map(row).join('')}`:''}
   ${(!_payments.length)?`<div style="margin:14px 16px;text-align:center;color:#888;font-size:13px;padding:26px 16px;background:#161616;border:1px solid #242424;border-radius:12px;">No payments yet. Send an invoice from a client\u2019s chart, or tap <b>Log a payment</b> to record cash, Venmo, or anything else.</div>`:''}
   <div style="height:20px;"></div>`;
+  try{_paySyncSquare(true);}catch(e){}
 }
 function _payMarkPaid(idv){const p=_payments.find(x=>x.id===idv);if(p){p.status='paid';_savePayments();}if(typeof _navCur!=='undefined'&&_navCur&&_navCur.screen==='payments')renderPayments();}
 function _payDelete(idv){const i=_payments.findIndex(x=>x.id===idv);if(i>=0){_payments.splice(i,1);_savePayments();}if(typeof _navCur!=='undefined'&&_navCur&&_navCur.screen==='payments')renderPayments();}
@@ -7595,8 +7599,14 @@ function _payLogSave(){
   if(typeof _navCur!=='undefined'&&_navCur&&_navCur.screen==='payments')renderPayments();
   if(typeof proToast==='function')proToast('Payment logged \u2713');
 }
-async function _paySyncSquare(){
-  if(typeof proToast==='function')proToast('Syncing from Square\u2026');
+setInterval(()=>{try{if(typeof _navCur!=='undefined'&&_navCur&&_navCur.screen==='payments')_paySyncSquare(true);}catch(e){}},60000);
+async function _paySyncSquare(auto){
+  if(auto){
+    const now=Date.now();
+    if(_paySyncSquare._lastAuto&&(now-_paySyncSquare._lastAuto)<90000)return; // throttle: at most once every 90s automatically
+    _paySyncSquare._lastAuto=now;
+  }
+  if(!auto&&typeof proToast==='function')proToast('Syncing from Square\u2026');
   try{
     const d=await _sqFetch('/api/square/invoices');
     (d.invoices||[]).forEach(sv=>{
@@ -7607,8 +7617,8 @@ async function _paySyncSquare(){
     });
     _savePayments();
     if(typeof _navCur!=='undefined'&&_navCur&&_navCur.screen==='payments')renderPayments();
-    if(typeof proToast==='function')proToast('Synced from Square \u2713');
-  }catch(e){if(typeof proToast==='function')proToast(_coRecon(e)?'Reconnect Square to sync':(e.message||'Could not sync'));}
+    if(!auto&&typeof proToast==='function')proToast('Synced from Square \u2713');
+  }catch(e){if(!auto&&typeof proToast==='function')proToast(_coRecon(e)?'Reconnect Square to sync':(e.message||'Could not sync'));}
 }
 
 function renderConnectCalendar(){
