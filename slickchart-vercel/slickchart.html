@@ -2124,6 +2124,40 @@ function _buildClientFileHTML(id){
   `</body></html>`;
 }
 // Print via a hidden iframe (reliable on mobile Safari, no popup blocker).
+// Build + print a clean session summary (the client-facing recap) — the browser's
+// print dialog lets the provider "Save as PDF".
+function _printSummary(id){
+  const c=CL[id];if(!c)return;
+  const noteEl=document.getElementById('summary-note');
+  const note=((summaryNoteDraft[id]!=null?summaryNoteDraft[id]:(noteEl?noteEl.innerText:''))||'').trim();
+  const homecare=(typeof getClientHomecare==='function'?getClientHomecare(id):[])||[];
+  const prods=(clientRecs[id]||[]).map(aid=>{const a=affiliateLinks.find(x=>x.id===aid);return a?{name:a.name,brand:a.brand||'',why:(_recReason(id,aid)||'')}:null;}).filter(Boolean);
+  const esc=s=>String(s||'').replace(/&/g,'&amp;').replace(/</g,'&lt;').replace(/>/g,'&gt;');
+  const today=new Date().toLocaleDateString('en-US',{month:'long',day:'numeric',year:'numeric'});
+  const html=`<!doctype html><html><head><meta charset="utf-8"><title>${esc(c.name)} — Session summary</title>
+  <style>body{font-family:-apple-system,Segoe UI,Roboto,sans-serif;color:#1a1a1a;max-width:640px;margin:32px auto;padding:0 24px;line-height:1.6;}
+  h1{font-size:22px;margin:0 0 2px;} .sub{color:#666;font-size:13px;margin-bottom:22px;}
+  h2{font-size:13px;text-transform:uppercase;letter-spacing:.06em;color:#888;margin:22px 0 8px;border-bottom:1px solid #eee;padding-bottom:5px;}
+  .note{font-size:14px;white-space:pre-wrap;} ol{margin:0;padding-left:20px;} li{margin-bottom:5px;}
+  .prod{margin-bottom:10px;} .prod b{font-size:14px;} .prod .br{color:#777;font-size:12px;} .prod .why{font-size:13px;color:#444;margin-top:2px;}
+  .foot{margin-top:30px;padding-top:12px;border-top:1px solid #eee;color:#999;font-size:12px;}</style></head><body>
+  <h1>${esc(bizInfo.name||'Session summary')}</h1>
+  <div class="sub">${esc(c.name)} · ${esc(c.treatment||'Session')} · ${esc(today)}</div>
+  ${note?`<h2>A note from ${esc(_providerFirstName())}</h2><div class="note">${esc(note)}</div>`:''}
+  ${homecare.length?`<h2>Homecare</h2><ol>${homecare.map(h=>`<li>${esc(h)}</li>`).join('')}</ol>`:''}
+  ${prods.length?`<h2>Recommended products</h2>${prods.map(p=>`<div class="prod"><b>${esc(p.name)}</b>${p.brand?` <span class="br">· ${esc(p.brand)}</span>`:''}${p.why?`<div class="why">${esc(p.why)}</div>`:''}</div>`).join('')}`:''}
+  <div class="foot">${esc(bizInfo.name||'')}${bizInfo.website?' · '+esc(bizInfo.website):''}</div>
+  </body></html>`;
+  const f=document.createElement('iframe');
+  f.setAttribute('aria-hidden','true');
+  f.style.cssText='position:fixed;right:0;bottom:0;width:0;height:0;border:0;opacity:0;';
+  document.body.appendChild(f);
+  try{
+    const doc=f.contentWindow.document;doc.open();doc.write(html);doc.close();
+    setTimeout(()=>{try{f.contentWindow.focus();f.contentWindow.print();}catch(e){}setTimeout(()=>{try{f.remove();}catch(e){}},2000);},350);
+    if(typeof proToast==='function')proToast('Opening print \u2014 choose \u201cSave as PDF\u201d');
+  }catch(e){try{f.remove();}catch(_){}if(typeof proToast==='function')proToast('Could not open print on this device');}
+}
 function _printClientFile(id){
   const html=_buildClientFileHTML(id); if(!html)return;
   const f=document.createElement('iframe');
@@ -3098,15 +3132,18 @@ function _activeNotesText(){
 // (AI) or edits by hand.
 function _clientFriendlyFromNotes(id,c){
   let raw=_activeNotesText().replace(/<br\s*\/?>/gi,'\n').replace(/&lt;/g,'<').trim();
+  return _clientFriendlyFromNotesText(raw,c);
+}
+// Core cleaner: works on any note text (already newline-separated). Removes leading
+// SOAP/section labels, expands a few unambiguous abbreviations, and frames warmly.
+function _clientFriendlyFromNotesText(raw,c){
+  raw=String(raw||'').replace(/<br\s*\/?>/gi,'\n').replace(/&lt;/g,'<').trim();
   if(!raw)return '';
   const lines=raw.split(/\n+/).map(l=>l.trim()).filter(Boolean).map(line=>{
-    // Strip a leading SOAP/section label only when it's clearly a label followed by
-    // a separator, e.g. "S — Subjective:", "O:", "Plan -", "Homecare:".
     let t=line
       .replace(/^\s*[A-Z]\s*[—\-–]\s*(subjective|objective|assessment|plan)\b\s*[:\-–—]?\s*/i,'')
       .replace(/^\s*[SOAP]\s*[:\-–—]\s+/,'')
       .replace(/^\s*(subjective|objective|assessment|plan|formula|processing time|toner applied|result notes?|treatment performed|products used|homecare( plan)?|next visit notes?|skin observations?)\s*[:\-–—]\s+/i,'');
-    // Only expand standalone, unambiguous abbreviations (whole word, spaces around).
     t=t.replace(/(^|\s)SPF(\s|$)/g,'$1sunscreen$2')
        .replace(/(^|\s)Tx(\s|$)/gi,'$1treatment$2')
        .replace(/(^|\s)Rx(\s|$)/gi,'$1prescription$2');
@@ -3592,11 +3629,27 @@ function renderSessionSummary(id){
   // clients, the scripted copy; then a client-FRIENDLY auto-rewrite of the real
   // provider notes; else a prompt. We never dump raw clinical shorthand on the
   // client, and we never fabricate content that wasn't in the notes.
-  const _noteContent=(summaryNoteDraft[id]!=null)
+  let _rawNote=(summaryNoteDraft[id]!=null)
     ? summaryNoteDraft[id]
     : (_isDemoClient
         ? (improvement+(notes?'\n\n'+notes:''))
         : (friendly || 'Tap Edit to write a note about today\u2019s visit, or use \u201cMake client-friendly\u201d to turn your treatment notes into a warm summary.'));
+  // Safety net: if whatever we ended up with still contains raw HTML line breaks
+  // (e.g. an older draft saved before the friendly transform existed), clean it so
+  // the client never sees literal "<br>" tags or stray clinical labels.
+  const _noteContent=(function(t){
+    t=String(t||'');
+    if(/<br\s*\/?>/i.test(t)){
+      // convert to newlines then, for real clients, run the friendly cleaner over it
+      const nl=t.replace(/<br\s*\/?>/gi,'\n');
+      if(!_isDemoClient&&typeof _clientFriendlyFromNotesText==='function'){
+        const cleaned=_clientFriendlyFromNotesText(nl,c);
+        if(cleaned)return cleaned;
+      }
+      return nl;
+    }
+    return t;
+  })(_rawNote);
 
 
   S.innerHTML=`
@@ -3715,7 +3768,7 @@ function renderSessionSummary(id){
         <div><div style="font-size:14px;font-weight:500;color:#f0f0f0;">${nextDate||'Not yet scheduled'}</div><div style="font-size:12px;color:#999;">${nextTime?nextTime+' · ':''}${c.treatment}</div></div>
       </div>
       <div style="display:flex;gap:8px;">
-        <button class="btng" style="flex:1;border-radius:8px;"><i class="ti ti-calendar" aria-hidden="true"></i> Add to calendar</button>
+        <button class="btng" style="flex:1;border-radius:8px;" onclick="_addToCalendar('${(c.treatment||'Appointment').replace(/'/g,'')} with ${_providerFirstName().replace(/'/g,'')||'your provider'}','${(nextDate||'').replace(/'/g,'')}','${(nextTime||'').replace(/'/g,'')}')"><i class="ti ti-calendar" aria-hidden="true"></i> Add to calendar</button>
         <button class="btng" style="flex:1;border-radius:8px;" onclick="nav('rebook','${id}')"><i class="ti ti-edit" aria-hidden="true"></i> Change date</button>
       </div>
     </div>`:''}
@@ -3730,7 +3783,7 @@ function renderSessionSummary(id){
     <button onclick="_summaryGuard('${id}')&&sendSummary('${id}')" class="btnp" style="border-radius:10px;${summarySendOn[id]?'':'opacity:.55;'}"><i class="ti ti-send" aria-hidden="true"></i> Send summary to ${c.name.split(' ')[0]}</button>
     <button onclick="_summaryGuard('${id}')&&shareSummaryLink('${id}')" style="border-radius:10px;padding:11px;border:1px solid #1a4a2a;background:#0a2019;color:#4ec49a;font-size:14px;font-weight:500;cursor:pointer;display:flex;align-items:center;justify-content:center;gap:7px;${summarySendOn[id]?'':'opacity:.55;'}"><i class="ti ti-link" aria-hidden="true"></i> Send as link — no app needed</button>
     <div style="display:flex;gap:8px;">
-      <button class="btng" style="flex:1;"><i class="ti ti-download" aria-hidden="true"></i> Save as PDF</button>
+      <button class="btng" style="flex:1;" onclick="_printSummary('${id}')"><i class="ti ti-download" aria-hidden="true"></i> Save as PDF</button>
       <button class="btng" style="flex:1;" onclick="_notesFrom='${_summaryFrom==='notes'?'profile':'room'}';nav('notes','${id}')"><i class="ti ti-notes" aria-hidden="true"></i> View notes</button>
     </div>
   </div>`;
@@ -4188,6 +4241,13 @@ function _copyFallback(text,done){
 function _openExternal(url){
   try{window.location.href=url;}catch(e){try{window.open(url,'_blank');}catch(_){}}
 }
+// Use the device's native share sheet when available; otherwise copy the link.
+function _shareOrCopy(url,title){
+  try{
+    if(navigator.share){navigator.share({title:title||'SlickChart',url:url}).catch(()=>{});return;}
+  }catch(e){}
+  _copyToClipboard(url,'Link copied — paste it anywhere');
+}
 
 // ── ONBOARDING / PROFESSION PICKER ──
 function renderOnboarding(){
@@ -4456,6 +4516,22 @@ function savePhotos(){
   }
 }
 
+// Message the client suggesting they rebook for a given date, with their booking link.
+function _sendRebookInvite(id,date){
+  const c=CL[id];if(!c)return;
+  const first=(c.name||'there').split(' ')[0];
+  let link='';try{link=(typeof _clientAppLink==='function')?_clientAppLink(id):'';}catch(e){}
+  const text=`Hi ${first}! It's about time to rebook — I'd suggest around ${date}. ${link?('You can request a time here: '+link):'Let me know what works and I\u2019ll get you on the books!'} ✨`;
+  try{
+    if(!msgStore[id])msgStore[id]=[];
+    msgStore[id].push({from:'me',text,time:'Just now'});
+    const t=threads.find(x=>x.id===id);if(t){t.preview='Time to rebook ✨';}
+    saveMessages();
+  }catch(e){}
+  try{if(typeof _scheduleClientSync==='function')_scheduleClientSync();}catch(e){}
+  if(typeof proToast==='function')proToast('Rebook invite sent to '+first);
+  nav('chat',id);
+}
 function renderRebook(id){
   setNav('clients');const c=CL[id]||Object.values(CL)[0]||{};
   document.getElementById('tt').textContent='Smart rebook';
@@ -4471,7 +4547,7 @@ function renderRebook(id){
     </div>
     <div style="padding:10px 14px;font-size:12px;color:#888;line-height:1.6;">${r.reason}</div>
     <div style="border-top:1px solid ${r.hi?'#2d2360':'#222'};padding:10px 14px;">
-      <button class="${r.hi?'btnp':'btng'}" style="border-radius:8px;padding:9px;width:100%;"><i class="ti ti-send"></i> Send rebook invite for ${r.date}</button>
+      <button onclick="_sendRebookInvite('${id}','${r.date.replace(/'/g,'')}')" class="${r.hi?'btnp':'btng'}" style="border-radius:8px;padding:9px;width:100%;"><i class="ti ti-send"></i> Send rebook invite for ${r.date}</button>
     </div>
   </div>`).join('')}`;
 }
@@ -4596,8 +4672,8 @@ function switchVTab(tab){
         <div style="font-size:11px;font-weight:500;color:#aaa;text-transform:uppercase;letter-spacing:.07em;margin-bottom:6px;">Your unique link</div>
         <div style="font-size:13px;color:var(--accent);font-weight:500;margin-bottom:10px;">slickchart.com/consult/jessica-lee</div>
         <div style="display:flex;gap:8px;">
-          <button class="btng" style="flex:1;"><i class="ti ti-copy"></i> Copy link</button>
-          <button class="btng" style="flex:1;"><i class="ti ti-share"></i> Share</button>
+          <button class="btng" style="flex:1;" onclick="_copyToClipboard('https://slickchart.com/consult/jessica-lee','Consult link copied')"><i class="ti ti-copy"></i> Copy link</button>
+          <button class="btng" style="flex:1;" onclick="_shareOrCopy('https://slickchart.com/consult/jessica-lee','Virtual consult link')"><i class="ti ti-share"></i> Share</button>
         </div>
       </div>
       <div style="font-size:11px;font-weight:500;color:#aaa;text-transform:uppercase;letter-spacing:.07em;margin-bottom:10px;">What clients see</div>
@@ -4887,9 +4963,9 @@ function renderPartnerDetail(i){
       <div class="fr" style="padding:8px 14px;border:none;"><span class="fl">Website</span><span style="font-size:13px;color:var(--accent);">${p.website}</span></div>
     </div>
     <div style="display:grid;grid-template-columns:1fr 1fr;gap:8px;margin-bottom:16px;">
-      <button class="btng"><i class="ti ti-phone" style="color:var(--accent);"></i> Call</button>
-      <button class="btng"><i class="ti ti-mail" style="color:var(--accent);"></i> Email</button>
-      <button class="btng"><i class="ti ti-world" style="color:var(--accent);"></i> Website</button>
+      <button class="btng" onclick="_openExternal('tel:'+String('${(p.phone||'').replace(/'/g,'')}').replace(/[^0-9+]/g,''))"><i class="ti ti-phone" style="color:var(--accent);"></i> Call</button>
+      <button class="btng" onclick="_openExternal('mailto:${(p.email||'').replace(/'/g,'')}')"><i class="ti ti-mail" style="color:var(--accent);"></i> Email</button>
+      <button class="btng" onclick="_openExternal(/^https?:/.test('${(p.website||'').replace(/'/g,'')}')?'${(p.website||'').replace(/'/g,'')}':'https://${(p.website||'').replace(/'/g,'')}')"><i class="ti ti-world" style="color:var(--accent);"></i> Website</button>
       <button onclick="nav('partner-intro',${i})" class="btnp" style="border-radius:10px;"><i class="ti ti-send"></i> Send intro</button>
     </div>
   </div>`;
@@ -6588,6 +6664,28 @@ function _copyText(t,btn){
 }
 
 // ── MESSAGES ──
+// Pick a client to start (or continue) a conversation with.
+function _newMessageSheet(){
+  const old=document.getElementById('newmsg-sheet');if(old)old.remove();
+  const ids=Object.keys(CL);
+  const rowsHTML=(q)=>{
+    q=(q||'').toLowerCase().trim();
+    const list=ids.filter(id=>!q||((CL[id].name||'').toLowerCase().includes(q)));
+    if(!list.length)return '<div style="padding:16px;text-align:center;color:#888;font-size:12px;">No clients match.</div>';
+    return list.map(id=>{const c=CL[id];return `<div onclick="document.getElementById('newmsg-sheet').remove();nav('chat','${id}')" style="display:flex;align-items:center;gap:10px;padding:10px 12px;border-bottom:1px solid #1e1e1e;cursor:pointer;">${av(c,34)}<div style="flex:1;min-width:0;"><div style="font-size:13px;color:#e0e0e0;">${c.name}</div><div style="font-size:11px;color:#999;">${c.treatment||''}</div></div><i class="ti ti-message-2" style="font-size:15px;color:var(--accent);"></i></div>`;}).join('');
+  };
+  const ov=document.createElement('div');ov.id='newmsg-sheet';
+  ov.style.cssText='position:fixed;top:0;bottom:0;left:0;right:0;margin:0 auto;width:390px;max-width:100%;z-index:9999;background:rgba(0,0,0,.6);display:flex;align-items:center;justify-content:center;padding:24px 16px;box-sizing:border-box;';
+  ov.onclick=e=>{if(e.target===ov)ov.remove();};
+  ov.innerHTML=`<div style="background:#161616;border:1px solid #2a2a2a;width:100%;border-radius:16px;overflow:hidden;max-height:80%;display:flex;flex-direction:column;">
+    <div style="display:flex;align-items:center;justify-content:space-between;padding:14px 16px 10px;"><div style="font-size:15px;font-weight:600;color:#f0f0f0;">New message</div><button onclick="this.closest('#newmsg-sheet').remove()" aria-label="Close" style="border:none;background:none;font-size:20px;color:#888;cursor:pointer;line-height:1;">✕</button></div>
+    <div style="padding:0 12px 8px;"><div style="position:relative;"><i class="ti ti-search" style="position:absolute;left:12px;top:50%;transform:translateY(-50%);font-size:14px;color:#777;"></i><input id="newmsg-q" oninput="document.getElementById('newmsg-list').innerHTML=window.__newmsgRows(this.value)" placeholder="Search clients…" style="width:100%;background:#0f0f0f;border:1px solid #2a2a2a;border-radius:9px;padding:9px 10px 9px 32px;font-size:13px;color:#e0e0e0;font-family:inherit;box-sizing:border-box;outline:none;"></div></div>
+    <div id="newmsg-list" style="overflow-y:auto;">${rowsHTML('')}</div>
+  </div>`;
+  window.__newmsgRows=rowsHTML;
+  (document.querySelector('.shell')||document.body).appendChild(ov);
+  setTimeout(()=>{const i=document.getElementById('newmsg-q');if(i)try{i.focus();}catch(e){}},30);
+}
 function renderMessages(){
   setNav('msgs');
   document.getElementById('tt').textContent='Messages';
@@ -6634,7 +6732,7 @@ function showMsgTab(tab){
   const content=document.getElementById('msg-tab-content');if(!content)return;
   if(tab==='inbox'){
     content.innerHTML=`
-    <div style="padding:12px 16px 8px;display:flex;align-items:center;justify-content:space-between;"><span style="font-size:13px;color:#999;">${threads.filter(t=>t.unread).length} unread</span><button style="background:var(--accent);color:var(--accent-ink);border:none;border-radius:8px;padding:7px 12px;font-size:12px;font-weight:500;cursor:pointer;"><i class="ti ti-edit" style="font-size:13px;"></i> New message</button></div>
+    <div style="padding:12px 16px 8px;display:flex;align-items:center;justify-content:space-between;"><span style="font-size:13px;color:#999;">${threads.filter(t=>t.unread).length} unread</span><button onclick="_newMessageSheet()" style="background:var(--accent);color:var(--accent-ink);border:none;border-radius:8px;padding:7px 12px;font-size:12px;font-weight:500;cursor:pointer;"><i class="ti ti-edit" style="font-size:13px;"></i> New message</button></div>
     ${_searchBar('Search messages by client…','.thread-card','msgs-noresults')}
     ${[...threads].sort((a,b)=>(b.unread?1:0)-(a.unread?1:0)).map(t=>{const c=CL[t.id];return`<div onclick="nav('chat','${t.id}')" class="thread-card" data-search="${(((c&&c.name)||'')+' '+(t.preview||'')).toLowerCase().replace(/[^a-z0-9 ]/g,' ')}" style="display:flex;align-items:center;gap:12px;padding:12px 16px;border-bottom:1px solid #1e1e1e;cursor:pointer;"><div style="position:relative;">${av(c,44)}${t.unread?`<div style="position:absolute;top:0;right:0;width:10px;height:10px;border-radius:50%;background:var(--accent);border:2px solid #111;"></div>`:''}</div><div style="flex:1;min-width:0;"><div style="font-size:14px;font-weight:${t.unread?500:400};color:#f0f0f0;">${c.name}</div><div style="font-size:12px;color:${t.unread?'#aaa':'#555'};overflow:hidden;text-overflow:ellipsis;white-space:nowrap;">${t.preview}</div></div><div style="text-align:right;"><div style="font-size:11px;color:#999;">${t.time}</div>${t.unread?`<div style="width:8px;height:8px;border-radius:50%;background:var(--accent);margin:4px 0 0 auto;"></div>`:''}</div></div>`}).join('')}
     ${_noRes('msgs-noresults','No conversations match your search.')}`;
@@ -7230,10 +7328,20 @@ function renderCourseDetail(id){
       ${Array.from({length:c.modules},(_, idx)=>{const titles=['Introduction & skin basics','Understanding your skin type','Active ingredients explained','Building your routine','Troubleshooting common issues','Advanced techniques'];return`<div style="display:flex;align-items:center;gap:10px;padding:10px 12px;border-bottom:1px solid #1e1e1e;"><div class="snum">${idx+1}</div><div style="flex:1;font-size:13px;color:#e0e0e0;">${titles[idx]||'Module '+(idx+1)}</div><i class="ti ti-lock" aria-hidden="true" style="font-size:13px;color:#888;"></i></div>`;}).join('')}
     </div>
     <div style="display:flex;gap:8px;margin-bottom:20px;">
-      <button class="btnp" style="flex:2;border-radius:8px;"><i class="ti ti-share"></i> Share enrollment link</button>
+      <button class="btnp" style="flex:2;border-radius:8px;" onclick="_shareOrCopy('https://slickchart.app/course/${c.id}','${(c.title||'Course').replace(/'/g,'')}')"><i class="ti ti-share"></i> Share enrollment link</button>
       <button class="btng" style="flex:1;" onclick="nav('course-builder','${c.id}')" aria-label="Edit course"><i class="ti ti-pencil"></i></button>
     </div>
   </div>`;
+}
+// Insert a new editable module row into the course builder list.
+function _cbAddModule(btn){
+  const list=btn&&btn.previousElementSibling;if(!list)return;
+  const n=list.querySelectorAll('.cb-module').length+1;
+  const div=document.createElement('div');div.className='cb-module';
+  div.style.cssText='display:flex;align-items:center;gap:10px;padding:10px 12px;border-bottom:1px solid #1e1e1e;';
+  div.innerHTML='<i class="ti ti-grip-vertical" style="font-size:15px;color:#666;"></i><div class="snum">'+n+'</div><input aria-label="Module name" placeholder="Module '+n+'" style="flex:1;border:none;background:none;font-size:13px;color:#e0e0e0;outline:none;font-family:inherit;"><button aria-label="Remove module" onclick="this.closest(\'.cb-module\').remove()" style="border:none;background:none;color:#999;cursor:pointer;"><i class="ti ti-trash" style="color:#e87070;"></i></button>';
+  list.appendChild(div);
+  const inp=div.querySelector('input');if(inp)try{inp.focus();}catch(e){}
 }
 function renderCourseBuilder(id){
   setNav('more');
@@ -7252,9 +7360,9 @@ function renderCourseBuilder(id){
     </div>
     <span class="fl-lbl">Modules</span>
     <div style="background:#1a1a1a;border:1px solid #2a2a2a;border-radius:12px;overflow:hidden;margin-bottom:10px;">
-      ${(c?Array.from({length:c.modules}):[0,1,2]).map((_, idx)=>`<div style="display:flex;align-items:center;gap:10px;padding:10px 12px;border-bottom:1px solid #1e1e1e;"><i class="ti ti-grip-vertical" style="font-size:15px;color:#666;"></i><div class="snum">${idx+1}</div><input aria-label="Module name" value="${['Introduction','Core content','Wrap-up & next steps'][idx]||'Module '+(idx+1)}" style="flex:1;border:none;background:none;font-size:13px;color:#e0e0e0;outline:none;font-family:inherit;"><button aria-label="Remove module" style="border:none;background:none;color:#999;cursor:pointer;"><i class="ti ti-trash" style="color:#e87070;"></i></button></div>`).join('')}
+      ${(c?Array.from({length:c.modules}):[0,1,2]).map((_, idx)=>`<div class="cb-module" style="display:flex;align-items:center;gap:10px;padding:10px 12px;border-bottom:1px solid #1e1e1e;"><i class="ti ti-grip-vertical" style="font-size:15px;color:#666;"></i><div class="snum">${idx+1}</div><input aria-label="Module name" value="${['Introduction','Core content','Wrap-up & next steps'][idx]||'Module '+(idx+1)}" style="flex:1;border:none;background:none;font-size:13px;color:#e0e0e0;outline:none;font-family:inherit;"><button aria-label="Remove module" onclick="this.closest('.cb-module').remove()" style="border:none;background:none;color:#999;cursor:pointer;"><i class="ti ti-trash" style="color:#e87070;"></i></button></div>`).join('')}
     </div>
-    <button style="width:100%;border:1.5px dashed #2a2a2a;border-radius:10px;padding:11px;display:flex;align-items:center;justify-content:center;gap:8px;font-size:13px;color:#aaa;background:none;cursor:pointer;margin-bottom:16px;"><i class="ti ti-plus"></i> Add a module</button>
+    <button onclick="_cbAddModule(this)" style="width:100%;border:1.5px dashed #2a2a2a;border-radius:10px;padding:11px;display:flex;align-items:center;justify-content:center;gap:8px;font-size:13px;color:#aaa;background:none;cursor:pointer;margin-bottom:16px;"><i class="ti ti-plus"></i> Add a module</button>
     <button class="btnp" style="border-radius:8px;margin-bottom:20px;" onclick="nav('learn')"><i class="ti ti-check"></i> Save course</button>
   </div>`;
 }
@@ -7458,7 +7566,7 @@ function renderShopBundle(i){
   document.getElementById('tt').textContent=b.name;
   S.innerHTML=`
   <div style="padding:12px 16px 0;display:flex;align-items:center;justify-content:flex-end;">
-    <button style="border:none;background:none;font-size:12px;color:var(--accent);cursor:pointer;"><i class="ti ti-pencil" style="font-size:12px;"></i> Edit</button>
+    <button onclick="renderEditBundle(${i})" style="border:none;background:none;font-size:12px;color:var(--accent);cursor:pointer;"><i class="ti ti-pencil" style="font-size:12px;"></i> Edit</button>
   </div>
   <div style="padding:14px 16px 0;display:flex;flex-direction:column;align-items:center;gap:8px;text-align:center;">
     <div style="width:64px;height:64px;border-radius:16px;background:${b.col};display:flex;align-items:center;justify-content:center;font-size:28px;">${b.icon}</div>
@@ -7471,7 +7579,7 @@ function renderShopBundle(i){
     <div style="display:flex;gap:8px;margin-top:14px;margin-bottom:10px;"><span style="font-size:12px;color:#999;"><i class="ti ti-send" style="font-size:11px;"></i> ${b.sent} sent</span></div>
     <div style="display:flex;gap:8px;margin-bottom:20px;">
       <button class="btnp" style="flex:2;border-radius:8px;" onclick="sendBundleToClient(${i})"><i class="ti ti-send"></i> Send to client</button>
-      <button class="btng" style="flex:1;"><i class="ti ti-copy"></i> Copy link</button>
+      <button class="btng" style="flex:1;" onclick="(function(){var u=_shopUrl();if(u){_copyToClipboard(/^https?:/.test(u)?u:('https://'+u),'Shop link copied');}else{proToast('Add your shop link in Settings → Shop first');}})()"><i class="ti ti-copy"></i> Copy link</button>
     </div>
   </div>`;
 }
@@ -7571,6 +7679,21 @@ function _togglePw(id,btn){
   el.type=showing?'password':'text';
   const ic=btn&&btn.querySelector('i');if(ic)ic.className='ti '+(showing?'ti-eye':'ti-eye-off');
   if(btn)btn.setAttribute('aria-label',showing?'Show password':'Hide password');
+}
+async function _updatePassword(){
+  const cur=(document.getElementById('pw-current')||{}).value||'';
+  const nw=(document.getElementById('pw-new')||{}).value||'';
+  const conf=(document.getElementById('pw-confirm')||{}).value||'';
+  if(!cur){proToast('Enter your current password');return;}
+  if(nw.length<8||!/[A-Z]/.test(nw)||!/[0-9\W]/.test(nw)){proToast('New password must be 8+ chars, one uppercase, one number or symbol');return;}
+  if(nw!==conf){proToast('New passwords don\u2019t match');return;}
+  const tok=(typeof Cloud!=='undefined'&&Cloud&&Cloud.token)||'';
+  try{
+    const r=await fetch('/api/change-password',{method:'POST',headers:{'Content-Type':'application/json'},body:JSON.stringify({token:tok,current:cur,next:nw})});
+    if(r.ok){proToast('Password updated \u2713');['pw-current','pw-new','pw-confirm'].forEach(i=>{const e=document.getElementById(i);if(e)e.value='';});return;}
+    if(r.status===404){proToast('Password changes aren\u2019t available on this plan yet \u2014 contact support to reset');return;}
+    const d=await r.json().catch(()=>({}));proToast(d.error||'Could not update password \u2014 check your current password');
+  }catch(e){proToast('Could not reach the server \u2014 try again');}
 }
 function proToast(msg,ms){
   const old=document.getElementById('pro-toast');if(old)old.remove();
@@ -10618,7 +10741,7 @@ function renderCalendar(){
     <div style="padding:11px 13px;flex:1;">
       <div style="display:flex;justify-content:space-between;align-items:flex-start;">
         <div><div style="font-size:13px;font-weight:500;color:#e0e0e0;">${a.client}</div><div style="font-size:12px;color:#999;margin-top:2px;">${a.tx} · ${a.dur} min</div></div>
-        <div style="text-align:right;"><div style="font-size:13px;font-weight:500;color:#f0f0f0;">${a.time}</div>${cid?`<i class="ti ti-chevron-right" style="font-size:14px;color:#666;margin-top:4px;"></i>`:`<button style="border:none;background:none;font-size:11px;color:var(--accent);cursor:pointer;margin-top:4px;">Room →</button>`}</div>
+        <div style="text-align:right;"><div style="font-size:13px;font-weight:500;color:#f0f0f0;">${a.time}</div>${cid?`<i class="ti ti-chevron-right" style="font-size:14px;color:#666;margin-top:4px;"></i>`:`<button onclick="event.stopPropagation();nav('today-appts')" style="border:none;background:none;font-size:11px;color:var(--accent);cursor:pointer;margin-top:4px;">Room →</button>`}</div>
       </div>
     </div>
   </div>`;}).join('')}
@@ -11083,7 +11206,7 @@ function renderPasswordSecurity(){
       <div style="display:flex;flex-direction:column;gap:5px;margin-bottom:14px;">
         ${['At least 8 characters','One uppercase letter','One number or symbol'].map(r=>`<div style="display:flex;align-items:center;gap:6px;"><i class="ti ti-circle-check" style="font-size:13px;color:#666;"></i><span style="font-size:12px;color:#999;">${r}</span></div>`).join('')}
       </div>
-      <button class="btnp" style="border-radius:8px;">Update password</button>
+      <button class="btnp" style="border-radius:8px;" onclick="_updatePassword()">Update password</button>
     </div>
     <div class="sh" style="padding:0 0 7px;"><h2>Two-factor authentication</h2></div>
     <div id="totp-body" style="background:#1a1a1a;border:1px solid #2a2a2a;border-radius:12px;overflow:hidden;margin-bottom:8px;padding:14px;color:#888;font-size:12px;">Loading\u2026</div>
@@ -11326,7 +11449,7 @@ function renderStaffDetail(id){
   <!-- Actions -->
   <div style="padding:0 16px 20px;display:flex;gap:8px;">
     <button class="btnp" style="flex:2;border-radius:10px;" onclick="nav('messages')"><i class="ti ti-message-circle" aria-hidden="true"></i> Message</button>
-    <button class="btng" style="flex:1;border-radius:10px;"><i class="ti ti-calendar" aria-hidden="true"></i> Schedule</button>
+    <button class="btng" style="flex:1;border-radius:10px;" onclick="nav('calendar')"><i class="ti ti-calendar" aria-hidden="true"></i> Schedule</button>
   </div>`;
 }
 
