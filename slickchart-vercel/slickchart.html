@@ -10476,7 +10476,30 @@ function ncSaveBasic(){
     conditions:'',notes:''};
   try{if(typeof saveClients==='function')saveClients();}catch(e){}
   proToast(name.split(' ')[0]+' added');
+  // Best-effort: also create them in Square so the two stay in sync. If Square
+  // isn't connected (or the call fails), we just keep the local client — never
+  // block adding someone because of a sync hiccup.
+  _pushClientToSquare(id);
   nav('nc-next-step',id);
+}
+async function _pushClientToSquare(id){
+  const c=CL[id];if(!c)return;
+  try{
+    const d=await _sqFetch('/api/square/customers',{method:'POST',body:{
+      name:c.name||'',email:c.email||'',phone:c.phone||'',
+      birthday:/^\d{4}-\d{2}-\d{2}$/.test(c.birthday||'')?c.birthday:''
+    }});
+    if(d&&d.customer&&d.customer.id){
+      c.squareId=d.customer.id;
+      try{if(typeof saveClients==='function')saveClients();}catch(e){}
+      if(typeof proToast==='function')proToast(d.existing?'Linked to existing Square customer':'Also added to Square');
+    }
+  }catch(e){
+    // Silent on the common "not connected" cases; only surface real errors quietly.
+    if(e&&e.code!=='nosquare'&&e.code!=='auth'&&e.code!=='network'){
+      if(typeof proToast==='function')proToast('Saved here — Square sync skipped');
+    }
+  }
 }
 let _ncNextChecks={invite:true,intake:true};
 function renderNCNextStep(id){
