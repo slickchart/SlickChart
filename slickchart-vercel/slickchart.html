@@ -311,6 +311,8 @@ let inv=[
   {name:'Chemical Peel Solution 30%',brand:'GlyMed Plus',cat:'Supplies',icon:'⚗️',qty:2,low:2,max:4,cost:68},
   {name:'Disposable Gloves (Box)',brand:'Generic',cat:'Supplies',icon:'🧤',qty:8,low:3,max:10,cost:12},
 ];
+function saveVendors(){try{localStorage.setItem('sc_vendors',JSON.stringify(vendors));}catch(e){}}
+function loadVendors(){try{const raw=localStorage.getItem('sc_vendors');if(raw){const arr=JSON.parse(raw);if(Array.isArray(arr)){vendors.length=0;arr.forEach(x=>vendors.push(x));}}}catch(e){}}
 function saveInv(){try{localStorage.setItem('sc_inventory',JSON.stringify(inv));}catch(e){}}
 function loadInv(){try{const raw=localStorage.getItem('sc_inventory');if(raw){const arr=JSON.parse(raw);if(Array.isArray(arr)){inv.length=0;arr.forEach(x=>inv.push(x));}}}catch(e){}}
 let partners=[
@@ -789,7 +791,7 @@ function _reloadAll(){try{
   if(typeof loadCustomResources==='function')loadCustomResources();
   if(typeof loadAi==='function')loadAi();
   if(typeof loadForms==='function')loadForms();
-  loadBizInfo();_syncProviderAvatar();loadClients();loadMessages();loadInv();if(!_sampleHidden()){_seedMayaOnce();}else{_purgeSample();}_seedBirthdays();if(!_sampleHidden()&&typeof _demoCheckinSeed==='function')_demoCheckinSeed();
+  loadBizInfo();_syncProviderAvatar();loadClients();loadMessages();loadInv();loadVendors();if(!_sampleHidden()){_seedMayaOnce();}else{_purgeSample();}_seedBirthdays();if(!_sampleHidden()&&typeof _demoCheckinSeed==='function')_demoCheckinSeed();
   if(typeof loadWorkspace==='function')loadWorkspace();
   if(typeof loadSquareCatalog==='function'){loadSquareCatalog();_mergeSquareRetail();}
   if(typeof loadCheckinCfg==='function')loadCheckinCfg();
@@ -5627,14 +5629,27 @@ function renderVendors(){
     <div style="border-top:1px solid #1e1e1e;padding:8px 14px;"><span style="font-size:12px;color:#999;"><i class="ti ti-user" style="font-size:12px;"></i> ${v.rep} · ${v.phone}</span></div>
   </div>`).join('')+_noRes('vendors-noresults','No vendors match your search.')}`;
 }
+function _vendorUrl(u){u=String(u||'').trim();if(!u||u==='\u2014')return'';return u.match(/^https?:\/\//)?u:'https://'+u;}
 function renderVendorDetail(i){
   setNav('pro');const v=vendors[i];
   document.getElementById('tt').textContent=v.name;
+  const websiteUrl=_vendorUrl(v.website);
+  const portalUrl=_vendorUrl(v.portal);
+  const btn=(icon,label,url,telOrMail)=>{
+    const on=telOrMail?(telOrMail!=='\u2014'&&telOrMail):url;
+    const action=telOrMail?`location.href='${icon==='ti-phone'?'tel:':'mailto:'}${telOrMail}'`:`window.open('${url}','_blank')`;
+    return `<button class="btng" ${on?`onclick="${action}"`:'disabled'} style="${on?'':'opacity:.45;cursor:default;'}"><i class="ti ${icon}" style="color:var(--accent);"></i> ${label}</button>`;
+  };
   S.innerHTML=`
   <div style="padding:12px 16px 0;display:flex;align-items:center;justify-content:flex-end;gap:8px;"><button onclick="nav('edit-vendor',${i})" style="background:var(--accent-tint);border:1px solid var(--accent-a30,#3d2d10);color:var(--accent);border-radius:8px;padding:6px 12px;font-size:12px;font-weight:600;cursor:pointer;font-family:inherit;display:inline-flex;align-items:center;gap:5px;"><i class="ti ti-pencil" style="font-size:12px;"></i> Edit</button><button onclick="deleteVendor(${i})" style="background:none;border:1px solid #3a1a1a;color:#a85a5a;border-radius:8px;padding:6px 12px;font-size:12px;font-weight:600;cursor:pointer;font-family:inherit;display:inline-flex;align-items:center;gap:5px;"><i class="ti ti-trash" style="font-size:12px;"></i> Delete</button></div>
   <div style="padding:14px 16px;display:flex;flex-direction:column;align-items:center;gap:8px;"><div style="width:64px;height:64px;border-radius:16px;background:${v.bg};border:1px solid #2a2a2a;display:flex;align-items:center;justify-content:center;font-size:22px;font-weight:500;color:${v.tc};">${v.init}</div><div style="text-align:center;"><div style="font-size:18px;font-weight:500;color:#f0f0f0;">${v.name}</div><div style="font-size:13px;color:#999;">${v.cat}</div></div></div>
-  <div style="display:grid;grid-template-columns:1fr 1fr;gap:8px;padding:0 16px 14px;"><button class="btng" ${v.phone&&v.phone!=='—'?`onclick="location.href='tel:${v.phone}'"`:''}><i class="ti ti-phone" style="color:var(--accent);"></i> Call</button><button class="btng" ${v.email&&v.email!=='—'?`onclick="location.href='mailto:${v.email}'"`:''}><i class="ti ti-mail" style="color:var(--accent);"></i> Email</button><button class="btng"><i class="ti ti-world" style="color:var(--accent);"></i> Website</button><button class="btng"><i class="ti ti-login" style="color:var(--accent);"></i> Portal</button></div>
-  <div style="padding:0 16px;"><div class="fr"><span class="fl">Sales rep</span><span class="fv">${v.rep}</span></div><div class="fr"><span class="fl">Phone</span>${v.phone&&v.phone!=='—'?`<a href="tel:${v.phone}" class="fv" style="text-decoration:none;">${v.phone}</a>`:`<span class="fv">—</span>`}</div><div class="fr"><span class="fl">Email</span>${v.email&&v.email!=='—'?`<a href="mailto:${v.email}" style="font-size:12px;color:var(--accent);text-decoration:none;word-break:break-all;">${v.email}</a>`:`<span class="fv">—</span>`}</div><div class="fr"><span class="fl">Portal</span><span style="font-size:12px;color:var(--accent);">${v.portal}</span></div><div class="fr"><span class="fl">Notes</span><span class="fv" style="font-size:12px;">${v.notes}</span></div></div>`;
+  <div style="display:grid;grid-template-columns:1fr 1fr;gap:8px;padding:0 16px 14px;">
+    ${btn('ti-phone','Call',null,v.phone)}
+    ${btn('ti-mail','Email',null,v.email)}
+    ${btn('ti-world','Website',websiteUrl)}
+    ${btn('ti-login','Portal',portalUrl)}
+  </div>
+  <div style="padding:0 16px;"><div class="fr"><span class="fl">Sales rep</span><span class="fv">${v.rep}</span></div><div class="fr"><span class="fl">Phone</span>${v.phone&&v.phone!=='—'?`<a href="tel:${v.phone}" class="fv" style="text-decoration:none;">${v.phone}</a>`:`<span class="fv">—</span>`}</div><div class="fr"><span class="fl">Email</span>${v.email&&v.email!=='—'?`<a href="mailto:${v.email}" style="font-size:12px;color:var(--accent);text-decoration:none;word-break:break-all;">${v.email}</a>`:`<span class="fv">—</span>`}</div><div class="fr"><span class="fl">Website</span>${websiteUrl?`<a href="${websiteUrl}" target="_blank" rel="noopener" style="font-size:12px;color:var(--accent);text-decoration:none;word-break:break-all;">${v.website}</a>`:`<span class="fv">—</span>`}</div><div class="fr"><span class="fl">Portal</span>${portalUrl?`<a href="${portalUrl}" target="_blank" rel="noopener" style="font-size:12px;color:var(--accent);text-decoration:none;word-break:break-all;">${v.portal}</a>`:`<span class="fv">—</span>`}</div><div class="fr"><span class="fl">Notes</span><span class="fv" style="font-size:12px;">${v.notes}</span></div></div>`;
 }
 
 // ── LEARN ──
@@ -9994,10 +10009,12 @@ function renderAddVendor(editIdx){
   <div style="padding:14px 16px 0;">
     <span class="fl-lbl">Brand name</span><input class="fi" id="vn-name" aria-label="Brand name" placeholder="e.g. iS Clinical" value="${val(v.name)}" style="margin-bottom:12px;">
     <span class="fl-lbl">Category</span>
-    <select class="fi" id="vn-cat" style="margin-bottom:12px;">${cats.map(c=>`<option${v.cat===c?' selected':''}>${c}</option>`).join('')}</select>
+    <input class="fi" id="vn-cat" list="vn-cat-options" aria-label="Category" placeholder="e.g. Skincare" value="${val(v.cat)}" style="margin-bottom:12px;">
+    <datalist id="vn-cat-options">${cats.map(c=>`<option value="${c}">`).join('')}</datalist>
     <span class="fl-lbl">Sales rep name</span><input class="fi" id="vn-rep" aria-label="Sales rep name" placeholder="Rep's full name" value="${val(clean(v.rep))}" style="margin-bottom:12px;">
     <span class="fl-lbl">Rep phone</span><input class="fi" id="vn-phone" aria-label="Rep phone" placeholder="(415) 000-0000" value="${val(clean(v.phone))}" style="margin-bottom:12px;">
     <span class="fl-lbl">Rep email</span><input class="fi" id="vn-email" placeholder="rep@brand.com" value="${val(clean(v.email))}" style="margin-bottom:12px;">
+    <span class="fl-lbl">Website</span><input class="fi" id="vn-website" aria-label="Website" placeholder="brand.com" value="${val(clean(v.website))}" style="margin-bottom:12px;">
     <span class="fl-lbl">Professional portal URL</span><input class="fi" id="vn-portal" aria-label="Professional portal URL" placeholder="pro.brand.com" value="${val(clean(v.portal))}" style="margin-bottom:12px;">
     <span class="fl-lbl">Notes</span>
     <textarea class="fi" id="vn-notes" style="height:72px;resize:none;margin-bottom:16px;" placeholder="Min order amounts, shipping notes, account details...">${val(v.notes)}</textarea>
@@ -10011,18 +10028,21 @@ function saveVendor(editIdx){
   const rep=g('vn-rep')||'\u2014';
   const phone=g('vn-phone')||'\u2014';
   const email=g('vn-email')||'\u2014';
+  const website=g('vn-website')||'\u2014';
   const portal=g('vn-portal')||'\u2014';
   const notes=g('vn-notes')||'';
   const initials=name.split(' ').map(w=>w[0]).filter(Boolean).join('').slice(0,2).toUpperCase();
   if(editIdx!=null&&vendors[editIdx]){
-    const v=vendors[editIdx];v.name=name;v.init=initials;v.cat=cat;v.rep=rep;v.phone=phone;v.email=email;v.portal=portal;v.notes=notes;
+    const v=vendors[editIdx];v.name=name;v.init=initials;v.cat=cat;v.rep=rep;v.phone=phone;v.email=email;v.website=website;v.portal=portal;v.notes=notes;
+    saveVendors();
     proToast('Vendor updated \u2713');nav('vendor-detail',editIdx);
   }else{
-    vendors.push({name,init:initials,bg:'#1a1a1a',tc:'#e0e0e0',cat,rep,phone,email,portal,notes});
+    vendors.push({name,init:initials,bg:'#1a1a1a',tc:'#e0e0e0',cat,rep,phone,email,website,portal,notes});
+    saveVendors();
     nav('vendors');
   }
 }
-function deleteVendor(i){const v=vendors[i];if(!v)return;confirmModal({title:'Delete vendor',body:'Remove '+(v.name||'this vendor')+' from your directory? This cannot be undone.',action:'Delete'},"()=>{vendors.splice("+i+",1);nav('vendors')}");}
+function deleteVendor(i){const v=vendors[i];if(!v)return;confirmModal({title:'Delete vendor',body:'Remove '+(v.name||'this vendor')+' from your directory? This cannot be undone.',action:'Delete'},"()=>{vendors.splice("+i+",1);saveVendors();nav('vendors')}");}
 </script>
 <script>if('serviceWorker' in navigator){window.addEventListener('load',function(){navigator.serviceWorker.register('/sw.js').catch(function(){});});}</script>
 <script>
