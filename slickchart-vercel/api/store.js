@@ -2,21 +2,29 @@
 //   GET  -> { data: { key: value, ... } }            (everything, for hydration)
 //   PUT  -> body { items: { key: value, ... } }       (upsert many)
 //        -> body { key, value }                        (upsert one)
-import { sql, ensureTable, dbEnabled } from '../lib/db.js';
-import { verifyToken } from '../lib/auth.js';
+import { sql, ensureTable, ensureProvidersTable, dbEnabled } from '../lib/db.js';
+import { verifyToken, isSessionValid } from '../lib/auth.js';
 
-function requireLogin(req, res) {
+async function requireLogin(req, res, q) {
   const secret = process.env.SESSION_SECRET || '';
   const h = req.headers['authorization'] || '';
   const token = h.startsWith('Bearer ') ? h.slice(7) : '';
   const payload = secret ? verifyToken(token, secret) : null;
   if (!payload) { res.status(401).json({ error: 'Not logged in.' }); return null; }
+  try {
+    if (!(await isSessionValid(q, payload.sid))) {
+      res.status(401).json({ error: 'This session has been signed out. Please log in again.' });
+      return null;
+    }
+  } catch (e) { /* if the check itself fails, don't lock people out over it */ }
   return payload.u || 'owner';
 }
 
 export default async function handler(req, res) {
   if (!dbEnabled()) { res.status(500).json({ error: 'No database is configured.' }); return; }
-  const owner = requireLogin(req, res);
+  await ensureProvidersTable(); // makes sure the sessions table exists before we check it
+  const q0 = sql();
+  const owner = await requireLogin(req, res, q0);
   if (!owner) return;
 
   try {
