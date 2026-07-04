@@ -2,7 +2,7 @@
 // Creates a provider account (unverified), emails a verification link, and
 // returns a session token so they can start using the app right away.
 import { sql, ensureProvidersTable, dbEnabled, hasActiveSubscription } from '../lib/db.js';
-import { signToken, hashPassword, makeToken } from '../lib/auth.js';
+import { signToken, hashPassword, makeToken, createSession } from '../lib/auth.js';
 import { sendEmail, appOrigin, addToAudience, welcomeEmailHtml, welcomeEmailText } from '../lib/email.js';
 import crypto from 'crypto';
 
@@ -58,7 +58,7 @@ export default async function handler(req, res) {
       });
     } catch (e) { console.error('[signup] welcome email failed:', e && e.message || e); /* don't block signup on email failure */ }
 
-    const token = signToken({ u: id, e: email }, secret);
+    const token = signToken({ u: id, e: email, sid: await createSession(q, id, req) }, secret);
     res.status(200).json({ token, name, email, verified: false });
   } catch (e) {
     res.status(e.status || 500).json({ error: e.message });
