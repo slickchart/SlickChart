@@ -2521,7 +2521,7 @@ Skin type: ${c.skin}
 Fitzpatrick: ${c.fitz}
 Concerns: ${c.concerns}
 Allergies / contraindications: ${c.allergies}
-Treatment today: ${c.treatment}
+${c.currentRoutine&&String(c.currentRoutine).trim()?`Current routine / products: ${c.currentRoutine}\n`:''}Treatment today: ${c.treatment}
 Last visit: ${c.lastVisit}
 Next visit: ${c.nextVisit}
 ${isDemo?(isHairBarber?
@@ -2717,6 +2717,7 @@ function _vitalsConfig(){
     {key:'skin',label:v.primary,ph:v.primaryPh},
     {key:'concerns',label:'Concerns',ph:'What they want to work on'},
     {key:'allergies',label:'Allergies / sensitivities',ph:'e.g. Fragrance, retinol — or None known'},
+    {key:'currentRoutine',label:'Current routine / products',ph:'What they are already using at home'},
     {key:'fitz',label:v.secondary,ph:v.secondaryPh},
     {key:'pregnancy',label:'Pregnant / nursing',ph:'Yes / No',med:true},
     {key:'medications',label:'Medications',ph:'e.g. None, or list',med:true},
@@ -2758,6 +2759,7 @@ function _vitalForQuestion(label){
   if(/medication|prescription|currently taking|on any med|taking any med/.test(l)) return 'medications';
   if(/medical (history|condition)|health condition|chronic|underlying condition|skin\s+condition/.test(l)) return 'conditions';
   if(/fitzpatrick|skin tone|undertone/.test(l)) return 'fitz';
+  if(/current\s*(skincare|hair care|nail care)\s*(products?|routine)?|current\s+routine|products?\s+you('re| are)\s+currently\s+using/.test(l)) return 'currentRoutine';
   if(/(skin|hair|lash|nail|brow)\s*(type|texture)|natural\s+(hair|lash|brow)|skin\s*type\s*&?\s*tone/.test(l)) return 'skin';
   if(/concern|goal|occasion|look|areas you want|cut style|preferred\s+(cut|style|finish|look)|work on|enhancement/.test(l)) return 'concerns';
   return null;
@@ -9438,9 +9440,10 @@ async function syncClientEvents(){
         providerSystemNotify('New message',`${name}: ${preview}`);
         touchedMsgs=true;touchedNotif=true;msgClientIds.push(cid);
       }else if(ev.kind==='checkin'){
+        const ciPhotos=Array.isArray(payload.photos)?payload.photos:[];
         const ci={id:ev.id,providerId:'me',clientId:cid,client:name,dateLabel:payload.dateLabel||'',time:payload.time||'',
           treatment:payload.treatment||'',groups:payload.groups||[],flagged:payload.flagged||[],notes:payload.notes||'',
-          photos:[],read:false};
+          photos:ciPhotos,read:false};
         checkins.unshift(ci);
         if(c){
           c.checkinDone=true;
@@ -9451,10 +9454,11 @@ async function syncClientEvents(){
           try{saveClients();}catch(e){}
         }
         const fl=(ci.flagged&&ci.flagged.length)?` Flagged: ${ci.flagged.join(', ')}.`:'';
-        notifFeed.unshift({id:'evc'+ev.id,type:'checkin',icon:'ti-clipboard-check',col:'#0a2019',ic:'#4ec49a',
-          title:'Pre-visit check-in',body:`${name} completed a check-in${ci.dateLabel?' for '+ci.dateLabel:''}.${fl}`,
+        const photoNote=ciPhotos.length?` \ud83d\udcf7 ${ciPhotos.length} photo${ciPhotos.length>1?'s':''} attached.`:'';
+        notifFeed.unshift({id:'evc'+ev.id,type:'checkin',icon:ciPhotos.length?'ti-camera':'ti-clipboard-check',col:'#0a2019',ic:'#4ec49a',
+          title:'Pre-visit check-in',body:`${name} completed a check-in${ci.dateLabel?' for '+ci.dateLabel:''}.${fl}${photoNote}`,
           time:'Just now',read:false,action:'checkin',data:ci.id});
-        providerSystemNotify('Pre-visit check-in',`${name} \u00b7 ${ci.treatment||''} \u00b7 ${ci.dateLabel||''}`);
+        providerSystemNotify('Pre-visit check-in',`${name} \u00b7 ${ci.treatment||''} \u00b7 ${ci.dateLabel||''}${photoNote}`);
         touchedCheckins=true;touchedNotif=true;
       }else if(ev.kind==='form'){
         if(c){
@@ -9651,7 +9655,10 @@ function _checkinCard(ci){
       <div style="flex:1;min-width:0;">
         <div style="font-size:14px;font-weight:600;color:#e0e0e0;">${ci.client}</div>
         <div style="font-size:12px;color:#999;margin-top:1px;">${ci.treatment} · ${ci.dateLabel} at ${ci.time}</div>
-        ${n?`<div style="margin-top:6px;display:inline-flex;align-items:center;gap:5px;background:#2a1410;border:1px solid #5c2a1a;border-radius:20px;padding:2px 9px;"><i class="ti ti-alert-circle" style="font-size:12px;color:#e8a070;"></i><span style="font-size:11px;color:#e8a070;font-weight:600;">${n} flagged</span></div>`:`<div style="margin-top:6px;font-size:11px;color:#4ec49a;">No changes flagged</div>`}
+        <div style="margin-top:6px;display:flex;flex-wrap:wrap;gap:6px;">
+          ${n?`<span style="display:inline-flex;align-items:center;gap:5px;background:#2a1410;border:1px solid #5c2a1a;border-radius:20px;padding:2px 9px;"><i class="ti ti-alert-circle" style="font-size:12px;color:#e8a070;"></i><span style="font-size:11px;color:#e8a070;font-weight:600;">${n} flagged</span></span>`:`<span style="font-size:11px;color:#4ec49a;">No changes flagged</span>`}
+          ${(ci.photos&&ci.photos.length)?`<span style="display:inline-flex;align-items:center;gap:4px;background:#0d1e33;border:1px solid #1a3a5c;border-radius:20px;padding:2px 9px;"><i class="ti ti-camera" style="font-size:12px;color:#5ba3e8;"></i><span style="font-size:11px;color:#5ba3e8;font-weight:600;">${ci.photos.length} photo${ci.photos.length>1?'s':''}</span></span>`:''}
+        </div>
       </div>
       <i class="ti ti-chevron-right" style="font-size:18px;color:#555;flex-shrink:0;"></i>
     </div>
