@@ -1,6 +1,6 @@
 // POST /api/login  { email, password }  (email omitted => legacy APP_PASSWORD owner)
 // Verifies against a provider account, rate-limited to stop brute-forcing.
-import { signToken, verifyPassword, tooManyAttempts, recordAttempt, clearAttempts } from '../lib/auth.js';
+import { signToken, verifyPassword, tooManyAttempts, recordAttempt, clearAttempts, createSession } from '../lib/auth.js';
 import { sql, ensureProvidersTable, dbEnabled } from '../lib/db.js';
 
 export default async function handler(req, res) {
@@ -23,7 +23,8 @@ export default async function handler(req, res) {
       const rows = await q`SELECT id, name, email, pass_hash, verified FROM providers WHERE email = ${email}`;
       if (rows.length && verifyPassword(password, rows[0].pass_hash)) {
         await clearAttempts(q, email);
-        const token = signToken({ u: rows[0].id, e: email }, secret);
+        const sid = await createSession(q, rows[0].id, req);
+        const token = signToken({ u: rows[0].id, e: email, sid }, secret);
         res.status(200).json({ token, name: rows[0].name || '', email, verified: !!rows[0].verified });
         return;
       }
