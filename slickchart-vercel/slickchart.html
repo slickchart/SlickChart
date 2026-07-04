@@ -2883,13 +2883,43 @@ function saveTreatment(id,screen){
 function togBtn(state,onclick,label){
   return `<button class="tog ${state?'on':'off'}" role="switch" aria-checked="${state?'true':'false'}" aria-label="${label||'Toggle'}" onclick="${onclick}"><span class="tok" aria-hidden="true"></span></button>`;
 }
-function toggleProductPicker(id){const p=document.getElementById('prod-picker');if(p)p.style.display=p.style.display==='none'?'block':'none';}
+function _prodPickerRows(clientId,q){
+  q=(q||'').toLowerCase().trim();
+  const already=clientRecs[clientId]||[];
+  const list=affiliateLinks.filter(a=>a.active&&!already.includes(a.id)&&(!q||((a.name||'')+' '+(a.brand||'')).toLowerCase().includes(q)));
+  if(!list.length)return `<div style="padding:16px;text-align:center;color:#888;font-size:12px;">${q?'No products match "'+q.replace(/</g,'&lt;')+'"':'No more products to add'}</div>`;
+  return list.map(a=>`<div onclick="addClientProd('${clientId}','${a.id}')" style="display:flex;align-items:center;gap:10px;padding:9px 12px;border-bottom:1px solid #1e1e1e;cursor:pointer;" id="pick-${a.id}">
+    <span style="font-size:18px;">${a.icon}</span>
+    <div style="flex:1;min-width:0;"><div style="font-size:13px;color:#e0e0e0;">${a.name}</div><div style="font-size:11px;color:#999;">${a.brand||''}</div></div>
+    <i class="ti ti-plus" style="font-size:14px;color:var(--accent);"></i>
+  </div>`).join('');
+}
+function _renderProdPickerList(clientId,q){const el=document.getElementById('prod-picker-list');if(el)el.innerHTML=_prodPickerRows(clientId,q);}
+function toggleProductPicker(id){
+  const p=document.getElementById('prod-picker');if(!p)return;
+  const opening=p.style.display==='none';
+  p.style.display=opening?'block':'none';
+  if(opening){
+    // refresh the list (in case products were added/removed) and focus search
+    const q=document.getElementById('prod-picker-q');if(q){q.value='';}
+    _renderProdPickerList(id,'');
+    setTimeout(()=>{const i=document.getElementById('prod-picker-q');if(i&&i.focus)try{i.focus();}catch(e){}},30);
+  }
+}
 function addClientProd(clientId,aid){
   if(!clientRecs[clientId])clientRecs[clientId]=[];
   if(clientRecs[clientId].includes(aid))return;
   clientRecs[clientId].push(aid);
-  const picker=document.getElementById('prod-picker');if(picker)picker.style.display='none';
   renderProductRecs(clientId);
+  // Keep the picker open so several products can be added in a row; just refresh
+  // the list (dropping the one just added) and clear the search for the next one.
+  const picker=document.getElementById('prod-picker');
+  if(picker&&picker.style.display!=='none'){
+    const q=document.getElementById('prod-picker-q');if(q)q.value='';
+    _renderProdPickerList(clientId,'');
+    setTimeout(()=>{const i=document.getElementById('prod-picker-q');if(i&&i.focus)try{i.focus();}catch(e){}},20);
+  }
+  if(typeof proToast==='function'){const a=affiliateLinks.find(x=>x.id===aid);proToast((a&&a.name?a.name:'Product')+' added');}
 }
 function removeClientProd(clientId,aid){
   clientRecs[clientId]=(clientRecs[clientId]||[]).filter(x=>x!==aid);
@@ -3028,11 +3058,8 @@ function renderNotes(id){
         <button onclick="toggleProductPicker('${id}')" id="prod-add-btn" style="border:none;background:none;font-size:12px;color:var(--accent);cursor:pointer;display:flex;align-items:center;gap:3px;"><i class="ti ti-plus" style="font-size:12px;"></i> Add</button>
       </div>
       <div id="prod-picker" style="display:none;background:#161616;border:1px solid #2a2a2a;border-radius:10px;overflow:hidden;margin-bottom:10px;">
-        ${affiliateLinks.filter(a=>a.active).map(a=>`<div onclick="addClientProd('${id}','${a.id}')" style="display:flex;align-items:center;gap:10px;padding:9px 12px;border-bottom:1px solid #1e1e1e;cursor:pointer;" id="pick-${a.id}">
-          <span style="font-size:18px;">${a.icon}</span>
-          <div style="flex:1;"><div style="font-size:13px;color:#e0e0e0;">${a.name}</div><div style="font-size:11px;color:#999;">${a.brand}</div></div>
-          <i class="ti ti-plus" style="font-size:14px;color:var(--accent);"></i>
-        </div>`).join('')}
+        <div style="position:relative;padding:8px;border-bottom:1px solid #1e1e1e;"><i class="ti ti-search" aria-hidden="true" style="position:absolute;left:18px;top:50%;transform:translateY(-50%);font-size:14px;color:#777;"></i><input id="prod-picker-q" oninput="_renderProdPickerList('${id}',this.value)" placeholder="Search products or brands…" style="width:100%;background:#0f0f0f;border:1px solid #2a2a2a;border-radius:8px;padding:8px 10px 8px 30px;font-size:13px;color:#e0e0e0;font-family:inherit;box-sizing:border-box;outline:none;"></div>
+        <div id="prod-picker-list">${_prodPickerRows(id,'')}</div>
       </div>
       <div id="prod-recs">
         ${(clientRecs[id]||[]).length===0?`<div style="background:#161616;border:1px dashed #2a2a2a;border-radius:10px;padding:14px;display:flex;flex-direction:column;align-items:center;gap:5px;"><i class="ti ti-shopping-bag" style="font-size:20px;color:#666;"></i><span style="font-size:12px;color:#999;">No products recommended yet</span></div>`:''}
