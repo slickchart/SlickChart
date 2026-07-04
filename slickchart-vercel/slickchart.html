@@ -1814,6 +1814,7 @@ function nav(screen,data){
     rebook:()=>renderRebook(data),notes:()=>renderNotes(data),photos:()=>renderPhotos(data),
     'session-summary':()=>renderSessionSummary(data),
     'summary-history':()=>renderSummaryHistory(data),
+    'session-detail':()=>renderSessionDetail(data),
     chat:()=>renderChat(data),
     'doc-detail':()=>renderDocDetail(data),'edit-doc':()=>renderEditDoc(data),
     'vendor-detail':()=>renderVendorDetail(data),
@@ -2338,8 +2339,28 @@ function viewSubmittedForm(id,i){
       <ul style="margin:0;padding-left:18px;">${sf.flagged.map(it=>`<li style="font-size:12.5px;color:#e6cccc;line-height:1.7;">${it}</li>`).join('')}</ul>
     </div>`:`<div style="background:#0a2019;border:1px solid #1c3d2e;border-radius:11px;padding:10px 13px;margin-bottom:14px;font-size:12.5px;color:#7fd6aa;"><i class="ti ti-circle-check" style="font-size:14px;"></i> No contraindications flagged.</div>`}
     ${rows.length?rows.map(([l,a])=>`<div style="margin-bottom:12px;padding-bottom:12px;border-bottom:1px solid #1e1e1e;"><div style="font-size:11px;color:#888;text-transform:uppercase;letter-spacing:.04em;margin-bottom:4px;">${l}</div><div style="font-size:13.5px;color:#e8e8e8;line-height:1.5;">${a.replace(/</g,'&lt;')}</div></div>`).join(''):'<div style="font-size:12px;color:#888;text-align:center;padding:10px;">No written answers — review & signature only.</div>'}
+    ${tmpl?`<div style="display:flex;gap:8px;margin-top:6px;">
+      <button onclick="resendFormToClient('${id}','${sf.formId}')" style="flex:1;background:#0d1e33;border:1px solid #1a3a5c;color:#5ba3e8;border-radius:9px;padding:10px;font-size:12.5px;font-weight:600;cursor:pointer;font-family:inherit;display:flex;align-items:center;justify-content:center;gap:6px;"><i class="ti ti-device-mobile"></i> Resend to app</button>
+      <button onclick="this.closest('#subform-sheet').remove();shareFormLink('${sf.formId}','${id}')" style="flex:1;background:#0a2019;border:1px solid #1a4a2a;color:#4ec49a;border-radius:9px;padding:10px;font-size:12.5px;font-weight:600;cursor:pointer;font-family:inherit;display:flex;align-items:center;justify-content:center;gap:6px;"><i class="ti ti-link"></i> Send link</button>
+    </div>`:''}
   </div>`;
   (document.querySelector('.shell')||document.body).appendChild(ov);
+}
+// Re-assign a form to a client so they can fill it out again (a fresh copy), and
+// let them know it's waiting. Reuses the same pending-form mechanism as a first send.
+function resendFormToClient(cid,fid){
+  const c=CL[cid];if(!c||!formTmpls[fid])return;
+  const sheet=document.getElementById('subform-sheet');if(sheet)sheet.remove();
+  _assignFormsToClient(c,_isIntakeForm(fid)?_withPhotoRelease(fid):[fid]);
+  try{if(typeof saveClients==='function')saveClients();}catch(e){}
+  try{
+    if(!msgStore[cid])msgStore[cid]=[];
+    msgStore[cid].push({from:'me',text:`Hi ${c.name.split(' ')[0]}! I've sent you the ${formTmpls[fid].name} to fill out again when you have a moment. ✨`,time:'Just now'});
+    const t=threads.find(x=>x.id===cid);if(t){t.preview='A form is ready for you';}
+    saveMessages();
+  }catch(e){}
+  try{if(typeof _scheduleClientSync==='function')_scheduleClientSync();}catch(e){}
+  if(typeof proToast==='function')proToast(formTmpls[fid].name+' resent to '+c.name.split(' ')[0]);
 }
 // ── Per-client forms storage: intakes, consents, signed forms ──
 // ── Suggest forms to send based on the booked treatment ──
@@ -2958,14 +2979,20 @@ function renderProductRecs(clientId){
   if(recs.length===0){el.innerHTML=`<div style="background:#161616;border:1px dashed #2a2a2a;border-radius:10px;padding:14px;display:flex;flex-direction:column;align-items:center;gap:5px;"><i class="ti ti-shopping-bag" style="font-size:20px;color:#666;"></i><span style="font-size:12px;color:#999;">No products recommended yet</span></div>`;return;}
   el.innerHTML=recs.map((aid,i)=>{const a=affiliateLinks.find(x=>x.id===aid);if(!a)return'';
     const up=i>0,down=i<recs.length-1;
-    return `<div style="background:#1a1a1a;border:1px solid #2a2a2a;border-radius:10px;padding:8px 10px 8px 12px;display:flex;align-items:center;gap:9px;margin-bottom:6px;">
-      <span style="font-size:18px;flex-shrink:0;">${a.icon}</span>
-      <div style="flex:1;min-width:0;"><div style="font-size:13px;font-weight:500;color:#e0e0e0;overflow:hidden;text-overflow:ellipsis;white-space:nowrap;">${a.name}</div><div style="font-size:11px;color:#999;">${a.brand}</div></div>
-      <div style="display:flex;flex-direction:column;flex-shrink:0;">
-        <button onclick="moveClientProd('${clientId}',${i},-1)" aria-label="Move up" ${up?'':'disabled'} style="border:none;background:none;cursor:${up?'pointer':'default'};padding:1px 4px;line-height:1;color:${up?'#aaa':'#3a3a3a'};"><i class="ti ti-chevron-up" style="font-size:15px;"></i></button>
-        <button onclick="moveClientProd('${clientId}',${i},1)" aria-label="Move down" ${down?'':'disabled'} style="border:none;background:none;cursor:${down?'pointer':'default'};padding:1px 4px;line-height:1;color:${down?'#aaa':'#3a3a3a'};"><i class="ti ti-chevron-down" style="font-size:15px;"></i></button>
+    return `<div style="background:#1a1a1a;border:1px solid #2a2a2a;border-radius:10px;padding:8px 10px 10px 12px;margin-bottom:6px;">
+      <div style="display:flex;align-items:center;gap:9px;">
+        <span style="font-size:18px;flex-shrink:0;">${a.icon}</span>
+        <div style="flex:1;min-width:0;"><div style="font-size:13px;font-weight:500;color:#e0e0e0;overflow:hidden;text-overflow:ellipsis;white-space:nowrap;">${a.name}</div><div style="font-size:11px;color:#999;">${a.brand}</div></div>
+        <div style="display:flex;flex-direction:column;flex-shrink:0;">
+          <button onclick="moveClientProd('${clientId}',${i},-1)" aria-label="Move up" ${up?'':'disabled'} style="border:none;background:none;cursor:${up?'pointer':'default'};padding:1px 4px;line-height:1;color:${up?'#aaa':'#3a3a3a'};"><i class="ti ti-chevron-up" style="font-size:15px;"></i></button>
+          <button onclick="moveClientProd('${clientId}',${i},1)" aria-label="Move down" ${down?'':'disabled'} style="border:none;background:none;cursor:${down?'pointer':'default'};padding:1px 4px;line-height:1;color:${down?'#aaa':'#3a3a3a'};"><i class="ti ti-chevron-down" style="font-size:15px;"></i></button>
+        </div>
+        <button onclick="removeClientProd('${clientId}','${a.id}')" class="icon-btn" aria-label="Remove product" style="flex-shrink:0;"><i class="ti ti-x" aria-hidden="true" style="font-size:14px;"></i></button>
       </div>
-      <button onclick="removeClientProd('${clientId}','${a.id}')" class="icon-btn" aria-label="Remove product" style="flex-shrink:0;"><i class="ti ti-x" aria-hidden="true" style="font-size:14px;"></i></button>
+      <div style="background:#161616;border-radius:8px;padding:7px 9px;margin-top:8px;">
+        <div style="font-size:9px;font-weight:600;color:#888;text-transform:uppercase;letter-spacing:.06em;margin-bottom:4px;">Why you recommend this</div>
+        <textarea oninput="_setRecReason('${clientId}','${a.id}',this.value)" placeholder="Add a note ${CL[clientId]?CL[clientId].name.split(' ')[0]:'they'} will see…" rows="2" style="width:100%;background:transparent;border:none;resize:none;color:#ccc;font-size:12px;line-height:1.5;font-family:inherit;outline:none;box-sizing:border-box;padding:0;">${_recReason(clientId,a.id).replace(/&/g,'&amp;').replace(/</g,'&lt;')}</textarea>
+      </div>
     </div>`;}).join('');
 }
 function moveClientProd(clientId,i,dir){
@@ -3504,6 +3531,8 @@ function buildSummaryCustomPanel(id){
 let summaryToggles={note:true,homecare:true,metrics:false,products:true,appointment:true};
 let summaryCustomOpen=false;
 let summaryNoteDraft={};   // provider's edited wording per client (overrides the default note)
+let summaryObsDraft={};     // provider's optional client-facing observation per client (starts empty for real clients)
+let _skipSummaryStore=false;  // set true when re-sharing an already-saved summary, to avoid duplicating it
 let summarySendOn={};      // per-session: off by default — provider opts in before anything actually sends
 function _summaryGuard(id){
   if(!summarySendOn[id]){ if(typeof proToast==='function')proToast('Turn on "Send to '+((CL[id]&&CL[id].name.split(' ')[0])||'client')+'\u2019s app" above first'); return false; }
@@ -3529,6 +3558,15 @@ function renderSessionSummary(id){
     :(id==='maya'?'Hyperpigmentation is responding beautifully to the Vitamin C series — jawline is visibly clearer.'
       :id==='sophie'?'Barrier is strengthening. Redness reduced this session.'
       :'T-zone congestion improving. Pores looking tighter.')):'';
+  // What actually goes in the note: a manual edit wins; then a real client-friendly
+  // rewrite; then, for the demo clients only, the scripted improvement copy; then the
+  // provider's own notes; else a prompt to add one. We never fabricate content for a
+  // real client — if there are no notes, we say so plainly.
+  const _noteContent=(summaryNoteDraft[id]!=null)
+    ? summaryNoteDraft[id]
+    : (_isDemoClient
+        ? (improvement+(notes?'\n\n'+notes:''))
+        : (notes || 'Tap Edit to write a note about today\u2019s visit, or use \u201cMake client-friendly\u201d to turn your treatment notes into a warm summary.'));
 
 
   S.innerHTML=`
@@ -3580,15 +3618,19 @@ function renderSessionSummary(id){
           <button onclick="editSummaryNote('${id}')" style="border:none;background:none;color:var(--accent);font-size:12px;cursor:pointer;display:flex;align-items:center;gap:4px;"><i class="ti ti-pencil" aria-hidden="true" style="font-size:12px;"></i> Edit</button>
         </div>
       </div>
-      <div id="summary-note" style="font-size:13px;color:#ccc;line-height:1.8;">${(summaryNoteDraft[id]!=null?summaryNoteDraft[id]:((improvement+(notes?'\n\n'+notes:''))||'Tap Edit to add a note about today\'s visit.')).replace(/\n/g,'<br>')}</div>
+      <div id="summary-note" style="font-size:13px;color:#ccc;line-height:1.8;">${_noteContent.replace(/</g,'&lt;').replace(/\n/g,'<br>')}</div>
     </div>`:''}
 
     ${summaryToggles.metrics?`<div style="padding:14px 16px;border-bottom:1px solid #222;">
       <div style="display:flex;align-items:center;gap:8px;margin-bottom:10px;">
-        <div style="font-size:12px;color:#aaa;text-transform:uppercase;letter-spacing:.07em;font-weight:500;">${isHairBarberSummary?"Session observations":"Skin observations today"}</div>
-        <span style="font-size:10px;background:var(--accent-tint);color:var(--accent);padding:2px 7px;border-radius:5px;font-weight:500;">Provider estimates</span>
+        <div style="font-size:12px;color:#aaa;text-transform:uppercase;letter-spacing:.07em;font-weight:500;">${isHairBarberSummary?"Session observations":"Observations today"}</div>
+        ${_isDemoClient?`<span style="font-size:10px;background:var(--accent-tint);color:var(--accent);padding:2px 7px;border-radius:5px;font-weight:500;">Provider estimates</span>`:''}
       </div>
-      ${id==='maya'?`<div style="display:grid;grid-template-columns:1fr 1fr;gap:8px;">${[['Hydration','74%','#5ba3e8','↑ from last visit'],['Barrier','82%','#4ec49a','↑ improving'],['Radiance','Good','var(--accent)','↑ visibly brighter'],['PIH','Fading','#a891ec','↓ ~40%']].map(([lbl,val,col,change])=>`<div style="background:#161616;border-radius:10px;padding:10px 12px;"><div style="font-size:11px;color:#777;margin-bottom:3px;">${lbl}</div><div style="font-size:16px;font-weight:500;color:${col};">${val}</div><div style="font-size:11px;color:#666;margin-top:2px;">${change}</div></div>`).join('')}</div><div style="margin-top:8px;font-size:11px;color:#666;line-height:1.5;">These are provider observations, not clinical measurements.</div>`:`<div style="background:#161616;border-radius:10px;padding:12px;font-size:13px;color:#ccc;line-height:1.7;">Your skin is progressing well. We'll track observations more closely over your next few sessions.</div>`}
+      ${_isDemoClient&&id==='maya'
+        ?`<div style="display:grid;grid-template-columns:1fr 1fr;gap:8px;">${[['Hydration','74%','#5ba3e8','↑ from last visit'],['Barrier','82%','#4ec49a','↑ improving'],['Radiance','Good','var(--accent)','↑ visibly brighter'],['PIH','Fading','#a891ec','↓ ~40%']].map(([lbl,val,col,change])=>`<div style="background:#161616;border-radius:10px;padding:10px 12px;"><div style="font-size:11px;color:#777;margin-bottom:3px;">${lbl}</div><div style="font-size:16px;font-weight:500;color:${col};">${val}</div><div style="font-size:11px;color:#666;margin-top:2px;">${change}</div></div>`).join('')}</div><div style="margin-top:8px;font-size:11px;color:#666;line-height:1.5;">These are provider observations, not clinical measurements.</div>`
+        :_isDemoClient
+          ?`<div style="background:#161616;border-radius:10px;padding:12px;font-size:13px;color:#ccc;line-height:1.7;">Your skin is progressing well. We'll track observations more closely over your next few sessions.</div>`
+          :`<textarea id="summary-obs" oninput="summaryObsDraft['${id}']=this.value;if(typeof persistWorkspace==='function')persistWorkspace();" placeholder="Optional — a short observation ${c.name.split(' ')[0]} will see (e.g. 'Skin looked calmer today, less redness than last time'). Leave blank to hide this section." rows="2" style="width:100%;background:#161616;border:1px solid #2a2a2a;border-radius:10px;padding:11px;font-size:13px;color:#ccc;line-height:1.6;font-family:inherit;box-sizing:border-box;resize:none;outline:none;">${(summaryObsDraft[id]||'').replace(/</g,'&lt;')}</textarea>`}
     </div>`:''}
 
     ${summaryToggles.homecare?`<div style="padding:14px 16px;border-bottom:1px solid #222;">
@@ -3613,7 +3655,7 @@ function renderSessionSummary(id){
       </div>
       ${_recPickerHTML(id)}
       ${(clientRecs[id]||[]).length===0?`<div style="background:#161616;border:1px dashed #2a2a2a;border-radius:10px;padding:14px;display:flex;flex-direction:column;align-items:center;gap:5px;"><i class="ti ti-shopping-bag" aria-hidden="true" style="font-size:20px;color:#666;"></i><span style="font-size:12px;color:#999;">No products yet — tap Add to recommend one</span></div>`:''}
-      ${(clientRecs[id]||[]).map((aid,i)=>{const a=affiliateLinks.find(x=>x.id===aid);if(!a)return'';const n=(clientRecs[id]||[]).length;return`<div draggable="true" ondragstart="recDragStart('${id}',${i},event)" ondragover="recDragOver(event)" ondrop="recDrop('${id}',${i},event)" style="display:flex;align-items:center;gap:8px;padding:8px 0;border-bottom:1px solid #1e1e1e;cursor:grab;">
+      ${(clientRecs[id]||[]).map((aid,i)=>{const a=affiliateLinks.find(x=>x.id===aid);if(!a)return'';const n=(clientRecs[id]||[]).length;return`<div style="border-bottom:1px solid #1e1e1e;padding:8px 0;"><div draggable="true" ondragstart="recDragStart('${id}',${i},event)" ondragover="recDragOver(event)" ondrop="recDrop('${id}',${i},event)" style="display:flex;align-items:center;gap:8px;cursor:grab;">
         ${n>1?`<div style="display:flex;flex-direction:column;gap:0;flex-shrink:0;">
           <button onclick="recMove('${id}',${i},-1)" aria-label="Move up" ${i===0?'disabled':''} style="width:20px;height:15px;line-height:1;border:none;background:none;color:${i===0?'#444':'#999'};font-size:11px;cursor:${i===0?'default':'pointer'};padding:0;">▲</button>
           <button onclick="recMove('${id}',${i},1)" aria-label="Move down" ${i===n-1?'disabled':''} style="width:20px;height:15px;line-height:1;border:none;background:none;color:${i===n-1?'#444':'#999'};font-size:11px;cursor:${i===n-1?'default':'pointer'};padding:0;">▼</button>
@@ -3624,6 +3666,11 @@ function renderSessionSummary(id){
         </div>
         ${(a.url||a.site||a.inOffice||amazonBuyUrl(a))?`<button onclick="event.stopPropagation();openBuyOptionsP('${a.id}')" draggable="false" style="background:var(--accent);color:var(--accent-ink);border:none;border-radius:7px;padding:5px 12px;font-size:11px;font-weight:500;cursor:pointer;white-space:nowrap;flex-shrink:0;">Buy</button>`:''}
         <button onclick="removeSummaryProd('${id}','${a.id}')" draggable="false" class="icon-btn" aria-label="Remove product"><i class="ti ti-x" aria-hidden="true" style="font-size:14px;"></i></button>
+      </div>
+      <div style="background:#161616;border-radius:8px;padding:7px 9px;margin-top:8px;">
+        <div style="font-size:9px;font-weight:600;color:#888;text-transform:uppercase;letter-spacing:.06em;margin-bottom:4px;">Why you recommend this</div>
+        <textarea onmousedown="event.stopPropagation()" oninput="_setRecReason('${id}','${a.id}',this.value)" placeholder="Add a note ${CL[id]?CL[id].name.split(' ')[0]:'they'} will see…" rows="2" style="width:100%;background:transparent;border:none;resize:none;color:#ccc;font-size:12px;line-height:1.5;font-family:inherit;outline:none;box-sizing:border-box;padding:0;">${_recReason(id,a.id).replace(/&/g,'&amp;').replace(/</g,'&lt;')}</textarea>
+      </div>
       </div>`;}).join('')}
       ${(clientRecs[id]||[]).length>1?`<div style="font-size:11px;color:#666;margin-top:8px;">Drag, or use ▲ ▼, to set the order ${CL[id]?CL[id].name.split(' ')[0]:'they'} sees.</div>`:''}
     </div>`:''}
@@ -3824,15 +3871,41 @@ let sessionSummaries={
     {date:'Jun 24, 2026',treatment:'LED Therapy',note:'Congestion improving, pores tighter. BHA 2–3x weekly is working well.',homecare:['BHA exfoliant 2–3x weekly','Oil-free moisturizer'],products:['BHA Exfoliant'],ts:Date.now()-432e6},
   ],
 };
+// Snapshot the provider's treatment notes by section (label + text), for the
+// active note format, so a saved session can reproduce the full clinical record.
+function _providerNotesSnapshot(id){
+  try{
+    const tmpl=noteTemplates[activeNoteTemplate]||noteTemplates.soap;
+    const draft=providerNoteDrafts[id];
+    const secs=(tmpl.sections||[]).map(sec=>{
+      const v=(draft&&draft.sections&&draft.sections[sec.id])?String(draft.sections[sec.id]).trim():'';
+      return (v&&v!=='No notes yet.')?{label:sec.label,text:v}:null;
+    }).filter(Boolean);
+    return {format:tmpl.name||'Notes',sections:secs};
+  }catch(e){return {format:'Notes',sections:[]};}
+}
 function _storeSummary(id){
   const c=CL[id];if(!c)return;
   const noteEl=document.getElementById('summary-note');
   const note=((summaryNoteDraft[id]!=null?summaryNoteDraft[id]:(noteEl?noteEl.innerText:''))||'').trim();
+  const obs=(summaryObsDraft[id]||'').trim();
   const homecare=summaryToggles.homecare?getClientHomecare(id).slice():[];
-  const products=summaryToggles.products?(clientRecs[id]||[]).map(aid=>{const a=affiliateLinks.find(x=>x.id===aid);return a?a.name:null;}).filter(Boolean):[];
+  // Products captured WITH their per-client "why" reason, brand and icon.
+  const productDetail=(clientRecs[id]||[]).map(aid=>{const a=affiliateLinks.find(x=>x.id===aid);return a?{name:a.name,brand:a.brand||'',icon:a.icon||'',why:(_recReason(id,aid)||'')}:null;}).filter(Boolean);
+  const products=summaryToggles.products?productDetail.map(p=>p.name):[];
+  const providerNotes=_providerNotesSnapshot(id);
   const date=new Date().toLocaleDateString('en-US',{month:'short',day:'numeric',year:'numeric'});
+  const ts=Date.now();
   if(!sessionSummaries[id])sessionSummaries[id]=[];
-  sessionSummaries[id].unshift({date,treatment:c.treatment,note,homecare,products,ts:Date.now()});
+  // Rich record kept on the provider side: everything done that day.
+  sessionSummaries[id].unshift({date,treatment:c.treatment,note,obs,homecare,products,productDetail,providerNotes,ts});
+  // Client-facing copy (what their app reads). Includes the friendly note + obs +
+  // products, but NOT the raw clinical provider notes.
+  const entry={date,title:c.treatment||'Session',note:(note+(obs?'\n\nObservations: '+obs:'')).trim(),products:products.slice(),ts};
+  if(!Array.isArray(c.summaries))c.summaries=[];
+  c.summaries.unshift(entry);
+  try{if(typeof saveClients==='function')saveClients();}catch(e){}
+  try{if(typeof _scheduleClientSync==='function')_scheduleClientSync();}catch(e){}
 }
 function renderSummaryHistory(id){
   setNav('clients');
@@ -3844,16 +3917,136 @@ function renderSummaryHistory(id){
   ${_searchBar('Search summaries…','.summary-card','summaries-noresults')}
   ${list.length===0?emptyState({icon:'ti-file-text',title:'No summaries yet',body:'When you finish a session and send a summary, it is saved here in their client file.'}):list.map((s,i)=>`
   <div class="summary-card" data-search="${((s.date||'')+' '+(s.treatment||'')+' '+(s.note||'')).toLowerCase().replace(/[^a-z0-9 ]/g,' ')}" style="background:#1a1a1a;border:1px solid #2a2a2a;border-radius:12px;margin:0 16px 10px;overflow:hidden;">
-    <div style="padding:12px 14px;display:flex;align-items:center;gap:10px;border-bottom:1px solid #1e1e1e;">
+    <button onclick="nav('session-detail','${id}:${i}')" style="width:100%;padding:12px 14px;display:flex;align-items:center;gap:10px;border:none;border-bottom:1px solid #1e1e1e;background:none;cursor:pointer;font-family:inherit;text-align:left;">
       <div style="width:38px;height:38px;border-radius:9px;background:var(--accent-tint);display:flex;align-items:center;justify-content:center;flex-shrink:0;"><i class="ti ti-file-text" style="font-size:17px;color:var(--accent);"></i></div>
-      <div style="flex:1;min-width:0;"><div style="font-size:13px;font-weight:600;color:#e0e0e0;">${s.treatment||'Session'}</div><div style="font-size:11px;color:#999;">${s.date}</div></div>
+      <div style="flex:1;min-width:0;"><div style="font-size:13px;font-weight:600;color:#e0e0e0;">${s.treatment||'Session'}</div><div style="font-size:11px;color:#999;">${s.date} · tap to view full record</div></div>
+      <i class="ti ti-chevron-right" style="font-size:16px;color:#666;flex-shrink:0;"></i>
+    </button>
+    ${s.note?`<div style="padding:10px 14px;font-size:12px;color:#bbb;line-height:1.6;border-bottom:1px solid #1e1e1e;">${(s.note.length>140?s.note.slice(0,140)+'…':s.note).replace(/</g,'&lt;').replace(/\n/g,'<br>')}</div>`:''}
+    <div style="display:flex;border-top:1px solid #1e1e1e;">
+      <button onclick="editSavedSummary('${id}',${i})" style="flex:1;background:none;border:none;border-right:1px solid #1e1e1e;color:var(--accent);font-size:12px;font-weight:600;cursor:pointer;padding:11px 6px;font-family:inherit;display:flex;align-items:center;justify-content:center;gap:5px;"><i class="ti ti-pencil" style="font-size:13px;"></i> Edit</button>
+      <button onclick="resendSavedSummary('${id}',${i})" style="flex:1;background:none;border:none;border-right:1px solid #1e1e1e;color:#5ba3e8;font-size:12px;font-weight:600;cursor:pointer;padding:11px 6px;font-family:inherit;display:flex;align-items:center;justify-content:center;gap:5px;"><i class="ti ti-device-mobile" style="font-size:13px;"></i> To app</button>
+      <button onclick="linkSavedSummary('${id}',${i})" style="flex:1;background:none;border:none;color:#4ec49a;font-size:12px;font-weight:600;cursor:pointer;padding:11px 6px;font-family:inherit;display:flex;align-items:center;justify-content:center;gap:5px;"><i class="ti ti-link" style="font-size:13px;"></i> Link</button>
     </div>
-    ${s.note?`<div style="padding:10px 14px;font-size:12px;color:#bbb;line-height:1.6;border-bottom:${(s.homecare&&s.homecare.length)||(s.products&&s.products.length)?'1px solid #1e1e1e':'none'};">${s.note}</div>`:''}
-    ${s.homecare&&s.homecare.length?`<div style="padding:9px 14px;"><div style="font-size:10px;color:#888;text-transform:uppercase;letter-spacing:.06em;margin-bottom:5px;">Homecare</div><div style="display:flex;flex-wrap:wrap;gap:5px;">${s.homecare.map(h=>`<span style="font-size:11px;background:#0a2019;color:#4ec49a;padding:2px 8px;border-radius:5px;">${h}</span>`).join('')}</div></div>`:''}
-    ${s.products&&s.products.length?`<div style="padding:0 14px 11px;"><div style="font-size:10px;color:#888;text-transform:uppercase;letter-spacing:.06em;margin-bottom:5px;">Products</div><div style="display:flex;flex-wrap:wrap;gap:5px;">${s.products.map(p=>`<span style="font-size:11px;background:var(--accent-tint);color:var(--accent);padding:2px 8px;border-radius:5px;">${p}</span>`).join('')}</div></div>`:''}
   </div>`).join('')}
   ${_noRes('summaries-noresults','No summaries match your search.')}
   <div style="height:16px;"></div>`;
+}
+// ── Saved-summary actions: view/edit, resend to the client's app, send by link ──
+// Full, organized record of everything from one session.
+function renderSessionDetail(arg){
+  setNav('clients');
+  const [id,idxStr]=String(arg).split(':');const i=parseInt(idxStr,10)||0;
+  const c=CL[id]||{};const s=(sessionSummaries[id]||[])[i];
+  document.getElementById('tt').textContent='Session record';
+  if(!s){S.innerHTML='<div style="padding:30px 16px;color:#888;">Session not found.</div>';return;}
+  const pn=s.providerNotes||{sections:[]};
+  const sectionBlock=(label,body,accent)=>`<div class="sh"><h2>${label}</h2></div><div style="margin:0 16px 12px;background:#161616;border:1px solid #242424;border-radius:12px;padding:13px 15px;font-size:13px;color:#d8d8d8;line-height:1.7;${accent?`border-left:3px solid ${accent};`:''}">${body}</div>`;
+  S.innerHTML=`
+  <div style="margin:12px 16px 6px;background:linear-gradient(135deg,var(--accent-tint),#141414);border:1px solid #2a2a2a;border-radius:14px;padding:15px 16px;">
+    <div style="font-size:17px;font-weight:600;color:#f0f0f0;">${s.treatment||'Session'}</div>
+    <div style="font-size:12px;color:var(--accent);margin-top:2px;">${c.name||''} · ${s.date||''}</div>
+  </div>
+
+  ${(pn.sections&&pn.sections.length)?`
+  <div class="sh"><h2>Provider treatment notes${pn.format?' · '+pn.format:''}</h2></div>
+  <div style="margin:0 16px 12px;">
+    ${pn.sections.map(sec=>`<div style="background:#161616;border:1px solid #242424;border-radius:12px;padding:12px 14px;margin-bottom:8px;">
+      <div style="font-size:10px;font-weight:600;color:#888;text-transform:uppercase;letter-spacing:.06em;margin-bottom:5px;">${sec.label}</div>
+      <div style="font-size:13px;color:#d8d8d8;line-height:1.7;">${String(sec.text).replace(/</g,'&lt;').replace(/\n/g,'<br>')}</div>
+    </div>`).join('')}
+  </div>`:''}
+
+  ${s.note?sectionBlock('Client summary — what '+((c.name||'they').split(' ')[0])+' saw',s.note.replace(/</g,'&lt;').replace(/\n/g,'<br>'),'var(--accent)'):''}
+  ${s.obs?sectionBlock('Observations',s.obs.replace(/</g,'&lt;').replace(/\n/g,'<br>'),'#5ba3e8'):''}
+
+  ${(s.homecare&&s.homecare.length)?`<div class="sh"><h2>Homecare that day</h2></div>
+  <div style="margin:0 16px 12px;background:#161616;border:1px solid #242424;border-radius:12px;padding:6px 14px;">
+    ${s.homecare.map((h,hi)=>`<div style="display:flex;align-items:flex-start;gap:8px;padding:8px 0;${hi<s.homecare.length-1?'border-bottom:1px solid #1e1e1e;':''}"><div style="width:20px;height:20px;border-radius:50%;background:#0a2019;border:1px solid #1a4a38;display:flex;align-items:center;justify-content:center;flex-shrink:0;margin-top:1px;"><span style="font-size:10px;color:#4ec49a;font-weight:600;">${hi+1}</span></div><span style="font-size:13px;color:#d8d8d8;line-height:1.5;">${String(h).replace(/</g,'&lt;')}</span></div>`).join('')}
+  </div>`:''}
+
+  ${(s.productDetail&&s.productDetail.length)?`<div class="sh"><h2>Products recommended</h2></div>
+  <div style="margin:0 16px 12px;">
+    ${s.productDetail.map(p=>`<div style="background:#161616;border:1px solid #242424;border-radius:12px;padding:11px 13px;margin-bottom:8px;display:flex;gap:11px;align-items:flex-start;">
+      <span style="font-size:22px;flex-shrink:0;">${p.icon||'🧴'}</span>
+      <div style="flex:1;min-width:0;"><div style="font-size:13px;font-weight:600;color:#e0e0e0;">${p.name}</div>${p.brand?`<div style="font-size:11px;color:#999;">${p.brand}</div>`:''}${p.why?`<div style="font-size:12px;color:#bbb;line-height:1.5;margin-top:6px;background:#111;border-radius:8px;padding:7px 9px;"><span style="color:#888;">Why:</span> ${String(p.why).replace(/</g,'&lt;')}</div>`:''}</div>
+    </div>`).join('')}
+  </div>`:(s.products&&s.products.length)?`<div class="sh"><h2>Products recommended</h2></div>
+  <div style="margin:0 16px 12px;background:#161616;border:1px solid #242424;border-radius:12px;padding:12px 14px;"><div style="display:flex;flex-wrap:wrap;gap:6px;">${s.products.map(p=>`<span style="font-size:12px;background:var(--accent-tint);color:var(--accent);padding:3px 10px;border-radius:6px;">${String(p).replace(/</g,'&lt;')}</span>`).join('')}</div></div>`:''}
+
+  <div style="padding:6px 16px 24px;display:flex;flex-direction:column;gap:8px;">
+    <button onclick="editSavedSummary('${id}',${i})" class="btnp" style="border-radius:10px;padding:12px;"><i class="ti ti-pencil"></i> Edit summary</button>
+    <div style="display:flex;gap:8px;">
+      <button onclick="resendSavedSummary('${id}',${i})" style="flex:1;background:#0d1e33;border:1px solid #1a3a5c;color:#5ba3e8;border-radius:10px;padding:12px;font-size:13px;font-weight:600;cursor:pointer;font-family:inherit;display:flex;align-items:center;justify-content:center;gap:6px;"><i class="ti ti-device-mobile"></i> Resend to app</button>
+      <button onclick="linkSavedSummary('${id}',${i})" style="flex:1;background:#0a2019;border:1px solid #1a4a2a;color:#4ec49a;border-radius:10px;padding:12px;font-size:13px;font-weight:600;cursor:pointer;font-family:inherit;display:flex;align-items:center;justify-content:center;gap:6px;"><i class="ti ti-link"></i> Send link</button>
+    </div>
+  </div>`;
+}
+function editSavedSummary(id,i){
+  const list=sessionSummaries[id]||[];const s=list[i];if(!s)return;
+  const c=CL[id]||{};
+  document.getElementById('tt').textContent='Edit summary';
+  S.innerHTML=`
+  <div style="padding:12px 16px 4px;"><div style="font-size:15px;font-weight:600;color:#f0f0f0;">${c.name||''}</div><div style="font-size:12px;color:#999;">${s.treatment||'Session'} · ${s.date||''}</div></div>
+  <div style="padding:6px 16px 20px;">
+    <div style="font-size:11px;font-weight:600;color:#888;text-transform:uppercase;letter-spacing:.06em;margin:10px 0 6px;">Note to ${(c.name||'client').split(' ')[0]}</div>
+    <textarea id="es-note" rows="7" style="width:100%;background:#111;border:1px solid #2a2a2a;border-radius:10px;padding:11px;font-size:13px;color:#ddd;line-height:1.7;font-family:inherit;box-sizing:border-box;resize:vertical;outline:none;">${(s.note||'').replace(/</g,'&lt;')}</textarea>
+    <div style="display:flex;gap:8px;margin-top:14px;">
+      <button onclick="_saveEditedSummary('${id}',${i})" class="btnp" style="flex:1;border-radius:9px;padding:11px;"><i class="ti ti-check"></i> Save changes</button>
+      <button onclick="nav('summary-history','${id}')" style="background:none;border:1px solid #555;color:#ccc;border-radius:9px;padding:11px 16px;font-size:13px;cursor:pointer;font-family:inherit;">Cancel</button>
+    </div>
+    <div style="display:flex;gap:8px;margin-top:8px;">
+      <button onclick="_saveEditedSummary('${id}',${i},'app')" style="flex:1;background:#0d1e33;border:1px solid #1a3a5c;color:#5ba3e8;border-radius:9px;padding:11px;font-size:13px;font-weight:600;cursor:pointer;font-family:inherit;display:flex;align-items:center;justify-content:center;gap:6px;"><i class="ti ti-device-mobile"></i> Save &amp; resend to app</button>
+      <button onclick="_saveEditedSummary('${id}',${i},'link')" style="flex:1;background:#0a2019;border:1px solid #1a4a2a;color:#4ec49a;border-radius:9px;padding:11px;font-size:13px;font-weight:600;cursor:pointer;font-family:inherit;display:flex;align-items:center;justify-content:center;gap:6px;"><i class="ti ti-link"></i> Save &amp; send link</button>
+    </div>
+  </div>`;
+}
+function _saveEditedSummary(id,i,thenAction){
+  const list=sessionSummaries[id]||[];const s=list[i];if(!s)return;
+  const ta=document.getElementById('es-note');
+  const newNote=(ta?ta.value:s.note||'').trim();
+  s.note=newNote;
+  // keep the client-record copy (what their app reads) in sync
+  const c=CL[id];
+  if(c&&Array.isArray(c.summaries)){
+    // match by timestamp/date+treatment since the two lists mirror each other
+    const cs=c.summaries.find(x=>(s.ts&&x.ts===s.ts)||(x.date===s.date&&x.title===(s.treatment||'Session')));
+    if(cs)cs.note=newNote;
+  }
+  try{if(typeof persistWorkspace==='function')persistWorkspace();}catch(e){}
+  try{if(typeof saveClients==='function')saveClients();}catch(e){}
+  if(thenAction==='app'){resendSavedSummary(id,i,true);}
+  else if(thenAction==='link'){linkSavedSummary(id,i);}
+  else{if(typeof proToast==='function')proToast('Summary updated');nav('summary-history',id);}
+}
+function resendSavedSummary(id,i,silent){
+  const list=sessionSummaries[id]||[];const s=list[i];if(!s)return;
+  const c=CL[id];if(!c)return;
+  // Make sure the client-record summary reflects this entry, then push to their app.
+  if(!Array.isArray(c.summaries))c.summaries=[];
+  const exists=c.summaries.find(x=>(s.ts&&x.ts===s.ts)||(x.date===s.date&&x.title===(s.treatment||'Session')));
+  if(!exists){c.summaries.unshift({date:s.date,title:s.treatment||'Session',note:s.note||'',products:(s.products||[]).slice(),ts:s.ts});}
+  try{if(typeof saveClients==='function')saveClients();}catch(e){}
+  try{if(typeof _scheduleClientSync==='function')_scheduleClientSync();}catch(e){}
+  // message the client + (demo) bridge post, mirroring a fresh send
+  try{
+    if(!msgStore[id])msgStore[id]=[];
+    msgStore[id].push({from:'me',text:`Hi ${c.name.split(' ')[0]}! Here's your session summary again — ${s.treatment||'your visit'} on ${s.date}. ✨`,time:'Just now'});
+    const t=threads.find(x=>x.id===id);if(t){t.preview='Your session summary is ready ✨';}
+    saveMessages();
+  }catch(e){}
+  if(!silent&&typeof proToast==='function')proToast('Resent to '+c.name.split(' ')[0]+"'s app");
+  if(!silent)nav('summary-history',id);
+}
+function linkSavedSummary(id,i){
+  const list=sessionSummaries[id]||[];const s=list[i];if(!s)return;
+  const c=CL[id];if(!c)return;
+  // Ensure it's on the client record + synced so the link shows the latest content,
+  // then reuse the existing share-link sheet (without re-storing a duplicate).
+  resendSavedSummary(id,i,true);
+  _skipSummaryStore=true;
+  if(typeof shareSummaryLink==='function')shareSummaryLink(id);
+  else if(typeof proToast==='function')proToast('Summary ready to share');
 }
 function sendSummary(id){
   if(!summarySendOn[id])return;
@@ -3889,6 +4082,12 @@ function _postSummaryData(id){
 // Send the client a no-app "magic link" to their recap + routine
 function shareSummaryLink(id){
   const c=CL[id];
+  // Sending by link should ALSO save the summary to the client's profile (same as
+  // sending to the app), so both paths leave a record. When invoked from an
+  // already-saved summary (linkSavedSummary), _skipSummaryStore is set so we don't
+  // create a duplicate.
+  try{if(typeof _storeSummary==='function'&&!_skipSummaryStore){_storeSummary(id);}}catch(e){}
+  _skipSummaryStore=false;
   const linkUrl='glowingskin.app/m/'+id+'-'+Math.random().toString(36).slice(2,8);
   const row=(onclick,icon,title,sub)=>`<button onclick="${onclick}" style="display:flex;width:100%;align-items:center;gap:11px;padding:12px 14px;border:1px solid #2a2a2a;background:#1a1a1a;border-radius:10px;margin-bottom:8px;cursor:pointer;text-align:left;"><i class="ti ${icon}" style="font-size:18px;color:var(--accent);"></i><div style="flex:1;min-width:0;"><div style="font-size:13px;font-weight:500;color:#e0e0e0;">${title}</div><div style="font-size:11px;color:#999;">${sub}</div></div></button>`;
   const ov=document.createElement('div');ov.id='send-prod-sheet';
@@ -6049,7 +6248,10 @@ function _assembleClientData(id){
     products=recIds.map(rid=>{const a=(typeof affiliateLinks!=='undefined'?affiliateLinks.find(x=>x.id===rid):null);return a?{name:a.name,brand:a.brand||'',why:((typeof _recReason==='function'?_recReason(id,rid):'')||''),icon:a.icon||'',url:a.url||a.site||''}:null;}).filter(Boolean);
   }catch(e){}
   let summaries=Array.isArray(c.summaries)?c.summaries:[];
-  if(!summaries.length&&c.treatment){summaries=[{date:c.lastVisit||'',title:c.treatment,note:('Your '+c.treatment+' visit'+(c.lastVisit?(' on '+c.lastVisit):'')+'.'),products:products.map(p=>p.name)}];}
+  // Do NOT fabricate a summary when there isn't one. Previously this auto-generated
+  // a generic "Your <treatment> visit" line, which read as random filler the provider
+  // never wrote. If there's no real summary yet, the client simply sees none until
+  // the provider sends one.
   const forms=(Array.isArray(c.submittedForms)?c.submittedForms.map(f=>({title:f.title||'Form',status:f.signed?'signed':'submitted',date:f.date||''})):[]);
   const pendingForms=(Array.isArray(c.pendingForms)?c.pendingForms:[]).map(pf=>{
     const tmpl=formTmpls[pf.formId];if(!tmpl)return null;
@@ -10236,29 +10438,12 @@ function renderTodayAppts(){
     <div style="font-size:13px;color:#999;">${today.length} appointment${today.length===1?'':'s'} today \u00b7 stays here all day so you can go back and finish notes anytime.</div>
     ${live?`<button onclick="_loadSquareAppts(true);renderTodayAppts()" style="margin-top:8px;background:none;border:none;color:var(--accent);font-size:12px;font-weight:600;cursor:pointer;font-family:inherit;padding:0;"><i class="ti ti-refresh" style="font-size:12px;"></i> Refresh</button>`:''}
   </div>
-  ${(function(){
-    // Pre-visit check-ins the provider can review before/at the appointment.
-    const cis=(typeof checkins!=='undefined'&&Array.isArray(checkins))?checkins:[];
-    if(!cis.length)return '';
-    const shown=cis.slice(0,6);
-    return `<div class="sh" style="display:flex;align-items:center;justify-content:space-between;"><h2>Pre-visit check-ins</h2><button onclick="nav('checkins')" style="border:none;background:none;color:var(--accent);font-size:12px;cursor:pointer;margin-right:16px;">View all</button></div>
-    <div style="padding:0 16px;margin-bottom:6px;">
-      ${shown.map(ci=>{const n=(ci.flagged||[]).length;const ph=(ci.photos||[]).length;
-        return `<div onclick="markCheckinRead('${ci.id}');nav('checkin-detail','${ci.id}')" style="background:${ci.read?'#161616':'#1e1a10'};border:1px solid ${ci.read?'#242424':'var(--accent-tint2)'};border-radius:11px;padding:10px 12px;margin-bottom:7px;display:flex;align-items:center;gap:10px;cursor:pointer;">
-          <div style="width:34px;height:34px;border-radius:9px;background:#0a2019;display:flex;align-items:center;justify-content:center;flex-shrink:0;"><i class="ti ${ph?'ti-camera':'ti-clipboard-check'}" style="font-size:16px;color:#4ec49a;"></i></div>
-          <div style="flex:1;min-width:0;"><div style="font-size:13px;font-weight:600;color:#e0e0e0;">${ci.client}</div><div style="font-size:11px;color:#999;">${ci.treatment||''}${ci.dateLabel?' \u00b7 '+ci.dateLabel:''}</div></div>
-          ${n?`<span style="display:inline-flex;align-items:center;gap:3px;background:#2a1410;border:1px solid #5c2a1a;border-radius:20px;padding:2px 8px;flex-shrink:0;"><i class="ti ti-alert-circle" style="font-size:11px;color:#e8a070;"></i><span style="font-size:10px;color:#e8a070;font-weight:600;">${n}</span></span>`:''}
-          ${ph?`<span style="display:inline-flex;align-items:center;gap:3px;background:#0d1e33;border:1px solid #1a3a5c;border-radius:20px;padding:2px 8px;flex-shrink:0;"><i class="ti ti-camera" style="font-size:11px;color:#5ba3e8;"></i><span style="font-size:10px;color:#5ba3e8;font-weight:600;">${ph}</span></span>`:''}
-          <i class="ti ti-chevron-right" style="font-size:15px;color:#555;flex-shrink:0;"></i>
-        </div>`;}).join('')}
-    </div>`;
-  })()}
   ${!today.length?`
   <div style="margin:14px 16px;text-align:center;color:#999;font-size:13px;padding:30px 20px;background:#161616;border:1px solid #242424;border-radius:12px;">
     <i class="ti ti-calendar-off" style="font-size:26px;color:#555;"></i>
     <div style="margin-top:8px;">${live?'Nothing on the books for today.':'No appointments to show yet.'}</div>
     ${live?'':'<div style="font-size:12px;color:#666;margin-top:4px;line-height:1.5;">Connect Square to sync your real schedule, or add appointments yourself.</div>'}
-  </div>`:`<div class="sh"><h2>Schedule</h2></div>`+today.map(a=>{
+  </div>`:``+today.map(a=>{
     const cid=live?_clientIdByName(a.client):null;
     const past=live&&a.at<now;
     const timeLbl=live?a.at.toLocaleTimeString('en-US',{hour:'numeric',minute:'2-digit'}):(a.time||'');
