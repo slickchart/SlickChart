@@ -175,7 +175,7 @@ function providerSystemNotify(title,body){
   }catch(e){}
 }
 let timerInt=null,timerSec=0,timerOn=false;
-let roomProtocol=0,roomStepsDone={},roomProtocolOff=false;
+let roomProtocol=0,roomStepsDone={},roomProtocolOff=(function(){try{return localStorage.getItem('sc_room_protocol_off')!=='false';}catch(e){return true;}})();
 let activeDocCat='All',activeNoteTemplate='soap';
 let activeVirtualTab='queue';
 let activeLearnTab='resources';
@@ -2703,7 +2703,8 @@ ${clientContext}`;
 
 function renderRoom(id){
   setNav('room');
-  roomProtocolOff=false;
+  // Protocols default to OFF; honor whatever the provider last chose (persisted).
+  try{roomProtocolOff=localStorage.getItem('sc_room_protocol_off')!=='false';}catch(e){roomProtocolOff=true;}
   const c=CL[id]||Object.values(CL)[0]||{};
   const isBrowOnly=selectedProfessions.includes('brow')&&!selectedProfessions.includes('esty')&&!selectedProfessions.includes('hair')&&!selectedProfessions.includes('barber');
   document.getElementById('tt').textContent='';
@@ -2790,8 +2791,9 @@ function _roomProtocolHTML(){
 }
 function toggleRoomProtocol(){
   roomProtocolOff=!roomProtocolOff;
+  try{localStorage.setItem('sc_room_protocol_off',roomProtocolOff?'true':'false');}catch(e){}
   const el=document.getElementById('room-protocol');if(el)el.innerHTML=_roomProtocolHTML();
-  if(typeof proToast==='function')proToast(roomProtocolOff?'Protocol checklist hidden for this session':'Protocol checklist on');
+  if(typeof proToast==='function')proToast(roomProtocolOff?'Protocol checklist off':'Protocol checklist on');
 }
 function _protocolRows(q){
   const list=(typeof protocols!=='undefined'&&protocols.length)?protocols:[];
@@ -2982,7 +2984,12 @@ function toggleProductPicker(id){
     // refresh the list (in case products were added/removed) and focus search
     const q=document.getElementById('prod-picker-q');if(q){q.value='';}
     _renderProdPickerList(id,'');
-    setTimeout(()=>{const i=document.getElementById('prod-picker-q');if(i&&i.focus)try{i.focus();}catch(e){}},30);
+    // Bring the picker fully into view so its search + "Done adding" controls aren't
+    // hidden below the bottom nav on a long notes page.
+    setTimeout(()=>{
+      try{p.scrollIntoView({behavior:'smooth',block:'center'});}catch(e){try{p.scrollIntoView();}catch(_){}}
+      const i=document.getElementById('prod-picker-q');if(i&&i.focus)try{i.focus({preventScroll:true});}catch(_){try{i.focus();}catch(e){}}
+    },40);
   }
 }
 function addClientProd(clientId,aid){
@@ -3204,6 +3211,7 @@ function renderNotes(id){
         <div id="prod-picker-list" style="max-height:172px;overflow-y:auto;">${_prodPickerRows(id,'')}</div>
         <div style="padding:8px;border-top:1px solid #1e1e1e;"><button onclick="toggleProductPicker('${id}')" style="width:100%;background:#0f0f0f;border:1px solid #2a2a2a;color:#ccc;border-radius:8px;padding:8px;font-size:12px;font-weight:600;cursor:pointer;font-family:inherit;">Done adding</button></div>
       </div>
+      <div style="height:8px;"></div>
       </div>
     </div>
     <div class="sh"><h2>Previous sessions</h2></div>
