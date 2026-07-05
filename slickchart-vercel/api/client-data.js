@@ -8,10 +8,10 @@ import { ensureClientTables, getClientByToken, markOpened } from '../lib/clients
 
 export default async function handler(req, res) {
   if (!dbEnabled()) { res.status(404).json({ error: 'Not found' }); return; }
-  await ensureClientTables();
   const token = (req.query && req.query.t) || (req.body && req.body.t) || '';
   if (!token) { res.status(400).json({ error: 'Missing link token' }); return; }
   try {
+    await ensureClientTables();
     const c = await getClientByToken(String(token));
     if (!c) { res.status(404).json({ error: 'This link is not valid or has been removed.' }); return; }
     markOpened(String(token)).catch(() => {});
