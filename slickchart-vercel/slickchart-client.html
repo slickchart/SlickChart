@@ -1862,7 +1862,13 @@ function loadClientCheckinCfg(){
 function _comfortStepFromCfg(cfg){
   if(cfg.chairComfortOn===false)return null;   // provider removed the section
   const qs=[];
-  if(cfg.drinks&&cfg.drinks.length)qs.push({type:'iconChoice',id:'drink',label:'Your drink',options:cfg.drinks.map(d=>[d.emoji,d.label,d.sub||''])});
+  if(cfg.drinks&&cfg.drinks.length){
+    // If a saved (possibly older) config has drinks but NONE carry a temperature/sub,
+    // fall back to the temperature-aware defaults so clients are still asked cold vs hot.
+    const anySub=cfg.drinks.some(d=>String(d.sub||'').trim());
+    const drinkOpts=anySub?cfg.drinks.map(d=>[d.emoji,d.label,d.sub||'']):CI_DRINKS;
+    qs.push({type:'iconChoice',id:'drink',label:'Your drink',options:drinkOpts});
+  }
   if(cfg.snacksOn&&cfg.snacks&&cfg.snacks.length)qs.push({type:'iconChoice',id:'snack',label:'Snack',options:cfg.snacks.map(s=>{const i=s.indexOf(' ');return i>0?[s.slice(0,i),s.slice(i+1)]:['🍽️',s];})});
   if(cfg.music&&cfg.music.length)qs.push({type:'iconChoice',id:'music',label:'Music',options:cfg.music.map(m=>[m.emoji,m.label]),allowCustom:cfg.musicCustom!==false,customPh:'e.g. a podcast, no music…'});
   (cfg.heat||[]).filter(h=>h.on!==false).forEach(h=>qs.push({type:'levelChoice',id:h.id,label:h.label,options:h.levels||['Off','Low','Med','High']}));
