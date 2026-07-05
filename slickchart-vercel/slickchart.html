@@ -8229,7 +8229,18 @@ function renderNotifFeed(){
   <div style="height:16px;"></div>`;
   setTimeout(()=>{try{document.querySelectorAll('.swipe-card').forEach((el,i)=>{if(typeof initSwipe==='function')initSwipe(el,i);});}catch(e){}},0);
 }
+// Best-effort: figure out which client (if any) a notification is about, so we can
+// offer a "View file" shortcut. chat/client/form notifs store the client id in data;
+// others fall back to an explicit clientId field or matching the body to a client name.
+function _notifClientId(n){
+  if(!n)return null;
+  if(n.clientId&&CL[n.clientId])return n.clientId;
+  if((n.action==='client'||n.action==='chat'||n.action==='form')&&n.data&&CL[n.data])return n.data;
+  return null;
+}
 function notifCard(n,bare){
+  const _cid=_notifClientId(n);
+  const _viewFile=_cid?`<button onclick="event.stopPropagation();nav('client','${_cid}')" style="margin-top:7px;background:none;border:1px solid #333;color:var(--accent);border-radius:7px;padding:4px 10px;font-size:11px;font-weight:600;cursor:pointer;font-family:inherit;display:inline-flex;align-items:center;gap:4px;"><i class="ti ti-user" style="font-size:12px;"></i> View file</button>`:'';
   return`<div onclick="markRead('${n.id}');${n.action==='client'?`nav('client','${n.data}')`:n.action==='form'?`openFormNotif('${n.data}','${n.formEvId||''}')`:n.action==='chat'?`nav('chat','${n.data}')`:n.action==='checkin'?`nav('checkin-detail','${n.data}')`:n.action==='vault'?`nav('vault')`:n.action==='inventory'?`nav('inventory')`:n.action==='requests'?`nav('requests')`:n.action==='home'?`nav('home')`:''}" style="background:#1a1a1a;border:1px solid ${n.read?'#2a2a2a':'var(--accent-tint2)'};border-radius:12px;${bare?'':'margin:0 16px 8px;'}overflow:hidden;cursor:pointer;${n.read?'':'background:#1e1a10;'}">
     <div style="padding:12px 14px;display:flex;align-items:flex-start;gap:10px;">
       <div style="position:relative;flex-shrink:0;">
@@ -8242,6 +8253,7 @@ function notifCard(n,bare){
         <div style="font-size:13px;font-weight:${n.read?400:600};color:#e0e0e0;margin-bottom:3px;">${n.title}</div>
         <div style="font-size:12px;color:#999;line-height:1.5;margin-bottom:4px;">${n.body}</div>
         <div style="font-size:11px;color:#555;">${n.time}</div>
+        ${_viewFile}
       </div>
     </div>
   </div>`;
@@ -10327,7 +10339,7 @@ async function syncClientEvents(){
         const photoNote=ciPhotos.length?` \ud83d\udcf7 ${ciPhotos.length} photo${ciPhotos.length>1?'s':''} attached.`:'';
         notifFeed.unshift({id:'evc'+ev.id,type:'checkin',icon:ciPhotos.length?'ti-camera':'ti-clipboard-check',col:'#0a2019',ic:'#4ec49a',
           title:'Pre-visit check-in',body:`${name} completed a check-in${ci.dateLabel?' for '+ci.dateLabel:''}.${fl}${photoNote}`,
-          time:'Just now',read:false,action:'checkin',data:ci.id});
+          time:'Just now',read:false,action:'checkin',data:ci.id,clientId:cid});
         providerSystemNotify('Pre-visit check-in',`${name} \u00b7 ${ci.treatment||''} \u00b7 ${ci.dateLabel||''}${photoNote}`);
         touchedCheckins=true;touchedNotif=true;
       }else if(ev.kind==='form'){
@@ -10500,7 +10512,7 @@ function pushCheckinNotif(ci){
   notifFeed.unshift({id:'nci'+Date.now()+Math.random().toString(36).slice(2,4),type:'checkin',
     icon:'ti-clipboard-check',col:'#0a2019',ic:'#4ec49a',
     title:'Pre-visit check-in',body:`${ci.client} completed a check-in for ${ci.dateLabel}.${fl}`,
-    time:'Just now',read:false,action:'checkin',data:ci.id});
+    time:'Just now',read:false,action:'checkin',data:ci.id,clientId:(ci.clientId||null)});
   updateBadge();
 }
 function markCheckinRead(id){const c=checkins.find(x=>x.id===id);if(c){c.read=true;try{if(typeof persistCheckins==='function')persistCheckins();}catch(e){}}updateBadge();}
@@ -10607,6 +10619,17 @@ function sendSuggestion(id){
   renderRequests();
 }
 
+// Renders a client's name as a tappable link into their file when we have a matching
+// client record; otherwise just the plain name (no dead link). Used in booking
+// requests and notifications so a provider can review the client before acting.
+function _clientNameLink(clientId,name,opts){
+  opts=opts||{};
+  const safe=String(name||'A client').replace(/</g,'&lt;');
+  const id=clientId&&CL[clientId]?clientId:null;
+  if(!id)return safe;
+  const color=opts.color||'var(--accent)';
+  return `<span onclick="event.stopPropagation();nav('client','${id}')" role="link" tabindex="0" title="View ${safe}'s file" style="cursor:pointer;color:${color};border-bottom:1px dotted currentColor;">${safe}</span>`;
+}
 function requestCard(b){
   const sugOpen=suggestOpenFor===b.id;
   const times=['9:00 AM','10:00 AM','11:00 AM','12:00 PM','1:00 PM','2:00 PM','3:00 PM','4:00 PM'];
@@ -10616,7 +10639,7 @@ function requestCard(b){
       <div style="display:flex;gap:11px;align-items:flex-start;">
         <div style="width:42px;height:42px;border-radius:11px;background:var(--accent-tint);display:flex;align-items:center;justify-content:center;flex-shrink:0;font-size:14px;font-weight:600;color:var(--accent);">${initialsOf(b.client)}</div>
         <div style="flex:1;min-width:0;">
-          <div style="font-size:14px;font-weight:600;color:#f0f0f0;">${b.client}</div>
+          <div style="font-size:14px;font-weight:600;color:#f0f0f0;">${_clientNameLink(b.clientId,b.client,{color:'#f0f0f0'})}</div>
           <div style="font-size:12px;color:var(--accent);margin-top:1px;">${b.treatment}</div>
           <div style="display:flex;align-items:center;gap:6px;font-size:12px;color:#aaa;margin-top:6px;"><i class="ti ti-calendar" style="font-size:13px;color:#888;"></i> ${fmtBookingDate(b)} · ${b.time}</div>
           ${b.note?`<div style="margin-top:8px;background:#111;border-radius:8px;padding:8px 10px;font-size:12px;color:#999;line-height:1.5;"><i class="ti ti-quote" style="font-size:11px;color:#555;"></i> ${b.note}</div>`:''}
