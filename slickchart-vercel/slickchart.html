@@ -6166,7 +6166,7 @@ function _qRowHTML(q){
         <button type="button" onclick="_moveFormQ(this,-1)" aria-label="Move question up" style="border:none;background:none;cursor:pointer;padding:0 2px;line-height:1;color:#888;"><i class="ti ti-chevron-up" style="font-size:14px;"></i></button>
         <button type="button" onclick="_moveFormQ(this,1)" aria-label="Move question down" style="border:none;background:none;cursor:pointer;padding:0 2px;line-height:1;color:#888;"><i class="ti ti-chevron-down" style="font-size:14px;"></i></button>
       </div>`}
-      <input class="q-label" value="${label}" placeholder="Question label" style="flex:1;min-width:0;border:none;background:none;font-size:14px;font-weight:500;color:#e0e0e0;outline:none;font-family:inherit;">
+      <input class="q-label" value="${label}" oninput="this.style.borderBottom='';" placeholder="Question label (required)" style="flex:1;min-width:0;border:none;border-bottom:1px solid transparent;background:none;font-size:14px;font-weight:500;color:#e0e0e0;outline:none;font-family:inherit;padding-bottom:2px;">
       <button onclick="this.closest('.qrow').remove()" class="icon-btn" aria-label="Delete question"><i class="ti ti-trash" aria-hidden="true" style="color:#e87070;font-size:16px;"></i></button>
     </div>
     <div style="border-top:1px solid #1e1e1e;padding:8px 12px;display:flex;align-items:center;gap:10px;">
@@ -6235,9 +6235,10 @@ function _readFormBuilder(tid){
   const nameEl=document.getElementById('form-name-input');
   const name=(nameEl&&nameEl.value||'').trim()||'Untitled form';
   const rows=[...document.querySelectorAll('#qlist .qrow')];
+  let _blankCount=0;
   const qs=rows.map(row=>{
     const label=(row.querySelector('.q-label')&&row.querySelector('.q-label').value||'').trim();
-    if(!label)return null;
+    if(!label){_blankCount++;return null;}
     const type=(row.querySelector('.q-type')&&row.querySelector('.q-type').value)||'Short text';
     const required=!!(row.querySelector('.q-req')&&row.querySelector('.q-req').checked);
     const q={id:row.getAttribute('data-qid')||('q'+(nextQIdLocal++)),label,type,required};
@@ -6249,10 +6250,26 @@ function _readFormBuilder(tid){
   // everything above. Keep any signature question anchored last regardless of
   // where it sits in the builder.
   qs.sort((a,b)=>(a.type==='Signature'?1:0)-(b.type==='Signature'?1:0));
-  return {name,qs};
+  return {name,qs,blankCount:_blankCount};
 }
 function saveFormBuilder(tid,thenPreview){
-  const {name,qs}=_readFormBuilder(tid);
+  const {name,qs,blankCount}=_readFormBuilder(tid);
+  // If any question rows have no label, don't silently drop them — tell the provider
+  // and highlight the empty ones so it's obvious what to fix.
+  if(blankCount>0){
+    let firstEmpty=null;
+    document.querySelectorAll('#qlist .qrow').forEach(row=>{
+      const inp=row.querySelector('.q-label');
+      if(inp&&!(inp.value||'').trim()){
+        inp.style.borderBottom='2px solid #e87070';
+        inp.setAttribute('placeholder','Name this question first');
+        if(!firstEmpty)firstEmpty=inp;
+      }
+    });
+    if(typeof proToast==='function')proToast(blankCount===1?'Give your question a name first':'Give each question a name first');
+    if(firstEmpty&&firstEmpty.focus){try{firstEmpty.focus();firstEmpty.scrollIntoView({block:'center',behavior:'smooth'});}catch(e){}}
+    return;
+  }
   let id=tid;
   if(tid==='new'){
     id='custom'+(++customFormSeq);
