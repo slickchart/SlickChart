@@ -3189,9 +3189,63 @@ function _bootRealClient(token){
       _applyRealClientData(j); client._real=true; try{document.title='SlickChart \u2014 '+client.name;}catch(e){} applyActiveProvider(); nav('home');
       try{_loadClientPrefsFromServer().then(function(){ if(document.getElementById('page-heading'))renderHome(); });}catch(e){}
       try{_loadMsgSeenIds();_fetchRealMessages(true);}catch(e){}
+      try{_lastDataFingerprint=_clientDataFingerprint(j);_startRealClientPolling();}catch(e){}
     }
     else{ _clientLinkError(j&&j.error); }
   }).catch(function(){ _clientLinkError(); });
+}
+// ── Lightweight polling: keep a real client's appointment, summaries, forms, and
+// messages fresh while the app stays open, without disrupting what they're doing. ──
+let _realPollTimer=null, _lastDataFingerprint='';
+// A compact signature of the fields worth re-rendering for. If it's unchanged we skip
+// the re-render entirely, so there's no flicker on an idle screen.
+function _clientDataFingerprint(j){
+  try{
+    const d=(j&&j.client&&j.client.data)||{};const prof=d.profile||{};
+    return JSON.stringify([
+      prof.nextVisit||'',prof.treatment||'',
+      (Array.isArray(d.summaries)?d.summaries.length:0),
+      (Array.isArray(d.summaries)&&d.summaries[0]&&d.summaries[0].note)||'',
+      (Array.isArray(d.pendingForms)?d.pendingForms.map(f=>f.formId).join(','):''),
+      (Array.isArray(d.pendingGuides)?d.pendingGuides.length:0),
+      (d.brand&&d.brand.logoDataUrl?'logo':''),(d.brand&&d.brand.primary)||''
+    ]);
+  }catch(e){return '';}
+}
+// Screens where a surprise re-render would interrupt the client mid-task. We skip
+// re-rendering while they're here (data still updates quietly in the background).
+function _isBusyScreen(){
+  const n=(typeof currentScreen!=='undefined'?currentScreen:'');
+  return n==='fill-form'||n==='checkin'||n==='rebook'||n==='virtual-submit'||n==='messages';
+}
+function _pollRealClient(){
+  if(!client._real||!client._token)return;
+  if(document.hidden)return; // don't poll a backgrounded tab
+  fetch('/api/client-data?t='+encodeURIComponent(client._token),{cache:'no-store'})
+    .then(function(r){return r.json();})
+    .then(function(j){
+      if(!(j&&j.ok&&j.client))return;
+      const fp=_clientDataFingerprint(j);
+      if(fp!==_lastDataFingerprint){
+        _lastDataFingerprint=fp;
+        _applyRealClientData(j);
+        try{applyActiveProvider();}catch(e){}
+        // only refresh the view if they're not mid-task and are on a passive screen
+        if(!_isBusyScreen()&&document.getElementById('page-heading')){
+          const n=(typeof currentScreen!=='undefined'?currentScreen:'home');
+          try{if(n==='home')renderHome();else if(typeof nav==='function')nav(n||'home');}catch(e){}
+        }
+      }
+      // messages refresh independently (they append, and show a notification)
+      try{if(!_isBusyScreen()||currentScreen==='messages')_fetchRealMessages(false);}catch(e){}
+    })
+    .catch(function(){});
+}
+function _startRealClientPolling(){
+  if(_realPollTimer)return;
+  _realPollTimer=setInterval(_pollRealClient,30000); // every 30s
+  // catch up promptly when the client returns to the tab
+  try{document.addEventListener('visibilitychange',function(){if(!document.hidden)_pollRealClient();});}catch(e){}
 }
 // ── Real message history (both directions), synced from the server ──
 let _msgSeenIds=[];
