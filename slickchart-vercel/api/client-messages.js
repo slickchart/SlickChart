@@ -9,8 +9,8 @@ export default async function handler(req, res) {
   if (!dbEnabled()) { res.status(200).json({ ok: false, messages: [] }); return; }
   const token = (req.query && req.query.t) || '';
   if (!token) { res.status(400).json({ error: 'Missing link token' }); return; }
-  await ensureClientTables();
   try {
+    await ensureClientTables();
     const c = await getClientByToken(String(token));
     if (!c) { res.status(404).json({ error: 'This link is not valid or has been removed.' }); return; }
     const rows = await listClientMessages(c.id, c.provider_id);
