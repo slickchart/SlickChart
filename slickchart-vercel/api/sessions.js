@@ -44,6 +44,19 @@ export default async function handler(req, res) {
 
     if (req.method === 'POST') {
       const b = req.body || {};
+
+      // Revoke every OTHER session for this provider, keeping the current one signed in.
+      if (b.action === 'revokeOthers') {
+        if (c.sid) {
+          await q`UPDATE sessions SET revoked = true WHERE provider_id = ${providerId} AND id <> ${c.sid} AND revoked = false`;
+        } else {
+          // No identifiable current session — revoke everything to be safe.
+          await q`UPDATE sessions SET revoked = true WHERE provider_id = ${providerId} AND revoked = false`;
+        }
+        res.status(200).json({ ok: true });
+        return;
+      }
+
       const id = String(b.id || '');
       if (!id) { res.status(400).json({ error: 'Missing session id' }); return; }
       // Only ever allow revoking a session that actually belongs to this provider.
