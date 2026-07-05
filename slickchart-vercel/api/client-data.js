@@ -20,6 +20,10 @@ export default async function handler(req, res) {
       const raw = await getKVValue(c.provider_id, 'sc_brand_colors');
       if (raw) data.brand = JSON.parse(raw);
     } catch (e) { /* fall back to whatever (if anything) was already in data.brand */ }
+    try {
+      const rawCfg = await getKVValue(c.provider_id, 'sc_checkin_cfg');
+      if (rawCfg) data.checkinCfg = JSON.parse(rawCfg);
+    } catch (e) { /* no saved check-in config yet — client falls back to defaults */ }
     res.setHeader('Cache-Control', 'no-store, no-cache, must-revalidate');
     res.setHeader('Pragma', 'no-cache');
     res.status(200).json({
