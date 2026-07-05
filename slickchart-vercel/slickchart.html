@@ -10085,6 +10085,24 @@ function _checkinForClient(cid,name){
   const norm=name?String(name).trim().toLowerCase():'';
   return checkins.find(ci=>(cid&&ci.clientId===cid)||(norm&&(ci.client||'').trim().toLowerCase()===norm))||null;
 }
+// Whether the provider has written today's treatment notes for this client yet.
+// "Done" = a session summary saved today whose snapshot actually contains notes,
+// an observation, or a client note (i.e. real content, not an empty save).
+function _notesDoneToday(cid){
+  if(!cid||typeof sessionSummaries==='undefined')return false;
+  const list=sessionSummaries[cid]||[];
+  if(!list.length)return false;
+  const startOfToday=new Date();startOfToday.setHours(0,0,0,0);
+  const t0=startOfToday.getTime();
+  return list.some(s=>{
+    const ts=s&&s.ts;
+    if(!ts||ts<t0)return false;
+    const hasSections=s.providerNotes&&Array.isArray(s.providerNotes.sections)&&s.providerNotes.sections.some(sec=>String(sec&&sec.text||'').trim());
+    const hasNote=String(s.note||'').trim();
+    const hasObs=String(s.obs||'').trim();
+    return !!(hasSections||hasNote||hasObs);
+  });
+}
 function fmtBookingDate(b){
   if(b.dateLabel)return b.dateLabel;
   try{return new Date(b.date+'T12:00:00').toLocaleDateString('en-US',{weekday:'long',month:'long',day:'numeric'});}catch(e){return b.date;}
@@ -10703,6 +10721,11 @@ function renderTodayAppts(){
           <span style="flex:1;font-size:12px;color:#4ec49a;font-weight:600;">Pre-visit check-in ready${(ci.flagged||[]).length?' \u00b7 '+ci.flagged.length+' flagged':''}${(ci.photos||[]).length?' \u00b7 '+(ci.photos||[]).length+' photo'+((ci.photos||[]).length>1?'s':''):''}</span>
           <i class="ti ti-chevron-right" style="font-size:13px;color:#4ec49a;flex-shrink:0;"></i>
         </button>`:''}
+        ${cid?(()=>{const done=_notesDoneToday(cid);return `<button onclick="event.stopPropagation();_notesFrom='today';nav('notes','${cid}')" style="margin-top:9px;width:100%;display:flex;align-items:center;gap:7px;background:${done?'#0a2019':'#241a08'};border:1px solid ${done?'#1a4a38':'#5a4318'};border-radius:8px;padding:7px 10px;cursor:pointer;font-family:inherit;text-align:left;">
+          <i class="ti ${done?'ti-checkbox':'ti-writing'}" style="font-size:14px;color:${done?'#4ec49a':'#e8b04e'};flex-shrink:0;"></i>
+          <span style="flex:1;font-size:12px;color:${done?'#4ec49a':'#e8b04e'};font-weight:600;">${done?'Treatment notes done':'Treatment notes not done yet'}</span>
+          <i class="ti ti-chevron-right" style="font-size:13px;color:${done?'#4ec49a':'#e8b04e'};flex-shrink:0;"></i>
+        </button>`;})():''}
       </div>
     </div>`;
   }).join('')}
