@@ -1893,11 +1893,15 @@ function _comfortStepFromCfg(cfg){
 // ── Generic form filling (real forms a provider has actually assigned) ──
 let _fillFormId='';
 function _pendingForm(){return (activeProvider().pendingForms||[]).find(pf=>pf.formId===_fillFormId);}
+// Signatures always come last on the form the client fills out, for every form and
+// provider. Both the render and the submit read questions through this so the field
+// indices line up.
+function _orderedFormQs(qs){return (qs||[]).slice().sort((a,b)=>(a&&a.type==='Signature'?1:0)-(b&&b.type==='Signature'?1:0));}
 function renderFillForm(){
   const pf=_pendingForm();
   if(!pf){ nav('home'); return; }
   document.getElementById('tt').textContent=pf.title;
-  const qs=pf.qs||[];
+  const qs=_orderedFormQs(pf.qs);
   S.innerHTML=`
   <div style="padding:14px 16px 4px;"><div id="page-heading" tabindex="-1" style="font-size:20px;font-weight:600;color:#1a1a1a;">${pf.title}</div><div style="font-size:13px;color:#b8a898;margin-top:2px;">Sent by ${client.providerFirst}</div></div>
   <div style="padding:6px 16px 20px;">
@@ -1933,7 +1937,7 @@ function _fillFormFieldHTML(q,i){
   if(q.type==='Date'){
     return `<div style="${wrapStyle}">${label}<input id="ff-${i}" type="date" style="width:100%;background:#faf7f4;border:1px solid #e8ddd3;border-radius:10px;padding:11px;font-size:14px;color:#3a2f28;box-sizing:border-box;"></div>`;
   }
-  if(q.type==='File upload'){
+  if(q.type==='File upload'||q.type==='Photo upload'){
     return `<div style="${wrapStyle}">${label}
       <div id="ff-photos-${i}" style="display:flex;flex-wrap:wrap;gap:8px;margin-bottom:8px;"></div>
       <button type="button" onclick="_ffAddPhotos(${i})" style="width:100%;background:#faf7f4;border:1.5px dashed #e8ddd3;border-radius:10px;padding:14px;font-size:13px;font-weight:600;color:var(--accent);cursor:pointer;font-family:inherit;display:flex;align-items:center;justify-content:center;gap:7px;"><i class="ti ti-camera" style="font-size:16px;"></i> Add photo${q.multiple===false?'':'s'}</button>
@@ -1975,7 +1979,7 @@ function _ffRenderPhotos(i){
 }
 function _submitFillForm(){
   const pf=_pendingForm();if(!pf)return;
-  const qs=pf.qs||[];
+  const qs=_orderedFormQs(pf.qs);
   const answers={};const flagged=[];let signed=false;
   let missingRequired=false;
   qs.forEach((q,i)=>{
@@ -1987,7 +1991,7 @@ function _submitFillForm(){
       const checked=(q.options||[]).map((o,oi)=>({o,el:document.getElementById(`ff-${i}-${oi}`)})).filter(x=>x.el&&x.el.checked).map(x=>x.o);
       answers[q.id]=checked;
       if(q.required&&!checked.length)missingRequired=true;
-    }else if(q.type==='File upload'){
+    }else if(q.type==='File upload'||q.type==='Photo upload'){
       const photos=(_ffPhotos[i]||[]).slice();
       answers[q.id]=photos;
       if(q.required&&!photos.length)missingRequired=true;

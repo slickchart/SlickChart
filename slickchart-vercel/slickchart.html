@@ -2085,7 +2085,7 @@ function _buildClientFileHTML(id){
     formsHTML=sfs.map(sf=>{
       const tmpl=(typeof formTmpls!=='undefined')?formTmpls[sf.formId]:null;
       const qa=[];
-      if(tmpl&&tmpl.qs){tmpl.qs.forEach(q=>{if(q.type==='Signature'||q.type==='Contraindications')return;const a=sf.answers&&sf.answers[q.id];if(q.type==='File upload'&&Array.isArray(a)){if(a.length)qa.push([q.label,a.length+' photo'+(a.length===1?'':'s')+' attached']);return;}if(a!=null&&String(a).trim())qa.push([q.label,String(a)]);});}
+      if(tmpl&&tmpl.qs){tmpl.qs.forEach(q=>{if(q.type==='Signature'||q.type==='Contraindications')return;const a=sf.answers&&sf.answers[q.id];if(_isPhotoType(q.type)&&Array.isArray(a)){if(a.length)qa.push([q.label,a.length+' photo'+(a.length===1?'':'s')+' attached']);return;}if(a!=null&&String(a).trim())qa.push([q.label,String(a)]);});}
       else{Object.keys(sf.answers||{}).forEach(k=>{const a=sf.answers[k];if(Array.isArray(a)&&a.length&&typeof a[0]==='string'&&a[0].slice(0,5)==='data:'){qa.push([k,a.length+' photo'+(a.length===1?'':'s')+' attached']);return;}qa.push([k,String(a)]);});}
       const qaHTML=qa.length?`<table class="qa">${qa.map(([l,v])=>`<tr><td class="l">${_fileEsc(l)}</td><td class="v">${_fileEsc(v)}</td></tr>`).join('')}</table>`:'<div class="muted">No written answers recorded.</div>';
       const flg=(sf.flagged&&sf.flagged.length)?`<div class="flag sm"><div class="flag-h">\u26a0 Flagged</div><ul>${sf.flagged.map(it=>`<li>${_fileEsc(it)}</li>`).join('')}</ul></div>`:'';
@@ -2378,7 +2378,7 @@ function viewSubmittedForm(id,i){
   const c=CL[id];if(!c||!c.submittedForms||!c.submittedForms[i])return;
   const sf=c.submittedForms[i];const tmpl=formTmpls[sf.formId];
   const rows=[];const photoGroups=[];
-  const _isPhotoAns=(q,a)=>q&&q.type==='File upload'&&Array.isArray(a)&&a.length;
+  const _isPhotoAns=(q,a)=>q&&_isPhotoType(q.type)&&Array.isArray(a)&&a.length;
   if(tmpl&&tmpl.qs){tmpl.qs.forEach(q=>{if(q.type==='Signature'||q.type==='Contraindications')return;const a=sf.answers[q.id];if(_isPhotoAns(q,a)){photoGroups.push([q.label,a]);return;}if(a!=null&&String(a).trim())rows.push([q.label,q.type==='Date'?_fmtDOB(String(a)):String(a)]);});}
   else{Object.keys(sf.answers||{}).forEach(k=>{const a=sf.answers[k];if(Array.isArray(a)&&a.length&&typeof a[0]==='string'&&a[0].slice(0,5)==='data:'){photoGroups.push([k,a]);return;}rows.push([k,String(a)]);});}
   const ov=document.createElement('div');ov.id='subform-sheet';
@@ -6147,7 +6147,10 @@ let formGuides={
   'contour-lymphatic':['g-contour-lymph'],
 };
 function formGuideList(fid){return (formGuides[fid]||[]).map(id=>_findGuide(id)).filter(Boolean);}
-const typeIcons={'Short text':'ti-text-size','Long text':'ti-align-left','Yes / No':'ti-toggle-left','Multiple choice':'ti-checks','Single select':'ti-circle-dot','Date':'ti-calendar','Contraindications':'ti-alert-triangle','Signature':'ti-writing','File upload':'ti-upload'};
+const typeIcons={'Short text':'ti-text-size','Long text':'ti-align-left','Yes / No':'ti-toggle-left','Multiple choice':'ti-checks','Single select':'ti-circle-dot','Date':'ti-calendar','Contraindications':'ti-alert-triangle','Signature':'ti-writing','Photo upload':'ti-camera'};
+// Recognize both the new 'Photo upload' name and the older 'File upload' so forms
+// created before the rename keep working.
+function _isPhotoType(t){return t==='Photo upload'||t==='File upload';}
 let nextQIdLocal=20;
 let customForms=[];     // user-created forms, surfaced in their own section
 let customFormSeq=0;
@@ -6159,7 +6162,10 @@ function _qRowHTML(q){
   const isContra=q.type==='Contraindications';
   return `<div class="qrow" data-qid="${q.id}" data-options='${opts}' data-items='${items}' style="background:#1a1a1a;border:1px solid #2a2a2a;border-radius:12px;margin-bottom:8px;">
     <div style="padding:10px 12px;display:flex;align-items:center;gap:8px;">
-      <i class="ti ti-grip-vertical" aria-hidden="true" style="font-size:15px;color:#666;flex-shrink:0;"></i>
+      ${q.type==='Signature'?`<i class="ti ti-writing" aria-hidden="true" title="Signature is always last" style="font-size:15px;color:#666;flex-shrink:0;"></i>`:`<div style="display:flex;flex-direction:column;flex-shrink:0;">
+        <button type="button" onclick="_moveFormQ(this,-1)" aria-label="Move question up" style="border:none;background:none;cursor:pointer;padding:0 2px;line-height:1;color:#888;"><i class="ti ti-chevron-up" style="font-size:14px;"></i></button>
+        <button type="button" onclick="_moveFormQ(this,1)" aria-label="Move question down" style="border:none;background:none;cursor:pointer;padding:0 2px;line-height:1;color:#888;"><i class="ti ti-chevron-down" style="font-size:14px;"></i></button>
+      </div>`}
       <input class="q-label" value="${label}" placeholder="Question label" style="flex:1;min-width:0;border:none;background:none;font-size:14px;font-weight:500;color:#e0e0e0;outline:none;font-family:inherit;">
       <button onclick="this.closest('.qrow').remove()" class="icon-btn" aria-label="Delete question"><i class="ti ti-trash" aria-hidden="true" style="color:#e87070;font-size:16px;"></i></button>
     </div>
@@ -6168,6 +6174,7 @@ function _qRowHTML(q){
       <label style="display:flex;align-items:center;gap:6px;font-size:11px;color:#aaa;cursor:pointer;margin-left:auto;"><input type="checkbox" class="q-req" ${q.required?'checked':''} style="width:15px;height:15px;accent-color:var(--accent);"> Required</label>
     </div>
     ${isContra?`<div style="border-top:1px solid #1e1e1e;padding:9px 12px;"><div style="font-size:11px;color:#888;margin-bottom:5px;display:flex;align-items:center;gap:5px;"><i class="ti ti-alert-triangle" style="font-size:12px;color:#e87070;"></i> Contraindications — one per line · clients confirm these right before signing</div><textarea class="q-items" placeholder="One contraindication per line…" style="width:100%;background:#111;border:1px solid #2f2f2f;border-radius:7px;padding:8px 9px;font-size:12px;color:#ccc;font-family:inherit;line-height:1.6;height:118px;resize:none;box-sizing:border-box;outline:none;">${(q.items||[]).join('\n').replace(/</g,'&lt;')}</textarea></div>`:''}
+    ${q.type==='Signature'?`<div style="border-top:1px solid #1e1e1e;padding:8px 12px;font-size:11px;color:#888;display:flex;align-items:center;gap:5px;"><i class="ti ti-info-circle" style="font-size:12px;color:#5ba3e8;"></i> Always shown last — clients sign after reviewing everything above.</div>`:''}
   </div>`;
 }
 function renderFormBuilder(tid){
@@ -6185,7 +6192,7 @@ function renderFormBuilder(tid){
     <button id="ai-form-btn" onclick="aiSuggestForm('${tid}',this)" style="background:var(--accent);color:var(--accent-ink);border:none;border-radius:8px;padding:7px 12px;font-size:12px;font-weight:600;cursor:pointer;white-space:nowrap;flex-shrink:0;">Suggest</button>
   </div>`:''}
   <div id="qlist" style="padding:0 16px;">
-    ${tmpl.qs.map(q=>_qRowHTML(q)).join('')}
+    ${_orderedFormQs(tmpl.qs).map(q=>_qRowHTML(q)).join('')}
   </div>
   <button onclick="addFormQ()" style="width:calc(100% - 32px);margin:0 16px 16px;border:1.5px dashed #2a2a2a;border-radius:10px;padding:12px;display:flex;align-items:center;justify-content:center;gap:8px;font-size:14px;color:#aaa;background:none;cursor:pointer;"><i class="ti ti-plus"></i> Add a question</button>`;
 }
@@ -6211,6 +6218,19 @@ function addFormQ(type){
   list.appendChild(row);
   const inp=row.querySelector&&row.querySelector('.q-label');if(inp&&inp.focus)inp.focus();
 }
+// Reorder a question by swapping its row with the neighbor in the given direction.
+// Reads back at save time from DOM order, so moving here is all that's needed.
+function _moveFormQ(btn,dir){
+  const row=btn.closest&&btn.closest('.qrow');if(!row)return;
+  const list=row.parentNode;if(!list)return;
+  if(dir<0){
+    const prev=row.previousElementSibling;
+    if(prev)list.insertBefore(row,prev);
+  }else{
+    const next=row.nextElementSibling;
+    if(next)list.insertBefore(next,row);
+  }
+}
 function _readFormBuilder(tid){
   const nameEl=document.getElementById('form-name-input');
   const name=(nameEl&&nameEl.value||'').trim()||'Untitled form';
@@ -6225,6 +6245,10 @@ function _readFormBuilder(tid){
     if(type==='Contraindications'){const ti=row.querySelector('.q-items');if(ti){const arr=(ti.value||'').split('\n').map(s=>s.trim()).filter(Boolean);if(arr.length)q.items=arr;}else{try{const it=JSON.parse(row.getAttribute('data-items')||'[]');if(it.length)q.items=it;}catch(e){}}}
     return q;
   }).filter(Boolean);
+  // A signature always belongs at the very end — clients sign after reviewing
+  // everything above. Keep any signature question anchored last regardless of
+  // where it sits in the builder.
+  qs.sort((a,b)=>(a.type==='Signature'?1:0)-(b.type==='Signature'?1:0));
   return {name,qs};
 }
 function saveFormBuilder(tid,thenPreview){
@@ -6247,9 +6271,13 @@ function _formQHTML(q){
       <ul style="margin:0;padding-left:18px;">${(q.items||[]).map(it=>`<li style="font-size:12.5px;color:#e6cccc;line-height:1.75;">${it}</li>`).join('')}</ul>
       <div style="font-size:12px;color:#d6a8a8;line-height:1.5;margin-top:9px;border-top:1px solid #4a1c1c;padding-top:8px;">By signing below, you confirm you've read and understood the above.</div>
     </div>`;}
-  return `<div style="margin-bottom:14px;padding-bottom:14px;border-bottom:1px solid #1e1e1e;"><div style="font-size:13px;font-weight:500;color:#e0e0e0;margin-bottom:6px;">${q.label} <span style="font-size:12px;color:${q.required?'#e87070':'#444'};">${q.required?'Required':'Optional'}</span></div>${q.type==='Short text'?'<input class="fi" placeholder="Your answer...">'  :''}${q.type==='Long text'?'<textarea class="fi" style="height:64px;resize:none;" placeholder="Your answer..."></textarea>':''} ${q.type==='Yes / No'?'<div style="display:flex;gap:8px;"><button class="btng" style="flex:1;">Yes</button><button class="btng" style="flex:1;">No</button></div>':''} ${q.type==='Date'?'<input type="date" class="fi" aria-label="Date">':''} ${(q.type==='Multiple choice'||q.type==='Single select')&&q.options?`<div style="display:flex;flex-wrap:wrap;gap:6px;">${q.options.map(o=>`<button class="btng" style="padding:6px 12px;font-size:12px;">${o}</button>`).join('')}</div>`:''} ${q.type==='Signature'?`<div style="border:1px dashed #2a2a2a;border-radius:8px;padding:20px;text-align:center;background:#161616;"><i class="ti ti-writing" style="font-size:22px;color:#888;display:block;margin-bottom:6px;"></i><span style="font-size:12px;color:#888;">Tap to sign</span></div>`:''} ${q.type==='File upload'?`<div style="border:1px dashed #2a2a2a;border-radius:8px;padding:20px;text-align:center;background:#161616;"><i class="ti ti-camera" style="font-size:22px;color:#888;display:block;margin-bottom:6px;"></i><span style="font-size:12px;color:#888;">Client attaches photos</span></div>`:''}</div>`;
+  return `<div style="margin-bottom:14px;padding-bottom:14px;border-bottom:1px solid #1e1e1e;"><div style="font-size:13px;font-weight:500;color:#e0e0e0;margin-bottom:6px;">${q.label} <span style="font-size:12px;color:${q.required?'#e87070':'#444'};">${q.required?'Required':'Optional'}</span></div>${q.type==='Short text'?'<input class="fi" placeholder="Your answer...">'  :''}${q.type==='Long text'?'<textarea class="fi" style="height:64px;resize:none;" placeholder="Your answer..."></textarea>':''} ${q.type==='Yes / No'?'<div style="display:flex;gap:8px;"><button class="btng" style="flex:1;">Yes</button><button class="btng" style="flex:1;">No</button></div>':''} ${q.type==='Date'?'<input type="date" class="fi" aria-label="Date">':''} ${(q.type==='Multiple choice'||q.type==='Single select')&&q.options?`<div style="display:flex;flex-wrap:wrap;gap:6px;">${q.options.map(o=>`<button class="btng" style="padding:6px 12px;font-size:12px;">${o}</button>`).join('')}</div>`:''} ${q.type==='Signature'?`<div style="border:1px dashed #2a2a2a;border-radius:8px;padding:20px;text-align:center;background:#161616;"><i class="ti ti-writing" style="font-size:22px;color:#888;display:block;margin-bottom:6px;"></i><span style="font-size:12px;color:#888;">Tap to sign</span></div>`:''} ${_isPhotoType(q.type)?`<div style="border:1px dashed #2a2a2a;border-radius:8px;padding:20px;text-align:center;background:#161616;"><i class="ti ti-camera" style="font-size:22px;color:#888;display:block;margin-bottom:6px;"></i><span style="font-size:12px;color:#888;">Client attaches photos</span></div>`:''}</div>`;
 }
 function _formHasSignature(fid){const t=formTmpls[fid];return !!(t&&t.qs&&t.qs.some(q=>q.type==='Signature'));}
+// Single source of truth for question order: signatures ALWAYS render last, on every
+// form and for every provider, regardless of how the form was built or stored. Used
+// everywhere questions are displayed or filled so the sign-off is always at the end.
+function _orderedFormQs(qs){return (qs||[]).slice().sort((a,b)=>(a&&a.type==='Signature'?1:0)-(b&&b.type==='Signature'?1:0));}
 function renderFormPreview(tid){
   setNav('pro');
   const tmpl=formTmpls[tid]||{name:'New form',qs:[]};
@@ -6258,7 +6286,7 @@ function renderFormPreview(tid){
   
   <div style="margin:10px 16px;background:#2a0f1a;border:1px solid #5a1e1e;border-radius:8px;padding:8px 12px;"><i class="ti ti-eye" style="font-size:13px;color:#e87070;"></i><span style="font-size:12px;color:#e87070;font-weight:500;"> Client-facing preview</span></div>
   <div style="padding:0 16px;"><div style="font-size:17px;font-weight:500;color:#f0f0f0;margin-bottom:4px;">${tmpl.name||'Untitled form'}</div><div style="font-size:13px;color:#999;margin-bottom:14px;">Please complete before your appointment.</div>
-  ${tmpl.qs.map(_formQHTML).join('')}
+  ${_orderedFormQs(tmpl.qs).map(_formQHTML).join('')}
   <button class="btnp" style="border-radius:8px;margin-top:4px;"><i class="ti ti-check"></i> Submit form</button></div><div style="height:16px;"></div>`;
 }
 
@@ -6274,7 +6302,7 @@ function _sdQHTML(q){
   else if(q.type==='Date')field=`<input class="fi" type="date" id="${id}">`;
   else if(q.type==='Yes / No')field=`<div style="display:flex;gap:8px;">${['Yes','No'].map(o=>`<button type="button" onclick="_sdPick(this,'${id}','${o}')" class="btng" style="flex:1;">${o}</button>`).join('')}</div>`;
   else if((q.type==='Multiple choice'||q.type==='Single select')&&q.options)field=`<div style="display:flex;flex-wrap:wrap;gap:6px;">${q.options.map(o=>`<button type="button" onclick="_sdPick(this,'${id}','${String(o).replace(/'/g,'\\u0027')}')" class="btng" style="padding:6px 12px;font-size:12px;">${o}</button>`).join('')}</div>`;
-  else if(q.type==='File upload')field=`<div style="background:#111;border:1.5px dashed #2f2f2f;border-radius:9px;padding:14px;text-align:center;color:#888;font-size:12px;display:flex;align-items:center;justify-content:center;gap:7px;"><i class="ti ti-camera" style="font-size:15px;"></i> Client can attach photos here</div>`;
+  else if(_isPhotoType(q.type))field=`<div style="background:#111;border:1.5px dashed #2f2f2f;border-radius:9px;padding:14px;text-align:center;color:#888;font-size:12px;display:flex;align-items:center;justify-content:center;gap:7px;"><i class="ti ti-camera" style="font-size:15px;"></i> Client can attach photos here</div>`;
   else field=`<input class="fi" id="${id}" placeholder="Your answer…">`;
   return `<div style="margin-bottom:14px;padding-bottom:14px;border-bottom:1px solid #1e1e1e;">${lab}${field}</div>`;
 }
@@ -12251,7 +12279,7 @@ async function aiSuggestForm(tid,btn){
     let sigIdx=qs.findIndex(q=>q.type==='Signature');
     if(sigIdx<0){qs.push(ci);qs.push({id:'sig'+Date.now(),type:'Signature',label:res.consent||'I consent to treatment',required:true});}
     else{qs.splice(sigIdx,0,ci);if(res.consent)qs[sigIdx+1].label=res.consent;}
-    const list=document.getElementById('qlist');if(list)list.innerHTML=qs.map(q=>_qRowHTML(q)).join('');
+    const list=document.getElementById('qlist');if(list)list.innerHTML=_orderedFormQs(qs).map(q=>_qRowHTML(q)).join('');
     if(typeof proToast==='function')proToast('Added contraindications + consent — review & save');
   }
   btn.disabled=false;btn.style.opacity='1';btn.innerHTML=old;
