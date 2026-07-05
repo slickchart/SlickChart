@@ -1,4 +1,3 @@
-
 // Serves slickchart-client.html but swaps the static "Maya Rodriguez" placeholder
 // title/link-preview for the real client's name (looked up by their token), so
 // texts/emails/RCS previews show the actual client, not the demo name.
