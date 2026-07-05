@@ -33,6 +33,11 @@ export async function ensureClientTables() {
     created_at bigint
   )`;
   await q`CREATE INDEX IF NOT EXISTS client_events_provider_idx ON client_events(provider_id)`;
+  await q`CREATE TABLE IF NOT EXISTS client_prefs (
+    client_id text PRIMARY KEY,
+    prefs jsonb DEFAULT '{}'::jsonb,
+    updated_at bigint
+  )`;
   _ready = true;
 }
 
@@ -107,4 +112,22 @@ export async function listClientMessages(clientId, providerId) {
   return await q`SELECT id, kind, payload, created_at FROM client_events
     WHERE client_id=${clientId} AND provider_id=${providerId} AND kind IN ('message','provider_message')
     ORDER BY created_at ASC LIMIT 500`;
+}
+
+// A client's own settings (notification prefs, homecare check-off state, streaks,
+// dismissed banners). Keyed by client id, stored server-side so they follow the
+// client across devices/browsers rather than living in one browser's localStorage.
+export async function getClientPrefs(clientId) {
+  const q = sql();
+  const rows = await q`SELECT prefs FROM client_prefs WHERE client_id=${String(clientId)}`;
+  return (rows[0] && rows[0].prefs) || {};
+}
+export async function saveClientPrefs(clientId, prefs) {
+  const q = sql();
+  const now = Date.now();
+  const data = JSON.stringify((prefs && typeof prefs === 'object') ? prefs : {});
+  await q`INSERT INTO client_prefs (client_id, prefs, updated_at)
+    VALUES (${String(clientId)}, ${data}::jsonb, ${now})
+    ON CONFLICT (client_id) DO UPDATE SET prefs=${data}::jsonb, updated_at=${now}`;
+  return true;
 }

@@ -27,5 +27,5 @@ export default async function handler(req, res) {
       return;
     }
     res.status(405).json({ error: 'Method not allowed' });
-  } catch (e) { res.status(e.status || 500).json({ error: e.message }); }
+  } catch (e) { console.error('[client-prefs] failed:', e && e.stack || e); res.status(e.status || 500).json({ error: e.message }); }
 }
