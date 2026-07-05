@@ -4098,6 +4098,22 @@ function editSavedSummary(id,i){
   const list=sessionSummaries[id]||[];const s=list[i];if(!s)return;
   const c=CL[id]||{};
   document.getElementById('tt').textContent='Edit summary';
+  // Seed the shared product picker (clientRecs) from THIS summary's products so the
+  // catalog picker shows exactly what's on this summary. Match saved product names
+  // back to catalog IDs where possible; names with no catalog match are ignored by
+  // the picker but preserved on save so nothing is silently dropped.
+  _esOrigRecs=(clientRecs[id]||[]).slice();
+  const savedNames=(Array.isArray(s.productDetail)&&s.productDetail.length)
+    ? s.productDetail.map(p=>(p&&p.name)||String(p))
+    : (Array.isArray(s.products)?s.products.slice():[]);
+  _esUnmatchedProducts=[];
+  const seeded=[];
+  savedNames.forEach(nm=>{
+    const a=affiliateLinks.find(x=>String(x.name||'').toLowerCase()===String(nm||'').toLowerCase());
+    if(a){if(!seeded.includes(a.id))seeded.push(a.id);}
+    else{_esUnmatchedProducts.push(nm);}
+  });
+  clientRecs[id]=seeded;
   S.innerHTML=`
   <div style="padding:12px 16px 4px;"><div style="font-size:15px;font-weight:600;color:#f0f0f0;">${c.name||''}</div><div style="font-size:12px;color:#999;">${s.treatment||'Session'} · ${s.date||''}</div></div>
   <div style="padding:6px 16px 20px;">
@@ -4108,43 +4124,63 @@ function editSavedSummary(id,i){
     <div style="font-size:11px;color:#777;margin-bottom:6px;">One item per line.</div>
     <textarea id="es-homecare" rows="4" placeholder="e.g. Vitamin C serum AM&#10;SPF 50 daily" style="width:100%;background:#111;border:1px solid #2a2a2a;border-radius:10px;padding:11px;font-size:13px;color:#ddd;line-height:1.7;font-family:inherit;box-sizing:border-box;resize:vertical;outline:none;">${(Array.isArray(s.homecare)?s.homecare.join('\n'):'').replace(/</g,'&lt;')}</textarea>
 
-    <div style="font-size:11px;font-weight:600;color:#888;text-transform:uppercase;letter-spacing:.06em;margin:16px 0 4px;">Products recommended</div>
-    <div style="font-size:11px;color:#777;margin-bottom:6px;">One product per line.</div>
-    <textarea id="es-products" rows="3" placeholder="e.g. C E Ferulic&#10;UV Defense SPF 50" style="width:100%;background:#111;border:1px solid #2a2a2a;border-radius:10px;padding:11px;font-size:13px;color:#ddd;line-height:1.7;font-family:inherit;box-sizing:border-box;resize:vertical;outline:none;">${((Array.isArray(s.productDetail)&&s.productDetail.length?s.productDetail.map(p=>(p&&p.name)||String(p)):Array.isArray(s.products)?s.products:[]).join('\n')).replace(/</g,'&lt;')}</textarea>
+    <div style="display:flex;align-items:center;justify-content:space-between;margin:18px 0 6px;">
+      <div style="font-size:11px;font-weight:600;color:#888;text-transform:uppercase;letter-spacing:.06em;">Products recommended <span id="prod-count" style="color:var(--accent);">${(clientRecs[id]||[]).length?'· '+(clientRecs[id]||[]).length:''}</span></div>
+      <button type="button" onclick="toggleProductPicker('${id}')" id="prod-add-btn" style="border:none;background:none;font-size:12px;color:var(--accent);cursor:pointer;display:flex;align-items:center;gap:3px;"><i class="ti ti-plus" style="font-size:12px;"></i> Add</button>
+    </div>
+    <div id="prod-recs"></div>
+    <div id="prod-picker" style="display:none;background:#161616;border:1px solid #2a2a2a;border-radius:10px;overflow:hidden;margin-top:8px;">
+      <div style="position:relative;padding:8px;border-bottom:1px solid #1e1e1e;"><i class="ti ti-search" aria-hidden="true" style="position:absolute;left:18px;top:50%;transform:translateY(-50%);font-size:14px;color:#777;"></i><input id="prod-picker-q" oninput="_renderProdPickerList('${id}',this.value)" placeholder="Search products or brands…" style="width:100%;background:#0f0f0f;border:1px solid #2a2a2a;border-radius:8px;padding:8px 10px 8px 30px;font-size:13px;color:#e0e0e0;font-family:inherit;box-sizing:border-box;outline:none;"></div>
+      <div id="prod-picker-list" style="max-height:172px;overflow-y:auto;">${_prodPickerRows(id,'')}</div>
+      <div style="padding:8px;border-top:1px solid #1e1e1e;"><button type="button" onclick="toggleProductPicker('${id}')" style="width:100%;background:#0f0f0f;border:1px solid #2a2a2a;color:#ccc;border-radius:8px;padding:8px;font-size:12px;font-weight:600;cursor:pointer;font-family:inherit;">Done adding</button></div>
+    </div>
 
     <div style="display:flex;gap:8px;margin-top:14px;">
       <button onclick="_saveEditedSummary('${id}',${i})" class="btnp" style="flex:1;border-radius:9px;padding:11px;"><i class="ti ti-check"></i> Save changes</button>
-      <button onclick="nav('summary-history','${id}')" style="background:none;border:1px solid #555;color:#ccc;border-radius:9px;padding:11px 16px;font-size:13px;cursor:pointer;font-family:inherit;">Cancel</button>
+      <button onclick="_cancelEditSummary('${id}')" style="background:none;border:1px solid #555;color:#ccc;border-radius:9px;padding:11px 16px;font-size:13px;cursor:pointer;font-family:inherit;">Cancel</button>
     </div>
     <div style="display:flex;gap:8px;margin-top:8px;">
       <button onclick="_saveEditedSummary('${id}',${i},'app')" style="flex:1;background:#0d1e33;border:1px solid #1a3a5c;color:#5ba3e8;border-radius:9px;padding:11px;font-size:13px;font-weight:600;cursor:pointer;font-family:inherit;display:flex;align-items:center;justify-content:center;gap:6px;"><i class="ti ti-device-mobile"></i> Save &amp; resend to app</button>
       <button onclick="_saveEditedSummary('${id}',${i},'link')" style="flex:1;background:#0a2019;border:1px solid #1a4a2a;color:#4ec49a;border-radius:9px;padding:11px;font-size:13px;font-weight:600;cursor:pointer;font-family:inherit;display:flex;align-items:center;justify-content:center;gap:6px;"><i class="ti ti-link"></i> Save &amp; send link</button>
     </div>
   </div>`;
+  try{renderProductRecs(id);}catch(e){}
+}
+let _esOrigRecs=null, _esUnmatchedProducts=[];
+function _cancelEditSummary(id){
+  // restore the product picker to whatever it was before editing this summary
+  if(_esOrigRecs!==null){clientRecs[id]=_esOrigRecs.slice();_esOrigRecs=null;}
+  _esUnmatchedProducts=[];
+  try{if(typeof persistClientRecs==='function')persistClientRecs();}catch(e){}
+  nav('summary-history',id);
 }
 function _saveEditedSummary(id,i,thenAction){
   const list=sessionSummaries[id]||[];const s=list[i];if(!s)return;
   const ta=document.getElementById('es-note');
   const newNote=(ta?ta.value:s.note||'').trim();
   s.note=newNote;
-  // homecare + products: one item per line, trimmed, blanks dropped
+  // homecare: one item per line, trimmed, blanks dropped
   const _lines=(elId)=>{const el=document.getElementById(elId);if(!el)return null;return el.value.split('\n').map(x=>x.trim()).filter(Boolean);};
   const newHomecare=_lines('es-homecare');
-  const newProducts=_lines('es-products');
   if(newHomecare!==null)s.homecare=newHomecare;
-  if(newProducts!==null){
-    s.products=newProducts;
-    // if a richer productDetail list existed, keep it consistent by name so the
-    // saved-summary view doesn't show stale product cards
-    if(Array.isArray(s.productDetail))s.productDetail=newProducts.map(name=>{const prev=s.productDetail.find(p=>((p&&p.name)||'')===name);return prev||{name};});
-  }
+  // products: come from the catalog picker (clientRecs[id] = array of product ids).
+  // Build structured productDetail from the catalog, then append any names that had
+  // no catalog match (so pre-existing free-text products aren't silently dropped).
+  const recIds=clientRecs[id]||[];
+  const picked=recIds.map(aid=>{const a=affiliateLinks.find(x=>x.id===aid);return a?{name:a.name,brand:a.brand||'',icon:a.icon||'',why:(typeof _recReason==='function'?(_recReason(id,aid)||''):'')}:null;}).filter(Boolean);
+  const unmatched=(_esUnmatchedProducts||[]).map(nm=>({name:nm}));
+  const productDetail=picked.concat(unmatched);
+  s.productDetail=productDetail;
+  s.products=productDetail.map(p=>p.name);
   // keep the client-record copy (what their app reads) in sync
   const c=CL[id];
   if(c&&Array.isArray(c.summaries)){
     // match by timestamp/date+treatment since the two lists mirror each other
     const cs=c.summaries.find(x=>(s.ts&&x.ts===s.ts)||(x.date===s.date&&x.title===(s.treatment||'Session')));
-    if(cs){cs.note=newNote;if(newHomecare!==null)cs.homecare=newHomecare.slice();if(newProducts!==null)cs.products=newProducts.slice();}
+    if(cs){cs.note=newNote;if(newHomecare!==null)cs.homecare=newHomecare.slice();cs.products=s.products.slice();cs.productDetail=productDetail.map(p=>({...p}));}
   }
+  _esOrigRecs=null;_esUnmatchedProducts=[];
+  try{if(typeof persistClientRecs==='function')persistClientRecs();}catch(e){}
   try{if(typeof persistWorkspace==='function')persistWorkspace();}catch(e){}
   try{if(typeof saveClients==='function')saveClients();}catch(e){}
   if(thenAction==='app'){resendSavedSummary(id,i,true);}
