@@ -2341,6 +2341,14 @@ function renderClient(id){
       <i class="ti ti-chevron-right" aria-hidden="true" style="font-size:16px;color:#888;"></i>
     </button>
   </div>
+  ${c.lastCheckin?`<div class="sh"><h2>Latest pre-visit check-in</h2></div>
+  <div style="padding:0 16px 6px;">
+    <button onclick="nav('checkin-detail','${c.lastCheckin.id}')" style="width:100%;background:#1a1a1a;border:1px solid ${(c.lastCheckin.flagged&&c.lastCheckin.flagged.length)?'#5c2a1a':'#2a2a2a'};border-radius:12px;padding:12px 14px;display:flex;align-items:center;gap:11px;cursor:pointer;font-family:inherit;text-align:left;">
+      <div style="width:38px;height:38px;border-radius:9px;background:#0a2019;display:flex;align-items:center;justify-content:center;flex-shrink:0;"><i class="ti ti-clipboard-check" style="font-size:18px;color:#4ec49a;"></i></div>
+      <div style="flex:1;min-width:0;"><div style="font-size:13px;font-weight:500;color:#e0e0e0;">${c.lastCheckin.dateLabel||'Most recent'}${c.lastCheckin.treatment?' · '+c.lastCheckin.treatment:''}</div><div style="font-size:11px;color:${(c.lastCheckin.flagged&&c.lastCheckin.flagged.length)?'#e8a070':'#999'};">${(c.lastCheckin.flagged&&c.lastCheckin.flagged.length)?c.lastCheckin.flagged.length+' flagged · tap to review':'No changes flagged · tap to view'}</div></div>
+      <i class="ti ti-chevron-right" aria-hidden="true" style="font-size:16px;color:#888;"></i>
+    </button>
+  </div>`:''}
   <div class="sh"><h2>Session summaries</h2></div>
   <div style="padding:0 16px 6px;">
     <button onclick="nav('summary-history','${id}')" style="width:100%;background:#1a1a1a;border:1px solid #2a2a2a;border-radius:12px;padding:12px 14px;display:flex;align-items:center;gap:11px;cursor:pointer;font-family:inherit;text-align:left;">
@@ -10353,6 +10361,10 @@ async function syncClientEvents(){
         checkins.unshift(ci);
         if(c){
           c.checkinDone=true;
+          // Keep only the MOST RECENT check-in on the client's file — a new one
+          // overwrites the previous, so providers can always reference the latest
+          // without check-ins accumulating on the chart forever.
+          c.lastCheckin={id:ci.id,dateLabel:ci.dateLabel,time:ci.time,treatment:ci.treatment,groups:(ci.groups||[]).slice(),flagged:(ci.flagged||[]).slice(),notes:ci.notes||'',photos:(ci.photos||[]).slice(),at:Date.now()};
           // A flagged check-in is exactly the kind of thing that needs to show up
           // as a real alert on the client's chart, not just sit inside the check-in
           // record where it's easy to miss before a session.
@@ -10560,10 +10572,12 @@ function renderCheckins(){
   </div>
   ${checkins.length===0?`<div style="margin:32px 16px;text-align:center;color:#666;font-size:14px;">No check-ins yet. They'll appear here the moment a client submits one.</div>`:checkins.map(_checkinCard).join('')}
   <div style="height:16px;"></div>`;
+  setTimeout(()=>{try{document.querySelectorAll('.ci-log-card').forEach((el,i)=>{if(typeof initSwipe==='function')initSwipe(el,i);});}catch(e){}},0);
 }
 function _checkinCard(ci){
   const n=(ci.flagged||[]).length;
-  return`<div onclick="markCheckinRead('${ci.id}');nav('checkin-detail','${ci.id}')" style="background:${ci.read?'#1a1a1a':'#1e1a10'};border:1px solid ${ci.read?'#2a2a2a':'var(--accent-tint2)'};border-radius:12px;margin:0 16px 8px;overflow:hidden;cursor:pointer;">
+  return`<div class="swipe-wrap" style="margin:0 16px 8px;">
+    <div class="swipe-card ci-log-card" onclick="markCheckinRead('${ci.id}');nav('checkin-detail','${ci.id}')" style="background:${ci.read?'#1a1a1a':'#1e1a10'};border:1px solid ${ci.read?'#2a2a2a':'var(--accent-tint2)'};border-radius:12px;overflow:hidden;cursor:pointer;">
     <div style="padding:12px 14px;display:flex;align-items:flex-start;gap:11px;">
       <div style="position:relative;flex-shrink:0;">
         <div style="width:40px;height:40px;border-radius:10px;background:#0a2019;display:flex;align-items:center;justify-content:center;"><i class="ti ti-clipboard-check" style="font-size:18px;color:#4ec49a;"></i></div>
@@ -10579,11 +10593,48 @@ function _checkinCard(ci){
       </div>
       <i class="ti ti-chevron-right" style="font-size:18px;color:#555;flex-shrink:0;"></i>
     </div>
+    </div>
+    <div class="swipe-reveal" style="background:#0f2a1a;" onclick="event.stopPropagation();_clearCheckin('${ci.id}')" aria-label="Clear this check-in"><i class="ti ti-check" aria-hidden="true" style="color:#4ec49a;"></i><span style="color:#4ec49a;">DONE</span></div>
   </div>`;
+}
+// Swipe a check-in in the log to clear it once you've dealt with it, so they don't
+// pile up. The most-recent copy still lives on the client's file for reference.
+let _lastClearedCheckin=null;
+function _clearCheckin(id){
+  const idx=checkins.findIndex(x=>x.id===id);
+  if(idx<0)return;
+  _lastClearedCheckin={ci:checkins[idx],idx:idx};
+  checkins.splice(idx,1);
+  try{persistCheckins();}catch(e){}
+  try{if(typeof updateBadge==='function')updateBadge();}catch(e){}
+  _checkinClearToast('Check-in cleared');
+  renderCheckins();
+}
+function _undoClearCheckin(){
+  if(_lastClearedCheckin){
+    const {ci,idx}=_lastClearedCheckin;
+    checkins.splice(Math.min(idx,checkins.length),0,ci);
+    _lastClearedCheckin=null;
+    try{persistCheckins();}catch(e){}
+    try{if(typeof updateBadge==='function')updateBadge();}catch(e){}
+    const t=document.getElementById('ci-clear-toast');if(t)t.remove();
+    renderCheckins();
+  }
+}
+function _checkinClearToast(msg){
+  const old=document.getElementById('ci-clear-toast');if(old)old.remove();
+  const t=document.createElement('div');t.id='ci-clear-toast';
+  t.style.cssText='position:fixed;bottom:88px;left:0;right:0;margin:0 auto;width:max-content;max-width:90%;background:#161616;border:1px solid #333;color:#e0e0e0;border-radius:10px;padding:9px 12px 9px 14px;font-size:13px;z-index:600;display:flex;align-items:center;gap:12px;box-shadow:0 6px 24px rgba(0,0,0,.4);white-space:nowrap;';
+  t.innerHTML=`<span>${msg}</span><button onclick="_undoClearCheckin()" style="background:none;border:none;color:var(--accent);font-weight:700;font-size:13px;cursor:pointer;font-family:inherit;padding:0;">Undo</button>`;
+  document.body.appendChild(t);
+  setTimeout(()=>{const el=document.getElementById('ci-clear-toast');if(el)el.remove();},5000);
 }
 function renderCheckinDetail(id){
   setNav('home');
-  const ci=checkins.find(x=>x.id===id);
+  let ci=checkins.find(x=>x.id===id);
+  // If it's been cleared from the log, fall back to the copy saved on the client file
+  // so the "Latest check-in" link on a client's chart still works.
+  if(!ci){for(const k in CL){if(CL[k]&&CL[k].lastCheckin&&CL[k].lastCheckin.id===id){ci=Object.assign({client:CL[k].name||'Client',clientId:k,read:true},CL[k].lastCheckin);break;}}}
   document.getElementById('tt').textContent='Check-in';
   if(!ci){S.innerHTML=`<div id="checkin-detail-screen"></div><div style="padding:30px 16px;color:#666;">Check-in not found.</div>`;return;}
   markCheckinRead(id);
@@ -10738,7 +10789,12 @@ SlickBridge.on('booking-request',b=>{
 
 SlickBridge.on('checkin-submitted',ci=>{
   checkins.unshift({...ci,read:false});
-  if(ci.clientId&&CL[ci.clientId]){CL[ci.clientId].checkinDone=true;try{if(typeof saveClients==='function')saveClients();}catch(e){}}
+  if(ci.clientId&&CL[ci.clientId]){
+    CL[ci.clientId].checkinDone=true;
+    // Most recent check-in only — overwrites the previous on the client file.
+    CL[ci.clientId].lastCheckin={id:ci.id,dateLabel:ci.dateLabel,time:ci.time,treatment:ci.treatment,groups:(ci.groups||[]).slice(),flagged:(ci.flagged||[]).slice(),notes:ci.notes||'',photos:(ci.photos||[]).slice(),at:Date.now()};
+    try{if(typeof saveClients==='function')saveClients();}catch(e){}
+  }
   pushCheckinNotif(ci);
   providerSystemNotify('Pre-visit check-in',`${ci.client} · ${ci.treatment} · ${ci.dateLabel}`);
   if(document.getElementById('home-screen'))renderHome();
