@@ -774,11 +774,19 @@ function _loadClientMessagesInto(p){
 }
 function activeProvider(){return client.providers.find(p=>p.id===client.activeProviderId)||client.providers[0];}
 function recomputeCountdown(){
-  const msLeft=APPT-TODAY;
-  const daysLeft=Math.ceil(msLeft/(1000*60*60*24));
+  // Real clients count from the actual current date; the demo stays pinned to its
+  // seeded "today" (TODAY) so the sample countdown reads coherently whenever it's viewed.
+  const now=(client._real)?new Date():new Date(TODAY);
+  // Count whole calendar days between today and the appointment, ignoring time-of-day
+  // so an appointment later *today* reads as 0 ("Today!"), not 1. Using midnight-to-
+  // midnight avoids the off-by-one that raw ms subtraction + Math.ceil produced.
+  const startOfToday=new Date(now.getFullYear(),now.getMonth(),now.getDate());
+  const apptDay=new Date(APPT.getFullYear(),APPT.getMonth(),APPT.getDate());
+  const daysLeft=Math.round((apptDay-startOfToday)/(1000*60*60*24));
   client.daysUntilNext=daysLeft;
-  client.hoursUntilNext=Math.floor((msLeft%(1000*60*60*24))/(1000*60*60));
-  client.isThisWeek=daysLeft<=7;client.isTomorrow=daysLeft===1;client.isToday=daysLeft===0;
+  client.hoursUntilNext=Math.max(0,Math.floor((APPT-now)/(1000*60*60)));
+  // "This week" = within the next 7 days and not already past.
+  client.isThisWeek=daysLeft>=0&&daysLeft<=7;client.isTomorrow=daysLeft===1;client.isToday=daysLeft===0;
 }
 function applyActiveProvider(){
   const p=activeProvider();
@@ -874,7 +882,20 @@ function downloadICS(){
 
 function openGoogleCal(){
   const start=`${client.nextDateISO}T${client.nextTimeISO}Z`;
-  const end=`${client.nextDateISO}T${(parseInt(client.nextTimeISO.slice(0,2))+1).toString().padStart(2,'0')}0000Z`;
+  // Derive the end from the real start + duration (in UTC, matching the Z-suffixed
+  // start) rather than a naive +1 hour that dropped the minutes and ignored duration.
+  const sH=parseInt(client.nextTimeISO.slice(0,2),10)||0;
+  const sM=parseInt(client.nextTimeISO.slice(2,4),10)||0;
+  const dur=(parseInt(client.durationMins,10)||60);
+  const endMs=Date.UTC(
+    parseInt(client.nextDateISO.slice(0,4),10),
+    parseInt(client.nextDateISO.slice(4,6),10)-1,
+    parseInt(client.nextDateISO.slice(6,8),10),
+    sH,sM+dur,0
+  );
+  const e=new Date(endMs);
+  const pad=n=>String(n).padStart(2,'0');
+  const end=`${e.getUTCFullYear()}${pad(e.getUTCMonth()+1)}${pad(e.getUTCDate())}T${pad(e.getUTCHours())}${pad(e.getUTCMinutes())}00Z`;
   const url=`https://calendar.google.com/calendar/render?action=TEMPLATE&text=${encodeURIComponent(client.treatment+' with '+client.provider)}&dates=${start}/${end}&details=${encodeURIComponent('Your '+client.treatment+' at '+client.studio)}&location=${encodeURIComponent(client.studioAddress)}`;
   window.open(url,'_blank');
   closeCalModal();
@@ -2345,16 +2366,22 @@ function renderRebook(){
   const hasAvail=!!rawAvail;
   const treatments=['Hydrafacial','Chemical Peel','Brightening Facial','Microneedling','Dermaplaning','Consultation'];
 
-  // Generate next 14 available dates honoring provider's open days
+  // Generate next 14 available dates honoring provider's open days, starting from
+  // today (real clients) or the pinned demo day. Real clients must never be shown a
+  // past date to "request".
   const dates=[];
-  const d=new Date('2026-07-18');
+  const _ymd=dt=>dt.getFullYear()+'-'+String(dt.getMonth()+1).padStart(2,'0')+'-'+String(dt.getDate()).padStart(2,'0');
+  const _base=(client._real)?new Date():new Date('2026-07-18T12:00:00');
+  const d=new Date(_base.getFullYear(),_base.getMonth(),_base.getDate());
+  // Start from tomorrow — a rebook request is for a future visit, not same-day.
+  d.setDate(d.getDate()+1);
   let guard=0;
   while(dates.length<14&&guard<120){
     guard++;
     const dk=REBOOK_DAYKEYS[d.getDay()];
     if(avail[dk]&&avail[dk].open){
       dates.push({
-        key:d.toISOString().slice(0,10),
+        key:_ymd(d),  // local date parts, not toISOString (which is UTC and can shift the day)
         day:d.toLocaleDateString('en-US',{weekday:'short'}),
         date:d.getDate(),
         month:d.toLocaleDateString('en-US',{month:'short'}),
