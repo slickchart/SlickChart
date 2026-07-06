@@ -1152,6 +1152,22 @@ function _bizLoc(){return [bizInfo.city,bizInfo.state].filter(Boolean).join(', '
 function loadBizInfo(){try{const raw=localStorage.getItem('sc_bizinfo');if(raw){const d=JSON.parse(raw)||{};Object.keys(d).forEach(k=>{bizInfo[k]=d[k];});}const wn=localStorage.getItem('sc_wsname');if(wn)workspace.name=wn;else if(bizInfo.name)workspace.name=bizInfo.name;if(_bizLoc())workspace.location=_bizLoc();}catch(e){}}
 function _a11yEnhance(){try{document.querySelectorAll('[onclick]:not(button):not(a):not(input):not(select):not(textarea):not([role])').forEach(el=>{el.setAttribute('role','button');if(!el.hasAttribute('tabindex'))el.setAttribute('tabindex','0');});}catch(e){}}
 try{document.addEventListener('keydown',function(e){const t=e.target;if((e.key==='Enter'||e.key===' ')&&t&&t.getAttribute&&t.getAttribute('role')==='button'&&t.hasAttribute('onclick')&&!['BUTTON','A','INPUT','SELECT','TEXTAREA'].includes(t.tagName)){e.preventDefault();t.click();}});}catch(e){}
+// After each render, make click-only elements keyboard-operable: any non-native element
+// with an onclick that isn't already focusable/labelled gets role=button + tabindex=0,
+// so it can be tabbed to and activated with Enter/Space via the delegated handler above.
+// Elements that opt out (nested inside another control, or explicitly aria-hidden) are skipped.
+function _a11yEnhanceClickables(root){
+  if(!root||!root.querySelectorAll)return;
+  const nodes=root.querySelectorAll('[onclick]');
+  for(let i=0;i<nodes.length;i++){
+    const el=nodes[i];const tag=el.tagName;
+    if(tag==='BUTTON'||tag==='A'||tag==='INPUT'||tag==='SELECT'||tag==='TEXTAREA')continue; // already operable
+    if(el.getAttribute('aria-hidden')==='true')continue;
+    if(el.closest('button,a'))continue; // clickable wrapper inside a real control — don't double up
+    if(!el.hasAttribute('role'))el.setAttribute('role','button');
+    if(!el.hasAttribute('tabindex'))el.setAttribute('tabindex','0');
+  }
+}
 // ── Cloud sync (database + login). Falls back to local-only until configured. ──
 function saveProfessions(){try{localStorage.setItem('sc_professions',JSON.stringify(selectedProfessions));}catch(e){}}
 function loadProfessions(){try{const raw=localStorage.getItem('sc_professions');if(raw){const a=JSON.parse(raw);if(Array.isArray(a)&&a.length)selectedProfessions=a;}}catch(e){}}
@@ -1953,6 +1969,7 @@ function nav(screen,data){
     if(!_navBacking){if(_navCur&&(_navCur.screen!==screen||_navCur.data!==data)){_navStack.push(_navCur);if(_navStack.length>40)_navStack.shift();}}
     _navCur={screen,data};
     fn();
+    try{_a11yEnhanceClickables(S);}catch(e){}
     S.scrollTop=0;
     if(screen==='home')_navStack.length=0;   // home is the root — clear history so no back button crowds the heading
     const bb=document.getElementById('topbar-back');if(bb)bb.style.display=_navStack.length?'flex':'none';
@@ -2986,7 +3003,7 @@ function editVitals(id){
   m.innerHTML=`<div style="background:#1a1a1a;border:1px solid #2a2a2a;border-radius:16px;width:100%;max-height:88%;overflow:auto;padding:18px 16px 26px;">
     <div style="width:36px;height:4px;background:#333;border-radius:2px;margin:0 auto 14px;"></div>
     <div style="font-size:16px;font-weight:600;color:#f0f0f0;margin-bottom:3px;">Edit client details</div>
-    <div style="font-size:12px;color:#999;margin-bottom:16px;line-height:1.5;">Keep ${c.name.split(' ')[0]}'s file current — labels adapt to your services.</div>
+    <div style="font-size:12px;color:#999;margin-bottom:16px;line-height:1.5;">Keep ${_fileEsc(c.name.split(' ')[0])}'s file current — labels adapt to your services.</div>
     ${fields.map(f=>`<div style="margin-bottom:12px;"><label style="display:block;font-size:11px;color:#aaa;text-transform:uppercase;letter-spacing:.05em;margin-bottom:5px;">${f.label}</label><input id="vital-${f.key}" value="${(c[f.key]||'').replace(/"/g,'&quot;')}" placeholder="${f.ph}" style="width:100%;background:#111;border:1px solid #333;border-radius:9px;padding:10px 12px;font-size:14px;color:#f0f0f0;font-family:inherit;box-sizing:border-box;outline:none;"></div>`).join('')}
     <div style="display:flex;gap:8px;margin-top:6px;">
       <button onclick="document.getElementById('vitals-modal').remove()" style="flex:1;background:#222;border:1px solid #333;border-radius:10px;padding:11px;font-size:14px;color:#ccc;cursor:pointer;">Cancel</button>
@@ -3049,7 +3066,7 @@ function changeTreatment(id,screen){
   m.innerHTML=`<div style="background:#1a1a1a;border:1px solid #2a2a2a;border-radius:16px;width:100%;padding:18px 16px 26px;">
     <div style="width:36px;height:4px;background:#333;border-radius:2px;margin:0 auto 14px;"></div>
     <div style="font-size:16px;font-weight:600;color:#f0f0f0;margin-bottom:3px;">Change treatment</div>
-    <div style="font-size:12px;color:#999;margin-bottom:14px;line-height:1.5;">Things come up — update the booked treatment for ${c.name.split(' ')[0]}. This carries across the appointment, notes, and client summary.</div>
+    <div style="font-size:12px;color:#999;margin-bottom:14px;line-height:1.5;">Things come up — update the booked treatment for ${_fileEsc(c.name.split(' ')[0])}. This carries across the appointment, notes, and client summary.</div>
     <input id="treatment-input" value="${(c.treatment||'').replace(/"/g,'&quot;')}" placeholder="Treatment name…" style="width:100%;background:#111;border:1px solid #333;border-radius:9px;padding:11px 12px;font-size:15px;color:#f0f0f0;font-family:inherit;box-sizing:border-box;margin-bottom:${(squareCatalog.services&&squareCatalog.services.length)?'12px':'16px'};outline:none;">
     ${(squareCatalog.services&&squareCatalog.services.length)?`<div style="font-size:11px;color:#999;margin-bottom:7px;">Your Square services — tap to use</div>
     <div style="display:flex;flex-wrap:wrap;gap:6px;margin-bottom:16px;max-height:118px;overflow-y:auto;">
@@ -3350,7 +3367,7 @@ function switchNoteTab(id){
   const previewNote=draftNote||liveNote||(isHairBarber?'Add a note about today\'s color/service for '+c.name.split(' ')[0]+'.':'Add a note about today\'s visit for '+c.name.split(' ')[0]+'.');
   const todayLbl=_todayLabel()||'Today';
   const nextApptLine=(c.nextVisit&&c.nextVisit!=='Not scheduled')?(c.nextVisit+(c.treatment?' \u00b7 '+c.treatment:'')):'Not yet scheduled';
-  document.getElementById('ncontent').innerHTML=`<div style="padding:12px 16px 0;"><div style="background:#0a2019;border-radius:8px;padding:8px 12px;font-size:12px;color:#4ec49a;margin-bottom:12px;display:flex;gap:6px;align-items:center;"><i class="ti ti-eye" style="font-size:12px;"></i> This is what ${c.name.split(' ')[0]} sees</div><div style="font-size:14px;font-weight:500;color:#f0f0f0;margin-bottom:4px;">Your session summary</div><div style="font-size:13px;color:#999;margin-bottom:12px;">${todayLbl} · ${c.treatment} with ${_providerFirstName()}</div><div style="background:#161616;border:1px solid #2a2a2a;border-radius:10px;padding:12px;font-size:13px;color:#ccc;line-height:1.7;margin-bottom:12px;">${previewNote.replace(/</g,'&lt;')}</div><div style="font-size:11px;font-weight:500;color:#aaa;text-transform:uppercase;letter-spacing:.07em;margin-bottom:6px;">${isHairBarber?'Aftercare reminders':'Homecare reminders'}</div><div style="display:flex;flex-wrap:wrap;gap:6px;margin-bottom:12px;">${getClientHomecare(id).slice(0,4).map(t=>`<span style="font-size:12px;padding:4px 10px;border-radius:20px;border:1px solid #666;color:#ccc;">${t}</span>`).join('')}</div>${(clientRecs[id]||[]).length>0?`<div style="font-size:11px;font-weight:500;color:#aaa;text-transform:uppercase;letter-spacing:.07em;margin-bottom:8px;">Recommended for you</div>${(clientRecs[id]||[]).map(aid=>{const a=affiliateLinks.find(x=>x.id===aid);if(!a)return'';return`<div style="background:#1a1a1a;border:1px solid #2a2a2a;border-radius:10px;padding:11px 12px;display:flex;align-items:center;gap:10px;margin-bottom:8px;"><span style="font-size:18px;">${a.icon}</span><div style="flex:1;min-width:0;"><div style="font-size:13px;font-weight:500;color:#e0e0e0;">${a.name}</div><div style="font-size:11px;color:#999;">${a.brand}</div></div>${(a.url||a.site||a.inOffice||amazonBuyUrl(a))?`<button onclick="openBuyOptionsP('${a.id}')" style="background:var(--accent);color:var(--accent-ink);border:none;border-radius:7px;padding:6px 11px;font-size:11px;font-weight:500;cursor:pointer;white-space:nowrap;">Buy</button>`:''}</div>`;}).join('')}`:''}<div style="font-size:11px;font-weight:500;color:#aaa;text-transform:uppercase;letter-spacing:.07em;margin-bottom:6px;">Next appointment</div><div style="background:#161616;border:1px solid #2a2a2a;border-radius:10px;padding:12px;display:flex;align-items:center;gap:8px;font-size:13px;color:#ccc;"><i class="ti ti-calendar" style="font-size:16px;color:var(--accent);"></i> ${nextApptLine}</div></div>`;
+  document.getElementById('ncontent').innerHTML=`<div style="padding:12px 16px 0;"><div style="background:#0a2019;border-radius:8px;padding:8px 12px;font-size:12px;color:#4ec49a;margin-bottom:12px;display:flex;gap:6px;align-items:center;"><i class="ti ti-eye" style="font-size:12px;"></i> This is what ${_fileEsc(c.name.split(' ')[0])} sees</div><div style="font-size:14px;font-weight:500;color:#f0f0f0;margin-bottom:4px;">Your session summary</div><div style="font-size:13px;color:#999;margin-bottom:12px;">${todayLbl} · ${c.treatment} with ${_providerFirstName()}</div><div style="background:#161616;border:1px solid #2a2a2a;border-radius:10px;padding:12px;font-size:13px;color:#ccc;line-height:1.7;margin-bottom:12px;">${previewNote.replace(/</g,'&lt;')}</div><div style="font-size:11px;font-weight:500;color:#aaa;text-transform:uppercase;letter-spacing:.07em;margin-bottom:6px;">${isHairBarber?'Aftercare reminders':'Homecare reminders'}</div><div style="display:flex;flex-wrap:wrap;gap:6px;margin-bottom:12px;">${getClientHomecare(id).slice(0,4).map(t=>`<span style="font-size:12px;padding:4px 10px;border-radius:20px;border:1px solid #666;color:#ccc;">${t}</span>`).join('')}</div>${(clientRecs[id]||[]).length>0?`<div style="font-size:11px;font-weight:500;color:#aaa;text-transform:uppercase;letter-spacing:.07em;margin-bottom:8px;">Recommended for you</div>${(clientRecs[id]||[]).map(aid=>{const a=affiliateLinks.find(x=>x.id===aid);if(!a)return'';return`<div style="background:#1a1a1a;border:1px solid #2a2a2a;border-radius:10px;padding:11px 12px;display:flex;align-items:center;gap:10px;margin-bottom:8px;"><span style="font-size:18px;">${a.icon}</span><div style="flex:1;min-width:0;"><div style="font-size:13px;font-weight:500;color:#e0e0e0;">${a.name}</div><div style="font-size:11px;color:#999;">${a.brand}</div></div>${(a.url||a.site||a.inOffice||amazonBuyUrl(a))?`<button onclick="openBuyOptionsP('${a.id}')" style="background:var(--accent);color:var(--accent-ink);border:none;border-radius:7px;padding:6px 11px;font-size:11px;font-weight:500;cursor:pointer;white-space:nowrap;">Buy</button>`:''}</div>`;}).join('')}`:''}<div style="font-size:11px;font-weight:500;color:#aaa;text-transform:uppercase;letter-spacing:.07em;margin-bottom:6px;">Next appointment</div><div style="background:#161616;border:1px solid #2a2a2a;border-radius:10px;padding:12px;display:flex;align-items:center;gap:8px;font-size:13px;color:#ccc;"><i class="ti ti-calendar" style="font-size:16px;color:var(--accent);"></i> ${nextApptLine}</div></div>`;
 }
 function renderNoteFormats(id){
   setNav('clients');
@@ -3797,11 +3814,11 @@ function renderSessionSummary(id){
 
   <div style="margin:10px 16px 6px;background:#0a2019;border:1px solid #1a4a2a;border-radius:10px;padding:9px 12px;display:flex;gap:7px;align-items:center;">
     <i class="ti ti-eye" aria-hidden="true" style="font-size:13px;color:#4ec49a;"></i>
-    <span style="font-size:12px;color:#4ec49a;">Preview — exactly what ${c.name.split(' ')[0]} will receive</span>
+    <span style="font-size:12px;color:#4ec49a;">Preview — exactly what ${_fileEsc(c.name.split(' ')[0])} will receive</span>
   </div>
 
   <div style="margin:0 16px 6px;background:#1a1a1a;border:1px solid #2a2a2a;border-radius:10px;padding:11px 14px;display:flex;align-items:center;justify-content:space-between;gap:10px;">
-    <div style="flex:1;min-width:0;"><div style="font-size:13px;font-weight:500;color:#e0e0e0;">Send to ${c.name.split(' ')[0]}'s app</div><div style="font-size:11px;color:#888;margin-top:1px;">On by default \u2014 turn off if you don't want to send this session.</div></div>
+    <div style="flex:1;min-width:0;"><div style="font-size:13px;font-weight:500;color:#e0e0e0;">Send to ${_fileEsc(c.name.split(' ')[0])}'s app</div><div style="font-size:11px;color:#888;margin-top:1px;">On by default \u2014 turn off if you don't want to send this session.</div></div>
     ${togBtn(summarySendOn[id],`summarySendOn['${id}']=!summarySendOn['${id}'];renderSessionSummary('${id}')`,'Send to '+c.name.split(' ')[0]+"'s app")}
   </div>
 
@@ -3899,7 +3916,7 @@ function renderSessionSummary(id){
   </div>
 
   <div style="padding:0 16px 20px;display:flex;flex-direction:column;gap:8px;">
-    <button onclick="_summaryGuard('${id}')&&sendSummary('${id}')" class="btnp" style="border-radius:10px;${summarySendOn[id]?'':'opacity:.55;'}"><i class="ti ti-send" aria-hidden="true"></i> Send summary to ${c.name.split(' ')[0]}</button>
+    <button onclick="_summaryGuard('${id}')&&sendSummary('${id}')" class="btnp" style="border-radius:10px;${summarySendOn[id]?'':'opacity:.55;'}"><i class="ti ti-send" aria-hidden="true"></i> Send summary to ${_fileEsc(c.name.split(' ')[0])}</button>
     <button onclick="_summaryGuard('${id}')&&shareSummaryLink('${id}')" style="border-radius:10px;padding:11px;border:1px solid #1a4a2a;background:#0a2019;color:#4ec49a;font-size:14px;font-weight:500;cursor:pointer;display:flex;align-items:center;justify-content:center;gap:7px;${summarySendOn[id]?'':'opacity:.55;'}"><i class="ti ti-link" aria-hidden="true"></i> Send as link — no app needed</button>
     <div style="display:flex;gap:8px;">
       <button class="btng" style="flex:1;" onclick="_printSummary('${id}')"><i class="ti ti-download" aria-hidden="true"></i> Save as PDF</button>
@@ -4323,7 +4340,7 @@ function sendSummary(id){
   _storeSummary(id);
   nav('clients');
   setTimeout(()=>{
-    S.insertAdjacentHTML('afterbegin',`<div id="sent-toast" style="position:fixed;top:16px;left:50%;transform:translateX(-50%);background:#0a2019;border:1px solid #4ec49a;border-radius:10px;padding:10px 16px;font-size:13px;color:#4ec49a;display:flex;align-items:center;gap:7px;z-index:999;white-space:nowrap;"><i class="ti ti-check" aria-hidden="true"></i> Summary sent to ${c.name.split(' ')[0]}!</div>`);
+    S.insertAdjacentHTML('afterbegin',`<div id="sent-toast" style="position:fixed;top:16px;left:50%;transform:translateX(-50%);background:#0a2019;border:1px solid #4ec49a;border-radius:10px;padding:10px 16px;font-size:13px;color:#4ec49a;display:flex;align-items:center;gap:7px;z-index:999;white-space:nowrap;"><i class="ti ti-check" aria-hidden="true"></i> Summary sent to ${_fileEsc(c.name.split(' ')[0])}!</div>`);
     setTimeout(()=>document.getElementById('sent-toast')?.remove(),2800);
   },100);
 }
@@ -4360,7 +4377,7 @@ function shareSummaryLink(id){
     <div style="display:flex;align-items:center;gap:10px;margin-bottom:6px;"><div style="width:38px;height:38px;border-radius:10px;background:var(--accent-tint);display:flex;align-items:center;justify-content:center;flex-shrink:0;"><i class="ti ti-link" style="font-size:18px;color:var(--accent);"></i></div><div style="flex:1;min-width:0;"><div style="font-size:15px;font-weight:500;color:#f0f0f0;">Send ${c.name.split(' ')[0]} a link</div><div style="font-size:12px;color:#999;">They get their recap + routine — no app or login</div></div><button onclick="closeSendProd()" aria-label="Close" style="border:none;background:none;font-size:20px;color:#888;cursor:pointer;line-height:1;">✕</button></div>
     <div style="margin:8px 0 14px;background:#111;border:1px solid #2a2a2a;border-radius:10px;padding:10px 12px;display:flex;align-items:center;gap:8px;"><i class="ti ti-world" style="font-size:14px;color:#777;flex-shrink:0;"></i><span style="flex:1;font-size:12px;color:#bbb;word-break:break-all;">${linkUrl}</span></div>
     ${row("confirmSendLink('"+id+"','text')","ti-message-2","Send via text","Opens with their recap and routine")}
-    ${row("confirmSendLink('"+id+"','email')","ti-mail","Send via email","Includes a link back to ${c.name.split(' ')[0]}'s portal")}
+    ${row("confirmSendLink('"+id+"','email')","ti-mail","Send via email","Includes a link back to ${_fileEsc(c.name.split(' ')[0])}'s portal")}
     ${row("confirmSendLink('"+id+"','copy')","ti-copy","Copy link","Paste it anywhere you message clients")}
   </div>`;
   (document.querySelector('.shell')||document.body).appendChild(ov);
@@ -5080,7 +5097,7 @@ function renderVirtualClient(id){
     <div style="display:grid;grid-template-columns:1fr 1fr 1fr;gap:6px;margin-bottom:14px;">
       ${refItems.map(o=>realImg(o,'ti-sparkles','#1e1633','#a891ec')).join('')}
     </div>`:''}
-    ${sub&&sub.goals?`<div style="background:#1a1a1a;border:1px solid #2a2a2a;border-radius:12px;padding:12px 14px;margin-bottom:12px;"><div style="font-size:11px;font-weight:600;color:#aaa;text-transform:uppercase;letter-spacing:.06em;margin-bottom:6px;">What ${c.name.split(' ')[0]} is hoping for</div><div style="font-size:13px;color:#ddd;line-height:1.6;">${sub.goals.replace(/</g,'&lt;')}</div></div>`:''}
+    ${sub&&sub.goals?`<div style="background:#1a1a1a;border:1px solid #2a2a2a;border-radius:12px;padding:12px 14px;margin-bottom:12px;"><div style="font-size:11px;font-weight:600;color:#aaa;text-transform:uppercase;letter-spacing:.06em;margin-bottom:6px;">What ${_fileEsc(c.name.split(' ')[0])} is hoping for</div><div style="font-size:13px;color:#ddd;line-height:1.6;">${sub.goals.replace(/</g,'&lt;')}</div></div>`:''}
     <div style="background:#13102a;border:1px solid #2d2360;border-radius:12px;padding:14px;margin-bottom:12px;">
       <div style="display:flex;align-items:center;gap:8px;margin-bottom:10px;"><span class="aic"><i class="ti ti-sparkles" style="font-size:12px;"></i> ${v.analysisTitle}</span><span id="vc-analysis-tag" style="font-size:11px;color:${initialSrc==='sample'?'#666':'#4ec49a'};">${hasReal&&initialSrc==='sample'?'Analyzing photo…':_vcSourceLabel(initialSrc)}</span></div>
       <div id="vc-analysis-body">${_metricCardsHTML(initialMetrics)}</div>
@@ -5098,7 +5115,7 @@ function renderVirtualClient(id){
     </div>
     <div style="font-size:11px;font-weight:500;color:#aaa;text-transform:uppercase;letter-spacing:.07em;margin-bottom:8px;">Your expert notes</div>
     <textarea class="fi" style="height:100px;resize:none;line-height:1.6;margin-bottom:8px;" placeholder="Confirm the look in pro terms, answer their questions, recommend a treatment plan and next steps..."></textarea>
-    <button class="btnp" style="border-radius:8px;margin-top:8px;margin-bottom:8px;" onclick="sendVcReview('${id}');${back}"><i class="ti ti-send"></i> Send review to ${c.name.split(' ')[0]}</button>
+    <button class="btnp" style="border-radius:8px;margin-top:8px;margin-bottom:8px;" onclick="sendVcReview('${id}');${back}"><i class="ti ti-send"></i> Send review to ${_fileEsc(c.name.split(' ')[0])}</button>
   </div>`;
   // Run the analysis hook (server vision model if configured, else on-device pixel measurements),
   // then patch the card in place. Cached on the submission so re-renders don't re-run it.
@@ -7786,7 +7803,7 @@ function renderRoutineBuilder(){
     <div style="margin-bottom:14px;">
       ${sentEntries.map(cid=>{const c=CL[cid];const s=sent[cid];return `<div style="background:#161616;border:1px solid #2a2a2a;border-radius:11px;padding:10px 12px;margin-bottom:8px;display:flex;align-items:center;gap:10px;">
         <div style="width:34px;height:34px;border-radius:9px;background:${c.bg};display:flex;align-items:center;justify-content:center;font-size:12px;font-weight:500;color:${c.tc};flex-shrink:0;">${c.initials}</div>
-        <div style="flex:1;min-width:0;"><div style="font-size:13px;font-weight:600;color:#e0e0e0;white-space:nowrap;overflow:hidden;text-overflow:ellipsis;">${s.name}</div><div style="font-size:11px;color:#999;">${c.name.split(' ')[0]} · ${(s.items||[]).length} product${(s.items||[]).length>1?'s':''}</div></div>
+        <div style="flex:1;min-width:0;"><div style="font-size:13px;font-weight:600;color:#e0e0e0;white-space:nowrap;overflow:hidden;text-overflow:ellipsis;">${s.name}</div><div style="font-size:11px;color:#999;">${_fileEsc(c.name.split(' ')[0])} · ${(s.items||[]).length} product${(s.items||[]).length>1?'s':''}</div></div>
         <button onclick="editSentRoutine('${cid}')" style="background:#1a1a1a;border:1px solid #2a2a2a;color:#ddd;border-radius:7px;padding:6px 10px;font-size:11px;font-weight:600;cursor:pointer;font-family:inherit;">Edit</button>
         <button onclick="resendRoutine('${cid}')" style="background:var(--accent-tint);color:var(--accent);border:none;border-radius:7px;padding:6px 10px;font-size:11px;font-weight:600;cursor:pointer;font-family:inherit;">Resend</button>
       </div>`;}).join('')}
@@ -11532,7 +11549,7 @@ function renderNCNextStep(id){
       <i class="ti ti-device-tablet" style="font-size:19px;color:var(--accent);flex-shrink:0;margin-top:1px;"></i>
       <span style="flex:1;"><span style="font-size:14px;font-weight:600;color:#f0f0f0;display:block;">Fill it out myself</span><span style="font-size:12px;color:#999;display:block;margin-top:2px;">Answer the intake questions right now, on this device</span></span>
     </button>
-    <div style="font-size:11px;font-weight:600;color:#777;text-transform:uppercase;letter-spacing:.06em;margin-bottom:8px;">Or send to ${c.name.split(' ')[0]} \u2014 pick any</div>
+    <div style="font-size:11px;font-weight:600;color:#777;text-transform:uppercase;letter-spacing:.06em;margin-bottom:8px;">Or send to ${_fileEsc(c.name.split(' ')[0])} \u2014 pick any</div>
     <label style="display:flex;align-items:flex-start;gap:10px;padding:12px 13px;border:1px solid #2a2a2a;background:#1a1a1a;border-radius:11px;margin-bottom:8px;cursor:pointer;">
       <input type="checkbox" id="ncn-invite" checked onchange="_ncNextChecks.invite=this.checked;_ncNextUpdateBtn()" style="margin-top:2px;width:17px;height:17px;accent-color:var(--accent);flex-shrink:0;">
       <span style="flex:1;"><span style="font-size:13px;font-weight:600;color:#e0e0e0;display:block;">Invite to the app</span><span style="font-size:11px;color:#999;display:block;margin-top:2px;">So they can see summaries, aftercare &amp; rebook anytime</span></span>

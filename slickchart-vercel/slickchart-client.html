@@ -1102,6 +1102,19 @@ function setNav(id){
 
 function _a11yEnhance(){try{document.querySelectorAll('[onclick]:not(button):not(a):not(input):not(select):not(textarea):not([role])').forEach(el=>{el.setAttribute('role','button');if(!el.hasAttribute('tabindex'))el.setAttribute('tabindex','0');});}catch(e){}}
 try{document.addEventListener('keydown',function(e){const t=e.target;if((e.key==='Enter'||e.key===' ')&&t&&t.getAttribute&&t.getAttribute('role')==='button'&&t.hasAttribute('onclick')&&!['BUTTON','A','INPUT','SELECT','TEXTAREA'].includes(t.tagName)){e.preventDefault();t.click();}});}catch(e){}
+// Make click-only elements keyboard-operable after each render (see provider app for rationale).
+function _a11yEnhanceClickables(root){
+  if(!root||!root.querySelectorAll)return;
+  const nodes=root.querySelectorAll('[onclick]');
+  for(let i=0;i<nodes.length;i++){
+    const el=nodes[i];const tag=el.tagName;
+    if(tag==='BUTTON'||tag==='A'||tag==='INPUT'||tag==='SELECT'||tag==='TEXTAREA')continue;
+    if(el.getAttribute('aria-hidden')==='true')continue;
+    if(el.closest('button,a'))continue;
+    if(!el.hasAttribute('role'))el.setAttribute('role','button');
+    if(!el.hasAttribute('tabindex'))el.setAttribute('tabindex','0');
+  }
+}
 try{if(typeof MutationObserver!=='undefined'){new MutationObserver(()=>_a11yEnhance()).observe(document.body,{childList:true,subtree:true});_a11yEnhance();}}catch(e){}
 let _navStack=[],_navCur=null,_navBacking=false;
 function navBack(){if(_navStack.length){const prev=_navStack.pop();_navBacking=true;nav(prev);_navBacking=false;}}
@@ -1140,6 +1153,7 @@ function nav(screen){
     _navCur=screen;
     currentScreen=screen;
     fn();
+    try{_a11yEnhanceClickables(S);}catch(e){}
     if(screen==='home'||screen==='welcome')_navStack.length=0;
     const bb=document.getElementById('topbar-back');if(bb)bb.style.display=(_navStack.length&&screen!=='checkin'&&screen!=='welcome')?'flex':'none';
     S.scrollTop=0;
@@ -1984,8 +1998,11 @@ function _fillFormFieldHTML(q,i){
       <div style="font-size:11px;color:#b8a898;margin-top:5px;">Tap to upload from your camera or photos.</div>
     </div>`;
   }
-  // Short text (default)
-  return `<div style="${wrapStyle}">${label}<input id="ff-${i}" ${aria} type="text" style="width:100%;background:#faf7f4;border:1px solid #e8ddd3;border-radius:10px;padding:11px;font-size:14px;color:#3a2f28;box-sizing:border-box;"></div>`;
+  // Short text (default) — pick email/tel input mode from the label for a better
+  // mobile keyboard (the field type is generic "Short text").
+  const _it=/e-?mail/i.test(q.label||'')?'email':(/phone|mobile|cell/i.test(q.label||'')?'tel':'text');
+  const _im=_it==='email'?' inputmode="email" autocomplete="email"':(_it==='tel'?' inputmode="tel" autocomplete="tel"':'');
+  return `<div style="${wrapStyle}">${label}<input id="ff-${i}" ${aria} type="${_it}"${_im} style="width:100%;background:#faf7f4;border:1px solid #e8ddd3;border-radius:10px;padding:11px;font-size:14px;color:#3a2f28;box-sizing:border-box;"></div>`;
 }
 function _ffSetChoice(i,val,btn){
   const hid=document.getElementById('ff-'+i);if(hid)hid.value=val;
@@ -2021,7 +2038,14 @@ function _submitFillForm(){
   const pf=_pendingForm();if(!pf)return;
   const qs=_orderedFormQs(pf.qs);
   const answers={};const flagged=[];let signed=false;
-  let missingRequired=false;
+  let missingRequired=false;let badFormat='';
+  // Email/phone fields come through as generic "Short text" (there's no dedicated type),
+  // so infer them from the label to validate format. Only validates when a value is
+  // present — emptiness is handled by the required check.
+  const _looksEmail=lbl=>/e-?mail/i.test(lbl||'');
+  const _looksPhone=lbl=>/phone|mobile|cell/i.test(lbl||'');
+  const _validEmail=v=>/^[^\s@]+@[^\s@]+\.[^\s@]+$/.test(v);
+  const _validPhone=v=>{const d=v.replace(/[^0-9]/g,'');return d.length>=7&&d.length<=15;};
   qs.forEach((q,i)=>{
     if(q.type==='Contraindications'){
       const checked=(q.items||[]).map((it,ii)=>({it,el:document.getElementById(`ff-${i}-${ii}`)})).filter(x=>x.el&&x.el.checked).map(x=>x.it);
@@ -2041,9 +2065,15 @@ function _submitFillForm(){
       answers[q.id]=val;
       if(q.type==='Signature'&&val)signed=true;
       if(q.required&&!val)missingRequired=true;
+      // Format-check email/phone short-text fields when the person entered something.
+      if(val&&(q.type==='Short text'||!q.type)){
+        if(_looksEmail(q.label)&&!_validEmail(val))badFormat=badFormat||'Please enter a valid email address.';
+        else if(_looksPhone(q.label)&&!_validPhone(val))badFormat=badFormat||'Please enter a valid phone number.';
+      }
     }
   });
   if(missingRequired){ if(typeof proToast==='function')proToast('Please fill in the required fields'); return; }
+  if(badFormat){ if(typeof proToast==='function')proToast(badFormat); return; }
   const dateLabel=new Date().toLocaleDateString('en-US',{month:'short',day:'numeric',year:'numeric'});
   const _finishFormSent=()=>{
     // Remove it from the pending list only once we know it's been sent, so a failed
