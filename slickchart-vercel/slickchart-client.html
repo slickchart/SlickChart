@@ -1977,6 +1977,7 @@ function _orderedFormQs(qs){return (qs||[]).slice().sort((a,b)=>(a&&a.type==='Si
 function renderFillForm(){
   const pf=_pendingForm();
   if(!pf){ nav('home'); return; }
+  _ffLoadDraft();
   document.getElementById('tt').textContent=pf.title;
   const qs=_orderedFormQs(pf.qs);
   S.innerHTML=`
@@ -1994,26 +1995,29 @@ function _fillFormFieldHTML(q,i){
   if(q.type==='Contraindications'){
     return `<div style="${wrapStyle}background:#fff8f0;border:1px solid #f0dcc0;border-radius:12px;padding:12px 14px;">
       <div style="font-size:12px;font-weight:700;color:#a06a2a;text-transform:uppercase;letter-spacing:.04em;margin-bottom:8px;">${q.label}</div>
-      ${(q.items||[]).map((it,ii)=>`<label style="display:flex;align-items:flex-start;gap:8px;padding:6px 0;cursor:pointer;"><input type="checkbox" id="ff-${i}-${ii}" style="margin-top:3px;width:16px;height:16px;accent-color:var(--accent);flex-shrink:0;"><span style="font-size:13px;color:#5a4a3a;line-height:1.5;">${it}</span></label>`).join('')}
+      ${(q.items||[]).map((it,ii)=>{const ck=(_ffDraft['q'+i+'_'+ii]===true);return `<label style="display:flex;align-items:flex-start;gap:8px;padding:6px 0;cursor:pointer;"><input type="checkbox" id="ff-${i}-${ii}" ${ck?'checked':''} onchange="_ffSetDraft('q${i}_${ii}',this.checked)" style="margin-top:3px;width:16px;height:16px;accent-color:var(--accent);flex-shrink:0;"><span style="font-size:13px;color:#5a4a3a;line-height:1.5;">${it}</span></label>`;}).join('')}
     </div>`;
   }
   if(q.type==='Signature'){
-    return `<div style="${wrapStyle}">${label}<input id="ff-${i}" ${aria} type="text" placeholder="Type your full name to sign" style="width:100%;background:#faf7f4;border:1px solid #e8ddd3;border-radius:10px;padding:12px;font-size:15px;font-family:'Brush Script MT',cursive;color:#3a2f28;box-sizing:border-box;"><div style="font-size:11px;color:#b8a898;margin-top:4px;">Typing your name here serves as your signature.</div></div>`;
+    return `<div style="${wrapStyle}">${label}<input id="ff-${i}" ${aria} type="text" placeholder="Type your full name to sign" value="${_txt(_ffDraft['q'+i]||'').replace(/"/g,'&quot;')}" oninput="_ffSetDraft('q${i}',this.value)" style="width:100%;background:#faf7f4;border:1px solid #e8ddd3;border-radius:10px;padding:12px;font-size:15px;font-family:'Brush Script MT',cursive;color:#3a2f28;box-sizing:border-box;"><div style="font-size:11px;color:#b8a898;margin-top:4px;">Typing your name here serves as your signature.</div></div>`;
   }
   if(q.type==='Yes / No'){
-    return `<div style="${wrapStyle}">${label}<div style="display:flex;gap:8px;"><button type="button" onclick="_ffSetChoice(${i},'Yes',this)" class="ff-choice" data-i="${i}" style="flex:1;padding:10px;border-radius:9px;border:1.5px solid #e8ddd3;background:#faf7f4;font-size:13px;font-weight:600;color:#5a4a3a;cursor:pointer;">Yes</button><button type="button" onclick="_ffSetChoice(${i},'No',this)" class="ff-choice" data-i="${i}" style="flex:1;padding:10px;border-radius:9px;border:1.5px solid #e8ddd3;background:#faf7f4;font-size:13px;font-weight:600;color:#5a4a3a;cursor:pointer;">No</button></div><input type="hidden" id="ff-${i}" value=""></div>`;
+    const dv=_ffDraft['q'+i]||'';
+    const bs=on=>`flex:1;padding:10px;border-radius:9px;border:1.5px solid ${on?'var(--accent)':'#e8ddd3'};background:${on?'var(--accent-lt)':'#faf7f4'};font-size:13px;font-weight:600;color:${on?'var(--accent)':'#5a4a3a'};cursor:pointer;`;
+    return `<div style="${wrapStyle}">${label}<div style="display:flex;gap:8px;"><button type="button" onclick="_ffSetChoice(${i},'Yes',this)" class="ff-choice" data-i="${i}" style="${bs(dv==='Yes')}">Yes</button><button type="button" onclick="_ffSetChoice(${i},'No',this)" class="ff-choice" data-i="${i}" style="${bs(dv==='No')}">No</button></div><input type="hidden" id="ff-${i}" value="${_txt(dv).replace(/"/g,'&quot;')}"></div>`;
   }
   if(q.type==='Single select'){
-    return `<div style="${wrapStyle}">${label}<div style="display:flex;flex-direction:column;gap:6px;">${(q.options||[]).map((o,oi)=>`<button type="button" onclick="_ffSetChoice(${i},'${o.replace(/'/g,"\\'")}',this)" class="ff-choice" data-i="${i}" style="text-align:left;padding:10px 12px;border-radius:9px;border:1.5px solid #e8ddd3;background:#faf7f4;font-size:13px;color:#5a4a3a;cursor:pointer;">${o}</button>`).join('')}</div><input type="hidden" id="ff-${i}" value=""></div>`;
+    const dv=_ffDraft['q'+i]||'';
+    return `<div style="${wrapStyle}">${label}<div style="display:flex;flex-direction:column;gap:6px;">${(q.options||[]).map((o,oi)=>{const on=dv===o;return `<button type="button" onclick="_ffSetChoice(${i},'${o.replace(/'/g,"\\'")}',this)" class="ff-choice" data-i="${i}" style="text-align:left;padding:10px 12px;border-radius:9px;border:1.5px solid ${on?'var(--accent)':'#e8ddd3'};background:${on?'var(--accent-lt)':'#faf7f4'};font-size:13px;color:${on?'var(--accent)':'#5a4a3a'};cursor:pointer;">${o}</button>`;}).join('')}</div><input type="hidden" id="ff-${i}" value="${_txt(dv).replace(/"/g,'&quot;')}"></div>`;
   }
   if(q.type==='Multiple choice'){
-    return `<div style="${wrapStyle}">${label}${(q.options||[]).map((o,oi)=>`<label style="display:flex;align-items:center;gap:8px;padding:5px 0;cursor:pointer;"><input type="checkbox" id="ff-${i}-${oi}" style="width:16px;height:16px;accent-color:var(--accent);"><span style="font-size:13px;color:#5a4a3a;">${o}</span></label>`).join('')}</div>`;
+    return `<div style="${wrapStyle}">${label}${(q.options||[]).map((o,oi)=>{const ck=(_ffDraft['q'+i+'_'+oi]===true);return `<label style="display:flex;align-items:center;gap:8px;padding:5px 0;cursor:pointer;"><input type="checkbox" id="ff-${i}-${oi}" ${ck?'checked':''} onchange="_ffSetDraft('q${i}_${oi}',this.checked)" style="width:16px;height:16px;accent-color:var(--accent);"><span style="font-size:13px;color:#5a4a3a;">${o}</span></label>`;}).join('')}</div>`;
   }
   if(q.type==='Long text'){
-    return `<div style="${wrapStyle}">${label}<textarea id="ff-${i}" style="width:100%;height:80px;resize:none;background:#faf7f4;border:1px solid #e8ddd3;border-radius:10px;padding:11px;font-size:14px;color:#3a2f28;font-family:inherit;box-sizing:border-box;line-height:1.5;"></textarea></div>`;
+    return `<div style="${wrapStyle}">${label}<textarea id="ff-${i}" oninput="_ffSetDraft('q${i}',this.value)" style="width:100%;height:80px;resize:none;background:#faf7f4;border:1px solid #e8ddd3;border-radius:10px;padding:11px;font-size:14px;color:#3a2f28;font-family:inherit;box-sizing:border-box;line-height:1.5;">${_txt(_ffDraft['q'+i]||'')}</textarea></div>`;
   }
   if(q.type==='Date'){
-    return `<div style="${wrapStyle}">${label}<input id="ff-${i}" ${aria} type="date" style="width:100%;background:#faf7f4;border:1px solid #e8ddd3;border-radius:10px;padding:11px;font-size:14px;color:#3a2f28;box-sizing:border-box;"></div>`;
+    return `<div style="${wrapStyle}">${label}<input id="ff-${i}" ${aria} type="date" value="${_txt(_ffDraft['q'+i]||'').replace(/"/g,'&quot;')}" oninput="_ffSetDraft('q${i}',this.value)" style="width:100%;background:#faf7f4;border:1px solid #e8ddd3;border-radius:10px;padding:11px;font-size:14px;color:#3a2f28;box-sizing:border-box;"></div>`;
   }
   if(q.type==='File upload'||q.type==='Photo upload'){
     return `<div style="${wrapStyle}">${label}
@@ -2026,16 +2030,36 @@ function _fillFormFieldHTML(q,i){
   // mobile keyboard (the field type is generic "Short text").
   const _it=/e-?mail/i.test(q.label||'')?'email':(/phone|mobile|cell/i.test(q.label||'')?'tel':'text');
   const _im=_it==='email'?' inputmode="email" autocomplete="email"':(_it==='tel'?' inputmode="tel" autocomplete="tel"':'');
-  return `<div style="${wrapStyle}">${label}<input id="ff-${i}" ${aria} type="${_it}"${_im} style="width:100%;background:#faf7f4;border:1px solid #e8ddd3;border-radius:10px;padding:11px;font-size:14px;color:#3a2f28;box-sizing:border-box;"></div>`;
+  return `<div style="${wrapStyle}">${label}<input id="ff-${i}" ${aria} type="${_it}"${_im} value="${_txt(_ffDraft['q'+i]||'').replace(/"/g,'&quot;')}" oninput="_ffSetDraft('q${i}',this.value)" style="width:100%;background:#faf7f4;border:1px solid #e8ddd3;border-radius:10px;padding:11px;font-size:14px;color:#3a2f28;box-sizing:border-box;"></div>`;
 }
 function _ffSetChoice(i,val,btn){
   const hid=document.getElementById('ff-'+i);if(hid)hid.value=val;
+  _ffSetDraft('q'+i,val);
   const group=document.querySelectorAll(`.ff-choice[data-i="${i}"]`);
   group.forEach(b=>{b.style.borderColor='#e8ddd3';b.style.background='#faf7f4';b.style.color='#5a4a3a';});
   if(btn){btn.style.borderColor='var(--accent)';btn.style.background='var(--accent-lt)';btn.style.color='var(--accent)';}
 }
 // Photos attached to a File-upload form question, keyed by field index.
 let _ffPhotos={};
+// Draft persistence for intake forms — clients fill long forms (medical history,
+// allergies, meds) on mobile and get interrupted. Without this, navigating away or a
+// tab reload wipes everything typed. Answers are keyed by form id + question index and
+// mirrored to localStorage so they survive until the form is submitted.
+let _ffDraft={};
+function _ffDraftStorageKey(){return 'sc_ffdraft_'+((typeof _fillFormId!=='undefined'&&_fillFormId)||'form');}
+function _ffLoadDraft(){
+  try{const raw=localStorage.getItem(_ffDraftStorageKey());_ffDraft=raw?(JSON.parse(raw)||{}):{};}catch(e){_ffDraft={};}
+}
+let _ffDraftTimer=null;
+function _ffSetDraft(key,val){
+  _ffDraft[key]=val;
+  clearTimeout(_ffDraftTimer);
+  _ffDraftTimer=setTimeout(()=>{try{localStorage.setItem(_ffDraftStorageKey(),JSON.stringify(_ffDraft));}catch(e){}},400);
+}
+function _ffClearDraft(){
+  _ffDraft={};
+  try{localStorage.removeItem(_ffDraftStorageKey());}catch(e){}
+}
 function _ffAddPhotos(i){
   _pickImages(function(srcs){
     if(!srcs||!srcs.length)return;
@@ -2105,6 +2129,7 @@ function _submitFillForm(){
     const p=activeProvider();
     p.pendingForms=(p.pendingForms||[]).filter(x=>x.formId!==pf.formId);
     _ffPhotos={};
+    _ffClearDraft();   // typed answers are now sent — drop the saved draft
     if(typeof proToast==='function')proToast('Sent \u2713');
     nav('home');
   };
@@ -2113,6 +2138,7 @@ function _submitFillForm(){
     if(typeof proToast==='function')proToast('Sending\u2026');
     _clientSubmit('form',{formId:pf.formId,title:pf.title,answers,flagged,signed,date:dateLabel})
       .then(function(res){
+        if(res&&res.duplicate)return;   // a submit is already in flight — ignore the duplicate tap
         if(res&&res.ok!==false)_finishFormSent();
         else if(typeof proToast==='function')proToast("Couldn't send \u2014 check your connection and tap Submit again");
       });
@@ -2233,6 +2259,9 @@ function _pickImages(cb){
   inp.click();
 }
 function _downscaleImg(file,cb,max=900){
+  // Guard against enormous files (e.g. RAW/HEIC) that can crash a mobile tab when read
+  // into a base64 data URL. 25MB is generous for a photo; anything bigger is dropped.
+  if(file&&file.size&&file.size>25*1024*1024){cb('');return;}
   const r=new FileReader();
   r.onload=e=>{
     const img=new Image();
@@ -2243,10 +2272,14 @@ function _downscaleImg(file,cb,max=900){
       try{c.getContext('2d').drawImage(img,0,0,w,h);cb(c.toDataURL('image/jpeg',0.72));}
       catch(_){cb(e.target.result);}
     };
-    img.onerror=()=>cb(e.target.result);
+    // Decode failed — return empty rather than the full-size original (which would
+    // defeat downscaling and could bloat storage). Callers drop empty results.
+    img.onerror=()=>cb('');
     img.src=e.target.result;
   };
-  r.onerror=()=>{};
+  // File read failed — must still call back, or a batch upload's completion counter
+  // never advances and the whole "add photos" flow hangs silently forever.
+  r.onerror=()=>cb('');
   r.readAsDataURL(file);
 }
 
@@ -2381,6 +2414,7 @@ function submitCheckin(){
     S.innerHTML=_sendingHTML('Sending your check-in…');
     _clientSubmit('checkin',{client:client.name,treatment:client.treatment,dateLabel:client.nextDate,time:client.nextTime,groups:pay.groups,flagged:pay.flagged,notes:pay.notes,photos:pay.photos||[]})
       .then(function(res){
+        if(res&&res.duplicate)return;
         if(res&&res.ok!==false){ prov.checkinDone=true; S.innerHTML=_checkinSuccessHTML(flagged); }
         else{ S.innerHTML=_submitFailedHTML('submitCheckin()',"Couldn't send your check-in"); }
       });
@@ -2566,6 +2600,7 @@ function submitRebook(){
     S.innerHTML=_sendingHTML('Sending your request…');
     _clientSubmit('booking',{treatment:booking.treatment,date:booking.date,dateLabel:booking.dateLabel,time:booking.time,note:booking.note,client:client.name})
       .then(function(res){
+        if(res&&res.duplicate)return;
         if(res&&res.ok!==false)_showRebookSent();
         else S.innerHTML=_submitFailedHTML('submitRebook()',"Couldn't send your request");
       });
@@ -2614,6 +2649,7 @@ function closeBuySheet(){const e=document.getElementById('buy-sheet');if(e)e.rem
 function copyCode(code){try{navigator.clipboard&&navigator.clipboard.writeText(code);}catch(e){}if(typeof pushNotify==='function')pushNotify({type:'code',icon:'ti-discount-2',col:'var(--accent-lt)',ic:'var(--accent)',title:'Code copied',body:code});}
 // ── Real image capture, downscaling, and on-device pixel analysis ──
 function _downscaleImage(file,maxDim,cb){
+  if(file&&file.size&&file.size>25*1024*1024){cb('');return;}
   const r=new FileReader();
   r.onload=e=>{const img=new Image();img.onload=()=>{
     let w=img.width,h=img.height;const scale=Math.min(1,maxDim/Math.max(w,h));w=Math.round(w*scale);h=Math.round(h*scale);
@@ -3321,26 +3357,35 @@ function _getClientToken(){
     return new URLSearchParams(location.search).get('c')||'';
   }catch(e){ return ''; }
 }
+var _clientSubmitInFlight={};
 function _clientSubmit(kind,payload,_retried){
   try{
     var tok=client._token; if(!tok)return Promise.resolve(null);
+    // Block a double-tap on the same action while one is already in flight — otherwise a
+    // slow/retrying request lets an impatient client submit a duplicate check-in, form,
+    // or booking. The retry re-enters with _retried=true and must bypass this guard.
+    if(!_retried){
+      if(_clientSubmitInFlight[kind])return Promise.resolve({ok:false,error:'inflight',duplicate:true});
+      _clientSubmitInFlight[kind]=true;
+    }
+    var _clear=function(v){if(!_retried)_clientSubmitInFlight[kind]=false;return v;};
     return fetch('/api/client-submit',{method:'POST',headers:{'Content-Type':'application/json'},body:JSON.stringify({t:tok,kind:kind,payload:payload||{}})})
       .then(function(r){
         // A non-OK HTTP status means it did NOT reach the provider — treat as failure so
         // callers on critical paths (check-in, booking, forms) don't show a false "sent".
         if(!r.ok){
-          if(!_retried)return new Promise(function(res){setTimeout(res,1200);}).then(function(){return _clientSubmit(kind,payload,true);});
+          if(!_retried)return new Promise(function(res){setTimeout(res,1200);}).then(function(){return _clientSubmit(kind,payload,true);}).then(_clear);
           return {ok:false,error:'server'};
         }
-        return r.json().then(function(j){return (j&&typeof j.ok!=='undefined')?j:{ok:true};}).catch(function(){return {ok:true};});
+        return r.json().then(function(j){return (j&&typeof j.ok!=='undefined')?j:{ok:true};}).catch(function(){return {ok:true};}).then(_clear);
       })
       .catch(function(){
         // Network error — retry once before giving up, since these are the client's
         // most important actions and a single blip shouldn't silently drop them.
-        if(!_retried)return new Promise(function(res){setTimeout(res,1200);}).then(function(){return _clientSubmit(kind,payload,true);});
+        if(!_retried)return new Promise(function(res){setTimeout(res,1200);}).then(function(){return _clientSubmit(kind,payload,true);}).then(_clear);
         return {ok:false,error:'network'};
       });
-  }catch(e){ return Promise.resolve({ok:false,error:'network'}); }
+  }catch(e){ if(!_retried)_clientSubmitInFlight[kind]=false; return Promise.resolve({ok:false,error:'network'}); }
 }
 function _clientLinkError(msg){
   var S=document.getElementById('S');
