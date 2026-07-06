@@ -6898,6 +6898,7 @@ function renderFormPreview(tid){
 
 // ── SIGN ON THIS DEVICE (in-person) ──
 let _signPadInk=false;
+let _signPadWinUp=null; // reference to the window 'mouseup' handler so we can remove it on re-init
 function _sdPick(btn,id,val){window._sdAns=window._sdAns||{};window._sdAns[id]=val;const wrap=btn.parentElement;if(wrap)Array.from(wrap.children).forEach(b=>{b.style.borderColor='';b.style.color='';b.style.background='';});btn.style.borderColor='var(--accent)';btn.style.color='var(--accent)';btn.style.background='var(--accent-a08)';}
 function _sdQHTML(q){
   if(q.type==='Contraindications')return _formQHTML(q);
@@ -6945,6 +6946,11 @@ function initSignPad(){
   const start=e=>{drawing=true;last=pos(e);if(e.cancelable)e.preventDefault();};
   const move=e=>{if(!drawing)return;const p=pos(e);ctx.beginPath();ctx.moveTo(last.x,last.y);ctx.lineTo(p.x,p.y);ctx.stroke();last=p;_signPadInk=true;if(e.cancelable)e.preventDefault();};
   const end=()=>{drawing=false;};
+  // The canvas listeners die with the canvas when it re-renders, but a window listener
+  // does not — so remove any handler left from a previous open before adding this one,
+  // otherwise each visit to the signing screen leaks another window 'mouseup'.
+  try{if(_signPadWinUp)window.removeEventListener('mouseup',_signPadWinUp);}catch(e){}
+  _signPadWinUp=end;
   c.addEventListener('mousedown',start);c.addEventListener('mousemove',move);window.addEventListener('mouseup',end);
   c.addEventListener('touchstart',start,{passive:false});c.addEventListener('touchmove',move,{passive:false});c.addEventListener('touchend',end);
 }

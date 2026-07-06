@@ -866,9 +866,9 @@ function openProviderSheet(){
     <div style="width:36px;height:4px;background:#e8ddd3;border-radius:2px;margin:0 auto 16px;"></div>
     <div style="font-size:16px;font-weight:700;color:#1a1a1a;margin-bottom:3px;">Your providers</div>
     <div style="font-size:13px;color:#b8a898;margin-bottom:16px;">Switch between the practices you visit — all in one login.</div>
-    ${client.providers.map(p=>{const on=p.id===client.activeProviderId;return`
+    ${client.providers.map(p=>{const on=p.id===client.activeProviderId;const _br=(p.brand&&p.brand.primary)?p.brand:{primary:'#C8A882',secondary:'#2C5F8A'};return`
     <button onclick="switchProvider('${p.id}')" style="width:100%;text-align:left;display:flex;align-items:center;gap:12px;background:${on?'var(--accent-lt)':'#fff'};border:1.5px solid ${on?'var(--accent)':'#f0ebe4'};border-radius:14px;padding:13px;margin-bottom:10px;cursor:pointer;">
-      <div style="width:46px;height:46px;border-radius:12px;background:linear-gradient(135deg,${p.brand.primary},${p.brand.secondary});display:flex;align-items:center;justify-content:center;flex-shrink:0;font-size:15px;font-weight:700;color:#fff;box-shadow:0 2px 8px ${p.brand.primary}55;">${p.initials}</div>
+      <div style="width:46px;height:46px;border-radius:12px;background:linear-gradient(135deg,${_br.primary},${_br.secondary||_br.primary});display:flex;align-items:center;justify-content:center;flex-shrink:0;font-size:15px;font-weight:700;color:#fff;box-shadow:0 2px 8px ${_br.primary}55;">${p.initials}</div>
       <div style="flex:1;min-width:0;">
         <div style="display:flex;align-items:center;gap:7px;"><span style="font-size:15px;font-weight:700;color:#1a1a1a;">${p.studio}</span>${p.connected?'':`<span style="font-size:9px;font-weight:700;color:#b8a898;border:1px solid #e8ddd3;border-radius:4px;padding:1px 5px;">DEMO</span>`}</div>
         <div style="font-size:12px;color:#9a8a7e;">${p.first} · ${p.kind}</div>
@@ -2917,6 +2917,7 @@ function renderLatestSummary(){
 // ── MAGIC-LINK LANDING (no app / no login needed) ──
 // ── Client fills out the form for real: answers + contraindication flags + signature ──
 let _cfPadInk=false;
+let _cfPadWinUp=null; // reference to the window 'mouseup' handler so we can remove it on re-init
 function _cfField(q){
   if(q.type==='Contraindications')return '';
   const id='cf-'+(q.id!=null?q.id:Math.random().toString(36).slice(2));
@@ -2968,6 +2969,11 @@ function _cfSignInit(){
   const start=e=>{drawing=true;last=pos(e);if(e.cancelable)e.preventDefault();};
   const move=e=>{if(!drawing)return;const p=pos(e);ctx.beginPath();ctx.moveTo(last.x,last.y);ctx.lineTo(p.x,p.y);ctx.stroke();last=p;_cfPadInk=true;if(e.cancelable)e.preventDefault();};
   const end=()=>{drawing=false;};
+  // Remove any window 'mouseup' left from a previous open so it doesn't accumulate each
+  // time the on-device signing pad is shown (canvas listeners die with the canvas; the
+  // window one does not).
+  try{if(_cfPadWinUp)window.removeEventListener('mouseup',_cfPadWinUp);}catch(e){}
+  _cfPadWinUp=end;
   c.addEventListener('mousedown',start);c.addEventListener('mousemove',move);window.addEventListener('mouseup',end);
   c.addEventListener('touchstart',start,{passive:false});c.addEventListener('touchmove',move,{passive:false});c.addEventListener('touchend',end);
 }
