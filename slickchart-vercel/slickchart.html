@@ -9527,7 +9527,13 @@ async function _biPreview(){
 }
 
 // ── Export center (Pro → Export data) ──
-function _downloadCSV(fname,rows){const csv=rows.map(r=>r.map(c=>{c=String(c==null?'':c);return /[",\n]/.test(c)?'"'+c.replace(/"/g,'""')+'"':c;}).join(',')).join('\r\n');try{const a=document.createElement('a');a.href='data:text/csv;charset=utf-8,'+encodeURIComponent(csv);a.download=fname;(document.querySelector('.shell')||document.body).appendChild(a);a.click();a.remove();}catch(e){}}
+function _downloadCSV(fname,rows){const csv=rows.map(r=>r.map(c=>{c=String(c==null?'':c);
+  // Neutralize CSV/formula injection: a cell starting with = + - @ (or tab/CR) is
+  // treated as a formula by Excel/Sheets, so a client-supplied name or note like
+  // "=cmd|'/c calc'!A1" could execute on export. Prefix such cells with an apostrophe
+  // so spreadsheets render them as plain text.
+  if(/^[=+\-@\t\r]/.test(c))c="'"+c;
+  return /[",\n]/.test(c)?'"'+c.replace(/"/g,'""')+'"':c;}).join(',')).join('\r\n');try{const a=document.createElement('a');a.href='data:text/csv;charset=utf-8,'+encodeURIComponent(csv);a.download=fname;(document.querySelector('.shell')||document.body).appendChild(a);a.click();a.remove();}catch(e){}}
 function _exportServicesCSV(){const rows=[['Service','Price']].concat((_svcMenu||[]).map(s=>[s.name||'',(+s.price||0).toFixed(2)]));_downloadCSV('slickchart-services.csv',rows);if(typeof proToast==='function')proToast('Exported '+((_svcMenu||[]).length)+' services');}
 function _exportClientsCSV(){const rows=[['Name','Email','Phone','Date of birth','Current treatment','Last visit','Next visit','Concerns','Allergies']].concat(Object.values(CL).map(c=>[c.name||'',c.email||'',c.phone||'',c.birthday||'',c.treatment||'',c.lastVisit||'',c.nextVisit||'',c.concerns||'',c.allergies||'']));_downloadCSV('slickchart-clients.csv',rows);if(typeof proToast==='function')proToast('Exported '+Object.keys(CL).length+' clients');}
 function _exportPaymentsCSV(){const rows=[['Date','Client','Subtotal','Tax','Total','Method','Status','Note']].concat((_payments||[]).map(p=>{const total=parseFloat(p.amount)||0;const tax=parseFloat(p.taxAmount)||0;return [p.date||'',p.clientName||'',(total-tax).toFixed(2),tax.toFixed(2),total.toFixed(2),p.method||'',p.status||'',p.note||''];}));_downloadCSV('slickchart-sales.csv',rows);if(typeof proToast==='function')proToast('Exported '+((_payments||[]).length)+' payments');}
