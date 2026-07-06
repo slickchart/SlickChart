@@ -206,6 +206,13 @@ const allProfessions=[
     terms:['Last brow service','Blood thinners','Skin type','Fitzpatrick','Keloid history','Retinol use'],
     recordSections:['Mapping notes','Shape & arch design','Pigment used (brand/color/code)','Technique applied','Skin observations','Healing instructions','Touch-up date'],
     checkinLabel:'Brow & health questions',built:true},
+  {id:'pmu',name:'Permanent makeup artist',icon:'🖋️',bg:'#1e0d33',ic:'#c084fc',badge:'bp',badgeLabel:'PMU',
+    sub:'Microblading, powder brows, lip blush, eyeliner, areola',
+    notes:['PMU record','Free form','Custom'],
+    forms:['PMU client intake','PMU consent & waiver','Photo release'],
+    terms:['Last PMU service','Blood thinners','Skin type','Fitzpatrick','Keloid history','Retinol / Accutane use'],
+    recordSections:['Area & design','Pigment used (brand/color/code)','Needle configuration','Technique & depth','Passes / layers','Skin observations','Healing & aftercare','Touch-up date'],
+    checkinLabel:'PMU & health questions',built:true},
   {id:'makeup',name:'Makeup artist',icon:'💄',bg:'#2a0f1a',ic:'#e87070',badge:'br',badgeLabel:'Beauty',
     sub:'Bridal, editorial, special effects, everyday glam',
     notes:['Service record','Free form','Custom'],
@@ -516,6 +523,26 @@ let formQs=[
   {id:7,label:'I consent to treatment & confirm my information is accurate',type:'Signature',required:true},
 ];
 let nextQId=20;
+
+// ── Shared, reusable form question sets ─────────────────────────────────────
+// Photo-release consent questions. When these labels appear on a submitted form,
+// _capturePhotoConsent() auto-extracts the yes/no answers onto the client file.
+function _photoReleaseQs(startId){
+  const b=startId||9100;
+  return [
+    {id:b,label:'I consent to before & after photos being taken for my records',type:'Yes / No',required:true},
+    {id:b+1,label:'I allow my before & after photos to be shared on social media / portfolio (faces may be cropped on request)',type:'Yes / No',required:false},
+    {id:b+2,label:'I understand I can withdraw photo consent at any time in writing',type:'Signature',required:true},
+  ];
+}
+// A standalone reference-photo upload question for professions where a visual
+// reference matters (hair, barber, brow, pmu, makeup, lash).
+function _referencePhotoQ(id){
+  return {id:id||9200,label:'Upload a reference photo (inspiration or your current look)',type:'Photo upload',required:false,multiple:true};
+}
+// Professions that should get a reference-photo prompt on intake + pre-visit check-in.
+const _refPhotoProfs=['hair','barber','brow','pmu','makeup','lash'];
+
 
 const protocols=[
   {id:'p1',name:'Signature Brightening Facial',icon:'ti-sun',col:'var(--accent-tint)',ic:'var(--accent)',steps:[{t:'Cleanse',d:'3 min',n:'Double cleanse — oil then gel.'},{t:'Enzyme exfoliation',d:'8 min',n:'Papaya enzyme mask, steam 5 min.'},{t:'Extractions',d:'10 min',n:'Comedone extractions as needed.'},{t:'Vitamin C serum',d:'2 min',n:'SkinCeuticals CE Ferulic, press in.'},{t:'Brightening booster',d:'10 min',n:'GlyMed niacinamide + kojic acid.'},{t:'Hydrating mask',d:'12 min',n:'Bioelements peptide sheet mask.'},{t:'Moisturize + SPF',d:'3 min',n:'Ceramide + UV Defense SPF50.'}]},
@@ -1507,6 +1534,14 @@ function applyProfessionConfig(){
   if(hairBarberOnly&&hasHair) Object.assign(checkinCfg,hairCheckinCfg);
   else if(hairBarberOnly&&hasBarber) Object.assign(checkinCfg,barberCheckinCfg);
   else if(browOnly) Object.assign(checkinCfg,browCheckinCfg);
+
+  // Reference-photo prompt on the pre-visit check-in for image-forward professions
+  // (hair, barber, brow, pmu, makeup, lash). Only set a default when the provider hasn't
+  // explicitly chosen — a saved config value always wins.
+  if(checkinCfg.referencePhotoOn==null){
+    const refProfs=(typeof _refPhotoProfs!=='undefined')?_refPhotoProfs:['hair','barber','brow','pmu','makeup','lash'];
+    checkinCfg.referencePhotoOn=selectedProfessions.some(p=>refProfs.includes(p));
+  }
 
   if(hairBarberOnly&&hasHair){protocols.length=0;hairProtocols.forEach(p=>protocols.push(p));}
   else if(hairBarberOnly&&hasBarber){protocols.length=0;barberProtocols.forEach(p=>protocols.push(p));}
@@ -3081,11 +3116,18 @@ function _vitalForQuestion(label){
 function _isPhotoReleaseForm(fid){return fid==='photo'||/-photo$/.test(fid||'');}
 function _capturePhotoConsent(c,formId,answers){
   try{
-    if(!_isPhotoReleaseForm(formId)||!c)return;
+    if(!c||!answers)return;
     const t=formTmpls[formId];if(!t||!t.qs)return;
+    const isReleaseForm=_isPhotoReleaseForm(formId);
+    // The photo-release consent is bundled into every intake (ids pr-taken / pr-share),
+    // and also exists as standalone Photo release forms. Capture from whichever is present
+    // so a client's photo consent lands on their file no matter which form carried it.
+    const takenBundled=answers['pr-taken'];
+    const shareBundled=answers['pr-share'];
     const findAns=re=>{const q=t.qs.find(q=>re.test(q.label||''));return q?answers[q.id]:undefined;};
-    const beforeAfter=findAns(/before\s*&?\s*after photos/i);
-    const social=findAns(/social media|portfolio/i);
+    const beforeAfter=(takenBundled!=null)?takenBundled:(isReleaseForm?findAns(/before\s*&?\s*after photos|photos being taken/i):undefined);
+    const social=(shareBundled!=null)?shareBundled:(isReleaseForm?findAns(/social media|portfolio/i):undefined);
+    if(beforeAfter==null&&social==null)return;   // this form had no photo-release answers
     c.photoConsent={
       beforeAfter:beforeAfter!=null?/yes/i.test(String(beforeAfter)):undefined,
       socialMedia:social!=null?/yes/i.test(String(social)):undefined,
@@ -5867,6 +5909,8 @@ function renderCheckinSettings(){
     <button onclick="checkinCfg.chairComfortOn=true;if(!checkinCfg.blankets.length)checkinCfg.blankets=[{id:'bl1',emoji:'🪨',label:'Weighted blanket'},{id:'bl2',emoji:'🛏️',label:'Sheet only'},{id:'bl3',emoji:'🚫',label:'No blanket'}];if(!checkinCfg.heat||!checkinCfg.heat.length)checkinCfg.heat=[{id:'h1',label:'Heated mattress pad',on:true,levels:['Off','Low','Med','High']},{id:'h2',label:'Heated blanket',on:true,levels:['Off','Low','Med','High']}];renderCheckinSettings()" style="border:none;background:none;color:var(--accent);font-size:12px;cursor:pointer;">+ Restore section</button>
   </div>`}
 
+  <div class="sh"><h2>Reference photo</h2></div>
+  <div style="background:#1a1a1a;border:1px solid #2a2a2a;border-radius:12px;margin:0 16px 16px;padding:11px 12px;display:flex;justify-content:space-between;align-items:center;gap:10px;"><div style="flex:1;min-width:0;"><div style="font-size:13px;font-weight:500;color:#e0e0e0;">Ask for a reference / inspo photo</div><div style="font-size:11px;color:#888;margin-top:2px;">Clients can upload their current look or inspiration before the visit.</div></div>${togBtn(checkinCfg.referencePhotoOn,'checkinCfg.referencePhotoOn=!checkinCfg.referencePhotoOn;renderCheckinSettings()','Ask for reference photo')}</div>
   <div class="sh"><h2>Additional notes</h2></div>
   <div style="background:#1a1a1a;border:1px solid #2a2a2a;border-radius:12px;margin:0 16px 16px;padding:11px 12px;display:flex;justify-content:space-between;align-items:center;"><div style="font-size:13px;font-weight:500;color:#e0e0e0;">Show "Anything else?" field</div>${togBtn(checkinCfg.extraNotes,'checkinCfg.extraNotes=!checkinCfg.extraNotes;renderCheckinSettings()','Show extra notes')}</div>`;
 }
@@ -6077,6 +6121,29 @@ const formTmpls={
     {id:2801,label:'Full name',type:'Short text',required:true},
     {id:2802,label:'I consent to before & after photos being taken',type:'Yes / No',required:true},
     {id:2803,label:'I consent to photos being shared on social media and portfolio',type:'Yes / No',required:true},
+  ]},
+  // ── PERMANENT MAKEUP (PMU) FORMS ──
+  'pmu-intake':{name:'PMU client intake & consent',qs:[
+    {id:'pmu-i1',label:'Full name',type:'Short text',required:true},
+    {id:'pmu-i2',label:'Date of birth',type:'Date',required:true},
+    {id:'pmu-i3',label:'Phone number',type:'Short text',required:true},
+    {id:'pmu-i4',label:'Email',type:'Short text',required:false},
+    {id:'pmu-i5',label:'Which service are you booking?',type:'Single select',required:true,options:['Microblading','Powder / ombre brows','Combo brows','Lip blush','Eyeliner','Areola / scar','Other']},
+    {id:'pmu-i6',label:'Any previous permanent makeup? (when & where)',type:'Long text',required:false},
+    {id:'pmu-i7',label:'Known allergies or sensitivities (pigments, numbing, latex, metals)',type:'Long text',required:true},
+    {id:'pmu-i8',label:'Current medications',type:'Long text',required:false},
+    {id:'pmu-i9',label:'Are you pregnant or nursing?',type:'Yes / No',required:true},
+    {id:'pmu-i10',label:'On blood thinners, Accutane, or retinoids?',type:'Yes / No',required:true},
+    {id:'pmu-ci',type:'Contraindications',label:'Contraindications — review before signing',required:true,items:['Pregnant or breastfeeding','Taking blood thinners or anticoagulants','Used Accutane / isotretinoin in the last 6\u201312 months','History of keloid scarring or poor wound healing','Active skin condition, breakout, or infection in the area','Diabetes, autoimmune, or a healing condition (please disclose)','Recent botox/filler in the area (within 2 weeks)']},
+    {id:'pmu-i11',label:'I understand PMU is semi-permanent, results vary by skin, and a touch-up is required',type:'Yes / No',required:true},
+    {id:'pmu-i12',label:'I consent to treatment & confirm my information is accurate',type:'Signature',required:true},
+  ]},
+  'consent-pmu':{name:'PMU service consent',qs:[
+    {id:'cpmu1',label:'Full name',type:'Short text',required:true},
+    {id:'cpmu2',label:'I understand results vary by skin type, aftercare, and lifestyle',type:'Yes / No',required:true},
+    {id:'cpmu3',label:'I understand a touch-up session is required 6\u20138 weeks after',type:'Yes / No',required:true},
+    {id:'cpmu-ci',type:'Contraindications',label:'Contraindications — review before signing',required:true,items:['Pregnant or breastfeeding','Taking blood thinners or anticoagulants','History of keloid scarring','Active skin condition or infection in the area','Used retinol / Accutane recently','Diabetes or a healing condition (please disclose)']},
+    {id:'cpmu4',label:'I\u2019ve read the contraindications above and consent to treatment',type:'Signature',required:true},
   ]},
   // ── MAKEUP ARTIST FORMS ──
   'makeup-intake':{name:'MUA client intake & consent',qs:[
@@ -6321,7 +6388,21 @@ const formTmpls={
     });
   }catch(e){}
 })();
-// Guides from the Learn library that ride along with each form when sent to a client.
+// ── Reference-photo upload on intakes for image-forward professions ──
+// hair, barber, brow, pmu, makeup, lash all benefit from a visual reference on file.
+(function bundleReferencePhoto(){
+  try{
+    const map={hair:'hair-intake',barber:'barber-intake',brow:'brow-intake',pmu:'pmu-intake',makeup:'makeup-intake',lash:'lash-intake'};
+    Object.keys(map).forEach(prof=>{
+      const t=formTmpls[map[prof]];
+      if(!t||!Array.isArray(t.qs))return;
+      if(t.qs.some(q=>q.id==='ref-photo'))return;                 // never double-add
+      const sig=t.qs.findIndex(q=>q.type==='Signature');
+      const at=sig>=0?sig:t.qs.length;
+      t.qs.splice(at,0,{id:'ref-photo',label:'Upload a reference photo (inspiration or your current look)',type:'Photo upload',required:false,multiple:true});
+    });
+  }catch(e){}
+})();
 // Keyed by form id → array of guide ids (see guideTemplatesByProf).
 // ── Bundles: a named group of forms + resources sent together in one action ──
 function loadBundles(){try{const s=localStorage.getItem('sc_bundles');if(s)return JSON.parse(s);}catch(e){}return [];}
@@ -7199,7 +7280,7 @@ function renderPro(){
   document.getElementById('tt').textContent='Pro';
   const urgent=docs.filter(d=>d.status==='urgent');
   const card=item=>`<div class="card" onclick="nav('${item.screen}')"><div class="row"><div style="width:46px;height:46px;border-radius:12px;background:${item.bg};display:flex;align-items:center;justify-content:center;flex-shrink:0;"><i class="ti ${item.icon}" style="font-size:22px;color:${item.ic};"></i></div><div style="flex:1;"><div style="font-size:15px;font-weight:500;color:#e0e0e0;">${item.name}</div><div style="font-size:12px;color:#999;margin-top:2px;">${item.desc}</div><div style="margin-top:6px;"><span class="bdg ${item.bdg}" style="font-size:12px;">${item.bdgLabel}</span></div></div><i aria-hidden="true" class="ti ti-chevron-right" style="font-size:18px;color:#888;"></i></div></div>`;
-  const groupA=[{icon:'ti-list-details',bg:'#1e1633',ic:'#a891ec',name:'Service menu',desc:'Your services & prices for invoices',screen:'service-menu',bdg:'bp',bdgLabel:`${_svcMenu.length} services`},{icon:'ti-clipboard-list',bg:'#0a2019',ic:'#4ec49a',name:'Saved protocols',desc:'Your treatment library',screen:'protocols',bdg:'bg',bdgLabel:`${protocols.length} protocols`}];
+  const groupA=[{icon:'ti-list-details',bg:'#1e1633',ic:'#a891ec',name:'Services & protocols',desc:'Your service menu, prices & treatment library',screen:'service-menu',bdg:'bp',bdgLabel:`${_svcMenu.length} services · ${protocols.length} protocols`}];
   const groupB=[{icon:'ti-shopping-bag',bg:'var(--accent-tint)',ic:'var(--accent)',name:'Shop',desc:'Products, bundles & affiliate links',screen:'shop',bdg:'bb',bdgLabel:`${affiliateLinks.length} products`},{icon:'ti-file-text',bg:'#0d1e33',ic:'#5ba3e8',name:'Forms',desc:'Intakes, consents & templates',screen:'forms',bdg:'bb',bdgLabel:`${(typeof getMergedForms==='function'?getMergedForms().length:0)} forms`},{icon:'ti-lock',bg:'#0d1e33',ic:'#5ba3e8',name:'My docs',desc:'Licenses, insurance, permits & certifications',screen:'vault',bdg:'bb',bdgLabel:`${docs.length} documents`},{icon:'ti-package',bg:'var(--accent-tint)',ic:'var(--accent)',name:'Inventory',desc:'Track stock levels & reorder alerts',screen:'inventory',bdg:'br',bdgLabel:`${inv.filter(i=>i.qty===0).length} out of stock`},{icon:'ti-building-warehouse',bg:'#1e1633',ic:'#a891ec',name:'Vendor directory',desc:'Brand contacts, rep info & ordering portals',screen:'vendors',bdg:'bp',bdgLabel:`${vendors.length} vendors`},{icon:'ti-download',bg:'#0a2019',ic:'#4ec49a',name:'Export data',desc:'Services, sales & client list (CSV)',screen:'export-data',bdg:'bg',bdgLabel:'CSV'}];
   S.innerHTML=`
   <div style="padding:18px 16px 8px;"><div style="font-size:15px;font-weight:500;color:#f0f0f0;margin-bottom:4px;">Provider tools</div><div style="font-size:13px;color:#999;">Your professional hub.</div></div>
@@ -9470,7 +9551,6 @@ async function _coDoCharge(id,cardId){
 
 // ── Local service menu (Pro → Service menu): editable services that feed invoice line items ──
 function _svcMenuDefaults(){
-  const pr=(typeof selectedProfessions!=='undefined'&&selectedProfessions&&selectedProfessions[0])||'esty';
   const M={
     esty:[['Signature Facial',95],['Dermaplane',85],['Chemical Peel',120],['Microdermabrasion',110],['Back Facial',90],['LED Light Therapy',45]],
     hair:[['Women\u2019s Cut',65],['Men\u2019s Cut',40],['Root Color',95],['Full Highlights',160],['Blowout',45],['Toner',35]],
@@ -9478,13 +9558,22 @@ function _svcMenuDefaults(){
     nail:[['Classic Manicure',35],['Gel Manicure',50],['Classic Pedicure',50],['Gel Pedicure',65],['Full Set',75],['Fill',45]],
     lash:[['Classic Full Set',120],['Hybrid Full Set',140],['Volume Full Set',160],['2-Week Fill',55],['Lash Lift',75]],
     brow:[['Brow Wax',20],['Brow Lamination',65],['Brow Tint',25],['Threading',18],['Henna Brows',55]],
+    pmu:[['Microblading',450],['Powder / Ombre Brows',500],['Combo Brows',550],['Lip Blush',500],['Eyeliner',350],['6-Week Touch-up',100]],
     wax:[['Brazilian',55],['Bikini',35],['Full Leg',70],['Underarm',20],['Lip + Chin',25]],
     makeup:[['Bridal Makeup',150],['Event Makeup',95],['Makeup Lesson',120],['Lashes Add-on',20]],
     massage:[['60-min Massage',95],['90-min Massage',135],['Deep Tissue',110],['Hot Stone',120],['Prenatal',100]],
     nutrition:[['Initial Consult',120],['Follow-up',75],['Custom Meal Plan',150],['3-Month Package',400]],
-    contour:[['Contour Session',120],['Wood Therapy',110],['Lymphatic Drainage',95],['Package of 6',600]]
+    contour:[['Contour Session',120],['Wood Therapy',110],['Lymphatic Drainage',95],['Package of 6',600]],
+    coach:[['Initial Assessment',90],['Training Session',70],['Package of 10',600],['Monthly Coaching',250]]
   };
-  return (M[pr]||[]).map((x,i)=>({id:'svc_seed'+i,name:x[0],price:x[1],taxable:true}));
+  // Merge services across ALL selected professions (deduped by name), so a multi-service
+  // provider sees their full menu — not just the first profession's, and never the wrong
+  // profession's list. Falls back to esty only if nothing matches.
+  const profs=(typeof selectedProfessions!=='undefined'&&Array.isArray(selectedProfessions)&&selectedProfessions.length)?selectedProfessions:['esty'];
+  const seen=new Set();const out=[];
+  profs.forEach(pr=>{(M[pr]||[]).forEach(x=>{const key=x[0].toLowerCase();if(!seen.has(key)){seen.add(key);out.push({id:'svc_seed'+out.length,name:x[0],price:x[1],taxable:true});}});});
+  if(!out.length){(M.esty).forEach(x=>out.push({id:'svc_seed'+out.length,name:x[0],price:x[1],taxable:true}));}
+  return out;
 }
 let _svcMenu=(function(){try{const r=JSON.parse(localStorage.getItem('sc_service_menu')||'null');if(Array.isArray(r))return r;}catch(e){}return _svcMenuDefaults();})();
 function _saveSvcMenu(){try{localStorage.setItem('sc_service_menu',JSON.stringify(_svcMenu));}catch(e){}}
@@ -9656,10 +9745,15 @@ function renderExportCenter(){
 }
 
 function renderServiceMenu(){
-  setNav('pro');document.getElementById('tt').textContent='Service menu';
+  setNav('pro');document.getElementById('tt').textContent='Services & protocols';
   const rows=_svcMenu.map((sv,i)=>`<div style="display:flex;align-items:center;gap:8px;background:#161616;border:1px solid #242424;border-radius:10px;padding:10px 12px;margin:0 16px 8px;"><input value="${String(sv.name||'').replace(/"/g,'&quot;')}" oninput="_svcSet(${i},'name',this.value)" placeholder="Service name" style="flex:1;min-width:0;background:none;border:none;border-bottom:1px solid #2a2a2a;color:#e0e0e0;font-size:14px;font-family:inherit;outline:none;padding-bottom:3px;"><span style="color:#777;font-size:13px;">$</span><input value="${sv.price||''}" inputmode="decimal" oninput="_svcSet(${i},'price',parseFloat(this.value)||0)" placeholder="0" style="width:60px;background:#111;border:1px solid #2a2a2a;border-radius:6px;padding:6px;color:#e0e0e0;font-size:13px;font-family:inherit;text-align:right;"><button onclick="_svcSet(${i},'taxable',(sv.taxable===false));renderServiceMenu()" style="background:${sv.taxable===false?'#2a1a0a':'#0a2019'};border:1px solid ${sv.taxable===false?'#4a3510':'#1c4030'};color:${sv.taxable===false?'#c99a5a':'#4ec49a'};border-radius:6px;padding:4px 8px;font-size:10px;font-weight:600;cursor:pointer;font-family:inherit;white-space:nowrap;flex-shrink:0;">${sv.taxable===false?'No tax':'Taxable'}</button><button onclick="_svcDel(${i})" aria-label="Delete service" style="background:none;border:none;color:#a85a5a;cursor:pointer;font-size:15px;padding:2px;"><i class="ti ti-trash"></i></button></div>`).join('');
   S.innerHTML=`
   <div style="padding:14px 16px 8px;"><div style="font-size:13px;color:#999;line-height:1.5;">Your services and prices. These appear in the <b>Add from menu</b> picker when you build an invoice \u2014 no Square required.</div></div>
+  <button onclick="nav('protocols')" style="width:calc(100% - 32px);margin:0 16px 12px;background:#0f1f17;border:1px solid #1c4030;border-radius:12px;padding:12px 14px;display:flex;align-items:center;gap:12px;cursor:pointer;font-family:inherit;text-align:left;">
+    <div style="width:38px;height:38px;border-radius:9px;background:#0a2019;display:flex;align-items:center;justify-content:center;flex-shrink:0;"><i class="ti ti-clipboard-list" aria-hidden="true" style="font-size:18px;color:#4ec49a;"></i></div>
+    <div style="flex:1;min-width:0;"><div style="font-size:14px;font-weight:500;color:#e0e0e0;">Treatment protocols</div><div style="font-size:12px;color:#7fbfa5;">Your step-by-step treatment library \u00b7 ${protocols.length} saved</div></div>
+    <i class="ti ti-chevron-right" aria-hidden="true" style="font-size:16px;color:#4a7a64;"></i>
+  </button>
   <div style="margin:2px 16px 12px;background:#161616;border:1px solid #242424;border-radius:12px;padding:12px 14px;display:flex;align-items:center;justify-content:space-between;gap:10px;"><div><div style="font-size:13px;font-weight:600;color:#e0e0e0;">Default sales tax</div><div style="font-size:11px;color:#888;">Added to invoices, links &amp; records. Leave 0 if you use Square\u2019s tax.</div></div><div style="display:flex;align-items:center;gap:5px;flex-shrink:0;"><input value="${_taxRate||''}" inputmode="decimal" onchange="_saveTaxRate(this.value)" placeholder="0" style="width:56px;background:#111;border:1px solid #2a2a2a;border-radius:6px;padding:7px;color:#e0e0e0;font-size:13px;font-family:inherit;text-align:right;"><span style="color:#888;font-size:14px;">%</span></div></div>
   ${_svcMenu.length?rows:`<div style="margin:10px 16px;text-align:center;color:#888;font-size:13px;padding:24px 16px;background:#161616;border:1px solid #242424;border-radius:12px;">No services yet \u2014 add your first one below.</div>`}
   <div style="padding:6px 16px 24px;"><button onclick="_svcAdd()" style="width:100%;background:#161616;border:1px dashed #3a3a3a;color:#cfe4d8;border-radius:10px;padding:12px;font-size:13px;font-weight:600;cursor:pointer;font-family:inherit;"><i class="ti ti-plus"></i> Add a service</button></div>`;

@@ -1954,6 +1954,8 @@ function _ciStepsFromCfg(cfg){
   if(qs.length)steps.push({title:'Since your last visit',id:'updates',questions:qs});
   const comfort=_comfortStepFromCfg(cfg);
   if(comfort&&comfort.questions.length)steps.push(comfort);
+  // Image-forward professions ask for a reference/inspiration photo before the visit.
+  if(cfg.referencePhotoOn)steps.push({title:'Reference photo',id:'refphoto',questions:[{type:'photo',id:'refPhoto',label:'Share a reference or your current look (optional)',hint:'Inspiration, a photo of your current style, or anything you want '+client.providerFirst+' to see before your visit.'}]});
   if(cfg.extraNotes!==false)steps.push({title:'Anything else',id:'notes',questions:[{type:'notes',id:'notes',ph:'Questions, requests, anything on your mind...'}]});
   return steps;
 }
@@ -2204,7 +2206,26 @@ function _renderCIQuestion(q){
   if(q.type==='iconChoice')return _ciIconChoice(q);
   if(q.type==='levelChoice')return _ciLevel(q);
   if(q.type==='notes')return _ciNotes(q);
+  if(q.type==='photo')return _ciPhoto(q);
   return '';
+}
+function _ciPhoto(q){
+  const photos=checkinAnswers[q.id+'Photos']||[];
+  return`<div style="font-size:12px;font-weight:600;color:#b8a898;text-transform:uppercase;letter-spacing:.07em;margin-bottom:8px;">${_txt(q.label||'Reference photo')}</div>
+    ${q.hint?`<div style="font-size:13px;color:#9a8a7e;line-height:1.5;margin-bottom:12px;">${_txt(q.hint)}</div>`:''}
+    <div style="display:flex;flex-wrap:wrap;gap:8px;margin-bottom:10px;">
+      ${photos.map((src,i)=>`<div style="position:relative;width:88px;height:88px;border-radius:10px;overflow:hidden;border:1.5px solid #e8ddd3;">
+        <img src="${_urlAttr(src)}" alt="reference ${i+1}" style="width:100%;height:100%;object-fit:cover;display:block;">
+        <button onclick="ciRemovePhoto('${q.id}',${i})" aria-label="Remove photo" style="position:absolute;top:2px;right:2px;width:20px;height:20px;border-radius:50%;background:rgba(0,0,0,.6);border:none;color:#fff;font-size:11px;cursor:pointer;display:flex;align-items:center;justify-content:center;">✕</button>
+      </div>`).join('')}
+      <button onclick="ciAddPhoto('${q.id}')" aria-label="Upload photos" style="width:88px;height:88px;border-radius:10px;border:1.5px dashed #d4c4b0;background:#faf7f4;display:flex;flex-direction:column;align-items:center;justify-content:center;gap:3px;cursor:pointer;color:#9a8a7e;">
+        <i class="ti ti-camera-plus" aria-hidden="true" style="font-size:20px;"></i><span style="font-size:10px;">Upload</span>
+      </button>
+      <button onclick="ciAddLink('${q.id}')" aria-label="Add a photo link" style="width:88px;height:88px;border-radius:10px;border:1.5px dashed #d4c4b0;background:#faf7f4;display:flex;flex-direction:column;align-items:center;justify-content:center;gap:3px;cursor:pointer;color:#9a8a7e;">
+        <i class="ti ti-link" aria-hidden="true" style="font-size:20px;"></i><span style="font-size:10px;">Link</span>
+      </button>
+    </div>
+    <div style="font-size:11px;color:#c4b9ae;">You can select several at once.</div>`;
 }
 
 function _ciLevel(q){
@@ -2347,7 +2368,9 @@ function _ciBuildPayload(){
         rows.push({label:q.label,value:checkinAnswers[q.id]||opts[0],flagged:false});
       }else if(q.type==='notes'){
         notes=checkinAnswers[q.id]||'';
-        photos=checkinAnswers[q.id+'Photos']||[];
+        photos=(photos||[]).concat(checkinAnswers[q.id+'Photos']||[]);
+      }else if(q.type==='photo'){
+        photos=(photos||[]).concat(checkinAnswers[q.id+'Photos']||[]);
       }
     });
     if(rows.length)groups.push({title:st.title,rows});
