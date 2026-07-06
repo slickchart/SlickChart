@@ -1573,7 +1573,26 @@ function doResetPw(){
   if(pw.length<8){if(er)er.textContent=t('min8');return;}
   Cloud.resetPw(_resetToken,pw).then(()=>{_resetToken='';_loginMode='login';renderLogin();const e2=document.getElementById('login-err');if(e2){e2.style.color='#4ec49a';e2.textContent=t('pw_updated');}}).catch(e=>{const er=document.getElementById('login-err');if(er)er.textContent=(e&&e.message)||'Reset failed';});
 }
-function _doLogout(){try{Cloud.logout();}catch(e){}try{localStorage.removeItem('sc_token');}catch(e){}_loginMode='login';try{if(typeof caches!=='undefined'&&caches.keys)caches.keys().then(ks=>ks.forEach(k=>caches.delete(k))).catch(()=>{});}catch(e){}try{location.reload();}catch(e){}setTimeout(()=>{try{renderLogin();}catch(e){}},60);}
+function _doLogout(){
+  try{Cloud.logout();}catch(e){}
+  try{localStorage.removeItem('sc_token');}catch(e){}
+  // Clear this account's synced data from local storage. It's safe in the cloud, and
+  // leaving it behind would let it bleed into the NEXT account that signs in on this
+  // device: Cloud.pull() only overwrites matching keys, and _cloudInit's "catch up
+  // missing keys" step would then push this account's leftover keys into the other's cloud.
+  // Guard on Cloud.enabled so a local-only user (whose only copy IS local) isn't wiped.
+  try{
+    if(typeof Cloud!=='undefined'&&Cloud&&Cloud.enabled){
+      const kill=[];
+      for(let i=0;i<localStorage.length;i++){const k=localStorage.key(i);if(k&&k.indexOf('sc_')===0&&k!=='sc_login_email')kill.push(k);}
+      kill.forEach(k=>{try{localStorage.removeItem(k);}catch(e){}});
+    }
+  }catch(e){}
+  _loginMode='login';
+  try{if(typeof caches!=='undefined'&&caches.keys)caches.keys().then(ks=>ks.forEach(k=>caches.delete(k))).catch(()=>{});}catch(e){}
+  try{location.reload();}catch(e){}
+  setTimeout(()=>{try{renderLogin();}catch(e){}},60);
+}
 function cloudLogout(){if(typeof confirmModal==='function'){confirmModal({title:'Sign out?',body:'Log out of SlickChart on this device? Your data stays saved in the cloud.',action:'Sign out'},_doLogout);}else{_doLogout();}}
 function applyProfessionConfig(){
   const profs=getActiveProfessions();
@@ -7548,9 +7567,13 @@ function renderChat(id){
 function attachProviderPhoto(id){_pickImages(srcs=>{if(srcs&&srcs.length)sendMsg(id,srcs);});}
 function attachProviderLink(id){const u=prompt('Paste an image link (URL):');if(u&&u.trim())sendMsg(id,[u.trim()]);}
 function sendMsg(id,imgArg){
-  const inp=document.getElementById('cinput');const text=(inp&&inp.value.trim())||'';
+  const inp=document.getElementById('cinput');let text=(inp&&inp.value.trim())||'';
   const imgs=Array.isArray(imgArg)?imgArg:(imgArg?[imgArg]:[]);
   if(!text&&!imgs.length)return;
+  // Cap message length — an extremely long one is almost always an accidental paste and
+  // would bloat storage / risk a failed sync.
+  const MAX=5000;
+  if(text.length>MAX){text=text.slice(0,MAX);if(typeof proToast==='function')proToast('Message shortened to '+MAX+' characters');}
   const t=threads.find(x=>x.id===id);if(t)t.preview=text||('📷 '+(imgs.length>1?imgs.length+' photos':'Photo'));
   if(!msgStore[id])msgStore[id]=[];
   msgStore[id].push({from:'me',text,imgs,time:'Just now'});
