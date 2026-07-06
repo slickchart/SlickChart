@@ -1958,12 +1958,23 @@ function _greeting(){const h=new Date().getHours();return h<12?'Good morning':h<
 // ── Birthdays (from Square sync or intake date-of-birth) ──
 function _normBirthday(s){
   if(!s)return ''; s=String(s).trim();
-  let m=s.match(/(\d{4})-(\d{2})-(\d{2})/); if(m)return m[1]+'-'+m[2]+'-'+m[3];
-  m=s.match(/(\d{2})-(\d{2})$/); if(m)return '0000-'+m[1]+'-'+m[2];
-  m=s.match(/^(\d{1,2})[\/](\d{1,2})[\/](\d{2,4})$/); if(m)return (m[3].length===2?'20'+m[3]:m[3])+'-'+String(m[1]).padStart(2,'0')+'-'+String(m[2]).padStart(2,'0');
+  let m=s.match(/(\d{4})-(\d{2})-(\d{2})/); if(m)return _validMD(m[2],m[3])?(m[1]+'-'+m[2]+'-'+m[3]):'';
+  m=s.match(/(\d{2})-(\d{2})$/); if(m)return _validMD(m[1],m[2])?('0000-'+m[1]+'-'+m[2]):'';
+  m=s.match(/^(\d{1,2})[\/](\d{1,2})[\/](\d{2,4})$/);
+  if(m){
+    // Expand a 2-digit year sensibly for a *birthday*: '94' → 1994, not 2094. Any 2-digit
+    // year that would land in the future is treated as 1900s.
+    let yr=m[3];
+    if(yr.length===2){const yy=parseInt(yr,10);const cur2=new Date().getFullYear()%100;yr=(yy>cur2?'19':'20')+yr;}
+    const mo=String(m[1]).padStart(2,'0'),da=String(m[2]).padStart(2,'0');
+    return _validMD(mo,da)?(yr+'-'+mo+'-'+da):'';
+  }
   const d=new Date(s); if(!isNaN(d))return d.getFullYear()+'-'+String(d.getMonth()+1).padStart(2,'0')+'-'+String(d.getDate()).padStart(2,'0');
   return '';
 }
+// Reject impossible month/day so a typo like 15/03 (month 15) or 2/30 (Feb 30) doesn't
+// become a stored "date" that skews birthday math.
+function _validMD(mo,da){const M=parseInt(mo,10),D=parseInt(da,10);return M>=1&&M<=12&&D>=1&&D<=31;}
 function _bdayMonthDay(b){const n=_normBirthday(b);if(!n)return null;const p=n.split('-');const m=parseInt(p[1],10),d=parseInt(p[2],10);if(!m||!d)return null;return {m,d};}
 function _bdayLabel(b){const md=_bdayMonthDay(b);if(!md)return '';return ['','Jan','Feb','Mar','Apr','May','Jun','Jul','Aug','Sep','Oct','Nov','Dec'][md.m]+' '+md.d;}
 // Display formatting only — the stored values stay as-is (raw digits / ISO date) so nothing else that reads them breaks.
