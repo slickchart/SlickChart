@@ -4413,6 +4413,15 @@ function _copyFallback(text,done){
 }
 // Navigate to an sms:/mailto: URL in a way that works inside the PWA shell.
 function _openExternal(url){
+  url=String(url||'').trim();
+  // Allow only known-safe schemes. A bare string with no scheme is treated as a URL
+  // and gets https:// prepended; anything with a disallowed scheme (javascript:, data:,
+  // file:, …) is refused so a stored value can't run code.
+  if(/^(tel:|mailto:|sms:)/i.test(url)){/* ok as-is */}
+  else if(/^https?:\/\//i.test(url)){/* ok as-is */}
+  else if(/^[a-z][a-z0-9+.-]*:/i.test(url)){return;}   // disallowed scheme
+  else if(url){url='https://'+url;}
+  else return;
   try{window.location.href=url;}catch(e){try{window.open(url,'_blank');}catch(_){}}
 }
 // Use the device's native share sheet when available; otherwise copy the link.
@@ -5141,9 +5150,9 @@ function renderPartnerDetail(i){
       <div class="fr" style="padding:8px 14px;border:none;"><span class="fl">Website</span><span style="font-size:13px;color:var(--accent);">${p.website}</span></div>
     </div>
     <div style="display:grid;grid-template-columns:1fr 1fr;gap:8px;margin-bottom:16px;">
-      <button class="btng" onclick="_openExternal('tel:'+String('${(p.phone||'').replace(/'/g,'')}').replace(/[^0-9+]/g,''))"><i class="ti ti-phone" style="color:var(--accent);"></i> Call</button>
-      <button class="btng" onclick="_openExternal('mailto:${(p.email||'').replace(/'/g,'')}')"><i class="ti ti-mail" style="color:var(--accent);"></i> Email</button>
-      <button class="btng" onclick="_openExternal(/^https?:/.test('${(p.website||'').replace(/'/g,'')}')?'${(p.website||'').replace(/'/g,'')}':'https://${(p.website||'').replace(/'/g,'')}')"><i class="ti ti-world" style="color:var(--accent);"></i> Website</button>
+      <button class="btng" onclick="_openExternal('tel:'+String('${_jsAttr(p.phone||'')}').replace(/[^0-9+]/g,''))"><i class="ti ti-phone" style="color:var(--accent);"></i> Call</button>
+      <button class="btng" onclick="_openExternal('mailto:${_jsAttr(p.email||'')}')"><i class="ti ti-mail" style="color:var(--accent);"></i> Email</button>
+      <button class="btng" onclick="_openExternal('${_jsAttr(p.website||'')}')"><i class="ti ti-world" style="color:var(--accent);"></i> Website</button>
       <button onclick="nav('partner-intro',${i})" class="btnp" style="border-radius:10px;"><i class="ti ti-send"></i> Send intro</button>
     </div>
   </div>`;
@@ -7218,7 +7227,7 @@ function renderDocDetail(id){
   <div style="padding:12px 16px 0;display:flex;align-items:center;justify-content:flex-end;"><button onclick="nav('edit-doc','${d.id}')" style="border:none;background:none;font-size:12px;color:var(--accent);cursor:pointer;"><i class="ti ti-pencil" style="font-size:12px;"></i> Edit</button></div>
   <div style="padding:14px 16px 0;display:flex;flex-direction:column;align-items:center;gap:10px;text-align:center;"><div style="width:64px;height:64px;border-radius:16px;background:${d.col};display:flex;align-items:center;justify-content:center;"><i class="ti ${d.icon}" style="font-size:28px;color:${d.ic};"></i></div><div><div style="font-size:17px;font-weight:500;color:#f0f0f0;">${d.name}</div><div style="font-size:13px;color:#999;">${d.issuer}</div></div><span class="bdg ${d.bdg}">${d.status==='urgent'?'Renew now':d.status==='soon'?'Expiring soon':d.status==='ok'?'Valid':'No expiration'}</span></div>
   ${d.file?`<div style="padding:14px 16px 0;">
-    ${d.fileType==='image'?`<img src="${d.file}" alt="Document photo" style="width:100%;border-radius:12px;display:block;margin-bottom:10px;">`:`<a href="${d.file}" target="_blank" rel="noopener" style="display:flex;align-items:center;gap:10px;background:#1a1a1a;border:1px solid #2a2a2a;border-radius:12px;padding:14px;color:#e0e0e0;text-decoration:none;margin-bottom:10px;"><i class="ti ti-file-type-pdf" style="font-size:24px;color:#e87070;"></i><div style="flex:1;font-size:14px;">${d.fileName||'Open PDF'}<div style="font-size:12px;color:#999;">Tap to view</div></div><i class="ti ti-external-link" style="font-size:16px;color:#888;"></i></a>`}
+    ${d.fileType==='image'?`<img src="${d.file}" alt="Document photo" style="width:100%;border-radius:12px;display:block;margin-bottom:10px;">`:`<a href="${d.file}" target="_blank" rel="noopener" style="display:flex;align-items:center;gap:10px;background:#1a1a1a;border:1px solid #2a2a2a;border-radius:12px;padding:14px;color:#e0e0e0;text-decoration:none;margin-bottom:10px;"><i class="ti ti-file-type-pdf" style="font-size:24px;color:#e87070;"></i><div style="flex:1;font-size:14px;">${_fileEsc(d.fileName||'Open PDF')}<div style="font-size:12px;color:#999;">Tap to view</div></div><i class="ti ti-external-link" style="font-size:16px;color:#888;"></i></a>`}
     <button onclick="_downloadDoc('${d.id}')" style="width:100%;background:#161616;border:1px solid #2a2a2a;color:#e0e0e0;border-radius:10px;padding:11px;font-size:13px;font-weight:600;cursor:pointer;font-family:inherit;display:flex;align-items:center;justify-content:center;gap:6px;"><i class="ti ti-download" style="font-size:15px;color:var(--accent);"></i> Download ${d.fileType==='pdf'?'PDF':'photo'}</button>
   </div>`:''}
   ${d.status==='urgent'?`<div style="background:#2a0f0f;border:1px solid #5a1e1e;border-radius:10px;margin:12px 16px;padding:10px 12px;display:flex;gap:8px;align-items:center;"><i class="ti ti-alert-circle" style="font-size:14px;color:#e87070;"></i><span style="font-size:12px;color:#e87070;font-weight:500;">${d.lbl} — renew as soon as possible.</span></div>`:''}
@@ -7297,8 +7306,8 @@ function renderInventory(){try{_applyImportedProducts();}catch(e){}
       <div style="flex:1;"><div style="height:5px;border-radius:3px;background:#111;overflow:hidden;"><div style="height:100%;width:${pct}%;background:${col};border-radius:3px;"></div></div></div>
     </div>
     ${(reorderFrom||reorderUrl)?`<div style="border-top:1px solid #242424;padding-top:9px;display:flex;align-items:center;gap:8px;">
-      <div style="flex:1;min-width:0;font-size:11px;color:#888;"><i class="ti ti-truck-delivery" style="font-size:12px;"></i> ${reorderFrom?('Reorder from '+reorderFrom):'Reorder link on file'}</div>
-      ${reorderUrl?`<a href="${reorderUrl.match(/^https?:\/\//)?reorderUrl:'https://'+reorderUrl}" target="_blank" rel="noopener" style="background:var(--accent-tint);color:var(--accent);border:1px solid var(--accent);border-radius:7px;padding:5px 11px;font-size:11px;font-weight:700;text-decoration:none;white-space:nowrap;"><i class="ti ti-shopping-cart" style="font-size:11px;"></i> Reorder</a>`:(vend&&vend.phone?`<a href="tel:${vend.phone}" style="background:#161616;border:1px solid #2a2a2a;color:#cfe4d8;border-radius:7px;padding:5px 11px;font-size:11px;font-weight:600;text-decoration:none;white-space:nowrap;"><i class="ti ti-phone" style="font-size:11px;"></i> Call</a>`:'')}
+      <div style="flex:1;min-width:0;font-size:11px;color:#888;"><i class="ti ti-truck-delivery" style="font-size:12px;"></i> ${reorderFrom?('Reorder from '+_fileEsc(reorderFrom)):'Reorder link on file'}</div>
+      ${reorderUrl?`<a href="${_urlAttr(_safeUrl(reorderUrl))}" target="_blank" rel="noopener" style="background:var(--accent-tint);color:var(--accent);border:1px solid var(--accent);border-radius:7px;padding:5px 11px;font-size:11px;font-weight:700;text-decoration:none;white-space:nowrap;"><i class="ti ti-shopping-cart" style="font-size:11px;"></i> Reorder</a>`:(vend&&vend.phone?`<a href="tel:${_urlAttr(vend.phone)}" style="background:#161616;border:1px solid #2a2a2a;color:#cfe4d8;border-radius:7px;padding:5px 11px;font-size:11px;font-weight:600;text-decoration:none;white-space:nowrap;"><i class="ti ti-phone" style="font-size:11px;"></i> Call</a>`:'')}
     </div>`:`<div style="border-top:1px solid #242424;padding-top:9px;"><button onclick="nav('add-inventory-item',${i})" style="border:none;background:none;color:var(--accent);font-size:11px;font-weight:600;cursor:pointer;padding:0;"><i class="ti ti-plus" style="font-size:11px;"></i> Add reorder info</button></div>`}
   </div>`}).join('')}
   ${_noRes('inv-noresults','No items match your search.')}`;
@@ -7397,13 +7406,14 @@ function renderVendors(){
     <div style="border-top:1px solid #1e1e1e;padding:8px 14px;"><span style="font-size:12px;color:#999;"><i class="ti ti-user" style="font-size:12px;"></i> ${_fileEsc(v.rep)} · ${_fileEsc(v.phone)}</span></div>
   </div>`).join('')+_noRes('vendors-noresults','No vendors match your search.')}`;
 }
-function _vendorUrl(u){
+function _safeUrl(u){
   u=String(u||'').trim();if(!u||u==='\u2014')return'';
   // Reject anything with an explicit non-http(s) scheme (javascript:, data:, vbscript:,
   // file:, etc). A bare "scheme:" with no // that isn't http(s) is treated as unsafe.
   if(/^[a-z][a-z0-9+.-]*:/i.test(u)&&!/^https?:\/\//i.test(u))return'';
   return u.match(/^https?:\/\//i)?u:'https://'+u;
 }
+function _vendorUrl(u){return _safeUrl(u);}   // back-compat alias
 // Escape a URL for safe placement inside a double-quoted HTML attribute (href="...").
 function _urlAttr(u){return String(u||'').replace(/&/g,'&amp;').replace(/"/g,'&quot;').replace(/</g,'&lt;').replace(/>/g,'&gt;');}
 function renderVendorDetail(i){
