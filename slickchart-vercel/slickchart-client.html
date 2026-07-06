@@ -800,6 +800,16 @@ function recomputeCountdown(){
   // Real clients count from the actual current date; the demo stays pinned to its
   // seeded "today" (TODAY) so the sample countdown reads coherently whenever it's viewed.
   const now=(client._real)?new Date():new Date(TODAY);
+  // If the appointment date is missing or unparseable (e.g. nothing scheduled yet),
+  // there's no countdown — mark it as such so the UI can show "Not scheduled" instead
+  // of "NaN days away" or a broken progress ring. new Date(null) yields the 1970 epoch
+  // rather than an Invalid Date, so also reject anything before year 2000.
+  if(!APPT||isNaN(APPT.getTime())||APPT.getFullYear()<2000){
+    client.daysUntilNext=null;client.hoursUntilNext=0;
+    client.isThisWeek=false;client.isTomorrow=false;client.isToday=false;client.hasNextAppt=false;
+    return;
+  }
+  client.hasNextAppt=true;
   // Count whole calendar days between today and the appointment, ignoring time-of-day
   // so an appointment later *today* reads as 0 ("Today!"), not 1. Using midnight-to-
   // midnight avoids the off-by-one that raw ms subtraction + Math.ceil produced.
@@ -880,15 +890,48 @@ let calModalOpen=false;
 function openCalModal(){calModalOpen=true;renderCalModal();}
 function closeCalModal(){calModalOpen=false;const m=document.getElementById('cal-modal');if(m)m.remove();}
 
+// Derive the appointment's local date/time parts from a reliable source. For real
+// clients nextDateISO/nextTimeISO are empty, so we fall back to APPT (parsed from
+// apptISO). Returns local wall-clock parts — calendar files should use floating local
+// time (no trailing Z), otherwise a 10am local appointment lands at 10am UTC.
+function _apptParts(){
+  let d=null;
+  // Prefer the explicit ISO fields when present AND well-formed (demo data supplies them).
+  if(client.nextDateISO&&client.nextTimeISO&&/^\d{8}$/.test(client.nextDateISO)&&/^\d{6}$/.test(client.nextTimeISO)){
+    // These were historically stored UTC-shifted; reconstruct the intended instant then
+    // read back local parts so the calendar shows the right wall-clock time.
+    const Y=+client.nextDateISO.slice(0,4),Mo=+client.nextDateISO.slice(4,6)-1,Da=+client.nextDateISO.slice(6,8);
+    const H=+client.nextTimeISO.slice(0,2),Mi=+client.nextTimeISO.slice(2,4);
+    d=new Date(Date.UTC(Y,Mo,Da,H,Mi,0));
+  } else if(APPT&&!isNaN(APPT.getTime())&&APPT.getFullYear()>=2000){
+    d=new Date(APPT);
+  }
+  if(!d||isNaN(d.getTime()))return null;
+  const p=n=>String(n).padStart(2,'0');
+  return {
+    date:d.getFullYear()+p(d.getMonth()+1)+p(d.getDate()),
+    time:p(d.getHours())+p(d.getMinutes())+'00',
+    dObj:d
+  };
+}
+// Escape a value for an iCal text field (RFC 5545): backslash, semicolon, comma, newlines.
+function _icsEsc(s){return String(s==null?'':s).replace(/\\/g,'\\\\').replace(/;/g,'\\;').replace(/,/g,'\\,').replace(/\r?\n/g,'\\n');}
 function buildICS(){
+  const parts=_apptParts();
+  const dtstamp=(function(){const d=new Date();const p=n=>String(n).padStart(2,'0');return d.getUTCFullYear()+p(d.getUTCMonth()+1)+p(d.getUTCDate())+'T'+p(d.getUTCHours())+p(d.getUTCMinutes())+p(d.getUTCSeconds())+'Z';})();
+  const uid='slickchart-'+((parts&&parts.date)||'appt')+'-'+Math.random().toString(36).slice(2,8)+'@slickchart.app';
+  const dur=(parseInt(client.durationMins,10)||60);
   const lines=[
-    'BEGIN:VCALENDAR','VERSION:2.0','PRODID:-//SlickChart//EN',
+    'BEGIN:VCALENDAR','VERSION:2.0','PRODID:-//SlickChart//EN','CALSCALE:GREGORIAN',
     'BEGIN:VEVENT',
-    `DTSTART:${client.nextDateISO}T${client.nextTimeISO}Z`,
-    `DURATION:PT${client.durationMins}M`,
-    `SUMMARY:${client.treatment} with ${client.provider}`,
-    `DESCRIPTION:Your ${client.treatment} appointment at ${client.studio}.\\nAddress: ${client.studioAddress}\\nPhone: ${client.studioPhone}`,
-    `LOCATION:${client.studioAddress}`,
+    'UID:'+uid,
+    'DTSTAMP:'+dtstamp,
+    // Floating local time (no Z) so the event shows at the provider's local wall-clock time.
+    parts?('DTSTART:'+parts.date+'T'+parts.time):'DTSTART:'+dtstamp,
+    'DURATION:PT'+dur+'M',
+    'SUMMARY:'+_icsEsc(client.treatment+' with '+client.provider),
+    'DESCRIPTION:'+_icsEsc('Your '+client.treatment+' appointment at '+client.studio+'.\nAddress: '+(client.studioAddress||'')+'\nPhone: '+(client.studioPhone||'')),
+    'LOCATION:'+_icsEsc(client.studioAddress||client.studio||''),
     'END:VEVENT','END:VCALENDAR'
   ];
   return lines.join('\r\n');
@@ -904,22 +947,14 @@ function downloadICS(){
 }
 
 function openGoogleCal(){
-  const start=`${client.nextDateISO}T${client.nextTimeISO}Z`;
-  // Derive the end from the real start + duration (in UTC, matching the Z-suffixed
-  // start) rather than a naive +1 hour that dropped the minutes and ignored duration.
-  const sH=parseInt(client.nextTimeISO.slice(0,2),10)||0;
-  const sM=parseInt(client.nextTimeISO.slice(2,4),10)||0;
+  const parts=_apptParts();
+  if(!parts){closeCalModal();showToast('No appointment date to add yet.');return;}
+  const start=parts.date+'T'+parts.time;   // floating local time (Google uses the user's cal tz)
   const dur=(parseInt(client.durationMins,10)||60);
-  const endMs=Date.UTC(
-    parseInt(client.nextDateISO.slice(0,4),10),
-    parseInt(client.nextDateISO.slice(4,6),10)-1,
-    parseInt(client.nextDateISO.slice(6,8),10),
-    sH,sM+dur,0
-  );
-  const e=new Date(endMs);
+  const e=new Date(parts.dObj.getTime()+dur*60000);
   const pad=n=>String(n).padStart(2,'0');
-  const end=`${e.getUTCFullYear()}${pad(e.getUTCMonth()+1)}${pad(e.getUTCDate())}T${pad(e.getUTCHours())}${pad(e.getUTCMinutes())}00Z`;
-  const url=`https://calendar.google.com/calendar/render?action=TEMPLATE&text=${encodeURIComponent(client.treatment+' with '+client.provider)}&dates=${start}/${end}&details=${encodeURIComponent('Your '+client.treatment+' at '+client.studio)}&location=${encodeURIComponent(client.studioAddress)}`;
+  const end=e.getFullYear()+pad(e.getMonth()+1)+pad(e.getDate())+'T'+pad(e.getHours())+pad(e.getMinutes())+'00';
+  const url=`https://calendar.google.com/calendar/render?action=TEMPLATE&text=${encodeURIComponent(client.treatment+' with '+client.provider)}&dates=${start}/${end}&details=${encodeURIComponent('Your '+client.treatment+' at '+client.studio)}&location=${encodeURIComponent(client.studioAddress||client.studio||'')}`;
   window.open(url,'_blank');
   closeCalModal();
 }
@@ -1253,21 +1288,22 @@ function renderHome(){
 
   <!-- Next appointment countdown -->
   ${(()=>{
+    const noAppt=(client.daysUntilNext==null||!isFinite(client.daysUntilNext));
     const urgent=client.isToday||client.isTomorrow||client.isThisWeek;
     const ringR=26;const ringC=2*Math.PI*ringR;
-    const pct=Math.max(0,Math.min(1,1-(client.daysUntilNext/28)));
+    const pct=noAppt?0:Math.max(0,Math.min(1,1-(client.daysUntilNext/28)));
     const filled=ringC*pct;
-    const urgencyLabel=client.isToday?'Today!':client.isTomorrow?'Tomorrow!':client.isThisWeek?`This ${new Date(APPT).toLocaleDateString('en-US',{weekday:'long'})}!`:`${client.daysUntilNext} days away`;
+    const urgencyLabel=noAppt?'Not scheduled':(client.isToday?'Today!':client.isTomorrow?'Tomorrow!':client.isThisWeek?`This ${new Date(APPT).toLocaleDateString('en-US',{weekday:'long'})}!`:`${client.daysUntilNext} days away`);
     return`<div style="margin:0 16px 14px;background:linear-gradient(135deg,var(--accent-tint),var(--accent-tint2));border-radius:16px;padding:18px 16px;">
     <div style="display:flex;align-items:center;gap:16px;">
       <div style="flex:1;">
         <div style="font-size:11px;font-weight:700;color:var(--accent-lt2);text-transform:uppercase;letter-spacing:.08em;margin-bottom:6px;opacity:.85;">Next appointment</div>
-        <div style="font-size:22px;font-weight:600;color:var(--accent-lt2);margin-bottom:2px;">${client.nextDate}</div>
-        <div style="font-size:13px;color:var(--accent-lt2);opacity:.75;">${client.nextTime} · ${client.treatment}</div>
+        <div style="font-size:22px;font-weight:600;color:var(--accent-lt2);margin-bottom:2px;">${noAppt?'Not scheduled':client.nextDate}</div>
+        <div style="font-size:13px;color:var(--accent-lt2);opacity:.75;">${noAppt?(client.treatment||'Book your next visit'):(client.nextTime+' · '+client.treatment)}</div>
         <div style="margin-top:10px;display:flex;align-items:center;gap:6px;flex-wrap:wrap;">
           <div style="background:${urgent?'var(--accent)':'rgba(255,255,255,.14)'};border-radius:6px;padding:4px 10px;font-size:12px;color:${urgent?'var(--accent-ink)':'var(--accent-lt2)'};font-weight:700;">${urgencyLabel}</div>
         </div>
-        ${client.isThisWeek?`<div style="margin-top:6px;font-size:12px;color:var(--accent-lt2);opacity:.75;">at ${client.nextTime} · ${client.hoursUntilNext}h away</div>`:''}
+        ${(client.isThisWeek&&!noAppt)?`<div style="margin-top:6px;font-size:12px;color:var(--accent-lt2);opacity:.75;">at ${client.nextTime} · ${client.hoursUntilNext}h away</div>`:''}
       </div>
       <!-- Animated SVG ring -->
       <div style="flex-shrink:0;position:relative;width:68px;height:68px;">
@@ -1277,8 +1313,8 @@ function renderHome(){
             stroke-dasharray="${filled.toFixed(1)} ${(ringC-filled).toFixed(1)}"/>
         </svg>
         <div style="position:absolute;inset:0;display:flex;flex-direction:column;align-items:center;justify-content:center;">
-          <div style="font-size:${client.daysUntilNext>=10?'18':'22'}px;font-weight:700;color:var(--accent-lt2);line-height:1;">${client.isToday?'🎉':client.daysUntilNext}</div>
-          ${!client.isToday?`<div style="font-size:9px;color:var(--accent-lt2);opacity:.7;font-weight:600;letter-spacing:.04em;">DAYS</div>`:''}
+          <div style="font-size:${(!noAppt&&client.daysUntilNext>=10)?'18':'22'}px;font-weight:700;color:var(--accent-lt2);line-height:1;">${noAppt?'—':(client.isToday?'🎉':client.daysUntilNext)}</div>
+          ${(!client.isToday&&!noAppt)?`<div style="font-size:9px;color:var(--accent-lt2);opacity:.7;font-weight:600;letter-spacing:.04em;">DAYS</div>`:''}
         </div>
       </div>
     </div>
@@ -3201,7 +3237,7 @@ function renderProfile(){
   <div style="display:flex;gap:8px;padding:14px 16px 8px;">
     <div class="stat" style="text-align:center;"><div style="font-size:20px;font-weight:700;color:var(--accent);">${_eng.streak||0}</div><div style="font-size:11px;color:#b8a898;">Day streak</div></div>
     <div class="stat" style="text-align:center;"><div style="font-size:20px;font-weight:700;color:#4ec49a;">${routinePct}%</div><div style="font-size:11px;color:#b8a898;">Routine done</div></div>
-    <div class="stat" style="text-align:center;"><div style="font-size:20px;font-weight:700;color:#a891ec;">${client.daysUntilNext}d</div><div style="font-size:11px;color:#b8a898;">Until next</div></div>
+    <div class="stat" style="text-align:center;"><div style="font-size:20px;font-weight:700;color:#a891ec;">${(client.daysUntilNext==null||!isFinite(client.daysUntilNext))?'—':client.daysUntilNext+'d'}</div><div style="font-size:11px;color:#b8a898;">Until next</div></div>
   </div>
 
   <div class="sh"><h2>${activeProvider().profileTitle}</h2></div>
