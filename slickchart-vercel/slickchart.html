@@ -10339,8 +10339,10 @@ async function _biTextLink(){
 
 function _payExportCSV(){
   const rows=[['Date','Client','Amount','Method','Status','Note']].concat(_payments.map(p=>[p.date||'',p.clientName||'',(parseFloat(p.amount)||0).toFixed(2),p.method||'',p.status||'',p.note||'']));
-  const csv=rows.map(r=>r.map(c=>{c=String(c);return /[",\n]/.test(c)?'"'+c.replace(/"/g,'""')+'"':c;}).join(',')).join('\r\n');
-  try{const a=document.createElement('a');a.href='data:text/csv;charset=utf-8,'+encodeURIComponent(csv);a.download='slickchart-payments.csv';(document.querySelector('.shell')||document.body).appendChild(a);a.click();a.remove();}catch(e){}
+  // Route through _downloadCSV so this export gets the same formula-injection guard as the
+  // others — the old inline builder here escaped quotes/commas but NOT a leading = + - @,
+  // so a client name or note starting with '=' could execute as a formula in Excel/Sheets.
+  _downloadCSV('slickchart-payments.csv',rows);
   if(typeof proToast==='function')proToast('Exported '+_payments.length+' payments');
 }
 function _payLogOpen(){
