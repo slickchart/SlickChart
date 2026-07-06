@@ -549,6 +549,10 @@ const protocols=[
   {id:'p2',name:'Acne Control Protocol',icon:'ti-droplet-off',col:'#0d1e33',ic:'#5ba3e8',steps:[{t:'Salicylic cleanse',d:'2 min',n:'2% BHA cleanser, T-zone focus.'},{t:'BHA peel',d:'5 min',n:'20% salicylic, max 3 min contact.'},{t:'Extractions',d:'10 min',n:'Comedone + milia.'},{t:'Blue LED therapy',d:'15 min',n:'415nm, reduces P. acnes bacteria.'},{t:'Calming serum',d:'2 min',n:'Azelaic acid + niacinamide.'},{t:'Oil-free finish',d:'2 min',n:'Lightweight gel + SPF.'}]},
   {id:'p3',name:'Deep Hydration + Barrier Repair',icon:'ti-droplet',col:'#0a2019',ic:'#4ec49a',steps:[{t:'Gentle milk cleanse',d:'2 min',n:'No foaming agents.'},{t:'HA serum',d:'1 min',n:'3 molecular weights, damp skin.'},{t:'Hydra-infusion',d:'20 min',n:'Hydrafacial tip 3, max suction 30%.'},{t:'Ceramide mask',d:'15 min',n:'Sheet mask + warm towel.'},{t:'Barrier oil blend',d:'2 min',n:'Squalane + rosehip.'},{t:'SPF',d:'1 min',n:'Mineral only.'}]},
 ];
+// Stable reference to the esthetician protocols — `protocols` above is the live array
+// that applyProfessionConfig() rewrites per profession, so we keep the esty set here to
+// merge back in when esty is among the selected professions.
+const _estyProtocols=protocols.slice();
 
 let courses=[
   {id:'c1',title:'Chemical Peel Mastery',icon:'ti-flask',bg:'#0a2019',ic:'#4ec49a',bdg:'bg',status:'Published',price:'$49',modules:6,duration:'45 min',enrolled:12,revenue:588,progress:100,desc:'A complete guide to at-home peel aftercare — what to expect, how to soothe, and when to call your esthetician.'},
@@ -1543,15 +1547,17 @@ function applyProfessionConfig(){
     checkinCfg.referencePhotoOn=selectedProfessions.some(p=>refProfs.includes(p));
   }
 
-  if(hairBarberOnly&&hasHair){protocols.length=0;hairProtocols.forEach(p=>protocols.push(p));}
-  else if(hairBarberOnly&&hasBarber){protocols.length=0;barberProtocols.forEach(p=>protocols.push(p));}
-  else if(browOnly){protocols.length=0;browProtocols.forEach(p=>protocols.push(p));}
-  else if(only('makeup')){protocols.length=0;makeupProtocols.forEach(p=>protocols.push(p));}
-  else if(only('massage')){protocols.length=0;massageProtocols.forEach(p=>protocols.push(p));}
-  else if(only('lash')){protocols.length=0;lashProtocols.forEach(p=>protocols.push(p));}
-  else if(only('nail')){protocols.length=0;nailProtocols.forEach(p=>protocols.push(p));}
-  else if(only('wax')){protocols.length=0;waxProtocols.forEach(p=>protocols.push(p));}
-  else if(only('coach')){protocols.length=0;coachProtocols.forEach(p=>protocols.push(p));}
+  // Merge protocols across ALL selected professions (not just single-profession cases),
+  // so e.g. a hairstylist who also does brows sees hair + brow protocols — and a
+  // hairstylist never sees the esty defaults. Esty protocols are the built-in `_estyProtocols`.
+  {
+    const _protoMap={esty:_estyProtocols,hair:hairProtocols,barber:barberProtocols,brow:browProtocols,
+      makeup:makeupProtocols,massage:massageProtocols,lash:lashProtocols,nail:nailProtocols,
+      wax:waxProtocols,coach:coachProtocols};
+    const merged=[];const seenP=new Set();
+    selectedProfessions.forEach(pid=>{(_protoMap[pid]||[]).forEach(p=>{const k=(p.id||p.name||'');if(!seenP.has(k)){seenP.add(k);merged.push(p);}});});
+    protocols.length=0;merged.forEach(p=>protocols.push(p));
+  }
 
   if(hairBarberOnly&&hasHair){affiliateLinks.length=0;hairAffiliateLinks.forEach(a=>affiliateLinks.push(a));}
   else if(hairBarberOnly&&hasBarber){affiliateLinks.length=0;barberAffiliateLinks.forEach(a=>affiliateLinks.push(a));}
@@ -1609,6 +1615,9 @@ function applyProfessionConfig(){
     if(CL.priya){CL.priya.treatment='LED Therapy';CL.priya.skin='Oily';CL.priya.concerns='Enlarged pores, breakouts';CL.priya.allergies='None known';}
   }
   if(typeof rebuildResources==='function')rebuildResources();
+  // Keep the service menu in sync with the current professions (only if untouched) —
+  // fixes a menu that was auto-seeded with esty before the real professions loaded.
+  if(typeof _reseedSvcMenuIfDefault==='function')_reseedSvcMenuIfDefault();
 }
 
 
@@ -9566,14 +9575,40 @@ function _svcMenuDefaults(){
     contour:[['Contour Session',120],['Wood Therapy',110],['Lymphatic Drainage',95],['Package of 6',600]],
     coach:[['Initial Assessment',90],['Training Session',70],['Package of 10',600],['Monthly Coaching',250]]
   };
-  // Merge services across ALL selected professions (deduped by name), so a multi-service
-  // provider sees their full menu — not just the first profession's, and never the wrong
-  // profession's list. Falls back to esty only if nothing matches.
-  const profs=(typeof selectedProfessions!=='undefined'&&Array.isArray(selectedProfessions)&&selectedProfessions.length)?selectedProfessions:['esty'];
+  // Merge services across ALL selected professions (deduped by name). If no selected
+  // profession has a menu, return EMPTY — don't fall back to esty (which would show the
+  // wrong services). The provider just adds their own.
+  const profs=(typeof selectedProfessions!=='undefined'&&Array.isArray(selectedProfessions)&&selectedProfessions.length)?selectedProfessions:[];
   const seen=new Set();const out=[];
   profs.forEach(pr=>{(M[pr]||[]).forEach(x=>{const key=x[0].toLowerCase();if(!seen.has(key)){seen.add(key);out.push({id:'svc_seed'+out.length,name:x[0],price:x[1],taxable:true});}});});
-  if(!out.length){(M.esty).forEach(x=>out.push({id:'svc_seed'+out.length,name:x[0],price:x[1],taxable:true}));}
   return out;
+}
+// Signature of a defaults array — used to tell whether the provider has customized their
+// menu (if not, we can safely re-seed it when their profession changes).
+function _svcMenuSig(arr){return (arr||[]).map(s=>String(s.name||'').toLowerCase().trim()+'|'+(+s.price||0)).join(',');}
+// Re-seed the service menu to match the current professions, but ONLY if the provider
+// hasn't customized it (empty, or still exactly matches a defaults signature for some
+// profession set). Keeps a hairstylist from being stuck with the esty defaults that were
+// seeded before their profession loaded.
+function _reseedSvcMenuIfDefault(){
+  try{
+    const cur=Array.isArray(_svcMenu)?_svcMenu:[];
+    // Consider it "untouched" if empty, or its signature matches the defaults for ANY
+    // single known profession (i.e. an earlier auto-seed the provider never edited).
+    const curSig=_svcMenuSig(cur);
+    const known=['esty','hair','barber','nail','lash','brow','pmu','wax','makeup','massage','nutrition','contour','coach'];
+    const savedProfs=selectedProfessions;
+    let untouched=(cur.length===0);
+    if(!untouched){
+      for(const p of known){
+        const tmp=(function(){const s=selectedProfessions;selectedProfessions=[p];const d=_svcMenuDefaults();selectedProfessions=s;return d;})();
+        if(_svcMenuSig(tmp)===curSig){untouched=true;break;}
+      }
+      // also matches the full current-profession defaults
+      if(!untouched&&_svcMenuSig(_svcMenuDefaults())===curSig)untouched=true;
+    }
+    if(untouched){_svcMenu=_svcMenuDefaults();_saveSvcMenu();}
+  }catch(e){}
 }
 let _svcMenu=(function(){try{const r=JSON.parse(localStorage.getItem('sc_service_menu')||'null');if(Array.isArray(r))return r;}catch(e){}return _svcMenuDefaults();})();
 function _saveSvcMenu(){try{localStorage.setItem('sc_service_menu',JSON.stringify(_svcMenu));}catch(e){}}
