@@ -2434,7 +2434,7 @@ function renderClient(id){
   <div class="sh" style="display:flex;align-items:center;justify-content:space-between;"><h2>Client details</h2><button onclick="editVitals('${id}')" style="border:1px solid var(--accent-a30,#3d2d10);background:var(--accent-tint);color:var(--accent);cursor:pointer;padding:4px 11px;border-radius:20px;font-size:11px;font-weight:600;font-family:inherit;display:inline-flex;align-items:center;gap:4px;margin-right:16px;"><i class="ti ti-pencil" style="font-size:11px;"></i> Edit</button></div>
   <div style="padding:0 16px;">
     ${_vitalsConfig().filter(f=>!f.med||(c[f.key]&&String(c[f.key]).trim()&&c[f.key]!=='—')).map(f=>`<div class="fr"><span class="fl">${f.label}</span><span class="fv"${f.key==='concerns'?' style="font-size:12px;"':''}>${c[f.key]||'—'}</span></div>`).join('')}
-    ${c.photoConsent?`<div class="fr"><span class="fl">Photo consent</span><span class="fv" style="font-size:12px;">${c.photoConsent.beforeAfter?'\u2713 Before/after':'\u2717 Before/after'} \u00b7 ${c.photoConsent.socialMedia?'\u2713 Social/portfolio':'\u2717 Social/portfolio'}</span></div>`:''}
+    ${c.photoConsent?`<div class="fr"><span class="fl">Photo consent</span><span class="fv" style="font-size:12px;">${c.photoConsent.beforeAfter?'\u2713 Before/after':'\u2717 Before/after'} \u00b7 ${c.photoConsent.socialMedia?'\u2713 Social/portfolio':'\u2717 Social/portfolio'}</span></div>`:`<div class="fr"><span class="fl">Photo consent</span><span class="fv" style="font-size:12px;color:#777;">Captured once they sign an intake</span></div>`}
   </div>
   ${(function(){const sug=(typeof _suggestedFormsFor==='function')?_suggestedFormsFor(c):[];if(!sug.length)return '';
     if(!window._sugChecked)window._sugChecked={};
@@ -3142,6 +3142,28 @@ function _capturePhotoConsent(c,formId,answers){
       socialMedia:social!=null?/yes/i.test(String(social)):undefined,
       date:new Date().toLocaleDateString('en-US',{month:'short',day:'numeric',year:'numeric'})
     };
+  }catch(e){}
+}
+// A client can attach a reference/inspo photo on their intake (id 'ref-photo', an array
+// of data URLs). Pull those into the provider's captured-photos gallery — tagged as a
+// reference — so they show up alongside check-in reference photos, not buried in answers.
+function _captureRefPhoto(cid,formId,answers){
+  try{
+    if(!cid||!answers)return;
+    let arr=answers['ref-photo'];
+    if(!Array.isArray(arr)||!arr.length){
+      // also catch any Photo-upload question on the form, by id
+      const t=formTmpls[formId];
+      if(t&&t.qs){const q=t.qs.find(q=>(q.type==='Photo upload'||q.type==='File upload'));if(q&&Array.isArray(answers[q.id]))arr=answers[q.id];}
+    }
+    if(!Array.isArray(arr)||!arr.length)return;
+    if(typeof capturedPhotos==='undefined')return;
+    if(!capturedPhotos[cid])capturedPhotos[cid]=[];
+    // Avoid re-adding the same intake photos if the form syncs more than once.
+    const have=new Set(capturedPhotos[cid].filter(p=>p&&p.source==='intake').map(p=>p.url));
+    const baseTs=Date.now();let added=0;
+    arr.forEach((url,i)=>{if(url&&!have.has(url)){capturedPhotos[cid].push({url,ts:baseTs+i,phase:'reference',angle:'',source:'intake'});added++;}});
+    if(added){try{if(typeof persistCapturedPhotos==='function')persistCapturedPhotos();}catch(e){}}
   }catch(e){}
 }
 function _applyIntakeVitals(chart,formId,getAns){
@@ -6669,7 +6691,7 @@ function submitSignOnDevice(fid,cid){
     _applyIntakeVitals(CL[cid],fid,q=>ans[q.id]);
     // store the signed form on the client's file so it lives in Forms & documents
     CL[cid].submittedForms=CL[cid].submittedForms||[];
-    if(!CL[cid].submittedForms.some(sf=>sf.formId===fid&&sf.signed))CL[cid].submittedForms.unshift({formId:fid,title:tmpl.name,answers:ans,flagged:[],date:'Today',signed:true});_captureBirthday(CL[cid],fid,ans);_capturePhotoConsent(CL[cid],fid,ans);
+    if(!CL[cid].submittedForms.some(sf=>sf.formId===fid&&sf.signed))CL[cid].submittedForms.unshift({formId:fid,title:tmpl.name,answers:ans,flagged:[],date:'Today',signed:true});_captureBirthday(CL[cid],fid,ans);_capturePhotoConsent(CL[cid],fid,ans);_captureRefPhoto(cid,fid,ans);
     try{if(typeof saveClients==='function')saveClients();}catch(e){}
   }
   proToast(`${tmpl.name} signed ✓`);
@@ -9586,35 +9608,26 @@ function _svcMenuDefaults(){
 // Signature of a defaults array — used to tell whether the provider has customized their
 // menu (if not, we can safely re-seed it when their profession changes).
 function _svcMenuSig(arr){return (arr||[]).map(s=>String(s.name||'').toLowerCase().trim()+'|'+(+s.price||0)).join(',');}
-// Re-seed the service menu to match the current professions, but ONLY if the provider
-// hasn't customized it (empty, or still exactly matches a defaults signature for some
-// profession set). Keeps a hairstylist from being stuck with the esty defaults that were
-// seeded before their profession loaded.
+// Whether the provider has hand-edited their service menu. Once true, we never auto-reseed.
+function _svcMenuIsCustom(){try{return localStorage.getItem('sc_service_menu_custom')==='1';}catch(e){return false;}}
+function _markSvcMenuCustom(){try{localStorage.setItem('sc_service_menu_custom','1');}catch(e){}}
+// Re-seed the service menu to match the current professions, UNLESS the provider has
+// hand-edited it. This fixes a menu that was auto-seeded from the default professions
+// (esty/wax/lash/brow) before the provider's real professions loaded — e.g. a hairstylist
+// who was stuck seeing esty services.
 function _reseedSvcMenuIfDefault(){
   try{
-    const cur=Array.isArray(_svcMenu)?_svcMenu:[];
-    // Consider it "untouched" if empty, or its signature matches the defaults for ANY
-    // single known profession (i.e. an earlier auto-seed the provider never edited).
-    const curSig=_svcMenuSig(cur);
-    const known=['esty','hair','barber','nail','lash','brow','pmu','wax','makeup','massage','nutrition','contour','coach'];
-    const savedProfs=selectedProfessions;
-    let untouched=(cur.length===0);
-    if(!untouched){
-      for(const p of known){
-        const tmp=(function(){const s=selectedProfessions;selectedProfessions=[p];const d=_svcMenuDefaults();selectedProfessions=s;return d;})();
-        if(_svcMenuSig(tmp)===curSig){untouched=true;break;}
-      }
-      // also matches the full current-profession defaults
-      if(!untouched&&_svcMenuSig(_svcMenuDefaults())===curSig)untouched=true;
-    }
-    if(untouched){_svcMenu=_svcMenuDefaults();_saveSvcMenu();}
+    if(_svcMenuIsCustom())return;                 // provider edited it — leave it alone
+    const next=_svcMenuDefaults();
+    // Only rewrite if it actually changed, to avoid needless writes/re-renders.
+    if(_svcMenuSig(next)!==_svcMenuSig(_svcMenu)){_svcMenu=next;_saveSvcMenu();}
   }catch(e){}
 }
 let _svcMenu=(function(){try{const r=JSON.parse(localStorage.getItem('sc_service_menu')||'null');if(Array.isArray(r))return r;}catch(e){}return _svcMenuDefaults();})();
 function _saveSvcMenu(){try{localStorage.setItem('sc_service_menu',JSON.stringify(_svcMenu));}catch(e){}}
-function _svcSet(i,k,v){if(_svcMenu[i]){_svcMenu[i][k]=v;_saveSvcMenu();}}
-function _svcDel(i){_svcMenu.splice(i,1);_saveSvcMenu();renderServiceMenu();}
-function _svcAdd(){_svcMenu.push({id:'svc_'+Date.now().toString(36),name:'',price:0});_saveSvcMenu();renderServiceMenu();}
+function _svcSet(i,k,v){if(_svcMenu[i]){_svcMenu[i][k]=v;_markSvcMenuCustom();_saveSvcMenu();}}
+function _svcDel(i){_svcMenu.splice(i,1);_markSvcMenuCustom();_saveSvcMenu();renderServiceMenu();}
+function _svcAdd(){_svcMenu.push({id:'svc_'+Date.now().toString(36),name:'',price:0});_markSvcMenuCustom();_saveSvcMenu();renderServiceMenu();}
 
 
 // ── Reports (accountant-ready): income summary, sales tax, reconciliation, transaction detail ──
@@ -10902,6 +10915,7 @@ async function syncClientEvents(){
             }
             if(typeof _capturePhotoConsent==='function'&&payload.formId){
               _capturePhotoConsent(c,payload.formId,payload.answers||{});
+              _captureRefPhoto(cid,payload.formId,payload.answers||{});
             }
           }catch(e){}
           if(payload.signed){c.signedForms=c.signedForms||[];if(c.signedForms.indexOf(title)<0)c.signedForms.push(title);}
@@ -11700,10 +11714,10 @@ function _ncQHTML(q,i){
     field=`<div style="display:flex;flex-wrap:wrap;gap:6px;">${q.options.map(o=>`<button onclick="newClientData['${id}']='${String(o).replace(/'/g,'\\u0027')}';renderNCStep()" class="btng" style="padding:6px 12px;font-size:12px;${val===o?'border-color:var(--accent);color:var(--accent);background:var(--accent-a08);':''}">${o}</button>`).join('')}</div>
     <input class="fi" id="${id}-other" aria-label="${q.label} — type your own" oninput="newClientData['${id}']=this.value" value="${isCustom?esc:''}" placeholder="Or type your own…" style="margin-top:8px;font-size:13px;">`;
   }
+  else if(q.type==='Photo upload'||q.type==='File upload')field=`<div style="background:#111;border:1.5px dashed #2f2f2f;border-radius:9px;padding:12px;text-align:center;color:#888;font-size:12px;display:flex;align-items:center;justify-content:center;gap:7px;"><i class="ti ti-camera" style="font-size:14px;"></i> Client adds this from their app or in-person link</div>`;
   else field=`<input class="fi" id="${id}" aria-label="${q.label}" value="${esc}" oninput="newClientData['${id}']=this.value" placeholder="Answer…">`;
   return `<div style="margin-bottom:14px;">${lab}${field}</div>`;
 }
-function renderNewClient(){setNav('clients');newClientData={};renderNCBasicStep();}
 function renderNCBasicStep(){
   setNav('clients');
   document.getElementById('tt').textContent='Add client';
@@ -11932,6 +11946,7 @@ function _pfiQHTML(q,i){
   if(q.type==='Long text')field=`<textarea class="fi" id="${id}" aria-label="${q.label}" oninput="_pfiData['${id}']=this.value" style="height:60px;resize:none;line-height:1.5;" placeholder="Answer…">${escT}</textarea>`;
   else if(q.type==='Date')field=`<input class="fi" type="date" id="${id}" aria-label="${q.label}" value="${esc}" onchange="_pfiData['${id}']=this.value">`;
   else if(q.type==='Yes / No')field=`<div style="display:flex;gap:8px;">${['Yes','No'].map(o=>`<button onclick="_pfiData['${id}']='${o}';_renderPfiQs()" class="btng" style="flex:1;${val===o?'border-color:var(--accent);color:var(--accent);background:var(--accent-a08);':''}">${o}</button>`).join('')}</div>`;
+  else if(q.type==='Photo upload'||q.type==='File upload')field=`<div style="background:#111;border:1.5px dashed #2f2f2f;border-radius:9px;padding:14px;text-align:center;color:#888;font-size:12px;display:flex;align-items:center;justify-content:center;gap:7px;"><i class="ti ti-camera" style="font-size:15px;"></i> The client can upload this from their app or in-person link</div>`;
   else field=`<input class="fi" id="${id}" aria-label="${q.label}" value="${esc}" oninput="_pfiData['${id}']=this.value" placeholder="Answer…">`;
   return `<div style="margin-bottom:14px;">${lab}${field}</div>`;
 }
@@ -11971,6 +11986,7 @@ function _pfiSave(id,fid){
   try{_applyIntakeVitals(c,fid,q=>answers[q.id]);}catch(e){}
   try{_captureBirthday(c,fid,answers);}catch(e){}
   try{_capturePhotoConsent(c,fid,answers);}catch(e){}
+  try{_captureRefPhoto(id,fid,answers);}catch(e){}
   c.submittedForms=c.submittedForms||[];
   c.submittedForms.unshift({formId:fid,title:t.name,answers,flagged,date:'Today',signed:false,filledBy:'provider'});
   if(flagged.length)c.flaggedContra={form:t.name,items:flagged.slice(),date:'Today'};
