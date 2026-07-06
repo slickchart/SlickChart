@@ -1829,7 +1829,7 @@ function persistClientHomecare(){try{localStorage.setItem('sc_client_homecare',J
 function loadClientHomecare(){try{const raw=localStorage.getItem('sc_client_homecare');if(raw){const v=JSON.parse(raw);if(v&&typeof v==='object')clientHomecare=v;}}catch(e){}}
 function persistSessionSummaries(){try{localStorage.setItem('sc_session_summaries',JSON.stringify(sessionSummaries));}catch(e){}}
 function loadSessionSummaries(){try{const raw=localStorage.getItem('sc_session_summaries');if(raw){const v=JSON.parse(raw);if(v&&typeof v==='object')sessionSummaries=v;}}catch(e){}}
-function persistCapturedPhotos(){try{localStorage.setItem('sc_captured_photos',JSON.stringify(capturedPhotos));}catch(e){}}
+function persistCapturedPhotos(){try{localStorage.setItem('sc_captured_photos',JSON.stringify(capturedPhotos));return true;}catch(e){return false;}}
 function loadCapturedPhotos(){try{const raw=localStorage.getItem('sc_captured_photos');if(raw){const v=JSON.parse(raw);if(v&&typeof v==='object')capturedPhotos=v;}}catch(e){}}
 function persistStaff(){try{localStorage.setItem('sc_staff',JSON.stringify(staff));}catch(e){}}
 function loadStaff(){try{const raw=localStorage.getItem('sc_staff');if(raw){const arr=JSON.parse(raw);if(Array.isArray(arr)&&arr.length){staff.length=0;arr.forEach(x=>staff.push(x));}}}catch(e){}}
@@ -4585,12 +4585,22 @@ function takePhoto(clientId,phase,after){
     const f=inp.files&&inp.files[0];const ts=Date.now();
     const save=url=>{
       if(!capturedPhotos[clientId])capturedPhotos[clientId]=[];
-      capturedPhotos[clientId].push({url:url||'',ts,phase:phase||'reference',angle:(typeof activeAngle!=='undefined'&&activeAngle!=='Inspiration')?activeAngle:'Front'});
+      const rec={url:url||'',ts,phase:phase||'reference',angle:(typeof activeAngle!=='undefined'&&activeAngle!=='Inspiration')?activeAngle:'Front'};
+      capturedPhotos[clientId].push(rec);
       // Persist immediately — don't rely on the caller's `after` callback routing through
       // nav() (the in-room capture flow re-renders a DOM fragment instead of navigating,
       // which used to leave freshly captured photos unsaved until the provider left the room).
-      try{if(typeof persistCapturedPhotos==='function')persistCapturedPhotos();}catch(e){}
-      proToast((phase?phase.charAt(0).toUpperCase()+phase.slice(1)+' photo':'Photo')+' captured · '+_photoStamp(ts));
+      let saved=true;
+      try{saved=(typeof persistCapturedPhotos==='function')?persistCapturedPhotos():true;}catch(e){saved=false;}
+      if(saved){
+        proToast((phase?phase.charAt(0).toUpperCase()+phase.slice(1)+' photo':'Photo')+' captured · '+_photoStamp(ts));
+      }else{
+        // Storage is full — the photo is only in memory and will be lost on reload.
+        // Roll it back out of the array so counts don't imply it was saved, and tell
+        // the provider plainly rather than showing a false "captured ✓".
+        const idx=capturedPhotos[clientId].indexOf(rec);if(idx>=0)capturedPhotos[clientId].splice(idx,1);
+        proToast('Couldn\u2019t save — device storage is full. Clear space or export existing photos.');
+      }
       if(after)after();
     };
     if(f){const r=new FileReader();r.onload=e=>save(e.target.result);r.onerror=()=>save('');r.readAsDataURL(f);}else save('');
