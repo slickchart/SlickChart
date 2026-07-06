@@ -1453,7 +1453,7 @@ function _detectLang(){
   return 'en';
 }
 let _lang=_detectLang();
-function t(k,vars){let str=(I18N[_lang]&&I18N[_lang][k])||I18N.en[k]||k;if(vars)Object.keys(vars).forEach(v=>{str=str.replace('{'+v+'}',vars[v]);});return str;}
+function t(k,vars){let str=(I18N[_lang]&&I18N[_lang][k])||I18N.en[k]||k;if(vars)Object.keys(vars).forEach(v=>{str=str.split('{'+v+'}').join(vars[v]);});return str;}
 function _langOptions(){return _LANGS.map(([c,l])=>`<option value="${c}"${_lang===c?' selected':''}>${l}</option>`).join('');}
 function _setLang(l){if(!I18N[l])return;_lang=l;try{localStorage.setItem('sc_lang',l);}catch(e){}
   if(document.getElementById('login-screen')){renderLogin();return;}
@@ -9559,7 +9559,12 @@ function _addToCalendar(title,dateStr,timeStr){
   const st=_icsStamp(dateStr,timeStr);if(!st){proToast('Add a date & time first');return;}
   const p=n=>String(n).padStart(2,'0');const e=new Date(st.d.getTime()+3600000);
   const es=e.getFullYear()+p(e.getMonth()+1)+p(e.getDate())+'T'+p(e.getHours())+p(e.getMinutes())+'00';
-  const ics=['BEGIN:VCALENDAR','VERSION:2.0','PRODID:-//SlickChart//EN','BEGIN:VEVENT','UID:sc-'+Date.now()+'@slickchart','DTSTART:'+st.stamp,'DTEND:'+es,'SUMMARY:'+String(title).replace(/([,;])/g,'\\$1'),'END:VEVENT','END:VCALENDAR'].join('\r\n');
+  // RFC 5545 text escaping: backslash FIRST, then ; , and newlines. The old version only
+  // escaped , and ; (a backslash or newline in a title produced malformed ICS), and it
+  // omitted DTSTAMP, which strict clients (Apple Calendar, Outlook) require.
+  const esc=s=>String(s==null?'':s).replace(/\\/g,'\\\\').replace(/;/g,'\\;').replace(/,/g,'\\,').replace(/\r?\n/g,'\\n');
+  const now=new Date();const dtstamp=now.getUTCFullYear()+p(now.getUTCMonth()+1)+p(now.getUTCDate())+'T'+p(now.getUTCHours())+p(now.getUTCMinutes())+p(now.getUTCSeconds())+'Z';
+  const ics=['BEGIN:VCALENDAR','VERSION:2.0','PRODID:-//SlickChart//EN','CALSCALE:GREGORIAN','BEGIN:VEVENT','UID:sc-'+Date.now()+'@slickchart','DTSTAMP:'+dtstamp,'DTSTART:'+st.stamp,'DTEND:'+es,'SUMMARY:'+esc(title),'END:VEVENT','END:VCALENDAR'].join('\r\n');
   const gcal='https://calendar.google.com/calendar/render?action=TEMPLATE&text='+encodeURIComponent(title)+'&dates='+st.stamp+'/'+es;
   const ov=document.createElement('div');ov.id='cal-add-sheet';
   ov.style.cssText='position:fixed;top:0;bottom:0;left:0;right:0;margin:0 auto;width:390px;max-width:100%;z-index:9999;background:rgba(0,0,0,.6);display:flex;align-items:center;justify-content:center;padding:24px 16px;box-sizing:border-box;';
@@ -9840,7 +9845,7 @@ function _fmtMoney(n){return _money(n).toLocaleString('en-US',{minimumFractionDi
 function _price(v){const n=parseFloat(v);return (isFinite(n)&&n>0)?n:0;}
 function _coSubtotal(){return _money(_coItems.reduce((a,it)=>a+((+it.price||0)*(it.qty||1)),0));}
 let _taxRate=(function(){try{const r=parseFloat(localStorage.getItem('sc_tax_rate'));return isFinite(r)?r:0;}catch(e){return 0;}})();
-function _saveTaxRate(v){_taxRate=Math.max(0,parseFloat(v)||0);try{localStorage.setItem('sc_tax_rate',String(_taxRate));}catch(e){}if(typeof Cloud!=='undefined'&&Cloud&&Cloud.pushAllLocal){try{Cloud.pushAllLocal();}catch(e){}}}
+function _saveTaxRate(v){_taxRate=Math.min(100,Math.max(0,parseFloat(v)||0));try{localStorage.setItem('sc_tax_rate',String(_taxRate));}catch(e){}if(typeof Cloud!=='undefined'&&Cloud&&Cloud.pushAllLocal){try{Cloud.pushAllLocal();}catch(e){}}}
 function _coTaxAmt(){if(_taxRate<=0)return 0;const t=_coItems.reduce((a,it)=>a+((it.taxable===false)?0:((+it.price||0)*(it.qty||1))),0);return _money(t*_taxRate/100);}
 function _coTotal(){return _money(_coSubtotal()+_coTaxAmt());}
 // The amount to charge/invoice: line-item total when there are items, otherwise the
