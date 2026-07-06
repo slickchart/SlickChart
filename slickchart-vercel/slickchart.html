@@ -6644,6 +6644,21 @@ function _assembleClientData(id){
 }
 let _syncingClients=false,_clientSyncTimer=null;
 function _scheduleClientSync(){ if(_clientSyncTimer)clearTimeout(_clientSyncTimer); _clientSyncTimer=setTimeout(function(){_syncClientsToServer({});},2500); }
+// After changing a client's recommendations/routine/forms: persist the workspace so
+// the change survives reload, and schedule a server sync so the client's own device
+// (which polls /api/client-data, not the same-browser bridge) actually receives it.
+function _persistAndSyncClient(cid){
+  try{if(typeof persistWorkspace==='function')persistWorkspace();}catch(e){}
+  try{if(cid&&typeof _scheduleSpecificClientSync==='function')_scheduleSpecificClientSync(cid);else if(typeof _scheduleClientSync==='function')_scheduleClientSync();}catch(e){}
+}
+// Debounced per-client sync so rapid successive sends (product, then routine) collapse
+// into a single network call for that client rather than re-pushing the whole roster.
+let _specificSyncTimers={};
+function _scheduleSpecificClientSync(cid){
+  if(!cid)return;
+  if(_specificSyncTimers[cid])clearTimeout(_specificSyncTimers[cid]);
+  _specificSyncTimers[cid]=setTimeout(function(){delete _specificSyncTimers[cid];try{_syncSpecificClientsToServer([cid],{});}catch(e){}},2500);
+}
 // Sync only the given client ids (fast path for invites) instead of the whole roster.
 async function _syncSpecificClientsToServer(ids,opts){
   opts=opts||{};
@@ -7785,6 +7800,7 @@ function confirmSendRoutine(cid){
   if(cid==='maya'){try{SlickBridge.post('routine-recommended',{providerId:'jess',clientId:'maya',routine:{name,note,products}});}catch(e){}}
   currentSentRoutines()[cid]={name,note,items:routineDraft.items.slice(),products,date:'Just now'};
   persistSentRoutines();
+  _persistAndSyncClient(cid);
   closeSendProd();
   const c=CL[cid];
   if(typeof proToast==='function')proToast(`Sent "${name}" to ${c?c.name.split(' ')[0]:'client'}`);
@@ -8018,6 +8034,9 @@ function confirmSendProduct(aid,cid){
   if(cid==='maya'&&a){
     try{SlickBridge.post('product-recommended',{providerId:'jess',clientId:'maya',product:{name:a.name,brand:a.brand,icon:a.icon,url:a.url||'',amazon:amazonBuyUrl(a),site:a.site||'',inOffice:!!a.inOffice,siteCode:a.siteCode||'',urlCode:a.urlCode||'',amazonCode:a.amazonCode||'',why:_recReason(cid,aid)}});}catch(e){}
   }
+  // Persist the recommendation and push it to the real client's device — the bridge
+  // post above only reaches a same-browser preview, not a client on their own phone.
+  _persistAndSyncClient(cid);
   closeSendProd();
   const c=CL[cid];
   proToast(`Recommended to ${c?c.name.split(' ')[0]:'client'}`);
@@ -8082,8 +8101,15 @@ function confirmSendResource(ri,cid){
   const r=resources[ri];if(!r)return;
   r.shared=(r.shared||0)+1;
   if(cid==='maya'){try{SlickBridge.post('resource-shared',{providerId:'jess',clientId:'maya',resource:{title:r.title,icon:r.icon,cat:r.cat,url:r.url||'',tips:r.tips||[]}});}catch(e){}}
-  closeSendProd();
+  // Assign it to the client's pending guides so a real client on their own device
+  // receives it via /api/client-data — the bridge post above only reaches a preview.
   const c=CL[cid];
+  if(c&&r.id){
+    if(!Array.isArray(c.pendingGuides))c.pendingGuides=[];
+    if(!c.pendingGuides.some(pg=>pg.guideId===r.id))c.pendingGuides.push({guideId:r.id,assignedAt:Date.now()});
+    try{saveClients();}catch(e){}
+  }
+  closeSendProd();
   proToast(`Sent to ${c?c.name.split(' ')[0]:'client'}`);
 }
 
