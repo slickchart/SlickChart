@@ -3116,11 +3116,16 @@ function toggleRoomStep(i){const k=roomProtocol+'-'+i;roomStepsDone[k]=!roomStep
 function _saveRoomState(){try{localStorage.setItem('sc_room_state_'+(_roomClientId||''),JSON.stringify({protocol:roomProtocol,done:roomStepsDone}));}catch(e){}}
 function _loadRoomState(id){
   _roomClientId=id||'';
+  // Reset per-client room state so nothing bleeds from the previously-open client.
+  // roomProtocol is a global index; without resetting it here, opening client B after
+  // client A left B showing A's selected protocol (and mapping step checkboxes to the
+  // wrong protocol via the roomProtocol-prefixed keys) whenever B's saved state had no
+  // protocol field. Default to 0 and only override from B's own saved value.
+  roomProtocol=0;roomStepsDone={};
   try{
     const raw=localStorage.getItem('sc_room_state_'+_roomClientId);
-    if(raw){const s=JSON.parse(raw)||{};roomProtocol=(typeof s.protocol==='number')?s.protocol:roomProtocol;roomStepsDone=(s.done&&typeof s.done==='object')?s.done:{};}
-    else{roomStepsDone={};}
-  }catch(e){roomStepsDone={};}
+    if(raw){const s=JSON.parse(raw)||{};roomProtocol=(typeof s.protocol==='number'&&s.protocol>=0)?s.protocol:0;roomStepsDone=(s.done&&typeof s.done==='object')?s.done:{};}
+  }catch(e){roomProtocol=0;roomStepsDone={};}
 }
 
 function _roomPhotosHTML(id){
@@ -10061,7 +10066,7 @@ function renderExportCenter(){
 
 function renderServiceMenu(){
   setNav('pro');document.getElementById('tt').textContent='Services & protocols';
-  const rows=_svcMenu.map((sv,i)=>`<div style="display:flex;align-items:center;gap:8px;background:#161616;border:1px solid #242424;border-radius:10px;padding:10px 12px;margin:0 16px 8px;"><input value="${String(sv.name||'').replace(/"/g,'&quot;')}" oninput="_svcSet(${i},'name',this.value)" placeholder="Service name" style="flex:1;min-width:0;background:none;border:none;border-bottom:1px solid #2a2a2a;color:#e0e0e0;font-size:14px;font-family:inherit;outline:none;padding-bottom:3px;"><span style="color:#777;font-size:13px;">$</span><input value="${sv.price||''}" inputmode="decimal" oninput="_svcSet(${i},'price',parseFloat(this.value)||0)" placeholder="0" style="width:60px;background:#111;border:1px solid #2a2a2a;border-radius:6px;padding:6px;color:#e0e0e0;font-size:13px;font-family:inherit;text-align:right;"><button onclick="_svcSet(${i},'taxable',(sv.taxable===false));renderServiceMenu()" style="background:${sv.taxable===false?'#2a1a0a':'#0a2019'};border:1px solid ${sv.taxable===false?'#4a3510':'#1c4030'};color:${sv.taxable===false?'#c99a5a':'#4ec49a'};border-radius:6px;padding:4px 8px;font-size:10px;font-weight:600;cursor:pointer;font-family:inherit;white-space:nowrap;flex-shrink:0;">${sv.taxable===false?'No tax':'Taxable'}</button><button onclick="_svcDel(${i})" aria-label="Delete service" style="background:none;border:none;color:#a85a5a;cursor:pointer;font-size:15px;padding:2px;"><i class="ti ti-trash"></i></button></div>`).join('');
+  const rows=_svcMenu.map((sv,i)=>`<div style="display:flex;align-items:center;gap:8px;background:#161616;border:1px solid #242424;border-radius:10px;padding:10px 12px;margin:0 16px 8px;"><input value="${String(sv.name||'').replace(/"/g,'&quot;')}" oninput="_svcSet(${i},'name',this.value)" placeholder="Service name" style="flex:1;min-width:0;background:none;border:none;border-bottom:1px solid #2a2a2a;color:#e0e0e0;font-size:14px;font-family:inherit;outline:none;padding-bottom:3px;"><span style="color:#777;font-size:13px;">$</span><input value="${sv.price||''}" inputmode="decimal" oninput="_svcSet(${i},'price',Math.max(0,parseFloat(this.value)||0))" placeholder="0" style="width:60px;background:#111;border:1px solid #2a2a2a;border-radius:6px;padding:6px;color:#e0e0e0;font-size:13px;font-family:inherit;text-align:right;"><button onclick="_svcSet(${i},'taxable',(sv.taxable===false));renderServiceMenu()" style="background:${sv.taxable===false?'#2a1a0a':'#0a2019'};border:1px solid ${sv.taxable===false?'#4a3510':'#1c4030'};color:${sv.taxable===false?'#c99a5a':'#4ec49a'};border-radius:6px;padding:4px 8px;font-size:10px;font-weight:600;cursor:pointer;font-family:inherit;white-space:nowrap;flex-shrink:0;">${sv.taxable===false?'No tax':'Taxable'}</button><button onclick="_svcDel(${i})" aria-label="Delete service" style="background:none;border:none;color:#a85a5a;cursor:pointer;font-size:15px;padding:2px;"><i class="ti ti-trash"></i></button></div>`).join('');
   S.innerHTML=`
   <div style="padding:14px 16px 8px;"><div style="font-size:13px;color:#999;line-height:1.5;">Your services and prices. These appear in the <b>Add from menu</b> picker when you build an invoice \u2014 no Square required.</div></div>
   <button onclick="nav('protocols')" style="width:calc(100% - 32px);margin:0 16px 12px;background:#0f1f17;border:1px solid #1c4030;border-radius:12px;padding:12px 14px;display:flex;align-items:center;gap:12px;cursor:pointer;font-family:inherit;text-align:left;">
