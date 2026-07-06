@@ -10336,7 +10336,27 @@ function _clientIdByName(name){
 function _checkinForClient(cid,name){
   if(typeof checkins==='undefined'||!Array.isArray(checkins))return null;
   const norm=name?String(name).trim().toLowerCase():'';
-  return checkins.find(ci=>(cid&&ci.clientId===cid)||(norm&&(ci.client||'').trim().toLowerCase()===norm))||null;
+  // Collect ALL matches, then return the most recent — don't trust array order.
+  // New real check-ins are unshifted (newest-first), but undo-restore reinserts at
+  // the original index and the demo seed sits at index 0, so plain .find() (first
+  // match) could return a stale check-in. Prefer the numeric `at` timestamp; when
+  // it's absent (older stored records / seed), fall back to array position, where
+  // a lower index means more recently unshifted.
+  let best=null,bestAt=-Infinity,bestIdx=Infinity;
+  for(let i=0;i<checkins.length;i++){
+    const ci=checkins[i];
+    if(!ci)continue;
+    const match=(cid&&ci.clientId===cid)||(norm&&(ci.client||'').trim().toLowerCase()===norm);
+    if(!match)continue;
+    const at=(typeof ci.at==='number')?ci.at:null;
+    if(at!=null){
+      if(at>bestAt||(bestAt===-Infinity)){best=ci;bestAt=at;bestIdx=i;}
+    }else if(bestAt===-Infinity && i<bestIdx){
+      // no timestamped match yet — keep the earliest-indexed (newest unshifted) one
+      best=ci;bestIdx=i;
+    }
+  }
+  return best;
 }
 // Whether the provider has written today's treatment notes for this client yet.
 // "Done" = a session summary saved today whose snapshot actually contains notes,
@@ -10409,7 +10429,7 @@ async function syncClientEvents(){
         const ciPhotos=Array.isArray(payload.photos)?payload.photos:[];
         const ci={id:ev.id,providerId:'me',clientId:cid,client:name,dateLabel:payload.dateLabel||'',time:payload.time||'',
           treatment:payload.treatment||'',groups:payload.groups||[],flagged:payload.flagged||[],notes:payload.notes||'',
-          photos:ciPhotos,read:false};
+          photos:ciPhotos,read:false,at:(ev.created_at?(new Date(ev.created_at).getTime()||Date.now()):Date.now())};
         checkins.unshift(ci);
         if(c){
           c.checkinDone=true;
@@ -10840,7 +10860,7 @@ SlickBridge.on('booking-request',b=>{
 });
 
 SlickBridge.on('checkin-submitted',ci=>{
-  checkins.unshift({...ci,read:false});
+  checkins.unshift({...ci,read:false,at:(typeof ci.at==='number'?ci.at:Date.now())});
   if(ci.clientId&&CL[ci.clientId]){
     CL[ci.clientId].checkinDone=true;
     // Most recent check-in only — overwrites the previous on the client file.
