@@ -7965,8 +7965,12 @@ function proToast(msg,ms){
   const old=document.getElementById('pro-toast');if(old)old.remove();
   if(_proToastTimer){clearTimeout(_proToastTimer);_proToastTimer=null;}
   const t=document.createElement('div');t.id='pro-toast';
+  // role=status + aria-live so screen-reader users hear feedback like "Payment
+  // complete" or "Could not save" instead of nothing.
+  t.setAttribute('role','status');t.setAttribute('aria-live','polite');
   t.style.cssText='position:fixed;bottom:88px;left:0;right:0;margin:0 auto;width:max-content;max-width:90%;background:#0a2019;border:1px solid #4ec49a;color:#4ec49a;border-radius:10px;padding:10px 16px;font-size:13px;z-index:600;white-space:nowrap;display:flex;align-items:center;gap:7px;box-shadow:0 6px 24px rgba(0,0,0,.4);';
-  t.innerHTML=`<i class="ti ti-check" style="font-size:14px;"></i>${msg}`;
+  t.innerHTML=`<i class="ti ti-check" aria-hidden="true" style="font-size:14px;"></i><span></span>`;
+  const _span=t.querySelector('span');if(_span)_span.textContent=String(msg==null?'':msg);
   (document.querySelector('.shell')||document.body).appendChild(t);
   const dur=(ms===0)?0:(ms||2800);
   if(dur>0)_proToastTimer=setTimeout(()=>{t.remove();_proToastTimer=null;},dur);
@@ -7982,12 +7986,15 @@ function confirmModal(opts,action){
   const run=()=>{try{if(typeof action==='function')action();else if(typeof action==='string'){const f=eval('('+action+')');if(typeof f==='function')f();}}catch(e){}};
   const danger=/delete|remove|stop|permanently|won['’]t/i.test(((opts.action||'')+' '+(opts.title||'')+' '+(opts.body||'')));
   const esc=s=>String(s==null?'':s);
+  const prevFocus=(document.activeElement&&document.activeElement.focus)?document.activeElement:null;
   const ov=document.createElement('div');ov.id='confirm-modal';
   ov.style.cssText='position:fixed;top:0;bottom:0;left:0;right:0;margin:0 auto;width:390px;max-width:100%;z-index:99999;background:rgba(0,0,0,.65);display:flex;align-items:center;justify-content:center;padding:24px;';
-  ov.onclick=e=>{if(e.target===ov)ov.remove();};
-  ov.innerHTML=`<div style="background:#1a1a1a;border:1px solid #2a2a2a;border-radius:16px;padding:20px;max-width:340px;width:100%;box-shadow:0 12px 40px rgba(0,0,0,.5);">
-    <div style="font-size:16px;font-weight:600;color:#f0f0f0;margin-bottom:8px;">${esc(opts.title||'Are you sure?')}</div>
-    <div style="font-size:13px;color:#aaa;line-height:1.55;margin-bottom:18px;">${esc(opts.body||'')}</div>
+  ov.onclick=e=>{if(e.target===ov)close();};
+  // Announced as a modal dialog, labelled by its title and described by its body, so
+  // a screen-reader user hears what they're confirming instead of nothing.
+  ov.innerHTML=`<div role="dialog" aria-modal="true" aria-labelledby="_cf-title" aria-describedby="_cf-body" style="background:#1a1a1a;border:1px solid #2a2a2a;border-radius:16px;padding:20px;max-width:340px;width:100%;box-shadow:0 12px 40px rgba(0,0,0,.5);">
+    <div id="_cf-title" style="font-size:16px;font-weight:600;color:#f0f0f0;margin-bottom:8px;">${esc(opts.title||'Are you sure?')}</div>
+    <div id="_cf-body" style="font-size:13px;color:#aaa;line-height:1.55;margin-bottom:18px;">${esc(opts.body||'')}</div>
     <div style="display:flex;gap:8px;">
       <button id="_cf-cancel" class="btng" style="flex:1;border-radius:10px;padding:11px;">Cancel</button>
       <button id="_cf-ok" style="flex:1;border:none;border-radius:10px;padding:11px;font-size:14px;font-weight:600;cursor:pointer;font-family:inherit;background:${danger?'#3a1414':'var(--accent)'};color:${danger?'#ff9b9b':'var(--accent-ink)'};">${esc(opts.action||'Confirm')}</button>
@@ -7995,8 +8002,22 @@ function confirmModal(opts,action){
   </div>`;
   (document.querySelector('.shell')||document.body).appendChild(ov);
   const ok=ov.querySelector('#_cf-ok'),cancel=ov.querySelector('#_cf-cancel');
-  if(cancel)cancel.onclick=()=>ov.remove();
-  if(ok)ok.onclick=()=>{ov.remove();run();};
+  function close(){try{document.removeEventListener('keydown',onKey,true);}catch(e){}ov.remove();try{if(prevFocus&&document.contains(prevFocus))prevFocus.focus();}catch(e){}}
+  function onKey(e){
+    if(e.key==='Escape'){e.preventDefault();close();return;}
+    if(e.key==='Tab'){
+      // Trap focus between the two buttons so it can't wander behind the overlay.
+      const f=[cancel,ok].filter(Boolean);if(!f.length)return;
+      const first=f[0],last=f[f.length-1];
+      if(e.shiftKey&&document.activeElement===first){e.preventDefault();last.focus();}
+      else if(!e.shiftKey&&document.activeElement===last){e.preventDefault();first.focus();}
+    }
+  }
+  document.addEventListener('keydown',onKey,true);
+  if(cancel)cancel.onclick=()=>close();
+  if(ok)ok.onclick=()=>{close();run();};
+  // Move focus into the dialog — the safe (Cancel) button by default.
+  requestAnimationFrame(()=>{try{(cancel||ok||ov).focus();}catch(e){}});
 }
 // Stale-safe automation delete: capture the automation object at tap time and
 // re-resolve its index when the user confirms, so a reordered/shortened array can't
