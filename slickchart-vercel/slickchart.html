@@ -6984,7 +6984,7 @@ function showMsgTab(tab){
           <span style="font-size:11px;color:#555;">swipe to delete →</span>
         </div>
       </div>
-      <div class="swipe-reveal" onclick="confirmModal({title:'Delete automation',body:'Delete \\'${_jsAttr(a.name)}\\'? It will stop sending immediately.',action:'Delete'},'()=>{autos.splice(${i},1);showMsgTab(\\'autos\\')}')" aria-label="Delete ${_fileEsc(a.name)}">
+      <div class="swipe-reveal" onclick="_deleteAutomation(${i},'autos')" aria-label="Delete ${_fileEsc(a.name)}">
         <i class="ti ti-trash" aria-hidden="true"></i>
         <span>DELETE</span>
       </div>
@@ -7285,7 +7285,10 @@ function renderInventory(){try{_applyImportedProducts();}catch(e){}
 }
 function deleteInventoryItem(i){
   const item=inv[i];if(!item)return;
-  confirmModal({title:'Remove item',body:'Remove "'+(item.name||'this item')+'" from your inventory?',action:'Delete'},'()=>{inv.splice('+i+',1);saveInv();nav(\'inventory\')}');
+  // Capture the item object, not the index — if the array changes between opening
+  // this dialog and confirming, indexOf re-resolves to the right item (or -1 if it's
+  // already gone), instead of a frozen index silently deleting the wrong row.
+  confirmModal({title:'Remove item',body:'Remove "'+(item.name||'this item')+'" from your inventory?',action:'Delete'},function(){const ix=inv.indexOf(item);if(ix>=0){inv.splice(ix,1);saveInv();}nav('inventory');});
 }
 function renderAddInventoryItem(i){
   setNav('pro');
@@ -7978,6 +7981,16 @@ function confirmModal(opts,action){
   const ok=ov.querySelector('#_cf-ok'),cancel=ov.querySelector('#_cf-cancel');
   if(cancel)cancel.onclick=()=>ov.remove();
   if(ok)ok.onclick=()=>{ov.remove();run();};
+}
+// Stale-safe automation delete: capture the automation object at tap time and
+// re-resolve its index when the user confirms, so a reordered/shortened array can't
+// cause the wrong automation to be deleted. `after` selects the right re-render.
+function _deleteAutomation(i,after){
+  const a=autos[i];if(!a)return;
+  confirmModal({title:'Delete automation',body:'Delete \''+((a.name||'this automation'))+'\'? It will stop sending immediately.',action:'Delete'},function(){
+    const ix=autos.indexOf(a);if(ix>=0)autos.splice(ix,1);
+    if(after==='messages')nav('messages');else showMsgTab('autos');
+  });
 }
 
 // ── Recommend a product to a client (from the Shop product list) ──
@@ -9131,18 +9144,29 @@ async function _coEnsureMenu(){
   _coMenu=merged;return _coMenu;
 }
 function _coValidItems(){return _coItems.filter(it=>it.variationId||(+it.price)>0).map(it=>Object.assign({},it,{name:(it.name&&String(it.name).trim())||'Item'}));}
-function _coSubtotal(){return _coItems.reduce((a,it)=>a+((+it.price||0)*(it.qty||1)),0);}
+// Round to whole cents using a tiny epsilon so values like 0.835 (which float math
+// can store as 0.83499999) still round up correctly.
+function _money(n){return Math.round((Number(n)||0)*100+(Number(n)>=0?1e-6:-1e-6))/100;}
+// Sanitize a typed price: never negative, never Infinity/NaN. Guards against a stray
+// minus sign or "Infinity" silently corrupting an invoice total.
+function _price(v){const n=parseFloat(v);return (isFinite(n)&&n>0)?n:0;}
+function _coSubtotal(){return _money(_coItems.reduce((a,it)=>a+((+it.price||0)*(it.qty||1)),0));}
 let _taxRate=(function(){try{const r=parseFloat(localStorage.getItem('sc_tax_rate'));return isFinite(r)?r:0;}catch(e){return 0;}})();
 function _saveTaxRate(v){_taxRate=Math.max(0,parseFloat(v)||0);try{localStorage.setItem('sc_tax_rate',String(_taxRate));}catch(e){}if(typeof Cloud!=='undefined'&&Cloud&&Cloud.pushAllLocal){try{Cloud.pushAllLocal();}catch(e){}}}
-function _coTaxAmt(){if(_taxRate<=0)return 0;const t=_coItems.reduce((a,it)=>a+((it.taxable===false)?0:((+it.price||0)*(it.qty||1))),0);return t*_taxRate/100;}
-function _coTotal(){return _coSubtotal()+_coTaxAmt();}
+function _coTaxAmt(){if(_taxRate<=0)return 0;const t=_coItems.reduce((a,it)=>a+((it.taxable===false)?0:((+it.price||0)*(it.qty||1))),0);return _money(t*_taxRate/100);}
+function _coTotal(){return _money(_coSubtotal()+_coTaxAmt());}
+// The amount to charge/invoice: line-item total when there are items, otherwise the
+// manually-typed amount — always sanitized so a negative or Infinity can't be charged.
+function _coAmount(){const items=_coValidItems();return items.length?_coTotal():_price(_coVal('co-amt'));}
 let _squareTaxRate=null;
 async function _fetchSquareTaxRate(){if(_squareTaxRate!==null)return _squareTaxRate;try{const d=await _sqFetch('/api/square/tax-rate');_squareTaxRate=(d&&d.ok&&d.rate)?d.rate:0;}catch(e){_squareTaxRate=0;}return _squareTaxRate;}
 function _effTaxRate(){return _taxRate>0?_taxRate:(_squareTaxRate||0);}
 function _taxIsEstimate(){return !(_taxRate>0)&&(_squareTaxRate>0);}
-function _taxableSub(){return _coItems.reduce((a,it)=>a+((it.taxable===false)?0:((+it.price||0)*(it.qty||1))),0);}
-function _dispTax(){return _effTaxRate()>0?(_taxableSub()*_effTaxRate()/100):0;}
-function _dispTotal(){return _coSubtotal()+_dispTax();}
+function _taxableSub(){return _money(_coItems.reduce((a,it)=>a+((it.taxable===false)?0:((+it.price||0)*(it.qty||1))),0));}
+// Tax and total are rounded to cents so the displayed lines always add up exactly
+// (subtotal + tax === total) and match the amount actually charged.
+function _dispTax(){return _effTaxRate()>0?_money(_taxableSub()*_effTaxRate()/100):0;}
+function _dispTotal(){return _money(_coSubtotal()+_dispTax());}
 function _coSyncAmt(){const a=document.getElementById('co-amt');if(a&&_coValidItems().length)a.value=_coSubtotal().toFixed(2);}
 function _coUpdateSubtotal(){const s=document.getElementById('co-subtotal');if(s)s.textContent='$'+_coSubtotal().toFixed(2);const t=document.getElementById('co-tax');if(t)t.textContent=_dispTax().toFixed(2);const g=document.getElementById('co-total');if(g)g.textContent=_dispTotal().toFixed(2);_coSyncAmt();}
 function _coQty(i,dv){if(_coItems[i]){_coItems[i].qty=Math.max(1,(_coItems[i].qty||1)+dv);_coRenderItems();}}
@@ -9150,7 +9174,7 @@ function _coAddCustom(){_coItems.push({name:'',price:0,qty:1,variationId:null,ki
 function _coRenderItems(){
   const el=document.getElementById('co-items');if(!el)return;
   if(!_coItems.length){el.innerHTML='';return;}
-  el.innerHTML=_coItems.map((it,i)=>`<div style="display:flex;align-items:center;gap:8px;background:#161616;border:1px solid #242424;border-radius:9px;padding:8px 10px;margin-bottom:6px;"><div style="flex:1;min-width:0;">${it.variationId?`<div style="font-size:13px;color:#e0e0e0;">${String(it.name).replace(/</g,'&lt;')}</div><div style="font-size:11px;color:#4ec49a;">$${(+it.price||0).toFixed(2)}</div>`:`<input value="${String(it.name||'').replace(/"/g,'&quot;')}" oninput="_coItems[${i}].name=this.value" placeholder="Item name" style="width:100%;background:none;border:none;border-bottom:1px solid #2a2a2a;color:#e0e0e0;font-size:13px;font-family:inherit;outline:none;padding-bottom:2px;"><div style="display:flex;align-items:center;gap:3px;margin-top:4px;"><span style="color:#777;font-size:11px;">$</span><input value="${it.price||''}" inputmode="decimal" oninput="_coItems[${i}].price=parseFloat(this.value)||0;_coUpdateSubtotal()" placeholder="0.00" style="width:60px;background:#111;border:1px solid #2a2a2a;border-radius:6px;padding:3px 6px;color:#e0e0e0;font-size:12px;font-family:inherit;"></div>`}</div><div style="display:flex;align-items:center;gap:5px;"><button onclick="_coQty(${i},-1)" style="width:24px;height:24px;border-radius:6px;background:#222;border:none;color:#ccc;cursor:pointer;font-size:14px;">\u2212</button><span style="min-width:16px;text-align:center;font-size:13px;color:#e0e0e0;">${it.qty||1}</span><button onclick="_coQty(${i},1)" style="width:24px;height:24px;border-radius:6px;background:#222;border:none;color:#ccc;cursor:pointer;font-size:14px;">+</button></div><button onclick="_coItems[${i}].taxable=(_coItems[${i}].taxable===false);_coRenderItems()" style="background:${it.taxable===false?'#2a1a0a':'#0a2019'};border:1px solid ${it.taxable===false?'#4a3510':'#1c4030'};color:${it.taxable===false?'#c99a5a':'#4ec49a'};border-radius:6px;padding:4px 7px;font-size:10px;font-weight:600;cursor:pointer;font-family:inherit;white-space:nowrap;">${it.taxable===false?'No tax':'Tax'}</button><button onclick="_coItems.splice(${i},1);_coRenderItems()" aria-label="Remove item" style="background:none;border:none;color:#a85a5a;cursor:pointer;font-size:14px;padding:2px;"><i class="ti ti-x"></i></button></div>`).join('')+`<div style="display:flex;justify-content:space-between;align-items:center;margin-top:6px;gap:8px;"><span style="font-size:11px;color:#888;">${_coItems.length} line${_coItems.length===1?'':'s'} on this invoice \u00b7 add more below</span><span style="font-size:13px;font-weight:700;color:#4ec49a;white-space:nowrap;">Subtotal: <span id="co-subtotal">$${_coSubtotal().toFixed(2)}</span></span></div>${_effTaxRate()>0?`<div style="display:flex;justify-content:space-between;font-size:12px;color:#aaa;margin-top:4px;"><span>${_taxIsEstimate()?'Est. tax':'Tax'} (${_effTaxRate()}%)</span><span>$<span id="co-tax">${_dispTax().toFixed(2)}</span></span></div><div style="display:flex;justify-content:space-between;font-size:13px;font-weight:700;color:#f0f0f0;margin-top:2px;"><span>${_taxIsEstimate()?'Est. total':'Total'}</span><span>$<span id="co-total">${_dispTotal().toFixed(2)}</span></span></div>${_taxIsEstimate()?`<div style="text-align:right;font-size:10px;color:#777;margin-top:3px;">Estimated from your Square tax · Square calculates the exact amount</div>`:''}`:`<div style="text-align:right;font-size:10px;color:#777;margin-top:3px;">+ sales tax from your Square settings, added on the invoice</div>`}`;
+  el.innerHTML=_coItems.map((it,i)=>`<div style="display:flex;align-items:center;gap:8px;background:#161616;border:1px solid #242424;border-radius:9px;padding:8px 10px;margin-bottom:6px;"><div style="flex:1;min-width:0;">${it.variationId?`<div style="font-size:13px;color:#e0e0e0;">${String(it.name).replace(/</g,'&lt;')}</div><div style="font-size:11px;color:#4ec49a;">$${(+it.price||0).toFixed(2)}</div>`:`<input value="${String(it.name||'').replace(/"/g,'&quot;')}" oninput="_coItems[${i}].name=this.value" placeholder="Item name" style="width:100%;background:none;border:none;border-bottom:1px solid #2a2a2a;color:#e0e0e0;font-size:13px;font-family:inherit;outline:none;padding-bottom:2px;"><div style="display:flex;align-items:center;gap:3px;margin-top:4px;"><span style="color:#777;font-size:11px;">$</span><input value="${it.price||''}" inputmode="decimal" oninput="_coItems[${i}].price=_price(this.value);_coUpdateSubtotal()" placeholder="0.00" style="width:60px;background:#111;border:1px solid #2a2a2a;border-radius:6px;padding:3px 6px;color:#e0e0e0;font-size:12px;font-family:inherit;"></div>`}</div><div style="display:flex;align-items:center;gap:5px;"><button onclick="_coQty(${i},-1)" style="width:24px;height:24px;border-radius:6px;background:#222;border:none;color:#ccc;cursor:pointer;font-size:14px;">\u2212</button><span style="min-width:16px;text-align:center;font-size:13px;color:#e0e0e0;">${it.qty||1}</span><button onclick="_coQty(${i},1)" style="width:24px;height:24px;border-radius:6px;background:#222;border:none;color:#ccc;cursor:pointer;font-size:14px;">+</button></div><button onclick="_coItems[${i}].taxable=(_coItems[${i}].taxable===false);_coRenderItems()" style="background:${it.taxable===false?'#2a1a0a':'#0a2019'};border:1px solid ${it.taxable===false?'#4a3510':'#1c4030'};color:${it.taxable===false?'#c99a5a':'#4ec49a'};border-radius:6px;padding:4px 7px;font-size:10px;font-weight:600;cursor:pointer;font-family:inherit;white-space:nowrap;">${it.taxable===false?'No tax':'Tax'}</button><button onclick="_coItems.splice(${i},1);_coRenderItems()" aria-label="Remove item" style="background:none;border:none;color:#a85a5a;cursor:pointer;font-size:14px;padding:2px;"><i class="ti ti-x"></i></button></div>`).join('')+`<div style="display:flex;justify-content:space-between;align-items:center;margin-top:6px;gap:8px;"><span style="font-size:11px;color:#888;">${_coItems.length} line${_coItems.length===1?'':'s'} on this invoice \u00b7 add more below</span><span style="font-size:13px;font-weight:700;color:#4ec49a;white-space:nowrap;">Subtotal: <span id="co-subtotal">$${_coSubtotal().toFixed(2)}</span></span></div>${_effTaxRate()>0?`<div style="display:flex;justify-content:space-between;font-size:12px;color:#aaa;margin-top:4px;"><span>${_taxIsEstimate()?'Est. tax':'Tax'} (${_effTaxRate()}%)</span><span>$<span id="co-tax">${_dispTax().toFixed(2)}</span></span></div><div style="display:flex;justify-content:space-between;font-size:13px;font-weight:700;color:#f0f0f0;margin-top:2px;"><span>${_taxIsEstimate()?'Est. total':'Total'}</span><span>$<span id="co-total">${_dispTotal().toFixed(2)}</span></span></div>${_taxIsEstimate()?`<div style="text-align:right;font-size:10px;color:#777;margin-top:3px;">Estimated from your Square tax · Square calculates the exact amount</div>`:''}`:`<div style="text-align:right;font-size:10px;color:#777;margin-top:3px;">+ sales tax from your Square settings, added on the invoice</div>`}`;
   _coSyncAmt();
 }
 function _coMenuOpen(){_coEnsureMenu().then(()=>_coMenuShow());}
@@ -9173,7 +9197,7 @@ function _coPick(i){const m=(_coMenu||[])[i];if(!m)return;_coItems.push({name:m.
 
 // Redefined checkout actions: use the line-item subtotal when present, and log every payment to the ledger.
 async function _coLink(id){
-  const c=CL[id];const items=_coValidItems();const amt=items.length?_coTotal():parseFloat(_coVal('co-amt'));
+  const c=CL[id];const items=_coValidItems();const amt=_coAmount();
   const name=_coVal('co-desc')||(items.length?(items.length+' items'):'Service');
   if(!amt||amt<=0)return _coErr('Add line items or an amount first.');
   _coBusy('Creating payment link\u2026');
@@ -9186,7 +9210,7 @@ async function _coLink(id){
   }catch(e){_coErr(e.message||'Could not create the link.',_coRecon(e));}
 }
 async function _coInvoice(id){
-  const c=CL[id];const items=_coValidItems();const amt=items.length?_coTotal():parseFloat(_coVal('co-amt'));const title=_coVal('co-desc')||'Service';
+  const c=CL[id];const items=_coValidItems();const amt=_coAmount();const title=_coVal('co-desc')||'Service';
   if(!items.length && (!amt||amt<=0))return _coErr('Add line items or an amount first.');
   if(!c.email)return _coErr('Add a client email to send an invoice (or use a payment link).');
   _coBusy('Creating and sending invoice\u2026');
@@ -9198,7 +9222,7 @@ async function _coInvoice(id){
   }catch(e){_coErr(e.message||'Could not send the invoice.',_coRecon(e));}
 }
 async function _coCharge(id){
-  const c=CL[id];const items=_coValidItems();const amt=items.length?_coTotal():parseFloat(_coVal('co-amt'));
+  const c=CL[id];const items=_coValidItems();const amt=_coAmount();
   if(!amt||amt<=0)return _coErr('Add line items or an amount first.');
   if(!c.squareId)return _coErr('This client is not linked to Square yet. Import them from Square, or use a payment link or invoice.');
   _coBusy('Checking saved cards\u2026');
@@ -9210,7 +9234,8 @@ async function _coCharge(id){
   }catch(e){_coErr(e.message||'Could not load saved cards.',_coRecon(e));}
 }
 async function _coDoCharge(id,cardId){
-  const c=CL[id];const items=_coValidItems();const amt=items.length?_coTotal():parseFloat(_coVal('co-amt'));const note=_coVal('co-desc')||'SlickChart';
+  const c=CL[id];const items=_coValidItems();const amt=_coAmount();const note=_coVal('co-desc')||'SlickChart';
+  if(!amt||amt<=0)return _coErr('Add line items or an amount first.');
   _coBusy('Charging\u2026');
   try{
     const d=await _sqFetch('/api/square/charge-card',{method:'POST',body:{customerId:c.squareId,cardId,amount:amt,note}});
@@ -10075,7 +10100,7 @@ function renderProtocols(){
     </div>
     <div style="border-top:1px solid #1e1e1e;padding:8px 14px;display:flex;gap:8px;">
       <button onclick="nav('protocol-apply','${p.id}')" style="border:none;background:none;font-size:12px;color:var(--accent);cursor:pointer;flex:1;text-align:left;"><i class="ti ti-user-check" style="font-size:12px;"></i> Apply to client</button>
-      <button onclick="confirmModal({title:'Remove protocol',body:'Remove \'${_jsAttr(p.name)}\' from your library? This can\'t be undone.',action:'Remove'},'()=>{protocols.splice(${i},1);renderProtocols()}')" style="border:none;background:none;font-size:12px;color:#e87070;cursor:pointer;"><i class="ti ti-trash" style="font-size:12px;"></i></button>
+      <button onclick="deleteProtocol('${_jsAttr(p.id)}')" style="border:none;background:none;font-size:12px;color:#e87070;cursor:pointer;"><i class="ti ti-trash" style="font-size:12px;"></i></button>
     </div>
   </div>`).join('')+_noRes('protocols-noresults','No protocols match your search.')}
   <div style="margin:4px 16px 10px;background:#1a1a1a;border:1.5px dashed #2a2a2a;border-radius:12px;padding:14px;display:flex;flex-direction:column;align-items:center;gap:5px;cursor:pointer;" onclick="nav('new-protocol')"><i class="ti ti-plus" style="font-size:20px;color:#777;"></i><span style="font-size:14px;color:#aaa;">Save a new protocol</span></div>`;
@@ -12266,7 +12291,7 @@ function renderAutoForm(a,idx){
       <div style="font-size:11px;color:#aaa;text-transform:uppercase;letter-spacing:.07em;margin-bottom:6px;">Preview</div>
       <div style="font-size:13px;color:#ccc;line-height:1.7;">Hi Maya! Just checking in after your recent appointment ✨. How is your skin feeling? Let me know if you have any questions!<br><br>— Jessica</div>
     </div>
-    ${idx>=0?`<button onclick="confirmModal({title:'Delete automation',body:'Delete this automation? It won\'t send any more messages.',action:'Delete'},'()=>{autos.splice(${idx},1);nav(\'messages\')}')" style="width:100%;border:none;border-radius:8px;padding:10px;font-size:13px;color:#e87070;background:#2a0f0f;cursor:pointer;margin-bottom:10px;"><i class="ti ti-trash" aria-hidden="true" style="font-size:13px;"></i> Delete automation</button>`:''}
+    ${idx>=0?`<button onclick="_deleteAutomation(${idx},'messages')" style="width:100%;border:none;border-radius:8px;padding:10px;font-size:13px;color:#e87070;background:#2a0f0f;cursor:pointer;margin-bottom:10px;"><i class="ti ti-trash" aria-hidden="true" style="font-size:13px;"></i> Delete automation</button>`:''}
     <div style="height:16px;"></div>
   </div>`;
 }
@@ -12618,7 +12643,7 @@ function saveVendor(editIdx){
     nav('vendors');
   }
 }
-function deleteVendor(i){const v=vendors[i];if(!v)return;confirmModal({title:'Delete vendor',body:'Remove '+(v.name||'this vendor')+' from your directory? This cannot be undone.',action:'Delete'},"()=>{vendors.splice("+i+",1);saveVendors();nav('vendors')}");}
+function deleteVendor(i){const v=vendors[i];if(!v)return;confirmModal({title:'Delete vendor',body:'Remove '+(v.name||'this vendor')+' from your directory? This cannot be undone.',action:'Delete'},function(){const ix=vendors.indexOf(v);if(ix>=0){vendors.splice(ix,1);saveVendors();}nav('vendors');});}
 </script>
 <script>if('serviceWorker' in navigator){window.addEventListener('load',function(){navigator.serviceWorker.register('/sw.js').catch(function(){});});}</script>
 <script>
