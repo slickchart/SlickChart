@@ -9691,7 +9691,7 @@ setTimeout(()=>{try{_checkNews();}catch(e){}},1500);
 
 
 // ── Payments: itemized invoicing menu, ledger, and Payments hub ──
-function _todayISO(){try{return new Date().toISOString().slice(0,10);}catch(e){return '';}}
+function _todayISO(){try{const d=new Date();return d.getFullYear()+'-'+String(d.getMonth()+1).padStart(2,'0')+'-'+String(d.getDate()).padStart(2,'0');}catch(e){return '';}}
 let _payments=(function(){try{return JSON.parse(localStorage.getItem('sc_payments')||'[]');}catch(e){return [];}})();
 function _savePayments(){try{localStorage.setItem('sc_payments',JSON.stringify(_payments));}catch(e){}}
 function _clientBalance(cid){return _payments.filter(p=>p.clientId===cid&&(p.status==='unpaid'||p.status==='partial')).reduce((a,p)=>a+(parseFloat(p.amount)||0),0);}
@@ -9885,7 +9885,11 @@ function _svcAdd(){_svcMenu.push({id:'svc_'+Date.now().toString(36),name:'',pric
 // ── Reports (accountant-ready): income summary, sales tax, reconciliation, transaction detail ──
 let _reportKey='this-month';
 function _reportRange(key){
-  const now=new Date();const y=now.getFullYear(),m=now.getMonth();const iso=d=>d.toISOString().slice(0,10);
+  const now=new Date();const y=now.getFullYear(),m=now.getMonth();
+  // Format using LOCAL date parts. Using toISOString() here would convert to UTC and
+  // shift the boundary by a day for anyone East of UTC (e.g. July 1 midnight local
+  // becomes June 30 in UTC), corrupting every report's period.
+  const iso=d=>d.getFullYear()+'-'+String(d.getMonth()+1).padStart(2,'0')+'-'+String(d.getDate()).padStart(2,'0');
   if(key==='this-month')return {from:iso(new Date(y,m,1)),to:iso(new Date(y,m+1,0)),label:'This month'};
   if(key==='last-month')return {from:iso(new Date(y,m-1,1)),to:iso(new Date(y,m,0)),label:'Last month'};
   if(key==='this-quarter'){const q=Math.floor(m/3);return {from:iso(new Date(y,q*3,1)),to:iso(new Date(y,q*3+3,0)),label:'This quarter'};}
@@ -11863,7 +11867,7 @@ function openLocalQuickAdd(){
     <span class="fl-lbl">Treatment</span>
     <select class="fi" id="qa-tx" style="margin-bottom:12px;">${txs.map(t=>`<option>${t}</option>`).join('')}</select>
     <div style="display:flex;gap:10px;margin-bottom:16px;">
-      <div style="flex:1;"><span class="fl-lbl">Date</span><input type="date" class="fi" id="qa-date" value="${new Date().toISOString().slice(0,10)}" min="${new Date().toISOString().slice(0,10)}" style="color-scheme:dark;"></div>
+      <div style="flex:1;"><span class="fl-lbl">Date</span><input type="date" class="fi" id="qa-date" value="${_isoToday()}" min="${_isoToday()}" style="color-scheme:dark;"></div>
       <div style="flex:1;"><span class="fl-lbl">Time</span><select class="fi" id="qa-time">${times.map(t=>`<option${t==='10:00 AM'?' selected':''}>${t}</option>`).join('')}</select></div>
     </div>
     <button class="btnp" style="border-radius:10px;" onclick="saveQuickAdd()"><i class="ti ti-check"></i> Add appointment</button>
@@ -11875,7 +11879,7 @@ function saveQuickAdd(){
   const name=document.getElementById('qa-client')?.value?.trim();
   if(!name){if(typeof proToast==='function')proToast('Enter a client name first');const el=document.getElementById('qa-client');if(el)el.focus();return;}
   const tx=document.getElementById('qa-tx')?.value||'Treatment';
-  const date=document.getElementById('qa-date')?.value||new Date().toISOString().slice(0,10);
+  const date=document.getElementById('qa-date')?.value||_isoToday();
   const time=document.getElementById('qa-time')?.value||'10:00 AM';
   let lbl=date;try{lbl=new Date(date+'T12:00:00').toLocaleDateString('en-US',{weekday:'long',month:'long',day:'numeric'});}catch(e){}
   manualAppts.unshift({client:name,tx,date,dateLabel:lbl,time,ic:'var(--accent)'});_saveManualAppts();try{_rebuildCalendarFeed();}catch(e){}
@@ -11903,7 +11907,7 @@ function openSquareBook(prefill){
     }
     const tms=opts.teamMembers||[];
     const svcOpts=opts.services.map((s,i)=>`<option value="${i}">${_fileEsc(s.name)}${s.durationMinutes?(' · '+s.durationMinutes+' min'):''}${s.price!=null?(' · $'+s.price):''}</option>`).join('');
-    const today=new Date().toISOString().slice(0,10);
+    const today=_isoToday();
     body.style.textAlign='left';body.style.padding='0';
     body.innerHTML=`
       <span class="fl-lbl">Client name</span><input class="fi" id="sqb-name" placeholder="Client name" value="${(prefill.client||'').replace(/"/g,'&quot;')}" style="margin-bottom:10px;">
