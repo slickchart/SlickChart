@@ -172,6 +172,17 @@ const SlickBridge=(function(){
   };
 })();
 
+/* Shared URL helpers — provider-supplied product/guide/site URLs reach the client via
+   sync, so treat them as untrusted: block unsafe schemes, prefix bare domains, and
+   escape for the href="" attribute and for display text. */
+function _safeUrl(u){
+  u=String(u||'').trim();if(!u)return'';
+  if(/^[a-z][a-z0-9+.-]*:/i.test(u)&&!/^https?:\/\//i.test(u))return'';   // reject javascript:, data:, file:, ...
+  return /^https?:\/\//i.test(u)?u:'https://'+u;
+}
+function _urlAttr(u){return String(u||'').replace(/&/g,'&amp;').replace(/"/g,'&quot;').replace(/</g,'&lt;').replace(/>/g,'&gt;');}
+function _txt(s){return String(s==null?'':s).replace(/&/g,'&amp;').replace(/</g,'&lt;').replace(/>/g,'&gt;');}
+
 /* ════════════════════════════════════════════════════════════════
    PUSH ENGINE — real Web Notifications API with graceful fallback.
    Fires a true system notification when permission is granted and the
@@ -1104,7 +1115,7 @@ function renderViewGuide(){
   <div style="padding:20px 16px 4px;text-align:center;"><div style="font-size:40px;margin-bottom:8px;">${pg.icon||'\ud83d\udcda'}</div><div id="page-heading" tabindex="-1" style="font-size:19px;font-weight:600;color:#1a1a1a;">${pg.title}</div>${pg.cat?`<div style="font-size:12px;color:#b8a898;margin-top:2px;">${pg.cat}</div>`:''}</div>
   <div style="padding:16px;">
     ${(pg.tips&&pg.tips.length)?`<div style="background:#fff;border:1.5px solid #f0ebe4;border-radius:14px;padding:14px;margin-bottom:14px;">${pg.tips.map(t=>`<div style="display:flex;gap:9px;padding:7px 0;"><i class="ti ti-sparkles" aria-hidden="true" style="font-size:14px;color:var(--accent);flex-shrink:0;margin-top:2px;"></i><span style="font-size:13.5px;color:#3a2f28;line-height:1.55;">${t}</span></div>`).join('')}</div>`:''}
-    ${pg.url?`<a href="${/^https?:\/\//.test(pg.url)?pg.url:('https://'+pg.url)}" target="_blank" rel="noopener" class="btnp" style="display:flex;width:100%;box-sizing:border-box;border-radius:12px;padding:13px;text-decoration:none;justify-content:center;"><i class="ti ti-external-link"></i> Open full guide</a>`:''}
+    ${pg.url?`<a href="${_urlAttr(_safeUrl(pg.url))}" target="_blank" rel="noopener" class="btnp" style="display:flex;width:100%;box-sizing:border-box;border-radius:12px;padding:13px;text-decoration:none;justify-content:center;"><i class="ti ti-external-link"></i> Open full guide</a>`:''}
     ${(!pg.tips||!pg.tips.length)&&!pg.url?`<div style="text-align:center;color:#b8a898;font-size:13px;padding:20px;">${client.providerFirst} shared this with you.</div>`:''}
   </div>`;
 }
@@ -1822,13 +1833,13 @@ function _shopProdCard(p,idx){
       <div style="display:flex;align-items:flex-start;gap:12px;margin-bottom:10px;">
         <span aria-hidden="true" style="font-size:28px;line-height:1;">${p.icon}</span>
         <div style="flex:1;min-width:0;">
-          <div style="font-size:15px;font-weight:600;color:#1a1a1a;">${p.name}</div>
-          <div style="font-size:12px;color:#b8a898;">${p.brand}</div>
+          <div style="font-size:15px;font-weight:600;color:#1a1a1a;">${_txt(p.name)}</div>
+          <div style="font-size:12px;color:#b8a898;">${_txt(p.brand)}</div>
           ${p.inOffice?`<div style="font-size:11px;color:var(--accent);font-weight:600;margin-top:3px;display:flex;align-items:center;gap:3px;"><i class="ti ti-building-store" aria-hidden="true" style="font-size:12px;"></i> Available in office</div>`:''}
         </div>
         ${_heartBtn(p)}
       </div>
-      ${p.why?`<div style="background:#faf7f4;border-radius:9px;padding:10px 12px;margin-bottom:12px;"><div style="font-size:11px;font-weight:600;color:#b8a898;text-transform:uppercase;letter-spacing:.06em;margin-bottom:4px;">Why ${client.providerFirst} recommends this</div><div style="font-size:13px;color:#6b5d52;line-height:1.6;">${p.why}</div></div>`:''}
+      ${p.why?`<div style="background:#faf7f4;border-radius:9px;padding:10px 12px;margin-bottom:12px;"><div style="font-size:11px;font-weight:600;color:#b8a898;text-transform:uppercase;letter-spacing:.06em;margin-bottom:4px;">Why ${_txt(client.providerFirst)} recommends this</div><div style="font-size:13px;color:#6b5d52;line-height:1.6;">${_txt(p.why)}</div></div>`:''}
       ${opts>0?`<button onclick="openBuyOptions(${idx})" style="width:100%;display:flex;align-items:center;justify-content:center;gap:7px;background:var(--accent);color:#fff;border:none;border-radius:10px;padding:11px;font-size:14px;font-weight:600;cursor:pointer;"><i class="ti ti-shopping-bag" aria-hidden="true" style="font-size:15px;"></i> Buy · ${opts} way${opts>1?'s':''} to get it</button>`:`<div style="font-size:12px;color:#c4b9ae;text-align:center;padding:4px;">Ask ${client.providerFirst} about this at your next visit</div>`}
     </div>
   </div>`;
@@ -2526,19 +2537,19 @@ function openBuyOptions(i){
   const blk=(html,code)=>`<div style="margin-bottom:8px;">${html}${cline(code)}</div>`;
   if(p.inOffice)rows.push(blk(`<button onclick="closeBuySheet();nav('messages')" style="display:flex;width:100%;text-align:left;align-items:center;gap:12px;padding:12px 14px;border:1.5px solid var(--accent);background:var(--accent-a20);border-radius:12px;cursor:pointer;font-family:inherit;">
     <i class="ti ti-building-store" aria-hidden="true" style="font-size:18px;color:var(--accent);"></i><div style="flex:1;"><div style="font-size:13px;font-weight:600;color:#1a1a1a;">Buy in office</div><div style="font-size:11px;color:#b8a898;">Pick up at your next visit · tap to message ${client.providerFirst}</div></div><i class="ti ti-chevron-right" aria-hidden="true" style="color:#c4b9ae;"></i></button>`,''));
-  if(p.site)rows.push(blk(`<a href="https://${p.site}" target="_blank" rel="noopener" onclick="closeBuySheet()" style="display:flex;align-items:center;gap:12px;padding:12px 14px;border:1.5px solid #f0ebe4;border-radius:12px;text-decoration:none;">
-    <i class="ti ti-shopping-bag" aria-hidden="true" style="font-size:18px;color:var(--accent);"></i><div style="flex:1;min-width:0;"><div style="font-size:13px;font-weight:600;color:#1a1a1a;">Buy from ${client.studio}</div><div style="font-size:11px;color:#b8a898;word-break:break-all;">${p.site}</div></div><i class="ti ti-chevron-right" aria-hidden="true" style="color:#c4b9ae;"></i></a>`,p.siteCode));
-  if(p.url)rows.push(blk(`<a href="https://${p.url}" target="_blank" rel="noopener" onclick="closeBuySheet()" style="display:flex;align-items:center;gap:12px;padding:12px 14px;border:1.5px solid #f0ebe4;border-radius:12px;text-decoration:none;">
-    <i class="ti ti-external-link" aria-hidden="true" style="font-size:18px;color:var(--accent);"></i><div style="flex:1;min-width:0;"><div style="font-size:13px;font-weight:600;color:#1a1a1a;">Shop at ${p.brand||'brand site'}</div><div style="font-size:11px;color:#b8a898;word-break:break-all;">${p.url}</div></div><i class="ti ti-chevron-right" aria-hidden="true" style="color:#c4b9ae;"></i></a>`,p.urlCode));
+  if(p.site)rows.push(blk(`<a href="${_urlAttr(_safeUrl(p.site))}" target="_blank" rel="noopener" onclick="closeBuySheet()" style="display:flex;align-items:center;gap:12px;padding:12px 14px;border:1.5px solid #f0ebe4;border-radius:12px;text-decoration:none;">
+    <i class="ti ti-shopping-bag" aria-hidden="true" style="font-size:18px;color:var(--accent);"></i><div style="flex:1;min-width:0;"><div style="font-size:13px;font-weight:600;color:#1a1a1a;">Buy from ${_txt(client.studio)}</div><div style="font-size:11px;color:#b8a898;word-break:break-all;">${_txt(p.site)}</div></div><i class="ti ti-chevron-right" aria-hidden="true" style="color:#c4b9ae;"></i></a>`,p.siteCode));
+  if(p.url)rows.push(blk(`<a href="${_urlAttr(_safeUrl(p.url))}" target="_blank" rel="noopener" onclick="closeBuySheet()" style="display:flex;align-items:center;gap:12px;padding:12px 14px;border:1.5px solid #f0ebe4;border-radius:12px;text-decoration:none;">
+    <i class="ti ti-external-link" aria-hidden="true" style="font-size:18px;color:var(--accent);"></i><div style="flex:1;min-width:0;"><div style="font-size:13px;font-weight:600;color:#1a1a1a;">Shop at ${_txt(p.brand||'brand site')}</div><div style="font-size:11px;color:#b8a898;word-break:break-all;">${_txt(p.url)}</div></div><i class="ti ti-chevron-right" aria-hidden="true" style="color:#c4b9ae;"></i></a>`,p.urlCode));
   const amz=p.amazon||(activeProvider().amazonStore||'');
-  if(amz)rows.push(blk(`<a href="https://${amz}" target="_blank" rel="noopener" onclick="closeBuySheet()" style="display:flex;align-items:center;gap:12px;padding:12px 14px;border:1.5px solid #f0ebe4;border-radius:12px;text-decoration:none;">
-    <i class="ti ti-brand-amazon" aria-hidden="true" style="font-size:18px;color:var(--accent);"></i><div style="flex:1;min-width:0;"><div style="font-size:13px;font-weight:600;color:#1a1a1a;">${/\/(shop|stores)\//i.test(amz)?(client.providerFirst+"'s Amazon store"):'Buy on Amazon'}</div><div style="font-size:11px;color:#b8a898;word-break:break-all;">${amz}</div></div><i class="ti ti-chevron-right" aria-hidden="true" style="color:#c4b9ae;"></i></a>`,p.amazonCode));
+  if(amz)rows.push(blk(`<a href="${_urlAttr(_safeUrl(amz))}" target="_blank" rel="noopener" onclick="closeBuySheet()" style="display:flex;align-items:center;gap:12px;padding:12px 14px;border:1.5px solid #f0ebe4;border-radius:12px;text-decoration:none;">
+    <i class="ti ti-brand-amazon" aria-hidden="true" style="font-size:18px;color:var(--accent);"></i><div style="flex:1;min-width:0;"><div style="font-size:13px;font-weight:600;color:#1a1a1a;">${/\/(shop|stores)\//i.test(amz)?_txt(client.providerFirst+"'s Amazon store"):'Buy on Amazon'}</div><div style="font-size:11px;color:#b8a898;word-break:break-all;">${_txt(amz)}</div></div><i class="ti ti-chevron-right" aria-hidden="true" style="color:#c4b9ae;"></i></a>`,p.amazonCode));
   if(!rows.length)return;
   const ov=document.createElement('div');ov.id='buy-sheet';
   ov.style.cssText='position:fixed;top:0;bottom:0;left:0;right:0;margin:0 auto;width:390px;max-width:100%;z-index:9999;background:rgba(0,0,0,.4);display:flex;align-items:center;justify-content:center;padding:24px 16px;box-sizing:border-box;';
   ov.onclick=e=>{if(e.target===ov)closeBuySheet();};
   ov.innerHTML=`<div style="background:#fff;width:100%;border-radius:16px;padding:16px;box-shadow:0 -8px 30px rgba(0,0,0,.18);">
-    <div style="display:flex;align-items:center;gap:10px;margin-bottom:12px;"><span style="font-size:22px;">${p.icon}</span><div style="flex:1;"><div style="font-size:15px;font-weight:700;color:#1a1a1a;">${p.name}</div><div style="font-size:12px;color:#b8a898;">${p.brand||''}</div></div><button onclick="closeBuySheet()" aria-label="Close" style="border:none;background:none;font-size:20px;color:#b8a898;cursor:pointer;line-height:1;">✕</button></div>
+    <div style="display:flex;align-items:center;gap:10px;margin-bottom:12px;"><span style="font-size:22px;">${p.icon}</span><div style="flex:1;"><div style="font-size:15px;font-weight:700;color:#1a1a1a;">${_txt(p.name)}</div><div style="font-size:12px;color:#b8a898;">${_txt(p.brand||'')}</div></div><button onclick="closeBuySheet()" aria-label="Close" style="border:none;background:none;font-size:20px;color:#b8a898;cursor:pointer;line-height:1;">✕</button></div>
     <div style="font-size:11px;color:#b8a898;text-transform:uppercase;letter-spacing:.06em;font-weight:600;margin-bottom:8px;">Where to buy</div>
     ${rows.join('')}
   </div>`;
@@ -2688,7 +2699,7 @@ function renderLatestSummary(){
     ${products.map((p,i)=>{const opts=(p.inOffice?1:0)+(p.site?1:0)+(p.url?1:0)+((p.amazon||activeProvider().amazonStore)?1:0);return`
     <div style="display:flex;align-items:flex-start;gap:12px;padding:12px 16px;border-bottom:1px solid #f0ebe4;">
       <span aria-hidden="true" style="font-size:22px;">${p.icon}</span>
-      <div style="flex:1;min-width:0;"><div style="font-size:13px;font-weight:600;color:#1a1a1a;">${p.name}</div><div style="font-size:11px;color:#b8a898;">${p.brand}</div>${p.inOffice?`<div style="font-size:11px;color:var(--accent);font-weight:600;margin-top:3px;display:flex;align-items:center;gap:3px;"><i class="ti ti-building-store" aria-hidden="true" style="font-size:12px;"></i> Available in office</div>`:''}${p.why?`<div style="font-size:12px;color:#6b5d52;line-height:1.5;margin-top:5px;">${p.why}</div>`:''}</div>
+      <div style="flex:1;min-width:0;"><div style="font-size:13px;font-weight:600;color:#1a1a1a;">${_txt(p.name)}</div><div style="font-size:11px;color:#b8a898;">${_txt(p.brand)}</div>${p.inOffice?`<div style="font-size:11px;color:var(--accent);font-weight:600;margin-top:3px;display:flex;align-items:center;gap:3px;"><i class="ti ti-building-store" aria-hidden="true" style="font-size:12px;"></i> Available in office</div>`:''}${p.why?`<div style="font-size:12px;color:#6b5d52;line-height:1.5;margin-top:5px;">${_txt(p.why)}</div>`:''}</div>
       ${opts>0?`<button onclick="openBuyOptions(${i})" style="background:var(--accent);color:#fff;border:none;border-radius:8px;padding:6px 14px;font-size:12px;font-weight:600;cursor:pointer;flex-shrink:0;">Buy</button>`:''}
     </div>`;}).join('')}
   </div>
@@ -2870,7 +2881,7 @@ function renderMagicLanding(){
     ${products.map((pr,i)=>{const opts=(pr.inOffice?1:0)+(pr.site?1:0)+(pr.url?1:0)+((pr.amazon||p.amazonStore)?1:0);return`
     <div style="display:flex;align-items:flex-start;gap:12px;padding:12px 16px;border-bottom:1px solid #f6f1ec;">
       <span aria-hidden="true" style="font-size:22px;">${pr.icon}</span>
-      <div style="flex:1;min-width:0;"><div style="font-size:13px;font-weight:600;color:#1a1a1a;">${pr.name}</div><div style="font-size:11px;color:#b8a898;">${pr.brand}</div>${pr.inOffice?`<div style="font-size:11px;color:var(--accent);font-weight:600;margin-top:3px;display:flex;align-items:center;gap:3px;"><i class="ti ti-building-store" aria-hidden="true" style="font-size:12px;"></i> Available in office</div>`:''}${pr.why?`<div style="font-size:12px;color:#6b5d52;line-height:1.5;margin-top:5px;">${pr.why}</div>`:''}</div>
+      <div style="flex:1;min-width:0;"><div style="font-size:13px;font-weight:600;color:#1a1a1a;">${_txt(pr.name)}</div><div style="font-size:11px;color:#b8a898;">${_txt(pr.brand)}</div>${pr.inOffice?`<div style="font-size:11px;color:var(--accent);font-weight:600;margin-top:3px;display:flex;align-items:center;gap:3px;"><i class="ti ti-building-store" aria-hidden="true" style="font-size:12px;"></i> Available in office</div>`:''}${pr.why?`<div style="font-size:12px;color:#6b5d52;line-height:1.5;margin-top:5px;">${_txt(pr.why)}</div>`:''}</div>
       ${opts>0?`<button onclick="openBuyOptions(${i})" style="background:var(--accent);color:#fff;border:none;border-radius:8px;padding:6px 14px;font-size:12px;font-weight:600;cursor:pointer;flex-shrink:0;">Buy</button>`:''}
     </div>`;}).join('')}
   </div>`:''}
@@ -2899,11 +2910,11 @@ function renderMagicLanding(){
     </div>
     ${p.resources.map(r=>{const hasTips=r.tips&&r.tips.length;const gk=_guideKey(r);const read=!!_eng.guides[gk];const inner=`<div style="display:flex;align-items:center;gap:11px;padding:12px 16px ${hasTips?'8px':'12px'};${hasTips?'':'border-bottom:1px solid #f6f1ec;'}">
       <span aria-hidden="true" style="font-size:22px;${read?'opacity:.45;':''}">${r.icon}</span>
-      <div style="flex:1;min-width:0;"><div style="font-size:13px;font-weight:600;color:${read?'#b8a898':'#1a1a1a'};">${r.title}</div><div style="font-size:11px;color:${read?'var(--accent)':'#b8a898'};font-weight:${read?'600':'400'};">${read?'Read ✓':r.cat}</div></div>
+      <div style="flex:1;min-width:0;"><div style="font-size:13px;font-weight:600;color:${read?'#b8a898':'#1a1a1a'};">${_txt(r.title)}</div><div style="font-size:11px;color:${read?'var(--accent)':'#b8a898'};font-weight:${read?'600':'400'};">${read?'Read ✓':_txt(r.cat)}</div></div>
       <button onclick="event.preventDefault();event.stopPropagation();markGuideRead('${gk}')" aria-label="${read?'Mark as unread':'Mark as read'}" style="width:26px;height:26px;border-radius:50%;border:2px solid ${read?'var(--accent)':'#e0d5c8'};background:${read?'var(--accent)':'#fff'};display:flex;align-items:center;justify-content:center;cursor:pointer;flex-shrink:0;">${read?'<i class="ti ti-check" aria-hidden="true" style="font-size:13px;color:#fff;"></i>':''}</button>
       ${r.url?'<i class="ti ti-chevron-right" aria-hidden="true" style="color:#c4b9ae;"></i>':''}
-    </div>${hasTips?`<ul style="margin:0;padding:2px 18px 12px 48px;list-style:disc;border-bottom:1px solid #f6f1ec;">${r.tips.map(t=>`<li style="font-size:12px;color:#6b5a48;line-height:1.6;margin-bottom:2px;">${t}</li>`).join('')}</ul>`:''}`;
-    return r.url?`<a href="https://${r.url}" target="_blank" rel="noopener" style="display:block;text-decoration:none;">${inner}</a>`:`<div>${inner}</div>`;}).join('')}
+    </div>${hasTips?`<ul style="margin:0;padding:2px 18px 12px 48px;list-style:disc;border-bottom:1px solid #f6f1ec;">${r.tips.map(t=>`<li style="font-size:12px;color:#6b5a48;line-height:1.6;margin-bottom:2px;">${_txt(t)}</li>`).join('')}</ul>`:''}`;
+    return r.url?`<a href="${_urlAttr(_safeUrl(r.url))}" target="_blank" rel="noopener" style="display:block;text-decoration:none;">${inner}</a>`:`<div>${inner}</div>`;}).join('')}
   </div>`:''}
 
   <!-- Next appointment -->
