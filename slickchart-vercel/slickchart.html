@@ -4291,7 +4291,7 @@ function createCustomProd(id){
 function toggleProdInOffice(id,aid){const a=affiliateLinks.find(x=>x.id===aid);if(a)a.inOffice=!a.inOffice;_rerenderRecs(id);}
 function _amazonIsStore(u){return /\/(shop|stores)\//i.test(u||'');}
 function _codeLine(code){const c=(code||'').replace(/'/g,"\\'");return `<div style="display:flex;align-items:center;gap:8px;margin-top:4px;padding:7px 11px;background:var(--accent-tint);border:1px dashed var(--accent);border-radius:8px;"><i class="ti ti-discount-2" aria-hidden="true" style="font-size:14px;color:var(--accent);flex-shrink:0;"></i><div style="flex:1;min-width:0;font-size:12px;color:#bbb;">Code <b style="color:var(--accent);letter-spacing:.03em;">${code}</b> at checkout</div><button onclick="event.preventDefault();event.stopPropagation();copyCode('${c}')" style="border:1px solid var(--accent);background:none;color:var(--accent);border-radius:6px;padding:4px 10px;font-size:10px;font-weight:600;cursor:pointer;flex-shrink:0;">Copy</button></div>`;}
-function copyCode(code){try{navigator.clipboard&&navigator.clipboard.writeText(code);}catch(e){}proToast(`Code "${code}" copied`);}
+function copyCode(code){_copyToClipboard(code,`Code "${code}" copied`);}
 function amazonBuyUrl(p){
   const tag=amazonAssociates.tag;
   if(p&&p.amazon){
@@ -4689,12 +4689,15 @@ function _copyToClipboard(text,okMsg){
   }catch(e){}
   _copyFallback(text,done);
 }
-function _copyFallback(text,done){
+function _copyFallback(text,done,fail){
   try{
     const ta=document.createElement('textarea');ta.value=text;ta.style.cssText='position:fixed;top:-1000px;left:-1000px;';
     document.body.appendChild(ta);ta.focus();ta.select();
-    document.execCommand('copy');document.body.removeChild(ta);done&&done();
-  }catch(e){if(typeof proToast==='function')proToast('Could not copy — long-press the link to copy it');}
+    const okd=document.execCommand('copy');document.body.removeChild(ta);
+    if(okd){done&&done();}
+    else if(fail){fail();}
+    else if(typeof proToast==='function'){proToast('Could not copy — long-press the link to copy it');}
+  }catch(e){if(fail){fail();}else if(typeof proToast==='function')proToast('Could not copy — long-press the link to copy it');}
 }
 // Navigate to an sms:/mailto: URL in a way that works inside the PWA shell.
 function _openExternal(url){
@@ -7392,9 +7395,16 @@ function shareFormLink(fid,cid){
   });
 }
 function _copyText(t,btn){
-  try{if(navigator.clipboard&&navigator.clipboard.writeText){navigator.clipboard.writeText(t);}}catch(e){}
-  if(btn){const o=btn.innerHTML;btn.innerHTML='<i class="ti ti-check"></i> Copied';setTimeout(()=>{btn.innerHTML=o;const s=btn.closest&&btn.closest('#link-sheet');if(s)s.remove();},900);}
-  proToast('Link copied');
+  const ok=()=>{
+    if(btn){const o=btn.innerHTML;btn.innerHTML='<i class="ti ti-check"></i> Copied';setTimeout(()=>{btn.innerHTML=o;const s=btn.closest&&btn.closest('#link-sheet');if(s)s.remove();},900);}
+    proToast('Link copied');
+  };
+  const fail=()=>{proToast('Couldn\u2019t copy — long-press the link to copy it');};
+  // Async clipboard with an execCommand fallback; only claim success when it worked.
+  try{
+    if(navigator.clipboard&&navigator.clipboard.writeText){navigator.clipboard.writeText(t).then(ok).catch(()=>_copyFallback(t,ok,fail));return;}
+  }catch(e){}
+  _copyFallback(t,ok,fail);
 }
 
 // ── MESSAGES ──
@@ -9719,6 +9729,35 @@ setTimeout(()=>{try{_checkNews();}catch(e){}},1500);
 
 // ── Payments: itemized invoicing menu, ledger, and Payments hub ──
 function _todayISO(){try{const d=new Date();return d.getFullYear()+'-'+String(d.getMonth()+1).padStart(2,'0')+'-'+String(d.getDate()).padStart(2,'0');}catch(e){return '';}}
+// Payment dates are stored in mixed formats — ISO ('2026-07-21'), display ('Jun 10, 2026'),
+// and the literal 'Today'. Normalize any of them to a sortable timestamp (ms). A pure string
+// sort of these mixed formats put ISO dates in the wrong place and stranded 'Today' by its
+// leading 'T', so payments and reports could show transactions badly out of order.
+function _dateToTime(d){
+  if(d==null)return 0;
+  const s=String(d).trim();if(!s)return 0;
+  if(/^today$/i.test(s))return Date.now();
+  if(/^yesterday$/i.test(s))return Date.now()-86400000;
+  // ISO YYYY-MM-DD (optionally with time) — parse as local midnight to avoid tz drift.
+  const iso=s.match(/^(\d{4})-(\d{2})-(\d{2})/);
+  if(iso)return new Date(+iso[1],+iso[2]-1,+iso[3]).getTime();
+  const t=Date.parse(s);return isNaN(t)?0:t;
+}
+// Normalize any stored date to an ISO 'YYYY-MM-DD' string for range comparison. Display-format
+// dates ('Jun 10, 2026') failed the old (p.date).slice(0,10) range check, so those transactions
+// were silently dropped from — or wrongly kept in — a report period.
+function _dateToISO(d){
+  const ms=_dateToTime(d);if(!ms)return '';
+  const x=new Date(ms);return x.getFullYear()+'-'+String(x.getMonth()+1).padStart(2,'0')+'-'+String(x.getDate()).padStart(2,'0');
+}
+// Friendly one-line date for payment rows. ISO dates become 'Jul 21, 2026'; already-friendly
+// strings ('Jun 10, 2026', 'Today') pass through unchanged instead of being chopped to
+// 'Jun 10, 20' by a blind slice(0,10).
+function _payDateDisp(d){
+  const s=String(d==null?'':d).trim();if(!s)return '\u2014';
+  if(/^\d{4}-\d{2}-\d{2}/.test(s)){const t=_dateToTime(s);if(t){try{return new Date(t).toLocaleDateString('en-US',{month:'short',day:'numeric',year:'numeric'});}catch(e){}}}
+  return s;
+}
 let _payments=(function(){try{return JSON.parse(localStorage.getItem('sc_payments')||'[]');}catch(e){return [];}})();
 function _savePayments(){try{localStorage.setItem('sc_payments',JSON.stringify(_payments));}catch(e){}}
 function _clientBalance(cid){return _payments.filter(p=>p.clientId===cid&&(p.status==='unpaid'||p.status==='partial')).reduce((a,p)=>a+(parseFloat(p.amount)||0),0);}
@@ -9925,7 +9964,7 @@ function _reportRange(key){
   return {from:'0000-01-01',to:'9999-12-31',label:'All time'};
 }
 function _reportData(from,to){
-  const inRange=p=>{const d=(p.date||'').slice(0,10);return d>=from&&d<=to;};
+  const inRange=p=>{const d=_dateToISO(p.date);return d&&d>=from&&d<=to;};
   const paid=_payments.filter(p=>p.status==='paid'&&inRange(p));
   const outstanding=_payments.filter(p=>(p.status==='unpaid'||p.status==='partial')&&inRange(p));
   let services=0,retail=0,other=0,tax=0,total=0;const byMethod={};
@@ -9978,8 +10017,8 @@ function _reportDocHTML(r,d){
   const esc=x=>String(x==null?'':x).replace(/[&<>]/g,m=>({'&':'&amp;','<':'&lt;','>':'&gt;'}[m]));
   const M=n=>'$'+(Math.round((n||0)*100)/100).toLocaleString('en-US',{minimumFractionDigits:2,maximumFractionDigits:2});
   const addr=[bizInfo.address,[bizInfo.city,bizInfo.state].filter(Boolean).join(', '),bizInfo.zip].filter(Boolean).join(', ');
-  const inRange=p=>{const dd=(p.date||'').slice(0,10);return dd>=r.from&&dd<=r.to;};
-  const txns=(_payments||[]).filter(inRange).slice().sort((a,b)=>String(a.date).localeCompare(String(b.date)));
+  const inRange=p=>{const dd=_dateToISO(p.date);return dd&&dd>=r.from&&dd<=r.to;};
+  const txns=(_payments||[]).filter(inRange).slice().sort((a,b)=>_dateToTime(a.date)-_dateToTime(b.date));
   const txRows=txns.map(p=>{const total=parseFloat(p.amount)||0;const tax=parseFloat(p.taxAmount)||0;let cat='';if(p.items&&p.items.length){cat=[...new Set(p.items.map(it=>it.kind==='product'?'Retail':(it.kind==='service'?'Service':'Other')))].join('+');}else cat=p.category||'';return '<tr><td>'+esc(p.date||'')+'</td><td>'+esc(p.clientName||'')+'</td><td>'+esc(p.note||'')+'</td><td>'+esc(cat)+'</td><td class="r">'+M(total-tax)+'</td><td class="r">'+M(tax)+'</td><td class="r">'+M(total)+'</td><td>'+esc(p.method||'')+'</td><td>'+esc(p.status||'')+'</td></tr>';}).join('');
   const methods=Object.entries(d.byMethod).sort((a,b)=>b[1]-a[1]).map(function(e){return '<tr><td>'+esc(e[0])+'</td><td class="r">'+M(e[1])+'</td></tr>';}).join('');
   return '<!doctype html><html><head><meta charset="utf-8"><title>Income Statement '+esc(d.from)+'</title><style>'
@@ -10015,7 +10054,7 @@ function _reportPDF(){
 function _reportExportSummary(){const r=_reportRange(_reportKey);const d=_reportData(r.from,r.to);const f=n=>(Math.round((n||0)*100)/100).toFixed(2);const rows=[['SlickChart \u2014 Income Summary'],['Period',r.label],['From',d.from],['To',d.to],['Basis','Cash (paid transactions)'],[''],['Category','Amount'],['Services revenue',f(d.services)],['Retail revenue',f(d.retail)],['Other revenue',f(d.other)],['Total revenue',f(d.revenue)],[''],['Sales tax collected (liability)',f(d.tax)],['Total collected',f(d.total)],[''],['Outstanding (A/R)',f(d.ar)],['Paid transactions',String(d.count)],['Average ticket',f(d.avg)]];_downloadCSV('slickchart-income-summary-'+d.from+'.csv',rows);if(typeof proToast==='function')proToast('Income summary exported');}
 function _reportExportTax(){const r=_reportRange(_reportKey);const d=_reportData(r.from,r.to);const f=n=>(Math.round((n||0)*100)/100).toFixed(2);const rows=[['SlickChart \u2014 Sales Tax Report'],['Period',r.label],['From',d.from],['To',d.to],[''],['Revenue (ex-tax)',f(d.revenue)],['Sales tax collected',f(d.tax)],['Total collected',f(d.total)]];_downloadCSV('slickchart-sales-tax-'+d.from+'.csv',rows);if(typeof proToast==='function')proToast('Sales tax report exported');}
 function _reportExportMethods(){const r=_reportRange(_reportKey);const d=_reportData(r.from,r.to);const f=n=>(Math.round((n||0)*100)/100).toFixed(2);const rows=[['SlickChart \u2014 Payment Reconciliation'],['Period',r.label+' ('+d.from+' to '+d.to+')'],[''],['Method','Amount collected']].concat(Object.entries(d.byMethod).sort((a,b)=>b[1]-a[1]).map(([m,v])=>[m,f(v)])).concat([['Total',f(d.total)]]);_downloadCSV('slickchart-reconciliation-'+d.from+'.csv',rows);if(typeof proToast==='function')proToast('Reconciliation exported');}
-function _reportExportDetail(){const r=_reportRange(_reportKey);const rows=[['Date','Client','Description','Category','Subtotal','Tax','Total','Method','Status']];const inRange=p=>{const dd=(p.date||'').slice(0,10);return dd>=r.from&&dd<=r.to;};(_payments||[]).filter(inRange).slice().sort((a,b)=>String(a.date).localeCompare(String(b.date))).forEach(p=>{const total=parseFloat(p.amount)||0;const tax=parseFloat(p.taxAmount)||0;let cat='';if(p.items&&p.items.length){cat=[...new Set(p.items.map(it=>it.kind==='product'?'Retail':(it.kind==='service'?'Service':'Other')))].join('+');}else cat=p.category||'';rows.push([p.date||'',p.clientName||'',p.note||'',cat,(total-tax).toFixed(2),tax.toFixed(2),total.toFixed(2),p.method||'',p.status||'']);});_downloadCSV('slickchart-transactions-'+r.from+'.csv',rows);if(typeof proToast==='function')proToast('Transaction detail exported');}
+function _reportExportDetail(){const r=_reportRange(_reportKey);const rows=[['Date','Client','Description','Category','Subtotal','Tax','Total','Method','Status']];const inRange=p=>{const dd=_dateToISO(p.date);return dd&&dd>=r.from&&dd<=r.to;};(_payments||[]).filter(inRange).slice().sort((a,b)=>_dateToTime(a.date)-_dateToTime(b.date)).forEach(p=>{const total=parseFloat(p.amount)||0;const tax=parseFloat(p.taxAmount)||0;let cat='';if(p.items&&p.items.length){cat=[...new Set(p.items.map(it=>it.kind==='product'?'Retail':(it.kind==='service'?'Service':'Other')))].join('+');}else cat=p.category||'';rows.push([p.date||'',p.clientName||'',p.note||'',cat,(total-tax).toFixed(2),tax.toFixed(2),total.toFixed(2),p.method||'',p.status||'']);});_downloadCSV('slickchart-transactions-'+r.from+'.csv',rows);if(typeof proToast==='function')proToast('Transaction detail exported');}
 
 // ── Invoice preview (Build invoice → Preview) ──
 async function _biPreview(){
@@ -10167,14 +10206,14 @@ function _biSaveUnpaid(){
 // Payments hub
 function renderPayments(){
   setNav('payments');document.getElementById('tt').textContent='Payments';
-  const byDateDesc=(a,b)=>String(b.date||'').localeCompare(String(a.date||''));
+  const byDateDesc=(a,b)=>_dateToTime(b.date)-_dateToTime(a.date);
   const out=_payments.filter(p=>p.status==='unpaid'||p.status==='partial').sort(byDateDesc);
   const paid=_payments.filter(p=>p.status==='paid').sort(byDateDesc);
   const sum=arr=>arr.reduce((a,p)=>a+(parseFloat(p.amount)||0),0);
   const ym=new Date().toISOString().slice(0,7);
   const monthPaid=sum(paid.filter(p=>String(p.date||'').slice(0,7)===ym));
   const chip=s=>({paid:['#0a2019','#4ec49a','Paid'],unpaid:['#2a1a0a','#e8b060','Unpaid'],partial:['#0d1e33','#5ba3e8','Partial'],refunded:['#1a1a1a','#999','Refunded'],canceled:['#1a1a1a','#777','Canceled']}[s]||['#1a1a1a','#999',s]);
-  const row=p=>{const cs=chip(p.status);return `<div onclick="_payOpen('${p.id}')" style="background:#161616;border:1px solid #242424;border-radius:11px;padding:11px 13px;margin:0 16px 8px;cursor:pointer;"><div style="display:flex;justify-content:space-between;align-items:center;"><div style="min-width:0;"><div style="font-size:14px;font-weight:600;color:#f0f0f0;">$${(parseFloat(p.amount)||0).toFixed(2)} <span style="font-size:11px;color:#888;font-weight:400;">\u00b7 ${p.method||''}</span></div><div style="font-size:12px;color:#999;margin-top:1px;">${String(p.clientName||'\u2014').replace(/</g,'&lt;')} \u00b7 ${(p.date||'').slice(0,10)}</div></div><span style="font-size:10px;font-weight:700;padding:3px 9px;border-radius:20px;background:${cs[0]};color:${cs[1]};">${cs[2]}</span></div>${p.note?`<div style="font-size:11px;color:#777;margin-top:5px;">${String(p.note).replace(/</g,'&lt;')}</div>`:''}<div style="display:flex;gap:14px;margin-top:8px;align-items:center;">${p.status!=='paid'?`<button onclick="event.stopPropagation();_payMarkPaid('${p.id}')" style="background:none;border:none;color:#4ec49a;font-size:12px;font-weight:600;cursor:pointer;font-family:inherit;padding:0;"><i class="ti ti-check"></i> Mark paid</button>`:''}<span style="color:#5ba3e8;font-size:12px;font-weight:600;"><i class="ti ti-chevron-right"></i> Details</span><button onclick="event.stopPropagation();_payDelete('${p.id}')" style="background:none;border:none;color:#a85a5a;font-size:12px;cursor:pointer;font-family:inherit;padding:0;margin-left:auto;">Remove</button></div></div>`;};
+  const row=p=>{const cs=chip(p.status);return `<div onclick="_payOpen('${p.id}')" style="background:#161616;border:1px solid #242424;border-radius:11px;padding:11px 13px;margin:0 16px 8px;cursor:pointer;"><div style="display:flex;justify-content:space-between;align-items:center;"><div style="min-width:0;"><div style="font-size:14px;font-weight:600;color:#f0f0f0;">$${(parseFloat(p.amount)||0).toFixed(2)} <span style="font-size:11px;color:#888;font-weight:400;">\u00b7 ${p.method||''}</span></div><div style="font-size:12px;color:#999;margin-top:1px;">${String(p.clientName||'\u2014').replace(/</g,'&lt;')} \u00b7 ${_payDateDisp(p.date)}</div></div><span style="font-size:10px;font-weight:700;padding:3px 9px;border-radius:20px;background:${cs[0]};color:${cs[1]};">${cs[2]}</span></div>${p.note?`<div style="font-size:11px;color:#777;margin-top:5px;">${String(p.note).replace(/</g,'&lt;')}</div>`:''}<div style="display:flex;gap:14px;margin-top:8px;align-items:center;">${p.status!=='paid'?`<button onclick="event.stopPropagation();_payMarkPaid('${p.id}')" style="background:none;border:none;color:#4ec49a;font-size:12px;font-weight:600;cursor:pointer;font-family:inherit;padding:0;"><i class="ti ti-check"></i> Mark paid</button>`:''}<span style="color:#5ba3e8;font-size:12px;font-weight:600;"><i class="ti ti-chevron-right"></i> Details</span><button onclick="event.stopPropagation();_payDelete('${p.id}')" style="background:none;border:none;color:#a85a5a;font-size:12px;cursor:pointer;font-family:inherit;padding:0;margin-left:auto;">Remove</button></div></div>`;};
   S.innerHTML=`
   <div style="padding:10px 16px 4px;display:flex;gap:8px;flex-wrap:wrap;">
     <button onclick="nav('build-invoice')" style="flex:1 1 100%;background:var(--accent);color:var(--accent-ink);border:none;border-radius:9px;padding:11px;font-size:13px;font-weight:700;cursor:pointer;font-family:inherit;"><i class="ti ti-file-invoice"></i> Build an invoice</button>
@@ -10202,7 +10241,7 @@ function _payOpen(idv){
   const itemsHtml=(p.items&&p.items.length)?('<div style="margin:12px 0 4px;">'+p.items.map(it=>`<div style="display:flex;justify-content:space-between;font-size:13px;color:#ccc;padding:5px 0;border-bottom:1px solid #1e1e1e;"><span>${((it.qty||1)>1?(it.qty+'\u00d7 '):'')+String(it.name).replace(/</g,'&lt;')}</span><span>$${((+it.price||0)*(it.qty||1)).toFixed(2)}</span></div>`).join('')+'</div>'):(p.note?('<div style="font-size:13px;color:#aaa;margin:10px 0 4px;">'+String(p.note).replace(/</g,'&lt;')+'</div>'):'');
   const m=document.createElement('div'); m.id='pay-detail'; m.style.cssText='position:fixed;top:0;bottom:0;left:0;right:0;margin:0 auto;width:390px;max-width:100%;z-index:9999;background:rgba(0,0,0,.6);display:flex;flex-direction:column;justify-content:flex-end;'; m.onclick=e=>{if(e.target===m)m.remove();};
   m.innerHTML='<div style="background:#161616;border-top:1px solid #2a2a2a;border-radius:16px 16px 0 0;padding:18px;max-height:88%;overflow:auto;"><div style="width:36px;height:4px;background:#2a2a2a;border-radius:2px;margin:0 auto 14px;"></div>'
-    +'<div style="display:flex;justify-content:space-between;align-items:flex-start;"><div><div style="font-size:20px;font-weight:700;color:#f0f0f0;">$'+(+p.amount||0).toFixed(2)+'</div><div style="font-size:13px;color:#999;margin-top:2px;">'+String(p.clientName||'\u2014').replace(/</g,'&lt;')+' \u00b7 '+(p.date||'').slice(0,10)+' \u00b7 '+(p.method||'')+'</div></div><span style="font-size:12px;font-weight:700;color:'+col+';text-transform:capitalize;">'+p.status+'</span></div>'
+    +'<div style="display:flex;justify-content:space-between;align-items:flex-start;"><div><div style="font-size:20px;font-weight:700;color:#f0f0f0;">$'+(+p.amount||0).toFixed(2)+'</div><div style="font-size:13px;color:#999;margin-top:2px;">'+String(p.clientName||'\u2014').replace(/</g,'&lt;')+' \u00b7 '+_payDateDisp(p.date)+' \u00b7 '+(p.method||'')+'</div></div><span style="font-size:12px;font-weight:700;color:'+col+';text-transform:capitalize;">'+p.status+'</span></div>'
     +itemsHtml
     +'<div style="display:flex;flex-direction:column;gap:8px;margin-top:16px;">'
     +(p.status!=='paid'?'<button class="btnp" style="width:100%;border-radius:10px;justify-content:center;" onclick="_payMarkPaid(\''+p.id+'\');var _m=document.getElementById(\'pay-detail\');if(_m)_m.remove();"><i class="ti ti-check"></i> Mark paid</button>':'')

@@ -975,6 +975,26 @@ function showToast(msg){
   setTimeout(()=>t.remove(),3000);
 }
 
+// Reliable clipboard copy with a fallback for webviews/older browsers where the async
+// clipboard API is missing — otherwise a copy could silently fail while still telling the
+// client it succeeded. Runs onDone only when the copy actually went through.
+function _clientCopy(text,onDone,onFail){
+  const ok=()=>{try{onDone&&onDone();}catch(e){}};
+  const fail=()=>{try{onFail&&onFail();}catch(e){}};
+  try{
+    if(navigator.clipboard&&navigator.clipboard.writeText){navigator.clipboard.writeText(String(text)).then(ok).catch(()=>_clientCopyFallback(text,ok,fail));return;}
+  }catch(e){}
+  _clientCopyFallback(text,ok,fail);
+}
+function _clientCopyFallback(text,ok,fail){
+  try{
+    const ta=document.createElement('textarea');ta.value=String(text);ta.style.cssText='position:fixed;top:-1000px;left:-1000px;';
+    document.body.appendChild(ta);ta.focus();ta.select();
+    const done=document.execCommand('copy');document.body.removeChild(ta);
+    if(done)ok();else fail();
+  }catch(e){fail();}
+}
+
 function renderCalModal(){
   const existing=document.getElementById('cal-modal');if(existing)existing.remove();
   const m=document.createElement('div');
@@ -2726,7 +2746,7 @@ function openBuyOptions(i){
   (document.querySelector('.shell')||document.body).appendChild(ov);
 }
 function closeBuySheet(){const e=document.getElementById('buy-sheet');if(e)e.remove();}
-function copyCode(code){try{navigator.clipboard&&navigator.clipboard.writeText(code);}catch(e){}if(typeof pushNotify==='function')pushNotify({type:'code',icon:'ti-discount-2',col:'var(--accent-lt)',ic:'var(--accent)',title:'Code copied',body:code});}
+function copyCode(code){_clientCopy(code,function(){if(typeof pushNotify==='function')pushNotify({type:'code',icon:'ti-discount-2',col:'var(--accent-lt)',ic:'var(--accent)',title:'Code copied',body:code});},function(){if(typeof showToast==='function')showToast('Couldn\u2019t copy — long-press the code to copy it');});}
 // ── Real image capture, downscaling, and on-device pixel analysis ──
 function _downscaleImage(file,maxDim,cb){
   if(file&&file.size&&file.size>25*1024*1024){cb('');return;}
