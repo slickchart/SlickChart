@@ -1269,11 +1269,18 @@ function _a11yEnhanceClickables(root){
 // that same backdrop close by dispatching a click on it. confirmModal has its own scoped
 // Escape handler (with focus trap), so it's skipped here to avoid double-handling.
 function _topOverlay(){
-  const kids=document.body?document.body.children:[];
+  // Overlays are appended either directly to <body> or inside .shell (most sheets use
+  // (.shell||body).appendChild). Scanning only body.children missed every .shell sheet,
+  // so Escape silently did nothing for them. Gather candidates from both containers.
+  const shell=document.querySelector('.shell');
+  const kids=[];
+  if(document.body)for(let i=0;i<document.body.children.length;i++)kids.push(document.body.children[i]);
+  if(shell)for(let i=0;i<shell.children.length;i++)kids.push(shell.children[i]);
   let top=null,topZ=-1;
   for(let i=0;i<kids.length;i++){
     const el=kids[i];
     if(el.id==='confirm-modal')continue; // handles its own Escape
+    if(el.classList&&el.classList.contains('shell'))continue; // the shell container itself isn't an overlay
     let s;try{s=getComputedStyle(el);}catch(e){continue;}
     if(s.position!=='fixed'||s.display==='none'||s.visibility==='hidden')continue;
     // Full-viewport overlays only (a fixed toast or bell shouldn't count).
