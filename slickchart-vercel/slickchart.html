@@ -1152,22 +1152,6 @@ function _bizLoc(){return [bizInfo.city,bizInfo.state].filter(Boolean).join(', '
 function loadBizInfo(){try{const raw=localStorage.getItem('sc_bizinfo');if(raw){const d=JSON.parse(raw)||{};Object.keys(d).forEach(k=>{bizInfo[k]=d[k];});}const wn=localStorage.getItem('sc_wsname');if(wn)workspace.name=wn;else if(bizInfo.name)workspace.name=bizInfo.name;if(_bizLoc())workspace.location=_bizLoc();}catch(e){}}
 function _a11yEnhance(){try{document.querySelectorAll('[onclick]:not(button):not(a):not(input):not(select):not(textarea):not([role])').forEach(el=>{el.setAttribute('role','button');if(!el.hasAttribute('tabindex'))el.setAttribute('tabindex','0');});}catch(e){}}
 try{document.addEventListener('keydown',function(e){const t=e.target;if((e.key==='Enter'||e.key===' ')&&t&&t.getAttribute&&t.getAttribute('role')==='button'&&t.hasAttribute('onclick')&&!['BUTTON','A','INPUT','SELECT','TEXTAREA'].includes(t.tagName)){e.preventDefault();t.click();}});}catch(e){}
-// After each render, make click-only elements keyboard-operable: any non-native element
-// with an onclick that isn't already focusable/labelled gets role=button + tabindex=0,
-// so it can be tabbed to and activated with Enter/Space via the delegated handler above.
-// Elements that opt out (nested inside another control, or explicitly aria-hidden) are skipped.
-function _a11yEnhanceClickables(root){
-  if(!root||!root.querySelectorAll)return;
-  const nodes=root.querySelectorAll('[onclick]');
-  for(let i=0;i<nodes.length;i++){
-    const el=nodes[i];const tag=el.tagName;
-    if(tag==='BUTTON'||tag==='A'||tag==='INPUT'||tag==='SELECT'||tag==='TEXTAREA')continue; // already operable
-    if(el.getAttribute('aria-hidden')==='true')continue;
-    if(el.closest('button,a'))continue; // clickable wrapper inside a real control — don't double up
-    if(!el.hasAttribute('role'))el.setAttribute('role','button');
-    if(!el.hasAttribute('tabindex'))el.setAttribute('tabindex','0');
-  }
-}
 // ── Cloud sync (database + login). Falls back to local-only until configured. ──
 function saveProfessions(){try{localStorage.setItem('sc_professions',JSON.stringify(selectedProfessions));}catch(e){}}
 function loadProfessions(){try{const raw=localStorage.getItem('sc_professions');if(raw){const a=JSON.parse(raw);if(Array.isArray(a)&&a.length)selectedProfessions=a;}}catch(e){}}
@@ -1222,9 +1206,7 @@ const Cloud={
           console.error('[Cloud sync] save failed with status',r.status);
           // A failed save must not just vanish — put these items back in the
           // queue and retry once, then actually tell the person if it still fails.
-          // Only restore keys that weren't re-edited while this request was in flight,
-          // so a stale failed value can't clobber a newer queued one (data loss).
-          if(!(retryCount>0)){for(const k in items){if(!(k in this._queue))this._queue[k]=items[k];}clearTimeout(this._timer);this._timer=setTimeout(()=>this._flush(1),1500);}
+          if(!(retryCount>0)){Object.assign(this._queue,items);clearTimeout(this._timer);this._timer=setTimeout(()=>this._flush(1),1500);}
           else if(typeof proToast==='function'){
             const tooBig=r.status===413;
             proToast(tooBig?'Could not save — that file is too large. Try a smaller image.':'Could not save your changes — check your connection and try again.',0);
@@ -1233,8 +1215,7 @@ const Cloud={
       })
       .catch(e=>{
         console.error('[Cloud sync] save failed:',e&&e.message);
-        // Restore only keys not re-edited while the request was in flight (see above).
-        if(!(retryCount>0)){for(const k in items){if(!(k in this._queue))this._queue[k]=items[k];}clearTimeout(this._timer);this._timer=setTimeout(()=>this._flush(1),1500);}
+        if(!(retryCount>0)){Object.assign(this._queue,items);clearTimeout(this._timer);this._timer=setTimeout(()=>this._flush(1),1500);}
         else if(typeof proToast==='function')proToast('Could not save your changes — check your connection and try again.',0);
       });
   },
@@ -1848,7 +1829,7 @@ function persistClientHomecare(){try{localStorage.setItem('sc_client_homecare',J
 function loadClientHomecare(){try{const raw=localStorage.getItem('sc_client_homecare');if(raw){const v=JSON.parse(raw);if(v&&typeof v==='object')clientHomecare=v;}}catch(e){}}
 function persistSessionSummaries(){try{localStorage.setItem('sc_session_summaries',JSON.stringify(sessionSummaries));}catch(e){}}
 function loadSessionSummaries(){try{const raw=localStorage.getItem('sc_session_summaries');if(raw){const v=JSON.parse(raw);if(v&&typeof v==='object')sessionSummaries=v;}}catch(e){}}
-function persistCapturedPhotos(){try{localStorage.setItem('sc_captured_photos',JSON.stringify(capturedPhotos));return true;}catch(e){return false;}}
+function persistCapturedPhotos(){try{localStorage.setItem('sc_captured_photos',JSON.stringify(capturedPhotos));}catch(e){}}
 function loadCapturedPhotos(){try{const raw=localStorage.getItem('sc_captured_photos');if(raw){const v=JSON.parse(raw);if(v&&typeof v==='object')capturedPhotos=v;}}catch(e){}}
 function persistStaff(){try{localStorage.setItem('sc_staff',JSON.stringify(staff));}catch(e){}}
 function loadStaff(){try{const raw=localStorage.getItem('sc_staff');if(raw){const arr=JSON.parse(raw);if(Array.isArray(arr)&&arr.length){staff.length=0;arr.forEach(x=>staff.push(x));}}}catch(e){}}
@@ -1969,7 +1950,6 @@ function nav(screen,data){
     if(!_navBacking){if(_navCur&&(_navCur.screen!==screen||_navCur.data!==data)){_navStack.push(_navCur);if(_navStack.length>40)_navStack.shift();}}
     _navCur={screen,data};
     fn();
-    try{_a11yEnhanceClickables(S);}catch(e){}
     S.scrollTop=0;
     if(screen==='home')_navStack.length=0;   // home is the root — clear history so no back button crowds the heading
     const bb=document.getElementById('topbar-back');if(bb)bb.style.display=_navStack.length?'flex':'none';
@@ -2035,7 +2015,7 @@ function renderHome(){
       <i class="ti ti-calendar-plus" style="font-size:20px;color:#4ec49a;"></i>
       <span style="position:absolute;top:-4px;right:-4px;min-width:18px;height:18px;padding:0 4px;background:#e87070;border-radius:9px;font-size:10px;font-weight:700;color:#fff;display:flex;align-items:center;justify-content:center;border:2px solid #0a2019;">${unseenReq.length}</span>
     </div>
-    <div style="flex:1;"><div style="font-size:14px;font-weight:600;color:#e8fff5;">New booking request${unseenReq.length>1?'s':''}</div><div style="font-size:12px;color:#7fbfa5;margin-top:1px;">${_fileEsc(unseenReq[0].client)} · ${_fileEsc(unseenReq[0].treatment)} — tap to review</div></div>
+    <div style="flex:1;"><div style="font-size:14px;font-weight:600;color:#e8fff5;">New booking request${unseenReq.length>1?'s':''}</div><div style="font-size:12px;color:#7fbfa5;margin-top:1px;">${unseenReq[0].client} · ${unseenReq[0].treatment} — tap to review</div></div>
     <i class="ti ti-chevron-right" style="font-size:18px;color:#4ec49a;"></i>
   </div>`,'req','_dismissReqTile()'):'';})()}
   ${newCheckins.length?_swipeTile(`
@@ -2044,7 +2024,7 @@ function renderHome(){
       <i class="ti ti-clipboard-check" style="font-size:20px;color:#4ec49a;"></i>
       <span style="position:absolute;top:-4px;right:-4px;min-width:18px;height:18px;padding:0 4px;background:#e87070;border-radius:9px;font-size:10px;font-weight:700;color:#fff;display:flex;align-items:center;justify-content:center;border:2px solid #0a2019;">${newCheckins.length}</span>
     </div>
-    <div style="flex:1;"><div style="font-size:14px;font-weight:600;color:#e8fff5;">New pre-visit check-in${newCheckins.length>1?'s':''}</div><div style="font-size:12px;color:#7fbfa5;margin-top:1px;">${_fileEsc(newCheckins[0].client)}${(newCheckins[0].flagged&&newCheckins[0].flagged.length)?` · ${newCheckins[0].flagged.length} flagged`:''} — tap to review</div></div>
+    <div style="flex:1;"><div style="font-size:14px;font-weight:600;color:#e8fff5;">New pre-visit check-in${newCheckins.length>1?'s':''}</div><div style="font-size:12px;color:#7fbfa5;margin-top:1px;">${newCheckins[0].client}${(newCheckins[0].flagged&&newCheckins[0].flagged.length)?` · ${newCheckins[0].flagged.length} flagged`:''} — tap to review</div></div>
     <i class="ti ti-chevron-right" style="font-size:18px;color:#4ec49a;"></i>
   </div>`,'cin','_dismissCinTile()'):''}
   ${_vcPendingCount()&&!_homeDismissed.has('vc')?_swipeTile(`
@@ -2070,8 +2050,8 @@ function renderHome(){
         <div style="padding:11px 13px;display:flex;align-items:center;gap:11px;">
           <div style="width:38px;height:38px;border-radius:9px;background:#2a1e08;display:flex;align-items:center;justify-content:center;flex-shrink:0;"><i class="ti ti-clock-exclamation" style="font-size:18px;color:var(--accent);"></i></div>
           <div style="flex:1;min-width:0;cursor:pointer;" onclick="nav('client','${id}')">
-            <div style="font-size:14px;font-weight:600;color:#ecd7a8;">${_fileEsc(c.name.split(' ')[0])} hasn't done their check-in</div>
-            <div style="font-size:12px;color:#c2a86a;margin-top:1px;overflow:hidden;text-overflow:ellipsis;white-space:nowrap;">${_fileEsc(c.treatment||'Visit')} · ${_fileEsc(c.nextVisit)}${when?' · '+_fileEsc(when):''}</div>
+            <div style="font-size:14px;font-weight:600;color:#ecd7a8;">${c.name.split(' ')[0]} hasn't done their check-in</div>
+            <div style="font-size:12px;color:#c2a86a;margin-top:1px;overflow:hidden;text-overflow:ellipsis;white-space:nowrap;">${c.treatment||'Visit'} · ${c.nextVisit}${when?' · '+when:''}</div>
           </div>
           <button onclick="event.stopPropagation();sendCheckin('${id}')" style="flex-shrink:0;background:var(--accent);color:var(--accent-ink);border:none;border-radius:8px;padding:7px 11px;font-size:12px;font-weight:600;cursor:pointer;font-family:inherit;display:inline-flex;align-items:center;gap:5px;"><i class="ti ti-message" style="font-size:13px;"></i> Send</button>
         </div>
@@ -2082,12 +2062,12 @@ function renderHome(){
     </div>`;}).join('');
     h+=flagged.filter(([id])=>!_homeDismissed.has('flag-'+id)).map(([id,c])=>_swipeTile(`<div onclick="nav('client','${id}')" style="margin:0;background:#2a0f0f;border:1px solid #5a2020;border-radius:12px;padding:11px 13px;display:flex;align-items:center;gap:11px;cursor:pointer;">
       <div style="width:38px;height:38px;border-radius:9px;background:#3a1414;display:flex;align-items:center;justify-content:center;flex-shrink:0;"><i class="ti ti-alert-triangle" style="font-size:18px;color:#e87070;"></i></div>
-      <div style="flex:1;min-width:0;"><div style="font-size:14px;font-weight:600;color:#f0c8c8;">${_fileEsc(c.name.split(' ')[0])} flagged ${c.flaggedContra.items.length} item${c.flaggedContra.items.length>1?'s':''} on intake</div><div style="font-size:12px;color:#c99;margin-top:1px;overflow:hidden;text-overflow:ellipsis;white-space:nowrap;">${_fileEsc(c.flaggedContra.items.join(', '))}</div></div>
+      <div style="flex:1;min-width:0;"><div style="font-size:14px;font-weight:600;color:#f0c8c8;">${c.name.split(' ')[0]} flagged ${c.flaggedContra.items.length} item${c.flaggedContra.items.length>1?'s':''} on intake</div><div style="font-size:12px;color:#c99;margin-top:1px;overflow:hidden;text-overflow:ellipsis;white-space:nowrap;">${c.flaggedContra.items.join(', ')}</div></div>
       <i class="ti ti-chevron-right" style="font-size:18px;color:#e87070;"></i>
     </div>`,'flag-'+id)).join('');
     h+=reviews.filter(([id])=>!_homeDismissed.has('rev-'+id)).map(([id,c])=>_swipeTile(`<div onclick="nav('client','${id}')" style="margin:0;background:#0f1f17;border:1px solid #1c4030;border-radius:12px;padding:11px 13px;display:flex;align-items:center;gap:11px;cursor:pointer;">
       <div style="width:38px;height:38px;border-radius:9px;background:#123226;display:flex;align-items:center;justify-content:center;flex-shrink:0;"><i class="ti ti-clipboard-check" style="font-size:18px;color:#4ec49a;"></i></div>
-      <div style="flex:1;min-width:0;"><div style="font-size:14px;font-weight:600;color:#cdeede;">${_fileEsc(c.name.split(' ')[0])} completed ${_fileEsc(c.submittedForms[0].title)}</div><div style="font-size:12px;color:#7fbfa5;margin-top:1px;">Answers on file — tap to review</div></div>
+      <div style="flex:1;min-width:0;"><div style="font-size:14px;font-weight:600;color:#cdeede;">${c.name.split(' ')[0]} completed ${c.submittedForms[0].title}</div><div style="font-size:12px;color:#7fbfa5;margin-top:1px;">Answers on file — tap to review</div></div>
       <i class="ti ti-chevron-right" style="font-size:18px;color:#4ec49a;"></i>
     </div>`,'rev-'+id)).join('');
     return h;
@@ -2327,12 +2307,12 @@ function renderClient(id){
   S.innerHTML=`
   <div id="client-screen-${id}" hidden></div>
   <div style="padding:12px 16px 0;display:flex;align-items:center;justify-content:space-between;"><button onclick="exportClientFile('${id}')" aria-label="Export or print client file" style="background:var(--accent-tint);border:1px solid var(--accent-a30,#3d2d10);color:var(--accent);border-radius:8px;padding:5px 11px;font-size:11px;font-weight:600;cursor:pointer;display:inline-flex;align-items:center;gap:5px;font-family:inherit;"><i class="ti ti-file-download" style="font-size:13px;"></i> Export file</button><button onclick="deleteClient('${id}')" aria-label="Remove client" style="background:none;border:1px solid #3a1a1a;color:#a85a5a;border-radius:8px;padding:5px 10px;font-size:11px;font-weight:600;cursor:pointer;display:inline-flex;align-items:center;gap:5px;font-family:inherit;"><i class="ti ti-trash" style="font-size:12px;"></i> Remove</button></div>
-  <div style="padding:14px 16px 0;display:flex;flex-direction:column;align-items:center;gap:8px;">${av(c,64)}<div style="text-align:center;"><div style="font-size:18px;font-weight:500;color:#f0f0f0;">${_fileEsc(c.name)}</div><div style="font-size:13px;color:#666;display:inline-flex;align-items:center;gap:6px;">${_fileEsc(c.treatment)} <button onclick="_editClientDetails('${id}')" style="border:1px solid var(--accent-a30,#3d2d10);background:var(--accent-tint);color:var(--accent);cursor:pointer;padding:3px 9px;border-radius:20px;line-height:1;display:inline-flex;align-items:center;gap:3px;font-size:11px;font-weight:600;font-family:inherit;"><i class="ti ti-pencil" style="font-size:11px;"></i> Edit</button></div></div></div>
+  <div style="padding:14px 16px 0;display:flex;flex-direction:column;align-items:center;gap:8px;">${av(c,64)}<div style="text-align:center;"><div style="font-size:18px;font-weight:500;color:#f0f0f0;">${c.name}</div><div style="font-size:13px;color:#666;display:inline-flex;align-items:center;gap:6px;">${c.treatment} <button onclick="_editClientDetails('${id}')" style="border:1px solid var(--accent-a30,#3d2d10);background:var(--accent-tint);color:var(--accent);cursor:pointer;padding:3px 9px;border-radius:20px;line-height:1;display:inline-flex;align-items:center;gap:3px;font-size:11px;font-weight:600;font-family:inherit;"><i class="ti ti-pencil" style="font-size:11px;"></i> Edit</button></div></div></div>
   <div style="margin:14px 16px 0;background:#161616;border:1px solid #242424;border-radius:12px;padding:12px 14px;"><div style="display:flex;justify-content:space-between;align-items:center;margin-bottom:8px;"><span style="font-size:11px;color:#888;text-transform:uppercase;letter-spacing:.06em;">Contact</span><button onclick="_editClientDetails('${id}')" style="background:var(--accent-tint);border:1px solid var(--accent-a30,#3d2d10);color:var(--accent);border-radius:8px;padding:4px 10px;font-size:11px;font-weight:600;cursor:pointer;font-family:inherit;"><i class="ti ti-pencil" style="font-size:11px;"></i> Edit</button></div><div style="font-size:13px;color:#ccc;line-height:1.9;"><div><i class="ti ti-mail" style="color:#666;margin-right:7px;"></i>${c.email?String(c.email).replace(/</g,'&lt;'):'<span style="color:#777;">No email</span>'}</div><div><i class="ti ti-phone" style="color:#666;margin-right:7px;"></i>${c.phone?_fmtPhone(c.phone).replace(/</g,'&lt;'):'<span style="color:#777;">No phone</span>'}</div><div><i class="ti ti-cake" style="color:#666;margin-right:7px;"></i>${c.birthday?_fmtDOB(c.birthday):'<span style="color:#777;">No date of birth</span>'}</div></div></div>
   ${c.flaggedContra?`<div style="margin:12px 16px 0;background:#2a0f0f;border:1px solid #5a2020;border-radius:12px;padding:12px 14px;">
     <div style="display:flex;align-items:center;gap:8px;margin-bottom:6px;"><i class="ti ti-alert-triangle" style="font-size:16px;color:#e87070;"></i><span style="font-size:13px;font-weight:700;color:#f0c8c8;">Flagged on intake — review before the visit</span></div>
-    <div style="font-size:11px;color:#c99;margin-bottom:7px;">${_fileEsc(c.name.split(' ')[0])} marked these on "${_fileEsc(c.flaggedContra.form)}" (${_fileEsc(c.flaggedContra.date)}):</div>
-    <ul style="margin:0 0 9px;padding-left:18px;">${c.flaggedContra.items.map(it=>`<li style="font-size:12.5px;color:#e6cccc;line-height:1.7;">${_fileEsc(it)}</li>`).join('')}</ul>
+    <div style="font-size:11px;color:#c99;margin-bottom:7px;">${c.name.split(' ')[0]} marked these on "${c.flaggedContra.form}" (${c.flaggedContra.date}):</div>
+    <ul style="margin:0 0 9px;padding-left:18px;">${c.flaggedContra.items.map(it=>`<li style="font-size:12.5px;color:#e6cccc;line-height:1.7;">${it}</li>`).join('')}</ul>
     <button onclick="dismissFlag('${id}')" style="background:none;border:1px solid #5a2020;color:#e8a0a0;border-radius:8px;padding:6px 12px;font-size:12px;cursor:pointer;font-family:inherit;"><i class="ti ti-check" style="font-size:12px;"></i> Mark reviewed</button>
   </div>`:''}
   <div style="display:grid;grid-template-columns:1fr 1fr;gap:8px;padding:12px 16px 8px;">
@@ -2402,7 +2382,7 @@ function renderClient(id){
   </div>
   <div class="sh"><h2>Recommended routine</h2></div>
   <div style="background:#1a1a1a;border:1px solid #2a2a2a;border-radius:12px;margin:0 16px 10px;padding:14px;">
-    <div style="font-size:12px;color:#999;line-height:1.5;margin-bottom:12px;">Homecare ${_fileEsc(c.name.split(' ')[0])} follows between visits. Shared with their session summary, so it reaches their app when you send one.</div>
+    <div style="font-size:12px;color:#999;line-height:1.5;margin-bottom:12px;">Homecare ${c.name.split(' ')[0]} follows between visits. Shared with their session summary, so it reaches their app when you send one.</div>
     <div style="display:flex;flex-wrap:wrap;gap:7px;margin-bottom:12px;">
       ${getClientHomecare(id).map((t,i)=>`<span style="display:inline-flex;align-items:center;gap:5px;font-size:12px;padding:5px 5px 5px 11px;border-radius:20px;border:1px solid #2a2a2a;background:#161616;color:#ddd;">${t}<button onclick="removeHomecareTag('${id}',${i},'profile')" aria-label="Remove routine item" style="border:none;background:none;color:#777;cursor:pointer;font-size:15px;line-height:1;padding:0 3px;min-width:20px;min-height:20px;">×</button></span>`).join('')||'<span style="font-size:12px;color:#777;">No routine items yet — add one below.</span>'}
     </div>
@@ -2413,7 +2393,7 @@ function renderClient(id){
   </div>
   <div class="sh"><h2>Recommended products</h2></div>
   <div style="padding:0 16px 4px;display:flex;align-items:center;justify-content:space-between;">
-    <span style="font-size:12px;color:#999;">What ${_fileEsc(c.name.split(' ')[0])} sees in their shop.</span>
+    <span style="font-size:12px;color:#999;">What ${c.name.split(' ')[0]} sees in their shop.</span>
     <button onclick="toggleSummaryProdPicker('${id}')" style="border:none;background:none;color:var(--accent);font-size:13px;cursor:pointer;display:flex;align-items:center;gap:3px;"><i class="ti ti-plus" aria-hidden="true" style="font-size:13px;"></i> Add</button>
   </div>
   <div style="padding:0 16px;">${_recPickerHTML(id)}</div>
@@ -2445,7 +2425,7 @@ function renderClient(id){
       </div>
     </div>
   </div>`;}).join('')}
-  ${(clientRecs[id]||[]).length>1?`<div style="padding:0 16px 6px;font-size:11px;color:#666;">Drag, or use ▲ ▼, to set the order ${_fileEsc(c.name.split(' ')[0])} sees.</div>`:''}
+  ${(clientRecs[id]||[]).length>1?`<div style="padding:0 16px 6px;font-size:11px;color:#666;">Drag, or use ▲ ▼, to set the order ${c.name.split(' ')[0]} sees.</div>`:''}
   <div class="sh"><h2>Virtual consult</h2></div>
   ${(()=>{const v=_vcProfile();const inv=vcInvites[id]||{};const nm=c.name.split(' ')[0];
   if(inv.submitted){const det=v.metrics.map(m=>m[0]+' '+m[1]).slice(0,4).join(' · ');return `
@@ -2602,7 +2582,7 @@ function renderFlaggedIntakes(){
       <div style="padding:13px 15px;display:flex;align-items:center;gap:11px;">
         ${av(c,42)}
         <div style="flex:1;min-width:0;">
-          <div style="font-size:15px;font-weight:600;color:#f5d5d5;">${_fileEsc(c.name)}</div>
+          <div style="font-size:15px;font-weight:600;color:#f5d5d5;">${c.name}</div>
           <div style="font-size:12px;color:#c99;margin-top:1px;overflow:hidden;text-overflow:ellipsis;white-space:nowrap;">${c.flaggedContra.form} \u00b7 ${c.flaggedContra.date}${c.nextVisit?' \u00b7 next '+c.nextVisit:''}</div>
         </div>
         <div style="width:34px;height:34px;border-radius:9px;background:#3a1414;display:flex;align-items:center;justify-content:center;flex-shrink:0;"><i class="ti ti-alert-triangle" aria-hidden="true" style="font-size:18px;color:#e87070;"></i></div>
@@ -2634,9 +2614,9 @@ function renderClientForms(id){
   const card=(inner,onclick,danger)=>`<button ${onclick?`onclick="${onclick}"`:'disabled'} style="width:100%;background:#1a1a1a;border:1px solid ${danger?'#5a2020':'#2a2a2a'};border-radius:12px;padding:11px 13px;display:flex;align-items:center;gap:11px;margin-bottom:8px;cursor:${onclick?'pointer':'default'};font-family:inherit;text-align:left;">${inner}</button>`;
   S.innerHTML=`
   
-  <div style="padding:10px 16px 0;display:flex;align-items:center;gap:10px;">${av(c,40)}<div><div style="font-size:16px;font-weight:600;color:#f0f0f0;">Forms &amp; documents</div><div style="font-size:12px;color:#999;">${subs.length+signedOnly.length} on file for ${_fileEsc(c.name.split(' ')[0])}</div></div></div>
+  <div style="padding:10px 16px 0;display:flex;align-items:center;gap:10px;">${av(c,40)}<div><div style="font-size:16px;font-weight:600;color:#f0f0f0;">Forms &amp; documents</div><div style="font-size:12px;color:#999;">${subs.length+signedOnly.length} on file for ${c.name.split(' ')[0]}</div></div></div>
   <div style="padding:14px 16px 0;">
-    <button onclick="openClientFormSender('${id}')" class="btnp" style="width:100%;border-radius:10px;margin-bottom:16px;"><i class="ti ti-send"></i> Send a form to ${_fileEsc(c.name.split(' ')[0])}</button>
+    <button onclick="openClientFormSender('${id}')" class="btnp" style="width:100%;border-radius:10px;margin-bottom:16px;"><i class="ti ti-send"></i> Send a form to ${c.name.split(' ')[0]}</button>
     ${subs.length?`<div style="font-size:11px;font-weight:600;color:#777;text-transform:uppercase;letter-spacing:.06em;margin-bottom:9px;">Completed &amp; signed</div>`+subs.map((sf,i)=>card(
       `<div style="width:36px;height:36px;border-radius:9px;background:${sf.flagged&&sf.flagged.length?'#2a0f0f':'var(--accent-tint)'};display:flex;align-items:center;justify-content:center;flex-shrink:0;"><i class="ti ti-${sf.flagged&&sf.flagged.length?'alert-triangle':(sf.signed?'clipboard-check':'clipboard-text')}" aria-hidden="true" style="font-size:17px;color:${sf.flagged&&sf.flagged.length?'#e87070':'var(--accent)'};"></i></div>
        <div style="flex:1;min-width:0;"><div style="font-size:13px;font-weight:500;color:#e0e0e0;">${sf.title}</div><div style="font-size:11px;color:#999;">${sf.date} · ${sf.signed?'Signed ✓':'Unsigned'}${sf.flagged&&sf.flagged.length?` · ${sf.flagged.length} flagged`:''}</div></div>
@@ -2646,7 +2626,7 @@ function renderClientForms(id){
       `<div style="width:36px;height:36px;border-radius:9px;background:var(--accent-tint);display:flex;align-items:center;justify-content:center;flex-shrink:0;"><i class="ti ti-signature" aria-hidden="true" style="font-size:17px;color:var(--accent);"></i></div>
        <div style="flex:1;min-width:0;"><div style="font-size:13px;font-weight:500;color:#e0e0e0;">${n}</div><div style="font-size:11px;color:#999;">Signed ✓</div></div>${fk?'<i class="ti ti-chevron-right" aria-hidden="true" style="font-size:16px;color:#888;"></i>':''}`,
       fk?`nav('form-preview','${fk}')`:'');}).join(''):''}
-    ${(!subs.length&&!signedOnly.length)?`<div style="background:#1a1a1a;border:1px dashed #2a2a2a;border-radius:12px;padding:26px 16px;display:flex;flex-direction:column;align-items:center;gap:8px;text-align:center;"><i class="ti ti-folder-open" aria-hidden="true" style="font-size:26px;color:#666;"></i><div style="font-size:13px;color:#bbb;font-weight:500;">No forms on file yet</div><div style="font-size:12px;color:#888;line-height:1.5;max-width:260px;">Intakes, consents, and signed forms for ${_fileEsc(c.name.split(' ')[0])} are stored here. Send one above to get started.</div></div>`:''}
+    ${(!subs.length&&!signedOnly.length)?`<div style="background:#1a1a1a;border:1px dashed #2a2a2a;border-radius:12px;padding:26px 16px;display:flex;flex-direction:column;align-items:center;gap:8px;text-align:center;"><i class="ti ti-folder-open" aria-hidden="true" style="font-size:26px;color:#666;"></i><div style="font-size:13px;color:#bbb;font-weight:500;">No forms on file yet</div><div style="font-size:12px;color:#888;line-height:1.5;max-width:260px;">Intakes, consents, and signed forms for ${c.name.split(' ')[0]} are stored here. Send one above to get started.</div></div>`:''}
   </div>`;
 }
 function openClientFormSender(id){
@@ -2656,7 +2636,7 @@ function openClientFormSender(id){
   ov.style.cssText='position:fixed;top:0;bottom:0;left:0;right:0;margin:0 auto;width:390px;max-width:100%;z-index:9999;background:rgba(0,0,0,.6);display:flex;align-items:center;justify-content:center;padding:24px 16px;box-sizing:border-box;';
   ov.onclick=e=>{if(e.target===ov)ov.remove();};
   ov.innerHTML=`<div style="background:#161616;border:1px solid #2a2a2a;width:100%;border-radius:16px;padding:18px 16px 24px;max-height:86%;overflow:auto;">
-    <div style="display:flex;align-items:center;justify-content:space-between;margin-bottom:4px;"><div style="font-size:15px;font-weight:600;color:#f0f0f0;min-width:0;">Send a form to ${_fileEsc(c.name.split(' ')[0])}</div><button onclick="this.closest('#sendform-sheet').remove()" aria-label="Close" style="border:none;background:none;font-size:20px;color:#888;cursor:pointer;line-height:1;flex-shrink:0;">✕</button></div>
+    <div style="display:flex;align-items:center;justify-content:space-between;margin-bottom:4px;"><div style="font-size:15px;font-weight:600;color:#f0f0f0;min-width:0;">Send a form to ${c.name.split(' ')[0]}</div><button onclick="this.closest('#sendform-sheet').remove()" aria-label="Close" style="border:none;background:none;font-size:20px;color:#888;cursor:pointer;line-height:1;flex-shrink:0;">✕</button></div>
     <div style="font-size:12px;color:#999;margin-bottom:14px;">Pick a form, then sign on this device or send a link.</div>
     ${keys.map(k=>`<div style="background:#1a1a1a;border:1px solid #2a2a2a;border-radius:12px;padding:11px 13px;margin-bottom:8px;">
       <div style="font-size:13px;font-weight:500;color:#e0e0e0;margin-bottom:8px;">${formTmpls[k].name}</div>
@@ -2707,7 +2687,7 @@ function renderBrief(id){
   <div style="padding:12px 16px 0;display:flex;justify-content:flex-end;align-items:center;">
     <button onclick="nav('room','${id}')" style="border:none;background:#0a2019;color:#4ec49a;border-radius:8px;padding:6px 12px;font-size:12px;cursor:pointer;"><i class="ti ti-armchair" style="font-size:12px;"></i> Session</button>
   </div>
-  <div style="padding:12px 16px 0;"><div class="row" style="gap:10px;">${av(c,38)}<div><div style="font-size:15px;font-weight:500;color:#f0f0f0;">${_fileEsc(c.name)}</div><div style="font-size:12px;color:#999;">${_fileEsc(c.nextVisit)} · ${_fileEsc(c.treatment)}</div>${selectedProfessions.includes('brow')&&!selectedProfessions.includes('esty')&&c.touchUpDate?`<div style="font-size:12px;color:#c084fc;margin-top:2px;display:flex;align-items:center;gap:4px;"><i class="ti ti-calendar-check" style="font-size:11px;"></i> Touch-up: ${_fileEsc(c.touchUpDate)}</div>`:''}</div></div></div></div>
+  <div style="padding:12px 16px 0;"><div class="row" style="gap:10px;">${av(c,38)}<div><div style="font-size:15px;font-weight:500;color:#f0f0f0;">${c.name}</div><div style="font-size:12px;color:#999;">${c.nextVisit} · ${c.treatment}</div>${selectedProfessions.includes('brow')&&!selectedProfessions.includes('esty')&&c.touchUpDate?`<div style="font-size:12px;color:#c084fc;margin-top:2px;display:flex;align-items:center;gap:4px;"><i class="ti ti-calendar-check" style="font-size:11px;"></i> Touch-up: ${c.touchUpDate}</div>`:''}</div></div></div></div>
   <div style="margin:12px 16px 0;background:#13102a;border:1px solid #2d2360;border-radius:12px;padding:14px;">
     <div style="display:flex;align-items:center;justify-content:space-between;margin-bottom:12px;">
       <span class="aic"><i class="ti ti-sparkles" style="font-size:12px;"></i> AI pre-appointment brief</span>
@@ -2716,7 +2696,7 @@ function renderBrief(id){
     <div id="brief-body">
       <div style="display:flex;align-items:center;gap:8px;padding:12px 0;">
         <div class="spin"></div>
-        <span style="font-size:13px;color:#a891ec;">Claude is reviewing ${_fileEsc(c.name.split(' ')[0])}'s chart...</span>
+        <span style="font-size:13px;color:#a891ec;">Claude is reviewing ${c.name.split(' ')[0]}'s chart...</span>
       </div>
     </div>
   </div>`;
@@ -2728,7 +2708,7 @@ async function loadBrief(id, c){
   const regen=document.getElementById('brief-regen');
   if(!el)return;
   if(regen)regen.style.pointerEvents='none';
-  el.innerHTML=`<div style="display:flex;align-items:center;gap:8px;padding:12px 0;"><div class="spin"></div><span style="font-size:13px;color:#a891ec;">Claude is reviewing ${_fileEsc(c.name.split(' ')[0])}'s chart...</span></div>`;
+  el.innerHTML=`<div style="display:flex;align-items:center;gap:8px;padding:12px 0;"><div class="spin"></div><span style="font-size:13px;color:#a891ec;">Claude is reviewing ${c.name.split(' ')[0]}'s chart...</span></div>`;
 
   const isHair=selectedProfessions.includes('hair');
   const isBarber=selectedProfessions.includes('barber')&&!selectedProfessions.includes('esty')&&!selectedProfessions.includes('hair');
@@ -3003,7 +2983,7 @@ function editVitals(id){
   m.innerHTML=`<div style="background:#1a1a1a;border:1px solid #2a2a2a;border-radius:16px;width:100%;max-height:88%;overflow:auto;padding:18px 16px 26px;">
     <div style="width:36px;height:4px;background:#333;border-radius:2px;margin:0 auto 14px;"></div>
     <div style="font-size:16px;font-weight:600;color:#f0f0f0;margin-bottom:3px;">Edit client details</div>
-    <div style="font-size:12px;color:#999;margin-bottom:16px;line-height:1.5;">Keep ${_fileEsc(c.name.split(' ')[0])}'s file current — labels adapt to your services.</div>
+    <div style="font-size:12px;color:#999;margin-bottom:16px;line-height:1.5;">Keep ${c.name.split(' ')[0]}'s file current — labels adapt to your services.</div>
     ${fields.map(f=>`<div style="margin-bottom:12px;"><label style="display:block;font-size:11px;color:#aaa;text-transform:uppercase;letter-spacing:.05em;margin-bottom:5px;">${f.label}</label><input id="vital-${f.key}" value="${(c[f.key]||'').replace(/"/g,'&quot;')}" placeholder="${f.ph}" style="width:100%;background:#111;border:1px solid #333;border-radius:9px;padding:10px 12px;font-size:14px;color:#f0f0f0;font-family:inherit;box-sizing:border-box;outline:none;"></div>`).join('')}
     <div style="display:flex;gap:8px;margin-top:6px;">
       <button onclick="document.getElementById('vitals-modal').remove()" style="flex:1;background:#222;border:1px solid #333;border-radius:10px;padding:11px;font-size:14px;color:#ccc;cursor:pointer;">Cancel</button>
@@ -3066,7 +3046,7 @@ function changeTreatment(id,screen){
   m.innerHTML=`<div style="background:#1a1a1a;border:1px solid #2a2a2a;border-radius:16px;width:100%;padding:18px 16px 26px;">
     <div style="width:36px;height:4px;background:#333;border-radius:2px;margin:0 auto 14px;"></div>
     <div style="font-size:16px;font-weight:600;color:#f0f0f0;margin-bottom:3px;">Change treatment</div>
-    <div style="font-size:12px;color:#999;margin-bottom:14px;line-height:1.5;">Things come up — update the booked treatment for ${_fileEsc(c.name.split(' ')[0])}. This carries across the appointment, notes, and client summary.</div>
+    <div style="font-size:12px;color:#999;margin-bottom:14px;line-height:1.5;">Things come up — update the booked treatment for ${c.name.split(' ')[0]}. This carries across the appointment, notes, and client summary.</div>
     <input id="treatment-input" value="${(c.treatment||'').replace(/"/g,'&quot;')}" placeholder="Treatment name…" style="width:100%;background:#111;border:1px solid #333;border-radius:9px;padding:11px 12px;font-size:15px;color:#f0f0f0;font-family:inherit;box-sizing:border-box;margin-bottom:${(squareCatalog.services&&squareCatalog.services.length)?'12px':'16px'};outline:none;">
     ${(squareCatalog.services&&squareCatalog.services.length)?`<div style="font-size:11px;color:#999;margin-bottom:7px;">Your Square services — tap to use</div>
     <div style="display:flex;flex-wrap:wrap;gap:6px;margin-bottom:16px;max-height:118px;overflow-y:auto;">
@@ -3367,7 +3347,7 @@ function switchNoteTab(id){
   const previewNote=draftNote||liveNote||(isHairBarber?'Add a note about today\'s color/service for '+c.name.split(' ')[0]+'.':'Add a note about today\'s visit for '+c.name.split(' ')[0]+'.');
   const todayLbl=_todayLabel()||'Today';
   const nextApptLine=(c.nextVisit&&c.nextVisit!=='Not scheduled')?(c.nextVisit+(c.treatment?' \u00b7 '+c.treatment:'')):'Not yet scheduled';
-  document.getElementById('ncontent').innerHTML=`<div style="padding:12px 16px 0;"><div style="background:#0a2019;border-radius:8px;padding:8px 12px;font-size:12px;color:#4ec49a;margin-bottom:12px;display:flex;gap:6px;align-items:center;"><i class="ti ti-eye" style="font-size:12px;"></i> This is what ${_fileEsc(c.name.split(' ')[0])} sees</div><div style="font-size:14px;font-weight:500;color:#f0f0f0;margin-bottom:4px;">Your session summary</div><div style="font-size:13px;color:#999;margin-bottom:12px;">${todayLbl} · ${c.treatment} with ${_providerFirstName()}</div><div style="background:#161616;border:1px solid #2a2a2a;border-radius:10px;padding:12px;font-size:13px;color:#ccc;line-height:1.7;margin-bottom:12px;">${previewNote.replace(/</g,'&lt;')}</div><div style="font-size:11px;font-weight:500;color:#aaa;text-transform:uppercase;letter-spacing:.07em;margin-bottom:6px;">${isHairBarber?'Aftercare reminders':'Homecare reminders'}</div><div style="display:flex;flex-wrap:wrap;gap:6px;margin-bottom:12px;">${getClientHomecare(id).slice(0,4).map(t=>`<span style="font-size:12px;padding:4px 10px;border-radius:20px;border:1px solid #666;color:#ccc;">${t}</span>`).join('')}</div>${(clientRecs[id]||[]).length>0?`<div style="font-size:11px;font-weight:500;color:#aaa;text-transform:uppercase;letter-spacing:.07em;margin-bottom:8px;">Recommended for you</div>${(clientRecs[id]||[]).map(aid=>{const a=affiliateLinks.find(x=>x.id===aid);if(!a)return'';return`<div style="background:#1a1a1a;border:1px solid #2a2a2a;border-radius:10px;padding:11px 12px;display:flex;align-items:center;gap:10px;margin-bottom:8px;"><span style="font-size:18px;">${a.icon}</span><div style="flex:1;min-width:0;"><div style="font-size:13px;font-weight:500;color:#e0e0e0;">${a.name}</div><div style="font-size:11px;color:#999;">${a.brand}</div></div>${(a.url||a.site||a.inOffice||amazonBuyUrl(a))?`<button onclick="openBuyOptionsP('${a.id}')" style="background:var(--accent);color:var(--accent-ink);border:none;border-radius:7px;padding:6px 11px;font-size:11px;font-weight:500;cursor:pointer;white-space:nowrap;">Buy</button>`:''}</div>`;}).join('')}`:''}<div style="font-size:11px;font-weight:500;color:#aaa;text-transform:uppercase;letter-spacing:.07em;margin-bottom:6px;">Next appointment</div><div style="background:#161616;border:1px solid #2a2a2a;border-radius:10px;padding:12px;display:flex;align-items:center;gap:8px;font-size:13px;color:#ccc;"><i class="ti ti-calendar" style="font-size:16px;color:var(--accent);"></i> ${nextApptLine}</div></div>`;
+  document.getElementById('ncontent').innerHTML=`<div style="padding:12px 16px 0;"><div style="background:#0a2019;border-radius:8px;padding:8px 12px;font-size:12px;color:#4ec49a;margin-bottom:12px;display:flex;gap:6px;align-items:center;"><i class="ti ti-eye" style="font-size:12px;"></i> This is what ${c.name.split(' ')[0]} sees</div><div style="font-size:14px;font-weight:500;color:#f0f0f0;margin-bottom:4px;">Your session summary</div><div style="font-size:13px;color:#999;margin-bottom:12px;">${todayLbl} · ${c.treatment} with ${_providerFirstName()}</div><div style="background:#161616;border:1px solid #2a2a2a;border-radius:10px;padding:12px;font-size:13px;color:#ccc;line-height:1.7;margin-bottom:12px;">${previewNote.replace(/</g,'&lt;')}</div><div style="font-size:11px;font-weight:500;color:#aaa;text-transform:uppercase;letter-spacing:.07em;margin-bottom:6px;">${isHairBarber?'Aftercare reminders':'Homecare reminders'}</div><div style="display:flex;flex-wrap:wrap;gap:6px;margin-bottom:12px;">${getClientHomecare(id).slice(0,4).map(t=>`<span style="font-size:12px;padding:4px 10px;border-radius:20px;border:1px solid #666;color:#ccc;">${t}</span>`).join('')}</div>${(clientRecs[id]||[]).length>0?`<div style="font-size:11px;font-weight:500;color:#aaa;text-transform:uppercase;letter-spacing:.07em;margin-bottom:8px;">Recommended for you</div>${(clientRecs[id]||[]).map(aid=>{const a=affiliateLinks.find(x=>x.id===aid);if(!a)return'';return`<div style="background:#1a1a1a;border:1px solid #2a2a2a;border-radius:10px;padding:11px 12px;display:flex;align-items:center;gap:10px;margin-bottom:8px;"><span style="font-size:18px;">${a.icon}</span><div style="flex:1;min-width:0;"><div style="font-size:13px;font-weight:500;color:#e0e0e0;">${a.name}</div><div style="font-size:11px;color:#999;">${a.brand}</div></div>${(a.url||a.site||a.inOffice||amazonBuyUrl(a))?`<button onclick="openBuyOptionsP('${a.id}')" style="background:var(--accent);color:var(--accent-ink);border:none;border-radius:7px;padding:6px 11px;font-size:11px;font-weight:500;cursor:pointer;white-space:nowrap;">Buy</button>`:''}</div>`;}).join('')}`:''}<div style="font-size:11px;font-weight:500;color:#aaa;text-transform:uppercase;letter-spacing:.07em;margin-bottom:6px;">Next appointment</div><div style="background:#161616;border:1px solid #2a2a2a;border-radius:10px;padding:12px;display:flex;align-items:center;gap:8px;font-size:13px;color:#ccc;"><i class="ti ti-calendar" style="font-size:16px;color:var(--accent);"></i> ${nextApptLine}</div></div>`;
 }
 function renderNoteFormats(id){
   setNav('clients');
@@ -3814,11 +3794,11 @@ function renderSessionSummary(id){
 
   <div style="margin:10px 16px 6px;background:#0a2019;border:1px solid #1a4a2a;border-radius:10px;padding:9px 12px;display:flex;gap:7px;align-items:center;">
     <i class="ti ti-eye" aria-hidden="true" style="font-size:13px;color:#4ec49a;"></i>
-    <span style="font-size:12px;color:#4ec49a;">Preview — exactly what ${_fileEsc(c.name.split(' ')[0])} will receive</span>
+    <span style="font-size:12px;color:#4ec49a;">Preview — exactly what ${c.name.split(' ')[0]} will receive</span>
   </div>
 
   <div style="margin:0 16px 6px;background:#1a1a1a;border:1px solid #2a2a2a;border-radius:10px;padding:11px 14px;display:flex;align-items:center;justify-content:space-between;gap:10px;">
-    <div style="flex:1;min-width:0;"><div style="font-size:13px;font-weight:500;color:#e0e0e0;">Send to ${_fileEsc(c.name.split(' ')[0])}'s app</div><div style="font-size:11px;color:#888;margin-top:1px;">On by default \u2014 turn off if you don't want to send this session.</div></div>
+    <div style="flex:1;min-width:0;"><div style="font-size:13px;font-weight:500;color:#e0e0e0;">Send to ${c.name.split(' ')[0]}'s app</div><div style="font-size:11px;color:#888;margin-top:1px;">On by default \u2014 turn off if you don't want to send this session.</div></div>
     ${togBtn(summarySendOn[id],`summarySendOn['${id}']=!summarySendOn['${id}'];renderSessionSummary('${id}')`,'Send to '+c.name.split(' ')[0]+"'s app")}
   </div>
 
@@ -3916,7 +3896,7 @@ function renderSessionSummary(id){
   </div>
 
   <div style="padding:0 16px 20px;display:flex;flex-direction:column;gap:8px;">
-    <button onclick="_summaryGuard('${id}')&&sendSummary('${id}')" class="btnp" style="border-radius:10px;${summarySendOn[id]?'':'opacity:.55;'}"><i class="ti ti-send" aria-hidden="true"></i> Send summary to ${_fileEsc(c.name.split(' ')[0])}</button>
+    <button onclick="_summaryGuard('${id}')&&sendSummary('${id}')" class="btnp" style="border-radius:10px;${summarySendOn[id]?'':'opacity:.55;'}"><i class="ti ti-send" aria-hidden="true"></i> Send summary to ${c.name.split(' ')[0]}</button>
     <button onclick="_summaryGuard('${id}')&&shareSummaryLink('${id}')" style="border-radius:10px;padding:11px;border:1px solid #1a4a2a;background:#0a2019;color:#4ec49a;font-size:14px;font-weight:500;cursor:pointer;display:flex;align-items:center;justify-content:center;gap:7px;${summarySendOn[id]?'':'opacity:.55;'}"><i class="ti ti-link" aria-hidden="true"></i> Send as link — no app needed</button>
     <div style="display:flex;gap:8px;">
       <button class="btng" style="flex:1;" onclick="_printSummary('${id}')"><i class="ti ti-download" aria-hidden="true"></i> Save as PDF</button>
@@ -4340,7 +4320,7 @@ function sendSummary(id){
   _storeSummary(id);
   nav('clients');
   setTimeout(()=>{
-    S.insertAdjacentHTML('afterbegin',`<div id="sent-toast" style="position:fixed;top:16px;left:50%;transform:translateX(-50%);background:#0a2019;border:1px solid #4ec49a;border-radius:10px;padding:10px 16px;font-size:13px;color:#4ec49a;display:flex;align-items:center;gap:7px;z-index:999;white-space:nowrap;"><i class="ti ti-check" aria-hidden="true"></i> Summary sent to ${_fileEsc(c.name.split(' ')[0])}!</div>`);
+    S.insertAdjacentHTML('afterbegin',`<div id="sent-toast" style="position:fixed;top:16px;left:50%;transform:translateX(-50%);background:#0a2019;border:1px solid #4ec49a;border-radius:10px;padding:10px 16px;font-size:13px;color:#4ec49a;display:flex;align-items:center;gap:7px;z-index:999;white-space:nowrap;"><i class="ti ti-check" aria-hidden="true"></i> Summary sent to ${c.name.split(' ')[0]}!</div>`);
     setTimeout(()=>document.getElementById('sent-toast')?.remove(),2800);
   },100);
 }
@@ -4377,7 +4357,7 @@ function shareSummaryLink(id){
     <div style="display:flex;align-items:center;gap:10px;margin-bottom:6px;"><div style="width:38px;height:38px;border-radius:10px;background:var(--accent-tint);display:flex;align-items:center;justify-content:center;flex-shrink:0;"><i class="ti ti-link" style="font-size:18px;color:var(--accent);"></i></div><div style="flex:1;min-width:0;"><div style="font-size:15px;font-weight:500;color:#f0f0f0;">Send ${c.name.split(' ')[0]} a link</div><div style="font-size:12px;color:#999;">They get their recap + routine — no app or login</div></div><button onclick="closeSendProd()" aria-label="Close" style="border:none;background:none;font-size:20px;color:#888;cursor:pointer;line-height:1;">✕</button></div>
     <div style="margin:8px 0 14px;background:#111;border:1px solid #2a2a2a;border-radius:10px;padding:10px 12px;display:flex;align-items:center;gap:8px;"><i class="ti ti-world" style="font-size:14px;color:#777;flex-shrink:0;"></i><span style="flex:1;font-size:12px;color:#bbb;word-break:break-all;">${linkUrl}</span></div>
     ${row("confirmSendLink('"+id+"','text')","ti-message-2","Send via text","Opens with their recap and routine")}
-    ${row("confirmSendLink('"+id+"','email')","ti-mail","Send via email","Includes a link back to ${_fileEsc(c.name.split(' ')[0])}'s portal")}
+    ${row("confirmSendLink('"+id+"','email')","ti-mail","Send via email","Includes a link back to ${c.name.split(' ')[0]}'s portal")}
     ${row("confirmSendLink('"+id+"','copy')","ti-copy","Copy link","Paste it anywhere you message clients")}
   </div>`;
   (document.querySelector('.shell')||document.body).appendChild(ov);
@@ -4433,15 +4413,6 @@ function _copyFallback(text,done){
 }
 // Navigate to an sms:/mailto: URL in a way that works inside the PWA shell.
 function _openExternal(url){
-  url=String(url||'').trim();
-  // Allow only known-safe schemes. A bare string with no scheme is treated as a URL
-  // and gets https:// prepended; anything with a disallowed scheme (javascript:, data:,
-  // file:, …) is refused so a stored value can't run code.
-  if(/^(tel:|mailto:|sms:)/i.test(url)){/* ok as-is */}
-  else if(/^https?:\/\//i.test(url)){/* ok as-is */}
-  else if(/^[a-z][a-z0-9+.-]*:/i.test(url)){return;}   // disallowed scheme
-  else if(url){url='https://'+url;}
-  else return;
   try{window.location.href=url;}catch(e){try{window.open(url,'_blank');}catch(_){}}
 }
 // Use the device's native share sheet when available; otherwise copy the link.
@@ -4605,22 +4576,12 @@ function takePhoto(clientId,phase,after){
     const f=inp.files&&inp.files[0];const ts=Date.now();
     const save=url=>{
       if(!capturedPhotos[clientId])capturedPhotos[clientId]=[];
-      const rec={url:url||'',ts,phase:phase||'reference',angle:(typeof activeAngle!=='undefined'&&activeAngle!=='Inspiration')?activeAngle:'Front'};
-      capturedPhotos[clientId].push(rec);
+      capturedPhotos[clientId].push({url:url||'',ts,phase:phase||'reference',angle:(typeof activeAngle!=='undefined'&&activeAngle!=='Inspiration')?activeAngle:'Front'});
       // Persist immediately — don't rely on the caller's `after` callback routing through
       // nav() (the in-room capture flow re-renders a DOM fragment instead of navigating,
       // which used to leave freshly captured photos unsaved until the provider left the room).
-      let saved=true;
-      try{saved=(typeof persistCapturedPhotos==='function')?persistCapturedPhotos():true;}catch(e){saved=false;}
-      if(saved){
-        proToast((phase?phase.charAt(0).toUpperCase()+phase.slice(1)+' photo':'Photo')+' captured · '+_photoStamp(ts));
-      }else{
-        // Storage is full — the photo is only in memory and will be lost on reload.
-        // Roll it back out of the array so counts don't imply it was saved, and tell
-        // the provider plainly rather than showing a false "captured ✓".
-        const idx=capturedPhotos[clientId].indexOf(rec);if(idx>=0)capturedPhotos[clientId].splice(idx,1);
-        proToast('Couldn\u2019t save — device storage is full. Clear space or export existing photos.');
-      }
+      try{if(typeof persistCapturedPhotos==='function')persistCapturedPhotos();}catch(e){}
+      proToast((phase?phase.charAt(0).toUpperCase()+phase.slice(1)+' photo':'Photo')+' captured · '+_photoStamp(ts));
       if(after)after();
     };
     if(f){const r=new FileReader();r.onload=e=>save(e.target.result);r.onerror=()=>save('');r.readAsDataURL(f);}else save('');
@@ -4916,12 +4877,11 @@ function switchVTab(tab){
 // Maps real pixel measurements (from the actual submitted photo) into profession-aware analysis cards.
 // The hosted vision model will enrich these; the values below are measured on-device, not mocked.
 function _metricsFromMeasures(kind,m){
-  m=m||{};
-  const clamp=v=>{v=+v;return Number.isFinite(v)?Math.round(Math.max(0,Math.min(100,v))):0;};
+  const clamp=v=>Math.round(Math.max(0,Math.min(100,v)));
   const lum=clamp(m.brightness/2.55),even=clamp(m.evenness);
   const warm=m.warmth>20?'Warm':m.warmth>6?'Neutral-warm':m.warmth<-4?'Cool':'Neutral';
   const red=m.redness>1.13?'Elevated':m.redness>1.05?'Mild':'Low';
-  const _b=+m.brightness;const level=Number.isFinite(_b)?Math.max(1,Math.min(10,Math.round(1+(_b/255)*9))):1;
+  const level=Math.max(1,Math.min(10,Math.round(1+(m.brightness/255)*9)));
   if(kind==='hair')return[
     ['Measured level','Level '+level,'Estimated from the overall lightness of the current photo.','var(--accent)','var(--accent-tint)'],
     ['Tone',warm+(m.warmth>20?' (gold)':''),m.warmth>14?'Warm reflect present — plan a cool/ash toner if lifting.':'Neutral-to-cool base detected.','#5ba3e8','#0d1e33'],
@@ -5097,7 +5057,7 @@ function renderVirtualClient(id){
     <div style="display:grid;grid-template-columns:1fr 1fr 1fr;gap:6px;margin-bottom:14px;">
       ${refItems.map(o=>realImg(o,'ti-sparkles','#1e1633','#a891ec')).join('')}
     </div>`:''}
-    ${sub&&sub.goals?`<div style="background:#1a1a1a;border:1px solid #2a2a2a;border-radius:12px;padding:12px 14px;margin-bottom:12px;"><div style="font-size:11px;font-weight:600;color:#aaa;text-transform:uppercase;letter-spacing:.06em;margin-bottom:6px;">What ${_fileEsc(c.name.split(' ')[0])} is hoping for</div><div style="font-size:13px;color:#ddd;line-height:1.6;">${sub.goals.replace(/</g,'&lt;')}</div></div>`:''}
+    ${sub&&sub.goals?`<div style="background:#1a1a1a;border:1px solid #2a2a2a;border-radius:12px;padding:12px 14px;margin-bottom:12px;"><div style="font-size:11px;font-weight:600;color:#aaa;text-transform:uppercase;letter-spacing:.06em;margin-bottom:6px;">What ${c.name.split(' ')[0]} is hoping for</div><div style="font-size:13px;color:#ddd;line-height:1.6;">${sub.goals.replace(/</g,'&lt;')}</div></div>`:''}
     <div style="background:#13102a;border:1px solid #2d2360;border-radius:12px;padding:14px;margin-bottom:12px;">
       <div style="display:flex;align-items:center;gap:8px;margin-bottom:10px;"><span class="aic"><i class="ti ti-sparkles" style="font-size:12px;"></i> ${v.analysisTitle}</span><span id="vc-analysis-tag" style="font-size:11px;color:${initialSrc==='sample'?'#666':'#4ec49a'};">${hasReal&&initialSrc==='sample'?'Analyzing photo…':_vcSourceLabel(initialSrc)}</span></div>
       <div id="vc-analysis-body">${_metricCardsHTML(initialMetrics)}</div>
@@ -5115,7 +5075,7 @@ function renderVirtualClient(id){
     </div>
     <div style="font-size:11px;font-weight:500;color:#aaa;text-transform:uppercase;letter-spacing:.07em;margin-bottom:8px;">Your expert notes</div>
     <textarea class="fi" style="height:100px;resize:none;line-height:1.6;margin-bottom:8px;" placeholder="Confirm the look in pro terms, answer their questions, recommend a treatment plan and next steps..."></textarea>
-    <button class="btnp" style="border-radius:8px;margin-top:8px;margin-bottom:8px;" onclick="sendVcReview('${id}');${back}"><i class="ti ti-send"></i> Send review to ${_fileEsc(c.name.split(' ')[0])}</button>
+    <button class="btnp" style="border-radius:8px;margin-top:8px;margin-bottom:8px;" onclick="sendVcReview('${id}');${back}"><i class="ti ti-send"></i> Send review to ${c.name.split(' ')[0]}</button>
   </div>`;
   // Run the analysis hook (server vision model if configured, else on-device pixel measurements),
   // then patch the card in place. Cached on the submission so re-renders don't re-run it.
@@ -5181,9 +5141,9 @@ function renderPartnerDetail(i){
       <div class="fr" style="padding:8px 14px;border:none;"><span class="fl">Website</span><span style="font-size:13px;color:var(--accent);">${p.website}</span></div>
     </div>
     <div style="display:grid;grid-template-columns:1fr 1fr;gap:8px;margin-bottom:16px;">
-      <button class="btng" onclick="_openExternal('tel:'+String('${_jsAttr(p.phone||'')}').replace(/[^0-9+]/g,''))"><i class="ti ti-phone" style="color:var(--accent);"></i> Call</button>
-      <button class="btng" onclick="_openExternal('mailto:${_jsAttr(p.email||'')}')"><i class="ti ti-mail" style="color:var(--accent);"></i> Email</button>
-      <button class="btng" onclick="_openExternal('${_jsAttr(p.website||'')}')"><i class="ti ti-world" style="color:var(--accent);"></i> Website</button>
+      <button class="btng" onclick="_openExternal('tel:'+String('${(p.phone||'').replace(/'/g,'')}').replace(/[^0-9+]/g,''))"><i class="ti ti-phone" style="color:var(--accent);"></i> Call</button>
+      <button class="btng" onclick="_openExternal('mailto:${(p.email||'').replace(/'/g,'')}')"><i class="ti ti-mail" style="color:var(--accent);"></i> Email</button>
+      <button class="btng" onclick="_openExternal(/^https?:/.test('${(p.website||'').replace(/'/g,'')}')?'${(p.website||'').replace(/'/g,'')}':'https://${(p.website||'').replace(/'/g,'')}')"><i class="ti ti-world" style="color:var(--accent);"></i> Website</button>
       <button onclick="nav('partner-intro',${i})" class="btnp" style="border-radius:10px;"><i class="ti ti-send"></i> Send intro</button>
     </div>
   </div>`;
@@ -6684,21 +6644,6 @@ function _assembleClientData(id){
 }
 let _syncingClients=false,_clientSyncTimer=null;
 function _scheduleClientSync(){ if(_clientSyncTimer)clearTimeout(_clientSyncTimer); _clientSyncTimer=setTimeout(function(){_syncClientsToServer({});},2500); }
-// After changing a client's recommendations/routine/forms: persist the workspace so
-// the change survives reload, and schedule a server sync so the client's own device
-// (which polls /api/client-data, not the same-browser bridge) actually receives it.
-function _persistAndSyncClient(cid){
-  try{if(typeof persistWorkspace==='function')persistWorkspace();}catch(e){}
-  try{if(cid&&typeof _scheduleSpecificClientSync==='function')_scheduleSpecificClientSync(cid);else if(typeof _scheduleClientSync==='function')_scheduleClientSync();}catch(e){}
-}
-// Debounced per-client sync so rapid successive sends (product, then routine) collapse
-// into a single network call for that client rather than re-pushing the whole roster.
-let _specificSyncTimers={};
-function _scheduleSpecificClientSync(cid){
-  if(!cid)return;
-  if(_specificSyncTimers[cid])clearTimeout(_specificSyncTimers[cid]);
-  _specificSyncTimers[cid]=setTimeout(function(){delete _specificSyncTimers[cid];try{_syncSpecificClientsToServer([cid],{});}catch(e){}},2500);
-}
 // Sync only the given client ids (fast path for invites) instead of the whole roster.
 async function _syncSpecificClientsToServer(ids,opts){
   opts=opts||{};
@@ -6783,27 +6728,22 @@ function renderInviteClients(){
 }
 function _inviteToggle(id){window._inviteSel[id]=!window._inviteSel[id];renderInviteClients();}
 function _inviteToggleAll(on){Object.keys(CL).filter(id=>CL[id].email).forEach(id=>window._inviteSel[id]=on);renderInviteClients();}
-let _bulkInviting=false;
 async function _doBulkInvite(){
   const tok=(typeof Cloud!=='undefined'&&Cloud&&Cloud.token)||''; if(!tok){proToast('Please sign in first');return;}
   const ids=Object.keys(CL).filter(id=>CL[id].email&&window._inviteSel[id]);
   if(!ids.length){proToast('Select at least one client');return;}
-  // Block a double-tap from emailing every selected client their invite twice.
-  if(_bulkInviting)return;
-  _bulkInviting=true;
   proToast('Preparing personal links\u2026',0);
   var _slowTimer=setTimeout(function(){
     if(document.getElementById('pro-toast'))proToast('Still working \u2014 this can take a few extra seconds if it\u2019s been a while\u2026',0);
   },4000);
+  await _syncSpecificClientsToServer(ids,{});
+  clearTimeout(_slowTimer);
   try{
-    await _syncSpecificClientsToServer(ids,{});
-    clearTimeout(_slowTimer);
     const r=await fetch('/api/client-invite',{method:'POST',headers:{'Content-Type':'application/json','Authorization':'Bearer '+tok},body:JSON.stringify({ids:ids,studio:((typeof bizInfo!=='undefined'&&bizInfo&&bizInfo.name)||''),from:((typeof _providerFirstName==='function'&&_providerFirstName())||'Your provider'),origin:location.origin})});
     const j=await r.json();
     if(j&&j.ok){ ids.forEach(id=>{if(CL[id])CL[id].appInvited=true;}); try{saveClients();}catch(e){} confirmModal({title:'Invites sent',body:'Emailed '+j.sent+' client'+(j.sent===1?'':'s')+' their personal link.'+(j.sent<ids.length?' Some may not have gone through — check their emails.':''),action:'Done'},function(){renderInviteClients();}); }
     else proToast((j&&j.error)||'Could not send invites');
-  }catch(e){clearTimeout(_slowTimer);proToast('Could not reach the server');}
-  finally{_bulkInviting=false;}
+  }catch(e){proToast('Could not reach the server');}
 }
 function _clientAppLink(id){
   const base=(typeof location!=='undefined'&&location.origin&&location.origin.indexOf('http')===0)?location.origin:'https://slick-chart.vercel.app';
@@ -7026,7 +6966,7 @@ function showMsgTab(tab){
     <div style="padding:12px 16px 8px;display:flex;align-items:center;justify-content:space-between;"><span style="font-size:13px;color:#999;">${threads.filter(t=>t.unread).length} unread</span><button onclick="_newMessageSheet()" style="background:var(--accent);color:var(--accent-ink);border:none;border-radius:8px;padding:7px 12px;font-size:12px;font-weight:500;cursor:pointer;"><i class="ti ti-edit" style="font-size:13px;"></i> New message</button></div>
     ${_searchBar('Search messages by client…','.thread-card','msgs-noresults')}
     ${threads.length===0?emptyState({icon:'ti-message-2',title:'No conversations yet',body:'Messages with your clients show up here. Tap New message to start one, or they\u2019ll appear when a client messages you from their app.'}):''}
-    ${[...threads].sort((a,b)=>(b.unread?1:0)-(a.unread?1:0)).map(t=>{const c=CL[t.id];return`<div onclick="nav('chat','${t.id}')" class="thread-card" data-search="${(((c&&c.name)||'')+' '+(t.preview||'')).toLowerCase().replace(/[^a-z0-9 ]/g,' ')}" style="display:flex;align-items:center;gap:12px;padding:12px 16px;border-bottom:1px solid #1e1e1e;cursor:pointer;"><div style="position:relative;">${av(c,44)}${t.unread?`<div style="position:absolute;top:0;right:0;width:10px;height:10px;border-radius:50%;background:var(--accent);border:2px solid #111;"></div>`:''}</div><div style="flex:1;min-width:0;"><div style="font-size:14px;font-weight:${t.unread?500:400};color:#f0f0f0;">${_fileEsc(c.name)}</div><div style="font-size:12px;color:${t.unread?'#aaa':'#555'};overflow:hidden;text-overflow:ellipsis;white-space:nowrap;">${_fileEsc(t.preview)}</div></div><div style="text-align:right;"><div style="font-size:11px;color:#999;">${_fileEsc(t.time)}</div>${t.unread?`<div style="width:8px;height:8px;border-radius:50%;background:var(--accent);margin:4px 0 0 auto;"></div>`:''}</div></div>`}).join('')}
+    ${[...threads].sort((a,b)=>(b.unread?1:0)-(a.unread?1:0)).map(t=>{const c=CL[t.id];return`<div onclick="nav('chat','${t.id}')" class="thread-card" data-search="${(((c&&c.name)||'')+' '+(t.preview||'')).toLowerCase().replace(/[^a-z0-9 ]/g,' ')}" style="display:flex;align-items:center;gap:12px;padding:12px 16px;border-bottom:1px solid #1e1e1e;cursor:pointer;"><div style="position:relative;">${av(c,44)}${t.unread?`<div style="position:absolute;top:0;right:0;width:10px;height:10px;border-radius:50%;background:var(--accent);border:2px solid #111;"></div>`:''}</div><div style="flex:1;min-width:0;"><div style="font-size:14px;font-weight:${t.unread?500:400};color:#f0f0f0;">${c.name}</div><div style="font-size:12px;color:${t.unread?'#aaa':'#555'};overflow:hidden;text-overflow:ellipsis;white-space:nowrap;">${t.preview}</div></div><div style="text-align:right;"><div style="font-size:11px;color:#999;">${t.time}</div>${t.unread?`<div style="width:8px;height:8px;border-radius:50%;background:var(--accent);margin:4px 0 0 auto;"></div>`:''}</div></div>`}).join('')}
     ${_noRes('msgs-noresults','No conversations match your search.')}`;
   } else {
     content.innerHTML=`
@@ -7060,12 +7000,12 @@ function renderChat(id){
   <div style="padding:10px 16px;border-bottom:1px solid #1e1e1e;display:flex;align-items:center;gap:10px;background:#161616;">
     <div onclick="nav('client','${id}')" style="display:flex;align-items:center;gap:10px;flex:1;min-width:0;cursor:pointer;">
       ${av(c,36)}
-      <div style="flex:1;min-width:0;"><div style="font-size:14px;font-weight:500;color:#f0f0f0;">${_fileEsc(c.name)}</div><div style="font-size:11px;color:#999;">${_fileEsc(c.treatment)}</div></div>
+      <div style="flex:1;min-width:0;"><div style="font-size:14px;font-weight:500;color:#f0f0f0;">${c.name}</div><div style="font-size:11px;color:#999;">${c.treatment}</div></div>
     </div>
     <button onclick="nav('client','${id}')" aria-label="View client profile" style="border:none;background:none;color:#aaa;font-size:18px;cursor:pointer;"><i class="ti ti-user-circle"></i></button>
   </div>
   <div id="chat-body" style="padding:12px 16px;display:flex;flex-direction:column;gap:10px;padding-bottom:80px;">
-    ${(msgStore[id]||[]).map(m=>{const imgs=m.imgs&&m.imgs.length?m.imgs:(m.img?[m.img]:[]);return`<div style="align-self:${m.from==='me'?'flex-end':'flex-start'};max-width:80%;width:fit-content;min-width:0;">${m.text?`<div class="${m.from==='me'?'bub-me':'bub-them'}">${_fileEsc(m.text)}</div>`:''}${imgs.length?`<div style="display:flex;flex-wrap:wrap;gap:4px;${m.text?'margin-top:4px;':''}justify-content:${m.from==='me'?'flex-end':'flex-start'};">${imgs.map(src=>`<img src="${_urlAttr(src)}" alt="shared photo" onclick="openPhoto(this.src)" style="width:${imgs.length>1?'92px':'180px'};height:${imgs.length>1?'92px':'auto'};${imgs.length>1?'object-fit:cover;':''}border-radius:12px;display:block;border:1px solid #2a2a2a;cursor:zoom-in;">`).join('')}</div>`:''}<div style="font-size:12px;color:#999;margin-top:3px;${m.from==='me'?'text-align:right;':''}">${_fileEsc(m.time)}</div></div>`;}).join('')}
+    ${(msgStore[id]||[]).map(m=>{const imgs=m.imgs&&m.imgs.length?m.imgs:(m.img?[m.img]:[]);return`<div style="align-self:${m.from==='me'?'flex-end':'flex-start'};max-width:80%;width:fit-content;min-width:0;">${m.text?`<div class="${m.from==='me'?'bub-me':'bub-them'}">${m.text}</div>`:''}${imgs.length?`<div style="display:flex;flex-wrap:wrap;gap:4px;${m.text?'margin-top:4px;':''}justify-content:${m.from==='me'?'flex-end':'flex-start'};">${imgs.map(src=>`<img src="${src}" alt="shared photo" onclick="openPhoto(this.src)" style="width:${imgs.length>1?'92px':'180px'};height:${imgs.length>1?'92px':'auto'};${imgs.length>1?'object-fit:cover;':''}border-radius:12px;display:block;border:1px solid #2a2a2a;cursor:zoom-in;">`).join('')}</div>`:''}<div style="font-size:12px;color:#999;margin-top:3px;${m.from==='me'?'text-align:right;':''}">${m.time}</div></div>`;}).join('')}
   </div>
   <div style="position:absolute;bottom:60px;left:0;right:0;background:#161616;border-top:1px solid #1e1e1e;padding:8px 12px;display:flex;align-items:flex-end;gap:6px;">
     <button onclick="attachProviderPhoto('${id}')" aria-label="Upload a photo" title="Upload a photo" style="width:34px;height:34px;border-radius:50%;background:#1a1a1a;border:1px solid #2a2a2a;display:flex;align-items:center;justify-content:center;cursor:pointer;flex-shrink:0;"><svg viewBox="0 0 24 24" width="17" height="17" fill="none" stroke="var(--accent)" stroke-width="1.8" stroke-linecap="round" stroke-linejoin="round" aria-hidden="true"><path d="M4 8h3l1.5-2h7L17 8h3a1 1 0 0 1 1 1v9a1 1 0 0 1-1 1H4a1 1 0 0 1-1-1V9a1 1 0 0 1 1-1z"/><circle cx="12" cy="13" r="3.2"/></svg></button>
@@ -7258,7 +7198,7 @@ function renderDocDetail(id){
   <div style="padding:12px 16px 0;display:flex;align-items:center;justify-content:flex-end;"><button onclick="nav('edit-doc','${d.id}')" style="border:none;background:none;font-size:12px;color:var(--accent);cursor:pointer;"><i class="ti ti-pencil" style="font-size:12px;"></i> Edit</button></div>
   <div style="padding:14px 16px 0;display:flex;flex-direction:column;align-items:center;gap:10px;text-align:center;"><div style="width:64px;height:64px;border-radius:16px;background:${d.col};display:flex;align-items:center;justify-content:center;"><i class="ti ${d.icon}" style="font-size:28px;color:${d.ic};"></i></div><div><div style="font-size:17px;font-weight:500;color:#f0f0f0;">${d.name}</div><div style="font-size:13px;color:#999;">${d.issuer}</div></div><span class="bdg ${d.bdg}">${d.status==='urgent'?'Renew now':d.status==='soon'?'Expiring soon':d.status==='ok'?'Valid':'No expiration'}</span></div>
   ${d.file?`<div style="padding:14px 16px 0;">
-    ${d.fileType==='image'?`<img src="${d.file}" alt="Document photo" style="width:100%;border-radius:12px;display:block;margin-bottom:10px;">`:`<a href="${d.file}" target="_blank" rel="noopener" style="display:flex;align-items:center;gap:10px;background:#1a1a1a;border:1px solid #2a2a2a;border-radius:12px;padding:14px;color:#e0e0e0;text-decoration:none;margin-bottom:10px;"><i class="ti ti-file-type-pdf" style="font-size:24px;color:#e87070;"></i><div style="flex:1;font-size:14px;">${_fileEsc(d.fileName||'Open PDF')}<div style="font-size:12px;color:#999;">Tap to view</div></div><i class="ti ti-external-link" style="font-size:16px;color:#888;"></i></a>`}
+    ${d.fileType==='image'?`<img src="${d.file}" alt="Document photo" style="width:100%;border-radius:12px;display:block;margin-bottom:10px;">`:`<a href="${d.file}" target="_blank" rel="noopener" style="display:flex;align-items:center;gap:10px;background:#1a1a1a;border:1px solid #2a2a2a;border-radius:12px;padding:14px;color:#e0e0e0;text-decoration:none;margin-bottom:10px;"><i class="ti ti-file-type-pdf" style="font-size:24px;color:#e87070;"></i><div style="flex:1;font-size:14px;">${d.fileName||'Open PDF'}<div style="font-size:12px;color:#999;">Tap to view</div></div><i class="ti ti-external-link" style="font-size:16px;color:#888;"></i></a>`}
     <button onclick="_downloadDoc('${d.id}')" style="width:100%;background:#161616;border:1px solid #2a2a2a;color:#e0e0e0;border-radius:10px;padding:11px;font-size:13px;font-weight:600;cursor:pointer;font-family:inherit;display:flex;align-items:center;justify-content:center;gap:6px;"><i class="ti ti-download" style="font-size:15px;color:var(--accent);"></i> Download ${d.fileType==='pdf'?'PDF':'photo'}</button>
   </div>`:''}
   ${d.status==='urgent'?`<div style="background:#2a0f0f;border:1px solid #5a1e1e;border-radius:10px;margin:12px 16px;padding:10px 12px;display:flex;gap:8px;align-items:center;"><i class="ti ti-alert-circle" style="font-size:14px;color:#e87070;"></i><span style="font-size:12px;color:#e87070;font-weight:500;">${d.lbl} — renew as soon as possible.</span></div>`:''}
@@ -7319,16 +7259,16 @@ function renderInventory(){try{_applyImportedProducts();}catch(e){}
   <div style="padding:12px 16px 0;display:flex;align-items:center;justify-content:flex-end;"><button onclick="nav('add-inventory-item')" style="background:var(--accent);color:var(--accent-ink);border:none;border-radius:8px;padding:7px 12px;font-size:12px;font-weight:500;cursor:pointer;">+ Add item</button></div>
   <div style="display:flex;gap:8px;padding:10px 16px;">${[['Total',inv.length,'#f0f0f0'],['Low',inv.filter(i=>i.qty<=i.low&&i.qty>0).length,'var(--accent)'],['Out',inv.filter(i=>i.qty===0).length,'#e87070']].map(([l,v,c])=>`<div style="flex:1;background:#161616;border-radius:10px;padding:9px 12px;"><div style="font-size:20px;font-weight:500;color:${c};">${v}</div><div style="font-size:11px;color:#999;">${l}</div></div>`).join('')}</div>
   ${_searchBar('Search inventory by item or brand…','.inv-card','inv-noresults')}
-  ${inv.length===0?emptyState({icon:'ti-package',title:'No items yet',body:'Add the products and supplies you keep on hand to track stock and reorder easily.',action:'Add first item',screen:'add-inventory-item'}):inv.map((item,i)=>{const _max=(+item.max>0)?+item.max:Math.max(1,+item.qty||0);const pct=Math.max(0,Math.min(100,Math.round((+item.qty||0)/_max*100)))||0;const col=item.qty===0?'#e87070':item.qty<=item.low?'var(--accent)':'#4ec49a';const lbl=item.qty===0?'Out of stock':item.qty<=item.low?`Low · ${item.qty} left`:`In stock · ${item.qty}`;
+  ${inv.length===0?emptyState({icon:'ti-package',title:'No items yet',body:'Add the products and supplies you keep on hand to track stock and reorder easily.',action:'Add first item',screen:'add-inventory-item'}):inv.map((item,i)=>{const pct=Math.min(100,Math.round(item.qty/item.max*100));const col=item.qty===0?'#e87070':item.qty<=item.low?'var(--accent)':'#4ec49a';const lbl=item.qty===0?'Out of stock':item.qty<=item.low?`Low · ${item.qty} left`:`In stock · ${item.qty}`;
   const vend=(item.vendorIdx!=null&&vendors[item.vendorIdx])?vendors[item.vendorIdx]:null;
   const reorderUrl=(item.reorderUrl||'').trim()||(vend&&vend.portal?('https://'+String(vend.portal).replace(/^https?:\/\//,'')):'');
   const reorderFrom=vend?vend.name:(item.vendorName||'').trim();
   return`<div class="inv-card" data-search="${((item.name||'')+' '+(item.brand||'')).toLowerCase().replace(/[^a-z0-9 ]/g,' ')}" style="background:#1a1a1a;border:1px solid #2a2a2a;border-radius:12px;margin:0 16px 10px;padding:11px 13px;">
     <div class="row" style="margin-bottom:8px;">
       <div style="font-size:20px;">${item.icon||'📦'}</div>
-      <div style="flex:1;min-width:0;"><div style="font-size:13px;font-weight:500;color:#e0e0e0;">${_fileEsc(item.name)}</div><div style="font-size:11px;color:#999;">${_fileEsc(item.brand||'')}</div></div>
+      <div style="flex:1;min-width:0;"><div style="font-size:13px;font-weight:500;color:#e0e0e0;">${item.name}</div><div style="font-size:11px;color:#999;">${item.brand||''}</div></div>
       <span class="bdg" style="background:${item.qty===0?'#2a0f0f':item.qty<=item.low?'var(--accent-tint)':'#0a2019'};color:${col};font-size:12px;">${lbl}</span>
-      <button onclick="nav('add-inventory-item',${i})" aria-label="Edit ${_urlAttr(item.name)}" style="border:none;background:none;color:#888;cursor:pointer;padding:4px;margin-left:2px;"><i class="ti ti-pencil" style="font-size:14px;"></i></button>
+      <button onclick="nav('add-inventory-item',${i})" aria-label="Edit ${item.name}" style="border:none;background:none;color:#888;cursor:pointer;padding:4px;margin-left:2px;"><i class="ti ti-pencil" style="font-size:14px;"></i></button>
     </div>
     <div style="display:flex;align-items:center;gap:10px;margin-bottom:${reorderFrom||reorderUrl?'10px':'0'};">
       <button onclick="inv[${i}].qty=Math.max(0,inv[${i}].qty-1);saveInv();renderInventory()" style="width:26px;height:26px;border-radius:50%;border:1px solid #2a2a2a;background:#161616;color:#888;cursor:pointer;font-size:15px;display:flex;align-items:center;justify-content:center;">−</button>
@@ -7337,8 +7277,8 @@ function renderInventory(){try{_applyImportedProducts();}catch(e){}
       <div style="flex:1;"><div style="height:5px;border-radius:3px;background:#111;overflow:hidden;"><div style="height:100%;width:${pct}%;background:${col};border-radius:3px;"></div></div></div>
     </div>
     ${(reorderFrom||reorderUrl)?`<div style="border-top:1px solid #242424;padding-top:9px;display:flex;align-items:center;gap:8px;">
-      <div style="flex:1;min-width:0;font-size:11px;color:#888;"><i class="ti ti-truck-delivery" style="font-size:12px;"></i> ${reorderFrom?('Reorder from '+_fileEsc(reorderFrom)):'Reorder link on file'}</div>
-      ${reorderUrl?`<a href="${_urlAttr(_safeUrl(reorderUrl))}" target="_blank" rel="noopener" style="background:var(--accent-tint);color:var(--accent);border:1px solid var(--accent);border-radius:7px;padding:5px 11px;font-size:11px;font-weight:700;text-decoration:none;white-space:nowrap;"><i class="ti ti-shopping-cart" style="font-size:11px;"></i> Reorder</a>`:(vend&&vend.phone?`<a href="tel:${_urlAttr(vend.phone)}" style="background:#161616;border:1px solid #2a2a2a;color:#cfe4d8;border-radius:7px;padding:5px 11px;font-size:11px;font-weight:600;text-decoration:none;white-space:nowrap;"><i class="ti ti-phone" style="font-size:11px;"></i> Call</a>`:'')}
+      <div style="flex:1;min-width:0;font-size:11px;color:#888;"><i class="ti ti-truck-delivery" style="font-size:12px;"></i> ${reorderFrom?('Reorder from '+reorderFrom):'Reorder link on file'}</div>
+      ${reorderUrl?`<a href="${reorderUrl.match(/^https?:\/\//)?reorderUrl:'https://'+reorderUrl}" target="_blank" rel="noopener" style="background:var(--accent-tint);color:var(--accent);border:1px solid var(--accent);border-radius:7px;padding:5px 11px;font-size:11px;font-weight:700;text-decoration:none;white-space:nowrap;"><i class="ti ti-shopping-cart" style="font-size:11px;"></i> Reorder</a>`:(vend&&vend.phone?`<a href="tel:${vend.phone}" style="background:#161616;border:1px solid #2a2a2a;color:#cfe4d8;border-radius:7px;padding:5px 11px;font-size:11px;font-weight:600;text-decoration:none;white-space:nowrap;"><i class="ti ti-phone" style="font-size:11px;"></i> Call</a>`:'')}
     </div>`:`<div style="border-top:1px solid #242424;padding-top:9px;"><button onclick="nav('add-inventory-item',${i})" style="border:none;background:none;color:var(--accent);font-size:11px;font-weight:600;cursor:pointer;padding:0;"><i class="ti ti-plus" style="font-size:11px;"></i> Add reorder info</button></div>`}
   </div>`}).join('')}
   ${_noRes('inv-noresults','No items match your search.')}`;
@@ -7430,23 +7370,14 @@ function renderVendors(){
     : _searchBar('Search vendors by name, category, or rep…','.vendor-card','vendors-noresults')+vendors.map((v,i)=>`
   <div class="vendor-card" data-search="${((v.name||'')+' '+(v.cat||'')+' '+(v.rep||'')).toLowerCase().replace(/[^a-z0-9 ]/g,' ')}" style="background:#1a1a1a;border:1px solid #2a2a2a;border-radius:12px;margin:0 16px 10px;overflow:hidden;">
     <div style="padding:12px 14px;display:flex;align-items:center;gap:12px;cursor:pointer;" onclick="nav('vendor-detail',${i})">
-      <div style="width:44px;height:44px;border-radius:10px;background:${v.bg};border:1px solid #2a2a2a;display:flex;align-items:center;justify-content:center;font-size:14px;font-weight:500;color:${v.tc};">${_fileEsc(v.init)}</div>
-      <div style="flex:1;"><div style="font-size:14px;font-weight:500;color:#e0e0e0;">${_fileEsc(v.name)}</div><div style="font-size:12px;color:#999;">${_fileEsc(v.cat)}</div></div>
+      <div style="width:44px;height:44px;border-radius:10px;background:${v.bg};border:1px solid #2a2a2a;display:flex;align-items:center;justify-content:center;font-size:14px;font-weight:500;color:${v.tc};">${v.init}</div>
+      <div style="flex:1;"><div style="font-size:14px;font-weight:500;color:#e0e0e0;">${v.name}</div><div style="font-size:12px;color:#999;">${v.cat}</div></div>
       <i aria-hidden="true" class="ti ti-chevron-right" style="font-size:16px;color:#888;"></i>
     </div>
-    <div style="border-top:1px solid #1e1e1e;padding:8px 14px;"><span style="font-size:12px;color:#999;"><i class="ti ti-user" style="font-size:12px;"></i> ${_fileEsc(v.rep)} · ${_fileEsc(v.phone)}</span></div>
+    <div style="border-top:1px solid #1e1e1e;padding:8px 14px;"><span style="font-size:12px;color:#999;"><i class="ti ti-user" style="font-size:12px;"></i> ${v.rep} · ${v.phone}</span></div>
   </div>`).join('')+_noRes('vendors-noresults','No vendors match your search.')}`;
 }
-function _safeUrl(u){
-  u=String(u||'').trim();if(!u||u==='\u2014')return'';
-  // Reject anything with an explicit non-http(s) scheme (javascript:, data:, vbscript:,
-  // file:, etc). A bare "scheme:" with no // that isn't http(s) is treated as unsafe.
-  if(/^[a-z][a-z0-9+.-]*:/i.test(u)&&!/^https?:\/\//i.test(u))return'';
-  return u.match(/^https?:\/\//i)?u:'https://'+u;
-}
-function _vendorUrl(u){return _safeUrl(u);}   // back-compat alias
-// Escape a URL for safe placement inside a double-quoted HTML attribute (href="...").
-function _urlAttr(u){return String(u||'').replace(/&/g,'&amp;').replace(/"/g,'&quot;').replace(/</g,'&lt;').replace(/>/g,'&gt;');}
+function _vendorUrl(u){u=String(u||'').trim();if(!u||u==='\u2014')return'';return u.match(/^https?:\/\//)?u:'https://'+u;}
 function renderVendorDetail(i){
   setNav('pro');const v=vendors[i];
   document.getElementById('tt').textContent=v.name;
@@ -7454,19 +7385,19 @@ function renderVendorDetail(i){
   const portalUrl=_vendorUrl(v.portal);
   const btn=(icon,label,url,telOrMail)=>{
     const on=telOrMail?(telOrMail!=='\u2014'&&telOrMail):url;
-    const action=telOrMail?`location.href='${icon==='ti-phone'?'tel:':'mailto:'}${_jsAttr(telOrMail)}'`:`window.open('${_jsAttr(url)}','_blank')`;
+    const action=telOrMail?`location.href='${icon==='ti-phone'?'tel:':'mailto:'}${telOrMail}'`:`window.open('${url}','_blank')`;
     return `<button class="btng" ${on?`onclick="${action}"`:'disabled'} style="${on?'':'opacity:.45;cursor:default;'}"><i class="ti ${icon}" style="color:var(--accent);"></i> ${label}</button>`;
   };
   S.innerHTML=`
   <div style="padding:12px 16px 0;display:flex;align-items:center;justify-content:flex-end;gap:8px;"><button onclick="nav('edit-vendor',${i})" style="background:var(--accent-tint);border:1px solid var(--accent-a30,#3d2d10);color:var(--accent);border-radius:8px;padding:6px 12px;font-size:12px;font-weight:600;cursor:pointer;font-family:inherit;display:inline-flex;align-items:center;gap:5px;"><i class="ti ti-pencil" style="font-size:12px;"></i> Edit</button><button onclick="deleteVendor(${i})" style="background:none;border:1px solid #3a1a1a;color:#a85a5a;border-radius:8px;padding:6px 12px;font-size:12px;font-weight:600;cursor:pointer;font-family:inherit;display:inline-flex;align-items:center;gap:5px;"><i class="ti ti-trash" style="font-size:12px;"></i> Delete</button></div>
-  <div style="padding:14px 16px;display:flex;flex-direction:column;align-items:center;gap:8px;"><div style="width:64px;height:64px;border-radius:16px;background:${v.bg};border:1px solid #2a2a2a;display:flex;align-items:center;justify-content:center;font-size:22px;font-weight:500;color:${v.tc};">${_fileEsc(v.init)}</div><div style="text-align:center;"><div style="font-size:18px;font-weight:500;color:#f0f0f0;">${_fileEsc(v.name)}</div><div style="font-size:13px;color:#999;">${_fileEsc(v.cat)}</div></div></div>
+  <div style="padding:14px 16px;display:flex;flex-direction:column;align-items:center;gap:8px;"><div style="width:64px;height:64px;border-radius:16px;background:${v.bg};border:1px solid #2a2a2a;display:flex;align-items:center;justify-content:center;font-size:22px;font-weight:500;color:${v.tc};">${v.init}</div><div style="text-align:center;"><div style="font-size:18px;font-weight:500;color:#f0f0f0;">${v.name}</div><div style="font-size:13px;color:#999;">${v.cat}</div></div></div>
   <div style="display:grid;grid-template-columns:1fr 1fr;gap:8px;padding:0 16px 14px;">
     ${btn('ti-phone','Call',null,v.phone)}
     ${btn('ti-mail','Email',null,v.email)}
     ${btn('ti-world','Website',websiteUrl)}
     ${btn('ti-login','Portal',portalUrl)}
   </div>
-  <div style="padding:0 16px;"><div class="fr"><span class="fl">Sales rep</span><span class="fv">${_fileEsc(v.rep)}</span></div><div class="fr"><span class="fl">Phone</span>${v.phone&&v.phone!=='—'?`<a href="tel:${_urlAttr(v.phone)}" class="fv" style="text-decoration:none;">${_fileEsc(v.phone)}</a>`:`<span class="fv">—</span>`}</div><div class="fr"><span class="fl">Email</span>${v.email&&v.email!=='—'?`<a href="mailto:${_urlAttr(v.email)}" style="font-size:12px;color:var(--accent);text-decoration:none;word-break:break-all;">${_fileEsc(v.email)}</a>`:`<span class="fv">—</span>`}</div><div class="fr"><span class="fl">Website</span>${websiteUrl?`<a href="${_urlAttr(websiteUrl)}" target="_blank" rel="noopener" style="font-size:12px;color:var(--accent);text-decoration:none;word-break:break-all;">${_fileEsc(v.website)}</a>`:`<span class="fv">—</span>`}</div><div class="fr"><span class="fl">Portal</span>${portalUrl?`<a href="${_urlAttr(portalUrl)}" target="_blank" rel="noopener" style="font-size:12px;color:var(--accent);text-decoration:none;word-break:break-all;">${_fileEsc(v.portal)}</a>`:`<span class="fv">—</span>`}</div><div class="fr"><span class="fl">Notes</span><span class="fv" style="font-size:12px;">${_fileEsc(v.notes)}</span></div></div>`;
+  <div style="padding:0 16px;"><div class="fr"><span class="fl">Sales rep</span><span class="fv">${v.rep}</span></div><div class="fr"><span class="fl">Phone</span>${v.phone&&v.phone!=='—'?`<a href="tel:${v.phone}" class="fv" style="text-decoration:none;">${v.phone}</a>`:`<span class="fv">—</span>`}</div><div class="fr"><span class="fl">Email</span>${v.email&&v.email!=='—'?`<a href="mailto:${v.email}" style="font-size:12px;color:var(--accent);text-decoration:none;word-break:break-all;">${v.email}</a>`:`<span class="fv">—</span>`}</div><div class="fr"><span class="fl">Website</span>${websiteUrl?`<a href="${websiteUrl}" target="_blank" rel="noopener" style="font-size:12px;color:var(--accent);text-decoration:none;word-break:break-all;">${v.website}</a>`:`<span class="fv">—</span>`}</div><div class="fr"><span class="fl">Portal</span>${portalUrl?`<a href="${portalUrl}" target="_blank" rel="noopener" style="font-size:12px;color:var(--accent);text-decoration:none;word-break:break-all;">${v.portal}</a>`:`<span class="fv">—</span>`}</div><div class="fr"><span class="fl">Notes</span><span class="fv" style="font-size:12px;">${v.notes}</span></div></div>`;
 }
 
 // ── LEARN ──
@@ -7803,7 +7734,7 @@ function renderRoutineBuilder(){
     <div style="margin-bottom:14px;">
       ${sentEntries.map(cid=>{const c=CL[cid];const s=sent[cid];return `<div style="background:#161616;border:1px solid #2a2a2a;border-radius:11px;padding:10px 12px;margin-bottom:8px;display:flex;align-items:center;gap:10px;">
         <div style="width:34px;height:34px;border-radius:9px;background:${c.bg};display:flex;align-items:center;justify-content:center;font-size:12px;font-weight:500;color:${c.tc};flex-shrink:0;">${c.initials}</div>
-        <div style="flex:1;min-width:0;"><div style="font-size:13px;font-weight:600;color:#e0e0e0;white-space:nowrap;overflow:hidden;text-overflow:ellipsis;">${s.name}</div><div style="font-size:11px;color:#999;">${_fileEsc(c.name.split(' ')[0])} · ${(s.items||[]).length} product${(s.items||[]).length>1?'s':''}</div></div>
+        <div style="flex:1;min-width:0;"><div style="font-size:13px;font-weight:600;color:#e0e0e0;white-space:nowrap;overflow:hidden;text-overflow:ellipsis;">${s.name}</div><div style="font-size:11px;color:#999;">${c.name.split(' ')[0]} · ${(s.items||[]).length} product${(s.items||[]).length>1?'s':''}</div></div>
         <button onclick="editSentRoutine('${cid}')" style="background:#1a1a1a;border:1px solid #2a2a2a;color:#ddd;border-radius:7px;padding:6px 10px;font-size:11px;font-weight:600;cursor:pointer;font-family:inherit;">Edit</button>
         <button onclick="resendRoutine('${cid}')" style="background:var(--accent-tint);color:var(--accent);border:none;border-radius:7px;padding:6px 10px;font-size:11px;font-weight:600;cursor:pointer;font-family:inherit;">Resend</button>
       </div>`;}).join('')}
@@ -7836,7 +7767,7 @@ function sendRoutineToClient(){
   ov.onclick=e=>{if(e.target===ov)closeSendProd();};
   ov.innerHTML=`<div style="background:#161616;border:1px solid #2a2a2a;width:100%;border-radius:16px;padding:16px;max-height:82%;overflow:auto;">
     <div style="display:flex;align-items:center;gap:10px;margin-bottom:12px;"><div style="width:38px;height:38px;border-radius:9px;background:var(--accent-tint);display:flex;align-items:center;justify-content:center;flex-shrink:0;"><i class="ti ti-list-check" style="font-size:18px;color:var(--accent);"></i></div><div style="flex:1;min-width:0;"><div style="font-size:15px;font-weight:500;color:#f0f0f0;">Send ${(routineDraft.name||'routine').replace(/</g,'&lt;')}</div><div style="font-size:12px;color:#999;">${routineDraft.items.length} product${routineDraft.items.length>1?'s':''} · pick a client</div></div><button onclick="closeSendProd()" aria-label="Close" style="border:none;background:none;font-size:20px;color:#888;cursor:pointer;line-height:1;">✕</button></div>
-    ${_clientPickerBody(Object.keys(CL).map(cid=>{const c=CL[cid];return`<button onclick="confirmSendRoutine('${cid}')" style="display:flex;width:100%;align-items:center;gap:10px;padding:11px 12px;border:1px solid #2a2a2a;background:#1a1a1a;border-radius:10px;margin-bottom:8px;cursor:pointer;text-align:left;"><div style="width:36px;height:36px;border-radius:9px;background:${c.bg};display:flex;align-items:center;justify-content:center;font-size:13px;font-weight:500;color:${c.tc};flex-shrink:0;">${c.initials}</div><div style="flex:1;min-width:0;"><div style="font-size:13px;font-weight:500;color:#e0e0e0;">${c.name}</div></div><i class="ti ti-send" style="font-size:16px;color:var(--accent);"></i></button>`;}).join(''))}
+    ${Object.keys(CL).map(cid=>{const c=CL[cid];return`<button onclick="confirmSendRoutine('${cid}')" style="display:flex;width:100%;align-items:center;gap:10px;padding:11px 12px;border:1px solid #2a2a2a;background:#1a1a1a;border-radius:10px;margin-bottom:8px;cursor:pointer;text-align:left;"><div style="width:36px;height:36px;border-radius:9px;background:${c.bg};display:flex;align-items:center;justify-content:center;font-size:13px;font-weight:500;color:${c.tc};flex-shrink:0;">${c.initials}</div><div style="flex:1;min-width:0;"><div style="font-size:13px;font-weight:500;color:#e0e0e0;">${c.name}</div></div><i class="ti ti-send" style="font-size:16px;color:var(--accent);"></i></button>`;}).join('')}
   </div>`;
   (document.querySelector('.shell')||document.body).appendChild(ov);
 }
@@ -7854,7 +7785,6 @@ function confirmSendRoutine(cid){
   if(cid==='maya'){try{SlickBridge.post('routine-recommended',{providerId:'jess',clientId:'maya',routine:{name,note,products}});}catch(e){}}
   currentSentRoutines()[cid]={name,note,items:routineDraft.items.slice(),products,date:'Just now'};
   persistSentRoutines();
-  _persistAndSyncClient(cid);
   closeSendProd();
   const c=CL[cid];
   if(typeof proToast==='function')proToast(`Sent "${name}" to ${c?c.name.split(' ')[0]:'client'}`);
@@ -7869,7 +7799,7 @@ function sendCourseToClient(courseId){
   ov.innerHTML=`<div style="background:#161616;border:1px solid #2a2a2a;width:100%;border-radius:16px;padding:16px;max-height:82%;overflow:auto;">
     <div style="display:flex;align-items:center;gap:10px;margin-bottom:6px;"><div style="width:38px;height:38px;border-radius:9px;background:${co.bg};display:flex;align-items:center;justify-content:center;flex-shrink:0;"><i class="ti ${co.icon}" style="font-size:18px;color:${co.ic};"></i></div><div style="flex:1;min-width:0;"><div style="font-size:15px;font-weight:500;color:#f0f0f0;">Send ${co.title}</div><div style="font-size:12px;color:#999;">Pick a client — they get a link to access it</div></div><button onclick="closeSendProd()" aria-label="Close" style="border:none;background:none;font-size:20px;color:#888;cursor:pointer;line-height:1;">✕</button></div>
     <div style="font-size:11px;color:#999;background:#1a1a1a;border:1px solid #2a2a2a;border-radius:9px;padding:8px 11px;margin-bottom:10px;line-height:1.5;">Payment is handled on your own checkout — SlickChart just shares the link.</div>
-    ${_clientPickerBody(Object.keys(CL).map(cid=>{const c=CL[cid];return`<button onclick="confirmSendCourse('${courseId}','${cid}')" style="display:flex;width:100%;align-items:center;gap:10px;padding:11px 12px;border:1px solid #2a2a2a;background:#1a1a1a;border-radius:10px;margin-bottom:8px;cursor:pointer;text-align:left;"><div style="width:36px;height:36px;border-radius:9px;background:${c.bg};display:flex;align-items:center;justify-content:center;font-size:13px;font-weight:500;color:${c.tc};flex-shrink:0;">${c.initials}</div><div style="flex:1;min-width:0;"><div style="font-size:13px;font-weight:500;color:#e0e0e0;">${c.name}</div></div><i class="ti ti-send" style="font-size:16px;color:var(--accent);"></i></button>`;}).join(''))}
+    ${Object.keys(CL).map(cid=>{const c=CL[cid];return`<button onclick="confirmSendCourse('${courseId}','${cid}')" style="display:flex;width:100%;align-items:center;gap:10px;padding:11px 12px;border:1px solid #2a2a2a;background:#1a1a1a;border-radius:10px;margin-bottom:8px;cursor:pointer;text-align:left;"><div style="width:36px;height:36px;border-radius:9px;background:${c.bg};display:flex;align-items:center;justify-content:center;font-size:13px;font-weight:500;color:${c.tc};flex-shrink:0;">${c.initials}</div><div style="flex:1;min-width:0;"><div style="font-size:13px;font-weight:500;color:#e0e0e0;">${c.name}</div></div><i class="ti ti-send" style="font-size:16px;color:var(--accent);"></i></button>`;}).join('')}
   </div>`;
   (document.querySelector('.shell')||document.body).appendChild(ov);
 }
@@ -8019,12 +7949,8 @@ function proToast(msg,ms){
   const old=document.getElementById('pro-toast');if(old)old.remove();
   if(_proToastTimer){clearTimeout(_proToastTimer);_proToastTimer=null;}
   const t=document.createElement('div');t.id='pro-toast';
-  // role=status + aria-live so screen-reader users hear feedback like "Payment
-  // complete" or "Could not save" instead of nothing.
-  t.setAttribute('role','status');t.setAttribute('aria-live','polite');
   t.style.cssText='position:fixed;bottom:88px;left:0;right:0;margin:0 auto;width:max-content;max-width:90%;background:#0a2019;border:1px solid #4ec49a;color:#4ec49a;border-radius:10px;padding:10px 16px;font-size:13px;z-index:600;white-space:nowrap;display:flex;align-items:center;gap:7px;box-shadow:0 6px 24px rgba(0,0,0,.4);';
-  t.innerHTML=`<i class="ti ti-check" aria-hidden="true" style="font-size:14px;"></i><span></span>`;
-  const _span=t.querySelector('span');if(_span)_span.textContent=String(msg==null?'':msg);
+  t.innerHTML=`<i class="ti ti-check" style="font-size:14px;"></i>${msg}`;
   (document.querySelector('.shell')||document.body).appendChild(t);
   const dur=(ms===0)?0:(ms||2800);
   if(dur>0)_proToastTimer=setTimeout(()=>{t.remove();_proToastTimer=null;},dur);
@@ -8040,15 +7966,12 @@ function confirmModal(opts,action){
   const run=()=>{try{if(typeof action==='function')action();else if(typeof action==='string'){const f=eval('('+action+')');if(typeof f==='function')f();}}catch(e){}};
   const danger=/delete|remove|stop|permanently|won['’]t/i.test(((opts.action||'')+' '+(opts.title||'')+' '+(opts.body||'')));
   const esc=s=>String(s==null?'':s);
-  const prevFocus=(document.activeElement&&document.activeElement.focus)?document.activeElement:null;
   const ov=document.createElement('div');ov.id='confirm-modal';
   ov.style.cssText='position:fixed;top:0;bottom:0;left:0;right:0;margin:0 auto;width:390px;max-width:100%;z-index:99999;background:rgba(0,0,0,.65);display:flex;align-items:center;justify-content:center;padding:24px;';
-  ov.onclick=e=>{if(e.target===ov)close();};
-  // Announced as a modal dialog, labelled by its title and described by its body, so
-  // a screen-reader user hears what they're confirming instead of nothing.
-  ov.innerHTML=`<div role="dialog" aria-modal="true" aria-labelledby="_cf-title" aria-describedby="_cf-body" style="background:#1a1a1a;border:1px solid #2a2a2a;border-radius:16px;padding:20px;max-width:340px;width:100%;box-shadow:0 12px 40px rgba(0,0,0,.5);">
-    <div id="_cf-title" style="font-size:16px;font-weight:600;color:#f0f0f0;margin-bottom:8px;">${esc(opts.title||'Are you sure?')}</div>
-    <div id="_cf-body" style="font-size:13px;color:#aaa;line-height:1.55;margin-bottom:18px;">${esc(opts.body||'')}</div>
+  ov.onclick=e=>{if(e.target===ov)ov.remove();};
+  ov.innerHTML=`<div style="background:#1a1a1a;border:1px solid #2a2a2a;border-radius:16px;padding:20px;max-width:340px;width:100%;box-shadow:0 12px 40px rgba(0,0,0,.5);">
+    <div style="font-size:16px;font-weight:600;color:#f0f0f0;margin-bottom:8px;">${esc(opts.title||'Are you sure?')}</div>
+    <div style="font-size:13px;color:#aaa;line-height:1.55;margin-bottom:18px;">${esc(opts.body||'')}</div>
     <div style="display:flex;gap:8px;">
       <button id="_cf-cancel" class="btng" style="flex:1;border-radius:10px;padding:11px;">Cancel</button>
       <button id="_cf-ok" style="flex:1;border:none;border-radius:10px;padding:11px;font-size:14px;font-weight:600;cursor:pointer;font-family:inherit;background:${danger?'#3a1414':'var(--accent)'};color:${danger?'#ff9b9b':'var(--accent-ink)'};">${esc(opts.action||'Confirm')}</button>
@@ -8056,22 +7979,8 @@ function confirmModal(opts,action){
   </div>`;
   (document.querySelector('.shell')||document.body).appendChild(ov);
   const ok=ov.querySelector('#_cf-ok'),cancel=ov.querySelector('#_cf-cancel');
-  function close(){try{document.removeEventListener('keydown',onKey,true);}catch(e){}ov.remove();try{if(prevFocus&&document.contains(prevFocus))prevFocus.focus();}catch(e){}}
-  function onKey(e){
-    if(e.key==='Escape'){e.preventDefault();close();return;}
-    if(e.key==='Tab'){
-      // Trap focus between the two buttons so it can't wander behind the overlay.
-      const f=[cancel,ok].filter(Boolean);if(!f.length)return;
-      const first=f[0],last=f[f.length-1];
-      if(e.shiftKey&&document.activeElement===first){e.preventDefault();last.focus();}
-      else if(!e.shiftKey&&document.activeElement===last){e.preventDefault();first.focus();}
-    }
-  }
-  document.addEventListener('keydown',onKey,true);
-  if(cancel)cancel.onclick=()=>close();
-  if(ok)ok.onclick=()=>{close();run();};
-  // Move focus into the dialog — the safe (Cancel) button by default.
-  requestAnimationFrame(()=>{try{(cancel||ok||ov).focus();}catch(e){}});
+  if(cancel)cancel.onclick=()=>ov.remove();
+  if(ok)ok.onclick=()=>{ov.remove();run();};
 }
 // Stale-safe automation delete: capture the automation object at tap time and
 // re-resolve its index when the user confirms, so a reordered/shortened array can't
@@ -8092,28 +8001,15 @@ function sendProductToClient(aid){
   ov.onclick=e=>{if(e.target===ov)closeSendProd();};
   ov.innerHTML=`<div style="background:#161616;border:1px solid #2a2a2a;width:100%;border-radius:16px;padding:16px;max-height:82%;overflow:auto;">
     <div style="display:flex;align-items:center;gap:10px;margin-bottom:10px;"><span style="font-size:22px;">${p.icon}</span><div style="flex:1;min-width:0;"><div style="font-size:15px;font-weight:500;color:#f0f0f0;">Recommend ${p.name}</div><div style="font-size:12px;color:#999;">Add it to a client's recommendations</div></div><button onclick="closeSendProd()" aria-label="Close" style="border:none;background:none;font-size:20px;color:#888;cursor:pointer;line-height:1;">✕</button></div>
-    ${_clientPickerBody(Object.keys(CL).map(cid=>{const c=CL[cid];const has=(clientRecs[cid]||[]).includes(aid);return`<button onclick="confirmSendProduct('${aid}','${cid}')" ${has?'disabled':''} style="display:flex;width:100%;align-items:center;gap:10px;padding:11px 12px;border:1px solid #2a2a2a;background:${has?'#0f0f0f':'#1a1a1a'};border-radius:10px;margin-bottom:8px;cursor:${has?'default':'pointer'};text-align:left;">
+    ${Object.keys(CL).map(cid=>{const c=CL[cid];const has=(clientRecs[cid]||[]).includes(aid);return`<button onclick="confirmSendProduct('${aid}','${cid}')" ${has?'disabled':''} style="display:flex;width:100%;align-items:center;gap:10px;padding:11px 12px;border:1px solid #2a2a2a;background:${has?'#0f0f0f':'#1a1a1a'};border-radius:10px;margin-bottom:8px;cursor:${has?'default':'pointer'};text-align:left;">
       <div style="width:36px;height:36px;border-radius:9px;background:${c.bg};display:flex;align-items:center;justify-content:center;font-size:13px;font-weight:500;color:${c.tc};flex-shrink:0;">${c.initials}</div>
       <div style="flex:1;min-width:0;"><div style="font-size:13px;font-weight:500;color:#e0e0e0;">${c.name}</div></div>
       ${has?'<span style="font-size:11px;color:#4ec49a;white-space:nowrap;">✓ Added</span>':'<i class="ti ti-plus" style="font-size:17px;color:var(--accent);"></i>'}
-    </button>`;}).join(''))}
+    </button>`;}).join('')}
   </div>`;
   (document.querySelector('.shell')||document.body).appendChild(ov);
 }
 function closeSendProd(){const e=document.getElementById('send-prod-sheet');if(e)e.remove();}
-// Shared empty-state for the "send to a client" picker sheets. When the provider has
-// no clients yet, an otherwise-empty list is a dead-end — show guidance and a way out
-// (add a client) instead of a sheet with nothing to pick.
-function _clientPickerBody(rowsHTML,closeFn){
-  if(Object.keys(CL).length)return rowsHTML;
-  const cf=closeFn||'closeSendProd()';
-  return `<div style="text-align:center;padding:22px 10px;">
-    <div style="width:48px;height:48px;border-radius:12px;background:#1a1a1a;display:flex;align-items:center;justify-content:center;margin:0 auto 12px;"><i class="ti ti-users" aria-hidden="true" style="font-size:22px;color:#666;"></i></div>
-    <div style="font-size:14px;font-weight:600;color:#e0e0e0;margin-bottom:5px;">No clients yet</div>
-    <div style="font-size:12px;color:#999;line-height:1.5;max-width:240px;margin:0 auto 14px;">Add a client first, then you can send this to them.</div>
-    <button onclick="${cf};nav('new-client')" style="background:var(--accent);color:var(--accent-ink);border:none;border-radius:9px;padding:9px 16px;font-size:13px;font-weight:600;cursor:pointer;font-family:inherit;"><i class="ti ti-plus" aria-hidden="true" style="font-size:13px;"></i> Add a client</button>
-  </div>`;
-}
 function confirmSendProduct(aid,cid){
   if(!clientRecs[cid])clientRecs[cid]=[];
   if(!clientRecs[cid].includes(aid))clientRecs[cid].push(aid);
@@ -8122,9 +8018,6 @@ function confirmSendProduct(aid,cid){
   if(cid==='maya'&&a){
     try{SlickBridge.post('product-recommended',{providerId:'jess',clientId:'maya',product:{name:a.name,brand:a.brand,icon:a.icon,url:a.url||'',amazon:amazonBuyUrl(a),site:a.site||'',inOffice:!!a.inOffice,siteCode:a.siteCode||'',urlCode:a.urlCode||'',amazonCode:a.amazonCode||'',why:_recReason(cid,aid)}});}catch(e){}
   }
-  // Persist the recommendation and push it to the real client's device — the bridge
-  // post above only reaches a same-browser preview, not a client on their own phone.
-  _persistAndSyncClient(cid);
   closeSendProd();
   const c=CL[cid];
   proToast(`Recommended to ${c?c.name.split(' ')[0]:'client'}`);
@@ -8148,11 +8041,11 @@ function sendBundleToClient(bi){
   ov.innerHTML=`<div style="background:#161616;border:1px solid #2a2a2a;width:100%;border-radius:16px;padding:16px;max-height:82%;overflow:auto;">
     <div style="display:flex;align-items:center;gap:10px;margin-bottom:6px;"><div style="width:38px;height:38px;border-radius:10px;background:${b.col};display:flex;align-items:center;justify-content:center;font-size:20px;flex-shrink:0;">${b.icon}</div><div style="flex:1;min-width:0;"><div style="font-size:15px;font-weight:500;color:#f0f0f0;">Send ${b.name}</div><div style="font-size:12px;color:#999;">${prods.length} product${prods.length===1?'':'s'} → a client's recommendations</div></div><button onclick="closeSendProd()" aria-label="Close" style="border:none;background:none;font-size:20px;color:#888;cursor:pointer;line-height:1;">✕</button></div>
     <div style="display:flex;flex-wrap:wrap;gap:5px;margin-bottom:12px;">${prods.map(a=>`<span style="font-size:11px;color:#ccc;background:#1a1a1a;border:1px solid #2a2a2a;border-radius:20px;padding:3px 9px;">${a.icon} ${a.name}</span>`).join('')||'<span style="font-size:12px;color:#777;">No matching products found</span>'}</div>
-    ${_clientPickerBody(Object.keys(CL).map(cid=>{const c=CL[cid];const recs=clientRecs[cid]||[];const allHave=prods.length>0&&prods.every(p=>recs.includes(p.id));return`<button onclick="confirmSendBundle(${bi},'${cid}')" ${allHave?'disabled':''} style="display:flex;width:100%;align-items:center;gap:10px;padding:11px 12px;border:1px solid #2a2a2a;background:${allHave?'#0f0f0f':'#1a1a1a'};border-radius:10px;margin-bottom:8px;cursor:${allHave?'default':'pointer'};text-align:left;">
+    ${Object.keys(CL).map(cid=>{const c=CL[cid];const recs=clientRecs[cid]||[];const allHave=prods.length>0&&prods.every(p=>recs.includes(p.id));return`<button onclick="confirmSendBundle(${bi},'${cid}')" ${allHave?'disabled':''} style="display:flex;width:100%;align-items:center;gap:10px;padding:11px 12px;border:1px solid #2a2a2a;background:${allHave?'#0f0f0f':'#1a1a1a'};border-radius:10px;margin-bottom:8px;cursor:${allHave?'default':'pointer'};text-align:left;">
       <div style="width:36px;height:36px;border-radius:9px;background:${c.bg};display:flex;align-items:center;justify-content:center;font-size:13px;font-weight:500;color:${c.tc};flex-shrink:0;">${c.initials}</div>
       <div style="flex:1;min-width:0;"><div style="font-size:13px;font-weight:500;color:#e0e0e0;">${c.name}</div></div>
       ${allHave?'<span style="font-size:11px;color:#4ec49a;white-space:nowrap;">✓ Has all</span>':'<i class="ti ti-plus" style="font-size:17px;color:var(--accent);"></i>'}
-    </button>`;}).join(''))}
+    </button>`;}).join('')}
   </div>`;
   (document.querySelector('.shell')||document.body).appendChild(ov);
 }
@@ -8164,7 +8057,6 @@ function confirmSendBundle(bi,cid){
     if(!clientRecs[cid].includes(a.id))clientRecs[cid].push(a.id);
     if(cid==='maya'){try{SlickBridge.post('product-recommended',{providerId:'jess',clientId:'maya',product:{name:a.name,brand:a.brand,icon:a.icon,url:a.url||'',amazon:amazonBuyUrl(a),site:a.site||'',inOffice:!!a.inOffice,siteCode:a.siteCode||'',urlCode:a.urlCode||'',amazonCode:a.amazonCode||'',why:_recReason(cid,a.id)}});}catch(e){}}
   });
-  _persistAndSyncClient(cid);
   closeSendProd();
   const c=CL[cid];
   proToast(`Sent ${b.name} to ${c?c.name.split(' ')[0]:'client'}`);
@@ -8178,11 +8070,11 @@ function sendResourceToClient(ri){
   ov.onclick=e=>{if(e.target===ov)closeSendProd();};
   ov.innerHTML=`<div style="background:#161616;border:1px solid #2a2a2a;width:100%;border-radius:16px;padding:16px;max-height:82%;overflow:auto;">
     <div style="display:flex;align-items:center;gap:10px;margin-bottom:10px;"><span style="font-size:24px;">${r.icon}</span><div style="flex:1;min-width:0;"><div style="font-size:15px;font-weight:500;color:#f0f0f0;">Send ${r.title}</div><div style="font-size:12px;color:#999;">${r.cat} · appears on the client's link</div></div><button onclick="closeSendProd()" aria-label="Close" style="border:none;background:none;font-size:20px;color:#888;cursor:pointer;line-height:1;">✕</button></div>
-    ${_clientPickerBody(Object.keys(CL).map(cid=>{const c=CL[cid];return`<button onclick="confirmSendResource(${ri},'${cid}')" style="display:flex;width:100%;align-items:center;gap:10px;padding:11px 12px;border:1px solid #2a2a2a;background:#1a1a1a;border-radius:10px;margin-bottom:8px;cursor:pointer;text-align:left;">
+    ${Object.keys(CL).map(cid=>{const c=CL[cid];return`<button onclick="confirmSendResource(${ri},'${cid}')" style="display:flex;width:100%;align-items:center;gap:10px;padding:11px 12px;border:1px solid #2a2a2a;background:#1a1a1a;border-radius:10px;margin-bottom:8px;cursor:pointer;text-align:left;">
       <div style="width:36px;height:36px;border-radius:9px;background:${c.bg};display:flex;align-items:center;justify-content:center;font-size:13px;font-weight:500;color:${c.tc};flex-shrink:0;">${c.initials}</div>
       <div style="flex:1;min-width:0;"><div style="font-size:13px;font-weight:500;color:#e0e0e0;">${c.name}</div></div>
       <i class="ti ti-plus" style="font-size:17px;color:var(--accent);"></i>
-    </button>`;}).join(''))}
+    </button>`;}).join('')}
   </div>`;
   (document.querySelector('.shell')||document.body).appendChild(ov);
 }
@@ -8190,15 +8082,8 @@ function confirmSendResource(ri,cid){
   const r=resources[ri];if(!r)return;
   r.shared=(r.shared||0)+1;
   if(cid==='maya'){try{SlickBridge.post('resource-shared',{providerId:'jess',clientId:'maya',resource:{title:r.title,icon:r.icon,cat:r.cat,url:r.url||'',tips:r.tips||[]}});}catch(e){}}
-  // Assign it to the client's pending guides so a real client on their own device
-  // receives it via /api/client-data — the bridge post above only reaches a preview.
-  const c=CL[cid];
-  if(c&&r.id){
-    if(!Array.isArray(c.pendingGuides))c.pendingGuides=[];
-    if(!c.pendingGuides.some(pg=>pg.guideId===r.id))c.pendingGuides.push({guideId:r.id,assignedAt:Date.now()});
-    try{saveClients();}catch(e){}
-  }
   closeSendProd();
+  const c=CL[cid];
   proToast(`Sent to ${c?c.name.split(' ')[0]:'client'}`);
 }
 
@@ -9050,19 +8935,12 @@ async function _loadCalFeedUrl(){
 
 // ── Take payment (via the provider's own connected Square) ──
 function _coVal(x){const el=document.getElementById(x);return el?el.value.trim():'';}
-function _coErr(msg,reconnect){_coActionLock=false;const el=document.getElementById('co-result');if(!el)return;el.innerHTML='<div style="background:#2a0f0f;border:1px solid #4a1515;border-radius:10px;padding:11px 13px;font-size:12px;color:#e8a0a0;line-height:1.5;">'+String(msg).replace(/</g,'&lt;')+(reconnect?' <button onclick="nav(\'square-guide\')" style="background:none;border:none;color:#f0c0c0;text-decoration:underline;cursor:pointer;font-family:inherit;font-size:12px;">Reconnect Square</button>':'')+'</div>';}
+function _coErr(msg,reconnect){const el=document.getElementById('co-result');if(!el)return;el.innerHTML='<div style="background:#2a0f0f;border:1px solid #4a1515;border-radius:10px;padding:11px 13px;font-size:12px;color:#e8a0a0;line-height:1.5;">'+String(msg).replace(/</g,'&lt;')+(reconnect?' <button onclick="nav(\'square-guide\')" style="background:none;border:none;color:#f0c0c0;text-decoration:underline;cursor:pointer;font-family:inherit;font-size:12px;">Reconnect Square</button>':'')+'</div>';}
 function _coBusy(t){const el=document.getElementById('co-result');if(el)el.innerHTML='<div style="text-align:center;color:#888;font-size:12px;padding:8px;">'+t+'</div>';}
-// Shared in-flight lock so a double-tap on "Send payment link"/"Send invoice"/"Charge"
-// can't fire the action twice (duplicate invoice email, duplicate payment-link record).
-// Cleared on any error (via _coErr), on success at each action's end, and on fresh entry.
-let _coActionLock=false;
-function _coLock(){if(_coActionLock)return false;_coActionLock=true;return true;}
 function _coRecon(e){return e&&(e.code==='reconnect'||e.code==='nosquare');}
 function renderCheckout(id){
   const c=CL[id];if(!c){nav('clients');return;}
   setNav('clients');document.getElementById('tt').textContent='Take payment';
-  _coCharging=false;   // fresh checkout session — clear any prior in-flight guard
-  _coActionLock=false;
   _coItems=[];
   S.innerHTML=`
   <div style="padding:14px 16px 4px;">
@@ -9247,7 +9125,6 @@ function _addPayment(p){p.id=p.id||('pay_'+Date.now().toString(36)+Math.random()
 let _coItems=[];
 let _coTip=false;
 let _coMenu=null;
-let _coCharging=false;   // in-flight guard: blocks a double-tap from charging twice
 function _coFlatten(d){
   const out=[];
   const add=(arr,kind)=>{(arr||[]).forEach(it=>{const vars=(it.variations&&it.variations.length)?it.variations:[{id:null,name:'',price:it.price}];vars.forEach(v=>{const nm=(v.name&&!/^regular$/i.test(v.name))?(it.name+' \u2014 '+v.name):it.name;out.push({name:nm,price:(v.price!=null?v.price:it.price)||0,variationId:v.id||null,kind,taxable:true});});});};
@@ -9267,29 +9144,18 @@ async function _coEnsureMenu(){
   _coMenu=merged;return _coMenu;
 }
 function _coValidItems(){return _coItems.filter(it=>it.variationId||(+it.price)>0).map(it=>Object.assign({},it,{name:(it.name&&String(it.name).trim())||'Item'}));}
-// Round to whole cents using a tiny epsilon so values like 0.835 (which float math
-// can store as 0.83499999) still round up correctly.
-function _money(n){return Math.round((Number(n)||0)*100+(Number(n)>=0?1e-6:-1e-6))/100;}
-// Sanitize a typed price: never negative, never Infinity/NaN. Guards against a stray
-// minus sign or "Infinity" silently corrupting an invoice total.
-function _price(v){const n=parseFloat(v);return (isFinite(n)&&n>0)?n:0;}
-function _coSubtotal(){return _money(_coItems.reduce((a,it)=>a+((+it.price||0)*(it.qty||1)),0));}
+function _coSubtotal(){return _coItems.reduce((a,it)=>a+((+it.price||0)*(it.qty||1)),0);}
 let _taxRate=(function(){try{const r=parseFloat(localStorage.getItem('sc_tax_rate'));return isFinite(r)?r:0;}catch(e){return 0;}})();
 function _saveTaxRate(v){_taxRate=Math.max(0,parseFloat(v)||0);try{localStorage.setItem('sc_tax_rate',String(_taxRate));}catch(e){}if(typeof Cloud!=='undefined'&&Cloud&&Cloud.pushAllLocal){try{Cloud.pushAllLocal();}catch(e){}}}
-function _coTaxAmt(){if(_taxRate<=0)return 0;const t=_coItems.reduce((a,it)=>a+((it.taxable===false)?0:((+it.price||0)*(it.qty||1))),0);return _money(t*_taxRate/100);}
-function _coTotal(){return _money(_coSubtotal()+_coTaxAmt());}
-// The amount to charge/invoice: line-item total when there are items, otherwise the
-// manually-typed amount — always sanitized so a negative or Infinity can't be charged.
-function _coAmount(){const items=_coValidItems();return items.length?_coTotal():_price(_coVal('co-amt'));}
+function _coTaxAmt(){if(_taxRate<=0)return 0;const t=_coItems.reduce((a,it)=>a+((it.taxable===false)?0:((+it.price||0)*(it.qty||1))),0);return t*_taxRate/100;}
+function _coTotal(){return _coSubtotal()+_coTaxAmt();}
 let _squareTaxRate=null;
 async function _fetchSquareTaxRate(){if(_squareTaxRate!==null)return _squareTaxRate;try{const d=await _sqFetch('/api/square/tax-rate');_squareTaxRate=(d&&d.ok&&d.rate)?d.rate:0;}catch(e){_squareTaxRate=0;}return _squareTaxRate;}
 function _effTaxRate(){return _taxRate>0?_taxRate:(_squareTaxRate||0);}
 function _taxIsEstimate(){return !(_taxRate>0)&&(_squareTaxRate>0);}
-function _taxableSub(){return _money(_coItems.reduce((a,it)=>a+((it.taxable===false)?0:((+it.price||0)*(it.qty||1))),0));}
-// Tax and total are rounded to cents so the displayed lines always add up exactly
-// (subtotal + tax === total) and match the amount actually charged.
-function _dispTax(){return _effTaxRate()>0?_money(_taxableSub()*_effTaxRate()/100):0;}
-function _dispTotal(){return _money(_coSubtotal()+_dispTax());}
+function _taxableSub(){return _coItems.reduce((a,it)=>a+((it.taxable===false)?0:((+it.price||0)*(it.qty||1))),0);}
+function _dispTax(){return _effTaxRate()>0?(_taxableSub()*_effTaxRate()/100):0;}
+function _dispTotal(){return _coSubtotal()+_dispTax();}
 function _coSyncAmt(){const a=document.getElementById('co-amt');if(a&&_coValidItems().length)a.value=_coSubtotal().toFixed(2);}
 function _coUpdateSubtotal(){const s=document.getElementById('co-subtotal');if(s)s.textContent='$'+_coSubtotal().toFixed(2);const t=document.getElementById('co-tax');if(t)t.textContent=_dispTax().toFixed(2);const g=document.getElementById('co-total');if(g)g.textContent=_dispTotal().toFixed(2);_coSyncAmt();}
 function _coQty(i,dv){if(_coItems[i]){_coItems[i].qty=Math.max(1,(_coItems[i].qty||1)+dv);_coRenderItems();}}
@@ -9297,7 +9163,7 @@ function _coAddCustom(){_coItems.push({name:'',price:0,qty:1,variationId:null,ki
 function _coRenderItems(){
   const el=document.getElementById('co-items');if(!el)return;
   if(!_coItems.length){el.innerHTML='';return;}
-  el.innerHTML=_coItems.map((it,i)=>`<div style="display:flex;align-items:center;gap:8px;background:#161616;border:1px solid #242424;border-radius:9px;padding:8px 10px;margin-bottom:6px;"><div style="flex:1;min-width:0;">${it.variationId?`<div style="font-size:13px;color:#e0e0e0;">${String(it.name).replace(/</g,'&lt;')}</div><div style="font-size:11px;color:#4ec49a;">$${(+it.price||0).toFixed(2)}</div>`:`<input value="${String(it.name||'').replace(/"/g,'&quot;')}" oninput="_coItems[${i}].name=this.value" placeholder="Item name" style="width:100%;background:none;border:none;border-bottom:1px solid #2a2a2a;color:#e0e0e0;font-size:13px;font-family:inherit;outline:none;padding-bottom:2px;"><div style="display:flex;align-items:center;gap:3px;margin-top:4px;"><span style="color:#777;font-size:11px;">$</span><input value="${it.price||''}" inputmode="decimal" oninput="_coItems[${i}].price=_price(this.value);_coUpdateSubtotal()" placeholder="0.00" style="width:60px;background:#111;border:1px solid #2a2a2a;border-radius:6px;padding:3px 6px;color:#e0e0e0;font-size:12px;font-family:inherit;"></div>`}</div><div style="display:flex;align-items:center;gap:5px;"><button onclick="_coQty(${i},-1)" style="width:24px;height:24px;border-radius:6px;background:#222;border:none;color:#ccc;cursor:pointer;font-size:14px;">\u2212</button><span style="min-width:16px;text-align:center;font-size:13px;color:#e0e0e0;">${it.qty||1}</span><button onclick="_coQty(${i},1)" style="width:24px;height:24px;border-radius:6px;background:#222;border:none;color:#ccc;cursor:pointer;font-size:14px;">+</button></div><button onclick="_coItems[${i}].taxable=(_coItems[${i}].taxable===false);_coRenderItems()" style="background:${it.taxable===false?'#2a1a0a':'#0a2019'};border:1px solid ${it.taxable===false?'#4a3510':'#1c4030'};color:${it.taxable===false?'#c99a5a':'#4ec49a'};border-radius:6px;padding:4px 7px;font-size:10px;font-weight:600;cursor:pointer;font-family:inherit;white-space:nowrap;">${it.taxable===false?'No tax':'Tax'}</button><button onclick="_coItems.splice(${i},1);_coRenderItems()" aria-label="Remove item" style="background:none;border:none;color:#a85a5a;cursor:pointer;font-size:14px;padding:2px;"><i class="ti ti-x"></i></button></div>`).join('')+`<div style="display:flex;justify-content:space-between;align-items:center;margin-top:6px;gap:8px;"><span style="font-size:11px;color:#888;">${_coItems.length} line${_coItems.length===1?'':'s'} on this invoice \u00b7 add more below</span><span style="font-size:13px;font-weight:700;color:#4ec49a;white-space:nowrap;">Subtotal: <span id="co-subtotal">$${_coSubtotal().toFixed(2)}</span></span></div>${_effTaxRate()>0?`<div style="display:flex;justify-content:space-between;font-size:12px;color:#aaa;margin-top:4px;"><span>${_taxIsEstimate()?'Est. tax':'Tax'} (${_effTaxRate()}%)</span><span>$<span id="co-tax">${_dispTax().toFixed(2)}</span></span></div><div style="display:flex;justify-content:space-between;font-size:13px;font-weight:700;color:#f0f0f0;margin-top:2px;"><span>${_taxIsEstimate()?'Est. total':'Total'}</span><span>$<span id="co-total">${_dispTotal().toFixed(2)}</span></span></div>${_taxIsEstimate()?`<div style="text-align:right;font-size:10px;color:#777;margin-top:3px;">Estimated from your Square tax · Square calculates the exact amount</div>`:''}`:`<div style="text-align:right;font-size:10px;color:#777;margin-top:3px;">+ sales tax from your Square settings, added on the invoice</div>`}`;
+  el.innerHTML=_coItems.map((it,i)=>`<div style="display:flex;align-items:center;gap:8px;background:#161616;border:1px solid #242424;border-radius:9px;padding:8px 10px;margin-bottom:6px;"><div style="flex:1;min-width:0;">${it.variationId?`<div style="font-size:13px;color:#e0e0e0;">${String(it.name).replace(/</g,'&lt;')}</div><div style="font-size:11px;color:#4ec49a;">$${(+it.price||0).toFixed(2)}</div>`:`<input value="${String(it.name||'').replace(/"/g,'&quot;')}" oninput="_coItems[${i}].name=this.value" placeholder="Item name" style="width:100%;background:none;border:none;border-bottom:1px solid #2a2a2a;color:#e0e0e0;font-size:13px;font-family:inherit;outline:none;padding-bottom:2px;"><div style="display:flex;align-items:center;gap:3px;margin-top:4px;"><span style="color:#777;font-size:11px;">$</span><input value="${it.price||''}" inputmode="decimal" oninput="_coItems[${i}].price=parseFloat(this.value)||0;_coUpdateSubtotal()" placeholder="0.00" style="width:60px;background:#111;border:1px solid #2a2a2a;border-radius:6px;padding:3px 6px;color:#e0e0e0;font-size:12px;font-family:inherit;"></div>`}</div><div style="display:flex;align-items:center;gap:5px;"><button onclick="_coQty(${i},-1)" style="width:24px;height:24px;border-radius:6px;background:#222;border:none;color:#ccc;cursor:pointer;font-size:14px;">\u2212</button><span style="min-width:16px;text-align:center;font-size:13px;color:#e0e0e0;">${it.qty||1}</span><button onclick="_coQty(${i},1)" style="width:24px;height:24px;border-radius:6px;background:#222;border:none;color:#ccc;cursor:pointer;font-size:14px;">+</button></div><button onclick="_coItems[${i}].taxable=(_coItems[${i}].taxable===false);_coRenderItems()" style="background:${it.taxable===false?'#2a1a0a':'#0a2019'};border:1px solid ${it.taxable===false?'#4a3510':'#1c4030'};color:${it.taxable===false?'#c99a5a':'#4ec49a'};border-radius:6px;padding:4px 7px;font-size:10px;font-weight:600;cursor:pointer;font-family:inherit;white-space:nowrap;">${it.taxable===false?'No tax':'Tax'}</button><button onclick="_coItems.splice(${i},1);_coRenderItems()" aria-label="Remove item" style="background:none;border:none;color:#a85a5a;cursor:pointer;font-size:14px;padding:2px;"><i class="ti ti-x"></i></button></div>`).join('')+`<div style="display:flex;justify-content:space-between;align-items:center;margin-top:6px;gap:8px;"><span style="font-size:11px;color:#888;">${_coItems.length} line${_coItems.length===1?'':'s'} on this invoice \u00b7 add more below</span><span style="font-size:13px;font-weight:700;color:#4ec49a;white-space:nowrap;">Subtotal: <span id="co-subtotal">$${_coSubtotal().toFixed(2)}</span></span></div>${_effTaxRate()>0?`<div style="display:flex;justify-content:space-between;font-size:12px;color:#aaa;margin-top:4px;"><span>${_taxIsEstimate()?'Est. tax':'Tax'} (${_effTaxRate()}%)</span><span>$<span id="co-tax">${_dispTax().toFixed(2)}</span></span></div><div style="display:flex;justify-content:space-between;font-size:13px;font-weight:700;color:#f0f0f0;margin-top:2px;"><span>${_taxIsEstimate()?'Est. total':'Total'}</span><span>$<span id="co-total">${_dispTotal().toFixed(2)}</span></span></div>${_taxIsEstimate()?`<div style="text-align:right;font-size:10px;color:#777;margin-top:3px;">Estimated from your Square tax · Square calculates the exact amount</div>`:''}`:`<div style="text-align:right;font-size:10px;color:#777;margin-top:3px;">+ sales tax from your Square settings, added on the invoice</div>`}`;
   _coSyncAmt();
 }
 function _coMenuOpen(){_coEnsureMenu().then(()=>_coMenuShow());}
@@ -9320,10 +9186,9 @@ function _coPick(i){const m=(_coMenu||[])[i];if(!m)return;_coItems.push({name:m.
 
 // Redefined checkout actions: use the line-item subtotal when present, and log every payment to the ledger.
 async function _coLink(id){
-  const c=CL[id];const items=_coValidItems();const amt=_coAmount();
+  const c=CL[id];const items=_coValidItems();const amt=items.length?_coTotal():parseFloat(_coVal('co-amt'));
   const name=_coVal('co-desc')||(items.length?(items.length+' items'):'Service');
   if(!amt||amt<=0)return _coErr('Add line items or an amount first.');
-  if(!_coLock())return;
   _coBusy('Creating payment link\u2026');
   try{
     const d=await _sqFetch('/api/square/payment-link',{method:'POST',body:{amount:amt,name,email:c.email||'',phone:c.phone||''}});
@@ -9334,10 +9199,9 @@ async function _coLink(id){
   }catch(e){_coErr(e.message||'Could not create the link.',_coRecon(e));}
 }
 async function _coInvoice(id){
-  const c=CL[id];const items=_coValidItems();const amt=_coAmount();const title=_coVal('co-desc')||'Service';
+  const c=CL[id];const items=_coValidItems();const amt=items.length?_coTotal():parseFloat(_coVal('co-amt'));const title=_coVal('co-desc')||'Service';
   if(!items.length && (!amt||amt<=0))return _coErr('Add line items or an amount first.');
   if(!c.email)return _coErr('Add a client email to send an invoice (or use a payment link).');
-  if(!_coLock())return;
   _coBusy('Creating and sending invoice\u2026');
   try{
     const body=items.length?{name:c.name,email:c.email,requestTip:_coTip,lineItems:items.map(it=>({name:it.name,price:it.price,quantity:it.qty||1,variationId:it.variationId||undefined,taxable:it.taxable!==false}))}:{amount:amt,title,name:c.name,email:c.email,requestTip:_coTip};
@@ -9347,33 +9211,26 @@ async function _coInvoice(id){
   }catch(e){_coErr(e.message||'Could not send the invoice.',_coRecon(e));}
 }
 async function _coCharge(id){
-  const c=CL[id];const items=_coValidItems();const amt=_coAmount();
+  const c=CL[id];const items=_coValidItems();const amt=items.length?_coTotal():parseFloat(_coVal('co-amt'));
   if(!amt||amt<=0)return _coErr('Add line items or an amount first.');
   if(!c.squareId)return _coErr('This client is not linked to Square yet. Import them from Square, or use a payment link or invoice.');
-  if(!_coLock())return;
   _coBusy('Checking saved cards\u2026');
   try{
     const d=await _sqFetch('/api/square/charge-card?customerId='+encodeURIComponent(c.squareId));
     const cards=d.cards||[];
-    if(!cards.length){_coActionLock=false;return _coErr('No saved card for '+c.name.split(' ')[0]+'. Use a payment link or invoice instead.');}
-    _coActionLock=false;   // cards rendered — release so the provider can tap one (the charge itself is guarded by _coCharging)
+    if(!cards.length)return _coErr('No saved card for '+c.name.split(' ')[0]+'. Use a payment link or invoice instead.');
     document.getElementById('co-result').innerHTML='<div style="background:#161616;border:1px solid #242424;border-radius:10px;padding:12px 14px;"><div style="font-size:12px;color:#aaa;margin-bottom:8px;">Charge $'+amt.toFixed(2)+' to a saved card:</div>'+cards.map(cd=>'<button onclick="_coDoCharge(\''+id+'\',\''+cd.id+'\')" class="btng" style="width:100%;justify-content:space-between;margin-bottom:6px;border-radius:8px;"><span>'+((cd.brand||'Card'))+' \u00b7\u00b7\u00b7\u00b7 '+(cd.last4||'')+'</span><span style="color:var(--accent);">Charge \u2192</span></button>').join('')+'</div>';
   }catch(e){_coErr(e.message||'Could not load saved cards.',_coRecon(e));}
 }
 async function _coDoCharge(id,cardId){
-  // Prevent a double-tap (or tap during a laggy request) from firing two charges —
-  // a duplicate here means the client is charged twice.
-  if(_coCharging)return;
-  const c=CL[id];const items=_coValidItems();const amt=_coAmount();const note=_coVal('co-desc')||'SlickChart';
-  if(!amt||amt<=0)return _coErr('Add line items or an amount first.');
-  _coCharging=true;
+  const c=CL[id];const items=_coValidItems();const amt=items.length?_coTotal():parseFloat(_coVal('co-amt'));const note=_coVal('co-desc')||'SlickChart';
   _coBusy('Charging\u2026');
   try{
     const d=await _sqFetch('/api/square/charge-card',{method:'POST',body:{customerId:c.squareId,cardId,amount:amt,note}});
     _addPayment({clientId:id,clientName:c.name,amount:amt,method:'Square',status:'paid',date:_todayISO(),note:note+' (card on file)',source:'square'});
     document.getElementById('co-result').innerHTML='<div style="background:#0a2019;border:1px solid #1c4030;border-radius:10px;padding:12px 14px;font-size:13px;color:#4ec49a;font-weight:600;"><i class="ti ti-check"></i> Charged $'+amt.toFixed(2)+' \u2014 '+(d.status||'done')+' \u00b7 logged in Payments</div>';
     if(typeof proToast==='function')proToast('Payment complete \u2713');
-  }catch(e){_coCharging=false;_coErr(e.message||'The charge did not go through.',_coRecon(e));}
+  }catch(e){_coErr(e.message||'The charge did not go through.',_coRecon(e));}
 }
 
 
@@ -9544,13 +9401,7 @@ async function _biPreview(){
 }
 
 // ── Export center (Pro → Export data) ──
-function _downloadCSV(fname,rows){const csv=rows.map(r=>r.map(c=>{c=String(c==null?'':c);
-  // Neutralize CSV/formula injection: a cell starting with = + - @ (or tab/CR) is
-  // treated as a formula by Excel/Sheets, so a client-supplied name or note like
-  // "=cmd|'/c calc'!A1" could execute on export. Prefix such cells with an apostrophe
-  // so spreadsheets render them as plain text.
-  if(/^[=+\-@\t\r]/.test(c))c="'"+c;
-  return /[",\n]/.test(c)?'"'+c.replace(/"/g,'""')+'"':c;}).join(',')).join('\r\n');try{const a=document.createElement('a');a.href='data:text/csv;charset=utf-8,'+encodeURIComponent(csv);a.download=fname;(document.querySelector('.shell')||document.body).appendChild(a);a.click();a.remove();}catch(e){}}
+function _downloadCSV(fname,rows){const csv=rows.map(r=>r.map(c=>{c=String(c==null?'':c);return /[",\n]/.test(c)?'"'+c.replace(/"/g,'""')+'"':c;}).join(',')).join('\r\n');try{const a=document.createElement('a');a.href='data:text/csv;charset=utf-8,'+encodeURIComponent(csv);a.download=fname;(document.querySelector('.shell')||document.body).appendChild(a);a.click();a.remove();}catch(e){}}
 function _exportServicesCSV(){const rows=[['Service','Price']].concat((_svcMenu||[]).map(s=>[s.name||'',(+s.price||0).toFixed(2)]));_downloadCSV('slickchart-services.csv',rows);if(typeof proToast==='function')proToast('Exported '+((_svcMenu||[]).length)+' services');}
 function _exportClientsCSV(){const rows=[['Name','Email','Phone','Date of birth','Current treatment','Last visit','Next visit','Concerns','Allergies']].concat(Object.values(CL).map(c=>[c.name||'',c.email||'',c.phone||'',c.birthday||'',c.treatment||'',c.lastVisit||'',c.nextVisit||'',c.concerns||'',c.allergies||'']));_downloadCSV('slickchart-clients.csv',rows);if(typeof proToast==='function')proToast('Exported '+Object.keys(CL).length+' clients');}
 function _exportPaymentsCSV(){const rows=[['Date','Client','Subtotal','Tax','Total','Method','Status','Note']].concat((_payments||[]).map(p=>{const total=parseFloat(p.amount)||0;const tax=parseFloat(p.taxAmount)||0;return [p.date||'',p.clientName||'',(total-tax).toFixed(2),tax.toFixed(2),total.toFixed(2),p.method||'',p.status||'',p.note||''];}));_downloadCSV('slickchart-sales.csv',rows);if(typeof proToast==='function')proToast('Exported '+((_payments||[]).length)+' payments');}
@@ -10856,8 +10707,8 @@ function _checkinCard(ci){
         ${!ci.read?`<div style="position:absolute;top:-2px;right:-2px;width:10px;height:10px;background:var(--accent);border-radius:50%;border:2px solid #1a1a1a;"></div>`:''}
       </div>
       <div style="flex:1;min-width:0;">
-        <div style="font-size:14px;font-weight:600;color:#e0e0e0;">${_fileEsc(ci.client)}</div>
-        <div style="font-size:12px;color:#999;margin-top:1px;">${_fileEsc(ci.treatment)} · ${_fileEsc(ci.dateLabel)} at ${_fileEsc(ci.time)}</div>
+        <div style="font-size:14px;font-weight:600;color:#e0e0e0;">${ci.client}</div>
+        <div style="font-size:12px;color:#999;margin-top:1px;">${ci.treatment} · ${ci.dateLabel} at ${ci.time}</div>
         <div style="margin-top:6px;display:flex;flex-wrap:wrap;gap:6px;">
           ${n?`<span style="display:inline-flex;align-items:center;gap:5px;background:#2a1410;border:1px solid #5c2a1a;border-radius:20px;padding:2px 9px;"><i class="ti ti-alert-circle" style="font-size:12px;color:#e8a070;"></i><span style="font-size:11px;color:#e8a070;font-weight:600;">${n} flagged</span></span>`:`<span style="font-size:11px;color:#4ec49a;">No changes flagged</span>`}
           ${(ci.photos&&ci.photos.length)?`<span style="display:inline-flex;align-items:center;gap:4px;background:#0d1e33;border:1px solid #1a3a5c;border-radius:20px;padding:2px 9px;"><i class="ti ti-camera" style="font-size:12px;color:#5ba3e8;"></i><span style="font-size:11px;color:#5ba3e8;font-weight:600;">${ci.photos.length} photo${ci.photos.length>1?'s':''}</span></span>`:''}
@@ -10914,23 +10765,23 @@ function renderCheckinDetail(id){
   S.innerHTML=`<div id="checkin-detail-screen"></div>
   
   <div style="margin:10px 16px 12px;background:linear-gradient(135deg,#0a2019,#0d2a20);border:1px solid #1a4a38;border-radius:14px;padding:16px;">
-    <div id="page-heading" tabindex="-1" style="font-size:18px;font-weight:600;color:#e8fff5;">${_fileEsc(ci.client)}</div>
-    <div style="font-size:13px;color:#7fbfa5;margin-top:2px;">${_fileEsc(ci.treatment)} · ${_fileEsc(ci.dateLabel)} at ${_fileEsc(ci.time)}</div>
+    <div id="page-heading" tabindex="-1" style="font-size:18px;font-weight:600;color:#e8fff5;">${ci.client}</div>
+    <div style="font-size:13px;color:#7fbfa5;margin-top:2px;">${ci.treatment} · ${ci.dateLabel} at ${ci.time}</div>
   </div>
   ${(ci.flagged&&ci.flagged.length)?`<div style="margin:0 16px 12px;background:#2a1410;border:1px solid #5c2a1a;border-radius:12px;padding:12px 14px;">
     <div style="display:flex;align-items:center;gap:7px;margin-bottom:4px;"><i class="ti ti-alert-circle" style="font-size:15px;color:#e8a070;"></i><span style="font-size:13px;font-weight:600;color:#e8a070;">Flagged for your attention</span></div>
-    <div style="font-size:12px;color:#d0a890;line-height:1.5;">${_fileEsc(first)} noted ${_fileEsc((ci.flagged||[]).join(', '))}. See details below.</div>
-  </div>`:`<div style="margin:0 16px 12px;background:#0a2019;border:1px solid #1a4a38;border-radius:12px;padding:11px 14px;font-size:12px;color:#7fbfa5;">No changes flagged — ${_fileEsc(first)} is good to pick up where you left off.</div>`}
+    <div style="font-size:12px;color:#d0a890;line-height:1.5;">${first} noted ${ci.flagged.join(', ')}. See details below.</div>
+  </div>`:`<div style="margin:0 16px 12px;background:#0a2019;border:1px solid #1a4a38;border-radius:12px;padding:11px 14px;font-size:12px;color:#7fbfa5;">No changes flagged — ${first} is good to pick up where you left off.</div>`}
   ${(ci.groups||[]).map(g=>`
-  <div class="sh"><h2>${_fileEsc(g.title)}</h2></div>
+  <div class="sh"><h2>${g.title}</h2></div>
   <div style="background:#1a1a1a;border:1px solid #2a2a2a;border-radius:12px;margin:0 16px 10px;overflow:hidden;">
     ${g.rows.map((r,i)=>`<div style="padding:12px 14px;${i<g.rows.length-1?'border-bottom:1px solid #242424;':''}">
-      <div style="font-size:12px;color:#999;margin-bottom:3px;">${_fileEsc(r.label)}</div>
-      <div style="display:flex;align-items:center;gap:7px;"><span style="font-size:14px;font-weight:600;color:${r.flagged?'#e8a070':'#e0e0e0'};">${_fileEsc(r.value)}</span>${r.flagged?`<i class="ti ti-flag" style="font-size:13px;color:#e8a070;"></i>`:''}</div>
-      ${r.detail?`<div style="font-size:13px;color:#c8c8c8;margin-top:6px;background:#121212;border-radius:8px;padding:8px 10px;line-height:1.5;">${_fileEsc(r.detail)}</div>`:''}
+      <div style="font-size:12px;color:#999;margin-bottom:3px;">${r.label}</div>
+      <div style="display:flex;align-items:center;gap:7px;"><span style="font-size:14px;font-weight:600;color:${r.flagged?'#e8a070':'#e0e0e0'};">${r.value}</span>${r.flagged?`<i class="ti ti-flag" style="font-size:13px;color:#e8a070;"></i>`:''}</div>
+      ${r.detail?`<div style="font-size:13px;color:#c8c8c8;margin-top:6px;background:#121212;border-radius:8px;padding:8px 10px;line-height:1.5;">${r.detail}</div>`:''}
     </div>`).join('')}
   </div>`).join('')}
-  ${ci.notes?`<div class="sh"><h2>Notes for you</h2></div><div style="background:#1a1a1a;border:1px solid #2a2a2a;border-radius:12px;margin:0 16px 10px;padding:13px 14px;font-size:13px;color:#d0d0d0;line-height:1.6;">${_fileEsc(ci.notes)}</div>`:''}
+  ${ci.notes?`<div class="sh"><h2>Notes for you</h2></div><div style="background:#1a1a1a;border:1px solid #2a2a2a;border-radius:12px;margin:0 16px 10px;padding:13px 14px;font-size:13px;color:#d0d0d0;line-height:1.6;">${ci.notes}</div>`:''}
   ${(ci.photos&&ci.photos.length)?`<div class="sh"><h2>Reference photos</h2></div>
   <div style="display:flex;flex-wrap:wrap;gap:8px;margin:0 16px 12px;">
     ${ci.photos.map((src,i)=>`<img src="${src}" alt="reference ${i+1}" onclick="openPhoto(this.src)" style="width:88px;height:88px;object-fit:cover;border-radius:10px;border:1px solid #2a2a2a;cursor:zoom-in;">`).join('')}
@@ -10995,9 +10846,9 @@ function requestCard(b){
         <div style="width:42px;height:42px;border-radius:11px;background:var(--accent-tint);display:flex;align-items:center;justify-content:center;flex-shrink:0;font-size:14px;font-weight:600;color:var(--accent);">${initialsOf(b.client)}</div>
         <div style="flex:1;min-width:0;">
           <div style="font-size:14px;font-weight:600;color:#f0f0f0;">${_clientNameLink(b.clientId,b.client,{color:'#f0f0f0'})}</div>
-          <div style="font-size:12px;color:var(--accent);margin-top:1px;">${_fileEsc(b.treatment)}</div>
-          <div style="display:flex;align-items:center;gap:6px;font-size:12px;color:#aaa;margin-top:6px;"><i class="ti ti-calendar" style="font-size:13px;color:#888;"></i> ${fmtBookingDate(b)} · ${_fileEsc(b.time)}</div>
-          ${b.note?`<div style="margin-top:8px;background:#111;border-radius:8px;padding:8px 10px;font-size:12px;color:#999;line-height:1.5;"><i class="ti ti-quote" style="font-size:11px;color:#555;"></i> ${_fileEsc(b.note)}</div>`:''}
+          <div style="font-size:12px;color:var(--accent);margin-top:1px;">${b.treatment}</div>
+          <div style="display:flex;align-items:center;gap:6px;font-size:12px;color:#aaa;margin-top:6px;"><i class="ti ti-calendar" style="font-size:13px;color:#888;"></i> ${fmtBookingDate(b)} · ${b.time}</div>
+          ${b.note?`<div style="margin-top:8px;background:#111;border-radius:8px;padding:8px 10px;font-size:12px;color:#999;line-height:1.5;"><i class="ti ti-quote" style="font-size:11px;color:#555;"></i> ${b.note}</div>`:''}
         </div>
       </div>
       <div style="display:flex;gap:7px;margin-top:12px;">
@@ -11549,7 +11400,7 @@ function renderNCNextStep(id){
       <i class="ti ti-device-tablet" style="font-size:19px;color:var(--accent);flex-shrink:0;margin-top:1px;"></i>
       <span style="flex:1;"><span style="font-size:14px;font-weight:600;color:#f0f0f0;display:block;">Fill it out myself</span><span style="font-size:12px;color:#999;display:block;margin-top:2px;">Answer the intake questions right now, on this device</span></span>
     </button>
-    <div style="font-size:11px;font-weight:600;color:#777;text-transform:uppercase;letter-spacing:.06em;margin-bottom:8px;">Or send to ${_fileEsc(c.name.split(' ')[0])} \u2014 pick any</div>
+    <div style="font-size:11px;font-weight:600;color:#777;text-transform:uppercase;letter-spacing:.06em;margin-bottom:8px;">Or send to ${c.name.split(' ')[0]} \u2014 pick any</div>
     <label style="display:flex;align-items:flex-start;gap:10px;padding:12px 13px;border:1px solid #2a2a2a;background:#1a1a1a;border-radius:11px;margin-bottom:8px;cursor:pointer;">
       <input type="checkbox" id="ncn-invite" checked onchange="_ncNextChecks.invite=this.checked;_ncNextUpdateBtn()" style="margin-top:2px;width:17px;height:17px;accent-color:var(--accent);flex-shrink:0;">
       <span style="flex:1;"><span style="font-size:13px;font-weight:600;color:#e0e0e0;display:block;">Invite to the app</span><span style="font-size:11px;color:#999;display:block;margin-top:2px;">So they can see summaries, aftercare &amp; rebook anytime</span></span>
