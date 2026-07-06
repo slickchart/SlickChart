@@ -1206,7 +1206,9 @@ const Cloud={
           console.error('[Cloud sync] save failed with status',r.status);
           // A failed save must not just vanish — put these items back in the
           // queue and retry once, then actually tell the person if it still fails.
-          if(!(retryCount>0)){Object.assign(this._queue,items);clearTimeout(this._timer);this._timer=setTimeout(()=>this._flush(1),1500);}
+          // Only restore keys that weren't re-edited while this request was in flight,
+          // so a stale failed value can't clobber a newer queued one (data loss).
+          if(!(retryCount>0)){for(const k in items){if(!(k in this._queue))this._queue[k]=items[k];}clearTimeout(this._timer);this._timer=setTimeout(()=>this._flush(1),1500);}
           else if(typeof proToast==='function'){
             const tooBig=r.status===413;
             proToast(tooBig?'Could not save — that file is too large. Try a smaller image.':'Could not save your changes — check your connection and try again.',0);
@@ -1215,7 +1217,8 @@ const Cloud={
       })
       .catch(e=>{
         console.error('[Cloud sync] save failed:',e&&e.message);
-        if(!(retryCount>0)){Object.assign(this._queue,items);clearTimeout(this._timer);this._timer=setTimeout(()=>this._flush(1),1500);}
+        // Restore only keys not re-edited while the request was in flight (see above).
+        if(!(retryCount>0)){for(const k in items){if(!(k in this._queue))this._queue[k]=items[k];}clearTimeout(this._timer);this._timer=setTimeout(()=>this._flush(1),1500);}
         else if(typeof proToast==='function')proToast('Could not save your changes — check your connection and try again.',0);
       });
   },
