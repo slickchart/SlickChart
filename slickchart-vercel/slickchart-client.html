@@ -3478,9 +3478,21 @@ function _pollRealClient(){
   if(!client._real||!client._token)return;
   if(document.hidden)return; // don't poll a backgrounded tab
   fetch('/api/client-data?t='+encodeURIComponent(client._token),{cache:'no-store'})
-    .then(function(r){return r.json();})
-    .then(function(j){
-      if(!(j&&j.ok&&j.client))return;
+    .then(function(r){return r.json().then(function(j){return {status:r.status,j:j};});})
+    .then(function(res){
+      const j=res.j;
+      // Access was revoked or the token became invalid while the app was open. Distinguish
+      // this from a transient blip: only act on an explicit server rejection (a 401/403, or
+      // an ok:false carrying a revoked/invalid/expired error), never on a network failure.
+      const revoked=(res.status===401||res.status===403)||
+        (j&&j.ok===false&&/revok|invalid|expire|not.?found|removed/i.test(String(j.error||'')));
+      if(revoked){
+        _stopRealClientPolling();
+        client._real=false;
+        _clientLinkError(j&&j.error);
+        return;
+      }
+      if(!(j&&j.ok&&j.client))return; // transient/empty — keep the current view, try again next tick
       const fp=_clientDataFingerprint(j);
       if(fp!==_lastDataFingerprint){
         _lastDataFingerprint=fp;
@@ -3497,6 +3509,7 @@ function _pollRealClient(){
     })
     .catch(function(){});
 }
+function _stopRealClientPolling(){if(_realPollTimer){clearInterval(_realPollTimer);_realPollTimer=null;}}
 function _startRealClientPolling(){
   if(_realPollTimer)return;
   _realPollTimer=setInterval(_pollRealClient,30000); // every 30s

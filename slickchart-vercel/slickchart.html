@@ -175,7 +175,7 @@ function providerSystemNotify(title,body){
   }catch(e){}
 }
 let timerInt=null,timerSec=0,timerOn=false;
-let roomProtocol=0,roomStepsDone={},roomProtocolOff=(function(){try{return localStorage.getItem('sc_room_protocol_off')!=='false';}catch(e){return true;}})();
+let roomProtocol=0,roomStepsDone={},_roomClientId='',roomProtocolOff=(function(){try{return localStorage.getItem('sc_room_protocol_off')!=='false';}catch(e){return true;}})();
 let activeDocCat='All',activeNoteTemplate='soap';
 let activeVirtualTab='queue';
 let activeLearnTab='resources';
@@ -2866,6 +2866,8 @@ function renderRoom(id){
   // Protocols default to OFF; honor whatever the provider last chose (persisted).
   try{roomProtocolOff=localStorage.getItem('sc_room_protocol_off')!=='false';}catch(e){roomProtocolOff=true;}
   const c=CL[id]||Object.values(CL)[0]||{};
+  // Restore this client's in-progress protocol + checked steps (persisted across nav/reload).
+  if(_roomClientId!==id)_loadRoomState(id);
   const isBrowOnly=selectedProfessions.includes('brow')&&!selectedProfessions.includes('esty')&&!selectedProfessions.includes('hair')&&!selectedProfessions.includes('barber');
   document.getElementById('tt').textContent='';
   S.innerHTML=`
@@ -2981,8 +2983,20 @@ function openProtocolSearch(){
   setTimeout(()=>{const i=document.getElementById('proto-q');if(i&&i.focus)try{i.focus();}catch(e){}},30);
 }
 function filterProtocols(q){const el=document.getElementById('proto-list');if(el)el.innerHTML=_protocolRows(q);}
-function pickRoomProtocol(i){roomProtocol=i;const s=document.getElementById('proto-search');if(s)s.remove();const el=document.getElementById('room-protocol');if(el)el.innerHTML=_roomProtocolHTML();if(typeof proToast==='function')proToast('Protocol switched');}
-function toggleRoomStep(i){const k=roomProtocol+'-'+i;roomStepsDone[k]=!roomStepsDone[k];const el=document.getElementById('room-protocol');if(el)el.innerHTML=_roomProtocolHTML();}
+function pickRoomProtocol(i){roomProtocol=i;_saveRoomState();const s=document.getElementById('proto-search');if(s)s.remove();const el=document.getElementById('room-protocol');if(el)el.innerHTML=_roomProtocolHTML();if(typeof proToast==='function')proToast('Protocol switched');}
+function toggleRoomStep(i){const k=roomProtocol+'-'+i;roomStepsDone[k]=!roomStepsDone[k];_saveRoomState();const el=document.getElementById('room-protocol');if(el)el.innerHTML=_roomProtocolHTML();}
+// Persist the live session's protocol + checked-off steps, scoped to the client being
+// seen. Without this, navigating away mid-treatment or a tab reload loses which steps
+// the provider has already completed — losing their place in the protocol during a visit.
+function _saveRoomState(){try{localStorage.setItem('sc_room_state_'+(_roomClientId||''),JSON.stringify({protocol:roomProtocol,done:roomStepsDone}));}catch(e){}}
+function _loadRoomState(id){
+  _roomClientId=id||'';
+  try{
+    const raw=localStorage.getItem('sc_room_state_'+_roomClientId);
+    if(raw){const s=JSON.parse(raw)||{};roomProtocol=(typeof s.protocol==='number')?s.protocol:roomProtocol;roomStepsDone=(s.done&&typeof s.done==='object')?s.done:{};}
+    else{roomStepsDone={};}
+  }catch(e){roomStepsDone={};}
+}
 
 function _roomPhotosHTML(id){
   const before=_capturedFor(id,'before'),after=_capturedFor(id,'after');
@@ -4391,6 +4405,9 @@ function sendSummary(id){
   // Send the actual summary content to the connected client's app so it replaces their summary screen
   _postSummaryData(id);
   _storeSummary(id);
+  // Session is complete — clear its saved protocol/step state so the next visit for this
+  // client starts with a clean protocol checklist.
+  try{roomStepsDone={};localStorage.removeItem('sc_room_state_'+id);if(_roomClientId===id)_roomClientId='';}catch(e){}
   nav('clients');
   setTimeout(()=>{
     S.insertAdjacentHTML('afterbegin',`<div id="sent-toast" style="position:fixed;top:16px;left:50%;transform:translateX(-50%);background:#0a2019;border:1px solid #4ec49a;border-radius:10px;padding:10px 16px;font-size:13px;color:#4ec49a;display:flex;align-items:center;gap:7px;z-index:999;white-space:nowrap;"><i class="ti ti-check" aria-hidden="true"></i> Summary sent to ${_fileEsc(c.name.split(' ')[0])}!</div>`);
@@ -5317,8 +5334,13 @@ function selectIntroClient(id){
   const list=document.getElementById('intro-client-list');if(list)list.style.display='none';
   const nr=document.getElementById('intro-client-noresults');if(nr)nr.style.display='none';
 }
+// Normalize a search query the SAME way the data-search attributes are built
+// (lowercase, punctuation/accents collapsed to spaces). Without this, searching a name
+// with an apostrophe/hyphen (e.g. "O'Brien", "Anne-Marie") never matches, because the
+// haystack has those characters stripped but the raw query still contains them.
+function _normSearch(q){return (q||'').trim().toLowerCase().replace(/[^a-z0-9 ]/g,' ');}
 function filterIntroClients(q){
-  q=(q||'').trim().toLowerCase();
+  q=_normSearch(q);
   const list=document.getElementById('intro-client-list');
   const nr=document.getElementById('intro-client-noresults');
   if(!q){if(list)list.style.display='none';if(nr)nr.style.display='none';return;}
@@ -5443,7 +5465,7 @@ function renderForms(){
   <div style="height:16px;"></div>`;
 }
 function filterForms(q){
-  q=(q||'').trim().toLowerCase();
+  q=_normSearch(q);
   const extras=document.getElementById('forms-extras');if(extras)extras.style.display=q?'none':'';
   let total=0;
   document.querySelectorAll('.form-section').forEach(sec=>{
@@ -5454,14 +5476,14 @@ function filterForms(q){
   const nr=document.getElementById('forms-noresults');if(nr)nr.style.display=(q&&total===0)?'':'none';
 }
 function filterShopProducts(q){
-  q=(q||'').trim().toLowerCase();
+  q=_normSearch(q);
   let total=0;
   document.querySelectorAll('.shop-prod').forEach(c=>{const m=!q||(c.getAttribute('data-search')||'').includes(q);c.style.display=m?'':'none';if(m)total++;});
   const nr=document.getElementById('shop-noresults');if(nr)nr.style.display=(q&&total===0)?'':'none';
 }
 // Generic list search — tag list items with class + data-search, drop in a _searchBar
 function searchList(q,cardSel,noResId){
-  q=(q||'').trim().toLowerCase();
+  q=_normSearch(q);
   let total=0;
   document.querySelectorAll(cardSel).forEach(c=>{const m=!q||(c.getAttribute('data-search')||'').includes(q);c.style.display=m?'':'none';if(m)total++;});
   if(noResId){const nr=document.getElementById(noResId);if(nr)nr.style.display=(q&&total===0)?'':'none';}
@@ -5679,7 +5701,7 @@ function toggleFormGuide(fid,gid){
   const sb=document.getElementById('fg-search');if(sb&&sb.value)filterFormGuides(sb.value);
 }
 function filterFormGuides(q){
-  q=(q||'').trim().toLowerCase();let total=0;
+  q=_normSearch(q);let total=0;
   document.querySelectorAll('.fg-row').forEach(c=>{const m=!q||(c.getAttribute('data-search')||'').includes(q);c.style.display=m?'':'none';if(m)total++;});
   const nr=document.getElementById('fg-noresults');if(nr)nr.style.display=(q&&total===0)?'':'none';
 }
@@ -7142,8 +7164,17 @@ function sendMsg(id,imgArg){
   renderChat(id);
   // Maya is the local demo client — keep the old same-browser bus for her
   if(id==='maya'){try{SlickBridge.post('client-message',{text,imgs,providerId:'jess',time:'Just now'});}catch(e){}}
-  // Any real, invited client — send for real via the server so it reaches their actual device
-  else{try{_sendProviderMessageToClient(id,text);}catch(e){}}
+  // Any real, invited client — send for real via the server so it reaches their actual device.
+  else{
+    const c=CL[id];
+    // Photo delivery to a real client's device isn't supported by the message sync yet
+    // (only text is transmitted). Don't let the provider believe a photo was delivered —
+    // tell them plainly. The photo still shows in the provider's own thread for reference.
+    if(imgs.length&&c&&c._token&&typeof proToast==='function'){
+      proToast(text?'Your message was sent — photos aren\u2019t delivered to the client app yet':'Photos aren\u2019t delivered to the client app yet — send a message instead');
+    }
+    if(text){try{_sendProviderMessageToClient(id,text);}catch(e){}}
+  }
 }
 async function _sendProviderMessageToClient(id,text,_retried){
   const c=CL[id];if(!c||!c._token)return; // not a real synced client yet — nothing to deliver
