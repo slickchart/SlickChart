@@ -285,6 +285,10 @@ const CL={
   sophie:{name:'Sophie Turner',initials:'ST',bg:'#0a2019',tc:'#4ec49a',skin:'Dry · Sensitive',concerns:'Acne scarring, redness',allergies:'Salicylic acid',fitz:'II',lastVisit:'May 28, 2026',nextVisit:'Jun 26 · 12:30 PM',treatment:'Chemical Peel',sessions:2,signedForms:['New client intake & consent'],submittedForms:[{formId:'intake',title:'New client intake & consent',answers:{},flagged:['Taking blood thinners or anticoagulants'],date:'Today',signed:true}],flaggedContra:{form:'New client intake & consent',items:['Taking blood thinners or anticoagulants'],date:'Today'}},
   priya:{name:'Priya Patel',initials:'PP',bg:'#2a1a00',tc:'var(--accent)',skin:'Oily',concerns:'Enlarged pores, breakouts',allergies:'None known',fitz:'IV',lastVisit:'Jun 24, 2026',nextVisit:'Jul 8 · 11:00 AM',treatment:'LED Therapy',sessions:1},
 };
+// Pristine deep-copy snapshot of the three sample clients, taken before anything can
+// mutate or purge them. "Restore sample data" rebuilds from this so all three always
+// come back fully intact.
+const _SAMPLE_CLIENTS_BACKUP={maya:JSON.parse(JSON.stringify(CL.maya)),sophie:JSON.parse(JSON.stringify(CL.sophie)),priya:JSON.parse(JSON.stringify(CL.priya))};
 
 let docs=[
   {id:'d1',name:'Esthetician License',issuer:'CA Board of Barbering & Cosmetology',number:'LE123456',issued:'Jan 15, 2022',expires:'Jan 15, 2026',icon:'ti-certificate',col:'#0d1e33',ic:'#5ba3e8',status:'urgent',lbl:'Expires in 19 days',bdg:'br',cat:'License'},
@@ -1096,7 +1100,19 @@ function _clearSampleData(){
 }
 function _restoreSampleData(){
   try{localStorage.removeItem('sc_hide_sample');}catch(e){}
-  if(typeof _seedMayaOnce==='function')_seedMayaOnce();
+  // Clear the one-time guard flags so the sample data can actually come back.
+  try{localStorage.removeItem('sc_maya_seeded');}catch(e){}
+  try{localStorage.removeItem('sc_demo_seeded');}catch(e){}
+  // Rebuild all three sample clients from the pristine snapshot (fresh deep copies so
+  // the originals can never be mutated). Restores Maya, Sophie AND Priya — not just one.
+  try{
+    ['maya','sophie','priya'].forEach(function(id){
+      if(_SAMPLE_CLIENTS_BACKUP[id]){CL[id]=JSON.parse(JSON.stringify(_SAMPLE_CLIENTS_BACKUP[id]));CL[id]._demoRestoredAt=Date.now();}
+    });
+    try{applyProfessionConfig();}catch(e){}
+    if(typeof saveClients==='function')saveClients();
+  }catch(e){}
+  // Bring back the sample docs and products (unchanged behavior).
   try{_SAMPLE_DOCS_BACKUP.forEach(sd=>{if(!docs.some(d=>d.id===sd.id))docs.push(sd);});}catch(e){}
   try{
     if(typeof affiliateLinks!=='undefined'){
@@ -1105,7 +1121,23 @@ function _restoreSampleData(){
       if(changed&&typeof persistWorkspace==='function')persistWorkspace();
     }
   }catch(e){}
-  if(typeof proToast==='function')proToast('Sample data restored');
+  // Re-seed the sample "needs your attention" items so the home screen shows working
+  // examples of a booking request and a check-in nudge. We add the demo booking
+  // directly (rather than via the guarded seeder) so it reliably comes back even if
+  // other bookings already exist.
+  try{
+    if(typeof SlickBridge!=='undefined'&&SlickBridge.upsertBooking){
+      const existing=(SlickBridge.getBookings()||[]).some(function(b){return b.id==='bk_demo1';});
+      if(!existing){
+        SlickBridge.upsertBooking({id:'bk_demo1',clientId:'priya',client:'Priya Patel',treatment:'LED Therapy',
+          date:'2026-07-21',dateLabel:'Monday, July 21',time:'11:00 AM',
+          note:'Mornings are best for me. Skin has been a little reactive lately.',status:'pending',created:Date.now()-3600*1000});
+      }
+    }
+  }catch(e){}
+  try{if(typeof _demoCheckinSeed==='function')_demoCheckinSeed();}catch(e){}
+  try{if(typeof updateBadge==='function')updateBadge();}catch(e){}
+  if(typeof proToast==='function')proToast('Sample clients & examples restored');
   nav('home');
 }
 function _seedMayaOnce(){
@@ -2075,7 +2107,7 @@ function renderClients(){
   </div>`:''}
   ${Object.keys(CL).length===0
     ? emptyState({icon:'ti-users',title:'No clients yet',body:'Add your first client to get started. Their chart, notes, and session history will live here.',action:'Add first client',screen:'new-client'})
-    : Object.entries(CL).map(([id,c])=>`<div class="card client-card" data-search="${((c.name||'')+' '+(c.treatment||'')).toLowerCase().replace(/[^a-z0-9 ]/g,' ')}" onclick="nav('client','${id}')"><div class="row">${av(c)}<div style="flex:1;"><div style="display:flex;align-items:center;gap:7px;"><span style="font-size:15px;font-weight:500;color:#f0f0f0;">${c.name}</span>${(id==='maya'||id==='sophie'||id==='priya')?`<span onclick="event.stopPropagation();showDemoInfo()" title="What are demo clients?" style="font-size:9px;font-weight:700;color:#caa86a;border:1px solid #3a2a10;background:#1a1308;border-radius:4px;padding:1px 5px;letter-spacing:.03em;cursor:pointer;">DEMO</span>`:''}</div></div><i aria-hidden="true" class="ti ti-chevron-right" style="font-size:16px;color:#888;"></i></div></div>`).join('')
+    : Object.entries(CL).sort((a,b)=>{const da=(a[0]==='maya'||a[0]==='sophie'||a[0]==='priya')?0:1;const db=(b[0]==='maya'||b[0]==='sophie'||b[0]==='priya')?0:1;return da-db;}).map(([id,c])=>`<div class="card client-card" data-search="${((c.name||'')+' '+(c.treatment||'')).toLowerCase().replace(/[^a-z0-9 ]/g,' ')}" onclick="nav('client','${id}')"><div class="row">${av(c)}<div style="flex:1;"><div style="display:flex;align-items:center;gap:7px;"><span style="font-size:15px;font-weight:500;color:#f0f0f0;">${c.name}</span>${(id==='maya'||id==='sophie'||id==='priya')?`<span onclick="event.stopPropagation();showDemoInfo()" title="What are demo clients?" style="font-size:9px;font-weight:700;color:#caa86a;border:1px solid #3a2a10;background:#1a1308;border-radius:4px;padding:1px 5px;letter-spacing:.03em;cursor:pointer;">DEMO</span>`:''}</div></div><i aria-hidden="true" class="ti ti-chevron-right" style="font-size:16px;color:#888;"></i></div></div>`).join('')
   }
   ${_noRes('clients-noresults','No clients match your search.')}`;
 }
