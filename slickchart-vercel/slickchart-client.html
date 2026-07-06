@@ -2011,13 +2011,26 @@ function _submitFillForm(){
   });
   if(missingRequired){ if(typeof proToast==='function')proToast('Please fill in the required fields'); return; }
   const dateLabel=new Date().toLocaleDateString('en-US',{month:'short',day:'numeric',year:'numeric'});
-  try{ if(client._real) _clientSubmit('form',{formId:pf.formId,title:pf.title,answers,flagged,signed,date:dateLabel}); }catch(e){}
-  // Remove it from the pending list locally right away so it doesn't linger after submitting.
-  const p=activeProvider();
-  p.pendingForms=(p.pendingForms||[]).filter(x=>x.formId!==pf.formId);
-  _ffPhotos={};
-  if(typeof proToast==='function')proToast('Sent \u2713');
-  nav('home');
+  const _finishFormSent=()=>{
+    // Remove it from the pending list only once we know it's been sent, so a failed
+    // submit doesn't make the form vanish while the provider never received it.
+    const p=activeProvider();
+    p.pendingForms=(p.pendingForms||[]).filter(x=>x.formId!==pf.formId);
+    _ffPhotos={};
+    if(typeof proToast==='function')proToast('Sent \u2713');
+    nav('home');
+  };
+  if(client._real){
+    const btns=document.querySelectorAll('button');
+    if(typeof proToast==='function')proToast('Sending\u2026');
+    _clientSubmit('form',{formId:pf.formId,title:pf.title,answers,flagged,signed,date:dateLabel})
+      .then(function(res){
+        if(res&&res.ok!==false)_finishFormSent();
+        else if(typeof proToast==='function')proToast("Couldn't send \u2014 check your connection and tap Submit again");
+      });
+    return;
+  }
+  _finishFormSent();
 }
 function renderCheckin(){
   setNav('home');
@@ -2211,26 +2224,8 @@ function _ciBuildPayload(){
   return{groups,flagged,notes,photos};
 }
 
-function submitCheckin(){
-  const flagged=[];
-  _ciSteps().forEach(st=>(st.questions||[]).forEach(q=>{
-    if(q.type==='boolean'&&checkinAnswers[q.id]==='yes')flagged.push((q.flagLabel||q.label||'').toLowerCase().replace(/\?$/,''));
-  }));
-  const prov=activeProvider();
-  prov.checkinDone=true;
-  const pay=_ciBuildPayload();
-  // Connected providers (the live provider app) receive the check-in instantly via the bridge
-  if(prov.connected){
-    SlickBridge.post('checkin-submitted',{
-      id:'ci'+Date.now()+Math.random().toString(36).slice(2,5),
-      providerId:prov.id,clientId:'maya',client:client.name,
-      dateLabel:client.nextDate,time:client.nextTime,treatment:client.treatment,
-      groups:pay.groups,flagged:pay.flagged,notes:pay.notes,photos:pay.photos,submittedAt:Date.now(),
-    });
-  }
-  // Real client — send for real so it reaches the provider's app on any device
-  try{if(client._real)_clientSubmit('checkin',{client:client.name,treatment:client.treatment,dateLabel:client.nextDate,time:client.nextTime,groups:pay.groups,flagged:pay.flagged,notes:pay.notes,photos:pay.photos||[]});}catch(e){}
-  S.innerHTML=`
+function _checkinSuccessHTML(flagged){
+  return `
   <div style="display:flex;flex-direction:column;align-items:center;justify-content:center;min-height:70vh;padding:24px;">
     <div style="width:80px;height:80px;background:var(--accent-lt);border-radius:50%;display:flex;align-items:center;justify-content:center;margin-bottom:18px;">
       <i class="ti ti-check" aria-hidden="true" style="font-size:40px;color:var(--accent);"></i>
@@ -2245,6 +2240,66 @@ function submitCheckin(){
       <button class="btng" style="border-radius:10px;" onclick="nav('home')">Back to home</button>
     </div>
   </div>`;
+}
+// Shown when a real submit couldn't reach the provider — never leave the client
+// falsely believing a check-in (possibly with a flagged contraindication) went through.
+function _submitFailedHTML(retryFn,title){
+  return `
+  <div style="display:flex;flex-direction:column;align-items:center;justify-content:center;min-height:70vh;padding:24px;">
+    <div style="width:80px;height:80px;background:#fff4f2;border-radius:50%;display:flex;align-items:center;justify-content:center;margin-bottom:18px;">
+      <i class="ti ti-wifi-off" aria-hidden="true" style="font-size:38px;color:#c87070;"></i>
+    </div>
+    <div style="font-size:20px;font-weight:600;color:#1a1a1a;margin-bottom:8px;text-align:center;">${title||"Couldn't send just yet"}</div>
+    <div style="font-size:14px;color:#b8a898;text-align:center;line-height:1.7;margin-bottom:4px;max-width:280px;">This didn't reach ${client.providerFirst} — it looks like your connection dropped. Your answers are saved here, so you can try again.</div>
+    <div style="display:flex;flex-direction:column;gap:8px;width:100%;max-width:260px;margin-top:16px;">
+      <button class="btnp" style="border-radius:10px;" onclick="${retryFn}"><i class="ti ti-refresh" aria-hidden="true"></i> Try again</button>
+      <button class="btng" style="border-radius:10px;" onclick="nav('home')">Back to home</button>
+    </div>
+  </div>`;
+}
+function _sendingHTML(msg){
+  return `
+  <div style="display:flex;flex-direction:column;align-items:center;justify-content:center;min-height:70vh;padding:24px;">
+    <div style="width:80px;height:80px;background:var(--accent-lt);border-radius:50%;display:flex;align-items:center;justify-content:center;margin-bottom:18px;">
+      <i class="ti ti-loader-2" aria-hidden="true" style="font-size:38px;color:var(--accent);animation:spin 1s linear infinite;"></i>
+    </div>
+    <div style="font-size:16px;font-weight:600;color:#1a1a1a;">${msg||'Sending…'}</div>
+    <style>@keyframes spin{to{transform:rotate(360deg)}}</style>
+  </div>`;
+}
+function submitCheckin(){
+  const flagged=[];
+  _ciSteps().forEach(st=>(st.questions||[]).forEach(q=>{
+    if(q.type==='boolean'&&checkinAnswers[q.id]==='yes')flagged.push((q.flagLabel||q.label||'').toLowerCase().replace(/\?$/,''));
+  }));
+  const prov=activeProvider();
+  const pay=_ciBuildPayload();
+  // Connected providers (the live provider app) receive the check-in instantly via the bridge
+  if(prov.connected){
+    prov.checkinDone=true;
+    SlickBridge.post('checkin-submitted',{
+      id:'ci'+Date.now()+Math.random().toString(36).slice(2,5),
+      providerId:prov.id,clientId:'maya',client:client.name,
+      dateLabel:client.nextDate,time:client.nextTime,treatment:client.treatment,
+      groups:pay.groups,flagged:pay.flagged,notes:pay.notes,photos:pay.photos,submittedAt:Date.now(),
+    });
+    S.innerHTML=_checkinSuccessHTML(flagged);
+    return;
+  }
+  // Real client — send for real and confirm it actually reached the server before
+  // telling them they're all set. A dropped check-in could hide a contraindication.
+  if(client._real){
+    S.innerHTML=_sendingHTML('Sending your check-in…');
+    _clientSubmit('checkin',{client:client.name,treatment:client.treatment,dateLabel:client.nextDate,time:client.nextTime,groups:pay.groups,flagged:pay.flagged,notes:pay.notes,photos:pay.photos||[]})
+      .then(function(res){
+        if(res&&res.ok!==false){ prov.checkinDone=true; S.innerHTML=_checkinSuccessHTML(flagged); }
+        else{ S.innerHTML=_submitFailedHTML('submitCheckin()',"Couldn't send your check-in"); }
+      });
+    return;
+  }
+  // Demo/local (no real token, not connected) — behave as before
+  prov.checkinDone=true;
+  S.innerHTML=_checkinSuccessHTML(flagged);
 }
 
 // ── CLIENT REBOOK REQUEST ──
@@ -2387,38 +2442,50 @@ function submitRebook(){
     created:Date.now(),
   };
   lastBookingId=booking.id;
-  try{if(client._real)_clientSubmit('booking',{treatment:booking.treatment,date:booking.date,dateLabel:booking.dateLabel,time:booking.time,note:booking.note,client:client.name});}catch(e){}
+  const _showRebookSent=()=>{
+    S.innerHTML=`
+    <div style="display:flex;flex-direction:column;align-items:center;justify-content:center;min-height:70vh;padding:24px;text-align:center;">
+      <div style="width:80px;height:80px;background:var(--accent-lt);border-radius:50%;display:flex;align-items:center;justify-content:center;margin-bottom:18px;">
+        <i class="ti ti-calendar-check" aria-hidden="true" style="font-size:40px;color:var(--accent);"></i>
+      </div>
+      <div style="font-size:20px;font-weight:600;color:#1a1a1a;margin-bottom:8px;">Request sent! ✨</div>
+      <div style="font-size:14px;color:#b8a898;line-height:1.7;margin-bottom:8px;">You've requested a <strong style="color:#1a1a1a;">${rebookState.treatment}</strong> on<br><strong style="color:#1a1a1a;">${dateLabel} at ${rebookState.time}</strong>.</div>
+      <div id="rebook-status" style="background:#fff8ed;border:1.5px solid #f0e2c8;border-radius:10px;padding:10px 14px;margin:12px 0;font-size:13px;color:#8b6b4a;line-height:1.5;display:flex;align-items:center;gap:8px;">
+        <i class="ti ti-clock" style="font-size:15px;"></i> Waiting for ${client.providerFirst} to confirm… you'll get a notification when it's booked.
+      </div>
+      <div style="display:flex;flex-direction:column;gap:8px;width:100%;max-width:260px;margin-top:12px;">
+        <button class="btnp" style="border-radius:10px;" onclick="nav('messages')"><i class="ti ti-message-circle" aria-hidden="true"></i> Message ${client.providerFirst}</button>
+        <button class="btng" style="border-radius:10px;" onclick="nav('home')">Back to home</button>
+      </div>
+    </div>`;
+  };
   if(prov.connected){
     // real cross-app flow → lands in the provider app's inbox
     SlickBridge.upsertBooking(booking);
     SlickBridge.post('booking-request',booking);
-  }else{
-    // demo provider (no live provider app) → simulate a confirmation shortly after
-    setTimeout(()=>{
-      const p=client.providers.find(x=>x.id===booking.providerId);if(!p)return;
-      p.nextDate=new Date(booking.date+'T12:00:00').toLocaleDateString('en-US',{month:'short',day:'numeric',year:'numeric'});
-      p.nextTime=booking.time;p.treatment=booking.treatment;p.apptISO=booking.date+'T12:00:00';
-      if(client.activeProviderId===p.id){client.nextDate=p.nextDate;client.nextTime=p.nextTime;client.treatment=p.treatment;updateRebookStatusPill('<i class="ti ti-circle-check" style="font-size:15px;"></i> Confirmed! Added to your appointments.','#f0fff5','#c0e8d0','#2a6a4a');}
-      pushNotify({type:'appointmentReminder',icon:'ti-calendar-check',col:'#f0fff5',ic:'#4ec49a',
-        title:'Appointment confirmed ✅',body:`${p.first} confirmed your ${booking.treatment} on ${p.nextDate} at ${booking.time}.`,onclick:()=>nav('home')});
-    },2600);
+    _showRebookSent();
+    return;
   }
-
-  S.innerHTML=`
-  <div style="display:flex;flex-direction:column;align-items:center;justify-content:center;min-height:70vh;padding:24px;text-align:center;">
-    <div style="width:80px;height:80px;background:var(--accent-lt);border-radius:50%;display:flex;align-items:center;justify-content:center;margin-bottom:18px;">
-      <i class="ti ti-calendar-check" aria-hidden="true" style="font-size:40px;color:var(--accent);"></i>
-    </div>
-    <div style="font-size:20px;font-weight:600;color:#1a1a1a;margin-bottom:8px;">Request sent! ✨</div>
-    <div style="font-size:14px;color:#b8a898;line-height:1.7;margin-bottom:8px;">You've requested a <strong style="color:#1a1a1a;">${rebookState.treatment}</strong> on<br><strong style="color:#1a1a1a;">${dateLabel} at ${rebookState.time}</strong>.</div>
-    <div id="rebook-status" style="background:#fff8ed;border:1.5px solid #f0e2c8;border-radius:10px;padding:10px 14px;margin:12px 0;font-size:13px;color:#8b6b4a;line-height:1.5;display:flex;align-items:center;gap:8px;">
-      <i class="ti ti-clock" style="font-size:15px;"></i> Waiting for ${client.providerFirst} to confirm… you'll get a notification when it's booked.
-    </div>
-    <div style="display:flex;flex-direction:column;gap:8px;width:100%;max-width:260px;margin-top:12px;">
-      <button class="btnp" style="border-radius:10px;" onclick="nav('messages')"><i class="ti ti-message-circle" aria-hidden="true"></i> Message ${client.providerFirst}</button>
-      <button class="btng" style="border-radius:10px;" onclick="nav('home')">Back to home</button>
-    </div>
-  </div>`;
+  if(client._real){
+    // Confirm the request actually reached the server before telling them it's sent.
+    S.innerHTML=_sendingHTML('Sending your request…');
+    _clientSubmit('booking',{treatment:booking.treatment,date:booking.date,dateLabel:booking.dateLabel,time:booking.time,note:booking.note,client:client.name})
+      .then(function(res){
+        if(res&&res.ok!==false)_showRebookSent();
+        else S.innerHTML=_submitFailedHTML('submitRebook()',"Couldn't send your request");
+      });
+    return;
+  }
+  // demo provider (no live provider app) → simulate a confirmation shortly after
+  setTimeout(()=>{
+    const p=client.providers.find(x=>x.id===booking.providerId);if(!p)return;
+    p.nextDate=new Date(booking.date+'T12:00:00').toLocaleDateString('en-US',{month:'short',day:'numeric',year:'numeric'});
+    p.nextTime=booking.time;p.treatment=booking.treatment;p.apptISO=booking.date+'T12:00:00';
+    if(client.activeProviderId===p.id){client.nextDate=p.nextDate;client.nextTime=p.nextTime;client.treatment=p.treatment;updateRebookStatusPill('<i class="ti ti-circle-check" style="font-size:15px;"></i> Confirmed! Added to your appointments.','#f0fff5','#c0e8d0','#2a6a4a');}
+    pushNotify({type:'appointmentReminder',icon:'ti-calendar-check',col:'#f0fff5',ic:'#4ec49a',
+      title:'Appointment confirmed ✅',body:`${p.first} confirmed your ${booking.treatment} on ${p.nextDate} at ${booking.time}.`,onclick:()=>nav('home')});
+  },2600);
+  _showRebookSent();
 }
 
 // ── LATEST SUMMARY ──
@@ -2684,11 +2751,25 @@ function submitClientForm(fid){
   // flagged contraindications = checked boxes
   const flagged=[];(f.contra||[]).forEach((it,ix)=>{const cb=document.getElementById('cfc-'+ix);if(cb&&cb.checked)flagged.push(it);});
   try{SlickBridge.post('form-completed',{providerId:'jess',clientId:'maya',formId:fid,title:f.title,answers,flagged,signed:true,date:'Today'});}catch(e){}
-  try{if(client._real)_clientSubmit('form',{formId:fid,title:f.title,answers,flagged,signed:true,date:'Today'});}catch(e){}
-  f.status='Completed ✓';f.answers=answers;f.flagged=flagged;
-  const sheet=document.getElementById('form-review-sheet');if(sheet)sheet.remove();
-  showToast(flagged.length?'Submitted — your provider will review your notes ✓':'Submitted & signed ✓');
-  if(currentScreen==='welcome')renderMagicLanding();
+  const _finishSigned=()=>{
+    f.status='Completed ✓';f.answers=answers;f.flagged=flagged;
+    const sheet=document.getElementById('form-review-sheet');if(sheet)sheet.remove();
+    showToast(flagged.length?'Submitted — your provider will review your notes ✓':'Submitted & signed ✓');
+    if(currentScreen==='welcome')renderMagicLanding();
+  };
+  if(client._real){
+    // A signed consent/intake with flagged contraindications must actually reach the
+    // provider — confirm before marking it complete, so a dropped submit is retryable.
+    const btn=(typeof event!=='undefined'&&event&&event.target&&event.target.closest)?event.target.closest('button'):null;
+    if(btn){btn.disabled=true;btn.textContent='Sending…';}
+    _clientSubmit('form',{formId:fid,title:f.title,answers,flagged,signed:true,date:'Today'})
+      .then(function(res){
+        if(res&&res.ok!==false)_finishSigned();
+        else{ if(btn){btn.disabled=false;btn.innerHTML='Submit &amp; sign';} showToast("Couldn't send — check your connection and tap Submit again"); }
+      });
+    return;
+  }
+  _finishSigned();
 }
 function renderMagicLanding(){
   const navEl=document.querySelector('.nav');if(navEl)navEl.style.display='none';
@@ -3145,11 +3226,26 @@ function _getClientToken(){
     return new URLSearchParams(location.search).get('c')||'';
   }catch(e){ return ''; }
 }
-function _clientSubmit(kind,payload){
+function _clientSubmit(kind,payload,_retried){
   try{
     var tok=client._token; if(!tok)return Promise.resolve(null);
-    return fetch('/api/client-submit',{method:'POST',headers:{'Content-Type':'application/json'},body:JSON.stringify({t:tok,kind:kind,payload:payload||{}})}).then(function(r){return r.json();}).catch(function(){return null;});
-  }catch(e){ return Promise.resolve(null); }
+    return fetch('/api/client-submit',{method:'POST',headers:{'Content-Type':'application/json'},body:JSON.stringify({t:tok,kind:kind,payload:payload||{}})})
+      .then(function(r){
+        // A non-OK HTTP status means it did NOT reach the provider — treat as failure so
+        // callers on critical paths (check-in, booking, forms) don't show a false "sent".
+        if(!r.ok){
+          if(!_retried)return new Promise(function(res){setTimeout(res,1200);}).then(function(){return _clientSubmit(kind,payload,true);});
+          return {ok:false,error:'server'};
+        }
+        return r.json().then(function(j){return (j&&typeof j.ok!=='undefined')?j:{ok:true};}).catch(function(){return {ok:true};});
+      })
+      .catch(function(){
+        // Network error — retry once before giving up, since these are the client's
+        // most important actions and a single blip shouldn't silently drop them.
+        if(!_retried)return new Promise(function(res){setTimeout(res,1200);}).then(function(){return _clientSubmit(kind,payload,true);});
+        return {ok:false,error:'network'};
+      });
+  }catch(e){ return Promise.resolve({ok:false,error:'network'}); }
 }
 function _clientLinkError(msg){
   var S=document.getElementById('S');
