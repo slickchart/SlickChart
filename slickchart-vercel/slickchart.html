@@ -1193,6 +1193,15 @@ const Cloud={
     if(!Object.keys(items).length)return;
     fetch('/api/store',{method:'PUT',headers:{'Content-Type':'application/json','Authorization':'Bearer '+this.token},body:JSON.stringify({items})})
       .then(r=>{
+        // A 401 here means this device's session was revoked (e.g. the provider used
+        // "sign out all other devices" elsewhere). Don't mislabel it as a connection
+        // problem and keep retrying against a dead token — sign this device out cleanly.
+        if(r.status===401){
+          if(typeof proToast==='function')proToast('You\u2019ve been signed out on this device. Please sign in again.',0);
+          try{this.logout();}catch(e){}
+          setTimeout(()=>{try{if(typeof _doLogout==='function')_doLogout();}catch(e){}},1200);
+          return;
+        }
         if(!r.ok){
           console.error('[Cloud sync] save failed with status',r.status);
           // A failed save must not just vanish — put these items back in the
@@ -11703,20 +11712,28 @@ function _revokeOtherSessions(){
     const tok=(typeof Cloud!=='undefined'&&Cloud&&Cloud.token)||'';
     if(!tok)return;
     try{
-      await fetch('/api/sessions',{method:'POST',headers:{'Content-Type':'application/json','Authorization':'Bearer '+tok},body:JSON.stringify({action:'revokeOthers'})});
+      const r=await fetch('/api/sessions',{method:'POST',headers:{'Content-Type':'application/json','Authorization':'Bearer '+tok},body:JSON.stringify({action:'revokeOthers'})});
+      // Only tell them the other devices are signed out if the server confirms it —
+      // otherwise an unrecognized device could still have access despite the toast.
+      let j={};try{j=await r.json();}catch(e){}
+      if(!r.ok||(j&&j.ok===false)){proToast((j&&j.error)||'Could not sign out other devices \u2014 try again');return;}
       _loadSessions();
       proToast('Signed out all other devices');
-    }catch(e){proToast('Could not sign out other devices');}
+    }catch(e){proToast('Could not reach the server \u2014 other devices may still be signed in');}
   });
 }
 async function _revokeSession(id){
   const tok=(typeof Cloud!=='undefined'&&Cloud&&Cloud.token)||'';
   if(!tok)return;
   try{
-    await fetch('/api/sessions',{method:'POST',headers:{'Content-Type':'application/json','Authorization':'Bearer '+tok},body:JSON.stringify({id})});
+    const r=await fetch('/api/sessions',{method:'POST',headers:{'Content-Type':'application/json','Authorization':'Bearer '+tok},body:JSON.stringify({id})});
+    // Don't claim the device was signed out unless the server confirms it — a false
+    // "signed out" on a security action could leave an unrecognized device with access.
+    let j={};try{j=await r.json();}catch(e){}
+    if(!r.ok||(j&&j.ok===false)){proToast((j&&j.error)||'Could not sign out that device \u2014 try again');return;}
     _loadSessions();
     proToast('Session signed out');
-  }catch(e){proToast('Could not revoke that session');}
+  }catch(e){proToast('Could not reach the server \u2014 that device may still be signed in');}
 }
 
 // ── SUBSCRIPTION & BILLING ──
