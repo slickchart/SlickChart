@@ -6743,22 +6743,27 @@ function renderInviteClients(){
 }
 function _inviteToggle(id){window._inviteSel[id]=!window._inviteSel[id];renderInviteClients();}
 function _inviteToggleAll(on){Object.keys(CL).filter(id=>CL[id].email).forEach(id=>window._inviteSel[id]=on);renderInviteClients();}
+let _bulkInviting=false;
 async function _doBulkInvite(){
   const tok=(typeof Cloud!=='undefined'&&Cloud&&Cloud.token)||''; if(!tok){proToast('Please sign in first');return;}
   const ids=Object.keys(CL).filter(id=>CL[id].email&&window._inviteSel[id]);
   if(!ids.length){proToast('Select at least one client');return;}
+  // Block a double-tap from emailing every selected client their invite twice.
+  if(_bulkInviting)return;
+  _bulkInviting=true;
   proToast('Preparing personal links\u2026',0);
   var _slowTimer=setTimeout(function(){
     if(document.getElementById('pro-toast'))proToast('Still working \u2014 this can take a few extra seconds if it\u2019s been a while\u2026',0);
   },4000);
-  await _syncSpecificClientsToServer(ids,{});
-  clearTimeout(_slowTimer);
   try{
+    await _syncSpecificClientsToServer(ids,{});
+    clearTimeout(_slowTimer);
     const r=await fetch('/api/client-invite',{method:'POST',headers:{'Content-Type':'application/json','Authorization':'Bearer '+tok},body:JSON.stringify({ids:ids,studio:((typeof bizInfo!=='undefined'&&bizInfo&&bizInfo.name)||''),from:((typeof _providerFirstName==='function'&&_providerFirstName())||'Your provider'),origin:location.origin})});
     const j=await r.json();
     if(j&&j.ok){ ids.forEach(id=>{if(CL[id])CL[id].appInvited=true;}); try{saveClients();}catch(e){} confirmModal({title:'Invites sent',body:'Emailed '+j.sent+' client'+(j.sent===1?'':'s')+' their personal link.'+(j.sent<ids.length?' Some may not have gone through — check their emails.':''),action:'Done'},function(){renderInviteClients();}); }
     else proToast((j&&j.error)||'Could not send invites');
-  }catch(e){proToast('Could not reach the server');}
+  }catch(e){clearTimeout(_slowTimer);proToast('Could not reach the server');}
+  finally{_bulkInviting=false;}
 }
 function _clientAppLink(id){
   const base=(typeof location!=='undefined'&&location.origin&&location.origin.indexOf('http')===0)?location.origin:'https://slick-chart.vercel.app';
@@ -8996,12 +9001,19 @@ async function _loadCalFeedUrl(){
 
 // ── Take payment (via the provider's own connected Square) ──
 function _coVal(x){const el=document.getElementById(x);return el?el.value.trim():'';}
-function _coErr(msg,reconnect){const el=document.getElementById('co-result');if(!el)return;el.innerHTML='<div style="background:#2a0f0f;border:1px solid #4a1515;border-radius:10px;padding:11px 13px;font-size:12px;color:#e8a0a0;line-height:1.5;">'+String(msg).replace(/</g,'&lt;')+(reconnect?' <button onclick="nav(\'square-guide\')" style="background:none;border:none;color:#f0c0c0;text-decoration:underline;cursor:pointer;font-family:inherit;font-size:12px;">Reconnect Square</button>':'')+'</div>';}
+function _coErr(msg,reconnect){_coActionLock=false;const el=document.getElementById('co-result');if(!el)return;el.innerHTML='<div style="background:#2a0f0f;border:1px solid #4a1515;border-radius:10px;padding:11px 13px;font-size:12px;color:#e8a0a0;line-height:1.5;">'+String(msg).replace(/</g,'&lt;')+(reconnect?' <button onclick="nav(\'square-guide\')" style="background:none;border:none;color:#f0c0c0;text-decoration:underline;cursor:pointer;font-family:inherit;font-size:12px;">Reconnect Square</button>':'')+'</div>';}
 function _coBusy(t){const el=document.getElementById('co-result');if(el)el.innerHTML='<div style="text-align:center;color:#888;font-size:12px;padding:8px;">'+t+'</div>';}
+// Shared in-flight lock so a double-tap on "Send payment link"/"Send invoice"/"Charge"
+// can't fire the action twice (duplicate invoice email, duplicate payment-link record).
+// Cleared on any error (via _coErr), on success at each action's end, and on fresh entry.
+let _coActionLock=false;
+function _coLock(){if(_coActionLock)return false;_coActionLock=true;return true;}
 function _coRecon(e){return e&&(e.code==='reconnect'||e.code==='nosquare');}
 function renderCheckout(id){
   const c=CL[id];if(!c){nav('clients');return;}
   setNav('clients');document.getElementById('tt').textContent='Take payment';
+  _coCharging=false;   // fresh checkout session — clear any prior in-flight guard
+  _coActionLock=false;
   _coItems=[];
   S.innerHTML=`
   <div style="padding:14px 16px 4px;">
@@ -9186,6 +9198,7 @@ function _addPayment(p){p.id=p.id||('pay_'+Date.now().toString(36)+Math.random()
 let _coItems=[];
 let _coTip=false;
 let _coMenu=null;
+let _coCharging=false;   // in-flight guard: blocks a double-tap from charging twice
 function _coFlatten(d){
   const out=[];
   const add=(arr,kind)=>{(arr||[]).forEach(it=>{const vars=(it.variations&&it.variations.length)?it.variations:[{id:null,name:'',price:it.price}];vars.forEach(v=>{const nm=(v.name&&!/^regular$/i.test(v.name))?(it.name+' \u2014 '+v.name):it.name;out.push({name:nm,price:(v.price!=null?v.price:it.price)||0,variationId:v.id||null,kind,taxable:true});});});};
@@ -9261,6 +9274,7 @@ async function _coLink(id){
   const c=CL[id];const items=_coValidItems();const amt=_coAmount();
   const name=_coVal('co-desc')||(items.length?(items.length+' items'):'Service');
   if(!amt||amt<=0)return _coErr('Add line items or an amount first.');
+  if(!_coLock())return;
   _coBusy('Creating payment link\u2026');
   try{
     const d=await _sqFetch('/api/square/payment-link',{method:'POST',body:{amount:amt,name,email:c.email||'',phone:c.phone||''}});
@@ -9274,6 +9288,7 @@ async function _coInvoice(id){
   const c=CL[id];const items=_coValidItems();const amt=_coAmount();const title=_coVal('co-desc')||'Service';
   if(!items.length && (!amt||amt<=0))return _coErr('Add line items or an amount first.');
   if(!c.email)return _coErr('Add a client email to send an invoice (or use a payment link).');
+  if(!_coLock())return;
   _coBusy('Creating and sending invoice\u2026');
   try{
     const body=items.length?{name:c.name,email:c.email,requestTip:_coTip,lineItems:items.map(it=>({name:it.name,price:it.price,quantity:it.qty||1,variationId:it.variationId||undefined,taxable:it.taxable!==false}))}:{amount:amt,title,name:c.name,email:c.email,requestTip:_coTip};
@@ -9286,24 +9301,30 @@ async function _coCharge(id){
   const c=CL[id];const items=_coValidItems();const amt=_coAmount();
   if(!amt||amt<=0)return _coErr('Add line items or an amount first.');
   if(!c.squareId)return _coErr('This client is not linked to Square yet. Import them from Square, or use a payment link or invoice.');
+  if(!_coLock())return;
   _coBusy('Checking saved cards\u2026');
   try{
     const d=await _sqFetch('/api/square/charge-card?customerId='+encodeURIComponent(c.squareId));
     const cards=d.cards||[];
-    if(!cards.length)return _coErr('No saved card for '+c.name.split(' ')[0]+'. Use a payment link or invoice instead.');
+    if(!cards.length){_coActionLock=false;return _coErr('No saved card for '+c.name.split(' ')[0]+'. Use a payment link or invoice instead.');}
+    _coActionLock=false;   // cards rendered — release so the provider can tap one (the charge itself is guarded by _coCharging)
     document.getElementById('co-result').innerHTML='<div style="background:#161616;border:1px solid #242424;border-radius:10px;padding:12px 14px;"><div style="font-size:12px;color:#aaa;margin-bottom:8px;">Charge $'+amt.toFixed(2)+' to a saved card:</div>'+cards.map(cd=>'<button onclick="_coDoCharge(\''+id+'\',\''+cd.id+'\')" class="btng" style="width:100%;justify-content:space-between;margin-bottom:6px;border-radius:8px;"><span>'+((cd.brand||'Card'))+' \u00b7\u00b7\u00b7\u00b7 '+(cd.last4||'')+'</span><span style="color:var(--accent);">Charge \u2192</span></button>').join('')+'</div>';
   }catch(e){_coErr(e.message||'Could not load saved cards.',_coRecon(e));}
 }
 async function _coDoCharge(id,cardId){
+  // Prevent a double-tap (or tap during a laggy request) from firing two charges —
+  // a duplicate here means the client is charged twice.
+  if(_coCharging)return;
   const c=CL[id];const items=_coValidItems();const amt=_coAmount();const note=_coVal('co-desc')||'SlickChart';
   if(!amt||amt<=0)return _coErr('Add line items or an amount first.');
+  _coCharging=true;
   _coBusy('Charging\u2026');
   try{
     const d=await _sqFetch('/api/square/charge-card',{method:'POST',body:{customerId:c.squareId,cardId,amount:amt,note}});
     _addPayment({clientId:id,clientName:c.name,amount:amt,method:'Square',status:'paid',date:_todayISO(),note:note+' (card on file)',source:'square'});
     document.getElementById('co-result').innerHTML='<div style="background:#0a2019;border:1px solid #1c4030;border-radius:10px;padding:12px 14px;font-size:13px;color:#4ec49a;font-weight:600;"><i class="ti ti-check"></i> Charged $'+amt.toFixed(2)+' \u2014 '+(d.status||'done')+' \u00b7 logged in Payments</div>';
     if(typeof proToast==='function')proToast('Payment complete \u2713');
-  }catch(e){_coErr(e.message||'The charge did not go through.',_coRecon(e));}
+  }catch(e){_coCharging=false;_coErr(e.message||'The charge did not go through.',_coRecon(e));}
 }
 
 
