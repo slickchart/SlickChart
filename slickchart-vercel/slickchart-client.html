@@ -3357,6 +3357,16 @@ function _startRealClientPolling(){
 let _msgSeenIds=[];
 function _loadMsgSeenIds(){try{_msgSeenIds=JSON.parse(localStorage.getItem('sc_seen_msg_ids')||'[]');}catch(e){_msgSeenIds=[];}}
 function _markMsgSeen(id){if(_msgSeenIds.indexOf(id)<0){_msgSeenIds.push(id);if(_msgSeenIds.length>500)_msgSeenIds.splice(0,_msgSeenIds.length-500);try{localStorage.setItem('sc_seen_msg_ids',JSON.stringify(_msgSeenIds));}catch(e){}}}
+// Mark many message ids seen with a single localStorage write instead of one per
+// message — matters on first load of a long thread, or a burst after being offline.
+function _markMsgsSeen(ids){
+  if(!ids||!ids.length)return;
+  const have=new Set(_msgSeenIds);let changed=false;
+  ids.forEach(function(id){if(!have.has(id)){_msgSeenIds.push(id);have.add(id);changed=true;}});
+  if(!changed)return;
+  if(_msgSeenIds.length>500)_msgSeenIds.splice(0,_msgSeenIds.length-500);
+  try{localStorage.setItem('sc_seen_msg_ids',JSON.stringify(_msgSeenIds));}catch(e){}
+}
 function _fmtMsgTime(ts){
   try{
     const d=new Date(ts);const now=new Date();
@@ -3373,7 +3383,7 @@ async function _fetchRealMessages(initial){
     const jess=client.providers.find(function(p){return p.id==='jess';})||client.providers[0];
     if(initial){
       jess.thread=j.messages.map(function(m){return {from:m.from==='provider'?'provider':'me',text:m.text,time:_fmtMsgTime(m.ts)};});
-      j.messages.forEach(function(m){_markMsgSeen(m.id);});
+      _markMsgsSeen(j.messages.map(function(m){return m.id;}));
       if(client.activeProviderId===jess.id)messages=jess.thread;
       try{_saveClientMessages();}catch(e){}
       if(document.getElementById('chat-body'))renderMessages();
@@ -3381,7 +3391,8 @@ async function _fetchRealMessages(initial){
       const newOnes=j.messages.filter(function(m){return m.from==='provider'&&_msgSeenIds.indexOf(m.id)<0;});
       if(!newOnes.length)return;
       const viewing=client.activeProviderId===jess.id&&document.getElementById('chat-body');
-      newOnes.forEach(function(m){_markMsgSeen(m.id);jess.thread.push({from:'provider',text:m.text,time:_fmtMsgTime(m.ts)});});
+      newOnes.forEach(function(m){jess.thread.push({from:'provider',text:m.text,time:_fmtMsgTime(m.ts)});});
+      _markMsgsSeen(newOnes.map(function(m){return m.id;}));
       if(!viewing)jess.unread=(jess.unread||0)+newOnes.length;
       else messages=jess.thread;
       try{_saveClientMessages();}catch(e){}

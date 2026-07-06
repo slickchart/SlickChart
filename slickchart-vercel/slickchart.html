@@ -10411,6 +10411,18 @@ function fmtBookingDate(b){
 // We poll them here and feed them into the same booking/chat UI used by the demo.
 function _seenEventIds(){try{return JSON.parse(localStorage.getItem('sc_seen_events')||'[]');}catch(e){return [];}}
 function _markEventSeen(id){try{const a=_seenEventIds();if(a.indexOf(id)<0){a.push(id);if(a.length>1000)a.splice(0,a.length-1000);localStorage.setItem('sc_seen_events',JSON.stringify(a));}}catch(e){}}
+// Mark many event ids seen in ONE read+write instead of re-parsing/re-writing the
+// whole (up-to-1000-element) array once per event — matters when a provider returns
+// after being offline and a burst of client submissions all arrive at once.
+function _markEventsSeen(ids){
+  if(!ids||!ids.length)return;
+  try{
+    const a=_seenEventIds();const have=new Set(a);
+    ids.forEach(id=>{if(!have.has(id)){a.push(id);have.add(id);}});
+    if(a.length>1000)a.splice(0,a.length-1000);
+    localStorage.setItem('sc_seen_events',JSON.stringify(a));
+  }catch(e){}
+}
 let _syncingEvents=false;
 async function syncClientEvents(){
   if(_syncingEvents)return;
@@ -10425,8 +10437,9 @@ async function syncClientEvents(){
     const fresh=j.events.filter(e=>seen.indexOf(e.id)<0).reverse(); // oldest first so newest ends up on top
     let touchedRequests=false,touchedMsgs=false,touchedNotif=false,touchedCheckins=false,touchedForms=false,touchedVc=false;
     const msgClientIds=[];
+    // Mark the whole batch seen in one write after processing (see _markEventsSeen).
+    _markEventsSeen(fresh.map(ev=>ev.id));
     fresh.forEach(ev=>{
-      _markEventSeen(ev.id);
       const payload=ev.payload||{};
       const cid=ev.client_id;
       const c=CL[cid];
