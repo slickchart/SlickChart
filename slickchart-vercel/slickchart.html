@@ -1453,7 +1453,7 @@ const Cloud={
 })();
 function _reloadAll(){try{
   loadProfessions();applyProfessionConfig();
-  if(typeof loadCustomResources==='function')loadCustomResources();
+  if(typeof loadCustomResources==='function')loadCustomResources();if(typeof _loadSummaryGuides==='function')_loadSummaryGuides();
   if(typeof loadAi==='function')loadAi();
   if(typeof loadForms==='function')loadForms();
   loadBizInfo();_syncProviderAvatar();_syncHeaderLogo();loadClients();loadMessages();loadInv();loadVendors();_loadPersistenceSweep();_loadHomeDismissed();loadProviderNoteDrafts();if(typeof loadSessionSummaries==='function')loadSessionSummaries();if(!_sampleHidden()){_seedMayaOnce();}else{_purgeSample();}_seedBirthdays();if(!_sampleHidden()&&typeof _demoCheckinSeed==='function')_demoCheckinSeed();
@@ -3318,7 +3318,8 @@ function _loadRoomState(id){
 function _roomPhotosHTML(id){
   const before=_capturedFor(id,'before'),after=_capturedFor(id,'after');
   const hasB=before.length,hasA=after.length;
-  const capBtn=(phase,has)=>`<button onclick="takePhoto('${id}','${phase}',()=>_rerenderRoomPhotos('${id}'))" style="width:100%;display:flex;flex-direction:column;align-items:center;gap:5px;background:${has?'#0a2019':'#161616'};border:1.5px ${has?'solid #1a4a2a':'dashed #3a3a3a'};border-radius:10px;padding:13px 8px;cursor:pointer;font-family:inherit;"><i class="ti ${has?'ti-circle-check':'ti-camera'}" aria-hidden="true" style="font-size:21px;color:${has?'#4ec49a':'var(--accent)'};"></i><span style="font-size:12px;font-weight:600;color:${has?'#4ec49a':'#ccc'};">${has?phase.charAt(0).toUpperCase()+phase.slice(1)+' ✓':'Take '+phase.toUpperCase()}</span></button>`;
+  const capBtn=(phase,has)=>`<button onclick="takePhoto('${id}','${phase}',()=>_rerenderRoomPhotos('${id}'))" style="width:100%;display:flex;flex-direction:column;align-items:center;gap:5px;background:${has?'#0a2019':'#161616'};border:1.5px ${has?'solid #1a4a2a':'dashed #3a3a3a'};border-radius:10px;padding:13px 8px;cursor:pointer;font-family:inherit;"><i class="ti ${has?'ti-circle-check':'ti-camera'}" aria-hidden="true" style="font-size:21px;color:${has?'#4ec49a':'var(--accent)'};"></i><span style="font-size:12px;font-weight:600;color:${has?'#4ec49a':'#ccc'};">${has?phase.charAt(0).toUpperCase()+phase.slice(1)+' ✓':'Take '+phase.toUpperCase()}</span></button>
+  <button onclick="takePhoto('${id}','${phase}',()=>_rerenderRoomPhotos('${id}'),true)" style="width:100%;display:flex;align-items:center;justify-content:center;gap:5px;background:none;border:0;padding:6px 4px 0;cursor:pointer;font-family:inherit;"><i class="ti ti-photo" aria-hidden="true" style="font-size:13px;color:#8a8a8a;"></i><span style="font-size:11px;color:#8a8a8a;text-decoration:underline;">From library</span></button>`;
   return `
   <div style="display:flex;align-items:center;justify-content:space-between;margin-bottom:8px;">
     <div style="font-size:12px;color:#999;text-transform:uppercase;letter-spacing:.07em;">Before &amp; after photos</div>
@@ -4241,7 +4242,35 @@ function buildSummaryCustomPanel(id){
 }
 
 // Per-summary section visibility state (metrics off by default)
-let summaryToggles={note:true,homecare:true,metrics:false,products:true,appointment:true};
+let summaryToggles={note:true,homecare:true,metrics:false,products:true,guides:true,appointment:true};
+// Aftercare guides/forms attached to a client's session summary (parallel to clientRecs for
+// products). Keyed by client id -> array of {kind:'guide'|'form', id}. Sent with the summary.
+let summaryGuides={};
+function _saveSummaryGuides(){try{localStorage.setItem('sc_summary_guides',JSON.stringify(summaryGuides));}catch(e){}}
+function _loadSummaryGuides(){try{const r=localStorage.getItem('sc_summary_guides');if(r){const v=JSON.parse(r);if(v&&typeof v==='object')summaryGuides=v;}}catch(e){}}
+// Resolve an attached {kind,id} entry to a display object {kind,id,title,icon,tips}.
+function _resolveSummaryGuide(item){
+  try{
+    if(!item)return null;
+    const g=(typeof _findGuide==='function')?_findGuide(item.id):null;
+    return g?{kind:'guide',id:g.id,title:g.title,icon:g.icon||'📄',tips:(g.tips||[]).slice()}:null;
+  }catch(e){return null;}
+}
+function _summaryGuideList(id){return (summaryGuides[id]||[]).map(_resolveSummaryGuide).filter(Boolean);}
+function addSummaryGuide(id,kind,gid){
+  if(!summaryGuides[id])summaryGuides[id]=[];
+  if(summaryGuides[id].some(x=>x.kind===kind&&x.id===gid))return; // no dupes
+  summaryGuides[id].push({kind:kind,id:gid});
+  _saveSummaryGuides();
+  if(typeof renderSessionSummary==='function')renderSessionSummary(id);
+}
+function removeSummaryGuide(id,kind,gid){
+  if(!summaryGuides[id])return;
+  summaryGuides[id]=summaryGuides[id].filter(x=>!(x.kind===kind&&x.id===gid));
+  _saveSummaryGuides();
+  if(typeof renderSessionSummary==='function')renderSessionSummary(id);
+}
+function toggleSummaryGuidePicker(){const el=document.getElementById('summary-guide-picker');if(el)el.style.display=el.style.display==='none'?'':'none';}
 let summaryCustomOpen=false;
 let summaryNoteDraft={};   // provider's edited wording per client (overrides the default note)
 let summaryObsDraft={};     // provider's optional client-facing observation per client (starts empty for real clients)
@@ -4407,6 +4436,27 @@ function renderSessionSummary(id){
       </div>
       </div>`;}).join('')}
       ${(clientRecs[id]||[]).length>1?`<div style="font-size:11px;color:#666;margin-top:8px;">Drag, or use ▲ ▼, to set the order ${CL[id]?CL[id].name.split(' ')[0]:'they'} sees.</div>`:''}
+    </div>`:''}
+
+    ${summaryToggles.guides?`<div style="padding:14px 16px;border-bottom:1px solid #222;">
+      <div style="display:flex;align-items:center;justify-content:space-between;margin-bottom:10px;">
+        <div style="font-size:12px;color:#aaa;text-transform:uppercase;letter-spacing:.07em;font-weight:500;">Aftercare guides</div>
+        <button onclick="toggleSummaryGuidePicker()" style="border:none;background:none;color:var(--accent);font-size:12px;cursor:pointer;display:flex;align-items:center;gap:3px;"><i class="ti ti-plus" aria-hidden="true" style="font-size:12px;"></i> Add</button>
+      </div>
+      <div id="summary-guide-picker" style="display:none;background:#161616;border:1px solid #2a2a2a;border-radius:10px;padding:8px;margin-bottom:10px;max-height:240px;overflow:auto;">
+        ${(typeof resources!=='undefined'?resources:[]).filter(g=>!(summaryGuides[id]||[]).some(x=>x.id===g.id)).map(g=>`<button onclick="addSummaryGuide('${id}','guide','${g.id}')" style="width:100%;display:flex;align-items:center;gap:9px;background:none;border:none;border-bottom:1px solid #1e1e1e;padding:9px 6px;cursor:pointer;font-family:inherit;text-align:left;">
+          <span aria-hidden="true" style="font-size:18px;flex-shrink:0;">${g.icon||'📄'}</span>
+          <span style="flex:1;min-width:0;"><span style="display:block;font-size:13px;color:#e0e0e0;">${g.title}</span><span style="display:block;font-size:11px;color:#777;">${g.cat||'Guide'}</span></span>
+          <i class="ti ti-plus" aria-hidden="true" style="font-size:15px;color:var(--accent);"></i>
+        </button>`).join('')||'<div style="padding:10px;text-align:center;font-size:12px;color:#888;">All your guides are already attached.</div>'}
+      </div>
+      ${_summaryGuideList(id).length===0?`<div style="background:#161616;border:1px dashed #2a2a2a;border-radius:10px;padding:14px;display:flex;flex-direction:column;align-items:center;gap:5px;"><i class="ti ti-file-text" aria-hidden="true" style="font-size:20px;color:#666;"></i><span style="font-size:12px;color:#999;">No aftercare guides yet — tap Add to attach one</span></div>`:_summaryGuideList(id).map(g=>`<div style="display:flex;align-items:center;gap:9px;border-bottom:1px solid #1e1e1e;padding:9px 0;">
+        <span aria-hidden="true" style="font-size:20px;flex-shrink:0;">${g.icon}</span>
+        <div style="flex:1;min-width:0;"><div style="font-size:13px;font-weight:500;color:#e0e0e0;">${g.title}</div><div style="font-size:11px;color:#777;">Aftercare guide${g.tips&&g.tips.length?' · '+g.tips.length+' tips':''}</div></div>
+        <button onclick="nav('guide-preview','${g.id}')" class="icon-btn" aria-label="Preview guide"><i class="ti ti-eye" aria-hidden="true" style="font-size:14px;color:#aaa;"></i></button>
+        <button onclick="removeSummaryGuide('${id}','guide','${g.id}')" class="icon-btn" aria-label="Remove guide"><i class="ti ti-x" aria-hidden="true" style="font-size:14px;"></i></button>
+      </div>`).join('')}
+      ${_summaryGuideList(id).length?`<div style="font-size:11px;color:#666;margin-top:8px;">These are sent with the summary as tap-to-read aftercare.</div>`:''}
     </div>`:''}
 
     ${summaryToggles.appointment?`<div style="padding:14px 16px;">
@@ -4655,11 +4705,12 @@ function _storeSummary(id){
   const date=new Date().toLocaleDateString('en-US',{month:'short',day:'numeric',year:'numeric'});
   const ts=Date.now();
   if(!sessionSummaries[id])sessionSummaries[id]=[];
+  const _guides=(typeof _summaryGuideList==='function')?_summaryGuideList(id).map(g=>({id:g.id,title:g.title,icon:g.icon,tips:(g.tips||[]).slice()})):[];
   // Rich record kept on the provider side: everything done that day.
-  sessionSummaries[id].unshift({date,treatment:c.treatment,note,obs,homecare,products,productDetail,providerNotes,ts});
+  sessionSummaries[id].unshift({date,treatment:c.treatment,note,obs,homecare,products,productDetail,providerNotes,guides:_guides,ts});
   // Client-facing copy (what their app reads). Includes the friendly note + obs +
-  // products, but NOT the raw clinical provider notes.
-  const entry={date,title:c.treatment||'Session',note:(note+(obs?'\n\nObservations: '+obs:'')).trim(),products:products.slice(),ts};
+  // products + aftercare guides, but NOT the raw clinical provider notes.
+  const entry={date,title:c.treatment||'Session',note:(note+(obs?'\n\nObservations: '+obs:'')).trim(),products:products.slice(),guides:_guides,ts};
   if(!Array.isArray(c.summaries))c.summaries=[];
   c.summaries.unshift(entry);
   // Persist the provider-side session record to its own synced key too — otherwise it lived
@@ -4897,7 +4948,11 @@ function _postSummaryData(id){
   const homecare=summaryToggles.homecare?getClientHomecare(id).slice():[];
   const products=summaryToggles.products?(clientRecs[id]||[]).map(aid=>{const a=affiliateLinks.find(x=>x.id===aid);return a?{name:a.name,brand:a.brand,icon:a.icon,url:a.url,amazon:amazonBuyUrl(a),site:a.site||'',inOffice:!!a.inOffice,siteCode:a.siteCode||'',urlCode:a.urlCode||'',amazonCode:a.amazonCode||'',why:_recReason(id,aid)}:null;}).filter(Boolean):[];
   const short=(note.split('\n')[0]||'').slice(0,120);
-  try{SlickBridge.post('session-summary',{providerId:'jess',clientId:'maya',date:'Jun 26, 2026',label:`Session · ${c.treatment}`,note,homecare,products,summaryNote:short});}catch(e){}
+  // Aftercare guides attached to this summary: send them as part of the summary payload AND
+  // fire resource-shared for each, so they appear both in the summary and in the client's guide list.
+  const guides=summaryToggles.guides?_summaryGuideList(id).map(g=>({id:g.id,title:g.title,icon:g.icon,tips:(g.tips||[]).slice(),cat:'Aftercare'})):[];
+  try{SlickBridge.post('session-summary',{providerId:'jess',clientId:'maya',date:'Jun 26, 2026',label:`Session · ${c.treatment}`,note,homecare,products,guides,summaryNote:short});}catch(e){}
+  try{guides.forEach(g=>SlickBridge.post('resource-shared',{providerId:'jess',clientId:'maya',resource:{id:g.id,title:g.title,icon:g.icon,tips:g.tips,cat:'Aftercare'}}));}catch(e){}
 }
 
 // Send the client a no-app "magic link" to their recap + routine
@@ -5147,10 +5202,15 @@ let uploadModalClientId=null;
 // ── Reusable camera capture (works across every photo area + all professions) ──
 let capturedPhotos={};
 function _photoStamp(ts){const d=new Date(ts);return d.toLocaleDateString('en-US',{month:'short',day:'numeric',year:'numeric'})+' · '+d.toLocaleTimeString('en-US',{hour:'numeric',minute:'2-digit'});}
-function _ensureCamInput(){let inp=document.getElementById('global-cam-input');if(!inp){inp=document.createElement('input');inp.type='file';inp.accept='image/*';inp.setAttribute('capture','environment');inp.id='global-cam-input';inp.style.display='none';(document.querySelector('.shell')||document.body).appendChild(inp);}return inp;}
+function _ensureCamInput(fromLibrary){let inp=document.getElementById('global-cam-input');if(!inp){inp=document.createElement('input');inp.type='file';inp.accept='image/*';inp.id='global-cam-input';inp.style.display='none';(document.querySelector('.shell')||document.body).appendChild(inp);}
+  // capture='environment' forces the live camera and hides the photo library. For a
+  // "choose from library" pick we must REMOVE it so the phone offers the camera roll
+  // (and Files); for a fresh capture we set it back on.
+  if(fromLibrary)inp.removeAttribute('capture');else inp.setAttribute('capture','environment');
+  return inp;}
 // Opens the device camera; saves an auto date-stamped photo, then re-renders via `after`
-function takePhoto(clientId,phase,after){
-  const inp=_ensureCamInput();inp.value='';inp.multiple=false;
+function takePhoto(clientId,phase,after,fromLibrary){
+  const inp=_ensureCamInput(fromLibrary);inp.value='';inp.multiple=false;
   inp.onchange=()=>{
     const f=inp.files&&inp.files[0];const ts=Date.now();
     const save=url=>{
@@ -11349,7 +11409,7 @@ updateBadge();
 // Beta build: pre-configure the workspace for a multi-discipline esty / waxer / lash / brow provider
 try{
   getMergedNotes().forEach(name=>{const key=name.toLowerCase().replace(/[^a-z]/g,'');if(!noteTemplates[key]){noteTemplates[key]={id:key,name,bdg:'bm',col:'#222',ic:'#aaa',desc:`${name} format`,sections:[{id:key+'1',label:name,color:'#aaa',ph:'Write your notes here...'}]};}});
-  loadCustomResources();  // restore any guides the provider added
+  loadCustomResources();if(typeof _loadSummaryGuides==='function')_loadSummaryGuides();  // restore any guides the provider added
   loadAi();  // restore the AI on/off preference
   loadProfessions();  // restore the provider's selected profession(s)
   applyProfessionConfig();
