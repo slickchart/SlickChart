@@ -1069,7 +1069,15 @@ const coachAffiliateLinks=[
 
 // ── PROFESSION SWITCH HELPER ──
 // Switches active note templates, checkin config, protocols, and affiliate links to match selected profession
-function saveClients(opts){try{localStorage.setItem('sc_clients',JSON.stringify(CL));}catch(e){} if(!(opts&&opts.noSync)&&typeof _scheduleClientSync==='function')_scheduleClientSync();}
+let _storageWarned=false;
+function _persistFailWarn(){
+  // A failed critical write (usually quota-exceeded) would otherwise lose a provider's edit
+  // silently — the in-memory change shows in the UI but is gone on reload. Warn once per
+  // session so they can free space (e.g. export/clear old photos) rather than lose data unaware.
+  if(_storageWarned)return;_storageWarned=true;
+  try{if(typeof proToast==='function')proToast('Device storage is full — recent changes may not be saved. Clear space or export photos.');}catch(e){}
+}
+function saveClients(opts){let _ok=true;try{localStorage.setItem('sc_clients',JSON.stringify(CL));}catch(e){_ok=false;_persistFailWarn();} if(!(opts&&opts.noSync)&&typeof _scheduleClientSync==='function')_scheduleClientSync();return _ok;}
 function _editClientDetails(id){
   const c=CL[id]; if(!c)return;
   const ex=document.getElementById('cl-edit'); if(ex)ex.remove();
@@ -2051,7 +2059,7 @@ function persistRecReasons(){try{localStorage.setItem('sc_rec_reasons',JSON.stri
 function loadRecReasons(){try{const raw=localStorage.getItem('sc_rec_reasons');if(raw){const v=JSON.parse(raw);if(v&&typeof v==='object')recReasons=v;}}catch(e){}}
 function persistClientHomecare(){try{localStorage.setItem('sc_client_homecare',JSON.stringify(clientHomecare));}catch(e){}}
 function loadClientHomecare(){try{const raw=localStorage.getItem('sc_client_homecare');if(raw){const v=JSON.parse(raw);if(v&&typeof v==='object')clientHomecare=v;}}catch(e){}}
-function persistSessionSummaries(){try{localStorage.setItem('sc_session_summaries',JSON.stringify(sessionSummaries));}catch(e){}}
+function persistSessionSummaries(){try{localStorage.setItem('sc_session_summaries',JSON.stringify(sessionSummaries));}catch(e){if(typeof _persistFailWarn==='function')_persistFailWarn();}}
 function loadSessionSummaries(){try{const raw=localStorage.getItem('sc_session_summaries');if(raw){const v=JSON.parse(raw);if(v&&typeof v==='object')sessionSummaries=v;}}catch(e){}}
 function persistCapturedPhotos(){try{localStorage.setItem('sc_captured_photos',JSON.stringify(capturedPhotos));return true;}catch(e){return false;}}
 function loadCapturedPhotos(){try{const raw=localStorage.getItem('sc_captured_photos');if(raw){const v=JSON.parse(raw);if(v&&typeof v==='object')capturedPhotos=v;}}catch(e){}}
@@ -5036,6 +5044,7 @@ function handlePhotoSelect(input){
         thumbs.appendChild(div);
       }
     };
+    reader.onerror=()=>{try{if(typeof proToast==='function')proToast('Couldn\u2019t read '+((file&&file.name)||'a file')+' — skipped');}catch(e){}};
     reader.readAsDataURL(file);
   });
   if(preview)preview.style.display='block';
