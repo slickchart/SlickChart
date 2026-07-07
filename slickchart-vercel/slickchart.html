@@ -492,11 +492,11 @@ const savedNotes={
 
 let checkinCfg={
   skinQ:[{id:'sq1',label:'Any skin changes since your last visit?',on:true},{id:'sq2',label:'Any health or medication changes?',on:true},{id:'sq3',label:'Any changes to your skincare routine?',on:true}],
-  drinks:[{id:'dr1',emoji:'💧',label:'Still water',sub:'cold'},{id:'dr2',emoji:'💧',label:'Still water',sub:'room temp'},{id:'dr3',emoji:'✨',label:'Sparkling water',sub:''},{id:'dr4',emoji:'🍵',label:'Herbal tea',sub:'hot'},{id:'dr5',emoji:'🚫',label:'No drink',sub:''}],
+  drinks:[{id:'dr1',emoji:'✨',label:'Sparkling water',sub:''},{id:'dr2',emoji:'💧',label:'Still water',sub:'room temp'},{id:'dr3',emoji:'💧',label:'Still water',sub:'cold'},{id:'dr4',emoji:'🚫',label:'No drink',sub:''}],
   snacksOn:false,
   music:[{id:'m1',emoji:'🎵',label:'Lo-fi / chill'},{id:'m2',emoji:'🌊',label:'Nature sounds'},{id:'m3',emoji:'⬜',label:'White noise'},{id:'m4',emoji:'🧘',label:'Meditation'},{id:'m5',emoji:'🎶',label:'Soft jazz'},{id:'m6',emoji:'🔇',label:'Silence'}],
   musicCustom:true,
-  blankets:[{id:'bl1',emoji:'🪨',label:'Weighted blanket'},{id:'bl2',emoji:'🛏️',label:'Sheet only'},{id:'bl3',emoji:'🚫',label:'No blanket'}],
+  blankets:[{id:'bl1',emoji:'🛏️',label:'Light blanket'},{id:'bl2',emoji:'🪨',label:'Weighted blanket'},{id:'bl3',emoji:'🚫',label:'No blanket'}],
   heat:[
     {id:'h1',label:'Heated mattress pad',on:true,levels:['Off','Low','Med','High']},
     {id:'h2',label:'Heated blanket',on:true,levels:['Off','Low','Med','High']},
@@ -1805,7 +1805,7 @@ const browCheckinCfg={
   drinks:[{id:'dr1',emoji:'💧',label:'Still water',sub:'cold'},{id:'dr2',emoji:'☕',label:'Coffee',sub:''},{id:'dr3',emoji:'🚫',label:'No drink',sub:''}],
   snacksOn:false,
   music:[{id:'m1',emoji:'🎵',label:'Lo-fi / chill'},{id:'m2',emoji:'🌊',label:'Nature sounds'},{id:'m3',emoji:'🧘',label:'Meditation'},{id:'m4',emoji:'🔇',label:'Silence'}],
-  blankets:[{id:'bl1',emoji:'🪨',label:'Weighted blanket'},{id:'bl2',emoji:'🛏️',label:'Sheet only'},{id:'bl3',emoji:'🚫',label:'No blanket'}],
+  blankets:[{id:'bl1',emoji:'🛏️',label:'Light blanket'},{id:'bl2',emoji:'🪨',label:'Weighted blanket'},{id:'bl3',emoji:'🚫',label:'No blanket'}],
   heat:[{id:'h1',label:'Heated mattress pad',on:true,levels:['Off','Low','Med','High']},{id:'h2',label:'Heated blanket',on:true,levels:['Off','Low','Med','High']}],
   chairComfortLabel:'Comfort',chairComfortOn:true,extraNotes:true,
 };
@@ -2094,23 +2094,30 @@ function _ciDayISO(label){
   const d=new Date(t);
   return d.getFullYear()+'-'+String(d.getMonth()+1).padStart(2,'0')+'-'+String(d.getDate()).padStart(2,'0');
 }
-// Auto-clear pre-visit check-ins once their appointment day has fully passed, so the log
-// doesn't accumulate. Conservative by design: sample check-ins are kept, and any check-in
-// whose date can't be confidently parsed (missing/ambiguous/unparseable) is kept rather
-// than risk removing one the provider still needs. A check-in stays visible through its
-// whole appointment day and drops off the following day.
+// Auto-clear pre-visit check-ins so the log doesn't accumulate. Two independent rules, either
+// of which retires a check-in: (1) its appointment day has fully passed, or (2) it was submitted
+// more than 24 hours ago (using the `at` timestamp). Rule 2 is the catch-all for real check-ins
+// whose dateLabel is missing/ambiguous — those used to sit in the log forever because rule 1
+// conservatively keeps anything it can't confidently date. Sample check-ins are always kept, and
+// a check-in with neither a datable label nor an `at` timestamp is still kept rather than guessed.
 function _pruneExpiredCheckins(){
   if(!Array.isArray(checkins)||!checkins.length)return false;
   const today=(typeof _todayISO==='function')?_todayISO():'';
   if(!today)return false;
   const sample=(typeof _SAMPLE_CHECKIN_IDS!=='undefined')?_SAMPLE_CHECKIN_IDS:[];
+  const now=Date.now();
+  const DAY_MS=24*60*60*1000;
   const before=checkins.length;
   checkins=checkins.filter(function(ci){
     if(!ci)return false;
     if(sample.indexOf(ci.id)>=0)return true;   // never auto-clear the demo check-in
+    // Rule 2: submitted more than 24h ago (only when we have a valid timestamp).
+    const at=(typeof ci.at==='number'&&isFinite(ci.at)&&ci.at>0)?ci.at:0;
+    if(at&&(now-at)>DAY_MS)return false;
+    // Rule 1: appointment day is in the past.
     const day=_ciDayISO(ci.dateLabel);
-    if(!day)return true;                        // can't tell => keep
-    return !(day<today);                        // drop only if the appointment day is past
+    if(day&&day<today)return false;
+    return true;                                // otherwise keep
   });
   if(checkins.length!==before){try{persistCheckins();}catch(e){}try{if(typeof updateBadge==='function')updateBadge();}catch(e){}return true;}
   return false;
@@ -6190,6 +6197,18 @@ function loadWorkspace(){
 function loadCheckinCfg(){
   // restore the provider's own saved check-in config on reload (it's already published to clients on Save)
   try{const raw=localStorage.getItem('sc_checkin_cfg');if(raw)Object.assign(checkinCfg,JSON.parse(raw)||{});}catch(e){}
+  // One-time migration to the refreshed comfort defaults. Only fires when the saved options still
+  // EXACTLY match the previous auto-seeded defaults — i.e. the provider never customized them — so
+  // anyone who edited their own drink/covering list keeps it untouched.
+  try{
+    const sig=arr=>Array.isArray(arr)?arr.map(x=>String((x&&x.label)||'')+'|'+String((x&&x.sub)||'')).join(','):'';
+    const OLD_DRINKS='Still water|cold,Still water|room temp,Sparkling water|,Herbal tea|hot,No drink|';
+    const OLD_BLANKETS='Weighted blanket|,Sheet only|,No blanket|';
+    let migrated=false;
+    if(sig(checkinCfg.drinks)===OLD_DRINKS){checkinCfg.drinks=[{id:'dr1',emoji:'✨',label:'Sparkling water',sub:''},{id:'dr2',emoji:'💧',label:'Still water',sub:'room temp'},{id:'dr3',emoji:'💧',label:'Still water',sub:'cold'},{id:'dr4',emoji:'🚫',label:'No drink',sub:''}];migrated=true;}
+    if(sig(checkinCfg.blankets)===OLD_BLANKETS){checkinCfg.blankets=[{id:'bl1',emoji:'🛏️',label:'Light blanket'},{id:'bl2',emoji:'🪨',label:'Weighted blanket'},{id:'bl3',emoji:'🚫',label:'No blanket'}];migrated=true;}
+    if(migrated){try{localStorage.setItem('sc_checkin_cfg',JSON.stringify(checkinCfg));if(typeof SlickBridge!=='undefined')SlickBridge.post('checkin-config',checkinCfg);}catch(e){}}
+  }catch(e){}
   // Reference-photo default must run AFTER the saved config loads, or a legacy saved
   // `referencePhotoOn:false` (from before this defaulted on) would clobber the default.
   // Until the provider explicitly toggles it (sc_refphoto_touched), force it on for the
@@ -6318,7 +6337,7 @@ function renderCheckinSettings(){
   </div>`:`
   <div style="padding:0 16px 4px;display:flex;align-items:center;justify-content:space-between;">
     <span style="font-size:11px;font-weight:600;color:#444;text-transform:uppercase;letter-spacing:.07em;">Comfort</span>
-    <button onclick="checkinCfg.chairComfortOn=true;if(!checkinCfg.blankets.length)checkinCfg.blankets=[{id:'bl1',emoji:'🪨',label:'Weighted blanket'},{id:'bl2',emoji:'🛏️',label:'Sheet only'},{id:'bl3',emoji:'🚫',label:'No blanket'}];if(!checkinCfg.heat||!checkinCfg.heat.length)checkinCfg.heat=[{id:'h1',label:'Heated mattress pad',on:true,levels:['Off','Low','Med','High']},{id:'h2',label:'Heated blanket',on:true,levels:['Off','Low','Med','High']}];renderCheckinSettings()" style="border:none;background:none;color:var(--accent);font-size:12px;cursor:pointer;">+ Restore section</button>
+    <button onclick="checkinCfg.chairComfortOn=true;if(!checkinCfg.blankets.length)checkinCfg.blankets=[{id:'bl1',emoji:'🛏️',label:'Light blanket'},{id:'bl2',emoji:'🪨',label:'Weighted blanket'},{id:'bl3',emoji:'🚫',label:'No blanket'}];if(!checkinCfg.heat||!checkinCfg.heat.length)checkinCfg.heat=[{id:'h1',label:'Heated mattress pad',on:true,levels:['Off','Low','Med','High']},{id:'h2',label:'Heated blanket',on:true,levels:['Off','Low','Med','High']}];renderCheckinSettings()" style="border:none;background:none;color:var(--accent);font-size:12px;cursor:pointer;">+ Restore section</button>
   </div>`}
 
   <div class="sh"><h2>Reference photo</h2></div>
