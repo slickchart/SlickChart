@@ -92,7 +92,7 @@ body{font-family:-apple-system,BlinkMacSystemFont,'Segoe UI',sans-serif;backgrou
 .modal{background:#1a1a1a;border:1px solid #2a2a2a;border-radius:16px;width:100%;padding:20px 16px;max-height:80%;overflow-y:auto;}
 .icon-btn{background:none;border:none;cursor:pointer;display:flex;align-items:center;justify-content:center;min-width:44px;min-height:44px;border-radius:8px;color:#ccc;}
 .icon-btn:focus-visible{outline:2px solid var(--accent);outline-offset:2px;}
-#sc-demo-banner{position:fixed;top:0;left:0;right:0;z-index:99999;background:linear-gradient(90deg,#2a231b,#1a1208);border-bottom:1px solid #3c3227;color:#f3ecdf;font-family:-apple-system,BlinkMacSystemFont,'Segoe UI',sans-serif;font-size:12.5px;display:flex;align-items:center;justify-content:center;gap:12px;padding:9px 14px;flex-wrap:wrap;text-align:center;}#sc-demo-banner b{color:#C8A882;}#sc-demo-banner button{background:none;border:1px solid #6b5d45;color:#C8A882;border-radius:20px;padding:4px 12px;font-size:11.5px;font-weight:600;cursor:pointer;font-family:inherit;}#sc-demo-banner button:hover{border-color:#C8A882;}
+#sc-demo-banner{position:fixed;top:0;left:0;right:0;z-index:99999;background:linear-gradient(90deg,#2a231b,#1a1208);border-bottom:1px solid #3c3227;color:#f3ecdf;font-family:-apple-system,BlinkMacSystemFont,'Segoe UI',sans-serif;font-size:12.5px;display:flex;align-items:center;justify-content:center;gap:12px;padding:9px 14px;flex-wrap:wrap;text-align:center;}#sc-demo-banner b{color:#C8A882;}#sc-demo-banner button{background:none;border:1px solid #6b5d45;color:#C8A882;border-radius:20px;padding:4px 12px;font-size:11.5px;font-weight:600;cursor:pointer;font-family:inherit;}#sc-demo-banner button:hover{border-color:#C8A882;}html,body{height:100%;margin:0;}.shell{height:100vh !important;max-height:100vh !important;min-height:0 !important;}
 </style>
 </head>
 <body>
@@ -190,7 +190,7 @@ function providerSystemNotify(title,body){
 }
 let timerInt=null,timerSec=0,timerOn=false;
 let roomProtocol=0,roomStepsDone={},_roomClientId='',roomProtocolOff=(function(){try{return localStorage.getItem('sc_room_protocol_off')!=='false';}catch(e){return true;}})();
-let activeDocCat='All',activeNoteTemplate='soap';
+let activeDocCat='All',activeNoteTemplate='freeform';
 let activeVirtualTab='queue';
 let activeLearnTab='resources';
 let activeShopTab='affiliates';
@@ -1459,7 +1459,7 @@ function _reloadAll(){try{
   if(typeof loadCustomResources==='function')loadCustomResources();
   if(typeof loadAi==='function')loadAi();
   if(typeof loadForms==='function')loadForms();
-  loadBizInfo();_syncProviderAvatar();_syncHeaderLogo();loadClients();loadMessages();loadInv();loadVendors();_loadPersistenceSweep();_loadHomeDismissed();loadProviderNoteDrafts();if(!_sampleHidden()){_seedMayaOnce();}else{_purgeSample();}_seedBirthdays();if(!_sampleHidden()&&typeof _demoCheckinSeed==='function')_demoCheckinSeed();
+  loadBizInfo();_syncProviderAvatar();_syncHeaderLogo();loadClients();loadMessages();loadInv();loadVendors();_loadPersistenceSweep();_loadHomeDismissed();loadProviderNoteDrafts();if(typeof loadSessionSummaries==='function')loadSessionSummaries();if(!_sampleHidden()){_seedMayaOnce();}else{_purgeSample();}_seedBirthdays();if(!_sampleHidden()&&typeof _demoCheckinSeed==='function')_demoCheckinSeed();
   if(typeof loadWorkspace==='function')loadWorkspace();
   if(typeof loadSquareCatalog==='function'){loadSquareCatalog();_mergeSquareRetail();}
   if(typeof loadCheckinCfg==='function')loadCheckinCfg();
@@ -1706,6 +1706,13 @@ function applyProfessionConfig(){
   if(hasNail){Object.assign(noteTemplates,nailNoteTemplates);if(only('nail'))activeNoteTemplate='nailRecord';}
   if(hasWax&&!hasEsty&&!hasBrow){Object.assign(noteTemplates,waxNoteTemplates);if(only('wax'))activeNoteTemplate='waxRecord';}
   if(hasCoach){Object.assign(noteTemplates,coachNoteTemplates);if(only('coach'))activeNoteTemplate='trainingRecord';}
+  // Respect the provider's explicitly saved note format; if none is saved yet, default to
+  // free form (rather than the profession-specific structured template). A saved pick always wins.
+  try{
+    const _savedFmt=(typeof localStorage!=='undefined')?localStorage.getItem('sc_note_fmt'):null;
+    if(_savedFmt&&noteTemplates[_savedFmt])activeNoteTemplate=_savedFmt;
+    else if(noteTemplates.freeform)activeNoteTemplate='freeform';
+  }catch(e){}
   if(only('makeup'))Object.assign(checkinCfg,makeupCheckinCfg);
   else if(only('massage'))Object.assign(checkinCfg,massageCheckinCfg);
   else if(only('lash'))Object.assign(checkinCfg,lashCheckinCfg);
@@ -2125,6 +2132,10 @@ function persistClientHomecare(){try{localStorage.setItem('sc_client_homecare',J
 function loadClientHomecare(){try{const raw=localStorage.getItem('sc_client_homecare');if(raw){const v=JSON.parse(raw);if(v&&typeof v==='object')clientHomecare=v;}}catch(e){}}
 function persistSessionSummaries(){try{localStorage.setItem('sc_session_summaries',JSON.stringify(sessionSummaries));}catch(e){if(typeof _persistFailWarn==='function')_persistFailWarn();}}
 function loadSessionSummaries(){try{const raw=localStorage.getItem('sc_session_summaries');if(raw){const v=JSON.parse(raw);if(v&&typeof v==='object')sessionSummaries=v;}}catch(e){}}
+// Provider's chosen note format (default: free form). Persisted so it sticks across reloads
+// and syncs across devices, and so applyProfessionConfig doesn't reset it every boot.
+function saveNoteFmt(){try{localStorage.setItem('sc_note_fmt',String(activeNoteTemplate||'freeform'));}catch(e){}}
+function loadNoteFmt(){try{const v=localStorage.getItem('sc_note_fmt');if(v&&noteTemplates[v])activeNoteTemplate=v;}catch(e){}}
 function persistCapturedPhotos(){try{localStorage.setItem('sc_captured_photos',JSON.stringify(capturedPhotos));return true;}catch(e){return false;}}
 function loadCapturedPhotos(){try{const raw=localStorage.getItem('sc_captured_photos');if(raw){const v=JSON.parse(raw);if(v&&typeof v==='object')capturedPhotos=v;}}catch(e){}}
 function persistStaff(){try{localStorage.setItem('sc_staff',JSON.stringify(staff));}catch(e){}}
@@ -3860,14 +3871,14 @@ function renderNoteFormats(id){
   <div style="padding:10px 16px 6px;font-size:13px;color:#999;">Choose a format for your provider notes.</div>
   <div class="sh"><h2>Built-in formats</h2></div>
   ${Object.values(noteTemplates).map(t=>`
-  <div style="background:#1a1a1a;border:1px solid ${activeNoteTemplate===t.id?'var(--accent)':'#2a2a2a'};border-radius:12px;margin:0 16px 10px;overflow:hidden;cursor:pointer;" onclick="activeNoteTemplate='${t.id}';nav('notes','${id}')">
+  <div style="background:#1a1a1a;border:1px solid ${activeNoteTemplate===t.id?'var(--accent)':'#2a2a2a'};border-radius:12px;margin:0 16px 10px;overflow:hidden;cursor:pointer;" onclick="activeNoteTemplate='${t.id}';if(typeof saveNoteFmt==='function')saveNoteFmt();nav('notes','${id}')">
     <div style="padding:12px 14px;display:flex;align-items:center;gap:12px;">
       <div style="width:42px;height:42px;border-radius:10px;background:${t.col};display:flex;align-items:center;justify-content:center;font-size:14px;font-weight:500;color:${t.ic};">${t.name}</div>
       <div style="flex:1;"><div style="display:flex;align-items:center;gap:6px;margin-bottom:2px;"><span style="font-size:14px;font-weight:500;color:#e0e0e0;">${t.name}</span>${activeNoteTemplate===t.id?'<span class="bdg bg" style="font-size:12px;">Active</span>':''}</div><div style="font-size:12px;color:#999;">${t.desc}</div></div>
       <i class="ti ${activeNoteTemplate===t.id?'ti-circle-check':'ti-circle'}" style="font-size:20px;color:${activeNoteTemplate===t.id?'#4ec49a':'#666'};"></i>
     </div>
   </div>`).join('')}
-  ${customNoteTemplates.length?`<div class="sh"><h2>Your custom formats</h2></div>${customNoteTemplates.map(t=>`<div style="background:#1a1a1a;border:1px solid ${activeNoteTemplate===t.id?'var(--accent)':'#2a2a2a'};border-radius:12px;margin:0 16px 10px;padding:12px 14px;cursor:pointer;display:flex;align-items:center;gap:12px;" onclick="activeNoteTemplate='${t.id}';nav('notes','${id}')"><div style="width:42px;height:42px;border-radius:10px;background:var(--accent-tint);display:flex;align-items:center;justify-content:center;font-size:11px;color:var(--accent);font-weight:500;">Custom</div><div style="flex:1;"><div style="font-size:14px;font-weight:500;color:#e0e0e0;">${t.name}</div><div style="font-size:12px;color:#999;">${t.sections.length} sections</div></div><i class="ti ${activeNoteTemplate===t.id?'ti-circle-check':'ti-circle'}" style="font-size:20px;color:${activeNoteTemplate===t.id?'#4ec49a':'#666'};"></i></div>`).join('')}`:''}
+  ${customNoteTemplates.length?`<div class="sh"><h2>Your custom formats</h2></div>${customNoteTemplates.map(t=>`<div style="background:#1a1a1a;border:1px solid ${activeNoteTemplate===t.id?'var(--accent)':'#2a2a2a'};border-radius:12px;margin:0 16px 10px;padding:12px 14px;cursor:pointer;display:flex;align-items:center;gap:12px;" onclick="activeNoteTemplate='${t.id}';if(typeof saveNoteFmt==='function')saveNoteFmt();nav('notes','${id}')"><div style="width:42px;height:42px;border-radius:10px;background:var(--accent-tint);display:flex;align-items:center;justify-content:center;font-size:11px;color:var(--accent);font-weight:500;">Custom</div><div style="flex:1;"><div style="font-size:14px;font-weight:500;color:#e0e0e0;">${t.name}</div><div style="font-size:12px;color:#999;">${t.sections.length} sections</div></div><i class="ti ${activeNoteTemplate===t.id?'ti-circle-check':'ti-circle'}" style="font-size:20px;color:${activeNoteTemplate===t.id?'#4ec49a':'#666'};"></i></div>`).join('')}`:''}
   <div style="margin:4px 16px 10px;background:#1a1a1a;border:1.5px dashed #2a2a2a;border-radius:12px;padding:14px;display:flex;flex-direction:column;align-items:center;gap:5px;cursor:pointer;" onclick="nav('new-note-template','${id}')">
     <i class="ti ti-plus" style="font-size:20px;color:#777;"></i><span style="font-size:14px;color:#aaa;">Create a custom format</span>
   </div>`;
@@ -4654,6 +4665,10 @@ function _storeSummary(id){
   const entry={date,title:c.treatment||'Session',note:(note+(obs?'\n\nObservations: '+obs:'')).trim(),products:products.slice(),ts};
   if(!Array.isArray(c.summaries))c.summaries=[];
   c.summaries.unshift(entry);
+  // Persist the provider-side session record to its own synced key too — otherwise it lived
+  // only in memory and in sc_clients, so another device never received it (the saved summary
+  // and provider notes appeared missing there).
+  try{if(typeof persistSessionSummaries==='function')persistSessionSummaries();}catch(e){}
   try{if(typeof saveClients==='function')saveClients();}catch(e){}
   try{if(typeof _scheduleClientSync==='function')_scheduleClientSync();}catch(e){}
 }
@@ -11645,6 +11660,19 @@ function seedDemoRequestOnce(){
 
 function addConfirmedAppt(b){
   confirmedAppts.unshift({client:b.client,tx:b.treatment,date:b.date,dateLabel:fmtBookingDate(b),time:b.time,ic:'#4ec49a'});
+  // Also stamp the client's own nextVisit so the session summary's "Next appointment" feeds
+  // reliably from the client record (not only via cross-array name matching). Match by the
+  // booking's clientId when present, else by name.
+  try{
+    let cid=b.clientId&&CL[b.clientId]?b.clientId:null;
+    if(!cid){const nm=(b.client||'').trim().toLowerCase();cid=Object.keys(CL).find(k=>((CL[k].name||'').trim().toLowerCase())===nm)||null;}
+    if(cid&&CL[cid]){
+      const lbl=fmtBookingDate(b);const t=(b.time||'').trim();
+      const nv=(lbl&&lbl!=='Date TBD')?(t?(lbl+' \u00b7 '+t):lbl):'';
+      // Only advance nextVisit if this booking is sooner than / replaces a stale one, or none is set.
+      if(nv){CL[cid].nextVisit=nv;try{if(typeof saveClients==='function')saveClients();}catch(e){}}
+    }
+  }catch(e){}
   try{_rebuildCalendarFeed();}catch(e){}
 }
 // ── Image helpers (downscale uploads to a shareable data URL, or accept a link) ──
@@ -12049,7 +12077,7 @@ async function _loadSquareAppts(force){
   if(!force&&(_sqApptsState==='ok'||_sqApptsState==='error'))return; // already attempted
   _sqApptsState='loading';
   try{
-    const data=await _sqFetch('/api/square/appointments?days=14');
+    const data=await _sqFetch('/api/square/appointments?days=90');
     const pal=[['var(--accent-tint)','var(--accent)'],['#0d1e33','#5ba3e8'],['#0a2019','#4ec49a'],['#1e1633','#a891ec']];
     const esc=s=>String(s||'').replace(/</g,'&lt;').replace(/>/g,'&gt;');
     squareAppts=(data.appointments||[]).map((a,i)=>{const d=a.startAt?new Date(a.startAt):null;return {id:a.id,at:d,client:esc(a.customerName)||'Client',tx:'Appointment',dur:a.durationMinutes||60,col:pal[i%pal.length][0],ic:pal[i%pal.length][1]};}).filter(a=>a.at&&!isNaN(a.at));

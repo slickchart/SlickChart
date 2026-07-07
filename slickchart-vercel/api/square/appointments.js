@@ -12,16 +12,23 @@ export default async function handler(req, res) {
 
   try {
     const now = new Date();
-    const days = Math.min(Math.max(parseInt(req.query.days || '14', 10) || 14, 1), 31);
+    // Allow up to 120 days so far-future rebookings (e.g. a 6–8 week follow-up) are captured.
+    // Square's List Bookings endpoint only allows ~31 days per query, so we page across
+    // consecutive <=31-day windows below rather than asking for the whole span at once.
+    const days = Math.min(Math.max(parseInt(req.query.days || '14', 10) || 14, 1), 120);
     // Look back a full day from now (not just "now") so appointments earlier today
     // stay in the list even after their start time passes — the provider may still
-    // need to open them later to finish session notes. We keep the *total* span the
-    // same length as before (just shifted a day earlier) so we never risk exceeding
-    // Square's allowed start_at_min/start_at_max range.
+    // need to open them later to finish session notes.
     const startMin = new Date(now.getTime() - 24 * 3600000);
     const end = new Date(startMin.getTime() + days * 86400000);
-    const startMinISO = startMin.toISOString();
-    const startMax = end.toISOString();
+
+    // Build consecutive query windows no longer than Square's per-request limit.
+    const WINDOW_MS = 30 * 86400000; // 30 days per window, safely under Square's ~31-day cap
+    const windows = [];
+    for (let ws = startMin.getTime(); ws < end.getTime(); ws += WINDOW_MS) {
+      const we = Math.min(ws + WINDOW_MS, end.getTime());
+      windows.push([new Date(ws).toISOString(), new Date(we).toISOString()]);
+    }
 
     // Every location on the account.
     let locIds = [];
@@ -30,20 +37,22 @@ export default async function handler(req, res) {
       locIds = (loc.locations || []).map(l => l.id).filter(Boolean);
     } catch (e) { /* fall back to unfiltered query below */ }
 
-    // Collect bookings from each location (and an unfiltered pass as a safety net).
+    // Collect bookings from each location across each time window (plus an unfiltered pass).
     let raw = [];
     const seen = new Set();
     const pull = async (qs) => {
       try {
         const d = await sf('/v2/bookings?' + qs.toString());
         for (const b of (d.bookings || [])) { if (b && b.id && !seen.has(b.id)) { seen.add(b.id); raw.push(b); } }
-      } catch (e) { /* skip a location/pass that errors */ }
+      } catch (e) { /* skip a location/window/pass that errors */ }
     };
-    for (const lid of locIds) {
-      await pull(new URLSearchParams({ location_id: lid, start_at_min: startMinISO, start_at_max: startMax, limit: '100' }));
+    for (const [wMin, wMax] of windows) {
+      for (const lid of locIds) {
+        await pull(new URLSearchParams({ location_id: lid, start_at_min: wMin, start_at_max: wMax, limit: '100' }));
+      }
+      // Unfiltered safety net (covers any location we didn't enumerate) for this window.
+      await pull(new URLSearchParams({ start_at_min: wMin, start_at_max: wMax, limit: '100' }));
     }
-    // Unfiltered safety net (covers any location we didn't enumerate).
-    await pull(new URLSearchParams({ start_at_min: startMinISO, start_at_max: startMax, limit: '100' }));
 
     const bookings = raw.filter(isLive);
 
