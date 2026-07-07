@@ -186,6 +186,13 @@ function _urlAttr(u){return String(u||'').replace(/&/g,'&amp;').replace(/"/g,'&q
 // quote can't break out of the src="…" attribute.
 function _imgSrc(u){u=String(u||'').trim();if(!u)return'';if(!/^data:image\//i.test(u)&&!/^https?:\/\//i.test(u)&&!/^blob:/i.test(u))return'';return _urlAttr(u);}
 function _txt(s){return String(s==null?'':s).replace(/&/g,'&amp;').replace(/</g,'&lt;').replace(/>/g,'&gt;').replace(/"/g,'&quot;');}
+// Emoji-safe initials (first letter of the first two words). Uses Array.from so a name with
+// an emoji or other multi-byte character yields a whole glyph, not a broken half-surrogate.
+function _initialsOf(name){var parts=String(name==null?'':name).trim().split(/\s+/).filter(Boolean);var ini=parts.slice(0,2).map(function(w){return Array.from(w)[0]||'';}).join('');return (ini||'?').toUpperCase();}
+// Convert a display time like "2:30 PM" to the HHMMSS form _apptParts expects, so a booked
+// appointment's calendar event lands at the real time rather than the noon fallback. Returns
+// '' for anything unparseable (callers then fall back to the existing behavior).
+function _timeTo24ISO(t){var m=String(t==null?'':t).trim().match(/^(\d{1,2}):(\d{2})\s*([AaPp][Mm])?$/);if(!m)return '';var h=parseInt(m[1],10),mi=parseInt(m[2],10),ap=(m[3]||'').toUpperCase();if(ap==='PM'&&h!==12)h+=12;if(ap==='AM'&&h===12)h=0;if(h<0||h>23||mi<0||mi>59)return '';return String(h).padStart(2,'0')+String(mi).padStart(2,'0')+'00';}
 // Escape a value for safe placement inside a single-quoted JS string in an inline handler
 // (onclick="fn('…')"). Backslash MUST be escaped first, otherwise a name like  x\'+code+'
 // would slip an apostrophe through and break out of the string. Also neutralizes < so a
@@ -2723,7 +2730,14 @@ function submitRebook(){
   setTimeout(()=>{
     const p=client.providers.find(x=>x.id===booking.providerId);if(!p)return;
     p.nextDate=new Date(booking.date+'T12:00:00').toLocaleDateString('en-US',{month:'short',day:'numeric',year:'numeric'});
-    p.nextTime=booking.time;p.treatment=booking.treatment;p.apptISO=booking.date+'T12:00:00';
+    p.nextTime=booking.time;p.treatment=booking.treatment;
+    // Build apptISO with the REAL appointment time (local, no Z) so "Add to calendar" and the
+    // hourly countdown use the actual time rather than a hardcoded noon. _timeTo24ISO returns
+    // HHMMSS; fall back to noon only when the display time can't be parsed.
+    (function(){var _t=_timeTo24ISO(booking.time);var _hm=/^\d{6}$/.test(_t)?(_t.slice(0,2)+':'+_t.slice(2,4)+':00'):'12:00:00';p.apptISO=booking.date+'T'+_hm;})();
+    // Clear any demo-seeded ISO date/time fields so _apptParts falls back to the fresh apptISO
+    // above (which carries this booking's real local time) instead of preferring stale values.
+    p.nextDateISO='';p.nextTimeISO='';if(client.activeProviderId===p.id){client.nextDateISO='';client.nextTimeISO='';}
     if(client.activeProviderId===p.id){client.nextDate=p.nextDate;client.nextTime=p.nextTime;client.treatment=p.treatment;updateRebookStatusPill('<i class="ti ti-circle-check" style="font-size:15px;"></i> Confirmed! Added to your appointments.','#f0fff5','#c0e8d0','#2a6a4a');}
     pushNotify({type:'appointmentReminder',icon:'ti-calendar-check',col:'#f0fff5',ic:'#4ec49a',
       title:'Appointment confirmed ✅',body:`${p.first} confirmed your ${booking.treatment} on ${p.nextDate} at ${booking.time}.`,onclick:()=>nav('home')});
@@ -3522,10 +3536,10 @@ function _applyRealClientData(j){
     client.activeProviderId='jess';
   }catch(e){}
   client.name=j.client.name||client.name;
-  client.initials=(client.name||'?').trim().split(/\s+/).map(function(w){return w[0]||'';}).slice(0,2).join('').toUpperCase();
+  client.initials=_initialsOf(client.name);
   var p=client.providers.find(function(x){return x.id==='jess';})||client.providers[0];
   if(d.studio)p.studio=d.studio;
-  if(d.providerName){p.name=d.providerName;p.first=String(d.providerName).split(' ')[0]||p.first;p.initials=String(d.providerName).trim().split(/\s+/).map(function(w){return w[0]||'';}).slice(0,2).join('').toUpperCase();}
+  if(d.providerName){p.name=d.providerName;p.first=String(d.providerName).split(' ')[0]||p.first;p.initials=_initialsOf(d.providerName);}
   if(d.brand)p.brand=d.brand;
   var prof=d.profile||{};
   p.treatment=prof.treatment||'';
