@@ -3563,34 +3563,60 @@ function startVoiceNote(id){
   // across events, and never auto-restart mid-utterance (the restart was what
   // fragmented the results and reintroduced the duplication).
   //
-  // finalizedText holds only segments the engine has marked final and that have
-  // scrolled out of the live results window, so nothing is lost if the browser
-  // trims e.results over a long dictation.
-  let finalizedText='';
-  let lastResultCount=0;
+  // Transcript handling — the correct Web Speech pattern. The browser hands us results
+  // incrementally: e.resultIndex marks where *new/changed* results begin, and each result's
+  // isFinal flag tells us whether the engine considers that segment settled. We accumulate
+  // finalized segments ONCE into finalText (never re-reading them, so they can't duplicate),
+  // and layer only the current interim on top. This fixes both the old duplication bug
+  // ("today today today…", from re-appending growing interims) AND the data-loss bug (the
+  // previous rebuild-from-whole-window approach silently dropped finalized text once the
+  // browser trimmed it out of e.results on a long dictation).
+  let finalText='';
   rec.onresult=(e)=>{
-    // If the results window shrank (browser trimmed old finals), bank what we had.
-    // Otherwise just rebuild live from the current window.
-    let live='';
-    for(let i=0;i<e.results.length;i++){
-      live+=e.results[i][0].transcript+' ';
+    let interim='';
+    for(let i=e.resultIndex;i<e.results.length;i++){
+      const r=e.results[i];
+      const seg=(r[0]&&r[0].transcript)||'';
+      if(r.isFinal)finalText+=seg+' ';
+      else interim+=seg+' ';
     }
-    _voiceText=(finalizedText+' '+live).replace(/\s+/g,' ').trim();
-    lastResultCount=e.results.length;
+    _voiceText=(finalText+interim).replace(/\s+/g,' ').trim();
     const el=document.getElementById('voice-transcript');
-    if(el)el.textContent=_voiceText||'Listening…';
+    if(el)el.textContent=_voiceText||'Listening\u2026';
   };
-  // Do NOT auto-restart. A deliberate restart mid-speech is exactly what caused
-  // the duplicated, growing text. If the browser ends on its own, we simply stop;
-  // the user still has everything captured so far and can tap Redo to add more.
+  // The browser ends recognition on its own after a short silence (Chrome does this even with
+  // continuous=true). Previously we did NOT restart — but that meant a natural pause while
+  // dictating clinical notes silently killed the mic, so anything said afterward was lost and
+  // the note came out truncated. Restarting is now SAFE: finalText persists across the restart
+  // and each fresh session begins with a clean e.results window, so there's no duplication (the
+  // duplication that forced the old no-restart rule came from re-reading the whole window, which
+  // the isFinal-based accumulation above no longer does). Only relaunch if the user hasn't
+  // intentionally stopped/cancelled.
   rec.onend=()=>{
-    const el=document.getElementById('voice-transcript');
-    if(el&&!_voiceStopping){
-      // Surface a gentle hint rather than silently restarting.
-      if(_voiceText)el.textContent=_voiceText;
+    if(_voiceStopping)return;
+    // Bank a trailing space so the next session's text doesn't butt against the last word.
+    if(finalText&&!/\s$/.test(finalText))finalText+=' ';
+    try{rec.start();}catch(e){
+      // If an immediate restart throws (some engines need a beat), retry shortly; give up
+      // quietly after that so we never spin.
+      setTimeout(()=>{if(!_voiceStopping){try{rec.start();}catch(_){}}},350);
     }
   };
-  rec.onerror=(e)=>{const el=document.getElementById('voice-transcript');if(el){if(e.error==='not-allowed'||e.error==='service-not-allowed')el.textContent='Microphone access was blocked. Allow the mic for this site in your browser, then try again.';else if(e.error==='no-speech')el.textContent='Nothing came through — try speaking again.';}};
+  rec.onerror=(e)=>{
+    const el=document.getElementById('voice-transcript');
+    if(e.error==='not-allowed'||e.error==='service-not-allowed'){
+      // A blocked mic won't recover by restarting — stop trying and tell them how to fix it.
+      _voiceStopping=true;
+      if(el)el.textContent='Microphone access was blocked. Allow the mic for this site in your browser, then try again.';
+    }else if(e.error==='no-speech'){
+      // Normal during a pause; onend will relaunch. Only hint if we have nothing yet, so we
+      // don't wipe out text the provider already dictated.
+      if(el&&!_voiceText)el.textContent='Listening\u2026 (say something to begin)';
+    }else if(e.error==='audio-capture'){
+      _voiceStopping=true;
+      if(el)el.textContent='No microphone was found. Check that one is connected, then try again.';
+    }
+  };
   try{rec.start();}catch(e){}
   _voiceOverlay(`<div style="display:flex;align-items:center;gap:8px;margin-bottom:10px;"><span class="voice-pulse" style="width:11px;height:11px;border-radius:50%;background:#e05555;display:inline-block;"></span><span style="font-size:15px;font-weight:600;color:#f0f0f0;">Listening…</span></div><div style="font-size:12px;color:#999;margin-bottom:8px;line-height:1.5;">Speak your notes out loud. Tap <b>Stop</b> when you're done, then review before saving.</div><div id="voice-transcript" style="min-height:90px;max-height:210px;overflow-y:auto;background:#0f0f0f;border:1px solid #2a2a2a;border-radius:10px;padding:11px;font-size:14px;color:#ddd;line-height:1.6;">Listening…</div><div style="display:flex;gap:8px;margin-top:12px;"><button onclick="_voiceStop()" style="flex:1;background:#e05555;color:#fff;border:none;border-radius:10px;padding:12px;font-size:13px;font-weight:600;cursor:pointer;font-family:inherit;"><i class="ti ti-player-stop"></i> Stop</button><button onclick="_voiceClose()" style="background:#1a1a1a;border:1px solid #2a2a2a;color:#ccc;border-radius:10px;padding:12px 16px;font-size:13px;cursor:pointer;font-family:inherit;">Cancel</button></div>`);
 }
