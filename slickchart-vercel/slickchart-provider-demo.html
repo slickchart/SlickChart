@@ -4771,8 +4771,11 @@ function renderSessionDetail(arg){
   const sectionBlock=(label,body,accent)=>`<div class="sh"><h2>${label}</h2></div><div style="margin:0 16px 12px;background:#161616;border:1px solid #242424;border-radius:12px;padding:13px 15px;font-size:13px;color:#d8d8d8;line-height:1.7;${accent?`border-left:3px solid ${accent};`:''}">${body}</div>`;
   S.innerHTML=`
   <div style="margin:12px 16px 6px;background:linear-gradient(135deg,var(--accent-tint),#141414);border:1px solid #2a2a2a;border-radius:14px;padding:15px 16px;">
-    <div style="font-size:17px;font-weight:600;color:#f0f0f0;">${s.treatment||'Session'}</div>
-    <div style="font-size:12px;color:var(--accent);margin-top:2px;">${c.name||''} · ${s.date||''}</div>
+    <div style="display:flex;align-items:flex-start;gap:8px;">
+      <div style="flex:1;min-width:0;"><div style="font-size:17px;font-weight:600;color:#f0f0f0;">${(s.treatment||'Session').replace(/</g,'&lt;')}</div>
+      <div style="font-size:12px;color:var(--accent);margin-top:2px;">${(c.name||'').replace(/</g,'&lt;')} · ${s.date||''}</div></div>
+      <button onclick="renameSavedSummary('${id}',${i})" aria-label="Rename summary" style="background:none;border:1px solid #3a3a3a;border-radius:8px;color:var(--accent);cursor:pointer;padding:6px 8px;flex-shrink:0;display:flex;align-items:center;gap:4px;font-size:11px;font-family:inherit;"><i class="ti ti-pencil" aria-hidden="true" style="font-size:13px;"></i> Rename</button>
+    </div>
   </div>
 
   ${(pn.sections&&pn.sections.length)?`
@@ -4801,6 +4804,15 @@ function renderSessionDetail(arg){
   </div>`:(s.products&&s.products.length)?`<div class="sh"><h2>Products recommended</h2></div>
   <div style="margin:0 16px 12px;background:#161616;border:1px solid #242424;border-radius:12px;padding:12px 14px;"><div style="display:flex;flex-wrap:wrap;gap:6px;">${s.products.map(p=>`<span style="font-size:12px;background:var(--accent-tint);color:var(--accent);padding:3px 10px;border-radius:6px;">${String(p).replace(/</g,'&lt;')}</span>`).join('')}</div></div>`:''}
 
+  ${(s.guides&&s.guides.length)?`<div class="sh"><h2>Aftercare guides linked</h2></div>
+  <div style="margin:0 16px 12px;">
+    ${s.guides.map(g=>`<div style="background:#161616;border:1px solid #242424;border-radius:12px;padding:11px 13px;margin-bottom:8px;display:flex;gap:11px;align-items:center;">
+      <span style="font-size:22px;flex-shrink:0;">${g.icon||'📄'}</span>
+      <div style="flex:1;min-width:0;"><div style="font-size:13px;font-weight:600;color:#e0e0e0;">${String(g.title||'Guide').replace(/</g,'&lt;')}</div><div style="font-size:11px;color:#999;">Aftercare guide${(g.tips&&g.tips.length)?' · '+g.tips.length+' tips':''}</div></div>
+      <button onclick="nav('guide-preview','${g.id}')" class="icon-btn" aria-label="Preview guide"><i class="ti ti-eye" aria-hidden="true" style="font-size:14px;color:#aaa;"></i></button>
+    </div>`).join('')}
+  </div>`:''}
+
   <div style="padding:6px 16px 24px;display:flex;flex-direction:column;gap:8px;">
     <button onclick="editSavedSummary('${id}',${i})" class="btnp" style="border-radius:10px;padding:12px;"><i class="ti ti-pencil"></i> Edit summary</button>
     <div style="display:flex;gap:8px;">
@@ -4808,6 +4820,49 @@ function renderSessionDetail(arg){
       <button onclick="linkSavedSummary('${id}',${i})" style="flex:1;background:#0a2019;border:1px solid #1a4a2a;color:#4ec49a;border-radius:10px;padding:12px;font-size:13px;font-weight:600;cursor:pointer;font-family:inherit;display:flex;align-items:center;justify-content:center;gap:6px;"><i class="ti ti-link"></i> Send link</button>
     </div>
   </div>`;
+}
+// Rename a saved summary (its "name" is the treatment title shown in the list + detail).
+// Updates the provider record and the matching client-facing copy, then persists both.
+function renameSavedSummary(id,i){
+  const list=sessionSummaries[id]||[];const s=list[i];if(!s)return;
+  const cur=s.treatment||'';
+  const ov=document.createElement('div');ov.id='rename-summary-modal';
+  ov.style.cssText='position:fixed;top:0;bottom:0;left:0;right:0;margin:0 auto;width:390px;max-width:100%;background:rgba(0,0,0,.7);z-index:9999;display:flex;align-items:center;justify-content:center;padding:24px 16px;box-sizing:border-box;';
+  ov.onclick=e=>{if(e.target===ov)ov.remove();};
+  ov.innerHTML=`<div style="background:#1a1a1a;border:1px solid #2a2a2a;border-radius:16px;width:100%;padding:18px 16px;">
+    <div style="font-size:15px;font-weight:600;color:#f0f0f0;margin-bottom:4px;">Rename summary</div>
+    <div style="font-size:12px;color:#999;margin-bottom:14px;">This is the name shown in the client\u2019s file and in their summary.</div>
+    <input id="rename-summary-input" value="${(cur||'').replace(/"/g,'&quot;')}" placeholder="Session name" style="width:100%;background:#111;border:1px solid #333;border-radius:9px;padding:11px 12px;font-size:14px;color:#eee;font-family:inherit;box-sizing:border-box;margin-bottom:14px;">
+    <div style="display:flex;gap:8px;">
+      <button onclick="document.getElementById('rename-summary-modal').remove()" style="flex:1;background:#161616;border:1px solid #2a2a2a;color:#ccc;border-radius:9px;padding:11px;font-size:13px;font-weight:600;cursor:pointer;font-family:inherit;">Cancel</button>
+      <button onclick="_commitRenameSummary('${id}',${i})" class="btnp" style="flex:1;border-radius:9px;padding:11px;">Save</button>
+    </div>
+  </div>`;
+  (document.querySelector('.shell')||document.body).appendChild(ov);
+  const inp=document.getElementById('rename-summary-input');if(inp){inp.focus();try{inp.setSelectionRange(inp.value.length,inp.value.length);}catch(e){}
+    inp.onkeydown=e=>{if(e.key==='Enter')_commitRenameSummary(id,i);};}
+}
+function _commitRenameSummary(id,i){
+  const inp=document.getElementById('rename-summary-input');
+  const name=inp?inp.value.trim():'';
+  const modal=document.getElementById('rename-summary-modal');if(modal)modal.remove();
+  if(!name)return;
+  const list=sessionSummaries[id]||[];const s=list[i];if(!s)return;
+  const prevTreatment=s.treatment, prevDate=s.date, prevTs=s.ts;
+  s.treatment=name;
+  // Update the matching client-facing copy (matched by ts, else by date+old title).
+  try{
+    const c=CL[id];
+    if(c&&Array.isArray(c.summaries)){
+      let entry=c.summaries.find(e=>e&&prevTs&&e.ts===prevTs);
+      if(!entry)entry=c.summaries.find(e=>e&&e.date===prevDate&&(e.title===prevTreatment||e.title==='Session'));
+      if(entry)entry.title=name;
+    }
+  }catch(e){}
+  try{if(typeof persistSessionSummaries==='function')persistSessionSummaries();}catch(e){}
+  try{if(typeof saveClients==='function')saveClients();}catch(e){}
+  if(typeof proToast==='function')proToast('Summary renamed');
+  if(typeof renderSessionDetail==='function')renderSessionDetail(id+':'+i);
 }
 function editSavedSummary(id,i){
   const list=sessionSummaries[id]||[];const s=list[i];if(!s)return;
