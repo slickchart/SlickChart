@@ -9832,7 +9832,7 @@ function _payDateDisp(d){
   return s;
 }
 let _payments=(function(){try{return JSON.parse(localStorage.getItem('sc_payments')||'[]');}catch(e){return [];}})();
-function _savePayments(){try{localStorage.setItem('sc_payments',JSON.stringify(_payments));}catch(e){}}
+function _savePayments(){try{localStorage.setItem('sc_payments',JSON.stringify(_payments));return true;}catch(e){return false;}}
 function _clientBalance(cid){return _payments.filter(p=>p.clientId===cid&&(p.status==='unpaid'||p.status==='partial')).reduce((a,p)=>a+(parseFloat(p.amount)||0),0);}
 function _addPayment(p){p.id=p.id||('pay_'+Date.now().toString(36)+Math.random().toString(36).slice(2,6));_payments.unshift(p);_savePayments();return p;}
 
@@ -10390,9 +10390,12 @@ function _payLogSave(){
   const cid=g('pl-client');const c=CL[cid]||{};const amt=parseFloat(g('pl-amt'));
   if(!amt||amt<=0){if(typeof proToast==='function')proToast('Enter an amount');return;}
   _addPayment({clientId:cid,clientName:c.name||'Client',amount:amt,method:g('pl-method')||'Cash',status:g('pl-status')||'paid',date:g('pl-date')||_todayISO(),note:g('pl-note')||'',category:g('pl-category')||'Service',source:'manual'});
+  // _addPayment persists via _savePayments; confirm it actually wrote before telling the
+  // provider it's logged (a silent quota failure would otherwise lose the record on reload).
+  const _saved=_savePayments();
   const m=document.getElementById('pay-log');if(m)m.remove();
   if(typeof _navCur!=='undefined'&&_navCur&&_navCur.screen==='payments')renderPayments();
-  if(typeof proToast==='function')proToast('Payment logged \u2713');
+  if(typeof proToast==='function')proToast(_saved?'Payment logged \u2713':'Couldn\u2019t save \u2014 storage may be full',0);
 }
 setInterval(()=>{try{if(typeof _navCur!=='undefined'&&_navCur&&_navCur.screen==='payments')_paySyncSquare(true);}catch(e){}},60000);
 async function _paySyncSquare(auto){
