@@ -1627,6 +1627,14 @@ function applyProfessionConfig(){
   const browOnly=hasBrow&&!hasEsty&&!hasHair&&!hasBarber;
   const hairBarberOnly=(hasHair||hasBarber)&&!hasEsty&&!hasBrow;
 
+  // Remember the base (profession-agnostic) template keys once, then on every run drop any
+  // profession-specific templates left over from a previously-selected profession. Without this,
+  // deselecting e.g. "hair" in settings would leave its templates (colorRecord) lingering in the
+  // note-template picker, since this function only ever Object.assign'd new ones on top.
+  if(!window._baseNoteTemplateKeys){window._baseNoteTemplateKeys=Object.keys(noteTemplates);}
+  Object.keys(noteTemplates).forEach(k=>{if(window._baseNoteTemplateKeys.indexOf(k)===-1)delete noteTemplates[k];});
+  if(window._baseNoteTemplateKeys.indexOf(activeNoteTemplate)===-1)activeNoteTemplate=window._baseNoteTemplateKeys[0]||activeNoteTemplate;
+
   if(hasHair){Object.assign(noteTemplates,hairNoteTemplates);activeNoteTemplate='colorRecord';}
   if(hasBarber){Object.assign(noteTemplates,barberNoteTemplates);if(!hasHair)activeNoteTemplate='cutRecord';}
   if(hasBrow){Object.assign(noteTemplates,browNoteTemplates);if(browOnly)activeNoteTemplate='browRecord';}
@@ -2747,9 +2755,9 @@ function viewSubmittedForm(id,i){
     <div style="font-size:12px;color:#999;margin-bottom:14px;">${sf.date} · ${sf.signed?'Signed by client ✓':'Not signed'}</div>
     ${sf.flagged&&sf.flagged.length?`<div style="background:#2a0f0f;border:1px solid #5a2020;border-radius:11px;padding:12px 13px;margin-bottom:14px;">
       <div style="display:flex;align-items:center;gap:7px;margin-bottom:6px;"><i class="ti ti-alert-triangle" style="font-size:15px;color:#e87070;"></i><span style="font-size:12.5px;font-weight:700;color:#f0c8c8;">Flagged — applies to client</span></div>
-      <ul style="margin:0;padding-left:18px;">${sf.flagged.map(it=>`<li style="font-size:12.5px;color:#e6cccc;line-height:1.7;">${it}</li>`).join('')}</ul>
+      <ul style="margin:0;padding-left:18px;">${sf.flagged.map(it=>`<li style="font-size:12.5px;color:#e6cccc;line-height:1.7;">${_fileEsc(it)}</li>`).join('')}</ul>
     </div>`:`<div style="background:#0a2019;border:1px solid #1c3d2e;border-radius:11px;padding:10px 13px;margin-bottom:14px;font-size:12.5px;color:#7fd6aa;"><i class="ti ti-circle-check" style="font-size:14px;"></i> No contraindications flagged.</div>`}
-    ${rows.length?rows.map(([l,a])=>`<div style="margin-bottom:12px;padding-bottom:12px;border-bottom:1px solid #1e1e1e;"><div style="font-size:11px;color:#888;text-transform:uppercase;letter-spacing:.04em;margin-bottom:4px;">${l}</div><div style="font-size:13.5px;color:#e8e8e8;line-height:1.5;">${_fileEsc(a)}</div></div>`).join(''):(photoGroups.length?'':'<div style="font-size:12px;color:#888;text-align:center;padding:10px;">No written answers — review & signature only.</div>')}
+    ${rows.length?rows.map(([l,a])=>`<div style="margin-bottom:12px;padding-bottom:12px;border-bottom:1px solid #1e1e1e;"><div style="font-size:11px;color:#888;text-transform:uppercase;letter-spacing:.04em;margin-bottom:4px;">${_fileEsc(l)}</div><div style="font-size:13.5px;color:#e8e8e8;line-height:1.5;">${_fileEsc(a)}</div></div>`).join(''):(photoGroups.length?'':'<div style="font-size:12px;color:#888;text-align:center;padding:10px;">No written answers — review & signature only.</div>')}
     ${photoGroups.map(([l,photos])=>`<div style="margin-bottom:12px;padding-bottom:12px;border-bottom:1px solid #1e1e1e;"><div style="font-size:11px;color:#888;text-transform:uppercase;letter-spacing:.04em;margin-bottom:7px;">${String(l).replace(/</g,'&lt;')} · ${photos.length} photo${photos.length===1?'':'s'}</div><div style="display:flex;flex-wrap:wrap;gap:8px;">${photos.map(src=>`<img src="${src}" alt="Client photo" onclick="openPhoto('${src}')" style="width:84px;height:84px;object-fit:cover;border-radius:9px;border:1px solid #2a2a2a;cursor:pointer;">`).join('')}</div></div>`).join('')}
     ${tmpl?`<div style="display:flex;gap:8px;margin-top:6px;">
       <button onclick="resendFormToClient('${id}','${sf.formId}')" style="flex:1;background:#0d1e33;border:1px solid #1a3a5c;color:#5ba3e8;border-radius:9px;padding:10px;font-size:12.5px;font-weight:600;cursor:pointer;font-family:inherit;display:flex;align-items:center;justify-content:center;gap:6px;"><i class="ti ti-device-mobile"></i> Resend to app</button>
