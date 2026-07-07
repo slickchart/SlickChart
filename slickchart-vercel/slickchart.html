@@ -9643,52 +9643,6 @@ function renderCheckout(id){
     <div style="margin-top:14px;font-size:11px;color:#777;line-height:1.6;background:#161616;border:1px solid #242424;border-radius:10px;padding:11px 13px;"><i class="ti ti-lock" style="font-size:11px;"></i> Payments run securely through your connected Square. Card details are entered on Square\u2019s checkout or your Square reader \u2014 never stored in SlickChart.</div>
   </div><div style="height:20px;"></div>`;
 }
-async function _coLink(id){
-  const c=CL[id];const amt=_coVal('co-amt');const name=_coVal('co-desc')||'Service';
-  if(!parseFloat(amt))return _coErr('Enter an amount first.');
-  _coBusy('Creating payment link\u2026');
-  try{
-    const d=await _sqFetch('/api/square/payment-link',{method:'POST',body:{amount:amt,name,email:c.email||'',phone:c.phone||''}});
-    if(!d.url)throw new Error('No link was returned.');
-    const msg='Hi '+c.name.split(' ')[0]+'! Your payment link for '+name+' ($'+amt+'): '+d.url;
-    const el=document.getElementById('co-result');
-    el.innerHTML='<div style="background:#0a2019;border:1px solid #1c4030;border-radius:10px;padding:12px 14px;"><div style="font-size:12px;color:#4ec49a;font-weight:600;margin-bottom:8px;">Payment link ready</div><div style="font-size:11px;color:#bbb;word-break:break-all;font-family:monospace;margin-bottom:10px;">'+d.url+'</div><div style="display:grid;grid-template-columns:1fr 1fr;gap:8px;"><button onclick="_copyText(\''+d.url+'\',this)" class="btnp" style="border-radius:8px;padding:9px;">Copy link</button><button onclick="location.href=\'sms:?&body='+encodeURIComponent(msg)+'\'" class="btng" style="border-radius:8px;padding:9px;">Text it</button></div></div>';
-  }catch(e){_coErr(e.message||'Could not create the link.',_coRecon(e));}
-}
-async function _coInvoice(id){
-  const c=CL[id];const amt=_coVal('co-amt');const title=_coVal('co-desc')||'Service';
-  if(!parseFloat(amt))return _coErr('Enter an amount first.');
-  if(!c.email)return _coErr('Add a client email to send an invoice (or use a payment link).');
-  _coBusy('Creating and sending invoice\u2026');
-  try{
-    await _sqFetch('/api/square/invoice',{method:'POST',body:{amount:amt,title,name:c.name,email:c.email}});
-    const el=document.getElementById('co-result');
-    el.innerHTML='<div style="background:#0a2019;border:1px solid #1c4030;border-radius:10px;padding:12px 14px;font-size:13px;color:#4ec49a;font-weight:600;"><i class="ti ti-check"></i> Invoice sent to '+c.email+'</div>';
-  }catch(e){_coErr(e.message||'Could not send the invoice.',_coRecon(e));}
-}
-async function _coCharge(id){
-  const c=CL[id];const amt=_coVal('co-amt');
-  if(!parseFloat(amt))return _coErr('Enter an amount first.');
-  if(!c.squareId)return _coErr('This client is not linked to Square yet. Import them from Square, or use a payment link or invoice.');
-  _coBusy('Checking saved cards\u2026');
-  try{
-    const d=await _sqFetch('/api/square/charge-card?customerId='+encodeURIComponent(c.squareId));
-    const cards=d.cards||[];
-    if(!cards.length)return _coErr('No saved card for '+c.name.split(' ')[0]+'. Use a payment link or invoice instead.');
-    const el=document.getElementById('co-result');
-    el.innerHTML='<div style="background:#161616;border:1px solid #242424;border-radius:10px;padding:12px 14px;"><div style="font-size:12px;color:#aaa;margin-bottom:8px;">Charge $'+amt+' to a saved card:</div>'+cards.map(cd=>'<button onclick="_coDoCharge(\''+id+'\',\''+cd.id+'\')" class="btng" style="width:100%;justify-content:space-between;margin-bottom:6px;border-radius:8px;"><span>'+((cd.brand||'Card'))+' \u00b7\u00b7\u00b7\u00b7 '+(cd.last4||'')+'</span><span style="color:var(--accent);">Charge \u2192</span></button>').join('')+'</div>';
-  }catch(e){_coErr(e.message||'Could not load saved cards.',_coRecon(e));}
-}
-async function _coDoCharge(id,cardId){
-  const c=CL[id];const amt=_coVal('co-amt');const note=_coVal('co-desc')||'SlickChart';
-  _coBusy('Charging\u2026');
-  try{
-    const d=await _sqFetch('/api/square/charge-card',{method:'POST',body:{customerId:c.squareId,cardId,amount:amt,note}});
-    const el=document.getElementById('co-result');
-    el.innerHTML='<div style="background:#0a2019;border:1px solid #1c4030;border-radius:10px;padding:12px 14px;font-size:13px;color:#4ec49a;font-weight:600;"><i class="ti ti-check"></i> Charged $'+amt+' \u2014 '+(d.status||'done')+'</div>';
-    if(typeof proToast==='function')proToast('Payment complete \u2713');
-  }catch(e){_coErr(e.message||'The charge did not go through.',_coRecon(e));}
-}
 
 
 // ── Beta ops: feedback capture, "What's new" changelog ──
