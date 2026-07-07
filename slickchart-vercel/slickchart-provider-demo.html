@@ -4743,10 +4743,11 @@ function renderSummaryHistory(id){
   <div style="padding:10px 16px 4px;display:flex;align-items:center;justify-content:space-between;"><div style="font-size:15px;font-weight:500;color:#f0f0f0;">${c.name}</div><span class="bdg ba" style="font-size:12px;">${list.length} summar${list.length===1?'y':'ies'}</span></div>
   ${_searchBar('Search summaries…','.summary-card','summaries-noresults')}
   ${list.length===0?emptyState({icon:'ti-file-text',title:'No summaries yet',body:'When you finish a session and send a summary, it is saved here in their client file.'}):list.map((s,i)=>`
-  <div class="summary-card" data-search="${((s.date||'')+' '+(s.treatment||'')+' '+(s.note||'')).toLowerCase().normalize('NFD').replace(/[̀-ͯ]/g,'').replace(/['‘’`"]/g,'').replace(/[^a-z0-9 ]/g,' ').replace(/\s+/g,' ').trim()}" style="background:#1a1a1a;border:1px solid #2a2a2a;border-radius:12px;margin:0 16px 10px;overflow:hidden;">
-    <button onclick="nav('session-detail','${id}:${i}')" style="width:100%;padding:12px 14px;display:flex;align-items:center;gap:10px;border:none;border-bottom:1px solid #1e1e1e;background:none;cursor:pointer;font-family:inherit;text-align:left;">
+  <div class="summary-card" data-search="${((s.date||'')+' '+(s.treatment||'')+' '+(s.note||'')).toLowerCase().normalize('NFD').replace(/[̀-ͯ]/g,'').replace(/['‘’`"]/g,'').replace(/[^a-z0-9 ]/g,' ').replace(/\s+/g,' ').trim()}" style="position:relative;background:#1a1a1a;border:1px solid #2a2a2a;border-radius:12px;margin:0 16px 10px;overflow:hidden;">
+    <button onclick="event.stopPropagation();renameSavedSummary('${id}',${i})" aria-label="Rename summary" style="position:absolute;top:8px;right:8px;z-index:2;background:#161616;border:1px solid #333;border-radius:7px;color:var(--accent);cursor:pointer;padding:4px 8px;display:flex;align-items:center;gap:4px;font-size:11px;font-family:inherit;"><i class="ti ti-pencil" aria-hidden="true" style="font-size:12px;"></i> Rename</button>
+    <button onclick="nav('session-detail','${id}:${i}')" style="width:100%;padding:12px 44px 12px 14px;display:flex;align-items:center;gap:10px;border:none;border-bottom:1px solid #1e1e1e;background:none;cursor:pointer;font-family:inherit;text-align:left;">
       <div style="width:38px;height:38px;border-radius:9px;background:var(--accent-tint);display:flex;align-items:center;justify-content:center;flex-shrink:0;"><i class="ti ti-file-text" style="font-size:17px;color:var(--accent);"></i></div>
-      <div style="flex:1;min-width:0;"><div style="font-size:13px;font-weight:600;color:#e0e0e0;">${s.treatment||'Session'}</div><div style="font-size:11px;color:#999;">${s.date} · tap to view full record</div></div>
+      <div style="flex:1;min-width:0;"><div style="font-size:13px;font-weight:600;color:#e0e0e0;">${(s.treatment||'Session').replace(/</g,'&lt;')}</div><div style="font-size:11px;color:#999;">${s.date} · tap to view full record</div></div>
       <i class="ti ti-chevron-right" style="font-size:16px;color:#666;flex-shrink:0;"></i>
     </button>
     ${s.note?`<div style="padding:10px 14px;font-size:12px;color:#bbb;line-height:1.6;border-bottom:1px solid #1e1e1e;">${(s.note.length>140?s.note.slice(0,140)+'…':s.note).replace(/</g,'&lt;').replace(/\n/g,'<br>')}</div>`:''}
@@ -4862,7 +4863,15 @@ function _commitRenameSummary(id,i){
   try{if(typeof persistSessionSummaries==='function')persistSessionSummaries();}catch(e){}
   try{if(typeof saveClients==='function')saveClients();}catch(e){}
   if(typeof proToast==='function')proToast('Summary renamed');
-  if(typeof renderSessionDetail==='function')renderSessionDetail(id+':'+i);
+  // Re-render whichever view we're on — the summaries list or the full record — so the new
+  // name shows immediately without navigating the provider away from where they were.
+  try{
+    const cur=(typeof _navCur!=='undefined'&&_navCur)?_navCur.screen:'';
+    if(cur==='session-detail'&&typeof renderSessionDetail==='function')renderSessionDetail(id+':'+i);
+    else if(typeof renderSummaryHistory==='function')renderSummaryHistory(id);
+  }catch(e){
+    try{if(typeof renderSummaryHistory==='function')renderSummaryHistory(id);}catch(_){}
+  }
 }
 function editSavedSummary(id,i){
   const list=sessionSummaries[id]||[];const s=list[i];if(!s)return;
