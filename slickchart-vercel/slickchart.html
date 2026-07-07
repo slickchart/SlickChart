@@ -4478,8 +4478,8 @@ function renderSessionSummary(id){
   </div>
 
   <div style="padding:0 16px 20px;display:flex;flex-direction:column;gap:8px;">
-    <button onclick="_summaryGuard('${id}')&&sendSummary('${id}')" class="btnp" style="border-radius:10px;${summarySendOn[id]?'':'opacity:.55;'}"><i class="ti ti-send" aria-hidden="true"></i> Send summary to ${_fileEsc(c.name.split(' ')[0])}</button>
-    <button onclick="_summaryGuard('${id}')&&shareSummaryLink('${id}')" style="border-radius:10px;padding:11px;border:1px solid #1a4a2a;background:#0a2019;color:#4ec49a;font-size:14px;font-weight:500;cursor:pointer;display:flex;align-items:center;justify-content:center;gap:7px;${summarySendOn[id]?'':'opacity:.55;'}"><i class="ti ti-link" aria-hidden="true"></i> Send as link — no app needed</button>
+    <button onclick="_summaryGuard('${id}')&&sendSummary('${id}')" class="btnp" style="border-radius:10px;${summarySendOn[id]?'':'opacity:.55;'}"><i class="ti ti-send" aria-hidden="true"></i> Send &amp; save to ${_fileEsc(c.name.split(' ')[0])}</button>
+    <button onclick="_summaryGuard('${id}')&&shareSummaryLink('${id}')" style="border-radius:10px;padding:11px;border:1px solid #1a4a2a;background:#0a2019;color:#4ec49a;font-size:14px;font-weight:500;cursor:pointer;display:flex;align-items:center;justify-content:center;gap:7px;${summarySendOn[id]?'':'opacity:.55;'}"><i class="ti ti-link" aria-hidden="true"></i> Send &amp; save as link — no app needed</button>
     <div style="display:flex;gap:8px;">
       <button class="btng" style="flex:1;" onclick="_printSummary('${id}')"><i class="ti ti-download" aria-hidden="true"></i> Save as PDF</button>
       <button class="btng" style="flex:1;" onclick="_notesFrom='${_summaryFrom==='notes'?'profile':'room'}';nav('notes','${id}')"><i class="ti ti-notes" aria-hidden="true"></i> View notes</button>
@@ -4730,8 +4730,11 @@ function renderSummaryHistory(id){
   ${_searchBar('Search summaries…','.summary-card','summaries-noresults')}
   ${list.length===0?emptyState({icon:'ti-file-text',title:'No summaries yet',body:'When you finish a session and send a summary, it is saved here in their client file.'}):list.map((s,i)=>`
   <div class="summary-card" data-search="${((s.date||'')+' '+(s.treatment||'')+' '+(s.note||'')).toLowerCase().normalize('NFD').replace(/[̀-ͯ]/g,'').replace(/['‘’`"]/g,'').replace(/[^a-z0-9 ]/g,' ').replace(/\s+/g,' ').trim()}" style="position:relative;background:#1a1a1a;border:1px solid #2a2a2a;border-radius:12px;margin:0 16px 10px;overflow:hidden;">
-    <button onclick="event.stopPropagation();renameSavedSummary('${id}',${i})" aria-label="Rename summary" style="position:absolute;top:8px;right:8px;z-index:2;background:#161616;border:1px solid #333;border-radius:7px;color:var(--accent);cursor:pointer;padding:4px 8px;display:flex;align-items:center;gap:4px;font-size:11px;font-family:inherit;"><i class="ti ti-pencil" aria-hidden="true" style="font-size:12px;"></i> Rename</button>
-    <button onclick="nav('session-detail','${id}:${i}')" style="width:100%;padding:12px 44px 12px 14px;display:flex;align-items:center;gap:10px;border:none;border-bottom:1px solid #1e1e1e;background:none;cursor:pointer;font-family:inherit;text-align:left;">
+    <div style="position:absolute;top:8px;right:8px;z-index:2;display:flex;gap:6px;">
+      <button onclick="event.stopPropagation();renameSavedSummary('${id}',${i})" aria-label="Rename summary" style="background:#161616;border:1px solid #333;border-radius:7px;color:var(--accent);cursor:pointer;padding:4px 8px;display:flex;align-items:center;gap:4px;font-size:11px;font-family:inherit;"><i class="ti ti-pencil" aria-hidden="true" style="font-size:12px;"></i> Rename</button>
+      <button onclick="event.stopPropagation();deleteSavedSummary('${id}',${i})" aria-label="Delete summary" style="background:#161616;border:1px solid #3a2020;border-radius:7px;color:#e87070;cursor:pointer;padding:4px 7px;display:flex;align-items:center;font-family:inherit;"><i class="ti ti-trash" aria-hidden="true" style="font-size:13px;"></i></button>
+    </div>
+    <button onclick="nav('session-detail','${id}:${i}')" style="width:100%;padding:12px 116px 12px 14px;display:flex;align-items:center;gap:10px;border:none;border-bottom:1px solid #1e1e1e;background:none;cursor:pointer;font-family:inherit;text-align:left;">
       <div style="width:38px;height:38px;border-radius:9px;background:var(--accent-tint);display:flex;align-items:center;justify-content:center;flex-shrink:0;"><i class="ti ti-file-text" style="font-size:17px;color:var(--accent);"></i></div>
       <div style="flex:1;min-width:0;"><div style="font-size:13px;font-weight:600;color:#e0e0e0;">${(s.treatment||'Session').replace(/</g,'&lt;')}</div><div style="font-size:11px;color:#999;">${s.date} · tap to view full record</div></div>
       <i class="ti ti-chevron-right" style="font-size:16px;color:#666;flex-shrink:0;"></i>
@@ -4807,6 +4810,45 @@ function renderSessionDetail(arg){
       <button onclick="linkSavedSummary('${id}',${i})" style="flex:1;background:#0a2019;border:1px solid #1a4a2a;color:#4ec49a;border-radius:10px;padding:12px;font-size:13px;font-weight:600;cursor:pointer;font-family:inherit;display:flex;align-items:center;justify-content:center;gap:6px;"><i class="ti ti-link"></i> Send link</button>
     </div>
   </div>`;
+}
+// Delete a saved summary (with confirm — it's destructive). Removes the provider record and
+// the matching client-facing copy, then persists both.
+function deleteSavedSummary(id,i){
+  const list=sessionSummaries[id]||[];const s=list[i];if(!s)return;
+  const c=CL[id]||{};
+  const nm=(s.treatment||'this summary');
+  const ov=document.createElement('div');ov.id='delete-summary-modal';
+  ov.style.cssText='position:fixed;top:0;bottom:0;left:0;right:0;margin:0 auto;width:390px;max-width:100%;background:rgba(0,0,0,.7);z-index:9999;display:flex;align-items:center;justify-content:center;padding:24px 16px;box-sizing:border-box;';
+  ov.onclick=e=>{if(e.target===ov)ov.remove();};
+  ov.innerHTML=`<div style="background:#1a1a1a;border:1px solid #2a2a2a;border-radius:16px;width:100%;padding:18px 16px;">
+    <div style="font-size:15px;font-weight:600;color:#f0f0f0;margin-bottom:6px;">Delete this summary?</div>
+    <div style="font-size:13px;color:#bbb;line-height:1.5;margin-bottom:16px;">\u201c${(nm).replace(/</g,'&lt;')}\u201d from ${(s.date||'this session')} will be removed from ${(c.name||'the client').split(' ')[0]}\u2019s file. This can\u2019t be undone.</div>
+    <div style="display:flex;gap:8px;">
+      <button onclick="document.getElementById('delete-summary-modal').remove()" style="flex:1;background:#161616;border:1px solid #2a2a2a;color:#ccc;border-radius:9px;padding:11px;font-size:13px;font-weight:600;cursor:pointer;font-family:inherit;">Cancel</button>
+      <button onclick="_commitDeleteSummary('${id}',${i})" style="flex:1;background:#2a0f0f;border:1px solid #5c1a1a;color:#e87070;border-radius:9px;padding:11px;font-size:13px;font-weight:700;cursor:pointer;font-family:inherit;">Delete</button>
+    </div>
+  </div>`;
+  (document.querySelector('.shell')||document.body).appendChild(ov);
+}
+function _commitDeleteSummary(id,i){
+  const modal=document.getElementById('delete-summary-modal');if(modal)modal.remove();
+  const list=sessionSummaries[id]||[];const s=list[i];if(!s)return;
+  const prevTs=s.ts, prevDate=s.date, prevTreatment=s.treatment;
+  // Remove the provider record.
+  list.splice(i,1);
+  // Remove the matching client-facing copy (by ts, else date+title).
+  try{
+    const c=CL[id];
+    if(c&&Array.isArray(c.summaries)){
+      let idx=c.summaries.findIndex(e=>e&&prevTs&&e.ts===prevTs);
+      if(idx<0)idx=c.summaries.findIndex(e=>e&&e.date===prevDate&&(e.title===prevTreatment||e.title==='Session'));
+      if(idx>=0)c.summaries.splice(idx,1);
+    }
+  }catch(e){}
+  try{if(typeof persistSessionSummaries==='function')persistSessionSummaries();}catch(e){}
+  try{if(typeof saveClients==='function')saveClients();}catch(e){}
+  if(typeof proToast==='function')proToast('Summary deleted');
+  if(typeof renderSummaryHistory==='function')renderSummaryHistory(id);
 }
 // Rename a saved summary (its "name" is the treatment title shown in the list + detail).
 // Updates the provider record and the matching client-facing copy, then persists both.
