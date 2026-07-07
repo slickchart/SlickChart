@@ -3158,7 +3158,7 @@ function renderRoom(id){
     <div style="background:#111;border:1px solid #1e1e1e;border-radius:12px;padding:12px 14px;">
       <div style="font-size:12px;color:#999;text-transform:uppercase;letter-spacing:.07em;margin-bottom:8px;">Session notes</div>
       <button onclick="_notesFrom='room';nav('notes','${id}')" style="width:100%;background:#0f0f0f;border:1px solid #2a2a2a;border-radius:10px;padding:12px 14px;display:flex;align-items:center;justify-content:space-between;gap:10px;cursor:pointer;font-family:inherit;text-align:left;">
-        <span style="display:flex;align-items:center;gap:10px;min-width:0;"><i class="ti ti-notes" style="color:var(--accent);font-size:17px;flex-shrink:0;"></i><span style="font-size:13px;color:${_noteSummaryPreview()?'#e0e0e0':'#888'};overflow:hidden;text-overflow:ellipsis;white-space:nowrap;">${_noteSummaryPreview()||'Add treatment notes — type or dictate'}</span></span>
+        <span style="display:flex;align-items:center;gap:10px;min-width:0;"><i class="ti ti-notes" style="color:var(--accent);font-size:17px;flex-shrink:0;"></i><span style="font-size:13px;color:${_noteSummaryPreview(id)?'#e0e0e0':'#888'};overflow:hidden;text-overflow:ellipsis;white-space:nowrap;">${_noteSummaryPreview(id)||'Add treatment notes — type or dictate'}</span></span>
         <i class="ti ti-chevron-right" style="color:#888;flex-shrink:0;"></i>
       </button>
     </div>
@@ -3630,22 +3630,34 @@ function _voiceSave(text){
   text=String(text||'').trim();if(!text){_voiceClose();return;}
   text=text.replace(/</g,'&lt;').replace(/>/g,'&gt;');
   const id=_voiceClientId;
-  const store=(activeNoteTemplate==='colorRecord'||activeNoteTemplate==='serviceRecord')?hairSavedNotes:(activeNoteTemplate==='cutRecord')?barberSavedNotes:(activeNoteTemplate==='browRecord'||activeNoteTemplate==='pmuRecord')?browSavedNotes:savedNotes;
   const tmpl=noteTemplates[activeNoteTemplate]||noteTemplates.soap;
   const secId=(tmpl.sections[0]||{}).id||'s1';
-  store[activeNoteTemplate]=store[activeNoteTemplate]||{};
-  const prev=store[activeNoteTemplate][secId];
-  store[activeNoteTemplate][secId]=(prev&&prev!=='No notes yet.')?(prev+'<br>'+text):text;
-  if(typeof persistWorkspace==='function'){try{persistWorkspace();}catch(e){}}
+  // Provider notes live per-client in providerNoteDrafts[id] (this is what renderNotes shows).
+  // The old code wrote to the global per-template savedNotes store, which feeds the CLIENT
+  // summary and is pre-seeded with demo content — so the transcript never appeared in the
+  // provider notes and instead surfaced on the client-summary side, mixed with sample data.
+  const draft=providerNoteDrafts[id]&&providerNoteDrafts[id].templateId===activeNoteTemplate?providerNoteDrafts[id]:{date:(typeof _isoToday==='function'?_isoToday():''),sections:{},templateId:activeNoteTemplate};
+  if(!draft.sections)draft.sections={};
+  const prev=draft.sections[secId];
+  draft.sections[secId]=(prev&&prev.trim()&&prev.trim()!=='No notes yet.')?(prev+'<br>'+text):text;
+  providerNoteDrafts[id]=draft;
+  if(typeof saveProviderNoteDrafts==='function'){try{saveProviderNoteDrafts();}catch(e){}}
   _voiceClose();
   if(typeof proToast==='function')proToast('Voice note saved to your notes');
   try{if(typeof renderNotes==='function'&&document.getElementById('ncontent'))renderNotes(id);}catch(e){}
 }
 // Gathers whatever's in the active note format (typed or dictated) as readable text,
-// so the client summary card reflects the same notes shown in the notes step.
-function _activeNotesText(){
-  const store=(activeNoteTemplate==='colorRecord'||activeNoteTemplate==='serviceRecord')?hairSavedNotes:(activeNoteTemplate==='cutRecord')?barberSavedNotes:(activeNoteTemplate==='browRecord'||activeNoteTemplate==='pmuRecord')?browSavedNotes:savedNotes;
+// so the client summary card reflects the SAME notes shown in the notes step. Reads the
+// per-client draft (providerNoteDrafts[id]) — the same store renderNotes displays — so the
+// summary matches the provider's actual notes for THIS client. Falls back to the global
+// per-template store only for the demo/preview path where no per-client draft exists.
+function _activeNotesText(id){
   const tmpl=noteTemplates[activeNoteTemplate]||noteTemplates.soap;
+  const draft=(id!=null&&providerNoteDrafts[id]&&providerNoteDrafts[id].templateId===activeNoteTemplate)?providerNoteDrafts[id]:null;
+  if(draft&&draft.sections){
+    return (tmpl.sections||[]).map(sec=>{const v=String(draft.sections[sec.id]||'').trim();return (v&&v!=='No notes yet.')?v:'';}).filter(Boolean).join('<br>');
+  }
+  const store=(activeNoteTemplate==='colorRecord'||activeNoteTemplate==='serviceRecord')?hairSavedNotes:(activeNoteTemplate==='cutRecord')?barberSavedNotes:(activeNoteTemplate==='browRecord'||activeNoteTemplate==='pmuRecord')?browSavedNotes:savedNotes;
   const s=(store&&store[activeNoteTemplate])||{};
   return (tmpl.sections||[]).map(sec=>{const v=String(s[sec.id]||'').trim();return (v&&v!=='No notes yet.')?v:'';}).filter(Boolean).join('<br>');
 }
@@ -3656,7 +3668,7 @@ function _activeNotesText(){
 // sentences; for a fuller warm rewrite the provider uses "Make client-friendly"
 // (AI) or edits by hand.
 function _clientFriendlyFromNotes(id,c){
-  let raw=_activeNotesText().replace(/<br\s*\/?>/gi,'\n').replace(/&lt;/g,'<').trim();
+  let raw=_activeNotesText(id).replace(/<br\s*\/?>/gi,'\n').replace(/&lt;/g,'<').trim();
   return _clientFriendlyFromNotesText(raw,c);
 }
 // Core cleaner: works on any note text (already newline-separated). Removes leading
@@ -3681,8 +3693,8 @@ function _clientFriendlyFromNotesText(raw,c){
   return (first?`Here's a recap of your visit, ${first}: `:'Here\u2019s a recap of your visit: ')+lines.join(' ');
 }
 // Short one-line preview of the current notes, for the session room's Notes step.
-function _noteSummaryPreview(){
-  const t=_activeNotesText().replace(/<br>/g,' ').replace(/&lt;/g,'<').replace(/\s+/g,' ').trim();
+function _noteSummaryPreview(id){
+  const t=_activeNotesText(id).replace(/<br>/g,' ').replace(/&lt;/g,'<').replace(/\s+/g,' ').trim();
   return t?(t.length>60?t.slice(0,60)+'…':t):'';
 }
 function renderNotes(id){
@@ -3753,7 +3765,7 @@ function switchNoteTab(id){
   document.getElementById('tnc').classList.add('active');
   const isHairBarber=(selectedProfessions.includes('hair')||selectedProfessions.includes('barber'))&&!selectedProfessions.includes('esty');
   const draftNote=(summaryNoteDraft[id]!=null?summaryNoteDraft[id]:'').trim();
-  const liveNote=_activeNotesText();
+  const liveNote=_activeNotesText(id);
   const previewNote=draftNote||liveNote||(isHairBarber?'Add a note about today\'s color/service for '+c.name.split(' ')[0]+'.':'Add a note about today\'s visit for '+c.name.split(' ')[0]+'.');
   const todayLbl=_todayLabel()||'Today';
   const nextApptLine=(c.nextVisit&&c.nextVisit!=='Not scheduled')?(c.nextVisit+(c.treatment?' \u00b7 '+c.treatment:'')):'Not yet scheduled';
@@ -4163,7 +4175,7 @@ function renderSessionSummary(id){
   const _nextAppt=(typeof _nextApptForClient==='function')?_nextApptForClient(id):null;
   const nextDate=_isDemoClient?(id==='maya'?'Jul 17, 2026':id==='sophie'?'Jul 10, 2026':'Jul 8, 2026'):(_nextAppt?_nextAppt.dateLabel:'');
   const nextTime=_isDemoClient?(id==='maya'?'10:00 AM':id==='sophie'?'12:30 PM':'11:00 AM'):(_nextAppt?_nextAppt.time:'');
-  const notes=_activeNotesText();
+  const notes=_activeNotesText(id);
   const friendly=(typeof _clientFriendlyFromNotes==='function')?_clientFriendlyFromNotes(id,c):'';
   const improvement=_isDemoClient?(isHairBarberSummary
     ?(id==='maya'?'Colour is vibrant and the balayage placement looks perfect — great lift without brassiness.'
