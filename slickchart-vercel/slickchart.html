@@ -2111,12 +2111,21 @@ function _pruneExpiredCheckins(){
   checkins=checkins.filter(function(ci){
     if(!ci)return false;
     if(sample.indexOf(ci.id)>=0)return true;   // never auto-clear the demo check-in
-    // Rule 2: submitted more than 24h ago (only when we have a valid timestamp).
-    const at=(typeof ci.at==='number'&&isFinite(ci.at)&&ci.at>0)?ci.at:0;
+    // Effective submit time: prefer `at`, then legacy `submittedAt`/`created`. Every check-in
+    // created since the auto-clear fix carries `at`, so a record missing all three is a
+    // pre-fix legacy entry — necessarily old, not something submitted just now.
+    let at=(typeof ci.at==='number'&&isFinite(ci.at)&&ci.at>0)?ci.at:0;
+    if(!at&&typeof ci.submittedAt==='number'&&isFinite(ci.submittedAt)&&ci.submittedAt>0)at=ci.submittedAt;
+    if(!at&&typeof ci.created==='number'&&isFinite(ci.created)&&ci.created>0)at=ci.created;
+    // Rule 2: submitted more than 24h ago.
     if(at&&(now-at)>DAY_MS)return false;
     // Rule 1: appointment day is in the past.
     const day=_ciDayISO(ci.dateLabel);
     if(day&&day<today)return false;
+    // Rule 3: no usable timestamp AND no datable appointment label. A fresh check-in always
+    // has `at`, so this can only be an old legacy/"Not scheduled" record that Rules 1–2 can't
+    // date — clear it rather than stranding it in the log forever.
+    if(!at&&!day)return false;
     return true;                                // otherwise keep
   });
   if(checkins.length!==before){try{persistCheckins();}catch(e){}try{if(typeof updateBadge==='function')updateBadge();}catch(e){}return true;}
@@ -11539,7 +11548,10 @@ function pushCheckinNotif(ci){
 function markCheckinRead(id){const c=checkins.find(x=>x.id===id);if(c){c.read=true;try{if(typeof persistCheckins==='function')persistCheckins();}catch(e){}}updateBadge();}
 
 function renderCheckins(){
-  if(!_lastClearedCheckin){try{_pruneExpiredCheckins();}catch(e){}}
+  // Skip the auto-prune only for the single render triggered right after a manual swipe-clear,
+  // so it doesn't disturb the Undo window. On any other navigation to the log, prune normally
+  // so stale check-ins clear even after the provider has manually cleared one this session.
+  if(_skipCheckinPrune){_skipCheckinPrune=false;}else{try{_pruneExpiredCheckins();}catch(e){}}
   setNav('home');
   document.getElementById('tt').textContent='Pre-visit check-ins';
   S.innerHTML=`<div id="checkins-screen"></div>
@@ -11578,10 +11590,12 @@ function _checkinCard(ci){
 // Swipe a check-in in the log to clear it once you've dealt with it, so they don't
 // pile up. The most-recent copy still lives on the client's file for reference.
 let _lastClearedCheckin=null;
+let _skipCheckinPrune=false;   // one-shot: set on manual clear, consumed by the next renderCheckins
 function _clearCheckin(id){
   const idx=checkins.findIndex(x=>x.id===id);
   if(idx<0)return;
   _lastClearedCheckin={ci:checkins[idx],idx:idx};
+  _skipCheckinPrune=true;      // don't auto-prune the render that's about to happen (protect Undo)
   checkins.splice(idx,1);
   try{persistCheckins();}catch(e){}
   try{if(typeof updateBadge==='function')updateBadge();}catch(e){}
@@ -11593,6 +11607,7 @@ function _undoClearCheckin(){
     const {ci,idx}=_lastClearedCheckin;
     checkins.splice(Math.min(idx,checkins.length),0,ci);
     _lastClearedCheckin=null;
+    _skipCheckinPrune=true;    // don't let the undo render immediately re-prune the restored item
     try{persistCheckins();}catch(e){}
     try{if(typeof updateBadge==='function')updateBadge();}catch(e){}
     const t=document.getElementById('ci-clear-toast');if(t)t.remove();
