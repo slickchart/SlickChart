@@ -541,10 +541,15 @@ SlickBridge.on('form-shared',d=>{
   const f={id:d.form.id,title:d.form.title,docs:d.form.docs||[],qs:d.form.qs||[],contra:d.form.contra||[],consent:d.form.consent||'',status:'Action needed',date:'Today'};
   const ex=jess.forms.findIndex(x=>x.id===f.id);
   if(ex>=0)jess.forms[ex]=f; else jess.forms.unshift(f);
-  if(client.activeProviderId==='jess'&&currentScreen==='welcome')renderMagicLanding();
+  // Add to the "before your visit" checklist (pendingForms) so it shows up in the home banner and
+  // task list, matching how real clients receive forms. Real clients get pendingForms from the
+  // server; the demo bridge needs to mirror that here.
+  jess.pendingForms=jess.pendingForms||[];
+  if(!jess.pendingForms.some(pf=>pf.formId===f.id))jess.pendingForms.push({formId:f.id,title:f.title,assignedAt:Date.now()});
+  if(client.activeProviderId==='jess'){if(currentScreen==='welcome')renderMagicLanding();else if(currentScreen==='home'&&typeof renderHome==='function')renderHome();}
   pushNotify({type:'form',icon:'ti-file-text',col:'var(--accent-lt)',ic:'var(--accent)',
     title:client.providerFirst+' sent a form to complete',body:d.form.title,
-    onclick:()=>{client.activeProviderId='jess';applyActiveProvider();nav('welcome');}});
+    onclick:()=>{client.activeProviderId='jess';applyActiveProvider();nav('home');}});
 });
 
 // Client AI preference
@@ -1385,23 +1390,27 @@ function renderHome(){
     </div>
   </div>
 
-  <!-- First-visit checklist banner: when there are intake/consent forms waiting AND the check-in
-       isn't done yet, make it unmistakable that BOTH must be completed. Clients were finishing the
-       check-in and stopping, not realizing the intake/consent form below was also required. -->
+  <!-- "Before your visit" checklist banner: whenever the provider has sent one or more forms to
+       complete ahead of an appointment, group them with the pre-visit check-in into a single clear
+       checklist so clients complete ALL of them, not just the first card they tap. Profession-neutral
+       and works for any number of forms (intake, consent, health history, waivers, etc.). -->
   ${(function(){
     const pf=(activeProvider().pendingForms||[]);
-    if(!pf.length)return '';                 // no intake/consent waiting → no first-visit banner
+    if(!pf.length)return '';                 // nothing sent to complete before the visit → no banner
     const ciDone=!!activeProvider().checkinDone;
-    // Completed forms are removed from pendingForms, so `pf.length` IS the number of forms still to
-    // do. Remaining work = those forms plus the check-in if it isn't done yet.
+    // Completed forms are removed from pendingForms, so pf.length is the number of forms still to do.
+    // Remaining work = those forms plus the check-in when it isn't done yet.
     const remaining=pf.length+(ciDone?0:1);
     const stepWord=remaining===1?'step':'steps';
+    // Count the total items in this visit's checklist (check-in is always part of it).
+    const totalItems=pf.length+1;
+    const itemWord=totalItems===1?'item':'items';
     return `<div style="margin:0 16px 14px;background:linear-gradient(135deg,var(--accent-tint),var(--accent-tint2));border:1.5px solid var(--accent);border-radius:14px;padding:14px 16px;">
       <div style="display:flex;align-items:center;gap:9px;margin-bottom:6px;">
         <i class="ti ti-list-check" aria-hidden="true" style="font-size:19px;color:var(--accent-lt2);"></i>
-        <div style="font-size:14px;font-weight:700;color:var(--accent-lt2);">Complete before your first visit</div>
+        <div style="font-size:14px;font-weight:700;color:var(--accent-lt2);">Complete before your visit</div>
       </div>
-      <div style="font-size:12.5px;color:var(--accent-lt2);opacity:.82;line-height:1.5;">Please fill out <b>both</b> your <b>pre-visit check-in</b> and your <b>new client intake &amp; consent</b> below. ${_txt(client.providerFirst)} needs both \u2014 finishing only one isn\u2019t enough to be ready for your visit.</div>
+      <div style="font-size:12.5px;color:var(--accent-lt2);opacity:.82;line-height:1.5;">${_txt(client.providerFirst)} needs <b>all ${totalItems} ${itemWord}</b> below completed before your appointment \u2014 your <b>pre-visit check-in</b> and ${pf.length===1?'the form':`all ${pf.length} forms`} below. Please don\u2019t stop after just one.</div>
       <div style="margin-top:10px;">
         <span style="font-size:11px;font-weight:700;color:var(--accent-ink);background:var(--accent);padding:4px 10px;border-radius:20px;">${remaining} ${stepWord} still to complete</span>
       </div>
@@ -1426,7 +1435,7 @@ function renderHome(){
     <div style="padding:12px 16px;display:flex;align-items:center;gap:12px;">
       <div style="width:42px;height:42px;background:#f3eefc;border-radius:10px;display:flex;align-items:center;justify-content:center;flex-shrink:0;"><i class="ti ti-file-text" aria-hidden="true" style="font-size:20px;color:#8b6fc7;"></i></div>
       <div style="flex:1;min-width:0;">
-        <div style="font-size:13px;font-weight:600;color:#1a1a1a;">${activeProvider().checkinDone?_txt(pf.title):`Step ${2+pfi} \u00b7 ${_txt(pf.title)}`}</div>
+        <div style="font-size:13px;font-weight:600;color:#1a1a1a;">Step ${2+pfi} \u00b7 ${_txt(pf.title)}</div>
         <div style="font-size:12px;color:#b8a898;">Required \u2014 ${_txt(client.providerFirst)} needs this before your visit</div>
       </div>
       <span style="font-size:11px;font-weight:700;color:#8b6fc7;background:#f3eefc;padding:4px 10px;border-radius:20px;flex-shrink:0;">Start</span>
