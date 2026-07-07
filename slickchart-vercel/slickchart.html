@@ -1413,9 +1413,20 @@ const Cloud={
           // Only restore keys that weren't re-edited while this request was in flight,
           // so a stale failed value can't clobber a newer queued one (data loss).
           if(!(retryCount>0)){for(const k in items){if(!(k in this._queue))this._queue[k]=items[k];}clearTimeout(this._timer);this._timer=setTimeout(()=>this._flush(1),1500);}
+          else if(r.status===413){
+            // Payload too large: don't sacrifice the whole batch. Find the biggest key
+            // (almost always an oversized image blob), drop ONLY that, and re-queue the
+            // rest so treatment notes and other small edits still reach the server.
+            const keys=Object.keys(items);
+            let biggest=null,biggestLen=-1;
+            keys.forEach(k=>{const len=(items[k]||'').length;if(len>biggestLen){biggestLen=len;biggest=k;}});
+            let requeued=0;
+            keys.forEach(k=>{if(k!==biggest&&!(k in this._queue)){this._queue[k]=items[k];requeued++;}});
+            if(requeued){clearTimeout(this._timer);this._timer=setTimeout(()=>this._flush(0),800);}
+            if(typeof proToast==='function')proToast('That photo was too large to sync, so it wasn\u2019t saved to the cloud — but your notes were saved. Try a smaller image.',0);
+          }
           else if(typeof proToast==='function'){
-            const tooBig=r.status===413;
-            proToast(tooBig?'Could not save — that file is too large. Try a smaller image.':'Could not save your changes — check your connection and try again.',0);
+            proToast('Could not save your changes — check your connection and try again.',0);
           }
         }
       })
@@ -5169,7 +5180,7 @@ function takePhoto(clientId,phase,after){
       }
       if(after)after();
     };
-    if(f){const r=new FileReader();r.onload=e=>save(e.target.result);r.onerror=()=>save('');r.readAsDataURL(f);}else save('');
+    if(f){_downscaleImg(f,function(url){save(url);},1600);}else save('');
   };
   inp.click();
 }
@@ -5244,19 +5255,17 @@ function handlePhotoSelect(input){
   const preview=document.getElementById('photo-preview-row');
   const saveBtn=document.getElementById('upload-save-btn');
   files.forEach(file=>{
-    const reader=new FileReader();
-    reader.onload=e=>{
-      _pendingPhotos.push({url:e.target.result,ts:Date.now()});
+    _downscaleImg(file,function(url){
+      if(!url){try{if(typeof proToast==='function')proToast('Couldn\u2019t read '+((file&&file.name)||'a file')+' — skipped');}catch(e){}return;}
+      _pendingPhotos.push({url:url,ts:Date.now()});
       if(thumbs){
         const div=document.createElement('div');
         div.style.cssText='width:72px;height:90px;border-radius:9px;overflow:hidden;flex-shrink:0;position:relative;';
         const d=new Date();
-        div.innerHTML=`<img src="${e.target.result}" alt="" style="width:100%;height:100%;object-fit:cover;"><div style="position:absolute;bottom:0;left:0;right:0;background:linear-gradient(transparent,rgba(0,0,0,.8));padding:6px 4px 3px;"><div style="font-size:8px;color:#fff;font-weight:600;">${d.toLocaleDateString('en-US',{month:'short',day:'numeric'})}</div></div>`;
+        div.innerHTML=`<img src="${url}" alt="" style="width:100%;height:100%;object-fit:cover;"><div style="position:absolute;bottom:0;left:0;right:0;background:linear-gradient(transparent,rgba(0,0,0,.8));padding:6px 4px 3px;"><div style="font-size:8px;color:#fff;font-weight:600;">${d.toLocaleDateString('en-US',{month:'short',day:'numeric'})}</div></div>`;
         thumbs.appendChild(div);
       }
-    };
-    reader.onerror=()=>{try{if(typeof proToast==='function')proToast('Couldn\u2019t read '+((file&&file.name)||'a file')+' — skipped');}catch(e){}};
-    reader.readAsDataURL(file);
+    },1600);
   });
   if(preview)preview.style.display='block';
   if(saveBtn){saveBtn.disabled=false;saveBtn.style.opacity='1';}
