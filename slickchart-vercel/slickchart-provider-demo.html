@@ -1383,9 +1383,28 @@ const Cloud={
   async resetPw(token,pw){const r=await fetch('/api/reset',{method:'POST',headers:{'Content-Type':'application/json'},body:JSON.stringify({token,password:pw})});let j={};try{j=await r.json();}catch(e){}if(!r.ok)throw new Error((j&&j.error)||'Reset failed');return true;},
   async verifyEmail(token){try{const r=await fetch('/api/verify?token='+encodeURIComponent(token));return r.ok;}catch(e){return false;}},
   logout(){this.token='';try{localStorage.removeItem('sc_token');}catch(e){}},
-  async pull(){if(!this.token)return -1;let r;try{r=await fetch('/api/store',{headers:{'Authorization':'Bearer '+this.token}});}catch(e){return -1;}if(r.status===401){this.logout();return -1;}let j={};try{j=await r.json();}catch(e){}const data=(j&&j.data)||{};const set=this._origSet||localStorage.setItem.bind(localStorage);const keys=Object.keys(data);keys.forEach(k=>{try{set(k,data[k]);}catch(e){}});this._lastPulledKeys=new Set(keys);return keys.length;},
+  async pull(){if(!this.token)return -1;let r;try{r=await fetch('/api/store',{headers:{'Authorization':'Bearer '+this.token}});}catch(e){return -1;}if(r.status===401){this.logout();return -1;}let j={};try{j=await r.json();}catch(e){}const data=(j&&j.data)||{};const set=this._origSet||localStorage.setItem.bind(localStorage);const keys=Object.keys(data);keys.forEach(k=>{try{
+    // Never overwrite a key that still has a pending local write queued — that local value
+    // is newer than whatever the server returned (e.g. a note saved moments before a reload,
+    // whose debounced push hadn't flushed yet). Overwriting it here is silent data loss.
+    if(this._queue&&Object.prototype.hasOwnProperty.call(this._queue,k))return;
+    set(k,data[k]);
+  }catch(e){}});this._lastPulledKeys=new Set(keys);return keys.length;},
   pushAllLocal(){const items={};try{for(let i=0;i<localStorage.length;i++){const k=localStorage.key(i);if(_syncable(k))items[k]=localStorage.getItem(k);}}catch(e){}if(this.token&&Object.keys(items).length)return fetch('/api/store',{method:'PUT',headers:{'Content-Type':'application/json','Authorization':'Bearer '+this.token},body:JSON.stringify({items})}).catch(()=>{});},
   push(k,v){if(!this.enabled||!this.token)return;this._queue[k]=v;clearTimeout(this._timer);this._timer=setTimeout(()=>this._flush(),700);},
+  // Flush any pending queued writes immediately during page unload. A normal fetch is often
+  // killed when the page navigates away, so use a keepalive fetch (which the browser is allowed
+  // to complete even as the page closes) against the same authenticated endpoint. This prevents
+  // losing a just-saved note/edit whose 700ms debounce hadn't fired before a refresh.
+  flushBeacon(){
+    try{
+      if(!this.token)return;
+      const items=this._queue;
+      if(!items||!Object.keys(items).length)return;
+      this._queue={};clearTimeout(this._timer);
+      fetch('/api/store',{method:'PUT',keepalive:true,headers:{'Content-Type':'application/json','Authorization':'Bearer '+this.token},body:JSON.stringify({items})}).catch(()=>{});
+    }catch(e){}
+  },
   _flush(retryCount){
     if(!this.token)return;
     const items=this._queue;this._queue={};
@@ -1423,6 +1442,18 @@ const Cloud={
   },
 };
 (function(){try{const _set=localStorage.setItem.bind(localStorage);Cloud._origSet=_set;localStorage.setItem=function(k,v){_set(k,v);try{if(_syncable(k))Cloud.push(k,v);}catch(e){}};}catch(e){}})();
+// Make sure pending cloud writes reach the server before the page goes away (refresh, close,
+// or navigate). Without this, a save whose 700ms debounce hadn't fired was lost on reload and
+// then clobbered by the older server copy on the next pull. pagehide + visibilitychange cover
+// mobile/desktop reliably; beforeunload is a desktop backstop.
+(function(){
+  try{
+    const flush=function(){try{if(typeof Cloud!=='undefined'&&Cloud.flushBeacon)Cloud.flushBeacon();}catch(e){}};
+    window.addEventListener('pagehide',flush);
+    window.addEventListener('beforeunload',flush);
+    document.addEventListener('visibilitychange',function(){if(document.visibilityState==='hidden')flush();});
+  }catch(e){}
+})();
 function _reloadAll(){try{
   loadProfessions();applyProfessionConfig();
   if(typeof loadCustomResources==='function')loadCustomResources();
