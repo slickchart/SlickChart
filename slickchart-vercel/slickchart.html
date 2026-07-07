@@ -1188,7 +1188,14 @@ function _purgeSample(){
     }
   }catch(e){}
   try{if(typeof updateBadge==='function')updateBadge();}catch(e){}
-  // Remove the demo/affiliate products too, plus any recommendations pointing to them.
+  // Remove sample provider note drafts (e.g. Maya's seeded voice-note-style draft) and any
+  // sample session-summary history, so real users aren't left with demo notes on file.
+  try{
+    if(typeof providerNoteDrafts!=='undefined'){
+      _SAMPLE_IDS.forEach(id=>{if(providerNoteDrafts[id]&&providerNoteDrafts[id]._sample)delete providerNoteDrafts[id];});
+      if(typeof saveProviderNoteDrafts==='function')saveProviderNoteDrafts();
+    }
+  }catch(e){}
   try{
     if(typeof affiliateLinks!=='undefined'){
       const before=affiliateLinks.length;
@@ -1248,6 +1255,10 @@ function _restoreSampleData(){
     }
   }catch(e){}
   try{if(typeof _demoCheckinSeed==='function')_demoCheckinSeed();}catch(e){}
+  try{if(typeof _demoPaymentSeed==='function')_demoPaymentSeed();}catch(e){}
+  // Bring back the sample provider note draft(s) (e.g. Maya's voice-note-style note) so the
+  // Notes screen showcases a completed note again after a restore.
+  try{if(typeof _demoNoteSeed==='function')_demoNoteSeed();}catch(e){}
   try{if(typeof updateBadge==='function')updateBadge();}catch(e){}
   if(typeof proToast==='function')proToast('Sample clients & examples restored');
   nav('home');
@@ -4528,6 +4539,30 @@ function _fmtNoteDate(iso){
     return d.toLocaleDateString('en-US',{month:'short',day:'numeric',year:'numeric'});
   }catch(e){return iso;}
 }
+// Sample note-draft content lives in _SAMPLE_NOTEDRAFTS below and is seeded onto Maya's file
+// by _demoNoteSeed() at boot (after drafts load), so it survives loadProviderNoteDrafts and
+// follows the same Remove/Restore lifecycle as the other sample data.
+const _SAMPLE_NOTEDRAFTS={
+  maya:{date:'2026-07-07',templateId:'soap',_sample:true,sections:{
+    s1:'Client reports skin feeling tight and slightly dull this week. Notes increased hyperpigmentation along the jawline. Confirms SPF compliance daily.',
+    s2:'Fitzpatrick III. Mild comedones on the T-zone. PIH Grade 2 on left mandible. Barrier function improved versus last visit.',
+    s3:'PIH responding positively to the Vitamin C protocol. Barrier improving. Comedone load down roughly 40% versus last visit.',
+    s4:'Continue Hydrafacial series (4 of 6). Add a brightening booster next session. Reintroduce Retinol 0.025% at the 60-day mark.'
+  }},
+};
+function _demoNoteSeed(){
+  try{
+    if(typeof providerNoteDrafts==='undefined'||typeof _sampleHidden!=='function')return;
+    if(_sampleHidden())return;
+    Object.keys(_SAMPLE_NOTEDRAFTS).forEach(function(id){
+      // Only seed if the sample client exists and has no draft yet — never clobber a real one.
+      if((typeof CL==='undefined'||CL[id])&&!providerNoteDrafts[id]){
+        providerNoteDrafts[id]=JSON.parse(JSON.stringify(_SAMPLE_NOTEDRAFTS[id]));
+      }
+    });
+    if(typeof saveProviderNoteDrafts==='function')saveProviderNoteDrafts();
+  }catch(e){}
+}
 let sessionSummaries={
   maya:[
     {date:'Jun 10, 2026',treatment:'Hydrafacial',note:'Hyperpigmentation responding beautifully to the Vitamin C series — jawline visibly clearer. Keep SPF daily.',homecare:['Vitamin C serum AM','SPF 50 daily','Gentle cleanser PM'],products:['C E Ferulic','UV Defense'],ts:Date.now()-1728e6},
@@ -7292,6 +7327,26 @@ function _demoCheckinSeed(){
       CL.maya.nextVisit=_soonVisitLabel(95);
       if(typeof saveClients==='function')saveClients();
     }
+  }catch(e){}
+}
+// Demo helper: seed one sample invoice on Maya's file so the Payments tab showcases a real
+// multi-line invoice, including a line-item note (the booking date on a Booking Deposit line).
+// Runs once, skips when sample data is hidden, and is tagged _sample so Remove/Restore handles it.
+function _demoPaymentSeed(){
+  try{
+    if(typeof _payments==='undefined'||typeof _sampleHidden!=='function')return;
+    if(_sampleHidden())return;
+    if(_payments.some(p=>p&&p.id==='pay_demo1'))return;
+    _payments.unshift({
+      id:'pay_demo1',_sample:true,clientId:'maya',clientName:'Maya Rodriguez',
+      amount:145,method:'Invoice',status:'unpaid',date:_todayISO?_todayISO():'2026-07-07',
+      note:'Invoice · 2 items',source:'manual',taxRate:(typeof _taxRate!=='undefined'?_taxRate:0),taxAmount:0,
+      items:[
+        {name:'Remaining balance of today\u2019s treatment',price:95,qty:1,variationId:null,kind:'service',note:''},
+        {name:'Booking Deposit',price:50,qty:1,variationId:null,kind:'service',note:'Booking date: Aug 14, 2026'}
+      ]
+    });
+    if(typeof _savePayments==='function')_savePayments();
   }catch(e){}
 }
 function sendCheckin(id){
@@ -11248,6 +11303,8 @@ try{
   loadDocs();  // restore the provider's saved documents (licenses, insurance, etc.)
   if(!_sampleHidden()){_seedMayaOnce();}else{_purgeSample();}  // sample Maya only when sample data is on
   if(!_sampleHidden()&&typeof _demoCheckinSeed==='function')_demoCheckinSeed();
+  if(!_sampleHidden()&&typeof _demoPaymentSeed==='function')_demoPaymentSeed();
+  if(!_sampleHidden()&&typeof _demoNoteSeed==='function')_demoNoteSeed();
   try{if(typeof MutationObserver!=='undefined'){new MutationObserver(()=>_a11yEnhance()).observe(document.body,{childList:true,subtree:true});_a11yEnhance();}}catch(e){}
   loadForms();  // restore any saved form edits / custom forms / connected guides from a previous session
   loadWorkspace();  // restore recommended products, reasons, custom products, and routines
