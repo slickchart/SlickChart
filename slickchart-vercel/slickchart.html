@@ -2070,7 +2070,39 @@ function loadAutos(){try{const raw=localStorage.getItem('sc_autos');if(raw){cons
 function persistNotifSettings(){try{localStorage.setItem('sc_notif_settings',JSON.stringify(notifSettings));}catch(e){}}
 function loadNotifSettings(){try{const raw=localStorage.getItem('sc_notif_settings');if(raw){const v=JSON.parse(raw);if(v&&typeof v==='object')notifSettings=v;}}catch(e){}}
 function persistCheckins(){try{localStorage.setItem('sc_checkins',JSON.stringify(checkins));}catch(e){}}
-function loadCheckins(){try{const raw=localStorage.getItem('sc_checkins');if(raw){const arr=JSON.parse(raw);if(Array.isArray(arr))checkins=arr;}}catch(e){}}
+function loadCheckins(){try{const raw=localStorage.getItem('sc_checkins');if(raw){const arr=JSON.parse(raw);if(Array.isArray(arr))checkins=arr;}}catch(e){}try{_pruneExpiredCheckins();}catch(e){}}
+// Convert a check-in's appointment-day label (e.g. "Jul 8, 2026") to an ISO day, but ONLY
+// when we can do so confidently. A label without an explicit 4-digit year (e.g. "Monday,
+// July 21") is ambiguous, so we return '' and never prune on a guess.
+function _ciDayISO(label){
+  if(!label)return '';
+  const s=String(label).trim();if(!s)return '';
+  if(!/\b\d{4}\b/.test(s))return '';
+  const t=Date.parse(s);if(isNaN(t))return '';
+  const d=new Date(t);
+  return d.getFullYear()+'-'+String(d.getMonth()+1).padStart(2,'0')+'-'+String(d.getDate()).padStart(2,'0');
+}
+// Auto-clear pre-visit check-ins once their appointment day has fully passed, so the log
+// doesn't accumulate. Conservative by design: sample check-ins are kept, and any check-in
+// whose date can't be confidently parsed (missing/ambiguous/unparseable) is kept rather
+// than risk removing one the provider still needs. A check-in stays visible through its
+// whole appointment day and drops off the following day.
+function _pruneExpiredCheckins(){
+  if(!Array.isArray(checkins)||!checkins.length)return false;
+  const today=(typeof _todayISO==='function')?_todayISO():'';
+  if(!today)return false;
+  const sample=(typeof _SAMPLE_CHECKIN_IDS!=='undefined')?_SAMPLE_CHECKIN_IDS:[];
+  const before=checkins.length;
+  checkins=checkins.filter(function(ci){
+    if(!ci)return false;
+    if(sample.indexOf(ci.id)>=0)return true;   // never auto-clear the demo check-in
+    const day=_ciDayISO(ci.dateLabel);
+    if(!day)return true;                        // can't tell => keep
+    return !(day<today);                        // drop only if the appointment day is past
+  });
+  if(checkins.length!==before){try{persistCheckins();}catch(e){}try{if(typeof updateBadge==='function')updateBadge();}catch(e){}return true;}
+  return false;
+}
 function persistCourses(){try{localStorage.setItem('sc_courses',JSON.stringify(courses));}catch(e){}}
 function loadCourses(){try{const raw=localStorage.getItem('sc_courses');if(raw){const arr=JSON.parse(raw);if(Array.isArray(arr))courses=arr;}}catch(e){}}
 function persistShopBundles(){try{localStorage.setItem('sc_shop_bundles',JSON.stringify(shopBundles));}catch(e){}}
@@ -11463,6 +11495,7 @@ function pushCheckinNotif(ci){
 function markCheckinRead(id){const c=checkins.find(x=>x.id===id);if(c){c.read=true;try{if(typeof persistCheckins==='function')persistCheckins();}catch(e){}}updateBadge();}
 
 function renderCheckins(){
+  try{_pruneExpiredCheckins();}catch(e){}
   setNav('home');
   document.getElementById('tt').textContent='Pre-visit check-ins';
   S.innerHTML=`<div id="checkins-screen"></div>
