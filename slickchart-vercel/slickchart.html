@@ -3623,8 +3623,33 @@ function startVoiceNote(id){
 function _voiceStop(){
   _voiceStopping=true;
   try{if(_voiceRec)_voiceRec.stop();}catch(e){}_voiceRec=null;
-  const txt=(_voiceText||'').trim().replace(/</g,'&lt;');
-  _voiceOverlay(`<div style="font-size:15px;font-weight:600;color:#f0f0f0;margin-bottom:8px;">Review your note</div><textarea id="voice-ta" style="width:100%;height:140px;background:#0f0f0f;border:1px solid #2a2a2a;border-radius:10px;padding:11px;font-size:14px;color:#ddd;font-family:inherit;line-height:1.6;resize:none;outline:none;box-sizing:border-box;">${txt}</textarea><div style="display:flex;gap:8px;margin-top:12px;"><button onclick="_voiceSave(document.getElementById('voice-ta').value)" style="flex:1;background:var(--accent);color:var(--accent-ink);border:none;border-radius:10px;padding:12px;font-size:13px;font-weight:600;cursor:pointer;font-family:inherit;"><i class="ti ti-check"></i> Save to notes</button><button onclick="startVoiceNote(_voiceClientId)" style="background:#1a1a1a;border:1px solid #2a2a2a;color:#ccc;border-radius:10px;padding:12px 14px;font-size:13px;cursor:pointer;font-family:inherit;"><i class="ti ti-refresh"></i> Redo</button></div>`);
+  _voicePreview();
+}
+// Full-screen-sheet preview of the captured note: read it, edit it inline, re-record from
+// scratch, or save. This is the single review step after dictation ends.
+function _voicePreview(){
+  const raw=(_voiceText||'').trim();
+  const txt=raw.replace(/</g,'&lt;');
+  const words=raw?raw.split(/\s+/).filter(Boolean).length:0;
+  const meta=raw?(words+' word'+(words===1?'':'s')+' captured \u00b7 edit anything below before saving'):'Nothing was captured. Try Start over, or type your note below.';
+  _voiceOverlay(`<div style="display:flex;align-items:center;gap:8px;margin-bottom:4px;"><i class="ti ti-microphone" aria-hidden="true" style="font-size:16px;color:var(--accent);"></i><span style="font-size:15px;font-weight:600;color:#f0f0f0;">Preview voice note</span></div>
+  <div style="font-size:12px;color:#8a8a8a;margin-bottom:10px;line-height:1.5;">${meta}</div>
+  <textarea id="voice-ta" placeholder="Your transcribed note\u2026" style="width:100%;height:150px;background:#0f0f0f;border:1px solid #2a2a2a;border-radius:10px;padding:11px;font-size:14px;color:#ddd;font-family:inherit;line-height:1.6;resize:none;outline:none;box-sizing:border-box;">${txt}</textarea>
+  <button onclick="_voiceSave(document.getElementById('voice-ta').value)" style="width:100%;margin-top:12px;background:var(--accent);color:var(--accent-ink);border:none;border-radius:10px;padding:12px;font-size:14px;font-weight:600;cursor:pointer;font-family:inherit;display:flex;align-items:center;justify-content:center;gap:7px;"><i class="ti ti-check"></i> Save to notes</button>
+  <div style="display:flex;gap:8px;margin-top:8px;">
+    <button onclick="_voiceRedo()" style="flex:1;background:#1a1a1a;border:1px solid #2a2a2a;color:#ccc;border-radius:10px;padding:11px;font-size:13px;font-weight:600;cursor:pointer;font-family:inherit;display:flex;align-items:center;justify-content:center;gap:6px;"><i class="ti ti-refresh"></i> Start over</button>
+    <button onclick="_voiceClose()" style="flex:1;background:none;border:1px solid #2a2a2a;color:#999;border-radius:10px;padding:11px;font-size:13px;cursor:pointer;font-family:inherit;">Cancel</button>
+  </div>
+  <div style="font-size:11px;color:#666;margin-top:10px;line-height:1.5;text-align:center;">\u201cStart over\u201d clears this and records a fresh note. \u201cSave\u201d adds it to your provider notes.</div>`);
+  const ta=document.getElementById('voice-ta');if(ta){try{ta.focus();ta.setSelectionRange(ta.value.length,ta.value.length);}catch(e){}}
+}
+// Re-record from scratch. Confirm first if there's a real transcript so a good dictation
+// isn't thrown away by an accidental tap.
+function _voiceRedo(){
+  const cur=(()=>{const el=document.getElementById('voice-ta');return el?el.value.trim():(_voiceText||'').trim();})();
+  if(cur.length>2&&!confirm('Start over? This clears the current note and records a new one.'))return;
+  _voiceText='';
+  startVoiceNote(_voiceClientId);
 }
 function _voiceSave(text){
   text=String(text||'').trim();if(!text){_voiceClose();return;}
