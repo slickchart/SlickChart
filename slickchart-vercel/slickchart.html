@@ -11459,12 +11459,15 @@ function initialsOf(name){return (Array.from(String(name||'?').trim().split(/\s+
 function _nextApptForClient(id){
   const c=CL[id];if(!c)return null;
   const name=(c.name||'').trim().toLowerCase();
+  // "Next" appointment means the next FUTURE visit — not the session being finished today.
+  // Anchor to the start of tomorrow so today's own appointment isn't picked as "next".
   const now=new Date();now.setHours(0,0,0,0);
+  const tomorrow=new Date(now.getTime()+24*3600000);
   const cands=[];
   // Live Square appointments (have real Date objects in .at)
   try{
     if(typeof squareAppts!=='undefined'&&Array.isArray(squareAppts)){
-      squareAppts.forEach(a=>{if(a.at&&(a.client||'').trim().toLowerCase()===name&&a.at>=now){
+      squareAppts.forEach(a=>{if(a.at&&(a.client||'').trim().toLowerCase()===name&&a.at>=tomorrow){
         cands.push({at:a.at,dateLabel:a.at.toLocaleDateString('en-US',{month:'short',day:'numeric',year:'numeric'}),time:a.at.toLocaleTimeString('en-US',{hour:'numeric',minute:'2-digit'}),treatment:(a.tx&&a.tx!=='Appointment')?a.tx:(c.treatment||'')});
       }});
     }
@@ -11475,7 +11478,7 @@ function _nextApptForClient(id){
     more.forEach(b=>{
       if((b.client||'').trim().toLowerCase()!==name)return;
       let at=null;try{at=b.date?new Date(b.date+'T12:00:00'):null;}catch(e){}
-      if(at&&!isNaN(at)&&at>=now){cands.push({at,dateLabel:b.dateLabel||at.toLocaleDateString('en-US',{month:'short',day:'numeric',year:'numeric'}),time:b.time||'',treatment:b.tx||b.treatment||c.treatment||''});}
+      if(at&&!isNaN(at)&&at>=tomorrow){cands.push({at,dateLabel:b.dateLabel||at.toLocaleDateString('en-US',{month:'short',day:'numeric',year:'numeric'}),time:b.time||'',treatment:b.tx||b.treatment||c.treatment||''});}
     });
   }catch(e){}
   if(cands.length){cands.sort((x,y)=>x.at-y.at);return cands[0];}
