@@ -11278,7 +11278,8 @@ function _notesDoneToday(cid){
 }
 function fmtBookingDate(b){
   if(b.dateLabel)return b.dateLabel;
-  try{return new Date(b.date+'T12:00:00').toLocaleDateString('en-US',{weekday:'long',month:'long',day:'numeric'});}catch(e){return b.date;}
+  if(!b.date)return 'Date TBD';
+  try{const d=new Date(b.date+'T12:00:00');if(isNaN(d.getTime()))return b.date||'Date TBD';return d.toLocaleDateString('en-US',{weekday:'long',month:'long',day:'numeric'});}catch(e){return b.date||'Date TBD';}
 }
 
 // ── Real client submissions (bookings & messages sent from the live client app) ──
@@ -11332,7 +11333,10 @@ async function syncClientEvents(){
         const preview=payload.text||'Sent a message';
         msgStore[cid].push({from:'them',text:payload.text||'',imgs:[],time:'Just now'});
         const th=threads.find(x=>x.id===cid);
-        if(th){th.preview=preview;th.time='Just now';th.unread=true;}
+        if(th){th.preview=preview;th.time='Just now';th.unread=true;
+          // Move this conversation to the top so the list stays ordered by most-recent activity
+          // (the render sort only groups unread-first and is stable, so array order = recency).
+          const ti=threads.indexOf(th);if(ti>0){threads.splice(ti,1);threads.unshift(th);}}
         else{threads.unshift({id:cid,preview,time:'Just now',unread:true});}
         notifFeed.unshift({id:'evn'+ev.id,type:'message',icon:'ti-message-circle',col:'#0d1e33',ic:'#5ba3e8',
           title:'New message',body:`${name}: "${preview}"`,time:'Just now',read:false,action:'chat',data:cid});
@@ -12953,7 +12957,11 @@ function _billingHTML(sub){
   const statusLabel=active?'Active':pastDue?'Payment failed':sub?'Canceled':'No subscription found';
   const statusColor=active?'bg':pastDue?'br':'bm';
   const amount=sub&&sub.plan_amount?('$'+(sub.plan_amount/100).toFixed(2)+'/month'):'$10.00/month';
-  const nextDate=sub&&sub.current_period_end?new Date(sub.current_period_end).toLocaleDateString('en-US',{month:'short',day:'numeric',year:'numeric'}):'\u2014';
+  // Stripe sends current_period_end as UNIX seconds; new Date() expects milliseconds. A raw
+  // seconds value would render as a 1970 date. Convert when it looks like seconds (< 1e12),
+  // but leave an already-ms value alone in case the backend normalized it.
+  const _cpe=sub&&sub.current_period_end?(Number(sub.current_period_end)<1e12?Number(sub.current_period_end)*1000:Number(sub.current_period_end)):0;
+  const nextDate=_cpe?new Date(_cpe).toLocaleDateString('en-US',{month:'short',day:'numeric',year:'numeric'}):'\u2014';
   return `
   <div style="margin:12px 16px;background:linear-gradient(135deg,var(--accent-tint),var(--accent-ink));border:1px solid var(--accent-a44);border-radius:14px;padding:18px;">
     <div style="display:flex;align-items:center;justify-content:space-between;margin-bottom:12px;">
