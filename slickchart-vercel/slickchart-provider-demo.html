@@ -2505,7 +2505,7 @@ function renderClients(){
   </div>`:''}
   ${Object.keys(CL).length===0
     ? emptyState({icon:'ti-users',title:'No clients yet',body:'Add your first client to get started. Their chart, notes, and session history will live here.',action:'Add first client',screen:'new-client'})
-    : Object.entries(CL).sort((a,b)=>{const da=(a[0]==='maya'||a[0]==='sophie'||a[0]==='priya')?0:1;const db=(b[0]==='maya'||b[0]==='sophie'||b[0]==='priya')?0:1;return da-db;}).map(([id,c])=>`<div class="card client-card" data-search="${((c.name||'')+' '+(c.treatment||'')).toLowerCase().normalize('NFD').replace(/[̀-ͯ]/g,'').replace(/['‘’`"]/g,'').replace(/[^a-z0-9 ]/g,' ').replace(/\s+/g,' ').trim()}" onclick="nav('client','${id}')"><div class="row">${av(c)}<div style="flex:1;"><div style="display:flex;align-items:center;gap:7px;"><span style="font-size:15px;font-weight:500;color:#f0f0f0;">${c.name}</span>${(id==='maya'||id==='sophie'||id==='priya')?`<span onclick="event.stopPropagation();showDemoInfo()" title="What are demo clients?" style="font-size:9px;font-weight:700;color:#caa86a;border:1px solid #3a2a10;background:#1a1308;border-radius:4px;padding:1px 5px;letter-spacing:.03em;cursor:pointer;">DEMO</span>`:''}</div></div><i aria-hidden="true" class="ti ti-chevron-right" style="font-size:16px;color:#888;"></i></div></div>`).join('')
+    : Object.entries(CL).sort((a,b)=>{const da=(a[0]==='maya'||a[0]==='sophie'||a[0]==='priya')?0:1;const db=(b[0]==='maya'||b[0]==='sophie'||b[0]==='priya')?0:1;return da-db;}).map(([id,c])=>`<div class="card client-card" data-search="${((c.name||'')+' '+(c.treatment||'')).toLowerCase().normalize('NFD').replace(/[̀-ͯ]/g,'').replace(/['‘’`"]/g,'').replace(/[^a-z0-9 ]/g,' ').replace(/\s+/g,' ').trim()}" onclick="nav('client','${id}')"><div class="row">${av(c)}<div style="flex:1;"><div style="display:flex;align-items:center;gap:7px;"><span style="font-size:15px;font-weight:500;color:#f0f0f0;">${_fileEsc(c.name)}</span>${(id==='maya'||id==='sophie'||id==='priya')?`<span onclick="event.stopPropagation();showDemoInfo()" title="What are demo clients?" style="font-size:9px;font-weight:700;color:#caa86a;border:1px solid #3a2a10;background:#1a1308;border-radius:4px;padding:1px 5px;letter-spacing:.03em;cursor:pointer;">DEMO</span>`:''}</div></div><i aria-hidden="true" class="ti ti-chevron-right" style="font-size:16px;color:#888;"></i></div></div>`).join('')
   }
   ${_noRes('clients-noresults','No clients match your search.')}`;
 }
@@ -3208,7 +3208,7 @@ function renderRoom(id){
   document.getElementById('tt').textContent='';
   S.innerHTML=`
   <div style="background:#0f0f0f;border-bottom:1px solid #1e1e1e;padding:14px 16px;display:flex;align-items:center;justify-content:space-between;">
-    <div><div style="font-size:12px;color:#999;text-transform:uppercase;letter-spacing:.07em;margin-bottom:2px;">Session</div><div style="font-size:16px;font-weight:500;color:#e0e0e0;display:flex;align-items:center;gap:8px;flex-wrap:wrap;">${c.name} · ${c.treatment} <button onclick="changeTreatment('${id}','room')" style="border:1px solid var(--accent-a30,#3d2d10);background:var(--accent-tint);color:var(--accent);cursor:pointer;padding:3px 9px;border-radius:20px;line-height:1;display:inline-flex;align-items:center;gap:3px;font-size:11px;font-weight:600;font-family:inherit;"><i class="ti ti-pencil" style="font-size:11px;"></i> Edit treatment</button></div></div>
+    <div><div style="font-size:12px;color:#999;text-transform:uppercase;letter-spacing:.07em;margin-bottom:2px;">Session</div><div style="font-size:16px;font-weight:500;color:#e0e0e0;display:flex;align-items:center;gap:8px;flex-wrap:wrap;">${_fileEsc(c.name)} · ${_fileEsc(c.treatment)} <button onclick="changeTreatment('${id}','room')" style="border:1px solid var(--accent-a30,#3d2d10);background:var(--accent-tint);color:var(--accent);cursor:pointer;padding:3px 9px;border-radius:20px;line-height:1;display:inline-flex;align-items:center;gap:3px;font-size:11px;font-weight:600;font-family:inherit;"><i class="ti ti-pencil" style="font-size:11px;"></i> Edit treatment</button></div></div>
     <button onclick="_summaryFrom='room';nav('session-summary','${id}')" style="background:var(--accent);color:var(--accent-ink);border:none;border-radius:8px;padding:7px 12px;font-size:12px;font-weight:500;cursor:pointer;">End session</button>
   </div>
   <div style="padding:10px 14px 0;">
@@ -10037,9 +10037,11 @@ function _importClientsFromRows(rows){
 }
 function _importProductsFromRows(rows){
   let n=0;(rows||[]).forEach(row=>{
-    const dup=affiliateLinks.some(a=>(a.name||'').toLowerCase()===row.name.toLowerCase())||_importedProducts.some(a=>(a.name||'').toLowerCase()===row.name.toLowerCase());
+    const nm=(row&&row.name!=null)?String(row.name).trim():'';
+    if(!nm)return;   // skip rows with no product name (can't dedup or display them)
+    const dup=affiliateLinks.some(a=>(a.name||'').toLowerCase()===nm.toLowerCase())||_importedProducts.some(a=>(a.name||'').toLowerCase()===nm.toLowerCase());
     if(dup)return;
-    _importedProducts.push({id:'ip'+Date.now().toString(36)+Math.floor(Math.random()*1e4).toString(36),name:row.name,brand:row.brand||'',icon:'\ud83e\uddf4',url:(row.url||'').replace(/^https?:\/\//,''),active:true,imported:true});n++;
+    _importedProducts.push({id:'ip'+Date.now().toString(36)+Math.floor(Math.random()*1e4).toString(36),name:nm,brand:row.brand||'',icon:'\ud83e\uddf4',url:(row.url||'').replace(/^https?:\/\//,''),active:true,imported:true});n++;
   });
   try{localStorage.setItem('sc_imported_products',JSON.stringify(_importedProducts));}catch(e){}
   _applyImportedProducts();
