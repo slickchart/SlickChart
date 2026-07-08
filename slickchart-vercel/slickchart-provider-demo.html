@@ -4035,7 +4035,7 @@ function renderNewNoteTemplate(clientId){
 function ntSecHTML(s,i){return`<div style="background:#1a1a1a;border:1px solid #2a2a2a;border-radius:10px;margin-bottom:8px;overflow:hidden;" id="ns-${s.id}"><div style="padding:10px 12px;display:flex;align-items:center;gap:8px;"><div style="width:10px;height:10px;border-radius:50%;background:${s.color};"></div><input aria-label="Section label" value="${s.label}" style="flex:1;border:none;background:none;font-size:14px;font-weight:500;color:#e0e0e0;outline:none;font-family:inherit;" oninput="noteEditSecs[${i}].label=this.value"><button onclick="rmNtSec('${s.id}')" class="icon-btn" aria-label="Delete"><i class="ti ti-trash" aria-hidden="true" style="color:#e87070;font-size:16px;"></i></button></div></div>`;}
 function addNtSec(){const colors=['#e87070','#5ba3e8','#4ec49a','var(--accent)','#a891ec'];const s={id:'ne'+Date.now(),label:'New section',color:colors[noteEditSecs.length%colors.length]};noteEditSecs.push(s);const list=document.getElementById('nt-secs');if(!list)return;const d=document.createElement('div');d.innerHTML=ntSecHTML(s,noteEditSecs.length-1);list.appendChild(d.firstChild);}
 function rmNtSec(id){noteEditSecs=noteEditSecs.filter(s=>s.id!==id);const el=document.getElementById('ns-'+id);if(el)el.remove();}
-function saveNoteTemplate(clientId){const name=document.getElementById('nt-name')?.value||'My custom format';customNoteTemplates.push({id:'ct'+Date.now(),name,bdg:'ba',col:'var(--accent-tint)',ic:'var(--accent)',desc:`Custom · ${noteEditSecs.length} sections`,sections:noteEditSecs.map(s=>({...s,ph:''}))});nav('notes',clientId);}
+function saveNoteTemplate(clientId){const name=document.getElementById('nt-name')?.value||'My custom format';customNoteTemplates.push({id:'ct'+Date.now(),name,bdg:'ba',col:'var(--accent-tint)',ic:'var(--accent)',desc:`Custom · ${noteEditSecs.length} sections`,sections:noteEditSecs.map(s=>({...s,ph:''}))});try{persistCustomNoteTemplates();}catch(e){}nav('notes',clientId);}
 // Photo comparison data per client
 const photoSessions={
   maya:[
@@ -8088,7 +8088,7 @@ function showMsgTab(tab){
         <div style="padding:12px 14px;display:flex;align-items:flex-start;gap:10px;">
           <div style="width:38px;height:38px;border-radius:9px;background:${a.col};display:flex;align-items:center;justify-content:center;font-size:17px;">${a.icon}</div>
           <div style="flex:1;min-width:0;"><div style="display:flex;align-items:center;gap:6px;margin-bottom:2px;"><span style="font-size:13px;font-weight:500;color:#e0e0e0;">${_fileEsc(a.name)}</span><span class="bdg ${a.on?'bg':'bm'}" style="font-size:12px;">${a.on?'Active':'Paused'}</span></div><div style="font-size:12px;color:#999;">${_fileEsc(a.trigger)}</div>${a.on&&a.sent>0?`<div style="font-size:11px;color:#999;margin-top:4px;">${a.sent} sent · ${a.opened} opened · ${Math.round(a.opened/a.sent*100)}% open rate</div>`:''}</div>
-          ${togBtn(a.on,'autos['+i+'].on=!autos['+i+'].on;showMsgTab(\'autos\')','Toggle automation')}
+          ${togBtn(a.on,'_toggleAuto('+i+')','Toggle automation')}
         </div>
         <div style="border-top:1px solid #1e1e1e;padding:7px 14px;display:flex;align-items:center;justify-content:space-between;">
           <button onclick="nav('edit-automation',${i})" style="border:none;background:none;font-size:12px;color:var(--accent);cursor:pointer;"><i class="ti ti-pencil" style="font-size:12px;"></i> Edit message</button>
@@ -8855,6 +8855,7 @@ function resendRoutine(cid){
   (sent.items||[]).forEach(aid=>{if(!clientRecs[cid].includes(aid))clientRecs[cid].push(aid);});
   if(cid==='maya'){try{SlickBridge.post('routine-recommended',{providerId:'jess',clientId:'maya',routine:{name:sent.name,note:sent.note||'',products:sent.products||[]}});}catch(e){}}
   sent.date='Just now';persistSentRoutines();
+  try{if(typeof persistWorkspace==='function')persistWorkspace();}catch(e){}  // persist the clientRecs additions above
   const c=CL[cid];
   if(typeof proToast==='function')proToast(`Resent "${sent.name}" to ${c?c.name.split(' ')[0]:'client'}`);
   renderRoutineBuilder();
@@ -9184,10 +9185,12 @@ function confirmModal(opts,action){
 // Stale-safe automation delete: capture the automation object at tap time and
 // re-resolve its index when the user confirms, so a reordered/shortened array can't
 // cause the wrong automation to be deleted. `after` selects the right re-render.
+function _toggleAuto(i){const a=autos[i];if(!a)return;a.on=!a.on;try{persistAutos();}catch(e){}showMsgTab('autos');}
 function _deleteAutomation(i,after){
   const a=autos[i];if(!a)return;
   confirmModal({title:'Delete automation',body:'Delete \''+((a.name||'this automation'))+'\'? It will stop sending immediately.',action:'Delete'},function(){
     const ix=autos.indexOf(a);if(ix>=0)autos.splice(ix,1);
+    try{persistAutos();}catch(e){}  // was missing — deleted automation reappeared on reload
     if(after==='messages')nav('messages');else showMsgTab('autos');
   });
 }
@@ -12448,6 +12451,7 @@ SlickBridge.on('booking-request',b=>{
 
 SlickBridge.on('checkin-submitted',ci=>{
   checkins.unshift({...ci,read:false,at:(typeof ci.at==='number'?ci.at:Date.now())});
+  try{if(typeof persistCheckins==='function')persistCheckins();}catch(e){}  // was missing — inbox check-in lost on reload
   if(ci.clientId&&CL[ci.clientId]){
     CL[ci.clientId].checkinDone=true;
     // Most recent check-in only — overwrites the previous on the client file.
@@ -13859,6 +13863,7 @@ function saveAuto(idx){
   } else {
     autos.push({name,icon:'📅',col:'#0d1e33',trigger,specificDate,specificTime,repeatEvery,on:true,sent:0,opened:0,bdg:'bb'});
   }
+  try{persistAutos();}catch(e){}  // was missing — new/edited automations were lost on reload
   nav('messages');
 }
 
@@ -13980,6 +13985,7 @@ function saveBundle(){
   const icon=document.getElementById('bn-icon')?.value||'✨';
   const products=affiliateLinks.filter((_,i)=>document.getElementById('bn-prod-'+i)?.checked).map(a=>a.name);
   shopBundles.push({id:'b'+Date.now(),name,icon,col:'var(--accent-tint)',ic:'var(--accent)',products:products.length?products:['Product 1','Product 2'],price,sent:0,clicks:0});
+  try{persistShopBundles();}catch(e){}  // was missing — new shop bundles were lost on reload
   activeShopTab='bundles';
   nav('shop');
 }
