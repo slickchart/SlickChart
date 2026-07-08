@@ -382,6 +382,18 @@ const noteTemplates={
     {id:'f1',label:'Session notes',color:'#888',ph:'Write your treatment notes freely...'},
   ]},
 };
+// Esthetician "Service record" — a skincare-service-oriented structured note (distinct from the
+// clinical SOAP format). Mirrors the esty recordSections so it reads naturally for facials, peels,
+// and treatments. Injected for estheticians in applyProfessionConfig and used as their default.
+const estyNoteTemplates={
+  serviceRecord:{id:'serviceRecord',name:'Service record',bdg:'br',col:'#2a0f1a',ic:'#e87070',desc:'Treatment · Products · Observations · Homecare',sections:[
+    {id:'esr1',label:'Treatment performed',color:'#e87070',ph:'Facial, peel, microneedling, extractions — describe the service in detail...'},
+    {id:'esr2',label:'Products used',color:'#4ec49a',ph:'Cleanser, exfoliant, serums, masks, actives — brands and percentages...'},
+    {id:'esr3',label:'Skin observations',color:'#5ba3e8',ph:'Skin condition, reactions, areas of concern, progress since last visit...'},
+    {id:'esr4',label:'Homecare plan',color:'var(--accent)',ph:'Recommended products, routine adjustments, actives to start/stop...'},
+    {id:'esr5',label:'Next visit notes',color:'#a891ec',ph:'Suggested timing, planned next treatment, anything to follow up on...'},
+  ]},
+};
 let customNoteTemplates=[];
 let noteEditSecs=[];
 let clientRecs={maya:['a1','a2'],sophie:[],priya:['a3']};
@@ -1694,7 +1706,8 @@ function applyProfessionConfig(){
   if(hasHair){Object.assign(noteTemplates,hairNoteTemplates);activeNoteTemplate='colorRecord';}
   if(hasBarber){Object.assign(noteTemplates,barberNoteTemplates);if(!hasHair)activeNoteTemplate='cutRecord';}
   if(hasBrow){Object.assign(noteTemplates,browNoteTemplates);if(browOnly)activeNoteTemplate='browRecord';}
-  if(hasEsty||(!hasHair&&!hasBarber&&!hasBrow)){activeNoteTemplate='soap';}
+  if(hasEsty){Object.assign(noteTemplates,estyNoteTemplates);}
+  if(hasEsty||(!hasHair&&!hasBarber&&!hasBrow)){activeNoteTemplate=hasEsty?'serviceRecord':'soap';}
 
   const only=p=>selectedProfessions.length===1&&selectedProfessions[0]===p;
   const hasMakeup=profs.some(p=>p.id==='makeup'), hasMassage=profs.some(p=>p.id==='massage'),
@@ -1706,12 +1719,36 @@ function applyProfessionConfig(){
   if(hasNail){Object.assign(noteTemplates,nailNoteTemplates);if(only('nail'))activeNoteTemplate='nailRecord';}
   if(hasWax&&!hasEsty&&!hasBrow){Object.assign(noteTemplates,waxNoteTemplates);if(only('wax'))activeNoteTemplate='waxRecord';}
   if(hasCoach){Object.assign(noteTemplates,coachNoteTemplates);if(only('coach'))activeNoteTemplate='trainingRecord';}
-  // Respect the provider's explicitly saved note format; if none is saved yet, default to
-  // free form (rather than the profession-specific structured template). A saved pick always wins.
+  // PMU: the pmuRecord template lives inside browNoteTemplates, so a PMU-only provider (no brow)
+  // wouldn't otherwise get it. Load it and default to it for PMU-only.
+  const hasPmu=profs.some(p=>p.id==='pmu');
+  if(hasPmu){Object.assign(noteTemplates,browNoteTemplates);if(only('pmu'))activeNoteTemplate='pmuRecord';}
+  // Choose the default note format. A format the provider explicitly saved always wins. Otherwise
+  // pick a profession-specific default: the structured record that fits each trade, per the mapping
+  // below (hair→color record, brow→brow record, PMU→PMU record, lash→lash record, wax→wax record,
+  // esthetician→service record, coach→BIRP, nutritionist→free form). Anything unmapped keeps the
+  // template chosen above, or free form as a last resort.
   try{
     const _savedFmt=(typeof localStorage!=='undefined')?localStorage.getItem('sc_note_fmt'):null;
-    if(_savedFmt&&noteTemplates[_savedFmt])activeNoteTemplate=_savedFmt;
-    else if(noteTemplates.freeform)activeNoteTemplate='freeform';
+    if(_savedFmt&&noteTemplates[_savedFmt]){
+      activeNoteTemplate=_savedFmt;   // provider's explicit choice — respect it
+    } else {
+      // Profession-specific default (first match wins; ordered so a single-profession provider
+      // lands on their trade's record, and multi-profession providers get a sensible primary).
+      const _hasNutrition=profs.some(p=>p.id==='nutrition');
+      const _profDefault=
+        hasHair?'colorRecord':
+        (hasBrow&&browOnly)?'browRecord':
+        (hasPmu&&only('pmu'))?'pmuRecord':
+        (hasLash&&only('lash'))?'lashRecord':
+        (hasWax&&only('wax'))?'waxRecord':
+        hasEsty?'serviceRecord':
+        hasCoach?'birp':
+        _hasNutrition?'freeform':
+        null;
+      if(_profDefault&&noteTemplates[_profDefault])activeNoteTemplate=_profDefault;
+      else if(!noteTemplates[activeNoteTemplate]&&noteTemplates.freeform)activeNoteTemplate='freeform';
+    }
   }catch(e){}
   if(only('makeup'))Object.assign(checkinCfg,makeupCheckinCfg);
   else if(only('massage'))Object.assign(checkinCfg,massageCheckinCfg);

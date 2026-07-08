@@ -6,6 +6,23 @@ This file lives in the repo (`slickchart-vercel/CHANGELOG.md`). Vercel ignores i
 
 ---
 
+## 2026-07-08 — Profession-specific note defaults
+
+The default treatment-note format now matches the provider's profession, instead of always defaulting to free form:
+
+- Hair stylist → **Color record**
+- Brow artist → **Brow record**
+- PMU artist → **PMU record** (also fixed: the PMU record template wasn't being loaded for PMU-only providers)
+- Lash tech → **Lash record**
+- Waxer → **Wax record**
+- Esthetician → **Service record** (new structured template: Treatment performed · Products used · Skin observations · Homecare plan · Next visit notes)
+- Coach → **BIRP**
+- Nutritionist → **Free form**
+
+A format the provider explicitly picks still always wins and persists (`sc_note_fmt`); the profession default only applies when they haven't chosen one. All formats remain available in the picker. Verified each profession resolves to the correct default.
+
+---
+
 ## 2026-07-08 — Square live sync + instant paths
 
 Products, services, prices, clients, appointments, and tax rate now update from Square automatically — no reboot, no manual re-push.
