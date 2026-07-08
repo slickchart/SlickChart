@@ -10372,7 +10372,16 @@ function _coTotal(){return _money(_coSubtotal()+_coTaxAmt());}
 // manually-typed amount — always sanitized so a negative or Infinity can't be charged.
 function _coAmount(){const items=_coValidItems();return items.length?_coTotal():_price(_coVal('co-amt'));}
 let _squareTaxRate=null;
-async function _fetchSquareTaxRate(){if(_squareTaxRate!==null)return _squareTaxRate;try{const d=await _sqFetch('/api/square/tax-rate');_squareTaxRate=(d&&d.ok&&d.rate)?d.rate:0;}catch(e){_squareTaxRate=0;}return _squareTaxRate;}
+let _squareTaxRateAt=0;   // when the Square tax rate was last fetched — used to expire the cache
+async function _fetchSquareTaxRate(){
+  // Serve the cached rate only if it's fresh (under 5 min old). Beyond that, refetch so a tax-rate
+  // change made in Square comes through without an app reboot. Tax rates change rarely, so this
+  // adds negligible load. On a fetch error we keep whatever we last had rather than dropping to 0.
+  if(_squareTaxRate!==null&&(Date.now()-_squareTaxRateAt)<300000)return _squareTaxRate;
+  try{const d=await _sqFetch('/api/square/tax-rate');_squareTaxRate=(d&&d.ok&&d.rate)?d.rate:0;_squareTaxRateAt=Date.now();}
+  catch(e){if(_squareTaxRate===null)_squareTaxRate=0;/* keep last known rate on transient errors */}
+  return _squareTaxRate;
+}
 function _effTaxRate(){return _taxRate>0?_taxRate:(_squareTaxRate||0);}
 function _taxIsEstimate(){return !(_taxRate>0)&&(_squareTaxRate>0);}
 function _taxableSub(){return _money(_coItems.reduce((a,it)=>a+((it.taxable===false)?0:((+it.price||0)*(it.qty||1))),0));}
@@ -10934,12 +10943,20 @@ setInterval(()=>{
     if(typeof document!=='undefined'&&document.hidden)return;
     if(typeof _autoSyncCatalog==='function')_autoSyncCatalog();
     if(typeof _autoSyncCustomers==='function')_autoSyncCustomers();
+    // Keep upcoming appointments current too — a booking added/moved/canceled in Square shows up
+    // on its own. force:true refetches; the fingerprint check inside avoids needless repaints.
+    // Skip if an appointment load already happened very recently (e.g. from navigating a screen),
+    // so the poll doesn't fire a redundant call right after an on-demand one.
+    if(typeof _loadSquareAppts==='function'&&(!_loadSquareAppts._lastPoll||(Date.now()-_loadSquareAppts._lastPoll)>=45000)){
+      _loadSquareAppts._lastPoll=Date.now();
+      _loadSquareAppts(true);
+    }
   }catch(e){}
 },60000);
 // When the app comes back to the foreground (tab refocused / phone unlocked), sync right away so
 // changes made in Square while you were elsewhere are reflected immediately on return.
 try{document.addEventListener('visibilitychange',function(){
-  if(!document.hidden){try{if(typeof _autoSyncCatalog==='function')_autoSyncCatalog();if(typeof _autoSyncCustomers==='function')_autoSyncCustomers();}catch(e){}}
+  if(!document.hidden){try{if(typeof _autoSyncCatalog==='function')_autoSyncCatalog();if(typeof _autoSyncCustomers==='function')_autoSyncCustomers();if(typeof _loadSquareAppts==='function')_loadSquareAppts(true);}catch(e){}}
 });}catch(e){}
 async function _paySyncSquare(auto){
   if(auto){
@@ -12461,15 +12478,22 @@ async function _loadSquareAppts(force){
   if(!hasKey){_sqApptsState='off';return;}                 // not signed in to cloud — keep sample data
   if(!force&&(_sqApptsState==='ok'||_sqApptsState==='error'))return; // already attempted
   _sqApptsState='loading';
+  let _changed=true;
   try{
     const data=await _sqFetch('/api/square/appointments?days=90');
     const pal=[['var(--accent-tint)','var(--accent)'],['#0d1e33','#5ba3e8'],['#0a2019','#4ec49a'],['#1e1633','#a891ec']];
     const esc=s=>String(s||'').replace(/</g,'&lt;').replace(/>/g,'&gt;');
     squareAppts=(data.appointments||[]).map((a,i)=>{const d=a.startAt?new Date(a.startAt):null;return {id:a.id,at:d,client:esc(a.customerName)||'Client',tx:'Appointment',dur:a.durationMinutes||60,col:pal[i%pal.length][0],ic:pal[i%pal.length][1]};}).filter(a=>a.at&&!isNaN(a.at));
+    // Fingerprint the appointment set (id + start + duration + who) so a background poll only
+    // repaints the screen when something actually changed — a new booking, a reschedule, or a
+    // cancellation — rather than flickering on every tick.
+    const fp=JSON.stringify((data.appointments||[]).map(a=>[a.id,a.startAt,a.durationMinutes,a.customerName]));
+    _changed=(fp!==_loadSquareAppts._lastFp);_loadSquareAppts._lastFp=fp;
     _sqApptsState='ok';
   }catch(e){_sqApptsState='error';squareAppts=null;}
-  // Refresh the visible screen if it shows appointments (without touching nav history).
-  try{if(_navCur&&_navCur.screen==='home')renderHome();else if(_navCur&&_navCur.screen==='calendar')renderCalendar();}catch(e){}
+  // Refresh the visible screen if it shows appointments (without touching nav history), but only
+  // when the data changed — so the periodic poll doesn't cause needless repaints.
+  if(_changed){try{if(_navCur&&_navCur.screen==='home')renderHome();else if(_navCur&&_navCur.screen==='calendar')renderCalendar();else if(_navCur&&_navCur.screen==='today-appts'&&typeof renderTodayAppts==='function')renderTodayAppts();}catch(e){}}
 }
 function _apptsLive(){return _sqApptsState==='ok'&&Array.isArray(squareAppts);}
 function _apptsThisWeek(){
@@ -13274,7 +13298,7 @@ function renderStudio(){
   S.innerHTML=`
   <div style="padding:16px 16px 8px;display:flex;align-items:center;justify-content:space-between;">
     <div>
-      <div id="page-heading" tabindex="-1" style="font-size:20px;font-weight:600;color:#f0f0f0;">${workspace.name}</div>
+      <div id="page-heading" tabindex="-1" style="font-size:20px;font-weight:600;color:#f0f0f0;">${_fileEsc(workspace.name)}</div>
       <div style="font-size:13px;color:#666;">Thursday, Jun 26 · ${workspace.plan} plan</div>
     </div>
     <span style="font-size:11px;background:var(--accent-tint);color:var(--accent);padding:4px 10px;border-radius:20px;font-weight:600;border:1px solid var(--accent-a44);">Owner</span>
@@ -13389,7 +13413,7 @@ function renderInviteStaff(){
   
   <div style="padding:12px 16px 6px;">
     <div style="font-size:18px;font-weight:600;color:#f0f0f0;margin-bottom:4px;">Invite a team member</div>
-    <div style="font-size:13px;color:#666;line-height:1.6;">They'll receive an email to create their account and join ${workspace.name}.</div>
+    <div style="font-size:13px;color:#666;line-height:1.6;">They'll receive an email to create their account and join ${_fileEsc(workspace.name)}.</div>
   </div>
 
   <div style="padding:0 16px;">
@@ -13439,7 +13463,7 @@ function submitInvite(){
       <i class="ti ti-mail-check" aria-hidden="true" style="font-size:36px;color:#4ec49a;"></i>
     </div>
     <div style="font-size:20px;font-weight:600;color:#f0f0f0;margin-bottom:8px;">Invite sent!</div>
-    <div style="font-size:14px;color:#666;line-height:1.7;margin-bottom:24px;">They'll get an email with a link to create their account and join ${workspace.name}. You'll be notified when they accept.</div>
+    <div style="font-size:14px;color:#666;line-height:1.7;margin-bottom:24px;">They'll get an email with a link to create their account and join ${_fileEsc(workspace.name)}. You'll be notified when they accept.</div>
     <div style="display:flex;flex-direction:column;gap:8px;width:100%;max-width:240px;">
       <button class="btnp" style="border-radius:10px;" onclick="nav('invite-staff')"><i class="ti ti-user-plus" aria-hidden="true"></i> Invite another</button>
       <button class="btng" style="border-radius:10px;" onclick="nav('studio')">Back to studio</button>
