@@ -38,6 +38,22 @@ Products, services, prices, clients, appointments, and tax rate now update from 
 
 **Limitation:** pull-based, so "instant" means "within ~60 s or on refocus." True sub-second updates would need Square webhooks (server-side `/api/square`).
 
+## 2026-07-08 — Self-serve data export + account deletion (privacy)
+
+Added two self-serve privacy features under Account → Security & billing → "Privacy & your data," so the app can satisfy data-portability and right-to-erasure expectations (GDPR/CCPA) without manual support requests.
+
+- **Export my data.** The existing Export Center gains an "Everything (full backup)" option that downloads a single JSON file containing every data set the app stores — the same complete `sc_*` set the cloud syncs, minus the three credential/transient keys (auth token, Square key, cross-tab bus). Values are parsed to readable JSON, with a manifest (account email, timestamp, key count). The per-category CSVs (clients, sales, services) remain.
+- **Delete my account.** A guarded, full-screen flow that lists exactly what will be erased, offers a one-tap full export first, and requires typing DELETE to enable the button. On confirm it wipes cloud data (a dedicated `/api/delete-account` endpoint if present, otherwise by overwriting the synced store with empty values), clears all local `sc_*` data plus the session Square key, drops the auth session and cached app shell, and reloads to a clean start. Cancel keeps everything.
+
+Added a generic `_downloadFile(name,text,mime)` helper (mirrors `_downloadCSV`'s anchor pattern) for the JSON export, and registered `export-data` / `delete-account` routes. Note: the account-deletion cloud wipe assumes a server `/api/delete-account` route for a hard server-side purge; until that's deployed, the fallback empties the synced store, which removes the data content but may leave empty keys — worth adding the endpoint server-side for a true purge.
+
+## 2026-07-08 — Bug sweep, round 27
+
+- **Square integration / diagnostics** (provider): the Square sync-diagnostic screen rendered location names, statuses, IDs, per-location booking counts, and error strings straight from the Square API response into HTML, unescaped. Location/business names can contain arbitrary characters set in the Square dashboard, so this is external data — added a local escaper to all of it, plus the permission-check labels from the token-status endpoint. Square retail products merged into the shop already render through escaped paths.
+- **Notification feed** (provider): the notification onclick handlers interpolated the notif `data`/`id` into single-quoted JS strings; `data` can carry a bridge-supplied client id, so wrapped them in `_jsAttr` for defense-in-depth. Title/body/time were already `_fileEsc`'d, and icon/color are internal literals.
+- **Checkout header** (provider): escaped the client email/phone contact line (provider-entered / CSV-importable, was unescaped).
+- Verified clean: client shop / buy-links — product fields via `_txt`, all three buy-link URLs (site/store/Amazon) via `_urlAttr(_safeUrl(...))` with `rel="noopener"`, discount codes via `_txt` + `_jsAttr` copy button. CSV import — the preview escapes `<` in its sample list and imported records inherit the systematic `_fileEsc` escaping everywhere they render (and CSV *export* is formula-injection-safe from round 25). Calendar Square appointments were escaped in round 26.
+
 ## 2026-07-08 — Bug sweep, round 26
 
 - **Virtual-consult flow** (provider) — the round's main find, two kinds of untrusted input:
