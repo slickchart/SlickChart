@@ -38,6 +38,10 @@ Products, services, prices, clients, appointments, and tax rate now update from 
 
 **Limitation:** pull-based, so "instant" means "within ~60 s or on refocus." True sub-second updates would need Square webhooks (server-side `/api/square`).
 
+## 2026-07-08 — Owner dashboard: subscriber count + subscriptions breakdown
+
+Added a "Subscribed" tile (active subscriptions + % of providers) and a "Subscriptions" breakdown block (active / past due / canceled, plus canceled-in-last-30-days as a churn signal) to the owner admin dashboard. Reads a new `subs` object from `/api/admin-stats`; hidden until the server returns it, so nothing breaks pre-deploy. The counts come straight from the existing `subscriptions` table the Stripe webhook already maintains (status normalized to active/past_due/canceled) — so this is a COUNT query, not new plumbing, and it also covers beta metric #6 (founding-member churn). Dropped the "Square sellers" tile to keep the top grid at 2×2. Backend queries are in BETA_METRICS_BACKEND_GUIDE.md (Step 5).
+
 ## 2026-07-08 — Beta metrics: charting activity + recurring pulse survey
 
 Instrumented the two beta metrics the app can honestly measure itself, and wrote a server spec
