@@ -1,4 +1,6 @@
-// POST /api/feedback  { message, rating? }   → logs a provider's beta feedback
+// POST /api/feedback  { message, rating?, kind?, timeSaved? }  → logs a provider's beta feedback
+//   kind:'pulse' + timeSaved come from the recurring pulse survey; the plain
+//   feedback button sends neither and is stored as kind='adhoc'.
 // GET  /api/feedback                          → owner-only: recent feedback { items }
 import { sql, ensureProvidersTable, dbEnabled } from '../lib/db.js';
 import { verifyToken } from '../lib/auth.js';
@@ -29,8 +31,8 @@ export default async function handler(req, res) {
       const q = sql();
       const you = await resolveEmail(req, q);
       if (!owner || you !== owner) { res.status(403).json({ error: 'Owner only' }); return; }
-      const rows = await q`SELECT rating, message, email, extract(epoch from ts) * 1000 AS ts FROM feedback ORDER BY ts DESC LIMIT 200`;
-      res.status(200).json({ items: rows.map(r => ({ rating: r.rating, message: r.message, email: r.email, ts: Math.round(Number(r.ts)) })) });
+      const rows = await q`SELECT rating, message, email, kind, time_saved, extract(epoch from ts) * 1000 AS ts FROM feedback ORDER BY ts DESC LIMIT 200`;
+      res.status(200).json({ items: rows.map(r => ({ rating: r.rating, message: r.message, email: r.email, kind: r.kind, timeSaved: r.time_saved, ts: Math.round(Number(r.ts)) })) });
     } catch (e) { res.status(200).json({ items: [] }); }
     return;
   }
@@ -39,11 +41,16 @@ export default async function handler(req, res) {
     const b = req.body || {};
     const message = String(b.message || '').slice(0, 4000).trim();
     const rating = b.rating ? parseInt(b.rating, 10) : null;
-    if (!message && !rating) { res.status(400).json({ error: 'Say a little about your experience.' }); return; }
+    // Pulse survey fields (from the recurring in-app prompt).
+    const kind = (b.kind === 'pulse') ? 'pulse' : 'adhoc';
+    const timeSaved = ['much_less', 'less', 'same', 'more'].includes(b.timeSaved) ? b.timeSaved : null;
+    // A pulse response is valid even if it's only a time-saved answer (no rating/message);
+    // the plain feedback button still needs at least a message or rating.
+    if (!message && !rating && !timeSaved) { res.status(400).json({ error: 'Say a little about your experience.' }); return; }
     try {
       await ensureProvidersTable();
       const q = sql(); const p = claims(req);
-      await q`INSERT INTO feedback (provider_id, email, rating, message) VALUES (${p.u || null}, ${p.e || null}, ${rating}, ${message})`;
+      await q`INSERT INTO feedback (provider_id, email, rating, message, kind, time_saved) VALUES (${p.u || null}, ${p.e || null}, ${rating}, ${message}, ${kind}, ${timeSaved})`;
       res.status(200).json({ ok: true });
     } catch (e) { res.status(200).json({ ok: false }); }
     return;
