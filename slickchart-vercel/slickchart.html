@@ -663,11 +663,20 @@ const hairNoteTemplates={
     {id:'cr4',label:'Toner / gloss',color:'#a891ec',ph:'Toner shade, developer, timing, result...'},
     {id:'cr5',label:'Result notes',color:'var(--accent)',ph:'Final result, client reaction, photos taken, adjustments made...'},
   ]},
-  serviceRecord:{id:'serviceRecord',name:'Service record',bdg:'bb',col:'#0d1e33',ic:'#5ba3e8',desc:'Service · Products · Notes',sections:[
-    {id:'sr1',label:'Service performed',color:'#5ba3e8',ph:'Cut, blowout, treatment, extensions — describe in detail...'},
-    {id:'sr2',label:'Products used',color:'#4ec49a',ph:'Shampoo, conditioner, treatments, styling products with amounts...'},
-    {id:'sr3',label:'Homecare plan',color:'var(--accent)',ph:'Recommended products, washing frequency, styling tips, next visit...'},
-    {id:'sr4',label:'Client notes',color:'#a891ec',ph:'Client feedback, preferences noted, anything for next visit...'},
+  haircutColorRecord:{id:'haircutColorRecord',name:'Haircut and color record',bdg:'bp',col:'#1e1633',ic:'#a891ec',desc:'Consultation · Cut · Formula · Result',sections:[
+    {id:'hcc1',label:'Consultation',color:'var(--accent)',ph:'Hair history, current color, desired look, previous services, allergies...'},
+    {id:'hcc2',label:'Cut details',color:'#e87070',ph:'Length removed, technique, layers, texturizing, styling — describe the cut...'},
+    {id:'hcc3',label:'Color formula',color:'#4ec49a',ph:'Brand, shade, developer %, mixing ratio, application method...'},
+    {id:'hcc4',label:'Processing / toner',color:'#5ba3e8',ph:'Processing time, rinse, toner or gloss shade + timing...'},
+    {id:'hcc5',label:'Result notes',color:'#a891ec',ph:'Final result, client reaction, photos taken, adjustments made...'},
+    {id:'hcc6',label:'Homecare plan',color:'var(--accent)',ph:'Recommended products, washing frequency, styling tips, next visit timing...'},
+  ]},
+  haircutRecord:{id:'haircutRecord',name:'Haircut record',bdg:'bb',col:'#0d1e33',ic:'#5ba3e8',desc:'Consultation · Cut · Style · Notes',sections:[
+    {id:'hc1',label:'Consultation',color:'var(--accent)',ph:'Desired look, hair type, face shape, lifestyle, maintenance level...'},
+    {id:'hc2',label:'Cut details',color:'#e87070',ph:'Length removed, technique, layers, texturizing, fringe/bangs...'},
+    {id:'hc3',label:'Styling',color:'#4ec49a',ph:'Blowout, tools used, products, finished style...'},
+    {id:'hc4',label:'Homecare plan',color:'var(--accent)',ph:'Recommended products, styling tips, trim timing, next visit...'},
+    {id:'hc5',label:'Client notes',color:'#a891ec',ph:'Client feedback, preferences noted, anything for next visit...'},
   ]},
   freeform:{id:'freeform',name:'Free form',bdg:'bm',col:'#222',ic:'#888',desc:'Unstructured · Write freely',sections:[
     {id:'f1',label:'Session notes',color:'#888',ph:'Write your session notes freely...'},
@@ -3800,7 +3809,7 @@ function _activeNotesText(id){
   if(draft&&draft.sections){
     return (tmpl.sections||[]).map(sec=>{const v=String(draft.sections[sec.id]||'').trim();return (v&&v!=='No notes yet.')?v:'';}).filter(Boolean).join('<br>');
   }
-  const store=(activeNoteTemplate==='colorRecord'||activeNoteTemplate==='serviceRecord')?hairSavedNotes:(activeNoteTemplate==='cutRecord')?barberSavedNotes:(activeNoteTemplate==='browRecord'||activeNoteTemplate==='pmuRecord')?browSavedNotes:savedNotes;
+  const store=(activeNoteTemplate==='colorRecord'||activeNoteTemplate==='haircutColorRecord'||activeNoteTemplate==='haircutRecord')?hairSavedNotes:(activeNoteTemplate==='cutRecord')?barberSavedNotes:(activeNoteTemplate==='browRecord'||activeNoteTemplate==='pmuRecord')?browSavedNotes:savedNotes;
   const s=(store&&store[activeNoteTemplate])||{};
   return (tmpl.sections||[]).map(sec=>{const v=String(s[sec.id]||'').trim();return (v&&v!=='No notes yet.')?v:'';}).filter(Boolean).join('<br>');
 }
@@ -3958,7 +3967,10 @@ function renderWriteNote(id){
   <div style="padding:0 16px;">
     ${t.sections.map(s=>`<div style="margin-bottom:14px;"><div style="font-size:11px;font-weight:500;text-transform:uppercase;letter-spacing:.07em;color:${s.color};margin-bottom:5px;display:flex;align-items:center;gap:5px;"><div style="width:8px;height:8px;border-radius:50%;background:${s.color};"></div>${s.label}</div><textarea id="wn-sec-${s.id}" class="fi" style="height:90px;resize:none;line-height:1.6;" placeholder="${s.ph}" oninput="_autosaveWriteNote('${id}')">${(sections[s.id]||'').replace(/</g,'&lt;')}</textarea></div>`).join('')}
   </div>
-  <button class="btnp" style="margin:0 16px 16px;width:calc(100% - 32px);border-radius:8px;" onclick="_saveWriteNote('${id}')"><i class="ti ti-check"></i> Save session note</button>`;
+  <div style="display:flex;gap:8px;margin:0 16px 16px;">
+    <button class="btnp" style="flex:1;border-radius:8px;" onclick="_saveAndSendNote('${id}')"><i class="ti ti-send"></i> Save and send</button>
+    <button style="flex:0 0 auto;background:none;border:1px solid #555;color:#ccc;border-radius:8px;padding:11px 16px;font-size:13px;cursor:pointer;font-family:inherit;" onclick="_saveWriteNote('${id}')"><i class="ti ti-check"></i> Just save</button>
+  </div>`;
 }
 let _autosaveWriteNoteTimer=null;
 function _autosaveWriteNote(id){
@@ -3981,8 +3993,11 @@ function _autosaveWriteNote(id){
     }catch(e){}
   },600);
 }
-function _saveWriteNote(id){
-  const c=CL[id];const t=noteTemplates[activeNoteTemplate]||noteTemplates.soap;
+// Save the current write-note editor into the draft + session-history/summary.
+// Returns {ok, id, idx} so callers can optionally send the just-saved summary.
+function _commitWriteNote(id){
+  const c=CL[id];if(!c)return {ok:false};
+  const t=noteTemplates[activeNoteTemplate]||noteTemplates.soap;
   const dateEl=document.getElementById('wn-date');
   const dateVal=(dateEl&&dateEl.value)||_isoToday();
   const sections={};
@@ -4000,7 +4015,25 @@ function _saveWriteNote(id){
   hist.sort((a,b)=>(b.ts||0)-(a.ts||0));
   try{persistSessionSummaries();}catch(e){}  // was missing — treatment-note summaries were kept only in memory and lost on reload
   try{if(typeof saveClients==='function')saveClients();}catch(e){}
+  // locate the entry we just saved so a caller can send it
+  const idx=hist.findIndex(h=>h._draftDate===dateVal);
+  return {ok:true,id,idx:idx<0?0:idx};
+}
+function _saveWriteNote(id){
+  const r=_commitWriteNote(id);
+  if(!r.ok)return;
   proToast('Note saved \u2713');
+  nav('notes',id);
+}
+function _saveAndSendNote(id){
+  const r=_commitWriteNote(id);
+  if(!r.ok)return;
+  // Push the just-saved summary to the client's app (resendSavedSummary handles the
+  // client-record sync, message, and bridge post). silent=true so it doesn't navigate
+  // to summary-history or double-toast — we show our own confirmation and go to Notes.
+  try{if(typeof resendSavedSummary==='function')resendSavedSummary(id,r.idx,true);}catch(e){}
+  const c=CL[id];
+  proToast('Saved and sent to '+((c&&c.name)?c.name.split(' ')[0]:'client')+' \u2713');
   nav('notes',id);
 }
 function renderNewNoteTemplate(clientId){
@@ -5019,8 +5052,8 @@ function editSavedSummary(id,i){
       <button onclick="_cancelEditSummary('${id}')" style="background:none;border:1px solid #555;color:#ccc;border-radius:9px;padding:11px 16px;font-size:13px;cursor:pointer;font-family:inherit;">Cancel</button>
     </div>
     <div style="display:flex;gap:8px;margin-top:8px;">
-      <button onclick="_saveEditedSummary('${id}',${i},'app')" style="flex:1;background:#0d1e33;border:1px solid #1a3a5c;color:#5ba3e8;border-radius:9px;padding:11px;font-size:13px;font-weight:600;cursor:pointer;font-family:inherit;display:flex;align-items:center;justify-content:center;gap:6px;"><i class="ti ti-device-mobile"></i> Save &amp; resend to app</button>
-      <button onclick="_saveEditedSummary('${id}',${i},'link')" style="flex:1;background:#0a2019;border:1px solid #1a4a2a;color:#4ec49a;border-radius:9px;padding:11px;font-size:13px;font-weight:600;cursor:pointer;font-family:inherit;display:flex;align-items:center;justify-content:center;gap:6px;"><i class="ti ti-link"></i> Save &amp; send link</button>
+      <button onclick="_saveEditedSummary('${id}',${i},'app')" style="flex:1;background:#0d1e33;border:1px solid #1a3a5c;color:#5ba3e8;border-radius:9px;padding:11px;font-size:13px;font-weight:600;cursor:pointer;font-family:inherit;display:flex;align-items:center;justify-content:center;gap:6px;"><i class="ti ti-device-mobile"></i> Save and send to app</button>
+      <button onclick="_saveEditedSummary('${id}',${i},'link')" style="flex:1;background:#0a2019;border:1px solid #1a4a2a;color:#4ec49a;border-radius:9px;padding:11px;font-size:13px;font-weight:600;cursor:pointer;font-family:inherit;display:flex;align-items:center;justify-content:center;gap:6px;"><i class="ti ti-link"></i> Save and send link</button>
     </div>
   </div>`;
   try{renderProductRecs(id);}catch(e){}
@@ -8989,7 +9022,14 @@ function renderAccount(){
     <i class="ti ti-cloud-check" aria-hidden="true" style="font-size:18px;color:#4ec49a;flex-shrink:0;"></i>
     <div style="flex:1;min-width:0;"><div style="font-size:13px;font-weight:600;color:#cdeede;">Cloud sync on</div><div style="font-size:11px;color:#7fbfa5;">Saved to your database &amp; synced across devices.</div></div>
     <button onclick="cloudLogout()" style="background:#13241c;border:1px solid #1a4a38;color:#7fbfa5;border-radius:8px;padding:6px 11px;font-size:11px;font-weight:600;cursor:pointer;flex-shrink:0;font-family:inherit;">Log out</button>
-  </div>`:''}
+  </div>`:(typeof Cloud!=='undefined'&&Cloud.enabled)?`<div style="margin:14px 16px 0;background:#2a1e0a;border:1px solid #5c431a;border-radius:12px;padding:11px 13px;display:flex;align-items:center;gap:10px;">
+    <i class="ti ti-cloud-off" aria-hidden="true" style="font-size:18px;color:#e0a030;flex-shrink:0;"></i>
+    <div style="flex:1;min-width:0;"><div style="font-size:13px;font-weight:600;color:#f0d9a8;">Not backing up</div><div style="font-size:11px;color:#c9a978;">You're signed out — changes save on this device only. Sign in to back up to your account &amp; sync across devices.</div></div>
+    <button onclick="renderLogin()" style="background:#3a2c10;border:1px solid #5c431a;color:#f0d9a8;border-radius:8px;padding:6px 11px;font-size:11px;font-weight:600;cursor:pointer;flex-shrink:0;font-family:inherit;">Sign in</button>
+  </div>`:`<div style="margin:14px 16px 0;background:#2a1e0a;border:1px solid #5c431a;border-radius:12px;padding:11px 13px;display:flex;align-items:center;gap:10px;">
+    <i class="ti ti-device-mobile" aria-hidden="true" style="font-size:18px;color:#e0a030;flex-shrink:0;"></i>
+    <div style="flex:1;min-width:0;"><div style="font-size:13px;font-weight:600;color:#f0d9a8;">This device only</div><div style="font-size:11px;color:#c9a978;">No cloud backup is configured, so your notes and client data are saved only in this browser. Clearing site data or switching devices will lose them.</div></div>
+  </div>`}
   <div class="sh" style="margin-top:14px;"><h2>Account settings</h2></div>
   <div style="padding:0 16px;margin-bottom:20px;"><div style="background:#1a1a1a;border:1px solid #2a2a2a;border-radius:12px;overflow:hidden;">
     ${[
