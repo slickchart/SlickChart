@@ -2181,11 +2181,15 @@ function _pruneExpiredCheckins(){
     let at=(typeof ci.at==='number'&&isFinite(ci.at)&&ci.at>0)?ci.at:0;
     if(!at&&typeof ci.submittedAt==='number'&&isFinite(ci.submittedAt)&&ci.submittedAt>0)at=ci.submittedAt;
     if(!at&&typeof ci.created==='number'&&isFinite(ci.created)&&ci.created>0)at=ci.created;
-    // Rule 2: submitted more than 24h ago.
-    if(at&&(now-at)>DAY_MS)return false;
-    // Rule 1: appointment day is in the past.
     const day=_ciDayISO(ci.dateLabel);
+    // Rule 1: appointment day is in the past — clear it.
     if(day&&day<today)return false;
+    // If the appointment is today or still upcoming, KEEP the check-in no matter when it was
+    // submitted — clients are encouraged to check in early, so an early (>24h old) submission
+    // for a future visit must not be pruned before the appointment even happens.
+    if(day&&day>=today)return true;
+    // Rule 2: no upcoming appointment date to protect it, and submitted more than 24h ago.
+    if(at&&(now-at)>DAY_MS)return false;
     // Rule 3: no usable timestamp AND no datable appointment label. A fresh check-in always
     // has `at`, so this can only be an old legacy/"Not scheduled" record that Rules 1–2 can't
     // date — clear it rather than stranding it in the log forever.
@@ -9616,8 +9620,8 @@ let brandColors=loadBrandColors();
 function saveBrandColors(){try{localStorage.setItem('sc_brand_colors',JSON.stringify(brandColors));}catch(e){}}
 
 // Derive readable ink + dark tints from any accent, then drive the whole app
-function _ink(hex){const h=hex.replace('#','');const r=parseInt(h.slice(0,2),16),g=parseInt(h.slice(2,4),16),b=parseInt(h.slice(4,6),16);return((r*299+g*587+b*114)/1000)>=140?'#181410':'#ffffff';}
-function _mixDark(hex,f){const h=hex.replace('#','');const m=(c)=>Math.round(parseInt(c,16)*f).toString(16).padStart(2,'0');return`#${m(h.slice(0,2))}${m(h.slice(2,4))}${m(h.slice(4,6))}`;}
+function _ink(hex){const h=String(hex==null?'':hex).replace('#','');const r=parseInt(h.slice(0,2),16),g=parseInt(h.slice(2,4),16),b=parseInt(h.slice(4,6),16);if(!isFinite(r)||!isFinite(g)||!isFinite(b))return'#ffffff';return((r*299+g*587+b*114)/1000)>=140?'#181410':'#ffffff';}
+function _mixDark(hex,f){const h=String(hex==null?'':hex).replace('#','');if(!/^[0-9a-fA-F]{6}$/.test(h))return'#1a1a1a';const m=(c)=>Math.round(parseInt(c,16)*f).toString(16).padStart(2,'0');return`#${m(h.slice(0,2))}${m(h.slice(2,4))}${m(h.slice(4,6))}`;}
 function applyTheme(){
   // brandColors comes from localStorage and is normally validated on input, but a
   // corrupted/legacy/partial stored value would make the hex math produce "#NaNNaNNaN"
