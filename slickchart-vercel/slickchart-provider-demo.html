@@ -3513,6 +3513,8 @@ function _applyIntakeVitals(chart,formId,getAns){
 }
 function changeTreatment(id,screen){
   const c=CL[id];if(!c)return;
+  // Pull any newly-added/renamed Square services in the background so the picker below is current.
+  try{if(typeof _autoSyncCatalog==='function')_autoSyncCatalog();}catch(e){}
   const m=document.createElement('div');m.id='treatment-modal';
   m.style.cssText='position:fixed;top:0;bottom:0;left:0;right:0;margin:0 auto;width:390px;max-width:100%;background:rgba(0,0,0,.7);z-index:400;display:flex;align-items:center;justify-content:center;padding:24px 16px;box-sizing:border-box;';
   m.onclick=e=>{if(e.target===m)m.remove();};
@@ -8725,6 +8727,8 @@ function renderCourseBuilder(id){
 
 // ── SHOP ──
 function renderShop(){try{_applyImportedProducts();}catch(e){}
+  // Refresh the Square catalog in the background so new/updated products show up automatically.
+  try{if(typeof _autoSyncCatalog==='function')_autoSyncCatalog();}catch(e){}
   setNav('more');
   document.getElementById('tt').textContent='Shop';
   S.innerHTML=`<div id="stab-content"></div>`;
@@ -8821,6 +8825,7 @@ function editSentRoutine(cid){
 }
 function renderRoutineBuilder(){
   setNav('more');
+  try{if(typeof _autoSyncCatalog==='function')_autoSyncCatalog();}catch(e){}
   document.getElementById('tt').textContent='Build a routine';
   const tpls=currentSavedRoutines();
   const sent=currentSentRoutines();
@@ -11306,7 +11311,7 @@ async function _sqLoadCustomers(){
     </div>`+list.map((c,i)=>`
       <div style="background:#161616;border:1px solid #242424;border-radius:11px;padding:11px 13px;margin-bottom:8px;display:flex;align-items:center;gap:11px;">
         <div style="width:36px;height:36px;border-radius:9px;background:#2e1c10;display:flex;align-items:center;justify-content:center;flex-shrink:0;font-size:13px;font-weight:600;color:var(--accent);">${(c.name||'?').trim().split(/\\s+/).map(p=>p[0]).slice(0,2).join('').toUpperCase()}</div>
-        <div style="flex:1;min-width:0;"><div style="font-size:14px;font-weight:600;color:#e8e8e8;">${c.name}</div><div style="font-size:11px;color:#888;overflow:hidden;text-overflow:ellipsis;white-space:nowrap;">${[c.email,c.phone].filter(Boolean).join(' · ')||'No contact on file'}</div></div>
+        <div style="flex:1;min-width:0;"><div style="font-size:14px;font-weight:600;color:#e8e8e8;">${_fileEsc(c.name)}</div><div style="font-size:11px;color:#888;overflow:hidden;text-overflow:ellipsis;white-space:nowrap;">${[c.email,c.phone].filter(Boolean).join(' · ')||'No contact on file'}</div></div>
         <button id="sqimp-${i}" onclick="_sqImportOne(${i})" style="background:#1a1a1a;border:1px solid var(--accent);color:var(--accent);border-radius:8px;padding:6px 12px;font-size:11px;font-weight:700;cursor:pointer;flex-shrink:0;">Import</button>
       </div>`).join('');
   }catch(e){out.innerHTML=_sqError(e.message);}
@@ -11353,6 +11358,52 @@ async function _sqLoadAppointments(){
   }catch(e){out.innerHTML=_sqError(e.message);}
 }
 
+// Background catalog refresh: keeps products, services, and prices in step with Square
+// automatically, so something added or re-priced in Square shows up in the app without a
+// manual re-push. Throttled, silent (no UI/toast), and a no-op when Square isn't connected
+// or is unreachable — it just keeps whatever's cached. Callers pass no args; the guard below
+// handles throttling and the in-flight lock.
+let _catalogSyncing=false;
+async function _autoSyncCatalog(opts){
+  opts=opts||{};
+  // Only meaningful once the provider is signed in (their token identifies which Square account
+  // to read). Without it, skip quietly rather than firing a doomed request on every screen.
+  const tok=(typeof Cloud!=='undefined'&&Cloud&&Cloud.token)||'';
+  if(!tok)return;
+  const now=Date.now();
+  // Throttle automatic refreshes to at most once every 3 minutes so opening several catalog
+  // screens in a row doesn't hammer the Square API. `force` (used by the manual button path)
+  // bypasses the throttle.
+  if(!opts.force&&_autoSyncCatalog._lastAt&&(now-_autoSyncCatalog._lastAt)<180000)return;
+  if(_catalogSyncing)return;   // a fetch is already in flight
+  _catalogSyncing=true;_autoSyncCatalog._lastAt=now;
+  try{
+    const data=await _sqFetch('/api/square/catalog');
+    const retail=data.retail||[];const services=data.services||[];
+    // Fingerprint the incoming catalog so we only persist / re-render when something actually
+    // changed (a new item, a removed item, a renamed item, or a price change). This keeps the
+    // background refresh from needlessly rewriting storage or disrupting the screen.
+    const fp=JSON.stringify([
+      retail.map(p=>[p.id,p.name,p.price,p.category]),
+      services.map(p=>[p.id,p.name,p.price])
+    ]);
+    if(fp===_autoSyncCatalog._lastFp){_catalogSyncing=false;return;}
+    _autoSyncCatalog._lastFp=fp;
+    squareCatalog={retail,services,syncedAt:Date.now()};
+    saveSquareCatalog();
+    _mergeSquareRetail();
+    try{_coMenu=null;}catch(e){}   // invalidate the cached checkout menu so it rebuilds with fresh prices
+    // If the provider is currently looking at a catalog-backed screen, refresh it in place so
+    // the new/updated items appear without them having to navigate away and back.
+    try{
+      const cur=(typeof _navCur!=='undefined'&&_navCur&&_navCur.screen)||'';
+      const catalogScreens={shop:1,'edit-bundle':1,reports:1};
+      if(catalogScreens[cur]&&typeof _navCur!=='undefined'&&typeof nav==='function'){nav(cur,_navCur.data);}
+    }catch(e){}
+  }catch(e){/* Square not connected / unreachable — keep the cached catalog silently */}
+  _catalogSyncing=false;
+}
+
 async function _sqLoadCatalog(){
   const out=document.getElementById('sq-results');if(!out)return;
   out.innerHTML=`<div style="padding:20px;text-align:center;color:#888;font-size:13px;">Loading products &amp; services from Square…</div>`;
@@ -11365,7 +11416,7 @@ async function _sqLoadCatalog(){
     const priceStr=p=>p.price==null?'':('$'+(Math.round(p.price*100)/100)+((p.priceMax!=null&&p.priceMax!==p.price)?('–$'+(Math.round(p.priceMax*100)/100)):''));
     const card=(p,kind)=>`<div style="background:#161616;border:1px solid #242424;border-radius:11px;padding:11px 13px;margin-bottom:8px;display:flex;align-items:center;gap:11px;">
       <div style="width:36px;height:36px;border-radius:9px;background:#2e1c10;display:flex;align-items:center;justify-content:center;flex-shrink:0;overflow:hidden;">${p.image?`<img src="${_imgSrc(p.image)}" alt="" style="width:100%;height:100%;object-fit:cover;">`:`<i class="ti ${kind==='service'?'ti-sparkles':'ti-shopping-bag'}" style="font-size:17px;color:var(--accent);"></i>`}</div>
-      <div style="flex:1;min-width:0;"><div style="font-size:14px;font-weight:600;color:#e8e8e8;overflow:hidden;text-overflow:ellipsis;white-space:nowrap;">${p.name}</div><div style="font-size:11px;color:#888;overflow:hidden;text-overflow:ellipsis;white-space:nowrap;">${[p.category,priceStr(p)].filter(Boolean).join(' · ')||'—'}</div></div>
+      <div style="flex:1;min-width:0;"><div style="font-size:14px;font-weight:600;color:#e8e8e8;overflow:hidden;text-overflow:ellipsis;white-space:nowrap;">${_fileEsc(p.name)}</div><div style="font-size:11px;color:#888;overflow:hidden;text-overflow:ellipsis;white-space:nowrap;">${[p.category,priceStr(p)].filter(Boolean).join(' · ')||'—'}</div></div>
     </div>`;
     out.innerHTML=`
       <div style="background:#0f2a1e;border:1px solid #1c4030;border-radius:10px;padding:10px 13px;margin:6px 0 12px;font-size:12px;color:#8fd3b4;line-height:1.5;"><i class="ti ti-check" style="color:#4ec49a;"></i> Synced ${retail.length} product${retail.length===1?'':'s'} and ${services.length} service${services.length===1?'':'s'}. Products now appear when recommending products &amp; building routines; services appear when changing a client's treatment.</div>
@@ -11618,6 +11669,8 @@ try{
     if(typeof affiliateLinks!=='undefined')affiliateLinks=affiliateLinks.filter(a=>_SAMPLE_PRODUCT_IDS.indexOf(a.id)<0);
   }catch(e){}}
   if(typeof loadSquareCatalog==='function'){loadSquareCatalog();_mergeSquareRetail();}  // bring in synced Square retail products
+  // Silent background refresh from Square shortly after boot, so catalog changes appear automatically.
+  try{if(typeof _autoSyncCatalog==='function')setTimeout(()=>{_autoSyncCatalog();},2500);}catch(e){}
   loadCheckinCfg();  // restore the saved check-in config
   if(typeof loadCiDismissed==='function')loadCiDismissed();
   if(typeof _ciRestoreOnce==='function')_ciRestoreOnce();  // restore dismissed check-in nudges
