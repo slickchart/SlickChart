@@ -856,7 +856,10 @@ function applyActiveProvider(){
   // per-provider homecare checklist (seed from the routine's done flags once)
   if(!p.checked)p.checked=Object.fromEntries((p.homecare||[]).map(s=>[s.key,!!s.done]));
   homecareChecked=p.checked;
-  try{if(_eng&&_eng.day===_engToday()){Object.keys(homecareChecked).forEach(k=>{homecareChecked[k]=!!(_eng.steps||{})[k];});}}catch(e){}
+  // Restore today's toggles from the engagement cache — but only if they were recorded against
+  // THIS provider. _eng.steps is a flat per-client map, so without this guard two providers whose
+  // routines share a step key (e.g. both have "cleanse") would bleed check-state into each other.
+  try{if(_eng&&_eng.day===_engToday()&&_eng.stepsProvider===p.id){Object.keys(homecareChecked).forEach(k=>{homecareChecked[k]=!!(_eng.steps||{})[k];});}}catch(e){}
   // keep photo compare indices valid for this provider's session count
   const n=(p.progress||[]).length;
   photoRight=Math.max(0,n-1);
@@ -1108,7 +1111,7 @@ async function _loadClientPrefsFromServer(){
     const p=j.prefs;
     if(p.notif)saveNotifPrefs(p.notif);
     if(p.eng){_eng=Object.assign(_eng,p.eng);try{localStorage.setItem('sc_client_engage',JSON.stringify(_eng));}catch(e){}
-      if(_eng.day===_engToday())Object.keys(homecareChecked).forEach(k=>{homecareChecked[k]=!!(_eng.steps||{})[k];});
+      if(_eng.day===_engToday()&&(_eng.stepsProvider===undefined||_eng.stepsProvider===(client&&client.activeProviderId)))Object.keys(homecareChecked).forEach(k=>{homecareChecked[k]=!!(_eng.steps||{})[k];});
     }
     if(Array.isArray(p.welcomeDismissed))try{localStorage.setItem('sc_welcome_dismissed',JSON.stringify(p.welcomeDismissed));}catch(e){}
     if(typeof p.installDismissed==='boolean')try{localStorage.setItem('sc_install_dismissed',p.installDismissed?'1':'0');}catch(e){}
@@ -1120,6 +1123,7 @@ function _engProgress(){const s=_engSteps();const total=s.length;const done=s.fi
 function toggleHomecareStep(key,where){
   homecareChecked[key]=!homecareChecked[key];
   _eng.steps=Object.assign({},homecareChecked);_eng.day=_engToday();
+  try{_eng.stepsProvider=(typeof activeProvider==='function')?activeProvider().id:(client&&client.activeProviderId);}catch(e){}
   const s=_engSteps();const allDone=s.length>0&&s.every(x=>homecareChecked[x.key]);
   if(allDone&&_eng.lastDoneDay!==_engToday()){
     _eng.streak=(_eng.lastDoneDay===_engYesterday())?(_eng.streak+1):1;
@@ -3115,14 +3119,14 @@ function renderMagicLanding(){
       <div style="min-width:0;"><div style="font-size:14px;font-weight:700;color:var(--accent-lt2);">${_txt(client.studio)}</div><div style="font-size:11px;color:var(--accent-lt2);opacity:.72;">${_txt(client.provider)}</div></div>
       <span style="margin-left:auto;display:inline-flex;align-items:center;gap:4px;font-size:10px;font-weight:600;color:var(--accent-lt2);background:rgba(255,255,255,.35);border-radius:20px;padding:4px 9px;white-space:nowrap;"><i class="ti ti-lock" aria-hidden="true" style="font-size:11px;"></i> Private link</span>
     </div>
-    <div style="font-size:22px;font-weight:700;color:var(--accent-lt2);margin-bottom:3px;">Hi ${first} 👋</div>
+    <div style="font-size:22px;font-weight:700;color:var(--accent-lt2);margin-bottom:3px;">Hi ${_txt(first)} 👋</div>
     <div style="font-size:13px;color:var(--accent-lt2);opacity:.82;line-height:1.5;">Everything from your visit with ${_txt(client.providerFirst)}, in one place. No app or login needed.</div>
   </div>
 
   ${s?`<!-- Note -->
   <div style="background:#fff;border:1.5px solid #f0ebe4;border-radius:14px;margin:0 16px 12px;padding:14px 16px;">
-    <div style="font-size:11px;font-weight:600;color:#b8a898;text-transform:uppercase;letter-spacing:.07em;margin-bottom:8px;">A note from ${_txt(client.providerFirst)} · ${s.date}</div>
-    <div style="font-size:14px;color:#1a1a1a;line-height:1.7;">${s.note||p.summaryNote||''}</div>
+    <div style="font-size:11px;font-weight:600;color:#b8a898;text-transform:uppercase;letter-spacing:.07em;margin-bottom:8px;">A note from ${_txt(client.providerFirst)} · ${_txt(s.date)}</div>
+    <div style="font-size:14px;color:#1a1a1a;line-height:1.7;white-space:pre-wrap;">${_txt(s.note||p.summaryNote||'')}</div>
   </div>`:''}
 
   <!-- Recommended routine (live) -->
@@ -3135,10 +3139,10 @@ function renderMagicLanding(){
     </div>
     ${routine.length?routine.map(step=>`
     <div style="display:flex;align-items:flex-start;gap:11px;padding:11px 16px;border-bottom:1px solid #f6f1ec;">
-      <button onclick="toggleHomecareStep('${_jsAttr(step.key||'')}','home')" aria-label="Toggle ${step.key}" style="width:24px;height:24px;border-radius:50%;border:2px solid ${homecareChecked[step.key]?'var(--accent)':'#e0d5c8'};background:${homecareChecked[step.key]?'var(--accent)':'#fff'};display:flex;align-items:center;justify-content:center;cursor:pointer;flex-shrink:0;margin-top:1px;">${homecareChecked[step.key]?'<i class="ti ti-check" aria-hidden="true" style="font-size:13px;color:#fff;"></i>':''}</button>
+      <button onclick="toggleHomecareStep('${_jsAttr(step.key||'')}','home')" aria-label="Toggle ${_txt(step.key)}" style="width:24px;height:24px;border-radius:50%;border:2px solid ${homecareChecked[step.key]?'var(--accent)':'#e0d5c8'};background:${homecareChecked[step.key]?'var(--accent)':'#fff'};display:flex;align-items:center;justify-content:center;cursor:pointer;flex-shrink:0;margin-top:1px;">${homecareChecked[step.key]?'<i class="ti ti-check" aria-hidden="true" style="font-size:13px;color:#fff;"></i>':''}</button>
       <div style="flex:1;min-width:0;">
-        <div style="font-size:13px;font-weight:600;color:${homecareChecked[step.key]?'#b8a898':'#1a1a1a'};${homecareChecked[step.key]?'text-decoration:line-through;':''}">${step.icon&&step.icon!=='🌿'?step.icon+' ':''}${step.key}</div>
-        ${step.time||step.tip?`<div style="font-size:11px;color:#b8a898;margin-top:2px;">${[step.time,step.tip].filter(Boolean).join(' · ')}</div>`:''}
+        <div style="font-size:13px;font-weight:600;color:${homecareChecked[step.key]?'#b8a898':'#1a1a1a'};${homecareChecked[step.key]?'text-decoration:line-through;':''}">${step.icon&&step.icon!=='🌿'?_txt(step.icon)+' ':''}${_txt(step.key)}</div>
+        ${step.time||step.tip?`<div style="font-size:11px;color:#b8a898;margin-top:2px;">${_txt([step.time,step.tip].filter(Boolean).join(' · '))}</div>`:''}
       </div>
     </div>`).join(''):'<div style="padding:16px;font-size:13px;color:#b8a898;">Your routine will appear here.</div>'}
   </div>
@@ -3150,7 +3154,7 @@ function renderMagicLanding(){
       <div style="flex:1;min-width:0;"><div style="font-size:13px;font-weight:700;color:#1a1a1a;">Aftercare for your ${_txt(client.treatment)}</div>${(function(){const ap=_aftercareProgress();return `<div style="font-size:11px;color:#b8a898;margin-top:1px;">${ap.done} of ${ap.total} done · what to do, day by day</div>`;})()}</div>
     </div>
     ${_aftercarePhases().map((ph,pi)=>`<div style="padding:11px 16px;border-bottom:1px solid #f6f1ec;">
-      <div style="font-size:11px;font-weight:700;color:var(--accent);text-transform:uppercase;letter-spacing:.05em;margin-bottom:8px;">${ph.when}</div>
+      <div style="font-size:11px;font-weight:700;color:var(--accent);text-transform:uppercase;letter-spacing:.05em;margin-bottom:8px;">${_txt(ph.when)}</div>
       ${ph.items.map((it,ii)=>{const dn=!!_eng.care[pi+'-'+ii];return `<div style="display:flex;align-items:flex-start;gap:10px;padding:5px 0;">
         <button onclick="toggleAftercare(${pi},${ii})" aria-label="${dn?'Mark not done':'Mark done'}" style="width:22px;height:22px;border-radius:50%;border:2px solid ${dn?'var(--accent)':'#e0d5c8'};background:${dn?'var(--accent)':'#fff'};display:flex;align-items:center;justify-content:center;cursor:pointer;flex-shrink:0;margin-top:1px;">${dn?'<i class="ti ti-check" aria-hidden="true" style="font-size:12px;color:#fff;"></i>':''}</button>
         <span style="font-size:13px;color:${dn?'#b8a898':'#3a322c'};line-height:1.5;${dn?'text-decoration:line-through;':''}">${_txt(it)}</span>
