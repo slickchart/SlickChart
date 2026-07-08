@@ -2483,6 +2483,8 @@ function renderHome(){
 // ── CLIENTS ──
 function renderClients(){
   setNav('clients');
+  // Pull any newly-added Square customers in the background so the list below stays current.
+  try{if(typeof _autoSyncCustomers==='function')_autoSyncCustomers();}catch(e){}
   document.getElementById('tt').textContent='Clients';
   S.innerHTML=`
   ${_searchBar('Search clients by name or treatment…','.client-card','clients-noresults')}
@@ -10327,6 +10329,7 @@ function _addPayment(p){p.id=p.id||('pay_'+Date.now().toString(36)+Math.random()
 let _coItems=[];
 let _coTip=false;
 let _coMenu=null;
+let _coMenuAt=0;   // when _coMenu was last built — used to expire the cache so prices stay fresh
 let _coCharging=false;   // in-flight guard: blocks a double-tap from charging twice
 function _coFlatten(d){
   const out=[];
@@ -10335,7 +10338,9 @@ function _coFlatten(d){
   return out;
 }
 async function _coEnsureMenu(){
-  if(_coMenu)return _coMenu;
+  // Reuse the cached menu only if it's fresh (under 60s old). Beyond that, refetch from Square so a
+  // price changed there shows up in checkout even if the background sync hasn't fired yet.
+  if(_coMenu&&(Date.now()-_coMenuAt)<60000)return _coMenu;
   let sq=[];
   try{const d=await _sqFetch('/api/square/catalog');sq=_coFlatten(d);}catch(e){sq=[];}
   try{const bo=await _sqFetch('/api/square/booking-options');(bo.services||[]).forEach(sv=>{if(sv&&sv.name)sq.push({name:sv.name,price:sv.price||0,variationId:sv.variationId||null,kind:'service',taxable:true});});}catch(e){}
@@ -10344,7 +10349,7 @@ async function _coEnsureMenu(){
   const local=[];try{(affiliateLinks||[]).forEach(a=>{if(a&&a.name)local.push({name:a.name,price:a.price||0,variationId:null,kind:'product',taxable:true});});}catch(e){}
   const seen={};const merged=[];sq.concat(localSvc,local).forEach(m=>{const k=(m.name||'').toLowerCase();if(k&&!seen[k]){seen[k]=1;merged.push(m);}});
   merged.sort((a,b)=>{const as=a.kind==='service'?0:1,bs=b.kind==='service'?0:1;if(as!==bs)return as-bs;const ap=(+a.price>0)?0:1,bp=(+b.price>0)?0:1;if(ap!==bp)return ap-bp;return String(a.name).localeCompare(String(b.name));});
-  _coMenu=merged;return _coMenu;
+  _coMenu=merged;_coMenuAt=Date.now();return _coMenu;
 }
 function _coValidItems(){return _coItems.filter(it=>it.variationId||(+it.price)>0).map(it=>Object.assign({},it,{name:(it.name&&String(it.name).trim())||'Item'}));}
 // Round to whole cents using a tiny epsilon so values like 0.835 (which float math
@@ -10920,6 +10925,22 @@ function _payLogSave(){
   if(typeof proToast==='function')proToast(_saved?'Payment logged \u2713':'Couldn\u2019t save \u2014 storage may be full',0);
 }
 setInterval(()=>{try{if(typeof _navCur!=='undefined'&&_navCur&&_navCur.screen==='payments')_paySyncSquare(true);}catch(e){}},60000);
+// Keep the Square catalog (products, services, prices) and client list in step in the background,
+// so a price change or a newly-added client shows up on its own while the app is open — no reboot
+// and no need to open a specific screen. Only runs while the tab is actually visible; each call is
+// itself throttled + change-detected, so this is cheap and won't hammer Square.
+setInterval(()=>{
+  try{
+    if(typeof document!=='undefined'&&document.hidden)return;
+    if(typeof _autoSyncCatalog==='function')_autoSyncCatalog();
+    if(typeof _autoSyncCustomers==='function')_autoSyncCustomers();
+  }catch(e){}
+},60000);
+// When the app comes back to the foreground (tab refocused / phone unlocked), sync right away so
+// changes made in Square while you were elsewhere are reflected immediately on return.
+try{document.addEventListener('visibilitychange',function(){
+  if(!document.hidden){try{if(typeof _autoSyncCatalog==='function')_autoSyncCatalog();if(typeof _autoSyncCustomers==='function')_autoSyncCustomers();}catch(e){}}
+});}catch(e){}
 async function _paySyncSquare(auto){
   if(auto){
     const now=Date.now();
@@ -11371,21 +11392,23 @@ async function _autoSyncCatalog(opts){
   const tok=(typeof Cloud!=='undefined'&&Cloud&&Cloud.token)||'';
   if(!tok)return;
   const now=Date.now();
-  // Throttle automatic refreshes to at most once every 3 minutes so opening several catalog
-  // screens in a row doesn't hammer the Square API. `force` (used by the manual button path)
-  // bypasses the throttle.
-  if(!opts.force&&_autoSyncCatalog._lastAt&&(now-_autoSyncCatalog._lastAt)<180000)return;
+  // Throttle automatic refreshes to at most once every 60 seconds so opening several catalog
+  // screens in a row doesn't hammer the Square API, while still surfacing price changes quickly.
+  // `force` (used by the manual button path) bypasses the throttle.
+  if(!opts.force&&_autoSyncCatalog._lastAt&&(now-_autoSyncCatalog._lastAt)<60000)return;
   if(_catalogSyncing)return;   // a fetch is already in flight
   _catalogSyncing=true;_autoSyncCatalog._lastAt=now;
   try{
     const data=await _sqFetch('/api/square/catalog');
     const retail=data.retail||[];const services=data.services||[];
     // Fingerprint the incoming catalog so we only persist / re-render when something actually
-    // changed (a new item, a removed item, a renamed item, or a price change). This keeps the
-    // background refresh from needlessly rewriting storage or disrupting the screen.
+    // changed. Include variation-level prices and priceMax, not just the top-level price — Square
+    // services/products often carry per-variation pricing (e.g. a facial with 30/60-min tiers), and
+    // a change there must still count as a change so the checkout menu rebuilds with the new price.
+    const _vp=p=>[(p.variations||[]).map(v=>[v.id,v.name,v.price])];
     const fp=JSON.stringify([
-      retail.map(p=>[p.id,p.name,p.price,p.category]),
-      services.map(p=>[p.id,p.name,p.price])
+      retail.map(p=>[p.id,p.name,p.price,p.priceMax,p.category,_vp(p)]),
+      services.map(p=>[p.id,p.name,p.price,p.priceMax,_vp(p)])
     ]);
     if(fp===_autoSyncCatalog._lastFp){_catalogSyncing=false;return;}
     _autoSyncCatalog._lastFp=fp;
@@ -11402,6 +11425,48 @@ async function _autoSyncCatalog(opts){
     }catch(e){}
   }catch(e){/* Square not connected / unreachable — keep the cached catalog silently */}
   _catalogSyncing=false;
+}
+
+// Background client refresh: auto-adds any new Square customers as app clients without a manual
+// "Import all" step. Additive only — it never overwrites an existing client's chart (so notes and
+// edits you've made in the app are preserved) and never deletes anyone. Throttled, silent, and a
+// no-op when Square isn't connected or is unreachable.
+let _customerSyncing=false;
+async function _autoSyncCustomers(opts){
+  opts=opts||{};
+  const tok=(typeof Cloud!=='undefined'&&Cloud&&Cloud.token)||'';
+  if(!tok)return;   // only once signed in — the token identifies which Square account to read
+  const now=Date.now();
+  // Match the catalog poll cadence: at most once every 60s automatically. `force` bypasses it.
+  if(!opts.force&&_autoSyncCustomers._lastAt&&(now-_autoSyncCustomers._lastAt)<60000)return;
+  if(_customerSyncing)return;
+  _customerSyncing=true;_autoSyncCustomers._lastAt=now;
+  try{
+    const data=await _sqFetch('/api/square/customers');
+    const list=data.customers||[];
+    // Fingerprint the incoming customer set so we skip the add-loop entirely when nothing changed.
+    const fp=JSON.stringify(list.map(c=>[c.id,c.name,c.email,c.phone]));
+    if(fp===_autoSyncCustomers._lastFp){_customerSyncing=false;return;}
+    _autoSyncCustomers._lastFp=fp;
+    let added=0;
+    list.forEach((c,i)=>{
+      // Same dedup key the manual import uses, so a customer already imported (manually or by an
+      // earlier auto-sync) is matched and left untouched rather than duplicated.
+      const id='sq_'+String(c.id||i).slice(0,10).toLowerCase().replace(/[^a-z0-9]/g,'');
+      if(!id||CL[id])return;   // already have them — don't overwrite their chart
+      CL[id]=_sqMakeClient(c);added++;
+    });
+    if(added){
+      if(typeof saveClients==='function')saveClients();
+      // If the provider is on the client list when new ones arrive, refresh it in place.
+      try{
+        const cur=(typeof _navCur!=='undefined'&&_navCur&&_navCur.screen)||'';
+        if(cur==='clients'&&typeof renderClients==='function')renderClients();
+      }catch(e){}
+      if(typeof proToast==='function')proToast(added===1?'1 new client synced from Square':(added+' new clients synced from Square'));
+    }
+  }catch(e){/* Square not connected / unreachable — try again on the next poll */}
+  _customerSyncing=false;
 }
 
 async function _sqLoadCatalog(){
@@ -11671,6 +11736,8 @@ try{
   if(typeof loadSquareCatalog==='function'){loadSquareCatalog();_mergeSquareRetail();}  // bring in synced Square retail products
   // Silent background refresh from Square shortly after boot, so catalog changes appear automatically.
   try{if(typeof _autoSyncCatalog==='function')setTimeout(()=>{_autoSyncCatalog();},2500);}catch(e){}
+  // Same for clients — pull any customers added in Square since last time (additive; never overwrites).
+  try{if(typeof _autoSyncCustomers==='function')setTimeout(()=>{_autoSyncCustomers();},3200);}catch(e){}
   loadCheckinCfg();  // restore the saved check-in config
   if(typeof loadCiDismissed==='function')loadCiDismissed();
   if(typeof _ciRestoreOnce==='function')_ciRestoreOnce();  // restore dismissed check-in nudges
