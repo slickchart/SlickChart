@@ -5000,9 +5000,13 @@ function resendSavedSummary(id,i,silent){
   // Make sure the client-record summary reflects this entry, then push to their app.
   if(!Array.isArray(c.summaries))c.summaries=[];
   const exists=c.summaries.find(x=>(s.ts&&x.ts===s.ts)||(x.date===s.date&&x.title===(s.treatment||'Session')));
-  if(!exists){c.summaries.unshift({date:s.date,title:s.treatment||'Session',note:s.note||'',products:(s.products||[]).slice(),ts:s.ts});}
+  if(!exists){c.summaries.unshift({date:s.date,title:s.treatment||'Session',note:s.note||'',products:(s.products||[]).slice(),guides:(s.guides||[]).slice(),ts:s.ts});}
+  else if(s.guides&&s.guides.length&&!exists.guides){exists.guides=s.guides.slice();}
   try{if(typeof saveClients==='function')saveClients();}catch(e){}
   try{if(typeof _scheduleClientSync==='function')_scheduleClientSync();}catch(e){}
+  // Re-share any attached aftercare guides so they ride along with the resent summary
+  // (demo bridge only; real clients receive them via the synced summary record above).
+  try{if(id==='maya'&&s.guides&&s.guides.length){s.guides.forEach(g=>SlickBridge.post('resource-shared',{providerId:'jess',clientId:'maya',resource:{id:g.id,title:g.title,icon:g.icon,tips:g.tips||[],cat:'Aftercare'}}));}}catch(e){}
   // message the client + (demo) bridge post, mirroring a fresh send
   try{
     if(!msgStore[id])msgStore[id]=[];
@@ -11833,8 +11837,21 @@ function addConfirmedAppt(b){
     if(cid&&CL[cid]){
       const lbl=fmtBookingDate(b);const t=(b.time||'').trim();
       const nv=(lbl&&lbl!=='Date TBD')?(t?(lbl+' \u00b7 '+t):lbl):'';
-      // Only advance nextVisit if this booking is sooner than / replaces a stale one, or none is set.
-      if(nv){CL[cid].nextVisit=nv;try{if(typeof saveClients==='function')saveClients();}catch(e){}}
+      // Only stamp nextVisit when this booking is actually in the future AND is sooner than
+      // whatever's already stored (or nothing is stored). Prevents a later or past-dated
+      // confirmation from clobbering a correct, sooner next visit.
+      let bookAt=null;try{bookAt=b.date?new Date(b.date+'T12:00:00'):null;}catch(e){}
+      const startToday=new Date();startToday.setHours(0,0,0,0);
+      const isFuture=bookAt&&!isNaN(bookAt)&&bookAt>=startToday;
+      if(nv&&isFuture){
+        // Compare against the existing nextVisit's date if we can parse one.
+        let curAt=null;
+        try{
+          const cv=CL[cid].nextVisit;
+          if(cv&&cv!=='Not scheduled'){const datePart=cv.split('\u00b7')[0].trim();const d=new Date(datePart);if(!isNaN(d))curAt=d;}
+        }catch(e){}
+        if(!curAt||bookAt<=curAt){CL[cid].nextVisit=nv;try{if(typeof saveClients==='function')saveClients();}catch(e){}}
+      }
     }
   }catch(e){}
   try{_rebuildCalendarFeed();}catch(e){}
@@ -11904,7 +11921,7 @@ function _downscaleImg(file,cb,max=900){
     img.onerror=()=>cb(e.target.result);
     img.src=e.target.result;
   };
-  r.onerror=()=>{};
+  r.onerror=()=>{try{cb('');}catch(_){}};
   r.readAsDataURL(file);
 }
 // lightbox for tapping a shared/reference photo
