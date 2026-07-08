@@ -38,6 +38,18 @@ Products, services, prices, clients, appointments, and tax rate now update from 
 
 **Limitation:** pull-based, so "instant" means "within ~60 s or on refocus." True sub-second updates would need Square webhooks (server-side `/api/square`).
 
+## 2026-07-08 — Beta metrics: charting activity + recurring pulse survey
+
+Instrumented the two beta metrics the app can honestly measure itself, and wrote a server spec
+(BETA_METRICS_SERVER_SPEC.md) for the aggregation the backend must add.
+
+- **Weekly active charting (metric #2).** A privacy-safe, fire-and-forget `_pingChart()` fires when a treatment note is saved (from the shared `_commitWriteNote` path), POSTing to a new `/api/beta-event` — only the authenticated provider, a timestamp, and new-vs-edit; never client data or note content. Also keeps a small per-device weekly counter (`sc_chart_activity`).
+- **Recurring pulse survey (metrics #3 + #4).** A bottom-sheet that appears at most once every 7 days, and only after ≥3 charts (so they have a view), asking an overall pulse rating and how charting time compares to their old method (much less / less / same / more). It records each impression (`pulse_shown`) so response rate has a denominator, and posts answers to `/api/feedback` with `kind:'pulse'`. Triggered gently ~1.4s after a chart save.
+- **Owner dashboard.** `/api/admin-stats` gains "Charting activity" and "Pulse survey" tiles (weekly active charters + % of providers, charts 7/30d, pulse response rate, avg rating, % who say charting is faster). Renders a "waiting for server" note until the backend returns the new fields, so nothing breaks pre-deploy.
+- The two new local keys (`sc_chart_activity`, `sc_pulse`) are excluded from cloud sync (per-device cadence/counters; the authoritative metric is server-aggregated).
+
+Metrics #1 (applications vs. cap), #5 (client retention), and #6 (founding-member churn) are intentionally NOT faked in the app — they live in your application form, Square, and Stripe respectively. The spec explains where each comes from so the beta review pulls from the right sources.
+
 ## 2026-07-08 — Team access (shared-login guidance for small teams)
 
 A beta tester wanted her employee (who works under the same Square account) to use the app too. It turns out this already works: SlickChart syncs one account across every signed-in device, so a teammate who signs in with the same login automatically shares the clients, catalog, notes, and Square connection, with changes syncing both ways — no code needed. Rather than build seats, added an honest "Team access" screen (Account → Team access) that explains the setup in three steps and sets expectations: changes sync both ways; it's one shared identity so notes aren't attributed per person and simultaneous edits to the same client are last-write-wins; it's a shared password (change it to revoke access when someone leaves); and "Sign out all other devices" will sign the teammate out too. Shows the account email for easy relay, and warns if the device isn't currently signed in with cloud sync (sharing needs an account). Notes on-screen that proper per-staff logins with per-note attribution are a roadmap item.

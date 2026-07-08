@@ -1361,7 +1361,7 @@ try{document.addEventListener('keydown',function(e){
 // ── Cloud sync (database + login). Falls back to local-only until configured. ──
 function saveProfessions(){try{localStorage.setItem('sc_professions',JSON.stringify(selectedProfessions));}catch(e){}}
 function loadProfessions(){try{const raw=localStorage.getItem('sc_professions');if(raw){const a=JSON.parse(raw);if(Array.isArray(a)&&a.length)selectedProfessions=a;}}catch(e){}}
-const _SYNC_SKIP={sc_token:1,sc_sqkey:1,sc_bus:1};
+const _SYNC_SKIP={sc_token:1,sc_sqkey:1,sc_bus:1,sc_chart_activity:1,sc_pulse:1};
 function _syncable(k){return typeof k==='string'&&k.indexOf('sc_')===0&&!_SYNC_SKIP[k];}
 const Cloud={
   enabled:false,
@@ -4010,20 +4010,56 @@ function _commitWriteNote(id){
   const hist=sessionSummaries[id];
   const primaryText=t.sections.map(s=>sections[s.id]).find(v=>v&&v.trim())||'';
   const existing=hist.find(h=>h._draftDate===dateVal);
+  const _wasNew=!existing;
   const entry={date:_fmtNoteDate(dateVal),treatment:c.treatment,note:primaryText,homecare:existing?existing.homecare:[],products:existing?existing.products:[],ts:new Date(dateVal).getTime()||Date.now(),_draftDate:dateVal};
   if(existing){Object.assign(existing,entry);}else{hist.unshift(entry);}
   hist.sort((a,b)=>(b.ts||0)-(a.ts||0));
   try{persistSessionSummaries();}catch(e){}  // was missing — treatment-note summaries were kept only in memory and lost on reload
   try{if(typeof saveClients==='function')saveClients();}catch(e){}
+  try{_pingChart(_wasNew);}catch(e){}  // beta metric: charting activity (privacy-safe, fire-and-forget)
   // locate the entry we just saved so a caller can send it
   const idx=hist.findIndex(h=>h._draftDate===dateVal);
   return {ok:true,id,idx:idx<0?0:idx};
+}
+// ── Beta metric: charting activity ────────────────────────────
+// Fire-and-forget ping when a treatment note is saved, so we can measure "weekly active
+// charting" (are providers actually charting after appointments). PRIVACY: sends only the
+// authenticated provider (via their token), a timestamp, and whether the note was new vs an
+// edit — never any client data or note content. No-ops unless signed in with cloud sync on.
+function _bumpLocalChartCount(){
+  try{
+    const wk=_isoWeekKey();
+    let o={};try{o=JSON.parse(localStorage.getItem('sc_chart_activity')||'{}');}catch(e){o={};}
+    if(o.week!==wk){o={week:wk,count:0};}
+    o.count=(o.count||0)+1;o.lastAt=Date.now();
+    localStorage.setItem('sc_chart_activity',JSON.stringify(o));
+  }catch(e){}
+}
+function _isoWeekKey(){
+  // Year + ISO week number, e.g. "2026-W28" — a stable weekly bucket.
+  const d=new Date();const t=new Date(Date.UTC(d.getFullYear(),d.getMonth(),d.getDate()));
+  const day=t.getUTCDay()||7;t.setUTCDate(t.getUTCDate()+4-day);
+  const yStart=new Date(Date.UTC(t.getUTCFullYear(),0,1));
+  const wk=Math.ceil((((t-yStart)/86400000)+1)/7);
+  return t.getUTCFullYear()+'-W'+String(wk).padStart(2,'0');
+}
+function _pingChart(isNew){
+  _bumpLocalChartCount();
+  try{
+    if(typeof Cloud==='undefined'||!Cloud||!Cloud.enabled||!Cloud.token)return;   // only for real cloud accounts
+    fetch('/api/beta-event',{
+      method:'POST',keepalive:true,
+      headers:{'Content-Type':'application/json','Authorization':'Bearer '+Cloud.token},
+      body:JSON.stringify({type:'chart_saved',isNew:!!isNew,at:Date.now()})
+    }).catch(()=>{});   // fire-and-forget; a failed metric must never surface to the provider
+  }catch(e){}
 }
 function _saveWriteNote(id){
   const r=_commitWriteNote(id);
   if(!r.ok)return;
   proToast('Note saved \u2713');
   nav('notes',id);
+  setTimeout(()=>{try{_maybeShowPulse();}catch(e){}},1400);   // gentle post-charting pulse (self-gated to weekly)
 }
 function _saveAndSendNote(id){
   const r=_commitWriteNote(id);
@@ -9340,6 +9376,66 @@ function confirmSendResource(ri,cid){
   proToast(`Sent to ${c?c.name.split(' ')[0]:'client'}`);
 }
 
+// ── Recurring pulse survey (beta metrics: response rate + self-reported time saved) ──
+// Shows at most once every 7 days, and only after the provider has actually charted a few
+// times (so they have something to react to). Dismissible. We record each SHOW so response
+// rate = responses / prompts-shown can be computed, and post answers with kind:'pulse' so the
+// server can separate recurring-survey data from ad-hoc feedback.
+const _PULSE_INTERVAL_DAYS=7;
+const _PULSE_MIN_CHARTS=3;
+let _pulseAnswers={rating:0,timeSaved:''};
+function _pulseState(){try{return JSON.parse(localStorage.getItem('sc_pulse')||'{}');}catch(e){return {};}}
+function _pulseSave(o){try{localStorage.setItem('sc_pulse',JSON.stringify(o));}catch(e){}}
+function _maybeShowPulse(){
+  try{
+    if(typeof Cloud==='undefined'||!Cloud||!Cloud.enabled||!Cloud.token)return;   // beta accounts only
+    if(document.getElementById('pulse-sheet')||document.getElementById('beta-fb'))return; // don't stack
+    const st=_pulseState();
+    const now=Date.now();
+    if(st.lastShownAt&&(now-st.lastShownAt)<_PULSE_INTERVAL_DAYS*86400000)return; // too soon
+    if(st.lastAnsweredAt&&(now-st.lastAnsweredAt)<_PULSE_INTERVAL_DAYS*86400000)return;
+    let charts=0;try{charts=(JSON.parse(localStorage.getItem('sc_chart_activity')||'{}').count)||0;}catch(e){}
+    if(charts<_PULSE_MIN_CHARTS)return; // not enough usage to have a view yet
+    _openPulse();
+  }catch(e){}
+}
+function _openPulse(){
+  _pulseAnswers={rating:0,timeSaved:''};
+  const st=_pulseState();st.lastShownAt=Date.now();st.shownCount=(st.shownCount||0)+1;_pulseSave(st);
+  // Record the impression server-side too, so response rate has a reliable denominator.
+  try{if(Cloud&&Cloud.enabled&&Cloud.token)fetch('/api/beta-event',{method:'POST',keepalive:true,headers:{'Content-Type':'application/json','Authorization':'Bearer '+Cloud.token},body:JSON.stringify({type:'pulse_shown',at:Date.now()})}).catch(()=>{});}catch(e){}
+  const old=document.getElementById('pulse-sheet');if(old)old.remove();
+  const m=document.createElement('div');m.id='pulse-sheet';
+  m.style.cssText='position:fixed;top:0;bottom:0;left:0;right:0;margin:0 auto;width:390px;max-width:100%;z-index:500;display:flex;flex-direction:column;justify-content:flex-end;';
+  const opt=(v,label)=>`<button id="pts-${v}" onclick="_pulsePickTime('${v}')" style="flex:1;background:#0f0f0f;border:1px solid #2a2a2a;color:#ccc;border-radius:9px;padding:9px 6px;font-size:12px;font-weight:600;cursor:pointer;font-family:inherit;">${label}</button>`;
+  m.innerHTML=`
+  <div onclick="_dismissPulse()" style="flex:1;background:rgba(0,0,0,.55);"></div>
+  <div style="background:#161616;border-radius:16px;padding:20px 16px 28px;border-top:1px solid #2a2a2a;">
+    <div style="width:36px;height:4px;background:#2a2a2a;border-radius:2px;margin:0 auto 16px;"></div>
+    <div style="display:flex;align-items:center;gap:8px;margin-bottom:6px;"><span style="background:var(--accent-tint);color:var(--accent);font-size:10px;font-weight:700;padding:3px 8px;border-radius:6px;letter-spacing:.04em;">QUICK PULSE</span><span style="font-size:16px;font-weight:600;color:#f0f0f0;">How's it going this week?</span></div>
+    <div style="font-size:13px;color:#888;margin-bottom:14px;line-height:1.5;">Two quick taps — it helps us shape SlickChart around how you actually work.</div>
+    <div style="font-size:12px;font-weight:600;color:#bbb;margin-bottom:8px;">Overall, how's SlickChart feeling?</div>
+    <div style="display:flex;gap:10px;justify-content:center;margin-bottom:16px;">${[['1','😕'],['2','😐'],['3','🙂'],['4','😃'],['5','🤩']].map(([n,e])=>`<button id="pr-${n}" onclick="_pulsePickRating(${n})" style="background:none;border:none;font-size:26px;cursor:pointer;opacity:.3;transition:opacity .1s;">${e}</button>`).join('')}</div>
+    <div style="font-size:12px;font-weight:600;color:#bbb;margin-bottom:8px;">Charting a client now vs. your old way, it takes\u2026</div>
+    <div style="display:flex;gap:6px;margin-bottom:18px;">${opt('much_less','Way less time')}${opt('less','A bit less')}${opt('same','About the same')}${opt('more','More time')}</div>
+    <button onclick="_sendPulse()" class="btnp" style="border-radius:10px;"><i class="ti ti-send"></i> Send</button>
+    <button onclick="_dismissPulse()" style="width:100%;margin-top:9px;background:none;border:none;font-size:14px;color:#666;cursor:pointer;padding:6px;">Maybe later</button>
+  </div>`;
+  (document.querySelector('.shell')||document.body).appendChild(m);
+}
+function _pulsePickRating(n){_pulseAnswers.rating=n;['1','2','3','4','5'].forEach(k=>{const el=document.getElementById('pr-'+k);if(el)el.style.opacity=(parseInt(k,10)<=n)?'1':'.3';});}
+function _pulsePickTime(v){_pulseAnswers.timeSaved=v;['much_less','less','same','more'].forEach(k=>{const el=document.getElementById('pts-'+k);if(el){const on=k===v;el.style.background=on?'var(--accent-tint)':'#0f0f0f';el.style.borderColor=on?'var(--accent)':'#2a2a2a';el.style.color=on?'var(--accent)':'#ccc';}});}
+function _dismissPulse(){const m=document.getElementById('pulse-sheet');if(m)m.remove();}
+async function _sendPulse(){
+  if(!_pulseAnswers.rating&&!_pulseAnswers.timeSaved){proToast('Tap a face or an option first');return;}
+  const st=_pulseState();st.lastAnsweredAt=Date.now();st.answeredCount=(st.answeredCount||0)+1;_pulseSave(st);
+  try{
+    const tok=(typeof Cloud!=='undefined'&&Cloud&&Cloud.token)||'';
+    await fetch('/api/feedback',{method:'POST',headers:Object.assign({'Content-Type':'application/json'},tok?{'Authorization':'Bearer '+tok}:{}),body:JSON.stringify({kind:'pulse',rating:_pulseAnswers.rating||undefined,timeSaved:_pulseAnswers.timeSaved||undefined,at:Date.now()})});
+  }catch(e){}
+  _dismissPulse();
+  proToast('Thanks — that really helps \ud83d\udc9b');
+}
 // Beta feedback (reachable from onboarding + settings)
 function openBetaFeedback(){
   const old=document.getElementById('beta-fb');if(old)old.remove();
@@ -10333,7 +10429,20 @@ async function _loadBetaStats(){
       <div style="display:flex;justify-content:space-between;font-size:13px;color:#ddd;padding:6px 0;border-bottom:1px solid #1e1e1e;"><span>Last 7 days</span><span style="font-weight:600;">${s.connectedNew7||0}</span></div>
       <div style="display:flex;justify-content:space-between;font-size:13px;color:#ddd;padding:6px 0;"><span>Last 30 days</span><span style="font-weight:600;">${s.connectedNew30||0}</span></div>
     </div>
-    <div style="margin-top:10px;font-size:11px;color:#666;line-height:1.5;">\u201cActive on Square\u201d = accounts that made a Square API call (invoice, payment link, or sync) in the period. These are aggregate counts only \u2014 no client or provider data leaves your database.</div>
+    ${(function(){var ch=j.charting||{},pu=j.pulse||{};var have=(ch&&(ch.activeProviders7!=null||ch.charts7!=null))||(pu&&pu.shown!=null);return have?`
+    <div class="sh" style="margin-top:14px;"><h2>Charting activity</h2></div>
+    <div style="display:grid;grid-template-columns:1fr 1fr;gap:10px;">
+      ${card('Charting this week',(ch.activeProviders7!=null?ch.activeProviders7:'\u2014'),(p.total?Math.round(100*(ch.activeProviders7||0)/p.total)+'% of providers':'providers who charted'),'#4ec49a')}
+      ${card('Charts saved (7d)',(ch.charts7!=null?ch.charts7:'\u2014'),(ch.charts30!=null?ch.charts30+' in 30 days':'new + edits'))}
+    </div>
+    <div style="margin-top:10px;background:#161616;border:1px solid #242424;border-radius:14px;padding:14px 16px;">
+      <div style="font-size:11px;color:#888;text-transform:uppercase;letter-spacing:.06em;margin-bottom:8px;">Pulse survey</div>
+      <div style="display:flex;justify-content:space-between;font-size:13px;color:#ddd;padding:6px 0;border-bottom:1px solid #1e1e1e;"><span>Response rate</span><span style="font-weight:600;">${(pu.shown?Math.round(100*(pu.answered||0)/pu.shown):0)}% <span style="color:#777;font-weight:400;">(${pu.answered||0}/${pu.shown||0})</span></span></div>
+      <div style="display:flex;justify-content:space-between;font-size:13px;color:#ddd;padding:6px 0;border-bottom:1px solid #1e1e1e;"><span>Avg pulse rating</span><span style="font-weight:600;">${pu.avgRating!=null?(Math.round(pu.avgRating*10)/10)+' / 5':'\u2014'}</span></div>
+      <div style="display:flex;justify-content:space-between;font-size:13px;color:#ddd;padding:6px 0;"><span>Say charting is faster</span><span style="font-weight:600;">${pu.fasterPct!=null?pu.fasterPct+'%':'\u2014'}</span></div>
+    </div>`:`
+    <div style="margin-top:12px;background:#161616;border:1px solid #242424;border-radius:14px;padding:14px 16px;font-size:12px;color:#888;line-height:1.55;"><b style="color:#aaa;">Charting &amp; pulse metrics</b><br>These populate once the server aggregates the <code style="color:#c8a882;">/api/beta-event</code> pings and <code style="color:#c8a882;">kind:'pulse'</code> feedback. The apps are already sending them.</div>`;})()}
+    <div style="margin-top:10px;font-size:11px;color:#666;line-height:1.5;">\u201cActive on Square\u201d = accounts that made a Square API call (invoice, payment link, or sync) in the period. \u201cCharting this week\u201d = distinct providers who saved at least one treatment note. These are aggregate counts only \u2014 no client or provider data leaves your database.</div>
     <div style="height:20px;"></div>`;
   }catch(e){el.innerHTML='<div style="color:#e8a060;font-size:13px;">Could not load stats right now.</div>';}
 }
