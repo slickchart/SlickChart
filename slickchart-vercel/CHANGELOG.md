@@ -2,6 +2,13 @@
 
 Newest entries at the top. One entry per deploy. Dates are US-formatted.
 
+## 2026-07-08 — Bug sweep, round 29
+
+- **Affiliate / recommended-product rendering** (the round's main theme): product `icon` / `name` / `brand` come from `affiliateLinks`, which includes CSV-imported and Square-synced items — i.e. external data — and were being rendered unescaped in several places. Escaped them in the routine builder's product selector, the client-detail recommendation cards, the "what your client sees" summary preview (also escaped the treatment, homecare chips, next-appointment line, and `_jsAttr`'d the buy-button id), the provider shop/affiliate card, and two other product rows. Buy-link URLs were already going through `_urlAttr(_safeUrl(...))`.
+- **Client-detail**: escaped the client first-name in a recommendation-note `placeholder` attribute. Rest of the screen verified clean (name/treatment/contact/vitals/flagged-intake all escaped; the printable client-file builder escapes throughout).
+- **Note-template editor**: escaped the custom section label in its `value` attribute (provider-authored free text).
+- Verified clean: the form-builder question row (label/options were already escaped from round 22), and the **onboarding flow** — it's fixed instructional content and the profession list is built-in definitions, not user input; it echoes no provider-entered text unescaped.
+
 ## 2026-07-08 — Bug sweep, round 28
 
 - **Client home screen** (biggest batch, client-facing): escaped a run of provider-authored text that was rendering raw — the brand tagline, the latest session-summary note, the next-appointment date/treatment/time, the check-in prompt date, and the client's own first name. This is the client's most-viewed screen, so it was the highest-value find of the round.
