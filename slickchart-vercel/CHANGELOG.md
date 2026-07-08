@@ -2,6 +2,13 @@
 
 Newest entries at the top. One entry per deploy. Dates are US-formatted.
 
+## 2026-07-08 — Bug sweep, round 28
+
+- **Client home screen** (biggest batch, client-facing): escaped a run of provider-authored text that was rendering raw — the brand tagline, the latest session-summary note, the next-appointment date/treatment/time, the check-in prompt date, and the client's own first name. This is the client's most-viewed screen, so it was the highest-value find of the round.
+- **Branding & CSS-injection hardening** (both apps): the branding live-preview rendered the tagline and welcome message unescaped (textarea + preview) — escaped them. More importantly, brand **colors** (`primary`/`secondary`) flow into `style="…"` in ~11 places and sync to the client, but were only validated at input time. Hardened the single chokepoint `_normHex` to reject non-hex and fall back to a safe default, sanitized `brandColors` at load (`loadBrandColors`), and sanitized the synced accent color in the client's printable summary builder. A manipulated stored/synced color can no longer inject CSS.
+- **Provider home/dashboard**: escaped the client first-name in a dismiss-reminder `aria-label` (real client data in an attribute; the visible text was already escaped). Rest of the dashboard verified clean — stat tiles, greetings, and activity are escaped or fixed literals; client ids are generated keys, not free text.
+- Verified clean: provider client-list + search (names via `_fileEsc`, search index normalized, printable client-file builder escapes throughout), and the **AI voice-notes feature** — the transcript is escaped at capture-to-storage, rendered into textareas, and the assembled note text is escaped; handled carefully.
+
 This file lives in the repo (`slickchart-vercel/CHANGELOG.md`). Vercel ignores it — it's documentation only. Append a new entry at the top each time you ship.
 
 ---

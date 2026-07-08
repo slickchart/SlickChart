@@ -2467,7 +2467,7 @@ function renderHome(){
           <button onclick="event.stopPropagation();sendCheckin('${id}')" style="flex-shrink:0;background:var(--accent);color:var(--accent-ink);border:none;border-radius:8px;padding:7px 11px;font-size:12px;font-weight:600;cursor:pointer;font-family:inherit;display:inline-flex;align-items:center;gap:5px;"><i class="ti ti-message" style="font-size:13px;"></i> Send</button>
         </div>
       </div>
-      <div class="swipe-reveal" style="background:#0f2a1a;" onclick="dismissCheckinNudge('${id}')" aria-label="Dismiss ${c.name.split(' ')[0]} check-in reminder">
+      <div class="swipe-reveal" style="background:#0f2a1a;" onclick="dismissCheckinNudge('${id}')" aria-label="Dismiss ${_fileEsc(c.name.split(' ')[0])} check-in reminder">
         <i class="ti ti-check" aria-hidden="true" style="color:#4ec49a;"></i><span style="color:#4ec49a;">DONE</span>
       </div>
     </div>`;}).join('');
@@ -9846,7 +9846,12 @@ function renderAISettings(){
 
 // ── BRAND COLORS (primary + secondary, hex + color wheel) ──
 function loadBrandColors(){
-  try{const s=localStorage.getItem('sc_brand_colors');if(s)return JSON.parse(s);}catch(e){}
+  const _hx=(c,fb)=>{c=String(c==null?'':c).trim();if(c&&c[0]!=='#')c='#'+c;return /^#[0-9a-fA-F]{6}$/.test(c)?c.toUpperCase():fb;};
+  try{const s=localStorage.getItem('sc_brand_colors');if(s){const o=JSON.parse(s)||{};
+    // Validate the two colors that get interpolated into style="" everywhere (and synced to
+    // the client). Everything else (tagline, welcome, logo) is escaped at render.
+    o.primary=_hx(o.primary,'#C8A882');o.secondary=_hx(o.secondary,'#2C5F8A');
+    return o;}}catch(e){}
   return{primary:'#C8A882',secondary:'#2C5F8A'};
 }
 let brandColors=loadBrandColors();
@@ -9877,7 +9882,12 @@ function applyTheme(){
 
 function _hexA(hex,a){const h=hex.replace('#','');const r=parseInt(h.slice(0,2),16),g=parseInt(h.slice(2,4),16),b=parseInt(h.slice(4,6),16);return`rgba(${r},${g},${b},${a})`;}
 function _isHex6(v){return /^#?[0-9a-fA-F]{6}$/.test((v||'').trim());}
-function _normHex(v){v=(v||'').trim();if(v[0]!=='#')v='#'+v;return v.toUpperCase();}
+function _normHex(v){v=(v||'').trim();if(v[0]!=='#')v='#'+v;
+  // Only accept a real #rrggbb hex. Anything else (e.g. a value smuggled in via a
+  // manipulated synced blob) would otherwise flow straight into style="...${color}"
+  // in ~11 places across both apps — a CSS-injection vector. Fall back to a safe neutral.
+  if(!/^#[0-9a-fA-F]{6}$/.test(v))return '#C8A882';
+  return v.toUpperCase();}
 
 function applyBrandLive(){
   const p=brandColors.primary,s=brandColors.secondary;
@@ -9982,16 +9992,16 @@ function renderBranding(){
 
     <span class="fl-lbl">Business tagline</span><input id="brand-tagline" aria-label="Business tagline" class="fi" value="${String(tagline).replace(/"/g,'&quot;')}" placeholder="Where your skin comes first." oninput="_updateBrandPreview()" style="margin-bottom:12px;">
     <span class="fl-lbl">Welcome message</span>
-    <textarea id="brand-welcome" class="fi" aria-label="Welcome message" oninput="_updateBrandPreview()" style="height:72px;resize:none;line-height:1.5;margin-bottom:12px;">${welcome}</textarea>
+    <textarea id="brand-welcome" class="fi" aria-label="Welcome message" oninput="_updateBrandPreview()" style="height:72px;resize:none;line-height:1.5;margin-bottom:12px;">${_fileEsc(welcome)}</textarea>
 
     <div style="font-size:13px;font-weight:500;color:#e0e0e0;margin:14px 0 8px;">Live preview</div>
     <div style="border-radius:14px;overflow:hidden;margin-bottom:18px;border:1px solid #2a2a2a;box-shadow:0 6px 20px rgba(0,0,0,.25);">
       <div id="bc-prev-bar" style="height:56px;background:linear-gradient(135deg,${p},${s});display:flex;align-items:center;gap:9px;padding:0 14px;">
         <div style="width:32px;height:32px;border-radius:9px;background:rgba(255,255,255,.92);display:flex;align-items:center;justify-content:center;flex-shrink:0;overflow:hidden;">${brandColors.logoDataUrl?`<img src="${_imgSrc(brandColors.logoDataUrl)}" alt="" style="max-width:100%;max-height:100%;object-fit:contain;">`:`<i class="ti ti-sparkles" id="bc-prev-logo" style="font-size:17px;color:${p};"></i>`}</div>
-        <div style="min-width:0;"><span style="font-size:15px;font-weight:700;color:#fff;text-shadow:0 1px 2px rgba(0,0,0,.15);display:block;white-space:nowrap;overflow:hidden;text-overflow:ellipsis;">${_fileEsc(bizInfo.name)}</span>${tagline?`<span id="bc-prev-tagline" style="font-size:10.5px;color:rgba(255,255,255,.85);display:block;white-space:nowrap;overflow:hidden;text-overflow:ellipsis;">${tagline}</span>`:'<span id="bc-prev-tagline" style="display:none;"></span>'}</div>
+        <div style="min-width:0;"><span style="font-size:15px;font-weight:700;color:#fff;text-shadow:0 1px 2px rgba(0,0,0,.15);display:block;white-space:nowrap;overflow:hidden;text-overflow:ellipsis;">${_fileEsc(bizInfo.name)}</span>${tagline?`<span id="bc-prev-tagline" style="font-size:10.5px;color:rgba(255,255,255,.85);display:block;white-space:nowrap;overflow:hidden;text-overflow:ellipsis;">${_fileEsc(tagline)}</span>`:'<span id="bc-prev-tagline" style="display:none;"></span>'}</div>
       </div>
       <div style="padding:15px 14px;background:#fff;">
-        <div id="bc-prev-welcome" style="font-size:13px;color:#444;line-height:1.5;margin-bottom:13px;">${welcome}</div>
+        <div id="bc-prev-welcome" style="font-size:13px;color:#444;line-height:1.5;margin-bottom:13px;">${_fileEsc(welcome)}</div>
         <div style="display:flex;align-items:center;gap:9px;">
           <button id="bc-prev-btn" style="background:${p};color:#fff;border:none;border-radius:9px;padding:10px 16px;font-size:13px;font-weight:600;cursor:default;">Book appointment</button>
           <span id="bc-prev-tag" style="background:${_hexA(s,0.16)};color:${s};font-size:12px;font-weight:700;padding:6px 12px;border-radius:20px;">New</span>
