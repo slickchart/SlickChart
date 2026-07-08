@@ -1437,10 +1437,10 @@ const Cloud={
             let requeued=0;
             keys.forEach(k=>{if(k!==biggest&&!(k in this._queue)){this._queue[k]=items[k];requeued++;}});
             if(requeued){clearTimeout(this._timer);this._timer=setTimeout(()=>this._flush(0),800);}
-            if(typeof proToast==='function')proToast('That photo was too large to sync, so it wasn\u2019t saved to the cloud — but your notes were saved. Try a smaller image.',0);
+            if(typeof proToast==='function')proToast('A photo was too large to back up to the cloud — your notes are saved. Try a smaller image next time.',0,'error');
           }
           else if(typeof proToast==='function'){
-            proToast('Could not save your changes — check your connection and try again.',0);
+            _cloudSyncToast('Changes couldn\u2019t back up to the cloud yet — they\u2019re saved on this device and will sync when you\u2019re back online.');
           }
         }
       })
@@ -1448,7 +1448,7 @@ const Cloud={
         console.error('[Cloud sync] save failed:',e&&e.message);
         // Restore only keys not re-edited while the request was in flight (see above).
         if(!(retryCount>0)){for(const k in items){if(!(k in this._queue))this._queue[k]=items[k];}clearTimeout(this._timer);this._timer=setTimeout(()=>this._flush(1),1500);}
-        else if(typeof proToast==='function')proToast('Could not save your changes — check your connection and try again.',0);
+        else if(typeof proToast==='function')_cloudSyncToast('Changes couldn\u2019t back up to the cloud yet — they\u2019re saved on this device and will sync when you\u2019re back online.');
       });
   },
 };
@@ -4779,6 +4779,8 @@ function renderSummaryHistory(id){
 }
 // ── Saved-summary actions: view/edit, resend to the client's app, send by link ──
 // Full, organized record of everything from one session.
+let _sessionDetailTab='provider';
+function switchSessionDetailTab(which){_sessionDetailTab=(which==='client')?'client':'provider';const pv=document.getElementById('sd-provider'),cv=document.getElementById('sd-client'),tp=document.getElementById('sd-tab-p'),tc=document.getElementById('sd-tab-c');if(pv)pv.style.display=(_sessionDetailTab==='provider')?'block':'none';if(cv)cv.style.display=(_sessionDetailTab==='client')?'block':'none';if(tp)tp.className='tab'+(_sessionDetailTab==='provider'?' active':'');if(tc)tc.className='tab'+(_sessionDetailTab==='client'?' active':'');}
 function renderSessionDetail(arg){
   setNav('clients');
   const [id,idxStr]=String(arg).split(':');const i=parseInt(idxStr,10)||0;
@@ -4787,6 +4789,48 @@ function renderSessionDetail(arg){
   if(!s){S.innerHTML='<div style="padding:30px 16px;color:#888;">Session not found.</div>';return;}
   const pn=s.providerNotes||{sections:[]};
   const sectionBlock=(label,body,accent)=>`<div class="sh"><h2>${label}</h2></div><div style="margin:0 16px 12px;background:#161616;border:1px solid #242424;border-radius:12px;padding:13px 15px;font-size:13px;color:#d8d8d8;line-height:1.7;${accent?`border-left:3px solid ${accent};`:''}">${body}</div>`;
+  // ── Provider-notes panel ──
+  const hasProvider=(pn.sections&&pn.sections.length)||s.obs;
+  const providerPanel=`
+  ${(pn.sections&&pn.sections.length)?`
+  <div class="sh"><h2>Provider treatment notes${pn.format?' · '+_fileEsc(pn.format):''}</h2></div>
+  <div style="margin:0 16px 12px;">
+    ${pn.sections.map(sec=>`<div style="background:#161616;border:1px solid #242424;border-radius:12px;padding:12px 14px;margin-bottom:8px;">
+      <div style="font-size:10px;font-weight:600;color:#888;text-transform:uppercase;letter-spacing:.06em;margin-bottom:5px;">${_fileEsc(sec.label)}</div>
+      <div style="font-size:13px;color:#d8d8d8;line-height:1.7;">${String(sec.text).replace(/</g,'&lt;').replace(/\n/g,'<br>')}</div>
+    </div>`).join('')}
+  </div>`:''}
+  ${s.obs?sectionBlock('Observations',s.obs.replace(/</g,'&lt;').replace(/\n/g,'<br>'),'#5ba3e8'):''}
+  ${!hasProvider?`<div style="margin:16px;text-align:center;color:#888;font-size:13px;padding:26px 20px;background:#161616;border:1px solid #242424;border-radius:12px;">No provider notes were saved for this session.</div>`:''}`;
+  // ── Client-summary panel (what the client saw) ──
+  const hasClient=s.note||(s.homecare&&s.homecare.length)||(s.productDetail&&s.productDetail.length)||(s.products&&s.products.length)||(s.guides&&s.guides.length);
+  const clientPanel=`
+  ${s.note?sectionBlock('Client summary — what '+((c.name||'they').split(' ')[0])+' saw',s.note.replace(/</g,'&lt;').replace(/\n/g,'<br>'),'var(--accent)'):''}
+  ${(s.homecare&&s.homecare.length)?`<div class="sh"><h2>Homecare that day</h2></div>
+  <div style="margin:0 16px 12px;background:#161616;border:1px solid #242424;border-radius:12px;padding:6px 14px;">
+    ${s.homecare.map((h,hi)=>`<div style="display:flex;align-items:flex-start;gap:8px;padding:8px 0;${hi<s.homecare.length-1?'border-bottom:1px solid #1e1e1e;':''}"><div style="width:20px;height:20px;border-radius:50%;background:#0a2019;border:1px solid #1a4a38;display:flex;align-items:center;justify-content:center;flex-shrink:0;margin-top:1px;"><span style="font-size:10px;color:#4ec49a;font-weight:600;">${hi+1}</span></div><span style="font-size:13px;color:#d8d8d8;line-height:1.5;">${String(h).replace(/</g,'&lt;')}</span></div>`).join('')}
+  </div>`:''}
+  ${(s.productDetail&&s.productDetail.length)?`<div class="sh"><h2>Products recommended</h2></div>
+  <div style="margin:0 16px 12px;">
+    ${s.productDetail.map(p=>`<div style="background:#161616;border:1px solid #242424;border-radius:12px;padding:11px 13px;margin-bottom:8px;display:flex;gap:11px;align-items:flex-start;">
+      <span style="font-size:22px;flex-shrink:0;">${_fileEsc(p.icon)||'🧴'}</span>
+      <div style="flex:1;min-width:0;"><div style="font-size:13px;font-weight:600;color:#e0e0e0;">${_fileEsc(p.name)}</div>${p.brand?`<div style="font-size:11px;color:#999;">${_fileEsc(p.brand)}</div>`:''}${p.why?`<div style="font-size:12px;color:#bbb;line-height:1.5;margin-top:6px;background:#111;border-radius:8px;padding:7px 9px;"><span style="color:#888;">Why:</span> ${String(p.why).replace(/</g,'&lt;')}</div>`:''}</div>
+    </div>`).join('')}
+  </div>`:(s.products&&s.products.length)?`<div class="sh"><h2>Products recommended</h2></div>
+  <div style="margin:0 16px 12px;background:#161616;border:1px solid #242424;border-radius:12px;padding:12px 14px;"><div style="display:flex;flex-wrap:wrap;gap:6px;">${s.products.map(p=>`<span style="font-size:12px;background:var(--accent-tint);color:var(--accent);padding:3px 10px;border-radius:6px;">${String(p).replace(/</g,'&lt;')}</span>`).join('')}</div></div>`:''}
+  ${(s.guides&&s.guides.length)?`<div class="sh"><h2>Aftercare guides linked</h2></div>
+  <div style="margin:0 16px 12px;">
+    ${s.guides.map(g=>`<div style="background:#161616;border:1px solid #242424;border-radius:12px;padding:11px 13px;margin-bottom:8px;display:flex;gap:11px;align-items:center;">
+      <span style="font-size:22px;flex-shrink:0;">${_fileEsc(g.icon)||'📄'}</span>
+      <div style="flex:1;min-width:0;"><div style="font-size:13px;font-weight:600;color:#e0e0e0;">${String(g.title||'Guide').replace(/</g,'&lt;')}</div><div style="font-size:11px;color:#999;">Aftercare guide${(g.tips&&g.tips.length)?' · '+g.tips.length+' tips':''}</div></div>
+      <button onclick="nav('guide-preview','${g.id}')" class="icon-btn" aria-label="Preview guide"><i class="ti ti-eye" aria-hidden="true" style="font-size:14px;color:#aaa;"></i></button>
+    </div>`).join('')}
+  </div>`:''}
+  ${!hasClient?`<div style="margin:16px;text-align:center;color:#888;font-size:13px;padding:26px 20px;background:#161616;border:1px solid #242424;border-radius:12px;">No client-facing summary was saved for this session.</div>`:''}`;
+  // Default to whichever tab actually has content (provider first).
+  if(_sessionDetailTab==='client'&&!hasClient&&hasProvider)_sessionDetailTab='provider';
+  if(_sessionDetailTab==='provider'&&!hasProvider&&hasClient)_sessionDetailTab='client';
+  const showProvider=_sessionDetailTab!=='client';
   S.innerHTML=`
   <div style="margin:12px 16px 6px;background:linear-gradient(135deg,var(--accent-tint),#141414);border:1px solid #2a2a2a;border-radius:14px;padding:15px 16px;">
     <div style="display:flex;align-items:flex-start;gap:8px;">
@@ -4796,40 +4840,10 @@ function renderSessionDetail(arg){
     </div>
   </div>
 
-  ${(pn.sections&&pn.sections.length)?`
-  <div class="sh"><h2>Provider treatment notes${pn.format?' · '+pn.format:''}</h2></div>
-  <div style="margin:0 16px 12px;">
-    ${pn.sections.map(sec=>`<div style="background:#161616;border:1px solid #242424;border-radius:12px;padding:12px 14px;margin-bottom:8px;">
-      <div style="font-size:10px;font-weight:600;color:#888;text-transform:uppercase;letter-spacing:.06em;margin-bottom:5px;">${sec.label}</div>
-      <div style="font-size:13px;color:#d8d8d8;line-height:1.7;">${String(sec.text).replace(/</g,'&lt;').replace(/\n/g,'<br>')}</div>
-    </div>`).join('')}
-  </div>`:''}
+  <div class="tab-bar"><button class="tab${showProvider?' active':''}" id="sd-tab-p" onclick="switchSessionDetailTab('provider')">Provider notes</button><button class="tab${showProvider?'':' active'}" id="sd-tab-c" onclick="switchSessionDetailTab('client')">Client summary</button></div>
 
-  ${s.note?sectionBlock('Client summary — what '+((c.name||'they').split(' ')[0])+' saw',s.note.replace(/</g,'&lt;').replace(/\n/g,'<br>'),'var(--accent)'):''}
-  ${s.obs?sectionBlock('Observations',s.obs.replace(/</g,'&lt;').replace(/\n/g,'<br>'),'#5ba3e8'):''}
-
-  ${(s.homecare&&s.homecare.length)?`<div class="sh"><h2>Homecare that day</h2></div>
-  <div style="margin:0 16px 12px;background:#161616;border:1px solid #242424;border-radius:12px;padding:6px 14px;">
-    ${s.homecare.map((h,hi)=>`<div style="display:flex;align-items:flex-start;gap:8px;padding:8px 0;${hi<s.homecare.length-1?'border-bottom:1px solid #1e1e1e;':''}"><div style="width:20px;height:20px;border-radius:50%;background:#0a2019;border:1px solid #1a4a38;display:flex;align-items:center;justify-content:center;flex-shrink:0;margin-top:1px;"><span style="font-size:10px;color:#4ec49a;font-weight:600;">${hi+1}</span></div><span style="font-size:13px;color:#d8d8d8;line-height:1.5;">${String(h).replace(/</g,'&lt;')}</span></div>`).join('')}
-  </div>`:''}
-
-  ${(s.productDetail&&s.productDetail.length)?`<div class="sh"><h2>Products recommended</h2></div>
-  <div style="margin:0 16px 12px;">
-    ${s.productDetail.map(p=>`<div style="background:#161616;border:1px solid #242424;border-radius:12px;padding:11px 13px;margin-bottom:8px;display:flex;gap:11px;align-items:flex-start;">
-      <span style="font-size:22px;flex-shrink:0;">${p.icon||'🧴'}</span>
-      <div style="flex:1;min-width:0;"><div style="font-size:13px;font-weight:600;color:#e0e0e0;">${p.name}</div>${p.brand?`<div style="font-size:11px;color:#999;">${p.brand}</div>`:''}${p.why?`<div style="font-size:12px;color:#bbb;line-height:1.5;margin-top:6px;background:#111;border-radius:8px;padding:7px 9px;"><span style="color:#888;">Why:</span> ${String(p.why).replace(/</g,'&lt;')}</div>`:''}</div>
-    </div>`).join('')}
-  </div>`:(s.products&&s.products.length)?`<div class="sh"><h2>Products recommended</h2></div>
-  <div style="margin:0 16px 12px;background:#161616;border:1px solid #242424;border-radius:12px;padding:12px 14px;"><div style="display:flex;flex-wrap:wrap;gap:6px;">${s.products.map(p=>`<span style="font-size:12px;background:var(--accent-tint);color:var(--accent);padding:3px 10px;border-radius:6px;">${String(p).replace(/</g,'&lt;')}</span>`).join('')}</div></div>`:''}
-
-  ${(s.guides&&s.guides.length)?`<div class="sh"><h2>Aftercare guides linked</h2></div>
-  <div style="margin:0 16px 12px;">
-    ${s.guides.map(g=>`<div style="background:#161616;border:1px solid #242424;border-radius:12px;padding:11px 13px;margin-bottom:8px;display:flex;gap:11px;align-items:center;">
-      <span style="font-size:22px;flex-shrink:0;">${g.icon||'📄'}</span>
-      <div style="flex:1;min-width:0;"><div style="font-size:13px;font-weight:600;color:#e0e0e0;">${String(g.title||'Guide').replace(/</g,'&lt;')}</div><div style="font-size:11px;color:#999;">Aftercare guide${(g.tips&&g.tips.length)?' · '+g.tips.length+' tips':''}</div></div>
-      <button onclick="nav('guide-preview','${g.id}')" class="icon-btn" aria-label="Preview guide"><i class="ti ti-eye" aria-hidden="true" style="font-size:14px;color:#aaa;"></i></button>
-    </div>`).join('')}
-  </div>`:''}
+  <div id="sd-provider" style="display:${showProvider?'block':'none'};padding-top:8px;">${providerPanel}</div>
+  <div id="sd-client" style="display:${showProvider?'none':'block'};padding-top:8px;">${clientPanel}</div>
 
   <div style="padding:6px 16px 24px;display:flex;flex-direction:column;gap:8px;">
     <button onclick="editSavedSummary('${id}',${i})" class="btnp" style="border-radius:10px;padding:12px;"><i class="ti ti-pencil"></i> Edit summary</button>
@@ -9042,18 +9056,37 @@ async function _updatePassword(){
     const d=await r.json().catch(()=>({}));proToast(d.error||'Could not update password \u2014 check your current password');
   }catch(e){proToast('Could not reach the server \u2014 try again');}
 }
-function proToast(msg,ms){
+let _cloudSyncToastAt=0;
+function _cloudSyncToast(msg){
+  // Background cloud-sync failures fire on a timer, independent of what the provider is doing,
+  // so a flaky connection could pop this repeatedly on screens unrelated to the failed save.
+  // Throttle to once per 30s and use the (auto-dismissing) error tone so it informs without
+  // nagging or masquerading as a success.
+  const now=Date.now();
+  if(now-_cloudSyncToastAt<30000)return;
+  _cloudSyncToastAt=now;
+  if(typeof proToast==='function')proToast(msg,0,'error');
+}
+function proToast(msg,ms,tone){
   const old=document.getElementById('pro-toast');if(old)old.remove();
   if(_proToastTimer){clearTimeout(_proToastTimer);_proToastTimer=null;}
   const t=document.createElement('div');t.id='pro-toast';
   // role=status + aria-live so screen-reader users hear feedback like "Payment
   // complete" or "Could not save" instead of nothing.
   t.setAttribute('role','status');t.setAttribute('aria-live','polite');
-  t.style.cssText='position:fixed;bottom:88px;left:0;right:0;margin:0 auto;width:max-content;max-width:90%;background:#0a2019;border:1px solid #4ec49a;color:#4ec49a;border-radius:10px;padding:10px 16px;font-size:13px;z-index:600;white-space:nowrap;display:flex;align-items:center;gap:7px;box-shadow:0 6px 24px rgba(0,0,0,.4);';
-  t.innerHTML=`<i class="ti ti-check" aria-hidden="true" style="font-size:14px;"></i><span></span>`;
+  // An error toast must LOOK like an error — the old code always used the green success
+  // styling + check icon, so a background sync failure ("Could not save…") showed up as a
+  // green checkmark, which read as success. Errors now get amber styling and a warning icon.
+  const isErr=(tone==='error');
+  const bg=isErr?'#241a08':'#0a2019', bd=isErr?'#e8b04e':'#4ec49a', fg=isErr?'#e8b04e':'#4ec49a', ic=isErr?'ti-alert-triangle':'ti-check';
+  t.style.cssText='position:fixed;bottom:88px;left:0;right:0;margin:0 auto;width:max-content;max-width:90%;background:'+bg+';border:1px solid '+bd+';color:'+fg+';border-radius:10px;padding:10px 16px;font-size:13px;z-index:600;white-space:normal;display:flex;align-items:center;gap:7px;box-shadow:0 6px 24px rgba(0,0,0,.4);';
+  t.innerHTML=`<i class="ti ${ic}" aria-hidden="true" style="font-size:14px;flex-shrink:0;"></i><span></span>`;
   const _span=t.querySelector('span');if(_span)_span.textContent=String(msg==null?'':msg);
   (document.querySelector('.shell')||document.body).appendChild(t);
-  const dur=(ms===0)?0:(ms||2800);
+  // Never let a toast stick forever — even errors auto-dismiss. A permanently-pinned error
+  // toast used to persist across navigation and appear on unrelated screens. Errors get a
+  // longer read time (6s) than the default success toast, but always clear.
+  const dur=(ms===0)?(isErr?6000:0):(ms||2800);
   if(dur>0)_proToastTimer=setTimeout(()=>{t.remove();_proToastTimer=null;},dur);
 }
 let _proToastTimer=null;
@@ -14044,6 +14077,51 @@ function saveVendor(editIdx){
   }
 }
 function deleteVendor(i){const v=vendors[i];if(!v)return;confirmModal({title:'Delete vendor',body:'Remove '+(v.name||'this vendor')+' from your directory? This cannot be undone.',action:'Delete'},function(){const ix=vendors.indexOf(v);if(ix>=0){vendors.splice(ix,1);saveVendors();}nav('vendors');});}
+
+// ── Keep a focused input above the on-screen keyboard ──────────────────────────
+// On mobile the software keyboard slides up over the bottom of the layout, hiding any
+// input near the bottom of the scroll — search fields especially, whose results are
+// below them. When a text field gains focus we scroll it into the visible band above
+// the keyboard. We wait a beat for the keyboard to animate in, and prefer visualViewport
+// (which reports the un-covered height) so we only scroll when the field is actually hidden.
+(function(){
+  function _isTextField(el){
+    if(!el||!el.tagName)return false;
+    const tag=el.tagName.toLowerCase();
+    if(tag==='textarea')return true;
+    if(tag!=='input')return false;
+    const ty=(el.getAttribute('type')||'text').toLowerCase();
+    return ['text','search','email','tel','url','number','password',''].indexOf(ty)>=0;
+  }
+  function _revealFocused(el){
+    if(!el||!el.getBoundingClientRect)return;
+    const vv=window.visualViewport;
+    // The bottom edge of the visible (un-keyboard-covered) area, in layout coords.
+    const visibleBottom=vv?(vv.offsetTop+vv.height):window.innerHeight;
+    const r=el.getBoundingClientRect();
+    // If the field's bottom sits below the visible band (or within a small margin of it),
+    // bring it into view. scrollIntoView with block:'center' lifts it clear of the keyboard.
+    if(r.bottom>visibleBottom-24||r.top<0){
+      try{el.scrollIntoView({block:'center',behavior:'smooth'});}
+      catch(e){try{el.scrollIntoView(false);}catch(_){}}
+    }
+  }
+  document.addEventListener('focusin',function(e){
+    const el=e.target;
+    if(!_isTextField(el))return;
+    // Two passes: one quick (layout may already have shifted), one after the keyboard
+    // has finished animating in (~300ms on most mobile browsers).
+    setTimeout(function(){_revealFocused(el);},120);
+    setTimeout(function(){if(document.activeElement===el)_revealFocused(el);},380);
+  });
+  // When the keyboard opens/closes the visual viewport resizes — re-reveal the active field.
+  if(window.visualViewport){
+    window.visualViewport.addEventListener('resize',function(){
+      const el=document.activeElement;
+      if(_isTextField(el))_revealFocused(el);
+    });
+  }
+})();
 </script>
 <script>if('serviceWorker' in navigator){window.addEventListener('load',function(){navigator.serviceWorker.register('/sw.js').catch(function(){});});}</script>
 <script>
