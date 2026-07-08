@@ -2588,6 +2588,7 @@ function _printSummary(id){
   const note=((summaryNoteDraft[id]!=null?summaryNoteDraft[id]:(noteEl?noteEl.innerText:''))||'').trim();
   const homecare=(typeof getClientHomecare==='function'?getClientHomecare(id):[])||[];
   const prods=(clientRecs[id]||[]).map(aid=>{const a=affiliateLinks.find(x=>x.id===aid);return a?{name:a.name,brand:a.brand||'',why:(_recReason(id,aid)||'')}:null;}).filter(Boolean);
+  const guides=(typeof _summaryGuideList==='function')?_summaryGuideList(id):[];
   const esc=s=>String(s||'').replace(/&/g,'&amp;').replace(/</g,'&lt;').replace(/>/g,'&gt;');
   const today=new Date().toLocaleDateString('en-US',{month:'long',day:'numeric',year:'numeric'});
   const html=`<!doctype html><html><head><meta charset="utf-8"><title>${esc(c.name)} — Session summary</title>
@@ -2602,6 +2603,7 @@ function _printSummary(id){
   ${note?`<h2>A note from ${esc(_providerFirstName())}</h2><div class="note">${esc(note)}</div>`:''}
   ${homecare.length?`<h2>Homecare</h2><ol>${homecare.map(h=>`<li>${esc(h)}</li>`).join('')}</ol>`:''}
   ${prods.length?`<h2>Recommended products</h2>${prods.map(p=>`<div class="prod"><b>${esc(p.name)}</b>${p.brand?` <span class="br">· ${esc(p.brand)}</span>`:''}${p.why?`<div class="why">${esc(p.why)}</div>`:''}</div>`).join('')}`:''}
+  ${guides.length?`<h2>Aftercare guides</h2>${guides.map(g=>`<div class="prod"><b>${esc(g.title)}</b>${(g.tips&&g.tips.length)?`<ol>${g.tips.map(t=>`<li>${esc(t)}</li>`).join('')}</ol>`:''}</div>`).join('')}`:''}
   <div class="foot">${esc(bizInfo.name||'')}${bizInfo.website?' · '+esc(bizInfo.website):''}</div>
   </body></html>`;
   const f=document.createElement('iframe');
@@ -11829,6 +11831,10 @@ function seedDemoRequestOnce(){
 }
 
 function addConfirmedAppt(b){
+  // De-dupe: don't add the same client+date+time twice (guards re-hydration on boot and any
+  // accidental double confirm from creating duplicate calendar entries).
+  const dupe=confirmedAppts.some(a=>a&&a.client===b.client&&a.date===b.date&&(a.time||'')===(b.time||''));
+  if(dupe)return;
   confirmedAppts.unshift({client:b.client,tx:b.treatment,date:b.date,dateLabel:fmtBookingDate(b),time:b.time,ic:'#4ec49a'});
   // Also stamp the client's own nextVisit so the session summary's "Next appointment" feeds
   // reliably from the client record (not only via cross-array name matching). Match by the
@@ -12070,6 +12076,7 @@ function renderCheckinDetail(id){
 
 function confirmBooking(id){
   const all=SlickBridge.getBookings();const b=all.find(x=>x.id===id);if(!b)return;
+  if(b.status==='confirmed')return; // already confirmed — don't duplicate the calendar entry
   b.status='confirmed';b.decidedAt=Date.now();SlickBridge.setBookings(all);
   addConfirmedAppt(b);
   SlickBridge.post('booking-confirmed',b);
