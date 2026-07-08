@@ -143,6 +143,29 @@ export async function ensureProvidersTable() {
   _provReady = true;
 }
 
+// Beta telemetry: one row per app-side event (a treatment note saved, or the
+// pulse survey shown). Aggregate-only — no client names or note content are
+// ever stored here, just which provider did what kind of action and when.
+let _betaReady = false;
+export async function ensureBetaTable() {
+  if (_betaReady) return;
+  const q = sql();
+  await q`CREATE TABLE IF NOT EXISTS beta_events (
+    id bigserial PRIMARY KEY,
+    provider_id text NOT NULL,
+    type text NOT NULL,
+    is_new boolean,
+    created_at timestamptz NOT NULL DEFAULT now()
+  )`;
+  await q`CREATE INDEX IF NOT EXISTS beta_events_provider_time ON beta_events (provider_id, created_at)`;
+  await q`CREATE INDEX IF NOT EXISTS beta_events_type_time ON beta_events (type, created_at)`;
+  // Pulse survey answers ride on the existing feedback table; add the two
+  // columns it needs (safe to run repeatedly — IF NOT EXISTS).
+  await q`ALTER TABLE feedback ADD COLUMN IF NOT EXISTS kind text`;
+  await q`ALTER TABLE feedback ADD COLUMN IF NOT EXISTS time_saved text`;
+  _betaReady = true;
+}
+
 // Shared check: does this email have an active (paid, or free-coupon) subscription?
 // A 100%-off Stripe coupon still produces a real completed checkout, so this
 // naturally covers both paying customers and coded free testers the same way.
