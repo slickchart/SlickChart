@@ -38,6 +38,10 @@ Products, services, prices, clients, appointments, and tax rate now update from 
 
 **Limitation:** pull-based, so "instant" means "within ~60 s or on refocus." True sub-second updates would need Square webhooks (server-side `/api/square`).
 
+## 2026-07-08 — Team access (shared-login guidance for small teams)
+
+A beta tester wanted her employee (who works under the same Square account) to use the app too. It turns out this already works: SlickChart syncs one account across every signed-in device, so a teammate who signs in with the same login automatically shares the clients, catalog, notes, and Square connection, with changes syncing both ways — no code needed. Rather than build seats, added an honest "Team access" screen (Account → Team access) that explains the setup in three steps and sets expectations: changes sync both ways; it's one shared identity so notes aren't attributed per person and simultaneous edits to the same client are last-write-wins; it's a shared password (change it to revoke access when someone leaves); and "Sign out all other devices" will sign the teammate out too. Shows the account email for easy relay, and warns if the device isn't currently signed in with cloud sync (sharing needs an account). Notes on-screen that proper per-staff logins with per-note attribution are a roadmap item.
+
 ## 2026-07-08 — Self-serve data export + account deletion (privacy)
 
 Added two self-serve privacy features under Account → Security & billing → "Privacy & your data," so the app can satisfy data-portability and right-to-erasure expectations (GDPR/CCPA) without manual support requests.
