@@ -7806,7 +7806,7 @@ function _assembleClientData(id){
     if(vi&&vi.invited&&!vi.submitted){const vp=(typeof _vcProfile==='function')?_vcProfile():{};
       vcInvite={kind:vp.kind||'skin',title:vp.title||'Virtual consult',fee:(typeof vcFee!=='undefined'?vcFee:'')||'',invitedAt:vi.invitedAt||0};}
   }catch(e){}
-  return {studio,providerName,profile:{skin:c.skin||'',concerns:c.concerns||'',allergies:c.allergies||'',fitz:c.fitz||'',treatment:c.treatment||'',lastVisit:c.lastVisit||'',nextVisit:c.nextVisit||''},summaries,aftercare,products,forms,pendingForms,pendingGuides,photos:Array.isArray(c.photos)?c.photos:[],booking:{canRequest:true},availability,vcInvite};
+  return {studio,providerName,profile:{skin:c.skin||'',concerns:c.concerns||'',allergies:c.allergies||'',fitz:c.fitz||'',treatment:c.treatment||'',lastVisit:c.lastVisit||'',nextVisit:c.nextVisit||'',email:c.email||'',phone:c.phone||''},summaries,aftercare,products,forms,pendingForms,pendingGuides,photos:Array.isArray(c.photos)?c.photos:[],booking:{canRequest:true},availability,vcInvite};
 }
 let _syncingClients=false,_clientSyncTimer=null;
 function _scheduleClientSync(){ if(_clientSyncTimer)clearTimeout(_clientSyncTimer); _clientSyncTimer=setTimeout(function(){_syncClientsToServer({});},2500); }
@@ -12493,6 +12493,22 @@ async function syncClientEvents(){
             time:'Just now',read:false,action:'form',data:cid,formEvId:ev.id});
           providerSystemNotify(flagged?'Intake flagged for review':'Form completed',`${name} \u00b7 ${title}${fl}`);
           touchedForms=true;touchedNotif=true;
+        }
+      }else if(ev.kind==='contact'){
+        // Client corrected the email/phone we have on file — update the chart so future
+        // invites/notifications use the right address, and let the provider know it changed.
+        if(c){
+          const parts=[];
+          const em=String(payload.email||'').trim(),ph=String(payload.phone||'').trim();
+          if(em&&em!==(c.email||'')){c.email=em;parts.push('email');}
+          if(ph&&ph!==(c.phone||'')){c.phone=ph;parts.push('phone');}
+          if(parts.length){
+            try{saveClients();}catch(e){}
+            notifFeed.unshift({id:'evct'+ev.id,type:'contact',icon:'ti-address-book',col:'#0d1e33',ic:'#5ba3e8',
+              title:'Contact info updated',body:`${name} updated their ${parts.join(' and ')}.`,time:'Just now',read:false,action:'client',data:cid});
+            providerSystemNotify('Contact info updated',`${name} · ${parts.join(' and ')}`);
+            touchedNotif=true;
+          }
         }
       }else if(ev.kind==='vc_submit'){
         vcSubmissions[cid]={photos:_sanVcPhotos(payload.photos),refs:(Array.isArray(payload.refs)&&payload.refs.length)?_sanVcPhotos(payload.refs):null,goals:payload.goals||'',measures:payload.measures||null,

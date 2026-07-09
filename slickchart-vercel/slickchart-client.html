@@ -572,6 +572,7 @@ const CI_COVERING=[['🛏️','Light blanket'],['🪨','Weighted blanket'],['�
 // messages, summaries and booking. "jess" is the one connected to the provider app.
 const client={
   name:'Maya Rodriguez',initials:'MR',
+  email:'maya@email.com',phone:'(510) 442-8801',
   activeProviderId:'jess',
   providers:[
     {id:'jess',name:'Jessica Lee, LE',first:'Jessica',initials:'JL',studio:'Glowing Skin Studio',
@@ -2957,18 +2958,30 @@ function submitVirtualConsult(){
   const goals=(document.getElementById('vc-goals')||{}).value||'';
   const date=new Date().toLocaleDateString('en-US',{month:'short',day:'numeric',year:'numeric'});
   const entry={date,kind:inv.kind,title:inv.title,photos,refs:(refs&&refs.length)?refs:null,goals};
-  const j=client.providers.find(p=>p.id==='jess');
-  if(j){j.virtualConsults=j.virtualConsults||[];j.virtualConsults.unshift(entry);try{persistVirtualConsults();}catch(e){}}
   // compute real measurements from the first photo, then hand the submission (images + measures) to the provider
   const firstSrc=(photos[0]||{}).src||'';
-  _imgMeasures(firstSrc).then(measures=>{
+  // Only consume the invite once the submission is safely away. The old code recorded the
+  // consult and set sc_vc_submitted up front, so a failed send (after _clientSubmit's own
+  // retry) silently lost the whole consult with no way to try again. Now we record + clear
+  // + notify only on success; on failure we keep the invite and photos so they can retry.
+  const finalize=()=>{
+    const j=client.providers.find(p=>p.id==='jess');
+    if(j){j.virtualConsults=j.virtualConsults||[];j.virtualConsults.unshift(entry);try{persistVirtualConsults();}catch(e){}}
+    try{if(inv&&inv.invitedAt)localStorage.setItem('sc_vc_submitted',String(inv.invitedAt));}catch(e){}
+    vcInvite=null;_vcSubmitState={photos:{},refs:{}};try{persistInvite();}catch(e){}
+    if(typeof pushNotify==='function')pushNotify({type:'vcSubmitted',icon:'ti-check',col:'#e9f7f0',ic:'#4ec49a',title:'Consult submitted ✨',body:client.providerFirst+' will review your photos and send notes back.'});
+    nav('journey');
+  };
+  const fail=()=>{if(typeof showToast==='function')showToast('Couldn’t send your consult — please check your connection and try again.');};
+  _imgMeasures(firstSrc).catch(()=>null).then(measures=>{
     try{SlickBridge.post('virtual-consult-submitted',{providerId:'jess',clientId:'maya',kind:inv.kind,title:inv.title,date,photos,refs:entry.refs,goals,measures});}catch(e){}
-    try{if(client._real)_clientSubmit('vc_submit',{kind:inv.kind,title:inv.title,date,photos,refs:entry.refs,goals,measures});}catch(e){}
+    if(client._real){
+      return _clientSubmit('vc_submit',{kind:inv.kind,title:inv.title,date,photos,refs:entry.refs,goals,measures})
+        .then(res=>{if(res&&res.ok)finalize();else if(res&&res.duplicate){/* already sending — ignore double tap */}else fail();})
+        .catch(fail);
+    }
+    finalize(); // demo / same-browser preview — no server dependency
   });
-  try{if(inv&&inv.invitedAt)localStorage.setItem('sc_vc_submitted',String(inv.invitedAt));}catch(e){}   // don't re-show this invite before the provider processes the submission
-  vcInvite=null;_vcSubmitState={photos:{},refs:{}};try{persistInvite();}catch(e){}
-  if(typeof pushNotify==='function')pushNotify({type:'vcSubmitted',icon:'ti-check',col:'#e9f7f0',ic:'#4ec49a',title:'Consult submitted ✨',body:client.providerFirst+' will review your photos and send notes back.'});
-  nav('journey');
 }
 function persistVirtualConsults(){const j=client.providers.find(p=>p.id==='jess');if(!j)return;try{localStorage.setItem('sc_client_vc',JSON.stringify(j.virtualConsults||[]));}catch(e){}}
 function loadVirtualConsults(){try{const raw=localStorage.getItem('sc_client_vc');if(!raw)return;const arr=JSON.parse(raw);const j=client.providers.find(p=>p.id==='jess');if(j&&Array.isArray(arr)&&arr.length)j.virtualConsults=arr;}catch(e){}}
@@ -3446,13 +3459,13 @@ function renderProfile(){
   <div class="sh"><h2>Contact info</h2></div>
   <div style="background:#fff;border:1.5px solid #f0ebe4;border-radius:12px;margin:0 16px 10px;overflow:hidden;">
     ${[
-      ['Email','maya@email.com','email'],
-      ['Phone','(510) 442-8801','phone'],
+      ['Email',(client.email||'').trim(),'email'],
+      ['Phone',(client.phone||'').trim(),'phone'],
     ].map(([label,val,key])=>`
     <div style="display:flex;align-items:center;justify-content:space-between;padding:11px 14px;border-bottom:1px solid #f0ebe4;">
       <span style="font-size:13px;color:#b8a898;min-width:70px;">${label}</span>
-      <span id="val-${key}" style="font-size:13px;color:#1a1a1a;flex:1;text-align:right;">${val}</span>
-      <button onclick="editField('${key}','${label}','${val}')" aria-label="Edit ${label}" style="background:none;border:none;cursor:pointer;padding:4px 4px 4px 10px;min-width:36px;min-height:36px;display:flex;align-items:center;justify-content:center;">
+      <span id="val-${key}" style="font-size:13px;color:${val?'#1a1a1a':'#c4b9ae'};flex:1;text-align:right;">${val?_txt(val):'Not set'}</span>
+      <button onclick="editField('${key}','${label}',${JSON.stringify(val).replace(/"/g,'&quot;')})" aria-label="Edit ${label}" style="background:none;border:none;cursor:pointer;padding:4px 4px 4px 10px;min-width:36px;min-height:36px;display:flex;align-items:center;justify-content:center;">
         <i class="ti ti-pencil" aria-hidden="true" style="font-size:14px;color:#c4b9ae;"></i>
       </button>
     </div>`).join('')}
@@ -3464,11 +3477,11 @@ function renderProfile(){
   <div class="sh"><h2>Settings</h2></div>
   <div style="background:#fff;border:1.5px solid #f0ebe4;border-radius:12px;margin:0 16px 20px;overflow:hidden;">
     ${[['ti-bell','Notifications','Appointment reminders & summaries','notif-settings'],
-    ['ti-lock','Privacy','Your data and sharing settings',null],['ti-help-circle','Help & FAQs','How to use the app','client-help']].map(([icon,name,sub,screen])=>`
-    <div style="padding:12px 14px;border-bottom:1px solid #f0ebe4;display:flex;align-items:center;gap:10px;cursor:pointer;" ${screen?`onclick="nav('${screen}')"`:''}>
+    ['ti-lock','Privacy','Your info is shared only with '+(client.provider||'your provider')+' for your care',null],['ti-help-circle','Help & FAQs','How to use the app','client-help']].map(([icon,name,sub,screen])=>`
+    <div style="padding:12px 14px;border-bottom:1px solid #f0ebe4;display:flex;align-items:center;gap:10px;${screen?'cursor:pointer;':''}" ${screen?`onclick="nav('${screen}')"`:''}>
       <div style="width:34px;height:34px;background:#faf7f4;border-radius:8px;display:flex;align-items:center;justify-content:center;"><i class="ti ${icon}" aria-hidden="true" style="font-size:16px;color:var(--accent);"></i></div>
-      <div style="flex:1;"><div style="font-size:13px;font-weight:600;color:#1a1a1a;">${name}</div><div style="font-size:11px;color:#b8a898;">${sub}</div></div>
-      <i aria-hidden="true" class="ti ti-chevron-right" style="font-size:16px;color:#c4b9ae;"></i>
+      <div style="flex:1;"><div style="font-size:13px;font-weight:600;color:#1a1a1a;">${name}</div><div style="font-size:11px;color:#b8a898;">${_txt(sub)}</div></div>
+      ${screen?'<i aria-hidden="true" class="ti ti-chevron-right" style="font-size:16px;color:#c4b9ae;"></i>':''}
     </div>`).join('')}
   </div>`;
 }
@@ -3498,6 +3511,24 @@ function editField(key, label, currentVal){
 function saveField(key){
   const val=document.getElementById('edit-input')?.value?.trim();
   if(!val){document.getElementById('edit-field-modal')?.remove();return;}
+  // Contact fields (email/phone) are the provider's on-file record for this client, so a
+  // change has to actually reach the provider — the old code toasted "Profile updated" but
+  // saved nothing for these two. Validate, save locally so it sticks on reload, then sync
+  // to the provider and only confirm on success.
+  if(key==='email'||key==='phone'){
+    if(key==='email'&&!/^[^\s@]+@[^\s@]+\.[^\s@]+$/.test(val)){showToast('That email doesn’t look right — please check it');return;}
+    if(key==='phone'&&(val.replace(/\D/g,'').length<7)){showToast('That phone number doesn’t look right — please check it');return;}
+    client[key]=val;
+    const el0=document.getElementById('val-'+key);if(el0){el0.textContent=val;el0.style.color='#1a1a1a';}
+    document.getElementById('edit-field-modal')?.remove();
+    try{_saveClientContact();}catch(e){}
+    if(client._real){
+      _clientSubmit('contact',{email:client.email||'',phone:client.phone||''})
+        .then(res=>{showToast(res&&res.ok?'Sent to '+(client.providerFirst||'your provider'):(res&&res.duplicate?'':'Saved here — couldn’t reach your provider, will retry'));})
+        .catch(()=>showToast('Saved here — couldn’t reach your provider'));
+    }else{showToast('Profile updated');}
+    return;
+  }
   if(key==='skin')client.skin=val;
   else if(key==='concerns')client.concerns=val;
   else if(key==='fitz')client.fitz=val;
@@ -3505,6 +3536,19 @@ function saveField(key){
   if(el)el.textContent=val;
   document.getElementById('edit-field-modal')?.remove();
   showToast('Profile updated');
+}
+function _saveClientContact(){try{localStorage.setItem('sc_client_contact',JSON.stringify({email:client.email||'',phone:client.phone||''}));}catch(e){}}
+function _loadClientContact(prof){
+  var pend;try{pend=JSON.parse(localStorage.getItem('sc_client_contact')||'null');}catch(e){pend=null;}
+  if(!pend)return;
+  // Drop a pending field once the provider's synced value has caught up to it, so a later
+  // provider-side change isn't hidden forever by a stale local edit.
+  if(pend.email&&prof&&prof.email===pend.email)pend.email='';
+  if(pend.phone&&prof&&prof.phone===pend.phone)pend.phone='';
+  if(pend.email)client.email=pend.email;
+  if(pend.phone)client.phone=pend.phone;
+  if(!pend.email&&!pend.phone){try{localStorage.removeItem('sc_client_contact');}catch(e){}}
+  else{try{localStorage.setItem('sc_client_contact',JSON.stringify(pend));}catch(e){}}
 }
 
 
@@ -3673,6 +3717,10 @@ function _applyRealClientData(j){
   if(d.providerName){p.name=d.providerName;p.first=String(d.providerName).split(' ')[0]||p.first;p.initials=_initialsOf(d.providerName);}
   if(d.brand)p.brand=d.brand;
   var prof=d.profile||{};
+  // Contact info the provider has on file — shown read-back in the profile so a real client
+  // sees their actual details (not the demo's), and can correct them (synced via 'contact').
+  client.email=prof.email||'';client.phone=prof.phone||'';
+  try{_loadClientContact(prof);}catch(e){}
   p.treatment=prof.treatment||'';
   p.summaryNote=(Array.isArray(d.summaries)&&d.summaries[0]&&d.summaries[0].note)||'';
   p.homecare=(Array.isArray(d.aftercare)?d.aftercare:[]).map(function(s){return {key:s,icon:'\u2728',time:'',tip:'',done:false};});

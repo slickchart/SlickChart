@@ -3,7 +3,7 @@
 import { dbEnabled } from '../lib/db.js';
 import { ensureClientTables, getClientByToken, logEvent } from '../lib/clients.js';
 
-const KINDS = ['form', 'booking', 'message', 'checkin', 'vc_submit'];
+const KINDS = ['form', 'booking', 'message', 'checkin', 'vc_submit', 'contact'];
 
 // Reject a single oversized payload before it's stored. Legitimate submissions —
 // even a check-in with several downscaled (1000px) photos as data URLs — stay well
