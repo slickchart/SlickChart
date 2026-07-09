@@ -926,7 +926,7 @@ function openProviderSheet(){
       <div style="width:46px;height:46px;border-radius:12px;background:linear-gradient(135deg,${_br.primary},${_br.secondary||_br.primary});display:flex;align-items:center;justify-content:center;flex-shrink:0;font-size:15px;font-weight:700;color:#fff;box-shadow:0 2px 8px ${_br.primary}55;">${_txt(p.initials)}</div>
       <div style="flex:1;min-width:0;">
         <div style="display:flex;align-items:center;gap:7px;"><span style="font-size:15px;font-weight:700;color:#1a1a1a;">${_txt(p.studio)}</span>${p.connected?'':`<span style="font-size:9px;font-weight:700;color:#b8a898;border:1px solid #e8ddd3;border-radius:4px;padding:1px 5px;">DEMO</span>`}</div>
-        <div style="font-size:12px;color:#9a8a7e;">${_txt(p.first)} · ${_txt(p.kind)}</div>
+        <div style="font-size:12px;color:#9a8a7e;">${_txt(p.first)}${p.kind?' · '+_txt(p.kind):''}</div>
         <div style="font-size:12px;color:#b8a898;margin-top:3px;"><i class="ti ti-calendar" style="font-size:11px;"></i> Next: ${_txt(p.nextDate)} · ${_txt(p.treatment)}</div>
       </div>
       <div style="flex-shrink:0;display:flex;flex-direction:column;align-items:flex-end;gap:6px;">
@@ -1180,7 +1180,8 @@ function _applyFormsDoneFromMap(){
 function _collectClientPrefs(){
   let welcomeDismissed=[];try{welcomeDismissed=JSON.parse(localStorage.getItem('sc_welcome_dismissed')||'[]');}catch(e){}
   const installDismissed=(function(){try{return localStorage.getItem('sc_install_dismissed')==='1';}catch(e){return false;}})();
-  return {notif:loadNotifPrefs(),eng:_eng,welcomeDismissed,installDismissed,checkinDone:_ciDoneMap,formsDone:_formsDoneMap,reminders:_reminderContext()};
+  let saved=[];try{saved=JSON.parse(localStorage.getItem('sc_client_saved')||'[]');}catch(e){}
+  return {notif:loadNotifPrefs(),eng:_eng,welcomeDismissed,installDismissed,checkinDone:_ciDoneMap,formsDone:_formsDoneMap,reminders:_reminderContext(),saved};
 }
 // Context the reminder cron needs, computed here where the browser knows the client's real
 // timezone and the appointment time is already parsed (apptISO). apptAt is an absolute epoch
@@ -1219,6 +1220,7 @@ async function _loadClientPrefsFromServer(){
     }
     if(Array.isArray(p.welcomeDismissed))try{localStorage.setItem('sc_welcome_dismissed',JSON.stringify(p.welcomeDismissed));}catch(e){}
     if(typeof p.installDismissed==='boolean')try{localStorage.setItem('sc_install_dismissed',p.installDismissed?'1':'0');}catch(e){}
+    if(Array.isArray(p.saved)){try{localStorage.setItem('sc_client_saved',JSON.stringify(p.saved));}catch(e){}try{const _ap=activeProvider();if(_ap)_ap.saved=p.saved.slice();}catch(e){}}
     if(p.checkinDone&&typeof p.checkinDone==='object'){
       _ciDoneMap=Object.assign({},_ciDoneMap,p.checkinDone);
       try{localStorage.setItem('sc_checkin_done',JSON.stringify(_ciDoneMap));}catch(e){}
@@ -2144,6 +2146,9 @@ function toggleSaved(name){
   const p=activeProvider();p.saved=p.saved||[];
   const i=p.saved.indexOf(name);
   if(i>=0)p.saved.splice(i,1);else p.saved.push(name);
+  // Persist so saved products survive reload (they were lost before), and sync for cross-device.
+  try{localStorage.setItem('sc_client_saved',JSON.stringify(p.saved));}catch(e){}
+  try{if(typeof _syncClientPrefsToServer==='function')_syncClientPrefsToServer();}catch(e){}
   renderShop();
 }
 function _heartBtn(p){
@@ -2656,8 +2661,14 @@ function _confirmDeleteClientData(){
 async function _doDeleteClientData(){
   const m=document.getElementById('del-data-modal');if(m)m.remove();
   const who=_txt(client.provider||'your provider');
-  // Ask the server to delete this client's app data + notify the provider (best-effort).
-  try{ if(client._real&&client._token){ await fetch('/api/client-delete?t='+encodeURIComponent(client._token),{method:'POST',headers:{'Content-Type':'application/json'},body:'{}'}).catch(function(){}); } }catch(e){}
+  // Try the server delete FIRST and only proceed if it succeeded — otherwise we'd wipe this
+  // device (and the retry token with it) while the provider-side records + notification never
+  // happened, yet tell the client "deleted". On failure, keep everything and let them retry.
+  if(client._real&&client._token){
+    let ok=false;
+    try{const r=await fetch('/api/client-delete?t='+encodeURIComponent(client._token),{method:'POST',headers:{'Content-Type':'application/json'},body:'{}'});ok=!!(r&&r.ok);}catch(e){ok=false;}
+    if(!ok){if(typeof showToast==='function')showToast('Couldn’t reach the server to delete your data — please check your connection and try again',false);return;}
+  }
   // Unsubscribe this device from push.
   try{ if('serviceWorker'in navigator){ const reg=await navigator.serviceWorker.ready; const sub=await reg.pushManager.getSubscription(); if(sub){try{await sub.unsubscribe();}catch(_){}} } }catch(e){}
   // Wipe local data on this device.
@@ -3893,6 +3904,13 @@ function _applyRealClientData(j){
   p.summaries=Array.isArray(d.summaries)?d.summaries:[];
   // no fabricated data in real mode
   p.avoid=[];p.aftercare=[];p.progress=[];p.observations=[];p.thread=[];p.homecareNote='';p.seriesLabel='';
+  // Remaining demo-seed fields — a real client must never see the sample "Maya" data (skin
+  // profile, shop goals/history/saved, demo guide, demo Amazon store, hardcoded profession).
+  p.profileFields=[];p.profileTitle='';p.shopGoals='';p.recLog=[];p.saved=[];p.resources=[];p.amazonStore='';p.kind='';
+  try{const _sv=JSON.parse(localStorage.getItem('sc_client_saved')||'null');if(Array.isArray(_sv))p.saved=_sv;}catch(e){}
+  // The provider's real check-in config rides in the blob (d.checkinCfg); persist it where the
+  // client's check-in reads it, so a real client sees THEIR provider's questions, not Maya's.
+  try{if(d.checkinCfg&&typeof d.checkinCfg==='object')localStorage.setItem('sc_checkin_cfg',JSON.stringify(d.checkinCfg));}catch(e){}
   p.session=1;p.totalSessions=1;p.studioAddress='';p.studioPhone='';p.connected=false;p.unread=0;
   var nv=String(prof.nextVisit||'').split('\u00b7');
   p.nextDate=(nv[0]||'').trim();p.nextTime=(nv[1]||'').trim();

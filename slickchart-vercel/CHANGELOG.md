@@ -2,6 +2,29 @@
 
 Newest entries at the top. One entry per deploy. Dates are US-formatted.
 
+## 2026-07-11 — Client fixes from the audit: real clients no longer see the demo's data
+
+`_applyRealClientData` (which switches from demo mode to a real client's data) wiped *most* of the
+sample "Maya" seed data but missed several fields, so real clients were shown another person's info.
+
+- **Skin profile** (`profileFields`/`profileTitle`), **shop goals** (`shopGoals`), **recommendation
+  history** (`recLog`), **saved products** (`saved`), the **demo guide** (`resources`), the **demo
+  Amazon-store link** (`amazonStore`), and the hardcoded **"Esthetician"** label (`kind`) are now all
+  reset for real clients. Highest-impact finding — a real client could see another client's skin type,
+  allergies, and product history. (Real guides use a different field, `pendingGuides`, so nothing real
+  is lost; the profession label falls back to the provider's name + credentials.)
+- **Pre-visit check-in now uses the provider's real questions.** The client only read the check-in
+  config from a localStorage key written by the same-browser preview bridge, so every real client got
+  Maya's esthetician questions regardless of provider. The config already rides in the blob
+  (`d.checkinCfg`); `_applyRealClientData` now persists it where the check-in reads it.
+- **Saved products persist** (were memory-only, lost on reload) — now saved to localStorage + synced.
+- **Data-deletion is honest** — `_doDeleteClientData` used to wipe the device and report success even
+  if the server call failed. Now it deletes server-side **first** and only wipes + confirms on success;
+  on failure it keeps everything and tells the client to retry.
+
+Client-app only → re-embedded into `api/client-page.js` (byte-identical) and demo regenerated
+(banner-only). `node --check` + boot + render smoke-test pass.
+
 ## 2026-07-11 — Provider fixes from a parallel audit: false confirmations + delivery/persistence gaps
 
 A multi-agent audit surfaced several real provider-side bugs; all verified and fixed here.
