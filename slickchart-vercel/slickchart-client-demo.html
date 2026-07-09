@@ -1032,16 +1032,19 @@ function openGoogleCal(){
   closeCalModal();
 }
 
-function showToast(msg){
+function showToast(msg,ok){
   const existing=document.getElementById('cal-toast');if(existing)existing.remove();
   const t=document.createElement('div');
   t.id='cal-toast';
   t.setAttribute('role','status');t.setAttribute('aria-live','polite');
-  t.style.cssText='position:absolute;bottom:90px;left:50%;transform:translateX(-50%);background:#1a1a1a;color:#fff;border-radius:10px;padding:10px 16px;font-size:13px;display:flex;align-items:center;gap:7px;z-index:999;white-space:nowrap;box-shadow:0 4px 20px rgba(0,0,0,.2);';
-  t.innerHTML=`<i class="ti ti-check" aria-hidden="true" style="color:#4ec49a;font-size:14px;"></i><span></span>`;
+  t.style.cssText='position:absolute;bottom:90px;left:50%;transform:translateX(-50%);background:#1a1a1a;color:#fff;border-radius:10px;padding:10px 16px;font-size:13px;display:flex;align-items:center;gap:7px;z-index:999;max-width:82%;box-shadow:0 4px 20px rgba(0,0,0,.2);';
+  // Pass ok:false for errors/validation so we don't show a reassuring green check on a problem.
+  const icon=ok===false?'ti-alert-triangle':'ti-check';
+  const iconCol=ok===false?'#e0a030':'#4ec49a';
+  t.innerHTML=`<i class="ti ${icon}" aria-hidden="true" style="color:${iconCol};font-size:14px;flex-shrink:0;"></i><span style="line-height:1.4;"></span>`;
   const _s=t.querySelector('span');if(_s)_s.textContent=String(msg==null?'':msg);
   (document.querySelector('.shell')||document.body).appendChild(t);
-  setTimeout(()=>t.remove(),3000);
+  setTimeout(()=>t.remove(),3400);
 }
 
 // Reliable clipboard copy with a fallback for webviews/older browsers where the async
@@ -2419,8 +2422,8 @@ function _submitFillForm(){
       }
     }
   });
-  if(missingRequired){ if(typeof proToast==='function')proToast('Please fill in the required fields'); return; }
-  if(badFormat){ if(typeof proToast==='function')proToast(badFormat); return; }
+  if(missingRequired){ showToast('Please fill in the required fields',false); return; }
+  if(badFormat){ showToast(badFormat,false); return; }
   const dateLabel=new Date().toLocaleDateString('en-US',{month:'short',day:'numeric',year:'numeric'});
   const _finishFormSent=()=>{
     // Remove it from the pending list only once we know it's been sent, so a failed
@@ -2430,17 +2433,17 @@ function _submitFillForm(){
     try{_markFormDone(p.id,pf);}catch(e){}   // persist so it doesn't reappear on reload before the provider syncs
     _ffPhotos={};
     _ffClearDraft();   // typed answers are now sent — drop the saved draft
-    if(typeof proToast==='function')proToast('Sent \u2713');
+    showToast('Sent \u2713');
     nav('home');
   };
   if(client._real){
     const btns=document.querySelectorAll('button');
-    if(typeof proToast==='function')proToast('Sending\u2026');
+    showToast('Sending\u2026');
     _clientSubmit('form',{formId:pf.formId,title:pf.title,answers,flagged,signed,date:dateLabel})
       .then(function(res){
         if(res&&res.duplicate)return;   // a submit is already in flight — ignore the duplicate tap
         if(res&&res.ok!==false)_finishFormSent();
-        else if(typeof proToast==='function')proToast("Couldn't send \u2014 check your connection and tap Submit again");
+        else showToast("Couldn't send \u2014 check your connection and tap Submit again",false);
       });
     return;
   }
@@ -2610,7 +2613,7 @@ function _downscaleImg(file,cb,max=900){
 function _pickClientAvatar(){
   const inp=document.createElement('input');
   inp.type='file';inp.accept='image/*';
-  inp.onchange=()=>{const f=inp.files&&inp.files[0];if(!f)return;_downscaleImg(f,src=>{if(src)_setClientAvatar(src);else if(typeof showToast==='function')showToast('Couldn’t read that image — try another');},400);};
+  inp.onchange=()=>{const f=inp.files&&inp.files[0];if(!f)return;_downscaleImg(f,src=>{if(src)_setClientAvatar(src);else if(typeof showToast==='function')showToast('Couldn’t read that image — try another',false);},400);};
   inp.click();
 }
 function _setClientAvatar(src){
@@ -2619,7 +2622,7 @@ function _setClientAvatar(src){
   if(client._real){
     _clientSubmit('contact',{avatar:src}).then(function(res){
       if(typeof showToast==='function')showToast(res&&res.ok?'Photo updated ✓':(res&&res.duplicate?'':'Saved here — couldn’t reach your provider'));
-    }).catch(function(){if(typeof showToast==='function')showToast('Saved here — couldn’t reach your provider');});
+    }).catch(function(){if(typeof showToast==='function')showToast('Saved here — couldn’t reach your provider',false);});
   }else if(typeof showToast==='function')showToast('Photo updated ✓');
   if(typeof renderProfile==='function')renderProfile();
 }
@@ -2955,7 +2958,7 @@ function renderRebook(){
 let lastBookingId=null;
 function submitRebook(){
   if(!rebookState.date||!rebookState.time){
-    showToast('Please pick a date and time first');
+    showToast('Please pick a date and time first',false);
     return;
   }
   const dateLabel=new Date(rebookState.date+'T12:00:00').toLocaleDateString('en-US',{weekday:'long',month:'long',day:'numeric'});
@@ -3056,7 +3059,7 @@ function openBuyOptions(i){
   (document.querySelector('.shell')||document.body).appendChild(ov);
 }
 function closeBuySheet(){const e=document.getElementById('buy-sheet');if(e)e.remove();}
-function copyCode(code){_clientCopy(code,function(){if(typeof pushNotify==='function')pushNotify({type:'code',icon:'ti-discount-2',col:'var(--accent-lt)',ic:'var(--accent)',title:'Code copied',body:code});},function(){if(typeof showToast==='function')showToast('Couldn\u2019t copy — long-press the code to copy it');});}
+function copyCode(code){_clientCopy(code,function(){if(typeof pushNotify==='function')pushNotify({type:'code',icon:'ti-discount-2',col:'var(--accent-lt)',ic:'var(--accent)',title:'Code copied',body:code});},function(){if(typeof showToast==='function')showToast('Couldn\u2019t copy — long-press the code to copy it',false);});}
 // ── Real image capture, downscaling, and on-device pixel analysis ──
 function _downscaleImage(file,maxDim,cb){
   if(file&&file.size&&file.size>25*1024*1024){cb('');return;}
@@ -3147,7 +3150,7 @@ function submitVirtualConsult(){
     if(typeof pushNotify==='function')pushNotify({type:'vcSubmitted',icon:'ti-check',col:'#e9f7f0',ic:'#4ec49a',title:'Consult submitted ✨',body:client.providerFirst+' will review your photos and send notes back.'});
     nav('journey');
   };
-  const fail=()=>{if(typeof showToast==='function')showToast('Couldn’t send your consult — please check your connection and try again.');};
+  const fail=()=>{if(typeof showToast==='function')showToast('Couldn’t send your consult — please check your connection and try again.',false);};
   _imgMeasures(firstSrc).catch(()=>null).then(measures=>{
     try{SlickBridge.post('virtual-consult-submitted',{providerId:'jess',clientId:'maya',kind:inv.kind,title:inv.title,date,photos,refs:entry.refs,goals,measures});}catch(e){}
     if(client._real){
@@ -3327,7 +3330,7 @@ function _cfClear(){const c=document.getElementById('cf-sign-pad');if(c&&c.getCo
 function submitClientForm(fid){
   const jess=client.providers.find(p=>p.id==='jess');if(!jess||!jess.forms)return;
   const f=jess.forms.find(x=>x.id===fid);if(!f)return;
-  if(!_cfPadInk){showToast('Please sign in the box to submit');return;}
+  if(!_cfPadInk){showToast('Please sign in the box to submit',false);return;}
   // collect answers keyed by question id
   const answers={};
   (f.qs||[]).forEach(q=>{if(q.type==='Signature'||q.type==='Contraindications')return;const id='cf-'+(q.id!=null?q.id:'');const el=document.getElementById(id);let v;if(el&&('value' in el))v=el.value;if(v==null||v==='')v=(window._cfAns||{})[id];if(v!=null&&String(v).trim()!=='')answers[q.id]=v;});
@@ -3348,7 +3351,7 @@ function submitClientForm(fid){
     _clientSubmit('form',{formId:fid,title:f.title,answers,flagged,signed:true,date:'Today'})
       .then(function(res){
         if(res&&res.ok!==false)_finishSigned();
-        else{ if(btn){btn.disabled=false;btn.innerHTML='Submit &amp; sign';} showToast("Couldn't send — check your connection and tap Submit again"); }
+        else{ if(btn){btn.disabled=false;btn.innerHTML='Submit &amp; sign';} showToast("Couldn't send — check your connection and tap Submit again",false); }
       });
     return;
   }
@@ -3567,7 +3570,7 @@ function _printMyRecords(){
     const doc=f.contentWindow.document;
     doc.open();doc.write(html);doc.close();
     setTimeout(()=>{try{f.contentWindow.focus();f.contentWindow.print();}catch(e){}setTimeout(()=>{try{f.remove();}catch(e){}},2000);},350);
-  }catch(e){try{f.remove();}catch(_){}if(typeof showToast==='function')showToast('Could not open print \u2014 try Download instead');}
+  }catch(e){try{f.remove();}catch(_){}if(typeof showToast==='function')showToast('Could not open print \u2014 try Download instead',false);}
 }
 function _downloadMyRecords(){
   const html=_buildMyRecordsHTML(); if(!html)return;
@@ -3579,7 +3582,7 @@ function _downloadMyRecords(){
     document.body.appendChild(a); a.click();
     setTimeout(()=>{try{URL.revokeObjectURL(url);a.remove();}catch(e){}},1500);
     if(typeof showToast==='function')showToast('Downloaded \u2713');
-  }catch(e){ if(typeof showToast==='function')showToast('Could not download \u2014 try Print instead'); }
+  }catch(e){ if(typeof showToast==='function')showToast('Could not download \u2014 try Print instead',false); }
 }
 function exportMyRecords(){
   const ov=document.createElement('div'); ov.id='myrec-sheet';
@@ -3692,8 +3695,8 @@ function saveField(key){
   // saved nothing for these two. Validate, save locally so it sticks on reload, then sync
   // to the provider and only confirm on success.
   if(key==='email'||key==='phone'){
-    if(key==='email'&&!/^[^\s@]+@[^\s@]+\.[^\s@]+$/.test(val)){showToast('That email doesn’t look right — please check it');return;}
-    if(key==='phone'&&(val.replace(/\D/g,'').length<7)){showToast('That phone number doesn’t look right — please check it');return;}
+    if(key==='email'&&!/^[^\s@]+@[^\s@]+\.[^\s@]+$/.test(val)){showToast('That email doesn’t look right — please check it',false);return;}
+    if(key==='phone'&&(val.replace(/\D/g,'').length<7)){showToast('That phone number doesn’t look right — please check it',false);return;}
     client[key]=val;
     const el0=document.getElementById('val-'+key);if(el0){el0.textContent=val;el0.style.color='#1a1a1a';}
     document.getElementById('edit-field-modal')?.remove();
@@ -3701,7 +3704,7 @@ function saveField(key){
     if(client._real){
       _clientSubmit('contact',{email:client.email||'',phone:client.phone||''})
         .then(res=>{showToast(res&&res.ok?'Sent to '+(client.providerFirst||'your provider'):(res&&res.duplicate?'':'Saved here — couldn’t reach your provider, will retry'));})
-        .catch(()=>showToast('Saved here — couldn’t reach your provider'));
+        .catch(()=>showToast('Saved here — couldn’t reach your provider',false));
     }else{showToast('Profile updated');}
     return;
   }

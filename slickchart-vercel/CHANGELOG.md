@@ -2,6 +2,27 @@
 
 Newest entries at the top. One entry per deploy. Dates are US-formatted.
 
+## 2026-07-11 — Fix: client form-fill feedback was invisible (proToast doesn't exist on the client)
+
+- **Filling out a form gave the client no feedback.** The client-app form-fill flow called `proToast(...)`
+  — but that function only exists in the *provider* app; the client's toast function is `showToast`. Every
+  call was guarded with `if(typeof proToast==='function')`, so it silently did nothing. The practical bug:
+  a client who missed a **required field** (or typed a bad email/phone) tapped **Submit** and saw
+  *nothing happen* — no "please fill in the required fields", no "Sending…", and no "couldn't send" on a
+  failed submit. Repointed all five calls to `showToast`, so the form now actually tells the client what's
+  going on. (This is the same class of bug as the earlier check-in reset issue — a client stuck with no
+  explanation.)
+- **Toasts no longer show a green ✓ on an error.** `showToast` gained an optional status flag; errors and
+  validation messages ("Couldn't send", "That email doesn't look right", "Please pick a date", etc.) now
+  show a warning icon instead of a reassuring checkmark, and long messages wrap instead of overflowing.
+  Swept the whole client app and flagged every clear error/validation toast.
+- Also confirmed while sweeping: **homecare** check-off persists + syncs (with streaks), the **guide/consult
+  and signing** flows already handle success/failure correctly, and **Square sync** is a live OAuth
+  integration best tested on your real account.
+- Client-app only → `slickchart-client.html` re-embedded into `api/client-page.js` (byte-identical) and the
+  client demo regenerated (banner-only). `node --check` + boot pass; a render smoke-test exercises the form,
+  check-in, profile, and privacy screens without error.
+
 ## 2026-07-11 — App-store readiness: privacy policy, in-app data deletion, camera capture
 
 Prep for wrapping the client app for the App Store / Play Store.
