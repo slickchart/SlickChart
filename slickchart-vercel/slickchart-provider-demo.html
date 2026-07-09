@@ -1307,7 +1307,37 @@ function _seedMayaOnce(){
     if(!CL.maya){CL.maya=_mayaSeed();try{applyProfessionConfig();}catch(e){}saveClients();}
   }catch(e){}
 }
-function deleteClient(id){if(!CL[id])return;const nm=(CL[id].name||'this client');if(!confirm('Remove '+nm+' from SlickChart?\n\nThis removes their chart from this app only. It does NOT affect their record in Square.'))return;delete CL[id];saveClients();if(typeof proToast==='function')proToast(nm+' removed');nav('clients');}
+// Remove all of a client's id-keyed side data when their chart is deleted — otherwise these
+// orphan forever: base64 photos/consults bloat storage, and old messages/summaries/recs linger.
+// (Financial records in _payments are intentionally kept — they stay manageable in the Payments
+// hub by name, and silently destroying tax history on a delete would be worse.)
+function _cleanupClientData(id){
+  try{
+    if(typeof clientRecs!=='undefined')delete clientRecs[id];
+    if(typeof recReasons!=='undefined')delete recReasons[id];
+    if(typeof clientHomecare!=='undefined')delete clientHomecare[id];
+    if(typeof sessionSummaries!=='undefined')delete sessionSummaries[id];
+    if(typeof capturedPhotos!=='undefined')delete capturedPhotos[id];
+    if(typeof vcInvites!=='undefined')delete vcInvites[id];
+    if(typeof vcSubmissions!=='undefined')delete vcSubmissions[id];
+    if(typeof clientHealingStage!=='undefined')delete clientHealingStage[id];
+    if(typeof summaryObsDraft!=='undefined')delete summaryObsDraft[id];
+    if(typeof providerNoteDrafts!=='undefined')delete providerNoteDrafts[id];
+    if(typeof msgStore!=='undefined')delete msgStore[id];
+    if(typeof threads!=='undefined')for(let ti=threads.length-1;ti>=0;ti--){if(threads[ti]&&threads[ti].id===id)threads.splice(ti,1);}
+  }catch(e){}
+  try{if(typeof persistClientRecs==='function')persistClientRecs();}catch(e){}
+  try{if(typeof persistRecReasons==='function')persistRecReasons();}catch(e){}
+  try{if(typeof persistClientHomecare==='function')persistClientHomecare();}catch(e){}
+  try{if(typeof persistSessionSummaries==='function')persistSessionSummaries();}catch(e){}
+  try{if(typeof persistCapturedPhotos==='function')persistCapturedPhotos();}catch(e){}
+  try{if(typeof persistVcState==='function')persistVcState();}catch(e){}
+  try{if(typeof persistClientHealingStage==='function')persistClientHealingStage();}catch(e){}
+  try{if(typeof saveMessages==='function')saveMessages();}catch(e){}
+  try{if(typeof saveProviderNoteDrafts==='function')saveProviderNoteDrafts();}catch(e){}
+  try{if(typeof persistWorkspace==='function')persistWorkspace();}catch(e){}
+}
+function deleteClient(id){if(!CL[id])return;const nm=(CL[id].name||'this client');if(!confirm('Remove '+nm+' from SlickChart?\n\nThis removes their chart from this app only. It does NOT affect their record in Square.'))return;_cleanupClientData(id);delete CL[id];saveClients();if(typeof proToast==='function')proToast(nm+' removed');nav('clients');}
 function _bizLoc(){return [bizInfo.city,bizInfo.state].filter(Boolean).join(', ')||'';}
 function loadBizInfo(){try{const raw=localStorage.getItem('sc_bizinfo');if(raw){const d=JSON.parse(raw)||{};Object.keys(d).forEach(k=>{bizInfo[k]=d[k];});}const wn=localStorage.getItem('sc_wsname');if(wn)workspace.name=wn;else if(bizInfo.name)workspace.name=bizInfo.name;if(_bizLoc())workspace.location=_bizLoc();}catch(e){}}
 function _a11yEnhance(){try{document.querySelectorAll('[onclick]:not(button):not(a):not(input):not(select):not(textarea):not([role])').forEach(el=>{el.setAttribute('role','button');if(!el.hasAttribute('tabindex'))el.setAttribute('tabindex','0');});
@@ -12671,7 +12701,11 @@ function addConfirmedAppt(b){
         let curAt=null;
         try{
           const cv=CL[cid].nextVisit;
-          if(cv&&cv!=='Not scheduled'){const datePart=cv.split('\u00b7')[0].trim();const d=new Date(datePart);if(!isNaN(d))curAt=d;}
+          // The stored nextVisit is year-less ("Jul 17"); new Date() would read it as year 2001,
+          // making the comparison below always reject a real (2026) booking \u2014 so a genuinely
+          // *sooner* confirmed appointment never replaced the shown one. Append the current year
+          // and roll to next year if that lands well in the past (same heuristic as elsewhere).
+          if(cv&&cv!=='Not scheduled'){const datePart=cv.split('\u00b7')[0].trim();const yr=new Date().getFullYear();let d=new Date(datePart+' '+yr);if(!isNaN(d)){if((d-Date.now())/86400000<-60)d=new Date(datePart+' '+(yr+1));if(!isNaN(d))curAt=d;}}
         }catch(e){}
         if(!curAt||bookAt<=curAt){CL[cid].nextVisit=nv;try{if(typeof saveClients==='function')saveClients();}catch(e){}}
       }
@@ -14848,7 +14882,11 @@ function saveVendor(editIdx){
     nav('vendors');
   }
 }
-function deleteVendor(i){const v=vendors[i];if(!v)return;confirmModal({title:'Delete vendor',body:'Remove '+(v.name||'this vendor')+' from your directory? This cannot be undone.',action:'Delete'},function(){const ix=vendors.indexOf(v);if(ix>=0){vendors.splice(ix,1);saveVendors();}nav('vendors');});}
+function deleteVendor(i){const v=vendors[i];if(!v)return;confirmModal({title:'Delete vendor',body:'Remove '+(v.name||'this vendor')+' from your directory? This cannot be undone.',action:'Delete'},function(){const ix=vendors.indexOf(v);if(ix>=0){vendors.splice(ix,1);
+  // Inventory references vendors by array index — remap so items don't silently point at the
+  // wrong vendor (and a wrong reorder link) after the splice shifts every later index down.
+  try{if(typeof inv!=='undefined'&&Array.isArray(inv)){inv.forEach(function(it){if(it&&typeof it.vendorIdx==='number'){if(it.vendorIdx===ix)it.vendorIdx=null;else if(it.vendorIdx>ix)it.vendorIdx--;}});if(typeof saveInv==='function')saveInv();}}catch(e){}
+  saveVendors();}nav('vendors');});}
 
 // ── Keep a focused input above the on-screen keyboard ──────────────────────────
 // On mobile the software keyboard slides up over the bottom of the layout, hiding any

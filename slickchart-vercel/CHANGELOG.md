@@ -2,6 +2,27 @@
 
 Newest entries at the top. One entry per deploy. Dates are US-formatted.
 
+## 2026-07-11 — Second audit round (provider): delete-cleanup, vendor indices, booking-date parse
+
+- **Deleting a client now cleans up their data.** `deleteClient` removed only the chart record and
+  orphaned every id-keyed side store — `capturedPhotos`/`vcSubmissions` (base64 images that bloat
+  storage), plus messages/threads, session summaries, product recs, homecare, VC state, note drafts,
+  and healing stage — leaving them stranded forever. A new `_cleanupClientData(id)` clears and persists
+  all of them (mirroring the existing demo-purge). Financial records (`_payments`) are intentionally
+  **kept** — they stay manageable in the Payments hub, and silently destroying tax history on a delete
+  would be worse.
+- **Deleting a vendor no longer mis-points inventory.** Vendors are referenced by array index
+  (`inv[*].vendorIdx`); `deleteVendor` spliced the array without remapping, so every item that pointed
+  past the deleted vendor silently shifted to the wrong vendor (and a wrong reorder link). Now the delete
+  remaps: `===` deleted → null, `>` deleted → decremented.
+- **A sooner confirmed booking now updates the client's next visit.** The booking-confirm handler parsed
+  the stored year-less `nextVisit` ("Jul 17") with `new Date()`, which V8 reads as year **2001** — so the
+  "only replace with an earlier visit" comparison always failed and a genuinely sooner appointment never
+  replaced the shown one. Now it appends the current year (rolling to next year if that lands in the past).
+
+Provider-only; demo regenerated (banner-only). `node --check` + boot pass; vendor-remap and date-parse
+logic verified by simulation.
+
 ## 2026-07-11 — API hardening from the security audit (low-severity, no user impact)
 
 The API security audit found **no** high-severity authorization gaps or SQL injection (every provider
