@@ -2,6 +2,12 @@
 
 Newest entries at the top. One entry per deploy. Dates are US-formatted.
 
+## 2026-07-08 — Bug sweep, round 30
+
+- **Courses / Learn** (main find): courses are provider-authored (title, description, price, module names) and were rendered unescaped in the course-list card, the course-detail view, and the course-builder inputs. Escaped title/status/duration/price/description across all three (value attrs via `_jsAttr`, textarea + display via `_fileEsc`).
+- **Inventory**: escaped the provider-entered item icon (a free-text emoji field) in the stock-card display. Rest of inventory was already clean — item name/brand via `_fileEsc`, reorder link via `_urlAttr(_safeUrl(...))`, vendor phone via `_urlAttr` in a `tel:` link, and add/edit inputs escape their value attributes.
+- Verified clean: provider messages/threads (names, previews, times escaped; automation name/trigger escaped; automation icon/color are fixed literals), the rebooking flow (built entirely from generated dates + fixed labels; no client free-text renders), and the toast/notification system (`proToast` sets the message via `textContent`, `providerSystemNotify` uses the native Notification API — so all the "Removed X"/"Sent to Y" toasts carrying user data are safe by construction). `confirmModal` escapes its title + body centrally.
+
 ## 2026-07-08 — Bug sweep, round 29
 
 - **Affiliate / recommended-product rendering** (the round's main theme): product `icon` / `name` / `brand` come from `affiliateLinks`, which includes CSV-imported and Square-synced items — i.e. external data — and were being rendered unescaped in several places. Escaped them in the routine builder's product selector, the client-detail recommendation cards, the "what your client sees" summary preview (also escaped the treatment, homecare chips, next-appointment line, and `_jsAttr`'d the buy-button id), the provider shop/affiliate card, and two other product rows. Buy-link URLs were already going through `_urlAttr(_safeUrl(...))`.
