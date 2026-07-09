@@ -3932,7 +3932,21 @@ async function _fetchRealMessages(initial){
       const viewing=client.activeProviderId===jess.id&&document.getElementById('chat-body');
       newOnes.forEach(function(m){jess.thread.push({from:'provider',text:m.text,imgs:Array.isArray(m.photos)?m.photos:[],time:_fmtMsgTime(m.ts)});});
       _markMsgsSeen(newOnes.map(function(m){return m.id;}));
-      if(!viewing)jess.unread=(jess.unread||0)+newOnes.length;
+      if(!viewing){
+        jess.unread=(jess.unread||0)+newOnes.length;
+        // The client isn't looking at the thread, so actually surface the new message(s) —
+        // this is what the "New message" toggle promises. pushNotify records it in the
+        // notification center and, respecting that toggle + quiet hours, fires a banner
+        // (or a real system notification when the tab's backgrounded and permission's granted).
+        try{
+          const last=newOnes[newOnes.length-1];
+          const preview=(last.text&&last.text.trim())?last.text.trim():((Array.isArray(last.photos)&&last.photos.length)?'📷 Photo':'New message');
+          const who=client.providerFirst||'your provider';
+          if(typeof pushNotify==='function')pushNotify({type:'messagereply',icon:'ti-message-circle',col:'#f0f5ff',ic:'#5ba3e8',
+            title:newOnes.length>1?(newOnes.length+' new messages from '+who):('New message from '+who),
+            body:preview,onclick:function(){client.activeProviderId=jess.id;if(typeof applyActiveProvider==='function')applyActiveProvider();nav('messages');}});
+        }catch(e){}
+      }
       else messages=jess.thread;
       try{_saveClientMessages();}catch(e){}
       if(viewing)renderMessages();

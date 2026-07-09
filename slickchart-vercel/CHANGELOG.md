@@ -2,6 +2,12 @@
 
 Newest entries at the top. One entry per deploy. Dates are US-formatted.
 
+## 2026-07-11 — Fix: clients now actually get notified of a new message
+
+- **A new message from the provider now fires the "New message" notification it promised.** When a real client's app polled and found a new provider message while they weren't looking at the thread, it bumped the unread badge but never called `pushNotify` — so the client got no banner and no system notification, even though the notification type, the "New message" toggle, and the gating logic all existed. Now the incoming-message path fires a `messagereply` notification (title names the provider, body shows the message preview or "📷 Photo", tapping opens the thread). It goes through `pushNotify`, so it still respects the client's "New message" toggle and quiet hours, and it's recorded in the notification center. Multiple new messages in one poll collapse into a single "N new messages" notification instead of a burst.
+- Client-app change → `slickchart-client.html` re-embedded into `api/client-page.js` (verified byte-identical) and the client demo regenerated (banner-only). `node --check` + boot pass; the title/preview logic (single/multi, text vs photo-only) verified by simulation.
+- **Known limitation flagged, not silently faked:** the two *scheduled* reminder toggles ("Day-of reminder" and "Daily homecare nudge") can't fire yet — there's no background push infrastructure (no service worker push handler, VAPID keys, or cron), so nothing can wake the app at 8 AM. Left untouched pending a decision on building real scheduled push; the event-driven notifications (appointment confirmations, summaries, and now messages) all work.
+
 ## 2026-07-11 — Feature: provider→client chat photos (two-way photo messaging complete)
 
 - **The provider can now send photos to a client in chat and they actually arrive.** This closes the other half of chat photos: `sendMsg` was text-only over the wire and honestly told the provider "photos aren't delivered to the client app yet." Now the (already downscaled) photos ride in the `provider-message` call, `/api/provider-message` stores them on the `provider_message` event, and the client renders them in the thread — on first load (via `/api/client-messages`, which already returns `photos`) and on the live 20-second poll (the incremental append now carries `imgs` too). So an annotated aftercare photo or a product pic reaches the client wherever they are.
