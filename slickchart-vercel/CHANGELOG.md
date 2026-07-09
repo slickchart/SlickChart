@@ -2,6 +2,31 @@
 
 Newest entries at the top. One entry per deploy. Dates are US-formatted.
 
+## 2026-07-11 — Hardcoded/fake-data sweep: honest virtual-consult metrics + audit
+
+Swept both apps for hardcoded/fake values that could show to *real* users (vs. intentional demo
+data). The app is mostly honest — most hardcoded values are correctly gated to the demo clients or
+sit in unreachable/shelved code — but one reachable leak was found and fixed.
+
+- **Fixed — virtual-consult "AI detected" metrics on the client chart.** On a real client's chart,
+  the consult card labeled the built-in **sample** metrics ("Hydration 62%, Barrier 71%…") as
+  **"AI detected"** whenever they'd submitted — i.e. fake numbers presented as if measured from that
+  client's photos. It now computes the **real** metrics from the submission's on-device measures
+  (`_metricsFromMeasures`) when present, and honestly labels the block **"Sample analysis"** (matching
+  the app's own `_vcSourceLabel` wording) when there's nothing measured — so real clients see real
+  values and never fake ones.
+- **Audited and confirmed OK (no change needed):** provider home tiles (real counts), Beta stats
+  (loads from the API), Reports (computed from real payments), the automation header (fixed earlier),
+  contact info (fixed earlier). The demo-only skin metrics carry a "Provider estimates / not clinical
+  measurements" disclaimer and only render for the demo client; a real client's demo data
+  (sessions, timeline, aftercare, ratings) is fully wiped by `_applyRealClientData`.
+- **Left intentionally alone (unreachable):** the Studio/staff dashboard + staff-invite (a `display:none`
+  toggle with a dev note to re-enable when team features return) and the older `renderVirtual`/`switchVTab`
+  consult mockup (superseded by the live `renderVcInbox`, reachable only from its own back button). Both
+  are shelved dead code; fixing/removing would work against the intent to revive or would risk the live
+  path — flagged rather than touched.
+- Provider-only change; demo regenerated (banner-only). `node --check` + boot pass.
+
 ## 2026-07-11 — Fix: client form-fill feedback was invisible (proToast doesn't exist on the client)
 
 - **Filling out a form gave the client no feedback.** The client-app form-fill flow called `proToast(...)`
