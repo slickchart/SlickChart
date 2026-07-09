@@ -45,7 +45,10 @@ function inQuiet(notif, hour, min) {
 
 function authorized(req) {
   const secret = process.env.CRON_SECRET || '';
-  if (!secret) return true; // no secret set → allow (Vercel Cron still only calls from its own infra)
+  // Fail CLOSED: without a configured secret this endpoint would be publicly invokable and each
+  // call scans the prefs table + queries push subs, so refuse rather than allow. Set CRON_SECRET
+  // (Vercel Cron auto-sends it as a Bearer token) to enable the job.
+  if (!secret) return false;
   const h = req.headers['authorization'] || '';
   if (h === 'Bearer ' + secret) return true;                 // Vercel Cron sends this when CRON_SECRET is set
   if ((req.query && req.query.key) === secret) return true;   // manual test trigger

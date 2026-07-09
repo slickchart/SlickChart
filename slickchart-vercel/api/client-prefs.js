@@ -22,6 +22,14 @@ export default async function handler(req, res) {
     if (req.method === 'PUT') {
       const body = req.body || {};
       const prefs = (body.prefs && typeof body.prefs === 'object') ? body.prefs : {};
+      // Cap the stored size (mirrors /api/client-submit) so a link-token holder can't bloat the
+      // client_prefs table with a multi-MB blob.
+      try {
+        if (Buffer.byteLength(JSON.stringify(prefs)) > 512 * 1024) {
+          res.status(413).json({ error: 'Preferences payload too large.' });
+          return;
+        }
+      } catch (e) { res.status(400).json({ error: 'Bad request' }); return; }
       await saveClientPrefs(c.id, prefs);
       res.status(200).json({ ok: true });
       return;

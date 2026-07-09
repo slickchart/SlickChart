@@ -2,6 +2,24 @@
 
 Newest entries at the top. One entry per deploy. Dates are US-formatted.
 
+## 2026-07-11 — API hardening from the security audit (low-severity, no user impact)
+
+The API security audit found **no** high-severity authorization gaps or SQL injection (every provider
+endpoint derives the provider id from the signed token, client endpoints are link-token gated, and all
+`sql` interpolations are bound params). Two clean, no-downside hardening items applied:
+
+- **Reminder cron fails closed.** `/api/cron-reminders` previously allowed the request when `CRON_SECRET`
+  was unset — a public endpoint that scans the prefs table + queries push subs per call. It now refuses
+  unless the secret is set (Vercel Cron auto-sends it, and it *is* set in this project, so no behavior
+  change here — this just closes the misconfiguration hole).
+- **Client-prefs PUT size cap.** Added a 512 KB payload guard (mirroring `/api/client-submit`) so a link-
+  token holder can't bloat `client_prefs` with a multi-megabyte blob.
+
+Config/API only; both files `node --check` clean. (Two other low-severity items — login returns distinct
+"no account" vs "wrong password" messages, and signup returns 409 on an existing email — are account-
+existence enumeration vectors, but fixing them trades away helpful login/signup UX, so they're flagged for
+your call rather than changed unilaterally.)
+
 ## 2026-07-11 — Client fixes from the audit: real clients no longer see the demo's data
 
 `_applyRealClientData` (which switches from demo mode to a real client's data) wiped *most* of the
