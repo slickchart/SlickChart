@@ -2,6 +2,15 @@
 
 Newest entries at the top. One entry per deploy. Dates are US-formatted.
 
+## 2026-07-10 — Bug sweep, round 41 (abuse/DoS guards on the client-submit boundary)
+
+- **Finding**: `/api/client-submit` (the token-authed endpoint where a client submits forms, check-ins, bookings, messages, and virtual-consult photos) stored `body.payload` **verbatim with no size cap and no rate limit**. A client with a valid link token — or anyone who got hold of one — could flood their provider's event feed / database with rapid-fire submissions, or persist oversized blobs. Severity is modest (it requires a valid token and the blast radius is that one provider), but it's an unguarded write path, so worth hardening.
+- **Added two boundary guards**:
+  - **Payload size guard** — reject any submission whose serialized payload exceeds 4 MB (`413`). A legitimate check-in with several downscaled (1000px) data-URL photos stays well under this; the cap only stops abuse/bugs from bloating the DB. (Vercel already caps the raw request at ~4.5 MB; this makes the app-level boundary explicit.)
+  - **Per-token burst limiter** — best-effort in-memory throttle (default 20 submissions per token per minute, `SUBMIT_BURST_LIMIT` env-overridable, `429` when exceeded), reusing the same proven pattern as `/api/ai`. It's per function instance and fails open, which is the right trade-off for a low-severity, token-scoped endpoint.
+- Verified with `node --check` and a simulation: a legitimate ~400 KB photo submission passes the size check, a 5 MB blob is rejected, and the burst limiter allows 20 then blocks the next 10 of 30 rapid calls.
+- Server/API-only change (`api/client-submit.js`) — no app HTML/JS change, so the demos and `api/client-page.js` embed are untouched.
+
 ## 2026-07-10 — Bug sweep, round 40 (security response headers)
 
 - **New angle**: the app was serving **no security response headers at all** (no CSP, `X-Frame-Options`, `X-Content-Type-Options`, `Referrer-Policy`, or HSTS). Added a baseline set via `vercel.json` `headers` (applies to every route — static files, the API, and the `/client/:token` client app), which backstops the whole XSS surface and closes clickjacking/MIME-sniffing/referrer-leak gaps without touching any app code.
