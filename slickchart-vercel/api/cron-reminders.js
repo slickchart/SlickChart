@@ -1,8 +1,10 @@
 // Scheduled reminder sender — invoked by Vercel Cron (see vercel.json). Walks every
 // client's synced prefs and sends web-push reminders that are due right now:
-//   • 24-hour appointment reminder   (toggle: appointmentReminder)
-//   • morning-of appointment reminder (toggle: appointmentDay, ~8am client-local)
-//   • daily homecare nudge            (toggle: homecareReminder, ~8am client-local)
+//   • day-before appointment reminder (toggle: appointmentReminder, client-local morning)
+//   • morning-of appointment reminder (toggle: appointmentDay, client-local morning)
+//   • daily homecare nudge            (toggle: homecareReminder, client-local morning)
+// "Morning" = 7–11am local. This works whether the cron runs hourly (fires once, deduped)
+// or once a day (schedule that daily run inside the morning window — see vercel.json).
 //
 // Reminders are driven by data the CLIENT computed and synced (its resolved timezone and
 // its parsed next-appointment timestamp), so the server never has to guess-parse a display
@@ -56,7 +58,7 @@ export default async function handler(req, res) {
   if (!pushConfigured()) { res.status(200).json({ ok: false, reason: 'push not configured' }); return; }
 
   const now = Date.now();
-  const summary = { checked: 0, appt24: 0, apptDay: 0, homecare: 0, devices: 0 };
+  const summary = { checked: 0, apptBefore: 0, apptDay: 0, homecare: 0, devices: 0 };
   try {
     await ensureClientTables();
     const rows = await listAllClientPrefs();
@@ -72,23 +74,28 @@ export default async function handler(req, res) {
       if (nowL.hour < 0) continue;
       if (inQuiet(notif, nowL.hour, nowL.min)) continue;
 
+      // Day-based reminders fire during the client's local morning window. This works the
+      // same whether the cron runs hourly (fires once, at the first morning hit — deduped)
+      // or once a day (the single daily run should be scheduled for this window; see
+      // vercel.json). It avoids tying the appointment reminder to an exact hours-away
+      // window, which a once-daily cron would almost always miss.
+      const MORNING_LO = 7, MORNING_HI = 11;
+      const inMorning = nowL.hour >= MORNING_LO && nowL.hour <= MORNING_HI;
       const due = [];
 
-      // 24-hour appointment reminder: appointment is between ~23h and ~25h away.
-      if (notif.appointmentReminder !== false && rem.apptAt) {
-        const dt = rem.apptAt - now;
-        if (dt > 23 * HOUR && dt <= 25 * HOUR) {
+      if (rem.apptAt) {
+        const apptL = localParts(rem.tz, rem.apptAt);
+        const tomorrow = localParts(rem.tz, now + 24 * HOUR).date;
+        // Day-before reminder: appointment is on tomorrow's local calendar day.
+        if (notif.appointmentReminder !== false && inMorning && apptL.date && apptL.date === tomorrow) {
           due.push({
-            rkey: 'appt24:' + rem.apptAt,
+            rkey: 'apptbefore:' + apptL.date + ':' + rem.apptAt,
             title: 'Appointment tomorrow',
             body: (rem.treatment ? rem.treatment + ' ' : 'Your appointment ') + (rem.apptLabel ? '· ' + rem.apptLabel : '') + '. See you then!'
           });
         }
-      }
-      // Morning-of reminder: appointment is later today (client-local) and it's the 8 o'clock hour.
-      if (notif.appointmentDay !== false && rem.apptAt && nowL.hour === 8) {
-        const apptL = localParts(rem.tz, rem.apptAt);
-        if (apptL.date === nowL.date && rem.apptAt > now) {
+        // Morning-of reminder: appointment is later today (client-local) and hasn't passed.
+        if (notif.appointmentDay !== false && inMorning && apptL.date === nowL.date && rem.apptAt > now) {
           due.push({
             rkey: 'apptday:' + apptL.date,
             title: 'Appointment today',
@@ -96,8 +103,8 @@ export default async function handler(req, res) {
           });
         }
       }
-      // Daily homecare nudge at ~8am local, for clients who have a homecare routine.
-      if (notif.homecareReminder !== false && rem.hasHomecare && nowL.hour === 8) {
+      // Daily homecare nudge in the local morning, for clients who have a homecare routine.
+      if (notif.homecareReminder !== false && rem.hasHomecare && inMorning) {
         due.push({
           rkey: 'homecare:' + nowL.date,
           title: 'Homecare reminder',
@@ -115,7 +122,7 @@ export default async function handler(req, res) {
         if (!fresh) continue;
         const sent = await sendPushToAll(subs, { title: r.title, body: r.body, url: '/client', tag: r.rkey, renotify: true }, deletePushSub);
         summary.devices += sent;
-        if (r.rkey.startsWith('appt24')) summary.appt24++;
+        if (r.rkey.startsWith('apptbefore')) summary.apptBefore++;
         else if (r.rkey.startsWith('apptday')) summary.apptDay++;
         else summary.homecare++;
       }

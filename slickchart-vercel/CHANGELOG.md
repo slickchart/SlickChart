@@ -2,6 +2,22 @@
 
 Newest entries at the top. One entry per deploy. Dates are US-formatted.
 
+## 2026-07-11 — Reminder cron: once-daily schedule + cadence-agnostic timing
+
+- **Cron schedule set to once daily** (`0 15 * * *` = 8:00am Pacific) so it runs on Vercel's
+  Hobby plan (hourly needs Pro). Real-time message pushes are unaffected — they don't use the cron.
+- **Reminder timing reworked to suit a daily run.** The appointment reminder previously used a
+  tight "23–25 hours away" window that only made sense for an hourly cron — a once-daily run would
+  miss almost every appointment. Reminders are now **calendar-day based within the client's local
+  morning (7–11am):** a **day-before** reminder when the appointment is on tomorrow's local date, a
+  **morning-of** reminder when it's today, and the **homecare nudge** each morning. This fires
+  correctly whether the cron runs once daily (schedule it in the morning window) or hourly (fires
+  once, deduped) — verified by simulation across timezones, the morning window, and the toggles.
+- Because the single daily run is timed to Pacific 8am, it lands in the 7–11am local window for
+  clients roughly Pacific-through-Eastern; a provider whose clients span wider timezones (or who's on
+  Pro) can switch back to hourly (`0 * * * *`) in `vercel.json` for per-timezone-correct morning timing.
+- Server/config only (`api/cron-reminders.js`, `vercel.json`); no app change.
+
 ## 2026-07-11 — Feature: real push notifications (web-push + service worker + reminder cron)
 
 Notifications now reach a client's phone **even when the app is closed** — the piece that was
