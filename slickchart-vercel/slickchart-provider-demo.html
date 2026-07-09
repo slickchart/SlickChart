@@ -12430,8 +12430,17 @@ async function syncClientEvents(){
         touchedRequests=true;touchedNotif=true;
       }else if(ev.kind==='message'){
         if(!msgStore[cid])msgStore[cid]=[];
-        const preview=payload.text||'Sent a message';
-        msgStore[cid].push({from:'them',text:payload.text||'',imgs:[],time:'Just now'});
+        // Photos a client sends in chat now come through — show them in the thread and file
+        // them onto the client's photo chart (tagged source:'message') so they're not stranded.
+        const mImgs=(Array.isArray(payload.photos)?payload.photos:[]).filter(_validImgSrc);
+        const preview=payload.text||(mImgs.length?('📷 '+(mImgs.length>1?mImgs.length+' photos':'Photo')):'Sent a message');
+        msgStore[cid].push({from:'them',text:payload.text||'',imgs:mImgs,time:'Just now'});
+        if(mImgs.length&&c){
+          if(!capturedPhotos[cid])capturedPhotos[cid]=[];
+          const baseTs=(ev.created_at?(new Date(ev.created_at).getTime()||Date.now()):Date.now());
+          mImgs.forEach((url,i)=>capturedPhotos[cid].push({url,ts:baseTs+i,phase:'reference',angle:'',source:'message'}));
+          try{if(typeof persistCapturedPhotos==='function')persistCapturedPhotos();}catch(e){}
+        }
         const th=threads.find(x=>x.id===cid);
         if(th){th.preview=preview;th.time='Just now';th.unread=true;
           // Move this conversation to the top so the list stays ordered by most-recent activity

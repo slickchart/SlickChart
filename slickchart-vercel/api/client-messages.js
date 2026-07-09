@@ -18,6 +18,7 @@ export default async function handler(req, res) {
       id: r.id,
       from: r.kind === 'provider_message' ? 'provider' : 'me',
       text: (r.payload && r.payload.text) || '',
+      photos: (r.payload && Array.isArray(r.payload.photos)) ? r.payload.photos : [],
       ts: Number(r.created_at) || 0
     }));
     res.status(200).json({ ok: true, messages });

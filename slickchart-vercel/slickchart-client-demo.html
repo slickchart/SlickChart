@@ -2046,25 +2046,25 @@ function attachClientLink(){const u=prompt('Paste an image link (URL):');if(u&&u
 function sendClientMsg(imgArg){
   const inp=document.getElementById('cinput');
   let text=(inp&&inp.value.trim())||'';
-  const imgs=Array.isArray(imgArg)?imgArg:(imgArg?[imgArg]:[]);
+  let imgs=Array.isArray(imgArg)?imgArg:(imgArg?[imgArg]:[]);
   if(!text&&!imgs.length)return;
   // A chat message has a natural length; an extremely long one is almost always an
   // accidental paste and would bloat local storage / risk a failed sync. Cap it generously.
   const MAX=5000;
   if(text.length>MAX){text=text.slice(0,MAX);if(typeof showToast==='function')showToast('Message shortened to '+MAX+' characters');}
-  // Only text is carried to the provider today (the message sync doesn't transmit photos
-  // yet), so a real text message gets a live delivery status + retry, while a photo we
-  // can't actually deliver is called out honestly instead of silently looking sent.
-  const track=!!(client._real&&text);
+  // Photos are downscaled small, but cap how many ride in one message so a big multi-select
+  // can't push the sync payload past the server's size limit (which would fail the send).
+  const MAXP=6;
+  if(imgs.length>MAXP){imgs=imgs.slice(0,MAXP);if(typeof showToast==='function')showToast('Sent the first '+MAXP+' photos — send the rest in another message');}
+  // Text and photos both reach the provider now, so any real message gets a live delivery
+  // status + retry — the client can see whether it actually landed.
+  const track=!!(client._real&&(text||imgs.length));
   const msg={_id:'cm'+(++_clientMsgSeq),from:'me',text,imgs,time:'Just now',status:track?'sending':undefined};
   messages.push(msg);
   try{_saveClientMessages();}catch(e){}
   if(inp){inp.value='';inp.style.height='auto';}
   renderMessages();
   if(track)_deliverClientMsg(msg);
-  if(client._real&&imgs.length&&typeof showToast==='function'){
-    showToast(text?'Message sent — photos aren’t shared with '+(client.providerFirst||'your provider')+' yet':'Photos aren’t shared with '+(client.providerFirst||'your provider')+' yet — send a message instead');
-  }
 }
 let _clientMsgSeq=0;
 // Deliver a client text message and reflect the real outcome in its bubble. _clientSubmit
@@ -2072,7 +2072,7 @@ let _clientMsgSeq=0;
 // quick message) by re-attempting a few times before giving up.
 function _deliverClientMsg(msg,attempt){
   attempt=attempt||0;
-  _clientSubmit('message',{text:msg.text||'',photos:(msg.imgs||[]).length}).then(function(res){
+  _clientSubmit('message',{text:msg.text||'',photos:(msg.imgs||[])}).then(function(res){
     if(res&&res.duplicate&&attempt<4){setTimeout(function(){_deliverClientMsg(msg,attempt+1);},1200);return;}
     msg.status=(res&&res.ok)?'sent':'failed';
     try{_saveClientMessages();}catch(e){}
@@ -3935,7 +3935,7 @@ async function _fetchRealMessages(initial){
     if(!(j&&j.ok&&Array.isArray(j.messages)))return;
     const jess=client.providers.find(function(p){return p.id==='jess';})||client.providers[0];
     if(initial){
-      jess.thread=j.messages.map(function(m){return {from:m.from==='provider'?'provider':'me',text:m.text,time:_fmtMsgTime(m.ts)};});
+      jess.thread=j.messages.map(function(m){return {from:m.from==='provider'?'provider':'me',text:m.text,imgs:Array.isArray(m.photos)?m.photos:[],time:_fmtMsgTime(m.ts)};});
       _markMsgsSeen(j.messages.map(function(m){return m.id;}));
       if(client.activeProviderId===jess.id)messages=jess.thread;
       try{_saveClientMessages();}catch(e){}
