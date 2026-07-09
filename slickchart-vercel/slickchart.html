@@ -8213,12 +8213,16 @@ function attachProviderPhoto(id){_pickImages(srcs=>{if(srcs&&srcs.length)sendMsg
 function attachProviderLink(id){const u=prompt('Paste an image link (URL):');if(u&&u.trim())sendMsg(id,[u.trim()]);}
 function sendMsg(id,imgArg){
   const inp=document.getElementById('cinput');let text=(inp&&inp.value.trim())||'';
-  const imgs=Array.isArray(imgArg)?imgArg:(imgArg?[imgArg]:[]);
+  let imgs=Array.isArray(imgArg)?imgArg:(imgArg?[imgArg]:[]);
   if(!text&&!imgs.length)return;
   // Cap message length — an extremely long one is almost always an accidental paste and
   // would bloat storage / risk a failed sync.
   const MAX=5000;
   if(text.length>MAX){text=text.slice(0,MAX);if(typeof proToast==='function')proToast('Message shortened to '+MAX+' characters');}
+  // Cap photos per message so a big multi-select can't blow the sync payload limit (same
+  // budget as the client side). Photos are already downscaled by the picker.
+  const MAXP=6;
+  if(imgs.length>MAXP){imgs=imgs.slice(0,MAXP);if(typeof proToast==='function')proToast('Sent the first '+MAXP+' photos — send the rest in another message');}
   const t=threads.find(x=>x.id===id);if(t)t.preview=text||('📷 '+(imgs.length>1?imgs.length+' photos':'Photo'));
   if(!msgStore[id])msgStore[id]=[];
   msgStore[id].push({from:'me',text,imgs,time:'Just now'});
@@ -8228,29 +8232,24 @@ function sendMsg(id,imgArg){
   // Maya is the local demo client — keep the old same-browser bus for her
   if(id==='maya'){try{SlickBridge.post('client-message',{text,imgs,providerId:'jess',time:'Just now'});}catch(e){}}
   // Any real, invited client — send for real via the server so it reaches their actual device.
-  else{
-    const c=CL[id];
-    // Photo delivery to a real client's device isn't supported by the message sync yet
-    // (only text is transmitted). Don't let the provider believe a photo was delivered —
-    // tell them plainly. The photo still shows in the provider's own thread for reference.
-    if(imgs.length&&c&&c._token&&typeof proToast==='function'){
-      proToast(text?'Your message was sent — photos aren\u2019t delivered to the client app yet':'Photos aren\u2019t delivered to the client app yet — send a message instead');
-    }
-    if(text){try{_sendProviderMessageToClient(id,text);}catch(e){}}
-  }
+  // Any real, invited client — send for real via the server (text and photos both
+  // reach their device now) so it lands wherever they are.
+  else{try{_sendProviderMessageToClient(id,text,imgs);}catch(e){}}
 }
-async function _sendProviderMessageToClient(id,text,_retried){
+async function _sendProviderMessageToClient(id,text,photos,_retried){
   const c=CL[id];if(!c||!c._token)return; // not a real synced client yet — nothing to deliver
   const tok=(typeof Cloud!=='undefined'&&Cloud&&Cloud.token)||'';if(!tok)return;
+  const imgs=Array.isArray(photos)?photos:[];
+  if(!String(text||'').trim()&&!imgs.length)return; // nothing to deliver
   try{
-    const r=await fetch('/api/provider-message',{method:'POST',headers:{'Content-Type':'application/json','Authorization':'Bearer '+tok},body:JSON.stringify({clientId:id,text})});
+    const r=await fetch('/api/provider-message',{method:'POST',headers:{'Content-Type':'application/json','Authorization':'Bearer '+tok},body:JSON.stringify({clientId:id,text:text||'',photos:imgs})});
     if(!r.ok)throw new Error('status '+r.status);
   }catch(e){
     // The message shows as sent locally, but if it never reached the server the client
     // will never see it — retry once, then actually tell the provider it didn't send.
     if(!_retried){
       await new Promise(res=>setTimeout(res,1500));
-      return _sendProviderMessageToClient(id,text,true);
+      return _sendProviderMessageToClient(id,text,imgs,true);
     }
     if(typeof proToast==='function')proToast('That message didn\u2019t reach '+((c.name||'your client').split(' ')[0])+' \u2014 check your connection and resend',0);
   }
