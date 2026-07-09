@@ -8729,7 +8729,7 @@ function rebuildResources(){
   });
   resources.length=0;out.forEach(g=>resources.push(g));
 }
-function _findGuide(id){return resources.find(g=>g.id===id)||Object.values(guideTemplatesByProf).flat().find(g=>g.id===id)||customResources.find(g=>g.id===id);}
+function _findGuide(id){return resources.find(g=>g.id===id)||Object.values(guideTemplatesByProf).flat().find(g=>g.id===id)||customResources.find(g=>g.id===id)||(function(){const co=(typeof courses!=='undefined'&&Array.isArray(courses))?courses.find(x=>x.id===id):null;return co?{id:co.id,title:co.title||'Course',icon:'📚',cat:'Course',url:co.url||'',tips:[]}:null;})();}
 function persistCustomResources(){try{localStorage.setItem('sc_resources',JSON.stringify(customResources));}catch(e){}}
 function loadCustomResources(){try{const raw=localStorage.getItem('sc_resources');if(raw){const a=JSON.parse(raw);if(Array.isArray(a))customResources=a;}}catch(e){}}
 function renderLearn(){
@@ -9140,9 +9140,18 @@ function sendCourseToClient(courseId){
 }
 function confirmSendCourse(courseId,cid){
   const co=courses.find(x=>x.id===courseId);if(!co)return;
-  if(cid==='maya'){try{SlickBridge.post('resource-shared',{providerId:'jess',clientId:'maya',resource:{title:co.title,icon:'📚',cat:'Course',url:co.url||''}});}catch(e){}}
-  closeSendProd();
   const c=CL[cid];
+  if(cid==='maya'){try{SlickBridge.post('resource-shared',{providerId:'jess',clientId:'maya',resource:{title:co.title,icon:'📚',cat:'Course',url:co.url||''}});}catch(e){}}
+  else if(c){
+    // Real client: actually assign the course as a resource card (resolved via _findGuide with
+    // its enrollment/external link) so it reaches their app through /api/client-data — the old
+    // code only claimed "Sent" and delivered nothing. saveClients() triggers the client sync.
+    if(!Array.isArray(c.pendingGuides))c.pendingGuides=[];
+    if(!c.pendingGuides.some(pg=>pg.guideId===co.id))c.pendingGuides.push({guideId:co.id,assignedAt:Date.now()});
+    try{saveClients();}catch(e){}
+    if(!c._token){closeSendProd();if(typeof proToast==='function')proToast(`${c.name.split(' ')[0]} hasn't been invited to the app yet — invite them first, then this course will be waiting for them`);return;}
+  }
+  closeSendProd();
   if(typeof proToast==='function')proToast(`Sent "${co.title}" to ${c?c.name.split(' ')[0]:'client'}`);
 }
 function renderShopBundle(i){

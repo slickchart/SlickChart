@@ -2,6 +2,25 @@
 
 Newest entries at the top. One entry per deploy. Dates are US-formatted.
 
+## 2026-07-11 — Fix: sending a course to a real client now actually delivers it
+
+- **"Send course" was a false confirmation for real clients.** `confirmSendCourse` posted over the
+  same-browser bridge only for the demo client and, for a real client, just showed *Sent "<course>" to
+  <name>* while delivering **nothing** — no assignment, no sync, so the client never received it (the
+  same class as the old virtual-consult-invite and booking bugs). Now a real client actually gets the
+  course: it's assigned to their `pendingGuides` as a "📚 Course" resource card (with the course's
+  external link when set) and `saveClients()` triggers the client-data sync, so it reaches their app on
+  their own device — matching how forms, guides, and products already deliver. `_findGuide` was extended
+  to resolve a course id into a guide-shaped card so the blob assembly picks it up; existing guides are
+  unchanged and an unknown id still drops cleanly (verified by simulation). Uninvited clients now get an
+  honest "invite them first, then this course will be waiting" message instead of a false "Sent".
+- Audited the rest of the send-to-client flows and confirmed they already reach real clients: **forms**
+  and **guides** deliver via `_assignFormsToClient`/`pendingGuides` + `saveClients()` (which itself
+  schedules the client sync — line 1100), and **products**/**bundles** call `_persistAndSyncClient`
+  explicitly. Course was the only broken one.
+- Provider-only change; demo regenerated (banner-only). `node --check` + boot pass; course resolution +
+  blob assembly verified by simulation.
+
 ## 2026-07-11 — Hardcoded/fake-data sweep: honest virtual-consult metrics + audit
 
 Swept both apps for hardcoded/fake values that could show to *real* users (vs. intentional demo
