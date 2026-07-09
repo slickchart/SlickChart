@@ -2,6 +2,27 @@
 
 Newest entries at the top. One entry per deploy. Dates are US-formatted.
 
+## 2026-07-11 — Second audit round (client): two HIGH bugs — summary crash + negative countdown
+
+- **The "Latest summary" screen crashed for real clients.** `renderLatestSummary` did `s.homecare.map(...)`
+  unguarded, but a real synced summary has **no** `homecare` field (the provider builds it as
+  `{date,title,note,products,guides}`) — so `.map` threw mid-template, `nav()` doesn't try/catch, and the
+  screen stayed blank/stuck. It hit **every real client who'd received a summary** (it worked in the demo
+  only because Maya's seed summaries include a `homecare` array). Guarded to `(s.homecare||[]).map`.
+- **Every unscheduled client saw a large negative countdown.** For a client with no booking the provider
+  syncs `nextVisit:'Not scheduled'`; the client did `new Date("Not scheduled <year>")`, which V8 parses as
+  **Jan 1** — so `apptISO` became Jan 1 and the home screen showed e.g. **"-189 days away"** / a "-189d"
+  tile while the date said "Not scheduled." Now "Not scheduled"/empty leaves `apptISO` empty so the UI
+  correctly shows "Not scheduled" (and the old phantom "appointment in 14 days" fallback is gone).
+- **Year-boundary appointments got the wrong year.** The year-less `nextVisit` always got the *current*
+  year, so from December a "Jan 5" booking landed in the past → negative countdown **and** the push
+  reminder's `apptAt` was in the past so it never fired. Now it rolls to next year when the current-year
+  guess is well in the past (matching the provider side).
+
+Client-app only → re-embedded into `api/client-page.js` (byte-identical) and demo regenerated
+(banner-only). `node --check` + boot pass; the parse logic (Not-scheduled → empty, year rollover) verified
+by simulation.
+
 ## 2026-07-11 — Second audit round (provider): delete-cleanup, vendor indices, booking-date parse
 
 - **Deleting a client now cleans up their data.** `deleteClient` removed only the chart record and

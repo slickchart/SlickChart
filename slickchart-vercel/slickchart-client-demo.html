@@ -3216,7 +3216,7 @@ function renderLatestSummary(){
     <div style="padding:12px 16px;border-bottom:1px solid #f0ebe4;">
       <div style="font-size:12px;font-weight:600;color:#b8a898;text-transform:uppercase;letter-spacing:.07em;">Your homecare routine</div>
     </div>
-    ${s.homecare.map((step,i)=>`
+    ${(s.homecare||[]).map((step,i)=>`
     <div style="display:flex;align-items:flex-start;gap:10px;padding:10px 16px;border-bottom:1px solid #f0ebe4;">
       <div style="width:22px;height:22px;border-radius:50%;background:var(--accent);display:flex;align-items:center;justify-content:center;flex-shrink:0;margin-top:1px;">
         <span style="font-size:11px;font-weight:700;color:#fff;">${i+1}</span>
@@ -3928,8 +3928,26 @@ function _applyRealClientData(j){
   p.session=1;p.totalSessions=1;p.studioAddress='';p.studioPhone='';p.connected=false;p.unread=0;
   var nv=String(prof.nextVisit||'').split('\u00b7');
   p.nextDate=(nv[0]||'').trim();p.nextTime=(nv[1]||'').trim();
-  var iso; try{ if(prof.nextVisit){ var dd=new Date(String(prof.nextVisit).replace('\u00b7','')+' '+(new Date().getFullYear())); if(!isNaN(dd))iso=dd.toISOString(); } }catch(e){}
-  p.apptISO=iso||new Date(Date.now()+14*86400000).toISOString();
+  // Parse the year-less nextVisit ("Jul 17 \u00b7 10:00 AM") into a real timestamp. Two traps:
+  // (1) "Not scheduled" must NOT be parsed \u2014 V8 reads new Date("Not scheduled 2026") as Jan 1,
+  //     which then shows a large NEGATIVE countdown for every unscheduled client; and
+  // (2) appending the current year to a date that's actually next year (Dec\u2192Jan) lands in the
+  //     past, breaking the countdown AND the reminder timestamp \u2014 so roll to next year.
+  // When there's no real appointment, leave apptISO empty so the UI shows "Not scheduled"
+  // (the old code invented a phantom appointment 14 days out).
+  var iso='';
+  try{
+    var _nv=String(prof.nextVisit||'').trim();
+    if(_nv && !/not\s*scheduled/i.test(_nv)){
+      var _clean=_nv.replace('\u00b7','').trim(), _yr=new Date().getFullYear();
+      var dd=new Date(_clean+' '+_yr);
+      if(!isNaN(dd)){
+        if((dd-Date.now())/86400000 < -60)dd=new Date(_clean+' '+(_yr+1));
+        if(!isNaN(dd))iso=dd.toISOString();
+      }
+    }
+  }catch(e){}
+  p.apptISO=iso;
   p.nextDateISO='';p.nextTimeISO='';p.durationMins=60;
   client._forms=Array.isArray(d.forms)?d.forms:[];
   p.pendingForms=Array.isArray(d.pendingForms)?d.pendingForms:[];
