@@ -2,6 +2,12 @@
 
 Newest entries at the top. One entry per deploy. Dates are US-formatted.
 
+## 2026-07-10 — Bug sweep, round 42 (reset-email rate limit + Subresource Integrity on the icon CDN)
+
+- **Password-reset rate limit**: `/api/request-reset` sent a reset email on every request with no throttle, so a known provider address could be bombed with reset emails (nuisance + email cost). Added a cap of **5 requests per address per hour**, reusing the existing `login_attempts` table via a **namespaced key** (`reset:<email>`) so it never collides with — or triggers — a real login lockout. The no-enumeration behavior is preserved: over the limit still returns `200`, and every request (matching address or not) is recorded so the response is identical whether the email exists or not.
+- **Subresource Integrity (SRI) on the Tabler icon font**: the apps load `tabler-icons.min.css` from jsDelivr with no integrity check, so a CDN compromise could serve tampered CSS. Added `integrity="sha384-…"` + `crossorigin="anonymous"` to the `<link>` in every surface that loads it (`slickchart.html`, `slickchart-client.html`, `slickchart-client-walkthrough.html`, both demos, and the `api/client-page.js` embed). The version is pinned (`@3.19.0`) and jsDelivr serves the npm file byte-for-byte, so the hash is stable; if the CDN ever served a different file the browser would simply refuse it. Computed the hash from the exact npm package (`npm pack @tabler/icons-webfont@3.19.0`) and **verified in headless Chromium** that the browser accepts the stylesheet under that hash (loads + applies, no integrity error).
+- Client-app change → `slickchart-client.html` re-embedded into `api/client-page.js` (byte-identical, SRI present), and both demos regenerated (banner-only diffs). All apps parse (`node --check`) and boot clean.
+
 ## 2026-07-10 — Bug sweep, round 41 (abuse/DoS guards on the client-submit boundary)
 
 - **Finding**: `/api/client-submit` (the token-authed endpoint where a client submits forms, check-ins, bookings, messages, and virtual-consult photos) stored `body.payload` **verbatim with no size cap and no rate limit**. A client with a valid link token — or anyone who got hold of one — could flood their provider's event feed / database with rapid-fire submissions, or persist oversized blobs. Severity is modest (it requires a valid token and the blast radius is that one provider), but it's an unguarded write path, so worth hardening.
