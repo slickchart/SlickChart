@@ -2979,6 +2979,7 @@ function submitVirtualConsult(){
     try{SlickBridge.post('virtual-consult-submitted',{providerId:'jess',clientId:'maya',kind:inv.kind,title:inv.title,date,photos,refs:entry.refs,goals,measures});}catch(e){}
     try{if(client._real)_clientSubmit('vc_submit',{kind:inv.kind,title:inv.title,date,photos,refs:entry.refs,goals,measures});}catch(e){}
   });
+  try{if(inv&&inv.invitedAt)localStorage.setItem('sc_vc_submitted',String(inv.invitedAt));}catch(e){}   // don't re-show this invite before the provider processes the submission
   vcInvite=null;_vcSubmitState={photos:{},refs:{}};try{persistInvite();}catch(e){}
   if(typeof pushNotify==='function')pushNotify({type:'vcSubmitted',icon:'ti-check',col:'#e9f7f0',ic:'#4ec49a',title:'Consult submitted ✨',body:client.providerFirst+' will review your photos and send notes back.'});
   nav('journey');
@@ -3703,12 +3704,35 @@ function _applyRealClientData(j){
   p.pendingForms=Array.isArray(d.pendingForms)?d.pendingForms:[];
   p.pendingGuides=Array.isArray(d.pendingGuides)?d.pendingGuides:[];
   client._realAvailability=(d.availability&&typeof d.availability==='object')?d.availability:null;
+  // Surface a virtual-consult invite the provider sent (delivered via the synced data blob,
+  // so it works on the client's own device — not just same-browser preview).
+  try{_applyServerVcInvite(d.vcInvite);}catch(e){}
   // The provider object was just rebuilt, wiping any in-memory checkinDone. Restore it
   // from the saved map so a completed pre-visit check-in isn't re-prompted on reload.
   _applyCheckinDoneFromMap();
   // Likewise, drop any pending form the client already submitted but the server hasn't
   // dropped yet (before the provider's app processed it), so it doesn't reappear as to-do.
   _applyFormsDoneFromMap();
+}
+function _vcSubmittedInviteId(){try{return localStorage.getItem('sc_vc_submitted')||'';}catch(e){return '';}}
+// Apply a virtual-consult invite delivered in the synced data blob. Shows it (and notifies
+// once per invite) unless the client has already submitted for this exact invite — matched
+// by the provider's invitedAt nonce — which stops it re-appearing in the window before the
+// provider's app has processed the submission (same idea as the pending-form fix).
+function _applyServerVcInvite(vi){
+  if(!vi||!vi.kind)return;
+  const iat=String(vi.invitedAt||'');
+  if(iat&&iat===_vcSubmittedInviteId())return;
+  if(!vcInvite||String(vcInvite.invitedAt||'')!==iat){
+    vcInvite={kind:vi.kind,title:vi.title||'Virtual consult',fee:vi.fee||'',providerFirst:client.providerFirst,invitedAt:vi.invitedAt||0};
+    _vcSubmitState={photos:{},refs:{}};
+    try{persistInvite();}catch(e){}
+  }
+  let notified='';try{notified=localStorage.getItem('sc_vc_notified')||'';}catch(e){}
+  if(iat!==notified){
+    try{localStorage.setItem('sc_vc_notified',iat);}catch(e){}
+    if(typeof pushNotify==='function')pushNotify({type:'vcInvite',icon:'ti-sparkles',col:'#f3eefc',ic:'#8b6fc7',title:client.providerFirst+' invited you to a virtual consult',body:'Submit a few photos so they can review before your visit.',onclick:()=>{client.activeProviderId='jess';applyActiveProvider();nav('virtual-submit');}});
+  }
 }
 function _bootRealClient(token){
   client._token=token;

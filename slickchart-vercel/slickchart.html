@@ -5671,12 +5671,20 @@ function loadVcState(){
 }
 function inviteVirtualConsult(id){
   const c=CL[id];if(!c)return;const v=_vcProfile();
-  vcInvites[id]={...(vcInvites[id]||{}),invited:true};
+  // invitedAt is a per-invite nonce so the client can tell a fresh invite from one they've
+  // already submitted for (mirrors the pending-form assignedAt fix).
+  vcInvites[id]={...(vcInvites[id]||{}),invited:true,submitted:false,invitedAt:Date.now()};
   try{persistVcState();}catch(e){}
   try{SlickBridge.post('virtual-consult-invite',{providerId:'jess',clientId:id,kind:v.kind,title:v.title,fee:vcFee});}catch(e){}
+  const _inviteMsg=`I'd love to do a virtual ${v.kind==='skin'?'skin':v.kind} consult before your next visit — I've sent an invite to your app. Upload a few photos and I'll send my notes back. ✨`;
   if(!msgStore[id])msgStore[id]=[];
-  msgStore[id].push({from:'me',text:`I'd love to do a virtual ${v.kind==='skin'?'skin':v.kind} consult before your next visit — I've sent an invite to your app. Upload a few photos and I'll send my notes back. ✨`,time:'Just now'});
+  msgStore[id].push({from:'me',text:_inviteMsg,time:'Just now'});
   try{saveMessages();}catch(e){}
+  // Reach a real client on their own device: deliver the message through the server, and
+  // (via the client-data sync below) surface the invite itself in their app — the SlickBridge
+  // post above only reaches a same-browser preview.
+  try{_sendProviderMessageToClient(id,_inviteMsg);}catch(e){}
+  try{if(typeof _persistAndSyncClient==='function')_persistAndSyncClient(id);else if(typeof _scheduleSpecificClientSync==='function')_scheduleSpecificClientSync(id);}catch(e){}
   if(typeof proToast==='function')proToast('Virtual consult invite sent to '+c.name.split(' ')[0]);
   renderClient(id);
 }
@@ -7791,7 +7799,14 @@ function _assembleClientData(id){
     const g=(typeof _findGuide==='function')?_findGuide(pg.guideId):null;if(!g)return null;
     return {guideId:pg.guideId,title:g.title||'Guide',icon:g.icon||'📄',cat:g.cat||'',url:g.url||'',tips:Array.isArray(g.tips)?g.tips:[]};
   }).filter(Boolean);
-  return {studio,providerName,profile:{skin:c.skin||'',concerns:c.concerns||'',allergies:c.allergies||'',fitz:c.fitz||'',treatment:c.treatment||'',lastVisit:c.lastVisit||'',nextVisit:c.nextVisit||''},summaries,aftercare,products,forms,pendingForms,pendingGuides,photos:Array.isArray(c.photos)?c.photos:[],booking:{canRequest:true},availability};
+  // Active virtual-consult invite for this client (if any), so the invite reaches them
+  // cross-device — not just via the same-browser SlickBridge. Dropped once they submit.
+  let vcInvite=null;
+  try{const vi=(typeof vcInvites!=='undefined')?vcInvites[id]:null;
+    if(vi&&vi.invited&&!vi.submitted){const vp=(typeof _vcProfile==='function')?_vcProfile():{};
+      vcInvite={kind:vp.kind||'skin',title:vp.title||'Virtual consult',fee:(typeof vcFee!=='undefined'?vcFee:'')||'',invitedAt:vi.invitedAt||0};}
+  }catch(e){}
+  return {studio,providerName,profile:{skin:c.skin||'',concerns:c.concerns||'',allergies:c.allergies||'',fitz:c.fitz||'',treatment:c.treatment||'',lastVisit:c.lastVisit||'',nextVisit:c.nextVisit||''},summaries,aftercare,products,forms,pendingForms,pendingGuides,photos:Array.isArray(c.photos)?c.photos:[],booking:{canRequest:true},availability,vcInvite};
 }
 let _syncingClients=false,_clientSyncTimer=null;
 function _scheduleClientSync(){ if(_clientSyncTimer)clearTimeout(_clientSyncTimer); _clientSyncTimer=setTimeout(function(){_syncClientsToServer({});},2500); }
@@ -12762,12 +12777,19 @@ function renderCheckinDetail(id){
   </div>`;
 }
 
+// Tell a real client (on their own device) about a booking decision through the message
+// thread — the SlickBridge posts in these handlers only reach a same-browser preview.
+// _sendProviderMessageToClient no-ops for demo/unsynced clients (guards on _token).
+function _notifyBookingClient(b, text){
+  try{const cid=b&&b.clientId;if(cid&&CL[cid]&&CL[cid]._token&&typeof _sendProviderMessageToClient==='function')_sendProviderMessageToClient(cid,text);}catch(e){}
+}
 function confirmBooking(id){
   const all=SlickBridge.getBookings();const b=all.find(x=>x.id===id);if(!b)return;
   if(b.status==='confirmed')return; // already confirmed — don't duplicate the calendar entry
   b.status='confirmed';b.decidedAt=Date.now();SlickBridge.setBookings(all);
   addConfirmedAppt(b);
   SlickBridge.post('booking-confirmed',b);
+  _notifyBookingClient(b,`Great news — your ${b.treatment} on ${fmtBookingDate(b)} at ${b.time} is confirmed! ✨`);
   pushBookingNotif({icon:'ti-calendar-check',title:'Appointment confirmed',body:`${b.client} · ${b.treatment} · ${fmtBookingDate(b)} at ${b.time}`});
   suggestOpenFor=null;
   renderRequests();
@@ -12776,6 +12798,7 @@ function declineBooking(id){
   const all=SlickBridge.getBookings();const b=all.find(x=>x.id===id);if(!b)return;
   b.status='declined';b.decidedAt=Date.now();SlickBridge.setBookings(all);
   SlickBridge.post('booking-declined',{...b,reason:'That time just filled up — please pick another slot and I\'ll get you in.'});
+  _notifyBookingClient(b,`Unfortunately that ${b.time} slot on ${fmtBookingDate(b)} just filled up — please pick another time and I'll get you in. 🙏`);
   pushBookingNotif({icon:'ti-calendar-x',col:'#2a0f0f',ic:'#e87070',title:'Request declined',body:`You let ${b.client} know that slot wasn't available.`});
   suggestOpenFor=null;
   renderRequests();
@@ -12791,6 +12814,7 @@ function sendSuggestion(id){
   SlickBridge.setBookings(all);
   SlickBridge.post('booking-suggested',{...b,suggestedDate:sd,suggestedTime:st});
   let sdLabel=sd;try{sdLabel=new Date(sd+'T12:00:00').toLocaleDateString('en-US',{month:'short',day:'numeric'});}catch(e){}
+  _notifyBookingClient(b,`That time wasn't open, but I can do your ${b.treatment} on ${sdLabel} at ${st} — does that work? Just reply and I'll lock it in. ✨`);
   pushBookingNotif({icon:'ti-calendar-question',col:'var(--accent-tint)',ic:'var(--accent)',title:'Alternative time sent',body:`You suggested ${sdLabel} at ${st} to ${b.client}.`});
   suggestOpenFor=null;
   renderRequests();

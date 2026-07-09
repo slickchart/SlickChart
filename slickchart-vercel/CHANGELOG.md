@@ -2,6 +2,12 @@
 
 Newest entries at the top. One entry per deploy. Dates are US-formatted.
 
+## 2026-07-11 — Functional QA sweep, round 45 (provider→client sync gaps: virtual-consult invites + booking responses)
+
+- **Virtual-consult invites now reach real clients.** `inviteVirtualConsult` only posted over `SlickBridge` (same-browser preview) and pushed the invite message to the *local* store, so a client on their own device never saw the invite — the whole VC feature was effectively preview-only. Now the invite is carried in the client's synced data blob (`_assembleClientData` includes a `vcInvite` while `vcInvites[id]` is invited-and-not-yet-submitted), the invite message is delivered through `/api/provider-message`, and inviting triggers an immediate per-client sync. The client app reads `d.vcInvite` in `_applyRealClientData`, shows the invite, and notifies once. To avoid the invite re-appearing in the window between the client submitting and the provider's app processing it, the invite carries an `invitedAt` nonce and the client records which invite it submitted (same technique as the pending-form fix) — a genuinely new re-invite (new nonce) still shows again. Verified the full lifecycle by simulation: shows + notifies once → no duplicate on re-poll → suppressed after submit → re-invite shows again.
+- **Booking confirm / decline / suggest now notify real clients.** Those handlers only posted over `SlickBridge`, so a cross-device client got no word on their request. Each now also sends a plain-language message through `/api/provider-message` (via a small `_notifyBookingClient` helper that no-ops for demo/unsynced clients): a confirmation, a "that slot filled up, please pick another" for declines, and the proposed alternative time for suggestions.
+- Touches both apps → `slickchart-client.html` re-embedded into `api/client-page.js` (byte-identical) and both demos regenerated (banner-only). `node --check` + boot pass for all four surfaces.
+
 ## 2026-07-11 — Functional QA sweep, round 44 (treatment protocols now persist)
 
 - **Created/edited/deleted treatment protocols no longer vanish on reload.** `protocols` is a `const` array that `applyProfessionConfig()` resets from the profession defaults on every boot, and `saveProtocol`/`deleteProtocol` only mutated it in memory — protocols aren't in the on-`nav` persistence sweep and there was no `persistProtocols`, so any protocol a provider built silently reverted to the defaults on their next visit (the exact same class of bug as the old course builder).
