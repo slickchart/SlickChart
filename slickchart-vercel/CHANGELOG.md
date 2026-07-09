@@ -2,6 +2,17 @@
 
 Newest entries at the top. One entry per deploy. Dates are US-formatted.
 
+## 2026-07-11 — Virtual consult: no default price
+
+- **The consultation-fee selector no longer assumes $25.** The "Client link" tab pre-highlighted the
+  **$25** pill and `vcFee` defaulted to `'$25'`, implying every provider charges that and that the
+  consult is always paid. It now **defaults to Free** (no price pre-selected) — because not every
+  provider charges, and those who do don't all charge the same. The fee pills are now real (they were
+  decorative before): tapping Free / $15 / $25 / $49 or a **Custom** amount sets and persists the
+  provider's choice (`sc_vc_fee`), and the helper text reads "This consult is free — tap a price only
+  if you charge for it." The client app never displays this fee, so nothing changes for clients.
+
+
 ## 2026-07-11 — Third audit round (server): brand-new-client token race
 
 - **A client's link could be born dead under concurrent syncs.** For a brand-new client, two

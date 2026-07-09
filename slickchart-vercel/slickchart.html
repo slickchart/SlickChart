@@ -5703,7 +5703,7 @@ function renderRebook(id){
 // ── VIRTUAL CONSULTATIONS ──
 let _vcBack='virtual';
 // Virtual consult is provider-initiated (usually a paid service) — clients can't start one unprompted
-let vcInvites={maya:{invited:true,submitted:true},sophie:{invited:true},priya:{invited:true,submitted:true,reviewed:true}},vcFee='$25';
+let vcInvites={maya:{invited:true,submitted:true},sophie:{invited:true},priya:{invited:true,submitted:true,reviewed:true}},vcFee=(function(){try{return localStorage.getItem('sc_vc_fee')||'';}catch(e){return '';}})();
 let vcSubmissions={}; // real client submissions keyed by clientId: {photos:[{label,src}],refs,goals,measures,date}
 function persistVcState(){
   try{localStorage.setItem('sc_pro_vc_invites',JSON.stringify(vcInvites));}catch(e){}
@@ -5808,6 +5808,21 @@ function renderVirtual(){
   <div id="vtab-content"></div>`;
   switchVTab(activeVirtualTab);
 }
+// Consultation fee is provider-set and defaults to Free (no price). Persisted locally; the client
+// app never displays it — it's the provider's own note of what they charge, if anything. Not every
+// provider makes this a paid service, so nothing is pre-selected as a price.
+function _setVcFee(val,btn){
+  if(val==='__custom__'){
+    var raw=null;try{raw=window.prompt('Set your consultation fee — just the number (leave blank for free):',(vcFee&&vcFee.charAt(0)==='$')?vcFee.slice(1):'');}catch(e){raw=null;}
+    if(raw===null)return;                       // cancelled — leave the current selection alone
+    raw=String(raw).replace(/[^0-9.]/g,'');
+    vcFee=raw?('$'+raw):'';
+  }else{
+    vcFee=val;                                  // '' for Free, or a preset like '$25'
+  }
+  try{localStorage.setItem('sc_vc_fee',vcFee);}catch(e){}
+  switchVTab('upload');                          // re-render so the right pill shows active
+}
 function switchVTab(tab){
   activeVirtualTab=tab;
   ['queue','upload','completed'].forEach(t=>{const el=document.getElementById('vt-'+t);if(el)el.classList.toggle('active',t===tab);});
@@ -5853,8 +5868,8 @@ function switchVTab(tab){
       </div>
       <div style="background:#1a1a1a;border:1px solid #2a2a2a;border-radius:12px;padding:12px;margin-bottom:16px;">
         <div style="font-size:12px;font-weight:500;color:#e0e0e0;margin-bottom:8px;">Consultation fee</div>
-        <div style="display:flex;gap:8px;margin-bottom:8px;">${['Free','$15','$25','$49','Custom'].map((p,i)=>`<button class="pill ${i===2?'active':''}" onclick="this.parentElement.querySelectorAll('.pill').forEach(x=>x.classList.remove('active'));this.classList.add('active')">${p}</button>`).join('')}</div>
-        <div style="font-size:11px;color:#999;">Charged before clients submit their photos</div>
+        <div style="display:flex;gap:8px;margin-bottom:8px;">${(function(){const preset=[['Free',''],['$15','$15'],['$25','$25'],['$49','$49']];const isPreset=preset.some(pr=>pr[1]===vcFee);const pills=preset.map(pr=>`<button class="pill ${pr[1]===vcFee?'active':''}" onclick="_setVcFee('${pr[1]}',this)">${pr[0]}</button>`);pills.push(`<button class="pill ${(!isPreset&&vcFee)?'active':''}" onclick="_setVcFee('__custom__',this)">${(!isPreset&&vcFee)?_fileEsc(vcFee):'Custom'}</button>`);return pills.join('');})()}</div>
+        <div style="font-size:11px;color:#999;">${vcFee?'Charged before clients submit their photos':'This consult is free — tap a price above only if you charge for it.'}</div>
       </div>
     </div>`;
   } else {
