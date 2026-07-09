@@ -2,6 +2,10 @@
 
 Newest entries at the top. One entry per deploy. Dates are US-formatted.
 
+## 2026-07-11 — Tweak: check-in comfort default drops "Heated blanket"
+
+- The pre-visit check-in **comfort defaults** now include only the **Heated mattress pad** (with its Off/Low/Med/High levels); the **Heated blanket** control is no longer seeded by default, since not every provider has one. Applied in three places so it's consistent: the base default, the "+ Restore section" re-seed, and a one-time migration (matching the existing drinks/blankets migration) that drops the heated blanket for any provider still on the exact old default without touching anyone who customized their heat controls. Providers who do have a heated blanket can re-add it any time via "+ Add heated control." Provider-only; demo regenerated (banner-only).
+
 ## 2026-07-11 — Fix: clients now actually get notified of a new message
 
 - **A new message from the provider now fires the "New message" notification it promised.** When a real client's app polled and found a new provider message while they weren't looking at the thread, it bumped the unread badge but never called `pushNotify` — so the client got no banner and no system notification, even though the notification type, the "New message" toggle, and the gating logic all existed. Now the incoming-message path fires a `messagereply` notification (title names the provider, body shows the message preview or "📷 Photo", tapping opens the thread). It goes through `pushNotify`, so it still respects the client's "New message" toggle and quiet hours, and it's recorded in the notification center. Multiple new messages in one poll collapse into a single "N new messages" notification instead of a burst.
