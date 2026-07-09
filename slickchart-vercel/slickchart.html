@@ -3474,6 +3474,7 @@ function editVitals(id){
 }
 function saveVitals(id){
   _vitalsConfig().forEach(f=>{const el=document.getElementById('vital-'+f.key);if(el)CL[id][f.key]=el.value.trim();});
+  try{saveClients();}catch(e){}   // CL isn't in the on-nav persistence sweep, so persist explicitly or the edit is lost on reload
   document.getElementById('vitals-modal')?.remove();
   if(typeof proToast==='function')proToast('Client details updated');
   renderClient(id);
@@ -3575,6 +3576,7 @@ function _pickTreatmentService(i){const s=(squareCatalog.services||[])[i];const 
 function saveTreatment(id,screen){
   const inp=document.getElementById('treatment-input');const v=(inp&&inp.value||'').trim();
   if(v)CL[id].treatment=v;
+  try{saveClients();}catch(e){}   // CL isn't in the on-nav persistence sweep — persist so the treatment edit survives reload
   document.getElementById('treatment-modal')?.remove();
   if(typeof proToast==='function')proToast('Treatment updated to "'+CL[id].treatment+'"');
   if(screen==='room')renderRoom(id);else if(screen==='session-summary')renderSessionSummary(id);else if(screen==='notes')renderNotes(id);else renderClient(id);
@@ -5417,7 +5419,7 @@ function renderProfessionDetail(id){
   const isActive=selectedProfessions.includes(id);
   S.innerHTML=`
   <div style="padding:12px 16px 0;display:flex;align-items:center;justify-content:flex-end;">
-    <button onclick="${isActive?`if(selectedProfessions.length>1){selectedProfessions=selectedProfessions.filter(x=>x!=='${id}');nav('profession-settings')}`:`selectedProfessions.push('${id}');applyProfessions()`}" style="border:none;background:${isActive?'#2a0f0f':'var(--accent)'};color:${isActive?'#e87070':'var(--accent-ink)'};border-radius:8px;padding:6px 13px;font-size:12px;font-weight:500;cursor:pointer;">${isActive?'Remove':'Add to workspace'}</button>
+    <button onclick="${isActive?`if(selectedProfessions.length>1){selectedProfessions=selectedProfessions.filter(x=>x!=='${id}');saveProfessions();try{applyProfessionConfig();}catch(e){}nav('profession-settings')}`:`selectedProfessions.push('${id}');applyProfessions()`}" style="border:none;background:${isActive?'#2a0f0f':'var(--accent)'};color:${isActive?'#e87070':'var(--accent-ink)'};border-radius:8px;padding:6px 13px;font-size:12px;font-weight:500;cursor:pointer;">${isActive?'Remove':'Add to workspace'}</button>
   </div>
   <div style="padding:16px 16px 0;display:flex;flex-direction:column;align-items:center;gap:8px;text-align:center;">
     <div style="width:64px;height:64px;border-radius:16px;background:${p.bg};display:flex;align-items:center;justify-content:center;font-size:28px;" aria-hidden="true">${p.icon}</div>
@@ -8781,8 +8783,12 @@ function renderCourseDetail(id){
     ${c.enrolled?`<div style="display:flex;gap:8px;margin-bottom:14px;">${[['Enrolled',c.enrolled,'#f0f0f0'],['Modules',c.modules,'var(--accent)'],['Rating','4.9 ★','#4ec49a']].map(([l,v,col])=>`<div style="flex:1;background:#161616;border-radius:10px;padding:9px 12px;"><div style="font-size:11px;color:#999;margin-bottom:3px;">${l}</div><div style="font-size:16px;font-weight:500;color:${col};">${v}</div></div>`).join('')}</div>`:''}
     <div style="font-size:11px;font-weight:500;color:#aaa;text-transform:uppercase;letter-spacing:.07em;margin-bottom:8px;">Modules</div>
     <div style="background:#1a1a1a;border:1px solid #2a2a2a;border-radius:12px;overflow:hidden;margin-bottom:14px;">
-      ${Array.from({length:c.modules},(_, idx)=>{const titles=['Introduction & skin basics','Understanding your skin type','Active ingredients explained','Building your routine','Troubleshooting common issues','Advanced techniques'];return`<div style="display:flex;align-items:center;gap:10px;padding:10px 12px;border-bottom:1px solid #1e1e1e;"><div class="snum">${idx+1}</div><div style="flex:1;font-size:13px;color:#e0e0e0;">${titles[idx]||'Module '+(idx+1)}</div><i class="ti ti-lock" aria-hidden="true" style="font-size:13px;color:#888;"></i></div>`;}).join('')}
+      ${(function(){const names=(Array.isArray(c.moduleNames)&&c.moduleNames.length)?c.moduleNames:Array.from({length:c.modules||0},(_, idx)=>{const titles=['Introduction & skin basics','Understanding your skin type','Active ingredients explained','Building your routine','Troubleshooting common issues','Advanced techniques'];return titles[idx]||'Module '+(idx+1);});return names.length?names.map((nm,idx)=>`<div style="display:flex;align-items:center;gap:10px;padding:10px 12px;border-bottom:1px solid #1e1e1e;"><div class="snum">${idx+1}</div><div style="flex:1;font-size:13px;color:#e0e0e0;">${_fileEsc(nm)}</div><i class="ti ti-lock" aria-hidden="true" style="font-size:13px;color:#888;"></i></div>`).join(''):'<div style="padding:12px;font-size:12px;color:#777;">No modules yet — tap Edit to add some.</div>';})()}
     </div>
+    ${(Array.isArray(c.resources)&&c.resources.length)?`<div style="font-size:11px;font-weight:500;color:#aaa;text-transform:uppercase;letter-spacing:.07em;margin-bottom:8px;">Learning materials</div>
+    <div style="background:#1a1a1a;border:1px solid #2a2a2a;border-radius:12px;overflow:hidden;margin-bottom:14px;">
+      ${c.resources.map((r,idx)=>{const icon=r.type==='pdf'?'ti-file-type-pdf':(r.type==='image'?'ti-photo':'ti-link');const label=r.name||r.url||'Resource';return `<div onclick="_openCourseRes('${_jsAttr(c.id)}',${idx})" style="display:flex;align-items:center;gap:10px;padding:11px 12px;border-bottom:1px solid #1e1e1e;cursor:pointer;"><i class="ti ${icon}" style="font-size:18px;color:${r.type==='pdf'?'#e87070':'var(--accent)'};flex-shrink:0;"></i><div style="flex:1;min-width:0;font-size:13px;color:#e0e0e0;overflow:hidden;text-overflow:ellipsis;white-space:nowrap;">${_fileEsc(label)}</div><i class="ti ti-external-link" style="font-size:13px;color:#888;flex-shrink:0;"></i></div>`;}).join('')}
+    </div>`:''}
     <div style="display:flex;gap:8px;margin-bottom:20px;">
       <button class="btnp" style="flex:2;border-radius:8px;" onclick="_shareOrCopy('https://slickchart.app/course/${c.id}','${_jsAttr(c.title||'Course')}')"><i class="ti ti-share"></i> Share enrollment link</button>
       <button class="btng" style="flex:1;" onclick="nav('course-builder','${c.id}')" aria-label="Edit course"><i class="ti ti-pencil"></i></button>
@@ -8803,24 +8809,111 @@ function renderCourseBuilder(id){
   setNav('more');
   document.getElementById('tt').textContent=id==='new'?'New course':'Edit course';
   const c=id==='new'?null:courses.find(x=>x.id===id);
+  // Seed the attached-materials draft from the existing course so attachments
+  // survive re-renders inside the builder (add/remove a module, etc.).
+  window._cbResDraft=(c&&Array.isArray(c.resources))?c.resources.slice():[];
+  // Real module names if the provider set them; otherwise fall back to sensible starters.
+  const modNames=(c&&Array.isArray(c.moduleNames)&&c.moduleNames.length)
+    ? c.moduleNames
+    : (c ? Array.from({length:c.modules||0},(_, i)=>['Introduction','Core content','Wrap-up & next steps'][i]||('Module '+(i+1)))
+         : ['Introduction','Core content','Wrap-up & next steps']);
   S.innerHTML=`
   <div style="padding:12px 16px 0;display:flex;align-items:center;justify-content:flex-end;">
-    <button onclick="nav('learn')" style="background:var(--accent);color:var(--accent-ink);border:none;border-radius:8px;padding:6px 14px;font-size:12px;font-weight:500;cursor:pointer;">Save</button>
+    <button onclick="saveCourse('${c?c.id:'new'}')" style="background:var(--accent);color:var(--accent-ink);border:none;border-radius:8px;padding:6px 14px;font-size:12px;font-weight:500;cursor:pointer;">Save</button>
   </div>
   <div style="padding:14px 16px 0;">
-    <span class="fl-lbl">Course title</span><input class="fi" value="${c?_jsAttr(c.title):''}" placeholder="e.g. Barrier Repair Masterclass" style="margin-bottom:12px;">
-    <span class="fl-lbl">Description</span><textarea class="fi" style="height:72px;resize:none;margin-bottom:12px;" placeholder="What will clients learn?">${c?_fileEsc(c.desc):''}</textarea>
+    <span class="fl-lbl">Course title</span><input id="cb-title" class="fi" value="${c?_jsAttr(c.title):''}" placeholder="e.g. Barrier Repair Masterclass" style="margin-bottom:12px;">
+    <span class="fl-lbl">Description</span><textarea id="cb-desc" class="fi" style="height:72px;resize:none;margin-bottom:12px;" placeholder="What will clients learn?">${c?_fileEsc(c.desc):''}</textarea>
     <div style="display:flex;gap:8px;margin-bottom:12px;">
-      <div style="flex:1;"><span class="fl-lbl">Price</span><input aria-label="Price" class="fi" value="${c?_jsAttr(c.price):'$29'}" style="margin:0;"></div>
-      <div style="flex:1;"><span class="fl-lbl">Status</span><select class="fi" aria-label="Select option" style="margin:0;"><option ${c&&c.status==='Draft'?'selected':''}>Draft</option><option ${c&&c.status==='Published'?'selected':''}>Published</option></select></div>
+      <div style="flex:1;"><span class="fl-lbl">Price</span><input id="cb-price" aria-label="Price" class="fi" value="${c?_jsAttr(c.price):'$29'}" style="margin:0;"></div>
+      <div style="flex:1;"><span class="fl-lbl">Status</span><select id="cb-status" class="fi" aria-label="Select option" style="margin:0;"><option ${c&&c.status==='Draft'?'selected':''}>Draft</option><option ${c&&c.status==='Published'?'selected':''}>Published</option></select></div>
     </div>
     <span class="fl-lbl">Modules</span>
-    <div style="background:#1a1a1a;border:1px solid #2a2a2a;border-radius:12px;overflow:hidden;margin-bottom:10px;">
-      ${(c?Array.from({length:c.modules}):[0,1,2]).map((_, idx)=>`<div class="cb-module" style="display:flex;align-items:center;gap:10px;padding:10px 12px;border-bottom:1px solid #1e1e1e;"><i class="ti ti-grip-vertical" style="font-size:15px;color:#666;"></i><div class="snum">${idx+1}</div><input aria-label="Module name" value="${['Introduction','Core content','Wrap-up & next steps'][idx]||'Module '+(idx+1)}" style="flex:1;border:none;background:none;font-size:13px;color:#e0e0e0;outline:none;font-family:inherit;"><button aria-label="Remove module" onclick="this.closest('.cb-module').remove()" style="border:none;background:none;color:#999;cursor:pointer;"><i class="ti ti-trash" style="color:#e87070;"></i></button></div>`).join('')}
+    <div id="cb-modules" style="background:#1a1a1a;border:1px solid #2a2a2a;border-radius:12px;overflow:hidden;margin-bottom:10px;">
+      ${modNames.map((nm, idx)=>`<div class="cb-module" style="display:flex;align-items:center;gap:10px;padding:10px 12px;border-bottom:1px solid #1e1e1e;"><i class="ti ti-grip-vertical" style="font-size:15px;color:#666;"></i><div class="snum">${idx+1}</div><input aria-label="Module name" value="${_jsAttr(nm)}" style="flex:1;border:none;background:none;font-size:13px;color:#e0e0e0;outline:none;font-family:inherit;"><button aria-label="Remove module" onclick="this.closest('.cb-module').remove()" style="border:none;background:none;color:#999;cursor:pointer;"><i class="ti ti-trash" style="color:#e87070;"></i></button></div>`).join('')}
     </div>
     <button onclick="_cbAddModule(this)" style="width:100%;border:1.5px dashed #2a2a2a;border-radius:10px;padding:11px;display:flex;align-items:center;justify-content:center;gap:8px;font-size:13px;color:#aaa;background:none;cursor:pointer;margin-bottom:16px;"><i class="ti ti-plus"></i> Add a module</button>
-    <button class="btnp" style="border-radius:8px;margin-bottom:20px;" onclick="nav('learn')"><i class="ti ti-check"></i> Save course</button>
+
+    <span class="fl-lbl">Learning materials <span style="color:#666;font-weight:400;">— PDFs &amp; links clients can open</span></span>
+    <div id="cb-res-list" style="margin:6px 0 8px;"></div>
+    <div style="display:flex;gap:8px;margin-bottom:8px;">
+      <input id="cb-res-url" class="fi" placeholder="Paste a resource link (https://…)" style="flex:1;margin:0;">
+      <button onclick="_cbAddResLink()" style="background:var(--accent-tint);color:var(--accent);border:1px solid var(--accent-a30,#3d2d10);border-radius:9px;padding:0 14px;font-size:13px;font-weight:600;cursor:pointer;white-space:nowrap;font-family:inherit;">Add link</button>
+    </div>
+    <label for="cb-res-file" style="width:100%;border:1.5px dashed #2a2a2a;border-radius:10px;padding:11px;display:flex;align-items:center;justify-content:center;gap:8px;font-size:13px;color:var(--accent);background:none;cursor:pointer;margin-bottom:16px;"><i class="ti ti-file-upload"></i> Upload a PDF or image</label>
+    <input type="file" id="cb-res-file" accept="application/pdf,image/*" style="display:none;" onchange="_cbPickResFile(this)">
+
+    <button class="btnp" style="border-radius:8px;margin-bottom:20px;" onclick="saveCourse('${c?c.id:'new'}')"><i class="ti ti-check"></i> Save course</button>
   </div>`;
+  _cbRenderRes();
+}
+// Render the attached learning materials inside the builder.
+function _cbRenderRes(){
+  const el=document.getElementById('cb-res-list');if(!el)return;
+  const list=window._cbResDraft||[];
+  el.innerHTML=list.length?list.map((r,i)=>{
+    const icon=r.type==='pdf'?'ti-file-type-pdf':(r.type==='image'?'ti-photo':'ti-link');
+    const label=r.name||r.url||'Resource';
+    return `<div style="display:flex;align-items:center;gap:9px;background:#161616;border:1px solid #2a2a2a;border-radius:10px;padding:9px 12px;margin-bottom:6px;"><i class="ti ${icon}" style="font-size:18px;color:${r.type==='pdf'?'#e87070':'var(--accent)'};flex-shrink:0;"></i><div style="flex:1;min-width:0;font-size:13px;color:#e0e0e0;overflow:hidden;text-overflow:ellipsis;white-space:nowrap;">${_fileEsc(label)}</div><button onclick="_cbRemoveRes(${i})" aria-label="Remove material" style="border:none;background:none;color:#e87070;cursor:pointer;flex-shrink:0;"><i class="ti ti-x"></i></button></div>`;
+  }).join(''):'<div style="font-size:12px;color:#777;padding:2px 2px 4px;">No materials yet — attach a PDF or link below.</div>';
+}
+function _cbRemoveRes(i){if(window._cbResDraft){window._cbResDraft.splice(i,1);_cbRenderRes();}}
+function _cbAddResLink(){
+  const el=document.getElementById('cb-res-url');const raw=(el&&el.value||'').trim();if(!raw)return;
+  const url=/^https?:\/\//i.test(raw)?raw:('https://'+raw);
+  if(!window._cbResDraft)window._cbResDraft=[];
+  window._cbResDraft.push({type:'link',url,name:raw.replace(/^https?:\/\//i,'')});
+  if(el)el.value='';
+  _cbRenderRes();
+}
+// Attach a PDF or image as a course material — mirrors the docs-vault _docPickFile:
+// PDFs are stored as data URLs, images are downscaled first to keep the payload small.
+function _cbPickResFile(input){
+  const f=input&&input.files&&input.files[0];if(!f)return;
+  if(f.size>8*1024*1024){if(typeof proToast==='function')proToast('That file is over 8MB — please pick a smaller one');input.value='';return;}
+  const isPdf=/pdf/i.test(f.type)||/\.pdf$/i.test(f.name||'');
+  const done=(data,type)=>{if(!window._cbResDraft)window._cbResDraft=[];window._cbResDraft.push({type,name:f.name||(type==='pdf'?'document.pdf':'image'),data:String(data||'')});_cbRenderRes();};
+  const r=new FileReader();
+  if(isPdf){r.onload=()=>done(r.result,'pdf');r.readAsDataURL(f);}
+  else{r.onload=()=>{const img=new Image();img.onload=()=>{let w=img.width,ht=img.height,max=1600;if(w>max||ht>max){const s=Math.min(max/w,max/ht);w=Math.round(w*s);ht=Math.round(ht*s);}const cv=document.createElement('canvas');cv.width=w;cv.height=ht;cv.getContext('2d').drawImage(img,0,0,w,ht);let data;try{data=cv.toDataURL('image/jpeg',0.82);}catch(e){data=String(r.result||'');}done(data,'image');};img.onerror=()=>done(r.result,'image');img.src=String(r.result||'');};r.readAsDataURL(f);}
+  input.value='';
+}
+// Actually build the course: read every field, create or update the record, persist.
+function saveCourse(id){
+  const g=i=>{const el=document.getElementById(i);return el?el.value.trim():'';};
+  const title=g('cb-title');
+  if(!title){if(typeof proToast==='function')proToast('Give your course a title first');return;}
+  const desc=g('cb-desc');
+  const price=g('cb-price')||'Free';
+  const statusEl=document.getElementById('cb-status');const status=statusEl?statusEl.value:'Draft';
+  const moduleNames=Array.from(document.querySelectorAll('#cb-modules .cb-module input')).map(el=>el.value.trim()).filter(Boolean);
+  const modules=moduleNames.length;
+  const resources=Array.isArray(window._cbResDraft)?window._cbResDraft.slice():[];
+  const existing=(id&&id!=='new')?courses.find(x=>x.id===id):null;
+  if(existing){
+    Object.assign(existing,{title,desc,price,status,modules,moduleNames,resources});
+  }else{
+    courses.push({id:'c'+Date.now().toString(36),title,desc,price,status,modules,moduleNames,resources,
+      icon:'ti-book',bg:'#1e1633',ic:'#a891ec',bdg:'bp',duration:'',enrolled:0,revenue:0,progress:0});
+  }
+  try{_markCoursesCustom();}catch(e){}
+  try{persistCourses();}catch(e){}
+  window._cbResDraft=null;
+  if(typeof proToast==='function')proToast(existing?'Course updated ✓':'Course created ✓');
+  nav('learn');
+}
+// Open a course's attached material. Looks the resource up by course id + index so the
+// (potentially large) data URL never has to live in an inline handler attribute. Links
+// open directly; PDFs/images open through a blank window + iframe (same trick the docs
+// vault uses, since browsers block top-level navigation to data: URLs).
+function _openCourseRes(courseId, idx){
+  const c=courses.find(x=>x.id===courseId);if(!c||!Array.isArray(c.resources)||!c.resources[idx])return;
+  const r=c.resources[idx];
+  try{
+    if(r.type==='link'){const u=_safeUrl(r.url);if(u)window.open(u,'_blank','noopener');return;}
+    const src=_docSrc(r.data);if(!src)return;
+    const w=window.open();if(w){w.document.title=r.name||'Course material';w.document.write('<iframe src="'+src+'" style="border:0;width:100%;height:100vh"></iframe>');}
+  }catch(e){}
 }
 
 // ── SHOP ──
@@ -10159,7 +10252,7 @@ function renderNotifications(){
   ].map(group=>`
     <div class="sh"><h2>${group.section}</h2></div>
     <div style="background:#1a1a1a;border:1px solid #2a2a2a;border-radius:12px;margin:0 16px 10px;overflow:hidden;">
-      ${group.items.map(([key,label,sub])=>`<div style="display:flex;align-items:center;gap:10px;padding:11px 14px;border-bottom:1px solid #1e1e1e;"><div style="flex:1;"><div style="font-size:13px;font-weight:500;color:#e0e0e0;">${label}</div><div style="font-size:12px;color:#999;">${sub}</div></div>${togBtn(notifSettings[key],'notifSettings[\''+key+'\']= !notifSettings[\''+key+'\'];renderNotifications()',label)}</div>`).join('')}
+      ${group.items.map(([key,label,sub])=>`<div style="display:flex;align-items:center;gap:10px;padding:11px 14px;border-bottom:1px solid #1e1e1e;"><div style="flex:1;"><div style="font-size:13px;font-weight:500;color:#e0e0e0;">${label}</div><div style="font-size:12px;color:#999;">${sub}</div></div>${togBtn(notifSettings[key],'notifSettings[\''+key+'\']= !notifSettings[\''+key+'\'];persistNotifSettings();renderNotifications()',label)}</div>`).join('')}
     </div>`).join('')}
   <div style="height:16px;"></div>`;
 }
