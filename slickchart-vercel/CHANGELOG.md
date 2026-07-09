@@ -2,6 +2,28 @@
 
 Newest entries at the top. One entry per deploy. Dates are US-formatted.
 
+## 2026-07-11 — Hardcoded-default sweep: money leak + demo-identity leaks
+
+- **Amazon affiliate links no longer default to the demo's account (real money).** `amazonAssociates`
+  defaulted to `{tag:'glowingskin-20', store:'amazon.com/shop/glowingskinstudio'}`, so until a provider
+  opened the Amazon screen and saved their own, every "Buy on Amazon" link they showed clients appended
+  the **demo's** affiliate tag and fell back to the **demo's** storefront — routing client purchases'
+  commission to the wrong account. Now defaults to empty; `amazonBuyUrl` already hides the Amazon option
+  when there's no tag/store, so nothing breaks — links simply don't appear until the provider connects
+  their own Associates account.
+- **Client-facing footers no longer show the demo's city/domain.** The client home footer hardcoded
+  "· Oakland, CA · glowingskinstudio.com" and the shared-link landing footer hardcoded
+  "· glowingskinstudio.com" — every real client saw the demo's location/website attributed to their own
+  provider. The provider's real `website` now rides in the client data blob and the footers show that
+  (or nothing if unset); the wrong city literal is gone.
+- **Removed two hardcoded turnaround promises made on the provider's behalf.** The virtual-consult
+  preview said "You review within 48 hours" and the client rebook screen said the provider "will confirm
+  within 24 hours" — neither provider set those SLAs. Reworded to non-committal ("You review & send
+  notes", "will review and confirm your request").
+
+Client re-embedded into `api/client-page.js` (byte-identical); both demos regenerated (banner-only).
+Boot + 9-screen smoke pass.
+
 ## 2026-07-11 — Virtual consult: no default price
 
 - **The consultation-fee selector no longer assumes $25.** The "Client link" tab pre-highlighted the
