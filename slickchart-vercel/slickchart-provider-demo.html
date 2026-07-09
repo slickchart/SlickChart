@@ -4329,9 +4329,9 @@ function _renderPhotosView(id,c,_passed){
         <button onclick="_vcBack='client';nav('virtual-client','${id}')" style="border:none;background:none;color:var(--accent);font-size:12px;cursor:pointer;display:flex;align-items:center;gap:3px;">Review <i class="ti ti-chevron-right" style="font-size:13px;"></i></button>
       </div>
       <div style="padding:10px 14px;display:grid;grid-template-columns:1fr 1fr 1fr;gap:6px;">
-        ${pItems.map((o,i)=>`<div style="border-radius:8px;background:${o.src?'#000':['#2e1c10','#0a2019','#0d1e33'][i%3]};aspect-ratio:3/4;display:flex;align-items:center;justify-content:center;position:relative;overflow:hidden;">${o.src?`<img src="${_imgSrc(o.src)}" alt="${_fileEsc(o.label)}" style="width:100%;height:100%;object-fit:cover;">`:`<i class="ti ti-user-circle" style="font-size:24px;color:${['var(--accent)','#4ec49a','#5ba3e8'][i%3]};opacity:.4;"></i>`}<span style="position:absolute;top:4px;right:4px;font-size:8px;background:rgba(0,0,0,.62);color:#fff;font-weight:600;padding:1px 4px;border-radius:3px;">${stamp}</span><span style="position:absolute;bottom:4px;left:4px;font-size:10px;background:rgba(0,0,0,.6);color:#ccc;padding:1px 5px;border-radius:3px;">${o.label}</span></div>`).join('')}
+        ${pItems.map((o,i)=>`<div style="border-radius:8px;background:${o.src?'#000':['#2e1c10','#0a2019','#0d1e33'][i%3]};aspect-ratio:3/4;display:flex;align-items:center;justify-content:center;position:relative;overflow:hidden;">${o.src?`<img src="${_imgSrc(o.src)}" alt="${_fileEsc(o.label)}" style="width:100%;height:100%;object-fit:cover;">`:`<i class="ti ti-user-circle" style="font-size:24px;color:${['var(--accent)','#4ec49a','#5ba3e8'][i%3]};opacity:.4;"></i>`}<span style="position:absolute;top:4px;right:4px;font-size:8px;background:rgba(0,0,0,.62);color:#fff;font-weight:600;padding:1px 4px;border-radius:3px;">${stamp}</span><span style="position:absolute;bottom:4px;left:4px;font-size:10px;background:rgba(0,0,0,.6);color:#ccc;padding:1px 5px;border-radius:3px;">${_fileEsc(o.label)}</span></div>`).join('')}
       </div>
-      ${rItems?`<div style="padding:0 14px 10px;display:grid;grid-template-columns:1fr 1fr 1fr;gap:6px;">${rItems.map(o=>`<div style="border-radius:8px;background:${o.src?'#000':'#1e1633'};border:1px solid #2d2360;aspect-ratio:3/4;display:flex;align-items:center;justify-content:center;position:relative;overflow:hidden;">${o.src?`<img src="${_imgSrc(o.src)}" alt="${_fileEsc(o.label)}" style="width:100%;height:100%;object-fit:cover;">`:`<i class="ti ti-sparkles" style="font-size:18px;color:#a891ec;opacity:.5;"></i>`}<span style="position:absolute;bottom:4px;left:4px;font-size:10px;background:rgba(0,0,0,.6);color:#ccc;padding:1px 5px;border-radius:3px;">${o.label}</span></div>`).join('')}</div>`:''}
+      ${rItems?`<div style="padding:0 14px 10px;display:grid;grid-template-columns:1fr 1fr 1fr;gap:6px;">${rItems.map(o=>`<div style="border-radius:8px;background:${o.src?'#000':'#1e1633'};border:1px solid #2d2360;aspect-ratio:3/4;display:flex;align-items:center;justify-content:center;position:relative;overflow:hidden;">${o.src?`<img src="${_imgSrc(o.src)}" alt="${_fileEsc(o.label)}" style="width:100%;height:100%;object-fit:cover;">`:`<i class="ti ti-sparkles" style="font-size:18px;color:#a891ec;opacity:.5;"></i>`}<span style="position:absolute;bottom:4px;left:4px;font-size:10px;background:rgba(0,0,0,.6);color:#ccc;padding:1px 5px;border-radius:3px;">${_fileEsc(o.label)}</span></div>`).join('')}</div>`:''}
     </div>
   </div>`})()}
 
@@ -8283,7 +8283,7 @@ function _downloadDoc(id){
     setTimeout(()=>{try{URL.revokeObjectURL(url);}catch(e){}},2000);
     if(typeof proToast==='function')proToast('Downloading '+fname);
   }catch(e){
-    try{const w=window.open();if(w){w.document.title=fname;w.document.write('<iframe src="'+d.file+'" style="border:0;width:100%;height:100vh"></iframe>');}}catch(_){}
+    try{const w=window.open();if(w){w.document.title=fname;w.document.write('<iframe src="'+_docSrc(d.file)+'" style="border:0;width:100%;height:100vh"></iframe>');}}catch(_){}
     if(typeof proToast==='function')proToast('Opened the file — use your browser to save it');
   }
 }
@@ -12269,6 +12269,12 @@ function _markEventsSeen(ids){
   }catch(e){}
 }
 let _syncingEvents=false;
+// Boundary sanitizer for client-submitted photo payloads (check-ins, virtual consults):
+// only keep strings that are real image sources (data:image, http(s), blob). Every render
+// site already guards with _imgSrc, but validating at ingest means a crafted photo string
+// (e.g. `x" onerror=…`) never even persists onto the chart / capturedPhotos / vcSubmissions.
+function _validImgSrc(u){return typeof u==='string'&&(/^data:image\//i.test(u)||/^https?:\/\//i.test(u)||/^blob:/i.test(u));}
+function _sanVcPhotos(arr){return (Array.isArray(arr)?arr:[]).map(o=>({label:String((o&&o.label)||''),src:(o&&_validImgSrc(o.src))?o.src:''}));}
 async function syncClientEvents(){
   if(_syncingEvents)return;
   const tok=(typeof Cloud!=='undefined'&&Cloud&&Cloud.token)||'';
@@ -12312,7 +12318,7 @@ async function syncClientEvents(){
         providerSystemNotify('New message',`${name}: ${preview}`);
         touchedMsgs=true;touchedNotif=true;msgClientIds.push(cid);
       }else if(ev.kind==='checkin'){
-        const ciPhotos=Array.isArray(payload.photos)?payload.photos:[];
+        const ciPhotos=(Array.isArray(payload.photos)?payload.photos:[]).filter(_validImgSrc);
         const ci={id:ev.id,providerId:'me',clientId:cid,client:name,dateLabel:payload.dateLabel||'',time:payload.time||'',
           treatment:payload.treatment||'',groups:payload.groups||[],flagged:payload.flagged||[],notes:payload.notes||'',
           photos:ciPhotos,read:false,at:(ev.created_at?(new Date(ev.created_at).getTime()||Date.now()):Date.now())};
@@ -12378,7 +12384,7 @@ async function syncClientEvents(){
           touchedForms=true;touchedNotif=true;
         }
       }else if(ev.kind==='vc_submit'){
-        vcSubmissions[cid]={photos:payload.photos||[],refs:payload.refs||null,goals:payload.goals||'',measures:payload.measures||null,
+        vcSubmissions[cid]={photos:_sanVcPhotos(payload.photos),refs:(Array.isArray(payload.refs)&&payload.refs.length)?_sanVcPhotos(payload.refs):null,goals:payload.goals||'',measures:payload.measures||null,
           date:payload.date||'Today',kind:payload.kind||'skin',title:payload.title||'Virtual consult'};
         vcInvites[cid]={...(vcInvites[cid]||{}),invited:true,submitted:true};
         try{if(typeof persistVcState==='function')persistVcState();}catch(e){}
@@ -12826,7 +12832,7 @@ SlickBridge.on('form-completed',d=>{
 
 SlickBridge.on('virtual-consult-submitted',d=>{
   const cid=d.clientId||'maya';
-  vcSubmissions[cid]={photos:d.photos||[],refs:d.refs||null,goals:d.goals||'',measures:d.measures||null,date:d.date||'Today',kind:d.kind||'skin',title:d.title||'Virtual consult'};
+  vcSubmissions[cid]={photos:_sanVcPhotos(d.photos),refs:(Array.isArray(d.refs)&&d.refs.length)?_sanVcPhotos(d.refs):null,goals:d.goals||'',measures:d.measures||null,date:d.date||'Today',kind:d.kind||'skin',title:d.title||'Virtual consult'};
   vcInvites[cid]={...(vcInvites[cid]||{}),invited:true,submitted:true};
   try{persistVcState();}catch(e){}
   const nm=(CL[cid]&&CL[cid].name.split(' ')[0])||'A client';
