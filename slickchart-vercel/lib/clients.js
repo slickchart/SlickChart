@@ -145,6 +145,12 @@ export async function upsertClient(providerId, c) {
     await q`INSERT INTO clients (id, provider_id, token, name, email, phone, data, created_at, updated_at)
       VALUES (${id}, ${providerId}, ${token}, ${(c && c.name) || ''}, ${(c && c.email) || ''}, ${(c && c.phone) || ''}, ${data}::jsonb, ${now}, ${now})
       ON CONFLICT (id) DO NOTHING`;
+    // A concurrent upsert of this same new id may have won the INSERT with a *different* token
+    // (ON CONFLICT DO NOTHING keeps the first write). Re-read so we return the token that was
+    // actually persisted — otherwise the loser hands back a token that isn't in the DB, i.e. a
+    // dead client link. Cheap: only runs on brand-new clients.
+    const back = await q`SELECT token FROM clients WHERE id=${id} AND provider_id=${providerId}`;
+    if (back[0] && back[0].token) token = back[0].token;
   } else {
     await q`UPDATE clients SET name=${(c && c.name) || ''}, email=${(c && c.email) || ''}, phone=${(c && c.phone) || ''}, data=${data}::jsonb, updated_at=${now}
       WHERE id=${id} AND provider_id=${providerId}`;

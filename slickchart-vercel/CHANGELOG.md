@@ -2,6 +2,16 @@
 
 Newest entries at the top. One entry per deploy. Dates are US-formatted.
 
+## 2026-07-11 — Third audit round (server): brand-new-client token race
+
+- **A client's link could be born dead under concurrent syncs.** For a brand-new client, two
+  overlapping `upsertClient` calls both saw no token, both generated one, and both ran
+  `INSERT … ON CONFLICT (id) DO NOTHING` — the DB kept the first token, but the *loser* returned its
+  own discarded token to the caller, which the provider then stored locally and copied into the invite
+  link. Result: a "copy link" that points at a token the DB never saved. `upsertClient` now re-reads
+  the persisted token after the insert and returns that, so every caller gets the token that actually
+  landed. Server-only; runs only on brand-new clients.
+
 ## 2026-07-11 — Third audit round (idempotency + form-photo leak)
 
 - **A dropped response could duplicate a client's submission.** `_clientSubmit` retries once on a
