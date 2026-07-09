@@ -4116,7 +4116,7 @@ function renderNewNoteTemplate(clientId){
 function ntSecHTML(s,i){return`<div style="background:#1a1a1a;border:1px solid #2a2a2a;border-radius:10px;margin-bottom:8px;overflow:hidden;" id="ns-${s.id}"><div style="padding:10px 12px;display:flex;align-items:center;gap:8px;"><div style="width:10px;height:10px;border-radius:50%;background:${_fileEsc(s.color)};"></div><input aria-label="Section label" value="${_jsAttr(s.label)}" style="flex:1;border:none;background:none;font-size:14px;font-weight:500;color:#e0e0e0;outline:none;font-family:inherit;" oninput="noteEditSecs[${i}].label=this.value"><button onclick="rmNtSec('${s.id}')" class="icon-btn" aria-label="Delete"><i class="ti ti-trash" aria-hidden="true" style="color:#e87070;font-size:16px;"></i></button></div></div>`;}
 function addNtSec(){const colors=['#e87070','#5ba3e8','#4ec49a','var(--accent)','#a891ec'];const s={id:'ne'+Date.now(),label:'New section',color:colors[noteEditSecs.length%colors.length]};noteEditSecs.push(s);const list=document.getElementById('nt-secs');if(!list)return;const d=document.createElement('div');d.innerHTML=ntSecHTML(s,noteEditSecs.length-1);list.appendChild(d.firstChild);}
 function rmNtSec(id){noteEditSecs=noteEditSecs.filter(s=>s.id!==id);const el=document.getElementById('ns-'+id);if(el)el.remove();}
-function saveNoteTemplate(clientId){const name=document.getElementById('nt-name')?.value||'My custom format';customNoteTemplates.push({id:'ct'+Date.now(),name,bdg:'ba',col:'var(--accent-tint)',ic:'var(--accent)',desc:`Custom · ${noteEditSecs.length} sections`,sections:noteEditSecs.map(s=>({...s,ph:''}))});try{persistCustomNoteTemplates();}catch(e){}nav('notes',clientId);}
+function saveNoteTemplate(clientId){const name=document.getElementById('nt-name')?.value||'My custom format';customNoteTemplates.push({id:'ct'+Date.now(),name,bdg:'ba',col:'var(--accent-tint)',ic:'var(--accent)',desc:`Custom · ${noteEditSecs.length} sections`,sections:noteEditSecs.map(s=>({...s,ph:''}))});try{persistCustomNoteTemplates();}catch(e){}if(typeof proToast==='function')proToast('Note format saved');nav('notes',clientId);}
 // Photo comparison data per client
 const photoSessions={
   maya:[
@@ -8178,7 +8178,7 @@ function showMsgTab(tab){
   } else {
     content.innerHTML=`
     <div style="padding:12px 16px 8px;display:flex;align-items:center;justify-content:space-between;"><div style="font-size:13px;color:#999;">${autos.filter(a=>a.on).length} active</div><button onclick="nav('add-automation')" style="background:var(--accent);color:var(--accent-ink);border:none;border-radius:8px;padding:7px 12px;font-size:12px;font-weight:500;cursor:pointer;">+ New</button></div>
-    <div style="display:flex;gap:8px;padding:0 16px;margin-bottom:10px;">${[['Sent this mo.','91','#f0f0f0'],['Open rate','85%','#4ec49a'],['Replies','34','#f0f0f0']].map(([l,v,c])=>`<div style="flex:1;background:#161616;border-radius:10px;padding:9px 10px;"><div style="font-size:12px;color:#999;margin-bottom:3px;">${l}</div><div style="font-size:18px;font-weight:500;color:${c};">${v}</div></div>`).join('')}</div>
+    <div style="display:flex;gap:8px;padding:0 16px;margin-bottom:10px;">${(()=>{const sent=autos.reduce((s,a)=>s+(+a.sent||0),0),opened=autos.reduce((s,a)=>s+(+a.opened||0),0),active=autos.filter(a=>a.on).length;return [['Total sent',String(sent),'#f0f0f0'],['Open rate',sent?Math.round(opened/sent*100)+'%':'—','#4ec49a'],['Active',String(active),'#f0f0f0']];})().map(([l,v,c])=>`<div style="flex:1;background:#161616;border-radius:10px;padding:9px 10px;"><div style="font-size:12px;color:#999;margin-bottom:3px;">${l}</div><div style="font-size:18px;font-weight:500;color:${c};">${v}</div></div>`).join('')}</div>
     ${autos.map((a,i)=>`<div class="swipe-wrap" id="auto-wrap-${i}">
       <div class="swipe-card" id="auto-card-${i}" style="background:#1a1a1a;border:1px solid #2a2a2a;border-radius:12px;overflow:hidden;">
         <div style="padding:12px 14px;display:flex;align-items:flex-start;gap:10px;">
@@ -10509,7 +10509,9 @@ function _setBetaRating(n){_betaRating=n;['1','2','3','4','5'].forEach(k=>{const
 async function _sendBetaFeedback(){
   const txt=((document.getElementById('beta-fb-text')||{}).value)||'';
   if(!txt.trim()&&!_betaRating){proToast('Tell us a little first');return;}
-  try{const tok=(typeof Cloud!=='undefined'&&Cloud&&Cloud.token)||'';await fetch('/api/feedback',{method:'POST',headers:Object.assign({'Content-Type':'application/json'},tok?{'Authorization':'Bearer '+tok}:{}),body:JSON.stringify({rating:_betaRating||undefined,message:txt})});}catch(e){}
+  let ok=false;
+  try{const tok=(typeof Cloud!=='undefined'&&Cloud&&Cloud.token)||'';const r=await fetch('/api/feedback',{method:'POST',headers:Object.assign({'Content-Type':'application/json'},tok?{'Authorization':'Bearer '+tok}:{}),body:JSON.stringify({rating:_betaRating||undefined,message:txt})});ok=!!(r&&r.ok);}catch(e){ok=false;}
+  if(!ok){proToast('Couldn\u2019t send just now \u2014 please try again.');return;}
   const m=document.getElementById('beta-fb');if(m)m.remove();_betaRating=0;proToast('Thanks! Your feedback was sent. \ud83d\udc9b');
 }
 let _news=[];
@@ -10893,7 +10895,8 @@ function _reseedSvcMenuIfDefault(){
 let _svcMenu=(function(){try{const r=JSON.parse(localStorage.getItem('sc_service_menu')||'null');if(Array.isArray(r))return r;}catch(e){}return _svcMenuDefaults();})();
 function _saveSvcMenu(){try{localStorage.setItem('sc_service_menu',JSON.stringify(_svcMenu));}catch(e){}}
 function _svcSet(i,k,v){if(_svcMenu[i]){_svcMenu[i][k]=v;_markSvcMenuCustom();_saveSvcMenu();}}
-function _svcDel(i){_svcMenu.splice(i,1);_markSvcMenuCustom();_saveSvcMenu();renderServiceMenu();}
+function _svcDelDo(i){_svcMenu.splice(i,1);_markSvcMenuCustom();_saveSvcMenu();renderServiceMenu();}
+function _svcDel(i){const sv=_svcMenu[i];if(sv&&String(sv.name||'').trim()&&typeof confirmModal==='function'){confirmModal({title:'Delete this service?',body:'Remove “'+String(sv.name).trim()+'” from your service menu.',action:'Delete'},function(){_svcDelDo(i);});}else{_svcDelDo(i);}}
 function _svcAdd(){_svcMenu.push({id:'svc_'+Date.now().toString(36),name:'',price:0});_markSvcMenuCustom();_saveSvcMenu();renderServiceMenu();}
 
 
@@ -11342,7 +11345,8 @@ function renderPayments(){
   try{_paySyncSquare(true);}catch(e){}
 }
 function _payMarkPaid(idv){const p=_payments.find(x=>x.id===idv);if(p){p.status='paid';_savePayments();}if(typeof _navCur!=='undefined'&&_navCur&&_navCur.screen==='payments')renderPayments();}
-function _payDelete(idv){const i=_payments.findIndex(x=>x.id===idv);if(i>=0){_payments.splice(i,1);_savePayments();}if(typeof _navCur!=='undefined'&&_navCur&&_navCur.screen==='payments')renderPayments();}
+function _payDeleteDo(idv){const i=_payments.findIndex(x=>x.id===idv);if(i>=0){_payments.splice(i,1);_savePayments();if(typeof proToast==='function')proToast('Payment removed');}const _m=document.getElementById('pay-detail');if(_m)_m.remove();if(typeof _navCur!=='undefined'&&_navCur&&_navCur.screen==='payments')renderPayments();}
+function _payDelete(idv){if(typeof confirmModal==='function'){confirmModal({title:'Remove this payment?',body:'This removes the payment record. It can’t be undone.',action:'Remove'},function(){_payDeleteDo(idv);});}else{_payDeleteDo(idv);}}
 function _payOpen(idv){
   const p=_payments.find(x=>x.id===idv); if(!p)return;
   const ex=document.getElementById('pay-detail'); if(ex)ex.remove();
@@ -11357,7 +11361,7 @@ function _payOpen(idv){
     +'<button class="btng" style="width:100%;border-radius:10px;justify-content:center;" onclick="_payTextLink(\''+p.id+'\')"><i class="ti ti-message"></i> Send text link</button>'
     +'<button class="btng" style="width:100%;border-radius:10px;justify-content:center;" onclick="_payEdit(\''+p.id+'\')"><i class="ti ti-edit"></i> Edit &amp; resend</button>'
     +(p.publicUrl?'<a href="'+p.publicUrl+'" target="_blank" rel="noopener" class="btng" style="width:100%;border-radius:10px;justify-content:center;text-decoration:none;"><i class="ti ti-external-link"></i> View in Square</a>':'')
-    +'<button onclick="_payDelete(\''+p.id+'\');var _m=document.getElementById(\'pay-detail\');if(_m)_m.remove();" style="width:100%;background:none;border:none;color:#a85a5a;font-size:13px;cursor:pointer;font-family:inherit;padding:8px;">Remove</button>'
+    +'<button onclick="_payDelete(\''+p.id+'\');" style="width:100%;background:none;border:none;color:#a85a5a;font-size:13px;cursor:pointer;font-family:inherit;padding:8px;">Remove</button>'
     +'<button onclick="var _m=document.getElementById(\'pay-detail\');if(_m)_m.remove();" style="width:100%;background:none;border:none;color:#777;font-size:13px;cursor:pointer;font-family:inherit;padding:2px;">Close</button>'
     +'</div></div>';
   (document.querySelector('.shell')||document.body).appendChild(m);
@@ -12402,7 +12406,8 @@ async function syncClientEvents(){
   _syncingEvents=true;
   try{
     const r=await fetch('/api/clients',{headers:{'Authorization':'Bearer '+tok}});
-    const j=await r.json();
+    if(!r.ok)return; // stale token / server error — skip this poll quietly, try again next tick
+    const j=await r.json().catch(()=>null);
     if(!(j&&j.ok&&Array.isArray(j.events)))return;
     const seen=_seenEventIds();
     const fresh=j.events.filter(e=>seen.indexOf(e.id)<0).reverse(); // oldest first so newest ends up on top
@@ -13375,6 +13380,8 @@ function ncSaveBasic(){
   const get=id=>{const el=document.getElementById(id);return el?el.value:'';};
   const name=(get('nc-name')||'').trim();
   if(!name){proToast('Add the client\u2019s name to continue');return;}
+  const emailV=(get('nc-email')||'').trim();
+  if(emailV&&!/^[^\s@]+@[^\s@]+\.[^\s@]+$/.test(emailV)){proToast('That email doesn\u2019t look right \u2014 check it or leave it blank');return;}
   const id=_newClientId();
   const initials=name.split(/\s+/).map(w=>w[0]||'').join('').slice(0,2).toUpperCase()||'NC';
   const palette=[['#1e1633','#a891ec'],['#0a2019','#4ec49a'],['#0d1e33','#5ba3e8'],['#2a0f1a','#e87070'],['#2e1c10','var(--accent)']];
