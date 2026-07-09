@@ -2,6 +2,16 @@
 
 Newest entries at the top. One entry per deploy. Dates are US-formatted.
 
+## 2026-07-10 — Bug sweep, round 40 (security response headers)
+
+- **New angle**: the app was serving **no security response headers at all** (no CSP, `X-Frame-Options`, `X-Content-Type-Options`, `Referrer-Policy`, or HSTS). Added a baseline set via `vercel.json` `headers` (applies to every route — static files, the API, and the `/client/:token` client app), which backstops the whole XSS surface and closes clickjacking/MIME-sniffing/referrer-leak gaps without touching any app code.
+- **Headers added** (to `/(.*)`):
+  - `Content-Security-Policy: object-src 'none'; base-uri 'self'; frame-ancestors 'self'` — a deliberately *partial* CSP. The app is inline-everything (inline `<script>`, `onclick=`, `style=`), so a strict `script-src` would break it; instead this blocks plugin-based XSS (`object-src`), base-tag hijacking (`base-uri`), and cross-origin framing (`frame-ancestors`) with **no** `default-src`, so scripts/styles/images/fonts/fetch are unaffected.
+  - `X-Frame-Options: SAMEORIGIN` + the CSP `frame-ancestors 'self'` — clickjacking protection. Set to SAMEORIGIN (not DENY) on purpose: the landing page (`index.html`) iframes `/slickchart-provider-demo` and `/slickchart-client-walkthrough` same-origin, and DENY would have broken that.
+  - `X-Content-Type-Options: nosniff`, `Referrer-Policy: strict-origin-when-cross-origin` (keeps the client link token in the URL from leaking down cross-origin referrers — e.g. when a client taps an affiliate "Buy" link), and `Strict-Transport-Security: max-age=31536000` (enforce HTTPS; no `includeSubDomains`/`preload`, kept conservative).
+- **Verified in a real browser** (headless Chromium): served all three pages locally with these exact headers and confirmed **zero CSP violations**, full render of the provider app (1.4 MB) and client app, and that the landing page's same-origin demo **iframe still loads** — so the frame policy protects against clickjacking without breaking the legitimate embed. Confirmed the apps use no `<base>`/`<object>`/`<embed>` and make no cross-origin client-side fetches, so nothing the CSP restricts is in use.
+- Config-only change (`vercel.json`) — no app HTML/JS change, so the demos and `api/client-page.js` embed are untouched.
+
 ## 2026-07-10 — Bug sweep, round 39 (defense-in-depth: escape the attribute-breakout class)
 
 - **Scope**: a focused defense-in-depth pass on the render spots that matter most for "a future change can't regress into XSS" — the ones where an interpolated value sits **inside an HTML attribute** and could *break out of it*, which is strictly worse than a text-node. Like round 38, these are **provider-authored** values (self-XSS today), so this is hardening, not a live vulnerability — but the attribute-breakout class is exactly where a future data-flow change would turn a self-XSS into a real one, so it's the right place to spend the effort.
