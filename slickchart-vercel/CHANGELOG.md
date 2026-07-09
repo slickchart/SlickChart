@@ -2,6 +2,14 @@
 
 Newest entries at the top. One entry per deploy. Dates are US-formatted.
 
+## 2026-07-11 — Reminder cron back to hourly (Vercel Pro) for per-timezone morning timing
+
+- Switched the cron schedule to **hourly** (`0 * * * *`) now that the project is on Vercel Pro.
+  The reminder logic is already cadence-agnostic (fires once per client per morning, deduped via
+  `reminder_log`), so hourly means every client is reminded at the first run inside **their own**
+  local 7–11am window — timezone-correct for all clients, not just Pacific. No logic change needed;
+  only `vercel.json`.
+
 ## 2026-07-11 — Reminder cron: once-daily schedule + cadence-agnostic timing
 
 - **Cron schedule set to once daily** (`0 15 * * *` = 8:00am Pacific) so it runs on Vercel's
