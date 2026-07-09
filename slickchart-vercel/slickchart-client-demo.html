@@ -2599,6 +2599,25 @@ function _downscaleImg(file,cb,max=900){
   r.readAsDataURL(file);
 }
 
+// Profile photo: pick one image, downscale small (it's just an avatar), save it locally and
+// sync it to the provider so it shows on the client's chart. Replaces the old "coming soon".
+function _pickClientAvatar(){
+  const inp=document.createElement('input');
+  inp.type='file';inp.accept='image/*';
+  inp.onchange=()=>{const f=inp.files&&inp.files[0];if(!f)return;_downscaleImg(f,src=>{if(src)_setClientAvatar(src);else if(typeof showToast==='function')showToast('Couldn’t read that image — try another');},400);};
+  inp.click();
+}
+function _setClientAvatar(src){
+  client.avatar=src;
+  try{localStorage.setItem('sc_client_avatar',src);}catch(e){}
+  if(client._real){
+    _clientSubmit('contact',{avatar:src}).then(function(res){
+      if(typeof showToast==='function')showToast(res&&res.ok?'Photo updated ✓':(res&&res.duplicate?'':'Saved here — couldn’t reach your provider'));
+    }).catch(function(){if(typeof showToast==='function')showToast('Saved here — couldn’t reach your provider');});
+  }else if(typeof showToast==='function')showToast('Photo updated ✓');
+  if(typeof renderProfile==='function')renderProfile();
+}
+
 // Check-in reference photos (stored on the notes question as `${id}Photos`)
 function ciAddPhoto(qid){_pickImages(srcs=>{if(!srcs||!srcs.length)return;const a=(checkinAnswers[qid+'Photos']=checkinAnswers[qid+'Photos']||[]);srcs.forEach(s=>a.push(s));_renderCheckinStep();});}
 function ciAddLink(qid){const u=prompt('Paste an image link (URL):');if(u&&u.trim()){(checkinAnswers[qid+'Photos']=checkinAnswers[qid+'Photos']||[]).push(u.trim());_renderCheckinStep();}}
@@ -3519,11 +3538,12 @@ function renderProfile(){
   const checked=Object.values(homecareChecked).filter(Boolean).length;
   const total=Object.keys(homecareChecked).length;
   const routinePct=total?Math.round(checked/total*100):0;
+  if(!client.avatar){try{const a=localStorage.getItem('sc_client_avatar');if(a)client.avatar=a;}catch(e){}}
   S.innerHTML=`
   <div style="padding:20px 16px 0;display:flex;flex-direction:column;align-items:center;gap:10px;">
     <div style="position:relative;">
-      <div style="width:72px;height:72px;border-radius:50%;background:var(--accent-lt2);display:flex;align-items:center;justify-content:center;font-size:26px;font-weight:700;color:var(--accent);border:3px solid #e8d0b8;">${client.initials||(client.name||'?').trim().charAt(0).toUpperCase()}</div>
-      <button onclick="alert('Photo upload coming soon!')" aria-label="Change profile photo" style="position:absolute;bottom:0;right:0;width:24px;height:24px;background:var(--accent);border:2px solid #fff;border-radius:50%;display:flex;align-items:center;justify-content:center;cursor:pointer;border:none;">
+      ${client.avatar?`<div style="width:72px;height:72px;border-radius:50%;overflow:hidden;border:3px solid #e8d0b8;"><img src="${_imgSrc(client.avatar)}" alt="Your profile photo" style="width:100%;height:100%;object-fit:cover;display:block;"></div>`:`<div style="width:72px;height:72px;border-radius:50%;background:var(--accent-lt2);display:flex;align-items:center;justify-content:center;font-size:26px;font-weight:700;color:var(--accent);border:3px solid #e8d0b8;">${client.initials||(client.name||'?').trim().charAt(0).toUpperCase()}</div>`}
+      <button onclick="_pickClientAvatar()" aria-label="Change profile photo" style="position:absolute;bottom:0;right:0;width:24px;height:24px;background:var(--accent);border:2px solid #fff;border-radius:50%;display:flex;align-items:center;justify-content:center;cursor:pointer;border:none;">
         <i class="ti ti-camera" aria-hidden="true" style="font-size:12px;color:#fff;"></i>
       </button>
     </div>

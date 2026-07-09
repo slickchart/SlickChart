@@ -2,6 +2,25 @@
 
 Newest entries at the top. One entry per deploy. Dates are US-formatted.
 
+## 2026-07-11 — Feature: client profile photo (replaces the "coming soon" alert; shows on the chart)
+
+- **Clients can set a profile photo, and it shows up on their chart in your app.** The camera button
+  on the client's profile used to just `alert('Photo upload coming soon!')` — a dead end. It now lets
+  them pick a photo (downscaled to 400px), shows it as their profile avatar, saves it locally, and
+  syncs it to you over the existing `contact` channel. Your `av()` avatar renderer now shows a client's
+  uploaded photo wherever their avatar appears (client list, chat, chart) and falls back to the initials
+  tile otherwise — genuinely useful for putting a face to a name. Delivery is honest: "Photo updated ✓"
+  only when it reached you, otherwise "Saved here — couldn't reach your provider."
+- Guardrails: only real `data:image/…` values are accepted on both ends (bogus/`javascript:` sources are
+  ignored), an unchanged photo is a no-op, and the provider gets a "Contact info updated · photo" note.
+- Also confirmed while sweeping that **Export/CSV** (services, sales, clients, sales-tax, full JSON
+  backup — all real downloads, with CSV-formula-injection escaping), **Reports**, **Inventory**
+  (quantity +/- persists, edit/add/delete, reorder links), and **Vendors** are all working correctly —
+  no changes needed there.
+- Touches both apps → `slickchart-client.html` re-embedded into `api/client-page.js` (byte-identical)
+  and both demos regenerated (banner-only). `node --check` + boot pass; avatar rendering and the
+  contact-handler photo logic verified by simulation.
+
 ## 2026-07-11 — Reminder cron back to hourly (Vercel Pro) for per-timezone morning timing
 
 - Switched the cron schedule to **hourly** (`0 * * * *`) now that the project is on Vercel Pro.
