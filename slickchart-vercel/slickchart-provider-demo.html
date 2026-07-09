@@ -1810,6 +1810,9 @@ function applyProfessionConfig(){
     const merged=[];const seenP=new Set();
     selectedProfessions.forEach(pid=>{(_protoMap[pid]||[]).forEach(p=>{const k=(p.id||p.name||'');if(!seenP.has(k)){seenP.add(k);merged.push(p);}});});
     protocols.length=0;merged.forEach(p=>protocols.push(p));
+    // Provider customized their protocols — restore their saved set over the profession
+    // defaults (matches how courses/service-menu keep custom edits across reconfigures).
+    if(typeof _protocolsAreCustom==='function'&&_protocolsAreCustom()){try{loadProtocols();}catch(e){}}
   }
 
   if(hairBarberOnly&&hasHair){affiliateLinks.length=0;hairAffiliateLinks.forEach(a=>affiliateLinks.push(a));}
@@ -2264,6 +2267,13 @@ function _pruneExpiredCheckins(){
 }
 function persistCourses(){try{localStorage.setItem('sc_courses',JSON.stringify(courses));}catch(e){}}
 function loadCourses(){try{const raw=localStorage.getItem('sc_courses');if(raw){const arr=JSON.parse(raw);if(Array.isArray(arr))courses=arr;}}catch(e){}}
+// Protocols persistence — `protocols` is a const array reset from profession defaults on
+// every applyProfessionConfig(), so like courses we mark it "custom" once the provider
+// edits it and restore the saved set over the defaults (mutating in place, since it's const).
+function persistProtocols(){try{localStorage.setItem('sc_protocols',JSON.stringify(protocols));}catch(e){}}
+function _protocolsAreCustom(){try{return localStorage.getItem('sc_protocols_custom')==='1';}catch(e){return false;}}
+function _markProtocolsCustom(){try{localStorage.setItem('sc_protocols_custom','1');}catch(e){}}
+function loadProtocols(){try{const raw=localStorage.getItem('sc_protocols');if(raw){const a=JSON.parse(raw);if(Array.isArray(a)&&a.length){protocols.length=0;a.forEach(p=>protocols.push(p));return true;}}}catch(e){}return false;}
 function persistShopBundles(){try{localStorage.setItem('sc_shop_bundles',JSON.stringify(shopBundles));}catch(e){}}
 function loadShopBundles(){try{const raw=localStorage.getItem('sc_shop_bundles');if(raw){const arr=JSON.parse(raw);if(Array.isArray(arr))shopBundles=arr;}}catch(e){}}
 function persistAffiliateLinks(){try{localStorage.setItem('sc_affiliate_links',JSON.stringify(affiliateLinks));}catch(e){}}
@@ -12065,14 +12075,16 @@ function saveProtocol(){
   if(_protoDraft.id!=null){
     const pr=protocols.find(x=>x.id===_protoDraft.id);
     if(pr){pr.name=name;pr.steps=steps;}
+    _markProtocolsCustom();persistProtocols();   // protocols isn't in the on-nav sweep \u2014 persist so the edit survives reload
     proToast('Protocol updated \u2713');nav('protocol-detail',_protoDraft.id);
   }else{
     const id='p'+Date.now().toString(36);
     protocols.push({id,name,icon:'ti-clipboard-list',col:'#0a2019',ic:'#4ec49a',steps});
+    _markProtocolsCustom();persistProtocols();
     proToast('Protocol saved \u2713');nav('protocol-detail',id);
   }
 }
-function deleteProtocol(id){const pr=protocols.find(x=>x.id===id);if(!pr)return;confirmModal({title:'Delete protocol',body:'Delete "'+(pr.name||'this protocol')+'"? This cannot be undone.',action:'Delete'},"()=>{const ix=protocols.findIndex(x=>x.id==='"+id+"');if(ix>=0)protocols.splice(ix,1);nav('protocols')}");}
+function deleteProtocol(id){const pr=protocols.find(x=>x.id===id);if(!pr)return;confirmModal({title:'Delete protocol',body:'Delete "'+(pr.name||'this protocol')+'"? This cannot be undone.',action:'Delete'},"()=>{const ix=protocols.findIndex(x=>x.id==='"+id+"');if(ix>=0){protocols.splice(ix,1);_markProtocolsCustom();persistProtocols();}nav('protocols')}");}
 
 // ── MORE ──
 // ── Help center ──

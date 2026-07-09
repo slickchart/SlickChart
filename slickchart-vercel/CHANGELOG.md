@@ -2,6 +2,12 @@
 
 Newest entries at the top. One entry per deploy. Dates are US-formatted.
 
+## 2026-07-11 — Functional QA sweep, round 44 (treatment protocols now persist)
+
+- **Created/edited/deleted treatment protocols no longer vanish on reload.** `protocols` is a `const` array that `applyProfessionConfig()` resets from the profession defaults on every boot, and `saveProtocol`/`deleteProtocol` only mutated it in memory — protocols aren't in the on-`nav` persistence sweep and there was no `persistProtocols`, so any protocol a provider built silently reverted to the defaults on their next visit (the exact same class of bug as the old course builder).
+- **Fix** mirrors how courses/service-menu keep custom edits: added `persistProtocols` / `loadProtocols` / a `sc_protocols_custom` flag; `saveProtocol` and `deleteProtocol` now mark-custom + persist; and `applyProfessionConfig` restores the saved set over the profession defaults once the provider has customized (mutating the const array in place). A fresh account with no custom protocols still gets the correct profession defaults.
+- Verified by simulation against the real script: a custom protocol survives a reconfigure/reload, the custom set isn't clobbered by defaults, and a non-custom account still resets to profession defaults. `node --check` + boot pass; provider-only, demo regenerated (banner-only).
+
 ## 2026-07-11 — Functional QA sweep, round 43 (course builder + silent data-loss fixes)
 
 - **Course builder now actually builds courses (main fix)**: `renderCourseBuilder`'s "Save" / "Save course" buttons only called `nav('learn')` — the form inputs had no ids and were never read, so creating or editing a course did nothing (the course was silently discarded). Rebuilt it into a real editor: `saveCourse(id)` reads the title / description / price / status / module rows, creates a new course or updates the existing one, and persists (`persistCourses`). Module names are now stored (`moduleNames`) and shown on the course detail instead of placeholder text. **Added the requested PDF/resource import**: a "Learning materials" section lets a provider attach PDFs/images (stored as data URLs, images downscaled, 8 MB cap — same pattern as the docs vault) and paste resource links; attachments render on the course detail and open in a viewer. Verified by simulation against the real script: create → captured + persisted, edit → updates in place, empty-title rejected, and both the builder and detail render without error.
