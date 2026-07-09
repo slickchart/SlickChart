@@ -2,6 +2,30 @@
 
 Newest entries at the top. One entry per deploy. Dates are US-formatted.
 
+## 2026-07-11 — Public "request a consult" link is now real (was a dead mockup)
+
+The Virtual Consultations → Client link tab used to show a hardcoded, non-working
+`slickchart.com/consult/jessica-lee` (the demo persona's name, and no backend route). It's now a
+real feature end-to-end:
+
+- **New public page** `slickchart.com/consult/<your-slug>` (`api/consult-page.js`, routed via
+  `vercel.json`). It resolves the slug to the provider, pulls their real business name / website /
+  brand color from their synced settings, and renders a branded, mobile-first request form. No login
+  needed — these are prospects, not clients yet.
+- **Public submit** (`api/consult-request.js`): strictly validated, size-capped, and rate-limited by
+  IP and by slug (it's an unauthenticated endpoint). Records a lead in a new `consult_requests` table.
+- **Slug management** (`api/consult-slug.js`): each provider claims a unique slug (auto-suggested from
+  their business name); stored on the `providers` row behind a unique index. `lib/consult.js` holds the
+  schema migration (`ALTER TABLE … ADD COLUMN IF NOT EXISTS`, so it's safe on the live DB) and helpers.
+- **Provider app**: the Client-link tab now loads the real slug, shows the real link with working
+  Copy/Share, lets you create/edit the slug, and lists incoming consult requests (name, contact,
+  message, with Email/Call buttons) pulled from `api/consult-requests.js`. The old copy that promised
+  photo upload / "within 48 hours" was reworded to match the real flow (request → you follow up).
+
+Backend verified: all modules `node --check` clean, the public page renders valid HTML (both the
+found and not-found paths), the in-page browser script parses, and the provider render helpers were
+runtime-tested across all states (unloaded / none-set / active). Provider demo regenerated (banner-only).
+
 ## 2026-07-11 — Hardcoded-default sweep: money leak + demo-identity leaks
 
 - **Amazon affiliate links no longer default to the demo's account (real money).** `amazonAssociates`

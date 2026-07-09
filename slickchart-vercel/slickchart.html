@@ -5823,6 +5823,70 @@ function _setVcFee(val,btn){
   try{localStorage.setItem('sc_vc_fee',vcFee);}catch(e){}
   switchVTab('upload');                          // re-render so the right pill shows active
 }
+// ── Public "request a consult" link — real, backed by /api/consult-slug + /api/consult-requests ──
+let _consultSlug=null;        // null = not loaded, '' = none set yet, else the claimed slug
+let _consultSuggestion='';
+let _consultRequests=null;    // null = not loaded, else array of requests
+function _consultHost(){var o='';try{o=(location&&location.origin)||'';}catch(e){}return (o&&/^https?:/.test(o))?o.replace(/^https?:\/\//,''):'slickchart.com';}
+function _consultFull(){return _consultSlug?('https://'+_consultHost()+'/consult/'+_consultSlug):'';}
+function _consultLinkCardHTML(){
+  if(_consultSlug===null){return `<div style="background:#1a1a1a;border:1px solid #2a2a2a;border-radius:12px;padding:14px;margin-bottom:14px;font-size:13px;color:#888;">Loading your consult link…</div>`;}
+  if(!_consultSlug){
+    return `<div style="background:#1a1a1a;border:1px solid var(--accent);border-radius:12px;padding:14px;margin-bottom:14px;">
+      <div style="font-size:13px;color:#ccc;line-height:1.55;margin-bottom:11px;">Create a public link anyone can use to request a consult with you — perfect for your Instagram bio or website.</div>
+      <button class="btnp" style="width:100%;border-radius:9px;justify-content:center;" onclick="_setConsultSlug()"><i class="ti ti-link"></i> Create my consult link</button>
+    </div>`;
+  }
+  const disp=_fileEsc(_consultHost()+'/consult/'+_consultSlug);const full=_jsAttr(_consultFull());
+  return `<div style="background:#1a1a1a;border:1px solid var(--accent);border-radius:12px;padding:14px;margin-bottom:14px;">
+    <div style="font-size:11px;font-weight:500;color:#aaa;text-transform:uppercase;letter-spacing:.07em;margin-bottom:6px;">Your consult link</div>
+    <div style="font-size:13px;color:var(--accent);font-weight:500;margin-bottom:10px;word-break:break-all;">${disp}</div>
+    <div style="display:flex;gap:8px;">
+      <button class="btng" style="flex:1;" onclick="_copyToClipboard('${full}','Consult link copied')"><i class="ti ti-copy"></i> Copy</button>
+      <button class="btng" style="flex:1;" onclick="_shareOrCopy('${full}','Request a virtual consult')"><i class="ti ti-share"></i> Share</button>
+      <button class="btng" style="flex:0 0 auto;" onclick="_setConsultSlug()" aria-label="Edit link name"><i class="ti ti-edit"></i></button>
+    </div>
+  </div>`;
+}
+async function _loadConsultLink(){
+  const tok=(typeof Cloud!=='undefined'&&Cloud&&Cloud.token)||'';
+  if(!tok){_consultSlug='';return;}
+  try{const r=await fetch('/api/consult-slug',{headers:{'Authorization':'Bearer '+tok}});const j=await r.json();if(j&&j.ok){_consultSlug=j.slug||'';_consultSuggestion=j.suggestion||'';}else{_consultSlug='';}}catch(e){_consultSlug='';}
+  if(activeVirtualTab==='upload'&&document.getElementById('vtab-content'))switchVTab('upload');
+}
+async function _setConsultSlug(){
+  const tok=(typeof Cloud!=='undefined'&&Cloud&&Cloud.token)||'';
+  if(!tok){if(typeof proToast==='function')proToast('Sign in to set up your consult link');return;}
+  let raw=null;try{raw=window.prompt('Choose your consult link name (letters, numbers, hyphens):',_consultSlug||_consultSuggestion||'');}catch(e){raw=null;}
+  if(raw===null)return;
+  try{const r=await fetch('/api/consult-slug',{method:'PUT',headers:{'Content-Type':'application/json','Authorization':'Bearer '+tok},body:JSON.stringify({slug:raw})});const j=await r.json();
+    if(r.ok&&j&&j.ok){_consultSlug=j.slug;if(typeof proToast==='function')proToast('Consult link ready ✓');if(activeVirtualTab==='upload')switchVTab('upload');}
+    else{if(typeof proToast==='function')proToast((j&&j.error)||'Could not set that link');}
+  }catch(e){if(typeof proToast==='function')proToast('Could not set that link');}
+}
+function _consultWhen(ts){try{const d=new Date(ts);if(isNaN(d.getTime()))return '';return d.toLocaleDateString('en-US',{month:'short',day:'numeric'});}catch(e){return '';}}
+function _consultRequestsHTML(){
+  if(_consultRequests===null){return `<div class="sh"><h2>Consult requests</h2></div><div style="margin:0 16px 16px;font-size:13px;color:#888;">Loading…</div>`;}
+  if(!_consultRequests.length){return `<div class="sh"><h2>Consult requests</h2></div><div style="margin:0 16px 16px;background:#161616;border:1px dashed #2a2a2a;border-radius:10px;padding:16px;text-align:center;color:#888;font-size:12px;">No requests yet. When someone submits your consult link, it shows up here.</div>`;}
+  return `<div class="sh"><h2>Consult requests · ${_consultRequests.length}</h2></div>`+_consultRequests.map(r=>{
+    const nm=_fileEsc(r.name||'Someone');const em=_fileEsc(r.email||'');const ph=_fileEsc(r.phone||'');
+    const msg=_fileEsc(r.message||'');const when=_consultWhen(r.created_at);
+    const mailBtn=r.email?`<a href="mailto:${_urlAttr(r.email)}" class="btng" style="flex:1;justify-content:center;text-decoration:none;"><i class="ti ti-mail"></i> Email</a>`:'';
+    const telBtn=r.phone?`<a href="tel:${_urlAttr(r.phone)}" class="btng" style="flex:1;justify-content:center;text-decoration:none;"><i class="ti ti-phone"></i> Call</a>`:'';
+    return `<div style="background:#1a1a1a;border:1px solid #2a2a2a;border-radius:12px;margin:0 16px 10px;padding:13px 14px;">
+      <div style="display:flex;justify-content:space-between;align-items:baseline;gap:8px;margin-bottom:4px;"><span style="font-size:14px;font-weight:600;color:#f0f0f0;">${nm}</span><span style="font-size:11px;color:#888;flex-shrink:0;">${when}</span></div>
+      <div style="font-size:12px;color:#999;margin-bottom:8px;word-break:break-all;">${em}${em&&ph?' · ':''}${ph}</div>
+      <div style="font-size:13px;color:#ccc;line-height:1.6;margin-bottom:${(mailBtn||telBtn)?'10':'0'}px;white-space:pre-wrap;">${msg}</div>
+      ${(mailBtn||telBtn)?`<div style="display:flex;gap:8px;">${mailBtn}${telBtn}</div>`:''}
+    </div>`;
+  }).join('');
+}
+async function _loadConsultRequests(){
+  const tok=(typeof Cloud!=='undefined'&&Cloud&&Cloud.token)||'';
+  if(!tok){_consultRequests=[];return;}
+  try{const r=await fetch('/api/consult-requests',{headers:{'Authorization':'Bearer '+tok}});const j=await r.json();_consultRequests=(j&&j.ok&&Array.isArray(j.requests))?j.requests:[];}catch(e){_consultRequests=[];}
+  if(activeVirtualTab==='upload'&&document.getElementById('vtab-content'))switchVTab('upload');
+}
 function switchVTab(tab){
   activeVirtualTab=tab;
   ['queue','upload','completed'].forEach(t=>{const el=document.getElementById('vt-'+t);if(el)el.classList.toggle('active',t===tab);});
@@ -5853,25 +5917,21 @@ function switchVTab(tab){
   } else if(tab==='upload'){
     content.innerHTML=`
     <div style="padding:14px 16px 0;">
-      <div style="font-size:13px;color:#999;margin-bottom:14px;">Share this link with clients. They upload current photos${_vcProfile().refLabels?' plus any inspiration / reference photos':''}, answer a few questions, and you review everything here with AI assistance.</div>
-      <div style="background:#1a1a1a;border:1px solid var(--accent);border-radius:12px;padding:14px;margin-bottom:14px;">
-        <div style="font-size:11px;font-weight:500;color:#aaa;text-transform:uppercase;letter-spacing:.07em;margin-bottom:6px;">Your unique link</div>
-        <div style="font-size:13px;color:var(--accent);font-weight:500;margin-bottom:10px;">slickchart.com/consult/jessica-lee</div>
-        <div style="display:flex;gap:8px;">
-          <button class="btng" style="flex:1;" onclick="_copyToClipboard('https://slickchart.com/consult/jessica-lee','Consult link copied')"><i class="ti ti-copy"></i> Copy link</button>
-          <button class="btng" style="flex:1;" onclick="_shareOrCopy('https://slickchart.com/consult/jessica-lee','Virtual consult link')"><i class="ti ti-share"></i> Share</button>
-        </div>
-      </div>
+      <div style="font-size:13px;color:#999;margin-bottom:14px;">Share this link anywhere — your Instagram bio, website, or a text. Anyone can request a consult with you, and their request lands below for you to follow up.</div>
+      ${_consultLinkCardHTML()}
       <div style="font-size:11px;font-weight:500;color:#aaa;text-transform:uppercase;letter-spacing:.07em;margin-bottom:10px;">What clients see</div>
       <div style="background:#1a1a1a;border:1px solid #2a2a2a;border-radius:12px;overflow:hidden;margin-bottom:14px;">
-        ${[['ti-camera','Upload current photos',_vcProfile().refLabels?'Plus reference / inspo photos of the look they want':'Front, sides, and any concern areas'],['ti-pencil','Answer a few questions','What they want, concerns, and goals'],['ti-clock','You review & send notes','AI pre-analyzes so your reply comes faster'],['ti-message-circle','Receive your expert notes','Personalized, delivered in-app']].map(([icon,title,sub])=>`<div style="padding:10px 12px;border-bottom:1px solid #1e1e1e;display:flex;align-items:center;gap:10px;"><div style="width:32px;height:32px;border-radius:8px;background:var(--accent-tint);display:flex;align-items:center;justify-content:center;flex-shrink:0;"><i class="ti ${icon}" style="font-size:14px;color:var(--accent);"></i></div><div><div style="font-size:13px;font-weight:500;color:#e0e0e0;">${title}</div><div style="font-size:12px;color:#999;">${sub}</div></div></div>`).join('')}
+        ${[['ti-send','Send you a request','Their name, contact, and goals'],['ti-clock','You follow up','Collect photos or book them in'],['ti-message-circle','Receive your expert notes','Personalized, delivered in-app']].map(([icon,title,sub])=>`<div style="padding:10px 12px;border-bottom:1px solid #1e1e1e;display:flex;align-items:center;gap:10px;"><div style="width:32px;height:32px;border-radius:8px;background:var(--accent-tint);display:flex;align-items:center;justify-content:center;flex-shrink:0;"><i class="ti ${icon}" style="font-size:14px;color:var(--accent);"></i></div><div><div style="font-size:13px;font-weight:500;color:#e0e0e0;">${title}</div><div style="font-size:12px;color:#999;">${sub}</div></div></div>`).join('')}
       </div>
       <div style="background:#1a1a1a;border:1px solid #2a2a2a;border-radius:12px;padding:12px;margin-bottom:16px;">
         <div style="font-size:12px;font-weight:500;color:#e0e0e0;margin-bottom:8px;">Consultation fee</div>
         <div style="display:flex;gap:8px;margin-bottom:8px;">${(function(){const preset=[['Free',''],['$15','$15'],['$25','$25'],['$49','$49']];const isPreset=preset.some(pr=>pr[1]===vcFee);const pills=preset.map(pr=>`<button class="pill ${pr[1]===vcFee?'active':''}" onclick="_setVcFee('${pr[1]}',this)">${pr[0]}</button>`);pills.push(`<button class="pill ${(!isPreset&&vcFee)?'active':''}" onclick="_setVcFee('__custom__',this)">${(!isPreset&&vcFee)?_fileEsc(vcFee):'Custom'}</button>`);return pills.join('');})()}</div>
         <div style="font-size:11px;color:#999;">${vcFee?'Charged before clients submit their photos':'This consult is free — tap a price above only if you charge for it.'}</div>
       </div>
-    </div>`;
+    </div>
+    ${_consultRequestsHTML()}`;
+    if(_consultSlug===null)_loadConsultLink();
+    if(_consultRequests===null)_loadConsultRequests();
   } else {
     const _demoReviews=[{id:'priya',date:'Jun 20, 2026',note:'Recommended BHA exfoliant 2-3x weekly. Avoid heavy oils on T-zone. Niacinamide serum for pore refinement.'},{id:'sophie',date:'Jun 12, 2026',note:'Barrier repair priority. No actives for 2 weeks. Centella-based moisturizer morning and evening.'},{id:'maya',date:'Jun 1, 2026',note:'PIH responding well. Vitamin C working — continue. SPF compliance is showing. Ready to introduce AHA in 3 weeks.'}].filter(item=>CL[item.id]);
     content.innerHTML=`
