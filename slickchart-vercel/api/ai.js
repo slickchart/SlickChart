@@ -94,7 +94,14 @@ export default async function handler(req, res) {
     const messages = Array.isArray(body.messages) ? body.messages : [];
     if (!messages.length) { res.status(400).json({ error: 'messages required' }); return; }
 
-    const model = (typeof body.model === 'string' && body.model) ? body.model : 'claude-sonnet-4-6';
+    // Allow-list the model so an anonymous caller can't point this key at an
+    // arbitrary/pricier model to run up the bill. The app only ever requests the
+    // default; anything not on the list quietly falls back to it (never errors,
+    // so a legit call is never broken). Extend ALLOWED_MODELS to add models on purpose.
+    const DEFAULT_MODEL = 'claude-sonnet-4-6';
+    const ALLOWED_MODELS = new Set([DEFAULT_MODEL, 'claude-haiku-4-5-20251001']);
+    const reqModel = (typeof body.model === 'string' && body.model) ? body.model : DEFAULT_MODEL;
+    const model = ALLOWED_MODELS.has(reqModel) ? reqModel : DEFAULT_MODEL;
     const max_tokens = Math.min(Math.max(parseInt(body.max_tokens, 10) || 1000, 1), 2000);
 
     const r = await fetch('https://api.anthropic.com/v1/messages', {
