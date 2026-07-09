@@ -2285,6 +2285,9 @@ function renderFillForm(){
   const pf=_pendingForm();
   if(!pf){ nav('home'); return; }
   _ffLoadDraft();
+  // Photos are in-memory only and keyed by field index. A fresh form must not inherit an
+  // earlier/abandoned form's photos — they'd silently attach to this form at the same index.
+  _ffPhotos={};
   document.getElementById('tt').textContent=pf.title;
   const qs=_orderedFormQs(pf.qs);
   S.innerHTML=`
@@ -3859,6 +3862,10 @@ var _clientSubmitInFlight={};
 function _clientSubmit(kind,payload,_retried){
   try{
     var tok=client._token; if(!tok)return Promise.resolve(null);
+    payload=payload||{};
+    // Idempotency key: minted once and carried through the retry (same payload object) so a
+    // submission that committed server-side but lost its response isn't written a second time.
+    if(!payload._idem){try{payload._idem=(self.crypto&&crypto.randomUUID)?crypto.randomUUID():(Date.now().toString(36)+Math.random().toString(36).slice(2));}catch(e){payload._idem=Date.now().toString(36)+Math.random().toString(36).slice(2);}}
     // Block a double-tap on the same action while one is already in flight — otherwise a
     // slow/retrying request lets an impatient client submit a duplicate check-in, form,
     // or booking. The retry re-enters with _retried=true and must bypass this guard.

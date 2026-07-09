@@ -58,7 +58,11 @@ export default async function handler(req, res) {
     await ensureClientTables();
     const c = await getClientByToken(token);
     if (!c) { res.status(404).json({ error: 'Invalid link' }); return; }
-    const id = await logEvent(c.provider_id, c.id, kind, payload);
+    // Pull the client's idempotency key out of the payload (kept out of the stored blob) so a
+    // retried submission that already committed doesn't create a second event.
+    const idem = payload && payload._idem;
+    if (payload && payload._idem) { delete payload._idem; }
+    const id = await logEvent(c.provider_id, c.id, kind, payload, idem);
     res.status(200).json({ ok: true, id });
   } catch (e) { res.status(e.status || 500).json({ error: e.message }); }
 }

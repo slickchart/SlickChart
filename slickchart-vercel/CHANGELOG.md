@@ -2,6 +2,28 @@
 
 Newest entries at the top. One entry per deploy. Dates are US-formatted.
 
+## 2026-07-11 — Third audit round (idempotency + form-photo leak)
+
+- **A dropped response could duplicate a client's submission.** `_clientSubmit` retries once on a
+  network failure — but if the *original* request actually reached the server and committed before its
+  response was lost, the retry wrote a **second** check-in / booking / form / message. The client now
+  mints a stable idempotency key (`_idem`) once and carries it through the retry; the server derives the
+  event's primary key from it (`ON CONFLICT (id) DO NOTHING`), so a retried-but-already-saved submission
+  collapses to one row. No schema change — reuses the existing `client_events.id` PK.
+- **Same fix for provider→client messages.** `_sendProviderMessageToClient` retries the same way and had
+  the same duplicate-on-lost-response window (a doubled message + a second push). It now threads a stable
+  key through the retry and `/api/provider-message` passes it to the same idempotent `logEvent`.
+- **Abandoned form photos leaked into the next form.** `_ffPhotos` (in-memory, keyed by field index) was
+  only cleared on a completed send. Attach photos to a form, leave without submitting, open a *different*
+  form → its photo tiles rendered empty but `_submitFillForm` still read `_ffPhotos[i]` and **silently
+  attached the first form's photos to the second at the same index**. `renderFillForm` now resets
+  `_ffPhotos` on entry, so a fresh form always starts with no inherited photos.
+
+Client re-embedded into `api/client-page.js` (byte-identical) and both demos regenerated (banner-only).
+`node --check` on all changed modules, boot on all four surfaces, and the 9-screen client render smoke test
+all pass. The idempotency keys are backward/forward compatible (an old client omits `_idem` → random id
+as before; the server ignores an unknown field), so no coordinated-deploy window.
+
 ## 2026-07-11 — Third audit round (provider): payment double-submit + stale invoice-edit target
 
 - **"Send invoice via Square" and "Text a payment link" (Build-invoice screen) could fire twice.**

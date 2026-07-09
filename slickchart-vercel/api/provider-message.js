@@ -23,6 +23,7 @@ export default async function handler(req, res) {
   await ensureClientTables();
   const body = req.body || {};
   const clientId = String(body.clientId || '');
+  const idem = body.idem;
   const text = String(body.text || '').trim();
   // Photos (data-URL or http[s]) now ride along too — validate the type and cap the count
   // so a message can carry an aftercare/annotated photo without a malformed or huge payload.
@@ -42,7 +43,7 @@ export default async function handler(req, res) {
     const q = sql();
     const rows = await q`SELECT id, data FROM clients WHERE id=${clientId} AND provider_id=${provider}`;
     if (!rows.length) { res.status(404).json({ error: 'Client not found' }); return; }
-    const id = await logEvent(provider, clientId, 'provider_message', { text, photos });
+    const id = await logEvent(provider, clientId, 'provider_message', { text, photos }, idem);
 
     // Fire a web-push so the message reaches the client even with the app closed. Best-effort:
     // never let a push failure affect the send result the provider sees. Respects the client's

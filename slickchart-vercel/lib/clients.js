@@ -178,12 +178,25 @@ export async function markInvited(providerId, ids) {
   }
 }
 
-export async function logEvent(providerId, clientId, kind, payload) {
+export async function logEvent(providerId, clientId, kind, payload, idemKey) {
   const q = sql();
-  const id = 'ev_' + genToken().slice(0, 12);
-  await q`INSERT INTO client_events (id, client_id, provider_id, kind, payload, created_at)
-    VALUES (${id}, ${clientId}, ${providerId}, ${kind}, ${JSON.stringify(payload || {})}::jsonb, ${Date.now()})`;
-  return id;
+  // When the caller supplies an idempotency key (minted client-side and carried across a
+  // retry), derive the row id from it so a submission that committed but lost its response
+  // isn't written twice. Reuses the existing `id` primary key — no schema change — via
+  // ON CONFLICT DO NOTHING. Without a key, a random id is used (no collisions to worry about).
+  let id;
+  if (idemKey) {
+    const safe = String(idemKey).replace(/[^a-zA-Z0-9_-]/g, '').slice(0, 40);
+    id = safe ? ('ev_idem_' + safe) : ('ev_' + genToken().slice(0, 12));
+  } else {
+    id = 'ev_' + genToken().slice(0, 12);
+  }
+  const rows = await q`INSERT INTO client_events (id, client_id, provider_id, kind, payload, created_at)
+    VALUES (${id}, ${clientId}, ${providerId}, ${kind}, ${JSON.stringify(payload || {})}::jsonb, ${Date.now()})
+    ON CONFLICT (id) DO NOTHING
+    RETURNING id`;
+  // No row back → the id already existed (a duplicate retry); collapse to the existing event.
+  return (rows && rows[0] && rows[0].id) ? rows[0].id : id;
 }
 
 export async function listEvents(providerId) {
