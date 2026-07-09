@@ -2,6 +2,13 @@
 
 Newest entries at the top. One entry per deploy. Dates are US-formatted.
 
+## 2026-07-10 — Fix: pre-visit check-in reset when a client reopened their link
+
+- **Bug (reported by a provider)**: a client completed her pre-visit check-in, then reopened her personal link to fill out the still-pending intake form — and the app showed the check-in as **not done again**, re-prompting her to redo a check-in she'd already submitted.
+- **Cause**: the client app tracked check-in completion only as an in-memory `checkinDone` flag on the provider object. It was **never persisted** — `_collectClientPrefs()` didn't include it and `_loadClientPrefsFromServer()` didn't restore it — and every page load rebuilds the provider object from scratch in `_applyRealClientData()`, wiping the flag. So any fresh load of the link forgot the check-in was done. (The pending-form banner only shows while a form is still outstanding, which is exactly why she hit it: the check-in was done but the intake wasn't.)
+- **Fix**: persist check-in completion per provider, keyed to the appointment date, in the client's server-synced prefs (`client-prefs`) plus a localStorage cache. On load it's restored in both `_applyRealClientData()` (instant, same-device) and `_loadClientPrefsFromServer()` (cross-device). Crucially it's **keyed to the appointment date**, so a completed check-in is remembered for *that* visit but a new or rescheduled appointment still resets to prompt a fresh check-in. Simulated the full flow: submit → reopen same device → reopen new device (server prefs) all show "complete"; a new appointment date correctly resets to "not done".
+- Client-app change → `slickchart-client.html` re-embedded into `api/client-page.js` (verified byte-identical), and `slickchart-client-demo.html` regenerated (banner-only diff). No provider-app change. Both apps parse (`node --check`) and boot clean (provider `applyProfessionConfig`/`renderHome` OK; client `renderHome` OK).
+
 ## 2026-07-09 — Bug sweep, round 37 (access-control review + AI-proxy hardening)
 
 - **Focus shift**: the cross-boundary XSS/escaping surface swept in rounds 32–36 came up **clean** this round (verified reflected-XSS via URL params in both apps, the static landing page, the client-writable API endpoints, the client message thread, `av()`/initials, the session room, and the AI Brief — all safe). So this round pivoted to an **access-control / IDOR review of the whole `/api` layer**.

@@ -1101,10 +1101,34 @@ function saveEng(){try{localStorage.setItem('sc_client_engage',JSON.stringify(_e
 // localStorage is kept only as an instant-load cache now; the server is the
 // actual source of truth, so settings survive a cleared browser or a new device.
 let _prefsSyncTimer=null;
+
+// Remembers which appointment a client has already completed their pre-visit check-in
+// for, per provider (provider id → the appointment date it was done for). Without this,
+// reopening the personal link on a fresh page load forgot the check-in was done — the
+// provider object is rebuilt from scratch in _applyRealClientData — so the client was
+// re-prompted to redo a check-in they'd already submitted. Keying on the appointment
+// date means a NEW appointment (a rescheduled or next visit) still asks for a fresh one.
+let _ciDoneMap=(function(){try{return JSON.parse(localStorage.getItem('sc_checkin_done')||'{}')||{};}catch(e){return {};}})();
+function _markCheckinDone(prov){
+  prov=prov||activeProvider();
+  if(!prov)return;
+  prov.checkinDone=true;
+  _ciDoneMap[prov.id]=prov.nextDate||'';
+  try{localStorage.setItem('sc_checkin_done',JSON.stringify(_ciDoneMap));}catch(e){}
+  _syncClientPrefsToServer();
+}
+// Re-apply saved check-in completion onto the freshly-rebuilt provider objects. Only
+// restores it when the stored appointment date still matches the provider's current
+// next appointment, so a new/rescheduled visit correctly resets to "not done yet".
+function _applyCheckinDoneFromMap(){
+  try{(client.providers||[]).forEach(function(p){
+    if(p&&_ciDoneMap[p.id]!==undefined&&_ciDoneMap[p.id]===(p.nextDate||''))p.checkinDone=true;
+  });}catch(e){}
+}
 function _collectClientPrefs(){
   let welcomeDismissed=[];try{welcomeDismissed=JSON.parse(localStorage.getItem('sc_welcome_dismissed')||'[]');}catch(e){}
   const installDismissed=(function(){try{return localStorage.getItem('sc_install_dismissed')==='1';}catch(e){return false;}})();
-  return {notif:loadNotifPrefs(),eng:_eng,welcomeDismissed,installDismissed};
+  return {notif:loadNotifPrefs(),eng:_eng,welcomeDismissed,installDismissed,checkinDone:_ciDoneMap};
 }
 function _syncClientPrefsToServer(){
   if(!client._real||!client._token)return; // nothing to sync in local/demo mode
@@ -1129,6 +1153,11 @@ async function _loadClientPrefsFromServer(){
     }
     if(Array.isArray(p.welcomeDismissed))try{localStorage.setItem('sc_welcome_dismissed',JSON.stringify(p.welcomeDismissed));}catch(e){}
     if(typeof p.installDismissed==='boolean')try{localStorage.setItem('sc_install_dismissed',p.installDismissed?'1':'0');}catch(e){}
+    if(p.checkinDone&&typeof p.checkinDone==='object'){
+      _ciDoneMap=Object.assign({},_ciDoneMap,p.checkinDone);
+      try{localStorage.setItem('sc_checkin_done',JSON.stringify(_ciDoneMap));}catch(e){}
+      _applyCheckinDoneFromMap();
+    }
   }catch(e){ console.error('[client prefs] load failed:',e&&e.message); /* fall back to whatever's cached locally */ }
 }
 function _engStreakLive(){return _eng.lastDoneDay===_engToday()||_eng.lastDoneDay===_engYesterday();}
@@ -2572,7 +2601,7 @@ function submitCheckin(){
   const flagged=(pay.flagged||[]).map(f=>String(f).toLowerCase());
   // Connected providers (the live provider app) receive the check-in instantly via the bridge
   if(prov.connected){
-    prov.checkinDone=true;
+    _markCheckinDone(prov);
     SlickBridge.post('checkin-submitted',{
       id:'ci'+Date.now()+Math.random().toString(36).slice(2,5),
       providerId:prov.id,clientId:'maya',client:client.name,
@@ -2589,13 +2618,13 @@ function submitCheckin(){
     _clientSubmit('checkin',{client:client.name,treatment:client.treatment,dateLabel:client.nextDate,time:client.nextTime,groups:pay.groups,flagged:pay.flagged,notes:pay.notes,photos:pay.photos||[]})
       .then(function(res){
         if(res&&res.duplicate)return;
-        if(res&&res.ok!==false){ prov.checkinDone=true; S.innerHTML=_checkinSuccessHTML(flagged); }
+        if(res&&res.ok!==false){ _markCheckinDone(prov); S.innerHTML=_checkinSuccessHTML(flagged); }
         else{ S.innerHTML=_submitFailedHTML('submitCheckin()',"Couldn't send your check-in"); }
       });
     return;
   }
   // Demo/local (no real token, not connected) — behave as before
-  prov.checkinDone=true;
+  _markCheckinDone(prov);
   S.innerHTML=_checkinSuccessHTML(flagged);
 }
 
@@ -3639,6 +3668,9 @@ function _applyRealClientData(j){
   p.pendingForms=Array.isArray(d.pendingForms)?d.pendingForms:[];
   p.pendingGuides=Array.isArray(d.pendingGuides)?d.pendingGuides:[];
   client._realAvailability=(d.availability&&typeof d.availability==='object')?d.availability:null;
+  // The provider object was just rebuilt, wiping any in-memory checkinDone. Restore it
+  // from the saved map so a completed pre-visit check-in isn't re-prompted on reload.
+  _applyCheckinDoneFromMap();
 }
 function _bootRealClient(token){
   client._token=token;
