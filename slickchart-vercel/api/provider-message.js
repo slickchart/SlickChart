@@ -4,7 +4,8 @@
 import { verifyToken } from '../lib/auth.js';
 import { dbEnabled } from '../lib/db.js';
 import { sql } from '../lib/db.js';
-import { ensureClientTables, logEvent } from '../lib/clients.js';
+import { ensureClientTables, logEvent, listPushSubs, deletePushSub } from '../lib/clients.js';
+import { sendPushToAll } from '../lib/push.js';
 
 function providerId(req) {
   const s = process.env.SESSION_SECRET || '';
@@ -39,9 +40,29 @@ export default async function handler(req, res) {
   try {
     // Confirm this client actually belongs to this provider before logging anything.
     const q = sql();
-    const rows = await q`SELECT id FROM clients WHERE id=${clientId} AND provider_id=${provider}`;
+    const rows = await q`SELECT id, data FROM clients WHERE id=${clientId} AND provider_id=${provider}`;
     if (!rows.length) { res.status(404).json({ error: 'Client not found' }); return; }
     const id = await logEvent(provider, clientId, 'provider_message', { text, photos });
+
+    // Fire a web-push so the message reaches the client even with the app closed. Best-effort:
+    // never let a push failure affect the send result the provider sees. Respects the client's
+    // "New message" toggle (stored in their synced prefs).
+    try {
+      const prefRows = await q`SELECT prefs FROM client_prefs WHERE client_id=${clientId}`;
+      const notif = (prefRows[0] && prefRows[0].prefs && prefRows[0].prefs.notif) || {};
+      const wants = notif.enabled !== false && notif.messagereply !== false; // default on
+      if (wants) {
+        const who = (rows[0].data && rows[0].data.providerName) || 'your provider';
+        const preview = text ? text : (photos.length ? (photos.length > 1 ? '📷 ' + photos.length + ' photos' : '📷 Photo') : 'New message');
+        const subs = await listPushSubs(clientId);
+        await sendPushToAll(subs, {
+          title: 'New message from ' + who,
+          body: preview.length > 140 ? preview.slice(0, 139) + '…' : preview,
+          url: '/client', tag: 'msg-' + clientId, renotify: true
+        }, deletePushSub);
+      }
+    } catch (e) { /* push is best-effort */ }
+
     res.status(200).json({ ok: true, id });
   } catch (e) { res.status(e.status || 500).json({ error: e.message }); }
 }

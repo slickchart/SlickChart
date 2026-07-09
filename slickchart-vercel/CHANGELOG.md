@@ -2,6 +2,37 @@
 
 Newest entries at the top. One entry per deploy. Dates are US-formatted.
 
+## 2026-07-11 — Feature: real push notifications (web-push + service worker + reminder cron)
+
+Notifications now reach a client's phone **even when the app is closed** — the piece that was
+missing (there was no background push infrastructure, so scheduled/away notifications couldn't fire).
+Requires a one-time Vercel setup (see `PUSH-SETUP.md`); if the env vars aren't set, everything else
+keeps working and pushes are simply skipped.
+
+- **Web Push foundation.** Added a VAPID-based push sender (`lib/push.js`, `web-push` dependency), a
+  `push` + `notificationclick` handler in the service worker (`sw.js`), a token-authed
+  `/api/push-subscribe` endpoint, and a `push_subscriptions` table. The client subscribes this device
+  when a client turns notifications on (and re-registers on each visit), embedding the public VAPID key.
+- **New-message push (works on any plan, no cron).** `/api/provider-message` now sends a web-push to
+  the client's devices when the provider messages them — so a reply lands on their phone with the app
+  closed. It respects the client's "New message" toggle (read from their synced prefs), shows the
+  provider's name + a preview ("📷 Photo" for image-only), and tapping it opens the chat. Best-effort:
+  a push failure never affects the provider's send.
+- **Scheduled reminders (cron).** A new hourly `vercel.json` cron hits `/api/cron-reminders`, which
+  sends a **24-hour appointment reminder**, a **morning-of reminder (~8am local)**, and a **daily
+  homecare nudge (~8am local)** — each gated on that client's individual toggle + quiet hours, and
+  claimed atomically (`reminder_log`) so it fires at most once. Reminders are driven by data the
+  client's app computes and syncs (its resolved IANA timezone + the already-parsed appointment
+  timestamp), so the server never guess-parses a display string; timezone placement, the 23–25h
+  window, quiet-hours wrap, and once-only sending were all verified by simulation.
+- **Setup + safety.** `PUSH-SETUP.md` documents the env vars (`VAPID_PUBLIC_KEY`, `VAPID_PRIVATE_KEY`,
+  `CRON_SECRET`, optional `VAPID_SUBJECT`), the Hobby-vs-Pro cron-frequency note, the iOS "Add to Home
+  Screen" requirement, and how to test. Added a `.gitignore` (node_modules etc.); the VAPID public key
+  is committed (safe), the private key is not. `node --check` passes for all new modules; the VAPID
+  keypair is accepted by `web-push`, and `lib/push.js` is a safe no-op when unconfigured.
+- Client-app change → `slickchart-client.html` re-embedded into `api/client-page.js` (byte-identical)
+  and the client demo regenerated (banner-only).
+
 ## 2026-07-11 — Tweak: check-in comfort default drops "Heated blanket"
 
 - The pre-visit check-in **comfort defaults** now include only the **Heated mattress pad** (with its Off/Low/Med/High levels); the **Heated blanket** control is no longer seeded by default, since not every provider has one. Applied in three places so it's consistent: the base default, the "+ Restore section" re-seed, and a one-time migration (matching the existing drinks/blankets migration) that drops the heated blanket for any provider still on the exact old default without touching anyone who customized their heat controls. Providers who do have a heated blanket can re-add it any time via "+ Add heated control." Provider-only; demo regenerated (banner-only).

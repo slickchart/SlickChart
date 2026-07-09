@@ -38,7 +38,79 @@ export async function ensureClientTables() {
     prefs jsonb DEFAULT '{}'::jsonb,
     updated_at bigint
   )`;
+  // Web-push subscriptions — one row per device a client enables notifications on.
+  // Keyed by a hash of the endpoint so re-subscribing the same device updates in place.
+  await q`CREATE TABLE IF NOT EXISTS push_subscriptions (
+    id text PRIMARY KEY,
+    client_id text NOT NULL,
+    provider_id text,
+    endpoint text NOT NULL,
+    sub jsonb NOT NULL,
+    created_at bigint
+  )`;
+  await q`CREATE INDEX IF NOT EXISTS push_subs_client_idx ON push_subscriptions(client_id)`;
+  // Dedup log for the reminder cron — one row per (client, reminder-instance) so a reminder
+  // is sent at most once even though the cron runs repeatedly across its send window.
+  await q`CREATE TABLE IF NOT EXISTS reminder_log (
+    client_id text NOT NULL,
+    rkey text NOT NULL,
+    sent_at bigint,
+    PRIMARY KEY (client_id, rkey)
+  )`;
   _ready = true;
+}
+
+// Atomically claim a reminder: returns true only the FIRST time this (client, rkey) is
+// seen, so concurrent/overlapping cron runs can't double-send. Callers send only on true.
+export async function claimReminder(clientId, rkey) {
+  const q = sql();
+  const rows = await q`INSERT INTO reminder_log (client_id, rkey, sent_at)
+    VALUES (${String(clientId)}, ${String(rkey)}, ${Date.now()})
+    ON CONFLICT (client_id, rkey) DO NOTHING RETURNING rkey`;
+  return rows.length > 0;
+}
+
+function _subId(endpoint) {
+  return 'ps_' + crypto.createHash('sha256').update(String(endpoint || '')).digest('base64url').slice(0, 24);
+}
+
+// Store (or refresh) one device's push subscription for a client.
+export async function savePushSub(clientId, providerId, subscription) {
+  if (!subscription || !subscription.endpoint) return null;
+  const q = sql();
+  const id = _subId(subscription.endpoint);
+  const now = Date.now();
+  const data = JSON.stringify(subscription);
+  await q`INSERT INTO push_subscriptions (id, client_id, provider_id, endpoint, sub, created_at)
+    VALUES (${id}, ${String(clientId)}, ${providerId ? String(providerId) : null}, ${String(subscription.endpoint)}, ${data}::jsonb, ${now})
+    ON CONFLICT (id) DO UPDATE SET client_id=${String(clientId)}, provider_id=${providerId ? String(providerId) : null}, sub=${data}::jsonb`;
+  return id;
+}
+
+// All of a client's device subscriptions, as { id, sub } rows.
+export async function listPushSubs(clientId) {
+  const q = sql();
+  const rows = await q`SELECT id, sub FROM push_subscriptions WHERE client_id=${String(clientId)}`;
+  return rows.map(r => ({ id: r.id, sub: r.sub }));
+}
+
+export async function deletePushSub(id) {
+  const q = sql();
+  await q`DELETE FROM push_subscriptions WHERE id=${String(id)}`;
+  return true;
+}
+
+export async function deletePushSubByEndpoint(clientId, endpoint) {
+  const q = sql();
+  await q`DELETE FROM push_subscriptions WHERE client_id=${String(clientId)} AND endpoint=${String(endpoint || '')}`;
+  return true;
+}
+
+// For the reminder cron: every client's saved prefs (bounded to beta scale). Includes the
+// client_id so the cron can look up that client's push subscriptions.
+export async function listAllClientPrefs() {
+  const q = sql();
+  return await q`SELECT client_id, prefs FROM client_prefs LIMIT 5000`;
 }
 
 // A random, URL-safe token that's effectively impossible to guess.

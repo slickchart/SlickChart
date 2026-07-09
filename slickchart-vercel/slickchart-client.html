@@ -236,6 +236,39 @@ const Push=(function(){
   return{supported,permission,request,inQuietHours,fireSystem};
 })();
 
+// ── Web Push subscription (real notifications when the app is closed) ──
+// Public VAPID key — safe to embed (it's only the public half). It MUST match the
+// VAPID_PUBLIC_KEY env var on the server, or the browser's push service rejects the sub.
+const VAPID_PUBLIC_KEY='BI0MVqsF4ydcwZFAAoz1sOu3Cu7foQIAvnQ56SkbvMYAGZEs2XbyOvjPeT-YpMRpF0Z-wMJ5ITyCSl0g73mQ25M';
+function _urlB64ToUint8(base64){
+  const pad='='.repeat((4-(base64.length%4))%4);
+  const b=(base64+pad).replace(/-/g,'+').replace(/_/g,'/');
+  const raw=atob(b);const arr=new Uint8Array(raw.length);
+  for(let i=0;i<raw.length;i++)arr[i]=raw.charCodeAt(i);
+  return arr;
+}
+// Subscribe this device for push and register it with the server. Safe to call repeatedly:
+// it reuses an existing subscription and only runs for a real, signed-in client with
+// notification permission already granted.
+async function _subscribePush(){
+  try{
+    if(!client._real||!client._token)return;
+    if(!('serviceWorker'in navigator)||!('PushManager'in window))return;
+    if(typeof Notification==='undefined'||Notification.permission!=='granted')return;
+    const reg=await navigator.serviceWorker.ready;
+    let sub=await reg.pushManager.getSubscription();
+    if(!sub){
+      sub=await reg.pushManager.subscribe({userVisibleOnly:true,applicationServerKey:_urlB64ToUint8(VAPID_PUBLIC_KEY)});
+    }
+    if(sub){
+      await fetch('/api/push-subscribe?t='+encodeURIComponent(client._token),{
+        method:'POST',headers:{'Content-Type':'application/json'},
+        body:JSON.stringify({subscription:sub})
+      }).catch(function(){});
+    }
+  }catch(e){/* push is a nice-to-have; never block the app on it */}
+}
+
 /* In-app notification center (the bell) */
 let clientNotifs=[
   {id:'cn1',type:'messagereply',icon:'ti-message-circle',col:'#f0f5ff',ic:'#5ba3e8',title:'New message from Jessica',body:'"Looking forward to seeing you! Remember to skip retinol 3 days before."',time:'2h ago',read:false},
@@ -1144,7 +1177,21 @@ function _applyFormsDoneFromMap(){
 function _collectClientPrefs(){
   let welcomeDismissed=[];try{welcomeDismissed=JSON.parse(localStorage.getItem('sc_welcome_dismissed')||'[]');}catch(e){}
   const installDismissed=(function(){try{return localStorage.getItem('sc_install_dismissed')==='1';}catch(e){return false;}})();
-  return {notif:loadNotifPrefs(),eng:_eng,welcomeDismissed,installDismissed,checkinDone:_ciDoneMap,formsDone:_formsDoneMap};
+  return {notif:loadNotifPrefs(),eng:_eng,welcomeDismissed,installDismissed,checkinDone:_ciDoneMap,formsDone:_formsDoneMap,reminders:_reminderContext()};
+}
+// Context the reminder cron needs, computed here where the browser knows the client's real
+// timezone and the appointment time is already parsed (apptISO). apptAt is an absolute epoch
+// ms, so the server compares it to "now" without re-parsing any display string.
+function _reminderContext(){
+  try{
+    const tz=(typeof Intl!=='undefined'&&Intl.DateTimeFormat)?(Intl.DateTimeFormat().resolvedOptions().timeZone||''):'';
+    const ap=(typeof activeProvider==='function')?activeProvider():null;
+    let apptAt=0,apptLabel='',treatment='';
+    if(ap&&ap.apptISO){const t=Date.parse(ap.apptISO);if(!isNaN(t))apptAt=t;}
+    if(ap){apptLabel=(((client.nextDate||ap.nextDate||'')+' '+(client.nextTime||ap.nextTime||'')).trim());treatment=ap.treatment||client.treatment||'';}
+    const hasHomecare=!!(ap&&Array.isArray(ap.homecare)&&ap.homecare.length);
+    return {tz,apptAt,apptLabel,treatment,hasHomecare};
+  }catch(e){return {};}
 }
 function _syncClientPrefsToServer(){
   if(!client._real||!client._token)return; // nothing to sync in local/demo mode
@@ -1602,6 +1649,8 @@ async function enableNotifs(){
   }
   saveNotifPrefs(p);
   renderNotifSettings();
+  // Register this device for real push (so notifications arrive with the app closed).
+  try{_subscribePush();}catch(e){}
   // welcome ping so the user immediately sees it working
   setTimeout(()=>pushNotify({type:'summaryReady',icon:'ti-bell-ringing',col:'#f0fff5',ic:'#4ec49a',
     title:'Notifications are on 🎉',body:"You'll get reminders, messages, and booking updates here.",force:true}),420);
@@ -3805,9 +3854,12 @@ function _bootRealClient(token){
   fetch('/api/client-data?t='+encodeURIComponent(token),{cache:'no-store'}).then(function(r){return r.json();}).then(function(j){
     if(j&&j.ok&&j.client){
       _applyRealClientData(j); client._real=true; try{document.title='SlickChart \u2014 '+client.name;}catch(e){} applyActiveProvider(); nav('home');
-      try{_loadClientPrefsFromServer().then(function(){ if(document.getElementById('page-heading'))renderHome(); });}catch(e){}
+      try{_loadClientPrefsFromServer().then(function(){ if(document.getElementById('page-heading'))renderHome(); try{_syncClientPrefsToServer();}catch(e){} });}catch(e){}
       try{_loadMsgSeenIds();_fetchRealMessages(true);}catch(e){}
       try{_lastDataFingerprint=_clientDataFingerprint(j);_startRealClientPolling();}catch(e){}
+      // If this client already granted notifications on a previous visit, make sure this
+      // device is subscribed for push (and the server has a fresh subscription).
+      try{_subscribePush();}catch(e){}
     }
     else{ _clientLinkError(j&&j.error); }
   }).catch(function(){ _clientLinkNetworkError(); });
