@@ -2028,7 +2028,7 @@ function renderMessages(){
     <div style="align-self:${m.from==='me'?'flex-end':'flex-start'};max-width:82%;width:fit-content;min-width:0;">
       ${m.text?`<div class="${m.from==='me'?'bub-me':'bub-them'}">${_txt(m.text)}</div>`:''}
       ${imgs.length?`<div style="display:flex;flex-wrap:wrap;gap:4px;${m.text?'margin-top:4px;':''}justify-content:${m.from==='me'?'flex-end':'flex-start'};">${imgs.map(src=>`<img src="${_imgSrc(src)}" alt="shared photo" style="width:${imgs.length>1?'96px':'180px'};height:${imgs.length>1?'96px':'auto'};${imgs.length>1?'object-fit:cover;':''}border-radius:12px;display:block;border:1.5px solid #f0ebe4;">`).join('')}</div>`:''}
-      <div style="font-size:10px;color:#c4b9ae;margin-top:3px;${m.from==='me'?'text-align:right;':''};">${_txt(m.time)}</div>
+      <div style="font-size:10px;color:#c4b9ae;margin-top:3px;${m.from==='me'?'text-align:right;':''};">${m.from==='me'&&m.status==='sending'?'Sending…':(m.from==='me'&&m.status==='failed'?`<span onclick="retryClientMsg('${m._id}')" style="color:#c2410c;cursor:pointer;font-weight:600;">Not delivered · Tap to retry</span>`:_txt(m.time))}</div>
     </div>`;}).join('')}
   </div>
   <div style="position:absolute;bottom:68px;left:0;right:0;background:#fff;border-top:1px solid #f0ebe4;padding:8px 12px;display:flex;align-items:flex-end;gap:6px;">
@@ -2052,11 +2052,41 @@ function sendClientMsg(imgArg){
   // accidental paste and would bloat local storage / risk a failed sync. Cap it generously.
   const MAX=5000;
   if(text.length>MAX){text=text.slice(0,MAX);if(typeof showToast==='function')showToast('Message shortened to '+MAX+' characters');}
-  messages.push({from:'me',text,imgs,time:'Just now'});
+  // Only text is carried to the provider today (the message sync doesn't transmit photos
+  // yet), so a real text message gets a live delivery status + retry, while a photo we
+  // can't actually deliver is called out honestly instead of silently looking sent.
+  const track=!!(client._real&&text);
+  const msg={_id:'cm'+(++_clientMsgSeq),from:'me',text,imgs,time:'Just now',status:track?'sending':undefined};
+  messages.push(msg);
   try{_saveClientMessages();}catch(e){}
-  try{if(client._real){_clientSubmit('message',{text:text,photos:imgs.length});}}catch(e){}
   if(inp){inp.value='';inp.style.height='auto';}
   renderMessages();
+  if(track)_deliverClientMsg(msg);
+  if(client._real&&imgs.length&&typeof showToast==='function'){
+    showToast(text?'Message sent — photos aren’t shared with '+(client.providerFirst||'your provider')+' yet':'Photos aren’t shared with '+(client.providerFirst||'your provider')+' yet — send a message instead');
+  }
+}
+let _clientMsgSeq=0;
+// Deliver a client text message and reflect the real outcome in its bubble. _clientSubmit
+// retries a network blip itself; here we also handle the per-kind in-flight guard (a second
+// quick message) by re-attempting a few times before giving up.
+function _deliverClientMsg(msg,attempt){
+  attempt=attempt||0;
+  _clientSubmit('message',{text:msg.text||'',photos:(msg.imgs||[]).length}).then(function(res){
+    if(res&&res.duplicate&&attempt<4){setTimeout(function(){_deliverClientMsg(msg,attempt+1);},1200);return;}
+    msg.status=(res&&res.ok)?'sent':'failed';
+    try{_saveClientMessages();}catch(e){}
+    if(document.getElementById('chat-body'))renderMessages();
+  }).catch(function(){
+    msg.status='failed';try{_saveClientMessages();}catch(e){}
+    if(document.getElementById('chat-body'))renderMessages();
+  });
+}
+function retryClientMsg(id){
+  const msg=messages.find(function(m){return m._id===id;});if(!msg)return;
+  msg.status='sending';try{_saveClientMessages();}catch(e){}
+  if(document.getElementById('chat-body'))renderMessages();
+  _deliverClientMsg(msg);
 }
 
 // ── SHOP ──
