@@ -2,6 +2,13 @@
 
 Newest entries at the top. One entry per deploy. Dates are US-formatted.
 
+## 2026-07-10 — Bug sweep, round 38 (defense-in-depth: finish affiliate-product escaping)
+
+- **Honest scope note**: this round found no new cross-boundary XSS (rounds 32–37 covered the client→provider, Square→provider, reflected-URL, and access-control surfaces). It's a **defense-in-depth / consistency pass**, completing the affiliate-product escaping that round 31 set out to finish. These are **provider-authored fields** — a provider would have to put a payload in their *own* product's name/icon/brand to hit their *own* provider-app view (self-XSS), so this is not a live vulnerability. It's worth doing because the same product fields flow to the client app, and a uniform "every render escapes" rule is what keeps a future change from silently becoming a real hole.
+- **Fixed**: eight affiliate-product render sites still interpolated product fields raw — the session-summary preview, the recommend-to-client picker, the messages-tab retail strip, the shop-bundle detail, the send-bundle sheet, the add-bundle product list, and the guide-attached product lists. Routed `a.icon` / `a.name` / `a.brand` / `a.commission` through `_fileEsc` at every one (they're all text-node renders, and the values are provider-set product strings — mostly emoji + short text, so escaping is a no-op for legitimate values and only neutralizes an injected string). Verified: a malicious product name collapses to inert text under `_fileEsc`, while legit emoji icons and names (`✨`, `C E Ferulic`) render unchanged.
+- Also confirmed clean this round: the Square appointment-booking modal (service names, team-member names/ids, and client name/email prefill all `_fileEsc`'d or attribute-escaped; staff come from the provider's own Square account anyway), and the session room (no client-submitted intake field renders raw).
+- Provider-only round — no client-app change, so `api/client-page.js` did not need re-embedding. Both apps parse (`node --check`) and boot clean; the provider demo differs from the app only by the injected banner.
+
 ## 2026-07-10 — Fix: submitted pre-visit forms reappearing as to-do on reload (same class as the check-in fix)
 
 - **Proactive follow-up to the check-in fix**: audited the rest of the client flow for the same "completion state lost on reload" pattern. Found one genuine sibling in **pre-visit forms** (and cleared virtual-consult submit + rebook as safe — VC is persisted to localStorage and cleared on submit; rebook is fire-and-forget).
