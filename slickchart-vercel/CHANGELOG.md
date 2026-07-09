@@ -2,6 +2,15 @@
 
 Newest entries at the top. One entry per deploy. Dates are US-formatted.
 
+## 2026-07-08 — Bug sweep, round 31
+
+- **Docs / vault detail** (main find): escaped provider-entered document fields that were rendering raw — the document number, issued date, and expiration date in the detail info table, plus the status label (`d.lbl`, which is derived from the provider's expiration text) in both the detail view and the vault list row. The edit/upload forms were already escaping their value attributes.
+- **Affiliate products (continued from round 29)**: escaped product icon/name/brand in two more sheets — the buy-options preview and the recommend-to-client sheet. That should be the last of the affiliate-product render sites.
+- **Treatment protocols**: escaped the provider-authored protocol name and step titles in the session-room protocol picker (protocols are user-created; their icon/color are fixed).
+- **Partner intro**: escaped partner name/type in the send-intro header card (the plain-text intro-message builder was already escaped by its caller before hitting the textarea). Partner icon/color/discount are fixed on creation.
+- **Client invite / first-visit package**: escaped the client first name in the invite-sheet header. The rest of the flow is solid — private links are built with `encodeURIComponent` on the token, names/emails escaped, and share messages are plain-text copied (never innerHTML'd).
+- Verified clean: vendor directory, profession-config (built-in profession definitions, not user input), and the invite-clients bulk list.
+
 ## 2026-07-08 — Bug sweep, round 30
 
 - **Courses / Learn** (main find): courses are provider-authored (title, description, price, module names) and were rendered unescaped in the course-list card, the course-detail view, and the course-builder inputs. Escaped title/status/duration/price/description across all three (value attrs via `_jsAttr`, textarea + display via `_fileEsc`).
