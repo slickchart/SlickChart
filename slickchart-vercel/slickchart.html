@@ -10875,7 +10875,7 @@ async function _coLink(id){
     _addPayment({clientId:id,clientName:c.name,amount:amt,taxAmount:_coTaxAmt(),method:'Square',status:'unpaid',date:_todayISO(),note:'Payment link',source:'square',publicUrl:d.url});
     const msg='Hi '+c.name.split(' ')[0]+'! Your payment link for '+name+' ($'+amt+'): '+d.url;
     document.getElementById('co-result').innerHTML='<div style="background:#0a2019;border:1px solid #1c4030;border-radius:10px;padding:12px 14px;"><div style="font-size:12px;color:#4ec49a;font-weight:600;margin-bottom:8px;">Payment link ready \u00b7 logged in Payments</div><div style="font-size:11px;color:#bbb;word-break:break-all;font-family:monospace;margin-bottom:10px;">'+d.url+'</div><div style="display:grid;grid-template-columns:1fr 1fr;gap:8px;"><button onclick="_copyText(\''+d.url+'\',this)" class="btnp" style="border-radius:8px;padding:9px;">Copy link</button><button onclick="location.href=\'sms:?&body='+encodeURIComponent(msg)+'\'" class="btng" style="border-radius:8px;padding:9px;">Text it</button></div></div>';
-  }catch(e){_coErr(e.message||'Could not create the link.',_coRecon(e));}
+  }catch(e){_coErr(e.message||'Could not create the link.',_coRecon(e));}finally{_coActionLock=false;}
 }
 async function _coInvoice(id){
   const c=CL[id];const items=_coValidItems();const amt=_coAmount();const title=_coVal('co-desc')||'Service';
@@ -10888,7 +10888,7 @@ async function _coInvoice(id){
     const d=await _sqFetch('/api/square/invoice',{method:'POST',body});
     _addPayment({clientId:id,clientName:c.name,amount:(d.total!=null?d.total:amt)||0,taxAmount:(d.tax||0),method:'Square',status:'unpaid',date:_todayISO(),note:'Invoice'+(items.length?(' \u00b7 '+items.length+' items'):''),source:'square',squareInvoiceId:d.invoiceId,publicUrl:d.url,items:items.map(it=>({name:it.name,price:it.price,qty:it.qty||1,variationId:it.variationId||null,kind:it.kind||'service',note:it.note||''}))});
     document.getElementById('co-result').innerHTML='<div style="background:#0a2019;border:1px solid #1c4030;border-radius:10px;padding:12px 14px;font-size:13px;color:#4ec49a;font-weight:600;"><i class="ti ti-check"></i> Invoice sent to '+c.email+' \u00b7 logged in Payments</div>';
-  }catch(e){_coErr(e.message||'Could not send the invoice.',_coRecon(e));}
+  }catch(e){_coErr(e.message||'Could not send the invoice.',_coRecon(e));}finally{_coActionLock=false;}
 }
 async function _coCharge(id){
   const c=CL[id];const items=_coValidItems();const amt=_coAmount();
@@ -11317,9 +11317,17 @@ function renderServiceMenu(){
 // Build an invoice from scratch (Payments hub → Build an invoice)
 let _biClient='';
 let _biEditId='';
+let _biEnterEdit=false;               // one-shot: true only when build-invoice is opened via _payEdit
+const _payLinking=new Set();          // payment-record ids with a Square link create in flight
 function renderBuildInvoice(){
-  setNav('payments');document.getElementById('tt').textContent=_biEditId?'Edit invoice':'Build invoice';
-  if(!_biEditId)_coItems=[];
+  setNav('payments');
+  // A fresh entry (via the "Build an invoice" button) must not inherit a stale edit target
+  // from an abandoned "Edit & resend" — otherwise sending would splice out an unrelated prior
+  // payment. Keep edit state only when we arrived from _payEdit (one-shot _biEnterEdit flag).
+  if(!_biEnterEdit){_biEditId='';_coItems=[];}
+  _biEnterEdit=false;
+  _coActionLock=false;   // never inherit a stale in-flight lock from a checkout session
+  document.getElementById('tt').textContent=_biEditId?'Edit invoice':'Build invoice';
   const entries=Object.entries(CL);
   const opts=entries.map(([cid,c])=>`<option value="${cid}">${String(c.name||'').replace(/</g,'&lt;')}</option>`).join('');
   if(!_biClient||!CL[_biClient])_biClient=entries.length?entries[0][0]:'';
@@ -11367,6 +11375,7 @@ async function _biSend(){
   const items=_coValidItems();
   if(!items.length)return _coErr(_coItems.length?'Set a price on each line item first.':'Add at least one line item.');
   if(!c.email)return _coErr(String(c.name||'This client').split(' ')[0]+' has no email on file. Add one on their chart, or use \u201cSave as unpaid\u201d.');
+  if(!_coLock())return;   // block a double-tap from emailing two invoices / logging two records
   _coBusy('Creating and sending invoice\u2026');
   try{
     const body={name:c.name,email:c.email,requestTip:_coTip,lineItems:items.map(it=>({name:it.name,price:it.price,quantity:it.qty||1,variationId:it.variationId||undefined,taxable:it.taxable!==false,note:(it.note||'')||undefined}))};
@@ -11375,7 +11384,7 @@ async function _biSend(){
     if(_biEditId){const _i=_payments.findIndex(x=>x.id===_biEditId);if(_i>=0&&_payments[_i].id!==_rec.id)_payments.splice(_i,1);_biEditId='';_savePayments();}
     if(typeof proToast==='function')proToast('Invoice sent \u2713');
     nav('payments');
-  }catch(e){_coErr(e.message||'Could not send the invoice.',_coRecon(e));}
+  }catch(e){_coErr(e.message||'Could not send the invoice.',_coRecon(e));}finally{_coActionLock=false;}
 }
 function _biSaveUnpaid(){
   const el=document.getElementById('bi-client');const cid=_biClient||(el&&el.value)||'';const c=CL[cid];
@@ -11445,6 +11454,7 @@ function _payEdit(idv){
   _biEditId=idv; _biClient=p.clientId||'';
   _coItems=(p.items&&p.items.length)?p.items.map(it=>({name:it.name,price:+it.price||0,qty:it.qty||1,variationId:it.variationId||null})):[{name:(p.note||'Service'),price:+p.amount||0,qty:1,variationId:null}];
   const m=document.getElementById('pay-detail'); if(m)m.remove();
+  _biEnterEdit=true;
   nav('build-invoice');
 }
 async function _payTextLink(idv){
@@ -11452,8 +11462,11 @@ async function _payTextLink(idv){
   const c=CL[p.clientId]||{}; const first=String(p.clientName||'there').split(' ')[0];
   let url=p.publicUrl;
   if(!url){
+    if(_payLinking.has(idv))return;   // a link is already being created for this record \u2014 don't create a second Square link
+    _payLinking.add(idv);
     try{ if(typeof proToast==='function')proToast('Creating link\u2026'); const d=await _sqFetch('/api/square/payment-link',{method:'POST',body:{amount:p.amount,name:p.note||'Payment',email:c.email||'',phone:c.phone||''}}); url=d.url; if(url){p.publicUrl=url;_savePayments();} }
     catch(e){ if(typeof proToast==='function')proToast(_coRecon(e)?'Reconnect Square to create a link':'Could not create link'); return; }
+    finally{ _payLinking.delete(idv); }
   }
   if(!url){ if(typeof proToast==='function')proToast('No link available'); return; }
   const msg='Hi '+first+'! Here\u2019s your payment link'+(p.amount?(' for $'+(+p.amount).toFixed(2)):'')+': '+url;
@@ -11465,6 +11478,7 @@ async function _biTextLink(){
   const items=_coValidItems();
   if(!items.length)return _coErr(_coItems.length?'Set a price on each line item first.':'Add at least one line item.');
   const amt=_coTotal(); const name=items.map(it=>it.name).slice(0,2).join(', ')+(items.length>2?'\u2026':'');
+  if(!_coLock())return;   // block a double-tap from creating two Square links / two records
   _coBusy('Creating text link\u2026');
   try{
     const d=await _sqFetch('/api/square/payment-link',{method:'POST',body:{amount:amt,name:name||'Service',email:c.email||'',phone:c.phone||''}});
@@ -11476,7 +11490,7 @@ async function _biTextLink(){
     location.href='sms:'+(c.phone?encodeURIComponent(c.phone):'')+'?&body='+encodeURIComponent(msg);
     if(typeof proToast==='function')proToast('Text link ready \u2713');
     setTimeout(()=>nav('payments'),350);
-  }catch(e){_coErr(e.message||'Could not create the link.',_coRecon(e));}
+  }catch(e){_coErr(e.message||'Could not create the link.',_coRecon(e));}finally{_coActionLock=false;}
 }
 
 function _payExportCSV(){

@@ -2,6 +2,28 @@
 
 Newest entries at the top. One entry per deploy. Dates are US-formatted.
 
+## 2026-07-11 — Third audit round (provider): payment double-submit + stale invoice-edit target
+
+- **"Send invoice via Square" and "Text a payment link" (Build-invoice screen) could fire twice.**
+  `_biSend`/`_biTextLink` do the same real-money work as the checkout path (`_coInvoice`/`_coLink`) —
+  POST to Square + log a payment record — but were the only money actions with **no in-flight guard**.
+  A laggy Square call plus an impatient second tap meant **two invoices emailed / two payment-link
+  records**. Both now take the shared `_coLock()` before the request and release it in a `finally`.
+- **After one checkout send, every checkout button went dead.** `_coLink`/`_coInvoice` acquired
+  `_coLock()` but never released it on the *success* path (only on error), so once you sent a payment
+  link or invoice from "Take payment," "Charge card on file" / "Send invoice" / "Send link" all silently
+  no-op'd until you left and re-entered the screen. Both now release the lock in a `finally`.
+- **An abandoned "Edit & resend" corrupted the next fresh invoice.** `renderBuildInvoice` reset
+  `_coItems` but not `_biEditId`, so opening "Edit & resend," backing out without sending, then tapping
+  "Build an invoice" opened a *new* invoice still in edit mode — and sending it **spliced out an
+  unrelated prior payment**. Edit state is now kept only when arriving via `_payEdit` (one-shot
+  `_biEnterEdit` flag); a fresh entry clears `_biEditId`/`_coItems` and any stale lock.
+- **"Send text link" from a payment row could mint two Square links** on a double-tap (per-record
+  guard via `_payLinking`, kept out of the persisted record so it can't stick across reloads).
+
+Provider-app only. Regenerated the provider demo (banner-only, +14/−0). `node --check` + boot pass.
+Escaping re-verified clean in the same round (no XSS regressions).
+
 ## 2026-07-11 — Second audit round (client): two HIGH bugs — summary crash + negative countdown
 
 - **The "Latest summary" screen crashed for real clients.** `renderLatestSummary` did `s.homecare.map(...)`
