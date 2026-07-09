@@ -485,8 +485,11 @@ function _rerenderHomecare(id,ctx){
   if(ctx==='profile')renderClient(id);else renderSessionSummary(id);
 }
 function _pushRoutine(id){
-  // the connected client (Maya) gets routine changes live — no summary needed
+  // The demo client (Maya) gets routine changes live over the same-browser bridge; a real
+  // client receives the updated routine through their synced data blob (aftercare), so a
+  // homecare edit here actually reaches them instead of only persisting locally.
   if(id==='maya'){try{SlickBridge.post('routine-update',{providerId:'jess',clientId:'maya',routine:getClientHomecare(id).slice()});}catch(e){}}
+  else{try{if(typeof _scheduleSpecificClientSync==='function')_scheduleSpecificClientSync(id);}catch(e){}}
 }
 function _addRoutineFromProfile(id){
   const el=document.getElementById('routine-add-'+id);
@@ -3632,6 +3635,7 @@ function addClientProd(clientId,aid){
   if(clientRecs[clientId].includes(aid))return;
   clientRecs[clientId].push(aid);
   if(typeof persistClientRecs==='function'){try{persistClientRecs();}catch(e){}}
+  try{if(clientId!=='maya'&&typeof _scheduleSpecificClientSync==='function')_scheduleSpecificClientSync(clientId);}catch(e){}
   renderProductRecs(clientId);
   // Keep the picker open so several products can be added in a row; just refresh
   // the list (dropping the one just added) and clear the search for the next one.
@@ -3646,6 +3650,7 @@ function addClientProd(clientId,aid){
 function removeClientProd(clientId,aid){
   clientRecs[clientId]=(clientRecs[clientId]||[]).filter(x=>x!==aid);
   if(typeof persistClientRecs==='function'){try{persistClientRecs();}catch(e){}}
+  try{if(clientId!=='maya'&&typeof _scheduleSpecificClientSync==='function')_scheduleSpecificClientSync(clientId);}catch(e){}
   renderProductRecs(clientId);
 }
 function renderProductRecs(clientId){
@@ -4667,7 +4672,7 @@ async function aiClientFriendly(id,btn){
 }
 
 let _recEditCtx='summary';
-function _rerenderRecs(id){persistWorkspace();if(_recEditCtx==='profile')renderClient(id);else renderSessionSummary(id);}
+function _rerenderRecs(id){persistWorkspace();try{if(id&&id!=='maya'&&typeof _scheduleSpecificClientSync==='function')_scheduleSpecificClientSync(id);}catch(e){}if(_recEditCtx==='profile')renderClient(id);else renderSessionSummary(id);}
 function _recPickerRows(id,q){
   q=(q||'').toLowerCase().trim();
   const list=affiliateLinks.filter(a=>a.active&&!(clientRecs[id]||[]).includes(a.id)&&(!q||((a.name||'')+' '+(a.brand||'')).toLowerCase().includes(q)));
@@ -9035,6 +9040,9 @@ function resendRoutine(cid){
   if(cid==='maya'){try{SlickBridge.post('routine-recommended',{providerId:'jess',clientId:'maya',routine:{name:sent.name,note:sent.note||'',products:sent.products||[]}});}catch(e){}}
   sent.date='Just now';persistSentRoutines();
   try{if(typeof persistWorkspace==='function')persistWorkspace();}catch(e){}  // persist the clientRecs additions above
+  // Push to the real client's synced blob so the resend actually reaches their device (not
+  // just the same-browser bridge above) — matching how confirmSendRoutine delivers.
+  if(cid!=='maya'){try{if(typeof _scheduleSpecificClientSync==='function')_scheduleSpecificClientSync(cid);}catch(e){}}
   const c=CL[cid];
   if(typeof proToast==='function')proToast(`Resent "${sent.name}" to ${c?c.name.split(' ')[0]:'client'}`);
   renderRoutineBuilder();

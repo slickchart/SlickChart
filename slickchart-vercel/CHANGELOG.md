@@ -2,6 +2,28 @@
 
 Newest entries at the top. One entry per deploy. Dates are US-formatted.
 
+## 2026-07-11 — Fix: in-place routine & product-rec edits now sync to real clients
+
+Continuing the delivery sweep from the course fix: several ways of *editing* a real client's
+recommendations after the first send updated the chart locally but never pushed to the client's
+synced data blob, so the client kept seeing the old version until some unrelated action happened to
+trigger a sync. The initial "send" actions synced (`_persistAndSyncClient`); the in-place edits used
+`persistWorkspace()` / `persistClientRecs()` which persist locally but don't sync.
+
+- **Homecare / routine edits** (`addHomecareTag` / `removeHomecareTag`, via `_pushRoutine`) — adding or
+  removing a routine step now schedules a per-client sync so the client's aftercare updates on their
+  device, not just Maya's same-browser preview.
+- **Resending a routine** (`resendRoutine`) — now pushes to the real client's blob (it only did a
+  local persist + bridge post before), matching `confirmSendRoutine`.
+- **Product-recommendation edits** — `addClientProd` / `removeClientProd` and the summary/profile rec
+  editor (`_rerenderRecs`, covering `addSummaryProd` / `removeSummaryProd` / `toggleProdInOffice`) now
+  schedule a per-client sync, so adding/removing a recommended product reaches the client.
+- All use the existing **debounced** `_scheduleSpecificClientSync(id)` (2.5s), so a rapid burst of edits
+  collapses into one network call; the demo client is excluded (it uses the live same-browser bridge).
+- Provider-only change; demo regenerated (banner-only). `node --check` + boot pass. This closes the
+  "edits don't reach the client" gap that the course fix surfaced — verified that every send *and* edit
+  path for routines, products, guides, forms, and courses now syncs.
+
 ## 2026-07-11 — Fix: sending a course to a real client now actually delivers it
 
 - **"Send course" was a false confirmation for real clients.** `confirmSendCourse` posted over the
