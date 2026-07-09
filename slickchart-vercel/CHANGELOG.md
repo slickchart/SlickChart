@@ -2,6 +2,25 @@
 
 Newest entries at the top. One entry per deploy. Dates are US-formatted.
 
+## 2026-07-11 — Provider fixes from a parallel audit: false confirmations + delivery/persistence gaps
+
+A multi-agent audit surfaced several real provider-side bugs; all verified and fixed here.
+
+**False confirmations (said "done" but did nothing / didn't reach the client):**
+- **Partner intro** (`sendPartnerIntro`) toasted "Intro sent to <client> — <partner> Cc'd" but the function was empty — no email, no message, nothing. Now it opens the provider's own email composer pre-filled with the edited message, the client as recipient, and the partner **Cc'd** (the natural form for a referral intro), and says so honestly. Requires picking a client first.
+- **Virtual-consult review** (`sendVcReview`) — a paid ($25) service — set a "reviewed" flag and toasted "Review sent" but **discarded the notes textarea** and delivered nothing. Now it reads the notes, requires them, and actually sends the review to the client (real clients via `/api/provider-message`, demo via the bridge), reflecting it in the provider's thread; the screen only navigates away on a successful send.
+- **Rebook invite** (`_sendRebookInvite`) pushed the message to the local thread + a blob sync, but chat messages ride `/api/provider-message` (read via `/api/client-messages`), NOT the client-data blob — so a real client never got the nudge. Now it sends for real.
+
+**Delivery gaps (edits that didn't reach the client):**
+- **Business info & hours** (`saveBizInfo`) — studio name and booking **availability** live only in each client's synced blob, but the save never triggered a sync, so real clients kept stale hours. Added a roster sync.
+- **Product-rec reorder** (`moveClientProd`) and the **"why I recommend this" note** (`_setRecReason`) now schedule a per-client sync, so re-ordering or editing a rec reason reaches the client (matching the summary-view editors fixed earlier).
+
+**Silent data loss:**
+- **Document renewal-reminder toggle** (`toggleDocReminder`) called `persistWorkspace()` — the wrong store, which doesn't include `docs` — so the toggle was lost on reload. Now calls `saveDocs()`.
+- **Chat unread flag** (`renderChat`) now persists when a thread is opened, so it doesn't show unread again after reload.
+
+The same audit **verified clean**: the payments/Square flow, session-summary send/delete/rename, check-in config (reaches clients via KV), branding, bundles, and every client/vendor/inventory/payment/protocol mutator persists correctly. Provider-only; demo regenerated (banner-only). `node --check` + boot pass.
+
 ## 2026-07-11 — Fix: in-place routine & product-rec edits now sync to real clients
 
 Continuing the delivery sweep from the course fix: several ways of *editing* a real client's

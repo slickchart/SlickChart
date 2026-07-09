@@ -400,7 +400,7 @@ let clientRecs={maya:['a1','a2'],sophie:[],priya:['a3']};
 // Per-client, per-product "why you recommend it" note (shown to the client in place of the default line)
 let recReasons={maya:{a1:'Vitamin C to fade hyperpigmentation and protect from UV every day.',a2:'Mineral SPF that won\'t clog pores — essential after a Hydrafacial.'}};
 function _recReason(id,aid){return (recReasons[id]||{})[aid]||'';}
-function _setRecReason(id,aid,val){(recReasons[id]=recReasons[id]||{})[aid]=val;persistWorkspace();}
+function _setRecReason(id,aid,val){(recReasons[id]=recReasons[id]||{})[aid]=val;persistWorkspace();try{if(id!=='maya'&&typeof _scheduleSpecificClientSync==='function')_scheduleSpecificClientSync(id);}catch(e){}}
 
 // Per-client homecare/aftercare tags — provider-customizable per session
 // Populated with defaults on first use based on active profession
@@ -3682,6 +3682,7 @@ function moveClientProd(clientId,i,dir){
   if(j<0||j>=recs.length)return;
   const t=recs[i];recs[i]=recs[j];recs[j]=t;
   if(typeof persistClientRecs==='function'){try{persistClientRecs();}catch(e){}}
+  try{if(clientId!=='maya'&&typeof _scheduleSpecificClientSync==='function')_scheduleSpecificClientSync(clientId);}catch(e){}
   renderProductRecs(clientId);
 }
 
@@ -5641,7 +5642,11 @@ function _sendRebookInvite(id,date){
     const t=threads.find(x=>x.id===id);if(t){t.preview='Time to rebook ✨';}
     saveMessages();
   }catch(e){}
-  try{if(typeof _scheduleClientSync==='function')_scheduleClientSync();}catch(e){}
+  // Actually deliver to the client. Chat messages ride /api/provider-message (a real client
+  // reads them via /api/client-messages), NOT the client-data blob — so the old
+  // _scheduleClientSync() here never reached a real client. Mirror the normal chat send.
+  if(id==='maya'){try{SlickBridge.post('client-message',{text,imgs:[],providerId:'jess',time:'Just now'});}catch(e){}}
+  else{try{_sendProviderMessageToClient(id,text);}catch(e){}}
   if(typeof proToast==='function')proToast('Rebook invite sent to '+first);
   nav('chat',id);
 }
@@ -5700,7 +5705,21 @@ function inviteVirtualConsult(id){
 // ── Virtual consult inbox (all clients, by status) ──
 function _vcStatus(id){const inv=vcInvites[id]||{};if(inv.reviewed)return 'reviewed';if(inv.submitted)return 'needs-review';if(inv.invited)return 'awaiting';return 'none';}
 function _vcPendingCount(){return Object.keys(CL).filter(id=>_vcStatus(id)==='needs-review').length;}
-function sendVcReview(id){vcInvites[id]={...(vcInvites[id]||{}),invited:true,submitted:true,reviewed:true};try{persistVcState();}catch(e){}if(typeof proToast==='function')proToast('Review sent to '+(CL[id]?CL[id].name.split(' ')[0]:'client'));}
+function sendVcReview(id){
+  const c=CL[id];
+  const ta=document.getElementById('vc-review-notes');
+  const notes=ta?String(ta.value||'').trim():'';
+  // This is a paid service ($25) — the old code discarded the notes textarea and delivered
+  // nothing to the client while claiming "Review sent". Now the review actually goes to them.
+  if(!notes){if(typeof proToast==='function')proToast('Add your review notes first');return false;}
+  vcInvites[id]={...(vcInvites[id]||{}),invited:true,submitted:true,reviewed:true};try{persistVcState();}catch(e){}
+  const msg='Your virtual consult review is ready 📋\n\n'+notes;
+  if(id==='maya'){try{SlickBridge.post('client-message',{text:msg,imgs:[],providerId:'jess',time:'Just now'});}catch(e){}}
+  else{try{_sendProviderMessageToClient(id,msg);}catch(e){}}
+  try{if(!msgStore[id])msgStore[id]=[];msgStore[id].push({from:'me',text:msg,time:'Just now'});const t=threads.find(x=>x.id===id);if(t)t.preview='Your consult review is ready 📋';saveMessages();}catch(e){}
+  if(typeof proToast==='function')proToast('Review sent to '+(c?c.name.split(' ')[0]:'client'));
+  return true;
+}
 function renderVcInbox(){
   setNav('clients');
   document.getElementById('tt').textContent='Virtual consults';
@@ -6087,8 +6106,8 @@ function renderVirtualClient(id){
       ${v.questions.map(q=>`<div style="font-size:13px;color:#ccc;padding:8px 0;border-bottom:1px solid #1e1e1e;display:flex;align-items:center;gap:6px;"><i class="ti ti-question-mark" style="font-size:12px;color:var(--accent);flex-shrink:0;"></i>${q}</div>`).join('')}
     </div>
     <div style="font-size:11px;font-weight:500;color:#aaa;text-transform:uppercase;letter-spacing:.07em;margin-bottom:8px;">Your expert notes</div>
-    <textarea class="fi" style="height:100px;resize:none;line-height:1.6;margin-bottom:8px;" placeholder="Confirm the look in pro terms, answer their questions, recommend a treatment plan and next steps..."></textarea>
-    <button class="btnp" style="border-radius:8px;margin-top:8px;margin-bottom:8px;" onclick="sendVcReview('${id}');${back}"><i class="ti ti-send"></i> Send review to ${_fileEsc(c.name.split(' ')[0])}</button>
+    <textarea id="vc-review-notes" class="fi" style="height:100px;resize:none;line-height:1.6;margin-bottom:8px;" placeholder="Confirm the look in pro terms, answer their questions, recommend a treatment plan and next steps..."></textarea>
+    <button class="btnp" style="border-radius:8px;margin-top:8px;margin-bottom:8px;" onclick="if(sendVcReview('${id}')){${back}}"><i class="ti ti-send"></i> Send review to ${_fileEsc(c.name.split(' ')[0])}</button>
   </div>`;
   // Run the analysis hook (server vision model if configured, else on-device pixel measurements),
   // then patch the card in place. Cached on the submission so re-renders don't re-run it.
@@ -6166,7 +6185,7 @@ function renderPartnerDetail(i){
     </div>
   </div>`;
 }
-let _introName=null;
+let _introName=null,_introClientId='';
 function _introMessage(p){
   return `Hi [Name]!
 
@@ -6185,14 +6204,23 @@ I think you'd really benefit from working together.
 }
 function sendPartnerIntro(i){
   const p=partners[i];
-  const to=document.getElementById('intro-to');
-  const sentTo=(to&&to.textContent&&to.textContent!=='Select a client below')?to.textContent:'your client';
-  if(typeof proToast==='function')proToast('Intro sent to '+sentTo+' — '+p.name.split(',')[0]+" CC'd");
-  nav('partners');
+  const c=CL[_introClientId];
+  if(!c){if(typeof proToast==='function')proToast('Pick a client to introduce first');return;}
+  // Actually deliver: open the provider's own email composer with the client as the recipient
+  // and the partner Cc'd (the natural form for a referral intro), pre-filled with the edited
+  // message — instead of the old code that toasted "sent" and did nothing.
+  const body=(document.getElementById('intro-msg')||{}).value||_introMessage(p);
+  const subject='Introduction — '+String(p.name||'').split(',')[0];
+  const mailto='mailto:'+encodeURIComponent(c.email||'')
+    +'?cc='+encodeURIComponent(p.email||'')
+    +'&subject='+encodeURIComponent(subject)
+    +'&body='+encodeURIComponent(body);
+  try{window.location.href=mailto;}catch(e){}
+  if(typeof proToast==='function')proToast(c.email?('Opening your email to introduce '+c.name.split(' ')[0]+' — '+p.name.split(',')[0]+' Cc’d'):('Opening your email — add '+c.name.split(' ')[0]+'’s address to send'));
 }
 function renderPartnerIntro(i){
   setNav('more');
-  _introName=null;
+  _introName=null;_introClientId='';
   const p=partners[i];
   document.getElementById('tt').textContent='Send intro';
   S.innerHTML=`
@@ -6227,6 +6255,7 @@ function selectIntroClient(id){
   const sel=document.getElementById('sel-'+id);
   if(sel){sel.style.background='var(--accent)';sel.style.borderColor='var(--accent)';sel.innerHTML='<i class="ti ti-check" style="font-size:11px;color:var(--accent-ink);"></i>';}
   const c=CL[id];if(!c)return;
+  _introClientId=id;
   const first=c.name.split(' ')[0];
   const to=document.getElementById('intro-to');if(to)to.textContent=c.name;
   const ta=document.getElementById('intro-msg');
@@ -8199,7 +8228,7 @@ function showMsgTab(tab){
 }
 function renderChat(id){
   setNav('msgs');
-  const c=CL[id];const t=threads.find(x=>x.id===id);if(t)t.unread=false;
+  const c=CL[id];const t=threads.find(x=>x.id===id);if(t){t.unread=false;try{saveMessages();}catch(e){}}
   if(!c){document.getElementById('tt').textContent='Message';S.innerHTML='<div style="padding:30px 16px;color:#888;text-align:center;">This conversation is no longer available.</div>';return;}
   document.getElementById('tt').textContent=c.name;
   S.innerHTML=`
@@ -8406,7 +8435,9 @@ function toggleDocReminder(id,key){
   if(!dd)return;
   if(!dd.reminders)dd.reminders={d90:true,d30:true,d0:false};
   dd.reminders[key]=!(dd.reminders[key]!==false);
-  if(typeof persistWorkspace==='function'){try{persistWorkspace();}catch(e){}}
+  // Persist to the docs store (sc_docs) — persistWorkspace() writes a different key and
+  // doesn't include docs, so the reminder toggle was silently lost on reload.
+  if(typeof saveDocs==='function'){try{saveDocs();}catch(e){}}
   renderDocDetail(id);
 }
 function renderDocDetail(id){
@@ -10224,6 +10255,10 @@ function saveBizInfo(){
   try{localStorage.setItem('sc_bizinfo',JSON.stringify(bizInfo));localStorage.setItem('sc_wsname',workspace.name);}catch(e){}
   SlickBridge.setAvailability(bizHours);
   _syncProviderAvatar();
+  // Studio name and booking availability live only in each client's synced blob (not the shared
+  // KV), so push a roster sync — otherwise real clients keep stale hours/studio until some other
+  // action happens to sync. Full-roster since these are shared across all clients.
+  try{if(typeof _scheduleClientSync==='function')_scheduleClientSync();}catch(e){}
   proToast('Business info & hours saved ✨');
 }
 
