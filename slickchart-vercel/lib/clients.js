@@ -106,6 +106,21 @@ export async function deletePushSubByEndpoint(clientId, endpoint) {
   return true;
 }
 
+// Client-initiated data deletion: drop the app data a client controls (their saved
+// preferences and every device push subscription). The clinical record in `clients` and
+// the event history are intentionally NOT removed here — the provider is the custodian and
+// may be legally required to retain them; instead a 'delete-request' event notifies them.
+export async function deleteClientPrefs(clientId) {
+  const q = sql();
+  await q`DELETE FROM client_prefs WHERE client_id=${String(clientId)}`;
+  return true;
+}
+export async function deleteClientPushSubs(clientId) {
+  const q = sql();
+  await q`DELETE FROM push_subscriptions WHERE client_id=${String(clientId)}`;
+  return true;
+}
+
 // For the reminder cron: every client's saved prefs (bounded to beta scale). Includes the
 // client_id so the cron can look up that client's push subscriptions.
 export async function listAllClientPrefs() {

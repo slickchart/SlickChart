@@ -2,6 +2,31 @@
 
 Newest entries at the top. One entry per deploy. Dates are US-formatted.
 
+## 2026-07-11 — App-store readiness: privacy policy, in-app data deletion, camera capture
+
+Prep for wrapping the client app for the App Store / Play Store.
+
+- **Privacy policy page.** New self-contained `privacy.html`, served at **`/privacy`** (Vercel cleanUrls),
+  covering what the app handles, how it's used, sharing, notifications, security, deletion, children, and
+  contact — light/dark aware, no external assets. Linked from the client app's new Privacy & Data screen.
+  *(Owner TODO: replace the `REPLACE_ME@example.com` contact and confirm the business name before store
+  submission — flagged in an HTML comment.)*
+- **In-app account/data deletion (Apple 5.1.1(v) requirement).** The client's Settings → **Privacy & data**
+  screen (the old dead "Privacy" row is now a real destination) explains what's stored, links the policy,
+  and offers **Delete my data**. It calls a new token-authed `/api/client-delete` that removes the data the
+  client controls (their saved prefs + every device push subscription), unsubscribes this device from push,
+  wipes local storage, and logs a `delete-request` event. The provider's app surfaces that as a "Data
+  deletion request" notification so they can remove the clinical record per their own retention duties (the
+  record and history are intentionally not force-deleted client-side, since the provider is the custodian).
+- **Native camera capture.** Photo pickers gained a `capture` path: the chat composer now has a dedicated
+  **Take a photo** button (opens the camera directly) alongside **Choose from library**. In a wrapped build
+  these invoke the native camera/library picker; on mobile web they already do.
+- **Push notifications** (built earlier) are the fourth native-ready piece and are already live once the
+  VAPID env vars are set.
+- Touches both apps + new `privacy.html` + `/api/client-delete` → `slickchart-client.html` re-embedded into
+  `api/client-page.js` (byte-identical) and both demos regenerated (banner-only). `node --check` + boot pass
+  for all surfaces.
+
 ## 2026-07-11 — Feature: client profile photo (replaces the "coming soon" alert; shows on the chart)
 
 - **Clients can set a profile photo, and it shows up on their chart in your app.** The camera button

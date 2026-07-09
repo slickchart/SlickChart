@@ -1386,6 +1386,7 @@ function nav(screen){
     home:renderHome,journey:renderJourney,homecare:renderHomecare,
     messages:renderMessages,shop:renderShop,profile:renderProfile,
     'notif-settings':renderNotifSettings,
+    'privacy-data':renderPrivacyData,
     notifications:renderClientNotifs,
     rebook:renderRebook,
     'client-help':renderClientHelp,
@@ -2081,7 +2082,8 @@ function renderMessages(){
     </div>`;}).join('')}
   </div>
   <div style="position:absolute;bottom:68px;left:0;right:0;background:#fff;border-top:1px solid #f0ebe4;padding:8px 12px;display:flex;align-items:flex-end;gap:6px;">
-    <button onclick="attachClientPhoto()" aria-label="Upload a photo" title="Upload a photo" style="width:36px;height:36px;border-radius:50%;background:#faf7f4;border:1.5px solid #e8ddd3;display:flex;align-items:center;justify-content:center;cursor:pointer;flex-shrink:0;"><svg viewBox="0 0 24 24" width="18" height="18" fill="none" stroke="var(--accent)" stroke-width="1.8" stroke-linecap="round" stroke-linejoin="round" aria-hidden="true"><path d="M4 8h3l1.5-2h7L17 8h3a1 1 0 0 1 1 1v9a1 1 0 0 1-1 1H4a1 1 0 0 1-1-1V9a1 1 0 0 1 1-1z"/><circle cx="12" cy="13" r="3.2"/></svg></button>
+    <button onclick="attachClientCamera()" aria-label="Take a photo" title="Take a photo" style="width:36px;height:36px;border-radius:50%;background:#faf7f4;border:1.5px solid #e8ddd3;display:flex;align-items:center;justify-content:center;cursor:pointer;flex-shrink:0;"><i class="ti ti-camera" aria-hidden="true" style="font-size:18px;color:var(--accent);"></i></button>
+    <button onclick="attachClientPhoto()" aria-label="Choose a photo" title="Choose from library" style="width:36px;height:36px;border-radius:50%;background:#faf7f4;border:1.5px solid #e8ddd3;display:flex;align-items:center;justify-content:center;cursor:pointer;flex-shrink:0;"><svg viewBox="0 0 24 24" width="18" height="18" fill="none" stroke="var(--accent)" stroke-width="1.8" stroke-linecap="round" stroke-linejoin="round" aria-hidden="true"><path d="M4 8h3l1.5-2h7L17 8h3a1 1 0 0 1 1 1v9a1 1 0 0 1-1 1H4a1 1 0 0 1-1-1V9a1 1 0 0 1 1-1z"/><circle cx="12" cy="13" r="3.2"/></svg></button>
     <button onclick="attachClientLink()" aria-label="Add a photo by link" title="Add a photo by link" style="width:36px;height:36px;border-radius:50%;background:#faf7f4;border:1.5px solid #e8ddd3;display:flex;align-items:center;justify-content:center;cursor:pointer;flex-shrink:0;"><svg viewBox="0 0 24 24" width="18" height="18" fill="none" stroke="var(--accent)" stroke-width="1.8" stroke-linecap="round" stroke-linejoin="round" aria-hidden="true"><path d="M10 14a3.5 3.5 0 0 0 5 0l3-3a3.5 3.5 0 0 0-5-5l-1 1"/><path d="M14 10a3.5 3.5 0 0 0-5 0l-3 3a3.5 3.5 0 0 0 5 5l1-1"/></svg></button>
     <textarea id="cinput" aria-label="Type a message" placeholder="Ask ${_txt(client.providerFirst)} anything..." rows="1" style="flex:1;background:#faf7f4;border:1.5px solid #e8ddd3;border-radius:20px;padding:9px 14px;font-size:13px;color:#1a1a1a;resize:none;font-family:inherit;max-height:80px;" oninput="this.style.height='auto';this.style.height=this.scrollHeight+'px'"></textarea>
     <button onclick="sendClientMsg()" aria-label="Send message" title="Send" style="width:36px;height:36px;border-radius:50%;background:var(--accent);border:none;display:flex;align-items:center;justify-content:center;cursor:pointer;flex-shrink:0;"><svg viewBox="0 0 24 24" width="17" height="17" fill="none" stroke="#fff" stroke-width="1.8" stroke-linecap="round" stroke-linejoin="round" aria-hidden="true"><path d="M21 4 3 11l6 2.5L21 4z"/><path d="m21 4-7 16-2.5-6.5"/></svg></button>
@@ -2090,6 +2092,7 @@ function renderMessages(){
 }
 
 function attachClientPhoto(){_pickImages(srcs=>{if(srcs&&srcs.length)sendClientMsg(srcs);});}
+function attachClientCamera(){_pickImages(srcs=>{if(srcs&&srcs.length)sendClientMsg(srcs);},true);}
 function attachClientLink(){const u=prompt('Paste an image link (URL):');if(u&&u.trim())sendClientMsg([u.trim()]);}
 
 function sendClientMsg(imgArg){
@@ -2564,9 +2567,12 @@ function _ciFlagged(){
 }
 
 // ── Image helpers (downscale uploads to a shareable data URL, or accept a link) ──
-function _pickImages(cb){
+function _pickImages(cb,capture){
   const inp=document.createElement('input');
-  inp.type='file';inp.accept='image/*';inp.multiple=true;
+  inp.type='file';inp.accept='image/*';
+  // capture=true jumps straight to the device camera (single shot); otherwise allow picking
+  // multiple from the library. Both invoke the native picker in an app-store-wrapped build.
+  if(capture){inp.capture='environment';}else{inp.multiple=true;}
   inp.onchange=()=>{
     const files=Array.from(inp.files||[]);if(!files.length)return;
     const out=[];let done=0;
@@ -2616,6 +2622,63 @@ function _setClientAvatar(src){
     }).catch(function(){if(typeof showToast==='function')showToast('Saved here — couldn’t reach your provider');});
   }else if(typeof showToast==='function')showToast('Photo updated ✓');
   if(typeof renderProfile==='function')renderProfile();
+}
+
+// ── Privacy & data (App Store: readable policy + in-app data deletion) ──
+function renderPrivacyData(){
+  setNav('home');
+  document.getElementById('tt').textContent='Privacy & data';
+  const who=_txt(client.provider||'your provider');
+  S.innerHTML=`
+  <div style="padding:16px;">
+    <div style="background:#fff;border:1.5px solid #f0ebe4;border-radius:14px;padding:16px;margin-bottom:14px;">
+      <div style="font-size:15px;font-weight:700;color:#1a1a1a;margin-bottom:8px;">Your privacy</div>
+      <div style="font-size:13px;color:#6b5d52;line-height:1.6;">Your information here is used only to support your care with ${who} — summaries, aftercare, forms, appointments, and messages. It's shared with ${who} and no one else, and never sold.</div>
+      <a href="/privacy" target="_blank" rel="noopener" style="display:inline-flex;align-items:center;gap:6px;margin-top:12px;font-size:13px;font-weight:600;color:var(--accent);text-decoration:none;"><i class="ti ti-file-text" aria-hidden="true"></i> Read the full privacy policy</a>
+    </div>
+    <div class="sh"><h2>What this app stores</h2></div>
+    <div style="background:#fff;border:1.5px solid #f0ebe4;border-radius:12px;padding:4px 14px;margin-bottom:14px;">
+      ${[['ti-user','Your name and contact details'],['ti-clipboard-heart','Care notes & forms '+who+' shares with you'],['ti-photo','Photos you upload (check-ins, messages, profile)'],['ti-calendar','Appointments and reminders'],['ti-bell','Your notification preferences']].map(function(r){return '<div style="display:flex;gap:10px;align-items:center;padding:9px 0;border-bottom:1px solid #f5f0ea;"><i class="ti '+r[0]+'" aria-hidden="true" style="font-size:15px;color:var(--accent);flex-shrink:0;"></i><span style="font-size:13px;color:#3a2f28;">'+_txt(r[1])+'</span></div>';}).join('')}
+    </div>
+    <div class="sh"><h2>Manage your data</h2></div>
+    <div style="background:#fff;border:1.5px solid #f0ebe4;border-radius:12px;overflow:hidden;margin-bottom:16px;">
+      <div onclick="nav('notif-settings')" style="padding:13px 14px;display:flex;align-items:center;gap:10px;cursor:pointer;border-bottom:1px solid #f0ebe4;"><i class="ti ti-bell" aria-hidden="true" style="font-size:16px;color:var(--accent);"></i><div style="flex:1;font-size:13px;font-weight:600;color:#1a1a1a;">Notification settings</div><i class="ti ti-chevron-right" aria-hidden="true" style="color:#c4b9ae;"></i></div>
+      <div onclick="_confirmDeleteClientData()" role="button" tabindex="0" style="padding:13px 14px;display:flex;align-items:center;gap:10px;cursor:pointer;"><i class="ti ti-trash" aria-hidden="true" style="font-size:16px;color:#c0392b;"></i><div style="flex:1;font-size:13px;font-weight:600;color:#c0392b;">Delete my data</div><i class="ti ti-chevron-right" aria-hidden="true" style="color:#c4b9ae;"></i></div>
+    </div>
+    <div style="font-size:11px;color:#b8a898;line-height:1.55;padding:0 4px;">Questions about your data? Contact ${who} directly, or see the contact in the privacy policy.</div>
+  </div>`;
+}
+function _confirmDeleteClientData(){
+  const ex=document.getElementById('del-data-modal');if(ex)ex.remove();
+  const who=_txt(client.provider||'your provider');
+  const m=document.createElement('div');m.id='del-data-modal';
+  m.style.cssText='position:fixed;inset:0;z-index:9999;background:rgba(0,0,0,.45);display:flex;align-items:center;justify-content:center;padding:24px;';
+  m.onclick=function(e){if(e.target===m)m.remove();};
+  m.innerHTML='<div role="dialog" aria-modal="true" style="background:#fff;border-radius:16px;max-width:340px;width:100%;padding:20px;box-shadow:0 12px 40px rgba(0,0,0,.25);">'
+    +'<div style="font-size:16px;font-weight:700;color:#c0392b;margin-bottom:8px;">Delete my data?</div>'
+    +'<div style="font-size:13px;color:#5b5048;line-height:1.6;margin-bottom:8px;">This removes your saved data from this app on this device and asks '+who+' to delete your records. It also turns off your notifications.</div>'
+    +'<div style="font-size:12px;color:#8a7d70;line-height:1.55;margin-bottom:16px;">Your provider may need to keep some treatment records to meet professional or legal requirements. This can’t be undone.</div>'
+    +'<div style="display:flex;gap:8px;">'
+    +'<button onclick="document.getElementById(\'del-data-modal\').remove()" style="flex:1;background:#faf7f4;border:1.5px solid #e8ddd3;border-radius:10px;padding:12px;font-size:14px;color:#9a8a7e;font-weight:600;cursor:pointer;font-family:inherit;">Cancel</button>'
+    +'<button onclick="_doDeleteClientData()" style="flex:1;background:#c0392b;border:none;border-radius:10px;padding:12px;font-size:14px;color:#fff;font-weight:700;cursor:pointer;font-family:inherit;">Delete</button>'
+    +'</div></div>';
+  (document.querySelector('.shell')||document.body).appendChild(m);
+}
+async function _doDeleteClientData(){
+  const m=document.getElementById('del-data-modal');if(m)m.remove();
+  const who=_txt(client.provider||'your provider');
+  // Ask the server to delete this client's app data + notify the provider (best-effort).
+  try{ if(client._real&&client._token){ await fetch('/api/client-delete?t='+encodeURIComponent(client._token),{method:'POST',headers:{'Content-Type':'application/json'},body:'{}'}).catch(function(){}); } }catch(e){}
+  // Unsubscribe this device from push.
+  try{ if('serviceWorker'in navigator){ const reg=await navigator.serviceWorker.ready; const sub=await reg.pushManager.getSubscription(); if(sub){try{await sub.unsubscribe();}catch(_){}} } }catch(e){}
+  // Wipe local data on this device.
+  try{ Object.keys(localStorage).filter(function(k){return k.indexOf('sc_')===0||k==='notif_prefs';}).forEach(function(k){localStorage.removeItem(k);}); }catch(e){}
+  // Confirmation screen.
+  try{
+    document.getElementById('tt').textContent='Data deleted';
+    const nv=document.querySelector('.nav');if(nv)nv.style.display='none';
+    S.innerHTML='<div style="padding:64px 26px;text-align:center;color:#6b5d52;"><div style="font-size:34px;margin-bottom:14px;">✅</div><div style="font-size:17px;font-weight:700;color:#1a1a1a;margin-bottom:8px;">Your data has been deleted</div><div style="font-size:13px;line-height:1.6;max-width:300px;margin:0 auto 8px;">We’ve removed your data from this app and let '+who+' know. You can close this page.</div><div style="font-size:12px;color:#b8a898;line-height:1.55;max-width:300px;margin:0 auto;">Changed your mind later? Just ask '+who+' to resend your link.</div></div>';
+  }catch(e){}
 }
 
 // Check-in reference photos (stored on the notes question as `${id}Photos`)
@@ -3590,7 +3653,7 @@ function renderProfile(){
   <div class="sh"><h2>Settings</h2></div>
   <div style="background:#fff;border:1.5px solid #f0ebe4;border-radius:12px;margin:0 16px 20px;overflow:hidden;">
     ${[['ti-bell','Notifications','Appointment reminders & summaries','notif-settings'],
-    ['ti-lock','Privacy','Your info is shared only with '+(client.provider||'your provider')+' for your care',null],['ti-help-circle','Help & FAQs','How to use the app','client-help']].map(([icon,name,sub,screen])=>`
+    ['ti-lock','Privacy & data','Privacy policy, your data, and account deletion','privacy-data'],['ti-help-circle','Help & FAQs','How to use the app','client-help']].map(([icon,name,sub,screen])=>`
     <div style="padding:12px 14px;border-bottom:1px solid #f0ebe4;display:flex;align-items:center;gap:10px;${screen?'cursor:pointer;':''}" ${screen?`onclick="nav('${screen}')"`:''}>
       <div style="width:34px;height:34px;background:#faf7f4;border-radius:8px;display:flex;align-items:center;justify-content:center;"><i class="ti ${icon}" aria-hidden="true" style="font-size:16px;color:var(--accent);"></i></div>
       <div style="flex:1;"><div style="font-size:13px;font-weight:600;color:#1a1a1a;">${name}</div><div style="font-size:11px;color:#b8a898;">${_txt(sub)}</div></div>
