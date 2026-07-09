@@ -1111,10 +1111,39 @@ function _applyCheckinDoneFromMap(){
     if(p&&_ciDoneMap[p.id]!==undefined&&_ciDoneMap[p.id]===(p.nextDate||''))p.checkinDone=true;
   });}catch(e){}
 }
+
+// Same idea as _ciDoneMap, but for pre-visit forms. A submitted form is removed from the
+// pending list locally, but on reload p.pendingForms is replaced by the server's copy — and
+// the server only drops it once the PROVIDER's app has processed the submission and re-synced.
+// In the window before that, a form the client already completed would pop back onto their
+// to-do list and invite a duplicate submission. This map remembers which specific form
+// instances were submitted (provider|formId → the form's assignedAt) so they stay off the
+// list. A form the provider RE-sends gets a new assignedAt, so it correctly reappears.
+let _formsDoneMap=(function(){try{return JSON.parse(localStorage.getItem('sc_forms_done')||'{}')||{};}catch(e){return {};}})();
+function _formDoneKey(provId,formId){return String(provId)+'|'+String(formId);}
+function _markFormDone(provId,pf){
+  if(!pf)return;
+  _formsDoneMap[_formDoneKey(provId,pf.formId)]=pf.assignedAt||'';
+  try{localStorage.setItem('sc_forms_done',JSON.stringify(_formsDoneMap));}catch(e){}
+  _syncClientPrefsToServer();
+}
+// Drop from every provider's pending list any form the client has already submitted (matching
+// the exact instance by assignedAt). A re-send has a newer assignedAt, so it is left in place.
+function _applyFormsDoneFromMap(){
+  try{(client.providers||[]).forEach(function(p){
+    if(p&&Array.isArray(p.pendingForms)){
+      p.pendingForms=p.pendingForms.filter(function(pf){
+        if(!pf)return false;
+        const k=_formDoneKey(p.id,pf.formId);
+        return !(_formsDoneMap[k]!==undefined&&_formsDoneMap[k]===(pf.assignedAt||''));
+      });
+    }
+  });}catch(e){}
+}
 function _collectClientPrefs(){
   let welcomeDismissed=[];try{welcomeDismissed=JSON.parse(localStorage.getItem('sc_welcome_dismissed')||'[]');}catch(e){}
   const installDismissed=(function(){try{return localStorage.getItem('sc_install_dismissed')==='1';}catch(e){return false;}})();
-  return {notif:loadNotifPrefs(),eng:_eng,welcomeDismissed,installDismissed,checkinDone:_ciDoneMap};
+  return {notif:loadNotifPrefs(),eng:_eng,welcomeDismissed,installDismissed,checkinDone:_ciDoneMap,formsDone:_formsDoneMap};
 }
 function _syncClientPrefsToServer(){
   if(!client._real||!client._token)return; // nothing to sync in local/demo mode
@@ -1143,6 +1172,11 @@ async function _loadClientPrefsFromServer(){
       _ciDoneMap=Object.assign({},_ciDoneMap,p.checkinDone);
       try{localStorage.setItem('sc_checkin_done',JSON.stringify(_ciDoneMap));}catch(e){}
       _applyCheckinDoneFromMap();
+    }
+    if(p.formsDone&&typeof p.formsDone==='object'){
+      _formsDoneMap=Object.assign({},_formsDoneMap,p.formsDone);
+      try{localStorage.setItem('sc_forms_done',JSON.stringify(_formsDoneMap));}catch(e){}
+      _applyFormsDoneFromMap();
     }
   }catch(e){ console.error('[client prefs] load failed:',e&&e.message); /* fall back to whatever's cached locally */ }
 }
@@ -2296,6 +2330,7 @@ function _submitFillForm(){
     // submit doesn't make the form vanish while the provider never received it.
     const p=activeProvider();
     p.pendingForms=(p.pendingForms||[]).filter(x=>x.formId!==pf.formId);
+    try{_markFormDone(p.id,pf);}catch(e){}   // persist so it doesn't reappear on reload before the provider syncs
     _ffPhotos={};
     _ffClearDraft();   // typed answers are now sent — drop the saved draft
     if(typeof proToast==='function')proToast('Sent \u2713');
@@ -3657,6 +3692,9 @@ function _applyRealClientData(j){
   // The provider object was just rebuilt, wiping any in-memory checkinDone. Restore it
   // from the saved map so a completed pre-visit check-in isn't re-prompted on reload.
   _applyCheckinDoneFromMap();
+  // Likewise, drop any pending form the client already submitted but the server hasn't
+  // dropped yet (before the provider's app processed it), so it doesn't reappear as to-do.
+  _applyFormsDoneFromMap();
 }
 function _bootRealClient(token){
   client._token=token;

@@ -2,6 +2,13 @@
 
 Newest entries at the top. One entry per deploy. Dates are US-formatted.
 
+## 2026-07-10 — Fix: submitted pre-visit forms reappearing as to-do on reload (same class as the check-in fix)
+
+- **Proactive follow-up to the check-in fix**: audited the rest of the client flow for the same "completion state lost on reload" pattern. Found one genuine sibling in **pre-visit forms** (and cleared virtual-consult submit + rebook as safe — VC is persisted to localStorage and cleared on submit; rebook is fire-and-forget).
+- **Bug**: when a client submits a pre-visit form it's removed from `pendingForms` locally, but on reload `p.pendingForms` is replaced by the **server's** copy — and the server only drops the form once the *provider's* app has ingested the submission event and re-synced (every 45s while open; longer if closed). In that window, reopening the link showed the just-completed form back on the to-do list, inviting a duplicate submission — the same multi-step "reopen the link between steps" workflow that surfaced the check-in bug.
+- **Fix**: remember which specific form instances the client submitted (`provider|formId → the form's assignedAt`) in server-synced prefs + a localStorage cache, and filter those out of every provider's `pendingForms` on load — in `_applyRealClientData()` (boot + the 30s poll) and `_loadClientPrefsFromServer()` (cross-device). Keyed on `assignedAt`, so a form the provider deliberately **re-sends** gets a new `assignedAt` and correctly reappears (verified in simulation: submit → hidden on reload; re-send → shows again; a different un-submitted form is never hidden; and it works on a fresh device via server prefs).
+- Client-app change → `slickchart-client.html` re-embedded into `api/client-page.js` (verified byte-identical), `slickchart-client-demo.html` regenerated (banner-only diff). No provider-app change. Both apps parse (`node --check`) and boot clean.
+
 ## 2026-07-10 — Fix: pre-visit check-in reset when a client reopened their link
 
 - **Bug (reported by a provider)**: a client completed her pre-visit check-in, then reopened her personal link to fill out the still-pending intake form — and the app showed the check-in as **not done again**, re-prompting her to redo a check-in she'd already submitted.
