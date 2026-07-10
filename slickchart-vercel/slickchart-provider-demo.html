@@ -10991,6 +10991,8 @@ let _coMenu=null;
 let _coMenuAt=0;   // when _coMenu was last built — used to expire the cache so prices stay fresh
 let _coCharging=false;   // in-flight guard: blocks a double-tap from charging twice
 let _coChargeKey=null;   // {sig,key} stable idempotency key so a retried charge can't double-charge
+let _coIdemKeys={};      // sig -> stable idempotency key, so a retried invoice isn't sent twice
+function _coIdem(sig){if(!_coIdemKeys[sig])_coIdemKeys[sig]='sc'+Date.now().toString(36)+Math.random().toString(36).slice(2,8);return _coIdemKeys[sig];}
 function _coFlatten(d){
   const out=[];
   const add=(arr,kind)=>{(arr||[]).forEach(it=>{const vars=(it.variations&&it.variations.length)?it.variations:[{id:null,name:'',price:it.price}];vars.forEach(v=>{const nm=(v.name&&!/^regular$/i.test(v.name))?(it.name+' \u2014 '+v.name):it.name;out.push({name:nm,price:(v.price!=null?v.price:it.price)||0,variationId:v.id||null,kind,taxable:true});});});};
@@ -11125,7 +11127,10 @@ async function _coInvoice(id){
   _coBusy('Creating and sending invoice\u2026');
   try{
     const body=items.length?{name:c.name,email:c.email,requestTip:_coTip,lineItems:items.map(it=>({name:it.name,price:it.price,quantity:it.qty||1,variationId:it.variationId||undefined,taxable:it.taxable!==false,note:(it.note||'')||undefined}))}:{amount:amt,title,name:c.name,email:c.email,requestTip:_coTip};
+    const _isig=id+'|inv|'+amt+'|'+(items.length?items.map(it=>it.name+':'+it.price+'x'+(it.qty||1)).join(','):title);
+    body.idempotencyKey=_coIdem(_isig);
     const d=await _sqFetch('/api/square/invoice',{method:'POST',body});
+    delete _coIdemKeys[_isig]; // sent \u2014 a later identical invoice should be a new, intentional one
     _addPayment({clientId:id,clientName:c.name,amount:(d.total!=null?d.total:amt)||0,taxAmount:(d.tax||0),method:'Square',status:'unpaid',date:_todayISO(),note:'Invoice'+(items.length?(' \u00b7 '+items.length+' items'):''),source:'square',squareInvoiceId:d.invoiceId,publicUrl:d.url,items:items.map(it=>({name:it.name,price:it.price,qty:it.qty||1,variationId:it.variationId||null,kind:it.kind||'service',note:it.note||''}))});
     document.getElementById('co-result').innerHTML='<div style="background:#0a2019;border:1px solid #1c4030;border-radius:10px;padding:12px 14px;font-size:13px;color:#4ec49a;font-weight:600;"><i class="ti ti-check"></i> Invoice sent to '+c.email+' \u00b7 logged in Payments</div>';
   }catch(e){_coErr(e.message||'Could not send the invoice.',_coRecon(e));}finally{_coActionLock=false;}
@@ -11638,7 +11643,10 @@ async function _biSend(){
   _coBusy('Creating and sending invoice\u2026');
   try{
     const body={name:c.name,email:c.email,requestTip:_coTip,lineItems:items.map(it=>({name:it.name,price:it.price,quantity:it.qty||1,variationId:it.variationId||undefined,taxable:it.taxable!==false,note:(it.note||'')||undefined}))};
+    const _isig=cid+'|inv|'+_coTotal()+'|'+items.map(it=>it.name+':'+it.price+'x'+(it.qty||1)).join(',');
+    body.idempotencyKey=_coIdem(_isig);
     const d=await _sqFetch('/api/square/invoice',{method:'POST',body});
+    delete _coIdemKeys[_isig]; // sent — a later identical invoice should be a new, intentional one
     const _rec=_addPayment({clientId:cid,clientName:c.name,amount:(d.total!=null?d.total:_coTotal())||0,taxAmount:(d.tax||_coTaxAmt()||0),method:'Square',status:'unpaid',date:_todayISO(),note:'Invoice \u00b7 '+items.length+' items',source:'square',squareInvoiceId:d.invoiceId,publicUrl:d.url,items:items.map(it=>({name:it.name,price:it.price,qty:it.qty||1,variationId:it.variationId||null,kind:it.kind||'service',note:it.note||''}))});
     if(_biEditId){const _i=_payments.findIndex(x=>x.id===_biEditId);if(_i>=0&&_payments[_i].id!==_rec.id)_payments.splice(_i,1);_biEditId='';_savePayments();}
     if(typeof proToast==='function')proToast('Invoice sent \u2713');

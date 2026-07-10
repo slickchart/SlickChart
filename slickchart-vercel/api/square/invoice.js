@@ -14,6 +14,13 @@ export default async function handler(req, res) {
 
   const items = Array.isArray(b.lineItems) ? b.lineItems.filter(li => li && (li.variationId || (li.name && parseFloat(li.price) > 0))) : [];
 
+  // Stable idempotency base from the client (falls back to a generated one). Reused across a
+  // retry so a lost-response resend doesn't create+email the client a SECOND invoice. Each Square
+  // step gets its own suffix since idempotency keys are scoped per endpoint. Square caps keys at 45.
+  const idemBase = (String(b.idempotencyKey || '').replace(/[^a-zA-Z0-9_-]/g, '').slice(0, 32))
+    || ('sc' + Date.now().toString(36) + Math.random().toString(36).slice(2, 8));
+  const kO = (idemBase + '-o').slice(0, 45), kI = (idemBase + '-i').slice(0, 45), kPub = (idemBase + '-p').slice(0, 45);
+
   try {
     const locationId = await resolveLocationId(ctx.token, ctx.locationId);
 
@@ -63,16 +70,16 @@ export default async function handler(req, res) {
     // order with EXPLICIT taxes (auto_apply_taxes is not allowed for invoice orders)
     const orderBody = { location_id: locationId, customer_id: customerId, line_items: orderLineItems };
     if (catTaxes.length) orderBody.taxes = catTaxes;
-    const order = await sf('/v2/orders', { method: 'POST', body: { idempotency_key: 'sc-o-' + Date.now(), order: orderBody } });
+    const order = await sf('/v2/orders', { method: 'POST', body: { idempotency_key: kO, order: orderBody } });
     const orderId = order.order && order.order.id;
     const total = order.order && order.order.total_money ? order.order.total_money.amount / 100 : null;
     const taxCollected = order.order && order.order.total_tax_money ? order.order.total_tax_money.amount / 100 : 0;
 
     // invoice — always include a due_date (Square requires it); tip prompt optional
     const pr = { request_type: 'BALANCE', tipping_enabled: !!b.requestTip, due_date: b.dueDate || new Date().toISOString().slice(0, 10) };
-    const inv = await sf('/v2/invoices', { method: 'POST', body: { idempotency_key: 'sc-i-' + Date.now(), invoice: { location_id: locationId, order_id: orderId, primary_recipient: { customer_id: customerId }, delivery_method: 'EMAIL', accepted_payment_methods: { card: true }, payment_requests: [pr] } } });
+    const inv = await sf('/v2/invoices', { method: 'POST', body: { idempotency_key: kI, invoice: { location_id: locationId, order_id: orderId, primary_recipient: { customer_id: customerId }, delivery_method: 'EMAIL', accepted_payment_methods: { card: true }, payment_requests: [pr] } } });
     const invoice = inv.invoice;
-    const pub = await sf('/v2/invoices/' + invoice.id + '/publish', { method: 'POST', body: { version: invoice.version, idempotency_key: 'sc-pub-' + Date.now() } });
+    const pub = await sf('/v2/invoices/' + invoice.id + '/publish', { method: 'POST', body: { version: invoice.version, idempotency_key: kPub } });
     res.status(200).json({ ok: true, invoiceId: invoice.id, url: (pub.invoice && pub.invoice.public_url) || '', total, tax: taxCollected });
   } catch (e) { res.status(e.status || 500).json({ error: e.message, code: e.status === 403 ? 'reconnect' : undefined }); }
 }
