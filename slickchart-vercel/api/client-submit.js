@@ -64,5 +64,5 @@ export default async function handler(req, res) {
     if (payload && payload._idem) { delete payload._idem; }
     const id = await logEvent(c.provider_id, c.id, kind, payload, idem);
     res.status(200).json({ ok: true, id });
-  } catch (e) { res.status(e.status || 500).json({ error: e.message }); }
+  } catch (e) { console.error('[client-submit] failed:', e && e.stack || e); res.status(e.status || 500).json({ error: 'Something went wrong. Please try again.' }); }
 }

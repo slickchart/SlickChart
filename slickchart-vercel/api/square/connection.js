@@ -9,7 +9,7 @@ export default async function handler(req, res) {
   if (req.method === 'DELETE') {
     if (!providerId) { res.status(401).json({ error: 'Please log in first.' }); return; }
     try { await disconnect(providerId); res.status(200).json({ ok: true }); }
-    catch (e) { res.status(e.status || 500).json({ error: e.message }); }
+    catch (e) { console.error('[connection] failed:', e && e.stack || e); res.status(e.status || 500).json({ error: 'Something went wrong. Please try again.' }); }
     return;
   }
   // GET status
@@ -25,5 +25,5 @@ export default async function handler(req, res) {
       env: cfg.env,
       merchantId: conn ? conn.merchantId : null
     });
-  } catch (e) { res.status(e.status || 500).json({ error: e.message }); }
+  } catch (e) { console.error('[connection] failed:', e && e.stack || e); res.status(e.status || 500).json({ error: 'Something went wrong. Please try again.' }); }
 }

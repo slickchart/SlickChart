@@ -65,5 +65,5 @@ export default async function handler(req, res) {
     } catch (e) { /* push is best-effort */ }
 
     res.status(200).json({ ok: true, id });
-  } catch (e) { res.status(e.status || 500).json({ error: e.message }); }
+  } catch (e) { console.error('[provider-message] failed:', e && e.stack || e); res.status(e.status || 500).json({ error: 'Something went wrong. Please try again.' }); }
 }

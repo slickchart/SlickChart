@@ -49,5 +49,5 @@ export default async function handler(req, res) {
     const sent = results.filter(r => r.status === 'fulfilled').length;
     await markInvited(provider, targets.map(c => c.id));
     res.status(200).json({ ok: true, sent, total: targets.length, noEmail: all.length - targets.length });
-  } catch (e) { res.status(e.status || 500).json({ error: e.message }); }
+  } catch (e) { console.error('[client-invite] failed:', e && e.stack || e); res.status(e.status || 500).json({ error: 'Something went wrong. Please try again.' }); }
 }

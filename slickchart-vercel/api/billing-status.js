@@ -19,5 +19,5 @@ export default async function handler(req, res) {
   try {
     const sub = await getSubscription(email);
     res.status(200).json({ ok: true, subscription: sub });
-  } catch (e) { res.status(e.status || 500).json({ error: e.message }); }
+  } catch (e) { console.error('[billing-status] failed:', e && e.stack || e); res.status(e.status || 500).json({ error: 'Something went wrong. Please try again.' }); }
 }

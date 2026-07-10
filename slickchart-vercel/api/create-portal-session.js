@@ -41,5 +41,5 @@ export default async function handler(req, res) {
     const j = await r.json();
     if (!r.ok) { res.status(502).json({ error: (j && j.error && j.error.message) || 'Could not open billing portal.' }); return; }
     res.status(200).json({ ok: true, url: j.url });
-  } catch (e) { res.status(e.status || 500).json({ error: e.message }); }
+  } catch (e) { console.error('[create-portal-session] failed:', e && e.stack || e); res.status(e.status || 500).json({ error: 'Something went wrong. Please try again.' }); }
 }

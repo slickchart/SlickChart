@@ -2,6 +2,18 @@
 
 Newest entries at the top. One entry per deploy. Dates are US-formatted.
 
+## 2026-07-10 — Info-leak cleanup: no endpoint returns raw internal errors
+
+Following the auth review, swept every API handler for the same info-leak. 14 endpoints (client-data,
+client-messages, client-submit, provider-message, client-invite, clients, signup, billing-status,
+create-portal-session, push-subscribe, client-prefs, client-delete, square/connection, admin-stats) were
+returning the raw exception `e.message` — DB/driver internals, constraint names, connection details — to
+the caller. They now log server-side and return a generic message (HTTP status preserved). The Square
+service handlers intentionally relay their controlled, friendly messages (e.g. "card declined") plus the
+"reconnect" hint, and the Square diagnostics endpoint intentionally shows detail — those are left as-is.
+
+Server-only; all modules parse.
+
 ## 2026-07-10 — Auth: real 2FA enforced + spraying defense + generic login + subscription re-check
 
 Closed the four flagged auth gaps.

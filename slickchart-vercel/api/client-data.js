@@ -30,5 +30,5 @@ export default async function handler(req, res) {
       ok: true,
       client: { id: c.id, name: c.name || '', email: c.email || '', data }
     });
-  } catch (e) { res.status(e.status || 500).json({ error: e.message }); }
+  } catch (e) { console.error('[client-data] failed:', e && e.stack || e); res.status(e.status || 500).json({ error: 'Something went wrong. Please try again.' }); }
 }

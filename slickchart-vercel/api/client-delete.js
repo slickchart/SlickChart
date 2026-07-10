@@ -22,5 +22,5 @@ export default async function handler(req, res) {
     // Best-effort: let the provider know so they can action the clinical record.
     try { await logEvent(c.provider_id, c.id, 'delete-request', { at: Date.now() }); } catch (e) {}
     res.status(200).json({ ok: true });
-  } catch (e) { console.error('[client-delete] failed:', e && e.stack || e); res.status(e.status || 500).json({ error: e.message }); }
+  } catch (e) { console.error('[client-delete] failed:', e && e.stack || e); res.status(e.status || 500).json({ error: 'Something went wrong. Please try again.' }); }
 }

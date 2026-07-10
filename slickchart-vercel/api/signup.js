@@ -61,6 +61,6 @@ export default async function handler(req, res) {
     const token = signToken({ u: id, e: email, sid: await createSession(q, id, req) }, secret);
     res.status(200).json({ token, name, email, verified: false });
   } catch (e) {
-    res.status(e.status || 500).json({ error: e.message });
+    console.error('[signup] failed:', e && e.stack || e); res.status(e.status || 500).json({ error: 'Something went wrong. Please try again.' });
   }
 }

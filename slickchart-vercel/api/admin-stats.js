@@ -115,5 +115,5 @@ export default async function handler(req, res) {
       pulse,
       subs
     });
-  } catch (e) { res.status(500).json({ error: e.message }); }
+  } catch (e) { console.error('[admin-stats] failed:', e && e.stack || e); res.status(500).json({ error: 'Something went wrong.' }); }
 }

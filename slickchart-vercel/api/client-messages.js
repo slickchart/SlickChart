@@ -22,5 +22,5 @@ export default async function handler(req, res) {
       ts: Number(r.created_at) || 0
     }));
     res.status(200).json({ ok: true, messages });
-  } catch (e) { res.status(e.status || 500).json({ error: e.message }); }
+  } catch (e) { console.error('[client-messages] failed:', e && e.stack || e); res.status(e.status || 500).json({ error: 'Something went wrong. Please try again.' }); }
 }
