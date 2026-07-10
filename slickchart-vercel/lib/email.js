@@ -3,12 +3,19 @@
 // development / before an email provider is connected.
 export async function sendEmail({ to, subject, html, text }) {
   const key = process.env.RESEND_API_KEY || '';
+  // The "from" address must be on a domain verified in Resend. Set EMAIL_FROM in Vercel to an address
+  // on your verified domain (e.g. "SlickChart <hello@yourdomain.com>"); until then it uses Resend's
+  // shared sandbox sender. NOTE: a gmail.com address cannot be a "from" here — Resend only sends from
+  // domains you own/verify. To route replies to your inbox, use EMAIL_REPLY_TO (below) instead.
   const from = process.env.EMAIL_FROM || 'SlickChart <onboarding@resend.dev>';
+  // Replies to any SlickChart email go here (defaults to the business inbox). This is how a Gmail
+  // address gets attached to the emails without needing to send *from* it.
+  const replyTo = process.env.EMAIL_REPLY_TO || 'slickchart2026@gmail.com';
   if (!key) { console.log('[email] RESEND_API_KEY not set — skipping email to', to); return { skipped: true }; }
   const r = await fetch('https://api.resend.com/emails', {
     method: 'POST',
     headers: { 'Authorization': 'Bearer ' + key, 'Content-Type': 'application/json' },
-    body: JSON.stringify({ from, to, subject, html, text })
+    body: JSON.stringify({ from, to, reply_to: replyTo, subject, html, text })
   });
   if (!r.ok) { const t = await r.text().catch(() => ''); throw new Error('Email send failed: ' + r.status + ' ' + t); }
   return r.json();
