@@ -472,7 +472,7 @@ const defaultCoachHomecare={
 let clientHomecare={};
 
 function getClientHomecare(id){
-  if(clientHomecare[id]) return clientHomecare[id];
+  if(Array.isArray(clientHomecare[id])) return clientHomecare[id];
   const sp=selectedProfessions;
   const only=p=>sp.length===1&&sp[0]===p;
   const isHairBarber=(sp.includes('hair')||sp.includes('barber'))&&!sp.includes('esty');
@@ -2455,6 +2455,7 @@ function emptyState(o){o=o||{};return `<div style="text-align:center;padding:46p
     <div style="font-size:13px;color:#888;line-height:1.6;max-width:300px;margin:0 auto;">${o.body||''}</div>
     ${o.action&&o.screen?`<button onclick="nav('${o.screen}')" style="margin-top:18px;background:var(--accent);color:var(--accent-ink);border:none;border-radius:10px;padding:10px 18px;font-size:13px;font-weight:600;cursor:pointer;font-family:inherit;"><i class="ti ti-plus" style="font-size:13px;"></i> ${o.action}</button>`:''}
   </div>`;}
+function _fcItems(c){var f=c&&c.flaggedContra;return (f&&Array.isArray(f.items))?f.items:[];}
 function renderHome(){
   setNav('home');
   setTimeout(maybeShowOnboarding,300);
@@ -2545,7 +2546,7 @@ function renderHome(){
     </div>`;}).join('');
     h+=flagged.filter(([id])=>!_homeDismissed.has('flag-'+id)).map(([id,c])=>_swipeTile(`<div onclick="nav('client','${id}')" style="margin:0;background:#2a0f0f;border:1px solid #5a2020;border-radius:12px;padding:11px 13px;display:flex;align-items:center;gap:11px;cursor:pointer;">
       <div style="width:38px;height:38px;border-radius:9px;background:#3a1414;display:flex;align-items:center;justify-content:center;flex-shrink:0;"><i class="ti ti-alert-triangle" style="font-size:18px;color:#e87070;"></i></div>
-      <div style="flex:1;min-width:0;"><div style="font-size:14px;font-weight:600;color:#f0c8c8;">${_fileEsc(c.name.split(' ')[0])} flagged ${c.flaggedContra.items.length} item${c.flaggedContra.items.length>1?'s':''} on intake</div><div style="font-size:12px;color:#c99;margin-top:1px;overflow:hidden;text-overflow:ellipsis;white-space:nowrap;">${_fileEsc(c.flaggedContra.items.join(', '))}</div></div>
+      <div style="flex:1;min-width:0;"><div style="font-size:14px;font-weight:600;color:#f0c8c8;">${_fileEsc(c.name.split(' ')[0])} flagged ${_fcItems(c).length} item${_fcItems(c).length>1?'s':''} on intake</div><div style="font-size:12px;color:#c99;margin-top:1px;overflow:hidden;text-overflow:ellipsis;white-space:nowrap;">${_fileEsc(_fcItems(c).join(', '))}</div></div>
       <i class="ti ti-chevron-right" style="font-size:18px;color:#e87070;"></i>
     </div>`,'flag-'+id)).join('');
     h+=reviews.filter(([id])=>!_homeDismissed.has('rev-'+id)).map(([id,c])=>_swipeTile(`<div onclick="nav('client','${id}')" style="margin:0;background:#0f1f17;border:1px solid #1c4030;border-radius:12px;padding:11px 13px;display:flex;align-items:center;gap:11px;cursor:pointer;">
@@ -2641,7 +2642,7 @@ function _buildClientFileHTML(id){
   if(c.flaggedContra){
     flaggedHTML=`<div class="flag"><div class="flag-h">\u26a0 Flagged on intake \u2014 review before treatment</div>`+
       `<div class="sub">Marked on \u201c${_fileEsc(c.flaggedContra.form)}\u201d (${_fileEsc(c.flaggedContra.date)}):</div>`+
-      `<ul>${c.flaggedContra.items.map(it=>`<li>${_fileEsc(it)}</li>`).join('')}</ul></div>`;
+      `<ul>${_fcItems(c).map(it=>`<li>${_fileEsc(it)}</li>`).join('')}</ul></div>`;
   }
   // ---- forms on file ----
   let formsHTML='';
@@ -2800,7 +2801,7 @@ function renderClient(id){
   ${c.flaggedContra?`<div style="margin:12px 16px 0;background:#2a0f0f;border:1px solid #5a2020;border-radius:12px;padding:12px 14px;">
     <div style="display:flex;align-items:center;gap:8px;margin-bottom:6px;"><i class="ti ti-alert-triangle" style="font-size:16px;color:#e87070;"></i><span style="font-size:13px;font-weight:700;color:#f0c8c8;">Flagged on intake — review before the visit</span></div>
     <div style="font-size:11px;color:#c99;margin-bottom:7px;">${_fileEsc(c.name.split(' ')[0])} marked these on "${_fileEsc(c.flaggedContra.form)}" (${_fileEsc(c.flaggedContra.date)}):</div>
-    <ul style="margin:0 0 9px;padding-left:18px;">${c.flaggedContra.items.map(it=>`<li style="font-size:12.5px;color:#e6cccc;line-height:1.7;">${_fileEsc(it)}</li>`).join('')}</ul>
+    <ul style="margin:0 0 9px;padding-left:18px;">${_fcItems(c).map(it=>`<li style="font-size:12.5px;color:#e6cccc;line-height:1.7;">${_fileEsc(it)}</li>`).join('')}</ul>
     <button onclick="dismissFlag('${id}')" style="background:none;border:1px solid #5a2020;color:#e8a0a0;border-radius:8px;padding:6px 12px;font-size:12px;cursor:pointer;font-family:inherit;"><i class="ti ti-check" style="font-size:12px;"></i> Mark reviewed</button>
   </div>`:''}
   <div style="display:grid;grid-template-columns:1fr 1fr;gap:8px;padding:12px 16px 8px;">
@@ -2955,7 +2956,7 @@ function viewSubmittedForm(id,i){
   const sf=c.submittedForms[i];const tmpl=formTmpls[sf.formId];
   const rows=[];const photoGroups=[];
   const _isPhotoAns=(q,a)=>q&&_isPhotoType(q.type)&&Array.isArray(a)&&a.length;
-  if(tmpl&&tmpl.qs){tmpl.qs.forEach(q=>{if(q.type==='Signature'||q.type==='Contraindications')return;const a=sf.answers[q.id];if(_isPhotoAns(q,a)){photoGroups.push([q.label,a]);return;}if(a!=null&&String(a).trim())rows.push([q.label,q.type==='Date'?_fmtDOB(String(a)):String(a)]);});}
+  if(tmpl&&tmpl.qs){tmpl.qs.forEach(q=>{if(q.type==='Signature'||q.type==='Contraindications')return;const a=sf.answers&&sf.answers[q.id];if(_isPhotoAns(q,a)){photoGroups.push([q.label,a]);return;}if(a!=null&&String(a).trim())rows.push([q.label,q.type==='Date'?_fmtDOB(String(a)):String(a)]);});}
   else{Object.keys(sf.answers||{}).forEach(k=>{const a=sf.answers[k];if(Array.isArray(a)&&a.length&&typeof a[0]==='string'&&a[0].slice(0,5)==='data:'){photoGroups.push([k,a]);return;}rows.push([k,String(a)]);});}
   const ov=document.createElement('div');ov.id='subform-sheet';
   ov.style.cssText='position:fixed;top:0;bottom:0;left:0;right:0;margin:0 auto;width:390px;max-width:100%;z-index:9999;background:rgba(0,0,0,.6);display:flex;align-items:center;justify-content:center;padding:24px 16px;box-sizing:border-box;';
@@ -3065,7 +3066,7 @@ function renderFlaggedIntakes(){
   const rows=flagged.map(([id,c])=>{
     const fi=(c.submittedForms||[]).findIndex(f=>f.flagged&&f.flagged.length);
     const open=fi>=0?`viewSubmittedForm('${id}',${fi})`:`nav('client-forms','${id}')`;
-    const items=c.flaggedContra.items;
+    const items=_fcItems(c);
     return `<div style="margin:0 16px 10px;background:#2a0f0f;border:1px solid #5a2020;border-radius:14px;overflow:hidden;">
       <div style="padding:13px 15px;display:flex;align-items:center;gap:11px;">
         ${av(c,42)}
@@ -3331,8 +3332,8 @@ function renderRoom(id){
       ${(function(){
         const rows=[];
         // Flagged contraindications from an intake / check-in
-        if(c.flaggedContra&&Array.isArray(c.flaggedContra.items)){
-          c.flaggedContra.items.forEach(it=>rows.push(`<div style="display:flex;align-items:flex-start;gap:8px;padding:8px 10px;background:#2a0f0f;border:1px solid #5a2020;border-radius:8px;margin-bottom:6px;"><i class="ti ti-alert-triangle" style="font-size:13px;color:#e87070;flex-shrink:0;margin-top:1px;"></i><div><div style="font-size:12px;font-weight:600;color:#e87070;">${_fileEsc(it)}</div><div style="font-size:11px;color:#666;">Flagged by client${c.flaggedContra.form?' on '+_fileEsc(c.flaggedContra.form.toLowerCase()):' on intake'}</div></div></div>`));
+        if(c.flaggedContra&&Array.isArray(_fcItems(c))){
+          _fcItems(c).forEach(it=>rows.push(`<div style="display:flex;align-items:flex-start;gap:8px;padding:8px 10px;background:#2a0f0f;border:1px solid #5a2020;border-radius:8px;margin-bottom:6px;"><i class="ti ti-alert-triangle" style="font-size:13px;color:#e87070;flex-shrink:0;margin-top:1px;"></i><div><div style="font-size:12px;font-weight:600;color:#e87070;">${_fileEsc(it)}</div><div style="font-size:11px;color:#666;">Flagged by client${c.flaggedContra.form?' on '+_fileEsc(c.flaggedContra.form.toLowerCase()):' on intake'}</div></div></div>`));
         }
         // A real, non-empty allergy on the chart is itself an alert
         const al=String(c.allergies||'').trim();
@@ -4926,7 +4927,7 @@ function _storeSummary(id){
 }
 function renderSummaryHistory(id){
   setNav('clients');
-  const c=CL[id];const list=sessionSummaries[id]||[];
+  const c=CL[id];if(!c){nav('clients');return;}const list=sessionSummaries[id]||[];
   document.getElementById('tt').textContent='Session summaries';
   S.innerHTML=`
   
@@ -13009,7 +13010,7 @@ function renderCheckinDetail(id){
   document.getElementById('tt').textContent='Check-in';
   if(!ci){S.innerHTML=`<div id="checkin-detail-screen"></div><div style="padding:30px 16px;color:#666;">Check-in not found.</div>`;return;}
   markCheckinRead(id);
-  const first=ci.client.split(' ')[0];
+  const first=String(ci.client||'Client').split(' ')[0];
   S.innerHTML=`<div id="checkin-detail-screen"></div>
   
   <div style="margin:10px 16px 12px;background:linear-gradient(135deg,#0a2019,#0d2a20);border:1px solid #1a4a38;border-radius:14px;padding:16px;">
@@ -13023,7 +13024,7 @@ function renderCheckinDetail(id){
   ${(ci.groups||[]).map(g=>`
   <div class="sh"><h2>${_fileEsc(g.title)}</h2></div>
   <div style="background:#1a1a1a;border:1px solid #2a2a2a;border-radius:12px;margin:0 16px 10px;overflow:hidden;">
-    ${g.rows.map((r,i)=>`<div style="padding:12px 14px;${i<g.rows.length-1?'border-bottom:1px solid #242424;':''}">
+    ${(g.rows||[]).map((r,i)=>`<div style="padding:12px 14px;${i<(g.rows||[]).length-1?'border-bottom:1px solid #242424;':''}">
       <div style="font-size:12px;color:#999;margin-bottom:3px;">${_fileEsc(r.label)}</div>
       <div style="display:flex;align-items:center;gap:7px;"><span style="font-size:14px;font-weight:600;color:${r.flagged?'#e8a070':'#e0e0e0'};">${_fileEsc(r.value)}</span>${r.flagged?`<i class="ti ti-flag" style="font-size:13px;color:#e8a070;"></i>`:''}</div>
       ${r.detail?`<div style="font-size:13px;color:#c8c8c8;margin-top:6px;background:#121212;border-radius:8px;padding:8px 10px;line-height:1.5;">${_fileEsc(r.detail)}</div>`:''}

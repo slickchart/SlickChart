@@ -2,6 +2,29 @@
 
 Newest entries at the top. One entry per deploy. Dates are US-formatted.
 
+## 2026-07-10 — Data-resilience: stale/malformed saved data can no longer blank a screen
+
+A dedicated pass for the highest-stakes class — a newer app version reading older/partial/corrupted
+saved data and crashing a render (a blank screen a beta tester can't get past). Both apps were already
+well-guarded (every `JSON.parse` of localStorage is wrapped; the big ingest functions validate with
+`Array.isArray`); these were the spots that slipped through:
+
+- **HOME could be taken down on boot by one malformed client.** The "Needs your attention" section
+  dereferenced `flaggedContra.items` (`.length`/`.join`/`.map`) assuming it's an array — a client record
+  whose `flaggedContra` drifted shape (older version / partial write) threw mid-render and locked the
+  user out of the first screen. All 8 read sites now go through a crash-proof `_fcItems()` helper.
+- **Check-in detail could blank on the alert path.** `renderCheckinDetail` guarded every array except
+  the per-group `g.rows` (and didn't default `ci.client`). A check-in synced by an older client app threw
+  on `g.rows.map`. Guarded both — same class as the already-fixed "summary with no homecare array."
+- **Session-summaries screen** crashed if a summary outlived its client (`CL[id]` gone): added the
+  missing null guard, matching every sibling client screen.
+- **Submitted-form view** dereferenced `sf.answers[q.id]` in one branch without the `sf.answers &&` guard
+  the other branches have — a pre-`answers` record threw. Guarded.
+- **Homecare** now returns its stored value only when it's actually an array (a non-array persisted value
+  would have thrown on `.map` in client detail).
+
+Provider-app only. Boot passes; demo regenerated (banner-only).
+
 ## 2026-07-10 — Communication sweep: honest errors, no false confirmations, clearer empty/chat states
 
 - **"Your account has been deleted" is no longer shown when the server wipe fails.** The delete-account
