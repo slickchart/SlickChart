@@ -47,9 +47,12 @@ export default async function handler(req, res) {
     }
 
     await q`UPDATE providers SET pass_hash = ${hashPassword(next)} WHERE id = ${payload.u}`;
+    // Changing the password signs out every OTHER session, so a stale/compromised device can't keep
+    // using its 30-day token afterward. Keep the current session (the device making the change).
+    try { await q`UPDATE sessions SET revoked = true WHERE provider_id = ${payload.u} AND id != ${payload.sid || ''}`; } catch (e) { /* non-fatal */ }
     res.status(200).json({ ok: true });
   } catch (e) {
     console.error('[change-password] failed:', e && e.stack || e);
-    res.status(e.status || 500).json({ error: e.message });
+    res.status(500).json({ error: 'Something went wrong. Please try again.' });
   }
 }

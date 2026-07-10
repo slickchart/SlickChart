@@ -13,5 +13,5 @@ export default async function handler(req, res) {
     await q`UPDATE providers SET verified = true WHERE id = ${rows[0].provider_id}`;
     await q`DELETE FROM auth_tokens WHERE token = ${token}`;
     res.status(200).json({ ok: true });
-  } catch (e) { res.status(e.status || 500).json({ error: e.message }); }
+  } catch (e) { console.error('[verify] failed:', e && e.stack || e); res.status(500).json({ error: 'Something went wrong. Please try again.' }); }
 }

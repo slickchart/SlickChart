@@ -31,7 +31,7 @@ export default async function handler(req, res) {
       await recordAttempt(q, email);
       res.status(401).json({ error: rows.length ? 'Incorrect password.' : 'No account found with that email. Create one to get started.' });
       return;
-    } catch (e) { res.status(e.status || 500).json({ error: e.message }); return; }
+    } catch (e) { console.error('[login] failed:', e && e.stack || e); res.status(500).json({ error: 'Something went wrong. Please try again.' }); return; }
   }
 
   // Legacy single-password owner login

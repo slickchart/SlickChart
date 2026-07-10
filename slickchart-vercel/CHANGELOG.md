@@ -2,6 +2,30 @@
 
 Newest entries at the top. One entry per deploy. Dates are US-formatted.
 
+## 2026-07-10 — Auth hardening (security review): session revocation + no error leaks
+
+An auth/session security review confirmed the crypto core is solid (constant-time HMAC session tokens,
+scrypt+per-user-salt passwords, single-use time-limited reset tokens bound to the account, fully
+parameterized SQL, fail-closed on a missing SESSION_SECRET, and clean tenant isolation). Two clear wins
+fixed here:
+
+- **Changing or resetting your password now signs out other sessions.** Session tokens are stateless
+  30-day JWTs, and the data endpoint checks session revocation on every request — but password
+  reset/change never revoked anything, so a stolen or stale token kept full access for up to 30 days
+  *even after* the owner changed their password (the exact thing you do after a suspected compromise).
+  Reset now revokes **all** sessions; change-password revokes **all but the current** device.
+- **Auth endpoints no longer return internal error details.** login/store/sessions/verify/reset returned
+  the raw exception message (DB/driver internals) to the caller; now they log server-side and return a
+  generic message.
+
+Server-only (api/login, reset, change-password, store, sessions, verify). All parse.
+
+_Flagged for your decision (not changed): (1) TOTP 2FA is wired into the UI but not enforced at login and
+its setup endpoints are mis-placed — it should be either fully built or removed so it doesn't imply
+protection it doesn't give; (2) login/signup reveal whether an email is registered (enumeration) vs the
+helpful "no account — create one" message; (3) brute-force throttling is per-email only (no per-IP cap);
+(4) the payment gate is checked only at signup, not on continued use._
+
 ## 2026-07-10 — Native-app readiness: self-host the icon font (was CDN-only)
 
 Prepping for Android/iOS store wrapping. The single biggest blocker found: **every icon in both apps

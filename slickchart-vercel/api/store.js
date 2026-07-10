@@ -58,6 +58,6 @@ export default async function handler(req, res) {
 
     res.status(405).json({ error: 'Method not allowed' });
   } catch (e) {
-    res.status(e.status || 500).json({ error: e.message });
+    console.error('[store] failed:', e && e.stack || e); res.status(500).json({ error: 'Something went wrong. Please try again.' });
   }
 }
