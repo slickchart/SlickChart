@@ -24,11 +24,17 @@ function readRawBody(req) {
   });
 }
 
+// Reject a signature whose timestamp is older than this (seconds). Matches Stripe's own
+// default tolerance and blocks replay of a captured-but-stale signed payload.
+const SIG_TOLERANCE_SEC = 300;
 function verifyStripeSignature(rawBody, sigHeader, secret) {
   if (!sigHeader || !secret) return false;
   const parts = {};
   sigHeader.split(',').forEach((p) => { const [k, v] = p.split('='); parts[k] = v; });
   if (!parts.t || !parts.v1) return false;
+  // Replay guard: the timestamp must be recent (and a valid number).
+  const ts = parseInt(parts.t, 10);
+  if (!Number.isFinite(ts) || Math.abs(Math.floor(Date.now() / 1000) - ts) > SIG_TOLERANCE_SEC) return false;
   const signedPayload = parts.t + '.' + rawBody;
   const computed = crypto.createHmac('sha256', secret).update(signedPayload, 'utf8').digest('hex');
   try {
