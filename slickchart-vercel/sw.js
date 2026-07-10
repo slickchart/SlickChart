@@ -19,8 +19,14 @@ self.addEventListener('fetch', (e) => {
   e.respondWith((async () => {
     try {
       const res = await fetch(req);
-      const cache = await caches.open(CACHE);
-      cache.put(req, res.clone());
+      // Only cache a full, successful, basic (same-origin) response. Skip 206 partials
+      // (range requests from audio/media seeking — cache.put() throws on those), redirects,
+      // and 4xx/5xx error pages so we never serve a stale error offline. Caching is
+      // best-effort: a put failure must never break the live response we return.
+      if (res && res.ok && res.status === 200 && res.type === 'basic') {
+        const copy = res.clone();
+        caches.open(CACHE).then(cache => cache.put(req, copy)).catch(() => {});
+      }
       return res;
     } catch (err) {
       const cached = await caches.match(req);
