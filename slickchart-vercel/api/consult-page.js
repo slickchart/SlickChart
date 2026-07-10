@@ -17,11 +17,22 @@ function shell(inner, opts) {
   const o = opts || {};
   const accent = o.accent || '#C8A882';
   const title = esc(o.title || 'Virtual consult');
+  // Social-share preview: this page is made to be shared (Instagram bio, a text, a website link),
+  // so give it a proper title/description card. noindex still keeps it out of search engines —
+  // social scrapers read the og:/twitter: tags regardless.
+  const ogTitle = esc(o.ogTitle || o.title || 'Virtual consult');
+  const ogDesc = esc(o.ogDesc || 'Request a virtual consult.');
   return `<!DOCTYPE html><html lang="en"><head><meta charset="UTF-8">
 <meta name="viewport" content="width=device-width, initial-scale=1, viewport-fit=cover">
 <title>${title}</title>
 <meta name="theme-color" content="${esc(accent)}">
 <meta name="robots" content="noindex">
+<meta property="og:type" content="website">
+<meta property="og:title" content="${ogTitle}">
+<meta property="og:description" content="${ogDesc}">
+<meta name="twitter:card" content="summary">
+<meta name="twitter:title" content="${ogTitle}">
+<meta name="twitter:description" content="${ogDesc}">
 <style>
 *{box-sizing:border-box;margin:0;padding:0;}
 :root{--accent:${esc(accent)};}
@@ -128,5 +139,10 @@ export default async function handler(req, res) {
   }
   </script>`;
 
-  res.status(200).send(shell(inner, { accent, title: 'Consult · ' + bizName }));
+  res.status(200).send(shell(inner, {
+    accent,
+    title: 'Consult · ' + bizName,
+    ogTitle: 'Request a consult with ' + bizName,
+    ogDesc: 'Share a bit about what you’re hoping for and ' + bizName + ' will follow up to set up your virtual consult.'
+  }));
 }
