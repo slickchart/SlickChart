@@ -88,7 +88,12 @@ export default async function handler(req, res) {
 
       if (rem.apptAt) {
         const apptL = localParts(rem.tz, rem.apptAt);
-        const tomorrow = localParts(rem.tz, now + 24 * HOUR).date;
+        // Tomorrow's local calendar date by incrementing the day component (DST-safe — a fixed
+        // +24h of milliseconds can skip a calendar day across a spring-forward boundary).
+        const _dp = String(nowL.date || '').split('-').map(Number);
+        const tomorrow = (_dp.length === 3 && _dp.every(n => !isNaN(n)))
+          ? new Date(Date.UTC(_dp[0], _dp[1] - 1, _dp[2] + 1)).toISOString().slice(0, 10)
+          : '';
         // Day-before reminder: appointment is on tomorrow's local calendar day.
         if (notif.appointmentReminder !== false && inMorning && apptL.date && apptL.date === tomorrow) {
           due.push({
@@ -97,8 +102,10 @@ export default async function handler(req, res) {
             body: (rem.treatment ? rem.treatment + ' ' : 'Your appointment ') + (rem.apptLabel ? '· ' + rem.apptLabel : '') + '. See you then!'
           });
         }
-        // Morning-of reminder: appointment is later today (client-local) and hasn't passed.
-        if (notif.appointmentDay !== false && inMorning && apptL.date === nowL.date && rem.apptAt > now) {
+        // Morning-of reminder: appointment is today (client-local). Allow a few hours' grace on the
+        // "hasn't passed" check so an early appointment (at or before the 7am window start) still
+        // gets its morning-of reminder at the first morning run, while ones that passed hours ago don't.
+        if (notif.appointmentDay !== false && inMorning && apptL.date === nowL.date && rem.apptAt > now - 3 * HOUR) {
           due.push({
             rkey: 'apptday:' + apptL.date,
             title: 'Appointment today',

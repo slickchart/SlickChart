@@ -2,6 +2,29 @@
 
 Newest entries at the top. One entry per deploy. Dates are US-formatted.
 
+## 2026-07-10 — Reminder cron: fire morning-of for early appointments; DST-safe "tomorrow"
+
+A date/time/timezone sweep confirmed the countdown/parsing is DST-safe (local midnight-to-midnight with
+rounding), 12h/AM-PM parsing handles midnight & noon, the hourly cron hits every timezone's morning
+window, and reminder dedup holds across DST. Two cron fixes:
+
+- **The "Appointment today" push now fires for early appointments.** The morning-of reminder required
+  `apptAt > now`, but the morning window starts at 7am — so an appointment at exactly 7:00 (or earlier)
+  never got one (at the 7:00 run `apptAt > now` is false; by 8:00 it's already past). Now allows a few
+  hours' grace, so early/at-open appointments get their morning-of reminder at the first morning run,
+  while ones that passed hours ago still don't.
+- **DST-hardened the "tomorrow" calculation.** The day-before reminder derived tomorrow via a fixed
+  `+24h` of milliseconds, which can skip a calendar day across a spring-forward boundary. Now increments
+  the calendar day component directly (verified across month/year rollover and leap years). It was
+  dormant (gated to mid-day), but the cron is the app's core promise, so it's worth making robust.
+
+Server-only (api/cron-reminders.js); no app rebuild.
+
+_Flagged for a product decision (not changed): appointment times are anchored to the **client's** device
+timezone, not the salon's, so a client in a different timezone than the salon sees a shifted countdown /
+reminder. Correct for same-timezone clients (the common case); fixing cross-timezone needs carrying the
+salon's timezone through the whole pipeline — a deliberate architecture change to discuss._
+
 ## 2026-07-10 — Boundary-input hardening (money/validation already solid)
 
 An input/edge-case sweep confirmed the money, division, required-field, and date-math paths are
