@@ -2,6 +2,27 @@
 
 Newest entries at the top. One entry per deploy. Dates are US-formatted.
 
+## 2026-07-10 — Native-app readiness: self-host the icon font (was CDN-only)
+
+Prepping for Android/iOS store wrapping. The single biggest blocker found: **every icon in both apps
+loaded from a jsdelivr CDN** (`@tabler/icons-webfont`). In a native WebView wrapper, if the device is
+offline or the CDN is blocked/slow, the entire UI renders with missing icons — which reads as a broken
+app and risks App Store / Play rejection. It also wasn't offline-cached (the service worker skips
+cross-origin requests).
+
+- Self-hosted the Tabler icon font in-repo (`/assets/tabler/tabler-icons.min.css` + `fonts/*.woff2`,
+  trimmed to woff2 which every modern iOS/Android WebView supports). Both apps now load icons same-origin,
+  so they work offline (the service worker caches them) and inside a native bundle with no external
+  dependency. Verified the used icon classes resolve and both apps boot.
+
+Also confirmed store-readiness basics are already in place: both PWA manifests are complete
+(name/short_name/icons incl. 192·512·maskable/display:standalone/theme+background/orientation/id), icons
+are correctly sized (apple-touch 180, 192, 512), `viewport-fit=cover` + safe-area insets are used,
+`apple-mobile-web-app-*` + theme-color are set, in-app account deletion and a privacy policy exist, and
+the auth crypto core (HMAC tokens, scrypt passwords, parameterized SQL, tenant isolation) audited clean.
+
+Client re-embedded (byte-identical); both demos regenerated (banner-only).
+
 ## 2026-07-10 — State-integrity: check-in re-arm + virtual-consult submission guard
 
 - **The check-in nudge now re-arms for a returning client.** The provider-side "needs check-in" flag was
