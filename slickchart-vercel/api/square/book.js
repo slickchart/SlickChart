@@ -67,10 +67,14 @@ export default async function handler(req, res) {
     };
     if (body.serviceVariationVersion != null) segment.service_variation_version = body.serviceVariationVersion;
 
+    // Prefer the client's stable key so a retried booking (lost response, tap-after-error) resolves
+    // to the SAME appointment instead of creating a duplicate. Fall back to a generated one.
+    const clientKey = String(body.idempotencyKey || '').replace(/[^a-zA-Z0-9_-]/g, '').slice(0, 45);
+    const bookKey = clientKey || ('sc-' + Date.now() + '-' + Math.random().toString(36).slice(2, 10));
     const result = await sf('/v2/bookings', {
       method: 'POST',
       body: {
-        idempotency_key: 'sc-' + Date.now() + '-' + Math.random().toString(36).slice(2, 10),
+        idempotency_key: bookKey,
         booking: {
           location_id: locationId,
           customer_id: customerId,

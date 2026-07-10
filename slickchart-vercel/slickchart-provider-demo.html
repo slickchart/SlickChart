@@ -13715,7 +13715,10 @@ function _sqDoBook(){
   if(!date||!time)return showErr('Pick a date and time.');
   let startAt;try{const d=new Date(date+'T'+time+':00');if(isNaN(d))throw 0;startAt=d.toISOString();}catch(e){return showErr('That date or time looks invalid.');}
   const btn=document.getElementById('sqb-go');if(btn){btn.disabled=true;btn.innerHTML='<i class="ti ti-loader"></i> Booking…';}
-  _sqFetch('/api/square/book',{method:'POST',body:{serviceVariationId:svc.variationId,serviceVariationVersion:svc.variationVersion,durationMinutes:svc.durationMinutes,startAt:startAt,teamMemberId:teamMemberId,customerName:name,customerEmail:email}}).then(()=>{
+  const _bsig=svc.variationId+'|'+startAt+'|'+teamMemberId+'|'+(email||name);
+  const _bkey=_coIdem(_bsig);
+  _sqFetch('/api/square/book',{method:'POST',body:{serviceVariationId:svc.variationId,serviceVariationVersion:svc.variationVersion,durationMinutes:svc.durationMinutes,startAt:startAt,teamMemberId:teamMemberId,customerName:name,customerEmail:email,idempotencyKey:_bkey}}).then(()=>{
+    delete _coIdemKeys[_bsig]; // booked — a later identical booking should be a new, intentional one
     const m=document.getElementById('qa-modal');if(m)m.remove();
     if(typeof proToast==='function')proToast('Booked in Square ✓');
     _loadSquareAppts(true);
