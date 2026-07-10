@@ -2,6 +2,25 @@
 
 Newest entries at the top. One entry per deploy. Dates are US-formatted.
 
+## 2026-07-10 — Accessibility: WCAG-AA contrast + screen-reader dialog semantics
+
+- **Text contrast now meets WCAG AA (4.5:1).** The muted greys used for secondary text failed badly —
+  the client app's `#b8a898` (2.3:1), `#c4b9ae` (1.9:1), `#9a8a7e` (3.3:1) on white, and the provider's
+  `#666` (3.2:1) / `#777` (4.0:1) on dark. Recolored **only the text uses** (borders/backgrounds/icons
+  untouched) to compliant equivalents that preserve the light→dark hierarchy — every replacement's ratio
+  was computed and verified ≥4.5:1 (client → `#82715f`/`#786858`/`#6b5d52`; provider → `#929292`/`#9a9a9a`).
+  Also fixed the public consult page's footer (compliant in both light and dark mode). ~370 text colors
+  updated; no layout or structural change.
+- **Bottom sheets are now real dialogs for screen readers.** The ~30 ad-hoc overlays (start-a-message,
+  checkout item picker, client picker, send product/form, etc.) were keyboard- and Escape-operable but
+  never announced as dialogs and didn't move focus in. A runtime enhancer now marks each full-viewport
+  overlay `role="dialog" aria-modal="true"`, moves focus into it on open (unless it already focused
+  something itself), and restores focus to the opener when it closes — in both apps, automatically, for
+  current and future sheets. It only targets true full-viewport modals (so toasts and the demo banner are
+  left alone) and skips overlays that already manage this (confirmModal). Verified against a real DOM.
+
+Client re-embedded (byte-identical); both demos regenerated (banner-only); boot + 9-screen smoke pass.
+
 ## 2026-07-10 — Accessibility: every form field now has a screen-reader name
 
 An accessibility pass found the apps already handle most of it well (icon buttons are labeled, click-only
