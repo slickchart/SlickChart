@@ -2,6 +2,28 @@
 
 Newest entries at the top. One entry per deploy. Dates are US-formatted.
 
+## 2026-07-10 — Accessibility: every form field now has a screen-reader name
+
+An accessibility pass found the apps already handle most of it well (icon buttons are labeled, click-only
+cards are made keyboard-operable at runtime, modals trap focus, images have alt text, pages set `lang`).
+The one real gap the runtime layer didn't cover: form fields whose visible label is a styled
+`<span class="fl-lbl">` (not a real `<label for>`), so a screen reader announced them as bare "edit text"
+on nearly every data-entry flow (client intake, charging a client, editing a chart, changing password,
+and every search box).
+
+- Upgraded the runtime accessibility enhancer so **every** unlabeled input/textarea/select gets an
+  accessible name automatically: it uses the field's nearest preceding `.fl-lbl` (walking siblings then a
+  couple of containers, with a field-boundary check so it never borrows a neighboring field's label),
+  falling back to the field's placeholder for search boxes that have no visible label. Runs on every
+  render via the existing MutationObserver, in **both** apps — so all ~160 previously-unnamed controls,
+  and any added later, are covered with **zero visual change**. Verified against a real DOM across direct-
+  sibling, intervening-element, wrapped-input, placeholder-only, and multi-field-container layouts.
+
+Client re-embedded (byte-identical); both demos regenerated (banner-only); boot + 9-screen smoke pass.
+Remaining a11y items are polish / judgment calls (see notes): a few grey text colors fail WCAG contrast
+(a visual/brand choice), and the ad-hoc bottom sheets could add `role="dialog"` + focus-in (they're
+already keyboard- and Escape-operable via the runtime layer).
+
 ## 2026-07-10 — Photos moved to IndexedDB (no more storage-quota ceiling)
 
 Before-and-after / captured photos were stored as base64 in a single localStorage key

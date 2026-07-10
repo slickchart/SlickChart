@@ -1327,13 +1327,42 @@ function deleteClient(id){if(!CL[id])return;const nm=(CL[id].name||'this client'
 function _bizLoc(){return [bizInfo.city,bizInfo.state].filter(Boolean).join(', ')||'';}
 function loadBizInfo(){try{const raw=localStorage.getItem('sc_bizinfo');if(raw){const d=JSON.parse(raw)||{};Object.keys(d).forEach(k=>{bizInfo[k]=d[k];});}const wn=localStorage.getItem('sc_wsname');if(wn)workspace.name=wn;else if(bizInfo.name)workspace.name=bizInfo.name;if(_bizLoc())workspace.location=_bizLoc();}catch(e){}}
 function _a11yEnhance(){try{document.querySelectorAll('[onclick]:not(button):not(a):not(input):not(select):not(textarea):not([role])').forEach(el=>{el.setAttribute('role','button');if(!el.hasAttribute('tabindex'))el.setAttribute('tabindex','0');});
-  // The visible field labels are styled <span class="fl-lbl"> rather than real <label for>,
-  // so a screen reader tabbing to the input hears only "edit text". Copy the label's text
-  // onto the form control that IMMEDIATELY follows it (the common, unambiguous case) as an
-  // aria-label. Only the direct next sibling is used, so a label can't be mis-associated with
-  // an unrelated input further down when there are intervening elements.
-  document.querySelectorAll('.fl-lbl').forEach(lbl=>{const n=lbl.nextElementSibling;if(n&&/^(INPUT|SELECT|TEXTAREA)$/.test(n.tagName)&&!n.hasAttribute('aria-label')&&!n.hasAttribute('aria-labelledby')){const txt=(lbl.textContent||'').replace(/\s+/g,' ').trim();if(txt)n.setAttribute('aria-label',txt);}});
+  try{_a11yLabelFields(document);}catch(e){}
   }catch(e){}}
+
+// Give every unlabeled form control an accessible name. Visible field labels are styled
+// <span class="fl-lbl"> (not real <label for>), so without this a screen reader announces the
+// field as bare "edit text". For each unnamed control, use the nearest preceding .fl-lbl (walk
+// back through siblings, then up a couple of containers — nearest-preceding is the field's own
+// label), falling back to its placeholder (covers search boxes that have no visible label).
+function _a11yLabelFields(root){
+  if(!root||!root.querySelectorAll)return;
+  var ctrls=root.querySelectorAll('input,select,textarea');
+  for(var i=0;i<ctrls.length;i++){
+    var el=ctrls[i];
+    if(el.type==='hidden')continue;
+    if(el.hasAttribute('aria-label')||el.hasAttribute('aria-labelledby'))continue;
+    if(el.closest&&el.closest('label'))continue;
+    if(el.id){var esc=(typeof window!=='undefined'&&window.CSS&&window.CSS.escape)?window.CSS.escape(el.id):el.id;try{if(document.querySelector('label[for="'+esc+'"]'))continue;}catch(_){}}
+    var lbl=null,node=el,stop=false;
+    for(var hop=0;hop<3&&node&&!lbl&&!stop;hop++){
+      var sib=node.previousElementSibling;
+      while(sib){
+        if(sib.classList&&sib.classList.contains('fl-lbl')){lbl=sib;break;}
+        var tn=sib.tagName;
+        // Field boundary: an earlier control (or a wrapper containing one) owns any label before
+        // it, so don't borrow that label for this field — fall back to the placeholder instead.
+        if(tn==='INPUT'||tn==='SELECT'||tn==='TEXTAREA'||(sib.querySelector&&sib.querySelector('input,select,textarea'))){stop=true;break;}
+        sib=sib.previousElementSibling;
+      }
+      node=node.parentElement;
+    }
+    var txt=lbl?((lbl.textContent||'').replace(/\s+/g,' ').replace(/\*/g,'').trim()):'';
+    if(!txt){var ph=el.getAttribute&&el.getAttribute('placeholder');if(ph)txt=String(ph).replace(/\s+/g,' ').trim();}
+    if(txt)el.setAttribute('aria-label',txt);
+  }
+}
+
 try{document.addEventListener('keydown',function(e){const t=e.target;if((e.key==='Enter'||e.key===' ')&&t&&t.getAttribute&&t.getAttribute('role')==='button'&&t.hasAttribute('onclick')&&!['BUTTON','A','INPUT','SELECT','TEXTAREA'].includes(t.tagName)){e.preventDefault();t.click();}});}catch(e){}
 // After each render, make click-only elements keyboard-operable: any non-native element
 // with an onclick that isn't already focusable/labelled gets role=button + tabindex=0,
