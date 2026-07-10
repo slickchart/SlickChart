@@ -61,6 +61,13 @@ export default async function handler(req, res) {
     const token = signToken({ u: id, e: email, sid: await createSession(q, id, req) }, secret);
     res.status(200).json({ token, name, email, verified: false });
   } catch (e) {
+    // A concurrent signup with the same email (e.g. a double-tapped button) races past the
+    // SELECT above and trips the UNIQUE(email) constraint. Surface the friendly 409, not a 500.
+    const code = e && (e.code || (e.cause && e.cause.code));
+    if (code === '23505' || /duplicate key|unique constraint/i.test(String(e && e.message || ''))) {
+      res.status(409).json({ error: 'An account with that email already exists — try logging in.' });
+      return;
+    }
     console.error('[signup] failed:', e && e.stack || e); res.status(e.status || 500).json({ error: 'Something went wrong. Please try again.' });
   }
 }
