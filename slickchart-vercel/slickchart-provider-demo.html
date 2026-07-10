@@ -9735,12 +9735,15 @@ function _dismissPulse(){const m=document.getElementById('pulse-sheet');if(m)m.r
 async function _sendPulse(){
   if(!_pulseAnswers.rating&&!_pulseAnswers.timeSaved){proToast('Tap a face or an option first');return;}
   const st=_pulseState();st.lastAnsweredAt=Date.now();st.answeredCount=(st.answeredCount||0)+1;_pulseSave(st);
+  let _pulseOk=false;
   try{
     const tok=(typeof Cloud!=='undefined'&&Cloud&&Cloud.token)||'';
-    await fetch('/api/feedback',{method:'POST',headers:Object.assign({'Content-Type':'application/json'},tok?{'Authorization':'Bearer '+tok}:{}),body:JSON.stringify({kind:'pulse',rating:_pulseAnswers.rating||undefined,timeSaved:_pulseAnswers.timeSaved||undefined,at:Date.now()})});
+    const r=await fetch('/api/feedback',{method:'POST',headers:Object.assign({'Content-Type':'application/json'},tok?{'Authorization':'Bearer '+tok}:{}),body:JSON.stringify({kind:'pulse',rating:_pulseAnswers.rating||undefined,timeSaved:_pulseAnswers.timeSaved||undefined,at:Date.now()})});
+    _pulseOk=r.ok;
   }catch(e){}
   _dismissPulse();
-  proToast('Thanks — that really helps \ud83d\udc9b');
+  if(_pulseOk)proToast('Thanks — that really helps \ud83d\udc9b');
+  else proToast('Couldn’t send just now — please try again.',0);
 }
 // Beta feedback (reachable from onboarding + settings)
 function openBetaFeedback(){
@@ -10011,6 +10014,7 @@ function renderNotifFeed(){
   ${read.length>0?`
   <div class="sh"><h2>Earlier</h2></div>
   ${read.map(n=>notifRow(n)).join('')}`:''}
+  ${(!unread.length&&!read.length)?emptyState({icon:'ti-bell',title:'You\u2019re all caught up',body:'New activity \u2014 booking requests, form submissions, check-ins, and messages \u2014 shows up here as it happens.'}):''}
   <div style="height:16px;"></div>`;
   setTimeout(()=>{try{document.querySelectorAll('.swipe-card').forEach((el,i)=>{if(typeof initSwipe==='function')initSwipe(el,i);});}catch(e){}},0);
 }
@@ -10808,7 +10812,7 @@ function renderWhatsNew(){
 async function _postAnnouncement(){
   const t=((document.getElementById('an-title')||{}).value)||'';const b=((document.getElementById('an-body')||{}).value)||'';
   if(!t.trim()){proToast('Add a title');return;}
-  try{const tok=(typeof Cloud!=='undefined'&&Cloud&&Cloud.token)||'';const r=await fetch('/api/announcements',{method:'POST',headers:{'Content-Type':'application/json','Authorization':'Bearer '+tok},body:JSON.stringify({title:t,body:b})});const j=await r.json();if(!r.ok)throw new Error(j.error||'Failed');proToast('Update published \u2713');await _checkNews();renderWhatsNew();}catch(e){proToast(e.message||'Could not publish');}
+  try{const tok=(typeof Cloud!=='undefined'&&Cloud&&Cloud.token)||'';const r=await fetch('/api/announcements',{method:'POST',headers:{'Content-Type':'application/json','Authorization':'Bearer '+tok},body:JSON.stringify({title:t,body:b})});const j=await r.json();if(!r.ok)throw new Error(j.error||'Failed');proToast('Update published \u2713');await _checkNews();renderWhatsNew();}catch(e){try{console.error('[announce]',e);}catch(_){}proToast('Could not publish \u2014 check your connection and try again');}
 }
 setTimeout(()=>{try{_checkNews();}catch(e){}},1500);
 
@@ -11329,20 +11333,29 @@ async function _confirmDeleteAccount(){
   const btn=document.getElementById('del-btn');
   if(btn){btn.disabled=true;btn.style.opacity='.6';btn.innerHTML='<i class="ti ti-loader-2"></i> Deleting\u2026';}
   const tok=(typeof Cloud!=='undefined'&&Cloud&&Cloud.token)||'';
-  // 1) Best-effort server wipe. Try a dedicated endpoint first; if it isn't deployed, fall
-  //    back to overwriting the synced store with empty values so nothing meaningful remains.
+  // 1) Server wipe. Try the dedicated endpoint first; if it isn't deployed, fall back to
+  //    overwriting the synced store with empty values. We must CONFIRM the server actually wiped
+  //    before destroying the local session and telling the provider "deleted" — otherwise their
+  //    (and their clients') data could still live on the server while they believe it's gone.
+  let serverGone=!tok;   // no token = local/demo only; there's nothing on the server to delete
   if(tok){
-    let wiped=false;
     try{
       const r=await fetch('/api/delete-account',{method:'POST',headers:{'Content-Type':'application/json','Authorization':'Bearer '+tok}});
-      wiped=r.ok;
+      if(r.ok)serverGone=true;
     }catch(e){}
-    if(!wiped){
+    if(!serverGone){
       try{
         const items={};
         for(let i=0;i<localStorage.length;i++){const k=localStorage.key(i);if(typeof k==='string'&&k.indexOf('sc_')===0&&k!=='sc_token'&&k!=='sc_sqkey'&&k!=='sc_bus')items[k]='';}
-        if(Object.keys(items).length)await fetch('/api/store',{method:'PUT',headers:{'Content-Type':'application/json','Authorization':'Bearer '+tok},body:JSON.stringify({items})}).catch(()=>{});
+        if(Object.keys(items).length)serverGone=await fetch('/api/store',{method:'PUT',headers:{'Content-Type':'application/json','Authorization':'Bearer '+tok},body:JSON.stringify({items})}).then(r=>r.ok).catch(()=>false);
       }catch(e){}
+    }
+    if(!serverGone){
+      // Couldn't confirm the server wipe — do NOT clear local data or sign out, so the provider
+      // stays signed in and can retry. Be honest instead of falsely reporting success.
+      if(btn){btn.disabled=false;btn.style.opacity='1';btn.style.cursor='pointer';btn.innerHTML='<i class="ti ti-trash" aria-hidden="true"></i> Delete my account permanently';}
+      if(typeof proToast==='function')proToast('We couldn\u2019t reach the server to delete your account. Please check your connection and try again.',0);
+      return;
     }
   }
   // 2) Wipe ALL local data for this account (including the login email + token), so nothing
@@ -11837,7 +11850,7 @@ async function _sqFetch(path,opts){
   }
   let data={};try{data=await resp.json();}catch(_){}
   if(resp.status===401){const e=new Error(data.error||'Square isn\u2019t connected yet.');e.code=(data&&data.code==='nosquare')?'nosquare':'auth';throw e;}
-  if(!resp.ok){const e=new Error(data.error||('Request failed ('+resp.status+')'));throw e;}
+  if(!resp.ok){try{console.error('[square] '+resp.status,data);}catch(_){}const e=new Error(data.error||'Something went wrong on Square’s side. Please try again in a moment.');throw e;}
   return data;
 }
 async function _sqConnect(){

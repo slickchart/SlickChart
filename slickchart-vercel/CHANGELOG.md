@@ -2,6 +2,27 @@
 
 Newest entries at the top. One entry per deploy. Dates are US-formatted.
 
+## 2026-07-10 — Communication sweep: honest errors, no false confirmations, clearer empty/chat states
+
+- **"Your account has been deleted" is no longer shown when the server wipe fails.** The delete-account
+  flow cleared local data and reported success even if the network request to actually wipe the account
+  (and all client data) never landed. Now it **confirms** the server side is gone first; if it can't, it
+  keeps you signed in, restores the button, and says so honestly ("We couldn't reach the server to delete
+  your account… try again") instead of falsely claiming your data is gone.
+- **No more raw error codes on the payment/Square screens.** Failed Square actions (take payment, send
+  invoice, charge card, book, import) could surface developer text like "Request failed (500)" in the red
+  box while you're trying to charge a client. Those now read "Something went wrong on Square's side —
+  please try again in a moment," with the technical detail kept in the console only. Same for the owner-only
+  "Publish update" error and the feedback pulse (which also no longer says "Thanks" if the send failed).
+- **Client chat no longer shows a fake fixed date.** Every real client's message thread rendered a static
+  "Jun 26, 2026" divider at the top regardless of actual dates — removed.
+- **Notifications screen now has a proper empty state** ("You're all caught up") instead of looking like it
+  failed to load on a fresh account.
+
+Client re-embedded (byte-identical); both demos regenerated (banner-only). Both apps boot; 9-screen smoke
+passes. (The client app's own send/submit failure messaging was audited and confirmed already solid —
+visible "Not delivered · Tap to retry", friendly "couldn't send" on every critical path.)
+
 ## 2026-07-10 — Performance: kill per-nav megabyte writes, debounce note typing, dedupe polling
 
 - **Navigation no longer re-serializes your whole photo library.** `_savePersistenceSweep` ran on
