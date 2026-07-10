@@ -38,5 +38,5 @@ export default async function handler(req, res) {
     }
     await q`UPDATE providers SET totp_enabled = true WHERE id = ${providerId}`;
     res.status(200).json({ ok: true, enabled: true });
-  } catch (e) { res.status(e.status || 500).json({ error: e.message }); }
+  } catch (e) { console.error('[totp-verify] failed:', e && e.stack || e); res.status(500).json({ error: 'Something went wrong. Please try again.' }); }
 }

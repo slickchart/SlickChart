@@ -56,8 +56,17 @@ export async function tooManyAttempts(q, email, max = 7, windowMin = 15) {
     WHERE email = ${email} AND ts > now() - (${windowMin} * interval '1 minute')`;
   return (rows[0] && rows[0].n) >= max;
 }
-export async function recordAttempt(q, email) {
-  await q`INSERT INTO login_attempts (email) VALUES (${email})`;
+export async function recordAttempt(q, email, ip) {
+  await q`INSERT INTO login_attempts (email, ip) VALUES (${email}, ${ip || ''})`;
+}
+// Per-IP cap (defends against password spraying — one guess each across many emails from one IP,
+// which the per-email limiter never catches). Higher threshold than per-email since an IP can be a
+// shared network. Fails open when no trustworthy IP is available.
+export async function tooManyAttemptsByIp(q, ip, max = 30, windowMin = 15) {
+  if (!ip) return false;
+  const rows = await q`SELECT count(*)::int AS n FROM login_attempts
+    WHERE ip = ${ip} AND ts > now() - (${windowMin} * interval '1 minute')`;
+  return (rows[0] && rows[0].n) >= max;
 }
 export async function clearAttempts(q, email) {
   await q`DELETE FROM login_attempts WHERE email = ${email}`;

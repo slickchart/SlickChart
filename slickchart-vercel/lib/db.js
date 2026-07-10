@@ -80,6 +80,7 @@ export async function ensureProvidersTable() {
     email text NOT NULL,
     ts timestamptz DEFAULT now()
   )`;
+  await q`ALTER TABLE login_attempts ADD COLUMN IF NOT EXISTS ip text`;
   // Interest log for "request live sync" on booking apps we don't yet integrate.
   await q`CREATE TABLE IF NOT EXISTS sync_requests (
     id bigserial PRIMARY KEY,

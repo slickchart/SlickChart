@@ -31,5 +31,5 @@ export default async function handler(req, res) {
     const uri = otpauthUri(secret, email || providerId);
     const qrUrl = 'https://api.qrserver.com/v1/create-qr-code/?size=220x220&data=' + encodeURIComponent(uri);
     res.status(200).json({ ok: true, secret, otpauthUri: uri, qrUrl });
-  } catch (e) { res.status(e.status || 500).json({ error: e.message }); }
+  } catch (e) { console.error('[totp-setup] failed:', e && e.stack || e); res.status(500).json({ error: 'Something went wrong. Please try again.' }); }
 }

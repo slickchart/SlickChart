@@ -2,6 +2,30 @@
 
 Newest entries at the top. One entry per deploy. Dates are US-formatted.
 
+## 2026-07-10 — Auth: real 2FA enforced + spraying defense + generic login + subscription re-check
+
+Closed the four flagged auth gaps.
+
+- **Two-factor authentication is now real and enforced.** The client app already had the full 2FA UI
+  (QR enrollment in Settings, a code prompt at login), and the TOTP implementation (`totp.js`) was a
+  correct RFC 6238 — but the setup endpoints sat at the repo root (never deployed) importing a
+  non-existent `lib/totp.js`, and login never checked the second factor. So "2FA" implied protection it
+  didn't give. Fixed the wiring: moved the code to `lib/totp.js` + `api/totp-setup.js` +
+  `api/totp-verify.js`, and **login now requires a valid 6-digit code when the account has 2FA on**
+  (returns a `requiresTotp` challenge otherwise). Verified against the RFC 6238 test vectors, so
+  Google Authenticator / Authy / 1Password interoperate; drift window ±30s; non-numeric codes rejected.
+- **Login no longer reveals whether an email is registered.** Both "no account" and "wrong password" now
+  return one generic "Email or password is incorrect."
+- **Brute-force throttling is now per-IP as well as per-email.** The per-email limit didn't stop password
+  spraying (one guess each across many emails from one IP); added a per-IP cap (using the platform's real
+  client IP, not the spoofable forwarded header), fail-open when no trustworthy IP is available.
+- **The subscription is re-checked at login, not only at signup.** When `REQUIRE_PAYMENT` is on, a lapsed
+  subscription is now caught at login (fail-open on a billing-lookup error so a transient hiccup can't
+  lock out a paying customer).
+
+Server-only (lib/totp, lib/auth, lib/db, api/login, api/totp-setup, api/totp-verify). TOTP verified end to
+end; all modules parse. No app rebuild (the client 2FA UI already existed).
+
 ## 2026-07-10 — Auth hardening (security review): session revocation + no error leaks
 
 An auth/session security review confirmed the crypto core is solid (constant-time HMAC session tokens,
