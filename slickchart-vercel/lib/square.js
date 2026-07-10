@@ -95,6 +95,25 @@ export function exchangeCode(code, redirectUri) {
 }
 export function refreshToken(refresh) { return obtainToken({ refresh_token: refresh, grant_type: 'refresh_token' }); }
 
+// Revoke a seller's tokens at Square so a disconnect fully severs access (not just locally).
+// The Revoke endpoint uses the "Client {app_secret}" auth scheme (not Bearer). Revoking by
+// access_token (without revoke_only_access_token) invalidates the merchant's access AND refresh
+// tokens. Square requires this on disconnect — deleting our row alone leaves live tokens behind.
+export async function revokeToken({ accessToken, merchantId }) {
+  const cfg = squareConfig();
+  if (!cfg.appId || !cfg.appSecret) return { skipped: true };
+  if (!accessToken && !merchantId) return { skipped: true };
+  const body = { client_id: cfg.appId };
+  if (accessToken) body.access_token = accessToken; else body.merchant_id = merchantId;
+  const resp = await fetch(cfg.base + '/oauth2/revoke', {
+    method: 'POST',
+    headers: { 'Authorization': 'Client ' + cfg.appSecret, 'Content-Type': 'application/json' },
+    body: JSON.stringify(body)
+  });
+  if (!resp.ok) { const t = await resp.text().catch(() => ''); const e = new Error('Square revoke failed (' + resp.status + ') ' + t); e.status = resp.status; throw e; }
+  return resp.json().catch(() => ({}));
+}
+
 // Persist a provider's connection (tokens encrypted at rest).
 export async function storeConnection(providerId, resp) {
   const q = sql();
@@ -110,6 +129,20 @@ export async function storeConnection(providerId, resp) {
 }
 export async function disconnect(providerId) {
   const q = sql();
+  // Revoke at Square FIRST so the tokens are truly dead, not just removed from our DB (Square
+  // requires this on disconnect; it's also what the "never keeps access" trust promise implies).
+  // Best-effort: if the row is already gone, the token's invalid, or Square errors, we still
+  // delete the local row so the provider is never stuck showing "connected" on our side.
+  try {
+    const rows = await q`SELECT access_token, merchant_id FROM square_connections WHERE provider_id = ${providerId}`;
+    if (rows[0]) {
+      const accessToken = decrypt(rows[0].access_token);
+      if (accessToken || rows[0].merchant_id) {
+        try { await revokeToken({ accessToken, merchantId: rows[0].merchant_id }); }
+        catch (e) { console.error('[square] revoke on disconnect failed (deleting local row anyway):', e && e.message || e); }
+      }
+    }
+  } catch (e) { /* proceed to delete regardless */ }
   await q`DELETE FROM square_connections WHERE provider_id = ${providerId}`;
 }
 
