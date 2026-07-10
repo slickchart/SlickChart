@@ -2,6 +2,23 @@
 
 Newest entries at the top. One entry per deploy. Dates are US-formatted.
 
+## 2026-07-10 — Boundary-input hardening (money/validation already solid)
+
+An input/edge-case sweep confirmed the money, division, required-field, and date-math paths are
+genuinely hardened (prices strip `$`/commas and reject negative/NaN/Infinity; all charge/invoice paths
+guard `amount>0`; divisions guard the denominator). Two real residual issues, both fixed:
+
+- **A long unbroken consult-request no longer breaks the layout.** A prospect can submit a 120-char name
+  or 2000-char message through the public consult form; the provider's Consult-requests card rendered the
+  name and message with no `word-break`, so a pasted long URL / unbroken string overflowed the card
+  sideways. Added `overflow-wrap`/`word-break` (the email/phone line already had it).
+- **Emoji / non-Latin names now make correct avatar initials.** Two new-client paths and `_cIni` built
+  initials with `name.split(...).map(w=>w[0])`, which returns a broken surrogate half for a name starting
+  with an emoji or astral character (e.g. "😀 Nguyen" → a mojibake "�N"). Routed them through the
+  existing `_initials()` helper (code-point-safe via `Array.from`), which the rest of the app already uses.
+
+Provider-app only. Boot passes; demo regenerated (banner-only).
+
 ## 2026-07-10 — Accessibility: WCAG-AA contrast + screen-reader dialog semantics
 
 - **Text contrast now meets WCAG AA (4.5:1).** The muted greys used for secondary text failed badly —
