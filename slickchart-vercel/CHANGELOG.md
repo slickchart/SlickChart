@@ -2,6 +2,26 @@
 
 Newest entries at the top. One entry per deploy. Dates are US-formatted.
 
+## 2026-07-10 — Performance: kill per-nav megabyte writes, debounce note typing, dedupe polling
+
+- **Navigation no longer re-serializes your whole photo library.** `_savePersistenceSweep` ran on
+  every screen change and, among 16 stores, re-wrote `sc_session_summaries` and `sc_captured_photos`
+  (base64 JPEGs — potentially megabytes) to localStorage synchronously. Both are already saved at every
+  point they actually change, so writing them again on every tap was pure overhead that made navigation
+  progressively jankier for providers with lots of photos. Removed those two from the per-nav sweep;
+  the 14 small stores still sweep as before.
+- **Typing a client note no longer writes the whole workspace on every keystroke.** The "note the
+  client will see" fields called `persistWorkspace()` (a full `JSON.stringify` of recs/reasons/homecare/
+  products) on every `oninput`. Now debounced (trailing 500ms) and flushed on navigation and on
+  pagehide/close, so nothing is lost but typing stays smooth on big accounts.
+- **Client app stopped double-polling messages.** `/api/client-messages` was fetched by both a 20s
+  timer and the 30s data poll. Dropped the duplicate fetch from the 30s poll — the dedicated 20s timer
+  owns messages now, cutting redundant network/serverless calls by ~a third with no latency change.
+
+Both apps boot; client re-embedded (byte-identical); both demos regenerated (banner-only); 9-screen
+smoke passes. (Two bigger items were left as flagged decisions — see notes: base64 photos still grow
+unbounded in localStorage, better solved with IndexedDB; and the full-client-sync fan-out could batch.)
+
 ## 2026-07-10 — Client home now surfaces new messages live
 
 - **Unread badge on the home "Message" tile.** A dead-code sweep found the 20-second message poll

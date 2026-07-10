@@ -414,7 +414,7 @@ let clientRecs={maya:['a1','a2'],sophie:[],priya:['a3']};
 // Per-client, per-product "why you recommend it" note (shown to the client in place of the default line)
 let recReasons={maya:{a1:'Vitamin C to fade hyperpigmentation and protect from UV every day.',a2:'Mineral SPF that won\'t clog pores — essential after a Hydrafacial.'}};
 function _recReason(id,aid){return (recReasons[id]||{})[aid]||'';}
-function _setRecReason(id,aid,val){(recReasons[id]=recReasons[id]||{})[aid]=val;persistWorkspace();try{if(id!=='maya'&&typeof _scheduleSpecificClientSync==='function')_scheduleSpecificClientSync(id);}catch(e){}}
+function _setRecReason(id,aid,val){(recReasons[id]=recReasons[id]||{})[aid]=val;_persistWorkspaceSoon();try{if(id!=='maya'&&typeof _scheduleSpecificClientSync==='function')_scheduleSpecificClientSync(id);}catch(e){}}
 
 // Per-client homecare/aftercare tags — provider-customizable per session
 // Populated with defaults on first use based on active profession
@@ -1512,7 +1512,7 @@ const Cloud={
 // mobile/desktop reliably; beforeunload is a desktop backstop.
 (function(){
   try{
-    const flush=function(){try{if(typeof Cloud!=='undefined'&&Cloud.flushBeacon)Cloud.flushBeacon();}catch(e){}};
+    const flush=function(){try{if(typeof _flushWorkspacePersist==='function')_flushWorkspacePersist();}catch(e){}try{if(typeof Cloud!=='undefined'&&Cloud.flushBeacon)Cloud.flushBeacon();}catch(e){}};
     window.addEventListener('pagehide',flush);
     window.addEventListener('beforeunload',flush);
     document.addEventListener('visibilitychange',function(){if(document.visibilityState==='hidden')flush();});
@@ -2332,8 +2332,19 @@ function _loadPersistenceSweep(){
 // Safety net: persist all of the above on every navigation, so nothing new added later
 // slips through the cracks the way these did. Cheap (localStorage) and runs after edits
 // naturally return the user to a list/detail screen.
+let _wsPersistTimer=null;
+// Debounced local persist for the workspace blob (recs/reasons/homecare/products/codes). The
+// rec-reason note fields fire oninput on every keystroke; writing the whole sc_workspace blob each
+// time janked typing on big accounts. Coalesce to a trailing write; flush on nav + pagehide.
+function _persistWorkspaceSoon(){if(_wsPersistTimer)clearTimeout(_wsPersistTimer);_wsPersistTimer=setTimeout(function(){_wsPersistTimer=null;try{persistWorkspace();}catch(e){}},500);}
+function _flushWorkspacePersist(){if(_wsPersistTimer){clearTimeout(_wsPersistTimer);_wsPersistTimer=null;try{persistWorkspace();}catch(e){}}}
 function _savePersistenceSweep(){
-  try{persistClientRecs();persistRecReasons();persistClientHomecare();persistSessionSummaries();persistCapturedPhotos();
+  // Session summaries and captured photos are intentionally NOT swept here — they're the heavy
+  // stores (summaries can be large; captured photos are base64 megabytes) and are already persisted
+  // at every mutation site (capture/add/edit/event-ingest). Re-serializing them on every nav() was
+  // pure overhead that made navigation jankier as a provider's photo library grew.
+  try{_flushWorkspacePersist();
+  persistClientRecs();persistRecReasons();persistClientHomecare();
   persistStaff();persistAutos();persistNotifSettings();persistCheckins();persistCourses();persistShopBundles();
   persistAffiliateLinks();persistCustomNoteTemplates();persistIntegrations();persistClientHealingStage();persistAmazonAssociates();}catch(e){}
 }
