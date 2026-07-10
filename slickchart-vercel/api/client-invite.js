@@ -46,8 +46,13 @@ export default async function handler(req, res) {
       const text = `Hi ${(c.name || 'there').split(' ')[0]}, ${fromName}${studio ? (' at ' + studio) : ''} set up your personal client space. Open it: ${link}`;
       await sendEmail({ to: c.email, subject, html, text });
     }));
-    const sent = results.filter(r => r.status === 'fulfilled').length;
-    await markInvited(provider, targets.map(c => c.id));
-    res.status(200).json({ ok: true, sent, total: targets.length, noEmail: all.length - targets.length });
+    // Only mark clients whose email actually went out (results are index-aligned with targets).
+    // A failed/bounced send must NOT show as "invited," or the provider thinks someone was
+    // notified when they weren't and never knows to resend.
+    const invitedIds = targets.filter((c, i) => results[i] && results[i].status === 'fulfilled').map(c => c.id);
+    const sent = invitedIds.length;
+    const failed = targets.length - sent;
+    if (invitedIds.length) await markInvited(provider, invitedIds);
+    res.status(200).json({ ok: true, sent, failed, invitedIds, total: targets.length, noEmail: all.length - targets.length });
   } catch (e) { console.error('[client-invite] failed:', e && e.stack || e); res.status(e.status || 500).json({ error: 'Something went wrong. Please try again.' }); }
 }
