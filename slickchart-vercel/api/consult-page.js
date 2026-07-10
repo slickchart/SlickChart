@@ -1,4 +1,4 @@
-// PUBLIC: serves slickchart.com/consult/<slug> — a branded page where a prospect can request a
+// PUBLIC: serves slickchart.app/consult/<slug> — a branded page where a prospect can request a
 // virtual consult from a specific provider. Resolves the slug to a provider, pulls their business
 // name / website / brand color from their synced settings, and renders a self-contained form that
 // posts to /api/consult-request. No client login required (these are new leads, not clients yet).

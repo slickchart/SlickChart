@@ -1,5 +1,5 @@
 // PUBLIC (no auth): a prospect submits a consult request through a provider's public link
-// (slickchart.com/consult/<slug>). Resolves the slug to a provider and records a lead.
+// (slickchart.app/consult/<slug>). Resolves the slug to a provider and records a lead.
 // Unauthenticated by design (it's a public contact form), so it's strictly validated,
 // size-capped, and rate-limited by IP and by slug.
 import { dbEnabled } from '../lib/db.js';

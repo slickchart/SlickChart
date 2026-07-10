@@ -1,5 +1,5 @@
 // Public "request a consult" feature.
-// A provider claims a public slug — slickchart.com/consult/<slug> — that anyone (not just an
+// A provider claims a public slug — slickchart.app/consult/<slug> — that anyone (not just an
 // existing client) can open to request a virtual consult. Submissions land as consult_requests
 // for that provider to follow up on. The slug lives on the provider row; requests get their own
 // table (they're leads, not yet clients, so they don't belong in client_events).
