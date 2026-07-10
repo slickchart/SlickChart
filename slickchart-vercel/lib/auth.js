@@ -105,8 +105,11 @@ export function friendlyLocation(req) {
 }
 
 function reqIp(req) {
-  const fwd = req.headers['x-forwarded-for'] || '';
-  return String(fwd).split(',')[0].trim() || (req.socket && req.socket.remoteAddress) || '';
+  // Prefer Vercel's unspoofable x-real-ip so the IP shown in the provider's active-sessions
+  // list (a security-review surface) is accurate; fall back to X-Forwarded-For then the socket.
+  const real = String(req.headers['x-real-ip'] || '').trim();
+  const fwd = String(req.headers['x-forwarded-for'] || '').split(',')[0].trim();
+  return real || fwd || (req.socket && req.socket.remoteAddress) || '';
 }
 
 // Creates a real session row and returns its id, to be embedded in the JWT
