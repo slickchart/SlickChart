@@ -5856,8 +5856,13 @@ function loadVcState(){
   try{const inv=localStorage.getItem('sc_pro_vc_invites');if(inv)vcInvites={...vcInvites,...JSON.parse(inv)};}catch(e){}
   try{const sub=localStorage.getItem('sc_pro_vc_subs');if(sub)vcSubmissions={...vcSubmissions,...JSON.parse(sub)};}catch(e){}
 }
-function inviteVirtualConsult(id){
-  const c=CL[id];if(!c)return;const v=_vcProfile();
+function inviteVirtualConsult(id,_force){
+  const c=CL[id];if(!c)return;
+  if(!_force && typeof _vcStatus==='function' && _vcStatus(id)==='needs-review'){
+    // A submission is waiting for review — re-inviting would drop it from the "Needs review" queue.
+    if(typeof confirmModal==='function'){confirmModal({title:'Replace pending submission?',body:(c.name||'This client').split(' ')[0]+' has a virtual-consult submission awaiting your review. Sending a new invite will replace it — review that first, or continue to replace.',action:'Send new invite'},function(){inviteVirtualConsult(id,true);});return;}
+  }
+  const v=_vcProfile();
   // invitedAt is a per-invite nonce so the client can tell a fresh invite from one they've
   // already submitted for (mirrors the pending-form assignedAt fix).
   vcInvites[id]={...(vcInvites[id]||{}),invited:true,submitted:false,invitedAt:Date.now()};
@@ -7924,9 +7929,10 @@ function _hoursUntilVisit(c){
   return (d-now)/3600000;
 }
 function _checkinDone(id,c){
-  if(c&&c.checkinDone)return true;
-  try{if(typeof checkins!=='undefined'&&Array.isArray(checkins)&&checkins.some(ci=>ci&&ci.clientId===id))return true;}catch(e){}
-  return false;
+  // Scoped to the CURRENT appointment: a check-in completed for a PRIOR visit must not suppress the
+  // nudge for a newly-booked one (the client app already keys this per-appointment). checkinDoneFor
+  // stores the nextVisit it was completed for, so it auto-invalidates whenever nextVisit changes.
+  return !!(c && c.checkinDoneFor != null && c.checkinDoneFor === ((c.nextVisit) || ''));
 }
 let _ciDismissed={};
 function loadCiDismissed(){try{const r=localStorage.getItem('sc_ci_dismissed');if(r)_ciDismissed=JSON.parse(r)||{};}catch(e){}}
@@ -12794,7 +12800,7 @@ async function syncClientEvents(){
           photos:ciPhotos,read:false,at:(ev.created_at?(new Date(ev.created_at).getTime()||Date.now()):Date.now())};
         checkins.unshift(ci);
         if(c){
-          c.checkinDone=true;
+          c.checkinDone=true;c.checkinDoneFor=(c.nextVisit||'');
           // Keep only the MOST RECENT check-in on the client's file — a new one
           // overwrites the previous, so providers can always reference the latest
           // without check-ins accumulating on the chart forever.
@@ -13303,7 +13309,7 @@ SlickBridge.on('checkin-submitted',ci=>{
   checkins.unshift({...ci,read:false,at:(typeof ci.at==='number'?ci.at:Date.now())});
   try{if(typeof persistCheckins==='function')persistCheckins();}catch(e){}  // was missing — inbox check-in lost on reload
   if(ci.clientId&&CL[ci.clientId]){
-    CL[ci.clientId].checkinDone=true;
+    CL[ci.clientId].checkinDone=true;CL[ci.clientId].checkinDoneFor=(CL[ci.clientId].nextVisit||'');
     // Most recent check-in only — overwrites the previous on the client file.
     CL[ci.clientId].lastCheckin={id:ci.id,dateLabel:ci.dateLabel,time:ci.time,treatment:ci.treatment,groups:(ci.groups||[]).slice(),flagged:(ci.flagged||[]).slice(),notes:ci.notes||'',photos:(ci.photos||[]).slice(),at:Date.now()};
     try{if(typeof saveClients==='function')saveClients();}catch(e){}

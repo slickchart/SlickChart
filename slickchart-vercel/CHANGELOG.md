@@ -2,6 +2,24 @@
 
 Newest entries at the top. One entry per deploy. Dates are US-formatted.
 
+## 2026-07-10 — State-integrity: check-in re-arm + virtual-consult submission guard
+
+- **The check-in nudge now re-arms for a returning client.** The provider-side "needs check-in" flag was
+  write-once (and also treated *any* past check-in as "done"), so once a client checked in for one visit
+  the provider was never nudged to request one again — even after they booked a new appointment. It's now
+  scoped to the current appointment (stores which `nextVisit` it was completed for and auto-invalidates
+  when that changes), matching what the client app already did. Verified across done/rebooked/never/legacy.
+- **Re-inviting a virtual consult no longer silently drops a submission awaiting review.** If a client had
+  submitted their consult photos (a paid service) and the provider tapped "Invite to a new consult" before
+  reviewing, the pending submission vanished from the Needs-review queue. Now it asks first ("… has a
+  submission awaiting your review — replace it?").
+
+Provider-app only. Boot passes; check-in logic simulated; demo regenerated (banner-only).
+
+_Flagged (not changed): a confirmed appointment whose time has passed keeps showing as the client's
+"next visit" until replaced/edited — what to show instead (its own "last visit"? "not scheduled"?) is a
+display/product choice worth deciding rather than auto-clearing the data._
+
 ## 2026-07-10 — Payments/Square money-integrity fixes (state-transition sweep)
 
 A state-transition sweep found several ways the money numbers could go wrong. All fixed:
