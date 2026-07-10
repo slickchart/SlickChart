@@ -4,6 +4,7 @@
 // size-capped, and rate-limited by IP and by slug.
 import { dbEnabled } from '../lib/db.js';
 import { getProviderBySlug, addConsultRequest } from '../lib/consult.js';
+import { sendEmail, appOrigin, consultLeadEmailHtml, consultLeadEmailText } from '../lib/email.js';
 
 // Best-effort in-memory burst limiter (per function instance; fails open) — same shape as
 // /api/client-submit and /api/ai. Stops a script from flooding a provider's lead list.
@@ -42,6 +43,23 @@ export default async function handler(req, res) {
     const prov = await getProviderBySlug(slug);
     if (!prov) { res.status(404).json({ error: 'This consult link is not active.' }); return; }
     await addConsultRequest(prov.id, { name, email, phone, message });
+
+    // Notify the provider so a lead doesn't sit unseen until they next open the app. Best-effort:
+    // a mail failure must never fail the prospect's submission (it's already saved). Reply-To is
+    // the prospect's email, so the provider can reply straight to the lead.
+    if (prov.email) {
+      try {
+        const link = appOrigin(req) + '/slickchart';
+        const fields = { providerName: prov.name, name, email, phone, message, link };
+        await sendEmail({
+          to: prov.email,
+          replyTo: email || undefined,
+          subject: 'New consult request from ' + (name || 'someone'),
+          html: consultLeadEmailHtml(fields),
+          text: consultLeadEmailText(fields)
+        });
+      } catch (e) { try { console.error('[consult-request] notify failed', e && e.message || e); } catch (_) {} }
+    }
     res.status(200).json({ ok: true });
   } catch (e) { try{console.error('[consult-request]', e && e.stack || e);}catch(_){} res.status(500).json({ error: 'Something went wrong — please try again.' }); }
 }

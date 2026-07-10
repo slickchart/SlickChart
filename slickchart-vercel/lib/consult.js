@@ -42,7 +42,7 @@ export function reservedSlug(s) { return RESERVED_SLUGS.has(String(s || '').toLo
 export async function getProviderBySlug(slug) {
   await ensureConsultSchema();
   const q = sql();
-  const rows = await q`SELECT id, name FROM providers WHERE consult_slug = ${String(slug || '').toLowerCase()}`;
+  const rows = await q`SELECT id, name, email FROM providers WHERE consult_slug = ${String(slug || '').toLowerCase()}`;
   return rows[0] || null;
 }
 

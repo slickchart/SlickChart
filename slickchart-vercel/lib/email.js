@@ -1,7 +1,7 @@
 // Minimal transactional email via Resend's HTTP API (no SDK/deps needed).
 // If RESEND_API_KEY isn't set, we no-op gracefully so the app still works in
 // development / before an email provider is connected.
-export async function sendEmail({ to, subject, html, text }) {
+export async function sendEmail({ to, subject, html, text, replyTo: replyToOverride }) {
   const key = process.env.RESEND_API_KEY || '';
   // The "from" address must be on a domain verified in Resend. slickchart.app is verified, so we
   // default to it; override with EMAIL_FROM in Vercel to use a different address on that domain.
@@ -9,8 +9,9 @@ export async function sendEmail({ to, subject, html, text }) {
   // To route replies to your inbox, use EMAIL_REPLY_TO (below) instead.
   const from = process.env.EMAIL_FROM || 'SlickChart <noreply@slickchart.app>';
   // Replies to any SlickChart email go here (defaults to the business inbox). This is how a Gmail
-  // address gets attached to the emails without needing to send *from* it.
-  const replyTo = process.env.EMAIL_REPLY_TO || 'slickchart2026@gmail.com';
+  // address gets attached to the emails without needing to send *from* it. A caller can override
+  // per-message (e.g. a lead-notification sets Reply-To to the prospect so a reply reaches them).
+  const replyTo = replyToOverride || process.env.EMAIL_REPLY_TO || 'slickchart2026@gmail.com';
   if (!key) { console.log('[email] RESEND_API_KEY not set — skipping email to', to); return { skipped: true }; }
   const r = await fetch('https://api.resend.com/emails', {
     method: 'POST',
@@ -138,4 +139,35 @@ With love,
 Ashley
 Founder, SlickChart · Botanical Aesthetics`;
 }
+// Notification a provider gets when someone submits their public consult link. The whole point of
+// the link is lead capture, so the request has to reach them without them polling the app. Reply-To
+// is set to the prospect (in consult-request.js) so hitting reply goes straight to the lead.
+export function consultLeadEmailHtml({ providerName, name, email, phone, message, link }) {
+  const row = (label, val) => val ? `<tr><td style="padding:6px 12px 6px 0;font-size:13px;color:#8a7a6c;white-space:nowrap;vertical-align:top;">${esc(label)}</td><td style="padding:6px 0;font-size:14px;color:#1a1a1a;overflow-wrap:anywhere;">${esc(val)}</td></tr>` : '';
+  return `<div style="font-family:-apple-system,Segoe UI,Roboto,sans-serif;max-width:520px;margin:0 auto;padding:8px;color:#1a1a1a;">
+    <div style="background:#14100c;border-radius:14px;padding:22px 24px;color:#f4ede2;">
+      <div style="font-size:12px;color:#a99b86;letter-spacing:.06em;text-transform:uppercase;margin-bottom:4px;">New consult request</div>
+      <div style="font-size:20px;font-weight:700;">${esc(name || 'Someone')} wants to book with you</div>
+    </div>
+    <div style="padding:20px 6px 6px;">
+      <table role="presentation" style="width:100%;border-collapse:collapse;margin-bottom:18px;">
+        ${row('Name', name)}${row('Email', email)}${row('Phone', phone)}
+      </table>
+      ${message ? `<div style="background:#faf7f3;border-radius:12px;padding:14px 16px;font-size:14px;line-height:1.6;color:#3a3a3a;white-space:pre-wrap;overflow-wrap:anywhere;margin-bottom:18px;">${esc(message)}</div>` : ''}
+      <p style="font-size:14px;line-height:1.7;color:#3a3a3a;margin:0 0 18px;">Just hit reply to answer ${esc((name || '').trim().split(/\s+/)[0] || 'them')} directly${email ? ' at ' + esc(email) : ''}${phone ? ', or call ' + esc(phone) : ''}.</p>
+      ${link ? `<div style="margin:0 0 8px;"><a href="${link}" style="background:#cd9a52;color:#1a1206;text-decoration:none;font-weight:700;padding:12px 24px;border-radius:10px;display:inline-block;font-size:14px;">Open SlickChart</a></div>` : ''}
+    </div>
+  </div>`;
+}
+export function consultLeadEmailText({ providerName, name, email, phone, message, link }) {
+  const lines = ['New consult request', ''];
+  lines.push('Name: ' + (name || 'Someone'));
+  if (email) lines.push('Email: ' + email);
+  if (phone) lines.push('Phone: ' + phone);
+  if (message) { lines.push('', message); }
+  lines.push('', 'Reply to this email to answer them directly' + (email ? ' (' + email + ')' : '') + '.');
+  if (link) lines.push('', 'Open SlickChart: ' + link);
+  return lines.join('\n');
+}
+
 function esc(s) { return String(s == null ? '' : s).replace(/[&<>"']/g, c => ({ '&': '&amp;', '<': '&lt;', '>': '&gt;', '"': '&quot;', "'": '&#39;' }[c])); }
