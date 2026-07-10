@@ -40,8 +40,12 @@ function callerKey(req) {
     const body = verifyToken(token, secret);
     if (body && body.u) return 'u:' + body.u;
   }
+  // Prefer the platform-set real IP (Vercel's x-real-ip, not spoofable) over the leftmost
+  // X-Forwarded-For entry (client-supplied and spoofable — otherwise an attacker rotates it to
+  // get a fresh rate-limit bucket per request and run up the AI bill).
+  const realIp = String(req.headers['x-real-ip'] || '').trim();
   const xff = String(req.headers['x-forwarded-for'] || '').split(',')[0].trim();
-  return 'ip:' + (xff || (req.socket && req.socket.remoteAddress) || 'anon');
+  return 'ip:' + (realIp || xff || (req.socket && req.socket.remoteAddress) || 'anon');
 }
 
 // ── Optional DB-backed daily quota (fails open if the DB hiccups) ──
