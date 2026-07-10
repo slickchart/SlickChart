@@ -20,8 +20,13 @@ export default async function handler(req, res) {
       if (!amount || amount <= 0) { res.status(400).json({ error: 'Enter a valid amount.' }); return; }
       if (!b.cardId) { res.status(400).json({ error: 'Pick a saved card.' }); return; }
       const locationId = await resolveLocationId(ctx.token, ctx.locationId);
+      // Prefer the client's stable idempotency key so a retried/duplicated request (lost response,
+      // double-tap after a timeout) resolves to the SAME Square payment instead of charging twice.
+      // Only fall back to a generated key if the client didn't send one. Square caps the key at 45 chars.
+      const clientKey = String(b.idempotencyKey || '').replace(/[^a-zA-Z0-9_-]/g, '').slice(0, 45);
+      const idemKey = clientKey || ('sc-pay-' + Date.now() + '-' + Math.random().toString(36).slice(2, 10));
       const p = await sf('/v2/payments', { method: 'POST', body: {
-        idempotency_key: 'sc-pay-' + Date.now() + '-' + Math.random().toString(36).slice(2, 10),
+        idempotency_key: idemKey,
         source_id: b.cardId, customer_id: b.customerId || undefined,
         amount_money: { amount, currency: 'USD' }, location_id: locationId,
         note: String(b.note || 'SlickChart').slice(0, 500)

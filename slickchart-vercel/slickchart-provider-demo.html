@@ -10990,6 +10990,7 @@ let _coTip=false;
 let _coMenu=null;
 let _coMenuAt=0;   // when _coMenu was last built — used to expire the cache so prices stay fresh
 let _coCharging=false;   // in-flight guard: blocks a double-tap from charging twice
+let _coChargeKey=null;   // {sig,key} stable idempotency key so a retried charge can't double-charge
 function _coFlatten(d){
   const out=[];
   const add=(arr,kind)=>{(arr||[]).forEach(it=>{const vars=(it.variations&&it.variations.length)?it.variations:[{id:null,name:'',price:it.price}];vars.forEach(v=>{const nm=(v.name&&!/^regular$/i.test(v.name))?(it.name+' \u2014 '+v.name):it.name;out.push({name:nm,price:(v.price!=null?v.price:it.price)||0,variationId:v.id||null,kind,taxable:true});});});};
@@ -11149,10 +11150,17 @@ async function _coDoCharge(id,cardId){
   if(_coCharging)return;
   const c=CL[id];const items=_coValidItems();const amt=_coAmount();const note=_coVal('co-desc')||'SlickChart';
   if(!amt||amt<=0)return _coErr('Add line items or an amount first.');
+  // Stable idempotency key for THIS charge intent. Reused across retries of the same
+  // (client, card, amount, note) so a lost response or a tap-after-timeout can't double-charge;
+  // cleared only after a confirmed success, so a later deliberate identical charge gets a fresh key.
+  const _sig=id+'|'+cardId+'|'+amt+'|'+note;
+  if(!_coChargeKey||_coChargeKey.sig!==_sig){_coChargeKey={sig:_sig,key:'sc-pay-'+Date.now().toString(36)+'-'+Math.random().toString(36).slice(2,10)};}
+  const _idem=_coChargeKey.key;
   _coCharging=true;
   _coBusy('Charging\u2026');
   try{
-    const d=await _sqFetch('/api/square/charge-card',{method:'POST',body:{customerId:c.squareId,cardId,amount:amt,note}});
+    const d=await _sqFetch('/api/square/charge-card',{method:'POST',body:{customerId:c.squareId,cardId,amount:amt,note,idempotencyKey:_idem}});
+    _coChargeKey=null; // confirmed success \u2014 a future identical charge should be a new, intentional one
     _addPayment({clientId:id,clientName:c.name,amount:amt,taxAmount:_coTaxAmt(),method:'Square',status:'paid',date:_todayISO(),note:note+' (card on file)',source:'square'});
     document.getElementById('co-result').innerHTML='<div style="background:#0a2019;border:1px solid #1c4030;border-radius:10px;padding:12px 14px;font-size:13px;color:#4ec49a;font-weight:600;"><i class="ti ti-check"></i> Charged $'+amt.toFixed(2)+' \u2014 '+(d.status||'done')+' \u00b7 logged in Payments</div>';
     if(typeof proToast==='function')proToast('Payment complete \u2713');
