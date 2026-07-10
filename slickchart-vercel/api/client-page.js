@@ -38,9 +38,13 @@ export default async function handler(req, res) {
       ? `${esc(first)}'s visit summary, aftercare, and appointments.`
       : `View your visit summary, aftercare, and appointments.`;
 
-    html = html.replace(/<title>[\s\S]*?<\/title>/, `<title>${title}</title>`);
+    // Use FUNCTION replacements: a replacement string would interpret `$`-patterns ($&, $`, $')
+    // that appear in an escaped client name (esc() turns specials into entities starting with `&`,
+    // so a name like `Jo$'` becomes `...$&#39;` — a `$&` pattern that would splice matched/trailing
+    // HTML into the page). A function returns the text verbatim, immune to that.
+    html = html.replace(/<title>[\s\S]*?<\/title>/, () => `<title>${title}</title>`);
     const ogTags = `<meta property="og:title" content="${title}">\n<meta property="og:description" content="${desc}">\n<meta property="og:type" content="website">\n<meta name="twitter:card" content="summary">`;
-    html = html.replace('<meta name="theme-color" content="#c8a882">', `<meta name="theme-color" content="#c8a882">\n${ogTags}`);
+    html = html.replace('<meta name="theme-color" content="#c8a882">', () => `<meta name="theme-color" content="#c8a882">\n${ogTags}`);
 
     res.setHeader('Content-Type', 'text/html; charset=utf-8');
     res.setHeader('Cache-Control', 'no-store');
