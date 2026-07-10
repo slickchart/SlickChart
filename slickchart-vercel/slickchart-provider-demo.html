@@ -1325,6 +1325,10 @@ function _cleanupClientData(id){
     if(typeof providerNoteDrafts!=='undefined')delete providerNoteDrafts[id];
     if(typeof msgStore!=='undefined')delete msgStore[id];
     if(typeof threads!=='undefined')for(let ti=threads.length-1;ti>=0;ti--){if(threads[ti]&&threads[ti].id===id)threads.splice(ti,1);}
+    // A deleted client's OUTSTANDING invoices would otherwise inflate A/R forever with no chart to
+    // resolve them from. Cancel those (drops them out of Outstanding/A/R) but keep any PAID records
+    // so revenue history and reports stay intact.
+    if(typeof _payments!=='undefined'&&Array.isArray(_payments)){let _ch=false;_payments.forEach(p=>{if(p&&p.clientId===id&&(p.status==='unpaid'||p.status==='partial')){p.status='canceled';_ch=true;}});if(_ch&&typeof _savePayments==='function')_savePayments();}
   }catch(e){}
   try{if(typeof persistClientRecs==='function')persistClientRecs();}catch(e){}
   try{if(typeof persistRecReasons==='function')persistRecReasons();}catch(e){}
@@ -10964,8 +10968,15 @@ function _payDateDisp(d){
 }
 let _payments=(function(){try{return JSON.parse(localStorage.getItem('sc_payments')||'[]');}catch(e){return [];}})();
 function _savePayments(){try{localStorage.setItem('sc_payments',JSON.stringify(_payments));return true;}catch(e){return false;}}
-function _clientBalance(cid){return _payments.filter(p=>p.clientId===cid&&(p.status==='unpaid'||p.status==='partial')).reduce((a,p)=>a+(parseFloat(p.amount)||0),0);}
+function _clientBalance(cid){return _payments.filter(p=>p.clientId===cid).reduce((a,p)=>a+_payOwed(p),0);}
 function _addPayment(p){p.id=p.id||('pay_'+Date.now().toString(36)+Math.random().toString(36).slice(2,6));_payments.unshift(p);_savePayments();return p;}
+// Money split for a payment. 'partial' = part-collected: amountPaid received, amount-amountPaid still
+// owed. paid = fully collected; unpaid = nothing collected; refunded/canceled = neither collected nor owed.
+function _payCollected(p){if(!p)return 0;if(p.status==='paid')return parseFloat(p.amount)||0;if(p.status==='partial')return Math.max(0,Math.min(parseFloat(p.amount)||0,parseFloat(p.amountPaid)||0));return 0;}
+function _payOwed(p){if(!p)return 0;if(p.status==='unpaid')return parseFloat(p.amount)||0;if(p.status==='partial')return Math.max(0,(parseFloat(p.amount)||0)-(parseFloat(p.amountPaid)||0));return 0;}
+// Tombstone Square invoice ids the provider deleted, so the auto-sync doesn't resurrect them.
+let _deletedSquareIds=(function(){try{const a=JSON.parse(localStorage.getItem('sc_deleted_sq')||'[]');return new Set(Array.isArray(a)?a:[]);}catch(e){return new Set();}})();
+function _markSquareDeleted(id){if(!id)return;_deletedSquareIds.add(id);try{localStorage.setItem('sc_deleted_sq',JSON.stringify(Array.from(_deletedSquareIds)));}catch(e){}}
 
 // Line-item builder (pulls the provider's Square services + products, plus local products)
 let _coItems=[];
@@ -11232,7 +11243,9 @@ function _reportData(from,to){
       }
     } else { const cat=p.category||''; if(cat==='Retail')retail+=net;else if(cat==='Service')services+=net;else other+=net; }
   });
-  const ar=outstanding.reduce((a,p)=>a+(parseFloat(p.amount)||0),0);const revenue=services+retail+other;
+  // Partial payments: count the collected portion toward revenue (by category), like a paid sale.
+  _payments.filter(p=>p.status==='partial'&&inRange(p)).forEach(p=>{const c=_payCollected(p);if(c<=0)return;total+=c;byMethod[p.method||'Other']=(byMethod[p.method||'Other']||0)+c;const cat=p.category||'';if(cat==='Retail')retail+=c;else if(cat==='Service')services+=c;else other+=c;});
+  const ar=outstanding.reduce((a,p)=>a+_payOwed(p),0);const revenue=services+retail+other;
   return {from,to,paid,outstanding,services,retail,other,tax,total,revenue,ar,count:paid.length,byMethod,avg:paid.length?total/paid.length:0};
 }
 function _reportExportBtn(icon,label,onclick){return `<button onclick="${onclick}" style="display:flex;align-items:center;gap:10px;background:#161616;border:1px solid #2a2a2a;border-radius:10px;padding:12px 14px;cursor:pointer;font-family:inherit;text-align:left;width:100%;"><i class="ti ${icon}" style="font-size:17px;color:#4ec49a;"></i><span style="flex:1;font-size:13px;font-weight:600;color:#e0e0e0;">${label}</span><i class="ti ti-download" style="color:#888;font-size:16px;"></i></button>`;}
@@ -11638,7 +11651,7 @@ function renderPayments(){
   const paid=_payments.filter(p=>p.status==='paid').sort(byDateDesc);
   const sum=arr=>arr.reduce((a,p)=>a+(parseFloat(p.amount)||0),0);
   const ym=new Date().toISOString().slice(0,7);
-  const monthPaid=sum(paid.filter(p=>String(p.date||'').slice(0,7)===ym));
+  const monthPaid=_payments.filter(p=>String(p.date||'').slice(0,7)===ym).reduce((a,p)=>a+_payCollected(p),0);
   const chip=s=>({paid:['#0a2019','#4ec49a','Paid'],unpaid:['#2a1a0a','#e8b060','Unpaid'],partial:['#0d1e33','#5ba3e8','Partial'],refunded:['#1a1a1a','#999','Refunded'],canceled:['#1a1a1a','#777','Canceled']}[s]||['#1a1a1a','#999',s]);
   const row=p=>{const cs=chip(p.status);return `<div onclick="_payOpen('${p.id}')" style="background:#161616;border:1px solid #242424;border-radius:11px;padding:11px 13px;margin:0 16px 8px;cursor:pointer;"><div style="display:flex;justify-content:space-between;align-items:center;"><div style="min-width:0;"><div style="font-size:14px;font-weight:600;color:#f0f0f0;">$${(parseFloat(p.amount)||0).toFixed(2)} <span style="font-size:11px;color:#888;font-weight:400;">\u00b7 ${_fileEsc(p.method||'')}</span></div><div style="font-size:12px;color:#999;margin-top:1px;">${String(p.clientName||'\u2014').replace(/</g,'&lt;')} \u00b7 ${_payDateDisp(p.date)}</div></div><span style="font-size:10px;font-weight:700;padding:3px 9px;border-radius:20px;background:${cs[0]};color:${cs[1]};">${_fileEsc(cs[2])}</span></div>${p.note?`<div style="font-size:11px;color:#9a9a9a;margin-top:5px;">${String(p.note).replace(/</g,'&lt;')}</div>`:''}<div style="display:flex;gap:14px;margin-top:8px;align-items:center;">${p.status!=='paid'?`<button onclick="event.stopPropagation();_payMarkPaid('${p.id}')" style="background:none;border:none;color:#4ec49a;font-size:12px;font-weight:600;cursor:pointer;font-family:inherit;padding:0;"><i class="ti ti-check"></i> Mark paid</button>`:''}<span style="color:#5ba3e8;font-size:12px;font-weight:600;"><i class="ti ti-chevron-right"></i> Details</span><button onclick="event.stopPropagation();_payDelete('${p.id}')" style="background:none;border:none;color:#a85a5a;font-size:12px;cursor:pointer;font-family:inherit;padding:0;margin-left:auto;">Remove</button></div></div>`;};
   S.innerHTML=`
@@ -11650,7 +11663,7 @@ function renderPayments(){
     <button onclick="nav('reports')" style="background:#161616;border:1px solid #2a2a2a;color:#cfe4d8;border-radius:9px;padding:10px 12px;font-size:12px;font-weight:600;cursor:pointer;font-family:inherit;"><i class="ti ti-chart-bar"></i> Reports</button>
   </div>
   <div style="display:flex;gap:8px;padding:8px 16px 6px;">
-    <div style="flex:1;background:#2a1a0a;border:1px solid #4a3510;border-radius:11px;padding:11px 13px;"><div style="font-size:11px;color:#c99a5a;">Outstanding</div><div style="font-size:18px;font-weight:600;color:#e8b060;">$${sum(out).toFixed(2)}</div></div>
+    <div style="flex:1;background:#2a1a0a;border:1px solid #4a3510;border-radius:11px;padding:11px 13px;"><div style="font-size:11px;color:#c99a5a;">Outstanding</div><div style="font-size:18px;font-weight:600;color:#e8b060;">$${out.reduce((a,p)=>a+_payOwed(p),0).toFixed(2)}</div></div>
     <div style="flex:1;background:#0a2019;border:1px solid #1c4030;border-radius:11px;padding:11px 13px;"><div style="font-size:11px;color:#6fae90;">Collected this month</div><div style="font-size:18px;font-weight:600;color:#4ec49a;">$${monthPaid.toFixed(2)}</div></div>
   </div>
   ${out.length?`<div class="sh"><h2>Outstanding</h2></div>${out.map(row).join('')}`:''}
@@ -11659,8 +11672,8 @@ function renderPayments(){
   <div style="height:20px;"></div>`;
   try{_paySyncSquare(true);}catch(e){}
 }
-function _payMarkPaid(idv){const p=_payments.find(x=>x.id===idv);if(p){p.status='paid';_savePayments();}if(typeof _navCur!=='undefined'&&_navCur&&_navCur.screen==='payments')renderPayments();}
-function _payDeleteDo(idv){const i=_payments.findIndex(x=>x.id===idv);if(i>=0){_payments.splice(i,1);_savePayments();if(typeof proToast==='function')proToast('Payment removed');}const _m=document.getElementById('pay-detail');if(_m)_m.remove();if(typeof _navCur!=='undefined'&&_navCur&&_navCur.screen==='payments')renderPayments();}
+function _payMarkPaid(idv){const p=_payments.find(x=>x.id===idv);if(p&&p.status!=='refunded'&&p.status!=='canceled'){p.status='paid';_savePayments();}if(typeof _navCur!=='undefined'&&_navCur&&_navCur.screen==='payments')renderPayments();}
+function _payDeleteDo(idv){const i=_payments.findIndex(x=>x.id===idv);if(i>=0){if(_payments[i]&&_payments[i].squareInvoiceId)_markSquareDeleted(_payments[i].squareInvoiceId);_payments.splice(i,1);_savePayments();if(typeof proToast==='function')proToast('Payment removed');}const _m=document.getElementById('pay-detail');if(_m)_m.remove();if(typeof _navCur!=='undefined'&&_navCur&&_navCur.screen==='payments')renderPayments();}
 function _payDelete(idv){if(typeof confirmModal==='function'){confirmModal({title:'Remove this payment?',body:'This removes the payment record. It can’t be undone.',action:'Remove'},function(){_payDeleteDo(idv);});}else{_payDeleteDo(idv);}}
 function _payOpen(idv){
   const p=_payments.find(x=>x.id===idv); if(!p)return;
@@ -11737,14 +11750,17 @@ function _payLogOpen(){
   const ex=document.getElementById('pay-log');if(ex)ex.remove();
   const opts=Object.entries(CL).map(([cid,c])=>`<option value="${cid}">${String(c.name||'').replace(/</g,'&lt;')}</option>`).join('');
   const m=document.createElement('div');m.id='pay-log';m.style.cssText='position:fixed;top:0;bottom:0;left:0;right:0;margin:0 auto;width:390px;max-width:100%;z-index:9999;background:rgba(0,0,0,.6);display:flex;flex-direction:column;justify-content:flex-end;';m.onclick=e=>{if(e.target===m)m.remove();};
-  m.innerHTML='<div style="background:#161616;border-top:1px solid #2a2a2a;border-radius:16px 16px 0 0;padding:18px;max-height:88%;overflow:auto;"><div style="width:36px;height:4px;background:#2a2a2a;border-radius:2px;margin:0 auto 14px;"></div><div style="font-size:15px;font-weight:600;color:#f0f0f0;margin-bottom:12px;">Log a payment</div><span class="fl-lbl">Client</span><select class="fi" id="pl-client" style="margin-bottom:10px;">'+opts+'</select><div style="display:flex;gap:10px;"><div style="flex:1;"><span class="fl-lbl">Amount</span><input class="fi" id="pl-amt" inputmode="decimal" placeholder="0.00" style="margin-bottom:10px;"></div><div style="flex:1;"><span class="fl-lbl">Date</span><input type="date" class="fi" id="pl-date" value="'+_todayISO()+'" style="margin-bottom:10px;color-scheme:dark;"></div></div><div style="display:flex;gap:10px;"><div style="flex:1;"><span class="fl-lbl">Method</span><select class="fi" id="pl-method" style="margin-bottom:10px;"><option>Cash</option><option>Venmo</option><option>Zelle</option><option>Card</option><option>Stripe</option><option>Square</option><option>Other</option></select></div><div style="flex:1;"><span class="fl-lbl">Status</span><select class="fi" id="pl-status" style="margin-bottom:10px;"><option value="paid">Paid</option><option value="unpaid">Unpaid</option><option value="partial">Partial</option></select></div></div><span class="fl-lbl">Category (for reports)</span><select class="fi" id="pl-category" style="margin-bottom:10px;"><option value="Service">Service</option><option value="Retail">Retail / product</option><option value="Other">Other</option></select><span class="fl-lbl">Note (optional)</span><input class="fi" id="pl-note" placeholder="e.g. Hydrafacial + serum" style="margin-bottom:14px;"><button class="btnp" style="width:100%;border-radius:10px;" onclick="_payLogSave()"><i class="ti ti-check"></i> Save payment</button><button onclick="document.getElementById(\'pay-log\').remove()" style="width:100%;margin-top:8px;background:none;border:none;color:#9a9a9a;font-size:13px;cursor:pointer;font-family:inherit;padding:6px;">Cancel</button></div>';
+  m.innerHTML='<div style="background:#161616;border-top:1px solid #2a2a2a;border-radius:16px 16px 0 0;padding:18px;max-height:88%;overflow:auto;"><div style="width:36px;height:4px;background:#2a2a2a;border-radius:2px;margin:0 auto 14px;"></div><div style="font-size:15px;font-weight:600;color:#f0f0f0;margin-bottom:12px;">Log a payment</div><span class="fl-lbl">Client</span><select class="fi" id="pl-client" style="margin-bottom:10px;">'+opts+'</select><div style="display:flex;gap:10px;"><div style="flex:1;"><span class="fl-lbl">Amount</span><input class="fi" id="pl-amt" inputmode="decimal" placeholder="0.00" style="margin-bottom:10px;"></div><div style="flex:1;"><span class="fl-lbl">Date</span><input type="date" class="fi" id="pl-date" value="'+_todayISO()+'" style="margin-bottom:10px;color-scheme:dark;"></div></div><div style="display:flex;gap:10px;"><div style="flex:1;"><span class="fl-lbl">Method</span><select class="fi" id="pl-method" style="margin-bottom:10px;"><option>Cash</option><option>Venmo</option><option>Zelle</option><option>Card</option><option>Stripe</option><option>Square</option><option>Other</option></select></div><div style="flex:1;"><span class="fl-lbl">Status</span><select class="fi" id="pl-status" style="margin-bottom:10px;"><option value="paid">Paid</option><option value="unpaid">Unpaid</option><option value="partial">Partial</option></select></div></div><span class="fl-lbl">Paid so far (only if Partial)</span><input class="fi" id="pl-partial" inputmode="decimal" placeholder="0.00" style="margin-bottom:10px;"><span class="fl-lbl">Category (for reports)</span><select class="fi" id="pl-category" style="margin-bottom:10px;"><option value="Service">Service</option><option value="Retail">Retail / product</option><option value="Other">Other</option></select><span class="fl-lbl">Note (optional)</span><input class="fi" id="pl-note" placeholder="e.g. Hydrafacial + serum" style="margin-bottom:14px;"><button class="btnp" style="width:100%;border-radius:10px;" onclick="_payLogSave()"><i class="ti ti-check"></i> Save payment</button><button onclick="document.getElementById(\'pay-log\').remove()" style="width:100%;margin-top:8px;background:none;border:none;color:#9a9a9a;font-size:13px;cursor:pointer;font-family:inherit;padding:6px;">Cancel</button></div>';
   (document.querySelector('.shell')||document.body).appendChild(m);
 }
 function _payLogSave(){
   const g=idv=>{const e=document.getElementById(idv);return e?e.value:'';};
   const cid=g('pl-client');const c=CL[cid]||{};const amt=_price(g('pl-amt'));
   if(!amt||amt<=0){if(typeof proToast==='function')proToast('Enter an amount');return;}
-  _addPayment({clientId:cid,clientName:c.name||'Client',amount:amt,method:g('pl-method')||'Cash',status:g('pl-status')||'paid',date:g('pl-date')||_todayISO(),note:g('pl-note')||'',category:g('pl-category')||'Service',source:'manual'});
+  // Partial: capture how much was collected so far; coerce to unpaid/paid at the boundaries.
+  let _st=g('pl-status')||'paid';let _ap;
+  if(_st==='partial'){const paidSoFar=Math.max(0,Math.min(amt,_price(g('pl-partial'))));if(paidSoFar<=0)_st='unpaid';else if(paidSoFar>=amt)_st='paid';else _ap=paidSoFar;}
+  _addPayment({clientId:cid,clientName:c.name||'Client',amount:amt,amountPaid:_ap,method:g('pl-method')||'Cash',status:_st,date:g('pl-date')||_todayISO(),note:g('pl-note')||'',category:g('pl-category')||'Service',source:'manual'});
   // _addPayment persists via _savePayments; confirm it actually wrote before telling the
   // provider it's logged (a silent quota failure would otherwise lose the record on reload).
   const _saved=_savePayments();
@@ -11789,8 +11805,8 @@ async function _paySyncSquare(auto){
     (d.invoices||[]).forEach(sv=>{
       const e=_payments.find(p=>p.squareInvoiceId===sv.id);
       const st=(sv.status==='paid')?'paid':(sv.status==='partial'?'partial':(sv.status==='canceled'||sv.status==='refunded')?sv.status:'unpaid');
-      if(e){e.status=st;if(sv.total!=null)e.amount=sv.total;if(sv.publicUrl)e.publicUrl=sv.publicUrl;}
-      else if(sv.status!=='draft'){_addPayment({clientId:'',clientName:sv.client||'Client',amount:sv.total||0,method:'Square',status:st,date:(sv.createdAt||'').slice(0,10)||_todayISO(),note:'Square invoice',source:'square',squareInvoiceId:sv.id,publicUrl:sv.publicUrl});}
+      if(e){if(!(e.status==='paid'&&(st==='unpaid'||st==='partial')))e.status=st;if(sv.total!=null)e.amount=sv.total;if(sv.publicUrl)e.publicUrl=sv.publicUrl;}
+      else if(sv.status!=='draft'&&!_deletedSquareIds.has(sv.id)){_addPayment({clientId:'',clientName:sv.client||'Client',amount:sv.total||0,method:'Square',status:st,date:(sv.createdAt||'').slice(0,10)||_todayISO(),note:'Square invoice',source:'square',squareInvoiceId:sv.id,publicUrl:sv.publicUrl});}
     });
     _savePayments();
     if(typeof _navCur!=='undefined'&&_navCur&&_navCur.screen==='payments')renderPayments();

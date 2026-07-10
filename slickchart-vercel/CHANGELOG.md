@@ -2,6 +2,28 @@
 
 Newest entries at the top. One entry per deploy. Dates are US-formatted.
 
+## 2026-07-10 — Payments/Square money-integrity fixes (state-transition sweep)
+
+A state-transition sweep found several ways the money numbers could go wrong. All fixed:
+
+- **Partial payments (deposits) now count correctly.** A payment marked **Partial** stored only a total
+  with no record of how much was collected — so it counted as **fully outstanding** in A/R *and* the
+  collected portion counted as **$0 revenue** (invisible on the CPA export). "Log a payment" now has a
+  "Paid so far" field; Outstanding/A/R use `amount − paid`, and the collected portion counts toward
+  revenue and "collected this month". Centralized in two helpers (`_payCollected`/`_payOwed`) and
+  simulated across paid/unpaid/partial/refunded/canceled + over/under-payment boundaries.
+- **Square auto-sync can no longer undo a manual "Mark paid" or resurrect a deleted invoice.** If you
+  collected a Square invoice out-of-band (cash/Venmo) and marked it paid, the 60-second sync used to
+  flip it back to unpaid every cycle (Square still showed it open) — money stuck in Outstanding. Now a
+  locally-paid record stays paid. And deleting a Square-linked invoice now tombstones it so the sync
+  doesn't re-add it on the next run.
+- **Deleting a client no longer leaves ghost A/R.** Their outstanding invoices were orphaned and kept
+  inflating Outstanding/A/R forever with no chart to resolve them. They're now canceled on delete (drop
+  out of A/R) while **paid** records are kept so revenue history stays intact.
+- **"Mark paid" won't re-collect a refunded/canceled payment** (defense-in-depth guard).
+
+Provider-app only. Boot passes; money math simulated; demo regenerated (banner-only).
+
 ## 2026-07-10 — Reminder cron: fire morning-of for early appointments; DST-safe "tomorrow"
 
 A date/time/timezone sweep confirmed the countdown/parsing is DST-safe (local midnight-to-midnight with
