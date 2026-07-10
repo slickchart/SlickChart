@@ -2,6 +2,25 @@
 
 Newest entries at the top. One entry per deploy. Dates are US-formatted.
 
+## 2026-07-10 — Photos moved to IndexedDB (no more storage-quota ceiling)
+
+Before-and-after / captured photos were stored as base64 in a single localStorage key
+(`sc_captured_photos`), which has a ~5MB browser cap — a busy provider would eventually hit it and get
+"storage full", unable to save new photos. They now live in **IndexedDB** (hundreds of MB, and off the
+localStorage stringify path):
+
+- Added a tiny promise-based IndexedDB key→value store (`_idb`) that degrades gracefully — if IndexedDB
+  is unavailable (private mode / very old browser) it transparently falls back to the old localStorage
+  behavior, so nothing breaks.
+- **Loss-proof migration:** on load, any existing `sc_captured_photos` in localStorage is read
+  synchronously (so a provider's photos are available instantly, no blank gap), then moved into
+  IndexedDB, and only then is the localStorage key freed. Verified end-to-end (round-trip + migration)
+  against a real IndexedDB.
+- Photos are kept in memory for synchronous rendering exactly as before; only the persistence backend
+  changed. Account deletion now also clears the IndexedDB copy.
+
+Provider-app only. Boot passes; demo regenerated (banner-only).
+
 ## 2026-07-10 — Consult feature: security hardening (adversarial review of my own new code)
 
 An adversarial security pass on the just-added public consult endpoints caught a real one:

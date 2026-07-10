@@ -1509,7 +1509,7 @@ function _reloadAll(){try{
   if(typeof loadCustomResources==='function')loadCustomResources();if(typeof _loadSummaryGuides==='function')_loadSummaryGuides();
   if(typeof loadAi==='function')loadAi();
   if(typeof loadForms==='function')loadForms();
-  loadBizInfo();_syncProviderAvatar();_syncHeaderLogo();loadClients();loadMessages();loadInv();loadVendors();_loadPersistenceSweep();_loadHomeDismissed();loadProviderNoteDrafts();if(typeof loadSessionSummaries==='function')loadSessionSummaries();if(!_sampleHidden()){_seedMayaOnce();}else{_purgeSample();}_seedBirthdays();if(!_sampleHidden()&&typeof _demoCheckinSeed==='function')_demoCheckinSeed();
+  loadBizInfo();_syncProviderAvatar();_syncHeaderLogo();loadClients();loadMessages();loadInv();loadVendors();_loadPersistenceSweep();try{_initCapturedPhotos();}catch(e){}_loadHomeDismissed();loadProviderNoteDrafts();if(typeof loadSessionSummaries==='function')loadSessionSummaries();if(!_sampleHidden()){_seedMayaOnce();}else{_purgeSample();}_seedBirthdays();if(!_sampleHidden()&&typeof _demoCheckinSeed==='function')_demoCheckinSeed();
   if(typeof loadWorkspace==='function')loadWorkspace();
   if(typeof loadSquareCatalog==='function'){loadSquareCatalog();_mergeSquareRetail();}
   if(typeof loadCheckinCfg==='function')loadCheckinCfg();
@@ -2222,8 +2222,63 @@ function loadSessionSummaries(){try{const raw=localStorage.getItem('sc_session_s
 // and syncs across devices, and so applyProfessionConfig doesn't reset it every boot.
 function saveNoteFmt(){try{localStorage.setItem('sc_note_fmt',String(activeNoteTemplate||'freeform'));}catch(e){}}
 function loadNoteFmt(){try{const v=localStorage.getItem('sc_note_fmt');if(v&&noteTemplates[v])activeNoteTemplate=v;}catch(e){}}
-function persistCapturedPhotos(){try{localStorage.setItem('sc_captured_photos',JSON.stringify(capturedPhotos));return true;}catch(e){return false;}}
-function loadCapturedPhotos(){try{const raw=localStorage.getItem('sc_captured_photos');if(raw){const v=JSON.parse(raw);if(v&&typeof v==='object')capturedPhotos=v;}}catch(e){}}
+// Minimal IndexedDB key->value store, used for large base64 photo data that would otherwise blow
+// the ~5MB localStorage quota. Promise-based and degrades gracefully (a failed op resolves to
+// undefined/false), so callers treat IndexedDB as best-effort and fall back to localStorage when
+// it's unavailable (private mode / very old browsers).
+const _idb=(function(){
+  let _p=null,_bad=false;
+  function _db(){
+    if(_bad)return Promise.reject();
+    if(_p)return _p;
+    _p=new Promise(function(res,rej){
+      try{
+        if(typeof indexedDB==='undefined'||!indexedDB){_bad=true;return rej();}
+        const rq=indexedDB.open('slickchart',1);
+        rq.onupgradeneeded=function(){try{if(!rq.result.objectStoreNames.contains('kv'))rq.result.createObjectStore('kv');}catch(e){}};
+        rq.onsuccess=function(){res(rq.result);};
+        rq.onerror=function(){_bad=true;rej();};
+      }catch(e){_bad=true;rej();}
+    });
+    return _p;
+  }
+  return {
+    available:function(){return !_bad && typeof indexedDB!=='undefined' && !!indexedDB;},
+    get:function(k){return _db().then(function(d){return new Promise(function(res,rej){try{const t=d.transaction('kv','readonly');const rq=t.objectStore('kv').get(k);rq.onsuccess=function(){res(rq.result);};rq.onerror=function(){rej();};}catch(e){rej();}});}).catch(function(){return undefined;});},
+    set:function(k,v){return _db().then(function(d){return new Promise(function(res,rej){try{const t=d.transaction('kv','readwrite');t.objectStore('kv').put(v,k);t.oncomplete=function(){res(true);};t.onerror=function(){rej();};}catch(e){rej();}});}).catch(function(){return false;});},
+    del:function(k){return _db().then(function(d){return new Promise(function(res,rej){try{const t=d.transaction('kv','readwrite');t.objectStore('kv').delete(k);t.oncomplete=function(){res(true);};t.onerror=function(){rej();};}catch(e){rej();}});}).catch(function(){return false;});}
+  };
+})();
+function persistCapturedPhotos(){
+  // Prefer IndexedDB (large quota, off the localStorage stringify path) for these base64 photos.
+  if(_idb.available()){try{_idb.set('captured_photos',capturedPhotos);}catch(e){}return true;}
+  try{localStorage.setItem('sc_captured_photos',JSON.stringify(capturedPhotos));return true;}catch(e){return false;}
+}
+let _cpMigrateLegacy=false;
+function loadCapturedPhotos(){
+  // Legacy: older builds stored photos in localStorage. Load them synchronously (immediately
+  // available) and flag them to migrate into IndexedDB in _initCapturedPhotos().
+  try{const raw=localStorage.getItem('sc_captured_photos');if(raw){const v=JSON.parse(raw);if(v&&typeof v==='object'){capturedPhotos=v;_cpMigrateLegacy=true;}}}catch(e){}
+}
+async function _initCapturedPhotos(){
+  try{
+    if(!_idb.available())return;                 // no IndexedDB -> stay on the localStorage fallback
+    if(_cpMigrateLegacy){
+      // Move the legacy localStorage copy into IndexedDB, then free the localStorage key.
+      const ok=await _idb.set('captured_photos',capturedPhotos);
+      if(ok){try{localStorage.removeItem('sc_captured_photos');}catch(e){}}
+      return;
+    }
+    // Already migrated (or brand new): pull photos from IndexedDB into memory, then refresh the
+    // current screen so they show (skip if the user is typing, to avoid stealing focus).
+    const v=await _idb.get('captured_photos');
+    if(v&&typeof v==='object'&&Object.keys(v).length){
+      capturedPhotos=v;
+      try{const ae=document.activeElement;const typing=ae&&(ae.tagName==='INPUT'||ae.tagName==='TEXTAREA');
+        if(!typing&&typeof _navCur!=='undefined'&&_navCur&&typeof nav==='function')nav(_navCur.screen,_navCur.data);}catch(e){}
+    }
+  }catch(e){}
+}
 function persistStaff(){try{localStorage.setItem('sc_staff',JSON.stringify(staff));}catch(e){}}
 function loadStaff(){try{const raw=localStorage.getItem('sc_staff');if(raw){const arr=JSON.parse(raw);if(Array.isArray(arr)&&arr.length){staff.length=0;arr.forEach(x=>staff.push(x));}}}catch(e){}}
 function persistAutos(){try{localStorage.setItem('sc_autos',JSON.stringify(autos));}catch(e){}}
@@ -11352,6 +11407,7 @@ async function _confirmDeleteAccount(){
     for(let i=0;i<localStorage.length;i++){const k=localStorage.key(i);if(typeof k==='string'&&k.indexOf('sc_')===0)kill.push(k);}
     kill.forEach(k=>{try{localStorage.removeItem(k);}catch(e){}});
     try{sessionStorage.removeItem('sc_sqkey');}catch(e){}
+  try{if(typeof _idb!=='undefined'&&_idb.del)_idb.del('captured_photos');}catch(e){}
   }catch(e){}
   // 3) Drop the auth session and any cached app shell, then return to a clean start.
   try{if(typeof Cloud!=='undefined'&&Cloud.logout)Cloud.logout();}catch(e){}
