@@ -19,5 +19,5 @@ export default async function handler(req, res) {
   try {
     const requests = await listConsultRequests(provider);
     res.status(200).json({ ok: true, requests });
-  } catch (e) { res.status(e.status || 500).json({ error: e.message }); }
+  } catch (e) { try{console.error('[consult-requests]', e && e.stack || e);}catch(_){} res.status(500).json({ error: 'Something went wrong. Please try again.' }); }
 }

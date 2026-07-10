@@ -31,7 +31,9 @@ export default async function handler(req, res) {
   if (!name || !email || !/.+@.+\..+/.test(email)) { res.status(400).json({ error: 'Please add your name and a valid email.' }); return; }
   if (!message) { res.status(400).json({ error: 'Please tell them a little about what you’re looking for.' }); return; }
 
-  const ip = String(req.headers['x-forwarded-for'] || '').split(',')[0].trim() || 'ip';
+  // Prefer the platform-set real client IP (x-real-ip on Vercel); the leftmost X-Forwarded-For
+  // entry is client-supplied and spoofable, so only fall back to it if x-real-ip is absent.
+  const ip = String(req.headers['x-real-ip'] || String(req.headers['x-forwarded-for'] || '').split(',')[0] || '').trim() || 'ip';
   if (!burstOk('cr:' + ip, 8, 60000) || !burstOk('crslug:' + slug, 40, 60000)) {
     res.status(429).json({ error: 'Too many requests — please try again in a minute.' });
     return;
@@ -41,5 +43,5 @@ export default async function handler(req, res) {
     if (!prov) { res.status(404).json({ error: 'This consult link is not active.' }); return; }
     await addConsultRequest(prov.id, { name, email, phone, message });
     res.status(200).json({ ok: true });
-  } catch (e) { res.status(e.status || 500).json({ error: e.message }); }
+  } catch (e) { try{console.error('[consult-request]', e && e.stack || e);}catch(_){} res.status(500).json({ error: 'Something went wrong — please try again.' }); }
 }

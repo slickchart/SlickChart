@@ -2,6 +2,29 @@
 
 Newest entries at the top. One entry per deploy. Dates are US-formatted.
 
+## 2026-07-10 — Consult feature: security hardening (adversarial review of my own new code)
+
+An adversarial security pass on the just-added public consult endpoints caught a real one:
+
+- **HIGH — fixed stored XSS on the public consult page.** The prospect-facing page embeds the provider's
+  business name in an inline `<script>` via `JSON.stringify`, which does NOT escape `<` — so a provider
+  whose business name contained `</script><img onerror=…>` could run arbitrary script on every prospect
+  who opened their consult link. `jsStr` now escapes `<`/`>` to `\u003c`/`\u003e`, closing the
+  `</script>` breakout (verified: the payload renders inert). The HTML-text/attribute/URL/color paths were
+  already correctly escaped (`esc`/`normUrl`/`hex`); this was the one JS-string-context gap.
+- **MED — public submit no longer leaks internal errors.** The unauthenticated POST returned `e.message`
+  (DB/driver internals) verbatim; now returns a generic message and logs the detail server-side. Same for
+  the two provider-authed consult endpoints.
+- **MED — sturdier rate-limit IP.** The per-IP limiter keyed off the spoofable leftmost `X-Forwarded-For`;
+  now prefers the platform-set `x-real-ip`, falling back to XFF only if absent (the per-slug cap stays as
+  defense-in-depth).
+- **LOW — reserved slugs + safer thank-you.** Blocked impersonation slugs (`admin`, `support`, `official`,
+  …); the thank-you message now uses `textContent` instead of `innerHTML` string-building.
+
+Verified clean by the same review: SQL injection (all parameterized), tenant isolation (auth fails closed,
+requests scoped to the caller, slugs can't be hijacked), and the page's not-found/error paths (no leak).
+Server-only change — no app rebuild.
+
 ## 2026-07-10 — Data-resilience: stale/malformed saved data can no longer blank a screen
 
 A dedicated pass for the highest-stakes class — a newer app version reading older/partial/corrupted

@@ -34,6 +34,10 @@ export function slugify(s) {
 }
 // 3–40 chars, letters/numbers/hyphens, must start & end alphanumeric.
 export function validSlug(s) { return /^[a-z0-9][a-z0-9-]{1,38}[a-z0-9]$/.test(String(s || '')); }
+// Reserved names a provider can't claim (impersonation / confusion). Slugs are namespaced under
+// /consult/ so they can't shadow app routes; this just blocks obvious impersonation handles.
+const RESERVED_SLUGS = new Set(['admin','administrator','support','help','helpdesk','official','login','signin','signup','register','api','www','root','staff','team','slickchart','consult','client','clients','account','settings','billing','security','moderator','mod','system','info','contact','sales','billing-support']);
+export function reservedSlug(s) { return RESERVED_SLUGS.has(String(s || '').toLowerCase()); }
 
 export async function getProviderBySlug(slug) {
   await ensureConsultSchema();
@@ -54,6 +58,7 @@ export async function claimSlug(providerId, desired) {
   await ensureConsultSchema();
   const slug = slugify(desired);
   if (!validSlug(slug)) return { ok: false, error: 'Use 3–40 letters, numbers, or hyphens.' };
+  if (reservedSlug(slug)) return { ok: false, error: 'That link name is reserved — please choose another.' };
   const q = sql();
   const owner = await q`SELECT id FROM providers WHERE consult_slug = ${slug}`;
   if (owner[0] && owner[0].id !== providerId) return { ok: false, error: 'That link name is taken — try another.' };

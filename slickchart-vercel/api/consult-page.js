@@ -6,7 +6,10 @@ import { dbEnabled, getKVValue } from '../lib/db.js';
 import { getProviderBySlug } from '../lib/consult.js';
 
 function esc(s) { return String(s == null ? '' : s).replace(/[&<>"']/g, c => ({ '&': '&amp;', '<': '&lt;', '>': '&gt;', '"': '&quot;', "'": '&#39;' }[c])); }
-function jsStr(s) { return JSON.stringify(String(s == null ? '' : s)); }
+// JSON.stringify escapes quotes/backslashes but NOT `<`, so a value containing `</script>`
+// would break out of the inline <script>. Escape the script-terminator + line separators so a
+// provider-controlled business name can never inject markup into a prospect's page.
+function jsStr(s) { return JSON.stringify(String(s == null ? '' : s)).replace(/</g, '\\u003c').replace(/>/g, '\\u003e'); }
 function hex(c, fb) { c = String(c == null ? '' : c).trim(); if (/^#?[0-9a-fA-F]{6}$/.test(c)) return c[0] === '#' ? c : ('#' + c); if (/^#?[0-9a-fA-F]{3}$/.test(c)) { const x = c.replace('#', ''); return '#' + x[0] + x[0] + x[1] + x[1] + x[2] + x[2]; } return fb; }
 function normUrl(u) { u = String(u || '').trim(); if (!u) return ''; return /^https?:\/\//i.test(u) ? u : ('https://' + u); }
 
@@ -111,7 +114,9 @@ export default async function handler(req, res) {
         if(res.ok&&res.j&&res.j.ok){
           document.getElementById('form-view').style.display='none';
           var d=document.getElementById('done-view');
-          d.innerHTML='<div class="done"><div class="ic">✓</div><h2>Request sent!</h2><p>Thanks, '+name.replace(/[<>&]/g,'')+'. '+BIZ.replace(/[<>&]/g,'')+' will reach out soon to set up your virtual consult.</p></div>';
+          d.innerHTML='<div class="done"><div class="ic">✓</div><h2>Request sent!</h2><p id="done-msg"></p></div>';
+          var _dm=document.getElementById('done-msg');
+          if(_dm)_dm.textContent='Thanks, '+name+'. '+BIZ+' will reach out soon to set up your virtual consult.';
           d.style.display='block';
           window.scrollTo(0,0);
         } else {
