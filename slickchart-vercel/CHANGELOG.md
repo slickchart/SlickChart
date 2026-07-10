@@ -2,6 +2,19 @@
 
 Newest entries at the top. One entry per deploy. Dates are US-formatted.
 
+## 2026-07-10 — Client home now surfaces new messages live
+
+- **Unread badge on the home "Message" tile.** A dead-code sweep found the 20-second message poll
+  tried to refresh the home screen via `getElementById('home-screen')` — an id that only exists in the
+  *provider* app, so on the client the branch never fired (leftover from a copy-paste). Fixed it to use
+  the client's real `currentScreen` check, and added a red unread count badge to the home "Message
+  [provider]" tile (driven by the provider thread's `unread`). Now a client sitting on Home sees a live
+  badge appear the moment a message arrives — not only after they navigate. Clears when they open the
+  thread. (Everything else in that sweep — dead buttons, dead links, missing nav targets, broken submit
+  flows — came back clean across both apps.)
+
+Client re-embedded (byte-identical); demo regenerated (banner-only). Boot + 9-screen smoke pass.
+
 ## 2026-07-11 — Public "request a consult" link is now real (was a dead mockup)
 
 The Virtual Consultations → Client link tab used to show a hardcoded, non-working
