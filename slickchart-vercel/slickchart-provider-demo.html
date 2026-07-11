@@ -1794,8 +1794,9 @@ const Cloud={
 function _reloadAll(){try{
   loadProfessions();applyProfessionConfig();
   if(typeof loadCustomResources==='function')loadCustomResources();if(typeof _loadSummaryGuides==='function')_loadSummaryGuides();
+  if(typeof loadBundles==='function')bundles=loadBundles();   // refresh form/guide bundles pulled from another device (loadForms above already reloads formGuides)
   // applyProfessionConfig() above already rebuilt `resources`, but it ran BEFORE the just-pulled
-  // custom guides were loaded — so rebuild again now, or guides synced from another device
+  // custom guides were loaded — so rebuild again now, or guides/bundles synced from another device
   // (e.g. created on the web, opened on the phone) never make it into the visible list.
   if(typeof rebuildResources==='function')rebuildResources();
   try{if(typeof _migrateGuideFiles==='function')_migrateGuideFiles();}catch(e){}
@@ -3560,11 +3561,11 @@ function _cfsSendGuide(gid,cid){
   const c=CL[cid];const r=(typeof _findGuide==='function')?_findGuide(gid):null;
   const sh=document.getElementById('sendform-sheet');if(sh)sh.remove();
   if(!c||!r)return;
-  if(cid==='maya'){try{SlickBridge.post('resource-shared',{providerId:'jess',clientId:'maya',resource:{guideId:r.id,title:r.title,icon:r.icon,cat:r.cat,url:r.url||'',tips:r.tips||[],fileName:r.fileName||'',fileType:r.fileType||'',hasFile:!!(r.hasFile||r.fileData),fileData:r.fileData||''}});}catch(e){}}
+  if(cid==='maya'){try{SlickBridge.post('resource-shared',{providerId:'jess',clientId:'maya',resource:{guideId:r.id,title:r.title,icon:r.icon,cat:r.cat,url:r.url||'',tips:r.tips||[],fileName:r.fileName||'',fileType:r.fileType||'',hasFile:!!(r.hasFile||r.fileData),fileData:r.fileData||''}});}catch(e){}proToast('Sent '+r.title+' to Maya');return;}
   if(!Array.isArray(c.pendingGuides))c.pendingGuides=[];
   if(!c.pendingGuides.some(pg=>pg.guideId===r.id))c.pendingGuides.push({guideId:r.id,assignedAt:Date.now()});
   try{saveClients();}catch(e){}
-  proToast('Sent '+r.title+' to '+c.name.split(' ')[0]);
+  _shareGuideLink(cid,r);
 }
 // ── AI helper: routes through the serverless proxy (/api/ai) so the browser
 //    never holds a key. Throws if AI isn't configured, so callers can fall back. ──
@@ -7989,7 +7990,7 @@ _ensureBundledFormQs();
 // Keyed by form id → array of guide ids (see guideTemplatesByProf).
 // ── Bundles: a named group of forms + resources sent together in one action ──
 function loadBundles(){try{const s=localStorage.getItem('sc_bundles');if(s)return JSON.parse(s);}catch(e){}return [];}
-function saveBundles(){try{localStorage.setItem('sc_bundles',JSON.stringify(bundles));}catch(e){}}
+function saveBundles(){const v=JSON.stringify(bundles);try{localStorage.setItem('sc_bundles',v);}catch(e){}if(typeof _pushKeyNow==='function')_pushKeyNow('sc_bundles',v);}
 let bundles=loadBundles();
 function _newBundle(){const id='bnd_'+Date.now().toString(36);bundles.push({id,name:'New bundle',formIds:[],resourceIds:[]});saveBundles();return id;}
 function _bundleItemCount(b){return (b.formIds||[]).length+(b.resourceIds||[]).length;}
@@ -9410,7 +9411,11 @@ function rebuildResources(){
   resources.length=0;out.forEach(g=>resources.push(g));
 }
 function _findGuide(id){return resources.find(g=>g.id===id)||Object.values(guideTemplatesByProf).flat().find(g=>g.id===id)||customResources.find(g=>g.id===id)||(function(){const co=(typeof courses!=='undefined'&&Array.isArray(courses))?courses.find(x=>x.id===id):null;return co?{id:co.id,title:co.title||'Course',icon:'📚',cat:'Course',url:co.url||'',tips:[]}:null;})();}
-function persistCustomResources(){try{localStorage.setItem('sc_resources',JSON.stringify(customResources));}catch(e){}}
+// Direct, immediate upsert of one KV key to the server — bypasses the debounced Cloud.push
+// so a save reliably reaches the server (and thus other devices) right away. Used for guides
+// and bundles, which a provider often builds on the web then expects on their phone.
+function _pushKeyNow(k,v){try{if(typeof Cloud==='undefined'||!Cloud||!Cloud.token)return;fetch('/api/store',{method:'PUT',headers:{'Content-Type':'application/json','Authorization':'Bearer '+Cloud.token},body:JSON.stringify({key:k,value:String(v)})}).catch(function(){});}catch(e){}}
+function persistCustomResources(){const v=JSON.stringify(customResources);try{localStorage.setItem('sc_resources',v);}catch(e){}_pushKeyNow('sc_resources',v);}
 function loadCustomResources(){try{const raw=localStorage.getItem('sc_resources');if(raw){const a=JSON.parse(raw);if(Array.isArray(a))customResources=a;}}catch(e){}}
 // Courses now live as the third tab inside the unified Forms · Guides · Courses screen.
 // renderLearn (and any nav('learn')) redirects there so there's a single home for all three.
@@ -10168,17 +10173,31 @@ function sendResourceToClient(ri){
 function confirmSendResource(ri,cid){
   const r=resources[ri];if(!r)return;
   r.shared=(r.shared||0)+1;
-  if(cid==='maya'){try{SlickBridge.post('resource-shared',{providerId:'jess',clientId:'maya',resource:{title:r.title,icon:r.icon,cat:r.cat,url:r.url||'',tips:r.tips||[]}});}catch(e){}}
-  // Assign it to the client's pending guides so a real client on their own device
-  // receives it via /api/client-data — the bridge post above only reaches a preview.
-  const c=CL[cid];
-  if(c&&r.id){
+  if(cid==='maya'){try{SlickBridge.post('resource-shared',{providerId:'jess',clientId:'maya',resource:{title:r.title,icon:r.icon,cat:r.cat,url:r.url||'',tips:r.tips||[],fileName:r.fileName||'',fileType:r.fileType||'',hasFile:!!(r.hasFile||r.fileData)}});}catch(e){}closeSendProd();proToast('Sent to Maya');return;}
+  // Assign it to the client's pending guides so it reaches their app via /api/client-data,
+  // then hand the provider a real link to send (invite if the client isn't on the app yet).
+  const c=CL[cid];if(!c){closeSendProd();return;}
+  if(r.id){
     if(!Array.isArray(c.pendingGuides))c.pendingGuides=[];
     if(!c.pendingGuides.some(pg=>pg.guideId===r.id))c.pendingGuides.push({guideId:r.id,assignedAt:Date.now()});
     try{saveClients();}catch(e){}
   }
   closeSendProd();
-  proToast(`Sent to ${c?c.name.split(' ')[0]:'client'}`);
+  _shareGuideLink(cid,r);
+}
+// After a guide is assigned to a client, give the provider a link to send them: the invite
+// flow if they're not on the app yet (the guide will be waiting), or the share sheet if they are.
+function _shareGuideLink(cid,r){
+  const c=CL[cid];if(!c)return;
+  if(!c._token){ inviteClientToApp(cid); return; }
+  const first=c.name.split(' ')[0];
+  const who=(typeof _providerFirstName==='function'&&_providerFirstName())?_providerFirstName():'Your provider';
+  _shareClientLinkSheet(cid,{
+    title:'Send '+(r&&r.title||'guide'),
+    icon:'ti-file-text',iconBg:'var(--accent-tint)',iconColor:'var(--accent)',
+    subject:((r&&r.title)||'A guide')+' from '+who,
+    msg:'Hi '+first+'! '+who+' shared '+((r&&r.title)||'a guide')+' with you: '+_clientAppLink(cid)
+  });
 }
 
 // ── Recurring pulse survey (beta metrics: response rate + self-reported time saved) ──
