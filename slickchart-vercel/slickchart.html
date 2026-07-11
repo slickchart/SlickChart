@@ -10731,9 +10731,17 @@ function _icsStamp(dateStr,timeStr){
 }
 function _rebuildCalendarFeed(){
   try{
+    const p=n=>String(n).padStart(2,'0');
+    const stampOf=d=>d.getFullYear()+p(d.getMonth()+1)+p(d.getDate())+'T'+p(d.getHours())+p(d.getMinutes())+'00';
+    const events=[];
+    // Manual + confirmed appointments (date + time strings)
     const src=(typeof manualAppts!=='undefined'?manualAppts:[]).concat(typeof confirmedAppts!=='undefined'?confirmedAppts:[]);
-    const events=[];const p=n=>String(n).padStart(2,'0');
-    src.forEach((a,i)=>{const st=_icsStamp(a.date,a.time);if(!st)return;const e=new Date(st.d.getTime()+3600000);const es=e.getFullYear()+p(e.getMonth()+1)+p(e.getDate())+'T'+p(e.getHours())+p(e.getMinutes())+'00';events.push({uid:'sc-'+(a.date||'')+'-'+i+'@slickchart',title:(a.tx?a.tx+' \u2014 ':'')+(a.client||'Appointment'),start:st.stamp,end:es,notes:''});});
+    src.forEach((a,i)=>{const st=_icsStamp(a.date,a.time);if(!st)return;const e=new Date(st.d.getTime()+3600000);events.push({uid:'sc-'+(a.date||'')+'-'+i+'@slickchart',title:(a.tx?a.tx+' \u2014 ':'')+(a.client||'Appointment'),start:st.stamp,end:stampOf(e),notes:''});});
+    // Live Square appointments (real Date + duration) \u2014 so a Square booking also flows to the
+    // provider's Google/Apple calendar, not just manually-added ones.
+    if(typeof _apptsLive==='function'&&_apptsLive()&&Array.isArray(squareAppts)){
+      squareAppts.forEach(a=>{if(!a.at||isNaN(a.at))return;const e=new Date(a.at.getTime()+(((+a.dur)||60)*60000));events.push({uid:'sq-'+(a.id||stampOf(a.at))+'@slickchart',title:(a.client||'Appointment'),start:stampOf(a.at),end:stampOf(e),notes:''});});
+    }
     localStorage.setItem('sc_calendar_feed',JSON.stringify(events));
   }catch(e){}
 }
@@ -13399,6 +13407,8 @@ async function _loadSquareAppts(force){
     const fp=JSON.stringify((data.appointments||[]).map(a=>[a.id,a.startAt,a.durationMinutes,a.customerName]));
     _changed=(fp!==_loadSquareAppts._lastFp);_loadSquareAppts._lastFp=fp;
     _sqApptsState='ok';
+    // Keep the Google/Apple sync-out feed current with live Square bookings too.
+    if(_changed){try{_rebuildCalendarFeed();}catch(e){}}
   }catch(e){_sqApptsState='error';squareAppts=null;}
   // Refresh the visible screen if it shows appointments (without touching nav history), but only
   // when the data changed — so the periodic poll doesn't cause needless repaints.
