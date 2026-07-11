@@ -1623,6 +1623,10 @@ async function _cloudInit(){
     }
     _reloadAll();
   }catch(e){}
+  // Make sure the client-facing shop catalog is on the server, and (if a logo is set locally) that
+  // the brand is too — so both reach clients even if an earlier save never synced.
+  try{if(typeof _syncShopCatalog==='function')_syncShopCatalog();}catch(e){}
+  try{if(typeof _syncBrandNow==='function'&&typeof brandColors!=='undefined'&&brandColors&&brandColors.logoDataUrl)_syncBrandNow();}catch(e){}
   nav('home');
   try{syncClientEvents();}catch(e){}
 }
@@ -2417,7 +2421,29 @@ function _markProtocolsCustom(){try{localStorage.setItem('sc_protocols_custom','
 function loadProtocols(){try{const raw=localStorage.getItem('sc_protocols');if(raw){const a=JSON.parse(raw);if(Array.isArray(a)&&a.length){protocols.length=0;a.forEach(p=>protocols.push(p));return true;}}}catch(e){}return false;}
 function persistShopBundles(){try{localStorage.setItem('sc_shop_bundles',JSON.stringify(shopBundles));}catch(e){}}
 function loadShopBundles(){try{const raw=localStorage.getItem('sc_shop_bundles');if(raw){const arr=JSON.parse(raw);if(Array.isArray(arr))shopBundles=arr;}}catch(e){}}
-function persistAffiliateLinks(){try{localStorage.setItem('sc_affiliate_links',JSON.stringify(affiliateLinks));}catch(e){}}
+function persistAffiliateLinks(){try{localStorage.setItem('sc_affiliate_links',JSON.stringify(affiliateLinks));}catch(e){}try{_syncShopCatalog();}catch(e){}}
+// The client-facing "Shop all" catalog: every active product, stripped of private fields
+// (earnings, clicks, commission). Synced to a provider-level KV the client reads (api/client-data
+// → sc_shop_catalog), so the client's Shop can list the full catalog without bloating each client's
+// own data blob — same pattern as branding.
+function _buildShopCatalog(){
+  try{
+    return (affiliateLinks||[]).filter(a=>a&&a.active!==false&&a.name).map(a=>({
+      name:a.name,brand:a.brand||'',icon:a.icon||'🛍️',inOffice:!!a.inOffice,
+      site:a.site||'',siteCode:a.siteCode||'',url:a.url||'',urlCode:a.urlCode||'',
+      amazon:a.amazon||'',amazonCode:a.amazonCode||''
+    }));
+  }catch(e){return [];}
+}
+function _syncShopCatalog(){
+  try{
+    const cat=_buildShopCatalog();
+    try{localStorage.setItem('sc_shop_catalog',JSON.stringify(cat));}catch(e){}
+    if(typeof Cloud!=='undefined'&&Cloud&&Cloud.token){
+      fetch('/api/store',{method:'PUT',headers:{'Content-Type':'application/json','Authorization':'Bearer '+Cloud.token},body:JSON.stringify({items:{sc_shop_catalog:JSON.stringify(cat)}})}).catch(()=>{});
+    }
+  }catch(e){}
+}
 function loadAffiliateLinks(){try{const raw=localStorage.getItem('sc_affiliate_links');if(raw){const arr=JSON.parse(raw);if(Array.isArray(arr))affiliateLinks=arr;}}catch(e){}}
 function persistCustomNoteTemplates(){try{localStorage.setItem('sc_custom_note_templates',JSON.stringify(customNoteTemplates));}catch(e){}}
 function loadCustomNoteTemplates(){try{const raw=localStorage.getItem('sc_custom_note_templates');if(raw){const arr=JSON.parse(raw);if(Array.isArray(arr))customNoteTemplates=arr;}}catch(e){}}
@@ -10461,12 +10487,26 @@ function _updateBrandPreview(){
   const tEl=document.getElementById('bc-prev-tagline');if(tEl){tEl.style.display=tag?'block':'none';tEl.textContent=tag;}
   const wEl=document.getElementById('bc-prev-welcome');if(wEl)wEl.textContent=wel;
 }
-// Push the brand (logo + colors) to the server RIGHT NOW rather than waiting on the debounce, so a
-// logo change reaches clients on their next poll without delay. saveBrandColors() already queues the
-// sync via the storage hook; this just flushes that queue immediately.
-function _syncBrandNow(){try{if(typeof Cloud!=='undefined'&&Cloud.token&&typeof Cloud._flush==='function')Cloud._flush();}catch(e){}}
+// Push the brand (logo + colors) to the server RIGHT NOW with a DIRECT PUT, rather than relying on
+// the debounced localStorage-hook sync. A logo data URL is large enough that if localStorage is near
+// quota, setItem can throw before the sync hook ever runs \u2014 so the logo would show for the provider
+// (it's in the in-memory brandColors) but never reach the server, and thus never reach clients. This
+// sends the in-memory brand straight to the KV the client reads (api/client-data \u2192 sc_brand_colors),
+// independent of localStorage, and reports whether it actually landed.
+function _syncBrandNow(cb){
+  try{
+    if(typeof Cloud==='undefined'||!Cloud||!Cloud.token){if(cb)cb(false);return;}
+    fetch('/api/store',{method:'PUT',headers:{'Content-Type':'application/json','Authorization':'Bearer '+Cloud.token},body:JSON.stringify({items:{sc_brand_colors:JSON.stringify(brandColors)}})})
+      .then(function(r){if(cb)cb(!!(r&&r.ok));})
+      .catch(function(){if(cb)cb(false);});
+  }catch(e){if(cb)cb(false);}
+}
 function _uploadLogo(){
-  _pickLogo(dataUrl=>{brandColors.logoDataUrl=dataUrl;saveBrandColors();_syncBrandNow();_syncHeaderLogo();renderBranding();proToast('Logo saved \u2713 \u00b7 syncing to your clients');});
+  _pickLogo(dataUrl=>{
+    brandColors.logoDataUrl=dataUrl;saveBrandColors();_syncHeaderLogo();renderBranding();
+    proToast('Logo saved \u2713 \u00b7 syncing to your clients\u2026');
+    _syncBrandNow(function(ok){if(typeof proToast==='function')proToast(ok?'Logo synced to your clients \u2713':'Saved on this device, but couldn\u2019t sync to clients \u2014 check your connection and try again',ok?2500:0);});
+  });
 }
 function _removeLogo(){
   confirmModal({title:'Remove your logo?',body:'Clients will see your initials instead until you upload a new one.',action:'Remove'},()=>{
@@ -13930,8 +13970,9 @@ function openSquareBook(prefill){
     const today=_isoToday();
     body.style.textAlign='left';body.style.padding='0';
     body.innerHTML=`
-      <span class="fl-lbl">Client name</span><input class="fi" id="sqb-name" placeholder="Client name" value="${(prefill.client||'').replace(/"/g,'&quot;')}" style="margin-bottom:10px;">
-      <span class="fl-lbl">Client email <span style="color:#929292;font-weight:400;">(optional — matches or creates them in Square)</span></span><input class="fi" id="sqb-email" type="email" placeholder="name@email.com" value="${(prefill.email||'').replace(/"/g,'&quot;')}" style="margin-bottom:10px;">
+      <span class="fl-lbl">Client</span><input class="fi" id="sqb-name" list="sqb-clients" autocomplete="off" placeholder="Search your clients or type a name" value="${(prefill.client||'').replace(/"/g,'&quot;')}" oninput="_sqbClientPick(this.value)" style="margin-bottom:4px;">${_clientDatalistHTML('sqb-clients')}
+      <div style="font-size:11px;color:#8a8a8a;margin-bottom:10px;">Search your Square &amp; app clients, or type a new name to create them.</div>
+      <span class="fl-lbl">Client email <span style="color:#929292;font-weight:400;">(optional — matches or creates them in Square)</span></span><input class="fi" id="sqb-email" type="email" autocomplete="off" placeholder="name@email.com" value="${(prefill.email||'').replace(/"/g,'&quot;')}" style="margin-bottom:10px;">
       <span class="fl-lbl">Service</span><select class="fi" id="sqb-svc" onchange="_sqLoadSlots()" style="margin-bottom:10px;">${svcOpts}</select>
       ${tms.length>1?`<span class="fl-lbl">With</span><select class="fi" id="sqb-tm" onchange="_sqLoadSlots()" style="margin-bottom:10px;">${tms.map(t=>`<option value="${_fileEsc(t.id)}">${_fileEsc(t.name)}</option>`).join('')}</select>`:''}
       <span class="fl-lbl">Date</span><input type="date" class="fi" id="sqb-date" value="${prefill.date||today}" min="${today}" onchange="_sqLoadSlots()" style="color-scheme:dark;margin-bottom:12px;">

@@ -21,6 +21,10 @@ export default async function handler(req, res) {
       if (raw) data.brand = JSON.parse(raw);
     } catch (e) { /* fall back to whatever (if anything) was already in data.brand */ }
     try {
+      const rawCat = await getKVValue(c.provider_id, 'sc_shop_catalog');
+      if (rawCat) data.catalog = JSON.parse(rawCat);
+    } catch (e) { /* no catalog published yet — client shows recommended only */ }
+    try {
       const rawCfg = await getKVValue(c.provider_id, 'sc_checkin_cfg');
       if (rawCfg) data.checkinCfg = JSON.parse(rawCfg);
     } catch (e) { /* no saved check-in config yet — client falls back to defaults */ }
