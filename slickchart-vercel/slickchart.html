@@ -13400,7 +13400,7 @@ async function _loadSquareAppts(force){
     const data=await _sqFetch('/api/square/appointments?days=90');
     const pal=[['var(--accent-tint)','var(--accent)'],['#0d1e33','#5ba3e8'],['#0a2019','#4ec49a'],['#1e1633','#a891ec']];
     const esc=s=>String(s||'').replace(/</g,'&lt;').replace(/>/g,'&gt;');
-    squareAppts=(data.appointments||[]).map((a,i)=>{const d=a.startAt?new Date(a.startAt):null;return {id:a.id,at:d,client:esc(a.customerName)||'Client',tx:'Appointment',dur:a.durationMinutes||60,col:pal[i%pal.length][0],ic:pal[i%pal.length][1]};}).filter(a=>a.at&&!isNaN(a.at));
+    squareAppts=(data.appointments||[]).map((a,i)=>{const d=a.startAt?new Date(a.startAt):null;return {id:a.id,at:d,client:esc(a.customerName)||'Client',tx:'Appointment',dur:a.durationMinutes||60,svid:a.serviceVariationId||'',tmid:a.teamMemberId||'',col:pal[i%pal.length][0],ic:pal[i%pal.length][1]};}).filter(a=>a.at&&!isNaN(a.at));
     // Fingerprint the appointment set (id + start + duration + who) so a background poll only
     // repaints the screen when something actually changed — a new booking, a reschedule, or a
     // cancellation — rather than flickering on every tick.
@@ -13675,12 +13675,14 @@ function openApptDetail(source,id){
       '<div style="font-size:16px;font-weight:600;color:#f0f0f0;margin-bottom:2px;">'+_fileEsc(a.client)+'</div>'
       +'<div style="font-size:12px;color:#4ec49a;margin-bottom:14px;">'+a.at.toLocaleDateString('en-US',{weekday:'long',month:'long',day:'numeric'})+' · '+_apptTimeStr(a.at)+' · Square</div>'
       +'<span class="fl-lbl">Reschedule to</span>'
-      +'<div style="display:flex;gap:10px;margin-bottom:14px;"><input type="date" class="fi" id="ad-date" value="'+dstr+'" style="flex:1;color-scheme:dark;"><input type="time" class="fi" id="ad-time" value="'+tstr+'" style="flex:1;color-scheme:dark;"></div>'
+      +'<input type="date" class="fi" id="ad-date" value="'+dstr+'" min="'+_isoToday()+'" onchange="_adLoadSlots('+_jsStr2(id)+')" style="color-scheme:dark;margin-bottom:12px;">'
+      +'<div id="ad-slots" data-time="'+tstr+'" style="margin-bottom:14px;min-height:22px;"></div>'
       +'<button class="btnp" style="border-radius:10px;" onclick="_apptRescheduleSquare('+_jsStr2(id)+')"><i class="ti ti-calendar-event"></i> Save new time</button>'
       +(cid?'<button class="btng" style="width:100%;border-radius:10px;margin-top:9px;" onclick="_closeApptSheet();nav(\'client\',\''+cid+'\')"><i class="ti ti-user"></i> Open client</button>':'')
       +'<button onclick="_apptCancelSquare('+_jsStr2(id)+')" style="width:100%;margin-top:9px;background:#2a0f0f;border:1px solid #4a1515;color:#e8a0a0;border-radius:10px;padding:12px;font-size:14px;font-weight:600;cursor:pointer;font-family:inherit;"><i class="ti ti-x"></i> Cancel this appointment</button>'
       +'<button onclick="_closeApptSheet()" style="width:100%;margin-top:8px;background:none;border:none;color:#929292;font-size:13px;cursor:pointer;padding:6px;">Close</button>'
     );
+    _adLoadSlots(id);
   } else if(source==='manual'){
     var a=_manualApptById(id);if(!a){if(typeof proToast==='function')proToast('That appointment is no longer here');return;}
     var times=['9:00 AM','10:00 AM','11:00 AM','12:00 PM','1:00 PM','2:00 PM','3:00 PM','4:00 PM','5:00 PM','6:00 PM'];
@@ -13698,10 +13700,32 @@ function openApptDetail(source,id){
     );
   }
 }
+// Availability slots for the reschedule sheet (same idea as booking, keyed to the appt's service).
+var _adSlots=null,_adSelSlot=null;
+function _adLoadSlots(id){
+  _adSlots=null;_adSelSlot=null;
+  var a=_sqApptById(id);var box=document.getElementById('ad-slots');if(!box)return;
+  var date=(document.getElementById('ad-date')||{}).value;
+  var fbTime=box.getAttribute('data-time')||'10:00';
+  if(!a||!a.svid){box.innerHTML='<input type="time" class="fi" id="ad-time-fb" value="'+fbTime+'" style="color-scheme:dark;">';return;}
+  if(!date){box.innerHTML='';return;}
+  box.innerHTML='<div style="color:#888;font-size:12px;padding:6px 2px;"><i class="ti ti-loader-2"></i> Finding open times…</div>';
+  _sqFetch('/api/square/availability',{method:'POST',body:{serviceVariationId:a.svid,teamMemberId:a.tmid||undefined,date:date}}).then(function(r){
+    var slots=(r&&r.slots)||[];_adSlots=slots;
+    if(!slots.length){box.innerHTML='<div style="color:#c99a5a;font-size:12px;padding:9px 11px;background:#2a1f0f;border:1px solid #4a3a1a;border-radius:8px;">No open times on this day — try another date.</div>';return;}
+    box.innerHTML='<div style="display:flex;flex-wrap:wrap;gap:6px;">'+slots.map(function(s,i){var lbl=new Date(s.startAt).toLocaleTimeString('en-US',{hour:'numeric',minute:'2-digit'});return '<button type="button" class="adslot" data-i="'+i+'" onclick="_adPickSlot('+i+')" style="background:#1a1a1a;border:1px solid #2a2a2a;color:#e0e0e0;border-radius:8px;padding:7px 11px;font-size:12px;cursor:pointer;font-family:inherit;">'+lbl+'</button>';}).join('')+'</div>';
+  }).catch(function(){_adSlots=null;box.innerHTML='<div style="color:#929292;font-size:11px;margin-bottom:6px;">Live availability unavailable — enter a time.</div><input type="time" class="fi" id="ad-time-fb" value="'+fbTime+'" style="color-scheme:dark;">';});
+}
+function _adPickSlot(i){_adSelSlot=(_adSlots&&_adSlots[i])||null;document.querySelectorAll('.adslot').forEach(function(b){var on=(b.getAttribute('data-i')===String(i));b.style.background=on?'var(--accent)':'#1a1a1a';b.style.color=on?'var(--accent-ink)':'#e0e0e0';b.style.borderColor=on?'var(--accent)':'#2a2a2a';});}
 function _apptRescheduleSquare(id){
-  var d=document.getElementById('ad-date'),t=document.getElementById('ad-time');
-  var dv=d&&d.value,tv=t&&t.value;if(!dv||!tv){if(typeof proToast==='function')proToast('Pick a date and time');return;}
-  var startAt;try{var dt=new Date(dv+'T'+tv+':00');if(isNaN(dt))throw 0;startAt=dt.toISOString();}catch(e){if(typeof proToast==='function')proToast('That date/time looks invalid');return;}
+  var startAt;
+  if(_adSelSlot){startAt=_adSelSlot.startAt;}
+  else{
+    var d=document.getElementById('ad-date'),t=document.getElementById('ad-time-fb');
+    var dv=d&&d.value,tv=t&&t.value;
+    if(!dv||!tv){if(typeof proToast==='function')proToast('Pick an available time');return;}
+    try{var dt=new Date(dv+'T'+tv+':00');if(isNaN(dt))throw 0;startAt=dt.toISOString();}catch(e){if(typeof proToast==='function')proToast('That date/time looks invalid');return;}
+  }
   _apptSheetBusy('Rescheduling…');
   _sqFetch('/api/square/reschedule-booking',{method:'POST',body:{bookingId:id,startAt:startAt}}).then(function(){
     _closeApptSheet();if(typeof proToast==='function')proToast('Appointment moved ✓');_loadSquareAppts(true);
@@ -13721,11 +13745,17 @@ function _doCancelSquare(id){
 function _manualApptSave(id){
   var a=_manualApptById(id);if(!a){_closeApptSheet();return;}
   var name=((document.getElementById('ad-client')||{}).value||'').trim();if(!name){if(typeof proToast==='function')proToast('Enter a client name');return;}
-  a.client=name;a.tx=(document.getElementById('ad-tx')||{}).value||'Treatment';
-  a.date=(document.getElementById('ad-mdate')||{}).value||a.date;a.time=(document.getElementById('ad-mtime')||{}).value||a.time;
-  try{a.dateLabel=new Date(a.date+'T12:00:00').toLocaleDateString('en-US',{weekday:'long',month:'long',day:'numeric'});}catch(e){}
-  _saveManualAppts();try{_rebuildCalendarFeed();}catch(e){}
-  _closeApptSheet();if(typeof proToast==='function')proToast('Appointment updated ✓');renderCalendar();
+  var tx=(document.getElementById('ad-tx')||{}).value||'Treatment';
+  var date=(document.getElementById('ad-mdate')||{}).value||a.date;var time=(document.getElementById('ad-mtime')||{}).value||a.time;
+  var commit=function(){
+    a.client=name;a.tx=tx;a.date=date;a.time=time;
+    try{a.dateLabel=new Date(date+'T12:00:00').toLocaleDateString('en-US',{weekday:'long',month:'long',day:'numeric'});}catch(e){}
+    _saveManualAppts();try{_rebuildCalendarFeed();}catch(e){}
+    _closeApptSheet();if(typeof proToast==='function')proToast('Appointment updated ✓');renderCalendar();
+  };
+  var clash=_manualOverlap(date,time,id);
+  if(clash&&typeof confirmModal==='function'){confirmModal({title:'Possible double-booking',body:'You already have '+(clash.client||'an appointment')+' around '+(clash.time||'')+' that day. Save anyway?',action:'Save anyway'},commit);}
+  else commit();
 }
 function _manualApptDelete(id){
   var go=function(){var i=(manualAppts||[]).findIndex(function(x){return x.id===id;});if(i>=0){manualAppts.splice(i,1);_saveManualAppts();try{_rebuildCalendarFeed();}catch(e){}}_closeApptSheet();if(typeof proToast==='function')proToast('Appointment deleted');renderCalendar();};
@@ -13768,16 +13798,29 @@ function openLocalQuickAdd(prefillDate){
   </div>`;
   document.querySelector('.shell').appendChild(m);
 }
+// Find an existing manual/confirmed appointment on the same day within ~30 min of a proposed time,
+// so a non-Square provider gets warned before double-booking themselves. (Square bookings are
+// guarded server-side by real availability; this covers the app's own calendar.)
+function _manualOverlap(date,time,excludeId){
+  var w=_apptWhen(date,time);if(!w)return null;
+  var pool=(manualAppts||[]).concat(typeof confirmedAppts!=='undefined'?confirmedAppts:[]);
+  return pool.find(function(a){if(!a)return false;if(excludeId&&a.id===excludeId)return false;if(a.date!==date)return false;var aw=_apptWhen(a.date,a.time);return aw&&Math.abs(aw.getTime()-w.getTime())<30*60000;})||null;
+}
 function saveQuickAdd(){
   const name=document.getElementById('qa-client')?.value?.trim();
   if(!name){if(typeof proToast==='function')proToast('Enter a client name first');const el=document.getElementById('qa-client');if(el)el.focus();return;}
   const tx=document.getElementById('qa-tx')?.value||'Treatment';
   const date=document.getElementById('qa-date')?.value||_isoToday();
   const time=document.getElementById('qa-time')?.value||'10:00 AM';
-  let lbl=date;try{lbl=new Date(date+'T12:00:00').toLocaleDateString('en-US',{weekday:'long',month:'long',day:'numeric'});}catch(e){}
-  manualAppts.unshift({id:'ma_'+Math.random().toString(36).slice(2,10),client:name,tx,date,dateLabel:lbl,time,ic:'var(--accent)'});_saveManualAppts();try{_rebuildCalendarFeed();}catch(e){}
-  const m=document.getElementById('qa-modal');if(m)m.remove();
-  renderCalendar();
+  const commit=function(){
+    let lbl=date;try{lbl=new Date(date+'T12:00:00').toLocaleDateString('en-US',{weekday:'long',month:'long',day:'numeric'});}catch(e){}
+    manualAppts.unshift({id:'ma_'+Math.random().toString(36).slice(2,10),client:name,tx,date,dateLabel:lbl,time,ic:'var(--accent)'});_saveManualAppts();try{_rebuildCalendarFeed();}catch(e){}
+    const m=document.getElementById('qa-modal');if(m)m.remove();
+    renderCalendar();
+  };
+  const clash=_manualOverlap(date,time,null);
+  if(clash&&typeof confirmModal==='function'){confirmModal({title:'Possible double-booking',body:'You already have '+(clash.client||'an appointment')+' around '+(clash.time||'')+' that day. Add this one anyway?',action:'Add anyway'},commit);}
+  else commit();
 }
 // Create a REAL appointment in Square. Loads the seller's live services + team
 // members, then books via /api/square/book. Falls back to a local appointment.
@@ -13805,33 +13848,59 @@ function openSquareBook(prefill){
     body.innerHTML=`
       <span class="fl-lbl">Client name</span><input class="fi" id="sqb-name" placeholder="Client name" value="${(prefill.client||'').replace(/"/g,'&quot;')}" style="margin-bottom:10px;">
       <span class="fl-lbl">Client email <span style="color:#929292;font-weight:400;">(optional — matches or creates them in Square)</span></span><input class="fi" id="sqb-email" type="email" placeholder="name@email.com" value="${(prefill.email||'').replace(/"/g,'&quot;')}" style="margin-bottom:10px;">
-      <span class="fl-lbl">Service</span><select class="fi" id="sqb-svc" style="margin-bottom:10px;">${svcOpts}</select>
-      ${tms.length>1?`<span class="fl-lbl">With</span><select class="fi" id="sqb-tm" style="margin-bottom:10px;">${tms.map(t=>`<option value="${_fileEsc(t.id)}">${_fileEsc(t.name)}</option>`).join('')}</select>`:''}
-      <div style="display:flex;gap:10px;margin-bottom:14px;">
-        <div style="flex:1;"><span class="fl-lbl">Date</span><input type="date" class="fi" id="sqb-date" value="${prefill.date||today}" style="color-scheme:dark;"></div>
-        <div style="flex:1;"><span class="fl-lbl">Time</span><input type="time" class="fi" id="sqb-time" value="${prefill.time||'10:00'}" style="color-scheme:dark;"></div>
-      </div>
+      <span class="fl-lbl">Service</span><select class="fi" id="sqb-svc" onchange="_sqLoadSlots()" style="margin-bottom:10px;">${svcOpts}</select>
+      ${tms.length>1?`<span class="fl-lbl">With</span><select class="fi" id="sqb-tm" onchange="_sqLoadSlots()" style="margin-bottom:10px;">${tms.map(t=>`<option value="${_fileEsc(t.id)}">${_fileEsc(t.name)}</option>`).join('')}</select>`:''}
+      <span class="fl-lbl">Date</span><input type="date" class="fi" id="sqb-date" value="${prefill.date||today}" min="${today}" onchange="_sqLoadSlots()" style="color-scheme:dark;margin-bottom:12px;">
+      <span class="fl-lbl">Available times <span style="color:#929292;font-weight:400;">— only open slots are shown</span></span>
+      <div id="sqb-slots" style="margin-bottom:14px;min-height:22px;"></div>
       <div id="sqb-err" style="display:none;color:#e87070;font-size:12px;margin-bottom:10px;line-height:1.5;"></div>
       <button class="btnp" id="sqb-go" style="border-radius:10px;" onclick="_sqDoBook()"><i class="ti ti-calendar-plus"></i> Book in Square</button>
       <button onclick="openLocalQuickAdd()" style="width:100%;margin-top:9px;background:none;border:none;font-size:13px;color:#888;cursor:pointer;font-family:inherit;">Add locally instead</button>`;
+    _sqLoadSlots();
   }).catch(e=>{
     const body=document.getElementById('sqbook-body');if(body){body.style.textAlign='left';body.style.padding='0';body.innerHTML=`<div style="color:#e87070;font-size:13px;margin-bottom:14px;line-height:1.5;">${e.message||'Could not load Square services.'}</div><button class="btng" style="width:100%;" onclick="openLocalQuickAdd()">Add appointment locally</button>`;}
   });
+}
+// Real open slots for the picked service+date+team member, from Square's availability search.
+let _sqSlots=null,_sqSelSlot=null;
+function _sqLoadSlots(){
+  _sqSlots=null;_sqSelSlot=null;
+  var svc=_sqBookOpts&&_sqBookOpts.services[parseInt((document.getElementById('sqb-svc')||{}).value||'0',10)];
+  var date=(document.getElementById('sqb-date')||{}).value;
+  var tmEl=document.getElementById('sqb-tm');var teamMemberId=tmEl?tmEl.value:((svc&&svc.teamMemberIds&&svc.teamMemberIds[0])||'');
+  var box=document.getElementById('sqb-slots');if(!box)return;
+  if(!svc||!date){box.innerHTML='';return;}
+  box.innerHTML='<div style="color:#888;font-size:12px;padding:6px 2px;"><i class="ti ti-loader-2"></i> Finding open times…</div>';
+  _sqFetch('/api/square/availability',{method:'POST',body:{serviceVariationId:svc.variationId,teamMemberId:teamMemberId||undefined,date:date}}).then(function(r){
+    var slots=(r&&r.slots)||[];_sqSlots=slots;
+    if(!slots.length){box.innerHTML='<div style="color:#c99a5a;font-size:12px;padding:9px 11px;background:#2a1f0f;border:1px solid #4a3a1a;border-radius:8px;">No open times on this day — try another date.</div>';return;}
+    box.innerHTML='<div style="display:flex;flex-wrap:wrap;gap:6px;">'+slots.map(function(s,i){var lbl=new Date(s.startAt).toLocaleTimeString('en-US',{hour:'numeric',minute:'2-digit'});return '<button type="button" class="sqslot" data-i="'+i+'" onclick="_sqPickSlot('+i+')" style="background:#1a1a1a;border:1px solid #2a2a2a;color:#e0e0e0;border-radius:8px;padding:7px 11px;font-size:12px;cursor:pointer;font-family:inherit;">'+lbl+'</button>';}).join('')+'</div>';
+  }).catch(function(e){
+    // Availability search unavailable (e.g. Appointments availability not configured yet) — fall back
+    // to a free time entry so booking still works; Square will reject a genuinely conflicting time.
+    _sqSlots=null;box.innerHTML='<div style="color:#929292;font-size:11px;margin-bottom:6px;">Live availability isn’t enabled for this account — enter a time.</div><input type="time" class="fi" id="sqb-time-fb" value="10:00" style="color-scheme:dark;">';
+  });
+}
+function _sqPickSlot(i){
+  _sqSelSlot=(_sqSlots&&_sqSlots[i])||null;
+  document.querySelectorAll('.sqslot').forEach(function(b){var on=(b.getAttribute('data-i')===String(i));b.style.background=on?'var(--accent)':'#1a1a1a';b.style.color=on?'var(--accent-ink)':'#e0e0e0';b.style.borderColor=on?'var(--accent)':'#2a2a2a';});
 }
 function _sqDoBook(){
   const val=id=>{const el=document.getElementById(id);return el?el.value:'';};
   const name=(val('sqb-name')||'').trim(),email=(val('sqb-email')||'').trim();
   const svc=_sqBookOpts&&_sqBookOpts.services[parseInt(val('sqb-svc')||'0',10)];
-  const date=val('sqb-date'),time=val('sqb-time');
+  const date=val('sqb-date');
   const tmEl=document.getElementById('sqb-tm');const tms=(_sqBookOpts&&_sqBookOpts.teamMembers)||[];
-  const teamMemberId=tmEl?tmEl.value:((svc&&svc.teamMemberIds&&svc.teamMemberIds[0])||(tms[0]&&tms[0].id)||'');
   const err=document.getElementById('sqb-err');const showErr=msg=>{if(err){err.style.display='block';err.textContent=msg;}};
   if(err)err.style.display='none';
   if(!name)return showErr('Enter a client name.');
   if(!svc)return showErr('Pick a service.');
+  if(!date)return showErr('Pick a date.');
+  let startAt,teamMemberId;
+  if(_sqSelSlot){ startAt=_sqSelSlot.startAt; teamMemberId=_sqSelSlot.teamMemberId||(tmEl&&tmEl.value)||(svc.teamMemberIds&&svc.teamMemberIds[0])||(tms[0]&&tms[0].id)||''; }
+  else if(document.getElementById('sqb-time-fb')){ const time=val('sqb-time-fb'); if(!time)return showErr('Pick a time.'); try{const d=new Date(date+'T'+time+':00');if(isNaN(d))throw 0;startAt=d.toISOString();}catch(e){return showErr('That time looks invalid.');} teamMemberId=(tmEl&&tmEl.value)||(svc.teamMemberIds&&svc.teamMemberIds[0])||(tms[0]&&tms[0].id)||''; }
+  else { return showErr('Pick an available time.'); }
   if(!teamMemberId)return showErr('No bookable team member found in Square — add one in Square Appointments first.');
-  if(!date||!time)return showErr('Pick a date and time.');
-  let startAt;try{const d=new Date(date+'T'+time+':00');if(isNaN(d))throw 0;startAt=d.toISOString();}catch(e){return showErr('That date or time looks invalid.');}
   const btn=document.getElementById('sqb-go');if(btn){btn.disabled=true;btn.innerHTML='<i class="ti ti-loader"></i> Booking…';}
   const _bsig=svc.variationId+'|'+startAt+'|'+teamMemberId+'|'+(email||name);
   const _bkey=_coIdem(_bsig);
