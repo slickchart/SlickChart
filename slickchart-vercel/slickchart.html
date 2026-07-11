@@ -6656,7 +6656,8 @@ function renderForms(){
   };
   let sections=['esty','wax','brow','lash','hair','barber','makeup','massage','nail','nutrition','contour','coach'].filter(p=>has(p)&&F[p]);
   if(!sections.length)sections=['esty'];
-  const photoCard={icon:'ti-photo',bg:'var(--accent-tint)',ic:'var(--accent)',name:'Photo release',sub:'Consent to share photos · auto-added to new client intake',id:'photo'};
+  // Photo release is bundled into every intake (asked once, auto-captured to the client's file),
+  // so it's no longer offered as a separate sendable card here — that duplicated the consent.
   const checkinSub=sections.length>1?`Auto-sends before every appointment · Covers your ${sections.length} disciplines`:'Auto-sends before every appointment · Fully customizable';
 
   S.innerHTML=`
@@ -6674,7 +6675,7 @@ function renderForms(){
   <div class="card" style="border-color:var(--accent);" onclick="nav('checkin-settings')"><div class="row"><div style="width:42px;height:42px;border-radius:10px;background:#2a0f1a;display:flex;align-items:center;justify-content:center;"><i class="ti ti-checklist" style="font-size:20px;color:#e87070;"></i></div><div style="flex:1;"><div style="font-size:14px;font-weight:500;color:#e0e0e0;">Pre-visit check-in</div><div style="font-size:12px;color:#999;margin-top:2px;">${checkinSub}</div><div style="margin-top:5px;display:flex;gap:5px;"><span class="bdg bg" style="font-size:12px;">Auto-send on</span><span class="bdg br" style="font-size:12px;">Customizable</span></div></div><i aria-hidden="true" class="ti ti-chevron-right" style="font-size:16px;color:#888;"></i></div></div>
   <div style="margin:2px 16px 0;padding:9px 12px;background:#0d1e33;border:1px solid #1a3a5c;border-radius:10px;display:flex;gap:8px;"><i class="ti ti-info-circle" style="font-size:14px;color:#5ba3e8;flex-shrink:0;margin-top:1px;"></i><span style="font-size:12px;color:#5ba3e8;line-height:1.5;">Connect aftercare guides to any form — switch to the <b>Guides</b> tab to manage them. Connected guides send with the form in one tap.</span></div>
   </div>
-  ${sections.map((p,si)=>{const[label,forms]=F[p];const list=si===sections.length-1?[...forms,photoCard]:forms;return`
+  ${sections.map((p,si)=>{const[label,forms]=F[p];const list=forms;return`
   <div class="form-section">
   <div class="sh"><h2>${label} · intake &amp; consent</h2></div>
   ${list.map(f=>_formCard(f)).join('')}
@@ -8263,12 +8264,15 @@ function _fvpClientRows(q){
   </button>`;}).join('');
 }
 function _renderFvpClients(q){const el=document.getElementById('fvp-list');if(el)el.innerHTML=_fvpClientRows(q);}
-// Any "new client intake" send should automatically include the photo release
-// too, since providers routinely need it for before/after photos and it was
-// previously just labeled as auto-included without actually happening.
+// The photo-release consent is now bundled directly INTO every intake form (the pr-taken /
+// pr-share questions, added by _bundlePhotoRelease), so we no longer tack on a separate
+// "Photo release" form — doing that asked the client for the same consent twice. We only fall
+// back to the standalone form in the unlikely case the intake being sent doesn't already carry
+// the bundled questions, so photo consent is still captured exactly once either way.
 function _withPhotoRelease(formIds){
   const list=Array.isArray(formIds)?formIds.slice():[formIds];
-  if(formTmpls.photo&&!list.includes('photo'))list.push('photo');
+  const hasBundled=list.some(fid=>{const t=formTmpls[fid];return t&&Array.isArray(t.qs)&&t.qs.some(q=>q.id==='pr-taken'||q.id==='pr-share');});
+  if(!hasBundled&&formTmpls.photo&&!list.includes('photo'))list.push('photo');
   return list;
 }
 function _assignFormsToClient(c,formIds){
