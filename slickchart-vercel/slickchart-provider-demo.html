@@ -1770,7 +1770,14 @@ const Cloud={
       });
   },
 };
-(function(){try{const _set=localStorage.setItem.bind(localStorage);Cloud._origSet=_set;localStorage.setItem=function(k,v){_set(k,v);try{if(_syncable(k))Cloud.push(k,v);}catch(e){}};}catch(e){}})();
+(function(){try{const _set=localStorage.setItem.bind(localStorage);Cloud._origSet=_set;localStorage.setItem=function(k,v){
+  // Write to localStorage AND mirror to the server. Critically, a localStorage quota
+  // failure (e.g. a big blob that no longer fits) must NOT stop the server push — otherwise
+  // the data is lost on both sides. So the local write is isolated, and Cloud.push always runs.
+  var _lsErr=null;try{_set(k,v);}catch(e){_lsErr=e;}
+  try{if(_syncable(k))Cloud.push(k,v);}catch(e){}
+  if(_lsErr)throw _lsErr;   // still surface quota errors to callers that check for them
+};}catch(e){}})();
 // Make sure pending cloud writes reach the server before the page goes away (refresh, close,
 // or navigate). Without this, a save whose 700ms debounce hadn't fired was lost on reload and
 // then clobbered by the older server copy on the next pull. pagehide + visibilitychange cover
@@ -3547,7 +3554,7 @@ function _cfsSendGuide(gid,cid){
   const c=CL[cid];const r=(typeof _findGuide==='function')?_findGuide(gid):null;
   const sh=document.getElementById('sendform-sheet');if(sh)sh.remove();
   if(!c||!r)return;
-  if(cid==='maya'){try{SlickBridge.post('resource-shared',{providerId:'jess',clientId:'maya',resource:{guideId:r.id,title:r.title,icon:r.icon,cat:r.cat,url:r.url||'',tips:r.tips||[],fileName:r.fileName||'',fileType:r.fileType||'',fileData:r.fileData||''}});}catch(e){}}
+  if(cid==='maya'){try{SlickBridge.post('resource-shared',{providerId:'jess',clientId:'maya',resource:{guideId:r.id,title:r.title,icon:r.icon,cat:r.cat,url:r.url||'',tips:r.tips||[],fileName:r.fileName||'',fileType:r.fileType||'',hasFile:!!(r.hasFile||r.fileData),fileData:r.fileData||''}});}catch(e){}}
   if(!Array.isArray(c.pendingGuides))c.pendingGuides=[];
   if(!c.pendingGuides.some(pg=>pg.guideId===r.id))c.pendingGuides.push({guideId:r.id,assignedAt:Date.now()});
   try{saveClients();}catch(e){}
@@ -7111,7 +7118,7 @@ function confirmSendForm(fid,cid){
   const sendIds=_isIntakeForm(fid)?_withPhotoRelease(fid):[fid];
   if(cid==='maya'){
     try{SlickBridge.post('form-shared',{providerId:'jess',clientId:'maya',form:{id:fid,title:tmpl.name,docs:guides.map(g=>({title:g.title,kind:g.cat})),qs:(tmpl.qs||[]).map(q=>({id:q.id,label:q.label,type:q.type,required:q.required,options:q.options,items:q.items})),contra:ci?ci.items:[],consent:sig?sig.label:''}});}catch(e){}
-    guides.forEach(g=>{try{SlickBridge.post('resource-shared',{providerId:'jess',clientId:'maya',resource:{guideId:g.id,title:g.title,icon:g.icon,cat:g.cat,url:g.url||'',tips:g.tips||[],fileName:g.fileName||'',fileType:g.fileType||'',fileData:g.fileData||''}});}catch(e){}});
+    guides.forEach(g=>{try{SlickBridge.post('resource-shared',{providerId:'jess',clientId:'maya',resource:{guideId:g.id,title:g.title,icon:g.icon,cat:g.cat,url:g.url||'',tips:g.tips||[],fileName:g.fileName||'',fileType:g.fileType||'',hasFile:!!(g.hasFile||g.fileData),fileData:g.fileData||''}});}catch(e){}});
   }else if(c){
     // Real client: actually assign the form(s) to them so they appear the next
     // time they open their app, instead of just claiming it was sent.
@@ -8455,7 +8462,7 @@ function _assembleClientData(id){
   const pendingGuides=(Array.isArray(c.pendingGuides)?c.pendingGuides:[]).map(pg=>{
     const g=(typeof _findGuide==='function')?_findGuide(pg.guideId):null;if(!g)return null;
     return {guideId:pg.guideId,title:g.title||'Guide',icon:g.icon||'📄',cat:g.cat||'',url:g.url||'',tips:Array.isArray(g.tips)?g.tips:[],
-      fileName:g.fileName||'',fileType:g.fileType||'',fileData:g.fileData||''};
+      fileName:g.fileName||'',fileType:g.fileType||'',hasFile:!!(g.hasFile||g.fileData)};
   }).filter(Boolean);
   // Active virtual-consult invite for this client (if any), so the invite reaches them
   // cross-device — not just via the same-browser SlickBridge. Dropped once they submit.
@@ -12993,6 +13000,7 @@ updateBadge();
 try{
   getMergedNotes().forEach(name=>{const key=name.toLowerCase().replace(/[^a-z]/g,'');if(!noteTemplates[key]){noteTemplates[key]={id:key,name,bdg:'bm',col:'#222',ic:'#aaa',desc:`${name} format`,sections:[{id:key+'1',label:name,color:'#aaa',ph:'Write your notes here...'}]};}});
   loadCustomResources();if(typeof _loadSummaryGuides==='function')_loadSummaryGuides();  // restore any guides the provider added
+  try{if(typeof _migrateGuideFiles==='function')_migrateGuideFiles();}catch(e){}  // rescue any legacy inline guide files to server + IndexedDB
   loadAi();  // restore the AI on/off preference
   loadProfessions();  // restore the provider's selected profession(s)
   applyProfessionConfig();
@@ -15527,13 +15535,16 @@ function saveBundle(){
 let _newResType={icon:'📄',cat:'Aftercare'};
 // A file (PDF, image, doc) the provider uploads as the guide's resource — clients can download it.
 // Staged here while editing; folded into the guide object on Save. Capped so it stays syncable.
-let _guideFileDraft=null; // {name,type,data} or null
+// A staged guide file is either {name,type,data} (freshly picked, has base64 data) or
+// {name,type,existing:true} (an already-uploaded file we don't re-read the bytes for).
+let _guideFileDraft=null;
 function _guideFileSizeLabel(dataUrl){try{const b=Math.round((String(dataUrl||'').length*3/4)/1024);return b>=1024?((b/1024).toFixed(1)+' MB'):(b+' KB');}catch(e){return '';}}
 function _guideFileRowHTML(){
-  if(_guideFileDraft&&_guideFileDraft.data){
+  if(_guideFileDraft&&(_guideFileDraft.data||_guideFileDraft.existing)){
+    const meta=_guideFileDraft.data?(_guideFileSizeLabel(_guideFileDraft.data)+' · clients can download this'):'Saved · clients can download this';
     return `<div style="display:flex;align-items:center;gap:10px;background:#161616;border:1px solid #2a2a2a;border-radius:10px;padding:10px 12px;">
       <i class="ti ti-file-text" aria-hidden="true" style="font-size:20px;color:var(--accent);flex-shrink:0;"></i>
-      <div style="flex:1;min-width:0;"><div style="font-size:13px;color:#e0e0e0;white-space:nowrap;overflow:hidden;text-overflow:ellipsis;">${_fileEsc(_guideFileDraft.name||'Attached file')}</div><div style="font-size:11px;color:#888;">${_guideFileSizeLabel(_guideFileDraft.data)} · clients can download this</div></div>
+      <div style="flex:1;min-width:0;"><div style="font-size:13px;color:#e0e0e0;white-space:nowrap;overflow:hidden;text-overflow:ellipsis;">${_fileEsc(_guideFileDraft.name||'Attached file')}</div><div style="font-size:11px;color:#888;">${meta}</div></div>
       <button onclick="_removeGuideFile()" style="background:none;border:none;color:#e87070;font-size:12px;cursor:pointer;flex-shrink:0;font-family:inherit;">Remove</button>
     </div>`;
   }
@@ -15544,7 +15555,9 @@ function _pickGuideFile(){
   inp.accept='application/pdf,image/*,.pdf,.doc,.docx,.txt,.csv,.rtf,.pages';
   inp.onchange=function(){
     const f=(inp.files||[])[0];if(!f)return;
-    if(f.size>4*1024*1024){if(typeof proToast==='function')proToast('Please choose a file under 4MB so it syncs to your clients reliably');return;}
+    // Cap at 3 MB so the base64 upload stays under the serverless request-body limit and
+    // reliably reaches the server in a single request.
+    if(f.size>3*1024*1024){if(typeof proToast==='function')proToast('Please choose a file under 3MB so it syncs to your clients reliably');return;}
     const r=new FileReader();
     r.onload=function(e){_guideFileDraft={name:f.name||'file',type:f.type||'',data:e.target.result};const row=document.getElementById('guide-file-row');if(row)row.innerHTML=_guideFileRowHTML();};
     r.onerror=function(){if(typeof proToast==='function')proToast('Could not read that file');};
@@ -15553,6 +15566,75 @@ function _pickGuideFile(){
   inp.click();
 }
 function _removeGuideFile(){_guideFileDraft=null;const row=document.getElementById('guide-file-row');if(row)row.innerHTML=_guideFileRowHTML();}
+// ── Guide file storage ── files live server-side (per owner+guide id) and in IndexedDB
+// locally, NOT in the synced sc_resources blob — base64 files are too big for that path,
+// which is why uploads used to vanish. The guide record keeps only name/type/hasFile.
+function _uploadGuideFileToServer(id,payload){
+  try{
+    if(typeof Cloud==='undefined'||!Cloud||!Cloud.token)return;
+    fetch('/api/guide-file',{method:'PUT',headers:{'Content-Type':'application/json','Authorization':'Bearer '+Cloud.token},body:JSON.stringify({id,name:payload.name||'',type:payload.type||'',data:payload.data})})
+      .then(r=>{if(!r.ok&&typeof proToast==='function'){proToast(r.status===413?'That file is too large to sync — please use one under 3 MB':'File saved on this device, but didn’t sync yet — check your connection and save again',0);}})
+      .catch(()=>{if(typeof proToast==='function')proToast('File saved on this device, but didn’t sync yet — check your connection and save again',0);});
+  }catch(e){}
+}
+function _deleteGuideFileFromServer(id){try{if(typeof Cloud!=='undefined'&&Cloud&&Cloud.token)fetch('/api/guide-file?id='+encodeURIComponent(id),{method:'DELETE',headers:{'Authorization':'Bearer '+Cloud.token}}).catch(()=>{});}catch(e){}}
+// Persist a guide's file: store the bytes locally (IndexedDB) + on the server, or remove
+// them if the provider cleared the attachment.
+function _persistGuideFile(id,draft,prevHadFile){
+  try{
+    if(draft&&draft.data){
+      const payload={name:draft.name||'',type:draft.type||'',data:draft.data};
+      try{if(typeof _idb!=='undefined'&&_idb.available())_idb.set('gfile_'+id,payload);}catch(e){}
+      _uploadGuideFileToServer(id,payload);
+    }else if(!draft&&prevHadFile){
+      try{if(typeof _idb!=='undefined'&&_idb.available())_idb.del('gfile_'+id);}catch(e){}
+      _deleteGuideFileFromServer(id);
+    }
+  }catch(e){}
+}
+// Fetch a guide's file bytes for preview/download: IndexedDB first, then the server.
+async function _getGuideFile(id){
+  try{if(typeof _idb!=='undefined'&&_idb.available()){const v=await _idb.get('gfile_'+id);if(v&&v.data)return v;}}catch(e){}
+  try{
+    if(typeof Cloud!=='undefined'&&Cloud&&Cloud.token){
+      const r=await fetch('/api/guide-file?id='+encodeURIComponent(id),{headers:{'Authorization':'Bearer '+Cloud.token}});
+      if(r.ok){const j=await r.json();if(j&&j.file&&j.file.data){try{if(typeof _idb!=='undefined'&&_idb.available())_idb.set('gfile_'+id,j.file);}catch(e){}return j.file;}}
+    }
+  }catch(e){}
+  return null;
+}
+async function _downloadGuideFileP(id){
+  const f=await _getGuideFile(id);
+  if(!f||!f.data){if(typeof proToast==='function')proToast('That file isn’t available on this device — open the guide once while online to fetch it');return;}
+  try{
+    const parts=String(f.data).split(',');const mime=(parts[0].match(/:(.*?);/)||[])[1]||f.type||'application/octet-stream';
+    const bin=atob(parts[1]||'');const arr=new Uint8Array(bin.length);for(let i=0;i<bin.length;i++)arr[i]=bin.charCodeAt(i);
+    const blob=new Blob([arr],{type:mime});const url=URL.createObjectURL(blob);
+    const a=document.createElement('a');a.href=url;a.download=f.name||'guide-file';document.body.appendChild(a);a.click();a.remove();
+    setTimeout(()=>URL.revokeObjectURL(url),4000);
+  }catch(e){try{window.open(f.data,'_blank');}catch(_){} }
+}
+// One-time migration: older guides embedded the file as base64 in the record (sc_resources).
+// Move any such file to the server + IndexedDB and strip the base64 so the blob stays small.
+let _guideFilesMigrated=false;
+function _migrateGuideFiles(){
+  if(_guideFilesMigrated)return;
+  // Need a token to push the recovered bytes to the server; if not signed in yet, retry later.
+  if(typeof Cloud==='undefined'||!Cloud||!Cloud.token)return;
+  _guideFilesMigrated=true;
+  try{
+    let changed=false;
+    (customResources||[]).forEach(g=>{
+      if(g&&g.fileData&&String(g.fileData).length>0){
+        _persistGuideFile(g.id,{name:g.fileName||'',type:g.fileType||'',data:g.fileData},false);
+        g.hasFile=true;delete g.fileData;changed=true;
+      }else if(g&&(g.fileName||g.fileType)&&g.hasFile===undefined){
+        g.hasFile=!!(g.fileName||g.fileType);changed=true;
+      }
+    });
+    if(changed)persistCustomResources();
+  }catch(e){}
+}
 function renderAddResource(){
   setNav('more');
   document.getElementById('tt').textContent='Add guide';
@@ -15633,6 +15715,7 @@ function renderGuidePreview(id){
   <div style="padding:0 16px;">
     <div style="display:flex;align-items:center;gap:12px;margin-bottom:14px;"><div style="font-size:34px;">${g.icon||'📄'}</div><div><div style="font-size:18px;font-weight:600;color:#f0f0f0;">${_fileEsc(g.title||'')}</div><div style="font-size:12px;color:#999;">${_fileEsc(g.cat||'')}</div></div></div>
     ${g.url?`<a href="${_urlAttr(_safeUrl(g.url))}" target="_blank" rel="noopener noreferrer" style="display:inline-flex;align-items:center;gap:5px;font-size:12px;color:var(--accent);text-decoration:none;margin-bottom:14px;"><i class="ti ti-external-link" style="font-size:12px;"></i> Open full guide</a>`:''}
+    ${(g.hasFile||g.fileData)?`<button onclick="_downloadGuideFileP('${g.id}')" style="display:inline-flex;align-items:center;gap:6px;font-size:12px;color:var(--accent);background:var(--accent-tint);border:1px solid var(--accent);border-radius:8px;padding:7px 12px;cursor:pointer;margin-bottom:14px;font-family:inherit;"><i class="ti ti-download" style="font-size:13px;"></i> ${_fileEsc(g.fileName||'Download file')}</button>`:''}
     ${(g.tips&&g.tips.length)?`<div style="font-size:11px;font-weight:600;color:#aaa;text-transform:uppercase;letter-spacing:.06em;margin-bottom:8px;">Tips</div>
     <div style="background:#1a1a1a;border:1px solid #2a2a2a;border-radius:12px;overflow:hidden;margin-bottom:16px;">
       ${g.tips.map((t,i)=>`<div style="display:flex;align-items:flex-start;gap:10px;padding:11px 13px;${i<g.tips.length-1?'border-bottom:1px solid #1e1e1e;':''}"><i class="ti ti-check" style="font-size:14px;color:#4ec49a;margin-top:2px;flex-shrink:0;"></i><span style="font-size:13px;color:#ddd;line-height:1.55;">${_fileEsc(t)}</span></div>`).join('')}
@@ -15648,7 +15731,9 @@ function renderEditResource(id){
   const g=_findGuide(id)||{id,icon:'📄',title:'',cat:'Aftercare',url:'',tips:[]};
   _editingGuideId=id;
   _guideProdDraft=(Array.isArray(g.products)?g.products.slice():[]);   // stage product edits
-  _guideFileDraft=(g.fileData?{name:g.fileName||'Attached file',type:g.fileType||'',data:g.fileData}:null);   // stage existing file
+  // Stage the existing file: legacy guides may still carry inline base64 (data), newer ones
+  // just carry hasFile + name/type and the bytes live server-side / in IndexedDB.
+  _guideFileDraft=(g.fileData?{name:g.fileName||'Attached file',type:g.fileType||'',data:g.fileData}:(g.hasFile?{name:g.fileName||'Attached file',type:g.fileType||'',existing:true}:null));
   const isCustom=/^g-custom-/.test(id);
   const hasOverride=customResources.some(x=>x.id===id);
   _newResType={icon:g.icon||'📄',cat:g.cat||'Aftercare'};
@@ -15686,11 +15771,15 @@ function saveEditResource(id){
   const url=(document.getElementById('res-url')?.value||'').trim().replace(/^https?:\/\//i,'');
   const tips=(document.getElementById('res-tips')?.value||'').split('\n').map(s=>s.trim()).filter(Boolean);
   const products=Array.isArray(_guideProdDraft)?_guideProdDraft.slice():((_findGuide(id)||{}).products||[]);
+  const prev=_findGuide(id)||{};
+  const prevHadFile=!!(prev.hasFile||prev.fileData);
+  const hasFile=!!(_guideFileDraft&&(_guideFileDraft.data||_guideFileDraft.existing));
   const upd={id,icon:_newResType.icon||'📄',title,cat:_newResType.cat||'Aftercare',url,tips,products,
-    fileName:(_guideFileDraft&&_guideFileDraft.name)||'',fileType:(_guideFileDraft&&_guideFileDraft.type)||'',fileData:(_guideFileDraft&&_guideFileDraft.data)||''};
+    fileName:(_guideFileDraft&&_guideFileDraft.name)||'',fileType:(_guideFileDraft&&_guideFileDraft.type)||'',hasFile};
   const i=customResources.findIndex(x=>x.id===id);
-  if(i>=0)customResources[i]=Object.assign({},customResources[i],upd);
+  if(i>=0){customResources[i]=Object.assign({},customResources[i],upd);delete customResources[i].fileData;}
   else customResources.push(upd);
+  _persistGuideFile(id,_guideFileDraft,prevHadFile);
   _guideProdDraft=null;_guideFileDraft=null;
   persistCustomResources();rebuildResources();
   if(typeof proToast==='function')proToast('Guide updated');
@@ -15786,9 +15875,11 @@ function saveResource(){
   const url=(document.getElementById('res-url')?.value||'').trim().replace(/^https?:\/\//i,'');
   const tips=(document.getElementById('res-tips')?.value||'').split('\n').map(s=>s.trim()).filter(Boolean);
   const products=Array.isArray(_guideProdDraft)?_guideProdDraft.slice():[];
+  const hasFile=!!(_guideFileDraft&&(_guideFileDraft.data||_guideFileDraft.existing));
   const g={id:'g-custom-'+Date.now(),icon:_newResType.icon||'📄',title,cat:_newResType.cat||'Aftercare',url,shared:0,tips,products,
-    fileName:(_guideFileDraft&&_guideFileDraft.name)||'',fileType:(_guideFileDraft&&_guideFileDraft.type)||'',fileData:(_guideFileDraft&&_guideFileDraft.data)||''};
+    fileName:(_guideFileDraft&&_guideFileDraft.name)||'',fileType:(_guideFileDraft&&_guideFileDraft.type)||'',hasFile};
   customResources.push(g);
+  _persistGuideFile(g.id,_guideFileDraft,false);
   _guideProdDraft=null;_guideFileDraft=null;
   persistCustomResources();
   rebuildResources();

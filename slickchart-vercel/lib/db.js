@@ -49,6 +49,33 @@ export async function getKVValue(owner, key) {
   return rows[0] ? rows[0].v : null;
 }
 
+// Uploaded files (guide PDFs, etc.) live in their own table keyed by (owner, id) rather
+// than inside the synced kv JSON blob — base64 files are far too large to ride the kv
+// sync (they blow the browser's localStorage quota and the request-body limit), which is
+// why uploads silently vanished before. Storing them separately keeps the kv blob small
+// and lets a client fetch just the one file it needs on demand.
+let _filesReady = false;
+export async function ensureFilesTable() {
+  if (_filesReady) return;
+  const q = sql();
+  await q`CREATE TABLE IF NOT EXISTS files (
+    owner text NOT NULL,
+    id text NOT NULL,
+    name text,
+    type text,
+    data text,
+    updated_at timestamptz DEFAULT now(),
+    PRIMARY KEY (owner, id)
+  )`;
+  _filesReady = true;
+}
+export async function getFileRow(owner, id) {
+  await ensureFilesTable();
+  const q = sql();
+  const rows = await q`SELECT id, name, type, data FROM files WHERE owner = ${owner} AND id = ${id}`;
+  return rows[0] || null;
+}
+
 // Provider accounts for multi-tenant login. Each provider's app data lives in the
 // kv table keyed by owner = provider id, so accounts are isolated automatically.
 let _provReady = false;
