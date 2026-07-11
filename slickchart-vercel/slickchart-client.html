@@ -296,8 +296,9 @@ function pushNotify(o){
   updateClientBadge();
 
   const prefs=loadNotifPrefs();
-  const typeOn=o.type?prefs[o.type]!==false:true;
-  const allowed=o.force||(prefs.enabled&&typeOn&&!Push.inQuietHours(prefs));
+  // Notifications are now a single on/off switch (no per-type toggles), so firing depends only on
+  // the master enable and quiet hours.
+  const allowed=o.force||(prefs.enabled&&!Push.inQuietHours(prefs));
   if(!allowed)return entry; // recorded in center, but no push/banner (off or quiet hours)
 
   const fireApp=()=>showPushBanner(entry,o.onclick);
@@ -334,9 +335,13 @@ function showPushBanner(n,onclick){
   setTimeout(()=>{if(el.parentNode){el.style.transform='translateY(-130%)';setTimeout(()=>el.remove(),350);}},5200);
 }
 
-function initSwipe(card,i){
+function initSwipe(card,i,onFullSwipe){
   if(!card||card._swipeInit)return;card._swipeInit=true;
   const W=80;
+  // When a full-swipe handler is supplied (e.g. notifications), a big left-swipe slides the card
+  // off and clears it outright; a small swipe still just reveals the DONE button.
+  const MAXPULL=onFullSwipe?W*2.4:W+20;
+  const FULL=W*1.5;
   let startX=0,startY=0,dx=0,dragging=false,opened=false,decided=false,horiz=false;
   const setX=x=>{card.style.transform='translateX('+x+'px)';};
   const open=()=>{opened=true;card.style.transition='transform .2s';card.style.transform='translateX(-'+W+'px)';};
@@ -349,11 +354,12 @@ function initSwipe(card,i){
     const mx=x-startX,my=y-startY;
     if(!decided){if(Math.abs(mx)>6||Math.abs(my)>6){decided=true;horiz=Math.abs(mx)>Math.abs(my);}else return;}
     if(!horiz){dragging=false;card.style.transition='transform .2s';setX(opened?-W:0);return;}
-    let nx=(opened?-W:0)+mx;if(nx>0)nx=0;if(nx<-W-20)nx=-W-20;dx=nx;setX(nx);
+    let nx=(opened?-W:0)+mx;if(nx>0)nx=0;if(nx<-MAXPULL)nx=-MAXPULL;dx=nx;setX(nx);
   };
   const onEnd=()=>{
     if(!dragging)return;dragging=false;
     if(!horiz){card.style.transition='transform .2s';return;}
+    if(onFullSwipe&&dx<-FULL){card.style.transition='transform .25s';card.style.transform='translateX(-120%)';setTimeout(onFullSwipe,180);return;}
     if(dx<-W/2){closeOthers();open();}else{close();}
   };
   card.addEventListener('touchstart',e=>{if(e.touches&&e.touches[0])onStart(e.touches[0].clientX,e.touches[0].clientY);},{passive:true});
@@ -362,6 +368,21 @@ function initSwipe(card,i){
   card.addEventListener('mousedown',e=>{onStart(e.clientX,e.clientY);const mm=ev=>onMove(ev.clientX,ev.clientY);const mu=()=>{onEnd();document.removeEventListener('mousemove',mm);document.removeEventListener('mouseup',mu);};document.addEventListener('mousemove',mm);document.addEventListener('mouseup',mu);});
 }
 function clearClientNotif(id){const i=clientNotifs.findIndex(n=>n.id===id);if(i>=0)clientNotifs.splice(i,1);updateClientBadge();renderClientNotifs();}
+// Tapping a notification marks it read and jumps to the thing it's about, instead of just sitting
+// on the list. Routes by notification type.
+function _notifOpen(id){
+  const n=clientNotifs.find(x=>x.id===id);
+  markClientRead(id);
+  const t=(n&&n.type)||'';
+  if(t==='messagereply'||t==='message')return nav('messages');
+  if(t==='summaryReady'){_summaryIdx=0;_summaryFrom='notifications';return nav('summary');}
+  if(t==='homecareReminder')return nav('homecare');
+  if(t==='vcInvite')return nav('virtual-submit');
+  if(t==='vcSubmitted')return nav('journey');
+  if(t==='code')return nav('shop');
+  if(/^appointment/i.test(t)||t==='bookingConfirmed'||t==='rebooked'||t==='booking')return nav('home');
+  renderClientNotifs(); // nothing specific to open — just refresh the read state
+}
 function renderClientNotifs(){
   setNav('home');
   document.getElementById('tt').textContent='Notifications';
@@ -370,7 +391,7 @@ function renderClientNotifs(){
   const read=clientNotifs.filter(n=>n.read);
   const card=n=>`
     <div style="position:relative;overflow:hidden;margin:0 16px 8px;border-radius:13px;">
-      <div class="swipe-card" onclick="markClientRead('${n.id}');renderClientNotifs()" style="background:#fff;border:1.5px solid ${n.read?'#f0ebe4':'#e8d9c4'};border-radius:13px;padding:12px 13px;display:flex;gap:11px;align-items:flex-start;cursor:pointer;${n.read?'':'box-shadow:0 1px 8px rgba(200,168,130,.12);'}">
+      <div class="swipe-card" data-nid="${n.id}" onclick="_notifOpen('${n.id}')" style="background:#fff;border:1.5px solid ${n.read?'#f0ebe4':'#e8d9c4'};border-radius:13px;padding:12px 13px;display:flex;gap:11px;align-items:flex-start;cursor:pointer;${n.read?'':'box-shadow:0 1px 8px rgba(200,168,130,.12);'}">
       <div style="position:relative;flex-shrink:0;">
         <div style="width:38px;height:38px;border-radius:10px;background:${n.col};display:flex;align-items:center;justify-content:center;">
           <i class="ti ${n.icon}" aria-hidden="true" style="font-size:18px;color:${n.ic};"></i>
@@ -403,7 +424,7 @@ function renderClientNotifs(){
   <div style="padding:0 16px 24px;">
     <button onclick="nav('notif-settings')" style="width:100%;background:#faf7f4;border:1.5px solid #f0ebe4;border-radius:11px;padding:12px;font-size:13px;color:#6b5d52;cursor:pointer;font-weight:600;display:flex;align-items:center;justify-content:center;gap:7px;"><i class="ti ti-settings" aria-hidden="true"></i> Notification settings</button>
   </div>`;
-  setTimeout(()=>{try{document.querySelectorAll('.swipe-card').forEach((el,i)=>{if(typeof initSwipe==='function')initSwipe(el,i);});}catch(e){}},0);
+  setTimeout(()=>{try{document.querySelectorAll('.swipe-card').forEach((el,i)=>{if(typeof initSwipe==='function'){const nid=el.getAttribute('data-nid');initSwipe(el,i,nid?(()=>clearClientNotif(nid)):undefined);}});}catch(e){}},0);
 }
 
 /* ════════════════════════════════════════════════════════════════
@@ -1579,6 +1600,19 @@ function _previsitSectionHTML(){
     </div>
   </div>`;
 }
+// Has this client actually been in yet? Used to hide the whole "After your visit" area (summary,
+// homecare routine) from a brand-new client who hasn't had their first appointment — showing a
+// "latest summary" to someone who's never visited was confusing.
+function _hasHadVisit(){
+  const p=activeProvider()||{};
+  return !!(
+    (p.summaryNote&&String(p.summaryNote).trim())||
+    (Array.isArray(p.progress)&&p.progress.length)||
+    (Array.isArray(p.homecare)&&p.homecare.length)||
+    (Array.isArray(p.recLog)&&p.recLog.length)||
+    (client.lastVisit&&client.lastVisit!=='—'&&client.lastVisit!=='—')
+  );
+}
 function renderHome(){
   setNav('home');
   const checked=Object.values(homecareChecked).filter(Boolean).length;
@@ -1599,9 +1633,6 @@ function renderHome(){
   <div style="padding:12px 16px 10px;">
     <div style="font-size:22px;font-weight:600;color:#1a1a1a;line-height:1.25;"><span style="font-weight:500;color:#786858;">${_greeting()},</span> <span id="page-heading" tabindex="-1">${_txt(client.name.split(' ')[0])}</span></div>
   </div>
-  <!-- "Complete before your visit" — top of the app because it's the priority item. One card that
-       walks the client through the check-in and every assigned form in a single guided pass. -->
-  ${_previsitSectionHTML()}
   ${_welcomeBannerHTML()}
 
   ${vcInvite?`
@@ -1611,7 +1642,9 @@ function renderHome(){
     <span style="font-size:11px;font-weight:700;color:#fff;background:#8b6fc7;padding:5px 11px;border-radius:20px;flex-shrink:0;">Start</span>
   </div>`:''}
 
-  <!-- Next appointment countdown -->
+  <!-- ── BEFORE YOUR APPOINTMENT ── the next-appointment card and the "complete before your visit"
+       checklist are one grouped area, so everything the client needs before they come in is together. -->
+  <div class="sh"><h2>Before your appointment</h2></div>
   ${(()=>{
     const noAppt=(client.daysUntilNext==null||!isFinite(client.daysUntilNext));
     const urgent=client.isToday||client.isTomorrow||client.isThisWeek;
@@ -1651,6 +1684,9 @@ function renderHome(){
   </div>`;
   })()}
 
+  <!-- Complete before your visit — grouped directly under the appointment it belongs to -->
+  ${_previsitSectionHTML()}
+
   <!-- Pending guides from provider -->
   ${(activeProvider().pendingGuides||[]).map(pg=>`
   <div style="margin:0 16px 14px;background:#fff;border:1.5px solid #f0ebe4;border-radius:14px;overflow:hidden;cursor:pointer;" onclick="_viewGuideId='${pg.guideId}';nav('view-guide')" role="button" aria-label="${_txt(pg.title)}">
@@ -1664,7 +1700,11 @@ function renderHome(){
     </div>
   </div>`).join('')}
 
-  <!-- Latest summary shortcut -->
+  <!-- ── AFTER YOUR VISIT ── the post-visit summary and homecare routine, only once the client has
+       actually been in. A brand-new client who hasn't visited yet doesn't see any of this. -->
+  ${_hasHadVisit()?`
+  <div class="sh"><h2>After your visit</h2></div>
+  ${(activeProvider().summaryNote&&String(activeProvider().summaryNote).trim())?`
   <div style="margin:0 16px 14px;background:#fff;border:1.5px solid #f0ebe4;border-radius:14px;overflow:hidden;cursor:pointer;" onclick="_summaryIdx=0;_summaryFrom='home';nav('summary')" role="button" aria-label="View latest session summary">
     <div style="padding:12px 16px;display:flex;align-items:center;gap:12px;">
       <div style="width:42px;height:42px;background:var(--accent-lt);border-radius:10px;display:flex;align-items:center;justify-content:center;flex-shrink:0;"><i class="ti ti-file-text" aria-hidden="true" style="font-size:20px;color:var(--accent);"></i></div>
@@ -1675,10 +1715,7 @@ function renderHome(){
       <i aria-hidden="true" class="ti ti-chevron-right" style="font-size:16px;color:#82715f;"></i>
     </div>
     <div style="padding:0 16px 12px;font-size:13px;color:#6b5d52;line-height:1.6;">${_txt(activeProvider().summaryNote)}</div>
-  </div>
-
-  <!-- Homecare section — today's routine wrapped under a clear Homecare heading -->
-  <div class="sh"><h2>Homecare</h2></div>
+  </div>`:''}
   <div style="margin:0 16px 14px;background:#fff;border:1.5px solid #f0ebe4;border-radius:14px;overflow:hidden;cursor:pointer;" onclick="nav('homecare')" role="button" aria-label="View homecare routine">
     <div style="padding:12px 16px;display:flex;align-items:center;justify-content:space-between;">
       <div>
@@ -1693,7 +1730,7 @@ function renderHome(){
     <div style="padding:0 16px 12px;display:flex;flex-wrap:wrap;gap:5px;">
       ${Object.keys(homecareChecked).map(k=>`<span style="font-size:11px;padding:3px 9px;border-radius:20px;background:${homecareChecked[k]?'var(--accent)':'var(--accent-lt)'};color:${homecareChecked[k]?'#fff':'#9a7a5e'};">${k}</span>`).join('')}
     </div>
-  </div>
+  </div>`:''}
 
   <!-- Quick actions -->
   <div class="sh"><h2>Quick actions</h2></div>
@@ -1767,16 +1804,12 @@ async function enableNotifs(){
   setTimeout(()=>pushNotify({type:'summaryReady',icon:'ti-bell-ringing',col:'#f0fff5',ic:'#4ec49a',
     title:'Notifications are on 🎉',body:"You'll get reminders, messages, and booking updates here.",force:true}),420);
 }
-function sendTestNotif(){
-  pushNotify({type:'appointmentReminder',icon:'ti-calendar-event',col:'var(--accent-lt)',ic:'var(--accent)',
-    title:'Appointment reminder',body:`Your ${client.treatment} with ${client.providerFirst} is coming up on ${client.nextDate} at ${client.nextTime}.`,
-    force:true,onclick:()=>nav('home')});
-}
-function disableAllNotifs(){
+// The single master switch. On → request permission + enable (enableNotifs handles the rest);
+// off → disable. Everything (reminders, messages, summaries) rides this one toggle now.
+function toggleAllNotifs(){
   const p=loadNotifPrefs();
-  p.enabled=false;
-  saveNotifPrefs(p);
-  renderNotifSettings();
+  if(p.enabled){p.enabled=false;saveNotifPrefs(p);renderNotifSettings();}
+  else{enableNotifs();}
 }
 function setQuietStart(val){
   const p=loadNotifPrefs();p.quietStart=val;saveNotifPrefs(p);
@@ -1789,72 +1822,31 @@ function renderNotifSettings(){
   setNav('home');
   document.getElementById('tt').textContent='Notifications';
   const p=loadNotifPrefs();
-
-  function tog(key,label,sub,disabled){
-    const on=p[key];
-    return`<div style="display:flex;align-items:center;gap:10px;padding:11px 14px;border-bottom:1px solid #f0ebe4;${disabled?'opacity:.4;pointer-events:none;':''}">
-      <div style="flex:1;">
-        <div style="font-size:13px;font-weight:600;color:#1a1a1a;">${label}</div>
-        ${sub?`<div style="font-size:11px;color:#786858;margin-top:1px;">${sub}</div>`:''}
-      </div>
-      <button role="switch" aria-checked="${on}" aria-label="Toggle ${label}" onclick="toggleNotif('${key}')" style="width:44px;height:26px;border-radius:13px;border:none;-webkit-appearance:none;appearance:none;padding:0;margin:0;box-sizing:border-box;background:${on?'var(--accent)':'#e8ddd3'};position:relative;cursor:pointer;flex-shrink:0;">
-        <span aria-hidden="true" style="position:absolute;top:3px;left:${on?'21':'3'}px;width:20px;height:20px;border-radius:50%;background:#fff;box-shadow:0 1px 3px rgba(0,0,0,.15);transition:left .15s;"></span>
-      </button>
-    </div>`;
-  }
-
-  const off=!p.enabled;
+  const on=!!p.enabled;
+  const off=!on;
   const perm=Push.permission(); // 'granted' | 'denied' | 'default' | 'unsupported'
-  const permLabel=perm==='granted'?'System notifications allowed':perm==='denied'?'Blocked in browser settings':perm==='default'?'Not yet requested':'Not supported here (in-app only)';
-  const permColor=perm==='granted'?'#3a7a5a':perm==='denied'?'#c87070':'#9a8a7e';
-  const permBg=perm==='granted'?'#f0fff8':perm==='denied'?'#fff4f2':'#faf7f4';
-  const permIcon=perm==='granted'?'ti-circle-check':perm==='denied'?'ti-alert-circle':'ti-info-circle';
 
   S.innerHTML=`
-  <div style="padding:12px 16px 0;">
-    
-  </div>
+  <div style="padding:8px 16px 4px;"><div id="page-heading" tabindex="-1" style="font-size:20px;font-weight:600;color:#1a1a1a;">Notifications</div></div>
 
-  ${off?`
-  <div style="margin:12px 16px;background:linear-gradient(135deg,var(--accent-tint),var(--accent-tint2));border-radius:14px;padding:18px 16px;">
-    <div style="font-size:15px;font-weight:600;color:var(--accent-lt2);margin-bottom:6px;">Stay in the loop</div>
-    <div style="font-size:13px;color:var(--accent-lt2);opacity:.8;line-height:1.6;margin-bottom:14px;">Get reminders before your appointment, daily homecare nudges, and messages from ${_txt(client.providerFirst)} — right to your phone.</div>
-    <button id="enable-notif-btn" onclick="enableNotifs()" style="width:100%;background:var(--accent);border:none;border-radius:10px;padding:12px;font-size:14px;font-weight:600;color:var(--accent-ink);cursor:pointer;display:flex;align-items:center;justify-content:center;gap:7px;">
-      <i class="ti ti-bell" aria-hidden="true"></i> Turn on notifications
-    </button>
-  </div>`:`
-  <div style="margin:12px 16px 8px;background:#f0fff8;border:1.5px solid #c0e8d0;border-radius:12px;padding:11px 14px;display:flex;gap:8px;align-items:center;">
-    <i class="ti ti-bell-ringing" aria-hidden="true" style="font-size:16px;color:#3a7a5a;flex-shrink:0;"></i>
-    <span style="font-size:13px;color:#2a6a4a;font-weight:600;">Notifications are on</span>
-  </div>
-  <div style="margin:0 16px 4px;background:${permBg};border:1.5px solid ${perm==='granted'?'#c0e8d0':perm==='denied'?'#f0d8d2':'#ece2d6'};border-radius:12px;padding:10px 14px;display:flex;gap:8px;align-items:center;">
-    <i class="ti ${permIcon}" aria-hidden="true" style="font-size:15px;color:${permColor};flex-shrink:0;"></i>
-    <div style="flex:1;">
-      <div style="font-size:12px;font-weight:600;color:${permColor};">${permLabel}</div>
-      ${perm==='denied'?`<div style="font-size:11px;color:#786858;margin-top:1px;line-height:1.4;">Enable SlickChart in your browser's site settings to get system notifications. You'll still see in-app alerts.</div>`:perm==='default'?`<div style="font-size:11px;color:#786858;margin-top:1px;">Tap below to allow notifications outside the app.</div>`:''}
+  <!-- One master switch for everything: reminders, messages, booking updates and summaries. -->
+  <div style="margin:8px 16px 6px;background:#fff;border:1.5px solid ${on?'var(--accent)':'#f0ebe4'};border-radius:14px;overflow:hidden;">
+    <div style="display:flex;align-items:center;gap:12px;padding:15px 16px;">
+      <div style="width:42px;height:42px;border-radius:11px;background:var(--accent-lt);display:flex;align-items:center;justify-content:center;flex-shrink:0;"><i class="ti ti-bell" aria-hidden="true" style="font-size:20px;color:var(--accent);"></i></div>
+      <div style="flex:1;min-width:0;">
+        <div style="font-size:15px;font-weight:700;color:#1a1a1a;">Notifications</div>
+        <div style="font-size:12px;color:#786858;margin-top:2px;line-height:1.4;">${on?`Reminders, messages from ${_txt(client.providerFirst)}, and booking updates.`:'Turn on to get reminders, messages, and booking updates.'}</div>
+      </div>
+      <button role="switch" aria-checked="${on}" aria-label="Notifications" onclick="toggleAllNotifs()" style="width:50px;height:30px;border-radius:15px;border:none;-webkit-appearance:none;appearance:none;padding:0;margin:0;box-sizing:border-box;background:${on?'var(--accent)':'#e8ddd3'};position:relative;cursor:pointer;flex-shrink:0;">
+        <span aria-hidden="true" style="position:absolute;top:3px;left:${on?'23':'3'}px;width:24px;height:24px;border-radius:50%;background:#fff;box-shadow:0 1px 3px rgba(0,0,0,.2);transition:left .15s;"></span>
+      </button>
     </div>
-    ${perm==='default'?`<button onclick="enableNotifs()" style="background:var(--accent);border:none;border-radius:7px;padding:6px 11px;font-size:11px;font-weight:600;color:var(--accent-ink);cursor:pointer;flex-shrink:0;">Allow</button>`:''}
   </div>
-  <div style="padding:6px 16px 4px;">
-    <button onclick="sendTestNotif()" style="width:100%;background:#fff;border:1.5px solid #e8ddd3;border-radius:10px;padding:11px;font-size:13px;color:#6b5d52;cursor:pointer;font-weight:600;display:flex;align-items:center;justify-content:center;gap:7px;"><i class="ti ti-send" aria-hidden="true"></i> Send a test notification</button>
-  </div>`}
-
-  <div class="sh"><h2>Appointment</h2></div>
-  <div style="background:#fff;border:1.5px solid #f0ebe4;border-radius:12px;margin:0 16px 12px;overflow:hidden;">
-    ${tog('appointmentReminder','24-hour reminder','The day before your appointment',off)}
-    ${tog('appointmentDay','Day-of reminder','Morning of your appointment at 8:00 AM',off)}
-  </div>
-
-  <div class="sh"><h2>Daily routine</h2></div>
-  <div style="background:#fff;border:1.5px solid #f0ebe4;border-radius:12px;margin:0 16px 12px;overflow:hidden;">
-    ${tog('homecareReminder','Daily homecare nudge','Reminder to complete your routine at 8:00 AM',off)}
-  </div>
-
-  <div class="sh"><h2>From ${_txt(client.providerFirst)}</h2></div>
-  <div style="background:#fff;border:1.5px solid #f0ebe4;border-radius:12px;margin:0 16px 12px;overflow:hidden;">
-    ${tog('summaryReady','Session summary ready',`When ${_txt(client.providerFirst)} sends your post-visit summary`,off)}
-    ${tog('messagereply','New message',`When ${_txt(client.providerFirst)} replies to your message`,off)}
-  </div>
+  ${(on&&perm==='denied')?`
+  <div style="margin:0 16px 6px;background:#fff4f2;border:1.5px solid #f0d8d2;border-radius:12px;padding:10px 14px;display:flex;gap:8px;align-items:flex-start;">
+    <i class="ti ti-alert-circle" aria-hidden="true" style="font-size:15px;color:#c87070;flex-shrink:0;margin-top:1px;"></i>
+    <div style="font-size:12px;color:#a05a52;line-height:1.45;">Your browser is blocking pop-up notifications. Allow SlickChart in your browser's site settings to get them on your lock screen — you'll still see alerts inside the app.</div>
+  </div>`:''}
 
   <div class="sh"><h2>Quiet hours</h2></div>
   <div style="background:#fff;border:1.5px solid #f0ebe4;border-radius:12px;margin:0 16px 12px;overflow:hidden;${off?'opacity:.4;pointer-events:none;':''}">
@@ -1872,11 +1864,7 @@ function renderNotifSettings(){
     </div>
     <div style="padding:10px 14px;font-size:12px;color:#786858;line-height:1.5;">No notifications will be sent during these hours.</div>
   </div>
-
-  ${!off?`
-  <div style="padding:0 16px 20px;">
-    <button onclick="disableAllNotifs()" style="width:100%;background:#fff;border:1.5px solid #f0dcd8;border-radius:10px;padding:11px;font-size:13px;color:#c87070;cursor:pointer;font-weight:600;">Turn off all notifications</button>
-  </div>`:''}`;
+  <div style="height:16px;"></div>`;
 }
 
 
@@ -3988,6 +3976,9 @@ function _applyRealClientData(j){
     if(!client.providers.length){client.providers=[{id:'jess',name:'',first:'',initials:'',studio:'',thread:[]}];}
     client.activeProviderId='jess';
   }catch(e){}
+  // A real client must not see the sample notifications ("New message from Jessica", the demo
+  // session-summary ping) that seed the demo notification center.
+  try{clientNotifs.length=0;if(typeof updateClientBadge==='function')updateClientBadge();}catch(e){}
   client.name=j.client.name||client.name;
   client.initials=_initialsOf(client.name);
   var p=client.providers.find(function(x){return x.id==='jess';})||client.providers[0];
