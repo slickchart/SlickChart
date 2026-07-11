@@ -1329,6 +1329,196 @@ function _cleanupClientData(id){
   try{if(typeof persistWorkspace==='function')persistWorkspace();}catch(e){}
 }
 function deleteClient(id){if(!CL[id])return;const nm=(CL[id].name||'this client');if(!confirm('Remove '+nm+' from SlickChart?\n\nThis removes their chart from this app only. It does NOT affect their record in Square.'))return;_cleanupClientData(id);delete CL[id];saveClients();if(typeof proToast==='function')proToast(nm+' removed');nav('clients');}
+
+// ══ Merge duplicate clients ══════════════════════════════════════════════════
+// Square lets you merge duplicate customers in its dashboard; this brings the same
+// idea into the app so a provider can combine two records (Square-synced OR added
+// here) into one chart without leaving SlickChart. A merge keeps the record you
+// choose and folds the other's forms, notes, photos, summaries, messages, product
+// recs, homecare, and payment history into it — nothing is lost. Square has no public
+// API to merge customers server-side, so we merge locally and remember any merged-away
+// Square customer so the background sync won't silently re-add it.
+const _MERGE_SKIP_IDS={maya:1,sophie:1,priya:1};
+let mergedSquareIds={};
+function loadMergedIds(){try{const raw=localStorage.getItem('sc_merged_ids');if(raw){const o=JSON.parse(raw);if(o&&typeof o==='object')mergedSquareIds=o;}}catch(e){}}
+function saveMergedIds(){try{localStorage.setItem('sc_merged_ids',JSON.stringify(mergedSquareIds));}catch(e){}}
+function _sqLocalId(sqid){return 'sq_'+String(sqid||'').slice(0,10).toLowerCase().replace(/[^a-z0-9]/g,'');}
+function _mergeNorm(s){return (typeof _normSearch==='function')?_normSearch(s):String(s||'').toLowerCase().replace(/[^a-z0-9]/g,'');}
+function _mergeDigits(s){return String(s||'').replace(/\D/g,'');}
+function _clientSubtitle(c){c=c||{};return [c.email,c.phone].filter(Boolean).join(' · ')||(c.treatment&&c.treatment!=='New client'?c.treatment:'')||'No contact on file';}
+function _isSquareClient(id){return String(id).indexOf('sq_')===0||!!(CL[id]&&CL[id].squareId);}
+// Group clients that are probably the same person: identical normalized name, a shared
+// email, or a shared phone. Uses union-find so a chain (A~B by name, B~C by phone) groups
+// A, B and C together. Demo clients are never included.
+function _findDuplicateGroups(){
+  const ids=Object.keys(CL).filter(id=>!_MERGE_SKIP_IDS[id]);
+  const parent={};const find=x=>{while(parent[x]!==x){parent[x]=parent[parent[x]];x=parent[x];}return x;};
+  ids.forEach(id=>parent[id]=id);
+  const union=(a,b)=>{const ra=find(a),rb=find(b);if(ra!==rb)parent[ra]=rb;};
+  const byName={},byEmail={},byPhone={};
+  ids.forEach(id=>{const c=CL[id]||{};
+    const nm=_mergeNorm(c.name);if(nm){(byName[nm]=byName[nm]||[]).push(id);}
+    const em=String(c.email||'').toLowerCase().trim();if(em){(byEmail[em]=byEmail[em]||[]).push(id);}
+    const ph=_mergeDigits(c.phone);if(ph.length>=7){(byPhone[ph]=byPhone[ph]||[]).push(id);}
+  });
+  [byName,byEmail,byPhone].forEach(map=>Object.keys(map).forEach(k=>{const g=map[k];for(let i=1;i<g.length;i++)union(g[0],g[i]);}));
+  const groups={};
+  ids.forEach(id=>{const r=find(id);(groups[r]=groups[r]||[]).push(id);});
+  return Object.keys(groups).map(k=>groups[k]).filter(g=>g.length>1);
+}
+function _isBlankVal(v){if(v==null)return true;const s=String(v).trim();return s===''||s==='—'||s==='Not scheduled'||s==='New client'||s==='No contact on file';}
+function _mergeArrUnique(a,b,keyFn){
+  const out=Array.isArray(a)?a.slice():[];
+  const seen={};out.forEach(x=>{seen[keyFn(x)]=1;});
+  (Array.isArray(b)?b:[]).forEach(x=>{const k=keyFn(x);if(!seen[k]){seen[k]=1;out.push(x);}});
+  return out;
+}
+// Move/combine every per-client side store from dropId onto keepId. Arrays are unioned or
+// concatenated; single-value drafts prefer whatever the kept record already has.
+function _mergeSideStores(keepId,dropId){
+  const numOr0=v=>{const x=parseInt(v,10);return isNaN(x)?0:x;};
+  try{
+    if(typeof clientRecs!=='undefined'&&clientRecs[dropId]){const s={};const out=(clientRecs[keepId]||[]).slice();out.forEach(x=>s[x]=1);clientRecs[dropId].forEach(x=>{if(!s[x]){s[x]=1;out.push(x);}});clientRecs[keepId]=out;delete clientRecs[dropId];}
+    if(typeof recReasons!=='undefined'&&recReasons[dropId]){recReasons[keepId]=Object.assign({},recReasons[dropId],recReasons[keepId]||{});delete recReasons[dropId];}
+    if(typeof clientHomecare!=='undefined'&&clientHomecare[dropId]){const s={};const out=(clientHomecare[keepId]||[]).slice();out.forEach(x=>s[x]=1);clientHomecare[dropId].forEach(x=>{if(!s[x]){s[x]=1;out.push(x);}});clientHomecare[keepId]=out;delete clientHomecare[dropId];}
+    if(typeof sessionSummaries!=='undefined'&&sessionSummaries[dropId]){sessionSummaries[keepId]=(sessionSummaries[keepId]||[]).concat(sessionSummaries[dropId]);delete sessionSummaries[dropId];}
+    if(typeof capturedPhotos!=='undefined'&&capturedPhotos[dropId]){capturedPhotos[keepId]=(capturedPhotos[keepId]||[]).concat(capturedPhotos[dropId]);delete capturedPhotos[dropId];}
+    if(typeof clientHealingStage!=='undefined'&&clientHealingStage[dropId]!=null){if(clientHealingStage[keepId]==null)clientHealingStage[keepId]=clientHealingStage[dropId];delete clientHealingStage[dropId];}
+    if(typeof vcInvites!=='undefined'&&vcInvites[dropId]){if(!vcInvites[keepId])vcInvites[keepId]=vcInvites[dropId];delete vcInvites[dropId];}
+    if(typeof vcSubmissions!=='undefined'&&vcSubmissions[dropId]){const d=Array.isArray(vcSubmissions[dropId])?vcSubmissions[dropId]:[vcSubmissions[dropId]];vcSubmissions[keepId]=(vcSubmissions[keepId]||[]).concat(d);delete vcSubmissions[dropId];}
+    if(typeof summaryObsDraft!=='undefined'&&summaryObsDraft[dropId]!=null){if(summaryObsDraft[keepId]==null)summaryObsDraft[keepId]=summaryObsDraft[dropId];delete summaryObsDraft[dropId];}
+    if(typeof summaryNoteDraft!=='undefined'&&summaryNoteDraft[dropId]!=null){if(summaryNoteDraft[keepId]==null)summaryNoteDraft[keepId]=summaryNoteDraft[dropId];delete summaryNoteDraft[dropId];}
+    if(typeof providerNoteDrafts!=='undefined'&&providerNoteDrafts[dropId]){if(!providerNoteDrafts[keepId])providerNoteDrafts[keepId]=providerNoteDrafts[dropId];delete providerNoteDrafts[dropId];}
+    if(typeof msgStore!=='undefined'&&msgStore[dropId]){msgStore[keepId]=(msgStore[keepId]||[]).concat(msgStore[dropId]);delete msgStore[dropId];}
+    if(typeof threads!=='undefined'&&Array.isArray(threads)){for(let i=threads.length-1;i>=0;i--){if(threads[i]&&threads[i].id===dropId){if(threads.some(t=>t&&t.id===keepId))threads.splice(i,1);else threads[i].id=keepId;}}}
+    if(typeof _payments!=='undefined'&&Array.isArray(_payments)){_payments.forEach(p=>{if(p&&p.clientId===dropId)p.clientId=keepId;});}
+  }catch(e){}
+  try{typeof persistClientRecs==='function'&&persistClientRecs();}catch(e){}
+  try{typeof persistRecReasons==='function'&&persistRecReasons();}catch(e){}
+  try{typeof persistClientHomecare==='function'&&persistClientHomecare();}catch(e){}
+  try{typeof persistSessionSummaries==='function'&&persistSessionSummaries();}catch(e){}
+  try{typeof persistCapturedPhotos==='function'&&persistCapturedPhotos();}catch(e){}
+  try{typeof persistVcState==='function'&&persistVcState();}catch(e){}
+  try{typeof persistClientHealingStage==='function'&&persistClientHealingStage();}catch(e){}
+  try{typeof saveMessages==='function'&&saveMessages();}catch(e){}
+  try{typeof saveProviderNoteDrafts==='function'&&saveProviderNoteDrafts();}catch(e){}
+  try{typeof _savePayments==='function'&&_savePayments();}catch(e){}
+}
+// Fold dropId into keepId: keep the chosen record's own fields, fill any blanks from the
+// duplicate, union all the list fields, then remove the duplicate.
+function _mergeClients(keepId,dropId){
+  if(keepId===dropId||!CL[keepId]||!CL[dropId])return;
+  const keep=CL[keepId],drop=CL[dropId];
+  const listKeys={submittedForms:1,signedForms:1,pendingForms:1,pendingGuides:1,sessions:1,seriesTotal:1};
+  Object.keys(drop).forEach(k=>{if(listKeys[k])return;if(!(k in keep)||_isBlankVal(keep[k])){if(!_isBlankVal(drop[k]))keep[k]=drop[k];}});
+  keep.submittedForms=_mergeArrUnique(keep.submittedForms,drop.submittedForms,sf=>(sf&&(sf.formId+'|'+(sf.date||'')+'|'+(sf.title||'')))||JSON.stringify(sf));
+  keep.signedForms=_mergeArrUnique(keep.signedForms,drop.signedForms,x=>String(x));
+  keep.pendingForms=_mergeArrUnique(keep.pendingForms,drop.pendingForms,pf=>(pf&&pf.formId)||JSON.stringify(pf));
+  keep.pendingGuides=_mergeArrUnique(keep.pendingGuides,drop.pendingGuides,pg=>(pg&&pg.guideId)||JSON.stringify(pg));
+  ['submittedForms','signedForms','pendingForms','pendingGuides'].forEach(k=>{if(Array.isArray(keep[k])&&!keep[k].length)delete keep[k];});
+  const n=v=>{const x=parseInt(v,10);return isNaN(x)?0:x;};
+  if(n(keep.sessions)||n(drop.sessions))keep.sessions=Math.max(n(keep.sessions),n(drop.sessions));
+  if(n(keep.seriesTotal)||n(drop.seriesTotal))keep.seriesTotal=Math.max(n(keep.seriesTotal),n(drop.seriesTotal));
+  if(!keep.flaggedContra&&drop.flaggedContra)keep.flaggedContra=drop.flaggedContra;
+  _mergeSideStores(keepId,dropId);
+  // Don't let the background Square sync re-create a merged-away Square customer.
+  if(_isSquareClient(dropId)){const local=drop.squareId?_sqLocalId(drop.squareId):dropId;mergedSquareIds[local]=1;if(String(dropId).indexOf('sq_')===0)mergedSquareIds[dropId]=1;saveMergedIds();}
+  delete CL[dropId];
+  saveClients();
+}
+function renderMergeClients(){
+  setNav('clients');
+  document.getElementById('tt').textContent='Merge duplicates';
+  const groups=_findDuplicateGroups();
+  S.innerHTML=`
+  <div style="padding:12px 16px 4px;font-size:13px;color:#999;line-height:1.55;">SlickChart looks for clients that show up twice — same name, email, or phone — and combines them into one chart. Works for clients synced from Square and ones you added here. Merging keeps every form, note, photo, summary, and payment.</div>
+  ${groups.length?`<div class="sh" style="margin-top:10px;"><h2>${groups.length} possible duplicate${groups.length===1?'':'s'}</h2></div>`+groups.map(g=>`
+    <div style="background:#161616;border:1px solid #2a2a2a;border-radius:12px;margin:0 16px 10px;padding:12px 14px;">
+      ${g.map(id=>{const c=CL[id]||{};return `<div style="display:flex;align-items:center;gap:10px;padding:6px 0;">${av(c,32)}<div style="flex:1;min-width:0;"><div style="font-size:13px;font-weight:500;color:#e0e0e0;">${_fileEsc(c.name)}</div><div style="font-size:11px;color:#888;overflow:hidden;text-overflow:ellipsis;white-space:nowrap;">${_fileEsc(_clientSubtitle(c))}</div></div>${_isSquareClient(id)?`<span style="font-size:9px;font-weight:700;color:var(--accent);border:1px solid #3a2a10;background:#1a1308;border-radius:4px;padding:1px 5px;letter-spacing:.03em;flex-shrink:0;">SQUARE</span>`:''}</div>`;}).join('')}
+      <button onclick="_openMergeSheet('${g.join(',')}')" class="btnp" style="border-radius:9px;padding:9px;margin-top:8px;font-size:13px;"><i class="ti ti-arrows-join" style="font-size:14px;"></i> Merge these</button>
+    </div>`).join(''):`<div style="margin:12px 16px;background:#0f2a1e;border:1px solid #1c4030;border-radius:11px;padding:14px;font-size:13px;color:#8fd3b4;display:flex;gap:9px;align-items:flex-start;"><i class="ti ti-check" style="color:#4ec49a;font-size:16px;margin-top:1px;flex-shrink:0;"></i><span>No duplicates found — your client list looks clean.</span></div>`}
+  <div class="sh" style="margin-top:14px;"><h2>Merge manually</h2></div>
+  <div style="padding:0 16px 8px;font-size:12px;color:#999;line-height:1.5;">Know two records are the same person but they weren’t caught above (like “Bob” and “Robert”)? Pick them yourself.</div>
+  <button onclick="_openManualMerge()" style="display:flex;align-items:center;gap:11px;width:calc(100% - 32px);box-sizing:border-box;margin:0 16px 22px;background:#1a1a1a;border:1px solid #2a2a2a;border-radius:11px;padding:12px 14px;cursor:pointer;font-family:inherit;text-align:left;color:inherit;"><div style="width:38px;height:38px;border-radius:9px;background:#1e1633;display:flex;align-items:center;justify-content:center;flex-shrink:0;"><i class="ti ti-arrows-join" style="font-size:19px;color:#a891ec;"></i></div><div style="flex:1;min-width:0;"><div style="font-size:14px;font-weight:500;color:#e0e0e0;">Merge two clients manually</div><div style="font-size:12px;color:#999;">Choose any two records to combine</div></div><i class="ti ti-chevron-right" style="font-size:16px;color:#888;flex-shrink:0;"></i></button>`;
+}
+function _openMergeSheet(idsCsv){
+  const ids=String(idsCsv).split(',').filter(id=>CL[id]);
+  if(ids.length<2){proToast('Pick at least two clients to merge');return;}
+  window._mergeGroupIds=ids;window._mergeKeep=ids[0];
+  const row=id=>{const c=CL[id]||{};return `<label style="display:flex;align-items:center;gap:10px;padding:10px 12px;border:1px solid #2a2a2a;background:#1a1a1a;border-radius:10px;margin-bottom:8px;cursor:pointer;">
+    <input type="radio" name="mergekeep" value="${id}" ${id===window._mergeKeep?'checked':''} onchange="window._mergeKeep=this.value;_updateMergePreview();" style="width:17px;height:17px;accent-color:var(--accent);flex-shrink:0;">
+    ${av(c,32)}
+    <div style="flex:1;min-width:0;"><div style="font-size:13px;font-weight:500;color:#e0e0e0;">${_fileEsc(c.name)}</div><div style="font-size:11px;color:#888;overflow:hidden;text-overflow:ellipsis;white-space:nowrap;">${_fileEsc(_clientSubtitle(c))}</div></div>
+    ${_isSquareClient(id)?`<span style="font-size:9px;font-weight:700;color:var(--accent);border:1px solid #3a2a10;background:#1a1308;border-radius:4px;padding:1px 5px;flex-shrink:0;">SQUARE</span>`:''}
+  </label>`;};
+  const ov=document.createElement('div');ov.id='merge-sheet';
+  ov.style.cssText='position:fixed;top:0;bottom:0;left:0;right:0;margin:0 auto;width:390px;max-width:100%;z-index:9999;background:rgba(0,0,0,.6);display:flex;align-items:center;justify-content:center;padding:24px 16px;box-sizing:border-box;';
+  ov.onclick=e=>{if(e.target===ov)ov.remove();};
+  ov.innerHTML=`<div style="background:#161616;border:1px solid #2a2a2a;width:100%;border-radius:16px;padding:16px;max-height:88%;display:flex;flex-direction:column;">
+    <div style="display:flex;align-items:center;justify-content:space-between;margin-bottom:4px;flex-shrink:0;"><div style="font-size:15px;font-weight:600;color:#f0f0f0;">Merge ${ids.length} clients</div><button onclick="this.closest('#merge-sheet').remove()" aria-label="Close" style="border:none;background:none;font-size:20px;color:#888;cursor:pointer;line-height:1;">✕</button></div>
+    <div style="font-size:12px;color:#999;margin-bottom:12px;flex-shrink:0;">Choose the record to keep. The others fold into it — no data is lost.</div>
+    <div style="overflow:auto;">${ids.map(row).join('')}</div>
+    <div id="merge-preview" style="font-size:12px;color:#8fbf9f;background:#0f2a1e;border:1px solid #1c4030;border-radius:9px;padding:9px 11px;margin:4px 0 12px;line-height:1.5;flex-shrink:0;"></div>
+    <button onclick="_doMerge()" class="btnp" style="border-radius:10px;flex-shrink:0;"><i class="ti ti-arrows-join"></i> Merge into one client</button>
+  </div>`;
+  (document.querySelector('.shell')||document.body).appendChild(ov);
+  _updateMergePreview();
+}
+function _updateMergePreview(){
+  const el=document.getElementById('merge-preview');if(!el)return;
+  const ids=window._mergeGroupIds||[];const keep=window._mergeKeep;
+  if(!keep||!CL[keep]){el.innerHTML='';return;}
+  let forms=0,summ=0,photos=0,msgs=0;const seenF={};
+  ids.forEach(id=>{const c=CL[id]||{};(c.submittedForms||[]).forEach(sf=>{const k=(sf&&(sf.formId+'|'+(sf.date||'')))||JSON.stringify(sf);if(!seenF[k]){seenF[k]=1;forms++;}});
+    if(typeof sessionSummaries!=='undefined')summ+=((sessionSummaries[id]||[]).length);
+    if(typeof capturedPhotos!=='undefined')photos+=((capturedPhotos[id]||[]).length);
+    if(typeof msgStore!=='undefined')msgs+=((msgStore[id]||[]).length);
+  });
+  el.innerHTML=`Everything combines into <b style="color:#cfe9db;">${_fileEsc(CL[keep].name)}</b>. Result: ${forms} form${forms===1?'':'s'} · ${summ} summar${summ===1?'y':'ies'} · ${photos} photo${photos===1?'':'s'}${msgs?(' · '+msgs+' message'+(msgs===1?'':'s')):''}.`;
+}
+function _doMerge(){
+  const ids=(window._mergeGroupIds||[]).filter(id=>CL[id]);
+  const keep=(window._mergeKeep&&CL[window._mergeKeep])?window._mergeKeep:ids[0];
+  if(!keep||ids.length<2){const sh=document.getElementById('merge-sheet');if(sh)sh.remove();return;}
+  const keepName=(CL[keep].name||'client').split(' ')[0];
+  ids.filter(id=>id!==keep).forEach(d=>_mergeClients(keep,d));
+  const sh=document.getElementById('merge-sheet');if(sh)sh.remove();
+  proToast('Merged into '+keepName);
+  nav('merge-clients');
+}
+function _openManualMerge(){
+  window._manualSel={};
+  const ov=document.createElement('div');ov.id='manual-merge-sheet';
+  ov.style.cssText='position:fixed;top:0;bottom:0;left:0;right:0;margin:0 auto;width:390px;max-width:100%;z-index:9999;background:rgba(0,0,0,.6);display:flex;align-items:center;justify-content:center;padding:24px 16px;box-sizing:border-box;';
+  ov.onclick=e=>{if(e.target===ov)ov.remove();};
+  ov.innerHTML=`<div style="background:#161616;border:1px solid #2a2a2a;width:100%;border-radius:16px;padding:16px;max-height:88%;display:flex;flex-direction:column;">
+    <div style="display:flex;align-items:center;justify-content:space-between;margin-bottom:4px;flex-shrink:0;"><div style="font-size:15px;font-weight:600;color:#f0f0f0;">Pick clients to merge</div><button onclick="this.closest('#manual-merge-sheet').remove()" aria-label="Close" style="border:none;background:none;font-size:20px;color:#888;cursor:pointer;line-height:1;">✕</button></div>
+    <div style="font-size:12px;color:#999;margin-bottom:10px;flex-shrink:0;">Select two or more records that are the same person.</div>
+    <div style="position:relative;margin-bottom:10px;flex-shrink:0;"><i class="ti ti-search" aria-hidden="true" style="position:absolute;left:11px;top:50%;transform:translateY(-50%);font-size:14px;color:#9a9a9a;"></i><input id="mm-q" oninput="_renderManualMergeRows(this.value)" placeholder="Search clients…" style="width:100%;background:#111;border:1px solid #2a2a2a;border-radius:9px;padding:8px 11px 8px 32px;font-size:13px;color:#e0e0e0;font-family:inherit;box-sizing:border-box;outline:none;"></div>
+    <div id="mm-list" style="overflow:auto;">${_manualMergeRows('')}</div>
+    <button onclick="_manualMergeNext()" class="btnp" style="border-radius:10px;margin-top:10px;flex-shrink:0;">Continue</button>
+  </div>`;
+  (document.querySelector('.shell')||document.body).appendChild(ov);
+  setTimeout(()=>{const i=document.getElementById('mm-q');if(i&&i.focus)try{i.focus();}catch(e){}},30);
+}
+function _manualMergeRows(q){
+  const nq=(typeof _normSearch==='function')?_normSearch(q):String(q||'').toLowerCase().trim();
+  const ids=Object.keys(CL).filter(id=>!_MERGE_SKIP_IDS[id]).filter(id=>{if(!nq)return true;const c=CL[id]||{};return _mergeNorm(c.name).includes(nq)||String(c.email||'').toLowerCase().includes(nq);});
+  if(!ids.length)return `<div style="padding:20px;text-align:center;color:#888;font-size:12px;">No clients match.</div>`;
+  return ids.map(id=>{const c=CL[id]||{};const on=!!(window._manualSel&&window._manualSel[id]);return `<label style="display:flex;align-items:center;gap:10px;padding:10px 12px;border:1px solid ${on?'var(--accent)':'#2a2a2a'};background:#1a1a1a;border-radius:10px;margin-bottom:8px;cursor:pointer;">
+    <input type="checkbox" ${on?'checked':''} onchange="window._manualSel=window._manualSel||{};if(this.checked)window._manualSel['${id}']=1;else delete window._manualSel['${id}'];this.closest('label').style.borderColor=this.checked?'var(--accent)':'#2a2a2a';" style="width:17px;height:17px;accent-color:var(--accent);flex-shrink:0;">
+    ${av(c,32)}
+    <div style="flex:1;min-width:0;"><div style="font-size:13px;font-weight:500;color:#e0e0e0;">${_fileEsc(c.name)}</div><div style="font-size:11px;color:#888;overflow:hidden;text-overflow:ellipsis;white-space:nowrap;">${_fileEsc(_clientSubtitle(c))}</div></div>
+    ${_isSquareClient(id)?`<span style="font-size:9px;font-weight:700;color:var(--accent);border:1px solid #3a2a10;background:#1a1308;border-radius:4px;padding:1px 5px;flex-shrink:0;">SQUARE</span>`:''}
+  </label>`;}).join('');
+}
+function _renderManualMergeRows(q){const el=document.getElementById('mm-list');if(el)el.innerHTML=_manualMergeRows(q);}
+function _manualMergeNext(){
+  const sel=Object.keys(window._manualSel||{}).filter(id=>CL[id]);
+  if(sel.length<2){proToast('Select at least two clients');return;}
+  const sh=document.getElementById('manual-merge-sheet');if(sh)sh.remove();
+  _openMergeSheet(sel.join(','));
+}
 function _bizLoc(){return [bizInfo.city,bizInfo.state].filter(Boolean).join(', ')||'';}
 function loadBizInfo(){try{const raw=localStorage.getItem('sc_bizinfo');if(raw){const d=JSON.parse(raw)||{};Object.keys(d).forEach(k=>{bizInfo[k]=d[k];});}const wn=localStorage.getItem('sc_wsname');if(wn)workspace.name=wn;else if(bizInfo.name)workspace.name=bizInfo.name;if(_bizLoc())workspace.location=_bizLoc();}catch(e){}}
 // Give ad-hoc bottom sheets / full-viewport overlays proper dialog semantics for screen readers:
@@ -1572,7 +1762,7 @@ function _reloadAll(){try{
   if(typeof loadCustomResources==='function')loadCustomResources();if(typeof _loadSummaryGuides==='function')_loadSummaryGuides();
   if(typeof loadAi==='function')loadAi();
   if(typeof loadForms==='function')loadForms();
-  loadBizInfo();_syncProviderAvatar();_syncHeaderLogo();loadClients();loadMessages();loadInv();loadVendors();_loadPersistenceSweep();try{_initCapturedPhotos();}catch(e){}_loadHomeDismissed();_loadAttnSeen();loadProviderNoteDrafts();if(typeof loadSessionSummaries==='function')loadSessionSummaries();if(!_sampleHidden()){_seedMayaOnce();}else{_purgeSample();}_seedBirthdays();if(!_sampleHidden()&&typeof _demoCheckinSeed==='function')_demoCheckinSeed();
+  loadBizInfo();_syncProviderAvatar();_syncHeaderLogo();loadClients();loadMergedIds();loadMessages();loadInv();loadVendors();_loadPersistenceSweep();try{_initCapturedPhotos();}catch(e){}_loadHomeDismissed();_loadAttnSeen();loadProviderNoteDrafts();if(typeof loadSessionSummaries==='function')loadSessionSummaries();if(!_sampleHidden()){_seedMayaOnce();}else{_purgeSample();}_seedBirthdays();if(!_sampleHidden()&&typeof _demoCheckinSeed==='function')_demoCheckinSeed();
   if(typeof loadWorkspace==='function')loadWorkspace();
   if(typeof loadSquareCatalog==='function'){loadSquareCatalog();_mergeSquareRetail();}
   if(typeof loadCheckinCfg==='function')loadCheckinCfg();
@@ -2515,7 +2705,7 @@ function nav(screen,data){
     'form-builder':()=>renderFormBuilder(data),'form-preview':()=>renderFormPreview(data),'form-docs':()=>renderFormDocs(data),'sign-form':()=>renderSignOnDevice(data&&data.fid,data&&data.cid),
     bundles:renderBundles,'edit-bundle':()=>renderEditBundle(data),
     'nc-next-step':()=>renderNCNextStep(data),'provider-fill-intake':()=>renderProviderFillIntake(data),
-    'edit-suggested-forms':renderEditSuggestedForms,
+    'edit-suggested-forms':renderEditSuggestedForms,'merge-clients':renderMergeClients,
     help:renderHelp,'help-article':()=>renderHelpArticle(data),
     client:()=>renderClient(data),brief:()=>renderBrief(data),room:()=>renderRoom(data),
     'client-forms':()=>renderClientForms(data),
@@ -2751,6 +2941,11 @@ function renderClients(){
     <div style="flex:1;min-width:0;"><div style="font-size:14px;font-weight:500;color:#efeaff;">Virtual consults</div><div style="font-size:12px;color:#a394cc;">Invite clients, review photos &amp; AI analysis</div></div>
     ${_vcPendingCount()?`<span style="background:var(--accent);color:var(--accent-ink);font-size:12px;font-weight:700;min-width:20px;height:20px;border-radius:10px;display:flex;align-items:center;justify-content:center;padding:0 6px;flex-shrink:0;">${_vcPendingCount()}</span>`:`<i class="ti ti-chevron-right" style="font-size:16px;color:#a891ec;flex-shrink:0;"></i>`}
   </button>
+  ${(function(){const dg=(typeof _findDuplicateGroups==='function')?_findDuplicateGroups():[];if(!dg.length)return '';const n=dg.reduce((a,g)=>a+g.length,0);return `<button onclick="nav('merge-clients')" style="display:flex;align-items:center;gap:11px;width:calc(100% - 32px);box-sizing:border-box;margin:0 16px 14px;background:#1a1308;border:1px solid #3a2a10;border-radius:12px;padding:12px 14px;cursor:pointer;font-family:inherit;text-align:left;">
+    <div style="width:42px;height:42px;border-radius:10px;background:#2e1c10;display:flex;align-items:center;justify-content:center;flex-shrink:0;"><i class="ti ti-arrows-join" style="font-size:20px;color:var(--accent);"></i></div>
+    <div style="flex:1;min-width:0;"><div style="font-size:14px;font-weight:500;color:#f0e6d2;">${n} possible duplicate${n===1?'':'s'} found</div><div style="font-size:12px;color:#caa86a;">Review &amp; merge them into one chart</div></div>
+    <i class="ti ti-chevron-right" style="font-size:16px;color:var(--accent);flex-shrink:0;"></i>
+  </button>`;})()}
   <div class="sh"><h2 id="page-heading" tabindex="-1">All clients</h2></div>
   ${_hasDemoClients()?`<div style="margin:0 16px 12px;background:#1a1308;border:1px solid #3a2a10;border-radius:11px;padding:11px 13px;display:flex;align-items:center;gap:11px;">
     <i class="ti ti-flask" aria-hidden="true" style="color:var(--accent);font-size:17px;flex-shrink:0;"></i>
@@ -12401,6 +12596,7 @@ function _sqImportOne(i){
   const c=(window._sqCust||[])[i];if(!c)return;
   const id='sq_'+String(c.id||i).slice(0,10).toLowerCase().replace(/[^a-z0-9]/g,'');
   const btn=document.getElementById('sqimp-'+i);
+  if(typeof mergedSquareIds!=='undefined'&&mergedSquareIds[id]){if(btn){btn.textContent='Merged';btn.style.color='#4ec49a';btn.style.borderColor='#1c4030';btn.disabled=true;}return;}
   if(CL[id]){if(btn){btn.textContent='Imported';btn.style.color='#4ec49a';btn.style.borderColor='#1c4030';}return;}
   CL[id]=_sqMakeClient(c);
   if(typeof saveClients==='function')saveClients();
@@ -12408,7 +12604,7 @@ function _sqImportOne(i){
 }
 function _sqImportAll(){
   const list=window._sqCust||[];let n=0;
-  list.forEach((c,i)=>{const id='sq_'+String(c.id||i).slice(0,10).toLowerCase().replace(/[^a-z0-9]/g,'');if(!CL[id]){CL[id]=_sqMakeClient(c);n++;}const btn=document.getElementById('sqimp-'+i);if(btn){btn.textContent='Imported ✓';btn.style.color='#4ec49a';btn.style.borderColor='#1c4030';btn.disabled=true;}});
+  list.forEach((c,i)=>{const id='sq_'+String(c.id||i).slice(0,10).toLowerCase().replace(/[^a-z0-9]/g,'');if(typeof mergedSquareIds!=='undefined'&&mergedSquareIds[id])return;if(!CL[id]){CL[id]=_sqMakeClient(c);n++;}const btn=document.getElementById('sqimp-'+i);if(btn){btn.textContent='Imported ✓';btn.style.color='#4ec49a';btn.style.borderColor='#1c4030';btn.disabled=true;}});
   if(typeof saveClients==='function')saveClients();
   proToast(n?`Imported ${n} client${n===1?'':'s'}`:'All already imported');
 }
@@ -12506,6 +12702,7 @@ async function _autoSyncCustomers(opts){
       // earlier auto-sync) is matched and left untouched rather than duplicated.
       const id='sq_'+String(c.id||i).slice(0,10).toLowerCase().replace(/[^a-z0-9]/g,'');
       if(!id||CL[id])return;   // already have them — don't overwrite their chart
+      if(typeof mergedSquareIds!=='undefined'&&mergedSquareIds[id])return;   // was merged into another chart — don't re-add
       CL[id]=_sqMakeClient(c);added++;
     });
     if(added){
