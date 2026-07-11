@@ -65,7 +65,9 @@ nav.nav{position:absolute;bottom:0;left:0;right:0;background:#fff;border-top:1px
 .pill{flex-shrink:0;padding:6px 14px;border-radius:20px;font-size:12px;border:1.5px solid #e8ddd3;color:#6b5d52;background:#fff;cursor:pointer;white-space:nowrap;font-weight:500;}
 .pill.active{background:var(--accent);color:#fff;border-color:var(--accent);}
 .pill:focus-visible{outline:2px solid var(--accent);outline-offset:2px;}
-.fi{width:100%;background:#faf7f4;border:1.5px solid #e8ddd3;border-radius:10px;padding:10px 12px;font-size:14px;color:#1a1a1a;font-family:inherit;}
+/* font-size must be >=16px: iOS Safari auto-zooms the viewport when a focused field is smaller,
+   which was the "screen zooms in" when tapping into the appointment notes and other inputs. */
+.fi{width:100%;background:#faf7f4;border:1.5px solid #e8ddd3;border-radius:10px;padding:10px 12px;font-size:16px;color:#1a1a1a;font-family:inherit;}
 .fi:focus{outline:2px solid var(--accent);outline-offset:0;border-color:var(--accent);}
 .tag{font-size:12px;padding:5px 12px;border-radius:20px;background:var(--accent-lt);color:#8b6b4a;border:none;font-weight:500;display:inline-block;}
 .divider{height:1px;background:#f0ebe4;margin:0 16px;}
@@ -408,9 +410,26 @@ function renderClientNotifs(){
    brand colors (set in the provider app's Branding section).
    ════════════════════════════════════════════════════════════════ */
 function _hexA(hex,a){const h=hex.replace('#','');return`rgba(${parseInt(h.slice(0,2),16)},${parseInt(h.slice(2,4),16)},${parseInt(h.slice(4,6),16)},${a})`;}
-function _ink(hex){const h=hex.replace('#','');const r=parseInt(h.slice(0,2),16),g=parseInt(h.slice(2,4),16),b=parseInt(h.slice(4,6),16);return((r*299+g*587+b*114)/1000)>=140?'#181410':'#ffffff';}
+function _srgbC(c){c/=255;return c<=0.04045?c/12.92:Math.pow((c+0.055)/1.055,2.4);}
+function _lumHex(hex){const h=hex.replace('#','');return 0.2126*_srgbC(parseInt(h.slice(0,2),16))+0.7152*_srgbC(parseInt(h.slice(2,4),16))+0.0722*_srgbC(parseInt(h.slice(4,6),16));}
+function _cr(L1,L2){const a=Math.max(L1,L2),b=Math.min(L1,L2);return (a+0.05)/(b+0.05);}
+// Pick black or white text for MAX readability on a background (WCAG contrast). The old version
+// used a single brightness cutoff, which left mid-tone brand colors (a medium green, say) carrying
+// hard-to-read dark text.
+function _ink(hex){const L=_lumHex(hex);return _cr(L,1)>=_cr(L,0)?'#ffffff':'#181410';}
 function _mixDark(hex,f){const h=hex.replace('#','');const m=(c)=>Math.round(parseInt(c,16)*f).toString(16).padStart(2,'0');return`#${m(h.slice(0,2))}${m(h.slice(2,4))}${m(h.slice(4,6))}`;}
 function _mixLight(hex,wa){const h=hex.replace('#','');const f=(c)=>Math.round(parseInt(c,16)*(1-wa)+255*wa).toString(16).padStart(2,'0');return`#${f(h.slice(0,2))}${f(h.slice(2,4))}${f(h.slice(4,6))}`;}
+// Guarantee a brand accent used as a solid button/fill is legible. If neither black nor white text
+// clears WCAG AA (4.5:1) on the accent, deepen the accent (same hue) until white text passes — so
+// any color a provider picks in Branding stays accessible instead of producing unreadable buttons.
+function _readableAccent(hex){
+  const ink=_ink(hex);
+  const inkL=(ink==='#ffffff')?1:_lumHex('#181410');
+  if(_cr(_lumHex(hex),inkL)>=4.5)return{accent:hex,ink:ink};
+  let d=hex;
+  for(let i=0;i<24;i++){d=_mixDark(d,0.9);if(_cr(_lumHex(d),1)>=4.5)return{accent:d,ink:'#ffffff'};}
+  return{accent:d,ink:_ink(d)};
+}
 function loadClientBrand(){try{const s=localStorage.getItem('sc_brand_colors');if(s)return JSON.parse(s);}catch(e){}return{primary:'#C8A882',secondary:'#2C5F8A'};}
 let clientBrand=loadClientBrand();
 function applyClientTheme(b){
@@ -426,9 +445,12 @@ function applyClientTheme(b){
     return fallback;
   };
   const p=_normHex(clientBrand.primary,'#C8A882'),s=_normHex(clientBrand.secondary,'#2C5F8A'),root=document.documentElement;
-  root.style.setProperty('--accent',p);
+  // Deepen the accent if needed so text on solid buttons stays legible; tints below still derive
+  // from the true brand color p, so light backgrounds keep the provider's exact hue.
+  const _ra=_readableAccent(p);
+  root.style.setProperty('--accent',_ra.accent);
   root.style.setProperty('--accent-2',s);
-  root.style.setProperty('--accent-ink',_ink(p));
+  root.style.setProperty('--accent-ink',_ra.ink);
   root.style.setProperty('--accent-tint',_mixDark(p,0.21));
   root.style.setProperty('--accent-tint2',_mixDark(p,0.30));
   root.style.setProperty('--accent-lt',_mixLight(p,0.80));
@@ -1503,7 +1525,7 @@ function renderHome(){
       ${(activeProvider().brand&&activeProvider().brand.tagline)?`<div style="font-size:11px;color:#786858;white-space:nowrap;overflow:hidden;text-overflow:ellipsis;">${_txt(activeProvider().brand.tagline)}</div>`:''}
     </div>
     ${client.providers.length>1?`<span style="font-size:11px;color:var(--accent);font-weight:700;background:var(--accent-lt);padding:3px 9px;border-radius:20px;flex-shrink:0;">Switch</span>`:''}
-    <i class="ti ti-selector" aria-hidden="true" style="font-size:18px;color:#82715f;flex-shrink:0;"></i>
+    <i class="ti ti-chevron-right" aria-hidden="true" style="font-size:18px;color:#82715f;flex-shrink:0;"></i>
   </button>
   <div style="padding:12px 16px 10px;">
     <div style="font-size:22px;font-weight:600;color:#1a1a1a;line-height:1.25;"><span style="font-weight:500;color:#786858;">${_greeting()},</span> <span id="page-heading" tabindex="-1">${_txt(client.name.split(' ')[0])}</span></div>
@@ -2236,12 +2258,12 @@ function renderShop(){
   const tabs=[['recommended','Recommended'],['saved','Saved'+(savedCount?` (${savedCount})`:'')],['history','History']];
   const seg=`<div style="display:flex;gap:4px;margin:0 16px 14px;background:#f4efe9;border-radius:11px;padding:4px;">${tabs.map(([v,lbl])=>`<button onclick="setShopView('${v}')" style="flex:1;border:none;border-radius:8px;padding:8px 4px;font-size:12px;font-weight:600;cursor:pointer;background:${shopView===v?'#fff':'transparent'};color:${shopView===v?'var(--accent)':'#a8957f'};box-shadow:${shopView===v?'0 1px 2px rgba(0,0,0,.08)':'none'};">${lbl}</button>`).join('')}</div>`;
   const header=`<div style="padding:14px 16px 12px;"><div id="page-heading" tabindex="-1" style="font-size:17px;font-weight:700;color:#1a1a1a;">${_txt(client.providerFirst)}'s Shop</div></div>`;
-  const empty=(icon,msg)=>`<div style="margin:18px 16px;background:#fff;border:1.5px dashed #e8ddd3;border-radius:14px;padding:30px 22px;display:flex;flex-direction:column;align-items:center;gap:9px;text-align:center;"><i class="ti ${icon}" aria-hidden="true" style="font-size:26px;color:#cbbba9;"></i><div style="font-size:13px;color:#a8957f;line-height:1.5;">${msg}</div></div>`;
+  const empty=(icon,msg)=>`<div style="margin:18px 16px;background:#faf7f4;border-radius:14px;padding:30px 22px;display:flex;flex-direction:column;align-items:center;gap:9px;text-align:center;"><i class="ti ${icon}" aria-hidden="true" style="font-size:26px;color:#cbbba9;"></i><div style="font-size:13px;color:#a8957f;line-height:1.5;">${msg}</div></div>`;
   let body='';
   if(shopView==='recommended'){
     const products=prov.products||[];
     _buyProducts=products;
-    body=`<div style="margin:0 16px 12px;background:var(--accent-lt);border-radius:10px;padding:10px 13px;"><span style="font-size:12px;color:#8b6b4a;line-height:1.5;">Curated for you${prov.shopGoals?(' — '+_txt(prov.shopGoals)):''}.</span></div>`;
+    body=`<div style="margin:0 16px 12px;background:var(--accent-lt);border-radius:10px;padding:10px 13px;text-align:center;"><span style="font-size:12px;color:#8b6b4a;line-height:1.5;">Products specifically recommended for you${prov.shopGoals?(' — '+_txt(prov.shopGoals)):''}.</span></div>`;
     if(prov.routine){body+=`<div style="margin:0 16px 12px;background:#fff;border:1px solid var(--accent-lt);border-left:3px solid var(--accent);border-radius:12px;padding:12px 14px;"><div style="display:flex;align-items:center;gap:7px;margin-bottom:${prov.routine.note?'7px':'0'};"><i class="ti ti-list-check" style="font-size:15px;color:var(--accent);"></i><span style="font-size:13px;font-weight:700;color:#1a1a1a;">${_txt(prov.routine.name)}</span></div>${prov.routine.note?`<div style="font-size:12px;color:#6b5a48;line-height:1.6;">${_txt(prov.routine.note)}</div><div style="font-size:11px;color:#786858;margin-top:6px;">— ${_txt(client.providerFirst)}</div>`:''}</div>`;}
     body+=products.length?products.map((p,i)=>_shopProdCard(p,i)).join(''):empty('ti-shopping-bag',`No recommendations yet — products ${_txt(client.providerFirst)} suggests will show up here.`);
     if(products.length)body+=`<div style="padding:8px 20px 20px;font-size:11px;color:#82715f;text-align:center;line-height:1.6;">Buy in office, from ${_txt(client.providerFirst)}'s store, or online — your choice.</div>`;
@@ -4247,17 +4269,24 @@ function _clientInstall(){
   var ua=navigator.userAgent||'';
   var isIOS=/iphone|ipad|ipod/i.test(ua)||(/Macintosh/.test(ua)&&navigator.maxTouchPoints>1);
   var isMacSafari=/Macintosh/.test(ua)&&/Safari/.test(ua)&&!/Chrome|CriOS|FxiOS|Edg/i.test(ua)&&!isIOS;
-  var shareIcon='<span style="display:inline-flex;align-items:center;justify-content:center;width:17px;height:17px;border:1.5px solid #444;border-radius:3px;position:relative;top:3px;">\u2191</span>';
+  // A proper iOS "Share" glyph (square open at the top with an up-arrow through it) drawn inline,
+  // in Apple's system blue, so clients can visually match the exact button in Safari's toolbar.
+  var shareSVG='<svg viewBox="0 0 24 26" width="15" height="16" style="vertical-align:middle;position:relative;top:2px;" aria-hidden="true"><path d="M12 2.5 L12 15" stroke="#0a84ff" stroke-width="2.2" fill="none" stroke-linecap="round"/><path d="M8 6 L12 2.5 L16 6" stroke="#0a84ff" stroke-width="2.2" fill="none" stroke-linecap="round" stroke-linejoin="round"/><path d="M7 10 H5.5 A2.5 2.5 0 0 0 3 12.5 V21 A2.5 2.5 0 0 0 5.5 23.5 H18.5 A2.5 2.5 0 0 0 21 21 V12.5 A2.5 2.5 0 0 0 18.5 10 H17" stroke="#0a84ff" stroke-width="2.2" fill="none" stroke-linecap="round" stroke-linejoin="round"/></svg>';
+  var shareBig='<svg viewBox="0 0 24 26" width="24" height="26" aria-hidden="true"><path d="M12 2.5 L12 15" stroke="#0a84ff" stroke-width="2.2" fill="none" stroke-linecap="round"/><path d="M8 6 L12 2.5 L16 6" stroke="#0a84ff" stroke-width="2.2" fill="none" stroke-linecap="round" stroke-linejoin="round"/><path d="M7 10 H5.5 A2.5 2.5 0 0 0 3 12.5 V21 A2.5 2.5 0 0 0 5.5 23.5 H18.5 A2.5 2.5 0 0 0 21 21 V12.5 A2.5 2.5 0 0 0 18.5 10 H17" stroke="#0a84ff" stroke-width="2.2" fill="none" stroke-linecap="round" stroke-linejoin="round"/></svg>';
   var steps=isIOS
-    ? ['In <b>Safari</b>, tap the <b>Share</b> icon '+shareIcon+' \u2014 a box with an arrow pointing up \u2014 in the toolbar (at the <b>bottom</b> of the screen on iPhone; top on iPad).','In the menu that slides up, scroll down and tap <b>Add to Home Screen</b>.','Tap <b>Add</b> in the top-right corner \u2014 done!']
+    ? ['In <b>Safari</b>, tap the <b>Share</b> button '+shareSVG+' at the <b>bottom</b> of the screen (top on iPad).','In the menu that slides up, scroll down and tap <b>Add to Home Screen</b>.','Tap <b>Add</b> in the top-right corner \u2014 done!']
     : isMacSafari
-    ? ['In <b>Safari</b>, click the <b>Share</b> icon '+shareIcon+' (a box with an arrow pointing up) in the toolbar at the <b>top</b>.','Choose <b>Add to Dock</b>.','Click <b>Add</b> \u2014 it opens like an app from your Dock.']
+    ? ['In <b>Safari</b>, click the <b>Share</b> button '+shareSVG+' in the toolbar at the <b>top</b>.','Choose <b>Add to Dock</b>.','Click <b>Add</b> \u2014 it opens like an app from your Dock.']
     : ['Open your browser\u2019s <b>menu</b> (\u22ee or \u2261, usually top-right).','Choose <b>Add to Home screen</b> or <b>Install app</b>.','Confirm \u2014 the icon appears on your home screen!'];
-  var stepsHTML=steps.map(function(s,i){return '<div style="display:flex;align-items:flex-start;gap:10px;text-align:left;margin-bottom:12px;"><div style="width:22px;height:22px;border-radius:50%;background:var(--accent,#C8A882);color:#1a1408;font-size:12px;font-weight:800;display:flex;align-items:center;justify-content:center;flex-shrink:0;">'+(i+1)+'</div><div style="font-size:13px;color:#444;line-height:1.5;padding-top:1px;">'+s+'</div></div>';}).join('');
+  // For Safari, lead with a big labeled picture of the exact button to look for.
+  var callout=(isIOS||isMacSafari)
+    ? '<div style="display:flex;align-items:center;gap:12px;background:#f0f6ff;border:1px solid #d5e6ff;border-radius:12px;padding:12px 14px;margin-bottom:16px;text-align:left;"><div style="width:44px;height:44px;border-radius:11px;background:#fff;border:1px solid #d5e6ff;display:flex;align-items:center;justify-content:center;flex-shrink:0;">'+shareBig+'</div><div style="font-size:12.5px;color:#3a5878;line-height:1.45;">First find this <b>Share</b> button in Safari \u2014 it\u2019s '+(isIOS?'at the <b>bottom</b> of your screen':'in the <b>top</b> toolbar')+'.</div></div>'
+    : '';
+  var stepsHTML=callout+steps.map(function(s,i){return '<div style="display:flex;align-items:flex-start;gap:10px;text-align:left;margin-bottom:12px;"><div style="width:22px;height:22px;border-radius:50%;background:var(--accent,#C8A882);color:var(--accent-ink,#1a1408);font-size:12px;font-weight:800;display:flex;align-items:center;justify-content:center;flex-shrink:0;">'+(i+1)+'</div><div style="font-size:13px;color:#444;line-height:1.5;padding-top:1px;">'+s+'</div></div>';}).join('');
   var ov=document.createElement('div');
   ov.style.cssText='position:fixed;inset:0;z-index:100001;background:rgba(0,0,0,.5);display:flex;align-items:center;justify-content:center;padding:24px;';
   ov.onclick=function(e){ if(e.target===ov) ov.remove(); };
-  ov.innerHTML='<div style="background:#fff;border-radius:16px;padding:22px 20px;max-width:340px;width:100%;box-shadow:0 16px 50px rgba(0,0,0,.4);"><div style="text-align:center;"><div style="width:52px;height:52px;border-radius:14px;background:var(--accent,#C8A882);color:#1a1408;font-weight:800;font-size:24px;display:flex;align-items:center;justify-content:center;margin:0 auto 12px;">S</div><div style="font-size:17px;font-weight:600;color:#1a1a1a;margin-bottom:4px;">Add to Home Screen</div><div style="font-size:12.5px;color:#888;line-height:1.5;margin-bottom:18px;">So you can open it in one tap, just like any other app.</div></div>'+stepsHTML+'<button id="_ci-ok" style="background:var(--accent,#C8A882);border:none;color:#1a1408;border-radius:10px;padding:12px 20px;font-size:14px;font-weight:600;cursor:pointer;width:100%;font-family:inherit;margin-top:6px;">Got it</button></div>';
+  ov.innerHTML='<div style="background:#fff;border-radius:16px;padding:22px 20px;max-width:340px;width:100%;box-shadow:0 16px 50px rgba(0,0,0,.4);"><div style="text-align:center;"><div style="width:52px;height:52px;border-radius:14px;background:var(--accent,#C8A882);color:var(--accent-ink,#1a1408);font-weight:800;font-size:24px;display:flex;align-items:center;justify-content:center;margin:0 auto 12px;">S</div><div style="font-size:17px;font-weight:600;color:#1a1a1a;margin-bottom:4px;">Add to Home Screen</div><div style="font-size:12.5px;color:#888;line-height:1.5;margin-bottom:18px;">So you can open it in one tap, just like any other app.</div></div>'+stepsHTML+'<button id="_ci-ok" style="background:var(--accent,#C8A882);border:none;color:var(--accent-ink,#1a1408);border-radius:10px;padding:12px 20px;font-size:14px;font-weight:600;cursor:pointer;width:100%;font-family:inherit;margin-top:6px;">Got it</button></div>';
   document.body.appendChild(ov);
   var ok=ov.querySelector('#_ci-ok'); if(ok) ok.onclick=function(){ ov.remove(); };
 }
