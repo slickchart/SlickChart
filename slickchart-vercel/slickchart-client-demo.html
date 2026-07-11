@@ -110,7 +110,6 @@ function scResetDemo(){
   location.reload();
 }
 </script>
-
 <div class="shell">
   <div class="sb"><span>9:41</span><span class="ic"><i class="ti ti-wifi"></i><i class="ti ti-battery-3"></i></span></div>
   <div class="topbar">
@@ -939,9 +938,9 @@ function openProviderSheet(){
     <button onclick="switchProvider('${p.id}')" style="width:100%;text-align:left;display:flex;align-items:center;gap:12px;background:${on?'var(--accent-lt)':'#fff'};border:1.5px solid ${on?'var(--accent)':'#f0ebe4'};border-radius:14px;padding:13px;margin-bottom:10px;cursor:pointer;">
       <div style="width:46px;height:46px;border-radius:12px;background:linear-gradient(135deg,${_br.primary},${_br.secondary||_br.primary});display:flex;align-items:center;justify-content:center;flex-shrink:0;font-size:15px;font-weight:700;color:#fff;box-shadow:0 2px 8px ${_br.primary}55;">${_txt(p.initials)}</div>
       <div style="flex:1;min-width:0;">
-        <div style="display:flex;align-items:center;gap:7px;"><span style="font-size:15px;font-weight:700;color:#1a1a1a;">${_txt(p.studio)}</span>${p.connected?'':`<span style="font-size:9px;font-weight:700;color:#786858;border:1px solid #e8ddd3;border-radius:4px;padding:1px 5px;">DEMO</span>`}</div>
+        <div style="display:flex;align-items:center;gap:7px;"><span style="font-size:15px;font-weight:700;color:#1a1a1a;">${_txt(p.studio)}</span>${(client._real||p.connected)?'':`<span style="font-size:9px;font-weight:700;color:#786858;border:1px solid #e8ddd3;border-radius:4px;padding:1px 5px;">DEMO</span>`}</div>
         <div style="font-size:12px;color:#6b5d52;">${_txt(p.first)}${p.kind?' · '+_txt(p.kind):''}</div>
-        <div style="font-size:12px;color:#786858;margin-top:3px;"><i class="ti ti-calendar" style="font-size:11px;"></i> Next: ${_txt(p.nextDate)} · ${_txt(p.treatment)}</div>
+        <div style="font-size:12px;color:#786858;margin-top:3px;"><i class="ti ti-calendar" style="font-size:11px;"></i> ${p.nextDate?('Next: '+_txt(p.nextDate)+(p.treatment?(' · '+_txt(p.treatment)):'')):'No upcoming appointment'}</div>
       </div>
       <div style="flex-shrink:0;display:flex;flex-direction:column;align-items:flex-end;gap:6px;">
         ${on?`<i class="ti ti-circle-check-filled" style="font-size:22px;color:var(--accent);"></i>`:`<i class="ti ti-chevron-right" style="font-size:18px;color:#82715f;"></i>`}
@@ -1492,7 +1491,7 @@ function _welcomeBannerHTML(){
   if(dismissed.includes(key))return '';
   return `<div style="margin:0 16px 14px;background:var(--accent-lt);border:1.5px solid var(--accent-a30,#e8dcc8);border-radius:14px;padding:13px 14px;display:flex;gap:10px;align-items:flex-start;">
     <i class="ti ti-sparkles" aria-hidden="true" style="font-size:16px;color:var(--accent);flex-shrink:0;margin-top:1px;"></i>
-    <div style="flex:1;font-size:13px;color:#5a4a3a;line-height:1.5;">${_txt(msg)}</div>
+    <div style="flex:1;font-size:13px;color:#5a4a3a;line-height:1.5;">${_txt(String(msg).replace(/\s*✨+\s*$/,''))}</div>
     <button onclick="_dismissWelcome('${_jsAttr(key)}')" aria-label="Dismiss" style="border:none;background:none;color:#786858;font-size:16px;cursor:pointer;line-height:1;flex-shrink:0;">\u2715</button>
   </div>`;
 }
@@ -1521,7 +1520,7 @@ function renderHome(){
     <i class="ti ti-selector" aria-hidden="true" style="font-size:18px;color:#82715f;flex-shrink:0;"></i>
   </button>
   <div style="padding:12px 16px 10px;">
-    <div style="font-size:22px;font-weight:600;color:#1a1a1a;line-height:1.25;"><span style="font-weight:500;color:#786858;">${_greeting()},</span> <span id="page-heading" tabindex="-1">${_txt(client.name.split(' ')[0])}</span> ✨</div>
+    <div style="font-size:22px;font-weight:600;color:#1a1a1a;line-height:1.25;"><span style="font-weight:500;color:#786858;">${_greeting()},</span> <span id="page-heading" tabindex="-1">${_txt(client.name.split(' ')[0])}</span></div>
   </div>
   ${_welcomeBannerHTML()}
 
@@ -1531,6 +1530,58 @@ function renderHome(){
     <div style="flex:1;min-width:0;"><div style="font-size:13px;font-weight:700;color:#1a1a1a;">${_txt(client.providerFirst)} invited you to a virtual consult</div><div style="font-size:12px;color:#6b5d52;line-height:1.4;">Submit a few photos → get expert notes back</div></div>
     <span style="font-size:11px;font-weight:700;color:#fff;background:#8b6fc7;padding:5px 11px;border-radius:20px;flex-shrink:0;">Start</span>
   </div>`:''}
+
+  <!-- "Before your visit" checklist banner: whenever the provider has sent one or more forms to
+       complete ahead of an appointment, group them with the pre-visit check-in into a single clear
+       checklist so clients complete ALL of them, not just the first card they tap. Profession-neutral
+       and works for any number of forms (intake, consent, health history, waivers, etc.). -->
+  ${(function(){
+    const pf=(activeProvider().pendingForms||[]);
+    if(!pf.length)return '';                 // nothing sent to complete before the visit → no banner
+    const ciDone=!!activeProvider().checkinDone;
+    // Completed forms are removed from pendingForms, so pf.length is the number of forms still to do.
+    // Remaining work = those forms plus the check-in when it isn't done yet.
+    const remaining=pf.length+(ciDone?0:1);
+    const stepWord=remaining===1?'step':'steps';
+    // Count the total items in this visit's checklist (check-in is always part of it).
+    const totalItems=pf.length+1;
+    const itemWord=totalItems===1?'item':'items';
+    return `<div style="margin:0 16px 14px;background:linear-gradient(135deg,var(--accent-tint),var(--accent-tint2));border:1.5px solid var(--accent);border-radius:14px;padding:14px 16px;">
+      <div style="display:flex;align-items:center;gap:9px;margin-bottom:6px;">
+        <i class="ti ti-list-check" aria-hidden="true" style="font-size:19px;color:var(--accent-lt2);"></i>
+        <div style="font-size:14px;font-weight:700;color:var(--accent-lt2);">Complete before your visit</div>
+      </div>
+      <div style="font-size:12.5px;color:var(--accent-lt2);opacity:.82;line-height:1.5;">${_txt(client.providerFirst)} needs <b>all ${totalItems} ${itemWord}</b> below completed before your appointment \u2014 your <b>pre-visit check-in</b> and ${pf.length===1?'the form':`all ${pf.length} forms`} below. Please don\u2019t stop after just one.</div>
+      <div style="margin-top:10px;">
+        <span style="font-size:11px;font-weight:700;color:var(--accent-ink);background:var(--accent);padding:4px 10px;border-radius:20px;">${remaining} ${stepWord} to complete</span>
+      </div>
+    </div>`;
+  })()}
+
+  <!-- Pre-visit check-in -->
+  <div style="margin:0 16px 14px;background:#fff;border:1.5px solid #f0ebe4;border-radius:14px;overflow:hidden;cursor:pointer;" onclick="nav('checkin')" role="button" aria-label="Pre-visit check-in">
+    <div style="padding:12px 16px;display:flex;align-items:center;gap:12px;">
+      <div style="width:42px;height:42px;background:var(--accent-lt);border-radius:10px;display:flex;align-items:center;justify-content:center;flex-shrink:0;"><i class="ti ${activeProvider().checkinDone?'ti-square-check':'ti-square'}" aria-hidden="true" style="font-size:22px;color:var(--accent);"></i></div>
+      <div style="flex:1;min-width:0;">
+        <div style="font-size:13px;font-weight:600;color:#1a1a1a;">${activeProvider().checkinDone?'Check-in complete':((activeProvider().pendingForms||[]).length?'Step 1 \u00b7 Pre-visit check-in':'Pre-visit check-in')}</div>
+        <div style="font-size:12px;color:#786858;">${activeProvider().checkinDone?`${_txt(client.providerFirst)} has your updates for ${_txt(client.nextDate)}`:`Quick prep so ${_txt(client.providerFirst)} is ready for ${_txt(client.nextDate)}`}</div>
+      </div>
+      ${activeProvider().checkinDone?`<i class="ti ti-circle-check-filled" aria-hidden="true" style="font-size:22px;color:#4ec49a;flex-shrink:0;"></i>`:`<span style="font-size:11px;font-weight:700;color:var(--accent);background:var(--accent-lt);padding:4px 10px;border-radius:20px;flex-shrink:0;">Start</span>`}
+    </div>
+  </div>
+
+  <!-- Pending forms from provider -->
+  ${(activeProvider().pendingForms||[]).map((pf,pfi)=>`
+  <div style="margin:0 16px 14px;background:#fff;border:1.5px solid #e5d9f0;border-radius:14px;overflow:hidden;cursor:pointer;" onclick="_fillFormId='${pf.formId}';nav('fill-form')" role="button" aria-label="${_txt(pf.title)}">
+    <div style="padding:12px 16px;display:flex;align-items:center;gap:12px;">
+      <div style="width:42px;height:42px;background:#f3eefc;border-radius:10px;display:flex;align-items:center;justify-content:center;flex-shrink:0;"><i class="ti ti-square" aria-hidden="true" style="font-size:22px;color:#8b6fc7;"></i></div>
+      <div style="flex:1;min-width:0;">
+        <div style="font-size:13px;font-weight:600;color:#1a1a1a;">Step ${2+pfi} \u00b7 ${_txt(pf.title)}</div>
+        <div style="font-size:12px;color:#786858;">Required \u2014 ${_txt(client.providerFirst)} needs this before your visit</div>
+      </div>
+      <span style="font-size:11px;font-weight:700;color:#8b6fc7;background:#f3eefc;padding:4px 10px;border-radius:20px;flex-shrink:0;">Start</span>
+    </div>
+  </div>`).join('')}
 
   <!-- Next appointment countdown -->
   ${(()=>{
@@ -1572,75 +1623,6 @@ function renderHome(){
   </div>`;
   })()}
 
-  <!-- Today's homecare -->
-  <div style="margin:0 16px 14px;background:#fff;border:1.5px solid #f0ebe4;border-radius:14px;overflow:hidden;cursor:pointer;" onclick="nav('homecare')" role="button" aria-label="View homecare routine">
-    <div style="padding:12px 16px;display:flex;align-items:center;justify-content:space-between;">
-      <div>
-        <div style="font-size:13px;font-weight:600;color:#1a1a1a;margin-bottom:2px;">Today's routine</div>
-        <div style="font-size:12px;color:#786858;">${checked} of ${total} steps done</div>
-      </div>
-      <div style="width:42px;height:42px;position:relative;">
-        <svg width="42" height="42"><circle cx="21" cy="21" r="17" fill="none" stroke="#f0ebe4" stroke-width="3"/><circle cx="21" cy="21" r="17" fill="none" stroke="var(--accent)" stroke-width="3" stroke-dasharray="${Math.round(2*Math.PI*17*pct/100)} ${Math.round(2*Math.PI*17*(100-pct)/100)}" stroke-linecap="round" transform="rotate(-90 21 21)"/></svg>
-        <div style="position:absolute;inset:0;display:flex;align-items:center;justify-content:center;font-size:11px;font-weight:700;color:var(--accent);">${pct}%</div>
-      </div>
-    </div>
-    <div style="padding:0 16px 12px;display:flex;flex-wrap:wrap;gap:5px;">
-      ${Object.keys(homecareChecked).map(k=>`<span style="font-size:11px;padding:3px 9px;border-radius:20px;background:${homecareChecked[k]?'var(--accent)':'var(--accent-lt)'};color:${homecareChecked[k]?'#fff':'#9a7a5e'};">${k}</span>`).join('')}
-    </div>
-  </div>
-
-  <!-- "Before your visit" checklist banner: whenever the provider has sent one or more forms to
-       complete ahead of an appointment, group them with the pre-visit check-in into a single clear
-       checklist so clients complete ALL of them, not just the first card they tap. Profession-neutral
-       and works for any number of forms (intake, consent, health history, waivers, etc.). -->
-  ${(function(){
-    const pf=(activeProvider().pendingForms||[]);
-    if(!pf.length)return '';                 // nothing sent to complete before the visit → no banner
-    const ciDone=!!activeProvider().checkinDone;
-    // Completed forms are removed from pendingForms, so pf.length is the number of forms still to do.
-    // Remaining work = those forms plus the check-in when it isn't done yet.
-    const remaining=pf.length+(ciDone?0:1);
-    const stepWord=remaining===1?'step':'steps';
-    // Count the total items in this visit's checklist (check-in is always part of it).
-    const totalItems=pf.length+1;
-    const itemWord=totalItems===1?'item':'items';
-    return `<div style="margin:0 16px 14px;background:linear-gradient(135deg,var(--accent-tint),var(--accent-tint2));border:1.5px solid var(--accent);border-radius:14px;padding:14px 16px;">
-      <div style="display:flex;align-items:center;gap:9px;margin-bottom:6px;">
-        <i class="ti ti-list-check" aria-hidden="true" style="font-size:19px;color:var(--accent-lt2);"></i>
-        <div style="font-size:14px;font-weight:700;color:var(--accent-lt2);">Complete before your visit</div>
-      </div>
-      <div style="font-size:12.5px;color:var(--accent-lt2);opacity:.82;line-height:1.5;">${_txt(client.providerFirst)} needs <b>all ${totalItems} ${itemWord}</b> below completed before your appointment \u2014 your <b>pre-visit check-in</b> and ${pf.length===1?'the form':`all ${pf.length} forms`} below. Please don\u2019t stop after just one.</div>
-      <div style="margin-top:10px;">
-        <span style="font-size:11px;font-weight:700;color:var(--accent-ink);background:var(--accent);padding:4px 10px;border-radius:20px;">${remaining} ${stepWord} still to complete</span>
-      </div>
-    </div>`;
-  })()}
-
-  <!-- Pre-visit check-in -->
-  <div style="margin:0 16px 14px;background:#fff;border:1.5px solid #f0ebe4;border-radius:14px;overflow:hidden;cursor:pointer;" onclick="nav('checkin')" role="button" aria-label="Pre-visit check-in">
-    <div style="padding:12px 16px;display:flex;align-items:center;gap:12px;">
-      <div style="width:42px;height:42px;background:var(--accent-lt);border-radius:10px;display:flex;align-items:center;justify-content:center;flex-shrink:0;"><i class="ti ti-clipboard-check" aria-hidden="true" style="font-size:20px;color:var(--accent);"></i></div>
-      <div style="flex:1;min-width:0;">
-        <div style="font-size:13px;font-weight:600;color:#1a1a1a;">${activeProvider().checkinDone?'Check-in complete':((activeProvider().pendingForms||[]).length?'Step 1 \u00b7 Pre-visit check-in':'Pre-visit check-in')}</div>
-        <div style="font-size:12px;color:#786858;">${activeProvider().checkinDone?`${_txt(client.providerFirst)} has your updates for ${_txt(client.nextDate)}`:`Quick prep so ${_txt(client.providerFirst)} is ready for ${_txt(client.nextDate)}`}</div>
-      </div>
-      ${activeProvider().checkinDone?`<i class="ti ti-circle-check-filled" aria-hidden="true" style="font-size:22px;color:#4ec49a;flex-shrink:0;"></i>`:`<span style="font-size:11px;font-weight:700;color:var(--accent);background:var(--accent-lt);padding:4px 10px;border-radius:20px;flex-shrink:0;">Start</span>`}
-    </div>
-  </div>
-
-  <!-- Pending forms from provider -->
-  ${(activeProvider().pendingForms||[]).map((pf,pfi)=>`
-  <div style="margin:0 16px 14px;background:#fff;border:1.5px solid #e5d9f0;border-radius:14px;overflow:hidden;cursor:pointer;" onclick="_fillFormId='${pf.formId}';nav('fill-form')" role="button" aria-label="${_txt(pf.title)}">
-    <div style="padding:12px 16px;display:flex;align-items:center;gap:12px;">
-      <div style="width:42px;height:42px;background:#f3eefc;border-radius:10px;display:flex;align-items:center;justify-content:center;flex-shrink:0;"><i class="ti ti-file-text" aria-hidden="true" style="font-size:20px;color:#8b6fc7;"></i></div>
-      <div style="flex:1;min-width:0;">
-        <div style="font-size:13px;font-weight:600;color:#1a1a1a;">Step ${2+pfi} \u00b7 ${_txt(pf.title)}</div>
-        <div style="font-size:12px;color:#786858;">Required \u2014 ${_txt(client.providerFirst)} needs this before your visit</div>
-      </div>
-      <span style="font-size:11px;font-weight:700;color:#8b6fc7;background:#f3eefc;padding:4px 10px;border-radius:20px;flex-shrink:0;">Start</span>
-    </div>
-  </div>`).join('')}
-
   <!-- Pending guides from provider -->
   ${(activeProvider().pendingGuides||[]).map(pg=>`
   <div style="margin:0 16px 14px;background:#fff;border:1.5px solid #f0ebe4;border-radius:14px;overflow:hidden;cursor:pointer;" onclick="_viewGuideId='${pg.guideId}';nav('view-guide')" role="button" aria-label="${_txt(pg.title)}">
@@ -1665,6 +1647,23 @@ function renderHome(){
       <i aria-hidden="true" class="ti ti-chevron-right" style="font-size:16px;color:#82715f;"></i>
     </div>
     <div style="padding:0 16px 12px;font-size:13px;color:#6b5d52;line-height:1.6;">${_txt(activeProvider().summaryNote)}</div>
+  </div>
+
+  <!-- Today's homecare -->
+  <div style="margin:0 16px 14px;background:#fff;border:1.5px solid #f0ebe4;border-radius:14px;overflow:hidden;cursor:pointer;" onclick="nav('homecare')" role="button" aria-label="View homecare routine">
+    <div style="padding:12px 16px;display:flex;align-items:center;justify-content:space-between;">
+      <div>
+        <div style="font-size:13px;font-weight:600;color:#1a1a1a;margin-bottom:2px;">Today's routine</div>
+        <div style="font-size:12px;color:#786858;">${checked} of ${total} steps done</div>
+      </div>
+      <div style="width:42px;height:42px;position:relative;">
+        <svg width="42" height="42"><circle cx="21" cy="21" r="17" fill="none" stroke="#f0ebe4" stroke-width="3"/><circle cx="21" cy="21" r="17" fill="none" stroke="var(--accent)" stroke-width="3" stroke-dasharray="${Math.round(2*Math.PI*17*pct/100)} ${Math.round(2*Math.PI*17*(100-pct)/100)}" stroke-linecap="round" transform="rotate(-90 21 21)"/></svg>
+        <div style="position:absolute;inset:0;display:flex;align-items:center;justify-content:center;font-size:11px;font-weight:700;color:var(--accent);">${pct}%</div>
+      </div>
+    </div>
+    <div style="padding:0 16px 12px;display:flex;flex-wrap:wrap;gap:5px;">
+      ${Object.keys(homecareChecked).map(k=>`<span style="font-size:11px;padding:3px 9px;border-radius:20px;background:${homecareChecked[k]?'var(--accent)':'var(--accent-lt)'};color:${homecareChecked[k]?'#fff':'#9a7a5e'};">${k}</span>`).join('')}
+    </div>
   </div>
 
   <!-- Quick actions -->
@@ -2710,6 +2709,7 @@ function renderPrivacyData(){
       <div style="font-size:15px;font-weight:700;color:#1a1a1a;margin-bottom:8px;">Your privacy</div>
       <div style="font-size:13px;color:#6b5d52;line-height:1.6;">Your information here is used only to support your care with ${who} — summaries, aftercare, forms, appointments, and messages. It's shared with ${who} and no one else, and never sold.</div>
       <a href="/privacy" target="_blank" rel="noopener" style="display:inline-flex;align-items:center;gap:6px;margin-top:12px;font-size:13px;font-weight:600;color:var(--accent);text-decoration:none;"><i class="ti ti-file-text" aria-hidden="true"></i> Read the full privacy policy</a>
+      <a href="/terms" target="_blank" rel="noopener" style="display:inline-flex;align-items:center;gap:6px;margin-top:8px;font-size:13px;font-weight:600;color:var(--accent);text-decoration:none;"><i class="ti ti-file-description" aria-hidden="true"></i> Terms of Service</a>
     </div>
     <div class="sh"><h2>What this app stores</h2></div>
     <div style="background:#fff;border:1.5px solid #f0ebe4;border-radius:12px;padding:4px 14px;margin-bottom:14px;">
@@ -4280,10 +4280,15 @@ document.addEventListener('DOMContentLoaded', function() {
 <script>
 function _clientInstall(){
   try{ if(window._scDeferredInstall){ window._scDeferredInstall.prompt(); window._scDeferredInstall.userChoice.then(function(){ window._scDeferredInstall=null; }); return; } }catch(e){}
-  var ua=navigator.userAgent||''; var isIOS=/iphone|ipad|ipod/i.test(ua);
+  var ua=navigator.userAgent||'';
+  var isIOS=/iphone|ipad|ipod/i.test(ua)||(/Macintosh/.test(ua)&&navigator.maxTouchPoints>1);
+  var isMacSafari=/Macintosh/.test(ua)&&/Safari/.test(ua)&&!/Chrome|CriOS|FxiOS|Edg/i.test(ua)&&!isIOS;
+  var shareIcon='<span style="display:inline-flex;align-items:center;justify-content:center;width:17px;height:17px;border:1.5px solid #444;border-radius:3px;position:relative;top:3px;">\u2191</span>';
   var steps=isIOS
-    ? ['Tap the <b>Share</b> button <span style="display:inline-block;">\u2191</span> at the bottom of the screen','Scroll down and tap <b>Add to Home Screen</b>','Tap <b>Add</b> in the top corner \u2014 done!']
-    : ['Tap the <b>menu</b> button (\u22ee or \u2261) in your browser','Choose <b>Add to Home screen</b> or <b>Install app</b>','Confirm \u2014 the icon appears on your home screen!'];
+    ? ['In <b>Safari</b>, tap the <b>Share</b> icon '+shareIcon+' \u2014 a box with an arrow pointing up \u2014 in the toolbar (at the <b>bottom</b> of the screen on iPhone; top on iPad).','In the menu that slides up, scroll down and tap <b>Add to Home Screen</b>.','Tap <b>Add</b> in the top-right corner \u2014 done!']
+    : isMacSafari
+    ? ['In <b>Safari</b>, click the <b>Share</b> icon '+shareIcon+' (a box with an arrow pointing up) in the toolbar at the <b>top</b>.','Choose <b>Add to Dock</b>.','Click <b>Add</b> \u2014 it opens like an app from your Dock.']
+    : ['Open your browser\u2019s <b>menu</b> (\u22ee or \u2261, usually top-right).','Choose <b>Add to Home screen</b> or <b>Install app</b>.','Confirm \u2014 the icon appears on your home screen!'];
   var stepsHTML=steps.map(function(s,i){return '<div style="display:flex;align-items:flex-start;gap:10px;text-align:left;margin-bottom:12px;"><div style="width:22px;height:22px;border-radius:50%;background:var(--accent,#C8A882);color:#1a1408;font-size:12px;font-weight:800;display:flex;align-items:center;justify-content:center;flex-shrink:0;">'+(i+1)+'</div><div style="font-size:13px;color:#444;line-height:1.5;padding-top:1px;">'+s+'</div></div>';}).join('');
   var ov=document.createElement('div');
   ov.style.cssText='position:fixed;inset:0;z-index:100001;background:rgba(0,0,0,.5);display:flex;align-items:center;justify-content:center;padding:24px;';
@@ -4305,7 +4310,7 @@ function _clientInstall(){
       var b=document.createElement('div'); b.id='sc-install';
       b.style.cssText='position:fixed;left:0;right:0;bottom:calc(env(safe-area-inset-bottom,0px) + 14px);margin:0 auto;width:360px;max-width:92%;background:#161616;border:1px solid #2f2f2f;border-radius:14px;padding:12px 14px;z-index:100000;box-shadow:0 10px 34px rgba(0,0,0,.55);display:flex;align-items:center;gap:11px;font-family:-apple-system,BlinkMacSystemFont,Segoe UI,sans-serif;';
       var msg = kind==='ios'
-        ? 'Install SlickChart \u2014 tap <b>Share</b> then <b>Add to Home Screen</b>.'
+        ? 'Install SlickChart: tap <b>Share</b> (the box with an \u2191) at the bottom of Safari, then <b>Add to Home Screen</b>.'
         : 'Add SlickChart to your home screen for one-tap access.';
       b.innerHTML='<div style="width:38px;height:38px;border-radius:10px;background:#C8A882;display:flex;align-items:center;justify-content:center;flex-shrink:0;color:#1a1408;font-weight:800;font-size:17px;">S</div>'
         +'<div style="flex:1;font-size:12px;color:#e0e0e0;line-height:1.45;">'+msg+'</div>'
