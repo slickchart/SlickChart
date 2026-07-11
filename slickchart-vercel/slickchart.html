@@ -12623,7 +12623,7 @@ _cloudInit();
 // pushes the appointment onto the calendar and notifies the client.
 // ════════════════════════════════════════════════════════════════
 let confirmedAppts=[];           // appts confirmed via the booking flow (session; re-seeded from bookings)
-let manualAppts=(function(){try{return JSON.parse(localStorage.getItem('sc_manual_appts')||'[]');}catch(e){return [];}})();
+let manualAppts=(function(){try{var a=JSON.parse(localStorage.getItem('sc_manual_appts')||'[]');if(!Array.isArray(a))return [];a.forEach(function(x){if(x&&!x.id)x.id='ma_'+Math.random().toString(36).slice(2,10);});return a;}catch(e){return [];}})();
 function _saveManualAppts(){try{localStorage.setItem('sc_manual_appts',JSON.stringify(manualAppts));}catch(e){}}
 let suggestOpenFor=null;         // id of request whose "suggest" panel is open
 
@@ -13524,100 +13524,216 @@ function renderTodayAppts(){
   <div style="height:20px;"></div>`;
 }
 function _docsNeedRenewal(){const soon=new Date(Date.now()+120*86400000);return (typeof docs!=='undefined'?docs:[]).filter(d=>{if(!d.expires)return false;const e=new Date(d.expires);return !isNaN(e)&&e<=soon;}).length;}
+// ── Unified calendar data + real interactive month grid ──────────────────────
+function _calKey(d){return d.getFullYear()+'-'+String(d.getMonth()+1).padStart(2,'0')+'-'+String(d.getDate()).padStart(2,'0');}
+// Parse a manual/confirmed appt (date 'YYYY-MM-DD' + time '10:00 AM') into a real local Date.
+function _apptWhen(dateStr,timeStr){
+  if(!dateStr)return null;
+  var d=new Date(String(dateStr)+'T00:00:00');if(isNaN(d))return null;
+  var m=String(timeStr||'').trim().match(/^(\d{1,2}):(\d{2})\s*([AaPp][Mm])?$/);
+  if(m){var h=parseInt(m[1],10),mi=parseInt(m[2],10),ap=(m[3]||'').toUpperCase();if(ap==='PM'&&h!==12)h+=12;if(ap==='AM'&&h===12)h=0;d.setHours(h,mi,0,0);}else{d.setHours(12,0,0,0);}
+  return d;
+}
+function _apptTimeStr(d){return d.toLocaleTimeString('en-US',{hour:'numeric',minute:'2-digit'});}
+// A few realistic sample appointments anchored to the REAL week -- only used in demo/sample mode
+// (no Square, sample data visible) so the calendar looks alive without hardcoded past dates.
+function _sampleCalAppts(){
+  var base=new Date();base.setHours(0,0,0,0);
+  var mk=function(off,h,mi,client,tx,ic){var d=new Date(base);d.setDate(d.getDate()+off);d.setHours(h,mi,0,0);return {when:d,title:client,sub:tx,ic:ic,source:'sample',id:null,raw:null};};
+  return [mk(0,10,0,'Maya Rodriguez','Hydrafacial','var(--accent)'),mk(0,14,30,'Sophie Turner','Chemical Peel','#5ba3e8'),mk(2,11,0,'Priya Patel','Microneedling','#a891ec'),mk(4,13,0,'Theresa B.','Dermaplane','#4ec49a')];
+}
+// All real appointments across sources, normalized + de-duplicated, sorted by time.
+function _allApptsUnified(){
+  var out=[];
+  if(_apptsLive()&&Array.isArray(squareAppts)){
+    squareAppts.forEach(function(a){if(a.at&&!isNaN(a.at))out.push({when:a.at,title:a.client,sub:((a.dur||60)+' min'),ic:a.ic||'var(--accent)',source:'square',id:a.id,raw:a});});
+  } else if(!_sampleHidden()){
+    out=out.concat(_sampleCalAppts());
+  }
+  (manualAppts||[]).forEach(function(a){var w=_apptWhen(a.date,a.time);if(w)out.push({when:w,title:a.client,sub:(a.tx||'Appointment'),ic:a.ic||'var(--accent)',source:'manual',id:a.id,raw:a});});
+  (confirmedAppts||[]).forEach(function(a){var w=_apptWhen(a.date,a.time);if(w)out.push({when:w,title:a.client,sub:(a.tx||'Appointment'),ic:a.ic||'#4ec49a',source:'confirmed',id:null,raw:a});});
+  out.sort(function(x,y){return x.when-y.when;});
+  var seen={},dedup=[];
+  out.forEach(function(a){var k=(a.title||'').toLowerCase().trim()+'@'+a.when.getTime();if(a.source!=='square'&&seen[k])return;seen[k]=true;dedup.push(a);});
+  return dedup;
+}
+let _calViewY=null,_calViewM=null; // viewed month; null = current month
+let _calSelKey=null;               // selected day 'YYYY-MM-DD'; null = today
+function _calGo(delta){var t=new Date();var y=(_calViewY==null?t.getFullYear():_calViewY);var m=(_calViewM==null?t.getMonth():_calViewM)+delta;while(m<0){m+=12;y--;}while(m>11){m-=12;y++;}_calViewY=y;_calViewM=m;renderCalendar();}
+function _calPick(key){_calSelKey=key;renderCalendar();}
+function _calToday(){_calViewY=null;_calViewM=null;_calSelKey=null;renderCalendar();}
+// tiny escapers for building inline JS-string args safely (single-quote + <)
+function _jsStr2(s){return "'"+String(s==null?'':s).replace(/\\/g,'\\\\').replace(/'/g,"\\'").replace(/</g,'\\x3c')+"'";}
+function _jsAttr2(s){return String(s==null?'':s).replace(/\\/g,'\\\\').replace(/'/g,"\\'").replace(/</g,'\\x3c');}
+// Add any unified appt to the provider's personal calendar (.ics / Google) via the existing sheet.
+function _addApptToCal(title,ts){_addToCalendar(title,_calKey(new Date(ts)),_apptTimeStr(new Date(ts)));}
+// One appointment row. Square + manual open the detail sheet (edit/reschedule/cancel); others tap
+// through to the client record when the name matches one.
+function _apptRowHTML(a){
+  var cid=_clientIdByName(a.title);
+  var editable=(a.source==='square'||a.source==='manual');
+  var onclick=editable?("openApptDetail('"+a.source+"','"+_jsAttr2(a.id||'')+"')"):(cid?("nav('client','"+cid+"')"):'');
+  var tap=onclick?(' onclick="'+onclick+'" style="cursor:pointer;"'):'';
+  return '<div'+tap+' style="margin:0 16px 8px;background:#1a1a1a;border:1px solid #2a2a2a;border-radius:12px;overflow:hidden;display:flex;">'
+    +'<div style="width:4px;background:'+a.ic+';flex-shrink:0;"></div>'
+    +'<div style="padding:11px 13px;flex:1;display:flex;justify-content:space-between;align-items:flex-start;gap:8px;">'
+      +'<div style="min-width:0;"><div style="font-size:13px;font-weight:500;color:#e0e0e0;overflow-wrap:anywhere;">'+_fileEsc(a.title)+'</div><div style="font-size:12px;color:#999;margin-top:2px;">'+_fileEsc(a.sub)+(a.source==='square'?' · <span style="color:#4ec49a;">Square</span>':'')+'</div></div>'
+      +'<div style="text-align:right;flex-shrink:0;"><div style="font-size:13px;font-weight:600;color:#f0f0f0;">'+_apptTimeStr(a.when)+'</div>'
+      +'<button onclick="event.stopPropagation();_addApptToCal('+_jsStr2(a.title)+','+a.when.getTime()+')" style="margin-top:4px;background:none;border:none;color:var(--accent);font-size:11px;cursor:pointer;font-family:inherit;"><i class="ti ti-calendar-plus" style="font-size:11px;"></i> Add to calendar</button></div>'
+    +'</div></div>';
+}
 function renderCalendar(){
   setNav('home');
   document.getElementById('tt').textContent='Calendar';
   _loadSquareAppts();
-  const live=_apptsLive();
-  const days=['Sun','Mon','Tue','Wed','Thu','Fri','Sat'];
-  const today=26;
-  const appts=_apptsData;
-  const _added=manualAppts.concat(confirmedAppts);window._calAdded=_added;
-  const weekDates=[22,23,24,25,26,27,28];
-  const todayAppts=appts.filter(a=>a.day===today);
-  const pend=pendingRequests();
-  const _grp={};if(live)squareAppts.forEach(a=>{const k=a.at.toDateString();(_grp[k]=_grp[k]||[]).push(a);});
-  const _gk=Object.keys(_grp).sort((x,y)=>new Date(x)-new Date(y));
-  const liveMiddle=`
-  <div style="padding:10px 16px 4px;display:flex;align-items:center;gap:8px;">
-    <span style="font-size:16px;font-weight:500;color:#f0f0f0;">Upcoming</span>
-    <span style="display:inline-flex;align-items:center;gap:4px;font-size:10px;font-weight:700;color:#4ec49a;background:#0a2019;border:1px solid #1a4a38;padding:2px 8px;border-radius:20px;letter-spacing:.04em;"><span style="width:6px;height:6px;border-radius:50%;background:#4ec49a;"></span>LIVE FROM SQUARE</span>
-    <button onclick="_loadSquareAppts(true)" aria-label="Refresh appointments" style="margin-left:auto;background:none;border:none;color:var(--accent);font-size:12px;font-weight:600;cursor:pointer;font-family:inherit;"><i class="ti ti-refresh" style="font-size:12px;"></i> Refresh</button>
-  </div>
-  ${_gk.length?`<div style="font-size:12px;color:#999;padding:0 16px 6px;">${squareAppts.length} appointment${squareAppts.length===1?'':'s'} · next 14 days</div>`+_gk.map(k=>{const d=new Date(k);const lbl=d.toLocaleDateString('en-US',{weekday:'long',month:'short',day:'numeric'});return `
-    <div style="padding:8px 16px 4px;font-size:13px;font-weight:600;color:#cfcfcf;">${lbl}<span style="color:#9a9a9a;font-weight:400;"> · ${_grp[k].length}</span></div>
-    ${_grp[k].map(a=>{const cid=_clientIdByName(a.client);return `<div ${cid?`onclick="nav('client','${cid}')" style="cursor:pointer;"`:''} style="margin:0 16px 8px;background:#1a1a1a;border:1px solid #2a2a2a;border-radius:12px;overflow:hidden;display:flex;"><div style="width:4px;background:${a.ic};flex-shrink:0;"></div><div style="padding:11px 13px;flex:1;display:flex;justify-content:space-between;align-items:flex-start;"><div><div style="font-size:13px;font-weight:500;color:#e0e0e0;">${_fileEsc(a.client)}</div><div style="font-size:12px;color:#999;margin-top:2px;">${a.dur} min</div></div><div style="display:flex;align-items:center;gap:6px;"><div style="font-size:13px;font-weight:500;color:#f0f0f0;">${a.at.toLocaleTimeString('en-US',{hour:'numeric',minute:'2-digit'})}</div>${cid?`<i class="ti ti-chevron-right" style="font-size:14px;color:#929292;"></i>`:''}</div></div></div>`;}).join('')}
-  `;}).join(''):`<div style="margin:14px 16px;text-align:center;color:#999;font-size:13px;padding:26px 16px;background:#161616;border:1px solid #242424;border-radius:12px;">No upcoming appointments in the next 14 days.<div style="font-size:12px;color:#929292;margin-top:6px;">New Square bookings will appear here automatically.</div></div>`}`;
-  const demoMiddle=`
-  <div style="padding:10px 16px 4px;font-size:16px;font-weight:500;color:#f0f0f0;">June 2026</div>
-  <div style="display:grid;grid-template-columns:repeat(7,1fr);gap:2px;padding:0 16px;margin-bottom:10px;">
-    ${days.map(d=>`<div style="text-align:center;font-size:12px;color:#999;padding:4px 0;">${d}</div>`).join('')}
-    ${weekDates.map(d=>`<div onclick="this.style.background='var(--accent)';this.style.color='var(--accent-ink)'" style="text-align:center;padding:6px 0;font-size:13px;border-radius:8px;cursor:pointer;${d===today?'background:var(--accent);color:var(--accent-ink);font-weight:500;':'color:#e0e0e0;'}">${d}</div>`).join('')}
-  </div>
-  <div style="border-top:1px solid #1e1e1e;padding:10px 16px 6px;display:flex;align-items:center;justify-content:space-between;">
-    <div style="font-size:13px;font-weight:500;color:#f0f0f0;">Thursday, Jun 26</div>
-    <span class="bdg bg">${todayAppts.length} appointments</span>
-  </div>
-  ${todayAppts.map(a=>{const cid=_clientIdByName(a.client);return `
-  <div ${cid?`onclick="nav('client','${cid}')" style="cursor:pointer;"`:''} style="margin:0 16px 10px;background:#1a1a1a;border:1px solid #2a2a2a;border-radius:12px;overflow:hidden;display:flex;">
-    <div style="width:4px;background:${a.ic};flex-shrink:0;"></div>
-    <div style="padding:11px 13px;flex:1;">
-      <div style="display:flex;justify-content:space-between;align-items:flex-start;">
-        <div><div style="font-size:13px;font-weight:500;color:#e0e0e0;">${_fileEsc(a.client)}</div><div style="font-size:12px;color:#999;margin-top:2px;">${_fileEsc(a.tx)} · ${a.dur} min</div></div>
-        <div style="text-align:right;"><div style="font-size:13px;font-weight:500;color:#f0f0f0;">${_fileEsc(a.time)}</div>${cid?`<i class="ti ti-chevron-right" style="font-size:14px;color:#929292;margin-top:4px;"></i>`:`<button onclick="event.stopPropagation();nav('today-appts')" style="border:none;background:none;font-size:11px;color:var(--accent);cursor:pointer;margin-top:4px;">Room →</button>`}</div>
-      </div>
-    </div>
-  </div>`;}).join('')}
-  <div style="margin:6px 16px 16px;">
-    <div onclick="openQuickAdd()" style="background:#1a1a1a;border:1.5px dashed #2a2a2a;border-radius:12px;padding:14px;display:flex;flex-direction:column;align-items:center;gap:5px;cursor:pointer;">
-      <i aria-hidden="true" class="ti ti-plus" style="font-size:20px;color:#888;"></i>
-      <span style="font-size:14px;color:#aaa;">Add appointment on Jun 26</span>
-    </div>
-  </div>`;
-  const notConnectedMiddle=`
-  <div style="margin:14px 16px;text-align:center;color:#999;font-size:13px;padding:30px 20px;background:#161616;border:1px solid #242424;border-radius:12px;">
-    <i class="ti ti-calendar-off" style="font-size:26px;color:#555;"></i>
-    <div style="margin-top:8px;">No appointments to show yet.</div>
-    <div style="font-size:12px;color:#929292;margin-top:4px;line-height:1.5;">Connect Square to sync your real schedule, or add appointments yourself.</div>
-    <button onclick="nav('data-setup')" style="margin-top:12px;background:var(--accent);color:var(--accent-ink);border:none;border-radius:9px;padding:9px 16px;font-size:12px;font-weight:600;cursor:pointer;">Get set up \u2192</button>
-  </div>`;
-  S.innerHTML=`
-  <div style="padding:10px 16px 0;display:flex;align-items:center;justify-content:space-between;gap:8px;">
-    <button onclick="nav('connect-calendar')" style="background:#161616;border:1px solid #2a2a2a;color:#9fbfae;border-radius:8px;padding:7px 11px;font-size:12px;font-weight:600;cursor:pointer;font-family:inherit;"><i class="ti ti-calendar-share" style="font-size:12px;"></i> Sync to Google/Apple</button>
-    <button onclick="openQuickAdd()" style="background:var(--accent);color:var(--accent-ink);border:none;border-radius:8px;padding:7px 12px;font-size:12px;font-weight:500;cursor:pointer;"><i class="ti ti-plus" style="font-size:12px;"></i> New appointment</button>
-  </div>
-  ${pend.length?`
-  <div onclick="nav('requests')" style="margin:10px 16px 2px;background:linear-gradient(135deg,#0a2019,#0d2a20);border:1px solid #1a4a38;border-radius:12px;padding:12px 14px;display:flex;align-items:center;gap:11px;cursor:pointer;">
-    <div style="width:38px;height:38px;border-radius:10px;background:#0f3528;display:flex;align-items:center;justify-content:center;flex-shrink:0;position:relative;">
-      <i class="ti ti-calendar-plus" style="font-size:19px;color:#4ec49a;"></i>
-      <span style="position:absolute;top:-4px;right:-4px;min-width:18px;height:18px;padding:0 4px;background:#e87070;border-radius:9px;font-size:10px;font-weight:700;color:#fff;display:flex;align-items:center;justify-content:center;border:2px solid #0a2019;">${pend.length}</span>
-    </div>
-    <div style="flex:1;"><div style="font-size:13px;font-weight:600;color:#e8fff5;">${pend.length} booking request${pend.length>1?'s':''} waiting</div><div style="font-size:12px;color:#7fbfa5;margin-top:1px;">Tap to review and confirm</div></div>
-    <i class="ti ti-chevron-right" style="font-size:18px;color:#4ec49a;"></i>
-  </div>`:''}
-  ${live?liveMiddle:(_sampleHidden()?notConnectedMiddle:demoMiddle)}
-  ${_added.length?`
-  <div style="border-top:1px solid #1e1e1e;padding:12px 16px 6px;"><div style="font-size:13px;font-weight:500;color:#f0f0f0;display:flex;align-items:center;gap:6px;"><i class="ti ti-calendar-plus" style="font-size:14px;color:#4ec49a;"></i> Your booked appointments</div></div>
-  ${_added.map((a,i)=>`
-  <div style="margin:0 16px 10px;background:#1a1a1a;border:1px solid #1a3a2c;border-radius:12px;overflow:hidden;display:flex;">
-    <div style="width:4px;background:${a.ic};flex-shrink:0;"></div>
-    <div style="padding:11px 13px;flex:1;display:flex;justify-content:space-between;align-items:flex-start;">
-      <div><div style="font-size:13px;font-weight:500;color:#e0e0e0;">${_fileEsc(a.client)}</div><div style="font-size:12px;color:#999;margin-top:2px;">${a.tx} · ${a.dateLabel||a.date}</div></div>
-      <div style="text-align:right;"><div style="font-size:13px;font-weight:500;color:#f0f0f0;">${a.time}</div><button onclick="_addToCalendarByIndex(${i})" style="margin-top:4px;background:none;border:none;color:var(--accent);font-size:11px;cursor:pointer;font-family:inherit;"><i class="ti ti-calendar-plus" style="font-size:11px;"></i> Add to calendar</button></div>
-    </div>
-  </div>`).join('')}`:''}`;
+  var live=_apptsLive();
+  var appts=_allApptsUnified();
+  var byDay={};appts.forEach(function(a){var k=_calKey(a.when);(byDay[k]=byDay[k]||[]).push(a);});
+  var now=new Date();
+  var vy=(_calViewY==null?now.getFullYear():_calViewY),vm=(_calViewM==null?now.getMonth():_calViewM);
+  var todayKey=_calKey(now);
+  var selKey=_calSelKey||todayKey;
+  var pend=pendingRequests();
+  var first=new Date(vy,vm,1);var startPad=first.getDay();var dim=new Date(vy,vm+1,0).getDate();
+  var monthLbl=first.toLocaleDateString('en-US',{month:'long',year:'numeric'});
+  var dow=['S','M','T','W','T','F','S'];
+  var cells='';
+  for(var i=0;i<startPad;i++)cells+='<div></div>';
+  for(var dn=1;dn<=dim;dn++){
+    var k=vy+'-'+String(vm+1).padStart(2,'0')+'-'+String(dn).padStart(2,'0');
+    var has=byDay[k]&&byDay[k].length;var isToday=(k===todayKey),isSel=(k===selKey);
+    cells+='<button onclick="_calPick(\''+k+'\')" aria-label="'+dn+(has?', '+byDay[k].length+' appointments':'')+'" style="position:relative;aspect-ratio:1;border:none;border-radius:9px;cursor:pointer;font-family:inherit;font-size:13px;font-weight:'+(isToday?'700':'500')+';'
+      +(isSel?'background:var(--accent);color:var(--accent-ink);':(isToday?'background:#2e1c10;color:var(--accent);':'background:#161616;color:#e0e0e0;'))
+      +'">'+dn+(has?'<span style="position:absolute;bottom:5px;left:50%;transform:translateX(-50%);width:5px;height:5px;border-radius:50%;background:'+(isSel?'var(--accent-ink)':'var(--accent)')+';"></span>':'')+'</button>';
+  }
+  var selAppts=(byDay[selKey]||[]).slice().sort(function(x,y){return x.when-y.when;});
+  var selDate=new Date(selKey+'T12:00:00');
+  var selLbl=isNaN(selDate)?selKey:selDate.toLocaleDateString('en-US',{weekday:'long',month:'long',day:'numeric'});
+  var upcoming=appts.filter(function(a){return a.when>=now&&_calKey(a.when)!==selKey;}).slice(0,8);
+  S.innerHTML=
+  '<div style="padding:10px 16px 0;display:flex;align-items:center;justify-content:space-between;gap:8px;">'
+    +'<button onclick="nav(\'connect-calendar\')" style="background:#161616;border:1px solid #2a2a2a;color:#9fbfae;border-radius:8px;padding:7px 11px;font-size:12px;font-weight:600;cursor:pointer;font-family:inherit;"><i class="ti ti-calendar-share" style="font-size:12px;"></i> Sync to Google/Apple</button>'
+    +'<button onclick="openQuickAdd()" style="background:var(--accent);color:var(--accent-ink);border:none;border-radius:8px;padding:7px 12px;font-size:12px;font-weight:500;cursor:pointer;"><i class="ti ti-plus" style="font-size:12px;"></i> New appointment</button>'
+  +'</div>'
+  +(pend.length?('<div onclick="nav(\'requests\')" style="margin:10px 16px 2px;background:linear-gradient(135deg,#0a2019,#0d2a20);border:1px solid #1a4a38;border-radius:12px;padding:12px 14px;display:flex;align-items:center;gap:11px;cursor:pointer;">'
+    +'<div style="width:38px;height:38px;border-radius:10px;background:#0f3528;display:flex;align-items:center;justify-content:center;flex-shrink:0;position:relative;"><i class="ti ti-calendar-plus" style="font-size:19px;color:#4ec49a;"></i>'
+    +'<span style="position:absolute;top:-4px;right:-4px;min-width:18px;height:18px;padding:0 4px;background:#e87070;border-radius:9px;font-size:10px;font-weight:700;color:#fff;display:flex;align-items:center;justify-content:center;border:2px solid #0a2019;">'+pend.length+'</span></div>'
+    +'<div style="flex:1;"><div style="font-size:13px;font-weight:600;color:#e8fff5;">'+pend.length+' booking request'+(pend.length>1?'s':'')+' waiting</div><div style="font-size:12px;color:#7fbfa5;margin-top:1px;">Tap to review and confirm</div></div>'
+    +'<i class="ti ti-chevron-right" style="font-size:18px;color:#4ec49a;"></i></div>'):'')
+  +'<div style="padding:12px 16px 6px;display:flex;align-items:center;gap:8px;">'
+    +'<div style="font-size:16px;font-weight:600;color:#f0f0f0;flex:1;">'+monthLbl+(live?' <span style="display:inline-flex;align-items:center;gap:3px;font-size:9px;font-weight:700;color:#4ec49a;background:#0a2019;border:1px solid #1a4a38;padding:1px 6px;border-radius:20px;vertical-align:middle;"><span style="width:5px;height:5px;border-radius:50%;background:#4ec49a;"></span>SQUARE</span>':'')+'</div>'
+    +'<button onclick="_calToday()" style="background:none;border:1px solid #2a2a2a;color:var(--accent);border-radius:7px;padding:4px 9px;font-size:11px;font-weight:600;cursor:pointer;font-family:inherit;">Today</button>'
+    +'<button onclick="_calGo(-1)" aria-label="Previous month" style="background:#161616;border:1px solid #2a2a2a;color:#ccc;border-radius:7px;width:30px;height:28px;cursor:pointer;"><i class="ti ti-chevron-left" style="font-size:14px;"></i></button>'
+    +'<button onclick="_calGo(1)" aria-label="Next month" style="background:#161616;border:1px solid #2a2a2a;color:#ccc;border-radius:7px;width:30px;height:28px;cursor:pointer;"><i class="ti ti-chevron-right" style="font-size:14px;"></i></button>'
+  +'</div>'
+  +'<div style="display:grid;grid-template-columns:repeat(7,1fr);gap:3px;padding:0 16px 4px;">'
+    +dow.map(function(d){return '<div style="text-align:center;font-size:11px;color:#888;padding:2px 0;">'+d+'</div>';}).join('')
+  +'</div>'
+  +'<div style="display:grid;grid-template-columns:repeat(7,1fr);gap:3px;padding:0 16px 12px;">'+cells+'</div>'
+  +'<div style="border-top:1px solid #1e1e1e;padding:12px 16px 4px;display:flex;align-items:center;justify-content:space-between;gap:8px;">'
+    +'<div style="font-size:14px;font-weight:600;color:#f0f0f0;">'+selLbl+'</div>'
+    +'<span class="bdg '+(selAppts.length?'bg':'bm')+'" style="font-size:12px;">'+selAppts.length+' appt'+(selAppts.length===1?'':'s')+'</span>'
+  +'</div>'
+  +(selAppts.length?selAppts.map(_apptRowHTML).join(''):
+    '<div style="margin:4px 16px 6px;"><button onclick="openQuickAdd(\''+selKey+'\')" style="width:100%;background:#1a1a1a;border:1.5px dashed #2a2a2a;border-radius:12px;padding:13px;display:flex;flex-direction:column;align-items:center;gap:5px;cursor:pointer;font-family:inherit;"><i aria-hidden="true" class="ti ti-plus" style="font-size:18px;color:#888;"></i><span style="font-size:13px;color:#aaa;">Add appointment on '+selDate.toLocaleDateString('en-US',{month:'short',day:'numeric'})+'</span></button></div>')
+  +(upcoming.length?('<div style="border-top:1px solid #1e1e1e;padding:12px 16px 6px;"><div style="font-size:13px;font-weight:500;color:#f0f0f0;">Upcoming</div></div>'
+    +upcoming.map(function(a){var dl=a.when.toLocaleDateString('en-US',{weekday:'short',month:'short',day:'numeric'});return _apptRowHTML(Object.assign({},a,{sub:dl+' · '+a.sub}));}).join('')):'');
+}
+
+// ── Appointment detail: reschedule/cancel (Square) + edit/delete (manual) ──
+function _sqApptById(id){return (Array.isArray(squareAppts)?squareAppts:[]).find(function(a){return a.id===id;})||null;}
+function _manualApptById(id){return (manualAppts||[]).find(function(a){return a.id===id;})||null;}
+function _closeApptSheet(){var m=document.getElementById('appt-detail');if(m)m.remove();}
+function _apptSheetShell(inner){
+  _closeApptSheet();
+  var m=document.createElement('div');m.id='appt-detail';
+  m.style.cssText='position:fixed;top:0;bottom:0;left:0;right:0;margin:0 auto;width:390px;max-width:100%;z-index:320;display:flex;flex-direction:column;justify-content:flex-end;';
+  m.innerHTML='<div onclick="_closeApptSheet()" style="flex:1;background:rgba(0,0,0,.5);"></div>'
+    +'<div id="appt-detail-body" style="background:#161616;border-radius:16px 16px 0 0;padding:18px 16px 26px;border-top:1px solid #2a2a2a;max-height:90%;overflow:auto;"><div style="width:36px;height:4px;background:#2a2a2a;border-radius:2px;margin:0 auto 16px;"></div>'+inner+'</div>';
+  (document.querySelector('.shell')||document.body).appendChild(m);
+}
+function _apptSheetBusy(msg){var b=document.getElementById('appt-detail-body');if(b)b.innerHTML='<div style="text-align:center;padding:34px 16px;color:#ccc;font-size:14px;"><i class="ti ti-loader-2"></i> '+msg+'</div>';}
+function _apptSheetError(msg){if(typeof proToast==='function')proToast(msg,0);_closeApptSheet();}
+function openApptDetail(source,id){
+  if(source==='square'){
+    var a=_sqApptById(id);if(!a){if(typeof proToast==='function')proToast('That appointment is no longer here');return;}
+    var dstr=_calKey(a.at);var tstr=String(a.at.getHours()).padStart(2,'0')+':'+String(a.at.getMinutes()).padStart(2,'0');
+    var cid=_clientIdByName(a.client);
+    _apptSheetShell(
+      '<div style="font-size:16px;font-weight:600;color:#f0f0f0;margin-bottom:2px;">'+_fileEsc(a.client)+'</div>'
+      +'<div style="font-size:12px;color:#4ec49a;margin-bottom:14px;">'+a.at.toLocaleDateString('en-US',{weekday:'long',month:'long',day:'numeric'})+' · '+_apptTimeStr(a.at)+' · Square</div>'
+      +'<span class="fl-lbl">Reschedule to</span>'
+      +'<div style="display:flex;gap:10px;margin-bottom:14px;"><input type="date" class="fi" id="ad-date" value="'+dstr+'" style="flex:1;color-scheme:dark;"><input type="time" class="fi" id="ad-time" value="'+tstr+'" style="flex:1;color-scheme:dark;"></div>'
+      +'<button class="btnp" style="border-radius:10px;" onclick="_apptRescheduleSquare('+_jsStr2(id)+')"><i class="ti ti-calendar-event"></i> Save new time</button>'
+      +(cid?'<button class="btng" style="width:100%;border-radius:10px;margin-top:9px;" onclick="_closeApptSheet();nav(\'client\',\''+cid+'\')"><i class="ti ti-user"></i> Open client</button>':'')
+      +'<button onclick="_apptCancelSquare('+_jsStr2(id)+')" style="width:100%;margin-top:9px;background:#2a0f0f;border:1px solid #4a1515;color:#e8a0a0;border-radius:10px;padding:12px;font-size:14px;font-weight:600;cursor:pointer;font-family:inherit;"><i class="ti ti-x"></i> Cancel this appointment</button>'
+      +'<button onclick="_closeApptSheet()" style="width:100%;margin-top:8px;background:none;border:none;color:#929292;font-size:13px;cursor:pointer;padding:6px;">Close</button>'
+    );
+  } else if(source==='manual'){
+    var a=_manualApptById(id);if(!a){if(typeof proToast==='function')proToast('That appointment is no longer here');return;}
+    var times=['9:00 AM','10:00 AM','11:00 AM','12:00 PM','1:00 PM','2:00 PM','3:00 PM','4:00 PM','5:00 PM','6:00 PM'];
+    var txs=['Hydrafacial','Chemical Peel','Brightening Facial','Microneedling','Dermaplaning','LED Therapy','Consultation'];
+    if(a.tx&&txs.indexOf(a.tx)<0)txs.unshift(a.tx);
+    if(a.time&&times.indexOf(a.time)<0)times.unshift(a.time);
+    _apptSheetShell(
+      '<div style="font-size:16px;font-weight:600;color:#f0f0f0;margin-bottom:14px;">Edit appointment</div>'
+      +'<span class="fl-lbl">Client name</span><input class="fi" id="ad-client" value="'+String(a.client||'').replace(/"/g,'&quot;')+'" style="margin-bottom:12px;">'
+      +'<span class="fl-lbl">Treatment</span><select class="fi" id="ad-tx" style="margin-bottom:12px;">'+txs.map(function(t){return '<option'+(t===a.tx?' selected':'')+'>'+_fileEsc(t)+'</option>';}).join('')+'</select>'
+      +'<div style="display:flex;gap:10px;margin-bottom:16px;"><div style="flex:1;"><span class="fl-lbl">Date</span><input type="date" class="fi" id="ad-mdate" value="'+(a.date||'')+'" style="color-scheme:dark;"></div><div style="flex:1;"><span class="fl-lbl">Time</span><select class="fi" id="ad-mtime">'+times.map(function(t){return '<option'+(t===a.time?' selected':'')+'>'+t+'</option>';}).join('')+'</select></div></div>'
+      +'<button class="btnp" style="border-radius:10px;" onclick="_manualApptSave('+_jsStr2(id)+')"><i class="ti ti-check"></i> Save changes</button>'
+      +'<button onclick="_manualApptDelete('+_jsStr2(id)+')" style="width:100%;margin-top:9px;background:#2a0f0f;border:1px solid #4a1515;color:#e8a0a0;border-radius:10px;padding:12px;font-size:14px;font-weight:600;cursor:pointer;font-family:inherit;"><i class="ti ti-trash"></i> Delete appointment</button>'
+      +'<button onclick="_closeApptSheet()" style="width:100%;margin-top:8px;background:none;border:none;color:#929292;font-size:13px;cursor:pointer;padding:6px;">Close</button>'
+    );
+  }
+}
+function _apptRescheduleSquare(id){
+  var d=document.getElementById('ad-date'),t=document.getElementById('ad-time');
+  var dv=d&&d.value,tv=t&&t.value;if(!dv||!tv){if(typeof proToast==='function')proToast('Pick a date and time');return;}
+  var startAt;try{var dt=new Date(dv+'T'+tv+':00');if(isNaN(dt))throw 0;startAt=dt.toISOString();}catch(e){if(typeof proToast==='function')proToast('That date/time looks invalid');return;}
+  _apptSheetBusy('Rescheduling…');
+  _sqFetch('/api/square/reschedule-booking',{method:'POST',body:{bookingId:id,startAt:startAt}}).then(function(){
+    _closeApptSheet();if(typeof proToast==='function')proToast('Appointment moved ✓');_loadSquareAppts(true);
+  }).catch(function(e){_apptSheetError((e&&e.message)||'Could not reschedule');});
+}
+function _apptCancelSquare(id){
+  var go=function(){_doCancelSquare(id);};
+  if(typeof confirmModal==='function')confirmModal({title:'Cancel appointment?',body:'This cancels the booking in Square and notifies the client per your Square settings.',action:'Cancel appointment'},go);
+  else if(confirm('Cancel this appointment in Square?'))go();
+}
+function _doCancelSquare(id){
+  _apptSheetBusy('Cancelling…');
+  _sqFetch('/api/square/cancel-booking',{method:'POST',body:{bookingId:id}}).then(function(){
+    _closeApptSheet();if(typeof proToast==='function')proToast('Appointment cancelled');_loadSquareAppts(true);
+  }).catch(function(e){_apptSheetError((e&&e.message)||'Could not cancel');});
+}
+function _manualApptSave(id){
+  var a=_manualApptById(id);if(!a){_closeApptSheet();return;}
+  var name=((document.getElementById('ad-client')||{}).value||'').trim();if(!name){if(typeof proToast==='function')proToast('Enter a client name');return;}
+  a.client=name;a.tx=(document.getElementById('ad-tx')||{}).value||'Treatment';
+  a.date=(document.getElementById('ad-mdate')||{}).value||a.date;a.time=(document.getElementById('ad-mtime')||{}).value||a.time;
+  try{a.dateLabel=new Date(a.date+'T12:00:00').toLocaleDateString('en-US',{weekday:'long',month:'long',day:'numeric'});}catch(e){}
+  _saveManualAppts();try{_rebuildCalendarFeed();}catch(e){}
+  _closeApptSheet();if(typeof proToast==='function')proToast('Appointment updated ✓');renderCalendar();
+}
+function _manualApptDelete(id){
+  var go=function(){var i=(manualAppts||[]).findIndex(function(x){return x.id===id;});if(i>=0){manualAppts.splice(i,1);_saveManualAppts();try{_rebuildCalendarFeed();}catch(e){}}_closeApptSheet();if(typeof proToast==='function')proToast('Appointment deleted');renderCalendar();};
+  if(typeof confirmModal==='function')confirmModal({title:'Delete appointment?',body:'This removes it from your calendar and your synced Google/Apple feed.',action:'Delete'},go);
+  else if(confirm('Delete this appointment?'))go();
 }
 
 // Quick-add appointment modal
 let _sqBookOpts=null;
 // "New appointment" → book in Square when connected, otherwise the local sheet.
-function openQuickAdd(){
+function openQuickAdd(prefillDate){
   const hasKey=(_sqApptsState==='ok')?'1':'';
-  if(hasKey){openSquareBook();return;}
-  openLocalQuickAdd();
+  const pf=(typeof prefillDate==='string'&&/^\d{4}-\d{2}-\d{2}$/.test(prefillDate))?prefillDate:'';
+  if(hasKey){openSquareBook(pf?{date:pf}:undefined);return;}
+  openLocalQuickAdd(pf);
 }
-function openLocalQuickAdd(){
+function openLocalQuickAdd(prefillDate){
   const existing=document.getElementById('qa-modal');if(existing)existing.remove();
+  const _dv=(typeof prefillDate==='string'&&/^\d{4}-\d{2}-\d{2}$/.test(prefillDate))?prefillDate:_isoToday();
+  const _min=(_dv<_isoToday())?_dv:_isoToday();
   const times=['9:00 AM','10:00 AM','11:00 AM','12:00 PM','1:00 PM','2:00 PM','3:00 PM','4:00 PM'];
   const txs=['Hydrafacial','Chemical Peel','Brightening Facial','Microneedling','Dermaplaning','LED Therapy','Consultation'];
   const m=document.createElement('div');
@@ -13632,7 +13748,7 @@ function openLocalQuickAdd(){
     <span class="fl-lbl">Treatment</span>
     <select class="fi" id="qa-tx" style="margin-bottom:12px;">${txs.map(t=>`<option>${t}</option>`).join('')}</select>
     <div style="display:flex;gap:10px;margin-bottom:16px;">
-      <div style="flex:1;"><span class="fl-lbl">Date</span><input type="date" class="fi" id="qa-date" value="${_isoToday()}" min="${_isoToday()}" style="color-scheme:dark;"></div>
+      <div style="flex:1;"><span class="fl-lbl">Date</span><input type="date" class="fi" id="qa-date" value="${_dv}" min="${_min}" style="color-scheme:dark;"></div>
       <div style="flex:1;"><span class="fl-lbl">Time</span><select class="fi" id="qa-time">${times.map(t=>`<option${t==='10:00 AM'?' selected':''}>${t}</option>`).join('')}</select></div>
     </div>
     <button class="btnp" style="border-radius:10px;" onclick="saveQuickAdd()"><i class="ti ti-check"></i> Add appointment</button>
@@ -13647,7 +13763,7 @@ function saveQuickAdd(){
   const date=document.getElementById('qa-date')?.value||_isoToday();
   const time=document.getElementById('qa-time')?.value||'10:00 AM';
   let lbl=date;try{lbl=new Date(date+'T12:00:00').toLocaleDateString('en-US',{weekday:'long',month:'long',day:'numeric'});}catch(e){}
-  manualAppts.unshift({client:name,tx,date,dateLabel:lbl,time,ic:'var(--accent)'});_saveManualAppts();try{_rebuildCalendarFeed();}catch(e){}
+  manualAppts.unshift({id:'ma_'+Math.random().toString(36).slice(2,10),client:name,tx,date,dateLabel:lbl,time,ic:'var(--accent)'});_saveManualAppts();try{_rebuildCalendarFeed();}catch(e){}
   const m=document.getElementById('qa-modal');if(m)m.remove();
   renderCalendar();
 }
