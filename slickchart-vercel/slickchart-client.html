@@ -609,6 +609,18 @@ SlickBridge.on('resource-shared',d=>{
     onclick:()=>{client.activeProviderId='jess';applyActiveProvider();nav('welcome');}});
 });
 
+SlickBridge.on('course-shared',d=>{
+  // provider sent a full course — it appears in the client's "Your courses" area
+  const jess=client.providers.find(p=>p.id==='jess');if(!jess||!d.course)return;
+  jess.pendingCourses=jess.pendingCourses||[];
+  const i=jess.pendingCourses.findIndex(c=>c.id===d.course.id);
+  if(i>=0)jess.pendingCourses[i]=d.course;else jess.pendingCourses.unshift(d.course);
+  if(client.activeProviderId==='jess'&&currentScreen==='home')renderHome();
+  pushNotify({type:'course',icon:'ti-book',col:'var(--accent-lt)',ic:'var(--accent)',
+    title:client.providerFirst+' shared a course',body:d.course.title,
+    onclick:()=>{client.activeProviderId='jess';applyActiveProvider();_viewCourseId=d.course.id;nav('view-course');}});
+});
+
 SlickBridge.on('form-shared',d=>{
   // provider sent a consent/intake form to complete (aftercare + contraindication docs arrive as resources)
   const jess=client.providers.find(p=>p.id==='jess');if(!jess||!d.form)return;
@@ -1526,6 +1538,83 @@ function _downloadGuideFile(guideId,btn){
     .catch(function(){alert('Couldn’t reach the server. Please check your connection and try again.');})
     .then(function(){ if(btn){btn.disabled=false;btn.innerHTML=orig;} });
 }
+// ── COURSE PLAYER ── lessons the provider built; progress tracked locally per lesson.
+let _viewCourseId='',_viewLessonId='';
+function _findCourse(id){return (activeProvider().pendingCourses||[]).find(c=>c.id===id)||null;}
+function _courseProgKey(){const p=activeProvider();return 'sc_course_prog_'+(p&&p.id||'jess');}
+function _courseProg(){try{return JSON.parse(localStorage.getItem(_courseProgKey())||'{}')||{};}catch(e){return {};}}
+function _courseSaveProg(o){try{localStorage.setItem(_courseProgKey(),JSON.stringify(o));}catch(e){}}
+function _lessonDone(courseId,lessonId){const o=_courseProg();return !!(o[courseId]&&o[courseId][lessonId]);}
+function _courseDoneCount(co){const o=_courseProg();const m=o[co.id]||{};return (co.lessons||[]).filter(l=>m[l.id]).length;}
+function _toggleLessonDone(courseId,lessonId){const o=_courseProg();if(!o[courseId])o[courseId]={};o[courseId][lessonId]=!o[courseId][lessonId];_courseSaveProg(o);}
+// Turn a YouTube/Vimeo/Loom link into an embeddable URL; fall back to null (show a link button).
+function _videoEmbed(url){
+  try{
+    const u=String(url||'').trim();if(!u)return null;
+    let m=u.match(/(?:youtube\.com\/watch\?v=|youtu\.be\/|youtube\.com\/embed\/)([\w-]{6,})/);
+    if(m)return 'https://www.youtube.com/embed/'+m[1];
+    m=u.match(/vimeo\.com\/(?:video\/)?(\d+)/);
+    if(m)return 'https://player.vimeo.com/video/'+m[1];
+    m=u.match(/loom\.com\/share\/([\w-]+)/);
+    if(m)return 'https://www.loom.com/embed/'+m[1];
+    return null;
+  }catch(e){return null;}
+}
+function renderViewCourse(){
+  const co=_findCourse(_viewCourseId);
+  if(!co){nav('home');return;}
+  document.getElementById('tt').textContent=co.title;
+  const lessons=co.lessons||[];const done=_courseDoneCount(co);const pct=lessons.length?Math.round(done/lessons.length*100):0;
+  S.innerHTML=`
+  ${co.cover?`<div style="height:150px;overflow:hidden;"><img src="${_imgSrc(co.cover)}" alt="" style="width:100%;height:100%;object-fit:cover;display:block;"></div>`:''}
+  <div style="padding:16px;">
+    <div id="page-heading" tabindex="-1" style="font-size:20px;font-weight:700;color:#1a1a1a;margin-bottom:3px;">${_txt(co.title)}</div>
+    <div style="font-size:12px;color:#786858;margin-bottom:10px;">${lessons.length} lesson${lessons.length===1?'':'s'} · ${done}/${lessons.length} complete</div>
+    <div style="height:6px;border-radius:3px;background:#f0ebe4;overflow:hidden;margin-bottom:14px;"><div style="height:100%;width:${pct}%;background:var(--accent);border-radius:3px;transition:width .2s;"></div></div>
+    ${co.desc?`<div style="font-size:13.5px;color:#3a2f28;line-height:1.6;margin-bottom:16px;">${_txt(co.desc)}</div>`:''}
+    <div style="background:#fff;border:1.5px solid #f0ebe4;border-radius:14px;overflow:hidden;">
+      ${lessons.map((l,i)=>{const d=_lessonDone(co.id,l.id);return `<div onclick="_viewLessonId='${_jsAttr(l.id)}';nav('view-lesson')" role="button" style="display:flex;align-items:center;gap:12px;padding:13px 15px;${i<lessons.length-1?'border-bottom:1px solid #f0ebe4;':''}cursor:pointer;">
+        <div style="width:28px;height:28px;border-radius:50%;flex-shrink:0;display:flex;align-items:center;justify-content:center;background:${d?'var(--accent)':'#f0ebe4'};color:${d?'#fff':'#a89887'};font-size:13px;font-weight:700;">${d?'<i class="ti ti-check" style="font-size:15px;"></i>':(i+1)}</div>
+        <div style="flex:1;min-width:0;"><div style="font-size:13.5px;font-weight:600;color:#1a1a1a;">${_txt(l.title||'Lesson '+(i+1))}</div><div style="font-size:11px;color:#a89887;">${[l.body?'Reading':'',l.videoUrl?'Video':'',(l.fileId||l.fileName)?'Download':''].filter(Boolean).join(' · ')||'Tap to open'}</div></div>
+        <i class="ti ti-chevron-right" style="font-size:17px;color:#c9bdb0;flex-shrink:0;"></i>
+      </div>`;}).join('')}
+    </div>
+    <div style="height:24px;"></div>
+  </div>`;
+}
+function renderViewLesson(){
+  const co=_findCourse(_viewCourseId);if(!co){nav('home');return;}
+  const lessons=co.lessons||[];const idx=lessons.findIndex(l=>l.id===_viewLessonId);
+  if(idx<0){nav('view-course');return;}
+  const l=lessons[idx];const done=_lessonDone(co.id,l.id);
+  document.getElementById('tt').textContent=l.title||'Lesson';
+  const embed=_videoEmbed(l.videoUrl);
+  S.innerHTML=`
+  <div style="padding:14px 16px 0;"><button onclick="nav('view-course')" style="background:none;border:none;color:var(--accent);font-size:13px;cursor:pointer;padding:0;display:inline-flex;align-items:center;gap:4px;font-family:inherit;"><i class="ti ti-chevron-left" style="font-size:15px;"></i> ${_txt(co.title)}</button></div>
+  <div style="padding:8px 16px;">
+    <div id="page-heading" tabindex="-1" style="font-size:19px;font-weight:700;color:#1a1a1a;margin-bottom:4px;">${_txt(l.title||'Lesson')}</div>
+    <div style="font-size:12px;color:#a89887;margin-bottom:14px;">Lesson ${idx+1} of ${lessons.length}</div>
+    ${embed?`<div style="position:relative;width:100%;padding-bottom:56.25%;border-radius:12px;overflow:hidden;margin-bottom:14px;background:#000;"><iframe src="${_urlAttr(embed)}" allow="accelerometer;autoplay;clipboard-write;encrypted-media;gyroscope;picture-in-picture" allowfullscreen style="position:absolute;top:0;left:0;width:100%;height:100%;border:0;"></iframe></div>`
+      :(l.videoUrl?`<a href="${_urlAttr(_safeUrl(l.videoUrl))}" target="_blank" rel="noopener" class="btnp" style="display:flex;width:100%;box-sizing:border-box;border-radius:12px;padding:12px;text-decoration:none;justify-content:center;margin-bottom:14px;"><i class="ti ti-player-play"></i> Watch the video</a>`:'')}
+    ${l.body?`<div style="font-size:14px;color:#3a2f28;line-height:1.7;white-space:pre-wrap;margin-bottom:16px;">${_txt(l.body)}</div>`:''}
+    ${(l.fileId||l.fileName)?`<button onclick="_downloadCourseFile('${_jsAttr(l.fileId||'')}','${_jsAttr(l.fileName||'file')}','${_jsAttr(l.fileType||'')}',this)" class="btnp" style="display:flex;width:100%;box-sizing:border-box;border-radius:12px;padding:12px;justify-content:center;align-items:center;gap:7px;margin-bottom:16px;"><i class="ti ti-download"></i> Download ${_txt(l.fileName||'file')}</button>`:''}
+    <button onclick="_lessonToggleAndRefresh('${_jsAttr(co.id)}','${_jsAttr(l.id)}')" class="${done?'btng':'btnp'}" style="display:flex;width:100%;box-sizing:border-box;border-radius:12px;padding:13px;justify-content:center;align-items:center;gap:7px;"><i class="ti ti-${done?'circle-check':'check'}"></i> ${done?'Completed':'Mark as complete'}</button>
+    ${idx<lessons.length-1?`<button onclick="_viewLessonId='${_jsAttr(lessons[idx+1].id)}';nav('view-lesson')" style="display:flex;width:100%;box-sizing:border-box;border:none;background:none;color:var(--accent);font-size:14px;font-weight:600;cursor:pointer;justify-content:center;align-items:center;gap:5px;padding:14px;font-family:inherit;">Next lesson <i class="ti ti-arrow-right"></i></button>`:`<div style="text-align:center;color:#786858;font-size:13px;padding:16px;">That's the last lesson 🎉</div>`}
+    <div style="height:20px;"></div>
+  </div>`;
+}
+function _lessonToggleAndRefresh(courseId,lessonId){_toggleLessonDone(courseId,lessonId);renderViewLesson();}
+function _downloadCourseFile(fileId,fileName,fileType,btn){
+  if(!fileId){alert('This file isn’t available yet — please try again shortly.');return;}
+  if(!client._real||!client._token){alert('This file will be available once you open your link online.');return;}
+  const orig=btn?btn.innerHTML:'';
+  if(btn){btn.disabled=true;btn.innerHTML='<i class="ti ti-loader-2"></i> Getting your file…';}
+  fetch('/api/guide-file?id='+encodeURIComponent(fileId)+'&t='+encodeURIComponent(client._token))
+    .then(function(r){return r.ok?r.json():null;})
+    .then(function(j){if(j&&j.file&&j.file.data){_saveDataUrlAsFile(j.file.data,j.file.name||fileName,j.file.type||fileType);}else{alert('Sorry — that file couldn’t be loaded. Please try again in a moment.');}})
+    .catch(function(){alert('Couldn’t reach the server. Please check your connection and try again.');})
+    .then(function(){if(btn){btn.disabled=false;btn.innerHTML=orig;}});
+}
 function nav(screen){
   document.getElementById('tt').textContent='SlickChart';
   const routes={
@@ -1541,6 +1630,7 @@ function nav(screen){
     welcome:renderMagicLanding,
     'fill-form':renderFillForm,
     'view-guide':renderViewGuide,
+    'view-course':renderViewCourse,'view-lesson':renderViewLesson,
   };
   const fn=routes[screen];
   if(fn){
@@ -1752,6 +1842,17 @@ function renderHome(){
       <span style="font-size:11px;font-weight:700;color:var(--accent);background:var(--accent-lt);padding:4px 10px;border-radius:20px;flex-shrink:0;">View</span>
     </div>
   </div>`).join('')}
+
+  <!-- Courses the provider assigned -->
+  ${(activeProvider().pendingCourses||[]).length?`<div class="sh"><h2>Your courses</h2></div>`+(activeProvider().pendingCourses||[]).map(co=>{const done=_courseDoneCount(co);const total=(co.lessons||[]).length;const pct=total?Math.round(done/total*100):0;return `
+  <div style="margin:0 16px 14px;background:#fff;border:1.5px solid #f0ebe4;border-radius:14px;overflow:hidden;cursor:pointer;" onclick="_viewCourseId='${_jsAttr(co.id)}';nav('view-course')" role="button" aria-label="${_txt(co.title)}">
+    ${co.cover?`<div style="height:110px;overflow:hidden;"><img src="${_imgSrc(co.cover)}" alt="" style="width:100%;height:100%;object-fit:cover;display:block;"></div>`:`<div style="height:70px;background:linear-gradient(135deg,var(--accent-lt),var(--accent-lt2));display:flex;align-items:center;justify-content:center;"><i class="ti ti-book" style="font-size:28px;color:var(--accent);"></i></div>`}
+    <div style="padding:12px 16px;">
+      <div style="font-size:14px;font-weight:600;color:#1a1a1a;margin-bottom:2px;">${_txt(co.title)}</div>
+      <div style="font-size:12px;color:#786858;margin-bottom:8px;">${total} lesson${total===1?'':'s'}${pct?' · '+pct+'% complete':''}</div>
+      <div style="height:5px;border-radius:3px;background:#f0ebe4;overflow:hidden;"><div style="height:100%;width:${pct}%;background:var(--accent);border-radius:3px;"></div></div>
+    </div>
+  </div>`;}).join(''):''}
 
   <!-- ── AFTER YOUR VISIT ── the post-visit summary. The homecare routine lives entirely in the
        Homecare nav tab now, so it's no longer duplicated here on Home. -->
@@ -4065,6 +4166,7 @@ function _applyRealClientData(j){
   client._forms=Array.isArray(d.forms)?d.forms:[];
   p.pendingForms=Array.isArray(d.pendingForms)?d.pendingForms:[];
   p.pendingGuides=Array.isArray(d.pendingGuides)?d.pendingGuides:[];
+  p.pendingCourses=Array.isArray(d.pendingCourses)?d.pendingCourses:[];
   client._realAvailability=(d.availability&&typeof d.availability==='object')?d.availability:null;
   // Surface a virtual-consult invite the provider sent (delivered via the synced data blob,
   // so it works on the client's own device — not just same-browser preview).

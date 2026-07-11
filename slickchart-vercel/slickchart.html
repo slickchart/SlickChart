@@ -1409,13 +1409,14 @@ function _mergeSideStores(keepId,dropId){
 function _mergeClients(keepId,dropId){
   if(keepId===dropId||!CL[keepId]||!CL[dropId])return;
   const keep=CL[keepId],drop=CL[dropId];
-  const listKeys={submittedForms:1,signedForms:1,pendingForms:1,pendingGuides:1,sessions:1,seriesTotal:1};
+  const listKeys={submittedForms:1,signedForms:1,pendingForms:1,pendingGuides:1,pendingCourses:1,sessions:1,seriesTotal:1};
   Object.keys(drop).forEach(k=>{if(listKeys[k])return;if(!(k in keep)||_isBlankVal(keep[k])){if(!_isBlankVal(drop[k]))keep[k]=drop[k];}});
   keep.submittedForms=_mergeArrUnique(keep.submittedForms,drop.submittedForms,sf=>(sf&&(sf.formId+'|'+(sf.date||'')+'|'+(sf.title||'')))||JSON.stringify(sf));
   keep.signedForms=_mergeArrUnique(keep.signedForms,drop.signedForms,x=>String(x));
   keep.pendingForms=_mergeArrUnique(keep.pendingForms,drop.pendingForms,pf=>(pf&&pf.formId)||JSON.stringify(pf));
   keep.pendingGuides=_mergeArrUnique(keep.pendingGuides,drop.pendingGuides,pg=>(pg&&pg.guideId)||JSON.stringify(pg));
-  ['submittedForms','signedForms','pendingForms','pendingGuides'].forEach(k=>{if(Array.isArray(keep[k])&&!keep[k].length)delete keep[k];});
+  keep.pendingCourses=_mergeArrUnique(keep.pendingCourses,drop.pendingCourses,pc=>(pc&&pc.id)||JSON.stringify(pc));
+  ['submittedForms','signedForms','pendingForms','pendingGuides','pendingCourses'].forEach(k=>{if(Array.isArray(keep[k])&&!keep[k].length)delete keep[k];});
   const n=v=>{const x=parseInt(v,10);return isNaN(x)?0:x;};
   if(n(keep.sessions)||n(drop.sessions))keep.sessions=Math.max(n(keep.sessions),n(drop.sessions));
   if(n(keep.seriesTotal)||n(drop.seriesTotal))keep.seriesTotal=Math.max(n(keep.seriesTotal),n(drop.seriesTotal));
@@ -8441,6 +8442,11 @@ function _assembleClientData(id){
     return {guideId:pg.guideId,title:g.title||'Guide',icon:g.icon||'📄',cat:g.cat||'',url:g.url||'',tips:Array.isArray(g.tips)?g.tips:[],
       fileName:g.fileName||'',fileType:g.fileType||'',hasFile:!!(g.hasFile||g.fileData)};
   }).filter(Boolean);
+  // Full courses the provider assigned — rendered by the client's in-app course player.
+  const pendingCourses=(Array.isArray(c.pendingCourses)?c.pendingCourses:[]).map(pc=>{
+    const co=(typeof courses!=='undefined')?courses.find(x=>x.id===pc.id):null;if(!co)return null;
+    return (typeof _coursePayload==='function')?_coursePayload(co):null;
+  }).filter(Boolean);
   // Active virtual-consult invite for this client (if any), so the invite reaches them
   // cross-device — not just via the same-browser SlickBridge. Dropped once they submit.
   let vcInvite=null;
@@ -8448,7 +8454,7 @@ function _assembleClientData(id){
     if(vi&&vi.invited&&!vi.submitted){const vp=(typeof _vcProfile==='function')?_vcProfile():{};
       vcInvite={kind:vp.kind||'skin',title:vp.title||'Virtual consult',fee:(typeof vcFee!=='undefined'?vcFee:'')||'',invitedAt:vi.invitedAt||0};}
   }catch(e){}
-  return {studio,website,providerName,profile:{skin:c.skin||'',concerns:c.concerns||'',allergies:c.allergies||'',fitz:c.fitz||'',treatment:c.treatment||'',lastVisit:c.lastVisit||'',nextVisit:c.nextVisit||'',email:c.email||'',phone:c.phone||''},summaries,aftercare,products,forms,pendingForms,pendingGuides,photos:Array.isArray(c.photos)?c.photos:[],booking:{canRequest:true},availability,vcInvite};
+  return {studio,website,providerName,profile:{skin:c.skin||'',concerns:c.concerns||'',allergies:c.allergies||'',fitz:c.fitz||'',treatment:c.treatment||'',lastVisit:c.lastVisit||'',nextVisit:c.nextVisit||'',email:c.email||'',phone:c.phone||''},summaries,aftercare,products,forms,pendingForms,pendingGuides,pendingCourses,photos:Array.isArray(c.photos)?c.photos:[],booking:{canRequest:true},availability,vcInvite};
 }
 let _syncingClients=false,_clientSyncTimer=null;
 function _scheduleClientSync(){ if(_clientSyncTimer)clearTimeout(_clientSyncTimer); _clientSyncTimer=setTimeout(function(){_syncClientsToServer({});},2500); }
@@ -9405,153 +9411,170 @@ function _coursesTabHTML(){
       <i class="ti ti-plus" style="font-size:22px;color:#9a9a9a;"></i><span style="font-size:14px;color:#aaa;">Create a new course</span>
     </div>`;
 }
+// ── COURSES ── A lesson-based course builder (think Teachable, streamlined for a solo
+// provider). A course is a cover + details + an ordered list of lessons, each lesson a
+// title with any of: written content, a video link, and a downloadable file. Lesson files
+// live in the same server + IndexedDB storage as guide files (never in the synced blob).
+function _courseLessons(c){
+  if(c&&Array.isArray(c.lessons)&&c.lessons.length)return c.lessons;
+  // Migrate a legacy course (module names / attached resources) into lessons on the fly.
+  const out=[];
+  if(c&&Array.isArray(c.moduleNames))c.moduleNames.forEach(nm=>out.push({id:'l'+(out.length+1),title:nm,body:'',videoUrl:'',fileId:'',fileName:'',fileType:''}));
+  if(c&&Array.isArray(c.resources))c.resources.forEach(r=>{
+    if(r.type==='link')out.push({id:'l'+(out.length+1),title:r.name||'Resource',body:'',videoUrl:r.url||'',fileId:'',fileName:'',fileType:''});
+  });
+  return out;
+}
+function _courseFileId(courseId,lessonId){return 'cfile_'+String(courseId)+'_'+String(lessonId);}
 function renderCourseDetail(id){
   setNav('more');
   const c=courses.find(x=>x.id===id)||courses[0];
   document.getElementById('tt').textContent=c.title;
+  const lessons=_courseLessons(c);
   S.innerHTML=`
   <div style="padding:12px 16px 0;display:flex;align-items:center;justify-content:flex-end;">
     <button onclick="nav('course-builder','${c.id}')" style="border:none;background:none;font-size:12px;color:var(--accent);cursor:pointer;"><i class="ti ti-pencil" style="font-size:12px;"></i> Edit</button>
   </div>
-  <div style="height:100px;background:${c.bg};display:flex;align-items:center;justify-content:center;margin:10px 16px;border-radius:12px;"><i class="ti ${c.icon}" style="font-size:44px;color:${c.ic};"></i></div>
+  ${c.cover?`<div style="margin:10px 16px;border-radius:12px;overflow:hidden;height:150px;"><img src="${_imgSrc(c.cover)}" alt="" style="width:100%;height:100%;object-fit:cover;display:block;"></div>`
+    :`<div style="height:100px;background:${c.bg||'#1e1633'};display:flex;align-items:center;justify-content:center;margin:10px 16px;border-radius:12px;"><i class="ti ${c.icon||'ti-book'}" style="font-size:44px;color:${c.ic||'#a891ec'};"></i></div>`}
   <div style="padding:0 16px;">
-    <div style="display:flex;align-items:center;justify-content:space-between;margin-bottom:4px;"><div style="font-size:18px;font-weight:500;color:#f0f0f0;">${_fileEsc(c.title)}</div><span class="bdg ${c.bdg}" style="font-size:12px;">${_fileEsc(c.status)}</span></div>
-    <div style="font-size:13px;color:#999;margin-bottom:10px;">${c.modules} modules · ${_fileEsc(c.duration)} · ${_fileEsc(c.price)}</div>
-    <div style="font-size:13px;color:#ccc;line-height:1.7;margin-bottom:14px;">${_fileEsc(c.desc)}</div>
-    ${c.enrolled?`<div style="display:flex;gap:8px;margin-bottom:14px;">${[['Enrolled',c.enrolled,'#f0f0f0'],['Modules',c.modules,'var(--accent)'],['Rating','4.9 ★','#4ec49a']].map(([l,v,col])=>`<div style="flex:1;background:#161616;border-radius:10px;padding:9px 12px;"><div style="font-size:11px;color:#999;margin-bottom:3px;">${l}</div><div style="font-size:16px;font-weight:500;color:${col};">${v}</div></div>`).join('')}</div>`:''}
-    <div style="font-size:11px;font-weight:500;color:#aaa;text-transform:uppercase;letter-spacing:.07em;margin-bottom:8px;">Modules</div>
+    <div style="display:flex;align-items:center;justify-content:space-between;margin-bottom:4px;"><div style="font-size:18px;font-weight:500;color:#f0f0f0;">${_fileEsc(c.title)}</div><span class="bdg ${c.bdg||'bp'}" style="font-size:12px;">${_fileEsc(c.status)}</span></div>
+    <div style="font-size:13px;color:#999;margin-bottom:10px;">${lessons.length} lesson${lessons.length===1?'':'s'} · ${_fileEsc(c.price||'Free')}</div>
+    ${c.desc?`<div style="font-size:13px;color:#ccc;line-height:1.7;margin-bottom:14px;">${_fileEsc(c.desc)}</div>`:''}
+    <div style="display:flex;align-items:center;justify-content:space-between;margin-bottom:8px;"><div style="font-size:11px;font-weight:500;color:#aaa;text-transform:uppercase;letter-spacing:.07em;">Lessons</div><button onclick="nav('course-builder','${c.id}')" style="border:none;background:none;color:var(--accent);font-size:11px;cursor:pointer;"><i class="ti ti-plus" style="font-size:11px;"></i> Add / edit</button></div>
     <div style="background:#1a1a1a;border:1px solid #2a2a2a;border-radius:12px;overflow:hidden;margin-bottom:14px;">
-      ${(function(){const names=(Array.isArray(c.moduleNames)&&c.moduleNames.length)?c.moduleNames:Array.from({length:c.modules||0},(_, idx)=>{const titles=['Introduction & skin basics','Understanding your skin type','Active ingredients explained','Building your routine','Troubleshooting common issues','Advanced techniques'];return titles[idx]||'Module '+(idx+1);});return names.length?names.map((nm,idx)=>`<div style="display:flex;align-items:center;gap:10px;padding:10px 12px;border-bottom:1px solid #1e1e1e;"><div class="snum">${idx+1}</div><div style="flex:1;font-size:13px;color:#e0e0e0;">${_fileEsc(nm)}</div><i class="ti ti-lock" aria-hidden="true" style="font-size:13px;color:#888;"></i></div>`).join(''):'<div style="padding:12px;font-size:12px;color:#9a9a9a;">No modules yet — tap Edit to add some.</div>';})()}
+      ${lessons.length?lessons.map((l,idx)=>{const bits=[];if(l.body)bits.push('Reading');if(l.videoUrl)bits.push('Video');if(l.fileId||l.fileName)bits.push('Download');return `<div style="display:flex;align-items:center;gap:10px;padding:11px 12px;${idx<lessons.length-1?'border-bottom:1px solid #1e1e1e;':''}"><div class="snum">${idx+1}</div><div style="flex:1;min-width:0;"><div style="font-size:13px;color:#e0e0e0;">${_fileEsc(l.title||'Untitled lesson')}</div>${bits.length?`<div style="font-size:11px;color:#888;margin-top:2px;">${bits.join(' · ')}</div>`:''}</div></div>`;}).join(''):'<div style="padding:14px 12px;font-size:12px;color:#9a9a9a;">No lessons yet — tap Edit to build your course.</div>'}
     </div>
-    ${(Array.isArray(c.resources)&&c.resources.length)?`<div style="font-size:11px;font-weight:500;color:#aaa;text-transform:uppercase;letter-spacing:.07em;margin-bottom:8px;">Learning materials</div>
-    <div style="background:#1a1a1a;border:1px solid #2a2a2a;border-radius:12px;overflow:hidden;margin-bottom:14px;">
-      ${c.resources.map((r,idx)=>{const icon=r.type==='pdf'?'ti-file-type-pdf':(r.type==='image'?'ti-photo':'ti-link');const label=r.name||r.url||'Resource';return `<div onclick="_openCourseRes('${_jsAttr(c.id)}',${idx})" style="display:flex;align-items:center;gap:10px;padding:11px 12px;border-bottom:1px solid #1e1e1e;cursor:pointer;"><i class="ti ${icon}" style="font-size:18px;color:${r.type==='pdf'?'#e87070':'var(--accent)'};flex-shrink:0;"></i><div style="flex:1;min-width:0;font-size:13px;color:#e0e0e0;overflow:hidden;text-overflow:ellipsis;white-space:nowrap;">${_fileEsc(label)}</div><i class="ti ti-external-link" style="font-size:13px;color:#888;flex-shrink:0;"></i></div>`;}).join('')}
-    </div>`:''}
     <div style="display:flex;gap:8px;margin-bottom:20px;">
-      <button class="btnp" style="flex:2;border-radius:8px;" onclick="_shareOrCopy('https://slickchart.app/course/${c.id}','${_jsAttr(c.title||'Course')}')"><i class="ti ti-share"></i> Share enrollment link</button>
+      <button class="btnp" style="flex:2;border-radius:8px;" onclick="sendCourseToClient('${c.id}')"><i class="ti ti-send"></i> Send to a client</button>
       <button class="btng" style="flex:1;" onclick="nav('course-builder','${c.id}')" aria-label="Edit course"><i class="ti ti-pencil"></i></button>
     </div>
   </div>`;
 }
-// Insert a new editable module row into the course builder list.
-function _cbAddModule(btn){
-  const list=btn&&btn.previousElementSibling;if(!list)return;
-  const n=list.querySelectorAll('.cb-module').length+1;
-  const div=document.createElement('div');div.className='cb-module';
-  div.style.cssText='display:flex;align-items:center;gap:10px;padding:10px 12px;border-bottom:1px solid #1e1e1e;';
-  div.innerHTML='<i class="ti ti-grip-vertical" style="font-size:15px;color:#929292;"></i><div class="snum">'+n+'</div><input aria-label="Module name" placeholder="Module '+n+'" style="flex:1;border:none;background:none;font-size:13px;color:#e0e0e0;outline:none;font-family:inherit;"><button aria-label="Remove module" onclick="this.closest(\'.cb-module\').remove()" style="border:none;background:none;color:#999;cursor:pointer;"><i class="ti ti-trash" style="color:#e87070;"></i></button>';
-  list.appendChild(div);
-  const inp=div.querySelector('input');if(inp)try{inp.focus();}catch(e){}
+// ── Course builder ── draft lives in window._cbDraft so edits survive re-renders.
+function _cbNewLesson(){return {id:'l'+Math.random().toString(36).slice(2,8),title:'',body:'',videoUrl:'',fileId:'',fileName:'',fileType:'',_newFileData:''};}
+function _cbInitDraft(c){
+  const d={cover:(c&&c.cover)||'',lessons:[]};
+  const src=_courseLessons(c||null);
+  d.lessons=src.length?src.map(l=>Object.assign(_cbNewLesson(),l)):[_cbNewLesson()];
+  window._cbDraft=d;
 }
 function renderCourseBuilder(id){
   setNav('more');
   document.getElementById('tt').textContent=id==='new'?'New course':'Edit course';
   const c=id==='new'?null:courses.find(x=>x.id===id);
-  // Seed the attached-materials draft from the existing course so attachments
-  // survive re-renders inside the builder (add/remove a module, etc.).
-  window._cbResDraft=(c&&Array.isArray(c.resources))?c.resources.slice():[];
-  // Real module names if the provider set them; otherwise fall back to sensible starters.
-  const modNames=(c&&Array.isArray(c.moduleNames)&&c.moduleNames.length)
-    ? c.moduleNames
-    : (c ? Array.from({length:c.modules||0},(_, i)=>['Introduction','Core content','Wrap-up & next steps'][i]||('Module '+(i+1)))
-         : ['Introduction','Core content','Wrap-up & next steps']);
+  _cbInitDraft(c);
   S.innerHTML=`
   <div style="padding:12px 16px 0;display:flex;align-items:center;justify-content:flex-end;">
-    <button onclick="saveCourse('${c?c.id:'new'}')" style="background:var(--accent);color:var(--accent-ink);border:none;border-radius:8px;padding:6px 14px;font-size:12px;font-weight:500;cursor:pointer;">Save</button>
+    <button onclick="saveCourse('${c?c.id:'new'}')" style="background:var(--accent);color:var(--accent-ink);border:none;border-radius:8px;padding:6px 14px;font-size:12px;font-weight:600;cursor:pointer;">Save</button>
   </div>
-  <div style="padding:14px 16px 0;">
-    <span class="fl-lbl">Course title</span><input id="cb-title" class="fi" value="${c?_jsAttr(c.title):''}" placeholder="e.g. Barrier Repair Masterclass" style="margin-bottom:12px;">
-    <span class="fl-lbl">Description</span><textarea id="cb-desc" class="fi" style="height:72px;resize:none;margin-bottom:12px;" placeholder="What will clients learn?">${c?_fileEsc(c.desc):''}</textarea>
-    <div style="display:flex;gap:8px;margin-bottom:12px;">
-      <div style="flex:1;"><span class="fl-lbl">Price</span><input id="cb-price" aria-label="Price" class="fi" value="${c?_jsAttr(c.price):'$29'}" style="margin:0;"></div>
-      <div style="flex:1;"><span class="fl-lbl">Status</span><select id="cb-status" class="fi" aria-label="Select option" style="margin:0;"><option ${c&&c.status==='Draft'?'selected':''}>Draft</option><option ${c&&c.status==='Published'?'selected':''}>Published</option></select></div>
+  <div style="padding:12px 16px 0;">
+    <div id="cb-cover-wrap" style="margin-bottom:14px;">${_cbCoverHTML()}</div>
+    <span class="fl-lbl">Course title</span><input id="cb-title" class="fi" value="${c?_jsAttr(c.title):''}" placeholder="e.g. At-Home Skincare Masterclass" style="margin-bottom:12px;">
+    <span class="fl-lbl">Description</span><textarea id="cb-desc" class="fi" style="height:70px;resize:none;margin-bottom:12px;" placeholder="What will clients learn?">${c?_fileEsc(c.desc):''}</textarea>
+    <div style="display:flex;gap:8px;margin-bottom:16px;">
+      <div style="flex:1;"><span class="fl-lbl">Price</span><input id="cb-price" aria-label="Price" class="fi" value="${c?_jsAttr(c.price||''):''}" placeholder="Free" style="margin:0;"></div>
+      <div style="flex:1;"><span class="fl-lbl">Status</span><select id="cb-status" class="fi" aria-label="Course status" style="margin:0;"><option ${(!c||c.status==='Draft')?'selected':''}>Draft</option><option ${c&&c.status==='Published'?'selected':''}>Published</option></select></div>
     </div>
-    <span class="fl-lbl">Modules</span>
-    <div id="cb-modules" style="background:#1a1a1a;border:1px solid #2a2a2a;border-radius:12px;overflow:hidden;margin-bottom:10px;">
-      ${modNames.map((nm, idx)=>`<div class="cb-module" style="display:flex;align-items:center;gap:10px;padding:10px 12px;border-bottom:1px solid #1e1e1e;"><i class="ti ti-grip-vertical" style="font-size:15px;color:#929292;"></i><div class="snum">${idx+1}</div><input aria-label="Module name" value="${_jsAttr(nm)}" style="flex:1;border:none;background:none;font-size:13px;color:#e0e0e0;outline:none;font-family:inherit;"><button aria-label="Remove module" onclick="this.closest('.cb-module').remove()" style="border:none;background:none;color:#999;cursor:pointer;"><i class="ti ti-trash" style="color:#e87070;"></i></button></div>`).join('')}
-    </div>
-    <button onclick="_cbAddModule(this)" style="width:100%;border:1.5px dashed #2a2a2a;border-radius:10px;padding:11px;display:flex;align-items:center;justify-content:center;gap:8px;font-size:13px;color:#aaa;background:none;cursor:pointer;margin-bottom:16px;"><i class="ti ti-plus"></i> Add a module</button>
-
-    <span class="fl-lbl">Learning materials <span style="color:#929292;font-weight:400;">— PDFs &amp; links clients can open</span></span>
-    <div id="cb-res-list" style="margin:6px 0 8px;"></div>
-    <div style="display:flex;gap:8px;margin-bottom:8px;">
-      <input id="cb-res-url" class="fi" placeholder="Paste a resource link (https://…)" style="flex:1;margin:0;">
-      <button onclick="_cbAddResLink()" style="background:var(--accent-tint);color:var(--accent);border:1px solid var(--accent-a30,#3d2d10);border-radius:9px;padding:0 14px;font-size:13px;font-weight:600;cursor:pointer;white-space:nowrap;font-family:inherit;">Add link</button>
-    </div>
-    <label for="cb-res-file" style="width:100%;border:1.5px dashed #2a2a2a;border-radius:10px;padding:11px;display:flex;align-items:center;justify-content:center;gap:8px;font-size:13px;color:var(--accent);background:none;cursor:pointer;margin-bottom:16px;"><i class="ti ti-file-upload"></i> Upload a PDF or image</label>
-    <input type="file" id="cb-res-file" accept="application/pdf,image/*" style="display:none;" onchange="_cbPickResFile(this)">
-
-    <button class="btnp" style="border-radius:8px;margin-bottom:20px;" onclick="saveCourse('${c?c.id:'new'}')"><i class="ti ti-check"></i> Save course</button>
+    <div style="display:flex;align-items:center;justify-content:space-between;margin-bottom:8px;"><span class="fl-lbl" style="margin:0;">Lessons</span><span style="font-size:11px;color:#9a9a9a;">Add content, a video link, or a file to each</span></div>
+    <div id="cb-lessons"></div>
+    <button onclick="_cbAddLesson()" style="width:100%;border:1.5px dashed #2a2a2a;border-radius:10px;padding:12px;display:flex;align-items:center;justify-content:center;gap:8px;font-size:13px;color:var(--accent);background:none;cursor:pointer;margin:4px 0 18px;font-family:inherit;"><i class="ti ti-plus"></i> Add a lesson</button>
+    <button class="btnp" style="border-radius:8px;margin-bottom:22px;" onclick="saveCourse('${c?c.id:'new'}')"><i class="ti ti-check"></i> Save course</button>
   </div>`;
-  _cbRenderRes();
+  _cbRenderLessons();
 }
-// Render the attached learning materials inside the builder.
-function _cbRenderRes(){
-  const el=document.getElementById('cb-res-list');if(!el)return;
-  const list=window._cbResDraft||[];
-  el.innerHTML=list.length?list.map((r,i)=>{
-    const icon=r.type==='pdf'?'ti-file-type-pdf':(r.type==='image'?'ti-photo':'ti-link');
-    const label=r.name||r.url||'Resource';
-    return `<div style="display:flex;align-items:center;gap:9px;background:#161616;border:1px solid #2a2a2a;border-radius:10px;padding:9px 12px;margin-bottom:6px;"><i class="ti ${icon}" style="font-size:18px;color:${r.type==='pdf'?'#e87070':'var(--accent)'};flex-shrink:0;"></i><div style="flex:1;min-width:0;font-size:13px;color:#e0e0e0;overflow:hidden;text-overflow:ellipsis;white-space:nowrap;">${_fileEsc(label)}</div><button onclick="_cbRemoveRes(${i})" aria-label="Remove material" style="border:none;background:none;color:#e87070;cursor:pointer;flex-shrink:0;"><i class="ti ti-x"></i></button></div>`;
-  }).join(''):'<div style="font-size:12px;color:#9a9a9a;padding:2px 2px 4px;">No materials yet — attach a PDF or link below.</div>';
+function _cbCoverHTML(){
+  const d=window._cbDraft||{};
+  if(d.cover){
+    return `<div style="position:relative;border-radius:12px;overflow:hidden;height:140px;">
+      <img src="${_imgSrc(d.cover)}" alt="Course cover" style="width:100%;height:100%;object-fit:cover;display:block;">
+      <button onclick="_cbRemoveCover()" aria-label="Remove cover" style="position:absolute;top:8px;right:8px;background:rgba(0,0,0,.6);border:none;color:#fff;border-radius:8px;padding:5px 9px;font-size:11px;cursor:pointer;font-family:inherit;"><i class="ti ti-trash" style="font-size:12px;"></i> Remove</button>
+    </div>`;
+  }
+  return `<label for="cb-cover-file" style="display:flex;flex-direction:column;align-items:center;justify-content:center;gap:6px;height:110px;border:1.5px dashed #2a2a2a;border-radius:12px;cursor:pointer;color:#9a9a9a;font-size:13px;"><i class="ti ti-photo-plus" style="font-size:24px;color:var(--accent);"></i> Add a cover image<input type="file" id="cb-cover-file" accept="image/*" style="display:none;" onchange="_cbPickCover(this)"></label>`;
 }
-function _cbRemoveRes(i){if(window._cbResDraft){window._cbResDraft.splice(i,1);_cbRenderRes();}}
-function _cbAddResLink(){
-  const el=document.getElementById('cb-res-url');const raw=(el&&el.value||'').trim();if(!raw)return;
-  const url=/^https?:\/\//i.test(raw)?raw:('https://'+raw);
-  if(!window._cbResDraft)window._cbResDraft=[];
-  window._cbResDraft.push({type:'link',url,name:raw.replace(/^https?:\/\//i,'')});
-  if(el)el.value='';
-  _cbRenderRes();
-}
-// Attach a PDF or image as a course material — mirrors the docs-vault _docPickFile:
-// PDFs are stored as data URLs, images are downscaled first to keep the payload small.
-function _cbPickResFile(input){
-  const f=input&&input.files&&input.files[0];if(!f)return;
-  if(f.size>8*1024*1024){if(typeof proToast==='function')proToast('That file is over 8MB — please pick a smaller one');input.value='';return;}
-  const isPdf=/pdf/i.test(f.type)||/\.pdf$/i.test(f.name||'');
-  const done=(data,type)=>{if(!window._cbResDraft)window._cbResDraft=[];window._cbResDraft.push({type,name:f.name||(type==='pdf'?'document.pdf':'image'),data:String(data||'')});_cbRenderRes();};
+function _cbPickCover(input){
+  const f=input&&input.files&&input.files[0];if(!f)return;input.value='';
   const r=new FileReader();
-  if(isPdf){r.onload=()=>done(r.result,'pdf');r.readAsDataURL(f);}
-  else{r.onload=()=>{const img=new Image();img.onload=()=>{let w=img.width,ht=img.height,max=1600;if(w>max||ht>max){const s=Math.min(max/w,max/ht);w=Math.round(w*s);ht=Math.round(ht*s);}const cv=document.createElement('canvas');cv.width=w;cv.height=ht;cv.getContext('2d').drawImage(img,0,0,w,ht);let data;try{data=cv.toDataURL('image/jpeg',0.82);}catch(e){data=String(r.result||'');}done(data,'image');};img.onerror=()=>done(r.result,'image');img.src=String(r.result||'');};r.readAsDataURL(f);}
-  input.value='';
+  r.onload=()=>{const img=new Image();img.onload=()=>{let w=img.width,h=img.height,max=1000;if(w>max||h>max){const s=Math.min(max/w,max/h);w=Math.round(w*s);h=Math.round(h*s);}const cv=document.createElement('canvas');cv.width=w;cv.height=h;cv.getContext('2d').drawImage(img,0,0,w,h);let data;try{data=cv.toDataURL('image/jpeg',0.8);}catch(e){data=String(r.result||'');}window._cbDraft.cover=data;const el=document.getElementById('cb-cover-wrap');if(el)el.innerHTML=_cbCoverHTML();};img.onerror=()=>{};img.src=String(r.result||'');};
+  r.readAsDataURL(f);
 }
-// Actually build the course: read every field, create or update the record, persist.
+function _cbRemoveCover(){if(window._cbDraft)window._cbDraft.cover='';const el=document.getElementById('cb-cover-wrap');if(el)el.innerHTML=_cbCoverHTML();}
+// Read the current DOM inputs back into the draft before any structural change/save.
+function _cbSyncFromDOM(){
+  const d=window._cbDraft;if(!d)return;
+  document.querySelectorAll('#cb-lessons .cb-lesson').forEach((el,i)=>{
+    if(!d.lessons[i])return;
+    const t=el.querySelector('.cbl-title');if(t)d.lessons[i].title=t.value;
+    const b=el.querySelector('.cbl-body');if(b)d.lessons[i].body=b.value;
+    const v=el.querySelector('.cbl-video');if(v)d.lessons[i].videoUrl=v.value;
+  });
+}
+function _cbRenderLessons(){
+  const wrap=document.getElementById('cb-lessons');if(!wrap)return;
+  const d=window._cbDraft||{lessons:[]};
+  wrap.innerHTML=d.lessons.map((l,i)=>{
+    const hasFile=!!(l._newFileData||l.fileId||l.fileName);
+    return `<div class="cb-lesson" style="background:#161616;border:1px solid #2a2a2a;border-radius:12px;padding:12px;margin-bottom:10px;">
+      <div style="display:flex;align-items:center;gap:8px;margin-bottom:8px;">
+        <div class="snum">${i+1}</div>
+        <input class="cbl-title" aria-label="Lesson title" value="${_jsAttr(l.title||'')}" placeholder="Lesson title" style="flex:1;background:#111;border:1px solid #2a2a2a;border-radius:8px;padding:8px 10px;font-size:13px;color:#e0e0e0;font-family:inherit;outline:none;">
+        <button onclick="_cbMoveLesson(${i},-1)" aria-label="Move up" ${i===0?'disabled':''} style="border:none;background:none;color:${i===0?'#444':'#aaa'};cursor:${i===0?'default':'pointer'};padding:4px;"><i class="ti ti-chevron-up" style="font-size:16px;"></i></button>
+        <button onclick="_cbMoveLesson(${i},1)" aria-label="Move down" ${i===d.lessons.length-1?'disabled':''} style="border:none;background:none;color:${i===d.lessons.length-1?'#444':'#aaa'};cursor:${i===d.lessons.length-1?'default':'pointer'};padding:4px;"><i class="ti ti-chevron-down" style="font-size:16px;"></i></button>
+        <button onclick="_cbRemoveLesson(${i})" aria-label="Delete lesson" style="border:none;background:none;color:#e87070;cursor:pointer;padding:4px;"><i class="ti ti-trash" style="font-size:15px;"></i></button>
+      </div>
+      <textarea class="cbl-body" aria-label="Lesson content" placeholder="Write the lesson (optional)…" style="width:100%;box-sizing:border-box;height:60px;resize:vertical;background:#111;border:1px solid #2a2a2a;border-radius:8px;padding:8px 10px;font-size:13px;color:#e0e0e0;font-family:inherit;outline:none;margin-bottom:8px;">${_fileEsc(l.body||'')}</textarea>
+      <div style="display:flex;align-items:center;gap:6px;margin-bottom:8px;"><i class="ti ti-video" style="font-size:15px;color:#9a9a9a;flex-shrink:0;"></i><input class="cbl-video" aria-label="Video link" value="${_jsAttr(l.videoUrl||'')}" placeholder="Video link (YouTube, Vimeo, Loom…)" style="flex:1;background:#111;border:1px solid #2a2a2a;border-radius:8px;padding:7px 10px;font-size:12.5px;color:#e0e0e0;font-family:inherit;outline:none;"></div>
+      ${hasFile?`<div style="display:flex;align-items:center;gap:8px;background:#111;border:1px solid #2a2a2a;border-radius:8px;padding:8px 10px;"><i class="ti ti-paperclip" style="font-size:15px;color:var(--accent);flex-shrink:0;"></i><span style="flex:1;min-width:0;font-size:12.5px;color:#e0e0e0;overflow:hidden;text-overflow:ellipsis;white-space:nowrap;">${_fileEsc(l.fileName||'Attached file')}</span><button onclick="_cbRemoveLessonFile(${i})" style="border:none;background:none;color:#e87070;font-size:12px;cursor:pointer;font-family:inherit;">Remove</button></div>`
+        :`<label for="cbl-file-${i}" style="display:inline-flex;align-items:center;gap:6px;font-size:12px;color:var(--accent);cursor:pointer;"><i class="ti ti-file-upload" style="font-size:14px;"></i> Attach a file (PDF, image, doc)<input type="file" id="cbl-file-${i}" accept="application/pdf,image/*,.pdf,.doc,.docx,.txt,.csv" style="display:none;" onchange="_cbPickLessonFile(${i},this)"></label>`}
+    </div>`;
+  }).join('');
+}
+function _cbAddLesson(){_cbSyncFromDOM();window._cbDraft.lessons.push(_cbNewLesson());_cbRenderLessons();}
+function _cbRemoveLesson(i){_cbSyncFromDOM();window._cbDraft.lessons.splice(i,1);if(!window._cbDraft.lessons.length)window._cbDraft.lessons.push(_cbNewLesson());_cbRenderLessons();}
+function _cbMoveLesson(i,dir){_cbSyncFromDOM();const a=window._cbDraft.lessons;const j=i+dir;if(j<0||j>=a.length)return;const t=a[i];a[i]=a[j];a[j]=t;_cbRenderLessons();}
+function _cbPickLessonFile(i,input){
+  const f=input&&input.files&&input.files[0];if(!f)return;input.value='';
+  if(f.size>3*1024*1024){if(typeof proToast==='function')proToast('Please choose a file under 3MB so it syncs reliably');return;}
+  _cbSyncFromDOM();
+  const r=new FileReader();
+  r.onload=e=>{const l=window._cbDraft.lessons[i];if(!l)return;l._newFileData=String(e.target.result||'');l.fileName=f.name||'file';l.fileType=f.type||'';_cbRenderLessons();};
+  r.onerror=()=>{if(typeof proToast==='function')proToast('Could not read that file');};
+  r.readAsDataURL(f);
+}
+function _cbRemoveLessonFile(i){_cbSyncFromDOM();const l=window._cbDraft.lessons[i];if(l){l._newFileData='';l._removeFile=!!l.fileId;l.fileName='';l.fileType='';l.fileId='';}_cbRenderLessons();}
 function saveCourse(id){
+  _cbSyncFromDOM();
   const g=i=>{const el=document.getElementById(i);return el?el.value.trim():'';};
   const title=g('cb-title');
   if(!title){if(typeof proToast==='function')proToast('Give your course a title first');return;}
   const desc=g('cb-desc');
   const price=g('cb-price')||'Free';
   const statusEl=document.getElementById('cb-status');const status=statusEl?statusEl.value:'Draft';
-  const moduleNames=Array.from(document.querySelectorAll('#cb-modules .cb-module input')).map(el=>el.value.trim()).filter(Boolean);
-  const modules=moduleNames.length;
-  const resources=Array.isArray(window._cbResDraft)?window._cbResDraft.slice():[];
+  const d=window._cbDraft||{lessons:[]};
+  const courseId=(id&&id!=='new')?id:('c'+Date.now().toString(36));
+  // Finalize lessons: upload any newly-attached files to server + IndexedDB, keep only refs.
+  const lessons=d.lessons.filter(l=>(l.title||'').trim()||l.body||l.videoUrl||l._newFileData||l.fileId).map(l=>{
+    const out={id:l.id||('l'+Math.random().toString(36).slice(2,8)),title:(l.title||'').trim()||'Lesson',body:l.body||'',videoUrl:(l.videoUrl||'').trim(),fileId:l.fileId||'',fileName:l.fileName||'',fileType:l.fileType||''};
+    if(l._newFileData){
+      const fid=_courseFileId(courseId,out.id);
+      out.fileId=fid;
+      _persistGuideFile(fid,{name:out.fileName,type:out.fileType,data:l._newFileData},false);
+    }else if(l._removeFile&&l.fileId){
+      _persistGuideFile(l.fileId,null,true);
+    }
+    return out;
+  });
+  if(!lessons.length)lessons.push({id:'l1',title:'Lesson 1',body:'',videoUrl:'',fileId:'',fileName:'',fileType:''});
   const existing=(id&&id!=='new')?courses.find(x=>x.id===id):null;
-  if(existing){
-    Object.assign(existing,{title,desc,price,status,modules,moduleNames,resources});
-  }else{
-    courses.push({id:'c'+Date.now().toString(36),title,desc,price,status,modules,moduleNames,resources,
-      icon:'ti-book',bg:'#1e1633',ic:'#a891ec',bdg:'bp',duration:'',enrolled:0,revenue:0,progress:0});
-  }
+  const base={title,desc,price,status,cover:d.cover||'',lessons,modules:lessons.length,moduleNames:lessons.map(l=>l.title),duration:lessons.length+' lesson'+(lessons.length===1?'':'s')};
+  if(existing){Object.assign(existing,base);delete existing.resources;}
+  else{courses.push(Object.assign({id:courseId,icon:'ti-book',bg:'#1e1633',ic:'#a891ec',bdg:'bp',enrolled:0,revenue:0,progress:0},base));}
   try{_markCoursesCustom();}catch(e){}
   try{persistCourses();}catch(e){}
-  window._cbResDraft=null;
+  window._cbDraft=null;
   if(typeof proToast==='function')proToast(existing?'Course updated ✓':'Course created ✓');
-  nav('learn');
-}
-// Open a course's attached material. Looks the resource up by course id + index so the
-// (potentially large) data URL never has to live in an inline handler attribute. Links
-// open directly; PDFs/images open through a blank window + iframe (same trick the docs
-// vault uses, since browsers block top-level navigation to data: URLs).
-function _openCourseRes(courseId, idx){
-  const c=courses.find(x=>x.id===courseId);if(!c||!Array.isArray(c.resources)||!c.resources[idx])return;
-  const r=c.resources[idx];
-  try{
-    if(r.type==='link'){const u=_safeUrl(r.url);if(u)window.open(u,'_blank','noopener');return;}
-    const src=_docSrc(r.data);if(!src)return;
-    const w=window.open();if(w){w.document.title=r.name||'Course material';w.document.write('<iframe src="'+src+'" style="border:0;width:100%;height:100vh"></iframe>');}
-  }catch(e){}
+  _fgTab='courses';nav('forms');
 }
 
 // ── SHOP ──
@@ -9567,7 +9590,11 @@ function switchShopTab(tab){
   activeShopTab='affiliates';
   const content=document.getElementById('stab-content');if(!content)return;
   content.innerHTML=`
-    <div style="padding:14px 16px 8px;display:flex;justify-content:space-between;align-items:center;gap:8px;"><span style="font-size:13px;color:#999;">${affiliateLinks.length} products</span><div style="display:flex;gap:8px;"><button onclick="nav('routine-builder')" style="background:var(--accent-tint);color:var(--accent);border:1px solid var(--accent-a30,#3d2d10);border-radius:8px;padding:7px 11px;font-size:12px;font-weight:600;cursor:pointer;"><i class="ti ti-list-check" style="font-size:12px;"></i> Build routine</button><button onclick="nav('add-affiliate')" style="background:var(--accent);color:var(--accent-ink);border:none;border-radius:8px;padding:7px 12px;font-size:12px;font-weight:500;cursor:pointer;">+ Add product</button></div></div>
+    <div style="padding:14px 16px 4px;display:flex;justify-content:space-between;align-items:center;gap:8px;"><span style="font-size:13px;color:#999;">${affiliateLinks.length} products</span><div style="display:flex;gap:8px;"><button onclick="nav('routine-builder')" style="background:var(--accent-tint);color:var(--accent);border:1px solid var(--accent-a30,#3d2d10);border-radius:8px;padding:7px 11px;font-size:12px;font-weight:600;cursor:pointer;"><i class="ti ti-list-check" style="font-size:12px;"></i> Build routine</button><button onclick="nav('add-affiliate')" style="background:var(--accent);color:var(--accent-ink);border:none;border-radius:8px;padding:7px 12px;font-size:12px;font-weight:500;cursor:pointer;">+ Add product</button></div></div>
+    <div style="padding:0 16px 8px;display:flex;gap:8px;flex-wrap:wrap;">
+      <button onclick="nav('import-products')" style="display:inline-flex;align-items:center;gap:5px;background:#161616;color:#bbb;border:1px solid #2a2a2a;border-radius:8px;padding:6px 11px;font-size:11.5px;cursor:pointer;font-family:inherit;"><i class="ti ti-file-spreadsheet" style="font-size:13px;color:var(--accent);"></i> Import from CSV</button>
+      <button onclick="nav('integrations')" style="display:inline-flex;align-items:center;gap:5px;background:#161616;color:#bbb;border:1px solid #2a2a2a;border-radius:8px;padding:6px 11px;font-size:11.5px;cursor:pointer;font-family:inherit;"><i class="ti ti-plug" style="font-size:13px;color:var(--accent);"></i> Sync from Square</button>
+    </div>
     <div style="padding:0 16px 6px;"><div style="position:relative;"><i class="ti ti-search" aria-hidden="true" style="position:absolute;left:11px;top:50%;transform:translateY(-50%);font-size:15px;color:#9a9a9a;"></i><input id="shop-search" oninput="filterShopProducts(this.value)" placeholder="Search products or brands…" style="width:100%;background:#161616;border:1px solid #2a2a2a;border-radius:10px;padding:9px 11px 9px 34px;font-size:13px;color:#e0e0e0;font-family:inherit;box-sizing:border-box;outline:none;"></div></div>
     ${affiliateLinks.map((a,i)=>{const chans=[];if(a.inOffice)chans.push(['ti-building-store','In office']);if(a.site)chans.push(['ti-shopping-bag','Your store'+(a.siteCode?' · '+a.siteCode:'')]);if(a.url)chans.push(['ti-external-link',(a.brand||'Brand')+(a.urlCode?' · '+a.urlCode:'')]);if(a.amazon)chans.push(['ti-brand-amazon','Amazon'+(a.amazonCode?' · '+a.amazonCode:'')]);return`
     <div class="shop-prod" data-search="${((a.name||'')+' '+(a.brand||'')+' '+(a.siteCode||'')+' '+(a.urlCode||'')+' '+(a.amazonCode||'')).toLowerCase().normalize('NFD').replace(/[̀-ͯ]/g,'').replace(/['‘’`"]/g,'').replace(/[^a-z0-9 ]/g,' ').replace(/\s+/g,' ').trim()}" style="background:#1a1a1a;border:1px solid #2a2a2a;border-radius:12px;margin:0 16px 10px;overflow:hidden;${a.active?'':'opacity:.55;'}">
@@ -9751,18 +9778,22 @@ function sendCourseToClient(courseId){
 function confirmSendCourse(courseId,cid){
   const co=courses.find(x=>x.id===courseId);if(!co)return;
   const c=CL[cid];
-  if(cid==='maya'){try{SlickBridge.post('resource-shared',{providerId:'jess',clientId:'maya',resource:{title:co.title,icon:'📚',cat:'Course',url:co.url||''}});}catch(e){}}
+  if(cid==='maya'){try{SlickBridge.post('course-shared',{providerId:'jess',clientId:'maya',course:_coursePayload(co)});}catch(e){}}
   else if(c){
-    // Real client: actually assign the course as a resource card (resolved via _findGuide with
-    // its enrollment/external link) so it reaches their app through /api/client-data — the old
-    // code only claimed "Sent" and delivered nothing. saveClients() triggers the client sync.
-    if(!Array.isArray(c.pendingGuides))c.pendingGuides=[];
-    if(!c.pendingGuides.some(pg=>pg.guideId===co.id))c.pendingGuides.push({guideId:co.id,assignedAt:Date.now()});
+    // Real client: assign the full course so it lands in their in-app course player via
+    // /api/client-data (files are fetched on demand by id). saveClients() triggers the sync.
+    if(!Array.isArray(c.pendingCourses))c.pendingCourses=[];
+    if(!c.pendingCourses.some(x=>x.id===co.id))c.pendingCourses.push({id:co.id,assignedAt:Date.now()});
     try{saveClients();}catch(e){}
     if(!c._token){closeSendProd();if(typeof proToast==='function')proToast(`${c.name.split(' ')[0]} hasn't been invited to the app yet — invite them first, then this course will be waiting for them`);return;}
   }
   closeSendProd();
   if(typeof proToast==='function')proToast(`Sent "${co.title}" to ${c?c.name.split(' ')[0]:'client'}`);
+}
+// The course shape a client receives — cover + lessons with file refs (bytes fetched on demand).
+function _coursePayload(co){
+  const lessons=_courseLessons(co).map(l=>({id:l.id,title:l.title||'Lesson',body:l.body||'',videoUrl:l.videoUrl||'',fileId:l.fileId||'',fileName:l.fileName||'',fileType:l.fileType||''}));
+  return {id:co.id,title:co.title||'Course',desc:co.desc||'',price:co.price||'',cover:co.cover||'',lessons};
 }
 function renderShopBundle(i){
   setNav('more');
