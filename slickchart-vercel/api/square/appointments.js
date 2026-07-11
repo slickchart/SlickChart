@@ -74,6 +74,7 @@ export default async function handler(req, res) {
         const seg = (b.appointment_segments || [])[0] || {};
         return {
           id: b.id,
+          version: b.version != null ? b.version : null, // needed to cancel/reschedule this booking
           startAt: b.start_at || '',
           status: b.status || '',
           locationId: b.location_id || '',
