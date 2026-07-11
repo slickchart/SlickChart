@@ -97,17 +97,30 @@ body{font-family:-apple-system,BlinkMacSystemFont,'Segoe UI',sans-serif;backgrou
 </style>
 </head>
 <body>
+<script>
+/* DEMO ISOLATION: this public demo shares its origin with the real app, so without this it would
+   read (and "Reset" would wipe) a logged-in provider's REAL data from localStorage. Replace storage
+   with an in-memory store and flag demo mode so the app skips login/Cloud and shows sample data. */
+(function(){try{
+  window.__SC_DEMO__=true;
+  var mem=Object.create(null);
+  var shim={
+    getItem:function(k){k=String(k);return (k in mem)?mem[k]:null;},
+    setItem:function(k,v){mem[String(k)]=String(v);},
+    removeItem:function(k){delete mem[String(k)];},
+    clear:function(){mem=Object.create(null);},
+    key:function(i){return Object.keys(mem)[i]||null;}
+  };
+  try{Object.defineProperty(shim,"length",{get:function(){return Object.keys(mem).length;}});}catch(e){}
+  try{Object.defineProperty(window,"localStorage",{configurable:true,get:function(){return shim;}});}catch(e){}
+}catch(e){}})();
+</script>
 <div id="sc-demo-banner">
   <span>🧪 <b>Live demo</b> — provider view, 3 sample clients already loaded (Maya, Sophie, Priya). Click around freely.</span>
   <button onclick="scResetDemo()">Reset demo</button>
 </div>
 <script>
-function scResetDemo(){
-  try{
-    Object.keys(localStorage).filter(k=>k.indexOf('sc_')===0).forEach(k=>localStorage.removeItem(k));
-  }catch(e){}
-  location.reload();
-}
+function scResetDemo(){try{Object.keys(localStorage).filter(function(k){return k.indexOf("sc_")===0;}).forEach(function(k){localStorage.removeItem(k);});}catch(e){}location.reload();}
 </script>
 <div class="shell">
   <div class="sb"><span>9:41</span><span class="ic"><i class="ti ti-wifi"></i><i class="ti ti-battery-3"></i></span></div>
@@ -1597,6 +1610,18 @@ function _reloadAll(){try{
   if(typeof loadVisionEndpoint==='function')loadVisionEndpoint();
 }catch(e){}}
 async function _cloudInit(){
+  // Public landing-page demo: never touch a real account or the server. The demo banner installs an
+  // in-memory localStorage shim and sets this flag, so we skip Cloud/login entirely and open the
+  // pre-seeded sample workspace. (Without this, the demo would either show a login screen or, worse,
+  // a logged-in provider's real clients, since the iframe shares this origin's storage.)
+  if(window.__SC_DEMO__){
+    try{localStorage.setItem('sc_onboarded','1');}catch(e){}
+    // Defer to a macrotask so the rest of the script finishes initializing its top-level let/const
+    // first (calling _reloadAll synchronously here hits a temporal-dead-zone on later declarations —
+    // the normal path avoids it only because `await Cloud.status()` yields).
+    setTimeout(function(){try{_reloadAll();}catch(e){}try{nav('home');}catch(e){}},0);
+    return;
+  }
   if(_handleAuthParams())return;
   await Cloud.status();
   if(!Cloud.enabled){
