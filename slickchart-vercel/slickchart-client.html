@@ -66,7 +66,9 @@ nav.nav{position:absolute;bottom:0;left:0;right:0;background:#fff;border-top:1px
 .pill.active{background:var(--accent);color:#fff;border-color:var(--accent);}
 .pill:focus-visible{outline:2px solid var(--accent);outline-offset:2px;}
 /* font-size must be >=16px: iOS Safari auto-zooms the viewport when a focused field is smaller,
-   which was the "screen zooms in" when tapping into the appointment notes and other inputs. */
+   which was the "screen zooms in" when tapping into a field. Many fields set a smaller inline
+   font-size, and only !important beats an inline style — nothing here needs controls above 16px. */
+input,textarea,select{font-size:16px!important;}
 .fi{width:100%;background:#faf7f4;border:1.5px solid #e8ddd3;border-radius:10px;padding:10px 12px;font-size:16px;color:#1a1a1a;font-family:inherit;}
 .fi:focus{outline:2px solid var(--accent);outline-offset:0;border-color:var(--accent);}
 .tag{font-size:12px;padding:5px 12px;border-radius:20px;background:var(--accent-lt);color:#8b6b4a;border:none;font-weight:500;display:inline-block;}
@@ -1510,6 +1512,74 @@ function _dismissWelcome(key){
   _syncClientPrefsToServer();
   if(document.getElementById('page-heading'))renderHome();
 }
+// ── "Complete before your visit" checklist + guided flow ─────────────────────────────────
+// The pre-visit check-in plus every form the provider assigned form ONE checklist. Instead of
+// making the client bounce back to Home and hunt for the next card, finishing one item walks
+// straight into the next incomplete one — so a single tap flows through everything.
+function _previsitItems(){
+  const p=activeProvider();const pf=(p.pendingForms||[]);
+  return [{type:'checkin',label:'Pre-visit check-in',done:!!p.checkinDone}]
+    .concat(pf.map(f=>({type:'form',formId:f.formId,label:f.title,done:false})));
+}
+function _nextPrevisitItem(){return _previsitItems().find(i=>!i.done)||null;}
+function _startPrevisitFlow(){
+  const t=_nextPrevisitItem();
+  if(!t){nav('home');return;}
+  if(t.type==='checkin')nav('checkin');
+  else{_fillFormId=t.formId;nav('fill-form');}
+}
+// After a check-in / form submit, continue into the next incomplete item. Returns true if it
+// navigated onward, so the caller can skip its own "back to home" / success screen.
+function _advancePrevisitFlow(doneLabel){
+  const t=_nextPrevisitItem();
+  if(!t)return false;
+  if(doneLabel)showToast(doneLabel+' ✓');
+  if(t.type==='checkin')nav('checkin');
+  else{_fillFormId=t.formId;nav('fill-form');}
+  return true;
+}
+function _previsitSectionHTML(){
+  const p=activeProvider();const pf=(p.pendingForms||[]);
+  // No forms assigned → the familiar standalone pre-visit check-in card (single item).
+  if(!pf.length){
+    const ciDone=!!p.checkinDone;
+    return `<div style="margin:0 16px 14px;background:#fff;border:1.5px solid ${ciDone?'#f0ebe4':'var(--accent)'};border-radius:14px;overflow:hidden;cursor:pointer;" onclick="nav('checkin')" role="button" aria-label="Pre-visit check-in">
+      <div style="padding:12px 16px;display:flex;align-items:center;gap:12px;">
+        <div style="width:42px;height:42px;background:var(--accent-lt);border-radius:10px;display:flex;align-items:center;justify-content:center;flex-shrink:0;"><i class="ti ${ciDone?'ti-square-check':'ti-square'}" aria-hidden="true" style="font-size:22px;color:var(--accent);"></i></div>
+        <div style="flex:1;min-width:0;">
+          <div style="font-size:13px;font-weight:600;color:#1a1a1a;">${ciDone?'Check-in complete':'Pre-visit check-in'}</div>
+          <div style="font-size:12px;color:#786858;">${ciDone?`${_txt(client.providerFirst)} has your updates for ${_txt(client.nextDate)}`:`Quick prep so ${_txt(client.providerFirst)} is ready for ${_txt(client.nextDate)}`}</div>
+        </div>
+        ${ciDone?`<i class="ti ti-circle-check-filled" aria-hidden="true" style="font-size:22px;color:#4ec49a;flex-shrink:0;"></i>`:`<span style="font-size:11px;font-weight:700;color:var(--accent);background:var(--accent-lt);padding:4px 10px;border-radius:20px;flex-shrink:0;">Start</span>`}
+      </div>
+    </div>`;
+  }
+  // Forms assigned → one consolidated card that runs the whole flow in a single pass.
+  const items=_previsitItems();
+  const total=items.length;
+  const doneCount=items.filter(i=>i.done).length;
+  const remaining=total-doneCount;
+  const allDone=remaining===0;
+  const rows=items.map(it=>`
+    <div style="display:flex;align-items:center;gap:10px;padding:9px 0;border-top:1px solid #f2ece4;">
+      <i class="ti ${it.done?'ti-square-check':'ti-square'}" aria-hidden="true" style="font-size:20px;color:${it.done?'#4ec49a':'var(--accent)'};flex-shrink:0;"></i>
+      <span style="flex:1;min-width:0;font-size:13px;font-weight:${it.done?'500':'600'};color:${it.done?'#9a8f82':'#1a1a1a'};${it.done?'text-decoration:line-through;':''}overflow:hidden;text-overflow:ellipsis;white-space:nowrap;">${_txt(it.label)}</span>
+    </div>`).join('');
+  return `<div style="margin:0 16px 14px;background:#fff;border:1.5px solid var(--accent);border-radius:14px;overflow:hidden;">
+    <div style="background:linear-gradient(135deg,var(--accent-tint),var(--accent-tint2));padding:13px 16px;">
+      <div style="display:flex;align-items:center;gap:9px;">
+        <i class="ti ti-list-check" aria-hidden="true" style="font-size:19px;color:var(--accent-lt2);"></i>
+        <div style="flex:1;font-size:14px;font-weight:700;color:var(--accent-lt2);">Complete before your visit</div>
+        <span style="font-size:11px;font-weight:700;color:var(--accent-ink);background:var(--accent);padding:3px 10px;border-radius:20px;flex-shrink:0;">${doneCount} of ${total} done</span>
+      </div>
+      <div style="font-size:12px;color:var(--accent-lt2);opacity:.82;line-height:1.5;margin-top:6px;">${allDone?`All set — ${_txt(client.providerFirst)} has everything for ${_txt(client.nextDate)}.`:`${_txt(client.providerFirst)} needs these before ${_txt(client.nextDate)}. One tap walks you through all ${total}.`}</div>
+    </div>
+    <div style="padding:4px 16px 14px;">
+      ${rows}
+      ${allDone?'':`<button onclick="_startPrevisitFlow()" class="btnp" style="border-radius:10px;margin-top:12px;"><i class="ti ti-arrow-right" aria-hidden="true"></i> ${doneCount>0?'Continue':'Start'} — ${remaining} left</button>`}
+    </div>
+  </div>`;
+}
 function renderHome(){
   setNav('home');
   const checked=Object.values(homecareChecked).filter(Boolean).length;
@@ -1530,6 +1600,9 @@ function renderHome(){
   <div style="padding:12px 16px 10px;">
     <div style="font-size:22px;font-weight:600;color:#1a1a1a;line-height:1.25;"><span style="font-weight:500;color:#786858;">${_greeting()},</span> <span id="page-heading" tabindex="-1">${_txt(client.name.split(' ')[0])}</span></div>
   </div>
+  <!-- "Complete before your visit" — top of the app because it's the priority item. One card that
+       walks the client through the check-in and every assigned form in a single guided pass. -->
+  ${_previsitSectionHTML()}
   ${_welcomeBannerHTML()}
 
   ${vcInvite?`
@@ -1538,61 +1611,6 @@ function renderHome(){
     <div style="flex:1;min-width:0;"><div style="font-size:13px;font-weight:700;color:#1a1a1a;">${_txt(client.providerFirst)} invited you to a virtual consult</div><div style="font-size:12px;color:#6b5d52;line-height:1.4;">Submit a few photos → get expert notes back</div></div>
     <span style="font-size:11px;font-weight:700;color:#fff;background:#8b6fc7;padding:5px 11px;border-radius:20px;flex-shrink:0;">Start</span>
   </div>`:''}
-
-  <!-- "Before your visit" checklist banner: whenever the provider has sent one or more forms to
-       complete ahead of an appointment, group them with the pre-visit check-in into a single clear
-       checklist so clients complete ALL of them, not just the first card they tap. Profession-neutral
-       and works for any number of forms (intake, consent, health history, waivers, etc.). -->
-  ${(function(){
-    const pf=(activeProvider().pendingForms||[]);
-    if(!pf.length)return '';                 // nothing sent to complete before the visit → no banner
-    const ciDone=!!activeProvider().checkinDone;
-    // Completed forms are removed from pendingForms, so pf.length is the number of forms still to do.
-    // Remaining work = those forms plus the check-in when it isn't done yet.
-    const remaining=pf.length+(ciDone?0:1);
-    const stepWord=remaining===1?'step':'steps';
-    // Count the total items in this visit's checklist (check-in is always part of it).
-    const totalItems=pf.length+1;
-    const itemWord=totalItems===1?'item':'items';
-    // Tapping the banner starts the first thing that's still to do (check-in, then the forms).
-    const go=!ciDone?"nav('checkin')":("_fillFormId='"+pf[0].formId+"';nav('fill-form')");
-    return `<div onclick="${go}" role="button" aria-label="Start what's left to complete before your visit" style="margin:0 16px 0;background:linear-gradient(135deg,var(--accent-tint),var(--accent-tint2));border:1.5px solid var(--accent);border-bottom:none;border-radius:14px 14px 0 0;padding:14px 16px;cursor:pointer;">
-      <div style="display:flex;align-items:center;gap:9px;margin-bottom:6px;">
-        <i class="ti ti-list-check" aria-hidden="true" style="font-size:19px;color:var(--accent-lt2);"></i>
-        <div style="font-size:14px;font-weight:700;color:var(--accent-lt2);flex:1;">Complete before your visit</div>
-        <i class="ti ti-chevron-right" aria-hidden="true" style="font-size:18px;color:var(--accent-lt2);opacity:.85;"></i>
-      </div>
-      <div style="font-size:12.5px;color:var(--accent-lt2);opacity:.82;line-height:1.5;">${_txt(client.providerFirst)} needs <b>all ${totalItems} ${itemWord}</b> below \u2014 your <b>pre-visit check-in</b> and ${pf.length===1?'the form':`all ${pf.length} forms`}. Tap to start.</div>
-      <div style="margin-top:10px;">
-        <span style="font-size:11px;font-weight:700;color:var(--accent-ink);background:var(--accent);padding:4px 10px;border-radius:20px;">${remaining} ${stepWord} to complete</span>
-      </div>
-    </div>`;
-  })()}
-
-  <!-- Pre-visit check-in (visually joined to the banner above when a checklist is active) -->
-  <div style="margin:0 16px ${(activeProvider().pendingForms||[]).length?'8px':'14px'};background:#fff;border:1.5px solid ${(activeProvider().pendingForms||[]).length?'var(--accent)':'#f0ebe4'};${(activeProvider().pendingForms||[]).length?'border-top:none;border-radius:0 0 14px 14px;':'border-radius:14px;'}overflow:hidden;cursor:pointer;" onclick="nav('checkin')" role="button" aria-label="Pre-visit check-in">
-    <div style="padding:12px 16px;display:flex;align-items:center;gap:12px;">
-      <div style="width:42px;height:42px;background:var(--accent-lt);border-radius:10px;display:flex;align-items:center;justify-content:center;flex-shrink:0;"><i class="ti ${activeProvider().checkinDone?'ti-square-check':'ti-square'}" aria-hidden="true" style="font-size:22px;color:var(--accent);"></i></div>
-      <div style="flex:1;min-width:0;">
-        <div style="font-size:13px;font-weight:600;color:#1a1a1a;">${activeProvider().checkinDone?'Check-in complete':((activeProvider().pendingForms||[]).length?'Step 1 \u00b7 Pre-visit check-in':'Pre-visit check-in')}</div>
-        <div style="font-size:12px;color:#786858;">${activeProvider().checkinDone?`${_txt(client.providerFirst)} has your updates for ${_txt(client.nextDate)}`:`Quick prep so ${_txt(client.providerFirst)} is ready for ${_txt(client.nextDate)}`}</div>
-      </div>
-      ${activeProvider().checkinDone?`<i class="ti ti-circle-check-filled" aria-hidden="true" style="font-size:22px;color:#4ec49a;flex-shrink:0;"></i>`:`<span style="font-size:11px;font-weight:700;color:var(--accent);background:var(--accent-lt);padding:4px 10px;border-radius:20px;flex-shrink:0;">Start</span>`}
-    </div>
-  </div>
-
-  <!-- Pending forms from provider -->
-  ${(activeProvider().pendingForms||[]).map((pf,pfi)=>`
-  <div style="margin:0 16px 14px;background:#fff;border:1.5px solid #e5d9f0;border-radius:14px;overflow:hidden;cursor:pointer;" onclick="_fillFormId='${pf.formId}';nav('fill-form')" role="button" aria-label="${_txt(pf.title)}">
-    <div style="padding:12px 16px;display:flex;align-items:center;gap:12px;">
-      <div style="width:42px;height:42px;background:#f3eefc;border-radius:10px;display:flex;align-items:center;justify-content:center;flex-shrink:0;"><i class="ti ti-square" aria-hidden="true" style="font-size:22px;color:#8b6fc7;"></i></div>
-      <div style="flex:1;min-width:0;">
-        <div style="font-size:13px;font-weight:600;color:#1a1a1a;">Step ${2+pfi} \u00b7 ${_txt(pf.title)}</div>
-        <div style="font-size:12px;color:#786858;">Required \u2014 ${_txt(client.providerFirst)} needs this before your visit</div>
-      </div>
-      <span style="font-size:11px;font-weight:700;color:#8b6fc7;background:#f3eefc;padding:4px 10px;border-radius:20px;flex-shrink:0;">Start</span>
-    </div>
-  </div>`).join('')}
 
   <!-- Next appointment countdown -->
   ${(()=>{
@@ -2504,6 +2522,7 @@ function _submitFillForm(){
     try{_markFormDone(p.id,pf);}catch(e){}   // persist so it doesn't reappear on reload before the provider syncs
     _ffPhotos={};
     _ffClearDraft();   // typed answers are now sent — drop the saved draft
+    if(_advancePrevisitFlow('Sent'))return;
     showToast('Sent \u2713');
     nav('home');
   };
@@ -2527,15 +2546,21 @@ function renderCheckin(){
   if(!p.checkinAnswers)p.checkinAnswers={};
   checkinAnswers=p.checkinAnswers;
   checkinStep=0;
+  _ciLastStep=-1;
   _renderCheckinStep();
 }
 
+// Track which step is currently on screen so we only jump the view back to the top when the client
+// actually moves to a new step (Next/Back) — not on the many in-step re-renders that happen while
+// they answer questions, which would otherwise yank the page up on every tap.
+let _ciLastStep=-1;
 function _renderCheckinStep(){
   const steps=_ciSteps();
   if(!steps.length){nav('home');return;}
   if(checkinStep>steps.length-1)checkinStep=steps.length-1;
   const step=steps[checkinStep];
   const isLast=checkinStep===steps.length-1;
+  const _stepChanged=(_ciLastStep!==checkinStep);_ciLastStep=checkinStep;
   S.innerHTML=`
   <div style="padding:12px 16px 0;display:flex;align-items:center;justify-content:space-between;">
     <button class="back" onclick="${checkinStep===0?'nav(\'home\')':'checkinStep--;_renderCheckinStep()'}" aria-label="Back">
@@ -2561,7 +2586,11 @@ function _renderCheckinStep(){
       ${isLast?'Submit check-in':'Next'}
     </button>
   </div>`;
+  if(_stepChanged)_scrollScreenTop();
 }
+// Reset the screen view to the top. Used when a multi-step flow advances so each new step starts
+// at the top of the field instead of wherever the previous step was scrolled to.
+function _scrollScreenTop(){try{S.scrollTop=0;}catch(e){}try{window.scrollTo(0,0);}catch(e){}}
 
 function _renderCIQuestion(q){
   if(q.type==='boolean')return _ciBoolean(q);
@@ -2834,8 +2863,7 @@ function _checkinSuccessHTML(flagged){
     </div>
     <div style="font-size:20px;font-weight:600;color:#1a1a1a;margin-bottom:8px;">You're all set!</div>
     <div style="font-size:14px;color:#786858;text-align:center;line-height:1.7;margin-bottom:8px;">${_txt(client.providerFirst)} will review your check-in before<br><strong style="color:#1a1a1a;">${_txt(client.nextDate)} at ${_txt(client.nextTime)}</strong>.</div>
-    ${flagged.length>0?
-      `<div style="background:var(--accent-lt);border-radius:10px;padding:10px 16px;margin:12px 0;font-size:13px;color:#8b6b4a;text-align:center;line-height:1.5;">They'll be prepared for the ${_txt(flagged.join(', '))} you flagged.</div>`:
+    ${flagged.length>0?'':
       `<div style="background:#f0fff8;border-radius:10px;padding:10px 16px;margin:12px 0;font-size:13px;color:#3a7a5a;text-align:center;line-height:1.5;">No big changes — ${_txt(client.providerFirst)} will pick right up where you left off.</div>`}
     <div style="display:flex;flex-direction:column;gap:8px;width:100%;max-width:260px;margin-top:12px;">
       <button class="btnp" style="border-radius:10px;" onclick="openCalModal()"><i class="ti ti-calendar-plus" aria-hidden="true"></i> Add to calendar</button>
@@ -2886,6 +2914,8 @@ function submitCheckin(){
       dateLabel:client.nextDate,time:client.nextTime,treatment:client.treatment,
       groups:pay.groups,flagged:pay.flagged,notes:pay.notes,photos:pay.photos,submittedAt:Date.now(),
     });
+    // If forms are still pending, walk straight into them; otherwise show the all-set screen.
+    if(_advancePrevisitFlow('Check-in saved'))return;
     S.innerHTML=_checkinSuccessHTML(flagged);
     return;
   }
@@ -2896,13 +2926,14 @@ function submitCheckin(){
     _clientSubmit('checkin',{client:client.name,treatment:client.treatment,dateLabel:client.nextDate,time:client.nextTime,groups:pay.groups,flagged:pay.flagged,notes:pay.notes,photos:pay.photos||[]})
       .then(function(res){
         if(res&&res.duplicate)return;
-        if(res&&res.ok!==false){ _markCheckinDone(prov); S.innerHTML=_checkinSuccessHTML(flagged); }
+        if(res&&res.ok!==false){ _markCheckinDone(prov); if(_advancePrevisitFlow('Check-in saved'))return; S.innerHTML=_checkinSuccessHTML(flagged); }
         else{ S.innerHTML=_submitFailedHTML('submitCheckin()',"Couldn't send your check-in"); }
       });
     return;
   }
   // Demo/local (no real token, not connected) — behave as before
   _markCheckinDone(prov);
+  if(_advancePrevisitFlow('Check-in saved'))return;
   S.innerHTML=_checkinSuccessHTML(flagged);
 }
 
