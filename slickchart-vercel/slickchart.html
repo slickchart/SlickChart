@@ -13605,14 +13605,14 @@ function _stampClientNextVisit(){
     if(!CL||typeof CL!=='object')return;
     var startToday=new Date();startToday.setHours(0,0,0,0);
     var appts=[];
-    if(typeof _apptsLive==='function'&&_apptsLive()&&Array.isArray(squareAppts))squareAppts.forEach(function(a){if(a.at&&!isNaN(a.at)&&a.at>=startToday)appts.push({name:a.client,when:a.at});});
-    (typeof manualAppts!=='undefined'?manualAppts:[]).forEach(function(a){var w=_apptWhen(a.date,a.time);if(w&&w>=startToday)appts.push({name:a.client,when:w});});
-    (typeof confirmedAppts!=='undefined'?confirmedAppts:[]).forEach(function(a){var w=_apptWhen(a.date,a.time);if(w&&w>=startToday)appts.push({name:a.client,when:w});});
+    if(typeof _apptsLive==='function'&&_apptsLive()&&Array.isArray(squareAppts))squareAppts.forEach(function(a){if(a.at&&!isNaN(a.at)&&a.at>=startToday)appts.push({name:a.client,clientId:'',when:a.at});});
+    (typeof manualAppts!=='undefined'?manualAppts:[]).forEach(function(a){var w=_apptWhen(a.date,a.time);if(w&&w>=startToday)appts.push({name:a.client,clientId:a.clientId||'',when:w});});
+    (typeof confirmedAppts!=='undefined'?confirmedAppts:[]).forEach(function(a){var w=_apptWhen(a.date,a.time);if(w&&w>=startToday)appts.push({name:a.client,clientId:a.clientId||'',when:w});});
     if(!appts.length)return;
     var changed=[];
     Object.keys(CL).forEach(function(cid){
       var c=CL[cid];if(!c)return;var nm=(c.name||'').trim().toLowerCase();if(!nm)return;
-      var mine=appts.filter(function(a){return String(a.name||'').trim().toLowerCase()===nm;}).sort(function(x,y){return x.when-y.when;});
+      var mine=appts.filter(function(a){return a.clientId?(a.clientId===cid):(String(a.name||'').trim().toLowerCase()===nm);}).sort(function(x,y){return x.when-y.when;});
       if(!mine.length)return;
       var w=mine[0].when;
       var label=w.toLocaleDateString('en-US',{weekday:'long',month:'long',day:'numeric'})+' · '+w.toLocaleTimeString('en-US',{hour:'numeric',minute:'2-digit'});
@@ -13719,7 +13719,7 @@ function openApptDetail(source,id){
     if(a.time&&times.indexOf(a.time)<0)times.unshift(a.time);
     _apptSheetShell(
       '<div style="font-size:16px;font-weight:600;color:#f0f0f0;margin-bottom:14px;">Edit appointment</div>'
-      +'<span class="fl-lbl">Client name</span><input class="fi" id="ad-client" value="'+String(a.client||'').replace(/"/g,'&quot;')+'" style="margin-bottom:12px;">'
+      +'<span class="fl-lbl">Client</span><input class="fi" id="ad-client" list="ad-clients" autocomplete="off" value="'+String(a.client||'').replace(/"/g,'&quot;')+'" style="margin-bottom:12px;">'+_clientDatalistHTML('ad-clients')
       +'<span class="fl-lbl">Treatment</span><select class="fi" id="ad-tx" style="margin-bottom:12px;">'+txs.map(function(t){return '<option'+(t===a.tx?' selected':'')+'>'+_fileEsc(t)+'</option>';}).join('')+'</select>'
       +'<div style="display:flex;gap:10px;margin-bottom:16px;"><div style="flex:1;"><span class="fl-lbl">Date</span><input type="date" class="fi" id="ad-mdate" value="'+(a.date||'')+'" style="color-scheme:dark;"></div><div style="flex:1;"><span class="fl-lbl">Time</span><select class="fi" id="ad-mtime">'+times.map(function(t){return '<option'+(t===a.time?' selected':'')+'>'+t+'</option>';}).join('')+'</select></div></div>'
       +'<button class="btnp" style="border-radius:10px;" onclick="_manualApptSave('+_jsStr2(id)+')"><i class="ti ti-check"></i> Save changes</button>'
@@ -13776,7 +13776,7 @@ function _manualApptSave(id){
   var tx=(document.getElementById('ad-tx')||{}).value||'Treatment';
   var date=(document.getElementById('ad-mdate')||{}).value||a.date;var time=(document.getElementById('ad-mtime')||{}).value||a.time;
   var commit=function(){
-    a.client=name;a.tx=tx;a.date=date;a.time=time;
+    a.client=name;a.tx=tx;a.date=date;a.time=time;a.clientId=_matchClientByName(name)||undefined;
     try{a.dateLabel=new Date(date+'T12:00:00').toLocaleDateString('en-US',{weekday:'long',month:'long',day:'numeric'});}catch(e){}
     _saveManualAppts();try{_rebuildCalendarFeed();}catch(e){}
     _closeApptSheet();if(typeof proToast==='function')proToast('Appointment updated ✓');renderCalendar();
@@ -13800,6 +13800,10 @@ function openQuickAdd(prefillDate){
   if(hasKey){openSquareBook(pf?{date:pf}:undefined);return;}
   openLocalQuickAdd(pf);
 }
+// Datalist of the provider's clients so a manual appointment can be linked to a real client record
+// (not just name-matched), and a resolver from a typed/picked name back to that client's id.
+function _clientDatalistHTML(id){return '<datalist id="'+id+'">'+Object.keys(CL).map(function(k){return '<option value="'+String((CL[k]&&CL[k].name)||'').replace(/"/g,'&quot;')+'">';}).join('')+'</datalist>';}
+function _matchClientByName(name){var nm=String(name||'').trim().toLowerCase();if(!nm)return '';return Object.keys(CL).find(function(k){return String((CL[k]&&CL[k].name)||'').trim().toLowerCase()===nm;})||'';}
 function openLocalQuickAdd(prefillDate){
   const existing=document.getElementById('qa-modal');if(existing)existing.remove();
   const _dv=(typeof prefillDate==='string'&&/^\d{4}-\d{2}-\d{2}$/.test(prefillDate))?prefillDate:_isoToday();
@@ -13814,7 +13818,8 @@ function openLocalQuickAdd(prefillDate){
   <div style="background:#161616;border-radius:16px;padding:20px 16px 28px;border-top:1px solid #2a2a2a;">
     <div style="width:36px;height:4px;background:#2a2a2a;border-radius:2px;margin:0 auto 18px;"></div>
     <div style="font-size:16px;font-weight:600;color:#f0f0f0;margin-bottom:16px;">New appointment</div>
-    <span class="fl-lbl">Client name</span><input class="fi" id="qa-client" placeholder="Client name" style="margin-bottom:12px;">
+    <span class="fl-lbl">Client</span><input class="fi" id="qa-client" list="qa-clients" autocomplete="off" placeholder="Pick a client or type a name" style="margin-bottom:4px;">${_clientDatalistHTML('qa-clients')}
+    <div style="font-size:11px;color:#8a8a8a;margin-bottom:12px;">Pick an existing client so it shows as their next appointment.</div>
     <span class="fl-lbl">Treatment</span>
     <select class="fi" id="qa-tx" style="margin-bottom:12px;">${txs.map(t=>`<option>${t}</option>`).join('')}</select>
     <div style="display:flex;gap:10px;margin-bottom:16px;">
@@ -13840,9 +13845,10 @@ function saveQuickAdd(){
   const tx=document.getElementById('qa-tx')?.value||'Treatment';
   const date=document.getElementById('qa-date')?.value||_isoToday();
   const time=document.getElementById('qa-time')?.value||'10:00 AM';
+  const clientId=_matchClientByName(name);
   const commit=function(){
     let lbl=date;try{lbl=new Date(date+'T12:00:00').toLocaleDateString('en-US',{weekday:'long',month:'long',day:'numeric'});}catch(e){}
-    manualAppts.unshift({id:'ma_'+Math.random().toString(36).slice(2,10),client:name,tx,date,dateLabel:lbl,time,ic:'var(--accent)'});_saveManualAppts();try{_rebuildCalendarFeed();}catch(e){}
+    manualAppts.unshift({id:'ma_'+Math.random().toString(36).slice(2,10),clientId:clientId||undefined,client:name,tx,date,dateLabel:lbl,time,ic:'var(--accent)'});_saveManualAppts();try{_rebuildCalendarFeed();}catch(e){}
     const m=document.getElementById('qa-modal');if(m)m.remove();
     renderCalendar();
   };
