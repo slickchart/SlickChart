@@ -1497,9 +1497,27 @@ function renderViewGuide(){
   <div style="padding:20px 16px 4px;text-align:center;"><div style="font-size:40px;margin-bottom:8px;">${pg.icon||'\ud83d\udcda'}</div><div id="page-heading" tabindex="-1" style="font-size:19px;font-weight:600;color:#1a1a1a;">${_txt(pg.title)}</div>${pg.cat?`<div style="font-size:12px;color:#786858;margin-top:2px;">${_txt(pg.cat)}</div>`:''}</div>
   <div style="padding:16px;">
     ${(pg.tips&&pg.tips.length)?`<div style="background:#fff;border:1.5px solid #f0ebe4;border-radius:14px;padding:14px;margin-bottom:14px;">${pg.tips.map(t=>`<div style="display:flex;gap:9px;padding:7px 0;"><i class="ti ti-point-filled" aria-hidden="true" style="font-size:14px;color:var(--accent);flex-shrink:0;margin-top:2px;"></i><span style="font-size:13.5px;color:#3a2f28;line-height:1.55;">${_txt(t)}</span></div>`).join('')}</div>`:''}
-    ${pg.url?`<a href="${_urlAttr(_safeUrl(pg.url))}" target="_blank" rel="noopener" class="btnp" style="display:flex;width:100%;box-sizing:border-box;border-radius:12px;padding:13px;text-decoration:none;justify-content:center;"><i class="ti ti-external-link"></i> Open full guide</a>`:''}
-    ${(!pg.tips||!pg.tips.length)&&!pg.url?`<div style="text-align:center;color:#786858;font-size:13px;padding:20px;">${_txt(client.providerFirst)} shared this with you.</div>`:''}
+    ${pg.fileData?`<button onclick="_downloadGuideFile('${_jsAttr(pg.guideId)}')" class="btnp" style="display:flex;width:100%;box-sizing:border-box;border-radius:12px;padding:13px;justify-content:center;align-items:center;gap:7px;${(pg.tips&&pg.tips.length)?'margin-top:0;':''}"><i class="ti ti-download"></i> Download ${_txt(pg.fileName||'file')}</button>`:''}
+    ${pg.url?`<a href="${_urlAttr(_safeUrl(pg.url))}" target="_blank" rel="noopener" class="btnp" style="display:flex;width:100%;box-sizing:border-box;border-radius:12px;padding:13px;text-decoration:none;justify-content:center;${pg.fileData?'margin-top:10px;':''}"><i class="ti ti-external-link"></i> Open full guide</a>`:''}
+    ${(!pg.tips||!pg.tips.length)&&!pg.url&&!pg.fileData?`<div style="text-align:center;color:#786858;font-size:13px;padding:20px;">${_txt(client.providerFirst)} shared this with you.</div>`:''}
   </div>`;
+}
+// Download the provider's uploaded guide file. Convert the stored data URL to a Blob first — that
+// downloads far more reliably (especially on mobile Safari) than an anchor pointed at a data URL.
+function _downloadGuideFile(guideId){
+  const pg=(activeProvider().pendingGuides||[]).find(g=>g.guideId===guideId);
+  if(!pg||!pg.fileData)return;
+  try{
+    const parts=String(pg.fileData).split(',');
+    const meta=parts[0]||'',b64=parts[1]||'';
+    const mime=(meta.match(/data:([^;]+)/)||[])[1]||pg.fileType||'application/octet-stream';
+    const bin=atob(b64),arr=new Uint8Array(bin.length);
+    for(let i=0;i<bin.length;i++)arr[i]=bin.charCodeAt(i);
+    const url=URL.createObjectURL(new Blob([arr],{type:mime}));
+    const a=document.createElement('a');a.href=url;a.download=pg.fileName||'guide';
+    document.body.appendChild(a);a.click();
+    setTimeout(function(){try{a.remove();URL.revokeObjectURL(url);}catch(e){}},1500);
+  }catch(e){ try{window.open(pg.fileData,'_blank');}catch(_){} }
 }
 function nav(screen){
   document.getElementById('tt').textContent='SlickChart';

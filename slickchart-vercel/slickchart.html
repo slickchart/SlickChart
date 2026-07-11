@@ -6807,7 +6807,7 @@ function confirmSendForm(fid,cid){
   const sendIds=_isIntakeForm(fid)?_withPhotoRelease(fid):[fid];
   if(cid==='maya'){
     try{SlickBridge.post('form-shared',{providerId:'jess',clientId:'maya',form:{id:fid,title:tmpl.name,docs:guides.map(g=>({title:g.title,kind:g.cat})),qs:(tmpl.qs||[]).map(q=>({id:q.id,label:q.label,type:q.type,required:q.required,options:q.options,items:q.items})),contra:ci?ci.items:[],consent:sig?sig.label:''}});}catch(e){}
-    guides.forEach(g=>{try{SlickBridge.post('resource-shared',{providerId:'jess',clientId:'maya',resource:{title:g.title,icon:g.icon,cat:g.cat,url:g.url||'',tips:g.tips||[]}});}catch(e){}});
+    guides.forEach(g=>{try{SlickBridge.post('resource-shared',{providerId:'jess',clientId:'maya',resource:{guideId:g.id,title:g.title,icon:g.icon,cat:g.cat,url:g.url||'',tips:g.tips||[],fileName:g.fileName||'',fileType:g.fileType||'',fileData:g.fileData||''}});}catch(e){}});
   }else if(c){
     // Real client: actually assign the form(s) to them so they appear the next
     // time they open their app, instead of just claiming it was sent.
@@ -8126,7 +8126,8 @@ function _assembleClientData(id){
   }).filter(Boolean);
   const pendingGuides=(Array.isArray(c.pendingGuides)?c.pendingGuides:[]).map(pg=>{
     const g=(typeof _findGuide==='function')?_findGuide(pg.guideId):null;if(!g)return null;
-    return {guideId:pg.guideId,title:g.title||'Guide',icon:g.icon||'📄',cat:g.cat||'',url:g.url||'',tips:Array.isArray(g.tips)?g.tips:[]};
+    return {guideId:pg.guideId,title:g.title||'Guide',icon:g.icon||'📄',cat:g.cat||'',url:g.url||'',tips:Array.isArray(g.tips)?g.tips:[],
+      fileName:g.fileName||'',fileType:g.fileType||'',fileData:g.fileData||''};
   }).filter(Boolean);
   // Active virtual-consult invite for this client (if any), so the invite reaches them
   // cross-device — not just via the same-browser SlickBridge. Dropped once they submit.
@@ -15194,11 +15195,39 @@ function saveBundle(){
 
 // ── ADD RESOURCE ──
 let _newResType={icon:'📄',cat:'Aftercare'};
+// A file (PDF, image, doc) the provider uploads as the guide's resource — clients can download it.
+// Staged here while editing; folded into the guide object on Save. Capped so it stays syncable.
+let _guideFileDraft=null; // {name,type,data} or null
+function _guideFileSizeLabel(dataUrl){try{const b=Math.round((String(dataUrl||'').length*3/4)/1024);return b>=1024?((b/1024).toFixed(1)+' MB'):(b+' KB');}catch(e){return '';}}
+function _guideFileRowHTML(){
+  if(_guideFileDraft&&_guideFileDraft.data){
+    return `<div style="display:flex;align-items:center;gap:10px;background:#161616;border:1px solid #2a2a2a;border-radius:10px;padding:10px 12px;">
+      <i class="ti ti-file-text" aria-hidden="true" style="font-size:20px;color:var(--accent);flex-shrink:0;"></i>
+      <div style="flex:1;min-width:0;"><div style="font-size:13px;color:#e0e0e0;white-space:nowrap;overflow:hidden;text-overflow:ellipsis;">${_fileEsc(_guideFileDraft.name||'Attached file')}</div><div style="font-size:11px;color:#888;">${_guideFileSizeLabel(_guideFileDraft.data)} · clients can download this</div></div>
+      <button onclick="_removeGuideFile()" style="background:none;border:none;color:#e87070;font-size:12px;cursor:pointer;flex-shrink:0;font-family:inherit;">Remove</button>
+    </div>`;
+  }
+  return `<button type="button" onclick="_pickGuideFile()" style="width:100%;border:1.5px dashed #3a3a3a;background:#161616;border-radius:10px;padding:12px;display:flex;align-items:center;justify-content:center;gap:8px;cursor:pointer;color:#bbb;font-family:inherit;font-size:13px;"><i class="ti ti-paperclip" aria-hidden="true" style="font-size:17px;color:var(--accent);"></i> Attach a file (PDF, image, doc)</button>`;
+}
+function _pickGuideFile(){
+  const inp=document.createElement('input');inp.type='file';
+  inp.accept='application/pdf,image/*,.pdf,.doc,.docx,.txt,.csv,.rtf,.pages';
+  inp.onchange=function(){
+    const f=(inp.files||[])[0];if(!f)return;
+    if(f.size>4*1024*1024){if(typeof proToast==='function')proToast('Please choose a file under 4MB so it syncs to your clients reliably');return;}
+    const r=new FileReader();
+    r.onload=function(e){_guideFileDraft={name:f.name||'file',type:f.type||'',data:e.target.result};const row=document.getElementById('guide-file-row');if(row)row.innerHTML=_guideFileRowHTML();};
+    r.onerror=function(){if(typeof proToast==='function')proToast('Could not read that file');};
+    r.readAsDataURL(f);
+  };
+  inp.click();
+}
+function _removeGuideFile(){_guideFileDraft=null;const row=document.getElementById('guide-file-row');if(row)row.innerHTML=_guideFileRowHTML();}
 function renderAddResource(){
   setNav('more');
   document.getElementById('tt').textContent='Add guide';
   _newResType={icon:'📄',cat:'Aftercare'};
-  _editingGuideId='__new__';_guideProdDraft=[];   // fresh product draft for the new guide
+  _editingGuideId='__new__';_guideProdDraft=[];_guideFileDraft=null;   // fresh product + file draft
   const types=[['📄','Aftercare','#0d1e33','#5ba3e8','Aftercare'],['🎥','Video','#0a2019','#4ec49a','Video'],['📋','Prep','var(--accent-tint)','var(--accent)','Prep'],['🌿','Education','#1e1633','#a891ec','Education']];
   S.innerHTML=`
   <div style="padding:12px 16px 0;display:flex;align-items:center;justify-content:flex-end;">
@@ -15211,6 +15240,8 @@ function renderAddResource(){
     </div>
     <span class="fl-lbl">Title</span><input class="fi" id="res-title" placeholder="e.g. Post-peel skincare guide" style="margin-bottom:12px;">
     <span class="fl-lbl">Link (optional)</span><input class="fi" id="res-url" placeholder="yourstudio.com/guides/…" style="margin-bottom:12px;">
+    <span class="fl-lbl">Or attach a file <span style="color:#888;font-weight:400;">— upload a PDF or doc you made; clients can download it</span></span>
+    <div id="guide-file-row" style="margin-bottom:12px;">${_guideFileRowHTML()}</div>
     <div style="display:flex;align-items:center;justify-content:space-between;margin-bottom:5px;"><span class="fl-lbl" style="margin:0;">Care tips — one per line</span>${aiEnabled?`<button id="ai-tips-btn" onclick="aiDraftTips(this,'res')" style="background:var(--accent-tint);color:var(--accent);border:1px solid var(--accent);border-radius:20px;padding:4px 11px;font-size:11px;font-weight:600;cursor:pointer;display:flex;align-items:center;gap:4px;"><i class="ti ti-sparkles" style="font-size:12px;"></i> Draft with AI</button>`:''}</div>
     <textarea class="fi" id="res-tips" style="height:122px;resize:none;margin-bottom:16px;line-height:1.6;" placeholder="Avoid sun for 48 hours&#10;Don't pick or scrub the area&#10;Gentle moisturizer only"></textarea>
     <div style="display:flex;align-items:center;justify-content:space-between;margin-bottom:8px;"><span class="fl-lbl" style="margin:0;">Linked products</span><button onclick="_toggleGuideProdPicker()" style="background:var(--accent-tint);color:var(--accent);border:1px solid var(--accent);border-radius:20px;padding:4px 11px;font-size:11px;font-weight:600;cursor:pointer;display:flex;align-items:center;gap:4px;"><i class="ti ti-plus" style="font-size:12px;"></i> Link product</button></div>
@@ -15287,6 +15318,7 @@ function renderEditResource(id){
   const g=_findGuide(id)||{id,icon:'📄',title:'',cat:'Aftercare',url:'',tips:[]};
   _editingGuideId=id;
   _guideProdDraft=(Array.isArray(g.products)?g.products.slice():[]);   // stage product edits
+  _guideFileDraft=(g.fileData?{name:g.fileName||'Attached file',type:g.fileType||'',data:g.fileData}:null);   // stage existing file
   const isCustom=/^g-custom-/.test(id);
   const hasOverride=customResources.some(x=>x.id===id);
   _newResType={icon:g.icon||'📄',cat:g.cat||'Aftercare'};
@@ -15302,6 +15334,8 @@ function renderEditResource(id){
     </div>
     <span class="fl-lbl">Title</span><input class="fi" id="res-title" value="${(g.title||'').replace(/"/g,'&quot;')}" placeholder="Guide title" style="margin-bottom:12px;">
     <span class="fl-lbl">Link (optional)</span><input class="fi" id="res-url" value="${(g.url||'').replace(/"/g,'&quot;')}" placeholder="yourstudio.com/guides/…" style="margin-bottom:12px;">
+    <span class="fl-lbl">Or attach a file <span style="color:#888;font-weight:400;">— upload a PDF or doc you made; clients can download it</span></span>
+    <div id="guide-file-row" style="margin-bottom:12px;">${_guideFileRowHTML()}</div>
     <div style="display:flex;align-items:center;justify-content:space-between;margin-bottom:5px;"><span class="fl-lbl" style="margin:0;">Care tips — one per line</span>${aiEnabled?`<button id="ai-tips-btn" onclick="aiDraftTips(this,'res')" style="background:var(--accent-tint);color:var(--accent);border:1px solid var(--accent);border-radius:20px;padding:4px 11px;font-size:11px;font-weight:600;cursor:pointer;display:flex;align-items:center;gap:4px;"><i class="ti ti-sparkles" style="font-size:12px;"></i> Draft with AI</button>`:''}</div>
     <textarea class="fi" id="res-tips" style="height:122px;resize:none;margin-bottom:16px;line-height:1.6;" placeholder="One tip per line">${(g.tips||[]).join('\n').replace(/</g,'&lt;')}</textarea>
     <div style="display:flex;align-items:center;justify-content:space-between;margin-bottom:8px;"><span class="fl-lbl" style="margin:0;">Linked products</span><button onclick="_toggleGuideProdPicker()" style="background:var(--accent-tint);color:var(--accent);border:1px solid var(--accent);border-radius:20px;padding:4px 11px;font-size:11px;font-weight:600;cursor:pointer;display:flex;align-items:center;gap:4px;"><i class="ti ti-plus" style="font-size:12px;"></i> Link product</button></div>
@@ -15322,11 +15356,12 @@ function saveEditResource(id){
   const url=(document.getElementById('res-url')?.value||'').trim().replace(/^https?:\/\//i,'');
   const tips=(document.getElementById('res-tips')?.value||'').split('\n').map(s=>s.trim()).filter(Boolean);
   const products=Array.isArray(_guideProdDraft)?_guideProdDraft.slice():((_findGuide(id)||{}).products||[]);
-  const upd={id,icon:_newResType.icon||'📄',title,cat:_newResType.cat||'Aftercare',url,tips,products};
+  const upd={id,icon:_newResType.icon||'📄',title,cat:_newResType.cat||'Aftercare',url,tips,products,
+    fileName:(_guideFileDraft&&_guideFileDraft.name)||'',fileType:(_guideFileDraft&&_guideFileDraft.type)||'',fileData:(_guideFileDraft&&_guideFileDraft.data)||''};
   const i=customResources.findIndex(x=>x.id===id);
   if(i>=0)customResources[i]=Object.assign({},customResources[i],upd);
   else customResources.push(upd);
-  _guideProdDraft=null;
+  _guideProdDraft=null;_guideFileDraft=null;
   persistCustomResources();rebuildResources();
   if(typeof proToast==='function')proToast('Guide updated');
   _fgTab='guides';nav('forms');
@@ -15421,9 +15456,10 @@ function saveResource(){
   const url=(document.getElementById('res-url')?.value||'').trim().replace(/^https?:\/\//i,'');
   const tips=(document.getElementById('res-tips')?.value||'').split('\n').map(s=>s.trim()).filter(Boolean);
   const products=Array.isArray(_guideProdDraft)?_guideProdDraft.slice():[];
-  const g={id:'g-custom-'+Date.now(),icon:_newResType.icon||'📄',title,cat:_newResType.cat||'Aftercare',url,shared:0,tips,products};
+  const g={id:'g-custom-'+Date.now(),icon:_newResType.icon||'📄',title,cat:_newResType.cat||'Aftercare',url,shared:0,tips,products,
+    fileName:(_guideFileDraft&&_guideFileDraft.name)||'',fileType:(_guideFileDraft&&_guideFileDraft.type)||'',fileData:(_guideFileDraft&&_guideFileDraft.data)||''};
   customResources.push(g);
-  _guideProdDraft=null;
+  _guideProdDraft=null;_guideFileDraft=null;
   persistCustomResources();
   rebuildResources();
   if(typeof proToast==='function')proToast('Guide added to your library');
