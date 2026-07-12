@@ -2,6 +2,24 @@
 
 Newest entries at the top. One entry per deploy. Dates are US-formatted.
 
+## 2026-07-12 — Fixes: past-dated "next visit" in the AI brief + voice-note doubling on Android
+
+- **AI brief showed a past appointment as the upcoming visit** (e.g. "next visit already scheduled for
+  Jul 11" when that was yesterday). The brief read the stored `nextVisit` string without checking whether
+  it had passed, so a stale date was both displayed and fed to the AI as "scheduled." Added a future-aware
+  `_upcomingVisit(id)` that prefers a real future appointment (`_nextApptForClient`) and otherwise returns
+  the stored date only if it hasn't passed — used for the brief header and the AI's chart context. A
+  past date now reads "No upcoming visit" / "Not scheduled."
+- **Voice notes doubled words on Android (Pixel).** The prior fix (fresh recognizer per restart) still had
+  two gaps on Android Chrome: the session accumulator was shared across recognizer instances, and there was
+  no guard against late/duplicate callbacks from a recognizer that had already been replaced — so a dead
+  recognizer would re-bank its text and spawn a second overlapping mic session ("today today today"). The
+  session buffer is now a per-recognizer closure local, and every callback (`onresult`/`onend`/`onerror`)
+  is dropped unless it comes from the current active recognizer. Banks each phrase exactly once, one mic
+  session at a time; still correct on iOS Safari.
+
+Provider-side only; demo in lockstep; both apps parse.
+
 ## 2026-07-12 — Tattoo: automated aftercare drip + 2D body-map placement + landing copy
 
 Two of the flagged tattoo follow-ups, built on the existing infrastructure.

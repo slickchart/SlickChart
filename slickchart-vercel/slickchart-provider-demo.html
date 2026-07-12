@@ -3771,6 +3771,19 @@ function _localBrief(id,c){
     {icon:'ti-star',color:'#a891ec',label:'Client goals',detail:clean(c.concerns)?clean(c.concerns)+'.':('Confirm '+first+'\u2019s goals at the start of the session.')},
   ];
 }
+// The client's upcoming visit label, future-aware. Prefers a real future appointment; otherwise
+// returns the stored nextVisit string ONLY if it hasn't already passed — so a stale past date
+// (e.g. an appointment that's now in the past) is never shown or fed to the AI as "next/scheduled".
+// Returns '' when nothing is upcoming.
+function _upcomingVisit(id){
+  const c=CL[id]||{};
+  try{const n=(typeof _nextApptForClient==='function')?_nextApptForClient(id):null;if(n&&n.dateLabel)return n.dateLabel;}catch(e){}
+  const s=String(c.nextVisit||'').trim();
+  if(!s)return '';
+  const d=new Date(s);
+  if(!isNaN(d.getTime())){const t=new Date();t.setHours(0,0,0,0);if(d.getTime()<t.getTime())return '';}
+  return s;
+}
 function renderBrief(id){
   setNav('clients');
   const c=CL[id];
@@ -3779,7 +3792,7 @@ function renderBrief(id){
   <div style="padding:12px 16px 0;display:flex;justify-content:flex-end;align-items:center;">
     <button onclick="nav('room','${id}')" style="border:none;background:#0a2019;color:#4ec49a;border-radius:8px;padding:6px 12px;font-size:12px;cursor:pointer;"><i class="ti ti-armchair" style="font-size:12px;"></i> Session</button>
   </div>
-  <div style="padding:12px 16px 0;"><div class="row" style="gap:10px;">${av(c,38)}<div><div style="font-size:15px;font-weight:500;color:#f0f0f0;">${_fileEsc(c.name)}</div><div style="font-size:12px;color:#999;">${_fileEsc(c.nextVisit)} · ${_fileEsc(c.treatment)}</div>${selectedProfessions.includes('brow')&&!selectedProfessions.includes('esty')&&c.touchUpDate?`<div style="font-size:12px;color:#c084fc;margin-top:2px;display:flex;align-items:center;gap:4px;"><i class="ti ti-calendar-check" style="font-size:11px;"></i> Touch-up: ${_fileEsc(c.touchUpDate)}</div>`:''}</div></div></div></div>
+  <div style="padding:12px 16px 0;"><div class="row" style="gap:10px;">${av(c,38)}<div><div style="font-size:15px;font-weight:500;color:#f0f0f0;">${_fileEsc(c.name)}</div><div style="font-size:12px;color:#999;">${_fileEsc(_upcomingVisit(id)||'No upcoming visit')} · ${_fileEsc(c.treatment)}</div>${selectedProfessions.includes('brow')&&!selectedProfessions.includes('esty')&&c.touchUpDate?`<div style="font-size:12px;color:#c084fc;margin-top:2px;display:flex;align-items:center;gap:4px;"><i class="ti ti-calendar-check" style="font-size:11px;"></i> Touch-up: ${_fileEsc(c.touchUpDate)}</div>`:''}</div></div></div></div>
   <div style="margin:12px 16px 0;background:#13102a;border:1px solid #2d2360;border-radius:12px;padding:14px;">
     <div style="display:flex;align-items:center;justify-content:space-between;margin-bottom:12px;">
       <span class="aic"><i class="ti ti-sparkles" style="font-size:12px;"></i> AI pre-appointment brief</span>
@@ -3827,7 +3840,7 @@ Concerns: ${c.concerns||'Not recorded'}
 Allergies / contraindications: ${c.allergies||'None noted'}
 ${c.currentRoutine&&String(c.currentRoutine).trim()?`Current routine / products: ${c.currentRoutine}\n`:''}Treatment today: ${c.treatment||'Not recorded'}
 Last visit: ${c.lastVisit||'—'}
-Next visit: ${c.nextVisit||'Not scheduled'}
+Next visit: ${_upcomingVisit(id)||'Not scheduled'}
 ${isDemo?(isHairBarber?
     (id==='maya'?`Session notes:
 - Feb 18: Consultation. Goal: balayage + gloss, warm honey tones. Virgin hair, no prior color.
@@ -4390,32 +4403,41 @@ function startVoiceNote(id){
   // and on end we bank the session's finalized text into `committed` exactly once. Nothing is ever
   // re-read, so nothing doubles, and no finalized text is lost across the auto-restarts.
   let committed=_seed?_seed+' ':'';   // finalized text so far (seeded when resuming after an edit)
-  let curSessionFinal='';             // finalized text of the CURRENT recognizer session
   function _voiceMakeRec(){
     const r=new SR();r.continuous=true;r.interimResults=true;r.lang='en-US';
+    let sessionFinal='';   // THIS recognizer's finalized text — a closure local, NOT shared, so a
+                           // superseded recognizer can't bleed its text into the next session.
+    // Guard: only the currently-active recognizer (_voiceRec) may act on its callbacks. Android
+    // Chrome fires trailing onresult/onend/onerror events from a recognizer we've already replaced;
+    // if a dead recognizer re-banked its text and relaunched, we'd double the words AND end up with
+    // two overlapping mic sessions — exactly the "today today today" doubling. Dropping stale
+    // callbacks fixes it on Android while staying correct on iOS Safari.
     r.onresult=(e)=>{
-      let sessionFinal='',interim='';
+      if(r!==_voiceRec)return;
+      let sf='',interim='';
       for(let i=0;i<e.results.length;i++){
         const res=e.results[i];
         const seg=(res[0]&&res[0].transcript)||'';
-        if(res.isFinal)sessionFinal+=seg+' ';
+        if(res.isFinal)sf+=seg+' ';
         else interim+=seg+' ';
       }
-      curSessionFinal=sessionFinal;
-      _voiceText=(committed+' '+sessionFinal+' '+interim).replace(/\s+/g,' ').trim();
+      sessionFinal=sf;
+      _voiceText=(committed+' '+sf+' '+interim).replace(/\s+/g,' ').trim();
       const el=document.getElementById('voice-transcript');
       if(el)el.textContent=_voiceText||'Listening…';
     };
     // Bank this session's finalized text ONCE, then spin up a brand-new recognizer so the next
-    // session starts from an empty results window (nothing can be re-read and duplicated). Only
-    // relaunch if the user hasn't intentionally stopped/paused/cancelled.
+    // session starts from an empty results window. Stale/duplicate `onend`s (common on Android) are
+    // dropped by the r===_voiceRec guard, so text is banked exactly once and only one recognizer
+    // ever runs at a time.
     r.onend=()=>{
-      if(_voiceStopping)return;
-      if(curSessionFinal.trim()){committed=(committed+' '+curSessionFinal).replace(/\s+/g,' ').trim();}
-      curSessionFinal='';
+      if(r!==_voiceRec||_voiceStopping)return;
+      if(sessionFinal.trim())committed=(committed+' '+sessionFinal).replace(/\s+/g,' ').trim();
+      sessionFinal='';
       _voiceStartRec();
     };
     r.onerror=(e)=>{
+      if(r!==_voiceRec)return;   // ignore errors from a superseded recognizer
       const el=document.getElementById('voice-transcript');
       if(e.error==='not-allowed'||e.error==='service-not-allowed'){
         // A blocked mic won't recover by restarting, stop trying and tell them how to fix it.
