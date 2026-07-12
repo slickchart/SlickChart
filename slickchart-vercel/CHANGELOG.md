@@ -2,6 +2,14 @@
 
 Newest entries at the top. One entry per deploy. Dates are US-formatted.
 
+## 2026-07-12 — Courses are now deletable (including the demo/starter ones)
+
+Courses could be created, edited, previewed, and sent — but never deleted, so the seeded starter
+courses were stuck on the list. Added a **Delete course** action (Edit a course → Delete course at the
+bottom, with a confirm). It removes the course, cleans up any attached lesson files (server + local),
+and marks the course set as customized so a deleted starter course doesn't get reseeded back on the next
+load. Provider-side only; demo regenerated in lockstep; both parse.
+
 ## 2026-07-12 — XSS round 35: escape client name/treatment in the provider session-summary screen
 
 A render-sink sweep of both apps came back almost entirely clean — messages, consult requests, form answers,

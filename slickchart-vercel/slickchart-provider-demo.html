@@ -9824,7 +9824,8 @@ function renderCourseBuilder(id){
     <div style="display:flex;align-items:center;justify-content:space-between;margin-bottom:8px;"><span class="fl-lbl" style="margin:0;">Lessons</span><span style="font-size:11px;color:#9a9a9a;">Add content, a video link, or a file to each</span></div>
     <div id="cb-lessons"></div>
     <button onclick="_cbAddLesson()" style="width:100%;border:1.5px dashed #2a2a2a;border-radius:10px;padding:12px;display:flex;align-items:center;justify-content:center;gap:8px;font-size:13px;color:var(--accent);background:none;cursor:pointer;margin:4px 0 18px;font-family:inherit;"><i class="ti ti-plus"></i> Add a lesson</button>
-    <button class="btnp" style="border-radius:8px;margin-bottom:22px;" onclick="saveCourse('${c?c.id:'new'}')"><i class="ti ti-check"></i> Save course</button>
+    <button class="btnp" style="border-radius:8px;margin-bottom:12px;" onclick="saveCourse('${c?c.id:'new'}')"><i class="ti ti-check"></i> Save course</button>
+    ${c?`<button onclick="deleteCourse('${_jsAttr(c.id)}')" style="width:100%;background:none;border:1px solid #3a1a1a;color:#c96a6a;border-radius:8px;padding:11px;font-size:13px;font-weight:600;cursor:pointer;font-family:inherit;margin-bottom:22px;display:inline-flex;align-items:center;justify-content:center;gap:6px;"><i class="ti ti-trash" style="font-size:14px;"></i> Delete course</button>`:''}
   </div>`;
   _cbRenderLessons();
 }
@@ -9919,6 +9920,20 @@ function saveCourse(id){
   try{persistCourses();}catch(e){}
   window._cbDraft=null;
   if(typeof proToast==='function')proToast(existing?'Course updated ✓':'Course created ✓');
+  _fgTab='courses';nav('forms');
+}
+
+// Delete a course — including the seeded/demo starter courses. Removes it from the list,
+// cleans up any attached lesson files (server + local), and marks the course set customized
+// so a deleted starter course doesn't get reseeded back on the next load.
+function deleteCourse(id){
+  const c=courses.find(x=>x.id===id);if(!c)return;
+  if(!confirm('Delete "'+String(c.title||'this course').replace(/\s+/g,' ').trim()+'"?\n\nThis permanently removes the course and its lessons. This can’t be undone.'))return;
+  try{(_courseLessons(c)||[]).forEach(l=>{if(l&&l.fileId){try{_persistGuideFile(l.fileId,null,true);}catch(e){}}});}catch(e){}
+  const i=courses.findIndex(x=>x.id===id);if(i>=0)courses.splice(i,1);
+  try{_markCoursesCustom();}catch(e){}
+  try{persistCourses();}catch(e){}
+  if(typeof proToast==='function')proToast('Course deleted');
   _fgTab='courses';nav('forms');
 }
 
