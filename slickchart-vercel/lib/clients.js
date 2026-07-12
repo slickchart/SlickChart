@@ -23,6 +23,10 @@ export async function ensureClientTables() {
     updated_at bigint
   )`;
   await q`CREATE INDEX IF NOT EXISTS clients_provider_idx ON clients(provider_id)`;
+  // Migration: tombstone marker for a client-initiated deletion. Set once the client purges
+  // their data; it (a) hides the row from the provider roster and (b) stops a provider re-sync
+  // from resurrecting the scrubbed PII (see upsertClient / deleteClientData below).
+  await q`ALTER TABLE clients ADD COLUMN IF NOT EXISTS deleted_at bigint`;
   await q`CREATE TABLE IF NOT EXISTS client_events (
     id text PRIMARY KEY,
     client_id text NOT NULL,
@@ -106,10 +110,8 @@ export async function deletePushSubByEndpoint(clientId, endpoint) {
   return true;
 }
 
-// Client-initiated data deletion: drop the app data a client controls (their saved
-// preferences and every device push subscription). The clinical record in `clients` and
-// the event history are intentionally NOT removed here — the provider is the custodian and
-// may be legally required to retain them; instead a 'delete-request' event notifies them.
+// Client-initiated data deletion: drop the app data a client controls — their saved
+// preferences and every device push subscription.
 export async function deleteClientPrefs(clientId) {
   const q = sql();
   await q`DELETE FROM client_prefs WHERE client_id=${String(clientId)}`;
@@ -118,6 +120,30 @@ export async function deleteClientPrefs(clientId) {
 export async function deleteClientPushSubs(clientId) {
   const q = sql();
   await q`DELETE FROM push_subscriptions WHERE client_id=${String(clientId)}`;
+  return true;
+}
+
+// Client-initiated deletion, server side: purge the client's own submissions and scrub the
+// server-held PII so nothing personally identifiable remains on our side, while leaving the
+// provider free to keep their own local treatment record for legal retention.
+//   • client_events: every submission the client made (check-in photos, form answers, the
+//     two-way message thread, virtual-consult photos, booking/contact updates). These are a
+//     delivery queue the provider ingests into their own chart; anything not yet ingested is
+//     intentionally discarded at the client's request. Call this BEFORE logging the
+//     'delete-request' event so that notification survives the purge.
+//   • the clients row: blank the contact columns (name/email/phone) and the server-side chart
+//     mirror (data), rotate the link token to an unshared value so the old link is dead, and
+//     set deleted_at so a provider re-sync can't resurrect any of it (see upsertClient).
+// The provider never reads `data` back (listClients omits it; only the now-revoked client
+// token could) — their retained record is their own local copy, so scrubbing here loses
+// nothing they can still retrieve.
+export async function deleteClientData(clientId) {
+  const q = sql();
+  const id = String(clientId);
+  await q`DELETE FROM client_events WHERE client_id=${id}`;
+  const revoked = 'revoked_' + genToken();
+  await q`UPDATE clients SET name='', email='', phone='', data='{}'::jsonb, token=${revoked}, deleted_at=${Date.now()}
+    WHERE id=${id}`;
   return true;
 }
 
@@ -138,7 +164,13 @@ export async function upsertClient(providerId, c) {
   const now = Date.now();
   const id = String((c && c.id) || ('c_' + genToken().slice(0, 10)));
   const data = JSON.stringify((c && c.data) || {});
-  const rows = await q`SELECT token FROM clients WHERE id=${id} AND provider_id=${providerId}`;
+  const rows = await q`SELECT token, deleted_at FROM clients WHERE id=${id} AND provider_id=${providerId}`;
+  // A client who deleted their data is tombstoned. Never resurrect the scrubbed PII or the
+  // revoked token from the provider's still-cached copy — a re-sync of a deleted client is a
+  // no-op server-side (the provider may keep their own local record; the server stays clean).
+  if (rows[0] && rows[0].deleted_at) {
+    return { id, token: rows[0].token, name: '', email: '', deleted: true };
+  }
   let token = rows[0] && rows[0].token;
   if (!token) {
     token = genToken();
@@ -161,7 +193,7 @@ export async function upsertClient(providerId, c) {
 export async function listClients(providerId) {
   const q = sql();
   return await q`SELECT id, token, name, email, phone, invited_at, opened_at, updated_at
-    FROM clients WHERE provider_id=${providerId} ORDER BY lower(name)`;
+    FROM clients WHERE provider_id=${providerId} AND deleted_at IS NULL ORDER BY lower(name)`;
 }
 
 export async function getClientByToken(token) {

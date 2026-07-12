@@ -2,6 +2,42 @@
 
 Newest entries at the top. One entry per deploy. Dates are US-formatted.
 
+## 2026-07-12 — Client account deletion now really deletes (server-side purge + tombstone)
+
+Reviewed the client app's three "native" needs. Two were already built correctly for a TWA/PWA and
+needed no change: **push notifications** run on real Web Push/VAPID (FCM on Android, APNs on installed
+iOS PWAs, both under the browser's push service) — wired end to end (`enableNotifs` → permission →
+`pushManager.subscribe` → `/api/push-subscribe`, service-worker `push`/`notificationclick`, cron
+reminders); and **native camera** uses `<input type="file" accept="image/*" capture="environment">`,
+which opens the device camera inside the WebView. The third — account deletion — had a real gap and is
+fixed here.
+
+Before, "Delete My Data" removed the client's prefs + push subscriptions and notified the provider, but
+the client's server-side **PII** (name/email/phone) and everything they'd **submitted** (check-in photos,
+form answers, the message thread, consult/booking events) stayed in the database, and the link kept
+working — so it wasn't an honest deletion. Worse, because the provider app is the source of truth and
+re-syncs its whole client list, any naive server scrub would have been **resurrected on the next sync**.
+
+Now `/api/client-delete` does a real, durable deletion:
+
+- **Purges the client's submissions.** Every `client_events` row for that client (check-ins, forms, the
+  full two-way message thread, virtual-consult/booking/contact events) is deleted. This runs *before* the
+  `delete-request` notification is logged, so the provider is still told.
+- **Scrubs server-held PII + the chart mirror.** The `clients` row's name/email/phone and the server-side
+  `data` blob are blanked. The provider never reads that mirror back (their retained record is their own
+  local copy), so this removes our identifiable copy without touching what a provider keeps for legal
+  retention.
+- **Revokes the link.** The token is rotated to an unshared value, so the old client link is immediately
+  dead (matching the "ask your provider to resend your link" copy).
+- **Tombstones the row** (`deleted_at`) so a provider re-sync can't undo any of the above — `upsertClient`
+  now no-ops on a deleted client, and `listClients` hides it from the roster. A one-line idempotent
+  migration adds the column.
+
+Client-side copy updated to describe the stronger behavior honestly. Verified end to end with an
+in-memory model of the exact query sequence (13/13: purge, PII scrub, token revocation,
+resurrection-blocked, roster exclusion, other clients untouched); all server modules and both client
+apps parse; client demo synced.
+
 ## 2026-07-12 — XSS sweep, round 34: finish escaping the client check-in / form-fill surface
 
 The escaping sweep had been thorough on the provider app but the **client app** (`slickchart-client.html`)
