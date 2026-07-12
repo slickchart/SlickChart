@@ -27,7 +27,14 @@ export default async function handler(req, res) {
     try {
       const rawCfg = await getKVValue(c.provider_id, 'sc_checkin_cfg');
       if (rawCfg) data.checkinCfg = JSON.parse(rawCfg);
-    } catch (e) { /* no saved check-in config yet — client falls back to defaults */ }
+    } catch (e) { /* no saved check-in config yet, client falls back to defaults */ }
+    try {
+      const rawSvc = await getKVValue(c.provider_id, 'sc_service_menu');
+      if (rawSvc) {
+        const svc = JSON.parse(rawSvc);
+        if (Array.isArray(svc)) data.services = svc.map(s => (s && s.name ? String(s.name).trim() : '')).filter(Boolean);
+      }
+    } catch (e) { /* no service menu published yet, client falls back to a generic list */ }
     res.setHeader('Cache-Control', 'no-store, no-cache, must-revalidate');
     res.setHeader('Pragma', 'no-cache');
     res.status(200).json({

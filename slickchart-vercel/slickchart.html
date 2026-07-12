@@ -4148,6 +4148,7 @@ function moveClientProd(clientId,i,dir){
 
 let _voiceRec=null,_voiceText='',_voiceClientId=null,_notesFrom='profile',_summaryFrom='room';
 let _voiceStopping=false;
+let _voiceSeed='';   // text to continue FROM when resuming after a pause+edit
 function _voiceKeyframes(){if(!document.getElementById('voice-kf')){const st=document.createElement('style');st.id='voice-kf';st.textContent='@keyframes vpulse{0%,100%{opacity:1;transform:scale(1)}50%{opacity:.35;transform:scale(.7)}}.voice-pulse{animation:vpulse 1s infinite;}';document.head.appendChild(st);}}
 function _voiceOverlay(html){
   let ov=document.getElementById('voice-overlay');
@@ -4156,7 +4157,9 @@ function _voiceOverlay(html){
 }
 function _voiceClose(){_voiceStopping=true;const ov=document.getElementById('voice-overlay');if(ov)ov.remove();try{if(_voiceRec)_voiceRec.stop();}catch(e){}_voiceRec=null;}
 function startVoiceNote(id){
-  _voiceClientId=id;_voiceText='';_voiceKeyframes();
+  _voiceClientId=id;_voiceKeyframes();
+  // If we're resuming after a pause+edit, start from that edited text so new speech appends to it.
+  const _seed=(_voiceSeed||'').trim();_voiceSeed='';_voiceText=_seed;
   const SR=window.SpeechRecognition||window.webkitSpeechRecognition;
   if(!SR){
     _voiceOverlay(`<div style="font-size:15px;font-weight:600;color:#f0f0f0;margin-bottom:4px;">Voice note</div><div style="font-size:12px;color:#e8a060;line-height:1.5;margin-bottom:10px;">Live dictation isn't supported in this browser. You can type or paste your note here instead, it saves to your notes the same way.</div><textarea id="voice-ta" style="width:100%;height:120px;background:#0f0f0f;border:1px solid #2a2a2a;border-radius:10px;padding:11px;font-size:14px;color:#ddd;font-family:inherit;line-height:1.6;resize:none;outline:none;box-sizing:border-box;"></textarea><div style="display:flex;gap:8px;margin-top:12px;"><button onclick="_voiceSave(document.getElementById('voice-ta').value)" style="flex:1;background:var(--accent);color:var(--accent-ink);border:none;border-radius:10px;padding:12px;font-size:13px;font-weight:600;cursor:pointer;font-family:inherit;">Save to notes</button><button onclick="_voiceClose()" style="background:#1a1a1a;border:1px solid #2a2a2a;color:#ccc;border-radius:10px;padding:12px 16px;font-size:13px;cursor:pointer;font-family:inherit;">Cancel</button></div>`);
@@ -4188,7 +4191,7 @@ function startVoiceNote(id){
   // the whole results window each event (idempotent, so resultIndex behaviour can't cause repeats),
   // and bank each finished session's text once into `committed` when the engine restarts. That keeps
   // it duplicate-proof on Android AND loss-proof across the auto-restarts on both platforms.
-  let committed='';        // finalized text from previous (ended) recognition sessions
+  let committed=_seed?_seed+' ':'';   // finalized text so far (seeded when resuming after an edit)
   let curSessionFinal='';  // finalized text of the CURRENT session (rebuilt every event)
   rec.onresult=(e)=>{
     let sessionFinal='',interim='';
@@ -4237,7 +4240,39 @@ function startVoiceNote(id){
     }
   };
   try{rec.start();}catch(e){}
-  _voiceOverlay(`<div style="display:flex;align-items:center;gap:8px;margin-bottom:10px;"><span class="voice-pulse" style="width:11px;height:11px;border-radius:50%;background:#e05555;display:inline-block;"></span><span style="font-size:15px;font-weight:600;color:#f0f0f0;">Listening…</span></div><div style="font-size:12px;color:#999;margin-bottom:8px;line-height:1.5;">Speak your notes out loud. Tap <b>Stop</b> when you're done, then review before saving.</div><div id="voice-transcript" style="min-height:90px;max-height:210px;overflow-y:auto;background:#0f0f0f;border:1px solid #2a2a2a;border-radius:10px;padding:11px;font-size:14px;color:#ddd;line-height:1.6;">Listening…</div><div style="display:flex;gap:8px;margin-top:12px;"><button onclick="_voiceStop()" style="flex:1;background:#e05555;color:#fff;border:none;border-radius:10px;padding:12px;font-size:13px;font-weight:600;cursor:pointer;font-family:inherit;"><i class="ti ti-player-stop"></i> Stop</button><button onclick="_voiceClose()" style="background:#1a1a1a;border:1px solid #2a2a2a;color:#ccc;border-radius:10px;padding:12px 16px;font-size:13px;cursor:pointer;font-family:inherit;">Cancel</button></div>`);
+  _voiceOverlay(`<div style="display:flex;align-items:center;gap:8px;margin-bottom:10px;"><span class="voice-pulse" style="width:11px;height:11px;border-radius:50%;background:#e05555;display:inline-block;"></span><span style="font-size:15px;font-weight:600;color:#f0f0f0;">Listening…</span></div><div style="font-size:12px;color:#999;margin-bottom:8px;line-height:1.5;">Speak your notes out loud. Tap <b>Pause</b> to fix a word, then keep going, or <b>Stop</b> when you're done.</div><div id="voice-transcript" style="min-height:90px;max-height:210px;overflow-y:auto;background:#0f0f0f;border:1px solid #2a2a2a;border-radius:10px;padding:11px;font-size:14px;color:#ddd;line-height:1.6;">${(_voiceText||'').replace(/</g,'&lt;')||'Listening…'}</div>
+  <div style="display:flex;gap:8px;margin-top:12px;">
+    <button onclick="_voicePause()" style="flex:1;background:#1a1a1a;border:1px solid var(--accent);color:var(--accent);border-radius:10px;padding:12px;font-size:13px;font-weight:600;cursor:pointer;font-family:inherit;"><i class="ti ti-player-pause"></i> Pause &amp; edit</button>
+    <button onclick="_voiceStop()" style="flex:1;background:#e05555;color:#fff;border:none;border-radius:10px;padding:12px;font-size:13px;font-weight:600;cursor:pointer;font-family:inherit;"><i class="ti ti-player-stop"></i> Stop</button>
+  </div>
+  <button onclick="_voiceClose()" style="width:100%;margin-top:8px;background:none;border:none;color:#929292;font-size:13px;cursor:pointer;font-family:inherit;padding:6px;">Cancel</button>`);
+}
+// Pause dictation to fix the text, then pick back up. We stop the mic (preventing the auto-restart),
+// show the transcript in an editable box, and Resume continues appending to whatever it's edited to.
+function _voicePause(){
+  _voiceStopping=true;
+  try{if(_voiceRec)_voiceRec.stop();}catch(e){}_voiceRec=null;
+  const txt=(_voiceText||'').replace(/</g,'&lt;');
+  _voiceOverlay(`<div style="display:flex;align-items:center;gap:8px;margin-bottom:8px;"><i class="ti ti-player-pause" aria-hidden="true" style="font-size:16px;color:var(--accent);"></i><span style="font-size:15px;font-weight:600;color:#f0f0f0;">Paused, edit your note</span></div>
+  <div style="font-size:12px;color:#8a8a8a;margin-bottom:10px;line-height:1.5;">Fix anything below, then tap <b>Resume</b> to keep dictating from where you left off.</div>
+  <textarea id="voice-ta" placeholder="Your note so far…" style="width:100%;height:150px;background:#0f0f0f;border:1px solid #2a2a2a;border-radius:10px;padding:11px;font-size:14px;color:#ddd;font-family:inherit;line-height:1.6;resize:none;outline:none;box-sizing:border-box;">${txt}</textarea>
+  <button onclick="_voiceResume()" style="width:100%;margin-top:12px;background:var(--accent);color:var(--accent-ink);border:none;border-radius:10px;padding:12px;font-size:14px;font-weight:600;cursor:pointer;font-family:inherit;display:flex;align-items:center;justify-content:center;gap:7px;"><i class="ti ti-player-play"></i> Resume dictation</button>
+  <div style="display:flex;gap:8px;margin-top:8px;">
+    <button onclick="_voiceStopFromPause()" style="flex:1;background:#1a1a1a;border:1px solid #2a2a2a;color:#ccc;border-radius:10px;padding:11px;font-size:13px;font-weight:600;cursor:pointer;font-family:inherit;"><i class="ti ti-check"></i> Done, review</button>
+    <button onclick="_voiceClose()" style="flex:1;background:none;border:1px solid #2a2a2a;color:#999;border-radius:10px;padding:11px;font-size:13px;cursor:pointer;font-family:inherit;">Cancel</button>
+  </div>`);
+  const ta=document.getElementById('voice-ta');if(ta){try{ta.focus();ta.setSelectionRange(ta.value.length,ta.value.length);}catch(e){}}
+}
+function _voiceResume(){
+  const ta=document.getElementById('voice-ta');
+  _voiceSeed=(ta?ta.value:(_voiceText||'')).trim();   // continue FROM the edited text
+  startVoiceNote(_voiceClientId);
+}
+// "Done, review" from the paused state: keep the edited text and go straight to the save/preview.
+function _voiceStopFromPause(){
+  const ta=document.getElementById('voice-ta');
+  if(ta)_voiceText=ta.value.trim();
+  _voicePreview();
 }
 function _voiceStop(){
   _voiceStopping=true;
@@ -4440,11 +4475,20 @@ function renderWriteNote(id){
   const c=CL[id];const t=noteTemplates[activeNoteTemplate]||noteTemplates.soap;
   const draft=providerNoteDrafts[id]||{};
   const dateVal=draft.date||_isoToday();
-  // Only prefill from the saved draft when it was written under THIS template, each template
-  // has its own section ids (soap s1-s4, dap d1-d3, …), so a draft from a different template
-  // wouldn't map onto these fields anyway. Using it would render blank fields and a save would
-  // then overwrite the original note. Instead, keep this template's editor clean.
-  const sections=(draft.templateId&&draft.templateId!==activeNoteTemplate)?{}:(draft.sections||{});
+  // Each template has its own section ids (soap s1-s4, dap d1-d3, …), so a draft written under a
+  // different template doesn't map onto these fields. The old code blanked the editor in that case,
+  // but the single per-client draft then got OVERWRITTEN on the next save — losing whatever was
+  // already typed under the previous format. Instead, carry that text over: fold the previous
+  // format's non-empty sections into this format's first field so nothing is lost. The provider can
+  // reorganize from there, and their words survive the format switch.
+  let sections;
+  if(draft.templateId&&draft.templateId!==activeNoteTemplate){
+    const carried=Object.keys(draft.sections||{}).map(k=>String(draft.sections[k]||'').trim()).filter(Boolean).join('\n\n');
+    const firstId=(t.sections[0]||{}).id;
+    sections=(carried&&firstId)?{[firstId]:carried}:{};
+  }else{
+    sections=draft.sections||{};
+  }
   document.getElementById('tt').textContent='Write note';
   S.innerHTML=`
   <div style="padding:12px 16px 0;display:flex;align-items:center;justify-content:flex-end;">
@@ -11637,6 +11681,16 @@ function _reseedSvcMenuIfDefault(){
 }
 let _svcMenu=(function(){try{const r=JSON.parse(localStorage.getItem('sc_service_menu')||'null');if(Array.isArray(r))return r;}catch(e){}return _svcMenuDefaults();})();
 function _saveSvcMenu(){try{localStorage.setItem('sc_service_menu',JSON.stringify(_svcMenu));}catch(e){}}
+// The provider's real treatment choices for the booking forms — their service menu plus any
+// services synced from Square, deduped. Replaces the old hardcoded demo list.
+function _apptTxOptions(){
+  const out=[],seen={};
+  const add=n=>{n=String(n||'').trim();if(n&&!seen[n.toLowerCase()]){seen[n.toLowerCase()]=1;out.push(n);}};
+  try{(_svcMenu||[]).forEach(s=>add(s&&s.name));}catch(e){}
+  try{if(typeof squareCatalog!=='undefined'&&squareCatalog&&Array.isArray(squareCatalog.services))squareCatalog.services.forEach(s=>add(s&&s.name));}catch(e){}
+  if(!out.length)add('Consultation');
+  return out;
+}
 function _svcSet(i,k,v){if(_svcMenu[i]){_svcMenu[i][k]=v;_markSvcMenuCustom();_saveSvcMenu();}}
 function _svcDelDo(i){_svcMenu.splice(i,1);_markSvcMenuCustom();_saveSvcMenu();renderServiceMenu();}
 function _svcDel(i){const sv=_svcMenu[i];if(sv&&String(sv.name||'').trim()&&typeof confirmModal==='function'){confirmModal({title:'Delete this service?',body:'Remove “'+String(sv.name).trim()+'” from your service menu.',action:'Delete'},function(){_svcDelDo(i);});}else{_svcDelDo(i);}}
@@ -14133,7 +14187,7 @@ function openApptDetail(source,id){
   } else if(source==='manual'){
     var a=_manualApptById(id);if(!a){if(typeof proToast==='function')proToast('That appointment is no longer here');return;}
     var times=['9:00 AM','10:00 AM','11:00 AM','12:00 PM','1:00 PM','2:00 PM','3:00 PM','4:00 PM','5:00 PM','6:00 PM'];
-    var txs=['Hydrafacial','Chemical Peel','Brightening Facial','Microneedling','Dermaplaning','LED Therapy','Consultation'];
+    var txs=_apptTxOptions();
     if(a.tx&&txs.indexOf(a.tx)<0)txs.unshift(a.tx);
     if(a.time&&times.indexOf(a.time)<0)times.unshift(a.time);
     _apptSheetShell(
@@ -14228,7 +14282,7 @@ function openLocalQuickAdd(prefillDate){
   const _dv=(typeof prefillDate==='string'&&/^\d{4}-\d{2}-\d{2}$/.test(prefillDate))?prefillDate:_isoToday();
   const _min=(_dv<_isoToday())?_dv:_isoToday();
   const times=['9:00 AM','10:00 AM','11:00 AM','12:00 PM','1:00 PM','2:00 PM','3:00 PM','4:00 PM'];
-  const txs=['Hydrafacial','Chemical Peel','Brightening Facial','Microneedling','Dermaplaning','LED Therapy','Consultation'];
+  const txs=_apptTxOptions();
   const m=document.createElement('div');
   m.id='qa-modal';
   m.style.cssText='position:fixed;top:0;bottom:0;left:0;right:0;margin:0 auto;width:390px;max-width:100%;z-index:300;display:flex;flex-direction:column;justify-content:flex-end;';
