@@ -2,6 +2,15 @@
 
 Newest entries at the top. One entry per deploy. Dates are US-formatted.
 
+## 2026-07-12 — Summary share message now matches the session date
+
+When you sent a summary whose session date was a past day (e.g. writing yesterday's notes today), the
+text/email/app message still said "…summary and aftercare **from today**." It now reads the actual
+session date: **"from today," "from yesterday,"** or **"from your visit on Jul 11."** A `_visitDatePhrase`
+helper derives the wording, and the specific saved summary's date is threaded through the link / to-app /
+resend paths (falling back to today when there's no dated summary). Provider-side only; demo in lockstep;
+both apps parse.
+
 ## 2026-07-12 — Notes & summaries: fix cross-client bleed, one card per session, bigger editor, dates
 
 Five fixes to the treatment-note / session-summary flow from provider feedback:

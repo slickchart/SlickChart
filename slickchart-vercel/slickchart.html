@@ -6136,6 +6136,7 @@ function _saveEditedSummary(id,i,thenAction){
 function resendSavedSummary(id,i,silent){
   const list=sessionSummaries[id]||[];const s=list[i];if(!s)return;
   const c=CL[id];if(!c)return;
+  _sendingSummaryDate=s._draftDate||s.date||null;   // date-aware share/app message
   // Make sure the client-record summary reflects this entry, then push to their app.
   if(!Array.isArray(c.summaries))c.summaries=[];
   const exists=c.summaries.find(x=>(s.ts&&x.ts===s.ts)||(x.date===s.date&&x.title===(s.treatment||'Session')));
@@ -6159,6 +6160,7 @@ function resendSavedSummary(id,i,silent){
 function linkSavedSummary(id,i){
   const list=sessionSummaries[id]||[];const s=list[i];if(!s)return;
   const c=CL[id];if(!c)return;
+  _sendingSummaryDate=s._draftDate||s.date||null;   // so the share message reflects THIS session's date
   // Ensure it's on the client record + synced so the link shows the latest content,
   // then reuse the existing share-link sheet (without re-storing a duplicate).
   resendSavedSummary(id,i,true);
@@ -6197,7 +6199,7 @@ function sendSummary(id){
   if(t){t.preview='Your session summary is ready ✨';t.unread=false;}
   if(!msgStore[id])msgStore[id]=[];
   const parts=['homecare routine','recommended products','next appointment'].filter((_,i)=>[summaryToggles.homecare,summaryToggles.products,summaryToggles.appointment][i]);
-  msgStore[id].push({from:'me',text:`Hi ${c.name.split(' ')[0]}! Your session summary from today is ready, including your ${parts.join(', ')}. See you next time! ✨\n\n${_providerFirstName()}`,time:'Just now'});
+  msgStore[id].push({from:'me',text:`Hi ${c.name.split(' ')[0]}! Your session summary ${_visitDatePhrase(providerNoteDrafts[id]&&providerNoteDrafts[id].date)} is ready, including your ${parts.join(', ')}. See you next time! ✨\n\n${_providerFirstName()}`,time:'Just now'});
   try{saveMessages();}catch(e){}
   // Send the actual summary content to the connected client's app so it replaces their summary screen
   _postSummaryData(id);
@@ -6256,15 +6258,31 @@ function shareSummaryLink(id){
   </div>`;
   (document.querySelector('.shell')||document.body).appendChild(ov);
 }
+// The date of the specific saved summary being shared (set by link/resend), so the outgoing
+// message says "from yesterday" / "from your visit on Jul 11" instead of always "from today".
+let _sendingSummaryDate=null;
+// Turn a session date (ISO or "Jul 11, 2026") into a natural phrase for the share message.
+function _visitDatePhrase(dateInput){
+  const s=String(dateInput||'').trim();
+  let d=/^\d{4}-\d{2}-\d{2}$/.test(s)?new Date(s+'T12:00:00'):(s?new Date(s):null);
+  if(!d||isNaN(d.getTime()))return 'from today';
+  const t=new Date();t.setHours(0,0,0,0);const dd=new Date(d);dd.setHours(0,0,0,0);
+  const days=Math.round((t.getTime()-dd.getTime())/86400000);
+  if(days<=0)return 'from today';
+  if(days===1)return 'from yesterday';
+  return 'from your visit on '+d.toLocaleDateString('en-US',{month:'short',day:'numeric'});
+}
 function confirmSendLink(id,channel){
   _postSummaryData(id);   // populate the client's link view with the latest recap + routine
+  const _visitPhrase=_visitDatePhrase(_sendingSummaryDate||(sessionSummaries[id]&&sessionSummaries[id][0]&&(sessionSummaries[id][0]._draftDate||sessionSummaries[id][0].date))||'');
+  _sendingSummaryDate=null;
   if(id==='maya'){try{SlickBridge.post('magic-link',{clientId:'maya',providerId:'jess'});}catch(e){}}
   const c=CL[id];const f=(c.name||'there').split(' ')[0];
   // Build the real shareable link for this client using the canonical helper.
   let link='';
   try{ link=(typeof _clientAppLink==='function')?_clientAppLink(id):''; }catch(e){}
   if(!link){ link=(c&&c._token)?('https://slickchart.app/client/'+c._token):('https://slickchart.app/client/'+id); }
-  const msg=`Hi ${f}! Here's your visit summary and aftercare from today: ${link}`;
+  const msg=`Hi ${f}! Here's your visit summary and aftercare ${_visitPhrase}: ${link}`;
   if(channel==='copy'){
     _copyToClipboard(link,'Link copied');
     closeSendProd();
