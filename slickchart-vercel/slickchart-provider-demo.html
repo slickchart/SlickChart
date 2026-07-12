@@ -2843,6 +2843,12 @@ function emptyState(o){o=o||{};return `<div style="text-align:center;padding:46p
     ${o.action&&o.screen?`<button onclick="nav('${o.screen}')" style="margin-top:18px;background:var(--accent);color:var(--accent-ink);border:none;border-radius:10px;padding:10px 18px;font-size:13px;font-weight:600;cursor:pointer;font-family:inherit;"><i class="ti ti-plus" style="font-size:13px;"></i> ${o.action}</button>`:''}
   </div>`;}
 function _fcItems(c){var f=c&&c.flaggedContra;return (f&&Array.isArray(f.items))?f.items:[];}
+// Content signatures so a dismissed attention card stays dismissed for THAT specific flag/form, but a
+// genuinely new flag or a newly completed form (different signature) surfaces again as its own card.
+function _flagSig(c){var f=c&&c.flaggedContra;if(!f)return '';return (f.form||'')+'|'+(f.date||'')+'|'+((f.items||[]).join('~'));}
+function _revSig(c){var s=c&&c.submittedForms&&c.submittedForms[0];if(!s)return '';return (s.evId||s.ts||s.date||'')+'|'+(s.title||'');}
+// Index of the client's flagged submitted form (so a flagged card opens the exact form, not just the chart).
+function _flaggedFormIdx(c){return (c&&Array.isArray(c.submittedForms))?c.submittedForms.findIndex(function(f){return f&&f.flagged&&f.flagged.length;}):-1;}
 function renderHome(){
   setNav('home');
   setTimeout(maybeShowOnboarding,300);
@@ -2916,31 +2922,31 @@ function renderHome(){
     h+=nudges.map(([id,c])=>{
       const hrs=_hoursUntilVisit(c);
       const when=(hrs==null)?'':(hrs<0?('appt was '+Math.round(-hrs*60)+' min ago'):(hrs<1?('in '+Math.max(1,Math.round(hrs*60))+' min'):('in '+(Math.round(hrs*10)/10)+'h')));
-      return `<div class="swipe-wrap" style="margin:0 16px 8px;">
-      <div class="swipe-card ci-nudge-card" style="background:#1a1308;border:1px solid #3a2a10;border-radius:12px;overflow:hidden;">
+      return `<div style="margin:0 16px 8px;position:relative;">
+      <div style="background:#1a1308;border:1px solid #3a2a10;border-radius:12px;overflow:hidden;">
         <div style="padding:11px 13px;display:flex;align-items:center;gap:11px;">
           <div style="width:38px;height:38px;border-radius:9px;background:#2a1e08;display:flex;align-items:center;justify-content:center;flex-shrink:0;"><i class="ti ti-clock-exclamation" style="font-size:18px;color:var(--accent);"></i></div>
-          <div style="flex:1;min-width:0;cursor:pointer;" onclick="nav('client','${id}')">
-            <div style="font-size:14px;font-weight:600;color:#ecd7a8;">${_fileEsc(c.name.split(' ')[0])} hasn't done their check-in</div>
+          <div style="flex:1;min-width:0;cursor:pointer;padding-right:20px;" onclick="nav('client','${id}')">
+            <div style="font-size:14px;font-weight:600;color:#ecd7a8;padding-right:14px;">${_fileEsc(c.name.split(' ')[0])} hasn't done their check-in</div>
             <div style="font-size:12px;color:#c2a86a;margin-top:1px;overflow:hidden;text-overflow:ellipsis;white-space:nowrap;">${_fileEsc(c.treatment||'Visit')} · ${_fileEsc(c.nextVisit)}${when?' · '+_fileEsc(when):''}</div>
           </div>
           <button onclick="event.stopPropagation();sendCheckin('${id}')" style="flex-shrink:0;background:var(--accent);color:var(--accent-ink);border:none;border-radius:8px;padding:7px 11px;font-size:12px;font-weight:600;cursor:pointer;font-family:inherit;display:inline-flex;align-items:center;gap:5px;"><i class="ti ti-message" style="font-size:13px;"></i> Send</button>
         </div>
       </div>
-      <div class="swipe-reveal" style="background:#0f2a1a;" onclick="dismissCheckinNudge('${id}')" aria-label="Dismiss ${_fileEsc(c.name.split(' ')[0])} check-in reminder">
-        <i class="ti ti-check" aria-hidden="true" style="color:#4ec49a;"></i><span style="color:#4ec49a;">DONE</span>
-      </div>
+      <button onclick="event.stopPropagation();dismissCheckinNudge('${id}')" aria-label="Dismiss ${_fileEsc(c.name.split(' ')[0])} check-in reminder" title="Clear" style="position:absolute;top:6px;right:6px;z-index:4;width:22px;height:22px;border-radius:50%;background:rgba(0,0,0,.3);border:none;color:#e6d3a8;cursor:pointer;display:flex;align-items:center;justify-content:center;padding:0;line-height:0;"><i class="ti ti-x" style="font-size:13px;"></i></button>
     </div>`;}).join('');
-    h+=flagged.filter(([id])=>!_homeDismissed.has('flag-'+id)&&_attnFresh('flag-'+id)).map(([id,c])=>_swipeTile(`<div onclick="nav('client','${id}')" style="margin:0;background:#2a0f0f;border:1px solid #5a2020;border-radius:12px;padding:11px 13px;display:flex;align-items:center;gap:11px;cursor:pointer;">
-      <div style="width:38px;height:38px;border-radius:9px;background:#3a1414;display:flex;align-items:center;justify-content:center;flex-shrink:0;"><i class="ti ti-alert-triangle" style="font-size:18px;color:#e87070;"></i></div>
-      <div style="flex:1;min-width:0;"><div style="font-size:14px;font-weight:600;color:#f0c8c8;">${_fileEsc(c.name.split(' ')[0])} flagged ${_fcItems(c).length} item${_fcItems(c).length>1?'s':''} on intake</div><div style="font-size:12px;color:#c99;margin-top:1px;overflow:hidden;text-overflow:ellipsis;white-space:nowrap;">${_fileEsc(_fcItems(c).join(', '))}</div></div>
-      <i class="ti ti-chevron-right" style="font-size:18px;color:#e87070;"></i>
-    </div>`,'flag-'+id)).join('');
-    h+=reviews.filter(([id])=>!_homeDismissed.has('rev-'+id)&&_attnFresh('rev-'+id)).map(([id,c])=>_swipeTile(`<div onclick="nav('client','${id}')" style="margin:0;background:#0f1f17;border:1px solid #1c4030;border-radius:12px;padding:11px 13px;display:flex;align-items:center;gap:11px;cursor:pointer;">
+    h+=flagged.filter(([id,c])=>{const k='flag-'+id+'-'+_flagSig(c);return !_homeDismissed.has(k)&&_attnFresh(k);}).map(([id,c])=>{
+      const fi=_flaggedFormIdx(c);
+      const open=fi>=0?`viewSubmittedForm('${id}',${fi})`:`nav('client','${id}')`;
+      const items=_fcItems(c);
+      return _swipeTile(`<div onclick="${open}" style="margin:0;background:#2a0f0f;border:1px solid #5a2020;border-radius:12px;padding:11px 34px 11px 13px;display:flex;align-items:flex-start;gap:11px;cursor:pointer;">
+      <div style="width:38px;height:38px;border-radius:9px;background:#3a1414;display:flex;align-items:center;justify-content:center;flex-shrink:0;margin-top:1px;"><i class="ti ti-alert-triangle" style="font-size:18px;color:#e87070;"></i></div>
+      <div style="flex:1;min-width:0;"><div style="font-size:14px;font-weight:600;color:#f0c8c8;">${_fileEsc(c.name.split(' ')[0])} flagged ${items.length} item${items.length!==1?'s':''} on intake</div>${items.length?`<ul style="margin:4px 0 0;padding-left:16px;">${items.map(it=>`<li style="font-size:12px;color:#e0b8b8;line-height:1.5;">${_fileEsc(it)}</li>`).join('')}</ul>`:''}<div style="font-size:11px;color:#a87878;margin-top:5px;">Tap to open the form</div></div>
+    </div>`,'flag-'+id+'-'+_flagSig(c));}).join('');
+    h+=reviews.filter(([id,c])=>{const k='rev-'+id+'-'+_revSig(c);return !_homeDismissed.has(k)&&_attnFresh(k);}).map(([id,c])=>_swipeTile(`<div onclick="viewSubmittedForm('${id}',0)" style="margin:0;background:#0f1f17;border:1px solid #1c4030;border-radius:12px;padding:11px 34px 11px 13px;display:flex;align-items:center;gap:11px;cursor:pointer;">
       <div style="width:38px;height:38px;border-radius:9px;background:#123226;display:flex;align-items:center;justify-content:center;flex-shrink:0;"><i class="ti ti-clipboard-check" style="font-size:18px;color:#4ec49a;"></i></div>
-      <div style="flex:1;min-width:0;"><div style="font-size:14px;font-weight:600;color:#cdeede;">${_fileEsc(c.name.split(' ')[0])} completed ${_fileEsc(c.submittedForms[0].title)}</div><div style="font-size:12px;color:#7fbfa5;margin-top:1px;">Answers on file, tap to review</div></div>
-      <i class="ti ti-chevron-right" style="font-size:18px;color:#4ec49a;"></i>
-    </div>`,'rev-'+id)).join('');
+      <div style="flex:1;min-width:0;"><div style="font-size:14px;font-weight:600;color:#cdeede;">${_fileEsc(c.name.split(' ')[0])} completed ${_fileEsc(c.submittedForms[0].title)}</div><div style="font-size:12px;color:#7fbfa5;margin-top:1px;">Tap to open the form</div></div>
+    </div>`,'rev-'+id+'-'+_revSig(c))).join('');
     return h;
   })()}
   <div class="sh"><h2>Up next</h2></div>
@@ -8498,8 +8504,11 @@ function _dismissCinTile(){
   unreadCheckins().forEach(c=>markCheckinRead(c.id));
   renderHome();
 }
+// A "needs attention" tile with an explicit X to clear it (replaced the old swipe-to-clear, which
+// was easy to miss and unreliable — a half-registered swipe made cleared cards seem to "come back").
 function _swipeTile(inner,key,customAction){
-  return `<div class="swipe-wrap"><div class="swipe-card">${inner}</div><div class="swipe-reveal" style="background:#0f2a1a;" onclick="event.stopPropagation();${customAction||`_dismissTile('${key}')`}" aria-label="Clear this tile"><i class="ti ti-check" aria-hidden="true" style="color:#4ec49a;"></i><span style="color:#4ec49a;">DONE</span></div></div>`;
+  const action=customAction||`_dismissTile('${key}')`;
+  return `<div style="position:relative;margin:0 16px 10px;">${inner}<button onclick="event.stopPropagation();${action}" aria-label="Clear this card" title="Clear" style="position:absolute;top:7px;right:7px;z-index:4;width:24px;height:24px;border-radius:50%;background:rgba(0,0,0,.32);border:none;color:#f0f0f0;cursor:pointer;display:flex;align-items:center;justify-content:center;padding:0;line-height:0;"><i class="ti ti-x" style="font-size:14px;"></i></button></div>`;
 }
 function dismissCheckinNudge(id){
   const c=CL[id];const key=id+'|'+((c&&c.nextVisit)||'');
@@ -9025,8 +9034,8 @@ function showMsgTab(tab){
     content.innerHTML=`
     <div style="padding:12px 16px 8px;display:flex;align-items:center;justify-content:space-between;"><div style="font-size:13px;color:#999;">${autos.filter(a=>a.on).length} active</div><button onclick="nav('add-automation')" style="background:var(--accent);color:var(--accent-ink);border:none;border-radius:8px;padding:7px 12px;font-size:12px;font-weight:500;cursor:pointer;">+ New</button></div>
     <div style="display:flex;gap:8px;padding:0 16px;margin-bottom:10px;">${(()=>{const sent=autos.reduce((s,a)=>s+(+a.sent||0),0),opened=autos.reduce((s,a)=>s+(+a.opened||0),0),active=autos.filter(a=>a.on).length;return [['Total sent',String(sent),'#f0f0f0'],['Open rate',sent?Math.round(opened/sent*100)+'%':'—','#4ec49a'],['Active',String(active),'#f0f0f0']];})().map(([l,v,c])=>`<div style="flex:1;background:#161616;border-radius:10px;padding:9px 10px;"><div style="font-size:12px;color:#999;margin-bottom:3px;">${l}</div><div style="font-size:18px;font-weight:500;color:${c};">${v}</div></div>`).join('')}</div>
-    ${autos.map((a,i)=>`<div class="swipe-wrap" id="auto-wrap-${i}">
-      <div class="swipe-card" id="auto-card-${i}" style="background:#1a1a1a;border:1px solid #2a2a2a;border-radius:12px;overflow:hidden;">
+    ${autos.map((a,i)=>`<div style="margin:0 16px 10px;">
+      <div style="background:#1a1a1a;border:1px solid #2a2a2a;border-radius:12px;overflow:hidden;">
         <div style="padding:12px 14px;display:flex;align-items:flex-start;gap:10px;">
           <div style="width:38px;height:38px;border-radius:9px;background:${_fileEsc(a.col)};display:flex;align-items:center;justify-content:center;font-size:17px;">${_fileEsc(a.icon)}</div>
           <div style="flex:1;min-width:0;"><div style="display:flex;align-items:center;gap:6px;margin-bottom:2px;"><span style="font-size:13px;font-weight:500;color:#e0e0e0;">${_fileEsc(a.name)}</span><span class="bdg ${a.on?'bg':'bm'}" style="font-size:12px;">${a.on?'Active':'Paused'}</span></div><div style="font-size:12px;color:#999;">${_fileEsc(a.trigger)}</div>${a.on&&a.sent>0?`<div style="font-size:11px;color:#999;margin-top:4px;">${a.sent} sent · ${a.opened} opened · ${Math.round(a.opened/a.sent*100)}% open rate</div>`:''}</div>
@@ -9034,15 +9043,10 @@ function showMsgTab(tab){
         </div>
         <div style="border-top:1px solid #1e1e1e;padding:7px 14px;display:flex;align-items:center;justify-content:space-between;">
           <button onclick="nav('edit-automation',${i})" style="border:none;background:none;font-size:12px;color:var(--accent);cursor:pointer;"><i class="ti ti-pencil" style="font-size:12px;"></i> Edit message</button>
-          <span style="font-size:11px;color:#555;">swipe to delete →</span>
+          <button onclick="_deleteAutomation(${i},'autos')" aria-label="Delete ${_fileEsc(a.name)}" style="border:none;background:none;font-size:12px;color:#e87070;cursor:pointer;font-family:inherit;"><i class="ti ti-trash" style="font-size:12px;"></i> Delete</button>
         </div>
       </div>
-      <div class="swipe-reveal" onclick="_deleteAutomation(${i},'autos')" aria-label="Delete ${_fileEsc(a.name)}">
-        <i class="ti ti-trash" aria-hidden="true"></i>
-        <span>DELETE</span>
-      </div>
     </div>`).join('')}`;
-    setTimeout(()=>autos.forEach((_,i)=>{const c=document.getElementById('auto-card-'+i);if(c)initSwipe(c,i);}),0);
   }
 }
 function renderChat(id){
@@ -10751,11 +10755,9 @@ function notifCard(n,bare){
   </div>`;
 }
 function notifRow(n){
-  return`<div style="position:relative;overflow:hidden;margin:0 16px 8px;border-radius:12px;">
-    <div class="swipe-card">${notifCard(n,true)}</div>
-    <div class="swipe-reveal" style="background:#0f2a1a;border-radius:0 12px 12px 0;" onclick="event.stopPropagation();clearNotif('${n.id}')" aria-label="Clear notification">
-      <i class="ti ti-check" aria-hidden="true" style="color:#4ec49a;"></i><span style="color:#4ec49a;">DONE</span>
-    </div>
+  return`<div style="position:relative;margin:0 16px 8px;border-radius:12px;">
+    ${notifCard(n,true)}
+    <button onclick="event.stopPropagation();clearNotif('${n.id}')" aria-label="Clear notification" title="Clear" style="position:absolute;top:6px;right:6px;z-index:4;width:22px;height:22px;border-radius:50%;background:rgba(0,0,0,.32);border:none;color:#f0f0f0;cursor:pointer;display:flex;align-items:center;justify-content:center;padding:0;line-height:0;"><i class="ti ti-x" style="font-size:13px;"></i></button>
   </div>`;
 }
 function clearNotif(id){const i=notifFeed.findIndex(n=>n.id===id);if(i>=0)notifFeed.splice(i,1);updateBadge();renderNotifFeed();}
@@ -13724,8 +13726,8 @@ function renderCheckins(){
 }
 function _checkinCard(ci){
   const n=(ci.flagged||[]).length;
-  return`<div class="swipe-wrap" style="margin:0 16px 8px;">
-    <div class="swipe-card ci-log-card" onclick="markCheckinRead('${ci.id}');nav('checkin-detail','${ci.id}')" style="background:${ci.read?'#1a1a1a':'#1e1a10'};border:1px solid ${ci.read?'#2a2a2a':'var(--accent-tint2)'};border-radius:12px;overflow:hidden;cursor:pointer;">
+  return`<div style="margin:0 16px 8px;position:relative;">
+    <div onclick="markCheckinRead('${ci.id}');nav('checkin-detail','${ci.id}')" style="background:${ci.read?'#1a1a1a':'#1e1a10'};border:1px solid ${ci.read?'#2a2a2a':'var(--accent-tint2)'};border-radius:12px;overflow:hidden;cursor:pointer;">
     <div style="padding:12px 14px;display:flex;align-items:flex-start;gap:11px;">
       <div style="position:relative;flex-shrink:0;">
         <div style="width:40px;height:40px;border-radius:10px;background:#0a2019;display:flex;align-items:center;justify-content:center;"><i class="ti ti-clipboard-check" style="font-size:18px;color:#4ec49a;"></i></div>
@@ -13739,10 +13741,10 @@ function _checkinCard(ci){
           ${(ci.photos&&ci.photos.length)?`<span style="display:inline-flex;align-items:center;gap:4px;background:#0d1e33;border:1px solid #1a3a5c;border-radius:20px;padding:2px 9px;"><i class="ti ti-camera" style="font-size:12px;color:#5ba3e8;"></i><span style="font-size:11px;color:#5ba3e8;font-weight:600;">${ci.photos.length} photo${ci.photos.length>1?'s':''}</span></span>`:''}
         </div>
       </div>
-      <i class="ti ti-chevron-right" style="font-size:18px;color:#555;flex-shrink:0;"></i>
+      <i class="ti ti-chevron-right" style="font-size:18px;color:#555;flex-shrink:0;margin-top:2px;"></i>
     </div>
     </div>
-    <div class="swipe-reveal" style="background:#0f2a1a;" onclick="event.stopPropagation();_clearCheckin('${ci.id}')" aria-label="Clear this check-in"><i class="ti ti-check" aria-hidden="true" style="color:#4ec49a;"></i><span style="color:#4ec49a;">DONE</span></div>
+    <button onclick="event.stopPropagation();_clearCheckin('${ci.id}')" aria-label="Clear this check-in" title="Clear" style="position:absolute;top:6px;right:6px;z-index:4;width:22px;height:22px;border-radius:50%;background:rgba(0,0,0,.3);border:none;color:#f0f0f0;cursor:pointer;display:flex;align-items:center;justify-content:center;padding:0;line-height:0;"><i class="ti ti-x" style="font-size:13px;"></i></button>
   </div>`;
 }
 // Swipe a check-in in the log to clear it once you've dealt with it, so they don't
