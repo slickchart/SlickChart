@@ -2,6 +2,21 @@
 
 Newest entries at the top. One entry per deploy. Dates are US-formatted.
 
+## 2026-07-12 — Smarter AI dictation: cleans terminology + files into your note sections
+
+The voice note now does what the card always promised. After you dictate, the preview's primary action
+is **✨ Clean up & file into sections**: it sends the raw transcript to Claude, which (1) fixes
+speech-to-text mistakes and corrects professional / medical terminology to what you most likely said
+(product & ingredient names, techniques, anatomy, units), and (2) sorts the content into the active note
+format's sections — matching the section names you speak as you go ("skin observations, mild
+erythema…"). The result drops into the right fields of your record for review before saving. A **Save
+as-is** option keeps the plain single-note behavior, and if AI is off or the response can't be parsed it
+falls back to a plain save so a dictation is never lost. Works with every note format (SOAP, color
+record, tattoo record, etc.) since it reads that format's own section labels.
+
+Note: this cleans up the *final* transcript; the live capture still uses the phone's built-in speech
+engine (accuracy varies by device). Provider-side only; demo in lockstep; both apps parse.
+
 ## 2026-07-12 — Voice-note doubling (real fix) + compact Clients action buttons
 
 - **Voice-note doubling on Android — root cause fixed.** A Pixel screenshot showed the real pattern:

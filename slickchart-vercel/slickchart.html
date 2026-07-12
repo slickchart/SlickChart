@@ -4508,12 +4508,14 @@ function _voicePreview(){
   _voiceOverlay(`<div style="display:flex;align-items:center;gap:8px;margin-bottom:4px;"><i class="ti ti-microphone" aria-hidden="true" style="font-size:16px;color:var(--accent);"></i><span style="font-size:15px;font-weight:600;color:#f0f0f0;">Preview voice note</span></div>
   <div style="font-size:12px;color:#8a8a8a;margin-bottom:10px;line-height:1.5;">${meta}</div>
   <textarea id="voice-ta" placeholder="Your transcribed note\u2026" style="width:100%;height:150px;background:#0f0f0f;border:1px solid #2a2a2a;border-radius:10px;padding:11px;font-size:14px;color:#ddd;font-family:inherit;line-height:1.6;resize:none;outline:none;box-sizing:border-box;">${txt}</textarea>
-  <button onclick="_voiceSave(document.getElementById('voice-ta').value)" style="width:100%;margin-top:12px;background:var(--accent);color:var(--accent-ink);border:none;border-radius:10px;padding:12px;font-size:14px;font-weight:600;cursor:pointer;font-family:inherit;display:flex;align-items:center;justify-content:center;gap:7px;"><i class="ti ti-check"></i> Save to notes</button>
+  ${aiEnabled?`<button onclick="_voiceSmartSave()" style="width:100%;margin-top:12px;background:var(--accent);color:var(--accent-ink);border:none;border-radius:10px;padding:12px;font-size:14px;font-weight:700;cursor:pointer;font-family:inherit;display:flex;align-items:center;justify-content:center;gap:7px;"><i class="ti ti-sparkles"></i> Clean up &amp; file into sections</button>
+  <button onclick="_voiceSave(document.getElementById('voice-ta').value)" style="width:100%;margin-top:8px;background:#1a1a1a;border:1px solid #2a2a2a;color:#ccc;border-radius:10px;padding:11px;font-size:13px;font-weight:600;cursor:pointer;font-family:inherit;display:flex;align-items:center;justify-content:center;gap:6px;"><i class="ti ti-check"></i> Save as-is (one note)</button>`
+  :`<button onclick="_voiceSave(document.getElementById('voice-ta').value)" style="width:100%;margin-top:12px;background:var(--accent);color:var(--accent-ink);border:none;border-radius:10px;padding:12px;font-size:14px;font-weight:600;cursor:pointer;font-family:inherit;display:flex;align-items:center;justify-content:center;gap:7px;"><i class="ti ti-check"></i> Save to notes</button>`}
   <div style="display:flex;gap:8px;margin-top:8px;">
     <button onclick="_voiceRedo()" style="flex:1;background:#1a1a1a;border:1px solid #2a2a2a;color:#ccc;border-radius:10px;padding:11px;font-size:13px;font-weight:600;cursor:pointer;font-family:inherit;display:flex;align-items:center;justify-content:center;gap:6px;"><i class="ti ti-refresh"></i> Start over</button>
     <button onclick="_voiceClose()" style="flex:1;background:none;border:1px solid #2a2a2a;color:#999;border-radius:10px;padding:11px;font-size:13px;cursor:pointer;font-family:inherit;">Cancel</button>
   </div>
-  <div style="font-size:11px;color:#929292;margin-top:10px;line-height:1.5;text-align:center;">\u201cStart over\u201d clears this and records a fresh note. \u201cSave\u201d adds it to your provider notes.</div>`);
+  <div style="font-size:11px;color:#929292;margin-top:10px;line-height:1.5;text-align:center;">${aiEnabled?'\u201cClean up &amp; file\u201d fixes wording and sorts your words into the matching note sections \u2014 review before saving.':'\u201cStart over\u201d clears this and records a fresh note. \u201cSave\u201d adds it to your provider notes.'}</div>`);
   const ta=document.getElementById('voice-ta');if(ta){try{ta.focus();ta.setSelectionRange(ta.value.length,ta.value.length);}catch(e){}}
 }
 // Re-record from scratch. Confirm first if there's a real transcript so a good dictation
@@ -4543,6 +4545,53 @@ function _voiceSave(text){
   _voiceClose();
   if(typeof proToast==='function')proToast('Voice note saved to your notes');
   try{if(typeof renderNotes==='function'&&document.getElementById('ncontent'))renderNotes(id);}catch(e){}
+}
+// Pull the first balanced {...} JSON object out of a model reply (tolerates code fences / stray text).
+function _parseJSONObject(str){
+  if(!str)return null;
+  let s=String(str).trim().replace(/^```(?:json)?/i,'').replace(/```$/,'').trim();
+  const a=s.indexOf('{'),b=s.lastIndexOf('}');
+  if(a<0||b<a)return null;
+  try{return JSON.parse(s.slice(a,b+1));}catch(e){return null;}
+}
+// Smart save: send the raw dictation to Claude to (1) fix speech-to-text errors + professional /
+// medical terminology and (2) sort the content into the active note format's sections (matching the
+// section names the provider spoke). Falls back to a plain single-note save on any failure so a
+// dictation is never lost.
+async function _voiceSmartSave(){
+  const ta=document.getElementById('voice-ta');
+  const raw=(ta?ta.value:(_voiceText||'')).trim();
+  if(!raw){_voiceClose();return;}
+  if(!aiEnabled){_voiceSave(raw);return;}
+  const id=_voiceClientId;
+  const tmpl=noteTemplates[activeNoteTemplate]||noteTemplates.soap;
+  const secs=(tmpl.sections||[]).filter(s=>s&&s.id&&s.label);
+  _voiceOverlay(`<div style="display:flex;align-items:center;gap:11px;padding:20px 2px;"><div class="spin"></div><div><div style="font-size:14px;font-weight:600;color:#f0f0f0;">Cleaning up &amp; filing your note…</div><div style="font-size:12px;color:#999;margin-top:3px;">Fixing terms and sorting into your ${_fileEsc(tmpl.name||'note')} sections</div></div></div>`);
+  const prof=(typeof _profName==='function'?_profName():'provider');
+  const sectionList=secs.map(s=>'- '+s.id+': '+s.label).join('\n');
+  const prompt=`You are an expert clinical scribe for a ${prof}. Below is a raw, error-prone phone voice transcription of treatment notes dictated during or after a session. Do two things and return ONLY JSON.\n\n1) CLEAN IT UP: fix speech-to-text errors and correct professional / medical terminology to what the ${prof} most likely meant (product and ingredient names, techniques, anatomy, units, dosages). Keep it concise and clinical, in the provider's voice. Preserve meaning. Do NOT invent findings, measurements, or products that are not in the transcript.\n\n2) FILE IT: sort the cleaned content into the note's sections below. The provider usually says a section's name right before its content (e.g. "skin observations, mild erythema on the cheeks..."). Use that spoken cue and the meaning to assign each part to the best section. Omit sections that have no content; if a part fits no section well, put it in the most relevant one.\n\nNOTE SECTIONS (id: label):\n${sectionList}\n\nRAW TRANSCRIPTION:\n"""\n${raw}\n"""\n\nOutput ONLY a JSON object mapping section id to its cleaned text (string) — include only sections that have content. No markdown, no code fences, no commentary.`;
+  let mapping=null;
+  try{const out=await _aiComplete([{role:'user',content:prompt}],2000);mapping=_parseJSONObject(out);}catch(e){mapping=null;}
+  const ids=new Set(secs.map(s=>s.id));
+  const filled=(mapping&&typeof mapping==='object')?Object.keys(mapping).filter(k=>ids.has(k)&&String(mapping[k]||'').trim()):[];
+  if(!filled.length){
+    // AI off / unparseable / nothing matched — never lose the dictation.
+    _voiceSave(raw);
+    if(typeof proToast==='function')proToast('Saved your note (couldn’t auto-file it this time)');
+    return;
+  }
+  const draft=(providerNoteDrafts[id]&&providerNoteDrafts[id].templateId===activeNoteTemplate)?providerNoteDrafts[id]:{date:(typeof _isoToday==='function'?_isoToday():''),sections:{},templateId:activeNoteTemplate};
+  if(!draft.sections)draft.sections={};
+  secs.forEach(s=>{
+    let v=mapping[s.id];if(v==null)return;v=String(v).trim().replace(/</g,'&lt;').replace(/>/g,'&gt;');if(!v)return;
+    const prev=String(draft.sections[s.id]||'').trim();
+    draft.sections[s.id]=(prev&&prev!=='No notes yet.')?(prev+'<br>'+v):v;
+  });
+  providerNoteDrafts[id]=draft;
+  try{if(typeof saveProviderNoteDrafts==='function')saveProviderNoteDrafts();}catch(e){}
+  _voiceClose();
+  if(typeof proToast==='function')proToast('Filed into '+filled.length+' section'+(filled.length===1?'':'s')+' ✨ — review & save');
+  try{if(typeof renderNotes==='function')renderNotes(id);}catch(e){}
 }
 // Gathers whatever's in the active note format (typed or dictated) as readable text,
 // so the client summary card reflects the SAME notes shown in the notes step. Reads the
