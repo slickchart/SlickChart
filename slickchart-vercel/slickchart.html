@@ -277,6 +277,13 @@ const allProfessions=[
     terms:['Target areas','Medical conditions','Recent surgeries','Metal implants / pacemaker','Weight & measurement goals'],
     recordSections:['Areas treated','Device / modality used','Settings / intensity','Measurements (before/after)','Client response','Next session plan'],
     checkinLabel:'Health & readiness questions',built:true},
+  {id:'tattoo',name:'Tattoo artist',icon:'🖊️',bg:'#1e0d33',ic:'#c084fc',badge:'bp',badgeLabel:'Ink',
+    sub:'Custom tattoos, fine line, color, cover-ups, touch-ups',
+    notes:['Tattoo record','Free form','Custom'],
+    forms:['Tattoo intake & medical history','Tattoo consent & release','Aftercare acknowledgment'],
+    terms:['Placement & size','Blood thinners','Skin conditions','Allergies (ink/latex/nickel)','Keloid history','Fainting history'],
+    recordSections:['Design & placement','Ink used (brand/color/lot)','Needle & machine log','Technique & passes','Skin observations','Healing & aftercare','Touch-up date'],
+    checkinLabel:'Tattoo & health questions',built:true},
 ];
 // Currently selected professions (default: esthetician)
 let selectedProfessions=['esty','wax','lash','brow'];
@@ -556,7 +563,7 @@ function _referencePhotoQ(id){
   return {id:id||9200,label:'Upload a reference photo (inspiration or your current look)',type:'Photo upload',required:false,multiple:true};
 }
 // Professions that should get a reference-photo prompt on intake + pre-visit check-in.
-const _refPhotoProfs=['hair','barber','brow','pmu','makeup','lash'];
+const _refPhotoProfs=['hair','barber','brow','pmu','makeup','lash','tattoo'];
 
 
 const protocols=[
@@ -619,6 +626,10 @@ const coursesByProf={
   contour:[
     {id:'cct1',title:'Body Contouring: What to Expect',icon:'ti-body-scan',bg:'#1e1633',ic:'#a891ec',bdg:'bp',status:'Draft',price:'$29',modules:4,duration:'30 min',enrolled:0,revenue:0,progress:0,desc:'Realistic results, the session series, and how to prep for the best outcome.'},
     {id:'cct2',title:'Lymphatic Support & Aftercare',icon:'ti-droplet',bg:'#0a2019',ic:'#4ec49a',bdg:'bg',status:'Draft',price:'Free',modules:3,duration:'20 min',enrolled:0,revenue:0,progress:0,desc:'Hydration, movement, and at-home habits that help results between sessions.'},
+  ],
+  tattoo:[
+    {id:'ctt1',title:'Tattoo Aftercare & Healing',icon:'ti-bandage',bg:'#1e0d33',ic:'#c084fc',bdg:'bp',status:'Draft',price:'Free',modules:5,duration:'25 min',enrolled:0,revenue:0,progress:0,desc:'The full healing journey — bandage removal, washing, the peeling and itching phase, and how to protect your new tattoo long-term.'},
+    {id:'ctt2',title:'Prepping for Your Tattoo',icon:'ti-clipboard-check',bg:'#0a2019',ic:'#4ec49a',bdg:'bg',status:'Draft',price:'Free',modules:3,duration:'15 min',enrolled:0,revenue:0,progress:0,desc:'How to show up ready — hydration, food, what to avoid, and what to expect the day of your appointment.'},
   ],
 };
 // Signature + reseed so courses follow the provider's profession until they customize.
@@ -1029,6 +1040,14 @@ const lashProtocols=[
 const lashAffiliateLinks=[
   {id:'la1',name:'Lash Extension Adhesive',brand:'Borboleta',icon:'👁',url:'borboletabeauty.com/ref/lashtech',clicks:16,earnings:24,commission:'15%',active:true},
   {id:'la2',name:'Lash Cleanser Foam',brand:'Borboleta',icon:'🧴',url:'borboletabeauty.com/ref/lashtech-2',clicks:12,earnings:12,commission:'10%',active:true},
+];
+// ── TATTOO AFTERCARE PRODUCT RECS ──
+const tattooAffiliateLinks=[
+  {id:'tt-a1',name:'Second-Skin Aftercare Film',brand:'Saniderm',icon:'🩹',url:'saniderm.com',amazon:'amazon.com/s?k=saniderm',clicks:0,earnings:0,commission:'10%',active:true,inOffice:true},
+  {id:'tt-a2',name:'Tattoo Aftercare Balm',brand:'Hustle Butter',icon:'🧈',url:'hustlebutter.com',amazon:'amazon.com/s?k=hustle+butter',clicks:0,earnings:0,commission:'12%',active:true,inOffice:true},
+  {id:'tt-a3',name:'Fragrance-Free Lotion',brand:'Lubriderm',icon:'🧴',url:'',amazon:'amazon.com/s?k=lubriderm+fragrance+free',clicks:0,earnings:0,commission:'8%',active:true},
+  {id:'tt-a4',name:'Fragrance-Free Antibacterial Soap',brand:'Dial Gold',icon:'🧼',url:'',amazon:'amazon.com/s?k=dial+gold+antibacterial+soap',clicks:0,earnings:0,commission:'6%',active:true},
+  {id:'tt-a5',name:'Mineral Sunscreen SPF 30+',brand:'Mineral SPF',icon:'☀️',url:'',amazon:'amazon.com/s?k=mineral+sunscreen+spf+30',clicks:0,earnings:0,commission:'8%',active:true},
 ];
 
 // ── NAIL TECH PROTOCOLS & AFFILIATE LINKS ──
@@ -2054,6 +2073,8 @@ function applyProfessionConfig(){
   // wouldn't otherwise get it. Load it and default to it for PMU-only.
   const hasPmu=profs.some(p=>p.id==='pmu');
   if(hasPmu){Object.assign(noteTemplates,browNoteTemplates);if(only('pmu'))activeNoteTemplate='pmuRecord';}
+  const hasTattoo=profs.some(p=>p.id==='tattoo');
+  if(hasTattoo){Object.assign(noteTemplates,tattooNoteTemplates);if(only('tattoo'))activeNoteTemplate='tattooRecord';}
   // Choose the default note format. A format the provider explicitly saved always wins. Otherwise
   // pick a profession-specific default: the structured record that fits each trade, per the mapping
   // below (hair→color record, brow→brow record, PMU→PMU record, lash→lash record, wax→wax record,
@@ -2071,6 +2092,7 @@ function applyProfessionConfig(){
         hasHair?'colorRecord':
         (hasBrow&&browOnly)?'browRecord':
         (hasPmu&&only('pmu'))?'pmuRecord':
+        (hasTattoo&&only('tattoo'))?'tattooRecord':
         (hasLash&&only('lash'))?'lashRecord':
         (hasWax&&only('wax'))?'waxRecord':
         hasEsty?'serviceRecord':
@@ -2087,6 +2109,7 @@ function applyProfessionConfig(){
   else if(only('nail'))Object.assign(checkinCfg,nailCheckinCfg);
   else if(only('wax'))Object.assign(checkinCfg,waxCheckinCfg);
   else if(only('coach'))Object.assign(checkinCfg,coachCheckinCfg);
+  else if(only('tattoo'))Object.assign(checkinCfg,tattooCheckinCfg);
 
   if(hairBarberOnly&&hasHair) Object.assign(checkinCfg,hairCheckinCfg);
   else if(hairBarberOnly&&hasBarber) Object.assign(checkinCfg,barberCheckinCfg);
@@ -2132,6 +2155,7 @@ function applyProfessionConfig(){
   else if(only('nail')){affiliateLinks.length=0;nailAffiliateLinks.forEach(a=>affiliateLinks.push(a));}
   else if(only('wax')){affiliateLinks.length=0;waxAffiliateLinks.forEach(a=>affiliateLinks.push(a));}
   else if(only('coach')){affiliateLinks.length=0;coachAffiliateLinks.forEach(a=>affiliateLinks.push(a));}
+  else if(only('tattoo')){affiliateLinks.length=0;tattooAffiliateLinks.forEach(a=>affiliateLinks.push(a));}
 
   // Swap client demo data
   if(browOnly){
@@ -2188,6 +2212,32 @@ function applyProfessionConfig(){
 
 
 // ── BROW ARTIST DATA ──
+const tattooNoteTemplates={
+  tattooRecord:{id:'tattooRecord',name:'Tattoo record',bdg:'bp',col:'#1e0d33',ic:'#c084fc',desc:'Design · Ink lot · Needle & machine · Healing',sections:[
+    {id:'tt1',label:'Design & placement',color:'#c084fc',ph:'Piece, style, size, body area (e.g. sleeve, backpiece, forearm), stencil approved, reference notes...'},
+    {id:'tt2',label:'Ink used — brand / color / lot #',color:'#5ba3e8',ph:'Log each ink: Brand · Color · Batch/Lot number (from the bottle). One per line — this is your safety trace record.'},
+    {id:'tt3',label:'Needle & machine log',color:'#4ec49a',ph:'Needle groups (RL / RM / RS / M1), configuration, machine + voltage per pass. Save common setups as presets.'},
+    {id:'tt4',label:'Technique & passes',color:'#a855f7',ph:'Lining / shading / color packing, number of passes, depth, saturation...'},
+    {id:'tt5',label:'Skin observations',color:'var(--accent)',ph:'Skin type, how it took ink, sensitivity, any reaction, breaks taken...'},
+    {id:'tt6',label:'Healing & aftercare',color:'#e87070',ph:'Wrap used (second-skin / bandage), aftercare given, products recommended...'},
+    {id:'tt7',label:'Touch-up plan',color:'#e8a060',ph:'Return date, spots to address after healing, session-series notes...'},
+  ]},
+};
+const tattooCheckinCfg={
+  skinQ:[
+    {id:'tq1',label:'Did you sleep and eat before your appointment?',on:true},
+    {id:'tq2',label:'Any alcohol in the last 24 hours?',on:true},
+    {id:'tq3',label:'Any new medications, blood thinners, or health changes?',on:true},
+    {id:'tq4',label:'Any sunburn, breakout, or irritation on the placement area?',on:true},
+    {id:'tq5',label:'Are you feeling well and hydrated today?',on:true},
+  ],
+  drinks:[{id:'dr1',emoji:'💧',label:'Water',sub:''},{id:'dr2',emoji:'⚡',label:'Electrolytes',sub:''},{id:'dr3',emoji:'🥤',label:'Soda / juice',sub:''},{id:'dr4',emoji:'🚫',label:'No drink',sub:''}],
+  snacksOn:true,snacks:['🍬 Candy or sugar','🍫 Chocolate','🥨 Salty snack'],
+  music:[{id:'m1',emoji:'🎧',label:'My own headphones'},{id:'m2',emoji:'🎵',label:'Studio playlist'},{id:'m3',emoji:'🎙️',label:'Podcast / talk'},{id:'m4',emoji:'🔇',label:'Quiet'}],
+  blankets:[{id:'bl1',emoji:'🛏️',label:'Blanket'},{id:'bl2',emoji:'🧥',label:'I run cold'},{id:'bl3',emoji:'🚫',label:'No blanket'}],
+  heat:[{id:'h1',label:'Room warmth',on:true,levels:['Cool','Neutral','Warm']}],
+  chairComfortLabel:'Comfort',chairComfortOn:true,extraNotes:true,
+};
 const browNoteTemplates={
   browRecord:{id:'browRecord',name:'Brow record',bdg:'bp',col:'#1e0d33',ic:'#c084fc',desc:'Mapping · Design · Service · Aftercare',sections:[
     {id:'br1',label:'Mapping & measurements',color:'#c084fc',ph:'Arch placement, tail length, front measurement, symmetry notes...'},
@@ -7093,6 +7143,11 @@ function switchFgTab(tab){
 // Built-in form definitions per profession (label + card metadata). Module-level so the
 // forms library, the "send to client" sheet, and the bundle editor all draw from one list.
 const _FORM_DEFS_BY_PROF={
+  tattoo:['Tattoo',[
+    {icon:'ti-clipboard-text',bg:'#1e0d33',ic:'#c084fc',name:'Tattoo intake & medical history',sub:'Health history + high-risk flags',id:'tattoo-intake'},
+    {icon:'ti-file-description',bg:'#2a0f1a',ic:'#e87070',name:'Tattoo consent & release',sub:'Permanency, touch-up policy & risks',id:'tattoo-consent'},
+    {icon:'ti-bandage',bg:'#0a2019',ic:'#4ec49a',name:'Aftercare acknowledgment',sub:'Healing instructions, signed',id:'tattoo-aftercare'},
+  ]],
   esty:['Esthetics',[
     {icon:'ti-clipboard-text',bg:'#0d1e33',ic:'#5ba3e8',name:'New client intake & consent',sub:'Intake + treatment consent in one',id:'intake'},
     {icon:'ti-file-description',bg:'#2a0f1a',ic:'#e87070',name:'Chemical peel consent',sub:'Contraindications + aftercare built in',id:'peel'},
@@ -7159,7 +7214,7 @@ function _formDefById(fid){for(const p in _FORM_DEFS_BY_PROF){const d=_FORM_DEFS
 // Forms scoped to the provider's selected professions (+ their custom forms), deduped.
 function _profFormDefs(){
   const has=p=>selectedProfessions.includes(p);
-  let profs=['esty','wax','brow','lash','hair','barber','makeup','massage','nail','nutrition','contour','coach'].filter(p=>has(p)&&_FORM_DEFS_BY_PROF[p]);
+  let profs=['tattoo','esty','wax','brow','lash','hair','barber','makeup','massage','nail','nutrition','contour','coach'].filter(p=>has(p)&&_FORM_DEFS_BY_PROF[p]);
   if(!profs.length)profs=['esty'];
   const out=[],seen={};
   profs.forEach(p=>{_FORM_DEFS_BY_PROF[p][1].forEach(f=>{if(!seen[f.id]){seen[f.id]=1;out.push(f);}});});
@@ -7227,7 +7282,7 @@ function renderForms(){
   document.getElementById('tt').textContent='Forms, Guides & Courses';
   const has=p=>selectedProfessions.includes(p);
   const F=_FORM_DEFS_BY_PROF;
-  let sections=['esty','wax','brow','lash','hair','barber','makeup','massage','nail','nutrition','contour','coach'].filter(p=>has(p)&&F[p]);
+  let sections=['tattoo','esty','wax','brow','lash','hair','barber','makeup','massage','nail','nutrition','contour','coach'].filter(p=>has(p)&&F[p]);
   if(!sections.length)sections=['esty'];
   // Photo release is bundled into every intake (asked once, auto-captured to the client's file),
   // so it's no longer offered as a separate sendable card here, that duplicated the consent.
@@ -7773,6 +7828,35 @@ function renderCheckinPreview(){
   </div><div style="height:16px;"></div>`;
 }
 const formTmpls={
+  'tattoo-intake':{name:'Tattoo intake & medical history',qs:[
+    {id:4601,label:'Full name',type:'Short text',required:true},
+    {id:4602,label:'Date of birth (must be 18+)',type:'Date',required:true},
+    {id:4603,label:'Tattoo placement & approximate size',type:'Short text',required:true},
+    {id:4604,label:'Is this a cover-up or rework of an existing tattoo?',type:'Yes / No',required:true},
+    {id:4605,label:'Any allergies? (inks, latex, nickel, adhesives, soaps)',type:'Long text',required:false},
+    {id:4606,label:'Current medications (incl. blood thinners, Accutane)',type:'Long text',required:false},
+    {id:4607,label:'How did you sleep and eat today?',type:'Short text',required:false},
+    {id:'tattoo-intake-ci',type:'Contraindications',label:'Health flags — check anything that applies to you',required:true,items:['Taking blood thinners or aspirin, or a bleeding disorder','Diabetes (especially if unmanaged)','Pregnant or breastfeeding','Eczema, psoriasis, or a rash in the tattoo area','History of keloids or raised / thick scarring','Prone to fainting or dizziness around needles','Heart condition, or need antibiotics before dental work','Skin infection, sunburn, or open wound in the area','Used Accutane / isotretinoin in the last 6 months','Under the influence of alcohol or drugs today']},
+    {id:4608,label:'I confirm this information is accurate and I am 18 or older',type:'Signature',required:true},
+  ]},
+  'tattoo-consent':{name:'Tattoo consent & release',qs:[
+    {id:4620,label:'Full name',type:'Short text',required:true},
+    {id:4621,label:'Placement of tattoo(s) today',type:'Short text',required:true},
+    {id:4622,label:'PERMANENCY — I understand a tattoo is permanent, that lines and colors soften over time, and that complete removal may be impossible or costly',type:'Yes / No',required:true},
+    {id:4623,label:'TOUCH-UP POLICY — I understand touch-ups may be needed after full healing, and I have reviewed my artist’s touch-up pricing and timeframe',type:'Yes / No',required:true},
+    {id:4624,label:'AFTERCARE — I understand healing depends on my aftercare and that ignoring instructions can affect the result',type:'Yes / No',required:true},
+    {id:4625,label:'RISKS — I understand the risks of infection, allergic reaction, and scarring, and that results vary with skin and healing',type:'Yes / No',required:true},
+    {id:4626,label:'PHOTO / MEDIA — I consent to photos of my tattoo for records and portfolio use',type:'Yes / No',required:false},
+    {id:'tattoo-consent-ci',type:'Contraindications',label:'Confirm none of these apply (check any that do)',required:true,items:['I am under 18','I am under the influence of alcohol or drugs','I withheld a relevant medical condition','I feel pressured into this decision']},
+    {id:4627,label:'I have read and agree to all of the above and release my artist and studio from liability for outcomes outside their control',type:'Signature',required:true},
+  ]},
+  'tattoo-aftercare':{name:'Aftercare acknowledgment',qs:[
+    {id:4640,label:'Full name',type:'Short text',required:true},
+    {id:4641,label:'I received and understand my aftercare (wash, moisturize lightly, no picking, no soaking, sun protection)',type:'Yes / No',required:true},
+    {id:4642,label:'I know how to reach my artist with questions during healing',type:'Yes / No',required:true},
+    {id:4643,label:'I understand a touch-up (if included) requires full healing first',type:'Yes / No',required:false},
+    {id:4644,label:'I acknowledge my aftercare responsibilities',type:'Signature',required:true},
+  ]},
   intake:{name:'New client intake & consent',qs:[...formQs]},
   peel:{name:'Chemical peel consent',qs:[
     {id:101,label:'Full name',type:'Short text',required:true},
@@ -8245,6 +8329,9 @@ let bundles=loadBundles();
 function _newBundle(){const id='bnd_'+Date.now().toString(36);bundles.push({id,name:'New bundle',formIds:[],resourceIds:[]});saveBundles();return id;}
 function _bundleItemCount(b){return (b.formIds||[]).length+(b.resourceIds||[]).length;}
 let formGuides={
+  'tattoo-intake':['g-tattoo-prep'],
+  'tattoo-consent':['g-tattoo-after'],
+  'tattoo-aftercare':['g-tattoo-after','g-tattoo-healing'],
   'peel':['g-esty-peel'],
   'micro':['g-esty-micro'],
   'derma':['g-esty-derma'],
@@ -9292,6 +9379,7 @@ function _bdgFor(st){return st==='urgent'?'br':st==='soon'?'ba':st==='ok'?'bg':'
 const _DOC_TEMPLATES={
   _general:[{name:'Business License',cat:'Business',hint:'City or county'},{name:'General Liability Insurance',cat:'Insurance',hint:'Your insurer'},{name:'EIN Confirmation Letter',cat:'Business',hint:'IRS'},{name:"Seller's Permit / Resale Certificate",cat:'Permits',hint:'State tax authority'},{name:'CPR / First Aid Certificate',cat:'Certifications',hint:'Red Cross / AHA'}],
   esty:[{name:'Esthetician License',cat:'License',hint:'State cosmetology board'},{name:'Establishment License',cat:'License',hint:'State board'},{name:'Professional Liability Insurance',cat:'Insurance',hint:'ABMP / ASCP'},{name:'Bloodborne Pathogens Certificate',cat:'Certifications',hint:'OSHA-approved course'}],
+  tattoo:[{name:'Tattoo / Body Art Practitioner License',cat:'License',hint:'State or county health dept'},{name:'Studio / Body Art Facility Permit',cat:'Permits',hint:'Local health department'},{name:'Bloodborne Pathogens Certificate',cat:'Certifications',hint:'OSHA-approved course'},{name:'Professional Liability Insurance',cat:'Insurance',hint:'Your insurer'}],
   hair:[{name:'Cosmetology License',cat:'License',hint:'State board'},{name:'Salon / Establishment License',cat:'License',hint:'State board'},{name:'Professional Liability Insurance',cat:'Insurance',hint:'Your insurer'}],
   barber:[{name:'Barber License',cat:'License',hint:'State board'},{name:'Barbershop License',cat:'License',hint:'State board'},{name:'Professional Liability Insurance',cat:'Insurance',hint:'Your insurer'}],
   nail:[{name:'Nail Technician License',cat:'License',hint:'State board'},{name:'Establishment License',cat:'License',hint:'State board'},{name:'Professional Liability Insurance',cat:'Insurance',hint:'Your insurer'}],
@@ -9604,6 +9692,12 @@ function renderVendorDetail(i){
 // Pre-made, profession-specific guides. Each carries real care tips so it's useful in-app,
 // not just a title + link. Forms attach guides from here (see formGuides).
 const guideTemplatesByProf={
+  tattoo:[
+    {id:'g-tattoo-after',icon:'🩹',title:'Tattoo aftercare — the first 2 weeks',cat:'Aftercare',url:'',shared:0,tips:['Leave the wrap on as long as I told you (a few hours, or up to 3–5 days for second-skin film)','Wash gently with lukewarm water & fragrance-free soap, then pat dry with a clean paper towel','Apply a thin layer of aftercare — too much suffocates it','Wash 2–3× a day and moisturize lightly while it heals','Never pick, scratch, or peel the flaking skin','No soaking: no baths, pools, hot tubs, lakes, or ocean for 2–3 weeks','Keep it out of direct sun and off the tanning bed while healing']},
+    {id:'g-tattoo-healing',icon:'🌀',title:'The peeling & itching phase (days 3–14)',cat:'Aftercare',url:'',shared:0,tips:['Days 3–6 it may feel tight and look shiny — that’s normal','Flaking and light peeling like a sunburn is expected — let it fall off on its own','Itching means it’s healing — tap or moisturize, don’t scratch','A little ink coming off during washing is normal, not lost color','If it’s hot, swollen, oozing, or spreading red after a few days, message me','Keep it lightly moisturized until fully healed (2–4 weeks)']},
+    {id:'g-tattoo-sun',icon:'☀️',title:'Protecting your tattoo long-term',cat:'Education',url:'',shared:0,tips:['Once healed, SPF 30+ on your tattoo any time it’s in the sun','Sun is the #1 cause of fading — protect it to keep the lines crisp','Moisturized skin holds color better — lotion daily','Reapply sunscreen every 2 hours outdoors','Book a touch-up if you notice fading or soft spots after full healing']},
+    {id:'g-tattoo-prep',icon:'📋',title:'Before your tattoo appointment',cat:'Prep',url:'',shared:0,tips:['Sleep well and eat a real meal beforehand — low blood sugar causes fainting','Hydrate the day before and the day of','No alcohol for 24 hours before (it thins your blood)','Avoid sunburn on the area beforehand','Wear comfy clothing that gives easy access to the placement','Bring reference images and any questions','Tell me about medications, allergies, or health changes']},
+  ],
   esty:[
     {id:'g-esty-peel',icon:'🧪',title:'Chemical peel aftercare',cat:'Aftercare',url:'',shared:24,tips:['No sun exposure, wear SPF 30+ every day','Don\u2019t pick, peel, or scrub flaking skin','Pause retinol, acids & exfoliants for 5\u20137 days','Gentle cleanser + rich moisturizer only','Avoid heat, sweat & workouts for 48 hours','Flaking and tightness for a few days is normal']},
     {id:'g-esty-micro',icon:'💉',title:'Microneedling aftercare',cat:'Aftercare',url:'',shared:17,tips:['No makeup for 24 hours','Cleanse gently with lukewarm water only','No actives or exfoliants for 3\u20135 days','SPF daily, skin is extra sun-sensitive','Skip the gym, sauna & sweating for 48 hours','Redness like a mild sunburn for 1\u20132 days is normal']},
@@ -11911,6 +12005,7 @@ async function _coDoCharge(id,cardId){
 // ── Local service menu (Pro → Service menu): editable services that feed invoice line items ──
 function _svcMenuDefaults(){
   const M={
+    tattoo:[['Consultation',0],['Deposit',50],['Minimum / Small Tattoo',120],['Hourly Rate',180],['Half-Day Session',600],['Full-Day Session',1000],['Touch-up',50]],
     esty:[['Signature Facial',95],['Dermaplane',85],['Chemical Peel',120],['Microdermabrasion',110],['Back Facial',90],['LED Light Therapy',45]],
     hair:[['Women\u2019s Cut',65],['Men\u2019s Cut',40],['Root Color',95],['Full Highlights',160],['Blowout',45],['Toner',35]],
     barber:[['Haircut',35],['Beard Trim',20],['Hot Towel Shave',40],['Cut + Beard',50],['Line Up',15]],
@@ -16271,7 +16366,7 @@ async function _aiJSON(prompt,fallbackFn){
     return JSON.parse((text||'').replace(/```json|```/g,'').trim());
   }catch(e){return fallbackFn?fallbackFn():null;}
 }
-function _profName(){const p=(selectedProfessions&&selectedProfessions[0])||'esty';const m={esty:'esthetician',hair:'hair stylist',barber:'barber',brow:'brow artist',makeup:'makeup artist',massage:'massage therapist',lash:'lash technician',nail:'nail technician',wax:'waxer'};return m[p]||'beauty professional';}
+function _profName(){const p=(selectedProfessions&&selectedProfessions[0])||'esty';const m={esty:'esthetician',hair:'hair stylist',barber:'barber',brow:'brow artist',makeup:'makeup artist',massage:'massage therapist',lash:'lash technician',nail:'nail technician',wax:'waxer',tattoo:'tattoo artist',pmu:'permanent makeup artist',nutrition:'nutritionist',coach:'health & fitness coach',contour:'body contouring specialist'};return m[p]||'beauty professional';}
 function _localContra(name){
   const n=(name||'').toLowerCase();
   const C=[

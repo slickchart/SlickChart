@@ -2,6 +2,31 @@
 
 Newest entries at the top. One entry per deploy. Dates are US-formatted.
 
+## 2026-07-12 — New profession: Tattoo artist (forms, guides, products, records)
+
+Added **Tattoo artist** to the profession picker with a full, data-driven workspace that flows through the
+existing systems (so selecting it configures everything automatically, and the client app needs no changes):
+
+- **Forms.** *Tattoo intake & medical history* with high-risk flags that alert you on submission — blood
+  thinners / bleeding disorders, diabetes, pregnancy, **eczema/psoriasis in the tattoo area**, **keloid
+  history**, fainting around needles, skin infection/sunburn, recent Accutane, intoxication. A *Tattoo
+  consent & release* with explicit **Permanency** and **Touch-up Policy** clauses (plus aftercare, risk,
+  and photo/media acknowledgments) and a signature. An *Aftercare acknowledgment* form.
+- **Procedure record** ("Tattoo record" note format): **Ink Lot Tracking** (log each ink as Brand · Color ·
+  Batch/Lot #), a **Needle & Machine Log** (needle groups RL/RM/RS/M1 + machine voltage per pass), design &
+  placement (with body area), technique & passes, skin observations, healing, and touch-up plan.
+- **Healing-Journey guides.** First-2-weeks aftercare, the peeling & itching phase (days 3–14), long-term
+  sun protection, and pre-appointment prep — the content for the automated day-by-day drip that's coming next.
+- **Suggested aftercare products** (Saniderm second-skin, Hustle Butter, fragrance-free lotion, antibacterial
+  soap, mineral SPF), a **Tattoo Aftercare & Healing** course, a **healing check-in**, tattoo license/permit
+  vault templates, and a default service menu (deposit, hourly, half/full-day, touch-up).
+
+Reference photos default ON (image-forward), and AI-written copy now knows the "tattoo artist" voice.
+Provider-side only; demo regenerated in lockstep; both parse; forms/guides/record cross-references and the
+config wiring verified (15/15). This is Phase 1 — the interactive extras (needle/machine preset library,
+automated aftercare drips, 2D body-map with pins, stencil overlay, Square-deposit auto-send, and lot-number
+OCR) are tracked as follow-ups.
+
 ## 2026-07-12 — Courses: Delete right on the course card
 
 Follow-up to the course-delete feature: the delete lived only inside a course's Edit screen, which
