@@ -4630,6 +4630,11 @@ function _activeNotesText(id){
   if(draft&&draft.sections){
     return (tmpl.sections||[]).map(sec=>{const v=String(draft.sections[sec.id]||'').trim();return (v&&v!=='No notes yet.')?v:'';}).filter(Boolean).join('<br>');
   }
+  // A REAL client with no notes yet in this format returns empty — never fall through to the
+  // global per-template store below, which is demo-seeded (Maya) and would otherwise bleed another
+  // client's notes into this client's summary. The store fallback is only for the demo/preview
+  // path where no client id is supplied.
+  if(id!=null)return '';
   const store=(activeNoteTemplate==='colorRecord'||activeNoteTemplate==='haircutColorRecord'||activeNoteTemplate==='haircutRecord')?hairSavedNotes:(activeNoteTemplate==='cutRecord')?barberSavedNotes:(activeNoteTemplate==='browRecord'||activeNoteTemplate==='pmuRecord')?browSavedNotes:savedNotes;
   const s=(store&&store[activeNoteTemplate])||{};
   return (tmpl.sections||[]).map(sec=>{const v=String(s[sec.id]||'').trim();return (v&&v!=='No notes yet.')?v:'';}).filter(Boolean).join('<br>');
@@ -4803,7 +4808,7 @@ function renderWriteNote(id){
     <span style="font-size:11px;color:#929292;">(change this if you're catching up on a note from another day)</span>
   </div>
   <div style="padding:0 16px;">
-    ${t.sections.map(s=>`<div style="margin-bottom:14px;"><div style="font-size:11px;font-weight:500;text-transform:uppercase;letter-spacing:.07em;color:${_fileEsc(s.color)};margin-bottom:5px;display:flex;align-items:center;gap:5px;"><div style="width:8px;height:8px;border-radius:50%;background:${_fileEsc(s.color)};"></div>${s.label}</div><textarea id="wn-sec-${s.id}" class="fi" style="height:90px;resize:none;line-height:1.6;" placeholder="${s.ph}" oninput="_autosaveWriteNote('${id}')">${(sections[s.id]||'').replace(/</g,'&lt;')}</textarea>${(activeNoteTemplate==='tattooRecord'&&s.id==='tt1')?_bodyMapField(id):''}</div>`).join('')}
+    ${t.sections.map(s=>`<div style="margin-bottom:14px;"><div style="font-size:11px;font-weight:500;text-transform:uppercase;letter-spacing:.07em;color:${_fileEsc(s.color)};margin-bottom:5px;display:flex;align-items:center;gap:5px;"><div style="width:8px;height:8px;border-radius:50%;background:${_fileEsc(s.color)};"></div>${s.label}</div><textarea id="wn-sec-${s.id}" class="fi" style="height:${t.sections.length<=1?'300':'150'}px;resize:vertical;line-height:1.6;" placeholder="${s.ph}" oninput="_autosaveWriteNote('${id}')">${(sections[s.id]||'').replace(/</g,'&lt;')}</textarea>${(activeNoteTemplate==='tattooRecord'&&s.id==='tt1')?_bodyMapField(id):''}</div>`).join('')}
   </div>
   <div style="display:flex;gap:8px;margin:0 16px 16px;">
     <button class="btnp" style="flex:1;border-radius:8px;" onclick="_saveAndSendNote('${id}')"><i class="ti ti-send"></i> Save and send</button>
@@ -4941,8 +4946,12 @@ function _commitWriteNote(id){
   const primaryText=t.sections.map(s=>sections[s.id]).find(v=>v&&v.trim())||'';
   const existing=hist.find(h=>h._draftDate===dateVal);
   const _wasNew=!existing;
-  const entry={date:_fmtNoteDate(dateVal),treatment:c.treatment,note:primaryText,homecare:existing?existing.homecare:[],products:existing?existing.products:[],ts:new Date(dateVal).getTime()||Date.now(),_draftDate:dateVal};
-  if(existing){Object.assign(existing,entry);}else{hist.unshift(entry);}
+  // Keep the raw structured note on `providerNotes` (feeds the "Provider notes" tab of the session
+  // record) so this write-note save and a later client-summary send land on ONE session entry (one
+  // card, two tabs) instead of two separate cards. Don't overwrite `note` once a client summary has
+  // been saved onto this entry — that field holds the client-facing version.
+  const entry={date:_fmtNoteDate(dateVal),treatment:c.treatment,homecare:existing?existing.homecare:[],products:existing?existing.products:[],ts:new Date(dateVal).getTime()||Date.now(),_draftDate:dateVal,providerNotes:(typeof _providerNotesSnapshot==='function'?_providerNotesSnapshot(id):(existing&&existing.providerNotes)||{sections:[]})};
+  if(existing){Object.assign(existing,entry);if(!existing._clientSaved)existing.note=primaryText;}else{entry.note=primaryText;hist.unshift(entry);}
   hist.sort((a,b)=>(b.ts||0)-(a.ts||0));
   try{persistSessionSummaries();}catch(e){}  // was missing, treatment-note summaries were kept only in memory and lost on reload
   try{if(typeof saveClients==='function')saveClients();}catch(e){}
@@ -5759,17 +5768,24 @@ function _storeSummary(id){
   const productDetail=(clientRecs[id]||[]).map(aid=>{const a=affiliateLinks.find(x=>x.id===aid);return a?{name:a.name,brand:a.brand||'',icon:a.icon||'',why:(_recReason(id,aid)||'')}:null;}).filter(Boolean);
   const products=summaryToggles.products?productDetail.map(p=>p.name):[];
   const providerNotes=_providerNotesSnapshot(id);
-  const date=new Date().toLocaleDateString('en-US',{month:'short',day:'numeric',year:'numeric'});
+  // Anchor to the same session/day as the treatment-note save so a session is ONE record (one card
+  // with Provider-notes + Client-summary tabs), not a second duplicate card.
+  const _dd=(providerNoteDrafts[id]&&providerNoteDrafts[id].date)||(typeof _isoToday==='function'?_isoToday():'');
+  const date=(_dd&&typeof _fmtNoteDate==='function')?_fmtNoteDate(_dd):new Date().toLocaleDateString('en-US',{month:'short',day:'numeric',year:'numeric'});
   const ts=Date.now();
   if(!sessionSummaries[id])sessionSummaries[id]=[];
   const _guides=(typeof _summaryGuideList==='function')?_summaryGuideList(id).map(g=>({id:g.id,title:g.title,icon:g.icon,tips:(g.tips||[]).slice()})):[];
-  // Rich record kept on the provider side: everything done that day.
-  sessionSummaries[id].unshift({date,treatment:c.treatment,note,obs,homecare,products,productDetail,providerNotes,guides:_guides,ts});
+  // Rich record kept on the provider side: everything done that day. Merge onto the same-day entry.
+  const _rec={date,treatment:c.treatment,note,obs,homecare,products,productDetail,providerNotes,guides:_guides,ts,_draftDate:_dd,_clientSaved:true};
+  const _ex=_dd?sessionSummaries[id].find(h=>h._draftDate===_dd):null;
+  if(_ex)Object.assign(_ex,_rec);else sessionSummaries[id].unshift(_rec);
+  sessionSummaries[id].sort((a,b)=>(b.ts||0)-(a.ts||0));
   // Client-facing copy (what their app reads). Includes the friendly note + obs +
-  // products + aftercare guides, but NOT the raw clinical provider notes.
-  const entry={date,title:c.treatment||'Session',note:(note+(obs?'\n\nObservations: '+obs:'')).trim(),products:products.slice(),guides:_guides,ts};
+  // products + aftercare guides, but NOT the raw clinical provider notes. Dedup by day too.
+  const entry={date,title:c.treatment||'Session',note:(note+(obs?'\n\nObservations: '+obs:'')).trim(),products:products.slice(),guides:_guides,ts,_draftDate:_dd};
   if(!Array.isArray(c.summaries))c.summaries=[];
-  c.summaries.unshift(entry);
+  const _cex=_dd?c.summaries.find(h=>h._draftDate===_dd):null;
+  if(_cex)Object.assign(_cex,entry);else c.summaries.unshift(entry);
   // Persist the provider-side session record to its own synced key too, otherwise it lived
   // only in memory and in sc_clients, so another device never received it (the saved summary
   // and provider notes appeared missing there).
@@ -5788,10 +5804,11 @@ function renderSummaryHistory(id){
   ${list.length===0?emptyState({icon:'ti-file-text',title:'No summaries yet',body:'When you finish a session and send a summary, it is saved here in their client file.'}):list.map((s,i)=>`
   <div class="summary-card" data-search="${((s.date||'')+' '+(s.treatment||'')+' '+(s.note||'')).toLowerCase().normalize('NFD').replace(/[̀-ͯ]/g,'').replace(/['‘’`"]/g,'').replace(/[^a-z0-9 ]/g,' ').replace(/\s+/g,' ').trim()}" style="position:relative;background:#1a1a1a;border:1px solid #2a2a2a;border-radius:12px;margin:0 16px 10px;overflow:hidden;">
     <div style="position:absolute;top:8px;right:8px;z-index:2;display:flex;gap:6px;">
+      <button onclick="event.stopPropagation();editSummaryDate('${id}',${i})" aria-label="Edit session date" style="background:#161616;border:1px solid #333;border-radius:7px;color:#5ba3e8;cursor:pointer;padding:4px 8px;display:flex;align-items:center;gap:4px;font-size:11px;font-family:inherit;"><i class="ti ti-calendar" aria-hidden="true" style="font-size:12px;"></i> Date</button>
       <button onclick="event.stopPropagation();renameSavedSummary('${id}',${i})" aria-label="Rename summary" style="background:#161616;border:1px solid #333;border-radius:7px;color:var(--accent);cursor:pointer;padding:4px 8px;display:flex;align-items:center;gap:4px;font-size:11px;font-family:inherit;"><i class="ti ti-pencil" aria-hidden="true" style="font-size:12px;"></i> Rename</button>
       <button onclick="event.stopPropagation();deleteSavedSummary('${id}',${i})" aria-label="Delete summary" style="background:#161616;border:1px solid #3a2020;border-radius:7px;color:#e87070;cursor:pointer;padding:4px 7px;display:flex;align-items:center;font-family:inherit;"><i class="ti ti-trash" aria-hidden="true" style="font-size:13px;"></i></button>
     </div>
-    <button onclick="nav('session-detail','${id}:${i}')" style="width:100%;padding:12px 116px 12px 14px;display:flex;align-items:center;gap:10px;border:none;border-bottom:1px solid #1e1e1e;background:none;cursor:pointer;font-family:inherit;text-align:left;">
+    <button onclick="nav('session-detail','${id}:${i}')" style="width:100%;padding:44px 14px 12px 14px;display:flex;align-items:center;gap:10px;border:none;border-bottom:1px solid #1e1e1e;background:none;cursor:pointer;font-family:inherit;text-align:left;">
       <div style="width:38px;height:38px;border-radius:9px;background:var(--accent-tint);display:flex;align-items:center;justify-content:center;flex-shrink:0;"><i class="ti ti-file-text" style="font-size:17px;color:var(--accent);"></i></div>
       <div style="flex:1;min-width:0;"><div style="font-size:13px;font-weight:600;color:#e0e0e0;">${(s.treatment||'Session').replace(/</g,'&lt;')}</div><div style="font-size:11px;color:#999;">${s.date} · tap to view full record</div></div>
       <i class="ti ti-chevron-right" style="font-size:16px;color:#929292;flex-shrink:0;"></i>
@@ -5805,6 +5822,42 @@ function renderSummaryHistory(id){
   </div>`).join('')}
   ${_noRes('summaries-noresults','No summaries match your search.')}
   <div style="height:16px;"></div>`;
+}
+// Edit the date a saved summary is filed under (for when you write the note the next day).
+function editSummaryDate(id,i){
+  const list=sessionSummaries[id]||[];const s=list[i];if(!s)return;
+  const cur=s._draftDate||(typeof _isoToday==='function'?_isoToday():'');
+  const ov=document.createElement('div');ov.id='sum-date-ov';
+  ov.style.cssText='position:fixed;inset:0;z-index:9999;background:rgba(0,0,0,.6);display:flex;align-items:center;justify-content:center;padding:20px;';
+  ov.onclick=e=>{if(e.target===ov)ov.remove();};
+  ov.innerHTML=`<div style="background:#161616;border:1px solid #2a2a2a;border-radius:14px;padding:18px;width:300px;max-width:100%;">
+    <div style="font-size:15px;font-weight:600;color:#f0f0f0;margin-bottom:4px;">Session date</div>
+    <div style="font-size:12px;color:#999;margin-bottom:12px;">Change the date this session is filed under — handy when you write the note the next day.</div>
+    <input id="sum-date-inp" type="date" value="${_urlAttr(cur)}" style="width:100%;box-sizing:border-box;background:#0f0f0f;border:1px solid #2a2a2a;color:#e0e0e0;border-radius:9px;padding:10px 12px;font-size:14px;font-family:inherit;">
+    <div style="display:flex;gap:8px;margin-top:14px;">
+      <button onclick="document.getElementById('sum-date-ov').remove()" style="flex:1;background:none;border:1px solid #2a2a2a;color:#ccc;border-radius:9px;padding:11px;font-size:13px;cursor:pointer;font-family:inherit;">Cancel</button>
+      <button onclick="_saveSummaryDate('${_jsAttr(id)}',${i})" class="btnp" style="flex:1;border-radius:9px;">Save date</button>
+    </div>
+  </div>`;
+  (document.querySelector('.shell')||document.body).appendChild(ov);
+}
+function _saveSummaryDate(id,i){
+  const inp=document.getElementById('sum-date-inp');const v=inp?inp.value:'';
+  const list=sessionSummaries[id]||[];const s=list[i];
+  if(!s||!v){const ov=document.getElementById('sum-date-ov');if(ov)ov.remove();return;}
+  const old=s._draftDate;
+  const d=new Date(v+'T12:00:00');
+  s._draftDate=v;
+  s.date=(typeof _fmtNoteDate==='function')?_fmtNoteDate(v):d.toLocaleDateString('en-US',{month:'short',day:'numeric',year:'numeric'});
+  s.ts=d.getTime()||Date.now();
+  // Keep the client-facing copy's date in sync.
+  try{const c=CL[id];if(c&&Array.isArray(c.summaries)){const cc=(old&&c.summaries.find(h=>h._draftDate===old))||c.summaries[i];if(cc){cc.date=s.date;cc._draftDate=v;cc.ts=s.ts;}}}catch(e){}
+  list.sort((a,b)=>(b.ts||0)-(a.ts||0));
+  try{if(typeof persistSessionSummaries==='function')persistSessionSummaries();}catch(e){}
+  try{if(typeof saveClients==='function')saveClients();}catch(e){}
+  const ov=document.getElementById('sum-date-ov');if(ov)ov.remove();
+  if(typeof proToast==='function')proToast('Session date updated');
+  renderSummaryHistory(id);
 }
 // ── Saved-summary actions: view/edit, resend to the client's app, send by link ──
 // Full, organized record of everything from one session.
@@ -13751,10 +13804,15 @@ function _nextApptForClient(id){
     });
   }catch(e){}
   if(cands.length){cands.sort((x,y)=>x.at-y.at);return cands[0];}
-  // Fallback: the client's stored nextVisit string, if it's a real scheduled value
+  // Fallback: the client's stored nextVisit string, but ONLY if it hasn't already passed — a stale
+  // past date (e.g. an appointment that's now in the past) must not be shown as the "next" visit.
   if(c.nextVisit&&c.nextVisit!=='Not scheduled'){
     const parts=c.nextVisit.split('·').map(s=>s.trim());
-    return {dateLabel:parts[0]||c.nextVisit,time:parts[1]||'',treatment:c.treatment||''};
+    const dl=parts[0]||c.nextVisit;
+    const d=new Date(dl);
+    if(isNaN(d.getTime())||d.getTime()>=now.getTime()){
+      return {dateLabel:dl,time:parts[1]||'',treatment:c.treatment||''};
+    }
   }
   return null;
 }

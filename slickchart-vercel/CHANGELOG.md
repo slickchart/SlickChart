@@ -2,6 +2,27 @@
 
 Newest entries at the top. One entry per deploy. Dates are US-formatted.
 
+## 2026-07-12 — Notes & summaries: fix cross-client bleed, one card per session, bigger editor, dates
+
+Five fixes to the treatment-note / session-summary flow from provider feedback:
+
+- **Client summary no longer bleeds another client's notes.** When a real client had no note yet in the
+  active format, the summary fell through to a demo-seeded global store (Maya's sample notes), so a new
+  client's summary could show someone else's content. A real client now returns empty there instead of
+  the demo data.
+- **One card per session, not two.** Saving a treatment note and sending a client summary used to create
+  two separate summary cards. They now merge into a single session record (keyed by the session date) with
+  the existing **Provider notes / Client summary** tabs — write-note first or summary first both land on
+  one card, and re-editing the note never clobbers the client-facing version.
+- **Next appointment no longer shows a past date.** `_nextApptForClient`'s stored-value fallback now only
+  returns `nextVisit` if it hasn't already passed (fixes the summary and, via it, the AI brief).
+- **Editable session date on saved summaries.** New **Date** button on each summary card opens a date
+  picker — handy when you write the note the next day. Keeps the client-facing copy in sync.
+- **Bigger Write Note editor.** Section textareas are much taller now (extra-tall for single-field
+  formats like Free form) and resizable.
+
+Provider-side only; demo in lockstep; both apps parse; merge + past-date logic verified.
+
 ## 2026-07-12 — Smarter AI dictation: cleans terminology + files into your note sections
 
 The voice note now does what the card always promised. After you dictate, the preview's primary action
