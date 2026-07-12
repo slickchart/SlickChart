@@ -2856,13 +2856,37 @@ function _fcDisplayItems(c){
   }
   return (Array.isArray(f.items)?f.items:[]);
 }
-// Where a flagged card should navigate: the exact check-in it came from, else the flagged submitted form.
+// Where a flagged card should navigate, most-specific first: the exact check-in it came from, else
+// the flagged submitted form, else any submitted form, else any check-in on file, else the chart.
 function _fcOpenAction(id,c){
-  if(c&&c.flaggedContra&&c.flaggedContra.checkinId&&c.lastCheckin&&c.lastCheckin.id){
-    return "markCheckinRead('"+c.lastCheckin.id+"');nav('checkin-detail','"+c.lastCheckin.id+"')";
-  }
+  var f=(c&&c.flaggedContra)||{};
+  var ci=(c&&c.lastCheckin&&c.lastCheckin.id)?c.lastCheckin.id:'';
+  var _open=function(cid){return "markCheckinRead('"+cid+"');nav('checkin-detail','"+cid+"')";};
+  // explicit check-in source, or a check-in-style flag with a check-in on file
+  if(ci&&(f.checkinId||f.form==='Pre-visit check-in'))return _open(ci);
   var fi=_flaggedFormIdx(c);
-  return fi>=0?("viewSubmittedForm('"+id+"',"+fi+")"):("nav('client','"+id+"')");
+  if(fi>=0)return "viewSubmittedForm('"+id+"',"+fi+")";
+  if(c&&Array.isArray(c.submittedForms)&&c.submittedForms.length)return "viewSubmittedForm('"+id+"',0)";
+  if(ci)return _open(ci);
+  return "nav('client','"+id+"')";
+}
+// Clear a flagged card from Home. Stored ON the client record (which syncs reliably as core data),
+// not just in the in-memory dismissed set — that set rode a debounced sync and a refresh's cloud
+// pull kept losing it, so the same cards came back. A brand-new flag replaces flaggedContra (no
+// ackHome), so it correctly resurfaces. The flag still shows on the client's chart.
+function _flagAckHome(id){
+  var c=CL[id];if(c&&c.flaggedContra){c.flaggedContra.ackHome=true;try{if(typeof saveClients==='function')saveClients();}catch(e){}}
+  _homeDismissed.add('flag-'+id);_saveHomeDismissed();
+  // saveClients only schedules a debounced sync; push the client list NOW too so a quick refresh's
+  // cloud pull can't overwrite the ack with a stale copy (that was why cleared cards kept returning).
+  try{if(typeof _pushKeyNow==='function')_pushKeyNow('sc_clients',localStorage.getItem('sc_clients')||'');}catch(e){}
+  if(typeof renderHome==='function')renderHome();
+}
+function _reviewAckHome(id){
+  var c=CL[id];if(c){var s=(c.submittedForms&&c.submittedForms[0])||{};c.reviewAck=String(s.evId||s.ts||s.date||'1');try{if(typeof saveClients==='function')saveClients();}catch(e){}}
+  _homeDismissed.add('rev-'+id);_saveHomeDismissed();
+  try{if(typeof _pushKeyNow==='function')_pushKeyNow('sc_clients',localStorage.getItem('sc_clients')||'');}catch(e){}
+  if(typeof renderHome==='function')renderHome();
 }
 // Content signatures so a dismissed attention card stays dismissed for THAT specific flag/form, but a
 // genuinely new flag or a newly completed form (different signature) surfaces again as its own card.
@@ -2953,20 +2977,22 @@ function renderHome(){
       </div>
       <button onclick="event.stopPropagation();dismissCheckinNudge('${id}')" aria-label="Dismiss ${_fileEsc(c.name.split(' ')[0])} check-in reminder" title="Clear" style="position:absolute;top:6px;right:6px;z-index:4;width:22px;height:22px;border-radius:50%;background:rgba(0,0,0,.3);border:none;color:#e6d3a8;cursor:pointer;display:flex;align-items:center;justify-content:center;padding:0;line-height:0;"><i class="ti ti-x" style="font-size:13px;"></i></button>
     </div>`;}).join('');
-    h+=flagged.filter(([id])=>!_homeDismissed.has('flag-'+id)&&_attnFresh('flag-'+id)).map(([id,c])=>{
+    h+=flagged.filter(([id,c])=>!(c.flaggedContra&&c.flaggedContra.ackHome)&&!_homeDismissed.has('flag-'+id)&&_attnFresh('flag-'+id)).map(([id,c])=>{
       const open=_fcOpenAction(id,c);
       const items=_fcDisplayItems(c);
-      const isCheckin=!!(c.flaggedContra&&c.flaggedContra.form==='Pre-visit check-in');
+      // Treat it as a check-in whenever the flag says so OR there's a check-in on file and no flagged
+      // form — so older check-in flags (no checkinId) still read/open as a check-in, not "intake".
+      const isCheckin=!!(c.flaggedContra&&(c.flaggedContra.form==='Pre-visit check-in'||c.flaggedContra.checkinId))||(!!(c.lastCheckin&&c.lastCheckin.id)&&_flaggedFormIdx(c)<0);
       const src=isCheckin?'on their check-in':'on intake';
       const tapHint=isCheckin?'Tap to open the check-in':'Tap to open the form';
       return _swipeTile(`<div onclick="${open}" style="margin:0;background:#2a0f0f;border:1px solid #5a2020;border-radius:12px;padding:11px 34px 11px 13px;display:flex;align-items:flex-start;gap:11px;cursor:pointer;">
       <div style="width:38px;height:38px;border-radius:9px;background:#3a1414;display:flex;align-items:center;justify-content:center;flex-shrink:0;margin-top:1px;"><i class="ti ti-alert-triangle" style="font-size:18px;color:#e87070;"></i></div>
       <div style="flex:1;min-width:0;"><div style="font-size:14px;font-weight:600;color:#f0c8c8;">${_fileEsc(c.name.split(' ')[0])} flagged ${items.length} item${items.length!==1?'s':''} ${src}</div>${items.length?`<ul style="margin:4px 0 0;padding-left:16px;">${items.map(it=>`<li style="font-size:12px;color:#e0b8b8;line-height:1.5;">${_fileEsc(it)}</li>`).join('')}</ul>`:''}<div style="font-size:11px;color:#a87878;margin-top:5px;">${tapHint}</div></div>
-    </div>`,'flag-'+id);}).join('');
-    h+=reviews.filter(([id])=>!_homeDismissed.has('rev-'+id)&&_attnFresh('rev-'+id)).map(([id,c])=>_swipeTile(`<div onclick="viewSubmittedForm('${id}',0)" style="margin:0;background:#0f1f17;border:1px solid #1c4030;border-radius:12px;padding:11px 34px 11px 13px;display:flex;align-items:center;gap:11px;cursor:pointer;">
+    </div>`,'flag-'+id,`_flagAckHome('${id}')`);}).join('');
+    h+=reviews.filter(([id,c])=>{const s=(c.submittedForms&&c.submittedForms[0])||{};const sig=String(s.evId||s.ts||s.date||'1');return c.reviewAck!==sig&&!_homeDismissed.has('rev-'+id)&&_attnFresh('rev-'+id);}).map(([id,c])=>_swipeTile(`<div onclick="viewSubmittedForm('${id}',0)" style="margin:0;background:#0f1f17;border:1px solid #1c4030;border-radius:12px;padding:11px 34px 11px 13px;display:flex;align-items:center;gap:11px;cursor:pointer;">
       <div style="width:38px;height:38px;border-radius:9px;background:#123226;display:flex;align-items:center;justify-content:center;flex-shrink:0;"><i class="ti ti-clipboard-check" style="font-size:18px;color:#4ec49a;"></i></div>
       <div style="flex:1;min-width:0;"><div style="font-size:14px;font-weight:600;color:#cdeede;">${_fileEsc(c.name.split(' ')[0])} completed ${_fileEsc(c.submittedForms[0].title)}</div><div style="font-size:12px;color:#7fbfa5;margin-top:1px;">Tap to open the form</div></div>
-    </div>`,'rev-'+id)).join('');
+    </div>`,'rev-'+id,`_reviewAckHome('${id}')`)).join('');
     return h;
   })()}
   <div class="sh"><h2>Up next</h2></div>
