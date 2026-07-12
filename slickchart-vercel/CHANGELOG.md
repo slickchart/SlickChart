@@ -2,6 +2,36 @@
 
 Newest entries at the top. One entry per deploy. Dates are US-formatted.
 
+## 2026-07-12 — XSS sweep, round 34: finish escaping the client check-in / form-fill surface
+
+The escaping sweep had been thorough on the provider app but the **client app** (`slickchart-client.html`)
+got less attention, and it renders two kinds of untrusted content: fields the provider authors and syncs
+down (check-in comfort config, form definitions, recommended-product/guide icons) and fields the client
+types themselves. Audited both apps' inline event handlers and the client render sinks and closed the
+remaining gaps — all are output-escaping only, no logic changes, values render and store identically.
+
+- **Client check-in rendering.** The comfort "level" buttons put the provider-synced option value and
+  question id straight into an inline `onclick` (`checkinAnswers['${id}']='${o}'`) with no escaping — a
+  synced config value carrying a `'` or `"` could break out of the handler. Routed the id/value through
+  `_jsAttr` (JS-string-in-attribute escaping) in `_ciLevel`, `_ciBoolean`, and `_ciNotes`, and escaped the
+  yes/no button labels, the notes label, the detail/notes placeholders, and the re-rendered answer text
+  (`_txt`). Verified against `'`, `"`, `</textarea>…`, and `<img onerror>` payloads: the handler can no
+  longer be broken out of and `_jsAttr` round-trips every value back to its original at runtime (so a
+  saved answer like `Off` still compares and stores exactly).
+- **Client magic-link form fill.** The multiple-choice option in `_cfField` was escaped with a
+  single-quote→`&#39;` replace, which the browser HTML-decodes back to `'` *before* JS parses the handler,
+  so it gave no protection (and ignored `"`); switched it and the field id to `_jsAttr`. The consent
+  paragraph and the recommended-product / guide icons were rendered as raw HTML — now `_txt`-escaped.
+- **Provider intake/preview handlers (defense-in-depth, provider-authored).** In the new-client intake
+  (`_ncQHTML`), the send-to-app form preview (`_sdField`), and the profile-fill renderer (`_pfiQHTML`),
+  form-option handlers used a double-quote-blind `'` escape and rendered option text, question labels,
+  and contraindication items raw — upgraded to `_jsAttr` for the handlers and `_fileEsc` for the displayed
+  text.
+
+Client- and provider-side only. Demos regenerated in lockstep (`slickchart-provider-demo.html`,
+`slickchart-client-demo.html`). Both apps and both demos parse; escaping verified end to end against a
+breakout-payload harness.
+
 ## 2026-07-10 — Info-leak cleanup: no endpoint returns raw internal errors
 
 Following the auth review, swept every API handler for the same info-leak. 14 endpoints (client-data,
