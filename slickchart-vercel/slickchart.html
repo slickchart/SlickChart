@@ -2753,7 +2753,7 @@ function loadAmazonAssociates(){try{const raw=localStorage.getItem('sc_amazon_as
 // One call to load everything above; wired into app init.
 function _loadPersistenceSweep(){
   loadClientRecs();loadRecReasons();loadClientHomecare();loadSessionSummaries();loadCapturedPhotos();
-  loadStaff();loadAutos();loadNotifSettings();loadCheckins();loadCourses();loadShopBundles();
+  loadStaff();loadAutos();loadNotifSettings();loadCheckins();loadCourses();loadShopBundles();try{loadBodyMaps();}catch(e){}
   loadAffiliateLinks();loadCustomNoteTemplates();loadIntegrations();loadClientHealingStage();loadAmazonAssociates();
 }
 // Safety net: persist all of the above on every navigation, so nothing new added later
@@ -3334,6 +3334,11 @@ function renderClient(id){
     <button class="btng" onclick="sendCheckin('${id}')" style="width:100%;justify-content:center;"><i class="ti ti-message" style="color:#4ec49a;"></i> Send pre-visit check-in</button>
     <button onclick="nav('checkin-settings')" style="display:block;width:100%;text-align:center;background:none;border:none;cursor:pointer;font-family:inherit;font-size:11px;color:#9a9a9a;margin-top:6px;padding:2px;">${(checkinCfg.autoSend&&checkinCfg.autoSend.on)?('Auto-send: '+checkinCfg.autoSend.when+' before each visit · edit'):'Auto-send is off · edit'}</button>
   </div>
+  ${selectedProfessions.includes('tattoo')?`<div style="padding:0 16px 14px;">
+    ${_aftercareDripActive(c)
+      ? `<button class="btng" onclick="_stopAftercareDrip('${id}')" style="width:100%;justify-content:center;color:#4ec49a;"><i class="ti ti-heartbeat" style="color:#4ec49a;"></i> Healing check-ins on · stop</button><div style="font-size:11px;color:#9a9a9a;text-align:center;margin-top:6px;">Day 1, 3 &amp; 30 aftercare messages auto-send</div>`
+      : `<button class="btng" onclick="_startAftercareDrip('${id}');nav('client','${id}')" style="width:100%;justify-content:center;"><i class="ti ti-heartbeat" style="color:#e87070;"></i> Start healing check-ins</button><div style="font-size:11px;color:#9a9a9a;text-align:center;margin-top:6px;">Auto-sends Day 1 (unwrap), Day 3 (peeling) &amp; Month 1 (healed photo)</div>`}
+  </div>`:''}
   <div style="padding:0 16px 14px;"><button class="btng" onclick="inviteClientToApp('${id}')" style="width:100%;justify-content:center;"><i class="ti ti-device-mobile" style="color:#a891ec;"></i> ${c.appInvited?'App invite sent ✓ · resend':'Invite to the app'}</button></div>
   ${(function(){var _b=_clientBalance(id);return _b>0?'<div style="padding:0 16px 8px;"><div style="background:#2a1a0a;border:1px solid #4a3510;border-radius:9px;padding:8px 12px;font-size:12px;color:#e8b060;display:flex;justify-content:space-between;"><span>Balance due</span><b>$'+_fmtMoney(_b)+'</b></div></div>':'';})()}
   <div style="padding:0 16px 14px;"><button class="btnp" onclick="nav('checkout','${id}')" style="width:100%;justify-content:center;border-radius:10px;"><i class="ti ti-cash"></i> Take payment</button></div>
@@ -4681,7 +4686,7 @@ function renderWriteNote(id){
     <span style="font-size:11px;color:#929292;">(change this if you're catching up on a note from another day)</span>
   </div>
   <div style="padding:0 16px;">
-    ${t.sections.map(s=>`<div style="margin-bottom:14px;"><div style="font-size:11px;font-weight:500;text-transform:uppercase;letter-spacing:.07em;color:${_fileEsc(s.color)};margin-bottom:5px;display:flex;align-items:center;gap:5px;"><div style="width:8px;height:8px;border-radius:50%;background:${_fileEsc(s.color)};"></div>${s.label}</div><textarea id="wn-sec-${s.id}" class="fi" style="height:90px;resize:none;line-height:1.6;" placeholder="${s.ph}" oninput="_autosaveWriteNote('${id}')">${(sections[s.id]||'').replace(/</g,'&lt;')}</textarea></div>`).join('')}
+    ${t.sections.map(s=>`<div style="margin-bottom:14px;"><div style="font-size:11px;font-weight:500;text-transform:uppercase;letter-spacing:.07em;color:${_fileEsc(s.color)};margin-bottom:5px;display:flex;align-items:center;gap:5px;"><div style="width:8px;height:8px;border-radius:50%;background:${_fileEsc(s.color)};"></div>${s.label}</div><textarea id="wn-sec-${s.id}" class="fi" style="height:90px;resize:none;line-height:1.6;" placeholder="${s.ph}" oninput="_autosaveWriteNote('${id}')">${(sections[s.id]||'').replace(/</g,'&lt;')}</textarea>${(activeNoteTemplate==='tattooRecord'&&s.id==='tt1')?_bodyMapField(id):''}</div>`).join('')}
   </div>
   <div style="display:flex;gap:8px;margin:0 16px 16px;">
     <button class="btnp" style="flex:1;border-radius:8px;" onclick="_saveAndSendNote('${id}')"><i class="ti ti-send"></i> Save and send</button>
@@ -4708,6 +4713,98 @@ function _autosaveWriteNote(id){
       if(typeof saveProviderNoteDrafts==='function')saveProviderNoteDrafts();
     }catch(e){}
   },600);
+}
+// ── Tattoo body-map placement picker ── tap a body outline to drop a pin; stores the pin + an
+// editable body-area tag so placement is charted and searchable. Own sc_ store (auto-synced).
+let bodyMaps={};
+let _bmClientId='';
+let _bmDraft={side:'front',pin:null,area:''};
+function loadBodyMaps(){try{const raw=localStorage.getItem('sc_body_maps');if(raw){const o=JSON.parse(raw);if(o&&typeof o==='object')bodyMaps=o;}}catch(e){}}
+function persistBodyMaps(){try{const v=JSON.stringify(bodyMaps);localStorage.setItem('sc_body_maps',v);if(typeof _pushKeyNow==='function')_pushKeyNow('sc_body_maps',v);}catch(e){}}
+function _bodyArea(nx,ny,side){
+  const personRight = side==='front' ? nx<0.5 : nx>=0.5;   // anatomical side, adjusted for view
+  const LR = personRight?'Right':'Left';
+  if(ny<0.11) return 'Head';
+  if(ny<0.175) return 'Neck';
+  if(nx<0.28||nx>0.72){ if(ny<0.33) return LR+' upper arm'; if(ny<0.45) return LR+' forearm'; return LR+' hand'; }
+  if(ny<0.50){ if(side==='back') return ny<0.35?'Upper back':'Lower back'; if(ny<0.28) return 'Chest'; if(ny<0.40) return 'Ribs'; return 'Stomach'; }
+  if(ny<0.55) return side==='back'?'Lower back / glutes':'Hip';
+  if(ny<0.74) return LR+' thigh';
+  if(ny<0.90) return LR+' shin / calf';
+  return LR+' foot';
+}
+function _bodySVG(side,pin){
+  const W=120,H=300;
+  const mark = pin ? `<circle cx="${(pin.x*W).toFixed(1)}" cy="${(pin.y*H).toFixed(1)}" r="7" fill="#e87070" stroke="#fff" stroke-width="2"/><circle cx="${(pin.x*W).toFixed(1)}" cy="${(pin.y*H).toFixed(1)}" r="2.5" fill="#fff"/>` : '';
+  return `<svg id="bm-svg" viewBox="0 0 ${W} ${H}" style="width:100%;height:100%;touch-action:none;display:block;cursor:crosshair;" onclick="_bodyMapPlace(event)">
+    <g fill="#241b30" stroke="#6a5a80" stroke-width="1.5" stroke-linejoin="round" pointer-events="all">
+      <circle cx="60" cy="30" r="22"/><rect x="52" y="50" width="16" height="12" rx="4"/>
+      <rect x="37" y="58" width="46" height="90" rx="16"/>
+      <rect x="19" y="64" width="15" height="80" rx="7"/><rect x="86" y="64" width="15" height="80" rx="7"/>
+      <rect x="40" y="140" width="40" height="22" rx="9"/>
+      <rect x="42" y="152" width="17" height="120" rx="8"/><rect x="61" y="152" width="17" height="120" rx="8"/>
+    </g>
+    <rect x="0" y="0" width="${W}" height="${H}" fill="transparent"/>${mark}
+  </svg>`;
+}
+function _bodyMapPlace(ev){
+  const svg=document.getElementById('bm-svg');if(!svg)return;
+  const r=svg.getBoundingClientRect();const t=(ev.touches&&ev.touches[0])||ev;
+  const nx=Math.min(1,Math.max(0,(t.clientX-r.left)/r.width));
+  const ny=Math.min(1,Math.max(0,(t.clientY-r.top)/r.height));
+  _bmDraft.pin={x:nx,y:ny}; _bmDraft.area=_bodyArea(nx,ny,_bmDraft.side); _bmRender();
+}
+function _bmSetSide(s){_bmDraft.side=s;if(_bmDraft.pin)_bmDraft.area=_bodyArea(_bmDraft.pin.x,_bmDraft.pin.y,s);_bmRender();}
+function _bmClear(){_bmDraft.pin=null;_bmDraft.area='';_bmRender();}
+function _openBodyMap(id){
+  const ex=bodyMaps[id];
+  _bmClientId=id; _bmDraft={side:(ex&&ex.side)||'front',pin:(ex&&ex.pin)||null,area:(ex&&ex.area)||''};
+  const ov=document.createElement('div');ov.id='body-map-ov';
+  ov.style.cssText='position:fixed;inset:0;z-index:9999;background:rgba(0,0,0,.6);display:flex;align-items:center;justify-content:center;padding:16px;';
+  ov.onclick=e=>{if(e.target===ov)ov.remove();};
+  ov.innerHTML=`<div style="background:#161616;border:1px solid #2a2a2a;border-radius:16px;padding:16px;width:330px;max-width:100%;max-height:92vh;overflow:auto;">
+    <div style="display:flex;justify-content:space-between;align-items:center;margin-bottom:10px;"><div style="font-size:15px;font-weight:600;color:#f0f0f0;">Tattoo placement</div><button onclick="document.getElementById('body-map-ov').remove()" style="border:none;background:none;color:#888;font-size:20px;cursor:pointer;">✕</button></div>
+    <div id="bm-body"></div></div>`;
+  (document.querySelector('.shell')||document.body).appendChild(ov);
+  _bmRender();
+}
+function _bmRender(){
+  const wrap=document.getElementById('bm-body');if(!wrap)return;const d=_bmDraft;
+  wrap.innerHTML=`
+    <div style="display:flex;gap:6px;margin-bottom:10px;">
+      <button onclick="_bmSetSide('front')" class="btng" style="flex:1;${d.side==='front'?'border-color:var(--accent);color:var(--accent);':''}">Front</button>
+      <button onclick="_bmSetSide('back')" class="btng" style="flex:1;${d.side==='back'?'border-color:var(--accent);color:var(--accent);':''}">Back</button>
+    </div>
+    <div style="background:#0d0d0d;border:1px solid #2a2a2a;border-radius:12px;height:300px;display:flex;align-items:center;justify-content:center;overflow:hidden;">${_bodySVG(d.side,d.pin)}</div>
+    <div style="font-size:11px;color:#9a9a9a;text-align:center;margin:8px 0 6px;">Tap the ${d.side} of the body to mark the placement</div>
+    <div style="margin-bottom:10px;"><div style="font-size:11px;color:#9a9a9a;margin-bottom:4px;">Body area (tap to edit)</div><input id="bm-area" class="fi" value="${_jsAttr(d.area||'')}" placeholder="e.g. Left forearm" oninput="_bmDraft.area=this.value" style="font-size:13px;"></div>
+    <div style="display:flex;gap:8px;">
+      ${d.pin?`<button onclick="_bmClear()" class="btng" style="flex:0 0 auto;">Clear</button>`:''}
+      <button class="btnp" style="flex:1;border-radius:8px;${!d.pin?'opacity:.5;pointer-events:none;':''}" onclick="_bodyMapSave()"><i class="ti ti-check"></i> Save placement</button>
+    </div>`;
+}
+function _bodyMapSave(){
+  const id=_bmClientId;if(!id||!_bmDraft.pin)return;
+  bodyMaps[id]={side:_bmDraft.side,pin:_bmDraft.pin,area:(_bmDraft.area||_bodyArea(_bmDraft.pin.x,_bmDraft.pin.y,_bmDraft.side)),ts:Date.now()};
+  persistBodyMaps();
+  // Reflect placement in the "Design & placement" note field — human-readable + text-searchable.
+  try{const el=document.getElementById('wn-sec-tt1');
+    if(el){const line='📍 Placement: '+bodyMaps[id].area+' ('+bodyMaps[id].side+')';
+      const cleaned=(el.value||'').split('\n').filter(l=>l.indexOf('📍 Placement:')!==0).join('\n').trim();
+      el.value=(line+(cleaned?'\n'+cleaned:'')).trim();
+      if(typeof _autosaveWriteNote==='function')_autosaveWriteNote(id);
+      const fld=document.getElementById('bm-field-tt1');if(fld)fld.outerHTML=_bodyMapField(id);
+    }
+  }catch(e){}
+  const ov=document.getElementById('body-map-ov');if(ov)ov.remove();
+  if(typeof proToast==='function')proToast('Placement saved: '+bodyMaps[id].area);
+}
+function _bodyMapField(id){
+  const bm=bodyMaps[id];
+  return `<div id="bm-field-tt1" style="margin-top:-4px;margin-bottom:8px;display:flex;align-items:center;gap:10px;flex-wrap:wrap;">
+    <button type="button" onclick="_openBodyMap('${_jsAttr(id)}')" style="background:#1e0d33;border:1px solid #3a2a4a;color:#c084fc;border-radius:8px;padding:7px 12px;font-size:12px;font-weight:600;cursor:pointer;font-family:inherit;display:inline-flex;align-items:center;gap:6px;"><i class="ti ti-map-pin"></i> ${bm?'Edit body map':'Body map'}</button>
+    ${bm&&bm.pin?`<div style="display:flex;align-items:center;gap:6px;"><div style="width:26px;height:40px;background:#0d0d0d;border:1px solid #2a2a2a;border-radius:5px;position:relative;flex-shrink:0;"><div style="position:absolute;width:7px;height:7px;border-radius:50%;background:#e87070;border:1px solid #fff;left:${(bm.pin.x*26-3.5).toFixed(1)}px;top:${(bm.pin.y*40-3.5).toFixed(1)}px;"></div></div><span style="font-size:12px;color:#ccc;">${_fileEsc(bm.area)} <span style="color:#888;">· ${_fileEsc(bm.side)}</span></span></div>`:'<span style="font-size:11px;color:#888;">Tap to mark where the tattoo goes</span>'}
+  </div>`;
 }
 // Save the current write-note editor into the draft + session-history/summary.
 // Returns {ok, id, idx} so callers can optionally send the just-saved summary.
@@ -5925,6 +6022,30 @@ function linkSavedSummary(id,i){
   if(typeof shareSummaryLink==='function')shareSummaryLink(id);
   else if(typeof proToast==='function')proToast('Summary ready to share');
 }
+// ── Aftercare drip (tattoo) ── start/restart the automated healing check-ins for a real client.
+// The server (clients.heal_started_at + cron-reminders) sends the Day-1 / Day-3 / Month-1 messages.
+function _aftercareDripActive(c){return !!(c&&c.aftercareDripAt&&(Date.now()-c.aftercareDripAt)<45*24*3600*1000);}
+function _startAftercareDrip(id,silent){
+  const c=CL[id];if(!c)return;
+  c.aftercareDripAt=Date.now();
+  try{saveClients();}catch(e){}
+  const tok=(typeof Cloud!=='undefined'&&Cloud&&Cloud.token)||'';
+  if(c._token&&tok){
+    fetch('/api/aftercare-drip',{method:'POST',headers:{'Content-Type':'application/json','Authorization':'Bearer '+tok},body:JSON.stringify({clientId:id,startedAt:c.aftercareDripAt})}).catch(function(){});
+  }
+  if(!silent&&typeof proToast==='function')proToast('Healing check-ins on — Day 1, 3 & 30 auto-send');
+}
+function _stopAftercareDrip(id){
+  const c=CL[id];if(!c)return;
+  delete c.aftercareDripAt;
+  try{saveClients();}catch(e){}
+  const tok=(typeof Cloud!=='undefined'&&Cloud&&Cloud.token)||'';
+  if(c._token&&tok){
+    fetch('/api/aftercare-drip',{method:'POST',headers:{'Content-Type':'application/json','Authorization':'Bearer '+tok},body:JSON.stringify({clientId:id,cancel:true})}).catch(function(){});
+  }
+  if(typeof proToast==='function')proToast('Healing check-ins stopped');
+  if(typeof nav==='function')nav('client',id);
+}
 function sendSummary(id){
   if(!summarySendOn[id])return;
   const c=CL[id];
@@ -5937,6 +6058,9 @@ function sendSummary(id){
   // Send the actual summary content to the connected client's app so it replaces their summary screen
   _postSummaryData(id);
   _storeSummary(id);
+  // Tattoo: a sent session summary means the session is done — auto-start the healing check-in
+  // drip (Day 1 / 3 / 30). Only for tattoo providers + real synced clients; restart is fine.
+  try{if(selectedProfessions.includes('tattoo')&&c&&c._token){_startAftercareDrip(id);}}catch(e){}
   // Session is complete, clear its saved protocol/step state so the next visit for this
   // client starts with a clean protocol checklist.
   try{roomStepsDone={};localStorage.removeItem('sc_room_state_'+id);if(_roomClientId===id)_roomClientId='';}catch(e){}

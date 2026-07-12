@@ -13,7 +13,8 @@
 // gated on the client's own notification toggles + quiet hours.
 import { dbEnabled } from '../lib/db.js';
 import {
-  ensureClientTables, listAllClientPrefs, listPushSubs, deletePushSub, claimReminder
+  ensureClientTables, listAllClientPrefs, listPushSubs, deletePushSub, claimReminder,
+  logEvent, clearHealStartById
 } from '../lib/clients.js';
 import { pushConfigured, sendPushToAll } from '../lib/push.js';
 
@@ -61,7 +62,7 @@ export default async function handler(req, res) {
   if (!pushConfigured()) { res.status(200).json({ ok: false, reason: 'push not configured' }); return; }
 
   const now = Date.now();
-  const summary = { checked: 0, apptBefore: 0, apptDay: 0, homecare: 0, devices: 0 };
+  const summary = { checked: 0, apptBefore: 0, apptDay: 0, homecare: 0, aftercare: 0, devices: 0 };
   try {
     await ensureClientTables();
     const rows = await listAllClientPrefs();
@@ -122,6 +123,39 @@ export default async function handler(req, res) {
         });
       }
 
+      // Tattoo aftercare drip — timed healing messages measured from the session-completion
+      // timestamp the provider set (clients.heal_started_at). Each stage fires once, in the
+      // client's local morning, only within its own window (so a late start can't backfire an
+      // earlier stage and a stale timestamp can't re-trigger).
+      const healStart = Number(row.heal_started_at) || 0;
+      if (healStart) {
+        const DAY = 24 * HOUR;
+        const elapsed = now - healStart;
+        if (elapsed >= 45 * DAY) {
+          try { await clearHealStartById(row.client_id); } catch (e) {}   // series complete — retire it
+        } else if (row.provider_id && notif.aftercareReminder !== false && inMorning) {
+          const STAGES = [
+            { key: 'd1', lo: 1 * DAY, hi: 3 * DAY,
+              title: 'Time to unwrap 🩹',
+              body: 'Day 1: gently remove your bandage, wash with lukewarm water & fragrance-free soap, pat dry, then a thin layer of aftercare.',
+              msg: 'Day 1 — you can take your bandage off now 🩹 Wash gently with lukewarm water and a fragrance-free soap, pat dry with a clean paper towel, then apply a thin layer of aftercare. Don’t re-bandage unless I gave you second-skin. Your full aftercare guide is in the app.' },
+            { key: 'd3', lo: 3 * DAY, hi: 30 * DAY,
+              title: 'The peeling phase 🌀',
+              body: 'Around day 3: flaking and itching are normal — don’t pick or scratch. Keep it lightly moisturized.',
+              msg: 'Day 3 check-in — you’re heading into the peeling & itching phase 🌀 Flaking like a sunburn is normal, and a little ink coming off in the wash is fine. Don’t pick or scratch, just tap or moisturize. Message me if it turns hot, swollen, or oozy.' },
+            { key: 'm1', lo: 30 * DAY, hi: 45 * DAY,
+              title: 'Send me a healed photo 📸',
+              body: 'It’s been about a month — I’d love to see how your tattoo healed! Open the app to send a photo.',
+              msg: 'It’s been about a month — I’d love to see how your tattoo healed! Send me a photo when you get a chance 📸 And if you spotted any soft spots, let’s book a touch-up.' },
+          ];
+          for (const st of STAGES) {
+            if (elapsed >= st.lo && elapsed < st.hi) {
+              due.push({ rkey: 'heal-' + st.key + ':' + healStart, title: st.title, body: st.body, healMsg: st.msg, isHeal: true });
+            }
+          }
+        }
+      }
+
       if (!due.length) continue;
       const subs = await listPushSubs(row.client_id);
       if (!subs.length) continue;
@@ -130,10 +164,16 @@ export default async function handler(req, res) {
         // Claim first so overlapping cron runs can't double-send; only then push.
         const fresh = await claimReminder(row.client_id, r.rkey);
         if (!fresh) continue;
+        // Aftercare drip also lands in the client's real message thread (as if the artist sent it),
+        // so the healing guidance persists in-app, not just as a transient push.
+        if (r.isHeal && row.provider_id) {
+          try { await logEvent(row.provider_id, row.client_id, 'provider_message', { text: r.healMsg, photos: [], auto: true }); } catch (e) {}
+        }
         const sent = await sendPushToAll(subs, { title: r.title, body: r.body, url: '/client', tag: r.rkey, renotify: true }, deletePushSub);
         summary.devices += sent;
         if (r.rkey.startsWith('apptbefore')) summary.apptBefore++;
         else if (r.rkey.startsWith('apptday')) summary.apptDay++;
+        else if (r.isHeal) summary.aftercare++;
         else summary.homecare++;
       }
     }

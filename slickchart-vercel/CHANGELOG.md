@@ -2,6 +2,31 @@
 
 Newest entries at the top. One entry per deploy. Dates are US-formatted.
 
+## 2026-07-12 — Tattoo: automated aftercare drip + 2D body-map placement + landing copy
+
+Two of the flagged tattoo follow-ups, built on the existing infrastructure.
+
+- **Automated aftercare drip (the Healing Journey).** When a provider sends a session summary for a
+  tattoo client, a timed 3-message series auto-starts (and there's a manual **Start / stop healing
+  check-ins** control on the client screen). The reminder cron sends, in the client's local morning,
+  once each and only within its window: **Day 1** (unwrap & first wash), **Day 3** (peeling & itching
+  phase), **~Month 1** (send a healed photo + touch-up nudge). Each message lands in the client's real
+  message thread *and* as a push. Server side: a `heal_started_at` column (idempotent migration), a
+  provider-authed `/api/aftercare-drip` to start/cancel, drip stages added to `cron-reminders.js`
+  (deduped via `reminder_log`, auto-retired after 45 days), and the cron's client query now joins the
+  provider id + heal timestamp. Gated on the client's `aftercareReminder` toggle and quiet hours like
+  every other reminder.
+- **2D body-map placement.** In the tattoo record's "Design & placement" field there's now a **Body map**
+  button: tap a front/back body outline to drop a pin, get an auto-suggested (and editable) body-area tag
+  (e.g. "Left forearm"), and it writes a `📍 Placement: …` line into the note (searchable) plus a mini pin
+  preview. Stored in a synced `sc_body_maps` store. Coordinate math modeled on the signature pad;
+  area-detection verified (9/9) and drip windows verified (10/10).
+- **Landing page** now lists **Tattoo artists** among the professions (hero list, sign-up dropdown, and
+  the "who it's for" copy).
+
+Provider app + demo in lockstep; client app unchanged (the drip rides the existing message thread);
+all server modules and both apps parse.
+
 ## 2026-07-12 — New profession: Tattoo artist (forms, guides, products, records)
 
 Added **Tattoo artist** to the profession picker with a full, data-driven workspace that flows through the

@@ -27,6 +27,9 @@ export async function ensureClientTables() {
   // their data; it (a) hides the row from the provider roster and (b) stops a provider re-sync
   // from resurrecting the scrubbed PII (see upsertClient / deleteClientData below).
   await q`ALTER TABLE clients ADD COLUMN IF NOT EXISTS deleted_at bigint`;
+  // Aftercare drip: when set, the reminder cron sends the timed Day-1 / Day-3 / Month-1 healing
+  // messages measured from this timestamp (tattoo profession). Cleared after the series completes.
+  await q`ALTER TABLE clients ADD COLUMN IF NOT EXISTS heal_started_at bigint`;
   await q`CREATE TABLE IF NOT EXISTS client_events (
     id text PRIMARY KEY,
     client_id text NOT NULL,
@@ -147,11 +150,36 @@ export async function deleteClientData(clientId) {
   return true;
 }
 
-// For the reminder cron: every client's saved prefs (bounded to beta scale). Includes the
-// client_id so the cron can look up that client's push subscriptions.
+// For the reminder cron: every client's saved prefs (bounded to beta scale). Joins the client
+// row so the cron also has the provider_id (to send messages as the provider) and the aftercare
+// heal_started_at (to time the healing drip). Excludes deleted clients.
 export async function listAllClientPrefs() {
   const q = sql();
-  return await q`SELECT client_id, prefs FROM client_prefs LIMIT 5000`;
+  return await q`SELECT cp.client_id, cp.prefs, c.provider_id, c.heal_started_at
+    FROM client_prefs cp JOIN clients c ON c.id = cp.client_id
+    WHERE c.deleted_at IS NULL LIMIT 5000`;
+}
+
+// Aftercare drip: start (or restart) the healing clock for one of a provider's own clients.
+// Constrained by provider_id so a provider can only schedule drips for their own clients.
+export async function setHealStart(clientId, providerId, startedAt) {
+  const q = sql();
+  const ts = Number(startedAt) || Date.now();
+  await q`UPDATE clients SET heal_started_at=${ts}
+    WHERE id=${String(clientId)} AND provider_id=${String(providerId)} AND deleted_at IS NULL`;
+  return true;
+}
+// Cancel a drip (provider-scoped).
+export async function clearHealStart(clientId, providerId) {
+  const q = sql();
+  await q`UPDATE clients SET heal_started_at=NULL WHERE id=${String(clientId)} AND provider_id=${String(providerId)}`;
+  return true;
+}
+// Cancel a drip by client id only — used by the cron to retire a completed/expired series.
+export async function clearHealStartById(clientId) {
+  const q = sql();
+  await q`UPDATE clients SET heal_started_at=NULL WHERE id=${String(clientId)}`;
+  return true;
 }
 
 // A random, URL-safe token that's effectively impossible to guess.
