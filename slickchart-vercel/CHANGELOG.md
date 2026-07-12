@@ -2,6 +2,25 @@
 
 Newest entries at the top. One entry per deploy. Dates are US-formatted.
 
+## 2026-07-12 — Course lessons: attach big worksheets via a document link (no size limit)
+
+Direct file uploads are capped at 3MB — not an arbitrary number but Vercel's ~4.5MB serverless
+request/response limit (files are base64-encoded, +33%, and travel through the function on both upload
+and download). Rather than a fragile bump, added a **worksheet / document link** field to every course
+lesson: paste a Google Drive / Dropbox / etc. share link for a file of any size, and the client taps
+**Open worksheet** to view it. No storage, no infrastructure, no size limit.
+
+- Provider course builder: a new link field under the video link, with a hint pointing over-3MB
+  worksheets to it; the 3MB upload toast now suggests the link instead. Lessons with only a link save
+  correctly, and the course preview shows a "Worksheet" tag.
+- Client lesson view: an "Open worksheet" button (opens in a new tab) plus a "Worksheet" tag in the
+  lesson list. The link is scheme-validated through `_safeUrl` (a `javascript:` link renders nothing) and
+  attribute-escaped.
+
+Both apps + both demos updated in lockstep and parse; save/round-trip and the URL gate verified (6/6).
+(Native large-file upload via Vercel Blob remains available as a future option if in-app upload of big
+files is preferred over links.)
+
 ## 2026-07-12 — Courses are now deletable (including the demo/starter ones)
 
 Courses could be created, edited, previewed, and sent — but never deleted, so the seeded starter
