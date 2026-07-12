@@ -1816,17 +1816,18 @@ function renderHome(){
     const ringR=26;const ringC=2*Math.PI*ringR;
     const pct=noAppt?0:Math.max(0,Math.min(1,1-(client.daysUntilNext/28)));
     const filled=ringC*pct;
-    const urgencyLabel=noAppt?'Not scheduled':(client.isToday?'Today!':client.isTomorrow?'Tomorrow!':client.isThisWeek?`This ${new Date(APPT).toLocaleDateString('en-US',{weekday:'long'})}!`:`${client.daysUntilNext} days away`);
+    // Only surface a short urgency chip for near-term visits; no "N days away"/"Xh away" countdown
+    // (the ring already shows the day count, and the countdown text read as clutter).
+    const urgencyLabel=client.isToday?'Today!':client.isTomorrow?'Tomorrow!':client.isThisWeek?`This ${new Date(APPT).toLocaleDateString('en-US',{weekday:'long'})}!`:'';
     return`<div style="margin:0 16px 14px;background:linear-gradient(135deg,var(--accent-tint),var(--accent-tint2));border-radius:16px;padding:18px 16px;">
     <div style="display:flex;align-items:center;gap:16px;">
       <div style="flex:1;">
         <div style="font-size:11px;font-weight:700;color:var(--accent-lt2);text-transform:uppercase;letter-spacing:.08em;margin-bottom:6px;opacity:.85;">Next appointment</div>
         <div style="font-size:22px;font-weight:600;color:var(--accent-lt2);margin-bottom:2px;">${noAppt?'Not scheduled':_txt(client.nextDate)}</div>
         <div style="font-size:13px;color:var(--accent-lt2);opacity:.75;">${noAppt?_txt(client.treatment||'Book your next visit'):(_txt(client.nextTime)+' · '+_txt(client.treatment))}</div>
-        <div style="margin-top:10px;display:flex;align-items:center;gap:6px;flex-wrap:wrap;">
-          <div style="background:${urgent?'var(--accent)':'rgba(255,255,255,.14)'};border-radius:6px;padding:4px 10px;font-size:12px;color:${urgent?'var(--accent-ink)':'var(--accent-lt2)'};font-weight:700;">${urgencyLabel}</div>
-        </div>
-        ${(client.isThisWeek&&!noAppt)?`<div style="margin-top:6px;font-size:12px;color:var(--accent-lt2);opacity:.75;">at ${_txt(client.nextTime)} · ${client.hoursUntilNext}h away</div>`:''}
+        ${urgencyLabel?`<div style="margin-top:10px;display:flex;align-items:center;gap:6px;flex-wrap:wrap;">
+          <div style="background:var(--accent);border-radius:6px;padding:4px 10px;font-size:12px;color:var(--accent-ink);font-weight:700;">${urgencyLabel}</div>
+        </div>`:''}
       </div>
       <!-- Animated SVG ring -->
       <div style="flex-shrink:0;position:relative;width:68px;height:68px;">
@@ -1898,16 +1899,24 @@ function renderHome(){
 
   <div style="height:6px;"></div>
   ${(function(){
-    // Only show if they haven't already installed it to the home screen.
+    // Only show if they haven't already installed it to the home screen, or dismissed the card.
     var standalone=(window.matchMedia&&window.matchMedia('(display-mode: standalone)').matches)||window.navigator.standalone===true;
     if(standalone)return '';
-    return `<button onclick="_clientInstall()" style="margin:0 16px 20px;width:calc(100% - 32px);display:flex;align-items:center;gap:11px;background:linear-gradient(135deg,var(--accent-lt),#fff);border:1.5px solid var(--accent-a30);border-radius:14px;padding:13px 14px;cursor:pointer;text-align:left;">
-      <div style="width:40px;height:40px;border-radius:10px;background:var(--accent);display:flex;align-items:center;justify-content:center;flex-shrink:0;"><i class="ti ti-device-mobile-plus" style="font-size:20px;color:var(--accent-ink);"></i></div>
-      <div style="flex:1;min-width:0;"><div style="font-size:13px;font-weight:700;color:#2a2a2a;">Add to your home screen</div><div style="font-size:11.5px;color:#6b5d52;line-height:1.4;">One tap to open ${_txt(client.studio)} anytime, no app store needed. Native iOS &amp; Android apps coming soon.</div></div>
-      <span style="font-size:11px;font-weight:700;color:var(--accent-ink);background:var(--accent);padding:5px 11px;border-radius:20px;flex-shrink:0;">Show me</span>
-    </button>`;
+    var dismissed=false;try{dismissed=localStorage.getItem('sc_a2hs_dismissed')==='1';}catch(e){}
+    if(dismissed)return '';
+    return `<div style="margin:0 16px 20px;width:calc(100% - 32px);display:flex;align-items:center;gap:9px;background:linear-gradient(135deg,var(--accent-lt),#fff);border:1.5px solid var(--accent-a30);border-radius:14px;padding:13px 14px;box-sizing:border-box;">
+      <div onclick="_clientInstall()" role="button" aria-label="Add to your home screen" style="display:flex;align-items:center;gap:11px;flex:1;min-width:0;cursor:pointer;text-align:left;">
+        <div style="width:40px;height:40px;border-radius:10px;background:var(--accent);display:flex;align-items:center;justify-content:center;flex-shrink:0;"><i class="ti ti-device-mobile-plus" style="font-size:20px;color:var(--accent-ink);"></i></div>
+        <div style="flex:1;min-width:0;"><div style="font-size:13px;font-weight:700;color:#2a2a2a;">Add to your home screen</div><div style="font-size:11.5px;color:#6b5d52;line-height:1.4;">One tap to open ${_txt(client.studio)} anytime, no app store needed. Native iOS &amp; Android apps coming soon.</div></div>
+        <span style="font-size:11px;font-weight:700;color:var(--accent-ink);background:var(--accent);padding:5px 11px;border-radius:20px;flex-shrink:0;">Show me</span>
+      </div>
+      <button onclick="_dismissA2HS()" aria-label="Dismiss" title="Dismiss" style="flex-shrink:0;align-self:flex-start;background:none;border:none;color:#9a8a78;cursor:pointer;padding:2px 4px;line-height:0;"><i class="ti ti-x" style="font-size:15px;"></i></button>
+    </div>`;
   })()}`;
 }
+// Clear the home "Add to home screen" card. Persisted so it stays gone; the header install button
+// and the profile card still let them install later if they change their mind.
+function _dismissA2HS(){try{localStorage.setItem('sc_a2hs_dismissed','1');}catch(e){}try{if(typeof _syncClientPrefsToServer==='function')_syncClientPrefsToServer();}catch(e){}try{if(typeof renderHome==='function')renderHome();}catch(e){}}
 
 // ── JOURNEY ──
 
@@ -3122,6 +3131,31 @@ function refreshRebookTimes(){
   c.innerHTML=slots.length?slots.map(rebookTimeBtnHTML).join(''):`<div style="grid-column:1/-1;text-align:center;font-size:12px;color:#786858;padding:12px;">Pick a date above to see available times</div>`;
 }
 
+// One preferred-date button. Built by a helper (like the time buttons) so selecting a date can
+// re-render it correctly. The old inline onclick only recolored the BUTTON, not its nested day/
+// date/month text, so a selected date turned dark (accent) while the number stayed near-black —
+// unreadable "black on dark green" for a green brand. selectRebookDate recolors text + chrome.
+function rebookDateBtnHTML(d){
+  const on=rebookState.date===d.key;
+  return `<button onclick="selectRebookDate('${d.key}')" class="date-btn" data-key="${d.key}" style="flex-shrink:0;width:54px;border:1.5px solid ${on?'var(--accent)':'#e8ddd3'};background:${on?'var(--accent)':'#fff'};border-radius:10px;padding:8px 4px;cursor:pointer;text-align:center;">
+    <div class="db-day" style="font-size:10px;font-weight:600;color:${on?'rgba(255,255,255,.9)':'#786858'};margin-bottom:3px;">${d.day}</div>
+    <div class="db-date" style="font-size:18px;font-weight:700;color:${on?'#fff':'#1a1a1a'};">${d.date}</div>
+    <div class="db-mon" style="font-size:10px;color:${on?'rgba(255,255,255,.9)':'#786858'};margin-top:2px;">${d.month}</div>
+  </button>`;
+}
+function selectRebookDate(key){
+  rebookState.date=key;
+  document.querySelectorAll('.date-btn').forEach(b=>{
+    const on=b.dataset.key===key;
+    b.style.background=on?'var(--accent)':'#fff';
+    b.style.borderColor=on?'var(--accent)':'#e8ddd3';
+    const day=b.querySelector('.db-day'),date=b.querySelector('.db-date'),mon=b.querySelector('.db-mon');
+    if(day)day.style.color=on?'rgba(255,255,255,.9)':'#786858';
+    if(date)date.style.color=on?'#fff':'#1a1a1a';
+    if(mon)mon.style.color=on?'rgba(255,255,255,.9)':'#786858';
+  });
+  refreshRebookTimes();
+}
 function renderRebook(){
   setNav('home');
   document.getElementById('tt').textContent='Request appointment';
@@ -3176,11 +3210,7 @@ function renderRebook(){
   <div class="sh"><h2>Preferred date</h2></div>
   <div style="padding:0 16px;overflow-x:auto;scrollbar-width:none;">
     <div style="display:flex;gap:7px;padding-bottom:4px;min-width:max-content;">
-      ${dates.map(d=>`<button onclick="rebookState.date='${d.key}';document.querySelectorAll('.date-btn').forEach(b=>{b.style.background=b.dataset.key==='${d.key}'?'var(--accent)':'#fff';b.style.color=b.dataset.key==='${d.key}'?'#fff':'#1a1a1a';b.style.borderColor=b.dataset.key==='${d.key}'?'var(--accent)':'#e8ddd3';});refreshRebookTimes();" class="date-btn" data-key="${d.key}" style="flex-shrink:0;width:54px;border:1.5px solid ${rebookState.date===d.key?'var(--accent)':'#e8ddd3'};background:${rebookState.date===d.key?'var(--accent)':'#fff'};border-radius:10px;padding:8px 4px;cursor:pointer;text-align:center;">
-        <div style="font-size:10px;font-weight:600;color:${rebookState.date===d.key?'rgba(255,255,255,.8)':'#b8a898'};margin-bottom:3px;">${d.day}</div>
-        <div style="font-size:18px;font-weight:700;color:${rebookState.date===d.key?'#fff':'#1a1a1a'};">${d.date}</div>
-        <div style="font-size:10px;color:${rebookState.date===d.key?'rgba(255,255,255,.8)':'#b8a898'};margin-top:2px;">${d.month}</div>
-      </button>`).join('')}
+      ${dates.map(rebookDateBtnHTML).join('')}
     </div>
   </div>
 
@@ -3237,8 +3267,7 @@ function submitRebook(){
         <i class="ti ti-clock" style="font-size:15px;"></i> Waiting for ${_txt(client.providerFirst)} to confirm… you'll get a notification when it's booked.
       </div>
       <div style="display:flex;flex-direction:column;gap:8px;width:100%;max-width:260px;margin-top:12px;">
-        <button class="btnp" style="border-radius:10px;" onclick="nav('messages')"><i class="ti ti-message-circle" aria-hidden="true"></i> Message ${_txt(client.providerFirst)}</button>
-        <button class="btng" style="border-radius:10px;" onclick="nav('home')">Back to home</button>
+        <button class="btnp" style="border-radius:10px;" onclick="nav('home')">Back to home</button>
       </div>
     </div>`;
   };
@@ -4085,7 +4114,13 @@ function _getClientToken(){
   try{
     const m=location.pathname.match(/\/client\/([^\/?]+)/);
     if(m&&m[1])return decodeURIComponent(m[1]);
-    return new URLSearchParams(location.search).get('c')||'';
+    const q=new URLSearchParams(location.search).get('c');
+    if(q)return q;
+    // Home-screen / PWA launches open the manifest start_url ("/client") with NO token in the URL,
+    // so this used to fall through to the sample/demo client. Recover the token we saved the first
+    // time they opened their real link, so an installed shortcut always loads THEIR space.
+    try{const st=localStorage.getItem('sc_client_token');if(st)return st;}catch(e){}
+    return '';
   }catch(e){ return ''; }
 }
 var _clientSubmitInFlight={};
@@ -4230,6 +4265,9 @@ function _applyServerVcInvite(vi){
 }
 function _bootRealClient(token){
   client._token=token;
+  // Remember this real link token so a later home-screen launch (which opens "/client" with no
+  // token in the URL) can recover it in _getClientToken instead of dropping to the demo client.
+  try{localStorage.setItem('sc_client_token',token);}catch(e){}
   var S=document.getElementById('S');
   if(S)S.innerHTML='<div style="padding:70px 24px;text-align:center;color:#6b5d52;"><div style="font-size:30px;margin-bottom:12px;">\u2728</div><div style="font-size:14px;">Loading your space\u2026</div></div>';
   fetch('/api/client-data?t='+encodeURIComponent(token),{cache:'no-store'}).then(function(r){return r.json();}).then(function(j){
