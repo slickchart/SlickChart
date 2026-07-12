@@ -215,6 +215,16 @@ function _urlAttr(u){return String(u||'').replace(/&/g,'&amp;').replace(/"/g,'&q
 // quote can't break out of the src="…" attribute.
 function _imgSrc(u){u=String(u||'').trim();if(!u)return'';if(!/^data:image\//i.test(u)&&!/^https?:\/\//i.test(u)&&!/^blob:/i.test(u))return'';return _urlAttr(u);}
 function _txt(s){return String(s==null?'':s).replace(/&/g,'&amp;').replace(/</g,'&lt;').replace(/>/g,'&gt;').replace(/"/g,'&quot;');}
+// Day-of-month with an ordinal suffix: 1->1st, 2->2nd, 11->11th, 21->21st, etc.
+function _ordDay(d){d=parseInt(d,10);if(!d)return String(d);const t=d%100;if(t>=11&&t<=13)return d+'th';switch(d%10){case 1:return d+'st';case 2:return d+'nd';case 3:return d+'rd';default:return d+'th';}}
+// Add an ordinal suffix to the day-of-month inside an already-formatted date string so clients see
+// "July 11th" rather than "July 11". Matches a month name followed by a 1-2 digit day and rewrites
+// just the day; leaves 4-digit years and everything else untouched. Safe to run on any date string
+// (idempotent — a day that already ends in st/nd/rd/th is skipped).
+const _MONTHS_RE=/\b(Jan(?:uary)?|Feb(?:ruary)?|Mar(?:ch)?|Apr(?:il)?|May|Jun(?:e)?|Jul(?:y)?|Aug(?:ust)?|Sep(?:t(?:ember)?)?|Oct(?:ober)?|Nov(?:ember)?|Dec(?:ember)?)\s+(\d{1,2})(?!\d)(?!\s*(?:st|nd|rd|th))/gi;
+function _ordinalize(s){if(s==null)return s;return String(s).replace(_MONTHS_RE,function(m,mon,day){return mon+' '+_ordDay(day);});}
+// Escape + ordinalize, for rendering a client-facing date string.
+function _dt(s){return _txt(_ordinalize(s));}
 // Emoji-safe initials (first letter of the first two words). Uses Array.from so a name with
 // an emoji or other multi-byte character yields a whole glyph, not a broken half-surrogate.
 function _initialsOf(name){var parts=String(name==null?'':name).trim().split(/\s+/).filter(Boolean);var ini=parts.slice(0,2).map(function(w){return Array.from(w)[0]||'';}).join('');return (ini||'?').toUpperCase();}
@@ -1014,7 +1024,7 @@ function openProviderSheet(){
       <div style="flex:1;min-width:0;">
         <div style="display:flex;align-items:center;gap:7px;"><span style="font-size:15px;font-weight:700;color:#1a1a1a;">${_txt(p.studio)}</span>${(client._real||p.connected)?'':`<span style="font-size:9px;font-weight:700;color:#786858;border:1px solid #e8ddd3;border-radius:4px;padding:1px 5px;">DEMO</span>`}</div>
         <div style="font-size:12px;color:#6b5d52;">${_txt(p.first)}${p.kind?' · '+_txt(p.kind):''}</div>
-        <div style="font-size:12px;color:#786858;margin-top:3px;"><i class="ti ti-calendar" style="font-size:11px;"></i> ${p.nextDate?('Next: '+_txt(p.nextDate)+(p.treatment?(' · '+_txt(p.treatment)):'')):'No upcoming appointment'}</div>
+        <div style="font-size:12px;color:#786858;margin-top:3px;"><i class="ti ti-calendar" style="font-size:11px;"></i> ${p.nextDate?('Next: '+_dt(p.nextDate)+(p.treatment?(' · '+_txt(p.treatment)):'')):'No upcoming appointment'}</div>
       </div>
       <div style="flex-shrink:0;display:flex;flex-direction:column;align-items:flex-end;gap:6px;">
         ${on?`<i class="ti ti-circle-check-filled" style="font-size:22px;color:var(--accent);"></i>`:`<i class="ti ti-chevron-right" style="font-size:18px;color:#82715f;"></i>`}
@@ -1150,7 +1160,7 @@ function renderCalModal(){
   <div style="background:#fff;border-radius:16px;padding:20px 16px 32px;box-shadow:0 -4px 30px rgba(0,0,0,.12);">
     <div style="width:36px;height:4px;background:#e8ddd3;border-radius:2px;margin:0 auto 18px;"></div>
     <div style="font-size:16px;font-weight:600;color:#1a1a1a;margin-bottom:4px;">Add to calendar</div>
-    <div style="font-size:13px;color:#786858;margin-bottom:18px;">${_txt(client.treatment)} · ${_txt(client.nextDate)} at ${_txt(client.nextTime)}</div>
+    <div style="font-size:13px;color:#786858;margin-bottom:18px;">${_txt(client.treatment)} · ${_dt(client.nextDate)} at ${_txt(client.nextTime)}</div>
 
     <!-- Google Calendar -->
     <button onclick="openGoogleCal()" style="width:100%;background:#fff;border:1.5px solid #e8ddd3;border-radius:12px;padding:14px 16px;display:flex;align-items:center;gap:12px;cursor:pointer;margin-bottom:10px;text-align:left;">
@@ -1657,6 +1667,7 @@ function nav(screen){
     'fill-form':renderFillForm,
     'view-guide':renderViewGuide,
     'view-course':renderViewCourse,'view-lesson':renderViewLesson,
+    library:renderLibrary,
   };
   const fn=routes[screen];
   if(fn){
@@ -1823,7 +1834,7 @@ function renderHome(){
     <div style="display:flex;align-items:center;gap:16px;">
       <div style="flex:1;">
         <div style="font-size:11px;font-weight:700;color:var(--accent-lt2);text-transform:uppercase;letter-spacing:.08em;margin-bottom:6px;opacity:.85;">Next appointment</div>
-        <div style="font-size:22px;font-weight:600;color:var(--accent-lt2);margin-bottom:2px;">${noAppt?'Not scheduled':_txt(client.nextDate)}</div>
+        <div style="font-size:22px;font-weight:600;color:var(--accent-lt2);margin-bottom:2px;">${noAppt?'Not scheduled':_dt(client.nextDate)}</div>
         <div style="font-size:13px;color:var(--accent-lt2);opacity:.75;">${noAppt?_txt(client.treatment||'Book your next visit'):(_txt(client.nextTime)+' · '+_txt(client.treatment))}</div>
         ${urgencyLabel?`<div style="margin-top:10px;display:flex;align-items:center;gap:6px;flex-wrap:wrap;">
           <div style="background:var(--accent);border-radius:6px;padding:4px 10px;font-size:12px;color:var(--accent-ink);font-weight:700;">${urgencyLabel}</div>
@@ -2043,7 +2054,7 @@ function openGalleryPhoto(i){
   const inner=s.src
     ?`<img src="${_imgSrc(s.src)}" alt="${_urlAttr(s.date)}" style="max-width:100%;max-height:80vh;border-radius:10px;">`
     :`<div style="width:min(80vw,320px);aspect-ratio:3/4;border-radius:14px;background:${s.bg};display:flex;align-items:center;justify-content:center;opacity:${s.opacity};"><i class="ti ti-user-circle" style="font-size:70px;color:${s.icon};"></i></div>`;
-  o.innerHTML=inner+`<div style="margin-top:14px;color:#fff;font-size:13px;font-weight:600;">${_txt(s.date)}</div><div style="margin-top:4px;color:rgba(255,255,255,.6);font-size:11px;">Tap anywhere to close</div>`;
+  o.innerHTML=inner+`<div style="margin-top:14px;color:#fff;font-size:13px;font-weight:600;">${_dt(s.date)}</div><div style="margin-top:4px;color:rgba(255,255,255,.6);font-size:11px;">Tap anywhere to close</div>`;
   document.body.appendChild(o);
 }
 function renderJourney(){
@@ -2125,14 +2136,14 @@ function renderJourney(){
         <div style="flex:1;">
           <div style="font-size:10px;color:#786858;font-weight:600;text-transform:uppercase;letter-spacing:.06em;margin-bottom:5px;">Before</div>
           <select aria-label="Choose before photo" onchange="photoLeft=parseInt(this.value);renderJourney()" style="width:100%;background:#faf7f4;border:1.5px solid #e8ddd3;border-radius:8px;padding:7px 10px;font-size:12px;color:#1a1a1a;cursor:pointer;font-weight:500;">
-            ${progressSessions.map((s,i)=>`<option value="${i}" ${i===photoLeft?'selected':''}>${_txt(s.date)}</option>`).join('')}
+            ${progressSessions.map((s,i)=>`<option value="${i}" ${i===photoLeft?'selected':''}>${_dt(s.date)}</option>`).join('')}
           </select>
         </div>
         <div style="display:flex;align-items:flex-end;padding-bottom:2px;color:#786858;font-size:18px;">→</div>
         <div style="flex:1;">
           <div style="font-size:10px;color:#786858;font-weight:600;text-transform:uppercase;letter-spacing:.06em;margin-bottom:5px;">After</div>
           <select aria-label="Choose after photo" onchange="photoRight=parseInt(this.value);renderJourney()" style="width:100%;background:#faf7f4;border:1.5px solid #e8ddd3;border-radius:8px;padding:7px 10px;font-size:12px;color:#1a1a1a;cursor:pointer;font-weight:500;">
-            ${progressSessions.map((s,i)=>`<option value="${i}" ${i===photoRight?'selected':''}>${_txt(s.date)}</option>`).join('')}
+            ${progressSessions.map((s,i)=>`<option value="${i}" ${i===photoRight?'selected':''}>${_dt(s.date)}</option>`).join('')}
           </select>
         </div>
       </div>
@@ -2140,7 +2151,7 @@ function renderJourney(){
       <div style="display:flex;gap:6px;">
         ${progressSessions.map((s,i)=>`
         <button onclick="photoRight=${i};if(photoLeft===${i})photoLeft=${Math.max(0,i-1)};renderJourney()" style="flex:1;background:${i===photoRight?'var(--accent)':i===photoLeft?'var(--accent-lt)':'#faf7f4'};border:1.5px solid ${i===photoRight?'var(--accent)':i===photoLeft?'#d4a870':'#e8ddd3'};border-radius:8px;padding:6px 4px;cursor:pointer;text-align:center;">
-          <div style="font-size:10px;font-weight:700;color:${i===photoRight?'#fff':i===photoLeft?'#9a7a5e':'#b8a898'};">${_txt(s.date)}</div>
+          <div style="font-size:10px;font-weight:700;color:${i===photoRight?'#fff':i===photoLeft?'#9a7a5e':'#b8a898'};">${_dt(s.date)}</div>
           <div style="font-size:9px;color:${i===photoRight?'rgba(255,255,255,.8)':i===photoLeft?'#b89a6e':'#c4b9ae'};">${i===photoRight?'After':i===photoLeft?'Before':'·'}</div>
         </button>`).join('')}
       </div>
@@ -2158,7 +2169,7 @@ function renderJourney(){
         ${progressSessions.map((s,i)=>`
         <div onclick="openGalleryPhoto(${i})" style="position:relative;aspect-ratio:3/4;border-radius:8px;overflow:hidden;cursor:pointer;background:${s.bg};display:flex;align-items:center;justify-content:center;opacity:${s.opacity};">
           ${s.src?`<img src="${_imgSrc(s.src)}" alt="${_urlAttr(s.date)}" style="width:100%;height:100%;object-fit:cover;">`:`<i class="ti ti-user-circle" aria-hidden="true" style="font-size:26px;color:${s.icon};"></i>`}
-          <span style="position:absolute;bottom:3px;left:3px;right:3px;font-size:8.5px;font-weight:700;color:#fff;background:rgba(0,0,0,.5);border-radius:4px;padding:1px 4px;text-align:center;overflow:hidden;text-overflow:ellipsis;white-space:nowrap;">${_txt(s.date)}</span>
+          <span style="position:absolute;bottom:3px;left:3px;right:3px;font-size:8.5px;font-weight:700;color:#fff;background:rgba(0,0,0,.5);border-radius:4px;padding:1px 4px;text-align:center;overflow:hidden;text-overflow:ellipsis;white-space:nowrap;">${_dt(s.date)}</span>
         </div>`).join('')}
       </div>
     </div>
@@ -2179,7 +2190,7 @@ function renderJourney(){
         <i class="ti ti-${i===0?'sparkles':'notes'}" aria-hidden="true" style="font-size:15px;color:${i===0?'#fff':'var(--accent)'};"></i>
       </div>
       <div style="flex:1;">
-        <div style="font-size:13px;font-weight:600;color:#1a1a1a;">${_txt(obs.date)}</div>
+        <div style="font-size:13px;font-weight:600;color:#1a1a1a;">${_dt(obs.date)}</div>
       </div>
       ${i===0?`<span style="font-size:11px;background:var(--accent);color:#fff;padding:3px 9px;border-radius:20px;font-weight:600;">Latest</span>`:''}
     </div>
@@ -2204,7 +2215,7 @@ function renderJourney(){
   <button onclick="_summaryIdx=${i};_summaryFrom='journey';nav('summary')" style="display:block;width:calc(100% - 32px);text-align:left;box-sizing:border-box;background:#fff;border:1.5px solid ${i===0?'var(--accent)':'#f0ebe4'};border-radius:14px;margin:0 16px 10px;padding:12px 14px;cursor:pointer;font-family:inherit;">
     <div style="display:flex;align-items:center;gap:11px;">
       <div style="width:36px;height:36px;border-radius:9px;background:var(--accent-lt);display:flex;align-items:center;justify-content:center;flex-shrink:0;"><i class="ti ti-file-text" style="font-size:16px;color:var(--accent);"></i></div>
-      <div style="flex:1;min-width:0;"><div style="font-size:13px;font-weight:600;color:#1a1a1a;">${_txt(s.date)}</div>${i===0?`<div style="font-size:11px;color:var(--accent);font-weight:600;">Latest</div>`:''}</div>
+      <div style="flex:1;min-width:0;"><div style="font-size:13px;font-weight:600;color:#1a1a1a;">${_dt(s.date)}</div>${i===0?`<div style="font-size:11px;color:var(--accent);font-weight:600;">Latest</div>`:''}</div>
       <i class="ti ti-chevron-right" style="font-size:15px;color:#82715f;flex-shrink:0;"></i>
     </div>
     <div style="font-size:12px;color:#6b5d52;line-height:1.5;margin-top:7px;overflow:hidden;text-overflow:ellipsis;display:-webkit-box;-webkit-line-clamp:2;-webkit-box-orient:vertical;">${_txt((s.note||'').split('\\n')[0])}</div>
@@ -2217,7 +2228,7 @@ function renderJourney(){
   <div style="background:#fff;border:1.5px solid #f0ebe4;border-radius:14px;margin:0 16px 10px;overflow:hidden;">
     <div style="padding:12px 14px;display:flex;align-items:center;gap:10px;border-bottom:1px solid #f5f0eb;">
       <div style="width:36px;height:36px;border-radius:9px;background:#f3eefc;display:flex;align-items:center;justify-content:center;flex-shrink:0;"><i class="ti ti-photo" style="font-size:15px;color:#8b6fc7;"></i></div>
-      <div style="flex:1;"><div style="font-size:13px;font-weight:600;color:#1a1a1a;">${_txt(vc.title||'Virtual consult')}</div><div style="font-size:11px;color:#786858;">Submitted ${_txt(vc.date)}</div></div>
+      <div style="flex:1;"><div style="font-size:13px;font-weight:600;color:#1a1a1a;">${_txt(vc.title||'Virtual consult')}</div><div style="font-size:11px;color:#786858;">Submitted ${_dt(vc.date)}</div></div>
     </div>
     <div style="padding:10px 14px;display:grid;grid-template-columns:1fr 1fr 1fr;gap:6px;">
       ${vc.photos.map(p=>{const o=typeof p==='string'?{label:p,src:''}:p;return `<div style="border-radius:8px;background:${o.src?'#000':'#faf5ee'};border:1px solid #f0e6d8;aspect-ratio:3/4;display:flex;align-items:center;justify-content:center;position:relative;overflow:hidden;">${o.src?`<img src="${_imgSrc(o.src)}" alt="${_urlAttr(o.label)}" style="width:100%;height:100%;object-fit:cover;">`:`<i class="ti ti-user-circle" style="font-size:22px;color:#d4b896;opacity:.6;"></i>`}<span style="position:absolute;bottom:4px;left:4px;font-size:9px;background:rgba(0,0,0,.55);color:#fff;padding:1px 5px;border-radius:3px;">${_txt(o.label)}</span></div>`;}).join('')}
@@ -2457,7 +2468,7 @@ function renderShop(){
     else{
       let idx=0;
       body=`<div style="padding:0 16px 8px;font-size:12px;color:#786858;">Everything ${_txt(client.providerFirst)} has recommended, most recent first.</div>`+log.map(g=>{
-        const head=`<div style="display:flex;align-items:center;gap:7px;margin:6px 16px 8px;"><div style="width:7px;height:7px;border-radius:50%;background:var(--accent);flex-shrink:0;"></div><span style="font-size:13px;font-weight:600;color:#1a1a1a;">${_txt(g.date)}</span>${g.label?`<span style="font-size:12px;color:#786858;">· ${_txt(g.label)}</span>`:''}</div>`;
+        const head=`<div style="display:flex;align-items:center;gap:7px;margin:6px 16px 8px;"><div style="width:7px;height:7px;border-radius:50%;background:var(--accent);flex-shrink:0;"></div><span style="font-size:13px;font-weight:600;color:#1a1a1a;">${_dt(g.date)}</span>${g.label?`<span style="font-size:12px;color:#786858;">· ${_txt(g.label)}</span>`:''}</div>`;
         const cards=(g.products||[]).map(p=>{const c=_shopProdCard(p,idx);idx++;return c;}).join('');
         return `<div style="margin-bottom:14px;">${head}${cards}</div>`;
       }).join('');
@@ -2545,7 +2556,8 @@ function _fillFormFieldHTML(q,i){
   const wrapStyle='margin-bottom:18px;';
   if(q.type==='Contraindications'){
     return `<div style="${wrapStyle}background:#fff8f0;border:1px solid #f0dcc0;border-radius:12px;padding:12px 14px;">
-      <div style="font-size:12px;font-weight:700;color:#a06a2a;text-transform:uppercase;letter-spacing:.04em;margin-bottom:8px;">${_txt(q.label)}</div>
+      <div style="font-size:12px;font-weight:700;color:#a06a2a;text-transform:uppercase;letter-spacing:.04em;margin-bottom:4px;">${_txt(q.label)}</div>
+      <div style="font-size:12px;color:#8a6a42;line-height:1.5;margin-bottom:9px;">Check the box next to anything that <b>does apply to you</b> — that you currently have or are experiencing. Leave the rest unchecked. If none apply, leave them all blank.</div>
       ${(q.items||[]).map((it,ii)=>{const ck=(_ffDraft['q'+i+'_'+ii]===true);return `<label style="display:flex;align-items:flex-start;gap:8px;padding:6px 0;cursor:pointer;"><input type="checkbox" id="ff-${i}-${ii}" ${ck?'checked':''} onchange="_ffSetDraft('q${i}_${ii}',this.checked)" style="margin-top:3px;width:16px;height:16px;accent-color:var(--accent);flex-shrink:0;"><span style="font-size:13px;color:#5a4a3a;line-height:1.5;">${_txt(it)}</span></label>`;}).join('')}
     </div>`;
   }
@@ -2733,7 +2745,7 @@ function _renderCheckinStep(){
       ${steps.map((_,i)=>`<div style="flex:1;height:4px;border-radius:2px;background:${i<=checkinStep?'var(--accent)':'#f0ebe4'};"></div>`).join('')}
     </div>
     <div style="font-size:18px;font-weight:600;color:#1a1a1a;margin-bottom:2px;">${_txt(step.title)}</div>
-    <div style="font-size:13px;color:#786858;">For your ${_txt(client.nextDate)} appointment · ${_txt(client.providerFirst)} sees this before you arrive.</div>
+    <div style="font-size:13px;color:#786858;">For your ${_dt(client.nextDate)} appointment · ${_txt(client.providerFirst)} sees this before you arrive.</div>
   </div>
   <div id="checkin-body">
     <div style="padding:10px 16px 0;">
@@ -2824,8 +2836,8 @@ function _ciFlagged(){
   }));
   if(!flagged.length)return '';
   return`<div style="background:#fff;border:1.5px solid #f0ebe4;border-radius:12px;padding:14px;margin-bottom:12px;">
-    <div style="font-size:12px;font-weight:600;color:#786858;text-transform:uppercase;letter-spacing:.07em;margin-bottom:8px;">What you flagged</div>
-    ${flagged.map((f,i)=>`<div style="display:flex;gap:8px;padding:7px 0;${i<flagged.length-1?'border-bottom:1px solid #f0ebe4;':''}"><i class="ti ti-alert-circle" aria-hidden="true" style="font-size:13px;color:#e87070;flex-shrink:0;margin-top:1px;"></i><div><div style="font-size:13px;font-weight:600;color:#1a1a1a;">${_txt(f.label)}</div>${f.detail?`<div style="font-size:12px;color:#6b5d52;margin-top:2px;">${_txt(f.detail)}</div>`:''}</div></div>`).join('')}
+    <div style="font-size:12px;font-weight:600;color:#786858;text-transform:uppercase;letter-spacing:.07em;margin-bottom:8px;display:flex;align-items:center;gap:6px;">What you flagged <i class="ti ti-flag" aria-hidden="true" style="font-size:13px;color:#c8956a;"></i></div>
+    ${flagged.map((f,i)=>`<div style="padding:7px 0;${i<flagged.length-1?'border-bottom:1px solid #f0ebe4;':''}"><div style="font-size:13px;font-weight:600;color:#1a1a1a;">${_txt(f.label)}</div>${f.detail?`<div style="font-size:12px;color:#6b5d52;margin-top:2px;">${_txt(f.detail)}</div>`:''}</div>`).join('')}
   </div>`;
 }
 
@@ -3021,7 +3033,7 @@ function _checkinSuccessHTML(flagged){
       <i class="ti ti-check" aria-hidden="true" style="font-size:40px;color:var(--accent);"></i>
     </div>
     <div style="font-size:20px;font-weight:600;color:#1a1a1a;margin-bottom:8px;">You're all set!</div>
-    <div style="font-size:14px;color:#786858;text-align:center;line-height:1.7;margin-bottom:8px;">${_txt(client.providerFirst)} will review your check-in before<br><strong style="color:#1a1a1a;">${_txt(client.nextDate)} at ${_txt(client.nextTime)}</strong>.</div>
+    <div style="font-size:14px;color:#786858;text-align:center;line-height:1.7;margin-bottom:8px;">${_txt(client.providerFirst)} will review your check-in before<br><strong style="color:#1a1a1a;">${_dt(client.nextDate)} at ${_txt(client.nextTime)}</strong>.</div>
     ${flagged.length>0?'':
       `<div style="background:#f0fff8;border-radius:10px;padding:10px 16px;margin:12px 0;font-size:13px;color:#3a7a5a;text-align:center;line-height:1.5;">No big changes, ${_txt(client.providerFirst)} will pick right up where you left off.</div>`}
     <div style="display:flex;flex-direction:column;gap:8px;width:100%;max-width:260px;margin-top:12px;">
@@ -3262,7 +3274,7 @@ function submitRebook(){
         <i class="ti ti-calendar-check" aria-hidden="true" style="font-size:40px;color:var(--accent);"></i>
       </div>
       <div style="font-size:20px;font-weight:600;color:#1a1a1a;margin-bottom:8px;">Request sent!</div>
-      <div style="font-size:14px;color:#786858;line-height:1.7;margin-bottom:8px;">You've requested a <strong style="color:#1a1a1a;">${_txt(rebookState.treatment)}</strong> on<br><strong style="color:#1a1a1a;">${_txt(dateLabel)} at ${_txt(rebookState.time)}</strong>.</div>
+      <div style="font-size:14px;color:#786858;line-height:1.7;margin-bottom:8px;">You've requested a <strong style="color:#1a1a1a;">${_txt(rebookState.treatment)}</strong> on<br><strong style="color:#1a1a1a;">${_dt(dateLabel)} at ${_txt(rebookState.time)}</strong>.</div>
       <div id="rebook-status" style="background:#fff8ed;border:1.5px solid #f0e2c8;border-radius:10px;padding:10px 14px;margin:12px 0;font-size:13px;color:#8b6b4a;line-height:1.5;display:flex;align-items:center;gap:8px;">
         <i class="ti ti-clock" style="font-size:15px;"></i> Waiting for ${_txt(client.providerFirst)} to confirm… you'll get a notification when it's booked.
       </div>
@@ -3303,7 +3315,7 @@ function submitRebook(){
     p.nextDateISO='';p.nextTimeISO='';if(client.activeProviderId===p.id){client.nextDateISO='';client.nextTimeISO='';}
     if(client.activeProviderId===p.id){client.nextDate=p.nextDate;client.nextTime=p.nextTime;client.treatment=p.treatment;updateRebookStatusPill('<i class="ti ti-circle-check" style="font-size:15px;"></i> Confirmed! Added to your appointments.','#f0fff5','#c0e8d0','#2a6a4a');}
     pushNotify({type:'appointmentReminder',icon:'ti-calendar-check',col:'#f0fff5',ic:'#4ec49a',
-      title:'Appointment confirmed ✅',body:`${p.first} confirmed your ${booking.treatment} on ${p.nextDate} at ${booking.time}.`,onclick:()=>nav('home')});
+      title:'Appointment confirmed ✅',body:`${p.first} confirmed your ${booking.treatment} on ${_ordinalize(p.nextDate)} at ${booking.time}.`,onclick:()=>nav('home')});
   },2600);
   _showRebookSent();
 }
@@ -3468,7 +3480,7 @@ function renderLatestSummary(){
       <div><div style="font-size:13px;font-weight:600;color:var(--accent-lt2);">${_txt(client.studio)}</div><div style="font-size:11px;color:var(--accent-lt2);opacity:.72;">${_txt(client.provider)}</div></div>
     </div>
     <div style="font-size:18px;font-weight:600;color:var(--accent-lt2);margin-bottom:2px;">Your session summary</div>
-    <div style="font-size:12px;color:var(--accent-lt2);opacity:.72;">${_txt(s.date)}</div>
+    <div style="font-size:12px;color:var(--accent-lt2);opacity:.72;">${_dt(s.date)}</div>
   </div>
 
   <!-- Note from ${_txt(client.providerFirst)} -->
@@ -3526,7 +3538,7 @@ function renderLatestSummary(){
     <div style="font-size:12px;font-weight:600;color:#786858;text-transform:uppercase;letter-spacing:.07em;margin-bottom:10px;">Next appointment</div>
     <div style="display:flex;align-items:center;gap:12px;padding:12px 14px;background:#faf7f4;border-radius:10px;margin-bottom:10px;">
       <div style="width:36px;height:36px;background:var(--accent-lt);border-radius:9px;display:flex;align-items:center;justify-content:center;"><i class="ti ti-calendar" aria-hidden="true" style="font-size:18px;color:var(--accent);"></i></div>
-      <div><div style="font-size:14px;font-weight:600;color:#1a1a1a;">${_txt(client.nextDate)}</div><div style="font-size:12px;color:#786858;">${_txt(client.nextTime)} · ${_txt(client.treatment)}</div></div>
+      <div><div style="font-size:14px;font-weight:600;color:#1a1a1a;">${_dt(client.nextDate)}</div><div style="font-size:12px;color:#786858;">${_txt(client.nextTime)} · ${_txt(client.treatment)}</div></div>
     </div>
     <div style="display:flex;gap:8px;">
       <button class="btng" onclick="openCalModal()" style="flex:1;"><i class="ti ti-calendar-plus" aria-hidden="true"></i> Add to calendar</button>
@@ -3572,8 +3584,8 @@ function reviewClientForm(fid){
     <div style="font-size:12px;color:#786858;margin-bottom:16px;">Please complete and sign before your appointment.</div>
     ${ans.map(_cfField).join('')}
     ${hasContra?`<div style="background:#fff4f0;border:1px solid #f3c9bb;border-radius:12px;padding:13px 14px;margin-bottom:15px;">
-      <div style="display:flex;align-items:center;gap:7px;margin-bottom:7px;"><i class="ti ti-alert-triangle" aria-hidden="true" style="font-size:16px;color:#c0492a;"></i><span style="font-size:13px;font-weight:700;color:#a23a1f;">Check any that apply to you</span></div>
-      <div style="font-size:12px;color:#9a5a44;line-height:1.5;margin-bottom:10px;">If any apply, tap it so ${_txt(client.providerFirst)} can review before your visit. If none apply, leave them unchecked.</div>
+      <div style="display:flex;align-items:center;gap:7px;margin-bottom:7px;"><i class="ti ti-alert-triangle" aria-hidden="true" style="font-size:16px;color:#c0492a;"></i><span style="font-size:13px;font-weight:700;color:#a23a1f;">Do any of these apply to you?</span></div>
+      <div style="font-size:12px;color:#9a5a44;line-height:1.5;margin-bottom:10px;">Check the box next to anything you <b>currently have or are experiencing</b>, so ${_txt(client.providerFirst)} can review it before your visit. If none apply, leave them all unchecked.</div>
       ${f.contra.map((it,ix)=>`<label style="display:flex;align-items:flex-start;gap:9px;padding:7px 0;cursor:pointer;"><input type="checkbox" id="cfc-${ix}" style="width:17px;height:17px;margin-top:1px;accent-color:#c0492a;flex-shrink:0;"><span style="font-size:12.5px;color:#6b4536;line-height:1.5;">${_txt(it)}</span></label>`).join('')}
     </div>`:''}
     <div style="font-size:13px;color:#4a4038;line-height:1.6;margin-bottom:10px;font-weight:600;">${f.consent||'I consent to treatment and confirm my information is accurate.'}</div>
@@ -3658,7 +3670,7 @@ function renderMagicLanding(){
 
   ${s?`<!-- Note -->
   <div style="background:#fff;border:1.5px solid #f0ebe4;border-radius:14px;margin:0 16px 12px;padding:14px 16px;">
-    <div style="font-size:11px;font-weight:600;color:#786858;text-transform:uppercase;letter-spacing:.07em;margin-bottom:8px;">A note from ${_txt(client.providerFirst)} · ${_txt(s.date)}</div>
+    <div style="font-size:11px;font-weight:600;color:#786858;text-transform:uppercase;letter-spacing:.07em;margin-bottom:8px;">A note from ${_txt(client.providerFirst)} · ${_dt(s.date)}</div>
     <div style="font-size:14px;color:#1a1a1a;line-height:1.7;white-space:pre-wrap;">${_txt(s.note||p.summaryNote||'')}</div>
   </div>`:''}
 
@@ -3745,7 +3757,7 @@ function renderMagicLanding(){
     <div style="font-size:11px;font-weight:600;color:#786858;text-transform:uppercase;letter-spacing:.07em;margin-bottom:10px;">Next appointment</div>
     <div style="display:flex;align-items:center;gap:12px;padding:11px 13px;background:#faf7f4;border-radius:10px;">
       <div style="width:36px;height:36px;background:var(--accent-lt);border-radius:9px;display:flex;align-items:center;justify-content:center;flex-shrink:0;"><i class="ti ti-calendar" aria-hidden="true" style="font-size:18px;color:var(--accent);"></i></div>
-      <div style="flex:1;min-width:0;"><div style="font-size:14px;font-weight:600;color:#1a1a1a;">${_txt(client.nextDate)}</div><div style="font-size:12px;color:#786858;">${_txt(client.nextTime)} · ${_txt(client.treatment)}</div></div>
+      <div style="flex:1;min-width:0;"><div style="font-size:14px;font-weight:600;color:#1a1a1a;">${_dt(client.nextDate)}</div><div style="font-size:12px;color:#786858;">${_txt(client.nextTime)} · ${_txt(client.treatment)}</div></div>
       <button onclick="openCalModal()" style="background:none;border:1.5px solid #e8ddd3;border-radius:8px;padding:7px 11px;font-size:12px;color:var(--accent);font-weight:600;cursor:pointer;white-space:nowrap;">Add</button>
     </div>
   </div>
@@ -3875,6 +3887,37 @@ function exportMyRecords(){
   document.body.appendChild(ov);
 }
 
+// ── LIBRARY ── a persistent home for every guide, aftercare doc, and course the provider has
+// shared, so they never feel like disposable one-off cards. Reads the same pendingGuides/
+// pendingCourses the provider keeps assigned, so anything shared stays here.
+function renderLibrary(){
+  setNav('home');
+  document.getElementById('tt').textContent='Guides & resources';
+  const guides=activeProvider().pendingGuides||[];
+  const courses=activeProvider().pendingCourses||[];
+  const empty=(!guides.length&&!courses.length);
+  S.innerHTML=`
+  <div style="padding:14px 16px 4px;"><div id="page-heading" tabindex="-1" style="font-size:20px;font-weight:600;color:#1a1a1a;">Guides &amp; resources</div>
+  <div style="font-size:13px;color:#786858;margin-top:3px;line-height:1.5;">Everything ${_txt(client.providerFirst)} has shared with you, saved here for whenever you need it.</div></div>
+  ${empty?`<div style="margin:16px;text-align:center;color:#786858;font-size:13px;padding:44px 22px;background:#fff;border:1.5px solid #f0ebe4;border-radius:14px;"><i class="ti ti-books" aria-hidden="true" style="font-size:30px;color:var(--accent);"></i><div style="margin-top:10px;font-weight:600;color:#1a1a1a;">Nothing here yet</div><div style="margin-top:4px;line-height:1.5;">When ${_txt(client.providerFirst)} sends you a guide, aftercare, or a course, it will be saved here.</div></div>`:''}
+  ${guides.length?`<div class="sh"><h2>Guides &amp; aftercare</h2></div>`+guides.map(pg=>`
+    <div style="margin:0 16px 10px;background:#fff;border:1.5px solid #f0ebe4;border-radius:14px;overflow:hidden;cursor:pointer;" onclick="_viewGuideId='${_jsAttr(pg.guideId)}';nav('view-guide')" role="button" aria-label="${_txt(pg.title)}">
+      <div style="padding:12px 16px;display:flex;align-items:center;gap:12px;">
+        <div style="width:42px;height:42px;background:var(--accent-lt);border-radius:10px;display:flex;align-items:center;justify-content:center;flex-shrink:0;font-size:19px;">${pg.icon||'📄'}</div>
+        <div style="flex:1;min-width:0;"><div style="font-size:13px;font-weight:600;color:#1a1a1a;">${_txt(pg.title)}</div><div style="font-size:12px;color:#786858;">${pg.cat?_txt(pg.cat):'Shared by '+_txt(client.providerFirst)}</div></div>
+        <i class="ti ti-chevron-right" aria-hidden="true" style="font-size:16px;color:#82715f;flex-shrink:0;"></i>
+      </div>
+    </div>`).join(''):''}
+  ${courses.length?`<div class="sh"><h2>Your courses</h2></div>`+courses.map(co=>{const done=_courseDoneCount(co);const totalL=(co.lessons||[]).length;const pct=totalL?Math.round(done/totalL*100):0;return `
+    <div style="margin:0 16px 10px;background:#fff;border:1.5px solid #f0ebe4;border-radius:14px;overflow:hidden;cursor:pointer;" onclick="_viewCourseId='${_jsAttr(co.id)}';nav('view-course')" role="button" aria-label="${_txt(co.title)}">
+      <div style="padding:12px 16px;">
+        <div style="font-size:14px;font-weight:600;color:#1a1a1a;margin-bottom:2px;">${_txt(co.title)}</div>
+        <div style="font-size:12px;color:#786858;margin-bottom:8px;">${totalL} lesson${totalL===1?'':'s'}${pct?' · '+pct+'% complete':''}</div>
+        <div style="height:5px;border-radius:3px;background:#f0ebe4;overflow:hidden;"><div style="height:100%;width:${pct}%;background:var(--accent);border-radius:3px;"></div></div>
+      </div>
+    </div>`;}).join(''):''}
+  <div style="height:20px;"></div>`;
+}
 function renderProfile(){
   setNav('home');
   document.getElementById('tt').textContent='My profile';
@@ -3925,6 +3968,16 @@ function renderProfile(){
       Contact info is shared with ${_txt(client.provider)} for appointment notifications only.
     </div>
   </div>
+
+  ${(function(){const g=(activeProvider().pendingGuides||[]).length,co=(activeProvider().pendingCourses||[]).length,n=g+co;return `
+  <div class="sh"><h2>Guides &amp; resources</h2></div>
+  <div style="background:#fff;border:1.5px solid #f0ebe4;border-radius:12px;margin:0 16px 10px;overflow:hidden;cursor:pointer;" onclick="nav('library')">
+    <div style="padding:12px 14px;display:flex;align-items:center;gap:10px;">
+      <div style="width:34px;height:34px;background:#faf7f4;border-radius:8px;display:flex;align-items:center;justify-content:center;"><i class="ti ti-books" aria-hidden="true" style="font-size:16px;color:var(--accent);"></i></div>
+      <div style="flex:1;"><div style="font-size:13px;font-weight:600;color:#1a1a1a;">Your guides &amp; resources</div><div style="font-size:11px;color:#786858;">${n?(n+' saved '+(n===1?'item':'items')+' from '+_txt(client.providerFirst)):'Aftercare, guides &amp; courses will be saved here'}</div></div>
+      <i aria-hidden="true" class="ti ti-chevron-right" style="font-size:16px;color:#82715f;"></i>
+    </div>
+  </div>`;})()}
 
   <div class="sh"><h2>Settings</h2></div>
   <div style="background:#fff;border:1.5px solid #f0ebe4;border-radius:12px;margin:0 16px 20px;overflow:hidden;">
@@ -4072,7 +4125,7 @@ SlickBridge.on('booking-confirmed',b=>{
   client.treatment=b.treatment||client.treatment;
   pushNotify({type:'appointmentReminder',icon:'ti-calendar-check',col:'#f0fff5',ic:'#4ec49a',
     title:'Appointment confirmed ✅',
-    body:`${client.providerFirst} confirmed your ${b.treatment} on ${fmtNiceDate(b.date)} at ${b.time}.`,
+    body:`${client.providerFirst} confirmed your ${b.treatment} on ${_ordinalize(fmtNiceDate(b.date))} at ${b.time}.`,
     onclick:()=>nav('home')});
   updateRebookStatusPill('<i class="ti ti-circle-check" style="font-size:15px;"></i> Confirmed! Added to your appointments.','#f0fff5','#c0e8d0','#2a6a4a');
 });
@@ -4080,9 +4133,9 @@ SlickBridge.on('booking-suggested',b=>{
   if(b.clientId&&b.clientId!=='maya')return;
   pushNotify({type:'messagereply',icon:'ti-calendar-question',col:'#fff8ed',ic:'var(--accent)',
     title:`${_txt(client.providerFirst)} suggested a new time`,
-    body:`How about ${fmtNiceDate(b.suggestedDate||b.date)} at ${b.suggestedTime||b.time}? Open to confirm.`,
+    body:`How about ${_ordinalize(fmtNiceDate(b.suggestedDate||b.date))} at ${b.suggestedTime||b.time}? Open to confirm.`,
     onclick:()=>nav('rebook')});
-  updateRebookStatusPill(`<i class="ti ti-calendar-question" style="font-size:15px;"></i> ${_txt(client.providerFirst)} suggested ${_txt(fmtNiceDate(b.suggestedDate||b.date))} at ${_txt(b.suggestedTime||b.time)}.`,'#fff8ed','#f0e2c8','#8b6b4a');
+  updateRebookStatusPill(`<i class="ti ti-calendar-question" style="font-size:15px;"></i> ${_txt(client.providerFirst)} suggested ${_dt(fmtNiceDate(b.suggestedDate||b.date))} at ${_txt(b.suggestedTime||b.time)}.`,'#fff8ed','#f0e2c8','#8b6b4a');
 });
 SlickBridge.on('booking-declined',b=>{
   if(b.clientId&&b.clientId!=='maya')return;

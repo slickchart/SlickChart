@@ -229,21 +229,21 @@ const allProfessions=[
   {id:'brow',name:'Brow artist',icon:'🎨',bg:'#1e0d33',ic:'#c084fc',badge:'bp',badgeLabel:'Brows',
     sub:'Microblading, nanobrows, lamination, tints, waxing',
     notes:['Brow record','PMU record','Free form','Custom'],
-    forms:['New brow client intake','PMU consent & waiver','Brow lamination consent','Photo release'],
+    forms:['New brow client intake','PMU consent & waiver','Brow lamination consent'],
     terms:['Last brow service','Blood thinners','Skin type','Fitzpatrick','Keloid history','Retinol use'],
     recordSections:['Mapping notes','Shape & arch design','Pigment used (brand/color/code)','Technique applied','Skin observations','Healing instructions','Touch-up date'],
     checkinLabel:'Brow & health questions',built:true},
   {id:'pmu',name:'Permanent makeup artist',icon:'🖋️',bg:'#1e0d33',ic:'#c084fc',badge:'bp',badgeLabel:'PMU',
     sub:'Microblading, powder brows, lip blush, eyeliner, areola',
     notes:['PMU record','Free form','Custom'],
-    forms:['PMU client intake','PMU consent & waiver','Photo release'],
+    forms:['PMU client intake','PMU consent & waiver'],
     terms:['Last PMU service','Blood thinners','Skin type','Fitzpatrick','Keloid history','Retinol / Accutane use'],
     recordSections:['Area & design','Pigment used (brand/color/code)','Needle configuration','Technique & depth','Passes / layers','Skin observations','Healing & aftercare','Touch-up date'],
     checkinLabel:'PMU & health questions',built:true},
   {id:'makeup',name:'Makeup artist',icon:'💄',bg:'#2a0f1a',ic:'#e87070',badge:'br',badgeLabel:'Beauty',
     sub:'Bridal, editorial, special effects, everyday glam',
     notes:['Service record','Free form','Custom'],
-    forms:['MUA client intake','Skin & allergy screen','Sanitation consent','Photo release','Bridal contract'],
+    forms:['MUA client intake','Skin & allergy screen','Sanitation consent','Bridal contract'],
     terms:['Skin type & tone','Product allergies','Eye sensitivity','Preferred finish','Occasion / look'],
     recordSections:['Look description','Products & shades used','Skin prep applied','Client feedback','Photo release confirmed','Repeat look notes'],
     checkinLabel:'Skin & preference questions',built:true},
@@ -299,7 +299,7 @@ const allProfessions=[
   {id:'contour',name:'Body contouring',icon:'🪐',bg:'#1e1633',ic:'#a891ec',badge:'bp',badgeLabel:'Body',
     sub:'Non-invasive fat reduction, skin tightening, lymphatic',
     notes:['Treatment record','SOAP','Free form','Custom'],
-    forms:['Body contouring intake','Cavitation & RF consent','Lymphatic drainage consent','Photo release'],
+    forms:['Body contouring intake','Cavitation & RF consent','Lymphatic drainage consent'],
     terms:['Target areas','Medical conditions','Recent surgeries','Metal implants / pacemaker','Weight & measurement goals'],
     recordSections:['Areas treated','Device / modality used','Settings / intensity','Measurements (before/after)','Client response','Next session plan'],
     checkinLabel:'Health & readiness questions',built:true},
@@ -560,7 +560,7 @@ let formQs=[
   {id:11,label:'Current medications',type:'Long text',required:false},
   {id:12,label:'Medical conditions',type:'Long text',required:false},
   {id:6,label:'Current skincare products',type:'Long text',required:false},
-  {id:13,type:'Contraindications',label:'Please check any that apply to you',required:false,items:['Known allergy to skincare ingredients or adhesives','Pregnant or breastfeeding','Used Accutane / isotretinoin in the last 6 months','Active cold sores, open lesions, or infection','Recent sunburn or sunless tan','Taking blood thinners','History of keloid scarring']},
+  {id:13,type:'Contraindications',label:'Do any of these apply to you? Check each one you currently have or are experiencing',required:false,items:['Known allergy to skincare ingredients or adhesives','Pregnant or breastfeeding','Used Accutane / isotretinoin in the last 6 months','Active cold sores, open lesions, or infection','Recent sunburn or sunless tan','Taking blood thinners','History of keloid scarring']},
   {id:7,label:'I consent to treatment & confirm my information is accurate',type:'Signature',required:true},
 ];
 let nextQId=20;
@@ -7251,8 +7251,11 @@ function confirmSendForm(fid,cid){
     guides.forEach(g=>{try{SlickBridge.post('resource-shared',{providerId:'jess',clientId:'maya',resource:{guideId:g.id,title:g.title,icon:g.icon,cat:g.cat,url:g.url||'',tips:g.tips||[],fileName:g.fileName||'',fileType:g.fileType||'',hasFile:!!(g.hasFile||g.fileData),fileData:g.fileData||''}});}catch(e){}});
   }else if(c){
     // Real client: actually assign the form(s) to them so they appear the next
-    // time they open their app, instead of just claiming it was sent.
+    // time they open their app, instead of just claiming it was sent. Also assign any
+    // guides ATTACHED to this form (formGuides) — the toast promises them, so they must
+    // actually be delivered to the client, not just the form.
     _assignFormsToClient(c,sendIds);
+    _assignGuidesToClient(c,guides);
     try{saveClients();}catch(e){}
     if(!c._token){
       closeSendProd();
@@ -8772,14 +8775,23 @@ function _renderFvpClients(q){const el=document.getElementById('fvp-list');if(el
 // back to the standalone form in the unlikely case the intake being sent doesn't already carry
 // the bundled questions, so photo consent is still captured exactly once either way.
 function _withPhotoRelease(formIds){
-  const list=Array.isArray(formIds)?formIds.slice():[formIds];
-  const hasBundled=list.some(fid=>{const t=formTmpls[fid];return t&&Array.isArray(t.qs)&&t.qs.some(q=>q.id==='pr-taken'||q.id==='pr-share');});
-  if(!hasBundled&&formTmpls.photo&&!list.includes('photo'))list.push('photo');
-  return list;
+  // Photo consent now lives INSIDE every intake (the pr-taken / pr-share questions added by
+  // _bundlePhotoRelease), so we never tack on a separate standalone "Photo release" form — doing
+  // that asked the client for the same consent twice. Kept as a passthrough so existing callers
+  // don't need to change; intakes always carry the bundled photo questions.
+  return Array.isArray(formIds)?formIds.slice():[formIds];
 }
 function _assignFormsToClient(c,formIds){
   if(!Array.isArray(c.pendingForms))c.pendingForms=[];
   (formIds||[]).forEach(fid=>{ if(formTmpls[fid]&&!c.pendingForms.some(pf=>pf.formId===fid))c.pendingForms.push({formId:fid,assignedAt:Date.now()}); });
+}
+// Deliver guides (full guide objects OR ids) to a real client by pushing them onto pendingGuides,
+// which is what rides to their app in the client-data blob. Used so a guide ATTACHED to a form
+// (via formGuides) actually reaches the client, not just the form — the send toast promises the
+// guides, so they must be assigned too. De-duped by guide id.
+function _assignGuidesToClient(c,guides){
+  if(!Array.isArray(c.pendingGuides))c.pendingGuides=[];
+  (guides||[]).forEach(g=>{const gid=(g&&(g.id||g.guideId))||g;if(gid&&!c.pendingGuides.some(pg=>pg.guideId===gid))c.pendingGuides.push({guideId:gid,assignedAt:Date.now()});});
 }
 function sendFirstVisitPackage(id){
   const c=CL[id];if(!c)return;
@@ -13409,8 +13421,9 @@ async function syncClientEvents(){
         providerSystemNotify('Pre-visit check-in',`${name} \u00b7 ${ci.treatment||''} \u00b7 ${ci.dateLabel||''}${photoNote}`);
         touchedCheckins=true;touchedNotif=true;
       }else if(ev.kind==='form'){
+        const title=payload.title||'Form';
+        const flagged=(payload.flagged&&payload.flagged.length)?payload.flagged.slice():null;
         if(c){
-          const title=payload.title||'Form';
           c.submittedForms=c.submittedForms||[];
           c.submittedForms.unshift({formId:payload.formId,title,answers:payload.answers||{},flagged:payload.flagged||[],date:payload.date||'Today',signed:!!payload.signed,evId:ev.id});
           if(Array.isArray(c.pendingForms))c.pendingForms=c.pendingForms.filter(pf=>pf.formId!==payload.formId);
@@ -13431,16 +13444,19 @@ async function syncClientEvents(){
             }
           }catch(e){}
           if(payload.signed){c.signedForms=c.signedForms||[];if(c.signedForms.indexOf(title)<0)c.signedForms.push(title);}
-          const flagged=(payload.flagged&&payload.flagged.length)?payload.flagged.slice():null;
           if(flagged)c.flaggedContra={form:title,items:flagged,date:payload.date||'Today'};
           try{saveClients();}catch(e){}
-          const fl=flagged?` \u26a0 Flagged: ${flagged.join(', ')}.`:'';
-          notifFeed.unshift({id:'evf'+ev.id,type:'form',icon:flagged?'ti-alert-triangle':'ti-clipboard-check',col:flagged?'#2a0f0f':'#0a2019',ic:flagged?'#e87070':'#4ec49a',
-            title:flagged?'Intake flagged for review':'Form completed',body:`${name} completed ${title}.${fl}`,
-            time:'Just now',read:false,action:'form',data:cid,formEvId:ev.id});
-          providerSystemNotify(flagged?'Intake flagged for review':'Form completed',`${name} \u00b7 ${title}${fl}`);
-          touchedForms=true;touchedNotif=true;
         }
+        // Notify for EVERY completed form \u2014 consent forms as much as intake, flagged or not \u2014 and
+        // do it even when the client record isn't in the local CL map yet, so a completed form is
+        // never silently missed (this branch used to be entirely inside if(c), so a signed consent
+        // form for a client that hadn't loaded produced no provider notification at all).
+        const fl=flagged?` \u26a0 Flagged: ${flagged.join(', ')}.`:'';
+        notifFeed.unshift({id:'evf'+ev.id,type:'form',icon:flagged?'ti-alert-triangle':'ti-clipboard-check',col:flagged?'#2a0f0f':'#0a2019',ic:flagged?'#e87070':'#4ec49a',
+          title:flagged?'Intake flagged for review':'Form completed',body:`${name} completed ${title}.${fl}`,
+          time:'Just now',read:false,action:'form',data:cid,formEvId:ev.id});
+        providerSystemNotify(flagged?'Intake flagged for review':'Form completed',`${name} \u00b7 ${title}${fl}`);
+        touchedForms=true;touchedNotif=true;
       }else if(ev.kind==='contact'){
         // Client corrected the email/phone we have on file, update the chart so future
         // invites/notifications use the right address, and let the provider know it changed.
