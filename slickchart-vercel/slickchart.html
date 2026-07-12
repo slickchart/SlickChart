@@ -2378,7 +2378,7 @@ let checkins=[
     ],
     flagged:['skin changes','routine change'],notes:'Mornings are best for me. Skin has been a little reactive lately.',photos:["data:image/svg+xml,%3Csvg xmlns='http://www.w3.org/2000/svg' viewBox='0 0 100 100'%3E%3Crect width='100' height='100' fill='%23e0bf9a'/%3E%3Ccircle cx='50' cy='40' r='20' fill='%23c89a6a'/%3E%3Crect x='30' y='62' width='40' height='34' rx='14' fill='%23c89a6a'/%3E%3Ctext x='50' y='94' font-size='8' fill='%23fff' text-anchor='middle'%3Echeek area%3C/text%3E%3C/svg%3E","data:image/svg+xml,%3Csvg xmlns='http://www.w3.org/2000/svg' viewBox='0 0 100 100'%3E%3Crect width='100' height='100' fill='%23d9b48f'/%3E%3Ccircle cx='38' cy='44' r='9' fill='%23b07a52'/%3E%3Ccircle cx='62' cy='52' r='6' fill='%23b07a52'/%3E%3Ctext x='50' y='90' font-size='8' fill='%23fff' text-anchor='middle'%3Ebreakout%3C/text%3E%3C/svg%3E"],submittedAt:Date.now()-120000,read:false},
 ];
-function unreadCheckins(){return checkins.filter(c=>!c.read);}
+function unreadCheckins(){return checkins.filter(c=>!c.read&&!_isCheckinReadLog(c.id)&&!_isCheckinClearedLog(c.id));}
 
 let bizInfo={
   name:'Glowing Skin Studio',
@@ -2589,7 +2589,18 @@ function _clearedCheckinsLog(){try{return JSON.parse(localStorage.getItem('sc_ci
 function _markCheckinClearedLog(id){if(!id)return;try{var a=_clearedCheckinsLog();if(a.indexOf(id)<0){a.push(id);if(a.length>800)a.splice(0,a.length-800);var v=JSON.stringify(a);localStorage.setItem('sc_ci_cleared',v);if(typeof _pushKeyNow==='function')_pushKeyNow('sc_ci_cleared',v);}}catch(e){}}
 function _unmarkCheckinClearedLog(id){if(!id)return;try{var a=_clearedCheckinsLog();var i=a.indexOf(id);if(i>=0){a.splice(i,1);var v=JSON.stringify(a);localStorage.setItem('sc_ci_cleared',v);if(typeof _pushKeyNow==='function')_pushKeyNow('sc_ci_cleared',v);}}catch(e){}}
 function _isCheckinClearedLog(id){return !!id&&_clearedCheckinsLog().indexOf(id)>=0;}
-function loadCheckins(){try{const raw=localStorage.getItem('sc_checkins');if(raw){const arr=JSON.parse(raw);if(Array.isArray(arr))checkins=arr;}}catch(e){}try{_pruneExpiredCheckins();}catch(e){}}
+// Which check-ins the provider has READ, tracked in a tiny id-only key that always syncs reliably
+// (the full sc_checkins blob can be large — photos — and a failed/oversized push would lose the
+// read flag; this small set is the durable source of truth so "reviewed" sticks across refresh).
+function _readCheckinsLog(){try{return JSON.parse(localStorage.getItem('sc_ci_read')||'[]');}catch(e){return [];}}
+function _markCheckinReadLog(id){if(!id)return;try{var a=_readCheckinsLog();if(a.indexOf(id)<0){a.push(id);if(a.length>1200)a.splice(0,a.length-1200);var v=JSON.stringify(a);localStorage.setItem('sc_ci_read',v);if(typeof _pushKeyNow==='function')_pushKeyNow('sc_ci_read',v);}}catch(e){}}
+function _isCheckinReadLog(id){return !!id&&_readCheckinsLog().indexOf(id)>=0;}
+function loadCheckins(){try{const raw=localStorage.getItem('sc_checkins');if(raw){const arr=JSON.parse(raw);if(Array.isArray(arr))checkins=arr;}}catch(e){}
+  // Reconcile against the tiny, always-synced state keys so a reverted sc_checkins blob can't
+  // undo a clear or a "mark reviewed": drop cleared check-ins and mark read ones read.
+  try{const cleared=_clearedCheckinsLog();if(cleared&&cleared.length)checkins=checkins.filter(c=>cleared.indexOf(c.id)<0);}catch(e){}
+  try{const rd=_readCheckinsLog();if(rd&&rd.length)checkins.forEach(c=>{if(rd.indexOf(c.id)>=0)c.read=true;});}catch(e){}
+  try{_pruneExpiredCheckins();}catch(e){}}
 // Convert a check-in's appointment-day label (e.g. "Jul 8, 2026") to an ISO day, but ONLY
 // when we can do so confidently. A label without an explicit 4-digit year (e.g. "Monday,
 // July 21") is ambiguous, so we return '' and never prune on a guess.
@@ -13819,7 +13830,7 @@ function pushCheckinNotif(ci){
     time:'Just now',read:false,action:'checkin',data:ci.id,clientId:(ci.clientId||null)});
   updateBadge();
 }
-function markCheckinRead(id){let hit=false;checkins.forEach(c=>{if(c.id===id&&!c.read){c.read=true;hit=true;}});if(hit){try{_persistCheckinsNow();}catch(e){}}updateBadge();}
+function markCheckinRead(id){if(!id)return;_markCheckinReadLog(id);let hit=false;checkins.forEach(c=>{if(c.id===id&&!c.read){c.read=true;hit=true;}});if(hit){try{_persistCheckinsNow();}catch(e){}}updateBadge();}
 
 function renderCheckins(){
   // Skip the auto-prune only for the single render triggered right after a manual swipe-clear,
