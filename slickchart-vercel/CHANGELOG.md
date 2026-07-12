@@ -2,6 +2,25 @@
 
 Newest entries at the top. One entry per deploy. Dates are US-formatted.
 
+## 2026-07-12 — XSS round 35: escape client name/treatment in the provider session-summary screen
+
+A render-sink sweep of both apps came back almost entirely clean — messages, consult requests, form answers,
+check-in detail, virtual-consult labels, the notification feed, booking cards, and the whole client app were
+all already escaped. It found three misses, all in the provider-side `renderSessionSummary` screen, where
+client-influenced fields rendered as raw HTML in the provider's authenticated session (stored XSS):
+
+- **Client display name** (`c.name`) in the edit-summary header — the client's name arrives via
+  self-registration / Square + CSV import / booking events, and is `_fileEsc`'d in ~15 other renders; this
+  one was missed. Now escaped.
+- **Treatment** (`c.treatment`) in two spots (the summary header and the "next appointment" block) — arrives
+  via `payload.treatment` on booking/check-in sync events. Now escaped, matching the adjacent calendar
+  `onclick` that already used `_jsAttr(c.treatment)`.
+- Also escaped the sibling fields on those lines for good measure: the summary's `s.treatment`/`s.date` and
+  the next-appointment `nextDate`/`nextTime` (the latter derive from client-submitted booking data, the same
+  class escaped in round 33).
+
+Provider-side only; demo regenerated in lockstep; both apps + demo parse.
+
 ## 2026-07-12 — Server security sweep: reset-link host poisoning + push-endpoint SSRF
 
 Extended the security sweep from the client apps into the API/server layer. A focused authz/tenant-isolation
