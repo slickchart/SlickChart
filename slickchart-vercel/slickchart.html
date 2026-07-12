@@ -9081,7 +9081,9 @@ function showMsgTab(tab){
 }
 function renderChat(id){
   setNav('msgs');
-  const c=CL[id];const t=threads.find(x=>x.id===id);if(t){t.unread=false;try{saveMessages();}catch(e){}}
+  const c=CL[id];const t=threads.find(x=>x.id===id);if(t&&t.unread){t.unread=false;try{saveMessages();}catch(e){}
+    // Push the read state NOW so a quick refresh's cloud pull can't restore the old unread copy.
+    try{if(typeof _pushKeyNow==='function')_pushKeyNow('sc_threads',localStorage.getItem('sc_threads')||'');}catch(e){}}
   if(!c){document.getElementById('tt').textContent='Message';S.innerHTML='<div style="padding:30px 16px;color:#888;text-align:center;">This conversation is no longer available.</div>';return;}
   document.getElementById('tt').textContent=c.name;
   S.innerHTML=`
@@ -13392,17 +13394,24 @@ function fmtBookingDate(b){
 // The client app posts these to /api/client-submit, which logs them server-side.
 // We poll them here and feed them into the same booking/chat UI used by the demo.
 function _seenEventIds(){try{return JSON.parse(localStorage.getItem('sc_seen_events')||'[]');}catch(e){return [];}}
-function _markEventSeen(id){try{const a=_seenEventIds();if(a.indexOf(id)<0){a.push(id);if(a.length>1000)a.splice(0,a.length-1000);localStorage.setItem('sc_seen_events',JSON.stringify(a));}}catch(e){}}
+function _markEventSeen(id){try{const a=_seenEventIds();if(a.indexOf(id)<0){a.push(id);if(a.length>1000)a.splice(0,a.length-1000);const v=JSON.stringify(a);localStorage.setItem('sc_seen_events',v);if(typeof _pushKeyNow==='function')_pushKeyNow('sc_seen_events',v);}}catch(e){}}
 // Mark many event ids seen in ONE read+write instead of re-parsing/re-writing the
 // whole (up-to-1000-element) array once per event, matters when a provider returns
 // after being offline and a burst of client submissions all arrive at once.
 function _markEventsSeen(ids){
   if(!ids||!ids.length)return;
   try{
-    const a=_seenEventIds();const have=new Set(a);
-    ids.forEach(id=>{if(!have.has(id)){a.push(id);have.add(id);}});
+    const a=_seenEventIds();const have=new Set(a);let added=false;
+    ids.forEach(id=>{if(!have.has(id)){a.push(id);have.add(id);added=true;}});
+    if(!added)return;
     if(a.length>1000)a.splice(0,a.length-1000);
-    localStorage.setItem('sc_seen_events',JSON.stringify(a));
+    const v=JSON.stringify(a);
+    localStorage.setItem('sc_seen_events',v);
+    // Push the seen-event set to the server NOW, not on the 700ms debounce. Otherwise a quick
+    // refresh's cloud pull restores an older seen-set, the same check-in/message event looks
+    // "fresh" again, and it re-creates the flag / re-marks the thread unread (the "cleared cards
+    // and read messages come back after refresh" bug).
+    if(typeof _pushKeyNow==='function')_pushKeyNow('sc_seen_events',v);
   }catch(e){}
 }
 let _syncingEvents=false;
