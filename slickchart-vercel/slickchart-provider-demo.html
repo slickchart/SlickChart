@@ -2870,6 +2870,13 @@ function _fcOpenAction(id,c){
   if(ci)return _open(ci);
   return "nav('client','"+id+"')";
 }
+// Durable record of check-in flags the provider has ALREADY reviewed/cleared. Kept in its own
+// key (pushed to the server immediately, not on the debounce) so that even if the source check-in
+// event is ever re-processed after a refresh, we never re-create a flag the provider already
+// cleared. This is the belt-and-suspenders guard behind "cleared check-in keeps coming back".
+function _dismissedCheckins(){try{return JSON.parse(localStorage.getItem('sc_flag_dismissed')||'[]');}catch(e){return [];}}
+function _markCheckinDismissed(cid){if(!cid)return;try{var a=_dismissedCheckins();if(a.indexOf(cid)<0){a.push(cid);if(a.length>500)a.splice(0,a.length-500);var v=JSON.stringify(a);localStorage.setItem('sc_flag_dismissed',v);if(typeof _pushKeyNow==='function')_pushKeyNow('sc_flag_dismissed',v);}}catch(e){}}
+function _isCheckinDismissed(cid){return !!cid&&_dismissedCheckins().indexOf(cid)>=0;}
 // Clear a flagged card from Home. Stored ON the client record (which syncs reliably as core data),
 // not just in the in-memory dismissed set — that set rode a debounced sync and a refresh's cloud
 // pull kept losing it, so the same cards came back. A brand-new flag replaces flaggedContra (no
@@ -3397,7 +3404,10 @@ function renderClient(id){
     <button onclick="inviteVirtualConsult('${id}')" class="btnp" style="width:100%;border-radius:9px;padding:11px;"><i class="ti ti-mail-share"></i> Invite ${nm} to a virtual consult</button>`}
   </div>`;})()}`;
 }
-function dismissFlag(id,then){const c=CL[id];if(c){c.flaggedContra=null;}try{if(typeof saveClients==='function')saveClients();}catch(e){}
+function dismissFlag(id,then){const c=CL[id];
+  // Remember the exact check-in this flag came from so a re-processed event can't rebuild it.
+  if(c&&c.flaggedContra){var _cid=c.flaggedContra.checkinId||(c.lastCheckin&&c.lastCheckin.id)||'';if(_cid)_markCheckinDismissed(_cid);}
+  if(c){c.flaggedContra=null;}try{if(typeof saveClients==='function')saveClients();}catch(e){}
   // saveClients only schedules a debounced sync; push the client list NOW so a refresh's cloud pull
   // can't restore the old flag (which is why "Mark reviewed" wasn't sticking).
   try{if(typeof _pushKeyNow==='function')_pushKeyNow('sc_clients',localStorage.getItem('sc_clients')||'');}catch(e){}
@@ -13514,7 +13524,7 @@ async function syncClientEvents(){
           // A flagged check-in is exactly the kind of thing that needs to show up
           // as a real alert on the client's chart, not just sit inside the check-in
           // record where it's easy to miss before a session.
-          if(ci.flagged&&ci.flagged.length){
+          if(ci.flagged&&ci.flagged.length&&!_isCheckinDismissed(ci.id)){
             // Carry the client's actual written detail for each flagged answer (WHAT changed, not just
             // "skin changes"), plus the source check-in id so the alert card can open the exact check-in.
             const _fdetails=[];(ci.groups||[]).forEach(g=>{(g.rows||[]).forEach(r=>{if(r&&r.flagged)_fdetails.push({label:r.label||'',detail:(r.detail||'').trim()});});});
@@ -16019,6 +16029,27 @@ let _editingGuideId=null;
 function _addGuideProd(id,aid){if(!_guideProdDraft)_guideProdDraft=_guideProds(id);if(!_guideProdDraft.includes(aid))_guideProdDraft.push(aid);const l=document.getElementById('guide-prod-list');if(l)l.innerHTML=_guideProdListHTML(id);_renderGuideProdPicker(id,'');}
 function _removeGuideProd(id,aid){if(!_guideProdDraft)_guideProdDraft=_guideProds(id);_guideProdDraft=_guideProdDraft.filter(x=>x!==aid);const l=document.getElementById('guide-prod-list');if(l)l.innerHTML=_guideProdListHTML(id);}
 // Client-style preview of a guide: tips + linked products with buy links.
+// Unified icon renderer for forms/guides/courses. An icon can be an emoji (default), an uploaded
+// image (stored as a data: URL or an image link), or empty ("no icon"). Empty returns nothing so
+// the layout collapses cleanly with no placeholder gap.
+function _iconMarkup(icon,size){
+  size=size||24;var s=String(icon==null?'':icon).trim();
+  if(!s)return '';
+  if(/^data:image\//i.test(s)||/^https?:\/\/[^\s]+\.(png|jpe?g|gif|webp|svg)(\?|#|$)/i.test(s))
+    return '<img src="'+_urlAttr(s)+'" alt="" style="width:'+size+'px;height:'+size+'px;border-radius:8px;object-fit:cover;display:inline-block;vertical-align:middle;">';
+  return '<span style="font-size:'+Math.round(size*0.92)+'px;line-height:1;display:inline-block;">'+_fileEsc(s)+'</span>';
+}
+// Is this icon value an uploaded/linked image (vs an emoji or empty)?
+function _iconIsImage(icon){var s=String(icon==null?'':icon).trim();return /^data:image\//i.test(s)||/^https?:\/\/[^\s]+\.(png|jpe?g|gif|webp|svg)(\?|#|$)/i.test(s);}
+// Load an uploaded PDF into the provider's in-app preview iframe (IndexedDB/server bytes → blob).
+function _previewGuideFileInFrameP(id){
+  _getGuideFile(id).then(function(f){
+    if(!f||!f.data)return;var fr=document.getElementById('pguide-frame');if(!fr)return;
+    try{var parts=String(f.data).split(',');var mime=((parts[0]||'').match(/data:([^;]+)/)||[])[1]||f.type||'application/pdf';
+      var bin=atob(parts[1]||'');var arr=new Uint8Array(bin.length);for(var i=0;i<bin.length;i++)arr[i]=bin.charCodeAt(i);
+      fr.src=URL.createObjectURL(new Blob([arr],{type:mime}));}catch(e){try{fr.src=f.data;}catch(_){}}
+  }).catch(function(){});
+}
 function renderGuidePreview(id){
   setNav('more');
   const g=_findGuide(id);
@@ -16031,9 +16062,17 @@ function renderGuidePreview(id){
   </div>
   <div style="margin:6px 16px 12px;background:#0a2019;border-radius:8px;padding:8px 12px;font-size:12px;color:#4ec49a;display:flex;gap:6px;align-items:center;"><i class="ti ti-eye" style="font-size:12px;"></i> This is what your client sees</div>
   <div style="padding:0 16px;">
-    <div style="display:flex;align-items:center;gap:12px;margin-bottom:14px;"><div style="font-size:34px;">${g.icon||'📄'}</div><div><div style="font-size:18px;font-weight:600;color:#f0f0f0;">${_fileEsc(g.title||'')}</div><div style="font-size:12px;color:#999;">${_fileEsc(g.cat||'')}</div></div></div>
+    <div style="display:flex;align-items:center;gap:12px;margin-bottom:14px;">${_iconMarkup(g.icon,34)}<div><div style="font-size:18px;font-weight:600;color:#f0f0f0;">${_fileEsc(g.title||'')}</div><div style="font-size:12px;color:#999;">${_fileEsc(g.cat||'')}</div></div></div>
+    ${(function(){
+      // Preview a linked or uploaded PDF right here (iframe) instead of forcing a click out to
+      // the link, this is the same in-app preview the client gets. Open/download stay as backups.
+      var urlPdf=!!(g.url&&(/\.pdf($|\?|#)/i.test(g.url)||String(g.cat||'').toUpperCase()==='PDF'));
+      var filePdf=(g.hasFile||g.fileData)&&(/pdf/i.test(g.fileType||'')||/\.pdf$/i.test(g.fileName||''));
+      if(!urlPdf&&!filePdf)return '';
+      return `<div style="margin-bottom:14px;"><iframe id="pguide-frame" ${urlPdf?`src="${_urlAttr(_safeUrl(g.url))}"`:''} title="${_fileEsc(g.title||'Guide')} preview" style="width:100%;height:60vh;border:1px solid #2a2a2a;border-radius:12px;background:#fff;"></iframe><div style="font-size:11px;color:#888;text-align:center;margin-top:6px;line-height:1.4;">Inline preview. If it doesn’t load, use the button below to open or download it.</div></div>`;
+    })()}
     ${g.url?`<a href="${_urlAttr(_safeUrl(g.url))}" target="_blank" rel="noopener noreferrer" style="display:inline-flex;align-items:center;gap:5px;font-size:12px;color:var(--accent);text-decoration:none;margin-bottom:14px;"><i class="ti ti-external-link" style="font-size:12px;"></i> Open full guide</a>`:''}
-    ${(g.hasFile||g.fileData)?`<button onclick="_downloadGuideFileP('${g.id}')" style="display:inline-flex;align-items:center;gap:6px;font-size:12px;color:var(--accent);background:var(--accent-tint);border:1px solid var(--accent);border-radius:8px;padding:7px 12px;cursor:pointer;margin-bottom:14px;font-family:inherit;"><i class="ti ti-download" style="font-size:13px;"></i> ${_fileEsc(g.fileName||'Download file')}</button>`:''}
+    ${(g.hasFile||g.fileData)?`<button onclick="_downloadGuideFileP('${g.id}')" style="display:inline-flex;align-items:center;gap:6px;font-size:12px;color:var(--accent);background:var(--accent-tint);border:1px solid var(--accent);border-radius:8px;padding:7px 12px;cursor:pointer;margin-bottom:14px;font-family:inherit;"><i class="ti ti-download" style="font-size:13px;"></i> View / download ${_fileEsc(g.fileName||'file')}</button>`:''}
     ${(g.tips&&g.tips.length)?`<div style="font-size:11px;font-weight:600;color:#aaa;text-transform:uppercase;letter-spacing:.06em;margin-bottom:8px;">Tips</div>
     <div style="background:#1a1a1a;border:1px solid #2a2a2a;border-radius:12px;overflow:hidden;margin-bottom:16px;">
       ${g.tips.map((t,i)=>`<div style="display:flex;align-items:flex-start;gap:10px;padding:11px 13px;${i<g.tips.length-1?'border-bottom:1px solid #1e1e1e;':''}"><i class="ti ti-check" style="font-size:14px;color:#4ec49a;margin-top:2px;flex-shrink:0;"></i><span style="font-size:13px;color:#ddd;line-height:1.55;">${_fileEsc(t)}</span></div>`).join('')}
@@ -16042,6 +16081,8 @@ function renderGuidePreview(id){
     ${prods.map(a=>`<div style="background:#1a1a1a;border:1px solid #2a2a2a;border-radius:10px;padding:11px 12px;display:flex;align-items:center;gap:10px;margin-bottom:8px;"><span style="font-size:18px;">${_fileEsc(a.icon)}</span><div style="flex:1;min-width:0;"><div style="font-size:13px;font-weight:500;color:#e0e0e0;">${_fileEsc(a.name)}</div><div style="font-size:11px;color:#999;">${_fileEsc(a.brand||'')}</div></div>${(a.url||a.site||a.inOffice||(typeof amazonBuyUrl==='function'&&amazonBuyUrl(a)))?`<button onclick="openBuyOptionsP('${a.id}')" style="background:var(--accent);color:var(--accent-ink);border:none;border-radius:7px;padding:6px 11px;font-size:11px;font-weight:600;cursor:pointer;white-space:nowrap;">Buy</button>`:''}</div>`).join('')}`:''}
     <div style="height:20px;"></div>
   </div>`;
+  // Uploaded PDFs: pull the bytes into the preview iframe (URL PDFs load via src directly).
+  if((g.hasFile||g.fileData)&&(/pdf/i.test(g.fileType||'')||/\.pdf$/i.test(g.fileName||''))){try{_previewGuideFileInFrameP(g.id);}catch(e){}}
 }
 function renderEditResource(id){
   setNav('more');
