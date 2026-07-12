@@ -2526,7 +2526,7 @@ function persistRecReasons(){try{localStorage.setItem('sc_rec_reasons',JSON.stri
 function loadRecReasons(){try{const raw=localStorage.getItem('sc_rec_reasons');if(raw){const v=JSON.parse(raw);if(v&&typeof v==='object')recReasons=v;}}catch(e){}}
 function persistClientHomecare(){try{localStorage.setItem('sc_client_homecare',JSON.stringify(clientHomecare));}catch(e){}}
 function loadClientHomecare(){try{const raw=localStorage.getItem('sc_client_homecare');if(raw){const v=JSON.parse(raw);if(v&&typeof v==='object')clientHomecare=v;}}catch(e){}}
-function persistSessionSummaries(){try{localStorage.setItem('sc_session_summaries',JSON.stringify(sessionSummaries));}catch(e){if(typeof _persistFailWarn==='function')_persistFailWarn();}}
+function persistSessionSummaries(){const v=JSON.stringify(sessionSummaries);try{localStorage.setItem('sc_session_summaries',v);}catch(e){if(typeof _persistFailWarn==='function')_persistFailWarn();}if(typeof _pushKeyNow==='function')_pushKeyNow('sc_session_summaries',v);}
 function loadSessionSummaries(){try{const raw=localStorage.getItem('sc_session_summaries');if(raw){const v=JSON.parse(raw);if(v&&typeof v==='object')sessionSummaries=v;}}catch(e){}}
 // Provider's chosen note format (default: free form). Persisted so it sticks across reloads
 // and syncs across devices, and so applyProfessionConfig doesn't reset it every boot.
@@ -2561,7 +2561,10 @@ const _idb=(function(){
 })();
 function persistCapturedPhotos(){
   // Prefer IndexedDB (large quota, off the localStorage stringify path) for these base64 photos.
-  if(_idb.available()){try{_idb.set('captured_photos',capturedPhotos);}catch(e){}return true;}
+  // Returns a Promise<boolean> in the IndexedDB case so callers can AWAIT the real write before
+  // claiming a photo was saved — the old fire-and-forget returned true instantly, so a photo could
+  // be reported "captured ✓" and then vanish on a refresh if the async write hadn't landed yet.
+  if(_idb.available()){try{return _idb.set('captured_photos',capturedPhotos).then(function(ok){return ok!==false;}).catch(function(){return false;});}catch(e){return Promise.resolve(false);}}
   try{localStorage.setItem('sc_captured_photos',JSON.stringify(capturedPhotos));return true;}catch(e){return false;}
 }
 let _cpMigrateLegacy=false;
@@ -5323,7 +5326,7 @@ function recDrop(id,i,ev){ev.preventDefault();if(_recDrag.id!==id||_recDrag.from
 // show here regardless of what a provider actually typed.
 let providerNoteDrafts={};
 function loadProviderNoteDrafts(){try{const s=localStorage.getItem('sc_note_drafts');if(s)providerNoteDrafts=JSON.parse(s)||{};}catch(e){}}
-function saveProviderNoteDrafts(){try{localStorage.setItem('sc_note_drafts',JSON.stringify(providerNoteDrafts));}catch(e){}}
+function saveProviderNoteDrafts(){const v=JSON.stringify(providerNoteDrafts);try{localStorage.setItem('sc_note_drafts',v);}catch(e){}if(typeof _pushKeyNow==='function')_pushKeyNow('sc_note_drafts',v);}
 function _isoToday(){const d=new Date();return d.getFullYear()+'-'+String(d.getMonth()+1).padStart(2,'0')+'-'+String(d.getDate()).padStart(2,'0');}
 function _fmtNoteDate(iso){
   try{const m=String(iso).match(/^(\d{4})-(\d{2})-(\d{2})/);if(!m)return iso;
@@ -6041,18 +6044,18 @@ function takePhoto(clientId,phase,after,fromLibrary){
       // Persist immediately, don't rely on the caller's `after` callback routing through
       // nav() (the in-room capture flow re-renders a DOM fragment instead of navigating,
       // which used to leave freshly captured photos unsaved until the provider left the room).
-      let saved=true;
-      try{saved=(typeof persistCapturedPhotos==='function')?persistCapturedPhotos():true;}catch(e){saved=false;}
-      if(saved){
-        proToast((phase?phase.charAt(0).toUpperCase()+phase.slice(1)+' photo':'Photo')+' captured · '+_photoStamp(ts));
-      }else{
-        // Storage is full, the photo is only in memory and will be lost on reload.
-        // Roll it back out of the array so counts don't imply it was saved, and tell
-        // the provider plainly rather than showing a false "captured ✓".
-        const idx=capturedPhotos[clientId].indexOf(rec);if(idx>=0)capturedPhotos[clientId].splice(idx,1);
-        proToast('Couldn\u2019t save, device storage is full. Clear space or export existing photos.');
-      }
-      if(after)after();
+      let _persistResult;
+      try{_persistResult=(typeof persistCapturedPhotos==='function')?persistCapturedPhotos():true;}catch(e){_persistResult=false;}
+      Promise.resolve(_persistResult).then(function(saved){
+        if(saved){
+          proToast((phase?phase.charAt(0).toUpperCase()+phase.slice(1)+' photo':'Photo')+' captured · '+_photoStamp(ts));
+        }else{
+          const idx=capturedPhotos[clientId].indexOf(rec);if(idx>=0)capturedPhotos[clientId].splice(idx,1);
+          try{_rerenderRoomPhotos(clientId);}catch(e){}
+          proToast('Couldn’t save, device storage is full. Clear space or export existing photos.');
+        }
+        if(after)after();
+      });
     };
     if(f){_downscaleImg(f,function(url){save(url);},1600);}else save('');
   };
@@ -13916,20 +13919,36 @@ async function _loadSquareAppts(force){
   if(_changed){try{if(_navCur&&_navCur.screen==='home')renderHome();else if(_navCur&&_navCur.screen==='calendar')renderCalendar();else if(_navCur&&_navCur.screen==='today-appts'&&typeof renderTodayAppts==='function')renderTodayAppts();}catch(e){}}
 }
 function _apptsLive(){return _sqApptsState==='ok'&&Array.isArray(squareAppts);}
+// A real provider account — sample data removed, or signed in to the cloud. Such an account must
+// NEVER be shown the fabricated sample appointments (_apptsData); it looks exactly like data loss.
+function _isRealApptAcct(){return _sampleHidden()||(typeof Cloud!=='undefined'&&Cloud&&!!Cloud.token);}
+// Every real appointment as {at:Date,...}: live Square bookings PLUS the ones booked manually in
+// the app (manualAppts), which the old code ignored entirely.
+function _realApptsMerged(){
+  const out=[];
+  if(_apptsLive())squareAppts.forEach(a=>{if(a.at&&!isNaN(a.at))out.push(a);});
+  (typeof manualAppts!=='undefined'?manualAppts:[]).forEach(a=>{let w=null;try{w=_apptWhen(a.date,a.time);}catch(e){}if(w&&!isNaN(w))out.push({id:a.id,at:w,client:a.client,tx:a.tx||'Appointment',dur:a.dur||60,ic:a.ic||'var(--accent)',clientId:a.clientId||'',source:'manual'});});
+  return out;
+}
 function _apptsThisWeek(){
-  if(Array.isArray(squareAppts)){const {start,end}=_weekRange();return squareAppts.filter(a=>a.at>=start&&a.at<end);}
-  return _apptsData.filter(a=>a.day>=22&&a.day<=28);
+  const {start,end}=_weekRange();
+  const real=_realApptsMerged().filter(a=>a.at>=start&&a.at<end).sort((a,b)=>a.at-b.at);
+  if(real.length||_isRealApptAcct())return real;
+  return _apptsData.filter(a=>a.day>=22&&a.day<=28);   // demo only, and only in the sample/demo state
 }
 function _apptsToday(){
-  if(_apptsLive()){const t=new Date();return squareAppts.filter(a=>a.at.getFullYear()===t.getFullYear()&&a.at.getMonth()===t.getMonth()&&a.at.getDate()===t.getDate());}
-  return _apptsData.filter(a=>a.day===26);
+  const t=new Date();const sd=d=>d&&d.getFullYear()===t.getFullYear()&&d.getMonth()===t.getMonth()&&d.getDate()===t.getDate();
+  const real=_realApptsMerged().filter(a=>sd(a.at)).sort((a,b)=>a.at-b.at);
+  if(real.length||_isRealApptAcct())return real;
+  return _apptsData.filter(a=>a.day===26);             // demo only, and only in the sample/demo state
 }
-function _apptsRemainingToday(){if(_apptsLive()){const now=new Date();return _apptsToday().filter(a=>a.at>now).length;}return null;}
+function _apptsRemainingToday(){if(_isRealApptAcct()){const now=new Date();return _apptsToday().filter(a=>a.at&&a.at>now).length;}return null;}
 function renderWeekAppts(){
   setNav('home');
   document.getElementById('tt').textContent="This week's appointments";
   _loadSquareAppts();
-  const live=_apptsLive();
+  const live=_isRealApptAcct();   // real accounts group/format by the appointment's Date (.at); demo uses .day
+  const _weekEmptyHint=live?'<div style="font-size:12px;color:#929292;margin-top:4px;line-height:1.5;">Book one from the calendar, or connect Square to sync your schedule.</div>':'<div style="font-size:12px;color:#929292;margin-top:4px;line-height:1.5;">Connect Square to sync your real schedule, or add appointments yourself.</div>';
   const week=_apptsThisWeek();
   const grp={};
   week.forEach(a=>{
@@ -13947,7 +13966,7 @@ function renderWeekAppts(){
   <div style="margin:14px 16px;text-align:center;color:#999;font-size:13px;padding:30px 20px;background:#161616;border:1px solid #242424;border-radius:12px;">
     <i class="ti ti-calendar-off" style="font-size:26px;color:#555;"></i>
     <div style="margin-top:8px;">${live?'Nothing on the books this week.':'No appointments to show yet.'}</div>
-    ${live?'':'<div style="font-size:12px;color:#929292;margin-top:4px;line-height:1.5;">Connect Square to sync your real schedule, or add appointments yourself.</div>'}
+    ${_weekEmptyHint}
   </div>`:keys.map(k=>{
     const items=grp[k];
     const dayLbl=live?new Date(k).toLocaleDateString('en-US',{weekday:'long',month:'short',day:'numeric'}):(()=>{const dn=['Sun','Mon','Tue','Wed','Thu','Fri','Sat'];const dd=[22,23,24,25,26,27,28];const i=dd.indexOf(items[0]&&items[0].day);return i>=0?dn[i]+' Jun '+items[0].day:'';})();
@@ -13970,7 +13989,7 @@ function renderWeekClients(){
   setNav('home');
   document.getElementById('tt').textContent="This week's clients";
   _loadSquareAppts();
-  const live=_apptsLive();
+  const live=_isRealApptAcct();
   const week=_apptsThisWeek();
   const seen=new Set();
   const names=[];
@@ -13995,24 +14014,24 @@ function renderTodayAppts(){
   setNav('home');
   document.getElementById('tt').textContent="Today's appointments";
   _loadSquareAppts();
-  const live=_apptsLive();
+  const real=_isRealApptAcct();
   const today=_apptsToday();
   const now=new Date();
   S.innerHTML=`
   <div style="padding:10px 16px 4px;">
     <div id="page-heading" tabindex="-1" style="font-size:19px;font-weight:600;color:#f0f0f0;margin-bottom:2px;">Today's appointments</div>
     <div style="font-size:13px;color:#999;">${today.length} appointment${today.length===1?'':'s'} today \u00b7 stays here all day so you can go back and finish notes anytime.</div>
-    ${live?`<button onclick="_loadSquareAppts(true);renderTodayAppts()" style="margin-top:8px;background:none;border:none;color:var(--accent);font-size:12px;font-weight:600;cursor:pointer;font-family:inherit;padding:0;"><i class="ti ti-refresh" style="font-size:12px;"></i> Refresh</button>`:''}
+    ${real?`<button onclick="_loadSquareAppts(true);renderTodayAppts()" style="margin-top:8px;background:none;border:none;color:var(--accent);font-size:12px;font-weight:600;cursor:pointer;font-family:inherit;padding:0;"><i class="ti ti-refresh" style="font-size:12px;"></i> Refresh</button>`:''}
   </div>
   ${!today.length?`
   <div style="margin:14px 16px;text-align:center;color:#999;font-size:13px;padding:30px 20px;background:#161616;border:1px solid #242424;border-radius:12px;">
     <i class="ti ti-calendar-off" style="font-size:26px;color:#555;"></i>
-    <div style="margin-top:8px;">${live?'Nothing on the books for today.':'No appointments to show yet.'}</div>
-    ${live?'':'<div style="font-size:12px;color:#929292;margin-top:4px;line-height:1.5;">Connect Square to sync your real schedule, or add appointments yourself.</div>'}
+    <div style="margin-top:8px;">${real?'Nothing on the books for today.':'No appointments to show yet.'}</div>
+    ${real?'<div style="font-size:12px;color:#929292;margin-top:4px;line-height:1.5;">Book one from the calendar, or connect Square to sync your schedule.</div>':'<div style="font-size:12px;color:#929292;margin-top:4px;line-height:1.5;">Connect Square to sync your real schedule, or add appointments yourself.</div>'}
   </div>`:``+today.map(a=>{
     const cid=_clientIdByName(a.client);
-    const past=live&&a.at<now;
-    const timeLbl=live?a.at.toLocaleTimeString('en-US',{hour:'numeric',minute:'2-digit'}):(a.time||'');
+    const past=a.at?(a.at<now):false;
+    const timeLbl=a.at?a.at.toLocaleTimeString('en-US',{hour:'numeric',minute:'2-digit'}):(a.time||'');
     const ci=_checkinForClient(cid,a.client);
     return `<div ${cid?`onclick="nav('client','${cid}')" style="cursor:pointer;"`:''} style="margin:0 16px 10px;background:#1a1a1a;border:1px solid #2a2a2a;border-radius:12px;overflow:hidden;display:flex;${past?'opacity:.7;':''}">
       <div style="width:4px;background:${a.ic||'var(--accent)'};flex-shrink:0;"></div>
