@@ -2606,6 +2606,15 @@ function loadAutos(){try{const raw=localStorage.getItem('sc_autos');if(raw){cons
 function persistNotifSettings(){try{localStorage.setItem('sc_notif_settings',JSON.stringify(notifSettings));}catch(e){}}
 function loadNotifSettings(){try{const raw=localStorage.getItem('sc_notif_settings');if(raw){const v=JSON.parse(raw);if(v&&typeof v==='object')notifSettings=v;}}catch(e){}}
 function persistCheckins(){try{localStorage.setItem('sc_checkins',JSON.stringify(checkins));}catch(e){}}
+// Push the check-in log to the server RIGHT NOW (not on the 700ms debounce), so a "cleared" or
+// "marked read" state can't be undone by a quick refresh's cloud pull restoring the old copy.
+function _persistCheckinsNow(){try{const v=JSON.stringify(checkins);localStorage.setItem('sc_checkins',v);if(typeof _pushKeyNow==='function')_pushKeyNow('sc_checkins',v);}catch(e){}}
+// Durable record of check-ins the provider has cleared from the log, so a re-processed check-in
+// event can never re-add one they already dealt with (the "cleared check-ins keep coming back" bug).
+function _clearedCheckinsLog(){try{return JSON.parse(localStorage.getItem('sc_ci_cleared')||'[]');}catch(e){return [];}}
+function _markCheckinClearedLog(id){if(!id)return;try{var a=_clearedCheckinsLog();if(a.indexOf(id)<0){a.push(id);if(a.length>800)a.splice(0,a.length-800);var v=JSON.stringify(a);localStorage.setItem('sc_ci_cleared',v);if(typeof _pushKeyNow==='function')_pushKeyNow('sc_ci_cleared',v);}}catch(e){}}
+function _unmarkCheckinClearedLog(id){if(!id)return;try{var a=_clearedCheckinsLog();var i=a.indexOf(id);if(i>=0){a.splice(i,1);var v=JSON.stringify(a);localStorage.setItem('sc_ci_cleared',v);if(typeof _pushKeyNow==='function')_pushKeyNow('sc_ci_cleared',v);}}catch(e){}}
+function _isCheckinClearedLog(id){return !!id&&_clearedCheckinsLog().indexOf(id)>=0;}
 function loadCheckins(){try{const raw=localStorage.getItem('sc_checkins');if(raw){const arr=JSON.parse(raw);if(Array.isArray(arr))checkins=arr;}}catch(e){}try{_pruneExpiredCheckins();}catch(e){}}
 // Convert a check-in's appointment-day label (e.g. "Jul 8, 2026") to an ISO day, but ONLY
 // when we can do so confidently. A label without an explicit 4-digit year (e.g. "Monday,
@@ -13554,7 +13563,11 @@ async function syncClientEvents(){
         const ci={id:ev.id,providerId:'me',clientId:cid,client:name,dateLabel:payload.dateLabel||'',time:payload.time||'',
           treatment:payload.treatment||'',groups:payload.groups||[],flagged:payload.flagged||[],notes:payload.notes||'',
           photos:ciPhotos,read:false,at:(ev.created_at?(new Date(ev.created_at).getTime()||Date.now()):Date.now())};
-        checkins.unshift(ci);
+        // Don't re-add a check-in the provider already cleared from the log, and never add a
+        // duplicate of one already showing (both caused check-ins to reappear/pile up on refresh).
+        const _ciDup=checkins.some(x=>x.id===ci.id);
+        const _ciCleared=(typeof _isCheckinClearedLog==='function')&&_isCheckinClearedLog(ci.id);
+        if(!_ciDup&&!_ciCleared)checkins.unshift(ci);
         if(c){
           c.checkinDone=true;c.checkinDoneFor=(c.nextVisit||'');
           // Keep only the MOST RECENT check-in on the client's file, a new one
@@ -13580,13 +13593,17 @@ async function syncClientEvents(){
           }
           try{saveClients();}catch(e){}
         }
-        const fl=(ci.flagged&&ci.flagged.length)?` Flagged: ${ci.flagged.join(', ')}.`:'';
-        const photoNote=ciPhotos.length?` \ud83d\udcf7 ${ciPhotos.length} photo${ciPhotos.length>1?'s':''} attached.`:'';
-        notifFeed.unshift({id:'evc'+ev.id,type:'checkin',icon:ciPhotos.length?'ti-camera':'ti-clipboard-check',col:'#0a2019',ic:'#4ec49a',
-          title:'Pre-visit check-in',body:`${name} completed a check-in${ci.dateLabel?' for '+ci.dateLabel:''}.${fl}${photoNote}`,
-          time:'Just now',read:false,action:'checkin',data:ci.id,clientId:cid});
-        providerSystemNotify('Pre-visit check-in',`${name} \u00b7 ${ci.treatment||''} \u00b7 ${ci.dateLabel||''}${photoNote}`);
-        touchedCheckins=true;touchedNotif=true;
+        // Only surface the notification/badge for a genuinely new check-in \u2014 not for one that was
+        // already cleared or is a duplicate of one already in the log.
+        if(!_ciDup&&!_ciCleared){
+          const fl=(ci.flagged&&ci.flagged.length)?` Flagged: ${ci.flagged.join(', ')}.`:'';
+          const photoNote=ciPhotos.length?` \ud83d\udcf7 ${ciPhotos.length} photo${ciPhotos.length>1?'s':''} attached.`:'';
+          notifFeed.unshift({id:'evc'+ev.id,type:'checkin',icon:ciPhotos.length?'ti-camera':'ti-clipboard-check',col:'#0a2019',ic:'#4ec49a',
+            title:'Pre-visit check-in',body:`${name} completed a check-in${ci.dateLabel?' for '+ci.dateLabel:''}.${fl}${photoNote}`,
+            time:'Just now',read:false,action:'checkin',data:ci.id,clientId:cid});
+          providerSystemNotify('Pre-visit check-in',`${name} \u00b7 ${ci.treatment||''} \u00b7 ${ci.dateLabel||''}${photoNote}`);
+          touchedCheckins=true;touchedNotif=true;
+        }
       }else if(ev.kind==='form'){
         const title=payload.title||'Form';
         const flagged=(payload.flagged&&payload.flagged.length)?payload.flagged.slice():null;
@@ -13828,7 +13845,7 @@ function pushCheckinNotif(ci){
     time:'Just now',read:false,action:'checkin',data:ci.id,clientId:(ci.clientId||null)});
   updateBadge();
 }
-function markCheckinRead(id){const c=checkins.find(x=>x.id===id);if(c){c.read=true;try{if(typeof persistCheckins==='function')persistCheckins();}catch(e){}}updateBadge();}
+function markCheckinRead(id){let hit=false;checkins.forEach(c=>{if(c.id===id&&!c.read){c.read=true;hit=true;}});if(hit){try{_persistCheckinsNow();}catch(e){}}updateBadge();}
 
 function renderCheckins(){
   // Skip the auto-prune only for the single render triggered right after a manual swipe-clear,
@@ -13879,8 +13896,12 @@ function _clearCheckin(id){
   if(idx<0)return;
   _lastClearedCheckin={ci:checkins[idx],idx:idx};
   _skipCheckinPrune=true;      // don't auto-prune the render that's about to happen (protect Undo)
-  checkins.splice(idx,1);
-  try{persistCheckins();}catch(e){}
+  // Remember this check-in as cleared FOREVER (pushed immediately) so a re-processed event can't
+  // re-add it, and remove every copy of it so duplicates don't linger. Then push the log now so a
+  // refresh's cloud pull can't restore it. This is what finally makes "Clear" stick across reloads.
+  _markCheckinClearedLog(id);
+  checkins=checkins.filter(x=>x.id!==id);
+  try{_persistCheckinsNow();}catch(e){}
   try{if(typeof updateBadge==='function')updateBadge();}catch(e){}
   _checkinClearToast('Check-in cleared');
   renderCheckins();
@@ -13889,9 +13910,10 @@ function _undoClearCheckin(){
   if(_lastClearedCheckin){
     const {ci,idx}=_lastClearedCheckin;
     checkins.splice(Math.min(idx,checkins.length),0,ci);
+    if(ci&&ci.id)_unmarkCheckinClearedLog(ci.id);   // undo the "cleared forever" mark so it stays
     _lastClearedCheckin=null;
     _skipCheckinPrune=true;    // don't let the undo render immediately re-prune the restored item
-    try{persistCheckins();}catch(e){}
+    try{_persistCheckinsNow();}catch(e){}
     try{if(typeof updateBadge==='function')updateBadge();}catch(e){}
     const t=document.getElementById('ci-clear-toast');if(t)t.remove();
     renderCheckins();
