@@ -2843,6 +2843,27 @@ function emptyState(o){o=o||{};return `<div style="text-align:center;padding:46p
     ${o.action&&o.screen?`<button onclick="nav('${o.screen}')" style="margin-top:18px;background:var(--accent);color:var(--accent-ink);border:none;border-radius:10px;padding:10px 18px;font-size:13px;font-weight:600;cursor:pointer;font-family:inherit;"><i class="ti ti-plus" style="font-size:13px;"></i> ${o.action}</button>`:''}
   </div>`;}
 function _fcItems(c){var f=c&&c.flaggedContra;return (f&&Array.isArray(f.items))?f.items:[];}
+// What to SHOW on a flagged card: for a check-in, the client's actual written detail ("new breakout on
+// chin") rather than the generic question ("Any skin changes since your last visit"). Falls back to the
+// question/label when they flagged something but didn't write a detail, and to the raw items for intake
+// contraindications (which are themselves the specific thing flagged).
+function _fcDisplayItems(c){
+  var f=c&&c.flaggedContra;if(!f)return [];
+  if(Array.isArray(f.details)&&f.details.length){
+    // Prefer WHAT the client actually wrote (the detail). Only fall back to the question label when
+    // they flagged an answer but left the detail blank, since there's nothing more specific to show.
+    return f.details.map(function(d){var det=(d.detail||'').trim();if(det)return det;var lbl=String(d.label||'').replace(/\?$/,'').trim();return lbl||'Flagged';});
+  }
+  return (Array.isArray(f.items)?f.items:[]);
+}
+// Where a flagged card should navigate: the exact check-in it came from, else the flagged submitted form.
+function _fcOpenAction(id,c){
+  if(c&&c.flaggedContra&&c.flaggedContra.checkinId&&c.lastCheckin&&c.lastCheckin.id){
+    return "markCheckinRead('"+c.lastCheckin.id+"');nav('checkin-detail','"+c.lastCheckin.id+"')";
+  }
+  var fi=_flaggedFormIdx(c);
+  return fi>=0?("viewSubmittedForm('"+id+"',"+fi+")"):("nav('client','"+id+"')");
+}
 // Content signatures so a dismissed attention card stays dismissed for THAT specific flag/form, but a
 // genuinely new flag or a newly completed form (different signature) surfaces again as its own card.
 function _flagSig(c){var f=c&&c.flaggedContra;if(!f)return '';return (f.form||'')+'|'+(f.date||'')+'|'+((f.items||[]).join('~'));}
@@ -2933,12 +2954,14 @@ function renderHome(){
       <button onclick="event.stopPropagation();dismissCheckinNudge('${id}')" aria-label="Dismiss ${_fileEsc(c.name.split(' ')[0])} check-in reminder" title="Clear" style="position:absolute;top:6px;right:6px;z-index:4;width:22px;height:22px;border-radius:50%;background:rgba(0,0,0,.3);border:none;color:#e6d3a8;cursor:pointer;display:flex;align-items:center;justify-content:center;padding:0;line-height:0;"><i class="ti ti-x" style="font-size:13px;"></i></button>
     </div>`;}).join('');
     h+=flagged.filter(([id])=>!_homeDismissed.has('flag-'+id)&&_attnFresh('flag-'+id)).map(([id,c])=>{
-      const fi=_flaggedFormIdx(c);
-      const open=fi>=0?`viewSubmittedForm('${id}',${fi})`:`nav('client','${id}')`;
-      const items=_fcItems(c);
+      const open=_fcOpenAction(id,c);
+      const items=_fcDisplayItems(c);
+      const isCheckin=!!(c.flaggedContra&&c.flaggedContra.form==='Pre-visit check-in');
+      const src=isCheckin?'on their check-in':'on intake';
+      const tapHint=isCheckin?'Tap to open the check-in':'Tap to open the form';
       return _swipeTile(`<div onclick="${open}" style="margin:0;background:#2a0f0f;border:1px solid #5a2020;border-radius:12px;padding:11px 34px 11px 13px;display:flex;align-items:flex-start;gap:11px;cursor:pointer;">
       <div style="width:38px;height:38px;border-radius:9px;background:#3a1414;display:flex;align-items:center;justify-content:center;flex-shrink:0;margin-top:1px;"><i class="ti ti-alert-triangle" style="font-size:18px;color:#e87070;"></i></div>
-      <div style="flex:1;min-width:0;"><div style="font-size:14px;font-weight:600;color:#f0c8c8;">${_fileEsc(c.name.split(' ')[0])} flagged ${items.length} item${items.length!==1?'s':''} on intake</div>${items.length?`<ul style="margin:4px 0 0;padding-left:16px;">${items.map(it=>`<li style="font-size:12px;color:#e0b8b8;line-height:1.5;">${_fileEsc(it)}</li>`).join('')}</ul>`:''}<div style="font-size:11px;color:#a87878;margin-top:5px;">Tap to open the form</div></div>
+      <div style="flex:1;min-width:0;"><div style="font-size:14px;font-weight:600;color:#f0c8c8;">${_fileEsc(c.name.split(' ')[0])} flagged ${items.length} item${items.length!==1?'s':''} ${src}</div>${items.length?`<ul style="margin:4px 0 0;padding-left:16px;">${items.map(it=>`<li style="font-size:12px;color:#e0b8b8;line-height:1.5;">${_fileEsc(it)}</li>`).join('')}</ul>`:''}<div style="font-size:11px;color:#a87878;margin-top:5px;">${tapHint}</div></div>
     </div>`,'flag-'+id);}).join('');
     h+=reviews.filter(([id])=>!_homeDismissed.has('rev-'+id)&&_attnFresh('rev-'+id)).map(([id,c])=>_swipeTile(`<div onclick="viewSubmittedForm('${id}',0)" style="margin:0;background:#0f1f17;border:1px solid #1c4030;border-radius:12px;padding:11px 34px 11px 13px;display:flex;align-items:center;gap:11px;cursor:pointer;">
       <div style="width:38px;height:38px;border-radius:9px;background:#123226;display:flex;align-items:center;justify-content:center;flex-shrink:0;"><i class="ti ti-clipboard-check" style="font-size:18px;color:#4ec49a;"></i></div>
@@ -3040,7 +3063,7 @@ function _buildClientFileHTML(id){
   if(c.flaggedContra){
     flaggedHTML=`<div class="flag"><div class="flag-h">\u26a0 Flagged on intake \u2014 review before treatment</div>`+
       `<div class="sub">Marked on \u201c${_fileEsc(c.flaggedContra.form)}\u201d (${_fileEsc(c.flaggedContra.date)}):</div>`+
-      `<ul>${_fcItems(c).map(it=>`<li>${_fileEsc(it)}</li>`).join('')}</ul></div>`;
+      `<ul>${_fcDisplayItems(c).map(it=>`<li>${_fileEsc(it)}</li>`).join('')}</ul></div>`;
   }
   // ---- forms on file ----
   let formsHTML='';
@@ -3199,7 +3222,7 @@ function renderClient(id){
   ${c.flaggedContra?`<div style="margin:12px 16px 0;background:#2a0f0f;border:1px solid #5a2020;border-radius:12px;padding:12px 14px;">
     <div style="display:flex;align-items:center;gap:8px;margin-bottom:6px;"><i class="ti ti-alert-triangle" style="font-size:16px;color:#e87070;"></i><span style="font-size:13px;font-weight:700;color:#f0c8c8;">Flagged on intake, review before the visit</span></div>
     <div style="font-size:11px;color:#c99;margin-bottom:7px;">${_fileEsc(c.name.split(' ')[0])} marked these on "${_fileEsc(c.flaggedContra.form)}" (${_fileEsc(c.flaggedContra.date)}):</div>
-    <ul style="margin:0 0 9px;padding-left:18px;">${_fcItems(c).map(it=>`<li style="font-size:12.5px;color:#e6cccc;line-height:1.7;">${_fileEsc(it)}</li>`).join('')}</ul>
+    <ul style="margin:0 0 9px;padding-left:18px;">${_fcDisplayItems(c).map(it=>`<li style="font-size:12.5px;color:#e6cccc;line-height:1.7;">${_fileEsc(it)}</li>`).join('')}</ul>
     <button onclick="dismissFlag('${id}')" style="background:none;border:1px solid #5a2020;color:#e8a0a0;border-radius:8px;padding:6px 12px;font-size:12px;cursor:pointer;font-family:inherit;"><i class="ti ti-check" style="font-size:12px;"></i> Mark reviewed</button>
   </div>`:''}
   <div style="display:grid;grid-template-columns:1fr 1fr;gap:8px;padding:12px 16px 8px;">
@@ -3464,7 +3487,7 @@ function renderFlaggedIntakes(){
   const rows=flagged.map(([id,c])=>{
     const fi=(c.submittedForms||[]).findIndex(f=>f.flagged&&f.flagged.length);
     const open=fi>=0?`viewSubmittedForm('${id}',${fi})`:`nav('client-forms','${id}')`;
-    const items=_fcItems(c);
+    const items=_fcDisplayItems(c);
     return `<div style="margin:0 16px 10px;background:#2a0f0f;border:1px solid #5a2020;border-radius:14px;overflow:hidden;">
       <div style="padding:13px 15px;display:flex;align-items:center;gap:11px;">
         ${av(c,42)}
@@ -3780,7 +3803,7 @@ function renderRoom(id){
         const rows=[];
         // Flagged contraindications from an intake / check-in
         if(c.flaggedContra&&Array.isArray(_fcItems(c))){
-          _fcItems(c).forEach(it=>rows.push(`<div style="display:flex;align-items:flex-start;gap:8px;padding:8px 10px;background:#2a0f0f;border:1px solid #5a2020;border-radius:8px;margin-bottom:6px;"><i class="ti ti-alert-triangle" style="font-size:13px;color:#e87070;flex-shrink:0;margin-top:1px;"></i><div><div style="font-size:12px;font-weight:600;color:#e87070;">${_fileEsc(it)}</div><div style="font-size:11px;color:#929292;">Flagged by client${c.flaggedContra.form?' on '+_fileEsc(c.flaggedContra.form.toLowerCase()):' on intake'}</div></div></div>`));
+          _fcDisplayItems(c).forEach(it=>rows.push(`<div style="display:flex;align-items:flex-start;gap:8px;padding:8px 10px;background:#2a0f0f;border:1px solid #5a2020;border-radius:8px;margin-bottom:6px;"><i class="ti ti-alert-triangle" style="font-size:13px;color:#e87070;flex-shrink:0;margin-top:1px;"></i><div><div style="font-size:12px;font-weight:600;color:#e87070;">${_fileEsc(it)}</div><div style="font-size:11px;color:#929292;">Flagged by client${c.flaggedContra.form?' on '+_fileEsc(c.flaggedContra.form.toLowerCase()):' on intake'}</div></div></div>`));
         }
         // A real, non-empty allergy on the chart is itself an alert
         const al=String(c.allergies||'').trim();
@@ -8471,7 +8494,7 @@ function _needsCheckin(){
 let _lastCiDismiss=null;
 let _homeDismissed=new Set();
 function _loadHomeDismissed(){try{const raw=localStorage.getItem('sc_home_dismissed');if(raw){const arr=JSON.parse(raw);if(Array.isArray(arr))_homeDismissed=new Set(arr);}}catch(e){}}
-function _saveHomeDismissed(){try{localStorage.setItem('sc_home_dismissed',JSON.stringify([..._homeDismissed]));}catch(e){}}
+function _saveHomeDismissed(){const v=JSON.stringify([..._homeDismissed]);try{localStorage.setItem('sc_home_dismissed',v);}catch(e){}if(typeof _pushKeyNow==='function')_pushKeyNow('sc_home_dismissed',v);}
 // "Needs your attention" items (flagged intake, completed-form reviews) used to linger forever
 // they'd keep resurfacing even after the provider had handled them a day or more ago. We stamp the
 // moment each item first appears and auto-clear it for good once it's older than 24h, so the list
@@ -8479,7 +8502,7 @@ function _saveHomeDismissed(){try{localStorage.setItem('sc_home_dismissed',JSON.
 // folded into the same persisted dismissal set, so a cleared item never comes back either.
 let _attnSeen={};
 function _loadAttnSeen(){try{const r=localStorage.getItem('sc_attn_seen');if(r)_attnSeen=JSON.parse(r)||{};}catch(e){}}
-function _saveAttnSeen(){try{localStorage.setItem('sc_attn_seen',JSON.stringify(_attnSeen));}catch(e){}}
+function _saveAttnSeen(){const v=JSON.stringify(_attnSeen);try{localStorage.setItem('sc_attn_seen',v);}catch(e){}if(typeof _pushKeyNow==='function')_pushKeyNow('sc_attn_seen',v);}
 function _attnFresh(key){
   const now=Date.now();const t=_attnSeen[key];
   if(!t){_attnSeen[key]=now;_saveAttnSeen();return true;}
@@ -13446,7 +13469,12 @@ async function syncClientEvents(){
           // A flagged check-in is exactly the kind of thing that needs to show up
           // as a real alert on the client's chart, not just sit inside the check-in
           // record where it's easy to miss before a session.
-          if(ci.flagged&&ci.flagged.length)c.flaggedContra={form:'Pre-visit check-in',items:ci.flagged.slice(),date:ci.dateLabel||'Today'};
+          if(ci.flagged&&ci.flagged.length){
+            // Carry the client's actual written detail for each flagged answer (WHAT changed, not just
+            // "skin changes"), plus the source check-in id so the alert card can open the exact check-in.
+            const _fdetails=[];(ci.groups||[]).forEach(g=>{(g.rows||[]).forEach(r=>{if(r&&r.flagged)_fdetails.push({label:r.label||'',detail:(r.detail||'').trim()});});});
+            c.flaggedContra={form:'Pre-visit check-in',items:ci.flagged.slice(),details:_fdetails,checkinId:ci.id,date:ci.dateLabel||'Today'};
+          }
           // Photos a client sends need to actually land in their photo chart, not
           // just sit inside this one check-in record where they're easy to miss.
           if(ciPhotos.length){
