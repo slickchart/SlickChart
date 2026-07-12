@@ -2,6 +2,13 @@
 
 Newest entries at the top. One entry per deploy. Dates are US-formatted.
 
+## 2026-07-12 — Courses: Delete right on the course card
+
+Follow-up to the course-delete feature: the delete lived only inside a course's Edit screen, which
+wasn't discoverable from the Courses list. Added a **Delete** button directly to each course card
+(next to Edit / Preview), so the starter/demo courses can be removed without opening the editor.
+Provider-side only; demo in lockstep; both parse.
+
 ## 2026-07-12 — Course lessons: attach big worksheets via a document link (no size limit)
 
 Direct file uploads are capped at 3MB — not an arbitrary number but Vercel's ~4.5MB serverless
