@@ -1342,6 +1342,13 @@ const _MERGE_SKIP_IDS={maya:1,sophie:1,priya:1};
 let mergedSquareIds={};
 function loadMergedIds(){try{const raw=localStorage.getItem('sc_merged_ids');if(raw){const o=JSON.parse(raw);if(o&&typeof o==='object')mergedSquareIds=o;}}catch(e){}}
 function saveMergedIds(){try{localStorage.setItem('sc_merged_ids',JSON.stringify(mergedSquareIds));}catch(e){}}
+// The "possible duplicates" banner can be dismissed. We remember the exact SET of duplicates that
+// was dismissed (a stable signature of the grouped ids), so the banner stays hidden for those pairs
+// but reappears on its own if a genuinely NEW duplicate shows up later — dismissing isn't "never
+// warn me again", it's "I've looked at these".
+let _dupDismissSig=(function(){try{return localStorage.getItem('sc_dup_dismiss')||'';}catch(e){return '';}})();
+function _dupSig(dg){try{return (dg||[]).map(g=>g.slice().sort().join('+')).sort().join('|');}catch(e){return '';}}
+function _dismissDupBanner(){try{const dg=(typeof _findDuplicateGroups==='function')?_findDuplicateGroups():[];_dupDismissSig=_dupSig(dg);localStorage.setItem('sc_dup_dismiss',_dupDismissSig);}catch(e){}try{if(typeof renderClients==='function')renderClients();}catch(e){}}
 function _sqLocalId(sqid){return 'sq_'+String(sqid||'').slice(0,10).toLowerCase().replace(/[^a-z0-9]/g,'');}
 function _mergeNorm(s){return (typeof _normSearch==='function')?_normSearch(s):String(s||'').toLowerCase().replace(/[^a-z0-9]/g,'');}
 function _mergeDigits(s){return String(s||'').replace(/\D/g,'');}
@@ -2958,11 +2965,14 @@ function renderClients(){
     <div style="flex:1;min-width:0;"><div style="font-size:14px;font-weight:500;color:#efeaff;">Virtual consults</div><div style="font-size:12px;color:#a394cc;">Invite clients, review photos &amp; AI analysis</div></div>
     ${_vcPendingCount()?`<span style="background:var(--accent);color:var(--accent-ink);font-size:12px;font-weight:700;min-width:20px;height:20px;border-radius:10px;display:flex;align-items:center;justify-content:center;padding:0 6px;flex-shrink:0;">${_vcPendingCount()}</span>`:`<i class="ti ti-chevron-right" style="font-size:16px;color:#a891ec;flex-shrink:0;"></i>`}
   </button>
-  ${(function(){const dg=(typeof _findDuplicateGroups==='function')?_findDuplicateGroups():[];if(!dg.length)return '';const n=dg.reduce((a,g)=>a+g.length,0);return `<button onclick="nav('merge-clients')" style="display:flex;align-items:center;gap:11px;width:calc(100% - 32px);box-sizing:border-box;margin:0 16px 14px;background:#1a1308;border:1px solid #3a2a10;border-radius:12px;padding:12px 14px;cursor:pointer;font-family:inherit;text-align:left;">
-    <div style="width:42px;height:42px;border-radius:10px;background:#2e1c10;display:flex;align-items:center;justify-content:center;flex-shrink:0;"><i class="ti ti-arrows-join" style="font-size:20px;color:var(--accent);"></i></div>
-    <div style="flex:1;min-width:0;"><div style="font-size:14px;font-weight:500;color:#f0e6d2;">${n} possible duplicate${n===1?'':'s'} found</div><div style="font-size:12px;color:#caa86a;">Review &amp; merge them into one chart</div></div>
-    <i class="ti ti-chevron-right" style="font-size:16px;color:var(--accent);flex-shrink:0;"></i>
-  </button>`;})()}
+  ${(function(){const dg=(typeof _findDuplicateGroups==='function')?_findDuplicateGroups():[];if(!dg.length)return '';if(typeof _dupSig==='function'&&_dupDismissSig&&_dupSig(dg)===_dupDismissSig)return '';const n=dg.reduce((a,g)=>a+g.length,0);return `<div style="display:flex;align-items:center;gap:11px;width:calc(100% - 32px);box-sizing:border-box;margin:0 16px 14px;background:#1a1308;border:1px solid #3a2a10;border-radius:12px;padding:12px 14px;">
+    <div onclick="nav('merge-clients')" style="display:flex;align-items:center;gap:11px;flex:1;min-width:0;cursor:pointer;">
+      <div style="width:42px;height:42px;border-radius:10px;background:#2e1c10;display:flex;align-items:center;justify-content:center;flex-shrink:0;"><i class="ti ti-arrows-join" style="font-size:20px;color:var(--accent);"></i></div>
+      <div style="flex:1;min-width:0;"><div style="font-size:14px;font-weight:500;color:#f0e6d2;">${n} possible duplicate${n===1?'':'s'} found</div><div style="font-size:12px;color:#caa86a;">Review &amp; merge them into one chart</div></div>
+      <i class="ti ti-chevron-right" style="font-size:16px;color:var(--accent);flex-shrink:0;"></i>
+    </div>
+    <button onclick="event.stopPropagation();_dismissDupBanner()" aria-label="Dismiss duplicate alert" title="Dismiss" style="flex-shrink:0;background:none;border:none;color:#8a7550;cursor:pointer;padding:6px;line-height:0;"><i class="ti ti-x" style="font-size:16px;"></i></button>
+  </div>`;})()}
   <div class="sh"><h2 id="page-heading" tabindex="-1">All clients</h2></div>
   ${_hasDemoClients()?`<div style="margin:0 16px 12px;background:#1a1308;border:1px solid #3a2a10;border-radius:11px;padding:11px 13px;display:flex;align-items:center;gap:11px;">
     <i class="ti ti-flask" aria-hidden="true" style="color:var(--accent);font-size:17px;flex-shrink:0;"></i>
@@ -4059,7 +4069,16 @@ function saveTreatment(id,screen){
   try{saveClients();}catch(e){}   // CL isn't in the on-nav persistence sweep, persist so the treatment edit survives reload
   document.getElementById('treatment-modal')?.remove();
   if(typeof proToast==='function')proToast('Treatment updated to "'+CL[id].treatment+'"');
-  if(screen==='room')renderRoom(id);else if(screen==='session-summary')renderSessionSummary(id);else if(screen==='notes')renderNotes(id);else renderClient(id);
+  if(screen==='write-note'){
+    // Snapshot the in-progress note editor synchronously (the textareas still exist behind the
+    // modal) so the re-render after a treatment change never drops unsaved keystrokes.
+    try{
+      const t=noteTemplates[activeNoteTemplate]||noteTemplates.soap;const dateEl=document.getElementById('wn-date');
+      if(dateEl){const sections={};t.sections.forEach(s=>{const el=document.getElementById('wn-sec-'+s.id);if(el)sections[s.id]=el.value;});providerNoteDrafts[id]={date:dateEl.value||_isoToday(),sections,templateId:activeNoteTemplate};if(typeof saveProviderNoteDrafts==='function')saveProviderNoteDrafts();}
+    }catch(e){}
+    renderWriteNote(id);
+  }
+  else if(screen==='room')renderRoom(id);else if(screen==='session-summary')renderSessionSummary(id);else if(screen==='notes')renderNotes(id);else renderClient(id);
 }
 
 function togBtn(state,onclick,label){
@@ -4168,81 +4187,76 @@ function startVoiceNote(id){
     _voiceOverlay(`<div style="font-size:15px;font-weight:600;color:#f0f0f0;margin-bottom:4px;">Voice note</div><div style="font-size:12px;color:#e8a060;line-height:1.5;margin-bottom:10px;">Live dictation isn't supported in this browser. You can type or paste your note here instead, it saves to your notes the same way.</div><textarea id="voice-ta" style="width:100%;height:120px;background:#0f0f0f;border:1px solid #2a2a2a;border-radius:10px;padding:11px;font-size:14px;color:#ddd;font-family:inherit;line-height:1.6;resize:none;outline:none;box-sizing:border-box;"></textarea><div style="display:flex;gap:8px;margin-top:12px;"><button onclick="_voiceSave(document.getElementById('voice-ta').value)" style="flex:1;background:var(--accent);color:var(--accent-ink);border:none;border-radius:10px;padding:12px;font-size:13px;font-weight:600;cursor:pointer;font-family:inherit;">Save to notes</button><button onclick="_voiceClose()" style="background:#1a1a1a;border:1px solid #2a2a2a;color:#ccc;border-radius:10px;padding:12px 16px;font-size:13px;cursor:pointer;font-family:inherit;">Cancel</button></div>`);
     return;
   }
-  const rec=new SR();rec.continuous=true;rec.interimResults=true;rec.lang='en-US';_voiceRec=rec;
   _voiceStopping=false;
-  // Transcript handling. The screenshot bug ("today today today Ginger today
-  // Ginger skin was a little bit…") came from growing interim results being
-  // APPENDED on each event instead of replacing the prior interim. The fix:
-  // on every event, rebuild the whole transcript straight from e.results, which
-  // always holds the current best transcript for every segment. Never accumulate
-  // across events, and never auto-restart mid-utterance (the restart was what
-  // fragmented the results and reintroduced the duplication).
+  // ── Transcript handling: fresh recognizer per session, banked accumulator ──────────────────
+  // The phone "today today today Ginger today..." doubling had two compounding causes. (1) Growing
+  // interim results were once appended each event instead of replacing the prior interim. (2) The
+  // deeper phone bug: the browser ends recognition on its own after a short silence (Android
+  // essentially ignores continuous=true and ends after every phrase), and REUSING the same
+  // SpeechRecognition object across that end->start cycle leaves the previous session's finalized
+  // results sitting inside e.results on Android -- so rebuilding the transcript from e.results
+  // re-reads text we've already banked, duplicating it across every restart.
   //
-  // Transcript handling, the correct Web Speech pattern. The browser hands us results
-  // incrementally: e.resultIndex marks where *new/changed* results begin, and each result's
-  // isFinal flag tells us whether the engine considers that segment settled. We accumulate
-  // finalized segments ONCE into finalText (never re-reading them, so they can't duplicate),
-  // and layer only the current interim on top. This fixes both the old duplication bug
-  // ("today today today…", from re-appending growing interims) AND the data-loss bug (the
-  // previous rebuild-from-whole-window approach silently dropped finalized text once the
-  // browser trimmed it out of e.results on a long dictation).
-  // ANDROID FIX: desktop Chrome advances e.resultIndex to mark only new results, so the old
-  // `for(i=resultIndex\u2026) finalText+=seg` added each finalized segment exactly once. Android
-  // Chrome frequently reports resultIndex=0 on EVERY event, so that same loop re-added every
-  // finalized segment on every event \u2192 the "today today today Ginger today\u2026" repeat the user hit.
-  // Fix: never accumulate with += inside onresult. Instead, rebuild THIS session's text fresh from
-  // the whole results window each event (idempotent, so resultIndex behaviour can't cause repeats),
-  // and bank each finished session's text once into `committed` when the engine restarts. That keeps
-  // it duplicate-proof on Android AND loss-proof across the auto-restarts on both platforms.
+  // The robust fix, correct on Android Chrome AND iOS Safari: keep a single `committed` accumulator
+  // of everything finalized so far, and build a BRAND-NEW recognizer for every (re)start. Each fresh
+  // object always begins with an empty results window, so within a session we simply rebuild that
+  // session's text from e.results (idempotent -- Android's resultIndex quirks can't cause repeats),
+  // and on end we bank the session's finalized text into `committed` exactly once. Nothing is ever
+  // re-read, so nothing doubles, and no finalized text is lost across the auto-restarts.
   let committed=_seed?_seed+' ':'';   // finalized text so far (seeded when resuming after an edit)
-  let curSessionFinal='';  // finalized text of the CURRENT session (rebuilt every event)
-  rec.onresult=(e)=>{
-    let sessionFinal='',interim='';
-    for(let i=0;i<e.results.length;i++){
-      const r=e.results[i];
-      const seg=(r[0]&&r[0].transcript)||'';
-      if(r.isFinal)sessionFinal+=seg+' ';
-      else interim+=seg+' ';
-    }
-    curSessionFinal=sessionFinal;
-    _voiceText=(committed+' '+sessionFinal+' '+interim).replace(/\s+/g,' ').trim();
-    const el=document.getElementById('voice-transcript');
-    if(el)el.textContent=_voiceText||'Listening\u2026';
-  };
-  // The browser ends recognition on its own after a short silence (Chrome does this even with
-  // continuous=true, and Android essentially ignores continuous, ending after every phrase).
-  // We restart so a natural pause while dictating clinical notes doesn't silently kill the mic
-  // and truncate the note. Restarting is safe: this session's finalized text is banked into
-  // `committed` first, and the fresh session starts with an empty results window, so nothing can
-  // be re-read and duplicated. Only relaunch if the user hasn't intentionally stopped/cancelled.
-  rec.onend=()=>{
+  let curSessionFinal='';             // finalized text of the CURRENT recognizer session
+  function _voiceMakeRec(){
+    const r=new SR();r.continuous=true;r.interimResults=true;r.lang='en-US';
+    r.onresult=(e)=>{
+      let sessionFinal='',interim='';
+      for(let i=0;i<e.results.length;i++){
+        const res=e.results[i];
+        const seg=(res[0]&&res[0].transcript)||'';
+        if(res.isFinal)sessionFinal+=seg+' ';
+        else interim+=seg+' ';
+      }
+      curSessionFinal=sessionFinal;
+      _voiceText=(committed+' '+sessionFinal+' '+interim).replace(/\s+/g,' ').trim();
+      const el=document.getElementById('voice-transcript');
+      if(el)el.textContent=_voiceText||'Listening…';
+    };
+    // Bank this session's finalized text ONCE, then spin up a brand-new recognizer so the next
+    // session starts from an empty results window (nothing can be re-read and duplicated). Only
+    // relaunch if the user hasn't intentionally stopped/paused/cancelled.
+    r.onend=()=>{
+      if(_voiceStopping)return;
+      if(curSessionFinal.trim()){committed=(committed+' '+curSessionFinal).replace(/\s+/g,' ').trim();}
+      curSessionFinal='';
+      _voiceStartRec();
+    };
+    r.onerror=(e)=>{
+      const el=document.getElementById('voice-transcript');
+      if(e.error==='not-allowed'||e.error==='service-not-allowed'){
+        // A blocked mic won't recover by restarting, stop trying and tell them how to fix it.
+        _voiceStopping=true;
+        if(el)el.textContent='Microphone access was blocked. Allow the mic for this site in your browser, then try again.';
+      }else if(e.error==='audio-capture'){
+        _voiceStopping=true;
+        if(el)el.textContent='No microphone was found. Check that one is connected, then try again.';
+      }else if(e.error==='no-speech'){
+        // Normal during a pause; onend will relaunch. Only hint if we have nothing yet, so we
+        // don't wipe out text the provider already dictated.
+        if(el&&!_voiceText)el.textContent='Listening… (say something to begin)';
+      }
+      // other errors (network, aborted, etc.): let onend relaunch a fresh recognizer.
+    };
+    return r;
+  }
+  function _voiceStartRec(){
     if(_voiceStopping)return;
-    // Bank this finished session's finalized text ONCE, then start a clean session. Because the
-    // next session begins with an empty results window, nothing from this session can be re-read
-    // and duplicated after the restart.
-    if(curSessionFinal.trim()){committed=(committed+' '+curSessionFinal).replace(/\s+/g,' ').trim();curSessionFinal='';}
-    try{rec.start();}catch(e){
-      // If an immediate restart throws (some engines need a beat), retry shortly; give up
-      // quietly after that so we never spin.
-      setTimeout(()=>{if(!_voiceStopping){try{rec.start();}catch(_){}}},350);
+    const r=_voiceMakeRec();_voiceRec=r;
+    try{r.start();}catch(e){
+      // Some engines throw if start() is called too soon after the previous session ended; retry
+      // shortly with another fresh recognizer, then give up quietly so we never spin.
+      setTimeout(()=>{if(_voiceStopping)return;try{const r2=_voiceMakeRec();_voiceRec=r2;r2.start();}catch(_){}},350);
     }
-  };
-  rec.onerror=(e)=>{
-    const el=document.getElementById('voice-transcript');
-    if(e.error==='not-allowed'||e.error==='service-not-allowed'){
-      // A blocked mic won't recover by restarting, stop trying and tell them how to fix it.
-      _voiceStopping=true;
-      if(el)el.textContent='Microphone access was blocked. Allow the mic for this site in your browser, then try again.';
-    }else if(e.error==='no-speech'){
-      // Normal during a pause; onend will relaunch. Only hint if we have nothing yet, so we
-      // don't wipe out text the provider already dictated.
-      if(el&&!_voiceText)el.textContent='Listening\u2026 (say something to begin)';
-    }else if(e.error==='audio-capture'){
-      _voiceStopping=true;
-      if(el)el.textContent='No microphone was found. Check that one is connected, then try again.';
-    }
-  };
-  try{rec.start();}catch(e){}
+  }
+  _voiceStartRec();
   _voiceOverlay(`<div style="display:flex;align-items:center;gap:8px;margin-bottom:10px;"><span class="voice-pulse" style="width:11px;height:11px;border-radius:50%;background:#e05555;display:inline-block;"></span><span style="font-size:15px;font-weight:600;color:#f0f0f0;">Listening…</span></div><div style="font-size:12px;color:#999;margin-bottom:8px;line-height:1.5;">Speak your notes out loud. Tap <b>Pause</b> to fix a word, then keep going, or <b>Stop</b> when you're done.</div><div id="voice-transcript" style="min-height:90px;max-height:210px;overflow-y:auto;background:#0f0f0f;border:1px solid #2a2a2a;border-radius:10px;padding:11px;font-size:14px;color:#ddd;line-height:1.6;">${(_voiceText||'').replace(/</g,'&lt;')||'Listening…'}</div>
   <div style="display:flex;gap:8px;margin-top:12px;">
     <button onclick="_voicePause()" style="flex:1;background:#1a1a1a;border:1px solid var(--accent);color:var(--accent);border-radius:10px;padding:12px;font-size:13px;font-weight:600;cursor:pointer;font-family:inherit;"><i class="ti ti-player-pause"></i> Pause &amp; edit</button>
@@ -4379,6 +4393,21 @@ function _noteSummaryPreview(id){
   const t=_activeNotesText(id).replace(/<br>/g,' ').replace(/&lt;/g,'<').replace(/\s+/g,' ').trim();
   return t?(t.length>60?t.slice(0,60)+'…':t):'';
 }
+// Resolve the section map to SHOW/EDIT for a client under a given template. If the stored draft was
+// written under a different format, fold its non-empty sections into this format's first field so the
+// carried-over notes are visible everywhere the notes render (the preview AND the editor) rather than
+// only appearing once you tap Edit, which made people think their notes had vanished.
+function _noteSectionsFor(id,tmpl){
+  const draft=providerNoteDrafts[id];
+  if(!draft)return {};
+  const activeId=tmpl.id||activeNoteTemplate;
+  if(draft.templateId&&draft.templateId!==activeId){
+    const carried=Object.keys(draft.sections||{}).map(k=>String(draft.sections[k]||'').trim()).filter(Boolean).join('\n\n');
+    const firstId=(tmpl.sections[0]||{}).id;
+    return (carried&&firstId)?{[firstId]:carried}:{};
+  }
+  return draft.sections||{};
+}
 function renderNotes(id){
   setNav('clients');
   const c=CL[id];
@@ -4388,7 +4417,7 @@ function renderNotes(id){
   S.innerHTML=`
   
   <div style="padding:10px 16px 4px;font-size:18px;font-weight:500;color:#f0f0f0;">${_fileEsc(c.name)}</div>
-  <div style="padding:0 16px;font-size:13px;color:#999;margin-bottom:8px;">${providerNoteDrafts[id]?_fmtNoteDate(providerNoteDrafts[id].date):'New session'} · ${_fileEsc(c.treatment)}</div>
+  <div style="padding:0 16px;font-size:13px;color:#999;margin-bottom:8px;display:flex;align-items:center;flex-wrap:wrap;gap:4px;">${providerNoteDrafts[id]?_fmtNoteDate(providerNoteDrafts[id].date):'New session'} · <span style="color:#ccc;">${_fileEsc(c.treatment)}</span><button onclick="changeTreatment('${id}','notes')" aria-label="Edit treatment" style="border:none;background:none;color:var(--accent);font-size:12px;cursor:pointer;font-family:inherit;display:inline-flex;align-items:center;gap:3px;padding:2px 4px;"><i class="ti ti-pencil" aria-hidden="true" style="font-size:12px;"></i> Edit</button></div>
   <div class="tab-bar"><button class="tab active" id="tnp">Provider notes</button><button class="tab" id="tnc" onclick="_summaryFrom='${fromRoom?'room':'notes'}';nav('session-summary','${id}')">Client summary</button></div>
   <div id="ncontent">
     <div style="margin:12px 16px 0;background:#1e1633;border:1px solid #3d2d7a;border-radius:12px;padding:12px 14px;">
@@ -4404,11 +4433,11 @@ function renderNotes(id){
       </div>
     </div>
     <div style="padding:0 16px;">
-      ${tmpl.sections.map(sec=>{
-        const draft=providerNoteDrafts[id];
-        const val=(draft&&draft.sections&&draft.sections[sec.id]&&draft.sections[sec.id].trim())?draft.sections[sec.id].replace(/</g,'&lt;'):'No notes yet.';
+      ${(()=>{const secs=_noteSectionsFor(id,tmpl);return tmpl.sections.map(sec=>{
+        const raw=secs[sec.id];
+        const val=(raw&&String(raw).trim())?String(raw).replace(/</g,'&lt;'):'No notes yet.';
         return`<div style="margin-bottom:12px;"><div style="font-size:11px;font-weight:500;text-transform:uppercase;letter-spacing:.07em;color:${_fileEsc(sec.color)};margin-bottom:5px;display:flex;align-items:center;gap:5px;"><div style="width:8px;height:8px;border-radius:50%;background:${_fileEsc(sec.color)};"></div>${sec.label}</div><div style="background:#161616;border:1px solid #2a2a2a;border-radius:10px;padding:12px;font-size:13px;color:#ccc;line-height:1.7;">${val}</div></div>`;
-      }).join('')}
+      }).join('');})()}
     </div>
     <div style="padding:0 16px;margin-bottom:4px;">
       <div style="display:flex;align-items:center;justify-content:space-between;margin-bottom:8px;">
@@ -4484,20 +4513,13 @@ function renderWriteNote(id){
   // already typed under the previous format. Instead, carry that text over: fold the previous
   // format's non-empty sections into this format's first field so nothing is lost. The provider can
   // reorganize from there, and their words survive the format switch.
-  let sections;
-  if(draft.templateId&&draft.templateId!==activeNoteTemplate){
-    const carried=Object.keys(draft.sections||{}).map(k=>String(draft.sections[k]||'').trim()).filter(Boolean).join('\n\n');
-    const firstId=(t.sections[0]||{}).id;
-    sections=(carried&&firstId)?{[firstId]:carried}:{};
-  }else{
-    sections=draft.sections||{};
-  }
+  const sections=_noteSectionsFor(id,t);
   document.getElementById('tt').textContent='Write note';
   S.innerHTML=`
   <div style="padding:12px 16px 0;display:flex;align-items:center;justify-content:flex-end;">
     <div style="display:flex;gap:8px;"><span class="bdg ${t.bdg}" style="font-size:12px;">${t.name}</span><button style="border:none;background:var(--accent);border-radius:8px;padding:6px 14px;font-size:12px;color:var(--accent-ink);cursor:pointer;font-weight:500;" onclick="_saveWriteNote('${id}')">Save</button></div>
   </div>
-  <div style="padding:6px 16px 4px;font-size:12px;color:#999;">${_fileEsc(c.name)} · ${_fileEsc(c.treatment)}</div>
+  <div style="padding:6px 16px 4px;font-size:12px;color:#999;display:flex;align-items:center;flex-wrap:wrap;gap:4px;">${_fileEsc(c.name)} · <span style="color:#bbb;">${_fileEsc(c.treatment)}</span><button onclick="changeTreatment('${id}','write-note')" aria-label="Edit treatment" style="border:none;background:none;color:var(--accent);font-size:12px;cursor:pointer;font-family:inherit;display:inline-flex;align-items:center;gap:3px;padding:2px 4px;"><i class="ti ti-pencil" aria-hidden="true" style="font-size:11px;"></i> Edit</button></div>
   <div style="padding:0 16px 10px;display:flex;align-items:center;gap:8px;">
     <span style="font-size:11px;color:#9a9a9a;">Session date</span>
     <input id="wn-date" type="date" value="${dateVal}" oninput="_autosaveWriteNote('${id}')" style="background:#161616;border:1px solid #2a2a2a;color:#e0e0e0;border-radius:8px;padding:6px 10px;font-size:13px;font-family:inherit;">
@@ -5601,9 +5623,27 @@ function editSavedSummary(id,i){
     else{_esUnmatchedProducts.push(nm);}
   });
   clientRecs[id]=seeded;
+  // Provider-notes sections to edit: use whatever format this summary was saved in; if none were
+  // saved, fall back to the active note format's section labels so the provider can add them here in
+  // the same format — exactly mirroring the note-writing screen.
+  const _pn=s.providerNotes||{sections:[]};
+  let _editSecs=(_pn.sections&&_pn.sections.length)?_pn.sections.map(x=>({label:(x&&x.label)||'',text:(x&&x.text)||''})):null;
+  if(!_editSecs){const _tmpl=noteTemplates[activeNoteTemplate]||noteTemplates.soap;_editSecs=(_tmpl.sections||[]).map(sec=>({label:sec.label,text:''}));}
+  const _pnFmt=(_pn.format)||((noteTemplates[activeNoteTemplate]||noteTemplates.soap).name)||'Notes';
+  const _providerEdit=`<div style="padding:6px 16px 20px;">
+    <div style="display:flex;align-items:center;gap:7px;margin:10px 0 10px;"><span style="font-size:11px;color:#999;">Format:</span><span style="display:inline-flex;align-items:center;gap:4px;background:#0a2019;color:#4ec49a;font-size:11px;padding:3px 9px;border-radius:20px;font-weight:500;">${_fileEsc(_pnFmt)}</span></div>
+    ${_editSecs.map((sec,si)=>`<div style="margin-bottom:14px;"><div style="font-size:11px;font-weight:600;color:#888;text-transform:uppercase;letter-spacing:.06em;margin-bottom:5px;">${_fileEsc(sec.label)}</div><textarea id="es-pn-${si}" data-label="${(sec.label||'').replace(/"/g,'&quot;')}" rows="4" placeholder="Add ${_fileEsc(sec.label).toLowerCase()}…" style="width:100%;background:#111;border:1px solid #2a2a2a;border-radius:10px;padding:11px;font-size:13px;color:#ddd;line-height:1.7;font-family:inherit;box-sizing:border-box;resize:vertical;outline:none;">${String(sec.text||'').replace(/</g,'&lt;')}</textarea></div>`).join('')}
+    <div style="font-size:11px;color:#929292;line-height:1.5;margin-top:2px;">These are your private clinical notes. ${(c.name||'The client').split(' ')[0]} only sees the Client summary tab.</div>
+    <div style="display:flex;gap:8px;margin-top:14px;">
+      <button onclick="_saveEditedSummary('${id}',${i})" class="btnp" style="flex:1;border-radius:9px;padding:11px;"><i class="ti ti-check"></i> Save changes</button>
+      <button onclick="_cancelEditSummary('${id}')" style="background:none;border:1px solid #555;color:#ccc;border-radius:9px;padding:11px 16px;font-size:13px;cursor:pointer;font-family:inherit;">Cancel</button>
+    </div>
+  </div>`;
   S.innerHTML=`
   <div style="padding:12px 16px 4px;"><div style="font-size:15px;font-weight:600;color:#f0f0f0;">${c.name||''}</div><div style="font-size:12px;color:#999;">${s.treatment||'Session'} · ${s.date||''}</div></div>
-  <div style="padding:6px 16px 20px;">
+  <div class="tab-bar"><button class="tab${_esTab==='client'?'':' active'}" id="es-tab-p" onclick="switchEditSummaryTab('provider')">Provider notes</button><button class="tab${_esTab==='client'?' active':''}" id="es-tab-c" onclick="switchEditSummaryTab('client')">Client summary</button></div>
+  <div id="es-provider" style="display:${_esTab==='client'?'none':'block'};">${_providerEdit}</div>
+  <div id="es-client" style="display:${_esTab==='client'?'block':'none'};padding:6px 16px 20px;">
     <div style="font-size:11px;font-weight:600;color:#888;text-transform:uppercase;letter-spacing:.06em;margin:10px 0 6px;">Note to ${(c.name||'client').split(' ')[0]}</div>
     <textarea id="es-note" rows="7" style="width:100%;background:#111;border:1px solid #2a2a2a;border-radius:10px;padding:11px;font-size:13px;color:#ddd;line-height:1.7;font-family:inherit;box-sizing:border-box;resize:vertical;outline:none;">${(s.note||'').replace(/</g,'&lt;')}</textarea>
 
@@ -5634,6 +5674,19 @@ function editSavedSummary(id,i){
   try{renderProductRecs(id);}catch(e){}
 }
 let _esOrigRecs=null, _esUnmatchedProducts=[];
+// Edit-summary is a two-tab editor that MIRRORS the note-writing screen: a "Provider notes" tab
+// (the clinical sections, in the format they were saved) and a "Client summary" tab (the friendly
+// note + homecare + products). Same layout, same format — so editing a past session feels identical
+// to writing it the first time.
+let _esTab='provider';
+function switchEditSummaryTab(which){
+  _esTab=(which==='client')?'client':'provider';
+  const pv=document.getElementById('es-provider'),cv=document.getElementById('es-client'),tp=document.getElementById('es-tab-p'),tc=document.getElementById('es-tab-c');
+  if(pv)pv.style.display=(_esTab==='provider')?'block':'none';
+  if(cv)cv.style.display=(_esTab==='client')?'block':'none';
+  if(tp)tp.className='tab'+(_esTab==='provider'?' active':'');
+  if(tc)tc.className='tab'+(_esTab==='client'?' active':'');
+}
 function _cancelEditSummary(id){
   // restore the product picker to whatever it was before editing this summary
   if(_esOrigRecs!==null){clientRecs[id]=_esOrigRecs.slice();_esOrigRecs=null;}
@@ -5650,6 +5703,15 @@ function _saveEditedSummary(id,i,thenAction){
   const _lines=(elId)=>{const el=document.getElementById(elId);if(!el)return null;return el.value.split('\n').map(x=>x.trim()).filter(Boolean);};
   const newHomecare=_lines('es-homecare');
   if(newHomecare!==null)s.homecare=newHomecare;
+  // Provider notes: read the editable clinical sections (present when the provider-notes tab was
+  // rendered), keep the saved format, and drop any section left blank. These stay on the provider
+  // record only — they are never part of the client-facing copy.
+  if(document.getElementById('es-pn-0')){
+    const secs=[];let si=0,el;
+    while((el=document.getElementById('es-pn-'+si))){const label=el.getAttribute('data-label')||'';const text=el.value.trim();if(text)secs.push({label,text});si++;}
+    const fmt=(s.providerNotes&&s.providerNotes.format)||((noteTemplates[activeNoteTemplate]||noteTemplates.soap).name)||'Notes';
+    s.providerNotes={format:fmt,sections:secs};
+  }
   // products: come from the catalog picker (clientRecs[id] = array of product ids).
   // Build structured productDetail from the catalog, then append any names that had
   // no catalog match (so pre-existing free-text products aren't silently dropped).
@@ -13888,9 +13950,11 @@ async function _loadSquareAppts(force){
     // client's next appointment so it shows in their client app.
     if(_changed){try{_rebuildCalendarFeed();}catch(e){}try{_stampClientNextVisit();}catch(e){}}
   }catch(e){_sqApptsState='error';squareAppts=null;}
-  // Refresh the visible screen if it shows appointments (without touching nav history), but only
-  // when the data changed, so the periodic poll doesn't cause needless repaints.
-  if(_changed){try{if(_navCur&&_navCur.screen==='home')renderHome();else if(_navCur&&_navCur.screen==='calendar')renderCalendar();else if(_navCur&&_navCur.screen==='today-appts'&&typeof renderTodayAppts==='function')renderTodayAppts();}catch(e){}}
+  // Refresh the visible screen if it shows appointments (without touching nav history). A background
+  // poll only repaints when the data actually changed (avoids flicker), but a manual Refresh (force)
+  // must ALWAYS repaint — otherwise, if the refetch returns the same set, the screen that briefly
+  // emptied itself while state was 'loading' would stay stuck on "Nothing on the books today".
+  if(_changed||force){try{if(_navCur&&_navCur.screen==='home')renderHome();else if(_navCur&&_navCur.screen==='calendar')renderCalendar();else if(_navCur&&_navCur.screen==='today-appts'&&typeof renderTodayAppts==='function')renderTodayAppts();}catch(e){}}
 }
 function _apptsLive(){return _sqApptsState==='ok'&&Array.isArray(squareAppts);}
 // A real provider account — sample data removed, or signed in to the cloud. Such an account must
@@ -13902,6 +13966,12 @@ function _realApptsMerged(){
   const out=[];
   if(_apptsLive())squareAppts.forEach(a=>{if(a.at&&!isNaN(a.at))out.push(a);});
   (typeof manualAppts!=='undefined'?manualAppts:[]).forEach(a=>{let w=null;try{w=_apptWhen(a.date,a.time);}catch(e){}if(w&&!isNaN(w))out.push({id:a.id,at:w,client:a.client,tx:a.tx||'Appointment',dur:a.dur||60,ic:a.ic||'var(--accent)',clientId:a.clientId||'',source:'manual'});});
+  // Bookings confirmed from client requests live in confirmedAppts (re-seeded from bookings on boot).
+  // They show on the calendar via _allApptsUnified, so Today's/This-week's must include them too or a
+  // provider who confirmed a request would see an empty schedule here. De-dupe against manual entries
+  // by client+time so a manually-added copy of the same visit doesn't double up.
+  const seen={};out.forEach(a=>{if(a.at)seen[(a.client||'').toLowerCase().trim()+'@'+a.at.getTime()]=1;});
+  (typeof confirmedAppts!=='undefined'?confirmedAppts:[]).forEach(a=>{let w=null;try{w=_apptWhen(a.date,a.time);}catch(e){}if(w&&!isNaN(w)){const k=(a.client||'').toLowerCase().trim()+'@'+w.getTime();if(seen[k])return;seen[k]=1;out.push({at:w,client:a.client,tx:a.tx||'Appointment',dur:a.dur||60,ic:a.ic||'#4ec49a',clientId:a.clientId||'',source:'confirmed'});}});
   return out;
 }
 function _apptsThisWeek(){
@@ -13995,7 +14065,7 @@ function renderTodayAppts(){
   <div style="padding:10px 16px 4px;">
     <div id="page-heading" tabindex="-1" style="font-size:19px;font-weight:600;color:#f0f0f0;margin-bottom:2px;">Today's appointments</div>
     <div style="font-size:13px;color:#999;">${today.length} appointment${today.length===1?'':'s'} today \u00b7 stays here all day so you can go back and finish notes anytime.</div>
-    ${real?`<button onclick="_loadSquareAppts(true);renderTodayAppts()" style="margin-top:8px;background:none;border:none;color:var(--accent);font-size:12px;font-weight:600;cursor:pointer;font-family:inherit;padding:0;"><i class="ti ti-refresh" style="font-size:12px;"></i> Refresh</button>`:''}
+    ${real?`<button onclick="_loadSquareAppts(true)" style="margin-top:8px;background:none;border:none;color:var(--accent);font-size:12px;font-weight:600;cursor:pointer;font-family:inherit;padding:0;"><i class="ti ti-refresh" style="font-size:12px;"></i> Refresh</button>`:''}
   </div>
   ${!today.length?`
   <div style="margin:14px 16px;text-align:center;color:#999;font-size:13px;padding:30px 20px;background:#161616;border:1px solid #242424;border-radius:12px;">
