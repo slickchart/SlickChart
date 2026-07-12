@@ -189,6 +189,15 @@ function _urlAttr(u){return String(u||'').replace(/&/g,'&amp;').replace(/"/g,'&q
 // quote can't break out of the src="…" attribute.
 function _imgSrc(u){u=String(u||'').trim();if(!u)return'';if(!/^data:image\//i.test(u)&&!/^https?:\/\//i.test(u)&&!/^blob:/i.test(u))return'';return _urlAttr(u);}
 function _txt(s){return String(s==null?'':s).replace(/&/g,'&amp;').replace(/</g,'&lt;').replace(/>/g,'&gt;').replace(/"/g,'&quot;');}
+// A guide/form icon your provider set can be an emoji, an uploaded image (data: URL or image
+// link), or nothing at all ("no icon"). Render each correctly; empty returns '' so nothing shows.
+function _iconIsImage(icon){var s=String(icon==null?'':icon).trim();return /^data:image\//i.test(s)||/^https?:\/\/[^\s]+\.(png|jpe?g|gif|webp|svg)(\?|#|$)/i.test(s);}
+function _iconMarkup(icon,size){
+  size=size||24;var s=String(icon==null?'':icon).trim();
+  if(!s)return '';
+  if(_iconIsImage(s)){var src=_imgSrc(s);if(src)return '<img src="'+src+'" alt="" style="width:'+size+'px;height:'+size+'px;border-radius:8px;object-fit:cover;display:inline-block;vertical-align:middle;">';return '';}
+  return '<span style="font-size:'+Math.round(size*0.92)+'px;line-height:1;display:inline-block;">'+_txt(s)+'</span>';
+}
 // Day-of-month with an ordinal suffix: 1->1st, 2->2nd, 11->11th, 21->21st, etc.
 function _ordDay(d){d=parseInt(d,10);if(!d)return String(d);const t=d%100;if(t>=11&&t<=13)return d+'th';switch(d%10){case 1:return d+'st';case 2:return d+'nd';case 3:return d+'rd';default:return d+'th';}}
 // Add an ordinal suffix to the day-of-month inside an already-formatted date string so clients see
@@ -1526,7 +1535,7 @@ function renderViewGuide(){
   const filePdf=hasFile&&(/pdf/i.test(pg.fileType||'')||/\.pdf$/i.test(pg.fileName||''));
   const showFrame=urlPdf||filePdf;
   S.innerHTML=`
-  <div style="padding:20px 16px 4px;text-align:center;"><div style="font-size:40px;margin-bottom:8px;">${pg.icon||'📚'}</div><div id="page-heading" tabindex="-1" style="font-size:19px;font-weight:600;color:#1a1a1a;">${_txt(pg.title)}</div>${pg.cat?`<div style="font-size:12px;color:#786858;margin-top:2px;">${_txt(pg.cat)}</div>`:''}</div>
+  <div style="padding:20px 16px 4px;text-align:center;"><div style="font-size:40px;margin-bottom:8px;">${_iconMarkup(pg.icon,44)||'📚'}</div><div id="page-heading" tabindex="-1" style="font-size:19px;font-weight:600;color:#1a1a1a;">${_txt(pg.title)}</div>${pg.cat?`<div style="font-size:12px;color:#786858;margin-top:2px;">${_txt(pg.cat)}</div>`:''}</div>
   <div style="padding:16px;">
     ${(pg.tips&&pg.tips.length)?`<div style="background:#fff;border:1.5px solid #f0ebe4;border-radius:14px;padding:14px;margin-bottom:14px;">${pg.tips.map(t=>`<div style="display:flex;gap:9px;padding:7px 0;"><i class="ti ti-point-filled" aria-hidden="true" style="font-size:14px;color:var(--accent);flex-shrink:0;margin-top:2px;"></i><span style="font-size:13.5px;color:#3a2f28;line-height:1.55;">${_txt(t)}</span></div>`).join('')}</div>`:''}
     ${showFrame?`<div style="margin-bottom:12px;"><iframe id="guide-frame" ${urlPdf?`src="${_urlAttr(_safeUrl(pg.url))}"`:''} title="${_txt(pg.title)} preview" style="width:100%;height:66vh;border:1.5px solid #f0ebe4;border-radius:12px;background:#fff;"></iframe><div style="font-size:11px;color:#9a8d80;text-align:center;margin-top:6px;line-height:1.4;">If the preview doesn't load, use the button below to open or download it.</div></div>`:''}
@@ -1888,7 +1897,7 @@ function renderHome(){
   <div style="margin:0 16px 14px;background:#fff;border:1.5px solid #f0ebe4;border-radius:14px;overflow:hidden;">
     <div style="padding:12px 16px;display:flex;align-items:center;gap:10px;">
       <div onclick="_viewGuideId='${_jsAttr(pg.guideId)}';nav('view-guide')" role="button" aria-label="${_txt(pg.title)}" style="display:flex;align-items:center;gap:12px;flex:1;min-width:0;cursor:pointer;">
-        <div style="width:42px;height:42px;background:var(--accent-lt);border-radius:10px;display:flex;align-items:center;justify-content:center;flex-shrink:0;font-size:19px;">${pg.icon||'📚'}</div>
+        <div style="width:42px;height:42px;background:var(--accent-lt);border-radius:10px;display:flex;align-items:center;justify-content:center;flex-shrink:0;font-size:19px;">${_iconMarkup(pg.icon,22)||'📚'}</div>
         <div style="flex:1;min-width:0;">
           <div style="font-size:13px;font-weight:600;color:#1a1a1a;">${_txt(pg.title)}</div>
           <div style="font-size:12px;color:#786858;">${_txt(client.providerFirst)} shared this with you</div>
@@ -3593,7 +3602,7 @@ function renderLatestSummary(){
     ${s.guides.map((g,gi)=>`
     <div style="padding:12px 16px;border-bottom:1px solid #f0ebe4;">
       <button onclick="_toggleSummaryGuide(${gi})" style="width:100%;display:flex;align-items:center;gap:10px;background:none;border:none;padding:0;cursor:pointer;font-family:inherit;text-align:left;">
-        <span aria-hidden="true" style="font-size:22px;flex-shrink:0;">${_txt(g.icon||'📄')}</span>
+        <span aria-hidden="true" style="font-size:22px;flex-shrink:0;display:inline-flex;align-items:center;">${_iconMarkup(g.icon,24)||'📄'}</span>
         <span style="flex:1;min-width:0;font-size:13px;font-weight:600;color:#1a1a1a;">${_txt(g.title)}</span>
         ${(g.tips&&g.tips.length)?`<i class="ti ti-chevron-down" id="sg-chev-${gi}" aria-hidden="true" style="font-size:16px;color:#786858;flex-shrink:0;transition:transform .15s;"></i>`:''}
       </button>
@@ -3972,7 +3981,7 @@ function renderLibrary(){
     <div style="margin:0 16px 10px;background:#fff;border:1.5px solid #f0ebe4;border-radius:14px;overflow:hidden;">
       <div style="padding:12px 16px;display:flex;align-items:center;gap:10px;">
         <div onclick="_viewGuideId='${_jsAttr(pg.guideId)}';nav('view-guide')" role="button" aria-label="${_txt(pg.title)}" style="display:flex;align-items:center;gap:12px;flex:1;min-width:0;cursor:pointer;">
-          <div style="width:42px;height:42px;background:var(--accent-lt);border-radius:10px;display:flex;align-items:center;justify-content:center;flex-shrink:0;font-size:19px;">${pg.icon||'📄'}</div>
+          <div style="width:42px;height:42px;background:var(--accent-lt);border-radius:10px;display:flex;align-items:center;justify-content:center;flex-shrink:0;font-size:19px;">${_iconMarkup(pg.icon,22)||'📄'}</div>
           <div style="flex:1;min-width:0;"><div style="font-size:13px;font-weight:600;color:#1a1a1a;">${_txt(pg.title)}</div><div style="font-size:12px;color:#786858;">${pg.cat?_txt(pg.cat):'Shared by '+_txt(client.providerFirst)}</div></div>
           <i class="ti ti-chevron-right" aria-hidden="true" style="font-size:16px;color:#82715f;flex-shrink:0;"></i>
         </div>
