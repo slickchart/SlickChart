@@ -1496,20 +1496,57 @@ function navBack(){
   if(_navCur==='notifications'||_navCur==='notif-settings'){_navStack.length=0;nav('home');return;}
   if(_navStack.length){const prev=_navStack.pop();_navBacking=true;nav(prev);_navBacking=false;}
 }
+// ── Resource library state ──────────────────────────────────────────────────────────────────
+// Guides/courses can be CLEARED from Home (they stay saved in the library) or DELETED from the
+// library entirely so they don't pile up forever. Kept on-device; keys 'g:<id>' / 'c:<id>'.
+function _resSetLoad(k){try{return new Set(JSON.parse(localStorage.getItem(k)||'[]'));}catch(e){return new Set();}}
+let _homeClearedRes=_resSetLoad('sc_home_cleared_res');
+let _deletedRes=_resSetLoad('sc_deleted_res');
+function _resSetSave(k,set){try{localStorage.setItem(k,JSON.stringify(Array.from(set)));}catch(e){}}
+function _resGK(id){return 'g:'+id;}
+function _resCK(id){return 'c:'+id;}
+function _homeGuides(){return (activeProvider().pendingGuides||[]).filter(pg=>pg&&!_deletedRes.has(_resGK(pg.guideId))&&!_homeClearedRes.has(_resGK(pg.guideId)));}
+function _homeCourses(){return (activeProvider().pendingCourses||[]).filter(co=>co&&!_deletedRes.has(_resCK(co.id))&&!_homeClearedRes.has(_resCK(co.id)));}
+function _libGuides(){return (activeProvider().pendingGuides||[]).filter(pg=>pg&&!_deletedRes.has(_resGK(pg.guideId)));}
+function _libCourses(){return (activeProvider().pendingCourses||[]).filter(co=>co&&!_deletedRes.has(_resCK(co.id)));}
+function clearGuideFromHome(id,ev){if(ev&&ev.stopPropagation)ev.stopPropagation();_homeClearedRes.add(_resGK(id));_resSetSave('sc_home_cleared_res',_homeClearedRes);try{if(typeof showToast==='function')showToast('Moved to your library');}catch(e){}renderHome();}
+function clearCourseFromHome(id,ev){if(ev&&ev.stopPropagation)ev.stopPropagation();_homeClearedRes.add(_resCK(id));_resSetSave('sc_home_cleared_res',_homeClearedRes);try{if(typeof showToast==='function')showToast('Moved to your library');}catch(e){}renderHome();}
+function deleteGuideFromLib(id,ev){if(ev&&ev.stopPropagation)ev.stopPropagation();if(!confirm('Delete this from your library? You can always ask your provider to resend it.'))return;_deletedRes.add(_resGK(id));_resSetSave('sc_deleted_res',_deletedRes);renderLibrary();}
+function deleteCourseFromLib(id,ev){if(ev&&ev.stopPropagation)ev.stopPropagation();if(!confirm('Delete this from your library? You can always ask your provider to resend it.'))return;_deletedRes.add(_resCK(id));_resSetSave('sc_deleted_res',_deletedRes);renderLibrary();}
 // ── Viewing a real guide/resource a provider shared ──
 let _viewGuideId='';
 function renderViewGuide(){
   const pg=(activeProvider().pendingGuides||[]).find(g=>g.guideId===_viewGuideId);
   if(!pg){ nav('home'); return; }
   document.getElementById('tt').textContent=pg.title;
+  // A linked or uploaded PDF previews right in the app (iframe) so the client doesn't have to
+  // download it just to read it — with View (the preview) AND Download/Open, either works.
+  const hasFile=!!(pg.fileData||pg.hasFile);
+  const urlPdf=!!(pg.url&&(/\.pdf($|\?|#)/i.test(pg.url)||String(pg.cat||'').toUpperCase()==='PDF'));
+  const filePdf=hasFile&&(/pdf/i.test(pg.fileType||'')||/\.pdf$/i.test(pg.fileName||''));
+  const showFrame=urlPdf||filePdf;
   S.innerHTML=`
-  <div style="padding:20px 16px 4px;text-align:center;"><div style="font-size:40px;margin-bottom:8px;">${pg.icon||'\ud83d\udcda'}</div><div id="page-heading" tabindex="-1" style="font-size:19px;font-weight:600;color:#1a1a1a;">${_txt(pg.title)}</div>${pg.cat?`<div style="font-size:12px;color:#786858;margin-top:2px;">${_txt(pg.cat)}</div>`:''}</div>
+  <div style="padding:20px 16px 4px;text-align:center;"><div style="font-size:40px;margin-bottom:8px;">${pg.icon||'📚'}</div><div id="page-heading" tabindex="-1" style="font-size:19px;font-weight:600;color:#1a1a1a;">${_txt(pg.title)}</div>${pg.cat?`<div style="font-size:12px;color:#786858;margin-top:2px;">${_txt(pg.cat)}</div>`:''}</div>
   <div style="padding:16px;">
     ${(pg.tips&&pg.tips.length)?`<div style="background:#fff;border:1.5px solid #f0ebe4;border-radius:14px;padding:14px;margin-bottom:14px;">${pg.tips.map(t=>`<div style="display:flex;gap:9px;padding:7px 0;"><i class="ti ti-point-filled" aria-hidden="true" style="font-size:14px;color:var(--accent);flex-shrink:0;margin-top:2px;"></i><span style="font-size:13.5px;color:#3a2f28;line-height:1.55;">${_txt(t)}</span></div>`).join('')}</div>`:''}
-    ${(pg.fileData||pg.hasFile)?`<button onclick="_downloadGuideFile('${_jsAttr(pg.guideId)}',this)" class="btnp" style="display:flex;width:100%;box-sizing:border-box;border-radius:12px;padding:13px;justify-content:center;align-items:center;gap:7px;${(pg.tips&&pg.tips.length)?'margin-top:0;':''}"><i class="ti ti-download"></i> Download ${_txt(pg.fileName||'file')}</button>`:''}
-    ${pg.url?`<a href="${_urlAttr(_safeUrl(pg.url))}" target="_blank" rel="noopener" class="btnp" style="display:flex;width:100%;box-sizing:border-box;border-radius:12px;padding:13px;text-decoration:none;justify-content:center;${(pg.fileData||pg.hasFile)?'margin-top:10px;':''}"><i class="ti ti-external-link"></i> Open full guide</a>`:''}
-    ${(!pg.tips||!pg.tips.length)&&!pg.url&&!pg.fileData&&!pg.hasFile?`<div style="text-align:center;color:#786858;font-size:13px;padding:20px;">${_txt(client.providerFirst)} shared this with you.</div>`:''}
+    ${showFrame?`<div style="margin-bottom:12px;"><iframe id="guide-frame" ${urlPdf?`src="${_urlAttr(_safeUrl(pg.url))}"`:''} title="${_txt(pg.title)} preview" style="width:100%;height:66vh;border:1.5px solid #f0ebe4;border-radius:12px;background:#fff;"></iframe><div style="font-size:11px;color:#9a8d80;text-align:center;margin-top:6px;line-height:1.4;">If the preview doesn't load, use the button below to open or download it.</div></div>`:''}
+    ${hasFile?`<button onclick="_downloadGuideFile('${_jsAttr(pg.guideId)}',this)" class="btnp" style="display:flex;width:100%;box-sizing:border-box;border-radius:12px;padding:13px;justify-content:center;align-items:center;gap:7px;"><i class="ti ti-download"></i> Download ${_txt(pg.fileName||'file')}</button>`:''}
+    ${pg.url?`<a href="${_urlAttr(_safeUrl(pg.url))}" target="_blank" rel="noopener" class="${showFrame||hasFile?'btng':'btnp'}" style="display:flex;width:100%;box-sizing:border-box;border-radius:12px;padding:13px;text-decoration:none;justify-content:center;align-items:center;gap:7px;${hasFile?'margin-top:10px;':''}"><i class="ti ti-external-link"></i> ${showFrame?'Open in browser':'Open full guide'}</a>`:''}
+    ${(!pg.tips||!pg.tips.length)&&!pg.url&&!hasFile?`<div style="text-align:center;color:#786858;font-size:13px;padding:20px;">${_txt(client.providerFirst)} shared this with you.</div>`:''}
   </div>`;
+  if(filePdf){try{_previewGuideFileInFrame(pg.guideId);}catch(e){}}
+}
+// Load an uploaded PDF into the in-app preview iframe: inline bytes if we still have them, else fetch
+// from the server with this client's link token, then show it as a blob so the preview renders.
+function _previewGuideFileInFrame(guideId){
+  const pg=(activeProvider().pendingGuides||[]).find(g=>g.guideId===guideId);if(!pg)return;
+  const setSrc=(dataUrl)=>{const fr=document.getElementById('guide-frame');if(!fr||!dataUrl)return;try{const parts=String(dataUrl).split(',');const mime=((parts[0]||'').match(/data:([^;]+)/)||[])[1]||'application/pdf';const bin=atob(parts[1]||'');const arr=new Uint8Array(bin.length);for(let i=0;i<bin.length;i++)arr[i]=bin.charCodeAt(i);fr.src=URL.createObjectURL(new Blob([arr],{type:mime}));}catch(e){fr.src=dataUrl;}};
+  if(pg.fileData){setSrc(pg.fileData);return;}
+  if(!pg.hasFile||!client._real||!client._token)return;
+  fetch('/api/guide-file?id='+encodeURIComponent(guideId)+'&t='+encodeURIComponent(client._token))
+    .then(function(r){return r.ok?r.json():null;})
+    .then(function(j){if(j&&j.file&&j.file.data)setSrc(j.file.data);})
+    .catch(function(){});
 }
 // Download the provider's uploaded guide file. Convert the stored data URL to a Blob first, that
 // downloads far more reliably (especially on mobile Safari) than an anchor pointed at a data URL.
@@ -1846,27 +1883,34 @@ function renderHome(){
   </div>`;
   })()}
 
-  <!-- Pending guides from provider -->
-  ${(activeProvider().pendingGuides||[]).map(pg=>`
-  <div style="margin:0 16px 14px;background:#fff;border:1.5px solid #f0ebe4;border-radius:14px;overflow:hidden;cursor:pointer;" onclick="_viewGuideId='${pg.guideId}';nav('view-guide')" role="button" aria-label="${_txt(pg.title)}">
-    <div style="padding:12px 16px;display:flex;align-items:center;gap:12px;">
-      <div style="width:42px;height:42px;background:var(--accent-lt);border-radius:10px;display:flex;align-items:center;justify-content:center;flex-shrink:0;font-size:19px;">${pg.icon||'\ud83d\udcda'}</div>
-      <div style="flex:1;min-width:0;">
-        <div style="font-size:13px;font-weight:600;color:#1a1a1a;">${_txt(pg.title)}</div>
-        <div style="font-size:12px;color:#786858;">${_txt(client.providerFirst)} shared this with you</div>
+  <!-- Pending guides from provider (cleared ones live on in the library) -->
+  ${_homeGuides().map(pg=>`
+  <div style="margin:0 16px 14px;background:#fff;border:1.5px solid #f0ebe4;border-radius:14px;overflow:hidden;">
+    <div style="padding:12px 16px;display:flex;align-items:center;gap:10px;">
+      <div onclick="_viewGuideId='${_jsAttr(pg.guideId)}';nav('view-guide')" role="button" aria-label="${_txt(pg.title)}" style="display:flex;align-items:center;gap:12px;flex:1;min-width:0;cursor:pointer;">
+        <div style="width:42px;height:42px;background:var(--accent-lt);border-radius:10px;display:flex;align-items:center;justify-content:center;flex-shrink:0;font-size:19px;">${pg.icon||'📚'}</div>
+        <div style="flex:1;min-width:0;">
+          <div style="font-size:13px;font-weight:600;color:#1a1a1a;">${_txt(pg.title)}</div>
+          <div style="font-size:12px;color:#786858;">${_txt(client.providerFirst)} shared this with you</div>
+        </div>
+        <span style="font-size:11px;font-weight:700;color:var(--accent);background:var(--accent-lt);padding:4px 10px;border-radius:20px;flex-shrink:0;">View</span>
       </div>
-      <span style="font-size:11px;font-weight:700;color:var(--accent);background:var(--accent-lt);padding:4px 10px;border-radius:20px;flex-shrink:0;">View</span>
+      <button onclick="clearGuideFromHome('${_jsAttr(pg.guideId)}',event)" aria-label="Clear from home, keeps it in your library" title="Clear from home" style="flex-shrink:0;background:none;border:none;color:#b8a898;cursor:pointer;padding:4px;line-height:0;"><i class="ti ti-x" style="font-size:15px;"></i></button>
     </div>
   </div>`).join('')}
+  ${_homeGuides().length?`<div style="margin:-4px 16px 14px;text-align:center;"><button onclick="nav('library')" style="background:none;border:none;color:var(--accent);font-size:12px;font-weight:600;cursor:pointer;font-family:inherit;padding:4px;"><i class="ti ti-books" style="font-size:12px;"></i> All guides &amp; resources</button></div>`:''}
 
-  <!-- Courses the provider assigned -->
-  ${(activeProvider().pendingCourses||[]).length?`<div class="sh"><h2>Your courses</h2></div>`+(activeProvider().pendingCourses||[]).map(co=>{const done=_courseDoneCount(co);const total=(co.lessons||[]).length;const pct=total?Math.round(done/total*100):0;return `
-  <div style="margin:0 16px 14px;background:#fff;border:1.5px solid #f0ebe4;border-radius:14px;overflow:hidden;cursor:pointer;" onclick="_viewCourseId='${_jsAttr(co.id)}';nav('view-course')" role="button" aria-label="${_txt(co.title)}">
+  <!-- Courses the provider assigned (cleared ones live on in the library) -->
+  ${_homeCourses().length?`<div class="sh"><h2>Your courses</h2></div>`+_homeCourses().map(co=>{const done=_courseDoneCount(co);const total=(co.lessons||[]).length;const pct=total?Math.round(done/total*100):0;return `
+  <div style="margin:0 16px 14px;background:#fff;border:1.5px solid #f0ebe4;border-radius:14px;overflow:hidden;position:relative;">
+    <button onclick="clearCourseFromHome('${_jsAttr(co.id)}',event)" aria-label="Clear from home, keeps it in your library" title="Clear from home" style="position:absolute;top:8px;right:8px;z-index:2;width:26px;height:26px;border-radius:50%;background:rgba(0,0,0,.35);border:none;color:#fff;cursor:pointer;display:flex;align-items:center;justify-content:center;"><i class="ti ti-x" style="font-size:14px;"></i></button>
+    <div onclick="_viewCourseId='${_jsAttr(co.id)}';nav('view-course')" role="button" aria-label="${_txt(co.title)}" style="cursor:pointer;">
     ${co.cover?`<div style="height:110px;overflow:hidden;"><img src="${_imgSrc(co.cover)}" alt="" style="width:100%;height:100%;object-fit:cover;display:block;"></div>`:`<div style="height:70px;background:linear-gradient(135deg,var(--accent-lt),var(--accent-lt2));display:flex;align-items:center;justify-content:center;"><i class="ti ti-book" style="font-size:28px;color:var(--accent);"></i></div>`}
     <div style="padding:12px 16px;">
       <div style="font-size:14px;font-weight:600;color:#1a1a1a;margin-bottom:2px;">${_txt(co.title)}</div>
       <div style="font-size:12px;color:#786858;margin-bottom:8px;">${total} lesson${total===1?'':'s'}${pct?' · '+pct+'% complete':''}</div>
       <div style="height:5px;border-radius:3px;background:#f0ebe4;overflow:hidden;"><div style="height:100%;width:${pct}%;background:var(--accent);border-radius:3px;"></div></div>
+    </div>
     </div>
   </div>`;}).join(''):''}
 
@@ -3912,27 +3956,33 @@ function exportMyRecords(){
 function renderLibrary(){
   setNav('home');
   document.getElementById('tt').textContent='Guides & resources';
-  const guides=activeProvider().pendingGuides||[];
-  const courses=activeProvider().pendingCourses||[];
+  const guides=_libGuides();
+  const courses=_libCourses();
   const empty=(!guides.length&&!courses.length);
   S.innerHTML=`
   <div style="padding:14px 16px 4px;"><div id="page-heading" tabindex="-1" style="font-size:20px;font-weight:600;color:#1a1a1a;">Guides &amp; resources</div>
   <div style="font-size:13px;color:#786858;margin-top:3px;line-height:1.5;">Everything ${_txt(client.providerFirst)} has shared with you, saved here for whenever you need it.</div></div>
   ${empty?`<div style="margin:16px;text-align:center;color:#786858;font-size:13px;padding:44px 22px;background:#fff;border:1.5px solid #f0ebe4;border-radius:14px;"><i class="ti ti-books" aria-hidden="true" style="font-size:30px;color:var(--accent);"></i><div style="margin-top:10px;font-weight:600;color:#1a1a1a;">Nothing here yet</div><div style="margin-top:4px;line-height:1.5;">When ${_txt(client.providerFirst)} sends you a guide, aftercare, or a course, it will be saved here.</div></div>`:''}
   ${guides.length?`<div class="sh"><h2>Guides &amp; aftercare</h2></div>`+guides.map(pg=>`
-    <div style="margin:0 16px 10px;background:#fff;border:1.5px solid #f0ebe4;border-radius:14px;overflow:hidden;cursor:pointer;" onclick="_viewGuideId='${_jsAttr(pg.guideId)}';nav('view-guide')" role="button" aria-label="${_txt(pg.title)}">
-      <div style="padding:12px 16px;display:flex;align-items:center;gap:12px;">
-        <div style="width:42px;height:42px;background:var(--accent-lt);border-radius:10px;display:flex;align-items:center;justify-content:center;flex-shrink:0;font-size:19px;">${pg.icon||'📄'}</div>
-        <div style="flex:1;min-width:0;"><div style="font-size:13px;font-weight:600;color:#1a1a1a;">${_txt(pg.title)}</div><div style="font-size:12px;color:#786858;">${pg.cat?_txt(pg.cat):'Shared by '+_txt(client.providerFirst)}</div></div>
-        <i class="ti ti-chevron-right" aria-hidden="true" style="font-size:16px;color:#82715f;flex-shrink:0;"></i>
+    <div style="margin:0 16px 10px;background:#fff;border:1.5px solid #f0ebe4;border-radius:14px;overflow:hidden;">
+      <div style="padding:12px 16px;display:flex;align-items:center;gap:10px;">
+        <div onclick="_viewGuideId='${_jsAttr(pg.guideId)}';nav('view-guide')" role="button" aria-label="${_txt(pg.title)}" style="display:flex;align-items:center;gap:12px;flex:1;min-width:0;cursor:pointer;">
+          <div style="width:42px;height:42px;background:var(--accent-lt);border-radius:10px;display:flex;align-items:center;justify-content:center;flex-shrink:0;font-size:19px;">${pg.icon||'📄'}</div>
+          <div style="flex:1;min-width:0;"><div style="font-size:13px;font-weight:600;color:#1a1a1a;">${_txt(pg.title)}</div><div style="font-size:12px;color:#786858;">${pg.cat?_txt(pg.cat):'Shared by '+_txt(client.providerFirst)}</div></div>
+          <i class="ti ti-chevron-right" aria-hidden="true" style="font-size:16px;color:#82715f;flex-shrink:0;"></i>
+        </div>
+        <button onclick="deleteGuideFromLib('${_jsAttr(pg.guideId)}',event)" aria-label="Delete from library" title="Delete" style="flex-shrink:0;background:none;border:none;color:#c9a99a;cursor:pointer;padding:4px;line-height:0;"><i class="ti ti-trash" style="font-size:15px;"></i></button>
       </div>
     </div>`).join(''):''}
   ${courses.length?`<div class="sh"><h2>Your courses</h2></div>`+courses.map(co=>{const done=_courseDoneCount(co);const totalL=(co.lessons||[]).length;const pct=totalL?Math.round(done/totalL*100):0;return `
-    <div style="margin:0 16px 10px;background:#fff;border:1.5px solid #f0ebe4;border-radius:14px;overflow:hidden;cursor:pointer;" onclick="_viewCourseId='${_jsAttr(co.id)}';nav('view-course')" role="button" aria-label="${_txt(co.title)}">
-      <div style="padding:12px 16px;">
-        <div style="font-size:14px;font-weight:600;color:#1a1a1a;margin-bottom:2px;">${_txt(co.title)}</div>
-        <div style="font-size:12px;color:#786858;margin-bottom:8px;">${totalL} lesson${totalL===1?'':'s'}${pct?' · '+pct+'% complete':''}</div>
-        <div style="height:5px;border-radius:3px;background:#f0ebe4;overflow:hidden;"><div style="height:100%;width:${pct}%;background:var(--accent);border-radius:3px;"></div></div>
+    <div style="margin:0 16px 10px;background:#fff;border:1.5px solid #f0ebe4;border-radius:14px;overflow:hidden;">
+      <div style="padding:12px 16px;display:flex;align-items:flex-start;gap:10px;">
+        <div onclick="_viewCourseId='${_jsAttr(co.id)}';nav('view-course')" role="button" aria-label="${_txt(co.title)}" style="flex:1;min-width:0;cursor:pointer;">
+          <div style="font-size:14px;font-weight:600;color:#1a1a1a;margin-bottom:2px;">${_txt(co.title)}</div>
+          <div style="font-size:12px;color:#786858;margin-bottom:8px;">${totalL} lesson${totalL===1?'':'s'}${pct?' · '+pct+'% complete':''}</div>
+          <div style="height:5px;border-radius:3px;background:#f0ebe4;overflow:hidden;"><div style="height:100%;width:${pct}%;background:var(--accent);border-radius:3px;"></div></div>
+        </div>
+        <button onclick="deleteCourseFromLib('${_jsAttr(co.id)}',event)" aria-label="Delete from library" title="Delete" style="flex-shrink:0;background:none;border:none;color:#c9a99a;cursor:pointer;padding:4px;line-height:0;"><i class="ti ti-trash" style="font-size:15px;"></i></button>
       </div>
     </div>`;}).join(''):''}
   <div style="height:20px;"></div>`;

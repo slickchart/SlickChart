@@ -8782,7 +8782,16 @@ function _withPhotoRelease(formIds){
 }
 function _assignFormsToClient(c,formIds){
   if(!Array.isArray(c.pendingForms))c.pendingForms=[];
-  (formIds||[]).forEach(fid=>{ if(formTmpls[fid]&&!c.pendingForms.some(pf=>pf.formId===fid))c.pendingForms.push({formId:fid,assignedAt:Date.now()}); });
+  (formIds||[]).forEach(fid=>{
+    if(!formTmpls[fid])return;
+    // Re-sending a form must always give it a FRESH assignedAt. The client tracks "done" forms by
+    // (formId + assignedAt); if a re-send kept the old instance (or didn't bump it), a client who
+    // already signed it today would keep it filtered out and never see the re-sent copy. Bumping the
+    // instance on every send is what makes "send it again" actually reach them again.
+    const ex=c.pendingForms.find(pf=>pf&&pf.formId===fid);
+    if(ex){ex.assignedAt=Date.now();}
+    else{c.pendingForms.push({formId:fid,assignedAt:Date.now()});}
+  });
 }
 // Deliver guides (full guide objects OR ids) to a real client by pushing them onto pendingGuides,
 // which is what rides to their app in the client-data blob. Used so a guide ATTACHED to a form
@@ -8847,6 +8856,15 @@ function inviteClientToApp(id){
 // Generic real share sheet, same working mechanism (real SMS/email/copy) used
 // by the app invite, now reusable for forms, bundles, anything else that needs
 // to point someone at their real personal link.
+// Confirm a "send to app" from the share sheet: the forms/guides/etc. were already assigned before
+// the sheet opened, so this just pushes an immediate sync for THIS client and gives the provider a
+// clear confirmation toast instead of the sheet closing to a blank screen with no feedback.
+function _confirmSentToApp(id){
+  const c=CL[id];if(!c)return;
+  try{if(typeof _scheduleSpecificClientSync==='function')_scheduleSpecificClientSync(id);else if(typeof _scheduleClientSync==='function')_scheduleClientSync();}catch(e){}
+  try{_markInvited(id);}catch(e){}
+  if(typeof proToast==='function')proToast('Sent to '+((c.name||'client').split(' ')[0])+'’s app ✓');
+}
 function _shareClientLinkSheet(id,opts){
   const c=CL[id];if(!c)return;
   opts=opts||{};
@@ -8861,6 +8879,8 @@ function _shareClientLinkSheet(id,opts){
   ov.innerHTML=`<div style="background:#161616;border:1px solid #2a2a2a;width:100%;border-radius:16px;padding:18px;">
     <div style="display:flex;align-items:center;gap:10px;margin-bottom:12px;"><div style="width:38px;height:38px;border-radius:9px;background:${opts.iconBg||'#1e1633'};display:flex;align-items:center;justify-content:center;flex-shrink:0;"><i class="ti ${opts.icon||'ti-link'}" style="font-size:18px;color:${opts.iconColor||'#a891ec'};"></i></div><div style="flex:1;min-width:0;"><div style="font-size:15px;font-weight:600;color:#f0f0f0;">${opts.title||('Send to '+first)}</div><div style="font-size:12px;color:#999;">Opens in any browser \u00b7 installable on their phone</div></div><button onclick="this.closest('#invite-sheet').remove()" aria-label="Close" style="border:none;background:none;font-size:20px;color:#888;cursor:pointer;line-height:1;">\u2715</button></div>
     <div style="background:#111;border:1px solid #2a2a2a;border-radius:10px;padding:11px 12px;margin-bottom:12px;font-size:12.5px;color:#bbb;line-height:1.55;">${msg.replace(/</g,'&lt;')}</div>
+    ${c._token?`<button onclick="_confirmSentToApp('${id}');this.closest('#invite-sheet').remove();" style="width:100%;border-radius:9px;padding:12px;margin-bottom:8px;display:flex;align-items:center;justify-content:center;gap:7px;background:#0a2019;border:1px solid #1a4a30;color:#4ec49a;font-size:13px;font-weight:600;cursor:pointer;font-family:inherit;"><i class="ti ti-device-mobile-check"></i> Send to their app now</button>
+    <div style="font-size:11px;color:#7a7a7a;text-align:center;margin-bottom:10px;line-height:1.4;">It syncs straight to their app, no link needed. Or share a link below.</div>`:''}
     <div style="display:grid;grid-template-columns:1fr 1fr;gap:8px;margin-bottom:8px;">
       <button onclick="_copyText('${link}',this);_markInvited('${id}')" class="btnp" style="border-radius:9px;padding:11px;"><i class="ti ti-copy"></i> Copy link</button>
       <button onclick="location.href='sms:?&body=${enc}';_markInvited('${id}');this.closest('#invite-sheet').remove();" class="btng" style="border-radius:9px;padding:11px;"><i class="ti ti-message"></i> Text it</button>
@@ -13134,24 +13154,24 @@ function renderMore(){
   ${(()=>{
     const isHairBarberOnly=(selectedProfessions.includes('hair')||selectedProfessions.includes('barber'))&&!selectedProfessions.includes('esty');
     const items=[
-      ['ti-building-warehouse','#1e1633','#a891ec','Provider tools','Services, shop, forms, docs, inventory & more','pro',0],
+      ['ti-building-warehouse','#1e1633','#a891ec','Provider Tools','Services, shop, forms, docs, inventory & more','pro',0],
       ['ti-help-circle','#0d1e33','#5ba3e8','Help','Search how-tos & troubleshooting','help',0],
       ['ti-heart-handshake','#0a2019','#4ec49a','Partners','Trusted referral network','partners',0],
     ];
     return items.map(([icon,bg,ic,name,desc,screen,badge])=>`<div class="card" onclick="nav('${screen}')"><div class="row"><div style="width:44px;height:44px;border-radius:10px;background:${bg};display:flex;align-items:center;justify-content:center;flex-shrink:0;"><i class="ti ${icon}" style="font-size:20px;color:${ic};"></i></div><div style="flex:1;"><div style="font-size:14px;font-weight:500;color:#e0e0e0;">${name}</div><div style="font-size:12px;color:${badge?'var(--accent)':'#999'};">${desc}</div></div>${badge?`<span style="background:var(--accent);color:var(--accent-ink);font-size:12px;font-weight:700;min-width:20px;height:20px;border-radius:10px;display:flex;align-items:center;justify-content:center;padding:0 6px;flex-shrink:0;">${badge}</span>`:`<i aria-hidden="true" class="ti ti-chevron-right" style="font-size:16px;color:#888;flex-shrink:0;"></i>`}</div></div>`).join('');
   })()}
-  <div class="sh"><h2>Beta program</h2></div>
+  <div class="sh"><h2>Beta Program</h2></div>
   <div style="background:#1a1a1a;border:1px solid #2a2a2a;border-radius:12px;margin:0 16px 20px;overflow:hidden;">
-    <div onclick="nav('whats-new')" style="display:flex;align-items:center;gap:11px;padding:13px 14px;border-bottom:1px solid #222;cursor:pointer;"><div style="width:38px;height:38px;border-radius:10px;background:#0a2019;display:flex;align-items:center;justify-content:center;flex-shrink:0;position:relative;"><i class="ti ti-sparkles" style="font-size:18px;color:#4ec49a;"></i>${window._newsUnread?'<span style="position:absolute;top:-3px;right:-3px;width:10px;height:10px;background:#e87070;border-radius:50%;border:2px solid #1a1a1a;"></span>':''}</div><div style="flex:1;"><div style="font-size:14px;font-weight:500;color:#e0e0e0;">What’s new</div><div style="font-size:12px;color:${window._newsUnread?'var(--accent)':'#999'};">${window._newsUnread?'New updates':'Latest updates & changes'}</div></div><i class="ti ti-chevron-right" style="font-size:16px;color:#888;"></i></div>
+    <div onclick="nav('whats-new')" style="display:flex;align-items:center;gap:11px;padding:13px 14px;border-bottom:1px solid #222;cursor:pointer;"><div style="width:38px;height:38px;border-radius:10px;background:#0a2019;display:flex;align-items:center;justify-content:center;flex-shrink:0;position:relative;"><i class="ti ti-sparkles" style="font-size:18px;color:#4ec49a;"></i>${window._newsUnread?'<span style="position:absolute;top:-3px;right:-3px;width:10px;height:10px;background:#e87070;border-radius:50%;border:2px solid #1a1a1a;"></span>':''}</div><div style="flex:1;"><div style="font-size:14px;font-weight:500;color:#e0e0e0;">What’s New</div><div style="font-size:12px;color:${window._newsUnread?'var(--accent)':'#999'};">${window._newsUnread?'New updates':'Latest updates & changes'}</div></div><i class="ti ti-chevron-right" style="font-size:16px;color:#888;"></i></div>
     <div onclick="openBetaFeedback()" style="display:flex;align-items:center;gap:11px;padding:13px 14px;border-bottom:1px solid #222;cursor:pointer;">
       <div style="width:38px;height:38px;border-radius:10px;background:var(--accent-tint);display:flex;align-items:center;justify-content:center;flex-shrink:0;"><i class="ti ti-message-2" style="font-size:18px;color:var(--accent);"></i></div>
-      <div style="flex:1;"><div style="font-size:14px;font-weight:500;color:#e0e0e0;">Share feedback</div><div style="font-size:12px;color:#999;">Tell us what to build next</div></div>
+      <div style="flex:1;"><div style="font-size:14px;font-weight:500;color:#e0e0e0;">Share Feedback</div><div style="font-size:12px;color:#999;">Tell us what to build next</div></div>
       <i class="ti ti-chevron-right" style="font-size:16px;color:#888;"></i>
     </div>
-    ${window._newsCanPost?`<div onclick="nav('feedback-inbox')" style="display:flex;align-items:center;gap:11px;padding:13px 14px;border-bottom:1px solid #222;cursor:pointer;"><div style="width:38px;height:38px;border-radius:10px;background:#1e1633;display:flex;align-items:center;justify-content:center;flex-shrink:0;"><i class="ti ti-inbox" style="font-size:18px;color:#a891ec;"></i></div><div style="flex:1;"><div style="font-size:14px;font-weight:500;color:#e0e0e0;">Feedback inbox</div><div style="font-size:12px;color:#999;">Read what your testers submitted</div></div><i class="ti ti-chevron-right" style="font-size:16px;color:#888;"></i></div>`:''}${window._newsCanPost?`<div onclick="nav('beta-stats')" style="display:flex;align-items:center;gap:11px;padding:13px 14px;border-bottom:1px solid #222;cursor:pointer;"><div style="width:38px;height:38px;border-radius:10px;background:#0a2019;display:flex;align-items:center;justify-content:center;flex-shrink:0;"><i class="ti ti-chart-dots" style="font-size:18px;color:#4ec49a;"></i></div><div style="flex:1;"><div style="font-size:14px;font-weight:500;color:#e0e0e0;">Beta stats</div><div style="font-size:12px;color:#999;">Square adoption &amp; growth</div></div><i class="ti ti-chevron-right" style="font-size:16px;color:#888;"></i></div>`:''}
+    ${window._newsCanPost?`<div onclick="nav('feedback-inbox')" style="display:flex;align-items:center;gap:11px;padding:13px 14px;border-bottom:1px solid #222;cursor:pointer;"><div style="width:38px;height:38px;border-radius:10px;background:#1e1633;display:flex;align-items:center;justify-content:center;flex-shrink:0;"><i class="ti ti-inbox" style="font-size:18px;color:#a891ec;"></i></div><div style="flex:1;"><div style="font-size:14px;font-weight:500;color:#e0e0e0;">Feedback Inbox</div><div style="font-size:12px;color:#999;">Read what your testers submitted</div></div><i class="ti ti-chevron-right" style="font-size:16px;color:#888;"></i></div>`:''}${window._newsCanPost?`<div onclick="nav('beta-stats')" style="display:flex;align-items:center;gap:11px;padding:13px 14px;border-bottom:1px solid #222;cursor:pointer;"><div style="width:38px;height:38px;border-radius:10px;background:#0a2019;display:flex;align-items:center;justify-content:center;flex-shrink:0;"><i class="ti ti-chart-dots" style="font-size:18px;color:#4ec49a;"></i></div><div style="flex:1;"><div style="font-size:14px;font-weight:500;color:#e0e0e0;">Beta Stats</div><div style="font-size:12px;color:#999;">Square adoption &amp; growth</div></div><i class="ti ti-chevron-right" style="font-size:16px;color:#888;"></i></div>`:''}
     <div onclick="replayOnboarding()" style="display:flex;align-items:center;gap:11px;padding:13px 14px;cursor:pointer;">
       <div style="width:38px;height:38px;border-radius:10px;background:#0d1e33;display:flex;align-items:center;justify-content:center;flex-shrink:0;"><i class="ti ti-refresh" style="font-size:18px;color:#5ba3e8;"></i></div>
-      <div style="flex:1;"><div style="font-size:14px;font-weight:500;color:#e0e0e0;">Replay setup tour</div><div style="font-size:12px;color:#999;">Revisit the welcome & setup steps</div></div>
+      <div style="flex:1;"><div style="font-size:14px;font-weight:500;color:#e0e0e0;">Replay Setup Tour</div><div style="font-size:12px;color:#999;">Revisit the welcome & setup steps</div></div>
       <i class="ti ti-chevron-right" style="font-size:16px;color:#888;"></i>
     </div>
   </div>`;
