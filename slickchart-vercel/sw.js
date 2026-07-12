@@ -1,7 +1,7 @@
 // SlickChart service worker — makes the app installable + resilient offline.
 // Safe by design: only same-origin GETs are handled, API + cross-origin always
 // go straight to the network (never cached), so data stays fresh and private.
-const CACHE = 'slickchart-v16';
+const CACHE = 'slickchart-v17';
 self.addEventListener('install', () => self.skipWaiting());
 self.addEventListener('activate', (e) => {
   e.waitUntil((async () => {
