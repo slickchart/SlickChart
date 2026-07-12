@@ -2,6 +2,35 @@
 
 Newest entries at the top. One entry per deploy. Dates are US-formatted.
 
+## 2026-07-12 — Server security sweep: reset-link host poisoning + push-endpoint SSRF
+
+Extended the security sweep from the client apps into the API/server layer. A focused authz/tenant-isolation
+audit came back clean — every provider endpoint constrains its queries by the signed-JWT provider id, every
+client endpoint resolves strictly from the unguessable link token (never a request-supplied id), Square is
+isolated by the caller's own OAuth token, owner-only endpoints check `OWNER_EMAIL` against the signed JWT, and
+the new client-deletion/tombstone path holds up (no cross-client delete, no resurrection). SQL is fully
+parameterized (Neon tagged templates), the Stripe webhook verifies its HMAC + replay window, cron fails closed
+without `CRON_SECRET`, and all tokens use `crypto.randomBytes` + `timingSafeEqual`. Two real issues fixed:
+
+- **Password-reset / verify link host poisoning (account-takeover class).** `appOrigin(req)` built links from the
+  `Host` / `X-Forwarded-Host` request header, which is attacker-influenced. For the emails that carry a live
+  secret token — password reset, email verification, and a client's private invite link — a spoofed header could
+  deliver a genuine email whose link points at an attacker origin, leaking the token on click. Those three now
+  build from a new `trustedOrigin()` that resolves only to an origin we control (`APP_ORIGIN` env, else the known
+  production origin) and **never** from a request header. Non-secret uses (Square's registered `redirect_uri`,
+  the calendar/portal URLs returned to the already-authenticated provider, the cosmetic consult link) still use
+  `appOrigin`. The client-invite still honors the provider app's own `location.origin`, now validated as a clean
+  http(s) origin with `trustedOrigin()` as the fallback.
+- **Blind SSRF via the web-push subscription endpoint (low).** A subscription is client-supplied JSON and the
+  server later POSTs to its `endpoint`; only a truthy check existed, so a token holder could point `endpoint` at
+  an internal URL (e.g. the cloud metadata IP) and turn a later send into a blind SSRF. Added `validPushEndpoint()`
+  (https + public host only; rejects loopback, private/link-local/reserved IPv4, IPv6 loopback/ULA/link-local, and
+  `localhost`/`.internal`/`.local`/metadata hosts), enforced both when a subscription is stored and again before
+  every send (so any endpoint stored before this guard still never gets hit). Verified 22/22 against real push
+  services (FCM/Mozilla/Apple/WNS pass) and SSRF targets (blocked).
+
+Server-only; all modules parse; validators unit-tested.
+
 ## 2026-07-12 — Client account deletion now really deletes (server-side purge + tombstone)
 
 Reviewed the client app's three "native" needs. Two were already built correctly for a TWA/PWA and

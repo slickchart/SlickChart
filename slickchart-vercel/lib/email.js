@@ -55,6 +55,19 @@ export function appOrigin(req) {
   return proto + '://' + host;
 }
 
+// Origin for links that carry a secret token (password reset, email verification, a client's
+// private invite link). These must resolve ONLY to an origin we control — never one derived
+// from a request header. The Host / X-Forwarded-Host header is attacker-influenced, so building
+// a token link from it is a reset-password-poisoning / host-header-injection vector: the victim
+// would receive a genuine email whose link (carrying their live token) points at the attacker's
+// origin, leaking the token on click. Set APP_ORIGIN to your canonical domain; otherwise the
+// known production origin is used. Never falls back to request headers.
+export function trustedOrigin() {
+  const env = String(process.env.APP_ORIGIN || '').trim().replace(/\/+$/, '');
+  if (/^https?:\/\/[^/\s]+$/i.test(env)) return env;
+  return 'https://slick-chart.vercel.app';
+}
+
 // The welcome + thank-you email new providers get right after signing up.
 // Written to do three things: verify their email (functional), thank them for
 // joining the founding beta, and set the tone that this is a provider-built

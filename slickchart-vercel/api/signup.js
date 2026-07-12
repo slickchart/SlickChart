@@ -3,7 +3,7 @@
 // returns a session token so they can start using the app right away.
 import { sql, ensureProvidersTable, dbEnabled, hasActiveSubscription } from '../lib/db.js';
 import { signToken, hashPassword, makeToken, createSession } from '../lib/auth.js';
-import { sendEmail, appOrigin, addToAudience, welcomeEmailHtml, welcomeEmailText } from '../lib/email.js';
+import { sendEmail, trustedOrigin, addToAudience, welcomeEmailHtml, welcomeEmailText } from '../lib/email.js';
 import crypto from 'crypto';
 
 export default async function handler(req, res) {
@@ -48,7 +48,7 @@ export default async function handler(req, res) {
     // Email verification link (valid 24h)
     const vtoken = makeToken();
     await q`INSERT INTO auth_tokens (token, provider_id, kind, expires_at) VALUES (${vtoken}, ${id}, 'verify', now() + interval '24 hours')`;
-    const link = appOrigin(req) + '/slickchart?verify=' + vtoken;
+    const link = trustedOrigin() + '/slickchart?verify=' + vtoken;
     try {
       await sendEmail({
         to: email,

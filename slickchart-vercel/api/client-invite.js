@@ -3,7 +3,7 @@
 import { verifyToken } from '../lib/auth.js';
 import { dbEnabled } from '../lib/db.js';
 import { ensureClientTables, listClients, markInvited } from '../lib/clients.js';
-import { sendEmail, appOrigin } from '../lib/email.js';
+import { sendEmail, trustedOrigin } from '../lib/email.js';
 
 function providerId(req) {
   const s = process.env.SESSION_SECRET || '';
@@ -22,7 +22,11 @@ export default async function handler(req, res) {
   await ensureClientTables();
   const body = req.body || {};
   const ids = Array.isArray(body.ids) ? body.ids : null; // null = everyone with an email
-  const origin = (body.origin || appOrigin(req) || 'https://slick-chart.vercel.app').replace(/\/$/, '');
+  // The provider's app passes its own location.origin so invites point at the domain they use;
+  // validate it's a clean http(s) origin and fall back to our controlled origin (never a request
+  // header) so a client's token-bearing invite link can't be pointed at an arbitrary host.
+  const _bodyOrigin = String(body.origin || '').trim().replace(/\/+$/, '');
+  const origin = /^https?:\/\/[^/\s]+$/i.test(_bodyOrigin) ? _bodyOrigin : trustedOrigin();
   const studio = String(body.studio || '').trim();
   const fromName = String(body.from || 'Your provider').trim();
   try {

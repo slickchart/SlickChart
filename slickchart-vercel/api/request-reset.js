@@ -2,7 +2,7 @@
 // Always returns 200 so we never reveal whether an email is registered.
 import { sql, ensureProvidersTable, dbEnabled } from '../lib/db.js';
 import { makeToken, tooManyAttempts, recordAttempt } from '../lib/auth.js';
-import { sendEmail, appOrigin } from '../lib/email.js';
+import { sendEmail, trustedOrigin } from '../lib/email.js';
 
 // A reset request is cheap to trigger but sends a real email every time, so cap how
 // many we'll act on for one address in a window — this stops a known address from
@@ -33,7 +33,7 @@ export default async function handler(req, res) {
       if (rows.length) {
         const token = makeToken();
         await q`INSERT INTO auth_tokens (token, provider_id, kind, expires_at) VALUES (${token}, ${rows[0].id}, 'reset', now() + interval '1 hour')`;
-        const link = appOrigin(req) + '/slickchart?reset=' + token;
+        const link = trustedOrigin() + '/slickchart?reset=' + token;
         try {
           await sendEmail({
             to: email,

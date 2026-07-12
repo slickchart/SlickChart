@@ -23,12 +23,38 @@ function ensure() {
 
 export function pushConfigured() { return ensure(); }
 
+// A push subscription is client-supplied JSON, and we later POST to its `endpoint`. Without a
+// guard, a client could set `endpoint` to an internal URL (e.g. the cloud metadata IP) and turn
+// that send into a blind SSRF. Real browser push services are always https to a public host, so
+// require https and reject loopback / private / link-local / internal hosts. Applied both when a
+// subscription is stored (api/push-subscribe) and again before every send (below), so any bad
+// endpoint stored before this guard existed still never gets hit.
+const _INTERNAL_HOST = /(^|\.)(localhost|internal|local)$/i;
+export function validPushEndpoint(endpoint) {
+  let u;
+  try { u = new URL(String(endpoint || '')); } catch (_) { return false; }
+  if (u.protocol !== 'https:') return false;
+  const h = u.hostname.toLowerCase().replace(/^\[|\]$/g, '');
+  if (!h || h === 'metadata.google.internal' || _INTERNAL_HOST.test(h)) return false;
+  // IPv6 loopback (::1), unique-local (fc00::/7), link-local (fe80::/10).
+  if (h === '::1' || /^f[cd][0-9a-f]{2}:/.test(h) || /^fe80:/.test(h)) return false;
+  // IPv4 literal → block private / loopback / link-local / reserved ranges.
+  const m = h.match(/^(\d{1,3})\.(\d{1,3})\.(\d{1,3})\.(\d{1,3})$/);
+  if (m) {
+    const a = +m[1], b = +m[2];
+    if (a === 0 || a === 10 || a === 127 || a >= 224 ||
+        (a === 169 && b === 254) || (a === 172 && b >= 16 && b <= 31) || (a === 192 && b === 168)) return false;
+  }
+  return true;
+}
+
 // Send one notification to one subscription. Never throws — returns a small result the
 // caller can act on. `gone:true` means the subscription is dead (the browser unsubscribed
 // or the endpoint expired) and should be deleted so we stop trying it.
 export async function sendPush(subscription, payload) {
   if (!ensure()) return { ok: false, skipped: true };
   if (!subscription || !subscription.endpoint) return { ok: false, error: 'bad subscription' };
+  if (!validPushEndpoint(subscription.endpoint)) return { ok: false, error: 'blocked endpoint' };
   try {
     await webpush.sendNotification(subscription, JSON.stringify(payload || {}), { TTL: 3600 });
     return { ok: true };
