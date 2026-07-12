@@ -7437,6 +7437,28 @@ function loadForms(){
   // A saved copy of formTmpls may predate the auto-added photo-release / reference-photo
   // questions and would wipe them on merge, re-inject so they're always present.
   try{if(typeof _ensureBundledFormQs==='function')_ensureBundledFormQs();}catch(e){}
+  // Heal an older saved intake where "primary skin concern" was a Multiple/Single choice question.
+  // The code default is Long text, but loadForms() merges the saved copy OVER it, so a provider who
+  // saved the form under a previous build would keep seeing preset choices. One-time migration coerces
+  // that question back to a free-text field (dropping its options) and re-persists.
+  try{_migrateSkinConcernLongText();}catch(e){}
+}
+function _migrateSkinConcernLongText(){
+  try{
+    if(localStorage.getItem('sc_skinconcern_migrated')==='1')return;
+    let changed=false;
+    Object.keys(formTmpls).forEach(k=>{
+      const t=formTmpls[k];if(!t||!Array.isArray(t.qs))return;
+      if(!/intake/i.test((t.name||'')+' '+k))return;   // only intake forms
+      t.qs.forEach(q=>{
+        if(q&&/skin concern/i.test(q.label||'')&&q.type!=='Long text'){
+          q.type='Long text';delete q.options;changed=true;
+        }
+      });
+    });
+    localStorage.setItem('sc_skinconcern_migrated','1');
+    if(changed&&typeof persistForms==='function')persistForms();
+  }catch(e){}
 }
 function persistWorkspace(){
   // recommended products, per-product reasons, custom products, in-office flags, and the recommended routine
@@ -8568,6 +8590,9 @@ function _assembleClientData(id){
   const studio=(typeof bizInfo!=='undefined'&&bizInfo&&bizInfo.name)||'';
   const website=(typeof bizInfo!=='undefined'&&bizInfo&&bizInfo.website)||'';
   const providerName=(typeof _providerFirstName==='function'&&_providerFirstName())||'';
+  // Full business address (for the client's "Get directions" map link). Built from the provider's
+  // business info; empty parts are dropped so a partial address still forms a usable maps query.
+  const studioAddress=(function(){try{const b=(typeof bizInfo!=='undefined'&&bizInfo)||{};const cityLine=[b.city,[b.state,b.zip].filter(Boolean).join(' ')].filter(Boolean).join(', ');return [b.address,cityLine].filter(Boolean).join(', ');}catch(e){return '';}})();
   // NOTE: branding is intentionally NOT included here anymore. It used to be
   // embedded in every single client's data blob, which meant the sync payload
   // grew with the client list and could exceed the server's size limit once a
@@ -8609,7 +8634,7 @@ function _assembleClientData(id){
     if(vi&&vi.invited&&!vi.submitted){const vp=(typeof _vcProfile==='function')?_vcProfile():{};
       vcInvite={kind:vp.kind||'skin',title:vp.title||'Virtual consult',fee:(typeof vcFee!=='undefined'?vcFee:'')||'',invitedAt:vi.invitedAt||0};}
   }catch(e){}
-  return {studio,website,providerName,profile:{skin:c.skin||'',concerns:c.concerns||'',allergies:c.allergies||'',fitz:c.fitz||'',treatment:c.treatment||'',lastVisit:c.lastVisit||'',nextVisit:c.nextVisit||'',email:c.email||'',phone:c.phone||''},summaries,aftercare,products,forms,pendingForms,pendingGuides,pendingCourses,photos:Array.isArray(c.photos)?c.photos:[],booking:{canRequest:true},availability,vcInvite};
+  return {studio,studioAddress,website,providerName,profile:{skin:c.skin||'',concerns:c.concerns||'',allergies:c.allergies||'',fitz:c.fitz||'',treatment:c.treatment||'',lastVisit:c.lastVisit||'',nextVisit:c.nextVisit||'',email:c.email||'',phone:c.phone||''},summaries,aftercare,products,forms,pendingForms,pendingGuides,pendingCourses,photos:Array.isArray(c.photos)?c.photos:[],booking:{canRequest:true},availability,vcInvite};
 }
 let _syncingClients=false,_clientSyncTimer=null;
 function _scheduleClientSync(){ if(_clientSyncTimer)clearTimeout(_clientSyncTimer); _clientSyncTimer=setTimeout(function(){_syncClientsToServer({});},2500); }

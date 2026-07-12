@@ -136,7 +136,7 @@ function scResetDemo(){try{Object.keys(localStorage).filter(function(k){return k
       <i class="ti ti-bell" aria-hidden="true" style="font-size:20px;color:#6b5d52;"></i>
       <span id="client-notif-badge" style="position:absolute;top:1px;right:1px;min-width:16px;height:16px;padding:0 3px;background:#e87070;border-radius:8px;font-size:9px;font-weight:700;color:#fff;display:none;align-items:center;justify-content:center;border:2px solid #fff;">0</span>
     </button>
-    <button class="avatar" data-nav="profile" aria-label="Settings"><i class="ti ti-settings" aria-hidden="true" style="font-size:16px;"></i></button>
+    <button data-nav="profile" aria-label="Settings" style="background:none;border:none;cursor:pointer;width:34px;height:34px;display:flex;align-items:center;justify-content:center;flex-shrink:0;"><i class="ti ti-settings" aria-hidden="true" style="font-size:20px;color:#6b5d52;"></i></button>
   </div>
   <main class="scr" id="S" aria-live="polite" aria-label="App content"></main>
   <nav class="nav" aria-label="Main navigation">
@@ -1864,6 +1864,10 @@ function renderHome(){
         <span style="font-size:13px;font-weight:600;color:var(--accent-lt2);">Add to calendar</span>
       </button>`}
     </div>
+    ${(!noAppt&&(client.studioAddress||client.studio))?`<a href="https://www.google.com/maps/dir/?api=1&destination=${encodeURIComponent((client.studioAddress||client.studio||'').trim())}" target="_blank" rel="noopener" aria-label="Get directions and travel time" style="display:flex;align-items:center;justify-content:center;gap:7px;margin-top:8px;background:rgba(255,255,255,.12);border:1px solid rgba(255,255,255,.22);border-radius:10px;padding:10px;text-decoration:none;cursor:pointer;">
+      <i class="ti ti-map-pin" aria-hidden="true" style="font-size:15px;color:var(--accent-lt2);"></i>
+      <span style="font-size:13px;font-weight:600;color:var(--accent-lt2);">Get directions &amp; travel time</span>
+    </a>`:''}
     ${((!noAppt)||(activeProvider().pendingForms||[]).length)?_previsitSectionHTML():''}
   </div>`;
   })()}
@@ -2306,6 +2310,16 @@ function renderHomecare(){
 
 // ── MESSAGES ──
 let msgInput='';
+// "Buy in office" reserves the product with the provider: instead of dropping the client into a
+// blank thread (which read as "why am I here?"), it opens messages with a ready-to-send reservation
+// note pre-filled, so one tap of Send asks the provider to set it aside for the next visit.
+let _msgPrefill='';
+function _reserveInOffice(name){
+  closeBuySheet();
+  const first=client.providerFirst||'there';
+  _msgPrefill=`Hi ${first}, could you set aside ${name} for me to buy in office at my next visit? Thank you!`;
+  nav('messages');
+}
 function renderMessages(){
   setNav('messages');
   // Opening the thread means the client has seen these messages, clear the unread badge now
@@ -2337,6 +2351,9 @@ function renderMessages(){
     <button onclick="sendClientMsg()" aria-label="Send message" title="Send" style="width:36px;height:36px;border-radius:50%;background:var(--accent);border:none;display:flex;align-items:center;justify-content:center;cursor:pointer;flex-shrink:0;"><svg viewBox="0 0 24 24" width="17" height="17" fill="none" stroke="#fff" stroke-width="1.8" stroke-linecap="round" stroke-linejoin="round" aria-hidden="true"><path d="M21 4 3 11l6 2.5L21 4z"/><path d="m21 4-7 16-2.5-6.5"/></svg></button>
   </div>`;
   const body=document.getElementById('chat-body');if(body)body.scrollTop=body.scrollHeight;
+  // Drop in any pre-filled reservation note ("Buy in office") so the client just taps Send.
+  const _inp=document.getElementById('cinput');
+  if(_inp&&_msgPrefill){_inp.value=_msgPrefill;_msgPrefill='';try{_inp.style.height='auto';_inp.style.height=_inp.scrollHeight+'px';_inp.focus();_inp.setSelectionRange(_inp.value.length,_inp.value.length);}catch(e){}}
 }
 
 function attachClientPhoto(){_pickImages(srcs=>{if(srcs&&srcs.length)sendClientMsg(srcs);});}
@@ -2967,10 +2984,42 @@ function ciAddPhoto(qid){_pickImages(srcs=>{if(!srcs||!srcs.length)return;const 
 function ciAddLink(qid){const u=prompt('Paste an image link (URL):');if(u&&u.trim()){(checkinAnswers[qid+'Photos']=checkinAnswers[qid+'Photos']||[]).push(u.trim());_renderCheckinStep();}}
 function ciRemovePhoto(qid,i){const a=checkinAnswers[qid+'Photos']||[];a.splice(i,1);_renderCheckinStep();}
 function ciMovePhoto(qid,i,dir){const a=checkinAnswers[qid+'Photos']||[];const j=i+dir;if(j<0||j>=a.length)return;const t=a[i];a[i]=a[j];a[j]=t;_renderCheckinStep();}
-let _ciDrag={qid:null,from:-1};
-function ciDragStart(qid,i,ev){_ciDrag={qid,from:i};try{ev.dataTransfer.effectAllowed='move';ev.dataTransfer.setData('text/plain',String(i));}catch(_){}}
-function ciDragOver(ev){ev.preventDefault();try{ev.dataTransfer.dropEffect='move';}catch(_){}}
-function ciDrop(qid,i,ev){ev.preventDefault();if(_ciDrag.qid!==qid||_ciDrag.from<0||_ciDrag.from===i){_ciDrag={qid:null,from:-1};return;}const a=checkinAnswers[qid+'Photos']||[];const[m]=a.splice(_ciDrag.from,1);a.splice(i,0,m);_ciDrag={qid:null,from:-1};_renderCheckinStep();}
+// Reference-photo reordering. The old version used HTML5 drag-and-drop (draggable/ondragstart),
+// which simply does not fire on mobile touch — so on a phone the photos couldn't be dragged at all.
+// This uses Pointer Events (touch + mouse), tracking the tile under the finger via elementFromPoint
+// and reordering on release. Works the same on phone and desktop; no arrow buttons needed.
+let _ciReorder=null;
+function _ciTileAt(x,y){const el=document.elementFromPoint(x,y);return el?el.closest('[data-ci-photo]'):null;}
+function ciPtrDown(qid,i,ev){
+  if(ev.button!==undefined&&ev.button!==0)return;   // primary button / touch only
+  const tile=ev.currentTarget;
+  _ciReorder={qid,from:i,startX:ev.clientX,startY:ev.clientY,moved:false,tile};
+  try{tile.setPointerCapture(ev.pointerId);}catch(_){}
+}
+function ciPtrMove(ev){
+  if(!_ciReorder)return;
+  const dx=ev.clientX-_ciReorder.startX,dy=ev.clientY-_ciReorder.startY;
+  if(!_ciReorder.moved&&(Math.abs(dx)+Math.abs(dy))<6)return;   // ignore tiny jitters (still a tap)
+  _ciReorder.moved=true;
+  ev.preventDefault();
+  _ciReorder.tile.style.opacity='.55';
+  const t=_ciTileAt(ev.clientX,ev.clientY);
+  document.querySelectorAll('[data-ci-photo]').forEach(el=>{el.style.outline='';el.style.outlineOffset='';});
+  if(t&&t!==_ciReorder.tile){t.style.outline='2px solid var(--accent)';t.style.outlineOffset='1px';}
+}
+function ciPtrUp(ev){
+  if(!_ciReorder)return;
+  const r=_ciReorder;_ciReorder=null;
+  try{r.tile.releasePointerCapture(ev.pointerId);}catch(_){}
+  r.tile.style.opacity='';
+  document.querySelectorAll('[data-ci-photo]').forEach(el=>{el.style.outline='';el.style.outlineOffset='';});
+  if(!r.moved)return;   // no real drag — leave it as a tap
+  const t=_ciTileAt(ev.clientX,ev.clientY);if(!t)return;
+  const qid=t.getAttribute('data-ci-photo'),to=parseInt(t.getAttribute('data-idx'),10);
+  if(qid!==r.qid||isNaN(to)||to===r.from)return;
+  const a=checkinAnswers[r.qid+'Photos']||[];const[m]=a.splice(r.from,1);a.splice(to,0,m);
+  _renderCheckinStep();
+}
 
 function _ciNotes(q){
   const photos=checkinAnswers[q.id+'Photos']||[];
@@ -2979,13 +3028,9 @@ function _ciNotes(q){
     <textarea class="fi" aria-label="Additional notes for ${_txt(client.providerFirst)}" placeholder="${q.ph||'Questions, requests, anything on your mind...'}" style="height:90px;resize:none;line-height:1.6;margin-bottom:12px;" oninput="checkinAnswers['${q.id}']=this.value">${checkinAnswers[q.id]||''}</textarea>
     <div style="font-size:12px;font-weight:600;color:#786858;text-transform:uppercase;letter-spacing:.07em;margin-bottom:8px;">Reference photos</div>
     <div style="display:flex;flex-wrap:wrap;gap:8px;margin-bottom:10px;">
-      ${photos.map((src,i)=>`<div draggable="true" ondragstart="ciDragStart('${q.id}',${i},event)" ondragover="ciDragOver(event)" ondrop="ciDrop('${q.id}',${i},event)" style="position:relative;width:78px;height:78px;border-radius:10px;overflow:hidden;border:1.5px solid #e8ddd3;cursor:grab;">
+      ${photos.map((src,i)=>`<div data-ci-photo="${q.id}" data-idx="${i}" ${photos.length>1?`onpointerdown="ciPtrDown('${q.id}',${i},event)" onpointermove="ciPtrMove(event)" onpointerup="ciPtrUp(event)" onpointercancel="ciPtrUp(event)"`:''} style="position:relative;width:78px;height:78px;border-radius:10px;overflow:hidden;border:1.5px solid #e8ddd3;${photos.length>1?'cursor:grab;touch-action:none;':''}">
         <img src="${_imgSrc(src)}" alt="reference ${i+1}" draggable="false" style="width:100%;height:100%;object-fit:cover;display:block;pointer-events:none;">
-        <button onclick="ciRemovePhoto('${q.id}',${i})" aria-label="Remove photo" style="position:absolute;top:2px;right:2px;width:20px;height:20px;border-radius:50%;background:rgba(0,0,0,.6);border:none;color:#fff;font-size:11px;cursor:pointer;display:flex;align-items:center;justify-content:center;">✕</button>
-        ${photos.length>1?`<div style="position:absolute;bottom:0;left:0;right:0;display:flex;justify-content:space-between;background:linear-gradient(transparent,rgba(0,0,0,.55));padding:2px 3px;">
-          <button onclick="ciMovePhoto('${q.id}',${i},-1)" aria-label="Move left" ${i===0?'disabled':''} style="width:20px;height:18px;border:none;background:none;color:${i===0?'rgba(255,255,255,.3)':'#fff'};font-size:12px;cursor:${i===0?'default':'pointer'};padding:0;">◀</button>
-          <button onclick="ciMovePhoto('${q.id}',${i},1)" aria-label="Move right" ${i===photos.length-1?'disabled':''} style="width:20px;height:18px;border:none;background:none;color:${i===photos.length-1?'rgba(255,255,255,.3)':'#fff'};font-size:12px;cursor:${i===photos.length-1?'default':'pointer'};padding:0;">▶</button>
-        </div>`:''}
+        <button onpointerdown="event.stopPropagation()" onclick="ciRemovePhoto('${q.id}',${i})" aria-label="Remove photo" style="position:absolute;top:2px;right:2px;width:20px;height:20px;border-radius:50%;background:rgba(0,0,0,.6);border:none;color:#fff;font-size:11px;cursor:pointer;display:flex;align-items:center;justify-content:center;">✕</button>
       </div>`).join('')}
       <button onclick="ciAddPhoto('${q.id}')" aria-label="Upload photos" style="width:78px;height:78px;border-radius:10px;border:1.5px dashed #d4c4b0;background:#faf7f4;display:flex;flex-direction:column;align-items:center;justify-content:center;gap:3px;cursor:pointer;color:#6b5d52;">
         <i class="ti ti-camera-plus" aria-hidden="true" style="font-size:18px;"></i><span style="font-size:10px;">Upload</span>
@@ -2994,7 +3039,7 @@ function _ciNotes(q){
         <i class="ti ti-link" aria-hidden="true" style="font-size:18px;"></i><span style="font-size:10px;">Link</span>
       </button>
     </div>
-    <div style="font-size:11px;color:#82715f;margin-bottom:6px;">Add inspo or reference photos for ${_txt(client.providerFirst)} to see before your visit.${photos.length>1?' Drag (or use ◀ ▶) to reorder.':' You can select several at once.'}</div>`;
+    <div style="font-size:11px;color:#82715f;margin-bottom:6px;">Add inspo or reference photos for ${_txt(client.providerFirst)} to see before your visit.${photos.length>1?' Drag a photo to reorder.':' You can select several at once.'}</div>`;
 }
 
 function _ciBuildPayload(){
@@ -3327,8 +3372,8 @@ function openBuyOptions(i){
   const rows=[];
   const cline=code=>code?`<div style="display:flex;align-items:center;gap:8px;margin-top:5px;padding:8px 11px;background:var(--accent-a20);border:1px dashed var(--accent);border-radius:10px;"><i class="ti ti-discount-2" aria-hidden="true" style="font-size:15px;color:var(--accent);flex-shrink:0;"></i><div style="flex:1;min-width:0;font-size:12px;color:#6b5d52;">Use <b style="color:var(--accent);letter-spacing:.03em;">${_txt(code)}</b> at checkout</div><button onclick="event.preventDefault();event.stopPropagation();copyCode('${_jsAttr(code||'')}')" style="border:1.5px solid var(--accent);background:none;color:var(--accent);border-radius:7px;padding:5px 11px;font-size:11px;font-weight:700;cursor:pointer;flex-shrink:0;">Copy</button></div>`:'';
   const blk=(html,code)=>`<div style="margin-bottom:8px;">${html}${cline(code)}</div>`;
-  if(p.inOffice)rows.push(blk(`<button onclick="closeBuySheet();nav('messages')" style="display:flex;width:100%;text-align:left;align-items:center;gap:12px;padding:12px 14px;border:1.5px solid var(--accent);background:var(--accent-a20);border-radius:12px;cursor:pointer;font-family:inherit;">
-    <i class="ti ti-building-store" aria-hidden="true" style="font-size:18px;color:var(--accent);"></i><div style="flex:1;"><div style="font-size:13px;font-weight:600;color:#1a1a1a;">Buy in office</div><div style="font-size:11px;color:#786858;">Pick up at your next visit · tap to message ${_txt(client.providerFirst)}</div></div><i class="ti ti-chevron-right" aria-hidden="true" style="color:#82715f;"></i></button>`,''));
+  if(p.inOffice)rows.push(blk(`<button onclick="_reserveInOffice('${_jsAttr(p.name||'this product')}')" style="display:flex;width:100%;text-align:left;align-items:center;gap:12px;padding:12px 14px;border:1.5px solid var(--accent);background:var(--accent-a20);border-radius:12px;cursor:pointer;font-family:inherit;">
+    <i class="ti ti-building-store" aria-hidden="true" style="font-size:18px;color:var(--accent);"></i><div style="flex:1;"><div style="font-size:13px;font-weight:600;color:#1a1a1a;">Buy in office</div><div style="font-size:11px;color:#786858;">Reserve it with ${_txt(client.providerFirst)} to pick up at your next visit</div></div><i class="ti ti-chevron-right" aria-hidden="true" style="color:#82715f;"></i></button>`,''));
   if(p.site)rows.push(blk(`<a href="${_urlAttr(_safeUrl(p.site))}" target="_blank" rel="noopener" onclick="closeBuySheet()" style="display:flex;align-items:center;gap:12px;padding:12px 14px;border:1.5px solid #f0ebe4;border-radius:12px;text-decoration:none;">
     <i class="ti ti-shopping-bag" aria-hidden="true" style="font-size:18px;color:var(--accent);"></i><div style="flex:1;min-width:0;"><div style="font-size:13px;font-weight:600;color:#1a1a1a;">Buy from ${_txt(client.studio)}</div><div style="font-size:11px;color:#786858;word-break:break-all;">${_txt(p.site)}</div></div><i class="ti ti-chevron-right" aria-hidden="true" style="color:#82715f;"></i></a>`,p.siteCode));
   if(p.url)rows.push(blk(`<a href="${_urlAttr(_safeUrl(p.url))}" target="_blank" rel="noopener" onclick="closeBuySheet()" style="display:flex;align-items:center;gap:12px;padding:12px 14px;border:1.5px solid #f0ebe4;border-radius:12px;text-decoration:none;">
@@ -4249,6 +4294,9 @@ function _applyRealClientData(j){
   p.summaries=Array.isArray(d.summaries)?d.summaries:[];
   // no fabricated data in real mode
   p.avoid=[];p.aftercare=[];p.progress=[];p.observations=[];p.thread=[];p.homecareNote='';p.seriesLabel='';
+  // Drop the demo "Skin analysis · Jun 26" virtual consult a real client must never see, then restore
+  // any consults THEY actually submitted (persisted locally), so their own history still shows.
+  p.virtualConsults=[];try{if(typeof loadVirtualConsults==='function')loadVirtualConsults();}catch(e){}
   // Remaining demo-seed fields, a real client must never see the sample "Maya" data (skin
   // profile, shop goals/history/saved, demo guide, demo Amazon store, hardcoded profession).
   p.profileFields=[];p.profileTitle='';p.shopGoals='';p.recLog=[];p.saved=[];p.resources=[];p.amazonStore='';p.kind='';
@@ -4256,7 +4304,7 @@ function _applyRealClientData(j){
   // The provider's real check-in config rides in the blob (d.checkinCfg); persist it where the
   // client's check-in reads it, so a real client sees THEIR provider's questions, not Maya's.
   try{if(d.checkinCfg&&typeof d.checkinCfg==='object')localStorage.setItem('sc_checkin_cfg',JSON.stringify(d.checkinCfg));}catch(e){}
-  p.session=1;p.totalSessions=1;p.studioAddress='';p.studioPhone='';p.connected=false;p.unread=0;
+  p.session=1;p.totalSessions=1;p.studioAddress=d.studioAddress||'';p.studioPhone='';p.connected=false;p.unread=0;
   var nv=String(prof.nextVisit||'').split('\u00b7');
   p.nextDate=(nv[0]||'').trim();p.nextTime=(nv[1]||'').trim();
   // Parse the year-less nextVisit ("Jul 17 \u00b7 10:00 AM") into a real timestamp. Two traps:
