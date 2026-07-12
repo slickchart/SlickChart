@@ -2,6 +2,23 @@
 
 Newest entries at the top. One entry per deploy. Dates are US-formatted.
 
+## 2026-07-12 — Voice-note doubling (real fix) + compact Clients action buttons
+
+- **Voice-note doubling on Android — root cause fixed.** A Pixel screenshot showed the real pattern:
+  Android Chrome emits a single spoken phrase as a *run of growing "final" snapshots* ("treatment" →
+  "treatment performed" → "treatment performed on" → …) and re-reads finalized text across recognizer
+  restarts, so the transcript concatenated to "treatment treatment treatment performed…". Added an
+  overlap-merge (`_mergeText`) that collapses any text where one segment's leading words repeat the
+  previous segment's trailing words — applied when combining final results, the interim, and the
+  cross-restart accumulator. Growing snapshots and re-reads now reduce to the sentence said once, while
+  genuinely distinct phrases still concatenate (verified). Also bumped the service-worker cache
+  (v23→v24) so no stale HTML lingers.
+- **Clients screen: the "Invite clients" and "Virtual Consults" cards are now a compact two-column row**
+  instead of two full-width stacked cards, so searching clients (buttons + keyboard) no longer eats the
+  whole screen.
+
+Provider-side only; demo in lockstep; both apps parse.
+
 ## 2026-07-12 — Fixes: past-dated "next visit" in the AI brief + voice-note doubling on Android
 
 - **AI brief showed a past appointment as the upcoming visit** (e.g. "next visit already scheduled for
