@@ -8,10 +8,9 @@ export async function sendEmail({ to, subject, html, text, replyTo: replyToOverr
   // NOTE: a gmail.com address cannot be a "from" here — Resend only sends from domains you own/verify.
   // To route replies to your inbox, use EMAIL_REPLY_TO (below) instead.
   const from = fromOverride || process.env.EMAIL_FROM || 'SlickChart <noreply@slickchart.app>';
-  // Replies to any SlickChart email go here (defaults to the business inbox). This is how a Gmail
-  // address gets attached to the emails without needing to send *from* it. A caller can override
+  // Replies to any SlickChart email go here (defaults to the support inbox). A caller can override
   // per-message (e.g. a lead-notification sets Reply-To to the prospect so a reply reaches them).
-  const replyTo = replyToOverride || process.env.EMAIL_REPLY_TO || 'slickchart2026@gmail.com';
+  const replyTo = replyToOverride || process.env.EMAIL_REPLY_TO || 'support@slickchart.app';
   if (!key) { console.log('[email] RESEND_API_KEY not set — skipping email to', to); return { skipped: true }; }
   const r = await fetch('https://api.resend.com/emails', {
     method: 'POST',
