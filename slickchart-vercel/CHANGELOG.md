@@ -2,6 +2,16 @@
 
 Newest entries at the top. One entry per deploy. Dates are US-formatted.
 
+## 2026-07-13 — Tattoo: stencil overlay on Before photos
+
+The Progress Photos screen now has a **Stencil** button (tattoo profession only). It lays a stencil or
+reference image over the client's most recent **Before** photo so the artist can check placement and
+sizing before committing: pick a reference already on file or **upload** a stencil, then **drag to
+position**, and adjust **opacity (starts at 50%)** and **size** with sliders. **Save overlay** composites
+the two at the Before photo's full resolution into a new Before photo (tagged "Stencil overlay") for the
+record. Pure canvas + data-URL image — no camera permissions, works offline. Provider-side only; demo in
+lockstep; both apps parse.
+
 ## 2026-07-13 — Tattoo: needle & machine preset library (one-tap setups)
 
 The **Needle & machine log** field on the tattoo record now has a row of **one-tap preset chips**. Tapping
