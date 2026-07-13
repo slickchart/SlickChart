@@ -1861,7 +1861,7 @@ async function _cloudInit(){
     if(!localStorage.getItem('sc_onboarded'))localStorage.setItem('sc_onboarded','1');
     nav('home');return;
   }
-  if(!Cloud.token){renderLogin();return;}      // database is on but no session, sign in
+  if(!Cloud.token){renderEntry();return;}      // database is on but no session — unified front door
   try{
     const n=await Cloud.pull();
     if(n===0){
@@ -1938,6 +1938,28 @@ function _handleAuthParams(){
   }catch(e){}
   return false;
 }
+// Unified front door. With no provider session, decide where to send someone: a client's device
+// (has a saved care-space link, never signed in as a provider) goes straight to their space; a
+// returning provider goes straight to sign-in; anyone else sees the welcome chooser.
+function renderEntry(){
+  let hasClient=false,hasProviderHist=false;
+  try{hasClient=!!localStorage.getItem('sc_client_token');}catch(e){}
+  try{hasProviderHist=!!localStorage.getItem('sc_login_email');}catch(e){}
+  if(hasClient&&!hasProviderHist){try{location.replace('/client');return;}catch(e){}}
+  if(hasProviderHist&&!hasClient){_loginMode='login';renderLogin();return;}
+  _loginMode='welcome';renderLogin();
+}
+// Passwordless "get my link": emails the client their personal magic link (path B).
+function _requestClientLink(){
+  const el=document.getElementById('client-email');const msg=document.getElementById('client-link-msg');
+  const email=el?el.value.trim():'';
+  if(!email||!/.+@.+\..+/.test(email)){if(msg){msg.style.color='#e87070';msg.textContent='Enter your email address.';}return;}
+  if(msg){msg.style.color='#888';msg.textContent='Sending…';}
+  fetch('/api/client-link',{method:'POST',headers:{'Content-Type':'application/json'},body:JSON.stringify({email:email,origin:location.origin})})
+    .then(function(r){return r.json().catch(function(){return {};});})
+    .then(function(j){if(msg){msg.style.color='#4ec49a';msg.textContent=(j&&j.message)||'If that email is on file, your secure link is on its way. Check your inbox.';}})
+    .catch(function(){if(msg){msg.style.color='#e87070';msg.textContent='Couldn’t reach the server. Try again in a moment.';}});
+}
 function renderLogin(err){
   const old=document.getElementById('login-screen');if(old)old.remove();
   const mode=_loginMode; const signup=mode==='signup';
@@ -1970,6 +1992,21 @@ function renderLogin(err){
       <div id="login-err" role="alert" style="font-size:12px;color:#e87070;min-height:16px;margin-bottom:10px;">${err||''}</div>
       <button onclick="doLoginTotp()" style="${btn}">Verify &amp; log in</button>
       <div style="text-align:center;margin-top:16px;font-size:13px;color:#888;"><button onclick="_setLoginMode('login')" style="background:none;border:none;color:var(--accent);font-weight:600;cursor:pointer;font-family:inherit;font-size:13px;">${t('back_login')}</button></div>`;
+  } else if(mode==='welcome'){
+    // Unified front door: one app, routes to the right experience for who you are.
+    const hasClient=(function(){try{return !!localStorage.getItem('sc_client_token');}catch(e){return false;}})();
+    inner=`<div style="font-size:13px;color:#888;margin-bottom:22px;">Welcome — let's get you to the right place.</div>
+      ${hasClient?`<button onclick="location.href='/client'" style="${btn};margin-bottom:10px;display:flex;align-items:center;justify-content:center;gap:7px;"><i class="ti ti-heart" style="font-size:15px;"></i> Continue to your care space</button>`:''}
+      <button onclick="_setLoginMode('login')" style="${btn};margin-bottom:10px;">I'm a provider — sign in</button>
+      <button onclick="_setLoginMode('signup')" style="width:100%;background:#161616;border:1px solid #2a2a2a;color:#e0e0e0;border-radius:10px;padding:13px;font-size:15px;font-weight:600;cursor:pointer;font-family:inherit;margin-bottom:18px;">Create a provider account</button>
+      <div style="text-align:center;font-size:13px;color:#888;">Are you a client? <button onclick="_setLoginMode('client')" style="background:none;border:none;color:var(--accent);font-weight:600;cursor:pointer;font-family:inherit;font-size:13px;">Get your link</button></div>`;
+  } else if(mode==='client'){
+    inner=`<div style="font-size:13px;color:#888;margin-bottom:18px;line-height:1.6;">Your care space is private to you. If your provider texted or emailed you a personal link, just tap it — this app remembers you after that.</div>
+      <label class="fl-lbl" for="client-email">Or get your link by email</label>
+      <input id="client-email" type="email" autocomplete="email" placeholder="you@email.com" onkeydown="if(event.key==='Enter')_requestClientLink()" style="${ic}">
+      <div id="client-link-msg" role="status" style="font-size:12px;color:#4ec49a;min-height:16px;margin-bottom:10px;"></div>
+      <button onclick="_requestClientLink()" style="${btn};display:flex;align-items:center;justify-content:center;gap:7px;"><i class="ti ti-mail" style="font-size:15px;"></i> Email me my link</button>
+      <div style="text-align:center;margin-top:16px;font-size:13px;color:#888;"><button onclick="_setLoginMode('welcome')" style="background:none;border:none;color:var(--accent);font-weight:600;cursor:pointer;font-family:inherit;font-size:13px;">← Back</button></div>`;
   } else {
     inner=`<div style="font-size:13px;color:#888;margin-bottom:22px;">${signup?t('sub_signup'):t('sub_login')}</div>
       ${signup?`<label class="fl-lbl" for="login-name">${t('name')}</label><input id="login-name" autocomplete="name" placeholder="${t('name_ph')}" style="${ic}">`:''}

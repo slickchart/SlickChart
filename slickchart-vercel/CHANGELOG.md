@@ -2,6 +2,26 @@
 
 Newest entries at the top. One entry per deploy. Dates are US-formatted.
 
+## 2026-07-13 — One app: unified front door (provider + client)
+
+First step toward a single "SlickChart" app instead of two. With no provider session, the app now shows a
+**unified entry** that routes by who you are:
+
+- **Returning client** (a care-space link was opened on this device before → `sc_client_token` saved) goes
+  **straight to their space** — no chooser.
+- **Returning provider** (has signed in before) goes **straight to sign-in**.
+- **Anyone else** sees a clean **Welcome** chooser: *I'm a provider — sign in / Create account* · *Are you a
+  client? Get your link*. A shared device that's been both never gets trapped — it shows the chooser with a
+  "Continue to your care space" shortcut.
+- **Client path (A):** tap your personal link once; the app remembers you (already supported) — now surfaced
+  in the front door.
+- **Client path (B):** new passwordless "get my link" — a client enters their email and the app emails their
+  secure link (via new `/api/client-link`; always a generic response and sent only to the address on file, so
+  it can't be used to probe who's a client; rate-limited).
+
+Provider login is 100% intact (just reached through the chooser when appropriate). Unifying the installable/
+store identity (one manifest + TWA) is the next step. Provider app + demo updated; both parse.
+
 ## 2026-07-13 — Guides: attach MULTIPLE files too
 
 Guides now hold more than one PDF/image/doc, matching the course change. The guide editor lists each
