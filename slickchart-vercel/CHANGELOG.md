@@ -2,6 +2,14 @@
 
 Newest entries at the top. One entry per deploy. Dates are US-formatted.
 
+## 2026-07-13 — Courses: lessons now open when you tap them
+
+On a course's detail screen the lesson rows were inert — tapping one did nothing, so lessons "didn't
+pull up." Each lesson row is now tappable (with a chevron + "Tap to open") and opens a **lesson viewer**
+bottom sheet showing the written **reading** content, plus buttons to **Watch video**, **Open worksheet**,
+and **Download** any attached file (via the existing guide-file store, offline-capable). Empty lessons show
+a gentle hint to add content. Provider-side; demo in lockstep; both apps parse.
+
 ## 2026-07-13 — Tattoo: Square deposit → auto-send intake & consent
 
 When a client pays a deposit in Square, SlickChart can now automatically get their tattoo intake &

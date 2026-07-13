@@ -10408,13 +10408,41 @@ function renderCourseDetail(id){
     ${c.desc?`<div style="font-size:13px;color:#ccc;line-height:1.7;margin-bottom:14px;">${_fileEsc(c.desc)}</div>`:''}
     <div style="display:flex;align-items:center;justify-content:space-between;margin-bottom:8px;"><div style="font-size:11px;font-weight:500;color:#aaa;text-transform:uppercase;letter-spacing:.07em;">Lessons</div><button onclick="nav('course-builder','${c.id}')" style="border:none;background:none;color:var(--accent);font-size:11px;cursor:pointer;"><i class="ti ti-plus" style="font-size:11px;"></i> Add / edit</button></div>
     <div style="background:#1a1a1a;border:1px solid #2a2a2a;border-radius:12px;overflow:hidden;margin-bottom:14px;">
-      ${lessons.length?lessons.map((l,idx)=>{const bits=[];if(l.body)bits.push('Reading');if(l.videoUrl)bits.push('Video');if(l.docUrl)bits.push('Worksheet');if(l.fileId||l.fileName)bits.push('Download');return `<div style="display:flex;align-items:center;gap:10px;padding:11px 12px;${idx<lessons.length-1?'border-bottom:1px solid #1e1e1e;':''}"><div class="snum">${idx+1}</div><div style="flex:1;min-width:0;"><div style="font-size:13px;color:#e0e0e0;">${_fileEsc(l.title||'Untitled lesson')}</div>${bits.length?`<div style="font-size:11px;color:#888;margin-top:2px;">${bits.join(' · ')}</div>`:''}</div></div>`;}).join(''):'<div style="padding:14px 12px;font-size:12px;color:#9a9a9a;">No lessons yet, tap Edit to build your course.</div>'}
+      ${lessons.length?lessons.map((l,idx)=>{const bits=[];if(l.body)bits.push('Reading');if(l.videoUrl)bits.push('Video');if(l.docUrl)bits.push('Worksheet');if(l.fileId||l.fileName)bits.push('Download');return `<div onclick="_openLessonView('${c.id}',${idx})" role="button" tabindex="0" style="display:flex;align-items:center;gap:10px;padding:11px 12px;cursor:pointer;${idx<lessons.length-1?'border-bottom:1px solid #1e1e1e;':''}"><div class="snum">${idx+1}</div><div style="flex:1;min-width:0;"><div style="font-size:13px;color:#e0e0e0;">${_fileEsc(l.title||'Untitled lesson')}</div>${bits.length?`<div style="font-size:11px;color:#888;margin-top:2px;">${bits.join(' · ')}</div>`:'<div style="font-size:11px;color:#888;margin-top:2px;">Tap to open</div>'}</div><i class="ti ti-chevron-right" style="font-size:16px;color:#666;flex-shrink:0;"></i></div>`;}).join(''):'<div style="padding:14px 12px;font-size:12px;color:#9a9a9a;">No lessons yet, tap Edit to build your course.</div>'}
     </div>
     <div style="display:flex;gap:8px;margin-bottom:20px;">
       <button class="btnp" style="flex:2;border-radius:8px;" onclick="sendCourseToClient('${c.id}')"><i class="ti ti-send"></i> Send to a client</button>
       <button class="btng" style="flex:1;" onclick="nav('course-builder','${c.id}')" aria-label="Edit course"><i class="ti ti-pencil"></i></button>
     </div>
   </div>`;
+}
+// Open a single lesson to actually READ it — bottom sheet showing the written content, plus buttons
+// to watch the video, open the worksheet link, and download any attached file. This is what a lesson
+// row taps into on the course detail screen (rows used to be inert, so lessons "didn't pull up").
+function _openLessonView(courseId,idx){
+  const c=courses.find(x=>x.id===courseId);if(!c)return;
+  const lessons=_courseLessons(c);const l=lessons[idx];if(!l)return;
+  const httpOk=u=>/^https?:\/\//i.test(String(u||'').trim());
+  const bodyHtml=l.body?`<div style="font-size:14px;color:#d8d8d8;line-height:1.7;white-space:pre-wrap;margin-bottom:16px;">${_fileEsc(l.body)}</div>`:'';
+  const linkBtn=(url,icon,label,color)=>`<a href="${_urlAttr(url)}" target="_blank" rel="noopener noreferrer" style="display:flex;align-items:center;gap:9px;background:#161616;border:1px solid #2a2a2a;border-radius:10px;padding:12px 14px;margin-bottom:9px;text-decoration:none;"><i class="ti ${icon}" style="font-size:18px;color:${color};flex-shrink:0;"></i><span style="flex:1;min-width:0;font-size:13px;font-weight:600;color:#e8e8e8;">${label}</span><i class="ti ti-external-link" style="font-size:14px;color:#777;flex-shrink:0;"></i></a>`;
+  const video=httpOk(l.videoUrl)?linkBtn(l.videoUrl,'ti-player-play','Watch video','#e05555'):'';
+  const doc=httpOk(l.docUrl)?linkBtn(l.docUrl,'ti-file-text','Open worksheet','#5ba3e8'):'';
+  const dl=l.fileId?`<button onclick="_downloadGuideFileP('${_jsAttr(l.fileId)}')" style="display:flex;width:100%;align-items:center;gap:9px;background:#161616;border:1px solid #2a2a2a;border-radius:10px;padding:12px 14px;margin-bottom:9px;cursor:pointer;font-family:inherit;text-align:left;"><i class="ti ti-download" style="font-size:18px;color:var(--accent);flex-shrink:0;"></i><span style="flex:1;min-width:0;font-size:13px;font-weight:600;color:#e8e8e8;overflow:hidden;text-overflow:ellipsis;white-space:nowrap;">Download ${_fileEsc(l.fileName||'file')}</span></button>`:'';
+  const empty=(!bodyHtml&&!video&&!doc&&!dl)?`<div style="font-size:13px;color:#9a9a9a;line-height:1.6;padding:6px 0 16px;">This lesson doesn't have any content yet. Tap <b>Edit this course</b> below to add a reading, a video link, a worksheet link, or a downloadable file.</div>`:'';
+  const ov=document.createElement('div');ov.id='lesson-view-ov';
+  ov.style.cssText='position:fixed;inset:0;z-index:9999;background:rgba(0,0,0,.72);display:flex;align-items:flex-end;justify-content:center;';
+  ov.onclick=e=>{if(e.target===ov)ov.remove();};
+  ov.innerHTML=`<div style="background:#141414;border:1px solid #2a2a2a;border-radius:18px 18px 0 0;width:390px;max-width:100%;max-height:88vh;overflow:auto;padding:16px 18px 26px;">
+    <div style="width:36px;height:4px;background:#333;border-radius:2px;margin:0 auto 14px;"></div>
+    <div style="display:flex;align-items:flex-start;gap:11px;margin-bottom:14px;">
+      <div class="snum" style="flex-shrink:0;">${idx+1}</div>
+      <div style="flex:1;min-width:0;"><div style="font-size:16px;font-weight:600;color:#f5f5f5;line-height:1.35;">${_fileEsc(l.title||'Lesson')}</div><div style="font-size:11px;color:#888;margin-top:2px;">${_fileEsc(c.title)}</div></div>
+      <button onclick="document.getElementById('lesson-view-ov').remove()" aria-label="Close" style="border:none;background:none;color:#888;font-size:20px;cursor:pointer;flex-shrink:0;">✕</button>
+    </div>
+    ${bodyHtml}${video}${doc}${dl}${empty}
+    <button onclick="document.getElementById('lesson-view-ov').remove();nav('course-builder','${c.id}')" style="width:100%;margin-top:6px;background:none;border:1px solid #333;color:#bbb;border-radius:10px;padding:11px;font-size:12px;cursor:pointer;font-family:inherit;"><i class="ti ti-pencil" style="font-size:12px;"></i> Edit this course</button>
+  </div>`;
+  (document.querySelector('.shell')||document.body).appendChild(ov);
 }
 // ── Course builder ── draft lives in window._cbDraft so edits survive re-renders.
 function _cbNewLesson(){return {id:'l'+Math.random().toString(36).slice(2,8),title:'',body:'',videoUrl:'',docUrl:'',fileId:'',fileName:'',fileType:'',_newFileData:''};}
