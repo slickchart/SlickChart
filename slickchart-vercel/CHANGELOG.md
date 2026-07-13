@@ -2,6 +2,16 @@
 
 Newest entries at the top. One entry per deploy. Dates are US-formatted.
 
+## 2026-07-13 — Guides: attach MULTIPLE files too
+
+Guides now hold more than one PDF/image/doc, matching the course change. The guide editor lists each
+attachment with its own **Remove** and an **Add another file** (multi-select supported); the guide preview
+shows a download button per file (and previews the first PDF inline); and the client's guide view renders a
+download button for each file. Back-compatible: the first file keeps the guide-id storage key so existing
+shares/links keep working, extra files get their own ids, and older single-file guides auto-migrate on
+edit. Still 3 MB per direct upload (paste a link for bigger). Provider + client apps and both demos updated;
+all parse.
+
 ## 2026-07-13 — Courses: attach MULTIPLE files per lesson
 
 A lesson can now hold **more than one PDF/image/doc**, not just a single file. In the course builder,

@@ -3711,7 +3711,7 @@ function _cfsSendGuide(gid,cid){
   const c=CL[cid];const r=(typeof _findGuide==='function')?_findGuide(gid):null;
   const sh=document.getElementById('sendform-sheet');if(sh)sh.remove();
   if(!c||!r)return;
-  if(cid==='maya'){try{SlickBridge.post('resource-shared',{providerId:'jess',clientId:'maya',resource:{guideId:r.id,title:r.title,icon:r.icon,cat:r.cat,url:r.url||'',tips:r.tips||[],fileName:r.fileName||'',fileType:r.fileType||'',hasFile:!!(r.hasFile||r.fileData),fileData:r.fileData||''}});}catch(e){}proToast('Sent '+r.title+' to Maya');return;}
+  if(cid==='maya'){try{SlickBridge.post('resource-shared',{providerId:'jess',clientId:'maya',resource:{guideId:r.id,title:r.title,icon:r.icon,cat:r.cat,url:r.url||'',tips:r.tips||[],files:_guideFileList(r),fileName:r.fileName||'',fileType:r.fileType||'',hasFile:!!(r.hasFile||r.fileData),fileData:r.fileData||''}});}catch(e){}proToast('Sent '+r.title+' to Maya');return;}
   if(!Array.isArray(c.pendingGuides))c.pendingGuides=[];
   if(!c.pendingGuides.some(pg=>pg.guideId===r.id))c.pendingGuides.push({guideId:r.id,assignedAt:Date.now()});
   try{saveClients();}catch(e){}
@@ -8013,7 +8013,7 @@ function confirmSendForm(fid,cid){
   const sendIds=_isIntakeForm(fid)?_withPhotoRelease(fid):[fid];
   if(cid==='maya'){
     try{SlickBridge.post('form-shared',{providerId:'jess',clientId:'maya',form:{id:fid,title:tmpl.name,docs:guides.map(g=>({title:g.title,kind:g.cat})),qs:(tmpl.qs||[]).map(q=>({id:q.id,label:q.label,type:q.type,required:q.required,options:q.options,items:q.items})),contra:ci?ci.items:[],consent:sig?sig.label:''}});}catch(e){}
-    guides.forEach(g=>{try{SlickBridge.post('resource-shared',{providerId:'jess',clientId:'maya',resource:{guideId:g.id,title:g.title,icon:g.icon,cat:g.cat,url:g.url||'',tips:g.tips||[],fileName:g.fileName||'',fileType:g.fileType||'',hasFile:!!(g.hasFile||g.fileData),fileData:g.fileData||''}});}catch(e){}});
+    guides.forEach(g=>{try{SlickBridge.post('resource-shared',{providerId:'jess',clientId:'maya',resource:{guideId:g.id,title:g.title,icon:g.icon,cat:g.cat,url:g.url||'',tips:g.tips||[],files:_guideFileList(g),fileName:g.fileName||'',fileType:g.fileType||'',hasFile:!!(g.hasFile||g.fileData),fileData:g.fileData||''}});}catch(e){}});
   }else if(c){
     // Real client: actually assign the form(s) to them so they appear the next
     // time they open their app, instead of just claiming it was sent. Also assign any
@@ -9428,7 +9428,7 @@ function _assembleClientData(id){
   const pendingGuides=(Array.isArray(c.pendingGuides)?c.pendingGuides:[]).map(pg=>{
     const g=(typeof _findGuide==='function')?_findGuide(pg.guideId):null;if(!g)return null;
     return {guideId:pg.guideId,title:g.title||'Guide',icon:g.icon||'📄',cat:g.cat||'',url:g.url||'',tips:Array.isArray(g.tips)?g.tips:[],
-      fileName:g.fileName||'',fileType:g.fileType||'',hasFile:!!(g.hasFile||g.fileData)};
+      files:_guideFileList(g),fileName:g.fileName||'',fileType:g.fileType||'',hasFile:!!(g.hasFile||g.fileData)};
   }).filter(Boolean);
   // Full courses the provider assigned, rendered by the client's in-app course player.
   const pendingCourses=(Array.isArray(c.pendingCourses)?c.pendingCourses:[]).map(pc=>{
@@ -11321,7 +11321,7 @@ function sendResourceToClient(ri){
 function confirmSendResource(ri,cid){
   const r=resources[ri];if(!r)return;
   r.shared=(r.shared||0)+1;
-  if(cid==='maya'){try{SlickBridge.post('resource-shared',{providerId:'jess',clientId:'maya',resource:{title:r.title,icon:r.icon,cat:r.cat,url:r.url||'',tips:r.tips||[],fileName:r.fileName||'',fileType:r.fileType||'',hasFile:!!(r.hasFile||r.fileData)}});}catch(e){}closeSendProd();proToast('Sent to Maya');return;}
+  if(cid==='maya'){try{SlickBridge.post('resource-shared',{providerId:'jess',clientId:'maya',resource:{title:r.title,icon:r.icon,cat:r.cat,url:r.url||'',tips:r.tips||[],files:_guideFileList(r),fileName:r.fileName||'',fileType:r.fileType||'',hasFile:!!(r.hasFile||r.fileData)}});}catch(e){}closeSendProd();proToast('Sent to Maya');return;}
   // Assign it to the client's pending guides so it reaches their app via /api/client-data,
   // then hand the provider a real link to send (invite if the client isn't on the app yet).
   const c=CL[cid];if(!c){closeSendProd();return;}
@@ -16858,35 +16858,65 @@ let _newResType={icon:'📄',cat:'Aftercare'};
 // Staged here while editing; folded into the guide object on Save. Capped so it stays syncable.
 // A staged guide file is either {name,type,data} (freshly picked, has base64 data) or
 // {name,type,existing:true} (an already-uploaded file we don't re-read the bytes for).
-let _guideFileDraft=null;
+// A guide can carry MULTIPLE files now. `_guideFileDrafts` stages them while editing; each is
+// {fileId?, name, type, data?, existing?}. Older guides had a single file keyed by the guide id —
+// `_guideFileList` normalizes either shape, and on save the first file keeps the guide-id key so
+// existing shares/clients keep working, while extra files get their own ids.
+let _guideFileDrafts=[],_guideRemovedFileIds=[];
+function _guideFileList(g){
+  if(!g)return [];
+  if(Array.isArray(g.files)&&g.files.length)return g.files.filter(f=>f&&(f.fileId||f.fileName));
+  if(g.hasFile||g.fileName||g.fileData)return [{fileId:g.id,fileName:g.fileName||'',fileType:g.fileType||''}];
+  return [];
+}
 function _guideFileSizeLabel(dataUrl){try{const b=Math.round((String(dataUrl||'').length*3/4)/1024);return b>=1024?((b/1024).toFixed(1)+' MB'):(b+' KB');}catch(e){return '';}}
 function _guideFileRowHTML(){
-  if(_guideFileDraft&&(_guideFileDraft.data||_guideFileDraft.existing)){
-    const meta=_guideFileDraft.data?(_guideFileSizeLabel(_guideFileDraft.data)+' · clients can download this'):'Saved · clients can download this';
-    return `<div style="display:flex;align-items:center;gap:10px;background:#161616;border:1px solid #2a2a2a;border-radius:10px;padding:10px 12px;">
+  const list=(_guideFileDrafts||[]).map((f,i)=>{
+    const meta=f.data?(_guideFileSizeLabel(f.data)+' · clients can download this'):'Saved · clients can download this';
+    return `<div style="display:flex;align-items:center;gap:10px;background:#161616;border:1px solid #2a2a2a;border-radius:10px;padding:10px 12px;margin-bottom:6px;">
       <i class="ti ti-file-text" aria-hidden="true" style="font-size:20px;color:var(--accent);flex-shrink:0;"></i>
-      <div style="flex:1;min-width:0;"><div style="font-size:13px;color:#e0e0e0;white-space:nowrap;overflow:hidden;text-overflow:ellipsis;">${_fileEsc(_guideFileDraft.name||'Attached file')}</div><div style="font-size:11px;color:#888;">${meta}</div></div>
-      <button onclick="_removeGuideFile()" style="background:none;border:none;color:#e87070;font-size:12px;cursor:pointer;flex-shrink:0;font-family:inherit;">Remove</button>
+      <div style="flex:1;min-width:0;"><div style="font-size:13px;color:#e0e0e0;white-space:nowrap;overflow:hidden;text-overflow:ellipsis;">${_fileEsc(f.name||'Attached file')}</div><div style="font-size:11px;color:#888;">${meta}</div></div>
+      <button onclick="_removeGuideFile(${i})" style="background:none;border:none;color:#e87070;font-size:12px;cursor:pointer;flex-shrink:0;font-family:inherit;">Remove</button>
     </div>`;
-  }
-  return `<button type="button" onclick="_pickGuideFile()" style="width:100%;border:1.5px dashed #3a3a3a;background:#161616;border-radius:10px;padding:12px;display:flex;align-items:center;justify-content:center;gap:8px;cursor:pointer;color:#bbb;font-family:inherit;font-size:13px;"><i class="ti ti-paperclip" aria-hidden="true" style="font-size:17px;color:var(--accent);"></i> Attach a file (PDF, image, doc)</button>`;
+  }).join('');
+  return list+`<button type="button" onclick="_pickGuideFile()" style="width:100%;border:1.5px dashed #3a3a3a;background:#161616;border-radius:10px;padding:12px;display:flex;align-items:center;justify-content:center;gap:8px;cursor:pointer;color:#bbb;font-family:inherit;font-size:13px;"><i class="ti ti-paperclip" aria-hidden="true" style="font-size:17px;color:var(--accent);"></i> ${(_guideFileDrafts&&_guideFileDrafts.length)?'Add another file':'Attach files (PDF, image, doc)'}</button>`;
 }
 function _pickGuideFile(){
-  const inp=document.createElement('input');inp.type='file';
+  const inp=document.createElement('input');inp.type='file';inp.multiple=true;
   inp.accept='application/pdf,image/*,.pdf,.doc,.docx,.txt,.csv,.rtf,.pages';
   inp.onchange=function(){
-    const f=(inp.files||[])[0];if(!f)return;
-    // Cap at 3 MB so the base64 upload stays under the serverless request-body limit and
-    // reliably reaches the server in a single request.
-    if(f.size>3*1024*1024){if(typeof proToast==='function')proToast('Please choose a file under 3MB so it syncs to your clients reliably');return;}
-    const r=new FileReader();
-    r.onload=function(e){_guideFileDraft={name:f.name||'file',type:f.type||'',data:e.target.result};const row=document.getElementById('guide-file-row');if(row)row.innerHTML=_guideFileRowHTML();};
-    r.onerror=function(){if(typeof proToast==='function')proToast('Could not read that file');};
-    r.readAsDataURL(f);
+    const files=Array.from(inp.files||[]);if(!files.length)return;
+    if(!Array.isArray(_guideFileDrafts))_guideFileDrafts=[];
+    let pending=files.length;const done=()=>{if(--pending<=0){const row=document.getElementById('guide-file-row');if(row)row.innerHTML=_guideFileRowHTML();}};
+    files.forEach(f=>{
+      // Cap at 3 MB each so the base64 upload stays under the serverless request-body limit.
+      if(f.size>3*1024*1024){if(typeof proToast==='function')proToast('“'+(f.name||'That file')+'” is over 3MB — attach a smaller file, or paste a link above',0);done();return;}
+      const r=new FileReader();
+      r.onload=function(e){_guideFileDrafts.push({name:f.name||'file',type:f.type||'',data:e.target.result});done();};
+      r.onerror=function(){if(typeof proToast==='function')proToast('Could not read “'+(f.name||'a file')+'”');done();};
+      r.readAsDataURL(f);
+    });
   };
   inp.click();
 }
-function _removeGuideFile(){_guideFileDraft=null;const row=document.getElementById('guide-file-row');if(row)row.innerHTML=_guideFileRowHTML();}
+function _removeGuideFile(i){
+  const f=(_guideFileDrafts||[])[i];
+  if(f&&f.existing&&f.fileId)_guideRemovedFileIds.push(f.fileId);   // clean up on save
+  if(_guideFileDrafts)_guideFileDrafts.splice(i,1);
+  const row=document.getElementById('guide-file-row');if(row)row.innerHTML=_guideFileRowHTML();
+}
+// Persist all staged guide files; first keeps the guide-id key (back-compat), extras get own ids.
+// Deletes any files the provider removed. Returns [{fileId,fileName,fileType}].
+function _finalizeGuideFiles(guideId){
+  const outFiles=[];
+  (_guideFileDrafts||[]).forEach((f,idx)=>{
+    const fid=f.fileId||(idx===0?guideId:(guideId+'__f'+Math.random().toString(36).slice(2,7)));
+    if(f.data){try{_persistGuideFile(fid,{name:f.name||'',type:f.type||'',data:f.data},false);}catch(e){}}
+    outFiles.push({fileId:fid,fileName:f.name||'',fileType:f.type||''});
+  });
+  (_guideRemovedFileIds||[]).forEach(fid=>{if(fid&&!outFiles.some(x=>x.fileId===fid)){try{_persistGuideFile(fid,null,true);}catch(e){}}});
+  return outFiles;
+}
 // ── Guide file storage ── files live server-side (per owner+guide id) and in IndexedDB
 // locally, NOT in the synced sc_resources blob, base64 files are too big for that path,
 // which is why uploads used to vanish. The guide record keeps only name/type/hasFile.
@@ -16964,7 +16994,7 @@ function renderAddResource(){
   setNav('more');
   document.getElementById('tt').textContent='Add Guide';
   _newResType={icon:'📄',cat:'Aftercare'};
-  _editingGuideId='__new__';_guideProdDraft=[];_guideFileDraft=null;_guideIconDraft='📄';   // fresh product + file + icon draft
+  _editingGuideId='__new__';_guideProdDraft=[];_guideFileDrafts=[];_guideRemovedFileIds=[];_guideIconDraft='📄';   // fresh product + file + icon draft
   const types=[['📄','Aftercare','#0d1e33','#5ba3e8','Aftercare'],['🎥','Video','#0a2019','#4ec49a','Video'],['📋','Prep','var(--accent-tint)','var(--accent)','Prep'],['🌿','Education','#1e1633','#a891ec','Education']];
   S.innerHTML=`
   <div style="padding:12px 16px 0;display:flex;align-items:center;justify-content:flex-end;">
@@ -17106,12 +17136,13 @@ function renderGuidePreview(id){
       // Preview a linked or uploaded PDF right here (iframe) instead of forcing a click out to
       // the link, this is the same in-app preview the client gets. Open/download stay as backups.
       var urlPdf=!!(g.url&&(/\.pdf($|\?|#)/i.test(g.url)||String(g.cat||'').toUpperCase()==='PDF'));
-      var filePdf=(g.hasFile||g.fileData)&&(/pdf/i.test(g.fileType||'')||/\.pdf$/i.test(g.fileName||''));
+      var gf0=_guideFileList(g)[0];
+      var filePdf=!!(gf0&&(/pdf/i.test(gf0.fileType||'')||/\.pdf$/i.test(gf0.fileName||'')));
       if(!urlPdf&&!filePdf)return '';
       return `<div style="margin-bottom:14px;"><iframe id="pguide-frame" ${urlPdf?`src="${_urlAttr(_safeUrl(g.url))}"`:''} title="${_fileEsc(g.title||'Guide')} preview" style="width:100%;height:60vh;border:1px solid #2a2a2a;border-radius:12px;background:#fff;"></iframe><div style="font-size:11px;color:#888;text-align:center;margin-top:6px;line-height:1.4;">Inline preview. If it doesn’t load, use the button below to open or download it.</div></div>`;
     })()}
     ${g.url?`<a href="${_urlAttr(_safeUrl(g.url))}" target="_blank" rel="noopener noreferrer" style="display:inline-flex;align-items:center;gap:5px;font-size:12px;color:var(--accent);text-decoration:none;margin-bottom:14px;"><i class="ti ti-external-link" style="font-size:12px;"></i> Open full guide</a>`:''}
-    ${(g.hasFile||g.fileData)?`<button onclick="_downloadGuideFileP('${g.id}')" style="display:inline-flex;align-items:center;gap:6px;font-size:12px;color:var(--accent);background:var(--accent-tint);border:1px solid var(--accent);border-radius:8px;padding:7px 12px;cursor:pointer;margin-bottom:14px;font-family:inherit;"><i class="ti ti-download" style="font-size:13px;"></i> View / download ${_fileEsc(g.fileName||'file')}</button>`:''}
+    ${_guideFileList(g).map(f=>`<button onclick="_downloadGuideFileP('${_jsAttr(f.fileId)}')" style="display:flex;width:100%;box-sizing:border-box;align-items:center;gap:6px;font-size:12px;color:var(--accent);background:var(--accent-tint);border:1px solid var(--accent);border-radius:8px;padding:9px 12px;cursor:pointer;margin-bottom:8px;font-family:inherit;"><i class="ti ti-download" style="font-size:13px;"></i> View / download ${_fileEsc(f.fileName||'file')}</button>`).join('')}
     ${(g.tips&&g.tips.length)?`<div style="font-size:11px;font-weight:600;color:#aaa;text-transform:uppercase;letter-spacing:.06em;margin-bottom:8px;">Tips</div>
     <div style="background:#1a1a1a;border:1px solid #2a2a2a;border-radius:12px;overflow:hidden;margin-bottom:16px;">
       ${g.tips.map((t,i)=>`<div style="display:flex;align-items:flex-start;gap:10px;padding:11px 13px;${i<g.tips.length-1?'border-bottom:1px solid #1e1e1e;':''}"><i class="ti ti-check" style="font-size:14px;color:#4ec49a;margin-top:2px;flex-shrink:0;"></i><span style="font-size:13px;color:#ddd;line-height:1.55;">${_fileEsc(t)}</span></div>`).join('')}
@@ -17120,8 +17151,8 @@ function renderGuidePreview(id){
     ${prods.map(a=>`<div style="background:#1a1a1a;border:1px solid #2a2a2a;border-radius:10px;padding:11px 12px;display:flex;align-items:center;gap:10px;margin-bottom:8px;"><span style="font-size:18px;">${_fileEsc(a.icon)}</span><div style="flex:1;min-width:0;"><div style="font-size:13px;font-weight:500;color:#e0e0e0;">${_fileEsc(a.name)}</div><div style="font-size:11px;color:#999;">${_fileEsc(a.brand||'')}</div></div>${(a.url||a.site||a.inOffice||(typeof amazonBuyUrl==='function'&&amazonBuyUrl(a)))?`<button onclick="openBuyOptionsP('${a.id}')" style="background:var(--accent);color:var(--accent-ink);border:none;border-radius:7px;padding:6px 11px;font-size:11px;font-weight:600;cursor:pointer;white-space:nowrap;">Buy</button>`:''}</div>`).join('')}`:''}
     <div style="height:20px;"></div>
   </div>`;
-  // Uploaded PDFs: pull the bytes into the preview iframe (URL PDFs load via src directly).
-  if((g.hasFile||g.fileData)&&(/pdf/i.test(g.fileType||'')||/\.pdf$/i.test(g.fileName||''))){try{_previewGuideFileInFrameP(g.id);}catch(e){}}
+  // Uploaded PDFs: pull the first file's bytes into the preview iframe (URL PDFs load via src directly).
+  (function(){const f0=_guideFileList(g)[0];if(f0&&f0.fileId&&(/pdf/i.test(f0.fileType||'')||/\.pdf$/i.test(f0.fileName||''))){try{_previewGuideFileInFrameP(f0.fileId);}catch(e){}}})();
 }
 function renderEditResource(id){
   setNav('more');
@@ -17129,9 +17160,11 @@ function renderEditResource(id){
   const g=_findGuide(id)||{id,icon:'📄',title:'',cat:'Aftercare',url:'',tips:[]};
   _editingGuideId=id;
   _guideProdDraft=(Array.isArray(g.products)?g.products.slice():[]);   // stage product edits
-  // Stage the existing file: legacy guides may still carry inline base64 (data), newer ones
-  // just carry hasFile + name/type and the bytes live server-side / in IndexedDB.
-  _guideFileDraft=(g.fileData?{name:g.fileName||'Attached file',type:g.fileType||'',data:g.fileData}:(g.hasFile?{name:g.fileName||'Attached file',type:g.fileType||'',existing:true}:null));
+  // Stage the existing file(s): newer guides carry a files[] array; older ones a single file
+  // (hasFile + name/type, bytes server-side/IndexedDB) or legacy inline base64 (fileData).
+  _guideRemovedFileIds=[];
+  _guideFileDrafts=_guideFileList(g).map(f=>({fileId:f.fileId,name:f.fileName||'Attached file',type:f.fileType||'',existing:true}));
+  if(g.fileData&&_guideFileDrafts.length){_guideFileDrafts[0].data=g.fileData;_guideFileDrafts[0].existing=false;}   // re-persist legacy inline bytes
   const isCustom=/^g-custom-/.test(id);
   const hasOverride=customResources.some(x=>x.id===id);
   _newResType={icon:g.icon||'📄',cat:g.cat||'Aftercare'};
@@ -17171,16 +17204,13 @@ function saveEditResource(id){
   const url=(document.getElementById('res-url')?.value||'').trim().replace(/^https?:\/\//i,'');
   const tips=(document.getElementById('res-tips')?.value||'').split('\n').map(s=>s.trim()).filter(Boolean);
   const products=Array.isArray(_guideProdDraft)?_guideProdDraft.slice():((_findGuide(id)||{}).products||[]);
-  const prev=_findGuide(id)||{};
-  const prevHadFile=!!(prev.hasFile||prev.fileData);
-  const hasFile=!!(_guideFileDraft&&(_guideFileDraft.data||_guideFileDraft.existing));
+  const files=_finalizeGuideFiles(id);const first=files[0]||{};
   const upd={id,icon:_guideIconToSave(),title,cat:_newResType.cat||'Aftercare',url,tips,products,
-    fileName:(_guideFileDraft&&_guideFileDraft.name)||'',fileType:(_guideFileDraft&&_guideFileDraft.type)||'',hasFile};
+    files,fileName:first.fileName||'',fileType:first.fileType||'',hasFile:files.length>0};
   const i=customResources.findIndex(x=>x.id===id);
   if(i>=0){customResources[i]=Object.assign({},customResources[i],upd);delete customResources[i].fileData;}
   else customResources.push(upd);
-  _persistGuideFile(id,_guideFileDraft,prevHadFile);
-  _guideProdDraft=null;_guideFileDraft=null;
+  _guideProdDraft=null;_guideFileDrafts=[];_guideRemovedFileIds=[];
   persistCustomResources();rebuildResources();
   if(typeof proToast==='function')proToast('Guide updated');
   _fgTab='guides';nav('forms');
@@ -17275,12 +17305,12 @@ function saveResource(){
   const url=(document.getElementById('res-url')?.value||'').trim().replace(/^https?:\/\//i,'');
   const tips=(document.getElementById('res-tips')?.value||'').split('\n').map(s=>s.trim()).filter(Boolean);
   const products=Array.isArray(_guideProdDraft)?_guideProdDraft.slice():[];
-  const hasFile=!!(_guideFileDraft&&(_guideFileDraft.data||_guideFileDraft.existing));
-  const g={id:'g-custom-'+Date.now(),icon:_guideIconToSave(),title,cat:_newResType.cat||'Aftercare',url,shared:0,tips,products,
-    fileName:(_guideFileDraft&&_guideFileDraft.name)||'',fileType:(_guideFileDraft&&_guideFileDraft.type)||'',hasFile};
+  const gid='g-custom-'+Date.now();
+  const files=_finalizeGuideFiles(gid);const first=files[0]||{};
+  const g={id:gid,icon:_guideIconToSave(),title,cat:_newResType.cat||'Aftercare',url,shared:0,tips,products,
+    files,fileName:first.fileName||'',fileType:first.fileType||'',hasFile:files.length>0};
   customResources.push(g);
-  _persistGuideFile(g.id,_guideFileDraft,false);
-  _guideProdDraft=null;_guideFileDraft=null;
+  _guideProdDraft=null;_guideFileDrafts=[];_guideRemovedFileIds=[];
   persistCustomResources();
   rebuildResources();
   if(typeof proToast==='function')proToast('Guide added to your library');

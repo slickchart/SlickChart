@@ -1556,29 +1556,38 @@ function renderViewGuide(){
   document.getElementById('tt').textContent=pg.title;
   // A linked or uploaded PDF previews right in the app (iframe) so the client doesn't have to
   // download it just to read it — with View (the preview) AND Download/Open, either works.
-  const hasFile=!!(pg.fileData||pg.hasFile);
+  const gfiles=_clientGuideFiles(pg);
+  const hasFile=gfiles.length>0;
+  const gf0=gfiles[0]||{};
   const urlPdf=!!(pg.url&&(/\.pdf($|\?|#)/i.test(pg.url)||String(pg.cat||'').toUpperCase()==='PDF'));
-  const filePdf=hasFile&&(/pdf/i.test(pg.fileType||'')||/\.pdf$/i.test(pg.fileName||''));
+  const filePdf=!!(gf0.fileId&&(/pdf/i.test(gf0.fileType||'')||/\.pdf$/i.test(gf0.fileName||'')));
   const showFrame=urlPdf||filePdf;
   S.innerHTML=`
   <div style="padding:20px 16px 4px;text-align:center;"><div style="font-size:40px;margin-bottom:8px;">${_iconMarkup(pg.icon,44)||'📚'}</div><div id="page-heading" tabindex="-1" style="font-size:19px;font-weight:600;color:#1a1a1a;">${_txt(pg.title)}</div>${pg.cat?`<div style="font-size:12px;color:#786858;margin-top:2px;">${_txt(pg.cat)}</div>`:''}</div>
   <div style="padding:16px;">
     ${(pg.tips&&pg.tips.length)?`<div style="background:#fff;border:1.5px solid #f0ebe4;border-radius:14px;padding:14px;margin-bottom:14px;">${pg.tips.map(t=>`<div style="display:flex;gap:9px;padding:7px 0;"><i class="ti ti-point-filled" aria-hidden="true" style="font-size:14px;color:var(--accent);flex-shrink:0;margin-top:2px;"></i><span style="font-size:13.5px;color:#3a2f28;line-height:1.55;">${_txt(t)}</span></div>`).join('')}</div>`:''}
     ${showFrame?`<div style="margin-bottom:12px;"><iframe id="guide-frame" ${urlPdf?`src="${_urlAttr(_safeUrl(pg.url))}"`:''} title="${_txt(pg.title)} preview" style="width:100%;height:66vh;border:1.5px solid #f0ebe4;border-radius:12px;background:#fff;"></iframe><div style="font-size:11px;color:#9a8d80;text-align:center;margin-top:6px;line-height:1.4;">If the preview doesn't load, use the button below to open or download it.</div></div>`:''}
-    ${hasFile?`<button onclick="_downloadGuideFile('${_jsAttr(pg.guideId)}',this)" class="btnp" style="display:flex;width:100%;box-sizing:border-box;border-radius:12px;padding:13px;justify-content:center;align-items:center;gap:7px;"><i class="ti ti-download"></i> Download ${_txt(pg.fileName||'file')}</button>`:''}
+    ${_clientGuideFiles(pg).map(f=>`<button onclick="_downloadGuideFileById('${_jsAttr(f.fileId)}','${_jsAttr(f.fileName||'file')}','${_jsAttr(f.fileType||'')}',this)" class="btnp" style="display:flex;width:100%;box-sizing:border-box;border-radius:12px;padding:13px;justify-content:center;align-items:center;gap:7px;margin-bottom:10px;"><i class="ti ti-download"></i> Download ${_txt(f.fileName||'file')}</button>`).join('')}
     ${pg.url?`<a href="${_urlAttr(_safeUrl(pg.url))}" target="_blank" rel="noopener" class="${showFrame||hasFile?'btng':'btnp'}" style="display:flex;width:100%;box-sizing:border-box;border-radius:12px;padding:13px;text-decoration:none;justify-content:center;align-items:center;gap:7px;${hasFile?'margin-top:10px;':''}"><i class="ti ti-external-link"></i> ${showFrame?'Open in browser':'Open full guide'}</a>`:''}
     ${(!pg.tips||!pg.tips.length)&&!pg.url&&!hasFile?`<div style="text-align:center;color:#786858;font-size:13px;padding:20px;">${_txt(client.providerFirst)} shared this with you.</div>`:''}
   </div>`;
-  if(filePdf){try{_previewGuideFileInFrame(pg.guideId);}catch(e){}}
+  if(filePdf&&gf0.fileId){try{_previewGuideFileInFrame(gf0.fileId,gf0._data||'');}catch(e){}}
+}
+// Normalize a shared guide's files: prefer the files[] array, fall back to the legacy single file
+// (keyed by the guide id). Legacy inline bytes ride on the single file as _data.
+function _clientGuideFiles(pg){
+  if(!pg)return [];
+  if(Array.isArray(pg.files)&&pg.files.length)return pg.files.filter(f=>f&&(f.fileId||f.fileName));
+  if(pg.hasFile||pg.fileName||pg.fileData)return [{fileId:pg.guideId,fileName:pg.fileName||'',fileType:pg.fileType||'',_data:pg.fileData||''}];
+  return [];
 }
 // Load an uploaded PDF into the in-app preview iframe: inline bytes if we still have them, else fetch
 // from the server with this client's link token, then show it as a blob so the preview renders.
-function _previewGuideFileInFrame(guideId){
-  const pg=(activeProvider().pendingGuides||[]).find(g=>g.guideId===guideId);if(!pg)return;
+function _previewGuideFileInFrame(fileId,inlineData){
   const setSrc=(dataUrl)=>{const fr=document.getElementById('guide-frame');if(!fr||!dataUrl)return;try{const parts=String(dataUrl).split(',');const mime=((parts[0]||'').match(/data:([^;]+)/)||[])[1]||'application/pdf';const bin=atob(parts[1]||'');const arr=new Uint8Array(bin.length);for(let i=0;i<bin.length;i++)arr[i]=bin.charCodeAt(i);fr.src=URL.createObjectURL(new Blob([arr],{type:mime}));}catch(e){fr.src=dataUrl;}};
-  if(pg.fileData){setSrc(pg.fileData);return;}
-  if(!pg.hasFile||!client._real||!client._token)return;
-  fetch('/api/guide-file?id='+encodeURIComponent(guideId)+'&t='+encodeURIComponent(client._token))
+  if(inlineData){setSrc(inlineData);return;}
+  if(!fileId||!client._real||!client._token)return;
+  fetch('/api/guide-file?id='+encodeURIComponent(fileId)+'&t='+encodeURIComponent(client._token))
     .then(function(r){return r.ok?r.json():null;})
     .then(function(j){if(j&&j.file&&j.file.data)setSrc(j.file.data);})
     .catch(function(){});
@@ -1603,18 +1612,25 @@ function _saveDataUrlAsFile(dataUrl,fileName,fileType){
 // (fileData); newer ones just flag hasFile and we fetch the file from the server on demand,
 // authenticated by this client's own link token. Convert to a Blob so it downloads
 // reliably (especially on mobile Safari) rather than pointing an anchor at a data URL.
-function _downloadGuideFile(guideId,btn){
-  const pg=(activeProvider().pendingGuides||[]).find(g=>g.guideId===guideId);
-  if(!pg)return;
-  if(pg.fileData){_saveDataUrlAsFile(pg.fileData,pg.fileName,pg.fileType);return;}
-  if(!pg.hasFile){return;}
+function _guideInlineData(fileId){
+  const gs=activeProvider().pendingGuides||[];
+  for(var i=0;i<gs.length;i++){var pg=gs[i];
+    if(pg.guideId===fileId&&pg.fileData)return pg.fileData;
+    if(Array.isArray(pg.files)){var f=pg.files.find(function(x){return x&&x.fileId===fileId;});if(f&&f._data)return f._data;}
+  }
+  return '';
+}
+function _downloadGuideFileById(fileId,fileName,fileType,btn){
+  if(!fileId)return;
+  var inline=_guideInlineData(fileId);
+  if(inline){_saveDataUrlAsFile(inline,fileName,fileType);return;}
   if(!client._real||!client._token){alert('This file will be available once you open your link online.');return;}
   const orig=btn?btn.innerHTML:'';
   if(btn){btn.disabled=true;btn.innerHTML='<i class="ti ti-loader-2"></i> Getting your file…';}
-  fetch('/api/guide-file?id='+encodeURIComponent(guideId)+'&t='+encodeURIComponent(client._token))
+  fetch('/api/guide-file?id='+encodeURIComponent(fileId)+'&t='+encodeURIComponent(client._token))
     .then(function(r){return r.ok?r.json():null;})
     .then(function(j){
-      if(j&&j.file&&j.file.data){_saveDataUrlAsFile(j.file.data,j.file.name||pg.fileName,j.file.type||pg.fileType);}
+      if(j&&j.file&&j.file.data){_saveDataUrlAsFile(j.file.data,j.file.name||fileName,j.file.type||fileType);}
       else{alert('Sorry, that file couldn’t be loaded. Please try again in a moment.');}
     })
     .catch(function(){alert('Couldn’t reach the server. Please check your connection and try again.');})
