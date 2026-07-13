@@ -2,6 +2,14 @@
 
 Newest entries at the top. One entry per deploy. Dates are US-formatted.
 
+## 2026-07-13 — Fix: deleted guides reappearing on reload (load-order bug)
+
+Course saving now persists (previous fix). This fixes the remaining "I delete a guide and it keeps coming
+back": on reload, `rebuildResources()` (and `applyProfessionConfig`) rebuilt the guides list BEFORE the
+persistence sweep loaded the hidden-deletes set — so the filter had nothing to apply and deleted template
+guides came straight back. `rebuildResources()` and `renderForms()` now call `loadHiddenSets()` at the top,
+so deletes are applied regardless of boot order. Provider-side; demo in lockstep; both apps parse.
+
 ## 2026-07-13 — Fix: new courses and form/guide deletes now survive a refresh
 
 Root-cause fix for "my course didn't save" and "deletes didn't persist." Cloud sync mirrored changes to
