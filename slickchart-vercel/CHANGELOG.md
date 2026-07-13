@@ -2,6 +2,19 @@
 
 Newest entries at the top. One entry per deploy. Dates are US-formatted.
 
+## 2026-07-13 — Courses: lessons preview inline, and the viewer is centered
+
+Two tweaks to the lesson viewer from provider feedback:
+
+- **Attached files now preview in the screen** instead of only offering a download. Images render as an
+  image and PDFs render in an inline viewer (via a blob URL, which is more reliable on mobile than a data
+  URL), so you can read a worksheet right there. A small **Download** link (and **Open full screen** for
+  PDFs) stays as a fallback.
+- **The viewer is centered** now, not pinned to the bottom of the screen — it was opening "way at the
+  bottom." Files that aren't cached on the device yet show a gentle "open once while online" note.
+
+Provider-side; demo in lockstep; both apps parse.
+
 ## 2026-07-13 — Tattoo: scan ink label to log the lot number (OCR)
 
 The tattoo record's **Ink used** field now has a **Scan ink label** button. Photograph the bottle and Claude
