@@ -1,13 +1,13 @@
 // Minimal transactional email via Resend's HTTP API (no SDK/deps needed).
 // If RESEND_API_KEY isn't set, we no-op gracefully so the app still works in
 // development / before an email provider is connected.
-export async function sendEmail({ to, subject, html, text, replyTo: replyToOverride }) {
+export async function sendEmail({ to, subject, html, text, replyTo: replyToOverride, from: fromOverride }) {
   const key = process.env.RESEND_API_KEY || '';
   // The "from" address must be on a domain verified in Resend. slickchart.app is verified, so we
   // default to it; override with EMAIL_FROM in Vercel to use a different address on that domain.
   // NOTE: a gmail.com address cannot be a "from" here — Resend only sends from domains you own/verify.
   // To route replies to your inbox, use EMAIL_REPLY_TO (below) instead.
-  const from = process.env.EMAIL_FROM || 'SlickChart <noreply@slickchart.app>';
+  const from = fromOverride || process.env.EMAIL_FROM || 'SlickChart <noreply@slickchart.app>';
   // Replies to any SlickChart email go here (defaults to the business inbox). This is how a Gmail
   // address gets attached to the emails without needing to send *from* it. A caller can override
   // per-message (e.g. a lead-notification sets Reply-To to the prospect so a reply reaches them).
