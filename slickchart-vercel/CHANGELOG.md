@@ -2,6 +2,27 @@
 
 Newest entries at the top. One entry per deploy. Dates are US-formatted.
 
+## 2026-07-13 — High-accuracy voice notes (Groq Whisper), with graceful fallback
+
+Voice notes can now be transcribed by **Groq's Whisper (`whisper-large-v3-turbo`)** server-side instead of
+the phone's built-in dictation — far more accurate on medical/product terminology and no more Android
+word-doubling, because the audio is recorded once and transcribed in one pass rather than streamed.
+
+- **New `/api/transcribe.js` proxy.** `GET` is a cheap capability probe (`{enabled}`); `POST` takes a
+  base64 audio clip and forwards it to Groq as multipart, returning `{text}`. The `GROQ_API_KEY` stays
+  server-side. Same caller-keyed burst limiter as `/api/ai` (default 12/min, `TRANSCRIBE_BURST_LIMIT`);
+  optional `GROQ_STT_MODEL` override. Rejects clips over ~4.5 MB (413).
+- **Client records, then transcribes.** On boot `_probeWhisper()` sets `_whisperOn`. When it's on and the
+  device can record, tapping the mic now records via `MediaRecorder` (opus, low bitrate) with a live timer
+  and a **5-minute auto-stop cap** so a marathon note can't exceed the upload limit, then posts the clip
+  for transcription.
+- **Same clean-up-and-file flow.** The transcript feeds the existing preview → "clean up & file into
+  sections" step, so it still routes into your named treatment-note sections exactly as before.
+- **Graceful fallback everywhere.** If the key isn't set (`enabled:false`), the mic is blocked, recording
+  isn't supported, or transcription fails, it quietly falls back to the phone's live dictation (or a
+  type-it box). Nothing breaks when Whisper isn't configured. Provider-side only; demo in lockstep; both
+  apps parse.
+
 ## 2026-07-12 — Summary share message now matches the session date
 
 When you sent a summary whose session date was a past day (e.g. writing yesterday's notes today), the

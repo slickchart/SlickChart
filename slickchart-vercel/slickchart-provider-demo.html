@@ -2779,7 +2779,7 @@ function loadAmazonAssociates(){try{const raw=localStorage.getItem('sc_amazon_as
 // One call to load everything above; wired into app init.
 function _loadPersistenceSweep(){
   loadClientRecs();loadRecReasons();loadClientHomecare();loadSessionSummaries();loadCapturedPhotos();
-  loadStaff();loadAutos();loadNotifSettings();loadCheckins();loadCourses();loadShopBundles();try{loadBodyMaps();}catch(e){}
+  loadStaff();loadAutos();loadNotifSettings();loadCheckins();loadCourses();loadShopBundles();try{loadBodyMaps();}catch(e){}try{_probeWhisper();}catch(e){}
   loadAffiliateLinks();loadCustomNoteTemplates();loadIntegrations();loadClientHealingStage();loadAmazonAssociates();
 }
 // Safety net: persist all of the above on every navigation, so nothing new added later
@@ -4379,8 +4379,87 @@ function _voiceOverlay(html){
   if(!ov){ov=document.createElement('div');ov.id='voice-overlay';ov.style.cssText='position:fixed;inset:0;background:rgba(0,0,0,.72);z-index:9999;display:flex;align-items:center;justify-content:center;padding:24px 16px;box-sizing:border-box;';document.body.appendChild(ov);ov.addEventListener('click',e=>{if(e.target===ov)_voiceClose();});}
   ov.innerHTML=`<div style="width:100%;max-width:440px;background:#161616;border:1px solid #2a2a2a;border-radius:16px;padding:18px 18px 26px;box-sizing:border-box;">${html}</div>`;
 }
-function _voiceClose(){_voiceStopping=true;const ov=document.getElementById('voice-overlay');if(ov)ov.remove();try{if(_voiceRec)_voiceRec.stop();}catch(e){}_voiceRec=null;}
+function _voiceClose(){_voiceStopping=true;const ov=document.getElementById('voice-overlay');if(ov)ov.remove();try{if(_voiceRec)_voiceRec.stop();}catch(e){}_voiceRec=null;try{if(_voiceRecorder){if(_voiceRecorder.rec&&_voiceRecorder.rec.state&&_voiceRecorder.rec.state!=='inactive'){_voiceRecCancel=true;_voiceRecorder.rec.stop();}_stopStream(_voiceRecorder.stream);_voiceRecorder=null;}}catch(e){}}
+
+// ── High-accuracy dictation (Groq Whisper) ──────────────────────────────────────────────────
+// When GROQ_API_KEY is configured (probed into _whisperOn) and the device can record, we capture a
+// short audio clip and transcribe it server-side for far better accuracy than the live phone engine,
+// then hand the text to the SAME preview → "clean up & file into sections" flow. Falls back to the
+// live Web Speech engine when Whisper isn't set up, the mic is blocked, or recording isn't supported.
+let _whisperOn=false, _voiceRecorder=null, _voiceRecCancel=false;
+const _VOICE_CAP_SECS=300;   // 5-minute cap so a marathon note can't exceed the upload limit
+function _probeWhisper(){
+  try{
+    const tok=(typeof Cloud!=='undefined'&&Cloud&&Cloud.token)||'';
+    fetch('/api/transcribe',{method:'GET',headers:tok?{'Authorization':'Bearer '+tok}:{}})
+      .then(r=>r.ok?r.json():null).then(d=>{_whisperOn=!!(d&&d.enabled);}).catch(()=>{});
+  }catch(e){}
+}
+function _stopStream(s){try{s&&s.getTracks&&s.getTracks().forEach(t=>t.stop());}catch(e){}}
+function _fmtSecs(s){const m=Math.floor(s/60),ss=s%60;return m+':'+String(ss).padStart(2,'0');}
+function _blobToB64(blob){return new Promise((res,rej)=>{const r=new FileReader();r.onload=()=>{const s=String(r.result||'');const i=s.indexOf(',');res(i>=0?s.slice(i+1):s);};r.onerror=rej;r.readAsDataURL(blob);});}
+function _recordSupported(){return !!(navigator.mediaDevices&&navigator.mediaDevices.getUserMedia&&window.MediaRecorder);}
+// Dispatcher: high-accuracy recording when available, else the live engine.
 function startVoiceNote(id){
+  if(_whisperOn&&_recordSupported())_startVoiceNoteRecorded(id);
+  else _startVoiceNoteLive(id);
+}
+async function _startVoiceNoteRecorded(id){
+  _voiceClientId=id;_voiceKeyframes();_voiceRecCancel=false;
+  const seed=(_voiceSeed||'').trim();_voiceSeed='';   // append to edited text when resuming
+  let stream;
+  try{stream=await navigator.mediaDevices.getUserMedia({audio:true});}
+  catch(e){_startVoiceNoteLive(id);return;}   // mic blocked/unavailable → live engine
+  let mime='audio/webm';
+  try{const prefs=['audio/webm;codecs=opus','audio/webm','audio/mp4','audio/ogg;codecs=opus'];for(const m of prefs){if(MediaRecorder.isTypeSupported&&MediaRecorder.isTypeSupported(m)){mime=m;break;}}}catch(e){}
+  let rec;
+  try{rec=new MediaRecorder(stream,{mimeType:mime,audioBitsPerSecond:24000});}
+  catch(e){try{rec=new MediaRecorder(stream);mime=rec.mimeType||mime;}catch(_){_stopStream(stream);_startVoiceNoteLive(id);return;}}
+  const chunks=[];let secs=0,timer=null;
+  _voiceRecorder={rec,stream};
+  rec.ondataavailable=e=>{if(e.data&&e.data.size)chunks.push(e.data);};
+  rec.onstop=async()=>{
+    if(timer){clearInterval(timer);timer=null;}
+    _stopStream(stream);_voiceRecorder=null;
+    if(_voiceRecCancel){_voiceRecCancel=false;return;}
+    const blob=new Blob(chunks,{type:(mime.split(';')[0]||'audio/webm')});
+    await _transcribeAndPreview(id,blob,seed);
+  };
+  try{rec.start();}catch(e){_stopStream(stream);_voiceRecorder=null;_startVoiceNoteLive(id);return;}
+  timer=setInterval(()=>{secs++;const el=document.getElementById('rec-timer');if(el)el.textContent=_fmtSecs(secs);if(secs>=_VOICE_CAP_SECS){try{rec.stop();}catch(e){}}},1000);
+  _voiceOverlay(`<div style="display:flex;align-items:center;gap:9px;margin-bottom:10px;"><span class="voice-pulse" style="width:12px;height:12px;border-radius:50%;background:#e05555;display:inline-block;"></span><span style="font-size:15px;font-weight:600;color:#f0f0f0;">Recording…</span><span id="rec-timer" style="font-size:13px;color:#999;margin-left:auto;font-variant-numeric:tabular-nums;">0:00</span></div>
+  <div style="font-size:12px;color:#999;margin-bottom:8px;line-height:1.5;">Speak your notes clearly, name each section as you go, then tap <b>Stop &amp; transcribe</b>. High-accuracy AI (auto-stops at 5 min).</div>
+  <div style="background:#0f0f0f;border:1px solid #2a2a2a;border-radius:10px;padding:22px 12px;text-align:center;color:#6a6a6a;font-size:13px;margin-bottom:12px;"><i class="ti ti-microphone" style="font-size:26px;color:#e05555;"></i><div style="margin-top:6px;">Listening…</div></div>
+  <button onclick="_voiceRecStop()" style="width:100%;background:var(--accent);color:var(--accent-ink);border:none;border-radius:10px;padding:13px;font-size:14px;font-weight:700;cursor:pointer;font-family:inherit;display:flex;align-items:center;justify-content:center;gap:7px;"><i class="ti ti-player-stop"></i> Stop &amp; transcribe</button>
+  <button onclick="_voiceClose()" style="width:100%;margin-top:8px;background:none;border:none;color:#929292;font-size:13px;cursor:pointer;font-family:inherit;padding:6px;">Cancel</button>`);
+}
+function _voiceRecStop(){try{if(_voiceRecorder&&_voiceRecorder.rec&&_voiceRecorder.rec.state!=='inactive')_voiceRecorder.rec.stop();}catch(e){}}
+async function _transcribeAndPreview(id,blob,seed){
+  _voiceOverlay(`<div style="display:flex;align-items:center;gap:11px;padding:22px 2px;"><div class="spin"></div><div><div style="font-size:14px;font-weight:600;color:#f0f0f0;">Transcribing your note…</div><div style="font-size:12px;color:#999;margin-top:3px;">High-accuracy AI transcription</div></div></div>`);
+  try{
+    const b64=await _blobToB64(blob);
+    if(!b64||b64.length>6000000){throw new Error('too-long');}
+    const tok=(typeof Cloud!=='undefined'&&Cloud&&Cloud.token)||'';
+    const prof=(typeof _profName==='function'?_profName():'');
+    const r=await fetch('/api/transcribe',{method:'POST',headers:Object.assign({'Content-Type':'application/json'},tok?{'Authorization':'Bearer '+tok}:{}),body:JSON.stringify({audio:b64,mime:blob.type,prompt:prof?('Treatment notes dictated by a '+prof+'. Product, ingredient, and clinical terms may be used.'):''})});
+    const data=await r.json().catch(()=>({}));
+    if(data&&data.enabled===false){_whisperOn=false;if(typeof proToast==='function')proToast('High-accuracy transcription isn’t set up — using live dictation');_startVoiceNoteLive(id);return;}
+    if(!r.ok||data.error||typeof data.text!=='string'){throw new Error((data&&data.error)||'transcribe-failed');}
+    _voiceText=((seed?seed+' ':'')+String(data.text||'').trim()).trim();
+    _voicePreview();
+  }catch(e){
+    const t=(e&&e.message==='too-long')?'That recording was too long to upload. Please record a shorter note.':'Couldn’t transcribe that recording. Try again, or type your note below.';
+    _voiceOverlay(`<div style="display:flex;align-items:center;gap:8px;margin-bottom:8px;"><i class="ti ti-microphone-off" style="font-size:16px;color:#e8a060;"></i><span style="font-size:15px;font-weight:600;color:#f0f0f0;">Transcription didn’t work</span></div>
+    <div style="font-size:12px;color:#e8a060;line-height:1.5;margin-bottom:10px;">${t}</div>
+    <textarea id="voice-ta" placeholder="Type your note…" style="width:100%;height:120px;background:#0f0f0f;border:1px solid #2a2a2a;border-radius:10px;padding:11px;font-size:14px;color:#ddd;font-family:inherit;line-height:1.6;resize:none;outline:none;box-sizing:border-box;">${(_voiceText||'').replace(/</g,'&lt;')}</textarea>
+    <div style="display:flex;gap:8px;margin-top:12px;">
+      <button onclick="startVoiceNote('${_jsAttr(id)}')" style="flex:1;background:#1a1a1a;border:1px solid var(--accent);color:var(--accent);border-radius:10px;padding:12px;font-size:13px;font-weight:600;cursor:pointer;font-family:inherit;"><i class="ti ti-refresh"></i> Try again</button>
+      <button onclick="_voiceText=document.getElementById('voice-ta').value;_voicePreview()" style="flex:1;background:var(--accent);color:var(--accent-ink);border:none;border-radius:10px;padding:12px;font-size:13px;font-weight:600;cursor:pointer;font-family:inherit;">Use this</button>
+    </div>
+    <button onclick="_voiceClose()" style="width:100%;margin-top:8px;background:none;border:none;color:#929292;font-size:13px;cursor:pointer;font-family:inherit;padding:6px;">Cancel</button>`);
+  }
+}
+function _startVoiceNoteLive(id){
   _voiceClientId=id;_voiceKeyframes();
   // If we're resuming after a pause+edit, start from that edited text so new speech appends to it.
   const _seed=(_voiceSeed||'').trim();_voiceSeed='';_voiceText=_seed;
