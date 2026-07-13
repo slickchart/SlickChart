@@ -2,6 +2,19 @@
 
 Newest entries at the top. One entry per deploy. Dates are US-formatted.
 
+## 2026-07-13 — Tattoo: Square deposit → auto-send intake & consent
+
+When a client pays a deposit in Square, SlickChart can now automatically get their tattoo intake &
+consent link to them so paperwork's done before they sit down. It runs on the existing Square payment
+sync (fires whenever the app opens / refreshes) — **no Square dashboard setup required**. A new setting on
+**Square Sync** (tattoo profession only) offers three modes: **Auto-send** (sends the link the moment a
+deposit clears), **Ask first** (default for tattoo — prompts before sending), and **Off**. Matching prefers
+the invoice recipient's email, then their full name; only clients with an email who haven't already been
+invited are eligible, and every send is deduped by invoice id + the client's `appInvited` flag so no one is
+emailed twice. Sends reuse the proven client-invite path and drop a note in the notifications feed. Server:
+`api/square/invoices.js` now also returns the recipient's `email` + `customerId` for reliable matching.
+Provider-side; demo in lockstep; both apps parse.
+
 ## 2026-07-13 — Tattoo: stencil overlay on Before photos
 
 The Progress Photos screen now has a **Stencil** button (tattoo profession only). It lays a stencil or

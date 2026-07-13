@@ -27,7 +27,9 @@ export default async function handler(req, res) {
       } catch (e) {}
       const r = inv.primary_recipient || {};
       const client = [r.given_name, r.family_name].filter(Boolean).join(' ') || r.email_address || '';
-      return { id: inv.id, status: simpleStatus(inv.status), total, client, publicUrl: inv.public_url || '', createdAt: inv.created_at || '' };
+      // email + customerId let the app reliably match a paid invoice to a client record (e.g. to
+      // auto-onboard on a paid deposit) instead of relying on name alone.
+      return { id: inv.id, status: simpleStatus(inv.status), total, client, email: r.email_address || '', customerId: r.customer_id || '', publicUrl: inv.public_url || '', createdAt: inv.created_at || '' };
     });
     res.status(200).json({ invoices });
   } catch (e) { res.status(e.status || 500).json({ error: e.message, code: e.status === 403 ? 'reconnect' : undefined }); }

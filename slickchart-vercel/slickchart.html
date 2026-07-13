@@ -13221,8 +13221,78 @@ async function _paySyncSquare(auto){
     });
     _savePayments();
     if(typeof _navCur!=='undefined'&&_navCur&&_navCur.screen==='payments')renderPayments();
+    try{_checkDepositOnboarding(d.invoices||[]);}catch(e){}
     if(!auto&&typeof proToast==='function')proToast('Synced from Square \u2713');
   }catch(e){if(!auto&&typeof proToast==='function')proToast(_coRecon(e)?'Reconnect Square to sync':(e.message||'Could not sync'));}
+}
+
+// \u2500\u2500 Square deposit \u2192 auto-send intake & consent \u2500\u2500\u2500\u2500\u2500\u2500\u2500\u2500\u2500\u2500\u2500\u2500\u2500\u2500\u2500\u2500\u2500\u2500\u2500\u2500\u2500\u2500\u2500\u2500\u2500\u2500\u2500\u2500\u2500\u2500\u2500\u2500\u2500\u2500\u2500\u2500\u2500\u2500\u2500\u2500\u2500\u2500\u2500\u2500\u2500\u2500
+// When a client pays a deposit in Square (a paid invoice), automatically get their tattoo intake &
+// consent link out to them so paperwork is done before they arrive. Runs on the existing Square
+// payment sync (which fires when the app opens / refreshes) \u2014 no Square dashboard setup required.
+// Mode: 'auto' sends silently; 'notify' (default for tattoo) asks first; 'off' does nothing. The
+// send reuses the proven invite path; dedupe is by invoice id + the client's appInvited flag so no
+// one is ever emailed twice. Matching prefers the recipient's email, then their full name.
+let _depositHandled=null;
+function _loadDepositHandled(){if(_depositHandled)return _depositHandled;try{const raw=localStorage.getItem('sc_deposit_handled');_depositHandled=raw?JSON.parse(raw):{};}catch(e){_depositHandled={};}if(!_depositHandled||typeof _depositHandled!=='object')_depositHandled={};return _depositHandled;}
+function _saveDepositHandled(){try{const v=JSON.stringify(_depositHandled||{});localStorage.setItem('sc_deposit_handled',v);if(typeof _pushKeyNow==='function')_pushKeyNow('sc_deposit_handled',v);}catch(e){}}
+function _depositMode(){try{const v=localStorage.getItem('sc_deposit_mode');if(v==='off'||v==='notify'||v==='auto')return v;}catch(e){}return selectedProfessions.includes('tattoo')?'notify':'off';}
+function _setDepositMode(m){try{localStorage.setItem('sc_deposit_mode',m);if(typeof _pushKeyNow==='function')_pushKeyNow('sc_deposit_mode',m);}catch(e){}if(typeof proToast==='function')proToast(m==='auto'?'On \u2014 deposits will auto-send forms':m==='notify'?'On \u2014 you\u2019ll be asked before sending':'Deposit auto-send turned off');if(typeof renderSquareSync==='function'&&typeof _navCur!=='undefined'&&_navCur&&_navCur.screen==='square-sync')renderSquareSync();}
+function _normStr(s){return String(s||'').trim().toLowerCase();}
+// Pure + unit-tested: paid recent deposits \u2192 clients who still need their intake/consent link.
+function _depositOnboardCandidates(invoices,clients,handled,nowMs){
+  const out=[],seen={};const recentCut=nowMs-21*86400000;
+  (invoices||[]).forEach(sv=>{
+    if(!sv||sv.status!=='paid'||!sv.id)return;
+    if(handled&&handled[sv.id])return;
+    const created=sv.createdAt?Date.parse(sv.createdAt):nowMs;
+    if(isFinite(created)&&created<recentCut)return;     // only recent deposits
+    const em=_normStr(sv.email),nm=_normStr(sv.client);
+    let cid='';
+    if(em){for(const id in clients){if(_normStr((clients[id]||{}).email)===em){cid=id;break;}}}
+    if(!cid&&nm){for(const id in clients){if(_normStr((clients[id]||{}).name)===nm){cid=id;break;}}}
+    if(!cid)return;                                       // no matching client on file \u2192 skip
+    const c=clients[cid]||{};
+    if(!c.email||c.appInvited||seen[cid])return;          // need an email; never re-send
+    seen[cid]=1;
+    out.push({invoiceId:sv.id,clientId:cid,name:c.name||sv.client||'Client'});
+  });
+  return out.slice(0,8);                                  // safety cap per run
+}
+async function _checkDepositOnboarding(invoices){
+  const mode=_depositMode();if(mode==='off')return;
+  const handled=_loadDepositHandled();
+  const cands=_depositOnboardCandidates(invoices,CL,handled,Date.now());
+  if(!cands.length)return;
+  // Mark these seen now so we don't prompt again next sync, whether or not they get sent.
+  const stamp=Date.now();cands.forEach(x=>{handled[x.invoiceId]=stamp;});_saveDepositHandled();
+  if(mode==='auto'){_sendDepositForms(cands,true);return;}
+  const names=cands.map(x=>x.name);
+  const list=names.length===1?names[0]:(names.slice(0,2).join(', ')+(names.length>2?(' +'+(names.length-2)+' more'):''));
+  const one=names.length===1;
+  confirmModal({title:'Deposit paid \ud83d\udcb3',body:list+' paid a deposit in Square. Send '+(one?'their':'their')+' tattoo intake & consent link'+(one?'':'s')+' now?',action:one?'Send link':'Send links'},function(){_sendDepositForms(cands,false);});
+}
+async function _sendDepositForms(cands,silent){
+  const tok=(typeof Cloud!=='undefined'&&Cloud&&Cloud.token)||'';if(!tok){if(!silent&&typeof proToast==='function')proToast('Please sign in first');return;}
+  const ids=cands.map(x=>x.clientId);if(!ids.length)return;
+  try{
+    await _syncSpecificClientsToServer(ids,{});
+    const r=await fetch('/api/client-invite',{method:'POST',headers:{'Content-Type':'application/json','Authorization':'Bearer '+tok},body:JSON.stringify({ids:ids,studio:((typeof bizInfo!=='undefined'&&bizInfo&&bizInfo.name)||''),from:((typeof _providerFirstName==='function'&&_providerFirstName())||'Your provider'),origin:location.origin})});
+    const j=await r.json().catch(()=>({}));
+    if(j&&j.ok){
+      const invited=Array.isArray(j.invitedIds)?j.invitedIds:ids;invited.forEach(id=>{if(CL[id])CL[id].appInvited=true;});try{saveClients();}catch(e){}
+      const n=(+j.sent)||ids.length;
+      if(typeof proToast==='function')proToast('Sent intake & consent to '+n+' client'+(n===1?'':'s')+' \ud83d\udcb3');
+      _depositNotify(cands);
+    }else if(!silent&&typeof proToast==='function'){proToast((j&&j.error)||'Couldn\u2019t send the forms');}
+  }catch(e){if(!silent&&typeof proToast==='function')proToast('Couldn\u2019t reach the server to send forms');}
+}
+function _depositNotify(cands){
+  try{
+    if(typeof notifFeed==='undefined'||!Array.isArray(notifFeed))return;
+    cands.forEach(x=>{if(notifFeed.some(n=>n.id==='dep_'+x.invoiceId))return;notifFeed.unshift({id:'dep_'+x.invoiceId,type:'form',icon:'ti-file-check',col:'#1e0d33',ic:'#c084fc',title:'Intake & consent sent',body:x.name+' paid a deposit \u2014 their tattoo intake & consent link is on the way.',time:'Just now',read:false,action:'client',data:x.clientId});});
+    if(typeof updateBadge==='function')updateBadge();
+  }catch(e){}
 }
 
 function renderConnectCalendar(){
@@ -13565,9 +13635,21 @@ function renderSquareSync(){
     <input id="sq-shop-url" value="${((typeof bizInfo!=='undefined'&&bizInfo.shopUrl)||'').replace(/"/g,'&quot;')}" placeholder="yourshop.square.site" onchange="_saveShopUrl(this.value)" style="width:100%;margin-top:5px;background:#111;border:1px solid #2a2a2a;border-radius:9px;padding:10px 12px;font-size:13px;color:#e0e0e0;font-family:inherit;box-sizing:border-box;outline:none;">
   </div>
   <div style="padding:0 16px;"><button onclick="_sqKey(true);proToast('Access key updated')" style="background:none;border:none;color:#9a9a9a;font-size:11px;cursor:pointer;padding:4px 0;"><i class="ti ti-key" style="font-size:11px;"></i> Change access key</button></div>
+  ${selectedProfessions.includes('tattoo')?_depositSettingCard():''}
   <div id="sq-results" style="padding:6px 16px 20px;"></div>`;
   _sqCheckStatus();
   _sqRenderConnState();
+}
+// Settings card: what to do when a deposit is paid in Square (tattoo profession).
+function _depositSettingCard(){
+  const m=_depositMode();
+  const opt=(val,label,sub)=>`<button onclick="_setDepositMode('${val}')" style="flex:1;text-align:left;background:${m===val?'#1e0d33':'#111'};border:1px solid ${m===val?'var(--accent)':'#2a2a2a'};color:${m===val?'#e6d5ff':'#bbb'};border-radius:9px;padding:9px 10px;cursor:pointer;font-family:inherit;">
+    <div style="font-size:12px;font-weight:700;">${label}</div><div style="font-size:10px;color:#8a8a8a;margin-top:2px;line-height:1.3;">${sub}</div></button>`;
+  return `<div style="margin:12px 16px 4px;background:#0f0f0f;border:1px solid #242424;border-radius:12px;padding:13px 14px;">
+    <div style="display:flex;align-items:center;gap:7px;margin-bottom:4px;"><i class="ti ti-file-invoice" style="font-size:15px;color:var(--accent);"></i><span style="font-size:13px;font-weight:600;color:#f0f0f0;">When a deposit is paid</span></div>
+    <div style="font-size:11px;color:#9a9a9a;line-height:1.5;margin-bottom:10px;">Automatically get a client's tattoo intake &amp; consent link to them when their Square deposit clears, so paperwork's done before they sit down. Runs whenever the app syncs — no extra setup.</div>
+    <div style="display:flex;gap:6px;">${opt('auto','Auto-send','Sends the link the moment a deposit is paid')}${opt('notify','Ask first','Prompts you before sending')}${opt('off','Off','Do nothing')}</div>
+  </div>`;
 }
 async function _sqCheckStatus(){
   const el=document.getElementById('sq-status');if(!el)return;
