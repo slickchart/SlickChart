@@ -661,7 +661,7 @@ const coursesByProf={
 // Signature + reseed so courses follow the provider's profession until they customize.
 function _coursesSig(arr){return (arr||[]).map(c=>String(c.id||'')+'|'+String(c.title||'')).join(',');}
 function _coursesAreCustom(){try{return localStorage.getItem('sc_courses_custom')==='1';}catch(e){return false;}}
-function _markCoursesCustom(){try{localStorage.setItem('sc_courses_custom','1');}catch(e){}}
+function _markCoursesCustom(){try{localStorage.setItem('sc_courses_custom','1');}catch(e){}try{if(typeof _pushKeyNow==='function')_pushKeyNow('sc_courses_custom','1');}catch(e){}}
 function _coursesDefaults(){
   const profs=(typeof selectedProfessions!=='undefined'&&Array.isArray(selectedProfessions)&&selectedProfessions.length)?selectedProfessions:[];
   const seen=new Set();const out=[];
@@ -2733,7 +2733,7 @@ function _pruneExpiredCheckins(){
   if(checkins.length!==before){try{persistCheckins();}catch(e){}try{if(typeof updateBadge==='function')updateBadge();}catch(e){}return true;}
   return false;
 }
-function persistCourses(){try{localStorage.setItem('sc_courses',JSON.stringify(courses));}catch(e){}}
+function persistCourses(){const v=JSON.stringify(courses);try{localStorage.setItem('sc_courses',v);}catch(e){}return (typeof _pushKeyNow==='function')?_pushKeyNow('sc_courses',v):Promise.resolve();}
 function loadCourses(){try{const raw=localStorage.getItem('sc_courses');if(raw){const arr=JSON.parse(raw);if(Array.isArray(arr))courses=arr;}}catch(e){}}
 // Protocols persistence, `protocols` is a const array reset from profession defaults on
 // every applyProfessionConfig(), so like courses we mark it "custom" once the provider
@@ -8213,8 +8213,9 @@ function filterFormGuides(q){
   const nr=document.getElementById('fg-noresults');if(nr)nr.style.display=(q&&total===0)?'':'none';
 }
 function persistForms(){
-  // survive a reload during testing (real product would sync to a backend)
-  try{localStorage.setItem('sc_forms',JSON.stringify({tmpls:formTmpls,guides:formGuides,custom:customForms,emojis:formEmojis}));}catch(e){}
+  const v=JSON.stringify({tmpls:formTmpls,guides:formGuides,custom:customForms,emojis:formEmojis});
+  try{localStorage.setItem('sc_forms',v);}catch(e){}
+  try{if(typeof _pushKeyNow==='function')_pushKeyNow('sc_forms',v);}catch(e){}   // immediate push so a fast refresh can't lose the change
 }
 function loadForms(){
   try{
@@ -10466,7 +10467,7 @@ function _findGuide(id){return resources.find(g=>g.id===id)||Object.values(guide
 // Direct, immediate upsert of one KV key to the server, bypasses the debounced Cloud.push
 // so a save reliably reaches the server (and thus other devices) right away. Used for guides
 // and bundles, which a provider often builds on the web then expects on their phone.
-function _pushKeyNow(k,v){try{if(typeof Cloud==='undefined'||!Cloud||!Cloud.token)return;fetch('/api/store',{method:'PUT',headers:{'Content-Type':'application/json','Authorization':'Bearer '+Cloud.token},body:JSON.stringify({key:k,value:String(v)})}).catch(function(){});}catch(e){}}
+function _pushKeyNow(k,v){try{if(typeof Cloud==='undefined'||!Cloud||!Cloud.token)return Promise.resolve();return fetch('/api/store',{method:'PUT',headers:{'Content-Type':'application/json','Authorization':'Bearer '+Cloud.token},body:JSON.stringify({key:k,value:String(v)})}).catch(function(){});}catch(e){return Promise.resolve();}}
 function persistCustomResources(){const v=JSON.stringify(customResources);try{localStorage.setItem('sc_resources',v);}catch(e){}_pushKeyNow('sc_resources',v);}
 function loadCustomResources(){try{const raw=localStorage.getItem('sc_resources');if(raw){const a=JSON.parse(raw);if(Array.isArray(a))customResources=a;}}catch(e){}}
 // Courses now live as the third tab inside the unified Forms · Guides · Courses screen.
@@ -10711,8 +10712,11 @@ async function saveCourse(id){
   if(existing){Object.assign(existing,base);delete existing.resources;}
   else{courses.push(Object.assign({id:courseId,icon:'ti-book',bg:'#1e1633',ic:'#a891ec',bdg:'bp',enrolled:0,revenue:0,progress:0},base));}
   try{_markCoursesCustom();}catch(e){}
-  try{persistCourses();}catch(e){}
-  try{await Promise.all(_fileWrites);}catch(e){}   // ensure the uploaded files are committed locally
+  let _coursePush=Promise.resolve();try{_coursePush=persistCourses()||Promise.resolve();}catch(e){}
+  // Wait for the course, the custom flag, and its files to actually reach the server before leaving.
+  // A refresh right after saving used to be beaten by the boot pull, which then restored a stale
+  // server copy (no new course) — awaiting the writes makes the server current first, so it can't.
+  try{await Promise.all(_fileWrites.concat([_coursePush,(typeof _pushKeyNow==='function'?_pushKeyNow('sc_courses_custom','1'):Promise.resolve())]));}catch(e){}
   window._cbDraft=null;
   if(typeof proToast==='function')proToast(existing?'Course updated ✓':'Course created ✓');
   _fgTab='courses';nav('forms');

@@ -2,6 +2,23 @@
 
 Newest entries at the top. One entry per deploy. Dates are US-formatted.
 
+## 2026-07-13 — Fix: new courses and form/guide deletes now survive a refresh
+
+Root-cause fix for "my course didn't save" and "deletes didn't persist." Cloud sync mirrored changes to
+the server on a **700 ms debounce** and only flushed pending writes via a page-hide beacon — which fires
+unreliably on mobile. So a refresh right after a change could beat the push, and the next boot's
+`Cloud.pull()` would then restore the **stale server copy**, wiping the change. Now the affected saves push
+to the server **immediately**:
+
+- `persistCourses()` and the "courses customized" flag push right away, and **`saveCourse` awaits** the
+  course + its files reaching the server before it leaves the editor — so a fast refresh can't lose a new
+  course.
+- `persistForms()` (custom-form deletes) pushes immediately; the hidden-template stores for forms/guides
+  already pushed immediately.
+- `_pushKeyNow()` now returns its request promise so save flows can await it.
+
+Provider-side; demo in lockstep; both apps parse.
+
 ## 2026-07-13 — Delete any form/guide (and it stays deleted); course uploads persist
 
 Provider feedback: the library had lots of template forms/guides they didn't want as clutter, deletes
