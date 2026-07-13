@@ -4861,7 +4861,7 @@ function renderWriteNote(id){
     <span style="font-size:11px;color:#929292;">(change this if you're catching up on a note from another day)</span>
   </div>
   <div style="padding:0 16px;">
-    ${t.sections.map(s=>`<div style="margin-bottom:14px;"><div style="font-size:11px;font-weight:500;text-transform:uppercase;letter-spacing:.07em;color:${_fileEsc(s.color)};margin-bottom:5px;display:flex;align-items:center;gap:5px;"><div style="width:8px;height:8px;border-radius:50%;background:${_fileEsc(s.color)};"></div>${s.label}</div><textarea id="wn-sec-${s.id}" class="fi" style="height:${t.sections.length<=1?'300':'150'}px;resize:vertical;line-height:1.6;" placeholder="${s.ph}" oninput="_autosaveWriteNote('${id}')">${(sections[s.id]||'').replace(/</g,'&lt;')}</textarea>${(activeNoteTemplate==='tattooRecord'&&s.id==='tt1')?_bodyMapField(id):''}${(activeNoteTemplate==='tattooRecord'&&s.id==='tt3')?_needlePresetField(id):''}</div>`).join('')}
+    ${t.sections.map(s=>`<div style="margin-bottom:14px;"><div style="font-size:11px;font-weight:500;text-transform:uppercase;letter-spacing:.07em;color:${_fileEsc(s.color)};margin-bottom:5px;display:flex;align-items:center;gap:5px;"><div style="width:8px;height:8px;border-radius:50%;background:${_fileEsc(s.color)};"></div>${s.label}</div><textarea id="wn-sec-${s.id}" class="fi" style="height:${t.sections.length<=1?'300':'150'}px;resize:vertical;line-height:1.6;" placeholder="${s.ph}" oninput="_autosaveWriteNote('${id}')">${(sections[s.id]||'').replace(/</g,'&lt;')}</textarea>${(activeNoteTemplate==='tattooRecord'&&s.id==='tt1')?_bodyMapField(id):''}${(activeNoteTemplate==='tattooRecord'&&s.id==='tt2')?_inkScanField(id):''}${(activeNoteTemplate==='tattooRecord'&&s.id==='tt3')?_needlePresetField(id):''}</div>`).join('')}
   </div>
   <div style="display:flex;gap:8px;margin:0 16px 16px;">
     <button class="btnp" style="flex:1;border-radius:8px;" onclick="_saveAndSendNote('${id}')"><i class="ti ti-send"></i> Save and send</button>
@@ -5067,6 +5067,59 @@ function _npDelete(pid){
   needlePresets=(needlePresets||[]).filter(p=>p.id!==pid);
   persistNeedlePresets();_npRenderMgr();
   const fld=document.getElementById('np-field-tt3');if(fld&&_npClientId)fld.outerHTML=_needlePresetField(_npClientId);
+}
+
+// ── Ink lot-number OCR ── photograph an ink bottle; Claude (vision) reads the brand, color, and
+// batch/lot number off the label and drops a clean trace line into the "Ink used" field — no more
+// squinting at tiny labels or fat-fingering a safety-critical number. The bottle photo is also saved
+// to the client's reference photos (works offline); the OCR read needs a moment of signal, and if
+// AI is off / offline it falls back to typing. Reuses /api/ai — no extra setup.
+function _inkScanField(id){
+  return `<div id="ink-scan-tt2" style="margin-top:-2px;margin-bottom:8px;display:flex;align-items:center;gap:10px;flex-wrap:wrap;">
+    <button type="button" onclick="_scanInkLabel('${_jsAttr(id)}')" style="background:#0d1e33;border:1px solid #1e3a5a;color:#5ba3e8;border-radius:8px;padding:7px 12px;font-size:12px;font-weight:600;cursor:pointer;font-family:inherit;display:inline-flex;align-items:center;gap:6px;"><i class="ti ti-camera"></i> Scan ink label</button>
+    <span style="font-size:11px;color:#888;">Reads brand, color &amp; lot # off the bottle</span>
+  </div>`;
+}
+function _scanInkLabel(id){
+  const inp=_ensureCamInput(false);inp.value='';inp.multiple=false;
+  inp.onchange=()=>{const f=inp.files&&inp.files[0];if(!f)return;_downscaleImg(f,function(url){if(!url){if(typeof proToast==='function')proToast('Couldn’t read that photo — try again');return;}_saveInkPhoto(id,url);_runInkOCR(id,url);},1400);};
+  inp.click();
+}
+// Keep the bottle photo on file as part of the trace record (also gives an offline fallback the
+// provider can read the lot # from by eye even if the OCR couldn't run).
+function _saveInkPhoto(id,url){
+  try{if(typeof capturedPhotos==='undefined')return;if(!capturedPhotos[id])capturedPhotos[id]=[];
+    capturedPhotos[id].push({url:url,ts:Date.now(),phase:'reference',angle:'Ink label'});
+    if(typeof persistCapturedPhotos==='function')persistCapturedPhotos();
+  }catch(e){}
+}
+async function _runInkOCR(id,dataUrl){
+  const el=document.getElementById('wn-sec-tt2');
+  if(!aiEnabled){if(typeof proToast==='function')proToast('Bottle photo saved. Turn on AI in Settings to auto-read the lot #, or type it below');return;}
+  if(typeof proToast==='function')proToast('Reading the ink label…',0);
+  try{
+    const b64=String(dataUrl).split(',')[1]||'';
+    const media=(String(dataUrl).match(/^data:(.*?);/)||[])[1]||'image/jpeg';
+    if(!b64)throw new Error('no-image');
+    const prompt='You are reading a tattoo ink bottle label from a photo, for a safety trace record. Extract ONLY what is actually printed on the label. Return ONLY JSON in this exact shape: {"inks":[{"brand":"","color":"","lot":"","expiry":""}]}. Use the batch/lot number exactly as printed (it may be labelled LOT, Batch, REF, or a code). "expiry" is the expiration / best-by date if shown (keep the printed format). If a field is not visible, use an empty string. If there is no ink label in the photo, return {"inks":[]}. No commentary, no code fences.';
+    const messages=[{role:'user',content:[{type:'image',source:{type:'base64',media_type:media,data:b64}},{type:'text',text:prompt}]}];
+    const out=await _aiComplete(messages,700);
+    const parsed=_parseJSONObject(out);
+    const inks=(parsed&&Array.isArray(parsed.inks))?parsed.inks:[];
+    const lines=inks.map(k=>{
+      const parts=[];
+      if(k&&k.brand)parts.push(String(k.brand).trim());
+      if(k&&k.color)parts.push(String(k.color).trim());
+      if(k&&k.lot)parts.push('Lot #'+String(k.lot).trim());
+      if(k&&k.expiry)parts.push('Exp '+String(k.expiry).trim());
+      return parts.join(' · ');
+    }).filter(Boolean);
+    if(!lines.length){if(typeof proToast==='function')proToast('Couldn’t make out a lot # — try a closer, well-lit photo, or type it in');return;}
+    if(el){const cur=(el.value||'').trim();el.value=(cur?cur+'\n':'')+lines.join('\n');if(typeof _autosaveWriteNote==='function')_autosaveWriteNote(id);}
+    if(typeof proToast==='function')proToast('Logged '+lines.length+' ink'+(lines.length===1?'':'s')+' ✨ — double-check the lot #');
+  }catch(e){
+    if(typeof proToast==='function')proToast('Bottle photo saved. Couldn’t auto-read it (offline or AI off) — type the lot # below');
+  }
 }
 // Save the current write-note editor into the draft + session-history/summary.
 // Returns {ok, id, idx} so callers can optionally send the just-saved summary.

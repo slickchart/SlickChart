@@ -2,6 +2,15 @@
 
 Newest entries at the top. One entry per deploy. Dates are US-formatted.
 
+## 2026-07-13 — Tattoo: scan ink label to log the lot number (OCR)
+
+The tattoo record's **Ink used** field now has a **Scan ink label** button. Photograph the bottle and Claude
+(vision, via the existing `/api/ai`) reads the **brand, color, and batch/lot number** off the label and drops
+a clean trace line into the field — no squinting at tiny print or fat-fingering a safety-critical number. The
+bottle photo is also saved to the client's reference photos as part of the trace record (works offline); the
+OCR read needs a moment of signal, and if AI is off / offline it saves the photo and lets you type the lot #.
+No extra setup — reuses the AI key. Provider-side; demo in lockstep; both apps parse.
+
 ## 2026-07-13 — Courses: lessons now open when you tap them
 
 On a course's detail screen the lesson rows were inert — tapping one did nothing, so lessons "didn't
