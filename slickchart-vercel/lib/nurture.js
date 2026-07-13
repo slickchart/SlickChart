@@ -182,11 +182,43 @@ export async function ensureNurtureTables(q) {
   )`;
 }
 
+// Emails that have unsubscribed in the Resend audience (e.g. via a broadcast's
+// unsubscribe link). We treat Resend's `unsubscribed` flag as a source of truth so a
+// single opt-out — from a broadcast OR a nurture email — stops every kind of email.
+// Best-effort: on any API hiccup we fall back to just the local opt-out list.
+async function resendUnsubscribedSet() {
+  const set = new Set();
+  const key = process.env.RESEND_API_KEY || '';
+  if (!key) return set;
+  try {
+    let aud = process.env.RESEND_AUDIENCE_ID || '';
+    if (!aud) {
+      const list = await fetch('https://api.resend.com/audiences', { headers: { Authorization: 'Bearer ' + key } });
+      if (!list.ok) return set;
+      const j = await list.json();
+      const arr = (j && (j.data || j.audiences || j)) || [];
+      aud = Array.isArray(arr) && arr[0] ? (arr[0].id || arr[0].audience_id) : '';
+      if (!aud) return set;
+    }
+    const r = await fetch('https://api.resend.com/audiences/' + aud + '/contacts', { headers: { Authorization: 'Bearer ' + key } });
+    if (!r.ok) return set;
+    const j = await r.json();
+    const contacts = (j && (j.data || j.contacts || j)) || [];
+    for (const c of (Array.isArray(contacts) ? contacts : [])) {
+      if (c && c.unsubscribed && c.email) set.add(String(c.email).toLowerCase());
+    }
+  } catch (e) { /* best-effort — keep going with local opt-outs only */ }
+  return set;
+}
+
 // ─── RUN ───────────────────────────────────────────────────────────────────────
 export async function runNurture() {
   const q = sql();
   await ensureProvidersTable();
   await ensureNurtureTables(q);
+
+  // Anyone unsubscribed in Resend (broadcast or nurture) is skipped everywhere.
+  const unsub = await resendUnsubscribedSet();
 
   // Only enroll contacts created on/after this date (guards existing/test contacts).
   const startTs = process.env.NURTURE_START || '2026-07-13';
@@ -207,7 +239,7 @@ export async function runNurture() {
     WHERE created_at >= ${startTs}
       AND lower(email) NOT IN (SELECT lower(email) FROM providers)
       AND lower(email) NOT IN (SELECT email FROM nurture_optout)`;
-  for (const row of leads) await processContact(q, 'lead', LEAD_SEQUENCE, row, { spotsLeft }, summary);
+  for (const row of leads) { if (unsub.has(String(row.email || '').toLowerCase())) continue; await processContact(q, 'lead', LEAD_SEQUENCE, row, { spotsLeft }, summary); }
 
   // Founders: providers created since start, not opted out.
   const founders = await q`
@@ -215,7 +247,7 @@ export async function runNurture() {
     FROM providers
     WHERE created_at >= ${startTs}
       AND lower(email) NOT IN (SELECT email FROM nurture_optout)`;
-  for (const row of founders) await processContact(q, 'founder', FOUNDER_SEQUENCE, row, { spotsLeft }, summary);
+  for (const row of founders) { if (unsub.has(String(row.email || '').toLowerCase())) continue; await processContact(q, 'founder', FOUNDER_SEQUENCE, row, { spotsLeft }, summary); }
 
   return summary;
 }
