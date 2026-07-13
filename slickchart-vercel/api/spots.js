@@ -4,8 +4,9 @@ import { sql, dbEnabled, ensureProvidersTable } from '../lib/db.js';
 
 export default async function handler(req, res) {
   const cap = parseInt(process.env.FOUNDING_CAP || '250', 10);
-  // Optional marketing floor (e.g. set SPOTS_TAKEN_BASE=10 to reflect existing founding testers).
-  const base = parseInt(process.env.SPOTS_TAKEN_BASE || '0', 10);
+  // Marketing floor: never show fewer than this many claimed (reflects existing founding testers).
+  // Defaults to 50; override anytime with the SPOTS_TAKEN_BASE env var in Vercel.
+  const base = parseInt(process.env.SPOTS_TAKEN_BASE || '50', 10);
   let taken = base;
   try {
     if (dbEnabled()) {
