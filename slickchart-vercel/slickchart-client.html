@@ -1631,12 +1631,19 @@ function renderViewCourse(){
     <div style="background:#fff;border:1.5px solid #f0ebe4;border-radius:14px;overflow:hidden;">
       ${lessons.map((l,i)=>{const d=_lessonDone(co.id,l.id);return `<div onclick="_viewLessonId='${_jsAttr(l.id)}';nav('view-lesson')" role="button" style="display:flex;align-items:center;gap:12px;padding:13px 15px;${i<lessons.length-1?'border-bottom:1px solid #f0ebe4;':''}cursor:pointer;">
         <div style="width:28px;height:28px;border-radius:50%;flex-shrink:0;display:flex;align-items:center;justify-content:center;background:${d?'var(--accent)':'#f0ebe4'};color:${d?'#fff':'#a89887'};font-size:13px;font-weight:700;">${d?'<i class="ti ti-check" style="font-size:15px;"></i>':(i+1)}</div>
-        <div style="flex:1;min-width:0;"><div style="font-size:13.5px;font-weight:600;color:#1a1a1a;">${_txt(l.title||'Lesson '+(i+1))}</div><div style="font-size:11px;color:#a89887;">${[l.body?'Reading':'',l.videoUrl?'Video':'',l.docUrl?'Worksheet':'',(l.fileId||l.fileName)?'Download':''].filter(Boolean).join(' · ')||'Tap to open'}</div></div>
+        <div style="flex:1;min-width:0;"><div style="font-size:13.5px;font-weight:600;color:#1a1a1a;">${_txt(l.title||'Lesson '+(i+1))}</div><div style="font-size:11px;color:#a89887;">${[l.body?'Reading':'',l.videoUrl?'Video':'',l.docUrl?'Worksheet':'',(function(){const n=_clientLessonFiles(l).length;return n?(n>1?n+' files':'Download'):'';})()].filter(Boolean).join(' · ')||'Tap to open'}</div></div>
         <i class="ti ti-chevron-right" style="font-size:17px;color:#c9bdb0;flex-shrink:0;"></i>
       </div>`;}).join('')}
     </div>
     <div style="height:24px;"></div>
   </div>`;
+}
+// A lesson can carry multiple files in `files`; older ones stored a single file in fileId/fileName.
+function _clientLessonFiles(l){
+  if(!l)return [];
+  if(Array.isArray(l.files)&&l.files.length)return l.files.filter(f=>f&&(f.fileId||f.fileName));
+  if(l.fileId||l.fileName)return [{fileId:l.fileId||'',fileName:l.fileName||'',fileType:l.fileType||''}];
+  return [];
 }
 function renderViewLesson(){
   const co=_findCourse(_viewCourseId);if(!co){nav('home');return;}
@@ -1653,7 +1660,7 @@ function renderViewLesson(){
     ${embed?`<div style="position:relative;width:100%;padding-bottom:56.25%;border-radius:12px;overflow:hidden;margin-bottom:14px;background:#000;"><iframe src="${_urlAttr(embed)}" allow="accelerometer;autoplay;clipboard-write;encrypted-media;gyroscope;picture-in-picture" allowfullscreen style="position:absolute;top:0;left:0;width:100%;height:100%;border:0;"></iframe></div>`
       :(l.videoUrl?`<a href="${_urlAttr(_safeUrl(l.videoUrl))}" target="_blank" rel="noopener" class="btnp" style="display:flex;width:100%;box-sizing:border-box;border-radius:12px;padding:12px;text-decoration:none;justify-content:center;margin-bottom:14px;"><i class="ti ti-player-play"></i> Watch the video</a>`:'')}
     ${l.body?`<div style="font-size:14px;color:#3a2f28;line-height:1.7;white-space:pre-wrap;margin-bottom:16px;">${_txt(l.body)}</div>`:''}
-    ${(l.fileId||l.fileName)?`<button onclick="_downloadCourseFile('${_jsAttr(l.fileId||'')}','${_jsAttr(l.fileName||'file')}','${_jsAttr(l.fileType||'')}',this)" class="btnp" style="display:flex;width:100%;box-sizing:border-box;border-radius:12px;padding:12px;justify-content:center;align-items:center;gap:7px;margin-bottom:16px;"><i class="ti ti-download"></i> Download ${_txt(l.fileName||'file')}</button>`:''}
+    ${_clientLessonFiles(l).map(f=>`<button onclick="_downloadCourseFile('${_jsAttr(f.fileId||'')}','${_jsAttr(f.fileName||'file')}','${_jsAttr(f.fileType||'')}',this)" class="btnp" style="display:flex;width:100%;box-sizing:border-box;border-radius:12px;padding:12px;justify-content:center;align-items:center;gap:7px;margin-bottom:10px;"><i class="ti ti-download"></i> Download ${_txt(f.fileName||'file')}</button>`).join('')}
     ${(l.docUrl&&_safeUrl(l.docUrl))?`<a href="${_urlAttr(_safeUrl(l.docUrl))}" target="_blank" rel="noopener" class="btnp" style="display:flex;width:100%;box-sizing:border-box;border-radius:12px;padding:12px;text-decoration:none;justify-content:center;align-items:center;gap:7px;margin-bottom:16px;"><i class="ti ti-file-text"></i> Open worksheet</a>`:''}
     <button onclick="_lessonToggleAndRefresh('${_jsAttr(co.id)}','${_jsAttr(l.id)}')" class="${done?'btng':'btnp'}" style="display:flex;width:100%;box-sizing:border-box;border-radius:12px;padding:13px;justify-content:center;align-items:center;gap:7px;"><i class="ti ti-${done?'circle-check':'check'}"></i> ${done?'Completed':'Mark as complete'}</button>
     ${idx<lessons.length-1?`<button onclick="_viewLessonId='${_jsAttr(lessons[idx+1].id)}';nav('view-lesson')" style="display:flex;width:100%;box-sizing:border-box;border:none;background:none;color:var(--accent);font-size:14px;font-weight:600;cursor:pointer;justify-content:center;align-items:center;gap:5px;padding:14px;font-family:inherit;">Next lesson <i class="ti ti-arrow-right"></i></button>`:`<div style="text-align:center;color:#786858;font-size:13px;padding:16px;">That's the last lesson 🎉</div>`}

@@ -2,6 +2,16 @@
 
 Newest entries at the top. One entry per deploy. Dates are US-formatted.
 
+## 2026-07-13 — Courses: attach MULTIPLE files per lesson
+
+A lesson can now hold **more than one PDF/image/doc**, not just a single file. In the course builder,
+"Attach files" supports multi-select and stacks each attachment with its own **Remove**; "Add another
+file" adds more. The lesson viewer previews **each** file inline (image or PDF), and the course-detail row
+shows the count ("3 files"). On the client side, the lesson player renders a download button per file.
+Each file gets its own stored id; the legacy single-file shape is auto-migrated on edit, and the first
+file is mirrored into the old fields so nothing breaks for older data. Still 3 MB per direct upload (paste
+a Drive/Dropbox link for bigger). Provider + client apps and both demos updated; all parse.
+
 ## 2026-07-13 — Fix: deleted guides reappearing on reload (load-order bug)
 
 Course saving now persists (previous fix). This fixes the remaining "I delete a guide and it keeps coming
