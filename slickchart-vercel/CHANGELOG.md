@@ -2,6 +2,24 @@
 
 Newest entries at the top. One entry per deploy. Dates are US-formatted.
 
+## 2026-07-13 — Delete any form/guide (and it stays deleted); course uploads persist
+
+Provider feedback: the library had lots of template forms/guides they didn't want as clutter, deletes
+didn't stick, and course file uploads were vanishing on app reset.
+
+- **Forms and guides are now deletable.** Every form card and guide card has a **trash** action. Deleting a
+  provider-created one removes it; deleting a built-in **template** hides it. Either way it's gone from the
+  library, the send-to-client sheet, and bundles.
+- **Deletes persist across refreshes.** Because templates are re-seeded from constants each load, a plain
+  removal wouldn't stick — so removed template ids are remembered in new synced stores (`sc_hidden_forms` /
+  `sc_hidden_guides`) that `rebuildResources()` / the forms list / `_profFormDefs()` all respect. Empty
+  sections are hidden. (Courses were already deletable + persistent.)
+- **Course file uploads persist reliably.** `saveCourse` now **awaits** the lesson file's local
+  (IndexedDB) write before leaving the editor, so a reload right after saving can't beat the write and
+  lose the upload; the server copy still uploads in parallel as a durable backup.
+
+Provider-side; demo in lockstep; both apps parse.
+
 ## 2026-07-13 — Courses: lessons preview inline, and the viewer is centered
 
 Two tweaks to the lesson viewer from provider feedback:

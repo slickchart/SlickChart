@@ -2780,7 +2780,7 @@ function loadAmazonAssociates(){try{const raw=localStorage.getItem('sc_amazon_as
 function _loadPersistenceSweep(){
   loadClientRecs();loadRecReasons();loadClientHomecare();loadSessionSummaries();loadCapturedPhotos();
   loadStaff();loadAutos();loadNotifSettings();loadCheckins();loadCourses();loadShopBundles();try{loadBodyMaps();}catch(e){}try{_probeWhisper();}catch(e){}
-  loadAffiliateLinks();loadCustomNoteTemplates();loadIntegrations();loadClientHealingStage();loadAmazonAssociates();try{loadNeedlePresets();}catch(e){}
+  loadAffiliateLinks();loadCustomNoteTemplates();loadIntegrations();loadClientHealingStage();loadAmazonAssociates();try{loadNeedlePresets();}catch(e){}try{loadHiddenSets();}catch(e){}
 }
 // Safety net: persist all of the above on every navigation, so nothing new added later
 // slips through the cracks the way these did. Cheap (localStorage) and runs after edits
@@ -7755,6 +7755,7 @@ function _guidesTabHTML(){
             <button onclick="event.stopPropagation();nav('guide-preview','${r.id}')" style="border:none;background:none;font-size:12px;color:#aaa;cursor:pointer;"><i class="ti ti-eye" style="font-size:13px;"></i> Preview</button>
             <button onclick="event.stopPropagation();sendResourceToClient(${ri})" style="border:none;background:none;font-size:12px;color:var(--accent);cursor:pointer;"><i class="ti ti-send" style="font-size:12px;"></i> Send</button>
             <button onclick="event.stopPropagation();nav('edit-resource','${r.id}')" aria-label="Edit guide" style="border:none;background:none;font-size:12px;color:#aaa;cursor:pointer;"><i class="ti ti-pencil" style="font-size:13px;"></i> Edit</button>
+            <button onclick="event.stopPropagation();deleteGuideCard('${r.id}')" aria-label="Delete guide" title="Delete guide" style="border:none;background:none;font-size:12px;color:#c96a6a;cursor:pointer;"><i class="ti ti-trash" style="font-size:13px;"></i></button>
           </div>
         </div>
       </div>`;}).join('')}
@@ -7849,7 +7850,7 @@ function _profFormDefs(){
   const out=[],seen={};
   profs.forEach(p=>{_FORM_DEFS_BY_PROF[p][1].forEach(f=>{if(!seen[f.id]){seen[f.id]=1;out.push(f);}});});
   (typeof customForms!=='undefined'?customForms:[]).forEach(cf=>{if(seen[cf.id])return;const t=formTmpls[cf.id]||cf;seen[cf.id]=1;out.push({icon:'ti-file-text',bg:'var(--accent-tint)',ic:'var(--accent)',name:(t.name||cf.name||'Custom form'),sub:(((formTmpls[cf.id]&&formTmpls[cf.id].qs)||[]).length)+' questions · custom',id:cf.id});});
-  return out;
+  return (typeof hiddenForms!=='undefined')?out.filter(f=>!hiddenForms[f.id]):out;
 }
 function _profFormIds(){return _profFormDefs().map(f=>f.id);}
 // Provider-set emoji override for a form; '' = deliberately no icon, undefined = use default tile.
@@ -7904,6 +7905,7 @@ function _formCard(f){
       <button onclick="nav('form-builder','${f.id}')" style="border:none;background:none;font-size:12px;color:var(--accent);cursor:pointer;"><i class="ti ti-pencil" style="font-size:12px;"></i> Edit</button>
       <button onclick="nav('form-preview','${f.id}')" style="border:none;background:none;font-size:12px;color:#aaa;cursor:pointer;"><i class="ti ti-eye" style="font-size:12px;"></i> Preview</button>
       <button onclick="sendFormToClient('${f.id}')" style="border:none;background:none;font-size:12px;color:#aaa;cursor:pointer;margin-left:auto;"><i class="ti ti-send" style="font-size:12px;"></i> Send</button>
+      <button onclick="deleteFormCard('${f.id}')" aria-label="Delete form" title="Delete form" style="border:none;background:none;font-size:12px;color:#c96a6a;cursor:pointer;"><i class="ti ti-trash" style="font-size:13px;"></i></button>
     </div>
   </div>`;
 }
@@ -7934,12 +7936,12 @@ function renderForms(){
   <div class="card" style="border-color:var(--accent);" onclick="nav('checkin-settings')"><div class="row"><div style="width:42px;height:42px;border-radius:10px;background:#2a0f1a;display:flex;align-items:center;justify-content:center;"><i class="ti ti-checklist" style="font-size:20px;color:#e87070;"></i></div><div style="flex:1;"><div style="font-size:14px;font-weight:500;color:#e0e0e0;">Pre-visit check-in</div><div style="font-size:12px;color:#999;margin-top:2px;">${checkinSub}</div><div style="margin-top:5px;display:flex;gap:5px;"><span class="bdg bg" style="font-size:12px;">Auto-send on</span><span class="bdg br" style="font-size:12px;">Customizable</span></div></div><i aria-hidden="true" class="ti ti-chevron-right" style="font-size:16px;color:#888;"></i></div></div>
   <div style="margin:2px 16px 0;padding:9px 12px;background:#0d1e33;border:1px solid #1a3a5c;border-radius:10px;display:flex;gap:8px;"><i class="ti ti-info-circle" style="font-size:14px;color:#5ba3e8;flex-shrink:0;margin-top:1px;"></i><span style="font-size:12px;color:#5ba3e8;line-height:1.5;">Connect aftercare guides to any form, switch to the <b>Guides</b> tab to manage them. Connected guides send with the form in one tap.</span></div>
   </div>
-  ${sections.map((p,si)=>{const[label,forms]=F[p];const list=forms;return`
+  ${sections.map((p,si)=>{const[label,forms]=F[p];const list=forms.filter(f=>!hiddenForms[f.id]);if(!list.length)return'';return`
   <div class="form-section">
   <div class="sh"><h2>${label} · intake &amp; consent</h2></div>
   ${list.map(f=>_formCard(f)).join('')}
   </div>`;}).join('')}
-  ${customForms.length?`<div class="form-section"><div class="sh"><h2>Custom forms</h2></div>${customForms.map(cf=>_formCard({icon:'ti-file-text',bg:'var(--accent-tint)',ic:'var(--accent)',name:(formTmpls[cf.id]||cf).name||cf.name,sub:`${(formTmpls[cf.id]&&formTmpls[cf.id].qs.length)||0} questions · custom`,id:cf.id})).join('')}</div>`:''}
+  ${(function(){const cf2=customForms.filter(cf=>!hiddenForms[cf.id]);return cf2.length?`<div class="form-section"><div class="sh"><h2>Custom forms</h2></div>${cf2.map(cf=>_formCard({icon:'ti-file-text',bg:'var(--accent-tint)',ic:'var(--accent)',name:(formTmpls[cf.id]||cf).name||cf.name,sub:`${(formTmpls[cf.id]&&formTmpls[cf.id].qs.length)||0} questions · custom`,id:cf.id})).join('')}</div>`:'';})()}
   <div id="forms-noresults" style="display:none;padding:30px 16px;text-align:center;color:#9a9a9a;font-size:13px;">No forms match your search.</div>
   <div style="height:16px;"></div>
   </div>
@@ -10415,12 +10417,50 @@ let resources=[];         // active library, rebuilt from selected professions +
 function rebuildResources(){
   const out=[],idx={};
   const profs=(typeof selectedProfessions!=='undefined'&&selectedProfessions.length)?selectedProfessions:['esty'];
-  profs.forEach(p=>{(guideTemplatesByProf[p]||[]).forEach(g=>{if(!(g.id in idx)){idx[g.id]=out.length;out.push(Object.assign({},g));}});});
+  profs.forEach(p=>{(guideTemplatesByProf[p]||[]).forEach(g=>{if(hiddenGuides[g.id])return;if(!(g.id in idx)){idx[g.id]=out.length;out.push(Object.assign({},g));}});});
   customResources.forEach(g=>{
+    if(hiddenGuides[g.id])return;
     if(g.id in idx){out[idx[g.id]]=Object.assign({},out[idx[g.id]],g);}        // edited template overrides original
     else if(/^g-custom-/.test(g.id)){idx[g.id]=out.length;out.push(Object.assign({},g));}  // provider-created guide
   });
   resources.length=0;out.forEach(g=>resources.push(g));
+}
+// Persisted "hidden" sets so a provider can delete built-in TEMPLATE forms/guides and have them
+// stay gone across refreshes. Templates are seeded from constants each load, so a plain array
+// removal wouldn't stick — we remember the removed ids here (synced across devices too).
+let hiddenForms={},hiddenGuides={};
+function loadHiddenSets(){
+  try{const a=localStorage.getItem('sc_hidden_forms');if(a){const o=JSON.parse(a);if(o&&typeof o==='object')hiddenForms=o;}}catch(e){}
+  try{const b=localStorage.getItem('sc_hidden_guides');if(b){const o=JSON.parse(b);if(o&&typeof o==='object')hiddenGuides=o;}}catch(e){}
+}
+function _saveHiddenForms(){try{const v=JSON.stringify(hiddenForms);localStorage.setItem('sc_hidden_forms',v);if(typeof _pushKeyNow==='function')_pushKeyNow('sc_hidden_forms',v);}catch(e){}}
+function _saveHiddenGuides(){try{const v=JSON.stringify(hiddenGuides);localStorage.setItem('sc_hidden_guides',v);if(typeof _pushKeyNow==='function')_pushKeyNow('sc_hidden_guides',v);}catch(e){}}
+function deleteFormCard(id){
+  const def=(typeof _formDefById==='function')?_formDefById(id):null;
+  const isCustom=(typeof customForms!=='undefined')&&customForms.some(cf=>cf.id===id);
+  const nm=(def&&def.name)||((typeof formTmpls!=='undefined'&&formTmpls[id]&&formTmpls[id].name))||'this form';
+  if(!confirm('Delete "'+String(nm).replace(/\s+/g,' ').trim()+'"?\n\nIt’ll be removed from your forms library. This can’t be undone.'))return;
+  if(isCustom){
+    for(let i=customForms.length-1;i>=0;i--){if(customForms[i].id===id)customForms.splice(i,1);}
+    try{if(typeof formTmpls!=='undefined'&&formTmpls[id])delete formTmpls[id];}catch(e){}
+    try{if(typeof persistForms==='function')persistForms();}catch(e){}
+  }
+  // Remember the removal (a custom form could share an id space; harmless to also hide it).
+  hiddenForms[id]=1;_saveHiddenForms();
+  if(typeof proToast==='function')proToast('Form deleted');
+  if(typeof renderForms==='function')renderForms();
+}
+function deleteGuideCard(id){
+  const g=(typeof resources!=='undefined')?resources.find(x=>x.id===id):null;
+  const nm=(g&&g.title)||'this guide';
+  if(!confirm('Delete "'+String(nm).replace(/\s+/g,' ').trim()+'"?\n\nIt’ll be removed from your guides. This can’t be undone.'))return;
+  try{for(let i=customResources.length-1;i>=0;i--){if(customResources[i].id===id)customResources.splice(i,1);}}catch(e){}
+  hiddenGuides[id]=1;                                   // stays gone across refresh (template or custom)
+  try{if(typeof persistCustomResources==='function')persistCustomResources();}catch(e){}
+  _saveHiddenGuides();
+  try{if(typeof rebuildResources==='function')rebuildResources();}catch(e){}
+  if(typeof proToast==='function')proToast('Guide deleted');
+  if(typeof renderForms==='function')renderForms();
 }
 function _findGuide(id){return resources.find(g=>g.id===id)||Object.values(guideTemplatesByProf).flat().find(g=>g.id===id)||customResources.find(g=>g.id===id)||(function(){const co=(typeof courses!=='undefined'&&Array.isArray(courses))?courses.find(x=>x.id===id):null;return co?{id:co.id,title:co.title||'Course',icon:'📚',cat:'Course',url:co.url||'',tips:[]}:null;})();}
 // Direct, immediate upsert of one KV key to the server, bypasses the debounced Cloud.push
@@ -10640,7 +10680,7 @@ function _cbPickLessonFile(i,input){
   r.readAsDataURL(f);
 }
 function _cbRemoveLessonFile(i){_cbSyncFromDOM();const l=window._cbDraft.lessons[i];if(l){l._newFileData='';l._removeFile=!!l.fileId;l.fileName='';l.fileType='';l.fileId='';}_cbRenderLessons();}
-function saveCourse(id){
+async function saveCourse(id){
   _cbSyncFromDOM();
   const g=i=>{const el=document.getElementById(i);return el?el.value.trim():'';};
   const title=g('cb-title');
@@ -10650,15 +10690,18 @@ function saveCourse(id){
   const statusEl=document.getElementById('cb-status');const status=statusEl?statusEl.value:'Draft';
   const d=window._cbDraft||{lessons:[]};
   const courseId=(id&&id!=='new')?id:('c'+Date.now().toString(36));
-  // Finalize lessons: upload any newly-attached files to server + IndexedDB, keep only refs.
+  // Finalize lessons: upload any newly-attached files to server + IndexedDB, keep only refs. We
+  // collect the local-write promises and await them below so the bytes are committed before we
+  // leave the editor — that's what stops uploads vanishing when the app reloads right after a save.
+  const _fileWrites=[];
   const lessons=d.lessons.filter(l=>(l.title||'').trim()||l.body||l.videoUrl||l.docUrl||l._newFileData||l.fileId).map(l=>{
     const out={id:l.id||('l'+Math.random().toString(36).slice(2,8)),title:(l.title||'').trim()||'Lesson',body:l.body||'',videoUrl:(l.videoUrl||'').trim(),docUrl:(l.docUrl||'').trim(),fileId:l.fileId||'',fileName:l.fileName||'',fileType:l.fileType||''};
     if(l._newFileData){
       const fid=_courseFileId(courseId,out.id);
       out.fileId=fid;
-      _persistGuideFile(fid,{name:out.fileName,type:out.fileType,data:l._newFileData},false);
+      _fileWrites.push(_persistGuideFile(fid,{name:out.fileName,type:out.fileType,data:l._newFileData},false));
     }else if(l._removeFile&&l.fileId){
-      _persistGuideFile(l.fileId,null,true);
+      _fileWrites.push(_persistGuideFile(l.fileId,null,true));
     }
     return out;
   });
@@ -10669,6 +10712,7 @@ function saveCourse(id){
   else{courses.push(Object.assign({id:courseId,icon:'ti-book',bg:'#1e1633',ic:'#a891ec',bdg:'bp',enrolled:0,revenue:0,progress:0},base));}
   try{_markCoursesCustom();}catch(e){}
   try{persistCourses();}catch(e){}
+  try{await Promise.all(_fileWrites);}catch(e){}   // ensure the uploaded files are committed locally
   window._cbDraft=null;
   if(typeof proToast==='function')proToast(existing?'Course updated ✓':'Course created ✓');
   _fgTab='courses';nav('forms');
@@ -16835,17 +16879,21 @@ function _uploadGuideFileToServer(id,payload){
 function _deleteGuideFileFromServer(id){try{if(typeof Cloud!=='undefined'&&Cloud&&Cloud.token)fetch('/api/guide-file?id='+encodeURIComponent(id),{method:'DELETE',headers:{'Authorization':'Bearer '+Cloud.token}}).catch(()=>{});}catch(e){}}
 // Persist a guide's file: store the bytes locally (IndexedDB) + on the server, or remove
 // them if the provider cleared the attachment.
+// Returns a Promise that resolves once the local (IndexedDB) write has actually COMMITTED — the
+// caller can await it before navigating away, so a fast reload can't beat the write and lose an
+// upload. The server upload runs in parallel as a durable backup (survives any local storage reset).
 function _persistGuideFile(id,draft,prevHadFile){
   try{
     if(draft&&draft.data){
       const payload={name:draft.name||'',type:draft.type||'',data:draft.data};
-      try{if(typeof _idb!=='undefined'&&_idb.available())_idb.set('gfile_'+id,payload);}catch(e){}
       _uploadGuideFileToServer(id,payload);
+      if(typeof _idb!=='undefined'&&_idb.available()){try{return Promise.resolve(_idb.set('gfile_'+id,payload));}catch(e){}}
     }else if(!draft&&prevHadFile){
-      try{if(typeof _idb!=='undefined'&&_idb.available())_idb.del('gfile_'+id);}catch(e){}
       _deleteGuideFileFromServer(id);
+      if(typeof _idb!=='undefined'&&_idb.available()){try{return Promise.resolve(_idb.del('gfile_'+id));}catch(e){}}
     }
   }catch(e){}
+  return Promise.resolve();
 }
 // Fetch a guide's file bytes for preview/download: IndexedDB first, then the server.
 async function _getGuideFile(id){
