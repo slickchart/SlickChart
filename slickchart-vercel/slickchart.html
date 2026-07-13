@@ -2754,7 +2754,7 @@ function loadAmazonAssociates(){try{const raw=localStorage.getItem('sc_amazon_as
 function _loadPersistenceSweep(){
   loadClientRecs();loadRecReasons();loadClientHomecare();loadSessionSummaries();loadCapturedPhotos();
   loadStaff();loadAutos();loadNotifSettings();loadCheckins();loadCourses();loadShopBundles();try{loadBodyMaps();}catch(e){}try{_probeWhisper();}catch(e){}
-  loadAffiliateLinks();loadCustomNoteTemplates();loadIntegrations();loadClientHealingStage();loadAmazonAssociates();
+  loadAffiliateLinks();loadCustomNoteTemplates();loadIntegrations();loadClientHealingStage();loadAmazonAssociates();try{loadNeedlePresets();}catch(e){}
 }
 // Safety net: persist all of the above on every navigation, so nothing new added later
 // slips through the cracks the way these did. Cheap (localStorage) and runs after edits
@@ -4861,7 +4861,7 @@ function renderWriteNote(id){
     <span style="font-size:11px;color:#929292;">(change this if you're catching up on a note from another day)</span>
   </div>
   <div style="padding:0 16px;">
-    ${t.sections.map(s=>`<div style="margin-bottom:14px;"><div style="font-size:11px;font-weight:500;text-transform:uppercase;letter-spacing:.07em;color:${_fileEsc(s.color)};margin-bottom:5px;display:flex;align-items:center;gap:5px;"><div style="width:8px;height:8px;border-radius:50%;background:${_fileEsc(s.color)};"></div>${s.label}</div><textarea id="wn-sec-${s.id}" class="fi" style="height:${t.sections.length<=1?'300':'150'}px;resize:vertical;line-height:1.6;" placeholder="${s.ph}" oninput="_autosaveWriteNote('${id}')">${(sections[s.id]||'').replace(/</g,'&lt;')}</textarea>${(activeNoteTemplate==='tattooRecord'&&s.id==='tt1')?_bodyMapField(id):''}</div>`).join('')}
+    ${t.sections.map(s=>`<div style="margin-bottom:14px;"><div style="font-size:11px;font-weight:500;text-transform:uppercase;letter-spacing:.07em;color:${_fileEsc(s.color)};margin-bottom:5px;display:flex;align-items:center;gap:5px;"><div style="width:8px;height:8px;border-radius:50%;background:${_fileEsc(s.color)};"></div>${s.label}</div><textarea id="wn-sec-${s.id}" class="fi" style="height:${t.sections.length<=1?'300':'150'}px;resize:vertical;line-height:1.6;" placeholder="${s.ph}" oninput="_autosaveWriteNote('${id}')">${(sections[s.id]||'').replace(/</g,'&lt;')}</textarea>${(activeNoteTemplate==='tattooRecord'&&s.id==='tt1')?_bodyMapField(id):''}${(activeNoteTemplate==='tattooRecord'&&s.id==='tt3')?_needlePresetField(id):''}</div>`).join('')}
   </div>
   <div style="display:flex;gap:8px;margin:0 16px 16px;">
     <button class="btnp" style="flex:1;border-radius:8px;" onclick="_saveAndSendNote('${id}')"><i class="ti ti-send"></i> Save and send</button>
@@ -4980,6 +4980,93 @@ function _bodyMapField(id){
     <button type="button" onclick="_openBodyMap('${_jsAttr(id)}')" style="background:#1e0d33;border:1px solid #3a2a4a;color:#c084fc;border-radius:8px;padding:7px 12px;font-size:12px;font-weight:600;cursor:pointer;font-family:inherit;display:inline-flex;align-items:center;gap:6px;"><i class="ti ti-map-pin"></i> ${bm?'Edit body map':'Body map'}</button>
     ${bm&&bm.pin?`<div style="display:flex;align-items:center;gap:6px;"><div style="width:26px;height:40px;background:#0d0d0d;border:1px solid #2a2a2a;border-radius:5px;position:relative;flex-shrink:0;"><div style="position:absolute;width:7px;height:7px;border-radius:50%;background:#e87070;border:1px solid #fff;left:${(bm.pin.x*26-3.5).toFixed(1)}px;top:${(bm.pin.y*40-3.5).toFixed(1)}px;"></div></div><span style="font-size:12px;color:#ccc;">${_fileEsc(bm.area)} <span style="color:#888;">· ${_fileEsc(bm.side)}</span></span></div>`:'<span style="font-size:11px;color:#888;">Tap to mark where the tattoo goes</span>'}
   </div>`;
+}
+
+// ── Needle / machine preset library ── one-tap common setups for the tattoo "Needle & machine log".
+// A preset bundles a needle group+size, technique, machine, and voltage into one clean line; tapping a
+// chip appends it to the tt3 field so the artist doesn't retype their standard setups every session.
+// Own sc_ store (auto-synced across devices). Seeded with sensible defaults the first time it's opened.
+let needlePresets=null;
+let _npClientId='';
+let _npDraft={needle:'',tech:'',machine:'',voltage:''};
+const _NP_TECHS=['Lining','Shading','Color pack','Whip shading','Blackwork'];
+const _NEEDLE_DEFAULTS=[
+  {id:'np_line3rl',label:'Lining — 3RL',text:'3RL · Lining · 7.5V'},
+  {id:'np_bold7rl',label:'Bold line — 7RL',text:'7RL · Lining · 8V'},
+  {id:'np_shade9rm',label:'Shading — 9RM',text:'9RM · Shading · 7V'},
+  {id:'np_pack15rm',label:'Color pack — 15RM',text:'15RM · Color pack · 8.5V'},
+  {id:'np_whip5rs',label:'Whip — 5RS',text:'5RS · Whip shading · 6.5V'}
+];
+function loadNeedlePresets(){try{const raw=localStorage.getItem('sc_needle_presets');if(raw){const o=JSON.parse(raw);if(Array.isArray(o))needlePresets=o;}}catch(e){}if(!Array.isArray(needlePresets))needlePresets=_NEEDLE_DEFAULTS.map(p=>Object.assign({},p));}
+function persistNeedlePresets(){try{const v=JSON.stringify(needlePresets||[]);localStorage.setItem('sc_needle_presets',v);if(typeof _pushKeyNow==='function')_pushKeyNow('sc_needle_presets',v);}catch(e){}}
+function _npText(d){return [d.needle,d.tech,d.machine,(d.voltage?String(d.voltage).replace(/\s*v\s*$/i,'')+'V':'')].map(x=>String(x||'').trim()).filter(Boolean).join(' · ');}
+// The chip row shown under the Needle & machine log field.
+function _needlePresetField(id){
+  if(!Array.isArray(needlePresets))loadNeedlePresets();
+  const chips=needlePresets.map(p=>`<button type="button" onclick="_applyNeedlePreset('${_jsAttr(id)}','${_jsAttr(p.id)}')" title="${_fileEsc(p.text)}" style="background:#0d2a20;border:1px solid #1e5a44;color:#4ec49a;border-radius:20px;padding:6px 11px;font-size:12px;font-weight:600;cursor:pointer;font-family:inherit;white-space:nowrap;">${_fileEsc(p.label)}</button>`).join('');
+  return `<div id="np-field-tt3" style="margin-top:-2px;margin-bottom:8px;">
+    <div style="font-size:11px;color:#9a9a9a;margin-bottom:6px;">One-tap setups — tap to add to the log above</div>
+    <div style="display:flex;gap:7px;flex-wrap:wrap;align-items:center;">${chips}<button type="button" onclick="_openNeedlePresetMgr('${_jsAttr(id)}')" style="background:#161616;border:1px dashed #4a4a4a;color:#bbb;border-radius:20px;padding:6px 11px;font-size:12px;cursor:pointer;font-family:inherit;"><i class="ti ti-plus"></i> New / manage</button></div>
+  </div>`;
+}
+function _applyNeedlePreset(id,pid){
+  const p=(needlePresets||[]).find(x=>x.id===pid);if(!p)return;
+  const el=document.getElementById('wn-sec-tt3');if(!el)return;
+  const cur=(el.value||'').trim();
+  el.value=(cur?cur+'\n':'')+p.text;
+  if(typeof _autosaveWriteNote==='function')_autosaveWriteNote(id);
+  if(typeof proToast==='function')proToast('Added: '+p.label);
+}
+function _openNeedlePresetMgr(id){
+  _npClientId=id||'';_npDraft={needle:'',tech:'',machine:'',voltage:''};
+  if(!Array.isArray(needlePresets))loadNeedlePresets();
+  const ov=document.createElement('div');ov.id='np-mgr-ov';
+  ov.style.cssText='position:fixed;inset:0;z-index:9999;background:rgba(0,0,0,.6);display:flex;align-items:center;justify-content:center;padding:16px;';
+  ov.onclick=e=>{if(e.target===ov)ov.remove();};
+  ov.innerHTML=`<div style="background:#161616;border:1px solid #2a2a2a;border-radius:16px;padding:16px;width:360px;max-width:100%;max-height:92vh;overflow:auto;">
+    <div style="display:flex;justify-content:space-between;align-items:center;margin-bottom:12px;"><div style="font-size:15px;font-weight:600;color:#f0f0f0;">Needle &amp; machine presets</div><button onclick="document.getElementById('np-mgr-ov').remove()" style="border:none;background:none;color:#888;font-size:20px;cursor:pointer;">✕</button></div>
+    <div id="np-mgr-body"></div></div>`;
+  (document.querySelector('.shell')||document.body).appendChild(ov);
+  _npRenderMgr();
+}
+function _npRenderMgr(){
+  const wrap=document.getElementById('np-mgr-body');if(!wrap)return;const d=_npDraft;
+  const list=(needlePresets||[]).map(p=>`<div style="display:flex;align-items:center;gap:8px;padding:8px 10px;background:#0f0f0f;border:1px solid #242424;border-radius:9px;margin-bottom:6px;">
+    <div style="flex:1;min-width:0;"><div style="font-size:13px;color:#e6e6e6;font-weight:600;">${_fileEsc(p.label)}</div><div style="font-size:11px;color:#8a8a8a;overflow:hidden;text-overflow:ellipsis;white-space:nowrap;">${_fileEsc(p.text)}</div></div>
+    <button onclick="_npDelete('${_jsAttr(p.id)}')" title="Delete preset" style="border:none;background:none;color:#c76a6a;font-size:14px;cursor:pointer;padding:5px;"><i class="ti ti-trash"></i></button>
+  </div>`).join('')||'<div style="font-size:12px;color:#888;padding:6px 2px 10px;">No presets yet — build one below.</div>';
+  const techPills=_NP_TECHS.map(t=>`<button type="button" onclick="_npDraft.tech=(_npDraft.tech==='${t}'?'':'${t}');_npRenderMgr()" class="pill ${d.tech===t?'active':''}" style="font-size:12px;">${t}</button>`).join('');
+  wrap.innerHTML=`
+    <div style="font-size:11px;font-weight:600;text-transform:uppercase;letter-spacing:.06em;color:#4ec49a;margin-bottom:8px;">Your presets</div>
+    ${list}
+    <div style="height:1px;background:#242424;margin:13px 0;"></div>
+    <div style="font-size:11px;font-weight:600;text-transform:uppercase;letter-spacing:.06em;color:#4ec49a;margin-bottom:9px;">New preset</div>
+    <div style="display:flex;gap:8px;margin-bottom:9px;">
+      <div style="flex:1;"><div style="font-size:11px;color:#9a9a9a;margin-bottom:3px;">Needle (group + size)</div><input class="fi" value="${_jsAttr(d.needle)}" placeholder="e.g. 3RL, 9RM" oninput="_npDraft.needle=this.value;_npUpdatePreview()" style="font-size:13px;"></div>
+      <div style="width:82px;"><div style="font-size:11px;color:#9a9a9a;margin-bottom:3px;">Voltage</div><input class="fi" value="${_jsAttr(d.voltage)}" placeholder="7.5" inputmode="decimal" oninput="_npDraft.voltage=this.value;_npUpdatePreview()" style="font-size:13px;"></div>
+    </div>
+    <div style="font-size:11px;color:#9a9a9a;margin-bottom:5px;">Technique</div>
+    <div style="display:flex;gap:6px;flex-wrap:wrap;margin-bottom:10px;">${techPills}</div>
+    <div style="margin-bottom:10px;"><div style="font-size:11px;color:#9a9a9a;margin-bottom:3px;">Machine (optional)</div><input class="fi" value="${_jsAttr(d.machine)}" placeholder="e.g. rotary, coil liner" oninput="_npDraft.machine=this.value;_npUpdatePreview()" style="font-size:13px;"></div>
+    <div style="font-size:11px;color:#9a9a9a;margin-bottom:8px;">Preview: <span id="np-preview" style="color:#4ec49a;font-weight:600;">${_fileEsc(_npText(d)||'—')}</span></div>
+    <button class="btnp" style="width:100%;border-radius:9px;" onclick="_npSave()"><i class="ti ti-plus"></i> Save preset</button>`;
+}
+function _npUpdatePreview(){const el=document.getElementById('np-preview');if(el)el.textContent=_npText(_npDraft)||'—';}
+function _npSave(){
+  const d=_npDraft;const text=_npText(d).trim();
+  if(!text){if(typeof proToast==='function')proToast('Add at least a needle or technique');return;}
+  const label=(d.needle&&d.tech)?(d.tech+' — '+d.needle.trim()):(d.needle.trim()||d.tech||text.slice(0,26));
+  needlePresets.push({id:'np_'+Date.now(),label:label,text:text});
+  persistNeedlePresets();
+  _npDraft={needle:'',tech:'',machine:'',voltage:''};
+  _npRenderMgr();
+  const fld=document.getElementById('np-field-tt3');if(fld&&_npClientId)fld.outerHTML=_needlePresetField(_npClientId);
+  if(typeof proToast==='function')proToast('Preset saved ✨');
+}
+function _npDelete(pid){
+  needlePresets=(needlePresets||[]).filter(p=>p.id!==pid);
+  persistNeedlePresets();_npRenderMgr();
+  const fld=document.getElementById('np-field-tt3');if(fld&&_npClientId)fld.outerHTML=_needlePresetField(_npClientId);
 }
 // Save the current write-note editor into the draft + session-history/summary.
 // Returns {ok, id, idx} so callers can optionally send the just-saved summary.

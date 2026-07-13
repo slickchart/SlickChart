@@ -2,6 +2,16 @@
 
 Newest entries at the top. One entry per deploy. Dates are US-formatted.
 
+## 2026-07-13 — Tattoo: needle & machine preset library (one-tap setups)
+
+The **Needle & machine log** field on the tattoo record now has a row of **one-tap preset chips**. Tapping
+one appends a clean setup line (e.g. `3RL · Lining · 7.5V`) to the log so the artist doesn't retype their
+standard configurations every session. **New / manage** opens a builder — needle group + size, technique
+(Lining / Shading / Color pack / Whip / Blackwork), optional machine, and voltage — with a live preview,
+plus a list of saved presets you can delete. Ships seeded with five sensible defaults; presets live in a
+new auto-synced `sc_needle_presets` store so they follow the artist across devices. Provider-side only
+(shown only on the tattoo template's `tt3` field); demo in lockstep; both apps parse.
+
 ## 2026-07-13 — High-accuracy voice notes (Groq Whisper), with graceful fallback
 
 Voice notes can now be transcribed by **Groq's Whisper (`whisper-large-v3-turbo`)** server-side instead of
