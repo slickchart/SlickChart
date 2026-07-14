@@ -525,10 +525,27 @@ function _pushRoutine(id){
   if(id==='maya'){try{SlickBridge.post('routine-update',{providerId:'jess',clientId:'maya',routine:getClientHomecare(id).slice()});}catch(e){}}
   else{try{if(typeof _scheduleSpecificClientSync==='function')_scheduleSpecificClientSync(id);}catch(e){}}
 }
-function _addRoutineFromProfile(id){
+function _addRoutineFromProfile(id,ctx){
   const el=document.getElementById('routine-add-'+id);
   const v=el?el.value.trim():'';
-  if(v)addHomecareTag(id,v,'profile');
+  if(v)addHomecareTag(id,v,ctx||'profile');
+}
+// Edit a routine line in place. Updates the model + local store on each keystroke (no re-render, so
+// the input keeps focus); the client sync fires on blur (via _pushRoutine) to avoid a request per key.
+function editHomecareItem(id,idx,value){
+  const tags=getClientHomecare(id);
+  if(idx<0||idx>=tags.length)return;
+  tags[idx]=value;
+  try{persistWorkspace();}catch(e){}
+}
+// Reorder a routine line up (-1) or down (+1), then persist, push to the client, and re-render.
+function moveHomecareItem(id,idx,dir,ctx){
+  const tags=getClientHomecare(id);const j=idx+dir;
+  if(j<0||j>=tags.length)return;
+  const t=tags[idx];tags[idx]=tags[j];tags[j]=t;
+  try{persistWorkspace();}catch(e){}
+  _pushRoutine(id);
+  _rerenderHomecare(id,ctx);
 }
 
 
@@ -3456,12 +3473,19 @@ function renderClient(id){
   <div class="sh"><h2>Recommended routine</h2></div>
   <div style="background:#1a1a1a;border:1px solid #2a2a2a;border-radius:12px;margin:0 16px 10px;padding:14px;">
     <div style="font-size:12px;color:#999;line-height:1.5;margin-bottom:12px;">Homecare ${_fileEsc(c.name.split(' ')[0])} follows between visits. Shared with their session summary, so it reaches their app when you send one.</div>
-    <div style="display:flex;flex-wrap:wrap;gap:7px;margin-bottom:12px;">
-      ${getClientHomecare(id).map((t,i)=>`<span style="display:inline-flex;align-items:center;gap:5px;font-size:12px;padding:5px 5px 5px 11px;border-radius:20px;border:1px solid #2a2a2a;background:#161616;color:#ddd;">${t}<button onclick="removeHomecareTag('${id}',${i},'profile')" aria-label="Remove routine item" style="border:none;background:none;color:#9a9a9a;cursor:pointer;font-size:15px;line-height:1;padding:0 3px;min-width:20px;min-height:20px;">×</button></span>`).join('')||'<span style="font-size:12px;color:#9a9a9a;">No routine items yet, add one below.</span>'}
+    <div style="margin-bottom:12px;">
+      ${getClientHomecare(id).map((t,i,arr)=>`<div style="display:flex;align-items:center;gap:6px;margin-bottom:6px;">
+        <div style="display:flex;flex-direction:column;line-height:.7;flex-shrink:0;">
+          <button onclick="moveHomecareItem('${id}',${i},-1,'profile')" aria-label="Move up" ${i===0?'disabled':''} style="border:none;background:none;color:${i===0?'#333':'#9a9a9a'};cursor:${i===0?'default':'pointer'};padding:1px 3px;font-size:13px;"><i class="ti ti-chevron-up"></i></button>
+          <button onclick="moveHomecareItem('${id}',${i},1,'profile')" aria-label="Move down" ${i===arr.length-1?'disabled':''} style="border:none;background:none;color:${i===arr.length-1?'#333':'#9a9a9a'};cursor:${i===arr.length-1?'default':'pointer'};padding:1px 3px;font-size:13px;"><i class="ti ti-chevron-down"></i></button>
+        </div>
+        <input value="${_jsAttr(t)}" aria-label="Routine step ${i+1}" oninput="editHomecareItem('${id}',${i},this.value)" onblur="_pushRoutine('${id}')" style="flex:1;min-width:0;background:#161616;border:1px solid #2a2a2a;border-radius:8px;padding:8px 10px;font-size:13px;color:#ddd;font-family:inherit;outline:none;">
+        <button onclick="removeHomecareTag('${id}',${i},'profile')" aria-label="Remove routine step" style="border:none;background:none;color:#9a9a9a;cursor:pointer;font-size:17px;line-height:1;padding:2px 6px;flex-shrink:0;">×</button>
+      </div>`).join('')||'<div style="font-size:12px;color:#9a9a9a;">No routine steps yet, add one below.</div>'}
     </div>
     <div style="display:flex;gap:8px;">
-      <input id="routine-add-${id}" aria-label="Add a routine step" placeholder="Add a routine step…" style="flex:1;background:#111;border:1px solid #333;border-radius:8px;padding:8px 11px;font-size:13px;color:#ddd;font-family:inherit;" onkeydown="if(event.key==='Enter')_addRoutineFromProfile('${id}')">
-      <button onclick="_addRoutineFromProfile('${id}')" style="border:none;background:var(--accent);color:var(--accent-ink);border-radius:8px;padding:8px 14px;font-size:13px;font-weight:600;cursor:pointer;white-space:nowrap;">+ Add</button>
+      <input id="routine-add-${id}" aria-label="Add a routine step" placeholder="Add a routine step…" style="flex:1;background:#111;border:1px solid #333;border-radius:8px;padding:8px 11px;font-size:13px;color:#ddd;font-family:inherit;" onkeydown="if(event.key==='Enter')_addRoutineFromProfile('${id}','profile')">
+      <button onclick="_addRoutineFromProfile('${id}','profile')" style="border:none;background:var(--accent);color:var(--accent-ink);border-radius:8px;padding:8px 14px;font-size:13px;font-weight:600;cursor:pointer;white-space:nowrap;">+ Add</button>
     </div>
   </div>
   <div class="sh"><h2>Recommended products</h2></div>
@@ -5721,12 +5745,16 @@ function renderSessionSummary(id){
 
     ${summaryToggles.homecare?`<div style="padding:14px 16px;border-bottom:1px solid #222;">
       <div style="font-size:12px;color:#aaa;text-transform:uppercase;letter-spacing:.07em;font-weight:500;margin-bottom:10px;">${isHairBarberSummary?"Your aftercare instructions":"Your homecare routine"}</div>
-      ${homecare.map((step,i)=>`<div style="display:flex;align-items:flex-start;gap:8px;padding:7px 0;border-bottom:1px solid #1e1e1e;">
-        <div style="width:22px;height:22px;border-radius:50%;background:var(--accent-tint);border:1px solid var(--accent);display:flex;align-items:center;justify-content:center;flex-shrink:0;margin-top:1px;">
+      ${homecare.map((step,i,arr)=>`<div style="display:flex;align-items:center;gap:7px;padding:6px 0;border-bottom:1px solid #1e1e1e;">
+        <div style="width:22px;height:22px;border-radius:50%;background:var(--accent-tint);border:1px solid var(--accent);display:flex;align-items:center;justify-content:center;flex-shrink:0;">
           <span style="font-size:11px;font-weight:500;color:var(--accent);">${i+1}</span>
         </div>
-        <span style="flex:1;font-size:13px;color:#ccc;line-height:1.6;">${step}</span>
-        <button onclick="removeHomecareTag('${id}',${i})" aria-label="Remove" style="border:none;background:none;color:#555;cursor:pointer;font-size:14px;padding:2px 4px;flex-shrink:0;">×</button>
+        <div style="display:flex;flex-direction:column;line-height:.7;flex-shrink:0;">
+          <button onclick="moveHomecareItem('${id}',${i},-1)" aria-label="Move up" ${i===0?'disabled':''} style="border:none;background:none;color:${i===0?'#333':'#888'};cursor:${i===0?'default':'pointer'};padding:1px 2px;font-size:12px;"><i class="ti ti-chevron-up"></i></button>
+          <button onclick="moveHomecareItem('${id}',${i},1)" aria-label="Move down" ${i===arr.length-1?'disabled':''} style="border:none;background:none;color:${i===arr.length-1?'#333':'#888'};cursor:${i===arr.length-1?'default':'pointer'};padding:1px 2px;font-size:12px;"><i class="ti ti-chevron-down"></i></button>
+        </div>
+        <input value="${_jsAttr(step)}" aria-label="Homecare step ${i+1}" oninput="editHomecareItem('${id}',${i},this.value)" onblur="_pushRoutine('${id}')" style="flex:1;min-width:0;background:#111;border:1px solid #2a2a2a;border-radius:8px;padding:7px 10px;font-size:13px;color:#ccc;font-family:inherit;outline:none;">
+        <button onclick="removeHomecareTag('${id}',${i})" aria-label="Remove" style="border:none;background:none;color:#555;cursor:pointer;font-size:16px;padding:2px 4px;flex-shrink:0;">×</button>
       </div>`).join('')}
       <div style="display:flex;gap:6px;margin-top:10px;">
         <input id="homecare-new-tag" placeholder="Add instruction..." style="flex:1;background:#111;border:1px solid #333;border-radius:7px;padding:7px 10px;font-size:12px;color:#ccc;font-family:inherit;" onkeydown="if(event.key==='Enter'){addHomecareTag('${id}',this.value.trim());this.value='';}">
