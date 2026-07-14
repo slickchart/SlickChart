@@ -42,9 +42,11 @@ body{font-family:-apple-system,BlinkMacSystemFont,'Segoe UI',sans-serif;backgrou
 .logo i{font-size:15px;color:#fff;}
 #tt{font-size:17px;font-weight:500;color:#1a1a1a;flex:1;}
 .avatar{width:32px;height:32px;border-radius:50%;background:var(--accent-lt2);display:flex;align-items:center;justify-content:center;font-size:12px;font-weight:600;color:var(--accent);cursor:pointer;border:1.5px solid #e8d5c0;}
-main.scr{flex:1;overflow-y:auto;padding-bottom:72px;}
+main.scr{flex:1;min-height:0;overflow-y:auto;padding-bottom:16px;}
 main.scr::-webkit-scrollbar{display:none;}
-nav.nav{position:absolute;bottom:0;left:0;right:0;background:#fff;border-top:1px solid #f0ebe4;display:flex;padding:6px 0 12px;}
+/* In-flow flex child (not position:absolute) so it always sits flush at the bottom of the shell
+   regardless of viewport quirks, and clears the phone's home indicator via the safe-area inset. */
+nav.nav{flex-shrink:0;background:#fff;border-top:1px solid #f0ebe4;display:flex;padding:6px 0 calc(12px + env(safe-area-inset-bottom,0px));}
 .ni{flex:1;display:flex;flex-direction:column;align-items:center;gap:2px;cursor:pointer;padding:3px 0;border:none;background:none;min-height:44px;justify-content:center;}
 .ni i{font-size:18px;color:#82715f;}
 .ni span{font-size:10px;color:#82715f;font-weight:500;}
@@ -1870,6 +1872,9 @@ function renderHome(){
        countdown, booking actions, and the "complete before your visit" checklist, no extra heading. -->
   ${(()=>{
     const noAppt=(client.daysUntilNext==null||!isFinite(client.daysUntilNext));
+    // A stored appointment whose date has already passed is the LAST visit, not the next one —
+    // relabel it and drop the countdown/check-in so it doesn't read as an upcoming booking.
+    const past=!noAppt&&isFinite(client.daysUntilNext)&&client.daysUntilNext<0;
     const urgent=client.isToday||client.isTomorrow||client.isThisWeek;
     const ringR=26;const ringC=2*Math.PI*ringR;
     const pct=noAppt?0:Math.max(0,Math.min(1,1-(client.daysUntilNext/28)));
@@ -1880,15 +1885,15 @@ function renderHome(){
     return`<div style="margin:0 16px 14px;background:linear-gradient(135deg,var(--accent-tint),var(--accent-tint2));border-radius:16px;padding:18px 16px;">
     <div style="display:flex;align-items:center;gap:16px;">
       <div style="flex:1;">
-        <div style="font-size:11px;font-weight:700;color:var(--accent-lt2);text-transform:uppercase;letter-spacing:.08em;margin-bottom:6px;opacity:.85;">Next appointment</div>
+        <div style="font-size:11px;font-weight:700;color:var(--accent-lt2);text-transform:uppercase;letter-spacing:.08em;margin-bottom:6px;opacity:.85;">${past?'Last appointment':'Next appointment'}</div>
         <div style="font-size:22px;font-weight:600;color:var(--accent-lt2);margin-bottom:2px;">${noAppt?'Not scheduled':_dt(client.nextDate)}</div>
         <div style="font-size:13px;color:var(--accent-lt2);opacity:.75;">${noAppt?_txt(client.treatment||'Book your next visit'):(_txt(client.nextTime)+' · '+_txt(client.treatment))}</div>
         ${urgencyLabel?`<div style="margin-top:10px;display:flex;align-items:center;gap:6px;flex-wrap:wrap;">
           <div style="background:var(--accent);border-radius:6px;padding:4px 10px;font-size:12px;color:var(--accent-ink);font-weight:700;">${urgencyLabel}</div>
         </div>`:''}
       </div>
-      <!-- Animated SVG ring -->
-      <div style="flex-shrink:0;position:relative;width:68px;height:68px;">
+      <!-- Animated SVG ring — only for a real upcoming visit (hidden once the date has passed). -->
+      ${past?'':`<div style="flex-shrink:0;position:relative;width:68px;height:68px;">
         <svg width="68" height="68" style="transform:rotate(-90deg);">
           <circle cx="34" cy="34" r="${ringR}" fill="none" stroke="rgba(255,255,255,.18)" stroke-width="4"/>
           <circle cx="34" cy="34" r="${ringR}" fill="none" stroke="var(--accent-lt2)" stroke-width="4" stroke-linecap="round"
@@ -1898,26 +1903,42 @@ function renderHome(){
           <div style="font-size:${(!noAppt&&client.daysUntilNext>=10)?'18':'22'}px;font-weight:700;color:var(--accent-lt2);line-height:1;">${noAppt?'—':(client.isToday?'🎉':client.daysUntilNext)}</div>
           ${(!client.isToday&&!noAppt)?`<div style="font-size:9px;color:var(--accent-lt2);opacity:.7;font-weight:600;letter-spacing:.04em;">DAYS</div>`:''}
         </div>
-      </div>
+      </div>`}
     </div>
     <!-- Actions + the pre-visit checklist, all wrapped inside this one card -->
     <div style="display:flex;gap:8px;margin-top:14px;">
       <button onclick="nav('rebook')" aria-label="Request an appointment" style="flex:1;background:rgba(255,255,255,.12);border:1px solid rgba(255,255,255,.22);border-radius:10px;padding:10px;display:flex;align-items:center;justify-content:center;gap:7px;cursor:pointer;">
         <i class="ti ti-calendar-plus" aria-hidden="true" style="font-size:15px;color:var(--accent-lt2);"></i>
-        <span style="font-size:13px;font-weight:600;color:var(--accent-lt2);">${noAppt?'Request an appointment':'Book another'}</span>
+        <span style="font-size:13px;font-weight:600;color:var(--accent-lt2);">${noAppt?'Request an appointment':past?'Book your next visit':'Book another'}</span>
       </button>
-      ${noAppt?'':`<button onclick="openCalModal()" aria-label="Add to calendar" style="flex:1;background:rgba(255,255,255,.12);border:1px solid rgba(255,255,255,.22);border-radius:10px;padding:10px;display:flex;align-items:center;justify-content:center;gap:7px;cursor:pointer;">
+      ${(noAppt||past)?'':`<button onclick="openCalModal()" aria-label="Add to calendar" style="flex:1;background:rgba(255,255,255,.12);border:1px solid rgba(255,255,255,.22);border-radius:10px;padding:10px;display:flex;align-items:center;justify-content:center;gap:7px;cursor:pointer;">
         <i class="ti ti-calendar-check" aria-hidden="true" style="font-size:15px;color:var(--accent-lt2);"></i>
         <span style="font-size:13px;font-weight:600;color:var(--accent-lt2);">Add to calendar</span>
       </button>`}
     </div>
-    ${(!noAppt&&(client.studioAddress||client.studio))?`<a href="https://www.google.com/maps/dir/?api=1&destination=${encodeURIComponent((client.studioAddress||client.studio||'').trim())}" target="_blank" rel="noopener" aria-label="Get directions" style="display:flex;align-items:center;justify-content:center;gap:7px;margin-top:8px;background:rgba(255,255,255,.12);border:1px solid rgba(255,255,255,.22);border-radius:10px;padding:10px;text-decoration:none;cursor:pointer;">
+    ${(!noAppt&&!past&&(client.studioAddress||client.studio))?`<a href="https://www.google.com/maps/dir/?api=1&destination=${encodeURIComponent((client.studioAddress||client.studio||'').trim())}" target="_blank" rel="noopener" aria-label="Get directions" style="display:flex;align-items:center;justify-content:center;gap:7px;margin-top:8px;background:rgba(255,255,255,.12);border:1px solid rgba(255,255,255,.22);border-radius:10px;padding:10px;text-decoration:none;cursor:pointer;">
       <i class="ti ti-map-pin" aria-hidden="true" style="font-size:15px;color:var(--accent-lt2);"></i>
       <span style="font-size:13px;font-weight:600;color:var(--accent-lt2);">Get directions</span>
     </a>`:''}
-    ${((!noAppt)||(activeProvider().pendingForms||[]).length)?_previsitSectionHTML():''}
+    ${(!past&&((!noAppt)||(activeProvider().pendingForms||[]).length))?_previsitSectionHTML():''}
   </div>`;
   })()}
+
+  <!-- ── AFTER YOUR VISIT ── surfaced high (right under the appointment card) and accent-emphasized,
+       so the latest summary + aftercare is the focus, especially when there's no upcoming visit. -->
+  ${(activeProvider().summaryNote&&String(activeProvider().summaryNote).trim())?`
+  <div class="sh"><h2>After your visit</h2></div>
+  <div style="margin:0 16px 14px;background:#fff;border:1.5px solid var(--accent);border-radius:14px;overflow:hidden;cursor:pointer;box-shadow:0 2px 12px rgba(200,168,130,.16);" onclick="_summaryIdx=0;_summaryFrom='home';nav('summary')" role="button" aria-label="View latest session summary and aftercare">
+    <div style="padding:12px 16px;display:flex;align-items:center;gap:12px;">
+      <div style="width:42px;height:42px;background:var(--accent-lt);border-radius:10px;display:flex;align-items:center;justify-content:center;flex-shrink:0;"><i class="ti ti-file-text" aria-hidden="true" style="font-size:20px;color:var(--accent);"></i></div>
+      <div style="flex:1;">
+        <div style="font-size:13px;font-weight:700;color:#1a1a1a;">Latest summary &amp; aftercare</div>
+        <div style="font-size:12px;color:#786858;">${_txt(client.treatment)} · from ${_txt(client.providerFirst)}</div>
+      </div>
+      <i aria-hidden="true" class="ti ti-chevron-right" style="font-size:16px;color:#82715f;"></i>
+    </div>
+    <div style="padding:0 16px 12px;font-size:13px;color:#6b5d52;line-height:1.6;">${_txt(activeProvider().summaryNote)}</div>
+  </div>`:''}
 
   <!-- Pending guides from provider (cleared ones live on in the library) -->
   ${_homeGuides().map(pg=>`
@@ -1948,22 +1969,6 @@ function renderHome(){
     </div>
     </div>
   </div>`;}).join(''):''}
-
-  <!-- ── AFTER YOUR VISIT ── the post-visit summary. The homecare routine lives entirely in the
-       Homecare nav tab now, so it's no longer duplicated here on Home. -->
-  ${(activeProvider().summaryNote&&String(activeProvider().summaryNote).trim())?`
-  <div class="sh"><h2>After your visit</h2></div>
-  <div style="margin:0 16px 14px;background:#fff;border:1.5px solid #f0ebe4;border-radius:14px;overflow:hidden;cursor:pointer;" onclick="_summaryIdx=0;_summaryFrom='home';nav('summary')" role="button" aria-label="View latest session summary">
-    <div style="padding:12px 16px;display:flex;align-items:center;gap:12px;">
-      <div style="width:42px;height:42px;background:var(--accent-lt);border-radius:10px;display:flex;align-items:center;justify-content:center;flex-shrink:0;"><i class="ti ti-file-text" aria-hidden="true" style="font-size:20px;color:var(--accent);"></i></div>
-      <div style="flex:1;">
-        <div style="font-size:13px;font-weight:600;color:#1a1a1a;">Latest summary</div>
-        <div style="font-size:12px;color:#786858;">${_txt(client.treatment)} · from ${_txt(client.providerFirst)}</div>
-      </div>
-      <i aria-hidden="true" class="ti ti-chevron-right" style="font-size:16px;color:#82715f;"></i>
-    </div>
-    <div style="padding:0 16px 12px;font-size:13px;color:#6b5d52;line-height:1.6;">${_txt(activeProvider().summaryNote)}</div>
-  </div>`:''}
 
   <div style="height:6px;"></div>
   ${(function(){
