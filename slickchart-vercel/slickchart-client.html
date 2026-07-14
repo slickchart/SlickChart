@@ -776,7 +776,6 @@ const client={
           {type:'iconChoice',id:'drink',label:'Your drink',options:CI_DRINKS},
           {type:'iconChoice',id:'music',label:'Music',options:CI_MUSIC,allowCustom:true,customPh:'e.g. classical, a podcast, no music…'},
           {type:'levelChoice',id:'heatedPad',label:'Heated mattress pad',options:CI_LEVELS},
-          {type:'levelChoice',id:'heatedBlanket',label:'Heated blanket',options:CI_LEVELS},
           {type:'iconChoice',id:'covering',label:'Covering',columns:3,options:CI_COVERING},
         ]},
         {title:'Anything else',questions:[
@@ -909,7 +908,6 @@ const client={
           {type:'iconChoice',id:'drink',label:'Your drink',options:CI_DRINKS},
           {type:'iconChoice',id:'music',label:'Music',options:CI_MUSIC,allowCustom:true,customPh:'e.g. pop, a podcast, silence…'},
           {type:'levelChoice',id:'heatedPad',label:'Heated mattress pad',options:CI_LEVELS},
-          {type:'levelChoice',id:'heatedBlanket',label:'Heated blanket',options:CI_LEVELS},
           {type:'iconChoice',id:'covering',label:'Covering',columns:3,options:CI_COVERING},
         ]},
         {title:'Anything else',questions:[
@@ -2516,12 +2514,22 @@ function _heartBtn(p){
   const s=_isSaved(p.name);
   return `<button onclick="event.stopPropagation();toggleSaved('${_jsAttr(p.name)}')" aria-label="${s?'Remove from saved':'Save for later'}" aria-pressed="${s}" title="${s?'Saved':'Save for later'}" style="width:34px;height:34px;border-radius:50%;border:1.5px solid ${s?'var(--accent)':'#e8ddd3'};background:${s?'var(--accent-lt)':'#fff'};display:flex;align-items:center;justify-content:center;cursor:pointer;flex-shrink:0;"><svg viewBox="0 0 24 24" width="17" height="17" fill="${s?'var(--accent)':'none'}" stroke="${s?'var(--accent)':'#b8a898'}" stroke-width="1.8" stroke-linecap="round" stroke-linejoin="round" aria-hidden="true"><path d="M12 21.35l-1.45-1.32C5.4 15.36 2 12.28 2 8.5 2 5.42 4.42 3 7.5 3c1.74 0 3.41.81 4.5 2.09C13.09 3.81 14.76 3 16.5 3 19.58 3 22 5.42 22 8.5c0 3.78-3.4 6.86-8.55 11.54L12 21.35z"/></svg></button>`;
 }
+// A product's thumbnail: the real product photo (synced from the provider's Square catalog) when
+// there is one, otherwise the emoji icon. Keeps the three shop surfaces (card, recommended, buy
+// sheet) consistent with one definition.
+function _prodThumb(p,size){
+  const s=size||28;
+  if(p&&p.image&&/^https?:\/\//i.test(String(p.image))){
+    return `<img src="${_imgSrc(p.image)}" alt="" style="width:${s+8}px;height:${s+8}px;border-radius:9px;object-fit:cover;flex-shrink:0;background:#f4efe9;">`;
+  }
+  return `<span aria-hidden="true" style="font-size:${s}px;line-height:1;">${_txt((p&&p.icon)||'🛍️')}</span>`;
+}
 function _shopProdCard(p,idx){
   const opts=(p.inOffice?1:0)+(p.site?1:0)+(p.url?1:0)+((p.amazon||activeProvider().amazonStore)?1:0);
   return `<div style="background:#fff;border:1.5px solid #f0ebe4;border-radius:14px;margin:0 16px 10px;overflow:hidden;">
     <div style="padding:14px 16px;">
       <div style="display:flex;align-items:flex-start;gap:12px;margin-bottom:10px;">
-        <span aria-hidden="true" style="font-size:28px;line-height:1;">${_txt(p.icon)}</span>
+        ${_prodThumb(p,28)}
         <div style="flex:1;min-width:0;">
           <div style="font-size:15px;font-weight:600;color:#1a1a1a;">${_txt(p.name)}</div>
           <div style="font-size:12px;color:#786858;">${_txt(p.brand)}</div>
@@ -3472,7 +3480,7 @@ function openBuyOptions(i){
   ov.style.cssText='position:fixed;top:0;bottom:0;left:0;right:0;margin:0 auto;width:390px;max-width:100%;z-index:9999;background:rgba(0,0,0,.4);display:flex;align-items:center;justify-content:center;padding:24px 16px;box-sizing:border-box;';
   ov.onclick=e=>{if(e.target===ov)closeBuySheet();};
   ov.innerHTML=`<div style="background:#fff;width:100%;border-radius:16px;padding:16px;box-shadow:0 -8px 30px rgba(0,0,0,.18);">
-    <div style="display:flex;align-items:center;gap:10px;margin-bottom:12px;"><span style="font-size:22px;">${_txt(p.icon)}</span><div style="flex:1;"><div style="font-size:15px;font-weight:700;color:#1a1a1a;">${_txt(p.name)}</div><div style="font-size:12px;color:#786858;">${_txt(p.brand||'')}</div></div><button onclick="closeBuySheet()" aria-label="Close" style="border:none;background:none;font-size:20px;color:#786858;cursor:pointer;line-height:1;">✕</button></div>
+    <div style="display:flex;align-items:center;gap:10px;margin-bottom:12px;">${_prodThumb(p,22)}<div style="flex:1;"><div style="font-size:15px;font-weight:700;color:#1a1a1a;">${_txt(p.name)}</div><div style="font-size:12px;color:#786858;">${_txt(p.brand||'')}</div></div><button onclick="closeBuySheet()" aria-label="Close" style="border:none;background:none;font-size:20px;color:#786858;cursor:pointer;line-height:1;">✕</button></div>
     <div style="font-size:11px;color:#786858;text-transform:uppercase;letter-spacing:.06em;font-weight:600;margin-bottom:8px;">Where to buy</div>
     ${rows.join('')}
   </div>`;
@@ -3661,7 +3669,7 @@ function renderLatestSummary(){
     ${(()=>{_buyProducts=products;return'';})()}
     ${products.map((p,i)=>{const opts=(p.inOffice?1:0)+(p.site?1:0)+(p.url?1:0)+((p.amazon||activeProvider().amazonStore)?1:0);return`
     <div style="display:flex;align-items:flex-start;gap:12px;padding:12px 16px;border-bottom:1px solid #f0ebe4;">
-      <span aria-hidden="true" style="font-size:22px;">${_txt(p.icon)}</span>
+      ${_prodThumb(p,22)}
       <div style="flex:1;min-width:0;"><div style="font-size:13px;font-weight:600;color:#1a1a1a;">${_txt(p.name)}</div><div style="font-size:11px;color:#786858;">${_txt(p.brand)}</div>${p.inOffice?`<div style="font-size:11px;color:var(--accent);font-weight:600;margin-top:3px;display:flex;align-items:center;gap:3px;"><i class="ti ti-building-store" aria-hidden="true" style="font-size:12px;"></i> Available in office</div>`:''}${p.why?`<div style="font-size:12px;color:#6b5d52;line-height:1.5;margin-top:5px;">${_txt(p.why)}</div>`:''}</div>
       ${opts>0?`<button onclick="openBuyOptions(${i})" style="background:var(--accent);color:#fff;border:none;border-radius:8px;padding:6px 14px;font-size:12px;font-weight:600;cursor:pointer;flex-shrink:0;">Buy</button>`:''}
     </div>`;}).join('')}

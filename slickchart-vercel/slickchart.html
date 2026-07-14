@@ -2781,6 +2781,10 @@ function _buildShopCatalog(){
   try{
     return (affiliateLinks||[]).filter(a=>a&&a.active!==false&&a.name).map(a=>({
       name:a.name,brand:a.brand||'',icon:a.icon||'🛍️',inOffice:!!a.inOffice,
+      // Carry the product image (Square catalog photo, or one the provider added) so the client's
+      // Shop shows the real product picture instead of a generic emoji. Only http(s) URLs are
+      // synced — a heavy data: URL would bloat this shared catalog blob.
+      image:(/^https?:\/\//i.test(String(a.image||'')))?a.image:'',
       site:a.site||'',siteCode:a.siteCode||'',url:a.url||'',urlCode:a.urlCode||'',
       amazon:a.amazon||'',amazonCode:a.amazonCode||''
     }));
@@ -8333,6 +8337,16 @@ function loadCheckinCfg(){
     if(sig(checkinCfg.drinks)===OLD_DRINKS){checkinCfg.drinks=[{id:'dr1',emoji:'✨',label:'Sparkling water',sub:''},{id:'dr2',emoji:'💧',label:'Still water',sub:'room temp'},{id:'dr3',emoji:'💧',label:'Still water',sub:'cold'},{id:'dr4',emoji:'🚫',label:'No drink',sub:''}];migrated=true;}
     if(sig(checkinCfg.blankets)===OLD_BLANKETS){checkinCfg.blankets=[{id:'bl1',emoji:'🛏️',label:'Light blanket'},{id:'bl2',emoji:'🪨',label:'Weighted blanket'},{id:'bl3',emoji:'🚫',label:'No blanket'}];migrated=true;}
     if(sig(checkinCfg.heat)===OLD_HEAT){checkinCfg.heat=[{id:'h1',label:'Heated mattress pad',on:true,levels:['Off','Low','Med','High']}];migrated=true;}
+    // Unconditionally drop any "Heated blanket" comfort option (heat OR covering) — the provider
+    // asked for it removed, and the strict-equality migration above only catches configs that were
+    // never otherwise customized. Safe because it targets exactly that one label.
+    ['heat','blankets'].forEach(k=>{
+      if(Array.isArray(checkinCfg[k])){
+        const before=checkinCfg[k].length;
+        checkinCfg[k]=checkinCfg[k].filter(x=>String((x&&x.label)||'').trim().toLowerCase()!=='heated blanket');
+        if(checkinCfg[k].length!==before)migrated=true;
+      }
+    });
     if(migrated){try{localStorage.setItem('sc_checkin_cfg',JSON.stringify(checkinCfg));if(typeof SlickBridge!=='undefined')SlickBridge.post('checkin-config',checkinCfg);}catch(e){}}
   }catch(e){}
   // Reference-photo default must run AFTER the saved config loads, or a legacy saved
@@ -9478,7 +9492,7 @@ function _assembleClientData(id){
   let products=[];
   try{
     const recIds=(typeof clientRecs!=='undefined'&&clientRecs[id])||[];
-    products=recIds.map(rid=>{const a=(typeof affiliateLinks!=='undefined'?affiliateLinks.find(x=>x.id===rid):null);return a?{name:a.name,brand:a.brand||'',why:((typeof _recReason==='function'?_recReason(id,rid):'')||''),icon:a.icon||'',url:a.url||a.site||''}:null;}).filter(Boolean);
+    products=recIds.map(rid=>{const a=(typeof affiliateLinks!=='undefined'?affiliateLinks.find(x=>x.id===rid):null);return a?{name:a.name,brand:a.brand||'',why:((typeof _recReason==='function'?_recReason(id,rid):'')||''),icon:a.icon||'',image:(/^https?:\/\//i.test(String(a.image||'')))?a.image:'',url:a.url||a.site||''}:null;}).filter(Boolean);
   }catch(e){}
   let summaries=Array.isArray(c.summaries)?c.summaries:[];
   // Do NOT fabricate a summary when there isn't one. Previously this auto-generated
@@ -10836,7 +10850,7 @@ function switchShopTab(tab){
     ${affiliateLinks.map((a,i)=>{const chans=[];if(a.inOffice)chans.push(['ti-building-store','In office']);if(a.site)chans.push(['ti-shopping-bag','Your store'+(a.siteCode?' · '+a.siteCode:'')]);if(a.url)chans.push(['ti-external-link',(a.brand||'Brand')+(a.urlCode?' · '+a.urlCode:'')]);if(a.amazon)chans.push(['ti-brand-amazon','Amazon'+(a.amazonCode?' · '+a.amazonCode:'')]);return`
     <div class="shop-prod" data-search="${((a.name||'')+' '+(a.brand||'')+' '+(a.siteCode||'')+' '+(a.urlCode||'')+' '+(a.amazonCode||'')).toLowerCase().normalize('NFD').replace(/[̀-ͯ]/g,'').replace(/['‘’`"]/g,'').replace(/[^a-z0-9 ]/g,' ').replace(/\s+/g,' ').trim()}" style="background:#1a1a1a;border:1px solid #2a2a2a;border-radius:12px;margin:0 16px 10px;overflow:hidden;${a.active?'':'opacity:.55;'}">
       <div style="padding:12px 14px;display:flex;align-items:flex-start;gap:10px;">
-        <span style="font-size:22px;">${_fileEsc(a.icon)}</span>
+        ${a.image?`<img src="${_imgSrc(a.image)}" alt="" style="width:34px;height:34px;border-radius:8px;object-fit:cover;flex-shrink:0;background:#111;">`:`<span style="font-size:22px;">${_fileEsc(a.icon)}</span>`}
         <div style="flex:1;min-width:0;"><div style="font-size:13px;font-weight:500;color:#e0e0e0;">${_fileEsc(a.name)}</div><div style="font-size:12px;color:#999;">${_fileEsc(a.brand||'—')}${a.url?' · '+_fileEsc(a.commission)+' affiliate':''}</div>
           <div style="display:flex;flex-wrap:wrap;gap:5px;margin-top:6px;">${chans.length?chans.map(([ic,lbl])=>`<span style="display:inline-flex;align-items:center;gap:3px;font-size:10px;color:var(--accent);background:var(--accent-tint);border:1px solid var(--accent-a30,#3d2d10);border-radius:20px;padding:2px 8px;"><i class="ti ${ic}" style="font-size:11px;"></i> ${lbl}</span>`).join(''):`<span style="font-size:11px;color:#9a9a9a;">No purchase options yet, tap Edit to add</span>`}</div>
         </div>
@@ -14496,6 +14510,20 @@ function _markEventsSeen(ids){
   }catch(e){}
 }
 let _syncingEvents=false;
+// Friendly submission date derived from the event's REAL server timestamp (created_at),
+// not from whenever this browser happened to process it. Without this, a check-in / form a
+// client submitted last night but that the provider's app only picked up this morning gets
+// stamped "Today" — the "did it yesterday, shows as today" bug. Falls back to whatever label
+// the client sent, then a generic "Recent".
+function _eventDateLabel(ev,fallback){
+  try{
+    if(ev&&ev.created_at){
+      const d=new Date(ev.created_at);
+      if(!isNaN(d.getTime()))return d.toLocaleDateString('en-US',{month:'short',day:'numeric'});
+    }
+  }catch(e){}
+  return fallback||'Recent';
+}
 // Boundary sanitizer for client-submitted photo payloads (check-ins, virtual consults):
 // only keep strings that are real image sources (data:image, http(s), blob). Every render
 // site already guards with _imgSrc, but validating at ingest means a crafted photo string
@@ -14514,10 +14542,13 @@ async function syncClientEvents(){
     if(!(j&&j.ok&&Array.isArray(j.events)))return;
     const seen=_seenEventIds();
     const fresh=j.events.filter(e=>seen.indexOf(e.id)<0).reverse(); // oldest first so newest ends up on top
-    let touchedRequests=false,touchedMsgs=false,touchedNotif=false,touchedCheckins=false,touchedForms=false,touchedVc=false;
+    let touchedRequests=false,touchedMsgs=false,touchedNotif=false,touchedCheckins=false,touchedForms=false,touchedVc=false,touchedClients=false,touchedPhotos=false;
     const msgClientIds=[];
-    // Mark the whole batch seen in one write after processing (see _markEventsSeen).
-    _markEventsSeen(fresh.map(ev=>ev.id));
+    // NOTE: events are marked seen at the very END of this function — after their derived data
+    // (check-ins, forms, messages) has been flushed to the server — so a background poll that gets
+    // frozen/killed mid-way (common for a phone PWA) can't record an event as "seen" while its
+    // actual data was never saved. That race is exactly how a client's submission "never came
+    // through." Each branch below is written to be idempotent so a re-processed event is harmless.
     fresh.forEach(ev=>{
       const payload=ev.payload||{};
       const cid=ev.client_id;
@@ -14533,16 +14564,20 @@ async function syncClientEvents(){
         touchedRequests=true;touchedNotif=true;
       }else if(ev.kind==='message'){
         if(!msgStore[cid])msgStore[cid]=[];
+        // Idempotency: if this exact event is already in the thread (a re-processed event after a
+        // partial persist), skip it entirely so the message / notification isn't duplicated.
+        if(msgStore[cid].some(m=>m&&m.evId===ev.id))return;
         // Photos a client sends in chat now come through, show them in the thread and file
         // them onto the client's photo chart (tagged source:'message') so they're not stranded.
         const mImgs=(Array.isArray(payload.photos)?payload.photos:[]).filter(_validImgSrc);
         const preview=payload.text||(mImgs.length?('📷 '+(mImgs.length>1?mImgs.length+' photos':'Photo')):'Sent a message');
-        msgStore[cid].push({from:'them',text:payload.text||'',imgs:mImgs,time:'Just now'});
+        msgStore[cid].push({from:'them',text:payload.text||'',imgs:mImgs,time:'Just now',evId:ev.id});
         if(mImgs.length&&c){
           if(!capturedPhotos[cid])capturedPhotos[cid]=[];
           const baseTs=(ev.created_at?(new Date(ev.created_at).getTime()||Date.now()):Date.now());
           mImgs.forEach((url,i)=>capturedPhotos[cid].push({url,ts:baseTs+i,phase:'reference',angle:'',source:'message'}));
           try{if(typeof persistCapturedPhotos==='function')persistCapturedPhotos();}catch(e){}
+          touchedPhotos=true;
         }
         const th=threads.find(x=>x.id===cid);
         if(th){th.preview=preview;th.time='Just now';th.unread=true;
@@ -14565,11 +14600,13 @@ async function syncClientEvents(){
         const _ciCleared=(typeof _isCheckinClearedLog==='function')&&_isCheckinClearedLog(ci.id);
         if(!_ciDup&&!_ciCleared)checkins.unshift(ci);
         if(c){
-          c.checkinDone=true;c.checkinDoneFor=(c.nextVisit||'');
+          c.checkinDone=true;c.checkinDoneFor=(c.nextVisit||'');touchedClients=true;
           // Keep only the MOST RECENT check-in on the client's file, a new one
           // overwrites the previous, so providers can always reference the latest
-          // without check-ins accumulating on the chart forever.
-          c.lastCheckin={id:ci.id,dateLabel:ci.dateLabel,time:ci.time,treatment:ci.treatment,groups:(ci.groups||[]).slice(),flagged:(ci.flagged||[]).slice(),notes:ci.notes||'',photos:(ci.photos||[]).slice(),at:Date.now()};
+          // without check-ins accumulating on the chart forever. Stamp `at` with the check-in's
+          // real submission time (ci.at = server created_at), NOT Date.now() — otherwise a
+          // check-in the provider only processes the next day shows as submitted "today".
+          c.lastCheckin={id:ci.id,dateLabel:ci.dateLabel,time:ci.time,treatment:ci.treatment,groups:(ci.groups||[]).slice(),flagged:(ci.flagged||[]).slice(),notes:ci.notes||'',photos:(ci.photos||[]).slice(),at:ci.at};
           // A flagged check-in is exactly the kind of thing that needs to show up
           // as a real alert on the client's chart, not just sit inside the check-in
           // record where it's easy to miss before a session.
@@ -14580,12 +14617,15 @@ async function syncClientEvents(){
             c.flaggedContra={form:'Pre-visit check-in',items:ci.flagged.slice(),details:_fdetails,checkinId:ci.id,date:ci.dateLabel||'Today'};
           }
           // Photos a client sends need to actually land in their photo chart, not
-          // just sit inside this one check-in record where they're easy to miss.
-          if(ciPhotos.length){
+          // just sit inside this one check-in record where they're easy to miss. Only file them
+          // for a genuinely new check-in (not a re-processed/cleared one) so a retry can't
+          // duplicate the same photos on the chart.
+          if(ciPhotos.length&&!_ciDup&&!_ciCleared){
             if(!capturedPhotos[cid])capturedPhotos[cid]=[];
-            const baseTs=Date.now();
+            const baseTs=ci.at||Date.now();
             ciPhotos.forEach((url,i)=>capturedPhotos[cid].push({url,ts:baseTs+i,phase:'reference',angle:'',source:'checkin'}));
             try{if(typeof persistCapturedPhotos==='function')persistCapturedPhotos();}catch(e){}
+            touchedPhotos=true;
           }
           try{saveClients();}catch(e){}
         }
@@ -14603,9 +14643,16 @@ async function syncClientEvents(){
       }else if(ev.kind==='form'){
         const title=payload.title||'Form';
         const flagged=(payload.flagged&&payload.flagged.length)?payload.flagged.slice():null;
+        // Idempotency: if this exact submission is already on the chart (re-processed event),
+        // skip it so the form and its notification aren't duplicated.
+        if(c&&Array.isArray(c.submittedForms)&&c.submittedForms.some(f=>f&&f.evId===ev.id))return;
+        // Stamp with the real submission date (server created_at), not the literal "Today" the
+        // client sent — so a form completed last night doesn't read as "Today" the next morning.
+        const formDate=_eventDateLabel(ev,payload.date||'Today');
         if(c){
+          touchedClients=true;
           c.submittedForms=c.submittedForms||[];
-          c.submittedForms.unshift({formId:payload.formId,title,answers:payload.answers||{},flagged:payload.flagged||[],date:payload.date||'Today',signed:!!payload.signed,evId:ev.id});
+          c.submittedForms.unshift({formId:payload.formId,title,answers:payload.answers||{},flagged:payload.flagged||[],date:formDate,signed:!!payload.signed,evId:ev.id});
           if(Array.isArray(c.pendingForms))c.pendingForms=c.pendingForms.filter(pf=>pf.formId!==payload.formId);
           // Map the real answers onto the actual chart fields (allergies, medications,
           // conditions, skin type, etc.), this used to only happen for the manual
@@ -14624,7 +14671,7 @@ async function syncClientEvents(){
             }
           }catch(e){}
           if(payload.signed){c.signedForms=c.signedForms||[];if(c.signedForms.indexOf(title)<0)c.signedForms.push(title);}
-          if(flagged)c.flaggedContra={form:title,items:flagged,date:payload.date||'Today'};
+          if(flagged)c.flaggedContra={form:title,items:flagged,date:formDate};
           try{saveClients();}catch(e){}
         }
         // Notify for EVERY completed form \u2014 consent forms as much as intake, flagged or not \u2014 and
@@ -14648,6 +14695,7 @@ async function syncClientEvents(){
           if(ph&&ph!==(c.phone||'')){c.phone=ph;parts.push('phone');}
           if(avv&&/^data:image\//.test(avv)&&avv!==(c.avatar||'')){c.avatar=avv;parts.push('photo');}
           if(parts.length){
+            touchedClients=true;
             try{saveClients();}catch(e){}
             notifFeed.unshift({id:'evct'+ev.id,type:'contact',icon:'ti-address-book',col:'#0d1e33',ic:'#5ba3e8',
               title:'Contact info updated',body:`${name} updated their ${parts.join(' and ')}.`,time:'Just now',read:false,action:'client',data:cid});
@@ -14665,7 +14713,7 @@ async function syncClientEvents(){
         touchedNotif=true;
       }else if(ev.kind==='vc_submit'){
         vcSubmissions[cid]={photos:_sanVcPhotos(payload.photos),refs:(Array.isArray(payload.refs)&&payload.refs.length)?_sanVcPhotos(payload.refs):null,goals:payload.goals||'',measures:payload.measures||null,
-          date:payload.date||'Today',kind:payload.kind||'skin',title:payload.title||'Virtual consult'};
+          date:_eventDateLabel(ev,payload.date||'Today'),kind:payload.kind||'skin',title:payload.title||'Virtual consult'};
         vcInvites[cid]={...(vcInvites[cid]||{}),invited:true,submitted:true};
         try{if(typeof persistVcState==='function')persistVcState();}catch(e){}
         notifFeed.unshift({id:'evv'+ev.id,type:'vc',icon:'ti-sparkles',col:'#1e1633',ic:'#a891ec',
@@ -14677,6 +14725,23 @@ async function syncClientEvents(){
     if(touchedNotif)updateBadge();
     if(touchedMsgs)try{saveMessages();}catch(e){}
     if(touchedCheckins)try{if(typeof persistCheckins==='function')persistCheckins();}catch(e){}
+    // Flush every touched data key to the server RIGHT NOW (not on the 700ms debounce), then mark
+    // the events seen. This ordering is the fix for "a client's submission never came through":
+    // if the tab is frozen/killed between these, the events stay unseen and are re-processed next
+    // time (harmless — every branch above is idempotent). Previously the seen-set was pushed first
+    // and the actual data rode the debounce, so a mid-window freeze recorded "seen" with no data.
+    try{
+      const flushes=[];
+      if(touchedRequests&&typeof _pushKeyNow==='function'){flushes.push(_pushKeyNow('sc_bookings',localStorage.getItem('sc_bookings')||''));}
+      if(touchedCheckins&&typeof _pushKeyNow==='function'){flushes.push(_pushKeyNow('sc_checkins',localStorage.getItem('sc_checkins')||''));}
+      if(touchedMsgs&&typeof _pushKeyNow==='function'){flushes.push(_pushKeyNow('sc_msgstore',localStorage.getItem('sc_msgstore')||''));flushes.push(_pushKeyNow('sc_threads',localStorage.getItem('sc_threads')||''));}
+      if(touchedClients&&typeof _pushKeyNow==='function'){flushes.push(_pushKeyNow('sc_clients',localStorage.getItem('sc_clients')||''));}
+      if(touchedPhotos&&typeof _pushKeyNow==='function'){flushes.push(_pushKeyNow('sc_captured_photos',localStorage.getItem('sc_captured_photos')||''));}
+      if(touchedVc&&typeof _pushKeyNow==='function'){try{if(typeof persistVcState==='function')persistVcState();}catch(e){}flushes.push(_pushKeyNow('sc_pro_vc_subs',localStorage.getItem('sc_pro_vc_subs')||''));flushes.push(_pushKeyNow('sc_pro_vc_invites',localStorage.getItem('sc_pro_vc_invites')||''));}
+      await Promise.all(flushes.map(p=>p&&p.catch?p.catch(()=>{}):p));
+    }catch(e){}
+    // Only now, after the data is committed server-side, record these events as seen.
+    _markEventsSeen(fresh.map(ev=>ev.id));
     if(touchedRequests&&document.getElementById('requests-screen'))renderRequests();
     if(touchedMsgs){
       if(document.getElementById('msg-tab-inbox')&&document.getElementById('msg-tab-inbox').classList.contains('active'))showMsgTab('inbox');
