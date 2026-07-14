@@ -1764,6 +1764,35 @@ function _previsitItems(){
     .concat(pf.map(f=>({type:'form',formId:f.formId,label:f.title,done:false})));
 }
 function _nextPrevisitItem(){return _previsitItems().find(i=>!i.done)||null;}
+// Where a given step sits in the whole pre-visit package (1-based), so each screen can show
+// "Step 2 of 3" and clients realize there's more than one form to complete. Returns null when
+// there's only a single item (nothing to clarify).
+function _previsitFlowPos(type,formId){
+  const items=_previsitItems();
+  if(items.length<=1)return null;
+  const idx=(type==='checkin')?items.findIndex(i=>i.type==='checkin')
+    :items.findIndex(i=>i.type==='form'&&i.formId===formId);
+  if(idx<0)return null;
+  return {idx,total:items.length};
+}
+// A segmented progress bar + "Step X of N" label shown at the top of each pre-visit step. This is
+// what finally makes a two-form package obvious: while filling form 1 the client can see there's a
+// form 2 still to come, and each screen names how many are left.
+function _previsitProgressHTML(type,formId){
+  const pos=_previsitFlowPos(type,formId);
+  if(!pos)return '';
+  const {idx,total}=pos;
+  const step=idx+1,after=total-step;
+  const segs=Array.from({length:total},function(_,i){return `<div style="flex:1;height:5px;border-radius:3px;background:${i<=idx?'var(--accent)':'#eadfd2'};"></div>`;}).join('');
+  const sub=after>0?`${after} more after this`:'Last one — almost done';
+  return `<div style="margin:12px 16px 0;background:var(--accent-lt);border:1px solid var(--accent-a20,#eadfd2);border-radius:12px;padding:11px 13px;">
+    <div style="display:flex;align-items:center;justify-content:space-between;margin-bottom:8px;gap:8px;">
+      <span style="font-size:12px;font-weight:700;color:var(--accent-ink,#7a5a2a);text-transform:uppercase;letter-spacing:.04em;">Before your visit · Step ${step} of ${total}</span>
+      <span style="font-size:11px;font-weight:600;color:#8a6a42;white-space:nowrap;">${sub}</span>
+    </div>
+    <div style="display:flex;gap:5px;">${segs}</div>
+  </div>`;
+}
 function _startPrevisitFlow(){
   const t=_nextPrevisitItem();
   if(!t){nav('home');return;}
@@ -1804,6 +1833,14 @@ function _previsitSectionHTML(){
   const doneCount=items.filter(i=>i.done).length;
   const remaining=total-doneCount;
   const allDone=remaining===0;
+  // Spell out exactly what's in the package (e.g. "a check-in and 2 forms") so a client can tell at
+  // a glance there's more than one thing — the "I didn't know there was a second form" complaint.
+  const formCount=items.filter(i=>i.type==='form').length;
+  const hasCheckin=items.some(i=>i.type==='checkin');
+  const parts=[];
+  if(hasCheckin)parts.push('a quick check-in');
+  if(formCount)parts.push(formCount+' form'+(formCount>1?'s':''));
+  const _pkgList=parts.length>1?(parts.slice(0,-1).join(', ')+' and '+parts[parts.length-1]):(parts[0]||'these');
   const rows=items.map((it,i)=>`
     <div style="display:flex;align-items:center;gap:10px;padding:9px 0;${i>0?'border-top:1px solid #f2ece4;':''}">
       <i class="ti ${it.done?'ti-square-check':'ti-square'}" aria-hidden="true" style="font-size:20px;color:${it.done?'#4ec49a':'var(--accent)'};flex-shrink:0;"></i>
@@ -1816,7 +1853,7 @@ function _previsitSectionHTML(){
         <div style="flex:1;font-size:13px;font-weight:700;color:#1a1a1a;">Complete before your visit</div>
         <span style="font-size:11px;font-weight:700;color:var(--accent-ink);background:var(--accent);padding:3px 10px;border-radius:20px;flex-shrink:0;">${doneCount} of ${total} done</span>
       </div>
-      <div style="font-size:12px;color:#786858;line-height:1.5;margin-top:5px;">${allDone?`All set, ${_txt(client.providerFirst)} has everything.`:`${_txt(client.providerFirst)} needs these. One tap walks you through all ${total}.`}</div>
+      <div style="font-size:12px;color:#786858;line-height:1.5;margin-top:5px;">${allDone?`All set, ${_txt(client.providerFirst)} has everything.`:`${_txt(client.providerFirst)} needs ${_pkgList}. One tap walks you through everything back to back — no need to come back.`}</div>
     </div>
     <div style="padding:2px 14px 12px;">
       ${rows}
@@ -2653,11 +2690,17 @@ function renderFillForm(){
   _ffPhotos={};
   document.getElementById('tt').textContent=pf.title;
   const qs=_orderedFormQs(pf.qs);
+  // "Continue to the next form" instead of a bare "Submit" when another pre-visit item still
+  // follows this one, so finishing a form doesn't feel like finishing the whole package.
+  const _flowPos=_previsitFlowPos('form',pf.formId);
+  const _moreAfter=_flowPos&&((_flowPos.total-(_flowPos.idx+1))>0);
+  const _submitLabel=_moreAfter?`Submit &amp; continue to the next form`:`Submit to ${_txt(client.providerFirst)}`;
   S.innerHTML=`
+  ${_previsitProgressHTML('form',pf.formId)}
   <div style="padding:14px 16px 4px;"><div id="page-heading" tabindex="-1" style="font-size:20px;font-weight:600;color:#1a1a1a;">${_txt(pf.title)}</div></div>
   <div style="padding:6px 16px 20px;">
     ${qs.map((q,i)=>_fillFormFieldHTML(q,i)).join('')}
-    <button onclick="_submitFillForm()" class="btnp" style="width:100%;border-radius:12px;padding:13px;margin-top:8px;">Submit to ${_txt(client.providerFirst)}</button>
+    <button onclick="_submitFillForm()" class="btnp" style="width:100%;border-radius:12px;padding:13px;margin-top:8px;">${_submitLabel}</button>
   </div>`;
 }
 function _fillFormFieldHTML(q,i){
@@ -2866,7 +2909,7 @@ function _renderCheckinStep(){
   <div style="padding:12px 16px 20px;">
     <button class="btnp" style="border-radius:10px;" onclick="${isLast?'submitCheckin()':'checkinStep++;_renderCheckinStep()'}">
       <i class="ti ti-${isLast?'check':'arrow-right'}" aria-hidden="true"></i>
-      ${isLast?'Submit check-in':'Next'}
+      ${isLast?((activeProvider().pendingForms||[]).length?'Submit &amp; continue to your forms':'Submit check-in'):'Next'}
     </button>
   </div>`;
   if(_stepChanged)_scrollScreenTop();

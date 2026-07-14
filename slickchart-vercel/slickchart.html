@@ -1180,8 +1180,10 @@ function loadClients(){try{const raw=localStorage.getItem('sc_clients');if(!raw)
 function _hasDemoClients(){return !!(CL.maya||CL.sophie||CL.priya);}
 function removeDemoClients(){
   try{localStorage.setItem('sc_hide_sample','1');}catch(e){}
+  try{if(typeof _pushKeyNow==='function')_pushKeyNow('sc_hide_sample','1');}catch(e){}   // push now so a reload/resync can't un-hide the samples
   _purgeSample();
   try{const raw=localStorage.getItem('sc_clients');if(raw){const o=JSON.parse(raw)||{};['maya','sophie','priya'].forEach(id=>delete o[id]);localStorage.setItem('sc_clients',JSON.stringify(o));}}catch(e){}
+  try{if(typeof _pushKeyNow==='function'){_pushKeyNow('sc_clients',localStorage.getItem('sc_clients')||'');_pushKeyNow('sc_bookings',localStorage.getItem('sc_bookings')||'');}}catch(e){}
   if(typeof proToast==='function')proToast('Demo clients removed');
   const sheet=document.getElementById('demo-info-sheet');if(sheet)sheet.remove();
   nav('clients');
@@ -1235,6 +1237,16 @@ const _SAMPLE_PRODUCT_IDS=['a1','a2','a3','a4'];
 const _SAMPLE_PRODUCTS_BACKUP=(typeof affiliateLinks!=='undefined')?affiliateLinks.filter(a=>_SAMPLE_PRODUCT_IDS.indexOf(a.id)>=0).map(a=>Object.assign({},a)):[];
 function _purgeSample(){
   _SAMPLE_IDS.forEach(id=>{try{delete CL[id];}catch(e){}});
+  // Remove the seeded demo booking request (Priya Patel · LED Therapy) and any booking tied to a
+  // sample client. Without this, "Remove demo clients" deleted Priya from the client list but left
+  // her booking request sitting on the home screen — sample data that wouldn't go away.
+  try{
+    if(typeof SlickBridge!=='undefined'&&SlickBridge.getBookings){
+      const bk=SlickBridge.getBookings()||[];
+      const kept=bk.filter(b=>b&&b.id!=='bk_demo1'&&_SAMPLE_IDS.indexOf(b.clientId)<0);
+      if(kept.length!==bk.length)SlickBridge.setBookings(kept);
+    }
+  }catch(e){}
   try{docs=docs.filter(d=>_SAMPLE_DOC_IDS.indexOf(d.id)<0);}catch(e){}
   try{if(typeof notifFeed!=='undefined')notifFeed=notifFeed.filter(n=>_SAMPLE_NOTIF_IDS.indexOf(n.id)<0);}catch(e){}
   try{if(typeof checkins!=='undefined')checkins=checkins.filter(c=>_SAMPLE_CHECKIN_IDS.indexOf(c.id)<0);}catch(e){}
@@ -1272,8 +1284,10 @@ function _purgeSample(){
 function _todayLabel(){try{return new Date().toLocaleDateString('en-US',{weekday:'long',month:'long',day:'numeric'});}catch(e){return '';}}
 function _clearSampleData(){
   try{localStorage.setItem('sc_hide_sample','1');}catch(e){}
+  try{if(typeof _pushKeyNow==='function')_pushKeyNow('sc_hide_sample','1');}catch(e){}
   _purgeSample();
   try{const raw=localStorage.getItem('sc_clients');if(raw){const o=JSON.parse(raw)||{};_SAMPLE_IDS.forEach(id=>delete o[id]);localStorage.setItem('sc_clients',JSON.stringify(o));}}catch(e){}
+  try{if(typeof _pushKeyNow==='function'){_pushKeyNow('sc_clients',localStorage.getItem('sc_clients')||'');_pushKeyNow('sc_bookings',localStorage.getItem('sc_bookings')||'');}}catch(e){}
   if(typeof proToast==='function')proToast('Sample data removed');
   nav('home');
 }
