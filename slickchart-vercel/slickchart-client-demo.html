@@ -2151,6 +2151,25 @@ function openGalleryPhoto(i){
   o.innerHTML=inner+`<div style="margin-top:14px;color:#fff;font-size:13px;font-weight:600;">${_dt(s.date)}</div><div style="margin-top:4px;color:rgba(255,255,255,.6);font-size:11px;">Tap anywhere to close</div>`;
   document.body.appendChild(o);
 }
+// Session summaries the client can hide from their journey so old recaps don't pile up forever.
+// We remember hidden ones locally (keyed per provider) so a delete survives the next data sync
+// from the provider — the provider still keeps the summary on their side.
+function _summaryKey(s){return String((s&&(s.id||s.date))||'');}
+function _hiddenSummarySet(){try{return JSON.parse(localStorage.getItem('sc_client_hidden_summaries')||'{}')||{};}catch(e){return {};}}
+function _visibleSummaries(){
+  const prov=activeProvider();const hidden=_hiddenSummarySet();const pid=String(prov.id||prov.providerId||'');
+  // The array is already newest-first (index 0 = Latest), so filtering preserves that order.
+  return (prov.summaries||[]).filter(s=>!hidden[pid+'|'+_summaryKey(s)]);
+}
+function deleteSummary(key,ev){
+  if(ev&&ev.stopPropagation)ev.stopPropagation();
+  if(!confirm('Remove this summary from your journey? Your provider still has it on their side.'))return;
+  const pid=String(activeProvider().id||activeProvider().providerId||'');
+  const h=_hiddenSummarySet();h[pid+'|'+String(key)]=1;
+  try{localStorage.setItem('sc_client_hidden_summaries',JSON.stringify(h));}catch(e){}
+  if(_summaryIdx>=_visibleSummaries().length)_summaryIdx=0;
+  renderJourney();
+}
 function renderJourney(){
   setNav('journey');
   document.getElementById('tt').textContent='My Journey';
@@ -2253,7 +2272,7 @@ function renderJourney(){
 
     <div style="padding:0 14px 12px;display:flex;gap:6px;align-items:flex-start;background:#faf7f4;margin:0;padding:10px 14px;">
       <i class="ti ti-camera" aria-hidden="true" style="font-size:13px;color:#9a7a5e;flex-shrink:0;margin-top:1px;"></i>
-      <span style="font-size:12px;color:#8b6b4a;line-height:1.5;">Photos taken by ${_txt(client.providerFirst)} at each session. Written observations from your provider are below.</span>
+      <span style="font-size:12px;color:#8b6b4a;line-height:1.5;">Photos taken by ${_txt(client.providerFirst)} at each session. Your session recaps are below.</span>
     </div>
 
     <!-- Full gallery, all sessions, contained in a scrollable strip so it doesn't stretch the page -->
@@ -2274,46 +2293,28 @@ function renderJourney(){
     <div style="font-size:12px;color:#786858;margin-top:3px;line-height:1.5;">They'll show up here after ${_txt(client.providerFirst)} adds photos from a visit.</div>
   </div>`}
 
-  <!-- ${_txt(client.providerFirst)}'s observations per session -->
-  <div class="sh"><h2>${_txt(client.providerFirst)}'s observations</h2></div>
-  <div style="padding:0 16px 6px;font-size:12px;color:#786858;line-height:1.5;">${_txt(client.providerFirst)}'s notes from each visit, in their own words.</div>
-  ${observations.length?observations.map((obs,i)=>`
-  <div style="background:#fff;border:1.5px solid ${i===0?'var(--accent)':'#f0ebe4'};border-radius:14px;margin:0 16px 10px;overflow:hidden;">
-    <div style="padding:12px 14px;display:flex;align-items:center;gap:10px;background:${i===0?'#fdf8f4':'#fff'};">
-      <div style="width:36px;height:36px;border-radius:9px;background:${i===0?'var(--accent)':'var(--accent-lt)'};display:flex;align-items:center;justify-content:center;flex-shrink:0;">
-        <i class="ti ti-${i===0?'sparkles':'notes'}" aria-hidden="true" style="font-size:15px;color:${i===0?'#fff':'var(--accent)'};"></i>
-      </div>
-      <div style="flex:1;">
-        <div style="font-size:13px;font-weight:600;color:#1a1a1a;">${_dt(obs.date)}</div>
-      </div>
-      ${i===0?`<span style="font-size:11px;background:var(--accent);color:#fff;padding:3px 9px;border-radius:20px;font-weight:600;">Latest</span>`:''}
-    </div>
-    <div style="padding:4px 14px 12px;">
-      ${obs.highlights.map(h=>`
-      <div style="display:flex;align-items:flex-start;gap:9px;padding:8px 0;border-bottom:1px solid #f5f0eb;">
-        <i class="ti ${h.icon}" aria-hidden="true" style="font-size:14px;color:${h.color};flex-shrink:0;margin-top:1px;"></i>
-        <span style="font-size:13px;color:#4a3c34;line-height:1.6;">${_txt(h.text)}</span>
-      </div>`).join('')}
-    </div>
-  </div>`).join(''):`
+  <!-- Session recaps from the provider (consolidated — the old 'observations' section was redundant
+       demo data that never reflected real visit notes). Newest first; each can be hidden. -->
+  ${(()=>{const sums=_visibleSummaries();if(!sums.length)return `
+  <div class="sh"><h2>Session recaps</h2></div>
   <div style="margin:0 16px 10px;background:#fff;border:1.5px solid #f0ebe4;border-radius:14px;padding:20px 16px;text-align:center;">
     <i class="ti ti-notes" aria-hidden="true" style="font-size:24px;color:#d8ccc0;"></i>
-    <div style="font-size:13px;font-weight:600;color:#4a3c34;margin-top:8px;">No notes yet</div>
-    <div style="font-size:12px;color:#786858;margin-top:3px;line-height:1.5;">${_txt(client.providerFirst)}'s observations will appear here after your first visit.</div>
-  </div>`}
-
-  ${(()=>{const sums=activeProvider().summaries||[];if(!sums.length)return '';return `
-  <div class="sh"><h2>Session summaries</h2></div>
-  <div style="padding:0 16px 8px;font-size:12px;color:#786858;line-height:1.5;">Every recap ${_txt(client.providerFirst)} has sent you, tap any to reopen it.</div>
+    <div style="font-size:13px;font-weight:600;color:#4a3c34;margin-top:8px;">No recaps yet</div>
+    <div style="font-size:12px;color:#786858;margin-top:3px;line-height:1.5;">${_txt(client.providerFirst)}'s notes from each visit will appear here after your first session.</div>
+  </div>`;return `
+  <div class="sh"><h2>Session recaps</h2></div>
+  <div style="padding:0 16px 8px;font-size:12px;color:#786858;line-height:1.5;">${_txt(client.providerFirst)}'s notes from each visit — tap to reopen, or × to remove one.</div>
   ${sums.map((s,i)=>`
-  <button onclick="_summaryIdx=${i};_summaryFrom='journey';nav('summary')" style="display:block;width:calc(100% - 32px);text-align:left;box-sizing:border-box;background:#fff;border:1.5px solid ${i===0?'var(--accent)':'#f0ebe4'};border-radius:14px;margin:0 16px 10px;padding:12px 14px;cursor:pointer;font-family:inherit;">
-    <div style="display:flex;align-items:center;gap:11px;">
-      <div style="width:36px;height:36px;border-radius:9px;background:var(--accent-lt);display:flex;align-items:center;justify-content:center;flex-shrink:0;"><i class="ti ti-file-text" style="font-size:16px;color:var(--accent);"></i></div>
-      <div style="flex:1;min-width:0;"><div style="font-size:13px;font-weight:600;color:#1a1a1a;">${_dt(s.date)}</div>${i===0?`<div style="font-size:11px;color:var(--accent);font-weight:600;">Latest</div>`:''}</div>
-      <i class="ti ti-chevron-right" style="font-size:15px;color:#82715f;flex-shrink:0;"></i>
+  <div style="position:relative;background:#fff;border:1.5px solid ${i===0?'var(--accent)':'#f0ebe4'};border-radius:14px;margin:0 16px 10px;overflow:hidden;">
+    <div role="button" tabindex="0" onclick="_summaryIdx=${i};_summaryFrom='journey';nav('summary')" onkeydown="if(event.key==='Enter'||event.key===' '){event.preventDefault();_summaryIdx=${i};_summaryFrom='journey';nav('summary')}" style="padding:12px 38px 12px 14px;cursor:pointer;">
+      <div style="display:flex;align-items:center;gap:11px;">
+        <div style="width:36px;height:36px;border-radius:9px;background:var(--accent-lt);display:flex;align-items:center;justify-content:center;flex-shrink:0;"><i class="ti ti-file-text" style="font-size:16px;color:var(--accent);"></i></div>
+        <div style="flex:1;min-width:0;"><div style="font-size:13px;font-weight:600;color:#1a1a1a;">${_dt(s.date)}</div>${i===0?`<div style="font-size:11px;color:var(--accent);font-weight:600;">Latest</div>`:''}</div>
+      </div>
+      <div style="font-size:12px;color:#6b5d52;line-height:1.5;margin-top:7px;overflow:hidden;text-overflow:ellipsis;display:-webkit-box;-webkit-line-clamp:2;-webkit-box-orient:vertical;">${_txt((s.note||'').split('\\n')[0])}</div>
     </div>
-    <div style="font-size:12px;color:#6b5d52;line-height:1.5;margin-top:7px;overflow:hidden;text-overflow:ellipsis;display:-webkit-box;-webkit-line-clamp:2;-webkit-box-orient:vertical;">${_txt((s.note||'').split('\\n')[0])}</div>
-  </button>`).join('')}`})()}
+    <button onclick="deleteSummary('${_jsAttr(_summaryKey(s))}',event)" aria-label="Remove this summary from your journey" title="Remove from your journey" style="position:absolute;top:8px;right:8px;background:rgba(255,255,255,.85);border:1px solid #f0ebe4;border-radius:50%;width:24px;height:24px;display:flex;align-items:center;justify-content:center;color:#b8a898;cursor:pointer;padding:0;"><i class="ti ti-x" style="font-size:13px;"></i></button>
+  </div>`).join('')}`})()}
 
   ${(()=>{const vcs=activeProvider().virtualConsults||[];if(!vcs.length)return '';return `
   <div class="sh"><h2>Virtual consults</h2></div>
@@ -3620,11 +3621,14 @@ function _toggleSummaryGuide(gi){
 function renderLatestSummary(){
   setNav('home');
   document.getElementById('tt').textContent='Session Summary';
-  const summaries=activeProvider().summaries||[];
+  const summaries=(typeof _visibleSummaries==='function')?_visibleSummaries():(activeProvider().summaries||[]);
   if(_summaryIdx>=summaries.length)_summaryIdx=0;
   const s=summaries[_summaryIdx]||{date:'',label:'',note:'',homecare:[]};
   const backTo=_summaryFrom==='journey'?'journey':'home';const backLbl=_summaryFrom==='journey'?'Journey':'Home';
-  const products=(s&&s.products&&s.products.length)?s.products:(activeProvider().products||[]);
+  // Show the provider's CURRENT recommendations (same source as the Shop's Recommended tab) so this
+  // stays in sync when they update it; fall back to the products frozen on this summary if the live
+  // list is empty.
+  const products=(activeProvider().products&&activeProvider().products.length)?activeProvider().products:((s&&s.products)||[]);
   S.innerHTML=`
   <div id="summary-screen"></div>
   <div style="padding:12px 16px 0;display:flex;align-items:center;justify-content:flex-end;">${summaries.length>1?`<span style="font-size:12px;color:#786858;">${_summaryIdx===0?'Latest':'#'+(summaries.length-_summaryIdx)} of ${summaries.length}</span>`:''}</div>
@@ -3644,6 +3648,22 @@ function renderLatestSummary(){
     <div style="font-size:12px;font-weight:600;color:#786858;text-transform:uppercase;letter-spacing:.07em;margin-bottom:8px;">A note from ${_txt(client.providerFirst)}</div>
     <div style="font-size:14px;color:#1a1a1a;line-height:1.8;">${_txt(s.note)}</div>
   </div>
+
+  <!-- Aftercare guides (placed right below the note) -->
+  ${(s.guides&&s.guides.length)?`<div style="background:#fff;border:1.5px solid #f0ebe4;border-radius:12px;margin:0 16px 10px;overflow:hidden;">
+    <div style="padding:12px 16px;border-bottom:1px solid #f0ebe4;">
+      <div style="font-size:12px;font-weight:600;color:#786858;text-transform:uppercase;letter-spacing:.07em;">Your aftercare guides</div>
+    </div>
+    ${s.guides.map((g,gi)=>`
+    <div style="padding:12px 16px;border-bottom:1px solid #f0ebe4;">
+      <button onclick="_toggleSummaryGuide(${gi})" style="width:100%;display:flex;align-items:center;gap:10px;background:none;border:none;padding:0;cursor:pointer;font-family:inherit;text-align:left;">
+        <span aria-hidden="true" style="font-size:22px;flex-shrink:0;display:inline-flex;align-items:center;">${_iconMarkup(g.icon,24)||'📄'}</span>
+        <span style="flex:1;min-width:0;font-size:13px;font-weight:600;color:#1a1a1a;">${_txt(g.title)}</span>
+        ${(g.tips&&g.tips.length)?`<i class="ti ti-chevron-down" id="sg-chev-${gi}" aria-hidden="true" style="font-size:16px;color:#786858;flex-shrink:0;transition:transform .15s;"></i>`:''}
+      </button>
+      ${(g.tips&&g.tips.length)?`<div id="sg-tips-${gi}" style="display:none;margin-top:10px;">${g.tips.map(t=>`<div style="display:flex;align-items:flex-start;gap:8px;padding:5px 0;"><i class="ti ti-check" aria-hidden="true" style="font-size:13px;color:var(--accent);flex-shrink:0;margin-top:3px;"></i><span style="font-size:13px;color:#4a4038;line-height:1.6;">${_txt(t)}</span></div>`).join('')}</div>`:''}
+    </div>`).join('')}
+  </div>`:''}
 
   <!-- Homecare -->
   <div style="background:#fff;border:1.5px solid #f0ebe4;border-radius:12px;margin:0 16px 10px;overflow:hidden;">
@@ -3672,22 +3692,6 @@ function renderLatestSummary(){
       ${opts>0?`<button onclick="openBuyOptions(${i})" style="background:var(--accent);color:#fff;border:none;border-radius:8px;padding:6px 14px;font-size:12px;font-weight:600;cursor:pointer;flex-shrink:0;">Buy</button>`:''}
     </div>`;}).join('')}
   </div>
-
-  <!-- Aftercare guides -->
-  ${(s.guides&&s.guides.length)?`<div style="background:#fff;border:1.5px solid #f0ebe4;border-radius:12px;margin:0 16px 10px;overflow:hidden;">
-    <div style="padding:12px 16px;border-bottom:1px solid #f0ebe4;">
-      <div style="font-size:12px;font-weight:600;color:#786858;text-transform:uppercase;letter-spacing:.07em;">Your aftercare guides</div>
-    </div>
-    ${s.guides.map((g,gi)=>`
-    <div style="padding:12px 16px;border-bottom:1px solid #f0ebe4;">
-      <button onclick="_toggleSummaryGuide(${gi})" style="width:100%;display:flex;align-items:center;gap:10px;background:none;border:none;padding:0;cursor:pointer;font-family:inherit;text-align:left;">
-        <span aria-hidden="true" style="font-size:22px;flex-shrink:0;display:inline-flex;align-items:center;">${_iconMarkup(g.icon,24)||'📄'}</span>
-        <span style="flex:1;min-width:0;font-size:13px;font-weight:600;color:#1a1a1a;">${_txt(g.title)}</span>
-        ${(g.tips&&g.tips.length)?`<i class="ti ti-chevron-down" id="sg-chev-${gi}" aria-hidden="true" style="font-size:16px;color:#786858;flex-shrink:0;transition:transform .15s;"></i>`:''}
-      </button>
-      ${(g.tips&&g.tips.length)?`<div id="sg-tips-${gi}" style="display:none;margin-top:10px;">${g.tips.map(t=>`<div style="display:flex;align-items:flex-start;gap:8px;padding:5px 0;"><i class="ti ti-check" aria-hidden="true" style="font-size:13px;color:var(--accent);flex-shrink:0;margin-top:3px;"></i><span style="font-size:13px;color:#4a4038;line-height:1.6;">${_txt(t)}</span></div>`).join('')}</div>`:''}
-    </div>`).join('')}
-  </div>`:''}
 
   <!-- Next appointment -->
   <div style="background:#fff;border:1.5px solid #f0ebe4;border-radius:12px;margin:0 16px 10px;padding:14px 16px;">
