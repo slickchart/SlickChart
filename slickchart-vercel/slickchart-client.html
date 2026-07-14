@@ -2703,6 +2703,28 @@ function renderFillForm(){
     <button onclick="_submitFillForm()" class="btnp" style="width:100%;border-radius:12px;padding:13px;margin-top:8px;">${_submitLabel}</button>
   </div>`;
 }
+// A date-of-birth / birthday field is better typed than picked: the native date wheel makes people
+// scroll back decades to their birth year. These fields render as a numeric text box (MM/DD/YYYY)
+// instead. Other Date fields (e.g. a preferred appointment date) keep the picker.
+function _looksDOB(lbl){return /birth\s?date|date of birth|\bd\.?o\.?b\.?\b|birthday/i.test(lbl||'');}
+// Auto-insert the slashes as they type digits, so MMDDYYYY becomes MM/DD/YYYY without them
+// hunting for the "/" key. Keeps the draft in sync with the same key the field submits under.
+function _fmtDOBInput(el,i){
+  const d=String(el.value||'').replace(/[^0-9]/g,'').slice(0,8);
+  let out=d;
+  if(d.length>4)out=d.slice(0,2)+'/'+d.slice(2,4)+'/'+d.slice(4);
+  else if(d.length>2)out=d.slice(0,2)+'/'+d.slice(2);
+  el.value=out;
+  _ffSetDraft('q'+i,out);
+}
+// Plausible birthday: MM/DD/YYYY (or M/D/YY) with a real month/day and a 4- or 2-digit year.
+function _validDOB(v){
+  const m=String(v||'').trim().match(/^(\d{1,2})\/(\d{1,2})\/(\d{2}|\d{4})$/);
+  if(!m)return false;
+  const mo=+m[1],da=+m[2];
+  if(mo<1||mo>12||da<1||da>31)return false;
+  return true;
+}
 function _fillFormFieldHTML(q,i){
   const req=q.required?' <span style="color:var(--accent);">*</span>':'';
   const label=`<div style="font-size:13px;font-weight:600;color:#3a2f28;margin-bottom:7px;">${_txt(q.label)}${req}</div>`;
@@ -2734,7 +2756,12 @@ function _fillFormFieldHTML(q,i){
     return `<div style="${wrapStyle}">${label}<textarea id="ff-${i}" oninput="_ffSetDraft('q${i}',this.value)" style="width:100%;height:80px;resize:none;background:#faf7f4;border:1px solid #e8ddd3;border-radius:10px;padding:11px;font-size:14px;color:#3a2f28;font-family:inherit;box-sizing:border-box;line-height:1.5;">${_txt(_ffDraft['q'+i]||'')}</textarea></div>`;
   }
   if(q.type==='Date'){
-    return `<div style="${wrapStyle}">${label}<input id="ff-${i}" ${aria} type="date" value="${_txt(_ffDraft['q'+i]||'').replace(/"/g,'&quot;')}" oninput="_ffSetDraft('q${i}',this.value)" style="width:100%;background:#faf7f4;border:1px solid #e8ddd3;border-radius:10px;padding:11px;font-size:14px;color:#3a2f28;box-sizing:border-box;"></div>`;
+    const dstyle='width:100%;background:#faf7f4;border:1px solid #e8ddd3;border-radius:10px;padding:11px;font-size:14px;color:#3a2f28;box-sizing:border-box;';
+    // Birthday → typeable numeric field so nobody scrolls a date wheel back to their birth year.
+    if(_looksDOB(q.label)){
+      return `<div style="${wrapStyle}">${label}<input id="ff-${i}" ${aria} type="text" inputmode="numeric" autocomplete="bday" maxlength="10" placeholder="MM/DD/YYYY" value="${_txt(_ffDraft['q'+i]||'').replace(/"/g,'&quot;')}" oninput="_fmtDOBInput(this,${i})" style="${dstyle}"><div style="font-size:11px;color:#a89a89;margin-top:5px;">Type it in — e.g. 03/15/1994</div></div>`;
+    }
+    return `<div style="${wrapStyle}">${label}<input id="ff-${i}" ${aria} type="date" value="${_txt(_ffDraft['q'+i]||'').replace(/"/g,'&quot;')}" oninput="_ffSetDraft('q${i}',this.value)" style="${dstyle}"></div>`;
   }
   if(q.type==='File upload'||q.type==='Photo upload'){
     return `<div style="${wrapStyle}">${label}
@@ -2835,6 +2862,8 @@ function _submitFillForm(){
         if(_looksEmail(q.label)&&!_validEmail(val))badFormat=badFormat||'Please enter a valid email address.';
         else if(_looksPhone(q.label)&&!_validPhone(val))badFormat=badFormat||'Please enter a valid phone number.';
       }
+      // Typed birthday must be a real MM/DD/YYYY date.
+      if(val&&q.type==='Date'&&_looksDOB(q.label)&&!_validDOB(val))badFormat=badFormat||'Please enter your date of birth as MM/DD/YYYY.';
     }
   });
   if(missingRequired){ showToast('Please fill in the required fields',false); return; }
