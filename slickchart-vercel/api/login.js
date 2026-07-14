@@ -50,12 +50,18 @@ export default async function handler(req, res) {
         // Re-check the subscription at login when the paywall is enforced. Fail OPEN on a lookup
         // error so a transient billing-provider hiccup can't lock a paying customer out.
         if ((process.env.REQUIRE_PAYMENT || '').toLowerCase() === 'true') {
-          try {
-            if (!(await hasActiveSubscription(email))) {
-              res.status(402).json({ error: 'Your subscription isn’t active. Please renew to continue.', checkoutUrl: process.env.STRIPE_PAYMENT_LINK || '' });
-              return;
-            }
-          } catch (e) { /* fail open — don't block on a billing lookup failure */ }
+          // Founder / comped accounts skip the paywall. Set FOUNDER_EMAILS in Vercel to a
+          // comma-separated list (e.g. the owner's email) — these never get gated on billing.
+          const exempt = String(process.env.FOUNDER_EMAILS || '')
+            .toLowerCase().split(',').map(s => s.trim()).filter(Boolean).includes(email);
+          if (!exempt) {
+            try {
+              if (!(await hasActiveSubscription(email))) {
+                res.status(402).json({ error: 'Your subscription isn’t active. Please renew to continue.', checkoutUrl: process.env.STRIPE_PAYMENT_LINK || '' });
+                return;
+              }
+            } catch (e) { /* fail open — don't block on a billing lookup failure */ }
+          }
         }
         await clearAttempts(q, email);
         const sid = await createSession(q, rows[0].id, req);
