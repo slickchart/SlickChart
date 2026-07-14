@@ -1362,7 +1362,7 @@ function toggleHomecareStep(key,where){
 function _engNudge(){
   const {total,done}=_engProgress();
   if(!total)return '';
-  if(done>=total)return _eng.streak>1?`All done today, ${_eng.streak}-day streak 🔥`:'All done for today 🎉';
+  if(done>=total)return _eng.streak>1?`All done today, ${_eng.streak}-day streak`:'All done for today';
   const left=total-done;
   if(done===0&&_engStreakLive()&&_eng.streak>0)return `Keep your ${_eng.streak}-day streak going, ${left} step${left>1?'s':''} today`;
   if(done===0)return `${left} step${left>1?'s':''} to do today`;
@@ -2353,7 +2353,7 @@ function renderHomecare(){
     </div>
     ${steps.length?`<div style="width:44px;height:44px;position:relative;">
       <svg width="44" height="44"><circle cx="22" cy="22" r="18" fill="none" stroke="#f0ebe4" stroke-width="3.5"/><circle cx="22" cy="22" r="18" fill="none" stroke="var(--accent)" stroke-width="3.5" stroke-dasharray="${(2*Math.PI*18*checked/total).toFixed(1)} ${(2*Math.PI*18*(1-checked/total)).toFixed(1)}" stroke-linecap="round" transform="rotate(-90 22 22)"/></svg>
-      <div style="position:absolute;inset:0;display:flex;align-items:center;justify-content:center;font-size:12px;font-weight:700;color:var(--accent);">${Math.round(checked/total*100)}%</div>
+      <div style="position:absolute;inset:0;display:flex;align-items:center;justify-content:center;font-size:${Math.round(checked/total*100)>=100?'9':'11'}px;font-weight:700;color:var(--accent);letter-spacing:-.02em;">${Math.round(checked/total*100)}%</div>
     </div>`:''}
   </div>
 
@@ -2368,11 +2368,11 @@ function renderHomecare(){
 
   <!-- Steps -->
   ${steps.length?steps.map(step=>`
-  <div style="background:#fff;border:1.5px solid #f0ebe4;border-radius:12px;margin:0 16px 8px;overflow:hidden;">
+  <div role="button" tabindex="0" onclick="toggleHomecareStep('${_jsAttr(step.key||'')}')" onkeydown="if(event.key==='Enter'||event.key===' '){event.preventDefault();toggleHomecareStep('${_jsAttr(step.key||'')}')}" aria-label="${homecareChecked[step.key]?'Mark '+_txt(step.key)+' as not done':'Mark '+_txt(step.key)+' as done'}" style="background:#fff;border:1.5px solid #f0ebe4;border-radius:12px;margin:0 16px 8px;overflow:hidden;cursor:pointer;">
     <div style="padding:12px 14px;display:flex;align-items:center;gap:12px;">
-      <button onclick="toggleHomecareStep('${_jsAttr(step.key||'')}')" class="check-circle ${homecareChecked[step.key]?'done':''}" aria-label="${homecareChecked[step.key]?'Mark '+_txt(step.key)+' as not done':'Mark '+_txt(step.key)+' as done'}">
+      <span class="check-circle ${homecareChecked[step.key]?'done':''}" aria-hidden="true">
         ${homecareChecked[step.key]?'<i class="ti ti-check" aria-hidden="true" style="font-size:13px;"></i>':''}
-      </button>
+      </span>
       <span aria-hidden="true" style="font-size:22px;">${_txt(step.icon)}</span>
       <div style="flex:1;">
         <div style="font-size:13px;font-weight:600;color:${homecareChecked[step.key]?'#b8a898':'#1a1a1a'};${homecareChecked[step.key]?'text-decoration:line-through;':''};">${_txt(step.key)}</div>
@@ -2410,6 +2410,27 @@ function _reserveInOffice(name){
   _msgPrefill=`Hi ${first}, could you set aside ${name} for me to buy in office at my next visit? Thank you!`;
   nav('messages');
 }
+// Turn URLs in a message into clickable links. Escapes every non-URL part (XSS-safe) and only
+// linkifies http(s)/www URLs that pass _safeUrl, so a message like "see slickchart.app/x" is tappable.
+function _linkifyMsg(text){
+  const s=String(text||'');
+  const re=/(https?:\/\/[^\s<]+|www\.[^\s<]+)/gi;
+  let out='',last=0,m;
+  while((m=re.exec(s))){
+    out+=_txt(s.slice(last,m.index));
+    let url=m[0],trail='';
+    const tm=url.match(/[.,;:!?)]+$/);if(tm){trail=tm[0];url=url.slice(0,url.length-trail.length);}
+    const href=/^https?:\/\//i.test(url)?url:('https://'+url);
+    const safe=(typeof _safeUrl==='function')?_safeUrl(href):href;
+    out+= safe
+      ? `<a href="${_urlAttr(safe)}" target="_blank" rel="noopener noreferrer" style="color:inherit;text-decoration:underline;word-break:break-all;">${_txt(url)}</a>`
+      : _txt(url);
+    out+=_txt(trail);
+    last=m.index+m[0].length;
+  }
+  out+=_txt(s.slice(last));
+  return out;
+}
 function renderMessages(){
   setNav('messages');
   // Opening the thread means the client has seen these messages, clear the unread badge now
@@ -2429,7 +2450,7 @@ function renderMessages(){
     ${messages.length?'':`<div style="margin:32px 8px;text-align:center;display:flex;flex-direction:column;align-items:center;gap:10px;"><div style="width:52px;height:52px;border-radius:50%;background:var(--accent-lt2);display:flex;align-items:center;justify-content:center;border:1.5px solid #e8d0b8;"><i class="ti ti-message-2" aria-hidden="true" style="font-size:24px;color:var(--accent);"></i></div><div style="font-size:14px;font-weight:600;color:#1a1a1a;">Message ${_txt(client.providerFirst)}</div><div style="font-size:12px;color:#786858;line-height:1.6;max-width:250px;">Ask a question, share a photo, or say hi. Your messages go straight to ${_txt(client.providerFirst)} and stay private between you two.</div></div>`}
     ${messages.map(m=>{const imgs=m.imgs&&m.imgs.length?m.imgs:(m.img?[m.img]:[]);return`
     <div style="align-self:${m.from==='me'?'flex-end':'flex-start'};max-width:82%;width:fit-content;min-width:0;">
-      ${m.text?`<div class="${m.from==='me'?'bub-me':'bub-them'}">${_txt(m.text)}</div>`:''}
+      ${m.text?`<div class="${m.from==='me'?'bub-me':'bub-them'}" style="white-space:pre-wrap;">${_linkifyMsg(m.text)}</div>`:''}
       ${imgs.length?`<div style="display:flex;flex-wrap:wrap;gap:4px;${m.text?'margin-top:4px;':''}justify-content:${m.from==='me'?'flex-end':'flex-start'};">${imgs.map(src=>`<img src="${_imgSrc(src)}" alt="shared photo" style="width:${imgs.length>1?'96px':'180px'};height:${imgs.length>1?'96px':'auto'};${imgs.length>1?'object-fit:cover;':''}border-radius:12px;display:block;border:1.5px solid #f0ebe4;">`).join('')}</div>`:''}
       <div style="font-size:10px;color:#82715f;margin-top:3px;${m.from==='me'?'text-align:right;':''};">${m.from==='me'&&m.status==='sending'?'Sending…':(m.from==='me'&&m.status==='failed'?`<span onclick="retryClientMsg('${m._id}')" style="color:#c2410c;cursor:pointer;font-weight:600;">Not delivered · Tap to retry</span>`:_txt(m.time))}</div>
     </div>`;}).join('')}
