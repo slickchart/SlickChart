@@ -1419,6 +1419,12 @@ function loadDeletedClients(){try{const raw=localStorage.getItem('sc_deleted_cli
 function _saveDeletedClients(){try{const v=JSON.stringify(_deletedClientIds);localStorage.setItem('sc_deleted_clients',v);if(typeof _pushKeyNow==='function')_pushKeyNow('sc_deleted_clients',v);}catch(e){}}
 function _serverDeleteClients(ids){try{const tok=(typeof Cloud!=='undefined'&&Cloud&&Cloud.token)||'';if(!tok||!ids||!ids.length)return;fetch('/api/clients',{method:'POST',headers:{'Content-Type':'application/json','Authorization':'Bearer '+tok},body:JSON.stringify({clients:[],deletedIds:ids})}).catch(function(){});}catch(e){}}
 function _markClientDeleted(id){if(!id)return;_deletedClientIds[id]=Date.now();_saveDeletedClients();_serverDeleteClients([id]);}
+// Square products the provider removed from their SlickChart shop (services they don't retail, gift
+// cards, one-offs). Like the deleted-client set, this synced guard stops the catalog re-sync from
+// re-adding a product they intentionally deleted. Keyed by the sq_ id derived in _mergeSquareRetail.
+let _hiddenSquareIds={};
+function loadHiddenSquare(){try{const raw=localStorage.getItem('sc_hidden_square');if(raw){const o=JSON.parse(raw);if(o&&typeof o==='object')_hiddenSquareIds=o;}}catch(e){}}
+function _saveHiddenSquare(){try{const v=JSON.stringify(_hiddenSquareIds);localStorage.setItem('sc_hidden_square',v);if(typeof _pushKeyNow==='function')_pushKeyNow('sc_hidden_square',v);}catch(e){}}
 // The "possible duplicates" banner can be dismissed. We remember the exact SET of duplicates that
 // was dismissed (a stable signature of the grouped ids), so the banner stays hidden for those pairs
 // but reappears on its own if a genuinely NEW duplicate shows up later — dismissing isn't "never
@@ -1867,7 +1873,7 @@ function _reloadAll(){try{
   try{if(typeof _migrateGuideFiles==='function')_migrateGuideFiles();}catch(e){}
   if(typeof loadAi==='function')loadAi();
   if(typeof loadForms==='function')loadForms();
-  loadBizInfo();_syncProviderAvatar();_syncHeaderLogo();loadClients();loadMergedIds();loadDeletedClients();loadMessages();loadInv();loadVendors();_loadPersistenceSweep();try{_initCapturedPhotos();}catch(e){}_loadHomeDismissed();_loadAttnSeen();loadProviderNoteDrafts();if(typeof loadSessionSummaries==='function')loadSessionSummaries();if(!_sampleHidden()){_seedMayaOnce();}else{_purgeSample();}_seedBirthdays();if(!_sampleHidden()&&typeof _demoCheckinSeed==='function')_demoCheckinSeed();
+  loadBizInfo();_syncProviderAvatar();_syncHeaderLogo();loadClients();loadMergedIds();loadDeletedClients();loadHiddenSquare();loadMessages();loadInv();loadVendors();_loadPersistenceSweep();try{_initCapturedPhotos();}catch(e){}_loadHomeDismissed();_loadAttnSeen();loadProviderNoteDrafts();if(typeof loadSessionSummaries==='function')loadSessionSummaries();if(!_sampleHidden()){_seedMayaOnce();}else{_purgeSample();}_seedBirthdays();if(!_sampleHidden()&&typeof _demoCheckinSeed==='function')_demoCheckinSeed();
   if(typeof loadWorkspace==='function')loadWorkspace();
   if(typeof loadSquareCatalog==='function'){loadSquareCatalog();_mergeSquareRetail();}
   if(typeof loadCheckinCfg==='function')loadCheckinCfg();
@@ -14134,6 +14140,7 @@ function _mergeSquareRetail(){
     (squareCatalog.retail||[]).forEach(p=>{
       if(p==null||p.id==null||p.id==='')return;   // no reliable id → can't dedup or link it; skip
       const id='sq_'+String(p.id).toLowerCase().replace(/[^a-z0-9]/g,'').slice(0,14);
+      if(typeof _hiddenSquareIds!=='undefined'&&_hiddenSquareIds[id])return;   // provider removed this from their shop — don't re-add
       const priceLabel=(p.price!=null)?('$'+(Math.round(p.price*100)/100)):'';
       const brand=[p.category||'',priceLabel].filter(Boolean).join(' · ')||'Your product';
       // Best automatic deep link to the product's own page: {shop}/product/{permalink}. Falls back to
@@ -17446,8 +17453,13 @@ function deleteAffiliate(ei){
   if(typeof ei!=='number'||!affiliateLinks[ei])return;
   const nm=affiliateLinks[ei].name||'this product';
   confirmModal({title:'Delete '+nm+'?',body:'This removes it from your shop for good. Routines that include it will simply skip it.',action:'Delete'},()=>{
+    const _a=affiliateLinks[ei];
+    // If it's a Square-synced product, remember the deletion so the next catalog sync doesn't
+    // resurrect it (services/gift-cards you don't want to retail stay gone).
+    if(_a&&(_a.source==='square'||String(_a.id||'').indexOf('sq_')===0)){try{_hiddenSquareIds[_a.id]=Date.now();_saveHiddenSquare();}catch(e){}}
     affiliateLinks.splice(ei,1);
     persistWorkspace();
+    try{if(typeof persistAffiliateLinks==='function')persistAffiliateLinks();}catch(e){}   // persist the removal + refresh the client shop catalog
     activeShopTab='affiliates';
     if(document.getElementById('add-affiliate-screen')||document.getElementById('tt').textContent.indexOf('product')>=0)nav('shop');else switchShopTab('affiliates');
     if(typeof proToast==='function')proToast(nm+' deleted');

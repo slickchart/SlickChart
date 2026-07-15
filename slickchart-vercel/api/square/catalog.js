@@ -34,7 +34,9 @@ export default async function handler(req, res) {
       .filter(o => o.type === 'ITEM' && !o.is_deleted)
       .map(o => normalizeItem(o, catNames, imgUrls));
 
-    const retail = items.filter(i => !i.isService);
+    // Retail = physical products only. Exclude appointment services AND gift cards (product_type
+    // GIFT_CARD) — a gift card isn't a retail product a client shops for in the app.
+    const retail = items.filter(i => !i.isService && i.productType !== 'GIFT_CARD');
     const services = items.filter(i => i.isService);
     retail.sort((a, b) => a.name.localeCompare(b.name));
     services.sort((a, b) => a.name.localeCompare(b.name));
