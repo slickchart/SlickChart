@@ -15402,6 +15402,23 @@ async function syncClientEvents(){
   finally{_syncingEvents=false;}   // always release the guard, even on an early return above
 }
 setInterval(()=>{try{syncClientEvents();}catch(e){}},15000);
+// React to a Square webhook: the server records recent Square activity (booking/payment/refund/
+// catalog change) into sc_square_activity, which the cloud pull brings down. When we see a newer one
+// than last handled, refresh the relevant live data and let the provider know — near-real-time.
+let _lastSquareActivityAt=0;
+function _checkSquareActivity(){
+  try{
+    const raw=localStorage.getItem('sc_square_activity');if(!raw)return;
+    const a=JSON.parse(raw);if(!a||!a.at||a.at<=_lastSquareActivityAt)return;
+    const first=(_lastSquareActivityAt===0);_lastSquareActivityAt=a.at;
+    if(first)return;   // don't toast/refresh for the state that was already there when we loaded
+    try{if(/booking/.test(a.type||'')&&typeof _loadSquareAppts==='function')_loadSquareAppts(true);}catch(e){}
+    try{if(/catalog/.test(a.type||'')&&typeof _autoSyncCatalog==='function')_autoSyncCatalog();}catch(e){}
+    try{if(/payment|refund/.test(a.type||'')&&typeof _paySyncSquare==='function')_paySyncSquare(true);}catch(e){}
+    if(typeof proToast==='function'&&a.label)proToast(a.label);
+  }catch(e){}
+}
+setInterval(()=>{try{_checkSquareActivity();}catch(e){}},15000);
 // Poll again the moment the provider returns to this tab/window, so anything a client just did
 // (form, message, check-in, virtual consult) shows up without a manual refresh.
 try{window.addEventListener('focus',function(){try{syncClientEvents();}catch(e){}});}catch(e){}
