@@ -66,6 +66,10 @@ function normalizeItem(o, catNames, imgUrls) {
   const prices = vars.map(v => v.price).filter(p => p != null);
   const catId = (d.categories && d.categories[0] && d.categories[0].id) || d.category_id || '';
   const imgId = (d.image_ids && d.image_ids[0]) || '';
+  // Resolve the product photo. Prefer the IMAGE object referenced by image_ids; fall back to the
+  // item's direct Square Online image URLs (ecom_image_uris), which are populated even when the
+  // IMAGE object isn't returned in this list page — this is why some product photos were blank.
+  const imageUrl = imgUrls[imgId] || (Array.isArray(d.ecom_image_uris) && d.ecom_image_uris[0]) || '';
   const pt = d.product_type || 'REGULAR';
   // SEO permalink for the item's Square Online store page (ecom_uri is deprecated). This is only the
   // name slug — Square's full product URL also carries a numeric id — but combined with the seller's
@@ -78,7 +82,7 @@ function normalizeItem(o, catNames, imgUrls) {
     category: catNames[catId] || '',
     productType: pt,
     isService: pt === 'APPOINTMENTS_SERVICE',
-    image: imgUrls[imgId] || '',
+    image: imageUrl,
     permalink: seo.permalink || '',
     variations: vars,
     price: prices.length ? Math.min(...prices) : null,

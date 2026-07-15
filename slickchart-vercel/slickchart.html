@@ -14121,7 +14121,7 @@ function _saveShopUrl(v){
   const shop=bizInfo.shopUrl;
   // Point each Square product's Buy link at its own page ({shop}/product/{permalink}) when we know the
   // slug, else the shop-all page. Only for auto-set links — never clobber a hand-pasted exact URL.
-  affiliateLinks.forEach(a=>{if(a.source==='square'&&shop&&(!a.site||a.siteAuto)){const s=String(a.squarePermalink||'').replace(/^\/+|\/+$/g,'');const h=shop.split('/')[0];a.site=s?(h+'/product/'+s):shop;a.siteAuto=true;}});
+  affiliateLinks.forEach(a=>{if(a.source==='square'&&shop&&(!a.site||a.siteAuto)){a.site=shop;a.siteAuto=true;}});
   if(typeof persistWorkspace==='function')persistWorkspace();
   if(typeof proToast==='function')proToast(shop?'Shop URL saved, set as default Buy':'Shop URL cleared');
 }
@@ -14140,19 +14140,18 @@ function _mergeSquareRetail(){
       // the shop-all page when the item has no online-store slug. `siteAuto` marks a link we set
       // automatically so a later resync can refresh it — but once the provider edits the store link by
       // hand (siteAuto cleared in saveAffiliate), we never overwrite their exact URL.
-      // Build the product page off the store's DOMAIN ROOT, not the full shop link: a Square shop URL
-      // is often the shop-all page (e.g. "mydomain.com/s/shop"), but individual product pages live at
-      // the root ("mydomain.com/product/{slug}"). So take the host of the shop URL and append the
-      // product slug. Fall back to the full shop link (shop-all) when the item has no slug.
-      const _slug=String(p.permalink||'').replace(/^\/+|\/+$/g,'');
-      const _host=String(shop||'').split('/')[0];
-      const _deep=(_host&&_slug)?(_host+'/product/'+_slug):shop;
+      // We capture the online-store slug (permalink) for reference, but we do NOT auto-build a
+      // "{host}/product/{slug}" link: a Square product page requires a numeric id the catalog API
+      // never exposes (e.g. .../product/name/63), so a slug-only URL typically 404s — worse than the
+      // shop page. The automatic default Buy stays the shop-all page; the provider can paste an exact
+      // product link (Square's "Copy link") to override it, which is the only reliable deep link.
+      const _deep=shop;
       const existing=affiliateLinks.find(a=>a.id===id);
       if(existing){
         existing.name=p.name;existing.price=p.price;existing.brand=brand;existing.source='square';existing.squareId=p.id;
         if(p.permalink)existing.squarePermalink=p.permalink;
         if(p.image)existing.image=p.image;
-        if(shop&&(!existing.site||existing.siteAuto)){existing.site=_deep;existing.siteAuto=true;}   // default Buy = the product's own page
+        if(shop&&(!existing.site||existing.siteAuto)){existing.site=_deep;existing.siteAuto=true;}   // default Buy = your shop page
       }else{
         affiliateLinks.push({id,name:p.name,brand,icon:'🛍️',image:p.image||'',site:_deep,siteAuto:!!(shop),squarePermalink:p.permalink||'',url:'',amazon:'',active:true,inOffice:true,source:'square',price:p.price,squareId:p.id});
       }
@@ -17430,7 +17429,7 @@ function renderAddAffiliate(ei){
     <div style="font-size:11px;font-weight:500;color:#aaa;text-transform:uppercase;letter-spacing:.07em;margin:6px 0 8px;">Where clients can buy</div>
     <label style="display:flex;align-items:center;gap:8px;margin-bottom:12px;background:#161616;border:1px solid #2a2a2a;border-radius:8px;padding:10px 12px;font-size:13px;color:#e0e0e0;cursor:pointer;"><input type="checkbox" id="af-inoffice" ${p.inOffice?'checked':''} style="width:17px;height:17px;accent-color:var(--accent);flex-shrink:0;"> <i class="ti ti-building-store" style="font-size:15px;color:var(--accent);"></i> Available in office (clients buy from you)</label>
     <span class="fl-lbl">Your website / store link</span><input class="fi" id="af-site" aria-label="Your website link" placeholder="glowingskinstudio.com/shop/..." value="${(p.site||'').replace(/"/g,'&quot;')}" style="margin-bottom:6px;">
-    ${p.source==='square'?`<div style="font-size:11px;color:#9a9a9a;line-height:1.5;margin:0 2px 8px;">We point this at your product's Square page automatically. If it doesn't open the exact item, open that product in your Square dashboard, tap <b style="color:#c9c9c9;">Copy link</b>, and paste it here — that's the guaranteed-correct link.</div>`:''}
+    ${p.source==='square'?`<div style="font-size:11px;color:#9a9a9a;line-height:1.5;margin:0 2px 8px;">By default this opens your shop page. To send clients straight to <b style="color:#c9c9c9;">this exact product</b>, open it in your Square dashboard, tap <b style="color:#c9c9c9;">Copy link</b>, and paste the link here (e.g. <span style="font-family:monospace;">…/product/name/63</span>). Square product links need that ending number, so pasting is the only way to link the exact item.</div>`:''}
     <input class="fi" id="af-site-code" aria-label="Your store discount code" placeholder="↳ Your store discount code (optional)" value="${(p.siteCode||'').replace(/"/g,'&quot;')}" style="margin-bottom:12px;font-size:13px;background:#0d0d0d;">
     <span class="fl-lbl">Affiliate / brand link</span><input class="fi" id="af-url" aria-label="Affiliate or brand URL" placeholder="brand.com/ref/jessica" value="${(p.url||'').replace(/"/g,'&quot;')}" style="margin-bottom:6px;">
     <input class="fi" id="af-url-code" aria-label="Brand site discount code" placeholder="↳ Brand site discount code (optional)" value="${(p.urlCode||'').replace(/"/g,'&quot;')}" style="margin-bottom:12px;font-size:13px;background:#0d0d0d;">
