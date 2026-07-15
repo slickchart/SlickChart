@@ -2675,7 +2675,7 @@ function _upcomingBirthdays(days){days=days||30;const today=new Date();today.set
   out.sort((a,b)=>a.inDays-b.inDays);return out;}
 function _seedBirthdays(){try{const b={maya:'1994-03-15',sophie:'1990-07-10',priya:'1988-07-22'};Object.keys(b).forEach(k=>{if(CL[k]&&!CL[k].birthday)CL[k].birthday=b[k];});}catch(e){}}
 // pull a date-of-birth answer off a signed form onto the client record
-function _captureBirthday(c,formId,answers){try{const t=formTmpls[formId];if(!t||!t.qs||!answers||!c)return;const q=t.qs.find(q=>/date of birth|\bdob\b|birth\s?date|birthday/i.test(q.label||''));if(q&&answers[q.id]&&!c.birthday)c.birthday=_normBirthday(answers[q.id]);}catch(e){}}
+function _captureBirthday(c,formId,answers,qsSnap){try{const qsrc=(Array.isArray(qsSnap)&&qsSnap.length)?qsSnap:((formTmpls[formId]||{}).qs);if(!Array.isArray(qsrc)||!qsrc.length||!answers||!c)return;const q=qsrc.find(q=>/date of birth|\bdob\b|d\.o\.b\.?|birth\s?date|birthday/i.test(q.label||''));if(q&&answers[q.id]&&!c.birthday)c.birthday=_normBirthday(answers[q.id]);}catch(e){}}
 function _birthdayPanelHTML(){
   const up=_upcomingBirthdays(45);
   const rows=up.length?up.slice(0,8).map(u=>`<div style="display:flex;align-items:center;justify-content:space-between;padding:7px 0;border-bottom:1px solid #14241c;"><span style="font-size:13px;color:#dfeee6;">${u.name}</span><span style="font-size:12px;color:#4ec49a;font-weight:600;">${u.label} \u00b7 ${u.inDays===0?'today \ud83c\udf82':u.inDays+'d'}</span></div>`).join(''):'<div style="font-size:12px;color:#7fae95;line-height:1.5;">No birthdays on file yet \u2014 they show up here once clients are imported from Square or complete an intake with their date of birth.</div>';
@@ -4438,10 +4438,15 @@ function _captureRefPhoto(cid,formId,answers){
     if(added){try{if(typeof persistCapturedPhotos==='function')persistCapturedPhotos();}catch(e){}}
   }catch(e){}
 }
-function _applyIntakeVitals(chart,formId,getAns){
-  const t=formTmpls[formId]; if(!t||!t.qs||!chart) return chart;
+function _applyIntakeVitals(chart,formId,getAns,qsSnap){
+  // Prefer the question snapshot the client actually filled (sent with the submission) over the live
+  // template: if the provider edited or deleted the form after assigning it, the live template's q.ids
+  // no longer match the answers and every chart field (allergies, meds, skin type…) would silently
+  // stay blank. The snapshot travels with the answers, so it always matches.
+  const qsrc=(Array.isArray(qsSnap)&&qsSnap.length)?qsSnap:((formTmpls[formId]||{}).qs);
+  if(!Array.isArray(qsrc)||!qsrc.length||!chart) return chart;
   const used={};
-  t.qs.forEach(q=>{
+  qsrc.forEach(q=>{
     if(q.type==='Signature'||q.type==='Contraindications') return;
     const vk=_vitalForQuestion(q.label); if(!vk||used[vk]) return;
     let a=getAns(q); if(a==null) return; a=String(a).trim(); if(!a) return;
@@ -14134,6 +14139,14 @@ function _mergeSquareRetail(){
         affiliateLinks.push({id,name:p.name,brand,icon:'🛍️',image:p.image||'',site:shop||'',url:'',amazon:'',active:true,inOffice:true,source:'square',price:p.price,squareId:p.id});
       }
     });
+    // Prune Square products that vanished from the catalog (discontinued, or left over from a
+    // previously-connected Square account) so they don't linger in the shop / recs with a dead Buy
+    // link. Only when we actually have a catalog to compare against — never nuke every Square product
+    // because a sync came back empty/failed.
+    if(Array.isArray(squareCatalog.retail)&&squareCatalog.retail.length){
+      const _live=new Set(squareCatalog.retail.filter(p=>p&&p.id!=null&&p.id!=='').map(p=>String(p.id)));
+      for(let i=affiliateLinks.length-1;i>=0;i--){const a=affiliateLinks[i];if(a&&a.source==='square'&&a.squareId!=null&&!_live.has(String(a.squareId)))affiliateLinks.splice(i,1);}
+    }
   }catch(e){}
 }
 function _sqKey(force){
@@ -14178,6 +14191,10 @@ async function _sqConnect(){
 async function _sqDisconnect(){
   const tok=(typeof Cloud!=='undefined'&&Cloud&&Cloud.token)||'';
   try{await fetch('/api/square/connection',{method:'DELETE',headers:tok?{'Authorization':'Bearer '+tok}:{}});}catch(e){}
+  // Clear the cached Square catalog and drop Square-sourced products, so a later reconnect (possibly a
+  // DIFFERENT Square account) doesn't leave the old account's products mixed into the shop and recs.
+  try{squareCatalog={retail:[],services:[],syncedAt:Date.now()};if(typeof saveSquareCatalog==='function')saveSquareCatalog();}catch(e){}
+  try{let _ch=false;for(let i=affiliateLinks.length-1;i>=0;i--){const a=affiliateLinks[i];if(a&&(a.source==='square'||String(a.id||'').indexOf('sq_')===0)){affiliateLinks.splice(i,1);_ch=true;}}if(_ch&&typeof persistAffiliateLinks==='function')persistAffiliateLinks();}catch(e){}
   proToast('Square disconnected');
   if(typeof nav==='function')nav('square-guide');
 }
@@ -15124,11 +15141,13 @@ async function syncClientEvents(){
           // "add new client" wizard, never for a real client's own form submission,
           // so none of this ever reached the chart, the AI brief, or session alerts.
           try{
+            // Pass the question snapshot the client filled (payload.qs) so vitals/birthday still map
+            // even if the provider edited or deleted the form template after assigning it.
             if(typeof _applyIntakeVitals==='function'&&payload.formId){
-              _applyIntakeVitals(c,payload.formId,q=>(payload.answers||{})[q.id]);
+              _applyIntakeVitals(c,payload.formId,q=>(payload.answers||{})[q.id],payload.qs);
             }
             if(typeof _captureBirthday==='function'&&payload.formId){
-              _captureBirthday(c,payload.formId,payload.answers||{});
+              _captureBirthday(c,payload.formId,payload.answers||{},payload.qs);
             }
             if(typeof _capturePhotoConsent==='function'&&payload.formId){
               _capturePhotoConsent(c,payload.formId,payload.answers||{});
@@ -15644,9 +15663,9 @@ SlickBridge.on('form-completed',d=>{
   const cid=d.clientId||'maya';const c=CL[cid];if(!c)return;
   const title=d.title||(formTmpls[d.formId]&&formTmpls[d.formId].name)||'Form';
   c.submittedForms=c.submittedForms||[];
-  c.submittedForms.unshift({formId:d.formId,title,answers:d.answers||{},flagged:d.flagged||[],date:d.date||'Today',signed:!!d.signed});_captureBirthday(c,d.formId,d.answers||{});
+  c.submittedForms.unshift({formId:d.formId,title,answers:d.answers||{},flagged:d.flagged||[],date:d.date||'Today',signed:!!d.signed});_captureBirthday(c,d.formId,d.answers||{},d.qs);
   // fill the chart vitals from the client's answers (same mapping the in-app flow uses)
-  if(d.formId&&formTmpls[d.formId])_applyIntakeVitals(c,d.formId,q=>(d.answers||{})[q.id]);
+  if(d.formId&&(formTmpls[d.formId]||(Array.isArray(d.qs)&&d.qs.length)))_applyIntakeVitals(c,d.formId,q=>(d.answers||{})[q.id],d.qs);
   if(d.signed){c.signedForms=c.signedForms||[];if(c.signedForms.indexOf(title)<0)c.signedForms.push(title);}
   const flagged=(d.flagged&&d.flagged.length)?d.flagged.slice():null;
   if(flagged)c.flaggedContra={form:title,items:flagged,date:d.date||'Today'};
