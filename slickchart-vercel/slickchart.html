@@ -10890,22 +10890,31 @@ async function saveCourse(id){
   // Wait for the course, the custom flag, and its files to actually reach the server before leaving.
   // A refresh right after saving used to be beaten by the boot pull, which then restored a stale
   // server copy (no new course) — awaiting the writes makes the server current first, so it can't.
-  try{await Promise.all(_fileWrites.concat([_coursePush,(typeof _pushKeyNow==='function'?_pushKeyNow('sc_courses_custom','1'):Promise.resolve())]));}catch(e){}
+  let _fileResults=[];
+  try{_fileResults=await Promise.all(_fileWrites);}catch(e){}
+  try{await Promise.all([_coursePush,(typeof _pushKeyNow==='function'?_pushKeyNow('sc_courses_custom','1'):Promise.resolve())]);}catch(e){}
   window._cbDraft=null;
-  if(typeof proToast==='function')proToast(existing?'Course updated ✓':'Course created ✓');
+  // If a lesson file saved locally but didn't reach the server, the course is safe but the client
+  // couldn't download that file yet — tell the provider honestly instead of a clean "saved".
+  const _failed=_fileResults.filter(r=>r&&r.ok&&r.uploaded===false).length;
+  if(_failed&&typeof proToast==='function'){
+    proToast('Course saved, but '+_failed+' file'+(_failed>1?'s':'')+" didn't upload — your client can't download "+(_failed>1?'them':'it')+' until you save again on a stronger connection.',0);
+  }else if(typeof proToast==='function'){proToast(existing?'Course updated ✓':'Course created ✓');}
   _fgTab='courses';nav('forms');
 }
 
 // Delete a course — including the seeded/demo starter courses. Removes it from the list,
 // cleans up any attached lesson files (server + local), and marks the course set customized
 // so a deleted starter course doesn't get reseeded back on the next load.
-function deleteCourse(id){
+async function deleteCourse(id){
   const c=courses.find(x=>x.id===id);if(!c)return;
   if(!confirm('Delete "'+String(c.title||'this course').replace(/\s+/g,' ').trim()+'"?\n\nThis permanently removes the course and its lessons. This can’t be undone.'))return;
   try{(_courseLessons(c)||[]).forEach(l=>{_lessonFileList(l).forEach(f=>{if(f&&f.fileId){try{_persistGuideFile(f.fileId,null,true);}catch(e){}}});});}catch(e){}
   const i=courses.findIndex(x=>x.id===id);if(i>=0)courses.splice(i,1);
   try{_markCoursesCustom();}catch(e){}
-  try{persistCourses();}catch(e){}
+  // Await the persist + the custom-flag push before leaving, same as saveCourse — otherwise a fast
+  // reload lets the boot pull restore the stale server copy and the deleted course silently returns.
+  try{await Promise.all([persistCourses()||Promise.resolve(),(typeof _pushKeyNow==='function'?_pushKeyNow('sc_courses_custom','1'):Promise.resolve())]);}catch(e){}
   if(typeof proToast==='function')proToast('Course deleted');
   _fgTab='courses';nav('forms');
 }
@@ -11118,7 +11127,12 @@ function confirmSendCourse(courseId,cid){
     if(!Array.isArray(c.pendingCourses))c.pendingCourses=[];
     if(!c.pendingCourses.some(x=>x.id===co.id))c.pendingCourses.push({id:co.id,assignedAt:Date.now()});
     try{saveClients();}catch(e){}
+    try{if(typeof _pushKeyNow==='function')_pushKeyNow('sc_clients',localStorage.getItem('sc_clients')||'');}catch(e){}
     if(!c._token){closeSendProd();if(typeof proToast==='function')proToast(`${c.name.split(' ')[0]} hasn't been invited to the app yet, invite them first, then this course will be waiting for them`);return;}
+  }else if(cid!=='maya'){
+    closeSendProd();
+    if(typeof proToast==='function')proToast('Couldn’t find that client to send to — please pick them from the list again.',0);
+    return;
   }
   closeSendProd();
   if(typeof proToast==='function')proToast(`Sent "${co.title}" to ${c?c.name.split(' ')[0]:'client'}`);
@@ -11131,7 +11145,12 @@ function _coursePayload(co){
     // Send the full `files` array plus legacy first-file fields so both new and old clients render.
     return {id:l.id,title:l.title||'Lesson',body:l.body||'',videoUrl:l.videoUrl||'',docUrl:l.docUrl||'',files,fileId:first.fileId||'',fileName:first.fileName||'',fileType:first.fileType||''};
   });
-  return {id:co.id,title:co.title||'Course',desc:co.desc||'',price:co.price||'',cover:co.cover||'',lessons};
+  // The cover goes into EACH assigned client's data blob. A big base64 cover duplicated across many
+  // clients is exactly what caused 413s before (branding was pulled out for this reason). Keep only
+  // a URL cover or a small inline one; drop a heavy data: cover (the client just shows the tile).
+  const _cover=String(co.cover||'');
+  const cover=(/^https?:\/\//i.test(_cover)||_cover.length<=40000)?_cover:'';
+  return {id:co.id,title:co.title||'Course',desc:co.desc||'',price:co.price||'',cover,lessons};
 }
 function renderShopBundle(i){
   setNav('more');
@@ -17178,26 +17197,39 @@ function _removeGuideFile(i){
 }
 // Persist all staged guide files; first keeps the guide-id key (back-compat), extras get own ids.
 // Deletes any files the provider removed. Returns [{fileId,fileName,fileType}].
+let _guideFileWrites=[];
 function _finalizeGuideFiles(guideId){
-  const outFiles=[];
+  const outFiles=[];_guideFileWrites=[];
   (_guideFileDrafts||[]).forEach((f,idx)=>{
     const fid=f.fileId||(idx===0?guideId:(guideId+'__f'+Math.random().toString(36).slice(2,7)));
-    if(f.data){try{_persistGuideFile(fid,{name:f.name||'',type:f.type||'',data:f.data},false);}catch(e){}}
+    if(f.data){try{_guideFileWrites.push(_persistGuideFile(fid,{name:f.name||'',type:f.type||'',data:f.data},false));}catch(e){}}
     outFiles.push({fileId:fid,fileName:f.name||'',fileType:f.type||''});
   });
-  (_guideRemovedFileIds||[]).forEach(fid=>{if(fid&&!outFiles.some(x=>x.fileId===fid)){try{_persistGuideFile(fid,null,true);}catch(e){}}});
+  (_guideRemovedFileIds||[]).forEach(fid=>{if(fid&&!outFiles.some(x=>x.fileId===fid)){try{_guideFileWrites.push(_persistGuideFile(fid,null,true));}catch(e){}}});
   return outFiles;
+}
+// Warn (honestly) if a guide's file saved locally but never reached the server — the copy clients
+// download. Same guarantee the course save gives.
+function _warnGuideFileUploads(){
+  try{Promise.all(_guideFileWrites||[]).then(function(rs){
+    const failed=(rs||[]).filter(r=>r&&r.ok&&r.uploaded===false).length;
+    if(failed&&typeof proToast==='function')proToast('Guide saved, but its file didn’t upload — clients can’t download it until you save again on a stronger connection.',0);
+  });}catch(e){}
 }
 // ── Guide file storage ── files live server-side (per owner+guide id) and in IndexedDB
 // locally, NOT in the synced sc_resources blob, base64 files are too big for that path,
 // which is why uploads used to vanish. The guide record keeps only name/type/hasFile.
+// Returns a Promise<{ok, reason}>. The server copy is what CLIENTS download (their app fetches
+// /api/guide-file by id), so the caller must be able to await this and know if it actually landed —
+// a fire-and-forget upload let a provider "save" a course/guide whose file the client could never
+// open. Still shows the same inline toast on failure, but now also reports the result upward.
 function _uploadGuideFileToServer(id,payload){
   try{
-    if(typeof Cloud==='undefined'||!Cloud||!Cloud.token)return;
-    fetch('/api/guide-file',{method:'PUT',headers:{'Content-Type':'application/json','Authorization':'Bearer '+Cloud.token},body:JSON.stringify({id,name:payload.name||'',type:payload.type||'',data:payload.data})})
-      .then(r=>{if(!r.ok&&typeof proToast==='function'){proToast(r.status===413?'That file is too large to sync, please use one under 3 MB':'File saved on this device, but didn’t sync yet, check your connection and save again',0);}})
-      .catch(()=>{if(typeof proToast==='function')proToast('File saved on this device, but didn’t sync yet, check your connection and save again',0);});
-  }catch(e){}
+    if(typeof Cloud==='undefined'||!Cloud||!Cloud.token)return Promise.resolve({ok:false,reason:'signedout'});
+    return fetch('/api/guide-file',{method:'PUT',headers:{'Content-Type':'application/json','Authorization':'Bearer '+Cloud.token},body:JSON.stringify({id,name:payload.name||'',type:payload.type||'',data:payload.data})})
+      .then(r=>{if(!r.ok){if(typeof proToast==='function')proToast(r.status===413?'That file is too large to sync, please use one under 3 MB':'File saved on this device, but didn’t sync yet, check your connection and save again',0);return {ok:false,reason:r.status===413?'toobig':'http'};}return {ok:true};})
+      .catch(()=>{if(typeof proToast==='function')proToast('File saved on this device, but didn’t sync yet, check your connection and save again',0);return {ok:false,reason:'network'};});
+  }catch(e){return Promise.resolve({ok:false,reason:'error'});}
 }
 function _deleteGuideFileFromServer(id){try{if(typeof Cloud!=='undefined'&&Cloud&&Cloud.token)fetch('/api/guide-file?id='+encodeURIComponent(id),{method:'DELETE',headers:{'Authorization':'Bearer '+Cloud.token}}).catch(()=>{});}catch(e){}}
 // Persist a guide's file: store the bytes locally (IndexedDB) + on the server, or remove
@@ -17205,18 +17237,26 @@ function _deleteGuideFileFromServer(id){try{if(typeof Cloud!=='undefined'&&Cloud
 // Returns a Promise that resolves once the local (IndexedDB) write has actually COMMITTED — the
 // caller can await it before navigating away, so a fast reload can't beat the write and lose an
 // upload. The server upload runs in parallel as a durable backup (survives any local storage reset).
+// Resolves to {ok, uploaded, reason} once BOTH the local (IndexedDB) write and the server upload
+// have settled, so callers (saveCourse / saveResource) can warn if the file didn't reach the server
+// — the copy clients actually download. `uploaded:false` means the record was saved but the file is
+// local-only for now.
 function _persistGuideFile(id,draft,prevHadFile){
   try{
     if(draft&&draft.data){
       const payload={name:draft.name||'',type:draft.type||'',data:draft.data};
-      _uploadGuideFileToServer(id,payload);
-      if(typeof _idb!=='undefined'&&_idb.available()){try{return Promise.resolve(_idb.set('gfile_'+id,payload));}catch(e){}}
+      const up=_uploadGuideFileToServer(id,payload);
+      let local=Promise.resolve();
+      if(typeof _idb!=='undefined'&&_idb.available()){try{local=Promise.resolve(_idb.set('gfile_'+id,payload));}catch(e){}}
+      return Promise.all([local,(up&&up.then)?up.catch(function(){return {ok:false,reason:'error'};}):Promise.resolve({ok:true})])
+        .then(function(r){return {ok:true,uploaded:!!(r[1]&&r[1].ok),reason:(r[1]&&r[1].reason)||''};})
+        .catch(function(){return {ok:true,uploaded:false,reason:'error'};});
     }else if(!draft&&prevHadFile){
       _deleteGuideFileFromServer(id);
-      if(typeof _idb!=='undefined'&&_idb.available()){try{return Promise.resolve(_idb.del('gfile_'+id));}catch(e){}}
+      if(typeof _idb!=='undefined'&&_idb.available()){try{return Promise.resolve(_idb.del('gfile_'+id)).then(function(){return {ok:true,uploaded:true};});}catch(e){}}
     }
   }catch(e){}
-  return Promise.resolve();
+  return Promise.resolve({ok:true,uploaded:true});
 }
 // Fetch a guide's file bytes for preview/download: IndexedDB first, then the server.
 async function _getGuideFile(id){
@@ -17484,12 +17524,18 @@ function saveEditResource(id){
   _guideProdDraft=null;_guideFileDrafts=[];_guideRemovedFileIds=[];
   persistCustomResources();rebuildResources();
   if(typeof proToast==='function')proToast('Guide updated');
+  _warnGuideFileUploads();
   _fgTab='guides';nav('forms');
 }
 function deleteResource(id){
   const isCustom=/^g-custom-/.test(id);
   const i=customResources.findIndex(x=>x.id===id);
   if(i>=0)customResources.splice(i,1);
+  // For a CUSTOM guide (a real delete), mark it hidden (pushed immediately) so a cross-device resync
+  // can't resurrect it — the same durable delete the card trash button does. Without this, another
+  // device holding a stale sc_resources would re-add it on the next sync (the "deleted guide keeps
+  // coming back" bug). A non-custom guide here is a "reset to original", not a delete — never hide it.
+  if(isCustom){try{if(typeof hiddenGuides!=='undefined'){hiddenGuides[id]=1;if(typeof _saveHiddenGuides==='function')_saveHiddenGuides();}}catch(e){}}
   // also detach from any forms
   Object.keys(formGuides).forEach(fid=>{const a=formGuides[fid];const j=a.indexOf(id);if(j>=0){a.splice(j,1);if(!a.length)delete formGuides[fid];}});
   persistCustomResources();persistForms();rebuildResources();
@@ -17585,6 +17631,7 @@ function saveResource(){
   persistCustomResources();
   rebuildResources();
   if(typeof proToast==='function')proToast('Guide added to your library');
+  _warnGuideFileUploads();
   _fgTab='guides';nav('forms');
 }
 
