@@ -3565,6 +3565,60 @@ async function _loadClientPurchases(id){
     </div>`).join('');
   }catch(e){if(body)body.innerHTML='Could not reach Square, try again.';}
 }
+// Lazy-load Square's Web Payments SDK (only when the provider actually adds a card). The card fields
+// render in a Square-hosted iframe and the raw card number is tokenized in the browser, so it never
+// reaches our server — we only send the one-time token to /api/square/save-card.
+function _loadSquareWebSDK(env){
+  return new Promise((resolve,reject)=>{
+    if(window.Square)return resolve(window.Square);
+    const url=(env==='production')?'https://web.squarecdn.com/v1/square.js':'https://sandbox.web.squarecdn.com/v1/square.js';
+    const s=document.createElement('script');s.src=url;s.async=true;
+    s.onload=()=>window.Square?resolve(window.Square):reject(new Error('Square SDK unavailable'));
+    s.onerror=()=>reject(new Error('Could not load Square’s card form'));
+    document.head.appendChild(s);
+  });
+}
+async function _addCardOnFile(id){
+  const c=CL[id];if(!c||!c.squareId)return;
+  const tok=(typeof Cloud!=='undefined'&&Cloud&&Cloud.token)||'';
+  const first=(c.name||'this client').split(' ')[0];
+  const ov=document.createElement('div');ov.id='card-sheet';
+  ov.style.cssText='position:fixed;inset:0;margin:0 auto;width:390px;max-width:100%;z-index:9999;background:rgba(0,0,0,.6);display:flex;align-items:center;justify-content:center;padding:24px 16px;box-sizing:border-box;';
+  ov.onclick=e=>{if(e.target===ov)ov.remove();};
+  ov.innerHTML=`<div style="background:#161616;border:1px solid #2a2a2a;width:100%;border-radius:16px;padding:18px;">
+    <div style="display:flex;justify-content:space-between;align-items:center;margin-bottom:14px;"><div style="font-size:16px;font-weight:600;color:#f0f0f0;">Add ${_fileEsc(first)}’s card</div><button onclick="document.getElementById('card-sheet').remove()" aria-label="Close" style="border:none;background:none;font-size:20px;color:#888;cursor:pointer;">✕</button></div>
+    <div style="background:#fff;border-radius:10px;padding:12px;min-height:52px;" id="sq-card-container"></div>
+    <div id="sq-card-msg" style="font-size:12px;color:#9a9a9a;margin-top:8px;min-height:16px;">Loading secure card form…</div>
+    <button id="sq-card-save" disabled style="width:100%;margin-top:12px;background:var(--accent);color:var(--accent-ink);border:none;border-radius:10px;padding:12px;font-size:14px;font-weight:600;cursor:pointer;opacity:.6;">Save card</button>
+    <div style="font-size:10px;color:#7a7a7a;margin-top:8px;text-align:center;"><i class="ti ti-lock" style="font-size:10px;"></i> Card entered securely in Square — we never see the number.</div>
+  </div>`;
+  (document.querySelector('.shell')||document.body).appendChild(ov);
+  const msg=t=>{const el=document.getElementById('sq-card-msg');if(el)el.textContent=t;};
+  try{
+    const cfgR=await fetch('/api/square/pay-config',{headers:{'Authorization':'Bearer '+tok}});
+    const cfg=await cfgR.json().catch(()=>({}));
+    if(!cfgR.ok||!cfg.ok){msg(cfg&&cfg.code==='no-appid'?'Card entry isn’t set up yet (missing Square app id).':((cfg&&cfg.error)||'Could not start card entry.'));return;}
+    if(!cfg.locationId){msg('No Square location found on your account.');return;}
+    const Square=await _loadSquareWebSDK(cfg.env);
+    const payments=Square.payments(cfg.appId,cfg.locationId);
+    const card=await payments.card();
+    await card.attach('#sq-card-container');
+    msg('Enter the card details above, then Save.');
+    const btn=document.getElementById('sq-card-save');if(btn){btn.disabled=false;btn.style.opacity='1';}
+    btn.onclick=async()=>{
+      btn.disabled=true;btn.style.opacity='.6';msg('Saving…');
+      try{
+        const result=await card.tokenize();
+        if(result.status!=='OK'){msg('Please check the card details and try again.');btn.disabled=false;btn.style.opacity='1';return;}
+        const r=await fetch('/api/square/save-card',{method:'POST',headers:{'Content-Type':'application/json','Authorization':'Bearer '+tok},body:JSON.stringify({customerId:c.squareId,sourceId:result.token})});
+        const j=await r.json().catch(()=>({}));
+        if(!r.ok||!j.ok){msg((j&&j.code==='scope')?'Reconnect Square to save cards.':((j&&j.error)||'Could not save the card.'));btn.disabled=false;btn.style.opacity='1';return;}
+        ov.remove();
+        if(typeof proToast==='function')proToast('Card saved ✓ '+(j.card?(j.card.brand+' ····'+j.card.last4):'')+' — charge it from Checkout');
+      }catch(e){msg('Could not save the card, try again.');btn.disabled=false;btn.style.opacity='1';}
+    };
+  }catch(e){msg((e&&e.message)||'Could not load the card form.');}
+}
 // Check a client's Square Loyalty balance by phone and store it on their chart (c.loyalty), then sync
 // so it shows in the client's own app too.
 async function _loadClientLoyalty(id){
@@ -3601,6 +3655,10 @@ function renderClient(id){
   ${c.squareId&&c.phone?`<div style="margin:12px 16px 0;background:#161616;border:1px solid #242424;border-radius:12px;padding:12px 14px;">
     <div style="display:flex;justify-content:space-between;align-items:center;"><span style="font-size:11px;color:#888;text-transform:uppercase;letter-spacing:.06em;">Loyalty points</span><button onclick="_loadClientLoyalty('${id}')" style="background:var(--accent-tint);border:1px solid var(--accent-a30,#3d2d10);color:var(--accent);border-radius:8px;padding:4px 10px;font-size:11px;font-weight:600;cursor:pointer;font-family:inherit;"><i class="ti ti-star" style="font-size:11px;"></i> Check Square</button></div>
     <div id="sq-loyalty-body" style="margin-top:9px;font-size:12px;color:#9a9a9a;line-height:1.5;">${c.loyalty&&c.loyalty.points!=null?('<b style="color:var(--accent);">'+c.loyalty.points+' points</b> · '+(c.loyalty.lifetime||0)+' lifetime'):('Check '+_fileEsc(c.name.split(' ')[0])+"’s Square loyalty balance.")}</div>
+  </div>`:''}
+  ${c.squareId?`<div style="margin:12px 16px 0;background:#161616;border:1px solid #242424;border-radius:12px;padding:12px 14px;">
+    <div style="display:flex;justify-content:space-between;align-items:center;"><span style="font-size:11px;color:#888;text-transform:uppercase;letter-spacing:.06em;">Card on file</span><button onclick="_addCardOnFile('${id}')" style="background:var(--accent-tint);border:1px solid var(--accent-a30,#3d2d10);color:var(--accent);border-radius:8px;padding:4px 10px;font-size:11px;font-weight:600;cursor:pointer;font-family:inherit;"><i class="ti ti-credit-card" style="font-size:11px;"></i> Add card</button></div>
+    <div style="margin-top:9px;font-size:12px;color:#9a9a9a;line-height:1.5;">Securely save ${_fileEsc(c.name.split(' ')[0])}’s card via Square so you can charge a deposit or no-show fee without re-entering it. You can then charge it from Checkout.</div>
   </div>`:''}
   ${c.flaggedContra?`<div style="margin:12px 16px 0;background:#2a0f0f;border:1px solid #5a2020;border-radius:12px;padding:12px 14px;">
     <div style="display:flex;align-items:center;gap:8px;margin-bottom:6px;"><i class="ti ti-alert-triangle" style="font-size:16px;color:#e87070;"></i><span style="font-size:13px;font-weight:700;color:#f0c8c8;">Flagged on intake, review before the visit</span></div>
