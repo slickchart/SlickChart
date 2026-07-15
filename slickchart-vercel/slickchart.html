@@ -6011,6 +6011,12 @@ function renderSessionSummary(id){
   </div>`;
 }
 
+// If the client-note editor is open, commit its current text into the draft. The editor only wrote
+// its value on the "Done" button, so tapping "Send" (or "Save & send", or the AI rewrite) while still
+// mid-edit read a STALE draft and silently sent the old/empty note. Called at every point that reads
+// the note so the provider's in-progress text is never dropped. (Cancel still discards — it never
+// flushes.)
+function _flushOpenSummaryNote(id){try{const ta=document.getElementById('note-edit-ta');if(ta){summaryNoteDraft[id]=ta.value;if(typeof persistSummaryDrafts==='function')persistSummaryDrafts();}}catch(e){}}
 function editSummaryNote(id){
   const el=document.getElementById('summary-note');
   if(!el)return;
@@ -6028,8 +6034,9 @@ function editSummaryNote(id){
 // Provider can still tap Edit afterwards to tweak it.
 async function aiClientFriendly(id,btn){
   if(!aiEnabled){if(typeof proToast==='function')proToast('AI features are off, turn them on in Settings → AI features');return;}
+  _flushOpenSummaryNote(id);
   const el=document.getElementById('summary-note');
-  const raw=((el&&el.innerText)||'').trim();
+  const raw=((el?el.innerText:(summaryNoteDraft[id]||''))||'').trim();
   if(!raw){if(typeof proToast==='function')proToast('Add some session notes first, then rewrite');return;}
   const c=CL[id]||{};const first=(c.name||'').split(' ')[0]||'your client';
   const old=btn.innerHTML;btn.disabled=true;btn.style.opacity='.6';btn.innerHTML='<i class="ti ti-loader-2"></i> Rewriting…';
@@ -6218,6 +6225,7 @@ function _providerNotesSnapshot(id){
 }
 function _storeSummary(id){
   const c=CL[id];if(!c)return;
+  _flushOpenSummaryNote(id);
   const noteEl=document.getElementById('summary-note');
   const note=((summaryNoteDraft[id]!=null?summaryNoteDraft[id]:(noteEl?noteEl.innerText:''))||'').trim();
   const obs=(summaryObsDraft[id]||'').trim();
@@ -6632,7 +6640,9 @@ function resendSavedSummary(id,i,silent){
   if(!exists){c.summaries.unshift({date:s.date,title:s.treatment||'Session',note:s.note||'',products:(s.products||[]).slice(),guides:(s.guides||[]).slice(),ts:s.ts});}
   else if(s.guides&&s.guides.length&&!exists.guides){exists.guides=s.guides.slice();}
   try{if(typeof saveClients==='function')saveClients();}catch(e){}
-  try{if(typeof _scheduleClientSync==='function')_scheduleClientSync();}catch(e){}
+  // Push to the client's device NOW, not on a 2.5s debounce — a "Save & send"/resend is a deliberate
+  // delivery tap, and backgrounding the PWA within that window (routine between clients) would drop it.
+  try{if(typeof _syncSpecificClientsToServer==='function')_syncSpecificClientsToServer([id],{});else if(typeof _scheduleClientSync==='function')_scheduleClientSync();}catch(e){}
   // Re-share any attached aftercare guides so they ride along with the resent summary
   // (demo bridge only; real clients receive them via the synced summary record above).
   try{if(id==='maya'&&s.guides&&s.guides.length){s.guides.forEach(g=>SlickBridge.post('resource-shared',{providerId:'jess',clientId:'maya',resource:{id:g.id,title:g.title,icon:g.icon,tips:g.tips||[],cat:'Aftercare'}}));}}catch(e){}
@@ -6710,6 +6720,7 @@ function sendSummary(id){
 function _postSummaryData(id){
   if(id!=='maya')return;
   const c=CL[id];
+  _flushOpenSummaryNote(id);
   const noteEl=document.getElementById('summary-note');
   const note=((summaryNoteDraft[id]!=null?summaryNoteDraft[id]:(noteEl?noteEl.innerText:''))||'').trim();
   const homecare=summaryToggles.homecare?getClientHomecare(id).slice():[];
@@ -7214,26 +7225,31 @@ function handlePhotoSelect(input){
 
 function savePhotos(){
   const cid=uploadModalClientId;
-  // commit each selected/captured photo with an auto date-stamp + chosen angle
-  let saved=true;
+  // Show the result toast + navigate only AFTER the write actually resolves. persistCapturedPhotos()
+  // returns a PROMISE when IndexedDB is available (the normal case), so the old synchronous check
+  // treated that truthy promise as success \u2014 the storage-full rollback was dead code and we always
+  // said "saved" even when the write failed. Mirror takePhoto: await the real result.
+  const _finish=(saved,before)=>{
+    if(!saved&&cid&&before){capturedPhotos[cid]=before;try{persistCapturedPhotos();}catch(e){}}
+    _pendingPhotos=[];_uploadAngle='Front';
+    document.getElementById('photo-upload-modal')?.remove();
+    if(cid){
+      nav('photos',cid);
+      setTimeout(()=>{
+        const _ok=saved;
+        S.insertAdjacentHTML('afterbegin',`<div id="photo-toast" style="position:absolute;top:16px;left:50%;transform:translateX(-50%);background:${_ok?'#0a2019':'#2a1206'};border:1px solid ${_ok?'#4ec49a':'#e8a060'};border-radius:10px;padding:10px 16px;font-size:13px;color:${_ok?'#4ec49a':'#e8a060'};display:flex;align-items:center;gap:7px;z-index:100;white-space:nowrap;"><i class="ti ti-${_ok?'check':'alert-triangle'}" aria-hidden="true"></i> ${_ok?'Photos saved &amp; date-stamped!':'Storage full, couldn\u2019t save photos'}</div>`);
+        setTimeout(()=>document.getElementById('photo-toast')?.remove(),2500);
+      },100);
+    }
+  };
   if(cid&&_pendingPhotos.length){
     if(!capturedPhotos[cid])capturedPhotos[cid]=[];
     const _before=capturedPhotos[cid].slice();   // snapshot for rollback on quota failure
     _pendingPhotos.forEach(p=>capturedPhotos[cid].push({url:p.url,ts:p.ts||Date.now(),phase:'reference',angle:_uploadAngle}));
-    // Actually write them, without this, photos added via the upload modal lived only in
-    // memory and vanished on the next reload, even though we told the provider "saved".
-    try{saved=(typeof persistCapturedPhotos==='function')?persistCapturedPhotos():true;}catch(e){saved=false;}
-    if(!saved){capturedPhotos[cid]=_before;try{persistCapturedPhotos();}catch(e){}}
-  }
-  _pendingPhotos=[];_uploadAngle='Front';
-  document.getElementById('photo-upload-modal')?.remove();
-  if(cid){
-    nav('photos',cid);
-    setTimeout(()=>{
-      const _ok=saved;
-      S.insertAdjacentHTML('afterbegin',`<div id="photo-toast" style="position:absolute;top:16px;left:50%;transform:translateX(-50%);background:${_ok?'#0a2019':'#2a1206'};border:1px solid ${_ok?'#4ec49a':'#e8a060'};border-radius:10px;padding:10px 16px;font-size:13px;color:${_ok?'#4ec49a':'#e8a060'};display:flex;align-items:center;gap:7px;z-index:100;white-space:nowrap;"><i class="ti ti-${_ok?'check':'alert-triangle'}" aria-hidden="true"></i> ${_ok?'Photos saved &amp; date-stamped!':'Storage full, couldn\u2019t save photos'}</div>`);
-      setTimeout(()=>document.getElementById('photo-toast')?.remove(),2500);
-    },100);
+    let _res;try{_res=(typeof persistCapturedPhotos==='function')?persistCapturedPhotos():true;}catch(e){_res=false;}
+    Promise.resolve(_res).then(saved=>_finish(saved!==false,_before)).catch(()=>_finish(false,_before));
+  }else{
+    _finish(true,null);
   }
 }
 
@@ -9798,7 +9814,12 @@ function _assembleClientData(id){
   try{const sr=(typeof currentSentRoutines==='function')?currentSentRoutines()[id]:null;
     if(sr&&(sr.name||sr.note))routine={name:sr.name||'Your routine',note:sr.note||'',date:sr.date||''};
   }catch(e){}
-  return {studio,studioAddress,website,providerName,profile:{skin:c.skin||'',concerns:c.concerns||'',allergies:c.allergies||'',fitz:c.fitz||'',treatment:c.treatment||'',lastVisit:c.lastVisit||'',nextVisit:c.nextVisit||'',email:c.email||'',phone:c.phone||''},summaries,aftercare,products,routine,forms,pendingForms,pendingGuides,pendingCourses,photos:Array.isArray(c.photos)?c.photos:[],progressPhotos,booking:{canRequest:true},availability,vcInvite};
+  // The provider's customized pre-visit check-in config. The client app reads d.checkinCfg into
+  // sc_checkin_cfg (see _applyRealClientData), but it was never being sent — so real clients always
+  // saw the generic default questionnaire instead of the provider's added/removed questions and the
+  // "saved, your clients see these now" toast was misleading. It's small and bounded, so per-client is fine.
+  const checkinCfgOut=(typeof checkinCfg!=='undefined'&&checkinCfg&&typeof checkinCfg==='object')?checkinCfg:null;
+  return {studio,studioAddress,website,providerName,profile:{skin:c.skin||'',concerns:c.concerns||'',allergies:c.allergies||'',fitz:c.fitz||'',treatment:c.treatment||'',lastVisit:c.lastVisit||'',nextVisit:c.nextVisit||'',email:c.email||'',phone:c.phone||''},summaries,aftercare,products,routine,forms,pendingForms,pendingGuides,pendingCourses,photos:Array.isArray(c.photos)?c.photos:[],progressPhotos,booking:{canRequest:true},availability,vcInvite,checkinCfg:checkinCfgOut};
 }
 let _syncingClients=false,_clientSyncTimer=null;
 function _scheduleClientSync(){ if(_clientSyncTimer)clearTimeout(_clientSyncTimer); _clientSyncTimer=setTimeout(function(){_syncClientsToServer({});},2500); }
