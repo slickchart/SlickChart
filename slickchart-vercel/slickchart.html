@@ -1192,6 +1192,28 @@ function _saveClientDetails(id){
 }
 
 function loadClients(){try{const raw=localStorage.getItem('sc_clients');if(!raw)return;const saved=JSON.parse(raw);if(!saved||typeof saved!=='object')return;Object.keys(CL).forEach(k=>delete CL[k]);Object.keys(saved).forEach(k=>{CL[k]=saved[k];});}catch(e){}}
+// Enforce the "gone" sets on whatever is currently in CL — removes anyone the provider merged away
+// (mergedSquareIds), deleted (_deletedClientIds), or the demo clients once hidden. This is the safety
+// net that makes merges/removals STICK: even if a stale synced client list (or the Square customer
+// pull) puts a removed person back into CL, this strips them out again on every load and re-render,
+// and writes the cleaned list back so the server copy converges too.
+function _purgeRemovedClients(){
+  try{
+    const hidden=(typeof _sampleHidden==='function')&&_sampleHidden();
+    const sampleIds=(typeof _SAMPLE_IDS!=='undefined')?_SAMPLE_IDS:['maya','sophie','priya'];
+    let changed=false;
+    Object.keys(CL).forEach(id=>{
+      const c=CL[id]||{};
+      const sqKey=(c.squareId&&typeof _sqLocalId==='function')?_sqLocalId(c.squareId):'';
+      const merged=(typeof mergedSquareIds!=='undefined')&&(mergedSquareIds[id]||(sqKey&&mergedSquareIds[sqKey]));
+      const deleted=(typeof _deletedClientIds!=='undefined')&&(_deletedClientIds[id]||(sqKey&&_deletedClientIds[sqKey]));
+      const sample=hidden&&sampleIds.indexOf(id)>=0;
+      if(merged||deleted||sample){delete CL[id];changed=true;}
+    });
+    // Push the cleaned list so the server stops handing the removed records back on the next pull.
+    if(changed){try{if(typeof saveClients==='function')saveClients();}catch(e){}}
+  }catch(e){}
+}
 function _hasDemoClients(){return !!(CL.maya||CL.sophie||CL.priya);}
 function removeDemoClients(){
   try{localStorage.setItem('sc_hide_sample','1');}catch(e){}
@@ -1887,7 +1909,7 @@ function _reloadAll(){try{
   try{if(typeof _migrateGuideFiles==='function')_migrateGuideFiles();}catch(e){}
   if(typeof loadAi==='function')loadAi();
   if(typeof loadForms==='function')loadForms();
-  loadBizInfo();_syncProviderAvatar();_syncHeaderLogo();loadClients();loadMergedIds();loadDeletedClients();loadHiddenSquare();loadMessages();loadInv();loadVendors();_loadPersistenceSweep();try{_initCapturedPhotos();}catch(e){}_loadHomeDismissed();_loadAttnSeen();loadProviderNoteDrafts();if(typeof loadSessionSummaries==='function')loadSessionSummaries();if(!_sampleHidden()){_seedMayaOnce();}else{_purgeSample();}_seedBirthdays();if(!_sampleHidden()&&typeof _demoCheckinSeed==='function')_demoCheckinSeed();
+  loadBizInfo();_syncProviderAvatar();_syncHeaderLogo();loadClients();loadMergedIds();loadDeletedClients();loadHiddenSquare();loadMessages();loadInv();loadVendors();_loadPersistenceSweep();try{_initCapturedPhotos();}catch(e){}_loadHomeDismissed();_loadAttnSeen();loadProviderNoteDrafts();if(typeof loadSessionSummaries==='function')loadSessionSummaries();if(!_sampleHidden()){_seedMayaOnce();}else{_purgeSample();}try{_purgeRemovedClients();}catch(e){}_seedBirthdays();if(!_sampleHidden()&&typeof _demoCheckinSeed==='function')_demoCheckinSeed();
   if(typeof loadWorkspace==='function')loadWorkspace();
   if(typeof loadSquareCatalog==='function'){loadSquareCatalog();_mergeSquareRetail();}
   if(typeof loadCheckinCfg==='function')loadCheckinCfg();
@@ -3345,6 +3367,9 @@ function renderHome(){
 // ── CLIENTS ──
 function renderClients(){
   setNav('clients');
+  // Enforce the block sets (merged / deleted / hidden samples) before we draw, so removed
+  // clients never flash back into the list even if a stale pull put them into CL.
+  try{_purgeRemovedClients();}catch(e){}
   // Pull any newly-added Square customers in the background so the list below stays current.
   try{if(typeof _autoSyncCustomers==='function')_autoSyncCustomers();}catch(e){}
   document.getElementById('tt').textContent='Clients';
@@ -15029,8 +15054,12 @@ try{
   applyProfessionConfig();
   loadBizInfo();_syncProviderAvatar();_syncHeaderLogo();  // restore the provider's own business name & details
   loadClients();  // restore the curated client list (demos removed, Square imports kept)
+  // Refresh the "gone" sets from the just-pulled data too, so a merge/removal done here or on another
+  // device is honored after this reload — then strip anyone they cover out of the client list.
+  try{if(typeof loadMergedIds==='function')loadMergedIds();if(typeof loadDeletedClients==='function')loadDeletedClients();if(typeof loadHiddenSquare==='function')loadHiddenSquare();}catch(e){}
   loadDocs();  // restore the provider's saved documents (licenses, insurance, etc.)
   if(!_sampleHidden()){_seedMayaOnce();}else{_purgeSample();}  // sample Maya only when sample data is on
+  try{_purgeRemovedClients();}catch(e){}
   if(!_sampleHidden()&&typeof _demoCheckinSeed==='function')_demoCheckinSeed();
   if(!_sampleHidden()&&typeof _demoPaymentSeed==='function')_demoPaymentSeed();
   if(!_sampleHidden()&&typeof _demoNoteSeed==='function')_demoNoteSeed();
