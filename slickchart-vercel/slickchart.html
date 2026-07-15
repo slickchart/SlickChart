@@ -4684,7 +4684,7 @@ function _voiceRedo(){
   _voiceText='';
   startVoiceNote(_voiceClientId);
 }
-function _voiceSave(text){
+function _voiceSave(text,toastMsg){
   text=String(text||'').trim();if(!text){_voiceClose();return;}
   text=text.replace(/</g,'&lt;').replace(/>/g,'&gt;');
   const id=_voiceClientId;
@@ -4700,10 +4700,26 @@ function _voiceSave(text){
   draft.sections[secId]=(prev&&prev.trim()&&prev.trim()!=='No notes yet.')?(prev+'<br>'+text):text;
   providerNoteDrafts[id]=draft;
   if(typeof saveProviderNoteDrafts==='function'){try{saveProviderNoteDrafts();}catch(e){}}
-  _voiceClose();
-  if(typeof proToast==='function')proToast('Voice note saved to your notes');
-  try{if(typeof renderNotes==='function'&&document.getElementById('ncontent'))renderNotes(id);}catch(e){}
+  _voiceAfterSave(id,toastMsg||'Voice note saved to your notes');
 }
+// After a note is saved, don't just close — offer to add more. People routinely remember one more
+// thing right after they finish, and starting over from the Notes screen felt like a chore. Another
+// voice note appends to the SAME note (both save paths append), so "Add more" just records again.
+function _voiceAfterSave(id,toast){
+  _voiceText='';_voiceSeed='';
+  try{if(typeof renderNotes==='function'&&document.getElementById('ncontent'))renderNotes(id);}catch(e){}
+  if(toast&&typeof proToast==='function')proToast(toast);
+  _voiceOverlay(`
+    <div style="text-align:center;">
+      <div style="width:54px;height:54px;border-radius:50%;background:#0a2019;display:flex;align-items:center;justify-content:center;margin:2px auto 12px;"><i class="ti ti-check" style="font-size:27px;color:#4ec49a;"></i></div>
+      <div style="font-size:16px;font-weight:700;color:#f0f0f0;margin-bottom:4px;">Saved to your notes</div>
+      <div style="font-size:12.5px;color:#999;line-height:1.55;margin-bottom:16px;">Forgot something? Add another voice note and it'll be added to this same note.</div>
+    </div>
+    <button onclick="_voiceAddMore()" style="width:100%;background:var(--accent);color:var(--accent-ink);border:none;border-radius:10px;padding:13px;font-size:14px;font-weight:700;cursor:pointer;font-family:inherit;display:flex;align-items:center;justify-content:center;gap:7px;"><i class="ti ti-microphone-2"></i> Add more</button>
+    <button onclick="_voiceClose()" style="width:100%;margin-top:8px;background:#1a1a1a;border:1px solid #2a2a2a;color:#ccc;border-radius:10px;padding:12px;font-size:13px;font-weight:600;cursor:pointer;font-family:inherit;display:flex;align-items:center;justify-content:center;gap:6px;"><i class="ti ti-check"></i> Done</button>`);
+}
+// Record another clip that appends to the note just saved.
+function _voiceAddMore(){const id=_voiceClientId;_voiceText='';_voiceSeed='';startVoiceNote(id);}
 // Pull the first balanced {...} JSON object out of a model reply (tolerates code fences / stray text).
 function _parseJSONObject(str){
   if(!str)return null;
@@ -4734,8 +4750,7 @@ async function _voiceSmartSave(){
   const filled=(mapping&&typeof mapping==='object')?Object.keys(mapping).filter(k=>ids.has(k)&&String(mapping[k]||'').trim()):[];
   if(!filled.length){
     // AI off / unparseable / nothing matched — never lose the dictation.
-    _voiceSave(raw);
-    if(typeof proToast==='function')proToast('Saved your note (couldn’t auto-file it this time)');
+    _voiceSave(raw,'Saved your note (couldn’t auto-file it this time)');
     return;
   }
   const draft=(providerNoteDrafts[id]&&providerNoteDrafts[id].templateId===activeNoteTemplate)?providerNoteDrafts[id]:{date:(typeof _isoToday==='function'?_isoToday():''),sections:{},templateId:activeNoteTemplate};
@@ -4747,9 +4762,7 @@ async function _voiceSmartSave(){
   });
   providerNoteDrafts[id]=draft;
   try{if(typeof saveProviderNoteDrafts==='function')saveProviderNoteDrafts();}catch(e){}
-  _voiceClose();
-  if(typeof proToast==='function')proToast('Filed into '+filled.length+' section'+(filled.length===1?'':'s')+' ✨ — review & save');
-  try{if(typeof renderNotes==='function')renderNotes(id);}catch(e){}
+  _voiceAfterSave(id,'Filed into '+filled.length+' section'+(filled.length===1?'':'s')+' ✨');
 }
 // Gathers whatever's in the active note format (typed or dictated) as readable text,
 // so the client summary card reflects the SAME notes shown in the notes step. Reads the
