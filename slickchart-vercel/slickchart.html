@@ -2264,7 +2264,21 @@ function applyProfessionConfig(){
     if((typeof _protocolsAreCustom==='function'&&_protocolsAreCustom())||_savedProtoCustom){try{loadProtocols();}catch(e){}if(_savedProtoCustom){try{_markProtocolsCustom();}catch(e){}}}
   }
 
-  if(hairBarberOnly&&hasHair){affiliateLinks.length=0;hairAffiliateLinks.forEach(a=>affiliateLinks.push(a));}
+  // Detect a provider-customized product set from SAVED data before wiping to profession demo
+  // products. A provider who added their own products, or connected Square (sq_/source:square
+  // entries, or a saved Square catalog), must NEVER have their real shop replaced with demo items —
+  // this was the "reconnecting Square reset a lot / still shows sample data" loss. Same guard shape as
+  // protocols/courses/service-menu. When custom, we restore the real set instead of resetting.
+  let _savedAffCustom=false;
+  try{const raw=localStorage.getItem('sc_affiliate_links');if(raw){const a=JSON.parse(raw);if(Array.isArray(a))_savedAffCustom=a.some(x=>x&&(x.custom||x.source==='square'||x.squareId||String(x.id||'').indexOf('sq_')===0));}}catch(e){}
+  try{if(!_savedAffCustom){const w=localStorage.getItem('sc_workspace');if(w){const o=JSON.parse(w);if(o&&Array.isArray(o.customProducts)&&o.customProducts.length)_savedAffCustom=true;}}}catch(e){}
+  try{if(!_savedAffCustom){const sc=localStorage.getItem('sc_square_catalog');if(sc){const o=JSON.parse(sc);if(o&&Array.isArray(o.retail)&&o.retail.length)_savedAffCustom=true;}}}catch(e){}
+  if(_savedAffCustom){
+    // Restore the real, authoritative set (custom + Square) rather than resetting to demo products.
+    try{if(typeof loadAffiliateLinks==='function')loadAffiliateLinks();}catch(e){}
+    try{if(typeof _mergeSquareRetail==='function')_mergeSquareRetail();}catch(e){}
+  }
+  else if(hairBarberOnly&&hasHair){affiliateLinks.length=0;hairAffiliateLinks.forEach(a=>affiliateLinks.push(a));}
   else if(hairBarberOnly&&hasBarber){affiliateLinks.length=0;barberAffiliateLinks.forEach(a=>affiliateLinks.push(a));}
   else if(browOnly){affiliateLinks.length=0;browAffiliateLinks.forEach(a=>affiliateLinks.push(a));}
   else if(only('makeup')){affiliateLinks.length=0;makeupAffiliateLinks.forEach(a=>affiliateLinks.push(a));}
@@ -9782,8 +9796,11 @@ function _assembleClientData(id){
   // id and, for guides, aren't deleted with the record; deleteCourse now keeps its files too.)
   const pendingForms=(Array.isArray(c.pendingForms)?c.pendingForms:[]).map(pf=>{
     const tmpl=formTmpls[pf.formId];
-    if(tmpl){const out={formId:pf.formId,title:tmpl.name,qs:(tmpl.qs||[]).map(q=>({id:q.id,label:q.label,type:q.type,required:!!q.required,options:q.options||null,items:q.items||null}))};pf.snapshot=out;return out;}
-    return pf.snapshot||null;
+    // assignedAt MUST travel to the client: its "already submitted" dedup keys on (formId+assignedAt),
+    // so a form the provider RE-sends (fresh assignedAt) is meant to reappear. Dropping it here made
+    // both sides compare '' === '' forever, permanently hiding every re-requested form.
+    if(tmpl){const out={formId:pf.formId,title:tmpl.name,assignedAt:pf.assignedAt||0,qs:(tmpl.qs||[]).map(q=>({id:q.id,label:q.label,type:q.type,required:!!q.required,options:q.options||null,items:q.items||null}))};pf.snapshot=out;return out;}
+    return pf.snapshot?Object.assign({},pf.snapshot,{assignedAt:pf.assignedAt||pf.snapshot.assignedAt||0}):null;
   }).filter(Boolean);
   const pendingGuides=(Array.isArray(c.pendingGuides)?c.pendingGuides:[]).map(pg=>{
     const g=(typeof _findGuide==='function')?_findGuide(pg.guideId):null;
@@ -14442,10 +14459,16 @@ async function _autoSyncCatalog(opts){
       services.map(p=>[p.id,p.name,p.price,p.priceMax,_vp(p)])
     ]);
     if(fp===_autoSyncCatalog._lastFp){_catalogSyncing=false;return;}
+    // Don't let a transient empty response overwrite a real catalog on every device (see _sqLoadCatalog).
+    const _hadCat=!!(squareCatalog&&((squareCatalog.retail&&squareCatalog.retail.length)||(squareCatalog.services&&squareCatalog.services.length)));
+    if(!retail.length&&!services.length&&_hadCat){_catalogSyncing=false;return;}
     _autoSyncCatalog._lastFp=fp;
     squareCatalog={retail,services,syncedAt:Date.now()};
     saveSquareCatalog();
     _mergeSquareRetail();
+    // Persist + push the merged shop so the client-facing catalog (sc_shop_catalog) actually refreshes
+    // — a repricing/new product used to only update in-memory and clients saw stale items until reboot.
+    try{if(typeof persistAffiliateLinks==='function')persistAffiliateLinks();}catch(e){}
     try{_coMenu=null;}catch(e){}   // invalidate the cached checkout menu so it rebuilds with fresh prices
     // If the provider is currently looking at a catalog-backed screen, refresh it in place so
     // the new/updated items appear without them having to navigate away and back.
@@ -14508,8 +14531,14 @@ async function _sqLoadCatalog(){
   try{
     const data=await _sqFetch('/api/square/catalog');
     const retail=data.retail||[];const services=data.services||[];
+    // A successful-but-EMPTY response (transient Square blip / token-location edge) must not replace a
+    // previously non-empty catalog — saveSquareCatalog auto-pushes to the cloud, so that would wipe the
+    // services + retail list on every device. Keep the cached catalog and say so.
+    const _hadCat=!!(squareCatalog&&((squareCatalog.retail&&squareCatalog.retail.length)||(squareCatalog.services&&squareCatalog.services.length)));
+    if(!retail.length&&!services.length&&_hadCat){out.innerHTML=`<div style="padding:20px;text-align:center;color:#c99a5a;font-size:13px;">Square returned an empty catalog just now — kept your last synced products. Try again in a moment.</div>`;return;}
     squareCatalog={retail,services,syncedAt:Date.now()};
     saveSquareCatalog();_mergeSquareRetail();
+    try{if(typeof persistAffiliateLinks==='function')persistAffiliateLinks();}catch(e){}   // refresh the client-facing shop
     if(!retail.length&&!services.length){out.innerHTML=`<div style="padding:20px;text-align:center;color:#888;font-size:13px;">No products or services found in your Square catalog.</div>`;return;}
     const priceStr=p=>p.price==null?'':('$'+(Math.round(p.price*100)/100)+((p.priceMax!=null&&p.priceMax!==p.price)?('–$'+(Math.round(p.priceMax*100)/100)):''));
     const card=(p,kind)=>`<div style="background:#161616;border:1px solid #242424;border-radius:11px;padding:11px 13px;margin-bottom:8px;display:flex;align-items:center;gap:11px;">
