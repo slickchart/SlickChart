@@ -1451,7 +1451,7 @@ function _mergeSideStores(keepId,dropId){
     if(typeof recReasons!=='undefined'&&recReasons[dropId]){recReasons[keepId]=Object.assign({},recReasons[dropId],recReasons[keepId]||{});delete recReasons[dropId];}
     if(typeof clientHomecare!=='undefined'&&clientHomecare[dropId]){const s={};const out=(clientHomecare[keepId]||[]).slice();out.forEach(x=>s[x]=1);clientHomecare[dropId].forEach(x=>{if(!s[x]){s[x]=1;out.push(x);}});clientHomecare[keepId]=out;delete clientHomecare[dropId];}
     if(typeof sessionSummaries!=='undefined'&&sessionSummaries[dropId]){sessionSummaries[keepId]=(sessionSummaries[keepId]||[]).concat(sessionSummaries[dropId]);delete sessionSummaries[dropId];}
-    if(typeof capturedPhotos!=='undefined'&&capturedPhotos[dropId]){capturedPhotos[keepId]=(capturedPhotos[keepId]||[]).concat(capturedPhotos[dropId]);delete capturedPhotos[dropId];}
+    if(typeof capturedPhotos!=='undefined'&&capturedPhotos[dropId]){const _kp=(capturedPhotos[keepId]||[]).slice();const _seen=new Set(_kp.map(function(p){return (p&&(p.pid||p.url))||'';}));capturedPhotos[dropId].forEach(function(p){const k=(p&&(p.pid||p.url))||'';if(k&&_seen.has(k))return;_seen.add(k);_kp.push(p);});capturedPhotos[keepId]=_kp;delete capturedPhotos[dropId];}
     if(typeof clientHealingStage!=='undefined'&&clientHealingStage[dropId]!=null){if(clientHealingStage[keepId]==null)clientHealingStage[keepId]=clientHealingStage[dropId];delete clientHealingStage[dropId];}
     if(typeof vcInvites!=='undefined'&&vcInvites[dropId]){if(!vcInvites[keepId])vcInvites[keepId]=vcInvites[dropId];delete vcInvites[dropId];}
     if(typeof vcSubmissions!=='undefined'&&vcSubmissions[dropId]){const d=Array.isArray(vcSubmissions[dropId])?vcSubmissions[dropId]:[vcSubmissions[dropId]];vcSubmissions[keepId]=(vcSubmissions[keepId]||[]).concat(d);delete vcSubmissions[dropId];}
@@ -2691,8 +2691,81 @@ function persistCapturedPhotos(){
   // Returns a Promise<boolean> in the IndexedDB case so callers can AWAIT the real write before
   // claiming a photo was saved — the old fire-and-forget returned true instantly, so a photo could
   // be reported "captured ✓" and then vanish on a refresh if the async write hadn't landed yet.
-  if(_idb.available()){try{return _idb.set('captured_photos',capturedPhotos).then(function(ok){return ok!==false;}).catch(function(){return false;});}catch(e){return Promise.resolve(false);}}
-  try{localStorage.setItem('sc_captured_photos',JSON.stringify(capturedPhotos));return true;}catch(e){return false;}
+  // After every local write we also (a) refresh the tiny cloud-synced photo INDEX and (b) back up
+  // any new photo's bytes to the server — IndexedDB is device-local, so without this a phone swap /
+  // cache clear would lose every before/after with no cloud copy to restore from.
+  function _after(){try{_persistPhotoIndex();}catch(e){}try{_backupPhotosToServer();}catch(e){}}
+  if(_idb.available()){try{return _idb.set('captured_photos',capturedPhotos).then(function(ok){_after();return ok!==false;}).catch(function(){_after();return false;});}catch(e){return Promise.resolve(false);}}
+  try{localStorage.setItem('sc_captured_photos',JSON.stringify(capturedPhotos));_after();return true;}catch(e){return false;}
+}
+// ── Photo cloud backup ── IndexedDB is device-local; these back photo BYTES to the server (by a
+// per-photo id, reusing the guide-file store) and keep a small metadata INDEX synced via localStorage,
+// so a new device / reinstall can restore every before/after instead of losing them.
+function _photoPid(p){
+  if(p&&!p.pid){try{p.pid='ph_'+Date.now().toString(36)+Math.random().toString(36).slice(2,9);}catch(e){p.pid='ph_'+Math.random().toString(36).slice(2,12);}}
+  return p&&p.pid;
+}
+function _buildPhotoIndex(){
+  const idx={};
+  try{Object.keys(capturedPhotos||{}).forEach(function(cid){
+    const arr=capturedPhotos[cid]||[];if(!arr.length)return;
+    idx[cid]=arr.map(function(p){return {pid:_photoPid(p),ts:p.ts||0,phase:p.phase||'',angle:p.angle||'',source:p.source||'',fileType:p.fileType||''};});
+  });}catch(e){}
+  return idx;
+}
+function _persistPhotoIndex(){try{const v=JSON.stringify(_buildPhotoIndex());localStorage.setItem('sc_photo_index',v);if(typeof _pushKeyNow==='function')_pushKeyNow('sc_photo_index',v);}catch(e){}}
+let _photoBackedUp=null;
+function _loadPhotoBackedUp(){if(_photoBackedUp)return _photoBackedUp;_photoBackedUp=new Set();try{const raw=localStorage.getItem('sc_photo_backed');if(raw)JSON.parse(raw).forEach(function(x){_photoBackedUp.add(x);});}catch(e){}return _photoBackedUp;}
+function _markPhotoBackedUp(pid){const s=_loadPhotoBackedUp();if(!s.has(pid)){s.add(pid);try{const v=JSON.stringify([...s].slice(-6000));localStorage.setItem('sc_photo_backed',v);if(typeof _pushKeyNow==='function')_pushKeyNow('sc_photo_backed',v);}catch(e){}}}
+let _photoBackupRunning=false;
+function _backupPhotosToServer(){
+  try{
+    if(typeof Cloud==='undefined'||!Cloud||!Cloud.token)return;
+    if(_photoBackupRunning)return;
+    const done=_loadPhotoBackedUp();const jobs=[];
+    Object.keys(capturedPhotos||{}).forEach(function(cid){
+      (capturedPhotos[cid]||[]).forEach(function(p){
+        if(!p||!p.url||!/^data:/i.test(String(p.url)))return;   // only inline (data:) bytes need uploading
+        const pid=_photoPid(p);if(done.has(pid))return;
+        let type='image/jpeg';try{type=String(p.url).slice(5,String(p.url).indexOf(';'))||type;}catch(e){}
+        jobs.push({pid:pid,data:p.url,type:type});
+      });
+    });
+    if(!jobs.length)return;
+    _photoBackupRunning=true;
+    // Upload a batch; each success is remembered so we never re-send. Remaining jobs go on the next
+    // persist pass, so a big backlog drains over time without blocking or hammering the server.
+    Promise.all(jobs.slice(0,6).map(function(j){
+      return _uploadGuideFileToServer(j.pid,{name:'',type:j.type,data:j.data}).then(function(r){if(r&&r.ok)_markPhotoBackedUp(j.pid);}).catch(function(){});
+    })).then(function(){_photoBackupRunning=false;if(jobs.length>6){try{setTimeout(_backupPhotosToServer,1500);}catch(e){_photoBackupRunning=false;}}}).catch(function(){_photoBackupRunning=false;});
+  }catch(e){_photoBackupRunning=false;}
+}
+async function _restorePhotosFromCloud(){
+  try{
+    if(typeof Cloud==='undefined'||!Cloud||!Cloud.token)return;
+    let idx={};try{const raw=localStorage.getItem('sc_photo_index');if(raw)idx=JSON.parse(raw)||{};}catch(e){}
+    let restored=0;
+    const cids=Object.keys(idx);
+    for(let ci=0;ci<cids.length;ci++){
+      const cid=cids[ci];
+      const have=new Set((capturedPhotos[cid]||[]).map(function(p){return (p&&p.pid)||'';}));
+      const metas=idx[cid]||[];
+      for(let mi=0;mi<metas.length;mi++){
+        const meta=metas[mi];if(!meta||!meta.pid||have.has(meta.pid))continue;
+        let f=null;try{f=await _getGuideFile(meta.pid);}catch(e){}
+        if(f&&f.data){
+          if(!capturedPhotos[cid])capturedPhotos[cid]=[];
+          capturedPhotos[cid].push({url:f.data,ts:meta.ts||0,phase:meta.phase||'',angle:meta.angle||'',source:meta.source||'',pid:meta.pid,fileType:meta.fileType||''});
+          _markPhotoBackedUp(meta.pid);restored++;
+        }
+      }
+    }
+    if(restored){
+      try{if(_idb.available())await _idb.set('captured_photos',capturedPhotos);}catch(e){}
+      try{const ae=document.activeElement;const typing=ae&&(ae.tagName==='INPUT'||ae.tagName==='TEXTAREA');
+        if(!typing&&typeof _navCur!=='undefined'&&_navCur&&typeof nav==='function')nav(_navCur.screen,_navCur.data);}catch(e){}
+    }
+  }catch(e){}
 }
 let _cpMigrateLegacy=false;
 function loadCapturedPhotos(){
@@ -2713,11 +2786,23 @@ async function _initCapturedPhotos(){
     // current screen so they show (skip if the user is typing, to avoid stealing focus).
     const v=await _idb.get('captured_photos');
     if(v&&typeof v==='object'&&Object.keys(v).length){
-      capturedPhotos=v;
+      // MERGE (don't wholesale-replace) so any photo captured into memory during this async read —
+      // e.g. a client check-in photo filed by syncClientEvents — isn't discarded by the load.
+      const cur=capturedPhotos;capturedPhotos=v;
+      try{Object.keys(cur||{}).forEach(function(cid){
+        if(!(cur[cid]&&cur[cid].length))return;
+        if(!capturedPhotos[cid])capturedPhotos[cid]=[];
+        const have=new Set(capturedPhotos[cid].map(function(p){return (p&&(p.pid||p.url))||'';}));
+        cur[cid].forEach(function(p){const k=(p&&(p.pid||p.url))||'';if(k&&!have.has(k)){capturedPhotos[cid].push(p);have.add(k);}});
+      });}catch(e){}
       try{const ae=document.activeElement;const typing=ae&&(ae.tagName==='INPUT'||ae.tagName==='TEXTAREA');
         if(!typing&&typeof _navCur!=='undefined'&&_navCur&&typeof nav==='function')nav(_navCur.screen,_navCur.data);}catch(e){}
     }
   }catch(e){}
+  // Restore any photos this device is missing from the cloud (a fresh install / new phone starts
+  // with an empty IndexedDB but the synced index knows what exists), and back up anything local that
+  // isn't on the server yet. Both run in the background so boot isn't blocked.
+  try{setTimeout(function(){try{_restorePhotosFromCloud();}catch(e){}try{_backupPhotosToServer();}catch(e){}},1200);}catch(e){}
 }
 function persistStaff(){try{localStorage.setItem('sc_staff',JSON.stringify(staff));}catch(e){}}
 function loadStaff(){try{const raw=localStorage.getItem('sc_staff');if(raw){const arr=JSON.parse(raw);if(Array.isArray(arr)&&arr.length){staff.length=0;arr.forEach(x=>staff.push(x));}}}catch(e){}}
@@ -14877,7 +14962,10 @@ async function syncClientEvents(){
       if(touchedCheckins&&typeof _pushKeyNow==='function'){flushes.push(_pushKeyNow('sc_checkins',localStorage.getItem('sc_checkins')||''));}
       if(touchedMsgs&&typeof _pushKeyNow==='function'){flushes.push(_pushKeyNow('sc_msgstore',localStorage.getItem('sc_msgstore')||''));flushes.push(_pushKeyNow('sc_threads',localStorage.getItem('sc_threads')||''));}
       if(touchedClients&&typeof _pushKeyNow==='function'){flushes.push(_pushKeyNow('sc_clients',localStorage.getItem('sc_clients')||''));}
-      if(touchedPhotos&&typeof _pushKeyNow==='function'){flushes.push(_pushKeyNow('sc_captured_photos',localStorage.getItem('sc_captured_photos')||''));}
+      // Photos live in IndexedDB (device-local); backup to the server happens via _backupPhotosToServer
+      // (per-photo, called from persistCapturedPhotos). Do NOT push the sc_captured_photos KV here — it's
+      // empty on IDB devices and would overwrite any real server copy with '' (silent photo wipe).
+      if(touchedPhotos){try{if(typeof _backupPhotosToServer==='function')_backupPhotosToServer();}catch(e){}}
       if(touchedVc&&typeof _pushKeyNow==='function'){try{if(typeof persistVcState==='function')persistVcState();}catch(e){}flushes.push(_pushKeyNow('sc_pro_vc_subs',localStorage.getItem('sc_pro_vc_subs')||''));flushes.push(_pushKeyNow('sc_pro_vc_invites',localStorage.getItem('sc_pro_vc_invites')||''));}
       await Promise.all(flushes.map(p=>p&&p.catch?p.catch(()=>{}):p));
     }catch(e){}
