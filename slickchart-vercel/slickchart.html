@@ -2276,7 +2276,14 @@ function applyProfessionConfig(){
   // this was the "reconnecting Square reset a lot / still shows sample data" loss. Same guard shape as
   // protocols/courses/service-menu. When custom, we restore the real set instead of resetting.
   let _savedAffCustom=false;
-  try{const raw=localStorage.getItem('sc_affiliate_links');if(raw){const a=JSON.parse(raw);if(Array.isArray(a))_savedAffCustom=a.some(x=>x&&(x.custom||x.source==='square'||x.squareId||String(x.id||'').indexOf('sq_')===0));}}catch(e){}
+  // An explicit "the provider touched their product list" flag — set on ANY add/edit/delete of a
+  // product. This is what makes a provider who merely added one real product, or deleted the demo
+  // ones, count as customized, so boot restores their saved shop instead of reseeding demo products
+  // over it (the "add a product, it disappears on reload" bug).
+  try{if(localStorage.getItem('sc_affiliate_custom')==='1')_savedAffCustom=true;}catch(e){}
+  try{if(!_savedAffCustom){const raw=localStorage.getItem('sc_affiliate_links');if(raw){const a=JSON.parse(raw);if(Array.isArray(a))_savedAffCustom=a.some(x=>x&&(x.custom||x.source==='square'||x.squareId||String(x.id||'').indexOf('sq_')===0));}}}catch(e){}
+  // Deleting all the demo products leaves an empty saved list — still a customization we must honor.
+  try{if(!_savedAffCustom){const raw=localStorage.getItem('sc_affiliate_links');if(raw){const a=JSON.parse(raw);if(Array.isArray(a)&&(typeof _hiddenSquareIds!=='undefined')&&Object.keys(_hiddenSquareIds||{}).length)_savedAffCustom=true;}}}catch(e){}
   try{if(!_savedAffCustom){const w=localStorage.getItem('sc_workspace');if(w){const o=JSON.parse(w);if(o&&Array.isArray(o.customProducts)&&o.customProducts.length)_savedAffCustom=true;}}}catch(e){}
   try{if(!_savedAffCustom){const sc=localStorage.getItem('sc_square_catalog');if(sc){const o=JSON.parse(sc);if(o&&Array.isArray(o.retail)&&o.retail.length)_savedAffCustom=true;}}}catch(e){}
   if(_savedAffCustom){
@@ -2699,7 +2706,7 @@ function persistSessionSummaries(){const v=JSON.stringify(sessionSummaries);try{
 function loadSessionSummaries(){try{const raw=localStorage.getItem('sc_session_summaries');if(raw){const v=JSON.parse(raw);if(v&&typeof v==='object')sessionSummaries=v;}}catch(e){}}
 // Provider's chosen note format (default: free form). Persisted so it sticks across reloads
 // and syncs across devices, and so applyProfessionConfig doesn't reset it every boot.
-function saveNoteFmt(){try{localStorage.setItem('sc_note_fmt',String(activeNoteTemplate||'freeform'));}catch(e){}}
+function saveNoteFmt(){try{const v=String(activeNoteTemplate||'freeform');localStorage.setItem('sc_note_fmt',v);if(typeof _pushKeyNow==='function')_pushKeyNow('sc_note_fmt',v);}catch(e){}}
 function loadNoteFmt(){try{const v=localStorage.getItem('sc_note_fmt');if(v&&noteTemplates[v])activeNoteTemplate=v;}catch(e){}}
 // Minimal IndexedDB key->value store, used for large base64 photo data that would otherwise blow
 // the ~5MB localStorage quota. Promise-based and degrades gracefully (a failed op resolves to
@@ -2850,7 +2857,7 @@ function persistStaff(){try{(function(_v){localStorage.setItem('sc_staff',_v);if
 function loadStaff(){try{const raw=localStorage.getItem('sc_staff');if(raw){const arr=JSON.parse(raw);if(Array.isArray(arr)&&arr.length){staff.length=0;arr.forEach(x=>staff.push(x));}}}catch(e){}}
 function persistAutos(){try{(function(_v){localStorage.setItem('sc_autos',_v);if(typeof _pushKeyNow==='function')_pushKeyNow('sc_autos',_v);return _v;})(JSON.stringify(autos));}catch(e){}}
 function loadAutos(){try{const raw=localStorage.getItem('sc_autos');if(raw){const arr=JSON.parse(raw);if(Array.isArray(arr))autos=arr;}}catch(e){}}
-function persistNotifSettings(){try{localStorage.setItem('sc_notif_settings',JSON.stringify(notifSettings));}catch(e){}}
+function persistNotifSettings(){try{const v=JSON.stringify(notifSettings);localStorage.setItem('sc_notif_settings',v);if(typeof _pushKeyNow==='function')_pushKeyNow('sc_notif_settings',v);}catch(e){}}
 function loadNotifSettings(){try{const raw=localStorage.getItem('sc_notif_settings');if(raw){const v=JSON.parse(raw);if(v&&typeof v==='object')notifSettings=v;}}catch(e){}}
 function persistCheckins(){try{localStorage.setItem('sc_checkins',JSON.stringify(checkins));}catch(e){}}
 // Push the check-in log to the server RIGHT NOW (not on the 700ms debounce), so a "cleared" or
@@ -2942,6 +2949,9 @@ function loadProtocols(){try{const raw=localStorage.getItem('sc_protocols');if(r
 function persistShopBundles(){try{(function(_v){localStorage.setItem('sc_shop_bundles',_v);if(typeof _pushKeyNow==='function')_pushKeyNow('sc_shop_bundles',_v);return _v;})(JSON.stringify(shopBundles));}catch(e){}}
 function loadShopBundles(){try{const raw=localStorage.getItem('sc_shop_bundles');if(raw){const arr=JSON.parse(raw);if(Array.isArray(arr))shopBundles=arr;}}catch(e){}}
 function persistAffiliateLinks(){try{(function(_v){localStorage.setItem('sc_affiliate_links',_v);if(typeof _pushKeyNow==='function')_pushKeyNow('sc_affiliate_links',_v);return _v;})(JSON.stringify(affiliateLinks));}catch(e){}try{_syncShopCatalog();}catch(e){}}
+// Mark the product list as provider-customized (immediate push) so boot never reseeds demo products
+// over their real shop. Set on every add/edit/delete of a product.
+function _markAffiliateCustom(){try{localStorage.setItem('sc_affiliate_custom','1');if(typeof _pushKeyNow==='function')_pushKeyNow('sc_affiliate_custom','1');}catch(e){}}
 // The client-facing "Shop all" catalog: every active product, stripped of private fields
 // (earnings, clicks, commission). Synced to a provider-level KV the client reads (api/client-data
 // → sc_shop_catalog), so the client's Shop can list the full catalog without bloating each client's
@@ -17491,6 +17501,7 @@ function deleteAffiliate(ei){
     // If it's a Square-synced product, remember the deletion so the next catalog sync doesn't
     // resurrect it (services/gift-cards you don't want to retail stay gone).
     if(_a&&(_a.source==='square'||String(_a.id||'').indexOf('sq_')===0)){try{_hiddenSquareIds[_a.id]=Date.now();_saveHiddenSquare();}catch(e){}}
+    try{_markAffiliateCustom();}catch(e){}   // deleting even a demo product is a customization — don't reseed it back
     affiliateLinks.splice(ei,1);
     persistWorkspace();
     try{if(typeof persistAffiliateLinks==='function')persistAffiliateLinks();}catch(e){}   // persist the removal + refresh the client shop catalog
@@ -17516,9 +17527,11 @@ function saveAffiliate(ei){
     // overwrites their exact product URL with an auto-built one.
     Object.assign(affiliateLinks[ei],{name,brand,icon,url,site,amazon,siteCode,urlCode,amazonCode,inOffice,commission,siteAuto:false});
   }else{
-    affiliateLinks.push({id:'a'+Date.now(),name,brand,icon,url,site,amazon,siteCode,urlCode,amazonCode,inOffice,clicks:0,earnings:0,commission,active:true});
+    affiliateLinks.push({id:'a'+Date.now(),name,brand,icon,url,site,amazon,siteCode,urlCode,amazonCode,inOffice,clicks:0,earnings:0,commission,active:true,custom:true});
   }
+  try{_markAffiliateCustom();}catch(e){}
   persistWorkspace();
+  try{if(typeof persistAffiliateLinks==='function')persistAffiliateLinks();}catch(e){}   // persist the add/edit to sc_affiliate_links + refresh client shop
   activeShopTab='affiliates';
   nav('shop');
 }

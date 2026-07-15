@@ -1221,6 +1221,7 @@ function _markCheckinDone(prov){
   prov.checkinDone=true;
   _ciDoneMap[prov.id]=prov.nextDate||'';
   try{localStorage.setItem('sc_checkin_done',JSON.stringify(_ciDoneMap));}catch(e){}
+  try{if(typeof _ciClearDraft==='function')_ciClearDraft();}catch(e){}   // check-in submitted — drop the resume draft
   _syncClientPrefsToServer();
 }
 // Re-apply saved check-in completion onto the freshly-rebuilt provider objects. Only
@@ -1264,7 +1265,20 @@ function _collectClientPrefs(){
   let welcomeDismissed=[];try{welcomeDismissed=JSON.parse(localStorage.getItem('sc_welcome_dismissed')||'[]');}catch(e){}
   const installDismissed=(function(){try{return localStorage.getItem('sc_install_dismissed')==='1';}catch(e){return false;}})();
   let saved=[];try{saved=JSON.parse(localStorage.getItem('sc_client_saved')||'[]');}catch(e){}
-  return {notif:loadNotifPrefs(),eng:_eng,welcomeDismissed,installDismissed,checkinDone:_ciDoneMap,formsDone:_formsDoneMap,reminders:_reminderContext(),saved};
+  // Everything below was localStorage-only and silently reverted on a fresh device — now synced so a
+  // client's own customizations (hidden summaries, deleted/cleared guides, course progress, a corrected
+  // phone/avatar, dismissed banners) follow them to any device.
+  const _j=(k,d)=>{try{const v=localStorage.getItem(k);return v==null?d:JSON.parse(v);}catch(e){return d;}};
+  const _s=(k)=>{try{return localStorage.getItem(k)||'';}catch(e){return '';}};
+  return {notif:loadNotifPrefs(),eng:_eng,welcomeDismissed,installDismissed,checkinDone:_ciDoneMap,formsDone:_formsDoneMap,reminders:_reminderContext(),saved,
+    hiddenSummaries:_j('sc_client_hidden_summaries',{}),
+    a2hsDismissed:(_s('sc_a2hs_dismissed')==='1'),
+    courseProg:_j('sc_course_prog_jess',{}),
+    clearedRes:_j('sc_home_cleared_res',[]),
+    deletedRes:_j('sc_deleted_res',[]),
+    contact:_j('sc_client_contact',null),
+    avatar:_s('sc_client_avatar'),
+    vcSubmitted:_s('sc_vc_submitted')};
 }
 // Context the reminder cron needs, computed here where the browser knows the client's real
 // timezone and the appointment time is already parsed (apptISO). apptAt is an absolute epoch
@@ -1314,6 +1328,18 @@ async function _loadClientPrefsFromServer(){
       try{localStorage.setItem('sc_forms_done',JSON.stringify(_formsDoneMap));}catch(e){}
       _applyFormsDoneFromMap();
     }
+    // Restore the newly-synced customization keys (see _collectClientPrefs).
+    if(p.hiddenSummaries&&typeof p.hiddenSummaries==='object')try{localStorage.setItem('sc_client_hidden_summaries',JSON.stringify(p.hiddenSummaries));}catch(e){}
+    if(typeof p.a2hsDismissed==='boolean')try{localStorage.setItem('sc_a2hs_dismissed',p.a2hsDismissed?'1':'0');}catch(e){}
+    if(p.courseProg&&typeof p.courseProg==='object')try{localStorage.setItem('sc_course_prog_jess',JSON.stringify(p.courseProg));}catch(e){}
+    if(Array.isArray(p.clearedRes))try{localStorage.setItem('sc_home_cleared_res',JSON.stringify(p.clearedRes));}catch(e){}
+    if(Array.isArray(p.deletedRes))try{localStorage.setItem('sc_deleted_res',JSON.stringify(p.deletedRes));}catch(e){}
+    if(p.vcSubmitted)try{localStorage.setItem('sc_vc_submitted',String(p.vcSubmitted));}catch(e){}
+    // Contact + avatar: the client's own correction. Restore it AND apply to the live view so a fresh
+    // device shows their edit immediately, not the provider's older on-file value.
+    if(p.contact&&typeof p.contact==='object'){try{localStorage.setItem('sc_client_contact',JSON.stringify(p.contact));}catch(e){}
+      try{if(p.contact.email)client.email=p.contact.email;if(p.contact.phone)client.phone=p.contact.phone;}catch(e){}}
+    if(p.avatar){try{localStorage.setItem('sc_client_avatar',String(p.avatar));}catch(e){}try{client.avatar=p.avatar;}catch(e){}}
   }catch(e){ console.error('[client prefs] load failed:',e&&e.message); /* fall back to whatever's cached locally */ }
 }
 function _engStreakLive(){return _eng.lastDoneDay===_engToday()||_eng.lastDoneDay===_engYesterday();}
@@ -1514,7 +1540,7 @@ function navBack(){
 function _resSetLoad(k){try{return new Set(JSON.parse(localStorage.getItem(k)||'[]'));}catch(e){return new Set();}}
 let _homeClearedRes=_resSetLoad('sc_home_cleared_res');
 let _deletedRes=_resSetLoad('sc_deleted_res');
-function _resSetSave(k,set){try{localStorage.setItem(k,JSON.stringify(Array.from(set)));}catch(e){}}
+function _resSetSave(k,set){try{localStorage.setItem(k,JSON.stringify(Array.from(set)));}catch(e){}try{if(typeof _syncClientPrefsToServer==='function')_syncClientPrefsToServer();}catch(e){}}
 function _resGK(id){return 'g:'+id;}
 function _resCK(id){return 'c:'+id;}
 function _homeGuides(){return (activeProvider().pendingGuides||[]).filter(pg=>pg&&!_deletedRes.has(_resGK(pg.guideId))&&!_homeClearedRes.has(_resGK(pg.guideId)));}
@@ -1618,7 +1644,7 @@ let _viewCourseId='',_viewLessonId='';
 function _findCourse(id){return (activeProvider().pendingCourses||[]).find(c=>c.id===id)||null;}
 function _courseProgKey(){const p=activeProvider();return 'sc_course_prog_'+(p&&p.id||'jess');}
 function _courseProg(){try{return JSON.parse(localStorage.getItem(_courseProgKey())||'{}')||{};}catch(e){return {};}}
-function _courseSaveProg(o){try{localStorage.setItem(_courseProgKey(),JSON.stringify(o));}catch(e){}}
+function _courseSaveProg(o){try{localStorage.setItem(_courseProgKey(),JSON.stringify(o));}catch(e){}try{if(typeof _syncClientPrefsToServer==='function')_syncClientPrefsToServer();}catch(e){}}
 function _lessonDone(courseId,lessonId){const o=_courseProg();return !!(o[courseId]&&o[courseId][lessonId]);}
 function _courseDoneCount(co){const o=_courseProg();const m=o[co.id]||{};return (co.lessons||[]).filter(l=>m[l.id]).length;}
 function _toggleLessonDone(courseId,lessonId){const o=_courseProg();if(!o[courseId])o[courseId]={};o[courseId][lessonId]=!o[courseId][lessonId];_courseSaveProg(o);}
@@ -2176,6 +2202,7 @@ function deleteSummary(key,ev){
   const pid=String(activeProvider().id||activeProvider().providerId||'');
   const h=_hiddenSummarySet();h[pid+'|'+String(key)]=1;
   try{localStorage.setItem('sc_client_hidden_summaries',JSON.stringify(h));}catch(e){}
+  try{if(typeof _syncClientPrefsToServer==='function')_syncClientPrefsToServer();}catch(e){}
   if(_summaryIdx>=_visibleSummaries().length)_summaryIdx=0;
   renderJourney();
 }
@@ -2946,12 +2973,21 @@ function _submitFillForm(){
   }
   _finishFormSent();
 }
+// Draft persistence for the pre-visit check-in. checkinAnswers (answers AND uploaded photos) used to
+// live only in memory on a rebuilt-every-load provider object, so a reload / backgrounded PWA mid
+// check-in lost everything the client had typed and every photo they'd taken. Persist it locally so
+// they can resume. Cleared on successful submit.
+function _ciDraftKey(){try{const p=activeProvider();return 'sc_checkin_draft_'+((p&&p.id)||'jess');}catch(e){return 'sc_checkin_draft';}}
+function _ciSaveDraft(){try{if(checkinAnswers&&Object.keys(checkinAnswers).length)localStorage.setItem(_ciDraftKey(),JSON.stringify(checkinAnswers));}catch(e){/* quota (large photos) — draft best-effort */}}
+function _ciClearDraft(){try{localStorage.removeItem(_ciDraftKey());}catch(e){}}
 function renderCheckin(){
   setNav('home');
   document.getElementById('tt').textContent='Pre-visit Check-in';
   const p=activeProvider();
   if(!p.checkinAnswers)p.checkinAnswers={};
   checkinAnswers=p.checkinAnswers;
+  // Resume an in-progress check-in that was interrupted before submit.
+  try{const raw=localStorage.getItem(_ciDraftKey());if(raw){const d=JSON.parse(raw);if(d&&typeof d==='object')Object.keys(d).forEach(k=>{if(checkinAnswers[k]==null)checkinAnswers[k]=d[k];});}}catch(e){}
   checkinStep=0;
   _ciLastStep=-1;
   _renderCheckinStep();
@@ -2962,6 +2998,7 @@ function renderCheckin(){
 // they answer questions, which would otherwise yank the page up on every tap.
 let _ciLastStep=-1;
 function _renderCheckinStep(){
+  try{_ciSaveDraft();}catch(e){}   // persist answers/photos on every step + choice so nothing is lost mid-check-in
   const steps=_ciSteps();
   if(!steps.length){nav('home');return;}
   if(checkinStep>steps.length-1)checkinStep=steps.length-1;
@@ -3126,6 +3163,7 @@ function _pickClientAvatar(){
 function _setClientAvatar(src){
   client.avatar=src;
   try{localStorage.setItem('sc_client_avatar',src);}catch(e){}
+  try{if(typeof _syncClientPrefsToServer==='function')_syncClientPrefsToServer();}catch(e){}   // survive a fresh device
   if(client._real){
     _clientSubmit('contact',{avatar:src}).then(function(res){
       if(typeof showToast==='function')showToast(res&&res.ok?'Photo updated ✓':(res&&res.duplicate?'':'Saved here, couldn’t reach your provider'));
@@ -4309,7 +4347,7 @@ function saveField(key){
   document.getElementById('edit-field-modal')?.remove();
   showToast('Profile updated');
 }
-function _saveClientContact(){try{localStorage.setItem('sc_client_contact',JSON.stringify({email:client.email||'',phone:client.phone||''}));}catch(e){}}
+function _saveClientContact(){try{localStorage.setItem('sc_client_contact',JSON.stringify({email:client.email||'',phone:client.phone||''}));}catch(e){}try{if(typeof _syncClientPrefsToServer==='function')_syncClientPrefsToServer();}catch(e){}}
 function _loadClientContact(prof){
   var pend;try{pend=JSON.parse(localStorage.getItem('sc_client_contact')||'null');}catch(e){pend=null;}
   if(!pend)return;
