@@ -8102,10 +8102,8 @@ function sendFormToClient(fid){
   ov.innerHTML=`<div style="background:#161616;border:1px solid #2a2a2a;width:100%;border-radius:16px;padding:16px;max-height:82%;display:flex;flex-direction:column;">
     <div style="display:flex;align-items:center;gap:10px;margin-bottom:10px;"><div style="width:38px;height:38px;border-radius:9px;background:var(--accent-tint);display:flex;align-items:center;justify-content:center;flex-shrink:0;"><i class="ti ti-file-text" style="font-size:18px;color:var(--accent);"></i></div><div style="flex:1;min-width:0;"><div style="font-size:15px;font-weight:500;color:#f0f0f0;">Send ${tmpl.name}</div><div style="font-size:12px;color:#999;">Choose how the client completes it</div></div><button onclick="closeSendProd()" aria-label="Close" style="border:none;background:none;font-size:20px;color:#888;cursor:pointer;line-height:1;">✕</button></div>
     ${guides.length?`<div style="font-size:11px;color:#999;background:#1a1a1a;border:1px solid #2a2a2a;border-radius:9px;padding:8px 11px;margin-bottom:10px;line-height:1.5;flex-shrink:0;">Also sends ${guides.length} guide${guides.length>1?'s':''}: ${guides.map(g=>g.icon+' '+g.title).join(' · ')}</div>`:''}
-    <div style="display:flex;gap:8px;margin-bottom:12px;flex-shrink:0;">
-      ${_formHasSignature(fid)?`<button onclick="closeSendProd();nav('sign-form',{fid:'${fid}'})" style="flex:1;display:flex;flex-direction:column;align-items:center;gap:5px;padding:12px 8px;border:1px solid var(--accent);background:var(--accent-a08);border-radius:11px;cursor:pointer;font-family:inherit;"><i class="ti ti-device-tablet" style="font-size:19px;color:var(--accent);"></i><span style="font-size:11.5px;font-weight:600;color:var(--accent);text-align:center;">Sign on this device</span></button>`:''}
-    </div>
-    <div style="font-size:11px;font-weight:600;color:#9a9a9a;text-transform:uppercase;letter-spacing:.06em;margin-bottom:8px;flex-shrink:0;">Send to a client's app</div>
+    ${_formHasSignature(fid)?`<div style="font-size:11px;color:#999;background:#1a1a1a;border:1px solid #2a2a2a;border-radius:9px;padding:8px 11px;margin-bottom:12px;line-height:1.5;flex-shrink:0;display:flex;align-items:center;gap:7px;"><i class="ti ti-device-tablet" style="font-size:15px;color:var(--accent);flex-shrink:0;"></i><span>Signing in person? Tap the <b style="color:var(--accent);">tablet icon</b> next to a client to hand them the device — it files to their chart.</span></div>`:''}
+    <div style="font-size:11px;font-weight:600;color:#9a9a9a;text-transform:uppercase;letter-spacing:.06em;margin-bottom:8px;flex-shrink:0;">Choose a client</div>
     <div style="position:relative;margin-bottom:10px;flex-shrink:0;"><i class="ti ti-search" aria-hidden="true" style="position:absolute;left:11px;top:50%;transform:translateY(-50%);font-size:14px;color:#9a9a9a;"></i><input id="sfc-q" oninput="_renderSendFormClients('${fid}',this.value)" placeholder="Search clients…" style="width:100%;background:#111;border:1px solid #2a2a2a;border-radius:9px;padding:8px 11px 8px 32px;font-size:13px;color:#e0e0e0;font-family:inherit;box-sizing:border-box;outline:none;"></div>
     <div id="sfc-list" style="overflow:auto;">${_sendFormClientRows(fid,'')}</div>
   </div>`;
@@ -8115,11 +8113,15 @@ function sendFormToClient(fid){
 function _sendFormClientRows(fid,q){
   const matches=_matchClients(q);
   if(!matches.length)return `<div style="padding:20px;text-align:center;color:#888;font-size:12px;">No clients match "${(q||'').replace(/</g,'&lt;')}"</div>`;
+  const canSign=(typeof _formHasSignature==='function')?_formHasSignature(fid):false;
   return matches.map(cid=>{const c=CL[cid];return`<div style="display:flex;align-items:center;gap:8px;margin-bottom:8px;">
     <button onclick="confirmSendForm('${fid}','${cid}')" style="display:flex;flex:1;min-width:0;align-items:center;gap:10px;padding:11px 12px;border:1px solid #2a2a2a;background:#1a1a1a;border-radius:10px;cursor:pointer;text-align:left;">
       <div style="width:36px;height:36px;border-radius:9px;background:${c.bg};display:flex;align-items:center;justify-content:center;font-size:13px;font-weight:500;color:${c.tc};flex-shrink:0;">${c.initials}</div>
       <div style="flex:1;min-width:0;"><div style="font-size:13px;font-weight:500;color:#e0e0e0;overflow:hidden;text-overflow:ellipsis;white-space:nowrap;">${_fileEsc(c.name)}</div><div style="font-size:10.5px;color:#888;">To their app</div></div>
     </button>
+    ${canSign?`<button onclick="closeSendProd();renderSignOnDevice('${fid}','${cid}')" aria-label="Sign in person for ${_fileEsc(c.name)}" title="Sign on this device" style="width:42px;height:42px;flex-shrink:0;border:1px solid var(--accent);background:var(--accent-a08);border-radius:10px;display:flex;align-items:center;justify-content:center;cursor:pointer;color:var(--accent);">
+      <i class="ti ti-device-tablet" style="font-size:17px;"></i>
+    </button>`:''}
     <button onclick="closeSendProd();shareFormLink('${fid}','${cid}')" aria-label="Send a link to ${_fileEsc(c.name)}" title="Send a link" style="width:42px;height:42px;flex-shrink:0;border:1px solid #2a2a2a;background:#1a1a1a;border-radius:10px;display:flex;align-items:center;justify-content:center;cursor:pointer;color:var(--accent);">
       <i class="ti ti-link" style="font-size:17px;"></i>
     </button>
@@ -9343,6 +9345,10 @@ function clearSignPad(){const c=document.getElementById('sign-pad');if(c&&c.getC
 function submitSignOnDevice(fid,cid){
   if(!_signPadInk){proToast('Please sign in the box to complete');return;}
   const tmpl=formTmpls[fid]||{name:'Form'};
+  // Never claim success and navigate away when there's no client to file this under — that
+  // silently discarded a completed, signed in-person form. Keep the provider on the signing
+  // screen (signature intact) and tell them to sign from the client's chart instead.
+  if(!(cid&&CL[cid])){proToast('This isn’t attached to a client yet — open the client’s chart and tap “Sign here” so it files to them.',0);return;}
   if(cid&&CL[cid]){
     CL[cid].signedForms=CL[cid].signedForms||[];if(CL[cid].signedForms.indexOf(tmpl.name)<0)CL[cid].signedForms.push(tmpl.name);
     // capture the answers entered on device (same source the vitals mapping uses)
