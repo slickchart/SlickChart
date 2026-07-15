@@ -2,7 +2,7 @@
 // the server (POST), and read them back with link tokens & invite status (GET).
 import { verifyToken } from '../lib/auth.js';
 import { dbEnabled } from '../lib/db.js';
-import { ensureClientTables, upsertClient, listClients, listEvents } from '../lib/clients.js';
+import { ensureClientTables, upsertClient, listClients, listEvents, markClientDeleted } from '../lib/clients.js';
 
 function providerId(req) {
   const s = process.env.SESSION_SECRET || '';
@@ -26,6 +26,10 @@ export default async function handler(req, res) {
     }
     if (req.method === 'POST') {
       const body = req.body || {};
+      // Soft-delete any clients the provider removed/merged-away, so the server row is tombstoned
+      // and can't resurrect as a blank zombie on the next re-sync. Runs before the upsert.
+      const del = Array.isArray(body.deletedIds) ? body.deletedIds : [];
+      if (del.length) { try { await Promise.all(del.slice(0, 500).map(id => markClientDeleted(provider, String(id)))); } catch (e) { /* best-effort */ } }
       const list = Array.isArray(body.clients) ? body.clients : [];
       const out = await Promise.all(list.slice(0, 2000).map(c => upsertClient(provider, c)));
       res.status(200).json({ ok: true, saved: out.length, clients: out });

@@ -4718,7 +4718,13 @@ async function _fetchRealMessages(initial){
     if(!(j&&j.ok&&Array.isArray(j.messages)))return;
     const jess=client.providers.find(function(p){return p.id==='jess';})||client.providers[0];
     if(initial){
+      // Preserve any locally-unsent/failed messages the server never received, so the wholesale
+      // refresh doesn't wipe a message (and its "Tap to retry") the client hasn't managed to send.
+      const _unsent=(jess.thread||[]).filter(function(m){return m&&m.from==='me'&&(m.status==='failed'||m.status==='sending');});
       jess.thread=j.messages.map(function(m){return {from:m.from==='provider'?'provider':'me',text:m.text,imgs:Array.isArray(m.photos)?m.photos:[],time:_fmtMsgTime(m.ts)};});
+      // Drop a preserved copy only if that same text already came back from the server (it did send).
+      const _serverMine=new Set(jess.thread.filter(function(m){return m.from==='me';}).map(function(m){return String(m.text||'').trim();}));
+      _unsent.forEach(function(m){const k=String(m.text||'').trim();if(!(k&&_serverMine.has(k)))jess.thread.push(m);});
       _markMsgsSeen(j.messages.map(function(m){return m.id;}));
       if(client.activeProviderId===jess.id)messages=jess.thread;
       try{_saveClientMessages();}catch(e){}

@@ -1390,7 +1390,7 @@ function _cleanupClientData(id){
   try{if(typeof saveProviderNoteDrafts==='function')saveProviderNoteDrafts();}catch(e){}
   try{if(typeof persistWorkspace==='function')persistWorkspace();}catch(e){}
 }
-function deleteClient(id){if(!CL[id])return;const nm=(CL[id].name||'this client');if(!confirm('Remove '+nm+' from SlickChart?\n\nThis removes their chart from this app only. It does NOT affect their record in Square.'))return;_cleanupClientData(id);delete CL[id];saveClients();if(typeof proToast==='function')proToast(nm+' removed');nav('clients');}
+function deleteClient(id){if(!CL[id])return;const nm=(CL[id].name||'this client');if(!confirm('Remove '+nm+' from SlickChart?\n\nThis removes their chart from this app only. It does NOT affect their record in Square.'))return;_cleanupClientData(id);delete CL[id];try{_markClientDeleted(id);}catch(e){}saveClients();if(typeof proToast==='function')proToast(nm+' removed');nav('clients');}
 
 // ══ Merge duplicate clients ══════════════════════════════════════════════════
 // Square lets you merge duplicate customers in its dashboard; this brings the same
@@ -1404,6 +1404,14 @@ const _MERGE_SKIP_IDS={maya:1,sophie:1,priya:1};
 let mergedSquareIds={};
 function loadMergedIds(){try{const raw=localStorage.getItem('sc_merged_ids');if(raw){const o=JSON.parse(raw);if(o&&typeof o==='object')mergedSquareIds=o;}}catch(e){}}
 function saveMergedIds(){try{(function(_v){localStorage.setItem('sc_merged_ids',_v);if(typeof _pushKeyNow==='function')_pushKeyNow('sc_merged_ids',_v);return _v;})(JSON.stringify(mergedSquareIds));}catch(e){}}
+// Clients the provider removed or merged away. Synced set (so all devices agree) that BLOCKS the
+// cloud/Square re-hydration from re-adding them as blank zombies — the "deleted client comes back
+// (with an empty chart)" bug. Paired with a server-side soft-delete so the row is truly gone.
+let _deletedClientIds={};
+function loadDeletedClients(){try{const raw=localStorage.getItem('sc_deleted_clients');if(raw){const o=JSON.parse(raw);if(o&&typeof o==='object')_deletedClientIds=o;}}catch(e){}}
+function _saveDeletedClients(){try{const v=JSON.stringify(_deletedClientIds);localStorage.setItem('sc_deleted_clients',v);if(typeof _pushKeyNow==='function')_pushKeyNow('sc_deleted_clients',v);}catch(e){}}
+function _serverDeleteClients(ids){try{const tok=(typeof Cloud!=='undefined'&&Cloud&&Cloud.token)||'';if(!tok||!ids||!ids.length)return;fetch('/api/clients',{method:'POST',headers:{'Content-Type':'application/json','Authorization':'Bearer '+tok},body:JSON.stringify({clients:[],deletedIds:ids})}).catch(function(){});}catch(e){}}
+function _markClientDeleted(id){if(!id)return;_deletedClientIds[id]=Date.now();_saveDeletedClients();_serverDeleteClients([id]);}
 // The "possible duplicates" banner can be dismissed. We remember the exact SET of duplicates that
 // was dismissed (a stable signature of the grouped ids), so the banner stays hidden for those pairs
 // but reappears on its own if a genuinely NEW duplicate shows up later — dismissing isn't "never
@@ -1493,6 +1501,7 @@ function _mergeClients(keepId,dropId){
   _mergeSideStores(keepId,dropId);
   // Don't let the background Square sync re-create a merged-away Square customer.
   if(_isSquareClient(dropId)){const local=drop.squareId?_sqLocalId(drop.squareId):dropId;mergedSquareIds[local]=1;if(String(dropId).indexOf('sq_')===0)mergedSquareIds[dropId]=1;saveMergedIds();}
+  try{_markClientDeleted(dropId);}catch(e){}
   delete CL[dropId];
   saveClients();
 }
@@ -1845,7 +1854,7 @@ function _reloadAll(){try{
   try{if(typeof _migrateGuideFiles==='function')_migrateGuideFiles();}catch(e){}
   if(typeof loadAi==='function')loadAi();
   if(typeof loadForms==='function')loadForms();
-  loadBizInfo();_syncProviderAvatar();_syncHeaderLogo();loadClients();loadMergedIds();loadMessages();loadInv();loadVendors();_loadPersistenceSweep();try{_initCapturedPhotos();}catch(e){}_loadHomeDismissed();_loadAttnSeen();loadProviderNoteDrafts();if(typeof loadSessionSummaries==='function')loadSessionSummaries();if(!_sampleHidden()){_seedMayaOnce();}else{_purgeSample();}_seedBirthdays();if(!_sampleHidden()&&typeof _demoCheckinSeed==='function')_demoCheckinSeed();
+  loadBizInfo();_syncProviderAvatar();_syncHeaderLogo();loadClients();loadMergedIds();loadDeletedClients();loadMessages();loadInv();loadVendors();_loadPersistenceSweep();try{_initCapturedPhotos();}catch(e){}_loadHomeDismissed();_loadAttnSeen();loadProviderNoteDrafts();if(typeof loadSessionSummaries==='function')loadSessionSummaries();if(!_sampleHidden()){_seedMayaOnce();}else{_purgeSample();}_seedBirthdays();if(!_sampleHidden()&&typeof _demoCheckinSeed==='function')_demoCheckinSeed();
   if(typeof loadWorkspace==='function')loadWorkspace();
   if(typeof loadSquareCatalog==='function'){loadSquareCatalog();_mergeSquareRetail();}
   if(typeof loadCheckinCfg==='function')loadCheckinCfg();
@@ -10221,7 +10230,13 @@ function sendMsg(id,imgArg){
   // Any real, invited client, send for real via the server so it reaches their actual device.
   // Any real, invited client, send for real via the server (text and photos both
   // reach their device now) so it lands wherever they are.
-  else{try{_sendProviderMessageToClient(id,text,imgs);}catch(e){}}
+  else{
+    // If they haven't joined the app yet (no link token), the message can't be delivered — tell the
+    // provider instead of silently showing it as sent (it would never reach the client).
+    const _c=CL[id];
+    if(_c&&!_c._token){if(typeof proToast==='function')proToast((String(_c.name||'This client').split(' ')[0])+' hasn’t joined the app yet — invite them from their profile so your messages reach them.',0);}
+    try{_sendProviderMessageToClient(id,text,imgs);}catch(e){}
+  }
 }
 async function _sendProviderMessageToClient(id,text,photos,_retried,_idem){
   const c=CL[id];if(!c||!c._token)return; // not a real synced client yet, nothing to deliver
@@ -14362,6 +14377,7 @@ async function _autoSyncCustomers(opts){
       const id='sq_'+String(c.id||i).slice(0,10).toLowerCase().replace(/[^a-z0-9]/g,'');
       if(!id||CL[id])return;   // already have them, don't overwrite their chart
       if(typeof mergedSquareIds!=='undefined'&&mergedSquareIds[id])return;   // was merged into another chart, don't re-add
+      if(typeof _deletedClientIds!=='undefined'&&_deletedClientIds[id])return;   // provider removed them, don't resurrect
       CL[id]=_sqMakeClient(c);added++;
     });
     if(added){
@@ -14840,6 +14856,7 @@ async function syncClientEvents(){
       const _pal=[['#1e1633','#a891ec'],['#0a2019','#4ec49a'],['#0d1e33','#5ba3e8'],['#2a0f1a','#e87070'],['#2e1c10','var(--accent)']];
       j.clients.forEach(sc=>{
         if(!sc||!sc.id||CL[sc.id])return;
+        if((typeof _deletedClientIds!=='undefined'&&_deletedClientIds[sc.id])||(typeof mergedSquareIds!=='undefined'&&mergedSquareIds[sc.id]))return;   // removed/merged — don't resurrect
         const nm=sc.name||'New client';const col=_pal[Object.keys(CL).length%_pal.length];
         CL[sc.id]={name:nm,initials:((typeof _initials==='function'?_initials(nm):'')||'NC'),bg:col[0],tc:col[1],
           phone:sc.phone||'',email:sc.email||'',skin:'—',concerns:'—',allergies:'None noted',fitz:'—',

@@ -150,6 +150,17 @@ export async function deleteClientData(clientId) {
   return true;
 }
 
+// Provider removed a client from THEIR app (or merged a duplicate away): soft-delete the roster row
+// (scoped to this provider) so listClients no longer returns it and upsertClient won't resurrect it.
+// Lighter than deleteClientData — keeps the row's PII/events intact, just tombstones it so a cloud
+// re-sync can't re-add a blank zombie. This is what stops "a deleted client comes back".
+export async function markClientDeleted(providerId, id) {
+  const q = sql();
+  await q`UPDATE clients SET deleted_at=${Date.now()}
+    WHERE id=${String(id)} AND provider_id=${String(providerId)} AND deleted_at IS NULL`;
+  return true;
+}
+
 // For the reminder cron: every client's saved prefs (bounded to beta scale). Joins the client
 // row so the cron also has the provider_id (to send messages as the provider) and the aftercare
 // heal_started_at (to time the healing drip). Excludes deleted clients.
@@ -273,11 +284,14 @@ export async function listEvents(providerId) {
 
 // Full two-way message thread for one client (client-submitted + provider-sent),
 // oldest first — this is the real message history behind the client app's chat.
+// Take the NEWEST 500 (DESC + LIMIT) then reverse to chronological order, so a long thread keeps
+// showing recent messages instead of freezing on the oldest 500 and hiding everything newer.
 export async function listClientMessages(clientId, providerId) {
   const q = sql();
-  return await q`SELECT id, kind, payload, created_at FROM client_events
+  const rows = await q`SELECT id, kind, payload, created_at FROM client_events
     WHERE client_id=${clientId} AND provider_id=${providerId} AND kind IN ('message','provider_message')
-    ORDER BY created_at ASC LIMIT 500`;
+    ORDER BY created_at DESC LIMIT 500`;
+  return rows.reverse();
 }
 
 // A client's own settings (notification prefs, homecare check-off state, streaks,
