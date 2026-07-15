@@ -1540,28 +1540,42 @@ function _openMergeSheet(idsCsv){
   const ids=String(idsCsv).split(',').filter(id=>CL[id]);
   if(ids.length<2){proToast('Pick at least two clients to merge');return;}
   window._mergeGroupIds=ids;window._mergeKeep=ids[0];
-  const row=id=>{const c=CL[id]||{};return `<label style="display:flex;align-items:center;gap:10px;padding:10px 12px;border:1px solid #2a2a2a;background:#1a1a1a;border-radius:10px;margin-bottom:8px;cursor:pointer;">
-    <input type="radio" name="mergekeep" value="${id}" ${id===window._mergeKeep?'checked':''} onchange="window._mergeKeep=this.value;_updateMergePreview();" style="width:17px;height:17px;accent-color:var(--accent);flex-shrink:0;">
+  const row=id=>{const c=CL[id]||{};return `<div style="display:flex;align-items:center;gap:9px;padding:9px 11px;border:1px solid #2a2a2a;background:#1a1a1a;border-radius:10px;margin-bottom:8px;">
+    <input type="checkbox" class="merge-incl" value="${id}" checked onchange="_mergeSelChanged()" title="Include in the merge" style="width:18px;height:18px;accent-color:var(--accent);flex-shrink:0;cursor:pointer;">
     ${av(c,32)}
     <div style="flex:1;min-width:0;"><div style="font-size:13px;font-weight:500;color:#e0e0e0;">${_fileEsc(c.name)}</div><div style="font-size:11px;color:#888;overflow:hidden;text-overflow:ellipsis;white-space:nowrap;">${_fileEsc(_clientSubtitle(c))}</div></div>
     ${_isSquareClient(id)?`<span style="font-size:9px;font-weight:700;color:var(--accent);border:1px solid #3a2a10;background:#1a1308;border-radius:4px;padding:1px 5px;flex-shrink:0;">SQUARE</span>`:''}
-  </label>`;};
+    <label style="display:flex;align-items:center;gap:4px;font-size:10px;color:#9a9a9a;cursor:pointer;flex-shrink:0;white-space:nowrap;"><input type="radio" name="mergekeep" class="merge-keep" value="${id}" ${id===window._mergeKeep?'checked':''} onchange="window._mergeKeep=this.value;_updateMergePreview();" style="width:15px;height:15px;accent-color:var(--accent);cursor:pointer;">Keep</label>
+  </div>`;};
   const ov=document.createElement('div');ov.id='merge-sheet';
   ov.style.cssText='position:fixed;top:0;bottom:0;left:0;right:0;margin:0 auto;width:390px;max-width:100%;z-index:9999;background:rgba(0,0,0,.6);display:flex;align-items:center;justify-content:center;padding:24px 16px;box-sizing:border-box;';
   ov.onclick=e=>{if(e.target===ov)ov.remove();};
   ov.innerHTML=`<div style="background:#161616;border:1px solid #2a2a2a;width:100%;border-radius:16px;padding:16px;max-height:88%;display:flex;flex-direction:column;">
-    <div style="display:flex;align-items:center;justify-content:space-between;margin-bottom:4px;flex-shrink:0;"><div style="font-size:15px;font-weight:600;color:#f0f0f0;">Merge ${ids.length} clients</div><button onclick="this.closest('#merge-sheet').remove()" aria-label="Close" style="border:none;background:none;font-size:20px;color:#888;cursor:pointer;line-height:1;">✕</button></div>
-    <div style="font-size:12px;color:#999;margin-bottom:12px;flex-shrink:0;">Choose the record to keep. The others fold into it, no data is lost.</div>
+    <div style="display:flex;align-items:center;justify-content:space-between;margin-bottom:4px;flex-shrink:0;"><div style="font-size:15px;font-weight:600;color:#f0f0f0;">Merge clients</div><button onclick="this.closest('#merge-sheet').remove()" aria-label="Close" style="border:none;background:none;font-size:20px;color:#888;cursor:pointer;line-height:1;">✕</button></div>
+    <div style="font-size:12px;color:#999;margin-bottom:12px;flex-shrink:0;line-height:1.5;">Only the <b style="color:#ccc;">checked</b> records get combined — <b style="color:#ccc;">uncheck anyone who's a different person</b> (like a mom &amp; daughter who share a phone or email). Then pick which record to <b style="color:#ccc;">Keep</b>.</div>
     <div style="overflow:auto;">${ids.map(row).join('')}</div>
     <div id="merge-preview" style="font-size:12px;color:#8fbf9f;background:#0f2a1e;border:1px solid #1c4030;border-radius:9px;padding:9px 11px;margin:4px 0 12px;line-height:1.5;flex-shrink:0;"></div>
-    <button onclick="_doMerge()" class="btnp" style="border-radius:10px;flex-shrink:0;"><i class="ti ti-arrows-join"></i> Merge into one client</button>
+    <button id="merge-go" onclick="_doMerge()" class="btnp" style="border-radius:10px;flex-shrink:0;"><i class="ti ti-arrows-join"></i> Merge selected</button>
   </div>`;
   (document.querySelector('.shell')||document.body).appendChild(ov);
   _updateMergePreview();
 }
+// The ids currently checked (included) in the merge sheet.
+function _mergeSelectedIds(){try{const els=document.querySelectorAll('.merge-incl:checked');if(els.length)return Array.from(els).map(el=>el.value).filter(id=>CL[id]);}catch(e){}return (window._mergeGroupIds||[]).filter(id=>CL[id]);}
+// A checkbox changed: if the "Keep" record was just unchecked, move Keep to the first still-checked one.
+function _mergeSelChanged(){
+  const sel=_mergeSelectedIds();
+  if(sel.length&&sel.indexOf(window._mergeKeep)<0){window._mergeKeep=sel[0];try{const r=document.querySelector('.merge-keep[value="'+window._mergeKeep+'"]');if(r)r.checked=true;}catch(e){}}
+  _updateMergePreview();
+}
 function _updateMergePreview(){
   const el=document.getElementById('merge-preview');if(!el)return;
-  const ids=window._mergeGroupIds||[];const keep=window._mergeKeep;
+  const ids=_mergeSelectedIds();let keep=window._mergeKeep;
+  if(ids.indexOf(keep)<0)keep=ids[0];
+  // Fewer than two selected → nothing to merge; guide the provider and disable the button.
+  const go=document.getElementById('merge-go');
+  if(ids.length<2){el.innerHTML='Check at least two records that are the <b style="color:#cfe9db;">same person</b> to merge.';if(go){go.disabled=true;go.style.opacity='.5';}return;}
+  if(go){go.disabled=false;go.style.opacity='1';}
   if(!keep||!CL[keep]){el.innerHTML='';return;}
   let forms=0,summ=0,msgs=0;const seenF={};const seenP={};
   ids.forEach(id=>{const c=CL[id]||{};(c.submittedForms||[]).forEach(sf=>{const k=(sf&&(sf.formId+'|'+(sf.date||'')))||JSON.stringify(sf);if(!seenF[k]){seenF[k]=1;forms++;}});
@@ -1575,9 +1589,9 @@ function _updateMergePreview(){
   el.innerHTML=`Everything combines into <b style="color:#cfe9db;">${_fileEsc(CL[keep].name)}</b>. Result: ${forms} form${forms===1?'':'s'} · ${summ} summar${summ===1?'y':'ies'} · ${photos} photo${photos===1?'':'s'}${msgs?(' · '+msgs+' message'+(msgs===1?'':'s')):''}.`;
 }
 function _doMerge(){
-  const ids=(window._mergeGroupIds||[]).filter(id=>CL[id]);
-  const keep=(window._mergeKeep&&CL[window._mergeKeep])?window._mergeKeep:ids[0];
-  if(!keep||ids.length<2){const sh=document.getElementById('merge-sheet');if(sh)sh.remove();return;}
+  const ids=_mergeSelectedIds();   // only the checked records — leaves unchecked family members separate
+  const keep=(window._mergeKeep&&CL[window._mergeKeep]&&ids.indexOf(window._mergeKeep)>=0)?window._mergeKeep:ids[0];
+  if(!keep||ids.length<2){if(typeof proToast==='function')proToast('Check at least two records to merge');return;}
   const keepName=(CL[keep].name||'client').split(' ')[0];
   ids.filter(id=>id!==keep).forEach(d=>_mergeClients(keep,d));
   const sh=document.getElementById('merge-sheet');if(sh)sh.remove();
