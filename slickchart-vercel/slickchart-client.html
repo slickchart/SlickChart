@@ -2179,6 +2179,38 @@ function deleteSummary(key,ev){
   if(_summaryIdx>=_visibleSummaries().length)_summaryIdx=0;
   renderJourney();
 }
+// Before/after photos the provider shared with this client. Refs (pid) come in the client data;
+// the bytes are fetched by id with the client's own link token (same path as guide files).
+let _photoBlobCache={};
+function _ppBadges(p){
+  return (p.phase?`<span style="position:absolute;top:5px;left:5px;background:${p.phase==='after'?'var(--accent)':'rgba(0,0,0,.7)'};color:#fff;font-size:8px;font-weight:700;padding:1px 6px;border-radius:5px;text-transform:uppercase;letter-spacing:.03em;">${_txt(p.phase)}</span>`:'')
+    +(p.date?`<span style="position:absolute;bottom:4px;left:5px;right:5px;font-size:8.5px;color:#fff;text-shadow:0 1px 3px rgba(0,0,0,.75);font-weight:600;">${_txt(p.date)}</span>`:'');
+}
+function _progressPhotoSectionHTML(){
+  const list=((activeProvider()||{}).progressPhotos||[]).filter(function(p){return p&&p.pid;});
+  if(!list.length)return '';
+  const sorted=list.slice().sort(function(a,b){return (b.ts||0)-(a.ts||0);});
+  return `<div style="margin:0 16px 14px;background:#fff;border:1.5px solid #f0ebe4;border-radius:14px;padding:14px;">
+    <div style="font-size:13px;font-weight:700;color:#1a1a1a;margin-bottom:3px;">Your progress photos</div>
+    <div style="font-size:12px;color:#786858;margin-bottom:11px;line-height:1.4;">Before &amp; after photos from your visits with ${_txt(client.providerFirst)}.</div>
+    <div style="display:grid;grid-template-columns:repeat(3,1fr);gap:8px;">
+      ${sorted.map(function(p){return `<div id="pp-${_jsAttr(p.pid)}" style="position:relative;aspect-ratio:3/4;border-radius:10px;overflow:hidden;background:#f4efe9;display:flex;align-items:center;justify-content:center;"><i class="ti ti-photo" aria-hidden="true" style="font-size:22px;color:#cbbba9;"></i>${_ppBadges(p)}</div>`;}).join('')}
+    </div>
+  </div>`;
+}
+function _hydrateProgressPhotos(){
+  const list=((activeProvider()||{}).progressPhotos||[]).filter(function(p){return p&&p.pid;});
+  if(!list.length||!client._real||!client._token)return;
+  list.forEach(function(p){
+    const cell=document.getElementById('pp-'+p.pid);if(!cell)return;
+    const show=function(dataUrl){const el=document.getElementById('pp-'+p.pid);if(!el||!dataUrl)return;el.innerHTML=`<img src="${_imgSrc(dataUrl)}" alt="Progress photo${p.date?' '+_urlAttr(p.date):''}" style="width:100%;height:100%;object-fit:cover;">`+_ppBadges(p);};
+    if(_photoBlobCache[p.pid]){show(_photoBlobCache[p.pid]);return;}
+    fetch('/api/guide-file?id='+encodeURIComponent(p.pid)+'&t='+encodeURIComponent(client._token))
+      .then(function(r){return r.ok?r.json():null;})
+      .then(function(j){if(j&&j.file&&j.file.data){_photoBlobCache[p.pid]=j.file.data;show(j.file.data);}})
+      .catch(function(){});
+  });
+}
 function renderJourney(){
   setNav('journey');
   document.getElementById('tt').textContent='My Journey';
@@ -2205,6 +2237,8 @@ function renderJourney(){
     <div style="flex:1;min-width:0;"><div style="font-size:13px;font-weight:700;color:#1a1a1a;">${_txt(client.providerFirst)} invited you to a virtual consult</div><div style="font-size:12px;color:#6b5d52;line-height:1.4;">Submit a few photos → get expert notes back</div></div>
     <span style="font-size:11px;font-weight:700;color:#fff;background:#8b6fc7;padding:5px 11px;border-radius:20px;flex-shrink:0;">Start</span>
   </div>`:''}
+
+  ${_progressPhotoSectionHTML()}
 
   <!-- Before & after photos, interactive -->
   ${hasPhotos?`
@@ -2341,6 +2375,7 @@ function renderJourney(){
   </div>`).join('')}`})()}
 
   <div style="height:8px;"></div>`;
+  try{setTimeout(_hydrateProgressPhotos,0);}catch(e){}
 }
 
 
@@ -4456,6 +4491,9 @@ function _applyRealClientData(j){
   p.products=Array.isArray(d.products)?d.products:[];
   // Full shop catalog (every active product the provider offers), for the "Shop all" tab.
   p.catalog=Array.isArray(d.catalog)?d.catalog:[];
+  // Before/after progress photos the provider chose to share with this client (refs only; bytes are
+  // fetched by id below). Empty unless the provider turned sharing on for them.
+  p.progressPhotos=Array.isArray(d.progressPhotos)?d.progressPhotos:[];
   p.summaries=Array.isArray(d.summaries)?d.summaries:[];
   // no fabricated data in real mode
   p.avoid=[];p.aftercare=[];p.progress=[];p.observations=[];p.thread=[];p.homecareNote='';p.seriesLabel='';

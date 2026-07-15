@@ -569,8 +569,8 @@ let nextQId=20;
 function _photoReleaseQs(startId){
   const b=startId||9100;
   return [
-    {id:b,label:'I consent to before & after photos being taken for my records',type:'Yes / No',required:true},
-    {id:b+1,label:'I allow my before & after photos to be shared on social media / portfolio (faces may be cropped on request)',type:'Yes / No',required:false},
+    {id:b,label:'I consent to before & after photos being taken for my chart — kept private to my records only, never shared',type:'Yes / No',required:true},
+    {id:b+1,label:'I also consent to my before & after photos being used publicly — social media, email, website, and promotion (faces cropped on request)',type:'Yes / No',required:false},
     {id:b+2,label:'I understand I can withdraw photo consent at any time in writing',type:'Signature',required:true},
   ];
 }
@@ -5457,6 +5457,19 @@ function _compareSessionsFor(id){
   real.push({date:vcDate,label:'Virtual Consult · Client-submitted photos',col:'#1e1633',ic:'#a891ec',improvements:[],virtual:true});
   return real;
 }
+// Per-client control: whether this client can see their own before/after progress photos in their
+// app. Off by default (clinical photos stay private to the chart). Turning it on syncs the photo
+// refs into their client-data and backs the bytes up so their app can fetch them.
+function toggleSharePhotos(id){
+  const c=CL[id];if(!c)return;
+  c.sharePhotos=!c.sharePhotos;
+  try{if(typeof saveClients==='function')saveClients();}catch(e){}
+  try{if(typeof _pushKeyNow==='function')_pushKeyNow('sc_clients',localStorage.getItem('sc_clients')||'');}catch(e){}
+  if(c.sharePhotos){try{if(typeof _backupPhotosToServer==='function')_backupPhotosToServer();}catch(e){}}
+  try{if(typeof _syncSpecificClientsToServer==='function')_syncSpecificClientsToServer([id]);}catch(e){}
+  if(typeof proToast==='function')proToast(c.sharePhotos?'Progress photos now visible in their app':'Progress photos hidden from their app');
+  try{_renderPhotosView(id,c);}catch(e){try{nav('photos',id);}catch(_){}}
+}
 function renderPhotos(id){
   setNav('clients');
   const c=CL[id];
@@ -5490,6 +5503,11 @@ function _renderPhotosView(id,c,_passed){
       <button onclick="openPhotoUpload('${id}')" style="background:#161616;color:#ccc;border:1px solid #2a2a2a;border-radius:8px;padding:7px 11px;font-size:12px;font-weight:500;cursor:pointer;display:flex;align-items:center;gap:5px;"><i class="ti ti-photo-plus" aria-hidden="true" style="font-size:13px;"></i> Add</button>
       ${selectedProfessions.includes('tattoo')?`<button onclick="_openStencilOverlay('${id}')" aria-label="Stencil overlay" style="background:#1e0d33;color:#c084fc;border:1px solid #3a2a4a;border-radius:8px;padding:7px 11px;font-size:12px;font-weight:600;cursor:pointer;display:flex;align-items:center;gap:5px;"><i class="ti ti-stack-2" aria-hidden="true" style="font-size:13px;"></i> Stencil</button>`:''}
     </div>
+  </div>
+  <div style="margin:10px 16px 0;background:#161616;border:1px solid ${c.sharePhotos?'var(--accent-a30,#3d2d10)':'#2a2a2a'};border-radius:10px;padding:10px 12px;display:flex;align-items:center;gap:10px;">
+    <i class="ti ti-${c.sharePhotos?'eye':'eye-off'}" aria-hidden="true" style="font-size:16px;color:${c.sharePhotos?'var(--accent)':'#888'};flex-shrink:0;"></i>
+    <div style="flex:1;min-width:0;"><div style="font-size:12.5px;font-weight:600;color:#e0e0e0;">${c.sharePhotos?'Visible in '+_fileEsc(c.name.split(' ')[0])+'’s app':'Private to your chart'}</div><div style="font-size:11px;color:#999;line-height:1.4;">${c.sharePhotos?'They can see their before &amp; after progress in their app.':'Turn on to let this client view their own progress photos.'}</div></div>
+    ${togBtn(!!c.sharePhotos,"toggleSharePhotos('"+id+"')",'Show progress photos in the client’s app')}
   </div>
 
   <div style="padding:10px 16px 4px;display:flex;align-items:center;justify-content:space-between;">
@@ -8437,6 +8455,7 @@ function loadForms(){
   // saved the form under a previous build would keep seeing preset choices. One-time migration coerces
   // that question back to a free-text field (dropping its options) and re-persists.
   try{_migrateSkinConcernLongText();}catch(e){}
+  try{_migratePhotoReleaseWording();}catch(e){}
 }
 function _migrateSkinConcernLongText(){
   try{
@@ -8456,6 +8475,30 @@ function _migrateSkinConcernLongText(){
     });
     localStorage.setItem('sc_skinconcern_migrated_v2','1');
     try{if(typeof _pushKeyNow==='function')_pushKeyNow('sc_skinconcern_migrated_v2','1');}catch(e){}
+    if(changed&&typeof persistForms==='function')persistForms();
+  }catch(e){}
+}
+// Reword saved photo-release questions to the clearer split: (1) before/after for the CHART ONLY,
+// (2) optional consent to PUBLIC use (social/email/website/promotion). Matches by keyword so it
+// updates a provider's already-saved forms too, and keeps the keywords _capturePhotoConsent reads.
+function _migratePhotoReleaseWording(){
+  try{
+    if(localStorage.getItem('sc_photorelease_migrated')==='1')return;
+    const NEW_TAKEN='I consent to before & after photos being taken for my chart — kept private to my records only, never shared';
+    const NEW_SHARE='I also consent to my before & after photos being used publicly — social media, email, website, and promotion (faces cropped on request)';
+    let changed=false;
+    Object.keys(formTmpls).forEach(function(k){
+      const t=formTmpls[k];if(!t||!Array.isArray(t.qs))return;
+      t.qs.forEach(function(q){
+        if(!q)return;const l=String(q.label||'');
+        // Public-use / social question first (it also mentions "photos").
+        if((/shared?\s*(on|to)?\s*social media|social media\s*(and|\/|,)?\s*portfolio|photos being shared/i.test(l))&&l!==NEW_SHARE){q.label=NEW_SHARE;if(q.required)q.required=false;changed=true;return;}
+        // Chart-only "before & after photos being taken" question.
+        if((/before\s*&?\s*after photos being taken/i.test(l))&&l!==NEW_TAKEN&&!/used publicly|social media/i.test(l)){q.label=NEW_TAKEN;changed=true;}
+      });
+    });
+    localStorage.setItem('sc_photorelease_migrated','1');
+    try{if(typeof _pushKeyNow==='function')_pushKeyNow('sc_photorelease_migrated','1');}catch(e){}
     if(changed&&typeof persistForms==='function')persistForms();
   }catch(e){}
 }
@@ -8776,8 +8819,8 @@ const formTmpls={
   ]},
   'hair-photo':{name:'Photo release',qs:[
     {id:801,label:'Full name',type:'Short text',required:true},
-    {id:802,label:'I consent to before & after photos being taken',type:'Yes / No',required:true},
-    {id:803,label:'I consent to photos being shared on social media and portfolio',type:'Yes / No',required:true},
+    {id:802,label:'I consent to before & after photos being taken for my chart — kept private to my records only, never shared',type:'Yes / No',required:true},
+    {id:803,label:'I also consent to my before & after photos being used publicly — social media, email, website, and promotion (faces cropped on request)',type:'Yes / No',required:false},
   ]},
   // ── BARBER FORMS ──
   'barber-intake':{name:'New client intake & consent',qs:[
@@ -8804,8 +8847,8 @@ const formTmpls={
   ]},
   'barber-photo':{name:'Photo release',qs:[
     {id:1201,label:'Full name',type:'Short text',required:true},
-    {id:1202,label:'I consent to before & after photos being taken',type:'Yes / No',required:true},
-    {id:1203,label:'I consent to photos being shared on social media and portfolio',type:'Yes / No',required:true},
+    {id:1202,label:'I consent to before & after photos being taken for my chart — kept private to my records only, never shared',type:'Yes / No',required:true},
+    {id:1203,label:'I also consent to my before & after photos being used publicly — social media, email, website, and promotion (faces cropped on request)',type:'Yes / No',required:false},
   ]},
   // ── BROW ARTIST FORMS ──
   'brow-intake':{name:'New brow client intake & consent',qs:[
@@ -8837,8 +8880,8 @@ const formTmpls={
   ]},
   'brow-photo':{name:'Photo release',qs:[
     {id:2301,label:'Full name',type:'Short text',required:true},
-    {id:2302,label:'I consent to before & after photos being taken',type:'Yes / No',required:true},
-    {id:2303,label:'I consent to photos being shared on social media and portfolio',type:'Yes / No',required:true},
+    {id:2302,label:'I consent to before & after photos being taken for my chart — kept private to my records only, never shared',type:'Yes / No',required:true},
+    {id:2303,label:'I also consent to my before & after photos being used publicly — social media, email, website, and promotion (faces cropped on request)',type:'Yes / No',required:false},
   ]},
   'wax-intake':{name:'Wax intake & consent',qs:[
     {id:2311,label:'Full name',type:'Short text',required:true},
@@ -8881,8 +8924,8 @@ const formTmpls={
   ]},
   photo:{name:'Photo release',qs:[
     {id:2801,label:'Full name',type:'Short text',required:true},
-    {id:2802,label:'I consent to before & after photos being taken',type:'Yes / No',required:true},
-    {id:2803,label:'I consent to photos being shared on social media and portfolio',type:'Yes / No',required:true},
+    {id:2802,label:'I consent to before & after photos being taken for my chart — kept private to my records only, never shared',type:'Yes / No',required:true},
+    {id:2803,label:'I also consent to my before & after photos being used publicly — social media, email, website, and promotion (faces cropped on request)',type:'Yes / No',required:false},
   ]},
   // ── PERMANENT MAKEUP (PMU) FORMS ──
   'pmu-intake':{name:'PMU client intake & consent',qs:[
@@ -8926,8 +8969,8 @@ const formTmpls={
   ]},
   'makeup-photo':{name:'Photo release',qs:[
     {id:3301,label:'Full name',type:'Short text',required:true},
-    {id:3302,label:'I consent to before & after photos being taken',type:'Yes / No',required:true},
-    {id:3303,label:'I consent to photos being shared on social media and portfolio',type:'Yes / No',required:true},
+    {id:3302,label:'I consent to before & after photos being taken for my chart — kept private to my records only, never shared',type:'Yes / No',required:true},
+    {id:3303,label:'I also consent to my before & after photos being used publicly — social media, email, website, and promotion (faces cropped on request)',type:'Yes / No',required:false},
   ]},
   // ── MASSAGE THERAPIST FORMS ──
   'massage-intake':{name:'Health history intake & consent',qs:[
@@ -9136,8 +9179,8 @@ const formTmpls={
 function _bundlePhotoRelease(){
   try{
     const rel=[
-      {id:'pr-taken',label:'I consent to before & after photos being taken',type:'Yes / No',required:true},
-      {id:'pr-share',label:'I consent to photos being shared on social media and portfolio',type:'Yes / No',required:true}
+      {id:'pr-taken',label:'I consent to before & after photos being taken for my chart — kept private to my records only, never shared',type:'Yes / No',required:true},
+      {id:'pr-share',label:'I also consent to my before & after photos being used publicly — social media, email, website, and promotion (faces cropped on request)',type:'Yes / No',required:false}
     ];
     Object.keys(formTmpls).forEach(k=>{
       if(k==='photo'||/-photo$/.test(k))return;                 // skip the standalone photo-release forms
@@ -9695,7 +9738,16 @@ function _assembleClientData(id){
     if(vi&&vi.invited&&!vi.submitted){const vp=(typeof _vcProfile==='function')?_vcProfile():{};
       vcInvite={kind:vp.kind||'skin',title:vp.title||'Virtual consult',fee:(typeof vcFee!=='undefined'?vcFee:'')||'',invitedAt:vi.invitedAt||0};}
   }catch(e){}
-  return {studio,studioAddress,website,providerName,profile:{skin:c.skin||'',concerns:c.concerns||'',allergies:c.allergies||'',fitz:c.fitz||'',treatment:c.treatment||'',lastVisit:c.lastVisit||'',nextVisit:c.nextVisit||'',email:c.email||'',phone:c.phone||''},summaries,aftercare,products,forms,pendingForms,pendingGuides,pendingCourses,photos:Array.isArray(c.photos)?c.photos:[],booking:{canRequest:true},availability,vcInvite};
+  // Before/after progress photos for the client's OWN app view — only when the provider turned on
+  // sharing for this client. Sends lightweight refs (pid + meta), not bytes; the client app fetches
+  // each by id (the photo is backed up server-side), so this can't bloat the client data blob.
+  let progressPhotos=[];
+  try{
+    if(c.sharePhotos&&typeof capturedPhotos!=='undefined'){
+      progressPhotos=(capturedPhotos[id]||[]).filter(p=>p&&(p.phase==='before'||p.phase==='after')&&p.url).map(p=>({pid:(typeof _photoPid==='function'?_photoPid(p):p.pid)||'',ts:p.ts||0,phase:p.phase,angle:p.angle||'',date:(function(){try{return new Date(p.ts||Date.now()).toLocaleDateString('en-US',{month:'short',day:'numeric',year:'numeric'});}catch(e){return '';}})()})).filter(x=>x.pid);
+    }
+  }catch(e){}
+  return {studio,studioAddress,website,providerName,profile:{skin:c.skin||'',concerns:c.concerns||'',allergies:c.allergies||'',fitz:c.fitz||'',treatment:c.treatment||'',lastVisit:c.lastVisit||'',nextVisit:c.nextVisit||'',email:c.email||'',phone:c.phone||''},summaries,aftercare,products,forms,pendingForms,pendingGuides,pendingCourses,photos:Array.isArray(c.photos)?c.photos:[],progressPhotos,booking:{canRequest:true},availability,vcInvite};
 }
 let _syncingClients=false,_clientSyncTimer=null;
 function _scheduleClientSync(){ if(_clientSyncTimer)clearTimeout(_clientSyncTimer); _clientSyncTimer=setTimeout(function(){_syncClientsToServer({});},2500); }
