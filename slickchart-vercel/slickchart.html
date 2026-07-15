@@ -7893,6 +7893,10 @@ const _FORM_DEFS_BY_PROF={
     {icon:'ti-droplet',bg:'#1e0d33',ic:'#c084fc',name:'Brow tint / stain consent',sub:'Contraindications + aftercare built in',id:'brow-tint'},
     {icon:'ti-file-description',bg:'#1e0d33',ic:'#c084fc',name:'PMU consent',sub:'Contraindications + aftercare built in',id:'brow-pmu'},
   ]],
+  pmu:['Permanent makeup',[
+    {icon:'ti-clipboard-text',bg:'#1e0d33',ic:'#c084fc',name:'PMU client intake & consent',sub:'Intake + treatment consent in one',id:'pmu-intake'},
+    {icon:'ti-file-description',bg:'#1e0d33',ic:'#c084fc',name:'PMU service consent',sub:'Contraindications + aftercare built in',id:'consent-pmu'},
+  ]],
   lash:['Lashes',[
     {icon:'ti-clipboard-text',bg:'#0d1e33',ic:'#5ba3e8',name:'New lash client intake & consent',sub:'Intake + treatment consent in one',id:'lash-intake'},
     {icon:'ti-needle',bg:'#1e1633',ic:'#a891ec',name:'Lash extension consent',sub:'Contraindications + aftercare built in',id:'lash'},
@@ -7943,7 +7947,7 @@ function _formDefById(fid){for(const p in _FORM_DEFS_BY_PROF){const d=_FORM_DEFS
 // Forms scoped to the provider's selected professions (+ their custom forms), deduped.
 function _profFormDefs(){
   const has=p=>selectedProfessions.includes(p);
-  let profs=['tattoo','esty','wax','brow','lash','hair','barber','makeup','massage','nail','nutrition','contour','coach'].filter(p=>has(p)&&_FORM_DEFS_BY_PROF[p]);
+  let profs=['tattoo','esty','wax','brow','pmu','lash','hair','barber','makeup','massage','nail','nutrition','contour','coach'].filter(p=>has(p)&&_FORM_DEFS_BY_PROF[p]);
   if(!profs.length)profs=['esty'];
   const out=[],seen={};
   profs.forEach(p=>{_FORM_DEFS_BY_PROF[p][1].forEach(f=>{if(!seen[f.id]){seen[f.id]=1;out.push(f);}});});
@@ -8020,7 +8024,7 @@ function renderForms(){
   document.getElementById('tt').textContent='Forms, Guides & Courses';
   const has=p=>selectedProfessions.includes(p);
   const F=_FORM_DEFS_BY_PROF;
-  let sections=['tattoo','esty','wax','brow','lash','hair','barber','makeup','massage','nail','nutrition','contour','coach'].filter(p=>has(p)&&F[p]);
+  let sections=['tattoo','esty','wax','brow','pmu','lash','hair','barber','makeup','massage','nail','nutrition','contour','coach'].filter(p=>has(p)&&F[p]);
   if(!sections.length)sections=['esty'];
   // Photo release is bundled into every intake (asked once, auto-captured to the client's file),
   // so it's no longer offered as a separate sendable card here, that duplicated the consent.
@@ -8161,6 +8165,11 @@ function confirmSendForm(fid,cid){
       proToast(`${c.name.split(' ')[0]} hasn't been invited to the app yet, invite them first, then this form will be waiting for them`);
       return;
     }
+  }else if(cid!=='maya'){
+    // Neither the demo client nor a resolvable real client — don't claim "Sent" and drop it.
+    closeSendProd();
+    proToast('Couldn’t find that client to send to — please pick them from the list again.',0);
+    return;
   }
   closeSendProd();
   const extra=sendIds.length>1?` + ${sendIds.length-1} more`:'';
@@ -9364,6 +9373,7 @@ function submitSignOnDevice(fid,cid){
     CL[cid].submittedForms=CL[cid].submittedForms||[];
     if(!CL[cid].submittedForms.some(sf=>sf.formId===fid&&sf.signed))CL[cid].submittedForms.unshift({formId:fid,title:tmpl.name,answers:ans,flagged:[],date:'Today',signed:true});_captureBirthday(CL[cid],fid,ans);_capturePhotoConsent(CL[cid],fid,ans);_captureRefPhoto(cid,fid,ans);
     try{if(typeof saveClients==='function')saveClients();}catch(e){}
+    try{if(typeof _pushKeyNow==='function')_pushKeyNow('sc_clients',localStorage.getItem('sc_clients')||'');}catch(e){}   // push now so an in-person signed form can't be lost to the debounce
   }
   proToast(`${tmpl.name} signed ✓`);
   if(cid&&CL[cid])nav('client',cid);else nav('forms');
@@ -14629,6 +14639,24 @@ async function syncClientEvents(){
     const fresh=j.events.filter(e=>seen.indexOf(e.id)<0).reverse(); // oldest first so newest ends up on top
     let touchedRequests=false,touchedMsgs=false,touchedNotif=false,touchedCheckins=false,touchedForms=false,touchedVc=false,touchedClients=false,touchedPhotos=false;
     const msgClientIds=[];
+    // Fill any client that exists server-side but hasn't synced into THIS browser's CL yet (created
+    // on another device, or a divergence between the server clients table and the sc_clients blob).
+    // Without this, a form / check-in / contact event whose client_id isn't in CL was silently
+    // dropped — the "intake not coming through / form fake-saved" bug — because the form branch (and
+    // the contact update, and the check-in's chart alert) persist ONLY onto the client record. The
+    // server already returns the client list here (j.clients); we just weren't using it.
+    if(Array.isArray(j.clients)){
+      const _pal=[['#1e1633','#a891ec'],['#0a2019','#4ec49a'],['#0d1e33','#5ba3e8'],['#2a0f1a','#e87070'],['#2e1c10','var(--accent)']];
+      j.clients.forEach(sc=>{
+        if(!sc||!sc.id||CL[sc.id])return;
+        const nm=sc.name||'New client';const col=_pal[Object.keys(CL).length%_pal.length];
+        CL[sc.id]={name:nm,initials:((typeof _initials==='function'?_initials(nm):'')||'NC'),bg:col[0],tc:col[1],
+          phone:sc.phone||'',email:sc.email||'',skin:'—',concerns:'—',allergies:'None noted',fitz:'—',
+          lastVisit:'—',nextVisit:'Not scheduled',treatment:'New client',sessions:0,seriesTotal:0,touchUpDate:'—',
+          conditions:'',notes:'',_token:sc.token||''};
+        touchedClients=true;
+      });
+    }
     // NOTE: events are marked seen at the very END of this function — after their derived data
     // (check-ins, forms, messages) has been flushed to the server — so a background poll that gets
     // frozen/killed mid-way (common for a phone PWA) can't record an event as "seen" while its
@@ -15925,7 +15953,19 @@ let newClientData={};
 let _ncDeliver='app';
 function _ncProf(){const p=(selectedProfessions&&selectedProfessions[0])||'esty';return (typeof allProfessions!=='undefined'&&allProfessions.find(x=>x.id===p))||{id:'esty',name:'Esthetician',terms:['Skin type','Allergies','Concerns','Current routine']};}
 function _ncSteps(){return ['Contact','Intake','Notes','Consent'];}
-function _ncConsentId(){const id=_ncProf().id;return formTmpls['consent-'+id]?'consent-'+id:'consent-esty';}
+function _ncConsentId(){
+  const id=_ncProf().id;
+  // Resolve the RIGHT consent for the profession. Several don't follow the "consent-<id>" pattern
+  // (tattoo → tattoo-consent, coach → coach-liability), so the old code silently fell back to the
+  // Esthetics consent — a tattoo/coach client would sign a skincare consent. Try the profession's
+  // real doc first (special-cased, then either naming order), and only fall back to esty for the
+  // esty family, never for a profession that has its own legal doc.
+  const special={coach:'coach-liability',tattoo:'tattoo-consent'};
+  const cands=[special[id],'consent-'+id,id+'-consent'].filter(Boolean);
+  for(const k of cands){if(formTmpls[k])return k;}
+  if(formTmpls['consent-esty'])return 'consent-esty';
+  return Object.keys(formTmpls).find(k=>/consent|liability|waiver/i.test(k))||'consent-esty';
+}
 function _ncIntakeFormId(){const id=_ncProf().id;const fid=id+'-intake';return formTmpls[fid]?fid:(formTmpls['intake']?'intake':null);}
 function _ncIntakeQs(){const fid=_ncIntakeFormId();const t=fid&&formTmpls[fid];if(!t)return [];return t.qs.filter(q=>{if(q.type==='Signature'||q.type==='Contraindications')return false;const l=(q.label||'').toLowerCase();if(/full name|^name$/.test(l))return false;if(/date of birth|^dob$/.test(l))return false;if(/phone|mobile number/.test(l))return false;if(/e-?mail/.test(l))return false;if(/how did you hear|referred by|referral|hear about us/.test(l))return false;return true;});}
 function _ncQHTML(q,i){
@@ -16155,9 +16195,24 @@ function finishNewClient(){
   if(mode==='device'){proToast(first+' added');renderSignOnDevice(cid,id);return;}
   if(mode==='link'){proToast(first+' added');nav('clients');shareFormLink(cid,id);return;}
   if(mode==='invite'){proToast(first+' added');nav('clients');inviteClientToApp(id);return;}
+  if(mode==='app'){
+    // Previously this fell through and toasted "consent sent" while assigning NOTHING — a fake
+    // save. Actually assign the consent to the client's pending forms, persist immediately, then
+    // deliver via the app invite (a brand-new client has no app yet, so the consent rides in on it).
+    const c2=CL[id];
+    if(c2){
+      const ids=(typeof _isIntakeForm==='function'&&_isIntakeForm(cid))?_withPhotoRelease(cid):[cid];
+      try{_assignFormsToClient(c2,ids);}catch(e){}
+      try{if(typeof saveClients==='function')saveClients();}catch(e){}
+      try{if(typeof _pushKeyNow==='function')_pushKeyNow('sc_clients',localStorage.getItem('sc_clients')||'');}catch(e){}
+    }
+    proToast(first+' added');
+    if(pend){nav('calendar');_reopenBookingWith(name,pend);return;}
+    nav('clients');inviteClientToApp(id);return;
+  }
   // Came here from the booking sheet → return to it with this client ready to book, instead of the list.
-  if(pend){proToast(first+' added'+(mode==='app'?' · consent sent':''));nav('calendar');_reopenBookingWith(name,pend);return;}
-  proToast(first+' added'+(mode==='app'?' · consent sent':''));
+  if(pend){proToast(first+' added');nav('calendar');_reopenBookingWith(name,pend);return;}
+  proToast(first+' added');
   nav('clients');
 }
 
@@ -16236,6 +16291,7 @@ function _pfiSave(id,fid){
   c.submittedForms.unshift({formId:fid,title:t.name,answers,flagged,date:'Today',signed:false,filledBy:'provider'});
   if(flagged.length)c.flaggedContra={form:t.name,items:flagged.slice(),date:'Today'};
   try{saveClients();}catch(e){}
+  try{if(typeof _pushKeyNow==='function')_pushKeyNow('sc_clients',localStorage.getItem('sc_clients')||'');}catch(e){}
   proToast('Intake saved \u2713');
   nav('client',id);
 }
