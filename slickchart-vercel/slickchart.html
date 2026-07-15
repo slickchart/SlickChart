@@ -2940,6 +2940,7 @@ function _loadPersistenceSweep(){
   loadClientRecs();loadRecReasons();loadClientHomecare();loadSessionSummaries();loadCapturedPhotos();
   loadStaff();loadAutos();loadNotifSettings();loadCheckins();loadCourses();loadShopBundles();try{loadBodyMaps();}catch(e){}try{_probeWhisper();}catch(e){}
   loadAffiliateLinks();loadCustomNoteTemplates();loadIntegrations();loadClientHealingStage();loadAmazonAssociates();try{loadNeedlePresets();}catch(e){}try{loadHiddenSets();}catch(e){}
+  try{loadSummaryDrafts();}catch(e){}
 }
 // Safety net: persist all of the above on every navigation, so nothing new added later
 // slips through the cracks the way these did. Cheap (localStorage) and runs after edits
@@ -5066,7 +5067,7 @@ function renderWriteNote(id){
     <span style="font-size:11px;color:#929292;">(change this if you're catching up on a note from another day)</span>
   </div>
   <div style="padding:0 16px;">
-    ${t.sections.map(s=>`<div style="margin-bottom:14px;"><div style="font-size:11px;font-weight:500;text-transform:uppercase;letter-spacing:.07em;color:${_fileEsc(s.color)};margin-bottom:5px;display:flex;align-items:center;gap:5px;"><div style="width:8px;height:8px;border-radius:50%;background:${_fileEsc(s.color)};"></div>${s.label}</div><textarea id="wn-sec-${s.id}" class="fi" style="height:${t.sections.length<=1?'300':'150'}px;resize:vertical;line-height:1.6;" placeholder="${s.ph}" oninput="_autosaveWriteNote('${id}')">${(sections[s.id]||'').replace(/</g,'&lt;')}</textarea>${(activeNoteTemplate==='tattooRecord'&&s.id==='tt1')?_bodyMapField(id):''}${(activeNoteTemplate==='tattooRecord'&&s.id==='tt2')?_inkScanField(id):''}${(activeNoteTemplate==='tattooRecord'&&s.id==='tt3')?_needlePresetField(id):''}</div>`).join('')}
+    ${t.sections.map(s=>`<div style="margin-bottom:14px;"><div style="font-size:11px;font-weight:500;text-transform:uppercase;letter-spacing:.07em;color:${_fileEsc(s.color)};margin-bottom:5px;display:flex;align-items:center;gap:5px;"><div style="width:8px;height:8px;border-radius:50%;background:${_fileEsc(s.color)};"></div>${s.label}</div><textarea id="wn-sec-${s.id}" class="fi" style="height:${t.sections.length<=1?'300':'150'}px;resize:vertical;line-height:1.6;" placeholder="${s.ph}" oninput="_autosaveWriteNote('${id}')" onblur="try{_snapshotWriteNoteNow('${id}')}catch(e){}">${(sections[s.id]||'').replace(/</g,'&lt;')}</textarea>${(activeNoteTemplate==='tattooRecord'&&s.id==='tt1')?_bodyMapField(id):''}${(activeNoteTemplate==='tattooRecord'&&s.id==='tt2')?_inkScanField(id):''}${(activeNoteTemplate==='tattooRecord'&&s.id==='tt3')?_needlePresetField(id):''}</div>`).join('')}
   </div>
   <div style="display:flex;gap:8px;margin:0 16px 16px;">
     <button class="btnp" style="flex:1;border-radius:8px;" onclick="_saveAndSendNote('${id}')"><i class="ti ti-send"></i> Save and send</button>
@@ -5074,25 +5075,28 @@ function renderWriteNote(id){
   </div>`;
 }
 let _autosaveWriteNoteTimer=null;
+// Capture the note editor's current content into the draft SYNCHRONOUSLY (no debounce) and persist.
+// Called on blur so tapping the nav bar / another field before the 600ms autosave fires can't drop
+// the last-typed sentence, and reused by the debounced autosave.
+function _snapshotWriteNoteNow(id){
+  try{
+    const t=noteTemplates[activeNoteTemplate]||noteTemplates.soap;
+    const dateEl=document.getElementById('wn-date');
+    // If the editor is no longer on screen, don't write — we'd capture empty textareas and wipe the draft.
+    if(!dateEl)return;
+    const dateVal=dateEl.value||_isoToday();
+    const sections={};
+    t.sections.forEach(s=>{const el=document.getElementById('wn-sec-'+s.id);if(el)sections[s.id]=el.value;});
+    providerNoteDrafts[id]={date:dateVal,sections,templateId:activeNoteTemplate};
+    if(typeof saveProviderNoteDrafts==='function')saveProviderNoteDrafts();
+  }catch(e){}
+}
 function _autosaveWriteNote(id){
   // Quietly preserve what's typed so notes aren't lost if the provider navigates away,
   // reloads, or gets interrupted before tapping Save. Debounced to avoid thrashing storage.
   // Only stores the draft, the session-history entry + summary still happen on explicit Save.
   clearTimeout(_autosaveWriteNoteTimer);
-  _autosaveWriteNoteTimer=setTimeout(()=>{
-    try{
-      const t=noteTemplates[activeNoteTemplate]||noteTemplates.soap;
-      const dateEl=document.getElementById('wn-date');
-      // If the editor is no longer on screen (provider navigated away), don't write
-      // otherwise we'd capture empty textareas and wipe the draft we're trying to protect.
-      if(!dateEl)return;
-      const dateVal=dateEl.value||_isoToday();
-      const sections={};
-      t.sections.forEach(s=>{const el=document.getElementById('wn-sec-'+s.id);if(el)sections[s.id]=el.value;});
-      providerNoteDrafts[id]={date:dateVal,sections,templateId:activeNoteTemplate};
-      if(typeof saveProviderNoteDrafts==='function')saveProviderNoteDrafts();
-    }catch(e){}
-  },600);
+  _autosaveWriteNoteTimer=setTimeout(()=>{_snapshotWriteNoteNow(id);},600);
 }
 // ── Tattoo body-map placement picker ── tap a body outline to drop a pin; stores the pin + an
 // editable body-area tag so placement is charted and searchable. Own sc_ store (auto-synced).
@@ -5759,6 +5763,11 @@ let summaryNoteDraft={};   // provider's edited wording per client (overrides th
 let summaryObsDraft={};     // provider's optional client-facing observation per client (starts empty for real clients)
 let _skipSummaryStore=false;  // set true when re-sharing an already-saved summary, to avoid duplicating it
 let summarySendOn={};      // per-session: off by default, provider opts in before anything actually sends
+// The edited/AI summary note and the client-facing observation are CLIENT-FACING drafts that were
+// in-memory only — a reload before Send lost them (their oninput handlers called persistWorkspace,
+// which never stored them). Persist them immediately to their own synced key so they survive.
+function persistSummaryDrafts(){try{const v=JSON.stringify({note:summaryNoteDraft,obs:summaryObsDraft});localStorage.setItem('sc_summary_drafts',v);if(typeof _pushKeyNow==='function')_pushKeyNow('sc_summary_drafts',v);}catch(e){}}
+function loadSummaryDrafts(){try{const raw=localStorage.getItem('sc_summary_drafts');if(raw){const v=JSON.parse(raw);if(v&&typeof v==='object'){if(v.note&&typeof v.note==='object')summaryNoteDraft=v.note;if(v.obs&&typeof v.obs==='object')summaryObsDraft=v.obs;}}}catch(e){}}
 function _summaryGuard(id){
   if(!summarySendOn[id]){ if(typeof proToast==='function')proToast('Turn on "Send to '+((CL[id]&&CL[id].name.split(' ')[0])||'client')+'\u2019s app" above first'); return false; }
   return true;
@@ -5876,7 +5885,7 @@ function renderSessionSummary(id){
         ?`<div style="display:grid;grid-template-columns:1fr 1fr;gap:8px;">${[['Hydration','74%','#5ba3e8','↑ from last visit'],['Barrier','82%','#4ec49a','↑ improving'],['Radiance','Good','var(--accent)','↑ visibly brighter'],['PIH','Fading','#a891ec','↓ ~40%']].map(([lbl,val,col,change])=>`<div style="background:#161616;border-radius:10px;padding:10px 12px;"><div style="font-size:11px;color:#9a9a9a;margin-bottom:3px;">${lbl}</div><div style="font-size:16px;font-weight:500;color:${col};">${val}</div><div style="font-size:11px;color:#929292;margin-top:2px;">${change}</div></div>`).join('')}</div><div style="margin-top:8px;font-size:11px;color:#929292;line-height:1.5;">These are provider observations, not clinical measurements.</div>`
         :_isDemoClient
           ?`<div style="background:#161616;border-radius:10px;padding:12px;font-size:13px;color:#ccc;line-height:1.7;">Your skin is progressing well. We'll track observations more closely over your next few sessions.</div>`
-          :`<textarea id="summary-obs" oninput="summaryObsDraft['${id}']=this.value;if(typeof persistWorkspace==='function')persistWorkspace();" placeholder="Optional, a short observation ${c.name.split(' ')[0]} will see (e.g. 'Skin looked calmer today, less redness than last time'). Leave blank to hide this section." rows="2" style="width:100%;background:#161616;border:1px solid #2a2a2a;border-radius:10px;padding:11px;font-size:13px;color:#ccc;line-height:1.6;font-family:inherit;box-sizing:border-box;resize:none;outline:none;">${(summaryObsDraft[id]||'').replace(/</g,'&lt;')}</textarea>`}
+          :`<textarea id="summary-obs" oninput="summaryObsDraft['${id}']=this.value;if(typeof persistSummaryDrafts==='function')persistSummaryDrafts();" placeholder="Optional, a short observation ${c.name.split(' ')[0]} will see (e.g. 'Skin looked calmer today, less redness than last time'). Leave blank to hide this section." rows="2" style="width:100%;background:#161616;border:1px solid #2a2a2a;border-radius:10px;padding:11px;font-size:13px;color:#ccc;line-height:1.6;font-family:inherit;box-sizing:border-box;resize:none;outline:none;">${(summaryObsDraft[id]||'').replace(/</g,'&lt;')}</textarea>`}
     </div>`:''}
 
     ${summaryToggles.homecare?`<div style="padding:14px 16px;border-bottom:1px solid #222;">
@@ -5981,7 +5990,7 @@ function editSummaryNote(id){
   el.outerHTML=`<div id="summary-note-edit">
     <textarea id="note-edit-ta" aria-label="Edit summary note" style="width:100%;background:#111;border:1px solid var(--accent);border-radius:8px;padding:9px;font-size:13px;color:#ccc;line-height:1.8;resize:none;height:120px;font-family:inherit;">${current}</textarea>
     <div style="display:flex;gap:8px;margin-top:8px;">
-      <button onclick="summaryNoteDraft['${id}']=document.getElementById('note-edit-ta').value;renderSessionSummary('${id}')" style="background:var(--accent);color:var(--accent-ink);border:none;border-radius:7px;padding:6px 14px;font-size:12px;font-weight:500;cursor:pointer;">Done</button>
+      <button onclick="summaryNoteDraft['${id}']=document.getElementById('note-edit-ta').value;if(typeof persistSummaryDrafts==='function')persistSummaryDrafts();renderSessionSummary('${id}')" style="background:var(--accent);color:var(--accent-ink);border:none;border-radius:7px;padding:6px 14px;font-size:12px;font-weight:500;cursor:pointer;">Done</button>
       <button onclick="renderSessionSummary('${id}')" style="background:none;border:1px solid #555;color:#ccc;border-radius:7px;padding:6px 14px;font-size:12px;cursor:pointer;">Cancel</button>
     </div>
   </div>`;
@@ -6001,7 +6010,7 @@ async function aiClientFriendly(id,btn){
     const out=((await _aiComplete([{role:'user',content:prompt}],400))||'').trim().replace(/^["']+|["']+$/g,'');
     if(!out)throw new Error('empty');
     summaryNoteDraft[id]=out;
-    if(typeof persistWorkspace==='function')persistWorkspace();
+    if(typeof persistSummaryDrafts==='function')persistSummaryDrafts();
     if(typeof proToast==='function')proToast('Rewritten for your client, edit if you like');
     renderSessionSummary(id);
   }catch(e){
@@ -6212,7 +6221,12 @@ function _storeSummary(id){
   // and provider notes appeared missing there).
   try{if(typeof persistSessionSummaries==='function')persistSessionSummaries();}catch(e){}
   try{if(typeof saveClients==='function')saveClients();}catch(e){}
-  try{if(typeof _scheduleClientSync==='function')_scheduleClientSync();}catch(e){}
+  try{if(typeof _pushKeyNow==='function')_pushKeyNow('sc_clients',localStorage.getItem('sc_clients')||'');}catch(e){}
+  // Deliver to the client's app NOW, not on the 2.5s roster debounce — otherwise closing the app
+  // right after tapping Send meant the summary never reached them until the next client sync.
+  try{if(typeof _syncSpecificClientsToServer==='function')_syncSpecificClientsToServer([id]);else if(typeof _scheduleClientSync==='function')_scheduleClientSync();}catch(e){}
+  // Clear the per-client summary drafts now that they're committed into the sent summary.
+  try{if(summaryNoteDraft)delete summaryNoteDraft[id];if(summaryObsDraft)delete summaryObsDraft[id];if(typeof persistSummaryDrafts==='function')persistSummaryDrafts();}catch(e){}
 }
 function renderSummaryHistory(id){
   setNav('clients');
