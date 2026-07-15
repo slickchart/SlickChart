@@ -13331,7 +13331,7 @@ async function _coDoCharge(id,cardId){
   try{
     const d=await _sqFetch('/api/square/charge-card',{method:'POST',body:{customerId:c.squareId,cardId,amount:amt,note,idempotencyKey:_idem}});
     _coChargeKey=null; // confirmed success \u2014 a future identical charge should be a new, intentional one
-    _addPayment({clientId:id,clientName:c.name,amount:amt,taxAmount:_coTaxAmt(),method:'Square',status:'paid',date:_todayISO(),note:note+' (card on file)',source:'square'});
+    _addPayment({clientId:id,clientName:c.name,amount:amt,taxAmount:_coTaxAmt(),method:'Square',status:'paid',date:_todayISO(),note:note+' (card on file)',source:'square',squarePaymentId:(d&&d.paymentId)||''});
     document.getElementById('co-result').innerHTML='<div style="background:#0a2019;border:1px solid #1c4030;border-radius:10px;padding:12px 14px;font-size:13px;color:#4ec49a;font-weight:600;"><i class="ti ti-check"></i> Charged $'+amt.toFixed(2)+' \u2014 '+(d.status||'done')+' \u00b7 logged in Payments</div>';
     if(typeof proToast==='function')proToast('Payment complete \u2713');
   }catch(e){_coErr(e.message||'The charge did not go through.',_coRecon(e));}
@@ -13900,10 +13900,30 @@ function _payOpen(idv){
     +'<button class="btng" style="width:100%;border-radius:10px;justify-content:center;" onclick="_payTextLink(\''+p.id+'\')"><i class="ti ti-message"></i> Send text link</button>'
     +'<button class="btng" style="width:100%;border-radius:10px;justify-content:center;" onclick="_payEdit(\''+p.id+'\')"><i class="ti ti-edit"></i> Edit &amp; resend</button>'
     +(p.publicUrl?'<a href="'+p.publicUrl+'" target="_blank" rel="noopener" class="btng" style="width:100%;border-radius:10px;justify-content:center;text-decoration:none;"><i class="ti ti-external-link"></i> View in Square</a>':'')
+    +((p.status==='paid'&&p.squarePaymentId)?'<button class="btng" style="width:100%;border-radius:10px;justify-content:center;color:#e8a060;border-color:#4a3510;" onclick="_payRefund(\''+p.id+'\')"><i class="ti ti-arrow-back-up"></i> Refund in Square</button>':'')
     +'<button onclick="_payDelete(\''+p.id+'\');" style="width:100%;background:none;border:none;color:#a85a5a;font-size:13px;cursor:pointer;font-family:inherit;padding:8px;">Remove</button>'
     +'<button onclick="var _m=document.getElementById(\'pay-detail\');if(_m)_m.remove();" style="width:100%;background:none;border:none;color:#9a9a9a;font-size:13px;cursor:pointer;font-family:inherit;padding:2px;">Close</button>'
     +'</div></div>';
   (document.querySelector('.shell')||document.body).appendChild(m);
+}
+async function _payRefund(idv){
+  const p=_payments.find(x=>x.id===idv); if(!p||!p.squarePaymentId)return;
+  const amt=(+p.amount||0);
+  const go=async()=>{
+    const tok=(typeof Cloud!=='undefined'&&Cloud&&Cloud.token)||'';
+    if(typeof proToast==='function')proToast('Refunding…');
+    try{
+      const r=await fetch('/api/square/refund',{method:'POST',headers:{'Content-Type':'application/json','Authorization':'Bearer '+tok},body:JSON.stringify({paymentId:p.squarePaymentId,amount:amt,reason:'SlickChart refund'})});
+      const j=await r.json().catch(()=>({}));
+      if(!r.ok||!j.ok){if(typeof proToast==='function')proToast((j&&j.code==='scope')?'Reconnect Square to issue refunds.':((j&&j.error)||'Refund failed'),0);return;}
+      p.status='refunded';try{_savePayments();}catch(e){}
+      const _m=document.getElementById('pay-detail');if(_m)_m.remove();
+      if(typeof proToast==='function')proToast('Refunded $'+amt.toFixed(2)+(j.status?(' · '+String(j.status).toLowerCase()):''));
+      if(typeof _navCur!=='undefined'&&_navCur&&_navCur.screen==='payments')renderPayments();
+    }catch(e){if(typeof proToast==='function')proToast('Could not reach Square, try again');}
+  };
+  if(typeof confirmModal==='function')confirmModal({title:'Refund $'+amt.toFixed(2)+'?',body:'This refunds the payment in Square and marks it refunded here. This can’t be undone.',action:'Refund'},go);
+  else if(confirm('Refund $'+amt.toFixed(2)+' in Square?'))go();
 }
 function _payEdit(idv){
   const p=_payments.find(x=>x.id===idv); if(!p)return;

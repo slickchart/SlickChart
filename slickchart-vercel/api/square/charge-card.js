@@ -31,7 +31,7 @@ export default async function handler(req, res) {
         amount_money: { amount, currency: 'USD' }, location_id: locationId,
         note: String(b.note || 'SlickChart').slice(0, 500)
       } });
-      res.status(200).json({ ok: true, status: p.payment && p.payment.status, receiptUrl: p.payment && p.payment.receipt_url });
+      res.status(200).json({ ok: true, status: p.payment && p.payment.status, paymentId: p.payment && p.payment.id, receiptUrl: p.payment && p.payment.receipt_url });
       return;
     }
     res.status(405).json({ error: 'Method not allowed' });
