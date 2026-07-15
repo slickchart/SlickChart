@@ -5071,8 +5071,10 @@ function renderNoteFormats(id){
     <i class="ti ti-plus" style="font-size:20px;color:#9a9a9a;"></i><span style="font-size:14px;color:#aaa;">Create a custom format</span>
   </div>`;
 }
+let _writeNoteClientId='';
 function renderWriteNote(id){
   setNav('clients');
+  _writeNoteClientId=id;   // whose editor is currently on screen — guards the async autosave below
   const c=CL[id];const t=noteTemplates[activeNoteTemplate]||noteTemplates.soap;
   const draft=providerNoteDrafts[id]||{};
   const dateVal=draft.date||_isoToday();
@@ -5112,6 +5114,10 @@ function _snapshotWriteNoteNow(id){
     const dateEl=document.getElementById('wn-date');
     // If the editor is no longer on screen, don't write — we'd capture empty textareas and wipe the draft.
     if(!dateEl)return;
+    // Guard against a stale debounced timer firing after we've navigated to a DIFFERENT client's
+    // note editor (same wn-* element ids): only snapshot when the on-screen editor is still this id,
+    // otherwise we'd write client B's textareas into client A's draft.
+    if(_writeNoteClientId&&id!==_writeNoteClientId)return;
     const dateVal=dateEl.value||_isoToday();
     const sections={};
     t.sections.forEach(s=>{const el=document.getElementById('wn-sec-'+s.id);if(el)sections[s.id]=el.value;});
