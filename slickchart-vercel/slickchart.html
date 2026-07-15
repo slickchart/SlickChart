@@ -3565,6 +3565,24 @@ async function _loadClientPurchases(id){
     </div>`).join('');
   }catch(e){if(body)body.innerHTML='Could not reach Square, try again.';}
 }
+// Check a client's Square Loyalty balance by phone and store it on their chart (c.loyalty), then sync
+// so it shows in the client's own app too.
+async function _loadClientLoyalty(id){
+  const c=CL[id];if(!c||!c.phone)return;
+  const body=document.getElementById('sq-loyalty-body');if(body)body.innerHTML='<i class="ti ti-loader-2"></i> Checking Square…';
+  const tok=(typeof Cloud!=='undefined'&&Cloud&&Cloud.token)||'';
+  try{
+    const r=await fetch('/api/square/loyalty?phone='+encodeURIComponent(c.phone),{headers:{'Authorization':'Bearer '+tok}});
+    const j=await r.json().catch(()=>({}));
+    if(!body)return;
+    if(!r.ok||!j.ok){body.innerHTML=(j&&j.code==='scope')?'Reconnect Square to read loyalty (new permission).':_fileEsc((j&&j.error)||'Could not load loyalty');return;}
+    if(!j.found){body.innerHTML=(j.note==='no-program')?'No loyalty program is set up in your Square yet.':'No loyalty account found for this phone number.';if(c.loyalty){delete c.loyalty;try{saveClients();}catch(e){}}return;}
+    c.loyalty={points:j.balance,lifetime:j.lifetimePoints,at:Date.now()};
+    try{saveClients();}catch(e){}
+    try{if(typeof _syncSpecificClientsToServer==='function')_syncSpecificClientsToServer([id],{});}catch(e){}
+    body.innerHTML='<b style="color:var(--accent);">'+j.balance+' points</b> · '+j.lifetimePoints+' lifetime — now visible in '+_fileEsc(c.name.split(' ')[0])+'’s app';
+  }catch(e){if(body)body.innerHTML='Could not reach Square, try again.';}
+}
 function renderClient(id){
   setNav('clients');
   _recEditCtx='profile';
@@ -3579,6 +3597,10 @@ function renderClient(id){
   ${c.squareId?`<div style="margin:12px 16px 0;background:#161616;border:1px solid #242424;border-radius:12px;padding:12px 14px;">
     <div style="display:flex;justify-content:space-between;align-items:center;"><span style="font-size:11px;color:#888;text-transform:uppercase;letter-spacing:.06em;">Retail purchases</span><button onclick="_loadClientPurchases('${id}')" style="background:var(--accent-tint);border:1px solid var(--accent-a30,#3d2d10);color:var(--accent);border-radius:8px;padding:4px 10px;font-size:11px;font-weight:600;cursor:pointer;font-family:inherit;"><i class="ti ti-refresh" style="font-size:11px;"></i> Load from Square</button></div>
     <div id="sq-purchases-body" style="margin-top:9px;font-size:12px;color:#9a9a9a;line-height:1.5;">See what ${_fileEsc(c.name.split(' ')[0])} has bought from your Square store.</div>
+  </div>`:''}
+  ${c.squareId&&c.phone?`<div style="margin:12px 16px 0;background:#161616;border:1px solid #242424;border-radius:12px;padding:12px 14px;">
+    <div style="display:flex;justify-content:space-between;align-items:center;"><span style="font-size:11px;color:#888;text-transform:uppercase;letter-spacing:.06em;">Loyalty points</span><button onclick="_loadClientLoyalty('${id}')" style="background:var(--accent-tint);border:1px solid var(--accent-a30,#3d2d10);color:var(--accent);border-radius:8px;padding:4px 10px;font-size:11px;font-weight:600;cursor:pointer;font-family:inherit;"><i class="ti ti-star" style="font-size:11px;"></i> Check Square</button></div>
+    <div id="sq-loyalty-body" style="margin-top:9px;font-size:12px;color:#9a9a9a;line-height:1.5;">${c.loyalty&&c.loyalty.points!=null?('<b style="color:var(--accent);">'+c.loyalty.points+' points</b> · '+(c.loyalty.lifetime||0)+' lifetime'):('Check '+_fileEsc(c.name.split(' ')[0])+"’s Square loyalty balance.")}</div>
   </div>`:''}
   ${c.flaggedContra?`<div style="margin:12px 16px 0;background:#2a0f0f;border:1px solid #5a2020;border-radius:12px;padding:12px 14px;">
     <div style="display:flex;align-items:center;gap:8px;margin-bottom:6px;"><i class="ti ti-alert-triangle" style="font-size:16px;color:#e87070;"></i><span style="font-size:13px;font-weight:700;color:#f0c8c8;">Flagged on intake, review before the visit</span></div>
@@ -9895,7 +9917,8 @@ function _assembleClientData(id){
   // saw the generic default questionnaire instead of the provider's added/removed questions and the
   // "saved, your clients see these now" toast was misleading. It's small and bounded, so per-client is fine.
   const checkinCfgOut=(typeof checkinCfg!=='undefined'&&checkinCfg&&typeof checkinCfg==='object')?checkinCfg:null;
-  return {studio,studioAddress,website,providerName,profile:{skin:c.skin||'',concerns:c.concerns||'',allergies:c.allergies||'',fitz:c.fitz||'',treatment:c.treatment||'',lastVisit:c.lastVisit||'',nextVisit:c.nextVisit||'',email:c.email||'',phone:c.phone||''},summaries,aftercare,products,routine,forms,pendingForms,pendingGuides,pendingCourses,photos:Array.isArray(c.photos)?c.photos:[],progressPhotos,booking:{canRequest:true},availability,vcInvite,checkinCfg:checkinCfgOut};
+  const loyaltyOut=(c.loyalty&&typeof c.loyalty==='object'&&c.loyalty.points!=null)?{points:c.loyalty.points,lifetime:c.loyalty.lifetime||0}:null;
+  return {studio,studioAddress,website,providerName,profile:{skin:c.skin||'',concerns:c.concerns||'',allergies:c.allergies||'',fitz:c.fitz||'',treatment:c.treatment||'',lastVisit:c.lastVisit||'',nextVisit:c.nextVisit||'',email:c.email||'',phone:c.phone||''},summaries,aftercare,products,routine,forms,pendingForms,pendingGuides,pendingCourses,photos:Array.isArray(c.photos)?c.photos:[],progressPhotos,booking:{canRequest:true},availability,vcInvite,checkinCfg:checkinCfgOut,loyalty:loyaltyOut};
 }
 let _syncingClients=false,_clientSyncTimer=null;
 function _scheduleClientSync(){ if(_clientSyncTimer)clearTimeout(_clientSyncTimer); _clientSyncTimer=setTimeout(function(){_syncClientsToServer({});},2500); }

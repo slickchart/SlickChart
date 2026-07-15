@@ -2648,7 +2648,9 @@ function renderShop(){
   const savedCount=prov.saved.length;
   const tabs=[['recommended','Recommended'],['all','Shop all'],['saved','Saved'+(savedCount?` (${savedCount})`:'')],['history','History']];
   const seg=`<div style="display:flex;gap:3px;margin:0 16px 14px;background:#f4efe9;border-radius:11px;padding:4px;">${tabs.map(([v,lbl])=>`<button onclick="setShopView('${v}')" style="flex:1;border:none;border-radius:8px;padding:8px 2px;font-size:11px;font-weight:600;cursor:pointer;white-space:nowrap;background:${shopView===v?'#fff':'transparent'};color:${shopView===v?'var(--accent)':'#a8957f'};box-shadow:${shopView===v?'0 1px 2px rgba(0,0,0,.08)':'none'};">${lbl}</button>`).join('')}</div>`;
-  const header=`<div style="padding:14px 16px 12px;"><div id="page-heading" tabindex="-1" style="font-size:17px;font-weight:700;color:#1a1a1a;">${_txt(client.providerFirst)}'s Shop</div></div>`;
+  const _loy=activeProvider().loyalty;
+  const _loyCard=(_loy&&_loy.points!=null)?`<div style="margin:0 16px 12px;background:linear-gradient(135deg,var(--accent-lt),#fff);border:1px solid var(--accent-lt);border-radius:12px;padding:11px 14px;display:flex;align-items:center;gap:10px;"><i class="ti ti-star-filled" aria-hidden="true" style="font-size:20px;color:var(--accent);"></i><div style="flex:1;min-width:0;"><div style="font-size:15px;font-weight:700;color:#1a1a1a;">${_loy.points} loyalty point${_loy.points===1?'':'s'}</div><div style="font-size:11px;color:#786858;">Earned with ${_txt(client.providerFirst)}${_loy.lifetime?` · ${_loy.lifetime} lifetime`:''}</div></div></div>`:'';
+  const header=`<div style="padding:14px 16px 12px;"><div id="page-heading" tabindex="-1" style="font-size:17px;font-weight:700;color:#1a1a1a;">${_txt(client.providerFirst)}'s Shop</div></div>`+_loyCard;
   const empty=(icon,msg)=>`<div style="margin:18px 16px;background:#faf7f4;border-radius:14px;padding:30px 22px;display:flex;flex-direction:column;align-items:center;gap:9px;text-align:center;"><i class="ti ${icon}" aria-hidden="true" style="font-size:26px;color:#cbbba9;"></i><div style="font-size:13px;color:#a8957f;line-height:1.5;">${msg}</div></div>`;
   let body='';
   if(shopView==='recommended'){
@@ -4553,6 +4555,8 @@ function _applyRealClientData(j){
   // miss this — only the demo client got it via SlickBridge. Explicitly set (null when none) so no
   // stale demo routine leaks through.
   p.routine=(d.routine&&typeof d.routine==='object'&&(d.routine.name||d.routine.note))?{name:d.routine.name||'Your routine',note:d.routine.note||'',date:d.routine.date||''}:null;
+  // Square loyalty balance the provider checked for this client (points + lifetime), shown on Shop.
+  p.loyalty=(d.loyalty&&typeof d.loyalty==='object'&&d.loyalty.points!=null)?{points:d.loyalty.points,lifetime:d.loyalty.lifetime||0}:null;
   // Full shop catalog (every active product the provider offers), for the "Shop all" tab.
   p.catalog=Array.isArray(d.catalog)?d.catalog:[];
   // Before/after progress photos the provider chose to share with this client (refs only; bytes are
@@ -4698,6 +4702,8 @@ function _clientDataFingerprint(j){
       (Array.isArray(d.aftercare)?d.aftercare.join('|'):''),
       // Named routine + provider's "why" note — so re-sending/renaming a routine re-renders live.
       (d.routine&&((d.routine.name||'')+'~'+(d.routine.note||'')))||'',
+      // Loyalty balance — so a freshly-checked points balance appears without a reload.
+      (d.loyalty&&(d.loyalty.points+'~'+(d.loyalty.lifetime||0)))||'',
       // Progress photos the provider shares — count + latest ref, so newly shared/removed photos poll in.
       (Array.isArray(d.progressPhotos)?d.progressPhotos.length:0),
       (Array.isArray(d.progressPhotos)&&d.progressPhotos[0]&&(d.progressPhotos[0].id||d.progressPhotos[0].url||''))||'',
