@@ -3623,7 +3623,7 @@ function _vcCapture(kind,label){
   _vcActiveSlot={kind,label};
   let inp=document.getElementById('vc-file-input');
   if(!inp){inp=document.createElement('input');inp.type='file';inp.accept='image/*';inp.id='vc-file-input';inp.style.display='none';
-    inp.onchange=function(){const f=this.files&&this.files[0];if(f&&_vcActiveSlot){const slot=_vcActiveSlot;_downscaleImage(f,1000,src=>{if(src)_vcSubmitState[slot.kind][slot.label]={src,ts:Date.now()};renderVirtualSubmit();});}this.value='';};
+    inp.onchange=function(){const f=this.files&&this.files[0];if(f&&_vcActiveSlot){const slot=_vcActiveSlot;_downscaleImage(f,1000,src=>{if(src){_vcSubmitState[slot.kind][slot.label]={src,ts:Date.now()};try{persistVcDraft();}catch(e){}}renderVirtualSubmit();});}this.value='';};
     (document.querySelector('.shell')||document.body).appendChild(inp);}
   if(kind==='photos')inp.setAttribute('capture','environment');else inp.removeAttribute('capture');
   inp.click();
@@ -3681,7 +3681,7 @@ function submitVirtualConsult(){
     const j=client.providers.find(p=>p.id==='jess');
     if(j){j.virtualConsults=j.virtualConsults||[];j.virtualConsults.unshift(entry);try{persistVirtualConsults();}catch(e){}}
     try{if(inv&&inv.invitedAt)localStorage.setItem('sc_vc_submitted',String(inv.invitedAt));}catch(e){}
-    vcInvite=null;_vcSubmitState={photos:{},refs:{}};try{persistInvite();}catch(e){}
+    vcInvite=null;_vcSubmitState={photos:{},refs:{}};try{persistInvite();}catch(e){}try{persistVcDraft();}catch(e){}
     if(typeof pushNotify==='function')pushNotify({type:'vcSubmitted',icon:'ti-check',col:'#e9f7f0',ic:'#4ec49a',title:'Consult submitted',body:client.providerFirst+' will review your photos and send notes back.'});
     nav('journey');
   };
@@ -3699,7 +3699,12 @@ function submitVirtualConsult(){
 function persistVirtualConsults(){const j=client.providers.find(p=>p.id==='jess');if(!j)return;try{localStorage.setItem('sc_client_vc',JSON.stringify(j.virtualConsults||[]));}catch(e){}}
 function loadVirtualConsults(){try{const raw=localStorage.getItem('sc_client_vc');if(!raw)return;const arr=JSON.parse(raw);const j=client.providers.find(p=>p.id==='jess');if(j&&Array.isArray(arr)&&arr.length)j.virtualConsults=arr;}catch(e){}}
 function persistInvite(){try{if(vcInvite)localStorage.setItem('sc_client_invite',JSON.stringify(vcInvite));else localStorage.removeItem('sc_client_invite');}catch(e){}}
-function loadInvite(){try{const raw=localStorage.getItem('sc_client_invite');if(raw)vcInvite=JSON.parse(raw);}catch(e){}}
+function loadInvite(){try{const raw=localStorage.getItem('sc_client_invite');if(raw)vcInvite=JSON.parse(raw);}catch(e){}try{loadVcDraft();}catch(e){}}
+// Persist the in-progress virtual-consult photos so a failed submit + app close doesn't lose every
+// photo the client took (the invite was already persisted; the photos were memory-only, contradicting
+// the "we keep the invite and photos so they can retry" promise). Cleared on successful submit.
+function persistVcDraft(){try{if(_vcSubmitState&&(Object.keys(_vcSubmitState.photos||{}).length||Object.keys(_vcSubmitState.refs||{}).length))localStorage.setItem('sc_vc_draft',JSON.stringify(_vcSubmitState));else localStorage.removeItem('sc_vc_draft');}catch(e){}}
+function loadVcDraft(){try{const raw=localStorage.getItem('sc_vc_draft');if(raw){const o=JSON.parse(raw);if(o&&typeof o==='object'&&o.photos)_vcSubmitState={photos:o.photos||{},refs:o.refs||{}};}}catch(e){}}
 function _toggleSummaryGuide(gi){
   var tips=document.getElementById('sg-tips-'+gi);var chev=document.getElementById('sg-chev-'+gi);
   if(!tips)return;
@@ -4563,7 +4568,7 @@ function _applyServerVcInvite(vi){
   if(!vcInvite||String(vcInvite.invitedAt||'')!==iat){
     vcInvite={kind:vi.kind,title:vi.title||'Virtual consult',fee:vi.fee||'',providerFirst:client.providerFirst,invitedAt:vi.invitedAt||0};
     _vcSubmitState={photos:{},refs:{}};
-    try{persistInvite();}catch(e){}
+    try{persistInvite();}catch(e){}try{persistVcDraft();}catch(e){}   // a new invite starts a fresh draft
   }
   let notified='';try{notified=localStorage.getItem('sc_vc_notified')||'';}catch(e){}
   if(iat!==notified){
