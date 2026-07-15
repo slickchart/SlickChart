@@ -13855,6 +13855,20 @@ function _biSaveUnpaid(){
 }
 
 // Payments hub
+// Quick Square gift-card balance lookup by card number.
+async function _checkGiftCard(){
+  const gan=(prompt('Enter the gift card number to check its balance:')||'').trim();
+  if(!gan)return;
+  const tok=(typeof Cloud!=='undefined'&&Cloud&&Cloud.token)||'';
+  if(typeof proToast==='function')proToast('Checking gift card…');
+  try{
+    const r=await fetch('/api/square/giftcard?gan='+encodeURIComponent(gan),{headers:{'Authorization':'Bearer '+tok}});
+    const j=await r.json().catch(()=>({}));
+    if(!r.ok||!j.ok){if(typeof proToast==='function')proToast((j&&j.code==='scope')?'Reconnect Square to check gift cards.':((j&&j.error)||'Could not check gift card'),0);return;}
+    if(!j.found){if(typeof proToast==='function')proToast('No gift card found for that number',0);return;}
+    if(typeof proToast==='function')proToast('Gift card balance: $'+(+j.balance||0).toFixed(2)+(j.state&&j.state!=='ACTIVE'?(' ('+String(j.state).toLowerCase()+')'):''),0);
+  }catch(e){if(typeof proToast==='function')proToast('Could not reach Square, try again');}
+}
 function renderPayments(){
   setNav('payments');document.getElementById('tt').textContent='Payments';
   const byDateDesc=(a,b)=>_dateToTime(b.date)-_dateToTime(a.date);
@@ -13870,6 +13884,7 @@ function renderPayments(){
     <button onclick="nav('build-invoice')" style="flex:1 1 100%;background:var(--accent);color:var(--accent-ink);border:none;border-radius:9px;padding:11px;font-size:13px;font-weight:700;cursor:pointer;font-family:inherit;"><i class="ti ti-file-invoice"></i> Build an invoice</button>
     <button onclick="_payLogOpen()" style="flex:1;background:#161616;border:1px solid #2a2a2a;color:#cfe4d8;border-radius:9px;padding:10px;font-size:12px;font-weight:600;cursor:pointer;font-family:inherit;min-width:110px;"><i class="ti ti-plus"></i> Log a payment</button>
     <button onclick="_paySyncSquare()" style="flex:1;background:#161616;border:1px solid #2a2a2a;color:#cfe4d8;border-radius:9px;padding:10px;font-size:12px;font-weight:600;cursor:pointer;font-family:inherit;min-width:110px;"><i class="ti ti-refresh"></i> Sync from Square</button>
+    <button onclick="_checkGiftCard()" style="flex:1;background:#161616;border:1px solid #2a2a2a;color:#cfe4d8;border-radius:9px;padding:10px;font-size:12px;font-weight:600;cursor:pointer;font-family:inherit;min-width:110px;"><i class="ti ti-gift"></i> Gift card balance</button>
     <button onclick="_payExportCSV()" style="background:#161616;border:1px solid #2a2a2a;color:#aaa;border-radius:9px;padding:10px 12px;font-size:12px;font-weight:600;cursor:pointer;font-family:inherit;"><i class="ti ti-download"></i> CSV</button>
     <button onclick="nav('reports')" style="background:#161616;border:1px solid #2a2a2a;color:#cfe4d8;border-radius:9px;padding:10px 12px;font-size:12px;font-weight:600;cursor:pointer;font-family:inherit;"><i class="ti ti-chart-bar"></i> Reports</button>
   </div>
