@@ -67,6 +67,10 @@ function normalizeItem(o, catNames, imgUrls) {
   const catId = (d.categories && d.categories[0] && d.categories[0].id) || d.category_id || '';
   const imgId = (d.image_ids && d.image_ids[0]) || '';
   const pt = d.product_type || 'REGULAR';
+  // SEO permalink for the item's Square Online store page (ecom_uri is deprecated). This is only the
+  // name slug — Square's full product URL also carries a numeric id — but combined with the seller's
+  // store domain it forms the best automatic deep link we can build from the catalog.
+  const seo = d.ecom_seo_data || {};
   return {
     id: o.id,
     name: d.name || '(unnamed)',
@@ -75,6 +79,7 @@ function normalizeItem(o, catNames, imgUrls) {
     productType: pt,
     isService: pt === 'APPOINTMENTS_SERVICE',
     image: imgUrls[imgId] || '',
+    permalink: seo.permalink || '',
     variations: vars,
     price: prices.length ? Math.min(...prices) : null,
     priceMax: prices.length ? Math.max(...prices) : null,

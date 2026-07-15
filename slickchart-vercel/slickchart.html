@@ -9787,7 +9787,11 @@ function _assembleClientData(id){
   let products=[];
   try{
     const recIds=(typeof clientRecs!=='undefined'&&clientRecs[id])||[];
-    products=recIds.map(rid=>{const a=(typeof affiliateLinks!=='undefined'?affiliateLinks.find(x=>x.id===rid):null);return a?{name:a.name,brand:a.brand||'',why:((typeof _recReason==='function'?_recReason(id,rid):'')||''),icon:a.icon||'',image:(/^https?:\/\//i.test(String(a.image||'')))?a.image:'',url:a.url||a.site||''}:null;}).filter(Boolean);
+    products=recIds.map(rid=>{const a=(typeof affiliateLinks!=='undefined'?affiliateLinks.find(x=>x.id===rid):null);return a?{name:a.name,brand:a.brand||'',why:((typeof _recReason==='function'?_recReason(id,rid):'')||''),icon:a.icon||'',image:(/^https?:\/\//i.test(String(a.image||'')))?a.image:'',
+      // Send the buy channels separately (was flattened to one `url`) so the client's Buy sheet shows
+      // "Buy from your store" pointing at the product's own page (a.site now carries the deep link),
+      // plus any brand/Amazon/in-office option — instead of collapsing everything into a single link.
+      url:a.url||'',site:a.site||'',siteCode:a.siteCode||'',urlCode:a.urlCode||'',inOffice:!!a.inOffice,amazon:((typeof amazonBuyUrl==='function'?amazonBuyUrl(a):'')||''),amazonCode:a.amazonCode||''}:null;}).filter(Boolean);
   }catch(e){}
   let summaries=Array.isArray(c.summaries)?c.summaries:[];
   // Do NOT fabricate a summary when there isn't one. Previously this auto-generated
@@ -14115,7 +14119,9 @@ function _saveShopUrl(v){
   bizInfo.shopUrl=String(v||'').trim().replace(/^https?:\/\//i,'').replace(/\/+$/,'');
   try{(function(_v){localStorage.setItem('sc_bizinfo',_v);if(typeof _pushKeyNow==='function')_pushKeyNow('sc_bizinfo',_v);return _v;})(JSON.stringify(bizInfo));}catch(e){}
   const shop=bizInfo.shopUrl;
-  affiliateLinks.forEach(a=>{if(a.source==='square'&&shop&&!a.site)a.site=shop;});
+  // Point each Square product's Buy link at its own page ({shop}/product/{permalink}) when we know the
+  // slug, else the shop-all page. Only for auto-set links — never clobber a hand-pasted exact URL.
+  affiliateLinks.forEach(a=>{if(a.source==='square'&&shop&&(!a.site||a.siteAuto)){const s=String(a.squarePermalink||'').replace(/^\/+|\/+$/g,'');a.site=s?(shop.replace(/\/+$/,'')+'/product/'+s):shop;a.siteAuto=true;}});
   if(typeof persistWorkspace==='function')persistWorkspace();
   if(typeof proToast==='function')proToast(shop?'Shop URL saved, set as default Buy':'Shop URL cleared');
 }
@@ -14130,13 +14136,20 @@ function _mergeSquareRetail(){
       const id='sq_'+String(p.id).toLowerCase().replace(/[^a-z0-9]/g,'').slice(0,14);
       const priceLabel=(p.price!=null)?('$'+(Math.round(p.price*100)/100)):'';
       const brand=[p.category||'',priceLabel].filter(Boolean).join(' · ')||'Your product';
+      // Best automatic deep link to the product's own page: {shop}/product/{permalink}. Falls back to
+      // the shop-all page when the item has no online-store slug. `siteAuto` marks a link we set
+      // automatically so a later resync can refresh it — but once the provider edits the store link by
+      // hand (siteAuto cleared in saveAffiliate), we never overwrite their exact URL.
+      const _slug=String(p.permalink||'').replace(/^\/+|\/+$/g,'');
+      const _deep=(shop&&_slug)?(shop.replace(/\/+$/,'')+'/product/'+_slug):shop;
       const existing=affiliateLinks.find(a=>a.id===id);
       if(existing){
         existing.name=p.name;existing.price=p.price;existing.brand=brand;existing.source='square';existing.squareId=p.id;
+        if(p.permalink)existing.squarePermalink=p.permalink;
         if(p.image)existing.image=p.image;
-        if(shop&&!existing.site)existing.site=shop;   // default Buy = your Square shop
+        if(shop&&(!existing.site||existing.siteAuto)){existing.site=_deep;existing.siteAuto=true;}   // default Buy = the product's own page
       }else{
-        affiliateLinks.push({id,name:p.name,brand,icon:'🛍️',image:p.image||'',site:shop||'',url:'',amazon:'',active:true,inOffice:true,source:'square',price:p.price,squareId:p.id});
+        affiliateLinks.push({id,name:p.name,brand,icon:'🛍️',image:p.image||'',site:_deep,siteAuto:!!(shop),squarePermalink:p.permalink||'',url:'',amazon:'',active:true,inOffice:true,source:'square',price:p.price,squareId:p.id});
       }
     });
     // Prune Square products that vanished from the catalog (discontinued, or left over from a
@@ -17412,6 +17425,7 @@ function renderAddAffiliate(ei){
     <div style="font-size:11px;font-weight:500;color:#aaa;text-transform:uppercase;letter-spacing:.07em;margin:6px 0 8px;">Where clients can buy</div>
     <label style="display:flex;align-items:center;gap:8px;margin-bottom:12px;background:#161616;border:1px solid #2a2a2a;border-radius:8px;padding:10px 12px;font-size:13px;color:#e0e0e0;cursor:pointer;"><input type="checkbox" id="af-inoffice" ${p.inOffice?'checked':''} style="width:17px;height:17px;accent-color:var(--accent);flex-shrink:0;"> <i class="ti ti-building-store" style="font-size:15px;color:var(--accent);"></i> Available in office (clients buy from you)</label>
     <span class="fl-lbl">Your website / store link</span><input class="fi" id="af-site" aria-label="Your website link" placeholder="glowingskinstudio.com/shop/..." value="${(p.site||'').replace(/"/g,'&quot;')}" style="margin-bottom:6px;">
+    ${p.source==='square'?`<div style="font-size:11px;color:#9a9a9a;line-height:1.5;margin:0 2px 8px;">We point this at your product's Square page automatically. If it doesn't open the exact item, open that product in your Square dashboard, tap <b style="color:#c9c9c9;">Copy link</b>, and paste it here — that's the guaranteed-correct link.</div>`:''}
     <input class="fi" id="af-site-code" aria-label="Your store discount code" placeholder="↳ Your store discount code (optional)" value="${(p.siteCode||'').replace(/"/g,'&quot;')}" style="margin-bottom:12px;font-size:13px;background:#0d0d0d;">
     <span class="fl-lbl">Affiliate / brand link</span><input class="fi" id="af-url" aria-label="Affiliate or brand URL" placeholder="brand.com/ref/jessica" value="${(p.url||'').replace(/"/g,'&quot;')}" style="margin-bottom:6px;">
     <input class="fi" id="af-url-code" aria-label="Brand site discount code" placeholder="↳ Brand site discount code (optional)" value="${(p.urlCode||'').replace(/"/g,'&quot;')}" style="margin-bottom:12px;font-size:13px;background:#0d0d0d;">
@@ -17448,7 +17462,9 @@ function saveAffiliate(ei){
   const inOffice=!!document.getElementById('af-inoffice')?.checked;
   const commission=window._afComm||'10%';
   if(typeof ei==='number'&&affiliateLinks[ei]){
-    Object.assign(affiliateLinks[ei],{name,brand,icon,url,site,amazon,siteCode,urlCode,amazonCode,inOffice,commission});
+    // The provider just set the store link by hand — mark it manual so a Square resync never
+    // overwrites their exact product URL with an auto-built one.
+    Object.assign(affiliateLinks[ei],{name,brand,icon,url,site,amazon,siteCode,urlCode,amazonCode,inOffice,commission,siteAuto:false});
   }else{
     affiliateLinks.push({id:'a'+Date.now(),name,brand,icon,url,site,amazon,siteCode,urlCode,amazonCode,inOffice,clicks:0,earnings:0,commission,active:true});
   }
