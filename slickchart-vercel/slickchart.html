@@ -1177,9 +1177,12 @@ function _saveClientDetails(id){
   const c=CL[id]; if(!c)return;
   const g=x=>{const e=document.getElementById(x);return e?String(e.value||'').trim():'';};
   const nm=g('cd-name');
-  if(nm){c.name=nm;c.initials=_initials(nm);}
+  if(nm){c.name=nm;c.initials=_initials(nm);}   // keep name non-empty (it's the chart's identity)
   c.email=g('cd-email'); c.phone=g('cd-phone');
-  const dob=g('cd-dob'); if(dob)c.birthday=dob;
+  // Allow CLEARING a wrong date of birth: assign whatever the field holds (including empty) as long
+  // as the field is actually on screen. Only skip when the input isn't rendered, so we never blank a
+  // DOB just because this variant of the sheet didn't show the field.
+  const _dobEl=document.getElementById('cd-dob'); if(_dobEl)c.birthday=String(_dobEl.value||'').trim();
   saveClients();
   if(typeof Cloud!=='undefined'&&Cloud&&Cloud.pushAllLocal){try{Cloud.pushAllLocal();}catch(e){}}
   const m=document.getElementById('cl-edit'); if(m)m.remove();
@@ -1378,6 +1381,10 @@ function _cleanupClientData(id){
     // resolve them from. Cancel those (drops them out of Outstanding/A/R) but keep any PAID records
     // so revenue history and reports stay intact.
     if(typeof _payments!=='undefined'&&Array.isArray(_payments)){let _ch=false;_payments.forEach(p=>{if(p&&p.clientId===id&&(p.status==='unpaid'||p.status==='partial')){p.status='canceled';_ch=true;}});if(_ch&&typeof _savePayments==='function')_savePayments();}
+    // Drop the removed client's check-ins so they don't linger in the inbox with a chart that no
+    // longer exists (tapping one would white-screen). Their lastCheckin lived on the client record,
+    // which is being deleted alongside this.
+    if(typeof checkins!=='undefined'&&Array.isArray(checkins)){const _n=checkins.length;checkins=checkins.filter(ci=>!(ci&&ci.clientId===id));if(checkins.length!==_n&&typeof _persistCheckinsNow==='function')_persistCheckinsNow();}
   }catch(e){}
   try{if(typeof persistClientRecs==='function')persistClientRecs();}catch(e){}
   try{if(typeof persistRecReasons==='function')persistRecReasons();}catch(e){}
@@ -1469,7 +1476,10 @@ function _mergeSideStores(keepId,dropId){
     if(typeof msgStore!=='undefined'&&msgStore[dropId]){msgStore[keepId]=(msgStore[keepId]||[]).concat(msgStore[dropId]);delete msgStore[dropId];}
     if(typeof threads!=='undefined'&&Array.isArray(threads)){for(let i=threads.length-1;i>=0;i--){if(threads[i]&&threads[i].id===dropId){if(threads.some(t=>t&&t.id===keepId))threads.splice(i,1);else threads[i].id=keepId;}}}
     if(typeof _payments!=='undefined'&&Array.isArray(_payments)){_payments.forEach(p=>{if(p&&p.clientId===dropId)p.clientId=keepId;});}
+    // Re-point the merged-away client's check-ins to the kept chart so they don't orphan in the inbox.
+    if(typeof checkins!=='undefined'&&Array.isArray(checkins)){checkins.forEach(ci=>{if(ci&&ci.clientId===dropId)ci.clientId=keepId;});}
   }catch(e){}
+  try{typeof _persistCheckinsNow==='function'&&_persistCheckinsNow();}catch(e){}
   try{typeof persistClientRecs==='function'&&persistClientRecs();}catch(e){}
   try{typeof persistRecReasons==='function'&&persistRecReasons();}catch(e){}
   try{typeof persistClientHomecare==='function'&&persistClientHomecare();}catch(e){}
@@ -1547,12 +1557,15 @@ function _updateMergePreview(){
   const el=document.getElementById('merge-preview');if(!el)return;
   const ids=window._mergeGroupIds||[];const keep=window._mergeKeep;
   if(!keep||!CL[keep]){el.innerHTML='';return;}
-  let forms=0,summ=0,photos=0,msgs=0;const seenF={};
+  let forms=0,summ=0,msgs=0;const seenF={};const seenP={};
   ids.forEach(id=>{const c=CL[id]||{};(c.submittedForms||[]).forEach(sf=>{const k=(sf&&(sf.formId+'|'+(sf.date||'')))||JSON.stringify(sf);if(!seenF[k]){seenF[k]=1;forms++;}});
     if(typeof sessionSummaries!=='undefined')summ+=((sessionSummaries[id]||[]).length);
-    if(typeof capturedPhotos!=='undefined')photos+=((capturedPhotos[id]||[]).length);
+    // Dedup photos by pid/url exactly as the merge does, so the preview count matches the real result
+    // (summing raw lengths over-counted any photo the two records shared).
+    if(typeof capturedPhotos!=='undefined')(capturedPhotos[id]||[]).forEach(p=>{const k=(p&&(p.pid||p.url))||'';if(k&&!seenP[k])seenP[k]=1;});
     if(typeof msgStore!=='undefined')msgs+=((msgStore[id]||[]).length);
   });
+  const photos=Object.keys(seenP).length;
   el.innerHTML=`Everything combines into <b style="color:#cfe9db;">${_fileEsc(CL[keep].name)}</b>. Result: ${forms} form${forms===1?'':'s'} · ${summ} summar${summ===1?'y':'ies'} · ${photos} photo${photos===1?'':'s'}${msgs?(' · '+msgs+' message'+(msgs===1?'':'s')):''}.`;
 }
 function _doMerge(){
@@ -3966,6 +3979,9 @@ function _upcomingVisit(id){
 function renderBrief(id){
   setNav('clients');
   const c=CL[id];
+  // Guard a stale/deleted client id (e.g. tapping an old notification for a client who was since
+  // removed or merged away) — otherwise every c.name/c.treatment below throws and the app white-screens.
+  if(!c){document.getElementById('tt').textContent='AI Client Brief';S.innerHTML=`<div style="padding:60px 24px;text-align:center;color:#888;"><div style="font-size:30px;margin-bottom:10px;">🗂️</div><div style="font-size:14px;">This client is no longer on file.</div><button onclick="nav('clients')" class="btnp" style="margin-top:16px;border-radius:9px;padding:9px 16px;font-size:13px;">Back to clients</button></div>`;return;}
   document.getElementById('tt').textContent='AI Client Brief';
   S.innerHTML=`
   <div style="padding:12px 16px 0;display:flex;justify-content:flex-end;align-items:center;">
