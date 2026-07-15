@@ -9582,19 +9582,26 @@ function _assembleClientData(id){
   // never wrote. If there's no real summary yet, the client simply sees none until
   // the provider sends one.
   const forms=(Array.isArray(c.submittedForms)?c.submittedForms.map(f=>({title:f.title||'Form',status:f.signed?'signed':'submitted',date:f.date||''})):[]);
+  // "Sent = permanent": resolve each assigned form/guide/course from the live library and keep a
+  // snapshot on the pending entry. If the provider later deletes it from their library, we serve the
+  // last snapshot so a client never loses something they were already given. (Files are fetched by
+  // id and, for guides, aren't deleted with the record; deleteCourse now keeps its files too.)
   const pendingForms=(Array.isArray(c.pendingForms)?c.pendingForms:[]).map(pf=>{
-    const tmpl=formTmpls[pf.formId];if(!tmpl)return null;
-    return {formId:pf.formId,title:tmpl.name,qs:(tmpl.qs||[]).map(q=>({id:q.id,label:q.label,type:q.type,required:!!q.required,options:q.options||null,items:q.items||null}))};
+    const tmpl=formTmpls[pf.formId];
+    if(tmpl){const out={formId:pf.formId,title:tmpl.name,qs:(tmpl.qs||[]).map(q=>({id:q.id,label:q.label,type:q.type,required:!!q.required,options:q.options||null,items:q.items||null}))};pf.snapshot=out;return out;}
+    return pf.snapshot||null;
   }).filter(Boolean);
   const pendingGuides=(Array.isArray(c.pendingGuides)?c.pendingGuides:[]).map(pg=>{
-    const g=(typeof _findGuide==='function')?_findGuide(pg.guideId):null;if(!g)return null;
-    return {guideId:pg.guideId,title:g.title||'Guide',icon:g.icon||'📄',cat:g.cat||'',url:g.url||'',tips:Array.isArray(g.tips)?g.tips:[],
-      files:_guideFileList(g),fileName:g.fileName||'',fileType:g.fileType||'',hasFile:!!(g.hasFile||g.fileData)};
+    const g=(typeof _findGuide==='function')?_findGuide(pg.guideId):null;
+    if(g){const out={guideId:pg.guideId,title:g.title||'Guide',icon:g.icon||'📄',cat:g.cat||'',url:g.url||'',tips:Array.isArray(g.tips)?g.tips:[],
+      files:_guideFileList(g),fileName:g.fileName||'',fileType:g.fileType||'',hasFile:!!(g.hasFile||g.fileData)};pg.snapshot=out;return out;}
+    return pg.snapshot?Object.assign({},pg.snapshot,{guideId:pg.guideId}):null;
   }).filter(Boolean);
   // Full courses the provider assigned, rendered by the client's in-app course player.
   const pendingCourses=(Array.isArray(c.pendingCourses)?c.pendingCourses:[]).map(pc=>{
-    const co=(typeof courses!=='undefined')?courses.find(x=>x.id===pc.id):null;if(!co)return null;
-    return (typeof _coursePayload==='function')?_coursePayload(co):null;
+    const co=(typeof courses!=='undefined')?courses.find(x=>x.id===pc.id):null;
+    if(co){const out=(typeof _coursePayload==='function')?_coursePayload(co):null;if(out){pc.snapshot=out;return out;}}
+    return pc.snapshot||null;
   }).filter(Boolean);
   // Active virtual-consult invite for this client (if any), so the invite reaches them
   // cross-device, not just via the same-browser SlickBridge. Dropped once they submit.
@@ -10908,8 +10915,10 @@ async function saveCourse(id){
 // so a deleted starter course doesn't get reseeded back on the next load.
 async function deleteCourse(id){
   const c=courses.find(x=>x.id===id);if(!c)return;
-  if(!confirm('Delete "'+String(c.title||'this course').replace(/\s+/g,' ').trim()+'"?\n\nThis permanently removes the course and its lessons. This can’t be undone.'))return;
-  try{(_courseLessons(c)||[]).forEach(l=>{_lessonFileList(l).forEach(f=>{if(f&&f.fileId){try{_persistGuideFile(f.fileId,null,true);}catch(e){}}});});}catch(e){}
+  if(!confirm('Delete "'+String(c.title||'this course').replace(/\s+/g,' ').trim()+'"?\n\nThis removes it from your library. Clients you already sent it to keep their copy.'))return;
+  // NOTE: deliberately do NOT delete the lesson files from the server here — a client who was
+  // already sent this course still downloads them by id (sent = permanent). Orphaned files for a
+  // course no client has are negligible; keeping them is the safe trade.
   const i=courses.findIndex(x=>x.id===id);if(i>=0)courses.splice(i,1);
   try{_markCoursesCustom();}catch(e){}
   // Await the persist + the custom-flag push before leaving, same as saveCourse — otherwise a fast
