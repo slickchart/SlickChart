@@ -8346,18 +8346,22 @@ function loadForms(){
 }
 function _migrateSkinConcernLongText(){
   try{
-    if(localStorage.getItem('sc_skinconcern_migrated')==='1')return;
+    // v2: the original migration only touched forms with "intake" in the name and fired once, so a
+    // provider whose intake was named otherwise (or whose form loaded after the one-time flag was
+    // set) kept seeing preset skin-concern tags. This bump re-runs the heal once more and matches by
+    // the QUESTION, not the form name — any "skin concern" question in any form becomes free text.
+    if(localStorage.getItem('sc_skinconcern_migrated_v2')==='1')return;
     let changed=false;
     Object.keys(formTmpls).forEach(k=>{
       const t=formTmpls[k];if(!t||!Array.isArray(t.qs))return;
-      if(!/intake/i.test((t.name||'')+' '+k))return;   // only intake forms
       t.qs.forEach(q=>{
         if(q&&/skin concern/i.test(q.label||'')&&q.type!=='Long text'){
           q.type='Long text';delete q.options;changed=true;
         }
       });
     });
-    localStorage.setItem('sc_skinconcern_migrated','1');
+    localStorage.setItem('sc_skinconcern_migrated_v2','1');
+    try{if(typeof _pushKeyNow==='function')_pushKeyNow('sc_skinconcern_migrated_v2','1');}catch(e){}
     if(changed&&typeof persistForms==='function')persistForms();
   }catch(e){}
 }
