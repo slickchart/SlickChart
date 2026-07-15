@@ -4736,15 +4736,39 @@ async function _fetchRealMessages(initial){
     if(initial){
       // Preserve any locally-unsent/failed messages the server never received, so the wholesale
       // refresh doesn't wipe a message (and its "Tap to retry") the client hasn't managed to send.
-      const _unsent=(jess.thread||[]).filter(function(m){return m&&m.from==='me'&&(m.status==='failed'||m.status==='sending');});
+      // A 'sending' message restored from a previous session is ORPHANED — the send promise died with
+      // that page and will never resolve — so downgrade it to 'failed' here, giving the client a real
+      // "Tap to retry" instead of a spinner stuck on "Sending…" forever.
+      const _unsent=(jess.thread||[]).filter(function(m){return m&&m.from==='me'&&(m.status==='failed'||m.status==='sending');}).map(function(m){return (m.status==='sending')?Object.assign({},m,{status:'failed'}):m;});
+      // Which provider messages are genuinely NEW (not seen in a prior session)? Snapshot BEFORE we
+      // mark everything seen, so we can raise the unread badge for messages that arrived while closed.
+      const _prevSeen=(typeof _msgSeenIds!=='undefined'&&Array.isArray(_msgSeenIds))?_msgSeenIds.slice():[];
+      const _freshProv=j.messages.filter(function(m){return m.from==='provider'&&_prevSeen.indexOf(m.id)<0;});
       jess.thread=j.messages.map(function(m){return {from:m.from==='provider'?'provider':'me',text:m.text,imgs:Array.isArray(m.photos)?m.photos:[],time:_fmtMsgTime(m.ts)};});
       // Drop a preserved copy only if that same text already came back from the server (it did send).
       const _serverMine=new Set(jess.thread.filter(function(m){return m.from==='me';}).map(function(m){return String(m.text||'').trim();}));
       _unsent.forEach(function(m){const k=String(m.text||'').trim();if(!(k&&_serverMine.has(k)))jess.thread.push(m);});
       _markMsgsSeen(j.messages.map(function(m){return m.id;}));
+      // Raise the unread badge (and one grouped notification) for messages received while the app was
+      // closed — previously the initial fetch blanket-marked everything seen and never set unread, so
+      // a message that came in overnight showed no badge and no notification.
+      const _viewingInit=client.activeProviderId===jess.id&&document.getElementById('chat-body');
+      if(_freshProv.length&&!_viewingInit){
+        jess.unread=(jess.unread||0)+_freshProv.length;
+        try{
+          const last=_freshProv[_freshProv.length-1];
+          const preview=(last.text&&last.text.trim())?last.text.trim():((Array.isArray(last.photos)&&last.photos.length)?'📷 Photo':'New message');
+          const who=client.providerFirst||'your provider';
+          if(typeof pushNotify==='function')pushNotify({type:'messagereply',icon:'ti-message-circle',col:'#f0f5ff',ic:'#5ba3e8',
+            title:_freshProv.length>1?(_freshProv.length+' new messages from '+who):('New message from '+who),
+            body:preview,onclick:function(){client.activeProviderId=jess.id;if(typeof applyActiveProvider==='function')applyActiveProvider();nav('messages');}});
+        }catch(e){}
+      }
       if(client.activeProviderId===jess.id)messages=jess.thread;
       try{_saveClientMessages();}catch(e){}
       if(document.getElementById('chat-body'))renderMessages();
+      else if(currentScreen==='home'&&typeof renderHome==='function')renderHome();
+      try{if(typeof updateClientBadge==='function')updateClientBadge();}catch(e){}
     }else{
       const newOnes=j.messages.filter(function(m){return m.from==='provider'&&_msgSeenIds.indexOf(m.id)<0;});
       if(!newOnes.length)return;
