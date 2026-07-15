@@ -4342,6 +4342,9 @@ function editVitals(id){
 }
 function saveVitals(id){
   _vitalsConfig().forEach(f=>{const el=document.getElementById('vital-'+f.key);if(el)CL[id][f.key]=el.value.trim();});
+  // A nextVisit typed here is provider-authored — drop the auto-stamp marker so the appointment
+  // reconcile pass won't treat it as a phantom and clear it.
+  try{if(CL[id])delete CL[id]._nvAuto;}catch(e){}
   try{saveClients();}catch(e){}   // CL isn't in the on-nav persistence sweep, so persist explicitly or the edit is lost on reload
   document.getElementById('vitals-modal')?.remove();
   if(typeof proToast==='function')proToast('Client details updated');
@@ -9772,7 +9775,14 @@ function _assembleClientData(id){
       progressPhotos=(capturedPhotos[id]||[]).filter(p=>p&&(p.phase==='before'||p.phase==='after')&&p.url).map(p=>({pid:(typeof _photoPid==='function'?_photoPid(p):p.pid)||'',ts:p.ts||0,phase:p.phase,angle:p.angle||'',date:(function(){try{return new Date(p.ts||Date.now()).toLocaleDateString('en-US',{month:'short',day:'numeric',year:'numeric'});}catch(e){return '';}})()})).filter(x=>x.pid);
     }
   }catch(e){}
-  return {studio,studioAddress,website,providerName,profile:{skin:c.skin||'',concerns:c.concerns||'',allergies:c.allergies||'',fitz:c.fitz||'',treatment:c.treatment||'',lastVisit:c.lastVisit||'',nextVisit:c.nextVisit||'',email:c.email||'',phone:c.phone||''},summaries,aftercare,products,forms,pendingForms,pendingGuides,pendingCourses,photos:Array.isArray(c.photos)?c.photos:[],progressPhotos,booking:{canRequest:true},availability,vcInvite};
+  // The named routine (with the provider's "why" note) the provider last sent this client. Demo
+  // clients get this live over SlickBridge; real clients only had the flat aftercare steps, so the
+  // routine card + reasoning never showed. Carry it in the blob so real clients see it too.
+  let routine=null;
+  try{const sr=(typeof currentSentRoutines==='function')?currentSentRoutines()[id]:null;
+    if(sr&&(sr.name||sr.note))routine={name:sr.name||'Your routine',note:sr.note||'',date:sr.date||''};
+  }catch(e){}
+  return {studio,studioAddress,website,providerName,profile:{skin:c.skin||'',concerns:c.concerns||'',allergies:c.allergies||'',fitz:c.fitz||'',treatment:c.treatment||'',lastVisit:c.lastVisit||'',nextVisit:c.nextVisit||'',email:c.email||'',phone:c.phone||''},summaries,aftercare,products,routine,forms,pendingForms,pendingGuides,pendingCourses,photos:Array.isArray(c.photos)?c.photos:[],progressPhotos,booking:{canRequest:true},availability,vcInvite};
 }
 let _syncingClients=false,_clientSyncTimer=null;
 function _scheduleClientSync(){ if(_clientSyncTimer)clearTimeout(_clientSyncTimer); _clientSyncTimer=setTimeout(function(){_syncClientsToServer({});},2500); }
@@ -9781,7 +9791,15 @@ function _scheduleClientSync(){ if(_clientSyncTimer)clearTimeout(_clientSyncTime
 // (which polls /api/client-data, not the same-browser bridge) actually receives it.
 function _persistAndSyncClient(cid){
   try{if(typeof persistWorkspace==='function')persistWorkspace();}catch(e){}
-  try{if(cid&&typeof _scheduleSpecificClientSync==='function')_scheduleSpecificClientSync(cid);else if(typeof _scheduleClientSync==='function')_scheduleClientSync();}catch(e){}
+  // Every caller here is a deliberate "send this to the client" tap (routine, product, bundle, VC
+  // invite), so push it to the server RIGHT NOW rather than on a 2.5s debounce — otherwise navigating
+  // away or the PWA freezing within that window silently drops the send and the client never gets it.
+  try{
+    if(cid&&typeof _syncSpecificClientsToServer==='function'){
+      if(_specificSyncTimers[cid]){clearTimeout(_specificSyncTimers[cid]);delete _specificSyncTimers[cid];}
+      _syncSpecificClientsToServer([cid],{});
+    }else if(typeof _scheduleClientSync==='function')_scheduleClientSync();
+  }catch(e){}
 }
 // Debounced per-client sync so rapid successive sends (product, then routine) collapse
 // into a single network call for that client rather than re-pushing the whole roster.
@@ -14876,6 +14894,12 @@ async function syncClientEvents(){
       const c=CL[cid];
       const name=payload.client||(c&&c.name)||'A client';
       if(ev.kind==='booking'){
+        // Idempotency: if this booking already exists (a re-processed event after a partial
+        // persist, or a poll on a second device), don't overwrite it or re-notify. Otherwise a
+        // booking the provider already CONFIRMED or DECLINED would silently revert to "pending"
+        // and fire a second "new request" alert for a slot that's already decided.
+        let _existBk=null;try{_existBk=(SlickBridge.getBookings()||[]).find(x=>x&&x.id===ev.id);}catch(e){}
+        if(_existBk)return;
         const b={id:ev.id,clientId:cid,client:name,treatment:payload.treatment||'Appointment',
           date:payload.date||'',dateLabel:payload.dateLabel||'',time:payload.time||'',
           note:payload.note||'',status:'pending',created:ev.created_at||Date.now()};
@@ -15131,7 +15155,7 @@ function addConfirmedAppt(b){
           // and roll to next year if that lands well in the past (same heuristic as elsewhere).
           if(cv&&cv!=='Not scheduled'){const datePart=cv.split('\u00b7')[0].trim();const yr=new Date().getFullYear();let d=new Date(datePart+' '+yr);if(!isNaN(d)){if((d-Date.now())/86400000<-60)d=new Date(datePart+' '+(yr+1));if(!isNaN(d))curAt=d;}}
         }catch(e){}
-        if(!curAt||bookAt<=curAt){CL[cid].nextVisit=nv;try{if(typeof saveClients==='function')saveClients();}catch(e){}}
+        if(!curAt||bookAt<=curAt){CL[cid].nextVisit=nv;CL[cid]._nvAuto=1;try{if(typeof saveClients==='function')saveClients();}catch(e){}}
       }
     }
   }catch(e){}
@@ -15568,7 +15592,7 @@ async function _loadSquareAppts(force){
     _sqApptsState='ok';
     // Keep the Google/Apple sync-out feed current with live Square bookings too, and reflect each
     // client's next appointment so it shows in their client app.
-    if(_changed){try{_rebuildCalendarFeed();}catch(e){}try{_stampClientNextVisit();}catch(e){}}
+    if(_changed){try{_rebuildCalendarFeed();}catch(e){}try{_stampClientNextVisit(true);}catch(e){}}
   }catch(e){_sqApptsState='error';squareAppts=null;}
   // Refresh the visible screen if it shows appointments (without touching nav history). A background
   // poll only repaints when the data actually changed (avoids flicker), but a manual Refresh (force)
@@ -15782,7 +15806,13 @@ function _apptRowHTML(a){
 // "next appointment" so it actually shows in their client app. Appointments are matched to a client
 // by name (manual/Square bookings are name-based). Format matches the confirm-flow's nextVisit
 // ("Weekday, Month day · time") so the two paths don't fight. Only sets, never clobbers with blank.
-function _stampClientNextVisit(){
+// Stamp each client's nextVisit from their soonest upcoming appointment. When `reconcile` is true
+// AND the appointment sources are trustworthy (Square loaded, or Square not connected), it ALSO
+// clears a stale nextVisit we previously auto-stamped once that appointment is gone (cancelled or
+// deleted) — otherwise the client keeps seeing a phantom appointment and a reminder fires for a slot
+// that no longer exists. Only auto-stamped values (marked `_nvAuto`) are ever cleared; a nextVisit
+// the provider typed by hand in Edit details is left untouched.
+function _stampClientNextVisit(reconcile){
   try{
     if(!CL||typeof CL!=='object')return;
     var startToday=new Date();startToday.setHours(0,0,0,0);
@@ -15790,15 +15820,26 @@ function _stampClientNextVisit(){
     if(typeof _apptsLive==='function'&&_apptsLive()&&Array.isArray(squareAppts))squareAppts.forEach(function(a){if(a.at&&!isNaN(a.at)&&a.at>=startToday)appts.push({name:a.client,clientId:'',when:a.at});});
     (typeof manualAppts!=='undefined'?manualAppts:[]).forEach(function(a){var w=_apptWhen(a.date,a.time);if(w&&w>=startToday)appts.push({name:a.client,clientId:a.clientId||'',when:w});});
     (typeof confirmedAppts!=='undefined'?confirmedAppts:[]).forEach(function(a){var w=_apptWhen(a.date,a.time);if(w&&w>=startToday)appts.push({name:a.client,clientId:a.clientId||'',when:w});});
-    if(!appts.length)return;
+    // Only run the "clear phantom" pass when the appointment picture is complete: Square finished
+    // loading ('ok') or Square isn't connected ('off'). During a load/error we can't tell an absent
+    // appointment from an unloaded one, so we never clear then (avoids wiping a real upcoming visit).
+    var sqSettled=(typeof _sqApptsState==='undefined')||_sqApptsState==='ok'||_sqApptsState==='off';
+    var doClear=!!reconcile&&sqSettled;
+    if(!appts.length&&!doClear)return;
     var changed=[];
     Object.keys(CL).forEach(function(cid){
       var c=CL[cid];if(!c)return;var nm=(c.name||'').trim().toLowerCase();if(!nm)return;
       var mine=appts.filter(function(a){return a.clientId?(a.clientId===cid):(String(a.name||'').trim().toLowerCase()===nm);}).sort(function(x,y){return x.when-y.when;});
-      if(!mine.length)return;
-      var w=mine[0].when;
-      var label=w.toLocaleDateString('en-US',{weekday:'long',month:'long',day:'numeric'})+' · '+w.toLocaleTimeString('en-US',{hour:'numeric',minute:'2-digit'});
-      if(c.nextVisit!==label){c.nextVisit=label;changed.push(cid);}
+      if(mine.length){
+        var w=mine[0].when;
+        var label=w.toLocaleDateString('en-US',{weekday:'long',month:'long',day:'numeric'})+' · '+w.toLocaleTimeString('en-US',{hour:'numeric',minute:'2-digit'});
+        if(c.nextVisit!==label){c.nextVisit=label;changed.push(cid);}
+        c._nvAuto=1;   // remember we set this, so a later cancel/delete can safely clear it
+      }else if(doClear&&c._nvAuto){
+        // We stamped this from an appointment that no longer exists → drop the phantom visit.
+        if(c.nextVisit&&c.nextVisit!=='Not scheduled'&&c.nextVisit!=='—'){c.nextVisit='Not scheduled';changed.push(cid);}
+        delete c._nvAuto;
+      }
     });
     if(changed.length){try{if(typeof saveClients==='function')saveClients({noSync:true});}catch(e){}changed.forEach(function(cid){try{if(typeof _scheduleSpecificClientSync==='function')_scheduleSpecificClientSync(cid);}catch(e){}});}
   }catch(e){}
@@ -15968,7 +16009,7 @@ function _manualApptSave(id){
   else commit();
 }
 function _manualApptDelete(id){
-  var go=function(){var i=(manualAppts||[]).findIndex(function(x){return x.id===id;});if(i>=0){manualAppts.splice(i,1);_saveManualAppts();try{_rebuildCalendarFeed();}catch(e){}}_closeApptSheet();if(typeof proToast==='function')proToast('Appointment deleted');renderCalendar();};
+  var go=function(){var i=(manualAppts||[]).findIndex(function(x){return x.id===id;});if(i>=0){manualAppts.splice(i,1);_saveManualAppts();try{_rebuildCalendarFeed();}catch(e){}try{_stampClientNextVisit(true);}catch(e){}}_closeApptSheet();if(typeof proToast==='function')proToast('Appointment deleted');renderCalendar();};
   if(typeof confirmModal==='function')confirmModal({title:'Delete appointment?',body:'This removes it from your calendar and your synced Google/Apple feed.',action:'Delete'},go);
   else if(confirm('Delete this appointment?'))go();
 }

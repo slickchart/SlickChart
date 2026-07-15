@@ -4489,6 +4489,10 @@ function _applyRealClientData(j){
   p.summaryNote=(Array.isArray(d.summaries)&&d.summaries[0]&&d.summaries[0].note)||'';
   p.homecare=(Array.isArray(d.aftercare)?d.aftercare:[]).map(function(s){return {key:s,icon:'',time:'',tip:'',done:false};});
   p.products=Array.isArray(d.products)?d.products:[];
+  // Named routine + provider's "why" note (shown as the routine card on Shop). Real clients used to
+  // miss this — only the demo client got it via SlickBridge. Explicitly set (null when none) so no
+  // stale demo routine leaks through.
+  p.routine=(d.routine&&typeof d.routine==='object'&&(d.routine.name||d.routine.note))?{name:d.routine.name||'Your routine',note:d.routine.note||'',date:d.routine.date||''}:null;
   // Full shop catalog (every active product the provider offers), for the "Shop all" tab.
   p.catalog=Array.isArray(d.catalog)?d.catalog:[];
   // Before/after progress photos the provider chose to share with this client (refs only; bytes are
@@ -4625,7 +4629,19 @@ function _clientDataFingerprint(j){
       // Detect an actual logo/brand CHANGE, not just presence, otherwise swapping one logo for
       // another (both non-empty) left this token identical and the poll never applied the new logo.
       _brandStamp(d.brand),(d.brand&&d.brand.primary)||'',(d.brand&&d.brand.secondary)||'',
-      (Array.isArray(d.products)?d.products.length:0),(Array.isArray(d.catalog)?d.catalog.length:0)
+      // Products: stamp name + reason ("why") + ORDER, not just the count — otherwise editing a
+      // recommendation's note, or reordering the list, left the token identical and the open client
+      // never saw the change until a full reload.
+      (Array.isArray(d.products)?d.products.map(function(p){return (p&&(p.name||p.id||''))+'~'+(p&&(p.why||p.reason||''));}).join('|'):''),
+      // Homecare routine (aftercare steps + their order) — was omitted entirely, so a live routine
+      // edit didn't re-apply on an already-open client.
+      (Array.isArray(d.aftercare)?d.aftercare.join('|'):''),
+      // Named routine + provider's "why" note — so re-sending/renaming a routine re-renders live.
+      (d.routine&&((d.routine.name||'')+'~'+(d.routine.note||'')))||'',
+      // Progress photos the provider shares — count + latest ref, so newly shared/removed photos poll in.
+      (Array.isArray(d.progressPhotos)?d.progressPhotos.length:0),
+      (Array.isArray(d.progressPhotos)&&d.progressPhotos[0]&&(d.progressPhotos[0].id||d.progressPhotos[0].url||''))||'',
+      (Array.isArray(d.catalog)?d.catalog.length:0)
     ]);
   }catch(e){return '';}
 }
