@@ -25,9 +25,11 @@ export function squareConfig() {
 // The permissions SlickChart needs from each seller.
 export const SQUARE_SCOPES = [
   'MERCHANT_PROFILE_READ', 'CUSTOMERS_READ', 'CUSTOMERS_WRITE',
-  'ITEMS_READ',
+  'ITEMS_READ', 'INVENTORY_READ',
   'APPOINTMENTS_READ', 'APPOINTMENTS_WRITE', 'APPOINTMENTS_ALL_READ', 'APPOINTMENTS_ALL_WRITE', 'APPOINTMENTS_BUSINESS_SETTINGS_READ',
-  'PAYMENTS_WRITE', 'PAYMENTS_READ', 'ORDERS_WRITE', 'ORDERS_READ', 'INVOICES_WRITE', 'INVOICES_READ'
+  'PAYMENTS_WRITE', 'PAYMENTS_READ', 'ORDERS_WRITE', 'ORDERS_READ', 'INVOICES_WRITE', 'INVOICES_READ',
+  // Added for: inventory counts, loyalty balances/points, and gift-card balance/redeem.
+  'LOYALTY_READ', 'LOYALTY_WRITE', 'GIFTCARDS_READ', 'GIFTCARDS_WRITE'
 ].join('+');
 
 // Legacy shared-key gate (still used as a fallback path).
