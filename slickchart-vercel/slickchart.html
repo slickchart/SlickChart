@@ -12885,7 +12885,7 @@ function _payDateDisp(d){
   return s;
 }
 let _payments=(function(){try{return JSON.parse(localStorage.getItem('sc_payments')||'[]');}catch(e){return [];}})();
-function _savePayments(){try{localStorage.setItem('sc_payments',JSON.stringify(_payments));return true;}catch(e){return false;}}
+function _savePayments(){try{const v=JSON.stringify(_payments);localStorage.setItem('sc_payments',v);if(typeof _pushKeyNow==='function')_pushKeyNow('sc_payments',v);return true;}catch(e){return false;}}   // push NOW — money records must not ride the debounce (a fast reload/device-switch could clobber a payment)
 function _clientBalance(cid){return _payments.filter(p=>p.clientId===cid).reduce((a,p)=>a+_payOwed(p),0);}
 function _addPayment(p){p.id=p.id||('pay_'+Date.now().toString(36)+Math.random().toString(36).slice(2,6));_payments.unshift(p);_savePayments();return p;}
 // Money split for a payment. 'partial' = part-collected: amountPaid received, amount-amountPaid still
@@ -13630,7 +13630,7 @@ function renderPayments(){
   <div style="height:20px;"></div>`;
   try{_paySyncSquare(true);}catch(e){}
 }
-function _payMarkPaid(idv){const p=_payments.find(x=>x.id===idv);if(p&&p.status!=='refunded'&&p.status!=='canceled'){p.status='paid';_savePayments();}if(typeof _navCur!=='undefined'&&_navCur&&_navCur.screen==='payments')renderPayments();}
+function _payMarkPaid(idv){const p=_payments.find(x=>x.id===idv);if(p&&p.status!=='refunded'&&p.status!=='canceled'){p.status='paid';const _ok=_savePayments();if(_ok===false&&typeof proToast==='function')proToast('Couldn’t save that — your device storage may be full. The change may not stick on reload.',0);}if(typeof _navCur!=='undefined'&&_navCur&&_navCur.screen==='payments')renderPayments();}
 function _payDeleteDo(idv){const i=_payments.findIndex(x=>x.id===idv);if(i>=0){if(_payments[i]&&_payments[i].squareInvoiceId)_markSquareDeleted(_payments[i].squareInvoiceId);_payments.splice(i,1);_savePayments();if(typeof proToast==='function')proToast('Payment removed');}const _m=document.getElementById('pay-detail');if(_m)_m.remove();if(typeof _navCur!=='undefined'&&_navCur&&_navCur.screen==='payments')renderPayments();}
 function _payDelete(idv){if(typeof confirmModal==='function'){confirmModal({title:'Remove this payment?',body:'This removes the payment record. It can’t be undone.',action:'Remove'},function(){_payDeleteDo(idv);});}else{_payDeleteDo(idv);}}
 function _payOpen(idv){
@@ -13764,7 +13764,17 @@ async function _paySyncSquare(auto){
       const e=_payments.find(p=>p.squareInvoiceId===sv.id);
       const st=(sv.status==='paid')?'paid':(sv.status==='partial'?'partial':(sv.status==='canceled'||sv.status==='refunded')?sv.status:'unpaid');
       if(e){if(!(e.status==='paid'&&(st==='unpaid'||st==='partial')))e.status=st;if(sv.total!=null)e.amount=sv.total;if(sv.publicUrl)e.publicUrl=sv.publicUrl;}
-      else if(sv.status!=='draft'&&!_deletedSquareIds.has(sv.id)){_addPayment({clientId:'',clientName:sv.client||'Client',amount:sv.total||0,method:'Square',status:st,date:(sv.createdAt||'').slice(0,10)||_todayISO(),note:'Square invoice',source:'square',squareInvoiceId:sv.id,publicUrl:sv.publicUrl});}
+      else if(sv.status!=='draft'&&!_deletedSquareIds.has(sv.id)){
+        // Avoid double-counting: if the provider ALSO logged this payment manually (cash, card on
+        // file, texted link — none carry a squareInvoiceId), LINK that record to this Square invoice
+        // instead of adding a second one. Match on client name + amount within a few days.
+        const svAmt=Math.round((+sv.total||0)*100);
+        const svName=String(sv.client||'').trim().toLowerCase();
+        const svDay=Date.parse((sv.createdAt||'').slice(0,10)||_todayISO())||0;
+        const dup=svName?_payments.find(p=>p&&!p.squareInvoiceId&&Math.round((+p.amount||0)*100)===svAmt&&String(p.clientName||'').trim().toLowerCase()===svName&&(function(){const pd=Date.parse((p.date||'').slice(0,10))||0;return svDay&&pd&&Math.abs(pd-svDay)<=3*86400000;})()):null;
+        if(dup){dup.squareInvoiceId=sv.id;if(!(dup.status==='paid'&&(st==='unpaid'||st==='partial')))dup.status=st;if(sv.total!=null)dup.amount=sv.total;if(sv.publicUrl)dup.publicUrl=sv.publicUrl;}
+        else _addPayment({clientId:'',clientName:sv.client||'Client',amount:sv.total||0,method:'Square',status:st,date:(sv.createdAt||'').slice(0,10)||_todayISO(),note:'Square invoice',source:'square',squareInvoiceId:sv.id,publicUrl:sv.publicUrl});
+      }
     });
     _savePayments();
     if(typeof _navCur!=='undefined'&&_navCur&&_navCur.screen==='payments')renderPayments();
