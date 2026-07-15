@@ -3541,6 +3541,30 @@ function exportClientFile(id){
   (document.querySelector('.shell')||document.body).appendChild(ov);
 }
 
+// Load a client's Square retail purchase history into their chart (on demand — one tap, so we don't
+// hit Square for every profile open). Shows each order's items, total, and date.
+async function _loadClientPurchases(id){
+  const c=CL[id];if(!c||!c.squareId)return;
+  const body=document.getElementById('sq-purchases-body');if(body)body.innerHTML='<i class="ti ti-loader-2"></i> Loading from Square…';
+  const tok=(typeof Cloud!=='undefined'&&Cloud&&Cloud.token)||'';
+  try{
+    const r=await fetch('/api/square/orders?customerId='+encodeURIComponent(c.squareId),{headers:{'Authorization':'Bearer '+tok}});
+    const j=await r.json().catch(()=>({}));
+    if(!body)return;
+    if(!r.ok||!j.ok){
+      body.innerHTML=(j&&j.code==='scope')?'Reconnect Square to see purchases — it needs the orders permission.':((j&&j.code==='nosquare')?'Connect Square first (Settings → Square).':_fileEsc((j&&j.error)||'Could not load purchases'));
+      return;
+    }
+    const orders=Array.isArray(j.orders)?j.orders:[];
+    if(!orders.length){body.innerHTML='No Square purchases on record yet.';return;}
+    const money=v=>(v==null?'':('$'+(Math.round(v*100)/100).toFixed(2)));
+    const fmtDate=s=>{try{return new Date(s).toLocaleDateString('en-US',{month:'short',day:'numeric',year:'numeric'});}catch(e){return '';}};
+    body.innerHTML=orders.map(o=>`<div style="border-top:1px solid #242424;padding:8px 0;">
+      <div style="display:flex;justify-content:space-between;gap:8px;"><span style="font-size:12px;color:#cfcfcf;">${_fileEsc(fmtDate(o.createdAt))}</span><span style="font-size:12px;font-weight:600;color:#4ec49a;">${money(o.total)}</span></div>
+      ${(o.items||[]).map(li=>`<div style="font-size:11px;color:#9a9a9a;">${_fileEsc(li.quantity)}× ${_fileEsc(li.name)}${li.total!=null?(' · '+money(li.total)):''}</div>`).join('')||'<div style="font-size:11px;color:#9a9a9a;">Purchase</div>'}
+    </div>`).join('');
+  }catch(e){if(body)body.innerHTML='Could not reach Square, try again.';}
+}
 function renderClient(id){
   setNav('clients');
   _recEditCtx='profile';
@@ -3552,6 +3576,10 @@ function renderClient(id){
   <div style="padding:12px 16px 0;display:flex;align-items:center;justify-content:space-between;"><button onclick="exportClientFile('${id}')" aria-label="Export or print client file" style="background:var(--accent-tint);border:1px solid var(--accent-a30,#3d2d10);color:var(--accent);border-radius:8px;padding:5px 11px;font-size:11px;font-weight:600;cursor:pointer;display:inline-flex;align-items:center;gap:5px;font-family:inherit;"><i class="ti ti-file-download" style="font-size:13px;"></i> Export file</button><button onclick="deleteClient('${id}')" aria-label="Remove client" style="background:none;border:1px solid #3a1a1a;color:#a85a5a;border-radius:8px;padding:5px 10px;font-size:11px;font-weight:600;cursor:pointer;display:inline-flex;align-items:center;gap:5px;font-family:inherit;"><i class="ti ti-trash" style="font-size:12px;"></i> Remove</button></div>
   <div style="padding:14px 16px 0;display:flex;flex-direction:column;align-items:center;gap:8px;">${av(c,64)}<div style="text-align:center;"><div style="font-size:18px;font-weight:500;color:#f0f0f0;">${_fileEsc(c.name)}</div><div style="font-size:13px;color:#929292;display:inline-flex;align-items:center;gap:6px;">${_fileEsc(c.treatment)} <button onclick="_editClientDetails('${id}')" style="border:1px solid var(--accent-a30,#3d2d10);background:var(--accent-tint);color:var(--accent);cursor:pointer;padding:3px 9px;border-radius:20px;line-height:1;display:inline-flex;align-items:center;gap:3px;font-size:11px;font-weight:600;font-family:inherit;"><i class="ti ti-pencil" style="font-size:11px;"></i> Edit</button></div></div></div>
   <div style="margin:14px 16px 0;background:#161616;border:1px solid #242424;border-radius:12px;padding:12px 14px;"><div style="display:flex;justify-content:space-between;align-items:center;margin-bottom:8px;"><span style="font-size:11px;color:#888;text-transform:uppercase;letter-spacing:.06em;">Contact</span><button onclick="_editClientDetails('${id}')" style="background:var(--accent-tint);border:1px solid var(--accent-a30,#3d2d10);color:var(--accent);border-radius:8px;padding:4px 10px;font-size:11px;font-weight:600;cursor:pointer;font-family:inherit;"><i class="ti ti-pencil" style="font-size:11px;"></i> Edit</button></div><div style="font-size:13px;color:#ccc;line-height:1.9;word-break:break-word;overflow-wrap:anywhere;"><div><i class="ti ti-mail" style="color:#929292;margin-right:7px;"></i>${c.email?String(c.email).replace(/</g,'&lt;'):'<span style="color:#9a9a9a;">No email</span>'}</div><div><i class="ti ti-phone" style="color:#929292;margin-right:7px;"></i>${c.phone?_fmtPhone(c.phone).replace(/</g,'&lt;'):'<span style="color:#9a9a9a;">No phone</span>'}</div><div><i class="ti ti-cake" style="color:#929292;margin-right:7px;"></i>${c.birthday?_fmtDOB(c.birthday):'<span style="color:#9a9a9a;">No date of birth</span>'}</div></div></div>
+  ${c.squareId?`<div style="margin:12px 16px 0;background:#161616;border:1px solid #242424;border-radius:12px;padding:12px 14px;">
+    <div style="display:flex;justify-content:space-between;align-items:center;"><span style="font-size:11px;color:#888;text-transform:uppercase;letter-spacing:.06em;">Retail purchases</span><button onclick="_loadClientPurchases('${id}')" style="background:var(--accent-tint);border:1px solid var(--accent-a30,#3d2d10);color:var(--accent);border-radius:8px;padding:4px 10px;font-size:11px;font-weight:600;cursor:pointer;font-family:inherit;"><i class="ti ti-refresh" style="font-size:11px;"></i> Load from Square</button></div>
+    <div id="sq-purchases-body" style="margin-top:9px;font-size:12px;color:#9a9a9a;line-height:1.5;">See what ${_fileEsc(c.name.split(' ')[0])} has bought from your Square store.</div>
+  </div>`:''}
   ${c.flaggedContra?`<div style="margin:12px 16px 0;background:#2a0f0f;border:1px solid #5a2020;border-radius:12px;padding:12px 14px;">
     <div style="display:flex;align-items:center;gap:8px;margin-bottom:6px;"><i class="ti ti-alert-triangle" style="font-size:16px;color:#e87070;"></i><span style="font-size:13px;font-weight:700;color:#f0c8c8;">Flagged on intake, review before the visit</span></div>
     <div style="font-size:11px;color:#c99;margin-bottom:7px;">${_fileEsc(c.name.split(' ')[0])} marked these on "${_fileEsc(c.flaggedContra.form)}" (${_fileEsc(c.flaggedContra.date)}):</div>
