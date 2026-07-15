@@ -663,6 +663,15 @@ function _reseedCoursesIfDefault(){
   try{
     if(_coursesAreCustom())return;
     const next=_coursesDefaults();
+    // Infer "customized" from the DATA, not just the sc_courses_custom flag. If the current set
+    // holds any course that isn't one of the profession defaults (a course the provider made), or
+    // has more courses than the default set, treat it as customized and NEVER overwrite it — then
+    // heal the missing flag. Relying on the flag alone meant a lost / late-synced sc_courses_custom
+    // (e.g. after a data resync) could wipe a real course AND push the empty-of-it default set to
+    // the cloud, deleting it on every device. This makes that impossible.
+    const defIds=new Set(next.map(c=>c&&c.id));
+    const hasProviderCourse=(courses||[]).some(c=>c&&!defIds.has(c.id))||((courses||[]).length>next.length);
+    if(hasProviderCourse){try{_markCoursesCustom();}catch(e){}return;}
     if(_coursesSig(next)!==_coursesSig(courses)){courses.length=0;next.forEach(c=>courses.push(c));try{if(typeof persistCourses==='function')persistCourses();}catch(e){}}
   }catch(e){}
 }
@@ -1704,7 +1713,7 @@ try{document.addEventListener('keydown',function(e){
 // ── Cloud sync (database + login). Falls back to local-only until configured. ──
 function saveProfessions(){try{localStorage.setItem('sc_professions',JSON.stringify(selectedProfessions));}catch(e){}}
 function loadProfessions(){try{const raw=localStorage.getItem('sc_professions');if(raw){const a=JSON.parse(raw);if(Array.isArray(a)&&a.length)selectedProfessions=a;}}catch(e){}}
-const _SYNC_SKIP={sc_token:1,sc_sqkey:1,sc_bus:1,sc_chart_activity:1,sc_pulse:1};
+const _SYNC_SKIP={sc_token:1,sc_sqkey:1,sc_bus:1,sc_chart_activity:1,sc_pulse:1,sc_cloud_seeded:1};
 function _syncable(k){return typeof k==='string'&&k.indexOf('sc_')===0&&!_SYNC_SKIP[k];}
 const Cloud={
   enabled:false,
@@ -1870,8 +1879,16 @@ async function _cloudInit(){
   try{
     const n=await Cloud.pull();
     if(n===0){
-      await Cloud.pushAllLocal();
+      // A brand-new account correctly seeds the cloud from local. But if THIS browser has
+      // successfully pulled real cloud data before (sc_cloud_seeded), an empty pull now is almost
+      // certainly a transient/failed read — NOT an emptied account. Pushing local over it would
+      // overwrite the real server data with whatever this device happens to hold (possibly demo
+      // defaults). So only seed-from-local when we've never seen cloud data here.
+      if(localStorage.getItem('sc_cloud_seeded')!=='1'){
+        await Cloud.pushAllLocal();
+      }
     }else{
+      try{localStorage.setItem('sc_cloud_seeded','1');}catch(e){}   // remember this account has real cloud data on this device
       if(!localStorage.getItem('sc_onboarded')){
         // Real saved data already exists in the cloud, this is an existing
         // provider on a new device, not a brand-new signup, so don't make them
