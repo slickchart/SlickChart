@@ -669,8 +669,11 @@ function _reseedCoursesIfDefault(){
     // heal the missing flag. Relying on the flag alone meant a lost / late-synced sc_courses_custom
     // (e.g. after a data resync) could wipe a real course AND push the empty-of-it default set to
     // the cloud, deleting it on every device. This makes that impossible.
-    const defIds=new Set(next.map(c=>c&&c.id));
-    const hasProviderCourse=(courses||[]).some(c=>c&&!defIds.has(c.id))||((courses||[]).length>next.length);
+    const allDefIds=new Set();try{Object.keys(coursesByProf).forEach(pr=>(coursesByProf[pr]||[]).forEach(c=>{if(c&&c.id)allDefIds.add(c.id);}));}catch(e){}
+    // A course whose id isn't a default from ANY profession is one the provider made — treat the
+    // whole set as customized. (Global, not just current-profession, so switching professions still
+    // reseeds a pristine wrong-profession set correctly instead of freezing it.)
+    const hasProviderCourse=(courses||[]).some(c=>c&&c.id&&!allDefIds.has(c.id));
     if(hasProviderCourse){try{_markCoursesCustom();}catch(e){}return;}
     if(_coursesSig(next)!==_coursesSig(courses)){courses.length=0;next.forEach(c=>courses.push(c));try{if(typeof persistCourses==='function')persistCourses();}catch(e){}}
   }catch(e){}
@@ -2225,10 +2228,18 @@ function applyProfessionConfig(){
       wax:waxProtocols,coach:coachProtocols};
     const merged=[];const seenP=new Set();
     selectedProfessions.forEach(pid=>{(_protoMap[pid]||[]).forEach(p=>{const k=(p.id||p.name||'');if(!seenP.has(k)){seenP.add(k);merged.push(p);}});});
+    // Detect a provider-customized protocol set from the SAVED data, not just the flag: any saved
+    // protocol whose id/name isn't a default from any profession means they've edited theirs. This
+    // makes a lost/late-synced sc_protocols_custom flag harmless — their protocols are still restored
+    // (and the flag healed) instead of being replaced by profession defaults in memory (which a later
+    // edit would then persist over the real set).
+    const _allProtoIds=new Set();try{Object.keys(_protoMap).forEach(k=>(_protoMap[k]||[]).forEach(p=>{const id=(p&&(p.id||p.name));if(id)_allProtoIds.add(id);}));}catch(e){}
+    let _savedProtoCustom=false;
+    try{const raw=localStorage.getItem('sc_protocols');if(raw){const a=JSON.parse(raw);if(Array.isArray(a)&&a.length)_savedProtoCustom=a.some(p=>{const id=(p&&(p.id||p.name));return id&&!_allProtoIds.has(id);});}}catch(e){}
     protocols.length=0;merged.forEach(p=>protocols.push(p));
     // Provider customized their protocols, restore their saved set over the profession
     // defaults (matches how courses/service-menu keep custom edits across reconfigures).
-    if(typeof _protocolsAreCustom==='function'&&_protocolsAreCustom()){try{loadProtocols();}catch(e){}}
+    if((typeof _protocolsAreCustom==='function'&&_protocolsAreCustom())||_savedProtoCustom){try{loadProtocols();}catch(e){}if(_savedProtoCustom){try{_markProtocolsCustom();}catch(e){}}}
   }
 
   if(hairBarberOnly&&hasHair){affiliateLinks.length=0;hairAffiliateLinks.forEach(a=>affiliateLinks.push(a));}
@@ -2799,7 +2810,7 @@ function loadCourses(){try{const raw=localStorage.getItem('sc_courses');if(raw){
 // edits it and restore the saved set over the defaults (mutating in place, since it's const).
 function persistProtocols(){try{localStorage.setItem('sc_protocols',JSON.stringify(protocols));}catch(e){}}
 function _protocolsAreCustom(){try{return localStorage.getItem('sc_protocols_custom')==='1';}catch(e){return false;}}
-function _markProtocolsCustom(){try{localStorage.setItem('sc_protocols_custom','1');}catch(e){}}
+function _markProtocolsCustom(){try{localStorage.setItem('sc_protocols_custom','1');}catch(e){}try{if(typeof _pushKeyNow==='function')_pushKeyNow('sc_protocols_custom','1');}catch(e){}}
 function loadProtocols(){try{const raw=localStorage.getItem('sc_protocols');if(raw){const a=JSON.parse(raw);if(Array.isArray(a)&&a.length){protocols.length=0;a.forEach(p=>protocols.push(p));return true;}}}catch(e){}return false;}
 function persistShopBundles(){try{localStorage.setItem('sc_shop_bundles',JSON.stringify(shopBundles));}catch(e){}}
 function loadShopBundles(){try{const raw=localStorage.getItem('sc_shop_bundles');if(raw){const arr=JSON.parse(raw);if(Array.isArray(arr))shopBundles=arr;}}catch(e){}}
@@ -12878,8 +12889,7 @@ async function _coDoCharge(id,cardId){
 
 
 // ── Local service menu (Pro → Service menu): editable services that feed invoice line items ──
-function _svcMenuDefaults(){
-  const M={
+const _SVC_MENU_BY_PROF={
     tattoo:[['Consultation',0],['Deposit',50],['Minimum / Small Tattoo',120],['Hourly Rate',180],['Half-Day Session',600],['Full-Day Session',1000],['Touch-up',50]],
     esty:[['Signature Facial',95],['Dermaplane',85],['Chemical Peel',120],['Microdermabrasion',110],['Back Facial',90],['LED Light Therapy',45]],
     hair:[['Women\u2019s Cut',65],['Men\u2019s Cut',40],['Root Color',95],['Full Highlights',160],['Blowout',45],['Toner',35]],
@@ -12894,13 +12904,18 @@ function _svcMenuDefaults(){
     nutrition:[['Initial Consult',120],['Follow-up',75],['Custom Meal Plan',150],['3-Month Package',400]],
     contour:[['Contour Session',120],['Wood Therapy',110],['Lymphatic Drainage',95],['Package of 6',600]],
     coach:[['Initial Assessment',90],['Training Session',70],['Package of 10',600],['Monthly Coaching',250]]
-  };
+};
+// Every default service across ALL professions, as a set of "name|price" keys. Used to tell a
+// provider-customized menu (any service that matches no profession default) from a pristine \u2014 even
+// if wrong-profession \u2014 one, so we never reseed over real edits.
+function _svcMenuAllDefaultKeys(){const s=new Set();try{Object.keys(_SVC_MENU_BY_PROF).forEach(pr=>_SVC_MENU_BY_PROF[pr].forEach(x=>s.add(String(x[0]).toLowerCase().trim()+'|'+(+x[1]||0))));}catch(e){}return s;}
+function _svcMenuDefaults(){
   // Merge services across ALL selected professions (deduped by name). If no selected
   // profession has a menu, return EMPTY, don't fall back to esty (which would show the
   // wrong services). The provider just adds their own.
   const profs=(typeof selectedProfessions!=='undefined'&&Array.isArray(selectedProfessions)&&selectedProfessions.length)?selectedProfessions:[];
   const seen=new Set();const out=[];
-  profs.forEach(pr=>{(M[pr]||[]).forEach(x=>{const key=x[0].toLowerCase();if(!seen.has(key)){seen.add(key);out.push({id:'svc_seed'+out.length,name:x[0],price:x[1],taxable:true});}});});
+  profs.forEach(pr=>{(_SVC_MENU_BY_PROF[pr]||[]).forEach(x=>{const key=x[0].toLowerCase();if(!seen.has(key)){seen.add(key);out.push({id:'svc_seed'+out.length,name:x[0],price:x[1],taxable:true});}});});
   return out;
 }
 // Signature of a defaults array, used to tell whether the provider has customized their
@@ -12908,7 +12923,7 @@ function _svcMenuDefaults(){
 function _svcMenuSig(arr){return (arr||[]).map(s=>String(s.name||'').toLowerCase().trim()+'|'+(+s.price||0)).join(',');}
 // Whether the provider has hand-edited their service menu. Once true, we never auto-reseed.
 function _svcMenuIsCustom(){try{return localStorage.getItem('sc_service_menu_custom')==='1';}catch(e){return false;}}
-function _markSvcMenuCustom(){try{localStorage.setItem('sc_service_menu_custom','1');}catch(e){}}
+function _markSvcMenuCustom(){try{localStorage.setItem('sc_service_menu_custom','1');}catch(e){}try{if(typeof _pushKeyNow==='function')_pushKeyNow('sc_service_menu_custom','1');}catch(e){}}
 // Re-seed the service menu to match the current professions, UNLESS the provider has
 // hand-edited it. This fixes a menu that was auto-seeded from the default professions
 // (esty/wax/lash/brow) before the provider's real professions loaded, e.g. a hairstylist
@@ -12916,6 +12931,15 @@ function _markSvcMenuCustom(){try{localStorage.setItem('sc_service_menu_custom',
 function _reseedSvcMenuIfDefault(){
   try{
     if(_svcMenuIsCustom())return;                 // provider edited it, leave it alone
+    // Infer "customized" from the data too, not just the flag: if the current menu contains any
+    // service that matches NO profession's defaults (a service the provider added, or a price they
+    // changed), treat it as customized, heal the flag, and never overwrite it. Relying on the flag
+    // alone meant a lost/late-synced sc_service_menu_custom could reseed defaults over a real menu
+    // AND push that over the cloud. A pristine but wrong-profession menu (every service matches some
+    // profession default) still reseeds correctly.
+    const defKeys=_svcMenuAllDefaultKeys();
+    const hasCustom=(_svcMenu||[]).some(s=>s&&!defKeys.has(String(s.name||'').toLowerCase().trim()+'|'+(+s.price||0)));
+    if(hasCustom){try{_markSvcMenuCustom();}catch(e){}return;}
     const next=_svcMenuDefaults();
     // Only rewrite if it actually changed, to avoid needless writes/re-renders.
     if(_svcMenuSig(next)!==_svcMenuSig(_svcMenu)){_svcMenu=next;_saveSvcMenu();}
