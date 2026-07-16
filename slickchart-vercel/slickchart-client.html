@@ -1566,21 +1566,51 @@ function renderViewGuide(){
   // download it just to read it — with View (the preview) AND Download/Open, either works.
   const gfiles=_clientGuideFiles(pg);
   const hasFile=gfiles.length>0;
-  const gf0=gfiles[0]||{};
   const urlPdf=!!(pg.url&&(/\.pdf($|\?|#)/i.test(pg.url)||String(pg.cat||'').toUpperCase()==='PDF'));
-  const filePdf=!!(gf0.fileId&&(/pdf/i.test(gf0.fileType||'')||/\.pdf$/i.test(gf0.fileName||'')));
-  const showFrame=urlPdf||filePdf;
+  // When a guide has more than one uploaded resource they now PAGE one at a time (chips + Prev/Next
+  // swap a single preview pane) instead of every file trying to preview/stack. The url-only case keeps
+  // its single inline frame. Downloads for every file stay listed below either way.
+  const _multiG=gfiles.length>1;
+  const showFrame=urlPdf||hasFile;
+  const _gChips=_multiG?`<div style="display:flex;gap:6px;overflow-x:auto;margin-bottom:10px;padding-bottom:3px;-webkit-overflow-scrolling:touch;">${gfiles.map((f,fi)=>`<button id="gv-chip-${fi}" onclick="_gvShowFile(${fi})" style="flex-shrink:0;max-width:150px;overflow:hidden;text-overflow:ellipsis;white-space:nowrap;border:1px solid #e6ddd2;background:#fff;color:#786858;border-radius:20px;padding:6px 12px;font-size:12px;font-weight:600;cursor:pointer;font-family:inherit;">${fi+1}. ${_txt((f.fileName||'File').replace(/\.[^.]+$/,''))}</button>`).join('')}</div>`:'';
+  const _gPager=_multiG?`<div style="display:flex;align-items:center;justify-content:space-between;gap:10px;margin:8px 0 4px;"><button onclick="_gvStep(-1)" style="flex:1;background:#fff;border:1px solid #e6ddd2;color:#786858;border-radius:9px;padding:9px;font-size:12px;font-weight:600;cursor:pointer;font-family:inherit;"><i class="ti ti-chevron-left"></i> Prev</button><span id="gv-count" style="font-size:12px;color:#9a8d80;flex-shrink:0;">1 of ${gfiles.length}</span><button onclick="_gvStep(1)" style="flex:1;background:#fff;border:1px solid #e6ddd2;color:#786858;border-radius:9px;padding:9px;font-size:12px;font-weight:600;cursor:pointer;font-family:inherit;">Next <i class="ti ti-chevron-right"></i></button></div>`:'';
+  const _frameHtml=hasFile
+    ? `${_gChips}<div id="guide-frame-box" style="min-height:120px;"><div style="display:flex;align-items:center;justify-content:center;font-size:12px;color:#9a8d80;padding:24px;">Loading…</div></div>${_gPager}<div style="font-size:11px;color:#9a8d80;text-align:center;margin-top:6px;line-height:1.4;">If a preview doesn't load, use the download button below.</div>`
+    : (urlPdf?`<iframe id="guide-frame" src="${_urlAttr(_safeUrl(pg.url))}" title="${_txt(pg.title)} preview" style="width:100%;height:66vh;border:1.5px solid #f0ebe4;border-radius:12px;background:#fff;"></iframe><div style="font-size:11px;color:#9a8d80;text-align:center;margin-top:6px;line-height:1.4;">If the preview doesn't load, use the button below to open it.</div>`:'');
   S.innerHTML=`
   <div style="padding:20px 16px 4px;text-align:center;"><div style="font-size:40px;margin-bottom:8px;">${_iconMarkup(pg.icon,44)||'📚'}</div><div id="page-heading" tabindex="-1" style="font-size:19px;font-weight:600;color:#1a1a1a;">${_txt(pg.title)}</div>${pg.cat?`<div style="font-size:12px;color:#786858;margin-top:2px;">${_txt(pg.cat)}</div>`:''}</div>
   <div style="padding:16px;">
     ${(pg.tips&&pg.tips.length)?`<div style="background:#fff;border:1.5px solid #f0ebe4;border-radius:14px;padding:14px;margin-bottom:14px;">${pg.tips.map(t=>`<div style="display:flex;gap:9px;padding:7px 0;"><i class="ti ti-point-filled" aria-hidden="true" style="font-size:14px;color:var(--accent);flex-shrink:0;margin-top:2px;"></i><span style="font-size:13.5px;color:#3a2f28;line-height:1.55;">${_txt(t)}</span></div>`).join('')}</div>`:''}
-    ${showFrame?`<div style="margin-bottom:12px;"><iframe id="guide-frame" ${urlPdf?`src="${_urlAttr(_safeUrl(pg.url))}"`:''} title="${_txt(pg.title)} preview" style="width:100%;height:66vh;border:1.5px solid #f0ebe4;border-radius:12px;background:#fff;"></iframe><div style="font-size:11px;color:#9a8d80;text-align:center;margin-top:6px;line-height:1.4;">If the preview doesn't load, use the button below to open or download it.</div></div>`:''}
-    ${_clientGuideFiles(pg).map(f=>`<button onclick="_downloadGuideFileById('${_jsAttr(f.fileId)}','${_jsAttr(f.fileName||'file')}','${_jsAttr(f.fileType||'')}',this)" class="btnp" style="display:flex;width:100%;box-sizing:border-box;border-radius:12px;padding:13px;justify-content:center;align-items:center;gap:7px;margin-bottom:10px;"><i class="ti ti-download"></i> Download ${_txt(f.fileName||'file')}</button>`).join('')}
+    ${_frameHtml?`<div style="margin-bottom:12px;">${_frameHtml}</div>`:''}
+    ${gfiles.map(f=>`<button onclick="_downloadGuideFileById('${_jsAttr(f.fileId)}','${_jsAttr(f.fileName||'file')}','${_jsAttr(f.fileType||'')}',this)" class="btng" style="display:flex;width:100%;box-sizing:border-box;border-radius:12px;padding:13px;justify-content:center;align-items:center;gap:7px;margin-bottom:10px;"><i class="ti ti-download"></i> Download ${_txt(f.fileName||'file')}</button>`).join('')}
     ${pg.url?`<a href="${_urlAttr(_safeUrl(pg.url))}" target="_blank" rel="noopener" class="${showFrame||hasFile?'btng':'btnp'}" style="display:flex;width:100%;box-sizing:border-box;border-radius:12px;padding:13px;text-decoration:none;justify-content:center;align-items:center;gap:7px;${hasFile?'margin-top:10px;':''}"><i class="ti ti-external-link"></i> ${showFrame?'Open in browser':'Open full guide'}</a>`:''}
     ${(!pg.tips||!pg.tips.length)&&!pg.url&&!hasFile?`<div style="text-align:center;color:#786858;font-size:13px;padding:20px;">${_txt(client.providerFirst)} shared this with you.</div>`:''}
   </div>`;
-  if(filePdf&&gf0.fileId){try{_previewGuideFileInFrame(gf0.fileId,gf0._data||'');}catch(e){}}
+  if(hasFile){window._gvFiles=gfiles;window._gvIdx=0;try{_gvShowFile(0);}catch(e){}}
 }
+function _gvIsPdf(f){return !!(f&&(/pdf/i.test(f.fileType||'')||/\.pdf$/i.test(f.fileName||'')));}
+function _gvIsImg(f){return !!(f&&(/image/i.test(f.fileType||'')||/\.(png|jpe?g|gif|webp|heic)$/i.test(f.fileName||'')));}
+// Paginated guide-resource viewer: render one uploaded file at a time into #guide-frame-box.
+function _gvShowFile(fi){
+  const files=window._gvFiles||[];if(!files.length)return;
+  fi=Math.max(0,Math.min(files.length-1,fi));window._gvIdx=fi;
+  files.forEach((_,i)=>{const ch=document.getElementById('gv-chip-'+i);if(ch){const on=i===fi;ch.style.borderColor=on?'var(--accent)':'#e6ddd2';ch.style.background=on?'var(--accent-lt)':'#fff';ch.style.color=on?'var(--accent)':'#786858';}});
+  const cnt=document.getElementById('gv-count');if(cnt)cnt.textContent=(fi+1)+' of '+files.length;
+  const box=document.getElementById('guide-frame-box');if(!box)return;
+  const f=files[fi];
+  if(_gvIsPdf(f)){
+    box.innerHTML=`<iframe id="guide-frame" title="preview" style="width:100%;height:66vh;border:1.5px solid #f0ebe4;border-radius:12px;background:#fff;"></iframe>`;
+    try{_previewGuideFileInFrame(f.fileId,f._data||'');}catch(e){}
+  } else if(_gvIsImg(f)){
+    box.innerHTML=`<div style="display:flex;align-items:center;justify-content:center;font-size:12px;color:#9a8d80;padding:24px;">Loading…</div>`;
+    const setImg=(d)=>{if(!box.isConnected||!d)return;box.innerHTML=`<img src="${_imgSrc(d)}" alt="${_txt(f.fileName||'')}" style="width:100%;border-radius:12px;border:1.5px solid #f0ebe4;display:block;">`;};
+    if(f._data){setImg(f._data);}
+    else if(f.fileId&&client._real&&client._token){fetch('/api/guide-file?id='+encodeURIComponent(f.fileId)+'&t='+encodeURIComponent(client._token)).then(r=>r.ok?r.json():null).then(j=>{if(j&&j.file&&j.file.data)setImg(j.file.data);else box.innerHTML=`<div style="font-size:12px;color:#9a8d80;padding:18px;text-align:center;">Use the Download button below to view this file.</div>`;}).catch(()=>{});}
+  } else {
+    box.innerHTML=`<div style="font-size:12px;color:#9a8d80;padding:18px;text-align:center;">Use the Download button below to open this file.</div>`;
+  }
+}
+function _gvStep(d){_gvShowFile((window._gvIdx||0)+d);}
 // Normalize a shared guide's files: prefer the files[] array, fall back to the legacy single file
 // (keyed by the guide id). Legacy inline bytes ride on the single file as _data.
 function _clientGuideFiles(pg){

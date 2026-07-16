@@ -11219,7 +11219,13 @@ function _openLessonView(courseId,idx){
   const doc=httpOk(l.docUrl)?linkBtn(l.docUrl,'ti-file-text','Open worksheet','#5ba3e8'):'';
   // Each attached file previews inline; a spinner shows while its bytes load from local/cloud storage.
   const _files=_lessonFileList(l);
-  const fileBox=_files.map((f,fi)=>`<div id="lesson-file-box-${fi}" style="margin-bottom:10px;"><div style="display:flex;align-items:center;gap:8px;font-size:12px;color:#888;padding:11px;background:#161616;border:1px solid #2a2a2a;border-radius:10px;"><div class="spin" style="width:15px;height:15px;"></div> Loading ${_fileEsc(f.fileName||'file')}…</div></div>`).join('');
+  // Multiple attachments used to each render a full-height iframe stacked down the page, so a lesson
+  // with 3 PDFs scrolled three screens deep — unusable on a phone. Now they page one-at-a-time: a chip
+  // row + Prev/Next swap a single preview pane, so the view never grows past one screen.
+  const _multiF=_files.length>1;
+  const _chips=_multiF?`<div style="display:flex;gap:6px;overflow-x:auto;margin-bottom:10px;padding-bottom:3px;-webkit-overflow-scrolling:touch;">${_files.map((f,fi)=>`<button id="lv-chip-${fi}" onclick="_lvShowFile(${fi})" style="flex-shrink:0;max-width:150px;overflow:hidden;text-overflow:ellipsis;white-space:nowrap;border:1px solid #2a2a2a;background:#161616;color:#bbb;border-radius:20px;padding:6px 12px;font-size:12px;font-weight:600;cursor:pointer;font-family:inherit;">${fi+1}. ${_fileEsc((f.fileName||'File').replace(/\.[^.]+$/,''))}</button>`).join('')}</div>`:'';
+  const _pager=_multiF?`<div style="display:flex;align-items:center;justify-content:space-between;gap:10px;margin-bottom:12px;"><button onclick="_lvStep(-1)" style="flex:1;background:#161616;border:1px solid #2a2a2a;color:#bbb;border-radius:9px;padding:9px;font-size:12px;font-weight:600;cursor:pointer;font-family:inherit;"><i class="ti ti-chevron-left"></i> Prev</button><span id="lv-count" style="font-size:12px;color:#888;flex-shrink:0;">1 of ${_files.length}</span><button onclick="_lvStep(1)" style="flex:1;background:#161616;border:1px solid #2a2a2a;color:#bbb;border-radius:9px;padding:9px;font-size:12px;font-weight:600;cursor:pointer;font-family:inherit;">Next <i class="ti ti-chevron-right"></i></button></div>`:'';
+  const fileBox=_files.length?`${_chips}<div id="lesson-file-box" style="margin-bottom:8px;"><div style="display:flex;align-items:center;gap:8px;font-size:12px;color:#888;padding:11px;background:#161616;border:1px solid #2a2a2a;border-radius:10px;"><div class="spin" style="width:15px;height:15px;"></div> Loading…</div></div>${_pager}`:'';
   const empty=(!bodyHtml&&!video&&!doc&&!_files.length)?`<div style="font-size:13px;color:#9a9a9a;line-height:1.6;padding:6px 0 16px;">This lesson doesn't have any content yet. Tap <b>Edit this course</b> below to add a reading, a video link, a worksheet link, or a file.</div>`:'';
   const ov=document.createElement('div');ov.id='lesson-view-ov';
   ov.style.cssText='position:fixed;inset:0;z-index:9999;background:rgba(0,0,0,.72);display:flex;align-items:center;justify-content:center;padding:16px;';
@@ -11234,11 +11240,22 @@ function _openLessonView(courseId,idx){
     <button onclick="document.getElementById('lesson-view-ov').remove();nav('course-builder','${c.id}')" style="width:100%;margin-top:6px;background:none;border:1px solid #333;color:#bbb;border-radius:10px;padding:11px;font-size:12px;cursor:pointer;font-family:inherit;"><i class="ti ti-pencil" style="font-size:12px;"></i> Edit this course</button>
   </div>`;
   (document.querySelector('.shell')||document.body).appendChild(ov);
-  _files.forEach((f,fi)=>{
-    if(f.fileId)_renderLessonFile(f.fileId,f.fileName,'lesson-file-box-'+fi);
-    else{const b=document.getElementById('lesson-file-box-'+fi);if(b)b.innerHTML=`<div style="font-size:12px;color:#e8a060;padding:11px;background:#161616;border:1px solid #2a2a2a;border-radius:10px;">${_fileEsc(f.fileName||'File')} — save the course to finish uploading it.</div>`;}
-  });
+  window._lvFiles=_files;window._lvIdx=0;
+  if(_files.length)_lvShowFile(0);
 }
+// Paginated attachment viewer for the lesson modal: show one file at a time, swap on chip/Prev/Next.
+function _lvShowFile(fi){
+  const files=window._lvFiles||[];if(!files.length)return;
+  fi=Math.max(0,Math.min(files.length-1,fi));window._lvIdx=fi;
+  files.forEach((_,i)=>{const ch=document.getElementById('lv-chip-'+i);if(ch){const on=i===fi;ch.style.borderColor=on?'var(--accent)':'#2a2a2a';ch.style.background=on?'var(--accent-tint)':'#161616';ch.style.color=on?'var(--accent)':'#bbb';}});
+  const cnt=document.getElementById('lv-count');if(cnt)cnt.textContent=(fi+1)+' of '+files.length;
+  const box=document.getElementById('lesson-file-box');
+  if(box)box.innerHTML=`<div style="display:flex;align-items:center;gap:8px;font-size:12px;color:#888;padding:11px;background:#161616;border:1px solid #2a2a2a;border-radius:10px;"><div class="spin" style="width:15px;height:15px;"></div> Loading…</div>`;
+  const f=files[fi];
+  if(f&&f.fileId)_renderLessonFile(f.fileId,f.fileName,'lesson-file-box');
+  else if(box)box.innerHTML=`<div style="font-size:12px;color:#e8a060;padding:11px;background:#161616;border:1px solid #2a2a2a;border-radius:10px;">${_fileEsc((f&&f.fileName)||'File')} — save the course to finish uploading it.</div>`;
+}
+function _lvStep(d){_lvShowFile((window._lvIdx||0)+d);}
 // Load a lesson's attached file and preview it inline: images render as an <img>, PDFs in an <iframe>
 // (via a blob URL, which renders more reliably on mobile than a data: URL). A small download link
 // stays available as a fallback. If the bytes aren't on the device yet, show a gentle note.
@@ -18116,13 +18133,19 @@ function renderGuidePreview(id){
   <div style="padding:0 16px;">
     <div style="display:flex;align-items:center;gap:12px;margin-bottom:14px;">${_iconMarkup(g.icon,34)}<div><div style="font-size:18px;font-weight:600;color:#f0f0f0;">${_fileEsc(g.title||'')}</div><div style="font-size:12px;color:#999;">${_fileEsc(g.cat||'')}</div></div></div>
     ${(function(){
-      // Preview a linked or uploaded PDF right here (iframe) instead of forcing a click out to
-      // the link, this is the same in-app preview the client gets. Open/download stay as backups.
+      // Preview linked/uploaded resources right here — the same in-app preview the client gets. When a
+      // guide has more than one uploaded file they PAGE one at a time (chips + Prev/Next) rather than
+      // stacking a full iframe per file. Open/download stay as backups below.
       var urlPdf=!!(g.url&&(/\.pdf($|\?|#)/i.test(g.url)||String(g.cat||'').toUpperCase()==='PDF'));
-      var gf0=_guideFileList(g)[0];
-      var filePdf=!!(gf0&&(/pdf/i.test(gf0.fileType||'')||/\.pdf$/i.test(gf0.fileName||'')));
-      if(!urlPdf&&!filePdf)return '';
-      return `<div style="margin-bottom:14px;"><iframe id="pguide-frame" ${urlPdf?`src="${_urlAttr(_safeUrl(g.url))}"`:''} title="${_fileEsc(g.title||'Guide')} preview" style="width:100%;height:60vh;border:1px solid #2a2a2a;border-radius:12px;background:#fff;"></iframe><div style="font-size:11px;color:#888;text-align:center;margin-top:6px;line-height:1.4;">Inline preview. If it doesn’t load, use the button below to open or download it.</div></div>`;
+      var gfs=_guideFileList(g);
+      if(gfs.length){
+        var multi=gfs.length>1;
+        var chips=multi?`<div style="display:flex;gap:6px;overflow-x:auto;margin-bottom:10px;padding-bottom:3px;-webkit-overflow-scrolling:touch;">${gfs.map(function(f,fi){return `<button id="pgv-chip-${fi}" onclick="_pgvShowFile(${fi})" style="flex-shrink:0;max-width:150px;overflow:hidden;text-overflow:ellipsis;white-space:nowrap;border:1px solid #2a2a2a;background:#161616;color:#bbb;border-radius:20px;padding:6px 12px;font-size:12px;font-weight:600;cursor:pointer;font-family:inherit;">${fi+1}. ${_fileEsc((f.fileName||'File').replace(/\.[^.]+$/,''))}</button>`;}).join('')}</div>`:'';
+        var pager=multi?`<div style="display:flex;align-items:center;justify-content:space-between;gap:10px;margin-top:8px;"><button onclick="_pgvStep(-1)" style="flex:1;background:#161616;border:1px solid #2a2a2a;color:#bbb;border-radius:9px;padding:9px;font-size:12px;font-weight:600;cursor:pointer;font-family:inherit;"><i class="ti ti-chevron-left"></i> Prev</button><span id="pgv-count" style="font-size:12px;color:#888;flex-shrink:0;">1 of ${gfs.length}</span><button onclick="_pgvStep(1)" style="flex:1;background:#161616;border:1px solid #2a2a2a;color:#bbb;border-radius:9px;padding:9px;font-size:12px;font-weight:600;cursor:pointer;font-family:inherit;">Next <i class="ti ti-chevron-right"></i></button></div>`:'';
+        return `<div style="margin-bottom:14px;">${chips}<div id="pguide-box"><div style="display:flex;align-items:center;gap:8px;font-size:12px;color:#888;padding:11px;background:#161616;border:1px solid #2a2a2a;border-radius:10px;"><div class="spin" style="width:15px;height:15px;"></div> Loading…</div></div>${pager}</div>`;
+      }
+      if(urlPdf)return `<div style="margin-bottom:14px;"><iframe id="pguide-frame" src="${_urlAttr(_safeUrl(g.url))}" title="${_fileEsc(g.title||'Guide')} preview" style="width:100%;height:60vh;border:1px solid #2a2a2a;border-radius:12px;background:#fff;"></iframe><div style="font-size:11px;color:#888;text-align:center;margin-top:6px;line-height:1.4;">Inline preview. If it doesn’t load, use the button below to open or download it.</div></div>`;
+      return '';
     })()}
     ${g.url?`<a href="${_urlAttr(_safeUrl(g.url))}" target="_blank" rel="noopener noreferrer" style="display:inline-flex;align-items:center;gap:5px;font-size:12px;color:var(--accent);text-decoration:none;margin-bottom:14px;"><i class="ti ti-external-link" style="font-size:12px;"></i> Open full guide</a>`:''}
     ${_guideFileList(g).map(f=>`<button onclick="_downloadGuideFileP('${_jsAttr(f.fileId)}')" style="display:flex;width:100%;box-sizing:border-box;align-items:center;gap:6px;font-size:12px;color:var(--accent);background:var(--accent-tint);border:1px solid var(--accent);border-radius:8px;padding:9px 12px;cursor:pointer;margin-bottom:8px;font-family:inherit;"><i class="ti ti-download" style="font-size:13px;"></i> View / download ${_fileEsc(f.fileName||'file')}</button>`).join('')}
@@ -18134,9 +18157,22 @@ function renderGuidePreview(id){
     ${prods.map(a=>`<div style="background:#1a1a1a;border:1px solid #2a2a2a;border-radius:10px;padding:11px 12px;display:flex;align-items:center;gap:10px;margin-bottom:8px;"><span style="font-size:18px;">${_fileEsc(a.icon)}</span><div style="flex:1;min-width:0;"><div style="font-size:13px;font-weight:500;color:#e0e0e0;">${_fileEsc(a.name)}</div><div style="font-size:11px;color:#999;">${_fileEsc(a.brand||'')}</div></div>${(a.url||a.site||a.inOffice||(typeof amazonBuyUrl==='function'&&amazonBuyUrl(a)))?`<button onclick="openBuyOptionsP('${a.id}')" style="background:var(--accent);color:var(--accent-ink);border:none;border-radius:7px;padding:6px 11px;font-size:11px;font-weight:600;cursor:pointer;white-space:nowrap;">Buy</button>`:''}</div>`).join('')}`:''}
     <div style="height:20px;"></div>
   </div>`;
-  // Uploaded PDFs: pull the first file's bytes into the preview iframe (URL PDFs load via src directly).
-  (function(){const f0=_guideFileList(g)[0];if(f0&&f0.fileId&&(/pdf/i.test(f0.fileType||'')||/\.pdf$/i.test(f0.fileName||''))){try{_previewGuideFileInFrameP(f0.fileId);}catch(e){}}})();
+  // Uploaded resources: render the first one into the paged preview box (URL PDFs load via src directly).
+  (function(){const gfs=_guideFileList(g);if(gfs.length){window._pgvFiles=gfs;window._pgvIdx=0;try{_pgvShowFile(0);}catch(e){}}})();
 }
+// Paginated guide-resource viewer for the provider preview. Reuses _renderLessonFile (image/PDF → box).
+function _pgvShowFile(fi){
+  const files=window._pgvFiles||[];if(!files.length)return;
+  fi=Math.max(0,Math.min(files.length-1,fi));window._pgvIdx=fi;
+  files.forEach((_,i)=>{const ch=document.getElementById('pgv-chip-'+i);if(ch){const on=i===fi;ch.style.borderColor=on?'var(--accent)':'#2a2a2a';ch.style.background=on?'var(--accent-tint)':'#161616';ch.style.color=on?'var(--accent)':'#bbb';}});
+  const cnt=document.getElementById('pgv-count');if(cnt)cnt.textContent=(fi+1)+' of '+files.length;
+  const box=document.getElementById('pguide-box');
+  if(box)box.innerHTML=`<div style="display:flex;align-items:center;gap:8px;font-size:12px;color:#888;padding:11px;background:#161616;border:1px solid #2a2a2a;border-radius:10px;"><div class="spin" style="width:15px;height:15px;"></div> Loading…</div>`;
+  const f=files[fi];
+  if(f&&f.fileId)_renderLessonFile(f.fileId,f.fileName,'pguide-box');
+  else if(box)box.innerHTML=`<div style="font-size:12px;color:#e8a060;padding:11px;background:#161616;border:1px solid #2a2a2a;border-radius:10px;">${_fileEsc((f&&f.fileName)||'File')} — save the guide to finish uploading it.</div>`;
+}
+function _pgvStep(d){_pgvShowFile((window._pgvIdx||0)+d);}
 function renderEditResource(id){
   setNav('more');
   document.getElementById('tt').textContent='Edit Guide';
