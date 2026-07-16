@@ -47,10 +47,14 @@ export default async function handler(req, res) {
     // A pulse response is valid even if it's only a time-saved answer (no rating/message);
     // the plain feedback button still needs at least a message or rating.
     if (!message && !rating && !timeSaved) { res.status(400).json({ error: 'Say a little about your experience.' }); return; }
+    // Require a signed-in provider — this used to accept an anonymous (provider_id=null) write, so
+    // anyone could POST rows and spam the feedback table.
+    const p = claims(req);
+    if (!p.u) { res.status(401).json({ error: 'Please sign in to send feedback.' }); return; }
     try {
       await ensureProvidersTable();
-      const q = sql(); const p = claims(req);
-      await q`INSERT INTO feedback (provider_id, email, rating, message, kind, time_saved) VALUES (${p.u || null}, ${p.e || null}, ${rating}, ${message}, ${kind}, ${timeSaved})`;
+      const q = sql();
+      await q`INSERT INTO feedback (provider_id, email, rating, message, kind, time_saved) VALUES (${p.u}, ${p.e || null}, ${rating}, ${message}, ${kind}, ${timeSaved})`;
       res.status(200).json({ ok: true });
     } catch (e) { res.status(200).json({ ok: false }); }
     return;
