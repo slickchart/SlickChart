@@ -1979,6 +1979,7 @@ async function _cloudInit(){
     nav('home');return;
   }
   if(!Cloud.token){renderEntry();return;}      // database is on but no session — unified front door
+  try{_initNativeProvider();}catch(e){}         // native App Store / Play build: status bar + push registration
   try{
     const n=await Cloud.pull();
     if(n===0){
@@ -7270,13 +7271,50 @@ function _ensureCamInput(fromLibrary){let inp=document.getElementById('global-ca
   // (and Files); for a fresh capture we set it back on.
   if(fromLibrary)inp.removeAttribute('capture');else inp.setAttribute('capture','environment');
   return inp;}
+// True only inside the Capacitor native shell (App Store / Play build).
+function _isNativeApp(){try{return !!(window.Capacitor&&window.Capacitor.isNativePlatform&&window.Capacitor.isNativePlatform());}catch(e){return false;}}
+// Native-only setup: dark status bar + OS push registration (APNs/FCM). No-op on the web/PWA. Sending
+// these still needs Firebase/APNs — see PUSH-NATIVE-SETUP.md.
+let _nativeProviderInit=false;
+async function _initNativeProvider(){
+  try{
+    if(_nativeProviderInit)return; _nativeProviderInit=true;
+    if(!_isNativeApp())return;
+    try{const SB=window.Capacitor.Plugins.StatusBar;if(SB){if(SB.setStyle)SB.setStyle({style:'DARK'});if(SB.setBackgroundColor)SB.setBackgroundColor({color:'#0d0d0d'});}}catch(e){}
+    const PN=window.Capacitor.Plugins&&window.Capacitor.Plugins.PushNotifications;
+    if(!PN)return;
+    let perm=await PN.checkPermissions();
+    if(perm.receive!=='granted')perm=await PN.requestPermissions();
+    if(perm.receive!=='granted')return;
+    PN.addListener('registration',function(tok){
+      try{
+        const t=(typeof Cloud!=='undefined'&&Cloud&&Cloud.token)||'';
+        if(!t||!tok||!tok.value)return;
+        const platform=(window.Capacitor.getPlatform&&window.Capacitor.getPlatform())||'';
+        fetch('/api/native-push',{method:'POST',headers:{'Content-Type':'application/json','Authorization':'Bearer '+t},body:JSON.stringify({platform,token:tok.value})}).catch(function(){});
+      }catch(e){}
+    });
+    PN.addListener('registrationError',function(){});
+    PN.addListener('pushNotificationActionPerformed',function(a){
+      try{const d=(a&&a.notification&&a.notification.data)||{};const scr=d.screen||d.action||'';if(scr&&typeof nav==='function')nav(scr);}catch(e){}
+    });
+    await PN.register();
+  }catch(e){/* push is a nice-to-have; never block the app */}
+}
+async function _ncPhotoDataUrl(fromCamera,maxW){
+  try{
+    if(!_isNativeApp())return null;
+    const Camera=window.Capacitor.Plugins&&window.Capacitor.Plugins.Camera;
+    if(!Camera||!Camera.getPhoto)return null;
+    const photo=await Camera.getPhoto({quality:82,width:(maxW||1600),resultType:'dataUrl',correctOrientation:true,source:fromCamera?'CAMERA':'PHOTOS',saveToGallery:false});
+    return (photo&&photo.dataUrl)||null;
+  }catch(e){return null;}
+}
 // Opens the device camera; saves an auto date-stamped photo, then re-renders via `after`
 function takePhoto(clientId,phase,after,fromLibrary){
-  const inp=_ensureCamInput(fromLibrary);inp.value='';inp.multiple=false;
-  inp.onchange=()=>{
-    const f=inp.files&&inp.files[0];const ts=Date.now();
-    const save=url=>{
-      if(!url){
+  const save=url=>{
+    const ts=Date.now();
+    if(!url){
         // A FileReader error (or no file) yields an empty url, don't create a phantom photo
         // record that would count in totals and render as an empty placeholder.
         if(typeof proToast==='function')proToast('Couldn\u2019t read that photo \u2014 please try again.');
@@ -7301,7 +7339,12 @@ function takePhoto(clientId,phase,after,fromLibrary){
         }
         if(after)after();
       });
-    };
+  };
+  // Native app: a fresh capture goes through the OS camera plugin; "From library" keeps the web picker.
+  if(!fromLibrary&&_isNativeApp()){ _ncPhotoDataUrl(true,1600).then(function(d){ if(d)save(d); else if(after)after(); }); return; }
+  const inp=_ensureCamInput(fromLibrary);inp.value='';inp.multiple=false;
+  inp.onchange=()=>{
+    const f=inp.files&&inp.files[0];
     if(f){_downscaleImg(f,function(url){save(url);},1600);}else save('');
   };
   inp.click();

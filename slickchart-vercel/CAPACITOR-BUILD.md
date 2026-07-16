@@ -5,10 +5,18 @@ Capacitor wraps the **live** SlickChart PWA in a native shell. The store app *is
 re-submission. (Same auto-update model as the Android TWA in `ANDROID-BUILD.md`.)
 
 **What's already set up in this repo (done for you):**
-- ✅ `@capacitor/core` + `@capacitor/cli` in `devDependencies`
+- ✅ `@capacitor/core` + `@capacitor/cli` + plugins (`camera`, `push-notifications`, `app`,
+  `status-bar`) in `package.json`
 - ✅ `capacitor.config.json` — appId `com.slickchart.app`, name `SlickChart`, points at the live app
 - ✅ `native-shell/` — a tiny offline-fallback page (Capacitor requires a local `webDir`)
 - ✅ npm scripts: `cap:add:ios`, `cap:add:android`, `cap:sync`, `cap:ios`, `cap:android`
+- ✅ **Native camera** — "Take photo" (before/after, check-in, consult) uses the OS camera in the
+  native build, falling back to the web picker on the PWA. Nothing to configure.
+- ✅ **Native push** — the app registers with the OS and stores the device token. **To actually
+  deliver** push you must set up Firebase/APNs — see `PUSH-NATIVE-SETUP.md`.
+- ✅ **Native permissions** — the plugins request camera + notification permission automatically. iOS
+  also needs usage-description strings in `Info.plist` (you add these after `cap add ios` — snippet in
+  the "iOS permission strings" section below).
 
 **What you do on YOUR machine** (can't be done in the cloud session): generate the native projects,
 build, and submit. iOS **requires a Mac + Xcode**. You also need an **Apple Developer account**
@@ -81,6 +89,24 @@ Wire these behind a `window.Capacitor` check in the app so the web build is unaf
 add that bridge code.)
 
 ---
+
+## iOS permission strings (add after `npx cap add ios`)
+Open `ios/App/App/Info.plist` in Xcode (or a text editor) and add these keys — iOS rejects the app if
+the camera/photo permissions are used without them:
+
+```xml
+<key>NSCameraUsageDescription</key>
+<string>SlickChart uses the camera to capture before/after and check-in photos.</string>
+<key>NSPhotoLibraryUsageDescription</key>
+<string>SlickChart lets you attach photos from your library to a client's record.</string>
+<key>NSPhotoLibraryAddUsageDescription</key>
+<string>SlickChart can save photos you capture back to your library.</string>
+```
+For push: in Xcode → the app target → **Signing & Capabilities → + Capability** → add **Push
+Notifications** and **Background Modes** (check *Remote notifications*).
+
+Android needs no manifest edits for the camera plugin (Capacitor adds them), and push works once
+`google-services.json` is in `android/app/` (see `PUSH-NATIVE-SETUP.md`).
 
 ## The genuinely easier alternative (no Xcode/Android Studio)
 **PWABuilder** (https://www.pwabuilder.com) packages your PWA for **both** iOS and Android from the

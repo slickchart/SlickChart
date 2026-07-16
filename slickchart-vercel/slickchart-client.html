@@ -295,6 +295,36 @@ async function _subscribePush(){
     }
   }catch(e){/* push is a nice-to-have; never block the app on it */}
 }
+// ── Native push (Capacitor app only) ──────────────────────────────────────────────────────────
+// In the App Store / Play build, web push doesn't fire — we register with the OS (APNs/FCM) via the
+// Capacitor plugin, hand the device token to the server, and route taps. No-op on the web/PWA, so the
+// existing web-push path is untouched there. Sending these still needs Firebase/APNs — see
+// PUSH-NATIVE-SETUP.md.
+let _nativePushInit=false;
+async function _initNativePush(){
+  try{
+    if(_nativePushInit)return; _nativePushInit=true;
+    if(!(window.Capacitor&&window.Capacitor.isNativePlatform&&window.Capacitor.isNativePlatform()))return;
+    const PN=window.Capacitor.Plugins&&window.Capacitor.Plugins.PushNotifications;
+    if(!PN)return;
+    let perm=await PN.checkPermissions();
+    if(perm.receive!=='granted'){perm=await PN.requestPermissions();}
+    if(perm.receive!=='granted')return;   // client declined OS notifications
+    PN.addListener('registration',function(tok){
+      try{
+        if(!client._real||!client._token||!tok||!tok.value)return;
+        const platform=(window.Capacitor.getPlatform&&window.Capacitor.getPlatform())||'';
+        fetch('/api/native-push?t='+encodeURIComponent(client._token),{method:'POST',headers:{'Content-Type':'application/json'},body:JSON.stringify({platform,token:tok.value})}).catch(function(){});
+      }catch(e){}
+    });
+    PN.addListener('registrationError',function(){});
+    // Tapping a native notification opens the app — route to the right screen from its data payload.
+    PN.addListener('pushNotificationActionPerformed',function(a){
+      try{const d=(a&&a.notification&&a.notification.data)||{};const scr=d.screen||d.action||'';if(scr&&typeof nav==='function')nav(scr);else if(typeof renderHome==='function')renderHome();}catch(e){}
+    });
+    await PN.register();
+  }catch(e){/* push is a nice-to-have; never block the app */}
+}
 
 /* In-app notification center (the bell) */
 let clientNotifs=[
@@ -2172,6 +2202,7 @@ async function enableNotifs(){
   renderNotifSettings();
   // Register this device for real push (so notifications arrive with the app closed).
   try{_subscribePush();}catch(e){}
+  try{_initNativePush();}catch(e){}   // native App Store / Play build
   // welcome ping so the user immediately sees it working
   setTimeout(()=>pushNotify({type:'summaryReady',icon:'ti-bell-ringing',col:'#f0fff5',ic:'#4ec49a',
     title:'Notifications are on 🎉',body:"You'll get reminders, messages, and booking updates here.",force:true}),420);
@@ -3192,7 +3223,27 @@ function _ciFlagged(){
 }
 
 // ── Image helpers (downscale uploads to a shareable data URL, or accept a link) ──
+// True only inside the Capacitor native shell (App Store / Play build), false on the web/PWA.
+function _isNativeApp(){try{return !!(window.Capacitor&&window.Capacitor.isNativePlatform&&window.Capacitor.isNativePlatform());}catch(e){return false;}}
+// Native camera/library via the Capacitor Camera plugin (used only in the native app). Returns a
+// downscaled dataURL, or null (cancelled / not native) so callers fall back to the web file input.
+async function _ncPhotoDataUrl(fromCamera,maxW){
+  try{
+    if(!_isNativeApp())return null;
+    const Camera=window.Capacitor.Plugins&&window.Capacitor.Plugins.Camera;
+    if(!Camera||!Camera.getPhoto)return null;
+    const photo=await Camera.getPhoto({quality:82,width:(maxW||1200),resultType:'dataUrl',correctOrientation:true,source:fromCamera?'CAMERA':'PHOTOS',saveToGallery:false});
+    return (photo&&photo.dataUrl)||null;
+  }catch(e){return null;}   // user cancelled or denied permission — no-op, caller handles fallback
+}
 function _pickImages(cb,capture){
+  // Native app: single-shot capture goes through the OS camera plugin (proper permission prompt + a
+  // real camera UI). Multi-select from the library keeps the web file input, which the webview opens
+  // as the native photo picker anyway.
+  if(capture&&_isNativeApp()){
+    _ncPhotoDataUrl(true,1000).then(function(d){if(d)cb([d]);});
+    return;
+  }
   const inp=document.createElement('input');
   inp.type='file';inp.accept='image/*';
   // capture=true jumps straight to the device camera (single shot); otherwise allow picking
@@ -4747,6 +4798,7 @@ function _bootRealClient(token){
       // If this client already granted notifications on a previous visit, make sure this
       // device is subscribed for push (and the server has a fresh subscription).
       try{_subscribePush();}catch(e){}
+      try{_initNativePush();}catch(e){}   // native App Store / Play build
     }
     else{ _clientLinkError(j&&j.error); }
   }).catch(function(){ _clientLinkNetworkError(); });
