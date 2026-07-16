@@ -180,6 +180,6 @@ export default async function handler(req, res) {
     res.status(200).json({ ok: true, ...summary });
   } catch (e) {
     console.error('[cron-reminders] failed:', e && e.stack || e);
-    res.status(500).json({ error: (e && e.message) || 'cron failed' });
+    console.error('[cron-reminders] failed:', e && e.message); res.status(500).json({ error: 'cron failed' });
   }
 }

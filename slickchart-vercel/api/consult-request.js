@@ -4,7 +4,7 @@
 // size-capped, and rate-limited by IP and by slug.
 import { dbEnabled } from '../lib/db.js';
 import { getProviderBySlug, addConsultRequest } from '../lib/consult.js';
-import { sendEmail, appOrigin, consultLeadEmailHtml, consultLeadEmailText } from '../lib/email.js';
+import { sendEmail, trustedOrigin, consultLeadEmailHtml, consultLeadEmailText } from '../lib/email.js';
 
 // Best-effort in-memory burst limiter (per function instance; fails open) — same shape as
 // /api/client-submit and /api/ai. Stops a script from flooding a provider's lead list.
@@ -49,7 +49,9 @@ export default async function handler(req, res) {
     // the prospect's email, so the provider can reply straight to the lead.
     if (prov.email) {
       try {
-        const link = appOrigin(req) + '/slickchart';
+        // Use our canonical origin, not the request Host header — the "Open SlickChart" button lands in
+        // the provider's real inbox, so a spoofed Host must not be able to redirect it.
+        const link = trustedOrigin() + '/slickchart';
         const fields = { providerName: prov.name, name, email, phone, message, link };
         await sendEmail({
           to: prov.email,

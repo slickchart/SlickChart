@@ -38,6 +38,17 @@ export default async function handler(req, res) {
   if (req.method !== 'POST') { res.status(405).json({ error: 'Method not allowed' }); return; }
   if (!apiKey) { res.status(200).json({ enabled: false }); return; }
 
+  // Require a signed-in provider — this is a proxy to a metered third-party (Groq) billed to our key,
+  // and voice notes are a provider-only feature. Without this, anyone could drive unbounded transcription
+  // spend anonymously (the burst limiter is per-instance and IP-keyed, so it fails open when distributed).
+  {
+    const secret = process.env.SESSION_SECRET || '';
+    const auth = req.headers['authorization'] || '';
+    const token = auth.replace(/^Bearer\s+/i, '').trim();
+    const payload = (secret && token) ? verifyToken(token, secret) : null;
+    if (!payload || !payload.u) { res.status(401).json({ error: 'Please sign in.' }); return; }
+  }
+
   const limit = Math.max(parseInt(process.env.TRANSCRIBE_BURST_LIMIT, 10) || 12, 1);
   if (!burstOk(callerKey(req), limit, 60000)) {
     res.status(429).json({ enabled: true, error: 'Too many recordings in a row — give it a moment.' });
@@ -75,8 +86,9 @@ export default async function handler(req, res) {
     });
     const data = await r.json().catch(() => ({}));
     if (!r.ok) {
-      const msg = (data && data.error && (data.error.message || data.error)) || 'Transcription failed';
-      res.status(r.status).json({ enabled: true, error: String(msg) });
+      // Don't pass Groq's raw error text (model names, quota/billing wording) back to the caller.
+      console.error('[transcribe] upstream error', r.status, (data && data.error && (data.error.message || data.error)) || '');
+      res.status(r.status >= 500 ? 502 : r.status).json({ enabled: true, error: 'Transcription failed. Please try again.' });
       return;
     }
     res.status(200).json({ enabled: true, text: String((data && data.text) || '').trim() });

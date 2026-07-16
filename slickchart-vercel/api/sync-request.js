@@ -17,9 +17,13 @@ export default async function handler(req, res) {
     await ensureProvidersTable();
     const q = sql();
     if (req.method === 'POST') {
+      // Require a signed-in provider — this used to accept an anonymous ('anon') write from anyone on
+      // the internet, appending an unbounded row per call.
+      const pid = providerId(req);
+      if (pid === 'anon') { res.status(401).json({ error: 'Please sign in.' }); return; }
       const app = String((req.body && req.body.app) || '').slice(0, 60).trim();
       if (!app) { res.status(400).json({ error: 'Missing app' }); return; }
-      await q`INSERT INTO sync_requests (app, provider_id) VALUES (${app}, ${providerId(req)})`;
+      await q`INSERT INTO sync_requests (app, provider_id) VALUES (${app}, ${pid})`;
       res.status(200).json({ ok: true });
       return;
     }

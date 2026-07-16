@@ -9,12 +9,15 @@ function wrap(events) {
   const now = new Date(); const pad = n => String(n).padStart(2, '0');
   const stamp = now.getUTCFullYear() + pad(now.getUTCMonth() + 1) + pad(now.getUTCDate()) + 'T' +
     pad(now.getUTCHours()) + pad(now.getUTCMinutes()) + pad(now.getUTCSeconds()) + 'Z';
+  // Sanitize datetime/uid fields too (not just SUMMARY/DESCRIPTION) so a stray CRLF in any field can't
+  // inject extra iCalendar lines/properties. Datetimes keep only valid ICS chars.
+  const dt = v => String(v || '').replace(/[^0-9TZ]/g, '');
   const body = (events || []).map(e => [
     'BEGIN:VEVENT',
-    'UID:' + (e.uid || ('sc-' + Math.random().toString(36).slice(2) + '@slickchart')),
+    'UID:' + esc(e.uid || ('sc-' + Math.random().toString(36).slice(2) + '@slickchart')),
     'DTSTAMP:' + stamp,
-    'DTSTART:' + e.start,
-    'DTEND:' + (e.end || e.start),
+    'DTSTART:' + dt(e.start),
+    'DTEND:' + dt(e.end || e.start),
     'SUMMARY:' + esc(e.title),
     e.notes ? ('DESCRIPTION:' + esc(e.notes)) : ''
   ].filter(Boolean).join('\r\n')).join('\r\n');
