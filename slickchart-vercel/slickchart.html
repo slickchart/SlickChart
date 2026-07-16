@@ -1459,7 +1459,9 @@ function _dupSig(dg){try{return (dg||[]).map(g=>g.slice().sort().join('+')).sort
 function _dismissDupBanner(){try{const dg=(typeof _findDuplicateGroups==='function')?_findDuplicateGroups():[];_dupDismissSig=_dupSig(dg);localStorage.setItem('sc_dup_dismiss',_dupDismissSig);if(typeof _pushKeyNow==='function')_pushKeyNow('sc_dup_dismiss',_dupDismissSig);}catch(e){}try{if(typeof renderClients==='function')renderClients();}catch(e){}}
 function _sqLocalId(sqid){return 'sq_'+String(sqid||'').slice(0,10).toLowerCase().replace(/[^a-z0-9]/g,'');}
 function _mergeNorm(s){return (typeof _normSearch==='function')?_normSearch(s):String(s||'').toLowerCase().replace(/[^a-z0-9]/g,'');}
-function _mergeDigits(s){return String(s||'').replace(/\D/g,'');}
+// Strip a leading "1" country code on 11-digit numbers (matching _fmtPhone) so the same person entered
+// with and without "+1" produces the same dedup key and gets grouped in Merge Duplicates.
+function _mergeDigits(s){let d=String(s||'').replace(/\D/g,'');if(d.length===11&&d[0]==='1')d=d.slice(1);return d;}
 function _clientSubtitle(c){c=c||{};return [c.email,c.phone].filter(Boolean).join(' · ')||(c.treatment&&c.treatment!=='New client'?c.treatment:'')||'No contact on file';}
 function _isSquareClient(id){return String(id).indexOf('sq_')===0||!!(CL[id]&&CL[id].squareId);}
 // Group clients that are probably the same person: identical normalized name, a shared
@@ -10691,7 +10693,10 @@ function _downloadDoc(id){
     if(typeof proToast==='function')proToast('Opened the file, use your browser to save it');
   }
 }
-function _parseDate(s){if(!s)return null;const d=new Date(s);return isNaN(d)?null:d;}
+// A bare ISO date-only string (from <input type="date">) parses as UTC midnight, which reads back a day
+// early in Americas timezones — so a doc expiring today saved as "Expired". Anchor date-only values to
+// local noon so the days-until math is correct regardless of timezone.
+function _parseDate(s){if(!s)return null;const str=String(s).trim();const d=new Date(/^\d{4}-\d{2}-\d{2}$/.test(str)?(str+'T12:00:00'):str);return isNaN(d)?null:d;}
 function _docStatus(expires){
   if(!expires||/^(none|n\/a|no)$/i.test(String(expires).trim()))return {status:'none',lbl:'No expiration'};
   const d=_parseDate(expires);if(!d)return {status:'none',lbl:String(expires)};
@@ -10764,6 +10769,9 @@ function _saveEditDoc(id){
 function renderVault(){
   setNav('pro');
   document.getElementById('tt').textContent='My Docs';
+  // Recompute expiry status live — it used to be frozen at save time, so a license that lapsed after
+  // saving still showed "Valid" (and contradicted the live Home "needs renewal" tile) until re-edited.
+  docs.forEach(d=>{try{const st=_docStatus(d.expires);d.status=st.status;d.lbl=st.lbl;d.bdg=_bdgFor(st.status);}catch(e){}});
   const urgent=docs.filter(d=>d.status==='urgent');
   const filtered=activeDocCat==='All'?docs:docs.filter(d=>d.cat===activeDocCat);
   S.innerHTML=`
@@ -10794,6 +10802,7 @@ function toggleDocReminder(id,key){
 }
 function renderDocDetail(id){
   setNav('pro');const d=docs.find(x=>x.id===id);if(!d)return;
+  try{const st=_docStatus(d.expires);d.status=st.status;d.lbl=st.lbl;d.bdg=_bdgFor(st.status);}catch(e){}   // live expiry status, not the value frozen at save
   document.getElementById('tt').textContent=d.name;
   S.innerHTML=`
   <div style="padding:12px 16px 0;display:flex;align-items:center;justify-content:flex-end;"><button onclick="nav('edit-doc','${d.id}')" style="border:none;background:none;font-size:12px;color:var(--accent);cursor:pointer;"><i class="ti ti-pencil" style="font-size:12px;"></i> Edit</button></div>
@@ -13668,8 +13677,10 @@ function _reportData(from,to){
   // Partial payments: the collected amount includes a proportional share of the invoice's tax, so book
   // only the NET toward revenue and the tax share toward tax — otherwise revenue was overstated and the
   // sales-tax report's Revenue(ex-tax) + Tax no longer equalled Total collected.
+  let partialCount=0;   // partial payments that actually collected money — they count toward the average
   _payments.filter(p=>p.status==='partial'&&inRange(p)).forEach(p=>{
     const c=_payCollected(p);if(c<=0)return;
+    partialCount++;
     const amt=parseFloat(p.amount)||0;const fullTax=parseFloat(p.taxAmount)||0;
     const taxPortion=(amt>0&&fullTax>0)?_money(fullTax*(c/amt)):0;
     const net=c-taxPortion;   // net = c - taxPortion so revenue + tax === total collected, exactly
@@ -13681,7 +13692,11 @@ function _reportData(from,to){
     } else {const cat=p.category||'';if(cat==='Retail')retail+=net;else if(cat==='Service')services+=net;else other+=net;}
   });
   const ar=outstanding.reduce((a,p)=>a+_payOwed(p),0);const revenue=services+retail+other;
-  return {from,to,paid,outstanding,services,retail,other,tax,total,revenue,ar,count:paid.length,byMethod,avg:paid.length?total/paid.length:0};
+  // Average ticket divides collected total by the number of transactions that CONTRIBUTED to it
+  // (fully-paid + partials that collected) — dividing by paid-only count inflated it (or showed $0 while
+  // money came in from partials).
+  const _txns=paid.length+partialCount;
+  return {from,to,paid,outstanding,services,retail,other,tax,total,revenue,ar,count:paid.length,byMethod,avg:_txns?total/_txns:0};
 }
 function _reportExportBtn(icon,label,onclick){return `<button onclick="${onclick}" style="display:flex;align-items:center;gap:10px;background:#161616;border:1px solid #2a2a2a;border-radius:10px;padding:12px 14px;cursor:pointer;font-family:inherit;text-align:left;width:100%;"><i class="ti ${icon}" style="font-size:17px;color:#4ec49a;"></i><span style="flex:1;font-size:13px;font-weight:600;color:#e0e0e0;">${label}</span><i class="ti ti-download" style="color:#888;font-size:16px;"></i></button>`;}
 function renderReports(){
@@ -14103,7 +14118,9 @@ function renderPayments(){
   const out=_payments.filter(p=>p.status==='unpaid'||p.status==='partial').sort(byDateDesc);
   const paid=_payments.filter(p=>p.status==='paid').sort(byDateDesc);
   const sum=arr=>arr.reduce((a,p)=>a+(parseFloat(p.amount)||0),0);
-  const ym=new Date().toISOString().slice(0,7);
+  // Local year-month — payment dates are stored with LOCAL date parts, so a UTC month (toISOString)
+  // rolled over on the last evening of the month in the Americas and zeroed out "Collected this month".
+  const _nowYm=new Date();const ym=_nowYm.getFullYear()+'-'+String(_nowYm.getMonth()+1).padStart(2,'0');
   const monthPaid=_payments.filter(p=>String(p.date||'').slice(0,7)===ym).reduce((a,p)=>a+_payCollected(p),0);
   const chip=s=>({paid:['#0a2019','#4ec49a','Paid'],unpaid:['#2a1a0a','#e8b060','Unpaid'],partial:['#0d1e33','#5ba3e8','Partial'],refunded:['#1a1a1a','#999','Refunded'],canceled:['#1a1a1a','#777','Canceled']}[s]||['#1a1a1a','#999',s]);
   const row=p=>{const cs=chip(p.status);return `<div onclick="_payOpen('${p.id}')" style="background:#161616;border:1px solid #242424;border-radius:11px;padding:11px 13px;margin:0 16px 8px;cursor:pointer;"><div style="display:flex;justify-content:space-between;align-items:center;"><div style="min-width:0;"><div style="font-size:14px;font-weight:600;color:#f0f0f0;">$${(parseFloat(p.amount)||0).toFixed(2)} <span style="font-size:11px;color:#888;font-weight:400;">\u00b7 ${_fileEsc(p.method||'')}</span></div><div style="font-size:12px;color:#999;margin-top:1px;">${String(p.clientName||'\u2014').replace(/</g,'&lt;')} \u00b7 ${_payDateDisp(p.date)}</div></div><span style="font-size:10px;font-weight:700;padding:3px 9px;border-radius:20px;background:${cs[0]};color:${cs[1]};">${_fileEsc(cs[2])}</span></div>${p.note?`<div style="font-size:11px;color:#9a9a9a;margin-top:5px;">${String(p.note).replace(/</g,'&lt;')}</div>`:''}<div style="display:flex;gap:14px;margin-top:8px;align-items:center;">${p.status!=='paid'?`<button onclick="event.stopPropagation();_payMarkPaid('${p.id}')" style="background:none;border:none;color:#4ec49a;font-size:12px;font-weight:600;cursor:pointer;font-family:inherit;padding:0;"><i class="ti ti-check"></i> Mark paid</button>`:''}<span style="color:#5ba3e8;font-size:12px;font-weight:600;"><i class="ti ti-chevron-right"></i> Details</span><button onclick="event.stopPropagation();_payDelete('${p.id}')" style="background:none;border:none;color:#a85a5a;font-size:12px;cursor:pointer;font-family:inherit;padding:0;margin-left:auto;">Remove</button></div></div>`;};
@@ -15266,7 +15283,9 @@ function _nextApptForClient(id){
   if(c.nextVisit&&c.nextVisit!=='Not scheduled'){
     const parts=c.nextVisit.split('·').map(s=>s.trim());
     const dl=parts[0]||c.nextVisit;
-    const d=new Date(dl);
+    // nextVisit is stored year-less (e.g. "Jul 17"), and new Date("Jul 17") parses as year 2001 — always
+    // "past", so the Next-appointment card silently vanished. Append the current year when none is present.
+    const d=new Date(/\d{4}/.test(dl)?dl:(dl+' '+new Date().getFullYear()));
     if(isNaN(d.getTime())||d.getTime()>=now.getTime()){
       return {dateLabel:dl,time:parts[1]||'',treatment:c.treatment||''};
     }
@@ -17770,7 +17789,7 @@ function renderAutoForm(a,idx){
 
     ${(a&&/birthday/i.test((a.name||'')+' '+(a.trigger||'')))?_birthdayPanelHTML():''}
     <span class="fl-lbl">Message</span>
-    <textarea class="fi" id="auto-msg" aria-label="Message body" style="height:110px;resize:none;line-height:1.6;margin-bottom:10px;" placeholder="Hi {client_name}! ✨">${a?`Hi {client_name}! Just checking in after your recent ${a.name.toLowerCase().includes('birthday')?'birthday 🎂':'appointment ✨'}. How is your skin feeling? Let me know if you have any questions!\n\n${_providerFirstName()}`:'Hi {client_name}! '}</textarea>
+    <textarea class="fi" id="auto-msg" aria-label="Message body" style="height:110px;resize:none;line-height:1.6;margin-bottom:10px;" placeholder="Hi {client_name}! ✨">${_fileEsc((a&&a.msg)||(a?`Hi {client_name}! Just checking in after your recent ${a.name.toLowerCase().includes('birthday')?'birthday 🎂':'appointment ✨'}. How is your skin feeling? Let me know if you have any questions!\n\n${_providerFirstName()}`:'Hi {client_name}! '))}</textarea>
     <div style="background:#1a1a1a;border:1px solid #2a2a2a;border-radius:8px;padding:8px 12px;margin-bottom:14px;">
       <div style="font-size:11px;color:#999;margin-bottom:5px;">Available variables</div>
       <div style="display:flex;flex-wrap:wrap;gap:5px;">${['{client_name}','{appointment_date}','{treatment_name}','{business_name}'].map(v=>`<span onclick="const ta=document.getElementById('auto-msg');ta.value+=v;" style="font-size:11px;background:#222;color:var(--accent);padding:3px 8px;border-radius:5px;cursor:pointer;">${v}</span>`).join('')}</div>
@@ -17793,10 +17812,11 @@ function saveAuto(idx){
   const specificDate=isDate?document.getElementById('auto-specific-date')?.value:'';
   const specificTime=isDate?document.getElementById('auto-specific-time')?.value:'';
   const repeatEvery=isDate?document.getElementById('auto-repeat')?.value:'';
+  const msg=document.getElementById('auto-msg')?.value||'';   // was never read, so edits to the message were silently discarded
   if(idx>=0){
-    Object.assign(autos[idx],{name,trigger,specificDate,specificTime,repeatEvery});
+    Object.assign(autos[idx],{name,trigger,specificDate,specificTime,repeatEvery,msg});
   } else {
-    autos.push({name,icon:'📅',col:'#0d1e33',trigger,specificDate,specificTime,repeatEvery,on:true,sent:0,opened:0,bdg:'bb'});
+    autos.push({name,icon:'📅',col:'#0d1e33',trigger,specificDate,specificTime,repeatEvery,msg,on:true,sent:0,opened:0,bdg:'bb'});
   }
   try{persistAutos();}catch(e){}  // was missing, new/edited automations were lost on reload
   nav('messages');
