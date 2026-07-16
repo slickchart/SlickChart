@@ -1436,6 +1436,16 @@ const _MERGE_SKIP_IDS={maya:1,sophie:1,priya:1};
 let mergedSquareIds={};
 function loadMergedIds(){try{const raw=localStorage.getItem('sc_merged_ids');if(raw){const o=JSON.parse(raw);if(o&&typeof o==='object')mergedSquareIds=o;}}catch(e){}}
 function saveMergedIds(){try{(function(_v){localStorage.setItem('sc_merged_ids',_v);if(typeof _pushKeyNow==='function')_pushKeyNow('sc_merged_ids',_v);return _v;})(JSON.stringify(mergedSquareIds));}catch(e){}}
+// Where a merged-away client id was folded INTO (dropId -> survivor keepId). A client's magic-link
+// token stays bound to their ORIGINAL id server-side, so any form / check-in / virtual-consult they
+// submit AFTER the provider merges their duplicate keeps arriving under that old id. Without this map
+// the event's client_id no longer matches a live chart, so the submission was silently dropped and
+// then marked seen forever. Unioned across devices via _TOMB_OBJ so every device routes the same way.
+let _mergedInto={};
+function loadMergedInto(){try{const raw=localStorage.getItem('sc_merged_into');if(raw){const o=JSON.parse(raw);if(o&&typeof o==='object')_mergedInto=o;}}catch(e){}}
+function _saveMergedInto(){try{const v=JSON.stringify(_mergedInto);localStorage.setItem('sc_merged_into',v);if(typeof _pushKeyNow==='function')_pushKeyNow('sc_merged_into',v);}catch(e){}}
+// Follow the merge chain (a survivor may itself have been merged later) to the final live chart id.
+function _resolveClientId(id){let cur=id,guard=0;while(cur&&!CL[cur]&&_mergedInto[cur]&&_mergedInto[cur]!==cur&&guard++<25)cur=_mergedInto[cur];return cur||id;}
 // Clients the provider removed or merged away. Synced set (so all devices agree) that BLOCKS the
 // cloud/Square re-hydration from re-adding them as blank zombies — the "deleted client comes back
 // (with an empty chart)" bug. Paired with a server-side soft-delete so the row is truly gone.
@@ -1544,6 +1554,9 @@ function _mergeClients(keepId,dropId){
   _mergeSideStores(keepId,dropId);
   // Don't let the background Square sync re-create a merged-away Square customer.
   if(_isSquareClient(dropId)){const local=drop.squareId?_sqLocalId(drop.squareId):dropId;mergedSquareIds[local]=1;if(String(dropId).indexOf('sq_')===0)mergedSquareIds[dropId]=1;saveMergedIds();}
+  // Remember where this id went so a form/check-in the client later submits under it (their token is
+  // still bound to dropId server-side) is routed onto the survivor instead of being silently dropped.
+  try{_mergedInto[dropId]=keepId;if(drop.squareId)_mergedInto[_sqLocalId(drop.squareId)]=keepId;_saveMergedInto();}catch(e){}
   try{_markClientDeleted(dropId);}catch(e){}
   delete CL[dropId];
   saveClients();
@@ -1792,7 +1805,7 @@ function _syncable(k){return typeof k==='string'&&k.indexOf('sc_')===0&&!_SYNC_S
 // refresh, before its push flushed) was wiped — resurrecting deleted clients, merged duplicates, and
 // dismissed flags. These keys are UNIONED with local on pull instead of overwritten. Object maps merge
 // by key; arrays merge by unique value.
-const _TOMB_OBJ={sc_deleted_clients:1,sc_hidden_square:1,sc_merged_ids:1};
+const _TOMB_OBJ={sc_deleted_clients:1,sc_hidden_square:1,sc_merged_ids:1,sc_merged_into:1};
 const _TOMB_ARR={sc_flag_dismissed:1,sc_ci_cleared:1,sc_ci_read:1,sc_home_dismissed:1,sc_notif_cleared:1,sc_notif_read:1};
 function _isTombstoneKey(k){return !!(_TOMB_OBJ[k]||_TOMB_ARR[k]);}
 // Returns the merged JSON string (server ∪ local), or null if there's nothing local to preserve.
@@ -1945,7 +1958,7 @@ function _reloadAll(){try{
   try{if(typeof _migrateGuideFiles==='function')_migrateGuideFiles();}catch(e){}
   if(typeof loadAi==='function')loadAi();
   if(typeof loadForms==='function')loadForms();
-  loadBizInfo();_syncProviderAvatar();_syncHeaderLogo();loadClients();loadMergedIds();loadDeletedClients();loadHiddenSquare();loadMessages();loadInv();loadVendors();_loadPersistenceSweep();try{_initCapturedPhotos();}catch(e){}_loadHomeDismissed();_loadAttnSeen();loadProviderNoteDrafts();if(typeof loadSessionSummaries==='function')loadSessionSummaries();if(!_sampleHidden()){_seedMayaOnce();}else{_purgeSample();}try{_purgeRemovedClients();}catch(e){}_seedBirthdays();if(!_sampleHidden()&&typeof _demoCheckinSeed==='function')_demoCheckinSeed();
+  loadBizInfo();_syncProviderAvatar();_syncHeaderLogo();loadClients();loadMergedIds();loadMergedInto();loadDeletedClients();loadHiddenSquare();loadMessages();loadInv();loadVendors();_loadPersistenceSweep();try{_initCapturedPhotos();}catch(e){}_loadHomeDismissed();_loadAttnSeen();loadProviderNoteDrafts();if(typeof loadSessionSummaries==='function')loadSessionSummaries();if(!_sampleHidden()){_seedMayaOnce();}else{_purgeSample();}try{_purgeRemovedClients();}catch(e){}_seedBirthdays();if(!_sampleHidden()&&typeof _demoCheckinSeed==='function')_demoCheckinSeed();
   if(typeof loadWorkspace==='function')loadWorkspace();
   if(typeof loadSquareCatalog==='function'){loadSquareCatalog();_mergeSquareRetail();}
   if(typeof loadCheckinCfg==='function')loadCheckinCfg();
@@ -15506,9 +15519,12 @@ async function syncClientEvents(){
     // frozen/killed mid-way (common for a phone PWA) can't record an event as "seen" while its
     // actual data was never saved. That race is exactly how a client's submission "never came
     // through." Each branch below is written to be idempotent so a re-processed event is harmless.
+    try{loadMergedInto();}catch(e){}   // pick up any merge routing synced from another device
     fresh.forEach(ev=>{
       const payload=ev.payload||{};
-      const cid=ev.client_id;
+      // Route through the merge map: if this client's duplicate was merged away, their token still
+      // arrives under the OLD id — resolve it to the surviving chart so the submission isn't dropped.
+      const cid=_resolveClientId(ev.client_id);
       const c=CL[cid];
       const name=payload.client||(c&&c.name)||'A client';
       if(ev.kind==='booking'){
