@@ -1315,7 +1315,7 @@ async function _loadClientPrefsFromServer(){
     if(p.eng){_eng=Object.assign(_eng,p.eng);try{localStorage.setItem('sc_client_engage',JSON.stringify(_eng));}catch(e){}
       if(_eng.day===_engToday()&&(_eng.stepsProvider===undefined||_eng.stepsProvider===(client&&client.activeProviderId)))Object.keys(homecareChecked).forEach(k=>{homecareChecked[k]=!!(_eng.steps||{})[k];});
     }
-    if(Array.isArray(p.welcomeDismissed))try{localStorage.setItem('sc_welcome_dismissed',JSON.stringify(p.welcomeDismissed));}catch(e){}
+    if(Array.isArray(p.welcomeDismissed))try{const cur=JSON.parse(localStorage.getItem('sc_welcome_dismissed')||'[]');const u=Array.from(new Set(cur.concat(p.welcomeDismissed)));localStorage.setItem('sc_welcome_dismissed',JSON.stringify(u));}catch(e){}
     if(typeof p.installDismissed==='boolean')try{localStorage.setItem('sc_install_dismissed',p.installDismissed?'1':'0');}catch(e){}
     if(Array.isArray(p.saved)){try{localStorage.setItem('sc_client_saved',JSON.stringify(p.saved));}catch(e){}try{const _ap=activeProvider();if(_ap)_ap.saved=p.saved.slice();}catch(e){}}
     if(p.checkinDone&&typeof p.checkinDone==='object'){
@@ -1332,8 +1332,13 @@ async function _loadClientPrefsFromServer(){
     if(p.hiddenSummaries&&typeof p.hiddenSummaries==='object')try{localStorage.setItem('sc_client_hidden_summaries',JSON.stringify(p.hiddenSummaries));}catch(e){}
     if(typeof p.a2hsDismissed==='boolean')try{localStorage.setItem('sc_a2hs_dismissed',p.a2hsDismissed?'1':'0');}catch(e){}
     if(p.courseProg&&typeof p.courseProg==='object')try{localStorage.setItem('sc_course_prog_jess',JSON.stringify(p.courseProg));}catch(e){}
-    if(Array.isArray(p.clearedRes))try{localStorage.setItem('sc_home_cleared_res',JSON.stringify(p.clearedRes));}catch(e){}
-    if(Array.isArray(p.deletedRes))try{localStorage.setItem('sc_deleted_res',JSON.stringify(p.deletedRes));}catch(e){}
+    // Merge (union), never overwrite: clears/deletes are monotonic tombstones. Overwriting with the
+    // server copy used to wipe a just-made local clear whose debounced save hadn't round-tripped yet,
+    // so the guide reappeared — and the follow-up sync then re-pushed the stale set, losing it for good.
+    // Union keeps the local tombstone (the follow-up sync pushes it back) and refreshes the in-memory
+    // Sets the home/library filters actually read.
+    if(Array.isArray(p.clearedRes)){try{const s=_resSetLoad('sc_home_cleared_res');p.clearedRes.forEach(x=>s.add(x));_homeClearedRes.forEach(x=>s.add(x));_homeClearedRes=s;localStorage.setItem('sc_home_cleared_res',JSON.stringify(Array.from(s)));}catch(e){}}
+    if(Array.isArray(p.deletedRes)){try{const s=_resSetLoad('sc_deleted_res');p.deletedRes.forEach(x=>s.add(x));_deletedRes.forEach(x=>s.add(x));_deletedRes=s;localStorage.setItem('sc_deleted_res',JSON.stringify(Array.from(s)));}catch(e){}}
     if(p.vcSubmitted)try{localStorage.setItem('sc_vc_submitted',String(p.vcSubmitted));}catch(e){}
     // Contact + avatar: the client's own correction. Restore it AND apply to the live view so a fresh
     // device shows their edit immediately, not the provider's older on-file value.
