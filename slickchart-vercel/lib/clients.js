@@ -264,7 +264,11 @@ export async function logEvent(providerId, clientId, kind, payload, idemKey) {
   let id;
   if (idemKey) {
     const safe = String(idemKey).replace(/[^a-zA-Z0-9_-]/g, '').slice(0, 40);
-    id = safe ? ('ev_idem_' + safe) : ('ev_' + genToken().slice(0, 12));
+    // Namespace the idempotency id by tenant + client so a key from one client/provider can never
+    // suppress another's genuine submission via ON CONFLICT DO NOTHING. The id used to be derived
+    // from the key alone (global), so a shared/guessed key across tenants could collide.
+    const scope = (String(providerId || '') + '_' + String(clientId || '')).replace(/[^a-zA-Z0-9_-]/g, '').slice(0, 48);
+    id = safe ? ('ev_idem_' + scope + '_' + safe) : ('ev_' + genToken().slice(0, 12));
   } else {
     id = 'ev_' + genToken().slice(0, 12);
   }

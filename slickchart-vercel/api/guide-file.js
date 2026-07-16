@@ -66,6 +66,22 @@ export default async function handler(req, res) {
         const c = await getClientByToken(String(t));
         if (!c) { res.status(404).json({ error: 'This link is not valid.' }); return; }
         owner = c.provider_id;
+        // Authorize: a client may only fetch files actually shared WITH them. The set of file ids a
+        // client can legitimately request equals the fileId/guideId values in their own synced data
+        // blob (that's the only place they learn an id). Without this, any of a provider's clients
+        // could read any of that provider's files by id (intra-tenant access).
+        let cdata = c.data; if (typeof cdata === 'string') { try { cdata = JSON.parse(cdata); } catch (e) { cdata = {}; } }
+        const allowed = new Set();
+        (function walk(o) {
+          if (!o || typeof o !== 'object') return;
+          if (Array.isArray(o)) { for (const v of o) walk(v); return; }
+          for (const k in o) {
+            const v = o[k];
+            if ((k === 'fileId' || k === 'guideId') && typeof v === 'string' && v) allowed.add(v);
+            else if (v && typeof v === 'object') walk(v);
+          }
+        })(cdata || {});
+        if (!allowed.has(id)) { res.status(404).json({ error: 'File not found.' }); return; }
       } else {
         await ensureProvidersTable();
         owner = await providerOwner(req);
