@@ -1785,6 +1785,28 @@ function saveProfessions(){try{(function(_v){localStorage.setItem('sc_profession
 function loadProfessions(){try{const raw=localStorage.getItem('sc_professions');if(raw){const a=JSON.parse(raw);if(Array.isArray(a)&&a.length)selectedProfessions=a;}}catch(e){}}
 const _SYNC_SKIP={sc_token:1,sc_sqkey:1,sc_bus:1,sc_chart_activity:1,sc_pulse:1,sc_cloud_seeded:1};
 function _syncable(k){return typeof k==='string'&&k.indexOf('sc_')===0&&!_SYNC_SKIP[k];}
+// Monotonic "tombstone" sets: deletes/hides/merges/dismissals that must only ever GROW. On a plain
+// pull the whole-blob server copy overwrote local, so a delete made on one device (or moments before a
+// refresh, before its push flushed) was wiped — resurrecting deleted clients, merged duplicates, and
+// dismissed flags. These keys are UNIONED with local on pull instead of overwritten. Object maps merge
+// by key; arrays merge by unique value.
+const _TOMB_OBJ={sc_deleted_clients:1,sc_hidden_square:1,sc_merged_ids:1};
+const _TOMB_ARR={sc_flag_dismissed:1,sc_ci_cleared:1,sc_ci_read:1,sc_home_dismissed:1};
+function _isTombstoneKey(k){return !!(_TOMB_OBJ[k]||_TOMB_ARR[k]);}
+// Returns the merged JSON string (server ∪ local), or null if there's nothing local to preserve.
+function _mergeTombstone(k,serverStr,localStr){
+  try{
+    if(localStr==null)return null;   // nothing local — let the plain overwrite run
+    if(_TOMB_ARR[k]){
+      const sv=JSON.parse(serverStr||'[]'),lv=JSON.parse(localStr||'[]');
+      const merged=Array.from(new Set([].concat(Array.isArray(sv)?sv:[],Array.isArray(lv)?lv:[])));
+      return JSON.stringify(merged);
+    }
+    const sv=JSON.parse(serverStr||'{}'),lv=JSON.parse(localStr||'{}');
+    // local wins on a key collision (its timestamp is this device's), but every id from both survives.
+    return JSON.stringify(Object.assign({},(sv&&typeof sv==='object')?sv:{},(lv&&typeof lv==='object')?lv:{}));
+  }catch(e){return null;}
+}
 const Cloud={
   enabled:false,
   token:(function(){try{return localStorage.getItem('sc_token')||'';}catch(e){return '';}})(),
@@ -1817,6 +1839,15 @@ const Cloud={
     // is newer than whatever the server returned (e.g. a note saved moments before a reload,
     // whose debounced push hadn't flushed yet). Overwriting it here is silent data loss.
     if(this._queue&&Object.prototype.hasOwnProperty.call(this._queue,k))return;
+    if(_isTombstoneKey(k)){
+      const mergedStr=_mergeTombstone(k,data[k],localStorage.getItem(k));
+      if(mergedStr!=null){
+        set(k,mergedStr);
+        // If local had ids the server didn't, push the superset back so every device converges.
+        if(mergedStr!==data[k]){try{this.push(k,mergedStr);}catch(e){}}
+        return;
+      }
+    }
     set(k,data[k]);
   }catch(e){}});this._lastPulledKeys=new Set(keys);return keys.length;},
   pushAllLocal(){const items={};try{for(let i=0;i<localStorage.length;i++){const k=localStorage.key(i);if(_syncable(k))items[k]=localStorage.getItem(k);}}catch(e){}if(this.token&&Object.keys(items).length)return fetch('/api/store',{method:'PUT',headers:{'Content-Type':'application/json','Authorization':'Bearer '+this.token},body:JSON.stringify({items})}).catch(()=>{});},
