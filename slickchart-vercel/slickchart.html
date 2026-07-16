@@ -73,7 +73,10 @@ body{font-family:-apple-system,BlinkMacSystemFont,'Segoe UI',sans-serif;backgrou
 .tok{width:20px;height:20px;border-radius:50%;background:#fff;position:absolute;top:3px;transition:left .18s;box-shadow:0 1px 2.5px rgba(0,0,0,.4);}
 .tog.on .tok{left:21px;}.tog.off .tok{left:3px;}
 .tog:focus-visible{outline:2px solid var(--accent);outline-offset:2px;border-radius:13px;}
-/* 16px so iOS Safari doesn't auto-zoom when a field is focused (matches the client app). */
+/* 16px so iOS Safari doesn't auto-zoom when a field is focused (matches the client app). The global
+   rule catches inline-styled inputs (some were 13–14px) that .fi doesn't cover, so charting on a
+   phone no longer zooms the viewport on every field focus and leave it stuck zoomed. */
+input,textarea,select{font-size:16px!important;}
 .fi{width:100%;background:#1a1a1a;border:1px solid #444;border-radius:10px;padding:9px 12px;font-size:16px;color:#e0e0e0;font-family:inherit;}
 .fi:focus{outline:2px solid var(--accent);outline-offset:0;}
 .fl-lbl{font-size:12px;font-weight:500;color:#aaa;text-transform:uppercase;letter-spacing:.07em;margin-bottom:5px;display:block;}
@@ -1453,7 +1456,7 @@ function _saveHiddenSquare(){try{const v=JSON.stringify(_hiddenSquareIds);localS
 // warn me again", it's "I've looked at these".
 let _dupDismissSig=(function(){try{return localStorage.getItem('sc_dup_dismiss')||'';}catch(e){return '';}})();
 function _dupSig(dg){try{return (dg||[]).map(g=>g.slice().sort().join('+')).sort().join('|');}catch(e){return '';}}
-function _dismissDupBanner(){try{const dg=(typeof _findDuplicateGroups==='function')?_findDuplicateGroups():[];_dupDismissSig=_dupSig(dg);localStorage.setItem('sc_dup_dismiss',_dupDismissSig);}catch(e){}try{if(typeof renderClients==='function')renderClients();}catch(e){}}
+function _dismissDupBanner(){try{const dg=(typeof _findDuplicateGroups==='function')?_findDuplicateGroups():[];_dupDismissSig=_dupSig(dg);localStorage.setItem('sc_dup_dismiss',_dupDismissSig);if(typeof _pushKeyNow==='function')_pushKeyNow('sc_dup_dismiss',_dupDismissSig);}catch(e){}try{if(typeof renderClients==='function')renderClients();}catch(e){}}
 function _sqLocalId(sqid){return 'sq_'+String(sqid||'').slice(0,10).toLowerCase().replace(/[^a-z0-9]/g,'');}
 function _mergeNorm(s){return (typeof _normSearch==='function')?_normSearch(s):String(s||'').toLowerCase().replace(/[^a-z0-9]/g,'');}
 function _mergeDigits(s){return String(s||'').replace(/\D/g,'');}
@@ -4713,6 +4716,9 @@ function addClientProd(clientId,aid){
   if(clientRecs[clientId].includes(aid))return;
   clientRecs[clientId].push(aid);
   if(typeof persistClientRecs==='function'){try{persistClientRecs();}catch(e){}}
+  // Also sync the workspace blob — loadWorkspace() restores clientRecs from sc_workspace on reload, so
+  // saving only sc_client_recs let a stale workspace copy clobber the add/remove/reorder on refresh.
+  try{if(typeof persistWorkspace==='function')persistWorkspace();}catch(e){}
   try{if(clientId!=='maya'&&typeof _scheduleSpecificClientSync==='function')_scheduleSpecificClientSync(clientId);}catch(e){}
   renderProductRecs(clientId);
   // Keep the picker open so several products can be added in a row; just refresh
@@ -4728,6 +4734,9 @@ function addClientProd(clientId,aid){
 function removeClientProd(clientId,aid){
   clientRecs[clientId]=(clientRecs[clientId]||[]).filter(x=>x!==aid);
   if(typeof persistClientRecs==='function'){try{persistClientRecs();}catch(e){}}
+  // Also sync the workspace blob — loadWorkspace() restores clientRecs from sc_workspace on reload, so
+  // saving only sc_client_recs let a stale workspace copy clobber the add/remove/reorder on refresh.
+  try{if(typeof persistWorkspace==='function')persistWorkspace();}catch(e){}
   try{if(clientId!=='maya'&&typeof _scheduleSpecificClientSync==='function')_scheduleSpecificClientSync(clientId);}catch(e){}
   renderProductRecs(clientId);
 }
@@ -4760,6 +4769,9 @@ function moveClientProd(clientId,i,dir){
   if(j<0||j>=recs.length)return;
   const t=recs[i];recs[i]=recs[j];recs[j]=t;
   if(typeof persistClientRecs==='function'){try{persistClientRecs();}catch(e){}}
+  // Also sync the workspace blob — loadWorkspace() restores clientRecs from sc_workspace on reload, so
+  // saving only sc_client_recs let a stale workspace copy clobber the add/remove/reorder on refresh.
+  try{if(typeof persistWorkspace==='function')persistWorkspace();}catch(e){}
   try{if(clientId!=='maya'&&typeof _scheduleSpecificClientSync==='function')_scheduleSpecificClientSync(clientId);}catch(e){}
   renderProductRecs(clientId);
 }
