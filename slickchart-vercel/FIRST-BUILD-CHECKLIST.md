@@ -7,6 +7,43 @@ Capacitor, don't also publish the TWA. Pick one Android path.)
 
 ---
 
+## 0a. One-time tools (install these first)
+You need three things on the Mac before any command works:
+
+- **Node.js** — runs the `npm` commands. Get it at **https://nodejs.org** → click the **LTS** button →
+  double-click the downloaded `.pkg` → Continue/Agree/Install.
+- **Xcode** — Apple's builder (big ~7GB download, start it early). **App Store → search "Xcode" →
+  Install**. Open it once, click **Agree**, let it "install additional components."
+- **CocoaPods** — a helper Capacitor needs for iOS. In Terminal (below) run:
+  `sudo gem install cocoapods` (it asks for your Mac password — typing shows nothing, that's normal).
+- **Android Studio** (only needed before the Android build) — **https://developer.android.com/studio**.
+
+**Open Terminal:** press **Cmd + Space**, type **Terminal**, press Enter. That's where you paste commands.
+
+## 0b. Get the code on your Mac (skip if you already have the SlickChart folder)
+In Terminal, paste and press Enter:
+```bash
+git clone https://github.com/slickchart/slickchart.git
+```
+(If a popup says "install command line developer tools," click Install, then re-run.) Then go into the
+folder:
+```bash
+cd slickchart            # or: cd slickchart/slickchart-vercel  — see next line
+```
+You're in the right place when `ls` lists **`capacitor.config.json`**. If it doesn't, the app files are
+in a subfolder — `cd` into the one that contains `capacitor.config.json`.
+
+## 0c. Generate the native folders (this IS the cap:add step)
+Paste these **one at a time**, pressing Enter and waiting for each to finish:
+```bash
+npm install
+npm install @capacitor/ios @capacitor/android
+npm run cap:add:ios
+npm run cap:add:android
+```
+When they finish you'll have new **`ios/`** and **`android/`** folders — that's the "folders exist" part
+done, and the Firebase config files now have somewhere to go.
+
 ## 0. Confirm the config (30 sec)
 `capacitor.config.json` → `server.url` should be your live domain (`https://slickchart.app/slickchart`).
 This is a **remote** build (SlickChart is static HTML + serverless, not a Next.js static export), so the
