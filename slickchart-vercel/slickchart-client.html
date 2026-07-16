@@ -1874,6 +1874,16 @@ function _advancePrevisitFlow(doneLabel){
 }
 // Renders as a white panel meant to sit INSIDE the appointment gradient card (see renderHome), so
 // the whole "before your visit" experience reads as one card.
+// How many hours before the appointment the pre-visit check-in should surface — driven by the
+// provider's "auto-send timing" setting (rides in the synced check-in config), not a hardcoded 24h.
+function _checkinWindowHours(){
+  try{
+    const cfg=JSON.parse(localStorage.getItem('sc_checkin_cfg')||'null');
+    const when=cfg&&cfg.autoSend&&cfg.autoSend.when;
+    const map={'2 hours':2,'1 day':24,'2 days':48,'3 days':72};
+    return map[when]||24;
+  }catch(e){return 24;}
+}
 function _previsitSectionHTML(){
   const p=activeProvider();const pf=(p.pendingForms||[]);
   // No forms assigned → the familiar single pre-visit check-in row.
@@ -2027,8 +2037,8 @@ function renderHome(){
       const hasForms=(activeProvider().pendingForms||[]).length>0;   // explicitly-assigned forms always show until done
       // The plain pre-visit check-in only appears inside the 24h window before the appointment, and
       // doesn't reappear for the next visit until it's again within 24h.
-      const within24h=!noAppt&&isFinite(client.hoursUntilNext)&&client.hoursUntilNext<=24;
-      return (hasForms||within24h)?_previsitSectionHTML():'';
+      const withinWindow=!noAppt&&isFinite(client.hoursUntilNext)&&client.hoursUntilNext<=_checkinWindowHours();
+      return (hasForms||withinWindow)?_previsitSectionHTML():'';
     })()}
   </div>`;
   })()}
@@ -3527,7 +3537,8 @@ function selectRebookDate(key){
 function renderRebook(){
   setNav('home');
   document.getElementById('tt').textContent='Request Appointment';
-  const rawAvail=(client._real&&client._realAvailability)?client._realAvailability:SlickBridge.getAvailability();
+  const _av=(typeof activeProvider==='function'&&activeProvider()._availability)||client._realAvailability;
+  const rawAvail=(client._real&&_av)?_av:SlickBridge.getAvailability();
   const avail=normalizeAvail(rawAvail);
   rebookAvail=avail;
   const hasAvail=!!rawAvail;
@@ -4661,7 +4672,11 @@ function _applyRealClientData(j){
   p.pendingGuides=Array.isArray(d.pendingGuides)?d.pendingGuides:[];
   p.pendingCourses=Array.isArray(d.pendingCourses)?d.pendingCourses:[];
   p.services=Array.isArray(d.services)?d.services:[];   // provider's real service menu (for the request-appointment picker)
-  client._realAvailability=(d.availability&&typeof d.availability==='object')?d.availability:null;
+  // Store availability PER PROVIDER (like services) — it used to live on one global client field that
+  // whichever provider synced last overwrote, so a multi-provider client saw the wrong open days/slots
+  // after switching. renderRebook reads the ACTIVE provider's copy.
+  p._availability=(d.availability&&typeof d.availability==='object')?d.availability:null;
+  client._realAvailability=p._availability;
   // Surface a virtual-consult invite the provider sent (delivered via the synced data blob,
   // so it works on the client's own device, not just same-browser preview).
   try{_applyServerVcInvite(d.vcInvite);}catch(e){}

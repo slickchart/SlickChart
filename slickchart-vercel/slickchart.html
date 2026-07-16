@@ -6136,7 +6136,7 @@ function renderSessionSummary(id){
       </div>
       <i class="ti ti-chevron-${summaryCustomOpen?'up':'down'}" aria-hidden="true" style="font-size:14px;color:#888;"></i>
     </button>
-    ${summaryCustomOpen?buildSummaryCustomPanel('${id}'):''}
+    ${summaryCustomOpen?buildSummaryCustomPanel(id):''}
   </div>
 
   <div style="margin:10px 16px 6px;background:#0a2019;border:1px solid #1a4a2a;border-radius:10px;padding:9px 12px;display:flex;gap:7px;align-items:center;">
@@ -7581,7 +7581,7 @@ function inviteVirtualConsult(id,_force){
   const v=_vcProfile();
   // invitedAt is a per-invite nonce so the client can tell a fresh invite from one they've
   // already submitted for (mirrors the pending-form assignedAt fix).
-  vcInvites[id]={...(vcInvites[id]||{}),invited:true,submitted:false,invitedAt:Date.now()};
+  vcInvites[id]={...(vcInvites[id]||{}),invited:true,submitted:false,reviewed:false,invitedAt:Date.now()};
   try{persistVcState();}catch(e){}
   try{SlickBridge.post('virtual-consult-invite',{providerId:'jess',clientId:id,kind:v.kind,title:v.title,fee:vcFee});}catch(e){}
   const _inviteMsg=`I'd love to do a virtual ${v.kind==='skin'?'skin':v.kind} consult before your next visit, I've sent an invite to your app. Upload a few photos and I'll send my notes back. ✨`;
@@ -15571,7 +15571,7 @@ async function syncClientEvents(){
       }else if(ev.kind==='vc_submit'){
         vcSubmissions[cid]={photos:_sanVcPhotos(payload.photos),refs:(Array.isArray(payload.refs)&&payload.refs.length)?_sanVcPhotos(payload.refs):null,goals:payload.goals||'',measures:payload.measures||null,
           date:_eventDateLabel(ev,payload.date||'Today'),kind:payload.kind||'skin',title:payload.title||'Virtual consult'};
-        vcInvites[cid]={...(vcInvites[cid]||{}),invited:true,submitted:true};
+        vcInvites[cid]={...(vcInvites[cid]||{}),invited:true,submitted:true,reviewed:false};   // a fresh submission must return to "needs review", even if a prior one was reviewed
         try{if(typeof persistVcState==='function')persistVcState();}catch(e){}
         notifFeed.unshift({id:'evv'+ev.id,type:'vc',icon:'ti-sparkles',col:'#1e1633',ic:'#a891ec',
           title:'Virtual consult submitted',body:`${name} sent photos for review.`,time:'Just now',read:false,action:'client',data:cid});
@@ -16040,6 +16040,12 @@ SlickBridge.on('checkin-submitted',ci=>{
     CL[ci.clientId].checkinDone=true;CL[ci.clientId].checkinDoneFor=(CL[ci.clientId].nextVisit||'');
     // Most recent check-in only, overwrites the previous on the client file.
     CL[ci.clientId].lastCheckin={id:ci.id,dateLabel:ci.dateLabel,time:ci.time,treatment:ci.treatment,groups:(ci.groups||[]).slice(),flagged:(ci.flagged||[]).slice(),notes:ci.notes||'',photos:(ci.photos||[]).slice(),at:Date.now()};
+    // Raise the contraindication alert (chart banner / Room Alerts / Home needs-attention) for flagged
+    // answers, matching the server-sync path — the bridge handler used to set lastCheckin but not this.
+    if(ci.flagged&&ci.flagged.length&&(typeof _isCheckinDismissed!=='function'||!_isCheckinDismissed(ci.id))){
+      const _fd=[];(ci.groups||[]).forEach(g=>{(g.rows||[]).forEach(r=>{if(r&&r.flagged)_fd.push({label:r.label||'',detail:(r.detail||'').trim()});});});
+      CL[ci.clientId].flaggedContra={form:'Pre-visit check-in',items:ci.flagged.slice(),details:_fd,checkinId:ci.id,date:ci.dateLabel||'Today'};
+    }
     try{if(typeof saveClients==='function')saveClients();}catch(e){}
   }
   pushCheckinNotif(ci);
@@ -16076,7 +16082,7 @@ SlickBridge.on('form-completed',d=>{
 SlickBridge.on('virtual-consult-submitted',d=>{
   const cid=d.clientId||'maya';
   vcSubmissions[cid]={photos:_sanVcPhotos(d.photos),refs:(Array.isArray(d.refs)&&d.refs.length)?_sanVcPhotos(d.refs):null,goals:d.goals||'',measures:d.measures||null,date:d.date||'Today',kind:d.kind||'skin',title:d.title||'Virtual consult'};
-  vcInvites[cid]={...(vcInvites[cid]||{}),invited:true,submitted:true};
+  vcInvites[cid]={...(vcInvites[cid]||{}),invited:true,submitted:true,reviewed:false};   // a fresh submission must return to "needs review", even if a prior one was reviewed
   try{persistVcState();}catch(e){}
   const nm=(CL[cid]&&CL[cid].name.split(' ')[0])||'A client';
   if(typeof pushNotify==='function')pushNotify({icon:'ti-sparkles',title:'Virtual consult submitted',body:nm+' sent photos for review.',action:'client',data:cid});
