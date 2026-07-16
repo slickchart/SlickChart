@@ -10980,7 +10980,10 @@ function saveInventoryItem(i){
     vendorName:g('ii-vendorname'),
     reorderUrl:g('ii-reorderurl'),
   };
-  if(i!=null&&inv[i])inv[i]=item;else inv.push(item);
+  // When editing, keep fields the form doesn't expose (Square link + retail data) \u2014 rebuilding the item
+  // from just the form fields used to drop squareVarId/sku/price, so the next Square sync couldn't match
+  // it and re-added a duplicate row with the price lost.
+  if(i!=null&&inv[i])inv[i]=Object.assign({},inv[i],item);else inv.push(item);
   saveInv();
   if(typeof proToast==='function')proToast(i!=null?'Item updated \u2713':'Item added \u2713');
   nav('inventory');
@@ -13410,7 +13413,10 @@ function _taxableSub(){return _money(_coItems.reduce((a,it)=>a+((it.taxable===fa
 // (subtotal + tax === total) and match the amount actually charged.
 function _dispTax(){return _effTaxRate()>0?_money(_taxableSub()*_effTaxRate()/100):0;}
 function _dispTotal(){return _money(_coSubtotal()+_dispTax());}
-function _coSyncAmt(){const a=document.getElementById('co-amt');if(a&&_coValidItems().length)a.value=_coSubtotal().toFixed(2);}
+// Mirror the actual charge (tax-included total) into the headline Amount field — it used to show the
+// pre-tax subtotal while the card charge / payment link billed subtotal+tax, so the provider read a
+// lower number than the client was charged.
+function _coSyncAmt(){const a=document.getElementById('co-amt');if(a&&_coValidItems().length)a.value=_dispTotal().toFixed(2);}
 function _coUpdateSubtotal(){const s=document.getElementById('co-subtotal');if(s)s.textContent='$'+_fmtMoney(_coSubtotal());const t=document.getElementById('co-tax');if(t)t.textContent=_fmtMoney(_dispTax());const g=document.getElementById('co-total');if(g)g.textContent=_fmtMoney(_dispTotal());_coSyncAmt();}
 function _coQty(i,dv){if(_coItems[i]){_coItems[i].qty=Math.max(1,(_coItems[i].qty||1)+dv);_coRenderItems();}}
 function _coAddCustom(){_coItems.push({name:'',price:0,qty:1,variationId:null,kind:'service',taxable:true,note:''});_coRenderItems();}
@@ -13490,7 +13496,7 @@ async function _coInvoice(id){
     body.idempotencyKey=_coIdem(_isig);
     const d=await _sqFetch('/api/square/invoice',{method:'POST',body});
     delete _coIdemKeys[_isig]; // sent \u2014 a later identical invoice should be a new, intentional one
-    _addPayment({clientId:id,clientName:c.name,amount:(d.total!=null?d.total:amt)||0,taxAmount:(d.tax||0),method:'Square',status:'unpaid',date:_todayISO(),note:'Invoice'+(items.length?(' \u00b7 '+items.length+' items'):''),source:'square',squareInvoiceId:d.invoiceId,publicUrl:d.url,items:items.map(it=>({name:it.name,price:it.price,qty:it.qty||1,variationId:it.variationId||null,kind:it.kind||'service',note:it.note||''}))});
+    _addPayment({clientId:id,clientName:c.name,amount:(d.total!=null?d.total:amt)||0,taxAmount:(d.tax||0),method:'Square',status:'unpaid',date:_todayISO(),note:'Invoice'+(items.length?(' \u00b7 '+items.length+' items'):''),source:'square',squareInvoiceId:d.invoiceId,publicUrl:d.url,items:items.map(it=>({name:it.name,price:it.price,qty:it.qty||1,variationId:it.variationId||null,kind:it.kind||'service',note:it.note||'',taxable:(it.taxable!==false)}))});
     document.getElementById('co-result').innerHTML='<div style="background:#0a2019;border:1px solid #1c4030;border-radius:10px;padding:12px 14px;font-size:13px;color:#4ec49a;font-weight:600;"><i class="ti ti-check"></i> Invoice sent to '+c.email+' \u00b7 logged in Payments</div>';
   }catch(e){_coErr(e.message||'Could not send the invoice.',_coRecon(e));}finally{_coActionLock=false;}
 }
@@ -14030,7 +14036,7 @@ async function _biSend(){
     body.idempotencyKey=_coIdem(_isig);
     const d=await _sqFetch('/api/square/invoice',{method:'POST',body});
     delete _coIdemKeys[_isig]; // sent, a later identical invoice should be a new, intentional one
-    const _rec=_addPayment({clientId:cid,clientName:c.name,amount:(d.total!=null?d.total:_coTotal())||0,taxAmount:(d.tax||_coTaxAmt()||0),method:'Square',status:'unpaid',date:_todayISO(),note:'Invoice \u00b7 '+items.length+' items',source:'square',squareInvoiceId:d.invoiceId,publicUrl:d.url,items:items.map(it=>({name:it.name,price:it.price,qty:it.qty||1,variationId:it.variationId||null,kind:it.kind||'service',note:it.note||''}))});
+    const _rec=_addPayment({clientId:cid,clientName:c.name,amount:(d.total!=null?d.total:_coTotal())||0,taxAmount:(d.tax||_coTaxAmt()||0),method:'Square',status:'unpaid',date:_todayISO(),note:'Invoice \u00b7 '+items.length+' items',source:'square',squareInvoiceId:d.invoiceId,publicUrl:d.url,items:items.map(it=>({name:it.name,price:it.price,qty:it.qty||1,variationId:it.variationId||null,kind:it.kind||'service',note:it.note||'',taxable:(it.taxable!==false)}))});
     if(_biEditId){const _i=_payments.findIndex(x=>x.id===_biEditId);if(_i>=0&&_payments[_i].id!==_rec.id)_payments.splice(_i,1);_biEditId='';_savePayments();}
     if(typeof proToast==='function')proToast('Invoice sent \u2713');
     nav('payments');
@@ -14042,9 +14048,10 @@ function _biSaveUnpaid(){
   const items=_coValidItems();
   if(!items.length)return _coErr(_coItems.length?'Set a price on each line item first.':'Add at least one line item.');
   const note=items.map(it=>((it.qty||1)>1?(it.qty+'\u00d7 '):'')+it.name).join(', ')+(_coTip?' \u00b7 tip requested':'');
+  const _wasEdit=!!_biEditId;   // capture before we clear it, so the toast reads correctly
   if(_biEditId){const _i=_payments.findIndex(x=>x.id===_biEditId);if(_i>=0)_payments.splice(_i,1);_biEditId='';}
-  _addPayment({clientId:cid,clientName:c.name,amount:_coTotal(),method:'Invoice',status:'unpaid',date:_todayISO(),note:note,source:'manual',taxRate:_taxRate,taxAmount:_coTaxAmt(),items:items.map(it=>({name:it.name,price:it.price,qty:it.qty||1,variationId:it.variationId||null,kind:it.kind||'service',note:it.note||''}))});
-  if(typeof proToast==='function')proToast(_biEditId?'Invoice updated':'Invoice saved as unpaid');
+  _addPayment({clientId:cid,clientName:c.name,amount:_coTotal(),method:'Invoice',status:'unpaid',date:_todayISO(),note:note,source:'manual',taxRate:_taxRate,taxAmount:_coTaxAmt(),items:items.map(it=>({name:it.name,price:it.price,qty:it.qty||1,variationId:it.variationId||null,kind:it.kind||'service',note:it.note||'',taxable:(it.taxable!==false)}))});
+  if(typeof proToast==='function')proToast(_wasEdit?'Invoice updated':'Invoice saved as unpaid');
   nav('payments');
 }
 
@@ -14137,7 +14144,7 @@ async function _payRefund(idv){
 function _payEdit(idv){
   const p=_payments.find(x=>x.id===idv); if(!p)return;
   _biEditId=idv; _biClient=p.clientId||'';
-  _coItems=(p.items&&p.items.length)?p.items.map(it=>({name:it.name,price:+it.price||0,qty:it.qty||1,variationId:it.variationId||null})):[{name:(p.note||'Service'),price:+p.amount||0,qty:1,variationId:null}];
+  _coItems=(p.items&&p.items.length)?p.items.map(it=>({name:it.name,price:+it.price||0,qty:it.qty||1,variationId:it.variationId||null,kind:it.kind||'service',note:it.note||'',taxable:(it.taxable!==false)})):[{name:(p.note||'Service'),price:+p.amount||0,qty:1,variationId:null}];
   const m=document.getElementById('pay-detail'); if(m)m.remove();
   _biEnterEdit=true;
   nav('build-invoice');
@@ -14168,7 +14175,7 @@ async function _biTextLink(){
   try{
     const d=await _sqFetch('/api/square/payment-link',{method:'POST',body:{amount:amt,name:name||'Service',email:c.email||'',phone:c.phone||''}});
     if(!d.url)throw new Error('No link was returned.');
-    const _rec=_addPayment({clientId:cid,clientName:c.name,amount:amt,taxAmount:_coTaxAmt(),method:'Square',status:'unpaid',date:_todayISO(),note:'Payment link \u00b7 '+(name||'Service'),source:'square',publicUrl:d.url,items:items.map(it=>({name:it.name,price:it.price,qty:it.qty||1,variationId:it.variationId||null,kind:it.kind||'service',note:it.note||''}))});
+    const _rec=_addPayment({clientId:cid,clientName:c.name,amount:amt,taxAmount:_coTaxAmt(),method:'Square',status:'unpaid',date:_todayISO(),note:'Payment link \u00b7 '+(name||'Service'),source:'square',publicUrl:d.url,items:items.map(it=>({name:it.name,price:it.price,qty:it.qty||1,variationId:it.variationId||null,kind:it.kind||'service',note:it.note||'',taxable:(it.taxable!==false)}))});
     if(_biEditId){const _i=_payments.findIndex(x=>x.id===_biEditId);if(_i>=0&&_payments[_i].id!==_rec.id)_payments.splice(_i,1);_biEditId='';_savePayments();}
     const first=String(c.name||'there').split(' ')[0];
     const msg='Hi '+first+'! Here\u2019s your payment link for $'+amt.toFixed(2)+': '+d.url;
