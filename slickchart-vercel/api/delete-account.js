@@ -58,6 +58,7 @@ export default async function handler(req, res) {
     await del(() => q`DELETE FROM client_prefs WHERE client_id IN (SELECT id FROM clients WHERE provider_id = ${providerId})`);
     await del(() => q`DELETE FROM reminder_log WHERE client_id IN (SELECT id FROM clients WHERE provider_id = ${providerId})`);
     await del(() => q`DELETE FROM push_subscriptions WHERE provider_id = ${providerId}`);
+    await del(() => q`DELETE FROM native_push_tokens WHERE provider_id = ${providerId}`);
     await del(() => q`DELETE FROM client_events WHERE provider_id = ${providerId}`);
     await del(() => q`DELETE FROM clients WHERE provider_id = ${providerId}`);
     await del(() => q`DELETE FROM consult_requests WHERE provider_id = ${providerId}`);

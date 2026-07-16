@@ -144,6 +144,7 @@ export async function deleteClientData(clientId) {
   const q = sql();
   const id = String(clientId);
   await q`DELETE FROM client_events WHERE client_id=${id}`;
+  try { await q`DELETE FROM native_push_tokens WHERE owner_id=${id}`; } catch (e) { /* table may not exist yet */ }
   const revoked = 'revoked_' + genToken();
   await q`UPDATE clients SET name='', email='', phone='', data='{}'::jsonb, token=${revoked}, deleted_at=${Date.now()}
     WHERE id=${id}`;
