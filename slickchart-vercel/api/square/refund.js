@@ -2,6 +2,7 @@
 // Refunds a Square payment (full amount by default, or a partial `amount`). Requires PAYMENTS_WRITE
 // (already in scope). Returns the refund status. Idempotent per (paymentId + amount).
 import { squareFetch as _sqf, sqContext } from '../../lib/square.js';
+import crypto from 'crypto';
 
 export default async function handler(req, res) {
   if (req.method !== 'POST') { res.status(405).json({ error: 'Method not allowed' }); return; }
@@ -21,8 +22,11 @@ export default async function handler(req, res) {
       if (!am || !am.amount) { res.status(400).json({ error: 'Could not determine the payment amount to refund.' }); return; }
       amount = am.amount; currency = am.currency || 'USD';
     }
-    // Stable idempotency key so a retried refund doesn't double-refund. Square caps it at 45 chars.
-    const idem = ('sc-rf-' + paymentId + '-' + amount).replace(/[^a-zA-Z0-9_-]/g, '').slice(0, 45);
+    // Idempotency key: prefer the caller's per-action key (stable across a retry of the SAME refund),
+    // else a random one. The old key was just paymentId+amount, so two DISTINCT partial refunds of the
+    // same amount on one payment collided — Square replayed the first and the second silently no-op'd.
+    // Square caps the key at 45 chars.
+    const idem = (String(b.idempotencyKey || '').trim() || ('sc-rf-' + crypto.randomBytes(12).toString('hex'))).replace(/[^a-zA-Z0-9_-]/g, '').slice(0, 45);
     const r = await sf('/v2/refunds', {
       method: 'POST',
       body: {

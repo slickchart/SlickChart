@@ -25,7 +25,7 @@ function wrap(events) {
 export default async function handler(req, res) {
   const secret = process.env.SESSION_SECRET || '';
   const t = (req.query && req.query.t) || '';
-  const p = secret && t ? verifyToken(String(t), secret) : null;
+  const p = secret && t ? verifyToken(String(t), secret, { scope: 'cal' }) : null;
   res.setHeader('Content-Type', 'text/calendar; charset=utf-8');
   res.setHeader('Content-Disposition', 'inline; filename="slickchart.ics"');
   let events = [];

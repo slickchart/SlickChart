@@ -5848,20 +5848,20 @@ function _renderPhotosView(id,c,_passed){
   <div style="margin:0 16px 12px;background:#1e0d33;border:1px solid #3d1a66;border-radius:12px;padding:12px 14px;">
     <div style="font-size:11px;font-weight:600;color:#c084fc;text-transform:uppercase;letter-spacing:.07em;margin-bottom:10px;">Healing stage</div>
     <div style="display:grid;grid-template-columns:1fr 1fr;gap:6px;">
-      ${healingStages.map((s,i)=>`<button onclick="clientHealingStage['${id}']=${i};_renderPhotosView('${id}',CL['${id}'],photoSessions['${id}']||[])" style="border:1px solid ${clientHealingStage['${id}']===i?'#c084fc':'#2a1a44'};background:${clientHealingStage['${id}']===i?'#2a0d4a':'#161616'};border-radius:8px;padding:8px 10px;cursor:pointer;text-align:left;">
+      ${healingStages.map((s,i)=>`<button onclick="clientHealingStage['${id}']=${i};_renderPhotosView('${id}',CL['${id}'],photoSessions['${id}']||[])" style="border:1px solid ${clientHealingStage[id]===i?'#c084fc':'#2a1a44'};background:${clientHealingStage[id]===i?'#2a0d4a':'#161616'};border-radius:8px;padding:8px 10px;cursor:pointer;text-align:left;">
         <div style="display:flex;align-items:center;gap:6px;">
           <div style="width:8px;height:8px;border-radius:50%;background:${['#e87070','var(--accent)','#4ec49a','#c084fc'][i]};flex-shrink:0;"></div>
-          <span style="font-size:12px;color:${clientHealingStage['${id}']===i?'#e0d0ff':'#888'};font-weight:${clientHealingStage['${id}']===i?600:400};">${s}</span>
+          <span style="font-size:12px;color:${clientHealingStage[id]===i?'#e0d0ff':'#888'};font-weight:${clientHealingStage[id]===i?600:400};">${s}</span>
         </div>
       </button>`).join('')}
     </div>
-    ${clientHealingStage['${id}']!==null?`<div style="margin-top:10px;padding:8px 10px;background:#111;border-radius:8px;font-size:12px;color:#999;line-height:1.5;">${['Pigment will appear very dark, this is normal. Advise client not to panic. No water for 7 days.','Scabbing and flaking is expected. Remind client: no picking. Color may look patchy, normal.','Results are now visible. Assess retention and document. Touch-up decision can be made.','Ready for touch-up session. Book within the next 2 weeks for best results.'][clientHealingStage['${id}']]}</div>`:''}
+    ${(clientHealingStage[id]!=null)?`<div style="margin-top:10px;padding:8px 10px;background:#111;border-radius:8px;font-size:12px;color:#999;line-height:1.5;">${['Pigment will appear very dark, this is normal. Advise client not to panic. No water for 7 days.','Scabbing and flaking is expected. Remind client: no picking. Color may look patchy, normal.','Results are now visible. Assess retention and document. Touch-up decision can be made.','Ready for touch-up session. Book within the next 2 weeks for best results.'][clientHealingStage[id]]}</div>`:''}
   </div>`:''}
 
   </div>
 
-  ${activeAngle==='Inspiration'&&isHairBarber?`
-  <!-- Hair inspiration board -->
+  ${activeAngle==='Inspiration'&&(isHairBarber||isBrowOnly)?`
+  <!-- Hair / brow inspiration board -->
   <div style="padding:0 16px 8px;">
     <div style="font-size:12px;color:#999;margin-bottom:10px;line-height:1.5;">Photos saved from consultations, client uploads, or reference images for this client's look goals.</div>
     <div style="display:grid;grid-template-columns:1fr 1fr;gap:8px;margin-bottom:12px;">
@@ -14145,7 +14145,8 @@ async function _payRefund(idv){
     const tok=(typeof Cloud!=='undefined'&&Cloud&&Cloud.token)||'';
     if(typeof proToast==='function')proToast('Refunding…');
     try{
-      const r=await fetch('/api/square/refund',{method:'POST',headers:{'Content-Type':'application/json','Authorization':'Bearer '+tok},body:JSON.stringify({paymentId:p.squarePaymentId,amount:amt,reason:'SlickChart refund'})});
+      const _idem='sc-rf-'+String(idv).replace(/[^a-zA-Z0-9_-]/g,'').slice(0,28)+'-'+Date.now();   // stable per refund action
+      const r=await fetch('/api/square/refund',{method:'POST',headers:{'Content-Type':'application/json','Authorization':'Bearer '+tok},body:JSON.stringify({paymentId:p.squarePaymentId,amount:amt,reason:'SlickChart refund',idempotencyKey:_idem})});
       const j=await r.json().catch(()=>({}));
       if(!r.ok||!j.ok){if(typeof proToast==='function')proToast((j&&j.code==='scope')?'Reconnect Square to issue refunds.':((j&&j.error)||'Refund failed'),0);return;}
       p.status='refunded';try{_savePayments();}catch(e){}

@@ -14,7 +14,12 @@ export function signToken(payload, secret, ttlSeconds = 60 * 60 * 24 * 30) {
   return data + '.' + sig;
 }
 
-export function verifyToken(token, secret) {
+// opts.scope: a string or array of scoped-token kinds (the `k` claim) the CALLER is willing to accept.
+// Scoped tokens — like the calendar feed's { k: 'cal' }, a low-privilege URL the provider pastes into
+// third-party calendar apps — must NOT authenticate general provider endpoints. By default any token
+// carrying a `k` claim is rejected here, so only api/calendar.js (which passes {scope:'cal'}) accepts
+// it. Full session tokens from login/signup carry no `k` and are unaffected.
+export function verifyToken(token, secret, opts) {
   if (!token || typeof token !== 'string' || token.indexOf('.') < 0) return null;
   const [data, sig] = token.split('.');
   const expect = crypto.createHmac('sha256', secret).update(data).digest('base64url');
@@ -25,6 +30,10 @@ export function verifyToken(token, secret) {
   try {
     const body = JSON.parse(Buffer.from(data, 'base64url').toString());
     if (body.exp && body.exp < Math.floor(Date.now() / 1000)) return null; // expired
+    if (body.k) {
+      const allowed = (opts && opts.scope != null) ? [].concat(opts.scope) : [];
+      if (allowed.indexOf(body.k) < 0) return null; // scoped token used outside its allowed scope
+    }
     return body;
   } catch (e) {
     return null;

@@ -45,25 +45,30 @@ export default async function handler(req, res) {
   const type = String(evt.type || '');
   const merchantId = String(evt.merchant_id || '');
 
-  // Always 200 quickly so Square doesn't retry; do the (best-effort) recording after.
-  res.status(200).json({ ok: true });
-
+  // Record the activity marker BEFORE responding. On Vercel, work started after res is sent isn't
+  // guaranteed to run (the instance can be frozen/reclaimed), so a post-response write was lost most of
+  // the time. The DB work below is two quick queries — well within Square's retry timeout — and is still
+  // wrapped so any failure can't turn a genuine event into a non-200 that Square keeps retrying.
   try {
-    if (!dbEnabled() || !merchantId) return;
-    const q = sql();
-    const rows = await q`SELECT provider_id FROM square_connections WHERE merchant_id = ${merchantId} LIMIT 1`;
-    const providerId = rows[0] && rows[0].provider_id;
-    if (!providerId) return;
-    // A friendly summary the app can toast.
-    let label = 'Square update';
-    if (/^booking\./.test(type)) label = 'A booking changed in Square';
-    else if (/^payment\./.test(type)) label = 'A payment came through in Square';
-    else if (/^refund\./.test(type)) label = 'A refund was processed in Square';
-    else if (/^catalog\./.test(type)) label = 'Your Square catalog changed';
-    const activity = JSON.stringify({ type, label, at: Date.now() });
-    // Record into the provider's synced kv under a key the app reads (but never writes), so pulling
-    // it can't clobber the app's own data. ensureTable is a no-op if the table already exists.
-    await q`INSERT INTO kv (owner, k, v) VALUES (${providerId}, 'sc_square_activity', ${activity})
-      ON CONFLICT (owner, k) DO UPDATE SET v = EXCLUDED.v`;
+    if (dbEnabled() && merchantId) {
+      const q = sql();
+      const rows = await q`SELECT provider_id FROM square_connections WHERE merchant_id = ${merchantId} LIMIT 1`;
+      const providerId = rows[0] && rows[0].provider_id;
+      if (providerId) {
+        // A friendly summary the app can toast.
+        let label = 'Square update';
+        if (/^booking\./.test(type)) label = 'A booking changed in Square';
+        else if (/^payment\./.test(type)) label = 'A payment came through in Square';
+        else if (/^refund\./.test(type)) label = 'A refund was processed in Square';
+        else if (/^catalog\./.test(type)) label = 'Your Square catalog changed';
+        const activity = JSON.stringify({ type, label, at: Date.now() });
+        // Record into the provider's synced kv under a key the app reads (but never writes), so pulling
+        // it can't clobber the app's own data. ensureTable is a no-op if the table already exists.
+        await q`INSERT INTO kv (owner, k, v) VALUES (${providerId}, 'sc_square_activity', ${activity})
+          ON CONFLICT (owner, k) DO UPDATE SET v = EXCLUDED.v`;
+      }
+    }
   } catch (e) { console.error('[square webhook] record failed:', e && e.message); }
+
+  res.status(200).json({ ok: true });
 }
