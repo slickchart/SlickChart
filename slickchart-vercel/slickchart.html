@@ -14114,6 +14114,7 @@ function renderBuildInvoice(){
     <label style="display:flex;align-items:center;gap:9px;margin:0 0 12px;cursor:pointer;padding:11px 12px;background:#161616;border:1px solid #242424;border-radius:10px;"><input type="checkbox" ${_coTip?'checked':''} onchange="_coTip=this.checked" style="width:17px;height:17px;accent-color:var(--accent);flex-shrink:0;"><span style="font-size:13px;color:#ccc;">Ask the client to add a tip</span></label>
     <button class="btng" style="width:100%;border-radius:10px;margin-bottom:8px;justify-content:center;" onclick="_biPreview()"><i class="ti ti-eye"></i> Preview invoice</button>
     <button class="btnp" style="width:100%;border-radius:10px;margin-bottom:8px;justify-content:center;" onclick="_biSend()"><i class="ti ti-send"></i> Send invoice via Square</button>
+    <button class="btng" style="width:100%;border-radius:10px;margin-bottom:8px;justify-content:center;" onclick="_coCharge(_biClient)"><i class="ti ti-credit-card"></i> Charge card on file</button>
     <button class="btng" style="width:100%;border-radius:10px;margin-bottom:8px;justify-content:center;" onclick="_biTextLink()"><i class="ti ti-message"></i> Text a payment link</button>
     <button class="btng" style="width:100%;border-radius:10px;justify-content:center;" onclick="_biSaveUnpaid()"><i class="ti ti-clock-hour-4"></i> Save as unpaid (mark paid later)</button>
     <div style="font-size:11px;color:#9a9a9a;margin-top:12px;line-height:1.5;text-align:center;">Sending via Square emails the client their invoice. \u201cSave as unpaid\u201d just records it here so you can mark it paid when they pay \u2014 handy for cash, Venmo, or Zelle.</div>
@@ -16832,12 +16833,32 @@ function _sqDoBook(){
   const btn=document.getElementById('sqb-go');if(btn){btn.disabled=true;btn.innerHTML='<i class="ti ti-loader"></i> Booking…';}
   const _bsig=svc.variationId+'|'+startAt+'|'+teamMemberId+'|'+(email||name);
   const _bkey=_coIdem(_bsig);
-  _sqFetch('/api/square/book',{method:'POST',body:{serviceVariationId:svc.variationId,serviceVariationVersion:svc.variationVersion,durationMinutes:svc.durationMinutes,startAt:startAt,teamMemberId:teamMemberId,customerName:name,customerEmail:email,idempotencyKey:_bkey}}).then(()=>{
+  const _startD=new Date(startAt);
+  const whenText=isNaN(_startD.getTime())?'':_startD.toLocaleString('en-US',{weekday:'long',month:'long',day:'numeric',hour:'numeric',minute:'2-digit'});
+  const biz=(typeof bizInfo!=='undefined'&&bizInfo&&bizInfo.name)?bizInfo.name:'';
+  // Find a matching local client's phone so we can offer a one-tap confirmation text after booking.
+  let _cliPhone='';try{const _k=(email||'').toLowerCase(),_nm=name.toLowerCase();for(const _id in CL){const _c=CL[_id];if(!_c)continue;if((email&&(_c.email||'').toLowerCase()===_k)||(!email&&(_c.name||'').trim().toLowerCase()===_nm)){_cliPhone=_c.phone||'';break;}}}catch(e){}
+  _sqFetch('/api/square/book',{method:'POST',body:{serviceVariationId:svc.variationId,serviceVariationVersion:svc.variationVersion,durationMinutes:svc.durationMinutes,startAt:startAt,teamMemberId:teamMemberId,customerName:name,customerEmail:email,notify:true,serviceName:svc.name,whenText:whenText,businessName:biz,idempotencyKey:_bkey}}).then((r)=>{
     delete _coIdemKeys[_bsig]; // booked, a later identical booking should be a new, intentional one
-    const m=document.getElementById('qa-modal');if(m)m.remove();
-    if(typeof proToast==='function')proToast('Booked in Square ✓');
     _loadSquareAppts(true);
     if(_navCur&&_navCur.screen==='calendar')renderCalendar();
+    const _first=(name.split(' ')[0]||'there');
+    const _sent=!!(r&&r.notified);
+    const _sms='Hi '+_first+'! You’re booked'+(biz?(' with '+biz):'')+' for '+svc.name+(whenText?(' on '+whenText):'')+'. See you then!';
+    const m=document.getElementById('qa-modal');
+    const cbody=document.getElementById('sqbook-body');
+    if(_cliPhone&&cbody){
+      // Client is a known local client with a phone — offer a one-tap confirmation text (no server
+      // SMS provider is wired up, so this uses the device's Messages app). Email already went server-side.
+      const _isIOS=/(iphone|ipad|ipod|mac)/i.test(navigator.userAgent||'');
+      const _href='sms:'+encodeURIComponent(_cliPhone)+(_isIOS?'&':'?')+'body='+encodeURIComponent(_sms);
+      cbody.style.textAlign='left';cbody.style.padding='0';
+      cbody.innerHTML='<div style="background:#0a2019;border:1px solid #1c4030;border-radius:10px;padding:12px 14px;font-size:13px;color:#4ec49a;font-weight:600;margin-bottom:12px;"><i class="ti ti-check"></i> Booked in Square'+(_sent?(' · emailed '+_fileEsc(_first)):'')+'</div><a href="'+_href+'" class="btnp" style="display:flex;width:100%;border-radius:10px;text-decoration:none;justify-content:center;box-sizing:border-box;margin-bottom:9px;"><i class="ti ti-message"></i> Text '+_fileEsc(_first)+' the confirmation</a><button onclick="document.getElementById(\'qa-modal\').remove()" style="width:100%;background:none;border:none;font-size:13px;color:#888;cursor:pointer;font-family:inherit;">Done</button>';
+      if(typeof proToast==='function')proToast('Booked in Square ✓');
+    }else{
+      if(m)m.remove();
+      if(typeof proToast==='function')proToast('Booked in Square ✓'+(_sent?' · client emailed':''));
+    }
   }).catch(e=>{if(btn){btn.disabled=false;btn.innerHTML='<i class="ti ti-calendar-plus"></i> Book in Square';}showErr(e.message||'Could not create the booking in Square.');});
 }
 
@@ -16928,7 +16949,7 @@ function ncSaveBasic(){
 }
 async function _pushClientToSquare(id){
   const c=CL[id];if(!c)return;
-  try{
+  const _try=async()=>{
     const d=await _sqFetch('/api/square/customers',{method:'POST',body:{
       name:c.name||'',email:c.email||'',phone:c.phone||'',
       birthday:/^\d{4}-\d{2}-\d{2}$/.test(c.birthday||'')?c.birthday:''
@@ -16937,12 +16958,25 @@ async function _pushClientToSquare(id){
       c.squareId=d.customer.id;
       try{if(typeof saveClients==='function')saveClients();}catch(e){}
       if(typeof proToast==='function')proToast(d.existing?'Linked to existing Square customer':'Also added to Square');
+      return true;
     }
-  }catch(e){
-    // Silent on the common "not connected" cases; only surface real errors quietly.
-    if(e&&e.code!=='nosquare'&&e.code!=='auth'&&e.code!=='network'){
-      if(typeof proToast==='function')proToast('Saved here, Square sync skipped');
+    return false;
+  };
+  try{ if(await _try())return; }
+  catch(e){
+    const code=e&&e.code;
+    if(code==='nosquare'||code==='auth'||code==='network'){
+      // Only surface anything if this provider actually uses Square, so we never nag those who don't.
+      // (This also handles the "first client added right after connecting" race: check the live
+      // connection, and if it's up, retry once — the create dedups by email server-side, so it's safe.)
+      let connected=false;try{const st=await _sqConnState();connected=!!(st&&(st.oauth||st.legacy));}catch(_){}
+      if(!connected)return; // provider doesn't use Square — stay silent
+      if(c.email){ try{ if(await _try())return; }catch(_){} }
+      if(typeof proToast==='function')proToast('Saved here — couldn’t add to Square. Check Settings → Square, then re-open the client.');
+      return;
     }
+    // Any other error: quietly note it didn't sync.
+    if(typeof proToast==='function')proToast('Saved here, Square sync skipped');
   }
 }
 let _ncNextChecks={invite:true,intake:true};
