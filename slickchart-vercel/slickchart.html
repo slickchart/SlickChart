@@ -10223,7 +10223,7 @@ async function _doBulkInvite(){
     clearTimeout(_slowTimer);
     const r=await fetch('/api/client-invite',{method:'POST',headers:{'Content-Type':'application/json','Authorization':'Bearer '+tok},body:JSON.stringify({ids:ids,studio:((typeof bizInfo!=='undefined'&&bizInfo&&bizInfo.name)||''),from:((typeof _providerFirstName==='function'&&_providerFirstName())||'Your provider'),origin:location.origin})});
     const j=await r.json();
-    if(j&&j.ok){ const invited=Array.isArray(j.invitedIds)?j.invitedIds:ids; invited.forEach(id=>{if(CL[id])CL[id].appInvited=true;}); try{saveClients();}catch(e){} const failed=(+j.failed||0); confirmModal({title:failed?'Some invites didn’t send':'Invites sent',body:'Emailed '+j.sent+' client'+(j.sent===1?'':'s')+' their personal link.'+(failed?(' '+failed+' didn’t go through, check those emails and try again.'):''),action:'Done'},function(){renderInviteClients();}); }
+    if(j&&j.ok){ const invited=Array.isArray(j.invitedIds)?j.invitedIds:(j.failed?[]:ids); invited.forEach(id=>{if(CL[id])CL[id].appInvited=true;}); try{saveClients();}catch(e){} const failed=(+j.failed||0); confirmModal({title:failed?'Some invites didn’t send':'Invites sent',body:'Emailed '+j.sent+' client'+(j.sent===1?'':'s')+' their personal link.'+(failed?(' '+failed+' didn’t go through, check those emails and try again.'):''),action:'Done'},function(){renderInviteClients();}); }
     else proToast((j&&j.error)||'Could not send invites');
   }catch(e){clearTimeout(_slowTimer);proToast('Could not reach the server');}
   finally{_bulkInviting=false;}
@@ -10961,7 +10961,10 @@ function _iiVendorPick(vi){
   if(vi===''||vi==null){return;}
   const v=vendors[+vi];if(!v)return;
   if(nameEl)nameEl.value=v.name;
-  if(urlEl&&v.portal)urlEl.value=v.portal;
+  // Always sync the reorder URL to the selected vendor — clearing it when the new vendor has no portal.
+  // It used to fill only when a portal existed, so switching to a portal-less vendor kept the PREVIOUS
+  // vendor's link, and Reorder opened the wrong store.
+  if(urlEl)urlEl.value=v.portal||'';
 }
 function saveInventoryItem(i){
   const g=id=>{const el=document.getElementById(id);return el?el.value.trim():'';};

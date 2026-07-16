@@ -3230,7 +3230,7 @@ function _setClientAvatar(src){
   try{localStorage.setItem('sc_client_avatar',src);}catch(e){}
   try{if(typeof _syncClientPrefsToServer==='function')_syncClientPrefsToServer();}catch(e){}   // survive a fresh device
   if(client._real){
-    _clientSubmit('contact',{avatar:src}).then(function(res){
+    _clientSubmit('contact',{avatar:src,_lock:'avatar'}).then(function(res){
       if(typeof showToast==='function')showToast(res&&res.ok?'Photo updated ✓':(res&&res.duplicate?'':'Saved here, couldn’t reach your provider'));
     }).catch(function(){if(typeof showToast==='function')showToast('Saved here, couldn’t reach your provider',false);});
   }else if(typeof showToast==='function')showToast('Photo updated ✓');
@@ -4174,7 +4174,11 @@ function _buildMyRecordsHTML(){
   if(p.nextDate) push('Next appointment', p.nextDate+(p.nextTime?(' \u00b7 '+p.nextTime):''));
   const sumHTML=sumRows.map(([l,v])=>`<tr><td class="l">${_myEsc(l)}</td><td class="v">${_myEsc(v)}</td></tr>`).join('');
   // ---- signed forms ----
-  const forms=(p.forms||[]).filter(f=>(f.status||'').toLowerCase().indexOf('complet')>=0);
+  // Real clients' forms arrive in client._forms ({title,status:'signed'|'submitted',date}); p.forms is
+  // demo-only. The old code read p.forms and filtered on 'complet', so a real client's records were
+  // always empty. Prefer the real list and accept signed/submitted/completed.
+  const _srcForms=(Array.isArray(client._forms)&&client._forms.length)?client._forms:(p.forms||[]);
+  const forms=_srcForms.filter(f=>{const s=(f.status||'').toLowerCase();return !s||/complet|sign|submit/.test(s);});
   let formsHTML='';
   if(forms.length){
     formsHTML=forms.map(f=>{
@@ -4192,6 +4196,9 @@ function _buildMyRecordsHTML(){
   let careHTML='';
   if(p.aftercare&&p.aftercare.length){
     careHTML=p.aftercare.map(blk=>`<div class="care"><div class="care-h">${_myEsc(blk.when)}</div><ul>${(blk.items||[]).map(it=>`<li>${_myEsc(it)}</li>`).join('')}</ul></div>`).join('');
+  } else if(Array.isArray(p.homecare)&&p.homecare.length){
+    // Real clients: the provider's recommended routine lives in p.homecare (aftercare[] is demo-only).
+    careHTML=`<div class="care"><div class="care-h">Your homecare routine</div><ul>${p.homecare.map(s=>`<li>${_myEsc((s&&(s.key||s.step||s.label))||String(s))}</li>`).join('')}</ul></div>`;
   }
   const avoidHTML=(p.avoid&&p.avoid.length)?`<div class="care"><div class="care-h">Things to avoid</div><ul>${p.avoid.map(it=>`<li>${_myEsc(it)}</li>`).join('')}</ul></div>`:'';
 
@@ -4403,7 +4410,7 @@ function saveField(key){
     document.getElementById('edit-field-modal')?.remove();
     try{_saveClientContact();}catch(e){}
     if(client._real){
-      _clientSubmit('contact',{email:client.email||'',phone:client.phone||''})
+      _clientSubmit('contact',{email:client.email||'',phone:client.phone||'',_lock:'field'})
         .then(res=>{showToast(res&&res.ok?'Sent to '+(client.providerFirst||'your provider'):(res&&res.duplicate?'':'Saved here, couldn’t reach your provider, will retry'));})
         .catch(()=>showToast('Saved here, couldn’t reach your provider',false));
     }else{showToast('Profile updated');}
@@ -4562,11 +4569,15 @@ function _clientSubmit(kind,payload,_retried){
     // Block a double-tap on the same action while one is already in flight, otherwise a
     // slow/retrying request lets an impatient client submit a duplicate check-in, form,
     // or booking. The retry re-enters with _retried=true and must bypass this guard.
+    // Lock per (kind + optional _lock) so two DIFFERENT actions of the same kind (e.g. an avatar upload
+    // vs an email/phone edit, both kind 'contact') don't block each other — only a true double-tap of
+    // the SAME action is deduped. Previously the second silently no-op'd and its change never synced.
+    var _lk=kind+((payload&&payload._lock)?(':'+payload._lock):'');
     if(!_retried){
-      if(_clientSubmitInFlight[kind])return Promise.resolve({ok:false,error:'inflight',duplicate:true});
-      _clientSubmitInFlight[kind]=true;
+      if(_clientSubmitInFlight[_lk])return Promise.resolve({ok:false,error:'inflight',duplicate:true});
+      _clientSubmitInFlight[_lk]=true;
     }
-    var _clear=function(v){if(!_retried)_clientSubmitInFlight[kind]=false;return v;};
+    var _clear=function(v){if(!_retried)_clientSubmitInFlight[_lk]=false;return v;};
     return fetch('/api/client-submit',{method:'POST',headers:{'Content-Type':'application/json'},body:JSON.stringify({t:tok,kind:kind,payload:payload||{}})})
       .then(function(r){
         // A non-OK HTTP status means it did NOT reach the provider, treat as failure so
@@ -4583,7 +4594,7 @@ function _clientSubmit(kind,payload,_retried){
         if(!_retried)return new Promise(function(res){setTimeout(res,1200);}).then(function(){return _clientSubmit(kind,payload,true);}).then(_clear);
         return {ok:false,error:'network'};
       });
-  }catch(e){ if(!_retried)_clientSubmitInFlight[kind]=false; return Promise.resolve({ok:false,error:'network'}); }
+  }catch(e){ try{if(!_retried)_clientSubmitInFlight[_lk]=false;}catch(_e){} return Promise.resolve({ok:false,error:'network'}); }
 }
 function _clientLinkError(msg){
   var S=document.getElementById('S');
@@ -5034,7 +5045,6 @@ function _clientInstall(){
   try{
     var standalone = (window.matchMedia && window.matchMedia('(display-mode: standalone)').matches) || window.navigator.standalone === true;
     if(standalone) return;
-    if(localStorage.getItem('sc_install_dismissed')==='1') return;
     var deferred=null;
     function dismiss(){ try{localStorage.setItem('sc_install_dismissed','1');}catch(e){} _syncClientPrefsToServer(); var b=document.getElementById('sc-install'); if(b)b.remove(); }
     function banner(kind){
@@ -5053,7 +5063,13 @@ function _clientInstall(){
       var go=document.getElementById('sc-inst-go');
       if(go)go.onclick=function(){ if(deferred){ deferred.prompt(); deferred.userChoice.then(function(){ dismiss(); }); } else { dismiss(); } };
     }
-    window.addEventListener('beforeinstallprompt', function(e){ e.preventDefault(); deferred=e; window._scDeferredInstall=e; setTimeout(function(){ banner('android'); }, 1500); });
+    // Capture the install event ALWAYS — even if the banner was dismissed — so the profile "Add to home
+    // screen" button can still fire the native one-tap install. Only AUTO-SHOW the banner when it hasn't
+    // been dismissed. (Previously an early return on dismissal skipped this listener entirely, so one-tap
+    // install was permanently dead after a single dismissal.)
+    var _instDismissed=false;try{_instDismissed=localStorage.getItem('sc_install_dismissed')==='1';}catch(e){}
+    window.addEventListener('beforeinstallprompt', function(e){ e.preventDefault(); deferred=e; window._scDeferredInstall=e; if(!_instDismissed) setTimeout(function(){ banner('android'); }, 1500); });
+    if(_instDismissed) return;   // don't auto-show the iOS banner if it was dismissed
     var ua=navigator.userAgent||'';
     var isIOS=/iphone|ipad|ipod/i.test(ua);
     var isSafari=/safari/i.test(ua) && !/crios|fxios|edgios|chrome|android/i.test(ua);
