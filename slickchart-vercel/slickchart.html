@@ -10588,7 +10588,13 @@ function sendMsg(id,imgArg){
   // budget as the client side). Photos are already downscaled by the picker.
   const MAXP=6;
   if(imgs.length>MAXP){imgs=imgs.slice(0,MAXP);if(typeof proToast==='function')proToast('Sent the first '+MAXP+' photos, send the rest in another message');}
-  const t=threads.find(x=>x.id===id);if(t)t.preview=text||('📷 '+(imgs.length>1?imgs.length+' photos':'Photo'));
+  const _prev=text||('📷 '+(imgs.length>1?imgs.length+' photos':'Photo'));
+  const t=threads.find(x=>x.id===id);
+  if(t){t.preview=_prev;t.time='Just now';}
+  // No thread yet → this is a provider-STARTED conversation (e.g. via "New message"). Create the thread
+  // so it appears in the Messages inbox; previously only incoming client messages created one, so a
+  // conversation the provider began was reachable only until they navigated away.
+  else if(CL[id]){threads.unshift({id:id,preview:_prev,time:'Just now',unread:false});}
   if(!msgStore[id])msgStore[id]=[];
   const _mid=_genMid();
   // Delivery status the provider can actually see: demo maya is always local; a real joined client
@@ -17027,7 +17033,7 @@ function _pfiQHTML(q,i){
   if(q.type==='Contraindications'){
     return `<div style="margin-bottom:14px;background:#1a1a1a;border:1px solid #2a2a2a;border-radius:11px;padding:12px 13px;">
       <div style="font-size:12px;font-weight:600;color:#e8a060;text-transform:uppercase;letter-spacing:.04em;margin-bottom:8px;">${_fileEsc(q.label)}</div>
-      ${(q.items||[]).map((it,ii)=>`<label style="display:flex;align-items:flex-start;gap:8px;padding:6px 0;cursor:pointer;"><input type="checkbox" id="${id}-${ii}" onchange="_pfiData['${id}']=_pfiCollectChecked('${id}',${(q.items||[]).length})" style="margin-top:3px;width:16px;height:16px;accent-color:var(--accent);flex-shrink:0;"><span style="font-size:13px;color:#ddd;line-height:1.5;">${_fileEsc(it)}</span></label>`).join('')}
+      ${(q.items||[]).map((it,ii)=>`<label style="display:flex;align-items:flex-start;gap:8px;padding:6px 0;cursor:pointer;"><input type="checkbox" id="${id}-${ii}" ${((_pfiData[id]||[]).indexOf(ii)>=0)?'checked':''} onchange="_pfiData['${id}']=_pfiCollectChecked('${id}',${(q.items||[]).length})" style="margin-top:3px;width:16px;height:16px;accent-color:var(--accent);flex-shrink:0;"><span style="font-size:13px;color:#ddd;line-height:1.5;">${_fileEsc(it)}</span></label>`).join('')}
     </div>`;
   }
   const val=_pfiData[id]||'';

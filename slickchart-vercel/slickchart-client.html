@@ -400,10 +400,14 @@ function _notifOpen(id){
   const t=(n&&n.type)||'';
   if(t==='messagereply'||t==='message')return nav('messages');
   if(t==='summaryReady'){_summaryIdx=0;_summaryFrom='notifications';return nav('summary');}
-  if(t==='homecareReminder')return nav('homecare');
+  // The actual emitted types are routine/course/product/resource/form/link — none of these matched the
+  // old routes, so tapping a shared routine/course/product/guide/form notification dead-ended on a
+  // no-op. Route each to the screen where that item lives.
+  if(t==='homecareReminder'||t==='routine')return nav('homecare');
   if(t==='vcInvite')return nav('virtual-submit');
   if(t==='vcSubmitted')return nav('journey');
-  if(t==='code')return nav('shop');
+  if(t==='code'||t==='product')return nav('shop');
+  if(t==='course'||t==='resource'||t==='guide'||t==='form'||t==='link')return nav('home');
   if(/^appointment/i.test(t)||t==='bookingConfirmed'||t==='rebooked'||t==='booking')return nav('home');
   renderClientNotifs(); // nothing specific to open, just refresh the read state
 }
@@ -1989,7 +1993,11 @@ function renderHome(){
     const filled=ringC*pct;
     // Only surface a short urgency chip for near-term visits; no "N days away"/"Xh away" countdown
     // (the ring already shows the day count, and the countdown text read as clutter).
-    const urgencyLabel=client.isToday?'Today!':client.isTomorrow?'Tomorrow!':client.isThisWeek?`This ${new Date(APPT).toLocaleDateString('en-US',{weekday:'long'})}!`:'';
+    // "This <weekday>!" only reads right when the appointment is genuinely later this calendar week.
+    // For a visit a full week out (or a weekday that's already passed this week) say "Next <weekday>!".
+    const _apWd=(APPT&&!isNaN(APPT.getTime()))?new Date(APPT).toLocaleDateString('en-US',{weekday:'long'}):'';
+    const _sameOrEarlierWd=(APPT&&!isNaN(APPT.getTime()))&&(new Date(APPT).getDay()<=new Date().getDay());
+    const urgencyLabel=client.isToday?'Today!':client.isTomorrow?'Tomorrow!':client.isThisWeek?`${(client.daysUntilNext>=7||_sameOrEarlierWd)?'Next':'This'} ${_apWd}!`:'';
     return`<div style="margin:0 16px 14px;background:linear-gradient(135deg,var(--accent-tint),var(--accent-tint2));border-radius:16px;padding:18px 16px;">
     <div style="display:flex;align-items:center;gap:16px;">
       <div style="flex:1;">
@@ -2009,7 +2017,7 @@ function renderHome(){
         </svg>
         <div style="position:absolute;inset:0;display:flex;flex-direction:column;align-items:center;justify-content:center;">
           <div style="font-size:${(!noAppt&&client.daysUntilNext>=10)?'18':'22'}px;font-weight:700;color:var(--accent-lt2);line-height:1;">${noAppt?'—':(client.isToday?'🎉':client.daysUntilNext)}</div>
-          ${(!client.isToday&&!noAppt)?`<div style="font-size:9px;color:var(--accent-lt2);opacity:.7;font-weight:600;letter-spacing:.04em;">DAYS</div>`:''}
+          ${(!client.isToday&&!noAppt)?`<div style="font-size:9px;color:var(--accent-lt2);opacity:.7;font-weight:600;letter-spacing:.04em;">${client.daysUntilNext===1?'DAY':'DAYS'}</div>`:''}
         </div>
       </div>`}
     </div>
@@ -2468,11 +2476,13 @@ function renderJourney(){
 function renderHomecare(){
   setNav('homecare');
   document.getElementById('tt').textContent='Your Routine';
-  const checked=Object.values(homecareChecked).filter(Boolean).length;
-  const total=Math.max(1,Object.keys(homecareChecked).length);
-
   const steps=activeProvider().homecare||[];
   const avoid=activeProvider().avoid||[];
+  // Count against the CURRENT steps, not every key ever stored in homecareChecked — a trimmed/renamed
+  // routine left stale keys behind, so the ring/% used a wrong denominator (couldn't reach 100%) and
+  // disagreed with the "steps left today" nudge (which counts real steps).
+  const checked=steps.filter(s=>homecareChecked[s.key]).length;
+  const total=Math.max(1,steps.length);
 
   S.innerHTML=`
   <div style="padding:14px 16px 8px;display:flex;align-items:center;justify-content:space-between;">
