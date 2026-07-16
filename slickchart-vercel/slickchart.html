@@ -13651,8 +13651,21 @@ function _reportData(from,to){
       }
     } else { const cat=p.category||''; if(cat==='Retail')retail+=net;else if(cat==='Service')services+=net;else other+=net; }
   });
-  // Partial payments: count the collected portion toward revenue (by category), like a paid sale.
-  _payments.filter(p=>p.status==='partial'&&inRange(p)).forEach(p=>{const c=_payCollected(p);if(c<=0)return;total+=c;byMethod[p.method||'Other']=(byMethod[p.method||'Other']||0)+c;const cat=p.category||'';if(cat==='Retail')retail+=c;else if(cat==='Service')services+=c;else other+=c;});
+  // Partial payments: the collected amount includes a proportional share of the invoice's tax, so book
+  // only the NET toward revenue and the tax share toward tax — otherwise revenue was overstated and the
+  // sales-tax report's Revenue(ex-tax) + Tax no longer equalled Total collected.
+  _payments.filter(p=>p.status==='partial'&&inRange(p)).forEach(p=>{
+    const c=_payCollected(p);if(c<=0)return;
+    const amt=parseFloat(p.amount)||0;const fullTax=parseFloat(p.taxAmount)||0;
+    const taxPortion=(amt>0&&fullTax>0)?_money(fullTax*(c/amt)):0;
+    const net=c-taxPortion;   // net = c - taxPortion so revenue + tax === total collected, exactly
+    total+=c;tax+=taxPortion;byMethod[p.method||'Other']=(byMethod[p.method||'Other']||0)+c;
+    if(p.items&&p.items.length){
+      const lineSum=p.items.reduce((a,it)=>a+((+it.price||0)*(it.qty||1)),0);
+      if(lineSum>0){p.items.forEach(it=>{const lt=(+it.price||0)*(it.qty||1);const share=net*(lt/lineSum);if(it.kind==='product')retail+=share;else if(it.kind==='service')services+=share;else other+=share;});}
+      else{const per=net/p.items.length;p.items.forEach(it=>{if(it.kind==='product')retail+=per;else if(it.kind==='service')services+=per;else other+=per;});}
+    } else {const cat=p.category||'';if(cat==='Retail')retail+=net;else if(cat==='Service')services+=net;else other+=net;}
+  });
   const ar=outstanding.reduce((a,p)=>a+_payOwed(p),0);const revenue=services+retail+other;
   return {from,to,paid,outstanding,services,retail,other,tax,total,revenue,ar,count:paid.length,byMethod,avg:paid.length?total/paid.length:0};
 }
