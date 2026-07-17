@@ -69,9 +69,17 @@ Perfect for solo providers and small studios who want to look polished, save tim
 | **Secondary category** | Health & Fitness (or Productivity) |
 | **Age rating** | 4+ / Everyone (no objectionable content) |
 | **Price** | Free (subscription billed in-app via your existing Stripe/web — see note) |
-| **Support URL** | https://slickchart.app  (add a real support/contact page) |
+| **Support URL** | https://slickchart.app/support |
 | **Marketing URL** | https://slickchart.app |
 | **Privacy Policy URL** | https://slickchart.app/privacy |
+| **Terms of Use (EULA) URL** | https://slickchart.app/terms |
+
+> **Where each URL goes:**
+> - **App Store Connect** → your app → *App Information*: Privacy Policy URL; and under the version's
+>   *App Review Information* / *General*: **Support URL** (required) and Marketing URL (optional).
+> - **Google Play Console** → *Store listing*: **Website** (marketing) + **Email** (support@slickchart.app);
+>   *App content → Privacy policy*: the Privacy Policy URL. Play uses a support **email** (required) and
+>   optionally a website — use `https://slickchart.app/support`.
 
 > ⚠️ **Payments note:** SlickChart's own subscription is billed through Stripe/your website, and Client
 > payments run through the provider's Square account. Apple/Google generally require **their** in-app
