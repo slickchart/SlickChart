@@ -1409,6 +1409,8 @@ function _restoreSampleData(){
   // Bring back the sample provider note draft(s) (e.g. Maya's voice-note-style note) so the
   // Notes screen showcases a completed note again after a restore.
   try{if(typeof _demoNoteSeed==='function')_demoNoteSeed();}catch(e){}
+  // Re-attach the signed intake & consent so the demo Forms section shows a completed form again.
+  try{if(typeof _demoFormsSeed==='function')_demoFormsSeed();}catch(e){}
   try{if(typeof updateBadge==='function')updateBadge();}catch(e){}
   if(typeof proToast==='function')proToast('Sample clients & examples restored');
   nav('home');
@@ -6637,6 +6639,36 @@ function _demoNoteSeed(){
       }
     });
     if(typeof saveProviderNoteDrafts==='function')saveProviderNoteDrafts();
+  }catch(e){}
+}
+// A signed intake & consent on file for the demo clients, so the Forms section showcases a completed,
+// signed form ("Signed consent, stored for every client"). The inline demo client literals — and the
+// backup snapshot Restore rebuilds from — don't carry forms, and _seedMayaOnce never overwrites an
+// already-present CL.maya, so without this Maya/Priya show an empty Forms section. Idempotent: only
+// adds a signed copy when one isn't already there, and never touches a real client. Answer keys match
+// the built-in intake template (formQs) ids so every field renders in the submitted-form view.
+const _SAMPLE_FORMS={
+  maya:{formId:'intake',title:'New client intake & consent',date:'Jun 10, 2026',signed:true,flagged:[],
+    answers:{1:'Maya Rodriguez',2:'1992-03-14',8:'(510) 555-0142',9:'maya.r@example.com',10:'Instagram',3:'Hyperpigmentation, dullness',4:'Fragrance, retinol',5:'No',11:'None',12:'Mild rosacea, managed',6:'Vitamin C serum AM, mineral SPF 50'}},
+  priya:{formId:'intake',title:'New client intake & consent',date:'Jun 24, 2026',signed:true,flagged:[],
+    answers:{1:'Priya Patel',2:'1988-07-22',8:'(415) 555-0178',9:'priya.p@example.com',10:'Referral from a friend',3:'Enlarged pores, occasional breakouts',4:'None known',5:'No',11:'None',12:'None',6:'Gentle gel cleanser, oil-free moisturizer'}},
+};
+function _demoFormsSeed(){
+  try{
+    if(typeof CL==='undefined'||typeof _sampleHidden!=='function'||_sampleHidden())return;
+    let changed=false;
+    Object.keys(_SAMPLE_FORMS).forEach(function(id){
+      const c=CL[id];if(!c)return;
+      const f=_SAMPLE_FORMS[id];
+      c.submittedForms=Array.isArray(c.submittedForms)?c.submittedForms:[];
+      // Never duplicate and never clobber a real signed form — only add if no signed copy exists yet.
+      if(!c.submittedForms.some(function(sf){return sf&&sf.formId===f.formId&&sf.signed;})){
+        c.submittedForms.unshift(JSON.parse(JSON.stringify(f)));changed=true;
+      }
+      c.signedForms=Array.isArray(c.signedForms)?c.signedForms:[];
+      if(c.signedForms.indexOf(f.title)<0){c.signedForms.push(f.title);changed=true;}
+    });
+    if(changed&&typeof saveClients==='function')saveClients();
   }catch(e){}
 }
 let sessionSummaries={
@@ -15556,6 +15588,7 @@ try{
   if(!_sampleHidden()&&typeof _demoCheckinSeed==='function')_demoCheckinSeed();
   if(!_sampleHidden()&&typeof _demoPaymentSeed==='function')_demoPaymentSeed();
   if(!_sampleHidden()&&typeof _demoNoteSeed==='function')_demoNoteSeed();
+  if(!_sampleHidden()&&typeof _demoFormsSeed==='function')_demoFormsSeed();
   try{if(typeof MutationObserver!=='undefined'){new MutationObserver(_a11yMut).observe(document.body,{childList:true,subtree:true});_a11yEnhance();}}catch(e){}
   loadForms();  // restore any saved form edits / custom forms / connected guides from a previous session
   loadWorkspace();  // restore recommended products, reasons, custom products, and routines
