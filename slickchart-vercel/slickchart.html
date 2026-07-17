@@ -2101,7 +2101,10 @@ function _requestClientLink(){
 }
 function renderLogin(err){
   const old=document.getElementById('login-screen');if(old)old.remove();
-  const mode=_loginMode; const signup=mode==='signup';
+  // App Store / Play compliance: the native app is "payment-silent" — it never sells the
+  // SlickChart subscription. Existing accounts can sign in; account creation happens on the web.
+  // So force any signup mode back to login when running inside the native (Capacitor) shell.
+  let mode=_loginMode; if(_isNativeApp()&&mode==='signup')mode='login'; const signup=mode==='signup';
   const ov=document.createElement('div');ov.id='login-screen';
   ov.style.cssText='position:fixed;inset:0;z-index:99999;background:#0d0d0d;display:flex;align-items:center;justify-content:center;padding:24px;overflow:auto;';
   const ic='width:100%;background:#161616;border:1px solid #2a2a2a;border-radius:10px;padding:12px 14px;font-size:15px;color:#f0f0f0;outline:none;margin-bottom:12px;box-sizing:border-box;';
@@ -2137,7 +2140,9 @@ function renderLogin(err){
     inner=`<div style="font-size:13px;color:#888;margin-bottom:22px;">Welcome — let's get you to the right place.</div>
       ${hasClient?`<button onclick="location.href='/client'" style="${btn};margin-bottom:10px;display:flex;align-items:center;justify-content:center;gap:7px;"><i class="ti ti-heart" style="font-size:15px;"></i> Continue to your care space</button>`:''}
       <button onclick="_setLoginMode('login')" style="${btn};margin-bottom:10px;">I'm a provider — sign in</button>
-      <button onclick="_setLoginMode('signup')" style="width:100%;background:#161616;border:1px solid #2a2a2a;color:#e0e0e0;border-radius:10px;padding:13px;font-size:15px;font-weight:600;cursor:pointer;font-family:inherit;margin-bottom:18px;">Create a provider account</button>
+      ${_isNativeApp()
+        ?`<div style="text-align:center;font-size:12px;color:#8a8a8a;line-height:1.5;margin-bottom:18px;">New to SlickChart? Create your account at <b style="color:#c9a978;">slickchart.app</b></div>`
+        :`<button onclick="_setLoginMode('signup')" style="width:100%;background:#161616;border:1px solid #2a2a2a;color:#e0e0e0;border-radius:10px;padding:13px;font-size:15px;font-weight:600;cursor:pointer;font-family:inherit;margin-bottom:18px;">Create a provider account</button>`}
       <div style="text-align:center;font-size:13px;color:#888;">Are you a client? <button onclick="_setLoginMode('client')" style="background:none;border:none;color:var(--accent);font-weight:600;cursor:pointer;font-family:inherit;font-size:13px;">Get your link</button></div>`;
   } else if(mode==='client'){
     inner=`<div style="font-size:13px;color:#888;margin-bottom:18px;line-height:1.6;">Your care space is private to you. If your provider texted or emailed you a personal link, just tap it — this app remembers you after that.</div>
@@ -2157,7 +2162,9 @@ function renderLogin(err){
       ${signup?`<label style="display:flex;align-items:flex-start;gap:8px;margin-bottom:12px;cursor:pointer;"><input type="checkbox" id="login-optin" checked style="margin-top:2px;width:16px;height:16px;accent-color:var(--accent);flex-shrink:0;"><span style="font-size:12px;color:#999;line-height:1.5;">Email me occasional product updates &amp; tips (about every 2 weeks). Unsubscribe anytime.</span></label>`:''}
       <div id="login-err" role="alert" style="font-size:12px;color:#e87070;min-height:16px;margin-bottom:10px;">${err||''}</div>
       <button onclick="${signup?'doSignup()':'doLogin()'}" style="${btn}">${signup?t('create_account'):t('log_in')}</button>
-      <div style="text-align:center;margin-top:16px;font-size:13px;color:#888;">${signup?t('have_account'):t('new_here')} <button onclick="_setLoginMode('${signup?'login':'signup'}')" style="background:none;border:none;color:var(--accent);font-weight:600;cursor:pointer;font-family:inherit;font-size:13px;">${signup?t('login_link'):t('create_link')}</button></div>`;
+      ${_isNativeApp()
+        ?`<div style="text-align:center;margin-top:16px;font-size:12px;color:#8a8a8a;line-height:1.5;">New here? Create your account at <b style="color:#c9a978;">slickchart.app</b></div>`
+        :`<div style="text-align:center;margin-top:16px;font-size:13px;color:#888;">${signup?t('have_account'):t('new_here')} <button onclick="_setLoginMode('${signup?'login':'signup'}')" style="background:none;border:none;color:var(--accent);font-weight:600;cursor:pointer;font-family:inherit;font-size:13px;">${signup?t('login_link'):t('create_link')}</button></div>`}`;
   }
   ov.innerHTML=`<div style="width:100%;max-width:340px;">
     <div style="display:flex;align-items:center;gap:9px;margin-bottom:12px;"><i class="ti ti-sparkles" style="font-size:24px;color:var(--accent);"></i><span style="font-size:22px;font-weight:600;color:#f0f0f0;">SlickChart</span></div>
@@ -2202,7 +2209,7 @@ function doSignup(){
   }).catch(e=>{
     const er=document.getElementById('login-err');
     if(er){
-      if(e&&e.checkoutUrl){const _u=(typeof _safeUrl==='function')?_safeUrl(e.checkoutUrl):'';const _m=String(e.message||'Sign up failed').replace(/</g,'&lt;').replace(/>/g,'&gt;');er.innerHTML=_m+(_u?(' <a href="'+_urlAttr(_u)+'" style="color:var(--accent);text-decoration:underline;">Subscribe now &rarr;</a>'):'');}
+      if(e&&e.checkoutUrl&&!_isNativeApp()){const _u=(typeof _safeUrl==='function')?_safeUrl(e.checkoutUrl):'';const _m=String(e.message||'Sign up failed').replace(/</g,'&lt;').replace(/>/g,'&gt;');er.innerHTML=_m+(_u?(' <a href="'+_urlAttr(_u)+'" style="color:var(--accent);text-decoration:underline;">Subscribe now &rarr;</a>'):'');}
       else{er.textContent=(e&&e.message)||'Sign up failed';}
     }
   });
@@ -11901,13 +11908,13 @@ function renderAccount(){
     <div style="width:72px;height:72px;border-radius:50%;background:#2e2318;display:flex;align-items:center;justify-content:center;font-size:26px;font-weight:500;color:var(--accent);">${_providerInitials()}</div>
     <div style="text-align:center;"><div style="font-size:18px;font-weight:500;color:#f0f0f0;word-break:break-word;">${_fileEsc(bizInfo.ownerName)}</div><div style="font-size:13px;color:#999;word-break:break-word;">${_fileEsc(bizInfo.name)}${_bizLoc()?' · '+_bizLoc():''}</div><div style="font-size:12px;color:var(--accent);word-break:break-word;">${_fileEsc(bizInfo.email)}</div></div>
   </div>
-  <div style="margin:14px 16px 0;background:linear-gradient(135deg,#2a2012,#1c1710);border:1px solid var(--accent);border-radius:14px;padding:14px 15px;display:flex;align-items:center;gap:13px;">
+  ${_isNativeApp()?'':`<div style="margin:14px 16px 0;background:linear-gradient(135deg,#2a2012,#1c1710);border:1px solid var(--accent);border-radius:14px;padding:14px 15px;display:flex;align-items:center;gap:13px;">
     <div style="width:44px;height:44px;border-radius:12px;background:var(--accent-tint);display:flex;align-items:center;justify-content:center;flex-shrink:0;"><i class="ti ti-award" style="font-size:24px;color:var(--accent);"></i></div>
     <div style="flex:1;min-width:0;">
       <div style="display:flex;align-items:center;gap:7px;flex-wrap:wrap;"><span style="font-size:15px;font-weight:700;color:#f0e6d2;">Founding Member</span><span style="font-size:9px;font-weight:800;letter-spacing:.06em;color:var(--accent-ink);background:var(--accent);padding:2px 7px;border-radius:5px;">FOUNDER</span></div>
       <div style="font-size:12px;color:#c9a978;line-height:1.5;margin-top:2px;">You're one of the first 250. Your <b style="color:var(--accent);">$10/month is locked in for life</b>, thank you for helping build SlickChart. 🌿</div>
     </div>
-  </div>
+  </div>`}
   <div style="padding:12px 16px 0;"><div style="display:flex;align-items:center;justify-content:space-between;background:#1a1a1a;border:1px solid #2a2a2a;border-radius:12px;padding:11px 14px;"><span style="font-size:13px;color:#e0e0e0;display:inline-flex;align-items:center;gap:8px;"><i class="ti ti-language" aria-hidden="true" style="color:var(--accent);"></i> ${t('language')}</span><select aria-label="${t('language')}" onchange="_setLang(this.value)" style="background:#161616;border:1px solid #2a2a2a;color:#e0e0e0;border-radius:8px;padding:6px 26px 6px 10px;font-size:13px;font-family:inherit;">${_langOptions()}</select></div></div>
   ${(typeof Cloud!=='undefined'&&Cloud.token)?`<div style="margin:14px 16px 0;background:#0a2019;border:1px solid #1a4a38;border-radius:12px;padding:11px 13px;display:flex;align-items:center;gap:10px;">
     <i class="ti ti-cloud-check" aria-hidden="true" style="font-size:18px;color:#4ec49a;flex-shrink:0;"></i>
@@ -11931,7 +11938,7 @@ function renderAccount(){
       ['ti-sparkles','#1e1633','#a891ec','AI Features','Brief, voice notes & virtual consultations','ai-settings'],
       ['ti-bell','#0a2019','#4ec49a','Notifications','Check-ins, forms, reminders','notifications'],
       ['ti-help-circle','#0d1e33','#5ba3e8','Help','Search how-tos & troubleshooting','help'],
-      ['ti-lock','var(--accent-tint)','var(--accent)','Security & Billing','Password, 2FA, plan & invoices','security-billing'],
+      ['ti-lock','var(--accent-tint)','var(--accent)',_isNativeApp()?'Security':'Security & Billing',_isNativeApp()?'Password & two-factor authentication':'Password, 2FA, plan & invoices','security-billing'],
     ].map(([icon,bg,ic,name,desc,screen])=>`<div class="nr" style="padding:11px 14px;" ${screen?`onclick="nav('${screen}')"`:''}><div style="width:38px;height:38px;border-radius:10px;background:${bg};display:flex;align-items:center;justify-content:center;flex-shrink:0;"><i class="ti ${icon}" style="font-size:18px;color:${ic};"></i></div><div style="flex:1;"><div style="font-size:14px;font-weight:500;color:#e0e0e0;">${name}</div><div style="font-size:12px;color:#999;">${desc}</div></div><i aria-hidden="true" class="ti ti-chevron-right" style="font-size:16px;color:#888;"></i></div>`).join('')}
   </div>
   <button onclick="_doLogout()" style="width:100%;border:1px solid #555;background:none;border-radius:10px;padding:11px;font-size:14px;color:#bbb;cursor:pointer;margin-top:10px;font-family:inherit;">Sign out</button>
@@ -12992,8 +12999,12 @@ function renderBusinessBranding(){
 }
 function renderAccountBilling(){
   renderPasswordSecurity();const _sec=S.innerHTML;
-  renderSubscriptionBilling();const _bill=S.innerHTML;
-  document.getElementById('tt').textContent='Security & Billing';
+  // Payment-silent in the native app: no subscription/billing section at all (no price, no
+  // "Manage billing" portal, no invoices). Web/PWA is unchanged.
+  const _native=_isNativeApp();
+  let _bill='';
+  if(!_native){renderSubscriptionBilling();_bill=S.innerHTML;}
+  document.getElementById('tt').textContent=_native?'Security':'Security & Billing';
   const _privacy=`<div class="sh" style="margin-top:10px;padding-top:8px;border-top:1px solid #222;"><h2>Privacy &amp; your data</h2></div>
   <div style="padding:0 16px 20px;">
     <div style="font-size:12px;color:#999;line-height:1.5;margin-bottom:10px;">Your data is yours. Download a full copy any time, or permanently delete your account.</div>
@@ -13012,10 +13023,10 @@ function renderAccountBilling(){
       <a href="/terms" target="_blank" rel="noopener" style="font-size:12px;font-weight:600;color:var(--accent);text-decoration:none;">Terms of Service</a>
     </div>
   </div>`;
-  S.innerHTML=_sec+'<div class="sh" style="margin-top:10px;padding-top:8px;border-top:1px solid #222;"><h2>Subscription & billing</h2></div>'+_bill+_privacy;
+  S.innerHTML=_sec+(_native?'':'<div class="sh" style="margin-top:10px;padding-top:8px;border-top:1px solid #222;"><h2>Subscription & billing</h2></div>'+_bill)+_privacy;
   _loadSessions(); // re-run against the final DOM, same reason as below
   _loadTotpState(); // re-run against the final DOM, same reason as below
-  _loadBillingStatus(); // re-run against the final DOM, the call inside renderSubscriptionBilling() above targeted a node that just got replaced
+  if(!_native)_loadBillingStatus(); // re-run against the final DOM, the call inside renderSubscriptionBilling() above targeted a node that just got replaced
 }
 
 function renderBizInfo(){
@@ -15198,10 +15209,15 @@ const helpArticles=[
   {id:'ts-link',cat:'Troubleshooting',title:'A client says their link isn\u2019t working',kw:'link broken not working error client cant open',body:`Ask them to try opening it again, links are unique to each client and don't expire. If it still fails, try resending it from their profile ("Invite to the app" or resend a form), which refreshes their access without changing their existing data.`},
   {id:'ts-slow',cat:'Troubleshooting',title:'The app feels slow or something looks stuck',kw:'slow loading stuck frozen refresh not updating',body:`Try refreshing the page first. If something you saved doesn't seem to have taken effect, wait a few seconds and refresh again, saves sync in the background and can take a moment on a slow connection.`},
 ];
+// Payment-silent native app: the "Managing your subscription" help article describes the billing
+// portal / changing plans, so it's excluded from search, listing, and direct open in the native
+// shell. Web/PWA sees the full list unchanged.
+function _helpList(){return _isNativeApp()?helpArticles.filter(a=>a.id!=='bill-plan'):helpArticles;}
 function _searchHelp(q){
   q=(q||'').toLowerCase().trim();
-  if(!q)return helpArticles;
-  return helpArticles.filter(a=>a.title.toLowerCase().includes(q)||a.kw.toLowerCase().includes(q)||a.body.toLowerCase().includes(q));
+  const list=_helpList();
+  if(!q)return list;
+  return list.filter(a=>a.title.toLowerCase().includes(q)||a.kw.toLowerCase().includes(q)||a.body.toLowerCase().includes(q));
 }
 function renderHelp(){
   document.getElementById('tt').textContent='Help';
@@ -15221,14 +15237,15 @@ function _renderHelpResults(q){
     box.innerHTML=`<div style="padding:0 16px;">${results.map(a=>_helpRowHTML(a)).join('')}</div>`;
     return;
   }
-  const cats=[...new Set(helpArticles.map(a=>a.cat))];
-  box.innerHTML=cats.map(cat=>`<div class="sh"><h2>${cat}</h2></div><div style="padding:0 16px;">${helpArticles.filter(a=>a.cat===cat).map(a=>_helpRowHTML(a)).join('')}</div>`).join('');
+  const _hl=_helpList();
+  const cats=[...new Set(_hl.map(a=>a.cat))];
+  box.innerHTML=cats.map(cat=>`<div class="sh"><h2>${cat}</h2></div><div style="padding:0 16px;">${_hl.filter(a=>a.cat===cat).map(a=>_helpRowHTML(a)).join('')}</div>`).join('');
 }
 function _helpRowHTML(a){
   return `<div class="card" onclick="nav('help-article','${a.id}')"><div class="row"><div style="width:36px;height:36px;border-radius:9px;background:var(--accent-tint);display:flex;align-items:center;justify-content:center;flex-shrink:0;"><i class="ti ti-help-circle" style="font-size:17px;color:var(--accent);"></i></div><div style="flex:1;min-width:0;"><div style="font-size:13.5px;font-weight:500;color:#e0e0e0;">${a.title}</div></div><i class="ti ti-chevron-right" style="font-size:15px;color:#888;"></i></div></div>`;
 }
 function renderHelpArticle(id){
-  const a=helpArticles.find(x=>x.id===id);
+  const a=_helpList().find(x=>x.id===id);
   if(!a){ nav('help'); return; }
   document.getElementById('tt').textContent=a.cat;
   S.innerHTML=`
@@ -17691,6 +17708,13 @@ function renderRevenue(){
 
 
 function renderSubscriptionBilling(){
+  // Payment-silent in the native app: if this route is ever reached directly, show a neutral
+  // account message with no pricing and no purchase/portal call-to-action.
+  if(_isNativeApp()){
+    document.getElementById('tt').textContent='Account';
+    S.innerHTML=`<div style="padding:44px 26px;text-align:center;color:#999;font-size:14px;line-height:1.7;">Manage your account settings at <b style="color:#c9a978;">slickchart.app</b>.</div>`;
+    return;
+  }
   document.getElementById('tt').textContent='Subscription & Billing';
   S.innerHTML=`
   <div id="billing-body" style="padding:40px 16px;text-align:center;color:#888;font-size:13px;">Loading your billing info\u2026</div>`;
@@ -17747,6 +17771,7 @@ function _billingHTML(sub){
   </div>`;
 }
 async function _openBillingPortal(){
+  if(_isNativeApp())return; // payment-silent: never open an external checkout/billing portal in-app
   const tok=(typeof Cloud!=='undefined'&&Cloud&&Cloud.token)||'';
   if(!tok)return;
   try{
