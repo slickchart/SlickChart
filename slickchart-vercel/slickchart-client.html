@@ -2809,10 +2809,26 @@ function _ciSteps(){
   }
   return (activeProvider().checkin&&activeProvider().checkin.steps)||[];
 }
+// The client can mark this as their first visit (opt-in — we never assume it, because on a
+// brand-new account even long-time returning clients have no visit history on file yet, so an
+// empty record is NOT a reliable "new client" signal). When they do, the "since your last visit"
+// framing is dropped: the step is retitled, a friendly note is shown, and each question loses its
+// "since your last visit / since last time" clause so nothing reads as if there were a prior visit.
+function _ciFirstVisit(){return checkinAnswers&&checkinAnswers._firstVisit==='yes';}
+function _ciStripSinceLast(lbl){
+  return String(lbl||'')
+    .replace(/,?\s*since (?:your |we )?last (?:visit|time|appointment|session)\b/ig,'')
+    .replace(/,?\s*since (?:we )?last (?:met|saw you)\b/ig,'')
+    .replace(/,?\s*since last time\b/ig,'')
+    .replace(/\s{2,}/g,' ')
+    .replace(/\s+([?.!,])/g,'$1')
+    .trim();
+}
 function _ciStepsFromCfg(cfg){
   const steps=[];
-  const qs=(cfg.skinQ||[]).filter(q=>q.on!==false).map(q=>({type:'boolean',id:q.id,label:q.label,detailPh:'Add any details for '+_txt(client.providerFirst)+'...'}));
-  if(qs.length)steps.push({title:'Since your last visit',id:'updates',questions:qs});
+  const fv=_ciFirstVisit();
+  const qs=(cfg.skinQ||[]).filter(q=>q.on!==false).map(q=>{const o={type:'boolean',id:q.id,label:fv?_ciStripSinceLast(q.label):q.label,detailPh:'Add any details for '+_txt(client.providerFirst)+'...'};if(fv)o.noLabel='No';return o;});
+  if(qs.length)steps.push({title:fv?'A few quick questions':'Since your last visit',id:'updates',questions:qs,firstVisitToggle:true,note:fv?('This is your first visit with '+_txt(client.providerFirst)+' — there’s no past visit to compare to, so just answer what applies and skip the rest.'):''});
   const comfort=_comfortStepFromCfg(cfg);
   if(comfort&&comfort.questions.length)steps.push(comfort);
   // Image-forward professions ask for a reference/inspiration photo before the visit.
@@ -3127,6 +3143,10 @@ function _renderCheckinStep(){
     </div>
     <div style="font-size:18px;font-weight:600;color:#1a1a1a;margin-bottom:2px;">${_txt(step.title)}</div>
     <div style="font-size:13px;color:#786858;">For your ${_dt(client.nextDate)} appointment · ${_txt(client.providerFirst)} sees this before you arrive.</div>
+    ${step.firstVisitToggle?`<button onclick="_ciToggleFirstVisit()" aria-pressed="${_ciFirstVisit()?'true':'false'}" style="margin-top:12px;display:inline-flex;align-items:center;gap:8px;border:1.5px solid ${_ciFirstVisit()?'var(--accent)':'#e8ddd3'};background:${_ciFirstVisit()?'var(--accent-lt)':'#fff'};color:${_ciFirstVisit()?'var(--accent)':'#6b5d52'};border-radius:999px;padding:8px 14px;font-size:12.5px;font-weight:600;cursor:pointer;">
+      <i class="ti ti-${_ciFirstVisit()?'circle-check-filled':'sparkles'}" aria-hidden="true"></i>${_ciFirstVisit()?'First visit — nothing to update yet':'This is my first visit'}
+    </button>`:''}
+    ${step.note?`<div style="margin-top:12px;background:var(--accent-lt);border:1px solid #f0e6d8;border-radius:11px;padding:11px 13px;font-size:13px;color:#6b5d52;line-height:1.55;">${_txt(step.note)}</div>`:''}
   </div>
   <div id="checkin-body">
     <div style="padding:10px 16px 0;">
@@ -3144,6 +3164,9 @@ function _renderCheckinStep(){
 // Reset the screen view to the top. Used when a multi-step flow advances so each new step starts
 // at the top of the field instead of wherever the previous step was scrolled to.
 function _scrollScreenTop(){try{S.scrollTop=0;}catch(e){}try{window.scrollTo(0,0);}catch(e){}}
+// Client taps "This is my first visit" — flip the flag and re-render so the step retitles, drops the
+// "since your last visit" wording, and shows the welcome note. Opt-in only; we never set it for them.
+function _ciToggleFirstVisit(){checkinAnswers._firstVisit=_ciFirstVisit()?'':'yes';try{_ciSaveDraft();}catch(e){}_renderCheckinStep();}
 
 function _renderCIQuestion(q){
   if(q.type==='boolean')return _ciBoolean(q);
@@ -3434,7 +3457,7 @@ function _ciBuildPayload(){
     (st.questions||[]).forEach(q=>{
       if(q.type==='boolean'){
         const yes=checkinAnswers[q.id]==='yes';
-        rows.push({label:q.label,value:yes?'Yes':'No changes',detail:yes?(checkinAnswers[q.id+'Detail']||''):'',flagged:yes});
+        rows.push({label:q.label,value:yes?'Yes':(_ciFirstVisit()?'No':'No changes'),detail:yes?(checkinAnswers[q.id+'Detail']||''):'',flagged:yes});
         if(yes)flagged.push((q.flagLabel||q.label||'').replace(/\?$/,''));
       }else if(q.type==='iconChoice'){
         const v=checkinAnswers[q.id];let val='—';
@@ -3451,9 +3474,10 @@ function _ciBuildPayload(){
         photos=(photos||[]).concat(checkinAnswers[q.id+'Photos']||[]);
       }
     });
+    if(st.id==='updates'&&_ciFirstVisit())rows.unshift({label:'Visit type',value:'First visit',flagged:false});
     if(rows.length)groups.push({title:st.title,rows});
   });
-  return{groups,flagged,notes,photos};
+  return{groups,flagged,notes,photos,firstVisit:_ciFirstVisit()};
 }
 
 function _checkinSuccessHTML(flagged){
