@@ -309,9 +309,9 @@ function getMergedNotes(){return [...new Set(getActiveProfessions().flatMap(p=>p
 function getMergedTerms(){return [...new Set(getActiveProfessions().flatMap(p=>p.terms))];}
 
 const CL={
-  maya:{name:'Maya Rodriguez',initials:'MR',bg:'#2e1c10',tc:'var(--accent)',skin:'Combination · Sensitive',concerns:'Hyperpigmentation, dullness',allergies:'Fragrance, retinol',fitz:'III',lastVisit:'Jun 10, 2026',nextVisit:'Jun 26 · 10:00 AM',treatment:'Hydrafacial',sessions:4,seriesTotal:6,touchUpDate:'Jul 22, 2026'},
-  sophie:{name:'Sophie Turner',initials:'ST',bg:'#0a2019',tc:'#4ec49a',skin:'Dry · Sensitive',concerns:'Acne scarring, redness',allergies:'Salicylic acid',fitz:'II',lastVisit:'May 28, 2026',nextVisit:'Jun 26 · 12:30 PM',treatment:'Chemical Peel',sessions:2,signedForms:['New client intake & consent'],submittedForms:[{formId:'intake',title:'New client intake & consent',answers:{},flagged:['Taking blood thinners or anticoagulants'],date:'Today',signed:true}],flaggedContra:{form:'New client intake & consent',items:['Taking blood thinners or anticoagulants'],date:'Today'}},
-  priya:{name:'Priya Patel',initials:'PP',bg:'#2a1a00',tc:'var(--accent)',skin:'Oily',concerns:'Enlarged pores, breakouts',allergies:'None known',fitz:'IV',lastVisit:'Jun 24, 2026',nextVisit:'Jul 8 · 11:00 AM',treatment:'LED Therapy',sessions:1},
+  maya:{name:'Maya Rodriguez',initials:'MR',bg:'#2e1c10',tc:'var(--accent)',phone:'(510) 555-0142',email:'maya.r@example.com',birthday:'1992-03-14',skin:'Combination · Sensitive',concerns:'Hyperpigmentation, dullness',allergies:'Fragrance, retinol',fitz:'III',lastVisit:'Jun 10, 2026',nextVisit:'Jun 26 · 10:00 AM',treatment:'Hydrafacial',sessions:4,seriesTotal:6,touchUpDate:'Jul 22, 2026'},
+  sophie:{name:'Sophie Turner',initials:'ST',bg:'#0a2019',tc:'#4ec49a',phone:'(415) 555-0193',email:'sophie.t@example.com',birthday:'1990-07-10',skin:'Dry · Sensitive',concerns:'Acne scarring, redness',allergies:'Salicylic acid',fitz:'II',lastVisit:'May 28, 2026',nextVisit:'Jun 26 · 12:30 PM',treatment:'Chemical Peel',sessions:2,signedForms:['New client intake & consent'],submittedForms:[{formId:'intake',title:'New client intake & consent',answers:{},flagged:['Taking blood thinners or anticoagulants'],date:'Today',signed:true}],flaggedContra:{form:'New client intake & consent',items:['Taking blood thinners or anticoagulants'],date:'Today'}},
+  priya:{name:'Priya Patel',initials:'PP',bg:'#2a1a00',tc:'var(--accent)',phone:'(415) 555-0178',email:'priya.p@example.com',birthday:'1988-07-22',skin:'Oily',concerns:'Enlarged pores, breakouts',allergies:'None known',fitz:'IV',lastVisit:'Jun 24, 2026',nextVisit:'Jul 8 · 11:00 AM',treatment:'LED Therapy',sessions:1},
 };
 // Pristine deep-copy snapshot of the three sample clients, taken before anything can
 // mutate or purge them. "Restore sample data" rebuilds from this so all three always
@@ -1305,6 +1305,21 @@ const _SAMPLE_IDS=['maya','sophie','priya'];
 const _SAMPLE_DOC_IDS=(typeof docs!=='undefined')?docs.map(d=>d.id):[];
 const _SAMPLE_DOCS_BACKUP=(typeof docs!=='undefined')?docs.slice():[];
 function _sampleHidden(){try{return localStorage.getItem('sc_hide_sample')==='1';}catch(e){return false;}}
+// Screenshot mode: a NON-DESTRUCTIVE display filter for App Store screenshots. When on, the list
+// screens (Clients, Messages, Payments) and the home "needs attention" cards show ONLY the sample
+// clients (Maya/Sophie/Priya), so real client info never lands in a screenshot. Nothing is deleted,
+// moved, or synced — it purely filters what's drawn, and turning it off shows everyone again.
+function _shotMode(){try{return localStorage.getItem('sc_shot_mode')==='1';}catch(e){return false;}}
+function _shotFilterEntries(entries){return _shotMode()?(entries||[]).filter(function(e){return _SAMPLE_IDS.indexOf(e&&e[0])>=0;}):entries;}
+function _shotFilterIds(ids){return _shotMode()?(ids||[]).filter(function(id){return _SAMPLE_IDS.indexOf(id)>=0;}):ids;}
+function _setShotMode(on){
+  try{localStorage.setItem('sc_shot_mode',on?'1':'0');}catch(e){}
+  // Screenshot mode is meaningless without the sample clients on screen, so turning it on also
+  // restores sample data if it was hidden. Turning it off leaves sample data as-is.
+  try{if(on&&_sampleHidden()&&typeof _restoreSampleData==='function')_restoreSampleData();}catch(e){}
+  try{if(typeof proToast==='function')proToast(on?'Screenshot mode on — showing only sample clients':'Screenshot mode off — your clients are back');}catch(e){}
+  try{nav('account');}catch(e){}
+}
 const _SAMPLE_NOTIF_IDS=['n1','n2','n3','n4','n5','n6','n7'];
 const _SAMPLE_CHECKIN_IDS=['ci_demo1'];
 // Demo/affiliate products that ship with the app as examples, these are sample
@@ -3464,9 +3479,9 @@ function renderHome(){
     <div style="flex:1;padding-right:18px;"><div style="font-size:14px;font-weight:600;color:#efeaff;">Virtual consult${_vcPendingCount()>1?'s':''} to review</div><div style="font-size:12px;color:#a394cc;margin-top:1px;">Client photos submitted, tap to review &amp; send notes</div></div>
   </div>`,'vc'):''}
   ${(function(){
-    const flagged=Object.entries(CL).filter(([id,c])=>_fcActive(c));
-    const reviews=Object.entries(CL).filter(([id,c])=>c.submittedForms&&c.submittedForms.length&&!_fcActive(c));
-    const nudges=(typeof _needsCheckin==='function')?_needsCheckin():[];
+    const flagged=_shotFilterEntries(Object.entries(CL).filter(([id,c])=>_fcActive(c)));
+    const reviews=_shotFilterEntries(Object.entries(CL).filter(([id,c])=>c.submittedForms&&c.submittedForms.length&&!_fcActive(c)));
+    const nudges=_shotFilterEntries((typeof _needsCheckin==='function')?_needsCheckin():[]);
     if(!flagged.length&&!reviews.length&&!nudges.length)return '';
     let h='<div class="sh"><h2>Needs your attention</h2></div>';
     h+=nudges.map(([id,c])=>{
@@ -3577,16 +3592,20 @@ function renderClients(){
     </div>
     <button onclick="event.stopPropagation();_dismissDupBanner()" aria-label="Dismiss duplicate alert" title="Dismiss" style="flex-shrink:0;background:none;border:none;color:#8a7550;cursor:pointer;padding:6px;line-height:0;"><i class="ti ti-x" style="font-size:16px;"></i></button>
   </div>`;})()}
+  ${_shotMode()?`<div style="margin:0 16px 12px;background:#13102a;border:1px solid #2d2360;border-radius:11px;padding:11px 13px;display:flex;align-items:center;gap:11px;">
+    <i class="ti ti-camera" aria-hidden="true" style="color:#a891ec;font-size:17px;flex-shrink:0;"></i>
+    <div style="flex:1;min-width:0;font-size:12px;color:#bcaee8;line-height:1.45;"><b style="color:#efeaff;">Screenshot mode is on.</b> Showing only sample clients — your real clients are hidden (not deleted).</div>
+    <button onclick="_setShotMode(false)" style="background:#a891ec;color:#13102a;border:none;border-radius:8px;padding:6px 12px;font-size:11px;font-weight:700;cursor:pointer;flex-shrink:0;">Turn off</button>
+  </div>`:''}
   <div class="sh"><h2 id="page-heading" tabindex="-1">All clients</h2></div>
-  ${_hasDemoClients()?`<div style="margin:0 16px 12px;background:#1a1308;border:1px solid #3a2a10;border-radius:11px;padding:11px 13px;display:flex;align-items:center;gap:11px;">
+  ${(_hasDemoClients()&&!_shotMode())?`<div style="margin:0 16px 12px;background:#1a1308;border:1px solid #3a2a10;border-radius:11px;padding:11px 13px;display:flex;align-items:center;gap:11px;">
     <i class="ti ti-flask" aria-hidden="true" style="color:var(--accent);font-size:17px;flex-shrink:0;"></i>
     <div style="flex:1;min-width:0;font-size:12px;color:#caa86a;line-height:1.45;">Sample clients (Maya, Sophie, Priya) are still here from the demo data.</div>
     <button onclick="removeDemoClients()" style="background:var(--accent);color:var(--accent-ink);border:none;border-radius:8px;padding:6px 12px;font-size:11px;font-weight:700;cursor:pointer;flex-shrink:0;">Remove</button>
   </div>`:''}
-  ${Object.keys(CL).length===0
+  ${(()=>{const _ent=_shotFilterEntries(Object.entries(CL));return _ent.length===0
     ? emptyState({icon:'ti-users',title:'No clients yet',body:'Add your first client to get started. Their chart, notes, and session history will live here.',action:'Add first client',screen:'new-client'})
-    : Object.entries(CL).sort((a,b)=>{const da=(a[0]==='maya'||a[0]==='sophie'||a[0]==='priya')?0:1;const db=(b[0]==='maya'||b[0]==='sophie'||b[0]==='priya')?0:1;return da-db;}).map(([id,c])=>`<div class="card client-card" data-search="${((c.name||'')+' '+(c.treatment||'')).toLowerCase().normalize('NFD').replace(/[̀-ͯ]/g,'').replace(/['‘’`"]/g,'').replace(/[^a-z0-9 ]/g,' ').replace(/\s+/g,' ').trim()}" onclick="nav('client','${id}')"><div class="row">${av(c)}<div style="flex:1;"><div style="display:flex;align-items:center;gap:7px;"><span style="font-size:15px;font-weight:500;color:#f0f0f0;">${_fileEsc(c.name)}</span>${(id==='maya'||id==='sophie'||id==='priya')?`<span onclick="event.stopPropagation();showDemoInfo()" title="What are demo clients?" style="font-size:9px;font-weight:700;color:#caa86a;border:1px solid #3a2a10;background:#1a1308;border-radius:4px;padding:1px 5px;letter-spacing:.03em;cursor:pointer;">DEMO</span>`:''}</div></div><i aria-hidden="true" class="ti ti-chevron-right" style="font-size:16px;color:#888;"></i></div></div>`).join('')
-  }
+    : _ent.sort((a,b)=>{const da=(a[0]==='maya'||a[0]==='sophie'||a[0]==='priya')?0:1;const db=(b[0]==='maya'||b[0]==='sophie'||b[0]==='priya')?0:1;return da-db;}).map(([id,c])=>`<div class="card client-card" data-search="${((c.name||'')+' '+(c.treatment||'')).toLowerCase().normalize('NFD').replace(/[̀-ͯ]/g,'').replace(/['‘’`"]/g,'').replace(/[^a-z0-9 ]/g,' ').replace(/\s+/g,' ').trim()}" onclick="nav('client','${id}')"><div class="row">${av(c)}<div style="flex:1;"><div style="display:flex;align-items:center;gap:7px;"><span style="font-size:15px;font-weight:500;color:#f0f0f0;">${_fileEsc(c.name)}</span>${(id==='maya'||id==='sophie'||id==='priya')?`<span onclick="event.stopPropagation();showDemoInfo()" title="What are demo clients?" style="font-size:9px;font-weight:700;color:#caa86a;border:1px solid #3a2a10;background:#1a1308;border-radius:4px;padding:1px 5px;letter-spacing:.03em;cursor:pointer;">DEMO</span>`:''}</div></div><i aria-hidden="true" class="ti ti-chevron-right" style="font-size:16px;color:#888;"></i></div></div>`).join('');})()}
   ${_noRes('clients-noresults','No clients match your search.')}`;
 }
 function _fileEsc(s){return String(s==null?'':s).replace(/&/g,'&amp;').replace(/</g,'&lt;').replace(/>/g,'&gt;').replace(/"/g,'&quot;');}
@@ -10891,7 +10910,7 @@ function showMsgTab(tab){
     <div style="padding:12px 16px 8px;display:flex;align-items:center;justify-content:space-between;"><span style="font-size:13px;color:#999;">${threads.filter(t=>t.unread).length} unread</span><button onclick="_newMessageSheet()" style="background:var(--accent);color:var(--accent-ink);border:none;border-radius:8px;padding:7px 12px;font-size:12px;font-weight:500;cursor:pointer;"><i class="ti ti-edit" style="font-size:13px;"></i> New message</button></div>
     ${_searchBar('Search messages by client…','.thread-card','msgs-noresults')}
     ${threads.length===0?emptyState({icon:'ti-message-2',title:'No conversations yet',body:'Messages with your clients show up here. Tap New message to start one, or they\u2019ll appear when a client messages you from their app.'}):''}
-    ${[...threads].sort((a,b)=>(b.unread?1:0)-(a.unread?1:0)).map(t=>{const c=CL[t.id];if(!c)return'';return`<div onclick="nav('chat','${t.id}')" class="thread-card" data-search="${(((c&&c.name)||'')+' '+(t.preview||'')).toLowerCase().normalize('NFD').replace(/[̀-ͯ]/g,'').replace(/['‘’`"]/g,'').replace(/[^a-z0-9 ]/g,' ').replace(/\s+/g,' ').trim()}" style="display:flex;align-items:center;gap:12px;padding:12px 16px;border-bottom:1px solid #1e1e1e;cursor:pointer;"><div style="position:relative;">${av(c,44)}${t.unread?`<div style="position:absolute;top:0;right:0;width:10px;height:10px;border-radius:50%;background:var(--accent);border:2px solid #111;"></div>`:''}</div><div style="flex:1;min-width:0;"><div style="font-size:14px;font-weight:${t.unread?500:400};color:#f0f0f0;">${_fileEsc(c.name)}</div><div style="font-size:12px;color:${t.unread?'#aaa':'#555'};overflow:hidden;text-overflow:ellipsis;white-space:nowrap;">${_fileEsc(t.preview)}</div></div><div style="text-align:right;"><div style="font-size:11px;color:#999;">${_fileEsc(t.time)}</div>${t.unread?`<div style="width:8px;height:8px;border-radius:50%;background:var(--accent);margin:4px 0 0 auto;"></div>`:''}</div></div>`}).join('')}
+    ${[...threads].filter(t=>!_shotMode()||_SAMPLE_IDS.indexOf(t.id)>=0).sort((a,b)=>(b.unread?1:0)-(a.unread?1:0)).map(t=>{const c=CL[t.id];if(!c)return'';return`<div onclick="nav('chat','${t.id}')" class="thread-card" data-search="${(((c&&c.name)||'')+' '+(t.preview||'')).toLowerCase().normalize('NFD').replace(/[̀-ͯ]/g,'').replace(/['‘’`"]/g,'').replace(/[^a-z0-9 ]/g,' ').replace(/\s+/g,' ').trim()}" style="display:flex;align-items:center;gap:12px;padding:12px 16px;border-bottom:1px solid #1e1e1e;cursor:pointer;"><div style="position:relative;">${av(c,44)}${t.unread?`<div style="position:absolute;top:0;right:0;width:10px;height:10px;border-radius:50%;background:var(--accent);border:2px solid #111;"></div>`:''}</div><div style="flex:1;min-width:0;"><div style="font-size:14px;font-weight:${t.unread?500:400};color:#f0f0f0;">${_fileEsc(c.name)}</div><div style="font-size:12px;color:${t.unread?'#aaa':'#555'};overflow:hidden;text-overflow:ellipsis;white-space:nowrap;">${_fileEsc(t.preview)}</div></div><div style="text-align:right;"><div style="font-size:11px;color:#999;">${_fileEsc(t.time)}</div>${t.unread?`<div style="width:8px;height:8px;border-radius:50%;background:var(--accent);margin:4px 0 0 auto;"></div>`:''}</div></div>`}).join('')}
     ${_noRes('msgs-noresults','No conversations match your search.')}`;
   } else {
     content.innerHTML=`
@@ -12258,6 +12277,8 @@ function renderAccount(){
     ${_sampleHidden()
       ?`<div onclick="_restoreSampleData()" style="display:flex;align-items:center;gap:11px;padding:13px 14px;cursor:pointer;"><div style="width:38px;height:38px;border-radius:10px;background:#1e1633;display:flex;align-items:center;justify-content:center;flex-shrink:0;"><i class="ti ti-history" style="font-size:18px;color:#a891ec;"></i></div><div style="flex:1;"><div style="font-size:14px;font-weight:500;color:#e0e0e0;">Restore Sample Data</div><div style="font-size:12px;color:#999;">Bring back the example client &amp; activity</div></div><i class="ti ti-chevron-right" style="font-size:16px;color:#888;"></i></div>`
       :`<div onclick="_clearSampleData()" style="display:flex;align-items:center;gap:11px;padding:13px 14px;cursor:pointer;"><div style="width:38px;height:38px;border-radius:10px;background:#2a0f0f;display:flex;align-items:center;justify-content:center;flex-shrink:0;"><i class="ti ti-eraser" style="font-size:18px;color:#e87070;"></i></div><div style="flex:1;"><div style="font-size:14px;font-weight:500;color:#e0e0e0;">Remove Sample Data</div><div style="font-size:12px;color:#999;">Clear the example client &amp; activity, keep your real data</div></div><i class="ti ti-chevron-right" style="font-size:16px;color:#888;"></i></div>`}
+    <div style="border-top:1px solid #2a2a2a;"></div>
+    <div style="display:flex;align-items:center;gap:11px;padding:13px 14px;"><div style="width:38px;height:38px;border-radius:10px;background:#13102a;display:flex;align-items:center;justify-content:center;flex-shrink:0;"><i class="ti ti-camera" style="font-size:18px;color:#a891ec;"></i></div><div style="flex:1;min-width:0;"><div style="font-size:14px;font-weight:500;color:#e0e0e0;">Screenshot Mode</div><div style="font-size:12px;color:#999;line-height:1.4;">Show only sample clients (Maya, Sophie, Priya) for App Store screenshots. Hides your real clients — nothing is deleted.</div></div>${togBtn(_shotMode(),'_setShotMode(!'+_shotMode()+')','Toggle screenshot mode')}</div>
     <div style="border-top:1px solid #2a2a2a;"></div>
     <div onclick="replayOnboarding()" style="display:flex;align-items:center;gap:11px;padding:13px 14px;cursor:pointer;"><div style="width:38px;height:38px;border-radius:10px;background:var(--accent-tint);display:flex;align-items:center;justify-content:center;flex-shrink:0;"><i class="ti ti-player-play" style="font-size:18px;color:var(--accent);"></i></div><div style="flex:1;"><div style="font-size:14px;font-weight:500;color:#e0e0e0;">Replay Setup Walkthrough</div><div style="font-size:12px;color:#999;">See the guided first-run setup again</div></div><i class="ti ti-chevron-right" style="font-size:16px;color:#888;"></i></div>
   </div></div>
@@ -14525,13 +14546,16 @@ async function _checkGiftCard(){
 function renderPayments(){
   setNav('payments');document.getElementById('tt').textContent='Payments';
   const byDateDesc=(a,b)=>_dateToTime(b.date)-_dateToTime(a.date);
-  const out=_payments.filter(p=>p.status==='unpaid'||p.status==='partial').sort(byDateDesc);
-  const paid=_payments.filter(p=>p.status==='paid').sort(byDateDesc);
+  // Screenshot mode: derive every displayed figure/row from sample-client payments only, so real
+  // client names AND real revenue totals never appear in a shot. Real _payments is left untouched.
+  const _pv=_shotMode()?_payments.filter(p=>_SAMPLE_IDS.indexOf(p.clientId)>=0):_payments;
+  const out=_pv.filter(p=>p.status==='unpaid'||p.status==='partial').sort(byDateDesc);
+  const paid=_pv.filter(p=>p.status==='paid').sort(byDateDesc);
   const sum=arr=>arr.reduce((a,p)=>a+(parseFloat(p.amount)||0),0);
   // Local year-month — payment dates are stored with LOCAL date parts, so a UTC month (toISOString)
   // rolled over on the last evening of the month in the Americas and zeroed out "Collected this month".
   const _nowYm=new Date();const ym=_nowYm.getFullYear()+'-'+String(_nowYm.getMonth()+1).padStart(2,'0');
-  const monthPaid=_payments.filter(p=>String(p.date||'').slice(0,7)===ym).reduce((a,p)=>a+_payCollected(p),0);
+  const monthPaid=_pv.filter(p=>String(p.date||'').slice(0,7)===ym).reduce((a,p)=>a+_payCollected(p),0);
   const chip=s=>({paid:['#0a2019','#4ec49a','Paid'],unpaid:['#2a1a0a','#e8b060','Unpaid'],partial:['#0d1e33','#5ba3e8','Partial'],refunded:['#1a1a1a','#999','Refunded'],canceled:['#1a1a1a','#777','Canceled']}[s]||['#1a1a1a','#999',s]);
   const row=p=>{const cs=chip(p.status);return `<div onclick="_payOpen('${p.id}')" style="background:#161616;border:1px solid #242424;border-radius:11px;padding:11px 13px;margin:0 16px 8px;cursor:pointer;"><div style="display:flex;justify-content:space-between;align-items:center;"><div style="min-width:0;"><div style="font-size:14px;font-weight:600;color:#f0f0f0;">$${(parseFloat(p.amount)||0).toFixed(2)} <span style="font-size:11px;color:#888;font-weight:400;">\u00b7 ${_fileEsc(p.method||'')}</span></div><div style="font-size:12px;color:#999;margin-top:1px;">${String(p.clientName||'\u2014').replace(/</g,'&lt;')} \u00b7 ${_payDateDisp(p.date)}</div></div><span style="font-size:10px;font-weight:700;padding:3px 9px;border-radius:20px;background:${cs[0]};color:${cs[1]};">${_fileEsc(cs[2])}</span></div>${p.note?`<div style="font-size:11px;color:#9a9a9a;margin-top:5px;">${String(p.note).replace(/</g,'&lt;')}</div>`:''}<div style="display:flex;gap:14px;margin-top:8px;align-items:center;">${p.status!=='paid'?`<button onclick="event.stopPropagation();_payMarkPaid('${p.id}')" style="background:none;border:none;color:#4ec49a;font-size:12px;font-weight:600;cursor:pointer;font-family:inherit;padding:0;"><i class="ti ti-check"></i> Mark paid</button>`:''}<span style="color:#5ba3e8;font-size:12px;font-weight:600;"><i class="ti ti-chevron-right"></i> Details</span><button onclick="event.stopPropagation();_payDelete('${p.id}')" style="background:none;border:none;color:#a85a5a;font-size:12px;cursor:pointer;font-family:inherit;padding:0;margin-left:auto;">Remove</button></div></div>`;};
   S.innerHTML=`
@@ -14549,7 +14573,7 @@ function renderPayments(){
   </div>
   ${out.length?`<div class="sh"><h2>Outstanding</h2></div>${out.map(row).join('')}`:''}
   ${paid.length?`<div class="sh"><h2>Paid</h2></div>${paid.slice(0,50).map(row).join('')}`:''}
-  ${(!_payments.length)?`<div style="margin:14px 16px;text-align:center;color:#888;font-size:13px;padding:26px 16px;background:#161616;border:1px solid #242424;border-radius:12px;">No payments yet. Send an invoice from a client\u2019s chart, or tap <b>Log a payment</b> to record cash, Venmo, or anything else.</div>`:''}
+  ${(!_pv.length)?`<div style="margin:14px 16px;text-align:center;color:#888;font-size:13px;padding:26px 16px;background:#161616;border:1px solid #242424;border-radius:12px;">No payments yet. Send an invoice from a client\u2019s chart, or tap <b>Log a payment</b> to record cash, Venmo, or anything else.</div>`:''}
   <div style="height:20px;"></div>`;
   try{_paySyncSquare(true);}catch(e){}
 }
