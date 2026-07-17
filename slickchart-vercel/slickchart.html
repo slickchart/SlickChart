@@ -2127,7 +2127,7 @@ function _requestClientLink(){
   const email=el?el.value.trim():'';
   if(!email||!/.+@.+\..+/.test(email)){if(msg){msg.style.color='#e87070';msg.textContent='Enter your email address.';}return;}
   if(msg){msg.style.color='#888';msg.textContent='Sending…';}
-  fetch('/api/client-link',{method:'POST',headers:{'Content-Type':'application/json'},body:JSON.stringify({email:email,origin:location.origin})})
+  fetch('/api/client-link',{method:'POST',headers:{'Content-Type':'application/json'},body:JSON.stringify({email:email,origin:_clientLinkBase()})})
     .then(function(r){return r.json().catch(function(){return {};});})
     .then(function(j){if(msg){msg.style.color='#4ec49a';msg.textContent=(j&&j.message)||'If that email is on file, your secure link is on its way. Check your inbox.';}})
     .catch(function(){if(msg){msg.style.color='#e87070';msg.textContent='Couldn’t reach the server. Try again in a moment.';}});
@@ -10503,15 +10503,23 @@ async function _doBulkInvite(){
   try{
     await _syncSpecificClientsToServer(ids,{});
     clearTimeout(_slowTimer);
-    const r=await fetch('/api/client-invite',{method:'POST',headers:{'Content-Type':'application/json','Authorization':'Bearer '+tok},body:JSON.stringify({ids:ids,studio:((typeof bizInfo!=='undefined'&&bizInfo&&bizInfo.name)||''),from:((typeof _providerFirstName==='function'&&_providerFirstName())||'Your provider'),origin:location.origin})});
+    const r=await fetch('/api/client-invite',{method:'POST',headers:{'Content-Type':'application/json','Authorization':'Bearer '+tok},body:JSON.stringify({ids:ids,studio:((typeof bizInfo!=='undefined'&&bizInfo&&bizInfo.name)||''),from:((typeof _providerFirstName==='function'&&_providerFirstName())||'Your provider'),origin:_clientLinkBase()})});
     const j=await r.json();
     if(j&&j.ok){ const invited=Array.isArray(j.invitedIds)?j.invitedIds:(j.failed?[]:ids); invited.forEach(id=>{if(CL[id])CL[id].appInvited=true;}); try{saveClients();}catch(e){} const failed=(+j.failed||0); confirmModal({title:failed?'Some invites didn’t send':'Invites sent',body:'Emailed '+j.sent+' client'+(j.sent===1?'':'s')+' their personal link.'+(failed?(' '+failed+' didn’t go through, check those emails and try again.'):''),action:'Done'},function(){renderInviteClients();}); }
     else proToast((j&&j.error)||'Could not send invites');
   }catch(e){clearTimeout(_slowTimer);proToast('Could not reach the server');}
   finally{_bulkInviting=false;}
 }
+// Client-facing links must ALWAYS use the canonical branded domain — never whatever origin the
+// provider's app happens to be running on (e.g. the raw slick-chart.vercel.app). An unbranded
+// *.vercel.app link looks untrustworthy, and iPhones are pickier about auto-linking it — especially
+// in a text from a number the client hasn't saved as a contact. (Localhost kept for dev.)
+function _clientLinkBase(){
+  try{ if(/^https?:\/\/(localhost|127\.0\.0\.1|\[::1\])/i.test(location.origin||''))return location.origin; }catch(e){}
+  return 'https://slickchart.app';
+}
 function _clientAppLink(id){
-  const base=(typeof location!=='undefined'&&location.origin&&location.origin.indexOf('http')===0)?location.origin:'https://slick-chart.vercel.app';
+  const base=_clientLinkBase();
   const tok=CL[id]&&CL[id]._token;
   return tok?(base+'/client/'+encodeURIComponent(tok)):(base+'/client');
 }
@@ -14680,7 +14688,7 @@ async function _sendDepositForms(cands,silent){
   const ids=cands.map(x=>x.clientId);if(!ids.length)return;
   try{
     await _syncSpecificClientsToServer(ids,{});
-    const r=await fetch('/api/client-invite',{method:'POST',headers:{'Content-Type':'application/json','Authorization':'Bearer '+tok},body:JSON.stringify({ids:ids,studio:((typeof bizInfo!=='undefined'&&bizInfo&&bizInfo.name)||''),from:((typeof _providerFirstName==='function'&&_providerFirstName())||'Your provider'),origin:location.origin})});
+    const r=await fetch('/api/client-invite',{method:'POST',headers:{'Content-Type':'application/json','Authorization':'Bearer '+tok},body:JSON.stringify({ids:ids,studio:((typeof bizInfo!=='undefined'&&bizInfo&&bizInfo.name)||''),from:((typeof _providerFirstName==='function'&&_providerFirstName())||'Your provider'),origin:_clientLinkBase()})});
     const j=await r.json().catch(()=>({}));
     if(j&&j.ok){
       const invited=Array.isArray(j.invitedIds)?j.invitedIds:ids;invited.forEach(id=>{if(CL[id])CL[id].appInvited=true;});try{saveClients();}catch(e){}
