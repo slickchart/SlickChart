@@ -1,0 +1,93 @@
+# Builds the downloadable SlickChart desktop installers in the cloud — no Mac/Windows machine
+# needed. GitHub runs the Mac build on a Mac and the Windows build on Windows, then hands you the
+# finished .dmg and .exe.
+#
+# HOW TO RUN IT
+#   • Easiest: GitHub → the "Actions" tab → "Build desktop apps" → "Run workflow".
+#   • Or push a version tag to make a downloadable Release:
+#       git tag desktop-v1.0.0 && git push origin desktop-v1.0.0
+#
+# WHERE THE FILES LAND
+#   • Every run: scroll to the bottom of the run page → "Artifacts" → download the Mac/Windows zip.
+#   • Tag runs (desktop-v*): also attached to a GitHub Release with clean download links.
+#
+# SIGNING (optional — builds work UNSIGNED with zero setup)
+#   Add these repo secrets (Settings → Secrets and variables → Actions) to sign automatically:
+#     Mac:      MAC_CSC_LINK (base64 of your Developer ID .p12), MAC_CSC_KEY_PASSWORD,
+#               APPLE_ID, APPLE_APP_SPECIFIC_PASSWORD, APPLE_TEAM_ID   (enables notarization)
+#     Windows:  WIN_CSC_LINK (base64 of your code-signing .pfx), WIN_CSC_KEY_PASSWORD
+#   With no secrets set, it still builds — the installers just show the OS "unidentified developer"
+#   warning until you add signing.
+
+name: Build desktop apps
+
+on:
+  workflow_dispatch: {}
+  push:
+    tags:
+      - 'desktop-v*'
+
+permissions:
+  contents: write
+
+concurrency:
+  group: desktop-build-${{ github.ref }}
+  cancel-in-progress: true
+
+jobs:
+  build:
+    strategy:
+      fail-fast: false
+      matrix:
+        include:
+          - os: macos-latest
+            name: mac
+            script: build:mac
+            pattern: desktop/dist/*.dmg
+          - os: windows-latest
+            name: windows
+            script: build:win
+            pattern: desktop/dist/*.exe
+    runs-on: ${{ matrix.os }}
+    timeout-minutes: 40
+    steps:
+      - name: Check out the repo
+        uses: actions/checkout@v4
+
+      - name: Set up Node
+        uses: actions/setup-node@v4
+        with:
+          node-version: 20
+
+      - name: Install desktop dependencies
+        working-directory: desktop
+        run: npm install
+
+      - name: Build the installer
+        working-directory: desktop
+        run: npm run ${{ matrix.script }}
+        env:
+          # Mac signing + notarization (only used if the secrets exist; otherwise unsigned).
+          CSC_LINK: ${{ (matrix.name == 'mac' && secrets.MAC_CSC_LINK) || (matrix.name == 'windows' && secrets.WIN_CSC_LINK) || '' }}
+          CSC_KEY_PASSWORD: ${{ (matrix.name == 'mac' && secrets.MAC_CSC_KEY_PASSWORD) || (matrix.name == 'windows' && secrets.WIN_CSC_KEY_PASSWORD) || '' }}
+          # Skip code-signing entirely when no certificate secret is present, so unsigned builds
+          # succeed on CI instead of failing to find an identity.
+          CSC_IDENTITY_AUTO_DISCOVERY: ${{ (matrix.name == 'mac' && secrets.MAC_CSC_LINK != '') || (matrix.name == 'windows' && secrets.WIN_CSC_LINK != '') }}
+          APPLE_ID: ${{ secrets.APPLE_ID }}
+          APPLE_APP_SPECIFIC_PASSWORD: ${{ secrets.APPLE_APP_SPECIFIC_PASSWORD }}
+          APPLE_TEAM_ID: ${{ secrets.APPLE_TEAM_ID }}
+          GH_TOKEN: ${{ secrets.GITHUB_TOKEN }}
+
+      - name: Upload installer as a run artifact
+        uses: actions/upload-artifact@v4
+        with:
+          name: slickchart-${{ matrix.name }}
+          path: ${{ matrix.pattern }}
+          if-no-files-found: error
+
+      - name: Attach to a Release (tag builds only)
+        if: startsWith(github.ref, 'refs/tags/desktop-v')
+        uses: softprops/action-gh-release@v2
+        with:
+          files: ${{ matrix.pattern }}
+          fail_on_unmatched_files: false

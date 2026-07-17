@@ -86,11 +86,30 @@ first.
 
 ---
 
-## Part 4 — build both from the cloud (optional, no Windows PC needed)
+## Part 4 — build both from the cloud (no Mac/Windows machine needed) ✅ set up
 
-GitHub Actions can build the Mac `.dmg` and Windows `.exe` for you on every release, so you don't
-need a Windows machine. If you want this, tell me and I'll add a workflow file — you'd store your
-Apple credentials (and Windows cert, if any) as encrypted GitHub secrets.
+A GitHub Actions workflow is already in the repo (`.github/workflows/desktop-build.yml`). GitHub
+builds the Mac `.dmg` on a Mac and the Windows `.exe` on Windows for you.
+
+**To run it:** on GitHub, open the **Actions** tab → **"Build desktop apps"** → **"Run workflow"**.
+When it finishes, open the run and download the installers from the **Artifacts** section at the
+bottom.
+
+**To make a downloadable Release** (clean download links instead of artifact zips), push a version
+tag:
+```bash
+git tag desktop-v1.0.0 && git push origin desktop-v1.0.0
+```
+The installers get attached to a GitHub Release automatically.
+
+**Signing is optional** — it builds unsigned with zero setup (installers just show the OS
+"unidentified developer" warning). To sign automatically, add these repo secrets under
+**Settings → Secrets and variables → Actions**:
+- Mac: `MAC_CSC_LINK` (base64 of your Developer ID `.p12`), `MAC_CSC_KEY_PASSWORD`, plus `APPLE_ID`,
+  `APPLE_APP_SPECIFIC_PASSWORD`, `APPLE_TEAM_ID` (these turn on notarization too).
+- Windows: `WIN_CSC_LINK` (base64 of your `.pfx`), `WIN_CSC_KEY_PASSWORD`.
+
+I can walk you through generating the base64 cert values when you're ready to sign.
 
 ---
 
