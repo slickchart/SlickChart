@@ -4106,14 +4106,21 @@ function resendFormToClient(cid,fid){
   const c=CL[cid];if(!c||!formTmpls[fid])return;
   const sheet=document.getElementById('subform-sheet');if(sheet)sheet.remove();
   _assignFormsToClient(c,_isIntakeForm(fid)?_withPhotoRelease(fid):[fid]);
-  try{if(typeof saveClients==='function')saveClients();}catch(e){}
+  try{if(typeof saveClients==='function')saveClients({noSync:true});}catch(e){}
   try{
     if(!msgStore[cid])msgStore[cid]=[];
     msgStore[cid].push({from:'me',text:`Hi ${c.name.split(' ')[0]}! I've sent you the ${formTmpls[fid].name} to fill out again when you have a moment. ✨`,time:'Just now'});
     const t=threads.find(x=>x.id===cid);if(t){t.preview='A form is ready for you';}
     saveMessages();
   }catch(e){}
-  try{if(typeof _scheduleClientSync==='function')_scheduleClientSync();}catch(e){}
+  // Push to the server IMMEDIATELY (not the 2.5s debounce) so the re-sent form actually reaches the
+  // client — the debounced sync dropped if the app backgrounded/navigated within the window.
+  try{
+    if(c._token&&typeof _syncSpecificClientsToServer==='function'){
+      if(typeof _specificSyncTimers!=='undefined'&&_specificSyncTimers[cid]){clearTimeout(_specificSyncTimers[cid]);delete _specificSyncTimers[cid];}
+      _syncSpecificClientsToServer([cid],{});
+    } else if(typeof _scheduleClientSync==='function')_scheduleClientSync();
+  }catch(e){}
   if(typeof proToast==='function')proToast(formTmpls[fid].name+' resent to '+c.name.split(' ')[0]);
 }
 // ── Per-client forms storage: intakes, consents, signed forms ──
@@ -8795,6 +8802,10 @@ function confirmSendForm(fid,cid){
       proToast(`${c.name.split(' ')[0]} hasn't been invited to the app yet, invite them first, then this form will be waiting for them`);
       return;
     }
+    // Push to the server IMMEDIATELY (not the 2.5s debounce) so the form + guides actually reach the
+    // client — the debounced sync dropped if the app backgrounded/navigated within the window, and
+    // the provider saw "Sent" while nothing arrived (even on refresh).
+    try{ if(typeof _syncSpecificClientsToServer==='function'){ if(typeof _specificSyncTimers!=='undefined'&&_specificSyncTimers[cid]){clearTimeout(_specificSyncTimers[cid]);delete _specificSyncTimers[cid];} _syncSpecificClientsToServer([cid],{}); } }catch(e){}
   }else if(cid!=='maya'){
     // Neither the demo client nor a resolvable real client — don't claim "Sent" and drop it.
     closeSendProd();
@@ -10572,7 +10583,13 @@ function sendFirstVisitPackage(id){
   const intakeFid=(typeof _ncIntakeFormId==='function')?_ncIntakeFormId():null;
   if(intakeFid&&formTmpls[intakeFid]){
     _assignFormsToClient(c,_withPhotoRelease(intakeFid));
-    try{saveClients();}catch(e){}
+    try{saveClients({noSync:true});}catch(e){}
+    // Push the just-assigned intake to the server RIGHT NOW (not the 2.5s debounce) so a client who
+    // opens their link immediately — e.g. handed to them in person — actually receives the new-client
+    // flow. Without this, a client who already had a token only got the debounced sync, which drops
+    // if the app backgrounds/navigates, so the form never arrived even on refresh. (A brand-new
+    // client with no token yet gets the token-creating sync inside inviteClientToApp below.)
+    try{ if(c._token&&typeof _syncSpecificClientsToServer==='function'){ if(typeof _specificSyncTimers!=='undefined'&&_specificSyncTimers[id]){clearTimeout(_specificSyncTimers[id]);delete _specificSyncTimers[id];} _syncSpecificClientsToServer([id],{}); } }catch(e){}
   }
   // The invite sheet itself handles the actual send/share step, this just
   // makes sure the intake form (+ photo release) is already waiting for them
@@ -10631,7 +10648,16 @@ function inviteClientToApp(id){
 // clear confirmation toast instead of the sheet closing to a blank screen with no feedback.
 function _confirmSentToApp(id){
   const c=CL[id];if(!c)return;
-  try{if(typeof _scheduleSpecificClientSync==='function')_scheduleSpecificClientSync(id);else if(typeof _scheduleClientSync==='function')_scheduleClientSync();}catch(e){}
+  // Push THIS client's data to the server IMMEDIATELY (not the 2.5s debounce). The debounced path
+  // was silently dropped if the app backgrounded or navigated within the window, so the "Sent ✓"
+  // toast appeared while nothing actually reached the client's app — even after they refreshed.
+  try{
+    if(c._token&&typeof _syncSpecificClientsToServer==='function'){
+      if(typeof _specificSyncTimers!=='undefined'&&_specificSyncTimers[id]){clearTimeout(_specificSyncTimers[id]);delete _specificSyncTimers[id];}
+      _syncSpecificClientsToServer([id],{});
+    } else if(typeof _scheduleSpecificClientSync==='function')_scheduleSpecificClientSync(id);
+    else if(typeof _scheduleClientSync==='function')_scheduleClientSync();
+  }catch(e){}
   try{_markInvited(id);}catch(e){}
   if(typeof proToast==='function')proToast('Sent to '+((c.name||'client').split(' ')[0])+'’s app ✓');
 }
