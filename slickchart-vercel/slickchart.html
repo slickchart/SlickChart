@@ -35,9 +35,11 @@ html{overflow-x:hidden;}
 .logo i{font-size:15px;color:#fff;}
 #tt{font-size:17px;font-weight:500;color:#f0f0f0;flex:1;}
 .av{width:30px;height:30px;border-radius:50%;background:#2e2318;display:flex;align-items:center;justify-content:center;font-size:11px;font-weight:500;color:var(--accent);cursor:pointer;flex-shrink:0;}
-.scr{flex:1;min-height:0;overflow-y:auto;padding-bottom:calc(78px + env(safe-area-inset-bottom, 0px));-webkit-overflow-scrolling:touch;}
+.scr{flex:1;min-height:0;overflow-y:auto;padding-bottom:16px;-webkit-overflow-scrolling:touch;}
 .scr::-webkit-scrollbar{display:none;}
-.nav{position:absolute;bottom:0;left:0;right:0;background:#161616;border-top:1px solid #222;display:flex;padding:6px 0 calc(10px + env(safe-area-inset-bottom, 0px));z-index:5;}
+/* In-flow flex child (not position:absolute) so the bottom bar always sits flush at the bottom of the
+   shell and can never drop below the visible viewport on tall mobile screens. */
+.nav{flex-shrink:0;background:#161616;border-top:1px solid #222;display:flex;padding:6px 0 calc(10px + env(safe-area-inset-bottom, 0px));z-index:5;}
 .ni{flex:1;display:flex;flex-direction:column;align-items:center;gap:2px;cursor:pointer;padding:3px 0;border:none;background:none;min-height:44px;justify-content:center;}
 .ni i{font-size:16px;color:#aaa;}
 .ni span{font-size:11px;color:#aaa;}
@@ -3514,6 +3516,18 @@ function renderHome(){
         const when=a.at.toLocaleDateString('en-US',{weekday:'short',month:'short',day:'numeric'})+' · '+a.at.toLocaleTimeString('en-US',{hour:'numeric',minute:'2-digit'});
         const cid=_clientIdByName(a.client);
         return '<div class="card" onclick="nav(\''+(cid?'client':'calendar')+'\''+(cid?",'"+cid+"'":'')+')"><div class="row"><div style="width:38px;height:38px;border-radius:50%;background:#2e1c10;color:var(--accent);display:flex;align-items:center;justify-content:center;font-weight:600;font-size:13px;flex-shrink:0;">'+ini+'</div><div style="flex:1;min-width:0;"><div style="font-size:15px;font-weight:500;color:#f0f0f0;">'+a.client+'</div><div style="font-size:12px;color:#999;margin-top:2px;">'+when+(a.dur?' · '+a.dur+' min':'')+'</div></div><span class="bdg bg" style="font-size:12px;">Confirmed</span></div></div>';
+      }).join('');
+    }
+    // Sample/demo mode: show the same real-week sample appointments the calendar uses so Up next
+    // isn't an empty "connect Square" prompt during screenshots or on a fresh account.
+    if(typeof _sampleHidden==='function'&&!_sampleHidden()){
+      const now=new Date();
+      const up=_realApptsMerged().filter(a=>a.at&&a.at>=new Date(now.getTime()-3600000)).sort((a,b)=>a.at-b.at).slice(0,3);
+      if(up.length)return up.map(a=>{
+        const ini=String(a.client||'Client').trim().split(/\s+/).map(w=>w[0]||'').slice(0,2).join('').toUpperCase()||'C';
+        const when=a.at.toLocaleDateString('en-US',{weekday:'short',month:'short',day:'numeric'})+' \u00b7 '+a.at.toLocaleTimeString('en-US',{hour:'numeric',minute:'2-digit'});
+        const cid=_clientIdByName(a.client);
+        return '<div class="card" onclick="nav(\''+(cid?'client':'calendar')+'\''+(cid?",'"+cid+"'":'')+')"><div class="row"><div style="width:38px;height:38px;border-radius:50%;background:#2e1c10;color:var(--accent);display:flex;align-items:center;justify-content:center;font-weight:600;font-size:13px;flex-shrink:0;">'+ini+'</div><div style="flex:1;min-width:0;"><div style="font-size:15px;font-weight:500;color:#f0f0f0;">'+_fileEsc(a.client)+'</div><div style="font-size:12px;color:#999;margin-top:2px;">'+when+(a.dur?' \u00b7 '+a.dur+' min':'')+'</div></div><span class="bdg bg" style="font-size:12px;">Confirmed</span></div></div>';
       }).join('');
     }
     return '<div class="card"><div style="padding:18px 16px;text-align:center;color:#999;font-size:13px;">Connect Square, or add appointments yourself, to see what\u2019s coming up.<div style="font-size:12px;color:#929292;margin-top:4px;"><a href="#" onclick="nav(\'data-setup\');return false;" style="color:var(--accent);">Get set up \u2192</a></div></div></div>';
@@ -16511,6 +16525,10 @@ function _isRealApptAcct(){return _sampleHidden()||(typeof Cloud!=='undefined'&&
 function _realApptsMerged(){
   const out=[];
   if(_apptsLive())squareAppts.forEach(a=>{if(a.at&&!isNaN(a.at))out.push(a);});
+  // Sample/demo mode (sample data on, no live Square): surface the same real-week-anchored sample
+  // appointments the calendar already uses, so Today's appts, Up next, and This week look alive for
+  // screenshots and brand-new accounts instead of an empty schedule that reads as broken.
+  else if(typeof _sampleHidden==='function'&&!_sampleHidden()){try{_sampleCalAppts().forEach(function(a){if(a.when&&!isNaN(a.when))out.push({at:a.when,client:a.title,tx:a.sub||'Appointment',dur:60,ic:a.ic||'var(--accent)',source:'sample'});});}catch(e){}}
   (typeof manualAppts!=='undefined'?manualAppts:[]).forEach(a=>{let w=null;try{w=_apptWhen(a.date,a.time);}catch(e){}if(w&&!isNaN(w))out.push({id:a.id,at:w,client:a.client,tx:a.tx||'Appointment',dur:a.dur||60,ic:a.ic||'var(--accent)',clientId:a.clientId||'',source:'manual'});});
   // Bookings confirmed from client requests live in confirmedAppts (re-seeded from bookings on boot).
   // They show on the calendar via _allApptsUnified, so Today's/This-week's must include them too or a
