@@ -6,6 +6,7 @@ import { dbEnabled } from '../lib/db.js';
 import { sql } from '../lib/db.js';
 import { ensureClientTables, logEvent, listPushSubs, deletePushSub } from '../lib/clients.js';
 import { sendPushToAll } from '../lib/push.js';
+import { sendNativeToClient } from '../lib/fcm.js';
 
 function providerId(req) {
   const s = process.env.SESSION_SECRET || '';
@@ -55,12 +56,15 @@ export default async function handler(req, res) {
       if (wants) {
         const who = (rows[0].data && rows[0].data.providerName) || 'your provider';
         const preview = text ? text : (photos.length ? (photos.length > 1 ? '📷 ' + photos.length + ' photos' : '📷 Photo') : 'New message');
+        const shortBody = preview.length > 140 ? preview.slice(0, 139) + '…' : preview;
         const subs = await listPushSubs(clientId);
         await sendPushToAll(subs, {
           title: 'New message from ' + who,
-          body: preview.length > 140 ? preview.slice(0, 139) + '…' : preview,
+          body: shortBody,
           url: '/client', tag: 'msg-' + clientId, renotify: true
         }, deletePushSub);
+        // Same message to the client's native app (Capacitor iOS/Android), if they installed it.
+        try { await sendNativeToClient(clientId, { title: 'New message from ' + who, body: shortBody, url: '/client', tag: 'msg-' + clientId }); } catch (e) {}
       }
     } catch (e) { /* push is best-effort */ }
 

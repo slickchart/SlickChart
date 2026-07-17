@@ -63,6 +63,27 @@ export default async function handler(req, res) {
     const idem = payload && payload._idem;
     if (payload && payload._idem) { delete payload._idem; }
     const id = await logEvent(c.provider_id, c.id, kind, payload, idem);
+    // Best-effort: nudge the provider's native app that a client did something worth a look.
+    // Never let a push failure affect the client's submit result.
+    try {
+      const LABEL = {
+        message: 'sent you a message',
+        booking: 'requested a booking',
+        checkin: 'submitted a check-in',
+        contact: 'sent you a request',
+        vc_submit: 'submitted a consult',
+        form: 'completed a form'
+      };
+      if (LABEL[kind] && c.provider_id) {
+        const who = (c.name && String(c.name).trim()) || 'A client';
+        const { sendNativeToProvider } = await import('../lib/fcm.js');
+        await sendNativeToProvider(c.provider_id, {
+          title: who + ' ' + LABEL[kind],
+          body: 'Tap to review in SlickChart.',
+          url: '/', tag: 'client-' + c.id
+        });
+      }
+    } catch (e) { /* push is best-effort */ }
     res.status(200).json({ ok: true, id });
   } catch (e) { console.error('[client-submit] failed:', e && e.stack || e); res.status(e.status || 500).json({ error: 'Something went wrong. Please try again.' }); }
 }
