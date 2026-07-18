@@ -2,7 +2,7 @@
 // Square redirects the seller here after they approve. We verify the signed state,
 // exchange the code for tokens, store them (encrypted) for that provider, then send
 // them back into the app.
-import { exchangeCode, storeConnection, getConnection } from '../../lib/square.js';
+import { exchangeCode, storeConnection, getConnection, squareRedirectUri } from '../../lib/square.js';
 import { verifyToken } from '../../lib/auth.js';
 import { appOrigin } from '../../lib/email.js';
 
@@ -22,7 +22,8 @@ export default async function handler(req, res) {
   if (!payload || payload.p !== 'sq' || !payload.u) { backTo(res, origin, { sq: 'error', reason: 'invalid_state' }); return; }
   if (!code) { backTo(res, origin, { sq: 'error', reason: 'no_code' }); return; }
   try {
-    const redirectUri = origin + '/api/square/callback';
+    // Must byte-for-byte match the redirect_uri used in the authorize step (api/square/connect).
+    const redirectUri = squareRedirectUri(req);
     const tokens = await exchangeCode(code, redirectUri);
     await storeConnection(payload.u, tokens);
     backTo(res, origin, { sq: 'connected' });

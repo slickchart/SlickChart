@@ -11,12 +11,13 @@
 // string. Each reminder-instance is claimed atomically (reminder_log) so it fires once even
 // though the cron runs every hour across the send window. Everything is best-effort and
 // gated on the client's own notification toggles + quiet hours.
-import { dbEnabled } from '../lib/db.js';
+import { dbEnabled, sql } from '../lib/db.js';
 import {
   ensureClientTables, listAllClientPrefs, listPushSubs, deletePushSub, claimReminder,
   logEvent, clearHealStartById
 } from '../lib/clients.js';
 import { pushConfigured, sendPushToAll } from '../lib/push.js';
+import { sendNativeToClient, fcmConfigured } from '../lib/fcm.js';
 
 const HOUR = 3600 * 1000;
 
@@ -158,7 +159,14 @@ export default async function handler(req, res) {
 
       if (!due.length) continue;
       const subs = await listPushSubs(row.client_id);
-      if (!subs.length) continue;
+      // A reminder reaches the client on EITHER channel — browser web-push and/or their native
+      // app. A native-only install has no web-push subscription, so don't skip on empty `subs`
+      // alone; check for a native token too before deciding there's no one to notify.
+      let hasNative = false;
+      if (fcmConfigured()) {
+        try { const q = sql(); const nt = await q`SELECT 1 FROM native_push_tokens WHERE owner_kind='client' AND owner_id=${row.client_id} LIMIT 1`; hasNative = !!(nt && nt.length); } catch (e) {}
+      }
+      if (!subs.length && !hasNative) continue;
 
       for (const r of due) {
         // Claim first so overlapping cron runs can't double-send; only then push.
@@ -170,7 +178,9 @@ export default async function handler(req, res) {
           try { await logEvent(row.provider_id, row.client_id, 'provider_message', { text: r.healMsg, photos: [], auto: true }); } catch (e) {}
         }
         const sent = await sendPushToAll(subs, { title: r.title, body: r.body, url: '/client', tag: r.rkey, renotify: true }, deletePushSub);
-        summary.devices += sent;
+        let nativeSent = 0;
+        if (hasNative) { try { nativeSent = await sendNativeToClient(row.client_id, { title: r.title, body: r.body, url: '/client', tag: r.rkey }); } catch (e) {} }
+        summary.devices += sent + nativeSent;
         if (r.rkey.startsWith('apptbefore')) summary.apptBefore++;
         else if (r.rkey.startsWith('apptday')) summary.apptDay++;
         else if (r.isHeal) summary.aftercare++;

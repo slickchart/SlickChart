@@ -70,6 +70,20 @@ export async function resolveLocationId(token, stored) {
 }
 
 // ── OAuth ────────────────────────────────────────────────────────────────────
+// The redirect_uri MUST byte-for-byte match the Redirect URL registered in the Square
+// Developer Dashboard, or Square rejects the authorize call with "Invalid value for
+// parameter `redirect_uri`". Deriving it from the request host makes it vary by whichever
+// domain the app was opened from (slickchart.app vs slick-chart.vercel.app), which breaks
+// the match. Pin it with SQUARE_REDIRECT_URI so authorize AND the token exchange always
+// send the one canonical value that's registered. Falls back to the request host only when
+// the env var isn't set (preserves old behavior for existing setups).
+export function squareRedirectUri(req) {
+  const fixed = (process.env.SQUARE_REDIRECT_URI || '').trim();
+  if (fixed) return fixed;
+  const host = (req && (req.headers['x-forwarded-host'] || req.headers.host)) || 'slickchart.app';
+  const proto = (req && req.headers['x-forwarded-proto']) || 'https';
+  return proto + '://' + host + '/api/square/callback';
+}
 export function authorizeUrl(state, redirectUri) {
   const cfg = squareConfig();
   const p = new URLSearchParams({ client_id: cfg.appId, scope: SQUARE_SCOPES, session: 'false', state });

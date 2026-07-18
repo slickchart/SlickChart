@@ -21,6 +21,9 @@ Then run `npm run cap:sync`.
 - `android/google-services.json` — Firebase Android config. Project **slickchart-2097d**, package
   **com.slickchart.app**. (Safe to commit — this file is designed to ship inside the Android app; its
   API key is restricted to your package. It is NOT the service-account secret.)
+- `ios/GoogleService-Info.plist` — Firebase iOS config. Same project, bundle **com.slickchart.app**.
+  (Also safe to commit — it's designed to ship inside the iOS app, and is NOT the service-account
+  secret.) On the Mac it belongs in the iOS app target — added via Xcode at `ios/App/App/`.
 
 ## What is NOT here (and must never be committed / pasted in chat)
 - The **service account key** (Firebase → Project settings → Service accounts → Generate new private
