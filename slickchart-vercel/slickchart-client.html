@@ -2058,7 +2058,7 @@ function renderHome(){
     <div style="display:flex;gap:8px;margin-top:14px;">
       <button onclick="nav('rebook')" aria-label="Request an appointment" style="flex:1;background:rgba(255,255,255,.12);border:1px solid rgba(255,255,255,.22);border-radius:10px;padding:10px;display:flex;align-items:center;justify-content:center;gap:7px;cursor:pointer;">
         <i class="ti ti-calendar-plus" aria-hidden="true" style="font-size:15px;color:var(--accent-lt2);"></i>
-        <span style="font-size:13px;font-weight:600;color:var(--accent-lt2);">${noAppt?'Request an appointment':past?'Book your next visit':'Book another'}</span>
+        <span style="font-size:13px;font-weight:600;color:var(--accent-lt2);">${noAppt?'Request an appointment':past?'Request your next visit':'Request another visit'}</span>
       </button>
       ${(noAppt||past)?'':`<button onclick="openCalModal()" aria-label="Add to calendar" style="flex:1;background:rgba(255,255,255,.12);border:1px solid rgba(255,255,255,.22);border-radius:10px;padding:10px;display:flex;align-items:center;justify-content:center;gap:7px;cursor:pointer;">
         <i class="ti ti-calendar-check" aria-hidden="true" style="font-size:15px;color:var(--accent-lt2);"></i>
@@ -2155,7 +2155,7 @@ function renderHome(){
 }
 // Clear the home "Add to home screen" card. Persisted so it stays gone; the header install button
 // and the profile card still let them install later if they change their mind.
-function _dismissA2HS(){try{localStorage.setItem('sc_a2hs_dismissed','1');}catch(e){}try{if(typeof _syncClientPrefsToServer==='function')_syncClientPrefsToServer();}catch(e){}try{if(typeof renderHome==='function')renderHome();}catch(e){}}
+function _dismissA2HS(){try{localStorage.setItem('sc_a2hs_dismissed','1');localStorage.setItem('sc_install_dismissed','1');}catch(e){}try{var b=document.getElementById('sc-install');if(b)b.remove();}catch(e){}try{if(typeof _syncClientPrefsToServer==='function')_syncClientPrefsToServer();}catch(e){}try{if(typeof renderHome==='function')renderHome();}catch(e){}}
 
 // ── JOURNEY ──
 
@@ -4102,13 +4102,12 @@ function reviewClientForm(fid){
       ${f.contra.map((it,ix)=>`<label style="display:flex;align-items:flex-start;gap:9px;padding:7px 0;cursor:pointer;"><input type="checkbox" id="cfc-${ix}" style="width:17px;height:17px;margin-top:1px;accent-color:#c0492a;flex-shrink:0;"><span style="font-size:12.5px;color:#6b4536;line-height:1.5;">${_txt(it)}</span></label>`).join('')}
     </div>`:''}
     <div style="font-size:13px;color:#4a4038;line-height:1.6;margin-bottom:10px;font-weight:600;">${_txt(f.consent||'I consent to treatment and confirm my information is accurate.')}</div>
-    <div style="font-size:11px;color:#786858;margin-bottom:6px;">Sign with your finger below</div>
-    <canvas id="cf-sign-pad" style="width:100%;height:150px;background:#faf7f3;border:1px solid #e8ddd2;border-radius:12px;touch-action:none;display:block;"></canvas>
-    <button onclick="_cfClear()" style="margin:6px 0 12px;background:none;border:none;color:#786858;font-size:12px;cursor:pointer;"><i class="ti ti-eraser" style="font-size:12px;"></i> Clear</button>
+    <div style="font-size:11px;color:#786858;margin-bottom:6px;">Sign by typing your full name</div>
+    <input id="cf-sign-name" type="text" aria-label="Type your full name to sign" placeholder="Type your full name to sign" value="${_txt(client.name||'').replace(/"/g,'&quot;')}" style="width:100%;box-sizing:border-box;background:#faf7f3;border:1px solid #e8ddd2;border-radius:12px;padding:12px;font-size:16px;font-family:'Brush Script MT',cursive;color:#3a2f28;outline:none;">
+    <div style="font-size:11px;color:#786858;margin:5px 0 12px;">Typing your name here serves as your signature.</div>
     <button onclick="submitClientForm('${fid}')" style="width:100%;background:var(--accent);color:#fff;border:none;border-radius:11px;padding:14px;font-size:14px;font-weight:700;cursor:pointer;">Submit &amp; sign</button>
   </div>`;
   (document.querySelector('.shell')||document.body).appendChild(ov);
-  setTimeout(_cfSignInit,0);
 }
 function _cfSignInit(){
   const c=document.getElementById('cf-sign-pad');if(!c||!c.getContext)return;
@@ -4132,13 +4131,14 @@ function _cfClear(){const c=document.getElementById('cf-sign-pad');if(c&&c.getCo
 function submitClientForm(fid){
   const jess=client.providers.find(p=>p.id==='jess');if(!jess||!jess.forms)return;
   const f=jess.forms.find(x=>x.id===fid);if(!f)return;
-  if(!_cfPadInk){showToast('Please sign in the box to submit',false);return;}
+  const _signEl=document.getElementById('cf-sign-name');const _signName=_signEl?_signEl.value.trim():'';
+  if(!_signName){showToast('Please type your name to sign',false);if(_signEl)_signEl.focus();return;}
   // collect answers keyed by question id
   const answers={};
   (f.qs||[]).forEach(q=>{if(q.type==='Signature'||q.type==='Contraindications')return;const id='cf-'+(q.id!=null?q.id:'');const el=document.getElementById(id);let v;if(el&&('value' in el))v=el.value;if(v==null||v==='')v=(window._cfAns||{})[id];if(v!=null&&String(v).trim()!=='')answers[q.id]=v;});
   // flagged contraindications = checked boxes
   const flagged=[];(f.contra||[]).forEach((it,ix)=>{const cb=document.getElementById('cfc-'+ix);if(cb&&cb.checked)flagged.push(it);});
-  try{SlickBridge.post('form-completed',{providerId:'jess',clientId:'maya',formId:fid,title:f.title,answers,flagged,signed:true,date:'Today'});}catch(e){}
+  try{SlickBridge.post('form-completed',{providerId:'jess',clientId:'maya',formId:fid,title:f.title,answers,flagged,signed:true,signature:_signName,date:'Today'});}catch(e){}
   const _finishSigned=()=>{
     f.status='Completed ✓';f.answers=answers;f.flagged=flagged;
     const sheet=document.getElementById('form-review-sheet');if(sheet)sheet.remove();
@@ -4150,7 +4150,7 @@ function submitClientForm(fid){
     // provider, confirm before marking it complete, so a dropped submit is retryable.
     const btn=(typeof event!=='undefined'&&event&&event.target&&event.target.closest)?event.target.closest('button'):null;
     if(btn){btn.disabled=true;btn.textContent='Sending…';}
-    _clientSubmit('form',{formId:fid,title:f.title,answers,flagged,signed:true,date:'Today'})
+    _clientSubmit('form',{formId:fid,title:f.title,answers,flagged,signed:true,signature:_signName,date:'Today'})
       .then(function(res){
         if(res&&res.ok!==false)_finishSigned();
         else{ if(btn){btn.disabled=false;btn.innerHTML='Submit &amp; sign';} showToast("Couldn't send, check your connection and tap Submit again",false); }
@@ -4160,7 +4160,9 @@ function submitClientForm(fid){
   _finishSigned();
 }
 function renderMagicLanding(){
-  const navEl=document.querySelector('.nav');if(navEl)navEl.style.display='none';
+  // Keep the bottom tab bar visible (Home tab active) so a client who lands here from a magic link
+  // can still reach Journey, Homecare, Messages & Shop — previously the nav was hidden and trapped them.
+  setNav('home');
   document.getElementById('tt').textContent='Your Visit';
   const p=activeProvider();
   const summaries=p.summaries||[];
@@ -4284,7 +4286,7 @@ function renderMagicLanding(){
     <button onclick="_clientInstall()" style="background:var(--accent);border:none;color:#1a1408;border-radius:9px;padding:9px 14px;font-size:12px;font-weight:700;cursor:pointer;font-family:inherit;flex-shrink:0;">Add</button>
   </div>
 
-  <div style="padding:6px 16px 24px;text-align:center;">
+  <div style="padding:6px 16px 88px;text-align:center;">
     <div style="font-size:11px;color:#82715f;line-height:1.6;">This private link was shared with you by ${_txt(client.providerFirst)}.<br>${_txt(client.studio)}${client.website?' · '+_txt(client.website):''}</div>
   </div>`;
 }
@@ -5203,8 +5205,12 @@ function _clientInstall(){
     // been dismissed. (Previously an early return on dismissal skipped this listener entirely, so one-tap
     // install was permanently dead after a single dismissal.)
     var _instDismissed=false;try{_instDismissed=localStorage.getItem('sc_install_dismissed')==='1';}catch(e){}
-    window.addEventListener('beforeinstallprompt', function(e){ e.preventDefault(); deferred=e; window._scDeferredInstall=e; if(!_instDismissed) setTimeout(function(){ banner('android'); }, 1500); });
-    if(_instDismissed) return;   // don't auto-show the iOS banner if it was dismissed
+    // Defer to the in-context "Add to home screen" card on Home: only auto-show this bottom banner
+    // once that card has been dismissed, so a client never sees two install nudges at once. The
+    // deferred prompt is still captured below, so the card's "Show me" can fire native install.
+    var _cardPending=true;try{_cardPending=localStorage.getItem('sc_a2hs_dismissed')!=='1';}catch(e){}
+    window.addEventListener('beforeinstallprompt', function(e){ e.preventDefault(); deferred=e; window._scDeferredInstall=e; if(!_instDismissed && !_cardPending) setTimeout(function(){ banner('android'); }, 1500); });
+    if(_instDismissed || _cardPending) return;   // don't auto-show the bottom banner while the Home card can still show
     var ua=navigator.userAgent||'';
     var isIOS=/iphone|ipad|ipod/i.test(ua);
     var isSafari=/safari/i.test(ua) && !/crios|fxios|edgios|chrome|android/i.test(ua);
