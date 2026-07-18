@@ -3925,6 +3925,36 @@ function _toggleSummaryGuide(gi){
   tips.style.display=open?'none':'block';
   if(chev)chev.style.transform=open?'':'rotate(180deg)';
 }
+// ── Client-side AI helper: posts to the same /api/ai proxy the provider app uses.
+//    No provider session here, so the proxy rate-limits by IP; throws if AI is off
+//    so the caller can fall back to "message your provider". ──
+async function _clientAI(messages,maxTokens){
+  const res=await fetch('/api/ai',{method:'POST',headers:{'Content-Type':'application/json'},body:JSON.stringify({messages,max_tokens:maxTokens||600})});
+  if(!res.ok)throw new Error('ai-http-'+res.status);
+  const data=await res.json().catch(()=>({}));
+  if(!data||data.enabled===false)throw new Error('ai-disabled');
+  if(data.error)throw new Error(data.error);
+  return (data.content||[]).map(b=>b.text||'').join('');
+}
+function _askCareChip(el){const t=document.getElementById('care-q');if(t){t.value=el.getAttribute('data-q')||el.textContent.trim();_askCare();}}
+async function _askCare(){
+  const inp=document.getElementById('care-q');const out=document.getElementById('care-answer');if(!inp||!out)return;
+  const q=inp.value.trim();if(!q){inp.focus();return;}
+  out.style.display='block';
+  out.innerHTML='<div style="color:#786858;font-size:13px;display:flex;align-items:center;gap:7px;"><i class="ti ti-loader-2" style="color:var(--accent);"></i> Thinking…</div>';
+  const ctx=window._careCtx||{};const who=_txt(ctx.provider||'your provider');
+  const parts=[];
+  if(ctx.treatment)parts.push('Treatment: '+ctx.treatment);
+  if(ctx.note)parts.push('Provider’s note: '+ctx.note);
+  if(ctx.homecare&&ctx.homecare.length)parts.push('Homecare routine: '+ctx.homecare.join('; '));
+  if(ctx.guides&&ctx.guides.length)parts.push('Aftercare guides: '+ctx.guides.map(g=>g.title+(g.tips&&g.tips.length?(' ('+g.tips.join('; ')+')'):'')).join(' | '));
+  if(ctx.products&&ctx.products.length)parts.push('Recommended products: '+ctx.products.join(', '));
+  const sys='You are a warm, friendly assistant on a beauty & wellness client’s personal aftercare page from '+(ctx.provider||'their provider')+'. Answer the client’s question using ONLY the aftercare information below. Keep it short (2–4 sentences), kind and practical. If the answer isn’t in the information, or the question is medical, urgent, or about changing their treatment, gently say you’re not certain and suggest they message '+(ctx.provider||'their provider')+' directly. Never diagnose, never give medical advice, and never invent product names, timings, or steps that aren’t provided.';
+  let ans='';try{ans=await _clientAI([{role:'user',content:sys+'\n\nAftercare information:\n'+parts.join('\n')+'\n\nClient’s question: '+q}],600);}catch(e){ans='';}
+  const o2=document.getElementById('care-answer');if(!o2)return;
+  if(ans&&ans.trim())o2.innerHTML='<div style="font-size:13.5px;color:#1a1a1a;line-height:1.7;">'+_txt(ans.trim())+'</div><div style="font-size:11px;color:#9a8a78;margin-top:8px;">For anything urgent or medical, message '+who+'.</div>';
+  else o2.innerHTML='<div style="font-size:13px;color:#786858;line-height:1.6;">I couldn’t answer that just now — please message '+who+', they’ll be happy to help.</div>';
+}
 function renderLatestSummary(){
   setNav('home');
   document.getElementById('tt').textContent='Session Summary';
@@ -4012,6 +4042,22 @@ function renderLatestSummary(){
       <button class="btng" style="flex:1;" onclick="nav('messages')"><i class="ti ti-message-circle" aria-hidden="true"></i> Message ${_txt(client.providerFirst)}</button>
     </div>
   </div>
+
+  <!-- Ask about your aftercare (AI, grounded in this summary) -->
+  ${(s.note||(s.guides&&s.guides.length)||(s.homecare&&s.homecare.length))?`
+  ${(function(){window._careCtx={provider:client.providerFirst||'your provider',studio:client.studio||'',treatment:client.treatment||'',note:s.note||'',guides:(s.guides||[]).map(g=>({title:g.title,tips:g.tips||[]})),homecare:s.homecare||[],products:(products||[]).map(p=>p.name).filter(Boolean)};return'';})()}
+  <div style="background:#fff;border:1.5px solid #f0ebe4;border-radius:12px;margin:0 16px 10px;padding:14px 16px;">
+    <div style="display:flex;align-items:center;gap:7px;margin-bottom:4px;"><i class="ti ti-sparkles" aria-hidden="true" style="font-size:15px;color:var(--accent);"></i><span style="font-size:12px;font-weight:600;color:#786858;text-transform:uppercase;letter-spacing:.07em;">Ask about your aftercare</span></div>
+    <div style="font-size:12px;color:#8a7a68;line-height:1.5;margin-bottom:10px;">Questions about your routine or aftercare? Ask here — answers come from ${_txt(client.providerFirst)}’s notes for you.</div>
+    <div style="display:flex;flex-wrap:wrap;gap:6px;margin-bottom:10px;">
+      ${['When can I wear makeup again?','How should I use my products?','What should I avoid?'].map(qq=>`<button type="button" onclick="_askCareChip(this)" data-q="${_txt(qq)}" style="background:#faf7f3;border:1px solid #e8ddd2;border-radius:16px;padding:6px 11px;font-size:12px;color:#5a4a3a;cursor:pointer;font-family:inherit;">${_txt(qq)}</button>`).join('')}
+    </div>
+    <div style="display:flex;gap:7px;">
+      <input id="care-q" aria-label="Ask a question about your aftercare" placeholder="Type your question…" onkeydown="if(event.key==='Enter'){event.preventDefault();_askCare();}" style="flex:1;box-sizing:border-box;background:#faf7f3;border:1px solid #e8ddd2;border-radius:10px;padding:10px 12px;font-size:14px;color:#1a1a1a;font-family:inherit;outline:none;">
+      <button onclick="_askCare()" aria-label="Ask" style="background:var(--accent);color:#fff;border:none;border-radius:10px;padding:0 15px;font-size:13px;font-weight:600;cursor:pointer;flex-shrink:0;">Ask</button>
+    </div>
+    <div id="care-answer" style="display:none;margin-top:12px;background:#faf7f3;border:1px solid #f0ebe4;border-radius:10px;padding:12px 13px;"></div>
+  </div>`:''}
 
   <!-- Footer -->
   <div style="padding:12px 16px 20px;display:flex;align-items:center;justify-content:center;gap:4px;">
