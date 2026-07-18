@@ -10628,6 +10628,15 @@ function _scheduleSpecificClientSync(cid){
   if(_specificSyncTimers[cid])clearTimeout(_specificSyncTimers[cid]);
   _specificSyncTimers[cid]=setTimeout(function(){delete _specificSyncTimers[cid];try{_syncSpecificClientsToServer([cid],{});}catch(e){}},2500);
 }
+// Surface an expired/dropped session ONCE (not spammy) whenever the server reports the provider is
+// signed out, so background/debounced syncs — and any form/guide send — can't keep failing silently.
+let _signedOutNoticeAt=0;
+function _noteSignedOut(){
+  const now=(function(){try{return Date.now();}catch(e){return 0;}})();
+  if(_signedOutNoticeAt&&(now-_signedOutNoticeAt)<30000)return;
+  _signedOutNoticeAt=now;
+  if(typeof proToast==='function')proToast('You’ve been signed out — sign in again to keep sending to clients and syncing.',0);
+}
 // Sync only the given client ids (fast path for invites) instead of the whole roster.
 async function _syncSpecificClientsToServer(ids,opts){
   opts=opts||{};
@@ -10637,6 +10646,7 @@ async function _syncSpecificClientsToServer(ids,opts){
   if(!list.length)return {ok:true,clients:[]};
   try{
     const r=await fetch('/api/clients',{method:'POST',headers:{'Content-Type':'application/json','Authorization':'Bearer '+tok},body:JSON.stringify({clients:list})});
+    if(r.status===401){try{_noteSignedOut();}catch(e){}}
     const j=await r.json();
     if(j&&j.ok&&Array.isArray(j.clients)){
       j.clients.forEach(function(sc){ if(CL[sc.id])CL[sc.id]._token=sc.token; });
