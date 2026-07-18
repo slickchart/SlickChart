@@ -8990,7 +8990,7 @@ function _sendCheckedSuggestions(id,sug){
   _sendAdHocBundle(id,checked);
 }
 function _isIntakeForm(fid){return fid==='intake'||/-intake$/.test(fid||'');}
-function confirmSendForm(fid,cid){
+async function confirmSendForm(fid,cid){
   const tmpl=formTmpls[fid];if(!tmpl)return;
   const guides=formGuideList(fid);
   const ci=(tmpl.qs||[]).find(q=>q.type==='Contraindications');
@@ -9014,10 +9014,15 @@ function confirmSendForm(fid,cid){
       proToast(`${c.name.split(' ')[0]} hasn't been invited to the app yet, invite them first, then this form will be waiting for them`);
       return;
     }
-    // Push to the server IMMEDIATELY (not the 2.5s debounce) so the form + guides actually reach the
-    // client — the debounced sync dropped if the app backgrounded/navigated within the window, and
-    // the provider saw "Sent" while nothing arrived (even on refresh).
-    try{ if(typeof _syncSpecificClientsToServer==='function'){ if(typeof _specificSyncTimers!=='undefined'&&_specificSyncTimers[cid]){clearTimeout(_specificSyncTimers[cid]);delete _specificSyncTimers[cid];} _syncSpecificClientsToServer([cid],{}); } }catch(e){}
+    // Push to the server and AWAIT the true outcome, so a silent failure (signed out, offline, or a
+    // too-large blob) can't masquerade as "Sent" while nothing actually reached the client's app.
+    closeSendProd();
+    const _first=c.name.split(' ')[0];
+    proToast('Sending to '+_first+'…',0);
+    const _res=await _pushClientNow(cid);
+    if(_res.ok){const _extra=sendIds.length>1?` + ${sendIds.length-1} more`:'';proToast(`Sent ${tmpl.name}${_extra}${guides.length?` + ${guides.length} guide${guides.length>1?'s':''}`:''} to ${_first} ✓`);}
+    else proToast(_res.msg,0);
+    return;
   }else if(cid!=='maya'){
     // Neither the demo client nor a resolvable real client — don't claim "Sent" and drop it.
     closeSendProd();
@@ -10644,6 +10649,20 @@ async function _syncSpecificClientsToServer(ids,opts){
     return j||{ok:false,error:'Could not sync'};
   }catch(e){ if(opts.toast)proToast('Could not reach the server'); return {ok:false,error:'Could not reach the server'}; }
 }
+// Push ONE client's data to the server RIGHT NOW and report the true outcome, so a "send form/guide"
+// flow can tell the provider honestly whether it actually reached the server — instead of firing the
+// sync and unconditionally claiming "Sent" while a signed-out/offline/too-large push silently dropped
+// (which is exactly how a client can be told a form was sent yet never receive it, even on refresh).
+async function _pushClientNow(cid){
+  try{
+    if(typeof _specificSyncTimers!=='undefined'&&_specificSyncTimers[cid]){clearTimeout(_specificSyncTimers[cid]);delete _specificSyncTimers[cid];}
+    const res=await _syncSpecificClientsToServer([cid],{});
+    if(res===null)return {ok:false,msg:'You’re signed out of your SlickChart account — sign in, then tap Send again.'};
+    if(res&&res.ok&&Array.isArray(res.clients))return {ok:true};
+    if(res&&res.error==='Not signed in')return {ok:false,msg:'You’re signed out — sign in to your account, then tap Send again.'};
+    return {ok:false,msg:(res&&res.error)||'Couldn’t reach the server — check your connection and tap Send again.'};
+  }catch(e){return {ok:false,msg:'Couldn’t reach the server — check your connection and tap Send again.'};}
+}
 async function _syncClientsToServer(opts){
   opts=opts||{};
   const tok=(typeof Cloud!=='undefined'&&Cloud&&Cloud.token)||'';
@@ -10807,22 +10826,26 @@ function _assignGuidesToClient(c,guides){
   if(!Array.isArray(c.pendingGuides))c.pendingGuides=[];
   (guides||[]).forEach(g=>{const gid=(g&&(g.id||g.guideId))||g;if(gid&&!c.pendingGuides.some(pg=>pg.guideId===gid))c.pendingGuides.push({guideId:gid,assignedAt:Date.now()});});
 }
-function sendFirstVisitPackage(id){
+async function sendFirstVisitPackage(id){
   const c=CL[id];if(!c)return;
   const intakeFid=(typeof _ncIntakeFormId==='function')?_ncIntakeFormId():null;
   if(intakeFid&&formTmpls[intakeFid]){
     _assignFormsToClient(c,_withPhotoRelease(intakeFid));
     try{saveClients({noSync:true});}catch(e){}
-    // Push the just-assigned intake to the server RIGHT NOW (not the 2.5s debounce) so a client who
-    // opens their link immediately — e.g. handed to them in person — actually receives the new-client
-    // flow. Without this, a client who already had a token only got the debounced sync, which drops
-    // if the app backgrounds/navigates, so the form never arrived even on refresh. (A brand-new
+    // Push the just-assigned intake to the server RIGHT NOW and AWAIT the outcome so a client who opens
+    // their link immediately actually receives the new-client flow. If the push fails (signed out /
+    // offline), warn the provider instead of silently inviting them to a formless app. (A brand-new
     // client with no token yet gets the token-creating sync inside inviteClientToApp below.)
-    try{ if(c._token&&typeof _syncSpecificClientsToServer==='function'){ if(typeof _specificSyncTimers!=='undefined'&&_specificSyncTimers[id]){clearTimeout(_specificSyncTimers[id]);delete _specificSyncTimers[id];} _syncSpecificClientsToServer([id],{}); } }catch(e){}
+    if(c._token){
+      const res=await _pushClientNow(id);
+      if(!res.ok&&typeof proToast==='function')proToast(res.msg,0);
+    }
+  } else if(typeof proToast==='function'){
+    // No intake template resolved for this profession — say so instead of silently sending a formless invite.
+    proToast('Heads up: no intake form is set up for your profession yet, so the invite will go out without one.',0);
   }
-  // The invite sheet itself handles the actual send/share step, this just
-  // makes sure the intake form (+ photo release) is already waiting for them
-  // the moment they open the app.
+  // The invite sheet itself handles the actual send/share step; this just makes sure the intake form
+  // (+ photo release) is already waiting for them the moment they open the app.
   inviteClientToApp(id);
 }
 function inviteClientToApp(id){
@@ -10875,20 +10898,16 @@ function inviteClientToApp(id){
 // Confirm a "send to app" from the share sheet: the forms/guides/etc. were already assigned before
 // the sheet opened, so this just pushes an immediate sync for THIS client and gives the provider a
 // clear confirmation toast instead of the sheet closing to a blank screen with no feedback.
-function _confirmSentToApp(id){
+async function _confirmSentToApp(id){
   const c=CL[id];if(!c)return;
-  // Push THIS client's data to the server IMMEDIATELY (not the 2.5s debounce). The debounced path
-  // was silently dropped if the app backgrounded or navigated within the window, so the "Sent ✓"
-  // toast appeared while nothing actually reached the client's app — even after they refreshed.
-  try{
-    if(c._token&&typeof _syncSpecificClientsToServer==='function'){
-      if(typeof _specificSyncTimers!=='undefined'&&_specificSyncTimers[id]){clearTimeout(_specificSyncTimers[id]);delete _specificSyncTimers[id];}
-      _syncSpecificClientsToServer([id],{});
-    } else if(typeof _scheduleSpecificClientSync==='function')_scheduleSpecificClientSync(id);
-    else if(typeof _scheduleClientSync==='function')_scheduleClientSync();
-  }catch(e){}
-  try{_markInvited(id);}catch(e){}
-  if(typeof proToast==='function')proToast('Sent to '+((c.name||'client').split(' ')[0])+'’s app ✓');
+  const first=(c.name||'client').split(' ')[0];
+  if(!c._token){ if(typeof proToast==='function')proToast(first+' hasn’t been invited yet — invite them first, then this will be waiting for them.'); return; }
+  // Push THIS client's data to the server and AWAIT the real result, so a signed-out/offline/too-large
+  // push can't show "Sent ✓" while nothing actually reached the client's app (even after they refresh).
+  if(typeof proToast==='function')proToast('Sending to '+first+'…',0);
+  const res=await _pushClientNow(id);
+  try{if(res.ok)_markInvited(id);}catch(e){}
+  if(typeof proToast==='function'){ if(res.ok)proToast('Sent to '+first+'’s app ✓'); else proToast(res.msg,0); }
 }
 function _shareClientLinkSheet(id,opts){
   const c=CL[id];if(!c)return;
