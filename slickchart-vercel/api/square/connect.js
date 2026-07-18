@@ -1,9 +1,8 @@
 // GET /api/square/connect  (requires SlickChart session Bearer token)
 // Returns { url } — the Square authorization URL to send THIS provider to, with a
 // signed state so the callback knows which provider is connecting.
-import { squareConfig, authorizeUrl, providerFromReq } from '../../lib/square.js';
+import { squareConfig, authorizeUrl, providerFromReq, squareRedirectUri } from '../../lib/square.js';
 import { signToken } from '../../lib/auth.js';
-import { appOrigin } from '../../lib/email.js';
 
 export default async function handler(req, res) {
   const secret = process.env.SESSION_SECRET || '';
@@ -12,6 +11,6 @@ export default async function handler(req, res) {
   const providerId = providerFromReq(req);
   if (!providerId) { res.status(401).json({ error: 'Please log in first.' }); return; }
   const state = signToken({ u: providerId, p: 'sq' }, secret, 600); // 10-minute state
-  const redirectUri = appOrigin(req) + '/api/square/callback';
+  const redirectUri = squareRedirectUri(req);
   res.status(200).json({ url: authorizeUrl(state, redirectUri) });
 }
