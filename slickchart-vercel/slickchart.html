@@ -3446,6 +3446,7 @@ function renderHome(){
       ];
     })().map(([l,v,s,c,scr])=>`<button onclick="nav('${scr}')" aria-label="${l}: ${v}, ${s}" style="flex:1;background:#161616;border:1px solid #232323;border-radius:10px;padding:10px 12px;cursor:pointer;font-family:inherit;text-align:left;"><div style="font-size:11px;color:#999;margin-bottom:4px;">${l}</div><div style="font-size:22px;font-weight:500;color:${c};">${v}</div><div style="font-size:11px;color:#999;">${s}</div></button>`).join('')}
   </div>
+  ${aiEnabled?`<div id="day-recap-card" style="margin:0 16px 10px;">${_dayRecapCardHTML()}</div>`:''}
   ${!_homeDismissed.has('preview-client')?_swipeTile(`
   <div onclick="_previewClientApp()" style="margin:0;background:linear-gradient(135deg,var(--accent-tint),var(--accent-tint2));border:1px solid var(--accent-a30);border-radius:12px;padding:12px 14px;display:flex;align-items:center;gap:11px;cursor:pointer;">
     <div style="width:40px;height:40px;border-radius:10px;background:var(--accent);display:flex;align-items:center;justify-content:center;flex-shrink:0;">
@@ -3559,6 +3560,69 @@ function renderHome(){
   setTimeout(()=>{try{document.querySelectorAll('.swipe-card').forEach((el,i)=>{if(typeof initSwipe==='function')initSwipe(el,i);});}catch(e){}try{_loadSquareAppts();}catch(e){}},0);
 }
 
+// ── AI day recap: a plain-language "here's your day" brief across appts, messages, flags & money.
+//    Generated on demand (one tap) and cached per calendar day so Home re-renders don't re-call AI. ──
+let _dayRecapCache={key:'',data:null};
+function _dayRecapKey(){try{return new Date().toDateString();}catch(e){return 'today';}}
+function _dayRecapCardHTML(){
+  const cached=(_dayRecapCache.key===_dayRecapKey())?_dayRecapCache.data:null;
+  if(cached){
+    const pr=(cached.priorities||[]).filter(Boolean).slice(0,3);
+    return `<div style="background:linear-gradient(135deg,var(--accent-tint),var(--accent-tint2));border:1px solid var(--accent-a30);border-radius:12px;padding:13px 15px;">
+      <div style="display:flex;align-items:center;gap:7px;margin-bottom:7px;"><i class="ti ti-sparkles" style="font-size:16px;color:var(--accent);"></i><span style="font-size:13px;font-weight:600;color:#f5f0e8;">Your day at a glance</span><button onclick="_aiDayRecap(true)" aria-label="Refresh recap" title="Refresh" style="margin-left:auto;border:none;background:none;color:#c8bda8;cursor:pointer;font-size:14px;"><i class="ti ti-refresh"></i></button></div>
+      <div style="font-size:13px;color:#e8dfce;line-height:1.6;">${_fileEsc(cached.recap||'')}</div>
+      ${pr.length?`<ul style="margin:9px 0 0;padding-left:17px;">${pr.map(p=>`<li style="font-size:12.5px;color:#d8cdb8;line-height:1.55;margin-bottom:2px;">${_fileEsc(p)}</li>`).join('')}</ul>`:''}
+    </div>`;
+  }
+  return `<button id="day-recap-btn" onclick="_aiDayRecap()" style="width:100%;background:#161616;border:1px dashed #333;border-radius:12px;padding:12px 14px;display:flex;align-items:center;gap:10px;cursor:pointer;font-family:inherit;text-align:left;">
+    <div style="width:34px;height:34px;border-radius:9px;background:var(--accent-tint);display:flex;align-items:center;justify-content:center;flex-shrink:0;"><i class="ti ti-sparkles" style="font-size:17px;color:var(--accent);"></i></div>
+    <div style="flex:1;min-width:0;"><div style="font-size:13px;font-weight:600;color:#e8e8e8;">Catch me up</div><div style="font-size:12px;color:#999;">A quick plain-language summary of your day</div></div>
+    <i class="ti ti-chevron-right" style="font-size:16px;color:#888;"></i>
+  </button>`;
+}
+async function _aiDayRecap(force){
+  const card=document.getElementById('day-recap-card');
+  if(card)card.innerHTML='<div style="background:#161616;border:1px solid #232323;border-radius:12px;padding:13px 15px;font-size:13px;color:#999;display:flex;align-items:center;gap:8px;"><i class="ti ti-loader-2" style="color:var(--accent);"></i> Reading your day…</div>';
+  // Gather the facts from the same helpers the tiles use, guarding each so a missing one can't break the recap.
+  const g=(fn,d)=>{try{return fn();}catch(e){return d;}};
+  const today=g(()=>_apptsToday(),[])||[];
+  const rem=g(()=>_apptsRemainingToday(),null);
+  const names=today.map(a=>String((a&&(a.client||a.name))||'').split(' ')[0]).filter(Boolean).slice(0,8);
+  const unread=g(()=>threads.filter(t=>t.unread).length,0);
+  const flagged=g(()=>Object.values(CL).filter(c=>_fcActive(c)).length,0);
+  const docExp=g(()=>_docsNeedRenewal(),0);
+  const checkins=g(()=>unreadCheckins().length,0);
+  const reqs=g(()=>pendingRequests().filter(b=>!b.seen).length,0);
+  const vc=g(()=>_vcPendingCount(),0);
+  const facts=[
+    'Appointments today: '+today.length+(names.length?(' ('+names.join(', ')+')'):''),
+    (rem!=null?('Remaining today: '+rem):''),
+    'Unread client messages: '+unread,
+    'Flagged intakes needing review: '+flagged,
+    'Booking requests to confirm: '+reqs,
+    'Pre-visit check-ins to review: '+checkins,
+    'Virtual consults to review: '+vc,
+    'Client documents expiring soon: '+docExp
+  ].filter(Boolean).join('\n');
+  const prompt='You are a warm, concise assistant for a solo '+_profName()+'. Given today’s facts, write a friendly 2–3 sentence recap of their day (address them directly, no greeting like "Hi"), then list up to 3 short, concrete priorities in order of importance. If a category is zero, don’t mention it. Never invent anything not in the facts. Return ONLY JSON: {"recap":"...","priorities":["...","..."]}.\n\nToday’s facts:\n'+facts;
+  let out=null;try{out=await _aiJSON(prompt,null);}catch(e){out=null;}
+  if(out&&out.recap){_dayRecapCache={key:_dayRecapKey(),data:out};}
+  else{
+    // Deterministic fallback so the card still gives value when AI is unavailable.
+    const bits=[];
+    if(today.length)bits.push('You have '+today.length+' appointment'+(today.length!==1?'s':'')+' today'+(rem!=null?(', '+rem+' still to come'):'')+'.');else bits.push('Nothing on the books today.');
+    const todo=[];
+    if(reqs)todo.push(reqs+' booking request'+(reqs!==1?'s':'')+' to confirm');
+    if(flagged)todo.push(flagged+' flagged intake'+(flagged!==1?'s':'')+' to review');
+    if(checkins)todo.push(checkins+' check-in'+(checkins!==1?'s':'')+' to review');
+    if(unread)todo.push(unread+' unread message'+(unread!==1?'s':''));
+    if(vc)todo.push(vc+' virtual consult'+(vc!==1?'s':''));
+    if(docExp)todo.push(docExp+' document'+(docExp!==1?'s':'')+' expiring');
+    _dayRecapCache={key:_dayRecapKey(),data:{recap:bits.join(' '),priorities:todo.slice(0,3)}};
+  }
+  const c2=document.getElementById('day-recap-card');if(c2)c2.innerHTML=_dayRecapCardHTML();
+}
+
 // ── CLIENTS ──
 function renderClients(){
   setNav('clients');
@@ -3570,6 +3634,20 @@ function renderClients(){
   document.getElementById('tt').textContent='Clients';
   S.innerHTML=`
   ${_searchBar('Search clients by name or treatment…','.client-card','clients-noresults')}
+  ${aiEnabled?`<div style="margin:0 16px 10px;">
+    <button onclick="_askBookToggle()" id="askbook-btn" style="width:100%;background:#161616;border:1px solid #232323;border-radius:10px;padding:10px 12px;display:flex;align-items:center;gap:9px;cursor:pointer;font-family:inherit;text-align:left;">
+      <i class="ti ti-sparkles" style="font-size:16px;color:var(--accent);flex-shrink:0;"></i>
+      <span style="font-size:13px;color:#ccc;flex:1;min-width:0;">Ask your book — “who’s due for a touch-up?”</span>
+      <i class="ti ti-chevron-down" id="askbook-caret" style="font-size:15px;color:#888;flex-shrink:0;"></i>
+    </button>
+    <div id="askbook-panel" style="display:none;margin-top:8px;">
+      <div style="display:flex;gap:6px;">
+        <input id="askbook-input" class="fi" style="flex:1;margin:0;" aria-label="Ask about your clients" placeholder="Ask about your clients…" onkeydown="if(event.key==='Enter'){event.preventDefault();_askBookRun();}">
+        <button onclick="_askBookRun()" style="background:var(--accent);color:var(--accent-ink);border:none;border-radius:10px;padding:0 15px;font-size:13px;font-weight:600;cursor:pointer;flex-shrink:0;">Ask</button>
+      </div>
+      <div id="askbook-results" style="margin-top:8px;"></div>
+    </div>
+  </div>`:''}
   <button class="btnp" style="margin:0 16px 10px;width:calc(100% - 32px);border-radius:10px;" onclick="nav('new-client')"><i class="ti ti-plus"></i> New client</button>
   <div style="display:flex;gap:10px;margin:0 16px 14px;">
     <button onclick="nav('invite-clients')" style="flex:1;min-width:0;display:flex;flex-direction:column;align-items:flex-start;gap:5px;box-sizing:border-box;background:linear-gradient(135deg,#0a2019,#0d2a1e);border:1px solid #1c4030;border-radius:12px;padding:11px 12px;cursor:pointer;font-family:inherit;text-align:left;">
@@ -3607,6 +3685,43 @@ function renderClients(){
     ? emptyState({icon:'ti-users',title:'No clients yet',body:'Add your first client to get started. Their chart, notes, and session history will live here.',action:'Add first client',screen:'new-client'})
     : _ent.sort((a,b)=>{const da=(a[0]==='maya'||a[0]==='sophie'||a[0]==='priya')?0:1;const db=(b[0]==='maya'||b[0]==='sophie'||b[0]==='priya')?0:1;return da-db;}).map(([id,c])=>`<div class="card client-card" data-search="${((c.name||'')+' '+(c.treatment||'')).toLowerCase().normalize('NFD').replace(/[̀-ͯ]/g,'').replace(/['‘’`"]/g,'').replace(/[^a-z0-9 ]/g,' ').replace(/\s+/g,' ').trim()}" onclick="nav('client','${id}')"><div class="row">${av(c)}<div style="flex:1;"><div style="display:flex;align-items:center;gap:7px;"><span style="font-size:15px;font-weight:500;color:#f0f0f0;">${_fileEsc(c.name)}</span>${(id==='maya'||id==='sophie'||id==='priya')?`<span onclick="event.stopPropagation();showDemoInfo()" title="What are demo clients?" style="font-size:9px;font-weight:700;color:#caa86a;border:1px solid #3a2a10;background:#1a1308;border-radius:4px;padding:1px 5px;letter-spacing:.03em;cursor:pointer;">DEMO</span>`:''}</div></div><i aria-hidden="true" class="ti ti-chevron-right" style="font-size:16px;color:#888;"></i></div></div>`).join('');})()}
   ${_noRes('clients-noresults','No clients match your search.')}`;
+}
+// ── "Ask your book": natural-language search over the client roster (who's due, allergies, etc.). ──
+function _askBookToggle(){
+  const p=document.getElementById('askbook-panel');const car=document.getElementById('askbook-caret');if(!p)return;
+  const open=p.style.display!=='none';p.style.display=open?'none':'block';
+  if(car)car.className='ti ti-chevron-'+(open?'down':'up');
+  if(!open){const i=document.getElementById('askbook-input');if(i)setTimeout(()=>i.focus(),50);}
+}
+async function _askBookRun(){
+  const inp=document.getElementById('askbook-input');const res=document.getElementById('askbook-results');
+  if(!inp||!res)return;
+  const q=inp.value.trim();if(!q){inp.focus();return;}
+  res.innerHTML='<div style="font-size:13px;color:#999;padding:6px 2px;"><i class="ti ti-loader-2" style="color:var(--accent);"></i> Looking through your clients…</div>';
+  const ents=(typeof _shotFilterEntries==='function')?_shotFilterEntries(Object.entries(CL)):Object.entries(CL);
+  const clean=v=>(v&&String(v).trim()&&String(v).trim()!=='—')?String(v).trim():'';
+  const total=ents.length;const capped=ents.slice(0,80);
+  const roster=capped.map(([id,c])=>{
+    const f=[
+      clean(c.treatment)&&('service '+clean(c.treatment)),
+      clean(c.concerns)&&('goals '+clean(c.concerns)),
+      (clean(c.allergies)&&!/^none/i.test(clean(c.allergies)))&&('allergies '+clean(c.allergies)),
+      clean(c.lastVisit)&&('last visit '+clean(c.lastVisit)),
+      clean(c.nextVisit)&&('next visit '+clean(c.nextVisit)),
+      clean(c.touchUpDate)&&('touch-up due '+clean(c.touchUpDate))
+    ].filter(Boolean).join(', ');
+    return 'id='+id+' | '+clean(c.name)+(f?(' | '+f):'');
+  }).join('\n');
+  const today=(function(){try{return new Date().toDateString();}catch(e){return '';}})();
+  const prompt='You are a search assistant over a solo '+_profName()+'’s client book. Today is '+today+'. Answer the question using ONLY the client list below — never invent clients or facts. Return ONLY JSON: {"answer":"one short sentence answering the question","ids":["id","id"]} where ids are the matching client ids in a sensible order (empty array if none match).\n\nQuestion: "'+q+'"\n\nClients:\n'+roster;
+  let out=null;try{out=await _aiJSON(prompt,null);}catch(e){out=null;}
+  const r2=document.getElementById('askbook-results');if(!r2)return;
+  if(!out||typeof out!=='object'){r2.innerHTML='<div style="font-size:13px;color:#999;padding:6px 2px;">Couldn’t search right now. Try again in a moment.</div>';return;}
+  const ids=(Array.isArray(out.ids)?out.ids:[]).filter(id=>CL[id]);
+  let h='<div style="font-size:13px;color:#e0e0e0;line-height:1.5;padding:2px 2px 8px;">'+_fileEsc(out.answer||'')+'</div>';
+  h+=ids.map(id=>{const c=CL[id];return '<div class="card" onclick="nav(\'client\',\''+id+'\')" style="cursor:pointer;"><div class="row">'+av(c)+'<div style="flex:1;min-width:0;"><div style="font-size:15px;font-weight:500;color:#f0f0f0;">'+_fileEsc(c.name)+'</div><div style="font-size:12px;color:#999;">'+_fileEsc(c.treatment||'')+'</div></div><i class="ti ti-chevron-right" style="font-size:16px;color:#888;flex-shrink:0;"></i></div></div>';}).join('');
+  if(total>80)h+='<div style="font-size:11px;color:#777;padding:6px 2px;">Searched your first 80 clients.</div>';
+  r2.innerHTML=h;
 }
 function _fileEsc(s){return String(s==null?'':s).replace(/&/g,'&amp;').replace(/</g,'&lt;').replace(/>/g,'&gt;').replace(/"/g,'&quot;');}
 // Escape user text for safe embedding inside a single-quoted JS string in an inline
@@ -10960,13 +11075,49 @@ function renderChat(id){
       const _tap=(_mine&&(m.status==='failed'||m.status==='pending')&&m._mid)?`onclick="_retryProviderMsg('${id}','${m._mid}')" style="cursor:pointer;"`:'';
       return`<div ${_tap} style="align-self:${_mine?'flex-end':'flex-start'};max-width:80%;width:fit-content;min-width:0;${_tap?'cursor:pointer;':''}">${m.text?`<div class="${_mine?'bub-me':'bub-them'}">${_fileEsc(m.text)}</div>`:''}${imgs.length?`<div style="display:flex;flex-wrap:wrap;gap:4px;${m.text?'margin-top:4px;':''}justify-content:${_mine?'flex-end':'flex-start'};">${imgs.map(src=>`<img src="${_imgSrc(src)}" alt="shared photo" onclick="openPhoto(this.src)" style="width:${imgs.length>1?'92px':'180px'};height:${imgs.length>1?'92px':'auto'};${imgs.length>1?'object-fit:cover;':''}border-radius:12px;display:block;border:1px solid #2a2a2a;cursor:zoom-in;">`).join('')}</div>`:''}<div style="font-size:12px;color:#999;margin-top:3px;${_mine?'text-align:right;':''}">${_fileEsc(m.time)}${_st?' · '+_st:''}</div></div>`;}).join('')}
   </div>
-  <div style="position:absolute;bottom:60px;left:0;right:0;background:#161616;border-top:1px solid #1e1e1e;padding:8px 12px;display:flex;align-items:flex-end;gap:6px;">
+  <div style="position:absolute;bottom:60px;left:0;right:0;background:#161616;border-top:1px solid #1e1e1e;padding:8px 12px;">
+    <div id="ai-suggest-bar" style="display:none;flex-wrap:wrap;gap:6px;margin-bottom:8px;"></div>
+    <div style="display:flex;align-items:flex-end;gap:6px;">
+    ${aiEnabled?`<button onclick="_aiSuggestReplies('${id}')" aria-label="Suggest a reply" title="Suggest a reply" style="width:34px;height:34px;border-radius:50%;background:#1a1a1a;border:1px solid #2a2a2a;display:flex;align-items:center;justify-content:center;cursor:pointer;flex-shrink:0;"><i class="ti ti-sparkles" style="font-size:17px;color:var(--accent);"></i></button>`:''}
     <button onclick="attachProviderPhoto('${id}')" aria-label="Upload a photo" title="Upload a photo" style="width:34px;height:34px;border-radius:50%;background:#1a1a1a;border:1px solid #2a2a2a;display:flex;align-items:center;justify-content:center;cursor:pointer;flex-shrink:0;"><svg viewBox="0 0 24 24" width="17" height="17" fill="none" stroke="var(--accent)" stroke-width="1.8" stroke-linecap="round" stroke-linejoin="round" aria-hidden="true"><path d="M4 8h3l1.5-2h7L17 8h3a1 1 0 0 1 1 1v9a1 1 0 0 1-1 1H4a1 1 0 0 1-1-1V9a1 1 0 0 1 1-1z"/><circle cx="12" cy="13" r="3.2"/></svg></button>
     <button onclick="attachProviderLink('${id}')" aria-label="Add a photo by link" title="Add a photo by link" style="width:34px;height:34px;border-radius:50%;background:#1a1a1a;border:1px solid #2a2a2a;display:flex;align-items:center;justify-content:center;cursor:pointer;flex-shrink:0;"><svg viewBox="0 0 24 24" width="17" height="17" fill="none" stroke="var(--accent)" stroke-width="1.8" stroke-linecap="round" stroke-linejoin="round" aria-hidden="true"><path d="M10 14a3.5 3.5 0 0 0 5 0l3-3a3.5 3.5 0 0 0-5-5l-1 1"/><path d="M14 10a3.5 3.5 0 0 0-5 0l-3 3a3.5 3.5 0 0 0 5 5l1-1"/></svg></button>
     <textarea id="cinput" aria-label="Type a message" placeholder="Message ${_fileEsc(c.name.split(' ')[0])}..." rows="1" style="flex:1;background:#1a1a1a;border:1px solid #2a2a2a;border-radius:20px;padding:8px 14px;font-size:13px;color:#e0e0e0;resize:none;font-family:inherit;outline:none;"></textarea>
     <button onclick="sendMsg('${id}')" aria-label="Send message" title="Send" style="width:34px;height:34px;border-radius:50%;background:var(--accent);border:none;display:flex;align-items:center;justify-content:center;cursor:pointer;"><svg viewBox="0 0 24 24" width="16" height="16" fill="none" stroke="var(--accent-ink)" stroke-width="1.8" stroke-linecap="round" stroke-linejoin="round" aria-hidden="true"><path d="M21 4 3 11l6 2.5L21 4z"/><path d="m21 4-7 16-2.5-6.5"/></svg></button>
+    </div>
   </div>`;
   const body=document.getElementById('chat-body');if(body)body.scrollTop=body.scrollHeight;
+}
+// ── AI reply drafts: 2–3 short, editable reply options grounded in the thread + chart. ──
+let _aiReplyDrafts=[];
+async function _aiSuggestReplies(id){
+  const c=CL[id];if(!c)return;
+  const bar=document.getElementById('ai-suggest-bar');if(!bar)return;
+  bar.style.display='flex';
+  bar.innerHTML='<span style="font-size:12px;color:#999;padding:4px 2px;"><i class="ti ti-loader-2" style="color:var(--accent);"></i> Thinking of replies…</span>';
+  const first=(c.name||'Client').split(' ')[0];
+  const convo=(msgStore[id]||[]).slice(-8).map(m=>((m.from==='me')?'Me':first)+': '+(m.text||'[photo]')).join('\n');
+  const chart=[
+    c.treatment?('Service: '+c.treatment):'',
+    c.concerns?('Goals/concerns: '+c.concerns):'',
+    (c.allergies&&!/^none/i.test(c.allergies))?('Allergies: '+c.allergies):'',
+    c.lastVisit?('Last visit: '+c.lastVisit):''
+  ].filter(Boolean).join('; ');
+  const prompt='You are helping a solo '+_profName()+' reply to a client’s text message. Write 3 short, warm, professional reply options (each under ~140 characters) the provider could send to '+first+'. Base them on the LATEST message in the conversation. Never invent appointment times, prices, or promises. Return ONLY JSON: {"replies":["...","...","..."]}.\n\nClient context: '+(chart||'none')+'\n\nRecent conversation:\n'+(convo||'(no messages yet)');
+  let out=null;try{out=await _aiJSON(prompt,null);}catch(e){out=null;}
+  const b=document.getElementById('ai-suggest-bar');if(!b)return;
+  const replies=(out&&Array.isArray(out.replies))?out.replies.filter(r=>r&&String(r).trim()).slice(0,3):[];
+  if(!replies.length){
+    b.innerHTML='<span style="font-size:12px;color:#999;padding:4px 2px;">Couldn’t draft replies right now.</span>';
+    setTimeout(()=>{const x=document.getElementById('ai-suggest-bar');if(x){x.style.display='none';x.innerHTML='';}},2500);return;
+  }
+  _aiReplyDrafts=replies;
+  b.innerHTML='<div style="width:100%;font-size:11px;color:#777;margin-bottom:1px;display:flex;align-items:center;gap:5px;"><i class="ti ti-sparkles" style="color:var(--accent);"></i> Tap to use · edit before sending</div>'+
+    replies.map((r,i)=>'<button onclick="_useSuggestedReply('+i+')" style="text-align:left;background:#1e1e1e;border:1px solid #333;border-radius:14px;padding:8px 12px;font-size:13px;color:#e0e0e0;cursor:pointer;font-family:inherit;max-width:100%;line-height:1.35;">'+_fileEsc(r)+'</button>').join('');
+}
+function _useSuggestedReply(i){
+  const r=_aiReplyDrafts[i]||'';
+  const t=document.getElementById('cinput');if(t){t.value=r;t.focus();try{t.setSelectionRange(r.length,r.length);}catch(e){}}
+  const bar=document.getElementById('ai-suggest-bar');if(bar){bar.style.display='none';bar.innerHTML='';}
 }
 function attachProviderPhoto(id){_pickImages(srcs=>{if(srcs&&srcs.length)sendMsg(id,srcs);});}
 function attachProviderLink(id){const u=prompt('Paste an image link (URL):');if(u&&u.trim())sendMsg(id,[u.trim()]);}
@@ -11283,6 +11434,7 @@ function renderInventory(){try{_applyImportedProducts();}catch(e){}
   S.innerHTML=`
   <div style="padding:12px 16px 0;display:flex;align-items:center;justify-content:flex-end;gap:8px;"><button onclick="_syncInventoryFromSquare(this)" style="background:#161616;color:#bbb;border:1px solid #2a2a2a;border-radius:8px;padding:7px 11px;font-size:12px;cursor:pointer;font-family:inherit;display:inline-flex;align-items:center;gap:5px;"><i class="ti ti-refresh" style="font-size:13px;color:var(--accent);"></i> Sync stock from Square</button><button onclick="nav('add-inventory-item')" style="background:var(--accent);color:var(--accent-ink);border:none;border-radius:8px;padding:7px 12px;font-size:12px;font-weight:500;cursor:pointer;">+ Add item</button></div>
   <div style="display:flex;gap:8px;padding:10px 16px;">${[['Total',inv.length,'#f0f0f0'],['Low',inv.filter(i=>i.qty<=i.low&&i.qty>0).length,'var(--accent)'],['Out',inv.filter(i=>i.qty===0).length,'#e87070']].map(([l,v,c])=>`<div style="flex:1;background:#161616;border-radius:10px;padding:9px 12px;"><div style="font-size:20px;font-weight:500;color:${c};">${v}</div><div style="font-size:11px;color:#999;">${l}</div></div>`).join('')}</div>
+  ${(aiEnabled&&inv.filter(i=>(+i.qty||0)<=(+i.low||0)).length)?`<div id="reorder-card" style="margin:0 16px 10px;">${_reorderCardHTML()}</div>`:''}
   ${_searchBar('Search inventory by item or brand…','.inv-card','inv-noresults')}
   ${inv.length===0?emptyState({icon:'ti-package',title:'No items yet',body:'Add the products and supplies you keep on hand to track stock and reorder easily.',action:'Add first item',screen:'add-inventory-item'}):inv.map((item,i)=>{const _max=(+item.max>0)?+item.max:Math.max(1,+item.qty||0);const pct=Math.max(0,Math.min(100,Math.round((+item.qty||0)/_max*100)))||0;const col=item.qty===0?'#e87070':item.qty<=item.low?'var(--accent)':'#4ec49a';const lbl=item.qty===0?'Out of stock':item.qty<=item.low?`Low · ${item.qty} left`:`In stock · ${item.qty}`;
   const vend=(item.vendorIdx!=null&&vendors[item.vendorIdx])?vendors[item.vendorIdx]:null;
@@ -11308,6 +11460,58 @@ function renderInventory(){try{_applyImportedProducts();}catch(e){}
   </div>`}).join('')}
   ${_noRes('inv-noresults','No items match your search.')}`;
 }
+// ── AI reorder assistant: drafts a prioritized restock list + ready-to-send order text per vendor.
+//    Reorder qty brings each low/out item back up to its "max/full" level (no fabricated run-out dates). ──
+let _reorderOrders=[];
+function _reorderLowItems(){
+  return inv.filter(i=>i&&(+i.qty||0)<=(+i.low||0)).map(i=>{
+    const max=(+i.max>0)?+i.max:Math.max(1,(+i.low||0)+2);
+    const need=Math.max(1,max-(+i.qty||0));
+    const vend=(i.vendorIdx!=null&&vendors[i.vendorIdx])?vendors[i.vendorIdx].name:((i.vendorName||'').trim());
+    return {name:i.name||'Item',brand:(i.brand||'').trim(),qty:(+i.qty||0),need,vendor:vend||'',out:(+i.qty||0)===0};
+  });
+}
+function _reorderCardHTML(){
+  const n=_reorderLowItems().length;
+  return `<button id="reorder-btn" onclick="_aiReorder()" style="width:100%;background:var(--accent-tint);border:1px solid var(--accent-a30);border-radius:12px;padding:11px 13px;display:flex;align-items:center;gap:10px;cursor:pointer;font-family:inherit;text-align:left;">
+    <div style="width:32px;height:32px;border-radius:9px;background:var(--accent);display:flex;align-items:center;justify-content:center;flex-shrink:0;"><i class="ti ti-sparkles" style="font-size:16px;color:var(--accent-ink);"></i></div>
+    <div style="flex:1;min-width:0;"><div style="font-size:13px;font-weight:600;color:#f5f0e8;">Draft my reorder list</div><div style="font-size:12px;color:#c8bda8;">${n} item${n!==1?'s':''} low or out — get a ready-to-send order</div></div>
+    <i class="ti ti-chevron-right" style="font-size:16px;color:#c8bda8;flex-shrink:0;"></i>
+  </button>`;
+}
+async function _aiReorder(){
+  const card=document.getElementById('reorder-card');if(!card)return;
+  const items=_reorderLowItems();
+  if(!items.length){card.innerHTML='';return;}
+  card.innerHTML='<div style="background:#161616;border:1px solid #232323;border-radius:12px;padding:13px 15px;font-size:13px;color:#999;display:flex;align-items:center;gap:8px;"><i class="ti ti-loader-2" style="color:var(--accent);"></i> Building your reorder list…</div>';
+  const lines=items.map(it=>'- '+it.name+(it.brand?(' ('+it.brand+')'):'')+' — have '+it.qty+', reorder '+it.need+' — vendor: '+(it.vendor||'not set')).join('\n');
+  const prompt='You help a solo '+_profName()+' restock supplies. Below are items at or below their low-stock threshold, with the quantity to reorder (brings each back to full). Write a short friendly one-sentence summary, then group the items by vendor and, for each vendor, a concise ready-to-send reorder message listing item names and quantities. For items with vendor "not set", group them under "No vendor on file". Return ONLY JSON: {"summary":"...","orders":[{"vendor":"...","message":"..."}]}.\n\nItems:\n'+lines;
+  let out=null;try{out=await _aiJSON(prompt,null);}catch(e){out=null;}
+  const c2=document.getElementById('reorder-card');if(!c2)return;
+  if(!out||!Array.isArray(out.orders)){
+    // Deterministic fallback: group by vendor ourselves.
+    const groups={};items.forEach(it=>{const k=it.vendor||'No vendor on file';(groups[k]=groups[k]||[]).push(it);});
+    out={summary:items.length+' item'+(items.length!==1?'s':'')+' to reorder.',orders:Object.keys(groups).map(v=>({vendor:v,message:'Reorder request:\n'+groups[v].map(it=>'• '+it.name+' — qty '+it.need).join('\n')}))};
+  }
+  _reorderOrders=(out.orders||[]).map(o=>o.message||'');
+  let h='<div style="background:var(--accent-tint);border:1px solid var(--accent-a30);border-radius:12px;padding:13px 15px;">';
+  h+='<div style="display:flex;align-items:center;gap:7px;margin-bottom:8px;"><i class="ti ti-sparkles" style="font-size:16px;color:var(--accent);"></i><span style="font-size:13px;font-weight:600;color:#f5f0e8;">Reorder list</span><button onclick="renderInventory()" aria-label="Close" title="Close" style="margin-left:auto;border:none;background:none;color:#c8bda8;cursor:pointer;font-size:15px;"><i class="ti ti-x"></i></button></div>';
+  h+='<div style="font-size:13px;color:#e8dfce;line-height:1.55;margin-bottom:10px;">'+_fileEsc(out.summary||'')+'</div>';
+  h+=(out.orders||[]).map((o,i)=>`<div style="background:#141414;border:1px solid #262626;border-radius:10px;padding:10px 12px;margin-bottom:8px;">
+    <div style="display:flex;align-items:center;gap:6px;margin-bottom:6px;"><span style="font-size:12px;font-weight:700;color:#e0d6c2;">${_fileEsc(o.vendor||'Order')}</span><button onclick="_copyReorder(${i},this)" style="margin-left:auto;border:none;background:#242424;color:var(--accent);border-radius:6px;padding:4px 9px;font-size:11px;font-weight:600;cursor:pointer;font-family:inherit;"><i class="ti ti-copy" style="font-size:11px;"></i> Copy</button></div>
+    <div style="font-size:12.5px;color:#cfcfcf;line-height:1.55;white-space:pre-wrap;">${_fileEsc(o.message||'')}</div>
+  </div>`).join('');
+  h+='<div style="font-size:11px;color:#a89a80;margin-top:2px;">Reorder amounts bring each item back to full. Adjust before sending.</div>';
+  h+='</div>';
+  c2.innerHTML=h;
+}
+function _copyReorder(i,btn){
+  const txt=_reorderOrders[i]||'';
+  const done=()=>{if(btn){const o=btn.innerHTML;btn.innerHTML='<i class="ti ti-check" style="font-size:11px;"></i> Copied';setTimeout(()=>{if(btn)btn.innerHTML=o;},1600);}};
+  try{if(navigator.clipboard&&navigator.clipboard.writeText){navigator.clipboard.writeText(txt).then(done,()=>{_fallbackCopy(txt);done();});return;}}catch(e){}
+  _fallbackCopy(txt);done();
+}
+function _fallbackCopy(txt){try{const ta=document.createElement('textarea');ta.value=txt;ta.style.position='fixed';ta.style.opacity='0';document.body.appendChild(ta);ta.select();document.execCommand('copy');document.body.removeChild(ta);}catch(e){}}
 // Pull live stock counts from Square and merge them into the inventory list. Matches an existing item
 // by its Square variation id, then SKU, then normalized name; updates the quantity in place, or adds
 // any tracked product not already on the list. Saved immediately (saveInv pushes to the cloud).
@@ -18281,7 +18485,10 @@ function renderAutoForm(a,idx){
     </div>
 
     ${(a&&/birthday/i.test((a.name||'')+' '+(a.trigger||'')))?_birthdayPanelHTML():''}
-    <span class="fl-lbl">Message</span>
+    <div style="display:flex;align-items:center;justify-content:space-between;margin-bottom:2px;">
+      <span class="fl-lbl" style="margin-bottom:0;">Message</span>
+      ${aiEnabled?`<button onclick="_aiDraftAutomation()" style="border:none;background:none;font-size:12px;color:var(--accent);cursor:pointer;font-family:inherit;padding:2px 0;"><i class="ti ti-sparkles" style="font-size:13px;"></i> Draft with AI</button>`:''}
+    </div>
     <textarea class="fi" id="auto-msg" aria-label="Message body" style="height:110px;resize:none;line-height:1.6;margin-bottom:10px;" placeholder="Hi {client_name}! ✨">${_fileEsc((a&&a.msg)||(a?`Hi {client_name}! Just checking in after your recent ${a.name.toLowerCase().includes('birthday')?'birthday 🎂':'appointment ✨'}. How is your skin feeling? Let me know if you have any questions!\n\n${_providerFirstName()}`:'Hi {client_name}! '))}</textarea>
     <div style="background:#1a1a1a;border:1px solid #2a2a2a;border-radius:8px;padding:8px 12px;margin-bottom:14px;">
       <div style="font-size:11px;color:#999;margin-bottom:5px;">Available variables</div>
@@ -18294,6 +18501,25 @@ function renderAutoForm(a,idx){
     ${idx>=0?`<button onclick="_deleteAutomation(${idx},'messages')" style="width:100%;border:none;border-radius:8px;padding:10px;font-size:13px;color:#e87070;background:#2a0f0f;cursor:pointer;margin-bottom:10px;"><i class="ti ti-trash" aria-hidden="true" style="font-size:13px;"></i> Delete automation</button>`:''}
     <div style="height:16px;"></div>
   </div>`;
+}
+// ── AI drafts automated/drip message copy from the automation's name + trigger. ──
+async function _aiDraftAutomation(){
+  const nameEl=document.getElementById('auto-name');
+  const ta=document.getElementById('auto-msg');
+  if(!ta)return;
+  const name=(nameEl&&nameEl.value.trim())||'';
+  const isDate=autoTriggerMode==='date';
+  const trig=isDate?'a scheduled campaign date':(document.getElementById('auto-trigger')?.value||'');
+  if(!name&&!trig){proToast('Name the automation first, then draft.');return;}
+  const btn=(typeof event!=='undefined'&&event&&event.target)?event.target.closest('button'):null;
+  const orig=btn?btn.innerHTML:'';if(btn){btn.disabled=true;btn.innerHTML='<i class="ti ti-loader-2"></i> Drafting…';}
+  const biz=(typeof businessName!=='undefined'&&businessName)||(typeof _businessName==='function'?_businessName():'')||'';
+  const prompt='Write one friendly, on-brand automated text message a solo '+_profName()+(biz?(' ('+biz+')'):'')+' would send clients. Automation: "'+(name||trig)+'". Trigger: "'+trig+'". Keep it under 300 characters, warm and human (not corporate). Use the placeholder {client_name} where the client’s first name goes, and sign off with the provider’s name. You may use one tasteful emoji. Return ONLY JSON: {"message":"..."}.';
+  let out=null;try{out=await _aiJSON(prompt,null);}catch(e){out=null;}
+  if(btn){btn.disabled=false;btn.innerHTML=orig;}
+  const t=document.getElementById('auto-msg');if(!t)return;
+  if(out&&out.message&&String(out.message).trim()){t.value=String(out.message).trim();proToast('Draft ready — edit as you like');}
+  else{proToast('Couldn’t draft right now. Try again in a moment.');}
 }
 function saveAuto(idx){
   const name=document.getElementById('auto-name')?.value;
