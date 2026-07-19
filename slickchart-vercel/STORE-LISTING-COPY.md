@@ -69,7 +69,7 @@ Your data syncs securely to the cloud so nothing lives on just one device. You c
 
 Look polished, protect what you've built, and turn your expertise into income — without a clunky, expensive system.
 
-SlickChart requires a subscription. Create your account at slickchart.app.
+SlickChart requires an active subscription.
 
 *SlickChart is a practice-management tool, not a medical device, and does not provide medical advice.*
 
