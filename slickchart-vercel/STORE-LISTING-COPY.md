@@ -9,8 +9,8 @@ stay under them. Don't mention other platforms or use words like "best/#1" (both
 **SlickChart**  *(Apple: 30 char max · Play title: 30 char max — you're at 9)*
 
 ## Subtitle (Apple, 30 char max)
-**Charts, consent & income tools**  *(30/30 — hits both protect + profit angles)*
-Punchier alt: **Protect & grow your business** (28)
+**Protect & grow your business**  *(28/30 — chosen)*
+Alt: **Charts, consent & income tools** (30)
 
 ## Short description (Google Play, 80 char max)
 **Charts, photos, forms, and booking sync for solo beauty & wellness pros.**
