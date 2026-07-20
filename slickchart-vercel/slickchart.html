@@ -107,6 +107,9 @@ details[open]>summary .sh-chev{transform:rotate(180deg);}
 .sh-chev{transition:transform .15s;}
 .ctab[hidden]{display:none;}
 .ctseg:focus-visible{outline:2px solid var(--accent);outline-offset:2px;}
+/* Search-filtered rows hide via this class, NOT by clearing inline display — clearing `style.display`
+   on a flex <label>/<button> row reverts it to inline and stacks its children (checkbox/avatar/name). */
+.srch-hide{display:none !important;}
 </style>
 </head>
 <body>
@@ -9330,7 +9333,9 @@ function filterShopProducts(q){
 function searchList(q,cardSel,noResId){
   q=_normSearch(q);
   let total=0;
-  document.querySelectorAll(cardSel).forEach(c=>{const m=!q||(c.getAttribute('data-search')||'').includes(q);c.style.display=m?'':'none';if(m)total++;});
+  // Toggle a hide CLASS rather than clearing style.display — clearing inline display on a flex
+  // <label>/<button> row would revert it to inline and stack its children.
+  document.querySelectorAll(cardSel).forEach(c=>{const m=!q||(c.getAttribute('data-search')||'').includes(q);c.classList.toggle('srch-hide',!m);if(m)total++;});
   if(noResId){const nr=document.getElementById(noResId);if(nr)nr.style.display=(q&&total===0)?'':'none';}
 }
 function _searchBar(placeholder,cardSel,noResId){
@@ -11499,7 +11504,7 @@ function showMsgTab(tab){
           ${togBtn(a.on,'_toggleAuto('+i+')','Toggle automation')}
         </div>
         <div style="border-top:1px solid #1e1e1e;padding:7px 14px;display:flex;align-items:center;justify-content:space-between;">
-          <button onclick="nav('edit-automation',${i})" style="border:none;background:none;font-size:12px;color:var(--accent);cursor:pointer;"><i class="ti ti-pencil" style="font-size:12px;"></i> Edit message</button>
+          <button onclick="nav('edit-automation',${i})" style="border:none;background:none;font-size:12px;color:var(--accent);cursor:pointer;font-family:inherit;font-weight:500;"><i class="ti ti-calendar-cog" style="font-size:12px;"></i> Edit &amp; schedule</button>
           <button onclick="_sendAutomation(${i})" style="border:none;background:none;font-size:12px;color:#4ec49a;cursor:pointer;font-family:inherit;font-weight:500;"><i class="ti ti-send" style="font-size:12px;"></i> Send now</button>
           <button onclick="_deleteAutomation(${i},'autos')" aria-label="Delete ${_fileEsc(a.name)}" style="border:none;background:none;font-size:12px;color:#e87070;cursor:pointer;font-family:inherit;"><i class="ti ti-trash" style="font-size:12px;"></i> Delete</button>
         </div>
@@ -13206,7 +13211,7 @@ function _ssToggle(cid,on){_ssSel[cid]=!!on;_ssUpdateBtn();}
 function _ssSelectAll(){
   // Act on the currently-visible (search-filtered) rows, so "Select all" after a search means
   // "select everyone matching this search" rather than silently selecting hidden clients too.
-  const boxes=[...document.querySelectorAll('.ss-cli')].filter(b=>{const row=b.closest('.ss-row');return !row||row.style.display!=='none';});
+  const boxes=[...document.querySelectorAll('.ss-cli')].filter(b=>{const row=b.closest('.ss-row');return !row||!row.classList.contains('srch-hide');});
   if(!boxes.length)return;
   const selVisible=boxes.filter(b=>_ssSel[b.value]).length;
   const turnOn=selVisible<boxes.length;   // if not all visible are selected, select them; else clear them
@@ -13371,7 +13376,7 @@ function _pickerSearch(inp){
   [...list.children].forEach(row=>{
     if(row.classList&&row.classList.contains('picker-nores'))return;
     const txt=(typeof _normSearch==='function')?_normSearch(row.textContent||''):String(row.textContent||'').toLowerCase();
-    const m=!q||txt.includes(q);row.style.display=m?'':'none';if(m)total++;
+    const m=!q||txt.includes(q);row.classList.toggle('srch-hide',!m);if(m)total++;   // class-hide keeps flex rows intact
   });
   const nr=list.querySelector('.picker-nores');if(nr)nr.style.display=(q&&total===0)?'':'none';
 }
@@ -16753,6 +16758,10 @@ function _markEventsSeen(ids){
   }catch(e){}
 }
 let _syncingEvents=false;
+// After the first sync (which processes the whole backlog), later syncs surface newly-arrived client
+// activity as an in-app toast — so a submission that lands while the provider is actively using the app
+// is visible, not just a silent bell-badge bump (browser notifications only fire when backgrounded).
+let _evSyncedOnce=false;
 // Friendly submission date derived from the event's REAL server timestamp (created_at),
 // not from whenever this browser happened to process it. Without this, a check-in / form a
 // client submitted last night but that the provider's app only picked up this morning gets
@@ -16812,6 +16821,7 @@ async function syncClientEvents(){
     // actual data was never saved. That race is exactly how a client's submission "never came
     // through." Each branch below is written to be idempotent so a re-processed event is harmless.
     try{loadMergedInto();}catch(e){}   // pick up any merge routing synced from another device
+    const _notifCountBefore=notifFeed.length;
     fresh.forEach(ev=>{
       const payload=ev.payload||{};
       // Route through the merge map: if this client's duplicate was merged away, their token still
@@ -17016,6 +17026,19 @@ async function syncClientEvents(){
       if(touchedVc&&typeof _pushKeyNow==='function'){try{if(typeof persistVcState==='function')persistVcState();}catch(e){}flushes.push(_pushKeyNow('sc_pro_vc_subs',localStorage.getItem('sc_pro_vc_subs')||''));flushes.push(_pushKeyNow('sc_pro_vc_invites',localStorage.getItem('sc_pro_vc_invites')||''));}
       await Promise.all(flushes.map(p=>p&&p.catch?p.catch(()=>{}):p));
     }catch(e){}
+    // Foreground cue: if genuinely new client activity arrived this pass (not the initial backlog),
+    // and the provider is looking at the app, toast it. The bell badge + browser/native push cover the
+    // backgrounded case; this covers "I was in the app and a client submitted but saw nothing."
+    try{
+      const _added=notifFeed.length-_notifCountBefore;
+      if(_evSyncedOnce&&_added>0&&!document.hidden&&typeof proToast==='function'){
+        const top=notifFeed[0];
+        const label=(_added===1&&top&&top.body)?top.body:(_added+' new client updates');
+        proToast(label,4500);
+      }
+    }catch(e){}
+    _evSyncedOnce=true;
+    try{if(typeof updateBadge==='function')updateBadge();}catch(e){}
     // Only now, after the data is committed server-side, record these events as seen.
     _markEventsSeen(fresh.map(ev=>ev.id));
     if(touchedRequests&&document.getElementById('requests-screen'))renderRequests();
@@ -19163,7 +19186,7 @@ function _setAutoRecip(mode){_autoRecipMode=mode;const el=document.getElementByI
 function _autoRecipToggle(id,on){_autoRecipSel[id]=!!on;_autoRecipCount();}
 function _autoRecipCount(){const n=Object.keys(_autoRecipSel).filter(k=>_autoRecipSel[k]).length;const el=document.getElementById('arow-count');if(el)el.textContent=n?(n+' selected'):'None selected yet';}
 function _autoRecipSelectAllVisible(){
-  const boxes=[...document.querySelectorAll('.arow-cb')].filter(b=>{const r=b.closest('.arow');return !r||r.style.display!=='none';});
+  const boxes=[...document.querySelectorAll('.arow-cb')].filter(b=>{const r=b.closest('.arow');return !r||!r.classList.contains('srch-hide');});
   if(!boxes.length)return;
   const sel=boxes.filter(b=>_autoRecipSel[b.value]).length;const on=sel<boxes.length;
   boxes.forEach(b=>{b.checked=on;_autoRecipSel[b.value]=on;});_autoRecipCount();
@@ -19276,18 +19299,38 @@ function renderAutoForm(a,idx){
       <span class="fl-lbl" style="margin-bottom:0;">Message</span>
       ${aiEnabled?`<button onclick="_aiDraftAutomation()" style="border:none;background:none;font-size:12px;color:var(--accent);cursor:pointer;font-family:inherit;padding:2px 0;"><i class="ti ti-sparkles" style="font-size:13px;"></i> Draft with AI</button>`:''}
     </div>
-    <textarea class="fi" id="auto-msg" aria-label="Message body" style="height:110px;resize:none;line-height:1.6;margin-bottom:10px;" placeholder="Hi {client_name}! ✨">${_fileEsc((a&&a.msg)||(a?`Hi {client_name}! Just checking in after your recent ${a.name.toLowerCase().includes('birthday')?'birthday 🎂':'appointment ✨'}. How is your skin feeling? Let me know if you have any questions!\n\n${_providerFirstName()}`:'Hi {client_name}! '))}</textarea>
+    <textarea class="fi" id="auto-msg" aria-label="Message body" oninput="_autoPreview()" style="height:110px;resize:none;line-height:1.6;margin-bottom:10px;" placeholder="Hi {client_name}! ✨">${_fileEsc((a&&a.msg)||(a?`Hi {client_name}! Just checking in after your recent ${a.name.toLowerCase().includes('birthday')?'birthday 🎂':'appointment ✨'}. How is your skin feeling? Let me know if you have any questions!\n\n${_providerFirstName()}`:'Hi {client_name}! '))}</textarea>
     <div style="background:#1a1a1a;border:1px solid #2a2a2a;border-radius:8px;padding:8px 12px;margin-bottom:14px;">
-      <div style="font-size:11px;color:#999;margin-bottom:5px;">Available variables</div>
-      <div style="display:flex;flex-wrap:wrap;gap:5px;">${['{client_name}','{appointment_date}','{treatment_name}','{business_name}'].map(v=>`<span onclick="const ta=document.getElementById('auto-msg');ta.value+=v;" style="font-size:11px;background:#222;color:var(--accent);padding:3px 8px;border-radius:5px;cursor:pointer;">${v}</span>`).join('')}</div>
+      <div style="font-size:11px;color:#999;margin-bottom:5px;">Tap a variable to insert it — it’s filled in per client when sent</div>
+      <div style="display:flex;flex-wrap:wrap;gap:5px;">${['{client_name}','{appointment_date}','{treatment_name}','{business_name}'].map(v=>`<span onclick="const ta=document.getElementById('auto-msg');ta.value+=v;_autoPreview();ta.focus();" style="font-size:11px;background:#222;color:var(--accent);padding:3px 8px;border-radius:5px;cursor:pointer;">${v}</span>`).join('')}</div>
     </div>
     <div style="background:#1a1a1a;border:1px solid #2a2a2a;border-radius:10px;padding:12px 14px;margin-bottom:14px;">
-      <div style="font-size:11px;color:#aaa;text-transform:uppercase;letter-spacing:.07em;margin-bottom:6px;">Preview</div>
-      <div style="font-size:13px;color:#ccc;line-height:1.7;">Hi Maya! Just checking in after your recent appointment ✨. How is your skin feeling? Let me know if you have any questions!<br><br>Jessica</div>
+      <div style="font-size:11px;color:#aaa;text-transform:uppercase;letter-spacing:.07em;margin-bottom:6px;">Preview <span style="text-transform:none;letter-spacing:0;color:#777;">— how it reads to a client</span></div>
+      <div id="auto-preview" style="font-size:13px;color:#ccc;line-height:1.7;"></div>
     </div>
     ${idx>=0?`<button onclick="_deleteAutomation(${idx},'messages')" style="width:100%;border:none;border-radius:8px;padding:10px;font-size:13px;color:#e87070;background:#2a0f0f;cursor:pointer;margin-bottom:10px;"><i class="ti ti-trash" aria-hidden="true" style="font-size:13px;"></i> Delete automation</button>`:''}
     <div style="height:16px;"></div>
   </div>`;
+  try{_autoPreview();}catch(e){}
+}
+// Fill the {placeholders} in an automation message with realistic sample values, so the Preview shows
+// what a client actually receives — not a fixed demo line unrelated to what the provider typed.
+function _fillAutoVars(text){
+  const cl=Object.values(CL)[0]||{};
+  const first=((cl.name||'there').split(' ')[0])||'there';
+  const biz=(typeof bizInfo!=='undefined'&&bizInfo&&(bizInfo.name||bizInfo.studio))||(typeof _businessName==='function'&&_businessName())||'your studio';
+  const tx=cl.treatment||'your treatment';
+  return String(text||'')
+    .replace(/\{client_name\}/gi,first)
+    .replace(/\{business_name\}/gi,biz)
+    .replace(/\{treatment_name\}/gi,tx)
+    .replace(/\{appointment_date\}/gi,'your next visit');
+}
+function _autoPreview(){
+  const ta=document.getElementById('auto-msg');const pv=document.getElementById('auto-preview');
+  if(!ta||!pv)return;
+  const filled=_fillAutoVars(ta.value||'');
+  pv.innerHTML=filled.trim()?_fileEsc(filled).replace(/\n/g,'<br>'):'<span style="color:#777;">Type your message above and the preview appears here.</span>';
 }
 // ── AI drafts automated/drip message copy from the automation's name + trigger. ──
 async function _aiDraftAutomation(){
