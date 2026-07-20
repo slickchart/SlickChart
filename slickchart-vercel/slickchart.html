@@ -27,10 +27,10 @@ body{font-family:-apple-system,BlinkMacSystemFont,'Segoe UI',sans-serif;backgrou
 html{overflow-x:hidden;}
 .shell{width:390px;max-width:100%;background:#111;border-radius:24px;border:1px solid #222;overflow:hidden;height:calc(100vh - 72px);max-height:900px;min-height:560px;display:flex;flex-direction:column;position:relative;}
   @media(max-width:480px){body{padding:0;}.shell{height:100dvh;max-height:none;min-height:0;border-radius:0;border:none;}}
-.sb{background:#161616;padding:10px 20px 6px;display:flex;justify-content:space-between;align-items:center;flex-shrink:0;}
-.sb span{font-size:13px;font-weight:500;color:#e8e8e8;}
-.sb .ic{display:flex;gap:6px;font-size:12px;color:#e8e8e8;}
-.topbar{background:#161616;padding:10px 16px 13px;border-bottom:1px solid #222;display:flex;align-items:center;gap:10px;flex-shrink:0;}
+/* Real iOS status bar (black-translucent) overlays the top of the webview, so the topbar pads
+   down by the top safe-area inset to clear the notch/Dynamic Island. In the desktop preview the
+   inset is 0, so this renders identically to before. Matches the client app's approach. */
+.topbar{background:#161616;padding:calc(10px + env(safe-area-inset-top, 0px)) 16px 13px;border-bottom:1px solid #222;display:flex;align-items:center;gap:10px;flex-shrink:0;}
 .logo{width:30px;height:30px;background:linear-gradient(135deg,var(--accent),var(--accent-2));border-radius:8px;display:flex;align-items:center;justify-content:center;flex-shrink:0;}
 .logo i{font-size:15px;color:#fff;}
 #tt{font-size:17px;font-weight:500;color:#f0f0f0;flex:1;}
@@ -89,7 +89,7 @@ input,textarea,select{font-size:16px!important;}
 .bub-them{background:#1a1a1a;color:#e0e0e0;border:1px solid #2a2a2a;border-radius:16px;border-bottom-left-radius:4px;padding:9px 13px;font-size:13px;line-height:1.6;align-self:flex-start;overflow-wrap:break-word;}
 .snum{width:24px;height:24px;border-radius:50%;background:var(--accent);color:var(--accent-ink);display:flex;align-items:center;justify-content:center;font-size:12px;font-weight:500;flex-shrink:0;margin-top:1px;}
 .prod{background:#1a1a1a;border:1px solid #2a2a2a;border-radius:10px;padding:10px;display:flex;gap:10px;align-items:center;margin-top:8px;}
-.modal-bg{position:absolute;top:0;left:0;right:0;bottom:60px;background:rgba(0,0,0,.75);z-index:100;display:flex;align-items:center;justify-content:center;}
+.modal-bg{position:absolute;top:0;left:0;right:0;bottom:calc(60px + env(safe-area-inset-bottom, 0px));background:rgba(0,0,0,.75);z-index:100;display:flex;align-items:center;justify-content:center;}
 
 .swipe-wrap{position:relative;overflow:hidden;border-radius:12px;margin:0 16px 10px;}
 .swipe-card{transition:transform .2s;touch-action:pan-y;position:relative;z-index:1;}
@@ -103,7 +103,6 @@ input,textarea,select{font-size:16px!important;}
 </head>
 <body>
 <div class="shell">
-  <div class="sb"><span>9:41</span><span class="ic"><i class="ti ti-wifi"></i><i class="ti ti-battery-3"></i></span></div>
   <div class="topbar">
     <button id="topbar-back" onclick="navBack()" aria-label="Go back" title="Back" style="display:none;align-items:center;justify-content:center;background:none;border:none;cursor:pointer;width:34px;height:34px;flex-shrink:0;margin-left:-4px;font-family:inherit;"><i class="ti ti-chevron-left" aria-hidden="true" style="font-size:22px;color:#aaa;"></i></button>
     <div class="logo"><i class="ti ti-sparkles"></i></div>
@@ -1470,7 +1469,7 @@ function _cleanupClientData(id){
   try{if(typeof saveProviderNoteDrafts==='function')saveProviderNoteDrafts();}catch(e){}
   try{if(typeof persistWorkspace==='function')persistWorkspace();}catch(e){}
 }
-function deleteClient(id){if(!CL[id])return;const nm=(CL[id].name||'this client');if(!confirm('Remove '+nm+' from SlickChart?\n\nThis removes their chart from this app only. It does NOT affect their record in Square.'))return;_cleanupClientData(id);delete CL[id];try{_markClientDeleted(id);}catch(e){}saveClients();if(typeof proToast==='function')proToast(nm+' removed');nav('clients');}
+function deleteClient(id){if(!CL[id])return;const nm=(CL[id].name||'this client');const _go=function(){_cleanupClientData(id);delete CL[id];try{_markClientDeleted(id);}catch(e){}saveClients();if(typeof proToast==='function')proToast(nm+' removed');nav('clients');};if(typeof confirmModal==='function')confirmModal({title:'Remove '+nm+'?',body:'This removes their chart from this app only. It does NOT affect their record in Square.',action:'Remove'},_go);else _go();}
 
 // ══ Merge duplicate clients ══════════════════════════════════════════════════
 // Square lets you merge duplicate customers in its dashboard; this brings the same
@@ -4214,7 +4213,17 @@ function renderClient(id){
   </div>`:''}`;
   if(c.squareId){setTimeout(function(){try{_loadClientCards(id);}catch(e){}},0);}
 }
-function dismissFlag(id,then){const c=CL[id];
+// Clearing a flagged contraindication also drops it from the Room "Alerts" panel and is pushed to the
+// server immediately (can't come back), so guard it behind a confirm — an accidental tap must not
+// silently remove an allergy/medication alert.
+function dismissFlag(id,then){
+  const c=CL[id];
+  if(!c||!c.flaggedContra){_doDismissFlag(id,then);return;}
+  if(typeof confirmModal==='function'){
+    confirmModal({title:'Clear this flag?',body:'This removes the flagged contraindication alert for '+((c.name)||'this client')+' and also hides it from the Room alerts. This can’t be undone.',action:'Mark reviewed'},function(){_doDismissFlag(id,then);});
+  }else{_doDismissFlag(id,then);}
+}
+function _doDismissFlag(id,then){const c=CL[id];
   // Remember the exact check-in this flag came from so a re-processed event can't rebuild it.
   if(c&&c.flaggedContra){var _cid=c.flaggedContra.checkinId||(c.lastCheckin&&c.lastCheckin.id)||'';if(_cid)_markCheckinDismissed(_cid);}
   if(c){c.flaggedContra=null;}try{if(typeof saveClients==='function')saveClients();}catch(e){}
@@ -5404,9 +5413,9 @@ function _voicePreview(){
 // isn't thrown away by an accidental tap.
 function _voiceRedo(){
   const cur=(()=>{const el=document.getElementById('voice-ta');return el?el.value.trim():(_voiceText||'').trim();})();
-  if(cur.length>2&&!confirm('Start over? This clears the current note and records a new one.'))return;
-  _voiceText='';
-  startVoiceNote(_voiceClientId);
+  const _go=function(){_voiceText='';startVoiceNote(_voiceClientId);};
+  if(cur.length>2&&typeof confirmModal==='function'){confirmModal({title:'Start over?',body:'This clears the current note and records a new one.',action:'Start over'},_go);return;}
+  _go();
 }
 function _voiceSave(text,toastMsg){
   text=String(text||'').trim();if(!text){_voiceClose();return;}
@@ -11107,7 +11116,7 @@ function renderChat(id){
       const _tap=(_mine&&(m.status==='failed'||m.status==='pending')&&m._mid)?`onclick="_retryProviderMsg('${id}','${m._mid}')" style="cursor:pointer;"`:'';
       return`<div ${_tap} style="align-self:${_mine?'flex-end':'flex-start'};max-width:80%;width:fit-content;min-width:0;${_tap?'cursor:pointer;':''}">${m.text?`<div class="${_mine?'bub-me':'bub-them'}">${_fileEsc(m.text)}</div>`:''}${imgs.length?`<div style="display:flex;flex-wrap:wrap;gap:4px;${m.text?'margin-top:4px;':''}justify-content:${_mine?'flex-end':'flex-start'};">${imgs.map(src=>`<img src="${_imgSrc(src)}" alt="shared photo" onclick="openPhoto(this.src)" style="width:${imgs.length>1?'92px':'180px'};height:${imgs.length>1?'92px':'auto'};${imgs.length>1?'object-fit:cover;':''}border-radius:12px;display:block;border:1px solid #2a2a2a;cursor:zoom-in;">`).join('')}</div>`:''}<div style="font-size:12px;color:#999;margin-top:3px;${_mine?'text-align:right;':''}">${_fileEsc(m.time)}${_st?' · '+_st:''}</div></div>`;}).join('')}
   </div>
-  <div style="position:absolute;bottom:60px;left:0;right:0;background:#161616;border-top:1px solid #1e1e1e;padding:8px 12px;">
+  <div style="position:absolute;bottom:calc(60px + env(safe-area-inset-bottom, 0px));left:0;right:0;background:#161616;border-top:1px solid #1e1e1e;padding:8px 12px;">
     <div id="ai-suggest-bar" style="display:none;flex-wrap:wrap;gap:6px;margin-bottom:8px;"></div>
     <div style="display:flex;align-items:flex-end;gap:6px;">
     ${aiEnabled?`<button onclick="_aiSuggestReplies('${id}')" aria-label="Suggest a reply" title="Suggest a reply" style="width:34px;height:34px;border-radius:50%;background:#1a1a1a;border:1px solid #2a2a2a;display:flex;align-items:center;justify-content:center;cursor:pointer;flex-shrink:0;"><i class="ti ti-sparkles" style="font-size:17px;color:var(--accent);"></i></button>`:''}
@@ -11847,7 +11856,7 @@ function deleteFormCard(id){
   const def=(typeof _formDefById==='function')?_formDefById(id):null;
   const isCustom=(typeof customForms!=='undefined')&&customForms.some(cf=>cf.id===id);
   const nm=(def&&def.name)||((typeof formTmpls!=='undefined'&&formTmpls[id]&&formTmpls[id].name))||'this form';
-  if(!confirm('Delete "'+String(nm).replace(/\s+/g,' ').trim()+'"?\n\nIt’ll be removed from your forms library. This can’t be undone.'))return;
+  const _go=function(){
   if(isCustom){
     for(let i=customForms.length-1;i>=0;i--){if(customForms[i].id===id)customForms.splice(i,1);}
     try{if(typeof formTmpls!=='undefined'&&formTmpls[id])delete formTmpls[id];}catch(e){}
@@ -11857,11 +11866,13 @@ function deleteFormCard(id){
   hiddenForms[id]=1;_saveHiddenForms();
   if(typeof proToast==='function')proToast('Form deleted');
   if(typeof renderForms==='function')renderForms();
+  };
+  if(typeof confirmModal==='function')confirmModal({title:'Delete this form?',body:'“'+String(nm).replace(/\s+/g,' ').trim()+'” will be removed from your forms library. This can’t be undone.',action:'Delete'},_go);else _go();
 }
 function deleteGuideCard(id){
   const g=(typeof resources!=='undefined')?resources.find(x=>x.id===id):null;
   const nm=(g&&g.title)||'this guide';
-  if(!confirm('Delete "'+String(nm).replace(/\s+/g,' ').trim()+'"?\n\nIt’ll be removed from your guides. This can’t be undone.'))return;
+  const _go=function(){
   try{for(let i=customResources.length-1;i>=0;i--){if(customResources[i].id===id)customResources.splice(i,1);}}catch(e){}
   hiddenGuides[id]=1;                                   // stays gone across refresh (template or custom)
   try{if(typeof persistCustomResources==='function')persistCustomResources();}catch(e){}
@@ -11869,6 +11880,8 @@ function deleteGuideCard(id){
   try{if(typeof rebuildResources==='function')rebuildResources();}catch(e){}
   if(typeof proToast==='function')proToast('Guide deleted');
   if(typeof renderForms==='function')renderForms();
+  };
+  if(typeof confirmModal==='function')confirmModal({title:'Delete this guide?',body:'“'+String(nm).replace(/\s+/g,' ').trim()+'” will be removed from your guides. This can’t be undone.',action:'Delete'},_go);else _go();
 }
 function _findGuide(id){return resources.find(g=>g.id===id)||Object.values(guideTemplatesByProf).flat().find(g=>g.id===id)||customResources.find(g=>g.id===id)||(function(){const co=(typeof courses!=='undefined'&&Array.isArray(courses))?courses.find(x=>x.id===id):null;return co?{id:co.id,title:co.title||'Course',icon:'📚',cat:'Course',url:co.url||'',tips:[]}:null;})();}
 // Direct, immediate upsert of one KV key to the server, bypasses the debounced Cloud.push
@@ -12195,7 +12208,7 @@ async function saveCourse(id){
 // so a deleted starter course doesn't get reseeded back on the next load.
 async function deleteCourse(id){
   const c=courses.find(x=>x.id===id);if(!c)return;
-  if(!confirm('Delete "'+String(c.title||'this course').replace(/\s+/g,' ').trim()+'"?\n\nThis removes it from your library. Clients you already sent it to keep their copy.'))return;
+  const _go=async function(){
   // NOTE: deliberately do NOT delete the lesson files from the server here — a client who was
   // already sent this course still downloads them by id (sent = permanent). Orphaned files for a
   // course no client has are negligible; keeping them is the safe trade.
@@ -12206,6 +12219,8 @@ async function deleteCourse(id){
   try{await Promise.all([persistCourses()||Promise.resolve(),(typeof _pushKeyNow==='function'?_pushKeyNow('sc_courses_custom','1'):Promise.resolve())]);}catch(e){}
   if(typeof proToast==='function')proToast('Course deleted');
   _fgTab='courses';nav('forms');
+  };
+  if(typeof confirmModal==='function')confirmModal({title:'Delete this course?',body:'“'+String(c.title||'this course').replace(/\s+/g,' ').trim()+'” will be removed from your library. Clients you already sent it to keep their copy.',action:'Delete'},function(){_go();});else _go();
 }
 
 // ── SHOP ──
@@ -12288,11 +12303,13 @@ function loadRoutineTemplate(id){
   if(typeof proToast==='function')proToast('Loaded "'+r.name+'"');
 }
 function deleteRoutineTemplate(id){
-  if(typeof window!=='undefined'&&typeof window.confirm==='function'&&!window.confirm('Delete this saved routine?'))return;
-  const k=_routineProfKey();
-  savedRoutinesByProf[k]=(savedRoutinesByProf[k]||[]).filter(x=>x.id!==id);
-  persistRoutines();
-  renderRoutineBuilder();
+  const _go=function(){
+    const k=_routineProfKey();
+    savedRoutinesByProf[k]=(savedRoutinesByProf[k]||[]).filter(x=>x.id!==id);
+    persistRoutines();
+    renderRoutineBuilder();
+  };
+  if(typeof confirmModal==='function')confirmModal({title:'Delete this routine?',body:'This removes the saved routine from your templates. This can’t be undone.',action:'Delete'},_go);else _go();
 }
 function resendRoutine(cid){
   const sent=currentSentRoutines()[cid];if(!sent)return;
@@ -18455,7 +18472,7 @@ function saveEditPartner(i){
 }
 function persistPartners(){try{(function(_v){localStorage.setItem('sc_partners',_v);if(typeof _pushKeyNow==='function')_pushKeyNow('sc_partners',_v);return _v;})(JSON.stringify(partners));}catch(e){}}
 function loadPartners(){try{const raw=localStorage.getItem('sc_partners');if(raw){const arr=JSON.parse(raw);if(Array.isArray(arr)&&arr.length)partners=arr;}}catch(e){}}
-function removePartner(i){if(typeof window!=='undefined'&&typeof window.confirm==='function'&&!window.confirm('Remove this partner from your network?'))return;partners.splice(i,1);persistPartners();if(typeof proToast==='function')proToast('Partner removed');nav('partners');}
+function removePartner(i){const _go=function(){partners.splice(i,1);persistPartners();if(typeof proToast==='function')proToast('Partner removed');nav('partners');};if(typeof confirmModal==='function')confirmModal({title:'Remove partner?',body:'This removes this partner from your network.',action:'Remove'},_go);else _go();}
 
 // ── ADD/EDIT AUTOMATION ──
 const triggerOptions=['24 hours after appointment','48 hours after Chemical Peel','72 hours after Microneedling','1 week after appointment','2 weeks after appointment',"On client's birthday","Client hasn't visited in 60 days","Client hasn't visited in 90 days",'Before appointment (24h reminder)','New intake form received'];
