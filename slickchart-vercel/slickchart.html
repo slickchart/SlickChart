@@ -3751,6 +3751,25 @@ async function _aiDayRecap(force){
 }
 
 // ── CLIENTS ──
+// The client roster used to be a flat list of just names. These add an at-a-glance context line
+// (next appointment, else last visit, else the booked service) and small right-aligned indicators
+// so the provider can scan for who's coming up and who needs review without opening each chart.
+function _rosterSub(id,c){
+  c=c||{};
+  const na=(typeof _nextApptForClient==='function')?_nextApptForClient(id):null;
+  if(na&&na.dateLabel)return {icon:'ti-calendar-event',color:'#7fbfa5',text:'Next: '+na.dateLabel+(na.treatment?' · '+na.treatment:'')};
+  if(c.lastVisit)return {icon:'ti-clock',color:'#8a8a8a',text:'Last visit '+c.lastVisit+(c.treatment?' · '+c.treatment:'')};
+  if(c.treatment)return {icon:'ti-sparkles',color:'#8a8a8a',text:c.treatment};
+  return {icon:'ti-user-plus',color:'#8a8a8a',text:'New client'};
+}
+function _rosterBadges(id,c){
+  c=c||{};let b='';
+  const flagged=(typeof _fcActive==='function'&&_fcActive(c))||!!c.flaggedContra;
+  const unread=(typeof threads!=='undefined')&&Array.isArray(threads)&&threads.some(t=>t&&t.id===id&&t.unread);
+  if(flagged)b+='<span title="Needs review" aria-label="Needs review" style="display:inline-flex;align-items:center;justify-content:center;width:20px;height:20px;border-radius:50%;background:#2a0f0f;border:1px solid #5a2020;flex-shrink:0;"><i class="ti ti-alert-triangle" style="font-size:12px;color:#e87070;"></i></span>';
+  if(unread)b+='<span title="Unread message" aria-label="Unread message" style="display:inline-flex;align-items:center;justify-content:center;width:20px;height:20px;border-radius:50%;background:var(--accent-tint);border:1px solid var(--accent-a30,#3d2d10);flex-shrink:0;"><i class="ti ti-message-2" style="font-size:12px;color:var(--accent);"></i></span>';
+  return b;
+}
 function renderClients(){
   setNav('clients');
   // Enforce the block sets (merged / deleted / hidden samples) before we draw, so removed
@@ -3810,7 +3829,7 @@ function renderClients(){
   </div>`:''}
   ${(()=>{const _ent=_shotFilterEntries(Object.entries(CL));return _ent.length===0
     ? emptyState({icon:'ti-users',title:'No clients yet',body:'Add your first client to get started. Their chart, notes, and session history will live here.',action:'Add first client',screen:'new-client'})
-    : _ent.sort((a,b)=>{const da=(a[0]==='maya'||a[0]==='sophie'||a[0]==='priya')?0:1;const db=(b[0]==='maya'||b[0]==='sophie'||b[0]==='priya')?0:1;return da-db;}).map(([id,c])=>`<div class="card client-card" data-search="${((c.name||'')+' '+(c.treatment||'')).toLowerCase().normalize('NFD').replace(/[̀-ͯ]/g,'').replace(/['‘’`"]/g,'').replace(/[^a-z0-9 ]/g,' ').replace(/\s+/g,' ').trim()}" onclick="nav('client','${id}')"><div class="row">${av(c)}<div style="flex:1;"><div style="display:flex;align-items:center;gap:7px;"><span style="font-size:15px;font-weight:500;color:#f0f0f0;">${_fileEsc(c.name)}</span>${(id==='maya'||id==='sophie'||id==='priya')?`<span onclick="event.stopPropagation();showDemoInfo()" title="What are demo clients?" style="font-size:9px;font-weight:700;color:#caa86a;border:1px solid #3a2a10;background:#1a1308;border-radius:4px;padding:1px 5px;letter-spacing:.03em;cursor:pointer;">DEMO</span>`:''}</div></div><i aria-hidden="true" class="ti ti-chevron-right" style="font-size:16px;color:#888;"></i></div></div>`).join('');})()}
+    : _ent.sort((a,b)=>{const da=(a[0]==='maya'||a[0]==='sophie'||a[0]==='priya')?0:1;const db=(b[0]==='maya'||b[0]==='sophie'||b[0]==='priya')?0:1;return da-db;}).map(([id,c])=>{const _rs=_rosterSub(id,c),_rb=_rosterBadges(id,c);return `<div class="card client-card" data-search="${((c.name||'')+' '+(c.treatment||'')).toLowerCase().normalize('NFD').replace(/[̀-ͯ]/g,'').replace(/['‘’`"]/g,'').replace(/[^a-z0-9 ]/g,' ').replace(/\s+/g,' ').trim()}" onclick="nav('client','${id}')"><div class="row">${av(c)}<div style="flex:1;min-width:0;"><div style="display:flex;align-items:center;gap:7px;"><span style="font-size:15px;font-weight:500;color:#f0f0f0;">${_fileEsc(c.name)}</span>${(id==='maya'||id==='sophie'||id==='priya')?`<span onclick="event.stopPropagation();showDemoInfo()" title="What are demo clients?" style="font-size:9px;font-weight:700;color:#caa86a;border:1px solid #3a2a10;background:#1a1308;border-radius:4px;padding:1px 5px;letter-spacing:.03em;cursor:pointer;">DEMO</span>`:''}</div><div style="display:flex;align-items:center;gap:5px;margin-top:2px;font-size:12px;color:${_rs.color};overflow:hidden;"><i class="ti ${_rs.icon}" style="font-size:12px;flex-shrink:0;"></i><span style="overflow:hidden;text-overflow:ellipsis;white-space:nowrap;">${_fileEsc(_rs.text)}</span></div></div><div style="display:flex;align-items:center;gap:6px;flex-shrink:0;">${_rb}<i aria-hidden="true" class="ti ti-chevron-right" style="font-size:16px;color:#888;"></i></div></div></div>`;}).join('');})()}
   ${_noRes('clients-noresults','No clients match your search.')}`;
 }
 // ── "Ask your book": natural-language search over the client roster (who's due, allergies, etc.). ──
