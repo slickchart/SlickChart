@@ -1369,7 +1369,7 @@ function _setShotMode(on){
   // Screenshot mode is meaningless without the sample clients on screen, so turning it on also
   // restores sample data if it was hidden. Turning it off leaves sample data as-is.
   try{if(on&&_sampleHidden()&&typeof _restoreSampleData==='function')_restoreSampleData();}catch(e){}
-  try{if(typeof proToast==='function')proToast(on?'Screenshot mode on — showing only sample clients':'Screenshot mode off — your clients are back');}catch(e){}
+  try{if(typeof proToast==='function')proToast(on?'Social media mode on — showing only sample clients':'Social media mode off — your clients are back');}catch(e){}
   try{nav('account');}catch(e){}
 }
 const _SAMPLE_NOTIF_IDS=['n1','n2','n3','n4','n5','n6','n7'];
@@ -3828,7 +3828,7 @@ function renderClients(){
   </div>`;})()}
   ${_shotMode()?`<div style="margin:0 16px 12px;background:#13102a;border:1px solid #2d2360;border-radius:11px;padding:11px 13px;display:flex;align-items:center;gap:11px;">
     <i class="ti ti-camera" aria-hidden="true" style="color:#a891ec;font-size:17px;flex-shrink:0;"></i>
-    <div style="flex:1;min-width:0;font-size:12px;color:#bcaee8;line-height:1.45;"><b style="color:#efeaff;">Screenshot mode is on.</b> Showing only sample clients — your real clients are hidden (not deleted).</div>
+    <div style="flex:1;min-width:0;font-size:12px;color:#bcaee8;line-height:1.45;"><b style="color:#efeaff;">Social media mode is on.</b> Showing only sample clients — your real clients are hidden (not deleted).</div>
     <button onclick="_setShotMode(false)" style="background:#a891ec;color:#13102a;border:none;border-radius:8px;padding:6px 12px;font-size:11px;font-weight:700;cursor:pointer;flex-shrink:0;">Turn off</button>
   </div>`:''}
   <div class="sh"><h2 id="page-heading" tabindex="-1">All clients</h2></div>
@@ -8302,7 +8302,10 @@ function inviteVirtualConsult(id,_force,_kind,_formId){
 }
 // ── Virtual consult inbox (all clients, by status) ──
 function _vcStatus(id){const inv=vcInvites[id]||{};if(inv.reviewed)return 'reviewed';if(inv.submitted)return 'needs-review';if(inv.invited)return 'awaiting';return 'none';}
-function _vcPendingCount(){return Object.keys(CL).filter(id=>_vcStatus(id)==='needs-review').length;}
+// Count consults awaiting review, honoring social-media/content mode the same way the inbox does:
+// sample clients' demo consults only count in content mode; real clients' consults only count in
+// normal use — so the home "needs attention" tile and Clients badge never show fabricated demo work.
+function _vcPendingCount(){return Object.keys(CL).filter(id=>_vcStatus(id)==='needs-review'&&(_shotMode()?(_SAMPLE_IDS.indexOf(id)>=0):(_SAMPLE_IDS.indexOf(id)<0))).length;}
 function sendVcReview(id){
   const ta=document.getElementById('vc-review-notes');
   const notes=ta?String(ta.value||'').trim():'';
@@ -8332,7 +8335,11 @@ function renderVcInbox(){
   setNav('clients');
   document.getElementById('tt').textContent='Virtual Consults';
   const meta={'needs-review':{label:'Needs review',col:'var(--accent)',bg:'var(--accent-tint)',ic:'ti-photo-up'},'awaiting':{label:'Awaiting photos',col:'#5ba3e8',bg:'#0d1e33',ic:'ti-clock'},'reviewed':{label:'Reviewed',col:'#4ec49a',bg:'#0a2019',ic:'ti-circle-check'}};
-  const rows=Object.keys(CL).map(id=>({id,c:CL[id],status:_vcStatus(id),sub:vcSubmissions[id]})).filter(r=>r.status!=='none');
+  // The seeded sample clients (Maya/Sophie/Priya) carry demo virtual-consult submissions. Treat those
+  // like every other piece of sample data: show them ONLY in social-media/content mode, and hide them
+  // in normal use so a real provider's consult queue isn't cluttered with fabricated entries.
+  const _vcVisible=(id)=>_shotMode()?(_SAMPLE_IDS.indexOf(id)>=0):(_SAMPLE_IDS.indexOf(id)<0);
+  const rows=Object.keys(CL).map(id=>({id,c:CL[id],status:_vcStatus(id),sub:vcSubmissions[id]})).filter(r=>r.status!=='none'&&_vcVisible(r.id));
   const order={'needs-review':0,'awaiting':1,'reviewed':2};
   rows.sort((a,b)=>order[a.status]-order[b.status]);
   const needs=rows.filter(r=>r.status==='needs-review').length;
@@ -8363,14 +8370,24 @@ function renderVcInbox(){
 function _vcInvitePicker(){
   document.getElementById('vc-invite-modal')?.remove();
   const avail=Object.keys(CL).filter(id=>_vcStatus(id)==='none');
+  const _ds=(s)=>(typeof _normSearch==='function')?_normSearch(s||''):String(s||'').toLowerCase();
+  const rows=avail.map(id=>`<button class="vcinv-row" data-search="${_ds(CL[id].name+' '+(CL[id].treatment||''))}" onclick="document.getElementById('vc-invite-modal').remove();inviteVirtualConsult('${id}');setTimeout(()=>nav('vc-inbox'),0)" style="display:flex;align-items:center;gap:11px;width:100%;text-align:left;background:#161616;border:1px solid #2a2a2a;border-radius:11px;padding:11px 12px;margin-bottom:8px;cursor:pointer;font-family:inherit;">${av(CL[id],36)}<div style="flex:1;min-width:0;"><div style="font-size:14px;color:#f0f0f0;font-weight:500;overflow:hidden;text-overflow:ellipsis;white-space:nowrap;">${_fileEsc(CL[id].name)}</div><div style="font-size:11px;color:#999;overflow:hidden;text-overflow:ellipsis;white-space:nowrap;">${_fileEsc(CL[id].treatment)}</div></div><i class="ti ti-chevron-right" style="font-size:16px;color:#929292;flex-shrink:0;"></i></button>`).join('');
   const m=document.createElement('div');m.id='vc-invite-modal';
-  m.style.cssText='position:fixed;top:0;bottom:0;left:0;right:0;margin:0 auto;width:390px;max-width:100%;background:rgba(0,0,0,.7);z-index:400;display:flex;align-items:center;justify-content:center;padding:24px 16px;box-sizing:border-box;';
+  m.style.cssText='position:fixed;inset:0;margin:0 auto;width:390px;max-width:100%;background:rgba(0,0,0,.7);z-index:400;display:flex;align-items:flex-end;justify-content:center;';
   m.onclick=e=>{if(e.target===m)m.remove();};
-  m.innerHTML=`<div style="background:#1a1a1a;border:1px solid #2a2a2a;border-radius:16px;width:100%;max-height:80%;overflow:auto;padding:18px 16px 26px;">
-    <div style="width:36px;height:4px;background:#333;border-radius:2px;margin:0 auto 14px;"></div>
-    <div style="font-size:16px;font-weight:600;color:#f0f0f0;margin-bottom:3px;">Invite to a virtual consult</div>
-    <div style="font-size:12px;color:#999;margin-bottom:14px;line-height:1.5;">Pick a client to send a photo-submission invite to.</div>
-    ${avail.length?avail.map(id=>`<button onclick="document.getElementById('vc-invite-modal').remove();inviteVirtualConsult('${id}');setTimeout(()=>nav('vc-inbox'),0)" style="display:flex;align-items:center;gap:11px;width:100%;text-align:left;background:#161616;border:1px solid #2a2a2a;border-radius:11px;padding:11px 12px;margin-bottom:8px;cursor:pointer;font-family:inherit;">${av(CL[id],36)}<div style="flex:1;"><div style="font-size:14px;color:#f0f0f0;font-weight:500;">${_fileEsc(CL[id].name)}</div><div style="font-size:11px;color:#999;">${_fileEsc(CL[id].treatment)}</div></div><i class="ti ti-chevron-right" style="font-size:16px;color:#929292;"></i></button>`).join(''):`<div style="font-size:13px;color:#888;text-align:center;padding:20px 0;">Every client already has an active consult.</div>`}
+  // Fixed-height flex column: header + search pinned, the client list scrolls internally — a long
+  // roster stays contained instead of turning into an endless scroll that swallows the whole screen.
+  m.innerHTML=`<div style="background:#1a1a1a;border:1px solid #2a2a2a;border-radius:16px 16px 0 0;width:100%;max-height:88%;display:flex;flex-direction:column;overflow:hidden;">
+    <div style="padding:16px 16px 0;flex-shrink:0;">
+      <div style="width:36px;height:4px;background:#333;border-radius:2px;margin:0 auto 14px;"></div>
+      <div style="font-size:16px;font-weight:600;color:#f0f0f0;margin-bottom:3px;">Invite to a virtual consult</div>
+      <div style="font-size:12px;color:#999;margin-bottom:12px;line-height:1.5;">Pick a client to send a photo-submission invite to.</div>
+      ${avail.length?`<div style="position:relative;margin-bottom:10px;"><i class="ti ti-search" aria-hidden="true" style="position:absolute;left:11px;top:50%;transform:translateY(-50%);font-size:14px;color:#9a9a9a;"></i><input oninput="searchList(this.value,'.vcinv-row','vcinv-nores')" placeholder="Search clients…" style="width:100%;background:#111;border:1px solid #2a2a2a;border-radius:9px;padding:8px 11px 8px 32px;font-size:13px;color:#e0e0e0;font-family:inherit;box-sizing:border-box;outline:none;"></div>`:''}
+    </div>
+    <div style="flex:1;min-height:0;overflow-y:auto;padding:0 16px calc(16px + env(safe-area-inset-bottom,0px));-webkit-overflow-scrolling:touch;">
+      ${avail.length?rows:`<div style="font-size:13px;color:#888;text-align:center;padding:20px 0;">Every client already has an active consult.</div>`}
+      ${_noRes('vcinv-nores','No clients match your search.')}
+    </div>
   </div>`;
   (document.querySelector('.shell')||document.body).appendChild(m);
 }
@@ -11117,15 +11134,38 @@ function renderInviteClients(){
   <div style="padding:14px 16px 4px;"><div style="font-size:19px;font-weight:600;color:#f0f0f0;margin-bottom:4px;">Invite your clients</div><div style="font-size:13px;color:#999;line-height:1.5;">Each client gets their own private link to see summaries, aftercare, forms, and rebook. We email each person their personal link.</div></div>
   <div style="margin:10px 16px;background:#0d1e33;border:1px solid #1a3a5c;border-radius:10px;padding:11px 13px;font-size:12px;color:#8fc0ea;line-height:1.55;"><i class="ti ti-lock" style="font-size:13px;"></i> Every link is private and unique to one client. No one can see another client's information.</div>
   ${withEmail.length?`
-  <div style="display:flex;align-items:center;justify-content:space-between;padding:6px 16px 8px;"><div style="font-size:12px;color:#999;">${selCount} of ${withEmail.length} selected</div><button onclick="_inviteToggleAll(${selCount<withEmail.length?'true':'false'})" style="background:none;border:none;color:var(--accent);font-size:12px;font-weight:600;cursor:pointer;font-family:inherit;">${selCount<withEmail.length?'Select all':'Deselect all'}</button></div>
-  ${withEmail.map(id=>{const c=CL[id];const on=window._inviteSel[id];return`<div onclick="_inviteToggle('${id}')" style="margin:0 16px 8px;background:#161616;border:1px solid ${on?'var(--accent-tint2)':'#242424'};border-radius:12px;padding:11px 13px;display:flex;align-items:center;gap:11px;cursor:pointer;"><div style="width:22px;height:22px;border-radius:6px;border:1.5px solid ${on?'var(--accent)':'#444'};background:${on?'var(--accent)':'transparent'};display:flex;align-items:center;justify-content:center;flex-shrink:0;">${on?'<i class="ti ti-check" style="font-size:14px;color:var(--accent-ink);"></i>':''}</div><div style="width:36px;height:36px;border-radius:9px;background:${c.bg||'#2a2a2a'};display:flex;align-items:center;justify-content:center;font-size:13px;font-weight:500;color:${c.tc||'#fff'};flex-shrink:0;">${_cIni(c)}</div><div style="flex:1;min-width:0;"><div style="font-size:14px;font-weight:500;color:#e0e0e0;">${_fileEsc(c.name)}</div><div style="font-size:12px;color:#999;">${_fileEsc(c.email)}${c.appInvited?' \u00b7 invited':''}</div></div></div>`;}).join('')}
-  <div style="padding:8px 16px 20px;"><button onclick="_doBulkInvite()" style="width:100%;background:var(--accent);border:none;border-radius:12px;padding:14px;font-size:15px;font-weight:600;color:var(--accent-ink);cursor:pointer;font-family:inherit;"><i class="ti ti-send"></i> Email ${selCount} client${selCount===1?'':'s'} their link</button></div>
+  <div style="display:flex;align-items:center;justify-content:space-between;padding:6px 16px 8px;"><div id="inv-count" style="font-size:12px;color:#999;">${selCount} of ${withEmail.length} selected</div><button id="inv-toggle-all" onclick="_inviteToggleAll()" style="background:none;border:none;color:var(--accent);font-size:12px;font-weight:600;cursor:pointer;font-family:inherit;">${selCount<withEmail.length?'Select all':'Deselect all'}</button></div>
+  ${withEmail.length>6?_searchBar('Search clients\u2026','.inv-cli','inv-nores'):''}
+  ${withEmail.map(id=>{const c=CL[id];const on=window._inviteSel[id];return`<div class="inv-cli" data-id="${id}" data-search="${((c.name||'')+' '+(c.email||'')).toLowerCase().normalize('NFD').replace(/[\u0300-\u036f]/g,'').replace(/['\u2018\u2019`"]/g,'').replace(/[^a-z0-9 ]/g,' ').replace(/\s+/g,' ').trim()}" onclick="_inviteToggle('${id}')" style="margin:0 16px 8px;background:#161616;border:1px solid ${on?'var(--accent-tint2)':'#242424'};border-radius:12px;padding:11px 13px;display:flex;align-items:center;gap:11px;cursor:pointer;"><div class="inv-box" style="width:22px;height:22px;border-radius:6px;border:1.5px solid ${on?'var(--accent)':'#444'};background:${on?'var(--accent)':'transparent'};display:flex;align-items:center;justify-content:center;flex-shrink:0;">${on?'<i class="ti ti-check" style="font-size:14px;color:var(--accent-ink);"></i>':''}</div><div style="width:36px;height:36px;border-radius:9px;background:${c.bg||'#2a2a2a'};display:flex;align-items:center;justify-content:center;font-size:13px;font-weight:500;color:${c.tc||'#fff'};flex-shrink:0;">${_cIni(c)}</div><div style="flex:1;min-width:0;"><div style="font-size:14px;font-weight:500;color:#e0e0e0;">${_fileEsc(c.name)}</div><div style="font-size:12px;color:#999;">${_fileEsc(c.email)}${c.appInvited?' \u00b7 invited':''}</div></div></div>`;}).join('')}
+  ${_noRes('inv-nores','No clients match your search.')}
+  <div style="padding:8px 16px 20px;"><button id="inv-send-btn" onclick="_doBulkInvite()" style="width:100%;background:var(--accent);border:none;border-radius:12px;padding:14px;font-size:15px;font-weight:600;color:var(--accent-ink);cursor:pointer;font-family:inherit;"><i class="ti ti-send"></i> Email ${selCount} client${selCount===1?'':'s'} their link</button></div>
   `:`<div style="text-align:center;color:#888;font-size:13px;padding:30px 24px;line-height:1.6;">None of your clients have an email on file yet. Add an email to their profile to invite them, or open a client's profile and copy their private link to share manually.</div>`}
   ${noEmail.length?`<div class="sh"><h2>No email on file (${noEmail.length})</h2></div><div style="font-size:12px;color:#888;padding:0 16px 14px;line-height:1.5;">Add an email on their profile to include them here, or copy their private link from their profile to text it.</div>`:''}
   <div style="height:20px;"></div>`;
 }
-function _inviteToggle(id){window._inviteSel[id]=!window._inviteSel[id];renderInviteClients();}
-function _inviteToggleAll(on){Object.keys(CL).filter(id=>CL[id].email).forEach(id=>window._inviteSel[id]=on);renderInviteClients();}
+// Toggle a single client in place (no full re-render) so an active search filter isn't wiped every
+// time the provider checks someone off.
+function _inviteToggle(id){
+  window._inviteSel[id]=!window._inviteSel[id];
+  const on=window._inviteSel[id];
+  const row=document.querySelector('.inv-cli[data-id="'+id+'"]');
+  if(row){row.style.borderColor=on?'var(--accent-tint2)':'#242424';const box=row.querySelector('.inv-box');if(box){box.style.border='1.5px solid '+(on?'var(--accent)':'#444');box.style.background=on?'var(--accent)':'transparent';box.innerHTML=on?'<i class="ti ti-check" style="font-size:14px;color:var(--accent-ink);"></i>':'';}}
+  _inviteUpdateCount();
+}
+function _inviteToggleAll(){
+  const withEmail=Object.keys(CL).filter(id=>CL[id].email);
+  const selCount=withEmail.filter(id=>window._inviteSel[id]).length;
+  const on=selCount<withEmail.length;   // not all selected → select all; else clear
+  withEmail.forEach(id=>{window._inviteSel[id]=on;const row=document.querySelector('.inv-cli[data-id="'+id+'"]');if(row){row.style.borderColor=on?'var(--accent-tint2)':'#242424';const box=row.querySelector('.inv-box');if(box){box.style.border='1.5px solid '+(on?'var(--accent)':'#444');box.style.background=on?'var(--accent)':'transparent';box.innerHTML=on?'<i class="ti ti-check" style="font-size:14px;color:var(--accent-ink);"></i>':'';}}});
+  _inviteUpdateCount();
+}
+function _inviteUpdateCount(){
+  const withEmail=Object.keys(CL).filter(id=>CL[id].email);
+  const selCount=withEmail.filter(id=>window._inviteSel[id]).length;
+  const cEl=document.getElementById('inv-count');if(cEl)cEl.textContent=selCount+' of '+withEmail.length+' selected';
+  const tEl=document.getElementById('inv-toggle-all');if(tEl)tEl.textContent=selCount<withEmail.length?'Select all':'Deselect all';
+  const bEl=document.getElementById('inv-send-btn');if(bEl)bEl.innerHTML='<i class="ti ti-send"></i> Email '+selCount+' client'+(selCount===1?'':'s')+' their link';
+}
 let _bulkInviting=false;
 async function _doBulkInvite(){
   const tok=(typeof Cloud!=='undefined'&&Cloud&&Cloud.token)||''; if(!tok){proToast('Please sign in first');return;}
@@ -11455,7 +11495,7 @@ function showMsgTab(tab){
       <div style="background:#1a1a1a;border:1px solid #2a2a2a;border-radius:12px;overflow:hidden;">
         <div style="padding:12px 14px;display:flex;align-items:flex-start;gap:10px;">
           <div style="width:38px;height:38px;border-radius:9px;background:${_fileEsc(a.col)};display:flex;align-items:center;justify-content:center;font-size:17px;">${_fileEsc(a.icon)}</div>
-          <div style="flex:1;min-width:0;"><div style="display:flex;align-items:center;gap:6px;margin-bottom:2px;"><span style="font-size:13px;font-weight:500;color:#e0e0e0;">${_fileEsc(a.name)}</span><span class="bdg ${a.on?'bg':'bm'}" style="font-size:12px;">${a.on?'Active':'Paused'}</span></div><div style="font-size:12px;color:#999;">${_fileEsc(a.trigger)}</div>${(_demoStats&&a.on&&a.sent>0)?`<div style="font-size:11px;color:#999;margin-top:4px;">${a.sent} sent · ${a.opened} opened · ${Math.round(a.opened/a.sent*100)}% open rate</div>`:''}</div>
+          <div style="flex:1;min-width:0;"><div style="display:flex;align-items:center;gap:6px;margin-bottom:2px;"><span style="font-size:13px;font-weight:500;color:#e0e0e0;">${_fileEsc(a.name)}</span><span class="bdg ${a.on?'bg':'bm'}" style="font-size:12px;">${a.on?'Active':'Paused'}</span></div><div style="font-size:12px;color:#999;">${_fileEsc(a.trigger)}</div>${_autoWhenLabel(a)?`<div style="font-size:11px;color:${a.on?'#5ba3e8':'#777'};margin-top:4px;display:inline-flex;align-items:center;gap:4px;"><i class="ti ti-clock-hour-4" style="font-size:12px;"></i> ${_fileEsc(_autoWhenLabel(a))}</div>`:''}${(_demoStats&&a.on&&a.sent>0)?`<div style="font-size:11px;color:#999;margin-top:4px;">${a.sent} sent · ${a.opened} opened · ${Math.round(a.opened/a.sent*100)}% open rate</div>`:''}</div>
           ${togBtn(a.on,'_toggleAuto('+i+')','Toggle automation')}
         </div>
         <div style="border-top:1px solid #1e1e1e;padding:7px 14px;display:flex;align-items:center;justify-content:space-between;">
@@ -12949,7 +12989,7 @@ function renderAccount(){
       ?`<div onclick="_restoreSampleData()" style="display:flex;align-items:center;gap:11px;padding:13px 14px;cursor:pointer;"><div style="width:38px;height:38px;border-radius:10px;background:#1e1633;display:flex;align-items:center;justify-content:center;flex-shrink:0;"><i class="ti ti-history" style="font-size:18px;color:#a891ec;"></i></div><div style="flex:1;"><div style="font-size:14px;font-weight:500;color:#e0e0e0;">Restore Sample Data</div><div style="font-size:12px;color:#999;">Bring back the example client &amp; activity</div></div><i class="ti ti-chevron-right" style="font-size:16px;color:#888;"></i></div>`
       :`<div onclick="_clearSampleData()" style="display:flex;align-items:center;gap:11px;padding:13px 14px;cursor:pointer;"><div style="width:38px;height:38px;border-radius:10px;background:#2a0f0f;display:flex;align-items:center;justify-content:center;flex-shrink:0;"><i class="ti ti-eraser" style="font-size:18px;color:#e87070;"></i></div><div style="flex:1;"><div style="font-size:14px;font-weight:500;color:#e0e0e0;">Remove Sample Data</div><div style="font-size:12px;color:#999;">Clear the example client &amp; activity, keep your real data</div></div><i class="ti ti-chevron-right" style="font-size:16px;color:#888;"></i></div>`}
     <div style="border-top:1px solid #2a2a2a;"></div>
-    <div style="display:flex;align-items:center;gap:11px;padding:13px 14px;"><div style="width:38px;height:38px;border-radius:10px;background:#13102a;display:flex;align-items:center;justify-content:center;flex-shrink:0;"><i class="ti ti-camera" style="font-size:18px;color:#a891ec;"></i></div><div style="flex:1;min-width:0;"><div style="font-size:14px;font-weight:500;color:#e0e0e0;">Screenshot Mode</div><div style="font-size:12px;color:#999;line-height:1.4;">Show only sample clients (Maya, Sophie, Priya) for App Store screenshots. Hides your real clients — nothing is deleted.</div></div>${togBtn(_shotMode(),'_setShotMode(!'+_shotMode()+')','Toggle screenshot mode')}</div>
+    <div style="display:flex;align-items:center;gap:11px;padding:13px 14px;"><div style="width:38px;height:38px;border-radius:10px;background:#13102a;display:flex;align-items:center;justify-content:center;flex-shrink:0;"><i class="ti ti-camera" style="font-size:18px;color:#a891ec;"></i></div><div style="flex:1;min-width:0;"><div style="font-size:14px;font-weight:500;color:#e0e0e0;">Social media content mode</div><div style="font-size:12px;color:#999;line-height:1.4;">Show only sample clients (Maya, Sophie, Priya) so you can screenshot or screen-record your app for social media &amp; marketing. Hides your real clients — nothing is deleted.</div></div>${togBtn(_shotMode(),'_setShotMode(!'+_shotMode()+')','Toggle social media content mode')}</div>
     <div style="border-top:1px solid #2a2a2a;"></div>
     <div onclick="replayOnboarding()" style="display:flex;align-items:center;gap:11px;padding:13px 14px;cursor:pointer;"><div style="width:38px;height:38px;border-radius:10px;background:var(--accent-tint);display:flex;align-items:center;justify-content:center;flex-shrink:0;"><i class="ti ti-player-play" style="font-size:18px;color:var(--accent);"></i></div><div style="flex:1;"><div style="font-size:14px;font-weight:500;color:#e0e0e0;">Replay Setup Walkthrough</div><div style="font-size:12px;color:#999;">See the guided first-run setup again</div></div><i class="ti ti-chevron-right" style="font-size:16px;color:#888;"></i></div>
   </div></div>
@@ -13126,28 +13166,43 @@ function _openSendSheet(opts){
   ov.style.cssText='position:fixed;inset:0;margin:0 auto;width:390px;max-width:100%;z-index:99999;background:rgba(0,0,0,.65);display:flex;align-items:flex-end;justify-content:center;';
   ov.onclick=e=>{if(e.target===ov)ov.remove();};
   const ids=Object.keys(CL);
-  const clientRows=ids.map(cid=>{const c=CL[cid];return `<label style="display:flex;align-items:center;gap:10px;padding:9px 12px;border:1px solid #2a2a2a;background:#161616;border-radius:10px;margin-bottom:6px;cursor:pointer;"><input type="checkbox" class="ss-cli" value="${_fileEsc(cid)}" onchange="_ssToggle('${_fileEsc(cid)}',this.checked)" style="width:17px;height:17px;accent-color:var(--accent);flex-shrink:0;"><div style="width:32px;height:32px;border-radius:8px;background:${_fileEsc(c.bg||'#2e2318')};display:flex;align-items:center;justify-content:center;font-size:12px;font-weight:500;color:${_fileEsc(c.tc||'var(--accent)')};flex-shrink:0;">${_fileEsc(c.initials||(c.name||'?').slice(0,1))}</div><span style="flex:1;min-width:0;font-size:13px;color:#e0e0e0;overflow:hidden;text-overflow:ellipsis;white-space:nowrap;">${_fileEsc(c.name)}</span></label>`;}).join('');
-  ov.innerHTML=`<div style="background:#1a1a1a;border:1px solid #2a2a2a;border-radius:16px 16px 0 0;width:100%;padding:18px 16px calc(14px + env(safe-area-inset-bottom,0px));max-height:88%;overflow-y:auto;">
-    <div style="font-size:16px;font-weight:600;color:#f0f0f0;margin-bottom:10px;">${_fileEsc(opts.title||'Send a message')}</div>
-    <span class="fl-lbl">Message</span>
-    <textarea id="ss-msg" class="fi" style="height:90px;resize:none;margin-bottom:5px;">${_fileEsc(opts.message||'')}</textarea>
-    <div style="font-size:11px;color:#8a8a8a;margin-bottom:14px;">Use {client_name} and it's filled in for each person.</div>
-    <div style="display:flex;align-items:center;justify-content:space-between;margin-bottom:8px;">
-      <span style="font-size:11px;font-weight:600;color:#999;text-transform:uppercase;letter-spacing:.05em;">Send to</span>
-      <button onclick="_ssSelectAll()" id="ss-all" style="border:none;background:none;color:var(--accent);font-size:12px;cursor:pointer;font-family:inherit;font-weight:500;">Select all</button>
+  const _ds=(s)=>(typeof _normSearch==='function')?_normSearch(s||''):String(s||'').toLowerCase();
+  const clientRows=ids.map(cid=>{const c=CL[cid];return `<label class="ss-row" data-search="${_ds(c.name)}" style="display:flex;align-items:center;gap:10px;padding:9px 12px;border:1px solid #2a2a2a;background:#161616;border-radius:10px;margin-bottom:6px;cursor:pointer;"><input type="checkbox" class="ss-cli" value="${_fileEsc(cid)}" onchange="_ssToggle('${_fileEsc(cid)}',this.checked)" style="width:17px;height:17px;accent-color:var(--accent);flex-shrink:0;"><div style="width:32px;height:32px;border-radius:8px;background:${_fileEsc(c.bg||'#2e2318')};display:flex;align-items:center;justify-content:center;font-size:12px;font-weight:500;color:${_fileEsc(c.tc||'var(--accent)')};flex-shrink:0;">${_fileEsc(c.initials||(c.name||'?').slice(0,1))}</div><span style="flex:1;min-width:0;font-size:13px;color:#e0e0e0;overflow:hidden;text-overflow:ellipsis;white-space:nowrap;">${_fileEsc(c.name)}</span></label>`;}).join('');
+  // Sheet is a fixed-height flex column: the message + "Send to" controls stay pinned at the top, the
+  // client list scrolls in the middle, and the Send/Cancel buttons stay anchored at the bottom — so a
+  // long client list never pushes the send button off-screen or hides the app behind an endless scroll.
+  ov.innerHTML=`<div style="background:#1a1a1a;border:1px solid #2a2a2a;border-radius:16px 16px 0 0;width:100%;max-height:90%;display:flex;flex-direction:column;overflow:hidden;">
+    <div style="padding:16px 16px 0;flex-shrink:0;">
+      <div style="font-size:16px;font-weight:600;color:#f0f0f0;margin-bottom:10px;">${_fileEsc(opts.title||'Send a message')}</div>
+      <span class="fl-lbl">Message</span>
+      <textarea id="ss-msg" class="fi" style="height:76px;resize:none;margin-bottom:5px;">${_fileEsc(opts.message||'')}</textarea>
+      <div style="font-size:11px;color:#8a8a8a;margin-bottom:12px;">Use {client_name} and it's filled in for each person.</div>
+      <div style="display:flex;align-items:center;justify-content:space-between;margin-bottom:8px;">
+        <span style="font-size:11px;font-weight:600;color:#999;text-transform:uppercase;letter-spacing:.05em;">Send to</span>
+        <button onclick="_ssSelectAll()" id="ss-all" style="border:none;background:none;color:var(--accent);font-size:12px;cursor:pointer;font-family:inherit;font-weight:500;">Select all</button>
+      </div>
+      ${ids.length?`<div style="position:relative;margin-bottom:10px;"><i class="ti ti-search" aria-hidden="true" style="position:absolute;left:11px;top:50%;transform:translateY(-50%);font-size:14px;color:#9a9a9a;"></i><input oninput="searchList(this.value,'.ss-row','ss-nores')" placeholder="Search clients…" style="width:100%;background:#111;border:1px solid #2a2a2a;border-radius:9px;padding:8px 11px 8px 32px;font-size:13px;color:#e0e0e0;font-family:inherit;box-sizing:border-box;outline:none;"></div>`:''}
     </div>
-    ${clientRows||'<div style="font-size:12px;color:#999;padding:4px 0 8px;">No clients yet.</div>'}
-    <button id="ss-send" onclick="_ssSend()" class="btnp" style="border-radius:10px;padding:12px;margin-top:10px;"><i class="ti ti-send"></i> Send</button>
-    <button onclick="document.getElementById('send-sheet').remove()" style="width:100%;margin-top:8px;background:none;border:none;color:#929292;font-size:13px;cursor:pointer;font-family:inherit;padding:6px;">Cancel</button>
+    <div style="flex:1;min-height:0;overflow-y:auto;padding:0 16px;-webkit-overflow-scrolling:touch;">
+      ${clientRows||'<div style="font-size:12px;color:#999;padding:4px 0 8px;">No clients yet.</div>'}
+      ${_noRes('ss-nores','No clients match your search.')}
+    </div>
+    <div style="padding:12px 16px calc(12px + env(safe-area-inset-bottom,0px));border-top:1px solid #2a2a2a;flex-shrink:0;background:#1a1a1a;">
+      <button id="ss-send" onclick="_ssSend()" class="btnp" style="border-radius:10px;padding:12px;"><i class="ti ti-send"></i> Send</button>
+      <button onclick="document.getElementById('send-sheet').remove()" style="width:100%;margin-top:8px;background:none;border:none;color:#929292;font-size:13px;cursor:pointer;font-family:inherit;padding:6px;">Cancel</button>
+    </div>
   </div>`;
   (document.querySelector('.shell')||document.body).appendChild(ov);
   _ssUpdateBtn();
 }
 function _ssToggle(cid,on){_ssSel[cid]=!!on;_ssUpdateBtn();}
 function _ssSelectAll(){
-  const boxes=document.querySelectorAll('.ss-cli');
-  const selCount=Object.keys(_ssSel).filter(k=>_ssSel[k]).length;
-  const turnOn=selCount<boxes.length;   // if not all selected, select all; else clear
+  // Act on the currently-visible (search-filtered) rows, so "Select all" after a search means
+  // "select everyone matching this search" rather than silently selecting hidden clients too.
+  const boxes=[...document.querySelectorAll('.ss-cli')].filter(b=>{const row=b.closest('.ss-row');return !row||row.style.display!=='none';});
+  if(!boxes.length)return;
+  const selVisible=boxes.filter(b=>_ssSel[b.value]).length;
+  const turnOn=selVisible<boxes.length;   // if not all visible are selected, select them; else clear them
   boxes.forEach(b=>{b.checked=turnOn;_ssSel[b.value]=turnOn;});
   const allBtn=document.getElementById('ss-all');if(allBtn)allBtn.textContent=turnOn?'Clear all':'Select all';
   _ssUpdateBtn();
@@ -13190,12 +13245,31 @@ async function _sendAutomationMsg(cid,msg){
   const st=(msgStore[cid]||[]).find(m=>m&&m._mid===_mid);
   return (st&&st.status)||'sent';
 }
+// Human "when does this auto-send" label for a date-scheduled automation card, so it's clear the
+// message fires on its own at the set time — and that the separate "Send now" is an EXTRA manual send.
+function _autoWhenLabel(a){
+  if(!a||!a.sendAt)return '';
+  var d;try{d=new Date(a.sendAt);}catch(e){return '';}
+  if(!d||isNaN(d.getTime()))return '';
+  var rep=(a.repeatEvery&&a.repeatEvery!=='once')?a.repeatEvery:'';
+  var dateStr=d.toLocaleDateString('en-US',{month:'short',day:'numeric'});
+  var timeStr=d.toLocaleTimeString('en-US',{hour:'numeric',minute:'2-digit'});
+  if(a.sendAt>Date.now())return 'Sends automatically '+dateStr+' at '+timeStr+(rep?' · repeats '+rep:'');
+  if(rep)return 'Repeats '+rep;
+  return 'Sent '+dateStr+' at '+timeStr;
+}
 // Automation card "Send now" → opens the multi-select sheet pre-filled with the automation's message.
+// If the automation is scheduled to auto-send later, make clear this is a separate, immediate send so
+// the provider isn't surprised that (a) it goes out now and (b) the scheduled send still runs too.
 function _sendAutomation(i){
   const a=autos[i];if(!a)return;
   const msg=String(a.msg||'').trim();
   if(!msg){if(typeof proToast==='function')proToast('Add a message to this automation first — tap “Edit message”.');return;}
-  _openSendSheet({title:'Send: '+(a.name||'automation'),message:a.msg});
+  const open=()=>_openSendSheet({title:'Send: '+(a.name||'automation'),message:a.msg});
+  const future=a.sendAt&&a.sendAt>Date.now();
+  if(future&&a.on&&typeof confirmModal==='function'){
+    confirmModal({title:'Send now, too?',body:'“'+(a.name||'This automation')+'” is set to send automatically '+(_autoWhenLabel(a)||'later')+'. Sending now is a separate, immediate message — the scheduled send will still go out unless you turn this automation off.',action:'Choose clients'},open);
+  }else open();
 }
 // Messages "Send to clients" → blank compose to one/a few/all.
 function _composeBroadcast(){ _openSendSheet({title:'Send to clients',message:''}); }
@@ -13229,14 +13303,37 @@ function closeSendProd(){const e=document.getElementById('send-prod-sheet');if(e
 // no clients yet, an otherwise-empty list is a dead-end, show guidance and a way out
 // (add a client) instead of a sheet with nothing to pick.
 function _clientPickerBody(rowsHTML,closeFn){
-  if(Object.keys(CL).length)return rowsHTML;
-  const cf=closeFn||'closeSendProd()';
-  return `<div style="text-align:center;padding:22px 10px;">
+  if(!Object.keys(CL).length){
+    const cf=closeFn||'closeSendProd()';
+    return `<div style="text-align:center;padding:22px 10px;">
     <div style="width:48px;height:48px;border-radius:12px;background:#1a1a1a;display:flex;align-items:center;justify-content:center;margin:0 auto 12px;"><i class="ti ti-users" aria-hidden="true" style="font-size:22px;color:#929292;"></i></div>
     <div style="font-size:14px;font-weight:600;color:#e0e0e0;margin-bottom:5px;">No clients yet</div>
     <div style="font-size:12px;color:#999;line-height:1.5;max-width:240px;margin:0 auto 14px;">Add a client first, then you can send this to them.</div>
     <button onclick="${cf};nav('new-client')" style="background:var(--accent);color:var(--accent-ink);border:none;border-radius:9px;padding:9px 16px;font-size:13px;font-weight:600;cursor:pointer;font-family:inherit;"><i class="ti ti-plus" aria-hidden="true" style="font-size:13px;"></i> Add a client</button>
   </div>`;
+  }
+  // Wrap the caller's rows in a searchable, height-bounded block: a pinned search filters the rows by
+  // their visible text, and the list scrolls internally (max-height) so a big roster never turns the
+  // sheet into an endless scroll. Only add the search once the roster is long enough to warrant it.
+  const showSearch=Object.keys(CL).length>6;
+  return `<div data-picker>
+    ${showSearch?`<div style="position:relative;margin-bottom:10px;"><i class="ti ti-search" aria-hidden="true" style="position:absolute;left:11px;top:50%;transform:translateY(-50%);font-size:14px;color:#9a9a9a;"></i><input oninput="_pickerSearch(this)" placeholder="Search clients…" style="width:100%;background:#111;border:1px solid #2a2a2a;border-radius:9px;padding:8px 11px 8px 32px;font-size:13px;color:#e0e0e0;font-family:inherit;box-sizing:border-box;outline:none;"></div>`:''}
+    <div class="picker-list" style="max-height:52vh;overflow-y:auto;-webkit-overflow-scrolling:touch;">${rowsHTML}<div class="picker-nores" style="display:none;padding:22px 10px;text-align:center;color:#9a9a9a;font-size:13px;">No clients match your search.</div></div>
+  </div>`;
+}
+// Filter a _clientPickerBody list by the visible text of each row (client name), keeping the search
+// input pinned while only the list scrolls. Rows are the direct children of .picker-list.
+function _pickerSearch(inp){
+  const wrap=inp.closest('[data-picker]');if(!wrap)return;
+  const list=wrap.querySelector('.picker-list');if(!list)return;
+  const q=(typeof _normSearch==='function')?_normSearch(inp.value||''):String(inp.value||'').toLowerCase().trim();
+  let total=0;
+  [...list.children].forEach(row=>{
+    if(row.classList&&row.classList.contains('picker-nores'))return;
+    const txt=(typeof _normSearch==='function')?_normSearch(row.textContent||''):String(row.textContent||'').toLowerCase();
+    const m=!q||txt.includes(q);row.style.display=m?'':'none';if(m)total++;
+  });
+  const nr=list.querySelector('.picker-nores');if(nr)nr.style.display=(q&&total===0)?'':'none';
 }
 async function confirmSendProduct(aid,cid){
   if(!clientRecs[cid])clientRecs[cid]=[];
@@ -16233,8 +16330,11 @@ function renderProtocolApply(pid){
   document.getElementById('tt').textContent='Apply Protocol';
   S.innerHTML=`
   
-  <div style="padding:12px 16px 0;"><div style="font-size:13px;color:#929292;margin-bottom:14px;">Choose a client to apply this protocol in a session.</div>
-  ${Object.entries(CL).map(([id,c])=>`<div onclick="nav('room','${id}')" style="display:flex;align-items:center;gap:12px;padding:11px 0;border-bottom:1px solid #1e1e1e;cursor:pointer;">${av(c,40)}<div style="flex:1;"><div style="font-size:14px;font-weight:500;color:#e0e0e0;">${_fileEsc(c.name)}</div><div style="font-size:12px;color:#999;">${_fileEsc(c.nextVisit)}</div></div><span style="font-size:12px;color:var(--accent);">Apply →</span></div>`).join('')}</div>`;
+  <div style="padding:12px 16px 0;"><div style="font-size:13px;color:#929292;margin-bottom:6px;">Choose a client to apply this protocol in a session.</div></div>
+  ${Object.keys(CL).length>6?_searchBar('Search clients…','.proto-apply-card','proto-apply-nores'):''}
+  <div style="padding:0 16px;">
+  ${Object.entries(CL).map(([id,c])=>`<div class="proto-apply-card" data-search="${((c.name||'')+' '+(c.treatment||'')).toLowerCase().normalize('NFD').replace(/[̀-ͯ]/g,'').replace(/['‘’`"]/g,'').replace(/[^a-z0-9 ]/g,' ').replace(/\s+/g,' ').trim()}" onclick="nav('room','${id}')" style="display:flex;align-items:center;gap:12px;padding:11px 0;border-bottom:1px solid #1e1e1e;cursor:pointer;">${av(c,40)}<div style="flex:1;min-width:0;"><div style="font-size:14px;font-weight:500;color:#e0e0e0;">${_fileEsc(c.name)}</div><div style="font-size:12px;color:#999;">${_fileEsc(c.nextVisit)}</div></div><span style="font-size:12px;color:var(--accent);flex-shrink:0;">Apply →</span></div>`).join('')}
+  ${_noRes('proto-apply-nores','No clients match your search.')}</div>`;
 }
 let _protoDraft={name:'',steps:[]};
 function renderNewProtocol(editId){
