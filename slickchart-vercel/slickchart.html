@@ -19259,13 +19259,10 @@ function renderAutoForm(a,idx){
     </div>
 
     <div id="trig-pane-preset" style="display:${isDate?'none':'block'};margin-bottom:14px;">
-      <select class="fi" id="auto-trigger" aria-label="Trigger event" style="margin-bottom:0;">
+      <select class="fi" id="auto-trigger" aria-label="Trigger event" onchange="_autoTriggerNote()" style="margin-bottom:0;">
         ${triggerOptions.map(t=>`<option ${a&&!a.specificDate&&a.trigger===t?'selected':''}>${t}</option>`).join('')}
       </select>
-      <div style="background:#241a08;border:1px solid #4a3510;border-radius:8px;padding:9px 12px;margin-top:10px;display:flex;gap:7px;align-items:flex-start;">
-        <i class="ti ti-alert-triangle" aria-hidden="true" style="font-size:13px;color:#e8b04e;flex-shrink:0;margin-top:1px;"></i>
-        <span style="font-size:12px;color:#e8b04e;line-height:1.5;">Event-based automatic sending isn’t live yet. To have a message send on its own, use <b>Specific date</b> — those go out automatically.</span>
-      </div>
+      <div id="auto-trigger-note"></div>
     </div>
 
     <div id="trig-pane-date" style="display:${isDate?'block':'none'};margin-bottom:14px;">
@@ -19312,6 +19309,20 @@ function renderAutoForm(a,idx){
     <div style="height:16px;"></div>
   </div>`;
   try{_autoPreview();}catch(e){}
+  try{_autoTriggerNote();}catch(e){}
+}
+// Birthday and "hasn't visited in N days" triggers are evaluated + sent automatically by the server
+// (api/cron-events). The appointment-relative triggers aren't automatic yet — say so honestly, and
+// point the provider at what IS hands-off.
+function _autoTriggerLive(trigger){const t=String(trigger||'').toLowerCase();return /birthday/.test(t)||/hasn.?t visited in \d+\s*days?/.test(t);}
+function _autoTriggerNote(){
+  const sel=document.getElementById('auto-trigger');const box=document.getElementById('auto-trigger-note');
+  if(!sel||!box)return;
+  if(_autoTriggerLive(sel.value)){
+    box.innerHTML='<div style="background:var(--accent-tint);border:1px solid #1c4030;border-radius:8px;padding:9px 12px;margin-top:10px;display:flex;gap:7px;align-items:flex-start;"><i class="ti ti-circle-check" aria-hidden="true" style="font-size:13px;color:#4ec49a;flex-shrink:0;margin-top:1px;"></i><span style="font-size:12px;color:#8fd6b0;line-height:1.5;">This one sends on its own — birthday and “hasn’t visited” messages go out automatically in each client’s morning. Just choose who gets it below.</span></div>';
+  }else{
+    box.innerHTML='<div style="background:#241a08;border:1px solid #4a3510;border-radius:8px;padding:9px 12px;margin-top:10px;display:flex;gap:7px;align-items:flex-start;"><i class="ti ti-alert-triangle" aria-hidden="true" style="font-size:13px;color:#e8b04e;flex-shrink:0;margin-top:1px;"></i><span style="font-size:12px;color:#e8b04e;line-height:1.5;">This trigger isn’t automatic yet. For a hands-off send, pick a <b>birthday</b> or <b>“hasn’t visited”</b> trigger, or use <b>Specific date</b> — those go out on their own.</span></div>';
+  }
 }
 // Fill the {placeholders} in an automation message with realistic sample values, so the Preview shows
 // what a client actually receives — not a fixed demo line unrelated to what the provider typed.
@@ -19373,9 +19384,11 @@ function saveAuto(idx){
   // Absolute send moment (epoch ms) computed from the provider's LOCAL date+time, so the server-side
   // sender (cron-automations) never has to guess a timezone. Only date-scheduled automations are sent.
   let sendAt=0, tz='';
+  // Always capture the provider's timezone — the event sender (cron-events) uses it to pick a friendly
+  // morning send window for birthday / "hasn't visited" messages, not just the date-scheduled ones.
+  try{tz=Intl.DateTimeFormat().resolvedOptions().timeZone||'';}catch(e){tz='';}
   if(isDate&&specificDate){
     try{sendAt=new Date(specificDate+'T'+((specificTime||'09:00'))+':00').getTime();if(isNaN(sendAt))sendAt=0;}catch(e){sendAt=0;}
-    try{tz=Intl.DateTimeFormat().resolvedOptions().timeZone||'';}catch(e){tz='';}
   }
   // Recipients: [] means "all active clients"; a non-empty array targets exactly those clients (the
   // cron-automations sender filters to them). Ignore stale ids for clients that no longer exist.
