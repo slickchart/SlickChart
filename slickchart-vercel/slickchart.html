@@ -7365,18 +7365,22 @@ function _stopAftercareDrip(id){
   if(typeof proToast==='function')proToast('Healing check-ins stopped');
   if(typeof nav==='function')nav('client',id);
 }
-function sendSummary(id){
+async function sendSummary(id){
   if(!summarySendOn[id])return;
   const c=CL[id];
   const t=threads.find(x=>x.id===id);
   if(t){t.preview='Your session summary is ready ✨';t.unread=false;}
   if(!msgStore[id])msgStore[id]=[];
   const parts=['homecare routine','recommended products','next appointment'].filter((_,i)=>[summaryToggles.homecare,summaryToggles.products,summaryToggles.appointment][i]);
-  msgStore[id].push({from:'me',text:`Hi ${c.name.split(' ')[0]}! Your session summary ${_visitDatePhrase(providerNoteDrafts[id]&&providerNoteDrafts[id].date)} is ready, including your ${parts.join(', ')}. See you next time! ✨\n\n${_providerFirstName()}`,time:'Just now'});
+  const _msg=`Hi ${c.name.split(' ')[0]}! Your session summary ${_visitDatePhrase(providerNoteDrafts[id]&&providerNoteDrafts[id].date)} is ready, including your ${parts.join(', ')}. See you next time! ✨\n\n${_providerFirstName()}`;
+  msgStore[id].push({from:'me',text:_msg,time:'Just now'});
   try{saveMessages();}catch(e){}
   // Send the actual summary content to the connected client's app so it replaces their summary screen
   _postSummaryData(id);
   _storeSummary(id);
+  // Notify the client through the tracked, pushed message path — a summary used to arrive with NO
+  // notification (blob only), so a real client never knew it was there until they happened to open the app.
+  try{_sendProviderMessageToClient(id,_msg);}catch(e){}
   // Tattoo: a sent session summary means the session is done — auto-start the healing check-in
   // drip (Day 1 / 3 / 30). Only for tattoo providers + real synced clients; restart is fine.
   try{if(selectedProfessions.includes('tattoo')&&c&&c._token){_startAftercareDrip(id);}}catch(e){}
@@ -7384,10 +7388,18 @@ function sendSummary(id){
   // client starts with a clean protocol checklist.
   try{roomStepsDone={};localStorage.removeItem('sc_room_state_'+id);if(_roomClientId===id)_roomClientId='';}catch(e){}
   nav('clients');
-  setTimeout(()=>{
-    S.insertAdjacentHTML('afterbegin',`<div id="sent-toast" style="position:fixed;top:16px;left:50%;transform:translateX(-50%);background:#0a2019;border:1px solid #4ec49a;border-radius:10px;padding:10px 16px;font-size:13px;color:#4ec49a;display:flex;align-items:center;gap:7px;z-index:999;white-space:nowrap;"><i class="ti ti-check" aria-hidden="true"></i> Summary sent to ${_fileEsc(c.name.split(' ')[0])}!</div>`);
-    setTimeout(()=>document.getElementById('sent-toast')?.remove(),2800);
-  },100);
+  // Confirm the summary blob actually reached the server before claiming success, instead of a green
+  // checkmark that fires whether or not delivery worked. Same pattern as send-form / first-visit.
+  let res={ok:true};
+  try{if(typeof _pushClientNow==='function')res=await _pushClientNow(id);}catch(e){res={ok:false,msg:'Couldn’t reach the server — tap Send again.'};}
+  if(res&&res.ok){
+    setTimeout(()=>{
+      S.insertAdjacentHTML('afterbegin',`<div id="sent-toast" style="position:fixed;top:16px;left:50%;transform:translateX(-50%);background:#0a2019;border:1px solid #4ec49a;border-radius:10px;padding:10px 16px;font-size:13px;color:#4ec49a;display:flex;align-items:center;gap:7px;z-index:999;white-space:nowrap;"><i class="ti ti-check" aria-hidden="true"></i> Summary sent to ${_fileEsc(c.name.split(' ')[0])}!</div>`);
+      setTimeout(()=>document.getElementById('sent-toast')?.remove(),2800);
+    },100);
+  }else if(typeof proToast==='function'){
+    proToast((res&&res.msg)||'Summary saved, but couldn’t reach the server — tap Send again.',0,'error');
+  }
 }
 
 // Posts the session-summary content to the connected client's app (used by Send + Send-as-link)
@@ -8046,12 +8058,15 @@ function inviteVirtualConsult(id,_force,_kind,_formId){
   try{SlickBridge.post('virtual-consult-invite',{providerId:'jess',clientId:id,kind:v.kind,title:v.title,fee:vcFee,photoLabels:Array.isArray(v.photoLabels)?v.photoLabels:[],refTitle:v.refTitle||null,refLabels:Array.isArray(v.refLabels)?v.refLabels:null});}catch(e){}
   const _inviteMsg=`I'd love to do a virtual ${v.kind==='skin'?'skin':v.kind} consult before your next visit, I've sent an invite to your app. Upload a few photos and I'll send my notes back. ✨`;
   if(!msgStore[id])msgStore[id]=[];
-  msgStore[id].push({from:'me',text:_inviteMsg,time:'Just now'});
+  // Tracked bubble (_mid + status) so the invite message flushes when the client joins and shows a
+  // real failed/retry state instead of an optimistic toast that can't be recovered.
+  let _imid;try{_imid=(self.crypto&&crypto.randomUUID)?crypto.randomUUID():(Date.now().toString(36)+Math.random().toString(36).slice(2));}catch(e){_imid=Date.now().toString(36)+Math.random().toString(36).slice(2);}
+  msgStore[id].push({from:'me',text:_inviteMsg,time:'Just now',_mid:_imid,status:'sending'});
   try{saveMessages();}catch(e){}
   // Reach a real client on their own device: deliver the message through the server, and
   // (via the client-data sync below) surface the invite itself in their app, the SlickBridge
   // post above only reaches a same-browser preview.
-  try{_sendProviderMessageToClient(id,_inviteMsg);}catch(e){}
+  try{_sendProviderMessageToClient(id,_inviteMsg,[],false,undefined,_imid);}catch(e){}
   try{if(typeof _persistAndSyncClient==='function')_persistAndSyncClient(id);else if(typeof _scheduleSpecificClientSync==='function')_scheduleSpecificClientSync(id);}catch(e){}
   if(typeof proToast==='function')proToast('Virtual consult'+(_formId?' + form':'')+' sent to '+c.name.split(' ')[0]);
   renderClient(id);
@@ -8060,19 +8075,29 @@ function inviteVirtualConsult(id,_force,_kind,_formId){
 function _vcStatus(id){const inv=vcInvites[id]||{};if(inv.reviewed)return 'reviewed';if(inv.submitted)return 'needs-review';if(inv.invited)return 'awaiting';return 'none';}
 function _vcPendingCount(){return Object.keys(CL).filter(id=>_vcStatus(id)==='needs-review').length;}
 function sendVcReview(id){
-  const c=CL[id];
   const ta=document.getElementById('vc-review-notes');
   const notes=ta?String(ta.value||'').trim():'';
-  // This is a paid service ($25), the old code discarded the notes textarea and delivered
-  // nothing to the client while claiming "Review sent". Now the review actually goes to them.
   if(!notes){if(typeof proToast==='function')proToast('Add your review notes first');return false;}
+  _doSendVcReview(id,notes);   // async delivery; sync true here lets the caller navigate back
+  return true;
+}
+// This is a paid service ($25). The review is delivered as a TRACKED message (with a _mid + status)
+// so that if the client hasn't opened their app yet it stays 'pending' and flushes when they join —
+// instead of silently vanishing while the provider saw "Review sent". Reviewed state is also pushed to
+// the client blob so it survives regardless of chat delivery.
+async function _doSendVcReview(id,notes){
+  const c=CL[id];
   vcInvites[id]={...(vcInvites[id]||{}),invited:true,submitted:true,reviewed:true};try{persistVcState();}catch(e){}
   const msg='Your virtual consult review is ready 📋\n\n'+notes;
-  if(id==='maya'){try{SlickBridge.post('client-message',{text:msg,imgs:[],providerId:'jess',time:'Just now'});}catch(e){}}
-  else{try{_sendProviderMessageToClient(id,msg);}catch(e){}}
-  try{if(!msgStore[id])msgStore[id]=[];msgStore[id].push({from:'me',text:msg,time:'Just now'});const t=threads.find(x=>x.id===id);if(t)t.preview='Your consult review is ready 📋';saveMessages();}catch(e){}
-  if(typeof proToast==='function')proToast('Review sent to '+(c?c.name.split(' ')[0]:'client'));
-  return true;
+  let _mid;try{_mid=(self.crypto&&crypto.randomUUID)?crypto.randomUUID():(Date.now().toString(36)+Math.random().toString(36).slice(2));}catch(e){_mid=Date.now().toString(36)+Math.random().toString(36).slice(2);}
+  try{if(!msgStore[id])msgStore[id]=[];msgStore[id].push({from:'me',text:msg,time:'Just now',_mid,status:'sending'});const t=threads.find(x=>x.id===id);if(t)t.preview='Your consult review is ready 📋';saveMessages();}catch(e){}
+  if(id==='maya'){try{SlickBridge.post('client-message',{text:msg,imgs:[],providerId:'jess',time:'Just now'});}catch(e){}try{if(typeof _setProviderMsgStatus==='function')_setProviderMsgStatus(id,_mid,'sent');}catch(e){}}
+  else{try{await _sendProviderMessageToClient(id,msg,[],false,undefined,_mid);}catch(e){}}
+  try{if(typeof _pushClientNow==='function')await _pushClientNow(id);}catch(e){}
+  const st=(msgStore[id]||[]).find(m=>m&&m._mid===_mid);
+  if(st&&st.status==='pending'){if(typeof proToast==='function')proToast('Review saved — it’ll send to '+((c&&c.name.split(' ')[0])||'your client')+' when they open their app');}
+  else if(st&&st.status==='failed'){if(typeof proToast==='function')proToast('Couldn’t reach '+((c&&c.name.split(' ')[0])||'your client')+' — tap the message to resend',0,'error');}
+  else{if(typeof proToast==='function')proToast('Review sent to '+((c&&c.name.split(' ')[0])||'client'));}
 }
 function renderVcInbox(){
   setNav('clients');
@@ -12409,19 +12434,22 @@ function deleteRoutineTemplate(id){
   };
   if(typeof confirmModal==='function')confirmModal({title:'Delete this routine?',body:'This removes the saved routine from your templates. This can’t be undone.',action:'Delete'},_go);else _go();
 }
-function resendRoutine(cid){
+async function resendRoutine(cid){
   const sent=currentSentRoutines()[cid];if(!sent)return;
   if(!clientRecs[cid])clientRecs[cid]=[];
   (sent.items||[]).forEach(aid=>{if(!clientRecs[cid].includes(aid))clientRecs[cid].push(aid);});
   if(cid==='maya'){try{SlickBridge.post('routine-recommended',{providerId:'jess',clientId:'maya',routine:{name:sent.name,note:sent.note||'',products:sent.products||[]}});}catch(e){}}
   sent.date='Just now';persistSentRoutines();
   try{if(typeof persistWorkspace==='function')persistWorkspace();}catch(e){}  // persist the clientRecs additions above
-  // Push to the real client's synced blob so the resend actually reaches their device (not
-  // just the same-browser bridge above), matching how confirmSendRoutine delivers.
-  if(cid!=='maya'){try{if(typeof _scheduleSpecificClientSync==='function')_scheduleSpecificClientSync(cid);}catch(e){}}
   const c=CL[cid];
-  if(typeof proToast==='function')proToast(`Resent "${sent.name}" to ${c?c.name.split(' ')[0]:'client'}`);
   renderRoutineBuilder();
+  // Push NOW and confirm, instead of a 2.5s debounce that a backgrounded PWA could drop after the
+  // "Resent" toast already showed.
+  if(c&&!c._token&&cid!=='maya'){if(typeof proToast==='function')proToast(`${c.name.split(' ')[0]} hasn’t joined their app yet — invite them and “${sent.name}” will be waiting.`);return;}
+  let res={ok:true};
+  try{if(c&&c._token&&typeof _pushClientNow==='function')res=await _pushClientNow(cid);}catch(e){res={ok:false,msg:'Couldn’t reach the server — try again.'};}
+  if(res&&res.ok){if(typeof proToast==='function')proToast(`Resent “${sent.name}” to ${c?c.name.split(' ')[0]:'client'}`);}
+  else if(typeof proToast==='function'){proToast((res&&res.msg)||'Saved, but couldn’t reach the server — try again.',0,'error');}
 }
 function editSentRoutine(cid){
   const sent=currentSentRoutines()[cid];if(!sent)return;
@@ -12489,7 +12517,7 @@ function sendRoutineToClient(){
   </div>`;
   (document.querySelector('.shell')||document.body).appendChild(ov);
 }
-function confirmSendRoutine(cid){
+async function confirmSendRoutine(cid){
   const name=(routineDraft.name||'').trim()||'Your routine';
   const note=(routineDraft.note||'').trim();
   if(!routineDraft.items.length)return;
@@ -12506,9 +12534,14 @@ function confirmSendRoutine(cid){
   _persistAndSyncClient(cid);
   closeSendProd();
   const c=CL[cid];
-  if(typeof proToast==='function')proToast(`Sent "${name}" to ${c?c.name.split(' ')[0]:'client'}`);
   routineDraft={name:'',items:[],note:''};
   nav('shop');
+  // Confirm the routine actually reached a real, joined client instead of an unconditional "Sent".
+  if(c&&!c._token&&cid!=='maya'){if(typeof proToast==='function')proToast(`${c.name.split(' ')[0]} hasn’t joined their app yet — invite them and “${name}” will be waiting.`);return;}
+  let res={ok:true};
+  try{if(c&&c._token&&typeof _pushClientNow==='function')res=await _pushClientNow(cid);}catch(e){res={ok:false,msg:'Couldn’t reach the server — try again.'};}
+  if(res&&res.ok){if(typeof proToast==='function')proToast(`Sent “${name}” to ${c?c.name.split(' ')[0]:'client'}`);}
+  else if(typeof proToast==='function'){proToast((res&&res.msg)||'Saved, but couldn’t reach the server — tap Send again.',0,'error');}
 }
 function sendCourseToClient(courseId){
   const co=courses.find(x=>x.id===courseId);if(!co)return;
@@ -12522,7 +12555,7 @@ function sendCourseToClient(courseId){
   </div>`;
   (document.querySelector('.shell')||document.body).appendChild(ov);
 }
-function confirmSendCourse(courseId,cid){
+async function confirmSendCourse(courseId,cid){
   const co=courses.find(x=>x.id===courseId);if(!co)return;
   const c=CL[cid];
   if(cid==='maya'){try{SlickBridge.post('course-shared',{providerId:'jess',clientId:'maya',course:_coursePayload(co)});}catch(e){}}
@@ -12540,7 +12573,11 @@ function confirmSendCourse(courseId,cid){
     return;
   }
   closeSendProd();
-  if(typeof proToast==='function')proToast(`Sent "${co.title}" to ${c?c.name.split(' ')[0]:'client'}`);
+  // Confirm delivery to a real, joined client rather than an unconditional "Sent".
+  let res={ok:true};
+  try{if(c&&c._token&&typeof _pushClientNow==='function')res=await _pushClientNow(cid);}catch(e){res={ok:false,msg:'Couldn’t reach the server — try again.'};}
+  if(res&&res.ok){if(typeof proToast==='function')proToast(`Sent "${co.title}" to ${c?c.name.split(' ')[0]:'client'}`);}
+  else if(typeof proToast==='function'){proToast((res&&res.msg)||'Saved, but couldn’t reach the server — try again.',0,'error');}
 }
 // The course shape a client receives, cover + lessons with file refs (bytes fetched on demand).
 function _coursePayload(co){
@@ -12833,7 +12870,7 @@ function _clientPickerBody(rowsHTML,closeFn){
     <button onclick="${cf};nav('new-client')" style="background:var(--accent);color:var(--accent-ink);border:none;border-radius:9px;padding:9px 16px;font-size:13px;font-weight:600;cursor:pointer;font-family:inherit;"><i class="ti ti-plus" aria-hidden="true" style="font-size:13px;"></i> Add a client</button>
   </div>`;
 }
-function confirmSendProduct(aid,cid){
+async function confirmSendProduct(aid,cid){
   if(!clientRecs[cid])clientRecs[cid]=[];
   if(!clientRecs[cid].includes(aid))clientRecs[cid].push(aid);
   const a=affiliateLinks.find(x=>x.id===aid);
@@ -12846,7 +12883,12 @@ function confirmSendProduct(aid,cid){
   _persistAndSyncClient(cid);
   closeSendProd();
   const c=CL[cid];
-  proToast(`Recommended to ${c?c.name.split(' ')[0]:'client'}`);
+  // Confirm delivery to a real, joined client rather than an unconditional "Recommended".
+  if(c&&!c._token&&cid!=='maya'){if(typeof proToast==='function')proToast(`${c.name.split(' ')[0]} hasn’t joined their app yet — invite them and this will be waiting.`);return;}
+  let res={ok:true};
+  try{if(c&&c._token&&typeof _pushClientNow==='function')res=await _pushClientNow(cid);}catch(e){res={ok:false,msg:'Couldn’t reach the server — try again.'};}
+  if(res&&res.ok){if(typeof proToast==='function')proToast(`Recommended to ${c?c.name.split(' ')[0]:'client'}`);}
+  else if(typeof proToast==='function'){proToast((res&&res.msg)||'Saved, but couldn’t reach the server — try again.',0,'error');}
 }
 
 // ── Send a whole bundle (protocol kit) to a client ──
