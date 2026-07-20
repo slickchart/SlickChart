@@ -13301,12 +13301,13 @@ function _autoNextOcc(a){
   const rep=String((a&&a.repeatEvery)||'').toLowerCase();
   if(!rep||rep==='once')return base;                 // one-shot: the scheduled moment itself
   const HOUR=3600000,now=Date.now();
+  const nn=Math.max(1,parseInt(rep,10)||1);   // custom "N days/weeks/months" → step by N
   const advance=(t)=>{
-    if(rep.includes('week'))return t+7*24*HOUR;
-    if(rep.includes('month')){const d=new Date(t);d.setMonth(d.getMonth()+1);return d.getTime();}
-    if(rep.includes('year')||rep.includes('annual')){const d=new Date(t);d.setFullYear(d.getFullYear()+1);return d.getTime();}
-    if(rep.includes('day'))return t+24*HOUR;
-    return t+7*24*HOUR;
+    if(rep.includes('week'))return t+nn*7*24*HOUR;
+    if(rep.includes('month')){const d=new Date(t);d.setMonth(d.getMonth()+nn);return d.getTime();}
+    if(rep.includes('year')||rep.includes('annual')){const d=new Date(t);d.setFullYear(d.getFullYear()+nn);return d.getTime();}
+    if(rep.includes('day'))return t+nn*24*HOUR;
+    return t+nn*7*24*HOUR;
   };
   let occ=base,guard=0;while(occ<now&&guard++<6000){const n=advance(occ);if(n<=occ)break;occ=n;}
   return occ;
@@ -19218,14 +19219,28 @@ function _autoRecipInit(a){
   if(a&&Array.isArray(a.clientIds)&&a.clientIds.length){_autoRecipMode='some';_autoRecipSel={};a.clientIds.forEach(id=>{if(CL[id])_autoRecipSel[id]=true;});}
   else{_autoRecipMode='all';_autoRecipSel={};}
 }
-function _setAutoRecip(mode){_autoRecipMode=mode;const el=document.getElementById('auto-recip');if(el)el.innerHTML=_autoRecipHTML();}
-function _autoRecipToggle(id,on){_autoRecipSel[id]=!!on;_autoRecipCount();}
+function _setAutoRecip(mode){_autoRecipMode=mode;const el=document.getElementById('auto-recip');if(el)el.innerHTML=_autoRecipHTML();try{_autoPreview();}catch(e){}}
+function _autoRecipToggle(id,on){
+  _autoRecipSel[id]=!!on;
+  // Keep the scrolling list's checkbox in sync when a pick is removed via its chip (or vice-versa).
+  try{document.querySelectorAll('.arow-cb').forEach(b=>{if(b.value===id)b.checked=!!on;});}catch(e){}
+  _autoRecipCount();_autoRecipRefreshChips();try{_autoPreview();}catch(e){}
+}
 function _autoRecipCount(){const n=Object.keys(_autoRecipSel).filter(k=>_autoRecipSel[k]).length;const el=document.getElementById('arow-count');if(el)el.textContent=n?(n+' selected'):'None selected yet';}
+function _autoRecipRefreshChips(){const el=document.getElementById('arow-chips');if(el)el.innerHTML=_autoRecipChipsHTML();}
+// A always-visible summary of who's picked, so selections aren't lost inside the scrolling list.
+// Each chip removes that client (which also unticks it in the list).
+function _autoRecipChipsHTML(){
+  const ids=Object.keys(_autoRecipSel).filter(k=>_autoRecipSel[k]&&CL[k]);
+  if(!ids.length)return '<div style="font-size:12px;color:#777;padding:1px 0 9px;">No one picked yet — tap clients below.</div>';
+  return '<div style="display:flex;flex-wrap:wrap;gap:6px;padding:1px 0 10px;">'+ids.map(id=>{const c=CL[id];const nm=(c.name||'Client').split(' ')[0];return '<span style="display:inline-flex;align-items:center;gap:4px;background:var(--accent-tint);border:1px solid var(--accent-a30,#3d2d10);color:var(--accent);border-radius:16px;padding:3px 5px 3px 10px;font-size:12px;font-weight:500;">'+_fileEsc(nm)+'<button onclick="_autoRecipToggle(\''+_jsAttr(id)+'\',false)" aria-label="Remove '+_fileEsc(nm)+'" style="border:none;background:none;color:var(--accent);cursor:pointer;padding:0 1px;line-height:0;display:flex;"><i class="ti ti-x" style="font-size:13px;"></i></button></span>';}).join('')+'</div>';
+}
 function _autoRecipSelectAllVisible(){
   const boxes=[...document.querySelectorAll('.arow-cb')].filter(b=>{const r=b.closest('.arow');return !r||!r.classList.contains('srch-hide');});
   if(!boxes.length)return;
   const sel=boxes.filter(b=>_autoRecipSel[b.value]).length;const on=sel<boxes.length;
-  boxes.forEach(b=>{b.checked=on;_autoRecipSel[b.value]=on;});_autoRecipCount();
+  boxes.forEach(b=>{b.checked=on;_autoRecipSel[b.value]=on;});
+  _autoRecipCount();_autoRecipRefreshChips();try{_autoPreview();}catch(e){}
 }
 function _autoRecipHTML(){
   const some=_autoRecipMode==='some';
@@ -19237,11 +19252,13 @@ function _autoRecipHTML(){
     return h;
   }
   const ids=Object.keys(CL);
-  const rows=ids.map(id=>{const c=CL[id];const on=!!_autoRecipSel[id];return `<label class="arow" data-search="${_ds(c.name)}" style="display:flex;align-items:center;gap:10px;padding:9px 11px;border-bottom:1px solid #1e1e1e;cursor:pointer;"><input type="checkbox" class="arow-cb" value="${_fileEsc(id)}" ${on?'checked':''} onchange="_autoRecipToggle('${_fileEsc(id)}',this.checked)" style="width:17px;height:17px;accent-color:var(--accent);flex-shrink:0;"><div style="width:30px;height:30px;border-radius:8px;background:${_fileEsc(c.bg||'#222')};display:flex;align-items:center;justify-content:center;font-size:11px;font-weight:600;color:${_fileEsc(c.tc||'#ccc')};flex-shrink:0;">${_fileEsc(c.initials||(c.name||'?').slice(0,1))}</div><span style="flex:1;min-width:0;font-size:13px;color:#e0e0e0;overflow:hidden;text-overflow:ellipsis;white-space:nowrap;">${_fileEsc(c.name)}</span></label>`;}).join('');
+  const rows=ids.map(id=>{const c=CL[id];const on=!!_autoRecipSel[id];return `<label class="arow" data-search="${_ds(c.name)}" style="display:flex;align-items:center;gap:10px;padding:9px 11px;border-bottom:1px solid #1e1e1e;cursor:pointer;"><input type="checkbox" class="arow-cb" value="${_fileEsc(id)}" ${on?'checked':''} onchange="_autoRecipToggle('${_jsAttr(id)}',this.checked)" style="width:17px;height:17px;accent-color:var(--accent);flex-shrink:0;"><div style="width:30px;height:30px;border-radius:8px;background:${_fileEsc(c.bg||'#222')};display:flex;align-items:center;justify-content:center;font-size:11px;font-weight:600;color:${_fileEsc(c.tc||'#ccc')};flex-shrink:0;">${_fileEsc(c.initials||(c.name||'?').slice(0,1))}</div><span style="flex:1;min-width:0;font-size:13px;color:#e0e0e0;overflow:hidden;text-overflow:ellipsis;white-space:nowrap;">${_fileEsc(c.name)}</span></label>`;}).join('');
   const n=Object.keys(_autoRecipSel).filter(k=>_autoRecipSel[k]).length;
+  h+=`<div id="arow-chips">${_autoRecipChipsHTML()}</div>`;
   h+=`<div style="display:flex;align-items:center;justify-content:space-between;margin-bottom:6px;"><span id="arow-count" style="font-size:12px;color:var(--accent);font-weight:600;">${n?n+' selected':'None selected yet'}</span><button onclick="_autoRecipSelectAllVisible()" style="border:none;background:none;color:var(--accent);font-size:12px;cursor:pointer;font-family:inherit;font-weight:500;">Select all</button></div>`;
-  if(ids.length>6)h+=`<div style="position:relative;margin-bottom:8px;"><i class="ti ti-search" aria-hidden="true" style="position:absolute;left:11px;top:50%;transform:translateY(-50%);font-size:14px;color:#9a9a9a;"></i><input oninput="searchList(this.value,'.arow','arow-nores')" placeholder="Search clients…" style="width:100%;background:#111;border:1px solid #2a2a2a;border-radius:9px;padding:8px 11px 8px 32px;font-size:13px;color:#e0e0e0;font-family:inherit;box-sizing:border-box;outline:none;"></div>`;
-  h+=`<div style="background:#1a1a1a;border:1px solid #2a2a2a;border-radius:10px;max-height:240px;overflow-y:auto;-webkit-overflow-scrolling:touch;">${rows||'<div style="padding:16px;text-align:center;color:#888;font-size:12px;">No clients yet.</div>'}${_noRes('arow-nores','No clients match your search.')}</div>`;
+  if(ids.length>4)h+=`<div style="position:relative;margin-bottom:8px;"><i class="ti ti-search" aria-hidden="true" style="position:absolute;left:11px;top:50%;transform:translateY(-50%);font-size:14px;color:#9a9a9a;"></i><input oninput="searchList(this.value,'.arow','arow-nores')" placeholder="Search clients…" style="width:100%;background:#111;border:1px solid #2a2a2a;border-radius:9px;padding:8px 11px 8px 32px;font-size:13px;color:#e0e0e0;font-family:inherit;box-sizing:border-box;outline:none;"></div>`;
+  h+=`<div style="background:#1a1a1a;border:1px solid #2a2a2a;border-radius:10px;max-height:190px;overflow-y:auto;-webkit-overflow-scrolling:touch;">${rows||'<div style="padding:16px;text-align:center;color:#888;font-size:12px;">No clients yet.</div>'}${_noRes('arow-nores','No clients match your search.')}</div>
+  ${ids.length>4?'<div style="font-size:11px;color:#777;margin-top:6px;text-align:center;">Scroll the list · tap to add or remove</div>':''}`;
   return h;
 }
 // What a saved automation's recipient set resolves to right now (used on the card + Send now).
@@ -19279,6 +19296,11 @@ function renderAutoForm(a,idx){
   const existingDate=a&&a.specificDate?a.specificDate:'';
   const existingTime=a&&a.specificTime?a.specificTime:'09:00';
   const existingRepeat=a&&a.repeatEvery?a.repeatEvery:'once';
+  // A custom repeat is stored as "<n> days|weeks|months" (e.g. "3 weeks"); presets are once/weekly/…
+  const _repCustomM=String(existingRepeat).match(/^(\d+)\s*(day|week|month)/i);
+  const _isCustomRep=!!_repCustomM;
+  const _repN=_repCustomM?_repCustomM[1]:'2';
+  const _repUnit=_repCustomM?(_repCustomM[2].toLowerCase()+'s'):'weeks';
   _autoRecipInit(a);
   S.innerHTML=`
   <div style="padding:12px 16px 0;display:flex;align-items:center;justify-content:flex-end;">
@@ -19291,7 +19313,7 @@ function renderAutoForm(a,idx){
     <span class="fl-lbl" style="margin-bottom:8px;">When to send</span>
     <div style="display:flex;border-bottom:1px solid #2a2a2a;margin-bottom:14px;">
       <button id="trig-tab-preset" onclick="switchTriggerMode('preset')" style="flex:1;padding:9px 6px;font-size:13px;border:none;background:none;cursor:pointer;border-bottom:2px solid ${isDate?'transparent':'var(--accent)'};color:${isDate?'#ccc':'var(--accent)'};font-weight:${isDate?'400':'500'};">Based on event</button>
-      <button id="trig-tab-date" onclick="switchTriggerMode('date')" style="flex:1;padding:9px 6px;font-size:13px;border:none;background:none;cursor:pointer;border-bottom:2px solid ${isDate?'var(--accent)':'transparent'};color:${isDate?'var(--accent)':'#ccc'};font-weight:${isDate?'500':'400'};">Specific date</button>
+      <button id="trig-tab-date" onclick="switchTriggerMode('date')" style="flex:1;padding:9px 6px;font-size:13px;border:none;background:none;cursor:pointer;border-bottom:2px solid ${isDate?'var(--accent)':'transparent'};color:${isDate?'var(--accent)':'#ccc'};font-weight:${isDate?'500':'400'};">Date &amp; time</button>
     </div>
 
     <div id="trig-pane-preset" style="display:${isDate?'none':'block'};margin-bottom:14px;">
@@ -19313,9 +19335,19 @@ function renderAutoForm(a,idx){
         </div>
         <div style="padding:12px 14px;">
           <div style="font-size:12px;color:#aaa;margin-bottom:9px;font-weight:500;text-transform:uppercase;letter-spacing:.07em;">Repeat</div>
-          <div style="display:flex;gap:6px;flex-wrap:wrap;">
-            ${[['once','One time'],['weekly','Weekly'],['monthly','Monthly'],['annually','Annually']].map(([val,lbl])=>`<button onclick="this.parentElement.querySelectorAll('button').forEach(b=>{b.style.background='#161616';b.style.color='#ccc';b.style.borderColor='#2a2a2a'});this.style.background='var(--accent)';this.style.color='var(--accent-ink)';this.style.borderColor='var(--accent)';document.getElementById('auto-repeat').value='${val}'" style="padding:6px 14px;border-radius:8px;font-size:12px;cursor:pointer;border:1px solid ${existingRepeat===val?'var(--accent)':'#2a2a2a'};background:${existingRepeat===val?'var(--accent)':'#161616'};color:${existingRepeat===val?'var(--accent-ink)':'#ccc'};">${lbl}</button>`).join('')}
-            <input type="hidden" id="auto-repeat" value="${existingRepeat}">
+          <div id="auto-repeat-btns" style="display:flex;gap:6px;flex-wrap:wrap;">
+            ${[['once','One time'],['weekly','Weekly'],['monthly','Monthly'],['annually','Annually']].map(([val,lbl])=>{const on=!_isCustomRep&&existingRepeat===val;return `<button type="button" onclick="_autoRepPreset(this,'${val}')" style="padding:6px 14px;border-radius:8px;font-size:12px;cursor:pointer;font-family:inherit;border:1px solid ${on?'var(--accent)':'#2a2a2a'};background:${on?'var(--accent)':'#161616'};color:${on?'var(--accent-ink)':'#ccc'};">${lbl}</button>`;}).join('')}
+            <button type="button" onclick="_autoRepCustomShow(this)" style="padding:6px 14px;border-radius:8px;font-size:12px;cursor:pointer;font-family:inherit;border:1px solid ${_isCustomRep?'var(--accent)':'#2a2a2a'};background:${_isCustomRep?'var(--accent)':'#161616'};color:${_isCustomRep?'var(--accent-ink)':'#ccc'};">Custom…</button>
+            <input type="hidden" id="auto-repeat" value="${_fileEsc(existingRepeat)}">
+          </div>
+          <div id="auto-repeat-custom" style="display:${_isCustomRep?'block':'none'};margin-top:10px;">
+            <div style="display:flex;align-items:center;gap:8px;font-size:13px;color:#ccc;">
+              <span>Every</span>
+              <input id="auto-repeat-n" type="number" min="1" max="60" value="${_repN}" oninput="_autoRepCustomChange()" style="width:66px;background:#161616;border:1px solid #2a2a2a;border-radius:7px;padding:7px 9px;font-size:13px;color:#e0e0e0;font-family:inherit;outline:none;">
+              <select id="auto-repeat-unit" onchange="_autoRepCustomChange()" style="flex:1;background:#161616;border:1px solid #2a2a2a;border-radius:7px;padding:7px 9px;font-size:13px;color:#e0e0e0;font-family:inherit;outline:none;">
+                ${['days','weeks','months'].map(u=>`<option ${u===_repUnit?'selected':''}>${u}</option>`).join('')}
+              </select>
+            </div>
           </div>
         </div>
       </div>
@@ -19334,8 +19366,8 @@ function renderAutoForm(a,idx){
     </div>
     <textarea class="fi" id="auto-msg" aria-label="Message body" oninput="_autoPreview()" style="height:110px;resize:none;line-height:1.6;margin-bottom:10px;" placeholder="Hi {client_name}! ✨">${_fileEsc((a&&a.msg)||(a?`Hi {client_name}! Just checking in after your recent ${a.name.toLowerCase().includes('birthday')?'birthday 🎂':'appointment ✨'}. How is your skin feeling? Let me know if you have any questions!\n\n${_providerFirstName()}`:'Hi {client_name}! '))}</textarea>
     <div style="background:#1a1a1a;border:1px solid #2a2a2a;border-radius:8px;padding:8px 12px;margin-bottom:14px;">
-      <div style="font-size:11px;color:#999;margin-bottom:5px;">Tap a variable to insert it — it’s filled in per client when sent</div>
-      <div style="display:flex;flex-wrap:wrap;gap:5px;">${['{client_name}','{appointment_date}','{treatment_name}','{business_name}'].map(v=>`<span onclick="const ta=document.getElementById('auto-msg');ta.value+=v;_autoPreview();ta.focus();" style="font-size:11px;background:#222;color:var(--accent);padding:3px 8px;border-radius:5px;cursor:pointer;">${v}</span>`).join('')}</div>
+      <div style="font-size:11px;color:#999;margin-bottom:6px;">Tap a variable to drop it in where your cursor is — it’s filled in per client when sent</div>
+      <div style="display:flex;flex-wrap:wrap;gap:6px;">${['{client_name}','{appointment_date}','{treatment_name}','{business_name}'].map(v=>`<button type="button" onclick="_autoInsertVar('${v}')" style="font-size:12px;background:var(--accent-tint);border:1px solid var(--accent-a30,#3d2d10);color:var(--accent);padding:5px 10px;border-radius:7px;cursor:pointer;font-family:inherit;font-weight:500;display:inline-flex;align-items:center;gap:4px;"><i class="ti ti-plus" style="font-size:12px;"></i>${v}</button>`).join('')}</div>
     </div>
     <div style="background:#1a1a1a;border:1px solid #2a2a2a;border-radius:10px;padding:12px 14px;margin-bottom:14px;">
       <div style="font-size:11px;color:#aaa;text-transform:uppercase;letter-spacing:.07em;margin-bottom:6px;">Preview <span style="text-transform:none;letter-spacing:0;color:#777;">— how it reads to a client</span></div>
@@ -19364,9 +19396,10 @@ function _autoTriggerNote(){
   }
 }
 // Fill the {placeholders} in an automation message with realistic sample values, so the Preview shows
-// what a client actually receives — not a fixed demo line unrelated to what the provider typed.
-function _fillAutoVars(text){
-  const cl=Object.values(CL)[0]||{};
+// what a client actually receives — not a fixed demo line unrelated to what the provider typed. Uses a
+// specific sample client when given (the first picked recipient), so the preview tracks the selection.
+function _fillAutoVars(text,cl){
+  cl=cl||Object.values(CL)[0]||{};
   const first=((cl.name||'there').split(' ')[0])||'there';
   const biz=(typeof bizInfo!=='undefined'&&bizInfo&&(bizInfo.name||bizInfo.studio))||(typeof _businessName==='function'&&_businessName())||'your studio';
   const tx=cl.treatment||'your treatment';
@@ -19376,11 +19409,43 @@ function _fillAutoVars(text){
     .replace(/\{treatment_name\}/gi,tx)
     .replace(/\{appointment_date\}/gi,'your next visit');
 }
+// The sample client the preview should read as: the first picked recipient in "specific" mode, else
+// just the first client on file. So deselecting someone updates the preview instead of getting stuck.
+function _autoPreviewSample(){
+  if(_autoRecipMode==='some'){const sid=Object.keys(_autoRecipSel).find(k=>_autoRecipSel[k]&&CL[k]);if(sid)return CL[sid];}
+  return Object.values(CL)[0]||null;
+}
 function _autoPreview(){
   const ta=document.getElementById('auto-msg');const pv=document.getElementById('auto-preview');
   if(!ta||!pv)return;
-  const filled=_fillAutoVars(ta.value||'');
+  const filled=_fillAutoVars(ta.value||'',_autoPreviewSample());
   pv.innerHTML=filled.trim()?_fileEsc(filled).replace(/\n/g,'<br>'):'<span style="color:#777;">Type your message above and the preview appears here.</span>';
+}
+// Repeat controls: presets set a fixed value; "Custom…" reveals an every-N-days/weeks/months picker
+// stored as "<n> <unit>" (which the cron's occurrence math already parses).
+function _autoRepSetActive(btn){
+  const wrap=document.getElementById('auto-repeat-btns');if(!wrap)return;
+  wrap.querySelectorAll('button').forEach(b=>{b.style.background='#161616';b.style.color='#ccc';b.style.borderColor='#2a2a2a';});
+  if(btn){btn.style.background='var(--accent)';btn.style.color='var(--accent-ink)';btn.style.borderColor='var(--accent)';}
+}
+function _autoRepPreset(btn,val){_autoRepSetActive(btn);const r=document.getElementById('auto-repeat');if(r)r.value=val;const cr=document.getElementById('auto-repeat-custom');if(cr)cr.style.display='none';}
+function _autoRepCustomShow(btn){_autoRepSetActive(btn);const cr=document.getElementById('auto-repeat-custom');if(cr)cr.style.display='block';_autoRepCustomChange();}
+function _autoRepCustomChange(){
+  const nEl=document.getElementById('auto-repeat-n'),uEl=document.getElementById('auto-repeat-unit'),r=document.getElementById('auto-repeat');
+  if(!r)return;
+  const n=Math.max(1,Math.min(60,parseInt(nEl&&nEl.value,10)||1));
+  const u=(uEl&&uEl.value)||'weeks';
+  r.value=n+' '+u;
+}
+// Insert a {variable} at the cursor (not just append) so providers never type them by hand.
+function _autoInsertVar(v){
+  const ta=document.getElementById('auto-msg');if(!ta)return;
+  const s=(typeof ta.selectionStart==='number')?ta.selectionStart:ta.value.length;
+  const e=(typeof ta.selectionEnd==='number')?ta.selectionEnd:ta.value.length;
+  ta.value=ta.value.slice(0,s)+v+ta.value.slice(e);
+  const pos=s+v.length;
+  try{ta.focus();ta.setSelectionRange(pos,pos);}catch(err){}
+  _autoPreview();
 }
 // ── AI drafts automated/drip message copy from the automation's name + trigger. ──
 async function _aiDraftAutomation(){
@@ -19437,14 +19502,29 @@ function saveAuto(idx){
     return;
   }
   const _newId='a'+Date.now().toString(36)+Math.random().toString(36).slice(2,6);
-  if(idx>=0){
-    Object.assign(autos[idx],{name,trigger,specificDate,specificTime,repeatEvery,msg,sendAt,tz,clientIds});
-    if(!autos[idx].id)autos[idx].id=_newId;
-  } else {
-    autos.push({id:_newId,name,icon:'📅',col:'#0d1e33',trigger,specificDate,specificTime,repeatEvery,msg,sendAt,tz,clientIds,on:true,sent:0,opened:0,bdg:'bb'});
+  const commit=function(){
+    if(idx>=0){
+      Object.assign(autos[idx],{name,trigger,specificDate,specificTime,repeatEvery,msg,sendAt,tz,clientIds});
+      if(!autos[idx].id)autos[idx].id=_newId;
+    } else {
+      autos.push({id:_newId,name,icon:'📅',col:'#0d1e33',trigger,specificDate,specificTime,repeatEvery,msg,sendAt,tz,clientIds,on:true,sent:0,opened:0,bdg:'bb'});
+    }
+    try{persistAutos();}catch(e){}  // was missing, new/edited automations were lost on reload
+    if(typeof proToast==='function')proToast(sendAt?'Scheduled ✓':'Saved ✓');
+    nav('messages');
+  };
+  // For a date-scheduled send, confirm the what/when/who before committing — it's a hands-off broadcast,
+  // so a quick summary prevents an accidental blast at the wrong time or to the wrong people.
+  if(isDate&&sendAt&&typeof confirmModal==='function'){
+    let whenStr='';try{const d=new Date(sendAt);whenStr=d.toLocaleDateString('en-US',{weekday:'short',month:'short',day:'numeric'})+' at '+d.toLocaleTimeString('en-US',{hour:'numeric',minute:'2-digit'});}catch(e){whenStr='the scheduled time';}
+    const repStr=(repeatEvery&&repeatEvery!=='once')?(', repeating every '+repeatEvery.replace(/^weekly$/,'week').replace(/^monthly$/,'month').replace(/^annually$/,'year')):'';
+    const who=clientIds.length?(clientIds.length+' selected client'+(clientIds.length>1?'s':'')):('all active clients ('+Object.keys(CL).length+')');
+    const sample=(clientIds.length?CL[clientIds[0]]:null)||_autoPreviewSample();
+    const prev=_fillAutoVars(msg,sample).replace(/\s+/g,' ').trim().slice(0,140);
+    confirmModal({title:'Schedule this send?',body:'“'+name+'” will send on '+whenStr+repStr+' to '+who+'. They’ll receive: “'+prev+(prev.length>=140?'…':'')+'”',action:'Schedule it'},commit);
+    return;
   }
-  try{persistAutos();}catch(e){}  // was missing, new/edited automations were lost on reload
-  nav('messages');
+  commit();
 }
 
 // ── ADD AFFILIATE LINK ──

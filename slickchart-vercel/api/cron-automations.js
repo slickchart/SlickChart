@@ -45,12 +45,15 @@ function dueOccurrence(auto, now) {
   const rep = String(auto.repeatEvery || '').toLowerCase();
   // 'once' / '' → one-shot. (The editor's repeat values are once/weekly/monthly/annually.)
   if (!rep || rep === 'once') return (now >= base && now < base + GRACE) ? base : null;
+  // Custom repeats are stored as "<n> days|weeks|months" (e.g. "3 weeks"); step by that n. The named
+  // presets (weekly/monthly/annually) have no leading number, so n falls back to 1.
+  const nn = Math.max(1, parseInt(rep, 10) || 1);
   const advance = (t) => {
-    if (rep.includes('week')) return t + 7 * 24 * HOUR;
-    if (rep.includes('month')) { const d = new Date(t); d.setMonth(d.getMonth() + 1); return d.getTime(); }
-    if (rep.includes('year') || rep.includes('annual')) { const d = new Date(t); d.setFullYear(d.getFullYear() + 1); return d.getTime(); }
-    if (rep.includes('day')) return t + 24 * HOUR;
-    return t + 7 * 24 * HOUR;
+    if (rep.includes('week')) return t + nn * 7 * 24 * HOUR;
+    if (rep.includes('month')) { const d = new Date(t); d.setMonth(d.getMonth() + nn); return d.getTime(); }
+    if (rep.includes('year') || rep.includes('annual')) { const d = new Date(t); d.setFullYear(d.getFullYear() + nn); return d.getTime(); }
+    if (rep.includes('day')) return t + nn * 24 * HOUR;
+    return t + nn * 7 * 24 * HOUR;
   };
   let occ = base, guard = 0;
   while (occ < now && guard++ < 6000) {
