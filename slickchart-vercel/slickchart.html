@@ -8029,10 +8029,13 @@ function inviteVirtualConsult(id,_force){
   }
   const v=_vcProfile();
   // invitedAt is a per-invite nonce so the client can tell a fresh invite from one they've
-  // already submitted for (mirrors the pending-form assignedAt fix).
-  vcInvites[id]={...(vcInvites[id]||{}),invited:true,submitted:false,reviewed:false,invitedAt:Date.now()};
+  // already submitted for (mirrors the pending-form assignedAt fix). Capture the profile's photo
+  // labels ON the invite so the client asks for the RIGHT shots per profession (and none at all for
+  // photo-free consults like nutrition/coaching) instead of re-deriving a skin-face grid.
+  vcInvites[id]={...(vcInvites[id]||{}),invited:true,submitted:false,reviewed:false,invitedAt:Date.now(),
+    kind:v.kind,title:v.title,photoLabels:Array.isArray(v.photoLabels)?v.photoLabels:[],refTitle:v.refTitle||null,refLabels:Array.isArray(v.refLabels)?v.refLabels:null};
   try{persistVcState();}catch(e){}
-  try{SlickBridge.post('virtual-consult-invite',{providerId:'jess',clientId:id,kind:v.kind,title:v.title,fee:vcFee});}catch(e){}
+  try{SlickBridge.post('virtual-consult-invite',{providerId:'jess',clientId:id,kind:v.kind,title:v.title,fee:vcFee,photoLabels:Array.isArray(v.photoLabels)?v.photoLabels:[],refTitle:v.refTitle||null,refLabels:Array.isArray(v.refLabels)?v.refLabels:null});}catch(e){}
   const _inviteMsg=`I'd love to do a virtual ${v.kind==='skin'?'skin':v.kind} consult before your next visit, I've sent an invite to your app. Upload a few photos and I'll send my notes back. ✨`;
   if(!msgStore[id])msgStore[id]=[];
   msgStore[id].push({from:'me',text:_inviteMsg,time:'Just now'});
@@ -10613,8 +10616,11 @@ function _assembleClientData(id){
   // cross-device, not just via the same-browser SlickBridge. Dropped once they submit.
   let vcInvite=null;
   try{const vi=(typeof vcInvites!=='undefined')?vcInvites[id]:null;
-    if(vi&&vi.invited&&!vi.submitted){const vp=(typeof _vcProfile==='function')?_vcProfile():{};
-      vcInvite={kind:vp.kind||'skin',title:vp.title||'Virtual consult',fee:(typeof vcFee!=='undefined'?vcFee:'')||'',invitedAt:vi.invitedAt||0};}
+    if(vi&&vi.invited&&!vi.submitted){
+      // Prefer the labels captured on the invite; fall back to the current profile for older invites.
+      const vp=(vi&&vi.kind)?vi:((typeof _vcProfile==='function')?_vcProfile():{});
+      vcInvite={kind:vp.kind||'skin',title:vp.title||'Virtual consult',fee:(typeof vcFee!=='undefined'?vcFee:'')||'',invitedAt:vi.invitedAt||0,
+        photoLabels:Array.isArray(vp.photoLabels)?vp.photoLabels:null,refTitle:vp.refTitle||null,refLabels:Array.isArray(vp.refLabels)?vp.refLabels:null};}
   }catch(e){}
   // Before/after progress photos for the client's OWN app view — only when the provider turned on
   // sharing for this client. Sends lightweight refs (pid + meta), not bytes; the client app fetches
