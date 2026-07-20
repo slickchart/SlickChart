@@ -21,6 +21,10 @@ const DAY = 24 * HOUR;
 // "Hasn't visited" fires only while the gap sits within this window past the threshold, so a one-time
 // deploy can't blast every long-dormant client — only those who cross the line get the nudge, once.
 const NOVISIT_WINDOW = 3 * DAY;
+// "X after service" fires only while elapsed sits within this span past the delay — wide enough that a
+// client-local morning always falls inside it (and to tolerate a cron gap), narrow enough that it's
+// still "around then". Claim-once keeps it to a single send.
+const AFTER_WINDOW = 2 * DAY;
 // Local morning window (client's timezone) for a friendly send time. Claim-once dedups within it.
 const MORNING_LO = 8, MORNING_HI = 11;
 
@@ -68,8 +72,20 @@ function classify(a) {
   const t = String((a && a.trigger) || '').toLowerCase();
   const n = String((a && a.name) || '').toLowerCase();
   if (/birthday/.test(t) || /birthday/.test(n)) return { kind: 'birthday' };
-  const m = t.match(/hasn.?t visited in (\d+)\s*days?/) || t.match(/(\d+)\s*days?\s*(?:since|no visit|inactive)/);
-  if (m) return { kind: 'novisit', days: parseInt(m[1], 10) || 90 };
+  const nv = t.match(/hasn.?t visited in (\d+)\s*days?/) || t.match(/(\d+)\s*days?\s*(?:since|no visit|inactive)/);
+  if (nv) return { kind: 'novisit', days: parseInt(nv[1], 10) || 90 };
+  // "X hours/days/weeks after <service>" — fires that long after the provider marks the visit complete
+  // (session summary / payment / explicit mark). An empty/appointment/visit/service target = any service;
+  // a named target (e.g. "chemical peel") only fires when the completed service matches.
+  const af = t.match(/(\d+)\s*(hour|day|week)s?\s*after\s*(.*)$/);
+  if (af && !/before/.test(t)) {
+    const num = parseInt(af[1], 10) || 0;
+    const unit = af[2];
+    const mult = unit === 'hour' ? HOUR : unit === 'week' ? 7 * DAY : DAY;
+    let tx = String(af[3] || '').trim().toLowerCase();
+    if (!tx || /^(their\s+)?(appointment|appt|service|visit)s?$/.test(tx)) tx = '';
+    if (num > 0) return { kind: 'after', ms: num * mult, treatment: tx };
+  }
   return null;
 }
 
@@ -78,7 +94,7 @@ export default async function handler(req, res) {
   if (!dbEnabled()) { res.status(200).json({ ok: false, reason: 'db disabled' }); return; }
 
   const now = Date.now();
-  const summary = { providers: 0, automations: 0, birthdays: 0, novisits: 0, devices: 0 };
+  const summary = { providers: 0, automations: 0, birthdays: 0, novisits: 0, afters: 0, devices: 0 };
   try {
     await ensureClientTables();
     await ensureTable();                       // kv table
@@ -128,6 +144,17 @@ export default async function handler(req, res) {
             if (gap < ev.days * DAY || gap >= ev.days * DAY + NOVISIT_WINDOW) continue;   // only just-crossed
             // Key on the visit day so a future visit (new lastVisit) can re-arm the same nudge.
             rkey = 'evt:nov' + ev.days + ':' + owner + ':' + autoId + ':' + cid + ':' + Math.round(lv / DAY);
+          } else if (ev.kind === 'after') {
+            const svcAt = Number(c.lastServiceAt) || 0;
+            if (!svcAt) continue;                                // no completed visit stamped yet
+            if (ev.treatment) {                                  // treatment-specific → the done service must match
+              const done = String(c.lastServiceTreatment || c.treatment || '').toLowerCase();
+              if (!done.includes(ev.treatment)) continue;
+            }
+            const elapsed = now - svcAt;
+            if (elapsed < ev.ms || elapsed >= ev.ms + AFTER_WINDOW) continue;
+            // Key on the service time so a later visit re-arms the same "after service" drip.
+            rkey = 'evt:aft' + ev.ms + ':' + owner + ':' + autoId + ':' + cid + ':' + Math.round(svcAt / HOUR);
           }
           if (!rkey) continue;
 
@@ -138,13 +165,14 @@ export default async function handler(req, res) {
           if (!providerCounted) { summary.providers++; providerCounted = true; }
           const first = (String(c.name || '').trim().split(/\s+/)[0]) || 'there';
           const biz = String(c.studio || c.businessName || '').trim();
+          const txName = (ev.kind === 'after' && c.lastServiceTreatment) ? c.lastServiceTreatment : (c.treatment || 'your treatment');
           const text = msg
             .replace(/\{client_name\}/gi, first)
             .replace(/\{business_name\}/gi, biz || 'us')
-            .replace(/\{treatment_name\}/gi, String(c.treatment || 'your treatment'))
+            .replace(/\{treatment_name\}/gi, String(txName))
             .replace(/\{appointment_date\}/gi, 'your next visit');
           try { await logEvent(owner, cid, 'provider_message', { text, photos: [], auto: true }); } catch (e) {}
-          if (ev.kind === 'birthday') summary.birthdays++; else summary.novisits++;
+          if (ev.kind === 'birthday') summary.birthdays++; else if (ev.kind === 'novisit') summary.novisits++; else summary.afters++;
 
           const title = ev.kind === 'birthday' ? 'A birthday note 🎂' : 'A note from your provider';
           if (pushConfigured()) {

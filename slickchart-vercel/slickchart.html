@@ -4964,6 +4964,14 @@ function renderRoom(id){
         <i class="ti ti-chevron-right" style="color:#888;flex-shrink:0;"></i>
       </button>
     </div>
+    ${(function(){
+      // "Service happened" marker for quick visits that won't end in a summary or payment. Sending a
+      // summary or taking payment already stamps this automatically; this is the manual shortcut, and
+      // it shows when the last completion was so it's clear it landed.
+      const done=c.lastServiceAt&&(Date.now()-c.lastServiceAt)<20*3600000;   // stamped within the last ~day
+      return `<button onclick="_roomMarkComplete('${id}')" style="width:100%;margin-top:10px;background:${done?'#0a2019':'#111'};border:1px solid ${done?'#1c4030':'#1e1e1e'};border-radius:12px;padding:12px 14px;display:flex;align-items:center;justify-content:center;gap:8px;cursor:pointer;font-family:inherit;color:${done?'#4ec49a':'#cfe4d8'};font-size:13px;font-weight:600;"><i class="ti ti-${done?'circle-check':'checkbox'}" style="font-size:16px;"></i> ${done?'Visit marked complete — tap to re-stamp':'Mark visit complete'}</button>
+      <div style="font-size:11px;color:#7a7a7a;text-align:center;margin-top:6px;line-height:1.5;">Starts any “after service” follow-up automations. Sending a summary or taking payment does this for you.</div>`;
+    })()}
   </div><div style="height:14px;"></div>`;
 }
 function _roomProtocolHTML(){
@@ -7162,6 +7170,10 @@ function _storeSummary(id){
   // only in memory and in sc_clients, so another device never received it (the saved summary
   // and provider notes appeared missing there).
   try{if(typeof persistSessionSummaries==='function')persistSessionSummaries();}catch(e){}
+  // Saving a session summary is a definitive "this service happened" signal — stamp the completion
+  // time so the server can fire "X hours/days after <service>" automations off it (see cron-events).
+  c.lastServiceAt=Date.now();c.lastServiceTreatment=c.treatment||'';
+  try{c.lastVisit=new Date().toLocaleDateString('en-US',{month:'short',day:'numeric',year:'numeric'});}catch(e){}
   try{if(typeof saveClients==='function')saveClients();}catch(e){}
   try{if(typeof _pushKeyNow==='function')_pushKeyNow('sc_clients',localStorage.getItem('sc_clients')||'');}catch(e){}
   // Deliver to the client's app NOW, not on the 2.5s roster debounce — otherwise closing the app
@@ -14914,9 +14926,33 @@ function _coRecordPaid(id,methodLabel){
     const c=CL[id];const items=_coValidItems();const amt=_coAmount();const note=_coVal('co-desc')||'Payment';
     if(!amt||amt<=0){_coActionLock=false;return _coErr('Add line items or an amount first.');}
     _addPayment({clientId:id,clientName:c.name,amount:amt,taxAmount:_coTaxAmt(),method:methodLabel||'Cash',status:'paid',date:_todayISO(),note:note+' ('+String(methodLabel||'cash').toLowerCase()+')',source:'manual',items:items.map(it=>({name:it.name,price:it.price,qty:it.qty||1,kind:it.kind||'service',note:it.note||'',taxable:(it.taxable!==false)}))});
+    // Taking payment is a "service happened" signal too — prefer the actual service line item's name
+    // for the treatment so treatment-specific drips (e.g. "48h after Chemical Peel") match precisely.
+    const svc=(items.find(it=>(it.kind||'service')==='service')||items[0]||{});
+    try{_markServiceComplete(id,svc.name||(c&&c.treatment)||'');}catch(e){}
     const res=document.getElementById('co-result');if(res)res.innerHTML='<div style="background:#0a2019;border:1px solid #1c4030;border-radius:10px;padding:12px 14px;font-size:13px;color:#4ec49a;font-weight:600;"><i class="ti ti-check"></i> Recorded $'+amt.toFixed(2)+' as paid ('+methodLabel+') · logged in Payments</div>';
     if(typeof proToast==='function')proToast('Payment recorded ✓');
   }finally{_coActionLock=false;}
+}
+// Stamp a client's visit as completed NOW: records lastServiceAt + the service done, refreshes the
+// chart's last-visit date, and syncs immediately so the server-side event sender (cron-events) can
+// fire "X hours/days after <service>" automations. Idempotent within the hour (the drip dedup keys on
+// the service time), so re-saving/editing the same session doesn't re-arm a drip.
+function _markServiceComplete(id,treatment){
+  const c=CL[id];if(!c)return;
+  c.lastServiceAt=Date.now();
+  c.lastServiceTreatment=(treatment&&String(treatment).trim())||c.treatment||'';
+  try{c.lastVisit=new Date().toLocaleDateString('en-US',{month:'short',day:'numeric',year:'numeric'});}catch(e){}
+  try{if(typeof saveClients==='function')saveClients();}catch(e){}
+  try{if(typeof _pushKeyNow==='function')_pushKeyNow('sc_clients',localStorage.getItem('sc_clients')||'');}catch(e){}
+  try{if(typeof _syncSpecificClientsToServer==='function')_syncSpecificClientsToServer([id]);}catch(e){}
+}
+// Explicit "mark this visit complete" from the Room, for a quick service with no summary or payment.
+function _roomMarkComplete(id){
+  const c=CL[id];if(!c)return;
+  _markServiceComplete(id,c.treatment);
+  if(typeof proToast==='function')proToast('Visit marked complete ✓ — any “after service” automations will run from now');
+  try{if(typeof _navCur!=='undefined'&&_navCur&&_navCur.screen==='room')renderRoom(id);}catch(e){}
 }
 
 
@@ -19314,14 +19350,17 @@ function renderAutoForm(a,idx){
 // Birthday and "hasn't visited in N days" triggers are evaluated + sent automatically by the server
 // (api/cron-events). The appointment-relative triggers aren't automatic yet — say so honestly, and
 // point the provider at what IS hands-off.
-function _autoTriggerLive(trigger){const t=String(trigger||'').toLowerCase();return /birthday/.test(t)||/hasn.?t visited in \d+\s*days?/.test(t);}
+function _autoTriggerLive(trigger){const t=String(trigger||'').toLowerCase();return /birthday/.test(t)||/hasn.?t visited in \d+\s*days?/.test(t)||(/\d+\s*(hour|day|week)s?\s*after/.test(t)&&!/before/.test(t));}
 function _autoTriggerNote(){
   const sel=document.getElementById('auto-trigger');const box=document.getElementById('auto-trigger-note');
   if(!sel||!box)return;
+  const t=String(sel.value||'').toLowerCase();
+  const isAfter=/\d+\s*(hour|day|week)s?\s*after/.test(t)&&!/before/.test(t);
   if(_autoTriggerLive(sel.value)){
-    box.innerHTML='<div style="background:var(--accent-tint);border:1px solid #1c4030;border-radius:8px;padding:9px 12px;margin-top:10px;display:flex;gap:7px;align-items:flex-start;"><i class="ti ti-circle-check" aria-hidden="true" style="font-size:13px;color:#4ec49a;flex-shrink:0;margin-top:1px;"></i><span style="font-size:12px;color:#8fd6b0;line-height:1.5;">This one sends on its own — birthday and “hasn’t visited” messages go out automatically in each client’s morning. Just choose who gets it below.</span></div>';
+    const extra=isAfter?' It starts from when you mark a visit complete — sending a summary or taking payment does that for you.':' They go out automatically in each client’s morning.';
+    box.innerHTML='<div style="background:var(--accent-tint);border:1px solid #1c4030;border-radius:8px;padding:9px 12px;margin-top:10px;display:flex;gap:7px;align-items:flex-start;"><i class="ti ti-circle-check" aria-hidden="true" style="font-size:13px;color:#4ec49a;flex-shrink:0;margin-top:1px;"></i><span style="font-size:12px;color:#8fd6b0;line-height:1.5;">This one sends on its own.'+extra+' Just choose who gets it below.</span></div>';
   }else{
-    box.innerHTML='<div style="background:#241a08;border:1px solid #4a3510;border-radius:8px;padding:9px 12px;margin-top:10px;display:flex;gap:7px;align-items:flex-start;"><i class="ti ti-alert-triangle" aria-hidden="true" style="font-size:13px;color:#e8b04e;flex-shrink:0;margin-top:1px;"></i><span style="font-size:12px;color:#e8b04e;line-height:1.5;">This trigger isn’t automatic yet. For a hands-off send, pick a <b>birthday</b> or <b>“hasn’t visited”</b> trigger, or use <b>Specific date</b> — those go out on their own.</span></div>';
+    box.innerHTML='<div style="background:#241a08;border:1px solid #4a3510;border-radius:8px;padding:9px 12px;margin-top:10px;display:flex;gap:7px;align-items:flex-start;"><i class="ti ti-alert-triangle" aria-hidden="true" style="font-size:13px;color:#e8b04e;flex-shrink:0;margin-top:1px;"></i><span style="font-size:12px;color:#e8b04e;line-height:1.5;">This trigger isn’t automatic yet. For a hands-off send, pick a <b>birthday</b>, <b>“after” a service</b>, or <b>“hasn’t visited”</b> trigger, or use <b>Specific date</b>.</span></div>';
   }
 }
 // Fill the {placeholders} in an automation message with realistic sample values, so the Preview shows
