@@ -3317,7 +3317,9 @@ function nav(screen,data){
     fn();
     try{_a11yEnhanceClickables(S);}catch(e){}
     S.scrollTop=0;
-    if(screen==='home')_navStack.length=0;   // home is the root, clear history so no back button crowds the heading
+    // The 6 bottom-nav destinations are peer roots, not a drill-down — clear history when landing on any
+    // of them so the top-bar back arrow only ever appears inside a detail screen, never on a top-level tab.
+    if(screen==='home'||screen==='clients'||screen==='payments'||screen==='messages'||screen==='calendar'||screen==='more')_navStack.length=0;
     const bb=document.getElementById('topbar-back');if(bb)bb.style.display=_navStack.length?'flex':'none';
     // Move focus to page heading
     requestAnimationFrame(()=>{
@@ -6482,7 +6484,6 @@ function renderSessionSummary(id){
     <div style="display:flex;gap:8px;">
       <button onclick="changeTreatment('${id}','session-summary')" style="border:1px solid #555;background:none;border-radius:8px;padding:6px 12px;font-size:12px;color:#ccc;cursor:pointer;"><i class="ti ti-pencil" aria-hidden="true" style="font-size:12px;"></i> Edit treatment</button>
       <button onclick="nav('rebook','${id}')" style="border:1px solid #555;background:none;border-radius:8px;padding:6px 12px;font-size:12px;color:#ccc;cursor:pointer;"><i class="ti ti-calendar-plus" aria-hidden="true" style="font-size:12px;"></i> Rebook</button>
-      <button onclick="_summaryGuard('${id}')&&sendSummary('${id}')" style="background:${summarySendOn[id]?'var(--accent)':'#2a2a2a'};color:${summarySendOn[id]?'var(--accent-ink)':'#888'};border:none;border-radius:8px;padding:6px 14px;font-size:12px;font-weight:500;cursor:pointer;display:flex;align-items:center;gap:5px;"><i class="ti ti-send" aria-hidden="true" style="font-size:12px;"></i> Send</button>
     </div>
   </div>
 
@@ -13904,7 +13905,7 @@ function renderCheckout(id){
     <div id="co-result" style="margin-bottom:14px;"></div>
     <button class="btnp" onclick="_coLink('${id}')" style="width:100%;border-radius:10px;margin-bottom:9px;"><i class="ti ti-link"></i> Send payment link</button>
     <button class="btng" onclick="_coInvoice('${id}')" style="width:100%;border-radius:10px;margin-bottom:9px;justify-content:center;"><i class="ti ti-file-invoice"></i> Send invoice by email</button>
-    <button class="btng" onclick="_coCharge('${id}')" style="width:100%;border-radius:10px;justify-content:center;margin-bottom:9px;"><i class="ti ti-credit-card"></i> Charge card on file</button>
+    ${c.squareId?`<button class="btng" onclick="_coCharge('${id}')" style="width:100%;border-radius:10px;justify-content:center;margin-bottom:9px;"><i class="ti ti-credit-card"></i> Charge card on file</button>`:''}
     <button class="btng" onclick="_coMarkPaid('${id}')" style="width:100%;border-radius:10px;justify-content:center;"><i class="ti ti-cash"></i> Mark paid \u2014 cash / other</button>
     <div style="margin-top:14px;font-size:11px;color:#9a9a9a;line-height:1.6;background:#161616;border:1px solid #242424;border-radius:10px;padding:11px 13px;"><i class="ti ti-lock" style="font-size:11px;"></i> Card payments run securely through your connected Square \u2014 never stored in SlickChart. \u201cMark paid\u201d just records a payment you took another way (cash, Venmo, your own reader) so your ledger and reports stay accurate.</div>
   </div><div style="height:20px;"></div>`;
@@ -18632,6 +18633,14 @@ async function _aiDraftAutomation(){
   const trig=isDate?'a scheduled campaign date':(document.getElementById('auto-trigger')?.value||'');
   if(!name&&!trig){proToast('Name the automation first, then draft.');return;}
   const btn=(typeof event!=='undefined'&&event&&event.target)?event.target.closest('button'):null;
+  // Don't silently blow away text the provider already wrote — confirm the replace first.
+  if(ta.value.trim()&&typeof confirmModal==='function'){
+    confirmModal({title:'Replace your message?',body:'Drafting with AI will replace what you’ve typed in the message box.',action:'Replace'},function(){_doAiDraftAutomation(btn,name,trig);});
+    return;
+  }
+  _doAiDraftAutomation(btn,name,trig);
+}
+async function _doAiDraftAutomation(btn,name,trig){
   const orig=btn?btn.innerHTML:'';if(btn){btn.disabled=true;btn.innerHTML='<i class="ti ti-loader-2"></i> Drafting…';}
   const biz=(typeof businessName!=='undefined'&&businessName)||(typeof _businessName==='function'?_businessName():'')||'';
   const prompt='Write one friendly, on-brand automated text message a solo '+_profName()+(biz?(' ('+biz+')'):'')+' would send clients. Automation: "'+(name||trig)+'". Trigger: "'+trig+'". Keep it under 300 characters, warm and human (not corporate). Use the placeholder {client_name} where the client’s first name goes, and sign off with the provider’s name. You may use one tasteful emoji. Return ONLY JSON: {"message":"..."}.';
