@@ -11490,8 +11490,7 @@ function renderChat(id){
     <div id="ai-suggest-bar" style="display:none;flex-wrap:wrap;gap:6px;margin-bottom:8px;"></div>
     <div style="display:flex;align-items:flex-end;gap:6px;">
     ${aiEnabled?`<button onclick="_aiSuggestReplies('${id}')" aria-label="Suggest a reply" title="Suggest a reply" style="width:34px;height:34px;border-radius:50%;background:#1a1a1a;border:1px solid #2a2a2a;display:flex;align-items:center;justify-content:center;cursor:pointer;flex-shrink:0;"><i class="ti ti-sparkles" style="font-size:17px;color:var(--accent);"></i></button>`:''}
-    <button onclick="attachProviderPhoto('${id}')" aria-label="Upload a photo" title="Upload a photo" style="width:34px;height:34px;border-radius:50%;background:#1a1a1a;border:1px solid #2a2a2a;display:flex;align-items:center;justify-content:center;cursor:pointer;flex-shrink:0;"><svg viewBox="0 0 24 24" width="17" height="17" fill="none" stroke="var(--accent)" stroke-width="1.8" stroke-linecap="round" stroke-linejoin="round" aria-hidden="true"><path d="M4 8h3l1.5-2h7L17 8h3a1 1 0 0 1 1 1v9a1 1 0 0 1-1 1H4a1 1 0 0 1-1-1V9a1 1 0 0 1 1-1z"/><circle cx="12" cy="13" r="3.2"/></svg></button>
-    <button onclick="attachProviderLink('${id}')" aria-label="Add a photo by link" title="Add a photo by link" style="width:34px;height:34px;border-radius:50%;background:#1a1a1a;border:1px solid #2a2a2a;display:flex;align-items:center;justify-content:center;cursor:pointer;flex-shrink:0;"><svg viewBox="0 0 24 24" width="17" height="17" fill="none" stroke="var(--accent)" stroke-width="1.8" stroke-linecap="round" stroke-linejoin="round" aria-hidden="true"><path d="M10 14a3.5 3.5 0 0 0 5 0l3-3a3.5 3.5 0 0 0-5-5l-1 1"/><path d="M14 10a3.5 3.5 0 0 0-5 0l-3 3a3.5 3.5 0 0 0 5 5l1-1"/></svg></button>
+    <button onclick="_chatShareSheet('${id}')" aria-label="Share a photo, form, check-in or booking" title="Share a photo, form, check-in or booking" style="width:34px;height:34px;border-radius:50%;background:#1a1a1a;border:1px solid #2a2a2a;display:flex;align-items:center;justify-content:center;cursor:pointer;flex-shrink:0;"><i class="ti ti-plus" style="font-size:20px;color:var(--accent);"></i></button>
     <textarea id="cinput" aria-label="Type a message" placeholder="Message ${_fileEsc(c.name.split(' ')[0])}..." rows="1" style="flex:1;background:#1a1a1a;border:1px solid #2a2a2a;border-radius:20px;padding:8px 14px;font-size:13px;color:#e0e0e0;resize:none;font-family:inherit;outline:none;"></textarea>
     <button onclick="sendMsg('${id}')" aria-label="Send message" title="Send" style="width:34px;height:34px;border-radius:50%;background:var(--accent);border:none;display:flex;align-items:center;justify-content:center;cursor:pointer;"><svg viewBox="0 0 24 24" width="16" height="16" fill="none" stroke="var(--accent-ink)" stroke-width="1.8" stroke-linecap="round" stroke-linejoin="round" aria-hidden="true"><path d="M21 4 3 11l6 2.5L21 4z"/><path d="m21 4-7 16-2.5-6.5"/></svg></button>
     </div>
@@ -11532,6 +11531,33 @@ function _useSuggestedReply(i){
 }
 function attachProviderPhoto(id){_pickImages(srcs=>{if(srcs&&srcs.length)sendMsg(id,srcs);});}
 function attachProviderLink(id){const u=prompt('Paste an image link (URL):');if(u&&u.trim())sendMsg(id,[u.trim()]);}
+// From inside a conversation the provider could only attach a photo. This "+" sheet keeps the photo
+// options but also lets them send the things a client usually asks for mid-chat — a form, a pre-visit
+// check-in, or a follow-up booking — without leaving the thread to hunt for them elsewhere.
+function _chatShareSheet(id){
+  const c=CL[id];if(!c)return;
+  const old=document.getElementById('chat-share-sheet');if(old)old.remove();
+  const first=_fileEsc((c.name||'Client').split(' ')[0]);
+  const row=(icon,col,bg,title,sub,action)=>`<button onclick="var s=document.getElementById('chat-share-sheet');if(s)s.remove();${action}" style="width:100%;display:flex;align-items:center;gap:12px;padding:12px 16px;background:none;border:none;border-top:1px solid #1e1e1e;cursor:pointer;font-family:inherit;text-align:left;"><div style="width:38px;height:38px;border-radius:10px;background:${bg};display:flex;align-items:center;justify-content:center;flex-shrink:0;"><i class="ti ${icon}" style="font-size:18px;color:${col};"></i></div><div style="flex:1;min-width:0;"><div style="font-size:14px;font-weight:500;color:#e8e8e8;">${title}</div><div style="font-size:12px;color:#999;overflow:hidden;text-overflow:ellipsis;white-space:nowrap;">${sub}</div></div><i class="ti ti-chevron-right" style="font-size:16px;color:#777;flex-shrink:0;"></i></button>`;
+  const label=(t)=>`<div style="padding:11px 16px 4px;font-size:11px;font-weight:700;color:#8a8a8a;text-transform:uppercase;letter-spacing:.06em;">${t}</div>`;
+  let body=label('Attach');
+  body+=row('ti-photo','var(--accent)','var(--accent-tint)','Photo from library','Pick one or more to send',`attachProviderPhoto('${id}')`);
+  body+=row('ti-link','var(--accent)','var(--accent-tint)','Photo by link','Paste an image URL',`attachProviderLink('${id}')`);
+  body+=label('Send to their app');
+  if(!c.appInvited)body+=row('ti-rocket','#4ec49a','#0a2019','First-visit package','Invite + intake form together',`sendFirstVisitPackage('${id}')`);
+  body+=row('ti-clipboard-check','#4ec49a','#0a2019','Pre-visit check-in',`Ask ${first} what has changed`,`sendCheckin('${id}')`);
+  body+=row('ti-file-text','var(--accent)','var(--accent-tint)','A form to fill out','Intake, consent or a custom form',`nav('client-forms','${id}')`);
+  body+=row('ti-calendar-plus','#a891ec','#1e1633','Book a follow-up',`Set up ${first}'s next visit`,`nav('rebook','${id}')`);
+  const ov=document.createElement('div');ov.id='chat-share-sheet';
+  ov.style.cssText='position:fixed;inset:0;margin:0 auto;width:390px;max-width:100%;z-index:9999;background:rgba(0,0,0,.6);display:flex;align-items:flex-end;justify-content:center;';
+  ov.onclick=e=>{if(e.target===ov)ov.remove();};
+  ov.innerHTML=`<div style="background:#161616;border-top:1px solid #2a2a2a;width:100%;border-radius:18px 18px 0 0;overflow:hidden;max-height:82%;overflow-y:auto;padding-bottom:calc(8px + env(safe-area-inset-bottom,0px));">
+    <div style="width:36px;height:4px;background:#2a2a2a;border-radius:2px;margin:10px auto 4px;"></div>
+    <div style="display:flex;align-items:center;justify-content:space-between;padding:4px 16px 2px;"><div style="font-size:15px;font-weight:600;color:#f0f0f0;">Share with ${first}</div><button onclick="this.closest('#chat-share-sheet').remove()" aria-label="Close" style="border:none;background:none;font-size:20px;color:#888;cursor:pointer;line-height:1;">✕</button></div>
+    ${body}
+  </div>`;
+  (document.querySelector('.shell')||document.body).appendChild(ov);
+}
 // Stable per-message id so we can update a sent bubble's delivery status in place and dedup retries.
 function _genMid(){try{return (self.crypto&&crypto.randomUUID)?crypto.randomUUID():(Date.now().toString(36)+Math.random().toString(36).slice(2));}catch(e){return Date.now().toString(36)+Math.random().toString(36).slice(2);}}
 // Update a provider message's delivery status ('sending'|'sent'|'failed'|'pending') and, if that
