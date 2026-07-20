@@ -6565,7 +6565,8 @@ function renderSessionSummary(id){
     ${summaryToggles.note?`<div style="padding:14px 16px;border-bottom:1px solid #222;">
       <div style="display:flex;align-items:center;justify-content:space-between;margin-bottom:8px;gap:8px;flex-wrap:wrap;">
         <div style="font-size:12px;color:#aaa;text-transform:uppercase;letter-spacing:.07em;font-weight:500;">A note from ${_providerFirstName()}</div>
-        <div style="display:flex;align-items:center;gap:8px;">
+        <div style="display:flex;align-items:center;gap:8px;flex-wrap:wrap;justify-content:flex-end;">
+          ${(aiEnabled&&(typeof _providerNotesSnapshot==='function')&&_providerNotesSnapshot(id).sections.length)?`<button id="ai-draft-btn" onclick="_aiDraftSummaryFromNotes('${id}',this)" style="border:1px solid var(--accent);background:var(--accent-tint);color:var(--accent);font-size:11px;font-weight:600;cursor:pointer;border-radius:20px;padding:4px 10px;display:flex;align-items:center;gap:4px;font-family:inherit;"><i class="ti ti-wand" style="font-size:12px;"></i> Draft from my notes</button>`:''}
           ${aiEnabled?`<button id="ai-friendly-btn" onclick="aiClientFriendly('${id}',this)" style="border:1px solid var(--accent);background:var(--accent-tint);color:var(--accent);font-size:11px;font-weight:600;cursor:pointer;border-radius:20px;padding:4px 10px;display:flex;align-items:center;gap:4px;font-family:inherit;"><i class="ti ti-sparkles" style="font-size:12px;"></i> Make client-friendly</button>`:''}
           <button onclick="editSummaryNote('${id}')" style="border:none;background:none;color:var(--accent);font-size:12px;cursor:pointer;display:flex;align-items:center;gap:4px;"><i class="ti ti-pencil" aria-hidden="true" style="font-size:12px;"></i> Edit</button>
         </div>
@@ -6721,6 +6722,32 @@ async function aiClientFriendly(id,btn){
     btn.disabled=false;btn.style.opacity='1';btn.innerHTML=old;
     if(typeof proToast==='function')proToast('Could not reach AI just now, try again, or edit manually');
   }
+}
+// Auto-draft the CLIENT-facing summary note from the provider's own session notes (typed or dictated
+// in the Room). Closes the gap where the provider had to write the client note from scratch even though
+// they'd just captured detailed notes — now it seeds a warm first draft they can refine.
+async function _aiDraftSummaryFromNotes(id,btn){
+  if(!aiEnabled){if(typeof proToast==='function')proToast('AI features are off — turn them on in Settings → AI features');return;}
+  const snap=(typeof _providerNotesSnapshot==='function')?_providerNotesSnapshot(id):{sections:[]};
+  const secs=(snap&&snap.sections)||[];
+  if(!secs.length){if(typeof proToast==='function')proToast('No session notes yet — jot or dictate your notes in the Room first.');return;}
+  _flushOpenSummaryNote(id);
+  const existing=((summaryNoteDraft[id]!=null?summaryNoteDraft[id]:((document.getElementById('summary-note')||{}).innerText||''))||'').trim();
+  const run=async function(){
+    const c=CL[id]||{};const first=(c.name||'').split(' ')[0]||'your client';
+    const old=btn?btn.innerHTML:'';if(btn){btn.disabled=true;btn.style.opacity='.6';btn.innerHTML='<i class="ti ti-loader-2"></i> Drafting…';}
+    try{
+      const notesText=secs.map(s=>s.label+': '+s.text).join('\n');
+      const prompt=`You are helping a ${typeof _profName==='function'?_profName():'wellness provider'} write the short note their client reads in a post-appointment summary. From the provider's own session notes below, write a warm, encouraging, plain-language message written directly to the client (address them as "you"). Remove clinical jargon and abbreviations, keep it accurate to the notes, do not invent treatments or outcomes, and keep it to 2–4 short sentences. Return ONLY the note, no preamble and no quotation marks.\n\nClient first name: ${first}\nTreatment: ${c.treatment||''}\n\nSession notes:\n${notesText}`;
+      const out=((await _aiComplete([{role:'user',content:prompt}],400))||'').trim().replace(/^["']+|["']+$/g,'');
+      if(!out)throw new Error('empty');
+      summaryNoteDraft[id]=out;if(typeof persistSummaryDrafts==='function')persistSummaryDrafts();
+      if(typeof proToast==='function')proToast('Drafted from your notes — edit if you like');
+      renderSessionSummary(id);
+    }catch(e){if(btn){btn.disabled=false;btn.style.opacity='1';btn.innerHTML=old;}if(typeof proToast==='function')proToast('Could not reach AI just now — try again, or edit manually');}
+  };
+  if(existing&&typeof confirmModal==='function'){confirmModal({title:'Replace the note?',body:'This replaces the current client note with a fresh draft from your session notes.',action:'Draft'},run);return;}
+  run();
 }
 
 let _recEditCtx='summary';
