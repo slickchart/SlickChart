@@ -3494,13 +3494,13 @@ function _flagAckHome(id){
   // saveClients only schedules a debounced sync; push the client list NOW too so a quick refresh's
   // cloud pull can't overwrite the ack with a stale copy (that was why cleared cards kept returning).
   try{if(typeof _pushKeyNow==='function')_pushKeyNow('sc_clients',localStorage.getItem('sc_clients')||'');}catch(e){}
-  if(typeof renderHome==='function')renderHome();
+  _reRenderAttn();
 }
 function _reviewAckHome(id){
   var c=CL[id];if(c){var s=(c.submittedForms&&c.submittedForms[0])||{};c.reviewAck=String(s.evId||s.ts||s.date||'1');try{if(typeof saveClients==='function')saveClients();}catch(e){}}
   _homeDismissed.add('rev-'+id);_saveHomeDismissed();
   try{if(typeof _pushKeyNow==='function')_pushKeyNow('sc_clients',localStorage.getItem('sc_clients')||'');}catch(e){}
-  if(typeof renderHome==='function')renderHome();
+  _reRenderAttn();
 }
 // Content signatures so a dismissed attention card stays dismissed for THAT specific flag/form, but a
 // genuinely new flag or a newly completed form (different signature) surfaces again as its own card.
@@ -3508,54 +3508,22 @@ function _flagSig(c){var f=c&&c.flaggedContra;if(!f)return '';return (f.form||''
 function _revSig(c){var s=c&&c.submittedForms&&c.submittedForms[0];if(!s)return '';return (s.evId||s.ts||s.date||'')+'|'+(s.title||'');}
 // Index of the client's flagged submitted form (so a flagged card opens the exact form, not just the chart).
 function _flaggedFormIdx(c){return (c&&Array.isArray(c.submittedForms))?c.submittedForms.findIndex(function(f){return f&&f.flagged&&f.flagged.length;}):-1;}
-function renderHome(){
-  setNav('home');
-  setTimeout(maybeShowOnboarding,300);
+function _reRenderAttn(){
+  // Re-render whichever attention surface is on screen so a dismissal made from the notification
+  // feed updates the feed (and one from Home updates Home). Both surfaces share the same underlying
+  // dismissal state, so clearing an item in either place clears it everywhere.
+  try{
+    if(typeof renderNotifFeed==='function'&&document.getElementById('notif-feed-screen'))return renderNotifFeed();
+    if(typeof renderHome==='function'&&document.getElementById('home-screen'))return renderHome();
+  }catch(e){}
+}
+// Single source of truth for the live "Needs your attention" tiles (booking requests, pre-visit
+// check-ins, virtual consults, check-in nudges, flagged intakes, form reviews). Rendered on Home AND
+// in the notification feed, so the bell is the one canonical activity hub and both draw from the same
+// dismissal state. Returns the concatenated tile HTML (empty string when nothing needs attention).
+function _attnTilesHTML(){
   const newCheckins=unreadCheckins();
-  S.innerHTML=`
-  <div id="home-screen"></div>
-  <div style="padding:20px 16px 8px;">
-    <div style="display:flex;justify-content:space-between;align-items:flex-start;">
-      <div><div id="page-heading" style="font-size:22px;font-weight:500;color:#f0f0f0;margin-bottom:2px;" tabindex="-1">${_greeting()}${_providerFirstName()?', '+_fileEsc(_providerFirstName()):''} 👋</div>
-      <div style="font-size:14px;color:#929292;">${_todayLabel()}</div></div>
-      <button onclick="nav('calendar')" aria-label="Open calendar" style="background:#161616;border:none;border-radius:10px;padding:8px 12px;font-size:12px;color:var(--accent);cursor:pointer;display:flex;align-items:center;gap:5px;min-width:44px;min-height:44px;"><i class="ti ti-calendar" aria-hidden="true" style="font-size:16px;"></i></button>
-    </div>
-  </div>
-  <div style="display:flex;gap:8px;padding:0 16px;margin-bottom:10px;">
-    ${(function(){
-      const todayN=_apptsToday().length;const rem=_apptsRemainingToday();
-      const ut=threads.filter(t=>t.unread);const um=ut.length;
-      const umSub=um?('from '+_fileEsc((CL[ut[0].id]&&CL[ut[0].id].name)?CL[ut[0].id].name.split(' ')[0]:ut[0].id)):'all caught up';
-      const fc=Object.values(CL).filter(c=>_fcActive(c)).length;const dr=_docsNeedRenewal();
-      const third=fc?["Flagged intakes",String(fc),"review before visit","#e87070","flagged-intakes"]
-        :dr?["Docs expiring",String(dr),"need renewal","#e87070","vault"]
-        :["Documents","OK","all current","#4ec49a","vault"];
-      return [
-        ["Today's appts",String(todayN),(rem!=null?rem+" remaining":(todayN?"scheduled":"none today")),"#f0f0f0","today-appts"],
-        ["Unread messages",String(um),umSub,"var(--accent)","messages"],
-        third
-      ];
-    })().map(([l,v,s,c,scr])=>`<button onclick="nav('${scr}')" aria-label="${l}: ${v}, ${s}" style="flex:1;background:#161616;border:1px solid #232323;border-radius:10px;padding:10px 12px;cursor:pointer;font-family:inherit;text-align:left;"><div style="font-size:11px;color:#999;margin-bottom:4px;">${l}</div><div style="font-size:22px;font-weight:500;color:${c};">${v}</div><div style="font-size:11px;color:#999;">${s}</div></button>`).join('')}
-  </div>
-  ${(aiEnabled&&!_dayRecapDismissedToday())?`<div id="day-recap-card" style="margin:0 16px 10px;">${_dayRecapCardHTML()}</div>`:''}
-  ${!_homeDismissed.has('preview-client')?_swipeTile(`
-  <div onclick="_previewClientApp()" style="margin:0;background:linear-gradient(135deg,var(--accent-tint),var(--accent-tint2));border:1px solid var(--accent-a30);border-radius:12px;padding:12px 14px;display:flex;align-items:center;gap:11px;cursor:pointer;">
-    <div style="width:40px;height:40px;border-radius:10px;background:var(--accent);display:flex;align-items:center;justify-content:center;flex-shrink:0;">
-      <i class="ti ti-device-mobile-check" style="font-size:20px;color:var(--accent-ink);"></i>
-    </div>
-    <div style="flex:1;min-width:0;"><div style="font-size:14px;font-weight:600;color:#f5f0e8;">See what your clients see</div><div style="font-size:12px;color:#c8bda8;margin-top:1px;">Tap to preview the client app, booking, summaries &amp; more</div></div>
-    <i class="ti ti-external-link" style="font-size:17px;color:#c8bda8;"></i>
-  </div>`,'preview-client'):''}
-  ${(function(){
-    // One unified "Needs your attention" heading over ALL attention items (booking requests, check-ins,
-    // virtual consults, flagged intakes, form reviews, check-in nudges) instead of scattering them as
-    // separate unlabeled tiles above a separate section. The notification bell remains the full log.
-    const anyAttn=(pendingRequests().filter(b=>!b.seen).length)||newCheckins.length||_vcPendingCount()
-      ||_shotFilterEntries(Object.entries(CL).filter(([id,c])=>_fcActive(c))).length
-      ||_shotFilterEntries(Object.entries(CL).filter(([id,c])=>c.submittedForms&&c.submittedForms.length&&!_fcActive(c))).length
-      ||_shotFilterEntries((typeof _needsCheckin==='function')?_needsCheckin():[]).length;
-    return anyAttn?'<div class="sh"><h2>Needs your attention</h2></div>':'';
-  })()}
+  return `
   ${(()=>{const unseenReq=pendingRequests().filter(b=>!b.seen);return unseenReq.length?_swipeTile(`
   <div onclick="nav('requests')" style="margin:0;background:linear-gradient(135deg,#0a2019,#0d2a20);border:1px solid #1a4a38;border-radius:12px;padding:12px 14px;display:flex;align-items:center;gap:11px;cursor:pointer;">
     <div style="width:40px;height:40px;border-radius:10px;background:#0f3528;display:flex;align-items:center;justify-content:center;flex-shrink:0;position:relative;">
@@ -3620,6 +3588,58 @@ function renderHome(){
     </div>`,'rev-'+id,`_reviewAckHome('${id}')`)).join('');
     return h;
   })()}
+`;
+}
+
+function renderHome(){
+  setNav('home');
+  setTimeout(maybeShowOnboarding,300);
+  const newCheckins=unreadCheckins();
+  S.innerHTML=`
+  <div id="home-screen"></div>
+  <div style="padding:20px 16px 8px;">
+    <div style="display:flex;justify-content:space-between;align-items:flex-start;">
+      <div><div id="page-heading" style="font-size:22px;font-weight:500;color:#f0f0f0;margin-bottom:2px;" tabindex="-1">${_greeting()}${_providerFirstName()?', '+_fileEsc(_providerFirstName()):''} 👋</div>
+      <div style="font-size:14px;color:#929292;">${_todayLabel()}</div></div>
+      <button onclick="nav('calendar')" aria-label="Open calendar" style="background:#161616;border:none;border-radius:10px;padding:8px 12px;font-size:12px;color:var(--accent);cursor:pointer;display:flex;align-items:center;gap:5px;min-width:44px;min-height:44px;"><i class="ti ti-calendar" aria-hidden="true" style="font-size:16px;"></i></button>
+    </div>
+  </div>
+  <div style="display:flex;gap:8px;padding:0 16px;margin-bottom:10px;">
+    ${(function(){
+      const todayN=_apptsToday().length;const rem=_apptsRemainingToday();
+      const ut=threads.filter(t=>t.unread);const um=ut.length;
+      const umSub=um?('from '+_fileEsc((CL[ut[0].id]&&CL[ut[0].id].name)?CL[ut[0].id].name.split(' ')[0]:ut[0].id)):'all caught up';
+      const fc=Object.values(CL).filter(c=>_fcActive(c)).length;const dr=_docsNeedRenewal();
+      const third=fc?["Flagged intakes",String(fc),"review before visit","#e87070","flagged-intakes"]
+        :dr?["Docs expiring",String(dr),"need renewal","#e87070","vault"]
+        :["Documents","OK","all current","#4ec49a","vault"];
+      return [
+        ["Today's appts",String(todayN),(rem!=null?rem+" remaining":(todayN?"scheduled":"none today")),"#f0f0f0","today-appts"],
+        ["Unread messages",String(um),umSub,"var(--accent)","messages"],
+        third
+      ];
+    })().map(([l,v,s,c,scr])=>`<button onclick="nav('${scr}')" aria-label="${l}: ${v}, ${s}" style="flex:1;background:#161616;border:1px solid #232323;border-radius:10px;padding:10px 12px;cursor:pointer;font-family:inherit;text-align:left;"><div style="font-size:11px;color:#999;margin-bottom:4px;">${l}</div><div style="font-size:22px;font-weight:500;color:${c};">${v}</div><div style="font-size:11px;color:#999;">${s}</div></button>`).join('')}
+  </div>
+  ${(aiEnabled&&!_dayRecapDismissedToday())?`<div id="day-recap-card" style="margin:0 16px 10px;">${_dayRecapCardHTML()}</div>`:''}
+  ${!_homeDismissed.has('preview-client')?_swipeTile(`
+  <div onclick="_previewClientApp()" style="margin:0;background:linear-gradient(135deg,var(--accent-tint),var(--accent-tint2));border:1px solid var(--accent-a30);border-radius:12px;padding:12px 14px;display:flex;align-items:center;gap:11px;cursor:pointer;">
+    <div style="width:40px;height:40px;border-radius:10px;background:var(--accent);display:flex;align-items:center;justify-content:center;flex-shrink:0;">
+      <i class="ti ti-device-mobile-check" style="font-size:20px;color:var(--accent-ink);"></i>
+    </div>
+    <div style="flex:1;min-width:0;"><div style="font-size:14px;font-weight:600;color:#f5f0e8;">See what your clients see</div><div style="font-size:12px;color:#c8bda8;margin-top:1px;">Tap to preview the client app, booking, summaries &amp; more</div></div>
+    <i class="ti ti-external-link" style="font-size:17px;color:#c8bda8;"></i>
+  </div>`,'preview-client'):''}
+  ${(function(){
+    // One unified "Needs your attention" heading over ALL attention items (booking requests, check-ins,
+    // virtual consults, flagged intakes, form reviews, check-in nudges) instead of scattering them as
+    // separate unlabeled tiles above a separate section. The notification bell remains the full log.
+    const anyAttn=(pendingRequests().filter(b=>!b.seen).length)||newCheckins.length||_vcPendingCount()
+      ||_shotFilterEntries(Object.entries(CL).filter(([id,c])=>_fcActive(c))).length
+      ||_shotFilterEntries(Object.entries(CL).filter(([id,c])=>c.submittedForms&&c.submittedForms.length&&!_fcActive(c))).length
+      ||_shotFilterEntries((typeof _needsCheckin==='function')?_needsCheckin():[]).length;
+    return anyAttn?'<div class="sh"><h2>Needs your attention</h2></div>':'';
+  })()}
+  ${_attnTilesHTML()}
   <div class="sh"><h2>Up next</h2></div>
   ${(()=>{
     if(_apptsLive()){
@@ -10706,7 +10726,7 @@ function _attnFresh(key){
   if(now-t>86400000){if(!_homeDismissed.has(key)){_homeDismissed.add(key);_saveHomeDismissed();}return false;}
   return true;
 }
-function _dismissTile(k){_homeDismissed.add(k);_saveHomeDismissed();renderHome();}
+function _dismissTile(k){_homeDismissed.add(k);_saveHomeDismissed();_reRenderAttn();}
 // "Swipe to clear" on the Home banners for bookings/check-ins now genuinely marks them
 // seen (persisted), instead of just hiding the summary card for the current session
 // which is why they used to reappear on every refresh even after being swiped away.
@@ -10715,11 +10735,11 @@ function _dismissReqTile(){
   let changed=false;
   list.forEach(b=>{if(b.status==='pending'&&!b.seen){b.seen=true;changed=true;}});
   if(changed)SlickBridge.setBookings(list);
-  renderHome();
+  _reRenderAttn();
 }
 function _dismissCinTile(){
   unreadCheckins().forEach(c=>markCheckinRead(c.id));
-  renderHome();
+  _reRenderAttn();
 }
 // A "needs attention" tile with an explicit X to clear it (replaced the old swipe-to-clear, which
 // was easy to miss and unreliable — a half-registered swipe made cleared cards seem to "come back").
@@ -10731,12 +10751,12 @@ function dismissCheckinNudge(id){
   const c=CL[id];const key=id+'|'+((c&&c.nextVisit)||'');
   _ciDismissed[key]=true;saveCiDismissed();_lastCiDismiss=key;
   _ciUndoToast(((c&&c.name)?c.name.split(' ')[0]:'Reminder')+' cleared');
-  if(document.getElementById('home-screen'))renderHome();
+  _reRenderAttn();
 }
 function undoLastCheckinDismiss(){
   if(_lastCiDismiss){delete _ciDismissed[_lastCiDismiss];saveCiDismissed();_lastCiDismiss=null;}
   const t=document.getElementById('ci-undo-toast');if(t)t.remove();
-  if(document.getElementById('home-screen'))renderHome();
+  _reRenderAttn();
 }
 function _ciUndoToast(msg){
   const old=document.getElementById('ci-undo-toast');if(old)old.remove();
@@ -13550,8 +13570,13 @@ function renderNotifFeed(){
   document.getElementById('tt').textContent='Notifications';
   const unread=notifFeed.filter(n=>!n.read);
   const read=notifFeed.filter(n=>n.read);
+  // The bell is the one canonical activity hub: the live actionable items (booking requests, pre-visit
+  // check-ins, virtual consults, flagged intakes, form reviews, check-in nudges) render here at the top,
+  // straight from the same source Home uses. Clearing one here clears it on Home too, and vice-versa.
+  let attn='';try{attn=(_attnTilesHTML()||'').trim();}catch(e){attn='';}
   S.innerHTML=`
   <div id="notif-feed-screen"></div>
+  ${attn?`<div class="sh"><h2>Needs action</h2></div>${attn}`:''}
   <div style="padding:12px 16px 0;display:flex;align-items:center;justify-content:space-between;">
     <div style="font-size:13px;color:#999;">${unread.length} unread</div>
     ${unread.length>0?`<button onclick="markAllNotifsRead()" style="border:none;background:none;font-size:12px;color:var(--accent);cursor:pointer;">Mark all read</button>`:''}
@@ -13562,7 +13587,7 @@ function renderNotifFeed(){
   ${read.length>0?`
   <div class="sh"><h2>Earlier</h2></div>
   ${read.map(n=>notifRow(n)).join('')}`:''}
-  ${(!unread.length&&!read.length)?emptyState({icon:'ti-bell',title:'You\u2019re all caught up',body:'New activity \u2014 booking requests, form submissions, check-ins, and messages \u2014 shows up here as it happens.'}):''}
+  ${(!attn&&!unread.length&&!read.length)?emptyState({icon:'ti-bell',title:'You\u2019re all caught up',body:'New activity \u2014 booking requests, form submissions, check-ins, and messages \u2014 shows up here as it happens.'}):''}
   <div style="height:16px;"></div>`;
   setTimeout(()=>{try{document.querySelectorAll('.swipe-card').forEach((el,i)=>{if(typeof initSwipe==='function')initSwipe(el,i);});}catch(e){}},0);
 }
