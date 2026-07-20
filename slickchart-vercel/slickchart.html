@@ -17420,13 +17420,21 @@ function _notifyBookingClient(b, text){
 function confirmBooking(id){
   const all=SlickBridge.getBookings();const b=all.find(x=>x.id===id);if(!b)return;
   if(b.status==='confirmed')return; // already confirmed, don't duplicate the calendar entry
-  b.status='confirmed';b.decidedAt=Date.now();SlickBridge.setBookings(all);
-  addConfirmedAppt(b);
-  SlickBridge.post('booking-confirmed',b);
-  _notifyBookingClient(b,`Great news, your ${b.treatment} on ${fmtBookingDate(b)} at ${b.time} is confirmed! ✨`);
-  pushBookingNotif({icon:'ti-calendar-check',title:'Appointment confirmed',body:`${b.client} · ${b.treatment} · ${fmtBookingDate(b)} at ${b.time}`});
-  suggestOpenFor=null;
-  renderRequests();
+  const commit=function(){
+    b.status='confirmed';b.decidedAt=Date.now();SlickBridge.setBookings(all);
+    addConfirmedAppt(b);
+    SlickBridge.post('booking-confirmed',b);
+    _notifyBookingClient(b,`Great news, your ${b.treatment} on ${fmtBookingDate(b)} at ${b.time} is confirmed! ✨`);
+    pushBookingNotif({icon:'ti-calendar-check',title:'Appointment confirmed',body:`${b.client} · ${b.treatment} · ${fmtBookingDate(b)} at ${b.time}`});
+    suggestOpenFor=null;
+    renderRequests();
+  };
+  // Warn before confirming a request that overlaps an existing appointment — same double-book guard the
+  // manual add uses. Cancelling leaves the request open so the provider can suggest another time instead.
+  const clash=(typeof _manualOverlap==='function')?_manualOverlap(b.date,b.time):null;
+  if(clash&&typeof confirmModal==='function'){
+    confirmModal({title:'Possible double-booking',body:'Confirming '+((b.client||'this client'))+' overlaps '+((clash.client||'another appointment'))+' around '+((clash.time||'that time'))+'. Confirm anyway — or cancel and suggest a different time?',action:'Confirm anyway'},commit);
+  }else commit();
 }
 function declineBooking(id){
   const all=SlickBridge.getBookings();const b=all.find(x=>x.id===id);if(!b)return;
