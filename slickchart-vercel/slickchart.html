@@ -105,6 +105,8 @@ details>summary{list-style:none;cursor:pointer;}
 details>summary::-webkit-details-marker{display:none;}
 details[open]>summary .sh-chev{transform:rotate(180deg);}
 .sh-chev{transition:transform .15s;}
+.ctab[hidden]{display:none;}
+.ctseg:focus-visible{outline:2px solid var(--accent);outline-offset:2px;}
 </style>
 </head>
 <body>
@@ -4137,11 +4139,41 @@ async function _loadClientLoyalty(id){
     body.innerHTML='<b style="color:var(--accent);">'+j.balance+' points</b> · '+j.lifetimePoints+' lifetime — now visible in '+_fileEsc(c.name.split(' ')[0])+'’s app';
   }catch(e){if(body)body.innerHTML='Could not reach Square, try again.';}
 }
+// The client file is organized into four tabs so it isn't one very long scroll. The identity block
+// (name, contact, any flag, next appointment) stays pinned above the tabs; the tabs split the rest:
+//   • Overview — today's-visit actions, payment, client details/vitals
+//   • Forms    — suggested forms, forms on file, latest pre-visit check-in
+//   • Care     — session summaries, recommended routine & products, virtual consult
+//   • Setup    — first-visit package / invites / check-in settings, Square
+// Tab is preserved across re-renders of the same client (so editing a routine doesn't bounce you back
+// to Overview) and resets to Overview when a different client is opened.
+let _clientTab='overview', _clientTabFor=null;
+function _clientTabHasFlag(c){return !!(c&&(c.flaggedContra||(c.lastCheckin&&c.lastCheckin.flagged&&c.lastCheckin.flagged.length)||(Array.isArray(c.submittedForms)&&c.submittedForms.some(f=>f&&f.flagged&&f.flagged.length))));}
+function _clientTabBar(id){
+  const c=CL[id]||{};
+  const dot='<span style="width:7px;height:7px;border-radius:50%;background:#e87070;flex-shrink:0;"></span>';
+  const tabs=[['overview','Overview',false],['forms','Forms',_clientTabHasFlag(c)],['care','Care',false],['setup','Setup',false]];
+  return `<div class="ctbar" role="tablist" style="position:sticky;top:0;z-index:5;display:flex;gap:4px;padding:8px 16px 10px;margin-top:6px;background:linear-gradient(#111,#111 72%,rgba(17,17,17,0));">
+    ${tabs.map(([k,l,flag])=>{const on=_clientTab===k;return `<button role="tab" aria-selected="${on}" data-tab="${k}" class="ctseg" onclick="_setClientTab('${id}','${k}')" style="flex:1;display:inline-flex;align-items:center;justify-content:center;gap:5px;padding:8px 4px;border-radius:9px;font-family:inherit;font-size:12.5px;font-weight:600;cursor:pointer;border:1px solid ${on?'var(--accent-a30,#3d2d10)':'#242424'};background:${on?'var(--accent-tint)':'#161616'};color:${on?'var(--accent)':'#9a9a9a'};">${l}${flag?dot:''}</button>`;}).join('')}
+  </div>`;
+}
+function _setClientTab(id,tab){
+  _clientTab=tab;_clientTabFor=id;
+  document.querySelectorAll('.ctab').forEach(p=>{p.hidden=(p.getAttribute('data-tab')!==tab);});
+  document.querySelectorAll('.ctseg').forEach(b=>{
+    const on=b.getAttribute('data-tab')===tab;b.setAttribute('aria-selected',on?'true':'false');
+    b.style.border='1px solid '+(on?'var(--accent-a30,#3d2d10)':'#242424');
+    b.style.background=on?'var(--accent-tint)':'#161616';
+    b.style.color=on?'var(--accent)':'#9a9a9a';
+  });
+  try{if(S&&S.scrollTo)S.scrollTo({top:0,behavior:'smooth'});}catch(e){}
+}
 function renderClient(id){
   setNav('clients');
   _recEditCtx='profile';
   const c=CL[id];
   if(!c){if(typeof renderClients==='function'){return renderClients();}S.innerHTML='<div style="padding:30px 16px;color:#888;text-align:center;">This client is no longer available.</div>';return;}
+  if(_clientTabFor!==id){_clientTab='overview';_clientTabFor=id;}
   document.getElementById('tt').textContent=c.name;
   S.innerHTML=`
   <div id="client-screen-${id}" hidden></div>
@@ -4170,6 +4202,8 @@ function renderClient(id){
       <button onclick="nav('rebook','${id}')" style="background:rgba(78,196,154,.12);border:1px solid #1c4030;color:#4ec49a;border-radius:8px;padding:6px 11px;font-size:11px;font-weight:600;cursor:pointer;font-family:inherit;flex-shrink:0;">Reschedule</button>
     </div>`;
   })()}
+  ${_clientTabBar(id)}
+  <div class="ctab" data-tab="overview"${_clientTab==='overview'?'':' hidden'}>
   <div class="sh" style="padding-top:6px;"><h2>Today’s visit</h2></div>
   <div style="display:grid;grid-template-columns:1fr 1fr;gap:8px;padding:0 16px 8px;">
     <button class="btnp" style="border-radius:10px;padding:9px;" onclick="nav('brief','${id}')"><i class="ti ti-brain"></i> AI Brief</button>
@@ -4182,28 +4216,13 @@ function renderClient(id){
   </div>
   ${(function(){var _b=_clientBalance(id);return _b>0?'<div style="padding:0 16px 8px;"><div style="background:#2a1a0a;border:1px solid #4a3510;border-radius:9px;padding:8px 12px;font-size:12px;color:#e8b060;display:flex;justify-content:space-between;"><span>Balance due</span><b>$'+_fmtMoney(_b)+'</b></div></div>':'';})()}
   <div style="padding:0 16px 14px;"><button class="btnp" onclick="nav('checkout','${id}')" style="width:100%;justify-content:center;border-radius:10px;"><i class="ti ti-cash"></i> Take payment</button></div>
-  <details ${c.appInvited?'':'open'}>
-    <summary class="sh" style="display:flex;align-items:center;justify-content:space-between;"><h2 style="margin:0;">Client setup &amp; messages</h2><i class="ti ti-chevron-down sh-chev" style="font-size:15px;color:#888;margin-right:16px;"></i></summary>
-  ${!c.appInvited?`<div style="padding:0 16px 12px;">
-    <button class="btnp" onclick="sendFirstVisitPackage('${id}')" style="width:100%;justify-content:center;border-radius:10px;"><i class="ti ti-rocket"></i> Send first-visit package</button>
-    <div style="font-size:11px;color:#888;text-align:center;margin-top:6px;line-height:1.5;">Invites them to the app + sends the intake form. Pre-visit check-in unlocks automatically once they're in.</div>
-  </div>`:''}
-  <div style="padding:0 16px 14px;">
-    <button class="btng" onclick="sendCheckin('${id}')" style="width:100%;justify-content:center;"><i class="ti ti-message" style="color:#4ec49a;"></i> Send pre-visit check-in</button>
-    <button onclick="nav('checkin-settings')" style="display:block;width:100%;text-align:center;background:none;border:none;cursor:pointer;font-family:inherit;font-size:11px;color:#9a9a9a;margin-top:6px;padding:2px;">${(checkinCfg.autoSend&&checkinCfg.autoSend.on)?('Auto-send: '+checkinCfg.autoSend.when+' before each visit · edit'):'Auto-send is off · edit'}</button>
-  </div>
-  ${selectedProfessions.includes('tattoo')?`<div style="padding:0 16px 14px;">
-    ${_aftercareDripActive(c)
-      ? `<button class="btng" onclick="_stopAftercareDrip('${id}')" style="width:100%;justify-content:center;color:#4ec49a;"><i class="ti ti-heartbeat" style="color:#4ec49a;"></i> Healing check-ins on · stop</button><div style="font-size:11px;color:#9a9a9a;text-align:center;margin-top:6px;">Day 1, 3 &amp; 30 aftercare messages auto-send</div>`
-      : `<button class="btng" onclick="_startAftercareDrip('${id}');nav('client','${id}')" style="width:100%;justify-content:center;"><i class="ti ti-heartbeat" style="color:#e87070;"></i> Start healing check-ins</button><div style="font-size:11px;color:#9a9a9a;text-align:center;margin-top:6px;">Auto-sends Day 1 (unwrap), Day 3 (peeling) &amp; Month 1 (healed photo)</div>`}
-  </div>`:''}
-  <div style="padding:0 16px 14px;"><button class="btng" onclick="inviteClientToApp('${id}')" style="width:100%;justify-content:center;"><i class="ti ti-device-mobile" style="color:#a891ec;"></i> ${c.appInvited?'App invite sent ✓ · resend':'Invite to the app'}</button></div>
-  </details>
   <div class="sh" style="display:flex;align-items:center;justify-content:space-between;"><h2>Client details</h2><button onclick="editVitals('${id}')" style="border:1px solid var(--accent-a30,#3d2d10);background:var(--accent-tint);color:var(--accent);cursor:pointer;padding:4px 11px;border-radius:20px;font-size:11px;font-weight:600;font-family:inherit;display:inline-flex;align-items:center;gap:4px;margin-right:16px;"><i class="ti ti-pencil" style="font-size:11px;"></i> Edit</button></div>
   <div style="padding:0 16px;">
     ${_vitalsConfig().filter(f=>!f.med||(c[f.key]&&String(c[f.key]).trim()&&c[f.key]!=='—')).map(f=>`<div class="fr"><span class="fl">${f.label}</span><span class="fv"${f.key==='concerns'?' style="font-size:12px;"':''}>${_fileEsc(c[f.key]||'—')}</span></div>`).join('')}
     ${c.photoConsent?`<div class="fr"><span class="fl">Photo consent</span><span class="fv" style="font-size:12px;">${c.photoConsent.beforeAfter?'\u2713 Before/after':'\u2717 Before/after'} \u00b7 ${c.photoConsent.socialMedia?'\u2713 Social/portfolio':'\u2717 Social/portfolio'}</span></div>`:`<div class="fr"><span class="fl">Photo consent</span><span class="fv" style="font-size:12px;color:#9a9a9a;">Captured once they sign an intake</span></div>`}
   </div>
+  </div>
+  <div class="ctab" data-tab="forms"${_clientTab==='forms'?'':' hidden'}>
   ${(function(){const sug=(typeof _suggestedFormsFor==='function')?_suggestedFormsFor(c):[];if(!sug.length)return '';
     if(!window._sugChecked)window._sugChecked={};
     sug.forEach(k=>{if(window._sugChecked[k]===undefined)window._sugChecked[k]=true;});
@@ -4236,6 +4255,8 @@ function renderClient(id){
       <i class="ti ti-chevron-right" aria-hidden="true" style="font-size:16px;color:#888;"></i>
     </button>
   </div>`:''}
+  </div>
+  <div class="ctab" data-tab="care"${_clientTab==='care'?'':' hidden'}>
   <div class="sh"><h2>Session summaries</h2></div>
   <div style="padding:0 16px 6px;">
     <button onclick="nav('summary-history','${id}')" style="width:100%;background:#1a1a1a;border:1px solid #2a2a2a;border-radius:12px;padding:12px 14px;display:flex;align-items:center;gap:11px;cursor:pointer;font-family:inherit;text-align:left;">
@@ -4331,6 +4352,25 @@ function renderClient(id){
     <div style="display:flex;align-items:center;gap:7px;background:var(--accent-a08);border:1px solid var(--accent-a20,#3d2d10);border-radius:9px;padding:9px 12px;margin-bottom:10px;"><i class="ti ti-lock" style="font-size:13px;color:var(--accent);"></i><span style="font-size:11px;color:#ccc;line-height:1.4;">Provider-initiated, clients can't start one on their own.</span></div>
     <button onclick="inviteVirtualConsult('${id}')" class="btnp" style="width:100%;border-radius:9px;padding:11px;"><i class="ti ti-mail-share"></i> Invite ${nm} to a virtual consult</button>`}
   </div>`;})()}
+  </div>
+  <div class="ctab" data-tab="setup"${_clientTab==='setup'?'':' hidden'}>
+  <details ${c.appInvited?'':'open'}>
+    <summary class="sh" style="display:flex;align-items:center;justify-content:space-between;"><h2 style="margin:0;">Client setup &amp; messages</h2><i class="ti ti-chevron-down sh-chev" style="font-size:15px;color:#888;margin-right:16px;"></i></summary>
+  ${!c.appInvited?`<div style="padding:0 16px 12px;">
+    <button class="btnp" onclick="sendFirstVisitPackage('${id}')" style="width:100%;justify-content:center;border-radius:10px;"><i class="ti ti-rocket"></i> Send first-visit package</button>
+    <div style="font-size:11px;color:#888;text-align:center;margin-top:6px;line-height:1.5;">Invites them to the app + sends the intake form. Pre-visit check-in unlocks automatically once they're in.</div>
+  </div>`:''}
+  <div style="padding:0 16px 14px;">
+    <button class="btng" onclick="sendCheckin('${id}')" style="width:100%;justify-content:center;"><i class="ti ti-message" style="color:#4ec49a;"></i> Send pre-visit check-in</button>
+    <button onclick="nav('checkin-settings')" style="display:block;width:100%;text-align:center;background:none;border:none;cursor:pointer;font-family:inherit;font-size:11px;color:#9a9a9a;margin-top:6px;padding:2px;">${(checkinCfg.autoSend&&checkinCfg.autoSend.on)?('Auto-send: '+checkinCfg.autoSend.when+' before each visit · edit'):'Auto-send is off · edit'}</button>
+  </div>
+  ${selectedProfessions.includes('tattoo')?`<div style="padding:0 16px 14px;">
+    ${_aftercareDripActive(c)
+      ? `<button class="btng" onclick="_stopAftercareDrip('${id}')" style="width:100%;justify-content:center;color:#4ec49a;"><i class="ti ti-heartbeat" style="color:#4ec49a;"></i> Healing check-ins on · stop</button><div style="font-size:11px;color:#9a9a9a;text-align:center;margin-top:6px;">Day 1, 3 &amp; 30 aftercare messages auto-send</div>`
+      : `<button class="btng" onclick="_startAftercareDrip('${id}');nav('client','${id}')" style="width:100%;justify-content:center;"><i class="ti ti-heartbeat" style="color:#e87070;"></i> Start healing check-ins</button><div style="font-size:11px;color:#9a9a9a;text-align:center;margin-top:6px;">Auto-sends Day 1 (unwrap), Day 3 (peeling) &amp; Month 1 (healed photo)</div>`}
+  </div>`:''}
+  <div style="padding:0 16px 14px;"><button class="btng" onclick="inviteClientToApp('${id}')" style="width:100%;justify-content:center;"><i class="ti ti-device-mobile" style="color:#a891ec;"></i> ${c.appInvited?'App invite sent ✓ · resend':'Invite to the app'}</button></div>
+  </details>
   ${c.squareId?`<div class="sh"><h2>Square</h2></div>
   <div style="margin:0 16px 10px;background:#161616;border:1px solid #242424;border-radius:12px;padding:12px 14px;">
     <div style="display:flex;justify-content:space-between;align-items:center;"><span style="font-size:11px;color:#888;text-transform:uppercase;letter-spacing:.06em;">Retail purchases</span><button onclick="_loadClientPurchases('${id}')" style="background:var(--accent-tint);border:1px solid var(--accent-a30,#3d2d10);color:var(--accent);border-radius:8px;padding:4px 10px;font-size:11px;font-weight:600;cursor:pointer;font-family:inherit;"><i class="ti ti-refresh" style="font-size:11px;"></i> Load from Square</button></div>
@@ -4343,7 +4383,8 @@ function renderClient(id){
   ${c.squareId?`<div style="margin:0 16px 14px;background:#161616;border:1px solid #242424;border-radius:12px;padding:12px 14px;">
     <div style="display:flex;justify-content:space-between;align-items:center;"><span style="font-size:11px;color:#888;text-transform:uppercase;letter-spacing:.06em;">Card on file</span><button onclick="_addCardOnFile('${id}')" style="background:var(--accent-tint);border:1px solid var(--accent-a30,#3d2d10);color:var(--accent);border-radius:8px;padding:4px 10px;font-size:11px;font-weight:600;cursor:pointer;font-family:inherit;"><i class="ti ti-credit-card" style="font-size:11px;"></i> Add card</button></div>
     <div id="sq-cards-body" style="margin-top:9px;font-size:12px;color:#9a9a9a;line-height:1.5;">Checking Square for a saved card…</div>
-  </div>`:''}`;
+  </div>`:''}
+  </div>`;
   if(c.squareId){setTimeout(function(){try{_loadClientCards(id);}catch(e){}},0);}
 }
 // Clearing a flagged contraindication also drops it from the Room "Alerts" panel and is pushed to the
