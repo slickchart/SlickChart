@@ -19222,9 +19222,14 @@ function _autoRecipInit(a){
 function _setAutoRecip(mode){_autoRecipMode=mode;const el=document.getElementById('auto-recip');if(el)el.innerHTML=_autoRecipHTML();try{_autoPreview();}catch(e){}}
 function _autoRecipToggle(id,on){
   _autoRecipSel[id]=!!on;
-  // Keep the scrolling list's checkbox in sync when a pick is removed via its chip (or vice-versa).
+  // Keep the picker's checkbox in sync when a pick is removed via its chip (or vice-versa).
   try{document.querySelectorAll('.arow-cb').forEach(b=>{if(b.value===id)b.checked=!!on;});}catch(e){}
-  _autoRecipCount();_autoRecipRefreshChips();try{_autoPreview();}catch(e){}
+  _autoRecipCount();
+  // Sheet open → just refresh the live chip summary behind it. Sheet closed (a chip's ✕ in the form) →
+  // re-render the inline summary so the "Choose clients" button's count updates too.
+  if(document.getElementById('auto-recip-sheet')){_autoRecipRefreshChips();}
+  else{const el=document.getElementById('auto-recip');if(el)el.innerHTML=_autoRecipHTML();}
+  try{_autoPreview();}catch(e){}
 }
 function _autoRecipCount(){const n=Object.keys(_autoRecipSel).filter(k=>_autoRecipSel[k]).length;const el=document.getElementById('arow-count');if(el)el.textContent=n?(n+' selected'):'None selected yet';}
 function _autoRecipRefreshChips(){const el=document.getElementById('arow-chips');if(el)el.innerHTML=_autoRecipChipsHTML();}
@@ -19251,16 +19256,37 @@ function _autoRecipHTML(){
     h+=`<div style="background:#1a1a1a;border:1px solid #2a2a2a;border-radius:9px;padding:10px 12px;font-size:12px;color:#999;line-height:1.5;">Goes to every active client (${Object.keys(CL).length}) when it sends.</div>`;
     return h;
   }
-  const ids=Object.keys(CL);
-  const rows=ids.map(id=>{const c=CL[id];const on=!!_autoRecipSel[id];return `<label class="arow" data-search="${_ds(c.name)}" style="display:flex;align-items:center;gap:10px;padding:9px 11px;border-bottom:1px solid #1e1e1e;cursor:pointer;"><input type="checkbox" class="arow-cb" value="${_fileEsc(id)}" ${on?'checked':''} onchange="_autoRecipToggle('${_jsAttr(id)}',this.checked)" style="width:17px;height:17px;accent-color:var(--accent);flex-shrink:0;"><div style="width:30px;height:30px;border-radius:8px;background:${_fileEsc(c.bg||'#222')};display:flex;align-items:center;justify-content:center;font-size:11px;font-weight:600;color:${_fileEsc(c.tc||'#ccc')};flex-shrink:0;">${_fileEsc(c.initials||(c.name||'?').slice(0,1))}</div><span style="flex:1;min-width:0;font-size:13px;color:#e0e0e0;overflow:hidden;text-overflow:ellipsis;white-space:nowrap;">${_fileEsc(c.name)}</span></label>`;}).join('');
-  const n=Object.keys(_autoRecipSel).filter(k=>_autoRecipSel[k]).length;
+  // Inline we only show a summary (chips) + a button that opens a dismissable pop-up picker — the long
+  // client list lives in that sheet, not stuck open in the form.
+  const n=Object.keys(_autoRecipSel).filter(k=>_autoRecipSel[k]&&CL[k]).length;
   h+=`<div id="arow-chips">${_autoRecipChipsHTML()}</div>`;
-  h+=`<div style="display:flex;align-items:center;justify-content:space-between;margin-bottom:6px;"><span id="arow-count" style="font-size:12px;color:var(--accent);font-weight:600;">${n?n+' selected':'None selected yet'}</span><button onclick="_autoRecipSelectAllVisible()" style="border:none;background:none;color:var(--accent);font-size:12px;cursor:pointer;font-family:inherit;font-weight:500;">Select all</button></div>`;
-  if(ids.length>4)h+=`<div style="position:relative;margin-bottom:8px;"><i class="ti ti-search" aria-hidden="true" style="position:absolute;left:11px;top:50%;transform:translateY(-50%);font-size:14px;color:#9a9a9a;"></i><input oninput="searchList(this.value,'.arow','arow-nores')" placeholder="Search clients…" style="width:100%;background:#111;border:1px solid #2a2a2a;border-radius:9px;padding:8px 11px 8px 32px;font-size:13px;color:#e0e0e0;font-family:inherit;box-sizing:border-box;outline:none;"></div>`;
-  h+=`<div style="background:#1a1a1a;border:1px solid #2a2a2a;border-radius:10px;max-height:190px;overflow-y:auto;-webkit-overflow-scrolling:touch;">${rows||'<div style="padding:16px;text-align:center;color:#888;font-size:12px;">No clients yet.</div>'}${_noRes('arow-nores','No clients match your search.')}</div>
-  ${ids.length>4?'<div style="font-size:11px;color:#777;margin-top:6px;text-align:center;">Scroll the list · tap to add or remove</div>':''}`;
+  h+=`<button type="button" onclick="_autoRecipSheet()" style="width:100%;background:#161616;border:1px solid #2a2a2a;border-radius:10px;padding:11px 14px;display:flex;align-items:center;justify-content:space-between;gap:10px;cursor:pointer;font-family:inherit;text-align:left;"><span style="display:flex;align-items:center;gap:8px;font-size:13px;color:#e0e0e0;font-weight:500;"><i class="ti ti-users" style="font-size:16px;color:var(--accent);"></i> ${n?('Edit who gets it · '+n+' selected'):'Choose clients'}</span><i class="ti ti-chevron-right" style="font-size:16px;color:#888;flex-shrink:0;"></i></button>`;
   return h;
 }
+// Dismissable pop-up picker for "specific clients" — the searchable checklist lives here (like the
+// "Send now" sheet) instead of staying open inline. Toggles feed the same _autoRecipSel state, so the
+// editor's chip summary + button count update live behind it; closing (Done / tap-away) re-renders them.
+function _autoRecipSheet(){
+  const old=document.getElementById('auto-recip-sheet');if(old)old.remove();
+  const _ds=(s)=>(typeof _normSearch==='function')?_normSearch(s||''):String(s||'').toLowerCase();
+  const ids=Object.keys(CL);
+  const rows=ids.map(id=>{const c=CL[id];const on=!!_autoRecipSel[id];return `<label class="arow" data-search="${_ds(c.name)}" style="display:flex;align-items:center;gap:10px;padding:10px 12px;border:1px solid #2a2a2a;background:#161616;border-radius:10px;margin-bottom:6px;cursor:pointer;"><input type="checkbox" class="arow-cb" value="${_fileEsc(id)}" ${on?'checked':''} onchange="_autoRecipToggle('${_jsAttr(id)}',this.checked)" style="width:17px;height:17px;accent-color:var(--accent);flex-shrink:0;"><div style="width:32px;height:32px;border-radius:8px;background:${_fileEsc(c.bg||'#222')};display:flex;align-items:center;justify-content:center;font-size:12px;font-weight:600;color:${_fileEsc(c.tc||'#ccc')};flex-shrink:0;">${_fileEsc(c.initials||(c.name||'?').slice(0,1))}</div><span style="flex:1;min-width:0;font-size:13px;color:#e0e0e0;overflow:hidden;text-overflow:ellipsis;white-space:nowrap;">${_fileEsc(c.name)}</span></label>`;}).join('');
+  const n=Object.keys(_autoRecipSel).filter(k=>_autoRecipSel[k]&&CL[k]).length;
+  const ov=document.createElement('div');ov.id='auto-recip-sheet';
+  ov.style.cssText='position:fixed;inset:0;margin:0 auto;width:390px;max-width:100%;z-index:99999;background:rgba(0,0,0,.65);display:flex;align-items:flex-end;justify-content:center;';
+  ov.onclick=e=>{if(e.target===ov)_autoRecipCloseSheet();};
+  ov.innerHTML=`<div style="background:#1a1a1a;border:1px solid #2a2a2a;border-radius:16px 16px 0 0;width:100%;max-height:90%;display:flex;flex-direction:column;overflow:hidden;">
+    <div style="padding:16px 16px 0;flex-shrink:0;">
+      <div style="display:flex;align-items:center;justify-content:space-between;"><div style="font-size:16px;font-weight:600;color:#f0f0f0;">Choose clients</div><button onclick="_autoRecipCloseSheet()" aria-label="Close" style="border:none;background:none;font-size:20px;color:#888;cursor:pointer;line-height:1;">✕</button></div>
+      <div style="display:flex;align-items:center;justify-content:space-between;margin:8px 0 10px;"><span id="arow-count" style="font-size:12px;color:var(--accent);font-weight:600;">${n?n+' selected':'None selected yet'}</span><button onclick="_autoRecipSelectAllVisible()" style="border:none;background:none;color:var(--accent);font-size:12px;cursor:pointer;font-family:inherit;font-weight:500;">Select all</button></div>
+      ${ids.length>4?`<div style="position:relative;margin-bottom:10px;"><i class="ti ti-search" aria-hidden="true" style="position:absolute;left:11px;top:50%;transform:translateY(-50%);font-size:14px;color:#9a9a9a;"></i><input oninput="searchList(this.value,'.arow','arow-nores')" placeholder="Search clients…" style="width:100%;background:#111;border:1px solid #2a2a2a;border-radius:9px;padding:8px 11px 8px 32px;font-size:13px;color:#e0e0e0;font-family:inherit;box-sizing:border-box;outline:none;"></div>`:''}
+    </div>
+    <div style="flex:1;min-height:0;overflow-y:auto;padding:0 16px;-webkit-overflow-scrolling:touch;">${rows||'<div style="padding:16px;text-align:center;color:#888;font-size:12px;">No clients yet.</div>'}${_noRes('arow-nores','No clients match your search.')}</div>
+    <div style="padding:12px 16px calc(12px + env(safe-area-inset-bottom,0px));border-top:1px solid #2a2a2a;flex-shrink:0;background:#1a1a1a;"><button onclick="_autoRecipCloseSheet()" class="btnp" style="border-radius:10px;padding:12px;">Done</button></div>
+  </div>`;
+  (document.querySelector('.shell')||document.body).appendChild(ov);
+}
+function _autoRecipCloseSheet(){const ov=document.getElementById('auto-recip-sheet');if(ov)ov.remove();try{const el=document.getElementById('auto-recip');if(el)el.innerHTML=_autoRecipHTML();_autoPreview();}catch(e){}}
 // What a saved automation's recipient set resolves to right now (used on the card + Send now).
 function _autoRecipLabel(a){
   const ids=(a&&Array.isArray(a.clientIds))?a.clientIds.filter(id=>CL[id]):[];
