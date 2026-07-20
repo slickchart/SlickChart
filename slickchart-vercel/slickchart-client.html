@@ -2589,7 +2589,8 @@ function renderHomecare(){
         <div style="font-size:13px;color:#6b5d52;line-height:1.6;white-space:pre-wrap;">${_txt(activeProvider().homecareNote)}</div>
       </div>
     </div>
-  </div>`:''}`;
+  </div>`:''}
+  ${(steps.length||activeProvider().homecareNote)?_askCareCardHTML({provider:client.providerFirst||'your provider',studio:client.studio||'',treatment:client.treatment||'',note:activeProvider().homecareNote||'',guides:[],homecare:(activeProvider().homecare||[]).map(s=>String(s.key||'')+(s.tip?(' — '+s.tip):'')).concat((activeProvider().avoid||[]).map(a=>'Avoid: '+a)),products:(typeof products!=='undefined'?products:[]).map(p=>p.name).filter(Boolean)}):''}`;
 }
 
 // ── MESSAGES ──
@@ -3995,6 +3996,26 @@ async function _clientAI(messages,maxTokens){
   return (data.content||[]).map(b=>b.text||'').join('');
 }
 function _askCareChip(el){const t=document.getElementById('care-q');if(t){t.value=el.getAttribute('data-q')||el.textContent.trim();_askCare();}}
+// Reusable grounded-aftercare "Ask" card. Sets the AI context and returns the card markup so it can
+// live on BOTH the session summary AND the Homecare tab (where clients naturally ask routine questions).
+// Chips are profession-agnostic so they read right for any provider, not just skin/esthetics.
+function _askCareCardHTML(ctx){
+  window._careCtx=ctx||{};
+  const who=_txt((ctx&&ctx.provider)||'your provider');
+  const chips=['How should I use my products?','What should I avoid right now?','When will I see results?'];
+  return `<div style="background:#fff;border:1.5px solid #f0ebe4;border-radius:12px;margin:0 16px 10px;padding:14px 16px;">
+    <div style="display:flex;align-items:center;gap:7px;margin-bottom:4px;"><i class="ti ti-sparkles" aria-hidden="true" style="font-size:15px;color:var(--accent);"></i><span style="font-size:12px;font-weight:600;color:#786858;text-transform:uppercase;letter-spacing:.07em;">Ask about your aftercare</span></div>
+    <div style="font-size:12px;color:#8a7a68;line-height:1.5;margin-bottom:10px;">Questions about your routine or aftercare? Ask here — answers come from ${who}’s notes for you.</div>
+    <div style="display:flex;flex-wrap:wrap;gap:6px;margin-bottom:10px;">
+      ${chips.map(qq=>`<button type="button" onclick="_askCareChip(this)" data-q="${_txt(qq)}" style="background:#faf7f3;border:1px solid #e8ddd2;border-radius:16px;padding:6px 11px;font-size:12px;color:#5a4a3a;cursor:pointer;font-family:inherit;">${_txt(qq)}</button>`).join('')}
+    </div>
+    <div style="display:flex;gap:7px;">
+      <input id="care-q" aria-label="Ask a question about your aftercare" placeholder="Type your question…" onkeydown="if(event.key==='Enter'){event.preventDefault();_askCare();}" style="flex:1;box-sizing:border-box;background:#faf7f3;border:1px solid #e8ddd2;border-radius:10px;padding:10px 12px;font-size:14px;color:#1a1a1a;font-family:inherit;outline:none;">
+      <button onclick="_askCare()" aria-label="Ask" style="background:var(--accent);color:var(--accent-ink);border:none;border-radius:10px;padding:0 15px;font-size:13px;font-weight:600;cursor:pointer;flex-shrink:0;">Ask</button>
+    </div>
+    <div id="care-answer" style="display:none;margin-top:12px;background:#faf7f3;border:1px solid #f0ebe4;border-radius:10px;padding:12px 13px;"></div>
+  </div>`;
+}
 async function _askCare(){
   const inp=document.getElementById('care-q');const out=document.getElementById('care-answer');if(!inp||!out)return;
   const q=inp.value.trim();if(!q){inp.focus();return;}
@@ -4102,20 +4123,7 @@ function renderLatestSummary(){
   </div>
 
   <!-- Ask about your aftercare (AI, grounded in this summary) -->
-  ${(s.note||(s.guides&&s.guides.length)||(s.homecare&&s.homecare.length))?`
-  ${(function(){window._careCtx={provider:client.providerFirst||'your provider',studio:client.studio||'',treatment:client.treatment||'',note:s.note||'',guides:(s.guides||[]).map(g=>({title:g.title,tips:g.tips||[]})),homecare:s.homecare||[],products:(products||[]).map(p=>p.name).filter(Boolean)};return'';})()}
-  <div style="background:#fff;border:1.5px solid #f0ebe4;border-radius:12px;margin:0 16px 10px;padding:14px 16px;">
-    <div style="display:flex;align-items:center;gap:7px;margin-bottom:4px;"><i class="ti ti-sparkles" aria-hidden="true" style="font-size:15px;color:var(--accent);"></i><span style="font-size:12px;font-weight:600;color:#786858;text-transform:uppercase;letter-spacing:.07em;">Ask about your aftercare</span></div>
-    <div style="font-size:12px;color:#8a7a68;line-height:1.5;margin-bottom:10px;">Questions about your routine or aftercare? Ask here — answers come from ${_txt(client.providerFirst)}’s notes for you.</div>
-    <div style="display:flex;flex-wrap:wrap;gap:6px;margin-bottom:10px;">
-      ${['When can I wear makeup again?','How should I use my products?','What should I avoid?'].map(qq=>`<button type="button" onclick="_askCareChip(this)" data-q="${_txt(qq)}" style="background:#faf7f3;border:1px solid #e8ddd2;border-radius:16px;padding:6px 11px;font-size:12px;color:#5a4a3a;cursor:pointer;font-family:inherit;">${_txt(qq)}</button>`).join('')}
-    </div>
-    <div style="display:flex;gap:7px;">
-      <input id="care-q" aria-label="Ask a question about your aftercare" placeholder="Type your question…" onkeydown="if(event.key==='Enter'){event.preventDefault();_askCare();}" style="flex:1;box-sizing:border-box;background:#faf7f3;border:1px solid #e8ddd2;border-radius:10px;padding:10px 12px;font-size:14px;color:#1a1a1a;font-family:inherit;outline:none;">
-      <button onclick="_askCare()" aria-label="Ask" style="background:var(--accent);color:var(--accent-ink);border:none;border-radius:10px;padding:0 15px;font-size:13px;font-weight:600;cursor:pointer;flex-shrink:0;">Ask</button>
-    </div>
-    <div id="care-answer" style="display:none;margin-top:12px;background:#faf7f3;border:1px solid #f0ebe4;border-radius:10px;padding:12px 13px;"></div>
-  </div>`:''}
+  ${(s.note||(s.guides&&s.guides.length)||(s.homecare&&s.homecare.length))?_askCareCardHTML({provider:client.providerFirst||'your provider',studio:client.studio||'',treatment:client.treatment||'',note:s.note||'',guides:(s.guides||[]).map(g=>({title:g.title,tips:g.tips||[]})),homecare:s.homecare||[],products:(products||[]).map(p=>p.name).filter(Boolean)}):''}
 
   <!-- Footer -->
   <div style="padding:12px 16px 20px;display:flex;align-items:center;justify-content:center;gap:4px;">
