@@ -11183,7 +11183,7 @@ function showMsgTab(tab){
   const content=document.getElementById('msg-tab-content');if(!content)return;
   if(tab==='inbox'){
     content.innerHTML=`
-    <div style="padding:12px 16px 8px;display:flex;align-items:center;justify-content:space-between;"><span style="font-size:13px;color:#999;">${threads.filter(t=>t.unread).length} unread</span><button onclick="_newMessageSheet()" style="background:var(--accent);color:var(--accent-ink);border:none;border-radius:8px;padding:7px 12px;font-size:12px;font-weight:500;cursor:pointer;"><i class="ti ti-edit" style="font-size:13px;"></i> New message</button></div>
+    <div style="padding:12px 16px 8px;display:flex;align-items:center;justify-content:space-between;gap:8px;"><span style="font-size:13px;color:#999;flex-shrink:0;">${threads.filter(t=>t.unread).length} unread</span><div style="display:flex;gap:8px;"><button onclick="_composeBroadcast()" style="background:#161616;border:1px solid #2a2a2a;color:#cfe4d8;border-radius:8px;padding:7px 11px;font-size:12px;font-weight:500;cursor:pointer;font-family:inherit;"><i class="ti ti-users" style="font-size:13px;"></i> Send to clients</button><button onclick="_newMessageSheet()" style="background:var(--accent);color:var(--accent-ink);border:none;border-radius:8px;padding:7px 11px;font-size:12px;font-weight:500;cursor:pointer;"><i class="ti ti-edit" style="font-size:13px;"></i> New</button></div></div>
     ${_searchBar('Search messages by client…','.thread-card','msgs-noresults')}
     ${threads.length===0?emptyState({icon:'ti-message-2',title:'No conversations yet',body:'Messages with your clients show up here. Tap New message to start one, or they\u2019ll appear when a client messages you from their app.'}):''}
     ${[...threads].filter(t=>!_shotMode()||_SAMPLE_IDS.indexOf(t.id)>=0).sort((a,b)=>(b.unread?1:0)-(a.unread?1:0)).map(t=>{const c=CL[t.id];if(!c)return'';return`<div onclick="nav('chat','${t.id}')" class="thread-card" data-search="${(((c&&c.name)||'')+' '+(t.preview||'')).toLowerCase().normalize('NFD').replace(/[̀-ͯ]/g,'').replace(/['‘’`"]/g,'').replace(/[^a-z0-9 ]/g,' ').replace(/\s+/g,' ').trim()}" style="display:flex;align-items:center;gap:12px;padding:12px 16px;border-bottom:1px solid #1e1e1e;cursor:pointer;"><div style="position:relative;">${av(c,44)}${t.unread?`<div style="position:absolute;top:0;right:0;width:10px;height:10px;border-radius:50%;background:var(--accent);border:2px solid #111;"></div>`:''}</div><div style="flex:1;min-width:0;"><div style="font-size:14px;font-weight:${t.unread?500:400};color:#f0f0f0;">${_clientNameLink(t.id,c.name,{color:'#f0f0f0'})}</div><div style="font-size:12px;color:${t.unread?'#aaa':'#555'};overflow:hidden;text-overflow:ellipsis;white-space:nowrap;">${_fileEsc(t.preview)}</div></div><div style="text-align:right;"><div style="font-size:11px;color:#999;">${_fileEsc(t.time)}</div>${t.unread?`<div style="width:8px;height:8px;border-radius:50%;background:var(--accent);margin:4px 0 0 auto;"></div>`:''}</div></div>`}).join('')}
@@ -11205,6 +11205,7 @@ function showMsgTab(tab){
         </div>
         <div style="border-top:1px solid #1e1e1e;padding:7px 14px;display:flex;align-items:center;justify-content:space-between;">
           <button onclick="nav('edit-automation',${i})" style="border:none;background:none;font-size:12px;color:var(--accent);cursor:pointer;"><i class="ti ti-pencil" style="font-size:12px;"></i> Edit message</button>
+          <button onclick="_sendAutomation(${i})" style="border:none;background:none;font-size:12px;color:#4ec49a;cursor:pointer;font-family:inherit;font-weight:500;"><i class="ti ti-send" style="font-size:12px;"></i> Send now</button>
           <button onclick="_deleteAutomation(${i},'autos')" aria-label="Delete ${_fileEsc(a.name)}" style="border:none;background:none;font-size:12px;color:#e87070;cursor:pointer;font-family:inherit;"><i class="ti ti-trash" style="font-size:12px;"></i> Delete</button>
         </div>
       </div>
@@ -12832,6 +12833,91 @@ function confirmModal(opts,action){
 // re-resolve its index when the user confirms, so a reordered/shortened array can't
 // cause the wrong automation to be deleted. `after` selects the right re-render.
 function _toggleAuto(i){const a=autos[i];if(!a)return;a.on=!a.on;try{persistAutos();}catch(e){}showMsgTab('autos');}
+// Send a message to ONE, A FEW (multi-select), or ALL clients — reusable sheet used by both the
+// automation "Send now" and the Messages "Send to clients" entry. Message is editable before sending
+// and {client_name} is personalized per person. Each send uses the tracked message path so it flushes
+// when a client joins and can be retried.
+let _ssSel={};
+function _openSendSheet(opts){
+  opts=opts||{};_ssSel={};
+  const old=document.getElementById('send-sheet');if(old)old.remove();
+  const ov=document.createElement('div');ov.id='send-sheet';
+  ov.style.cssText='position:fixed;inset:0;margin:0 auto;width:390px;max-width:100%;z-index:99999;background:rgba(0,0,0,.65);display:flex;align-items:flex-end;justify-content:center;';
+  ov.onclick=e=>{if(e.target===ov)ov.remove();};
+  const ids=Object.keys(CL);
+  const clientRows=ids.map(cid=>{const c=CL[cid];return `<label style="display:flex;align-items:center;gap:10px;padding:9px 12px;border:1px solid #2a2a2a;background:#161616;border-radius:10px;margin-bottom:6px;cursor:pointer;"><input type="checkbox" class="ss-cli" value="${_fileEsc(cid)}" onchange="_ssToggle('${_fileEsc(cid)}',this.checked)" style="width:17px;height:17px;accent-color:var(--accent);flex-shrink:0;"><div style="width:32px;height:32px;border-radius:8px;background:${_fileEsc(c.bg||'#2e2318')};display:flex;align-items:center;justify-content:center;font-size:12px;font-weight:500;color:${_fileEsc(c.tc||'var(--accent)')};flex-shrink:0;">${_fileEsc(c.initials||(c.name||'?').slice(0,1))}</div><span style="flex:1;min-width:0;font-size:13px;color:#e0e0e0;overflow:hidden;text-overflow:ellipsis;white-space:nowrap;">${_fileEsc(c.name)}</span></label>`;}).join('');
+  ov.innerHTML=`<div style="background:#1a1a1a;border:1px solid #2a2a2a;border-radius:16px 16px 0 0;width:100%;padding:18px 16px calc(14px + env(safe-area-inset-bottom,0px));max-height:88%;overflow-y:auto;">
+    <div style="font-size:16px;font-weight:600;color:#f0f0f0;margin-bottom:10px;">${_fileEsc(opts.title||'Send a message')}</div>
+    <span class="fl-lbl">Message</span>
+    <textarea id="ss-msg" class="fi" style="height:90px;resize:none;margin-bottom:5px;">${_fileEsc(opts.message||'')}</textarea>
+    <div style="font-size:11px;color:#8a8a8a;margin-bottom:14px;">Use {client_name} and it's filled in for each person.</div>
+    <div style="display:flex;align-items:center;justify-content:space-between;margin-bottom:8px;">
+      <span style="font-size:11px;font-weight:600;color:#999;text-transform:uppercase;letter-spacing:.05em;">Send to</span>
+      <button onclick="_ssSelectAll()" id="ss-all" style="border:none;background:none;color:var(--accent);font-size:12px;cursor:pointer;font-family:inherit;font-weight:500;">Select all</button>
+    </div>
+    ${clientRows||'<div style="font-size:12px;color:#999;padding:4px 0 8px;">No clients yet.</div>'}
+    <button id="ss-send" onclick="_ssSend()" class="btnp" style="border-radius:10px;padding:12px;margin-top:10px;"><i class="ti ti-send"></i> Send</button>
+    <button onclick="document.getElementById('send-sheet').remove()" style="width:100%;margin-top:8px;background:none;border:none;color:#929292;font-size:13px;cursor:pointer;font-family:inherit;padding:6px;">Cancel</button>
+  </div>`;
+  (document.querySelector('.shell')||document.body).appendChild(ov);
+  _ssUpdateBtn();
+}
+function _ssToggle(cid,on){_ssSel[cid]=!!on;_ssUpdateBtn();}
+function _ssSelectAll(){
+  const boxes=document.querySelectorAll('.ss-cli');
+  const selCount=Object.keys(_ssSel).filter(k=>_ssSel[k]).length;
+  const turnOn=selCount<boxes.length;   // if not all selected, select all; else clear
+  boxes.forEach(b=>{b.checked=turnOn;_ssSel[b.value]=turnOn;});
+  const allBtn=document.getElementById('ss-all');if(allBtn)allBtn.textContent=turnOn?'Clear all':'Select all';
+  _ssUpdateBtn();
+}
+function _ssUpdateBtn(){
+  const n=Object.keys(_ssSel).filter(k=>_ssSel[k]).length;
+  const btn=document.getElementById('ss-send');if(!btn)return;
+  btn.innerHTML='<i class="ti ti-send"></i> Send'+(n?(' to '+n+' client'+(n>1?'s':'')):'');
+  btn.style.opacity=n?'1':'.5';btn.disabled=!n;
+}
+async function _ssSend(){
+  const msgEl=document.getElementById('ss-msg');const msg=msgEl?String(msgEl.value||'').trim():'';
+  const sel=Object.keys(_ssSel).filter(k=>_ssSel[k]);
+  if(!msg){if(typeof proToast==='function')proToast('Type a message first');return;}
+  if(!sel.length){if(typeof proToast==='function')proToast('Pick at least one client');return;}
+  const doIt=async function(){
+    const sheet=document.getElementById('send-sheet');if(sheet)sheet.remove();
+    if(typeof proToast==='function')proToast('Sending…');
+    let ok=0,pending=0,fail=0;
+    for(const cid of sel.slice(0,500)){const st=await _sendAutomationMsg(cid,msg);if(st==='sent')ok++;else if(st==='pending')pending++;else fail++;}
+    try{saveMessages();}catch(e){}
+    const parts=[];if(ok)parts.push(ok+' sent');if(pending)parts.push(pending+' will send when they join');if(fail)parts.push(fail+' failed');
+    if(typeof proToast==='function')proToast(parts.join(' · ')||'Done',fail?0:undefined,fail?'error':undefined);
+  };
+  // A broadcast to many is consequential — confirm when it's more than a couple of people.
+  if(sel.length>3&&typeof confirmModal==='function'){confirmModal({title:'Send to '+sel.length+' clients?',body:'This sends your message to '+sel.length+' clients right now.',action:'Send'},function(){doIt();});}
+  else doIt();
+}
+// Deliver a (personalized) message to ONE client via the tracked message path. Returns the bubble status.
+async function _sendAutomationMsg(cid,msg){
+  const c=CL[cid];if(!c)return 'fail';
+  const first=(c.name||'').split(' ')[0]||'there';
+  const text=String(msg||'').replace(/\{client_name\}/gi,first);
+  let _mid;try{_mid=(self.crypto&&crypto.randomUUID)?crypto.randomUUID():(Date.now().toString(36)+Math.random().toString(36).slice(2));}catch(e){_mid=Date.now().toString(36)+Math.random().toString(36).slice(2);}
+  if(!msgStore[cid])msgStore[cid]=[];
+  msgStore[cid].push({from:'me',text,time:'Just now',_mid,status:'sending'});
+  const t=threads.find(x=>x.id===cid);if(t)t.preview=text.slice(0,60);
+  if(cid==='maya'){try{SlickBridge.post('client-message',{text,imgs:[],providerId:'jess',time:'Just now'});}catch(e){}try{if(typeof _setProviderMsgStatus==='function')_setProviderMsgStatus(cid,_mid,'sent');}catch(e){}}
+  else{try{await _sendProviderMessageToClient(cid,text,[],false,undefined,_mid);}catch(e){}}
+  const st=(msgStore[cid]||[]).find(m=>m&&m._mid===_mid);
+  return (st&&st.status)||'sent';
+}
+// Automation card "Send now" → opens the multi-select sheet pre-filled with the automation's message.
+function _sendAutomation(i){
+  const a=autos[i];if(!a)return;
+  const msg=String(a.msg||'').trim();
+  if(!msg){if(typeof proToast==='function')proToast('Add a message to this automation first — tap “Edit message”.');return;}
+  _openSendSheet({title:'Send: '+(a.name||'automation'),message:a.msg});
+}
+// Messages "Send to clients" → blank compose to one/a few/all.
+function _composeBroadcast(){ _openSendSheet({title:'Send to clients',message:''}); }
 function _deleteAutomation(i,after){
   const a=autos[i];if(!a)return;
   confirmModal({title:'Delete automation',body:'Delete \''+((a.name||'this automation'))+'\'? It will stop sending immediately.',action:'Delete'},function(){
