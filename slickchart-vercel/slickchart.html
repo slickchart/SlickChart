@@ -8022,13 +8022,21 @@ function loadVcState(){
   try{const inv=localStorage.getItem('sc_pro_vc_invites');if(inv)vcInvites={...vcInvites,...JSON.parse(inv)};}catch(e){}
   try{const sub=localStorage.getItem('sc_pro_vc_subs');if(sub)vcSubmissions={...vcSubmissions,...JSON.parse(sub)};}catch(e){}
 }
-function inviteVirtualConsult(id,_force){
+function inviteVirtualConsult(id,_force,_kind){
   const c=CL[id];if(!c)return;
   if(!_force && typeof _vcStatus==='function' && _vcStatus(id)==='needs-review'){
     // A submission is waiting for review, re-inviting would drop it from the "Needs review" queue.
-    if(typeof confirmModal==='function'){confirmModal({title:'Replace pending submission?',body:(c.name||'This client').split(' ')[0]+' has a virtual-consult submission awaiting your review. Sending a new invite will replace it, review that first, or continue to replace.',action:'Send new invite'},function(){inviteVirtualConsult(id,true);});return;}
+    if(typeof confirmModal==='function'){confirmModal({title:'Replace pending submission?',body:(c.name||'This client').split(' ')[0]+' has a virtual-consult submission awaiting your review. Sending a new invite will replace it, review that first, or continue to replace.',action:'Send new invite'},function(){inviteVirtualConsult(id,true,_kind);});return;}
   }
-  const v=_vcProfile();
+  // Choose the consult type: an explicit kind (from the picker), or — for a provider who offers several
+  // — show the type picker so the client is asked for the right photos. One option → send it directly.
+  let v;
+  if(_kind){const o=(typeof _vcKindOptions==='function'?_vcKindOptions():[]).find(x=>x.kind===_kind);v=o?o.profile:_vcProfile();}
+  else{
+    const opts=(typeof _vcKindOptions==='function')?_vcKindOptions():[];
+    if(opts.length>1){_vcInvitePickerSheet(id,opts);return;}
+    v=opts.length?opts[0].profile:_vcProfile();
+  }
   // invitedAt is a per-invite nonce so the client can tell a fresh invite from one they've
   // already submitted for (mirrors the pending-form assignedAt fix). Capture the profile's photo
   // labels ON the invite so the client asks for the RIGHT shots per profession (and none at all for
@@ -8477,6 +8485,39 @@ function _vcProfile(){
     terminology:[['“Tired / dull”','Dehydration + uneven texture'],['“Dark spots”','PIH (post-inflammatory)'],['“Bumpy texture”','Congestion / closed comedones']],
     questions:['Can I start using retinol now?','Which SPF should I use post-laser?','Is my jawline texture normal?']
   };
+}
+// Resolve the VC template for a SINGLE profession by scoping _vcProfile()'s view of selectedProfessions
+// (it only reads that global), so we can enumerate every consult type a multi-discipline provider offers
+// without duplicating the template data.
+function _vcProfileForProf(prof){
+  const saved=selectedProfessions;
+  try{selectedProfessions=[prof];return _vcProfile();}finally{selectedProfessions=saved;}
+}
+function _vcKindOptions(){
+  const seen={};const opts=[];
+  (selectedProfessions||[]).forEach(p=>{
+    let v=null;try{v=_vcProfileForProf(p);}catch(e){v=null;}
+    if(v&&v.kind&&!seen[v.kind]){seen[v.kind]=1;opts.push({kind:v.kind,title:v.title,icon:v.icon||'ti-camera',profile:v});}
+  });
+  if(!opts.length){const v=_vcProfile();opts.push({kind:v.kind,title:v.title,icon:v.icon||'ti-camera',profile:v});}
+  return opts;
+}
+// Let the provider choose which consult type (skin, brow, lash, nail…) to send when they offer several,
+// so the client is asked for the RIGHT photos instead of always the profession-priority default.
+function _vcInvitePickerSheet(id,opts){
+  const c=CL[id]||{};const first=(c.name||'').split(' ')[0];
+  const esc=s=>String(s==null?'':s).replace(/&/g,'&amp;').replace(/</g,'&lt;').replace(/>/g,'&gt;');
+  const old=document.getElementById('vc-type-sheet');if(old)old.remove();
+  const ov=document.createElement('div');ov.id='vc-type-sheet';
+  ov.style.cssText='position:fixed;inset:0;margin:0 auto;width:390px;max-width:100%;z-index:99999;background:rgba(0,0,0,.65);display:flex;align-items:flex-end;justify-content:center;';
+  ov.onclick=e=>{if(e.target===ov)ov.remove();};
+  ov.innerHTML=`<div style="background:#1a1a1a;border:1px solid #2a2a2a;border-radius:16px 16px 0 0;width:100%;padding:18px 16px calc(18px + env(safe-area-inset-bottom,0px));max-height:80%;overflow-y:auto;">
+    <div style="font-size:16px;font-weight:600;color:#f0f0f0;margin-bottom:4px;">Virtual consult for ${esc(first)}</div>
+    <div style="font-size:12px;color:#999;margin-bottom:14px;">Pick the consult type — it sets which photos ${esc(first)} is asked to send.</div>
+    ${opts.map(o=>`<button onclick="document.getElementById('vc-type-sheet').remove();inviteVirtualConsult('${id}',true,'${o.kind}')" class="btng" style="width:100%;justify-content:flex-start;gap:10px;margin-bottom:8px;border-radius:10px;padding:12px 14px;text-align:left;"><i class="ti ${o.icon}" style="font-size:18px;color:var(--accent);"></i><span style="flex:1;">${esc(o.title)}</span><i class="ti ti-chevron-right" style="color:#888;"></i></button>`).join('')}
+    <button onclick="document.getElementById('vc-type-sheet').remove()" style="width:100%;margin-top:4px;background:none;border:none;color:#929292;font-size:13px;cursor:pointer;font-family:inherit;padding:8px;">Cancel</button>
+  </div>`;
+  (document.querySelector('.shell')||document.body).appendChild(ov);
 }
 function renderVirtualClient(id){
   setNav('clients');
