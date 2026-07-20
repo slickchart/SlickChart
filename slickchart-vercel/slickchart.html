@@ -11495,7 +11495,7 @@ function showMsgTab(tab){
       <div style="background:#1a1a1a;border:1px solid #2a2a2a;border-radius:12px;overflow:hidden;">
         <div style="padding:12px 14px;display:flex;align-items:flex-start;gap:10px;">
           <div style="width:38px;height:38px;border-radius:9px;background:${_fileEsc(a.col)};display:flex;align-items:center;justify-content:center;font-size:17px;">${_fileEsc(a.icon)}</div>
-          <div style="flex:1;min-width:0;"><div style="display:flex;align-items:center;gap:6px;margin-bottom:2px;"><span style="font-size:13px;font-weight:500;color:#e0e0e0;">${_fileEsc(a.name)}</span><span class="bdg ${a.on?'bg':'bm'}" style="font-size:12px;">${a.on?'Active':'Paused'}</span></div><div style="font-size:12px;color:#999;">${_fileEsc(a.trigger)}</div>${_autoWhenLabel(a)?`<div style="font-size:11px;color:${a.on?'#5ba3e8':'#777'};margin-top:4px;display:inline-flex;align-items:center;gap:4px;"><i class="ti ti-clock-hour-4" style="font-size:12px;"></i> ${_fileEsc(_autoWhenLabel(a))}</div>`:''}${(_demoStats&&a.on&&a.sent>0)?`<div style="font-size:11px;color:#999;margin-top:4px;">${a.sent} sent · ${a.opened} opened · ${Math.round(a.opened/a.sent*100)}% open rate</div>`:''}</div>
+          <div style="flex:1;min-width:0;"><div style="display:flex;align-items:center;gap:6px;margin-bottom:2px;"><span style="font-size:13px;font-weight:500;color:#e0e0e0;">${_fileEsc(a.name)}</span><span class="bdg ${a.on?'bg':'bm'}" style="font-size:12px;">${a.on?'Active':'Paused'}</span></div><div style="font-size:12px;color:#999;">${_fileEsc(a.trigger)}</div>${_autoWhenLabel(a)?`<div style="font-size:11px;color:${a.on?'#5ba3e8':'#777'};margin-top:4px;display:flex;align-items:center;gap:8px;flex-wrap:wrap;"><span style="display:inline-flex;align-items:center;gap:4px;"><i class="ti ti-clock-hour-4" style="font-size:12px;"></i> ${_fileEsc(_autoWhenLabel(a))}</span><span style="display:inline-flex;align-items:center;gap:4px;color:${a.on?'#8a8a8a':'#666'};"><i class="ti ti-users" style="font-size:12px;"></i> ${_fileEsc(_autoRecipLabel(a))}</span></div>`:''}${(_demoStats&&a.on&&a.sent>0)?`<div style="font-size:11px;color:#999;margin-top:4px;">${a.sent} sent · ${a.opened} opened · ${Math.round(a.opened/a.sent*100)}% open rate</div>`:''}</div>
           ${togBtn(a.on,'_toggleAuto('+i+')','Toggle automation')}
         </div>
         <div style="border-top:1px solid #1e1e1e;padding:7px 14px;display:flex;align-items:center;justify-content:space-between;">
@@ -13164,13 +13164,17 @@ let _ssSel={};
 let _ssAuto=null;
 function _openSendSheet(opts){
   opts=opts||{};_ssSel={};_ssAuto=opts.auto||null;
+  // Pre-select recipients (e.g. an automation's chosen clients) so "Send now" mirrors who the scheduled
+  // send would reach — the provider sees exactly who's getting it before pressing Send.
+  const preselect=Array.isArray(opts.preselect)?opts.preselect.filter(id=>CL[id]):[];
+  preselect.forEach(id=>{_ssSel[id]=true;});
   const old=document.getElementById('send-sheet');if(old)old.remove();
   const ov=document.createElement('div');ov.id='send-sheet';
   ov.style.cssText='position:fixed;inset:0;margin:0 auto;width:390px;max-width:100%;z-index:99999;background:rgba(0,0,0,.65);display:flex;align-items:flex-end;justify-content:center;';
   ov.onclick=e=>{if(e.target===ov)ov.remove();};
   const ids=Object.keys(CL);
   const _ds=(s)=>(typeof _normSearch==='function')?_normSearch(s||''):String(s||'').toLowerCase();
-  const clientRows=ids.map(cid=>{const c=CL[cid];return `<label class="ss-row" data-search="${_ds(c.name)}" style="display:flex;align-items:center;gap:10px;padding:9px 12px;border:1px solid #2a2a2a;background:#161616;border-radius:10px;margin-bottom:6px;cursor:pointer;"><input type="checkbox" class="ss-cli" value="${_fileEsc(cid)}" onchange="_ssToggle('${_fileEsc(cid)}',this.checked)" style="width:17px;height:17px;accent-color:var(--accent);flex-shrink:0;"><div style="width:32px;height:32px;border-radius:8px;background:${_fileEsc(c.bg||'#2e2318')};display:flex;align-items:center;justify-content:center;font-size:12px;font-weight:500;color:${_fileEsc(c.tc||'var(--accent)')};flex-shrink:0;">${_fileEsc(c.initials||(c.name||'?').slice(0,1))}</div><span style="flex:1;min-width:0;font-size:13px;color:#e0e0e0;overflow:hidden;text-overflow:ellipsis;white-space:nowrap;">${_fileEsc(c.name)}</span></label>`;}).join('');
+  const clientRows=ids.map(cid=>{const c=CL[cid];const on=!!_ssSel[cid];return `<label class="ss-row" data-search="${_ds(c.name)}" style="display:flex;align-items:center;gap:10px;padding:9px 12px;border:1px solid #2a2a2a;background:#161616;border-radius:10px;margin-bottom:6px;cursor:pointer;"><input type="checkbox" class="ss-cli" value="${_fileEsc(cid)}" ${on?'checked':''} onchange="_ssToggle('${_fileEsc(cid)}',this.checked)" style="width:17px;height:17px;accent-color:var(--accent);flex-shrink:0;"><div style="width:32px;height:32px;border-radius:8px;background:${_fileEsc(c.bg||'#2e2318')};display:flex;align-items:center;justify-content:center;font-size:12px;font-weight:500;color:${_fileEsc(c.tc||'var(--accent)')};flex-shrink:0;">${_fileEsc(c.initials||(c.name||'?').slice(0,1))}</div><span style="flex:1;min-width:0;font-size:13px;color:#e0e0e0;overflow:hidden;text-overflow:ellipsis;white-space:nowrap;">${_fileEsc(c.name)}</span></label>`;}).join('');
   // Sheet is a fixed-height flex column: the message + "Send to" controls stay pinned at the top, the
   // client list scrolls in the middle, and the Send/Cancel buttons stay anchored at the bottom — so a
   // long client list never pushes the send button off-screen or hides the app behind an endless scroll.
@@ -13297,10 +13301,14 @@ function _sendAutomation(i){
   const a=autos[i];if(!a)return;
   const msg=String(a.msg||'').trim();
   if(!msg){if(typeof proToast==='function')proToast('Add a message to this automation first — tap “Edit message”.');return;}
-  const open=()=>_openSendSheet({title:'Send: '+(a.name||'automation'),message:a.msg,auto:a});
+  // Pre-select whoever the automation targets (its chosen clients, or everyone for an "all clients"
+  // automation) so "Send now" opens already showing exactly who it will go to.
+  const preselect=(Array.isArray(a.clientIds)&&a.clientIds.length)?a.clientIds:Object.keys(CL);
+  const open=()=>_openSendSheet({title:'Send now: '+(a.name||'automation'),message:a.msg,auto:a,preselect});
   const future=a.sendAt&&a.sendAt>Date.now();
+  const who=_autoRecipLabel(a).toLowerCase();
   if(future&&a.on&&typeof confirmModal==='function'){
-    confirmModal({title:'Send now, too?',body:'“'+(a.name||'This automation')+'” is set to send automatically '+(_autoWhenLabel(a)||'later')+'. Sending now goes out immediately — and anyone you send to now won’t get the scheduled copy again. Everyone you don’t pick still receives it at the scheduled time.',action:'Choose clients'},open);
+    confirmModal({title:'Send now instead of waiting?',body:'“'+(a.name||'This automation')+'” is set to send automatically '+(_autoWhenLabel(a)||'later')+' ('+who+'). Send it now instead? Anyone you send to now won’t get the scheduled copy again — everyone else still gets it at the scheduled time. You’ll confirm recipients on the next screen.',action:'Choose recipients'},open);
   }else open();
 }
 // Messages "Send to clients" → blank compose to one/a few/all.
@@ -19143,6 +19151,46 @@ function removePartner(i){const _go=function(){partners.splice(i,1);persistPartn
 // ── ADD/EDIT AUTOMATION ──
 const triggerOptions=['24 hours after appointment','48 hours after Chemical Peel','72 hours after Microneedling','1 week after appointment','2 weeks after appointment',"On client's birthday","Client hasn't visited in 60 days","Client hasn't visited in 90 days",'Before appointment (24h reminder)','New intake form received'];
 let autoTriggerMode='preset';
+// Recipients for an automation: 'all' active clients (default) or a specific chosen set. This is the
+// "who does this go to" step that used to be missing — a scheduled automation silently went to everyone.
+let _autoRecipMode='all';
+let _autoRecipSel={};
+function _autoRecipInit(a){
+  if(a&&Array.isArray(a.clientIds)&&a.clientIds.length){_autoRecipMode='some';_autoRecipSel={};a.clientIds.forEach(id=>{if(CL[id])_autoRecipSel[id]=true;});}
+  else{_autoRecipMode='all';_autoRecipSel={};}
+}
+function _setAutoRecip(mode){_autoRecipMode=mode;const el=document.getElementById('auto-recip');if(el)el.innerHTML=_autoRecipHTML();}
+function _autoRecipToggle(id,on){_autoRecipSel[id]=!!on;_autoRecipCount();}
+function _autoRecipCount(){const n=Object.keys(_autoRecipSel).filter(k=>_autoRecipSel[k]).length;const el=document.getElementById('arow-count');if(el)el.textContent=n?(n+' selected'):'None selected yet';}
+function _autoRecipSelectAllVisible(){
+  const boxes=[...document.querySelectorAll('.arow-cb')].filter(b=>{const r=b.closest('.arow');return !r||r.style.display!=='none';});
+  if(!boxes.length)return;
+  const sel=boxes.filter(b=>_autoRecipSel[b.value]).length;const on=sel<boxes.length;
+  boxes.forEach(b=>{b.checked=on;_autoRecipSel[b.value]=on;});_autoRecipCount();
+}
+function _autoRecipHTML(){
+  const some=_autoRecipMode==='some';
+  const _ds=(s)=>(typeof _normSearch==='function')?_normSearch(s||''):String(s||'').toLowerCase();
+  const segBtn=(m,l)=>`<button onclick="_setAutoRecip('${m}')" style="flex:1;padding:9px;border-radius:9px;font-size:13px;font-weight:600;cursor:pointer;font-family:inherit;border:1px solid ${_autoRecipMode===m?'var(--accent)':'#2a2a2a'};background:${_autoRecipMode===m?'var(--accent-tint)':'#161616'};color:${_autoRecipMode===m?'var(--accent)':'#ccc'};">${l}</button>`;
+  let h=`<div style="display:flex;gap:6px;margin-bottom:10px;">${segBtn('all','All active clients')}${segBtn('some','Specific clients')}</div>`;
+  if(!some){
+    h+=`<div style="background:#1a1a1a;border:1px solid #2a2a2a;border-radius:9px;padding:10px 12px;font-size:12px;color:#999;line-height:1.5;">Goes to every active client (${Object.keys(CL).length}) when it sends.</div>`;
+    return h;
+  }
+  const ids=Object.keys(CL);
+  const rows=ids.map(id=>{const c=CL[id];const on=!!_autoRecipSel[id];return `<label class="arow" data-search="${_ds(c.name)}" style="display:flex;align-items:center;gap:10px;padding:9px 11px;border-bottom:1px solid #1e1e1e;cursor:pointer;"><input type="checkbox" class="arow-cb" value="${_fileEsc(id)}" ${on?'checked':''} onchange="_autoRecipToggle('${_fileEsc(id)}',this.checked)" style="width:17px;height:17px;accent-color:var(--accent);flex-shrink:0;"><div style="width:30px;height:30px;border-radius:8px;background:${_fileEsc(c.bg||'#222')};display:flex;align-items:center;justify-content:center;font-size:11px;font-weight:600;color:${_fileEsc(c.tc||'#ccc')};flex-shrink:0;">${_fileEsc(c.initials||(c.name||'?').slice(0,1))}</div><span style="flex:1;min-width:0;font-size:13px;color:#e0e0e0;overflow:hidden;text-overflow:ellipsis;white-space:nowrap;">${_fileEsc(c.name)}</span></label>`;}).join('');
+  const n=Object.keys(_autoRecipSel).filter(k=>_autoRecipSel[k]).length;
+  h+=`<div style="display:flex;align-items:center;justify-content:space-between;margin-bottom:6px;"><span id="arow-count" style="font-size:12px;color:var(--accent);font-weight:600;">${n?n+' selected':'None selected yet'}</span><button onclick="_autoRecipSelectAllVisible()" style="border:none;background:none;color:var(--accent);font-size:12px;cursor:pointer;font-family:inherit;font-weight:500;">Select all</button></div>`;
+  if(ids.length>6)h+=`<div style="position:relative;margin-bottom:8px;"><i class="ti ti-search" aria-hidden="true" style="position:absolute;left:11px;top:50%;transform:translateY(-50%);font-size:14px;color:#9a9a9a;"></i><input oninput="searchList(this.value,'.arow','arow-nores')" placeholder="Search clients…" style="width:100%;background:#111;border:1px solid #2a2a2a;border-radius:9px;padding:8px 11px 8px 32px;font-size:13px;color:#e0e0e0;font-family:inherit;box-sizing:border-box;outline:none;"></div>`;
+  h+=`<div style="background:#1a1a1a;border:1px solid #2a2a2a;border-radius:10px;max-height:240px;overflow-y:auto;-webkit-overflow-scrolling:touch;">${rows||'<div style="padding:16px;text-align:center;color:#888;font-size:12px;">No clients yet.</div>'}${_noRes('arow-nores','No clients match your search.')}</div>`;
+  return h;
+}
+// What a saved automation's recipient set resolves to right now (used on the card + Send now).
+function _autoRecipLabel(a){
+  const ids=(a&&Array.isArray(a.clientIds))?a.clientIds.filter(id=>CL[id]):[];
+  if(ids.length)return 'To '+ids.length+' client'+(ids.length>1?'s':'');
+  return 'To all active clients';
+}
 function renderAddAutomation(){
   setNav('msgs');
   autoTriggerMode='preset';
@@ -19172,6 +19220,7 @@ function renderAutoForm(a,idx){
   const existingDate=a&&a.specificDate?a.specificDate:'';
   const existingTime=a&&a.specificTime?a.specificTime:'09:00';
   const existingRepeat=a&&a.repeatEvery?a.repeatEvery:'once';
+  _autoRecipInit(a);
   S.innerHTML=`
   <div style="padding:12px 16px 0;display:flex;align-items:center;justify-content:flex-end;">
     <button onclick="saveAuto(${idx})" style="background:var(--accent);color:var(--accent-ink);border:none;border-radius:8px;padding:6px 14px;font-size:12px;font-weight:500;cursor:pointer;">Save</button>
@@ -19216,11 +19265,13 @@ function renderAutoForm(a,idx){
       </div>
       <div style="background:var(--accent-tint);border:1px solid #4a3010;border-radius:8px;padding:9px 12px;margin-top:10px;display:flex;gap:7px;align-items:center;">
         <i class="ti ti-info-circle" aria-hidden="true" style="font-size:13px;color:var(--accent);flex-shrink:0;"></i>
-        <span style="font-size:12px;color:var(--accent);line-height:1.5;">This message will send to all active clients on the selected date. Use repeating schedules for seasonal campaigns.</span>
+        <span style="font-size:12px;color:var(--accent);line-height:1.5;">This message sends on its own at the date &amp; time above — you don’t have to press anything. Choose who gets it just below.</span>
       </div>
     </div>
 
     ${(a&&/birthday/i.test((a.name||'')+' '+(a.trigger||'')))?_birthdayPanelHTML():''}
+    <span class="fl-lbl" style="margin-bottom:8px;">Send to</span>
+    <div id="auto-recip" style="margin-bottom:16px;">${_autoRecipHTML()}</div>
     <div style="display:flex;align-items:center;justify-content:space-between;margin-bottom:2px;">
       <span class="fl-lbl" style="margin-bottom:0;">Message</span>
       ${aiEnabled?`<button onclick="_aiDraftAutomation()" style="border:none;background:none;font-size:12px;color:var(--accent);cursor:pointer;font-family:inherit;padding:2px 0;"><i class="ti ti-sparkles" style="font-size:13px;"></i> Draft with AI</button>`:''}
@@ -19283,12 +19334,19 @@ function saveAuto(idx){
     try{sendAt=new Date(specificDate+'T'+((specificTime||'09:00'))+':00').getTime();if(isNaN(sendAt))sendAt=0;}catch(e){sendAt=0;}
     try{tz=Intl.DateTimeFormat().resolvedOptions().timeZone||'';}catch(e){tz='';}
   }
+  // Recipients: [] means "all active clients"; a non-empty array targets exactly those clients (the
+  // cron-automations sender filters to them). Ignore stale ids for clients that no longer exist.
+  const clientIds=(_autoRecipMode==='some')?Object.keys(_autoRecipSel).filter(k=>_autoRecipSel[k]&&CL[k]):[];
+  if(_autoRecipMode==='some'&&!clientIds.length){
+    if(typeof proToast==='function')proToast('Pick at least one client to send to, or choose “All active clients”.');
+    return;
+  }
   const _newId='a'+Date.now().toString(36)+Math.random().toString(36).slice(2,6);
   if(idx>=0){
-    Object.assign(autos[idx],{name,trigger,specificDate,specificTime,repeatEvery,msg,sendAt,tz});
+    Object.assign(autos[idx],{name,trigger,specificDate,specificTime,repeatEvery,msg,sendAt,tz,clientIds});
     if(!autos[idx].id)autos[idx].id=_newId;
   } else {
-    autos.push({id:_newId,name,icon:'📅',col:'#0d1e33',trigger,specificDate,specificTime,repeatEvery,msg,sendAt,tz,on:true,sent:0,opened:0,bdg:'bb'});
+    autos.push({id:_newId,name,icon:'📅',col:'#0d1e33',trigger,specificDate,specificTime,repeatEvery,msg,sendAt,tz,clientIds,on:true,sent:0,opened:0,bdg:'bb'});
   }
   try{persistAutos();}catch(e){}  // was missing, new/edited automations were lost on reload
   nav('messages');

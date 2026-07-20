@@ -86,7 +86,9 @@ export default async function handler(req, res) {
         const occ = dueOccurrence(a, now);
         if (occ == null) continue;
         const autoId = a.id || (String(a.name || 'auto') + ':' + (a.sendAt || ''));
-        due.push({ autoId, occ, msg });
+        // Optional recipient list: [] / missing → all clients; non-empty → only those client ids.
+        const clientIds = Array.isArray(a.clientIds) ? a.clientIds.map(String).filter(Boolean) : null;
+        due.push({ autoId, occ, msg, clientIds });
       }
       if (!due.length) continue;
 
@@ -97,9 +99,11 @@ export default async function handler(req, res) {
 
       for (const d of due) {
         summary.automations++;
+        const targetSet = (d.clientIds && d.clientIds.length) ? new Set(d.clientIds) : null;
         for (const c of clients.slice(0, 2000)) {
           const cid = c && c.id;
           if (!cid) continue;
+          if (targetSet && !targetSet.has(cid)) continue;   // recipient-limited automation
           const rkey = 'auto:' + owner + ':' + d.autoId + ':' + d.occ;
           // Claim first so overlapping cron runs can't double-send to this client.
           let fresh = false;
