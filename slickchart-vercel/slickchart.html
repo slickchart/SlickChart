@@ -127,7 +127,7 @@ details[open]>summary .sh-chev{transform:rotate(180deg);}
     <button class="ni active" id="ni-home" onclick="nav('home')" aria-label="Home" aria-current="page"><i class="ti ti-home" aria-hidden="true"></i><span>Home</span></button>
     <button class="ni" id="ni-clients" onclick="nav('clients')" aria-label="Clients"><i class="ti ti-users" aria-hidden="true"></i><span>Clients</span></button>
     <button class="ni" id="ni-payments" onclick="nav('payments')" aria-label="Payments"><i class="ti ti-cash" aria-hidden="true"></i><span>Payments</span></button>
-    <button class="ni" id="ni-msgs" onclick="nav('messages')" aria-label="Messages"><i class="ti ti-message-circle" aria-hidden="true"></i><span>Messages</span></button>
+    <button class="ni" id="ni-msgs" onclick="nav('messages')" aria-label="Messages" style="position:relative;"><i class="ti ti-message-circle" aria-hidden="true"></i><span>Messages</span><span id="msgs-tab-badge" aria-hidden="true" style="display:none;position:absolute;top:3px;right:calc(50% - 20px);min-width:16px;height:16px;padding:0 4px;box-sizing:border-box;background:var(--accent);border-radius:8px;font-size:9px;font-weight:700;color:var(--accent-ink);align-items:center;justify-content:center;line-height:1;">0</span></button>
     <button class="ni" id="ni-calendar" onclick="nav('calendar')" aria-label="Calendar"><i class="ti ti-calendar" aria-hidden="true"></i><span>Calendar</span></button>
     <button class="ni" id="ni-more" onclick="nav('more')" aria-label="More"><i class="ti ti-dots" aria-hidden="true"></i><span>More</span></button>
   </nav>
@@ -2917,6 +2917,16 @@ function setNav(id){
   const alias=(id==='pro')?'more':id; // Pro's tools now live under the More tab
   const el=document.getElementById('ni-'+alias);
   if(el){el.classList.add('active');el.setAttribute('aria-current','page');}
+  _updateMsgTabBadge();
+}
+// Unread-conversation count on the Messages bottom-nav tab, so a client's incoming message is
+// visible from anywhere in the app — not only via the notification bell. Kept current on every
+// screen change (setNav) and whenever the notification state refreshes (updateBadge).
+function _updateMsgTabBadge(){
+  try{const el=document.getElementById('msgs-tab-badge');if(!el)return;
+    const n=(typeof threads!=='undefined'&&Array.isArray(threads))?threads.filter(t=>t&&t.unread).length:0;
+    el.textContent=n>9?'9+':String(n);el.style.display=n>0?'flex':'none';
+  }catch(e){}
 }
 function av(c,sz=40){
   // Show the client's own uploaded photo if they've set one (synced from their app); fall
@@ -11491,7 +11501,7 @@ function renderChat(id){
     <div style="display:flex;align-items:flex-end;gap:6px;">
     ${aiEnabled?`<button onclick="_aiSuggestReplies('${id}')" aria-label="Suggest a reply" title="Suggest a reply" style="width:34px;height:34px;border-radius:50%;background:#1a1a1a;border:1px solid #2a2a2a;display:flex;align-items:center;justify-content:center;cursor:pointer;flex-shrink:0;"><i class="ti ti-sparkles" style="font-size:17px;color:var(--accent);"></i></button>`:''}
     <button onclick="_chatShareSheet('${id}')" aria-label="Share a photo, form, check-in or booking" title="Share a photo, form, check-in or booking" style="width:34px;height:34px;border-radius:50%;background:#1a1a1a;border:1px solid #2a2a2a;display:flex;align-items:center;justify-content:center;cursor:pointer;flex-shrink:0;"><i class="ti ti-plus" style="font-size:20px;color:var(--accent);"></i></button>
-    <textarea id="cinput" aria-label="Type a message" placeholder="Message ${_fileEsc(c.name.split(' ')[0])}..." rows="1" style="flex:1;background:#1a1a1a;border:1px solid #2a2a2a;border-radius:20px;padding:8px 14px;font-size:13px;color:#e0e0e0;resize:none;font-family:inherit;outline:none;"></textarea>
+    <textarea id="cinput" aria-label="Type a message" placeholder="Message ${_fileEsc(c.name.split(' ')[0])}..." rows="1" oninput="this.style.height='auto';this.style.height=Math.min(this.scrollHeight,96)+'px'" style="flex:1;background:#1a1a1a;border:1px solid #2a2a2a;border-radius:20px;padding:8px 14px;font-size:13px;color:#e0e0e0;resize:none;font-family:inherit;outline:none;max-height:96px;"></textarea>
     <button onclick="sendMsg('${id}')" aria-label="Send message" title="Send" style="width:34px;height:34px;border-radius:50%;background:var(--accent);border:none;display:flex;align-items:center;justify-content:center;cursor:pointer;"><svg viewBox="0 0 24 24" width="16" height="16" fill="none" stroke="var(--accent-ink)" stroke-width="1.8" stroke-linecap="round" stroke-linejoin="round" aria-hidden="true"><path d="M21 4 3 11l6 2.5L21 4z"/><path d="m21 4-7 16-2.5-6.5"/></svg></button>
     </div>
   </div>`;
@@ -13731,6 +13741,7 @@ function markRead(id){
 }
 function updateBadge(){
   _applyNotifState();   // prune cleared + apply read state on every feed refresh so it survives reloads
+  _updateMsgTabBadge();
   const badge=document.getElementById('notif-badge');
   const count=unreadCount();
   // The badge is a fixed 16px circle, cap the label so a large count doesn't clip.
