@@ -13159,8 +13159,11 @@ function _toggleAuto(i){const a=autos[i];if(!a)return;a.on=!a.on;try{persistAuto
 // and {client_name} is personalized per person. Each send uses the tracked message path so it flushes
 // when a client joins and can be retried.
 let _ssSel={};
+// When the send sheet is opened from a scheduled automation's "Send now", remember which automation so
+// the manual send can pre-claim that occurrence server-side and the cron won't also send it (no double-send).
+let _ssAuto=null;
 function _openSendSheet(opts){
-  opts=opts||{};_ssSel={};
+  opts=opts||{};_ssSel={};_ssAuto=opts.auto||null;
   const old=document.getElementById('send-sheet');if(old)old.remove();
   const ov=document.createElement('div');ov.id='send-sheet';
   ov.style.cssText='position:fixed;inset:0;margin:0 auto;width:390px;max-width:100%;z-index:99999;background:rgba(0,0,0,.65);display:flex;align-items:flex-end;justify-content:center;';
@@ -13218,12 +13221,24 @@ async function _ssSend(){
   const sel=Object.keys(_ssSel).filter(k=>_ssSel[k]);
   if(!msg){if(typeof proToast==='function')proToast('Type a message first');return;}
   if(!sel.length){if(typeof proToast==='function')proToast('Pick at least one client');return;}
+  const auto=_ssAuto;   // capture now; the sheet (and _ssAuto) may be cleared before the async work finishes
   const doIt=async function(){
     const sheet=document.getElementById('send-sheet');if(sheet)sheet.remove();
     if(typeof proToast==='function')proToast('Sending…');
     let ok=0,pending=0,fail=0;
     for(const cid of sel.slice(0,500)){const st=await _sendAutomationMsg(cid,msg);if(st==='sent')ok++;else if(st==='pending')pending++;else fail++;}
     try{saveMessages();}catch(e){}
+    // If this was a scheduled automation, pre-claim its next occurrence for exactly these clients so the
+    // cron won't also send them the scheduled copy (no double-send). Clients we didn't send to now stay
+    // unclaimed and still get the automatic send at its time. Best-effort; never blocks the send result.
+    try{
+      const occ=(auto&&typeof _autoNextOcc==='function')?_autoNextOcc(auto):0;
+      const autoId=auto?(auto.id||((auto.name||'auto')+':'+(auto.sendAt||''))):'';
+      const tok=(typeof Cloud!=='undefined'&&Cloud&&Cloud.token)||'';
+      if(auto&&occ&&autoId&&tok){
+        fetch('/api/automation-claim',{method:'POST',headers:{'Content-Type':'application/json','Authorization':'Bearer '+tok},body:JSON.stringify({autoId,occ,clientIds:sel.slice(0,500)})}).catch(function(){});
+      }
+    }catch(e){}
     const parts=[];if(ok)parts.push(ok+' sent');if(pending)parts.push(pending+' will send when they join');if(fail)parts.push(fail+' failed');
     if(typeof proToast==='function')proToast(parts.join(' · ')||'Done',fail?0:undefined,fail?'error':undefined);
   };
@@ -13258,17 +13273,34 @@ function _autoWhenLabel(a){
   if(rep)return 'Repeats '+rep;
   return 'Sent '+dateStr+' at '+timeStr;
 }
+// The next occurrence timestamp the scheduled cron will fire for this automation — mirrors the server's
+// dueOccurrence advance logic so a manual "Send now" can claim the SAME key and prevent a double-send.
+function _autoNextOcc(a){
+  const base=Number(a&&a.sendAt)||0;if(!base)return 0;
+  const rep=String((a&&a.repeatEvery)||'').toLowerCase();
+  if(!rep||rep==='once')return base;                 // one-shot: the scheduled moment itself
+  const HOUR=3600000,now=Date.now();
+  const advance=(t)=>{
+    if(rep.includes('week'))return t+7*24*HOUR;
+    if(rep.includes('month')){const d=new Date(t);d.setMonth(d.getMonth()+1);return d.getTime();}
+    if(rep.includes('year')||rep.includes('annual')){const d=new Date(t);d.setFullYear(d.getFullYear()+1);return d.getTime();}
+    if(rep.includes('day'))return t+24*HOUR;
+    return t+7*24*HOUR;
+  };
+  let occ=base,guard=0;while(occ<now&&guard++<6000){const n=advance(occ);if(n<=occ)break;occ=n;}
+  return occ;
+}
 // Automation card "Send now" → opens the multi-select sheet pre-filled with the automation's message.
-// If the automation is scheduled to auto-send later, make clear this is a separate, immediate send so
-// the provider isn't surprised that (a) it goes out now and (b) the scheduled send still runs too.
+// The sheet carries the automation so a manual send can pre-claim its scheduled occurrence (see _ssSend):
+// anyone sent to now won't also receive the scheduled copy, while everyone else still gets it on time.
 function _sendAutomation(i){
   const a=autos[i];if(!a)return;
   const msg=String(a.msg||'').trim();
   if(!msg){if(typeof proToast==='function')proToast('Add a message to this automation first — tap “Edit message”.');return;}
-  const open=()=>_openSendSheet({title:'Send: '+(a.name||'automation'),message:a.msg});
+  const open=()=>_openSendSheet({title:'Send: '+(a.name||'automation'),message:a.msg,auto:a});
   const future=a.sendAt&&a.sendAt>Date.now();
   if(future&&a.on&&typeof confirmModal==='function'){
-    confirmModal({title:'Send now, too?',body:'“'+(a.name||'This automation')+'” is set to send automatically '+(_autoWhenLabel(a)||'later')+'. Sending now is a separate, immediate message — the scheduled send will still go out unless you turn this automation off.',action:'Choose clients'},open);
+    confirmModal({title:'Send now, too?',body:'“'+(a.name||'This automation')+'” is set to send automatically '+(_autoWhenLabel(a)||'later')+'. Sending now goes out immediately — and anyone you send to now won’t get the scheduled copy again. Everyone you don’t pick still receives it at the scheduled time.',action:'Choose clients'},open);
   }else open();
 }
 // Messages "Send to clients" → blank compose to one/a few/all.
