@@ -3783,6 +3783,25 @@ function _rosterBadges(id,c){
   if(unread)b+='<span title="Unread message" aria-label="Unread message" style="display:inline-flex;align-items:center;justify-content:center;width:20px;height:20px;border-radius:50%;background:var(--accent-tint);border:1px solid var(--accent-a30,#3d2d10);flex-shrink:0;"><i class="ti ti-message-2" style="font-size:12px;color:var(--accent);"></i></span>';
   return b;
 }
+// Roster filter/sort. 'all' surfaces attention-needing clients at the top, then alphabetical;
+// 'attention' narrows to who needs action; 'upcoming' shows only booked clients, soonest first.
+let _clientFilter='all';
+function _clientNeedsAttention(id,c){
+  c=c||CL[id]||{};
+  if((typeof _fcActive==='function'&&_fcActive(c))||c.flaggedContra)return true;
+  if(typeof threads!=='undefined'&&Array.isArray(threads)&&threads.some(t=>t&&t.id===id&&t.unread))return true;
+  if(typeof _vcStatus==='function'&&_vcStatus(id)==='needs-review')return true;
+  if(Array.isArray(c.submittedForms)&&c.submittedForms.length&&c.reviewAck!==String(((c.submittedForms[0]||{}).evId)||((c.submittedForms[0]||{}).ts)||((c.submittedForms[0]||{}).date)||'1'))return true;
+  return false;
+}
+function _clientNextApptMs(id){
+  try{const na=(typeof _nextApptForClient==='function')?_nextApptForClient(id):null;if(!na)return null;
+    if(na.at&&na.at.getTime)return na.at.getTime();
+    if(na.dateLabel){const d=new Date(/\d{4}/.test(na.dateLabel)?na.dateLabel:(na.dateLabel+' '+new Date().getFullYear()));if(!isNaN(d.getTime()))return d.getTime();}
+    return Infinity;   // has a next visit but unparseable date → still "upcoming", sort last
+  }catch(e){return null;}
+}
+function _setClientFilter(f){_clientFilter=f;if(typeof renderClients==='function')renderClients();}
 function renderClients(){
   setNav('clients');
   // Enforce the block sets (merged / deleted / hidden samples) before we draw, so removed
@@ -3835,14 +3854,25 @@ function renderClients(){
     <button onclick="_setShotMode(false)" style="background:#a891ec;color:#13102a;border:none;border-radius:8px;padding:6px 12px;font-size:11px;font-weight:700;cursor:pointer;flex-shrink:0;">Turn off</button>
   </div>`:''}
   <div class="sh"><h2 id="page-heading" tabindex="-1">All clients</h2></div>
+  ${(()=>{const _all=_shotFilterEntries(Object.entries(CL));if(_all.length<3)return '';
+    const attn=_all.filter(([id,c])=>_clientNeedsAttention(id,c)).length;
+    const chip=(f,lbl,badge)=>{const on=_clientFilter===f;return `<button onclick="_setClientFilter('${f}')" style="flex-shrink:0;display:inline-flex;align-items:center;gap:5px;padding:6px 12px;border-radius:20px;font-size:12px;font-weight:600;cursor:pointer;font-family:inherit;border:1px solid ${on?'var(--accent)':'#2a2a2a'};background:${on?'var(--accent-tint)':'#161616'};color:${on?'var(--accent)':'#bbb'};">${lbl}${badge?`<span style="background:${on?'var(--accent)':'#e87070'};color:${on?'var(--accent-ink)':'#fff'};border-radius:9px;min-width:16px;height:16px;padding:0 4px;font-size:10px;font-weight:700;display:inline-flex;align-items:center;justify-content:center;">${badge}</span>`:''}</button>`;};
+    return `<div style="display:flex;gap:8px;padding:0 16px 12px;overflow-x:auto;scrollbar-width:none;">${chip('all','All')}${chip('attention','Needs attention',attn||'')}${chip('upcoming','Upcoming')}</div>`;
+  })()}
   ${(_hasDemoClients()&&!_shotMode())?`<div style="margin:0 16px 12px;background:#1a1308;border:1px solid #3a2a10;border-radius:11px;padding:11px 13px;display:flex;align-items:center;gap:11px;">
     <i class="ti ti-flask" aria-hidden="true" style="color:var(--accent);font-size:17px;flex-shrink:0;"></i>
     <div style="flex:1;min-width:0;font-size:12px;color:#caa86a;line-height:1.45;">Sample clients (Maya, Sophie, Priya) are still here from the demo data.</div>
     <button onclick="removeDemoClients()" style="background:var(--accent);color:var(--accent-ink);border:none;border-radius:8px;padding:6px 12px;font-size:11px;font-weight:700;cursor:pointer;flex-shrink:0;">Remove</button>
   </div>`:''}
-  ${(()=>{const _ent=_shotFilterEntries(Object.entries(CL));return _ent.length===0
-    ? emptyState({icon:'ti-users',title:'No clients yet',body:'Add your first client to get started. Their chart, notes, and session history will live here.',action:'Add first client',screen:'new-client'})
-    : _ent.sort((a,b)=>{const da=(a[0]==='maya'||a[0]==='sophie'||a[0]==='priya')?0:1;const db=(b[0]==='maya'||b[0]==='sophie'||b[0]==='priya')?0:1;return da-db;}).map(([id,c])=>{const _rs=_rosterSub(id,c),_rb=_rosterBadges(id,c);return `<div class="card client-card" data-search="${((c.name||'')+' '+(c.treatment||'')).toLowerCase().normalize('NFD').replace(/[̀-ͯ]/g,'').replace(/['‘’`"]/g,'').replace(/[^a-z0-9 ]/g,' ').replace(/\s+/g,' ').trim()}" onclick="nav('client','${id}')"><div class="row">${av(c)}<div style="flex:1;min-width:0;"><div style="display:flex;align-items:center;gap:7px;"><span style="font-size:15px;font-weight:500;color:#f0f0f0;">${_fileEsc(c.name)}</span>${(id==='maya'||id==='sophie'||id==='priya')?`<span onclick="event.stopPropagation();showDemoInfo()" title="What are demo clients?" style="font-size:9px;font-weight:700;color:#caa86a;border:1px solid #3a2a10;background:#1a1308;border-radius:4px;padding:1px 5px;letter-spacing:.03em;cursor:pointer;">DEMO</span>`:''}</div><div style="display:flex;align-items:center;gap:5px;margin-top:2px;font-size:12px;color:${_rs.color};overflow:hidden;"><i class="ti ${_rs.icon}" style="font-size:12px;flex-shrink:0;"></i><span style="overflow:hidden;text-overflow:ellipsis;white-space:nowrap;">${_fileEsc(_rs.text)}</span></div></div><div style="display:flex;align-items:center;gap:6px;flex-shrink:0;">${_rb}<i aria-hidden="true" class="ti ti-chevron-right" style="font-size:16px;color:#888;"></i></div></div></div>`;}).join('');})()}
+  ${(()=>{let _ent=_shotFilterEntries(Object.entries(CL));
+    if(_ent.length===0)return emptyState({icon:'ti-users',title:'No clients yet',body:'Add your first client to get started. Their chart, notes, and session history will live here.',action:'Add first client',screen:'new-client'});
+    const f=_clientFilter;
+    if(f==='attention')_ent=_ent.filter(([id,c])=>_clientNeedsAttention(id,c));
+    else if(f==='upcoming')_ent=_ent.filter(([id])=>_clientNextApptMs(id)!=null);
+    if(f==='upcoming'){_ent.sort((a,b)=>((_clientNextApptMs(a[0])==null?Infinity:_clientNextApptMs(a[0]))-(_clientNextApptMs(b[0])==null?Infinity:_clientNextApptMs(b[0]))));}
+    else{_ent.sort((a,b)=>{const aa=_clientNeedsAttention(a[0],a[1])?0:1,ba=_clientNeedsAttention(b[0],b[1])?0:1;if(aa!==ba)return aa-ba;return String(a[1].name||'').localeCompare(String(b[1].name||''));});}
+    if(!_ent.length)return `<div style="margin:0 16px;background:#1a1a1a;border:1px solid #2a2a2a;border-radius:12px;padding:22px 16px;text-align:center;color:#999;font-size:13px;">${f==='attention'?'Nothing needs your attention right now 🎉':'No clients with an upcoming appointment.'}</div>`;
+    return _ent.map(([id,c])=>{const _rs=_rosterSub(id,c),_rb=_rosterBadges(id,c);return `<div class="card client-card" data-search="${((c.name||'')+' '+(c.treatment||'')).toLowerCase().normalize('NFD').replace(/[̀-ͯ]/g,'').replace(/['‘’`"]/g,'').replace(/[^a-z0-9 ]/g,' ').replace(/\s+/g,' ').trim()}" onclick="nav('client','${id}')"><div class="row">${av(c)}<div style="flex:1;min-width:0;"><div style="display:flex;align-items:center;gap:7px;"><span style="font-size:15px;font-weight:500;color:#f0f0f0;">${_fileEsc(c.name)}</span>${(id==='maya'||id==='sophie'||id==='priya')?`<span onclick="event.stopPropagation();showDemoInfo()" title="What are demo clients?" style="font-size:9px;font-weight:700;color:#caa86a;border:1px solid #3a2a10;background:#1a1308;border-radius:4px;padding:1px 5px;letter-spacing:.03em;cursor:pointer;">DEMO</span>`:''}</div><div style="display:flex;align-items:center;gap:5px;margin-top:2px;font-size:12px;color:${_rs.color};overflow:hidden;"><i class="ti ${_rs.icon}" style="font-size:12px;flex-shrink:0;"></i><span style="overflow:hidden;text-overflow:ellipsis;white-space:nowrap;">${_fileEsc(_rs.text)}</span></div></div><div style="display:flex;align-items:center;gap:6px;flex-shrink:0;">${_rb}<i aria-hidden="true" class="ti ti-chevron-right" style="font-size:16px;color:#888;"></i></div></div></div>`;}).join('');})()}
   ${_noRes('clients-noresults','No clients match your search.')}`;
 }
 // ── "Ask your book": natural-language search over the client roster (who's due, allergies, etc.). ──
