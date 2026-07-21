@@ -3777,7 +3777,7 @@ function renderHome(){
         const ini=String(a.client||'Client').trim().split(/\s+/).map(w=>w[0]||'').slice(0,2).join('').toUpperCase()||'C';
         const when=a.at.toLocaleDateString('en-US',{weekday:'short',month:'short',day:'numeric'})+' · '+a.at.toLocaleTimeString('en-US',{hour:'numeric',minute:'2-digit'});
         const cid=_clientIdByName(a.client);
-        return '<div class="card" onclick="nav(\''+(cid?'client':'calendar')+'\''+(cid?",'"+cid+"'":'')+')"><div class="row"><div style="width:38px;height:38px;border-radius:50%;background:var(--p-amber-bg);color:var(--accent-strong);display:flex;align-items:center;justify-content:center;font-weight:600;font-size:13px;flex-shrink:0;">'+ini+'</div><div style="flex:1;min-width:0;"><div style="font-size:15px;font-weight:500;color:var(--p-ink);">'+a.client+'</div><div style="font-size:12px;color:var(--p-mut);margin-top:2px;">'+when+(a.dur?' · '+a.dur+' min':'')+'</div></div><span class="bdg bg" style="font-size:12px;">Confirmed</span></div></div>';
+        return '<div class="card" style="padding:0;overflow:hidden;" onclick="nav(\''+(cid?'client':'calendar')+'\''+(cid?",'"+cid+"'":'')+')"><div class="row" style="padding:14px;"><div style="width:38px;height:38px;border-radius:50%;background:var(--p-amber-bg);color:var(--accent-strong);display:flex;align-items:center;justify-content:center;font-weight:600;font-size:13px;flex-shrink:0;">'+ini+'</div><div style="flex:1;min-width:0;"><div style="font-size:15px;font-weight:500;color:var(--p-ink);">'+a.client+'</div><div style="font-size:12px;color:var(--p-mut);margin-top:2px;">'+when+(a.dur?' · '+a.dur+' min':'')+'</div></div><span class="bdg bg" style="font-size:12px;">Confirmed</span></div>'+_firstVisitNudgeHTML(cid)+'</div>';
       }).join('');
     }
     // Sample/demo mode: show the same real-week sample appointments the calendar uses so Up next
@@ -3789,7 +3789,7 @@ function renderHome(){
         const ini=String(a.client||'Client').trim().split(/\s+/).map(w=>w[0]||'').slice(0,2).join('').toUpperCase()||'C';
         const when=a.at.toLocaleDateString('en-US',{weekday:'short',month:'short',day:'numeric'})+' \u00b7 '+a.at.toLocaleTimeString('en-US',{hour:'numeric',minute:'2-digit'});
         const cid=_clientIdByName(a.client);
-        return '<div class="card" onclick="nav(\''+(cid?'client':'calendar')+'\''+(cid?",'"+cid+"'":'')+')"><div class="row"><div style="width:38px;height:38px;border-radius:50%;background:var(--p-amber-bg);color:var(--accent-strong);display:flex;align-items:center;justify-content:center;font-weight:600;font-size:13px;flex-shrink:0;">'+ini+'</div><div style="flex:1;min-width:0;"><div style="font-size:15px;font-weight:500;color:var(--p-ink);">'+_fileEsc(a.client)+'</div><div style="font-size:12px;color:var(--p-mut);margin-top:2px;">'+when+(a.dur?' \u00b7 '+a.dur+' min':'')+'</div></div><span class="bdg bg" style="font-size:12px;">Confirmed</span></div></div>';
+        return '<div class="card" style="padding:0;overflow:hidden;" onclick="nav(\''+(cid?'client':'calendar')+'\''+(cid?",'"+cid+"'":'')+')"><div class="row" style="padding:14px;"><div style="width:38px;height:38px;border-radius:50%;background:var(--p-amber-bg);color:var(--accent-strong);display:flex;align-items:center;justify-content:center;font-weight:600;font-size:13px;flex-shrink:0;">'+ini+'</div><div style="flex:1;min-width:0;"><div style="font-size:15px;font-weight:500;color:var(--p-ink);">'+_fileEsc(a.client)+'</div><div style="font-size:12px;color:var(--p-mut);margin-top:2px;">'+when+(a.dur?' \u00b7 '+a.dur+' min':'')+'</div></div><span class="bdg bg" style="font-size:12px;">Confirmed</span></div>'+_firstVisitNudgeHTML(cid)+'</div>';
       }).join('');
     }
     return '<div class="card"><div style="padding:18px 16px;text-align:center;color:var(--p-mut);font-size:13px;">Connect Square, or add appointments yourself, to see what\u2019s coming up.<div style="font-size:12px;color:var(--p-mut);margin-top:4px;"><a href="#" onclick="nav(\'data-setup\');return false;" style="color:var(--accent-strong);">Get set up \u2192</a></div></div></div>';
@@ -4683,6 +4683,21 @@ function _hasIntakeOnFile(c){
   if(!c)return false;
   const names=[...((c.submittedForms||[]).map(s=>s&&s.title)),...((c.signedForms||[])||[])];
   return names.some(n=>/intake/i.test(String(n||'')));
+}
+// A one-line, tappable first-visit-package nudge for a booked client who hasn't filled out an
+// intake yet. Full-bleed row meant to sit at the bottom of an appointment card (Up next, This
+// week's appointments) with the card set to padding:0;overflow:hidden. Returns '' when not needed.
+function _firstVisitNudgeHTML(cid){
+  const c=cid&&(typeof CL!=='undefined')&&CL[cid];
+  if(!c||(typeof _hasIntakeOnFile==='function'&&_hasIntakeOnFile(c)))return '';
+  const invited=!!(c.appInvited||c._token);
+  const label=invited?'Intake not filled out yet':'New client — send their first-visit package';
+  const cta=invited?'Send intake':'Send package';
+  return `<div onclick="event.stopPropagation();sendFirstVisitPackage('${cid}')" style="border-top:1px solid var(--p-line3);background:var(--p-amber-bg);padding:9px 13px;display:flex;align-items:center;gap:8px;cursor:pointer;">
+    <i class="ti ti-rocket" aria-hidden="true" style="font-size:14px;color:var(--p-amber);flex-shrink:0;"></i>
+    <span style="flex:1;min-width:0;font-size:12px;color:var(--p-amber);line-height:1.35;">${label}</span>
+    <span style="font-size:11px;font-weight:700;color:var(--accent-strong);white-space:nowrap;">${cta} <i class="ti ti-chevron-right" aria-hidden="true" style="font-size:11px;"></i></span>
+  </div>`;
 }
 function _suggestedFormsFor(c){
   if(!c||typeof formTmpls==='undefined')return [];
@@ -17849,33 +17864,21 @@ function renderWeekAppts(){
   const live=_isRealApptAcct();   // real accounts group/format by the appointment's Date (.at); demo uses .day
   const _weekEmptyHint=live?'<div style="font-size:12px;color:var(--p-mut);margin-top:4px;line-height:1.5;">Book one from the calendar, or connect Square to sync your schedule.</div>':'<div style="font-size:12px;color:var(--p-mut);margin-top:4px;line-height:1.5;">Connect Square to sync your real schedule, or add appointments yourself.</div>';
   const week=_apptsThisWeek();
+  // Group/label by the real timestamp whenever every appt carries one (live Square, synced sample,
+  // manual & confirmed bookings all do) — only the pure legacy demo rows fall back to .day/.time.
+  const useAt=week.length>0&&week.every(a=>a.at&&!isNaN(a.at));
   const grp={};
   week.forEach(a=>{
-    const k=live?a.at.toDateString():('day'+a.day);
+    const k=useAt?a.at.toDateString():('day'+a.day);
     (grp[k]=grp[k]||[]).push(a);
   });
-  const keys=live?Object.keys(grp).sort((x,y)=>new Date(x)-new Date(y)):Object.keys(grp);
+  const keys=useAt?Object.keys(grp).sort((x,y)=>new Date(x)-new Date(y)):Object.keys(grp);
   S.innerHTML=`
   <div style="padding:10px 16px 4px;">
     <div id="page-heading" tabindex="-1" style="font-size:19px;font-weight:600;color:var(--p-ink);margin-bottom:2px;">This week's appointments</div>
     <div style="font-size:13px;color:var(--p-mut);">${week.length} appointment${week.length===1?'':'s'} this week</div>
     ${live?`<button onclick="_loadSquareAppts(true);renderWeekAppts()" style="margin-top:8px;background:none;border:none;color:var(--accent-strong);font-size:12px;font-weight:600;cursor:pointer;font-family:inherit;padding:0;"><i class="ti ti-refresh" style="font-size:12px;"></i> Refresh</button>`:''}
   </div>
-  ${(function(){
-    // Every first-timer booked this week who still needs setup — send the first-visit package right here.
-    if(!week.length)return '';
-    const seen={},cands=[];
-    week.forEach(a=>{const cid=live?_clientIdByName(a.client):(a.clientId||null);if(!cid||seen[cid])return;seen[cid]=1;const c=CL[cid];if(c&&String(c.name||'').trim()&&!c.lastVisit&&!c.appInvited)cands.push([cid,c]);});
-    if(!cands.length)return '';
-    return `<div style="margin:10px 16px 6px;padding:12px 14px;background:linear-gradient(135deg,var(--p-surf2),var(--p-green-bg));border:1px solid var(--p-green-line);border-radius:12px;">
-      <div style="display:flex;align-items:center;gap:8px;margin-bottom:6px;"><i class="ti ti-rocket" style="font-size:16px;color:var(--p-green);"></i><div style="font-size:13px;font-weight:600;color:var(--p-green);">First-timers this week</div><div style="font-size:11px;color:var(--p-mut2);margin-left:auto;">${cands.length} to set up</div></div>
-      ${cands.map(([cid,c])=>`<div style="display:flex;align-items:center;gap:10px;padding:9px 0;border-top:1px solid rgba(26,74,56,.45);">
-        <div style="width:32px;height:32px;border-radius:8px;background:${c.bg||'var(--p-chip)'};display:flex;align-items:center;justify-content:center;font-size:12px;font-weight:500;color:${c.tc||'#fff'};flex-shrink:0;">${_cIni(c)}</div>
-        <div style="flex:1;min-width:0;font-size:13px;font-weight:500;color:var(--p-ink);overflow:hidden;text-overflow:ellipsis;white-space:nowrap;">${_fileEsc(c.name)}</div>
-        <button onclick="event.stopPropagation();sendFirstVisitPackage('${cid}')" style="flex-shrink:0;background:var(--accent);color:var(--accent-ink);border:none;border-radius:8px;padding:6px 11px;font-size:12px;font-weight:600;cursor:pointer;font-family:inherit;"><i class="ti ti-rocket" style="font-size:12px;"></i> Send package</button>
-      </div>`).join('')}
-    </div>`;
-  })()}
   ${!week.length?`
   <div style="margin:14px 16px;text-align:center;color:var(--p-mut);font-size:13px;padding:30px 20px;background:var(--surf1);border:1px solid var(--p-line3);border-radius:12px;">
     <i class="ti ti-calendar-off" style="font-size:26px;color:var(--p-mut2);"></i>
@@ -17883,17 +17886,24 @@ function renderWeekAppts(){
     ${_weekEmptyHint}
   </div>`:keys.map(k=>{
     const items=grp[k];
-    const dayLbl=live?new Date(k).toLocaleDateString('en-US',{weekday:'long',month:'short',day:'numeric'}):(()=>{const dn=['Sun','Mon','Tue','Wed','Thu','Fri','Sat'];const dd=[22,23,24,25,26,27,28];const i=dd.indexOf(items[0]&&items[0].day);return i>=0?dn[i]+' Jun '+items[0].day:'';})();
+    const dayLbl=useAt?new Date(k).toLocaleDateString('en-US',{weekday:'long',month:'short',day:'numeric'}):(()=>{const dn=['Sun','Mon','Tue','Wed','Thu','Fri','Sat'];const dd=[22,23,24,25,26,27,28];const i=dd.indexOf(items[0]&&items[0].day);return i>=0?dn[i]+' Jun '+items[0].day:'';})();
     return `<div style="padding:8px 16px 4px;font-size:13px;font-weight:600;color:var(--p-ink);">${dayLbl}<span style="color:var(--p-mut);font-weight:400;"> \u00b7 ${items.length}</span></div>`+
       items.map(a=>{
-        const cid=live?_clientIdByName(a.client):null;
-        const timeLbl=live?a.at.toLocaleTimeString('en-US',{hour:'numeric',minute:'2-digit'}):(a.time||'');
-        return `<div ${cid?`onclick="nav('client','${cid}')" style="cursor:pointer;"`:''} style="margin:0 16px 8px;background:var(--surf2);border:1px solid var(--p-line);border-radius:12px;overflow:hidden;display:flex;">
-          <div style="width:4px;background:${a.ic||'var(--accent)'};flex-shrink:0;"></div>
-          <div style="padding:11px 13px;flex:1;display:flex;justify-content:space-between;align-items:flex-start;">
-            <div><div style="font-size:14px;font-weight:500;color:var(--p-ink);">${_fileEsc(a.client)}</div><div style="font-size:12px;color:var(--p-mut);margin-top:2px;">${a.dur||a.durationMinutes||''} min</div></div>
-            <div style="display:flex;align-items:center;gap:6px;"><div style="font-size:13px;font-weight:500;color:var(--p-ink);">${timeLbl}</div>${cid?`<i class="ti ti-chevron-right" style="font-size:14px;color:var(--p-mut);"></i>`:''}</div>
+        const cid=a.clientId||(typeof _clientIdByName==='function'?_clientIdByName(a.client):null)||null;
+        const timeLbl=useAt?a.at.toLocaleTimeString('en-US',{hour:'numeric',minute:'2-digit'}):(a.time||'');
+        // Full booked date + time on the row itself, like the client list — plus the per-client
+        // first-visit-package nudge when they're booked but have no intake on file yet.
+        const durLbl=(a.dur||a.durationMinutes)?' · '+(a.dur||a.durationMinutes)+' min':'';
+        const whenSub=(dayLbl?dayLbl+' · ':'')+timeLbl+durLbl;
+        return `<div ${cid?`onclick="nav('client','${cid}')" style="cursor:pointer;"`:''} style="margin:0 16px 8px;background:var(--surf2);border:1px solid var(--p-line);border-radius:12px;overflow:hidden;">
+          <div style="display:flex;">
+            <div style="width:4px;background:${a.ic||'var(--accent)'};flex-shrink:0;"></div>
+            <div style="padding:11px 13px;flex:1;min-width:0;display:flex;justify-content:space-between;align-items:center;gap:8px;">
+              <div style="min-width:0;"><div style="font-size:14px;font-weight:500;color:var(--p-ink);">${_fileEsc(a.client)}</div><div style="font-size:12px;color:var(--p-mut);margin-top:2px;overflow:hidden;text-overflow:ellipsis;white-space:nowrap;">${whenSub}</div></div>
+              ${cid?`<i class="ti ti-chevron-right" style="font-size:14px;color:var(--p-mut);flex-shrink:0;"></i>`:''}
+            </div>
           </div>
+          ${_firstVisitNudgeHTML(cid)}
         </div>`;
       }).join('');
   }).join('')}
