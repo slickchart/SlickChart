@@ -3602,6 +3602,19 @@ function _attnTilesHTML(){
     <div style="flex:1;padding-right:18px;"><div style="font-size:14px;font-weight:600;color:#efeaff;">Virtual consult${_vcPendingCount()>1?'s':''} to review</div><div style="font-size:12px;color:#a394cc;margin-top:1px;">Client photos submitted, tap to review &amp; send notes</div></div>
   </div>`,'vc'):''}
   ${(function(){
+    // Brand-new clients with a first appointment coming up who haven't been set up yet —
+    // nudge to send the first-visit package (invite + intake in one tap).
+    var cands=_shotFilterEntries(Object.entries(CL)).filter(function(e){var id=e[0],c=e[1];
+      return c&&String(c.name||'').trim()&&!c.lastVisit&&!c.appInvited&&(_clientNextApptMs(id)!=null)&&!_homeDismissed.has('fvp-'+id);
+    }).sort(function(a,b){return (_clientNextApptMs(a[0])||Infinity)-(_clientNextApptMs(b[0])||Infinity);}).slice(0,3);
+    return cands.map(function(e){var id=e[0],c=e[1];var na=(typeof _nextApptForClient==='function')?_nextApptForClient(id):null;return _swipeTile(`
+    <div onclick="sendFirstVisitPackage('${id}')" style="margin:0;background:linear-gradient(135deg,#0a2019,#0d2a20);border:1px solid #1a4a38;border-radius:12px;padding:12px 14px;display:flex;align-items:center;gap:11px;cursor:pointer;">
+      <div style="width:40px;height:40px;border-radius:10px;background:#0f3528;display:flex;align-items:center;justify-content:center;flex-shrink:0;"><i class="ti ti-rocket" style="font-size:20px;color:#4ec49a;"></i></div>
+      <div style="flex:1;padding-right:18px;"><div style="font-size:14px;font-weight:600;color:#e8fff5;">First visit for ${_fileEsc((c.name||'').split(' ')[0])}</div><div style="font-size:12px;color:#7fbfa5;margin-top:1px;overflow:hidden;text-overflow:ellipsis;white-space:nowrap;">${na&&na.dateLabel?_fileEsc('Next: '+na.dateLabel+' · '):''}Send the first-visit package</div></div>
+      <i class="ti ti-chevron-right" style="font-size:16px;color:#5a8a7a;flex-shrink:0;"></i>
+    </div>`,'fvp-'+id);}).join('');
+  })()}
+  ${(function(){
     const flagged=_shotFilterEntries(Object.entries(CL).filter(([id,c])=>_fcActive(c)));
     const reviews=_shotFilterEntries(Object.entries(CL).filter(([id,c])=>c.submittedForms&&c.submittedForms.length&&!_fcActive(c)));
     const nudges=_shotFilterEntries((typeof _needsCheckin==='function')?_needsCheckin():[]);
@@ -3689,7 +3702,8 @@ function renderHome(){
     const anyAttn=(pendingRequests().filter(b=>!b.seen).length)||newCheckins.length||_vcPendingCount()
       ||_shotFilterEntries(Object.entries(CL).filter(([id,c])=>_fcActive(c))).length
       ||_shotFilterEntries(Object.entries(CL).filter(([id,c])=>c.submittedForms&&c.submittedForms.length&&!_fcActive(c))).length
-      ||_shotFilterEntries((typeof _needsCheckin==='function')?_needsCheckin():[]).length;
+      ||_shotFilterEntries((typeof _needsCheckin==='function')?_needsCheckin():[]).length
+      ||_shotFilterEntries(Object.entries(CL)).filter(function(e){var id=e[0],c=e[1];return c&&String(c.name||'').trim()&&!c.lastVisit&&!c.appInvited&&(_clientNextApptMs(id)!=null)&&!_homeDismissed.has('fvp-'+id);}).length;
     return anyAttn?'<div class="sh"><h2>Needs your attention</h2></div>':'';
   })()}
   ${_attnTilesHTML()}
@@ -3903,12 +3917,16 @@ function renderClients(){
     <button onclick="removeDemoClients()" style="background:var(--accent);color:var(--accent-ink);border:none;border-radius:8px;padding:6px 12px;font-size:11px;font-weight:700;cursor:pointer;flex-shrink:0;">Remove</button>
   </div>`:''}
   ${(()=>{let _ent=_shotFilterEntries(Object.entries(CL));
+    // Hide unnamed clients (imported contacts with no name) from the roster. They stay in
+    // the data so a real client with a matching email/phone surfaces as a possible duplicate
+    // to merge — they're just not shown as their own empty rows.
+    _ent=_ent.filter(([id,c])=>{const nm=String((c&&c.name)||'').trim().toLowerCase();return nm && nm!=='(no name)' && nm!=='no name';});
     if(_ent.length===0)return emptyState({icon:'ti-users',title:'No clients yet',body:'Add your first client to get started. Their chart, notes, and session history will live here.',action:'Add first client',screen:'new-client'});
     const f=_clientFilter;
     if(f==='attention')_ent=_ent.filter(([id,c])=>_clientNeedsAttention(id,c));
     else if(f==='upcoming')_ent=_ent.filter(([id])=>_clientNextApptMs(id)!=null);
     if(f==='upcoming'){_ent.sort((a,b)=>((_clientNextApptMs(a[0])==null?Infinity:_clientNextApptMs(a[0]))-(_clientNextApptMs(b[0])==null?Infinity:_clientNextApptMs(b[0]))));}
-    else{_ent.sort((a,b)=>{const aa=_clientNeedsAttention(a[0],a[1])?0:1,ba=_clientNeedsAttention(b[0],b[1])?0:1;if(aa!==ba)return aa-ba;return String(a[1].name||'').localeCompare(String(b[1].name||''));});}
+    else{_ent.sort((a,b)=>String(a[1].name||'').localeCompare(String(b[1].name||''),undefined,{sensitivity:'base'}));}
     if(!_ent.length)return `<div style="margin:0 16px;background:var(--surf2);border:1px solid #1b3a33;border-radius:12px;padding:22px 16px;text-align:center;color:#999;font-size:13px;">${f==='attention'?'Nothing needs your attention right now 🎉':'No clients with an upcoming appointment.'}</div>`;
     return _ent.map(([id,c])=>{const _rs=_rosterSub(id,c),_rb=_rosterBadges(id,c);return `<div class="card client-card" data-search="${((c.name||'')+' '+(c.treatment||'')).toLowerCase().normalize('NFD').replace(/[̀-ͯ]/g,'').replace(/['‘’`"]/g,'').replace(/[^a-z0-9 ]/g,' ').replace(/\s+/g,' ').trim()}" onclick="nav('client','${id}')"><div class="row">${av(c)}<div style="flex:1;min-width:0;"><div style="display:flex;align-items:center;gap:7px;"><span style="font-size:15px;font-weight:500;color:#f0f0f0;">${_fileEsc(c.name)}</span>${(id==='maya'||id==='sophie'||id==='priya')?`<span onclick="event.stopPropagation();showDemoInfo()" title="What are demo clients?" style="font-size:9px;font-weight:700;color:#7fbfa5;border:1px solid #1e4a38;background:#0f251d;border-radius:4px;padding:1px 5px;letter-spacing:.03em;cursor:pointer;">DEMO</span>`:''}</div><div style="display:flex;align-items:center;gap:5px;margin-top:2px;font-size:12px;color:${_rs.color};overflow:hidden;"><i class="ti ${_rs.icon}" style="font-size:12px;flex-shrink:0;"></i><span style="overflow:hidden;text-overflow:ellipsis;white-space:nowrap;">${_fileEsc(_rs.text)}</span></div></div><div style="display:flex;align-items:center;gap:6px;flex-shrink:0;">${_rb}<i aria-hidden="true" class="ti ti-chevron-right" style="font-size:16px;color:#888;"></i></div></div></div>`;}).join('');})()}
   ${_noRes('clients-noresults','No clients match your search.')}`;
@@ -4454,6 +4472,7 @@ function renderClient(id){
   </div>`;})()}
   </div>
   <div class="ctab" data-tab="setup"${_clientTab==='setup'?'':' hidden'}>
+  <div style="padding:14px 16px 4px;"><button class="btng" onclick="inviteClientToApp('${id}')" style="width:100%;justify-content:center;"><i class="ti ti-device-mobile" style="color:#a891ec;"></i> ${c.appInvited?'Resend app invite':'Invite to the app'}</button>${c.appInvited?`<div style="font-size:11px;color:#4ec49a;text-align:center;margin-top:6px;"><i class="ti ti-check" style="font-size:12px;"></i> Already invited — send it again anytime</div>`:''}</div>
   <details ${c.appInvited?'':'open'}>
     <summary class="sh" style="display:flex;align-items:center;justify-content:space-between;"><h2 style="margin:0;">Client setup &amp; messages</h2><i class="ti ti-chevron-down sh-chev" style="font-size:15px;color:#888;margin-right:16px;"></i></summary>
   ${!c.appInvited?`<div style="padding:0 16px 12px;">
@@ -4469,7 +4488,6 @@ function renderClient(id){
       ? `<button class="btng" onclick="_stopAftercareDrip('${id}')" style="width:100%;justify-content:center;color:#4ec49a;"><i class="ti ti-heartbeat" style="color:#4ec49a;"></i> Healing check-ins on · stop</button><div style="font-size:11px;color:#9a9a9a;text-align:center;margin-top:6px;">Day 1, 3 &amp; 30 aftercare messages auto-send</div>`
       : `<button class="btng" onclick="_startAftercareDrip('${id}');nav('client','${id}')" style="width:100%;justify-content:center;"><i class="ti ti-heartbeat" style="color:#e87070;"></i> Start healing check-ins</button><div style="font-size:11px;color:#9a9a9a;text-align:center;margin-top:6px;">Auto-sends Day 1 (unwrap), Day 3 (peeling) &amp; Month 1 (healed photo)</div>`}
   </div>`:''}
-  <div style="padding:0 16px 14px;"><button class="btng" onclick="inviteClientToApp('${id}')" style="width:100%;justify-content:center;"><i class="ti ti-device-mobile" style="color:#a891ec;"></i> ${c.appInvited?'App invite sent ✓ · resend':'Invite to the app'}</button></div>
   </details>
   ${c.squareId?`<div class="sh"><h2>Square</h2></div>
   <div style="margin:0 16px 10px;background:var(--surf1);border:1px solid #163029;border-radius:12px;padding:12px 14px;">
@@ -11210,22 +11228,15 @@ async function _syncClientsToServer(opts){
 }
 function renderInviteClients(){
   setNav('account');document.getElementById('tt').textContent='Invite Clients';
-  const withEmail=Object.keys(CL).filter(id=>CL[id].email);
-  const noEmail=Object.keys(CL).filter(id=>!CL[id].email);
-  if(!window._inviteSel)window._inviteSel={};
-  withEmail.forEach(id=>{if(window._inviteSel[id]===undefined)window._inviteSel[id]=true;});
-  const selCount=withEmail.filter(id=>window._inviteSel[id]).length;
+  // Named clients only (unnamed imports stay hidden, same as the roster), sorted A\u2192Z.
+  const ids=Object.keys(CL).filter(id=>{const nm=String((CL[id]&&CL[id].name)||'').trim().toLowerCase();return nm&&nm!=='(no name)'&&nm!=='no name';})
+    .sort((a,b)=>String(CL[a].name||'').localeCompare(String(CL[b].name||''),undefined,{sensitivity:'base'}));
   S.innerHTML=`
-  <div style="padding:14px 16px 4px;"><div style="font-size:19px;font-weight:600;color:#f0f0f0;margin-bottom:4px;">Invite your clients</div><div style="font-size:13px;color:#999;line-height:1.5;">Each client gets their own private link to see summaries, aftercare, forms, and rebook. We email each person their personal link.</div></div>
+  <div style="padding:14px 16px 4px;"><div style="font-size:19px;font-weight:600;color:#f0f0f0;margin-bottom:4px;">Invite your clients</div><div style="font-size:13px;color:#999;line-height:1.5;">Each client gets their own private link to see summaries, aftercare, forms, and rebook. Tap a client to send it your way \u2014 email, text, or copy the link.</div></div>
   <div style="margin:10px 16px;background:#0d1e33;border:1px solid #1a3a5c;border-radius:10px;padding:11px 13px;font-size:12px;color:#8fc0ea;line-height:1.55;"><i class="ti ti-lock" style="font-size:13px;"></i> Every link is private and unique to one client. No one can see another client's information.</div>
-  ${withEmail.length?`
-  <div style="display:flex;align-items:center;justify-content:space-between;padding:6px 16px 8px;"><div id="inv-count" style="font-size:12px;color:#999;">${selCount} of ${withEmail.length} selected</div><button id="inv-toggle-all" onclick="_inviteToggleAll()" style="background:none;border:none;color:var(--accent);font-size:12px;font-weight:600;cursor:pointer;font-family:inherit;">${selCount<withEmail.length?'Select all':'Deselect all'}</button></div>
-  ${withEmail.length>6?_searchBar('Search clients\u2026','.inv-cli','inv-nores'):''}
-  ${withEmail.map(id=>{const c=CL[id];const on=window._inviteSel[id];return`<div class="inv-cli" data-id="${id}" data-search="${((c.name||'')+' '+(c.email||'')).toLowerCase().normalize('NFD').replace(/[\u0300-\u036f]/g,'').replace(/['\u2018\u2019`"]/g,'').replace(/[^a-z0-9 ]/g,' ').replace(/\s+/g,' ').trim()}" onclick="_inviteToggle('${id}')" style="margin:0 16px 8px;background:var(--surf1);border:1px solid ${on?'var(--accent-tint2)':'#163029'};border-radius:12px;padding:11px 13px;display:flex;align-items:center;gap:11px;cursor:pointer;"><div class="inv-box" style="width:22px;height:22px;border-radius:6px;border:1.5px solid ${on?'var(--accent)':'#315249'};background:${on?'var(--accent)':'transparent'};display:flex;align-items:center;justify-content:center;flex-shrink:0;">${on?'<i class="ti ti-check" style="font-size:14px;color:var(--accent-ink);"></i>':''}</div><div style="width:36px;height:36px;border-radius:9px;background:${c.bg||'#1b3a33'};display:flex;align-items:center;justify-content:center;font-size:13px;font-weight:500;color:${c.tc||'#fff'};flex-shrink:0;">${_cIni(c)}</div><div style="flex:1;min-width:0;"><div style="font-size:14px;font-weight:500;color:#e0e0e0;">${_fileEsc(c.name)}</div><div style="font-size:12px;color:#999;">${_fileEsc(c.email)}${c.appInvited?' \u00b7 invited':''}</div></div></div>`;}).join('')}
+  ${ids.length>6?_searchBar('Search clients\u2026','.inv-cli','inv-nores'):''}
+  ${ids.length?ids.map(id=>{const c=CL[id];return`<div class="inv-cli" data-id="${id}" data-search="${((c.name||'')+' '+(c.email||'')).toLowerCase().normalize('NFD').replace(/[\u0300-\u036f]/g,'').replace(/['\u2018\u2019`"]/g,'').replace(/[^a-z0-9 ]/g,' ').replace(/\s+/g,' ').trim()}" onclick="inviteClientToApp('${id}')" style="margin:0 16px 8px;background:var(--surf1);border:1px solid #163029;border-radius:12px;padding:11px 13px;display:flex;align-items:center;gap:11px;cursor:pointer;"><div style="width:36px;height:36px;border-radius:9px;background:${c.bg||'#1b3a33'};display:flex;align-items:center;justify-content:center;font-size:13px;font-weight:500;color:${c.tc||'#fff'};flex-shrink:0;">${_cIni(c)}</div><div style="flex:1;min-width:0;"><div style="font-size:14px;font-weight:500;color:#e0e0e0;">${_fileEsc(c.name)}</div><div style="font-size:12px;color:#999;">${c.email?_fileEsc(c.email):'No email on file \u2014 text or copy the link'}${c.appInvited?' \u00b7 invited':''}</div></div><i class="ti ti-send" aria-hidden="true" style="font-size:17px;color:var(--accent);flex-shrink:0;"></i></div>`;}).join(''):`<div style="text-align:center;color:#888;font-size:13px;padding:30px 24px;line-height:1.6;">No clients yet. Add a client, then invite them here.</div>`}
   ${_noRes('inv-nores','No clients match your search.')}
-  <div style="padding:8px 16px 20px;"><button id="inv-send-btn" onclick="_doBulkInvite()" style="width:100%;background:var(--accent);border:none;border-radius:12px;padding:14px;font-size:15px;font-weight:600;color:var(--accent-ink);cursor:pointer;font-family:inherit;"><i class="ti ti-send"></i> Email ${selCount} client${selCount===1?'':'s'} their link</button></div>
-  `:`<div style="text-align:center;color:#888;font-size:13px;padding:30px 24px;line-height:1.6;">None of your clients have an email on file yet. Add an email to their profile to invite them, or open a client's profile and copy their private link to share manually.</div>`}
-  ${noEmail.length?`<div class="sh"><h2>No email on file (${noEmail.length})</h2></div><div style="font-size:12px;color:#888;padding:0 16px 14px;line-height:1.5;">Add an email on their profile to include them here, or copy their private link from their profile to text it.</div>`:''}
   <div style="height:20px;"></div>`;
 }
 // Toggle a single client in place (no full re-render) so an active search filter isn't wiped every
