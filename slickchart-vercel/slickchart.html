@@ -3887,6 +3887,11 @@ function _rosterBadges(id,c){
   c=c||{};let b='';
   const flagged=(typeof _fcActive==='function'&&_fcActive(c))||!!c.flaggedContra;
   const unread=(typeof threads!=='undefined')&&Array.isArray(threads)&&threads.some(t=>t&&t.id===id&&t.unread);
+  // Booked but no intake filled out yet → an amber "intake needed" badge so it's scannable in the
+  // list, the same at-a-glance cue that opens into the nudge line on the client card.
+  const na=(typeof _nextApptForClient==='function')?_nextApptForClient(id):null;
+  const needsIntake=na&&na.dateLabel&&(typeof _hasIntakeOnFile==='function')&&!_hasIntakeOnFile(c);
+  if(needsIntake)b+='<span title="No intake on file yet" aria-label="No intake on file yet" style="display:inline-flex;align-items:center;justify-content:center;width:20px;height:20px;border-radius:50%;background:var(--p-amber-bg);border:1px solid var(--p-amber-line);flex-shrink:0;"><i class="ti ti-file-alert" style="font-size:12px;color:var(--p-amber);"></i></span>';
   if(flagged)b+='<span title="Needs review" aria-label="Needs review" style="display:inline-flex;align-items:center;justify-content:center;width:20px;height:20px;border-radius:50%;background:var(--p-red-bg);border:1px solid var(--p-red-line);flex-shrink:0;"><i class="ti ti-alert-triangle" style="font-size:12px;color:var(--p-red);"></i></span>';
   if(unread)b+='<span title="Unread message" aria-label="Unread message" style="display:inline-flex;align-items:center;justify-content:center;width:20px;height:20px;border-radius:50%;background:var(--accent-tint);border:1px solid var(--accent-a30,var(--p-line3));flex-shrink:0;"><i class="ti ti-message-2" style="font-size:12px;color:var(--accent-strong);"></i></span>';
   return b;
@@ -4381,7 +4386,11 @@ function renderClient(id){
     var na=(typeof _nextApptForClient==='function')?_nextApptForClient(id):null;
     if(!na||!na.dateLabel)return '';
     var whenStr=_fileEsc(na.dateLabel)+(na.time?' · '+_fileEsc(na.time):'');
-    return `<div style="margin:12px 16px 0;background:linear-gradient(135deg,var(--p-surf2),var(--p-green-bg));border:1px solid var(--p-line3);border-radius:12px;padding:12px 14px;display:flex;align-items:center;gap:11px;">
+    // Booked but no intake filled out → nudge right under the date to send it (first-visit package
+    // for a client not in the app yet, otherwise just the intake). Mirrors the client-list nudge.
+    var _needsIntake=(typeof _hasIntakeOnFile==='function')&&!_hasIntakeOnFile(c);
+    return `<div style="margin:12px 16px 0;background:linear-gradient(135deg,var(--p-surf2),var(--p-green-bg));border:1px solid var(--p-line3);border-radius:12px;overflow:hidden;">
+     <div style="padding:12px 14px;display:flex;align-items:center;gap:11px;">
       <div style="width:38px;height:38px;border-radius:9px;background:var(--p-green-bg);display:flex;align-items:center;justify-content:center;flex-shrink:0;"><i class="ti ti-calendar-event" style="font-size:18px;color:var(--p-green);"></i></div>
       <div style="flex:1;min-width:0;">
         <div style="font-size:10px;font-weight:700;color:var(--p-mut2);letter-spacing:.07em;text-transform:uppercase;">Next appointment</div>
@@ -4389,6 +4398,12 @@ function renderClient(id){
         ${na.treatment?`<div style="font-size:12px;color:#9fceb8;overflow:hidden;text-overflow:ellipsis;white-space:nowrap;">${_fileEsc(na.treatment)}</div>`:''}
       </div>
       <button onclick="nav('rebook','${id}')" style="background:rgba(78,196,154,.12);border:1px solid var(--p-line3);color:var(--p-green);border-radius:8px;padding:6px 11px;font-size:11px;font-weight:600;cursor:pointer;font-family:inherit;flex-shrink:0;">Reschedule</button>
+     </div>
+     ${_needsIntake?`<div onclick="sendFirstVisitPackage('${id}')" style="border-top:1px solid var(--p-line3);background:var(--p-amber-bg);padding:10px 14px;display:flex;align-items:center;gap:9px;cursor:pointer;">
+       <i class="ti ti-file-alert" aria-hidden="true" style="font-size:16px;color:var(--p-amber);flex-shrink:0;"></i>
+       <span style="flex:1;min-width:0;font-size:12px;color:var(--p-amber);line-height:1.4;">Hasn't filled out ${c.appInvited?'their intake':'an intake'} yet</span>
+       <span style="font-size:11px;font-weight:700;color:var(--accent-strong);white-space:nowrap;">${c.appInvited?'Send intake':'Send package'} <i class="ti ti-chevron-right" aria-hidden="true" style="font-size:11px;"></i></span>
+     </div>`:''}
     </div>`;
   })()}
   ${_clientTabBar(id)}
@@ -4425,7 +4440,7 @@ function renderClient(id){
         <span style="flex:1;min-width:0;font-size:13px;color:var(--p-purple);">${_fileEsc(formTmpls[k].name)}</span>
         <button onclick="renderSignOnDevice('${k}','${id}')" class="btng" style="padding:5px 10px;font-size:11px;border-radius:7px;">Sign here</button>
       </label>`).join('')}
-      <button onclick="_sendCheckedSuggestions('${id}',${JSON.stringify(sug)})" class="btnp" style="width:100%;border-radius:8px;padding:9px;margin-top:10px;font-size:12.5px;"><i class="ti ti-send"></i> Send selected</button>
+      <button onclick="_sendCheckedSuggestions('${id}')" class="btnp" style="width:100%;border-radius:8px;padding:9px;margin-top:10px;font-size:12.5px;"><i class="ti ti-send"></i> Send selected</button>
     </div>
   </div>`;})()}
   <div class="sh"><h2>Forms &amp; documents</h2></div>
@@ -4661,6 +4676,14 @@ function resendFormToClient(cid,fid){
 function loadSuggestedFormsOverride(){try{const s=localStorage.getItem('sc_suggested_forms');if(s)return JSON.parse(s);}catch(e){}return null;}
 function saveSuggestedFormsOverride(){try{(function(_v){localStorage.setItem('sc_suggested_forms',_v);if(typeof _pushKeyNow==='function')_pushKeyNow('sc_suggested_forms',_v);return _v;})(JSON.stringify(suggestedFormsOverride||[]));}catch(e){}}
 let suggestedFormsOverride=loadSuggestedFormsOverride();
+// True once the client has actually submitted or signed an intake form. Used to nudge (booked but
+// no intake) on the client card and in the client list — a sent-but-not-filled intake still counts
+// as "needs intake" so we keep prompting until it's really done.
+function _hasIntakeOnFile(c){
+  if(!c)return false;
+  const names=[...((c.submittedForms||[]).map(s=>s&&s.title)),...((c.signedForms||[])||[])];
+  return names.some(n=>/intake/i.test(String(n||'')));
+}
 function _suggestedFormsFor(c){
   if(!c||typeof formTmpls==='undefined')return [];
   const have=new Set([...((c.submittedForms||[]).map(s=>s.title)),...((c.signedForms||[])||[])]);
@@ -9560,7 +9583,11 @@ function _renderSendFormClients(fid,q){const el=document.getElementById('sfc-lis
 // Sends only the suggestions the provider actually checked, one form uses
 // the normal single-form share, several use the same bundle mechanism.
 function _sendCheckedSuggestions(id,sug){
-  const checked=(sug||[]).filter(k=>window._sugChecked&&window._sugChecked[k]);
+  // Recompute the suggested list from the client rather than trusting an argument: the list used
+  // to be JSON-embedded in the button's onclick attribute, but JSON's double-quotes closed the
+  // double-quoted attribute early and silently broke the click. Deriving it here is quote-safe.
+  if(!sug){const c=CL[id];sug=(c&&typeof _suggestedFormsFor==='function')?_suggestedFormsFor(c):[];}
+  const checked=(sug||[]).filter(k=>!window._sugChecked||window._sugChecked[k]!==false);
   if(!checked.length){proToast('Check at least one form to send');return;}
   if(checked.length===1){shareFormLink(checked[0],id);return;}
   _sendAdHocBundle(id,checked);
