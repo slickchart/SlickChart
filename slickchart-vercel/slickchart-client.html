@@ -3299,6 +3299,7 @@ function _renderCheckinStep(){
     </button>
     <span style="font-size:12px;color:var(--c-mut);font-weight:500;">${checkinStep+1} of ${steps.length}</span>
   </div>
+  ${_previsitProgressHTML('checkin')}
   <div style="padding:10px 16px 0;">
     <div style="display:flex;gap:4px;margin-bottom:10px;">
       ${steps.map((_,i)=>`<div style="flex:1;height:4px;border-radius:2px;background:${i<=checkinStep?'var(--accent)':'#e7f0ec'};"></div>`).join('')}
@@ -3316,10 +3317,18 @@ function _renderCheckinStep(){
     </div>
   </div>
   <div style="padding:12px 16px 20px;">
-    <button class="btnp" style="border-radius:10px;" onclick="${isLast?'submitCheckin()':'checkinStep++;_renderCheckinStep()'}">
-      <i class="ti ti-${isLast?'check':'arrow-right'}" aria-hidden="true"></i>
-      ${isLast?((activeProvider().pendingForms||[]).length?'Submit &amp; continue to your forms':'Submit check-in'):'Next'}
-    </button>
+    ${(function(){
+      // Only the true end of the whole package says "Submit". When a form (e.g. the new-client
+      // intake) still follows the check-in, the last check-in step reads "Next" exactly like the
+      // steps before it, so nobody mistakes the check-in submit for finishing — they flow straight
+      // into the intake, and the single Submit lives at the very end of that form.
+      const _more=isLast&&(activeProvider().pendingForms||[]).length>0;
+      const _end=isLast&&!_more;   // last step with nothing after → real submit
+      return `<button class="btnp" style="border-radius:10px;" onclick="${isLast?'submitCheckin()':'checkinStep++;_renderCheckinStep()'}">
+      <i class="ti ti-${_end?'check':'arrow-right'}" aria-hidden="true"></i>
+      ${_end?'Submit check-in':'Next'}
+    </button>`;
+    })()}
   </div>`;
   if(_stepChanged)_scrollScreenTop();
 }
@@ -3702,7 +3711,7 @@ function submitCheckin(){
       groups:pay.groups,flagged:pay.flagged,notes:pay.notes,photos:pay.photos,submittedAt:Date.now(),
     });
     // If forms are still pending, walk straight into them; otherwise show the all-set screen.
-    if(_advancePrevisitFlow('Check-in saved'))return;
+    if(_advancePrevisitFlow(''))return;
     S.innerHTML=_checkinSuccessHTML(flagged);
     return;
   }
@@ -3713,14 +3722,14 @@ function submitCheckin(){
     _clientSubmit('checkin',{client:client.name,treatment:client.treatment,dateLabel:client.nextDate,time:client.nextTime,groups:pay.groups,flagged:pay.flagged,notes:pay.notes,photos:pay.photos||[]})
       .then(function(res){
         if(res&&res.duplicate)return;
-        if(res&&res.ok!==false){ _markCheckinDone(prov); if(_advancePrevisitFlow('Check-in saved'))return; S.innerHTML=_checkinSuccessHTML(flagged); }
+        if(res&&res.ok!==false){ _markCheckinDone(prov); if(_advancePrevisitFlow(''))return; S.innerHTML=_checkinSuccessHTML(flagged); }
         else{ S.innerHTML=_submitFailedHTML('submitCheckin()',"Couldn't send your check-in"); }
       });
     return;
   }
   // Demo/local (no real token, not connected), behave as before
   _markCheckinDone(prov);
-  if(_advancePrevisitFlow('Check-in saved'))return;
+  if(_advancePrevisitFlow(''))return;
   S.innerHTML=_checkinSuccessHTML(flagged);
 }
 
