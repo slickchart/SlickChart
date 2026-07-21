@@ -2985,24 +2985,27 @@ function _providerInitials(){
 function _syncProviderAvatar(){/* the header button is now a fixed settings icon, not initials, nothing to sync */}
 // Measures the average luminance (0-255) of a logo's opaque pixels, cached per src.
 // Lets us blend ANY provider logo — light or dark — onto the bar without a hard box.
-var _scLogoLum={};
+var _scLogoStats={};
 function _scLogoLuminance(src,cb){
-  if(_scLogoLum[src]!=null){cb(_scLogoLum[src]);return;}
+  if(_scLogoStats[src]){cb(_scLogoStats[src]);return;}
   try{
     var img=new Image();
     img.onload=function(){
       try{
         var n=36,c=document.createElement('canvas');c.width=n;c.height=n;
         var x=c.getContext('2d');x.drawImage(img,0,0,n,n);
-        var d=x.getImageData(0,0,n,n).data,s=0,w=0;
+        var d=x.getImageData(0,0,n,n).data,s=0,w=0,sat=0;
         for(var i=0;i<d.length;i+=4){var a=d[i+3]/255;if(a<0.15)continue;
-          s+=(0.299*d[i]+0.587*d[i+1]+0.114*d[i+2])*a;w+=a;}
-        var lum=w?s/w:128;_scLogoLum[src]=lum;cb(lum);
-      }catch(e){cb(128);}
+          var r=d[i],g=d[i+1],b=d[i+2];
+          s+=(0.299*r+0.587*g+0.114*b)*a;
+          var mx=Math.max(r,g,b),mn=Math.min(r,g,b);
+          sat+=(mx?(mx-mn)/mx:0)*a; w+=a;}
+        var st={lum:w?s/w:128,sat:w?sat/w:0};_scLogoStats[src]=st;cb(st);
+      }catch(e){cb({lum:128,sat:0});}
     };
-    img.onerror=function(){cb(128);};
+    img.onerror=function(){cb({lum:128,sat:0});};
     img.src=src;
-  }catch(e){cb(128);}
+  }catch(e){cb({lum:128,sat:0});}
 }
 function _scThemeIsDark(){try{return document.documentElement.getAttribute('data-theme')!=='light';}catch(e){return true;}}
 function _syncHeaderLogo(){
@@ -3012,12 +3015,13 @@ function _syncHeaderLogo(){
       const src=_imgSrc(brandColors.logoDataUrl);
       el.style.background='transparent';el.style.padding='0';el.style.boxSizing='border-box';
       el.innerHTML=`<img src="${src}" alt="" style="width:100%;height:100%;object-fit:contain;border-radius:7px;">`;
-      // Adaptive backing: only add a soft chip when the logo would clash with the bar,
-      // so a dark-native mark (the lotus) blends, but a pale logo on a light bar stays visible.
-      _scLogoLuminance(src,function(lum){
-        var barDark=_scThemeIsDark(),bg='transparent',pad='0';
-        if(barDark&&lum<80){bg='rgba(240,246,244,.92)';pad='3px';}
-        else if(!barDark&&lum>185){bg='rgba(10,20,18,.85)';pad='3px';}
+      // Only back a logo that's near-grayscale AND would truly vanish (a black-ish mark on a
+      // dark bar, or a white-ish mark on a light bar). A colorful mark like the lotus reads on
+      // both, so it always stays transparent — no white box.
+      _scLogoLuminance(src,function(st){
+        var barDark=_scThemeIsDark(),bg='transparent',pad='0',mono=st.sat<0.22;
+        if(mono&&barDark&&st.lum<70){bg='rgba(240,246,244,.94)';pad='3px';}
+        else if(mono&&!barDark&&st.lum>200){bg='rgba(12,22,20,.9)';pad='3px';}
         el.style.background=bg;el.style.padding=pad;
       });
     }else{
@@ -3632,8 +3636,8 @@ function _attnTilesHTML(){
     // Brand-new clients with a first appointment coming up who haven't been set up yet —
     // nudge to send the first-visit package (invite + intake in one tap).
     var cands=_shotFilterEntries(Object.entries(CL)).filter(function(e){var id=e[0],c=e[1];
-      return c&&String(c.name||'').trim()&&!c.lastVisit&&!c.appInvited&&(_clientNextApptMs(id)!=null)&&!_homeDismissed.has('fvp-'+id);
-    }).sort(function(a,b){return (_clientNextApptMs(a[0])||Infinity)-(_clientNextApptMs(b[0])||Infinity);}).slice(0,3);
+      return c&&String(c.name||'').trim()&&!c.lastVisit&&!c.appInvited&&(_clientApptSoonMs(id)!=null)&&!_homeDismissed.has('fvp-'+id);
+    }).sort(function(a,b){return (_clientApptSoonMs(a[0])||Infinity)-(_clientApptSoonMs(b[0])||Infinity);}).slice(0,3);
     return cands.map(function(e){var id=e[0],c=e[1];var na=(typeof _nextApptForClient==='function')?_nextApptForClient(id):null;return _swipeTile(`
     <div onclick="sendFirstVisitPackage('${id}')" style="margin:0;background:linear-gradient(135deg,#0a2019,#0d2a20);border:1px solid #1a4a38;border-radius:12px;padding:12px 14px;display:flex;align-items:center;gap:11px;cursor:pointer;">
       <div style="width:40px;height:40px;border-radius:10px;background:#0f3528;display:flex;align-items:center;justify-content:center;flex-shrink:0;"><i class="ti ti-rocket" style="font-size:20px;color:#4ec49a;"></i></div>
@@ -3730,7 +3734,7 @@ function renderHome(){
       ||_shotFilterEntries(Object.entries(CL).filter(([id,c])=>_fcActive(c))).length
       ||_shotFilterEntries(Object.entries(CL).filter(([id,c])=>c.submittedForms&&c.submittedForms.length&&!_fcActive(c))).length
       ||_shotFilterEntries((typeof _needsCheckin==='function')?_needsCheckin():[]).length
-      ||_shotFilterEntries(Object.entries(CL)).filter(function(e){var id=e[0],c=e[1];return c&&String(c.name||'').trim()&&!c.lastVisit&&!c.appInvited&&(_clientNextApptMs(id)!=null)&&!_homeDismissed.has('fvp-'+id);}).length;
+      ||_shotFilterEntries(Object.entries(CL)).filter(function(e){var id=e[0],c=e[1];return c&&String(c.name||'').trim()&&!c.lastVisit&&!c.appInvited&&(_clientApptSoonMs(id)!=null)&&!_homeDismissed.has('fvp-'+id);}).length;
     return anyAttn?'<div class="sh"><h2>Needs your attention</h2></div>':'';
   })()}
   ${_attnTilesHTML()}
@@ -3878,6 +3882,21 @@ function _clientNextApptMs(id){
     if(na.at&&na.at.getTime)return na.at.getTime();
     if(na.dateLabel){const d=new Date(/\d{4}/.test(na.dateLabel)?na.dateLabel:(na.dateLabel+' '+new Date().getFullYear()));if(!isNaN(d.getTime()))return d.getTime();}
     return Infinity;   // has a next visit but unparseable date → still "upcoming", sort last
+  }catch(e){return null;}
+}
+// Like _clientNextApptMs but INCLUDES today — a brand-new client's very first appointment is
+// often the same day, and the first-visit nudge should still fire for it.
+function _clientApptSoonMs(id){
+  try{
+    const c=CL[id];if(!c)return null;
+    const name=(c.name||'').trim().toLowerCase();
+    const today=new Date();today.setHours(0,0,0,0);const t0=today.getTime();
+    let best=null;
+    const consider=(at)=>{if(at&&at.getTime&&!isNaN(at.getTime())&&at.getTime()>=t0){const ms=at.getTime();if(best==null||ms<best)best=ms;}};
+    try{if(typeof squareAppts!=='undefined'&&Array.isArray(squareAppts))squareAppts.forEach(a=>{if((a.client||'').trim().toLowerCase()===name)consider(a.at);});}catch(e){}
+    try{const more=(typeof confirmedAppts!=='undefined'?confirmedAppts:[]).concat(typeof manualAppts!=='undefined'?manualAppts:[]);more.forEach(b=>{if((b.client||'').trim().toLowerCase()!==name)return;let at=(b.at&&b.at.getTime)?b.at:(b.when?new Date(b.when):(b.dateLabel?new Date(b.dateLabel+(/\d{4}/.test(b.dateLabel)?'':' '+new Date().getFullYear())):null));consider(at);});}catch(e){}
+    if(best==null){const m=_clientNextApptMs(id);if(m!=null&&m!==Infinity)best=m;}
+    return best;
   }catch(e){return null;}
 }
 function _setClientFilter(f){_clientFilter=f;if(typeof renderClients==='function')renderClients();}
