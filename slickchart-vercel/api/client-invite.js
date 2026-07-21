@@ -37,15 +37,21 @@ export default async function handler(req, res) {
       const first = esc((c.name || 'there').split(' ')[0]);
       const who = esc(fromName) + (studio ? (' at ' + esc(studio)) : '');
       const subject = studio ? ('Your space at ' + studio) : 'Your client app is ready';
+      const ASSETS = 'https://slickchart.app/assets';
       const html = `<div style="font-family:-apple-system,Segoe UI,Roboto,sans-serif;max-width:520px;margin:0 auto;padding:8px;color:#1a1a1a;">
-        <div style="background:#0a1719;border-radius:14px;padding:22px;text-align:center;color:#eaf6f4;">
-          <div style="font-size:20px;font-weight:700;margin-bottom:6px;">${studio ? esc(studio) : 'SlickChart'}</div>
-          <div style="font-size:13px;color:#a2beb9;">Your personal client space</div>
+        <div style="background:linear-gradient(160deg,#0e2b2b 0%,#0a1719 55%,#07130f 100%);background-color:#0a1719;border-radius:16px;padding:30px 22px 26px;text-align:center;color:#eaf6f4;border:1px solid #16332f;">
+          <img src="${ASSETS}/slickchart-logo.png" width="60" height="60" alt="" style="display:inline-block;margin:0 0 12px;">
+          <div style="font-size:21px;font-weight:700;letter-spacing:-.01em;margin-bottom:5px;">${studio ? esc(studio) : 'SlickChart'}</div>
+          <div style="font-size:13px;color:#8fd7c4;letter-spacing:.02em;">Your personal client space</div>
         </div>
-        <p style="font-size:15px;line-height:1.6;">Hi ${first},</p>
-        <p style="font-size:15px;line-height:1.6;">${who} set up a private space just for you. See your visit summaries, aftercare, forms, and rebook anytime, all in one place. No app store, no download.</p>
-        <p style="text-align:center;margin:26px 0;"><a href="${link}" style="background:#26c1b0;color:#03201e;text-decoration:none;font-weight:600;padding:13px 26px;border-radius:10px;display:inline-block;">Open your app</a></p>
-        <p style="font-size:12px;color:#888;line-height:1.6;">This link is private and just for you. Please don't share it. If you weren't expecting this, you can ignore this email.</p>
+        <p style="font-size:15px;line-height:1.7;margin:22px 4px 0;">Hi ${first},</p>
+        <p style="font-size:15px;line-height:1.7;margin:12px 4px;color:#2c3a36;">${who} set up a private space just for you. See your visit summaries, aftercare, forms, and rebook anytime, all in one place. No app store, no download.</p>
+        <p style="text-align:center;margin:26px 0;"><a href="${link}" style="background:linear-gradient(135deg,#19b8bf 0%,#2bc7a2 52%,#6fdca6 100%);background-color:#26c1b0;color:#03201e;text-decoration:none;font-weight:700;padding:14px 30px;border-radius:11px;display:inline-block;font-size:15px;box-shadow:0 8px 22px -10px rgba(43,199,172,.6);">Open your app &rarr;</a></p>
+        <p style="font-size:12px;color:#8a9a94;line-height:1.6;margin:0 4px;">This link is private and just for you. Please don't share it. If you weren't expecting this, you can ignore this email.</p>
+        <div style="border-top:1px solid #e2ece8;margin:24px 4px 0;padding-top:16px;text-align:center;">
+          <a href="https://slickchart.app" style="text-decoration:none;display:inline-block;"><img src="${ASSETS}/wordmark-light.png" height="18" alt="SlickChart" style="height:18px;opacity:.75;vertical-align:middle;"></a>
+          <div style="font-size:11px;color:#a2b4ae;margin-top:6px;">Client charting &amp; care, powered by SlickChart</div>
+        </div>
       </div>`;
       const text = `Hi ${(c.name || 'there').split(' ')[0]}, ${fromName}${studio ? (' at ' + studio) : ''} set up your personal client space. Open it: ${link}`;
       await sendEmail({ to: c.email, subject, html, text });
