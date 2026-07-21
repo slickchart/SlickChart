@@ -76,7 +76,7 @@ export function welcomeEmailHtml({ name, link }) {
   return `<div style="font-family:-apple-system,Segoe UI,Roboto,sans-serif;max-width:560px;margin:0 auto;padding:8px;color:#1a1a1a;">
     <div style="background:#0a1719;border-radius:14px;padding:28px 24px;text-align:center;color:#eaf6f4;">
       <img src="https://slickchart.app/assets/slickchart-logo.png" width="46" height="46" alt="" style="display:inline-block;margin:0 0 8px;">
-      <div style="font-size:22px;font-weight:700;margin-bottom:4px;">SlickChart</div>
+      <div style="font-size:22px;font-weight:700;margin-bottom:4px;">Slick<span style="color:#6fdca6;">Chart</span></div>
       <div style="font-size:13px;color:#a2beb9;letter-spacing:.04em;text-transform:uppercase;">Founding Beta</div>
     </div>
 

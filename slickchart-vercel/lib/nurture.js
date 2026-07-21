@@ -44,7 +44,7 @@ function wrap(bodyHtml, email) {
   return `<div style="font-family:-apple-system,Segoe UI,Roboto,sans-serif;max-width:560px;margin:0 auto;padding:8px;color:#1a1a1a;">
     <div style="background:#0a1719;border-radius:14px;padding:22px 24px;text-align:center;color:#eaf6f4;">
       <img src="https://slickchart.app/assets/slickchart-logo.png" width="42" height="42" alt="" style="display:inline-block;margin:0 0 6px;">
-      <div style="font-size:20px;font-weight:700;">SlickChart</div>
+      <div style="font-size:20px;font-weight:700;">Slick<span style="color:#6fdca6;">Chart</span></div>
       <div style="font-size:12px;color:#a2beb9;letter-spacing:.05em;text-transform:uppercase;">Built by an esthetician, for providers</div>
     </div>
     <div style="padding:26px 6px 6px;font-size:16px;line-height:1.7;color:#2a2a2a;">

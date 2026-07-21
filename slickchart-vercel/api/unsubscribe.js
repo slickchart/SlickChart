@@ -9,7 +9,7 @@ function page(title, msg) {
   return `<!doctype html><meta charset="utf-8"><meta name="viewport" content="width=device-width,initial-scale=1">
   <title>${title}</title>
   <div style="font-family:-apple-system,Segoe UI,Roboto,sans-serif;max-width:460px;margin:12vh auto;padding:28px;text-align:center;color:#2a2a2a;">
-    <div style="font-size:20px;font-weight:700;color:#0a1719;margin-bottom:6px;">SlickChart</div>
+    <div style="font-size:20px;font-weight:700;color:#0a1719;margin-bottom:6px;">Slick<span style="color:#0f8a7e;">Chart</span></div>
     <h1 style="font-size:22px;margin:14px 0 8px;">${title}</h1>
     <p style="font-size:15px;line-height:1.6;color:#555;">${msg}</p>
   </div>`;
