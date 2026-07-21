@@ -74,9 +74,10 @@ export function trustedOrigin() {
 export function welcomeEmailHtml({ name, link }) {
   const first = String(name || '').trim().split(/\s+/)[0] || 'there';
   return `<div style="font-family:-apple-system,Segoe UI,Roboto,sans-serif;max-width:560px;margin:0 auto;padding:8px;color:#1a1a1a;">
-    <div style="background:#14100c;border-radius:14px;padding:28px 24px;text-align:center;color:#f4ede2;">
+    <div style="background:#0a1719;border-radius:14px;padding:28px 24px;text-align:center;color:#eaf6f4;">
+      <img src="https://slickchart.app/assets/slickchart-logo.png" width="46" height="46" alt="" style="display:inline-block;margin:0 0 8px;">
       <div style="font-size:22px;font-weight:700;margin-bottom:4px;">SlickChart</div>
-      <div style="font-size:13px;color:#a99b86;letter-spacing:.04em;text-transform:uppercase;">Founding Beta</div>
+      <div style="font-size:13px;color:#a2beb9;letter-spacing:.04em;text-transform:uppercase;">Founding Beta</div>
     </div>
 
     <div style="padding:28px 6px 6px;">
@@ -86,12 +87,12 @@ export function welcomeEmailHtml({ name, link }) {
       <p style="font-size:16px;line-height:1.7;color:#3a3a3a;margin:0 0 20px;">As a founding beta provider, you're not just a customer, you're a collaborator. Every question you ask, every rough edge you point out, and every "it would be great if it also did ___" makes this better, faster than I could ever manage building it alone. This app is going to get amazing, and you're one of the people making that happen.</p>
 
       <div style="text-align:center;margin:26px 0;">
-        <a href="${link}" style="background:#cd9a52;color:#1a1206;text-decoration:none;font-weight:700;padding:14px 28px;border-radius:10px;display:inline-block;font-size:15px;">Verify your email &amp; get started</a>
+        <a href="${link}" style="background:#26c1b0;color:#03201e;text-decoration:none;font-weight:700;padding:14px 28px;border-radius:10px;display:inline-block;font-size:15px;">Verify your email &amp; get started</a>
         <div style="font-size:12px;color:#999;margin-top:10px;">This link expires in 24 hours.</div>
       </div>
 
-      <div style="background:#faf7f3;border-radius:12px;padding:18px 20px;margin:0 0 20px;">
-        <div style="font-size:12px;font-weight:700;color:#9a7a4a;text-transform:uppercase;letter-spacing:.06em;margin-bottom:10px;">What's included, all of it, no higher tier</div>
+      <div style="background:#eef6f4;border-radius:12px;padding:18px 20px;margin:0 0 20px;">
+        <div style="font-size:12px;font-weight:700;color:#1e9e88;text-transform:uppercase;letter-spacing:.06em;margin-bottom:10px;">What's included, all of it, no higher tier</div>
         <table role="presentation" style="width:100%;border-collapse:collapse;font-size:14px;line-height:1.6;color:#3a3a3a;">
           <tr><td style="padding:4px 0;">✨</td><td style="padding:4px 0 4px 8px;">Client charting, notes, and before &amp; after photos</td></tr>
           <tr><td style="padding:4px 0;">📋</td><td style="padding:4px 0 4px 8px;">Digital intake, consent, and consult forms</td></tr>
@@ -102,7 +103,7 @@ export function welcomeEmailHtml({ name, link }) {
       </div>
 
       <div style="margin:0 0 20px;">
-        <div style="font-size:12px;font-weight:700;color:#9a7a4a;text-transform:uppercase;letter-spacing:.06em;margin-bottom:10px;">Getting started</div>
+        <div style="font-size:12px;font-weight:700;color:#1e9e88;text-transform:uppercase;letter-spacing:.06em;margin-bottom:10px;">Getting started</div>
         <p style="font-size:14px;line-height:1.8;color:#3a3a3a;margin:0;">
           1. Verify your email above, then log in on your phone<br>
           2. The guided setup walks you through your business info, hours, and profession<br>
@@ -155,19 +156,19 @@ Founder, SlickChart · Botanical Aesthetics`;
 // the link is lead capture, so the request has to reach them without them polling the app. Reply-To
 // is set to the prospect (in consult-request.js) so hitting reply goes straight to the lead.
 export function consultLeadEmailHtml({ providerName, name, email, phone, message, link }) {
-  const row = (label, val) => val ? `<tr><td style="padding:6px 12px 6px 0;font-size:13px;color:#8a7a6c;white-space:nowrap;vertical-align:top;">${esc(label)}</td><td style="padding:6px 0;font-size:14px;color:#1a1a1a;overflow-wrap:anywhere;">${esc(val)}</td></tr>` : '';
+  const row = (label, val) => val ? `<tr><td style="padding:6px 12px 6px 0;font-size:13px;color:#7a948c;white-space:nowrap;vertical-align:top;">${esc(label)}</td><td style="padding:6px 0;font-size:14px;color:#1a1a1a;overflow-wrap:anywhere;">${esc(val)}</td></tr>` : '';
   return `<div style="font-family:-apple-system,Segoe UI,Roboto,sans-serif;max-width:520px;margin:0 auto;padding:8px;color:#1a1a1a;">
-    <div style="background:#14100c;border-radius:14px;padding:22px 24px;color:#f4ede2;">
-      <div style="font-size:12px;color:#a99b86;letter-spacing:.06em;text-transform:uppercase;margin-bottom:4px;">New consult request</div>
+    <div style="background:#0a1719;border-radius:14px;padding:22px 24px;color:#eaf6f4;">
+      <div style="font-size:12px;color:#a2beb9;letter-spacing:.06em;text-transform:uppercase;margin-bottom:4px;">New consult request</div>
       <div style="font-size:20px;font-weight:700;">${esc(name || 'Someone')} wants to book with you</div>
     </div>
     <div style="padding:20px 6px 6px;">
       <table role="presentation" style="width:100%;border-collapse:collapse;margin-bottom:18px;">
         ${row('Name', name)}${row('Email', email)}${row('Phone', phone)}
       </table>
-      ${message ? `<div style="background:#faf7f3;border-radius:12px;padding:14px 16px;font-size:14px;line-height:1.6;color:#3a3a3a;white-space:pre-wrap;overflow-wrap:anywhere;margin-bottom:18px;">${esc(message)}</div>` : ''}
+      ${message ? `<div style="background:#eef6f4;border-radius:12px;padding:14px 16px;font-size:14px;line-height:1.6;color:#3a3a3a;white-space:pre-wrap;overflow-wrap:anywhere;margin-bottom:18px;">${esc(message)}</div>` : ''}
       <p style="font-size:14px;line-height:1.7;color:#3a3a3a;margin:0 0 18px;">Just hit reply to answer ${esc((name || '').trim().split(/\s+/)[0] || 'them')} directly${email ? ' at ' + esc(email) : ''}${phone ? ', or call ' + esc(phone) : ''}.</p>
-      ${link ? `<div style="margin:0 0 8px;"><a href="${link}" style="background:#cd9a52;color:#1a1206;text-decoration:none;font-weight:700;padding:12px 24px;border-radius:10px;display:inline-block;font-size:14px;">Open SlickChart</a></div>` : ''}
+      ${link ? `<div style="margin:0 0 8px;"><a href="${link}" style="background:#26c1b0;color:#03201e;text-decoration:none;font-weight:700;padding:12px 24px;border-radius:10px;display:inline-block;font-size:14px;">Open SlickChart</a></div>` : ''}
     </div>
   </div>`;
 }

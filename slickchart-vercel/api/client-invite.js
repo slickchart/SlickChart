@@ -38,13 +38,13 @@ export default async function handler(req, res) {
       const who = esc(fromName) + (studio ? (' at ' + esc(studio)) : '');
       const subject = studio ? ('Your space at ' + studio) : 'Your client app is ready';
       const html = `<div style="font-family:-apple-system,Segoe UI,Roboto,sans-serif;max-width:520px;margin:0 auto;padding:8px;color:#1a1a1a;">
-        <div style="background:#14100c;border-radius:14px;padding:22px;text-align:center;color:#f4ede2;">
+        <div style="background:#0a1719;border-radius:14px;padding:22px;text-align:center;color:#eaf6f4;">
           <div style="font-size:20px;font-weight:700;margin-bottom:6px;">${studio ? esc(studio) : 'SlickChart'}</div>
-          <div style="font-size:13px;color:#a99b86;">Your personal client space</div>
+          <div style="font-size:13px;color:#a2beb9;">Your personal client space</div>
         </div>
         <p style="font-size:15px;line-height:1.6;">Hi ${first},</p>
         <p style="font-size:15px;line-height:1.6;">${who} set up a private space just for you. See your visit summaries, aftercare, forms, and rebook anytime, all in one place. No app store, no download.</p>
-        <p style="text-align:center;margin:26px 0;"><a href="${link}" style="background:#cd9a52;color:#1a1206;text-decoration:none;font-weight:600;padding:13px 26px;border-radius:10px;display:inline-block;">Open your app</a></p>
+        <p style="text-align:center;margin:26px 0;"><a href="${link}" style="background:#26c1b0;color:#03201e;text-decoration:none;font-weight:600;padding:13px 26px;border-radius:10px;display:inline-block;">Open your app</a></p>
         <p style="font-size:12px;color:#888;line-height:1.6;">This link is private and just for you. Please don't share it. If you weren't expecting this, you can ignore this email.</p>
       </div>`;
       const text = `Hi ${(c.name || 'there').split(' ')[0]}, ${fromName}${studio ? (' at ' + studio) : ''} set up your personal client space. Open it: ${link}`;
