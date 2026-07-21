@@ -562,11 +562,41 @@ function applyClientTheme(b){
   root.style.setProperty('--accent-a30',_hexA(p,0.19));
   updateTopbarLogo();
 }
+// Average luminance (0-255) of a logo's opaque pixels, cached — lets any provider
+// logo blend onto the bar whether it's light or dark.
+var _scLogoLum={};
+function _scLogoLuminance(src,cb){
+  if(_scLogoLum[src]!=null){cb(_scLogoLum[src]);return;}
+  try{
+    var img=new Image();
+    img.onload=function(){
+      try{
+        var n=36,c=document.createElement('canvas');c.width=n;c.height=n;
+        var x=c.getContext('2d');x.drawImage(img,0,0,n,n);
+        var d=x.getImageData(0,0,n,n).data,s=0,w=0;
+        for(var i=0;i<d.length;i+=4){var a=d[i+3]/255;if(a<0.15)continue;
+          s+=(0.299*d[i]+0.587*d[i+1]+0.114*d[i+2])*a;w+=a;}
+        var lum=w?s/w:128;_scLogoLum[src]=lum;cb(lum);
+      }catch(e){cb(128);}
+    };
+    img.onerror=function(){cb(128);};
+    img.src=src;
+  }catch(e){cb(128);}
+}
+function _scThemeIsDark(){try{return document.documentElement.getAttribute('data-theme')==='dark';}catch(e){return false;}}
 function updateTopbarLogo(){
   const el=document.getElementById('topbar-logo');if(!el)return;
   const brand=(typeof activeProvider==='function'&&activeProvider()&&activeProvider().brand)||clientBrand||{};
   if(brand.logoDataUrl){
-    el.innerHTML=`<img src="${_imgSrc(brand.logoDataUrl)}" alt="" onerror="this.style.display='none'" style="width:100%;height:100%;object-fit:contain;background:var(--c-card);border-radius:8px;">`;
+    const src=_imgSrc(brand.logoDataUrl);
+    el.innerHTML=`<img id="topbar-logo-img" src="${src}" alt="" onerror="this.style.display='none'" style="width:100%;height:100%;object-fit:contain;border-radius:8px;">`;
+    _scLogoLuminance(src,function(lum){
+      var img=document.getElementById('topbar-logo-img');if(!img)return;
+      var barDark=_scThemeIsDark(),bg='transparent',pad='0';
+      if(barDark&&lum<80){bg='rgba(240,246,244,.92)';pad='3px';}
+      else if(!barDark&&lum>185){bg='rgba(10,20,18,.85)';pad='3px';}
+      img.style.background=bg;img.style.padding=pad;img.style.boxSizing='border-box';
+    });
   }else{
     el.innerHTML='<i class="ti ti-leaf" aria-hidden="true"></i>';
   }

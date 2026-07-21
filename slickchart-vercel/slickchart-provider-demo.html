@@ -2983,12 +2983,43 @@ function _providerInitials(){
   return (base.slice(0,2)||'SC').toUpperCase();
 }
 function _syncProviderAvatar(){/* the header button is now a fixed settings icon, not initials, nothing to sync */}
+// Measures the average luminance (0-255) of a logo's opaque pixels, cached per src.
+// Lets us blend ANY provider logo — light or dark — onto the bar without a hard box.
+var _scLogoLum={};
+function _scLogoLuminance(src,cb){
+  if(_scLogoLum[src]!=null){cb(_scLogoLum[src]);return;}
+  try{
+    var img=new Image();
+    img.onload=function(){
+      try{
+        var n=36,c=document.createElement('canvas');c.width=n;c.height=n;
+        var x=c.getContext('2d');x.drawImage(img,0,0,n,n);
+        var d=x.getImageData(0,0,n,n).data,s=0,w=0;
+        for(var i=0;i<d.length;i+=4){var a=d[i+3]/255;if(a<0.15)continue;
+          s+=(0.299*d[i]+0.587*d[i+1]+0.114*d[i+2])*a;w+=a;}
+        var lum=w?s/w:128;_scLogoLum[src]=lum;cb(lum);
+      }catch(e){cb(128);}
+    };
+    img.onerror=function(){cb(128);};
+    img.src=src;
+  }catch(e){cb(128);}
+}
+function _scThemeIsDark(){try{return document.documentElement.getAttribute('data-theme')!=='light';}catch(e){return true;}}
 function _syncHeaderLogo(){
   try{
     const el=document.querySelector('.logo');if(!el)return;
     if(typeof brandColors!=='undefined'&&brandColors.logoDataUrl){
+      const src=_imgSrc(brandColors.logoDataUrl);
       el.style.background='transparent';el.style.padding='0';el.style.boxSizing='border-box';
-      el.innerHTML=`<img src="${_imgSrc(brandColors.logoDataUrl)}" alt="" style="width:100%;height:100%;object-fit:contain;">`;
+      el.innerHTML=`<img src="${src}" alt="" style="width:100%;height:100%;object-fit:contain;border-radius:7px;">`;
+      // Adaptive backing: only add a soft chip when the logo would clash with the bar,
+      // so a dark-native mark (the lotus) blends, but a pale logo on a light bar stays visible.
+      _scLogoLuminance(src,function(lum){
+        var barDark=_scThemeIsDark(),bg='transparent',pad='0';
+        if(barDark&&lum<80){bg='rgba(240,246,244,.92)';pad='3px';}
+        else if(!barDark&&lum>185){bg='rgba(10,20,18,.85)';pad='3px';}
+        el.style.background=bg;el.style.padding=pad;
+      });
     }else{
       el.style.background='';el.style.padding='';
       el.innerHTML='<i class="ti ti-sparkles"></i>';
