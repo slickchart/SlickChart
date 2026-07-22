@@ -3192,9 +3192,32 @@ function persistCapturedPhotos(){
   // any new photo's bytes to the server — IndexedDB is device-local, so without this a phone swap /
   // cache clear would lose every before/after with no cloud copy to restore from.
   function _after(){try{_persistPhotoIndex();}catch(e){}try{_backupPhotosToServer();}catch(e){}}
-  if(_idb.available()){try{return _idb.set('captured_photos',capturedPhotos).then(function(ok){_after();return ok!==false;}).catch(function(){_after();return false;});}catch(e){return Promise.resolve(false);}}
-  try{localStorage.setItem('sc_captured_photos',JSON.stringify(capturedPhotos));_after();return true;}catch(e){return false;}
+  // Last-resort local copy when IndexedDB is unavailable OR its write fails (iOS Safari can reject
+  // IDB writes under storage pressure / private mode). Without this fallback a failed IDB write used
+  // to return false and the caller discarded the photo — the exact way a before/after could vanish.
+  function _ls(){try{localStorage.setItem('sc_captured_photos',JSON.stringify(capturedPhotos));return true;}catch(e){return false;}}
+  if(_idb.available()){
+    try{
+      return _idb.set('captured_photos',capturedPhotos)
+        .then(function(ok){_after();return ok===false?_ls():true;})   // IDB soft-fail → localStorage
+        .catch(function(){_after();return _ls();});                    // IDB threw → localStorage
+    }catch(e){_after();return _ls();}
+  }
+  const r=_ls();_after();return r;
 }
+// Belt-and-suspenders: when the app is backgrounded or the tab is about to be evicted (iOS Safari
+// reclaims memory after "a bit" away), flush the in-progress session work one more time — captured
+// photos, the open note-editor draft, and note drafts — so returning never lands on lost work.
+(function(){
+  function _flushSession(){
+    try{if(typeof persistCapturedPhotos==='function')persistCapturedPhotos();}catch(e){}
+    try{if(typeof _writeNoteClientId!=='undefined'&&_writeNoteClientId&&typeof _snapshotWriteNoteNow==='function')_snapshotWriteNoteNow(_writeNoteClientId);}catch(e){}
+    try{if(typeof saveProviderNoteDrafts==='function')saveProviderNoteDrafts();}catch(e){}
+    try{if(typeof _savePersistenceSweep==='function')_savePersistenceSweep();}catch(e){}
+  }
+  try{window.addEventListener('pagehide',_flushSession);}catch(e){}
+  try{window.addEventListener('visibilitychange',function(){if(document.visibilityState==='hidden')_flushSession();});}catch(e){}
+})();
 // ── Photo cloud backup ── IndexedDB is device-local; these back photo BYTES to the server (by a
 // per-photo id, reusing the guide-file store) and keep a small metadata INDEX synced via localStorage,
 // so a new device / reinstall can restore every before/after instead of losing them.
@@ -8236,9 +8259,11 @@ function takePhoto(clientId,phase,after,fromLibrary){
         if(saved){
           proToast((phase?phase.charAt(0).toUpperCase()+phase.slice(1)+' photo':'Photo')+' captured · '+_photoStamp(ts));
         }else{
-          const idx=capturedPhotos[clientId].indexOf(rec);if(idx>=0)capturedPhotos[clientId].splice(idx,1);
-          try{_rerenderRoomPhotos(clientId);}catch(e){}
-          proToast('Couldn’t save, device storage is full. Clear space or export existing photos.');
+          // NEVER discard the photo on a save hiccup — that's how a before/after used to vanish.
+          // Keep it in memory (still visible + usable this session), keep retrying the cloud backup,
+          // and tell the truth so the provider can free space rather than silently losing work.
+          try{if(typeof _backupPhotosToServer==='function')_backupPhotosToServer();}catch(e){}
+          proToast('Photo kept for now, but device storage is tight — free up space soon so it saves permanently.',0);
         }
         if(after)after();
       });
