@@ -8563,18 +8563,28 @@ function _sendRebookInvite(id,date){
   const first=(c.name||'there').split(' ')[0];
   let link='';try{link=(typeof _clientAppLink==='function')?_clientAppLink(id):'';}catch(e){}
   const text=`Hi ${first}! It's about time to rebook, I'd suggest around ${date}. ${link?('You can request a time here: '+link):'Let me know what works and I\u2019ll get you on the books!'} ✨`;
+  // Track the bubble like a normal chat send so delivery is honest: a not-yet-joined client's invite is
+  // marked 'pending' (auto-sends when they open their app) rather than falsely reported as "sent".
+  const _joined=(id!=='maya'&&c&&!!c._token);
+  const _mid=(typeof _genMid==='function')?_genMid():undefined;
   try{
     if(!msgStore[id])msgStore[id]=[];
-    msgStore[id].push({from:'me',text,time:'Just now'});
-    const t=threads.find(x=>x.id===id);if(t){t.preview='Time to rebook ✨';}
+    msgStore[id].push({from:'me',text,time:'Just now',_mid,status:(id==='maya')?'sent':(_joined?'sending':'pending')});
+    let t=threads.find(x=>x.id===id);
+    if(t){t.preview='Time to rebook ✨';t.time='Just now';}
+    else if(CL[id]){threads.unshift({id:id,preview:'Time to rebook ✨',time:'Just now',unread:false});}
     saveMessages();
   }catch(e){}
   // Actually deliver to the client. Chat messages ride /api/provider-message (a real client
   // reads them via /api/client-messages), NOT the client-data blob, so the old
   // _scheduleClientSync() here never reached a real client. Mirror the normal chat send.
   if(id==='maya'){try{SlickBridge.post('client-message',{text,imgs:[],providerId:'jess',time:'Just now'});}catch(e){}}
-  else{try{_sendProviderMessageToClient(id,text);}catch(e){}}
-  if(typeof proToast==='function')proToast('Rebook invite sent to '+first);
+  else if(!_joined){
+    if(typeof proToast==='function')proToast(first+' hasn’t joined the app yet — this rebook invite will send automatically once they open their app.',0);
+  }else{
+    try{_sendProviderMessageToClient(id,text,[],false,null,_mid);}catch(e){}
+    if(typeof proToast==='function')proToast('Rebook invite sent to '+first);
+  }
   nav('chat',id);
 }
 function renderRebook(id){
@@ -18549,7 +18559,7 @@ function openSquareBook(prefill){
     const today=_isoToday();
     body.style.textAlign='left';body.style.padding='0';
     body.innerHTML=`
-      <span class="fl-lbl">Client</span><input class="fi" id="sqb-name" list="sqb-clients" autocomplete="off" placeholder="Search your clients or type a name" value="${(prefill.client||'').replace(/"/g,'&quot;')}" oninput="_sqbClientPick(this.value)" style="margin-bottom:4px;">${_clientDatalistHTML('sqb-clients')}
+      <span class="fl-lbl">Client</span><input class="fi" id="sqb-name" list="sqb-clients" autocomplete="off" placeholder="Search your clients or type a name" value="${(prefill.client||'').replace(/"/g,'&quot;')}" style="margin-bottom:4px;">${_clientDatalistHTML('sqb-clients')}
       <div style="font-size:11px;color:var(--p-mut);margin-bottom:10px;">Search your Square &amp; app clients, or type a new name to create them.</div>
       <span class="fl-lbl">Client email <span style="color:var(--p-mut);font-weight:400;">(optional, matches or creates them in Square)</span></span><input class="fi" id="sqb-email" type="email" autocomplete="off" placeholder="name@email.com" value="${(prefill.email||'').replace(/"/g,'&quot;')}" style="margin-bottom:10px;">
       <span class="fl-lbl">Service</span><select class="fi" id="sqb-svc" onchange="_sqLoadSlots()" style="margin-bottom:10px;">${svcOpts}</select>
@@ -19347,7 +19357,7 @@ function submitInvite(){
     <div style="font-size:14px;color:var(--p-mut);line-height:1.7;margin-bottom:24px;">They'll get an email with a link to create their account and join ${_fileEsc(workspace.name)}. You'll be notified when they accept.</div>
     <div style="display:flex;flex-direction:column;gap:8px;width:100%;max-width:240px;">
       <button class="btnp" style="border-radius:10px;" onclick="nav('invite-staff')"><i class="ti ti-user-plus" aria-hidden="true"></i> Invite another</button>
-      <button class="btng" style="border-radius:10px;" onclick="nav('studio')">Back to studio</button>
+      <button class="btng" style="border-radius:10px;" onclick="nav('team-access')">Back to team</button>
     </div>
   </div>`;
 }

@@ -2168,7 +2168,7 @@ function renderHome(){
     </div>
     <!-- Actions + the pre-visit checklist, all wrapped inside this one card -->
     <div style="display:flex;gap:8px;margin-top:14px;">
-      <button onclick="nav('rebook')" aria-label="Request an appointment" style="flex:1;background:rgba(255,255,255,.12);border:1px solid rgba(255,255,255,.22);border-radius:10px;padding:10px;display:flex;align-items:center;justify-content:center;gap:7px;cursor:pointer;">
+      <button onclick="nav('rebook')" style="flex:1;background:rgba(255,255,255,.12);border:1px solid rgba(255,255,255,.22);border-radius:10px;padding:10px;display:flex;align-items:center;justify-content:center;gap:7px;cursor:pointer;">
         <i class="ti ti-calendar-plus" aria-hidden="true" style="font-size:15px;color:var(--accent-lt2);"></i>
         <span style="font-size:13px;font-weight:600;color:var(--accent-lt2);">${noAppt?'Request an appointment':past?'Request your next visit':'Request another visit'}</span>
       </button>
@@ -4104,8 +4104,12 @@ function _vcSets(inv){
 // Toggle the submit button as the client types (photo-free consults) or after photo capture.
 function _vcSyncSubmit(){
   const btn=document.getElementById('vc-submit-btn');if(!btn)return;
+  // Keep the typed goals in state (+persist) so re-rendering the page (e.g. after adding a photo) or a
+  // reload doesn't wipe them — for a photo-free consult the goals text IS the whole submission.
+  const g=(document.getElementById('vc-goals')||{}).value||'';
+  _vcSubmitState.goals=g;try{persistVcDraft();}catch(e){}
   let ok;
-  if(window._vcPhotoFree){const g=(document.getElementById('vc-goals')||{}).value||'';ok=g.trim().length>0;}
+  if(window._vcPhotoFree){ok=g.trim().length>0;}
   else{ok=Object.values(_vcSubmitState.photos).filter(p=>p&&p.src).length>0;}
   btn.disabled=!ok;
   btn.style.background=ok?'var(--accent)':'#d9e7e1';
@@ -4143,7 +4147,7 @@ function renderVirtualSubmit(){
     ${sets.refs?`<div style="font-size:12px;font-weight:600;color:var(--c-mut);text-transform:uppercase;letter-spacing:.06em;margin-bottom:8px;display:flex;align-items:center;gap:5px;"><i class="ti ti-photo-star" style="font-size:13px;color:#8b6fc7;"></i> ${_txt(sets.refTitle||'Inspiration / references')}</div>
     <div style="display:grid;grid-template-columns:1fr 1fr 1fr;gap:8px;margin-bottom:18px;">${sets.refs.map(l=>tile(l,'refs')).join('')}</div>`:''}`}
     <div style="font-size:12px;font-weight:600;color:var(--c-mut);text-transform:uppercase;letter-spacing:.06em;margin-bottom:8px;">${photoFree?'Tell '+_txt(client.providerFirst)+' about your goals':'What are you hoping for?'}</div>
-    <textarea id="vc-goals" oninput="_vcSyncSubmit()" placeholder="Tell ${_txt(client.providerFirst)} what you'd love, any concerns, and questions…" style="width:100%;background:var(--c-card);border:1.5px solid var(--c-line);border-radius:12px;padding:12px;font-size:13px;color:var(--c-ink);height:84px;resize:none;font-family:inherit;line-height:1.6;box-sizing:border-box;outline:none;margin-bottom:16px;"></textarea>
+    <textarea id="vc-goals" oninput="_vcSyncSubmit()" placeholder="Tell ${_txt(client.providerFirst)} what you'd love, any concerns, and questions…" style="width:100%;background:var(--c-card);border:1.5px solid var(--c-line);border-radius:12px;padding:12px;font-size:13px;color:var(--c-ink);height:84px;resize:none;font-family:inherit;line-height:1.6;box-sizing:border-box;outline:none;margin-bottom:16px;">${_txt(_vcSubmitState.goals||'')}</textarea>
     <button id="vc-submit-btn" onclick="submitVirtualConsult()" ${canSubmit?'':'disabled'} style="width:100%;background:${canSubmit?'var(--accent)':'#d9e7e1'};color:${canSubmit?'var(--accent-ink)':'var(--c-mut)'};border:none;border-radius:12px;padding:13px;font-size:15px;font-weight:700;cursor:${canSubmit?'pointer':'default'};font-family:inherit;margin-bottom:20px;"><i class="ti ti-send"></i> <span id="vc-submit-label">${ctaLabel}</span></button>
   </div>`;
 }
@@ -4187,8 +4191,8 @@ function loadInvite(){try{const raw=localStorage.getItem('sc_client_invite');if(
 // Persist the in-progress virtual-consult photos so a failed submit + app close doesn't lose every
 // photo the client took (the invite was already persisted; the photos were memory-only, contradicting
 // the "we keep the invite and photos so they can retry" promise). Cleared on successful submit.
-function persistVcDraft(){try{if(_vcSubmitState&&(Object.keys(_vcSubmitState.photos||{}).length||Object.keys(_vcSubmitState.refs||{}).length))localStorage.setItem('sc_vc_draft',JSON.stringify(_vcSubmitState));else localStorage.removeItem('sc_vc_draft');}catch(e){}}
-function loadVcDraft(){try{const raw=localStorage.getItem('sc_vc_draft');if(raw){const o=JSON.parse(raw);if(o&&typeof o==='object'&&o.photos)_vcSubmitState={photos:o.photos||{},refs:o.refs||{}};}}catch(e){}}
+function persistVcDraft(){try{if(_vcSubmitState&&(Object.keys(_vcSubmitState.photos||{}).length||Object.keys(_vcSubmitState.refs||{}).length||String(_vcSubmitState.goals||'').trim()))localStorage.setItem('sc_vc_draft',JSON.stringify(_vcSubmitState));else localStorage.removeItem('sc_vc_draft');}catch(e){}}
+function loadVcDraft(){try{const raw=localStorage.getItem('sc_vc_draft');if(raw){const o=JSON.parse(raw);if(o&&typeof o==='object'&&o.photos)_vcSubmitState={photos:o.photos||{},refs:o.refs||{},goals:o.goals||''};}}catch(e){}}
 function _toggleSummaryGuide(gi){
   var tips=document.getElementById('sg-tips-'+gi);var chev=document.getElementById('sg-chev-'+gi);
   if(!tips)return;
@@ -4430,6 +4434,7 @@ function submitClientForm(fid){
     if(btn){btn.disabled=true;btn.textContent='Sending…';}
     _clientSubmit('form',{formId:fid,title:f.title,answers,flagged,signed:true,signature:_signName,date:'Today'})
       .then(function(res){
+        if(res&&res.duplicate)return;   // first submit already in flight — ignore the double-tap, don't flash an error
         if(res&&res.ok!==false)_finishSigned();
         else{ if(btn){btn.disabled=false;btn.innerHTML='Submit &amp; sign';} showToast("Couldn't send, check your connection and tap Submit again",false); }
       });
