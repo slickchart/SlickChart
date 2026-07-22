@@ -1436,7 +1436,7 @@ function showDemoInfo(){
     <div style="font-size:13px;color:var(--p-ink);line-height:1.6;margin-bottom:14px;">Maya, Sophie, and Priya are <b style="color:var(--p-ink);">sample clients</b> that come pre-loaded so you can explore SlickChart with realistic data, summaries, forms, check-ins, and the client app view, before adding your own.</div>
     <div style="background:var(--p-blue-bg);border:1px solid var(--p-blue-line);border-radius:11px;padding:12px 13px;margin-bottom:16px;">
       <div style="font-size:12px;font-weight:600;color:var(--p-blue);margin-bottom:5px;display:flex;align-items:center;gap:6px;"><i class="ti ti-info-circle" style="font-size:13px;"></i> Good to know</div>
-      <div style="font-size:12px;color:#a8c8e8;line-height:1.6;">They're only visible to you, your real clients never see them. You can keep them while you learn, then remove them anytime with one tap below.</div>
+      <div style="font-size:12px;color:var(--p-ink);line-height:1.6;">They're only visible to you, your real clients never see them. You can keep them while you learn, then remove them anytime with one tap below.</div>
     </div>
     <div style="font-size:11px;font-weight:600;color:var(--p-mut);text-transform:uppercase;letter-spacing:.05em;margin-bottom:8px;">To remove them</div>
     <div style="font-size:12.5px;color:var(--p-ink);line-height:1.7;margin-bottom:16px;">Tap the button below (or use the <b style="color:var(--p-ink);">"Remove"</b> button on the "Sample clients" banner at the top of your client list). This clears all three at once and can't be undone, but you can always explore the demo again from Settings if you need it.</div>
@@ -2933,6 +2933,7 @@ function persistAi(){try{(function(_v){localStorage.setItem('sc_ai',_v);if(typeo
 function loadAi(){try{const v=localStorage.getItem('sc_ai');if(v!==null)aiEnabled=(v==='1');}catch(e){}}
 
 let notifSettings={
+  newCheckin:true,
   formSigned:true,
   photoUploaded:true,
   docExpiring:true,
@@ -2941,6 +2942,10 @@ let notifSettings={
   rebookReminder:false,
   weeklyReport:true,
 };
+// Whether a given push/email notification category is enabled. The Notification-preferences screen
+// governs PUSH/EMAIL delivery (per its own header) — the in-app bell log always keeps the record, so
+// turning a category off silences the phone buzz without ever hiding the item inside the app.
+function _notifOn(key){return notifSettings[key]!==false;}
 
 
 // Notification feed
@@ -3131,7 +3136,9 @@ function _normBirthday(s){
     const mo=String(m[1]).padStart(2,'0'),da=String(m[2]).padStart(2,'0');
     return _validMD(mo,da)?(yr+'-'+mo+'-'+da):'';
   }
-  const d=new Date(s); if(!isNaN(d))return d.getFullYear()+'-'+String(d.getMonth()+1).padStart(2,'0')+'-'+String(d.getDate()).padStart(2,'0');
+  // Only accept the loose Date() parse when the source actually carries a 4-digit year. Otherwise V8
+  // parses "Jan 5" as the year 2001, silently storing (and later displaying) a wrong birth year.
+  if(/\b\d{4}\b/.test(s)){const d=new Date(s); if(!isNaN(d))return d.getFullYear()+'-'+String(d.getMonth()+1).padStart(2,'0')+'-'+String(d.getDate()).padStart(2,'0');}
   return '';
 }
 // Reject impossible month/day so a typo like 15/03 (month 15) or 2/30 (Feb 30) doesn't
@@ -3158,8 +3165,12 @@ function _fmtDOB(b){
   return parseInt(m[2],10)+'/'+parseInt(m[3],10)+'/'+m[1];
 }
 function _upcomingBirthdays(days){days=days||30;const today=new Date();today.setHours(0,0,0,0);const out=[];
+  const _leapYr=y=>((y%4===0&&y%100!==0)||y%400===0);
   Object.entries(CL).forEach(([id,c])=>{const md=_bdayMonthDay(c&&c.birthday);if(!md)return;
-    let next=new Date(today.getFullYear(),md.m-1,md.d);if(next<today)next=new Date(today.getFullYear()+1,md.m-1,md.d);
+    // A Feb-29 birthday in a non-leap year is observed on Feb 28 — otherwise new Date(y,1,29) rolls to
+    // Mar 1 and the countdown would disagree with the "Feb 29" label.
+    const _bd=y=>(md.m===2&&md.d===29&&!_leapYr(y))?28:md.d;
+    let next=new Date(today.getFullYear(),md.m-1,_bd(today.getFullYear()));if(next<today)next=new Date(today.getFullYear()+1,md.m-1,_bd(today.getFullYear()+1));
     const inDays=Math.round((next-today)/86400000); if(inDays<=days)out.push({id,name:c.name,label:_bdayLabel(c.birthday),inDays});});
   out.sort((a,b)=>a.inDays-b.inDays);return out;}
 function _seedBirthdays(){try{const b={maya:'1994-03-15',sophie:'1990-07-10',priya:'1988-07-22'};Object.keys(b).forEach(k=>{if(CL[k]&&!CL[k].birthday)CL[k].birthday=b[k];});}catch(e){}}
@@ -3897,7 +3908,7 @@ function _dayRecapCardHTML(){
     return `<div style="background:linear-gradient(135deg,var(--accent-tint),var(--accent-tint2));border:1px solid var(--accent-a30);border-radius:12px;padding:13px 15px;">
       <div style="display:flex;align-items:center;gap:7px;margin-bottom:7px;"><i class="ti ti-sparkles" style="font-size:16px;color:var(--accent-strong);"></i><span style="font-size:13px;font-weight:600;color:var(--p-ink);">Your day at a glance</span><button onclick="_aiDayRecap(true)" aria-label="Refresh recap" title="Refresh" style="margin-left:auto;border:none;background:none;color:var(--p-mut2);cursor:pointer;font-size:14px;"><i class="ti ti-refresh"></i></button><button onclick="_dismissDayRecap()" aria-label="Dismiss" title="Dismiss for today" style="margin-left:8px;border:none;background:none;color:var(--p-mut2);cursor:pointer;font-size:15px;"><i class="ti ti-x"></i></button></div>
       <div style="font-size:13px;color:var(--p-amber);line-height:1.6;">${_fileEsc(cached.recap||'')}</div>
-      ${pr.length?`<ul style="margin:9px 0 0;padding-left:17px;">${pr.map(p=>`<li style="font-size:12.5px;color:#d8cdb8;line-height:1.55;margin-bottom:2px;">${_fileEsc(p)}</li>`).join('')}</ul>`:''}
+      ${pr.length?`<ul style="margin:9px 0 0;padding-left:17px;">${pr.map(p=>`<li style="font-size:12.5px;color:var(--p-amber);line-height:1.55;margin-bottom:2px;">${_fileEsc(p)}</li>`).join('')}</ul>`:''}
     </div>`;
   }
   return `<button id="day-recap-btn" onclick="_aiDayRecap()" style="width:100%;background:var(--surf1);border:1px dashed var(--p-chip2);border-radius:12px;padding:12px 14px;display:flex;align-items:center;gap:10px;cursor:pointer;font-family:inherit;text-align:left;">
@@ -4056,7 +4067,7 @@ function renderClients(){
   </div>`;})()}
   ${_shotMode()?`<div style="margin:0 16px 12px;background:var(--p-purple-bg);border:1px solid var(--p-purple-line);border-radius:11px;padding:11px 13px;display:flex;align-items:center;gap:11px;">
     <i class="ti ti-camera" aria-hidden="true" style="color:var(--p-purple);font-size:17px;flex-shrink:0;"></i>
-    <div style="flex:1;min-width:0;font-size:12px;color:#bcaee8;line-height:1.45;"><b style="color:var(--p-purple);">Social media mode is on.</b> Showing only sample clients — your real clients are hidden (not deleted).</div>
+    <div style="flex:1;min-width:0;font-size:12px;color:var(--p-ink);line-height:1.45;"><b style="color:var(--p-purple);">Social media mode is on.</b> Showing only sample clients — your real clients are hidden (not deleted).</div>
     <button onclick="_setShotMode(false)" style="background:#a891ec;color:#13102a;border:none;border-radius:8px;padding:6px 12px;font-size:11px;font-weight:700;cursor:pointer;flex-shrink:0;">Turn off</button>
   </div>`:''}
   <div class="sh"><h2 id="page-heading" tabindex="-1">All clients</h2></div>
@@ -4454,7 +4465,7 @@ function renderClient(id){
   <div style="margin:14px 16px 0;background:var(--surf1);border:1px solid var(--p-line3);border-radius:12px;padding:12px 14px;"><div style="display:flex;justify-content:space-between;align-items:center;margin-bottom:8px;"><span style="font-size:11px;color:var(--p-mut);text-transform:uppercase;letter-spacing:.06em;">Contact</span><button onclick="_editClientDetails('${id}')" style="background:var(--accent-tint);border:1px solid var(--accent-a30,var(--p-line3));color:var(--accent-strong);border-radius:8px;padding:4px 10px;font-size:11px;font-weight:600;cursor:pointer;font-family:inherit;"><i class="ti ti-pencil" style="font-size:11px;"></i> Edit</button></div><div style="font-size:13px;color:var(--p-mut);line-height:1.9;word-break:break-word;overflow-wrap:anywhere;"><div><i class="ti ti-mail" style="color:var(--p-mut);margin-right:7px;"></i>${c.email?String(c.email).replace(/</g,'&lt;'):'<span style="color:var(--p-mut);">No email</span>'}</div><div><i class="ti ti-phone" style="color:var(--p-mut);margin-right:7px;"></i>${c.phone?_fmtPhone(c.phone).replace(/</g,'&lt;'):'<span style="color:var(--p-mut);">No phone</span>'}</div><div><i class="ti ti-cake" style="color:var(--p-mut);margin-right:7px;"></i>${c.birthday?_fmtDOB(c.birthday):'<span style="color:var(--p-mut);">No date of birth</span>'}</div></div></div>
   ${c.flaggedContra?`<div style="margin:12px 16px 0;background:var(--p-red-bg);border:1px solid var(--p-red-line);border-radius:12px;padding:12px 14px;">
     <div style="display:flex;align-items:center;gap:8px;margin-bottom:6px;"><i class="ti ti-alert-triangle" style="font-size:16px;color:var(--p-red);"></i><span style="font-size:13px;font-weight:700;color:var(--p-red);">Flagged on intake, review before the visit</span></div>
-    <div style="font-size:11px;color:#c99;margin-bottom:7px;">${_fileEsc(c.name.split(' ')[0])} marked these on "${_fileEsc(c.flaggedContra.form)}" (${_fileEsc(c.flaggedContra.date)}):</div>
+    <div style="font-size:11px;color:var(--p-red);margin-bottom:7px;">${_fileEsc(c.name.split(' ')[0])} marked these on "${_fileEsc(c.flaggedContra.form)}" (${_fileEsc(c.flaggedContra.date)}):</div>
     <ul style="margin:0 0 9px;padding-left:18px;">${_fcDisplayItems(c).map(it=>`<li style="font-size:12.5px;color:var(--p-red);line-height:1.7;">${_fileEsc(it)}</li>`).join('')}</ul>
     <button onclick="dismissFlag('${id}')" style="background:none;border:1px solid var(--p-red-line);color:var(--p-red);border-radius:8px;padding:11px 16px;font-size:13px;cursor:pointer;font-family:inherit;display:inline-flex;align-items:center;gap:6px;"><i class="ti ti-check" style="font-size:13px;"></i> Mark reviewed</button>
   </div>`:''}
@@ -4512,7 +4523,7 @@ function renderClient(id){
   <div class="sh" style="display:flex;align-items:center;justify-content:space-between;"><h2>Suggested for this visit</h2><button onclick="nav('edit-suggested-forms')" style="border:none;background:none;color:var(--accent-strong);font-size:11px;cursor:pointer;">Edit</button></div>
   <div style="padding:0 16px 6px;">
     <div style="background:linear-gradient(135deg,var(--p-surf2),var(--p-purple-bg));border:1px solid var(--p-purple-line);border-radius:12px;padding:12px 14px;">
-      <div style="display:flex;align-items:flex-start;gap:7px;margin-bottom:4px;"><i class="ti ti-bulb" aria-hidden="true" style="font-size:15px;color:var(--p-purple);margin-top:1px;flex-shrink:0;"></i><span style="font-size:12px;color:#cfc4f5;line-height:1.45;">Booked for <b style="color:var(--p-purple);">${_fileEsc(c.treatment||'a visit')}</b>, you may want to send:</span></div>
+      <div style="display:flex;align-items:flex-start;gap:7px;margin-bottom:4px;"><i class="ti ti-bulb" aria-hidden="true" style="font-size:15px;color:var(--p-purple);margin-top:1px;flex-shrink:0;"></i><span style="font-size:12px;color:var(--p-ink);line-height:1.45;">Booked for <b style="color:var(--p-purple);">${_fileEsc(c.treatment||'a visit')}</b>, you may want to send:</span></div>
       ${sug.map(k=>`<label style="display:flex;align-items:center;gap:9px;padding:9px 0 2px;cursor:pointer;">
         <input type="checkbox" ${window._sugChecked[k]?'checked':''} onchange="window._sugChecked['${k}']=this.checked" style="width:16px;height:16px;accent-color:var(--accent-strong);flex-shrink:0;">
         <span style="flex:1;min-width:0;font-size:13px;color:var(--p-purple);">${_fileEsc(formTmpls[k].name)}</span>
@@ -4705,7 +4716,7 @@ function viewSubmittedForm(id,i){
     ${sf.flagged&&sf.flagged.length?`<div style="background:var(--p-red-bg);border:1px solid var(--p-red-line);border-radius:11px;padding:12px 13px;margin-bottom:14px;">
       <div style="display:flex;align-items:center;gap:7px;margin-bottom:6px;"><i class="ti ti-alert-triangle" style="font-size:15px;color:var(--p-red);"></i><span style="font-size:12.5px;font-weight:700;color:var(--p-red);">Flagged, applies to client</span></div>
       <ul style="margin:0;padding-left:18px;">${sf.flagged.map(it=>`<li style="font-size:12.5px;color:var(--p-red);line-height:1.7;">${_fileEsc(it)}</li>`).join('')}</ul>
-    </div>`:`<div style="background:var(--p-surf2);border:1px solid #1c3d2e;border-radius:11px;padding:10px 13px;margin-bottom:14px;font-size:12.5px;color:#7fd6aa;"><i class="ti ti-circle-check" style="font-size:14px;"></i> No contraindications flagged.</div>`}
+    </div>`:`<div style="background:var(--p-surf2);border:1px solid #1c3d2e;border-radius:11px;padding:10px 13px;margin-bottom:14px;font-size:12.5px;color:var(--p-green);"><i class="ti ti-circle-check" style="font-size:14px;"></i> No contraindications flagged.</div>`}
     ${rows.length?rows.map(([l,a,ty])=>{const yn=(ty==='Yes / No');const isYes=/^yes$/i.test(String(a));const val=yn?`<span style="display:inline-flex;align-items:center;gap:6px;color:${isYes?'var(--p-green)':'var(--p-ink)'};font-weight:500;"><i class="ti ti-${isYes?'checkbox':'square'}" style="font-size:16px;"></i>${_fileEsc(a)}</span>`:_fileEsc(a);return `<div style="margin-bottom:12px;padding-bottom:12px;border-bottom:1px solid var(--p-line2);"><div style="font-size:11px;color:var(--p-mut);text-transform:uppercase;letter-spacing:.04em;margin-bottom:4px;">${_fileEsc(l)}</div><div style="font-size:13.5px;color:var(--p-ink);line-height:1.5;">${val}</div></div>`;}).join(''):(photoGroups.length?'':'<div style="font-size:12px;color:var(--p-mut);text-align:center;padding:10px;">No written answers, review & signature only.</div>')}
     ${photoGroups.map(([l,photos])=>`<div style="margin-bottom:12px;padding-bottom:12px;border-bottom:1px solid var(--p-line2);"><div style="font-size:11px;color:var(--p-mut);text-transform:uppercase;letter-spacing:.04em;margin-bottom:7px;">${String(l).replace(/</g,'&lt;')} · ${photos.length} photo${photos.length===1?'':'s'}</div><div style="display:flex;flex-wrap:wrap;gap:8px;">${photos.map(src=>`<img src="${_imgSrc(src)}" alt="Client photo" onclick="openPhoto('${_jsAttr(src)}')" style="width:84px;height:84px;object-fit:cover;border-radius:9px;border:1px solid var(--p-line);cursor:pointer;">`).join('')}</div></div>`).join('')}
     ${sf.signed?`<div style="margin-top:2px;background:var(--p-surf);border:1px solid var(--p-line);border-radius:12px;padding:13px 14px 11px;">
@@ -4717,7 +4728,7 @@ function viewSubmittedForm(id,i){
           <span style="display:inline-flex;align-items:center;gap:5px;background:var(--p-surf2);border:1px solid var(--p-line3);color:var(--p-green);font-size:11px;font-weight:700;padding:3px 9px;border-radius:20px;"><i class="ti ti-circle-check" style="font-size:12px;"></i> Signed · ${_fileEsc(sf.date)}</span>
         </div>
       </div>
-      <div style="font-size:11.5px;color:#7fa88f;margin-top:9px;display:flex;align-items:center;gap:6px;"><i class="ti ti-lock" style="font-size:12px;"></i> Saved to ${_fileEsc(c.name)}'s record</div>
+      <div style="font-size:11.5px;color:var(--p-mut2);margin-top:9px;display:flex;align-items:center;gap:6px;"><i class="ti ti-lock" style="font-size:12px;"></i> Saved to ${_fileEsc(c.name)}'s record</div>
     </div>`:''}
     ${tmpl?`<div style="display:flex;gap:8px;margin-top:12px;">
       <button onclick="resendFormToClient('${id}','${sf.formId}')" style="flex:1;background:var(--p-blue-bg);border:1px solid var(--p-blue-line);color:var(--p-blue);border-radius:9px;padding:10px;font-size:12.5px;font-weight:600;cursor:pointer;font-family:inherit;display:flex;align-items:center;justify-content:center;gap:6px;"><i class="ti ti-device-mobile"></i> Resend to app</button>
@@ -4873,13 +4884,13 @@ function renderFlaggedIntakes(){
       <div style="padding:13px 15px;display:flex;align-items:center;gap:11px;">
         ${av(c,42)}
         <div style="flex:1;min-width:0;">
-          <div style="font-size:15px;font-weight:600;color:var(--p-red);">${_clientNameLink(id,c.name,{color:'#f5d5d5'})}</div>
-          <div style="font-size:12px;color:#c99;margin-top:1px;overflow:hidden;text-overflow:ellipsis;white-space:nowrap;">${_fileEsc(c.flaggedContra.form)} \u00b7 ${_fileEsc(c.flaggedContra.date)}${c.nextVisit?' \u00b7 next '+_fileEsc(c.nextVisit):''}</div>
+          <div style="font-size:15px;font-weight:600;color:var(--p-red);">${_clientNameLink(id,c.name,{color:'var(--p-red)'})}</div>
+          <div style="font-size:12px;color:var(--p-mut);margin-top:1px;overflow:hidden;text-overflow:ellipsis;white-space:nowrap;">${_fileEsc(c.flaggedContra.form)} \u00b7 ${_fileEsc(c.flaggedContra.date)}${c.nextVisit?' \u00b7 next '+_fileEsc(c.nextVisit):''}</div>
         </div>
         <div style="width:34px;height:34px;border-radius:9px;background:var(--p-red-bg);display:flex;align-items:center;justify-content:center;flex-shrink:0;"><i class="ti ti-alert-triangle" aria-hidden="true" style="font-size:18px;color:var(--p-red);"></i></div>
       </div>
       <div style="padding:0 15px 13px;">
-        <div style="font-size:11px;text-transform:uppercase;letter-spacing:.05em;color:#c07a7a;margin-bottom:6px;">Flagged ${items.length} item${items.length>1?'s':''}</div>
+        <div style="font-size:11px;text-transform:uppercase;letter-spacing:.05em;color:var(--p-red);margin-bottom:6px;">Flagged ${items.length} item${items.length>1?'s':''}</div>
         <ul style="margin:0 0 12px;padding-left:18px;">${items.map(it=>`<li style="font-size:13px;color:var(--p-red);line-height:1.7;">${_fileEsc(it)}</li>`).join('')}</ul>
         <div style="display:flex;gap:8px;">
           <button onclick="${open}" style="flex:1;background:var(--accent);color:var(--accent-ink);border:none;border-radius:10px;padding:11px;font-size:13px;font-weight:600;cursor:pointer;font-family:inherit;display:inline-flex;align-items:center;justify-content:center;gap:6px;"><i class="ti ${viewIcon}" aria-hidden="true" style="font-size:15px;"></i> ${viewLabel}</button>
@@ -4891,7 +4902,7 @@ function renderFlaggedIntakes(){
   }).join('');
   S.innerHTML=`
   <div style="padding:14px 16px 8px;">
-    <div style="font-size:13px;color:#c99;display:flex;align-items:flex-start;gap:7px;line-height:1.5;"><i class="ti ti-alert-triangle" aria-hidden="true" style="color:var(--p-red);margin-top:2px;"></i><span>${flagged.length} client${flagged.length>1?'s':''} flagged something on an intake or check-in. Review before the visit \u2014 tap to open it.</span></div>
+    <div style="font-size:13px;color:var(--p-red);display:flex;align-items:flex-start;gap:7px;line-height:1.5;"><i class="ti ti-alert-triangle" aria-hidden="true" style="color:var(--p-red);margin-top:2px;"></i><span>${flagged.length} client${flagged.length>1?'s':''} flagged something on an intake or check-in. Review before the visit \u2014 tap to open it.</span></div>
   </div>
   ${rows}
   <div style="height:16px;"></div>`;
@@ -5236,7 +5247,7 @@ function renderRoom(id){
         const al=String(c.allergies||'').trim();
         const hasAllergy=al&&!/^(none|n\/?a|no known|na|-|—)\b/i.test(al);
         if(hasAllergy){
-          rows.push(`<div style="display:flex;align-items:flex-start;gap:8px;padding:8px 10px;background:var(--p-red-bg);border:1px solid var(--p-red-line);border-radius:8px;margin-bottom:6px;"><i class="ti ti-alert-triangle" style="font-size:13px;color:var(--p-red);flex-shrink:0;margin-top:1px;"></i><div><div style="font-size:12px;font-weight:600;color:var(--p-red);">Allergies / sensitivities</div><div style="font-size:11px;color:#c8a0a0;line-height:1.4;">${_fileEsc(al)}</div></div></div>`);
+          rows.push(`<div style="display:flex;align-items:flex-start;gap:8px;padding:8px 10px;background:var(--p-red-bg);border:1px solid var(--p-red-line);border-radius:8px;margin-bottom:6px;"><i class="ti ti-alert-triangle" style="font-size:13px;color:var(--p-red);flex-shrink:0;margin-top:1px;"></i><div><div style="font-size:12px;font-weight:600;color:var(--p-red);">Allergies / sensitivities</div><div style="font-size:11px;color:var(--p-red);line-height:1.4;">${_fileEsc(al)}</div></div></div>`);
         }
         // Medications & conditions are worth surfacing here too when present
         const meds=String(c.medications||'').trim();
@@ -13053,7 +13064,7 @@ function switchShopTab(tab){
         <div style="flex:1;min-width:0;"><div style="font-size:13px;font-weight:500;color:var(--p-ink);">${_fileEsc(a.name)}</div><div style="font-size:12px;color:var(--p-mut);">${_fileEsc(a.brand||'—')}${a.url?' · '+_fileEsc(a.commission)+' affiliate':''}</div>
           <div style="display:flex;flex-wrap:wrap;gap:5px;margin-top:6px;">${chans.length?chans.map(([ic,lbl])=>`<span style="display:inline-flex;align-items:center;gap:3px;font-size:10px;color:var(--accent-strong);background:var(--accent-tint);border:1px solid var(--accent-a30,var(--p-line3));border-radius:20px;padding:2px 8px;"><i class="ti ${ic}" style="font-size:11px;"></i> ${lbl}</span>`).join(''):`<span style="font-size:11px;color:var(--p-mut);">No purchase options yet, tap Edit to add</span>`}</div>
         </div>
-        ${togBtn(a.active,'affiliateLinks['+i+'].active=!affiliateLinks['+i+'].active;switchShopTab(\'affiliates\')','Toggle product')}
+        ${togBtn(a.active,'affiliateLinks['+i+'].active=!affiliateLinks['+i+'].active;persistAffiliateLinks();switchShopTab(\'affiliates\')','Toggle product')}
       </div>
       <div style="border-top:1px solid var(--p-line2);padding:8px 14px;display:flex;gap:14px;align-items:center;">
         <button onclick="deleteAffiliate(${i})" style="border:none;background:none;font-size:12px;color:var(--p-red);cursor:pointer;"><i class="ti ti-trash" style="font-size:12px;"></i> Delete</button>
@@ -15232,7 +15243,7 @@ async function _coLink(id){
     const d=await _sqFetch('/api/square/payment-link',{method:'POST',body:{amount:amt,name,email:c.email||'',phone:c.phone||''}});
     if(!d.url)throw new Error('No link was returned.');
     _addPayment({clientId:id,clientName:c.name,amount:amt,taxAmount:_coTaxAmt(),method:'Square',status:'unpaid',date:_todayISO(),note:'Payment link',source:'square',publicUrl:d.url});
-    const msg='Hi '+c.name.split(' ')[0]+'! Your payment link for '+name+' ($'+amt+'): '+d.url;
+    const msg='Hi '+c.name.split(' ')[0]+'! Your payment link for '+name+' ($'+(+amt).toFixed(2)+'): '+d.url;
     document.getElementById('co-result').innerHTML='<div style="background:var(--p-surf2);border:1px solid var(--p-line3);border-radius:10px;padding:12px 14px;"><div style="font-size:12px;color:var(--p-green);font-weight:600;margin-bottom:8px;">Payment link ready \u00b7 logged in Payments</div><div style="font-size:11px;color:var(--p-mut);word-break:break-all;font-family:monospace;margin-bottom:10px;">'+d.url+'</div><div style="display:grid;grid-template-columns:1fr 1fr;gap:8px;"><button onclick="_copyText(\''+d.url+'\',this)" class="btnp" style="border-radius:8px;padding:9px;">Copy link</button><button onclick="location.href=\'sms:?&body='+encodeURIComponent(msg)+'\'" class="btng" style="border-radius:8px;padding:9px;">Text it</button></div></div>';
   }catch(e){_coErr(e.message||'Could not create the link.',_coRecon(e));}finally{_coActionLock=false;}
 }
@@ -17283,7 +17294,7 @@ async function syncClientEvents(){
         else{threads.unshift({id:cid,preview,time:'Just now',unread:true});}
         notifFeed.unshift({id:'evn'+ev.id,type:'message',icon:'ti-message-circle',col:'var(--p-blue-bg)',ic:'var(--p-blue)',
           title:'New message',body:`${name}: "${preview}"`,time:'Just now',read:false,action:'chat',data:cid});
-        providerSystemNotify('New message',`${name}: ${preview}`);
+        if(_notifOn('newMessage'))providerSystemNotify('New message',`${name}: ${preview}`);
         touchedMsgs=true;touchedNotif=true;msgClientIds.push(cid);
       }else if(ev.kind==='checkin'){
         const ciPhotos=(Array.isArray(payload.photos)?payload.photos:[]).filter(_validImgSrc);
@@ -17333,7 +17344,7 @@ async function syncClientEvents(){
           notifFeed.unshift({id:'evc'+ev.id,type:'checkin',icon:ciPhotos.length?'ti-camera':'ti-clipboard-check',col:'var(--p-surf2)',ic:'var(--p-green)',
             title:'Pre-visit check-in',body:`${name} completed a check-in${ci.dateLabel?' for '+ci.dateLabel:''}.${fl}${photoNote}`,
             time:'Just now',read:false,action:'checkin',data:ci.id,clientId:cid});
-          providerSystemNotify('Pre-visit check-in',`${name} \u00b7 ${ci.treatment||''} \u00b7 ${ci.dateLabel||''}${photoNote}`);
+          if(_notifOn('newCheckin'))providerSystemNotify('Pre-visit check-in',`${name} \u00b7 ${ci.treatment||''} \u00b7 ${ci.dateLabel||''}${photoNote}`);
           touchedCheckins=true;touchedNotif=true;
         }
       }else if(ev.kind==='form'){
@@ -17380,7 +17391,7 @@ async function syncClientEvents(){
         notifFeed.unshift({id:'evf'+ev.id,type:'form',icon:flagged?'ti-alert-triangle':'ti-clipboard-check',col:flagged?'var(--p-red-bg)':'var(--p-surf2)',ic:flagged?'var(--p-red)':'var(--p-green)',
           title:flagged?'Intake flagged for review':'Form completed',body:`${name} completed ${title}.${fl}`,
           time:'Just now',read:false,action:'form',data:cid,formEvId:ev.id});
-        providerSystemNotify(flagged?'Intake flagged for review':'Form completed',`${name} \u00b7 ${title}${fl}`);
+        if(_notifOn('formSigned'))providerSystemNotify(flagged?'Intake flagged for review':'Form completed',`${name} \u00b7 ${title}${fl}`);
         touchedForms=true;touchedNotif=true;
       }else if(ev.kind==='contact'){
         // Client corrected the email/phone we have on file, update the chart so future
@@ -17416,7 +17427,7 @@ async function syncClientEvents(){
         try{if(typeof persistVcState==='function')persistVcState();}catch(e){}
         notifFeed.unshift({id:'evv'+ev.id,type:'vc',icon:'ti-sparkles',col:'var(--p-purple-bg)',ic:'var(--p-purple)',
           title:'Virtual consult submitted',body:`${name} sent photos for review.`,time:'Just now',read:false,action:'client',data:cid});
-        providerSystemNotify('Virtual consult submitted',`${name} sent photos for your review.`);
+        if(_notifOn('photoUploaded'))providerSystemNotify('Virtual consult submitted',`${name} sent photos for your review.`);
         touchedVc=true;touchedNotif=true;
       }
     });
@@ -17911,7 +17922,7 @@ SlickBridge.on('checkin-submitted',ci=>{
     try{if(typeof saveClients==='function')saveClients();}catch(e){}
   }
   pushCheckinNotif(ci);
-  providerSystemNotify('Pre-visit check-in',`${ci.client} · ${ci.treatment} · ${ci.dateLabel}`);
+  if(_notifOn('newCheckin'))providerSystemNotify('Pre-visit check-in',`${ci.client} · ${ci.treatment} · ${ci.dateLabel}`);
   if(document.getElementById('home-screen'))renderHome();
   else if(document.getElementById('checkins-screen'))renderCheckins();
   else if(document.getElementById('notif-feed-screen'))renderNotifFeed();
@@ -17935,7 +17946,7 @@ SlickBridge.on('form-completed',d=>{
     title:flagged?'Intake flagged for review':'Form completed',
     body:`${nm} completed ${title}.${fl}`,time:'Just now',read:false,action:'client',data:cid});
   updateBadge();
-  providerSystemNotify(flagged?'Intake flagged for review':'Form completed',`${nm} · ${title}${fl}`);
+  if(_notifOn('formSigned'))providerSystemNotify(flagged?'Intake flagged for review':'Form completed',`${nm} · ${title}${fl}`);
   if(document.getElementById('client-screen-'+cid))renderClient(cid);
   else if(document.getElementById('home-screen'))renderHome();
   else if(document.getElementById('notif-feed-screen'))renderNotifFeed();
@@ -17948,7 +17959,7 @@ SlickBridge.on('virtual-consult-submitted',d=>{
   try{persistVcState();}catch(e){}
   const nm=(CL[cid]&&CL[cid].name.split(' ')[0])||'A client';
   if(typeof pushNotify==='function')pushNotify({icon:'ti-sparkles',title:'Virtual consult submitted',body:nm+' sent photos for review.',action:'client',data:cid});
-  if(typeof providerSystemNotify==='function')providerSystemNotify('Virtual consult submitted',nm+' sent photos for your review.');
+  if(typeof providerSystemNotify==='function'&&_notifOn('photoUploaded'))providerSystemNotify('Virtual consult submitted',nm+' sent photos for your review.');
   if(document.getElementById('client-screen-'+cid)||S.innerHTML.includes('virtual-client-screen'))renderVirtualClient(cid);
   else if(document.getElementById('vc-inbox-screen'))renderVcInbox();
   else if(document.getElementById('home-screen'))renderHome();

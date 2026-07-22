@@ -2409,7 +2409,7 @@ function renderNotifSettings(){
   ${(on&&perm==='denied')?`
   <div style="margin:0 16px 6px;background:var(--c-alert-bg);border:1.5px solid #f0d8d2;border-radius:12px;padding:10px 14px;display:flex;gap:8px;align-items:flex-start;">
     <i class="ti ti-alert-circle" aria-hidden="true" style="font-size:15px;color:#c87070;flex-shrink:0;margin-top:1px;"></i>
-    <div style="font-size:12px;color:#a05a52;line-height:1.45;">Your browser is blocking pop-up notifications. Allow SlickChart in your browser's site settings to get them on your lock screen, you'll still see alerts inside the app.</div>
+    <div style="font-size:12px;color:var(--c-ink);line-height:1.45;">Your browser is blocking pop-up notifications. Allow SlickChart in your browser's site settings to get them on your lock screen, you'll still see alerts inside the app.</div>
   </div>`:''}
 
   <div class="sh"><h2>Quiet hours</h2></div>
@@ -2711,7 +2711,7 @@ function renderHomecare(){
     <div>
       <div id="page-heading" tabindex="-1" style="font-size:15px;font-weight:600;color:var(--c-ink);">Today's routine</div>
       <div style="font-size:13px;color:var(--c-mut);">${steps.length?(_engNudge()||(checked+' of '+total+' done'))+' · from '+_txt(client.providerFirst):'from '+_txt(client.providerFirst)}</div>
-      ${steps.length&&_eng.streak>0&&_engStreakLive()?`<div style="display:inline-flex;align-items:center;gap:4px;margin-top:6px;background:var(--c-warn-bg);border:1px solid #f0d6a8;border-radius:20px;padding:3px 10px;font-size:11px;font-weight:700;color:#b06a00;"><i class="ti ti-flame" style="font-size:12px;"></i> ${_eng.streak}-day streak</div>`:''}
+      ${steps.length&&_eng.streak>0&&_engStreakLive()?`<div style="display:inline-flex;align-items:center;gap:4px;margin-top:6px;background:var(--c-warn-bg);border:1px solid #f0d6a8;border-radius:20px;padding:3px 10px;font-size:11px;font-weight:700;color:var(--c-ink);"><i class="ti ti-flame" style="font-size:12px;"></i> ${_eng.streak}-day streak</div>`:''}
     </div>
     ${steps.length?`<div style="width:44px;height:44px;position:relative;">
       <svg width="44" height="44"><circle cx="22" cy="22" r="18" fill="none" stroke="#e7f0ec" stroke-width="3.5"/><circle cx="22" cy="22" r="18" fill="none" stroke="var(--accent)" stroke-width="3.5" stroke-dasharray="${(2*Math.PI*18*checked/total).toFixed(1)} ${(2*Math.PI*18*(1-checked/total)).toFixed(1)}" stroke-linecap="round" transform="rotate(-90 22 22)"/></svg>
@@ -2729,9 +2729,9 @@ function renderHomecare(){
   ${avoid.length?`
   <!-- Avoid list -->
   <div style="margin:0 16px 14px;background:var(--c-surf3);border:1.5px solid #f0dcc8;border-radius:12px;padding:12px 14px;">
-    <div style="font-size:12px;font-weight:600;color:#9a6a3a;text-transform:uppercase;letter-spacing:.07em;margin-bottom:7px;">Avoid right now</div>
+    <div style="font-size:12px;font-weight:600;color:var(--c-ink);text-transform:uppercase;letter-spacing:.07em;margin-bottom:7px;">Avoid right now</div>
     <div style="display:flex;flex-wrap:wrap;gap:6px;">
-      ${avoid.map(a=>`<span style="font-size:12px;padding:4px 10px;border-radius:20px;background:var(--c-surf3);color:#8b5c2e;border:1px solid #e8c4a0;">${_txt(a)}</span>`).join('')}
+      ${avoid.map(a=>`<span style="font-size:12px;padding:4px 10px;border-radius:20px;background:var(--c-surf3);color:var(--c-ink);border:1px solid #e8c4a0;">${_txt(a)}</span>`).join('')}
     </div>
   </div>`:''}
 
@@ -2752,7 +2752,7 @@ function renderHomecare(){
   </div>`).join(''):`
   <div style="margin:22px 16px;padding:14px 22px;display:flex;flex-direction:column;align-items:center;gap:8px;text-align:center;">
     <div style="font-size:14px;font-weight:600;color:var(--c-ink);">Your routine is on its way</div>
-    <div style="font-size:13px;color:#82705a;line-height:1.5;max-width:250px;">${_txt(client.providerFirst)} will set up your personalized home-care steps here after your visit.</div>
+    <div style="font-size:13px;color:var(--c-mut);line-height:1.5;max-width:250px;">${_txt(client.providerFirst)} will set up your personalized home-care steps here after your visit.</div>
   </div>`}
 
   <!-- Note from provider -->
@@ -2869,7 +2869,9 @@ let _clientMsgSeq=0;
 // quick message) by re-attempting a few times before giving up.
 function _deliverClientMsg(msg,attempt){
   attempt=attempt||0;
-  _clientSubmit('message',{text:msg.text||'',photos:(msg.imgs||[])}).then(function(res){
+  // Lock per message id (not just per kind 'message') so a second quickly-sent message doesn't dedupe
+  // against the first still in flight — otherwise it'd exhaust its retries and show a false "Not delivered".
+  _clientSubmit('message',{text:msg.text||'',photos:(msg.imgs||[]),_lock:(msg._id||('m'+(++_clientMsgSeq)))}).then(function(res){
     if(res&&res.duplicate&&attempt<4){setTimeout(function(){_deliverClientMsg(msg,attempt+1);},1200);return;}
     msg.status=(res&&res.ok)?'sent':'failed';
     try{_saveClientMessages();}catch(e){}
@@ -3117,8 +3119,8 @@ function _fillFormFieldHTML(q,i){
   const wrapStyle='margin-bottom:18px;';
   if(q.type==='Contraindications'){
     return `<div style="${wrapStyle}background:var(--c-surf3);border:1px solid #f0dcc0;border-radius:12px;padding:12px 14px;">
-      <div style="font-size:12px;font-weight:700;color:#a06a2a;text-transform:uppercase;letter-spacing:.04em;margin-bottom:4px;">${_txt(q.label)}</div>
-      <div style="font-size:12px;color:#8a6a42;line-height:1.5;margin-bottom:9px;">Check the box next to anything that <b>does apply to you</b> — that you currently have or are experiencing. Leave the rest unchecked. If none apply, leave them all blank.</div>
+      <div style="font-size:12px;font-weight:700;color:var(--c-ink);text-transform:uppercase;letter-spacing:.04em;margin-bottom:4px;">${_txt(q.label)}</div>
+      <div style="font-size:12px;color:var(--c-mut);line-height:1.5;margin-bottom:9px;">Check the box next to anything that <b>does apply to you</b> — that you currently have or are experiencing. Leave the rest unchecked. If none apply, leave them all blank.</div>
       ${(q.items||[]).map((it,ii)=>{const ck=(_ffDraft['q'+i+'_'+ii]===true);return `<label style="display:flex;align-items:flex-start;gap:8px;padding:6px 0;cursor:pointer;"><input type="checkbox" id="ff-${i}-${ii}" ${ck?'checked':''} onchange="_ffSetDraft('q${i}_${ii}',this.checked)" style="margin-top:3px;width:16px;height:16px;accent-color:var(--accent-ink-lt);flex-shrink:0;"><span style="font-size:13px;color:var(--c-mut);line-height:1.5;">${_txt(it)}</span></label>`;}).join('')}
     </div>`;
   }
@@ -4406,9 +4408,9 @@ function reviewClientForm(fid){
     <div style="font-size:12px;color:var(--c-mut);margin-bottom:16px;">Please complete and sign before your appointment.</div>
     ${ans.map(_cfField).join('')}
     ${hasContra?`<div style="background:var(--c-surf3);border:1px solid #f3c9bb;border-radius:12px;padding:13px 14px;margin-bottom:15px;">
-      <div style="display:flex;align-items:center;gap:7px;margin-bottom:7px;"><i class="ti ti-alert-triangle" aria-hidden="true" style="font-size:16px;color:#c0492a;"></i><span style="font-size:13px;font-weight:700;color:#a23a1f;">Do any of these apply to you?</span></div>
-      <div style="font-size:12px;color:#9a5a44;line-height:1.5;margin-bottom:10px;">Check the box next to anything you <b>currently have or are experiencing</b>, so ${_txt(client.providerFirst)} can review it before your visit. If none apply, leave them all unchecked.</div>
-      ${f.contra.map((it,ix)=>`<label style="display:flex;align-items:flex-start;gap:9px;padding:7px 0;cursor:pointer;"><input type="checkbox" id="cfc-${ix}" style="width:17px;height:17px;margin-top:1px;accent-color:#c0492a;flex-shrink:0;"><span style="font-size:12.5px;color:#6b4536;line-height:1.5;">${_txt(it)}</span></label>`).join('')}
+      <div style="display:flex;align-items:center;gap:7px;margin-bottom:7px;"><i class="ti ti-alert-triangle" aria-hidden="true" style="font-size:16px;color:#c0492a;"></i><span style="font-size:13px;font-weight:700;color:var(--c-ink);">Do any of these apply to you?</span></div>
+      <div style="font-size:12px;color:var(--c-mut);line-height:1.5;margin-bottom:10px;">Check the box next to anything you <b>currently have or are experiencing</b>, so ${_txt(client.providerFirst)} can review it before your visit. If none apply, leave them all unchecked.</div>
+      ${f.contra.map((it,ix)=>`<label style="display:flex;align-items:flex-start;gap:9px;padding:7px 0;cursor:pointer;"><input type="checkbox" id="cfc-${ix}" style="width:17px;height:17px;margin-top:1px;accent-color:#c0492a;flex-shrink:0;"><span style="font-size:12.5px;color:var(--c-ink);line-height:1.5;">${_txt(it)}</span></label>`).join('')}
     </div>`:''}
     <div style="font-size:13px;color:var(--c-mut);line-height:1.6;margin-bottom:10px;font-weight:600;">${_txt(f.consent||'I consent to treatment and confirm my information is accurate.')}</div>
     <div style="font-size:11px;color:var(--c-mut);margin-bottom:6px;">Sign by typing your full name</div>
@@ -4504,7 +4506,7 @@ function renderMagicLanding(){
     <div style="padding:13px 16px 11px;border-bottom:1px solid var(--c-line);display:flex;align-items:center;gap:10px;">
       <i class="ti ti-droplet" aria-hidden="true" style="font-size:15px;color:var(--accent-ink-lt);"></i>
       <div style="flex:1;min-width:0;"><div style="font-size:13px;font-weight:700;color:var(--c-ink);">Your recommended routine</div>${routine.length?`<div style="font-size:11px;color:var(--c-mut);margin-top:1px;">${_engNudge()}</div>`:''}</div>
-      ${_eng.streak>0&&_engStreakLive()?`<span style="display:inline-flex;align-items:center;gap:3px;background:var(--c-warn-bg);border:1px solid #f0d6a8;border-radius:20px;padding:3px 9px;font-size:11px;font-weight:700;color:#b06a00;flex-shrink:0;"><i class="ti ti-flame" style="font-size:11px;"></i> ${_eng.streak}</span>`:''}
+      ${_eng.streak>0&&_engStreakLive()?`<span style="display:inline-flex;align-items:center;gap:3px;background:var(--c-warn-bg);border:1px solid #f0d6a8;border-radius:20px;padding:3px 9px;font-size:11px;font-weight:700;color:var(--c-ink);flex-shrink:0;"><i class="ti ti-flame" style="font-size:11px;"></i> ${_eng.streak}</span>`:''}
       ${(function(){const pr=_engProgress();return pr.total?`<div style="width:34px;height:34px;position:relative;flex-shrink:0;"><svg width="34" height="34"><circle cx="17" cy="17" r="14" fill="none" stroke="#e7f0ec" stroke-width="3"/><circle cx="17" cy="17" r="14" fill="none" stroke="var(--accent)" stroke-width="3" stroke-dasharray="${(2*Math.PI*14*pr.done/pr.total).toFixed(1)} ${(2*Math.PI*14).toFixed(1)}" stroke-linecap="round" transform="rotate(-90 17 17)"/></svg><div style="position:absolute;inset:0;display:flex;align-items:center;justify-content:center;font-size:9px;font-weight:700;color:var(--accent-ink-lt);">${pr.done}/${pr.total}</div></div>`:'';})()}
     </div>
     ${routine.length?routine.map(step=>`
