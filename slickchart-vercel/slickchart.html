@@ -8544,6 +8544,9 @@ function savePhotos(){
 // Message the client suggesting they rebook for a given date, with their booking link.
 function _sendRebookInvite(id,date){
   const c=CL[id];if(!c)return;
+  // Mint the client's real link token first if missing, so the rebook message never carries a
+  // tokenless "/client" link that drops them into the sample/demo app.
+  if(!c._token){ _withClientToken(id,function(){ _sendRebookInvite(id,date); }); return; }
   const first=(c.name||'there').split(' ')[0];
   let link='';try{link=(typeof _clientAppLink==='function')?_clientAppLink(id):'';}catch(e){}
   const text=`Hi ${first}! It's about time to rebook, I'd suggest around ${date}. ${link?('You can request a time here: '+link):'Let me know what works and I\u2019ll get you on the books!'} ✨`;
@@ -11238,6 +11241,9 @@ function _demoPaymentSeed(){
 }
 function sendCheckin(id){
   const c=CL[id];if(!c)return;
+  // Never hand out a tokenless "/client" link (it lands the client in the sample/demo app). Mint the
+  // token first if needed, then re-run so the message carries their real personal link.
+  if(!c._token){ _withClientToken(id,function(){ sendCheckin(id); }); return; }
   const first=(c.name||'there').split(' ')[0];
   const phone=String(c.phone||'').trim();
   const link=_clientAppLink(id);
@@ -11543,6 +11549,27 @@ function _clientAppLink(id){
   const tok=CL[id]&&CL[id]._token;
   return tok?(base+'/client/'+encodeURIComponent(tok)):(base+'/client');
 }
+// Ensure this client has a real link TOKEN before we hand them any link, then run `then`. Without a
+// token, _clientAppLink returns a bare "/client" URL — which boots the client app into the SAMPLE
+// (demo "Maya") experience, not their own space. That's how a real client can end up staring at
+// sample data. A client may lack a token if they were just created, imported, or if a fresh app
+// reload hasn't re-synced yet. This mints/recovers the token via a server sync first (same path the
+// app-invite uses), and only proceeds once it's present — otherwise it tells the provider honestly.
+function _withClientToken(id,then){
+  const c=CL[id];if(!c)return;
+  if(c._token){ then(); return; }
+  const tok=(typeof Cloud!=='undefined'&&Cloud&&Cloud.token)||'';
+  if(!tok){ if(typeof proToast==='function')proToast('Please sign in to your SlickChart account first, then try again.'); return; }
+  const first=(c.name||'your client').split(' ')[0];
+  if(typeof proToast==='function')proToast('Preparing '+first+'’s secure link…',0);
+  var _slow=setTimeout(function(){ if(document.getElementById('pro-toast')&&typeof proToast==='function')proToast('Still working — this can take a few extra seconds…',0); },4000);
+  Promise.resolve(_syncSpecificClientsToServer([id],{})).then(function(j){
+    clearTimeout(_slow);
+    var t=document.getElementById('pro-toast');if(t)t.remove();
+    if(c._token){ then(); }
+    else if(typeof proToast==='function')proToast((j&&j.error)||'Couldn’t prepare a secure link — check your connection and try again.',0);
+  }).catch(function(){ clearTimeout(_slow); if(typeof proToast==='function')proToast('Couldn’t reach the server to prepare the link — try again.',0); });
+}
 // Opens the real client app in demo mode (no token = sample experience) in a new tab,
 // so a provider can see and tap through exactly what their clients get, no need to
 // create a fake client. The ?preview=1 flag lets the client app show a "Preview" banner.
@@ -11692,6 +11719,8 @@ async function _confirmSentToApp(id){
 }
 function _shareClientLinkSheet(id,opts){
   const c=CL[id];if(!c)return;
+  // Belt-and-suspenders: never open a share sheet whose link would be a tokenless "/client" demo link.
+  if(!c._token){ _withClientToken(id,function(){ _shareClientLinkSheet(id,opts); }); return; }
   opts=opts||{};
   const first=c.name.split(' ')[0];
   const link=_clientAppLink(id);
