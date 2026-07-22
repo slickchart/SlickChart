@@ -8006,7 +8006,10 @@ function _postSummaryData(id){
 
 // Send the client a no-app "magic link" to their recap + routine
 function shareSummaryLink(id){
-  const c=CL[id];
+  const c=CL[id];if(!c)return;
+  // Make sure the client has a real link token before we build/send anything — never hand out a
+  // tokenless "/client" link that drops them into the sample/demo app. Mint it first, then re-run.
+  if(!c._token){ _withClientToken(id,function(){ shareSummaryLink(id); }); return; }
   // Sending by link should ALSO save the summary to the client's profile (same as
   // sending to the app), so both paths leave a record. When invoked from an
   // already-saved summary (linkSavedSummary), _skipSummaryStore is set so we don't
@@ -8015,7 +8018,7 @@ function shareSummaryLink(id){
   _skipSummaryStore=false;
   let linkUrl='';
   try{ linkUrl=(typeof _clientAppLink==='function')?_clientAppLink(id):''; }catch(e){}
-  if(!linkUrl){ linkUrl=(c&&c._token)?('https://slickchart.app/client/'+c._token):('https://slickchart.app/client/'+id); }
+  if(!linkUrl&&c._token){ linkUrl=_clientLinkBase()+'/client/'+encodeURIComponent(c._token); }
   const row=(onclick,icon,title,sub)=>`<button onclick="${onclick}" style="display:flex;width:100%;align-items:center;gap:11px;padding:12px 14px;border:1px solid var(--p-line);background:var(--surf2);border-radius:10px;margin-bottom:8px;cursor:pointer;text-align:left;"><i class="ti ${icon}" style="font-size:18px;color:var(--accent-strong);"></i><div style="flex:1;min-width:0;"><div style="font-size:13px;font-weight:500;color:var(--p-ink);">${title}</div><div style="font-size:11px;color:var(--p-mut);">${sub}</div></div></button>`;
   const ov=document.createElement('div');ov.id='send-prod-sheet';
   ov.style.cssText='position:fixed;top:0;bottom:0;left:0;right:0;margin:0 auto;width:390px;max-width:100%;z-index:9999;background:rgba(0,0,0,.6);display:flex;align-items:center;justify-content:center;padding:24px 16px;box-sizing:border-box;';
@@ -8044,6 +8047,8 @@ function _visitDatePhrase(dateInput){
   return 'from your visit on '+d.toLocaleDateString('en-US',{month:'short',day:'numeric'});
 }
 function confirmSendLink(id,channel){
+  // Mint the client's real link token first if missing, so we never send a tokenless "/client" demo link.
+  var _c0=CL[id]; if(_c0&&!_c0._token){ _withClientToken(id,function(){ confirmSendLink(id,channel); }); return; }
   _postSummaryData(id);   // populate the client's link view with the latest recap + routine
   const _visitPhrase=_visitDatePhrase(_sendingSummaryDate||(sessionSummaries[id]&&sessionSummaries[id][0]&&(sessionSummaries[id][0]._draftDate||sessionSummaries[id][0].date))||'');
   _sendingSummaryDate=null;
@@ -8052,7 +8057,7 @@ function confirmSendLink(id,channel){
   // Build the real shareable link for this client using the canonical helper.
   let link='';
   try{ link=(typeof _clientAppLink==='function')?_clientAppLink(id):''; }catch(e){}
-  if(!link){ link=(c&&c._token)?('https://slickchart.app/client/'+c._token):('https://slickchart.app/client/'+id); }
+  if(!link&&c._token){ link=_clientLinkBase()+'/client/'+encodeURIComponent(c._token); }
   const msg=`Hi ${f}! Here's your visit summary and aftercare ${_visitPhrase}: ${link}`;
   if(channel==='copy'){
     _copyToClipboard(link,'Link copied');
@@ -11574,7 +11579,10 @@ function _clientLinkBase(){
 function _clientAppLink(id){
   const base=_clientLinkBase();
   const tok=CL[id]&&CL[id]._token;
-  return tok?(base+'/client/'+encodeURIComponent(tok)):(base+'/client');
+  // NEVER return a bare "/client" (that URL boots the client app into the SAMPLE/demo experience).
+  // With no token, return '' so a caller can't accidentally hand a client a demo link — every send
+  // path mints the token first via _withClientToken, so this only returns '' when something is wrong.
+  return tok?(base+'/client/'+encodeURIComponent(tok)):'';
 }
 // Ensure this client has a real link TOKEN before we hand them any link, then run `then`. Without a
 // token, _clientAppLink returns a bare "/client" URL — which boots the client app into the SAMPLE
