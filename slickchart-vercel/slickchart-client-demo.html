@@ -5067,8 +5067,12 @@ function _applyRealClientData(j){
   // A real client must not see the sample notifications ("New message from Jessica", the demo
   // session-summary ping) that seed the demo notification center.
   try{clientNotifs.length=0;if(typeof updateClientBadge==='function')updateClientBadge();}catch(e){}
-  client.name=j.client.name||client.name;
-  client.initials=_initialsOf(client.name);
+  // Use the real name from the server. If it's blank (a sparse/just-created record), fall back to a
+  // neutral placeholder — NEVER keep the demo seed identity ("Maya Rodriguez"), or a real client would
+  // see the sample name as if it were their own space.
+  var _realName=(j.client&&j.client.name&&String(j.client.name).trim())||'';
+  client.name=_realName||'there';
+  client.initials=_realName?_initialsOf(_realName):'';
   var p=client.providers.find(function(x){return x.id==='jess';})||client.providers[0];
   if(d.studio)p.studio=d.studio;
   p.website=d.website||'';   // real provider website (empty if unset), never inherit the demo domain
@@ -5412,15 +5416,17 @@ document.addEventListener('DOMContentLoaded', function() {
   updateClientBadge();
   var _ctok=_getClientToken();
   if(_ctok){ _bootRealClient(_ctok); return; }
-  // Provider previewing the client app (opened with ?preview=1 from provider Settings/Home).
+  // No token \u2192 this is the SAMPLE/demo experience (demo "Maya" data). Always show a clear banner so a
+  // client who opened an incomplete or outdated link doesn't mistake this sample for their own space
+  // and start filling in forms that go nowhere. Providers who opened it via ?preview=1 get the shorter
+  // "preview" wording; anyone else gets a nudge to open their real personal link.
   try{
-    if(new URLSearchParams(location.search).get('preview')==='1'){
-      var pb=document.createElement('div');
-      pb.style.cssText='position:fixed;top:0;left:0;right:0;z-index:100001;background:#1a1308;color:#caa86a;border-bottom:1px solid #3a2a10;font-size:12px;font-weight:600;text-align:center;padding:6px 12px;font-family:-apple-system,BlinkMacSystemFont,Segoe UI,sans-serif;';
-      pb.innerHTML='\u2728 Preview \u2014 this is a sample of what your clients see';
-      document.body.appendChild(pb);
-      try{document.body.style.paddingTop='27px';}catch(e){}
-    }
+    var _prev=new URLSearchParams(location.search).get('preview')==='1';
+    var pb=document.createElement('div');
+    pb.style.cssText='position:fixed;top:0;left:0;right:0;z-index:100001;background:#1a1308;color:#caa86a;border-bottom:1px solid #3a2a10;font-size:12px;font-weight:600;text-align:center;padding:7px 14px;line-height:1.4;font-family:-apple-system,BlinkMacSystemFont,Segoe UI,sans-serif;';
+    pb.innerHTML=_prev?'\u2728 Preview \u2014 this is a sample of what your clients see':'\u2728 Sample preview \u2014 open the personal link your provider sent you to see your own space';
+    document.body.appendChild(pb);
+    try{document.body.style.paddingTop=(_prev?'27':'40')+'px';}catch(e){}
   }catch(e){}
   try{document.title='SlickChart, '+client.name;}catch(e){}
   // connected provider reflects any brand Jessica saved in the provider app
