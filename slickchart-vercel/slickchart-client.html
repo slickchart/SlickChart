@@ -1680,8 +1680,8 @@ function _libGuides(){return (activeProvider().pendingGuides||[]).filter(pg=>pg&
 function _libCourses(){return (activeProvider().pendingCourses||[]).filter(co=>co&&!_deletedRes.has(_resCK(co.id)));}
 function clearGuideFromHome(id,ev){if(ev&&ev.stopPropagation)ev.stopPropagation();_homeClearedRes.add(_resGK(id));_resSetSave('sc_home_cleared_res',_homeClearedRes);try{if(typeof showToast==='function')showToast('Moved to your library');}catch(e){}renderHome();}
 function clearCourseFromHome(id,ev){if(ev&&ev.stopPropagation)ev.stopPropagation();_homeClearedRes.add(_resCK(id));_resSetSave('sc_home_cleared_res',_homeClearedRes);try{if(typeof showToast==='function')showToast('Moved to your library');}catch(e){}renderHome();}
-function deleteGuideFromLib(id,ev){if(ev&&ev.stopPropagation)ev.stopPropagation();if(!confirm('Delete this from your library? You can always ask your provider to resend it.'))return;_deletedRes.add(_resGK(id));_resSetSave('sc_deleted_res',_deletedRes);renderLibrary();}
-function deleteCourseFromLib(id,ev){if(ev&&ev.stopPropagation)ev.stopPropagation();if(!confirm('Delete this from your library? You can always ask your provider to resend it.'))return;_deletedRes.add(_resCK(id));_resSetSave('sc_deleted_res',_deletedRes);renderLibrary();}
+function deleteGuideFromLib(id,ev){if(ev&&ev.stopPropagation)ev.stopPropagation();_confirmSheet({title:'Remove from your library?',body:'You can always ask your provider to resend it.',action:'Remove',danger:true},function(){_deletedRes.add(_resGK(id));_resSetSave('sc_deleted_res',_deletedRes);renderLibrary();});}
+function deleteCourseFromLib(id,ev){if(ev&&ev.stopPropagation)ev.stopPropagation();_confirmSheet({title:'Remove from your library?',body:'You can always ask your provider to resend it.',action:'Remove',danger:true},function(){_deletedRes.add(_resCK(id));_resSetSave('sc_deleted_res',_deletedRes);renderLibrary();});}
 // ── Viewing a real guide/resource a provider shared ──
 let _viewGuideId='';
 function renderViewGuide(){
@@ -2024,7 +2024,11 @@ function _checkinWindowHours(){
     return map[when]||24;
   }catch(e){return 24;}
 }
-function _previsitSectionHTML(){
+function _previsitSectionHTML(opts){
+  opts=opts||{};
+  // When shown on its own (not nested inside the dark appointment card) it needs a border + no top
+  // margin so it reads as a proper standalone card against the page background.
+  const _wrap=opts.standalone?'margin:0;background:var(--c-card);border:1.5px solid var(--c-line);border-radius:12px':'margin:14px 0 0;background:var(--c-card);border-radius:12px';
   const p=activeProvider();const pf=(p.pendingForms||[]);
   // No forms assigned → the familiar single pre-visit check-in row.
   if(!pf.length){
@@ -2032,7 +2036,7 @@ function _previsitSectionHTML(){
     // "Start" row — tapping it would just bounce back to Home. Show nothing until there's something to do.
     if(typeof _ciSteps==='function'&&!_ciSteps().length)return '';
     const ciDone=!!p.checkinDone;
-    return `<div style="margin:14px 0 0;background:var(--c-card);border-radius:12px;overflow:hidden;cursor:pointer;" onclick="nav('checkin')" role="button" aria-label="Pre-visit check-in">
+    return `<div style="${_wrap};overflow:hidden;cursor:pointer;" onclick="nav('checkin')" role="button" aria-label="Pre-visit check-in">
       <div style="padding:12px 14px;display:flex;align-items:center;gap:11px;">
         <div style="width:40px;height:40px;background:var(--accent-lt);border-radius:10px;display:flex;align-items:center;justify-content:center;flex-shrink:0;"><i class="ti ${ciDone?'ti-square-check':'ti-square'}" aria-hidden="true" style="font-size:22px;color:var(--accent-ink-lt);"></i></div>
         <div style="flex:1;min-width:0;">
@@ -2062,7 +2066,7 @@ function _previsitSectionHTML(){
       <i class="ti ${it.done?'ti-square-check':'ti-square'}" aria-hidden="true" style="font-size:20px;color:${it.done?'#4ec49a':'var(--accent)'};flex-shrink:0;"></i>
       <span style="flex:1;min-width:0;font-size:13px;font-weight:${it.done?'500':'600'};color:${it.done?'var(--c-mut2)':'var(--c-ink)'};${it.done?'text-decoration:line-through;':''}overflow:hidden;text-overflow:ellipsis;white-space:nowrap;">${_txt(it.label)}</span>
     </div>`).join('');
-  return `<div style="margin:14px 0 0;background:var(--c-card);border-radius:12px;overflow:hidden;">
+  return `<div style="${_wrap};overflow:hidden;">
     <div style="padding:12px 14px 4px;">
       <div style="display:flex;align-items:center;gap:8px;">
         <i class="ti ti-list-check" aria-hidden="true" style="font-size:18px;color:var(--accent-ink-lt);"></i>
@@ -2097,17 +2101,18 @@ function renderHome(){
   const total=Object.keys(homecareChecked).length;
   const pct=total?Math.round(checked/total*100):0;
 
+  const _multiProv=(client.providers&&client.providers.length>1);
   S.innerHTML=`
-  <button onclick="openProviderSheet()" aria-label="Switch provider" style="margin:14px 16px 2px;width:calc(100% - 32px);display:flex;align-items:center;gap:10px;background:var(--c-card);border:1.5px solid var(--c-line);border-radius:14px;padding:9px 12px;cursor:pointer;">
+  <${_multiProv?'button onclick="openProviderSheet()" aria-label="Switch provider"':'div'} style="margin:14px 16px 2px;width:calc(100% - 32px);display:flex;align-items:center;gap:10px;background:var(--c-card);border:1.5px solid var(--c-line);border-radius:14px;padding:9px 12px;${_multiProv?'cursor:pointer;':''}">
     <div style="width:34px;height:34px;border-radius:9px;background:linear-gradient(135deg,var(--accent),var(--accent-2));display:flex;align-items:center;justify-content:center;font-size:12px;font-weight:700;color:#fff;flex-shrink:0;overflow:hidden;">${(activeProvider().brand&&activeProvider().brand.logoDataUrl)?`<img src="${_imgSrc(activeProvider().brand.logoDataUrl)}" alt="" onerror="this.style.display='none'" style="width:100%;height:100%;object-fit:contain;background:var(--c-card);">`:activeProvider().initials}</div>
     <div style="flex:1;text-align:left;min-width:0;">
       <div style="font-size:9px;font-weight:700;color:var(--c-mut);letter-spacing:.08em;text-transform:uppercase;">Provider</div>
       <div style="font-size:14px;font-weight:700;color:var(--c-ink);white-space:nowrap;overflow:hidden;text-overflow:ellipsis;">${_txt(client.studio)}</div>
       ${(activeProvider().brand&&activeProvider().brand.tagline)?`<div style="font-size:11px;color:var(--c-mut);white-space:nowrap;overflow:hidden;text-overflow:ellipsis;">${_txt(activeProvider().brand.tagline)}</div>`:''}
     </div>
-    ${client.providers.length>1?`<span style="font-size:11px;color:var(--accent-ink-lt);font-weight:700;background:var(--accent-lt);padding:3px 9px;border-radius:20px;flex-shrink:0;">Switch</span>`:''}
-    <i class="ti ti-chevron-right" aria-hidden="true" style="font-size:18px;color:var(--c-mut);flex-shrink:0;"></i>
-  </button>
+    ${_multiProv?`<span style="font-size:11px;color:var(--accent-ink-lt);font-weight:700;background:var(--accent-lt);padding:3px 9px;border-radius:20px;flex-shrink:0;">Switch</span>
+    <i class="ti ti-chevron-right" aria-hidden="true" style="font-size:18px;color:var(--c-mut);flex-shrink:0;"></i>`:''}
+  </${_multiProv?'button':'div'}>
   <div style="padding:12px 16px 10px;">
     <div style="font-size:22px;font-weight:600;color:var(--c-ink);line-height:1.25;"><span style="font-weight:500;color:var(--c-mut);">${_greeting()},</span> <span id="page-heading" tabindex="-1">${_txt(client.name.split(' ')[0])}</span></div>
   </div>
@@ -2183,12 +2188,27 @@ function renderHome(){
       const apptPassed=(APPT&&!isNaN(APPT.getTime())&&APPT.getTime()<=Date.now());
       if(apptPassed)return '';
       const hasForms=(activeProvider().pendingForms||[]).length>0;   // explicitly-assigned forms always show until done
+      // With no appointment on the books yet, assigned forms are hoisted into their own labeled section
+      // below (so they don't read as buried inside a "Not scheduled" card) — skip them here.
+      if(noAppt)return '';
       // The plain pre-visit check-in only appears inside the 24h window before the appointment, and
       // doesn't reappear for the next visit until it's again within 24h.
-      const withinWindow=!noAppt&&isFinite(client.hoursUntilNext)&&client.hoursUntilNext<=_checkinWindowHours();
+      const withinWindow=isFinite(client.hoursUntilNext)&&client.hoursUntilNext<=_checkinWindowHours();
       return (hasForms||withinWindow)?_previsitSectionHTML():'';
     })()}
   </div>`;
+  })()}
+
+  <!-- Assigned pre-visit forms with no appointment yet: hoisted into their own clearly-labeled card so
+       they read as a real to-do rather than something tucked inside a "Not scheduled" appointment. -->
+  ${(()=>{
+    const noAppt=(client.daysUntilNext==null||!isFinite(client.daysUntilNext));
+    const hasForms=(activeProvider().pendingForms||[]).length>0;
+    if(!noAppt||!hasForms)return '';
+    return `<div style="margin:0 16px 14px;">
+      <div style="font-size:11px;font-weight:700;color:var(--c-mut);text-transform:uppercase;letter-spacing:.08em;margin:0 2px 7px;">From ${_txt(client.providerFirst)}</div>
+      ${_previsitSectionHTML({standalone:true})}
+    </div>`;
   })()}
 
   <!-- ── AFTER YOUR VISIT ── surfaced high (right under the appointment card) and accent-emphasized,
@@ -2412,13 +2432,14 @@ function _visibleSummaries(){
 }
 function deleteSummary(key,ev){
   if(ev&&ev.stopPropagation)ev.stopPropagation();
-  if(!confirm('Remove this summary from your journey? Your provider still has it on their side.'))return;
-  const pid=String(activeProvider().id||activeProvider().providerId||'');
-  const h=_hiddenSummarySet();h[pid+'|'+String(key)]=1;
-  try{localStorage.setItem('sc_client_hidden_summaries',JSON.stringify(h));}catch(e){}
-  try{if(typeof _syncClientPrefsToServer==='function')_syncClientPrefsToServer();}catch(e){}
-  if(_summaryIdx>=_visibleSummaries().length)_summaryIdx=0;
-  renderJourney();
+  _confirmSheet({title:'Remove this summary?',body:'It’s hidden from your journey here. Your provider still has it on their side.',action:'Remove',danger:true},function(){
+    const pid=String(activeProvider().id||activeProvider().providerId||'');
+    const h=_hiddenSummarySet();h[pid+'|'+String(key)]=1;
+    try{localStorage.setItem('sc_client_hidden_summaries',JSON.stringify(h));}catch(e){}
+    try{if(typeof _syncClientPrefsToServer==='function')_syncClientPrefsToServer();}catch(e){}
+    if(_summaryIdx>=_visibleSummaries().length)_summaryIdx=0;
+    renderJourney();
+  });
 }
 // Before/after photos the provider shared with this client. Refs (pid) come in the client data;
 // the bytes are fetched by id with the client's own link token (same path as guide files).
@@ -2790,7 +2811,7 @@ function renderMessages(){
 
 function attachClientPhoto(){_pickImages(srcs=>{if(srcs&&srcs.length)sendClientMsg(srcs);});}
 function attachClientCamera(){_pickImages(srcs=>{if(srcs&&srcs.length)sendClientMsg(srcs);},true);}
-function attachClientLink(){const u=prompt('Paste an image link (URL):');if(u&&u.trim())sendClientMsg([u.trim()]);}
+function attachClientLink(){_inputSheet({title:'Add a photo by link',body:'Paste an image URL to send it in the chat.',placeholder:'https://…',inputmode:'url',action:'Send'},function(u){sendClientMsg([u]);});}
 
 function sendClientMsg(imgArg){
   const inp=document.getElementById('cinput');
@@ -3024,9 +3045,10 @@ function renderFillForm(){
   const _flowPos=_previsitFlowPos('form',pf.formId);
   const _moreAfter=_flowPos&&((_flowPos.total-(_flowPos.idx+1))>0);
   const _submitLabel=_moreAfter?`Submit &amp; continue to the next form`:`Submit to ${_txt(client.providerFirst)}`;
+  const _anyReq=qs.some(q=>q&&q.required);
   S.innerHTML=`
   ${_previsitProgressHTML('form',pf.formId)}
-  <div style="padding:14px 16px 4px;"><div id="page-heading" tabindex="-1" style="font-size:20px;font-weight:600;color:var(--c-ink);">${_txt(pf.title)}</div></div>
+  <div style="padding:14px 16px 4px;"><div id="page-heading" tabindex="-1" style="font-size:20px;font-weight:600;color:var(--c-ink);">${_txt(pf.title)}</div>${_anyReq?`<div style="font-size:12px;color:var(--c-mut);margin-top:4px;"><span style="color:var(--accent-ink-lt);font-weight:700;">*</span> = required</div>`:''}</div>
   <div style="padding:6px 16px 20px;">
     ${qs.map((q,i)=>_fillFormFieldHTML(q,i)).join('')}
     <button onclick="_submitFillForm()" class="btnp" style="width:100%;border-radius:12px;padding:13px;margin-top:8px;">${_submitLabel}</button>
@@ -3519,6 +3541,52 @@ function renderPrivacyData(){
     </div>
   </div>`;
 }
+// Branded confirm dialog (replaces native confirm()). onConfirm runs only if the user confirms.
+function _confirmSheet(opts,onConfirm){
+  opts=opts||{};
+  const esc=s=>String(s==null?'':s).replace(/&/g,'&amp;').replace(/</g,'&lt;').replace(/>/g,'&gt;').replace(/"/g,'&quot;');
+  const ex=document.getElementById('confirm-sheet');if(ex)ex.remove();
+  const danger=!!opts.danger;
+  const ov=document.createElement('div');ov.id='confirm-sheet';
+  ov.style.cssText='position:fixed;inset:0;z-index:99999;background:rgba(0,0,0,.45);display:flex;align-items:center;justify-content:center;padding:24px;';
+  const close=()=>{try{ov.remove();}catch(e){}};
+  ov.onclick=e=>{if(e.target===ov)close();};
+  const accBtn=danger?'background:#c0392b;color:#fff;':'background:var(--accent);color:var(--accent-ink);';
+  ov.innerHTML='<div role="dialog" aria-modal="true" style="background:var(--c-card);border-radius:16px;max-width:340px;width:100%;padding:20px;box-shadow:0 12px 40px rgba(0,0,0,.25);">'
+    +'<div style="font-size:16px;font-weight:700;color:'+(danger?'#c0392b':'var(--c-ink)')+';margin-bottom:'+(opts.body?'8px':'14px')+';">'+esc(opts.title||'Are you sure?')+'</div>'
+    +(opts.body?'<div style="font-size:13px;color:var(--c-mut);line-height:1.6;margin-bottom:16px;">'+esc(opts.body)+'</div>':'')
+    +'<div style="display:flex;gap:8px;">'
+    +'<button id="_cs-cancel" style="flex:1;background:var(--c-surf);border:1.5px solid var(--c-line);border-radius:10px;padding:12px;font-size:14px;color:var(--c-mut);font-weight:600;cursor:pointer;font-family:inherit;">'+esc(opts.cancel||'Cancel')+'</button>'
+    +'<button id="_cs-ok" style="flex:1;border:none;border-radius:10px;padding:12px;font-size:14px;font-weight:700;cursor:pointer;font-family:inherit;'+accBtn+'">'+esc(opts.action||'Confirm')+'</button>'
+    +'</div></div>';
+  (document.querySelector('.shell')||document.body).appendChild(ov);
+  ov.querySelector('#_cs-cancel').onclick=close;
+  ov.querySelector('#_cs-ok').onclick=()=>{close();try{if(typeof onConfirm==='function')onConfirm();}catch(e){}};
+}
+// Branded single-input dialog (replaces native prompt()). onSubmit receives the trimmed value (only if non-empty).
+function _inputSheet(opts,onSubmit){
+  opts=opts||{};
+  const esc=s=>String(s==null?'':s).replace(/&/g,'&amp;').replace(/</g,'&lt;').replace(/>/g,'&gt;').replace(/"/g,'&quot;');
+  const ex=document.getElementById('input-sheet');if(ex)ex.remove();
+  const ov=document.createElement('div');ov.id='input-sheet';
+  ov.style.cssText='position:fixed;inset:0;z-index:99999;background:rgba(0,0,0,.45);display:flex;align-items:center;justify-content:center;padding:24px;';
+  const close=()=>{try{ov.remove();}catch(e){}};
+  ov.onclick=e=>{if(e.target===ov)close();};
+  ov.innerHTML='<div role="dialog" aria-modal="true" style="background:var(--c-card);border-radius:16px;max-width:340px;width:100%;padding:20px;box-shadow:0 12px 40px rgba(0,0,0,.25);">'
+    +'<div style="font-size:16px;font-weight:700;color:var(--c-ink);margin-bottom:'+(opts.body?'6px':'12px')+';">'+esc(opts.title||'Enter a value')+'</div>'
+    +(opts.body?'<div style="font-size:12px;color:var(--c-mut);line-height:1.5;margin-bottom:12px;">'+esc(opts.body)+'</div>':'')
+    +'<input id="_is-input" type="'+esc(opts.type||'text')+'" inputmode="'+esc(opts.inputmode||'text')+'" value="'+esc(opts.value||'')+'" placeholder="'+esc(opts.placeholder||'')+'" style="width:100%;background:var(--c-surf);border:1.5px solid var(--c-line);border-radius:10px;padding:11px 12px;font-size:15px;color:var(--c-ink);outline:none;box-sizing:border-box;margin-bottom:16px;font-family:inherit;">'
+    +'<div style="display:flex;gap:8px;">'
+    +'<button id="_is-cancel" style="flex:1;background:var(--c-surf);border:1.5px solid var(--c-line);border-radius:10px;padding:12px;font-size:14px;color:var(--c-mut);font-weight:600;cursor:pointer;font-family:inherit;">Cancel</button>'
+    +'<button id="_is-ok" style="flex:1;border:none;border-radius:10px;padding:12px;font-size:14px;font-weight:700;cursor:pointer;font-family:inherit;background:var(--accent);color:var(--accent-ink);">'+esc(opts.action||'Add')+'</button>'
+    +'</div></div>';
+  (document.querySelector('.shell')||document.body).appendChild(ov);
+  const inp=ov.querySelector('#_is-input');
+  const submit=()=>{const v=(inp&&inp.value||'').trim();close();if(v){try{if(typeof onSubmit==='function')onSubmit(v);}catch(e){}}};
+  ov.querySelector('#_is-ok').onclick=submit;
+  ov.querySelector('#_is-cancel').onclick=close;
+  if(inp){inp.onkeydown=e=>{if(e.key==='Enter'){e.preventDefault();submit();}else if(e.key==='Escape')close();};setTimeout(()=>{try{inp.focus();inp.select();}catch(e){}},40);}
+}
 function _confirmDeleteClientData(){
   const ex=document.getElementById('del-data-modal');if(ex)ex.remove();
   const who=_txt(client.provider||'your provider');
@@ -3560,7 +3628,7 @@ async function _doDeleteClientData(){
 
 // Check-in reference photos (stored on the notes question as `${id}Photos`)
 function ciAddPhoto(qid){_pickImages(srcs=>{if(!srcs||!srcs.length)return;const a=(checkinAnswers[qid+'Photos']=checkinAnswers[qid+'Photos']||[]);srcs.forEach(s=>a.push(s));_renderCheckinStep();});}
-function ciAddLink(qid){const u=prompt('Paste an image link (URL):');if(u&&u.trim()){(checkinAnswers[qid+'Photos']=checkinAnswers[qid+'Photos']||[]).push(u.trim());_renderCheckinStep();}}
+function ciAddLink(qid){_inputSheet({title:'Add a photo by link',body:'Paste an image URL to attach it.',placeholder:'https://…',inputmode:'url',action:'Add'},function(u){(checkinAnswers[qid+'Photos']=checkinAnswers[qid+'Photos']||[]).push(u);_renderCheckinStep();});}
 function ciRemovePhoto(qid,i){const a=checkinAnswers[qid+'Photos']||[];a.splice(i,1);_renderCheckinStep();}
 function ciMovePhoto(qid,i,dir){const a=checkinAnswers[qid+'Photos']||[];const j=i+dir;if(j<0||j>=a.length)return;const t=a[i];a[i]=a[j];a[j]=t;_renderCheckinStep();}
 // Reference-photo reordering. The old version used HTML5 drag-and-drop (draggable/ondragstart),

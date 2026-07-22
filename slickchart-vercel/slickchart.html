@@ -575,11 +575,39 @@ function addHomecareTag(id,tag,ctx){
   const tags=getClientHomecare(id);
   if(tag&&!tags.includes(tag)){tags.push(tag);persistWorkspace();_pushRoutine(id);_rerenderHomecare(id,ctx);}
 }
+// A single removed aftercare/summary item, held so the undo toast can put it right back. Removing
+// an item with one accidental tap used to be irreversible — you had to remember and retype it.
+let _lastAftercareUndo=null;
+function _aftercareUndoToast(msg){
+  const old=document.getElementById('aftercare-undo-toast');if(old)old.remove();
+  const t=document.createElement('div');t.id='aftercare-undo-toast';
+  t.setAttribute('role','status');t.setAttribute('aria-live','polite');
+  t.style.cssText='position:fixed;bottom:88px;left:0;right:0;margin:0 auto;width:max-content;max-width:90%;background:var(--surf1);border:1px solid var(--p-chip2);color:var(--p-ink);border-radius:10px;padding:9px 12px 9px 14px;font-size:13px;z-index:600;display:flex;align-items:center;gap:12px;box-shadow:0 6px 24px rgba(0,0,0,.4);white-space:nowrap;';
+  t.innerHTML='<span></span><button onclick="_runAftercareUndo()" style="background:none;border:none;color:var(--accent-strong);font-weight:700;font-size:13px;cursor:pointer;font-family:inherit;padding:0;">Undo</button>';
+  t.querySelector('span').textContent=String(msg==null?'':msg);
+  (document.querySelector('.shell')||document.body).appendChild(t);
+  setTimeout(()=>{if(t&&t.parentNode)t.remove();},5000);
+}
+function _runAftercareUndo(){
+  const u=_lastAftercareUndo;_lastAftercareUndo=null;
+  const t=document.getElementById('aftercare-undo-toast');if(t)t.remove();
+  if(u&&typeof u.restore==='function'){try{u.restore();}catch(e){}}
+}
 function removeHomecareTag(id,idx,ctx){
-  getClientHomecare(id).splice(idx,1);
+  const tags=getClientHomecare(id);
+  const removed=tags[idx];
+  tags.splice(idx,1);
   persistWorkspace();
   _pushRoutine(id);
   _rerenderHomecare(id,ctx);
+  if(removed!=null){
+    _lastAftercareUndo={restore:function(){
+      const arr=getClientHomecare(id);
+      arr.splice(Math.min(idx,arr.length),0,removed);
+      persistWorkspace();_pushRoutine(id);_rerenderHomecare(id,ctx);
+    }};
+    _aftercareUndoToast('Removed “'+String(removed)+'”');
+  }
 }
 function _rerenderHomecare(id,ctx){
   if(ctx==='profile')renderClient(id);else renderSessionSummary(id);
@@ -3766,14 +3794,6 @@ function renderHome(){
     })().map(([l,v,s,c,scr])=>`<button onclick="nav('${scr}')" aria-label="${l}: ${v}, ${s}" style="flex:1;background:var(--surf1);border:1px solid var(--p-line2);border-radius:10px;padding:10px 12px;cursor:pointer;font-family:inherit;text-align:left;"><div style="font-size:11px;color:var(--p-mut);margin-bottom:4px;">${l}</div><div style="font-size:22px;font-weight:500;color:${c};">${v}</div><div style="font-size:11px;color:var(--p-mut);">${s}</div></button>`).join('')}
   </div>
   ${(aiEnabled&&!_dayRecapDismissedToday())?`<div id="day-recap-card" style="margin:0 16px 10px;">${_dayRecapCardHTML()}</div>`:''}
-  ${!_homeDismissed.has('preview-client')?_swipeTile(`
-  <div onclick="_previewClientApp()" style="margin:0;background:linear-gradient(135deg,var(--accent-tint),var(--accent-tint2));border:1px solid var(--accent-a30);border-radius:12px;padding:12px 14px;display:flex;align-items:center;gap:11px;cursor:pointer;">
-    <div style="width:40px;height:40px;border-radius:10px;background:var(--accent);display:flex;align-items:center;justify-content:center;flex-shrink:0;">
-      <i class="ti ti-device-mobile-check" style="font-size:20px;color:var(--accent-ink);"></i>
-    </div>
-    <div style="flex:1;min-width:0;"><div style="font-size:14px;font-weight:600;color:var(--p-ink);">See what your clients see</div><div style="font-size:12px;color:var(--p-mut2);margin-top:1px;">Tap to preview the client app, booking, summaries &amp; more</div></div>
-    <i class="ti ti-external-link" style="font-size:17px;color:var(--p-mut2);"></i>
-  </div>`,'preview-client'):''}
   ${(function(){
     // One unified "Needs your attention" heading over ALL attention items (booking requests, check-ins,
     // virtual consults, flagged intakes, form reviews, check-in nudges) instead of scattering them as
@@ -3817,6 +3837,14 @@ function renderHome(){
     }
     return '<div class="card"><div style="padding:18px 16px;text-align:center;color:var(--p-mut);font-size:13px;">Connect Square, or add appointments yourself, to see what\u2019s coming up.<div style="font-size:12px;color:var(--p-mut);margin-top:4px;"><a href="#" onclick="nav(\'data-setup\');return false;" style="color:var(--accent-strong);">Get set up \u2192</a></div></div></div>';
   })()}
+  ${!_homeDismissed.has('preview-client')?_swipeTile(`
+  <div onclick="_previewClientApp()" style="margin:0;background:linear-gradient(135deg,var(--accent-tint),var(--accent-tint2));border:1px solid var(--accent-a30);border-radius:12px;padding:12px 14px;display:flex;align-items:center;gap:11px;cursor:pointer;">
+    <div style="width:40px;height:40px;border-radius:10px;background:var(--accent);display:flex;align-items:center;justify-content:center;flex-shrink:0;">
+      <i class="ti ti-device-mobile-check" style="font-size:20px;color:var(--accent-ink);"></i>
+    </div>
+    <div style="flex:1;min-width:0;"><div style="font-size:14px;font-weight:600;color:var(--p-ink);">See what your clients see</div><div style="font-size:12px;color:var(--p-mut2);margin-top:1px;">Tap to preview the client app, booking, summaries &amp; more</div></div>
+    <i class="ti ti-external-link" style="font-size:17px;color:var(--p-mut2);"></i>
+  </div>`,'preview-client'):''}
   ${_sampleHidden()?'':'<div class="sh"><h2>Recent activity</h2></div>'}
   ${(_sampleHidden()?[]:[['ti-file-check','var(--p-surf2)','var(--p-green)','Consent Form Signed','Priya Patel · 2h ago','client-forms','priya'],['ti-microphone','var(--p-purple-bg)','var(--p-purple)','AI voice note saved','Maya Rodriguez · Yesterday','notes','maya'],['ti-camera','var(--accent-tint)','var(--accent)','Before/after photos added','Maya Rodriguez · Yesterday','photos','maya']]).map(([icon,bg,ic,name,sub,scr,cid])=>`
   <div class="card" onclick="${CL[cid]?`nav('${scr}','${cid}')`:`nav('clients')`}" style="cursor:pointer;"><div class="row"><div style="width:32px;height:32px;border-radius:8px;background:${bg};display:flex;align-items:center;justify-content:center;flex-shrink:0;"><i class="ti ${icon}" style="font-size:15px;color:${ic};"></i></div><div style="flex:1;min-width:0;"><div style="font-size:14px;color:var(--p-ink);">${name}</div><div style="font-size:12px;color:var(--p-mut);">${sub}</div></div><i class="ti ti-chevron-right" aria-hidden="true" style="font-size:16px;color:var(--p-mut);flex-shrink:0;"></i></div></div>`).join('')}
@@ -6355,7 +6383,7 @@ function _npRenderMgr(){
   const wrap=document.getElementById('np-mgr-body');if(!wrap)return;const d=_npDraft;
   const list=(needlePresets||[]).map(p=>`<div style="display:flex;align-items:center;gap:8px;padding:8px 10px;background:var(--p-bg);border:1px solid var(--p-line3);border-radius:9px;margin-bottom:6px;">
     <div style="flex:1;min-width:0;"><div style="font-size:13px;color:var(--p-ink);font-weight:600;">${_fileEsc(p.label)}</div><div style="font-size:11px;color:var(--p-mut);overflow:hidden;text-overflow:ellipsis;white-space:nowrap;">${_fileEsc(p.text)}</div></div>
-    <button onclick="_npDelete('${_jsAttr(p.id)}')" title="Delete preset" style="border:none;background:none;color:#c76a6a;font-size:14px;cursor:pointer;padding:5px;"><i class="ti ti-trash"></i></button>
+    <button onclick="_npDelete('${_jsAttr(p.id)}')" title="Delete preset" aria-label="Delete preset" style="border:none;background:none;color:#c76a6a;font-size:15px;cursor:pointer;padding:9px 11px;margin:-4px 0;line-height:1;"><i class="ti ti-trash"></i></button>
   </div>`).join('')||'<div style="font-size:12px;color:var(--p-mut);padding:6px 2px 10px;">No presets yet — build one below.</div>';
   const techPills=_NP_TECHS.map(t=>`<button type="button" onclick="_npDraft.tech=(_npDraft.tech==='${t}'?'':'${t}');_npRenderMgr()" class="pill ${d.tech===t?'active':''}" style="font-size:12px;">${t}</button>`).join('');
   wrap.innerHTML=`
@@ -6386,9 +6414,14 @@ function _npSave(){
   if(typeof proToast==='function')proToast('Preset saved ✨');
 }
 function _npDelete(pid){
-  needlePresets=(needlePresets||[]).filter(p=>p.id!==pid);
-  persistNeedlePresets();_npRenderMgr();
-  const fld=document.getElementById('np-field-tt3');if(fld&&_npClientId)fld.outerHTML=_needlePresetField(_npClientId);
+  const _go=function(){
+    needlePresets=(needlePresets||[]).filter(p=>p.id!==pid);
+    persistNeedlePresets();_npRenderMgr();
+    const fld=document.getElementById('np-field-tt3');if(fld&&_npClientId)fld.outerHTML=_needlePresetField(_npClientId);
+  };
+  const p=(needlePresets||[]).find(x=>x.id===pid);
+  if(typeof confirmModal==='function'){confirmModal({title:'Delete this preset?',body:'Remove the saved needle configuration'+(p&&p.name?' “'+p.name+'”':'')+'. This can’t be undone.',action:'Delete'},_go);return;}
+  _go();
 }
 
 // ── Ink lot-number OCR ── photograph an ink bottle; Claude (vision) reads the brand, color, and
@@ -6865,9 +6898,19 @@ function addSummaryGuide(id,kind,gid){
 }
 function removeSummaryGuide(id,kind,gid){
   if(!summaryGuides[id])return;
-  summaryGuides[id]=summaryGuides[id].filter(x=>!(x.kind===kind&&x.id===gid));
+  const arr=summaryGuides[id];
+  const pos=arr.findIndex(x=>x.kind===kind&&x.id===gid);
+  if(pos<0)return;
+  const removed=arr[pos];
+  summaryGuides[id]=arr.filter((x,i)=>i!==pos);
   _saveSummaryGuides();
   if(typeof renderSessionSummary==='function')renderSessionSummary(id);
+  _lastAftercareUndo={restore:function(){
+    (summaryGuides[id]=summaryGuides[id]||[]).splice(Math.min(pos,summaryGuides[id].length),0,removed);
+    _saveSummaryGuides();
+    if(typeof renderSessionSummary==='function')renderSessionSummary(id);
+  }};
+  _aftercareUndoToast('Removed “'+String((removed&&(removed.title||removed.name))||'item')+'”');
 }
 function toggleSummaryGuidePicker(){const el=document.getElementById('summary-guide-picker');if(el)el.style.display=el.style.display==='none'?'':'none';}
 let summaryCustomOpen=false;
@@ -7209,7 +7252,21 @@ function toggleSummaryProdPicker(id){
   }
 }
 function addSummaryProd(id,aid){if(!clientRecs[id])clientRecs[id]=[];if(!clientRecs[id].includes(aid))clientRecs[id].push(aid);_rerenderRecs(id);}
-function removeSummaryProd(id,aid){clientRecs[id]=(clientRecs[id]||[]).filter(x=>x!==aid);_rerenderRecs(id);}
+function removeSummaryProd(id,aid){
+  const arr=(clientRecs[id]||[]);
+  const pos=arr.indexOf(aid);
+  clientRecs[id]=arr.filter(x=>x!==aid);
+  _rerenderRecs(id);
+  if(pos>=0){
+    _lastAftercareUndo={restore:function(){
+      const a=(clientRecs[id]=clientRecs[id]||[]);
+      if(!a.includes(aid))a.splice(Math.min(pos,a.length),0,aid);
+      _rerenderRecs(id);
+    }};
+    let _nm=aid;try{_nm=(typeof _prodName==='function'&&_prodName(aid))||aid;}catch(e){}
+    _aftercareUndoToast('Removed “'+String(_nm)+'”');
+  }
+}
 let custProdSeq=0;
 function createCustomProd(id){
   const nameEl=document.getElementById('cust-name');
@@ -8500,7 +8557,7 @@ function renderRebook(id){
   const recs=id==='maya'?[{lbl:'Ideal · Hydrafacial follow-up',date:'Jul 17, 2026',weeks:3,reason:'Completing series on schedule. PIH protocol benefits from consistent 3-week cadence.',hi:true},{lbl:'Extended · if skin needs rest',date:'Jul 24, 2026',weeks:4,reason:'Alternative if barrier shows stress post-brightening booster.',hi:false}]:[{lbl:'Ideal · next treatment window',date:_fmtWeeksOut(2),weeks:2,reason:'Based on treatment type and recovery period.',hi:true},{lbl:'Alternative window',date:_fmtWeeksOut(4),weeks:4,reason:'Slightly longer rest if needed.',hi:false}];
   S.innerHTML=`
   
-  <div style="padding:12px 16px 0;"><div style="font-size:16px;font-weight:500;color:var(--p-ink);margin-bottom:2px;">Smart rebook</div><div style="font-size:13px;color:var(--p-mut);margin-bottom:10px;">AI-suggested windows based on treatment type and session history.</div></div>
+  <div style="padding:12px 16px 0;"><div style="font-size:16px;font-weight:500;color:var(--p-ink);margin-bottom:2px;">Smart rebook</div><div style="font-size:13px;color:var(--p-mut);margin-bottom:10px;">Suggested rebooking windows based on treatment type and session history. Sending an invite messages the client their booking link.</div></div>
   ${recs.map(r=>`<div style="margin:0 16px 10px;background:${r.hi?'var(--p-purple-bg)':'var(--p-surf3)'};border:1px solid ${r.hi?'#3d2d7a':'var(--p-chip)'};border-radius:12px;overflow:hidden;">
     <div style="padding:12px 14px;border-bottom:1px solid ${r.hi?'var(--p-purple-line)':'var(--p-chip)'};">
       <div style="display:flex;align-items:center;justify-content:space-between;margin-bottom:6px;"><span class="bdg ${r.hi?'bp':'bm'}" style="font-size:12px;">${r.lbl}</span>${r.hi?'<span class="bdg bg" style="font-size:12px;">Recommended</span>':''}</div>
@@ -8670,16 +8727,17 @@ function renderVirtual(){
 // app never displays it, it's the provider's own note of what they charge, if anything. Not every
 // provider makes this a paid service, so nothing is pre-selected as a price.
 function _setVcFee(val,btn){
+  const _persist=()=>{try{(function(_v){localStorage.setItem('sc_vc_fee',_v);if(typeof _pushKeyNow==='function')_pushKeyNow('sc_vc_fee',_v);return _v;})(vcFee);}catch(e){}switchVTab('upload');};
   if(val==='__custom__'){
-    var raw=null;try{raw=window.prompt('Set your consultation fee, just the number (leave blank for free):',(vcFee&&vcFee.charAt(0)==='$')?vcFee.slice(1):'');}catch(e){raw=null;}
-    if(raw===null)return;                       // cancelled, leave the current selection alone
-    raw=String(raw).replace(/[^0-9.]/g,'');
-    vcFee=raw?('$'+raw):'';
-  }else{
-    vcFee=val;                                  // '' for Free, or a preset like '$25'
+    _inputSheet({title:'Set your consultation fee',body:'Just the number — leave blank for free.',placeholder:'e.g. 25',inputmode:'decimal',value:(vcFee&&vcFee.charAt(0)==='$')?vcFee.slice(1):'',action:'Save'},function(raw){
+      raw=String(raw||'').replace(/[^0-9.]/g,'');
+      vcFee=raw?('$'+raw):'';
+      _persist();
+    });
+    return;
   }
-  try{(function(_v){localStorage.setItem('sc_vc_fee',_v);if(typeof _pushKeyNow==='function')_pushKeyNow('sc_vc_fee',_v);return _v;})(vcFee);}catch(e){}
-  switchVTab('upload');                          // re-render so the right pill shows active
+  vcFee=val;                                    // '' for Free, or a preset like '$25'
+  _persist();                                    // re-render so the right pill shows active
 }
 // ── Public "request a consult" link, real, backed by /api/consult-slug + /api/consult-requests ──
 let _consultSlug=null;        // null = not loaded, '' = none set yet, else the claimed slug
@@ -8715,12 +8773,13 @@ async function _loadConsultLink(){
 async function _setConsultSlug(){
   const tok=(typeof Cloud!=='undefined'&&Cloud&&Cloud.token)||'';
   if(!tok){if(typeof proToast==='function')proToast('Sign in to set up your consult link');return;}
-  let raw=null;try{raw=window.prompt('Choose your consult link name (letters, numbers, hyphens):',_consultSlug||_consultSuggestion||'');}catch(e){raw=null;}
-  if(raw===null)return;
-  try{const r=await fetch('/api/consult-slug',{method:'PUT',headers:{'Content-Type':'application/json','Authorization':'Bearer '+tok},body:JSON.stringify({slug:raw})});const j=await r.json();
-    if(r.ok&&j&&j.ok){_consultSlug=j.slug;if(typeof proToast==='function')proToast('Consult link ready ✓');if(activeVirtualTab==='upload')switchVTab('upload');}
-    else{if(typeof proToast==='function')proToast((j&&j.error)||'Could not set that link');}
-  }catch(e){if(typeof proToast==='function')proToast('Could not set that link');}
+  _inputSheet({title:'Choose your consult link name',body:'Letters, numbers, and hyphens.',placeholder:'your-name',value:_consultSlug||_consultSuggestion||'',action:'Save'},async function(raw){
+    if(!raw)return;
+    try{const r=await fetch('/api/consult-slug',{method:'PUT',headers:{'Content-Type':'application/json','Authorization':'Bearer '+tok},body:JSON.stringify({slug:raw})});const j=await r.json();
+      if(r.ok&&j&&j.ok){_consultSlug=j.slug;if(typeof proToast==='function')proToast('Consult link ready ✓');if(activeVirtualTab==='upload')switchVTab('upload');}
+      else{if(typeof proToast==='function')proToast((j&&j.error)||'Could not set that link');}
+    }catch(e){if(typeof proToast==='function')proToast('Could not set that link');}
+  });
 }
 function _consultWhen(ts){try{const d=new Date(ts);if(isNaN(d.getTime()))return '';return d.toLocaleDateString('en-US',{month:'short',day:'numeric'});}catch(e){return '';}}
 function _consultRequestsHTML(){
@@ -11842,7 +11901,7 @@ function _useSuggestedReply(i){
   const bar=document.getElementById('ai-suggest-bar');if(bar){bar.style.display='none';bar.innerHTML='';}
 }
 function attachProviderPhoto(id){_pickImages(srcs=>{if(srcs&&srcs.length)sendMsg(id,srcs);});}
-function attachProviderLink(id){const u=prompt('Paste an image link (URL):');if(u&&u.trim())sendMsg(id,[u.trim()]);}
+function attachProviderLink(id){_inputSheet({title:'Add a photo by link',body:'Paste an image URL to attach it to this message.',placeholder:'https://…',inputmode:'url',action:'Add'},function(u){if(u)sendMsg(id,[u]);});}
 // From inside a conversation the provider could only attach a photo. This "+" sheet keeps the photo
 // options but also lets them send the things a client usually asks for mid-chat — a form, a pre-visit
 // check-in, or a follow-up booking — without leaving the thread to hunt for them elsewhere.
@@ -13374,6 +13433,31 @@ function showToast(msg){return proToast(msg);}
 // Optional in-app notification (guarded callers); routes to the provider notify feed
 function pushNotify(o){try{if(typeof providerSystemNotify==='function')providerSystemNotify((o&&o.title)||'Notification',(o&&o.body)||'');}catch(e){}}
 // Styled confirmation modal used by delete/remove buttons: confirmModal({title,body,action}, fnOrString)
+// Branded single-line input dialog — replaces native prompt() so text entry stays inside the app
+// shell (styled, on-brand, tap-outside-to-close). onSubmit(value) fires only on confirm; cancel is a no-op.
+function _inputSheet(opts,onSubmit){
+  opts=opts||{};
+  const esc=s=>String(s==null?'':s).replace(/&/g,'&amp;').replace(/</g,'&lt;').replace(/>/g,'&gt;').replace(/"/g,'&quot;');
+  const ov=document.createElement('div');ov.id='input-sheet';
+  ov.style.cssText='position:fixed;top:0;bottom:0;left:0;right:0;margin:0 auto;width:390px;max-width:100%;z-index:99999;background:rgba(0,0,0,.65);display:flex;align-items:center;justify-content:center;padding:24px;';
+  const close=()=>{try{ov.remove();}catch(e){}};
+  ov.onclick=e=>{if(e.target===ov)close();};
+  ov.innerHTML=`<div role="dialog" aria-modal="true" aria-labelledby="_is-title" style="background:var(--surf2);border:1px solid var(--p-line);border-radius:16px;padding:20px;max-width:340px;width:100%;box-shadow:0 12px 40px rgba(0,0,0,.5);">
+    <div id="_is-title" style="font-size:16px;font-weight:600;color:var(--p-ink);margin-bottom:${opts.body?'6px':'12px'};">${esc(opts.title||'Enter a value')}</div>
+    ${opts.body?`<div style="font-size:12px;color:var(--p-mut);line-height:1.5;margin-bottom:12px;">${esc(opts.body)}</div>`:''}
+    <input id="_is-input" type="${esc(opts.type||'text')}" inputmode="${esc(opts.inputmode||'text')}" value="${esc(opts.value||'')}" placeholder="${esc(opts.placeholder||'')}" style="width:100%;background:var(--surf1);border:1px solid var(--p-line);border-radius:10px;padding:11px 12px;font-size:15px;color:var(--p-ink);outline:none;box-sizing:border-box;margin-bottom:16px;font-family:inherit;">
+    <div style="display:flex;gap:8px;">
+      <button id="_is-cancel" class="btng" style="flex:1;border-radius:10px;padding:11px;">Cancel</button>
+      <button id="_is-ok" style="flex:1;border:none;border-radius:10px;padding:11px;font-size:14px;font-weight:600;cursor:pointer;font-family:inherit;background:var(--accent);color:var(--accent-ink);">${esc(opts.action||'Save')}</button>
+    </div>
+  </div>`;
+  (document.querySelector('.shell')||document.body).appendChild(ov);
+  const inp=ov.querySelector('#_is-input');
+  const submit=()=>{const v=(inp&&inp.value||'').trim();close();try{if(typeof onSubmit==='function')onSubmit(v);}catch(e){}};
+  ov.querySelector('#_is-ok').onclick=submit;
+  ov.querySelector('#_is-cancel').onclick=close;
+  if(inp){inp.onkeydown=e=>{if(e.key==='Enter'){e.preventDefault();submit();}else if(e.key==='Escape')close();};setTimeout(()=>{try{inp.focus();inp.select();}catch(e){}},40);}
+}
 function confirmModal(opts,action){
   opts=opts||{};
   const run=()=>{try{if(typeof action==='function')action();else if(typeof action==='string'){const f=eval('('+action+')');if(typeof f==='function')f();}}catch(e){}};
@@ -15752,18 +15836,19 @@ function _biSaveUnpaid(){
 
 // Payments hub
 // Quick Square gift-card balance lookup by card number.
-async function _checkGiftCard(){
-  const gan=(prompt('Enter the gift card number to check its balance:')||'').trim();
-  if(!gan)return;
-  const tok=(typeof Cloud!=='undefined'&&Cloud&&Cloud.token)||'';
-  if(typeof proToast==='function')proToast('Checking gift card…');
-  try{
-    const r=await fetch('/api/square/giftcard?gan='+encodeURIComponent(gan),{headers:{'Authorization':'Bearer '+tok}});
-    const j=await r.json().catch(()=>({}));
-    if(!r.ok||!j.ok){if(typeof proToast==='function')proToast((j&&j.code==='scope')?'Reconnect Square to check gift cards.':((j&&j.error)||'Could not check gift card'),0);return;}
-    if(!j.found){if(typeof proToast==='function')proToast('No gift card found for that number',0);return;}
-    if(typeof proToast==='function')proToast('Gift card balance: $'+(+j.balance||0).toFixed(2)+(j.state&&j.state!=='ACTIVE'?(' ('+String(j.state).toLowerCase()+')'):''),0);
-  }catch(e){if(typeof proToast==='function')proToast('Could not reach Square, try again');}
+function _checkGiftCard(){
+  _inputSheet({title:'Check a gift card balance',body:'Enter the gift card number.',placeholder:'Gift card number',inputmode:'numeric',action:'Check'},async function(gan){
+    if(!gan)return;
+    const tok=(typeof Cloud!=='undefined'&&Cloud&&Cloud.token)||'';
+    if(typeof proToast==='function')proToast('Checking gift card…');
+    try{
+      const r=await fetch('/api/square/giftcard?gan='+encodeURIComponent(gan),{headers:{'Authorization':'Bearer '+tok}});
+      const j=await r.json().catch(()=>({}));
+      if(!r.ok||!j.ok){if(typeof proToast==='function')proToast((j&&j.code==='scope')?'Reconnect Square to check gift cards.':((j&&j.error)||'Could not check gift card'),0);return;}
+      if(!j.found){if(typeof proToast==='function')proToast('No gift card found for that number',0);return;}
+      if(typeof proToast==='function')proToast('Gift card balance: $'+(+j.balance||0).toFixed(2)+(j.state&&j.state!=='ACTIVE'?(' ('+String(j.state).toLowerCase()+')'):''),0);
+    }catch(e){if(typeof proToast==='function')proToast('Could not reach Square, try again');}
+  });
 }
 function renderPayments(){
   setNav('payments');document.getElementById('tt').textContent='Payments';
@@ -15839,8 +15924,7 @@ async function _payRefund(idv){
       if(typeof _navCur!=='undefined'&&_navCur&&_navCur.screen==='payments')renderPayments();
     }catch(e){if(typeof proToast==='function')proToast('Could not reach Square, try again');}
   };
-  if(typeof confirmModal==='function')confirmModal({title:'Refund $'+amt.toFixed(2)+'?',body:'This refunds the payment in Square and marks it refunded here. This can’t be undone.',action:'Refund'},go);
-  else if(confirm('Refund $'+amt.toFixed(2)+' in Square?'))go();
+  confirmModal({title:'Refund $'+amt.toFixed(2)+'?',body:'This refunds the payment in Square and marks it refunded here. This can’t be undone.',action:'Refund'},go);
 }
 function _payEdit(idv){
   const p=_payments.find(x=>x.id===idv); if(!p)return;
@@ -16209,8 +16293,9 @@ function _mergeSquareRetail(){
 function _sqKey(force){
   let k=sessionStorage.getItem('sc_sqkey')||'';
   if(force||!k){
-    k=window.prompt('Enter your SlickChart access key\n(the APP_SHARED_SECRET you set in Vercel):',k||'');
-    if(k){sessionStorage.setItem('sc_sqkey',k);}
+    _inputSheet({title:'Enter your SlickChart access key',body:'The APP_SHARED_SECRET you set in Vercel.',placeholder:'Access key',value:k,action:'Save'},function(v){
+      if(v){try{sessionStorage.setItem('sc_sqkey',v);}catch(e){}if(typeof proToast==='function')proToast('Access key saved ✓');}
+    });
   }
   return k||'';
 }
@@ -16408,7 +16493,7 @@ function renderSquareSync(){
     <span style="font-size:11px;color:var(--p-mut);">Your Square Online shop link, the default <b>Buy</b> for your products</span>
     <input id="sq-shop-url" value="${((typeof bizInfo!=='undefined'&&bizInfo.shopUrl)||'').replace(/"/g,'&quot;')}" placeholder="yourshop.square.site" onchange="_saveShopUrl(this.value)" style="width:100%;margin-top:5px;background:var(--p-surf);border:1px solid var(--p-line);border-radius:9px;padding:10px 12px;font-size:13px;color:var(--p-ink);font-family:inherit;box-sizing:border-box;outline:none;">
   </div>
-  <div style="padding:0 16px;"><button onclick="_sqKey(true);proToast('Access key updated')" style="background:none;border:none;color:var(--p-mut);font-size:11px;cursor:pointer;padding:4px 0;"><i class="ti ti-key" style="font-size:11px;"></i> Change access key</button></div>
+  <div style="padding:0 16px;"><button onclick="_sqKey(true)" style="background:none;border:none;color:var(--p-mut);font-size:11px;cursor:pointer;padding:4px 0;"><i class="ti ti-key" style="font-size:11px;"></i> Change access key</button></div>
   ${selectedProfessions.includes('tattoo')?_depositSettingCard():''}
   <div id="sq-results" style="padding:6px 16px 20px;"></div>`;
   _sqCheckStatus();
@@ -18180,11 +18265,17 @@ function renderCalendar(){
     +'<button onclick="nav(\'connect-calendar\')" style="background:var(--surf1);border:1px solid var(--p-line);color:var(--p-mut2);border-radius:8px;padding:7px 11px;font-size:12px;font-weight:600;cursor:pointer;font-family:inherit;"><i class="ti ti-calendar-share" style="font-size:12px;"></i> Sync to Google/Apple</button>'
     +'<button onclick="openQuickAdd()" style="background:var(--accent);color:var(--accent-ink);border:none;border-radius:8px;padding:7px 12px;font-size:12px;font-weight:500;cursor:pointer;"><i class="ti ti-plus" style="font-size:12px;"></i> New appointment</button>'
   +'</div>'
+  // Booking requests is a persistent home on the calendar — always here so providers know where client
+  // requests land, even when none are waiting. Emphasized (green, badge) when pending; muted otherwise.
   +(pend.length?('<div onclick="nav(\'requests\')" style="margin:10px 16px 2px;background:linear-gradient(135deg,var(--p-surf2),var(--p-green-bg));border:1px solid var(--p-green-line);border-radius:12px;padding:12px 14px;display:flex;align-items:center;gap:11px;cursor:pointer;">'
     +'<div style="width:38px;height:38px;border-radius:10px;background:var(--p-green-bg);display:flex;align-items:center;justify-content:center;flex-shrink:0;position:relative;"><i class="ti ti-calendar-plus" style="font-size:19px;color:var(--p-green);"></i>'
     +'<span style="position:absolute;top:-4px;right:-4px;min-width:18px;height:18px;padding:0 4px;background:#5fd99f;border-radius:9px;font-size:10px;font-weight:700;color:#04231d;display:flex;align-items:center;justify-content:center;border:2px solid var(--p-surf2);">'+pend.length+'</span></div>'
     +'<div style="flex:1;"><div style="font-size:13px;font-weight:600;color:var(--p-green);">'+pend.length+' booking request'+(pend.length>1?'s':'')+' waiting</div><div style="font-size:12px;color:var(--p-mut2);margin-top:1px;">Tap to review and confirm</div></div>'
-    +'<i class="ti ti-chevron-right" style="font-size:18px;color:var(--p-green);"></i></div>'):'')
+    +'<i class="ti ti-chevron-right" style="font-size:18px;color:var(--p-green);"></i></div>')
+    :('<div onclick="nav(\'requests\')" aria-label="Booking requests" style="margin:10px 16px 2px;background:var(--surf1);border:1px solid var(--p-line2);border-radius:12px;padding:11px 14px;display:flex;align-items:center;gap:11px;cursor:pointer;">'
+    +'<div style="width:34px;height:34px;border-radius:9px;background:var(--surf2);display:flex;align-items:center;justify-content:center;flex-shrink:0;"><i class="ti ti-calendar-plus" style="font-size:17px;color:var(--p-mut2);"></i></div>'
+    +'<div style="flex:1;"><div style="font-size:13px;font-weight:600;color:var(--p-ink);">Booking requests</div><div style="font-size:12px;color:var(--p-mut);margin-top:1px;">None waiting — client requests land here</div></div>'
+    +'<i class="ti ti-chevron-right" style="font-size:18px;color:var(--p-mut);"></i></div>'))
   +'<div style="padding:12px 16px 6px;display:flex;align-items:center;gap:8px;">'
     +'<div style="font-size:16px;font-weight:600;color:var(--p-ink);flex:1;">'+monthLbl+(showSquareBadge?' <span style="display:inline-flex;align-items:center;gap:3px;font-size:9px;font-weight:700;color:var(--p-green);background:var(--p-surf2);border:1px solid var(--p-green-line);padding:1px 6px;border-radius:20px;vertical-align:middle;"><span style="width:5px;height:5px;border-radius:50%;background:#4ec49a;"></span>SQUARE</span>':'')+'</div>'
     +'<button onclick="_calToday()" style="background:none;border:1px solid var(--p-line);color:var(--accent-strong);border-radius:7px;padding:4px 9px;font-size:11px;font-weight:600;cursor:pointer;font-family:inherit;">Today</button>'
@@ -18286,8 +18377,7 @@ function _apptRescheduleSquare(id){
 }
 function _apptCancelSquare(id){
   var go=function(){_doCancelSquare(id);};
-  if(typeof confirmModal==='function')confirmModal({title:'Cancel appointment?',body:'This cancels the booking in Square and notifies the client per your Square settings.',action:'Cancel appointment'},go);
-  else if(confirm('Cancel this appointment in Square?'))go();
+  confirmModal({title:'Cancel appointment?',body:'This cancels the booking in Square and notifies the client per your Square settings.',action:'Cancel appointment'},go);
 }
 function _doCancelSquare(id){
   _apptSheetBusy('Cancelling…');
@@ -18312,8 +18402,7 @@ function _manualApptSave(id){
 }
 function _manualApptDelete(id){
   var go=function(){var i=(manualAppts||[]).findIndex(function(x){return x.id===id;});if(i>=0){manualAppts.splice(i,1);_saveManualAppts();try{_rebuildCalendarFeed();}catch(e){}try{_stampClientNextVisit(true);}catch(e){}}_closeApptSheet();if(typeof proToast==='function')proToast('Appointment deleted');renderCalendar();};
-  if(typeof confirmModal==='function')confirmModal({title:'Delete appointment?',body:'This removes it from your calendar and your synced Google/Apple feed.',action:'Delete'},go);
-  else if(confirm('Delete this appointment?'))go();
+  confirmModal({title:'Delete appointment?',body:'This removes it from your calendar and your synced Google/Apple feed.',action:'Delete'},go);
 }
 
 // Quick-add appointment modal
