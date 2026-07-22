@@ -25,6 +25,14 @@ export default async function handler(req, res) {
         const sum = (inv.payment_requests || []).reduce((a, r) => a + ((r.computed_amount_money && r.computed_amount_money.amount) || 0), 0);
         if (sum) total = sum / 100;
       } catch (e) {}
+      // Amount actually collected so far (sum of completed payments across the invoice's payment
+      // requests). Without this, a PARTIALLY_PAID invoice reported $0 collected + the FULL amount owed,
+      // so revenue reports understated and outstanding balances overstated.
+      let amountPaid = null;
+      try {
+        const paid = (inv.payment_requests || []).reduce((a, r) => a + ((r.total_completed_amount_money && r.total_completed_amount_money.amount) || 0), 0);
+        amountPaid = paid / 100;
+      } catch (e) {}
       const r = inv.primary_recipient || {};
       const client = [r.given_name, r.family_name].filter(Boolean).join(' ') || r.email_address || '';
       // email + customerId let the app reliably match a paid invoice to a client record (e.g. to

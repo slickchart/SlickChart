@@ -13,10 +13,16 @@ export default async function handler(req, res) {
   if (!paymentId) { res.status(400).json({ error: 'Missing paymentId' }); return; }
 
   try {
-    // If no amount is given, look up the payment and refund the full amount.
-    let amount = (b.amount != null) ? Math.round(parseFloat(b.amount) * 100) : null;
+    // Amount handling. Distinguish "no amount given" (→ refund the full captured amount) from "an amount
+    // was given but it's invalid". The old code treated a non-numeric amount (NaN) as "no amount" and
+    // silently escalated to a FULL refund — so a malformed partial-refund request could over-refund.
+    let amount = null;
     let currency = 'USD';
-    if (!amount || amount <= 0) {
+    if (b.amount != null) {
+      amount = Math.round(parseFloat(b.amount) * 100);
+      if (!Number.isFinite(amount) || amount <= 0) { res.status(400).json({ error: 'Invalid refund amount.' }); return; }
+    }
+    if (amount == null) {
       const pd = await sf('/v2/payments/' + encodeURIComponent(paymentId));
       const am = pd && pd.payment && pd.payment.amount_money;
       if (!am || !am.amount) { res.status(400).json({ error: 'Could not determine the payment amount to refund.' }); return; }

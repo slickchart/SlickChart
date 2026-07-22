@@ -415,6 +415,10 @@ let autos=[
   {name:'We miss you',icon:'💌',col:'var(--p-blue-bg)',trigger:"Client hasn't visited in 90 days",on:true,sent:8,opened:6,bdg:'bb'},
   {name:'Post-microneedling care',icon:'🔬',col:'var(--p-purple-bg)',trigger:'72 hours after Microneedling',on:false,sent:0,opened:0,bdg:'bp'},
 ];
+// Tag these seeded demo arrays so "Remove demo clients" strips them from a real account too — otherwise
+// a brand-new provider keeps fake inventory/stock, fake vendor rep contacts, fake partner businesses, and
+// automations shown as "Active" that they never set up. A provider's OWN added items never carry _sample.
+try{[vendors,inv,partners,autos].forEach(function(arr){(arr||[]).forEach(function(x){if(x&&typeof x==='object')x._sample=true;});});}catch(e){}
 
 const threads=[
   {id:'maya',preview:'Yes, skip heavy sweating for 24 hours.',time:'12:47 PM',unread:false},
@@ -1501,6 +1505,13 @@ function _purgeSample(){
       if(changed&&typeof persistClientRecs==='function')persistClientRecs();
     }
   }catch(e){}
+  // Strip the seeded demo inventory / vendors / partners / automations (tagged _sample) so a real
+  // provider who removes the demo isn't left with fake stock, rep contacts, referral businesses, or
+  // "active" automations they never created. Their own added items (no _sample) are kept.
+  try{ if(typeof inv!=='undefined'){ inv=inv.filter(x=>!(x&&x._sample)); if(typeof saveInv==='function')saveInv(); } }catch(e){}
+  try{ if(typeof vendors!=='undefined'){ for(let i=vendors.length-1;i>=0;i--){ if(vendors[i]&&vendors[i]._sample)vendors.splice(i,1); } if(typeof saveVendors==='function')saveVendors(); } }catch(e){}
+  try{ if(typeof partners!=='undefined'){ partners=partners.filter(x=>!(x&&x._sample)); if(typeof persistPartners==='function')persistPartners(); } }catch(e){}
+  try{ if(typeof autos!=='undefined'){ autos=autos.filter(x=>!(x&&x._sample)); if(typeof persistAutos==='function')persistAutos(); } }catch(e){}
 }
 function _todayLabel(){try{return new Date().toLocaleDateString('en-US',{weekday:'long',month:'long',day:'numeric'});}catch(e){return '';}}
 function _clearSampleData(){
@@ -15977,7 +15988,9 @@ async function _payRefund(idv){
     const tok=(typeof Cloud!=='undefined'&&Cloud&&Cloud.token)||'';
     if(typeof proToast==='function')proToast('Refunding…');
     try{
-      const _idem='sc-rf-'+String(idv).replace(/[^a-zA-Z0-9_-]/g,'').slice(0,28)+'-'+Date.now();   // stable per refund action
+      // Stable per (payment + amount) so a retry after a lost response reuses the SAME key and Square
+      // dedupes it — a Date.now() salt made every retry a distinct refund request (double-refund risk).
+      const _idem=('sc-rf-'+String(idv).replace(/[^a-zA-Z0-9_-]/g,'').slice(0,28)+'-'+Math.round((+amt||0)*100)).slice(0,45);
       const r=await fetch('/api/square/refund',{method:'POST',headers:{'Content-Type':'application/json','Authorization':'Bearer '+tok},body:JSON.stringify({paymentId:p.squarePaymentId,amount:amt,reason:'SlickChart refund',idempotencyKey:_idem})});
       const j=await r.json().catch(()=>({}));
       if(!r.ok||!j.ok){if(typeof proToast==='function')proToast((j&&j.code==='scope')?'Reconnect Square to issue refunds.':((j&&j.error)||'Refund failed'),0);return;}
@@ -16100,7 +16113,7 @@ async function _paySyncSquare(auto){
     (d.invoices||[]).forEach(sv=>{
       const e=_payments.find(p=>p.squareInvoiceId===sv.id);
       const st=(sv.status==='paid')?'paid':(sv.status==='partial'?'partial':(sv.status==='canceled'||sv.status==='refunded')?sv.status:'unpaid');
-      if(e){if(!(e.status==='paid'&&(st==='unpaid'||st==='partial')))e.status=st;if(sv.total!=null)e.amount=sv.total;if(sv.publicUrl)e.publicUrl=sv.publicUrl;}
+      if(e){if(!(e.status==='paid'&&(st==='unpaid'||st==='partial')))e.status=st;if(sv.total!=null)e.amount=sv.total;if(sv.amountPaid!=null)e.amountPaid=sv.amountPaid;if(sv.publicUrl)e.publicUrl=sv.publicUrl;}
       else if(sv.status!=='draft'&&!_deletedSquareIds.has(sv.id)){
         // Avoid double-counting: if the provider ALSO logged this payment manually (cash, card on
         // file, texted link — none carry a squareInvoiceId), LINK that record to this Square invoice
@@ -16109,8 +16122,8 @@ async function _paySyncSquare(auto){
         const svName=String(sv.client||'').trim().toLowerCase();
         const svDay=Date.parse((sv.createdAt||'').slice(0,10)||_todayISO())||0;
         const dup=svName?_payments.find(p=>p&&!p.squareInvoiceId&&Math.round((+p.amount||0)*100)===svAmt&&String(p.clientName||'').trim().toLowerCase()===svName&&(function(){const pd=Date.parse((p.date||'').slice(0,10))||0;return svDay&&pd&&Math.abs(pd-svDay)<=3*86400000;})()):null;
-        if(dup){dup.squareInvoiceId=sv.id;if(!(dup.status==='paid'&&(st==='unpaid'||st==='partial')))dup.status=st;if(sv.total!=null)dup.amount=sv.total;if(sv.publicUrl)dup.publicUrl=sv.publicUrl;}
-        else _addPayment({clientId:'',clientName:sv.client||'Client',amount:sv.total||0,method:'Square',status:st,date:(sv.createdAt||'').slice(0,10)||_todayISO(),note:'Square invoice',source:'square',squareInvoiceId:sv.id,publicUrl:sv.publicUrl});
+        if(dup){dup.squareInvoiceId=sv.id;if(!(dup.status==='paid'&&(st==='unpaid'||st==='partial')))dup.status=st;if(sv.total!=null)dup.amount=sv.total;if(sv.amountPaid!=null)dup.amountPaid=sv.amountPaid;if(sv.publicUrl)dup.publicUrl=sv.publicUrl;}
+        else _addPayment({clientId:'',clientName:sv.client||'Client',amount:sv.total||0,amountPaid:sv.amountPaid,method:'Square',status:st,date:(sv.createdAt||'').slice(0,10)||_todayISO(),note:'Square invoice',source:'square',squareInvoiceId:sv.id,publicUrl:sv.publicUrl});
       }
     });
     _savePayments();
@@ -19640,7 +19653,7 @@ function saveEditPartner(i){
   nav('partner-detail',i);
 }
 function persistPartners(){try{(function(_v){localStorage.setItem('sc_partners',_v);if(typeof _pushKeyNow==='function')_pushKeyNow('sc_partners',_v);return _v;})(JSON.stringify(partners));}catch(e){}}
-function loadPartners(){try{const raw=localStorage.getItem('sc_partners');if(raw){const arr=JSON.parse(raw);if(Array.isArray(arr)&&arr.length)partners=arr;}}catch(e){}}
+function loadPartners(){try{const raw=localStorage.getItem('sc_partners');if(raw){const arr=JSON.parse(raw);if(Array.isArray(arr))partners=arr;}}catch(e){}}
 function removePartner(i){const _go=function(){partners.splice(i,1);persistPartners();if(typeof proToast==='function')proToast('Partner removed');nav('partners');};if(typeof confirmModal==='function')confirmModal({title:'Remove partner?',body:'This removes this partner from your network.',action:'Remove'},_go);else _go();}
 
 // ── ADD/EDIT AUTOMATION ──
