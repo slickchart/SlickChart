@@ -407,6 +407,10 @@ function updateClientBadge(){
       }else if(typeof activeProvider==='function'){const ap=activeProvider();mu=(ap&&+ap.unread)||0;}
       mb.textContent=mu>9?'9+':String(mu);
       mb.style.display=mu>0?'flex':'none';
+      // The badge itself is decorative (aria-hidden); fold the unread count into the tab's accessible
+      // name so a screen-reader client hears "Messages, 3 unread" instead of just "Messages".
+      const mtab=document.getElementById('ni-messages');
+      if(mtab)mtab.setAttribute('aria-label',mu>0?('Messages, '+mu+' unread'):'Messages');
     }
   }catch(e){}
   const b=document.getElementById('client-notif-badge');if(!b)return;
@@ -1585,7 +1589,7 @@ function _a11yDialogify(node){
   try{
     if(!node||node.nodeType!==1||!node.getAttribute)return;
     var st=node.getAttribute('style')||'';
-    if(!/position:\s*fixed/.test(st)||!/top:\s*0/.test(st)||!/bottom:\s*0/.test(st))return;
+    if(!/position:\s*fixed/.test(st)||!((/top:\s*0/.test(st)&&/bottom:\s*0/.test(st))||/inset:\s*0/.test(st)))return;
     if(node.__a11yDialog)return; node.__a11yDialog=true;
     if(node.getAttribute('role')==='dialog'||(node.querySelector&&node.querySelector('[role="dialog"]')))return;
     var panel=node.firstElementChild||node;
@@ -2825,10 +2829,10 @@ function renderMessages(){
     </div>`;}).join('')}
   </div>
   <div style="position:absolute;bottom:68px;left:0;right:0;background:var(--c-card);border-top:1px solid var(--c-line);padding:8px 12px;display:flex;align-items:flex-end;gap:6px;">
-    <button onclick="attachClientPhoto()" aria-label="Add a photo" title="Add a photo" style="width:36px;height:36px;border-radius:50%;background:var(--c-surf);border:1.5px solid var(--c-line);display:flex;align-items:center;justify-content:center;cursor:pointer;flex-shrink:0;"><i class="ti ti-camera" aria-hidden="true" style="font-size:18px;color:var(--accent-ink-lt);"></i></button>
-    <button onclick="attachClientLink()" aria-label="Add a photo by link" title="Add a photo by link" style="width:36px;height:36px;border-radius:50%;background:var(--c-surf);border:1.5px solid var(--c-line);display:flex;align-items:center;justify-content:center;cursor:pointer;flex-shrink:0;"><i class="ti ti-link" aria-hidden="true" style="font-size:19px;color:var(--accent-ink-lt);"></i></button>
+    <button onclick="attachClientPhoto()" aria-label="Add a photo" title="Add a photo" style="width:40px;height:40px;border-radius:50%;background:var(--c-surf);border:1.5px solid var(--c-line);display:flex;align-items:center;justify-content:center;cursor:pointer;flex-shrink:0;"><i class="ti ti-camera" aria-hidden="true" style="font-size:18px;color:var(--accent-ink-lt);"></i></button>
+    <button onclick="attachClientLink()" aria-label="Add a photo by link" title="Add a photo by link" style="width:40px;height:40px;border-radius:50%;background:var(--c-surf);border:1.5px solid var(--c-line);display:flex;align-items:center;justify-content:center;cursor:pointer;flex-shrink:0;"><i class="ti ti-link" aria-hidden="true" style="font-size:19px;color:var(--accent-ink-lt);"></i></button>
     <textarea id="cinput" aria-label="Type a message" placeholder="Ask ${_txt(client.providerFirst)} anything..." rows="1" style="flex:1;background:var(--c-surf);border:1.5px solid var(--c-line);border-radius:20px;padding:9px 14px;font-size:13px;color:var(--c-ink);resize:none;font-family:inherit;max-height:80px;" oninput="this.style.height='auto';this.style.height=this.scrollHeight+'px'"></textarea>
-    <button onclick="sendClientMsg()" aria-label="Send message" title="Send" style="width:36px;height:36px;border-radius:50%;background:var(--accent);border:none;display:flex;align-items:center;justify-content:center;cursor:pointer;flex-shrink:0;"><svg viewBox="0 0 24 24" width="17" height="17" fill="none" stroke="#fff" stroke-width="1.8" stroke-linecap="round" stroke-linejoin="round" aria-hidden="true"><path d="M21 4 3 11l6 2.5L21 4z"/><path d="m21 4-7 16-2.5-6.5"/></svg></button>
+    <button onclick="sendClientMsg()" aria-label="Send message" title="Send" style="width:40px;height:40px;border-radius:50%;background:var(--accent);border:none;display:flex;align-items:center;justify-content:center;cursor:pointer;flex-shrink:0;"><svg viewBox="0 0 24 24" width="17" height="17" fill="none" stroke="#fff" stroke-width="1.8" stroke-linecap="round" stroke-linejoin="round" aria-hidden="true"><path d="M21 4 3 11l6 2.5L21 4z"/><path d="m21 4-7 16-2.5-6.5"/></svg></button>
   </div>`;
   const body=document.getElementById('chat-body');if(body)body.scrollTop=body.scrollHeight;
   // Drop in any pre-filled reservation note ("Buy in office") so the client just taps Send.
@@ -4782,14 +4786,15 @@ function renderProfile(){
 
   <div style="height:8px;"></div>
 
-  <div class="sh"><h2>${activeProvider().profileTitle}</h2></div>
+  ${(activeProvider().profileFields||[]).length?`
+  <div class="sh"><h2>${_txt(activeProvider().profileTitle||'Your profile')}</h2></div>
   <div style="background:var(--c-card);border:1.5px solid var(--c-line);border-radius:12px;margin:0 16px 10px;overflow:hidden;">
     ${(activeProvider().profileFields||[]).map(([label,val],i,arr)=>`
     <div style="display:flex;align-items:center;justify-content:space-between;padding:11px 14px;${i<arr.length-1?'border-bottom:1px solid var(--c-line);':''}">
       <span style="font-size:13px;color:var(--c-mut);min-width:90px;">${_txt(label)}</span>
       <span style="font-size:13px;font-weight:600;color:var(--c-ink);flex:1;text-align:right;">${_txt(val)}</span>
     </div>`).join('')}
-  </div>
+  </div>`:''}
 
   <div class="sh"><h2>Contact info</h2></div>
   <div style="background:var(--c-card);border:1.5px solid var(--c-line);border-radius:12px;margin:0 16px 10px;overflow:hidden;">
@@ -5082,6 +5087,8 @@ function _applyRealClientData(j){
   // Contact info the provider has on file, shown read-back in the profile so a real client
   // sees their actual details (not the demo's), and can correct them (synced via 'contact').
   client.email=prof.email||'';client.phone=prof.phone||'';
+  // The client's last-visit date the provider has on file (drives "have they been in yet" surfaces).
+  client.lastVisit=prof.lastVisit||'';
   try{_loadClientContact(prof);}catch(e){}
   p.treatment=prof.treatment||'';
   p.summaryNote=(Array.isArray(d.summaries)&&d.summaries[0]&&d.summaries[0].note)||'';
@@ -5104,14 +5111,19 @@ function _applyRealClientData(j){
   // Drop the demo "Skin analysis · Jun 26" virtual consult a real client must never see, then restore
   // any consults THEY actually submitted (persisted locally), so their own history still shows.
   p.virtualConsults=[];try{if(typeof loadVirtualConsults==='function')loadVirtualConsults();}catch(e){}
-  // Remaining demo-seed fields, a real client must never see the sample "Maya" data (skin
-  // profile, shop goals/history/saved, demo guide, demo Amazon store, hardcoded profession).
-  p.profileFields=[];p.profileTitle='';p.shopGoals='';p.recLog=[];p.saved=[];p.resources=[];p.amazonStore='';p.kind='';
+  // Build the client's profile card from the REAL values the provider recorded (skin type, Fitzpatrick,
+  // main concern, allergies) — the provider sends these in `profile`, but they used to be hard-cleared
+  // here, so a real client's profile section showed empty. Only non-empty fields are listed.
+  p.profileFields=[['Skin type',prof.skin],['Fitzpatrick',prof.fitz],['Main concern',prof.concerns],['Allergies',prof.allergies]].filter(function(r){return r[1]&&String(r[1]).trim();});
+  p.profileTitle=p.profileFields.length?'Your profile':'';
+  // Remaining demo-seed fields a real client must never see (shop goals/history/saved, demo guide,
+  // demo Amazon store, hardcoded profession).
+  p.shopGoals='';p.recLog=[];p.saved=[];p.resources=[];p.amazonStore='';p.kind='';
   try{const _sv=JSON.parse(localStorage.getItem('sc_client_saved')||'null');if(Array.isArray(_sv))p.saved=_sv;}catch(e){}
   // The provider's real check-in config rides in the blob (d.checkinCfg); persist it where the
   // client's check-in reads it, so a real client sees THEIR provider's questions, not Maya's.
   try{if(d.checkinCfg&&typeof d.checkinCfg==='object')localStorage.setItem('sc_checkin_cfg',JSON.stringify(d.checkinCfg));}catch(e){}
-  p.session=1;p.totalSessions=1;p.studioAddress=d.studioAddress||'';p.studioPhone='';p.connected=false;p.unread=0;
+  p.session=1;p.totalSessions=1;p.studioAddress=d.studioAddress||'';p.studioPhone=d.studioPhone||'';p.connected=false;p.unread=0;
   var nv=String(prof.nextVisit||'').split('\u00b7');
   p.nextDate=(nv[0]||'').trim();p.nextTime=(nv[1]||'').trim();
   // Parse the year-less nextVisit ("Jul 17 \u00b7 10:00 AM") into a real timestamp. Two traps:

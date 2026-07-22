@@ -1892,7 +1892,7 @@ function _a11yDialogify(node){
   try{
     if(!node||node.nodeType!==1||!node.getAttribute)return;
     var st=node.getAttribute('style')||'';
-    if(!/position:\s*fixed/.test(st)||!/top:\s*0/.test(st)||!/bottom:\s*0/.test(st))return;
+    if(!/position:\s*fixed/.test(st)||!((/top:\s*0/.test(st)&&/bottom:\s*0/.test(st))||/inset:\s*0/.test(st)))return;
     if(node.__a11yDialog)return; node.__a11yDialog=true;
     if(node.getAttribute('role')==='dialog'||(node.querySelector&&node.querySelector('[role="dialog"]')))return;
     var panel=node.firstElementChild||node;
@@ -8412,8 +8412,8 @@ function _stRender(){
       <img id="st-ovimg" src="${_imgSrc(s.stencil)}" style="position:absolute;left:${s.cx*100}%;top:${s.cy*100}%;width:${s.scale*100}%;transform:translate(-50%,-50%);opacity:${s.op};pointer-events:none;" draggable="false" alt="Stencil">
     </div>
     <div style="font-size:11px;color:var(--p-mut);margin-bottom:8px;text-align:center;">Drag the stencil to position it</div>
-    <div style="margin-bottom:9px;"><div style="display:flex;justify-content:space-between;font-size:11px;color:var(--p-mut);margin-bottom:3px;"><span>Opacity</span><span>${Math.round(s.op*100)}%</span></div><input type="range" min="10" max="90" value="${Math.round(s.op*100)}" oninput="_stOv.op=this.value/100;var e=document.getElementById('st-ovimg');if(e)e.style.opacity=_stOv.op;this.previousElementSibling.lastElementChild.textContent=this.value+'%'" style="width:100%;"></div>
-    <div style="margin-bottom:12px;"><div style="display:flex;justify-content:space-between;font-size:11px;color:var(--p-mut);margin-bottom:3px;"><span>Size</span><span>${Math.round(s.scale*100)}%</span></div><input type="range" min="20" max="150" value="${Math.round(s.scale*100)}" oninput="_stOv.scale=this.value/100;var e=document.getElementById('st-ovimg');if(e)e.style.width=(_stOv.scale*100)+'%';this.previousElementSibling.lastElementChild.textContent=this.value+'%'" style="width:100%;"></div>
+    <div style="margin-bottom:9px;"><div style="display:flex;justify-content:space-between;font-size:11px;color:var(--p-mut);margin-bottom:3px;"><span>Opacity</span><span>${Math.round(s.op*100)}%</span></div><input type="range" aria-label="Stencil opacity" min="10" max="90" value="${Math.round(s.op*100)}" oninput="_stOv.op=this.value/100;var e=document.getElementById('st-ovimg');if(e)e.style.opacity=_stOv.op;this.previousElementSibling.lastElementChild.textContent=this.value+'%'" style="width:100%;"></div>
+    <div style="margin-bottom:12px;"><div style="display:flex;justify-content:space-between;font-size:11px;color:var(--p-mut);margin-bottom:3px;"><span>Size</span><span>${Math.round(s.scale*100)}%</span></div><input type="range" aria-label="Stencil size" min="20" max="150" value="${Math.round(s.scale*100)}" oninput="_stOv.scale=this.value/100;var e=document.getElementById('st-ovimg');if(e)e.style.width=(_stOv.scale*100)+'%';this.previousElementSibling.lastElementChild.textContent=this.value+'%'" style="width:100%;"></div>
     <div style="display:flex;gap:8px;">
       <button class="btng" style="flex:0 0 auto;" onclick="_stOv.stencil='';_stRender()"><i class="ti ti-arrow-back-up"></i> Change</button>
       <button class="btnp" style="flex:1;border-radius:9px;" onclick="_stSave()"><i class="ti ti-check"></i> Save overlay</button>
@@ -11393,7 +11393,12 @@ function _assembleClientData(id){
   // "saved, your clients see these now" toast was misleading. It's small and bounded, so per-client is fine.
   const checkinCfgOut=(typeof checkinCfg!=='undefined'&&checkinCfg&&typeof checkinCfg==='object')?checkinCfg:null;
   const loyaltyOut=(c.loyalty&&typeof c.loyalty==='object'&&c.loyalty.points!=null)?{points:c.loyalty.points,lifetime:c.loyalty.lifetime||0}:null;
-  return {studio,studioAddress,website,providerName,profile:{skin:c.skin||'',concerns:c.concerns||'',allergies:c.allergies||'',fitz:c.fitz||'',treatment:c.treatment||'',lastVisit:c.lastVisit||'',nextVisit:c.nextVisit||'',email:c.email||'',phone:c.phone||''},summaries,aftercare,products,routine,forms,pendingForms,pendingGuides,pendingCourses,photos:Array.isArray(c.photos)?c.photos:[],progressPhotos,booking:{canRequest:true},availability,vcInvite,checkinCfg:checkinCfgOut,loyalty:loyaltyOut};
+  // studioPhone rides alongside studioAddress so the client's "Add to calendar" invite shows a real
+  // contact number. NOTE: the provider's raw session `photos` are deliberately NOT sent — the client
+  // only ever renders `progressPhotos` (the ones the provider explicitly shared), and shipping the
+  // full clinical photo set would both bloat the blob (413s) and expose photos the client shouldn't see.
+  const studioPhone=((typeof bizInfo!=='undefined'&&bizInfo&&bizInfo.phone)||'');
+  return {studio,studioAddress,studioPhone,website,providerName,profile:{skin:c.skin||'',concerns:c.concerns||'',allergies:c.allergies||'',fitz:c.fitz||'',treatment:c.treatment||'',lastVisit:c.lastVisit||'',nextVisit:c.nextVisit||'',email:c.email||'',phone:c.phone||''},summaries,aftercare,products,routine,forms,pendingForms,pendingGuides,pendingCourses,progressPhotos,booking:{canRequest:true},availability,vcInvite,checkinCfg:checkinCfgOut,loyalty:loyaltyOut};
 }
 let _syncingClients=false,_clientSyncTimer=null;
 function _scheduleClientSync(){ if(_clientSyncTimer)clearTimeout(_clientSyncTimer); _clientSyncTimer=setTimeout(function(){_syncClientsToServer({});},2500); }
