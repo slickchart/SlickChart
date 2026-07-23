@@ -3922,7 +3922,9 @@ function renderRebook(){
   setNav('home');
   document.getElementById('tt').textContent='Request Appointment';
   const _av=(typeof activeProvider==='function'&&activeProvider()._availability)||client._realAvailability;
-  const rawAvail=(client._real&&_av)?_av:SlickBridge.getAvailability();
+  // A real client must NEVER see the demo availability. If their provider hasn't published hours yet,
+  // fall through to normalizeAvail's generic default (Mon–Sat 9–5), not SlickBridge's sample schedule.
+  const rawAvail=client._real?_av:SlickBridge.getAvailability();
   const avail=normalizeAvail(rawAvail);
   rebookAvail=avail;
   const hasAvail=!!rawAvail;
@@ -5147,10 +5149,12 @@ function _clientLinkError(msg){
 }
 function _applyRealClientData(j){
   var d=(j.client&&j.client.data)||{};
-  // Real clients should only ever see their actual provider(s), remove the demo
-  // providers (marcus/sofia) that seed the sample multi-provider switcher.
+  // Real clients should only ever see their actual provider. A real client's app is scoped to ONE
+  // provider (their link token), which we map onto the 'jess' slot below — so keep ONLY that slot and
+  // drop every demo "other provider" (Marcus/Sofia or any future seed). An allowlist, not a denylist,
+  // so no sample provider can ever leak into the client's switcher.
   try{
-    client.providers=(client.providers||[]).filter(function(x){return x.id!=='marcus'&&x.id!=='sofia';});
+    client.providers=(client.providers||[]).filter(function(x){return x&&x.id==='jess';});
     if(!client.providers.length){client.providers=[{id:'jess',name:'',first:'',initials:'',studio:'',thread:[]}];}
     client.activeProviderId='jess';
   }catch(e){}
@@ -5285,6 +5289,10 @@ function _bootRealClient(token){
   // Remember this real link token so a later home-screen launch (which opens "/client" with no
   // token in the URL) can recover it in _getClientToken instead of dropping to the demo client.
   try{localStorage.setItem('sc_client_token',token);}catch(e){}
+  // Point the PWA manifest at a TOKENIZED start_url so "Add to Home Screen" installs a shortcut that
+  // launches THIS client's space — not the bare "/client" (which drops into the demo). Must happen
+  // before the client taps Add to Home Screen, so do it as soon as we know the token.
+  try{var _ml=document.querySelector('link[rel="manifest"]');if(_ml&&token)_ml.setAttribute('href','/api/client-manifest?t='+encodeURIComponent(token));}catch(e){}
   var S=document.getElementById('S');
   if(S)S.innerHTML='<div style="padding:70px 24px;text-align:center;color:var(--c-mut);"><div style="font-size:30px;margin-bottom:12px;">\u2728</div><div style="font-size:14px;">Loading your space\u2026</div></div>';
   fetch('/api/client-data?t='+encodeURIComponent(token),{cache:'no-store'}).then(function(r){return r.json();}).then(function(j){
