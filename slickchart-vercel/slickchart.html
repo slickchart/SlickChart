@@ -11410,7 +11410,8 @@ function _assembleClientData(id){
   // only ever renders `progressPhotos` (the ones the provider explicitly shared), and shipping the
   // full clinical photo set would both bloat the blob (413s) and expose photos the client shouldn't see.
   const studioPhone=((typeof bizInfo!=='undefined'&&bizInfo&&bizInfo.phone)||'');
-  return {studio,studioAddress,studioPhone,website,providerName,profile:{skin:c.skin||'',concerns:c.concerns||'',allergies:c.allergies||'',fitz:c.fitz||'',treatment:c.treatment||'',lastVisit:c.lastVisit||'',nextVisit:c.nextVisit||'',email:c.email||'',phone:c.phone||''},summaries,aftercare,products,routine,forms,pendingForms,pendingGuides,pendingCourses,progressPhotos,booking:{canRequest:true},availability,vcInvite,checkinCfg:checkinCfgOut,loyalty:loyaltyOut};
+  const suggestedBooking=(c.suggestedBooking&&typeof c.suggestedBooking==='object'&&c.suggestedBooking.date&&c.suggestedBooking.time)?{date:c.suggestedBooking.date,time:c.suggestedBooking.time,treatment:c.suggestedBooking.treatment||''}:null;
+  return {studio,studioAddress,studioPhone,website,providerName,profile:{skin:c.skin||'',concerns:c.concerns||'',allergies:c.allergies||'',fitz:c.fitz||'',treatment:c.treatment||'',lastVisit:c.lastVisit||'',nextVisit:c.nextVisit||'',email:c.email||'',phone:c.phone||''},summaries,aftercare,products,routine,forms,pendingForms,pendingGuides,pendingCourses,progressPhotos,booking:{canRequest:true},suggestedBooking,availability,vcInvite,checkinCfg:checkinCfgOut,loyalty:loyaltyOut};
 }
 let _syncingClients=false,_clientSyncTimer=null;
 function _scheduleClientSync(){ if(_clientSyncTimer)clearTimeout(_clientSyncTimer); _clientSyncTimer=setTimeout(function(){_syncClientsToServer({});},2500); }
@@ -17848,6 +17849,7 @@ function confirmBooking(id){
   if(b.status==='confirmed')return; // already confirmed, don't duplicate the calendar entry
   const commit=function(){
     b.status='confirmed';b.decidedAt=Date.now();b.seen=true;SlickBridge.setBookings(all);
+    try{if(b.clientId&&CL[b.clientId]&&CL[b.clientId].suggestedBooking){CL[b.clientId].suggestedBooking=null;saveClients({noSync:true});if(typeof _scheduleSpecificClientSync==='function')_scheduleSpecificClientSync(b.clientId);}}catch(e){}
     addConfirmedAppt(b);
     SlickBridge.post('booking-confirmed',b);
     _notifyBookingClient(b,`Great news, your ${b.treatment} on ${fmtBookingDate(b)} at ${b.time} is confirmed! ✨`);
@@ -17865,6 +17867,7 @@ function confirmBooking(id){
 function declineBooking(id){
   const all=SlickBridge.getBookings();const b=all.find(x=>x.id===id);if(!b)return;
   b.status='declined';b.decidedAt=Date.now();b.seen=true;SlickBridge.setBookings(all);
+  try{if(b.clientId&&CL[b.clientId]&&CL[b.clientId].suggestedBooking){CL[b.clientId].suggestedBooking=null;saveClients({noSync:true});if(typeof _scheduleSpecificClientSync==='function')_scheduleSpecificClientSync(b.clientId);}}catch(e){}
   SlickBridge.post('booking-declined',{...b,reason:'That time just filled up, please pick another slot and I\'ll get you in.'});
   _notifyBookingClient(b,`Unfortunately that ${b.time} slot on ${fmtBookingDate(b)} just filled up, please pick another time and I'll get you in. 🙏`);
   pushBookingNotif({icon:'ti-calendar-x',col:'var(--p-red-bg)',ic:'var(--p-red)',title:'Request declined',body:`You let ${b.client} know that slot wasn't available.`});
@@ -17881,6 +17884,9 @@ function sendSuggestion(id){
   b.status='suggested';b.suggestedDate=sd;b.suggestedTime=st;b.decidedAt=Date.now();
   SlickBridge.setBookings(all);
   SlickBridge.post('booking-suggested',{...b,suggestedDate:sd,suggestedTime:st});
+  // Deliver the suggestion to a REAL client's app (in their synced data, not only as a chat message) so
+  // they get a one-tap "Accept this time" instead of having to hunt for the slot and re-request.
+  try{ if(b.clientId&&CL[b.clientId]){ CL[b.clientId].suggestedBooking={date:sd,time:st,treatment:b.treatment||'',at:Date.now()}; try{saveClients({noSync:true});}catch(e){} if(typeof _pushClientNow==='function')_pushClientNow(b.clientId); else if(typeof _scheduleSpecificClientSync==='function')_scheduleSpecificClientSync(b.clientId); } }catch(e){}
   let sdLabel=sd;try{sdLabel=new Date(sd+'T12:00:00').toLocaleDateString('en-US',{month:'short',day:'numeric'});}catch(e){}
   _notifyBookingClient(b,`That time wasn't open, but I can do your ${b.treatment} on ${sdLabel} at ${st}, does that work? Just reply and I'll lock it in. ✨`);
   pushBookingNotif({icon:'ti-calendar-question',col:'var(--accent-tint)',ic:'var(--accent-strong)',title:'Alternative time sent',body:`You suggested ${sdLabel} at ${st} to ${b.client}.`});

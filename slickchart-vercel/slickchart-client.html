@@ -2122,6 +2122,8 @@ function renderHome(){
   </div>
   ${_welcomeBannerHTML()||_homeIntroHTML()}
 
+  ${_suggestedTimeBannerHTML()}
+
   ${vcInvite?`
   <div onclick="nav('virtual-submit')" role="button" style="margin:0 16px 14px;background:linear-gradient(135deg,var(--c-ai-bg),var(--c-card));border:1.5px solid #d8c8f0;border-radius:16px;padding:14px;cursor:pointer;display:flex;align-items:center;gap:11px;">
     <div style="width:40px;height:40px;border-radius:10px;background:#8b6fc7;display:flex;align-items:center;justify-content:center;flex-shrink:0;"><i class="ti ti-camera" style="font-size:18px;color:#fff;"></i></div>
@@ -3967,6 +3969,36 @@ function renderRebook(){
   </div>`;
 }
 
+// ── "Accept suggested time" — when the provider proposes an alternate slot, the client gets a one-tap
+//    Accept banner on Home instead of having to re-find the slot and submit a fresh request. ──
+function _suggestedTimeBannerHTML(){
+  const s=client&&client._suggestedBooking;if(!s||!s.date||!s.time)return '';
+  let lbl=s.date;try{lbl=new Date(s.date+'T12:00:00').toLocaleDateString('en-US',{weekday:'short',month:'short',day:'numeric'});}catch(e){}
+  return `<div style="margin:0 16px 14px;background:linear-gradient(135deg,var(--c-warn-bg),var(--c-card));border:1.5px solid #f0dcc8;border-radius:16px;padding:14px;">
+    <div style="display:flex;align-items:center;gap:9px;margin-bottom:8px;"><div style="width:36px;height:36px;border-radius:9px;background:var(--accent-lt);display:flex;align-items:center;justify-content:center;flex-shrink:0;"><i class="ti ti-calendar-question" aria-hidden="true" style="font-size:18px;color:var(--accent-ink-lt);"></i></div>
+      <div style="flex:1;min-width:0;"><div style="font-size:13px;font-weight:700;color:var(--c-ink);">${_txt(client.providerFirst)} suggested a time</div><div style="font-size:12px;color:var(--c-mut);">${_txt(s.treatment||client.treatment||'Your visit')}</div></div></div>
+    <div style="font-size:15px;font-weight:700;color:var(--c-ink);margin:2px 2px 12px;">${_txt(lbl)} at ${_txt(s.time)}</div>
+    <div style="display:flex;gap:8px;">
+      <button onclick="_acceptSuggestedTime()" style="flex:1;background:var(--accent);color:var(--accent-ink);border:none;border-radius:10px;padding:11px;font-size:14px;font-weight:700;cursor:pointer;font-family:inherit;"><i class="ti ti-check" aria-hidden="true"></i> Accept this time</button>
+      <button onclick="_dismissSuggestedTime()" style="flex:1;background:var(--c-surf);color:var(--c-mut);border:1.5px solid var(--c-line);border-radius:10px;padding:11px;font-size:14px;font-weight:600;cursor:pointer;font-family:inherit;">Pick another</button>
+    </div>
+  </div>`;
+}
+function _acceptSuggestedTime(){
+  const s=client&&client._suggestedBooking;if(!s||!s.date||!s.time){showToast('That suggestion is no longer available',false);return;}
+  // Mark handled so the banner doesn't reappear after the data sync round-trips, then submit a request
+  // for exactly the suggested slot by reusing the normal rebook path.
+  try{localStorage.setItem('sc_suggestion_handled',(s.date+'|'+s.time));}catch(e){}
+  rebookState={treatment:s.treatment||client.treatment||'Appointment',date:s.date,time:s.time,note:''};
+  client._suggestedBooking=null;
+  submitRebook();
+}
+function _dismissSuggestedTime(){
+  const s=client&&client._suggestedBooking;
+  if(s){try{localStorage.setItem('sc_suggestion_handled',(s.date+'|'+s.time));}catch(e){}}
+  client._suggestedBooking=null;
+  nav('rebook');
+}
 let lastBookingId=null;
 function submitRebook(){
   if(!rebookState.date||!rebookState.time){
@@ -4971,11 +5003,15 @@ SlickBridge.on('booking-confirmed',b=>{
 });
 SlickBridge.on('booking-suggested',b=>{
   if(b.clientId&&b.clientId!=='maya')return;
+  // Surface the suggestion as a one-tap "Accept this time" banner on Home (same as the real synced path).
+  client._suggestedBooking={date:b.suggestedDate||b.date,time:b.suggestedTime||b.time,treatment:b.treatment||''};
+  try{localStorage.removeItem('sc_suggestion_handled');}catch(e){}
   pushNotify({type:'messagereply',icon:'ti-calendar-question',col:'#fff8ed',ic:'var(--accent)',
     title:`${_txt(client.providerFirst)} suggested a new time`,
-    body:`How about ${_ordinalize(fmtNiceDate(b.suggestedDate||b.date))} at ${b.suggestedTime||b.time}? Open to confirm.`,
-    onclick:()=>nav('rebook')});
+    body:`How about ${_ordinalize(fmtNiceDate(b.suggestedDate||b.date))} at ${b.suggestedTime||b.time}? Open to accept.`,
+    onclick:()=>nav('home')});
   updateRebookStatusPill(`<i class="ti ti-calendar-question" style="font-size:15px;"></i> ${_txt(client.providerFirst)} suggested ${_dt(fmtNiceDate(b.suggestedDate||b.date))} at ${_txt(b.suggestedTime||b.time)}.`,'#fff8ed','#f0e2c8','#4f6f66');
+  try{if(typeof currentScreen!=='undefined'&&currentScreen==='home'&&typeof renderHome==='function')renderHome();}catch(e){}
 });
 SlickBridge.on('booking-declined',b=>{
   if(b.clientId&&b.clientId!=='maya')return;
@@ -5157,6 +5193,14 @@ function _applyRealClientData(j){
   // after switching. renderRebook reads the ACTIVE provider's copy.
   p._availability=(d.availability&&typeof d.availability==='object')?d.availability:null;
   client._realAvailability=p._availability;
+  // A time the provider suggested in response to a booking request → shown as a one-tap "Accept" banner
+  // on Home. Skip it if the client already accepted/dismissed this exact suggestion (marker survives the
+  // sync round-trip until the provider confirms/declines and clears it server-side).
+  try{
+    var _sb=(d.suggestedBooking&&typeof d.suggestedBooking==='object'&&d.suggestedBooking.date&&d.suggestedBooking.time)?d.suggestedBooking:null;
+    var _handled='';try{_handled=localStorage.getItem('sc_suggestion_handled')||'';}catch(e){}
+    client._suggestedBooking=(_sb&&_handled!==(_sb.date+'|'+_sb.time))?_sb:null;
+  }catch(e){client._suggestedBooking=null;}
   // Surface a virtual-consult invite the provider sent (delivered via the synced data blob,
   // so it works on the client's own device, not just same-browser preview).
   try{_applyServerVcInvite(d.vcInvite);}catch(e){}
