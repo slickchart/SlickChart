@@ -18051,6 +18051,10 @@ async function _loadSquareAppts(force){
     const pal=[['var(--accent-tint)','var(--accent)'],['var(--p-blue-bg)','var(--p-blue)'],['var(--p-surf2)','var(--p-green)'],['var(--p-purple-bg)','var(--p-purple)']];
     const esc=s=>String(s||'').replace(/</g,'&lt;').replace(/>/g,'&gt;');
     squareAppts=(data.appointments||[]).map((a,i)=>{const d=a.startAt?new Date(a.startAt):null;return {id:a.id,at:d,client:esc(a.customerName)||'Client',tx:'Appointment',dur:a.durationMinutes||60,svid:a.serviceVariationId||'',tmid:a.teamMemberId||'',col:pal[i%pal.length][0],ic:pal[i%pal.length][1]};}).filter(a=>a.at&&!isNaN(a.at));
+    // Add anyone who booked online through Square to the client list (so the provider can send them
+    // forms / their app link). Runs before _stampClientNextVisit below so a brand-new booker gets their
+    // upcoming visit stamped too. Matches existing clients by Square id/name — never duplicates.
+    try{ _upsertClientsFromSquare(data.appointments||[]); }catch(e){}
     // Fingerprint the appointment set (id + start + duration + who) so a background poll only
     // repaints the screen when something actually changed, a new booking, a reschedule, or a
     // cancellation, rather than flickering on every tick.
@@ -18066,6 +18070,47 @@ async function _loadSquareAppts(force){
   // must ALWAYS repaint — otherwise, if the refetch returns the same set, the screen that briefly
   // emptied itself while state was 'loading' would stay stuck on "Nothing on the books today".
   if(_changed||force){try{if(_navCur&&_navCur.screen==='home')renderHome();else if(_navCur&&_navCur.screen==='calendar')renderCalendar();else if(_navCur&&_navCur.screen==='today-appts'&&typeof renderTodayAppts==='function')renderTodayAppts();}catch(e){}}
+}
+// Create/refresh SlickChart client records from Square online bookings, so a client who booked
+// through Square shows up in the list and can be sent forms + their app link. Idempotent: matches an
+// existing client by Square customer id first, then by name, and only creates when there's no match.
+function _upsertClientsFromSquare(appts){
+  if(!Array.isArray(appts)||!appts.length)return;
+  const palette=[['var(--p-purple-bg)','var(--p-purple)'],['var(--p-surf2)','var(--p-green)'],['var(--p-blue-bg)','var(--p-blue)'],['var(--p-red-bg)','var(--p-red)'],['var(--p-amber-bg)','var(--accent)']];
+  let added=0,changed=false;const newNames=[];const _seen={};
+  appts.forEach(function(a){
+    const name=String((a&&a.customerName)||'').trim();
+    if(!name||name.toLowerCase()==='client')return;   // skip bookings with no real customer name
+    const sqid=String((a&&a.customerId)||'');
+    // De-dupe within this batch (a client with two upcoming bookings shouldn't be added twice).
+    const dedupeKey=sqid||('name:'+name.toLowerCase());
+    if(_seen[dedupeKey])return; _seen[dedupeKey]=1;
+    // Already in the list? Prefer a Square-id match, then fall back to an exact name match.
+    let cid=null;
+    if(sqid)cid=Object.keys(CL).find(function(k){return CL[k]&&CL[k].squareId===sqid;})||null;
+    if(!cid&&typeof _clientIdByName==='function')cid=_clientIdByName(name)||null;
+    if(cid){
+      // Existing client — backfill Square id + contact info if we didn't have them yet.
+      const c=CL[cid];
+      if(sqid&&!c.squareId){c.squareId=sqid;changed=true;}
+      if(a.customerEmail&&!String(c.email||'').trim()){c.email=a.customerEmail;changed=true;}
+      if(a.customerPhone&&!String(c.phone||'').trim()){c.phone=a.customerPhone;changed=true;}
+      return;
+    }
+    // New online booker → create a client record.
+    const id=(typeof _newClientId==='function')?_newClientId():('c'+Date.now()+Math.random().toString(36).slice(2,5));
+    const col=palette[Object.keys(CL).length%palette.length];
+    CL[id]={name:name,initials:((typeof _initials==='function'?_initials(name):'')||'NC'),bg:col[0],tc:col[1],
+      phone:a.customerPhone||'',email:a.customerEmail||'',birthday:'',
+      skin:'—',concerns:'—',allergies:'None noted',fitz:'—',
+      lastVisit:'—',nextVisit:'Not scheduled',treatment:'New client',sessions:0,seriesTotal:0,touchUpDate:'—',
+      conditions:'',notes:'',squareId:sqid,source:'square'};
+    added++;changed=true;newNames.push(name.split(' ')[0]);
+  });
+  if(changed){try{if(typeof saveClients==='function')saveClients();}catch(e){}}
+  if(added&&typeof proToast==='function'){
+    proToast(added===1?(newNames[0]+' booked online — added to your clients'):(added+' new online bookings added to your clients'));
+  }
 }
 function _apptsLive(){return _sqApptsState==='ok'&&Array.isArray(squareAppts);}
 // A real provider account — sample data removed, or signed in to the cloud. Such an account must

@@ -58,13 +58,19 @@ export default async function handler(req, res) {
 
     // Resolve customer names (one lookup per unique customer, in parallel).
     const ids = [...new Set(bookings.map(b => b.customer_id).filter(Boolean))];
-    const names = {};
+    const cust = {};
     await Promise.all(ids.map(async (id) => {
       try {
         const cd = await sf('/v2/customers/' + id);
         if (cd.customer) {
-          names[id] = [cd.customer.given_name, cd.customer.family_name].filter(Boolean).join(' ').trim()
-            || cd.customer.email_address || 'Client';
+          const c = cd.customer;
+          // Capture email + phone (not just the name) so a new online booker can be added to the
+          // provider's client list with the contact info needed to send them forms / their app link.
+          cust[id] = {
+            name: [c.given_name, c.family_name].filter(Boolean).join(' ').trim() || c.email_address || 'Client',
+            email: c.email_address || '',
+            phone: c.phone_number || ''
+          };
         }
       } catch { /* ignore a single failed lookup */ }
     }));
@@ -79,7 +85,9 @@ export default async function handler(req, res) {
           status: b.status || '',
           locationId: b.location_id || '',
           customerId: b.customer_id || '',
-          customerName: names[b.customer_id] || 'Client',
+          customerName: (cust[b.customer_id] && cust[b.customer_id].name) || 'Client',
+          customerEmail: (cust[b.customer_id] && cust[b.customer_id].email) || '',
+          customerPhone: (cust[b.customer_id] && cust[b.customer_id].phone) || '',
           durationMinutes: seg.duration_minutes || null,
           serviceVariationId: seg.service_variation_id || '',
           teamMemberId: seg.team_member_id || ''
