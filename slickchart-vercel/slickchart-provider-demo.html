@@ -1616,6 +1616,7 @@ function _cleanupClientData(id){
     if(typeof clientHomecare!=='undefined')delete clientHomecare[id];
     if(typeof sessionSummaries!=='undefined')delete sessionSummaries[id];
     if(typeof capturedPhotos!=='undefined')delete capturedPhotos[id];
+    try{if(typeof _roomDraftWrite==='function')_roomDraftWrite(id,null);}catch(e){}
     if(typeof vcInvites!=='undefined')delete vcInvites[id];
     if(typeof vcSubmissions!=='undefined')delete vcSubmissions[id];
     if(typeof clientHealingStage!=='undefined')delete clientHealingStage[id];
@@ -3338,6 +3339,68 @@ async function _restorePhotosFromCloud(){
       try{if(_idb.available())await _idb.set('captured_photos',capturedPhotos);}catch(e){}
       try{const ae=document.activeElement;const typing=ae&&(ae.tagName==='INPUT'||ae.tagName==='TEXTAREA');
         if(!typing&&typeof _navCur!=='undefined'&&_navCur&&typeof nav==='function')nav(_navCur.screen,_navCur.data);}catch(e){}
+    }
+  }catch(e){}
+}
+// ── Room session photo draft ── A localStorage safety copy of the CURRENT session's before/after photo
+// BYTES. Captured photos live in IndexedDB, but iOS can evict IDB between app launches and the cloud
+// backup is async — so a "before" taken seconds before the provider steps out of the room (to take a
+// call, finish a treatment) could be gone on return. localStorage survives WebView kills and IDB
+// eviction, so we mirror the just-captured before/after here and restore it on room re-entry. Each photo
+// is dropped from the draft once it's confirmed backed up to the cloud (which can then restore it),
+// keeping this store small and bounded. This is what finally stops "I lose my before photos every time."
+function _roomDraftKey(id){return 'sc_room_draft_'+(id||'');}
+function _roomDraftGet(id){try{var raw=localStorage.getItem(_roomDraftKey(id));var v=raw?JSON.parse(raw):null;return (v&&Array.isArray(v.photos))?v:null;}catch(e){return null;}}
+function _roomDraftWrite(id,photos){
+  try{
+    if(!photos||!photos.length){try{localStorage.removeItem(_roomDraftKey(id));}catch(e){}return;}
+    localStorage.setItem(_roomDraftKey(id),JSON.stringify({photos:photos,updated:Date.now()}));
+  }catch(e){
+    // Storage full: clear stale drafts (other clients, >2 days old) and retry once so THIS session's
+    // photos still make it into the safety copy.
+    try{_pruneRoomDrafts();}catch(_){}
+    try{localStorage.setItem(_roomDraftKey(id),JSON.stringify({photos:photos,updated:Date.now()}));}catch(_){}
+  }
+}
+// Rebuild a client's draft from capturedPhotos: keep only this session's recent before/after photos that
+// AREN'T yet confirmed in the cloud (the vulnerable ones); drop everything else so the draft stays tiny.
+function _syncRoomDraftPhotos(id){
+  try{
+    if(!id||typeof capturedPhotos==='undefined')return;
+    var backed=(typeof _loadPhotoBackedUp==='function')?_loadPhotoBackedUp():new Set();
+    var recentCut=Date.now()-2*86400000;
+    var arr=(capturedPhotos[id]||[]).filter(function(p){return p&&p.url&&(p.phase==='before'||p.phase==='after')&&(p.ts||0)>=recentCut&&!(p.pid&&backed.has(p.pid));});
+    if(arr.length>8)arr=arr.slice(-8);   // bound localStorage to the last few of the current session
+    var mini=arr.map(function(p){return {pid:(typeof _photoPid==='function'?_photoPid(p):(p.pid||'')),url:p.url,ts:p.ts||0,phase:p.phase||'',angle:p.angle||''};});
+    _roomDraftWrite(id,mini);
+  }catch(e){}
+}
+// On room entry, re-insert any draft photos this device is missing (lost to IDB eviction / a WebView
+// kill) so the before/after slots are never wrongly empty. Returns how many were recovered.
+function _restoreRoomDraftPhotos(id){
+  try{
+    var d=_roomDraftGet(id);if(!d||!d.photos||!d.photos.length)return 0;
+    if(typeof capturedPhotos==='undefined')return 0;
+    if(!capturedPhotos[id])capturedPhotos[id]=[];
+    var have=new Set(capturedPhotos[id].map(function(p){return (p&&(p.pid||p.url))||'';}));
+    var added=0;
+    d.photos.forEach(function(p){var k=(p&&(p.pid||p.url))||'';if(k&&!have.has(k)&&p.url){capturedPhotos[id].push({url:p.url,ts:p.ts||0,phase:p.phase||'',angle:p.angle||'',pid:p.pid||undefined});have.add(k);added++;}});
+    if(added){try{if(typeof persistCapturedPhotos==='function')persistCapturedPhotos();}catch(e){}}
+    return added;
+  }catch(e){return 0;}
+}
+// Drop room drafts that are stale (>2 days) or whose photos are all safely backed up, to reclaim space.
+function _pruneRoomDrafts(){
+  try{
+    var backed=(typeof _loadPhotoBackedUp==='function')?_loadPhotoBackedUp():new Set();
+    var cut=Date.now()-2*86400000;
+    for(var i=localStorage.length-1;i>=0;i--){
+      var key=localStorage.key(i);if(!key||key.indexOf('sc_room_draft_')!==0)continue;
+      var keep=false;
+      try{var v=JSON.parse(localStorage.getItem(key)||'{}');
+        if(v&&Array.isArray(v.photos)&&(v.updated||0)>=cut){keep=(v.photos||[]).some(function(p){return p&&p.pid&&!backed.has(p.pid)||(p&&!p.pid);});}
+      }catch(e){keep=false;}
+      if(!keep){try{localStorage.removeItem(key);}catch(e){}}
     }
   }catch(e){}
 }
@@ -5280,6 +5343,10 @@ function renderRoom(id){
   // Protocols default to OFF; honor whatever the provider last chose (persisted).
   try{roomProtocolOff=localStorage.getItem('sc_room_protocol_off')!=='false';}catch(e){roomProtocolOff=true;}
   const c=CL[id]||Object.values(CL)[0]||{};
+  // Recover any before/after photos this device may have lost (IDB eviction / a WebView kill while the
+  // provider stepped out) from the localStorage safety draft, BEFORE the photo slots render — so
+  // re-entering the room never wrongly shows an empty "Take BEFORE" and tempts a duplicate retake.
+  try{_restoreRoomDraftPhotos(id);_syncRoomDraftPhotos(id);}catch(e){}
   // Restore this client's in-progress protocol + checked steps (persisted across nav/reload).
   if(_roomClientId!==id)_loadRoomState(id);
   const isBrowOnly=selectedProfessions.includes('brow')&&!selectedProfessions.includes('esty')&&!selectedProfessions.includes('hair')&&!selectedProfessions.includes('barber');
@@ -5445,7 +5512,8 @@ function _roomPhotosHTML(id){
     <div style="flex:1;">${capBtn('before',hasB)}</div>
     <div style="flex:1;">${capBtn('after',hasA)}</div>
   </div>
-  ${(before.length||after.length)?`<div style="display:flex;gap:7px;overflow-x:auto;scrollbar-width:none;margin-top:10px;padding-bottom:2px;">${before.concat(after).map(p=>_capturedThumb(p,62)).join('')}</div>`:''}`;
+  ${(before.length||after.length)?`<div style="display:flex;gap:7px;overflow-x:auto;scrollbar-width:none;margin-top:10px;padding-bottom:2px;">${before.concat(after).map(p=>_capturedThumb(p,62)).join('')}</div>
+  <div style="display:flex;align-items:center;gap:5px;margin-top:8px;font-size:11px;color:var(--p-green);"><i class="ti ti-lock-check" aria-hidden="true" style="font-size:12px;"></i> Saved automatically — safe to step away and come back.</div>`:''}`;
 }
 function _rerenderRoomPhotos(id){const el=document.getElementById('room-photos');if(el)el.innerHTML=_roomPhotosHTML(id);}
 // ── Change a booked treatment day-of (propagates to appointment, notes, summary) ──
@@ -8396,6 +8464,9 @@ function takePhoto(clientId,phase,after,fromLibrary){
       if(!capturedPhotos[clientId])capturedPhotos[clientId]=[];
       const rec={url:url,ts,phase:phase||'reference',angle:(typeof activeAngle!=='undefined'&&activeAngle!=='Inspiration')?activeAngle:'Front'};
       capturedPhotos[clientId].push(rec);
+      // Mirror this session's before/after into the localStorage safety draft immediately, so it survives
+      // an app kill / IDB eviction while the provider is out of the room (before the async cloud backup lands).
+      if(phase==='before'||phase==='after'){try{_syncRoomDraftPhotos(clientId);}catch(e){}}
       // Persist immediately, don't rely on the caller's `after` callback routing through
       // nav() (the in-room capture flow re-renders a DOM fragment instead of navigating,
       // which used to leave freshly captured photos unsaved until the provider left the room).
