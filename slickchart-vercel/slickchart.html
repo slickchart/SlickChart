@@ -1322,7 +1322,17 @@ function _persistFailWarn(){
   if(_storageWarned)return;_storageWarned=true;
   try{if(typeof proToast==='function')proToast('Device storage is full, recent changes may not be saved. Clear space or export photos.');}catch(e){}
 }
-function saveClients(opts){let _ok=true;try{localStorage.setItem('sc_clients',JSON.stringify(CL));}catch(e){_ok=false;_persistFailWarn();} if(!(opts&&opts.noSync)&&typeof _scheduleClientSync==='function')_scheduleClientSync();return _ok;}
+// Per-client "updated at" tracking, so two devices editing DIFFERENT clients converge instead of the
+// whole-roster blob last-writer-wins clobbering each other. We stamp _uAt only on clients whose content
+// actually changed since load/last-save (compared against a baseline signature that excludes _uAt), and
+// the pull merge (_mergeClients) keeps the newer copy per client id.
+let _clientSigCache={};
+function _clientSig(c){try{return JSON.stringify(c,function(k,v){return k==='_uAt'?undefined:v;});}catch(e){return '';}}
+// Record the current CL as the baseline (no stamping) — called after a load/pull so only genuinely
+// subsequent edits get a fresh _uAt.
+function _seedClientSigCache(){try{_clientSigCache={};Object.keys(CL).forEach(function(id){var c=CL[id];if(c&&typeof c==='object')_clientSigCache[id]=_clientSig(c);});}catch(e){}}
+function _stampClientChanges(){try{Object.keys(CL).forEach(function(id){var c=CL[id];if(!c||typeof c!=='object')return;var sig=_clientSig(c);if(_clientSigCache[id]!==sig){c._uAt=Date.now();_clientSigCache[id]=sig;}});}catch(e){}}
+function saveClients(opts){let _ok=true;try{_stampClientChanges();}catch(e){}try{localStorage.setItem('sc_clients',JSON.stringify(CL));}catch(e){_ok=false;_persistFailWarn();} if(!(opts&&opts.noSync)&&typeof _scheduleClientSync==='function')_scheduleClientSync();return _ok;}
 function _editClientDetails(id){
   const c=CL[id]; if(!c)return;
   const ex=document.getElementById('cl-edit'); if(ex)ex.remove();
@@ -1364,7 +1374,7 @@ function _saveClientDetails(id){
   renderClient(id);
 }
 
-function loadClients(){try{const raw=localStorage.getItem('sc_clients');if(!raw)return;const saved=JSON.parse(raw);if(!saved||typeof saved!=='object')return;Object.keys(CL).forEach(k=>delete CL[k]);Object.keys(saved).forEach(k=>{CL[k]=saved[k];});}catch(e){}}
+function loadClients(){try{const raw=localStorage.getItem('sc_clients');if(!raw)return;const saved=JSON.parse(raw);if(!saved||typeof saved!=='object')return;Object.keys(CL).forEach(k=>delete CL[k]);Object.keys(saved).forEach(k=>{CL[k]=saved[k];});}catch(e){}try{_seedClientSigCache();}catch(e){}}
 // Enforce the "gone" sets on whatever is currently in CL — removes anyone the provider merged away
 // (mergedSquareIds), deleted (_deletedClientIds), or the demo clients once hidden. This is the safety
 // net that makes merges/removals STICK: even if a stale synced client list (or the Square customer
@@ -2003,6 +2013,31 @@ function _syncable(k){return typeof k==='string'&&k.indexOf('sc_')===0&&!_SYNC_S
 const _TOMB_OBJ={sc_deleted_clients:1,sc_hidden_square:1,sc_merged_ids:1,sc_merged_into:1};
 const _TOMB_ARR={sc_flag_dismissed:1,sc_ci_cleared:1,sc_ci_read:1,sc_home_dismissed:1,sc_notif_cleared:1,sc_notif_read:1};
 function _isTombstoneKey(k){return !!(_TOMB_OBJ[k]||_TOMB_ARR[k]);}
+// Merge the client roster per-client-id instead of whole-blob overwriting it, so two devices that edit
+// DIFFERENT clients both keep their edits (the old last-writer-wins dropped one device's whole change).
+// Newer per-client _uAt wins; a client on only one side is kept; deleted clients are never resurrected.
+// Same-client-both-edited still resolves to the newest copy (a rarer field-level conflict).
+function _mergeClients(serverStr,localStr){
+  try{
+    if(localStr==null)return null;   // fresh device with no local roster — let the server copy load as-is
+    var sv=JSON.parse(serverStr||'{}'),lv=JSON.parse(localStr||'{}');
+    if(!sv||typeof sv!=='object'||!lv||typeof lv!=='object')return null;
+    var del=(typeof _deletedClientIds==='object'&&_deletedClientIds)||{};
+    var ids={};Object.keys(sv).forEach(function(i){ids[i]=1;});Object.keys(lv).forEach(function(i){ids[i]=1;});
+    var out={};var changed=false;   // changed = local contributed something the server needs (push it back)
+    Object.keys(ids).forEach(function(id){
+      var s=sv[id],l=lv[id];
+      if(del[id]){if(s)changed=true;return;}        // deleted client still on server → dropping it is a change
+      if(s&&!l){out[id]=s;return;}                   // server-only: keep, nothing to push
+      if(l&&!s){out[id]=l;changed=true;return;}       // local-only: server is missing it → push up
+      if(!s&&!l)return;
+      var su=(+(s&&s._uAt))||0,lu=(+(l&&l._uAt))||0;
+      if(su>lu){out[id]=s;}                           // server newer: take it, no push
+      else{out[id]=l;if(_clientSig(l)!==_clientSig(s))changed=true;}   // local newer/tie: push only if different
+    });
+    return {str:JSON.stringify(out),changed:changed};
+  }catch(e){return null;}
+}
 // Returns the merged JSON string (server ∪ local), or null if there's nothing local to preserve.
 function _mergeTombstone(k,serverStr,localStr){
   try{
@@ -2049,6 +2084,16 @@ const Cloud={
     // is newer than whatever the server returned (e.g. a note saved moments before a reload,
     // whose debounced push hadn't flushed yet). Overwriting it here is silent data loss.
     if(this._queue&&Object.prototype.hasOwnProperty.call(this._queue,k))return;
+    if(k==='sc_clients'){
+      const m=_mergeClients(data[k],localStorage.getItem(k));
+      if(m&&m.str!=null){
+        set(k,m.str);
+        // Push the merged superset back only when THIS device contributed a client the server lacked or a
+        // newer edit — avoids a re-ordered-but-identical blob ping-ponging between devices forever.
+        if(m.changed){try{this.push(k,m.str);}catch(e){}}
+        return;
+      }
+    }
     if(_isTombstoneKey(k)){
       const mergedStr=_mergeTombstone(k,data[k],localStorage.getItem(k));
       if(mergedStr!=null){

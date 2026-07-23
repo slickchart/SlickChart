@@ -1414,12 +1414,25 @@ function _collectClientPrefs(){
 function _reminderContext(){
   try{
     const tz=(typeof Intl!=='undefined'&&Intl.DateTimeFormat)?(Intl.DateTimeFormat().resolvedOptions().timeZone||''):'';
+    // Build one upcoming appointment per provider the client sees — not just the active one — so a client
+    // with more than one SlickChart provider gets a reminder for EVERY upcoming appointment. Rebuilt from
+    // current provider data on each sync, so a provider's cancelled/moved appointment drops out here too.
+    const _now=Date.now();
+    const appts=[];
+    const provs=(client&&Array.isArray(client.providers))?client.providers:[];
+    provs.forEach(function(p){
+      if(!p||!p.apptISO)return;
+      const t=Date.parse(p.apptISO);
+      if(isNaN(t)||t<_now-3*3600000)return;   // skip missing/past appts (a passed or cleared one is stale)
+      appts.push({at:t,label:((p.nextDate||'')+' '+(p.nextTime||'')).trim(),treatment:p.treatment||''});
+    });
     const ap=(typeof activeProvider==='function')?activeProvider():null;
     let apptAt=0,apptLabel='',treatment='';
     if(ap&&ap.apptISO){const t=Date.parse(ap.apptISO);if(!isNaN(t))apptAt=t;}
     if(ap){apptLabel=(((client.nextDate||ap.nextDate||'')+' '+(client.nextTime||ap.nextTime||'')).trim());treatment=ap.treatment||client.treatment||'';}
     const hasHomecare=!!(ap&&Array.isArray(ap.homecare)&&ap.homecare.length);
-    return {tz,apptAt,apptLabel,treatment,hasHomecare};
+    // apptAt/apptLabel/treatment remain for older server builds; `appts` is the multi-provider superset.
+    return {tz,apptAt,apptLabel,treatment,hasHomecare,appts};
   }catch(e){return {};}
 }
 function _syncClientPrefsToServer(){

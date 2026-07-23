@@ -88,31 +88,41 @@ export default async function handler(req, res) {
       const inMorning = nowL.hour >= MORNING_LO && nowL.hour <= MORNING_HI;
       const due = [];
 
-      if (rem.apptAt) {
-        const apptL = localParts(rem.tz, rem.apptAt);
+      // Reminders for EVERY upcoming appointment across the client's providers. Newer clients sync an
+      // `appts` array (one per provider); older ones sync a single scalar apptAt — fall back to that so
+      // existing installs keep working. Each appointment gets its own rkey (including its time) so two
+      // providers' same-day appointments don't collapse into one reminder.
+      const apptList = (Array.isArray(rem.appts) && rem.appts.length)
+        ? rem.appts.filter(a => a && a.at).map(a => ({ at: Number(a.at) || 0, label: a.label || '', treatment: a.treatment || '' }))
+        : (rem.apptAt ? [{ at: Number(rem.apptAt) || 0, label: rem.apptLabel || '', treatment: rem.treatment || '' }] : []);
+      if (apptList.length) {
         // Tomorrow's local calendar date by incrementing the day component (DST-safe — a fixed
         // +24h of milliseconds can skip a calendar day across a spring-forward boundary).
         const _dp = String(nowL.date || '').split('-').map(Number);
         const tomorrow = (_dp.length === 3 && _dp.every(n => !isNaN(n)))
           ? new Date(Date.UTC(_dp[0], _dp[1] - 1, _dp[2] + 1)).toISOString().slice(0, 10)
           : '';
-        // Day-before reminder: appointment is on tomorrow's local calendar day.
-        if (notif.appointmentReminder !== false && inMorning && apptL.date && apptL.date === tomorrow) {
-          due.push({
-            rkey: 'apptbefore:' + apptL.date + ':' + rem.apptAt,
-            title: 'Appointment tomorrow',
-            body: (rem.treatment ? rem.treatment + ' ' : 'Your appointment ') + (rem.apptLabel ? '· ' + rem.apptLabel : '') + '. See you then!'
-          });
-        }
-        // Morning-of reminder: appointment is today (client-local). Allow a few hours' grace on the
-        // "hasn't passed" check so an early appointment (at or before the 7am window start) still
-        // gets its morning-of reminder at the first morning run, while ones that passed hours ago don't.
-        if (notif.appointmentDay !== false && inMorning && apptL.date === nowL.date && rem.apptAt > now - 3 * HOUR) {
-          due.push({
-            rkey: 'apptday:' + apptL.date,
-            title: 'Appointment today',
-            body: (rem.treatment ? rem.treatment + ' ' : 'Your appointment ') + (rem.apptLabel ? '· ' + rem.apptLabel : '') + '. Looking forward to seeing you!'
-          });
+        for (const a of apptList) {
+          if (!a.at) continue;
+          const apptL = localParts(rem.tz, a.at);
+          // Day-before reminder: appointment is on tomorrow's local calendar day.
+          if (notif.appointmentReminder !== false && inMorning && apptL.date && apptL.date === tomorrow) {
+            due.push({
+              rkey: 'apptbefore:' + apptL.date + ':' + a.at,
+              title: 'Appointment tomorrow',
+              body: (a.treatment ? a.treatment + ' ' : 'Your appointment ') + (a.label ? '· ' + a.label : '') + '. See you then!'
+            });
+          }
+          // Morning-of reminder: appointment is today (client-local). Allow a few hours' grace on the
+          // "hasn't passed" check so an early appointment (at or before the 7am window start) still
+          // gets its morning-of reminder at the first morning run, while ones that passed hours ago don't.
+          if (notif.appointmentDay !== false && inMorning && apptL.date === nowL.date && a.at > now - 3 * HOUR) {
+            due.push({
+              rkey: 'apptday:' + apptL.date + ':' + a.at,
+              title: 'Appointment today',
+              body: (a.treatment ? a.treatment + ' ' : 'Your appointment ') + (a.label ? '· ' + a.label : '') + '. Looking forward to seeing you!'
+            });
+          }
         }
       }
       // Daily homecare nudge in the local morning, for clients who have a homecare routine.
