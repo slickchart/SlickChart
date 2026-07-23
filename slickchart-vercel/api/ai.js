@@ -16,6 +16,21 @@
 
 import { verifyToken } from '../lib/auth.js';
 import { dbEnabled, sql, ensureTable } from '../lib/db.js';
+import { getClientByToken } from '../lib/clients.js';
+
+// Only a signed-in provider OR a real client (via their link token) may use this metered proxy — it's
+// billed to our Anthropic key. Without this the endpoint was an open, unauthenticated LLM for the whole
+// internet to run up the bill on. Provider tokens verify offline (HMAC); a client link token is looked up
+// in the DB (the aftercare helper in the client app sends it as X-Client-Token).
+async function isAuthorized(req) {
+  const secret = process.env.SESSION_SECRET || '';
+  const auth = req.headers['authorization'] || '';
+  const token = auth.replace(/^Bearer\s+/i, '').trim();
+  if (secret && token) { const body = verifyToken(token, secret); if (body && body.u) return true; }
+  const ct = String(req.headers['x-client-token'] || '').trim();
+  if (ct && dbEnabled()) { try { if (await getClientByToken(ct)) return true; } catch (e) { /* DB trouble → not authorized via this path */ } }
+  return false;
+}
 
 // ── In-memory burst limiter (best-effort, per function instance) ──
 const _hits = new Map();
@@ -70,6 +85,9 @@ export default async function handler(req, res) {
   const apiKey = process.env.ANTHROPIC_API_KEY || '';
   if (!apiKey) { res.status(200).json({ enabled: false }); return; }
 
+  // Require a valid credential before doing any billable upstream work.
+  if (!(await isAuthorized(req))) { res.status(401).json({ enabled: true, error: 'Please sign in.' }); return; }
+
   const who = callerKey(req);
 
   // 1) Burst limit — always on, no database needed.
@@ -79,10 +97,12 @@ export default async function handler(req, res) {
     return;
   }
 
-  // 2) Daily quota — only when a database is connected and a limit is set.
-  const dailyLimit = parseInt(process.env.AI_DAILY_LIMIT, 10);
+  // 2) Daily quota — default ON (500/caller/day) whenever a database is connected, so a compromised or
+  //    shared token can't run up an unbounded bill. Set AI_DAILY_LIMIT to override, or 0 to disable.
+  const _envLimit = parseInt(process.env.AI_DAILY_LIMIT, 10);
+  const dailyLimit = Number.isFinite(_envLimit) ? _envLimit : 500;
   let dailyKey = null;
-  if (dbEnabled() && Number.isFinite(dailyLimit) && dailyLimit > 0) {
+  if (dbEnabled() && dailyLimit > 0) {
     try {
       const d = await dailyCount(who);
       if (d.count >= dailyLimit) {
@@ -97,6 +117,14 @@ export default async function handler(req, res) {
     const body = (req.body && typeof req.body === 'object') ? req.body : JSON.parse(req.body || '{}');
     const messages = Array.isArray(body.messages) ? body.messages : [];
     if (!messages.length) { res.status(400).json({ error: 'messages required' }); return; }
+    // Bound INPUT cost. The output cap (max_tokens) does nothing about input/vision tokens, which are
+    // billed too — so cap message count, total serialized size, and image blocks. The app sends a handful
+    // of short messages and at most 4 downscaled images; a direct caller can't pack a max-size payload.
+    if (messages.length > 50) { res.status(413).json({ error: 'Request too large.' }); return; }
+    let _imgCount = 0;
+    try { for (const m of messages) { const c = m && m.content; if (Array.isArray(c)) for (const blk of c) { if (blk && blk.type === 'image') _imgCount++; } } } catch (e) {}
+    if (_imgCount > 8) { res.status(413).json({ error: 'Too many images in one request.' }); return; }
+    if (JSON.stringify(messages).length > 2000000) { res.status(413).json({ error: 'Request too large.' }); return; }
 
     // Allow-list the model so an anonymous caller can't point this key at an
     // arbitrary/pricier model to run up the bill. The app only ever requests the
@@ -120,8 +148,11 @@ export default async function handler(req, res) {
 
     const data = await r.json().catch(() => ({}));
     if (!r.ok) {
-      const msg = (data && data.error && data.error.message) || 'AI request failed';
-      res.status(r.status).json({ enabled: true, error: msg });
+      // Redact the upstream provider's raw error (model names, billing/quota wording, auth specifics) —
+      // log it server-side and return a generic message, matching /api/transcribe. The client degrades to
+      // its on-device fallback on any error, so a generic string is enough.
+      try { console.error('[ai] upstream error', r.status, (data && data.error && data.error.message) || ''); } catch (e) {}
+      res.status(r.status === 429 ? 429 : 502).json({ enabled: true, error: r.status === 429 ? 'The AI is busy right now — please try again in a moment.' : 'AI request failed. Please try again.' });
       return;
     }
 

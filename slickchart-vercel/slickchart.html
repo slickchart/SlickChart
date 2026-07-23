@@ -3996,17 +3996,13 @@ function renderHome(){
   </div>
   ${(aiEnabled&&!_dayRecapDismissedToday())?`<div id="day-recap-card" style="margin:0 16px 10px;">${_dayRecapCardHTML()}</div>`:''}
   ${(function(){
-    // One unified "Needs your attention" heading over ALL attention items (booking requests, check-ins,
-    // virtual consults, flagged intakes, form reviews, check-in nudges) instead of scattering them as
-    // separate unlabeled tiles above a separate section. The notification bell remains the full log.
-    const anyAttn=(pendingRequests().filter(b=>!b.seen).length)||newCheckins.length||_vcPendingCount()
-      ||_shotFilterEntries(Object.entries(CL).filter(([id,c])=>_fcActive(c))).length
-      ||_shotFilterEntries(Object.entries(CL).filter(([id,c])=>c.submittedForms&&c.submittedForms.length&&!_fcActive(c))).length
-      ||_shotFilterEntries((typeof _needsCheckin==='function')?_needsCheckin():[]).length
-      ||_shotFilterEntries(Object.entries(CL)).filter(function(e){var id=e[0],c=e[1];return c&&String(c.name||'').trim()&&!c.lastVisit&&!c.appInvited&&(_clientApptSoonMs(id)!=null)&&!_homeDismissed.has('fvp-'+id);}).length;
-    return anyAttn?'<div class="sh"><h2>Needs your attention</h2></div>':'';
+    // One unified "Needs your attention" heading over ALL attention items. Drive BOTH the heading and the
+    // tiles off the SAME rendered output, so the header can never sit above an empty section: the previous
+    // `anyAttn` gate used looser predicates than the tiles' handled-state filters (ackHome / _homeDismissed
+    // / _attnFresh / reviewAck), so it stayed lit after the last tile was cleared.
+    const _tiles=_attnTilesHTML();
+    return (_tiles&&_tiles.trim())?('<div class="sh"><h2>Needs your attention</h2></div>'+_tiles):'';
   })()}
-  ${_attnTilesHTML()}
   <div class="sh"><h2>Up next</h2></div>
   ${(()=>{
     if(_apptsLive()){
@@ -7681,7 +7677,10 @@ function _storeSummary(id){
   sessionSummaries[id].sort((a,b)=>(b.ts||0)-(a.ts||0));
   // Client-facing copy (what their app reads). Includes the friendly note + obs +
   // products + aftercare guides, but NOT the raw clinical provider notes. Dedup by day too.
-  const entry={date,title:c.treatment||'Session',note:(note+(obs?'\n\nObservations: '+obs:'')).trim(),products:products.slice(),guides:_guides,ts,_draftDate:_dd};
+  // Include homecare so the client's summary "Your homecare routine" section actually populates — the
+  // entry used to omit it, so every real client saw an empty homecare box on every session summary
+  // (it only looked right in the demo, whose seeded summaries hardcode a homecare array). Honors the toggle.
+  const entry={date,title:c.treatment||'Session',note:(note+(obs?'\n\nObservations: '+obs:'')).trim(),homecare:homecare.slice(),products:products.slice(),guides:_guides,ts,_draftDate:_dd};
   if(!Array.isArray(c.summaries))c.summaries=[];
   const _cex=_dd?c.summaries.find(h=>h._draftDate===_dd):null;
   if(_cex)Object.assign(_cex,entry);else c.summaries.unshift(entry);
@@ -8482,7 +8481,7 @@ async function _initNativeProvider(){
   try{
     if(_nativeProviderInit)return; _nativeProviderInit=true;
     if(!_isNativeApp())return;
-    try{const SB=window.Capacitor.Plugins.StatusBar;if(SB){if(SB.setStyle)SB.setStyle({style:'DARK'});if(SB.setBackgroundColor)SB.setBackgroundColor({color:'var(--p-bg2)'});}}catch(e){}
+    try{const SB=window.Capacitor.Plugins.StatusBar;if(SB){if(SB.setStyle)SB.setStyle({style:'DARK'});if(SB.setBackgroundColor){var _sbc='';try{_sbc=getComputedStyle(document.documentElement).getPropertyValue('--p-bg2').trim();}catch(e){}if(/^#?[0-9a-fA-F]{3,8}$/.test(_sbc)){if(_sbc[0]!=='#')_sbc='#'+_sbc;Promise.resolve(SB.setBackgroundColor({color:_sbc})).catch(function(){});}}}}catch(e){}
     const PN=window.Capacitor.Plugins&&window.Capacitor.Plugins.PushNotifications;
     if(!PN)return;
     let perm=await PN.checkPermissions();

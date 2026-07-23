@@ -4324,10 +4324,12 @@ function _toggleSummaryGuide(gi){
   if(chev)chev.style.transform=open?'':'rotate(180deg)';
 }
 // ── Client-side AI helper: posts to the same /api/ai proxy the provider app uses.
-//    No provider session here, so the proxy rate-limits by IP; throws if AI is off
-//    so the caller can fall back to "message your provider". ──
+//    Sends the client's link token so the (now auth-gated) proxy authorizes a real client; throws if AI
+//    is off so the caller can fall back to "message your provider". ──
 async function _clientAI(messages,maxTokens){
-  const res=await fetch('/api/ai',{method:'POST',headers:{'Content-Type':'application/json'},body:JSON.stringify({messages,max_tokens:maxTokens||600})});
+  const headers={'Content-Type':'application/json'};
+  try{if(client&&client._token)headers['X-Client-Token']=client._token;}catch(e){}
+  const res=await fetch('/api/ai',{method:'POST',headers,body:JSON.stringify({messages,max_tokens:maxTokens||600})});
   if(!res.ok)throw new Error('ai-http-'+res.status);
   const data=await res.json().catch(()=>({}));
   if(!data||data.enabled===false)throw new Error('ai-disabled');
