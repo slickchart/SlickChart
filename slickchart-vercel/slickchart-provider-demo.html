@@ -2405,7 +2405,7 @@ function doLogin(){
   const er=document.getElementById('login-err');if(er)er.textContent='';
   if(!email||!pw){if(er)er.textContent='Enter your email and password.';return;}
   Cloud.login(email,pw).then(async()=>{
-    try{const n=await Cloud.pull();if(n===0)await Cloud.pushAllLocal();_reloadAll();}catch(e){}
+    try{const n=await Cloud.pull();if(n===0)await Cloud.pushAllLocal();else try{localStorage.setItem('sc_onboarded','1');}catch(e){} _reloadAll();}catch(e){}
     const ov=document.getElementById('login-screen');if(ov)ov.remove();nav('home');
   }).catch(e=>{
     if(e&&e.requiresTotp){_pendingTotpEmail=email;_pendingTotpPw=pw;_setLoginMode('totp');return;}
@@ -2416,7 +2416,7 @@ function doLoginTotp(){
   const code=(document.getElementById('login-totp')||{}).value||'';
   const er=document.getElementById('login-err');if(er)er.textContent='';
   Cloud.login(_pendingTotpEmail,_pendingTotpPw,code).then(async()=>{
-    try{const n=await Cloud.pull();if(n===0)await Cloud.pushAllLocal();_reloadAll();}catch(e){}
+    try{const n=await Cloud.pull();if(n===0)await Cloud.pushAllLocal();else try{localStorage.setItem('sc_onboarded','1');}catch(e){} _reloadAll();}catch(e){}
     _pendingTotpEmail='';_pendingTotpPw='';
     const ov=document.getElementById('login-screen');if(ov)ov.remove();nav('home');
   }).catch(e=>{const er=document.getElementById('login-err');if(er)er.textContent=(e&&e.message)||'Invalid code';});
@@ -4271,7 +4271,7 @@ function _printSummary(id){
   const noteEl=document.getElementById('summary-note');
   const note=((summaryNoteDraft[id]!=null?summaryNoteDraft[id]:(noteEl?noteEl.innerText:''))||'').trim();
   const homecare=(typeof getClientHomecare==='function'?getClientHomecare(id):[])||[];
-  const prods=(clientRecs[id]||[]).map(aid=>{const a=affiliateLinks.find(x=>x.id===aid);return a?{name:a.name,brand:a.brand||'',why:(_recReason(id,aid)||'')}:null;}).filter(Boolean);
+  const prods=(clientRecs[id]||[]).map(aid=>{const a=affiliateLinks.find(x=>x.id===aid);return (a&&a.active!==false)?{name:a.name,brand:a.brand||'',why:(_recReason(id,aid)||'')}:null;}).filter(Boolean);
   const guides=(typeof _summaryGuideList==='function')?_summaryGuideList(id):[];
   const esc=s=>String(s||'').replace(/&/g,'&amp;').replace(/</g,'&lt;').replace(/>/g,'&gt;');
   const today=new Date().toLocaleDateString('en-US',{month:'long',day:'numeric',year:'numeric'});
@@ -4458,7 +4458,7 @@ async function _loadClientLoyalty(id){
     c.loyalty={points:j.balance,lifetime:j.lifetimePoints,at:Date.now()};
     try{saveClients();}catch(e){}
     try{if(typeof _syncSpecificClientsToServer==='function')_syncSpecificClientsToServer([id],{});}catch(e){}
-    body.innerHTML='<b style="color:var(--accent-strong);">'+j.balance+' points</b> · '+j.lifetimePoints+' lifetime — now visible in '+_fileEsc(c.name.split(' ')[0])+'’s app';
+    body.innerHTML='<b style="color:var(--accent-strong);">'+j.balance+' point'+(j.balance===1?'':'s')+'</b> · '+j.lifetimePoints+' lifetime — now visible in '+_fileEsc(c.name.split(' ')[0])+'’s app';
   }catch(e){if(body)body.innerHTML='Could not reach Square, try again.';}
 }
 // The client file is organized into four tabs so it isn't one very long scroll. The identity block
@@ -4538,7 +4538,7 @@ function renderClient(id){
   <div class="ctab" data-tab="overview"${_clientTab==='overview'?'':' hidden'}>
   <div class="sh" style="padding-top:6px;"><h2>Today’s visit</h2></div>
   <div style="display:grid;grid-template-columns:1fr 1fr;gap:8px;padding:0 16px 8px;">
-    <button class="btnp" style="border-radius:10px;padding:9px;" onclick="nav('brief','${id}')"><i class="ti ti-brain"></i> AI Brief</button>
+    <button class="btnp" style="border-radius:10px;padding:9px;" onclick="nav('brief','${id}')"><i class="ti ${aiEnabled?'ti-brain':'ti-file-text'}"></i> ${aiEnabled?'AI Brief':'Visit Brief'}</button>
     <button class="btnp" style="border-radius:10px;padding:9px;background:var(--p-surf2);color:var(--p-green);" onclick="nav('room','${id}')"><i class="ti ti-armchair"></i> Start Session</button>
   </div>
   <div style="display:grid;grid-template-columns:1fr 1fr 1fr;gap:8px;padding:0 16px 12px;">
@@ -4710,7 +4710,7 @@ function renderClient(id){
   </div>`:''}
   ${c.squareId&&c.phone?`<div style="margin:0 16px 10px;background:var(--surf1);border:1px solid var(--p-line3);border-radius:12px;padding:12px 14px;">
     <div style="display:flex;justify-content:space-between;align-items:center;"><span style="font-size:11px;color:var(--p-mut);text-transform:uppercase;letter-spacing:.06em;">Loyalty points</span><button onclick="_loadClientLoyalty('${id}')" style="background:var(--accent-tint);border:1px solid var(--accent-a30,var(--p-line3));color:var(--accent-strong);border-radius:8px;padding:4px 10px;font-size:11px;font-weight:600;cursor:pointer;font-family:inherit;"><i class="ti ti-star" style="font-size:11px;"></i> Check Square</button></div>
-    <div id="sq-loyalty-body" style="margin-top:9px;font-size:12px;color:var(--p-mut);line-height:1.5;">${c.loyalty&&c.loyalty.points!=null?('<b style="color:var(--accent-strong);">'+c.loyalty.points+' points</b> · '+(c.loyalty.lifetime||0)+' lifetime'):('Check '+_fileEsc(c.name.split(' ')[0])+"’s Square loyalty balance.")}</div>
+    <div id="sq-loyalty-body" style="margin-top:9px;font-size:12px;color:var(--p-mut);line-height:1.5;">${c.loyalty&&c.loyalty.points!=null?('<b style="color:var(--accent-strong);">'+c.loyalty.points+' point'+(c.loyalty.points===1?'':'s')+'</b> · '+(c.loyalty.lifetime||0)+' lifetime'):('Check '+_fileEsc(c.name.split(' ')[0])+"’s Square loyalty balance.")}</div>
   </div>`:''}
   ${c.squareId?`<div style="margin:0 16px 14px;background:var(--surf1);border:1px solid var(--p-line3);border-radius:12px;padding:12px 14px;">
     <div style="display:flex;justify-content:space-between;align-items:center;"><span style="font-size:11px;color:var(--p-mut);text-transform:uppercase;letter-spacing:.06em;">Card on file</span><button onclick="_addCardOnFile('${id}')" style="background:var(--accent-tint);border:1px solid var(--accent-a30,var(--p-line3));color:var(--accent-strong);border-radius:8px;padding:4px 10px;font-size:11px;font-weight:600;cursor:pointer;font-family:inherit;"><i class="ti ti-credit-card" style="font-size:11px;"></i> Add card</button></div>
@@ -5152,6 +5152,9 @@ async function loadBrief(id, c){
   const el=document.getElementById('brief-body');
   const regen=document.getElementById('brief-regen');
   if(!el)return;
+  // Respect the AI kill-switch: if the provider turned AI off (to opt out / avoid cost), never fire an
+  // Anthropic call here — show the deterministic on-device brief instead (same as the AI-failure fallback).
+  if(typeof aiEnabled!=='undefined'&&!aiEnabled){try{el.innerHTML=_localBrief(id,c);}catch(e){}if(regen)regen.style.display='none';return;}
   if(regen)regen.style.pointerEvents='none';
   el.innerHTML=`<div style="display:flex;align-items:center;gap:8px;padding:12px 0;"><div class="spin"></div><span style="font-size:13px;color:var(--p-purple);">Claude is reviewing ${_fileEsc(c.name.split(' ')[0])}'s chart...</span></div>`;
 
@@ -7523,7 +7526,7 @@ function _storeSummary(id){
   const obs=(summaryObsDraft[id]||'').trim();
   const homecare=summaryToggles.homecare?getClientHomecare(id).slice():[];
   // Products captured WITH their per-client "why" reason, brand and icon.
-  const productDetail=(clientRecs[id]||[]).map(aid=>{const a=affiliateLinks.find(x=>x.id===aid);return a?{name:a.name,brand:a.brand||'',icon:a.icon||'',why:(_recReason(id,aid)||'')}:null;}).filter(Boolean);
+  const productDetail=(clientRecs[id]||[]).map(aid=>{const a=affiliateLinks.find(x=>x.id===aid);return (a&&a.active!==false)?{name:a.name,brand:a.brand||'',icon:a.icon||'',why:(_recReason(id,aid)||'')}:null;}).filter(Boolean);
   const products=summaryToggles.products?productDetail.map(p=>p.name):[];
   const providerNotes=_providerNotesSnapshot(id);
   // Anchor to the same session/day as the treatment-note save so a session is ONE record (one card
@@ -7905,7 +7908,7 @@ function _saveEditedSummary(id,i,thenAction){
   // Build structured productDetail from the catalog, then append any names that had
   // no catalog match (so pre-existing free-text products aren't silently dropped).
   const recIds=clientRecs[id]||[];
-  const picked=recIds.map(aid=>{const a=affiliateLinks.find(x=>x.id===aid);return a?{name:a.name,brand:a.brand||'',icon:a.icon||'',why:(typeof _recReason==='function'?(_recReason(id,aid)||''):'')}:null;}).filter(Boolean);
+  const picked=recIds.map(aid=>{const a=affiliateLinks.find(x=>x.id===aid);return (a&&a.active!==false)?{name:a.name,brand:a.brand||'',icon:a.icon||'',why:(typeof _recReason==='function'?(_recReason(id,aid)||''):'')}:null;}).filter(Boolean);
   const unmatched=(_esUnmatchedProducts||[]).map(nm=>({name:nm}));
   const productDetail=picked.concat(unmatched);
   s.productDetail=productDetail;
@@ -8988,7 +8991,10 @@ function _metricsFromMeasures(kind,m){
     ['Undertone',warm,'From the average colour of the photo.','var(--p-purple)','var(--p-purple-bg)'],
   ];
 }
-function _metricCardsHTML(metrics){return metrics.map(([label,val,note,col,bg])=>`<div style="background:${bg};border-radius:8px;padding:10px 12px;margin-bottom:6px;"><div style="display:flex;align-items:center;justify-content:space-between;margin-bottom:3px;"><span style="font-size:12px;font-weight:500;color:${col};">${_fileEsc(label)}</span><span style="font-size:13px;font-weight:500;color:${col};">${_fileEsc(val)}</span></div><div style="font-size:12px;color:var(--p-mut);line-height:1.5;">${_fileEsc(note)}</div></div>`).join('');}
+// Only allow a real CSS color token for col/bg — these can come from a provider-configured custom
+// vision endpoint (untrusted), and were interpolated straight into the style attribute.
+function _cssColor(c,fb){c=String(c==null?'':c).trim();return /^(#[0-9a-fA-F]{3,8}|var\(--[a-zA-Z0-9-]+\)|rgba?\([\d.,\s%]+\)|[a-zA-Z]+)$/.test(c)?c:(fb||'transparent');}
+function _metricCardsHTML(metrics){return metrics.map(([label,val,note,col,bg])=>{col=_cssColor(col,'var(--p-ink)');bg=_cssColor(bg,'var(--p-surf2)');return `<div style="background:${bg};border-radius:8px;padding:10px 12px;margin-bottom:6px;"><div style="display:flex;align-items:center;justify-content:space-between;margin-bottom:3px;"><span style="font-size:12px;font-weight:500;color:${col};">${_fileEsc(label)}</span><span style="font-size:13px;font-weight:500;color:${col};">${_fileEsc(val)}</span></div><div style="font-size:12px;color:var(--p-mut);line-height:1.5;">${_fileEsc(note)}</div></div>`;}).join('');}
 // ── Vision analysis hook ──────────────────────────────────────────────────
 // In the hosted app, set window.SLICKCHART_VISION_ENDPOINT to your server route. The
 // server proxies to the vision model (e.g. Claude vision) and keeps the API key server-side.
@@ -9323,7 +9329,7 @@ function renderVirtualClient(id){
       const tag=document.getElementById('vc-analysis-tag');if(tag){tag.textContent=_vcSourceLabel(r.source);tag.style.color=r.source==='sample'?'#666':'var(--p-green)';}
       const sum=document.getElementById('vc-analysis-summary');if(sum&&r.summary){sum.textContent=r.summary;sum.style.display='';}
       if(r.terminology&&r.terminology.length){const tm=document.getElementById('vc-terminology');if(tm)tm.innerHTML=r.terminology.map(([said,term])=>`<div style="display:flex;align-items:flex-start;gap:8px;padding:7px 0;border-bottom:1px solid var(--p-line2);"><div style="flex:1;min-width:0;"><div style="font-size:12px;color:var(--p-mut);font-style:italic;">${_fileEsc(said)}</div></div><i class="ti ti-arrow-right" style="font-size:13px;color:var(--p-mut2);flex-shrink:0;margin-top:2px;"></i><div style="flex:1.3;min-width:0;"><div style="font-size:12px;color:var(--accent-strong);font-weight:500;">${_fileEsc(term)}</div></div></div>`).join('');}
-    });
+    }).catch(function(){var tag=document.getElementById('vc-analysis-tag');if(tag){tag.textContent='Analysis unavailable';tag.style.color='var(--p-mut)';}});
   }
 }
 
@@ -11364,7 +11370,7 @@ function _assembleClientData(id){
   let products=[];
   try{
     const recIds=(typeof clientRecs!=='undefined'&&clientRecs[id])||[];
-    products=recIds.map(rid=>{const a=(typeof affiliateLinks!=='undefined'?affiliateLinks.find(x=>x.id===rid):null);return a?{name:a.name,brand:a.brand||'',why:((typeof _recReason==='function'?_recReason(id,rid):'')||''),icon:a.icon||'',image:(/^https?:\/\//i.test(String(a.image||'')))?a.image:'',
+    products=recIds.map(rid=>{const a=(typeof affiliateLinks!=='undefined'?affiliateLinks.find(x=>x.id===rid):null);return (a&&a.active!==false)?{name:a.name,brand:a.brand||'',why:((typeof _recReason==='function'?_recReason(id,rid):'')||''),icon:a.icon||'',image:(/^https?:\/\//i.test(String(a.image||'')))?a.image:'',
       // Send the buy channels separately (was flattened to one `url`) so the client's Buy sheet shows
       // "Buy from your store" pointing at the product's own page (a.site now carries the deep link),
       // plus any brand/Amazon/in-office option — instead of collapsing everything into a single link.
@@ -13488,14 +13494,23 @@ function onboardNext(){
   }
   onboardStep++;renderOnboard();
 }
+// Persist everything the wizard collected (profession, business/owner name, availability) — the half of
+// finishOnboarding that must ALSO run before "Connect Square" redirects away mid-wizard, or that setup
+// is lost across the OAuth round-trip (the account comes back onboarded='1' but half-configured).
+function _persistOnboarding(){
+  try{
+    bizInfo.name=onboardData.biz.name||bizInfo.name;
+    bizInfo.ownerName=onboardData.biz.owner||bizInfo.ownerName;_syncProviderAvatar();
+    if(onboardData.biz.name)workspace.name=onboardData.biz.name;
+    saveProfessions();
+    (function(_v){localStorage.setItem('sc_bizinfo',_v);if(typeof _pushKeyNow==='function')_pushKeyNow('sc_bizinfo',_v);return _v;})(JSON.stringify(bizInfo));
+    (function(_v){localStorage.setItem('sc_wsname',_v);if(typeof _pushKeyNow==='function')_pushKeyNow('sc_wsname',_v);})(workspace.name);
+    try{applyProfessionConfig();}catch(e){}
+    SlickBridge.setAvailability(normalizeAvail(onboardData.avail));   // feeds the client booking flow (per-day)
+  }catch(e){}
+}
 function finishOnboarding(dest,data){
-  bizInfo.name=onboardData.biz.name||bizInfo.name;
-  bizInfo.ownerName=onboardData.biz.owner||bizInfo.ownerName;_syncProviderAvatar();
-  if(onboardData.biz.name)workspace.name=onboardData.biz.name;
-  saveProfessions();
-  try{(function(_v){localStorage.setItem('sc_bizinfo',_v);if(typeof _pushKeyNow==='function')_pushKeyNow('sc_bizinfo',_v);return _v;})(JSON.stringify(bizInfo));(function(_v){localStorage.setItem('sc_wsname',_v);if(typeof _pushKeyNow==='function')_pushKeyNow('sc_wsname',_v);})(workspace.name);}catch(e){}
-  try{applyProfessionConfig();}catch(e){}
-  SlickBridge.setAvailability(normalizeAvail(onboardData.avail));   // feeds the client booking flow (per-day)
+  _persistOnboarding();
   localStorage.setItem('sc_onboarded','1');
   closeOnboard();
   nav(dest||'data-setup',data);
@@ -13509,7 +13524,7 @@ function onboardToggleProf(id){
   renderOnboard();
 }
 function onboardToggleDay(d){onboardData.avail.days[d]=!onboardData.avail.days[d];renderOnboard();}
-function onboardConnectSquare(){try{localStorage.setItem('sc_onboarded','1');}catch(e){}if(typeof _sqConnect==='function'){_sqConnect();}else{onboardNext();}}
+function onboardConnectSquare(){_persistOnboarding();try{localStorage.setItem('sc_onboarded','1');}catch(e){}if(typeof _sqConnect==='function'){_sqConnect();}else{onboardNext();}}
 
 function _togglePw(id,btn){
   const el=document.getElementById(id);if(!el)return;
@@ -20216,6 +20231,7 @@ function deleteAffiliate(ei){
     affiliateLinks.splice(ei,1);
     persistWorkspace();
     try{if(typeof persistAffiliateLinks==='function')persistAffiliateLinks();}catch(e){}   // persist the removal + refresh the client shop catalog
+    try{if(typeof _scheduleClientSync==='function')_scheduleClientSync();}catch(e){}   // push updated per-client blobs so a deleted product drops from clients' recs promptly
     activeShopTab='affiliates';
     if(document.getElementById('add-affiliate-screen')||document.getElementById('tt').textContent.indexOf('product')>=0)nav('shop');else switchShopTab('affiliates');
     if(typeof proToast==='function')proToast(nm+' deleted');
@@ -20243,6 +20259,7 @@ function saveAffiliate(ei){
   try{_markAffiliateCustom();}catch(e){}
   persistWorkspace();
   try{if(typeof persistAffiliateLinks==='function')persistAffiliateLinks();}catch(e){}   // persist the add/edit to sc_affiliate_links + refresh client shop
+  try{if(typeof _scheduleClientSync==='function')_scheduleClientSync();}catch(e){}   // push updated per-client blobs so a re-priced/renamed product reaches clients promptly
   activeShopTab='affiliates';
   nav('shop');
 }
