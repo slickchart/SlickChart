@@ -4470,6 +4470,12 @@ function submitClientForm(fid){
   const f=jess.forms.find(x=>x.id===fid);if(!f)return;
   const _signEl=document.getElementById('cf-sign-name');const _signName=_signEl?_signEl.value.trim():'';
   if(!_signName){showToast('Please type your name to sign',false);if(_signEl)_signEl.focus();return;}
+  // Enforce required fields BEFORE signing (mirrors the real intake path's validation). Otherwise a field
+  // marked "Required" — e.g. "List any allergies" — could be left blank and still submit as a signed,
+  // "Completed" form with the required answer silently missing.
+  let _missReq=null;
+  (f.qs||[]).forEach(q=>{if(_missReq||!q||!q.required||q.type==='Signature'||q.type==='Contraindications')return;const rid='cf-'+(q.id!=null?q.id:'');const rel=document.getElementById(rid);let rv;if(rel&&('value' in rel))rv=rel.value;if(rv==null||rv==='')rv=(window._cfAns||{})[rid];if(rv==null||String(rv).trim()===''){_missReq=q;}});
+  if(_missReq){showToast('Please answer: '+((_missReq.label||_missReq.q||'the required question')),false);const _me=document.getElementById('cf-'+(_missReq.id!=null?_missReq.id:''));if(_me&&_me.focus)_me.focus();return;}
   // collect answers keyed by question id
   const answers={};
   (f.qs||[]).forEach(q=>{if(q.type==='Signature'||q.type==='Contraindications')return;const id='cf-'+(q.id!=null?q.id:'');const el=document.getElementById(id);let v;if(el&&('value' in el))v=el.value;if(v==null||v==='')v=(window._cfAns||{})[id];if(v!=null&&String(v).trim()!=='')answers[q.id]=v;});

@@ -19,6 +19,26 @@ export default async function handler(req, res) {
   try {
     const locationId = await resolveLocationId(ctx.token, ctx.locationId);
     const data = await sf('/v2/invoices/search', { method: 'POST', body: { query: { filter: { location_ids: [locationId] }, sort: { field: 'INVOICE_SORT_DATE', order: 'DESC' } }, limit: 100 } });
+
+    // Sales tax lives on each invoice's linked ORDER (not the invoice itself). Batch-retrieve the orders so
+    // the app can book tax collected vs. ex-tax revenue correctly — without it, Square-originated invoices
+    // reported $0 tax and overstated revenue by the tax amount. Best-effort: if orders can't be read
+    // (e.g. the token lacks ORDERS_READ), we simply return no tax and the app falls back to its old behavior.
+    const taxByOrder = {};
+    try {
+      const orderIds = [...new Set((data.invoices || []).map(i => i.order_id).filter(Boolean))];
+      for (let i = 0; i < orderIds.length; i += 100) {
+        const chunk = orderIds.slice(i, i + 100);
+        if (!chunk.length) continue;
+        const od = await sf('/v2/orders/batch-retrieve', { method: 'POST', body: { order_ids: chunk } });
+        for (const o of (od.orders || [])) {
+          if (o && o.id && o.total_tax_money && typeof o.total_tax_money.amount === 'number') {
+            taxByOrder[o.id] = o.total_tax_money.amount / 100;
+          }
+        }
+      }
+    } catch (e) { /* leave tax unresolved; app keeps its prior (tax-less) behavior for these invoices */ }
+
     const invoices = (data.invoices || []).map(inv => {
       let total = null;
       try {
@@ -37,7 +57,8 @@ export default async function handler(req, res) {
       const client = [r.given_name, r.family_name].filter(Boolean).join(' ') || r.email_address || '';
       // email + customerId let the app reliably match a paid invoice to a client record (e.g. to
       // auto-onboard on a paid deposit) instead of relying on name alone.
-      return { id: inv.id, status: simpleStatus(inv.status), total, client, email: r.email_address || '', customerId: r.customer_id || '', publicUrl: inv.public_url || '', createdAt: inv.created_at || '' };
+      const tax = (inv.order_id && taxByOrder[inv.order_id] != null) ? taxByOrder[inv.order_id] : null;
+      return { id: inv.id, status: simpleStatus(inv.status), total, tax, amountPaid, client, email: r.email_address || '', customerId: r.customer_id || '', publicUrl: inv.public_url || '', createdAt: inv.created_at || '', updatedAt: inv.updated_at || '' };
     });
     res.status(200).json({ invoices });
   } catch (e) { res.status(e.status || 500).json({ error: e.message, code: e.status === 403 ? 'reconnect' : undefined }); }

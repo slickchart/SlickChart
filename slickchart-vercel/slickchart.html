@@ -3638,21 +3638,44 @@ function _fcActive(c){
   if(cid&&typeof _isCheckinDismissed==='function'&&_isCheckinDismissed(cid))return false;
   return true;
 }
-// Record a FORM contraindication flag onto the client, merging with an existing same-session form flag
-// instead of overwriting it — so when a client flags contraindications on more than one form of a
-// bundle back-to-back, the prominent alert lists ALL of them, not just the last form's.
+// Combine a NEW contraindication flag with any existing un-reviewed one instead of overwriting it, so a
+// flag from one source (e.g. an intake "blood thinners") is never silently dropped when a flag from
+// another source (e.g. a pre-visit check-in) arrives. SAFETY-CRITICAL: before this, whichever flagged
+// submission was processed LAST won the single flaggedContra slot and the other source's
+// contraindications vanished from every alert surface.
+function _mergeContra(existing,incoming){
+  if(!incoming)return existing||null;
+  if(!existing)return incoming;
+  // Union of the raw flagged items.
+  var items=(existing.items||[]).slice();
+  (incoming.items||[]).forEach(function(it){if(items.indexOf(it)<0)items.push(it);});
+  // Union of the display details. A form/intake item carries no written detail (its text IS the detail),
+  // so synthesize one for any item lacking a detail entry — otherwise _fcDisplayItems (which prefers the
+  // details array when present) would show only the source that had details and hide the other's items.
+  var detailFor=function(f){
+    if(Array.isArray(f.details)&&f.details.length)return f.details.slice();
+    return (f.items||[]).map(function(it){return {label:'',detail:it};});
+  };
+  var details=detailFor(existing);
+  var seen={};details.forEach(function(d){seen[(d.detail||d.label||'')]=1;});
+  detailFor(incoming).forEach(function(d){var k=(d.detail||d.label||'');if(k&&!seen[k]){seen[k]=1;details.push(d);}});
+  // Combine the source labels ("New client intake & consent + Pre-visit check-in").
+  var forms=existing.form||'';
+  if(incoming.form&&incoming.form!==forms){forms=forms?(forms+' + '+incoming.form):incoming.form;}
+  // Keep the check-in id ONLY when BOTH sources are check-in flags. If a persistent form/intake
+  // contraindication is in the mix, drop it so a routine check-in dismissal can't hide the medical flag.
+  var checkinId=(existing.checkinId&&incoming.checkinId)?incoming.checkinId:'';
+  var out={form:forms,items:items,details:details,date:incoming.date||existing.date||'Today'};
+  if(checkinId)out.checkinId=checkinId;
+  return out;
+}
+// Record a FORM contraindication flag onto the client, merging with any existing un-reviewed flag (from
+// another form OR a check-in) instead of overwriting it — so when a client flags contraindications across
+// more than one submission, the prominent alert lists ALL of them, not just the last one's.
 function _setFormFlag(c,title,items,date){
   if(!c||!items||!items.length)return;
   date=date||'Today';
-  var ex=c.flaggedContra;
-  if(ex&&!ex.checkinId&&ex.date===date){
-    var merged=(ex.items||[]).slice();
-    items.forEach(function(it){if(merged.indexOf(it)<0)merged.push(it);});
-    var forms=(ex.form&&ex.form!==title)?(ex.form+' + '+title):(ex.form||title);
-    c.flaggedContra={form:forms,items:merged,date:date};
-  }else{
-    c.flaggedContra={form:title,items:items.slice(),date:date};
-  }
+  c.flaggedContra=_mergeContra(c.flaggedContra,{form:title,items:items.slice(),date:date});
 }
 // What to SHOW on a flagged card: for a check-in, the client's actual written detail ("new breakout on
 // chin") rather than the generic question ("Any skin changes since your last visit"). Falls back to the
@@ -15184,7 +15207,12 @@ function _clientBalance(cid){return _payments.filter(p=>p.clientId===cid).reduce
 function _addPayment(p){p.id=p.id||('pay_'+Date.now().toString(36)+Math.random().toString(36).slice(2,6));_payments.unshift(p);_savePayments();return p;}
 // Money split for a payment. 'partial' = part-collected: amountPaid received, amount-amountPaid still
 // owed. paid = fully collected; unpaid = nothing collected; refunded/canceled = neither collected nor owed.
-function _payCollected(p){if(!p)return 0;if(p.status==='paid')return parseFloat(p.amount)||0;if(p.status==='partial')return Math.max(0,Math.min(parseFloat(p.amount)||0,parseFloat(p.amountPaid)||0));return 0;}
+function _payCollected(p){if(!p)return 0;if(p.status==='paid'){var _a=parseFloat(p.amount)||0;var _ap=parseFloat(p.amountPaid);
+  // Count what was ACTUALLY collected. When a client adds a tip through Square, amountPaid (the completed
+  // total, tip included) exceeds the invoice amount — counting only p.amount dropped every tip from
+  // revenue and "Total collected".
+  return isNaN(_ap)?_a:Math.max(_a,_ap);}
+  if(p.status==='partial')return Math.max(0,Math.min(parseFloat(p.amount)||0,parseFloat(p.amountPaid)||0));return 0;}
 function _payOwed(p){if(!p)return 0;if(p.status==='unpaid')return parseFloat(p.amount)||0;if(p.status==='partial')return Math.max(0,(parseFloat(p.amount)||0)-(parseFloat(p.amountPaid)||0));return 0;}
 // Tombstone Square invoice ids the provider deleted, so the auto-sync doesn't resurrect them.
 let _deletedSquareIds=(function(){try{const a=JSON.parse(localStorage.getItem('sc_deleted_sq')||'[]');return new Set(Array.isArray(a)?a:[]);}catch(e){return new Set();}})();
@@ -15519,13 +15547,21 @@ function _reportRange(key){
   return {from:'0000-01-01',to:'9999-12-31',label:'All time'};
 }
 function _reportData(from,to){
-  const inRange=p=>{const d=_dateToISO(p.date);return d&&d>=from&&d<=to;};
+  // Cash basis: a paid/partial payment belongs to the period money was RECEIVED (paidDate), not when the
+  // invoice was created. Without this, an invoice created Jun 28 and paid Jul 3 landed in June's report,
+  // contradicting the "cash basis" label. Unpaid records have no paidDate, so they use their own date.
+  const _effDate=p=>(((p.status==='paid'||p.status==='partial')&&p.paidDate)?p.paidDate:p.date);
+  const inRange=p=>{const d=_dateToISO(_effDate(p));return d&&d>=from&&d<=to;};
   const paid=_payments.filter(p=>p.status==='paid'&&inRange(p));
   const outstanding=_payments.filter(p=>(p.status==='unpaid'||p.status==='partial')&&inRange(p));
   let services=0,retail=0,other=0,tax=0,total=0;const byMethod={};
   paid.forEach(p=>{
-    const amt=parseFloat(p.amount)||0;const t=parseFloat(p.taxAmount)||0;tax+=t;total+=amt;const net=amt-t;
-    byMethod[p.method||'Other']=(byMethod[p.method||'Other']||0)+amt;
+    const amt=parseFloat(p.amount)||0;const t=parseFloat(p.taxAmount)||0;
+    // collected includes any tip added at payment; the tip surplus is revenue (booked to "other"), never tax.
+    const collected=_payCollected(p);const tip=Math.max(0,collected-amt);
+    tax+=t;total+=collected;const net=amt-t;
+    byMethod[p.method||'Other']=(byMethod[p.method||'Other']||0)+collected;
+    if(tip>0)other+=tip;
     if(p.items&&p.items.length){
       const lineSum=p.items.reduce((a,it)=>a+((+it.price||0)*(it.qty||1)),0);
       if(lineSum>0){
@@ -16013,7 +16049,7 @@ function renderPayments(){
   <div style="height:20px;"></div>`;
   try{_paySyncSquare(true);}catch(e){}
 }
-function _payMarkPaid(idv){const p=_payments.find(x=>x.id===idv);if(p&&p.status!=='refunded'&&p.status!=='canceled'){p.status='paid';const _ok=_savePayments();if(_ok===false&&typeof proToast==='function')proToast('Couldn’t save that — your device storage may be full. The change may not stick on reload.',0);}if(typeof _navCur!=='undefined'&&_navCur&&_navCur.screen==='payments')renderPayments();}
+function _payMarkPaid(idv){const p=_payments.find(x=>x.id===idv);if(p&&p.status!=='refunded'&&p.status!=='canceled'){p.status='paid';if(!p.paidDate)p.paidDate=(typeof _todayISO==='function'?_todayISO():'');const _ok=_savePayments();if(_ok===false&&typeof proToast==='function')proToast('Couldn’t save that — your device storage may be full. The change may not stick on reload.',0);}if(typeof _navCur!=='undefined'&&_navCur&&_navCur.screen==='payments')renderPayments();}
 function _payDeleteDo(idv){const i=_payments.findIndex(x=>x.id===idv);if(i>=0){if(_payments[i]&&_payments[i].squareInvoiceId)_markSquareDeleted(_payments[i].squareInvoiceId);_payments.splice(i,1);_savePayments();if(typeof proToast==='function')proToast('Payment removed');}const _m=document.getElementById('pay-detail');if(_m)_m.remove();if(typeof _navCur!=='undefined'&&_navCur&&_navCur.screen==='payments')renderPayments();}
 function _payDelete(idv){if(typeof confirmModal==='function'){confirmModal({title:'Remove this payment?',body:'This removes the payment record. It can’t be undone.',action:'Remove'},function(){_payDeleteDo(idv);});}else{_payDeleteDo(idv);}}
 function _payOpen(idv){
@@ -16168,7 +16204,11 @@ async function _paySyncSquare(auto){
     (d.invoices||[]).forEach(sv=>{
       const e=_payments.find(p=>p.squareInvoiceId===sv.id);
       const st=(sv.status==='paid')?'paid':(sv.status==='partial'?'partial':(sv.status==='canceled'||sv.status==='refunded')?sv.status:'unpaid');
-      if(e){if(!(e.status==='paid'&&(st==='unpaid'||st==='partial')))e.status=st;if(sv.total!=null)e.amount=sv.total;if(sv.amountPaid!=null)e.amountPaid=sv.amountPaid;if(sv.publicUrl)e.publicUrl=sv.publicUrl;}
+      // Payment-received date (cash-basis reporting) and sales tax collected, for invoices created/paid in
+      // Square. Without taxAmount the sales-tax report booked $0 tax and overstated revenue by the tax; with
+      // paidDate, revenue lands in the month the money actually arrived, not the invoice-creation month.
+      const svPaidDate=(st==='paid'||st==='partial')?((sv.updatedAt||sv.createdAt||'').slice(0,10)||''):'';
+      if(e){if(!(e.status==='paid'&&(st==='unpaid'||st==='partial')))e.status=st;if(sv.total!=null)e.amount=sv.total;if(sv.amountPaid!=null)e.amountPaid=sv.amountPaid;if(sv.tax!=null&&e.taxAmount==null)e.taxAmount=sv.tax;if(svPaidDate&&!e.paidDate)e.paidDate=svPaidDate;if(sv.publicUrl)e.publicUrl=sv.publicUrl;}
       else if(sv.status!=='draft'&&!_deletedSquareIds.has(sv.id)){
         // Avoid double-counting: if the provider ALSO logged this payment manually (cash, card on
         // file, texted link — none carry a squareInvoiceId), LINK that record to this Square invoice
@@ -16177,8 +16217,8 @@ async function _paySyncSquare(auto){
         const svName=String(sv.client||'').trim().toLowerCase();
         const svDay=Date.parse((sv.createdAt||'').slice(0,10)||_todayISO())||0;
         const dup=svName?_payments.find(p=>p&&!p.squareInvoiceId&&Math.round((+p.amount||0)*100)===svAmt&&String(p.clientName||'').trim().toLowerCase()===svName&&(function(){const pd=Date.parse((p.date||'').slice(0,10))||0;return svDay&&pd&&Math.abs(pd-svDay)<=3*86400000;})()):null;
-        if(dup){dup.squareInvoiceId=sv.id;if(!(dup.status==='paid'&&(st==='unpaid'||st==='partial')))dup.status=st;if(sv.total!=null)dup.amount=sv.total;if(sv.amountPaid!=null)dup.amountPaid=sv.amountPaid;if(sv.publicUrl)dup.publicUrl=sv.publicUrl;}
-        else _addPayment({clientId:'',clientName:sv.client||'Client',amount:sv.total||0,amountPaid:sv.amountPaid,method:'Square',status:st,date:(sv.createdAt||'').slice(0,10)||_todayISO(),note:'Square invoice',source:'square',squareInvoiceId:sv.id,publicUrl:sv.publicUrl});
+        if(dup){dup.squareInvoiceId=sv.id;if(!(dup.status==='paid'&&(st==='unpaid'||st==='partial')))dup.status=st;if(sv.total!=null)dup.amount=sv.total;if(sv.amountPaid!=null)dup.amountPaid=sv.amountPaid;if(sv.tax!=null&&dup.taxAmount==null)dup.taxAmount=sv.tax;if(svPaidDate&&!dup.paidDate)dup.paidDate=svPaidDate;if(sv.publicUrl)dup.publicUrl=sv.publicUrl;}
+        else _addPayment({clientId:'',clientName:sv.client||'Client',amount:sv.total||0,amountPaid:sv.amountPaid,taxAmount:(sv.tax!=null?sv.tax:undefined),method:'Square',status:st,date:(sv.createdAt||'').slice(0,10)||_todayISO(),paidDate:svPaidDate||undefined,note:'Square invoice',source:'square',squareInvoiceId:sv.id,publicUrl:sv.publicUrl});
       }
     });
     _savePayments();
@@ -17404,7 +17444,7 @@ async function syncClientEvents(){
             // Carry the client's actual written detail for each flagged answer (WHAT changed, not just
             // "skin changes"), plus the source check-in id so the alert card can open the exact check-in.
             const _fdetails=[];(ci.groups||[]).forEach(g=>{(g.rows||[]).forEach(r=>{if(r&&r.flagged)_fdetails.push({label:r.label||'',detail:(r.detail||'').trim()});});});
-            c.flaggedContra={form:'Pre-visit check-in',items:ci.flagged.slice(),details:_fdetails,checkinId:ci.id,date:ci.dateLabel||'Today'};
+            c.flaggedContra=_mergeContra(c.flaggedContra,{form:'Pre-visit check-in',items:ci.flagged.slice(),details:_fdetails,checkinId:ci.id,date:ci.dateLabel||'Today'});
           }
           // Photos a client sends need to actually land in their photo chart, not
           // just sit inside this one check-in record where they're easy to miss. Only file them
@@ -17922,7 +17962,12 @@ function _clientNameLink(clientId,name,opts){
 }
 function requestCard(b){
   const sugOpen=suggestOpenFor===b.id;
-  const times=['9:00 AM','10:00 AM','11:00 AM','12:00 PM','1:00 PM','2:00 PM','3:00 PM','4:00 PM'];
+  // Cover a full working day (a provider may take evening bookings) AND always include the client's
+  // originally requested time. Otherwise a requested slot with no matching option (e.g. 5:00 PM) made the
+  // <select> silently fall back to its first option (9:00 AM), so tapping Send suggested a time the
+  // provider never chose — the client then one-tap "accepts" 9:00 AM.
+  const times=['8:00 AM','9:00 AM','10:00 AM','11:00 AM','12:00 PM','1:00 PM','2:00 PM','3:00 PM','4:00 PM','5:00 PM','6:00 PM','7:00 PM','8:00 PM'];
+  if(b.time&&times.indexOf(b.time)<0)times.unshift(b.time);
   return`
   <div style="margin:0 16px 10px;background:var(--surf2);border:1px solid var(--accent-tint2);border-radius:14px;overflow:hidden;">
     <div style="padding:13px 14px;">
@@ -18005,7 +18050,7 @@ SlickBridge.on('checkin-submitted',ci=>{
     // answers, matching the server-sync path — the bridge handler used to set lastCheckin but not this.
     if(ci.flagged&&ci.flagged.length&&(typeof _isCheckinDismissed!=='function'||!_isCheckinDismissed(ci.id))){
       const _fd=[];(ci.groups||[]).forEach(g=>{(g.rows||[]).forEach(r=>{if(r&&r.flagged)_fd.push({label:r.label||'',detail:(r.detail||'').trim()});});});
-      CL[ci.clientId].flaggedContra={form:'Pre-visit check-in',items:ci.flagged.slice(),details:_fd,checkinId:ci.id,date:ci.dateLabel||'Today'};
+      CL[ci.clientId].flaggedContra=_mergeContra(CL[ci.clientId].flaggedContra,{form:'Pre-visit check-in',items:ci.flagged.slice(),details:_fd,checkinId:ci.id,date:ci.dateLabel||'Today'});
     }
     try{if(typeof saveClients==='function')saveClients();}catch(e){}
   }
@@ -18699,17 +18744,24 @@ function _reopenBookingWith(name,draft){
 // Find an existing manual/confirmed appointment on the same day within ~30 min of a proposed time,
 // so a non-Square provider gets warned before double-booking themselves. (Square bookings are
 // guarded server-side by real availability; this covers the app's own calendar.)
-function _manualOverlap(date,time,excludeId){
+function _manualOverlap(date,time,excludeId,propDur){
   var w=_apptWhen(date,time);if(!w)return null;
+  // Treat each appointment as an interval [start, start+duration) and flag a real overlap, rather than a
+  // fixed ±30-min proximity to the start. The old proximity test ignored duration entirely, so a 60-min
+  // service at 2:00 (running to 3:00) with a new booking at 2:45 was NOT flagged (|2:45-2:00|=45>30) even
+  // though they plainly collide. Durations default to 60 min when unknown (typical service length).
+  var wStart=w.getTime();
+  var wEnd=wStart+((propDur&&propDur>0?propDur:60)*60000);
+  var overlaps=function(aStart,aDur){var s=aStart.getTime();var e=s+((aDur&&aDur>0?aDur:60)*60000);return s<wEnd&&wStart<e;};
   var pool=(manualAppts||[]).concat(typeof confirmedAppts!=='undefined'?confirmedAppts:[]);
-  var hit=pool.find(function(a){if(!a)return false;if(excludeId&&a.id===excludeId)return false;if(a.date!==date)return false;var aw=_apptWhen(a.date,a.time);return aw&&Math.abs(aw.getTime()-w.getTime())<30*60000;})||null;
+  var hit=pool.find(function(a){if(!a)return false;if(excludeId&&a.id===excludeId)return false;if(a.date!==date)return false;var aw=_apptWhen(a.date,a.time);return aw&&overlaps(aw,a.dur||a.durationMinutes);})||null;
   if(hit)return hit;
   // Also warn when the slot collides with a LIVE Square booking — the old guard only checked the app's
   // own manual/confirmed appts, so a provider who takes real Square bookings got no double-booking
   // warning when adding a manual appt (or confirming a request) on top of one. Square appts carry a
-  // Date in .at (not date/time strings).
+  // Date in .at (not date/time strings) and their real length in .dur.
   if(typeof _apptsLive==='function'&&_apptsLive()&&Array.isArray(squareAppts)){
-    var sq=squareAppts.find(function(a){if(!a||!a.at||isNaN(a.at))return false;if(excludeId&&a.id===excludeId)return false;return Math.abs(a.at.getTime()-w.getTime())<30*60000;});
+    var sq=squareAppts.find(function(a){if(!a||!a.at||isNaN(a.at))return false;if(excludeId&&a.id===excludeId)return false;return overlaps(a.at,a.dur||a.durationMinutes);});
     if(sq)return {client:sq.client||'a Square booking',time:(sq.at&&sq.at.toLocaleTimeString)?sq.at.toLocaleTimeString('en-US',{hour:'numeric',minute:'2-digit'}):'',_square:true};
   }
   return null;
