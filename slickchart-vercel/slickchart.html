@@ -3627,9 +3627,32 @@ function _fcItems(c){var f=c&&c.flaggedContra;return (f&&Array.isArray(f.items))
 // source of truth that finally stops "cleared pre-visit check-ins coming back after refresh".
 function _fcActive(c){
   if(!c||!c.flaggedContra)return false;
-  var cid=c.flaggedContra.checkinId||(c.lastCheckin&&c.lastCheckin.id)||'';
+  var f=c.flaggedContra;
+  // Only a CHECK-IN flag's visibility is tied to whether its source check-in was dismissed. A form /
+  // intake contraindication flag has no checkinId; it must NEVER inherit the dismissed-state of an
+  // unrelated earlier check-in (that silently pulled a freshly-flagged contraindication — e.g. "I take
+  // blood thinners" checked on the intake — out of the pre-visit review queue and recolored it as a
+  // routine completed form).
+  var isCheckinFlag=!!f.checkinId||f.form==='Pre-visit check-in';
+  var cid=f.checkinId||((isCheckinFlag&&c.lastCheckin&&c.lastCheckin.id)||'');
   if(cid&&typeof _isCheckinDismissed==='function'&&_isCheckinDismissed(cid))return false;
   return true;
+}
+// Record a FORM contraindication flag onto the client, merging with an existing same-session form flag
+// instead of overwriting it — so when a client flags contraindications on more than one form of a
+// bundle back-to-back, the prominent alert lists ALL of them, not just the last form's.
+function _setFormFlag(c,title,items,date){
+  if(!c||!items||!items.length)return;
+  date=date||'Today';
+  var ex=c.flaggedContra;
+  if(ex&&!ex.checkinId&&ex.date===date){
+    var merged=(ex.items||[]).slice();
+    items.forEach(function(it){if(merged.indexOf(it)<0)merged.push(it);});
+    var forms=(ex.form&&ex.form!==title)?(ex.form+' + '+title):(ex.form||title);
+    c.flaggedContra={form:forms,items:merged,date:date};
+  }else{
+    c.flaggedContra={form:title,items:items.slice(),date:date};
+  }
 }
 // What to SHOW on a flagged card: for a check-in, the client's actual written detail ("new breakout on
 // chin") rather than the generic question ("Any skin changes since your last visit"). Falls back to the
@@ -12032,7 +12055,9 @@ function _retryProviderMsg(id,mid){
   try{const arr=msgStore[id]||[];const m=arr.find(x=>x&&x._mid===mid);if(!m)return;
     const c=CL[id];if(!c||!c._token){if(typeof proToast==='function')proToast((String((c&&c.name)||'This client').split(' ')[0])+' hasn’t joined yet — this will send once they open their app.',0);return;}
     m.status='sending';renderChat(id);
-    _sendProviderMessageToClient(id,m.text||'',(m.imgs||[]),false,m._idem||(m._idem=_genMid()),m._mid);
+    // Pass null idem — _sendProviderMessageToClient derives the SAME stable key from _mid on every
+    // attempt, so a resend of an already-committed message can't create a duplicate.
+    _sendProviderMessageToClient(id,m.text||'',(m.imgs||[]),false,null,m._mid);
   }catch(e){}
 }
 function sendMsg(id,imgArg){
@@ -12082,12 +12107,19 @@ async function _sendProviderMessageToClient(id,text,photos,_retried,_idem,_mid){
   const tok=(typeof Cloud!=='undefined'&&Cloud&&Cloud.token)||'';if(!tok){if(_mid)_setProviderMsgStatus(id,_mid,'failed');return;}
   const imgs=Array.isArray(photos)?photos:[];
   if(!String(text||'').trim()&&!imgs.length){if(_mid)_setProviderMsgStatus(id,_mid,'sent');return;} // nothing to deliver
-  // Stable idempotency key across the retry so a message that committed server-side but lost
-  // its response isn't stored (and pushed) to the client twice.
-  if(!_idem){try{_idem=(self.crypto&&crypto.randomUUID)?crypto.randomUUID():(Date.now().toString(36)+Math.random().toString(36).slice(2));}catch(e){_idem=Date.now().toString(36)+Math.random().toString(36).slice(2);}}
+  // Stable idempotency key across BOTH the auto-retry and a later manual "tap to resend": derive it
+  // from the message id (_mid), which is the same on every attempt of this bubble. The old code minted
+  // a random key that wasn't stored, so a manual resend of a message that had committed server-side
+  // (but lost its HTTP response) generated a NEW key and the client received it twice.
+  if(!_idem)_idem=_mid?('pm-'+String(_mid)):((function(){try{return (self.crypto&&crypto.randomUUID)?crypto.randomUUID():(Date.now().toString(36)+Math.random().toString(36).slice(2));}catch(e){return Date.now().toString(36)+Math.random().toString(36).slice(2);}})());
   try{
     const r=await fetch('/api/provider-message',{method:'POST',headers:{'Content-Type':'application/json','Authorization':'Bearer '+tok},body:JSON.stringify({clientId:id,text:text||'',photos:imgs,idem:_idem})});
     if(!r.ok)throw new Error('status '+r.status);
+    // A 200 can still carry {ok:false} (e.g. the DB is unavailable server-side) — nothing was stored,
+    // so the client will never get it. Treat that as a failure (mirrors the client send path) instead
+    // of marking the bubble "sent" when it wasn't.
+    let _j={};try{_j=await r.json();}catch(e){}
+    if(_j&&_j.ok===false)throw new Error('server ok:false');
     if(_mid)_setProviderMsgStatus(id,_mid,'sent');
   }catch(e){
     // The message shows as sent locally, but if it never reached the server the client
@@ -14890,14 +14922,16 @@ function _rebuildCalendarFeed(){
     const p=n=>String(n).padStart(2,'0');
     const stampOf=d=>d.getFullYear()+p(d.getMonth()+1)+p(d.getDate())+'T'+p(d.getHours())+p(d.getMinutes())+'00';
     const events=[];
-    // Manual + confirmed appointments (date + time strings)
-    const src=(typeof manualAppts!=='undefined'?manualAppts:[]).concat(typeof confirmedAppts!=='undefined'?confirmedAppts:[]);
-    src.forEach((a,i)=>{const st=_icsStamp(a.date,a.time);if(!st)return;const e=new Date(st.d.getTime()+3600000);events.push({uid:'sc-'+(a.date||'')+'-'+i+'@slickchart',title:(a.tx?a.tx+' \u2014 ':'')+(a.client||'Appointment'),start:st.stamp,end:stampOf(e),notes:''});});
-    // Live Square appointments (real Date + duration) \u2014 so a Square booking also flows to the
-    // provider's Google/Apple calendar, not just manually-added ones.
+    // Live Square appointments FIRST (real Date + duration), and remember each one's client+start so a
+    // manual/confirmed entry for the same appointment isn't ALSO emitted \u2014 otherwise the synced
+    // Google/Apple feed lists that appointment twice (the in-app calendar already dedupes these).
+    const sqKeys=new Set();
     if(typeof _apptsLive==='function'&&_apptsLive()&&Array.isArray(squareAppts)){
-      squareAppts.forEach(a=>{if(!a.at||isNaN(a.at))return;const e=new Date(a.at.getTime()+(((+a.dur)||60)*60000));events.push({uid:'sq-'+(a.id||stampOf(a.at))+'@slickchart',title:(a.client||'Appointment'),start:stampOf(a.at),end:stampOf(e),notes:''});});
+      squareAppts.forEach(a=>{if(!a.at||isNaN(a.at))return;const start=stampOf(a.at);const e=new Date(a.at.getTime()+(((+a.dur)||60)*60000));events.push({uid:'sq-'+(a.id||start)+'@slickchart',title:(a.client||'Appointment'),start,end:stampOf(e),notes:''});sqKeys.add(String(a.client||'').trim().toLowerCase()+'@'+start);});
     }
+    // Manual + confirmed appointments (date + time strings), skipping any that duplicate a Square one.
+    const src=(typeof manualAppts!=='undefined'?manualAppts:[]).concat(typeof confirmedAppts!=='undefined'?confirmedAppts:[]);
+    src.forEach((a,i)=>{const st=_icsStamp(a.date,a.time);if(!st)return;if(sqKeys.has(String(a.client||'').trim().toLowerCase()+'@'+st.stamp))return;const e=new Date(st.d.getTime()+3600000);events.push({uid:'sc-'+(a.date||'')+'-'+i+'@slickchart',title:(a.tx?a.tx+' \u2014 ':'')+(a.client||'Appointment'),start:st.stamp,end:stampOf(e),notes:''});});
     localStorage.setItem('sc_calendar_feed',JSON.stringify(events));
   }catch(e){}
 }
@@ -17413,7 +17447,7 @@ async function syncClientEvents(){
             }
           }catch(e){}
           if(payload.signed){c.signedForms=c.signedForms||[];if(c.signedForms.indexOf(title)<0)c.signedForms.push(title);}
-          if(flagged)c.flaggedContra={form:title,items:flagged,date:formDate};
+          if(flagged)_setFormFlag(c,title,flagged,formDate);
           try{saveClients();}catch(e){}
         }
         // Notify for EVERY completed form \u2014 consent forms as much as intake, flagged or not \u2014 and
@@ -17970,7 +18004,7 @@ SlickBridge.on('form-completed',d=>{
   if(d.formId&&(formTmpls[d.formId]||(Array.isArray(d.qs)&&d.qs.length)))_applyIntakeVitals(c,d.formId,q=>(d.answers||{})[q.id],d.qs);
   if(d.signed){c.signedForms=c.signedForms||[];if(c.signedForms.indexOf(title)<0)c.signedForms.push(title);}
   const flagged=(d.flagged&&d.flagged.length)?d.flagged.slice():null;
-  if(flagged)c.flaggedContra={form:title,items:flagged,date:d.date||'Today'};
+  if(flagged)_setFormFlag(c,title,flagged,d.date||'Today');
   try{if(typeof saveClients==='function')saveClients();}catch(e){}
   const nm=c.name.split(' ')[0];
   const fl=flagged?` ⚠ Flagged: ${flagged.join(', ')}.`:'';
@@ -18647,7 +18681,17 @@ function _reopenBookingWith(name,draft){
 function _manualOverlap(date,time,excludeId){
   var w=_apptWhen(date,time);if(!w)return null;
   var pool=(manualAppts||[]).concat(typeof confirmedAppts!=='undefined'?confirmedAppts:[]);
-  return pool.find(function(a){if(!a)return false;if(excludeId&&a.id===excludeId)return false;if(a.date!==date)return false;var aw=_apptWhen(a.date,a.time);return aw&&Math.abs(aw.getTime()-w.getTime())<30*60000;})||null;
+  var hit=pool.find(function(a){if(!a)return false;if(excludeId&&a.id===excludeId)return false;if(a.date!==date)return false;var aw=_apptWhen(a.date,a.time);return aw&&Math.abs(aw.getTime()-w.getTime())<30*60000;})||null;
+  if(hit)return hit;
+  // Also warn when the slot collides with a LIVE Square booking — the old guard only checked the app's
+  // own manual/confirmed appts, so a provider who takes real Square bookings got no double-booking
+  // warning when adding a manual appt (or confirming a request) on top of one. Square appts carry a
+  // Date in .at (not date/time strings).
+  if(typeof _apptsLive==='function'&&_apptsLive()&&Array.isArray(squareAppts)){
+    var sq=squareAppts.find(function(a){if(!a||!a.at||isNaN(a.at))return false;if(excludeId&&a.id===excludeId)return false;return Math.abs(a.at.getTime()-w.getTime())<30*60000;});
+    if(sq)return {client:sq.client||'a Square booking',time:(sq.at&&sq.at.toLocaleTimeString)?sq.at.toLocaleTimeString('en-US',{hour:'numeric',minute:'2-digit'}):'',_square:true};
+  }
+  return null;
 }
 function saveQuickAdd(){
   const name=document.getElementById('qa-client')?.value?.trim();

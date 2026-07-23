@@ -4953,6 +4953,16 @@ SlickBridge.on('booking-confirmed',b=>{
   client.nextDate=fmtNiceDate(b.date);
   client.nextTime=b.time;
   client.treatment=b.treatment||client.treatment;
+  // Refresh the Home countdown ring immediately — it used to update nextDate/nextTime but never rebuild
+  // APPT, so the "next appointment" ring stayed stale (or "—") until a manual reload.
+  try{
+    var _t=(b.time||'').trim();
+    var dd=new Date((b.date||'')+' '+_t);
+    if(isNaN(dd))dd=new Date(fmtNiceDate(b.date)+' '+new Date().getFullYear()+' '+_t);
+    if(!isNaN(dd)&&dd.getFullYear()>=2000){APPT=dd;try{var _ap=activeProvider();if(_ap)_ap.apptISO=dd.toISOString();}catch(e){}}
+  }catch(e){}
+  try{if(typeof recomputeCountdown==='function')recomputeCountdown();}catch(e){}
+  try{if(typeof currentScreen!=='undefined'&&currentScreen==='home'&&typeof renderHome==='function')renderHome();}catch(e){}
   pushNotify({type:'appointmentReminder',icon:'ti-calendar-check',col:'#f0fff5',ic:'#4ec49a',
     title:'Appointment confirmed ✅',
     body:`${client.providerFirst} confirmed your ${b.treatment} on ${_ordinalize(fmtNiceDate(b.date))} at ${b.time}.`,
@@ -5357,9 +5367,12 @@ async function _fetchRealMessages(initial){
       const _prevSeen=(typeof _msgSeenIds!=='undefined'&&Array.isArray(_msgSeenIds))?_msgSeenIds.slice():[];
       const _freshProv=j.messages.filter(function(m){return m.from==='provider'&&_prevSeen.indexOf(m.id)<0;});
       jess.thread=j.messages.map(function(m){return {from:m.from==='provider'?'provider':'me',text:m.text,imgs:Array.isArray(m.photos)?m.photos:[],time:_fmtMsgTime(m.ts)};});
-      // Drop a preserved copy only if that same text already came back from the server (it did send).
-      const _serverMine=new Set(jess.thread.filter(function(m){return m.from==='me';}).map(function(m){return String(m.text||'').trim();}));
-      _unsent.forEach(function(m){const k=String(m.text||'').trim();if(!(k&&_serverMine.has(k)))jess.thread.push(m);});
+      // Drop a preserved copy only if the same message already came back from the server (it did send).
+      // Key on text AND photo signature — a photo-only message has empty text, so the old text-only key
+      // was always falsy and re-pushed it, showing the photo twice (one normal, one "tap to retry").
+      const _msgSig=function(m){return String(m.text||'').trim()+'|'+((m.imgs&&m.imgs[0])?String(m.imgs[0]).slice(0,80):'')+'|'+((m.imgs&&m.imgs.length)||0);};
+      const _serverMine=new Set(jess.thread.filter(function(m){return m.from==='me';}).map(_msgSig));
+      _unsent.forEach(function(m){const k=_msgSig(m);if(k!=='||0'&&!_serverMine.has(k))jess.thread.push(m);});
       _markMsgsSeen(j.messages.map(function(m){return m.id;}));
       // Raise the unread badge (and one grouped notification) for messages received while the app was
       // closed — previously the initial fetch blanket-marked everything seen and never set unread, so
