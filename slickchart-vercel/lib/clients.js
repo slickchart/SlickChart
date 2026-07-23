@@ -77,6 +77,14 @@ export async function claimReminder(clientId, rkey) {
   return rows.length > 0;
 }
 
+// Undo a claim when the reminder reached ZERO devices (a transient push-service failure). Deleting the
+// dedup row lets the next hourly cron run retry, instead of the claim-before-send leaving that day's
+// reminder permanently unsent.
+export async function releaseReminder(clientId, rkey) {
+  const q = sql();
+  try { await q`DELETE FROM reminder_log WHERE client_id=${String(clientId)} AND rkey=${String(rkey)}`; } catch (e) {}
+}
+
 function _subId(endpoint) {
   return 'ps_' + crypto.createHash('sha256').update(String(endpoint || '')).digest('base64url').slice(0, 24);
 }

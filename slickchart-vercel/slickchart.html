@@ -2075,6 +2075,15 @@ const Cloud={
       fetch('/api/store',{method:'PUT',keepalive:true,headers:{'Content-Type':'application/json','Authorization':'Bearer '+this.token},body:JSON.stringify({items})}).catch(()=>{});
     }catch(e){}
   },
+  // Re-queue failed items (without clobbering any newer edit made while the request was in flight) and
+  // schedule another flush with capped exponential backoff. Never drops data — it retries until the write
+  // lands or the page goes away (pagehide's keepalive beacon covers the latter).
+  _retryLater(items,retryCount){
+    try{for(const k in items){if(!(k in this._queue))this._queue[k]=items[k];}}catch(e){}
+    const n=retryCount||0;
+    clearTimeout(this._timer);
+    this._timer=setTimeout(()=>this._flush(n+1),Math.min(1500*Math.pow(2,n),60000));
+  },
   _flush(retryCount){
     if(!this.token)return;
     const items=this._queue;this._queue={};
@@ -2109,16 +2118,21 @@ const Cloud={
             if(requeued){clearTimeout(this._timer);this._timer=setTimeout(()=>this._flush(0),800);}
             if(typeof proToast==='function')proToast('A photo was too large to back up to the cloud, your notes are saved. Try a smaller image next time.',0,'error');
           }
-          else if(typeof proToast==='function'){
-            _cloudSyncToast('Changes couldn\u2019t back up to the cloud yet, they\u2019re saved on this device and will sync when you\u2019re back online.');
+          else{
+            // Keep the items queued and KEEP retrying with capped backoff instead of abandoning them after
+            // two tries. Combined with the 'online' listener below, this makes the reassurance we show
+            // ("will sync when you're back online") actually true \u2014 the old code dropped them for good.
+            this._retryLater(items,retryCount);
+            if(typeof proToast==='function')_cloudSyncToast('Changes couldn\u2019t back up to the cloud yet, they\u2019re saved on this device and will sync when you\u2019re back online.');
           }
         }
       })
       .catch(e=>{
         console.error('[Cloud sync] save failed:',e&&e.message);
-        // Restore only keys not re-edited while the request was in flight (see above).
-        if(!(retryCount>0)){for(const k in items){if(!(k in this._queue))this._queue[k]=items[k];}clearTimeout(this._timer);this._timer=setTimeout(()=>this._flush(1),1500);}
-        else if(typeof proToast==='function')_cloudSyncToast('Changes couldn\u2019t back up to the cloud yet, they\u2019re saved on this device and will sync when you\u2019re back online.');
+        // Restore only keys not re-edited while the request was in flight (see above), then keep retrying
+        // with backoff (a network error usually means offline \u2014 the 'online' listener will also kick it).
+        this._retryLater(items,retryCount);
+        if(retryCount>0&&typeof proToast==='function')_cloudSyncToast('Changes couldn\u2019t back up to the cloud yet, they\u2019re saved on this device and will sync when you\u2019re back online.');
       });
   },
 };
@@ -2140,6 +2154,9 @@ const Cloud={
     window.addEventListener('pagehide',flush);
     window.addEventListener('beforeunload',flush);
     document.addEventListener('visibilitychange',function(){if(document.visibilityState==='hidden')flush();});
+    // When the device comes back online, immediately retry any writes that failed while offline (instead
+    // of waiting out the backoff) — this is what makes "will sync when you're back online" actually happen.
+    window.addEventListener('online',function(){try{if(typeof Cloud!=='undefined'&&Cloud&&Cloud.token&&Cloud._queue&&Object.keys(Cloud._queue).length)Cloud._flush();}catch(e){}});
   }catch(e){}
 })();
 function _reloadAll(){try{
@@ -8033,6 +8050,21 @@ function linkSavedSummary(id,i){
 // ── Aftercare drip (tattoo) ── start/restart the automated healing check-ins for a real client.
 // The server (clients.heal_started_at + cron-reminders) sends the Day-1 / Day-3 / Month-1 messages.
 function _aftercareDripActive(c){return !!(c&&c.aftercareDripAt&&(Date.now()-c.aftercareDripAt)<45*24*3600*1000);}
+// Is THIS visit a tattoo session? Gates the tattoo healing drip so a multi-discipline provider (tattoo +
+// esthetics/massage/etc.) doesn't auto-enrol a facial or massage client into "unwrap your tattoo / your
+// tattoo is peeling" messages. A single-discipline tattoo artist always qualifies; otherwise we require a
+// clear tattoo signal on this client's own visit. Biased toward NOT sending when unsure (a false send is
+// embarrassing; a miss is recoverable — the provider can start the drip manually).
+function _isTattooSession(c){
+  try{
+    if(!selectedProfessions.includes('tattoo'))return false;
+    if(selectedProfessions.length===1)return true;                       // tattoo-only artist
+    var tx=String((c&&c.treatment)||'').toLowerCase();
+    if(/tattoo|linework|\bflash\b|shading|half\s*sleeve|full\s*sleeve/.test(tx))return true;
+    if(typeof activeNoteTemplate!=='undefined'&&activeNoteTemplate==='tattooRecord')return true;
+    return false;
+  }catch(e){return false;}
+}
 function _startAftercareDrip(id,silent){
   const c=CL[id];if(!c)return;
   c.aftercareDripAt=Date.now();
@@ -8072,7 +8104,7 @@ async function sendSummary(id){
   try{_sendProviderMessageToClient(id,_msg);}catch(e){}
   // Tattoo: a sent session summary means the session is done — auto-start the healing check-in
   // drip (Day 1 / 3 / 30). Only for tattoo providers + real synced clients; restart is fine.
-  try{if(selectedProfessions.includes('tattoo')&&c&&c._token){_startAftercareDrip(id);}}catch(e){}
+  try{if(c&&c._token&&_isTattooSession(c)){_startAftercareDrip(id);}}catch(e){}
   // Session is complete, clear its saved protocol/step state so the next visit for this
   // client starts with a clean protocol checklist.
   try{roomStepsDone={};localStorage.removeItem('sc_room_state_'+id);if(_roomClientId===id)_roomClientId='';}catch(e){}
@@ -12036,6 +12068,9 @@ function renderChat(id){
   const c=CL[id];const t=threads.find(x=>x.id===id);if(t&&t.unread){t.unread=false;try{saveMessages();}catch(e){}
     // Push the read state NOW so a quick refresh's cloud pull can't restore the old unread copy.
     try{if(typeof _pushKeyNow==='function')_pushKeyNow('sc_threads',localStorage.getItem('sc_threads')||'');}catch(e){}}
+  // Reading the conversation must also clear its bell notifications — otherwise the inbox dot cleared but
+  // the notification badge stayed lit forever (only tapping the notification card itself marked it read).
+  try{var _mnChanged=false;notifFeed.forEach(function(n){if(n&&n.type==='message'&&n.action==='chat'&&n.data===id&&!n.read){n.read=true;_notifRead.add(n.id);_mnChanged=true;}});if(_mnChanged){_saveNotifState();if(typeof updateBadge==='function')updateBadge();}}catch(e){}
   if(!c){document.getElementById('tt').textContent='Message';S.innerHTML='<div style="padding:30px 16px;color:var(--p-mut);text-align:center;">This conversation is no longer available.</div>';return;}
   // If this client has joined since some messages were composed (or a send failed earlier), re-drive
   // any pending/failed ones now that we're here with a delivery token.
@@ -12145,7 +12180,10 @@ function _setProviderMsgStatus(id,mid,status){
 function _flushPendingProviderMsgs(id,onlyPending){
   try{const c=CL[id];if(!c||!c._token||id==='maya')return;const arr=msgStore[id]||[];
     arr.forEach(m=>{if(m&&m.from==='me'&&(m.status==='pending'||(!onlyPending&&m.status==='failed'))){m.status='sending';if(!m._mid)m._mid=_genMid();
-      _sendProviderMessageToClient(id,m.text||'',(m.imgs||[]),false,m._idem||(m._idem=_genMid()),m._mid);}});
+      // Pass null idem so the delivery uses the SAME stable 'pm-'+_mid key as the initial send and the
+      // manual resend. Minting a fresh random key here meant a lost-response flush + later manual resend
+      // sent two different keys, so the client received the message twice.
+      _sendProviderMessageToClient(id,m.text||'',(m.imgs||[]),false,null,m._mid);}});
   }catch(e){}
 }
 // Sweep every thread for pending/failed provider messages and re-drive the ones whose client now
@@ -15285,6 +15323,19 @@ function _payCollected(p){if(!p)return 0;if(p.status==='paid'){var _a=parseFloat
   return isNaN(_ap)?_a:Math.max(_a,_ap);}
   if(p.status==='partial')return Math.max(0,Math.min(parseFloat(p.amount)||0,parseFloat(p.amountPaid)||0));return 0;}
 function _payOwed(p){if(!p)return 0;if(p.status==='unpaid')return parseFloat(p.amount)||0;if(p.status==='partial')return Math.max(0,(parseFloat(p.amount)||0)-(parseFloat(p.amountPaid)||0));return 0;}
+// Effective reporting date (cash basis): paid/partial belong to the period money was received (paidDate);
+// everything else uses the invoice date. Used so the transaction ledger/detail exports sit in the SAME
+// period as the income summary that's printed next to them.
+function _payEffDate(p){return p?(((p.status==='paid'||p.status==='partial')&&p.paidDate)?p.paidDate:p.date):'';}
+// Tax actually COLLECTED on a payment (matches _reportData): full tax when paid, the proportional share
+// when partial, zero when nothing's been collected. So the ledger's Tax column reconciles to the summary.
+function _payCollectedTax(p){
+  if(!p)return 0;
+  var fullTax=parseFloat(p.taxAmount)||0;if(!fullTax)return 0;
+  if(p.status==='paid')return fullTax;
+  if(p.status==='partial'){var amt=parseFloat(p.amount)||0;var c=_payCollected(p);return (amt>0)?(typeof _money==='function'?_money(fullTax*(c/amt)):Math.round(fullTax*(c/amt)*100)/100):0;}
+  return 0;
+}
 // Tombstone Square invoice ids the provider deleted, so the auto-sync doesn't resurrect them.
 let _deletedSquareIds=(function(){try{const a=JSON.parse(localStorage.getItem('sc_deleted_sq')||'[]');return new Set(Array.isArray(a)?a:[]);}catch(e){return new Set();}})();
 function _markSquareDeleted(id){if(!id)return;_deletedSquareIds.add(id);try{(function(_v){localStorage.setItem('sc_deleted_sq',_v);if(typeof _pushKeyNow==='function')_pushKeyNow('sc_deleted_sq',_v);return _v;})(JSON.stringify(Array.from(_deletedSquareIds)));}catch(e){}}
@@ -15708,9 +15759,12 @@ function _reportDocHTML(r,d){
   const esc=x=>String(x==null?'':x).replace(/[&<>]/g,m=>({'&':'&amp;','<':'&lt;','>':'&gt;'}[m]));
   const M=n=>'$'+(Math.round((n||0)*100)/100).toLocaleString('en-US',{minimumFractionDigits:2,maximumFractionDigits:2});
   const addr=[bizInfo.address,[bizInfo.city,bizInfo.state].filter(Boolean).join(', '),bizInfo.zip].filter(Boolean).join(', ');
-  const inRange=p=>{const dd=_dateToISO(p.date);return dd&&dd>=r.from&&dd<=r.to;};
-  const txns=(_payments||[]).filter(inRange).slice().sort((a,b)=>_dateToTime(a.date)-_dateToTime(b.date));
-  const txRows=txns.map(p=>{const total=parseFloat(p.amount)||0;const tax=parseFloat(p.taxAmount)||0;let cat='';if(p.items&&p.items.length){cat=[...new Set(p.items.map(it=>it.kind==='product'?'Retail':(it.kind==='service'?'Service':'Other')))].join('+');}else cat=p.category||'';return '<tr><td>'+esc(p.date||'')+'</td><td>'+esc(p.clientName||'')+'</td><td>'+esc(p.note||'')+'</td><td>'+esc(cat)+'</td><td class="r">'+M(total-tax)+'</td><td class="r">'+M(tax)+'</td><td class="r">'+M(total)+'</td><td>'+esc(p.method||'')+'</td><td>'+esc(p.status||'')+'</td></tr>';}).join('');
+  // Cash basis, matching the income summary printed above: filter + sort on the effective (paid) date and
+  // show COLLECTED amounts (tips included, tax = collected tax share) so the ledger reconciles to the
+  // summary's Total collected / Total revenue / Sales tax rather than showing invoice-date gross figures.
+  const inRange=p=>{const dd=_dateToISO(_payEffDate(p));return dd&&dd>=r.from&&dd<=r.to;};
+  const txns=(_payments||[]).filter(inRange).slice().sort((a,b)=>_dateToTime(_payEffDate(a))-_dateToTime(_payEffDate(b)));
+  const txRows=txns.map(p=>{const coll=_payCollected(p);const tax=_payCollectedTax(p);const sub=coll-tax;let cat='';if(p.items&&p.items.length){cat=[...new Set(p.items.map(it=>it.kind==='product'?'Retail':(it.kind==='service'?'Service':'Other')))].join('+');}else cat=p.category||'';return '<tr><td>'+esc(_payEffDate(p)||'')+'</td><td>'+esc(p.clientName||'')+'</td><td>'+esc(p.note||'')+'</td><td>'+esc(cat)+'</td><td class="r">'+M(sub)+'</td><td class="r">'+M(tax)+'</td><td class="r">'+M(coll)+'</td><td>'+esc(p.method||'')+'</td><td>'+esc(p.status||'')+'</td></tr>';}).join('');
   const methods=Object.entries(d.byMethod).sort((a,b)=>b[1]-a[1]).map(function(e){return '<tr><td>'+esc(e[0])+'</td><td class="r">'+M(e[1])+'</td></tr>';}).join('');
   return '<!doctype html><html><head><meta charset="utf-8"><title>Income Statement '+esc(d.from)+'</title><style>'
     +'*{box-sizing:border-box;}body{font-family:-apple-system,Segoe UI,Helvetica,Arial,sans-serif;color:#0b1816;margin:0;padding:30px 34px;font-size:12px;line-height:1.5;}'
@@ -15726,7 +15780,7 @@ function _reportDocHTML(r,d){
     +'<h2>Revenue (cash basis)</h2><table class="sum"><tr><td>Services</td><td class="r">'+M(d.services)+'</td></tr><tr><td>Retail / products</td><td class="r">'+M(d.retail)+'</td></tr>'+(d.other>0?'<tr><td>Other</td><td class="r">'+M(d.other)+'</td></tr>':'')+'<tr class="tot"><td>Total revenue</td><td class="r">'+M(d.revenue)+'</td></tr></table>'
     +'<h2>Collections &amp; sales tax</h2><table class="sum"><tr><td>Sales tax collected <span class="muted">(liability, not revenue)</span></td><td class="r">'+M(d.tax)+'</td></tr><tr class="tot"><td>Total collected</td><td class="r">'+M(d.total)+'</td></tr><tr><td>Outstanding (A/R)</td><td class="r">'+M(d.ar)+'</td></tr><tr><td class="muted">Paid transactions</td><td class="r muted">'+d.count+'</td></tr><tr><td class="muted">Average ticket</td><td class="r muted">'+M(d.avg)+'</td></tr></table>'
     +'<h2>Payment method reconciliation</h2><table class="sum">'+(methods||'<tr><td class="muted">No payments in this period.</td><td></td></tr>')+'</table>'
-    +'<h2>Transaction ledger</h2><table class="ledger"><thead><tr><th>Date</th><th>Client</th><th>Description</th><th>Category</th><th class="r">Subtotal</th><th class="r">Tax</th><th class="r">Total</th><th>Method</th><th>Status</th></tr></thead><tbody>'+(txRows||'<tr><td colspan="9" class="muted">No transactions in this period.</td></tr>')+'</tbody></table>'
+    +'<h2>Transaction ledger</h2><table class="ledger"><thead><tr><th>Date</th><th>Client</th><th>Description</th><th>Category</th><th class="r">Subtotal</th><th class="r">Tax</th><th class="r">Collected</th><th>Method</th><th>Status</th></tr></thead><tbody>'+(txRows||'<tr><td colspan="9" class="muted">No transactions in this period.</td></tr>')+'</tbody></table>'
     +'<div class="foot">Prepared by SlickChart \u00b7 cash basis (paid transactions). Sales tax is shown separately as a liability collected on behalf of the taxing authority, not as revenue. SlickChart tracks income only; business expenses are not included \u2014 pair this with your expense records for a complete profit &amp; loss statement.</div>'
     +'</body></html>';
 }
@@ -15745,7 +15799,7 @@ function _reportPDF(){
 function _reportExportSummary(){const r=_reportRange(_reportKey);const d=_reportData(r.from,r.to);const f=n=>(Math.round((n||0)*100)/100).toFixed(2);const rows=[['SlickChart \u2014 Income Summary'],['Period',r.label],['From',d.from],['To',d.to],['Basis','Cash (paid transactions)'],[''],['Category','Amount'],['Services revenue',f(d.services)],['Retail revenue',f(d.retail)],['Other revenue',f(d.other)],['Total revenue',f(d.revenue)],[''],['Sales tax collected (liability)',f(d.tax)],['Total collected',f(d.total)],[''],['Outstanding (A/R)',f(d.ar)],['Paid transactions',String(d.count)],['Average ticket',f(d.avg)]];_downloadCSV('slickchart-income-summary-'+d.from+'.csv',rows);if(typeof proToast==='function')proToast('Income summary exported');}
 function _reportExportTax(){const r=_reportRange(_reportKey);const d=_reportData(r.from,r.to);const f=n=>(Math.round((n||0)*100)/100).toFixed(2);const rows=[['SlickChart \u2014 Sales Tax Report'],['Period',r.label],['From',d.from],['To',d.to],[''],['Revenue (ex-tax)',f(d.revenue)],['Sales tax collected',f(d.tax)],['Total collected',f(d.total)]];_downloadCSV('slickchart-sales-tax-'+d.from+'.csv',rows);if(typeof proToast==='function')proToast('Sales tax report exported');}
 function _reportExportMethods(){const r=_reportRange(_reportKey);const d=_reportData(r.from,r.to);const f=n=>(Math.round((n||0)*100)/100).toFixed(2);const rows=[['SlickChart \u2014 Payment Reconciliation'],['Period',r.label+' ('+d.from+' to '+d.to+')'],[''],['Method','Amount collected']].concat(Object.entries(d.byMethod).sort((a,b)=>b[1]-a[1]).map(([m,v])=>[m,f(v)])).concat([['Total',f(d.total)]]);_downloadCSV('slickchart-reconciliation-'+d.from+'.csv',rows);if(typeof proToast==='function')proToast('Reconciliation exported');}
-function _reportExportDetail(){const r=_reportRange(_reportKey);const rows=[['Date','Client','Description','Category','Subtotal','Tax','Total','Method','Status']];const inRange=p=>{const dd=_dateToISO(p.date);return dd&&dd>=r.from&&dd<=r.to;};(_payments||[]).filter(inRange).slice().sort((a,b)=>_dateToTime(a.date)-_dateToTime(b.date)).forEach(p=>{const total=parseFloat(p.amount)||0;const tax=parseFloat(p.taxAmount)||0;let cat='';if(p.items&&p.items.length){cat=[...new Set(p.items.map(it=>it.kind==='product'?'Retail':(it.kind==='service'?'Service':'Other')))].join('+');}else cat=p.category||'';rows.push([p.date||'',p.clientName||'',p.note||'',cat,(total-tax).toFixed(2),tax.toFixed(2),total.toFixed(2),p.method||'',p.status||'']);});_downloadCSV('slickchart-transactions-'+r.from+'.csv',rows);if(typeof proToast==='function')proToast('Transaction detail exported');}
+function _reportExportDetail(){const r=_reportRange(_reportKey);const rows=[['Date','Client','Description','Category','Subtotal','Tax','Collected','Method','Status']];const inRange=p=>{const dd=_dateToISO(_payEffDate(p));return dd&&dd>=r.from&&dd<=r.to;};(_payments||[]).filter(inRange).slice().sort((a,b)=>_dateToTime(_payEffDate(a))-_dateToTime(_payEffDate(b))).forEach(p=>{const coll=_payCollected(p);const tax=_payCollectedTax(p);const sub=coll-tax;let cat='';if(p.items&&p.items.length){cat=[...new Set(p.items.map(it=>it.kind==='product'?'Retail':(it.kind==='service'?'Service':'Other')))].join('+');}else cat=p.category||'';rows.push([_payEffDate(p)||'',p.clientName||'',p.note||'',cat,sub.toFixed(2),tax.toFixed(2),coll.toFixed(2),p.method||'',p.status||'']);});_downloadCSV('slickchart-transactions-'+r.from+'.csv',rows);if(typeof proToast==='function')proToast('Transaction detail exported');}
 
 // ── Invoice preview (Build invoice → Preview) ──
 async function _biPreview(){
@@ -15790,7 +15844,7 @@ function _downloadCSV(fname,rows){const csv=rows.map(r=>r.map(c=>{c=String(c==nu
   // "=cmd|'/c calc'!A1" could execute on export. Prefix such cells with an apostrophe
   // so spreadsheets render them as plain text.
   if(/^[=+\-@\t\r]/.test(c))c="'"+c;
-  return /[",\n]/.test(c)?'"'+c.replace(/"/g,'""')+'"':c;}).join(',')).join('\r\n');try{const a=document.createElement('a');a.href='data:text/csv;charset=utf-8,'+encodeURIComponent(csv);a.download=fname;(document.querySelector('.shell')||document.body).appendChild(a);a.click();a.remove();}catch(e){}}
+  return /[",\n\r]/.test(c)?'"'+c.replace(/"/g,'""')+'"':c;}).join(',')).join('\r\n');try{const a=document.createElement('a');a.href='data:text/csv;charset=utf-8,'+encodeURIComponent(csv);a.download=fname;(document.querySelector('.shell')||document.body).appendChild(a);a.click();a.remove();}catch(e){}}
 function _exportServicesCSV(){const rows=[['Service','Price']].concat((_svcMenu||[]).map(s=>[s.name||'',(+s.price||0).toFixed(2)]));_downloadCSV('slickchart-services.csv',rows);if(typeof proToast==='function')proToast('Exported '+((_svcMenu||[]).length)+' services');}
 function _exportClientsCSV(){const rows=[['Name','Email','Phone','Date of birth','Current treatment','Last visit','Next visit','Concerns','Allergies']].concat(Object.values(CL).map(c=>[c.name||'',c.email||'',c.phone||'',c.birthday||'',c.treatment||'',c.lastVisit||'',c.nextVisit||'',c.concerns||'',c.allergies||'']));_downloadCSV('slickchart-clients.csv',rows);if(typeof proToast==='function')proToast('Exported '+Object.keys(CL).length+' clients');}
 function _exportPaymentsCSV(){const rows=[['Date','Client','Subtotal','Tax','Total','Method','Status','Note']].concat((_payments||[]).map(p=>{const total=parseFloat(p.amount)||0;const tax=parseFloat(p.taxAmount)||0;return [p.date||'',p.clientName||'',(total-tax).toFixed(2),tax.toFixed(2),total.toFixed(2),p.method||'',p.status||'',p.note||''];}));_downloadCSV('slickchart-sales.csv',rows);if(typeof proToast==='function')proToast('Exported '+((_payments||[]).length)+' payments');}
@@ -15976,7 +16030,7 @@ function renderServiceMenu(){
     <div style="flex:1;min-width:0;"><div style="font-size:14px;font-weight:500;color:var(--p-ink);">Treatment protocols</div><div style="font-size:12px;color:var(--p-mut2);">Your step-by-step treatment library \u00b7 ${protocols.length} saved</div></div>
     <i class="ti ti-chevron-right" aria-hidden="true" style="font-size:16px;color:#4a7a64;"></i>
   </button>
-  <div style="margin:2px 16px 12px;background:var(--surf1);border:1px solid var(--p-line3);border-radius:12px;padding:12px 14px;display:flex;align-items:center;justify-content:space-between;gap:10px;"><div><div style="font-size:13px;font-weight:600;color:var(--p-ink);">Default sales tax</div><div style="font-size:11px;color:var(--p-mut);">Added to invoices, links &amp; records. Leave 0 if you use Square\u2019s tax.</div></div><div style="display:flex;align-items:center;gap:5px;flex-shrink:0;"><input value="${_taxRate||''}" inputmode="decimal" onchange="_saveTaxRate(this.value)" placeholder="0" style="width:56px;background:var(--p-surf);border:1px solid var(--p-line);border-radius:6px;padding:7px;color:var(--p-ink);font-size:13px;font-family:inherit;text-align:right;"><span style="color:var(--p-mut);font-size:14px;">%</span></div></div>
+  <div style="margin:2px 16px 12px;background:var(--surf1);border:1px solid var(--p-line3);border-radius:12px;padding:12px 14px;display:flex;align-items:center;justify-content:space-between;gap:10px;"><div><div style="font-size:13px;font-weight:600;color:var(--p-ink);">Default sales tax</div><div style="font-size:11px;color:var(--p-mut);">Added to payment links &amp; manual records. Square invoices use your Square tax settings. Leave 0 if you use Square\u2019s tax.</div></div><div style="display:flex;align-items:center;gap:5px;flex-shrink:0;"><input value="${_taxRate||''}" inputmode="decimal" onchange="_saveTaxRate(this.value)" placeholder="0" style="width:56px;background:var(--p-surf);border:1px solid var(--p-line);border-radius:6px;padding:7px;color:var(--p-ink);font-size:13px;font-family:inherit;text-align:right;"><span style="color:var(--p-mut);font-size:14px;">%</span></div></div>
   ${_svcMenu.length?rows:`<div style="margin:10px 16px;text-align:center;color:var(--p-mut);font-size:13px;padding:24px 16px;background:var(--surf1);border:1px solid var(--p-line3);border-radius:12px;">No services yet \u2014 add your first one below.</div>`}
   <div style="padding:6px 16px 24px;"><button onclick="_svcAdd()" style="width:100%;background:var(--surf1);border:1px dashed var(--p-line);color:var(--p-ink);border-radius:10px;padding:12px;font-size:13px;font-weight:600;cursor:pointer;font-family:inherit;"><i class="ti ti-plus"></i> Add a service</button></div>`;
 }
@@ -16051,7 +16105,7 @@ async function _biSend(){
     body.idempotencyKey=_coIdem(_isig);
     const d=await _sqFetch('/api/square/invoice',{method:'POST',body});
     delete _coIdemKeys[_isig]; // sent, a later identical invoice should be a new, intentional one
-    const _rec=_addPayment({clientId:cid,clientName:c.name,amount:(d.total!=null?d.total:_coTotal())||0,taxAmount:(d.tax||_coTaxAmt()||0),method:'Square',status:'unpaid',date:_todayISO(),note:'Invoice \u00b7 '+items.length+' items',source:'square',squareInvoiceId:d.invoiceId,publicUrl:d.url,items:items.map(it=>({name:it.name,price:it.price,qty:it.qty||1,variationId:it.variationId||null,kind:it.kind||'service',note:it.note||'',taxable:(it.taxable!==false)}))});
+    const _rec=_addPayment({clientId:cid,clientName:c.name,amount:(d.total!=null?d.total:_coTotal())||0,taxAmount:(d.tax||0),method:'Square',status:'unpaid',date:_todayISO(),note:'Invoice \u00b7 '+items.length+' items',source:'square',squareInvoiceId:d.invoiceId,publicUrl:d.url,items:items.map(it=>({name:it.name,price:it.price,qty:it.qty||1,variationId:it.variationId||null,kind:it.kind||'service',note:it.note||'',taxable:(it.taxable!==false)}))});
     if(_biEditId){const _i=_payments.findIndex(x=>x.id===_biEditId);if(_i>=0&&_payments[_i].id!==_rec.id)_payments.splice(_i,1);_biEditId='';_savePayments();}
     if(typeof proToast==='function')proToast('Invoice sent \u2713');
     nav('payments');

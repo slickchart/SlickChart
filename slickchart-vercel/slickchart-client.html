@@ -2486,14 +2486,18 @@ function _journeyProgressHTML(){
   const visits=((activeProvider().summaries||[]).length)||0;
   // Real clients get shared before/after photos in progressPhotos (the demo uses progress sets); count
   // whichever is present so the "Photos" momentum tile isn't stuck at zero for real clients.
-  const photos=((activeProvider().progress||[]).length)||((activeProvider().progressPhotos||[]).length)||0;
+  const _progSets=(activeProvider().progress||[]).length;
+  const photos=_progSets||((activeProvider().progressPhotos||[]).length)||0;
+  // Demo `progress` entries are genuine photo SETS/sessions; a real client's progressPhotos is a flat list
+  // of individual before/after photos, so label those "Photos" (not "Photo sets") to avoid overcounting.
+  const _photosAreSets=_progSets>0;
   const streak=(typeof _eng!=='undefined'&&_eng&&typeof _engStreakLive==='function'&&_engStreakLive())?(+_eng.streak||0):0;
   if(tot<=1 && !visits && !photos) return '';   // nothing meaningful yet
   const pct=tot>0?Math.max(0,Math.min(100,Math.round(sess/tot*100))):0;
   const done=tot>0&&sess>=tot;
   const stat=(val,lbl,icon)=>`<div style="flex:1;background:var(--c-surf);border-radius:10px;padding:10px 8px;text-align:center;"><div style="font-size:18px;font-weight:700;color:var(--c-ink);line-height:1;">${val}</div><div style="font-size:10px;color:#82705a;font-weight:600;margin-top:4px;display:inline-flex;align-items:center;gap:3px;"><i class="ti ${icon}" style="font-size:11px;color:var(--accent-ink-lt);"></i>${lbl}</div></div>`;
   const tiles=[stat(visits,visits===1?'Visit':'Visits','ti-calendar-heart')];
-  if(photos)tiles.push(stat(photos,photos===1?'Photo set':'Photo sets','ti-photo'));
+  if(photos)tiles.push(stat(photos,_photosAreSets?(photos===1?'Photo set':'Photo sets'):(photos===1?'Photo':'Photos'),'ti-photo'));
   if(streak>0)tiles.push(stat(streak,streak===1?'Day streak':'Day streak','ti-flame'));
   return `<div style="margin:0 16px 14px;background:var(--c-card);border:1.5px solid var(--c-line);border-radius:14px;padding:14px 16px;">
     <div style="font-size:12px;font-weight:600;color:var(--c-mut);text-transform:uppercase;letter-spacing:.07em;margin-bottom:12px;">Your progress</div>
@@ -2515,7 +2519,7 @@ function renderJourney(){
   // Real clients' shared before/after photos render above via _progressPhotoSectionHTML() (they live in
   // progressPhotos, not the demo-only `progress` sets). Track that so we don't show a "No progress photos
   // yet" card directly under the photos they DO have.
-  const hasProgressPhotos=(activeProvider().progressPhotos||[]).length>0;
+  const hasProgressPhotos=(activeProvider().progressPhotos||[]).some(function(p){return p&&p.pid;});
   if(hasPhotos){
     if(photoRight>progressSessions.length-1)photoRight=progressSessions.length-1;
     if(photoLeft>progressSessions.length-1)photoLeft=progressSessions.length-1;
@@ -2854,9 +2858,13 @@ let _clientMsgSeq=0;
 // quick message) by re-attempting a few times before giving up.
 function _deliverClientMsg(msg,attempt){
   attempt=attempt||0;
+  // Stable idempotency key per message, persisted on the bubble — so a MANUAL "tap to retry" (a fresh
+  // _deliverClientMsg call) reuses the same key instead of minting a new one. Without this, retrying a
+  // message the server already stored (but whose response was lost) delivered it to the provider twice.
+  if(!msg._idem){try{msg._idem=(self.crypto&&crypto.randomUUID)?crypto.randomUUID():(Date.now().toString(36)+Math.random().toString(36).slice(2));}catch(e){msg._idem=Date.now().toString(36)+Math.random().toString(36).slice(2);}try{_saveClientMessages();}catch(_){}}
   // Lock per message id (not just per kind 'message') so a second quickly-sent message doesn't dedupe
   // against the first still in flight — otherwise it'd exhaust its retries and show a false "Not delivered".
-  _clientSubmit('message',{text:msg.text||'',photos:(msg.imgs||[]),_lock:(msg._id||('m'+(++_clientMsgSeq)))}).then(function(res){
+  _clientSubmit('message',{text:msg.text||'',photos:(msg.imgs||[]),_lock:(msg._id||('m'+(++_clientMsgSeq))),_idem:msg._idem}).then(function(res){
     if(res&&res.duplicate&&attempt<4){setTimeout(function(){_deliverClientMsg(msg,attempt+1);},1200);return;}
     msg.status=(res&&res.ok)?'sent':'failed';
     try{_saveClientMessages();}catch(e){}
@@ -3832,11 +3840,20 @@ function normalizeAvail(a){
 let rebookAvail=null;
 function rebookHourlySlots(dayObj){
   if(!dayObj||!dayObj.open)return[];
-  let sH=parseInt(dayObj.start,10),eH=parseInt(dayObj.end,10);
-  // Guard against a saved inverted/invalid range (end <= start), which would otherwise
-  // yield zero slots and silently block booking. Fall back to standard 9–5 hours.
-  if(!isFinite(sH)||!isFinite(eH)||eH<=sH){sH=9;eH=17;}
-  const slots=[];for(let h=sH;h<eH;h++){let hr=h%12;if(hr===0)hr=12;slots.push(`${hr}:00 ${h<12?'AM':'PM'}`);}
+  // Parse real hours AND minutes (the provider can open/close on the :30). parseInt dropped the minutes,
+  // so a 9:30 open offered a pre-open 9:00 slot and a 17:30 close dropped the 5:00 slot.
+  const pm=s=>{const m=String(s||'').match(/^(\d{1,2}):(\d{2})/);return m?(+m[1])*60+(+m[2]):NaN;};
+  let startMin=pm(dayObj.start),endMin=pm(dayObj.end);
+  if(!isFinite(startMin))startMin=9*60;
+  if(!isFinite(endMin))endMin=17*60;
+  // Hours that close at/after midnight (end <= start, e.g. 2 PM–12 AM) are evening/overnight: roll the
+  // close to the next day. The old code collapsed these to a hardcoded 9–5, offering a full set of morning
+  // slots the provider never works and hiding the real evening availability.
+  if(endMin<=startMin)endMin+=24*60;
+  const slots=[];
+  // Whole-hour start times at/after opening (round a :30 open UP so no pre-open slot) and before close
+  // (a :30 close still offers the preceding whole hour).
+  for(let t=Math.ceil(startMin/60)*60;t<endMin;t+=60){const h=Math.floor(t/60)%24;let hr=h%12;if(hr===0)hr=12;slots.push(`${hr}:00 ${h<12?'AM':'PM'}`);}
   return slots;
 }
 function rebookTimeBtnHTML(t){

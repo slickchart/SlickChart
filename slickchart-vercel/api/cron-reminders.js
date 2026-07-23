@@ -13,7 +13,7 @@
 // gated on the client's own notification toggles + quiet hours.
 import { dbEnabled, sql } from '../lib/db.js';
 import {
-  ensureClientTables, listAllClientPrefs, listPushSubs, deletePushSub, claimReminder,
+  ensureClientTables, listAllClientPrefs, listPushSubs, deletePushSub, claimReminder, releaseReminder,
   logEvent, clearHealStartById
 } from '../lib/clients.js';
 import { pushConfigured, sendPushToAll } from '../lib/push.js';
@@ -180,6 +180,10 @@ export default async function handler(req, res) {
         const sent = await sendPushToAll(subs, { title: r.title, body: r.body, url: '/client', tag: r.rkey, renotify: true }, deletePushSub);
         let nativeSent = 0;
         if (hasNative) { try { nativeSent = await sendNativeToClient(row.client_id, { title: r.title, body: r.body, url: '/client', tag: r.rkey }); } catch (e) {} }
+        // If NOTHING reached the client (transient push failure), release the claim so the next hourly run
+        // retries. Skip for aftercare — its guidance is also written to the in-app thread above, so it isn't
+        // lost, and re-running would duplicate that thread message.
+        if (!r.isHeal && (sent + nativeSent) === 0) { try { await releaseReminder(row.client_id, r.rkey); } catch (e) {} }
         summary.devices += sent + nativeSent;
         if (r.rkey.startsWith('apptbefore')) summary.apptBefore++;
         else if (r.rkey.startsWith('apptday')) summary.apptDay++;
