@@ -222,9 +222,28 @@ export async function upsertClient(providerId, c) {
   let token = rows[0] && rows[0].token;
   if (!token) {
     token = genToken();
+    // Two syncs can fire for the SAME brand-new client at once — e.g. the add-path sync (empty
+    // pendingForms) and the "Send first-visit package" sync (carrying the intake). The old
+    // ON CONFLICT DO NOTHING kept the FIRST insert and silently discarded the loser's data, so when the
+    // empty one won, the intake form was lost (the client then saw only the pre-visit check-in, which
+    // is re-injected server-side from a provider-wide KV and so was unaffected). Now the loser upserts
+    // its data instead of being dropped, and — critically — a write that carries NO pending forms can
+    // never wipe an intake the other write already stored: if the incoming blob's pendingForms is empty
+    // but the stored one isn't, we keep the stored pendingForms. Token stays the first-issued one.
     await q`INSERT INTO clients (id, provider_id, token, name, email, phone, data, created_at, updated_at)
       VALUES (${id}, ${providerId}, ${token}, ${(c && c.name) || ''}, ${(c && c.email) || ''}, ${(c && c.phone) || ''}, ${data}::jsonb, ${now}, ${now})
-      ON CONFLICT (id) DO NOTHING`;
+      ON CONFLICT (id) DO UPDATE SET
+        name = EXCLUDED.name,
+        email = EXCLUDED.email,
+        phone = EXCLUDED.phone,
+        updated_at = EXCLUDED.updated_at,
+        data = CASE
+          WHEN COALESCE(jsonb_array_length(EXCLUDED.data->'pendingForms'), 0) = 0
+               AND COALESCE(jsonb_array_length(clients.data->'pendingForms'), 0) > 0
+            THEN jsonb_set(EXCLUDED.data, '{pendingForms}', clients.data->'pendingForms')
+          ELSE EXCLUDED.data
+        END
+      WHERE clients.deleted_at IS NULL`;
     // A concurrent upsert of this same new id may have won the INSERT with a *different* token
     // (ON CONFLICT DO NOTHING keeps the first write). Re-read so we return the token that was
     // actually persisted — otherwise the loser hands back a token that isn't in the DB, i.e. a

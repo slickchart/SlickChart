@@ -11904,10 +11904,13 @@ async function sendFirstVisitPackage(id){
   if(intakeFid&&formTmpls[intakeFid]){
     _assignFormsToClient(c,_withPhotoRelease(intakeFid));
     try{saveClients({noSync:true});}catch(e){}
+    // Make sure a brand-new client has a token first (this creates their server record), THEN push the
+    // intake as a definitive UPDATE so it's the LAST authoritative write — it can't be lost to a
+    // concurrent add-path sync that carried an empty pendingForms.
+    if(!c._token){ try{ await _syncSpecificClientsToServer([id],{}); }catch(e){} }
     // Push the just-assigned intake to the server RIGHT NOW and AWAIT the outcome so a client who opens
     // their link immediately actually receives the new-client flow. If the push fails (signed out /
-    // offline), warn the provider instead of silently inviting them to a formless app. (A brand-new
-    // client with no token yet gets the token-creating sync inside inviteClientToApp below.)
+    // offline), warn the provider instead of silently inviting them to a formless app.
     if(c._token){
       const res=await _pushClientNow(id);
       if(!res.ok&&typeof proToast==='function')proToast(res.msg,0);
