@@ -4614,6 +4614,11 @@ function _setClientTab(id,tab){
   });
   try{if(S&&S.scrollTo)S.scrollTo({top:0,behavior:'smooth'});}catch(e){}
 }
+// Private per-client practitioner notes (birthdays, events, reminders). Autosaves; stays on the provider
+// side only — _assembleClientData never includes gpNote, so it is never delivered to the client.
+let _gpNoteTimer=null;
+function _gpNoteType(id){clearTimeout(_gpNoteTimer);_gpNoteTimer=setTimeout(function(){_gpNoteSave(id);},800);}
+function _gpNoteSave(id){var el=document.getElementById('gpnote-'+id);var c=CL[id];if(!c||!el)return;var v=el.value;if((c.gpNote||'')===(v||''))return;c.gpNote=v;try{saveClients();}catch(e){}}
 function renderClient(id){
   setNav('clients');
   _recEditCtx='profile';
@@ -4672,6 +4677,11 @@ function renderClient(id){
   </div>
   ${(function(){var _b=_clientBalance(id);return _b>0?'<div style="padding:0 16px 8px;"><div style="background:var(--p-amber-bg);border:1px solid var(--p-amber-line);border-radius:9px;padding:8px 12px;font-size:12px;color:var(--p-amber);display:flex;justify-content:space-between;"><span>Balance due</span><b>$'+_fmtMoney(_b)+'</b></div></div>':'';})()}
   <div style="padding:0 16px 14px;"><button class="btnp" onclick="nav('checkout','${id}')" style="width:100%;justify-content:center;border-radius:10px;"><i class="ti ti-cash"></i> Take payment</button></div>
+  <div class="sh"><h2>Private notes</h2></div>
+  <div style="padding:0 16px 14px;">
+    <textarea id="gpnote-${id}" placeholder="Notes to yourself about ${_fileEsc((c.name||'').split(' ')[0]||'this client')} — birthdays, events, preferences, anything to remember." oninput="_gpNoteType('${id}')" onblur="_gpNoteSave('${id}')" style="width:100%;box-sizing:border-box;min-height:72px;resize:vertical;background:var(--surf1);border:1px solid var(--p-line);border-radius:12px;padding:11px 13px;font-size:13px;line-height:1.5;color:var(--p-ink);font-family:inherit;">${_fileEsc(c.gpNote||'')}</textarea>
+    <div style="font-size:11px;color:var(--p-mut);margin-top:5px;display:flex;align-items:center;gap:4px;"><i class="ti ti-lock" style="font-size:11px;"></i> Private to you — saved automatically, never shown to the client.</div>
+  </div>
   <div class="sh" style="display:flex;align-items:center;justify-content:space-between;"><h2>Client details</h2><button onclick="editVitals('${id}')" style="border:1px solid var(--accent-a30,var(--p-line3));background:var(--accent-tint);color:var(--accent-strong);cursor:pointer;padding:4px 11px;border-radius:20px;font-size:11px;font-weight:600;font-family:inherit;display:inline-flex;align-items:center;gap:4px;margin-right:16px;"><i class="ti ti-pencil" style="font-size:11px;"></i> Edit</button></div>
   <div style="padding:0 16px;">
     ${_vitalsConfig().filter(f=>!f.med||(c[f.key]&&String(c[f.key]).trim()&&c[f.key]!=='—')).map(f=>`<div class="fr"><span class="fl">${f.label}</span><span class="fv"${f.key==='concerns'?' style="font-size:12px;"':''}>${_fileEsc(c[f.key]||'—')}</span></div>`).join('')}
