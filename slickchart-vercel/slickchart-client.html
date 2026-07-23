@@ -1454,7 +1454,11 @@ async function _loadClientPrefsFromServer(){
     const p=j.prefs;
     if(p.notif)saveNotifPrefs(p.notif);
     if(p.eng){_eng=Object.assign(_eng,p.eng);try{localStorage.setItem('sc_client_engage',JSON.stringify(_eng));}catch(e){}
-      if(_eng.day===_engToday()&&(_eng.stepsProvider===undefined||_eng.stepsProvider===(client&&client.activeProviderId)))Object.keys(homecareChecked).forEach(k=>{homecareChecked[k]=!!(_eng.steps||{})[k];});
+      // Only restore the saved checklist onto the provider it was recorded under. The old `undefined`
+      // fallback applied it to whatever provider was active, so for a client with multiple providers a
+      // legacy record (no stepsProvider) marked another provider's shared step keys as done. Still allow
+      // the legacy fallback when the client has at most one provider (no one to cross-contaminate).
+      if(_eng.day===_engToday()&&(_eng.stepsProvider===(client&&client.activeProviderId)||(_eng.stepsProvider===undefined&&((client&&client.providers)||[]).length<=1)))Object.keys(homecareChecked).forEach(k=>{homecareChecked[k]=!!(_eng.steps||{})[k];});
     }
     if(Array.isArray(p.welcomeDismissed))try{const cur=JSON.parse(localStorage.getItem('sc_welcome_dismissed')||'[]');const u=Array.from(new Set(cur.concat(p.welcomeDismissed)));localStorage.setItem('sc_welcome_dismissed',JSON.stringify(u));}catch(e){}
     if(typeof p.installDismissed==='boolean')try{localStorage.setItem('sc_install_dismissed',p.installDismissed?'1':'0');}catch(e){}
@@ -3208,6 +3212,13 @@ function _ffClearDraft(){
 function _ffIdemKey(pf){return 'sc_ffidem_'+((pf&&pf.formId)||'form')+((pf&&pf.assignedAt)?('_'+pf.assignedAt):'');}
 function _ffStableIdem(pf){try{const k=_ffIdemKey(pf);let v=localStorage.getItem(k);if(!v){v=(self.crypto&&crypto.randomUUID)?crypto.randomUUID():(Date.now().toString(36)+Math.random().toString(36).slice(2));localStorage.setItem(k,v);}return v;}catch(e){return '';}}
 function _ffClearIdem(pf){try{localStorage.removeItem(_ffIdemKey(pf));}catch(e){}}
+// Same stable-idempotency pattern for a pre-visit check-in, keyed by provider + this appointment. Without
+// it, a check-in that committed server-side but lost its response would be RE-SENT (new random key) when
+// the client tapped "Try again", landing a duplicate check-in in the provider's inbox and re-raising the
+// flag twice. Cleared on confirmed success so the next appointment's check-in gets a fresh key.
+function _ciIdemKey(prov){return 'sc_ciidem_'+((prov&&prov.id)||'')+'_'+((typeof client!=='undefined'&&client&&client.nextDate)||'')+'_'+((typeof client!=='undefined'&&client&&client.nextTime)||'');}
+function _ciStableIdem(prov){try{const k=_ciIdemKey(prov);let v=localStorage.getItem(k);if(!v){v=(self.crypto&&crypto.randomUUID)?crypto.randomUUID():(Date.now().toString(36)+Math.random().toString(36).slice(2));localStorage.setItem(k,v);}return v;}catch(e){return '';}}
+function _ciClearIdem(prov){try{localStorage.removeItem(_ciIdemKey(prov));}catch(e){}}
 function _ffAddPhotos(i){
   _pickImages(function(srcs){
     if(!srcs||!srcs.length)return;
@@ -3824,10 +3835,10 @@ function submitCheckin(){
   // telling them they're all set. A dropped check-in could hide a contraindication.
   if(client._real){
     S.innerHTML=_sendingHTML('Sending your check-in…');
-    _clientSubmit('checkin',{client:client.name,treatment:client.treatment,dateLabel:client.nextDate,time:client.nextTime,groups:pay.groups,flagged:pay.flagged,notes:pay.notes,photos:pay.photos||[]})
+    _clientSubmit('checkin',{client:client.name,treatment:client.treatment,dateLabel:client.nextDate,time:client.nextTime,groups:pay.groups,flagged:pay.flagged,notes:pay.notes,photos:pay.photos||[],_idem:_ciStableIdem(prov)})
       .then(function(res){
         if(res&&res.duplicate)return;
-        if(res&&res.ok!==false){ _markCheckinDone(prov); if(_advancePrevisitFlow(''))return; S.innerHTML=_checkinSuccessHTML(flagged); }
+        if(res&&res.ok!==false){ try{_ciClearIdem(prov);}catch(e){} _markCheckinDone(prov); if(_advancePrevisitFlow(''))return; S.innerHTML=_checkinSuccessHTML(flagged); }
         else{ S.innerHTML=_submitFailedHTML('submitCheckin()',"Couldn't send your check-in"); }
       });
     return;

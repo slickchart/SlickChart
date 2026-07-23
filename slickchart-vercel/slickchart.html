@@ -2486,6 +2486,10 @@ function doResetPw(){
   Cloud.resetPw(_resetToken,pw).then(()=>{_resetToken='';_loginMode='login';renderLogin();const e2=document.getElementById('login-err');if(e2){e2.style.color='var(--p-green)';e2.textContent=t('pw_updated');}}).catch(e=>{const er=document.getElementById('login-err');if(er)er.textContent=(e&&e.message)||'Reset failed';});
 }
 function _doLogout(){
+  // Revoke THIS session server-side first (while we still hold the token), so signing out actually
+  // invalidates the token everywhere — not just on this device. keepalive lets it complete even as we
+  // navigate away. Best-effort: local sign-out proceeds regardless.
+  try{var _t=(typeof Cloud!=='undefined'&&Cloud&&Cloud.token)||localStorage.getItem('sc_token')||'';if(_t)fetch('/api/logout',{method:'POST',keepalive:true,headers:{'Authorization':'Bearer '+_t}}).catch(function(){});}catch(e){}
   try{Cloud.logout();}catch(e){}
   try{localStorage.removeItem('sc_token');}catch(e){}
   // Clear this account's synced data from local storage. It's safe in the cloud, and
@@ -4328,7 +4332,10 @@ function _buildClientFileHTML(id){
     formsHTML=sfs.map(sf=>{
       const tmpl=(typeof formTmpls!=='undefined')?formTmpls[sf.formId]:null;
       const qa=[];
-      if(tmpl&&tmpl.qs){tmpl.qs.forEach(q=>{if(q.type==='Signature'||q.type==='Contraindications')return;const a=sf.answers&&sf.answers[q.id];if(_isPhotoType(q.type)&&Array.isArray(a)){if(a.length)qa.push([q.label,a.length+' photo'+(a.length===1?'':'s')+' attached']);return;}if(a!=null&&String(a).trim())qa.push([q.label,String(a)]);});}
+      // Prefer the at-submission question snapshot so an edited form template can't mislabel or drop a
+      // client's answers on this printable summary (matches viewSubmittedForm).
+      const _qsrc=(Array.isArray(sf.qs)&&sf.qs.length)?sf.qs:(tmpl&&tmpl.qs);
+      if(_qsrc){_qsrc.forEach(q=>{if(q.type==='Signature'||q.type==='Contraindications')return;const a=sf.answers&&sf.answers[q.id];if(_isPhotoType(q.type)&&Array.isArray(a)){if(a.length)qa.push([q.label,a.length+' photo'+(a.length===1?'':'s')+' attached']);return;}if(a!=null&&String(a).trim())qa.push([q.label,String(a)]);});}
       else{Object.keys(sf.answers||{}).forEach(k=>{const a=sf.answers[k];if(Array.isArray(a)&&a.length&&typeof a[0]==='string'&&a[0].slice(0,5)==='data:'){qa.push([k,a.length+' photo'+(a.length===1?'':'s')+' attached']);return;}qa.push([k,String(a)]);});}
       const qaHTML=qa.length?`<table class="qa">${qa.map(([l,v])=>`<tr><td class="l">${_fileEsc(l)}</td><td class="v">${_fileEsc(v)}</td></tr>`).join('')}</table>`:'<div class="muted">No written answers recorded.</div>';
       const flg=(sf.flagged&&sf.flagged.length)?`<div class="flag sm"><div class="flag-h">\u26a0 Flagged</div><ul>${sf.flagged.map(it=>`<li>${_fileEsc(it)}</li>`).join('')}</ul></div>`:'';
@@ -4772,7 +4779,7 @@ function renderClient(id){
   </div>`;}).join('')}
   ${(clientRecs[id]||[]).length>1?`<div style="padding:0 16px 6px;font-size:11px;color:var(--p-mut);">Drag, or use ▲ ▼, to set the order ${_fileEsc(c.name.split(' ')[0])} sees.</div>`:''}
   <div class="sh"><h2>Virtual consult</h2></div>
-  ${(()=>{const v=_vcProfile();const inv=vcInvites[id]||{};const nm=c.name.split(' ')[0];
+  ${(()=>{const v=_vcProfileFor(id);const inv=vcInvites[id]||{};const nm=c.name.split(' ')[0];
   if(inv.submitted){const _sub=vcSubmissions[id];const _rmx=(_sub&&_sub.measures&&typeof _metricsFromMeasures==='function')?_metricsFromMeasures(v.kind,_sub.measures):null;const _mx=(_rmx&&_rmx.length)?_rmx:v.metrics;const _dl=(_rmx&&_rmx.length)?'AI detected':'Sample analysis';const det=_mx.map(m=>m[0]+' '+m[1]).slice(0,4).join(' · ');return `
   <div style="background:var(--surf2);border:1px solid var(--p-line);border-radius:12px;margin:0 16px 14px;overflow:hidden;">
     <div style="padding:12px 14px;display:flex;align-items:center;gap:12px;">
@@ -4863,7 +4870,12 @@ function viewSubmittedForm(id,i){
   const sf=c.submittedForms[i];const tmpl=formTmpls[sf.formId];
   const rows=[];const photoGroups=[];
   const _isPhotoAns=(q,a)=>q&&_isPhotoType(q.type)&&Array.isArray(a)&&a.length;
-  if(tmpl&&tmpl.qs){tmpl.qs.forEach(q=>{if(q.type==='Signature'||q.type==='Contraindications')return;const a=sf.answers&&sf.answers[q.id];if(_isPhotoAns(q,a)){photoGroups.push([q.label,a]);return;}if(a!=null&&String(a).trim())rows.push([q.label,q.type==='Date'?_fmtDOB(String(a)):String(a),q.type||'']);});}
+  // Prefer the question snapshot captured AT SUBMISSION over the live template — otherwise editing the
+  // form later (renaming/deleting/reordering questions) mislabels a client's answers or drops them from
+  // view (e.g. an allergy answer shown under a renamed "Skin concerns" label). Falls back to the current
+  // template for older submissions saved before the snapshot was stored.
+  const _qsrc=(Array.isArray(sf.qs)&&sf.qs.length)?sf.qs:(tmpl&&tmpl.qs);
+  if(_qsrc){_qsrc.forEach(q=>{if(q.type==='Signature'||q.type==='Contraindications')return;const a=sf.answers&&sf.answers[q.id];if(_isPhotoAns(q,a)){photoGroups.push([q.label,a]);return;}if(a!=null&&String(a).trim())rows.push([q.label,q.type==='Date'?_fmtDOB(String(a)):String(a),q.type||'']);});}
   else{Object.keys(sf.answers||{}).forEach(k=>{const a=sf.answers[k];if(Array.isArray(a)&&a.length&&typeof a[0]==='string'&&a[0].slice(0,5)==='data:'){photoGroups.push([k,a]);return;}rows.push([k,String(a),'']);});}
   const signerName=c.name||'Client';
   const ov=document.createElement('div');ov.id='subform-sheet';
@@ -7012,7 +7024,7 @@ function _renderPhotosView(id,c,_passed){
   </div>`:''}
 
   <!-- Virtual consult photos -->
-  ${(()=>{const v=_vcProfile();const sub=vcSubmissions[id];const hasReal=!!(sub&&sub.photos&&sub.photos.length);
+  ${(()=>{const v=_vcProfileFor(id);const sub=vcSubmissions[id];const hasReal=!!(sub&&sub.photos&&sub.photos.length);
   const pItems=hasReal?sub.photos:v.photoLabels.map(l=>({label:l,src:''}));
   const rItems=(sub&&sub.refs&&sub.refs.length)?sub.refs:(v.refLabels?v.refLabels.map(l=>({label:l,src:''})):null);
   const stamp=(sub&&sub.date&&sub.date.replace(/,.*/,''))||new Date().toLocaleDateString('en-US',{month:'short',day:'numeric'});
@@ -9213,6 +9225,20 @@ function _imgMeasures(dataURL){return new Promise(res=>{
   };img.onerror=()=>res(null);img.src=dataURL;
   }catch(e){res(null);}
 });}
+// Resolve the consult profile for a specific client by the KIND that was actually invited/submitted
+// (stored on the submission and the invite), not the provider's global default. Without this, a
+// multi-discipline provider reviewing e.g. a brow consult saw skin metrics, skin terminology and a skin
+// analysis run on brow photos, because _vcProfile() only returns a non-skin template for single-discipline
+// setups. Falls back to _vcProfile() for older invites/submissions with no kind.
+function _vcProfileFor(id){
+  try{
+    var sub=(typeof vcSubmissions!=='undefined')&&vcSubmissions[id];
+    var inv=(typeof vcInvites!=='undefined')&&vcInvites[id];
+    var k=(sub&&sub.kind)||(inv&&inv.kind)||'';
+    if(k&&typeof _vcKindOptions==='function'){var o=_vcKindOptions().find(function(x){return x&&x.kind===k;});if(o&&o.profile)return o.profile;}
+  }catch(e){}
+  return _vcProfile();
+}
 function _vcProfile(){
   const sp=selectedProfessions,has=x=>sp.includes(x);
   const isHairBarber=(has('hair')||has('barber'))&&!has('esty');
@@ -9409,7 +9435,7 @@ function _vcSendInvite(id){
 function renderVirtualClient(id){
   setNav('clients');
   const c=CL[id];
-  const v=_vcProfile();
+  const v=_vcProfileFor(id);   // resolve by the consult kind actually invited/submitted, not the default
   const sub=vcSubmissions[id];
   const hasReal=!!(sub&&sub.photos&&sub.photos.length);
   document.getElementById('tt').textContent=v.title;
@@ -12634,14 +12660,17 @@ async function _syncInventoryFromSquare(btn){
     const items=Array.isArray(j.items)?j.items:[];
     if(!items.length){if(typeof proToast==='function')proToast('Square isn’t tracking stock for any products yet. Turn on inventory tracking for an item in Square, then sync again.',0);return;}
     const norm=s=>(typeof _normSearch==='function')?_normSearch(s):String(s||'').toLowerCase().replace(/[^a-z0-9]/g,'');
-    let updated=0,added=0;
+    let updated=0,added=0;const _usedRows=new Set();
     items.forEach(it=>{
       const sku=(it.sku||'').trim().toLowerCase();const nm=norm(it.name);
-      let ex=inv.find(x=>x&&x.squareVarId===it.variationId)
-        ||(sku?inv.find(x=>x&&(x.sku||'').trim().toLowerCase()===sku):null)
-        ||inv.find(x=>x&&norm(x.name)===nm);
-      if(ex){ex.qty=it.quantity;ex.squareVarId=it.variationId;if(it.sku&&!ex.sku)ex.sku=it.sku;if(it.price!=null&&ex.price==null)ex.price=it.price;updated++;}
-      else{inv.push({name:it.name,brand:'',qty:it.quantity,low:3,max:Math.max(+it.quantity||0,10),icon:'📦',sku:it.sku||'',price:(it.price!=null?it.price:''),squareVarId:it.variationId});added++;}
+      // Don't let two Square variations bind to the same local row (e.g. two products both named "Serum"
+      // with no SKU): once a row is matched, exclude it from the SKU/name fallbacks so the second variation
+      // adds its own row instead of overwriting the first's stock count.
+      let ex=inv.find(x=>x&&!_usedRows.has(x)&&x.squareVarId===it.variationId)
+        ||(sku?inv.find(x=>x&&!_usedRows.has(x)&&(x.sku||'').trim().toLowerCase()===sku):null)
+        ||inv.find(x=>x&&!_usedRows.has(x)&&norm(x.name)===nm);
+      if(ex){_usedRows.add(ex);ex.qty=it.quantity;ex.squareVarId=it.variationId;if(it.sku&&!ex.sku)ex.sku=it.sku;if(it.price!=null&&ex.price==null)ex.price=it.price;updated++;}
+      else{const _row={name:it.name,brand:'',qty:it.quantity,low:3,max:Math.max(+it.quantity||0,10),icon:'📦',sku:it.sku||'',price:(it.price!=null?it.price:''),squareVarId:it.variationId};inv.push(_row);_usedRows.add(_row);added++;}
     });
     saveInv();
     if(typeof proToast==='function')proToast('Synced from Square · '+updated+' updated'+(added?', '+added+' added':''));
@@ -16613,12 +16642,16 @@ function _mergeSquareRetail(){
       const _deep=shop;
       const existing=affiliateLinks.find(a=>a.id===id);
       if(existing){
-        existing.name=p.name;existing.price=p.price;existing.brand=brand;existing.source='square';existing.squareId=p.id;
+        // Only refresh name/brand from Square while they're still auto — once the provider renames a
+        // product (or sets its brand) in the shop editor, saveAffiliate marks nameAuto:false and we leave
+        // their wording alone. Before this, every reload reverted their edit back to the raw Square name.
+        if(existing.nameAuto!==false){existing.name=p.name;existing.brand=brand;}
+        existing.price=p.price;existing.source='square';existing.squareId=p.id;
         if(p.permalink)existing.squarePermalink=p.permalink;
         if(p.image)existing.image=p.image;
         if(shop&&(!existing.site||existing.siteAuto)){existing.site=_deep;existing.siteAuto=true;}   // default Buy = your shop page
       }else{
-        affiliateLinks.push({id,name:p.name,brand,icon:'🛍️',image:p.image||'',site:_deep,siteAuto:!!(shop),squarePermalink:p.permalink||'',url:'',amazon:'',active:true,inOffice:true,source:'square',price:p.price,squareId:p.id});
+        affiliateLinks.push({id,name:p.name,brand,nameAuto:true,icon:'🛍️',image:p.image||'',site:_deep,siteAuto:!!(shop),squarePermalink:p.permalink||'',url:'',amazon:'',active:true,inOffice:true,source:'square',price:p.price,squareId:p.id});
       }
     });
     // Prune Square products that vanished from the catalog (discontinued, or left over from a
@@ -17652,7 +17685,7 @@ async function syncClientEvents(){
         if(c){
           touchedClients=true;
           c.submittedForms=c.submittedForms||[];
-          c.submittedForms.unshift({formId:payload.formId,title,answers:payload.answers||{},flagged:payload.flagged||[],date:formDate,signed:!!payload.signed,evId:ev.id});
+          c.submittedForms.unshift({formId:payload.formId,title,answers:payload.answers||{},flagged:payload.flagged||[],date:formDate,signed:!!payload.signed,evId:ev.id,qs:Array.isArray(payload.qs)?payload.qs:null});
           if(Array.isArray(c.pendingForms))c.pendingForms=c.pendingForms.filter(pf=>pf.formId!==payload.formId);
           // Map the real answers onto the actual chart fields (allergies, medications,
           // conditions, skin type, etc.), this used to only happen for the manual
@@ -20447,7 +20480,7 @@ function saveAffiliate(ei){
   if(typeof ei==='number'&&affiliateLinks[ei]){
     // The provider just set the store link by hand — mark it manual so a Square resync never
     // overwrites their exact product URL with an auto-built one.
-    Object.assign(affiliateLinks[ei],{name,brand,icon,url,site,amazon,siteCode,urlCode,amazonCode,inOffice,commission,siteAuto:false});
+    Object.assign(affiliateLinks[ei],{name,brand,icon,url,site,amazon,siteCode,urlCode,amazonCode,inOffice,commission,siteAuto:false,nameAuto:false});
   }else{
     affiliateLinks.push({id:'a'+Date.now(),name,brand,icon,url,site,amazon,siteCode,urlCode,amazonCode,inOffice,clicks:0,earnings:0,commission,active:true,custom:true});
   }

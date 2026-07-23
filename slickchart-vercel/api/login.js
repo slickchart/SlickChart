@@ -6,6 +6,11 @@ import { signToken, verifyPassword, tooManyAttempts, tooManyAttemptsByIp, record
 import { sql, ensureProvidersTable, dbEnabled, hasActiveSubscription } from '../lib/db.js';
 import { verifyToken as verifyTotp } from '../lib/totp.js';
 
+// A valid-format (salt:hash) decoy so an UNKNOWN email still runs the same slow scrypt a known one does.
+// Without it, the intentionally-generic "Email or password is incorrect" reply leaked which emails are
+// registered via a timing side channel (scrypt runs only when the row exists).
+const DECOY_PASS_HASH = 'a'.repeat(32) + ':' + 'b'.repeat(128);
+
 // Trust the platform-set client IP (x-real-ip on Vercel); the leftmost X-Forwarded-For entry is
 // client-supplied and spoofable, so only fall back to it when x-real-ip is absent.
 function clientIp(req) {
@@ -32,7 +37,10 @@ export default async function handler(req, res) {
         return;
       }
       const rows = await q`SELECT id, name, email, pass_hash, verified, totp_enabled, totp_secret FROM providers WHERE email = ${email}`;
-      const passOk = rows.length && verifyPassword(password, rows[0].pass_hash);
+      // Run scrypt in BOTH branches (real hash vs decoy) so response latency doesn't reveal whether the
+      // email is registered — the decoy result is discarded.
+      const passOk = rows.length ? verifyPassword(password, rows[0].pass_hash)
+                                 : (verifyPassword(password, DECOY_PASS_HASH) && false);
       if (passOk) {
         // Second factor: if the account has TOTP enabled, a valid 6-digit code is required.
         if (rows[0].totp_enabled) {

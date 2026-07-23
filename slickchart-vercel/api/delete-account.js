@@ -6,7 +6,7 @@
 // table keyed to the provider or to its clients. Deleting the account data via a blanked KV store
 // (the old client-side fallback) is NOT sufficient — the account row and linked records must go.
 import { sql, dbEnabled, ensureProvidersTable } from '../lib/db.js';
-import { verifyToken } from '../lib/auth.js';
+import { verifyToken, isSessionValid } from '../lib/auth.js';
 import { disconnect } from '../lib/square.js';
 
 // Best-effort: cancel the provider's Stripe subscription so billing stops with the account.
@@ -33,6 +33,11 @@ export default async function handler(req, res) {
   try {
     await ensureProvidersTable();
     const q = sql();
+
+    // Reject a token whose session was signed out / revoked (sign-out, "sign out other devices",
+    // password reset). Without this, a revoked token could still trigger the single most destructive
+    // action — permanent account deletion — long after the provider believed that device was cut off.
+    try { if (!(await isSessionValid(q, payload.sid))) { res.status(401).json({ error: 'This session has been signed out. Please log in again.' }); return; } } catch (e) { /* if the check itself errors, don't hard-block a legitimate deletion */ }
 
     // Resolve the account email (needed for the email-keyed tables).
     let email = (payload && payload.e) ? String(payload.e).toLowerCase() : null;
