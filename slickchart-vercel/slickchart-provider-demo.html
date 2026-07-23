@@ -4059,6 +4059,7 @@ function renderClients(){
     </div>
   </div>`:''}
   <button class="btnp" style="margin:0 16px 10px;width:calc(100% - 32px);border-radius:10px;" onclick="nav('new-client')"><i class="ti ti-plus"></i> New client</button>
+  ${(typeof Cloud!=='undefined'&&Cloud&&Cloud.token)?`<button onclick="_syncSquareClientsNow()" style="margin:0 16px 12px;width:calc(100% - 32px);background:var(--surf1);border:1px solid var(--p-line2);border-radius:10px;padding:10px 12px;display:flex;align-items:center;justify-content:center;gap:8px;cursor:pointer;font-family:inherit;"><i class="ti ti-brand-square" aria-hidden="true" style="font-size:15px;color:var(--accent-strong);"></i><span style="font-size:13px;font-weight:600;color:var(--p-mut);">Sync clients from Square</span></button>`:''}
   <div style="display:flex;gap:10px;margin:0 16px 14px;">
     <button onclick="nav('invite-clients')" style="flex:1;min-width:0;display:flex;flex-direction:column;align-items:flex-start;gap:5px;box-sizing:border-box;background:linear-gradient(135deg,var(--p-surf2),var(--p-green-bg));border:1px solid var(--p-line3);border-radius:12px;padding:11px 12px;cursor:pointer;font-family:inherit;text-align:left;">
       <div style="width:32px;height:32px;border-radius:9px;background:var(--p-green-bg);display:flex;align-items:center;justify-content:center;"><i class="ti ti-send" style="font-size:17px;color:var(--p-green);"></i></div>
@@ -18108,8 +18109,50 @@ function _upsertClientsFromSquare(appts){
     added++;changed=true;newNames.push(name.split(' ')[0]);
   });
   if(changed){try{if(typeof saveClients==='function')saveClients();}catch(e){}}
-  if(added&&typeof proToast==='function'){
+  if(added&&!(_upsertClientsFromSquare._quiet)&&typeof proToast==='function'){
     proToast(added===1?(newNames[0]+' booked online — added to your clients'):(added+' new online bookings added to your clients'));
+  }
+  return added;
+}
+// One-tap "Sync from Square": pull clients from BOTH the Square customer list AND upcoming bookings
+// (a brand-new online booker often isn't in the customer list yet, but their booking already carries
+// their details). Reports a clear result — including telling the provider to reconnect if Square
+// refuses — so a silent no-op can't leave them stuck.
+async function _syncSquareClientsNow(){
+  const tok=(typeof Cloud!=='undefined'&&Cloud&&Cloud.token)||'';
+  if(!tok){if(typeof proToast==='function')proToast('Sign in to your SlickChart account first');return;}
+  if(typeof proToast==='function')proToast('Checking Square for clients…',0);
+  let added=0, err=null, reachedSquare=false;
+  const _before=Object.keys(CL).length;
+  // 1) The full Square customer list.
+  try{
+    const data=await _sqFetch('/api/square/customers');
+    reachedSquare=true;
+    (data.customers||[]).forEach(function(c){
+      const id='sq_'+String((c&&c.id)||'').slice(0,10).toLowerCase().replace(/[^a-z0-9]/g,'');
+      if(!id||id==='sq_')return;
+      if(CL[id])return;
+      if(typeof mergedSquareIds!=='undefined'&&mergedSquareIds[id])return;
+      if(typeof _deletedClientIds!=='undefined'&&_deletedClientIds[id])return;
+      CL[id]=_sqMakeClient(c);added++;
+    });
+  }catch(e){err=e;}
+  // 2) Upcoming bookings — catches a just-booked client the customer list hasn't surfaced yet.
+  try{
+    const ad=await _sqFetch('/api/square/appointments?days=120');
+    reachedSquare=true;
+    _upsertClientsFromSquare._quiet=true;
+    added+=(_upsertClientsFromSquare(ad.appointments||[])||0);
+    _upsertClientsFromSquare._quiet=false;
+  }catch(e){err=err||e;}
+  try{if(added&&typeof saveClients==='function')saveClients();}catch(e){}
+  const _after=Object.keys(CL).length;const net=_after-_before;
+  const t=document.getElementById('pro-toast');if(t)t.remove();
+  if(typeof renderClients==='function'&&typeof _navCur!=='undefined'&&_navCur&&_navCur.screen==='clients')renderClients();
+  if(typeof proToast==='function'){
+    if(net>0)proToast(net===1?'1 client added from Square ✓':(net+' clients added from Square ✓'));
+    else if(!reachedSquare)proToast('Couldn’t reach Square. If this keeps happening, reconnect it: Settings → Square → Disconnect, then Connect with Square.',0);
+    else proToast('No new Square clients to add. If she just booked, Square can take a few minutes to create her record — try again shortly, or check the booking is confirmed (not pending) in Square.',0);
   }
 }
 function _apptsLive(){return _sqApptsState==='ok'&&Array.isArray(squareAppts);}
