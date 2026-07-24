@@ -387,6 +387,37 @@ const allProfessions=[
 // Currently selected professions (default: esthetician)
 let selectedProfessions=['esty','wax','lash','brow'];
 let provFilterCat='All';
+// Categories for the profession picker — the list is grouped by these so it stays scannable as more
+// professions are added, and searchable by name. A profession with no explicit category falls under "More".
+const professionCatOrder=['Skin & face','Hair & barber','Brows & lashes','Nails & waxing','Ink & tattoo','Body & wellness','Animal therapy','More'];
+const professionCat={
+  esty:'Skin & face', makeup:'Skin & face',
+  hair:'Hair & barber', barber:'Hair & barber',
+  brow:'Brows & lashes', lash:'Brows & lashes', pmu:'Brows & lashes',
+  nail:'Nails & waxing', wax:'Nails & waxing',
+  tattoo:'Ink & tattoo',
+  massage:'Body & wellness', movement:'Body & wellness', contour:'Body & wellness', nutrition:'Body & wellness', coach:'Body & wellness',
+  equine:'Animal therapy'
+};
+function _profCat(id){return professionCat[id]||'More';}
+let _profSearch='';
+// Live-filter the profession picker without re-rendering (so the search box keeps focus while typing).
+function _filterProfs(v){
+  _profSearch=v||'';
+  const q=_profSearch.trim().toLowerCase();
+  let anyVisible=false;
+  document.querySelectorAll('.prof-cat-group').forEach(function(grp){
+    let groupHas=false;
+    grp.querySelectorAll('.prof-pick').forEach(function(btn){
+      const show=!q||((btn.getAttribute('data-search')||'').indexOf(q)>=0);
+      btn.style.display=show?'':'none';
+      if(show)groupHas=true;
+    });
+    grp.style.display=groupHas?'':'none';
+    if(groupHas)anyVisible=true;
+  });
+  const nr=document.getElementById('prof-noresults');if(nr)nr.style.display=anyVisible?'none':'';
+}
 const provCategories=['All','Skin','Beauty','Hair','Wellness'];
 
 function getActiveProfessions(){return allProfessions.filter(p=>selectedProfessions.includes(p.id));}
@@ -8403,21 +8434,39 @@ function renderOnboarding(){
     <button onclick="applyProfessions()" class="btnp" style="border-radius:10px;"><i class="ti ti-check" aria-hidden="true"></i> Set up my workspace (${selectedProfessions.length} selected)</button>
   </div>
 
-  <div style="display:grid;grid-template-columns:1fr 1fr;gap:8px;padding:0 16px;margin-bottom:14px;">
-    ${allProfessions.map(p=>`
-    <button onclick="toggleProfSelection('${p.id}',this)" id="prof-pick-${p.id}" style="border:1px solid ${selectedProfessions.includes(p.id)?'var(--accent)':'var(--p-chip)'};border-radius:12px;padding:14px 10px;display:flex;flex-direction:column;align-items:center;gap:6px;cursor:pointer;background:${selectedProfessions.includes(p.id)?'var(--accent-tint)':'var(--p-surf3)'};text-align:center;position:relative;">
-      ${selectedProfessions.includes(p.id)?`<div style="position:absolute;top:6px;right:6px;width:16px;height:16px;background:var(--accent);border-radius:50%;display:flex;align-items:center;justify-content:center;"><i class="ti ti-check" aria-hidden="true" style="font-size:10px;color:var(--accent-ink);"></i></div>`:''}
-      <span aria-hidden="true" style="font-size:24px;">${p.icon}</span>
-      <span style="font-size:12px;font-weight:500;color:var(--p-ink);">${p.name}</span>
-      <span class="bdg ${p.badge}" style="font-size:10px;">${p.badgeLabel}</span>
-    </button>`).join('')}
+  <div style="padding:0 16px 4px;">
+    <div style="position:relative;">
+      <i class="ti ti-search" aria-hidden="true" style="position:absolute;left:12px;top:50%;transform:translateY(-50%);font-size:15px;color:var(--p-mut);"></i>
+      <input id="prof-search" type="text" value="${_profSearch?_fileEsc(_profSearch):''}" oninput="_filterProfs(this.value)" placeholder="Search professions…" aria-label="Search professions" autocomplete="off" style="width:100%;box-sizing:border-box;background:var(--p-surf3);border:1px solid var(--p-line);border-radius:10px;padding:10px 12px 10px 34px;font-size:14px;color:var(--p-ink);font-family:inherit;">
+    </div>
   </div>
 
-  <div style="padding:0 16px 6px;font-size:12px;color:var(--p-mut);text-align:center;line-height:1.6;">Multiple selections merge templates from each profession automatically.</div>
+  <div id="prof-list" style="padding:0 16px 6px;">
+    ${professionCatOrder.map(cat=>{
+      const profs=allProfessions.filter(p=>_profCat(p.id)===cat);
+      if(!profs.length)return '';
+      return `<div class="prof-cat-group" data-cat="${_fileEsc(cat)}">
+        <div style="font-size:11px;font-weight:700;letter-spacing:.08em;text-transform:uppercase;color:var(--p-mut);margin:15px 2px 9px;">${_fileEsc(cat)}</div>
+        <div style="display:grid;grid-template-columns:1fr 1fr;gap:8px;">
+        ${profs.map(p=>{const on=selectedProfessions.includes(p.id);return `<button onclick="toggleProfSelection('${p.id}',this)" id="prof-pick-${p.id}" class="prof-pick" data-search="${_fileEsc((p.name+' '+(p.sub||'')+' '+cat).toLowerCase())}" style="border:1px solid ${on?'var(--accent)':'var(--p-chip)'};border-radius:12px;padding:14px 10px;display:flex;flex-direction:column;align-items:center;gap:6px;cursor:pointer;background:${on?'var(--accent-tint)':'var(--p-surf3)'};text-align:center;position:relative;">
+          ${on?`<div style="position:absolute;top:6px;right:6px;width:16px;height:16px;background:var(--accent);border-radius:50%;display:flex;align-items:center;justify-content:center;"><i class="ti ti-check" aria-hidden="true" style="font-size:10px;color:var(--accent-ink);"></i></div>`:''}
+          <span aria-hidden="true" style="font-size:24px;">${p.icon}</span>
+          <span style="font-size:12px;font-weight:500;color:var(--p-ink);">${p.name}</span>
+          <span class="bdg ${p.badge}" style="font-size:10px;">${p.badgeLabel}</span>
+        </button>`;}).join('')}
+        </div>
+      </div>`;
+    }).join('')}
+    <div id="prof-noresults" style="display:none;padding:26px 8px;text-align:center;font-size:13px;color:var(--p-mut);line-height:1.6;">No professions match that search.<br>Pick the closest one — you can rename note formats and forms after setup.</div>
+  </div>
+
+  <div style="padding:8px 16px 6px;font-size:12px;color:var(--p-mut);text-align:center;line-height:1.6;">Multiple selections merge templates from each profession automatically.</div>
 
   <div style="padding:0 16px 20px;">
     <button onclick="applyProfessions()" class="btnp" style="border-radius:10px;"><i class="ti ti-check" aria-hidden="true"></i> Set up my workspace (${selectedProfessions.length} selected)</button>
   </div>`;
+  // Re-apply an active search after a re-render (e.g. toggling a profession) so the filter sticks.
+  if(_profSearch){try{_filterProfs(_profSearch);}catch(e){}}
 }
 
 function toggleProfSelection(id, btn){
@@ -14453,14 +14502,27 @@ function renderOnboard(){
     <div style="padding:30px 24px 8px;">
       <div style="font-size:22px;font-weight:600;color:var(--p-ink);margin-bottom:6px;">What do you do?</div>
       <div style="font-size:14px;color:var(--p-mut);line-height:1.6;margin-bottom:18px;">Pick one or more. We'll tailor your forms, note formats, and language to match.</div>
-      <div style="display:grid;grid-template-columns:1fr 1fr;gap:9px;">
-        ${allProfessions.map(p=>{const on=selectedProfessions.includes(p.id);return`
-        <button onclick="onboardToggleProf('${p.id}')" style="border:1.5px solid ${on?'var(--accent)':'var(--p-chip)'};background:${on?'var(--accent-tint)':'var(--p-surf3)'};border-radius:13px;padding:14px 10px;display:flex;flex-direction:column;align-items:center;gap:7px;cursor:pointer;text-align:center;position:relative;">
-          ${on?`<span style="position:absolute;top:8px;right:8px;width:18px;height:18px;border-radius:50%;background:var(--accent);display:flex;align-items:center;justify-content:center;"><i class="ti ti-check" style="font-size:12px;color:var(--accent-ink);"></i></span>`:''}
-          <span style="font-size:26px;line-height:1;">${p.icon}</span>
-          <span style="font-size:13px;font-weight:600;color:${on?'var(--p-ink)':'#ccc'};">${p.name}</span>
-          <span style="font-size:10px;color:var(--p-mut);line-height:1.4;">${p.sub}</span>
-        </button>`;}).join('')}
+      <div style="position:relative;margin-bottom:6px;">
+        <i class="ti ti-search" aria-hidden="true" style="position:absolute;left:12px;top:50%;transform:translateY(-50%);font-size:15px;color:var(--p-mut);"></i>
+        <input id="prof-search" type="text" value="${_profSearch?_fileEsc(_profSearch):''}" oninput="_filterProfs(this.value)" placeholder="Search professions…" aria-label="Search professions" autocomplete="off" style="width:100%;box-sizing:border-box;background:var(--p-surf3);border:1px solid var(--p-line);border-radius:10px;padding:11px 12px 11px 34px;font-size:14px;color:var(--p-ink);font-family:inherit;">
+      </div>
+      <div id="prof-list">
+      ${professionCatOrder.map(cat=>{
+        const profs=allProfessions.filter(p=>_profCat(p.id)===cat);
+        if(!profs.length)return '';
+        return `<div class="prof-cat-group" data-cat="${_fileEsc(cat)}">
+          <div style="font-size:11px;font-weight:700;letter-spacing:.08em;text-transform:uppercase;color:var(--p-mut);margin:15px 2px 9px;">${_fileEsc(cat)}</div>
+          <div style="display:grid;grid-template-columns:1fr 1fr;gap:9px;">
+          ${profs.map(p=>{const on=selectedProfessions.includes(p.id);return `<button onclick="onboardToggleProf('${p.id}')" class="prof-pick" data-search="${_fileEsc((p.name+' '+(p.sub||'')+' '+cat).toLowerCase())}" style="border:1.5px solid ${on?'var(--accent)':'var(--p-chip)'};background:${on?'var(--accent-tint)':'var(--p-surf3)'};border-radius:13px;padding:14px 10px;display:flex;flex-direction:column;align-items:center;gap:7px;cursor:pointer;text-align:center;position:relative;">
+            ${on?`<span style="position:absolute;top:8px;right:8px;width:18px;height:18px;border-radius:50%;background:var(--accent);display:flex;align-items:center;justify-content:center;"><i class="ti ti-check" style="font-size:12px;color:var(--accent-ink);"></i></span>`:''}
+            <span style="font-size:26px;line-height:1;">${p.icon}</span>
+            <span style="font-size:13px;font-weight:600;color:${on?'var(--p-ink)':'#ccc'};">${p.name}</span>
+            <span style="font-size:10px;color:var(--p-mut);line-height:1.4;">${p.sub}</span>
+          </button>`;}).join('')}
+          </div>
+        </div>`;
+      }).join('')}
+      <div id="prof-noresults" style="display:none;padding:26px 8px;text-align:center;font-size:13px;color:var(--p-mut);line-height:1.6;">No professions match that search.<br>Pick the closest one — you can rename things after setup.</div>
       </div>
     </div>`;
   }
@@ -14628,6 +14690,8 @@ function renderOnboard(){
   const needsScroll=['beta','profession','business','availability','square','install','invite'].includes(step);
   m.innerHTML=`<div style="flex:1;display:flex;flex-direction:column;${needsScroll?'justify-content:flex-start;':'justify-content:center;'}">${body}</div>${footer}`;
   document.querySelector('.shell').appendChild(m);
+  // Re-apply an active profession search after a re-render (no-op on steps without the picker).
+  if(_profSearch){try{_filterProfs(_profSearch);}catch(e){}}
 }
 
 function renderNotifFeed(){
