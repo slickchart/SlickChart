@@ -3718,7 +3718,7 @@ function nav(screen,data){
   if(timerInt&&screen!=='room'){clearInterval(timerInt);timerInt=null;}
   const routes={
     home:renderHome,clients:renderClients,forms:renderForms,messages:renderMessages,
-    pro:renderPro,more:renderMore,account:renderAccount,branding:renderBranding,
+    pro:renderMore,more:renderMore,account:renderAccount,branding:renderBranding,
     'biz-info':renderBizInfo,'business-branding':renderBusinessBranding,'security-billing':renderAccountBilling,'delete-account':renderDeleteAccount,'team-access':renderTeamAccess,'notifications':renderNotifications,'notifications-feed':renderNotifFeed,'integrations':renderIntegrations,'square-sync':renderSquareSync,'square-guide':renderSquareGuide,
     shop:renderShop,partners:renderPartners,learn:renderLearn,virtual:renderVirtual,'vc-inbox':renderVcInbox,'routine-builder':renderRoutineBuilder,
     protocols:renderProtocols,automations:()=>{renderMessages();setTimeout(()=>showMsgTab('autos'),0);},
@@ -4030,6 +4030,52 @@ function _attnTilesHTML(){
 `;
 }
 
+// ── Getting-started checklist: a warm, self-checking "what to do first" card on Home for brand-new
+//    providers. Each step auto-checks from signals already in the app (real client added, hours set,
+//    a client invited, first forms sent). It disappears for good once all steps are done, the provider
+//    dismisses it, or they're clearly rolling (a few real clients) — so it never nags an established user.
+function _gsDismissed(){try{return localStorage.getItem('sc_gs_dismissed')==='1';}catch(e){return false;}}
+function dismissGettingStarted(){try{localStorage.setItem('sc_gs_dismissed','1');}catch(e){}const c=document.getElementById('getting-started-card');if(c){c.style.display='none';c.innerHTML='';}try{if(typeof proToast==='function')proToast('Hidden — replay the setup tour anytime from More');}catch(e){}}
+function _gsState(){
+  let realCount=0,anyInvited=false,anyForms=false;
+  try{Object.keys(CL).forEach(function(id){
+    if(_SAMPLE_IDS.indexOf(id)>=0)return;const c=CL[id];if(!c)return;realCount++;
+    if(c.appInvited||c._token)anyInvited=true;
+    if((c.submittedForms&&c.submittedForms.length)||(c.signedForms&&c.signedForms.length)||(c.pendingForms&&c.pendingForms.length))anyForms=true;
+  });}catch(e){}
+  let hours=false;try{hours=!!(typeof SlickBridge!=='undefined'&&SlickBridge.getAvailability&&SlickBridge.getAvailability());}catch(e){}
+  return {realCount:realCount,hours:hours,anyInvited:anyInvited,anyForms:anyForms};
+}
+function _gettingStartedHTML(){
+  if(_gsDismissed())return '';
+  const st=_gsState();
+  // Once the provider has a few real clients they're clearly up and running — get out of the way for good.
+  if(st.realCount>=3)return '';
+  const steps=[
+    {done:st.realCount>0,icon:'ti-user-plus',t:'Add your first client',s:'Just a name gets their chart started',act:"nav('new-client')"},
+    {done:st.hours,icon:'ti-clock',t:'Set your working hours',s:'Clients can only request times you’re open',act:"nav('biz-info')"},
+    {done:st.anyInvited,icon:'ti-send',t:'Invite a client to their app',s:'A private link to summaries, forms & rebooking',act:"nav('invite-clients')"},
+    {done:st.anyForms,icon:'ti-file-text',t:'Send a first-visit package',s:'Intake & consent forms, sent in one tap',act:"nav('clients')"}
+  ];
+  const doneN=steps.filter(function(s){return s.done;}).length;
+  if(doneN>=steps.length)return '';
+  return `<div style="background:linear-gradient(135deg,var(--accent-tint),var(--accent-tint2));border:1px solid var(--accent-a30);border-radius:14px;padding:14px 15px;">
+    <div style="display:flex;align-items:center;gap:8px;margin-bottom:3px;">
+      <i class="ti ti-sparkles" style="font-size:16px;color:var(--accent-strong);"></i>
+      <span style="font-size:14px;font-weight:600;color:var(--p-ink);">Let’s get you set up</span>
+      <button onclick="dismissGettingStarted()" aria-label="Hide getting started" title="Hide" style="margin-left:auto;border:none;background:none;color:var(--p-mut2);cursor:pointer;font-size:15px;padding:0;line-height:1;"><i class="ti ti-x"></i></button>
+    </div>
+    <div style="font-size:12px;color:var(--p-mut2);margin-bottom:9px;">${doneN} of ${steps.length} done · a few quick steps and you’re rolling</div>
+    ${steps.map(function(s){return `<div ${s.done?'':`onclick="${s.act}"`} style="display:flex;align-items:center;gap:11px;padding:9px 0;${s.done?'opacity:.6;':'cursor:pointer;'}border-top:1px solid var(--accent-a30);">
+      <div style="width:27px;height:27px;border-radius:50%;flex-shrink:0;display:flex;align-items:center;justify-content:center;background:${s.done?'var(--p-green)':'var(--p-surf3)'};border:1.5px solid ${s.done?'var(--p-green)':'var(--p-chip)'};">
+        ${s.done?'<i class="ti ti-check" style="font-size:14px;color:#fff;"></i>':`<i class="ti ${s.icon}" style="font-size:14px;color:var(--accent-strong);"></i>`}
+      </div>
+      <div style="flex:1;min-width:0;"><div style="font-size:13.5px;font-weight:600;color:var(--p-ink);${s.done?'text-decoration:line-through;':''}">${s.t}</div><div style="font-size:11.5px;color:var(--p-mut2);line-height:1.4;">${s.s}</div></div>
+      ${s.done?'':'<i class="ti ti-chevron-right" style="font-size:15px;color:var(--p-mut2);flex-shrink:0;"></i>'}
+    </div>`;}).join('')}
+  </div>`;
+}
+
 function renderHome(){
   setNav('home');
   setTimeout(maybeShowOnboarding,300);
@@ -4043,6 +4089,7 @@ function renderHome(){
       <button onclick="nav('calendar')" aria-label="Open calendar" style="background:var(--surf1);border:none;border-radius:10px;padding:8px 12px;font-size:12px;color:var(--accent-strong);cursor:pointer;display:flex;align-items:center;gap:5px;min-width:44px;min-height:44px;"><i class="ti ti-calendar" aria-hidden="true" style="font-size:16px;"></i></button>
     </div>
   </div>
+  ${(function(){try{const gs=_gettingStartedHTML();return gs?`<div id="getting-started-card" style="padding:0 16px;margin-bottom:12px;">${gs}</div>`:'';}catch(e){return '';}})()}
   <div style="display:flex;gap:8px;padding:0 16px;margin-bottom:10px;">
     ${(function(){
       const todayN=_apptsToday().length;const rem=_apptsRemainingToday();
@@ -4059,7 +4106,7 @@ function renderHome(){
       ];
     })().map(([l,v,s,c,scr])=>`<button onclick="nav('${scr}')" aria-label="${l}: ${v}, ${s}" style="flex:1;background:var(--surf1);border:1px solid var(--p-line2);border-radius:10px;padding:10px 12px;cursor:pointer;font-family:inherit;text-align:left;"><div style="font-size:11px;color:var(--p-mut);margin-bottom:4px;">${l}</div><div style="font-size:22px;font-weight:500;color:${c};">${v}</div><div style="font-size:11px;color:var(--p-mut);">${s}</div></button>`).join('')}
   </div>
-  ${(aiEnabled&&!_dayRecapDismissedToday())?`<div id="day-recap-card" style="margin:0 16px 10px;">${_dayRecapCardHTML()}</div>`:''}
+  ${(aiEnabled&&!_dayRecapDismissedToday()&&_dayRecapHasContent())?`<div id="day-recap-card" style="margin:0 16px 10px;">${_dayRecapCardHTML()}</div>`:''}
   ${(function(){
     // One unified "Needs your attention" heading over ALL attention items. Drive BOTH the heading and the
     // tiles off the SAME rendered output, so the header can never sit above an empty section: the previous
@@ -4097,6 +4144,10 @@ function renderHome(){
         return '<div class="card" style="padding:0;overflow:hidden;" onclick="nav(\''+(cid?'client':'calendar')+'\''+(cid?",'"+cid+"'":'')+')"><div class="row" style="padding:14px;"><div style="width:38px;height:38px;border-radius:50%;background:var(--p-amber-bg);color:var(--accent-strong);display:flex;align-items:center;justify-content:center;font-weight:600;font-size:13px;flex-shrink:0;">'+ini+'</div><div style="flex:1;min-width:0;"><div style="font-size:15px;font-weight:500;color:var(--p-ink);">'+_fileEsc(a.client)+'</div><div style="font-size:12px;color:var(--p-mut);margin-top:2px;">'+when+(a.dur?' \u00b7 '+a.dur+' min':'')+'</div></div><span class="bdg bg" style="font-size:12px;">Confirmed</span></div>'+_firstVisitNudgeHTML(cid,a.at)+'</div>';
       }).join('');
     }
+    // Truly empty account: the real first step is adding a client, not connecting Square \u2014 so lead with that.
+    if(_gsState().realCount===0){
+      return '<div class="card"><div style="padding:18px 16px;text-align:center;color:var(--p-mut);font-size:13px;">Add your first client to start booking and charting.<div style="font-size:12px;margin-top:7px;"><a href="#" onclick="nav(\'new-client\');return false;" style="color:var(--accent-strong);font-weight:600;">Add your first client \u2192</a></div><div style="font-size:11px;color:var(--p-mut);margin-top:6px;">Use Square? <a href="#" onclick="nav(\'data-setup\');return false;" style="color:var(--accent-strong);">Connect &amp; import \u2192</a></div></div></div>';
+    }
     return '<div class="card"><div style="padding:18px 16px;text-align:center;color:var(--p-mut);font-size:13px;">Connect Square, or add appointments yourself, to see what\u2019s coming up.<div style="font-size:12px;color:var(--p-mut);margin-top:4px;"><a href="#" onclick="nav(\'data-setup\');return false;" style="color:var(--accent-strong);">Get set up \u2192</a></div></div></div>';
   })()}
   ${!_homeDismissed.has('preview-client')?_swipeTile(`
@@ -4125,6 +4176,12 @@ function _dayRecapKey(){try{return new Date().toDateString();}catch(e){return 't
 // that calendar day (kept in localStorage so it survives reloads), then offers itself again tomorrow.
 function _dayRecapDismissedToday(){try{return localStorage.getItem('sc_recap_dismissed')===_dayRecapKey();}catch(e){return false;}}
 function _dismissDayRecap(){try{localStorage.setItem('sc_recap_dismissed',_dayRecapKey());}catch(e){}const c=document.getElementById('day-recap-card');if(c){c.style.display='none';c.innerHTML='';}}
+// Only offer "Catch me up" when there's actually something to recap — otherwise a brand-new, empty
+// account sees an AI card that would summarize nothing. Mirrors the facts _aiDayRecap gathers.
+function _dayRecapHasContent(){
+  const g=(fn)=>{try{return fn()||0;}catch(e){return 0;}};
+  return !!(g(()=>_apptsToday().length)||g(()=>threads.filter(t=>t.unread).length)||g(()=>Object.values(CL).filter(c=>_fcActive(c)).length)||g(()=>_docsNeedRenewal())||g(()=>unreadCheckins().length)||g(()=>pendingRequests().filter(b=>!b.seen).length)||g(()=>_vcPendingCount()));
+}
 function _dayRecapCardHTML(){
   const cached=(_dayRecapCache.key===_dayRecapKey())?_dayRecapCache.data:null;
   if(cached){
@@ -4251,9 +4308,12 @@ function renderClients(){
   // Pull any newly-added Square customers in the background so the list below stays current.
   try{if(typeof _autoSyncCustomers==='function')_autoSyncCustomers();}catch(e){}
   document.getElementById('tt').textContent='Clients';
+  // Roster size gates the power tools: "Ask your book" (an AI search over your clients) and the Virtual
+  // Consults card are noise on a near-empty account, so they appear once there are a few clients to work with.
+  const _clCount=Object.keys(CL).length;
   S.innerHTML=`
-  ${_searchBar('Search clients by name or treatment…','.client-card','clients-noresults')}
-  ${aiEnabled?`<div style="margin:0 16px 10px;">
+  ${(_clCount>=3)?_searchBar('Search clients by name or treatment…','.client-card','clients-noresults'):''}
+  ${(aiEnabled&&_clCount>=3)?`<div style="margin:0 16px 10px;">
     <button onclick="_askBookToggle()" id="askbook-btn" style="width:100%;background:var(--surf1);border:1px solid var(--p-line2);border-radius:10px;padding:10px 12px;display:flex;align-items:center;gap:9px;cursor:pointer;font-family:inherit;text-align:left;">
       <i class="ti ti-sparkles" style="font-size:16px;color:var(--accent-strong);flex-shrink:0;"></i>
       <span style="font-size:13px;color:var(--p-mut);flex:1;min-width:0;">Ask your book — “who’s due for a touch-up?”</span>
@@ -4275,12 +4335,12 @@ function renderClients(){
       <div style="font-size:13px;font-weight:600;color:var(--p-green);line-height:1.2;">Invite clients</div>
       <div style="font-size:11px;color:var(--p-mut2);line-height:1.3;">Send each their private link</div>
     </button>
-    <button onclick="nav('vc-inbox')" style="position:relative;flex:1;min-width:0;display:flex;flex-direction:column;align-items:flex-start;gap:5px;box-sizing:border-box;background:linear-gradient(135deg,var(--p-surf2),var(--p-purple-bg));border:1px solid var(--p-purple-line);border-radius:12px;padding:11px 12px;cursor:pointer;font-family:inherit;text-align:left;">
+    ${(_clCount>=3||_vcPendingCount())?`<button onclick="nav('vc-inbox')" style="position:relative;flex:1;min-width:0;display:flex;flex-direction:column;align-items:flex-start;gap:5px;box-sizing:border-box;background:linear-gradient(135deg,var(--p-surf2),var(--p-purple-bg));border:1px solid var(--p-purple-line);border-radius:12px;padding:11px 12px;cursor:pointer;font-family:inherit;text-align:left;">
       <div style="width:32px;height:32px;border-radius:9px;background:var(--p-purple-bg);display:flex;align-items:center;justify-content:center;"><i class="ti ti-scan" style="font-size:17px;color:var(--p-purple);"></i></div>
       <div style="font-size:13px;font-weight:600;color:var(--p-purple);line-height:1.2;">Virtual Consults</div>
       <div style="font-size:11px;color:var(--p-purple);line-height:1.3;">Review photos &amp; AI analysis</div>
       ${_vcPendingCount()?`<span style="position:absolute;top:9px;right:9px;background:var(--accent);color:var(--accent-ink);font-size:11px;font-weight:700;min-width:18px;height:18px;border-radius:9px;display:flex;align-items:center;justify-content:center;padding:0 5px;">${_vcPendingCount()}</span>`:''}
-    </button>
+    </button>`:''}
   </div>
   ${(function(){const dg=(typeof _findDuplicateGroups==='function')?_findDuplicateGroups():[];if(!dg.length)return '';if(typeof _dupSig==='function'&&_dupDismissSig&&_dupSig(dg)===_dupDismissSig)return '';const n=dg.reduce((a,g)=>a+g.length,0);return `<div style="display:flex;align-items:center;gap:11px;width:calc(100% - 32px);box-sizing:border-box;margin:0 16px 14px;background:var(--p-surf3);border:1px solid var(--p-green-line);border-radius:12px;padding:12px 14px;">
     <div onclick="nav('merge-clients')" style="display:flex;align-items:center;gap:11px;flex:1;min-width:0;cursor:pointer;">
@@ -12537,29 +12597,9 @@ async function _sendProviderMessageToClient(id,text,photos,_retried,_idem,_mid){
   }
 }
 
-// ── PRO ──
-function renderPro(){
-  setNav('pro');
-  document.getElementById('tt').textContent='Pro';
-  const urgent=docs.filter(d=>d.status==='urgent');
-  const card=item=>`<div class="card" onclick="nav('${item.screen}')"><div class="row"><div style="width:46px;height:46px;border-radius:12px;background:${item.bg};display:flex;align-items:center;justify-content:center;flex-shrink:0;"><i class="ti ${item.icon}" style="font-size:22px;color:${item.ic};"></i></div><div style="flex:1;"><div style="font-size:15px;font-weight:500;color:var(--p-ink);">${item.name}</div><div style="font-size:12px;color:var(--p-mut);margin-top:2px;">${item.desc}</div><div style="margin-top:6px;"><span class="bdg ${item.bdg}" style="font-size:12px;">${item.bdgLabel}</span></div></div><i aria-hidden="true" class="ti ti-chevron-right" style="font-size:18px;color:var(--p-mut);"></i></div></div>`;
-  const groupA=[{icon:'ti-list-details',bg:'var(--p-purple-bg)',ic:'var(--p-purple)',name:'Services & Protocols',desc:'Your service menu, prices & treatment library',screen:'service-menu',bdg:'bp',bdgLabel:`${_svcMenu.length} services · ${protocols.length} protocols`}];
-  const groupB=[{icon:'ti-shopping-bag',bg:'var(--accent-tint)',ic:'var(--accent-strong)',name:'Shop',desc:'Products, bundles & affiliate links',screen:'shop',bdg:'bb',bdgLabel:`${affiliateLinks.length} products`},{icon:'ti-file-text',bg:'var(--p-blue-bg)',ic:'var(--p-blue)',name:'Forms, Guides & Courses',desc:'Intakes, consents, client guides & courses',screen:'forms',bdg:'bb',bdgLabel:`${(typeof getMergedForms==='function'?getMergedForms().length:0)} forms · ${(typeof resources!=='undefined'?resources.length:0)} guides`},{icon:'ti-lock',bg:'var(--p-blue-bg)',ic:'var(--p-blue)',name:'My Docs',desc:'Licenses, insurance, permits & certifications',screen:'vault',bdg:'bb',bdgLabel:`${docs.length} documents`},{icon:'ti-package',bg:'var(--accent-tint)',ic:'var(--accent-strong)',name:'Inventory',desc:'Track stock levels & reorder alerts',screen:'inventory',bdg:'br',bdgLabel:`${inv.filter(i=>i.qty===0).length} out of stock`},{icon:'ti-building-warehouse',bg:'var(--p-purple-bg)',ic:'var(--p-purple)',name:'Vendor Directory',desc:'Brand contacts, rep info & ordering portals',screen:'vendors',bdg:'bp',bdgLabel:`${vendors.length} vendors`},{icon:'ti-download',bg:'var(--p-surf2)',ic:'var(--p-green)',name:'Export Data',desc:'Services, sales & client list (CSV)',screen:'export-data',bdg:'bg',bdgLabel:'CSV'}];
-  S.innerHTML=`
-  <div style="padding:18px 16px 8px;"><div style="font-size:15px;font-weight:500;color:var(--p-ink);margin-bottom:4px;">Provider Tools</div><div style="font-size:13px;color:var(--p-mut);">Your professional hub.</div></div>
-  ${urgent.length?`<div style="background:var(--p-red-bg);border:1px solid var(--p-red-line);border-radius:10px;margin:0 16px 10px;padding:10px 12px;display:flex;gap:8px;align-items:flex-start;"><i class="ti ti-alert-circle" style="font-size:14px;color:var(--p-red);flex-shrink:0;margin-top:1px;"></i><div><div style="font-size:12px;font-weight:500;color:var(--p-red);">${urgent.length} document${urgent.length>1?'s':''} need attention</div><div style="font-size:11px;color:#aa5555;">${urgent.map(d=>d.name).join(' \u00b7 ')}</div><button onclick="nav('vault')" style="border:none;background:none;color:var(--accent-strong);font-size:12px;cursor:pointer;margin-top:8px;padding:2px 0;font-weight:500;display:block;">View My Docs \u2192</button></div></div>`:''}
-  <div class="sh"><h2>Menu &amp; protocols</h2></div>
-  ${groupA.map(card).join('')}
-  <div class="sh"><h2>Tools</h2></div>
-  ${groupB.map(card).join('')}
-  <div class="sh"><h2>See your client's view</h2></div>
-  <button onclick="_previewClientApp()" style="width:100%;background:var(--surf2);border:1px solid var(--p-line);border-radius:12px;padding:11px 13px;display:flex;align-items:center;gap:11px;margin-bottom:8px;cursor:pointer;font-family:inherit;text-align:left;">
-    <div style="width:46px;height:46px;border-radius:12px;background:var(--accent-tint);display:flex;align-items:center;justify-content:center;flex-shrink:0;"><i class="ti ti-device-mobile-check" style="font-size:22px;color:var(--accent-strong);"></i></div>
-    <div style="flex:1;min-width:0;"><div style="font-size:15px;font-weight:500;color:var(--p-ink);">Preview Client App</div><div style="font-size:12px;color:var(--p-mut);margin-top:2px;line-height:1.45;">Open the app your clients use, booking, summaries, homecare & more. Opens a sample version in a new tab.</div></div>
-    <i aria-hidden="true" class="ti ti-external-link" style="font-size:17px;color:var(--p-mut);flex-shrink:0;"></i>
-  </button>
-  <div style="height:20px;"></div>`;
-}
+// ── PRO ── (removed) ──
+// The Provider Tools hub now lives entirely under the "More" tab (renderMore). The old renderPro was an
+// unreachable duplicate that had drifted out of sync, so the 'pro' route points at renderMore instead.
 
 // ── VAULT ──
 function saveDocs(){try{(function(_v){localStorage.setItem('sc_docs',_v);if(typeof _pushKeyNow==='function')_pushKeyNow('sc_docs',_v);return _v;})(JSON.stringify(docs));}catch(e){if(typeof proToast==='function')proToast('Storage is full, try a smaller file');}}
@@ -12754,10 +12794,10 @@ function renderInventory(){try{_applyImportedProducts();}catch(e){}
   setNav('pro');
   document.getElementById('tt').textContent='Inventory';
   S.innerHTML=`
-  <div style="padding:12px 16px 0;display:flex;align-items:center;justify-content:flex-end;gap:8px;"><button onclick="_syncInventoryFromSquare(this)" style="background:var(--surf1);color:var(--p-mut);border:1px solid var(--p-line);border-radius:8px;padding:7px 11px;font-size:12px;cursor:pointer;font-family:inherit;display:inline-flex;align-items:center;gap:5px;"><i class="ti ti-refresh" style="font-size:13px;color:var(--accent-strong);"></i> Sync stock from Square</button><button onclick="nav('add-inventory-item')" style="background:var(--accent);color:var(--accent-ink);border:none;border-radius:8px;padding:7px 12px;font-size:12px;font-weight:500;cursor:pointer;">+ Add item</button></div>
-  <div style="display:flex;gap:8px;padding:10px 16px;">${[['Total',inv.length,'var(--p-ink)'],['Low',inv.filter(i=>i.qty<=i.low&&i.qty>0).length,'var(--accent-strong)'],['Out',inv.filter(i=>i.qty===0).length,'var(--p-red)']].map(([l,v,c])=>`<div style="flex:1;background:var(--surf1);border-radius:10px;padding:9px 12px;"><div style="font-size:20px;font-weight:500;color:${c};">${v}</div><div style="font-size:11px;color:var(--p-mut);">${l}</div></div>`).join('')}</div>
+  <div style="padding:12px 16px 0;display:flex;align-items:center;justify-content:flex-end;gap:8px;">${inv.length?`<button onclick="_syncInventoryFromSquare(this)" style="background:var(--surf1);color:var(--p-mut);border:1px solid var(--p-line);border-radius:8px;padding:7px 11px;font-size:12px;cursor:pointer;font-family:inherit;display:inline-flex;align-items:center;gap:5px;"><i class="ti ti-refresh" style="font-size:13px;color:var(--accent-strong);"></i> Sync stock from Square</button>`:''}<button onclick="nav('add-inventory-item')" style="background:var(--accent);color:var(--accent-ink);border:none;border-radius:8px;padding:7px 12px;font-size:12px;font-weight:500;cursor:pointer;">+ Add item</button></div>
+  ${inv.length?`<div style="display:flex;gap:8px;padding:10px 16px;">${[['Total',inv.length,'var(--p-ink)'],['Low',inv.filter(i=>i.qty<=i.low&&i.qty>0).length,'var(--accent-strong)'],['Out',inv.filter(i=>i.qty===0).length,'var(--p-red)']].map(([l,v,c])=>`<div style="flex:1;background:var(--surf1);border-radius:10px;padding:9px 12px;"><div style="font-size:20px;font-weight:500;color:${c};">${v}</div><div style="font-size:11px;color:var(--p-mut);">${l}</div></div>`).join('')}</div>`:''}
   ${(aiEnabled&&inv.filter(i=>(+i.qty||0)<=(+i.low||0)).length)?`<div id="reorder-card" style="margin:0 16px 10px;">${_reorderCardHTML()}</div>`:''}
-  ${_searchBar('Search inventory by item or brand…','.inv-card','inv-noresults')}
+  ${inv.length?_searchBar('Search inventory by item or brand…','.inv-card','inv-noresults'):''}
   ${inv.length===0?emptyState({icon:'ti-package',title:'No items yet',body:'Add the products and supplies you keep on hand to track stock and reorder easily.',action:'Add first item',screen:'add-inventory-item'}):inv.map((item,i)=>{const _max=(+item.max>0)?+item.max:Math.max(1,+item.qty||0);const pct=Math.max(0,Math.min(100,Math.round((+item.qty||0)/_max*100)))||0;const col=item.qty===0?'var(--p-red)':item.qty<=item.low?'var(--accent-strong)':'var(--p-green)';const lbl=item.qty===0?'Out of stock':item.qty<=item.low?`Low · ${item.qty} left`:`In stock · ${item.qty}`;
   const vend=(item.vendorIdx!=null&&vendors[item.vendorIdx])?vendors[item.vendorIdx]:null;
   const reorderUrl=(item.reorderUrl||'').trim()||(vend&&vend.portal?('https://'+String(vend.portal).replace(/^https?:\/\//,'')):'');
@@ -13845,7 +13885,7 @@ function renderAccount(){
 
 // ── NEW PROVIDER BETA ONBOARDING ──
 let onboardStep=0;
-const ONBOARD_STEPS=['welcome','beta','profession','business','availability','square','install','invite','tips','done'];
+const ONBOARD_STEPS=['welcome','beta','profession','business','availability','square','install','invite','tips','explore','done'];
 let onboardData={
   biz:{name:'',owner:''},
   avail:{days:{mon:true,tue:true,wed:true,thu:true,fri:true,sat:true,sun:false},start:'09:00',end:'17:00'},
@@ -14652,6 +14692,47 @@ function renderOnboard(){
     primaryLabel='Got it';
   }
 
+  else if(step==='explore'){
+    // A single, skippable "what else can this do" screen — core-first, grouped, not a wall of forced steps.
+    // Tapping Next skips the whole thing; the one "Try it" deep-link jumps into a live demo session.
+    const sampleId=(typeof CL!=='undefined'&&CL['maya'])?'maya':'';
+    const sections=[
+      ['In the treatment room','var(--accent-strong)',[
+        ['ti-armchair','Start a session','One hub per visit: pull up history, take before/after photos, write notes, apply protocols, and check out — all in one place.',sampleId?['room',sampleId]:null],
+        ['ti-file-text','Notes your way','Write SOAP or your own format — sections come pre-filled for your profession, so charting is a few taps.',null],
+        ['ti-sparkles','AI pre-visit brief','Before each visit we can draft a quick brief: last treatment, notes, cautions. AI is optional — turn it off anytime in Settings → AI.',null]
+      ]],
+      ['Get paid & grow','var(--p-green)',[
+        ['ti-receipt','Checkout & invoices','Take payment or send an itemized invoice when a visit wraps; balances and tips roll into your Payments tab.',null],
+        ['ti-shopping-bag','Recommend products & earn','Add products or affiliate links to a client’s summary and earn on what they buy.',null],
+        ['ti-calendar-heart','Auto-rebook','Every session summary invites the client to rebook, so your chair stays full.',null]
+      ]],
+      ['Behind the scenes','var(--p-purple)',[
+        ['ti-clipboard-check','Forms & check-ins on autopilot','Send consents and pre-visit check-ins automatically; flagged answers surface before the visit.',null],
+        ['ti-message-2','Messages & automations','Message clients right in the app and set reminders and follow-ups to send themselves.',null],
+        ['ti-package','Inventory, reports & branding','Track stock, export your sales and client list, and put your logo and colors on everything clients see.',null]
+      ]]
+    ];
+    body=`
+    <div style="padding:30px 24px 8px;">
+      <div style="font-size:22px;font-weight:600;color:var(--p-ink);margin-bottom:6px;">What else can SlickChart do?</div>
+      <div style="font-size:14px;color:var(--p-mut);line-height:1.6;margin-bottom:6px;">A quick peek at what’s waiting for you inside. No need to learn it all now — just tap Next to jump in, and come back to explore anytime.</div>
+      ${sections.map(([title,col,rows])=>`
+        <div style="font-size:11px;font-weight:700;letter-spacing:.08em;text-transform:uppercase;color:${col};margin:20px 2px 10px;">${title}</div>
+        ${rows.map(([ic,t,s,jump])=>`
+        <div style="display:flex;gap:12px;align-items:flex-start;margin-bottom:13px;">
+          <div style="width:40px;height:40px;border-radius:10px;background:var(--accent-tint);display:flex;align-items:center;justify-content:center;flex-shrink:0;"><i class="ti ${ic}" aria-hidden="true" style="font-size:19px;color:var(--accent-strong);"></i></div>
+          <div style="flex:1;min-width:0;"><div style="font-size:14px;font-weight:600;color:var(--p-ink);">${t}</div><div style="font-size:12px;color:var(--p-mut);line-height:1.5;margin-top:1px;">${s}</div>${jump?`<button onclick="finishOnboarding('${jump[0]}','${jump[1]}')" style="margin-top:6px;background:var(--accent);color:var(--accent-ink);border:none;border-radius:8px;padding:6px 12px;font-size:12px;font-weight:600;cursor:pointer;font-family:inherit;">Try it now →</button>`:''}</div>
+        </div>`).join('')}
+      `).join('')}
+      <div style="margin-top:6px;background:var(--surf2);border:1px solid var(--p-line);border-radius:11px;padding:12px 13px;display:flex;gap:9px;align-items:flex-start;">
+        <i class="ti ti-map-2" style="font-size:14px;color:var(--accent-strong);flex-shrink:0;margin-top:1px;"></i>
+        <span style="font-size:12px;color:var(--p-mut);line-height:1.6;">Everything here lives under the <strong style="color:var(--p-mut);">More</strong> tab. You can replay this whole tour anytime from <strong style="color:var(--p-mut);">More → Replay Setup Tour</strong>.</span>
+      </div>
+    </div>`;
+    primaryLabel='Sounds good →';
+  }
+
   else if(step==='done'){
     showSkip=false;showBack=false;
     const profNames=allProfessions.filter(p=>selectedProfessions.includes(p.id)).map(p=>p.name).join(', ');
@@ -14671,7 +14752,7 @@ function renderOnboard(){
       </div>`:''}
       <div style="width:100%;max-width:300px;background:var(--surf2);border:1px solid var(--p-line);border-radius:12px;padding:14px;text-align:left;">
         <div style="font-size:12px;font-weight:600;color:var(--accent-strong);margin-bottom:9px;letter-spacing:.04em;">FIRST STEPS</div>
-        ${[['ti-user-plus','Add your first client'],['ti-send','Invite your clients to their app'],['ti-calendar','Review your calendar']].map(([ic,t])=>`<div style="display:flex;align-items:center;gap:9px;padding:5px 0;"><i class="ti ${ic}" style="font-size:15px;color:var(--p-mut);"></i><span style="font-size:13px;color:var(--p-mut);">${t}</span></div>`).join('')}
+        ${[['ti-user-plus','Add your first client','new-client'],['ti-send','Invite your clients to their app','invite-clients'],['ti-calendar','Review your calendar','calendar']].map(([ic,t,dest])=>`<div onclick="finishOnboarding('${dest}')" style="display:flex;align-items:center;gap:9px;padding:5px 0;cursor:pointer;"><i class="ti ${ic}" style="font-size:15px;color:var(--p-mut);"></i><span style="font-size:13px;color:var(--p-mut);">${t}</span><i class="ti ti-chevron-right" style="font-size:13px;color:var(--p-mut);margin-left:auto;"></i></div>`).join('')}
         <div onclick="finishOnboarding('account')" style="display:flex;align-items:center;gap:9px;padding:5px 0;cursor:pointer;"><i class="ti ti-eraser" style="font-size:15px;color:var(--p-mut);"></i><span style="font-size:13px;color:var(--p-mut);">Remove sample data once you're ready</span><i class="ti ti-chevron-right" style="font-size:13px;color:var(--p-mut);margin-left:auto;"></i></div>
       </div>
       <button onclick="openBetaFeedback()" style="margin-top:16px;background:none;border:1px solid var(--accent-tint2);color:var(--accent-strong);border-radius:9px;padding:9px 16px;font-size:13px;font-weight:600;cursor:pointer;display:inline-flex;align-items:center;gap:6px;"><i class="ti ti-message-2" style="font-size:14px;"></i> Share beta feedback</button>
@@ -14687,7 +14768,7 @@ function renderOnboard(){
     ${showSkip?`<button onclick="onboardSkip()" style="width:100%;background:none;border:none;font-size:13px;color:#315249;cursor:pointer;padding:${showBack?'2px':'9px'};">Skip setup for now</button>`:''}
   </div>`;
 
-  const needsScroll=['beta','profession','business','availability','square','install','invite'].includes(step);
+  const needsScroll=['beta','profession','business','availability','square','install','invite','explore'].includes(step);
   m.innerHTML=`<div style="flex:1;display:flex;flex-direction:column;${needsScroll?'justify-content:flex-start;':'justify-content:center;'}">${body}</div>${footer}`;
   document.querySelector('.shell').appendChild(m);
   // Re-apply an active profession search after a re-render (no-op on steps without the picker).
@@ -16449,15 +16530,15 @@ function renderPayments(){
   <div style="padding:10px 16px 4px;display:flex;gap:8px;flex-wrap:wrap;">
     <button onclick="nav('build-invoice')" style="flex:1 1 100%;background:var(--accent);color:var(--accent-ink);border:none;border-radius:9px;padding:11px;font-size:13px;font-weight:700;cursor:pointer;font-family:inherit;"><i class="ti ti-file-invoice"></i> Build an invoice</button>
     <button onclick="_payLogOpen()" style="flex:1;background:var(--surf1);border:1px solid var(--p-line);color:var(--p-ink);border-radius:9px;padding:10px;font-size:12px;font-weight:600;cursor:pointer;font-family:inherit;min-width:110px;"><i class="ti ti-plus"></i> Log a payment</button>
-    <button onclick="_paySyncSquare()" style="flex:1;background:var(--surf1);border:1px solid var(--p-line);color:var(--p-ink);border-radius:9px;padding:10px;font-size:12px;font-weight:600;cursor:pointer;font-family:inherit;min-width:110px;"><i class="ti ti-refresh"></i> Sync from Square</button>
+    ${_pv.length?`<button onclick="_paySyncSquare()" style="flex:1;background:var(--surf1);border:1px solid var(--p-line);color:var(--p-ink);border-radius:9px;padding:10px;font-size:12px;font-weight:600;cursor:pointer;font-family:inherit;min-width:110px;"><i class="ti ti-refresh"></i> Sync from Square</button>
     <button onclick="_checkGiftCard()" style="flex:1;background:var(--surf1);border:1px solid var(--p-line);color:var(--p-ink);border-radius:9px;padding:10px;font-size:12px;font-weight:600;cursor:pointer;font-family:inherit;min-width:110px;"><i class="ti ti-gift"></i> Gift card balance</button>
     <button onclick="_payExportCSV()" style="background:var(--surf1);border:1px solid var(--p-line);color:var(--p-mut);border-radius:9px;padding:10px 12px;font-size:12px;font-weight:600;cursor:pointer;font-family:inherit;"><i class="ti ti-download"></i> CSV</button>
-    <button onclick="nav('reports')" style="background:var(--surf1);border:1px solid var(--p-line);color:var(--p-ink);border-radius:9px;padding:10px 12px;font-size:12px;font-weight:600;cursor:pointer;font-family:inherit;"><i class="ti ti-chart-bar"></i> Reports</button>
+    <button onclick="nav('reports')" style="background:var(--surf1);border:1px solid var(--p-line);color:var(--p-ink);border-radius:9px;padding:10px 12px;font-size:12px;font-weight:600;cursor:pointer;font-family:inherit;"><i class="ti ti-chart-bar"></i> Reports</button>`:''}
   </div>
-  <div style="display:flex;gap:8px;padding:8px 16px 6px;">
+  ${_pv.length?`<div style="display:flex;gap:8px;padding:8px 16px 6px;">
     <div style="flex:1;background:var(--p-amber-bg);border:1px solid var(--p-amber-line);border-radius:11px;padding:11px 13px;"><div style="font-size:11px;color:var(--p-amber);">Outstanding</div><div style="font-size:18px;font-weight:600;color:var(--p-amber);">$${out.reduce((a,p)=>a+_payOwed(p),0).toFixed(2)}</div></div>
     <div style="flex:1;background:var(--p-surf2);border:1px solid var(--p-line3);border-radius:11px;padding:11px 13px;"><div style="font-size:11px;color:#6fae90;">Collected this month</div><div style="font-size:18px;font-weight:600;color:var(--p-green);">$${monthPaid.toFixed(2)}</div></div>
-  </div>
+  </div>`:''}
   ${out.length?`<div class="sh"><h2>Outstanding</h2></div>${out.map(row).join('')}`:''}
   ${paid.length?`<div class="sh"><h2>Paid</h2></div>${paid.slice(0,50).map(row).join('')}`:''}
   ${(!_pv.length)?`<div style="margin:14px 16px;text-align:center;color:var(--p-mut);font-size:13px;padding:26px 16px;background:var(--surf1);border:1px solid var(--p-line3);border-radius:12px;">No payments yet. Send an invoice from a client\u2019s chart, or tap <b>Log a payment</b> to record cash, Venmo, or anything else.</div>`:''}
