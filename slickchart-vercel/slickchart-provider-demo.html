@@ -4846,6 +4846,7 @@ function renderClient(id){
       <div style="flex:1;min-width:0;">${(function(){const subs=c.submittedForms||[];const extra=(c.signedForms||[]).filter(x=>!subs.some(s=>s.title===x)).length;const n=subs.length+extra;return `<div style="font-size:13px;font-weight:500;color:var(--p-ink);">${n} form${n===1?'':'s'} on file</div><div style="font-size:11px;color:var(--p-mut);">${n?'Intakes, consents &amp; signed forms, tap to view':'Send an intake or consent to get started'}</div>`;})()}</div>
       <i class="ti ti-chevron-right" aria-hidden="true" style="font-size:16px;color:var(--p-mut);"></i>
     </button>
+    <button onclick="openClientFormSender('${id}')" class="btnp" style="width:100%;border-radius:10px;margin-top:8px;padding:11px;"><i class="ti ti-send" aria-hidden="true"></i> Send a form to ${_fileEsc(c.name.split(' ')[0])}</button>
   </div>
   ${c.lastCheckin?`<div class="sh"><h2>Latest pre-visit check-in</h2></div>
   <div style="padding:0 16px 6px;">
@@ -12110,6 +12111,29 @@ function _previewClientApp(){
   try{window.open(base+'/client?preview=1','_blank');}catch(e){try{location.href=base+'/client?preview=1';}catch(_){}}
 }
 function _markInvited(id){if(CL[id]){CL[id].appInvited=true;try{if(typeof saveClients==='function')saveClients();}catch(e){}}}
+// What just went out, in the client's words — used by the share-confirmation toasts so hitting Copy /
+// Text / Email always gives clear feedback that the invite (and any waiting forms) is on its way.
+function _inviteSentWhat(id){
+  const c=CL[id];const first=(c&&c.name)?c.name.split(' ')[0]:'your client';
+  const hasForms=!!(c&&Array.isArray(c.pendingForms)&&c.pendingForms.length>0);
+  return hasForms?(first+'’s intake + check-in are on the way'):('Invite ready for '+first);
+}
+// Copy the client's link AND confirm — only claims success once the clipboard write actually worked.
+function _copyInviteAndConfirm(id,btn){
+  const c=CL[id];if(!c)return;
+  const link=(typeof _clientAppLink==='function')?_clientAppLink(id):'';
+  _markInvited(id);
+  const done=function(){ if(btn){const o=btn.innerHTML;btn.innerHTML='<i class="ti ti-check"></i> Copied';setTimeout(function(){try{btn.innerHTML=o;}catch(e){}},1500);} if(typeof proToast==='function')proToast('Link copied — '+_inviteSentWhat(id)+'. Paste it to '+((c.name||'').split(' ')[0]||'them')+'.'); };
+  const fail=function(){ if(typeof proToast==='function')proToast('Couldn’t copy — long-press the link to copy it'); };
+  try{ if(navigator.clipboard&&navigator.clipboard.writeText){ navigator.clipboard.writeText(link).then(done).catch(function(){_copyFallback(link,done,fail);}); return; } }catch(e){}
+  _copyFallback(link,done,fail);
+}
+// Mark invited + confirm after opening the Messages / Mail app to actually send it.
+function _inviteSharedToast(id,method){
+  _markInvited(id);
+  const lead=method==='text'?'Opening your texts':(method==='email'?'Opening your email':'Sent');
+  if(typeof proToast==='function')proToast(lead+' — '+_inviteSentWhat(id)+'.');
+}
 function sendFirstVisitPackagePicker(){
   const ov=document.createElement('div');ov.id='send-fvp-sheet';
   ov.style.cssText='position:fixed;top:0;bottom:0;left:0;right:0;margin:0 auto;width:390px;max-width:100%;z-index:9999;background:rgba(0,0,0,.6);display:flex;align-items:center;justify-content:center;padding:24px 16px;box-sizing:border-box;';
@@ -12222,7 +12246,7 @@ function inviteClientToApp(id){
   // forms) keeps the friendly general wording.
   const _hasPendingForms=Array.isArray(c.pendingForms)&&c.pendingForms.length>0;
   const msg=_hasPendingForms
-    ? ('Hi '+first+'! \u2728 Getting you ready for your visit'+(biz?(' at '+biz):'')+' \u2014 tap to finish your 2 quick forms (intake + check-in). No app to download:\n\n'+link)
+    ? ('Hi '+first+'! Getting you ready for your visit'+(biz?(' at '+biz):'')+' \u2014 tap to finish your 2 quick forms (intake + check-in). No app to download. Looking forward to seeing you!\n\n'+link)
     : ('Hi '+first+'! '+who+' invited you to SlickChart'+(biz?(' \u2014 '+biz):'')+'. See your visit summary, aftercare, forms, and rebook anytime:\n\n'+link);
   const enc=encodeURIComponent(msg);
   // iOS Messages only auto-links a URL that stands on its own line, and wants the sms body
@@ -12237,10 +12261,10 @@ function inviteClientToApp(id){
     <div style="background:var(--p-surf);border:1px solid var(--p-line);border-radius:10px;padding:11px 12px;margin-bottom:12px;font-size:12.5px;color:var(--p-mut);line-height:1.55;overflow-wrap:anywhere;word-break:break-word;">${msg.replace(/</g,'&lt;')}</div>
     <div style="display:flex;gap:7px;align-items:flex-start;background:var(--p-blue-bg);border:1px solid var(--p-blue-line);border-radius:9px;padding:8px 11px;margin-bottom:12px;"><i class="ti ti-info-circle" style="font-size:14px;color:var(--p-blue);flex-shrink:0;margin-top:1px;"></i><span style="font-size:11.5px;color:#8fbce8;line-height:1.5;">On an iPhone, the link may not be tappable until they save your number to their Contacts — that’s Apple blocking links from unknown senders, not a broken link.</span></div>
     <div style="display:grid;grid-template-columns:1fr 1fr;gap:8px;margin-bottom:8px;">
-      <button onclick="_copyText('${link}',this);_markInvited('${id}')" class="btnp" style="border-radius:9px;padding:11px;"><i class="ti ti-copy"></i> Copy link</button>
-      <button onclick="location.href='${smsHref}';_markInvited('${id}');this.closest('#invite-sheet').remove();" class="btng" style="border-radius:9px;padding:11px;"><i class="ti ti-message"></i> Text it</button>
+      <button onclick="_copyInviteAndConfirm('${id}',this)" class="btnp" style="border-radius:9px;padding:11px;"><i class="ti ti-copy"></i> Copy link</button>
+      <button onclick="location.href='${smsHref}';_inviteSharedToast('${id}','text');this.closest('#invite-sheet').remove();" class="btng" style="border-radius:9px;padding:11px;"><i class="ti ti-message"></i> Text it</button>
     </div>
-    <button onclick="location.href='mailto:'+encodeURIComponent('${_jsAttr(c.email||'')}').replace(/%40/g,'@')+'?subject=${encodeURIComponent('Join me on SlickChart')}&body=${enc}';_markInvited('${id}');this.closest('#invite-sheet').remove();" class="btng" style="width:100%;border-radius:9px;padding:11px;justify-content:center;"><i class="ti ti-mail"></i> Email it</button>
+    <button onclick="location.href='mailto:'+encodeURIComponent('${_jsAttr(c.email||'')}').replace(/%40/g,'@')+'?subject=${encodeURIComponent('Join me on SlickChart')}&body=${enc}';_inviteSharedToast('${id}','email');this.closest('#invite-sheet').remove();" class="btng" style="width:100%;border-radius:9px;padding:11px;justify-content:center;"><i class="ti ti-mail"></i> Email it</button>
   </div>`;
   (document.querySelector('.shell')||document.body).appendChild(ov);
 }
