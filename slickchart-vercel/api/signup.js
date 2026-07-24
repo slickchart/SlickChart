@@ -65,7 +65,9 @@ export default async function handler(req, res) {
     // so the founder knows in real time as beta testers come through. Best-effort — never blocks or
     // fails the signup. Set FOUNDER_NOTIFY_EMAIL in Vercel to turn it on.
     try {
-      const notifyTo = String(process.env.FOUNDER_NOTIFY_EMAIL || '').trim();
+      // Default to the owner's inbox so signup pings work out of the box (no env setup needed) — this is
+      // why the first paid provider's signup was missed. FOUNDER_NOTIFY_EMAIL / FOUNDER_EMAILS override it.
+      const notifyTo = String(process.env.FOUNDER_NOTIFY_EMAIL || process.env.FOUNDER_EMAILS || 'botanicalaestheticsbyashley@gmail.com').split(',')[0].trim();
       if (notifyTo) {
         let total = 0;
         try { const c = await q`SELECT count(*)::int AS n FROM providers`; total = (c && c[0] && c[0].n) || 0; } catch (e) {}

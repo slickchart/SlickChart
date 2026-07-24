@@ -12,6 +12,14 @@
 // so automatic body parsing is turned off below and the body is read by hand.
 import crypto from 'crypto';
 import { sql, ensureProvidersTable } from '../lib/db.js';
+import { sendEmail } from '../lib/email.js';
+
+// The owner's inbox for real-time milestone pings. Defaults to the built-in owner so a PAID signup is
+// never missed even before any env is configured; FOUNDER_NOTIFY_EMAIL / FOUNDER_EMAILS override it.
+function founderNotifyEmail() {
+  return String(process.env.FOUNDER_NOTIFY_EMAIL || process.env.FOUNDER_EMAILS || 'botanicalaestheticsbyashley@gmail.com').split(',')[0].trim();
+}
+function escHtml(s) { return String(s == null ? '' : s).replace(/[&<>"']/g, c => ({ '&': '&amp;', '<': '&lt;', '>': '&gt;', '"': '&quot;', "'": '&#39;' }[c])); }
 
 export const config = { api: { bodyParser: false } };
 
@@ -82,12 +90,30 @@ export default async function handler(req, res) {
       const customerId = session.customer || null;
       const subscriptionId = session.subscription || null;
       if (email) {
+        // Was this a brand-new paying customer (vs. a returning/renewed one)? Notify the owner only on a
+        // genuinely NEW active subscription, so the "first paid provider" milestone can never be missed.
+        let wasNew = false;
+        try { const prev = await q`SELECT status FROM subscriptions WHERE email=${email}`; wasNew = !(prev[0] && prev[0].status === 'active'); } catch (e) {}
         await q`INSERT INTO subscriptions (email, stripe_customer_id, stripe_subscription_id, status, updated_at)
           VALUES (${email}, ${customerId}, ${subscriptionId}, 'active', now())
           ON CONFLICT (email) DO UPDATE SET
             stripe_customer_id=EXCLUDED.stripe_customer_id,
             stripe_subscription_id=EXCLUDED.stripe_subscription_id,
             status='active', updated_at=now()`;
+        if (wasNew) {
+          // Best-effort founder ping — must never block or fail the webhook (Stripe still needs its 200).
+          try {
+            const to = founderNotifyEmail();
+            let name = '';
+            try { const p = await q`SELECT name FROM providers WHERE email=${email}`; name = (p[0] && p[0].name) || ''; } catch (e) {}
+            if (to) await sendEmail({
+              to,
+              subject: `💰 New PAID SlickChart provider: ${name || email}`,
+              text: `A provider just started a paid subscription.\n\nName: ${name || '(not given)'}\nEmail: ${email}\n\nThat's real revenue — congratulations! 🎉`,
+              html: `<div style="font-family:-apple-system,Segoe UI,Roboto,sans-serif;max-width:440px;margin:0 auto;padding:8px;"><div style="font-size:22px;margin-bottom:6px;">💰 New PAID provider</div><div style="font-size:14px;color:#333;line-height:1.9;"><b>Name:</b> ${escHtml(name || '(not given)')}<br><b>Email:</b> ${escHtml(email)}</div><div style="font-size:13px;color:#2a7;margin-top:10px;">That's real revenue — congratulations! 🎉</div></div>`
+            });
+          } catch (e) { console.error('[stripe-webhook] founder paid-notify failed:', e && e.message || e); }
+        }
       }
     } else if (event.type === 'customer.subscription.updated' || event.type === 'customer.subscription.deleted') {
       const sub = event.data.object;
