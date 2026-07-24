@@ -35,13 +35,21 @@ export default async function handler(req, res) {
         count(*) FILTER (WHERE created_at > now() - interval '30 days')::int AS new30
       FROM providers`)[0] || {};
 
+    // NOTE: square_connections has ONE row per provider (ON CONFLICT (provider_id)). `connected` is
+    // therefore the number of PROVIDER accounts that connected Square, while `merchants` is the number of
+    // DISTINCT Square businesses (merchant_id) — the two differ when two providers connect the same Square
+    // account or a connection has a null merchant_id. The Square App Marketplace bar is "5 ACTIVE SELLERS",
+    // i.e. distinct merchants recently active, which is `activeMerchants30`.
     const sq = (await q`SELECT
         count(*)::int AS connected,
         count(DISTINCT merchant_id)::int AS merchants,
+        count(*) FILTER (WHERE merchant_id IS NULL)::int AS null_merchant,
         count(*) FILTER (WHERE connected_at  > now() - interval '7 days')::int  AS new7,
         count(*) FILTER (WHERE connected_at  > now() - interval '30 days')::int AS new30,
         count(*) FILTER (WHERE last_used_at  > now() - interval '7 days')::int  AS active7,
-        count(*) FILTER (WHERE last_used_at  > now() - interval '30 days')::int AS active30
+        count(*) FILTER (WHERE last_used_at  > now() - interval '30 days')::int AS active30,
+        count(DISTINCT merchant_id) FILTER (WHERE last_used_at > now() - interval '7 days')::int  AS active_merchants7,
+        count(DISTINCT merchant_id) FILTER (WHERE last_used_at > now() - interval '30 days')::int AS active_merchants30
       FROM square_connections`)[0] || {};
 
     let waitlistCount = 0;
@@ -105,11 +113,14 @@ export default async function handler(req, res) {
       square: {
         connected,
         merchants: sq.merchants || 0,
+        nullMerchant: sq.null_merchant || 0,
         connectRate: total ? Math.round((connected / total) * 100) : 0,
         connectedNew7: sq.new7 || 0,
         connectedNew30: sq.new30 || 0,
         active7: sq.active7 || 0,
-        active30: sq.active30 || 0
+        active30: sq.active30 || 0,
+        activeMerchants7: sq.active_merchants7 || 0,
+        activeMerchants30: sq.active_merchants30 || 0
       },
       charting,
       pulse,
