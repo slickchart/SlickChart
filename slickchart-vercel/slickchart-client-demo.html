@@ -2014,8 +2014,12 @@ function _dismissHomeIntro(){try{localStorage.setItem('sc_home_intro_seen','1');
 // straight into the next incomplete one, so a single tap flows through everything.
 function _previsitItems(){
   const p=activeProvider();const pf=(p.pendingForms||[]);
-  return [{type:'checkin',label:'Pre-visit check-in',done:!!p.checkinDone}]
-    .concat(pf.map(f=>({type:'form',formId:f.formId,label:f.title,done:false})));
+  // Provider-assigned forms (the new-client intake & consent) come FIRST, then the pre-visit check-in.
+  // These are the important, consent-bearing documents for a first visit, so making them step 1 means the
+  // intake can never be skipped or "missed after the check-in" — the client hits it before anything else,
+  // and the check-in flows right after as the same single sequence.
+  return pf.map(f=>({type:'form',formId:f.formId,label:f.title,done:false}))
+    .concat([{type:'checkin',label:'Pre-visit check-in',done:!!p.checkinDone}]);
 }
 function _nextPrevisitItem(){return _previsitItems().find(i=>!i.done)||null;}
 // Where a given step sits in the whole pre-visit package (1-based), so each screen can show
@@ -3111,18 +3115,23 @@ function renderFillForm(){
   _ffPhotos={};
   document.getElementById('tt').textContent=pf.title;
   const qs=_orderedFormQs(pf.qs);
-  // "Continue to the next form" instead of a bare "Submit" when another pre-visit item still
-  // follows this one, so finishing a form doesn't feel like finishing the whole package.
-  const _flowPos=_previsitFlowPos('form',pf.formId);
-  const _moreAfter=_flowPos&&((_flowPos.total-(_flowPos.idx+1))>0);
-  const _submitLabel=_moreAfter?`Submit &amp; continue to the next form`:`Submit to ${_txt(client.providerFirst)}`;
+  // Never show a "Submit" button in the MIDDLE of the pre-visit flow — it makes people think they're
+  // finished and they miss whatever comes next (the check-in or a second form). When something still
+  // follows, the button reads "Continue…" and only the very last item says "Submit".
+  const _items=_previsitItems();
+  const _idx=_items.findIndex(function(it){return it.type==='form'&&it.formId===pf.formId;});
+  const _nextItem=(_idx>=0)?_items[_idx+1]:null;
+  const _submitLabel=_nextItem
+    ? (_nextItem.type==='checkin'?`Continue to your check-in`:`Continue to the next form`)
+    : `Submit to ${_txt(client.providerFirst)}`;
+  const _submitIcon=_nextItem?'ti-arrow-right':'ti-send';
   const _anyReq=qs.some(q=>q&&q.required);
   S.innerHTML=`
   ${_previsitProgressHTML('form',pf.formId)}
   <div style="padding:14px 16px 4px;"><div id="page-heading" tabindex="-1" style="font-size:20px;font-weight:600;color:var(--c-ink);">${_txt(pf.title)}</div>${_anyReq?`<div style="font-size:12px;color:var(--c-mut);margin-top:4px;"><span style="color:var(--accent-ink-lt);font-weight:700;">*</span> = required</div>`:''}</div>
   <div style="padding:6px 16px 20px;">
     ${qs.map((q,i)=>_fillFormFieldHTML(q,i)).join('')}
-    <button onclick="_submitFillForm()" class="btnp" style="width:100%;border-radius:12px;padding:13px;margin-top:8px;">${_submitLabel}</button>
+    <button onclick="_submitFillForm()" class="btnp" style="width:100%;border-radius:12px;padding:13px;margin-top:8px;"><i class="ti ${_submitIcon}" aria-hidden="true" style="margin-right:5px;"></i>${_submitLabel}</button>
   </div>`;
 }
 // A date-of-birth / birthday field is better typed than picked: the native date wheel makes people
