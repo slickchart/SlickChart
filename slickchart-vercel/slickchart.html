@@ -7111,8 +7111,17 @@ let summaryToggles={note:true,homecare:true,metrics:false,products:true,guides:t
 // Aftercare guides/forms attached to a client's session summary (parallel to clientRecs for
 // products). Keyed by client id -> array of {kind:'guide'|'form', id}. Sent with the summary.
 let summaryGuides={};
+let summaryGuideOptOut={};   // per-client: auto-attached default guides the provider removed (so removal sticks)
 function _saveSummaryGuides(){try{(function(_v){localStorage.setItem('sc_summary_guides',_v);if(typeof _pushKeyNow==='function')_pushKeyNow('sc_summary_guides',_v);return _v;})(JSON.stringify(summaryGuides));}catch(e){}}
-function _loadSummaryGuides(){try{const r=localStorage.getItem('sc_summary_guides');if(r){const v=JSON.parse(r);if(v&&typeof v==='object')summaryGuides=v;}}catch(e){}}
+function _saveSummaryGuideOptOut(){try{const v=JSON.stringify(summaryGuideOptOut);localStorage.setItem('sc_summary_guide_optout',v);if(typeof _pushKeyNow==='function')_pushKeyNow('sc_summary_guide_optout',v);}catch(e){}}
+function _loadSummaryGuides(){try{const r=localStorage.getItem('sc_summary_guides');if(r){const v=JSON.parse(r);if(v&&typeof v==='object')summaryGuides=v;}}catch(e){}try{const o=localStorage.getItem('sc_summary_guide_optout');if(o){const v=JSON.parse(o);if(v&&typeof v==='object')summaryGuideOptOut=v;}}catch(e){}}
+// Guides that AUTO-attach to every session summary for a profession, so a standard aftercare guide goes
+// out with each visit without the provider re-adding it each time. Equine: the post-session cryotherapy
+// aftercare. Editable per-client — removing it records an opt-out so it stays gone for that client.
+function _profAutoGuideIds(){
+  try{ if(typeof selectedProfessions!=='undefined'&&selectedProfessions.includes('equine'))return ['g-equine-after']; }catch(e){}
+  return [];
+}
 // Resolve an attached {kind,id} entry to a display object {kind,id,title,icon,tips}.
 function _resolveSummaryGuide(item){
   try{
@@ -7121,24 +7130,40 @@ function _resolveSummaryGuide(item){
     return g?{kind:'guide',id:g.id,title:g.title,icon:g.icon||'📄',tips:(g.tips||[]).slice()}:null;
   }catch(e){return null;}
 }
-function _summaryGuideList(id){return (summaryGuides[id]||[]).map(_resolveSummaryGuide).filter(Boolean);}
+function _summaryGuideList(id){
+  const explicit=(summaryGuides[id]||[]).map(_resolveSummaryGuide).filter(Boolean);
+  const have=new Set(explicit.map(g=>g.id));
+  const opt=new Set(summaryGuideOptOut[id]||[]);
+  // Append profession-default guides that aren't already attached and haven't been opted out for this client.
+  const autos=_profAutoGuideIds().filter(gid=>!have.has(gid)&&!opt.has(gid)).map(gid=>_resolveSummaryGuide({kind:'guide',id:gid})).filter(Boolean);
+  return explicit.concat(autos);
+}
 function addSummaryGuide(id,kind,gid){
+  // Re-adding an auto-default that was previously removed clears its opt-out.
+  try{if(summaryGuideOptOut[id]){const i=summaryGuideOptOut[id].indexOf(gid);if(i>=0){summaryGuideOptOut[id].splice(i,1);_saveSummaryGuideOptOut();}}}catch(e){}
   if(!summaryGuides[id])summaryGuides[id]=[];
-  if(summaryGuides[id].some(x=>x.kind===kind&&x.id===gid))return; // no dupes
+  if(summaryGuides[id].some(x=>x.kind===kind&&x.id===gid)){if(typeof renderSessionSummary==='function')renderSessionSummary(id);return;} // no dupes
   summaryGuides[id].push({kind:kind,id:gid});
   _saveSummaryGuides();
   if(typeof renderSessionSummary==='function')renderSessionSummary(id);
 }
 function removeSummaryGuide(id,kind,gid){
-  if(!summaryGuides[id])return;
-  const arr=summaryGuides[id];
+  // If this is an auto-attached profession default, record the opt-out so it doesn't reappear next visit.
+  const isAuto=_profAutoGuideIds().indexOf(gid)>=0;
+  if(isAuto){if(!summaryGuideOptOut[id])summaryGuideOptOut[id]=[];if(summaryGuideOptOut[id].indexOf(gid)<0){summaryGuideOptOut[id].push(gid);_saveSummaryGuideOptOut();}}
+  const arr=summaryGuides[id]||[];
   const pos=arr.findIndex(x=>x.kind===kind&&x.id===gid);
-  if(pos<0)return;
+  if(pos<0){ // a pure auto-default (never stored explicitly) — the opt-out above removes it; just re-render
+    if(typeof renderSessionSummary==='function')renderSessionSummary(id);
+    if(isAuto)_aftercareUndoToast('Removed the auto aftercare guide for this client');
+    return;
+  }
   const removed=arr[pos];
   summaryGuides[id]=arr.filter((x,i)=>i!==pos);
   _saveSummaryGuides();
   if(typeof renderSessionSummary==='function')renderSessionSummary(id);
   _lastAftercareUndo={restore:function(){
+    if(isAuto&&summaryGuideOptOut[id]){const oi=summaryGuideOptOut[id].indexOf(gid);if(oi>=0){summaryGuideOptOut[id].splice(oi,1);_saveSummaryGuideOptOut();}}
     (summaryGuides[id]=summaryGuides[id]||[]).splice(Math.min(pos,summaryGuides[id].length),0,removed);
     _saveSummaryGuides();
     if(typeof renderSessionSummary==='function')renderSessionSummary(id);
