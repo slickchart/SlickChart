@@ -16715,6 +16715,14 @@ setInterval(()=>{
 try{document.addEventListener('visibilitychange',function(){
   if(!document.hidden){try{if(typeof _autoSyncCatalog==='function')_autoSyncCatalog();if(typeof _autoSyncCustomers==='function')_autoSyncCustomers();if(typeof _loadSquareAppts==='function')_loadSquareAppts(true);}catch(e){}}
 });}catch(e){}
+// Square timestamps (created_at/updated_at) are RFC-3339 UTC instants. Cash-basis reporting keys off the
+// LOCAL calendar date the money arrived, so we parse the full instant (Date.parse honours the trailing Z/
+// offset) and then read LOCAL date parts. A plain `.slice(0,10)` would take the UTC date and push a late-
+// evening payment into the next day/month for any provider west of UTC — misfiling revenue & sales tax.
+function _sqInstantLocalDate(ts){
+  const t=Date.parse(String(ts||''));if(isNaN(t))return '';
+  const x=new Date(t);return x.getFullYear()+'-'+String(x.getMonth()+1).padStart(2,'0')+'-'+String(x.getDate()).padStart(2,'0');
+}
 async function _paySyncSquare(auto){
   if(auto){
     const now=Date.now();
@@ -16730,8 +16738,11 @@ async function _paySyncSquare(auto){
       // Payment-received date (cash-basis reporting) and sales tax collected, for invoices created/paid in
       // Square. Without taxAmount the sales-tax report booked $0 tax and overstated revenue by the tax; with
       // paidDate, revenue lands in the month the money actually arrived, not the invoice-creation month.
-      const svPaidDate=(st==='paid'||st==='partial')?((sv.updatedAt||sv.createdAt||'').slice(0,10)||''):'';
-      if(e){if(!(e.status==='paid'&&(st==='unpaid'||st==='partial')))e.status=st;if(sv.total!=null)e.amount=sv.total;if(sv.amountPaid!=null)e.amountPaid=sv.amountPaid;if(sv.tax!=null&&e.taxAmount==null)e.taxAmount=sv.tax;if(svPaidDate&&!e.paidDate)e.paidDate=svPaidDate;if(sv.publicUrl)e.publicUrl=sv.publicUrl;}
+      const svPaidDate=(st==='paid'||st==='partial')?_sqInstantLocalDate(sv.updatedAt||sv.createdAt):'';
+      // Record the paid date when first known, AND refresh it once the invoice is fully PAID — otherwise a
+      // deposit collected in one month freezes paidDate there, and the later balance payment (which flips
+      // status to 'paid' and amountPaid to the full total) gets booked into the wrong, earlier month.
+      if(e){if(!(e.status==='paid'&&(st==='unpaid'||st==='partial')))e.status=st;if(sv.total!=null)e.amount=sv.total;if(sv.amountPaid!=null)e.amountPaid=sv.amountPaid;if(sv.tax!=null&&e.taxAmount==null)e.taxAmount=sv.tax;if(svPaidDate&&(!e.paidDate||st==='paid'))e.paidDate=svPaidDate;if(sv.publicUrl)e.publicUrl=sv.publicUrl;}
       else if(sv.status!=='draft'&&!_deletedSquareIds.has(sv.id)){
         // Avoid double-counting: if the provider ALSO logged this payment manually (cash, card on
         // file, texted link — none carry a squareInvoiceId), LINK that record to this Square invoice
@@ -16740,7 +16751,7 @@ async function _paySyncSquare(auto){
         const svName=String(sv.client||'').trim().toLowerCase();
         const svDay=Date.parse((sv.createdAt||'').slice(0,10)||_todayISO())||0;
         const dup=svName?_payments.find(p=>p&&!p.squareInvoiceId&&Math.round((+p.amount||0)*100)===svAmt&&String(p.clientName||'').trim().toLowerCase()===svName&&(function(){const pd=Date.parse((p.date||'').slice(0,10))||0;return svDay&&pd&&Math.abs(pd-svDay)<=3*86400000;})()):null;
-        if(dup){dup.squareInvoiceId=sv.id;if(!(dup.status==='paid'&&(st==='unpaid'||st==='partial')))dup.status=st;if(sv.total!=null)dup.amount=sv.total;if(sv.amountPaid!=null)dup.amountPaid=sv.amountPaid;if(sv.tax!=null&&dup.taxAmount==null)dup.taxAmount=sv.tax;if(svPaidDate&&!dup.paidDate)dup.paidDate=svPaidDate;if(sv.publicUrl)dup.publicUrl=sv.publicUrl;}
+        if(dup){dup.squareInvoiceId=sv.id;if(!(dup.status==='paid'&&(st==='unpaid'||st==='partial')))dup.status=st;if(sv.total!=null)dup.amount=sv.total;if(sv.amountPaid!=null)dup.amountPaid=sv.amountPaid;if(sv.tax!=null&&dup.taxAmount==null)dup.taxAmount=sv.tax;if(svPaidDate&&(!dup.paidDate||st==='paid'))dup.paidDate=svPaidDate;if(sv.publicUrl)dup.publicUrl=sv.publicUrl;}
         else _addPayment({clientId:'',clientName:sv.client||'Client',amount:sv.total||0,amountPaid:sv.amountPaid,taxAmount:(sv.tax!=null?sv.tax:undefined),method:'Square',status:st,date:(sv.createdAt||'').slice(0,10)||_todayISO(),paidDate:svPaidDate||undefined,note:'Square invoice',source:'square',squareInvoiceId:sv.id,publicUrl:sv.publicUrl});
       }
     });
