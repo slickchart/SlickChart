@@ -11864,7 +11864,7 @@ function _assembleClientData(id){
   // full clinical photo set would both bloat the blob (413s) and expose photos the client shouldn't see.
   const studioPhone=((typeof bizInfo!=='undefined'&&bizInfo&&bizInfo.phone)||'');
   const suggestedBooking=(c.suggestedBooking&&typeof c.suggestedBooking==='object'&&c.suggestedBooking.date&&c.suggestedBooking.time)?{date:c.suggestedBooking.date,time:c.suggestedBooking.time,treatment:c.suggestedBooking.treatment||''}:null;
-  return {studio,studioAddress,studioPhone,website,providerName,profile:{skin:c.skin||'',concerns:c.concerns||'',allergies:c.allergies||'',fitz:c.fitz||'',treatment:c.treatment||'',lastVisit:c.lastVisit||'',nextVisit:c.nextVisit||'',email:c.email||'',phone:c.phone||''},summaries,aftercare,products,routine,forms,pendingForms,pendingGuides,pendingCourses,progressPhotos,booking:{canRequest:true},suggestedBooking,availability,vcInvite,checkinCfg:checkinCfgOut,loyalty:loyaltyOut};
+  return {studio,studioAddress,studioPhone,website,providerName,profile:{skin:c.skin||'',concerns:c.concerns||'',allergies:c.allergies||'',fitz:c.fitz||'',treatment:c.treatment||'',lastVisit:c.lastVisit||'',nextVisit:c.nextVisit||'',email:c.email||'',phone:c.phone||''},summaries,aftercare,products,routine,forms,pendingForms,pendingGuides,pendingCourses,progressPhotos,booking:{canRequest:true},suggestedBooking,availability,vcInvite,checkinCfg:checkinCfgOut,checkinReqAt:c.checkinReqAt||0,loyalty:loyaltyOut};
 }
 let _syncingClients=false,_clientSyncTimer=null;
 function _scheduleClientSync(){ if(_clientSyncTimer)clearTimeout(_clientSyncTimer); _clientSyncTimer=setTimeout(function(){_syncClientsToServer({});},2500); }
@@ -12164,6 +12164,11 @@ function _assignGuidesToClient(c,guides){
 }
 async function sendFirstVisitPackage(id){
   const c=CL[id];if(!c)return;
+  // Stamp a fresh pre-visit check-in request. The client keys "check-in done" on this nonce (plus the
+  // appointment date), so sending a new first-visit package always asks for a FRESH check-in — even for
+  // a not-yet-scheduled client whose empty appointment date would otherwise match a check-in they
+  // completed on an earlier package and show it as already done.
+  c.checkinReqAt=Date.now();
   const intakeFid=(typeof _ncIntakeFormId==='function')?_ncIntakeFormId():null;
   if(intakeFid&&formTmpls[intakeFid]){
     _assignFormsToClient(c,_withPhotoRelease(intakeFid));

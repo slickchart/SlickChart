@@ -1370,21 +1370,27 @@ let _prefsSyncTimer=null;
 // re-prompted to redo a check-in they'd already submitted. Keying on the appointment
 // date means a NEW appointment (a rescheduled or next visit) still asks for a fresh one.
 let _ciDoneMap=(function(){try{return JSON.parse(localStorage.getItem('sc_checkin_done')||'{}')||{};}catch(e){return {};}})();
+// The signature a completed check-in is stored under. It ties completion to BOTH the appointment date
+// AND the provider's latest check-in request nonce (checkinReqAt, bumped when a first-visit package is
+// sent). That way a fresh package always asks for a new check-in — even for a not-yet-scheduled client
+// whose empty appointment date would otherwise match an earlier completion. Backward-compatible: when
+// there's no nonce we fall back to the bare date so already-completed check-ins aren't re-prompted.
+function _ciSig(prov){var d=(prov&&prov.nextDate)||'';return (prov&&prov.checkinReqAt)?(d+'|'+prov.checkinReqAt):d;}
 function _markCheckinDone(prov){
   prov=prov||activeProvider();
   if(!prov)return;
   prov.checkinDone=true;
-  _ciDoneMap[prov.id]=prov.nextDate||'';
+  _ciDoneMap[prov.id]=_ciSig(prov);
   try{localStorage.setItem('sc_checkin_done',JSON.stringify(_ciDoneMap));}catch(e){}
   try{if(typeof _ciClearDraft==='function')_ciClearDraft();}catch(e){}   // check-in submitted — drop the resume draft
   _syncClientPrefsToServer();
 }
 // Re-apply saved check-in completion onto the freshly-rebuilt provider objects. Only
-// restores it when the stored appointment date still matches the provider's current
-// next appointment, so a new/rescheduled visit correctly resets to "not done yet".
+// restores it when the stored signature still matches the provider's current one, so a
+// new/rescheduled visit OR a freshly-sent package correctly resets to "not done yet".
 function _applyCheckinDoneFromMap(){
   try{(client.providers||[]).forEach(function(p){
-    if(p&&_ciDoneMap[p.id]!==undefined&&_ciDoneMap[p.id]===(p.nextDate||''))p.checkinDone=true;
+    if(p&&_ciDoneMap[p.id]!==undefined&&_ciDoneMap[p.id]===_ciSig(p))p.checkinDone=true;
   });}catch(e){}
 }
 
@@ -1977,6 +1983,10 @@ function _welcomeBannerHTML(){
   const brand=activeProvider().brand;
   const msg=brand&&brand.welcomeMessage;
   if(!msg)return '';
+  // The welcome note ("take a moment to fill this out") only makes sense when there's actually
+  // something to complete. Once every pre-visit form + the check-in are done, drop it so returning
+  // clients aren't greeted by a prompt to fill out nothing.
+  if(typeof _nextPrevisitItem==='function' && !_nextPrevisitItem())return '';
   let dismissed=[];try{dismissed=JSON.parse(localStorage.getItem('sc_welcome_dismissed')||'[]');}catch(e){}
   const key=activeProvider().id+':'+msg.slice(0,40);
   if(dismissed.includes(key))return '';
@@ -5257,6 +5267,9 @@ function _applyRealClientData(j){
   // The provider's real check-in config rides in the blob (d.checkinCfg); persist it where the
   // client's check-in reads it, so a real client sees THEIR provider's questions, not Maya's.
   try{if(d.checkinCfg&&typeof d.checkinCfg==='object')localStorage.setItem('sc_checkin_cfg',JSON.stringify(d.checkinCfg));}catch(e){}
+  // Latest pre-visit check-in request nonce from the provider (bumped when they send a first-visit
+  // package). Feeds _ciSig so a freshly-requested check-in resets to "not done" even with no appointment.
+  p.checkinReqAt=(d.checkinReqAt!=null)?d.checkinReqAt:0;
   p.session=1;p.totalSessions=1;p.studioAddress=d.studioAddress||'';p.studioPhone=d.studioPhone||'';p.connected=false;p.unread=0;
   var nv=String(prof.nextVisit||'').split('\u00b7');
   p.nextDate=(nv[0]||'').trim();p.nextTime=(nv[1]||'').trim();
