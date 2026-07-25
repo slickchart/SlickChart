@@ -1422,7 +1422,29 @@ function _saveClientDetails(id){
   renderClient(id);
 }
 
-function loadClients(){try{const raw=localStorage.getItem('sc_clients');if(!raw)return;const saved=JSON.parse(raw);if(!saved||typeof saved!=='object')return;Object.keys(CL).forEach(k=>delete CL[k]);Object.keys(saved).forEach(k=>{CL[k]=saved[k];});}catch(e){}try{_seedClientSigCache();}catch(e){}}
+// The client roster (sc_clients) lives in localStorage, which browsers cap at only a few MB per site
+// (NOT your disk). Full-resolution check-in photos are base64 data URIs — hundreds of KB each — and
+// they're already stored in the check-in log (sc_checkins), the photo chart (capturedPhotos, IndexedDB),
+// and on the server. Duplicating them onto each client's lastCheckin was silently blowing past that cap
+// after a week of check-ins ("device storage is full"). Keep only a lightweight photoCount here; the
+// cleared-check-in fallback in renderCheckinDetail re-resolves the actual images from capturedPhotos.
+function _slimLastCheckin(c){
+  try{
+    if(c&&c.lastCheckin&&Array.isArray(c.lastCheckin.photos)&&c.lastCheckin.photos.length){
+      c.lastCheckin.photoCount=c.lastCheckin.photos.length;
+      delete c.lastCheckin.photos;
+      return true;
+    }
+  }catch(e){}
+  return false;
+}
+function loadClients(){try{const raw=localStorage.getItem('sc_clients');if(!raw)return;const saved=JSON.parse(raw);if(!saved||typeof saved!=='object')return;Object.keys(CL).forEach(k=>delete CL[k]);Object.keys(saved).forEach(k=>{CL[k]=saved[k];});
+  // One-time reclaim: strip any base64 check-in photos an older build wrote into the roster, then
+  // rewrite the (now much smaller) blob directly so the freed space is available immediately. Done
+  // before seeding the signature cache so this cleanup doesn't spuriously bump every client's _uAt.
+  let _slimmed=false;Object.keys(CL).forEach(k=>{if(_slimLastCheckin(CL[k]))_slimmed=true;});
+  if(_slimmed){try{localStorage.setItem('sc_clients',JSON.stringify(CL));}catch(e){}}
+  }catch(e){}try{_seedClientSigCache();}catch(e){}}
 // Enforce the "gone" sets on whatever is currently in CL — removes anyone the provider merged away
 // (mergedSquareIds), deleted (_deletedClientIds), or the demo clients once hidden. This is the safety
 // net that makes merges/removals STICK: even if a stale synced client list (or the Square customer
@@ -18038,7 +18060,9 @@ function _reconcileEventAttachments(events){
       const curAt=(c.lastCheckin&&c.lastCheckin.at)||0;
       if(at&&curAt&&at<curAt)continue;   // never let an older check-in clobber a newer one on the chart
       const ciPhotos=(Array.isArray(payload.photos)?payload.photos:[]).filter(_validImgSrc);
-      c.lastCheckin={id:ev.id,dateLabel:payload.dateLabel||'',time:payload.time||'',treatment:payload.treatment||'',groups:(payload.groups||[]).slice(),flagged:(payload.flagged||[]).slice(),notes:payload.notes||'',photos:ciPhotos.slice(),at:at||Date.now()};
+      // Store only a photo count on the roster (localStorage) — the images themselves live in the
+      // check-in log + capturedPhotos, so keeping base64 here just bloats the tiny sc_clients cap.
+      c.lastCheckin={id:ev.id,dateLabel:payload.dateLabel||'',time:payload.time||'',treatment:payload.treatment||'',groups:(payload.groups||[]).slice(),flagged:(payload.flagged||[]).slice(),notes:payload.notes||'',photoCount:ciPhotos.length,at:at||Date.now()};
       c.checkinDone=true;c.checkinDoneFor=(c.nextVisit||'');
       if(payload.flagged&&payload.flagged.length&&!((typeof _isCheckinDismissed==='function')&&_isCheckinDismissed(ev.id))&&typeof _mergeContra==='function'){
         const _fd=[];(payload.groups||[]).forEach(g=>{(g.rows||[]).forEach(r=>{if(r&&r.flagged)_fd.push({label:r.label||'',detail:(r.detail||'').trim()});});});
@@ -18155,7 +18179,7 @@ async function syncClientEvents(){
           // without check-ins accumulating on the chart forever. Stamp `at` with the check-in's
           // real submission time (ci.at = server created_at), NOT Date.now() — otherwise a
           // check-in the provider only processes the next day shows as submitted "today".
-          c.lastCheckin={id:ci.id,dateLabel:ci.dateLabel,time:ci.time,treatment:ci.treatment,groups:(ci.groups||[]).slice(),flagged:(ci.flagged||[]).slice(),notes:ci.notes||'',photos:(ci.photos||[]).slice(),at:ci.at};
+          c.lastCheckin={id:ci.id,dateLabel:ci.dateLabel,time:ci.time,treatment:ci.treatment,groups:(ci.groups||[]).slice(),flagged:(ci.flagged||[]).slice(),notes:ci.notes||'',photoCount:(ci.photos||[]).length,at:ci.at};
           // A flagged check-in is exactly the kind of thing that needs to show up
           // as a real alert on the client's chart, not just sit inside the check-in
           // record where it's easy to miss before a session.
@@ -18585,7 +18609,13 @@ function renderCheckinDetail(id){
   let ci=checkins.find(x=>x.id===id);
   // If it's been cleared from the log, fall back to the copy saved on the client file
   // so the "Latest check-in" link on a client's chart still works.
-  if(!ci){for(const k in CL){if(CL[k]&&CL[k].lastCheckin&&CL[k].lastCheckin.id===id){ci=Object.assign({client:CL[k].name||'Client',clientId:k,read:true},CL[k].lastCheckin);break;}}}
+  if(!ci){for(const k in CL){if(CL[k]&&CL[k].lastCheckin&&CL[k].lastCheckin.id===id){ci=Object.assign({client:CL[k].name||'Client',clientId:k,read:true},CL[k].lastCheckin);
+    // The roster no longer stores base64 check-in photos (they bloated localStorage). Re-resolve them
+    // from the photo chart for this fallback view, newest photoCount images filed from a check-in.
+    if((!ci.photos||!ci.photos.length)&&ci.photoCount&&typeof capturedPhotos!=='undefined'&&capturedPhotos[k]){
+      ci.photos=capturedPhotos[k].filter(p=>p&&p.source==='checkin').map(p=>p.url).slice(-ci.photoCount);
+    }
+    break;}}}
   document.getElementById('tt').textContent='Check-in';
   if(!ci){S.innerHTML=`<div id="checkin-detail-screen"></div><div style="padding:30px 16px;color:var(--p-mut);">Check-in not found.</div>`;return;}
   markCheckinRead(id);
@@ -18772,7 +18802,7 @@ SlickBridge.on('checkin-submitted',ci=>{
   if(ci.clientId&&CL[ci.clientId]){
     CL[ci.clientId].checkinDone=true;CL[ci.clientId].checkinDoneFor=(CL[ci.clientId].nextVisit||'');
     // Most recent check-in only, overwrites the previous on the client file.
-    CL[ci.clientId].lastCheckin={id:ci.id,dateLabel:ci.dateLabel,time:ci.time,treatment:ci.treatment,groups:(ci.groups||[]).slice(),flagged:(ci.flagged||[]).slice(),notes:ci.notes||'',photos:(ci.photos||[]).slice(),at:Date.now()};
+    CL[ci.clientId].lastCheckin={id:ci.id,dateLabel:ci.dateLabel,time:ci.time,treatment:ci.treatment,groups:(ci.groups||[]).slice(),flagged:(ci.flagged||[]).slice(),notes:ci.notes||'',photoCount:(ci.photos||[]).length,at:Date.now()};
     // Raise the contraindication alert (chart banner / Room Alerts / Home needs-attention) for flagged
     // answers, matching the server-sync path — the bridge handler used to set lastCheckin but not this.
     if(ci.flagged&&ci.flagged.length&&(typeof _isCheckinDismissed!=='function'||!_isCheckinDismissed(ci.id))){
