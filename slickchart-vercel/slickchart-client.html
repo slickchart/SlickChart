@@ -4555,8 +4555,14 @@ function submitClientForm(fid){
   // flagged contraindications = checked boxes
   const flagged=[];(f.contra||[]).forEach((it,ix)=>{const cb=document.getElementById('cfc-'+ix);if(cb&&cb.checked)flagged.push(it);});
   try{SlickBridge.post('form-completed',{providerId:'jess',clientId:'maya',formId:fid,title:f.title,answers,flagged,signed:true,signature:_signName,date:'Today'});}catch(e){}
+  // Stable idempotency key for THIS signed form, keyed the same way as the intake path so a
+  // response-loss + manual "tap Submit again" reuses the key and the server dedups it. Without it,
+  // this signed-consent path (unlike _submitFillForm) could land TWO copies of the same signed form
+  // on the provider's chart — a real problem for a legally-relevant consent/waiver.
+  const _idemPf={formId:fid,assignedAt:f.assignedAt};
   const _finishSigned=()=>{
     f.status='Completed ✓';f.answers=answers;f.flagged=flagged;
+    try{_ffClearIdem(_idemPf);}catch(e){}   // submission confirmed — retire its idempotency key
     const sheet=document.getElementById('form-review-sheet');if(sheet)sheet.remove();
     showToast(flagged.length?'Submitted, your provider will review your notes ✓':'Submitted & signed ✓');
     if(currentScreen==='welcome')renderMagicLanding();
@@ -4566,7 +4572,7 @@ function submitClientForm(fid){
     // provider, confirm before marking it complete, so a dropped submit is retryable.
     const btn=(typeof event!=='undefined'&&event&&event.target&&event.target.closest)?event.target.closest('button'):null;
     if(btn){btn.disabled=true;btn.textContent='Sending…';}
-    _clientSubmit('form',{formId:fid,title:f.title,answers,flagged,signed:true,signature:_signName,date:'Today'})
+    _clientSubmit('form',{formId:fid,title:f.title,answers,flagged,signed:true,signature:_signName,date:'Today',_idem:_ffStableIdem(_idemPf)})
       .then(function(res){
         if(res&&res.duplicate)return;   // first submit already in flight — ignore the double-tap, don't flash an error
         if(res&&res.ok!==false)_finishSigned();
