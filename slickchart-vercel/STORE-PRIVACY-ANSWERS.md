@@ -37,7 +37,7 @@ Purpose is **App Functionality** (a couple also "Analytics" — noted).
 | **Identifiers — User ID** | Yes | Account ID |
 | **Identifiers — Device ID** | Yes | Push notification token |
 | **Purchases — Purchase History** | Yes | Provider's subscription status (via Stripe) |
-| **Usage Data — Product Interaction** | Yes | Minimal beta/feature-usage events → mark purpose **Analytics** + App Functionality |
+| **Usage Data — Product Interaction** | Yes | Minimal feature-usage events → mark purpose **Analytics** + App Functionality |
 | **Diagnostics** | No | No crash/analytics SDK is bundled |
 | **Location (Precise or Coarse)** | No | The app does not use device location services |
 | **Browsing History / Search History / Contacts (address book) / Sensitive Info (as its own bucket)** | No | Not collected |
