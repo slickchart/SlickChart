@@ -3272,6 +3272,13 @@ function _ffClearIdem(pf){try{localStorage.removeItem(_ffIdemKey(pf));}catch(e){
 function _ciIdemKey(prov){return 'sc_ciidem_'+((prov&&prov.id)||'')+'_'+((typeof client!=='undefined'&&client&&client.nextDate)||'')+'_'+((typeof client!=='undefined'&&client&&client.nextTime)||'');}
 function _ciStableIdem(prov){try{const k=_ciIdemKey(prov);let v=localStorage.getItem(k);if(!v){v=(self.crypto&&crypto.randomUUID)?crypto.randomUUID():(Date.now().toString(36)+Math.random().toString(36).slice(2));localStorage.setItem(k,v);}return v;}catch(e){return '';}}
 function _ciClearIdem(prov){try{localStorage.removeItem(_ciIdemKey(prov));}catch(e){}}
+// Same stable-idempotency pattern for a booking request, keyed by provider + requested slot + treatment.
+// Without it, a request that committed server-side but lost its response would be RE-SENT with a fresh
+// random key on a manual "Try again", landing a DUPLICATE appointment request in the provider's inbox
+// (provider-side ingest dedups on event id, which differs between the two sends). Cleared on success.
+function _bkIdemKey(bk){return 'sc_bkidem_'+((bk&&bk.providerId)||'')+'_'+((bk&&bk.date)||'')+'_'+((bk&&bk.time)||'')+'_'+((bk&&bk.treatment)||'');}
+function _bkStableIdem(bk){try{const k=_bkIdemKey(bk);let v=localStorage.getItem(k);if(!v){v=(self.crypto&&crypto.randomUUID)?crypto.randomUUID():(Date.now().toString(36)+Math.random().toString(36).slice(2));localStorage.setItem(k,v);}return v;}catch(e){return '';}}
+function _bkClearIdem(bk){try{localStorage.removeItem(_bkIdemKey(bk));}catch(e){}}
 function _ffAddPhotos(i){
   _pickImages(function(srcs){
     if(!srcs||!srcs.length)return;
@@ -4143,10 +4150,10 @@ function submitRebook(){
   if(client._real){
     // Confirm the request actually reached the server before telling them it's sent.
     S.innerHTML=_sendingHTML('Sending your request…');
-    _clientSubmit('booking',{treatment:booking.treatment,date:booking.date,dateLabel:booking.dateLabel,time:booking.time,note:booking.note,client:client.name})
+    _clientSubmit('booking',{treatment:booking.treatment,date:booking.date,dateLabel:booking.dateLabel,time:booking.time,note:booking.note,client:client.name,_idem:_bkStableIdem(booking)})
       .then(function(res){
         if(res&&res.duplicate)return;
-        if(res&&res.ok!==false)_showRebookSent();
+        if(res&&res.ok!==false){try{_bkClearIdem(booking);}catch(e){}_showRebookSent();}
         else S.innerHTML=_submitFailedHTML('submitRebook()',"Couldn't send your request");
       });
     return;

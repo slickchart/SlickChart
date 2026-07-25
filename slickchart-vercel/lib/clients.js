@@ -308,10 +308,17 @@ export async function logEvent(providerId, clientId, kind, payload, idemKey) {
   return (rows && rows[0] && rows[0].id) ? rows[0].id : id;
 }
 
+// The provider GET feeds two things off this list: the notification feed AND the client-side
+// self-heal that re-derives a chart's forms/check-ins from the event log when a device's cached
+// copy was lost. The old LIMIT 500 (across ALL clients) meant that once a provider passed ~500
+// lifetime events, the oldest form/check-in events aged out of the window and could no longer be
+// recovered by the self-heal. Raised to match the 2000-client upsert bound so the safety net
+// covers realistic single-provider volume. (If this ever needs to scale further, split the query
+// so high-volume message events can't crowd out the structured form/check-in events.)
 export async function listEvents(providerId) {
   const q = sql();
   return await q`SELECT id, client_id, kind, payload, seen, created_at
-    FROM client_events WHERE provider_id=${providerId} ORDER BY created_at DESC LIMIT 500`;
+    FROM client_events WHERE provider_id=${providerId} ORDER BY created_at DESC LIMIT 2000`;
 }
 
 // Full two-way message thread for one client (client-submitted + provider-sent),
