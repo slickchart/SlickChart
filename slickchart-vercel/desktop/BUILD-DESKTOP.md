@@ -86,6 +86,42 @@ Mac"** button into slickchart.app right next to the App Store button.
 
 ---
 
+---
+
+## Second channel: the Mac App Store
+
+This is a **separate build and a separate submission** — same idea as your iOS launch.
+The config is already wired up (`npm run build:mas`); it just needs App-Store-specific
+certificates and a provisioning profile, and it goes through Apple review.
+
+### What's different from the direct `.dmg`
+- **Sandboxed** — already handled (`build/entitlements.mas.plist`).
+- **Two certificates** (create in Xcode → Settings → Accounts → Manage Certificates → "+",
+  or at <https://developer.apple.com/account/resources/certificates>):
+  - **Apple Distribution**
+  - **Mac Installer Distribution**
+- **Provisioning profile** — at <https://developer.apple.com/account/resources/profiles>,
+  create a **"Mac App Store"** profile for App ID `com.slickchart.app`, download it, and save it as:
+  ```
+  desktop/build/embedded.provisionprofile
+  ```
+  (electron-builder picks it up automatically.)
+- **Register the app** in App Store Connect first — add the **macOS** platform to your existing
+  SlickChart record (or create a new macOS app record).
+
+### Build + upload
+```bash
+npm run build:mas
+```
+Produces `desktop/dist/mas/SlickChart-0.1.0.pkg`. Upload it to App Store Connect with the free
+**Transporter** app (from the Mac App Store), then submit for review — exactly like iOS.
+
+Heads-up: Mac App Store review occasionally flags thin web-wrapper apps (guideline 4.2). Your
+iOS app is the same model and passed, so you're in good shape — but if a reviewer pushes back,
+send me the message and we'll respond together.
+
+---
+
 ## Notes
 - **No signing credentials?** `npm run build:mac` still produces a `.dmg`, but it will
   be unsigned and macOS will warn users it "can't be opened." Always build with the
