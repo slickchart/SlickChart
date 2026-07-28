@@ -844,6 +844,10 @@ const coursesByProf={
     {id:'cmv5',title:'BarreFLOW 101',icon:'ti-walk',bg:'var(--p-red-bg)',ic:'var(--p-red)',bdg:'br',status:'Draft',price:'$29',modules:4,duration:'30 min',enrolled:0,revenue:0,progress:0,desc:'Foot therapy, lymphatic health, and hip mobility in a gentle, barre-style flow.'},
     {id:'cmv6',title:'Office Therapy — Fix Your Posture',icon:'ti-armchair',bg:'var(--p-blue-bg)',ic:'var(--p-blue)',bdg:'bb',status:'Draft',price:'Free',modules:3,duration:'20 min',enrolled:0,revenue:0,progress:0,desc:'Desk-friendly resets for posture, neck, and hips you can do between meetings.'},
   ],
+  equine:[
+    {id:'ceq1',title:'Cryotherapy for Your Horse: What to Expect',icon:'ti-snowflake',bg:'var(--p-blue-bg)',ic:'var(--p-blue)',bdg:'bb',status:'Draft',price:'Free',modules:4,duration:'25 min',enrolled:0,revenue:0,progress:0,desc:'How localized cold therapy supports tendon, ligament & joint recovery — the session series, what results to expect, and how it works alongside your veterinarian.'},
+    {id:'ceq2',title:'Between Sessions: Home Care & Rehab',icon:'ti-run',bg:'var(--p-surf2)',ic:'var(--p-green)',bdg:'bg',status:'Draft',price:'$19',modules:4,duration:'30 min',enrolled:0,revenue:0,progress:0,desc:'Turnout and controlled exercise during rehab, daily checks, cold-hosing if prescribed, and progress videos — getting the most from your horse’s treatment series.'},
+  ],
 };
 // Signature + reseed so courses follow the provider's profession until they customize.
 function _coursesSig(arr){return (arr||[]).map(c=>String(c.id||'')+'|'+String(c.title||'')).join(',');}
@@ -853,7 +857,9 @@ function _coursesDefaults(){
   const profs=(typeof selectedProfessions!=='undefined'&&Array.isArray(selectedProfessions)&&selectedProfessions.length)?selectedProfessions:[];
   const seen=new Set();const out=[];
   profs.forEach(pr=>{(coursesByProf[pr]||[]).forEach(c=>{if(!seen.has(c.id)){seen.add(c.id);out.push(Object.assign({},c));}});});
-  return out.length?out:_estyCourses.map(c=>Object.assign({},c));
+  // Never fall back to esty courses — a profession with no course set (or none selected) gets an
+  // empty Courses tab, not someone else's skincare courses. Equine etc. seed their own above.
+  return out;
 }
 function _reseedCoursesIfDefault(){
   try{
@@ -2717,7 +2723,7 @@ function applyProfessionConfig(){
     const _protoMap={esty:_estyProtocols,hair:hairProtocols,barber:barberProtocols,brow:browProtocols,
       makeup:makeupProtocols,massage:massageProtocols,lash:lashProtocols,nail:nailProtocols,
       wax:waxProtocols,coach:coachProtocols,movement:movementProtocols,
-      tattoo:tattooProtocols,pmu:pmuProtocols,nutrition:nutritionProtocols,contour:contourProtocols};
+      tattoo:tattooProtocols,pmu:pmuProtocols,nutrition:nutritionProtocols,contour:contourProtocols,equine:equineProtocols};
     const merged=[];const seenP=new Set();
     selectedProfessions.forEach(pid=>{(_protoMap[pid]||[]).forEach(p=>{const k=(p.id||p.name||'');if(!seenP.has(k)){seenP.add(k);merged.push(p);}});});
     // Detect a provider-customized protocol set from the SAVED data, not just the flag: any saved
@@ -2821,6 +2827,7 @@ function applyProfessionConfig(){
   // fixes a menu that was auto-seeded with esty before the real professions loaded.
   if(typeof _reseedSvcMenuIfDefault==='function')_reseedSvcMenuIfDefault();
   if(typeof _reseedCoursesIfDefault==='function')_reseedCoursesIfDefault();
+  if(typeof _reseedShopIfDefault==='function')_reseedShopIfDefault();
 }
 
 
@@ -3024,6 +3031,16 @@ const contourProtocols=[
     {t:'Treatment',d:'—',n:'Perform the modality over the target area per protocol; monitor comfort and skin response.'},
     {t:'Finish & lymphatic support',d:'10 min',n:'Wipe down, lymphatic massage/drainage support, hydration.'},
     {t:'Aftercare & plan',d:'5 min',n:'After photos, at-home guidance (hydration, movement), and book the next session in the series.'},
+  ]},
+];
+// Example equine cryotherapy protocol — a starting point the provider edits to their own routine.
+const equineProtocols=[
+  {id:'eqp1',name:'Localized cryotherapy session',icon:'ti-snowflake',col:'var(--p-blue-bg)',ic:'var(--p-blue)',steps:[
+    {t:'Owner check-in & re-grade',d:'5 min',n:'Change since last visit and current meds; re-check AAEP lameness grade (0–5) and palpate the target area for heat, swelling and pain.'},
+    {t:'Prep the area',d:'5 min',n:'Clean and dry; clip if needed. Confirm no open wound, skin infection or liniment over the site; note baseline skin temperature.'},
+    {t:'Cryotherapy application',d:'10–15 min',n:'Apply the America Cryo Subzero device to the target area at the set distance, keeping it moving in passes. Watch the horse’s tolerance and the skin the whole time.'},
+    {t:'Immediate reassessment',d:'5 min',n:'Re-palpate, note the immediate response and any adverse reaction; re-grade if appropriate.'},
+    {t:'Home care & next visit',d:'5 min',n:'Give the turnout / controlled-exercise plan, send the aftercare guide, log pre/post grades and book the next session.'},
   ]},
 ];
 const browAffiliateLinks=[
@@ -3679,6 +3696,38 @@ function persistAffiliateLinks(){try{(function(_v){localStorage.setItem('sc_affi
 // Mark the product list as provider-customized (immediate push) so boot never reseeds demo products
 // over their real shop. Set on every add/edit/delete of a product.
 function _markAffiliateCustom(){try{localStorage.setItem('sc_affiliate_custom','1');if(typeof _pushKeyNow==='function')_pushKeyNow('sc_affiliate_custom','1');}catch(e){}}
+// Starter retail/recommend products per profession — seeds a fresh catalog so a new provider isn't
+// empty (or stuck with another trade's sample products). Provider replaces the links with their own
+// affiliate URLs; editing anything marks the shop custom and stops reseeding.
+const _SHOP_STARTER_BY_PROF={
+  equine:[
+    {id:'eq_p1',name:'Ice Horse Tendon Wraps',brand:'Ice Horse',icon:'🧊'},
+    {id:'eq_p2',name:'Sore No-More Liniment',brand:'Arenus',icon:'🧴'},
+    {id:'eq_p3',name:'Uptite Poultice',brand:'Uptite',icon:'🩹'},
+    {id:'eq_p4',name:'Back on Track Mesh Sheet',brand:'Back on Track',icon:'🐴'},
+    {id:'eq_p5',name:'Arnica Cooling Gel',brand:'Equilite',icon:'❄️'},
+  ],
+};
+function _shopStarterDefaults(){
+  const profs=(typeof selectedProfessions!=='undefined'&&Array.isArray(selectedProfessions)&&selectedProfessions.length)?selectedProfessions:[];
+  const seen=new Set();const out=[];
+  profs.forEach(pr=>{(_SHOP_STARTER_BY_PROF[pr]||[]).forEach(p=>{const k=String(p.name||'').toLowerCase();if(!seen.has(k)){seen.add(k);out.push(Object.assign({url:'',clicks:0,earnings:0,commission:'',active:true},p));}});});
+  return out;
+}
+// Seed the profession's starter products ONLY over a pristine catalog (empty, or the esty demo
+// samples a1–a4). Never over real products (sc_affiliate_custom, or any non-sample id present).
+function _reseedShopIfDefault(){
+  try{
+    if(localStorage.getItem('sc_affiliate_custom')==='1')return;
+    const starters=_shopStarterDefaults();
+    if(!starters.length)return;                         // no starter set for this profession — leave the catalog as-is
+    const cur=(typeof affiliateLinks!=='undefined'&&Array.isArray(affiliateLinks))?affiliateLinks:[];
+    const pristine=!cur.length||cur.every(a=>a&&_SAMPLE_PRODUCT_IDS.indexOf(a.id)>=0);
+    if(!pristine)return;                                // real or already-seeded products present — don't clobber
+    affiliateLinks=starters;
+    try{persistAffiliateLinks();}catch(e){}
+  }catch(e){}
+}
 // The client-facing "Shop all" catalog: every active product, stripped of private fields
 // (earnings, clicks, commission). Synced to a provider-level KV the client reads (api/client-data
 // → sc_shop_catalog), so the client's Shop can list the full catalog without bloating each client's
@@ -4110,6 +4159,11 @@ function _gettingStartedHTML(){
   </div>`;
 }
 
+// "Up next" wrapper: past 3 appointments for the day, cap the height and scroll so a full day fits
+// without pushing the rest of Home off-screen. 3 or fewer render at natural height (no scroll).
+function _wrapUpNext(cardsHtml,count){
+  return count>3?`<div style="max-height:452px;overflow-y:auto;-webkit-overflow-scrolling:touch;">${cardsHtml}</div>`:cardsHtml;
+}
 function renderHome(){
   setNav('home');
   setTimeout(maybeShowOnboarding,300);
@@ -4155,26 +4209,32 @@ function renderHome(){
       const now=new Date();
       const todayStr=now.toDateString();
       const tomorrowStr=new Date(now.getTime()+86400000).toDateString();
-      const up=squareAppts.filter(a=>a.at&&a.at>=new Date(now.getTime()-3600000)).slice(0,3);
-      if(!up.length)return '<div class="card"><div style="padding:18px 16px;text-align:center;color:var(--p-mut);font-size:13px;">Nothing else on the books right now.<div style="font-size:12px;color:var(--p-mut);margin-top:4px;">New bookings will show up here automatically.</div></div></div>';
-      const firstIsToday=up[0].at.toDateString()===todayStr;
-      const dayLabel=!firstIsToday?`<div style="padding:0 16px 8px;font-size:12px;color:var(--p-mut);">Nothing left today \u2014 ${up[0].at.toDateString()===tomorrowStr?'tomorrow\u2019s':'next up,'} booked:</div>`:'';
-      return dayLabel+up.map(a=>{
+      const _upAll=squareAppts.filter(a=>a.at&&a.at>=new Date(now.getTime()-3600000)).sort((a,b)=>a.at-b.at);
+      if(!_upAll.length)return '<div class="card"><div style="padding:18px 16px;text-align:center;color:var(--p-mut);font-size:13px;">Nothing else on the books right now.<div style="font-size:12px;color:var(--p-mut);margin-top:4px;">New bookings will show up here automatically.</div></div></div>';
+      // Show EVERYONE booked for the active day (today's remainder, else the next booked day). No cap:
+      // a full day (4, 6, 10 appts) all appears, in a scroll region so it never overruns the home screen.
+      const _firstDay=_upAll[0].at.toDateString();
+      const up=_upAll.filter(a=>a.at.toDateString()===_firstDay);
+      const firstIsToday=_firstDay===todayStr;
+      const dayLabel=!firstIsToday?`<div style="padding:0 16px 8px;font-size:12px;color:var(--p-mut);">Nothing left today \u2014 ${_firstDay===tomorrowStr?'tomorrow\u2019s':'next up,'} booked:</div>`:'';
+      return dayLabel+_wrapUpNext(up.map(a=>{
         const when=a.at.toLocaleDateString('en-US',{weekday:'short',month:'short',day:'numeric'})+' · '+a.at.toLocaleTimeString('en-US',{hour:'numeric',minute:'2-digit'});
         const cid=_clientIdByName(a.client);
         return '<div class="card" style="padding:0;overflow:hidden;" onclick="nav(\''+(cid?'client':'calendar')+'\''+(cid?",'"+cid+"'":'')+')"><div class="row" style="padding:14px;"><div style="flex:1;min-width:0;"><div style="font-size:15px;font-weight:500;color:var(--p-ink);">'+a.client+'</div><div style="font-size:12px;color:var(--p-mut);margin-top:2px;">'+when+(a.dur?' · '+a.dur+' min':'')+'</div></div><span class="bdg bg" style="font-size:12px;">Confirmed</span></div>'+_firstVisitNudgeHTML(cid,a.at)+'</div>';
-      }).join('');
+      }).join(''),up.length);
     }
     // Sample/demo mode: show the same real-week sample appointments the calendar uses so Up next
     // isn't an empty "connect Square" prompt during screenshots or on a fresh account.
     if(typeof _sampleHidden==='function'&&!_sampleHidden()){
       const now=new Date();
-      const up=_realApptsMerged().filter(a=>a.at&&a.at>=new Date(now.getTime()-3600000)).sort((a,b)=>a.at-b.at).slice(0,3);
-      if(up.length)return up.map(a=>{
+      const _uAll=_realApptsMerged().filter(a=>a.at&&a.at>=new Date(now.getTime()-3600000)).sort((a,b)=>a.at-b.at);
+      const _d0=_uAll.length?_uAll[0].at.toDateString():null;
+      const up=_uAll.filter(a=>a.at.toDateString()===_d0);
+      if(up.length)return _wrapUpNext(up.map(a=>{
         const when=a.at.toLocaleDateString('en-US',{weekday:'short',month:'short',day:'numeric'})+' \u00b7 '+a.at.toLocaleTimeString('en-US',{hour:'numeric',minute:'2-digit'});
         const cid=_clientIdByName(a.client);
         return '<div class="card" style="padding:0;overflow:hidden;" onclick="nav(\''+(cid?'client':'calendar')+'\''+(cid?",'"+cid+"'":'')+')"><div class="row" style="padding:14px;"><div style="flex:1;min-width:0;"><div style="font-size:15px;font-weight:500;color:var(--p-ink);">'+_fileEsc(a.client)+'</div><div style="font-size:12px;color:var(--p-mut);margin-top:2px;">'+when+(a.dur?' \u00b7 '+a.dur+' min':'')+'</div></div><span class="bdg bg" style="font-size:12px;">Confirmed</span></div>'+_firstVisitNudgeHTML(cid,a.at)+'</div>';
-      }).join('');
+      }).join(''),up.length);
     }
     // Truly empty account: the real first step is adding a client, not connecting Square \u2014 so lead with that.
     if(_gsState().realCount===0){
@@ -5745,6 +5805,7 @@ function _professionWord(){const sp=selectedProfessions,has=x=>sp.includes(x);
   if(has('coach'))return 'coach';
   if(has('contour'))return 'contour';
   if(has('movement'))return 'movement';
+  if(has('equine'))return 'equine';
   return 'skin';}
 // ── Profession-aware, editable client vitals ──
 function _vitalsConfig(){
@@ -5777,6 +5838,21 @@ function _vitalsConfig(){
       {key:'conditions',label:'Health conditions',ph:'Arthritis, osteoporosis, heart, etc.',med:true},
       {key:'lastVisit',label:'Last session',ph:'e.g. Jun 10, 2026'},
       {key:'nextVisit',label:'Next session',ph:'e.g. Jul 8 · 11:00 AM'},
+    ];
+  }
+  // Equine cryotherapy: the "client" is a horse (+ owner). Horse-appropriate fields — no skin type,
+  // Fitzpatrick or pregnancy. Reuses the same storage keys with equine labels.
+  if(w==='equine'){
+    return [
+      {key:'skin',label:'Breed & age',ph:'e.g. Thoroughbred, 12 yrs'},
+      {key:'concerns',label:'Discipline / use',ph:'e.g. Hunter/jumper, trail, retired'},
+      {key:'allergies',label:'Affected area(s)',ph:'e.g. R front tendon, hocks, back, SI'},
+      {key:'currentRoutine',label:'Primary veterinarian',ph:'Name & clinic'},
+      {key:'fitz',label:'Current work level',ph:'e.g. Light work, stall rest, turnout'},
+      {key:'medications',label:'Medications & joint support',ph:'e.g. Bute, Adequan, supplements',med:true},
+      {key:'conditions',label:'Diagnosis / known conditions',ph:'e.g. Suspensory strain, arthritis',med:true},
+      {key:'lastVisit',label:'Last session',ph:'e.g. Jun 10, 2026'},
+      {key:'nextVisit',label:'Next session',ph:'e.g. Jul 8 · 10:00 AM'},
     ];
   }
   // Wellness professions (nutrition, coach) don't have skin/pregnancy-style clinical
@@ -10005,12 +10081,17 @@ const _FORM_DEFS_BY_PROF={
     {icon:'ti-file-description',bg:'var(--p-red-bg)',ic:'var(--p-red)',name:'Liability & informed consent',sub:'Assumption of risk',id:'movement-liability'},
     {icon:'ti-target',bg:'var(--p-surf2)',ic:'var(--p-green)',name:'Goals & program plan',sub:'Goals, channel & program prescribed',id:'movement-goals'},
   ]],
+  equine:['Equine cryotherapy',[
+    {icon:'ti-clipboard-text',bg:'var(--p-surf2)',ic:'var(--p-green)',name:'Equine intake & consent',sub:'Horse + owner history, health flags & consent',id:'equine-intake'},
+    {icon:'ti-activity',bg:'var(--accent-tint)',ic:'var(--accent-strong)',name:'Equine assessment & baseline',sub:'Lameness grade, palpation, ROM & gait',id:'equine-assessment'},
+    {icon:'ti-snowflake',bg:'var(--p-blue-bg)',ic:'var(--p-blue)',name:'Cryotherapy session & progress note',sub:'Areas treated, response & plan',id:'equine-progress'},
+  ]],
 };
 function _formDefById(fid){for(const p in _FORM_DEFS_BY_PROF){const d=_FORM_DEFS_BY_PROF[p][1].find(f=>f.id===fid);if(d)return d;}return null;}
 // Forms scoped to the provider's selected professions (+ their custom forms), deduped.
 function _profFormDefs(){
   const has=p=>selectedProfessions.includes(p);
-  let profs=['tattoo','movement','esty','wax','brow','pmu','lash','hair','barber','makeup','massage','nail','nutrition','contour','coach'].filter(p=>has(p)&&_FORM_DEFS_BY_PROF[p]);
+  let profs=['tattoo','movement','equine','esty','wax','brow','pmu','lash','hair','barber','makeup','massage','nail','nutrition','contour','coach'].filter(p=>has(p)&&_FORM_DEFS_BY_PROF[p]);
   if(!profs.length)profs=['esty'];
   const out=[],seen={};
   // Honor a provider's renamed built-in form: the edit is saved to formTmpls[id].name, so surface
@@ -10090,7 +10171,7 @@ function renderForms(){
   document.getElementById('tt').textContent=_sectionTitle('forms');
   const has=p=>selectedProfessions.includes(p);
   const F=_FORM_DEFS_BY_PROF;
-  let sections=['tattoo','movement','esty','wax','brow','pmu','lash','hair','barber','makeup','massage','nail','nutrition','contour','coach'].filter(p=>has(p)&&F[p]);
+  let sections=['tattoo','movement','equine','esty','wax','brow','pmu','lash','hair','barber','makeup','massage','nail','nutrition','contour','coach'].filter(p=>has(p)&&F[p]);
   if(!sections.length)sections=['esty'];
   // Photo release is bundled into every intake (asked once, auto-captured to the client's file),
   // so it's no longer offered as a separate sendable card here, that duplicated the consent.
@@ -10190,7 +10271,7 @@ function _sendFormClientRows(fid,q){
   return matches.map(cid=>{const c=CL[cid];return`<div style="display:flex;align-items:center;gap:8px;margin-bottom:8px;">
     <button onclick="confirmSendForm('${fid}','${cid}')" style="display:flex;flex:1;min-width:0;align-items:center;gap:10px;padding:11px 12px;border:1px solid var(--p-line);background:var(--surf2);border-radius:10px;cursor:pointer;text-align:left;">
       <div style="width:36px;height:36px;border-radius:9px;background:${c.bg};display:flex;align-items:center;justify-content:center;font-size:13px;font-weight:500;color:${c.tc};flex-shrink:0;">${c.initials}</div>
-      <div style="flex:1;min-width:0;"><div style="font-size:13px;font-weight:500;color:var(--p-ink);overflow:hidden;text-overflow:ellipsis;white-space:nowrap;">${_fileEsc(c.name)}</div><div style="font-size:10.5px;color:var(--p-mut);">To their app</div></div>
+      <div style="flex:1;min-width:0;"><div style="font-size:13px;font-weight:500;color:var(--p-ink);overflow:hidden;text-overflow:ellipsis;white-space:nowrap;">${_fileEsc(c.name)}</div><div style="font-size:10.5px;color:var(--p-mut);">Choose how to send</div></div>
     </button>
     ${canSign?`<button onclick="closeSendProd();renderSignOnDevice('${fid}','${cid}')" aria-label="Sign in person for ${_fileEsc(c.name)}" title="Sign on this device" style="width:42px;height:42px;flex-shrink:0;border:1px solid var(--accent);background:var(--accent-a08);border-radius:10px;display:flex;align-items:center;justify-content:center;cursor:pointer;color:var(--accent-strong);">
       <i class="ti ti-device-tablet" style="font-size:17px;"></i>
@@ -10241,11 +10322,10 @@ async function confirmSendForm(fid,cid){
     // Push to the server and AWAIT the true outcome, so a silent failure (signed out, offline, or a
     // too-large blob) can't masquerade as "Sent" while nothing actually reached the client's app.
     closeSendProd();
-    const _first=c.name.split(' ')[0];
-    proToast('Sending to '+_first+'…',0);
-    const _res=await _pushClientNow(cid);
-    if(_res.ok){const _extra=sendIds.length>1?` + ${sendIds.length-1} more`:'';proToast(`Sent ${tmpl.name}${_extra}${guides.length?` + ${guides.length} guide${guides.length>1?'s':''}`:''} to ${_first} ✓`);}
-    else proToast(_res.msg,0);
+    // Give the provider a choice of delivery — push to their app now, OR email/text/copy a link —
+    // instead of a silent app-only send. Forms + guides are already assigned above, so whichever path
+    // they pick carries them (the sheet's "Send to their app now" pushes; the link options share it).
+    shareFormLink(fid,cid);
     return;
   }else if(cid!=='maya'){
     // Neither the demo client nor a resolvable real client — don't claim "Sent" and drop it.
@@ -11352,6 +11432,9 @@ let formGuides={
   'tattoo-intake':['g-tattoo-prep'],
   'tattoo-consent':['g-tattoo-after'],
   'tattoo-aftercare':['g-tattoo-after','g-tattoo-healing'],
+  'equine-intake':['g-equine-prep'],
+  'equine-assessment':['g-equine-series'],
+  'equine-progress':['g-equine-after','g-equine-between'],
   'peel':['g-esty-peel'],
   'micro':['g-esty-micro'],
   'derma':['g-esty-derma'],
@@ -12384,6 +12467,7 @@ function shareFormLink(fid,cid){
   const c=CL[cid];if(!c)return;
   const sendIds=_isIntakeForm(fid)?_withPhotoRelease(fid):[fid];
   _assignFormsToClient(c,sendIds);
+  try{_assignGuidesToClient(c,formGuideList(fid));}catch(e){} // carry any guides attached to this form
   try{saveClients();}catch(e){}
   try{if(typeof _pushKeyNow==='function')_pushKeyNow('sc_clients',localStorage.getItem('sc_clients')||'');}catch(e){}
   if(!c._token){ inviteClientToApp(cid); return; }
@@ -12774,7 +12858,8 @@ const _DOC_TEMPLATES={
   massage:[{name:'Massage Therapy License (LMT)',cat:'License',hint:'State board'},{name:'Professional Liability Insurance',cat:'Insurance',hint:'ABMP / AMTA'},{name:'CPR / First Aid Certificate',cat:'Certifications',hint:'Red Cross / AHA'}],
   nutrition:[{name:'Nutritionist / Dietitian Credential',cat:'Certifications',hint:'RD, CN, or CNS'},{name:'Professional Liability Insurance',cat:'Insurance',hint:'Your insurer'},{name:'Business License',cat:'Business',hint:'City / county'}],
   contour:[{name:'Body Contouring Certification',cat:'Certifications',hint:'Training provider'},{name:'Professional Liability Insurance',cat:'Insurance',hint:'Your insurer'}],
-  coach:[{name:'Coaching Certification',cat:'Certifications',hint:'Credentialing body'},{name:'Professional Liability Insurance',cat:'Insurance',hint:'Your insurer'}]
+  coach:[{name:'Coaching Certification',cat:'Certifications',hint:'Credentialing body'},{name:'Professional Liability Insurance',cat:'Insurance',hint:'Your insurer'}],
+  equine:[{name:'Veterinary Technician License / Credential',cat:'License',hint:'State vet board (RVT / CVT / LVT)'},{name:'America Cryo Equine Certification',cat:'Certifications',hint:'America Cryo training'},{name:'Equine / Professional Liability Insurance',cat:'Insurance',hint:'Your insurer'},{name:'Business License',cat:'Business',hint:'City / county'}]
 };
 function _suggestedDocs(){
   const have=new Set(docs.map(d=>(d.name||'').toLowerCase().trim()));
@@ -14011,7 +14096,17 @@ let onboardStep=0;
 const ONBOARD_STEPS=['welcome','beta','profession','business','availability','square','install','invite','tips','explore','done'];
 let onboardData={
   biz:{name:'',owner:''},
-  avail:{days:{mon:true,tue:true,wed:true,thu:true,fri:true,sat:true,sun:false},start:'09:00',end:'17:00'},
+  // Per-day hours (each day its own open/start/end) so providers can set e.g. Sat 10–2 while
+  // weekdays run 9–5. Matches the Settings availability editor's shape (normalizeAvail).
+  avail:{
+    mon:{open:true,start:'09:00',end:'17:00'},
+    tue:{open:true,start:'09:00',end:'17:00'},
+    wed:{open:true,start:'09:00',end:'17:00'},
+    thu:{open:true,start:'09:00',end:'17:00'},
+    fri:{open:true,start:'09:00',end:'17:00'},
+    sat:{open:true,start:'09:00',end:'17:00'},
+    sun:{open:false,start:'09:00',end:'17:00'},
+  },
 };
 
 function onboardComplete(){return !!localStorage.getItem('sc_onboarded');}
@@ -14020,7 +14115,7 @@ function showOnboarding(){
   onboardStep=0;
   onboardData.biz={name:bizInfo.name||'',owner:bizInfo.ownerName||''};
   const existingAvail=SlickBridge.getAvailability();
-  if(existingAvail)onboardData.avail=existingAvail;
+  if(existingAvail)onboardData.avail=normalizeAvail(existingAvail); // always per-day shape
   renderOnboard();
 }
 function replayOnboarding(){localStorage.removeItem('sc_onboarded');showOnboarding();}
@@ -14031,9 +14126,10 @@ function onboardNext(){
   const step=ONBOARD_STEPS[onboardStep];
   if(step==='profession'&&selectedProfessions.length===0){proToast('Pick at least one profession');return;}
   if(step==='availability'){
-    const st=parseInt(String(onboardData.avail.start||'0'),10),en=parseInt(String(onboardData.avail.end||'0'),10);
-    if(isFinite(st)&&isFinite(en)&&en<=st){proToast('Closing time must be after opening time');return;}
-    if(!Object.values(onboardData.avail.days||{}).some(Boolean)){proToast('Pick at least one working day');return;}
+    const toMin=s=>{const p=String(s||'').split(':');return (parseInt(p[0],10)||0)*60+(parseInt(p[1],10)||0);};
+    const openKeys=DAY_DEFS.filter(([k])=>onboardData.avail[k]&&onboardData.avail[k].open).map(([k])=>k);
+    if(!openKeys.length){proToast('Pick at least one working day');return;}
+    for(const k of openKeys){const d=onboardData.avail[k];if(toMin(d.end)<=toMin(d.start)){proToast('Closing time must be after opening time on '+k.charAt(0).toUpperCase()+k.slice(1));return;}}
   }
   onboardStep++;renderOnboard();
 }
@@ -14066,7 +14162,9 @@ function onboardToggleProf(id){
   }else selectedProfessions.push(id);
   renderOnboard();
 }
-function onboardToggleDay(d){onboardData.avail.days[d]=!onboardData.avail.days[d];renderOnboard();}
+function onboardToggleDay(d){onboardData.avail[d].open=!onboardData.avail[d].open;renderOnboard();}
+function onboardSetHour(k,which,v){onboardData.avail[k][which]=v;}
+function onboardCopyHoursToAll(){const ref=onboardData.avail.mon;DAY_DEFS.forEach(([k])=>{if(onboardData.avail[k].open){onboardData.avail[k].start=ref.start;onboardData.avail[k].end=ref.end;}});renderOnboard();proToast('Applied Monday\'s hours to all open days');}
 function onboardConnectSquare(){_persistOnboarding();try{localStorage.setItem('sc_onboarded','1');}catch(e){}if(typeof _sqConnect==='function'){_sqConnect();}else{onboardNext();}}
 
 function _togglePw(id,btn){
@@ -14707,24 +14805,27 @@ function renderOnboard(){
   }
 
   else if(step==='availability'){
-    const dayDefs=[['mon','Mon'],['tue','Tue'],['wed','Wed'],['thu','Thu'],['fri','Fri'],['sat','Sat'],['sun','Sun']];
-    const startOpts=[['07:00','7 AM'],['08:00','8 AM'],['09:00','9 AM'],['10:00','10 AM'],['11:00','11 AM']];
-    const endOpts=[['15:00','3 PM'],['16:00','4 PM'],['17:00','5 PM'],['18:00','6 PM'],['19:00','7 PM'],['20:00','8 PM']];
+    const opts=(sel)=>halfHourOptions().map(o=>`<option value="${o.v}"${o.v===sel?' selected':''}>${o.l}</option>`).join('');
     body=`
     <div style="padding:30px 24px 8px;">
       <div style="font-size:22px;font-weight:600;color:var(--p-ink);margin-bottom:6px;">When are you open?</div>
-      <div style="font-size:14px;color:var(--p-mut);line-height:1.6;margin-bottom:18px;">Clients can only request appointments on these days and hours. Set it once, change it anytime.</div>
-      <span class="fl-lbl">Working days</span>
-      <div style="display:flex;gap:6px;margin:8px 0 18px;">
-        ${dayDefs.map(([k,l])=>{const on=onboardData.avail.days[k];return`<button onclick="onboardToggleDay('${k}')" style="flex:1;border:1.5px solid ${on?'var(--accent)':'var(--p-chip)'};background:${on?'var(--accent-tint)':'var(--p-surf3)'};color:${on?'var(--accent)':'#666'};border-radius:9px;padding:10px 0;font-size:12px;font-weight:600;cursor:pointer;">${l}</button>`;}).join('')}
+      <div style="font-size:14px;color:var(--p-mut);line-height:1.6;margin-bottom:16px;">Set hours for each day, they can be different. Clients can only request appointments within them. Change anytime.</div>
+      <div style="background:var(--surf2);border:1px solid var(--p-line);border-radius:12px;overflow:hidden;">
+        ${DAY_DEFS.map(([k,label])=>{const d=onboardData.avail[k];return`
+        <div style="display:flex;align-items:center;gap:9px;padding:9px 12px;border-bottom:1px solid var(--p-line2);">
+          <button onclick="onboardToggleDay('${k}')" role="switch" aria-checked="${d.open}" aria-label="${label} open" style="width:38px;height:23px;border-radius:12px;border:none;-webkit-appearance:none;appearance:none;padding:0;margin:0;box-sizing:border-box;background:${d.open?'var(--accent)':'var(--p-chip)'};position:relative;cursor:pointer;flex-shrink:0;">
+            <span aria-hidden="true" style="position:absolute;top:3px;left:${d.open?'18':'3'}px;width:17px;height:17px;border-radius:50%;background:#fff;transition:left .15s;"></span>
+          </button>
+          <span style="width:34px;font-size:13px;font-weight:600;color:${d.open?'var(--p-ink)':'#666'};flex-shrink:0;">${label.slice(0,3)}</span>
+          ${d.open?`
+            <select onchange="onboardSetHour('${k}','start',this.value)" aria-label="${label} open time" style="flex:1;min-width:0;background:var(--p-bg);border:1px solid var(--p-line);border-radius:7px;padding:7px 4px;font-size:12px;color:var(--p-ink);font-family:inherit;">${opts(d.start)}</select>
+            <span style="font-size:12px;color:var(--p-mut);flex-shrink:0;">–</span>
+            <select onchange="onboardSetHour('${k}','end',this.value)" aria-label="${label} close time" style="flex:1;min-width:0;background:var(--p-bg);border:1px solid var(--p-line);border-radius:7px;padding:7px 4px;font-size:12px;color:var(--p-ink);font-family:inherit;">${opts(d.end)}</select>
+          `:`<span style="flex:1;font-size:12px;color:var(--p-mut);">Closed</span>`}
+        </div>`;}).join('')}
       </div>
-      <span class="fl-lbl">Hours</span>
-      <div style="display:flex;gap:10px;align-items:center;margin-top:8px;">
-        <select aria-label="Opening time" class="fi" onchange="onboardData.avail.start=this.value" style="flex:1;">${startOpts.map(([v,l])=>`<option value="${v}"${onboardData.avail.start===v?' selected':''}>${l}</option>`).join('')}</select>
-        <span style="font-size:13px;color:var(--p-mut);">to</span>
-        <select aria-label="Closing time" class="fi" onchange="onboardData.avail.end=this.value" style="flex:1;">${endOpts.map(([v,l])=>`<option value="${v}"${onboardData.avail.end===v?' selected':''}>${l}</option>`).join('')}</select>
-      </div>
-      <div style="margin-top:18px;background:var(--p-surf2);border:1px solid var(--p-green-line);border-radius:11px;padding:12px 13px;display:flex;gap:9px;align-items:flex-start;">
+      <button onclick="onboardCopyHoursToAll()" style="margin-top:10px;width:100%;background:none;border:1px solid var(--p-line);border-radius:9px;padding:9px;font-size:12px;font-weight:600;color:var(--accent-strong);cursor:pointer;font-family:inherit;display:flex;align-items:center;justify-content:center;gap:6px;"><i class="ti ti-copy" style="font-size:13px;"></i> Same hours daily? Copy Monday to all open days</button>
+      <div style="margin-top:14px;background:var(--p-surf2);border:1px solid var(--p-green-line);border-radius:11px;padding:12px 13px;display:flex;gap:9px;align-items:flex-start;">
         <i class="ti ti-calendar-check" style="font-size:14px;color:var(--p-green);flex-shrink:0;margin-top:1px;"></i>
         <span style="font-size:12px;color:var(--p-mut2);line-height:1.6;">This powers your booking requests, clients' app shows exactly these slots, and their requests land in your inbox to confirm.</span>
       </div>
@@ -14859,7 +14960,7 @@ function renderOnboard(){
   else if(step==='done'){
     showSkip=false;showBack=false;
     const profNames=allProfessions.filter(p=>selectedProfessions.includes(p.id)).map(p=>p.name).join(', ');
-    const openDays=Object.entries(onboardData.avail.days).filter(([,v])=>v).length;
+    const openDays=DAY_DEFS.filter(([k])=>onboardData.avail[k]&&onboardData.avail[k].open).length;
     body=`
     <div style="flex:1;display:flex;flex-direction:column;align-items:center;justify-content:center;padding:40px 26px 12px;text-align:center;">
       <div style="width:84px;height:84px;border-radius:50%;background:linear-gradient(135deg,var(--accent-tint),var(--accent-tint2));display:flex;align-items:center;justify-content:center;margin-bottom:22px;">
@@ -16105,7 +16206,8 @@ const _SVC_MENU_BY_PROF={
     nutrition:[['Initial Consult',120],['Follow-up',75],['Custom Meal Plan',150],['3-Month Package',400]],
     contour:[['Contour Session',120],['Wood Therapy',110],['Lymphatic Drainage',95],['Package of 6',600]],
     coach:[['Initial Assessment',90],['Training Session',70],['Package of 10',600],['Monthly Coaching',250]],
-    movement:[['Movement Assessment',95],['Private Session',80],['Package of 6 Sessions',450],['Monthly Membership',150],['Online Studio Membership',49],['Small-Group Class',25]]
+    movement:[['Movement Assessment',95],['Private Session',80],['Package of 6 Sessions',450],['Monthly Membership',150],['Online Studio Membership',49],['Small-Group Class',25]],
+    equine:[['Initial Assessment & Baseline',125],['Cryotherapy Session',85],['Package of 6 Sessions',450],['Follow-up Assessment',75],['Barn Call / Travel Fee',40]]
 };
 // Every default service across ALL professions, as a set of "name|price" keys. Used to tell a
 // provider-customized menu (any service that matches no profession default) from a pristine \u2014 even
