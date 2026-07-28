@@ -238,8 +238,8 @@ export async function upsertClient(providerId, c) {
         phone = EXCLUDED.phone,
         updated_at = EXCLUDED.updated_at,
         data = CASE
-          WHEN COALESCE(jsonb_array_length(EXCLUDED.data->'pendingForms'), 0) = 0
-               AND COALESCE(jsonb_array_length(clients.data->'pendingForms'), 0) > 0
+          WHEN COALESCE(CASE WHEN jsonb_typeof(EXCLUDED.data->'pendingForms')='array' THEN jsonb_array_length(EXCLUDED.data->'pendingForms') END, 0) = 0
+               AND COALESCE(CASE WHEN jsonb_typeof(clients.data->'pendingForms')='array' THEN jsonb_array_length(clients.data->'pendingForms') END, 0) > 0
             THEN jsonb_set(EXCLUDED.data, '{pendingForms}', clients.data->'pendingForms')
           ELSE EXCLUDED.data
         END

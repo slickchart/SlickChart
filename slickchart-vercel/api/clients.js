@@ -31,8 +31,20 @@ export default async function handler(req, res) {
       const del = Array.isArray(body.deletedIds) ? body.deletedIds : [];
       if (del.length) { try { await Promise.all(del.slice(0, 500).map(id => markClientDeleted(provider, String(id)))); } catch (e) { /* best-effort */ } }
       const list = Array.isArray(body.clients) ? body.clients : [];
-      const out = await Promise.all(list.slice(0, 2000).map(c => upsertClient(provider, c)));
-      res.status(200).json({ ok: true, saved: out.length, clients: out });
+      // Isolate per-client failures: one client whose blob makes the DB throw must NOT 500 the whole
+      // batch and block every other client's sync (that stalls form delivery account-wide). Save each
+      // independently; return the ones that saved, and report the ones that didn't.
+      const settled = await Promise.allSettled(list.slice(0, 2000).map(c => upsertClient(provider, c)));
+      const out = [], failed = [];
+      settled.forEach((r, i) => {
+        if (r.status === 'fulfilled') { out.push(r.value); }
+        else {
+          const c = list[i] || {};
+          failed.push({ id: c.id || null });
+          console.error('[clients] upsert failed for', c && c.id, r.reason && (r.reason.stack || r.reason.message) || r.reason);
+        }
+      });
+      res.status(200).json({ ok: true, saved: out.length, clients: out, failed });
       return;
     }
     res.status(405).json({ error: 'Method not allowed' });
