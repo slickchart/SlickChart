@@ -50,9 +50,9 @@ page (e.g. `A1B2C3D4E5`).
    ```
 2. Paste in your notarization credentials (replace the three values):
    ```bash
-   export APPLE_ID="botanicalaestheticsbyashley@gmail.com"
+   export APPLE_ID="slickchart2026@gmail.com"
    export APPLE_APP_SPECIFIC_PASSWORD="xxxx-xxxx-xxxx-xxxx"
-   export APPLE_TEAM_ID="YOURTEAMID"
+   export APPLE_TEAM_ID="774LQ68Z3X"
    ```
 3. Build, sign, and notarize in one go:
    ```bash
