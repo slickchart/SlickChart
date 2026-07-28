@@ -1382,12 +1382,16 @@ function _persistFailWarn(){
 // actually changed since load/last-save (compared against a baseline signature that excludes _uAt), and
 // the pull merge (_mergeClients) keeps the newer copy per client id.
 let _clientSigCache={};
+// Ids whose local data changed since the last confirmed server sync. Populated by _stampClientChanges
+// so the debounced background sync can push ONLY the clients that actually changed instead of the whole
+// roster every time (see _flushClientSync) — the roster-wide push opened hundreds of DB connections.
+let _dirtyClientIds={};
 function _clientSig(c){try{return JSON.stringify(c,function(k,v){return k==='_uAt'?undefined:v;});}catch(e){return '';}}
 // Record the current CL as the baseline (no stamping) — called after a load/pull so only genuinely
 // subsequent edits get a fresh _uAt.
 function _seedClientSigCache(){try{_clientSigCache={};Object.keys(CL).forEach(function(id){var c=CL[id];if(c&&typeof c==='object')_clientSigCache[id]=_clientSig(c);});}catch(e){}}
-function _stampClientChanges(){try{Object.keys(CL).forEach(function(id){var c=CL[id];if(!c||typeof c!=='object')return;var sig=_clientSig(c);if(_clientSigCache[id]!==sig){c._uAt=Date.now();_clientSigCache[id]=sig;}});}catch(e){}}
-function saveClients(opts){let _ok=true;try{_stampClientChanges();}catch(e){}try{localStorage.setItem('sc_clients',JSON.stringify(CL));}catch(e){_ok=false;_persistFailWarn();} if(!(opts&&opts.noSync)&&typeof _scheduleClientSync==='function')_scheduleClientSync();return _ok;}
+function _stampClientChanges(){try{Object.keys(CL).forEach(function(id){var c=CL[id];if(!c||typeof c!=='object')return;var sig=_clientSig(c);if(_clientSigCache[id]!==sig){c._uAt=Date.now();_clientSigCache[id]=sig;_dirtyClientIds[id]=1;}});}catch(e){}}
+function saveClients(opts){let _ok=true;try{_stampClientChanges();}catch(e){}try{localStorage.setItem('sc_clients',JSON.stringify(CL));}catch(e){_ok=false;_persistFailWarn();} if(!(opts&&opts.noSync)&&typeof _scheduleClientSyncDirty==='function')_scheduleClientSyncDirty();return _ok;}
 function _editClientDetails(id){
   const c=CL[id]; if(!c)return;
   const ex=document.getElementById('cl-edit'); if(ex)ex.remove();
@@ -12076,7 +12080,34 @@ function _assembleClientData(id){
   return {studio,studioAddress,studioPhone,website,providerName,profile:{skin:c.skin||'',concerns:c.concerns||'',allergies:c.allergies||'',fitz:c.fitz||'',treatment:c.treatment||'',lastVisit:c.lastVisit||'',nextVisit:c.nextVisit||'',email:c.email||'',phone:c.phone||''},summaries,aftercare,products,routine,forms,pendingForms,pendingGuides,pendingCourses,progressPhotos,booking:{canRequest:true},suggestedBooking,availability,vcInvite,checkinCfg:checkinCfgOut,checkinReqAt:c.checkinReqAt||0,loyalty:loyaltyOut};
 }
 let _syncingClients=false,_clientSyncTimer=null;
-function _scheduleClientSync(){ if(_clientSyncTimer)clearTimeout(_clientSyncTimer); _clientSyncTimer=setTimeout(function(){_syncClientsToServer({});},2500); }
+// Sync bookkeeping: have we pushed the whole roster at least once this session, is the next flush
+// forced to be a full roster push (global change / self-heal), and is a fallback retry already armed.
+let _didFullClientSync=false,_fullSyncPending=false,_dirtyRetryPending=false;
+function _armClientSyncTimer(){ if(_clientSyncTimer)clearTimeout(_clientSyncTimer); _clientSyncTimer=setTimeout(_flushClientSync,2500); }
+// Global change (catalog re-price, branding, product removal) — every client's assembled blob may now
+// differ even though no CL row changed, so force a FULL roster push on the next flush.
+function _scheduleClientSync(){ _fullSyncPending=true; _armClientSyncTimer(); }
+// Targeted change (one or more specific clients edited via saveClients) — flush only the dirty set.
+function _scheduleClientSyncDirty(){ _armClientSyncTimer(); }
+// Decide, at flush time, whether to push the whole roster or just the clients that changed.
+async function _flushClientSync(){
+  _clientSyncTimer=null;
+  // First push of the session, or a global change we can't attribute to specific ids → full roster.
+  if(_fullSyncPending||!_didFullClientSync){ _fullSyncPending=false; try{await _syncClientsToServer({});}catch(e){} return; }
+  const ids=Object.keys(_dirtyClientIds).filter(function(id){return CL[id];});
+  if(!ids.length){ _dirtyClientIds={}; return; }
+  // Clear optimistically so edits made DURING the push aren't dropped (they re-populate the set).
+  _dirtyClientIds={};
+  let res=null; try{res=await _syncSpecificClientsToServer(ids,{});}catch(e){}
+  const ok=res&&res.ok&&Array.isArray(res.clients);
+  if(!ok){
+    // Push didn't confirm — re-mark these dirty and arm a single full-roster retry to self-heal any
+    // drift. The _dirtyRetryPending guard keeps a persistent failure (offline/signed out) from
+    // spinning a tight 2.5s loop.
+    ids.forEach(function(id){ if(CL[id])_dirtyClientIds[id]=1; });
+    if(!_dirtyRetryPending){ _dirtyRetryPending=true; setTimeout(function(){ _dirtyRetryPending=false; _fullSyncPending=true; _armClientSyncTimer(); },2500); }
+  }
+}
 // After changing a client's recommendations/routine/forms: persist the workspace so
 // the change survives reload, and schedule a server sync so the client's own device
 // (which polls /api/client-data, not the same-browser bridge) actually receives it.
@@ -12155,6 +12186,9 @@ async function _syncClientsToServer(opts){
     const r=await fetch('/api/clients',{method:'POST',headers:{'Content-Type':'application/json','Authorization':'Bearer '+tok},body:JSON.stringify({clients:list})});
     let j={};try{j=await r.json();}catch(e){}
     if(r.ok&&j&&j.ok&&Array.isArray(j.clients)){
+      // The whole roster is now on the server, so nothing is outstanding — reset the dirty set and
+      // mark that future flushes can trust it (send only changed clients).
+      _didFullClientSync=true; _dirtyClientIds={};
       j.clients.forEach(function(sc){ if(CL[sc.id])CL[sc.id]._token=sc.token; });
       try{saveClients({noSync:true});}catch(e){}
       try{if(typeof _flushAllPendingProviderMsgs==='function')_flushAllPendingProviderMsgs();}catch(e){}
