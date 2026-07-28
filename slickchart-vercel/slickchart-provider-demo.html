@@ -844,6 +844,10 @@ const coursesByProf={
     {id:'cmv5',title:'BarreFLOW 101',icon:'ti-walk',bg:'var(--p-red-bg)',ic:'var(--p-red)',bdg:'br',status:'Draft',price:'$29',modules:4,duration:'30 min',enrolled:0,revenue:0,progress:0,desc:'Foot therapy, lymphatic health, and hip mobility in a gentle, barre-style flow.'},
     {id:'cmv6',title:'Office Therapy — Fix Your Posture',icon:'ti-armchair',bg:'var(--p-blue-bg)',ic:'var(--p-blue)',bdg:'bb',status:'Draft',price:'Free',modules:3,duration:'20 min',enrolled:0,revenue:0,progress:0,desc:'Desk-friendly resets for posture, neck, and hips you can do between meetings.'},
   ],
+  equine:[
+    {id:'ceq1',title:'Cryotherapy for Your Horse: What to Expect',icon:'ti-snowflake',bg:'var(--p-blue-bg)',ic:'var(--p-blue)',bdg:'bb',status:'Draft',price:'Free',modules:4,duration:'25 min',enrolled:0,revenue:0,progress:0,desc:'How localized cold therapy supports tendon, ligament & joint recovery — the session series, what results to expect, and how it works alongside your veterinarian.'},
+    {id:'ceq2',title:'Between Sessions: Home Care & Rehab',icon:'ti-run',bg:'var(--p-surf2)',ic:'var(--p-green)',bdg:'bg',status:'Draft',price:'$19',modules:4,duration:'30 min',enrolled:0,revenue:0,progress:0,desc:'Turnout and controlled exercise during rehab, daily checks, cold-hosing if prescribed, and progress videos — getting the most from your horse’s treatment series.'},
+  ],
 };
 // Signature + reseed so courses follow the provider's profession until they customize.
 function _coursesSig(arr){return (arr||[]).map(c=>String(c.id||'')+'|'+String(c.title||'')).join(',');}
@@ -853,7 +857,9 @@ function _coursesDefaults(){
   const profs=(typeof selectedProfessions!=='undefined'&&Array.isArray(selectedProfessions)&&selectedProfessions.length)?selectedProfessions:[];
   const seen=new Set();const out=[];
   profs.forEach(pr=>{(coursesByProf[pr]||[]).forEach(c=>{if(!seen.has(c.id)){seen.add(c.id);out.push(Object.assign({},c));}});});
-  return out.length?out:_estyCourses.map(c=>Object.assign({},c));
+  // Never fall back to esty courses — a profession with no course set (or none selected) gets an
+  // empty Courses tab, not someone else's skincare courses. Equine etc. seed their own above.
+  return out;
 }
 function _reseedCoursesIfDefault(){
   try{
@@ -2821,6 +2827,7 @@ function applyProfessionConfig(){
   // fixes a menu that was auto-seeded with esty before the real professions loaded.
   if(typeof _reseedSvcMenuIfDefault==='function')_reseedSvcMenuIfDefault();
   if(typeof _reseedCoursesIfDefault==='function')_reseedCoursesIfDefault();
+  if(typeof _reseedShopIfDefault==='function')_reseedShopIfDefault();
 }
 
 
@@ -3679,6 +3686,38 @@ function persistAffiliateLinks(){try{(function(_v){localStorage.setItem('sc_affi
 // Mark the product list as provider-customized (immediate push) so boot never reseeds demo products
 // over their real shop. Set on every add/edit/delete of a product.
 function _markAffiliateCustom(){try{localStorage.setItem('sc_affiliate_custom','1');if(typeof _pushKeyNow==='function')_pushKeyNow('sc_affiliate_custom','1');}catch(e){}}
+// Starter retail/recommend products per profession — seeds a fresh catalog so a new provider isn't
+// empty (or stuck with another trade's sample products). Provider replaces the links with their own
+// affiliate URLs; editing anything marks the shop custom and stops reseeding.
+const _SHOP_STARTER_BY_PROF={
+  equine:[
+    {id:'eq_p1',name:'Ice Horse Tendon Wraps',brand:'Ice Horse',icon:'🧊'},
+    {id:'eq_p2',name:'Sore No-More Liniment',brand:'Arenus',icon:'🧴'},
+    {id:'eq_p3',name:'Uptite Poultice',brand:'Uptite',icon:'🩹'},
+    {id:'eq_p4',name:'Back on Track Mesh Sheet',brand:'Back on Track',icon:'🐴'},
+    {id:'eq_p5',name:'Arnica Cooling Gel',brand:'Equilite',icon:'❄️'},
+  ],
+};
+function _shopStarterDefaults(){
+  const profs=(typeof selectedProfessions!=='undefined'&&Array.isArray(selectedProfessions)&&selectedProfessions.length)?selectedProfessions:[];
+  const seen=new Set();const out=[];
+  profs.forEach(pr=>{(_SHOP_STARTER_BY_PROF[pr]||[]).forEach(p=>{const k=String(p.name||'').toLowerCase();if(!seen.has(k)){seen.add(k);out.push(Object.assign({url:'',clicks:0,earnings:0,commission:'',active:true},p));}});});
+  return out;
+}
+// Seed the profession's starter products ONLY over a pristine catalog (empty, or the esty demo
+// samples a1–a4). Never over real products (sc_affiliate_custom, or any non-sample id present).
+function _reseedShopIfDefault(){
+  try{
+    if(localStorage.getItem('sc_affiliate_custom')==='1')return;
+    const starters=_shopStarterDefaults();
+    if(!starters.length)return;                         // no starter set for this profession — leave the catalog as-is
+    const cur=(typeof affiliateLinks!=='undefined'&&Array.isArray(affiliateLinks))?affiliateLinks:[];
+    const pristine=!cur.length||cur.every(a=>a&&_SAMPLE_PRODUCT_IDS.indexOf(a.id)>=0);
+    if(!pristine)return;                                // real or already-seeded products present — don't clobber
+    affiliateLinks=starters;
+    try{persistAffiliateLinks();}catch(e){}
+  }catch(e){}
+}
 // The client-facing "Shop all" catalog: every active product, stripped of private fields
 // (earnings, clicks, commission). Synced to a provider-level KV the client reads (api/client-data
 // → sc_shop_catalog), so the client's Shop can list the full catalog without bloating each client's
@@ -5756,6 +5795,7 @@ function _professionWord(){const sp=selectedProfessions,has=x=>sp.includes(x);
   if(has('coach'))return 'coach';
   if(has('contour'))return 'contour';
   if(has('movement'))return 'movement';
+  if(has('equine'))return 'equine';
   return 'skin';}
 // ── Profession-aware, editable client vitals ──
 function _vitalsConfig(){
@@ -5788,6 +5828,21 @@ function _vitalsConfig(){
       {key:'conditions',label:'Health conditions',ph:'Arthritis, osteoporosis, heart, etc.',med:true},
       {key:'lastVisit',label:'Last session',ph:'e.g. Jun 10, 2026'},
       {key:'nextVisit',label:'Next session',ph:'e.g. Jul 8 · 11:00 AM'},
+    ];
+  }
+  // Equine cryotherapy: the "client" is a horse (+ owner). Horse-appropriate fields — no skin type,
+  // Fitzpatrick or pregnancy. Reuses the same storage keys with equine labels.
+  if(w==='equine'){
+    return [
+      {key:'skin',label:'Breed & age',ph:'e.g. Thoroughbred, 12 yrs'},
+      {key:'concerns',label:'Discipline / use',ph:'e.g. Hunter/jumper, trail, retired'},
+      {key:'allergies',label:'Affected limb(s) / area',ph:'e.g. R front tendon, hocks'},
+      {key:'currentRoutine',label:'Primary veterinarian',ph:'Name & clinic'},
+      {key:'fitz',label:'Current work level',ph:'e.g. Light work, stall rest, turnout'},
+      {key:'medications',label:'Medications & joint support',ph:'e.g. Bute, Adequan, supplements',med:true},
+      {key:'conditions',label:'Diagnosis / known conditions',ph:'e.g. Suspensory strain, arthritis',med:true},
+      {key:'lastVisit',label:'Last session',ph:'e.g. Jun 10, 2026'},
+      {key:'nextVisit',label:'Next session',ph:'e.g. Jul 8 · 10:00 AM'},
     ];
   }
   // Wellness professions (nutrition, coach) don't have skin/pregnancy-style clinical
@@ -11367,6 +11422,9 @@ let formGuides={
   'tattoo-intake':['g-tattoo-prep'],
   'tattoo-consent':['g-tattoo-after'],
   'tattoo-aftercare':['g-tattoo-after','g-tattoo-healing'],
+  'equine-intake':['g-equine-prep'],
+  'equine-assessment':['g-equine-series'],
+  'equine-progress':['g-equine-after','g-equine-between'],
   'peel':['g-esty-peel'],
   'micro':['g-esty-micro'],
   'derma':['g-esty-derma'],
