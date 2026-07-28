@@ -587,7 +587,9 @@ function _readableAccent(hex){
   for(let i=0;i<24;i++){d=_mixDark(d,0.9);if(_cr(_lumHex(d),1)>=4.5)return{accent:d,ink:'#ffffff'};}
   return{accent:d,ink:_ink(d)};
 }
-function loadClientBrand(){try{const s=localStorage.getItem('sc_brand_colors');if(s)return JSON.parse(s);}catch(e){}return{primary:'#0F8A7E',secondary:'#1E7FB0'};}
+// Client-namespaced so a dual client+provider (same email, same browser origin) doesn't read the
+// provider app's OWN brand into their client portal. The client's provider brand rides the synced blob.
+function loadClientBrand(){try{const s=localStorage.getItem('sc_client_brand_colors');if(s)return JSON.parse(s);}catch(e){}return{primary:'#0F8A7E',secondary:'#1E7FB0'};}
 let clientBrand=loadClientBrand();
 function applyClientTheme(b){
   if(b)clientBrand=b;
@@ -674,7 +676,7 @@ SlickBridge.on('brand-update',b=>{
 
 SlickBridge.on('checkin-config',cfg=>{
   // the connected provider edited what comfort options clients can choose, persist for next open
-  try{localStorage.setItem('sc_checkin_cfg',JSON.stringify(cfg));}catch(e){}
+  try{localStorage.setItem('sc_client_checkin_cfg',JSON.stringify(cfg));}catch(e){}
 });
 
 SlickBridge.on('session-summary',s=>{
@@ -2083,7 +2085,7 @@ function _advancePrevisitFlow(doneLabel){
 // provider's "auto-send timing" setting (rides in the synced check-in config), not a hardcoded 24h.
 function _checkinWindowHours(){
   try{
-    const cfg=JSON.parse(localStorage.getItem('sc_checkin_cfg')||'null');
+    const cfg=JSON.parse(localStorage.getItem('sc_client_checkin_cfg')||'null');
     const when=cfg&&cfg.autoSend&&cfg.autoSend.when;
     const map={'2 hours':2,'1 day':24,'2 days':48,'3 days':72};
     return map[when]||24;
@@ -3090,7 +3092,7 @@ function _ciStepsFromCfg(cfg){
   return steps;
 }
 function loadClientCheckinCfg(){
-  try{const v=localStorage.getItem('sc_checkin_cfg');return v?JSON.parse(v):null;}catch(e){return null;}
+  try{const v=localStorage.getItem('sc_client_checkin_cfg');return v?JSON.parse(v):null;}catch(e){return null;}
 }
 function _comfortStepFromCfg(cfg){
   if(cfg.chairComfortOn===false)return null;   // provider removed the section
@@ -5279,7 +5281,9 @@ function _applyRealClientData(j){
   try{const _sv=JSON.parse(localStorage.getItem('sc_client_saved')||'null');if(Array.isArray(_sv))p.saved=_sv;}catch(e){}
   // The provider's real check-in config rides in the blob (d.checkinCfg); persist it where the
   // client's check-in reads it, so a real client sees THEIR provider's questions, not Maya's.
-  try{if(d.checkinCfg&&typeof d.checkinCfg==='object')localStorage.setItem('sc_checkin_cfg',JSON.stringify(d.checkinCfg));}catch(e){}
+  // Client-namespaced key: a dual client+provider on the same origin must not overwrite the
+  // provider app's own 'sc_checkin_cfg' with the config of the provider they're a client of.
+  try{if(d.checkinCfg&&typeof d.checkinCfg==='object')localStorage.setItem('sc_client_checkin_cfg',JSON.stringify(d.checkinCfg));}catch(e){}
   // Latest pre-visit check-in request nonce from the provider (bumped when they send a first-visit
   // package). Feeds _ciSig so a freshly-requested check-in resets to "not done" even with no appointment.
   p.checkinReqAt=(d.checkinReqAt!=null)?d.checkinReqAt:0;

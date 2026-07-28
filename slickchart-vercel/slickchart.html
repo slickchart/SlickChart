@@ -13984,7 +13984,17 @@ let onboardStep=0;
 const ONBOARD_STEPS=['welcome','beta','profession','business','availability','square','install','invite','tips','explore','done'];
 let onboardData={
   biz:{name:'',owner:''},
-  avail:{days:{mon:true,tue:true,wed:true,thu:true,fri:true,sat:true,sun:false},start:'09:00',end:'17:00'},
+  // Per-day hours (each day its own open/start/end) so providers can set e.g. Sat 10–2 while
+  // weekdays run 9–5. Matches the Settings availability editor's shape (normalizeAvail).
+  avail:{
+    mon:{open:true,start:'09:00',end:'17:00'},
+    tue:{open:true,start:'09:00',end:'17:00'},
+    wed:{open:true,start:'09:00',end:'17:00'},
+    thu:{open:true,start:'09:00',end:'17:00'},
+    fri:{open:true,start:'09:00',end:'17:00'},
+    sat:{open:true,start:'09:00',end:'17:00'},
+    sun:{open:false,start:'09:00',end:'17:00'},
+  },
 };
 
 function onboardComplete(){return !!localStorage.getItem('sc_onboarded');}
@@ -13993,7 +14003,7 @@ function showOnboarding(){
   onboardStep=0;
   onboardData.biz={name:bizInfo.name||'',owner:bizInfo.ownerName||''};
   const existingAvail=SlickBridge.getAvailability();
-  if(existingAvail)onboardData.avail=existingAvail;
+  if(existingAvail)onboardData.avail=normalizeAvail(existingAvail); // always per-day shape
   renderOnboard();
 }
 function replayOnboarding(){localStorage.removeItem('sc_onboarded');showOnboarding();}
@@ -14004,9 +14014,10 @@ function onboardNext(){
   const step=ONBOARD_STEPS[onboardStep];
   if(step==='profession'&&selectedProfessions.length===0){proToast('Pick at least one profession');return;}
   if(step==='availability'){
-    const st=parseInt(String(onboardData.avail.start||'0'),10),en=parseInt(String(onboardData.avail.end||'0'),10);
-    if(isFinite(st)&&isFinite(en)&&en<=st){proToast('Closing time must be after opening time');return;}
-    if(!Object.values(onboardData.avail.days||{}).some(Boolean)){proToast('Pick at least one working day');return;}
+    const toMin=s=>{const p=String(s||'').split(':');return (parseInt(p[0],10)||0)*60+(parseInt(p[1],10)||0);};
+    const openKeys=DAY_DEFS.filter(([k])=>onboardData.avail[k]&&onboardData.avail[k].open).map(([k])=>k);
+    if(!openKeys.length){proToast('Pick at least one working day');return;}
+    for(const k of openKeys){const d=onboardData.avail[k];if(toMin(d.end)<=toMin(d.start)){proToast('Closing time must be after opening time on '+k.charAt(0).toUpperCase()+k.slice(1));return;}}
   }
   onboardStep++;renderOnboard();
 }
@@ -14039,7 +14050,9 @@ function onboardToggleProf(id){
   }else selectedProfessions.push(id);
   renderOnboard();
 }
-function onboardToggleDay(d){onboardData.avail.days[d]=!onboardData.avail.days[d];renderOnboard();}
+function onboardToggleDay(d){onboardData.avail[d].open=!onboardData.avail[d].open;renderOnboard();}
+function onboardSetHour(k,which,v){onboardData.avail[k][which]=v;}
+function onboardCopyHoursToAll(){const ref=onboardData.avail.mon;DAY_DEFS.forEach(([k])=>{if(onboardData.avail[k].open){onboardData.avail[k].start=ref.start;onboardData.avail[k].end=ref.end;}});renderOnboard();proToast('Applied Monday\'s hours to all open days');}
 function onboardConnectSquare(){_persistOnboarding();try{localStorage.setItem('sc_onboarded','1');}catch(e){}if(typeof _sqConnect==='function'){_sqConnect();}else{onboardNext();}}
 
 function _togglePw(id,btn){
@@ -14680,24 +14693,27 @@ function renderOnboard(){
   }
 
   else if(step==='availability'){
-    const dayDefs=[['mon','Mon'],['tue','Tue'],['wed','Wed'],['thu','Thu'],['fri','Fri'],['sat','Sat'],['sun','Sun']];
-    const startOpts=[['07:00','7 AM'],['08:00','8 AM'],['09:00','9 AM'],['10:00','10 AM'],['11:00','11 AM']];
-    const endOpts=[['15:00','3 PM'],['16:00','4 PM'],['17:00','5 PM'],['18:00','6 PM'],['19:00','7 PM'],['20:00','8 PM']];
+    const opts=(sel)=>halfHourOptions().map(o=>`<option value="${o.v}"${o.v===sel?' selected':''}>${o.l}</option>`).join('');
     body=`
     <div style="padding:30px 24px 8px;">
       <div style="font-size:22px;font-weight:600;color:var(--p-ink);margin-bottom:6px;">When are you open?</div>
-      <div style="font-size:14px;color:var(--p-mut);line-height:1.6;margin-bottom:18px;">Clients can only request appointments on these days and hours. Set it once, change it anytime.</div>
-      <span class="fl-lbl">Working days</span>
-      <div style="display:flex;gap:6px;margin:8px 0 18px;">
-        ${dayDefs.map(([k,l])=>{const on=onboardData.avail.days[k];return`<button onclick="onboardToggleDay('${k}')" style="flex:1;border:1.5px solid ${on?'var(--accent)':'var(--p-chip)'};background:${on?'var(--accent-tint)':'var(--p-surf3)'};color:${on?'var(--accent)':'#666'};border-radius:9px;padding:10px 0;font-size:12px;font-weight:600;cursor:pointer;">${l}</button>`;}).join('')}
+      <div style="font-size:14px;color:var(--p-mut);line-height:1.6;margin-bottom:16px;">Set hours for each day, they can be different. Clients can only request appointments within them. Change anytime.</div>
+      <div style="background:var(--surf2);border:1px solid var(--p-line);border-radius:12px;overflow:hidden;">
+        ${DAY_DEFS.map(([k,label])=>{const d=onboardData.avail[k];return`
+        <div style="display:flex;align-items:center;gap:9px;padding:9px 12px;border-bottom:1px solid var(--p-line2);">
+          <button onclick="onboardToggleDay('${k}')" role="switch" aria-checked="${d.open}" aria-label="${label} open" style="width:38px;height:23px;border-radius:12px;border:none;-webkit-appearance:none;appearance:none;padding:0;margin:0;box-sizing:border-box;background:${d.open?'var(--accent)':'var(--p-chip)'};position:relative;cursor:pointer;flex-shrink:0;">
+            <span aria-hidden="true" style="position:absolute;top:3px;left:${d.open?'18':'3'}px;width:17px;height:17px;border-radius:50%;background:#fff;transition:left .15s;"></span>
+          </button>
+          <span style="width:34px;font-size:13px;font-weight:600;color:${d.open?'var(--p-ink)':'#666'};flex-shrink:0;">${label.slice(0,3)}</span>
+          ${d.open?`
+            <select onchange="onboardSetHour('${k}','start',this.value)" aria-label="${label} open time" style="flex:1;min-width:0;background:var(--p-bg);border:1px solid var(--p-line);border-radius:7px;padding:7px 4px;font-size:12px;color:var(--p-ink);font-family:inherit;">${opts(d.start)}</select>
+            <span style="font-size:12px;color:var(--p-mut);flex-shrink:0;">–</span>
+            <select onchange="onboardSetHour('${k}','end',this.value)" aria-label="${label} close time" style="flex:1;min-width:0;background:var(--p-bg);border:1px solid var(--p-line);border-radius:7px;padding:7px 4px;font-size:12px;color:var(--p-ink);font-family:inherit;">${opts(d.end)}</select>
+          `:`<span style="flex:1;font-size:12px;color:var(--p-mut);">Closed</span>`}
+        </div>`;}).join('')}
       </div>
-      <span class="fl-lbl">Hours</span>
-      <div style="display:flex;gap:10px;align-items:center;margin-top:8px;">
-        <select aria-label="Opening time" class="fi" onchange="onboardData.avail.start=this.value" style="flex:1;">${startOpts.map(([v,l])=>`<option value="${v}"${onboardData.avail.start===v?' selected':''}>${l}</option>`).join('')}</select>
-        <span style="font-size:13px;color:var(--p-mut);">to</span>
-        <select aria-label="Closing time" class="fi" onchange="onboardData.avail.end=this.value" style="flex:1;">${endOpts.map(([v,l])=>`<option value="${v}"${onboardData.avail.end===v?' selected':''}>${l}</option>`).join('')}</select>
-      </div>
-      <div style="margin-top:18px;background:var(--p-surf2);border:1px solid var(--p-green-line);border-radius:11px;padding:12px 13px;display:flex;gap:9px;align-items:flex-start;">
+      <button onclick="onboardCopyHoursToAll()" style="margin-top:10px;width:100%;background:none;border:1px solid var(--p-line);border-radius:9px;padding:9px;font-size:12px;font-weight:600;color:var(--accent-strong);cursor:pointer;font-family:inherit;display:flex;align-items:center;justify-content:center;gap:6px;"><i class="ti ti-copy" style="font-size:13px;"></i> Same hours daily? Copy Monday to all open days</button>
+      <div style="margin-top:14px;background:var(--p-surf2);border:1px solid var(--p-green-line);border-radius:11px;padding:12px 13px;display:flex;gap:9px;align-items:flex-start;">
         <i class="ti ti-calendar-check" style="font-size:14px;color:var(--p-green);flex-shrink:0;margin-top:1px;"></i>
         <span style="font-size:12px;color:var(--p-mut2);line-height:1.6;">This powers your booking requests, clients' app shows exactly these slots, and their requests land in your inbox to confirm.</span>
       </div>
@@ -14832,7 +14848,7 @@ function renderOnboard(){
   else if(step==='done'){
     showSkip=false;showBack=false;
     const profNames=allProfessions.filter(p=>selectedProfessions.includes(p.id)).map(p=>p.name).join(', ');
-    const openDays=Object.entries(onboardData.avail.days).filter(([,v])=>v).length;
+    const openDays=DAY_DEFS.filter(([k])=>onboardData.avail[k]&&onboardData.avail[k].open).length;
     body=`
     <div style="flex:1;display:flex;flex-direction:column;align-items:center;justify-content:center;padding:40px 26px 12px;text-align:center;">
       <div style="width:84px;height:84px;border-radius:50%;background:linear-gradient(135deg,var(--accent-tint),var(--accent-tint2));display:flex;align-items:center;justify-content:center;margin-bottom:22px;">
