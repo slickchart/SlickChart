@@ -11473,16 +11473,16 @@ function _formTypeOptions(sel){return Object.keys(typeIcons).map(t=>`<option val
 function _qRowHTML(q){
   const opts=q.options&&q.options.length?JSON.stringify(q.options).replace(/'/g,'&#39;'):'[]';
   const items=q.items&&q.items.length?JSON.stringify(q.items).replace(/'/g,'&#39;'):'[]';
-  const label=(q.label||'').replace(/&/g,'&amp;').replace(/"/g,'&quot;');
+  const label=(q.label||'').replace(/&/g,'&amp;').replace(/</g,'&lt;');
   const isContra=q.type==='Contraindications';
   return `<div class="qrow" data-qid="${q.id}" data-options='${opts}' data-items='${items}' style="background:var(--surf2);border:1px solid var(--p-line);border-radius:12px;margin-bottom:8px;">
-    <div style="padding:10px 12px;display:flex;align-items:center;gap:8px;">
-      ${q.type==='Signature'?`<i class="ti ti-writing" aria-hidden="true" title="Signature is always last" style="font-size:15px;color:var(--p-mut);flex-shrink:0;"></i>`:`<div style="display:flex;flex-direction:column;flex-shrink:0;">
+    <div style="padding:10px 12px;display:flex;align-items:flex-start;gap:8px;">
+      ${q.type==='Signature'?`<i class="ti ti-writing" aria-hidden="true" title="Signature is always last" style="font-size:15px;color:var(--p-mut);flex-shrink:0;margin-top:2px;"></i>`:`<div style="display:flex;flex-direction:column;flex-shrink:0;margin-top:1px;">
         <button type="button" onclick="_moveFormQ(this,-1)" aria-label="Move question up" style="border:none;background:none;cursor:pointer;padding:0 2px;line-height:1;color:var(--p-mut);"><i class="ti ti-chevron-up" style="font-size:14px;"></i></button>
         <button type="button" onclick="_moveFormQ(this,1)" aria-label="Move question down" style="border:none;background:none;cursor:pointer;padding:0 2px;line-height:1;color:var(--p-mut);"><i class="ti ti-chevron-down" style="font-size:14px;"></i></button>
       </div>`}
-      <input class="q-label" value="${label}" oninput="this.style.borderBottom='';" placeholder="Question label (required)" style="flex:1;min-width:0;border:none;border-bottom:1px solid transparent;background:none;font-size:14px;font-weight:500;color:var(--p-ink);outline:none;font-family:inherit;padding-bottom:2px;">
-      <button onclick="this.closest('.qrow').remove()" class="icon-btn" aria-label="Delete question"><i class="ti ti-trash" aria-hidden="true" style="color:var(--p-red);font-size:16px;"></i></button>
+      <textarea class="q-label" rows="1" oninput="this.style.borderBottom='';this.style.height='auto';this.style.height=this.scrollHeight+'px';" placeholder="Question label (required)" style="flex:1;min-width:0;border:none;border-bottom:1px solid transparent;background:none;font-size:14px;font-weight:500;color:var(--p-ink);outline:none;font-family:inherit;padding:0 0 2px;resize:none;overflow:hidden;line-height:1.45;">${label}</textarea>
+      <button onclick="this.closest('.qrow').remove()" class="icon-btn" aria-label="Delete question" style="margin-top:1px;"><i class="ti ti-trash" aria-hidden="true" style="color:var(--p-red);font-size:16px;"></i></button>
     </div>
     <div style="border-top:1px solid var(--p-line2);padding:8px 12px;display:flex;align-items:center;gap:10px;">
       <select aria-label="Question type" class="q-type" onchange="_changeQType(this)" style="background:var(--p-surf);border:1px solid var(--p-line);border-radius:7px;padding:5px 8px;font-size:12px;color:var(--p-mut);font-family:inherit;">${_formTypeOptions(q.type)}</select>
@@ -11519,7 +11519,11 @@ function renderFormBuilder(tid){
     ${_orderedFormQs(tmpl.qs).map(q=>_qRowHTML(q)).join('')}
   </div>
   <button onclick="addFormQ()" style="width:calc(100% - 32px);margin:0 16px 16px;border:1.5px dashed var(--p-line);border-radius:10px;padding:12px;display:flex;align-items:center;justify-content:center;gap:8px;font-size:14px;color:var(--p-mut);background:none;cursor:pointer;"><i class="ti ti-plus"></i> Add a question</button>`;
+  // Grow each question-label textarea to fit its full text, so long consent lines wrap and are
+  // fully readable instead of being clipped to one line.
+  _sizeQLabels();
 }
+function _sizeQLabels(){try{document.querySelectorAll('#qlist .q-label').forEach(t=>{t.style.height='auto';t.style.height=t.scrollHeight+'px';});}catch(e){}}
 function _changeQType(sel){
   const row=sel.closest&&sel.closest('.qrow');if(!row)return;
   const id=row.getAttribute('data-qid')||('q'+(nextQIdLocal++));
@@ -11536,6 +11540,7 @@ function _changeQType(sel){
   const tmp=document.createElement('div');tmp.innerHTML=_qRowHTML(q);
   const nr=tmp.firstElementChild;
   if(nr&&row.parentNode)row.parentNode.replaceChild(nr,row);
+  _sizeQLabels();
 }
 function addFormQ(type){
   const list=document.getElementById('qlist');if(!list)return;
@@ -11564,7 +11569,7 @@ function _readFormBuilder(tid){
   const rows=[...document.querySelectorAll('#qlist .qrow')];
   let _blankCount=0;
   const qs=rows.map(row=>{
-    const label=(row.querySelector('.q-label')&&row.querySelector('.q-label').value||'').trim();
+    const label=(row.querySelector('.q-label')&&row.querySelector('.q-label').value||'').replace(/\s*\n\s*/g,' ').trim();
     if(!label){_blankCount++;return null;}
     const type=(row.querySelector('.q-type')&&row.querySelector('.q-type').value)||'Short text';
     const required=!!(row.querySelector('.q-req')&&row.querySelector('.q-req').checked);
