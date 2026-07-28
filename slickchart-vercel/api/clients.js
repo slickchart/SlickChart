@@ -30,20 +30,23 @@ export default async function handler(req, res) {
       // and can't resurrect as a blank zombie on the next re-sync. Runs before the upsert.
       const del = Array.isArray(body.deletedIds) ? body.deletedIds : [];
       if (del.length) { try { await Promise.all(del.slice(0, 500).map(id => markClientDeleted(provider, String(id)))); } catch (e) { /* best-effort */ } }
-      const list = Array.isArray(body.clients) ? body.clients : [];
-      // Isolate per-client failures: one client whose blob makes the DB throw must NOT 500 the whole
-      // batch and block every other client's sync (that stalls form delivery account-wide). Save each
-      // independently; return the ones that saved, and report the ones that didn't.
-      const settled = await Promise.allSettled(list.slice(0, 2000).map(c => upsertClient(provider, c)));
+      const items = (Array.isArray(body.clients) ? body.clients : []).slice(0, 2000);
+      // Cap DB concurrency. Neon's HTTP driver opens a fresh connection PER query, and upsertClient
+      // runs ~3 queries each. Firing every client at once (Promise.all over the whole list) opened
+      // 400-520 simultaneous connections per request and exhausted the function's file descriptors
+      // (EMFILE), 500-ing the route account-wide. A small worker pool keeps only a few connections
+      // open at a time; per-client try/catch also isolates a bad record from the rest of the batch.
       const out = [], failed = [];
-      settled.forEach((r, i) => {
-        if (r.status === 'fulfilled') { out.push(r.value); }
-        else {
-          const c = list[i] || {};
-          failed.push({ id: c.id || null });
-          console.error('[clients] upsert failed for', c && c.id, r.reason && (r.reason.stack || r.reason.message) || r.reason);
+      const CONCURRENCY = 4;
+      let _i = 0;
+      async function _worker() {
+        while (_i < items.length) {
+          const c = items[_i++] || {};
+          try { out.push(await upsertClient(provider, c)); }
+          catch (e) { failed.push({ id: c.id || null }); console.error('[clients] upsert failed for', c && c.id, e && (e.stack || e.message) || e); }
         }
-      });
+      }
+      await Promise.all(Array.from({ length: Math.min(CONCURRENCY, items.length) }, () => _worker()));
       res.status(200).json({ ok: true, saved: out.length, clients: out, failed });
       return;
     }
