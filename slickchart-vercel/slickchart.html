@@ -4083,6 +4083,11 @@ function _gettingStartedHTML(){
   </div>`;
 }
 
+// "Up next" wrapper: past 3 appointments for the day, cap the height and scroll so a full day fits
+// without pushing the rest of Home off-screen. 3 or fewer render at natural height (no scroll).
+function _wrapUpNext(cardsHtml,count){
+  return count>3?`<div style="max-height:452px;overflow-y:auto;-webkit-overflow-scrolling:touch;">${cardsHtml}</div>`:cardsHtml;
+}
 function renderHome(){
   setNav('home');
   setTimeout(maybeShowOnboarding,300);
@@ -4128,26 +4133,32 @@ function renderHome(){
       const now=new Date();
       const todayStr=now.toDateString();
       const tomorrowStr=new Date(now.getTime()+86400000).toDateString();
-      const up=squareAppts.filter(a=>a.at&&a.at>=new Date(now.getTime()-3600000)).slice(0,3);
-      if(!up.length)return '<div class="card"><div style="padding:18px 16px;text-align:center;color:var(--p-mut);font-size:13px;">Nothing else on the books right now.<div style="font-size:12px;color:var(--p-mut);margin-top:4px;">New bookings will show up here automatically.</div></div></div>';
-      const firstIsToday=up[0].at.toDateString()===todayStr;
-      const dayLabel=!firstIsToday?`<div style="padding:0 16px 8px;font-size:12px;color:var(--p-mut);">Nothing left today \u2014 ${up[0].at.toDateString()===tomorrowStr?'tomorrow\u2019s':'next up,'} booked:</div>`:'';
-      return dayLabel+up.map(a=>{
+      const _upAll=squareAppts.filter(a=>a.at&&a.at>=new Date(now.getTime()-3600000)).sort((a,b)=>a.at-b.at);
+      if(!_upAll.length)return '<div class="card"><div style="padding:18px 16px;text-align:center;color:var(--p-mut);font-size:13px;">Nothing else on the books right now.<div style="font-size:12px;color:var(--p-mut);margin-top:4px;">New bookings will show up here automatically.</div></div></div>';
+      // Show EVERYONE booked for the active day (today's remainder, else the next booked day). No cap:
+      // a full day (4, 6, 10 appts) all appears, in a scroll region so it never overruns the home screen.
+      const _firstDay=_upAll[0].at.toDateString();
+      const up=_upAll.filter(a=>a.at.toDateString()===_firstDay);
+      const firstIsToday=_firstDay===todayStr;
+      const dayLabel=!firstIsToday?`<div style="padding:0 16px 8px;font-size:12px;color:var(--p-mut);">Nothing left today \u2014 ${_firstDay===tomorrowStr?'tomorrow\u2019s':'next up,'} booked:</div>`:'';
+      return dayLabel+_wrapUpNext(up.map(a=>{
         const when=a.at.toLocaleDateString('en-US',{weekday:'short',month:'short',day:'numeric'})+' · '+a.at.toLocaleTimeString('en-US',{hour:'numeric',minute:'2-digit'});
         const cid=_clientIdByName(a.client);
         return '<div class="card" style="padding:0;overflow:hidden;" onclick="nav(\''+(cid?'client':'calendar')+'\''+(cid?",'"+cid+"'":'')+')"><div class="row" style="padding:14px;"><div style="flex:1;min-width:0;"><div style="font-size:15px;font-weight:500;color:var(--p-ink);">'+a.client+'</div><div style="font-size:12px;color:var(--p-mut);margin-top:2px;">'+when+(a.dur?' · '+a.dur+' min':'')+'</div></div><span class="bdg bg" style="font-size:12px;">Confirmed</span></div>'+_firstVisitNudgeHTML(cid,a.at)+'</div>';
-      }).join('');
+      }).join(''),up.length);
     }
     // Sample/demo mode: show the same real-week sample appointments the calendar uses so Up next
     // isn't an empty "connect Square" prompt during screenshots or on a fresh account.
     if(typeof _sampleHidden==='function'&&!_sampleHidden()){
       const now=new Date();
-      const up=_realApptsMerged().filter(a=>a.at&&a.at>=new Date(now.getTime()-3600000)).sort((a,b)=>a.at-b.at).slice(0,3);
-      if(up.length)return up.map(a=>{
+      const _uAll=_realApptsMerged().filter(a=>a.at&&a.at>=new Date(now.getTime()-3600000)).sort((a,b)=>a.at-b.at);
+      const _d0=_uAll.length?_uAll[0].at.toDateString():null;
+      const up=_uAll.filter(a=>a.at.toDateString()===_d0);
+      if(up.length)return _wrapUpNext(up.map(a=>{
         const when=a.at.toLocaleDateString('en-US',{weekday:'short',month:'short',day:'numeric'})+' \u00b7 '+a.at.toLocaleTimeString('en-US',{hour:'numeric',minute:'2-digit'});
         const cid=_clientIdByName(a.client);
         return '<div class="card" style="padding:0;overflow:hidden;" onclick="nav(\''+(cid?'client':'calendar')+'\''+(cid?",'"+cid+"'":'')+')"><div class="row" style="padding:14px;"><div style="flex:1;min-width:0;"><div style="font-size:15px;font-weight:500;color:var(--p-ink);">'+_fileEsc(a.client)+'</div><div style="font-size:12px;color:var(--p-mut);margin-top:2px;">'+when+(a.dur?' \u00b7 '+a.dur+' min':'')+'</div></div><span class="bdg bg" style="font-size:12px;">Confirmed</span></div>'+_firstVisitNudgeHTML(cid,a.at)+'</div>';
-      }).join('');
+      }).join(''),up.length);
     }
     // Truly empty account: the real first step is adding a client, not connecting Square \u2014 so lead with that.
     if(_gsState().realCount===0){
@@ -9978,12 +9989,17 @@ const _FORM_DEFS_BY_PROF={
     {icon:'ti-file-description',bg:'var(--p-red-bg)',ic:'var(--p-red)',name:'Liability & informed consent',sub:'Assumption of risk',id:'movement-liability'},
     {icon:'ti-target',bg:'var(--p-surf2)',ic:'var(--p-green)',name:'Goals & program plan',sub:'Goals, channel & program prescribed',id:'movement-goals'},
   ]],
+  equine:['Equine cryotherapy',[
+    {icon:'ti-clipboard-text',bg:'var(--p-surf2)',ic:'var(--p-green)',name:'Equine intake & consent',sub:'Horse + owner history, health flags & consent',id:'equine-intake'},
+    {icon:'ti-activity',bg:'var(--accent-tint)',ic:'var(--accent-strong)',name:'Equine assessment & baseline',sub:'Lameness grade, palpation, ROM & gait',id:'equine-assessment'},
+    {icon:'ti-snowflake',bg:'var(--p-blue-bg)',ic:'var(--p-blue)',name:'Cryotherapy session & progress note',sub:'Areas treated, response & plan',id:'equine-progress'},
+  ]],
 };
 function _formDefById(fid){for(const p in _FORM_DEFS_BY_PROF){const d=_FORM_DEFS_BY_PROF[p][1].find(f=>f.id===fid);if(d)return d;}return null;}
 // Forms scoped to the provider's selected professions (+ their custom forms), deduped.
 function _profFormDefs(){
   const has=p=>selectedProfessions.includes(p);
-  let profs=['tattoo','movement','esty','wax','brow','pmu','lash','hair','barber','makeup','massage','nail','nutrition','contour','coach'].filter(p=>has(p)&&_FORM_DEFS_BY_PROF[p]);
+  let profs=['tattoo','movement','equine','esty','wax','brow','pmu','lash','hair','barber','makeup','massage','nail','nutrition','contour','coach'].filter(p=>has(p)&&_FORM_DEFS_BY_PROF[p]);
   if(!profs.length)profs=['esty'];
   const out=[],seen={};
   // Honor a provider's renamed built-in form: the edit is saved to formTmpls[id].name, so surface
@@ -10063,7 +10079,7 @@ function renderForms(){
   document.getElementById('tt').textContent=_sectionTitle('forms');
   const has=p=>selectedProfessions.includes(p);
   const F=_FORM_DEFS_BY_PROF;
-  let sections=['tattoo','movement','esty','wax','brow','pmu','lash','hair','barber','makeup','massage','nail','nutrition','contour','coach'].filter(p=>has(p)&&F[p]);
+  let sections=['tattoo','movement','equine','esty','wax','brow','pmu','lash','hair','barber','makeup','massage','nail','nutrition','contour','coach'].filter(p=>has(p)&&F[p]);
   if(!sections.length)sections=['esty'];
   // Photo release is bundled into every intake (asked once, auto-captured to the client's file),
   // so it's no longer offered as a separate sendable card here, that duplicated the consent.
@@ -10163,7 +10179,7 @@ function _sendFormClientRows(fid,q){
   return matches.map(cid=>{const c=CL[cid];return`<div style="display:flex;align-items:center;gap:8px;margin-bottom:8px;">
     <button onclick="confirmSendForm('${fid}','${cid}')" style="display:flex;flex:1;min-width:0;align-items:center;gap:10px;padding:11px 12px;border:1px solid var(--p-line);background:var(--surf2);border-radius:10px;cursor:pointer;text-align:left;">
       <div style="width:36px;height:36px;border-radius:9px;background:${c.bg};display:flex;align-items:center;justify-content:center;font-size:13px;font-weight:500;color:${c.tc};flex-shrink:0;">${c.initials}</div>
-      <div style="flex:1;min-width:0;"><div style="font-size:13px;font-weight:500;color:var(--p-ink);overflow:hidden;text-overflow:ellipsis;white-space:nowrap;">${_fileEsc(c.name)}</div><div style="font-size:10.5px;color:var(--p-mut);">To their app</div></div>
+      <div style="flex:1;min-width:0;"><div style="font-size:13px;font-weight:500;color:var(--p-ink);overflow:hidden;text-overflow:ellipsis;white-space:nowrap;">${_fileEsc(c.name)}</div><div style="font-size:10.5px;color:var(--p-mut);">Choose how to send</div></div>
     </button>
     ${canSign?`<button onclick="closeSendProd();renderSignOnDevice('${fid}','${cid}')" aria-label="Sign in person for ${_fileEsc(c.name)}" title="Sign on this device" style="width:42px;height:42px;flex-shrink:0;border:1px solid var(--accent);background:var(--accent-a08);border-radius:10px;display:flex;align-items:center;justify-content:center;cursor:pointer;color:var(--accent-strong);">
       <i class="ti ti-device-tablet" style="font-size:17px;"></i>
@@ -10214,11 +10230,10 @@ async function confirmSendForm(fid,cid){
     // Push to the server and AWAIT the true outcome, so a silent failure (signed out, offline, or a
     // too-large blob) can't masquerade as "Sent" while nothing actually reached the client's app.
     closeSendProd();
-    const _first=c.name.split(' ')[0];
-    proToast('Sending to '+_first+'…',0);
-    const _res=await _pushClientNow(cid);
-    if(_res.ok){const _extra=sendIds.length>1?` + ${sendIds.length-1} more`:'';proToast(`Sent ${tmpl.name}${_extra}${guides.length?` + ${guides.length} guide${guides.length>1?'s':''}`:''} to ${_first} ✓`);}
-    else proToast(_res.msg,0);
+    // Give the provider a choice of delivery — push to their app now, OR email/text/copy a link —
+    // instead of a silent app-only send. Forms + guides are already assigned above, so whichever path
+    // they pick carries them (the sheet's "Send to their app now" pushes; the link options share it).
+    shareFormLink(fid,cid);
     return;
   }else if(cid!=='maya'){
     // Neither the demo client nor a resolvable real client — don't claim "Sent" and drop it.
@@ -12357,6 +12372,7 @@ function shareFormLink(fid,cid){
   const c=CL[cid];if(!c)return;
   const sendIds=_isIntakeForm(fid)?_withPhotoRelease(fid):[fid];
   _assignFormsToClient(c,sendIds);
+  try{_assignGuidesToClient(c,formGuideList(fid));}catch(e){} // carry any guides attached to this form
   try{saveClients();}catch(e){}
   try{if(typeof _pushKeyNow==='function')_pushKeyNow('sc_clients',localStorage.getItem('sc_clients')||'');}catch(e){}
   if(!c._token){ inviteClientToApp(cid); return; }
