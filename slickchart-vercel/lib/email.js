@@ -103,6 +103,12 @@ export function welcomeEmailHtml({ name, link }) {
         </table>
       </div>
 
+      <div style="background:#fff8ee;border:1px solid #f0d9a8;border-radius:12px;padding:18px 20px;margin:0 0 20px;">
+        <div style="font-size:12px;font-weight:700;color:#b3801f;text-transform:uppercase;letter-spacing:.06em;margin-bottom:8px;">New to Square? A little gift to start</div>
+        <p style="font-size:14px;line-height:1.7;color:#3a3a3a;margin:0 0 12px;">SlickChart connects to Square in one tap to pull in your clients, catalog, bookings, and invoicing. If you don't have Square yet, sign up through my referral link and Square will waive the processing fees on your first <strong>$1,000 in sales</strong> — real money back in your pocket while you get set up.</p>
+        <a href="https://squareup.com/refer/2832A5A0B0" style="background:#1a1a1a;color:#ffffff;text-decoration:none;font-weight:700;padding:11px 22px;border-radius:9px;display:inline-block;font-size:14px;">Get $1,000 in free Square processing &rarr;</a>
+      </div>
+
       <div style="margin:0 0 20px;">
         <div style="font-size:12px;font-weight:700;color:#1e9e88;text-transform:uppercase;letter-spacing:.06em;margin-bottom:10px;">Getting started</div>
         <p style="font-size:14px;line-height:1.8;color:#3a3a3a;margin:0;">
@@ -138,6 +144,9 @@ What's included, all of it, no higher tier:
 - A private client app, with real two-way messaging
 - Payments and invoicing, with or without Square
 - AI voice notes and session summaries (fully optional)
+
+New to Square? Sign up through my referral link and Square waives the processing fees on your first $1,000 in sales, then connect it to SlickChart in one tap:
+https://squareup.com/refer/2832A5A0B0
 
 Getting started:
 1. Verify your email above, then log in on your phone
