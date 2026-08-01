@@ -3460,6 +3460,7 @@ function _ciPhoto(q){
       ${photos.map((src,i)=>`<div style="position:relative;width:88px;height:88px;border-radius:10px;overflow:hidden;border:1.5px solid var(--c-line);">
         <img src="${_imgSrc(src)}" alt="reference ${i+1}" style="width:100%;height:100%;object-fit:cover;display:block;">
         <button onclick="ciRemovePhoto('${q.id}',${i})" aria-label="Remove photo" style="position:absolute;top:2px;right:2px;width:20px;height:20px;border-radius:50%;background:rgba(0,0,0,.6);border:none;color:#fff;font-size:11px;cursor:pointer;display:flex;align-items:center;justify-content:center;">✕</button>
+        ${String(src).slice(0,5)==='data:'?`<button onclick="ciRotatePhoto('${q.id}',${i})" aria-label="Rotate photo" title="Rotate" style="position:absolute;top:2px;left:2px;width:20px;height:20px;border-radius:50%;background:rgba(0,0,0,.6);border:none;color:#fff;cursor:pointer;display:flex;align-items:center;justify-content:center;"><i class="ti ti-rotate-clockwise" style="font-size:11px;"></i></button><button onclick="ciFlipPhoto('${q.id}',${i})" aria-label="Flip photo" title="Flip" style="position:absolute;bottom:2px;left:2px;width:20px;height:20px;border-radius:50%;background:rgba(0,0,0,.6);border:none;color:#fff;cursor:pointer;display:flex;align-items:center;justify-content:center;"><i class="ti ti-flip-horizontal" style="font-size:11px;"></i></button>`:''}
       </div>`).join('')}
       <button onclick="ciAddPhoto('${q.id}')" aria-label="Upload photos" style="width:88px;height:88px;border-radius:10px;border:1.5px dashed #d4c4b0;background:var(--c-surf);display:flex;flex-direction:column;align-items:center;justify-content:center;gap:3px;cursor:pointer;color:var(--c-mut);">
         <i class="ti ti-camera-plus" aria-hidden="true" style="font-size:20px;"></i><span style="font-size:10px;">Upload</span>
@@ -3559,6 +3560,28 @@ function _downscaleImg(file,cb,max=900){
   // Guard against enormous files (e.g. RAW/HEIC) that can crash a mobile tab when read
   // into a base64 data URL. 25MB is generous for a photo; anything bigger is dropped.
   if(file&&file.size&&file.size>25*1024*1024){cb('');return;}
+  // Bake the photo's EXIF orientation into the pixels via createImageBitmap so re-encoded
+  // photos stay UPRIGHT. iPhone portrait shots store "which way is up" as a tag the canvas
+  // re-encode strips, which is why they fell sideways. from-image applies it first.
+  if(window.createImageBitmap){
+    try{
+      createImageBitmap(file,{imageOrientation:'from-image'}).then(function(bmp){
+        try{
+          let w=bmp.width,h=bmp.height;
+          if(w>max||h>max){const s=max/Math.max(w,h);w=Math.round(w*s);h=Math.round(h*s);}
+          const c=document.createElement('canvas');c.width=w;c.height=h;
+          c.getContext('2d').drawImage(bmp,0,0,w,h);
+          const out=c.toDataURL('image/jpeg',0.72);
+          if(bmp.close){try{bmp.close();}catch(_){}}
+          cb(out);
+        }catch(_){_downscaleImgLegacy(file,cb,max);}
+      }).catch(function(){_downscaleImgLegacy(file,cb,max);});
+      return;
+    }catch(_){}
+  }
+  _downscaleImgLegacy(file,cb,max);
+}
+function _downscaleImgLegacy(file,cb,max=900){
   const r=new FileReader();
   r.onload=e=>{
     const img=new Image();
@@ -3569,13 +3592,9 @@ function _downscaleImg(file,cb,max=900){
       try{c.getContext('2d').drawImage(img,0,0,w,h);cb(c.toDataURL('image/jpeg',0.72));}
       catch(_){cb(e.target.result);}
     };
-    // Decode failed, return empty rather than the full-size original (which would
-    // defeat downscaling and could bloat storage). Callers drop empty results.
     img.onerror=()=>cb('');
     img.src=e.target.result;
   };
-  // File read failed, must still call back, or a batch upload's completion counter
-  // never advances and the whole "add photos" flow hangs silently forever.
   r.onerror=()=>cb('');
   r.readAsDataURL(file);
 }
@@ -3713,6 +3732,10 @@ async function _doDeleteClientData(){
 function ciAddPhoto(qid){_pickImages(srcs=>{if(!srcs||!srcs.length)return;const a=(checkinAnswers[qid+'Photos']=checkinAnswers[qid+'Photos']||[]);srcs.forEach(s=>a.push(s));_renderCheckinStep();});}
 function ciAddLink(qid){_inputSheet({title:'Add a photo by link',body:'Paste an image URL to attach it.',placeholder:'https://…',inputmode:'url',action:'Add'},function(u){(checkinAnswers[qid+'Photos']=checkinAnswers[qid+'Photos']||[]).push(u);_renderCheckinStep();});}
 function ciRemovePhoto(qid,i){const a=checkinAnswers[qid+'Photos']||[];a.splice(i,1);_renderCheckinStep();}
+// Manual rotate 90° / flip for a check-in photo (only for uploaded photos, not pasted links).
+function _ciImgTransform(src,mode,cb){const img=new Image();img.onload=function(){const w=img.width,h=img.height,c=document.createElement('canvas'),x=c.getContext('2d');if(mode==='rot'){c.width=h;c.height=w;x.translate(h,0);x.rotate(Math.PI/2);x.drawImage(img,0,0);}else{c.width=w;c.height=h;x.translate(w,0);x.scale(-1,1);x.drawImage(img,0,0);}let out;try{out=c.toDataURL('image/jpeg',0.82);}catch(e){out=src;}cb(out);};img.onerror=function(){cb(src);};img.src=src;}
+function ciRotatePhoto(qid,i){const a=checkinAnswers[qid+'Photos']||[];if(!a[i]||String(a[i]).slice(0,5)!=='data:')return;_ciImgTransform(a[i],'rot',function(u){a[i]=u;try{_ciSaveDraftSoon();}catch(e){}_renderCheckinStep();});}
+function ciFlipPhoto(qid,i){const a=checkinAnswers[qid+'Photos']||[];if(!a[i]||String(a[i]).slice(0,5)!=='data:')return;_ciImgTransform(a[i],'flip',function(u){a[i]=u;try{_ciSaveDraftSoon();}catch(e){}_renderCheckinStep();});}
 function ciMovePhoto(qid,i,dir){const a=checkinAnswers[qid+'Photos']||[];const j=i+dir;if(j<0||j>=a.length)return;const t=a[i];a[i]=a[j];a[j]=t;_renderCheckinStep();}
 // Reference-photo reordering. The old version used HTML5 drag-and-drop (draggable/ondragstart),
 // which simply does not fire on mobile touch — so on a phone the photos couldn't be dragged at all.
@@ -3761,6 +3784,7 @@ function _ciNotes(q){
       ${photos.map((src,i)=>`<div data-ci-photo="${q.id}" data-idx="${i}" ${photos.length>1?`onpointerdown="ciPtrDown('${q.id}',${i},event)" onpointermove="ciPtrMove(event)" onpointerup="ciPtrUp(event)" onpointercancel="ciPtrUp(event)"`:''} style="position:relative;width:78px;height:78px;border-radius:10px;overflow:hidden;border:1.5px solid var(--c-line);${photos.length>1?'cursor:grab;touch-action:none;':''}">
         <img src="${_imgSrc(src)}" alt="reference ${i+1}" draggable="false" style="width:100%;height:100%;object-fit:cover;display:block;pointer-events:none;">
         <button onpointerdown="event.stopPropagation()" onclick="ciRemovePhoto('${q.id}',${i})" aria-label="Remove photo" style="position:absolute;top:2px;right:2px;width:20px;height:20px;border-radius:50%;background:rgba(0,0,0,.6);border:none;color:#fff;font-size:11px;cursor:pointer;display:flex;align-items:center;justify-content:center;">✕</button>
+        ${String(src).slice(0,5)==='data:'?`<button onpointerdown="event.stopPropagation()" onclick="ciRotatePhoto('${q.id}',${i})" aria-label="Rotate photo" title="Rotate" style="position:absolute;top:2px;left:2px;width:20px;height:20px;border-radius:50%;background:rgba(0,0,0,.6);border:none;color:#fff;cursor:pointer;display:flex;align-items:center;justify-content:center;"><i class="ti ti-rotate-clockwise" style="font-size:11px;"></i></button><button onpointerdown="event.stopPropagation()" onclick="ciFlipPhoto('${q.id}',${i})" aria-label="Flip photo" title="Flip" style="position:absolute;bottom:2px;left:2px;width:20px;height:20px;border-radius:50%;background:rgba(0,0,0,.6);border:none;color:#fff;cursor:pointer;display:flex;align-items:center;justify-content:center;"><i class="ti ti-flip-horizontal" style="font-size:11px;"></i></button>`:''}
       </div>`).join('')}
       <button onclick="ciAddPhoto('${q.id}')" aria-label="Upload photos" style="width:78px;height:78px;border-radius:10px;border:1.5px dashed #d4c4b0;background:var(--c-surf);display:flex;flex-direction:column;align-items:center;justify-content:center;gap:3px;cursor:pointer;color:var(--c-mut);">
         <i class="ti ti-camera-plus" aria-hidden="true" style="font-size:18px;"></i><span style="font-size:10px;">Upload</span>
@@ -4184,6 +4208,24 @@ function copyCode(code){_clientCopy(code,function(){if(typeof pushNotify==='func
 // ── Real image capture, downscaling, and on-device pixel analysis ──
 function _downscaleImage(file,maxDim,cb){
   if(file&&file.size&&file.size>25*1024*1024){cb('');return;}
+  // Apply EXIF orientation first (via createImageBitmap) so photos stay upright after re-encode.
+  if(window.createImageBitmap){
+    try{
+      createImageBitmap(file,{imageOrientation:'from-image'}).then(function(bmp){
+        try{
+          let w=bmp.width,h=bmp.height;const scale=Math.min(1,maxDim/Math.max(w,h));w=Math.round(w*scale);h=Math.round(h*scale);
+          const cv=document.createElement('canvas');cv.width=w;cv.height=h;cv.getContext('2d').drawImage(bmp,0,0,w,h);
+          const out=cv.toDataURL('image/jpeg',0.78);
+          if(bmp.close){try{bmp.close();}catch(_){}}
+          cb(out);
+        }catch(_){_downscaleImageLegacy(file,maxDim,cb);}
+      }).catch(function(){_downscaleImageLegacy(file,maxDim,cb);});
+      return;
+    }catch(_){}
+  }
+  _downscaleImageLegacy(file,maxDim,cb);
+}
+function _downscaleImageLegacy(file,maxDim,cb){
   const r=new FileReader();
   r.onload=e=>{const img=new Image();img.onload=()=>{
     let w=img.width,h=img.height;const scale=Math.min(1,maxDim/Math.max(w,h));w=Math.round(w*scale);h=Math.round(h*scale);
