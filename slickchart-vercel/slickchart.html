@@ -2115,7 +2115,7 @@ function _syncable(k){return typeof k==='string'&&k.indexOf('sc_')===0&&!_SYNC_S
 // dismissed flags. These keys are UNIONED with local on pull instead of overwritten. Object maps merge
 // by key; arrays merge by unique value.
 const _TOMB_OBJ={sc_deleted_clients:1,sc_hidden_square:1,sc_merged_ids:1,sc_merged_into:1};
-const _TOMB_ARR={sc_flag_dismissed:1,sc_ci_cleared:1,sc_ci_read:1,sc_home_dismissed:1,sc_notif_cleared:1,sc_notif_read:1};
+const _TOMB_ARR={sc_flag_dismissed:1,sc_form_flag_dismissed:1,sc_ci_cleared:1,sc_ci_read:1,sc_home_dismissed:1,sc_notif_cleared:1,sc_notif_read:1};
 function _isTombstoneKey(k){return !!(_TOMB_OBJ[k]||_TOMB_ARR[k]);}
 // Merge the client roster per-client-id instead of whole-blob overwriting it, so two devices that edit
 // DIFFERENT clients both keep their edits (the old last-writer-wins dropped one device's whole change).
@@ -4078,6 +4078,18 @@ function _fcActive(c){
   var isCheckinFlag=!!f.checkinId||f.form==='Pre-visit check-in';
   var cid=f.checkinId||((isCheckinFlag&&c.lastCheckin&&c.lastCheckin.id)||'');
   if(cid&&typeof _isCheckinDismissed==='function'&&_isCheckinDismissed(cid))return false;
+  // A FORM / intake contraindication flag the provider already reviewed must stay gone even if a cloud
+  // pull or re-processed submission event rebuilds flaggedContra. Hide it only when EVERY item in the
+  // current flag is covered by reviewed (dismissed) submitted forms — so a merged check-in flag, or a
+  // second still-unreviewed intake, is never silently suppressed.
+  if(!isCheckinFlag&&typeof _isFormFlagDismissed==='function'){
+    var _items=(f.items||[]);
+    if(_items.length&&Array.isArray(c.submittedForms)){
+      var _cov={};
+      c.submittedForms.forEach(function(sf){if(sf&&sf.flagged&&sf.flagged.length&&sf.evId&&_isFormFlagDismissed('ev:'+sf.evId)){sf.flagged.forEach(function(it){_cov[it]=1;});}});
+      if(Object.keys(_cov).length&&_items.every(function(it){return _cov[it];}))return false;
+    }
+  }
   return true;
 }
 // Combine a NEW contraindication flag with any existing un-reviewed one instead of overwriting it, so a
@@ -4153,6 +4165,17 @@ function _fcOpenAction(id,c){
 function _dismissedCheckins(){try{return JSON.parse(localStorage.getItem('sc_flag_dismissed')||'[]');}catch(e){return [];}}
 function _markCheckinDismissed(cid){if(!cid)return;try{var a=_dismissedCheckins();if(a.indexOf(cid)<0){a.push(cid);if(a.length>500)a.splice(0,a.length-500);var v=JSON.stringify(a);localStorage.setItem('sc_flag_dismissed',v);if(typeof _pushKeyNow==='function')_pushKeyNow('sc_flag_dismissed',v);}}catch(e){}}
 function _isCheckinDismissed(cid){return !!cid&&_dismissedCheckins().indexOf(cid)>=0;}
+// Durable record of FORM / intake contraindication flags the provider has ALREADY reviewed, keyed by the
+// submission's event id. The check-in guard above only covers check-in flags; an intake flag had no
+// equivalent, so nulling flaggedContra didn't stick — a cloud pull or a re-processed submission event
+// rebuilt it and the intake kept returning to the Flagged Intakes area after being marked reviewed. This
+// is the guard _fcActive checks so a reviewed intake flag stays gone across every rebuild path.
+function _dismissedFormFlags(){try{return JSON.parse(localStorage.getItem('sc_form_flag_dismissed')||'[]');}catch(e){return [];}}
+function _markFormFlagDismissed(k){if(!k)return;try{var a=_dismissedFormFlags();if(a.indexOf(k)<0){a.push(k);if(a.length>1000)a.splice(0,a.length-1000);var v=JSON.stringify(a);localStorage.setItem('sc_form_flag_dismissed',v);if(typeof _pushKeyNow==='function')_pushKeyNow('sc_form_flag_dismissed',v);}}catch(e){}}
+function _isFormFlagDismissed(k){return !!k&&_dismissedFormFlags().indexOf(k)>=0;}
+// Mark every flagged submitted form on a client as reviewed — called when the provider clears the flag
+// (from the chart or from Home) so no rebuild path can pull the intake contraindication back into review.
+function _markClientFormFlagsReviewed(c){if(!c||!Array.isArray(c.submittedForms))return;c.submittedForms.forEach(function(sf){if(sf&&sf.flagged&&sf.flagged.length&&sf.evId)_markFormFlagDismissed('ev:'+sf.evId);});}
 // Clear a flagged card from Home. Stored ON the client record (which syncs reliably as core data),
 // not just in the in-memory dismissed set — that set rode a debounced sync and a refresh's cloud
 // pull kept losing it, so the same cards came back. A brand-new flag replaces flaggedContra (no
@@ -4163,6 +4186,7 @@ function _flagAckHome(id){
     // permanent guard the Flagged Intakes "Mark reviewed" uses). Without this, clearing from Home
     // left the check-in un-dismissed and it came back on refresh.
     var _cid=c.flaggedContra.checkinId||(c.lastCheckin&&c.lastCheckin.id)||'';if(_cid&&typeof _markCheckinDismissed==='function')_markCheckinDismissed(_cid);
+    if(typeof _markClientFormFlagsReviewed==='function')_markClientFormFlagsReviewed(c);
     try{if(typeof saveClients==='function')saveClients();}catch(e){}}
   _homeDismissed.add('flag-'+id);_saveHomeDismissed();
   // saveClients only schedules a debounced sync; push the client list NOW too so a quick refresh's
@@ -5248,6 +5272,9 @@ function dismissFlag(id,then){
 function _doDismissFlag(id,then){const c=CL[id];
   // Remember the exact check-in this flag came from so a re-processed event can't rebuild it.
   if(c&&c.flaggedContra){var _cid=c.flaggedContra.checkinId||(c.lastCheckin&&c.lastCheckin.id)||'';if(_cid)_markCheckinDismissed(_cid);}
+  // Same durable guard for intake/form contraindications, keyed by submission event id — otherwise a
+  // cloud pull or re-processed event rebuilds flaggedContra and the intake returns to the review queue.
+  if(c&&typeof _markClientFormFlagsReviewed==='function')_markClientFormFlagsReviewed(c);
   if(c){c.flaggedContra=null;}try{if(typeof saveClients==='function')saveClients();}catch(e){}
   // saveClients only schedules a debounced sync; push the client list NOW so a refresh's cloud pull
   // can't restore the old flag (which is why "Mark reviewed" wasn't sticking).
