@@ -1360,6 +1360,28 @@ function _markCheckinDone(prov){
   try{if(typeof _ciClearDraft==='function')_ciClearDraft();}catch(e){}   // check-in submitted — drop the resume draft
   _syncClientPrefsToServer();
 }
+// Mark the check-in done but KEEP the resume draft — used when we optimistically advance a real client
+// into the next pre-visit step (the intake) while the submit is still in flight. If that background
+// submit later fails we revert cleanly with _unmarkCheckinDone, and because the draft (typed answers +
+// photos) is still here the client can re-open and resubmit without re-entering everything.
+function _markCheckinDoneKeepDraft(prov){
+  prov=prov||activeProvider();
+  if(!prov)return;
+  prov.checkinDone=true;
+  _ciDoneMap[prov.id]=_ciSig(prov);
+  try{localStorage.setItem('sc_checkin_done',JSON.stringify(_ciDoneMap));}catch(e){}
+  _syncClientPrefsToServer();
+}
+// Revert an optimistic check-in completion when the background submit ultimately fails, so the check-in
+// reappears on the client's to-do list and its flagged contraindications are never silently lost.
+function _unmarkCheckinDone(prov){
+  prov=prov||activeProvider();
+  if(!prov)return;
+  prov.checkinDone=false;
+  try{delete _ciDoneMap[prov.id];}catch(e){_ciDoneMap[prov.id]=undefined;}
+  try{localStorage.setItem('sc_checkin_done',JSON.stringify(_ciDoneMap));}catch(e){}
+  _syncClientPrefsToServer();
+}
 // Re-apply saved check-in completion onto the freshly-rebuilt provider objects. Only
 // restores it when the stored signature still matches the provider's current one, so a
 // new/rescheduled visit OR a freshly-sent package correctly resets to "not done yet".
@@ -3890,15 +3912,34 @@ function submitCheckin(){
     S.innerHTML=_checkinSuccessHTML(flagged);
     return;
   }
-  // Real client, send for real and confirm it actually reached the server before
-  // telling them they're all set. A dropped check-in could hide a contraindication.
+  // Real client, send for real. When another pre-visit step still follows (typically the new-client
+  // intake form), DON'T gate it behind the network round-trip: a slow submit — a cold serverless start,
+  // a large check-in photo payload, or the built-in 1200ms retry back-off — used to leave the client
+  // staring at a full-screen "Sending…" spinner, so they gave up and exited before the intake ever
+  // loaded, missing it entirely. Instead mark the check-in done, walk straight into the next step, and
+  // let the submit finish in the background while they fill it out. The submit is idempotent
+  // (_ciStableIdem) and self-retries; if it ultimately fails we revert the done flag so the check-in
+  // returns to their to-do list and any flagged contraindication isn't silently lost.
   if(client._real){
+    const _ciPayload={client:client.name,treatment:client.treatment,dateLabel:client.nextDate,time:client.nextTime,groups:pay.groups,flagged:pay.flagged,notes:pay.notes,photos:pay.photos||[],_idem:_ciStableIdem(prov)};
+    _markCheckinDoneKeepDraft(prov);
+    if(_nextPrevisitItem()){
+      _clientSubmit('checkin',_ciPayload).then(function(res){
+        if(res&&res.duplicate)return;
+        if(res&&res.ok!==false){ try{_ciClearIdem(prov);}catch(e){} try{if(typeof _ciClearDraft==='function')_ciClearDraft();}catch(e){} }
+        else{ _unmarkCheckinDone(prov); showToast("Your check-in didn't send — reopen it from your to-do list to try again",false); }
+      });
+      _advancePrevisitFlow('Check-in sent');
+      return;
+    }
+    // Nothing follows — this is the last step, so confirm it actually reached the server before showing
+    // the all-set screen (a dropped FINAL check-in could hide a contraindication with nothing after it).
     S.innerHTML=_sendingHTML('Sending your check-in…');
-    _clientSubmit('checkin',{client:client.name,treatment:client.treatment,dateLabel:client.nextDate,time:client.nextTime,groups:pay.groups,flagged:pay.flagged,notes:pay.notes,photos:pay.photos||[],_idem:_ciStableIdem(prov)})
+    _clientSubmit('checkin',_ciPayload)
       .then(function(res){
         if(res&&res.duplicate)return;
-        if(res&&res.ok!==false){ try{_ciClearIdem(prov);}catch(e){} _markCheckinDone(prov); if(_advancePrevisitFlow(''))return; S.innerHTML=_checkinSuccessHTML(flagged); }
-        else{ S.innerHTML=_submitFailedHTML('submitCheckin()',"Couldn't send your check-in"); }
+        if(res&&res.ok!==false){ try{_ciClearIdem(prov);}catch(e){} try{if(typeof _ciClearDraft==='function')_ciClearDraft();}catch(e){} S.innerHTML=_checkinSuccessHTML(flagged); }
+        else{ _unmarkCheckinDone(prov); S.innerHTML=_submitFailedHTML('submitCheckin()',"Couldn't send your check-in"); }
       });
     return;
   }
