@@ -2518,9 +2518,9 @@ function _progressPhotoSectionHTML(){
   const sorted=list.slice().sort(function(a,b){return (b.ts||0)-(a.ts||0);});
   return `<div style="margin:0 16px 14px;background:var(--c-card);border:1.5px solid var(--c-line);border-radius:14px;padding:14px;">
     <div style="font-size:13px;font-weight:700;color:var(--c-ink);margin-bottom:3px;">Your progress photos</div>
-    <div style="font-size:12px;color:var(--c-mut);margin-bottom:11px;line-height:1.4;">Before &amp; after photos from your visits with ${_txt(client.providerFirst)}.</div>
+    <div style="font-size:12px;color:var(--c-mut);margin-bottom:11px;line-height:1.4;">Before &amp; after photos from your visits with ${_txt(client.providerFirst)}. Tap any photo to view or save it.</div>
     <div style="display:grid;grid-template-columns:repeat(3,1fr);gap:8px;">
-      ${sorted.map(function(p){return `<div id="pp-${_jsAttr(p.pid)}" style="position:relative;aspect-ratio:3/4;border-radius:10px;overflow:hidden;background:var(--c-surf3);display:flex;align-items:center;justify-content:center;"><i class="ti ti-photo" aria-hidden="true" style="font-size:22px;color:#cbbba9;"></i>${_ppBadges(p)}</div>`;}).join('')}
+      ${sorted.map(function(p){return `<div id="pp-${_jsAttr(p.pid)}" onclick="_openProgressPhoto('${_jsAttr(p.pid)}')" role="button" aria-label="View or save photo" style="position:relative;aspect-ratio:3/4;border-radius:10px;overflow:hidden;background:var(--c-surf3);display:flex;align-items:center;justify-content:center;cursor:pointer;"><i class="ti ti-photo" aria-hidden="true" style="font-size:22px;color:#cbbba9;"></i>${_ppBadges(p)}</div>`;}).join('')}
     </div>
   </div>`;
 }
@@ -2536,6 +2536,73 @@ function _hydrateProgressPhotos(){
       .then(function(j){if(j&&j.file&&j.file.data){_photoBlobCache[p.pid]=j.file.data;show(j.file.data);}})
       .catch(function(){});
   });
+}
+// ── Photo viewer + Save ── lets a client open a shared before/after photo full-size and download/save
+// a copy. On phones it opens the native share sheet ("Save Image"/"Save to Files"); on desktop it
+// downloads the file directly.
+var _pvSrc='',_pvName='photo';
+function _dataURLtoBlob(dataUrl){
+  try{
+    var parts=String(dataUrl).split(',');var mime=(/data:([^;]+)/.exec(parts[0])||[])[1]||'image/jpeg';
+    var bstr=atob(parts[1]||'');var n=bstr.length;var u8=new Uint8Array(n);while(n--)u8[n]=bstr.charCodeAt(n);
+    return new Blob([u8],{type:mime});
+  }catch(e){return null;}
+}
+function _savePhoto(dataUrl,filename){
+  if(!dataUrl)return;
+  filename=String(filename||'photo').replace(/[^\w.-]+/g,'-').replace(/^-+|-+$/g,'')||'photo';
+  if(!/\.(jpe?g|png|webp)$/i.test(filename))filename+='.jpg';
+  var blob=(String(dataUrl).slice(0,5)==='data:')?_dataURLtoBlob(dataUrl):null;
+  var touch=(navigator.maxTouchPoints>0)||(window.matchMedia&&matchMedia('(pointer:coarse)').matches);
+  // 1) Native share on phones — the reliable way to actually save into the camera roll / Files.
+  try{
+    if(blob&&touch&&navigator.canShare){
+      var file=new File([blob],filename,{type:blob.type||'image/jpeg'});
+      if(navigator.canShare({files:[file]})){navigator.share({files:[file]}).catch(function(){});return;}
+    }
+  }catch(e){}
+  // 2) Direct download (desktop, Android Chrome).
+  try{
+    var url=blob?URL.createObjectURL(blob):dataUrl;
+    var a=document.createElement('a');a.href=url;a.download=filename;document.body.appendChild(a);a.click();
+    setTimeout(function(){try{document.body.removeChild(a);if(blob)URL.revokeObjectURL(url);}catch(e){}},1500);
+    if(typeof showToast==='function')showToast('Photo saved');
+    return;
+  }catch(e){}
+  // 3) Last resort — open it so the client can long-press to save.
+  try{window.open(dataUrl,'_blank');}catch(e){}
+}
+function _savePhotoCurrent(){_savePhoto(_pvSrc,_pvName);}
+function _closePhotoViewer(){var o=document.getElementById('photo-viewer');if(o)o.remove();}
+function _showPhotoViewer(dataUrl,name,loading){
+  _closePhotoViewer();
+  _pvSrc=loading?'':(dataUrl||'');_pvName=name||'photo';
+  var ov=document.createElement('div');ov.id='photo-viewer';
+  ov.style.cssText='position:fixed;inset:0;z-index:10000;background:rgba(0,0,0,.93);display:flex;flex-direction:column;align-items:center;justify-content:center;padding:18px;';
+  ov.onclick=function(e){if(e.target===ov)_closePhotoViewer();};
+  ov.innerHTML=loading
+    ? '<div style="color:#fff;font-size:14px;">Loading…</div>'
+    : '<img src="'+_imgSrc(dataUrl)+'" alt="Before and after photo" style="max-width:100%;max-height:76vh;object-fit:contain;border-radius:12px;">'
+      +'<div style="display:flex;gap:10px;margin-top:16px;">'
+      +'<button onclick="_savePhotoCurrent()" style="background:var(--accent);color:var(--accent-ink);border:none;border-radius:12px;padding:13px 22px;font-size:15px;font-weight:700;cursor:pointer;font-family:inherit;display:inline-flex;align-items:center;gap:7px;"><i class="ti ti-download" aria-hidden="true"></i> Save photo</button>'
+      +'<button onclick="_closePhotoViewer()" style="background:rgba(255,255,255,.16);color:#fff;border:none;border-radius:12px;padding:13px 20px;font-size:15px;font-weight:600;cursor:pointer;font-family:inherit;">Close</button>'
+      +'</div>';
+  document.body.appendChild(ov);
+}
+// Open a shared before/after photo (fetch its bytes if not already loaded), then show it with Save.
+function _openProgressPhoto(pid){
+  var list=((activeProvider()||{}).progressPhotos||[]);var p=null;
+  for(var i=0;i<list.length;i++){if(list[i]&&list[i].pid===pid){p=list[i];break;}}
+  if(!p)return;
+  var name='before-after'+(p.phase?('-'+p.phase):'')+(p.date?('-'+String(p.date).replace(/[^\w]+/g,'-')):'');
+  if(_photoBlobCache[pid]){_showPhotoViewer(_photoBlobCache[pid],name);return;}
+  _showPhotoViewer('',name,true);
+  if(client._real&&client._token){
+    fetch('/api/guide-file?id='+encodeURIComponent(pid)+'&t='+encodeURIComponent(client._token))
+      .then(function(r){return r.ok?r.json():null;})
+      .then(function(j){if(j&&j.file&&j.file.data){_photoBlobCache[pid]=j.file.data;_showPhotoViewer(j.file.data,name);}else _closePhotoViewer();})
+      .catch(function(){_closePhotoViewer();});
+  }else{_closePhotoViewer();}
 }
 // A "progress at a glance" card for the Journey: treatment-series progress bar (Session X of Y) plus
 // visit/photo counts and any homecare streak, so the client sees momentum, not just a photo gallery.
