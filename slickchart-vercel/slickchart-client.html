@@ -354,12 +354,74 @@ async function _initNativePush(){
       }catch(e){}
     });
     PN.addListener('registrationError',function(){});
-    // Tapping a native notification opens the app — route to the right screen from its data payload.
+    // Tapping a native notification opens the app — route to the exact screen it's about (their
+    // check-in for an appointment reminder, the message thread, their homecare routine, etc.).
     PN.addListener('pushNotificationActionPerformed',function(a){
-      try{const d=(a&&a.notification&&a.notification.data)||{};const scr=d.screen||d.action||'';if(scr&&typeof nav==='function')nav(scr);else if(typeof renderHome==='function')renderHome();}catch(e){}
+      try{const d=(a&&a.notification&&a.notification.data)||{};const scr=_clientLinkFromData(d);if(scr)_queueClientDeepLink(scr);else if(typeof renderHome==='function')renderHome();}catch(e){}
     });
     await PN.register();
   }catch(e){/* push is a nice-to-have; never block the app */}
+}
+// ── Push deep-linking ──────────────────────────────────────────────────────────────────────────
+// A tapped push should open the item it's about, not just Home. The push carries a `screen` (native
+// data) or an `?s=` url param (web push). Because the client's data may not have loaded yet on a cold
+// start, we hold the target and route it once the app is ready (client._real), then clear it.
+let _pendingClientScreen=null;
+// Normalize native FCM data OR a web-push url into a screen name.
+function _clientLinkFromData(d){
+  if(!d)return '';
+  let scr=d.screen||d.action||'';
+  if(!scr&&d.url){try{scr=new URL(d.url,location.origin).searchParams.get('s')||'';}catch(e){}}
+  return String(scr||'');
+}
+function _queueClientDeepLink(scr){
+  if(!scr)return;
+  _pendingClientScreen={screen:String(scr),ts:Date.now()};
+  _tryClientDeepLink();
+}
+function _routeClientScreen(scr){
+  try{
+    if(typeof nav!=='function')return;
+    if(scr==='messages')return nav('messages');
+    if(scr==='homecare')return nav('homecare');
+    if(scr==='summary'){try{_summaryIdx=0;_summaryFrom='notifications';}catch(e){}return nav('summary');}
+    if(scr==='journey')return nav('journey');
+    if(scr==='shop')return nav('shop');
+    if(scr==='profile')return nav('profile');
+    if(scr==='rebook')return nav('rebook');
+    if(scr==='virtual-submit')return nav('virtual-submit');
+    return nav('home');
+  }catch(e){}
+}
+function _tryClientDeepLink(){
+  const link=_pendingClientScreen;
+  if(!link)return;
+  if(Date.now()-(link.ts||0)>60000){_pendingClientScreen=null;return;}   // never let a stale tap hijack nav later
+  if(!client._real)return;   // wait until this client's own data has loaded
+  const scr=link.screen;
+  if(scr==='previsit'||scr==='checkin'){
+    // Route into the pre-visit flow (merged intake+check-in package, or the check-in). Wait until the
+    // check-in config/forms are loaded so we land on the right step rather than bouncing to Home; the
+    // 60s guard drops it if there's genuinely nothing pending (e.g. the check-in was already done).
+    const haveCfg=(typeof _ciSteps==='function')&&_ciSteps().length>0;
+    const haveForm=((activeProvider().pendingForms||[]).length>0);
+    if(!haveCfg&&!haveForm)return;
+    _pendingClientScreen=null;
+    try{_startPrevisitFlow();}catch(e){try{nav('home');}catch(_){}}
+    return;
+  }
+  _pendingClientScreen=null;
+  _routeClientScreen(scr);
+}
+// A web-push tap navigates the PWA to /client?s=<screen>; read it on boot and strip it so a later
+// refresh doesn't re-trigger the jump.
+function _handleClientPushParams(){
+  try{
+    const s=new URLSearchParams(location.search).get('s');
+    if(!s)return;
+    _queueClientDeepLink(String(s));
+    try{const u=new URL(location.href);u.searchParams.delete('s');history.replaceState({},'',u);}catch(e){}
+  }catch(e){}
 }
 
 /* In-app notification center (the bell) */
@@ -5706,7 +5768,8 @@ function _bootRealClient(token){
   fetch('/api/client-data?t='+encodeURIComponent(token),{cache:'no-store'}).then(function(r){return r.json();}).then(function(j){
     if(j&&j.ok&&j.client){
       _applyRealClientData(j); client._real=true; try{document.title='SlickChart \u2014 '+client.name;}catch(e){} applyActiveProvider(); nav('home');
-      try{_loadClientPrefsFromServer().then(function(){ if(document.getElementById('page-heading'))renderHome(); try{_syncClientPrefsToServer();}catch(e){} });}catch(e){}
+      try{_tryClientDeepLink();}catch(e){}   // a push tap may be waiting to open a specific screen
+      try{_loadClientPrefsFromServer().then(function(){ if(document.getElementById('page-heading'))renderHome(); try{_syncClientPrefsToServer();}catch(e){} try{_tryClientDeepLink();}catch(_e){} });}catch(e){}
       try{_loadMsgSeenIds();_fetchRealMessages(true);}catch(e){}
       try{_lastDataFingerprint=_clientDataFingerprint(j);_startRealClientPolling();}catch(e){}
       // If this client already granted notifications on a previous visit, make sure this
@@ -5824,6 +5887,8 @@ function _pollRealClient(){
       }
       // messages are polled by their own dedicated 20s timer (see setInterval below), not fetched
       // here too, to avoid a duplicate /api/client-messages request on every 30s data poll.
+      // A pending pre-visit deep link may have been waiting on newly-synced forms/check-in config.
+      try{_tryClientDeepLink();}catch(e){}
     })
     .catch(function(){});
 }
@@ -5938,6 +6003,7 @@ document.addEventListener('DOMContentLoaded', function() {
     el.addEventListener('click', function() { nav(el.getAttribute('data-nav')); });
   });
   updateClientBadge();
+  try{_handleClientPushParams();}catch(e){}   // web-push tap → /client?s=<screen>; queue it for after data loads
   var _ctok=_getClientToken();
   if(_ctok){ _bootRealClient(_ctok); return; }
   // No token \u2192 this is the SAMPLE/demo experience (demo "Maya" data). Always show a clear banner so a

@@ -110,7 +110,8 @@ export default async function handler(req, res) {
             due.push({
               rkey: 'apptbefore:' + apptL.date + ':' + a.at,
               title: 'Appointment tomorrow',
-              body: (a.treatment ? a.treatment + ' ' : 'Your appointment ') + (a.label ? '· ' + a.label : '') + '. See you then!'
+              body: (a.treatment ? a.treatment + ' ' : 'Your appointment ') + (a.label ? '· ' + a.label : '') + '. See you then!',
+              screen: 'previsit'   // tap opens the pre-visit check-in / intake
             });
           }
           // Morning-of reminder: appointment is today (client-local). Allow a few hours' grace on the
@@ -120,7 +121,8 @@ export default async function handler(req, res) {
             due.push({
               rkey: 'apptday:' + apptL.date + ':' + a.at,
               title: 'Appointment today',
-              body: (a.treatment ? a.treatment + ' ' : 'Your appointment ') + (a.label ? '· ' + a.label : '') + '. Looking forward to seeing you!'
+              body: (a.treatment ? a.treatment + ' ' : 'Your appointment ') + (a.label ? '· ' + a.label : '') + '. Looking forward to seeing you!',
+              screen: 'previsit'   // tap opens the pre-visit check-in / intake
             });
           }
         }
@@ -130,7 +132,8 @@ export default async function handler(req, res) {
         due.push({
           rkey: 'homecare:' + nowL.date,
           title: 'Homecare reminder',
-          body: 'A little reminder to keep up with your routine today ✨'
+          body: 'A little reminder to keep up with your routine today ✨',
+          screen: 'homecare'   // tap opens their homecare routine
         });
       }
 
@@ -161,7 +164,7 @@ export default async function handler(req, res) {
           ];
           for (const st of STAGES) {
             if (elapsed >= st.lo && elapsed < st.hi) {
-              due.push({ rkey: 'heal-' + st.key + ':' + healStart, title: st.title, body: st.body, healMsg: st.msg, isHeal: true });
+              due.push({ rkey: 'heal-' + st.key + ':' + healStart, title: st.title, body: st.body, healMsg: st.msg, isHeal: true, screen: 'messages' });
             }
           }
         }
@@ -187,9 +190,13 @@ export default async function handler(req, res) {
         if (r.isHeal && row.provider_id) {
           try { await logEvent(row.provider_id, row.client_id, 'provider_message', { text: r.healMsg, photos: [], auto: true }); } catch (e) {}
         }
-        const sent = await sendPushToAll(subs, { title: r.title, body: r.body, url: '/client', tag: r.rkey, renotify: true }, deletePushSub);
+        // Deep-link the tap to the relevant screen (check-in/intake for appointment reminders, the
+        // homecare routine, the message thread for aftercare) instead of always dropping on Home.
+        const scr = r.screen || '';
+        const dlUrl = '/client' + (scr ? ('?s=' + encodeURIComponent(scr)) : '');
+        const sent = await sendPushToAll(subs, { title: r.title, body: r.body, url: dlUrl, tag: r.rkey, renotify: true, screen: scr }, deletePushSub);
         let nativeSent = 0;
-        if (hasNative) { try { nativeSent = await sendNativeToClient(row.client_id, { title: r.title, body: r.body, url: '/client', tag: r.rkey }); } catch (e) {} }
+        if (hasNative) { try { nativeSent = await sendNativeToClient(row.client_id, { title: r.title, body: r.body, url: dlUrl, tag: r.rkey, screen: scr }); } catch (e) {} }
         // If NOTHING reached the client (transient push failure), release the claim so the next hourly run
         // retries. Skip for aftercare — its guidance is also written to the in-app thread above, so it isn't
         // lost, and re-running would duplicate that thread message.

@@ -61,10 +61,10 @@ export default async function handler(req, res) {
         await sendPushToAll(subs, {
           title: 'New message from ' + who,
           body: shortBody,
-          url: '/client', tag: 'msg-' + clientId, renotify: true
+          url: '/client?s=messages', tag: 'msg-' + clientId, renotify: true, screen: 'messages'
         }, deletePushSub);
         // Same message to the client's native app (Capacitor iOS/Android), if they installed it.
-        try { await sendNativeToClient(clientId, { title: 'New message from ' + who, body: shortBody, url: '/client', tag: 'msg-' + clientId }); } catch (e) {}
+        try { await sendNativeToClient(clientId, { title: 'New message from ' + who, body: shortBody, url: '/client?s=messages', tag: 'msg-' + clientId, screen: 'messages' }); } catch (e) {}
       }
     } catch (e) { /* push is best-effort */ }
 

@@ -95,6 +95,7 @@ export async function sendFcm(token, payload) {
   if (payload && payload.kind) data.kind = String(payload.kind);
   if (payload && payload.clientId) data.clientId = String(payload.clientId);
   if (payload && payload.itemId) data.itemId = String(payload.itemId);
+  if (payload && payload.screen) data.screen = String(payload.screen);
   const message = {
     token,
     notification: { title, body: bodyTxt },

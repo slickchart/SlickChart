@@ -117,10 +117,10 @@ export default async function handler(req, res) {
           try { await logEvent(owner, cid, 'provider_message', { text, photos: [], auto: true }); summary.messages++; } catch (e) {}
           // Best-effort push on either channel.
           if (pushConfigured()) {
-            try { const subs = await listPushSubs(cid); if (subs && subs.length) { summary.devices += await sendPushToAll(subs, { title: 'New message', body: text.slice(0, 140), url: '/client', tag: rkey, renotify: true }, deletePushSub); } } catch (e) {}
+            try { const subs = await listPushSubs(cid); if (subs && subs.length) { summary.devices += await sendPushToAll(subs, { title: 'New message', body: text.slice(0, 140), url: '/client?s=messages', tag: rkey, renotify: true, screen: 'messages' }, deletePushSub); } } catch (e) {}
           }
           if (fcmConfigured()) {
-            try { summary.devices += await sendNativeToClient(cid, { title: 'New message', body: text.slice(0, 140), url: '/client', tag: rkey }); } catch (e) {}
+            try { summary.devices += await sendNativeToClient(cid, { title: 'New message', body: text.slice(0, 140), url: '/client?s=messages', tag: rkey, screen: 'messages' }); } catch (e) {}
           }
         }
       }

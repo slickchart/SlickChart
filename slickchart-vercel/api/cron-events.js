@@ -176,10 +176,10 @@ export default async function handler(req, res) {
 
           const title = ev.kind === 'birthday' ? 'A birthday note 🎂' : 'A note from your provider';
           if (pushConfigured()) {
-            try { const subs = await listPushSubs(cid); if (subs && subs.length) summary.devices += await sendPushToAll(subs, { title, body: text.slice(0, 140), url: '/client', tag: rkey, renotify: true }, deletePushSub); } catch (e) {}
+            try { const subs = await listPushSubs(cid); if (subs && subs.length) summary.devices += await sendPushToAll(subs, { title, body: text.slice(0, 140), url: '/client?s=messages', tag: rkey, renotify: true, screen: 'messages' }, deletePushSub); } catch (e) {}
           }
           if (fcmConfigured()) {
-            try { summary.devices += await sendNativeToClient(cid, { title, body: text.slice(0, 140), url: '/client', tag: rkey }); } catch (e) {}
+            try { summary.devices += await sendNativeToClient(cid, { title, body: text.slice(0, 140), url: '/client?s=messages', tag: rkey, screen: 'messages' }); } catch (e) {}
           }
         }
         summary.automations++;
