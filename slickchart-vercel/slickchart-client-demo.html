@@ -1986,6 +1986,7 @@ function nav(screen){
     rebook:renderRebook,
     'client-help':renderClientHelp,
     summary:renderLatestSummary,checkin:renderCheckin,
+    previsit:renderPrevisitPackage,
     'virtual-submit':renderVirtualSubmit,
     welcome:renderMagicLanding,
     'fill-form':renderFillForm,
@@ -2097,6 +2098,9 @@ function _previsitProgressHTML(type,formId){
 function _startPrevisitFlow(){
   const t=_nextPrevisitItem();
   if(!t){nav('home');return;}
+  // First-visit case (one intake form + the check-in): show them merged on a single scrollable page so
+  // there's no separate second screen to miss. Any other shape keeps the step-by-step guided flow.
+  if(_previsitUsePackage()){_fillFormId=(activeProvider().pendingForms[0]||{}).formId;nav('previsit');return;}
   if(t.type==='checkin')nav('checkin');
   else{_fillFormId=t.formId;nav('fill-form');}
 }
@@ -3416,8 +3420,12 @@ function _ffFocusBadField(i){
     setTimeout(function(){try{wrap.style.outline='';wrap.style.outlineOffset='';}catch(e){}},2800);
   }catch(e){}
 }
-function _submitFillForm(){
-  const pf=_pendingForm();if(!pf)return;
+// Read + validate every intake field straight from the DOM (ids ff-${i}), returning the collected
+// answers or {ok:false} after showing an error toast and jumping to the first bad field. Split out of
+// _submitFillForm so the single-scrollable first-visit package (_submitPrevisitPackage) collects the
+// intake exactly the same way — same required/email/phone/DOB checks, same "signed" detection, same
+// flagged-contraindication capture — before firing its two separate backend submissions.
+function _collectFillForm(pf){
   const qs=_orderedFormQs(pf.qs);
   const answers={};const flagged=[];let signed=false;
   let missingRequired=false;let badFormat='';let firstBadIdx=-1;
@@ -3457,8 +3465,15 @@ function _submitFillForm(){
       if(val&&q.type==='Date'&&_looksDOB(q.label)&&!_validDOB(val)){badFormat=badFormat||'Please enter your date of birth as MM/DD/YYYY.';_markBad(i);}
     }
   });
-  if(missingRequired||badFormat){ if(firstBadIdx>=0)_ffFocusBadField(firstBadIdx); showToast(missingRequired?'Please fill in the required fields':badFormat,false); return; }
+  if(missingRequired||badFormat){ if(firstBadIdx>=0)_ffFocusBadField(firstBadIdx); showToast(missingRequired?'Please fill in the required fields':badFormat,false); return {ok:false}; }
   const dateLabel=new Date().toLocaleDateString('en-US',{month:'short',day:'numeric',year:'numeric'});
+  return {ok:true,qs,answers,flagged,signed,dateLabel};
+}
+function _submitFillForm(){
+  const pf=_pendingForm();if(!pf)return;
+  const _c=_collectFillForm(pf);
+  if(!_c.ok)return;   // validation failed — toast + focus already shown by _collectFillForm
+  const qs=_c.qs,answers=_c.answers,flagged=_c.flagged,signed=_c.signed,dateLabel=_c.dateLabel;
   const _finishFormSent=()=>{
     // Remove it from the pending list only once we know it's been sent, so a failed
     // submit doesn't make the form vanish while the provider never received it.
@@ -3521,6 +3536,7 @@ let _ciDraftTimer=null;
 function _ciSaveDraftSoon(){clearTimeout(_ciDraftTimer);_ciDraftTimer=setTimeout(function(){try{_ciSaveDraft();}catch(e){}},400);}
 function _ciClearDraft(){try{localStorage.removeItem(_ciDraftKey());}catch(e){}}
 function renderCheckin(){
+  _ciPkgMode=false;   // standalone wizard — _ciRerender re-renders the full step, not a package block
   setNav('home');
   document.getElementById('tt').textContent='Pre-visit Check-in';
   const p=activeProvider();
@@ -3590,7 +3606,22 @@ function _renderCheckinStep(){
 function _scrollScreenTop(){try{S.scrollTop=0;}catch(e){}try{window.scrollTo(0,0);}catch(e){}}
 // Client taps "This is my first visit" — flip the flag and re-render so the step retitles, drops the
 // "since your last visit" wording, and shows the welcome note. Opt-in only; we never set it for them.
-function _ciToggleFirstVisit(){checkinAnswers._firstVisit=_ciFirstVisit()?'':'yes';try{_ciSaveDraft();}catch(e){}_renderCheckinStep();}
+function _ciToggleFirstVisit(){checkinAnswers._firstVisit=_ciFirstVisit()?'':'yes';try{_ciSaveDraft();}catch(e){}_ciRerender();}
+// A check-in answer tap re-renders the check-in view. That view is EITHER the standalone multi-step
+// wizard (renderCheckin) OR the single-scrollable first-visit package (renderPrevisitPackage), where the
+// intake and the check-in share ONE page so nobody can miss a "second form". This indirection routes the
+// re-render to whichever is on screen: on the package it re-renders ONLY the check-in block (leaving the
+// intake above and the scroll position untouched); otherwise it re-renders the full wizard step exactly
+// as before. _ciPkgMode is set true only while the package is on screen.
+let _ciPkgMode=false;
+function _ciRerender(){
+  if(_ciPkgMode){
+    const body=document.getElementById('ci-package-body');
+    if(body){try{_ciSaveDraft();}catch(e){}body.innerHTML=_previsitCheckinBlockHTML();}
+    return;   // never fall through to the wizard while the package is showing
+  }
+  _renderCheckinStep();
+}
 
 function _renderCIQuestion(q){
   if(q.type==='boolean')return _ciBoolean(q);
@@ -3625,7 +3656,7 @@ function _ciLevel(q){
   const v=checkinAnswers[q.id]||opts[0];   // defaults to first (e.g. "Off")
   return`<div style="font-size:12px;font-weight:600;color:var(--c-mut);text-transform:uppercase;letter-spacing:.07em;margin-bottom:8px;">${_txt(q.label)}</div>
   <div style="display:flex;gap:6px;margin-bottom:14px;">
-    ${opts.map(o=>`<button onclick="checkinAnswers['${_jsAttr(q.id)}']='${_jsAttr(o)}';_renderCheckinStep()" style="flex:1;border:1.5px solid ${v===o?'var(--accent)':'#d9e7e1'};background:${v===o?'var(--accent)':'#fff'};color:${v===o?'#fff':'#54645e'};border-radius:9px;padding:11px 4px;font-size:13px;font-weight:600;cursor:pointer;">${_txt(o)}</button>`).join('')}
+    ${opts.map(o=>`<button onclick="checkinAnswers['${_jsAttr(q.id)}']='${_jsAttr(o)}';_ciRerender()" style="flex:1;border:1.5px solid ${v===o?'var(--accent)':'#d9e7e1'};background:${v===o?'var(--accent)':'#fff'};color:${v===o?'#fff':'#54645e'};border-radius:9px;padding:11px 4px;font-size:13px;font-weight:600;cursor:pointer;">${_txt(o)}</button>`).join('')}
   </div>`;
 }
 
@@ -3636,8 +3667,8 @@ function _ciBoolean(q){
       <div style="font-size:13px;font-weight:600;color:var(--c-ink);margin-bottom:4px;">${_txt(q.label)}</div>
       ${q.hint?`<div style="font-size:12px;color:var(--c-mut);margin-bottom:10px;">${_txt(q.hint)}</div>`:''}
       <div style="display:flex;gap:8px;">
-        <button onclick="checkinAnswers['${_jsAttr(q.id)}']='yes';_renderCheckinStep()" style="flex:1;border:1.5px solid ${v==='yes'?'var(--accent)':'#d9e7e1'};background:${v==='yes'?'var(--accent)':'#fff'};color:${v==='yes'?'#fff':'#54645e'};border-radius:8px;padding:10px;font-size:13px;cursor:pointer;font-weight:600;">${_txt(q.yesLabel||'Yes')}</button>
-        <button onclick="checkinAnswers['${_jsAttr(q.id)}']='no';_renderCheckinStep()" style="flex:1;border:1.5px solid ${v==='no'?'var(--accent)':'#d9e7e1'};background:${v==='no'?'var(--accent)':'#fff'};color:${v==='no'?'#fff':'#54645e'};border-radius:8px;padding:10px;font-size:13px;cursor:pointer;font-weight:600;">${_txt(q.noLabel||'No changes')}</button>
+        <button onclick="checkinAnswers['${_jsAttr(q.id)}']='yes';_ciRerender()" style="flex:1;border:1.5px solid ${v==='yes'?'var(--accent)':'#d9e7e1'};background:${v==='yes'?'var(--accent)':'#fff'};color:${v==='yes'?'#fff':'#54645e'};border-radius:8px;padding:10px;font-size:13px;cursor:pointer;font-weight:600;">${_txt(q.yesLabel||'Yes')}</button>
+        <button onclick="checkinAnswers['${_jsAttr(q.id)}']='no';_ciRerender()" style="flex:1;border:1.5px solid ${v==='no'?'var(--accent)':'#d9e7e1'};background:${v==='no'?'var(--accent)':'#fff'};color:${v==='no'?'#fff':'#54645e'};border-radius:8px;padding:10px;font-size:13px;cursor:pointer;font-weight:600;">${_txt(q.noLabel||'No changes')}</button>
       </div>
     </div>
     ${v==='yes'?`<div style="border-top:1px solid var(--c-line);padding:10px 14px;"><textarea aria-label="Details" placeholder="${_txt(q.detailPh||'Add any details...')}" style="width:100%;background:var(--c-surf);border:1.5px solid var(--c-line);border-radius:8px;padding:9px 12px;font-size:13px;color:var(--c-ink);font-family:inherit;resize:none;height:70px;line-height:1.5;" oninput="checkinAnswers['${_jsAttr(q.id)}Detail']=this.value;_ciSaveDraftSoon()">${_txt(checkinAnswers[q.id+'Detail']||'')}</textarea></div>`:''}
@@ -3651,8 +3682,8 @@ function _ciIconChoice(q){
   return`<div style="font-size:12px;font-weight:600;color:var(--c-mut);text-transform:uppercase;letter-spacing:.07em;margin-bottom:8px;">${_txt(q.label)}</div>
   <div style="background:var(--c-card);border:1.5px solid ${(v!==undefined&&v!=='')?'var(--accent)':'#e7f0ec'};border-radius:12px;overflow:hidden;margin-bottom:14px;">
     <div style="display:grid;grid-template-columns:repeat(${cols},1fr);gap:1px;background:var(--c-surf2);">
-      ${opts.map((o,i)=>`<button onclick="checkinAnswers['${q.id}']=${i};${q.allowCustom?`checkinAnswers['${q.id}Custom']='';`:''}_renderCheckinStep()" style="background:${v===i?'var(--accent-lt)':'#fff'};border:none;padding:12px 8px;cursor:pointer;text-align:center;"><span aria-hidden="true" style="font-size:22px;display:block;margin-bottom:4px;">${_txt(o[0])}</span><div style="font-size:12px;font-weight:${v===i?700:500};color:${v===i?'#4f6f66':'var(--c-ink)'};">${_txt(o[1])}</div>${o[2]?`<div style="font-size:11px;color:var(--c-mut);">${_txt(o[2])}</div>`:''}${v===i?`<div style="width:20px;height:3px;background:var(--accent);border-radius:2px;margin:4px auto 0;"></div>`:''}</button>`).join('')}
-      ${q.allowCustom?`<button onclick="checkinAnswers['${q.id}']=-1;_renderCheckinStep()" style="background:${v===-1?'var(--accent-lt)':'#fff'};border:none;padding:12px 8px;cursor:pointer;text-align:center;grid-column:1/-1;"><span aria-hidden="true" style="font-size:20px;display:block;margin-bottom:4px;">✏️</span><div style="font-size:12px;font-weight:${v===-1?700:500};color:${v===-1?'#4f6f66':'var(--c-ink)'};">${_txt(q.customLabel||'Something else…')}</div>${v===-1?`<div style="width:20px;height:3px;background:var(--accent);border-radius:2px;margin:4px auto 0;"></div>`:''}</button>`:''}
+      ${opts.map((o,i)=>`<button onclick="checkinAnswers['${q.id}']=${i};${q.allowCustom?`checkinAnswers['${q.id}Custom']='';`:''}_ciRerender()" style="background:${v===i?'var(--accent-lt)':'#fff'};border:none;padding:12px 8px;cursor:pointer;text-align:center;"><span aria-hidden="true" style="font-size:22px;display:block;margin-bottom:4px;">${_txt(o[0])}</span><div style="font-size:12px;font-weight:${v===i?700:500};color:${v===i?'#4f6f66':'var(--c-ink)'};">${_txt(o[1])}</div>${o[2]?`<div style="font-size:11px;color:var(--c-mut);">${_txt(o[2])}</div>`:''}${v===i?`<div style="width:20px;height:3px;background:var(--accent);border-radius:2px;margin:4px auto 0;"></div>`:''}</button>`).join('')}
+      ${q.allowCustom?`<button onclick="checkinAnswers['${q.id}']=-1;_ciRerender()" style="background:${v===-1?'var(--accent-lt)':'#fff'};border:none;padding:12px 8px;cursor:pointer;text-align:center;grid-column:1/-1;"><span aria-hidden="true" style="font-size:20px;display:block;margin-bottom:4px;">✏️</span><div style="font-size:12px;font-weight:${v===-1?700:500};color:${v===-1?'#4f6f66':'var(--c-ink)'};">${_txt(q.customLabel||'Something else…')}</div>${v===-1?`<div style="width:20px;height:3px;background:var(--accent);border-radius:2px;margin:4px auto 0;"></div>`:''}</button>`:''}
     </div>
     ${q.allowCustom&&v===-1?`<div style="padding:10px 14px;border-top:1px solid var(--c-line);"><input class="fi" aria-label="Custom request" placeholder="${_txt(q.customPh||'Tell us...')}" value="${_txt(checkinAnswers[q.id+'Custom']||'')}" oninput="checkinAnswers['${q.id}Custom']=this.value;_ciSaveDraftSoon()" style="font-size:13px;"></div>`:''}
   </div>`;
@@ -4073,6 +4104,153 @@ function submitCheckin(){
   _markCheckinDone(prov);
   if(_advancePrevisitFlow(''))return;
   S.innerHTML=_checkinSuccessHTML(flagged);
+}
+
+// ── SINGLE-SCROLLABLE FIRST-VISIT PACKAGE (intake + check-in on ONE page) ──────────────────────────
+// People kept completing the intake and then missing the pre-visit check-in (or vice-versa) because they
+// were two separate screens. This merges them into ONE scrollable form with a single Submit, so there is
+// no second screen to miss. It still files TWO separate backend events — one 'form' (intake) and one
+// 'checkin' — so the provider's chart keeps them apart exactly as before; only the client-side UI is merged.
+
+// Show the merged page only for the exact case people were missing: a real client with EXACTLY ONE pending
+// intake form AND the pre-visit check-in still to do. Two+ forms, or a demo/connected session, keep the
+// proven step-by-step guided flow (which already walks between items back-to-back).
+function _previsitUsePackage(){
+  try{
+    if(!client._real)return false;
+    const p=activeProvider();
+    if((p.pendingForms||[]).length!==1)return false;
+    if(p.checkinDone)return false;
+    if(typeof _ciSteps==='function'&&!_ciSteps().length)return false;   // no check-in configured yet
+    return true;
+  }catch(e){return false;}
+}
+// The whole pre-visit check-in rendered as one continuous block (every step flattened, no wizard paging),
+// so it can sit below the intake on the single package page. Mirrors _renderCheckinStep's per-step header
+// (title + first-visit toggle + note) but stacks the steps top-to-bottom into one scroll.
+function _previsitCheckinBlockHTML(){
+  const steps=_ciSteps();
+  return steps.map(function(step){
+    const fvToggle=step.firstVisitToggle?`<button onclick="_ciToggleFirstVisit()" aria-pressed="${_ciFirstVisit()?'true':'false'}" style="margin-top:10px;display:inline-flex;align-items:center;gap:8px;border:1.5px solid ${_ciFirstVisit()?'var(--accent)':'#d9e7e1'};background:${_ciFirstVisit()?'var(--accent-lt)':'#fff'};color:${_ciFirstVisit()?'var(--accent)':'#54645e'};border-radius:999px;padding:8px 14px;font-size:12.5px;font-weight:600;cursor:pointer;"><i class="ti ti-${_ciFirstVisit()?'circle-check-filled':'sparkles'}" aria-hidden="true"></i>${_ciFirstVisit()?'First visit — nothing to update yet':'This is my first visit'}</button>`:'';
+    const note=step.note?`<div style="margin-top:10px;background:var(--accent-lt);border:1px solid #f0e6d8;border-radius:11px;padding:11px 13px;font-size:13px;color:var(--c-mut);line-height:1.55;">${_txt(step.note)}</div>`:'';
+    return `<div style="margin-top:24px;">
+      <div style="font-size:16px;font-weight:600;color:var(--c-ink);margin-bottom:2px;">${_txt(step.title)}</div>
+      ${fvToggle}${note}
+      <div style="margin-top:12px;">${(step.questions||[]).map(_renderCIQuestion).join('')}</div>
+    </div>`;
+  }).join('');
+}
+function renderPrevisitPackage(){
+  const p=activeProvider();
+  // Set _fillFormId to the single pending intake form BEFORE _pendingForm()/draft helpers read it.
+  if((p.pendingForms||[]).length===1)_fillFormId=p.pendingForms[0].formId;
+  const pf=_pendingForm();
+  // If the intake is gone (already done, or config changed), fall back to the guided step flow so we
+  // never strand the client on a broken page.
+  if(!pf){_ciPkgMode=false;_startPrevisitFlow();return;}
+  _ciPkgMode=true;
+  setNav('home');
+  document.getElementById('tt').textContent='Before your visit';
+  // Intake setup (mirror renderFillForm): load the saved draft, reset in-memory photos.
+  _ffLoadDraft();
+  _ffPhotos={};
+  // Check-in setup (mirror renderCheckin): point checkinAnswers at this provider and resume any draft.
+  if(!p.checkinAnswers)p.checkinAnswers={};
+  checkinAnswers=p.checkinAnswers;
+  try{const raw=localStorage.getItem(_ciDraftKey());if(raw){const d=JSON.parse(raw);if(d&&typeof d==='object')Object.keys(d).forEach(k=>{if(checkinAnswers[k]==null)checkinAnswers[k]=d[k];});}}catch(e){}
+  const qs=_orderedFormQs(pf.qs);
+  const anyReq=qs.some(q=>q&&q.required);
+  S.innerHTML=`
+    <div style="margin:12px 16px 0;background:var(--accent-lt);border:1px solid var(--accent-a20,#eadfd2);border-radius:12px;padding:12px 14px;">
+      <div style="font-size:12px;font-weight:700;color:var(--accent-ink,#7a5a2a);text-transform:uppercase;letter-spacing:.04em;">Before your visit</div>
+      <div style="font-size:12.5px;color:#8a6a42;margin-top:3px;line-height:1.5;">Everything's on this one page — your intake and a quick check-in. Scroll all the way down and tap Submit at the end.</div>
+    </div>
+    <div style="padding:14px 16px 4px;"><div id="page-heading" tabindex="-1" style="font-size:20px;font-weight:600;color:var(--c-ink);">${_txt(pf.title)}</div>${anyReq?`<div style="font-size:12px;color:var(--c-mut);margin-top:4px;"><span style="color:var(--accent-ink-lt);font-weight:700;">*</span> = required</div>`:''}</div>
+    <div style="padding:6px 16px 0;">
+      ${qs.map((q,i)=>_fillFormFieldHTML(q,i)).join('')}
+    </div>
+    <div style="margin:6px 16px 0;border-top:1px solid var(--c-line);"></div>
+    <div id="ci-package-body" style="padding:0 16px 0;">${_previsitCheckinBlockHTML()}</div>
+    <div style="padding:20px 16px 26px;">
+      <button onclick="_submitPrevisitPackage()" class="btnp" style="width:100%;border-radius:12px;padding:13px;"><i class="ti ti-send" aria-hidden="true" style="margin-right:5px;"></i>Submit to ${_txt(client.providerFirst)}</button>
+    </div>`;
+}
+// Holds the two built payloads across a "Sending…"→retry so a retry re-sends the SAME idempotent
+// payloads (server dedups on their stable idem keys) without re-reading a DOM that's no longer on screen.
+let _pkgPending=null;
+function _pkgRetry(){ if(_pkgPending)_pkgSendReal(); else _startPrevisitFlow(); }
+function _submitPrevisitPackage(){
+  const pf=_pendingForm();if(!pf)return;
+  // Validate + collect the intake from the DOM (same checks as the standalone intake form).
+  const c=_collectFillForm(pf);
+  if(!c.ok)return;   // toast + jump-to-bad-field already handled; stay on the page so nothing is lost
+  const prov=activeProvider();
+  const pay=_ciBuildPayload();
+  const ciFlaggedLc=(pay.flagged||[]).map(f=>String(f).toLowerCase());
+  const ffPayload={formId:pf.formId,title:pf.title,answers:c.answers,flagged:c.flagged,signed:c.signed,date:c.dateLabel,qs:c.qs.map(function(q){return {id:q.id,label:q.label,type:q.type};}),_idem:_ffStableIdem(pf)};
+  const ciPayload={client:client.name,treatment:client.treatment,dateLabel:client.nextDate,time:client.nextTime,groups:pay.groups,flagged:pay.flagged,notes:pay.notes,photos:pay.photos||[],_idem:_ciStableIdem(prov)};
+
+  // Connected demo provider (landing-page demo bridge): file both, then show the all-set screen.
+  if(prov.connected){
+    prov.pendingForms=(prov.pendingForms||[]).filter(function(x){return x.formId!==pf.formId;});
+    try{_markFormDone(prov.id,pf);}catch(e){}
+    _markCheckinDone(prov);
+    SlickBridge.post('checkin-submitted',{
+      id:'ci'+Date.now()+Math.random().toString(36).slice(2,5),
+      providerId:prov.id,clientId:'maya',client:client.name,
+      dateLabel:client.nextDate,time:client.nextTime,treatment:client.treatment,
+      groups:pay.groups,flagged:pay.flagged,notes:pay.notes,photos:pay.photos,submittedAt:Date.now(),
+    });
+    _ffPhotos={};_ffClearDraft();
+    _ciPkgMode=false;
+    S.innerHTML=_checkinSuccessHTML(ciFlaggedLc);
+    return;
+  }
+
+  // Real client: file the intake and the check-in as TWO separate, idempotent backend events so they
+  // land in the chart under submittedForms and lastCheckin exactly as the separate flows do today. This
+  // is the final step, so we confirm delivery before the all-set screen — a dropped submit could hide a
+  // flagged contraindication (in the intake OR the check-in) with nothing after it to catch it.
+  if(client._real){
+    _pkgPending={ffPayload:ffPayload,ciPayload:ciPayload,ciFlaggedLc:ciFlaggedLc,pf:pf,prov:prov};
+    _pkgSendReal();
+    return;
+  }
+
+  // Demo/local (no real token, not connected): mark both done and show the all-set screen.
+  prov.pendingForms=(prov.pendingForms||[]).filter(function(x){return x.formId!==pf.formId;});
+  try{_markFormDone(prov.id,pf);}catch(e){}
+  _markCheckinDone(prov);
+  _ffPhotos={};_ffClearDraft();
+  _ciPkgMode=false;
+  S.innerHTML=_checkinSuccessHTML(ciFlaggedLc);
+}
+function _pkgSendReal(){
+  const st=_pkgPending;if(!st)return;
+  S.innerHTML=_sendingHTML('Sending…');
+  Promise.all([_clientSubmit('form',st.ffPayload),_clientSubmit('checkin',st.ciPayload)]).then(function(res){
+    const fr=res[0],cr=res[1];
+    const formOk=!!(fr&&(fr.duplicate||fr.ok!==false));
+    const ciOk=!!(cr&&(cr.duplicate||cr.ok!==false));
+    if(formOk&&ciOk){
+      const prov=st.prov,pf=st.pf;
+      // Clear the intake draft/idem BEFORE dropping pf from pendingForms — _ffClearDraft keys off the
+      // still-pending form instance; removing it first would compute the wrong key and leave the draft.
+      try{_ffClearIdem(pf);}catch(e){}
+      try{_ffClearDraft();}catch(e){}
+      prov.pendingForms=(prov.pendingForms||[]).filter(function(x){return x.formId!==pf.formId;});
+      try{_markFormDone(prov.id,pf);}catch(e){}
+      _ffPhotos={};
+      _markCheckinDone(prov);   // also clears the check-in draft
+      try{_ciClearIdem(prov);}catch(e){}
+      _ciPkgMode=false;_pkgPending=null;
+      S.innerHTML=_checkinSuccessHTML(st.ciFlaggedLc);
+    }else{
+      // Keep drafts + idem keys so "Try again" re-sends the same idempotent payloads; the server dedups
+      // whichever half already landed, so neither the intake nor the check-in is ever doubled.
+      S.innerHTML=_submitFailedHTML('_pkgRetry()',"Couldn't send just yet");
+    }
+  });
 }
 
 // ── CLIENT REBOOK REQUEST ──
