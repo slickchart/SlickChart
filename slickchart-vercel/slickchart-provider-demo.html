@@ -6400,6 +6400,27 @@ function _stopStream(s){try{s&&s.getTracks&&s.getTracks().forEach(t=>t.stop());}
 function _fmtSecs(s){const m=Math.floor(s/60),ss=s%60;return m+':'+String(ss).padStart(2,'0');}
 function _blobToB64(blob){return new Promise((res,rej)=>{const r=new FileReader();r.onload=()=>{const s=String(r.result||'');const i=s.indexOf(',');res(i>=0?s.slice(i+1):s);};r.onerror=rej;r.readAsDataURL(blob);});}
 function _recordSupported(){return !!(navigator.mediaDevices&&navigator.mediaDevices.getUserMedia&&window.MediaRecorder);}
+// A blocked mic needs different instructions inside the installed app (fix it in the OS app settings)
+// vs the browser (fix it in the site permissions) — the old "allow it for this site in your browser"
+// wording is confusing and wrong when someone's tapping the native app icon.
+function _micHelpMsg(){
+  return _isNativeApp()
+    ? 'Microphone access is off for the SlickChart app. Open your phone Settings → Apps → SlickChart → Permissions → Microphone → Allow, then try again.'
+    : 'Microphone access was blocked. Allow the mic for this site in your browser, then try again.';
+}
+// Shown when the mic can't be opened inside the installed app — where the live Web Speech engine is
+// unreliable anyway, so instead of silently spinning it up we tell them how to enable the mic and let
+// them type the note in the meantime.
+function _voiceMicBlocked(id){
+  _voiceOverlay(`<div style="display:flex;align-items:center;gap:8px;margin-bottom:8px;"><i class="ti ti-microphone-off" style="font-size:16px;color:var(--p-amber);"></i><span style="font-size:15px;font-weight:600;color:var(--p-ink);">Microphone is blocked</span></div>
+  <div style="font-size:12px;color:var(--p-amber);line-height:1.5;margin-bottom:10px;">${_micHelpMsg()}</div>
+  <textarea id="voice-ta" placeholder="Or type your note here…" style="width:100%;height:110px;background:var(--p-bg);border:1px solid var(--p-line);border-radius:10px;padding:11px;font-size:14px;color:var(--p-ink);font-family:inherit;line-height:1.6;resize:none;outline:none;box-sizing:border-box;"></textarea>
+  <div style="display:flex;gap:8px;margin-top:12px;">
+    <button onclick="startVoiceNote('${_jsAttr(id)}')" style="flex:1;background:var(--surf2);border:1px solid var(--accent);color:var(--accent-strong);border-radius:10px;padding:12px;font-size:13px;font-weight:600;cursor:pointer;font-family:inherit;"><i class="ti ti-refresh"></i> Try again</button>
+    <button onclick="_voiceSave(document.getElementById('voice-ta').value)" style="flex:1;background:var(--accent);color:var(--accent-ink);border:none;border-radius:10px;padding:12px;font-size:13px;font-weight:600;cursor:pointer;font-family:inherit;">Save to notes</button>
+  </div>
+  <button onclick="_voiceClose()" style="width:100%;margin-top:8px;background:none;border:none;color:var(--p-mut);font-size:13px;cursor:pointer;font-family:inherit;padding:6px;">Cancel</button>`);
+}
 // Dispatcher: high-accuracy recording when available, else the live engine.
 function startVoiceNote(id){
   if(_whisperOn&&_recordSupported())_startVoiceNoteRecorded(id);
@@ -6410,7 +6431,7 @@ async function _startVoiceNoteRecorded(id){
   const seed=(_voiceSeed||'').trim();_voiceSeed='';   // append to edited text when resuming
   let stream;
   try{stream=await navigator.mediaDevices.getUserMedia({audio:true});}
-  catch(e){_startVoiceNoteLive(id);return;}   // mic blocked/unavailable → live engine
+  catch(e){ if(_isNativeApp()){_voiceMicBlocked(id);return;} _startVoiceNoteLive(id);return; }   // mic blocked/unavailable → app: show how to enable; web: fall back to the live engine
   let mime='audio/webm';
   try{const prefs=['audio/webm;codecs=opus','audio/webm','audio/mp4','audio/ogg;codecs=opus'];for(const m of prefs){if(MediaRecorder.isTypeSupported&&MediaRecorder.isTypeSupported(m)){mime=m;break;}}}catch(e){}
   let rec;
@@ -6542,7 +6563,7 @@ function _startVoiceNoteLive(id){
       if(e.error==='not-allowed'||e.error==='service-not-allowed'){
         // A blocked mic won't recover by restarting, stop trying and tell them how to fix it.
         _voiceStopping=true;
-        if(el)el.textContent='Microphone access was blocked. Allow the mic for this site in your browser, then try again.';
+        if(el)el.textContent=_micHelpMsg();
       }else if(e.error==='audio-capture'){
         _voiceStopping=true;
         if(el)el.textContent='No microphone was found. Check that one is connected, then try again.';
