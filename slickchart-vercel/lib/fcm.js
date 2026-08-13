@@ -87,10 +87,14 @@ export async function sendFcm(token, payload) {
   if (!at) return { ok: false, error: 'no access token' };
   const title = String((payload && payload.title) || 'SlickChart');
   const bodyTxt = String((payload && payload.body) || '');
-  // FCM data values must be strings.
+  // FCM data values must be strings. `url` drives web-push navigation; kind/clientId/itemId let the
+  // app open the exact item the notification is about (deep link) when tapped natively.
   const data = {};
   if (payload && payload.url) data.url = String(payload.url);
   if (payload && payload.tag) data.tag = String(payload.tag);
+  if (payload && payload.kind) data.kind = String(payload.kind);
+  if (payload && payload.clientId) data.clientId = String(payload.clientId);
+  if (payload && payload.itemId) data.itemId = String(payload.itemId);
   const message = {
     token,
     notification: { title, body: bodyTxt },

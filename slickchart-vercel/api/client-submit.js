@@ -77,10 +77,17 @@ export default async function handler(req, res) {
       if (LABEL[kind] && c.provider_id) {
         const who = (c.name && String(c.name).trim()) || 'A client';
         const { sendNativeToProvider } = await import('../lib/fcm.js');
+        // Deep-link target: tapping the push should open the exact item (this client's check-in, the
+        // form they just submitted, their message, etc.) rather than dumping the provider on Home.
+        // clientId is the server client id (the app maps it to its own roster key); itemId is this
+        // event's id (which the app stores as the check-in / submitted-form id). A same-origin url with
+        // the same three params lets a web-push tap route through the app's boot-time deep-link parser.
+        const deepUrl = '/slickchart?n=' + encodeURIComponent(kind) + '&c=' + encodeURIComponent(String(c.id)) + '&i=' + encodeURIComponent(String(id));
         await sendNativeToProvider(c.provider_id, {
           title: who + ' ' + LABEL[kind],
           body: 'Tap to review in SlickChart.',
-          url: '/', tag: 'client-' + c.id
+          url: deepUrl, tag: 'client-' + c.id,
+          kind, clientId: String(c.id), itemId: String(id)
         });
       }
     } catch (e) { /* push is best-effort */ }

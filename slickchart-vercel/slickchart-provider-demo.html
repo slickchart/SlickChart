@@ -2428,6 +2428,7 @@ async function _cloudInit(){
   try{if(typeof _syncShopCatalog==='function')_syncShopCatalog();}catch(e){}
   try{if(typeof _syncBrandNow==='function'&&typeof brandColors!=='undefined'&&brandColors&&brandColors.logoDataUrl)_syncBrandNow();}catch(e){}
   nav('home');
+  try{_handlePushParams();}catch(e){}   // a web-push tap lands on /slickchart?n=..&c=..&i=.. — route to that item
   try{syncClientEvents();}catch(e){}
 }
 // ── Internationalization (i18n) ──────────────────────────────────────────────
@@ -9036,10 +9037,86 @@ async function _initNativeProvider(){
     });
     PN.addListener('registrationError',function(){});
     PN.addListener('pushNotificationActionPerformed',function(a){
-      try{const d=(a&&a.notification&&a.notification.data)||{};const scr=d.screen||d.action||'';if(scr&&typeof nav==='function')nav(scr);}catch(e){}
+      try{const d=(a&&a.notification&&a.notification.data)||{};_queueDeepLink(_pushLinkFromData(d));}catch(e){}
     });
     await PN.register();
   }catch(e){/* push is a nice-to-have; never block the app */}
+}
+// ── Push deep-linking ──────────────────────────────────────────────────────────────────────────
+// Tapping a client-activity push (check-in received, form completed, new message, booking request)
+// should open that exact item, not just Home. The push carries {kind, clientId, itemId}. Because the
+// tapped event may not have synced onto the chart yet (cold app start, or the provider tapped within a
+// second of the client submitting), we hold the target as _pendingDeepLink, kick a sync, and route as
+// soon as the item appears — falling back to the client's chart, then Home, if it never resolves.
+let _pendingDeepLink=null,_deepLinkTries=0;
+// Normalize a native FCM data object OR a web-push url's query string into {kind,clientId,itemId}.
+function _pushLinkFromData(d){
+  if(!d)return null;
+  let kind=d.kind||d.action||'',clientId=d.clientId||d.c||'',itemId=d.itemId||d.i||'';
+  if((!kind||!clientId)&&d.url){try{const u=new URL(d.url,location.origin);kind=kind||u.searchParams.get('n')||'';clientId=clientId||u.searchParams.get('c')||'';itemId=itemId||u.searchParams.get('i')||'';}catch(e){}}
+  if(!kind&&!clientId)return null;
+  return {kind:String(kind||''),clientId:String(clientId||''),itemId:String(itemId||'')};
+}
+// Read the deep-link params off the boot URL (a web-push tap navigates the PWA to /slickchart?n=..&c=..&i=..)
+// and strip them so a later refresh doesn't re-fire the jump.
+function _handlePushParams(){
+  try{
+    const p=new URLSearchParams(location.search);
+    const n=p.get('n');
+    if(!n)return;
+    _queueDeepLink({kind:String(n),clientId:String(p.get('c')||''),itemId:String(p.get('i')||'')});
+    try{const u=new URL(location.href);u.searchParams.delete('n');u.searchParams.delete('c');u.searchParams.delete('i');history.replaceState({},'',u);}catch(e){}
+  }catch(e){}
+}
+function _queueDeepLink(link){
+  if(!link||(!link.kind&&!link.clientId))return;
+  link.ts=Date.now();
+  _pendingDeepLink=link;_deepLinkTries=0;
+  try{syncClientEvents();}catch(e){}   // pull the just-submitted event so the target exists to route to
+  _tryConsumeDeepLink();
+}
+// Navigate to the target if it's resolvable right now; return true only when we actually landed on it.
+function _routeDeepLink(kind,cid,itemId){
+  try{
+    if(typeof nav!=='function')return false;
+    if(kind==='checkin'){
+      const found=(typeof checkins!=='undefined'&&Array.isArray(checkins)&&checkins.some(x=>x&&x.id===itemId))
+        ||Object.keys(CL).some(k=>CL[k]&&CL[k].lastCheckin&&CL[k].lastCheckin.id===itemId);
+      if(found&&itemId){try{if(typeof markCheckinRead==='function')markCheckinRead(itemId);}catch(e){}nav('checkin-detail',itemId);return true;}
+      if(cid&&CL[cid]){nav('client',cid);return true;}   // chart shows the latest check-in while it syncs
+      return false;
+    }
+    if(kind==='form'){
+      const c=cid&&CL[cid];
+      if(c&&Array.isArray(c.submittedForms)&&c.submittedForms.some(f=>f&&f.evId===itemId)){
+        if(typeof openFormNotif==='function'){openFormNotif(cid,itemId);return true;}
+        nav('client',cid);return true;
+      }
+      if(c){nav('client',cid);return true;}
+      return false;
+    }
+    if(kind==='message'){if(cid&&CL[cid]){nav('chat',cid);return true;}return false;}
+    if(kind==='booking'){nav('requests');return true;}
+    if((kind==='vc_submit'||kind==='contact')&&cid&&CL[cid]){nav('client',cid);return true;}
+    if(cid&&CL[cid]){nav('client',cid);return true;}   // unknown kind but we know the client
+    return false;
+  }catch(e){return false;}
+}
+function _tryConsumeDeepLink(){
+  const link=_pendingDeepLink;
+  if(!link)return;
+  // Only jump for a recent tap — never let a stale target hijack navigation minutes later.
+  if(Date.now()-(link.ts||0)>60000){_pendingDeepLink=null;_deepLinkTries=0;return;}
+  // Wait until the provider workspace is actually up (not sitting on login/entry).
+  if(typeof Cloud==='undefined'||!Cloud||!Cloud.token)return;
+  const cid=link.clientId?_resolveClientId(link.clientId):'';
+  if(_routeDeepLink(link.kind,cid,link.itemId)){_pendingDeepLink=null;_deepLinkTries=0;return;}
+  // Target not synced yet — retry as sync passes land, then fall back so the tap is never a dead end.
+  _deepLinkTries++;
+  if(_deepLinkTries>=6){
+    _pendingDeepLink=null;_deepLinkTries=0;
+    try{if(cid&&CL[cid])nav('client',cid);}catch(e){}
+  }
 }
 async function _ncPhotoDataUrl(fromCamera,maxW){
   try{
@@ -18917,6 +18994,8 @@ async function syncClientEvents(){
     }
     if(touchedNotif&&document.getElementById('notif-feed-screen'))renderNotifFeed();
     if((touchedRequests||touchedMsgs||touchedCheckins||touchedForms||touchedVc)&&document.getElementById('home-screen'))renderHome();
+    // A push tap may be waiting on the very event this sync just attached — route to it now that it exists.
+    try{_tryConsumeDeepLink();}catch(e){}
   }catch(e){}
   finally{_syncingEvents=false;}   // always release the guard, even on an early return above
 }
