@@ -1433,6 +1433,15 @@ function _markFormDone(provId,pf){
   try{localStorage.setItem('sc_forms_done',JSON.stringify(_formsDoneMap));}catch(e){}
   _syncClientPrefsToServer();
 }
+// Reverse of _markFormDone — used when a form was optimistically marked done to keep the pre-visit
+// package flowing, but its background submit ultimately failed. Clearing the marker lets the form
+// reappear on the to-do list so it's never silently lost.
+function _unmarkFormDone(provId,pf){
+  if(!pf)return;
+  try{delete _formsDoneMap[_formDoneKey(provId,pf.formId)];}catch(e){_formsDoneMap[_formDoneKey(provId,pf.formId)]=undefined;}
+  try{localStorage.setItem('sc_forms_done',JSON.stringify(_formsDoneMap));}catch(e){}
+  _syncClientPrefsToServer();
+}
 // Drop from every provider's pending list any form the client has already submitted (matching
 // the exact instance by assignedAt). A re-send has a newer assignedAt, so it is left in place.
 function _applyFormsDoneFromMap(){
@@ -3459,19 +3468,42 @@ function _submitFillForm(){
     _ffPhotos={};
     _ffClearDraft();   // typed answers are now sent, drop the saved draft
     try{_ffClearIdem(pf);}catch(e){}   // submission confirmed — retire its idempotency key
-    if(_advancePrevisitFlow('Sent'))return;
+    if(_advancePrevisitFlow(''))return;
     showToast('Sent \u2713');
     nav('home');
   };
+  const _ffPayload={formId:pf.formId,title:pf.title,answers,flagged,signed,date:dateLabel,qs:qs.map(function(q){return {id:q.id,label:q.label,type:q.type};}),_idem:_ffStableIdem(pf)};
   if(client._real){
-    const btns=document.querySelectorAll('button');
-    showToast('Sending\u2026');
-    _clientSubmit('form',{formId:pf.formId,title:pf.title,answers,flagged,signed,date:dateLabel,qs:qs.map(function(q){return {id:q.id,label:q.label,type:q.type};}),_idem:_ffStableIdem(pf)})
-      .then(function(res){
-        if(res&&res.duplicate)return;   // a submit is already in flight, ignore the duplicate tap
-        if(res&&res.ok!==false)_finishFormSent();
-        else showToast("Couldn't send \u2014 check your connection and tap Submit again",false);
+    const p=activeProvider();
+    // Optimistically mark this form done and glide STRAIGHT into the next pre-visit step, so the intake
+    // and the check-in feel like ONE unbroken flow \u2014 no "Sent" confirmation and no network wait in
+    // between. That pause (and the "Sent \u2713" it ended with) is exactly where clients believed they were
+    // finished and skipped the second step. The submit runs in the background and is idempotent; if it
+    // truly fails we restore the form so nothing is ever silently lost, and keep the typed draft so a
+    // redo starts where they left off.
+    p.pendingForms=(p.pendingForms||[]).filter(function(x){return x.formId!==pf.formId;});
+    try{_markFormDone(p.id,pf);}catch(e){}
+    _ffPhotos={};
+    var _ffRestore=function(){
+      try{if(!(p.pendingForms||[]).some(function(x){return x&&x.formId===pf.formId;}))(p.pendingForms=p.pendingForms||[]).push(pf);}catch(e){}
+      try{_unmarkFormDone(p.id,pf);}catch(e){}
+    };
+    if(_nextPrevisitItem()){
+      _clientSubmit('form',_ffPayload).then(function(res){
+        if(res&&res.duplicate)return;
+        if(res&&res.ok!==false){ try{_ffClearIdem(pf);}catch(e){} try{_ffClearDraft();}catch(e){} }
+        else{ _ffRestore(); showToast("Your intake didn't send \u2014 reopen it from your to-do list to try again",false); }
       });
+      _advancePrevisitFlow('');   // no "Sent \u2713" \u2014 just flow into the check-in
+      return;
+    }
+    // Nothing follows \u2014 this is the last step, so confirm it reached the server before the all-done screen.
+    showToast('Sending\u2026');
+    _clientSubmit('form',_ffPayload).then(function(res){
+      if(res&&res.duplicate)return;
+      if(res&&res.ok!==false){ try{_ffClearIdem(pf);}catch(e){} try{_ffClearDraft();}catch(e){} showToast('Sent \u2713'); nav('home'); }
+      else{ _ffRestore(); showToast("Couldn't send \u2014 check your connection and tap Submit again",false); }
+    });
     return;
   }
   _finishFormSent();
