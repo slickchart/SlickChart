@@ -29,7 +29,7 @@ export default function handler(req, res) {
   }
 
   // 2) Assemble from the individual pieces (single-app common case).
-  const pkg = (process.env.ANDROID_PACKAGE_NAME || 'app.slickchart.twa').trim();
+  const pkg = (process.env.ANDROID_PACKAGE_NAME || 'com.slickchart.app').trim();
   const fingerprints = String(process.env.ANDROID_CERT_FINGERPRINTS || '')
     .split(',').map(s => s.trim()).filter(Boolean);
   const body = [{
