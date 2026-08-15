@@ -2039,6 +2039,8 @@ function nav(screen){
     if(screen==='home'||screen==='welcome')_navStack.length=0;
     const bb=document.getElementById('topbar-back');if(bb)bb.style.display=(_navStack.length&&screen!=='checkin'&&screen!=='welcome')?'flex':'none';
     S.scrollTop=0;
+    // Keep the "get the app" nudge on the Home screen only, so it never floats over a form's Submit button.
+    try{var _an=document.getElementById('sc-appnudge');if(_an)_an.style.display=(screen==='home')?'block':'none';}catch(e){}
     requestAnimationFrame(()=>{
       const heading=S.querySelector('#page-heading,[role="heading"]');
       const target=heading||S.querySelector('button,.back');
@@ -2406,7 +2408,7 @@ function renderHome(){
     return `<div style="margin:0 16px 20px;width:calc(100% - 32px);display:flex;align-items:center;gap:9px;background:linear-gradient(135deg,var(--accent-lt),var(--c-card));border:1.5px solid var(--accent-a30);border-radius:14px;padding:13px 14px;box-sizing:border-box;">
       <div onclick="_clientInstall()" role="button" aria-label="Add to your home screen" style="display:flex;align-items:center;gap:11px;flex:1;min-width:0;cursor:pointer;text-align:left;">
         <div style="width:40px;height:40px;border-radius:10px;background:var(--accent);display:flex;align-items:center;justify-content:center;flex-shrink:0;"><i class="ti ti-device-mobile-plus" style="font-size:20px;color:var(--accent-ink);"></i></div>
-        <div style="flex:1;min-width:0;"><div style="font-size:13px;font-weight:700;color:var(--c-ink);">Add to your home screen</div><div style="font-size:11.5px;color:var(--c-mut);line-height:1.4;">One tap to open ${_txt(client.studio)} anytime, no app store needed. Native iOS &amp; Android apps coming soon.</div></div>
+        <div style="flex:1;min-width:0;"><div style="font-size:13px;font-weight:700;color:var(--c-ink);">Add to your home screen</div><div style="font-size:11.5px;color:var(--c-mut);line-height:1.4;">One tap to open ${_txt(client.studio)} anytime, right from your home screen.</div></div>
         <span style="font-size:11px;font-weight:700;color:var(--accent-ink);background:var(--accent);padding:5px 11px;border-radius:20px;flex-shrink:0;">Show me</span>
       </div>
       <button onclick="_dismissA2HS()" aria-label="Dismiss" title="Dismiss" style="flex-shrink:0;align-self:flex-start;background:none;border:none;color:#9a8a78;cursor:pointer;padding:2px 4px;line-height:0;"><i class="ti ti-x" style="font-size:15px;"></i></button>
@@ -2422,6 +2424,51 @@ function renderHome(){
 // Clear the home "Add to home screen" card. Persisted so it stays gone; the header install button
 // and the profile card still let them install later if they change their mind.
 function _dismissA2HS(){try{localStorage.setItem('sc_a2hs_dismissed','1');localStorage.setItem('sc_install_dismissed','1');}catch(e){}try{var b=document.getElementById('sc-install');if(b)b.remove();}catch(e){}try{if(typeof _syncClientPrefsToServer==='function')_syncClientPrefsToServer();}catch(e){}try{if(typeof renderHome==='function')renderHome();}catch(e){}}
+
+// ── "Get the app" nudge for CLIENTS ────────────────────────────────────────────────────────────
+// When a client opens their private link in a browser, gently suggest the native app for the best
+// experience. Their link still works in the browser, so this is a soft, dismissible toast that sticks
+// dismissed once closed. Hidden inside the native app itself and never shown in the sample/demo. Shows
+// the store that matches their phone (both on desktop/unknown). Lives on document.body (outside the
+// #S content) so it survives re-renders; nav() hides it off the Home screen so it never covers a form.
+var _APPNUDGE_APPLE='https://apps.apple.com/app/id6792418818';
+var _APPNUDGE_PLAY='https://play.google.com/store/apps/details?id=com.slickchart.app';
+function _appNudgePlatform(){
+  try{
+    var ua=navigator.userAgent||'';
+    if(/iPad|iPhone|iPod/.test(ua)||((navigator.platform==='MacIntel')&&(navigator.maxTouchPoints>1)))return 'ios';
+    if(/Android/i.test(ua))return 'android';
+  }catch(e){}
+  return 'other';
+}
+function _dismissAppNudge(){
+  try{localStorage.setItem('sc_appnudge_dismissed','1');}catch(e){}
+  var el=document.getElementById('sc-appnudge');if(el)el.remove();
+}
+function _showAppDownloadNudge(){
+  try{
+    if(typeof _isNativeApp==='function'&&_isNativeApp())return;    // already inside the installed app
+    if(typeof client==='undefined'||!client._real)return;          // sample/demo preview — don't nudge
+    var dismissed='';try{dismissed=localStorage.getItem('sc_appnudge_dismissed')||'';}catch(e){}
+    if(dismissed)return;
+    if(document.getElementById('sc-appnudge'))return;
+    var plat=_appNudgePlatform();
+    var apple='<a href="'+_APPNUDGE_APPLE+'" target="_blank" rel="noopener" onclick="_dismissAppNudge()" style="flex:1;display:inline-flex;align-items:center;justify-content:center;gap:6px;background:var(--accent);color:var(--accent-ink);border-radius:11px;padding:11px;font-size:13px;font-weight:700;text-decoration:none;"><i class="ti ti-brand-apple" style="font-size:16px;"></i> App Store</a>';
+    var play='<a href="'+_APPNUDGE_PLAY+'" target="_blank" rel="noopener" onclick="_dismissAppNudge()" style="flex:1;display:inline-flex;align-items:center;justify-content:center;gap:6px;background:var(--accent);color:var(--accent-ink);border-radius:11px;padding:11px;font-size:13px;font-weight:700;text-decoration:none;"><i class="ti ti-brand-google-play" style="font-size:16px;"></i> Google Play</a>';
+    var btns=(plat==='ios')?apple:(plat==='android')?play:(apple+play);
+    var el=document.createElement('div');
+    el.id='sc-appnudge';
+    el.style.cssText='position:fixed;left:12px;right:12px;bottom:calc(74px + env(safe-area-inset-bottom, 0px));z-index:9000;background:var(--c-card);border:1.5px solid var(--accent-a30,#e8dcc8);border-radius:16px;padding:14px;box-shadow:0 10px 34px rgba(0,0,0,.20);max-width:460px;margin:0 auto;';
+    el.innerHTML=''
+      +'<div style="display:flex;align-items:flex-start;gap:11px;margin-bottom:11px;">'
+        +'<div style="width:40px;height:40px;border-radius:10px;background:var(--accent-lt);display:flex;align-items:center;justify-content:center;flex-shrink:0;"><i class="ti ti-device-mobile-check" aria-hidden="true" style="font-size:20px;color:var(--accent-ink-lt);"></i></div>'
+        +'<div style="flex:1;min-width:0;"><div style="font-size:14px;font-weight:700;color:var(--c-ink);">For the best experience, get the app</div><div style="font-size:12px;color:var(--c-mut);line-height:1.45;margin-top:2px;">Faster, with appointment reminders and easy photo sharing. Your link still works here too.</div></div>'
+        +'<button onclick="_dismissAppNudge()" aria-label="Not now" style="flex-shrink:0;background:none;border:none;color:var(--c-mut);cursor:pointer;padding:2px 4px;line-height:0;font-size:16px;">✕</button>'
+      +'</div>'
+      +'<div style="display:flex;gap:8px;">'+btns+'</div>';
+    document.body.appendChild(el);
+  }catch(e){}
+}
 
 // ── JOURNEY ──
 
@@ -5446,7 +5493,7 @@ function renderClientHelp(){
     ['ti-file-text','Where are my session summaries?',`After each visit, ${_txt(client.providerFirst)} can send a summary with notes and homecare. Find them on your home screen under Latest summary, or in your Journey.`],
     ['ti-droplet','How does the homecare checklist work?','Tap Homecare to see the routine your provider recommends. Check off steps as you go, it helps you stay on track between visits.'],
     ['ti-camera','Can I share photos with my provider?',`Yes, in Messages you can attach photos, and if ${_txt(client.providerFirst)} invites you to a virtual consult you can submit photos for review.`],
-    ['ti-device-mobile','How do I add this to my phone?','On the home screen, tap "Add to your home screen" for one-tap access anytime, no app store or download needed. It works right in your browser, and native iOS & Android apps are coming soon.'],
+    ['ti-device-mobile','How do I add this to my phone?','You have two easy options: on the home screen, tap "Add to your home screen" for one-tap access right in your browser, or download the free SlickChart app from the Apple App Store or Google Play for the best experience.'],
     ['ti-lock','Is my information private?',`Your information is only shared between you and ${_txt(client.providerFirst)}. Other clients never see your details.`]
   ];
   S.innerHTML=`
@@ -5769,6 +5816,7 @@ function _bootRealClient(token){
     if(j&&j.ok&&j.client){
       _applyRealClientData(j); client._real=true; try{document.title='SlickChart \u2014 '+client.name;}catch(e){} applyActiveProvider(); nav('home');
       try{_tryClientDeepLink();}catch(e){}   // a push tap may be waiting to open a specific screen
+      try{setTimeout(function(){try{_showAppDownloadNudge();}catch(e){}},1400);}catch(e){}   // soft "get the app" nudge
       try{_loadClientPrefsFromServer().then(function(){ if(document.getElementById('page-heading'))renderHome(); try{_syncClientPrefsToServer();}catch(e){} try{_tryClientDeepLink();}catch(_e){} });}catch(e){}
       try{_loadMsgSeenIds();_fetchRealMessages(true);}catch(e){}
       try{_lastDataFingerprint=_clientDataFingerprint(j);_startRealClientPolling();}catch(e){}
