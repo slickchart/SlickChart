@@ -2378,6 +2378,12 @@ async function _cloudInit(){
     return;
   }
   if(_handleAuthParams())return;
+  // Register the native client-link handler NOW, before any early return below. A client-only user
+  // (no provider session) taps their emailed "/client?c=<token>" Universal/App Link, iOS/Android opens
+  // the installed app, and we must route that tap into their care space. Previously this only ran for
+  // signed-in providers (further down), so a client tapping their link just landed back on the front
+  // door — an endless loop with no way into their profile. Safe/no-op on web and when not native.
+  try{_initDeepLinks();}catch(e){}
   await Cloud.status();
   if(!Cloud.enabled){
     // No database configured at all, this is a local-only, single-device setup.
@@ -9090,11 +9096,13 @@ function _isNativeApp(){try{return !!(window.Capacitor&&window.Capacitor.isNativ
 // https://slickchart.app/client/<token> link, Capacitor still loads the app's start URL (the provider
 // shell), so we catch the tapped link and navigate the WebView to it — landing the client in their own
 // space. Same-origin, so it's just an in-app navigation once the domain association is verified.
+let _deepLinksInit=false;
 function _initDeepLinks(){
   try{
     if(!_isNativeApp())return;
+    if(_deepLinksInit)return; _deepLinksInit=true;   // register the appUrlOpen/getLaunchUrl handlers exactly once
     var App=window.Capacitor&&window.Capacitor.Plugins&&window.Capacitor.Plugins.App;
-    if(!App||!App.addListener)return;
+    if(!App||!App.addListener){_deepLinksInit=false;return;}
     var go=function(raw){
       try{
         if(!raw)return;

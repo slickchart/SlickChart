@@ -32,6 +32,9 @@ export default async function handler(req, res) {
     const xff = String(req.headers['x-forwarded-for'] || '').split(',')[0].trim();
     const ip = realIp || xff || (req.socket && req.socket.remoteAddress) || 'anon';
     if (!burstOk('ip:' + ip, 6, 60000)) { res.status(200).json(generic); return; }   // stay generic even when limited
+    // Per-email cooldown: a client double-tapping "Email me my link" (or an impatient retry) must not
+    // fan out into a pile of duplicate emails. One send per email per 45s; still generic when limited.
+    if (!burstOk('em:' + email, 1, 45000)) { res.status(200).json(generic); return; }
 
     if (!dbEnabled()) { res.status(200).json(generic); return; }
     await ensureClientTables();
@@ -43,9 +46,20 @@ export default async function handler(req, res) {
 
     const q = sql();
     // A person could be a client of more than one provider with the same email — send each their link.
-    const rows = await q`SELECT token, name, email FROM clients
+    // But within ONE provider there are often DUPLICATE records for the same person (a booking creates a
+    // shell, then an intake/first-visit package creates or updates another), and emailing a link for each
+    // is how a single client ended up with ~10 emails — several pointing at empty shell records that then
+    // won't load. DISTINCT ON collapses to exactly ONE link per provider, choosing the best record:
+    // one they've already opened, else the one carrying the most data, else the most recently updated.
+    const rows = await q`SELECT DISTINCT ON (provider_id) token, name, email, provider_id
+      FROM clients
       WHERE lower(email) = ${email} AND deleted_at IS NULL
-      ORDER BY updated_at DESC NULLS LAST LIMIT 5`;
+      ORDER BY provider_id,
+        (opened_at IS NOT NULL) DESC,
+        length(coalesce(data::text, '')) DESC,
+        updated_at DESC NULLS LAST,
+        created_at DESC NULLS LAST
+      LIMIT 5`;
 
     for (const c of (rows || [])) {
       if (!c || !c.token) continue;
