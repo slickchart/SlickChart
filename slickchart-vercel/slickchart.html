@@ -3841,6 +3841,75 @@ function _pr_moved(targetId,moved){
     +'<button onclick="_pr_render()" style="width:100%;background:none;border:1px solid var(--p-line);color:var(--p-mut);border-radius:10px;padding:10px;font-size:13px;cursor:pointer;font-family:inherit;">Back to recovery</button>'
     +'</div>';
 }
+// ── Remove imported Square clients (Settings → Your data) ────────────────────────────────────────
+// Cleanup for a roster polluted by importing from the WRONG Square account. Imported clients carry
+// source:'square'; clients you added yourself do not, so this never targets your real charts. Anything
+// that already has YOUR work on it (forms, photos, notes, summaries, messages) is flagged and left
+// UNCHECKED so a real client can't be swept away by accident.
+function _squareImportedIds(){try{return Object.keys(CL).filter(function(id){return CL[id]&&CL[id].source==='square';});}catch(e){return [];}}
+function _clientHasWork(id){
+  try{
+    var c=CL[id]||{};
+    if((c.submittedForms&&c.submittedForms.length)||(c.pendingForms&&c.pendingForms.length))return true;
+    if(typeof capturedPhotos!=='undefined'&&capturedPhotos[id]&&capturedPhotos[id].length)return true;
+    if(typeof sessionSummaries!=='undefined'&&sessionSummaries[id]&&sessionSummaries[id].length)return true;
+    if(typeof providerNoteDrafts!=='undefined'&&providerNoteDrafts[id])return true;
+    if(typeof msgStore!=='undefined'&&msgStore[id]&&msgStore[id].length)return true;
+    if(c.lastCheckin||c.checkinDoneFor||(c.birthday&&String(c.birthday).trim())||(c.notes&&String(c.notes).trim()))return true;
+  }catch(e){}
+  return false;
+}
+let _sqcSel=null;
+function _openSquareCleanup(){
+  var ids=_squareImportedIds();
+  _sqcSel=new Set();
+  ids.forEach(function(id){if(!_clientHasWork(id))_sqcSel.add(id);});   // pre-select only the safe ones
+  var ov=document.getElementById('sq-cleanup');if(ov)ov.remove();
+  ov=document.createElement('div');ov.id='sq-cleanup';
+  ov.style.cssText='position:fixed;inset:0;margin:0 auto;width:390px;max-width:100%;z-index:10000;background:rgba(0,0,0,.6);display:flex;flex-direction:column;justify-content:flex-end;';
+  ov.onclick=function(e){if(e.target===ov)ov.remove();};
+  (document.querySelector('.shell')||document.body).appendChild(ov);
+  _sqc_render();
+}
+function _sqc_render(msg){
+  var ov=document.getElementById('sq-cleanup');if(!ov)return;
+  var ids=_squareImportedIds().sort(function(a,b){return String((CL[a]&&CL[a].name)||'').localeCompare(String((CL[b]&&CL[b].name)||''));});
+  var rows=ids.map(function(id){
+    var c=CL[id]||{};var sel=_sqcSel.has(id);var work=_clientHasWork(id);
+    return '<label style="display:flex;align-items:center;gap:10px;padding:9px 11px;border:1px solid var(--p-line);border-radius:10px;margin-bottom:6px;cursor:pointer;background:var(--p-surf);">'
+      +'<input type="checkbox" '+(sel?'checked':'')+' onchange="_sqc_toggle(\''+_jsAttr(id)+'\')" style="width:18px;height:18px;accent-color:var(--accent-strong);flex-shrink:0;">'
+      +'<div style="flex:1;min-width:0;"><div style="font-size:14px;color:var(--p-ink);">'+_fileEsc(c.name||'(no name)')+'</div><div style="font-size:11px;color:var(--p-mut);overflow:hidden;text-overflow:ellipsis;white-space:nowrap;">'+_fileEsc(_clientSubtitle(c))+'</div></div>'
+      +(work?'<span style="font-size:9px;font-weight:700;color:var(--accent-strong);border:1px solid var(--p-green-line);background:var(--p-surf3);border-radius:4px;padding:2px 6px;flex-shrink:0;">HAS YOUR DATA</span>':'')
+      +'</label>';
+  }).join('');
+  var selCount=_sqcSel.size;
+  ov.innerHTML='<div style="background:var(--surf1);border-top:1px solid var(--p-line);border-radius:16px 16px 0 0;padding:18px;max-height:92%;overflow:auto;">'
+    +'<div style="width:36px;height:4px;background:var(--p-chip);border-radius:2px;margin:0 auto 14px;"></div>'
+    +'<div style="font-size:16px;font-weight:600;color:var(--p-ink);margin-bottom:4px;">Remove imported Square clients</div>'
+    +'<div style="font-size:12px;color:var(--p-mut);line-height:1.55;margin-bottom:12px;">'+ids.length+' client'+(ids.length===1?'':'s')+' came in from a Square import. Removing them here does NOT touch Square. Anyone marked <b>HAS YOUR DATA</b> is left unchecked so you never lose real work — review before removing.</div>'
+    +(msg?('<div role="status" style="font-size:12.5px;color:var(--p-green);background:var(--p-surf2);border:1px solid var(--p-line);border-radius:9px;padding:9px 11px;margin-bottom:12px;">'+_fileEsc(msg)+'</div>'):'')
+    +(ids.length?('<div style="display:flex;gap:8px;margin-bottom:12px;"><button onclick="_sqc_all(1)" style="flex:1;background:none;border:1px solid var(--p-line);color:var(--p-mut);border-radius:8px;padding:8px;font-size:12px;cursor:pointer;font-family:inherit;">Select all</button><button onclick="_sqc_all(0)" style="flex:1;background:none;border:1px solid var(--p-line);color:var(--p-mut);border-radius:8px;padding:8px;font-size:12px;cursor:pointer;font-family:inherit;">Select none</button></div>'
+    +rows
+    +'<button onclick="_sqc_remove()" class="btnp" style="width:100%;border-radius:10px;margin-top:10px;'+(selCount?'':'opacity:.5;')+'"><i class="ti ti-trash"></i> Remove '+selCount+' selected</button>'):'<div style="font-size:13px;color:var(--p-mut);padding:8px 2px;">No imported Square clients found. Your roster is clean.</div>')
+    +'<button onclick="var o=document.getElementById(\'sq-cleanup\');if(o)o.remove();try{if(typeof renderClients===\'function\')renderClients();}catch(e){}" style="width:100%;margin-top:8px;background:none;border:1px solid var(--p-line);color:var(--p-mut);border-radius:10px;padding:10px;font-size:13px;cursor:pointer;font-family:inherit;">Close</button>'
+    +'</div>';
+}
+function _sqc_toggle(id){if(_sqcSel.has(id))_sqcSel.delete(id);else _sqcSel.add(id);_sqc_render();}
+function _sqc_all(on){var ids=_squareImportedIds();_sqcSel=new Set();if(on)ids.forEach(function(id){_sqcSel.add(id);});_sqc_render();}
+function _sqc_remove(){
+  var ids=Array.from(_sqcSel).filter(function(id){return CL[id];});
+  if(!ids.length){_sqc_render('Select at least one to remove.');return;}
+  var go=function(){
+    ids.forEach(function(id){try{_cleanupClientData(id);}catch(e){}try{if(typeof _deletedClientIds==='object'&&_deletedClientIds)_deletedClientIds[id]=Date.now();}catch(e){}delete CL[id];});
+    try{if(typeof _saveDeletedClients==='function')_saveDeletedClients();}catch(e){}
+    try{if(typeof _serverDeleteClients==='function')_serverDeleteClients(ids);}catch(e){}   // one batched tombstone push
+    try{if(typeof saveClients==='function')saveClients();}catch(e){}
+    _sqcSel=new Set();
+    _sqc_render('Removed '+ids.length+' imported client'+(ids.length===1?'':'s')+'. They won’t come back on the next sync.');
+  };
+  if(typeof confirmModal==='function')confirmModal({title:'Remove '+ids.length+' client'+(ids.length===1?'':'s')+'?',body:'This removes them from SlickChart only (never from Square). Anything left checked — including any marked “HAS YOUR DATA” — will be removed.',action:'Remove'},go);
+  else go();
+}
 let _cpMigrateLegacy=false;
 function loadCapturedPhotos(){
   // Legacy: older builds stored photos in localStorage. Load them synchronously (immediately
@@ -14943,6 +15012,7 @@ function renderAccount(){
     <div style="display:flex;align-items:center;gap:11px;padding:13px 14px;"><div style="width:38px;height:38px;border-radius:10px;background:var(--p-purple-bg);display:flex;align-items:center;justify-content:center;flex-shrink:0;"><i class="ti ti-camera" style="font-size:18px;color:var(--p-purple);"></i></div><div style="flex:1;min-width:0;"><div style="font-size:14px;font-weight:500;color:var(--p-ink);">Social media content mode</div><div style="font-size:12px;color:var(--p-mut);line-height:1.4;">Show only sample clients (Maya, Sophie, Priya) so you can screenshot or screen-record your app for social media &amp; marketing. Hides your real clients — nothing is deleted.</div></div>${togBtn(_shotMode(),'_setShotMode(!'+_shotMode()+')','Toggle social media content mode')}</div>
     <div style="border-top:1px solid var(--p-line);"></div>
     <div onclick="_openPhotoRecovery()" style="display:flex;align-items:center;gap:11px;padding:13px 14px;cursor:pointer;"><div style="width:38px;height:38px;border-radius:10px;background:var(--p-blue-bg);display:flex;align-items:center;justify-content:center;flex-shrink:0;"><i class="ti ti-photo-search" style="font-size:18px;color:var(--p-blue);"></i></div><div style="flex:1;"><div style="font-size:14px;font-weight:500;color:var(--p-ink);">Recover lost photos</div><div style="font-size:12px;color:var(--p-mut);">Find &amp; restore before/after photos from every backup</div></div><i class="ti ti-chevron-right" style="font-size:16px;color:var(--p-mut);"></i></div>
+    ${(function(){var n=(typeof _squareImportedIds==='function')?_squareImportedIds().length:0;return n?`<div style="border-top:1px solid var(--p-line);"></div><div onclick="_openSquareCleanup()" style="display:flex;align-items:center;gap:11px;padding:13px 14px;cursor:pointer;"><div style="width:38px;height:38px;border-radius:10px;background:var(--p-red-bg);display:flex;align-items:center;justify-content:center;flex-shrink:0;"><i class="ti ti-user-x" style="font-size:18px;color:var(--p-red);"></i></div><div style="flex:1;"><div style="font-size:14px;font-weight:500;color:var(--p-ink);">Remove imported Square clients</div><div style="font-size:12px;color:var(--p-mut);">${n} client${n===1?'':'s'} imported from Square · review &amp; remove</div></div><i class="ti ti-chevron-right" style="font-size:16px;color:var(--p-mut);"></i></div>`:'';})()}
     <div style="border-top:1px solid var(--p-line);"></div>
     <div onclick="replayOnboarding()" style="display:flex;align-items:center;gap:11px;padding:13px 14px;cursor:pointer;"><div style="width:38px;height:38px;border-radius:10px;background:var(--accent-tint);display:flex;align-items:center;justify-content:center;flex-shrink:0;"><i class="ti ti-player-play" style="font-size:18px;color:var(--accent-strong);"></i></div><div style="flex:1;"><div style="font-size:14px;font-weight:500;color:var(--p-ink);">Replay Setup Tour</div><div style="font-size:12px;color:var(--p-mut);">See the guided first-run setup again</div></div><i class="ti ti-chevron-right" style="font-size:16px;color:var(--p-mut);"></i></div>
   </div></div>

@@ -16,10 +16,15 @@ export default async function handler(req, res) {
   try {
     let conn = null;
     if (providerId) conn = await getConnection(providerId);
+    const hasOwn = !!(conn && conn.token);
     const legacy = !!cfg.token; // deployment-wide fallback token present
+    // A LOGGED-IN account is "connected" only when it has its OWN Square. Reporting "connected" just
+    // because a deployment-wide token exists is what let a signed-in user import another account's
+    // customers thinking they were connected to their own. The shared token only counts for the legacy
+    // no-login case (no providerId).
     res.status(200).json({
-      connected: !!(conn && conn.token) || legacy,
-      oauth: !!(conn && conn.token),
+      connected: providerId ? hasOwn : (hasOwn || legacy),
+      oauth: hasOwn,
       legacy,
       oauthConfigured,
       env: cfg.env,

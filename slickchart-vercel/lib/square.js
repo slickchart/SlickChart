@@ -205,13 +205,20 @@ export async function sqContext(req, res) {
         try { const q = sql(); q`UPDATE square_connections SET last_used_at=now() WHERE provider_id=${providerId} AND (last_used_at IS NULL OR last_used_at < now() - interval '1 hour')`.catch(() => {}); } catch (e) {}
         return { token: conn.token, locationId: conn.locationId, providerId };
       }
-    } catch (e) { /* fall through to legacy */ }
+    } catch (e) { /* no own connection */ }
+    // A LOGGED-IN account must use its OWN connected Square. Never fall back to the deployment-wide
+    // shared SQUARE_ACCESS_TOKEN for an authenticated provider \u2014 that token belongs to a different
+    // Square account, so falling back to it serves one logged-in user another merchant's real customers
+    // (a cross-account data leak). Tell them to connect their own Square instead.
+    res.status(401).json({ error: 'Connect your own Square account to sync your customers.', code: 'nosquare' });
+    return null;
   }
-  // Legacy fallback: shared key + deployment env token (original single-tenant setup)
+  // Legacy fallback ONLY for the original single-tenant, NO-LOGIN setup (no authenticated provider at
+  // all), still gated behind the deployment's shared key. The normal signed-in app never reaches here.
   const cfg = squareConfig();
   const key = req.headers['x-slickchart-key'] || '';
   if (cfg.token && process.env.APP_SHARED_SECRET && key === process.env.APP_SHARED_SECRET) {
-    return { token: cfg.token, locationId: cfg.locationId || null, providerId: providerId || 'owner' };
+    return { token: cfg.token, locationId: cfg.locationId || null, providerId: 'owner' };
   }
   res.status(401).json({ error: 'Square isn\u2019t connected for this account yet.', code: 'nosquare' });
   return null;
