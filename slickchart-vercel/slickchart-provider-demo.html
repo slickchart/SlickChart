@@ -18635,9 +18635,27 @@ function _nextApptForClient(id){
 }
 function _clientIdByName(name){
   if(!name)return null;
-  const norm=String(name).trim().toLowerCase();
-  const id=Object.keys(CL).find(k=>(CL[k].name||'').trim().toLowerCase()===norm);
-  return id||null;
+  // Link an appointment's booking name to a client record. An EXACT-only match silently fails when the
+  // Square booking name differs from the saved client even slightly (a middle name, punctuation, extra
+  // space, or a first-name-only booking) — and a failed link hides that client's whole appointment nudge
+  // (send intake / send check-in). So fall back through progressively looser matches, but each fallback
+  // only counts when it resolves to EXACTLY ONE client, so we never mis-link two people with similar names.
+  const norm=s=>String(s||'').trim().toLowerCase().replace(/[.,'’`’\-]/g,'').replace(/\s+/g,' ');
+  const target=norm(name);
+  if(!target)return null;
+  const keys=Object.keys(CL);
+  // 1) exact (normalized) full-name match
+  let id=keys.find(k=>norm(CL[k].name)===target);
+  if(id)return id;
+  // 2) unique match on first+last only (ignores a differing middle name)
+  const fl=s=>{const t=norm(s).split(' ').filter(Boolean);return t.length?(t[0]+(t.length>1?(' '+t[t.length-1]):'')):'';};
+  const tfl=fl(name);
+  let cand=tfl?keys.filter(k=>fl(CL[k].name)===tfl):[];
+  if(cand.length===1)return cand[0];
+  // 3) unique match where one name is a prefix of the other (e.g. a first-name-only "Sheri" booking)
+  cand=keys.filter(k=>{const n=norm(CL[k].name);return n&&(n.startsWith(target+' ')||target.startsWith(n+' '));});
+  if(cand.length===1)return cand[0];
+  return null;
 }
 // Find the latest check-in for a client (by id or by name), so appointment views
 // can surface "this client already checked in" and link straight to it.
