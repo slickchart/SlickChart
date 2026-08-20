@@ -4083,12 +4083,18 @@ function _fcActive(c){
   // pull or re-processed submission event rebuilds flaggedContra. Hide it only when EVERY item in the
   // current flag is covered by reviewed (dismissed) submitted forms — so a merged check-in flag, or a
   // second still-unreviewed intake, is never silently suppressed.
-  if(!isCheckinFlag&&typeof _isFormFlagDismissed==='function'){
-    var _items=(f.items||[]);
-    if(_items.length&&Array.isArray(c.submittedForms)){
-      var _cov={};
-      c.submittedForms.forEach(function(sf){if(sf&&sf.flagged&&sf.flagged.length&&sf.evId&&_isFormFlagDismissed('ev:'+sf.evId)){sf.flagged.forEach(function(it){_cov[it]=1;});}});
-      if(Object.keys(_cov).length&&_items.every(function(it){return _cov[it];}))return false;
+  if(!isCheckinFlag){
+    // Durable per-client guard: this exact set of contraindications was already marked reviewed.
+    // Content-based, stored on the client, so it survives rebuilds and needs no event id.
+    try{var _sig=_flagItemsSig(c);if(_sig&&Array.isArray(c.flagsReviewed)&&c.flagsReviewed.indexOf(_sig)>=0)return false;}catch(e){}
+    // Legacy/multi-device guard: every flagged item is covered by a reviewed (event-id-keyed) form.
+    if(typeof _isFormFlagDismissed==='function'){
+      var _items=(f.items||[]);
+      if(_items.length&&Array.isArray(c.submittedForms)){
+        var _cov={};
+        c.submittedForms.forEach(function(sf){if(sf&&sf.flagged&&sf.flagged.length&&sf.evId&&_isFormFlagDismissed('ev:'+sf.evId)){sf.flagged.forEach(function(it){_cov[it]=1;});}});
+        if(Object.keys(_cov).length&&_items.every(function(it){return _cov[it];}))return false;
+      }
     }
   }
   return true;
@@ -4176,7 +4182,21 @@ function _markFormFlagDismissed(k){if(!k)return;try{var a=_dismissedFormFlags();
 function _isFormFlagDismissed(k){return !!k&&_dismissedFormFlags().indexOf(k)>=0;}
 // Mark every flagged submitted form on a client as reviewed — called when the provider clears the flag
 // (from the chart or from Home) so no rebuild path can pull the intake contraindication back into review.
-function _markClientFormFlagsReviewed(c){if(!c||!Array.isArray(c.submittedForms))return;c.submittedForms.forEach(function(sf){if(sf&&sf.flagged&&sf.flagged.length&&sf.evId)_markFormFlagDismissed('ev:'+sf.evId);});}
+// Order-independent, normalized signature of the CURRENTLY-flagged contraindication items — the medical
+// facts the provider is reviewing. Used as a durable per-client "reviewed" key that doesn't depend on a
+// submission event id existing or staying stable across syncs.
+function _flagItemsSig(c){var f=c&&c.flaggedContra;var items=(f&&Array.isArray(f.items))?f.items:[];return items.map(function(it){return String(it||'').trim().toLowerCase();}).filter(Boolean).sort().join('~');}
+function _markClientFormFlagsReviewed(c){
+  if(!c)return;
+  // Keep the original event-id keys (covers the multi-device localStorage guard).
+  if(Array.isArray(c.submittedForms))c.submittedForms.forEach(function(sf){if(sf&&sf.flagged&&sf.flagged.length&&sf.evId)_markFormFlagDismissed('ev:'+sf.evId);});
+  // AND record the reviewed flag's content signature ON the client record. The client blob syncs
+  // reliably as core data (unlike the localStorage dismissed-list, which a cloud pull could clobber),
+  // and this needs no event id — so a reviewed intake contraindication stays cleared even for
+  // seed/imported records or when a later sync rebuilds/merges the flag. A genuinely NEW contraindication
+  // has a different signature and correctly resurfaces.
+  try{var sig=_flagItemsSig(c);if(sig){if(!Array.isArray(c.flagsReviewed))c.flagsReviewed=[];if(c.flagsReviewed.indexOf(sig)<0)c.flagsReviewed.push(sig);if(c.flagsReviewed.length>50)c.flagsReviewed.splice(0,c.flagsReviewed.length-50);}}catch(e){}
+}
 // Clear a flagged card from Home. Stored ON the client record (which syncs reliably as core data),
 // not just in the in-memory dismissed set — that set rode a debounced sync and a refresh's cloud
 // pull kept losing it, so the same cards came back. A brand-new flag replaces flaggedContra (no
