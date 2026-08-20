@@ -3651,6 +3651,98 @@ function _pruneRoomDrafts(){
     }
   }catch(e){}
 }
+// ── Photo recovery (Settings → Your data → Recover lost photos) ──────────────────────────────────
+// A rescue path for "my before/afters vanished." It surfaces EVERY place a photo might be hiding —
+// in-memory, the per-session localStorage safety drafts (including ones whose client record was renamed
+// or duplicated), IndexedDB, and the cloud index — force-restores them all, and lets the provider open
+// the record they're attached to or move an orphaned set onto the right client. This matters most when a
+// duplicate client record split the session: the photos are safe under one id while the provider is
+// looking at another.
+function _countPhotosFor(cid){return (capturedPhotos&&capturedPhotos[cid]&&capturedPhotos[cid].length)||0;}
+function _countAllPhotos(){var n=0;try{Object.keys(capturedPhotos||{}).forEach(function(cid){n+=(capturedPhotos[cid]||[]).length;});}catch(e){}return n;}
+function _roomDraftKeys(){var out=[];try{for(var i=0;i<localStorage.length;i++){var k=localStorage.key(i);if(k&&k.indexOf('sc_room_draft_')===0)out.push(k);}}catch(e){}return out;}
+function _photoRecoveryScan(){
+  var rep={cloud:!!(typeof Cloud!=='undefined'&&Cloud&&Cloud.token),byId:{},orphans:[]};
+  var add=function(cid,field,n){if(!n)return;var name=(CL[cid]&&CL[cid].name)||null;if(!name){var o=rep.orphans.find(function(x){return x.id===cid;});if(o){o[field]=(o[field]||0)+n;}else{var e={id:cid};e[field]=n;rep.orphans.push(e);}return;}var r=rep.byId[cid]||(rep.byId[cid]={id:cid,name:name});r[field]=(r[field]||0)+n;};
+  try{Object.keys(capturedPhotos||{}).forEach(function(cid){add(cid,'mem',(capturedPhotos[cid]||[]).length);});}catch(e){}
+  try{_roomDraftKeys().forEach(function(k){var cid=k.slice('sc_room_draft_'.length);var d=_roomDraftGet(cid);add(cid,'draft',(d&&d.photos)?d.photos.length:0);});}catch(e){}
+  try{var raw=localStorage.getItem('sc_photo_index');if(raw){var idx=JSON.parse(raw)||{};Object.keys(idx).forEach(function(cid){add(cid,'cloud',(idx[cid]||[]).length);});}}catch(e){}
+  return rep;
+}
+async function _forcePhotoRecovery(){
+  var before=_countAllPhotos();
+  // 1) pull anything sitting in IndexedDB back into memory
+  try{if(_idb.available()){var v=await _idb.get('captured_photos');if(v&&typeof v==='object'){Object.keys(v).forEach(function(cid){if(!capturedPhotos[cid])capturedPhotos[cid]=[];var have=new Set(capturedPhotos[cid].map(function(p){return (p&&(p.pid||p.url))||'';}));(v[cid]||[]).forEach(function(p){var kk=(p&&(p.pid||p.url))||'';if(kk&&!have.has(kk)){capturedPhotos[cid].push(p);have.add(kk);}});});}}}catch(e){}
+  // 2) re-insert every per-session safety draft (including orphaned client ids)
+  try{_roomDraftKeys().forEach(function(k){var cid=k.slice('sc_room_draft_'.length);try{_restoreRoomDraftPhotos(cid);}catch(e){}});}catch(e){}
+  // 3) pull down everything the cloud index knows about, for ALL client ids
+  try{await _restorePhotosFromCloud();}catch(e){}
+  try{if(typeof persistCapturedPhotos==='function')await Promise.resolve(persistCapturedPhotos());}catch(e){}
+  var after=_countAllPhotos();
+  return {before:before,after:after,recovered:Math.max(0,after-before)};
+}
+function _openPhotoRecovery(){
+  var ov=document.getElementById('photo-recover');if(ov)ov.remove();
+  ov=document.createElement('div');ov.id='photo-recover';
+  ov.style.cssText='position:fixed;inset:0;margin:0 auto;width:390px;max-width:100%;z-index:10000;background:rgba(0,0,0,.6);display:flex;flex-direction:column;justify-content:flex-end;';
+  ov.onclick=function(e){if(e.target===ov)ov.remove();};
+  (document.querySelector('.shell')||document.body).appendChild(ov);
+  _pr_render();
+}
+function _pr_render(msg){
+  var ov=document.getElementById('photo-recover');if(!ov)return;
+  var rep=_photoRecoveryScan();
+  var ids=Object.keys(rep.byId).map(function(k){return rep.byId[k];}).sort(function(a,b){return (b.mem||0)+(b.draft||0)+(b.cloud||0)-((a.mem||0)+(a.draft||0)+(a.cloud||0));});
+  var row=function(r,isOrphan){
+    var total=Math.max(r.mem||0,r.draft||0,r.cloud||0);
+    var bits=[];if(r.mem)bits.push(r.mem+' loaded');if(r.draft)bits.push(r.draft+' safety copy');if(r.cloud)bits.push(r.cloud+' in cloud');
+    var title=isOrphan?('Unassigned photos'):_fileEsc(r.name);
+    var action=isOrphan
+      ?('<button onclick="_pr_reassign(\''+r.id+'\')" style="background:var(--accent);border:none;color:var(--accent-ink);border-radius:8px;padding:7px 12px;font-size:12px;font-weight:600;cursor:pointer;font-family:inherit;flex-shrink:0;">Move to a client…</button>')
+      :('<button onclick="_pr_open(\''+r.id+'\')" style="background:var(--accent);border:none;color:var(--accent-ink);border-radius:8px;padding:7px 12px;font-size:12px;font-weight:600;cursor:pointer;font-family:inherit;flex-shrink:0;">Open session</button>');
+    return '<div style="display:flex;align-items:center;gap:10px;padding:11px 12px;border:1px solid var(--p-line);border-radius:10px;margin-bottom:8px;background:var(--p-surf);"><div style="flex:1;min-width:0;"><div style="font-size:14px;font-weight:600;color:var(--p-ink);">'+title+' · '+total+' photo'+(total===1?'':'s')+'</div><div style="font-size:11px;color:var(--p-mut);">'+(bits.join(' · ')||'—')+'</div></div>'+action+'</div>';
+  };
+  var body=ids.map(function(r){return row(r,false);}).join('')+rep.orphans.map(function(r){return row(r,true);}).join('');
+  if(!body)body='<div style="font-size:13px;color:var(--p-mut);line-height:1.6;padding:8px 2px;">No before/after photos were found on this device or in your cloud backup. If you just tapped “Find & restore,” they truly aren’t in any saved copy — reply to your SlickChart support thread and we’ll dig into the server logs.</div>';
+  ov.innerHTML='<div style="background:var(--surf1);border-top:1px solid var(--p-line);border-radius:16px 16px 0 0;padding:18px;max-height:92%;overflow:auto;">'
+    +'<div style="width:36px;height:4px;background:var(--p-chip);border-radius:2px;margin:0 auto 14px;"></div>'
+    +'<div style="font-size:16px;font-weight:600;color:var(--p-ink);margin-bottom:4px;">Recover lost photos</div>'
+    +'<div style="font-size:12px;color:var(--p-mut);line-height:1.55;margin-bottom:14px;">Tap <b>Find &amp; restore</b> to pull every before/after out of this device’s safety copies and your cloud backup. Photos are grouped by the client they’re attached to — if a set landed on the wrong record, use <b>Move to a client</b>.'+(rep.cloud?'':' <span style="color:var(--p-amber);">You appear signed out — sign in first so the cloud backup can be searched.</span>')+'</div>'
+    +(msg?('<div role="status" style="font-size:12.5px;color:var(--p-green);background:var(--p-surf2);border:1px solid var(--p-line);border-radius:9px;padding:9px 11px;margin-bottom:12px;">'+_fileEsc(msg)+'</div>'):'')
+    +'<button id="pr-run" onclick="_pr_run()" class="btnp" style="width:100%;border-radius:10px;margin-bottom:14px;"><i class="ti ti-refresh"></i> Find &amp; restore</button>'
+    +body
+    +'<button onclick="var o=document.getElementById(\'photo-recover\');if(o)o.remove();" style="width:100%;margin-top:6px;background:none;border:1px solid var(--p-line);color:var(--p-mut);border-radius:10px;padding:10px;font-size:13px;cursor:pointer;font-family:inherit;">Close</button>'
+    +'</div>';
+}
+async function _pr_run(){
+  var btn=document.getElementById('pr-run');if(btn){btn.disabled=true;btn.innerHTML='<i class="ti ti-loader"></i> Searching every backup…';}
+  var res={recovered:0};try{res=await _forcePhotoRecovery();}catch(e){}
+  _pr_render(res.recovered>0?('Recovered '+res.recovered+' photo'+(res.recovered===1?'':'s')+'. Open the session below to see them.'):'Restore finished — everything already saved is listed below.');
+}
+function _pr_open(cid){var o=document.getElementById('photo-recover');if(o)o.remove();try{nav('room',cid);}catch(e){try{nav('client',cid);}catch(_){}}}
+function _pr_reassign(orphanId){
+  var ov=document.getElementById('photo-recover');if(!ov)return;
+  var names=Object.keys(CL).filter(function(k){return CL[k]&&CL[k].name;}).sort(function(a,b){return String(CL[a].name).localeCompare(String(CL[b].name));});
+  var list=names.map(function(k){return '<div onclick="_pr_doReassign(\''+orphanId+'\',\''+k+'\')" style="padding:11px 12px;border:1px solid var(--p-line);border-radius:10px;margin-bottom:6px;cursor:pointer;font-size:14px;color:var(--p-ink);background:var(--p-surf);">'+_fileEsc(CL[k].name)+'</div>';}).join('');
+  ov.innerHTML='<div style="background:var(--surf1);border-top:1px solid var(--p-line);border-radius:16px 16px 0 0;padding:18px;max-height:92%;overflow:auto;">'
+    +'<div style="width:36px;height:4px;background:var(--p-chip);border-radius:2px;margin:0 auto 14px;"></div>'
+    +'<div style="font-size:16px;font-weight:600;color:var(--p-ink);margin-bottom:4px;">Move photos to which client?</div>'
+    +'<div style="font-size:12px;color:var(--p-mut);margin-bottom:14px;">These photos will be attached to the client you pick.</div>'
+    +(list||'<div style="font-size:13px;color:var(--p-mut);">No clients yet.</div>')
+    +'<button onclick="_pr_render()" style="width:100%;margin-top:6px;background:none;border:1px solid var(--p-line);color:var(--p-mut);border-radius:10px;padding:10px;font-size:13px;cursor:pointer;font-family:inherit;">Back</button>'
+    +'</div>';
+}
+function _pr_doReassign(orphanId,targetId){
+  try{
+    if(!capturedPhotos[orphanId]||!capturedPhotos[orphanId].length){_pr_render('Nothing to move.');return;}
+    if(!capturedPhotos[targetId])capturedPhotos[targetId]=[];
+    var have=new Set(capturedPhotos[targetId].map(function(p){return (p&&(p.pid||p.url))||'';}));
+    var moved=0;capturedPhotos[orphanId].forEach(function(p){var kk=(p&&(p.pid||p.url))||'';if(kk&&!have.has(kk)){capturedPhotos[targetId].push(p);have.add(kk);moved++;}});
+    delete capturedPhotos[orphanId];
+    try{if(typeof persistCapturedPhotos==='function')persistCapturedPhotos();}catch(e){}
+    _pr_render('Moved '+moved+' photo'+(moved===1?'':'s')+' to '+((CL[targetId]&&CL[targetId].name)||'the client')+'. Open their session to see them.');
+  }catch(e){_pr_render('Couldn’t move those photos.');}
+}
 let _cpMigrateLegacy=false;
 function loadCapturedPhotos(){
   // Legacy: older builds stored photos in localStorage. Load them synchronously (immediately
@@ -14751,6 +14843,8 @@ function renderAccount(){
       :`<div onclick="_clearSampleData()" style="display:flex;align-items:center;gap:11px;padding:13px 14px;cursor:pointer;"><div style="width:38px;height:38px;border-radius:10px;background:var(--p-red-bg);display:flex;align-items:center;justify-content:center;flex-shrink:0;"><i class="ti ti-eraser" style="font-size:18px;color:var(--p-red);"></i></div><div style="flex:1;"><div style="font-size:14px;font-weight:500;color:var(--p-ink);">Remove Sample Data</div><div style="font-size:12px;color:var(--p-mut);">Clear the example client &amp; activity, keep your real data</div></div><i class="ti ti-chevron-right" style="font-size:16px;color:var(--p-mut);"></i></div>`}
     <div style="border-top:1px solid var(--p-line);"></div>
     <div style="display:flex;align-items:center;gap:11px;padding:13px 14px;"><div style="width:38px;height:38px;border-radius:10px;background:var(--p-purple-bg);display:flex;align-items:center;justify-content:center;flex-shrink:0;"><i class="ti ti-camera" style="font-size:18px;color:var(--p-purple);"></i></div><div style="flex:1;min-width:0;"><div style="font-size:14px;font-weight:500;color:var(--p-ink);">Social media content mode</div><div style="font-size:12px;color:var(--p-mut);line-height:1.4;">Show only sample clients (Maya, Sophie, Priya) so you can screenshot or screen-record your app for social media &amp; marketing. Hides your real clients — nothing is deleted.</div></div>${togBtn(_shotMode(),'_setShotMode(!'+_shotMode()+')','Toggle social media content mode')}</div>
+    <div style="border-top:1px solid var(--p-line);"></div>
+    <div onclick="_openPhotoRecovery()" style="display:flex;align-items:center;gap:11px;padding:13px 14px;cursor:pointer;"><div style="width:38px;height:38px;border-radius:10px;background:var(--p-blue-bg);display:flex;align-items:center;justify-content:center;flex-shrink:0;"><i class="ti ti-photo-search" style="font-size:18px;color:var(--p-blue);"></i></div><div style="flex:1;"><div style="font-size:14px;font-weight:500;color:var(--p-ink);">Recover lost photos</div><div style="font-size:12px;color:var(--p-mut);">Find &amp; restore before/after photos from every backup</div></div><i class="ti ti-chevron-right" style="font-size:16px;color:var(--p-mut);"></i></div>
     <div style="border-top:1px solid var(--p-line);"></div>
     <div onclick="replayOnboarding()" style="display:flex;align-items:center;gap:11px;padding:13px 14px;cursor:pointer;"><div style="width:38px;height:38px;border-radius:10px;background:var(--accent-tint);display:flex;align-items:center;justify-content:center;flex-shrink:0;"><i class="ti ti-player-play" style="font-size:18px;color:var(--accent-strong);"></i></div><div style="flex:1;"><div style="font-size:14px;font-weight:500;color:var(--p-ink);">Replay Setup Tour</div><div style="font-size:12px;color:var(--p-mut);">See the guided first-run setup again</div></div><i class="ti ti-chevron-right" style="font-size:16px;color:var(--p-mut);"></i></div>
   </div></div>
