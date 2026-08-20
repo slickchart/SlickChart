@@ -3727,7 +3727,7 @@ async function _recoverUnindexedServerPhotos(){
     for(var i=0;i<missing.length&&i<300;i++){
       var f=missing[i];if(!f||have.has(f.id))continue;
       var file=null;try{file=await _getGuideFile(f.id);}catch(e){}
-      if(file&&file.data){capturedPhotos.__recovered__.push({url:file.data,ts:0,phase:'',angle:'',pid:f.id,source:'cloud-recovered'});have.add(f.id);got++;}
+      if(file&&file.data){var _t=0;try{_t=f.updated_at?Date.parse(f.updated_at):0;}catch(e){}capturedPhotos.__recovered__.push({url:file.data,ts:_t||0,phase:'',angle:'',pid:f.id,source:'cloud-recovered'});have.add(f.id);got++;}
     }
     return got;
   }catch(e){return 0;}
@@ -3749,7 +3749,7 @@ function _pr_render(msg){
     var bits=[];if(r.mem)bits.push(r.mem+' loaded');if(r.draft)bits.push(r.draft+' safety copy');if(r.cloud)bits.push(r.cloud+' in cloud');
     var title=isOrphan?('Unassigned photos'):_fileEsc(r.name);
     var action=isOrphan
-      ?('<button onclick="_pr_reassign(\''+r.id+'\')" style="background:var(--accent);border:none;color:var(--accent-ink);border-radius:8px;padding:7px 12px;font-size:12px;font-weight:600;cursor:pointer;font-family:inherit;flex-shrink:0;">Move to a client…</button>')
+      ?('<button onclick="_pr_gallery(\''+r.id+'\')" style="background:var(--accent);border:none;color:var(--accent-ink);border-radius:8px;padding:7px 12px;font-size:12px;font-weight:600;cursor:pointer;font-family:inherit;flex-shrink:0;">View &amp; assign…</button>')
       :('<button onclick="_pr_open(\''+r.id+'\')" style="background:var(--accent);border:none;color:var(--accent-ink);border-radius:8px;padding:7px 12px;font-size:12px;font-weight:600;cursor:pointer;font-family:inherit;flex-shrink:0;">Open session</button>');
     return '<div style="display:flex;align-items:center;gap:10px;padding:11px 12px;border:1px solid var(--p-line);border-radius:10px;margin-bottom:8px;background:var(--p-surf);"><div style="flex:1;min-width:0;"><div style="font-size:14px;font-weight:600;color:var(--p-ink);">'+title+' · '+total+' photo'+(total===1?'':'s')+'</div><div style="font-size:11px;color:var(--p-mut);">'+(bits.join(' · ')||'—')+'</div></div>'+action+'</div>';
   };
@@ -3771,27 +3771,86 @@ async function _pr_run(){
   _pr_render(res.recovered>0?('Recovered '+res.recovered+' photo'+(res.recovered===1?'':'s')+'. Open the session below to see them.'):'Restore finished — everything already saved is listed below.');
 }
 function _pr_open(cid){var o=document.getElementById('photo-recover');if(o)o.remove();try{nav('room',cid);}catch(e){try{nav('client',cid);}catch(_){}}}
-function _pr_reassign(orphanId){
+// ── Recovered-photo gallery: SEE the pooled unassigned photos (newest first, so today's session is at
+// the top), tap to view full-size, select the ones for a client, then assign just those. ──
+let _prSel=null,_prGalleryBucket='';
+function _pr_photoKey(p,i){return (p&&p.pid)||(p&&p.url)||('#'+i);}
+function _pr_gallery(bucketId){
   var ov=document.getElementById('photo-recover');if(!ov)return;
-  var names=Object.keys(CL).filter(function(k){return CL[k]&&CL[k].name;}).sort(function(a,b){return String(CL[a].name).localeCompare(String(CL[b].name));});
-  var list=names.map(function(k){return '<div onclick="_pr_doReassign(\''+orphanId+'\',\''+k+'\')" style="padding:11px 12px;border:1px solid var(--p-line);border-radius:10px;margin-bottom:6px;cursor:pointer;font-size:14px;color:var(--p-ink);background:var(--p-surf);">'+_fileEsc(CL[k].name)+'</div>';}).join('');
-  ov.innerHTML='<div style="background:var(--surf1);border-top:1px solid var(--p-line);border-radius:16px 16px 0 0;padding:18px;max-height:92%;overflow:auto;">'
+  _prGalleryBucket=bucketId;if(!_prSel)_prSel=new Set();
+  var arr=(capturedPhotos[bucketId]||[]).map(function(p,i){return {p:p,key:_pr_photoKey(p,i)};}).sort(function(a,b){return (b.p.ts||0)-(a.p.ts||0);});
+  var thumbs=arr.map(function(o){
+    var sel=_prSel.has(o.key);
+    return '<div style="position:relative;padding-top:100%;border-radius:8px;overflow:hidden;border:2px solid '+(sel?'var(--accent-strong)':'transparent')+';background:#000;">'
+      +'<img src="'+_urlAttr(o.p.url)+'" loading="lazy" onclick="_pr_view(\''+_jsAttr(o.key)+'\')" style="position:absolute;inset:0;width:100%;height:100%;object-fit:cover;cursor:pointer;display:block;">'
+      +'<button onclick="_pr_toggleSel(\''+_jsAttr(o.key)+'\')" aria-label="Select photo" style="position:absolute;top:5px;right:5px;width:28px;height:28px;border-radius:50%;border:2px solid #fff;background:'+(sel?'var(--accent-strong)':'rgba(0,0,0,.45)')+';color:#fff;font-size:15px;font-weight:700;cursor:pointer;display:flex;align-items:center;justify-content:center;line-height:1;padding:0;">'+(sel?'✓':'+')+'</button>'
+      +'</div>';
+  }).join('');
+  var n=arr.length,selCount=_prSel.size;
+  ov.innerHTML='<div style="background:var(--surf1);border-top:1px solid var(--p-line);border-radius:16px 16px 0 0;padding:18px;max-height:94%;overflow:auto;">'
     +'<div style="width:36px;height:4px;background:var(--p-chip);border-radius:2px;margin:0 auto 14px;"></div>'
-    +'<div style="font-size:16px;font-weight:600;color:var(--p-ink);margin-bottom:4px;">Move photos to which client?</div>'
-    +'<div style="font-size:12px;color:var(--p-mut);margin-bottom:14px;">These photos will be attached to the client you pick.</div>'
-    +(list||'<div style="font-size:13px;color:var(--p-mut);">No clients yet.</div>')
-    +'<button onclick="_pr_render()" style="width:100%;margin-top:6px;background:none;border:1px solid var(--p-line);color:var(--p-mut);border-radius:10px;padding:10px;font-size:13px;cursor:pointer;font-family:inherit;">Back</button>'
+    +'<div style="font-size:16px;font-weight:600;color:var(--p-ink);margin-bottom:4px;">Recovered photos · '+n+'</div>'
+    +'<div style="font-size:12px;color:var(--p-mut);line-height:1.55;margin-bottom:12px;">Newest first — your most recent session is at the top. Tap a photo to see it full-size; tap the circle to select the ones that belong to a client, then assign just those.</div>'
+    +'<div style="position:sticky;top:0;z-index:2;background:var(--surf1);padding:6px 0 10px;display:flex;gap:8px;">'
+      +'<button onclick="_pr_assignSelected()" class="btnp" style="flex:1;border-radius:9px;'+(selCount?'':'opacity:.55;')+'"><i class="ti ti-user-check"></i> Assign '+(selCount?(selCount+' selected'):'selected')+'…</button>'
+      +'<button onclick="_prSel=new Set();_pr_gallery(\''+bucketId+'\')" style="flex:0 0 auto;background:none;border:1px solid var(--p-line);color:var(--p-mut);border-radius:9px;padding:0 12px;font-size:12px;cursor:pointer;font-family:inherit;">Clear</button>'
+    +'</div>'
+    +'<div style="display:grid;grid-template-columns:repeat(3,1fr);gap:6px;margin-bottom:14px;">'+thumbs+'</div>'
+    +'<button onclick="_pr_reassign(\''+bucketId+'\',1)" style="width:100%;background:none;border:1px solid var(--p-line);color:var(--p-mut);border-radius:10px;padding:10px;font-size:13px;cursor:pointer;font-family:inherit;margin-bottom:8px;">Or assign ALL '+n+' to one client…</button>'
+    +'<button onclick="_pr_render()" style="width:100%;background:none;border:1px solid var(--p-line);color:var(--p-mut);border-radius:10px;padding:10px;font-size:13px;cursor:pointer;font-family:inherit;">Back</button>'
     +'</div>';
 }
-function _pr_doReassign(orphanId,targetId){
+function _pr_toggleSel(key){if(!_prSel)_prSel=new Set();if(_prSel.has(key))_prSel.delete(key);else _prSel.add(key);_pr_gallery(_prGalleryBucket);}
+function _pr_view(key){
+  var arr=capturedPhotos[_prGalleryBucket]||[];var rec=null;for(var i=0;i<arr.length;i++){if(_pr_photoKey(arr[i],i)===key){rec=arr[i];break;}}
+  if(!rec)return;
+  var sel=_prSel&&_prSel.has(key);
+  var v=document.createElement('div');v.id='pr-view';
+  v.style.cssText='position:fixed;inset:0;z-index:10001;background:rgba(0,0,0,.92);display:flex;flex-direction:column;align-items:center;justify-content:center;padding:16px;';
+  v.onclick=function(e){if(e.target===v)v.remove();};
+  v.innerHTML='<img src="'+_urlAttr(rec.url)+'" style="max-width:100%;max-height:78%;object-fit:contain;border-radius:8px;">'
+    +'<div style="display:flex;gap:10px;margin-top:16px;">'
+      +'<button onclick="_pr_toggleSel(\''+_jsAttr(key)+'\');var x=document.getElementById(\'pr-view\');if(x)x.remove();" class="btnp" style="border-radius:10px;padding:11px 20px;">'+(sel?'✓ Selected — tap to unselect':'Select this photo')+'</button>'
+      +'<button onclick="var x=document.getElementById(\'pr-view\');if(x)x.remove();" style="background:none;border:1px solid #666;color:#ddd;border-radius:10px;padding:11px 18px;font-size:14px;cursor:pointer;font-family:inherit;">Close</button>'
+    +'</div>';
+  (document.querySelector('.shell')||document.body).appendChild(v);
+}
+function _pr_assignSelected(){
+  if(!_prSel||!_prSel.size){_pr_gallery(_prGalleryBucket);return;}
+  _pr_reassign(_prGalleryBucket,0);
+}
+// pickClient: show the client list, then assign either the SELECTED photos (all=0) or ALL (all=1).
+function _pr_reassign(bucketId,all){
+  var ov=document.getElementById('photo-recover');if(!ov)return;
+  var names=Object.keys(CL).filter(function(k){return CL[k]&&CL[k].name;}).sort(function(a,b){return String(CL[a].name).localeCompare(String(CL[b].name));});
+  var count=all?((capturedPhotos[bucketId]||[]).length):(_prSel?_prSel.size:0);
+  var list=names.map(function(k){return '<div onclick="_pr_doReassign(\''+bucketId+'\',\''+k+'\','+(all?1:0)+')" style="padding:11px 12px;border:1px solid var(--p-line);border-radius:10px;margin-bottom:6px;cursor:pointer;font-size:14px;color:var(--p-ink);background:var(--p-surf);">'+_fileEsc(CL[k].name)+'</div>';}).join('');
+  ov.innerHTML='<div style="background:var(--surf1);border-top:1px solid var(--p-line);border-radius:16px 16px 0 0;padding:18px;max-height:92%;overflow:auto;">'
+    +'<div style="width:36px;height:4px;background:var(--p-chip);border-radius:2px;margin:0 auto 14px;"></div>'
+    +'<div style="font-size:16px;font-weight:600;color:var(--p-ink);margin-bottom:4px;">Assign '+count+' photo'+(count===1?'':'s')+' to which client?</div>'
+    +'<div style="font-size:12px;color:var(--p-mut);margin-bottom:14px;">They’ll be attached to the client you pick. You can re-tag each as Before/After afterward from their photos.</div>'
+    +(list||'<div style="font-size:13px;color:var(--p-mut);">No clients yet.</div>')
+    +'<button onclick="_pr_gallery(\''+bucketId+'\')" style="width:100%;margin-top:6px;background:none;border:1px solid var(--p-line);color:var(--p-mut);border-radius:10px;padding:10px;font-size:13px;cursor:pointer;font-family:inherit;">Back</button>'
+    +'</div>';
+}
+function _pr_doReassign(bucketId,targetId,all){
   try{
-    if(!capturedPhotos[orphanId]||!capturedPhotos[orphanId].length){_pr_render('Nothing to move.');return;}
+    var src=capturedPhotos[bucketId]||[];
+    if(!src.length){_pr_render('Nothing to move.');return;}
     if(!capturedPhotos[targetId])capturedPhotos[targetId]=[];
     var have=new Set(capturedPhotos[targetId].map(function(p){return (p&&(p.pid||p.url))||'';}));
-    var moved=0;capturedPhotos[orphanId].forEach(function(p){var kk=(p&&(p.pid||p.url))||'';if(kk&&!have.has(kk)){capturedPhotos[targetId].push(p);have.add(kk);moved++;}});
-    delete capturedPhotos[orphanId];
+    var moved=0,keep=[];
+    src.forEach(function(p,i){
+      var key=_pr_photoKey(p,i);
+      var take=all?true:(_prSel&&_prSel.has(key));
+      if(!take){keep.push(p);return;}
+      var kk=(p&&(p.pid||p.url))||'';
+      if(kk&&!have.has(kk)){capturedPhotos[targetId].push(p);have.add(kk);moved++;}
+    });
+    if(keep.length)capturedPhotos[bucketId]=keep;else delete capturedPhotos[bucketId];
+    _prSel=new Set();
     try{if(typeof persistCapturedPhotos==='function')persistCapturedPhotos();}catch(e){}
-    _pr_render('Moved '+moved+' photo'+(moved===1?'':'s')+' to '+((CL[targetId]&&CL[targetId].name)||'the client')+'. Open their session to see them.');
+    _pr_render('Moved '+moved+' photo'+(moved===1?'':'s')+' to '+((CL[targetId]&&CL[targetId].name)||'the client')+'. Open their session to see them (and tag any as Before/After).');
   }catch(e){_pr_render('Couldn’t move those photos.');}
 }
 let _cpMigrateLegacy=false;
