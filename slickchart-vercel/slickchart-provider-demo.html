@@ -1451,7 +1451,7 @@ function _editClientDetails(id){
     +'<span class="fl-lbl">Name</span><input class="fi" id="cd-name" value="'+val(c.name)+'" style="margin-bottom:10px;">'
     +'<span class="fl-lbl">Email</span><input class="fi" id="cd-email" type="email" autocapitalize="off" value="'+val(c.email)+'" placeholder="name@email.com" style="margin-bottom:10px;">'
     +'<span class="fl-lbl">Phone</span><input class="fi" id="cd-phone" type="tel" value="'+val(c.phone)+'" placeholder="(555) 123-4567" style="margin-bottom:10px;">'
-    +'<span class="fl-lbl">Date of birth</span><input class="fi" id="cd-dob" type="date" value="'+val(c.birthday)+'" style="margin-bottom:14px;color-scheme:dark;">'
+    +'<span class="fl-lbl">Date of birth</span><div style="margin-bottom:14px;">'+_pDOBFieldHTML('cd-dob',_fmtDOB(c.birthday),'','Date of birth')+'</div>'
     +'<button class="btnp" style="width:100%;border-radius:10px;" onclick="_saveClientDetails(\''+id+'\')"><i class="ti ti-check"></i> Save details</button>'
     +'<button onclick="document.getElementById(\'cl-edit\').remove()" style="width:100%;margin-top:8px;background:none;border:none;color:var(--p-mut);font-size:13px;cursor:pointer;font-family:inherit;padding:6px;">Cancel</button></div>';
   (document.querySelector('.shell')||document.body).appendChild(m);
@@ -1474,7 +1474,10 @@ function _saveClientDetails(id){
   // Allow CLEARING a wrong date of birth: assign whatever the field holds (including empty) as long
   // as the field is actually on screen. Only skip when the input isn't rendered, so we never blank a
   // DOB just because this variant of the sheet didn't show the field.
-  const _dobEl=document.getElementById('cd-dob'); if(_dobEl)c.birthday=String(_dobEl.value||'').trim();
+  // DOB is now typed as MM/DD/YYYY (or picked from the calendar, which writes the same). Normalize a
+  // parseable entry to ISO for storage; keep a not-yet-complete entry as-typed rather than losing it;
+  // an empty field clears the DOB.
+  const _dobEl=document.getElementById('cd-dob'); if(_dobEl){const _raw=String(_dobEl.value||'').trim();c.birthday=_raw?(_normBirthday(_raw)||_raw):'';}
   saveClients();
   if(typeof Cloud!=='undefined'&&Cloud&&Cloud.pushAllLocal){try{Cloud.pushAllLocal();}catch(e){}}
   const m=document.getElementById('cl-edit'); if(m)m.remove();
@@ -3420,6 +3423,30 @@ function _fmtDOB(b){
   const m=n.match(/^(\d{4})-(\d{2})-(\d{2})/);
   if(!m||m[1]==='0000')return String(b);
   return parseInt(m[2],10)+'/'+parseInt(m[3],10)+'/'+m[1];
+}
+// Does this label ask for a date of birth? Used to render a TYPEABLE field (with a calendar option)
+// instead of a calendar-only <input type="date">, which on a phone forces scrolling back decades to a
+// birth year with no way to just type it.
+function _looksDOB(lbl){return /birth\s?date|date of birth|\bd\.?o\.?b\.?\b|birthday/i.test(lbl||'');}
+// Auto-insert slashes as digits are typed (MMDDYYYY -> MM/DD/YYYY) so a DOB can be typed straight in.
+function _pDOBType(el){const d=String(el.value||'').replace(/[^0-9]/g,'').slice(0,8);let out=d;if(d.length>4)out=d.slice(0,2)+'/'+d.slice(2,4)+'/'+d.slice(4);else if(d.length>2)out=d.slice(0,2)+'/'+d.slice(2);el.value=out;}
+// The calendar button writes its ISO (YYYY-MM-DD) pick back into the paired text field as M/D/YYYY and
+// fires the text field's own input handler, so typing and the calendar share ONE value and ONE store.
+function _pDOBFromPicker(picker,targetId){const t=document.getElementById(targetId);if(!t)return;const m=String(picker.value||'').match(/^(\d{4})-(\d{2})-(\d{2})$/);t.value=m?(parseInt(m[2],10)+'/'+parseInt(m[3],10)+'/'+m[1]):'';try{t.dispatchEvent(new Event('input',{bubbles:true}));}catch(e){if(typeof t.oninput==='function')t.oninput();}}
+// One reusable "type it OR pick from the calendar" DOB control. `assign` is a JS expression fragment run
+// on every input, receiving the field via `this` (e.g. "newClientData['x']=this.value"); pass '' when the
+// value is instead read from the input by id at submit time.
+function _pDOBFieldHTML(id,curVal,assign,aria){
+  const v=String(curVal==null?'':curVal).replace(/"/g,'&quot;');
+  const a=aria?(' aria-label="'+_fileEsc(aria)+'"'):'';
+  const onin=('_pDOBType(this);'+(assign||'')).replace(/"/g,'&quot;');
+  return '<div style="display:flex;gap:8px;align-items:stretch;">'
+    +'<input class="fi" id="'+id+'" type="text" inputmode="numeric" autocomplete="bday" maxlength="10" placeholder="MM/DD/YYYY"'+a+' value="'+v+'" oninput="'+onin+'" style="flex:1;">'
+    +'<label style="position:relative;display:inline-flex;align-items:center;justify-content:center;width:46px;border:1px solid var(--p-line);border-radius:9px;background:var(--p-surf);cursor:pointer;flex-shrink:0;" title="Pick from calendar">'
+      +'<i class="ti ti-calendar" style="font-size:18px;color:var(--p-mut);" aria-hidden="true"></i>'
+      +'<input type="date" tabindex="-1" aria-label="Choose date of birth from calendar" onchange="_pDOBFromPicker(this,\''+id+'\')" style="position:absolute;inset:0;width:100%;height:100%;opacity:0;cursor:pointer;color-scheme:dark;">'
+    +'</label></div>'
+    +'<div style="font-size:11px;color:var(--p-mut2);margin-top:5px;">Type it in (e.g. 03/15/1994) or tap the calendar</div>';
 }
 function _upcomingBirthdays(days){days=days||30;const today=new Date();today.setHours(0,0,0,0);const out=[];
   const _leapYr=y=>((y%4===0&&y%100!==0)||y%400===0);
@@ -12188,7 +12215,7 @@ function _sdQHTML(q){
   const lab=`<div style="font-size:13px;font-weight:500;color:var(--p-ink);margin-bottom:6px;">${_fileEsc(q.label)} <span style="font-size:12px;color:${q.required?'var(--p-red)':'#315249'};">${q.required?'Required':'Optional'}</span></div>`;
   let field='';
   if(q.type==='Long text')field=`<textarea class="fi" id="${id}" style="height:60px;resize:none;line-height:1.5;" placeholder="Your answer…"></textarea>`;
-  else if(q.type==='Date')field=`<input class="fi" type="date" id="${id}">`;
+  else if(q.type==='Date')field=_looksDOB(q.label)?_pDOBFieldHTML(id,'','',q.label):`<input class="fi" type="date" id="${id}">`;
   else if(q.type==='Yes / No')field=`<div style="display:flex;gap:8px;">${['Yes','No'].map(o=>`<button type="button" onclick="_sdPick(this,'${_jsAttr(id)}','${_jsAttr(o)}')" class="btng" style="flex:1;">${o}</button>`).join('')}</div>`;
   else if((q.type==='Multiple choice'||q.type==='Single select')&&q.options)field=`<div style="display:flex;flex-wrap:wrap;gap:6px;">${q.options.map(o=>`<button type="button" onclick="_sdPick(this,'${_jsAttr(id)}','${_jsAttr(o)}')" class="btng" style="padding:6px 12px;font-size:12px;">${_fileEsc(o)}</button>`).join('')}</div>`;
   else if(_isPhotoType(q.type))field=`<div style="background:var(--p-surf);border:1.5px dashed var(--p-line);border-radius:9px;padding:14px;text-align:center;color:var(--p-mut);font-size:12px;display:flex;align-items:center;justify-content:center;gap:7px;"><i class="ti ti-camera" style="font-size:15px;"></i> Client can attach photos here</div>`;
@@ -12289,11 +12316,41 @@ function _hoursUntilVisit(c){
   if((d-now)/86400000 < -60)d=new Date(now.getFullYear()+1,mo,day,h,min,0);
   return (d-now)/3600000;
 }
+// A FORMAT-INSENSITIVE signature of an appointment label (month + day + time). The stored nextVisit gets
+// rewritten in different formats by different code paths — a booking confirmation stamps "Aug 20 · 10:00
+// AM" while the appointment reconcile stamps "Wednesday, August 20 · 10:00 AM" for the very same visit —
+// so an exact-string "done for <label>" check breaks the moment a relabel happens and wrongly re-surfaces
+// "check-in not done" for a client who already completed it. Reducing both sides to (month, day, time)
+// makes those equivalent. Returns '' when no date can be read, so two blanks never falsely match here.
+function _apptSig(s){
+  s=String(s||'').toLowerCase();
+  if(!s||/not scheduled|^—$|^-$/.test(s.trim()))return '';
+  var mons={jan:1,feb:2,mar:3,apr:4,may:5,jun:6,jul:7,aug:8,sep:9,oct:10,nov:11,dec:12};
+  var mo=0,day=0,mm=s.match(/(jan|feb|mar|apr|may|jun|jul|aug|sep|oct|nov|dec)[a-z]*\.?\s+(\d{1,2})/);
+  if(mm){mo=mons[mm[1]];day=parseInt(mm[2],10);}
+  else{var nd=s.match(/\b(\d{1,2})[\/\-](\d{1,2})\b/);if(nd){mo=parseInt(nd[1],10);day=parseInt(nd[2],10);}}
+  if(!mo||!day)return '';
+  var hh=null,mi=0,t1=s.match(/(\d{1,2}):(\d{2})\s*(am|pm)?/),t2=t1?null:s.match(/\b(\d{1,2})\s*(am|pm)\b/);
+  if(t1){hh=parseInt(t1[1],10);mi=parseInt(t1[2],10);var ap1=t1[3]||'';if(ap1==='pm'&&hh<12)hh+=12;if(ap1==='am'&&hh===12)hh=0;}
+  else if(t2){hh=parseInt(t2[1],10);var ap2=t2[2]||'';if(ap2==='pm'&&hh<12)hh+=12;if(ap2==='am'&&hh===12)hh=0;}
+  return mo+'-'+day+(hh==null?'':('@'+hh+':'+mi));
+}
+// Just the calendar-day portion (month + day), for the looser fallback when one label carries a time and
+// the other doesn't after a reformat.
+function _apptDay(s){var sig=_apptSig(s);return sig?sig.split('@')[0]:'';}
 function _checkinDone(id,c){
   // Scoped to the CURRENT appointment: a check-in completed for a PRIOR visit must not suppress the
   // nudge for a newly-booked one (the client app already keys this per-appointment). checkinDoneFor
-  // stores the nextVisit it was completed for, so it auto-invalidates whenever nextVisit changes.
-  return !!(c && c.checkinDoneFor != null && c.checkinDoneFor === ((c.nextVisit) || ''));
+  // stores the nextVisit it was completed for.
+  if(!c||c.checkinDoneFor==null)return false;
+  var nv=c.nextVisit||'',cf=c.checkinDoneFor;
+  if(cf===nv)return true;                                   // exact match (fast path / unscheduled '' === '')
+  var sN=_apptSig(nv),sC=_apptSig(cf);
+  if(sN&&sC){
+    if(sN===sC)return true;                                 // same appointment, different label FORMAT
+    if(_apptDay(nv)===_apptDay(cf))return true;             // same day, time reformatted or dropped
+  }
+  return false;
 }
 let _ciDismissed={};
 function loadCiDismissed(){try{const r=localStorage.getItem('sc_ci_dismissed');if(r)_ciDismissed=JSON.parse(r)||{};}catch(e){}}
@@ -20489,7 +20546,9 @@ function _ncQHTML(q,i){
   const esc=String(val).replace(/"/g,'&quot;');const escT=String(val).replace(/</g,'&lt;');
   let field='';
   if(q.type==='Long text')field=`<textarea class="fi" id="${id}" aria-label="${_fileEsc(q.label)}" oninput="newClientData['${id}']=this.value" style="height:60px;resize:none;line-height:1.5;" placeholder="Answer…">${escT}</textarea>`;
-  else if(q.type==='Date')field=`<input class="fi" type="date" id="${id}" aria-label="${_fileEsc(q.label)}" value="${esc}" onchange="newClientData['${id}']=this.value">`;
+  else if(q.type==='Date')field=_looksDOB(q.label)
+    ?_pDOBFieldHTML(id,_fmtDOB(val),`newClientData['${id}']=this.value`,q.label)
+    :`<input class="fi" type="date" id="${id}" aria-label="${_fileEsc(q.label)}" value="${esc}" onchange="newClientData['${id}']=this.value">`;
   else if(q.type==='Yes / No')field=`<div style="display:flex;gap:8px;">${['Yes','No'].map(o=>`<button onclick="newClientData['${id}']='${o}';renderNCStep()" class="btng" style="flex:1;${val===o?'border-color:var(--accent-strong);color:var(--accent-strong);background:var(--accent-a08);':''}">${o}</button>`).join('')}</div>`;
   else if((q.type==='Multiple choice'||q.type==='Single select')&&q.options){
     const isCustom=val&&q.options.indexOf(val)<0;
