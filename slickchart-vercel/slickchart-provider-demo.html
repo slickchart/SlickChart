@@ -20591,27 +20591,66 @@ function _newClientId(){
   while(CL[id]){base++;id='c'+base;}
   return id;
 }
+// Before minting a brand-new client, see if this person is ALREADY in the roster — otherwise "Add a
+// client" for someone who booked online (a Square-synced shell) or was added before silently creates a
+// DUPLICATE record. Each duplicate syncs to the server as its own row with its own link token, which is
+// exactly how one client received a pile of "get my link" emails (one per row) with their intake landing
+// on one record and empty shells on the others. Match on email first (a definite same-person signal),
+// then fall back to a unique name match — but never merge two different people who share a name yet have
+// conflicting emails on file. Returns the existing client id to reuse, or null to create fresh.
+function _findExistingClientId(name,email){
+  try{
+    var em=String(email||'').trim().toLowerCase();
+    if(em){
+      var byEmail=Object.keys(CL).find(function(k){return CL[k]&&String(CL[k].email||'').trim().toLowerCase()===em;});
+      if(byEmail)return byEmail;
+    }
+    if(typeof _clientIdByName==='function'){
+      var byName=_clientIdByName(name);
+      if(byName){
+        var exEm=String((CL[byName]&&CL[byName].email)||'').trim().toLowerCase();
+        if(!em||!exEm||em===exEm)return byName;   // same person (or no conflicting email) → reuse
+      }
+    }
+  }catch(e){}
+  return null;
+}
 function ncSaveBasic(){
   const get=id=>{const el=document.getElementById(id);return el?el.value:'';};
   const name=(get('nc-name')||'').trim();
   if(!name){proToast('Add the client\u2019s name to continue');return;}
   const emailV=(get('nc-email')||'').trim();
   if(emailV&&!/^[^\s@]+@[^\s@]+\.[^\s@]+$/.test(emailV)){proToast('That email doesn\u2019t look right \u2014 check it or leave it blank');return;}
-  const id=_newClientId();
   const initials=_initials(name)||'NC';
-  const palette=[['var(--p-purple-bg)','var(--p-purple)'],['var(--p-surf2)','var(--p-green)'],['var(--p-blue-bg)','var(--p-blue)'],['var(--p-red-bg)','var(--p-red)'],['var(--p-amber-bg)','var(--accent)']];
-  const col=palette[Object.keys(CL).length%palette.length];
-  CL[id]={name,initials,bg:col[0],tc:col[1],
-    phone:get('nc-phone')||'',email:get('nc-email')||'',birthday:get('nc-dob')||'',
-    skin:'—',concerns:'—',allergies:'None noted',fitz:'—',
-    lastVisit:'—',nextVisit:'Not scheduled',treatment:'New client',sessions:0,seriesTotal:0,touchUpDate:'—',
-    conditions:'',notes:''};
-  try{if(typeof saveClients==='function')saveClients();}catch(e){}
-  proToast(name.split(' ')[0]+' added');
-  // Best-effort: also create them in Square so the two stay in sync. If Square
-  // isn't connected (or the call fails), we just keep the local client, never
-  // block adding someone because of a sync hiccup.
-  _pushClientToSquare(id);
+  const _phone=get('nc-phone')||'', _dob=get('nc-dob')||'';
+  const _existing=_findExistingClientId(name,emailV);
+  let id;
+  if(_existing){
+    // Already in the roster — update in place instead of creating a duplicate, and DON'T clobber their
+    // existing data (forms, history, token). Only fill/refresh contact fields.
+    id=_existing; const c=CL[id];
+    c.name=name; c.initials=initials;
+    if(emailV)c.email=emailV;
+    if(_phone)c.phone=_phone;
+    if(_dob&&!String(c.birthday||'').trim())c.birthday=_dob;
+    try{if(typeof saveClients==='function')saveClients();}catch(e){}
+    proToast(name.split(' ')[0]+' is already in your clients — opening their setup');
+  } else {
+    id=_newClientId();
+    const palette=[['var(--p-purple-bg)','var(--p-purple)'],['var(--p-surf2)','var(--p-green)'],['var(--p-blue-bg)','var(--p-blue)'],['var(--p-red-bg)','var(--p-red)'],['var(--p-amber-bg)','var(--accent)']];
+    const col=palette[Object.keys(CL).length%palette.length];
+    CL[id]={name,initials,bg:col[0],tc:col[1],
+      phone:_phone,email:emailV,birthday:_dob,
+      skin:'—',concerns:'—',allergies:'None noted',fitz:'—',
+      lastVisit:'—',nextVisit:'Not scheduled',treatment:'New client',sessions:0,seriesTotal:0,touchUpDate:'—',
+      conditions:'',notes:''};
+    try{if(typeof saveClients==='function')saveClients();}catch(e){}
+    proToast(name.split(' ')[0]+' added');
+    // Best-effort: also create them in Square so the two stay in sync. If Square
+    // isn't connected (or the call fails), we just keep the local client, never
+    // block adding someone because of a sync hiccup.
+    _pushClientToSquare(id);
+  }
   nav('nc-next-step',id);
 }
 async function _pushClientToSquare(id){
@@ -20768,17 +20807,30 @@ function renderNCStep(){
 function finishNewClient(){
   _ncReadStep();
   const name=(newClientData['nc-name']||'').trim()||'New client';
-  const id=_newClientId();
   const initials=_initials(name)||'NC';
-  const palette=[['var(--p-purple-bg)','var(--p-purple)'],['var(--p-surf2)','var(--p-green)'],['var(--p-blue-bg)','var(--p-blue)'],['var(--p-red-bg)','var(--p-red)'],['var(--p-amber-bg)','var(--accent)']];
-  const col=palette[Object.keys(CL).length%palette.length];
   const fid=_ncIntakeFormId();
-  CL[id]={name,initials,bg:col[0],tc:col[1],
-    phone:newClientData['nc-phone']||'',email:newClientData['nc-email']||'',
-    skin:'—',concerns:'—',
-    allergies:'None noted',fitz:'—',
-    lastVisit:'—',nextVisit:'Not scheduled',treatment:'New client',sessions:0,seriesTotal:0,touchUpDate:'—',
-    conditions:'',notes:newClientData['nc-notes']||''};
+  const _email=newClientData['nc-email']||'', _phone=newClientData['nc-phone']||'';
+  const _existing=_findExistingClientId(name,_email);
+  let id;
+  if(_existing){
+    // Reuse the existing record rather than creating a duplicate; preserve their forms/history/token
+    // and only refresh contact + notes. (Intake vitals below still apply on top from this session.)
+    id=_existing; const c=CL[id];
+    c.name=name; c.initials=initials;
+    if(_email)c.email=_email;
+    if(_phone)c.phone=_phone;
+    if(newClientData['nc-notes'])c.notes=newClientData['nc-notes'];
+  } else {
+    id=_newClientId();
+    const palette=[['var(--p-purple-bg)','var(--p-purple)'],['var(--p-surf2)','var(--p-green)'],['var(--p-blue-bg)','var(--p-blue)'],['var(--p-red-bg)','var(--p-red)'],['var(--p-amber-bg)','var(--accent)']];
+    const col=palette[Object.keys(CL).length%palette.length];
+    CL[id]={name,initials,bg:col[0],tc:col[1],
+      phone:_phone,email:_email,
+      skin:'—',concerns:'—',
+      allergies:'None noted',fitz:'—',
+      lastVisit:'—',nextVisit:'Not scheduled',treatment:'New client',sessions:0,seriesTotal:0,touchUpDate:'—',
+      conditions:'',notes:newClientData['nc-notes']||''};
+  }
   // fill vitals from the intake answers (same mapping the client-completed form uses)
   if(fid)_applyIntakeVitals(CL[id],fid,q=>newClientData['nc-iq-'+(q.id!=null?q.id:'')]);
   // if this profession's form doesn't ask about conditions, fall back to the Notes field
