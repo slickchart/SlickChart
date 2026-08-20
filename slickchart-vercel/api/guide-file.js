@@ -56,6 +56,23 @@ export default async function handler(req, res) {
     }
 
     if (req.method === 'GET') {
+      // Recovery list (provider only): metadata for every backed-up PROGRESS PHOTO (ids are 'ph_...').
+      // Used by Settings → Recover lost photos to find photo bytes still on the server whose local index
+      // reference was lost (e.g. the index got rebuilt from an empty in-memory set after a refresh), so
+      // they can be pulled back even though nothing local points at them anymore. Bytes are NOT included
+      // here — the client fetches just the ids it's missing, one by one.
+      if (req.query && String(req.query.list) === 'photos') {
+        await ensureProvidersTable();
+        const owner = await providerOwner(req);
+        if (!owner) { res.status(401).json({ error: 'Not logged in.' }); return; }
+        const q = sql();
+        const rows = await q`SELECT id, type, updated_at, length(coalesce(data, '')) AS size
+          FROM files WHERE owner = ${owner} AND left(id, 3) = 'ph_' AND data IS NOT NULL
+          ORDER BY updated_at DESC LIMIT 5000`;
+        res.setHeader('Cache-Control', 'no-store');
+        res.status(200).json({ ok: true, photos: (rows || []).map(r => ({ id: r.id, type: r.type || '', size: Number(r.size) || 0, updated_at: r.updated_at })) });
+        return;
+      }
       const id = String((req.query && req.query.id) || '').slice(0, 160);
       if (!id) { res.status(400).json({ error: 'Missing file id.' }); return; }
       let owner = null;

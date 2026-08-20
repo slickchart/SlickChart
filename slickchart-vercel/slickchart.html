@@ -3677,9 +3677,33 @@ async function _forcePhotoRecovery(){
   try{_roomDraftKeys().forEach(function(k){var cid=k.slice('sc_room_draft_'.length);try{_restoreRoomDraftPhotos(cid);}catch(e){}});}catch(e){}
   // 3) pull down everything the cloud index knows about, for ALL client ids
   try{await _restorePhotosFromCloud();}catch(e){}
+  // 4) last resort: pull ANY backed-up photo bytes still on the server that the local index lost track
+  //    of (e.g. the index got rebuilt empty after a refresh). These land in an "Unassigned" bucket the
+  //    provider can move onto the right client, since their client label is no longer known.
+  try{await _recoverUnindexedServerPhotos();}catch(e){}
   try{if(typeof persistCapturedPhotos==='function')await Promise.resolve(persistCapturedPhotos());}catch(e){}
   var after=_countAllPhotos();
   return {before:before,after:after,recovered:Math.max(0,after-before)};
+}
+async function _recoverUnindexedServerPhotos(){
+  try{
+    if(typeof Cloud==='undefined'||!Cloud||!Cloud.token)return 0;
+    var known=new Set();
+    try{Object.keys(capturedPhotos||{}).forEach(function(cid){(capturedPhotos[cid]||[]).forEach(function(p){if(p&&p.pid)known.add(p.pid);});});}catch(e){}
+    var list=[];
+    try{var r=await fetch('/api/guide-file?list=photos',{headers:{'Authorization':'Bearer '+Cloud.token}});if(r&&r.ok){var j=await r.json();if(j&&Array.isArray(j.photos))list=j.photos;}}catch(e){return 0;}
+    var missing=list.filter(function(f){return f&&f.id&&(f.size>0)&&!known.has(f.id);});
+    if(!missing.length)return 0;
+    if(!capturedPhotos.__recovered__)capturedPhotos.__recovered__=[];
+    var have=new Set(capturedPhotos.__recovered__.map(function(p){return (p&&p.pid)||'';}));
+    var got=0;
+    for(var i=0;i<missing.length&&i<300;i++){
+      var f=missing[i];if(!f||have.has(f.id))continue;
+      var file=null;try{file=await _getGuideFile(f.id);}catch(e){}
+      if(file&&file.data){capturedPhotos.__recovered__.push({url:file.data,ts:0,phase:'',angle:'',pid:f.id,source:'cloud-recovered'});have.add(f.id);got++;}
+    }
+    return got;
+  }catch(e){return 0;}
 }
 function _openPhotoRecovery(){
   var ov=document.getElementById('photo-recover');if(ov)ov.remove();
