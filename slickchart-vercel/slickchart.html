@@ -12899,32 +12899,54 @@ function _assignGuidesToClient(c,guides){
 }
 async function sendFirstVisitPackage(id){
   const c=CL[id];if(!c)return;
-  // Stamp a fresh pre-visit check-in request. The client keys "check-in done" on this nonce (plus the
-  // appointment date), so sending a new first-visit package always asks for a FRESH check-in — even for
-  // a not-yet-scheduled client whose empty appointment date would otherwise match a check-in they
-  // completed on an earlier package and show it as already done.
-  c.checkinReqAt=Date.now();
+  // The intake and the pre-visit check-in must travel as ONE bundle. The client shows the check-in on a
+  // time window (available the moment they open their link), but the intake only shows once its
+  // pendingForms entry has actually synced. So if we stamped the check-in but the intake push failed or
+  // landed late, the client would see + submit a check-in ALONE and the intake would never appear —
+  // exactly the "their check-in came through but not the intake" bug. To keep them atomic we: resolve a
+  // real intake form up front, assign it BEFORE we stamp the check-in, then push both together and
+  // CONFIRM the push landed (with one retry) before telling the provider it's ready.
   const intakeFid=(typeof _ncIntakeFormId==='function')?_ncIntakeFormId():null;
-  if(intakeFid&&formTmpls[intakeFid]){
-    _assignFormsToClient(c,_withPhotoRelease(intakeFid));
-    try{saveClients({noSync:true});}catch(e){}
-    // Make sure a brand-new client has a token first (this creates their server record), THEN push the
-    // intake as a definitive UPDATE so it's the LAST authoritative write — it can't be lost to a
-    // concurrent add-path sync that carried an empty pendingForms.
-    if(!c._token){ try{ await _syncSpecificClientsToServer([id],{}); }catch(e){} }
-    // Push the just-assigned intake to the server RIGHT NOW and AWAIT the outcome so a client who opens
-    // their link immediately actually receives the new-client flow. If the push fails (signed out /
-    // offline), warn the provider instead of silently inviting them to a formless app.
-    if(c._token){
-      const res=await _pushClientNow(id);
-      // Positive confirmation the intake actually reached the server, so there's no guessing whether the
-      // new-client flow went out. On failure, surface the reason instead of a false "all good".
-      if(res&&res.ok){ if(typeof proToast==='function')proToast('✓ '+c.name.split(' ')[0]+'’s new-client intake + pre-visit check-in are ready — they’ll see both when they open the link.'); }
-      else if(typeof proToast==='function')proToast((res&&res.msg)||'Couldn’t confirm the intake reached the server — please check your connection and resend.',0);
-    }
-  } else if(typeof proToast==='function'){
-    // No intake template resolved for this profession — say so instead of silently sending a formless invite.
-    proToast('Heads up: no intake form is set up for your profession yet, so the invite will go out without one.',0);
+  if(!intakeFid||!formTmpls[intakeFid]){
+    // No intake template resolved at all — extremely unlikely (the built-in "intake" is always present),
+    // but rather than quietly send a check-in with no intake, tell the provider and stop. Sending a
+    // half package is worse than sending nothing, because a client who completes the lone check-in reads
+    // as "all done" while the intake was never asked for.
+    if(typeof proToast==='function')proToast('No intake form is set up yet, so a first-visit package can’t go out. Add an intake under Forms, then resend.',0);
+    return;
+  }
+  // Assign the intake (+ bundled photo release) FIRST so the client record is never in a
+  // check-in-without-intake state, THEN stamp the fresh check-in request. The client keys "check-in done"
+  // on this nonce (plus the appointment date), so a new package always asks for a FRESH check-in.
+  _assignFormsToClient(c,_withPhotoRelease(intakeFid));
+  c.checkinReqAt=Date.now();
+  try{saveClients({noSync:true});}catch(e){}
+  // Cancel any already-armed per-client sync whose payload may have been built BEFORE we assigned the
+  // intake (it would carry an empty pendingForms). Our explicit push below becomes the authoritative,
+  // last write for this client.
+  try{if(typeof _specificSyncTimers!=='undefined'&&_specificSyncTimers[id]){clearTimeout(_specificSyncTimers[id]);delete _specificSyncTimers[id];}}catch(e){}
+  // Make sure a brand-new client has a token first (this creates their server record), THEN push the
+  // intake as a definitive UPDATE so it's the LAST authoritative write — it can't be lost to a
+  // concurrent add-path sync that carried an empty pendingForms.
+  if(!c._token){ try{ await _syncSpecificClientsToServer([id],{}); }catch(e){} }
+  // Push the just-assigned intake + check-in to the server RIGHT NOW and AWAIT the outcome so a client
+  // who opens their link immediately actually receives the FULL new-client flow, not a lone check-in.
+  let res=null;
+  if(c._token){
+    res=await _pushClientNow(id);
+    // A first push can drop on a cold serverless start / brief blip. Since a silently-lost intake is the
+    // exact failure we're guarding against, retry once before we decide it truly didn't land.
+    if(!(res&&res.ok)){ try{await new Promise(r=>setTimeout(r,1500));}catch(e){} res=await _pushClientNow(id); }
+  }
+  if(res&&res.ok){
+    // Positive confirmation both reached the server, so there's no guessing whether the new-client flow
+    // went out.
+    if(typeof proToast==='function')proToast('✓ '+c.name.split(' ')[0]+'’s new-client intake + pre-visit check-in are ready — they’ll see both when they open the link.');
+  } else if(c._token){
+    // Push still didn't confirm. Re-arm the durable full-roster sync so the intake self-heals to the
+    // server on the next flush, and be honest that it isn't confirmed yet instead of a false "all good".
+    try{if(typeof _scheduleClientSync==='function')_scheduleClientSync();}catch(e){}
+    if(typeof proToast==='function')proToast((res&&res.msg)||'Couldn’t confirm the intake + check-in reached the server — check your connection, then resend before texting the link.',0);
   }
   // The invite sheet itself handles the actual send/share step; this just makes sure the intake form
   // (+ photo release) is already waiting for them the moment they open the app.
@@ -20428,7 +20450,11 @@ function _ncConsentId(){
   if(formTmpls['consent-esty'])return 'consent-esty';
   return Object.keys(formTmpls).find(k=>/consent|liability|waiver/i.test(k))||'consent-esty';
 }
-function _ncIntakeFormId(){const id=_ncProf().id;const fid=id+'-intake';return formTmpls[fid]?fid:(formTmpls['intake']?'intake':null);}
+function _ncIntakeFormId(){const id=_ncProf().id;const fid=id+'-intake';if(formTmpls[fid])return fid;if(formTmpls['intake'])return 'intake';
+  // Final fallback: any intake-style template that exists, so a first-visit package is never sent
+  // without an intake just because the generic "intake" was renamed or removed from the library.
+  const any=Object.keys(formTmpls).find(function(k){return /(^|-)intake$/.test(k)||/intake/i.test((formTmpls[k]&&formTmpls[k].name)||'');});
+  return any||null;}
 function _ncIntakeQs(){const fid=_ncIntakeFormId();const t=fid&&formTmpls[fid];if(!t)return [];return t.qs.filter(q=>{if(q.type==='Signature'||q.type==='Contraindications')return false;const l=(q.label||'').toLowerCase();if(/full name|^name$/.test(l))return false;if(/date of birth|^dob$/.test(l))return false;if(/phone|mobile number/.test(l))return false;if(/e-?mail/.test(l))return false;if(/how did you hear|referred by|referral|hear about us/.test(l))return false;return true;});}
 function _ncQHTML(q,i){
   const id='nc-iq-'+(q.id!=null?q.id:i);const val=newClientData[id]||'';

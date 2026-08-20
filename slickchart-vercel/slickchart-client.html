@@ -3619,6 +3619,7 @@ function _ciSaveDraftSoon(){clearTimeout(_ciDraftTimer);_ciDraftTimer=setTimeout
 function _ciClearDraft(){try{localStorage.removeItem(_ciDraftKey());}catch(e){}}
 function renderCheckin(){
   _ciPkgMode=false;   // standalone wizard — _ciRerender re-renders the full step, not a package block
+  _ciBundleChecked=false;   // re-check once, on submit, whether a first-visit intake is still syncing in
   setNav('home');
   document.getElementById('tt').textContent='Pre-visit Check-in';
   const p=activeProvider();
@@ -3696,6 +3697,9 @@ function _ciToggleFirstVisit(){checkinAnswers._firstVisit=_ciFirstVisit()?'':'ye
 // intake above and the scroll position untouched); otherwise it re-renders the full wizard step exactly
 // as before. _ciPkgMode is set true only while the package is on screen.
 let _ciPkgMode=false;
+// One-shot guard so the standalone check-in's "is a first-visit intake still syncing in?" refresh runs
+// at most once per check-in session (reset in renderCheckin), never looping on the re-entrant submit.
+let _ciBundleChecked=false;
 function _ciRerender(){
   if(_ciPkgMode){
     const body=document.getElementById('ci-package-body');
@@ -4160,6 +4164,27 @@ function submitCheckin(){
   // (_ciStableIdem) and self-retries; if it ultimately fails we revert the done flag so the check-in
   // returns to their to-do list and any flagged contraindication isn't silently lost.
   if(client._real){
+    // ── Bundle guard ─────────────────────────────────────────────────────────────────────────────
+    // The pre-visit check-in surfaces on a time window (available the instant the client opens their
+    // link), but a first-visit INTAKE only appears once its pendingForms entry has synced in. If a
+    // provider just sent a first-visit package and the intake is still in flight, the client could reach
+    // this standalone check-in with no pending form and submit it ALONE — leaving the intake orphaned
+    // (the "their check-in came through but not the intake" report). Before finalizing a lone check-in
+    // (no pending forms right now), do ONE fresh fetch; if the intake has landed, walk them into the
+    // bundled flow instead of completing the check-in by itself.
+    if(!_ciBundleChecked && client._token && !(prov.pendingForms||[]).length){
+      _ciBundleChecked=true;
+      S.innerHTML=_sendingHTML('One moment…');
+      return _refreshProviderDataOnce().then(function(){
+        if(((activeProvider()||{}).pendingForms||[]).length){
+          // An intake arrived — route into the merged package (or guided flow) so both get done together.
+          try{showToast('One more step before your check-in — your intake',true);}catch(e){}
+          _startPrevisitFlow();
+          return;
+        }
+        submitCheckin();   // nothing new synced in; proceed with the normal standalone check-in submit
+      });
+    }
     const _ciPayload={client:client.name,treatment:client.treatment,dateLabel:client.nextDate,time:client.nextTime,groups:pay.groups,flagged:pay.flagged,notes:pay.notes,photos:pay.photos||[],_idem:_ciStableIdem(prov)};
     _markCheckinDoneKeepDraft(prov);
     if(_nextPrevisitItem()){
@@ -5892,6 +5917,28 @@ function _clientDataFingerprint(j){
 function _isBusyScreen(){
   const n=(typeof currentScreen!=='undefined'?currentScreen:'');
   return n==='fill-form'||n==='checkin'||n==='rebook'||n==='virtual-submit'||n==='messages';
+}
+// One-shot fresh fetch of this client's provider data, applied in place, resolving when done (or after a
+// short cap so a slow/failed request never strands a caller mid-flow). Used by the check-in bundle guard
+// to catch a first-visit intake that's still syncing in before finalizing a lone check-in.
+function _refreshProviderDataOnce(){
+  return new Promise(function(resolve){
+    if(!client._real||!client._token){resolve(false);return;}
+    let done=false;const finish=function(v){if(done)return;done=true;resolve(v);};
+    try{setTimeout(function(){finish(false);},4000);}catch(e){}
+    fetch('/api/client-data?t='+encodeURIComponent(client._token),{cache:'no-store'})
+      .then(function(r){return r.json();})
+      .then(function(j){
+        try{
+          if(j&&j.ok&&j.client){
+            const fp=_clientDataFingerprint(j);
+            if(fp!==_lastDataFingerprint){_lastDataFingerprint=fp;_applyRealClientData(j);try{applyActiveProvider();}catch(e){}}
+          }
+        }catch(e){}
+        finish(true);
+      })
+      .catch(function(){finish(false);});
+  });
 }
 function _pollRealClient(){
   if(!client._real||!client._token)return;
