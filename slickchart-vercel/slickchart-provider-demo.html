@@ -3979,7 +3979,7 @@ function _sheetBar(){
     +'<button onclick="_sheetCloseFrom(this)" aria-label="Close" style="border:none;background:var(--p-surf2);width:32px;height:32px;border-radius:50%;color:var(--p-ink);font-size:18px;line-height:1;cursor:pointer;display:flex;align-items:center;justify-content:center;flex-shrink:0;">✕</button>'
     +'</div>';
 }
-function _sheetCloseFrom(btn){try{var ov=btn.closest('#sqp,#sq-cleanup,#photo-recover');if(!ov)return;if(ov.id==='sqp'&&_sqpBusy)return;ov.remove();if(ov.id==='sq-cleanup'){try{if(typeof renderClients==='function')renderClients();}catch(e){}}}catch(e){}}
+function _sheetCloseFrom(btn){try{var ov=btn.closest('#sqp,#sq-cleanup,#photo-recover,#sq-rebuild');if(!ov)return;if((ov.id==='sqp'&&_sqpBusy)||(ov.id==='sq-rebuild'&&_sqrBusy))return;ov.remove();if(ov.id==='sq-cleanup'||ov.id==='sq-rebuild'){try{if(typeof renderClients==='function')renderClients();}catch(e){}}}catch(e){}}
 function _sqp_box(html){var ov=document.getElementById('sqp');if(!ov)return;ov.innerHTML='<div style="background:var(--surf1);border-top:1px solid var(--p-line);border-radius:16px 16px 0 0;padding:18px;max-height:92%;overflow:auto;">'+_sheetBar()+html+'</div>';}
 async function _openSquarePurge(){
   var ov=document.getElementById('sqp');if(ov)ov.remove();
@@ -4074,6 +4074,67 @@ async function _sqp_execute(){
     +(failed?('<div style="font-size:12.5px;color:var(--p-amber);text-align:center;line-height:1.5;margin-bottom:12px;">'+failed+' couldn’t be deleted — Square blocks removing a customer that has appointments or orders attached. Delete those in the Square Dashboard, then re-run.</div>'):'<div style="font-size:12.5px;color:var(--p-mut);text-align:center;margin-bottom:12px;">Your Square customer list is cleaned up.</div>')
     +'<button onclick="_sqp_render()" style="width:100%;background:none;border:1px solid var(--p-line);color:var(--p-mut);border-radius:10px;padding:10px;font-size:13px;cursor:pointer;font-family:inherit;margin-bottom:8px;">Review what’s left</button>'
     +'<button onclick="var o=document.getElementById(\'sqp\');if(o)o.remove();" class="btnp" style="width:100%;border-radius:10px;">Done</button>');
+}
+// ── Rebuild your SlickChart client list from Square (Settings → Your data) ───────────────────────
+// Restores real clients that got removed from SlickChart, by re-importing from your Square. Two safety
+// properties: (1) it only imports customers your OWN Square created (native creation_source) — the
+// third-party strangers are NEVER pulled in, even if your Square isn't fully cleaned yet; (2) it imports
+// each under a FRESH record id, because the server refuses to un-delete a tombstoned client — a fresh id
+// sidesteps that so the restore actually sticks. Purely additive: it never deletes anything.
+let _sqrBusy=false,_sqrMissing=null;
+function _sqr_box(html){var ov=document.getElementById('sq-rebuild');if(!ov)return;ov.innerHTML='<div style="background:var(--surf1);border-top:1px solid var(--p-line);border-radius:16px 16px 0 0;padding:18px;max-height:92%;overflow:auto;">'+_sheetBar()+html+'</div>';}
+async function _openSquareRebuild(){
+  var ov=document.getElementById('sq-rebuild');if(ov)ov.remove();
+  ov=document.createElement('div');ov.id='sq-rebuild';
+  ov.style.cssText='position:fixed;inset:0;margin:0 auto;width:390px;max-width:100%;z-index:10000;background:rgba(0,0,0,.6);display:flex;flex-direction:column;justify-content:flex-end;';
+  ov.onclick=function(e){if(_sqrBusy)return;if(e.target===ov)ov.remove();};
+  (document.querySelector('.shell')||document.body).appendChild(ov);
+  _sqr_box('<div style="font-size:16px;font-weight:600;color:var(--p-ink);margin-bottom:6px;">Rebuild client list from Square</div><div style="font-size:13px;color:var(--p-mut);padding:14px 0;text-align:center;"><div class="spin" style="margin:0 auto 10px;"></div>Checking your Square…</div>');
+  var data=null,err=null;
+  try{ data=await _sqFetch('/api/square/customers'); }catch(e){ err=e; }
+  if(err||!data||!Array.isArray(data.customers)){
+    var msg=(err&&err.code==='nosquare')?'Connect your OWN Square first (Settings → Apps & connections → Square), then run this.':((err&&err.message)||'Could not load your Square customers.');
+    _sqr_box('<div style="font-size:16px;font-weight:600;color:var(--p-ink);margin-bottom:8px;">Rebuild client list from Square</div><div style="font-size:13px;color:var(--p-mut);line-height:1.6;margin-bottom:14px;">'+_fileEsc(msg)+'</div><button onclick="_sheetCloseFrom(this)" class="btnp" style="width:100%;border-radius:10px;">Close</button>');
+    return;
+  }
+  var idx=_sqMineIndex();
+  // Restore candidates: in your Square, NOT already in SlickChart, and created natively by your Square
+  // (so third-party strangers are structurally excluded).
+  _sqrMissing=data.customers.filter(function(c){return c&&c.id&&!_sqCustIsMine(c,idx)&&!_sqIsAppCreated(c.creationSource);});
+  _sqr_render();
+}
+function _sqr_render(msg){
+  var n=(_sqrMissing||[]).length;
+  var preview=(_sqrMissing||[]).slice(0,8).map(function(c){return _fileEsc(c.name||'(no name)');}).join(', ');
+  _sqr_box(
+    '<div style="font-size:16px;font-weight:600;color:var(--p-ink);margin-bottom:6px;">Rebuild client list from Square</div>'
+    +(msg?('<div role="status" style="font-size:12.5px;color:var(--p-green);background:var(--p-surf2);border:1px solid var(--p-line);border-radius:9px;padding:9px 11px;margin-bottom:12px;">'+_fileEsc(msg)+'</div>'):'')
+    +(n?(
+      '<div style="font-size:13px;color:var(--p-mut);line-height:1.6;margin-bottom:12px;"><b style="color:var(--p-ink);">'+n+'</b> of your Square customers aren’t in SlickChart. These were all created by your own Square (online bookings, walk-ins, imports) — the third-party strangers are excluded, so this only brings back your real clients.'+(preview?('<div style="margin-top:8px;color:var(--p-mut2);font-size:12px;">e.g. '+preview+(n>8?', …':'')+'</div>'):'')+'</div>'
+      +'<button onclick="_sqr_run()" class="btnp" style="width:100%;border-radius:10px;"><i class="ti ti-download"></i> Restore '+n+' client'+(n===1?'':'s')+'</button>'
+    ):'<div style="font-size:13px;color:var(--p-green);line-height:1.6;padding:6px 0 12px;">Every one of your Square customers is already in SlickChart — nothing to restore. 🎉</div>')
+    +'<button onclick="_sheetCloseFrom(this)" style="width:100%;margin-top:8px;background:none;border:1px solid var(--p-line);color:var(--p-mut);border-radius:10px;padding:10px;font-size:13px;cursor:pointer;font-family:inherit;">Close</button>'
+  );
+}
+async function _sqr_run(){
+  var list=_sqrMissing||[];if(!list.length){_sqr_render();return;}
+  _sqrBusy=true;
+  _sqr_box('<div style="font-size:16px;font-weight:600;color:var(--p-ink);margin-bottom:10px;">Restoring…</div><div style="font-size:13px;color:var(--p-mut);padding:8px 0;text-align:center;"><div class="spin" style="margin:0 auto 10px;"></div>Bringing '+list.length+' client'+(list.length===1?'':'s')+' back…</div>');
+  var restored=0;
+  try{
+    list.forEach(function(c){
+      var newId=(typeof _newClientId==='function')?_newClientId():('c'+Date.now()+Math.random().toString(36).slice(2,6));
+      CL[newId]=_sqMakeClient({id:c.id,name:c.name,email:c.email,phone:c.phone,birthday:c.birthday});
+      restored++;
+    });
+    try{if(typeof saveClients==='function')saveClients();}catch(e){}   // pushes fresh rows (no tombstone conflict)
+  }catch(e){}
+  _sqrBusy=false;
+  _sqrMissing=[];
+  _sqr_box('<div style="font-size:34px;text-align:center;margin-bottom:8px;">✅</div>'
+    +'<div style="font-size:16px;font-weight:600;color:var(--p-ink);text-align:center;margin-bottom:6px;">Restored '+restored+' client'+(restored===1?'':'s')+'</div>'
+    +'<div style="font-size:12.5px;color:var(--p-mut);text-align:center;line-height:1.5;margin-bottom:14px;">They’re back in your client list. Their visit history and forms will re-attach as they check in or you add notes.</div>'
+    +'<button onclick="_sheetCloseFrom(this)" class="btnp" style="width:100%;border-radius:10px;">Done</button>');
 }
 let _cpMigrateLegacy=false;
 function loadCapturedPhotos(){
@@ -15188,6 +15249,8 @@ function renderAccount(){
     ${(function(){var n=(typeof _squareImportedIds==='function')?_squareImportedIds().length:0;return n?`<div style="border-top:1px solid var(--p-line);"></div><div onclick="_openSquareCleanup()" style="display:flex;align-items:center;gap:11px;padding:13px 14px;cursor:pointer;"><div style="width:38px;height:38px;border-radius:10px;background:var(--p-red-bg);display:flex;align-items:center;justify-content:center;flex-shrink:0;"><i class="ti ti-user-x" style="font-size:18px;color:var(--p-red);"></i></div><div style="flex:1;"><div style="font-size:14px;font-weight:500;color:var(--p-ink);">Remove imported Square clients</div><div style="font-size:12px;color:var(--p-mut);">${n} client${n===1?'':'s'} imported from Square · review &amp; remove</div></div><i class="ti ti-chevron-right" style="font-size:16px;color:var(--p-mut);"></i></div>`:'';})()}
     <div style="border-top:1px solid var(--p-line);"></div>
     <div onclick="_openSquarePurge()" style="display:flex;align-items:center;gap:11px;padding:13px 14px;cursor:pointer;"><div style="width:38px;height:38px;border-radius:10px;background:var(--p-red-bg);display:flex;align-items:center;justify-content:center;flex-shrink:0;"><i class="ti ti-eraser" style="font-size:18px;color:var(--p-red);"></i></div><div style="flex:1;"><div style="font-size:14px;font-weight:500;color:var(--p-ink);">Clean up Square customer list</div><div style="font-size:12px;color:var(--p-mut);">Remove strangers from your live Square (protects your clients)</div></div><i class="ti ti-chevron-right" style="font-size:16px;color:var(--p-mut);"></i></div>
+    <div style="border-top:1px solid var(--p-line);"></div>
+    <div onclick="_openSquareRebuild()" style="display:flex;align-items:center;gap:11px;padding:13px 14px;cursor:pointer;"><div style="width:38px;height:38px;border-radius:10px;background:var(--p-green-bg,var(--p-surf2));display:flex;align-items:center;justify-content:center;flex-shrink:0;"><i class="ti ti-refresh" style="font-size:18px;color:var(--p-green);"></i></div><div style="flex:1;"><div style="font-size:14px;font-weight:500;color:var(--p-ink);">Rebuild client list from Square</div><div style="font-size:12px;color:var(--p-mut);">Restore your own clients that went missing (skips strangers)</div></div><i class="ti ti-chevron-right" style="font-size:16px;color:var(--p-mut);"></i></div>
     <div style="border-top:1px solid var(--p-line);"></div>
     <div onclick="replayOnboarding()" style="display:flex;align-items:center;gap:11px;padding:13px 14px;cursor:pointer;"><div style="width:38px;height:38px;border-radius:10px;background:var(--accent-tint);display:flex;align-items:center;justify-content:center;flex-shrink:0;"><i class="ti ti-player-play" style="font-size:18px;color:var(--accent-strong);"></i></div><div style="flex:1;"><div style="font-size:14px;font-weight:500;color:var(--p-ink);">Replay Setup Tour</div><div style="font-size:12px;color:var(--p-mut);">See the guided first-run setup again</div></div><i class="ti ti-chevron-right" style="font-size:16px;color:var(--p-mut);"></i></div>
   </div></div>
