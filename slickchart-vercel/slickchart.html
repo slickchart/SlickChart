@@ -3991,12 +3991,19 @@ function _sqp_render(){
   var ov=document.getElementById('sqp');if(!ov||!_sqpAll)return;
   var matchedN=_sqpAll.filter(function(c){return c.matched;}).length;
   var reviewable=_sqpAll.filter(function(c){return !c.prot;});   // everyone not a hard roster match
-  var qraw=_sqpQuery, q=_sqNormName(qraw);
-  var shown=q?reviewable.filter(function(c){return _sqNormName(c.name).indexOf(q)>=0||String(c.email||'').toLowerCase().indexOf(qraw.toLowerCase())>=0;}):reviewable;
+  var qraw=_sqpQuery, q=_sqNormName(qraw), qd=qraw.replace(/\D/g,'');
+  var shown=reviewable;
+  if(q||qd){
+    shown=reviewable.filter(function(c){
+      if(q&&(_sqNormName(c.name).indexOf(q)>=0||String(c.email||'').toLowerCase().indexOf(qraw.toLowerCase())>=0))return true;
+      if(qd&&qd.length>=3&&_sqDigits(c.phone).indexOf(qd)>=0)return true;   // phone/area-code search, e.g. "734"
+      return false;
+    });
+  }
   if(_sqpAfter){shown=shown.filter(function(c){return c.ts&&c.ts>=_sqpAfter;});}
   if(_sqpBefore){shown=shown.filter(function(c){return c.ts&&c.ts<=_sqpBefore;});}
   _sqpShownIds=shown.map(function(c){return c.id;}).filter(Boolean);
-  var dateSet=!!(_sqpAfter||_sqpBefore);
+  var dateSet=!!(_sqpAfter||_sqpBefore||(qd&&qd.length>=3)||q);   // any active filter (date, phone, or name) narrows the set
   var rows=shown.slice(0,600).map(function(c){
     var sel=c.id&&_sqpSel.has(c.id);
     var when='';try{if(c.createdAt)when=new Date(c.createdAt).toLocaleDateString('en-US',{month:'short',day:'numeric',year:'numeric'});}catch(e){}
@@ -4008,13 +4015,14 @@ function _sqp_render(){
   var selCount=_sqpSel.size;
   _sqp_box(
     '<div style="font-size:16px;font-weight:600;color:var(--p-ink);margin-bottom:4px;">Clean up Square customers</div>'
-    +'<div style="font-size:12px;color:var(--p-mut);line-height:1.55;margin-bottom:10px;">'+_sqpAll.length+' customers in your connected Square. <b style="color:var(--p-green);">'+matchedN+' are matched to your SlickChart clients</b> (hidden, can’t be deleted). The other <b>'+reviewable.length+'</b> include BOTH your real customers and the injected strangers — creation type didn’t separate them, so <b>date does the work</b>: they’re sorted newest-first, and the strangers arrived in a burst. Bracket that window below, review, then delete. <b style="color:var(--p-red);">Deleting is permanent.</b></div>'
-    +'<div style="background:var(--p-amber-bg);border:1px solid var(--p-amber-line);border-radius:9px;padding:8px 11px;margin-bottom:10px;font-size:11.5px;color:var(--p-amber);line-height:1.5;">Back up first (Square Dashboard → Import/Export → Export). Rows tagged <b>APP</b> were created by a third-party app — the surest strangers. Scroll to spot the burst of unfamiliar names on one or two recent dates.</div>'
+    +'<div style="font-size:12px;color:var(--p-mut);line-height:1.55;margin-bottom:10px;">'+_sqpAll.length+' customers in your connected Square. <b style="color:var(--p-green);">'+matchedN+' are matched to your SlickChart clients</b> (hidden, can’t be deleted). The other <b>'+reviewable.length+'</b> include your real customers AND the strangers. Best way to isolate the strangers: <b>search by their out-of-area code</b> (e.g. type <b>734</b>) — your real clients aren’t in that area. You can also filter by date. Review, then delete. <b style="color:var(--p-red);">Deleting is permanent.</b></div>'
+    +'<div style="background:var(--p-amber-bg);border:1px solid var(--p-amber-line);border-radius:9px;padding:8px 11px;margin-bottom:10px;font-size:11.5px;color:var(--p-amber);line-height:1.5;">Back up first (Square Dashboard → Import/Export → Export). Type an area code (like 734) to pull up just those numbers — check they’re unfamiliar/“never visited”, then Select all shown → Delete. Rows tagged <b>APP</b> are also sure strangers.</div>'
     +(reviewable.length?(
-      '<input placeholder="Search these…" value="'+_urlAttr(_sqpQuery)+'" oninput="_sqpQuery=this.value;_sqp_render();" style="width:100%;box-sizing:border-box;background:var(--p-surf);border:1px solid var(--p-line);border-radius:9px;padding:9px 11px;font-size:13px;color:var(--p-ink);margin-bottom:8px;">'
+      '<input placeholder="Search name, email, or phone — e.g. 734" value="'+_urlAttr(_sqpQuery)+'" oninput="_sqpQuery=this.value;_sqp_render();" style="width:100%;box-sizing:border-box;background:var(--p-surf);border:1px solid var(--p-line);border-radius:9px;padding:9px 11px;font-size:13px;color:var(--p-ink);margin-bottom:8px;">'
+      +(qd&&qd.length>=3?'<div style="font-size:11px;color:var(--p-amber);margin:-2px 0 8px;line-height:1.45;">Showing the '+_sqpShownIds.length+' whose phone contains "'+_fileEsc(qd)+'". If these are all the out-of-area strangers, tap “Select all shown” → Delete.</div>':'')
       +'<div style="display:flex;align-items:center;gap:6px;margin-bottom:6px;"><span style="font-size:11px;color:var(--p-mut);white-space:nowrap;width:78px;">Added on/after</span><input type="date" value="'+_urlAttr(_sqpAfterStr)+'" onchange="_sqp_setAfter(this.value)" style="flex:1;min-width:0;box-sizing:border-box;background:var(--p-surf);border:1px solid var(--p-line);border-radius:8px;padding:6px 8px;font-size:12px;color:var(--p-ink);color-scheme:dark;">'+(_sqpAfter?'<button onclick="_sqp_setAfter(\'\')" style="background:none;border:1px solid var(--p-line);color:var(--p-mut);border-radius:8px;padding:6px 9px;font-size:11px;cursor:pointer;font-family:inherit;flex-shrink:0;">✕</button>':'')+'</div>'
       +'<div style="display:flex;align-items:center;gap:6px;margin-bottom:8px;"><span style="font-size:11px;color:var(--p-mut);white-space:nowrap;width:78px;">and on/before</span><input type="date" value="'+_urlAttr(_sqpBeforeStr)+'" onchange="_sqp_setBefore(this.value)" style="flex:1;min-width:0;box-sizing:border-box;background:var(--p-surf);border:1px solid var(--p-line);border-radius:8px;padding:6px 8px;font-size:12px;color:var(--p-ink);color-scheme:dark;">'+(_sqpBefore?'<button onclick="_sqp_setBefore(\'\')" style="background:none;border:1px solid var(--p-line);color:var(--p-mut);border-radius:8px;padding:6px 9px;font-size:11px;cursor:pointer;font-family:inherit;flex-shrink:0;">✕</button>':'')+'</div>'
-      +(!dateSet?'<div style="font-size:11.5px;color:var(--p-red);background:var(--p-red-bg);border:1px solid var(--p-red);border-radius:8px;padding:8px 10px;margin-bottom:8px;line-height:1.45;"><b>Set a date range before selecting all</b> — without it, "select all" includes your real customers too. Find the injection burst (a cluster of unfamiliar names on one or two recent dates) and bracket it.</div>':'')
+      +(!dateSet?'<div style="font-size:11.5px;color:var(--p-red);background:var(--p-red-bg);border:1px solid var(--p-red);border-radius:8px;padding:8px 10px;margin-bottom:8px;line-height:1.45;"><b>Narrow the list before selecting all</b> — search an out-of-area code (like 734), or use the dates. Without a filter, "select all" would include your real customers too.</div>':'')
       +'<div style="display:flex;gap:8px;margin-bottom:10px;"><button onclick="_sqp_all(1)" style="flex:1;background:none;border:1px solid '+(dateSet?'var(--p-line)':'var(--p-line2)')+';color:'+(dateSet?'var(--p-mut)':'var(--p-mut2)')+';border-radius:8px;padding:7px;font-size:12px;cursor:pointer;font-family:inherit;">Select all shown ('+_sqpShownIds.length+')</button><button onclick="_sqp_all(0)" style="flex:1;background:none;border:1px solid var(--p-line);color:var(--p-mut);border-radius:8px;padding:7px;font-size:12px;cursor:pointer;font-family:inherit;">Select none</button></div>'
       +rows
       +(shown.length>600?'<div style="font-size:11px;color:var(--p-mut);text-align:center;padding:6px;">Showing first 600 — narrow with search or the dates.</div>':'')
