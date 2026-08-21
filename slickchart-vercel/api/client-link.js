@@ -63,7 +63,12 @@ export default async function handler(req, res) {
 
     for (const c of (rows || [])) {
       if (!c || !c.token) continue;
-      const link = origin + '/client?c=' + encodeURIComponent(c.token);
+      // Deliberately /space (NOT /client): the installed native app claims /client and /client/*
+      // in its Universal-Link / App-Link config, so a client tapping a /client link gets it captured
+      // by the *provider* app shell and dumped on the "email me my link" gateway — an endless loop.
+      // /space is not claimed by the app, so it always opens in the browser, where the care space
+      // loads correctly from the ?c= token. See vercel.json rewrite: /space -> /api/client-page.
+      const link = origin + '/space?c=' + encodeURIComponent(c.token);
       const first = esc(String(c.name || 'there').split(' ')[0]);
       const html = `<div style="font-family:-apple-system,Segoe UI,Roboto,sans-serif;max-width:520px;margin:0 auto;padding:8px;color:#1a1a1a;">
         <p style="font-size:16px;">Hi ${first},</p>
