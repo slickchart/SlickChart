@@ -3936,6 +3936,13 @@ function _sqCustIsMine(cust,idx){
   var nm=_sqNormName(cust.name);if(nm&&idx.names.has(nm))return true;   // name match errs toward PROTECTING
   return false;
 }
+// Was this Square customer created by a third-party app/API? That's how the leaked strangers got in.
+// Anything created natively by Square (online bookings, walk-ins, dashboard adds, CSV imports — the
+// provider's own customers, including the many who haven't come in yet) is NOT app-created and is
+// protected automatically, independent of the SlickChart roster. Unknown/blank source → treat as NOT
+// app-created (protect it) so we never delete on a missing field.
+function _sqIsAppCreated(src){var s=String(src||'').toUpperCase();return s==='THIRD_PARTY'||s==='THIRD_PARTY_IMPORT';}
+function _sqSrcLabel(src){var s=String(src||'').toUpperCase().replace(/_/g,' ').toLowerCase();return s?s.replace(/\b\w/g,function(m){return m.toUpperCase();}):'Unknown';}
 let _sqpAll=null,_sqpSel=null,_sqpQuery='',_sqpBusy=false;
 function _sqp_box(html){var ov=document.getElementById('sqp');if(!ov)return;ov.innerHTML='<div style="background:var(--surf1);border-top:1px solid var(--p-line);border-radius:16px 16px 0 0;padding:18px;max-height:92%;overflow:auto;"><div style="width:36px;height:4px;background:var(--p-chip);border-radius:2px;margin:0 auto 14px;"></div>'+html+'</div>';}
 async function _openSquarePurge(){
@@ -3953,29 +3960,40 @@ async function _openSquarePurge(){
     return;
   }
   var idx=_sqMineIndex();
-  _sqpAll=data.customers.map(function(c){return {id:c.id,name:c.name||'(no name)',email:c.email||'',phone:c.phone||'',mine:_sqCustIsMine(c,idx)};});
-  _sqpSel=new Set(_sqpAll.filter(function(c){return !c.mine&&c.id;}).map(function(c){return c.id;}));
+  _sqpAll=data.customers.map(function(c){
+    var matched=_sqCustIsMine(c,idx);
+    var appCreated=_sqIsAppCreated(c.creationSource);
+    // Protected if it matches your roster OR your Square created it natively. Only an app-created
+    // customer that ALSO isn't in your roster is even a candidate for deletion.
+    return {id:c.id,name:c.name||'(no name)',email:c.email||'',phone:c.phone||'',
+      matched:matched,appCreated:appCreated,prot:(matched||!appCreated),
+      src:c.creationSource||'',createdAt:c.createdAt||''};
+  });
+  _sqpSel=new Set(_sqpAll.filter(function(c){return !c.prot&&c.id;}).map(function(c){return c.id;}));
   _sqpQuery='';
   _sqp_render();
 }
 function _sqp_render(){
   var ov=document.getElementById('sqp');if(!ov||!_sqpAll)return;
-  var mineCount=_sqpAll.filter(function(c){return c.mine;}).length;
-  var strangers=_sqpAll.filter(function(c){return !c.mine;});
+  var protN=_sqpAll.filter(function(c){return c.prot;}).length;
+  var matchedN=_sqpAll.filter(function(c){return c.matched;}).length;
+  var nativeN=_sqpAll.filter(function(c){return c.prot&&!c.matched;}).length;
+  var strangers=_sqpAll.filter(function(c){return !c.prot;});
   var qraw=_sqpQuery, q=_sqNormName(qraw);
   var shown=q?strangers.filter(function(c){return _sqNormName(c.name).indexOf(q)>=0||String(c.email||'').toLowerCase().indexOf(qraw.toLowerCase())>=0;}):strangers;
   var rows=shown.slice(0,600).map(function(c){
     var sel=c.id&&_sqpSel.has(c.id);
+    var when='';try{if(c.createdAt)when=new Date(c.createdAt).toLocaleDateString('en-US',{month:'short',day:'numeric',year:'numeric'});}catch(e){}
     return '<label style="display:flex;align-items:center;gap:10px;padding:8px 10px;border:1px solid var(--p-line);border-radius:9px;margin-bottom:5px;cursor:pointer;background:var(--p-surf);">'
       +'<input type="checkbox" '+(sel?'checked':'')+' onchange="_sqp_toggle(\''+_jsAttr(c.id)+'\')" style="width:17px;height:17px;accent-color:var(--p-red);flex-shrink:0;">'
-      +'<div style="flex:1;min-width:0;"><div style="font-size:13px;color:var(--p-ink);">'+_fileEsc(c.name)+'</div><div style="font-size:11px;color:var(--p-mut);overflow:hidden;text-overflow:ellipsis;white-space:nowrap;">'+_fileEsc([c.email,c.phone].filter(Boolean).join(' · ')||'no contact on file')+'</div></div>'
+      +'<div style="flex:1;min-width:0;"><div style="font-size:13px;color:var(--p-ink);">'+_fileEsc(c.name)+'</div><div style="font-size:11px;color:var(--p-mut);overflow:hidden;text-overflow:ellipsis;white-space:nowrap;">'+_fileEsc([c.email,c.phone].filter(Boolean).join(' · ')||'no contact on file')+(when?(' · added '+when):'')+'</div></div>'
       +'</label>';
   }).join('');
   var selCount=_sqpSel.size;
   _sqp_box(
     '<div style="font-size:16px;font-weight:600;color:var(--p-ink);margin-bottom:4px;">Clean up Square customers</div>'
-    +'<div style="font-size:12px;color:var(--p-mut);line-height:1.55;margin-bottom:10px;">'+_sqpAll.length+' customers in your connected Square. <b style="color:var(--p-green);">'+mineCount+' match your clients and are protected</b> (hidden, can’t be deleted). The <b>'+strangers.length+'</b> below aren’t in your roster — review and delete the ones that aren’t yours. <b style="color:var(--p-red);">This permanently deletes them from your live Square and can’t be undone.</b></div>'
-    +'<div style="background:var(--p-amber-bg);border:1px solid var(--p-amber-line);border-radius:9px;padding:8px 11px;margin-bottom:10px;font-size:11.5px;color:var(--p-amber);line-height:1.5;">Back up first: in the Square Dashboard, export your customer list before deleting.</div>'
+    +'<div style="font-size:12px;color:var(--p-mut);line-height:1.55;margin-bottom:10px;">'+_sqpAll.length+' customers in your connected Square. <b style="color:var(--p-green);">'+protN+' are protected</b> — '+matchedN+' match your clients and '+nativeN+' were created by your own Square (online bookings, walk-ins, imports — including customers who haven’t come in yet). They’re hidden and can’t be deleted. The <b>'+strangers.length+'</b> below were added by a third-party app and aren’t in your roster. <b style="color:var(--p-red);">Deleting is permanent and can’t be undone.</b></div>'
+    +'<div style="background:var(--p-amber-bg);border:1px solid var(--p-amber-line);border-radius:9px;padding:8px 11px;margin-bottom:10px;font-size:11.5px;color:var(--p-amber);line-height:1.5;">Still review the names below and uncheck anyone you recognize. Back up first: export your customer list from the Square Dashboard.</div>'
     +(strangers.length?(
       '<input placeholder="Search these…" value="'+_urlAttr(_sqpQuery)+'" oninput="_sqpQuery=this.value;_sqp_render();" style="width:100%;box-sizing:border-box;background:var(--p-surf);border:1px solid var(--p-line);border-radius:9px;padding:9px 11px;font-size:13px;color:var(--p-ink);margin-bottom:8px;">'
       +'<div style="display:flex;gap:8px;margin-bottom:10px;"><button onclick="_sqp_all(1)" style="flex:1;background:none;border:1px solid var(--p-line);color:var(--p-mut);border-radius:8px;padding:7px;font-size:12px;cursor:pointer;font-family:inherit;">Select all '+strangers.length+'</button><button onclick="_sqp_all(0)" style="flex:1;background:none;border:1px solid var(--p-line);color:var(--p-mut);border-radius:8px;padding:7px;font-size:12px;cursor:pointer;font-family:inherit;">Select none</button></div>'
@@ -3987,10 +4005,10 @@ function _sqp_render(){
   );
 }
 function _sqp_toggle(id){if(!id)return;if(_sqpSel.has(id))_sqpSel.delete(id);else _sqpSel.add(id);_sqp_render();}
-function _sqp_all(on){_sqpSel=new Set();if(on)_sqpAll.filter(function(c){return !c.mine&&c.id;}).forEach(function(c){_sqpSel.add(c.id);});_sqp_render();}
+function _sqp_all(on){_sqpSel=new Set();if(on)_sqpAll.filter(function(c){return !c.prot&&c.id;}).forEach(function(c){_sqpSel.add(c.id);});_sqp_render();}
 function _sqp_confirm(){
   var n=_sqpSel.size;if(!n){_sqp_render();return;}
-  var protectedN=_sqpAll.filter(function(c){return c.mine;}).length;
+  var protectedN=_sqpAll.filter(function(c){return c.prot;}).length;
   _sqp_box('<div style="font-size:16px;font-weight:600;color:var(--p-red);margin-bottom:8px;">Delete '+n+' from your live Square?</div>'
     +'<div style="font-size:13px;color:var(--p-mut);line-height:1.6;margin-bottom:14px;">This permanently removes '+n+' customer'+(n===1?'':'s')+' from your Square account. It cannot be undone. Your '+protectedN+' matched client'+(protectedN===1?'':'s')+' are not affected.<br><br>Type <b style="color:var(--p-ink);">DELETE</b> to confirm.</div>'
     +'<input id="sqp-confirm" autocapitalize="characters" placeholder="Type DELETE" oninput="var b=document.getElementById(\'sqp-go\');if(b){var ok=this.value.trim().toUpperCase()===\'DELETE\';b.disabled=!ok;b.style.opacity=ok?\'1\':\'.5\';}" style="width:100%;box-sizing:border-box;background:var(--p-surf);border:1px solid var(--p-line);border-radius:9px;padding:11px 12px;font-size:14px;color:var(--p-ink);margin-bottom:12px;letter-spacing:.08em;">'

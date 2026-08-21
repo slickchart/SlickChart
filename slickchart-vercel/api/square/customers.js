@@ -86,6 +86,11 @@ function normalize(c) {
     phone: c.phone_number || '',
     note: c.note || '',
     birthday: c.birthday || '',
-    createdAt: c.created_at || ''
+    createdAt: c.created_at || '',
+    // How the customer got into Square. THIRD_PARTY / THIRD_PARTY_IMPORT = created via an app/API (this
+    // is how the leaked strangers got in). Everything else (DIRECTORY, APPOINTMENTS, ONLINE_STORE,
+    // INSTANT_PROFILE, IMPORT, etc.) is a customer Square itself created — the provider's own — and the
+    // cleanup tool uses this to protect them regardless of the SlickChart roster.
+    creationSource: c.creation_source || ''
   };
 }
