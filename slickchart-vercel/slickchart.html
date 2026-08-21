@@ -3954,7 +3954,7 @@ function _sheetBar(){
     +'<button onclick="_sheetCloseFrom(this)" aria-label="Close" style="border:none;background:var(--p-surf2);width:32px;height:32px;border-radius:50%;color:var(--p-ink);font-size:18px;line-height:1;cursor:pointer;display:flex;align-items:center;justify-content:center;flex-shrink:0;">✕</button>'
     +'</div>';
 }
-function _sheetCloseFrom(btn){try{var ov=btn.closest('#sqp,#sq-cleanup,#photo-recover,#sq-rebuild');if(!ov)return;if((ov.id==='sqp'&&_sqpBusy)||(ov.id==='sq-rebuild'&&_sqrBusy))return;ov.remove();if(ov.id==='sq-cleanup'||ov.id==='sq-rebuild'){try{if(typeof renderClients==='function')renderClients();}catch(e){}}}catch(e){}}
+function _sheetCloseFrom(btn){try{var ov=btn.closest('#sqp,#sq-cleanup,#photo-recover,#sq-rebuild,#exp-check');if(!ov)return;if((ov.id==='sqp'&&_sqpBusy)||(ov.id==='sq-rebuild'&&_sqrBusy)||(ov.id==='exp-check'&&_expBusy))return;ov.remove();if(ov.id==='sq-cleanup'||ov.id==='sq-rebuild'){try{if(typeof renderClients==='function')renderClients();}catch(e){}}}catch(e){}}
 function _sqp_box(html){var ov=document.getElementById('sqp');if(!ov)return;ov.innerHTML='<div style="background:var(--surf1);border-top:1px solid var(--p-line);border-radius:16px 16px 0 0;padding:18px;max-height:92%;overflow:auto;">'+_sheetBar()+html+'</div>';}
 async function _openSquarePurge(){
   var ov=document.getElementById('sqp');if(ov)ov.remove();
@@ -4126,6 +4126,56 @@ async function _sqr_run(){
     +'<div style="font-size:16px;font-weight:600;color:var(--p-ink);text-align:center;margin-bottom:6px;">Restored '+restored+' client'+(restored===1?'':'s')+'</div>'
     +'<div style="font-size:12.5px;color:var(--p-mut);text-align:center;line-height:1.5;margin-bottom:14px;">They’re back in your client list. Their visit history and forms will re-attach as they check in or you add notes.</div>'
     +'<button onclick="_sheetCloseFrom(this)" class="btnp" style="width:100%;border-radius:10px;">Done</button>');
+}
+// ── Owner-only: client data exposure check (Settings → Your data) ────────────────────────────────
+// Reports whether any OTHER account on this deployment pulled the owner's clients (while the shared
+// Square token was live), and can scrub the owner's clients out of those accounts. Server gates this to
+// FOUNDER_EMAILS; the UI just relays the result.
+let _expBusy=false,_expData=null;
+function _exp_box(html){var ov=document.getElementById('exp-check');if(!ov)return;ov.innerHTML='<div style="background:var(--surf1);border-top:1px solid var(--p-line);border-radius:16px 16px 0 0;padding:18px;max-height:92%;overflow:auto;">'+_sheetBar()+html+'</div>';}
+async function _openExposureCheck(){
+  var ov=document.getElementById('exp-check');if(ov)ov.remove();
+  ov=document.createElement('div');ov.id='exp-check';
+  ov.style.cssText='position:fixed;inset:0;margin:0 auto;width:390px;max-width:100%;z-index:10000;background:rgba(0,0,0,.6);display:flex;flex-direction:column;justify-content:flex-end;';
+  ov.onclick=function(e){if(_expBusy)return;if(e.target===ov)ov.remove();};
+  (document.querySelector('.shell')||document.body).appendChild(ov);
+  _exp_box('<div style="font-size:16px;font-weight:600;color:var(--p-ink);margin-bottom:6px;">Client data exposure check</div><div style="font-size:13px;color:var(--p-mut);padding:14px 0;text-align:center;"><div class="spin" style="margin:0 auto 10px;"></div>Checking your deployment…</div>');
+  var tok=(typeof Cloud!=='undefined'&&Cloud&&Cloud.token)||'';
+  var data=null,status=0;
+  try{ var r=await fetch('/api/admin/exposure',{headers:{'Authorization':'Bearer '+tok}}); status=r.status; data=await r.json(); }catch(e){}
+  if(status===403){ _exp_box('<div style="font-size:16px;font-weight:600;color:var(--p-ink);margin-bottom:8px;">Owner-only tool</div><div style="font-size:13px;color:var(--p-mut);line-height:1.6;margin-bottom:14px;">'+_fileEsc((data&&data.error)||'Add your login email to FOUNDER_EMAILS in Vercel, redeploy, then reopen this.')+'</div><button onclick="_sheetCloseFrom(this)" class="btnp" style="width:100%;border-radius:10px;">Close</button>'); return; }
+  if(!data||!data.ok){ _exp_box('<div style="font-size:16px;font-weight:600;color:var(--p-ink);margin-bottom:8px;">Client data exposure check</div><div style="font-size:13px;color:var(--p-mut);margin-bottom:14px;">'+_fileEsc((data&&data.error)||'Could not run the check.')+'</div><button onclick="_sheetCloseFrom(this)" class="btnp" style="width:100%;border-radius:10px;">Close</button>'); return; }
+  _expData=data; _exp_render();
+}
+function _exp_render(msg){
+  var d=_expData||{};
+  var accts=(d.accounts||[]);
+  var rows=accts.map(function(a){return '<div style="display:flex;align-items:center;justify-content:space-between;gap:10px;padding:9px 11px;border:1px solid var(--p-line);border-radius:9px;margin-bottom:6px;background:var(--p-surf);"><div style="min-width:0;"><div style="font-size:13px;color:var(--p-ink);overflow:hidden;text-overflow:ellipsis;">'+_fileEsc(a.account)+'</div><div style="font-size:11px;color:var(--p-mut);">'+a.clients+' clients total</div></div><div style="font-size:13px;font-weight:700;color:var(--p-red);flex-shrink:0;">'+a.copiesOfMine+' of yours</div></div>';}).join('');
+  _exp_box(
+    '<div style="font-size:16px;font-weight:600;color:var(--p-ink);margin-bottom:6px;">Client data exposure check</div>'
+    +(msg?('<div role="status" style="font-size:12.5px;color:var(--p-green);background:var(--p-surf2);border:1px solid var(--p-line);border-radius:9px;padding:9px 11px;margin-bottom:12px;">'+_fileEsc(msg)+'</div>'):'')
+    +'<div style="font-size:12.5px;color:var(--p-mut);line-height:1.6;margin-bottom:12px;">You have <b style="color:var(--p-ink);">'+(d.ownerClients||0)+'</b> clients. There '+(d.otherAccountsTotal===1?'is':'are')+' <b>'+(d.otherAccountsTotal||0)+'</b> other account'+(d.otherAccountsTotal===1?'':'s')+' on your deployment. <b style="color:'+(d.totalCopiesOfMine?'var(--p-red)':'var(--p-green)')+';">'+(d.totalCopiesOfMine||0)+'</b> cop'+(d.totalCopiesOfMine===1?'y':'ies')+' of your clients '+(d.totalCopiesOfMine?('sit in '+(d.accountsWithMyClients||0)+' other account'+(d.accountsWithMyClients===1?'':'s')+' below.'):'were found anywhere else.')+'</div>'
+    +(accts.length?(rows
+      +'<button onclick="_exp_purge()" class="btnp" style="width:100%;border-radius:10px;margin-top:8px;background:var(--p-red);"><i class="ti ti-eraser"></i> Scrub my clients from these accounts</button>'):'<div style="font-size:13px;color:var(--p-green);line-height:1.6;padding:6px 0;">None of your clients were found in any other account. 🎉</div>')
+    +'<button onclick="_sheetCloseFrom(this)" style="width:100%;margin-top:8px;background:none;border:1px solid var(--p-line);color:var(--p-mut);border-radius:10px;padding:10px;font-size:13px;cursor:pointer;font-family:inherit;">Close</button>'
+  );
+}
+function _exp_purge(){
+  var d=_expData||{};var n=d.totalCopiesOfMine||0;
+  _exp_box('<div style="font-size:16px;font-weight:600;color:var(--p-red);margin-bottom:8px;">Scrub '+n+' cop'+(n===1?'y':'ies')+' of your clients?</div><div style="font-size:13px;color:var(--p-mut);line-height:1.6;margin-bottom:14px;">This permanently removes YOUR clients from every other account on your deployment. Those accounts’ own clients are not touched. Type <b style="color:var(--p-ink);">SCRUB</b> to confirm.</div>'
+    +'<input id="exp-confirm" autocapitalize="characters" placeholder="Type SCRUB" oninput="var b=document.getElementById(\'exp-go\');if(b){var ok=this.value.trim().toUpperCase()===\'SCRUB\';b.disabled=!ok;b.style.opacity=ok?\'1\':\'.5\';}" style="width:100%;box-sizing:border-box;background:var(--p-surf);border:1px solid var(--p-line);border-radius:9px;padding:11px 12px;font-size:14px;color:var(--p-ink);margin-bottom:12px;letter-spacing:.08em;">'
+    +'<button id="exp-go" disabled onclick="_exp_doPurge()" class="btnp" style="width:100%;border-radius:10px;background:var(--p-red);opacity:.5;margin-bottom:8px;"><i class="ti ti-eraser"></i> Scrub now</button>'
+    +'<button onclick="_exp_render()" style="width:100%;background:none;border:1px solid var(--p-line);color:var(--p-mut);border-radius:10px;padding:10px;font-size:13px;cursor:pointer;font-family:inherit;">Cancel</button>');
+  setTimeout(function(){var i=document.getElementById('exp-confirm');if(i)try{i.focus();}catch(e){}},40);
+}
+async function _exp_doPurge(){
+  _expBusy=true;
+  _exp_box('<div style="font-size:16px;font-weight:600;color:var(--p-ink);margin-bottom:10px;">Scrubbing…</div><div style="font-size:13px;color:var(--p-mut);padding:8px 0;text-align:center;"><div class="spin" style="margin:0 auto 10px;"></div>Removing your clients from other accounts…</div>');
+  var tok=(typeof Cloud!=='undefined'&&Cloud&&Cloud.token)||'';var data=null;
+  try{ var r=await fetch('/api/admin/exposure',{method:'POST',headers:{'Authorization':'Bearer '+tok,'Content-Type':'application/json'},body:JSON.stringify({action:'purge',confirm:true})}); data=await r.json(); }catch(e){}
+  _expBusy=false;
+  if(data&&data.ok){ _expData.totalCopiesOfMine=0; _expData.accounts=[]; _exp_render('Removed '+(data.purged||0)+' cop'+((data.purged||0)===1?'y':'ies')+' of your clients from '+(data.accountsScrubbed||0)+' other account'+((data.accountsScrubbed||0)===1?'':'s')+'.'); }
+  else{ _exp_render('Scrub didn’t complete: '+((data&&data.error)||'unknown error')); }
 }
 let _cpMigrateLegacy=false;
 function loadCapturedPhotos(){
@@ -15242,6 +15292,8 @@ function renderAccount(){
     <div onclick="_openSquarePurge()" style="display:flex;align-items:center;gap:11px;padding:13px 14px;cursor:pointer;"><div style="width:38px;height:38px;border-radius:10px;background:var(--p-red-bg);display:flex;align-items:center;justify-content:center;flex-shrink:0;"><i class="ti ti-eraser" style="font-size:18px;color:var(--p-red);"></i></div><div style="flex:1;"><div style="font-size:14px;font-weight:500;color:var(--p-ink);">Clean up Square customer list</div><div style="font-size:12px;color:var(--p-mut);">Remove strangers from your live Square (protects your clients)</div></div><i class="ti ti-chevron-right" style="font-size:16px;color:var(--p-mut);"></i></div>
     <div style="border-top:1px solid var(--p-line);"></div>
     <div onclick="_openSquareRebuild()" style="display:flex;align-items:center;gap:11px;padding:13px 14px;cursor:pointer;"><div style="width:38px;height:38px;border-radius:10px;background:var(--p-green-bg,var(--p-surf2));display:flex;align-items:center;justify-content:center;flex-shrink:0;"><i class="ti ti-refresh" style="font-size:18px;color:var(--p-green);"></i></div><div style="flex:1;"><div style="font-size:14px;font-weight:500;color:var(--p-ink);">Rebuild client list from Square</div><div style="font-size:12px;color:var(--p-mut);">Restore your own clients that went missing (skips strangers)</div></div><i class="ti ti-chevron-right" style="font-size:16px;color:var(--p-mut);"></i></div>
+    <div style="border-top:1px solid var(--p-line);"></div>
+    <div onclick="_openExposureCheck()" style="display:flex;align-items:center;gap:11px;padding:13px 14px;cursor:pointer;"><div style="width:38px;height:38px;border-radius:10px;background:var(--p-red-bg);display:flex;align-items:center;justify-content:center;flex-shrink:0;"><i class="ti ti-shield-lock" style="font-size:18px;color:var(--p-red);"></i></div><div style="flex:1;"><div style="font-size:14px;font-weight:500;color:var(--p-ink);">Client data exposure check</div><div style="font-size:12px;color:var(--p-mut);">Owner-only · find &amp; scrub your clients from other accounts</div></div><i class="ti ti-chevron-right" style="font-size:16px;color:var(--p-mut);"></i></div>
     <div style="border-top:1px solid var(--p-line);"></div>
     <div onclick="replayOnboarding()" style="display:flex;align-items:center;gap:11px;padding:13px 14px;cursor:pointer;"><div style="width:38px;height:38px;border-radius:10px;background:var(--accent-tint);display:flex;align-items:center;justify-content:center;flex-shrink:0;"><i class="ti ti-player-play" style="font-size:18px;color:var(--accent-strong);"></i></div><div style="flex:1;"><div style="font-size:14px;font-weight:500;color:var(--p-ink);">Replay Setup Tour</div><div style="font-size:12px;color:var(--p-mut);">See the guided first-run setup again</div></div><i class="ti ti-chevron-right" style="font-size:16px;color:var(--p-mut);"></i></div>
   </div></div>
