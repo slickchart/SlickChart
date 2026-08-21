@@ -13125,10 +13125,19 @@ function _copyInviteMsgAndConfirm(id,btn){
   try{ if(navigator.clipboard&&navigator.clipboard.writeText){ navigator.clipboard.writeText(msg).then(done).catch(function(){_copyFallback(msg,done,fail);}); return; } }catch(e){}
   _copyFallback(msg,done,fail);
 }
+// Build an sms: link addressed to the client's number (auto-filled from their file) with a prefilled
+// body, so "Text it" opens Messages already addressed — no copying the number from the profile. iOS/Mac
+// Messages wants '&' before the body, Android wants '?'. A missing number still yields a valid link (no
+// recipient) so nothing breaks for a client with no phone on file.
+function _smsHref(phone,msg){
+  var isIOS=/(iphone|ipad|ipod|mac)/i.test(navigator.userAgent||'');
+  var num=String(phone||'').replace(/[^\d+]/g,'');
+  return 'sms:'+num+(isIOS?'&':'?')+'body='+encodeURIComponent(msg||'');
+}
 function _inviteSendText(id){
+  const c=CL[id]||{};
   const msg=_inviteEditedMsg(id);
-  const _isIOS=/(iphone|ipad|ipod|mac)/i.test(navigator.userAgent||'');
-  const href='sms:'+(_isIOS?'&':'?')+'body='+encodeURIComponent(msg);
+  const href=_smsHref(c.phone,msg);
   _inviteSharedToast(id,'text');
   const sh=document.getElementById('invite-sheet');if(sh)sh.remove();
   location.href=href;
@@ -13353,8 +13362,7 @@ function _shareClientLinkSheet(id,opts){
   const msg=opts.msg||('Hi '+first+'! Here\u2019s your link:\n\n'+link);
   const enc=encodeURIComponent(msg);
   // iOS Messages only auto-links a URL on its own line and wants '&' (not '?') before the body.
-  const _isIOS=/(iphone|ipad|ipod|mac)/i.test(navigator.userAgent||'');
-  const smsHref='sms:'+(_isIOS?'&':'?')+'body='+enc;
+  const smsHref=_smsHref(c.phone,msg);   // addressed to the client automatically (from their file)
   const old=document.getElementById('invite-sheet');if(old)old.remove();
   const ov=document.createElement('div');ov.id='invite-sheet';
   ov.style.cssText='position:fixed;top:0;bottom:0;left:0;right:0;margin:0 auto;width:390px;max-width:100%;z-index:9999;background:rgba(0,0,0,.6);display:flex;align-items:center;justify-content:center;padding:24px 16px;box-sizing:border-box;';
