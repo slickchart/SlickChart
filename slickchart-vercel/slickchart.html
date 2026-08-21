@@ -3943,7 +3943,8 @@ function _sqCustIsMine(cust,idx){
 // app-created (protect it) so we never delete on a missing field.
 function _sqIsAppCreated(src){var s=String(src||'').toUpperCase();return s==='THIRD_PARTY'||s==='THIRD_PARTY_IMPORT';}
 function _sqSrcLabel(src){var s=String(src||'').toUpperCase().replace(/_/g,' ').toLowerCase();return s?s.replace(/\b\w/g,function(m){return m.toUpperCase();}):'Unknown';}
-let _sqpAll=null,_sqpSel=null,_sqpQuery='',_sqpBusy=false;
+let _sqpAll=null,_sqpSel=null,_sqpQuery='',_sqpBusy=false,_sqpAfter=0,_sqpAfterStr='',_sqpShownIds=[];
+function _sqp_setAfter(v){_sqpAfterStr=v||'';try{_sqpAfter=v?new Date(v+'T00:00:00').getTime():0;}catch(e){_sqpAfter=0;}_sqp_render();}
 // A sticky top bar (grab-handle + always-reachable ✕) for the full-height cleanup sheets, so a long
 // list never buries the only way out at the very bottom. Sticks to the top of the scroll area.
 function _sheetBar(){
@@ -3990,6 +3991,8 @@ function _sqp_render(){
   var strangers=_sqpAll.filter(function(c){return !c.prot;});
   var qraw=_sqpQuery, q=_sqNormName(qraw);
   var shown=q?strangers.filter(function(c){return _sqNormName(c.name).indexOf(q)>=0||String(c.email||'').toLowerCase().indexOf(qraw.toLowerCase())>=0;}):strangers;
+  if(_sqpAfter){shown=shown.filter(function(c){var t=0;try{t=c.createdAt?new Date(c.createdAt).getTime():0;}catch(e){}return t&&t>=_sqpAfter;});}
+  _sqpShownIds=shown.map(function(c){return c.id;}).filter(Boolean);
   var rows=shown.slice(0,600).map(function(c){
     var sel=c.id&&_sqpSel.has(c.id);
     var when='';try{if(c.createdAt)when=new Date(c.createdAt).toLocaleDateString('en-US',{month:'short',day:'numeric',year:'numeric'});}catch(e){}
@@ -4005,16 +4008,18 @@ function _sqp_render(){
     +'<div style="background:var(--p-amber-bg);border:1px solid var(--p-amber-line);border-radius:9px;padding:8px 11px;margin-bottom:10px;font-size:11.5px;color:var(--p-amber);line-height:1.5;">Still review the names below and uncheck anyone you recognize. Back up first: export your customer list from the Square Dashboard.</div>'
     +(strangers.length?(
       '<input placeholder="Search these…" value="'+_urlAttr(_sqpQuery)+'" oninput="_sqpQuery=this.value;_sqp_render();" style="width:100%;box-sizing:border-box;background:var(--p-surf);border:1px solid var(--p-line);border-radius:9px;padding:9px 11px;font-size:13px;color:var(--p-ink);margin-bottom:8px;">'
-      +'<div style="display:flex;gap:8px;margin-bottom:10px;"><button onclick="_sqp_all(1)" style="flex:1;background:none;border:1px solid var(--p-line);color:var(--p-mut);border-radius:8px;padding:7px;font-size:12px;cursor:pointer;font-family:inherit;">Select all '+strangers.length+'</button><button onclick="_sqp_all(0)" style="flex:1;background:none;border:1px solid var(--p-line);color:var(--p-mut);border-radius:8px;padding:7px;font-size:12px;cursor:pointer;font-family:inherit;">Select none</button></div>'
+      +'<div style="display:flex;align-items:center;gap:8px;margin-bottom:8px;"><span style="font-size:11px;color:var(--p-mut);white-space:nowrap;">Only added on/after</span><input type="date" value="'+_urlAttr(_sqpAfterStr)+'" onchange="_sqp_setAfter(this.value)" style="flex:1;min-width:0;box-sizing:border-box;background:var(--p-surf);border:1px solid var(--p-line);border-radius:8px;padding:7px 9px;font-size:12px;color:var(--p-ink);color-scheme:dark;">'+(_sqpAfter?'<button onclick="_sqp_setAfter(\'\')" style="background:none;border:1px solid var(--p-line);color:var(--p-mut);border-radius:8px;padding:7px 10px;font-size:12px;cursor:pointer;font-family:inherit;flex-shrink:0;">Clear</button>':'')+'</div>'
+      +(_sqpAfter?'<div style="font-size:11px;color:var(--p-amber);margin-bottom:8px;line-height:1.45;">Showing only strangers added on/after '+_fileEsc(_sqpAfterStr)+' — set this to just before the strangers appeared to isolate the injected ones (your real customers were added long before).</div>':'')
+      +'<div style="display:flex;gap:8px;margin-bottom:10px;"><button onclick="_sqp_all(1)" style="flex:1;background:none;border:1px solid var(--p-line);color:var(--p-mut);border-radius:8px;padding:7px;font-size:12px;cursor:pointer;font-family:inherit;">Select all shown ('+_sqpShownIds.length+')</button><button onclick="_sqp_all(0)" style="flex:1;background:none;border:1px solid var(--p-line);color:var(--p-mut);border-radius:8px;padding:7px;font-size:12px;cursor:pointer;font-family:inherit;">Select none</button></div>'
       +rows
-      +(shown.length>600?'<div style="font-size:11px;color:var(--p-mut);text-align:center;padding:6px;">Showing first 600 — use search to narrow down.</div>':'')
+      +(shown.length>600?'<div style="font-size:11px;color:var(--p-mut);text-align:center;padding:6px;">Showing first 600 — narrow with search or the date filter.</div>':'')
       +'<button onclick="_sqp_confirm()" class="btnp" style="width:100%;border-radius:10px;margin-top:8px;background:var(--p-red);'+(selCount?'':'opacity:.5;')+'"><i class="ti ti-trash"></i> Delete '+selCount+' from Square…</button>'
     ):'<div style="font-size:13px;color:var(--p-green);padding:10px 2px;line-height:1.5;">Every Square customer matches one of your clients — nothing to clean up. 🎉</div>')
     +'<button onclick="var o=document.getElementById(\'sqp\');if(o)o.remove();" style="width:100%;margin-top:8px;background:none;border:1px solid var(--p-line);color:var(--p-mut);border-radius:10px;padding:10px;font-size:13px;cursor:pointer;font-family:inherit;">Close</button>'
   );
 }
 function _sqp_toggle(id){if(!id)return;if(_sqpSel.has(id))_sqpSel.delete(id);else _sqpSel.add(id);_sqp_render();}
-function _sqp_all(on){_sqpSel=new Set();if(on)_sqpAll.filter(function(c){return !c.prot&&c.id;}).forEach(function(c){_sqpSel.add(c.id);});_sqp_render();}
+function _sqp_all(on){_sqpSel=new Set();if(on)(_sqpShownIds||[]).forEach(function(id){if(id)_sqpSel.add(id);});_sqp_render();}
 function _sqp_confirm(){
   var n=_sqpSel.size;if(!n){_sqp_render();return;}
   var protectedN=_sqpAll.filter(function(c){return c.prot;}).length;
