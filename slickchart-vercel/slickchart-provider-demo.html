@@ -3970,8 +3970,9 @@ function _sqCustIsMine(cust,idx){
 // app-created (protect it) so we never delete on a missing field.
 function _sqIsAppCreated(src){var s=String(src||'').toUpperCase();return s==='THIRD_PARTY'||s==='THIRD_PARTY_IMPORT';}
 function _sqSrcLabel(src){var s=String(src||'').toUpperCase().replace(/_/g,' ').toLowerCase();return s?s.replace(/\b\w/g,function(m){return m.toUpperCase();}):'Unknown';}
-let _sqpAll=null,_sqpSel=null,_sqpQuery='',_sqpBusy=false,_sqpAfter=0,_sqpAfterStr='',_sqpShownIds=[];
+let _sqpAll=null,_sqpSel=null,_sqpQuery='',_sqpBusy=false,_sqpAfter=0,_sqpAfterStr='',_sqpBefore=0,_sqpBeforeStr='',_sqpShownIds=[];
 function _sqp_setAfter(v){_sqpAfterStr=v||'';try{_sqpAfter=v?new Date(v+'T00:00:00').getTime():0;}catch(e){_sqpAfter=0;}_sqp_render();}
+function _sqp_setBefore(v){_sqpBeforeStr=v||'';try{_sqpBefore=v?new Date(v+'T23:59:59').getTime():0;}catch(e){_sqpBefore=0;}_sqp_render();}
 // A sticky top bar (grab-handle + always-reachable ✕) for the full-height cleanup sheets, so a long
 // list never buries the only way out at the very bottom. Sticks to the top of the scroll area.
 function _sheetBar(){
@@ -4000,49 +4001,53 @@ async function _openSquarePurge(){
   _sqpAll=data.customers.map(function(c){
     var matched=_sqCustIsMine(c,idx);
     var appCreated=_sqIsAppCreated(c.creationSource);
-    // Protected if it matches your roster OR your Square created it natively. Only an app-created
-    // customer that ALSO isn't in your roster is even a candidate for deletion.
+    // Only a roster match is a hard "yours". Creation source turned out NOT to separate the injected
+    // strangers here (many carry a native-looking source), so it's shown as a hint, not a shield. Date
+    // is the reliable separator — the strangers arrived in a burst; real customers span years.
     return {id:c.id,name:c.name||'(no name)',email:c.email||'',phone:c.phone||'',
-      matched:matched,appCreated:appCreated,prot:(matched||!appCreated),
-      src:c.creationSource||'',createdAt:c.createdAt||''};
+      matched:matched,appCreated:appCreated,prot:matched,
+      src:c.creationSource||'',createdAt:c.createdAt||'',
+      ts:(function(){try{return c.createdAt?new Date(c.createdAt).getTime():0;}catch(e){return 0;}})()};
   });
-  _sqpSel=new Set(_sqpAll.filter(function(c){return !c.prot&&c.id;}).map(function(c){return c.id;}));
-  _sqpQuery='';
+  _sqpAll.sort(function(a,b){return (b.ts||0)-(a.ts||0);});   // newest first — the injection burst floats to the top
+  _sqpSel=new Set();   // nothing pre-selected — you drive it with the date window + review
+  _sqpQuery='';_sqpAfter=0;_sqpAfterStr='';_sqpBefore=0;_sqpBeforeStr='';
   _sqp_render();
 }
 function _sqp_render(){
   var ov=document.getElementById('sqp');if(!ov||!_sqpAll)return;
-  var protN=_sqpAll.filter(function(c){return c.prot;}).length;
   var matchedN=_sqpAll.filter(function(c){return c.matched;}).length;
-  var nativeN=_sqpAll.filter(function(c){return c.prot&&!c.matched;}).length;
-  var strangers=_sqpAll.filter(function(c){return !c.prot;});
+  var reviewable=_sqpAll.filter(function(c){return !c.prot;});   // everyone not a hard roster match
   var qraw=_sqpQuery, q=_sqNormName(qraw);
-  var shown=q?strangers.filter(function(c){return _sqNormName(c.name).indexOf(q)>=0||String(c.email||'').toLowerCase().indexOf(qraw.toLowerCase())>=0;}):strangers;
-  if(_sqpAfter){shown=shown.filter(function(c){var t=0;try{t=c.createdAt?new Date(c.createdAt).getTime():0;}catch(e){}return t&&t>=_sqpAfter;});}
+  var shown=q?reviewable.filter(function(c){return _sqNormName(c.name).indexOf(q)>=0||String(c.email||'').toLowerCase().indexOf(qraw.toLowerCase())>=0;}):reviewable;
+  if(_sqpAfter){shown=shown.filter(function(c){return c.ts&&c.ts>=_sqpAfter;});}
+  if(_sqpBefore){shown=shown.filter(function(c){return c.ts&&c.ts<=_sqpBefore;});}
   _sqpShownIds=shown.map(function(c){return c.id;}).filter(Boolean);
+  var dateSet=!!(_sqpAfter||_sqpBefore);
   var rows=shown.slice(0,600).map(function(c){
     var sel=c.id&&_sqpSel.has(c.id);
     var when='';try{if(c.createdAt)when=new Date(c.createdAt).toLocaleDateString('en-US',{month:'short',day:'numeric',year:'numeric'});}catch(e){}
     return '<label style="display:flex;align-items:center;gap:10px;padding:8px 10px;border:1px solid var(--p-line);border-radius:9px;margin-bottom:5px;cursor:pointer;background:var(--p-surf);">'
       +'<input type="checkbox" '+(sel?'checked':'')+' onchange="_sqp_toggle(\''+_jsAttr(c.id)+'\')" style="width:17px;height:17px;accent-color:var(--p-red);flex-shrink:0;">'
-      +'<div style="flex:1;min-width:0;"><div style="font-size:13px;color:var(--p-ink);">'+_fileEsc(c.name)+'</div><div style="font-size:11px;color:var(--p-mut);overflow:hidden;text-overflow:ellipsis;white-space:nowrap;">'+_fileEsc([c.email,c.phone].filter(Boolean).join(' · ')||'no contact on file')+(when?(' · added '+when):'')+'</div></div>'
+      +'<div style="flex:1;min-width:0;"><div style="font-size:13px;color:var(--p-ink);">'+_fileEsc(c.name)+(c.appCreated?' <span style="font-size:9px;font-weight:700;color:var(--p-red);border:1px solid var(--p-red);border-radius:4px;padding:0 4px;">APP</span>':'')+'</div><div style="font-size:11px;color:var(--p-mut);overflow:hidden;text-overflow:ellipsis;white-space:nowrap;">'+_fileEsc([c.email,c.phone].filter(Boolean).join(' · ')||'no contact on file')+(when?(' · added '+when):'')+'</div></div>'
       +'</label>';
   }).join('');
   var selCount=_sqpSel.size;
   _sqp_box(
     '<div style="font-size:16px;font-weight:600;color:var(--p-ink);margin-bottom:4px;">Clean up Square customers</div>'
-    +'<div style="font-size:12px;color:var(--p-mut);line-height:1.55;margin-bottom:10px;">'+_sqpAll.length+' customers in your connected Square. <b style="color:var(--p-green);">'+protN+' are protected</b> — '+matchedN+' match your clients and '+nativeN+' were created by your own Square (online bookings, walk-ins, imports — including customers who haven’t come in yet). They’re hidden and can’t be deleted. The <b>'+strangers.length+'</b> below were added by a third-party app and aren’t in your roster. <b style="color:var(--p-red);">Deleting is permanent and can’t be undone.</b></div>'
-    +'<div style="background:var(--p-amber-bg);border:1px solid var(--p-amber-line);border-radius:9px;padding:8px 11px;margin-bottom:10px;font-size:11.5px;color:var(--p-amber);line-height:1.5;">Still review the names below and uncheck anyone you recognize. Back up first: export your customer list from the Square Dashboard.</div>'
-    +(strangers.length?(
+    +'<div style="font-size:12px;color:var(--p-mut);line-height:1.55;margin-bottom:10px;">'+_sqpAll.length+' customers in your connected Square. <b style="color:var(--p-green);">'+matchedN+' are matched to your SlickChart clients</b> (hidden, can’t be deleted). The other <b>'+reviewable.length+'</b> include BOTH your real customers and the injected strangers — creation type didn’t separate them, so <b>date does the work</b>: they’re sorted newest-first, and the strangers arrived in a burst. Bracket that window below, review, then delete. <b style="color:var(--p-red);">Deleting is permanent.</b></div>'
+    +'<div style="background:var(--p-amber-bg);border:1px solid var(--p-amber-line);border-radius:9px;padding:8px 11px;margin-bottom:10px;font-size:11.5px;color:var(--p-amber);line-height:1.5;">Back up first (Square Dashboard → Import/Export → Export). Rows tagged <b>APP</b> were created by a third-party app — the surest strangers. Scroll to spot the burst of unfamiliar names on one or two recent dates.</div>'
+    +(reviewable.length?(
       '<input placeholder="Search these…" value="'+_urlAttr(_sqpQuery)+'" oninput="_sqpQuery=this.value;_sqp_render();" style="width:100%;box-sizing:border-box;background:var(--p-surf);border:1px solid var(--p-line);border-radius:9px;padding:9px 11px;font-size:13px;color:var(--p-ink);margin-bottom:8px;">'
-      +'<div style="display:flex;align-items:center;gap:8px;margin-bottom:8px;"><span style="font-size:11px;color:var(--p-mut);white-space:nowrap;">Only added on/after</span><input type="date" value="'+_urlAttr(_sqpAfterStr)+'" onchange="_sqp_setAfter(this.value)" style="flex:1;min-width:0;box-sizing:border-box;background:var(--p-surf);border:1px solid var(--p-line);border-radius:8px;padding:7px 9px;font-size:12px;color:var(--p-ink);color-scheme:dark;">'+(_sqpAfter?'<button onclick="_sqp_setAfter(\'\')" style="background:none;border:1px solid var(--p-line);color:var(--p-mut);border-radius:8px;padding:7px 10px;font-size:12px;cursor:pointer;font-family:inherit;flex-shrink:0;">Clear</button>':'')+'</div>'
-      +(_sqpAfter?'<div style="font-size:11px;color:var(--p-amber);margin-bottom:8px;line-height:1.45;">Showing only strangers added on/after '+_fileEsc(_sqpAfterStr)+' — set this to just before the strangers appeared to isolate the injected ones (your real customers were added long before).</div>':'')
-      +'<div style="display:flex;gap:8px;margin-bottom:10px;"><button onclick="_sqp_all(1)" style="flex:1;background:none;border:1px solid var(--p-line);color:var(--p-mut);border-radius:8px;padding:7px;font-size:12px;cursor:pointer;font-family:inherit;">Select all shown ('+_sqpShownIds.length+')</button><button onclick="_sqp_all(0)" style="flex:1;background:none;border:1px solid var(--p-line);color:var(--p-mut);border-radius:8px;padding:7px;font-size:12px;cursor:pointer;font-family:inherit;">Select none</button></div>'
+      +'<div style="display:flex;align-items:center;gap:6px;margin-bottom:6px;"><span style="font-size:11px;color:var(--p-mut);white-space:nowrap;width:78px;">Added on/after</span><input type="date" value="'+_urlAttr(_sqpAfterStr)+'" onchange="_sqp_setAfter(this.value)" style="flex:1;min-width:0;box-sizing:border-box;background:var(--p-surf);border:1px solid var(--p-line);border-radius:8px;padding:6px 8px;font-size:12px;color:var(--p-ink);color-scheme:dark;">'+(_sqpAfter?'<button onclick="_sqp_setAfter(\'\')" style="background:none;border:1px solid var(--p-line);color:var(--p-mut);border-radius:8px;padding:6px 9px;font-size:11px;cursor:pointer;font-family:inherit;flex-shrink:0;">✕</button>':'')+'</div>'
+      +'<div style="display:flex;align-items:center;gap:6px;margin-bottom:8px;"><span style="font-size:11px;color:var(--p-mut);white-space:nowrap;width:78px;">and on/before</span><input type="date" value="'+_urlAttr(_sqpBeforeStr)+'" onchange="_sqp_setBefore(this.value)" style="flex:1;min-width:0;box-sizing:border-box;background:var(--p-surf);border:1px solid var(--p-line);border-radius:8px;padding:6px 8px;font-size:12px;color:var(--p-ink);color-scheme:dark;">'+(_sqpBefore?'<button onclick="_sqp_setBefore(\'\')" style="background:none;border:1px solid var(--p-line);color:var(--p-mut);border-radius:8px;padding:6px 9px;font-size:11px;cursor:pointer;font-family:inherit;flex-shrink:0;">✕</button>':'')+'</div>'
+      +(!dateSet?'<div style="font-size:11.5px;color:var(--p-red);background:var(--p-red-bg);border:1px solid var(--p-red);border-radius:8px;padding:8px 10px;margin-bottom:8px;line-height:1.45;"><b>Set a date range before selecting all</b> — without it, "select all" includes your real customers too. Find the injection burst (a cluster of unfamiliar names on one or two recent dates) and bracket it.</div>':'')
+      +'<div style="display:flex;gap:8px;margin-bottom:10px;"><button onclick="_sqp_all(1)" style="flex:1;background:none;border:1px solid '+(dateSet?'var(--p-line)':'var(--p-line2)')+';color:'+(dateSet?'var(--p-mut)':'var(--p-mut2)')+';border-radius:8px;padding:7px;font-size:12px;cursor:pointer;font-family:inherit;">Select all shown ('+_sqpShownIds.length+')</button><button onclick="_sqp_all(0)" style="flex:1;background:none;border:1px solid var(--p-line);color:var(--p-mut);border-radius:8px;padding:7px;font-size:12px;cursor:pointer;font-family:inherit;">Select none</button></div>'
       +rows
-      +(shown.length>600?'<div style="font-size:11px;color:var(--p-mut);text-align:center;padding:6px;">Showing first 600 — narrow with search or the date filter.</div>':'')
+      +(shown.length>600?'<div style="font-size:11px;color:var(--p-mut);text-align:center;padding:6px;">Showing first 600 — narrow with search or the dates.</div>':'')
       +'<button onclick="_sqp_confirm()" class="btnp" style="width:100%;border-radius:10px;margin-top:8px;background:var(--p-red);'+(selCount?'':'opacity:.5;')+'"><i class="ti ti-trash"></i> Delete '+selCount+' from Square…</button>'
     ):'<div style="font-size:13px;color:var(--p-green);padding:10px 2px;line-height:1.5;">Every Square customer matches one of your clients — nothing to clean up. 🎉</div>')
-    +'<button onclick="var o=document.getElementById(\'sqp\');if(o)o.remove();" style="width:100%;margin-top:8px;background:none;border:1px solid var(--p-line);color:var(--p-mut);border-radius:10px;padding:10px;font-size:13px;cursor:pointer;font-family:inherit;">Close</button>'
+    +'<button onclick="_sheetCloseFrom(this)" style="width:100%;margin-top:8px;background:none;border:1px solid var(--p-line);color:var(--p-mut);border-radius:10px;padding:10px;font-size:13px;cursor:pointer;font-family:inherit;">Close</button>'
   );
 }
 function _sqp_toggle(id){if(!id)return;if(_sqpSel.has(id))_sqpSel.delete(id);else _sqpSel.add(id);_sqp_render();}
