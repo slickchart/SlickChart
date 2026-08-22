@@ -91,6 +91,14 @@ function normalize(c) {
     // is how the leaked strangers got in). Everything else (DIRECTORY, APPOINTMENTS, ONLINE_STORE,
     // INSTANT_PROFILE, IMPORT, etc.) is a customer Square itself created — the provider's own — and the
     // cleanup tool uses this to protect them regardless of the SlickChart roster.
-    creationSource: c.creation_source || ''
+    creationSource: c.creation_source || '',
+    // Email-marketing subscription. This is the strongest "this is really mine" signal we have: the
+    // provider's own subscriber count (what Square Marketing shows) matches their true client list,
+    // while the injected strangers came in phone-only with no email, so they are NOT subscribers.
+    // `subscribed` = has a real email AND has not unsubscribed. Use it as a KEEP/whitelist — its
+    // COMPLEMENT is a mix of strangers AND the provider's own phone-only leads, so never delete on
+    // "not subscribed" alone.
+    emailUnsubscribed: !!(c.preferences && c.preferences.email_unsubscribed),
+    subscribed: !!(c.email_address && !(c.preferences && c.preferences.email_unsubscribed))
   };
 }

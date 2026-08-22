@@ -4020,11 +4020,15 @@ async function _openSquarePurge(){
   _sqpAll=data.customers.map(function(c){
     var matched=_sqCustIsMine(c,idx);
     var appCreated=_sqIsAppCreated(c.creationSource);
-    // Only a roster match is a hard "yours". Creation source turned out NOT to separate the injected
-    // strangers here (many carry a native-looking source), so it's shown as a hint, not a shield. Date
-    // is the reliable separator — the strangers arrived in a burst; real customers span years.
+    // Email subscribers are the provider's REAL clients: their Square Marketing subscriber count
+    // matches their true list, while the injected strangers came in phone-only (no email) and are not
+    // subscribers. So a subscriber is protected just like a roster match — that shields the ~hundreds of
+    // real clients and shrinks the review list down to non-subscribers, where the strangers actually are.
+    var subscribed=!!c.subscribed;
+    // Only a roster match OR an email subscription is a hard "yours". Creation source turned out NOT to
+    // separate the strangers (many carry a native-looking source), so it's a hint, not a shield.
     return {id:c.id,name:c.name||'(no name)',email:c.email||'',phone:c.phone||'',
-      matched:matched,appCreated:appCreated,prot:matched,
+      matched:matched,appCreated:appCreated,subscribed:subscribed,prot:(matched||subscribed),
       src:c.creationSource||'',createdAt:c.createdAt||'',
       ts:(function(){try{return c.createdAt?new Date(c.createdAt).getTime():0;}catch(e){return 0;}})()};
   });
@@ -4036,7 +4040,9 @@ async function _openSquarePurge(){
 function _sqp_render(){
   var ov=document.getElementById('sqp');if(!ov||!_sqpAll)return;
   var matchedN=_sqpAll.filter(function(c){return c.matched;}).length;
-  var reviewable=_sqpAll.filter(function(c){return !c.prot;});   // everyone not a hard roster match
+  var subN=_sqpAll.filter(function(c){return c.subscribed;}).length;
+  var protN=_sqpAll.filter(function(c){return c.prot;}).length;   // matched OR subscribed
+  var reviewable=_sqpAll.filter(function(c){return !c.prot;});   // not roster-matched AND not an email subscriber
   var qraw=_sqpQuery, q=_sqNormName(qraw), qd=qraw.replace(/\D/g,'');
   var shown=reviewable;
   if(q||qd){
@@ -4061,7 +4067,7 @@ function _sqp_render(){
   var selCount=_sqpSel.size;
   _sqp_box(
     '<div style="font-size:16px;font-weight:600;color:var(--p-ink);margin-bottom:4px;">Clean up Square customers</div>'
-    +'<div style="font-size:12px;color:var(--p-mut);line-height:1.55;margin-bottom:10px;">'+_sqpAll.length+' customers in your connected Square. <b style="color:var(--p-green);">'+matchedN+' are matched to your SlickChart clients</b> (hidden, can’t be deleted). The other <b>'+reviewable.length+'</b> include your real customers AND the strangers. Best way to isolate the strangers: <b>search by their out-of-area code</b> (e.g. type <b>734</b>) — your real clients aren’t in that area. You can also filter by date. Review, then delete. <b style="color:var(--p-red);">Deleting is permanent.</b></div>'
+    +'<div style="font-size:12px;color:var(--p-mut);line-height:1.55;margin-bottom:10px;">'+_sqpAll.length+' customers in your connected Square. <b style="color:var(--p-green);">'+protN+' are protected</b> (hidden, can’t be deleted) — <b>'+subN+' email subscribers</b> (your real list, the count you see in Square Marketing)'+(matchedN?(' + '+matchedN+' matched to SlickChart'):'')+'. That leaves <b>'+reviewable.length+'</b> non-subscribers to review — this is where the strangers are. Narrow with their out-of-area code (type <b>734</b>) or by date, then delete. <b style="color:var(--p-red);">Deleting is permanent.</b></div>'
     +'<div style="background:var(--p-amber-bg);border:1px solid var(--p-amber-line);border-radius:9px;padding:8px 11px;margin-bottom:10px;font-size:11.5px;color:var(--p-amber);line-height:1.5;">Back up first (Square Dashboard → Import/Export → Export). Type an area code (like 734) to pull up just those numbers — check they’re unfamiliar/“never visited”, then Select all shown → Delete. Rows tagged <b>APP</b> are also sure strangers.</div>'
     +(reviewable.length?(
       '<input placeholder="Search name, email, or phone — e.g. 734" value="'+_urlAttr(_sqpQuery)+'" oninput="_sqpQuery=this.value;_sqp_render();" style="width:100%;box-sizing:border-box;background:var(--p-surf);border:1px solid var(--p-line);border-radius:9px;padding:9px 11px;font-size:13px;color:var(--p-ink);margin-bottom:8px;">'
@@ -4073,7 +4079,7 @@ function _sqp_render(){
       +rows
       +(shown.length>600?'<div style="font-size:11px;color:var(--p-mut);text-align:center;padding:6px;">Showing first 600 — narrow with search or the dates.</div>':'')
       +'<button onclick="_sqp_confirm()" class="btnp" style="width:100%;border-radius:10px;margin-top:8px;background:var(--p-red);'+(selCount?'':'opacity:.5;')+'"><i class="ti ti-trash"></i> Delete '+selCount+' from Square…</button>'
-    ):'<div style="font-size:13px;color:var(--p-green);padding:10px 2px;line-height:1.5;">Every Square customer matches one of your clients — nothing to clean up. 🎉</div>')
+    ):'<div style="font-size:13px;color:var(--p-green);padding:10px 2px;line-height:1.5;">Every Square customer is protected — an email subscriber or matched to a SlickChart client. Nothing to clean up. 🎉</div>')
     +'<button onclick="_sheetCloseFrom(this)" style="width:100%;margin-top:8px;background:none;border:1px solid var(--p-line);color:var(--p-mut);border-radius:10px;padding:10px;font-size:13px;cursor:pointer;font-family:inherit;">Close</button>'
   );
 }
@@ -4118,7 +4124,7 @@ async function _sqp_execute(){
 // third-party strangers are NEVER pulled in, even if your Square isn't fully cleaned yet; (2) it imports
 // each under a FRESH record id, because the server refuses to un-delete a tombstoned client — a fresh id
 // sidesteps that so the restore actually sticks. Purely additive: it never deletes anything.
-let _sqrBusy=false,_sqrMissing=null;
+let _sqrBusy=false,_sqrMissing=null,_sqrMissingPhone=null;
 function _sqr_box(html){var ov=document.getElementById('sq-rebuild');if(!ov)return;ov.innerHTML='<div style="background:var(--surf1);border-top:1px solid var(--p-line);border-radius:16px 16px 0 0;padding:18px;max-height:92%;overflow:auto;">'+_sheetBar()+html+'</div>';}
 async function _openSquareRebuild(){
   var ov=document.getElementById('sq-rebuild');if(ov)ov.remove();
@@ -4135,26 +4141,38 @@ async function _openSquareRebuild(){
     return;
   }
   var idx=_sqMineIndex();
-  // Restore candidates: in your Square, NOT already in SlickChart, and created natively by your Square
-  // (so third-party strangers are structurally excluded).
-  _sqrMissing=data.customers.filter(function(c){return c&&c.id&&!_sqCustIsMine(c,idx)&&!_sqIsAppCreated(c.creationSource);});
+  // Restore candidates = in your Square, not already in SlickChart. Split by the reliable "really mine"
+  // signal: EMAIL SUBSCRIBERS are guaranteed-real (they match your Square Marketing count), so those are
+  // the safe, primary restore. The rest are phone-only / no-email contacts — your real never-came-in
+  // leads live here, but so might a few strangers, so they're a separate, cautioned batch (still never
+  // includes anything created by a third-party app).
+  var missing=data.customers.filter(function(c){return c&&c.id&&!_sqCustIsMine(c,idx);});
+  _sqrMissing=missing.filter(function(c){return c.subscribed;});
+  _sqrMissingPhone=missing.filter(function(c){return !c.subscribed&&!_sqIsAppCreated(c.creationSource);});
   _sqr_render();
 }
 function _sqr_render(msg){
   var n=(_sqrMissing||[]).length;
+  var np=(_sqrMissingPhone||[]).length;
   var preview=(_sqrMissing||[]).slice(0,8).map(function(c){return _fileEsc(c.name||'(no name)');}).join(', ');
   _sqr_box(
     '<div style="font-size:16px;font-weight:600;color:var(--p-ink);margin-bottom:6px;">Rebuild client list from Square</div>'
     +(msg?('<div role="status" style="font-size:12.5px;color:var(--p-green);background:var(--p-surf2);border:1px solid var(--p-line);border-radius:9px;padding:9px 11px;margin-bottom:12px;">'+_fileEsc(msg)+'</div>'):'')
-    +(n?(
-      '<div style="font-size:13px;color:var(--p-mut);line-height:1.6;margin-bottom:12px;"><b style="color:var(--p-ink);">'+n+'</b> of your Square customers aren’t in SlickChart. These were all created by your own Square (online bookings, walk-ins, imports) — the third-party strangers are excluded, so this only brings back your real clients.'+(preview?('<div style="margin-top:8px;color:var(--p-mut2);font-size:12px;">e.g. '+preview+(n>8?', …':'')+'</div>'):'')+'</div>'
-      +'<button onclick="_sqr_run()" class="btnp" style="width:100%;border-radius:10px;"><i class="ti ti-download"></i> Restore '+n+' client'+(n===1?'':'s')+'</button>'
+    +((n||np)?(
+      (n?(
+        '<div style="font-size:13px;color:var(--p-mut);line-height:1.6;margin-bottom:10px;"><b style="color:var(--p-ink);">'+n+'</b> of your email subscribers aren’t in SlickChart yet. These are your <b style="color:var(--p-green);">real clients</b> (they’re on your Square Marketing list) — safe to bring back.'+(preview?('<div style="margin-top:8px;color:var(--p-mut2);font-size:12px;">e.g. '+preview+(n>8?', …':'')+'</div>'):'')+'</div>'
+        +'<button onclick="_sqr_run(\'sub\')" class="btnp" style="width:100%;border-radius:10px;margin-bottom:'+(np?'12px':'0')+';"><i class="ti ti-download"></i> Restore '+n+' subscriber'+(n===1?'':'s')+'</button>'
+      ):'<div style="font-size:13px;color:var(--p-green);line-height:1.6;margin-bottom:'+(np?'12px':'0')+';">All your email subscribers are already in SlickChart. 🎉</div>')
+      +(np?(
+        '<div style="border-top:1px solid var(--p-line);padding-top:12px;font-size:12.5px;color:var(--p-mut);line-height:1.6;margin-bottom:10px;"><b style="color:var(--p-ink);">'+np+'</b> more are phone-only (no email, so not subscribers). Your real never-came-in leads are in here — but a few of the injected strangers might be too. Bring them back only if you’re okay reviewing them after.</div>'
+        +'<button onclick="_sqr_run(\'phone\')" style="width:100%;border-radius:10px;background:none;border:1px solid var(--p-line);color:var(--p-mut);padding:11px;font-size:13px;cursor:pointer;font-family:inherit;">Also restore '+np+' phone-only contact'+(np===1?'':'s')+'</button>'
+      ):'')
     ):'<div style="font-size:13px;color:var(--p-green);line-height:1.6;padding:6px 0 12px;">Every one of your Square customers is already in SlickChart — nothing to restore. 🎉</div>')
     +'<button onclick="_sheetCloseFrom(this)" style="width:100%;margin-top:8px;background:none;border:1px solid var(--p-line);color:var(--p-mut);border-radius:10px;padding:10px;font-size:13px;cursor:pointer;font-family:inherit;">Close</button>'
   );
 }
-async function _sqr_run(){
-  var list=_sqrMissing||[];if(!list.length){_sqr_render();return;}
+async function _sqr_run(which){
+  var list=(which==='phone')?(_sqrMissingPhone||[]):(_sqrMissing||[]);if(!list.length){_sqr_render();return;}
   _sqrBusy=true;
   _sqr_box('<div style="font-size:16px;font-weight:600;color:var(--p-ink);margin-bottom:10px;">Restoring…</div><div style="font-size:13px;color:var(--p-mut);padding:8px 0;text-align:center;"><div class="spin" style="margin:0 auto 10px;"></div>Bringing '+list.length+' client'+(list.length===1?'':'s')+' back…</div>');
   var restored=0;
@@ -4167,10 +4185,13 @@ async function _sqr_run(){
     try{if(typeof saveClients==='function')saveClients();}catch(e){}   // pushes fresh rows (no tombstone conflict)
   }catch(e){}
   _sqrBusy=false;
-  _sqrMissing=[];
+  // Clear only the batch we just restored, so the other batch stays offerable.
+  if(which==='phone')_sqrMissingPhone=[];else _sqrMissing=[];
+  var moreN=(_sqrMissingPhone||[]).length;
   _sqr_box('<div style="font-size:34px;text-align:center;margin-bottom:8px;">✅</div>'
     +'<div style="font-size:16px;font-weight:600;color:var(--p-ink);text-align:center;margin-bottom:6px;">Restored '+restored+' client'+(restored===1?'':'s')+'</div>'
     +'<div style="font-size:12.5px;color:var(--p-mut);text-align:center;line-height:1.5;margin-bottom:14px;">They’re back in your client list. Their visit history and forms will re-attach as they check in or you add notes.</div>'
+    +((which!=='phone'&&moreN)?('<button onclick="_sqr_render()" style="width:100%;border-radius:10px;background:none;border:1px solid var(--p-line);color:var(--p-mut);padding:11px;font-size:13px;cursor:pointer;font-family:inherit;margin-bottom:8px;">Review '+moreN+' phone-only contact'+(moreN===1?'':'s')+'</button>'):'')
     +'<button onclick="_sheetCloseFrom(this)" class="btnp" style="width:100%;border-radius:10px;">Done</button>');
 }
 // ── Owner-only: client data exposure check (Settings → Your data) ────────────────────────────────
