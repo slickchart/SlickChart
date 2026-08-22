@@ -2490,6 +2490,45 @@ function renderEntry(){
   if(hasProviderHist&&!hasClient){_loginMode='login';renderLogin();return;}
   _loginMode='welcome';renderLogin();
 }
+// In-app client sign-in (native app): email a 6-digit code, verify it, then drop into the care space.
+// This is how a client who downloaded the app from the store gets INTO their own space — the app has
+// no personal link stored on a fresh install, so without this they'd be stuck on the front door.
+let _clientCodeEmail='';
+function _clientSendCode(resend){
+  const el=document.getElementById('client-email');
+  const email=(resend?_clientCodeEmail:(el?el.value.trim():'')).toLowerCase();
+  // On the email screen the status line is #client-link-msg; on the code screen (resend) it's #client-code-msg.
+  const msg=document.getElementById(resend?'client-code-msg':'client-link-msg');
+  if(!email||!/.+@.+\..+/.test(email)){if(msg){msg.style.color='var(--p-red)';msg.textContent='Enter your email address.';}return;}
+  if(msg){msg.style.color='var(--p-mut)';msg.textContent='Sending…';}
+  fetch('/api/client-code',{method:'POST',headers:{'Content-Type':'application/json'},body:JSON.stringify({email:email})})
+    .then(function(r){return r.json().catch(function(){return {};});})
+    .then(function(){
+      _clientCodeEmail=email;
+      if(!resend){_setLoginMode('clientcode');setTimeout(function(){try{document.getElementById('client-code').focus();}catch(e){}},60);}
+      else if(msg){msg.style.color='var(--p-green)';msg.textContent='New code sent — check your inbox.';}
+    })
+    .catch(function(){if(msg){msg.style.color='var(--p-red)';msg.textContent='Couldn’t reach the server. Try again in a moment.';}});
+}
+function _clientVerifyCode(){
+  const el=document.getElementById('client-code');const msg=document.getElementById('client-code-msg');
+  const code=((el?el.value:'')||'').replace(/\D/g,'');
+  if(code.length!==6){if(msg){msg.style.color='var(--p-red)';msg.textContent='Enter the 6-digit code.';}return;}
+  if(msg){msg.style.color='var(--p-mut)';msg.textContent='Verifying…';}
+  fetch('/api/client-code',{method:'POST',headers:{'Content-Type':'application/json'},body:JSON.stringify({email:_clientCodeEmail,code:code})})
+    .then(function(r){return r.json().catch(function(){return {};});})
+    .then(function(j){
+      if(j&&j.ok&&j.token){
+        // Remember them: the client page reads sc_client_token, and next app launch renderEntry() sees
+        // hasClient and routes straight to /client. Navigate into their space now.
+        try{localStorage.setItem('sc_client_token',j.token);}catch(e){}
+        try{location.replace('/client');}catch(e){try{location.href='/client';}catch(_){}}
+      }else{
+        if(msg){msg.style.color='var(--p-red)';msg.textContent=(j&&j.error)||'That code didn’t match. Check it and try again.';}
+      }
+    })
+    .catch(function(){if(msg){msg.style.color='var(--p-red)';msg.textContent='Couldn’t reach the server. Try again in a moment.';}});
+}
 // Passwordless "get my link": emails the client their personal magic link (path B).
 function _requestClientLink(){
   const el=document.getElementById('client-email');const msg=document.getElementById('client-link-msg');
@@ -2547,12 +2586,19 @@ function renderLogin(err){
         ?`<div style="text-align:center;font-size:12px;color:var(--p-mut);line-height:1.5;">New here? Providers create an account at <b style="color:var(--p-amber);">slickchart.app</b></div>`
         :`<div style="text-align:center;font-size:13px;color:var(--p-mut);">New provider? <button onclick="_setLoginMode('signup')" style="background:none;border:none;color:var(--accent-strong);font-weight:600;cursor:pointer;font-family:inherit;font-size:13px;">Create an account</button></div>`}`;
   } else if(mode==='client'){
-    inner=`<div style="font-size:13px;color:var(--p-mut);margin-bottom:18px;line-height:1.6;">Your care space is private to you. If your provider texted or emailed you a personal link, just tap it — this app remembers you after that.</div>
-      <label class="fl-lbl" for="client-email">Or get your link by email</label>
-      <input id="client-email" type="email" autocomplete="email" placeholder="you@email.com" onkeydown="if(event.key==='Enter')_requestClientLink()" style="${ic}">
+    inner=`<div style="font-size:13px;color:var(--p-mut);margin-bottom:18px;line-height:1.6;">Sign in to your care space. Enter the email your provider has on file and we'll email you a 6-digit code.</div>
+      <label class="fl-lbl" for="client-email">Your email</label>
+      <input id="client-email" type="email" autocomplete="email" placeholder="you@email.com" onkeydown="if(event.key==='Enter')_clientSendCode()" style="${ic}">
       <div id="client-link-msg" role="status" style="font-size:12px;color:var(--p-green);min-height:16px;margin-bottom:10px;"></div>
-      <button onclick="_requestClientLink()" style="${btn};display:flex;align-items:center;justify-content:center;gap:7px;"><i class="ti ti-mail" style="font-size:15px;"></i> Email me my link</button>
+      <button onclick="_clientSendCode()" style="${btn};display:flex;align-items:center;justify-content:center;gap:7px;"><i class="ti ti-mail" style="font-size:15px;"></i> Email me a sign-in code</button>
       <div style="text-align:center;margin-top:16px;font-size:13px;color:var(--p-mut);"><button onclick="_setLoginMode('welcome')" style="background:none;border:none;color:var(--accent-strong);font-weight:600;cursor:pointer;font-family:inherit;font-size:13px;">← Back</button></div>`;
+  } else if(mode==='clientcode'){
+    inner=`<div style="font-size:13px;color:var(--p-mut);margin-bottom:18px;line-height:1.6;">Enter the 6-digit code we emailed to <b style="color:var(--p-ink);">${_fileEsc(_clientCodeEmail||'your email')}</b>.</div>
+      <label class="fl-lbl" for="client-code">Sign-in code</label>
+      <input id="client-code" inputmode="numeric" autocomplete="one-time-code" maxlength="6" placeholder="000000" onkeydown="if(event.key==='Enter')_clientVerifyCode()" style="${ic};letter-spacing:.3em;font-size:20px;text-align:center;">
+      <div id="client-code-msg" role="status" style="font-size:12px;color:var(--p-green);min-height:16px;margin-bottom:10px;"></div>
+      <button onclick="_clientVerifyCode()" style="${btn};display:flex;align-items:center;justify-content:center;gap:7px;"><i class="ti ti-heart" style="font-size:15px;"></i> Open my care space</button>
+      <div style="text-align:center;margin-top:16px;font-size:13px;color:var(--p-mut);"><button onclick="_clientSendCode(true)" style="background:none;border:none;color:var(--accent-strong);font-weight:600;cursor:pointer;font-family:inherit;font-size:13px;">Resend code</button> &nbsp;·&nbsp; <button onclick="_setLoginMode('client')" style="background:none;border:none;color:var(--p-mut);font-weight:600;cursor:pointer;font-family:inherit;font-size:13px;">← Change email</button></div>`;
   } else {
     inner=`<div style="font-size:13px;color:var(--p-mut);margin-bottom:22px;">${signup?t('sub_signup'):t('sub_login')}</div>
       ${signup?`<label class="fl-lbl" for="login-name">${t('name')}</label><input id="login-name" autocomplete="name" placeholder="${t('name_ph')}" style="${ic}">`:''}
@@ -9338,7 +9384,7 @@ function shareSummaryLink(id){
   _skipSummaryStore=false;
   let linkUrl='';
   try{ linkUrl=(typeof _clientAppLink==='function')?_clientAppLink(id):''; }catch(e){}
-  if(!linkUrl&&c._token){ linkUrl=_clientLinkBase()+'/client/'+encodeURIComponent(c._token); }
+  if(!linkUrl&&c._token){ linkUrl=_clientLinkBase()+'/space?c='+encodeURIComponent(c._token); }
   const row=(onclick,icon,title,sub)=>`<button onclick="${onclick}" style="display:flex;width:100%;align-items:center;gap:11px;padding:12px 14px;border:1px solid var(--p-line);background:var(--surf2);border-radius:10px;margin-bottom:8px;cursor:pointer;text-align:left;"><i class="ti ${icon}" style="font-size:18px;color:var(--accent-strong);"></i><div style="flex:1;min-width:0;"><div style="font-size:13px;font-weight:500;color:var(--p-ink);">${title}</div><div style="font-size:11px;color:var(--p-mut);">${sub}</div></div></button>`;
   const ov=document.createElement('div');ov.id='send-prod-sheet';
   ov.style.cssText='position:fixed;top:0;bottom:0;left:0;right:0;margin:0 auto;width:390px;max-width:100%;z-index:9999;background:rgba(0,0,0,.6);display:flex;align-items:center;justify-content:center;padding:24px 16px;box-sizing:border-box;';
@@ -9377,7 +9423,7 @@ function confirmSendLink(id,channel){
   // Build the real shareable link for this client using the canonical helper.
   let link='';
   try{ link=(typeof _clientAppLink==='function')?_clientAppLink(id):''; }catch(e){}
-  if(!link&&c._token){ link=_clientLinkBase()+'/client/'+encodeURIComponent(c._token); }
+  if(!link&&c._token){ link=_clientLinkBase()+'/space?c='+encodeURIComponent(c._token); }
   const msg=`Hi ${f}! Here's your visit summary and aftercare ${_visitPhrase}: ${link}`;
   if(channel==='copy'){
     _copyToClipboard(link,'Link copied');
@@ -13347,7 +13393,11 @@ function _clientAppLink(id){
   // NEVER return a bare "/client" (that URL boots the client app into the SAMPLE/demo experience).
   // With no token, return '' so a caller can't accidentally hand a client a demo link — every send
   // path mints the token first via _withClientToken, so this only returns '' when something is wrong.
-  return tok?(base+'/client/'+encodeURIComponent(tok)):'';
+  // Use /space (NOT /client): the installed native app claims /client + /client/* as Universal/App
+  // Links, so a client tapping a /client link has it hijacked by the PROVIDER app shell and gets
+  // dumped on the "email me my link" gateway — an endless loop. /space is not claimed, so it always
+  // opens in the browser where the care space loads correctly from ?c=. (vercel.json: /space -> client-page)
+  return tok?(base+'/space?c='+encodeURIComponent(tok)):'';
 }
 // Ensure this client has a real link TOKEN before we hand them any link, then run `then`. Without a
 // token, _clientAppLink returns a bare "/client" URL — which boots the client app into the SAMPLE

@@ -64,6 +64,16 @@ export async function ensureClientTables() {
     sent_at bigint,
     PRIMARY KEY (client_id, rkey)
   )`;
+  // Passwordless IN-APP client sign-in: a one-time 6-digit code (scrypt-hashed) emailed to a client
+  // so they can sign into their care space from inside the native app without a personal link. One
+  // active code per email (a new request replaces it); short expiry; attempts capped. See api/client-code.js.
+  await q`CREATE TABLE IF NOT EXISTS client_login_codes (
+    email text PRIMARY KEY,
+    code_hash text NOT NULL,
+    expires_at bigint NOT NULL,
+    attempts int DEFAULT 0,
+    created_at bigint
+  )`;
   _ready = true;
 }
 
