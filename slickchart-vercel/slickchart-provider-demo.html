@@ -4182,6 +4182,26 @@ function _sqp_render(){
   // A pile of unfamiliar recent ones means something is still writing to your Square.
   var _now=Date.now(),_recentCut=_now-3*86400000;
   var recentN=reviewable.filter(function(c){return c.ts&&c.ts>=_recentCut;}).length;
+  // Area-code breakdown of the non-subscriber pile. The injected strangers cluster in an out-of-area
+  // code (734) and fake 555-0100 numbers; the provider's own phone-only leads sit in her LOCAL code. So
+  // showing the codes with counts turns "I can't tell who's mine" into "734 has 480, that's not me."
+  var _areaCounts={},_fake555=0,_noPhone=0;
+  reviewable.forEach(function(c){
+    var d=_sqDigits(c.phone);
+    if(d.length>=10){ var ac=d.slice(0,3); _areaCounts[ac]=(_areaCounts[ac]||0)+1; if(d.indexOf('5550100')>=0)_fake555++; }
+    else _noPhone++;
+  });
+  var _areaSorted=Object.keys(_areaCounts).sort(function(a,b){return _areaCounts[b]-_areaCounts[a];});
+  var areaChips='';
+  if(_areaSorted.length||_fake555||_noPhone){
+    areaChips='<div style="font-size:11.5px;color:var(--p-mut);margin-bottom:6px;line-height:1.5;">Tap an <b>area code that isn’t yours</b> to pull up just those (they’re almost certainly strangers), then Select all shown → Delete:</div><div style="display:flex;flex-wrap:wrap;gap:6px;margin-bottom:10px;">'
+      +_areaSorted.slice(0,10).map(function(ac){
+        var big=_areaCounts[ac]>=15;
+        return '<button onclick="_sqpQuery=\''+ac+'\';_sqp_render();" style="background:'+(big?'var(--p-red-bg)':'var(--p-surf)')+';border:1px solid '+(big?'var(--p-red)':'var(--p-line)')+';color:'+(big?'var(--p-red)':'var(--p-ink)')+';border-radius:20px;padding:5px 11px;font-size:12px;cursor:pointer;font-family:inherit;">('+ac+') · '+_areaCounts[ac]+'</button>';
+      }).join('')
+      +(_fake555?'<button onclick="_sqpQuery=\'5550100\';_sqp_render();" style="background:var(--p-red-bg);border:1px solid var(--p-red);color:var(--p-red);border-radius:20px;padding:5px 11px;font-size:12px;cursor:pointer;font-family:inherit;">📵 fake 555-0100 · '+_fake555+'</button>':'')
+      +'</div>';
+  }
   var qraw=_sqpQuery, q=_sqNormName(qraw), qd=qraw.replace(/\D/g,'');
   var shown=reviewable;
   if(q||qd){
@@ -4210,7 +4230,8 @@ function _sqp_render(){
     +(recentN?('<div style="background:var(--p-red-bg);border:1px solid var(--p-red);border-radius:9px;padding:9px 11px;margin-bottom:10px;font-size:11.5px;color:var(--p-red);line-height:1.5;"><b>⚠️ '+recentN+' non-subscriber'+(recentN===1?'':'s')+' added in the last 3 days.</b> If these aren’t people you added yourself, something may still be writing to your Square — sort is newest-first below, so check the top rows’ dates and tell me. If they’re all older than that, the leak is stopped and this is just the existing backlog to clear.</div>'):'<div style="background:var(--p-surf2);border:1px solid var(--p-line);border-radius:9px;padding:9px 11px;margin-bottom:10px;font-size:11.5px;color:var(--p-green);line-height:1.5;">✓ No unfamiliar customers added in the last 3 days — nothing new is being injected. What’s left is the existing backlog to clear.</div>')
     +'<div style="background:var(--p-amber-bg);border:1px solid var(--p-amber-line);border-radius:9px;padding:8px 11px;margin-bottom:10px;font-size:11.5px;color:var(--p-amber);line-height:1.5;">Back up first (Square Dashboard → Import/Export → Export). Type an area code (like 734) to pull up just those numbers — check they’re unfamiliar/“never visited”, then Select all shown → Delete. Rows tagged <b>APP</b> are also sure strangers.</div>'
     +(reviewable.length?(
-      '<input placeholder="Search name, email, or phone — e.g. 734" value="'+_urlAttr(_sqpQuery)+'" oninput="_sqpQuery=this.value;_sqp_render();" style="width:100%;box-sizing:border-box;background:var(--p-surf);border:1px solid var(--p-line);border-radius:9px;padding:9px 11px;font-size:13px;color:var(--p-ink);margin-bottom:8px;">'
+      areaChips
+      +'<input placeholder="Search name, email, or phone — e.g. 734" value="'+_urlAttr(_sqpQuery)+'" oninput="_sqpQuery=this.value;_sqp_render();" style="width:100%;box-sizing:border-box;background:var(--p-surf);border:1px solid var(--p-line);border-radius:9px;padding:9px 11px;font-size:13px;color:var(--p-ink);margin-bottom:8px;">'
       +(qd&&qd.length>=3?'<div style="font-size:11px;color:var(--p-amber);margin:-2px 0 8px;line-height:1.45;">Showing the '+_sqpShownIds.length+' whose phone contains "'+_fileEsc(qd)+'". If these are all the out-of-area strangers, tap “Select all shown” → Delete.</div>':'')
       +'<div style="display:flex;align-items:center;gap:6px;margin-bottom:6px;"><span style="font-size:11px;color:var(--p-mut);white-space:nowrap;width:78px;">Added on/after</span><input type="date" value="'+_urlAttr(_sqpAfterStr)+'" onchange="_sqp_setAfter(this.value)" style="flex:1;min-width:0;box-sizing:border-box;background:var(--p-surf);border:1px solid var(--p-line);border-radius:8px;padding:6px 8px;font-size:12px;color:var(--p-ink);color-scheme:dark;">'+(_sqpAfter?'<button onclick="_sqp_setAfter(\'\')" style="background:none;border:1px solid var(--p-line);color:var(--p-mut);border-radius:8px;padding:6px 9px;font-size:11px;cursor:pointer;font-family:inherit;flex-shrink:0;">✕</button>':'')+'</div>'
       +'<div style="display:flex;align-items:center;gap:6px;margin-bottom:8px;"><span style="font-size:11px;color:var(--p-mut);white-space:nowrap;width:78px;">and on/before</span><input type="date" value="'+_urlAttr(_sqpBeforeStr)+'" onchange="_sqp_setBefore(this.value)" style="flex:1;min-width:0;box-sizing:border-box;background:var(--p-surf);border:1px solid var(--p-line);border-radius:8px;padding:6px 8px;font-size:12px;color:var(--p-ink);color-scheme:dark;">'+(_sqpBefore?'<button onclick="_sqp_setBefore(\'\')" style="background:none;border:1px solid var(--p-line);color:var(--p-mut);border-radius:8px;padding:6px 9px;font-size:11px;cursor:pointer;font-family:inherit;flex-shrink:0;">✕</button>':'')+'</div>'
