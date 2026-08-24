@@ -215,9 +215,17 @@ export async function sqContext(req, res) {
   }
   // Legacy fallback ONLY for the original single-tenant, NO-LOGIN setup (no authenticated provider at
   // all), still gated behind the deployment's shared key. The normal signed-in app never reaches here.
+  //
+  // This shared deployment-wide SQUARE_ACCESS_TOKEN is the exact mechanism behind the cross-account
+  // Square incident, so it is now DISABLED by default and only activates when the deployment explicitly
+  // opts in with SQUARE_ALLOW_SHARED_TOKEN=1. In a multi-tenant deployment (every provider connects
+  // their own Square via OAuth) this flag stays unset, so even a leaked APP_SHARED_SECRET + a populated
+  // SQUARE_ACCESS_TOKEN can never hand an unauthenticated caller the owner's Square data. Set the flag
+  // only for a genuine single-tenant, self-hosted owner deployment.
   const cfg = squareConfig();
   const key = req.headers['x-slickchart-key'] || '';
-  if (cfg.token && process.env.APP_SHARED_SECRET && key === process.env.APP_SHARED_SECRET) {
+  const legacyAllowed = process.env.SQUARE_ALLOW_SHARED_TOKEN === '1';
+  if (legacyAllowed && cfg.token && process.env.APP_SHARED_SECRET && key === process.env.APP_SHARED_SECRET) {
     return { token: cfg.token, locationId: cfg.locationId || null, providerId: 'owner' };
   }
   res.status(401).json({ error: 'Square isn\u2019t connected for this account yet.', code: 'nosquare' });

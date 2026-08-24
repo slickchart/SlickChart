@@ -19,7 +19,9 @@ async function requireLogin(req, res, q) {
       return null;
     }
   } catch (e) { /* if the check itself fails, don't lock people out over it */ }
-  return payload.u || 'owner';
+  // Fail closed on a token with no tenant claim rather than defaulting to the shared 'owner' bucket.
+  if (!payload.u) { res.status(401).json({ error: 'Not logged in.' }); return null; }
+  return payload.u;
 }
 
 export default async function handler(req, res) {

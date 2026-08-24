@@ -17,7 +17,12 @@ async function requireLogin(req, res, q) {
       return null;
     }
   } catch (e) { /* if the check itself fails, don't lock people out over it */ }
-  return payload.u || 'owner';
+  // Require an explicit tenant claim. Every legitimately-minted token carries `u` (a provider id, or
+  // the literal 'owner' for the single-tenant owner login). Defaulting a u-less token to the shared
+  // 'owner' tenant would be a latent cross-account footgun — a future token-mint path that forgot `u`
+  // would hand its holder the owner's entire dataset. Fail closed instead.
+  if (!payload.u) { res.status(401).json({ error: 'Not logged in.' }); return null; }
+  return payload.u;
 }
 
 export default async function handler(req, res) {

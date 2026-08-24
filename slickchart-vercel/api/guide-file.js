@@ -17,7 +17,8 @@ async function providerOwner(req) {
   const payload = secret ? verifyToken(token, secret) : null;
   if (!payload) return null;
   try { if (!(await isSessionValid(sql(), payload.sid))) return null; } catch (e) { /* don't lock out on a check failure */ }
-  return payload.u || 'owner';
+  // No tenant claim → treat as unauthenticated rather than defaulting to the shared 'owner' tenant.
+  return payload.u || null;
 }
 
 export default async function handler(req, res) {
