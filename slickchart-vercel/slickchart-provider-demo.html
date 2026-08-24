@@ -515,6 +515,22 @@ function loadMessages(){
   try{const raw=localStorage.getItem('sc_msgstore');if(raw){const parsed=JSON.parse(raw);if(parsed&&typeof parsed==='object'){Object.keys(msgStore).forEach(k=>delete msgStore[k]);Object.keys(parsed).forEach(k=>{msgStore[k]=parsed[k];});}}}catch(e){}
   try{const raw=localStorage.getItem('sc_threads');if(raw){const arr=JSON.parse(raw);if(Array.isArray(arr)){threads.length=0;arr.forEach(t=>threads.push(t));}}}catch(e){}
 }
+// Real send time for a chat message. New messages carry a numeric ts (epoch ms); older/legacy ones
+// only have the literal "Just now" label, so fall back to that. Shows a clock time for today,
+// "Yesterday HH:MM", a weekday within the last week, else a date.
+function _fmtMsgTime(m){
+  try{
+    const ts=m&&m.ts;
+    if(!ts||typeof ts!=='number')return (m&&m.time)||'';
+    const d=new Date(ts),now=new Date();
+    const timeStr=d.toLocaleTimeString([],{hour:'numeric',minute:'2-digit'});
+    if(d.toDateString()===now.toDateString())return timeStr;
+    if(new Date(now.getTime()-86400000).toDateString()===d.toDateString())return 'Yesterday '+timeStr;
+    if((now.getTime()-ts)<7*86400000)return d.toLocaleDateString([],{weekday:'short'})+' '+timeStr;
+    const sameYear=d.getFullYear()===now.getFullYear();
+    return d.toLocaleDateString([],sameYear?{month:'short',day:'numeric'}:{month:'short',day:'numeric',year:'numeric'})+', '+timeStr;
+  }catch(e){return (m&&m.time)||'';}
+}
 
 const noteTemplates={
   soap:{id:'soap',name:'SOAP',bdg:'bb',col:'var(--p-blue-bg)',ic:'var(--p-blue)',desc:'Subjective · Objective · Assessment · Plan',sections:[
@@ -6384,7 +6400,7 @@ function resendFormToClient(cid,fid){
   try{if(typeof saveClients==='function')saveClients({noSync:true});}catch(e){}
   try{
     if(!msgStore[cid])msgStore[cid]=[];
-    msgStore[cid].push({from:'me',text:`Hi ${c.name.split(' ')[0]}! I've sent you the ${formTmpls[fid].name} to fill out again when you have a moment. ✨`,time:'Just now'});
+    msgStore[cid].push({from:'me',text:`Hi ${c.name.split(' ')[0]}! I've sent you the ${formTmpls[fid].name} to fill out again when you have a moment. ✨`,time:'Just now',ts:Date.now()});
     const t=threads.find(x=>x.id===cid);if(t){t.preview='A form is ready for you';}
     saveMessages();
   }catch(e){}
@@ -9628,7 +9644,7 @@ function resendSavedSummary(id,i,silent){
   // message the client + (demo) bridge post, mirroring a fresh send
   try{
     if(!msgStore[id])msgStore[id]=[];
-    msgStore[id].push({from:'me',text:`Hi ${c.name.split(' ')[0]}! Here's your session summary again, ${s.treatment||'your visit'} on ${s.date}. ✨`,time:'Just now'});
+    msgStore[id].push({from:'me',text:`Hi ${c.name.split(' ')[0]}! Here's your session summary again, ${s.treatment||'your visit'} on ${s.date}. ✨`,time:'Just now',ts:Date.now()});
     const t=threads.find(x=>x.id===id);if(t){t.preview='Your session summary is ready ✨';}
     saveMessages();
   }catch(e){}
@@ -9693,7 +9709,7 @@ async function sendSummary(id){
   if(!msgStore[id])msgStore[id]=[];
   const parts=['homecare routine','recommended products','next appointment'].filter((_,i)=>[summaryToggles.homecare,summaryToggles.products,summaryToggles.appointment][i]);
   const _msg=`Hi ${c.name.split(' ')[0]}! Your session summary ${_visitDatePhrase(providerNoteDrafts[id]&&providerNoteDrafts[id].date)} is ready, including your ${parts.join(', ')}. See you next time! ✨\n\n${_providerFirstName()}`;
-  msgStore[id].push({from:'me',text:_msg,time:'Just now'});
+  msgStore[id].push({from:'me',text:_msg,time:'Just now',ts:Date.now()});
   try{saveMessages();}catch(e){}
   // Send the actual summary content to the connected client's app so it replaces their summary screen
   _postSummaryData(id);
@@ -10494,16 +10510,16 @@ function _sendRebookInvite(id,date){
   const _mid=(typeof _genMid==='function')?_genMid():undefined;
   try{
     if(!msgStore[id])msgStore[id]=[];
-    msgStore[id].push({from:'me',text,time:'Just now',_mid,status:(id==='maya')?'sent':(_joined?'sending':'pending')});
+    msgStore[id].push({from:'me',text,time:'Just now',ts:Date.now(),_mid,status:(id==='maya')?'sent':(_joined?'sending':'pending')});
     let t=threads.find(x=>x.id===id);
-    if(t){t.preview='Time to rebook ✨';t.time='Just now';}
-    else if(CL[id]){threads.unshift({id:id,preview:'Time to rebook ✨',time:'Just now',unread:false});}
+    if(t){t.preview='Time to rebook ✨';t.time='Just now';t.ts=Date.now();}
+    else if(CL[id]){threads.unshift({id:id,preview:'Time to rebook ✨',time:'Just now',ts:Date.now(),unread:false});}
     saveMessages();
   }catch(e){}
   // Actually deliver to the client. Chat messages ride /api/provider-message (a real client
   // reads them via /api/client-messages), NOT the client-data blob, so the old
   // _scheduleClientSync() here never reached a real client. Mirror the normal chat send.
-  if(id==='maya'){try{SlickBridge.post('client-message',{text,imgs:[],providerId:'jess',time:'Just now'});}catch(e){}}
+  if(id==='maya'){try{SlickBridge.post('client-message',{text,imgs:[],providerId:'jess',time:'Just now',ts:Date.now()});}catch(e){}}
   else if(!_joined){
     if(typeof proToast==='function')proToast(first+' hasn’t joined the app yet — this rebook invite will send automatically once they open their app.',0);
   }else{
@@ -10572,7 +10588,7 @@ function inviteVirtualConsult(id,_force,_kind,_formId){
   // Tracked bubble (_mid + status) so the invite message flushes when the client joins and shows a
   // real failed/retry state instead of an optimistic toast that can't be recovered.
   let _imid;try{_imid=(self.crypto&&crypto.randomUUID)?crypto.randomUUID():(Date.now().toString(36)+Math.random().toString(36).slice(2));}catch(e){_imid=Date.now().toString(36)+Math.random().toString(36).slice(2);}
-  msgStore[id].push({from:'me',text:_inviteMsg,time:'Just now',_mid:_imid,status:'sending'});
+  msgStore[id].push({from:'me',text:_inviteMsg,time:'Just now',ts:Date.now(),_mid:_imid,status:'sending'});
   try{saveMessages();}catch(e){}
   // Reach a real client on their own device: deliver the message through the server, and
   // (via the client-data sync below) surface the invite itself in their app, the SlickBridge
@@ -10604,8 +10620,8 @@ async function _doSendVcReview(id,notes){
   vcInvites[id]={...(vcInvites[id]||{}),invited:true,submitted:true,reviewed:true};try{persistVcState();}catch(e){}
   const msg='Your virtual consult review is ready 📋\n\n'+notes;
   let _mid;try{_mid=(self.crypto&&crypto.randomUUID)?crypto.randomUUID():(Date.now().toString(36)+Math.random().toString(36).slice(2));}catch(e){_mid=Date.now().toString(36)+Math.random().toString(36).slice(2);}
-  try{if(!msgStore[id])msgStore[id]=[];msgStore[id].push({from:'me',text:msg,time:'Just now',_mid,status:'sending'});const t=threads.find(x=>x.id===id);if(t)t.preview='Your consult review is ready 📋';saveMessages();}catch(e){}
-  if(id==='maya'){try{SlickBridge.post('client-message',{text:msg,imgs:[],providerId:'jess',time:'Just now'});}catch(e){}try{if(typeof _setProviderMsgStatus==='function')_setProviderMsgStatus(id,_mid,'sent');}catch(e){}}
+  try{if(!msgStore[id])msgStore[id]=[];msgStore[id].push({from:'me',text:msg,time:'Just now',ts:Date.now(),_mid,status:'sending'});const t=threads.find(x=>x.id===id);if(t)t.preview='Your consult review is ready 📋';saveMessages();}catch(e){}
+  if(id==='maya'){try{SlickBridge.post('client-message',{text:msg,imgs:[],providerId:'jess',time:'Just now',ts:Date.now()});}catch(e){}try{if(typeof _setProviderMsgStatus==='function')_setProviderMsgStatus(id,_mid,'sent');}catch(e){}}
   else{try{await _sendProviderMessageToClient(id,msg,[],false,undefined,_mid);}catch(e){}}
   try{if(typeof _pushClientNow==='function')await _pushClientNow(id);}catch(e){}
   const st=(msgStore[id]||[]).find(m=>m&&m._mid===_mid);
@@ -14202,7 +14218,7 @@ function showMsgTab(tab){
     <div style="padding:12px 16px 8px;display:flex;align-items:center;justify-content:space-between;gap:8px;"><span style="font-size:13px;color:var(--p-mut);flex-shrink:0;">${threads.filter(t=>t.unread).length} unread</span><div style="display:flex;gap:8px;"><button onclick="_composeBroadcast()" style="background:var(--surf1);border:1px solid var(--p-line);color:var(--p-ink);border-radius:8px;padding:7px 11px;font-size:12px;font-weight:500;cursor:pointer;font-family:inherit;"><i class="ti ti-users" style="font-size:13px;"></i> Send to clients</button><button onclick="_newMessageSheet()" style="background:var(--accent);color:var(--accent-ink);border:none;border-radius:8px;padding:7px 11px;font-size:12px;font-weight:500;cursor:pointer;"><i class="ti ti-edit" style="font-size:13px;"></i> New</button></div></div>
     ${_searchBar('Search messages by client…','.thread-card','msgs-noresults')}
     ${threads.length===0?emptyState({icon:'ti-message-2',title:'No conversations yet',body:'Messages with your clients show up here. Tap New message to start one, or they\u2019ll appear when a client messages you from their app.'}):''}
-    ${[...threads].filter(t=>!_shotMode()||_SAMPLE_IDS.indexOf(t.id)>=0).sort((a,b)=>(b.unread?1:0)-(a.unread?1:0)).map(t=>{const c=CL[t.id];if(!c)return'';return`<div onclick="nav('chat','${t.id}')" class="thread-card" data-search="${(((c&&c.name)||'')+' '+(t.preview||'')).toLowerCase().normalize('NFD').replace(/[̀-ͯ]/g,'').replace(/['‘’`"]/g,'').replace(/[^a-z0-9 ]/g,' ').replace(/\s+/g,' ').trim()}" style="display:flex;align-items:center;gap:12px;padding:12px 16px;border-bottom:1px solid var(--p-line2);cursor:pointer;"><div style="position:relative;">${av(c,44)}${t.unread?`<div style="position:absolute;top:0;right:0;width:10px;height:10px;border-radius:50%;background:var(--accent);border:2px solid #0b1816;"></div>`:''}</div><div style="flex:1;min-width:0;"><div style="font-size:14px;font-weight:${t.unread?500:400};color:var(--p-ink);">${_clientNameLink(t.id,c.name,{color:'var(--p-ink)'})}</div><div style="font-size:12px;color:${t.unread?'#aaa':'#555'};overflow:hidden;text-overflow:ellipsis;white-space:nowrap;">${_fileEsc(t.preview)}</div></div><div style="text-align:right;"><div style="font-size:11px;color:var(--p-mut);">${_fileEsc(t.time)}</div>${t.unread?`<div style="width:8px;height:8px;border-radius:50%;background:var(--accent);margin:4px 0 0 auto;"></div>`:''}</div></div>`}).join('')}
+    ${[...threads].filter(t=>!_shotMode()||_SAMPLE_IDS.indexOf(t.id)>=0).sort((a,b)=>(b.unread?1:0)-(a.unread?1:0)).map(t=>{const c=CL[t.id];if(!c)return'';return`<div onclick="nav('chat','${t.id}')" class="thread-card" data-search="${(((c&&c.name)||'')+' '+(t.preview||'')).toLowerCase().normalize('NFD').replace(/[̀-ͯ]/g,'').replace(/['‘’`"]/g,'').replace(/[^a-z0-9 ]/g,' ').replace(/\s+/g,' ').trim()}" style="display:flex;align-items:center;gap:12px;padding:12px 16px;border-bottom:1px solid var(--p-line2);cursor:pointer;"><div style="position:relative;">${av(c,44)}${t.unread?`<div style="position:absolute;top:0;right:0;width:10px;height:10px;border-radius:50%;background:var(--accent);border:2px solid #0b1816;"></div>`:''}</div><div style="flex:1;min-width:0;"><div style="font-size:14px;font-weight:${t.unread?500:400};color:var(--p-ink);">${_clientNameLink(t.id,c.name,{color:'var(--p-ink)'})}</div><div style="font-size:12px;color:${t.unread?'#aaa':'#555'};overflow:hidden;text-overflow:ellipsis;white-space:nowrap;">${_fileEsc(t.preview)}</div></div><div style="text-align:right;"><div style="font-size:11px;color:var(--p-mut);">${_fileEsc(_fmtMsgTime(t))}</div>${t.unread?`<div style="width:8px;height:8px;border-radius:50%;background:var(--accent);margin:4px 0 0 auto;"></div>`:''}</div></div>`}).join('')}
     ${_noRes('msgs-noresults','No conversations match your search.')}`;
   } else {
     // The preset automations ship with illustrative send stats. Only surface them in Screenshot
@@ -14258,7 +14274,7 @@ function renderChat(id){
       else if(_mine&&m.status==='failed')_st='<span style="color:var(--p-red);">Not delivered · Tap to resend</span>';
       else if(_mine&&m.status==='pending')_st='<span style="color:var(--p-amber);">Will send when they join</span>';
       const _tap=(_mine&&(m.status==='failed'||m.status==='pending')&&m._mid)?`onclick="_retryProviderMsg('${id}','${m._mid}')" style="cursor:pointer;"`:'';
-      return`<div ${_tap} style="align-self:${_mine?'flex-end':'flex-start'};max-width:80%;width:fit-content;min-width:0;${_tap?'cursor:pointer;':''}">${m.text?`<div class="${_mine?'bub-me':'bub-them'}">${_fileEsc(m.text)}</div>`:''}${imgs.length?`<div style="display:flex;flex-wrap:wrap;gap:4px;${m.text?'margin-top:4px;':''}justify-content:${_mine?'flex-end':'flex-start'};">${imgs.map(src=>`<img src="${_imgSrc(src)}" alt="shared photo" onclick="openPhoto(this.src)" style="width:${imgs.length>1?'92px':'180px'};height:${imgs.length>1?'92px':'auto'};${imgs.length>1?'object-fit:cover;':''}border-radius:12px;display:block;border:1px solid var(--p-line);cursor:zoom-in;">`).join('')}</div>`:''}<div style="font-size:12px;color:var(--p-mut);margin-top:3px;${_mine?'text-align:right;':''}">${_fileEsc(m.time)}${_st?' · '+_st:''}</div></div>`;}).join('')}
+      return`<div ${_tap} style="align-self:${_mine?'flex-end':'flex-start'};max-width:80%;width:fit-content;min-width:0;${_tap?'cursor:pointer;':''}">${m.text?`<div class="${_mine?'bub-me':'bub-them'}">${_fileEsc(m.text)}</div>`:''}${imgs.length?`<div style="display:flex;flex-wrap:wrap;gap:4px;${m.text?'margin-top:4px;':''}justify-content:${_mine?'flex-end':'flex-start'};">${imgs.map(src=>`<img src="${_imgSrc(src)}" alt="shared photo" onclick="openPhoto(this.src)" style="width:${imgs.length>1?'92px':'180px'};height:${imgs.length>1?'92px':'auto'};${imgs.length>1?'object-fit:cover;':''}border-radius:12px;display:block;border:1px solid var(--p-line);cursor:zoom-in;">`).join('')}</div>`:''}<div style="font-size:12px;color:var(--p-mut);margin-top:3px;${_mine?'text-align:right;':''}">${_fileEsc(_fmtMsgTime(m))}${_st?' · '+_st:''}</div></div>`;}).join('')}
   </div>
   <div style="position:absolute;bottom:calc(60px + env(safe-area-inset-bottom, 0px));left:0;right:0;background:var(--surf1);border-top:1px solid var(--p-line2);padding:8px 12px;">
     <div id="ai-suggest-bar" style="display:none;flex-wrap:wrap;gap:6px;margin-bottom:8px;"></div>
@@ -14378,11 +14394,11 @@ function sendMsg(id,imgArg){
   if(imgs.length>MAXP){imgs=imgs.slice(0,MAXP);if(typeof proToast==='function')proToast('Sent the first '+MAXP+' photos, send the rest in another message');}
   const _prev=text||('📷 '+(imgs.length>1?imgs.length+' photos':'Photo'));
   const t=threads.find(x=>x.id===id);
-  if(t){t.preview=_prev;t.time='Just now';}
+  if(t){t.preview=_prev;t.time='Just now';t.ts=Date.now();}
   // No thread yet → this is a provider-STARTED conversation (e.g. via "New message"). Create the thread
   // so it appears in the Messages inbox; previously only incoming client messages created one, so a
   // conversation the provider began was reachable only until they navigated away.
-  else if(CL[id]){threads.unshift({id:id,preview:_prev,time:'Just now',unread:false});}
+  else if(CL[id]){threads.unshift({id:id,preview:_prev,time:'Just now',ts:Date.now(),unread:false});}
   if(!msgStore[id])msgStore[id]=[];
   const _mid=_genMid();
   // Delivery status the provider can actually see: demo maya is always local; a real joined client
@@ -14390,12 +14406,12 @@ function sendMsg(id,imgArg){
   // 'pending' and gets flushed automatically once they open their app (see _flushPendingProviderMsgs).
   const _joined=(id!=='maya'&&CL[id]&&!!CL[id]._token);
   const _status=(id==='maya')?'sent':(_joined?'sending':'pending');
-  msgStore[id].push({from:'me',text,imgs,time:'Just now',_mid,status:_status});
+  msgStore[id].push({from:'me',text,imgs,time:'Just now',ts:Date.now(),_mid,status:_status});
   try{saveMessages();}catch(e){}
   if(inp)inp.value='';
   renderChat(id);
   // Maya is the local demo client, keep the old same-browser bus for her
-  if(id==='maya'){try{SlickBridge.post('client-message',{text,imgs,providerId:'jess',time:'Just now'});}catch(e){}}
+  if(id==='maya'){try{SlickBridge.post('client-message',{text,imgs,providerId:'jess',time:'Just now',ts:Date.now()});}catch(e){}}
   // Any real, invited client, send for real via the server (text and photos both
   // reach their device now) so it lands wherever they are.
   else{
@@ -16047,9 +16063,9 @@ async function _sendAutomationMsg(cid,msg){
   const text=String(msg||'').replace(/\{client_name\}/gi,first);
   let _mid;try{_mid=(self.crypto&&crypto.randomUUID)?crypto.randomUUID():(Date.now().toString(36)+Math.random().toString(36).slice(2));}catch(e){_mid=Date.now().toString(36)+Math.random().toString(36).slice(2);}
   if(!msgStore[cid])msgStore[cid]=[];
-  msgStore[cid].push({from:'me',text,time:'Just now',_mid,status:'sending'});
+  msgStore[cid].push({from:'me',text,time:'Just now',ts:Date.now(),_mid,status:'sending'});
   const t=threads.find(x=>x.id===cid);if(t)t.preview=text.slice(0,60);
-  if(cid==='maya'){try{SlickBridge.post('client-message',{text,imgs:[],providerId:'jess',time:'Just now'});}catch(e){}try{if(typeof _setProviderMsgStatus==='function')_setProviderMsgStatus(cid,_mid,'sent');}catch(e){}}
+  if(cid==='maya'){try{SlickBridge.post('client-message',{text,imgs:[],providerId:'jess',time:'Just now',ts:Date.now()});}catch(e){}try{if(typeof _setProviderMsgStatus==='function')_setProviderMsgStatus(cid,_mid,'sent');}catch(e){}}
   else{try{await _sendProviderMessageToClient(cid,text,[],false,undefined,_mid);}catch(e){}}
   const st=(msgStore[cid]||[]).find(m=>m&&m._mid===_mid);
   return (st&&st.status)||'sent';
@@ -18695,7 +18711,7 @@ async function _sendDepositForms(cands,silent){
 function _depositNotify(cands){
   try{
     if(typeof notifFeed==='undefined'||!Array.isArray(notifFeed))return;
-    cands.forEach(x=>{if(notifFeed.some(n=>n.id==='dep_'+x.invoiceId))return;notifFeed.unshift({id:'dep_'+x.invoiceId,type:'form',icon:'ti-file-check',col:'var(--p-purple-bg)',ic:'var(--p-purple)',title:'Intake & consent sent',body:x.name+' paid a deposit \u2014 their tattoo intake & consent link is on the way.',time:'Just now',read:false,action:'client',data:x.clientId});});
+    cands.forEach(x=>{if(notifFeed.some(n=>n.id==='dep_'+x.invoiceId))return;notifFeed.unshift({id:'dep_'+x.invoiceId,type:'form',icon:'ti-file-check',col:'var(--p-purple-bg)',ic:'var(--p-purple)',title:'Intake & consent sent',body:x.name+' paid a deposit \u2014 their tattoo intake & consent link is on the way.',time:'Just now',ts:Date.now(),read:false,action:'client',data:x.clientId});});
     if(typeof updateBadge==='function')updateBadge();
   }catch(e){}
 }
@@ -19946,7 +19962,7 @@ async function syncClientEvents(){
         // them onto the client's photo chart (tagged source:'message') so they're not stranded.
         const mImgs=(Array.isArray(payload.photos)?payload.photos:[]).filter(_validImgSrc);
         const preview=payload.text||(mImgs.length?('📷 '+(mImgs.length>1?mImgs.length+' photos':'Photo')):'Sent a message');
-        msgStore[cid].push({from:'them',text:payload.text||'',imgs:mImgs,time:'Just now',evId:ev.id});
+        msgStore[cid].push({from:'them',text:payload.text||'',imgs:mImgs,time:'Just now',ts:(ev.created_at?(new Date(ev.created_at).getTime()||Date.now()):Date.now()),evId:ev.id});
         if(mImgs.length&&c){
           if(!capturedPhotos[cid])capturedPhotos[cid]=[];
           const baseTs=(ev.created_at?(new Date(ev.created_at).getTime()||Date.now()):Date.now());
@@ -19955,13 +19971,13 @@ async function syncClientEvents(){
           touchedPhotos=true;
         }
         const th=threads.find(x=>x.id===cid);
-        if(th){th.preview=preview;th.time='Just now';th.unread=true;
+        if(th){th.preview=preview;th.time='Just now';th.ts=Date.now();th.unread=true;
           // Move this conversation to the top so the list stays ordered by most-recent activity
           // (the render sort only groups unread-first and is stable, so array order = recency).
           const ti=threads.indexOf(th);if(ti>0){threads.splice(ti,1);threads.unshift(th);}}
-        else{threads.unshift({id:cid,preview,time:'Just now',unread:true});}
+        else{threads.unshift({id:cid,preview,time:'Just now',ts:Date.now(),unread:true});}
         notifFeed.unshift({id:'evn'+ev.id,type:'message',icon:'ti-message-circle',col:'var(--p-blue-bg)',ic:'var(--p-blue)',
-          title:'New message',body:`${name}: "${preview}"`,time:'Just now',read:false,action:'chat',data:cid});
+          title:'New message',body:`${name}: "${preview}"`,time:'Just now',ts:Date.now(),read:false,action:'chat',data:cid});
         if(_notifOn('newMessage'))providerSystemNotify('New message',`${name}: ${preview}`);
         touchedMsgs=true;touchedNotif=true;msgClientIds.push(cid);
       }else if(ev.kind==='checkin'){
@@ -20011,7 +20027,7 @@ async function syncClientEvents(){
           const photoNote=ciPhotos.length?` \ud83d\udcf7 ${ciPhotos.length} photo${ciPhotos.length>1?'s':''} attached.`:'';
           notifFeed.unshift({id:'evc'+ev.id,type:'checkin',icon:ciPhotos.length?'ti-camera':'ti-clipboard-check',col:'var(--p-surf2)',ic:'var(--p-green)',
             title:'Pre-visit check-in',body:`${name} completed a check-in${ci.dateLabel?' for '+ci.dateLabel:''}.${fl}${photoNote}`,
-            time:'Just now',read:false,action:'checkin',data:ci.id,clientId:cid});
+            time:'Just now',ts:Date.now(),read:false,action:'checkin',data:ci.id,clientId:cid});
           if(_notifOn('newCheckin'))providerSystemNotify('Pre-visit check-in',`${name} \u00b7 ${ci.treatment||''} \u00b7 ${ci.dateLabel||''}${photoNote}`);
           touchedCheckins=true;touchedNotif=true;
         }
@@ -20058,7 +20074,7 @@ async function syncClientEvents(){
         const fl=flagged?` \u26a0 Flagged: ${flagged.join(', ')}.`:'';
         notifFeed.unshift({id:'evf'+ev.id,type:'form',icon:flagged?'ti-alert-triangle':'ti-clipboard-check',col:flagged?'var(--p-red-bg)':'var(--p-surf2)',ic:flagged?'var(--p-red)':'var(--p-green)',
           title:flagged?'Intake flagged for review':'Form completed',body:`${name} completed ${title}.${fl}`,
-          time:'Just now',read:false,action:'form',data:cid,formEvId:ev.id});
+          time:'Just now',ts:Date.now(),read:false,action:'form',data:cid,formEvId:ev.id});
         if(_notifOn('formSigned'))providerSystemNotify(flagged?'Intake flagged for review':'Form completed',`${name} \u00b7 ${title}${fl}`);
         touchedForms=true;touchedNotif=true;
       }else if(ev.kind==='contact'){
@@ -20075,7 +20091,7 @@ async function syncClientEvents(){
             touchedClients=true;
             try{saveClients();}catch(e){}
             notifFeed.unshift({id:'evct'+ev.id,type:'contact',icon:'ti-address-book',col:'var(--p-blue-bg)',ic:'var(--p-blue)',
-              title:'Contact info updated',body:`${name} updated their ${parts.join(' and ')}.`,time:'Just now',read:false,action:'client',data:cid});
+              title:'Contact info updated',body:`${name} updated their ${parts.join(' and ')}.`,time:'Just now',ts:Date.now(),read:false,action:'client',data:cid});
             providerSystemNotify('Contact info updated',`${name} · ${parts.join(' and ')}`);
             touchedNotif=true;
           }
@@ -20085,7 +20101,7 @@ async function syncClientEvents(){
         // subscription) is already gone server-side; surface this so the provider can remove
         // the client's record here per their own retention obligations.
         notifFeed.unshift({id:'evdel'+ev.id,type:'delete-request',icon:'ti-user-x',col:'var(--p-red-bg)',ic:'var(--p-red)',
-          title:'Data deletion request',body:`${name} asked to delete their data. Review and remove their record if appropriate.`,time:'Just now',read:false,action:'client',data:cid});
+          title:'Data deletion request',body:`${name} asked to delete their data. Review and remove their record if appropriate.`,time:'Just now',ts:Date.now(),read:false,action:'client',data:cid});
         providerSystemNotify('Data deletion request',`${name} requested deletion of their data.`);
         touchedNotif=true;
       }else if(ev.kind==='vc_submit'){
@@ -20094,7 +20110,7 @@ async function syncClientEvents(){
         vcInvites[cid]={...(vcInvites[cid]||{}),invited:true,submitted:true,reviewed:false};   // a fresh submission must return to "needs review", even if a prior one was reviewed
         try{if(typeof persistVcState==='function')persistVcState();}catch(e){}
         notifFeed.unshift({id:'evv'+ev.id,type:'vc',icon:'ti-sparkles',col:'var(--p-purple-bg)',ic:'var(--p-purple)',
-          title:'Virtual consult submitted',body:`${name} sent photos for review.`,time:'Just now',read:false,action:'client',data:cid});
+          title:'Virtual consult submitted',body:`${name} sent photos for review.`,time:'Just now',ts:Date.now(),read:false,action:'client',data:cid});
         if(_notifOn('photoUploaded'))providerSystemNotify('Virtual consult submitted',`${name} sent photos for your review.`);
         touchedVc=true;touchedNotif=true;
       }
@@ -20335,7 +20351,7 @@ function openPhoto(src){
 function pushBookingNotif(o){
   notifFeed.unshift({id:'nb'+Date.now()+Math.random().toString(36).slice(2,4),type:'booking',
     icon:o.icon||'ti-calendar-plus',col:o.col||'var(--p-surf2)',ic:o.ic||'var(--p-green)',
-    title:o.title,body:o.body,time:'Just now',read:false,action:'requests',data:null});
+    title:o.title,body:o.body,time:'Just now',ts:Date.now(),read:false,action:'requests',data:null});
   updateBadge();
 }
 
@@ -20345,7 +20361,7 @@ function pushCheckinNotif(ci){
   notifFeed.unshift({id:'nci'+Date.now()+Math.random().toString(36).slice(2,4),type:'checkin',
     icon:'ti-clipboard-check',col:'var(--p-surf2)',ic:'var(--p-green)',
     title:'Pre-visit check-in',body:`${ci.client} completed a check-in for ${ci.dateLabel}.${fl}`,
-    time:'Just now',read:false,action:'checkin',data:ci.id,clientId:(ci.clientId||null)});
+    time:'Just now',ts:Date.now(),read:false,action:'checkin',data:ci.id,clientId:(ci.clientId||null)});
   updateBadge();
 }
 function markCheckinRead(id){if(!id)return;_markCheckinReadLog(id);let hit=false;checkins.forEach(c=>{if(c.id===id&&!c.read){c.read=true;hit=true;}});if(hit){try{_persistCheckinsNow();}catch(e){}}updateBadge();}
@@ -20660,7 +20676,7 @@ SlickBridge.on('form-completed',d=>{
   notifFeed.unshift({id:'nf'+Date.now()+Math.random().toString(36).slice(2,4),type:'form',
     icon:flagged?'ti-alert-triangle':'ti-clipboard-check',col:flagged?'var(--p-red-bg)':'var(--p-surf2)',ic:flagged?'var(--p-red)':'var(--p-green)',
     title:flagged?'Intake flagged for review':'Form completed',
-    body:`${nm} completed ${title}.${fl}`,time:'Just now',read:false,action:'client',data:cid});
+    body:`${nm} completed ${title}.${fl}`,time:'Just now',ts:Date.now(),read:false,action:'client',data:cid});
   updateBadge();
   if(_notifOn('formSigned'))providerSystemNotify(flagged?'Intake flagged for review':'Form completed',`${nm} · ${title}${fl}`);
   if(document.getElementById('client-screen-'+cid))renderClient(cid);
