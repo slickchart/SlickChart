@@ -3956,6 +3956,113 @@ function _sqc_remove(){
   if(typeof confirmModal==='function')confirmModal({title:'Remove '+ids.length+' client'+(ids.length===1?'':'s')+'?',body:'This removes them from SlickChart only (never from Square). Anything left checked — including any marked “HAS YOUR DATA” — will be removed.',action:'Remove'},go);
   else go();
 }
+// ── Clean up MY client list (Settings → Your data) ──────────────────────────────────────────────
+// Rescue for a SlickChart roster (CL) polluted by the bad Square merge. Unlike "Remove imported Square
+// clients" (which only sees source:'square'), this reviews the WHOLE roster and PROTECTS your real ones
+// two ways: (1) anyone you've done real work with (forms, photos, notes, summaries, messages, birthday
+// — via _clientHasWork), and (2) anyone who is an EMAIL SUBSCRIBER on your Square (their email/phone
+// matches your Square Marketing list — your true ~452). Everyone else is reviewable, newest-first (the
+// injected strangers arrived in a burst), with a 734/area-code + "no contact info" filter to corner them.
+// Removing here only affects SlickChart (never Square) and tombstones the server rows so they don't
+// resync. Real clients are protected and never selectable.
+let _lcAll=null,_lcSel=null,_lcQuery='',_lcBusy=false,_lcNoContact=false,_lcErr='',_lcSubReached=false;
+function _lcParseTs(id){try{var m=String(id||'').match(/^c(\d{10,})$/);return m?parseInt(m[1],10):0;}catch(e){return 0;}}
+function _lcBox(html){var ov=document.getElementById('list-cleanup');if(!ov)return;ov.innerHTML='<div style="background:var(--surf1);border-top:1px solid var(--p-line);border-radius:16px 16px 0 0;padding:18px;max-height:92%;overflow:auto;">'+_sheetBar()+html+'</div>';}
+async function _openListCleanup(){
+  var ov=document.getElementById('list-cleanup');if(ov)ov.remove();
+  ov=document.createElement('div');ov.id='list-cleanup';
+  ov.style.cssText='position:fixed;inset:0;margin:0 auto;width:390px;max-width:100%;z-index:10000;background:rgba(0,0,0,.6);display:flex;flex-direction:column;justify-content:flex-end;';
+  ov.onclick=function(e){if(_lcBusy)return;if(e.target===ov)ov.remove();};
+  (document.querySelector('.shell')||document.body).appendChild(ov);
+  _lcBox('<div style="font-size:16px;font-weight:600;color:var(--p-ink);margin-bottom:6px;">Clean up my client list</div><div style="font-size:13px;color:var(--p-mut);padding:14px 0;text-align:center;"><div class="spin" style="margin:0 auto 10px;"></div>Checking your Square subscribers to protect your real clients…</div>');
+  // Best-effort: pull your Square subscribers so real clients are protected by email/phone. If Square
+  // isn't connected we still run — just protecting by "has your work" + letting you review the rest.
+  var subEmails=new Set(),subPhones=new Set();_lcSubReached=false;_lcErr='';
+  try{
+    var data=await _sqFetch('/api/square/customers');
+    if(data&&Array.isArray(data.customers)){
+      _lcSubReached=true;
+      data.customers.forEach(function(c){ if(!c||!c.subscribed)return;
+        var em=String(c.email||'').toLowerCase().trim();if(em)subEmails.add(em);
+        var ph=_sqDigits(c.phone);if(ph.length>=7)subPhones.add(ph);
+      });
+    }
+  }catch(e){ _lcErr=(e&&e.code==='nosquare')?'Square isn’t connected, so I’m protecting by your saved work only. Connect Square (Settings → Apps & connections) to also protect by your subscriber list.':''; }
+  _lcAll=Object.keys(CL).map(function(id){
+    var c=CL[id]||{};
+    var em=String(c.email||'').toLowerCase().trim();
+    var ph=_sqDigits(c.phone);
+    var isSub=(em&&subEmails.has(em))||(ph.length>=7&&subPhones.has(ph));
+    var work=_clientHasWork(id);
+    return {id:id,name:c.name||'(no name)',email:c.email||'',phone:c.phone||'',
+      work:work,subscribed:!!isSub,prot:(work||isSub),ts:_lcParseTs(id)};
+  });
+  _lcAll.sort(function(a,b){return (b.ts||0)-(a.ts||0);});   // newest first — the injection burst floats up
+  _lcSel=new Set();_lcQuery='';_lcNoContact=false;
+  _lc_render();
+}
+function _lc_render(){
+  var ov=document.getElementById('list-cleanup');if(!ov||!_lcAll)return;
+  var total=_lcAll.length;
+  var subN=_lcAll.filter(function(c){return c.subscribed;}).length;
+  var workN=_lcAll.filter(function(c){return c.work&&!c.subscribed;}).length;
+  var protN=_lcAll.filter(function(c){return c.prot;}).length;
+  var reviewable=_lcAll.filter(function(c){return !c.prot;});
+  var qraw=_lcQuery,q=_sqNormName(qraw),qd=qraw.replace(/\D/g,'');
+  var shown=reviewable;
+  if(q||qd){shown=shown.filter(function(c){
+    if(q&&(_sqNormName(c.name).indexOf(q)>=0||String(c.email||'').toLowerCase().indexOf(qraw.toLowerCase())>=0))return true;
+    if(qd&&qd.length>=3&&_sqDigits(c.phone).indexOf(qd)>=0)return true;
+    return false;
+  });}
+  if(_lcNoContact){shown=shown.filter(function(c){return !String(c.email||'').trim()&&_sqDigits(c.phone).length<7;});}
+  var narrowed=!!(q||(qd&&qd.length>=3)||_lcNoContact);
+  _lcShownIds=shown.map(function(c){return c.id;}).filter(Boolean);
+  var rows=shown.slice(0,600).map(function(c){
+    var sel=_lcSel.has(c.id);
+    return '<label style="display:flex;align-items:center;gap:10px;padding:8px 10px;border:1px solid var(--p-line);border-radius:9px;margin-bottom:5px;cursor:pointer;background:var(--p-surf);">'
+      +'<input type="checkbox" '+(sel?'checked':'')+' onchange="_lc_toggle(\''+_jsAttr(c.id)+'\')" style="width:17px;height:17px;accent-color:var(--p-red);flex-shrink:0;">'
+      +'<div style="flex:1;min-width:0;"><div style="font-size:13px;color:var(--p-ink);">'+_fileEsc(c.name)+'</div><div style="font-size:11px;color:var(--p-mut);overflow:hidden;text-overflow:ellipsis;white-space:nowrap;">'+_fileEsc([c.email,c.phone].filter(Boolean).join(' · ')||'no contact on file')+'</div></div>'
+      +'</label>';
+  }).join('');
+  var selCount=_lcSel.size;
+  _lcBox(
+    '<div style="font-size:16px;font-weight:600;color:var(--p-ink);margin-bottom:4px;">Clean up my client list</div>'
+    +'<div style="font-size:12px;color:var(--p-mut);line-height:1.55;margin-bottom:10px;">'+total+' clients in your SlickChart list. <b style="color:var(--p-green);">'+protN+' are protected</b> (hidden, can’t be removed)'+(_lcSubReached?(' — <b>'+subN+' email subscribers</b> (your real list)'+(workN?(' + '+workN+' with your saved work'):'')):(' — '+protN+' with your saved work'))+'. That leaves <b>'+reviewable.length+'</b> to review — this is where the strangers are. Removing them affects SlickChart only, never Square.</div>'
+    +(_lcErr?('<div style="background:var(--p-amber-bg);border:1px solid var(--p-amber-line);border-radius:9px;padding:8px 11px;margin-bottom:10px;font-size:11.5px;color:var(--p-amber);line-height:1.5;">'+_fileEsc(_lcErr)+'</div>'):'')
+    +(reviewable.length?(
+      '<input placeholder="Search name, email, or phone — e.g. 734" value="'+_urlAttr(_lcQuery)+'" oninput="_lcQuery=this.value;_lc_render();" style="width:100%;box-sizing:border-box;background:var(--p-surf);border:1px solid var(--p-line);border-radius:9px;padding:9px 11px;font-size:13px;color:var(--p-ink);margin-bottom:8px;">'
+      +'<label style="display:flex;align-items:center;gap:8px;margin-bottom:8px;cursor:pointer;font-size:12px;color:var(--p-mut);"><input type="checkbox" '+(_lcNoContact?'checked':'')+' onchange="_lcNoContact=this.checked;_lc_render();" style="width:16px;height:16px;accent-color:var(--p-red);"> Only show ones with no email &amp; no phone</label>'
+      +(narrowed?'<div style="font-size:11px;color:var(--p-amber);margin:-2px 0 8px;line-height:1.45;">Showing '+_lcShownIds.length+' of the '+reviewable.length+' reviewable. If these are all strangers, tap “Select all shown” → Remove.</div>':'<div style="font-size:11.5px;color:var(--p-red);background:var(--p-red-bg);border:1px solid var(--p-red);border-radius:8px;padding:8px 10px;margin-bottom:8px;line-height:1.45;"><b>Narrow before selecting all</b> — search an out-of-area code (like 734) or tick “no email &amp; no phone”. Without a filter, “select all” could include a real never-came-in lead.</div>')
+      +'<div style="display:flex;gap:8px;margin-bottom:10px;"><button onclick="_lc_all(1)" style="flex:1;background:none;border:1px solid '+(narrowed?'var(--p-line)':'var(--p-line2)')+';color:'+(narrowed?'var(--p-mut)':'var(--p-mut2)')+';border-radius:8px;padding:7px;font-size:12px;cursor:pointer;font-family:inherit;">Select all shown ('+_lcShownIds.length+')</button><button onclick="_lc_all(0)" style="flex:1;background:none;border:1px solid var(--p-line);color:var(--p-mut);border-radius:8px;padding:7px;font-size:12px;cursor:pointer;font-family:inherit;">Select none</button></div>'
+      +rows
+      +(shown.length>600?'<div style="font-size:11px;color:var(--p-mut);text-align:center;padding:6px;">Showing first 600 — narrow with search or the filter.</div>':'')
+      +'<button onclick="_lc_remove()" class="btnp" style="width:100%;border-radius:10px;margin-top:8px;background:var(--p-red);'+(selCount?'':'opacity:.5;')+'"><i class="ti ti-user-x"></i> Remove '+selCount+' from my list</button>'
+    ):'<div style="font-size:13px;color:var(--p-green);padding:10px 2px;line-height:1.5;">Every client is protected — a subscriber or someone you’ve worked with. Your list is clean. 🎉</div>')
+    +'<button onclick="_sheetCloseFrom(this)" style="width:100%;margin-top:8px;background:none;border:1px solid var(--p-line);color:var(--p-mut);border-radius:10px;padding:10px;font-size:13px;cursor:pointer;font-family:inherit;">Close</button>'
+  );
+}
+var _lcShownIds=[];
+function _lc_toggle(id){if(!id)return;if(_lcSel.has(id))_lcSel.delete(id);else _lcSel.add(id);_lc_render();}
+function _lc_all(on){_lcSel=new Set();if(on)(_lcShownIds||[]).forEach(function(id){if(id)_lcSel.add(id);});_lc_render();}
+function _lc_remove(){
+  var ids=Array.from(_lcSel).filter(function(id){return CL[id];});
+  if(!ids.length){_lc_render();return;}
+  var go=function(){
+    _lcBusy=true;
+    ids.forEach(function(id){try{_cleanupClientData(id);}catch(e){}try{if(typeof _deletedClientIds==='object'&&_deletedClientIds)_deletedClientIds[id]=Date.now();}catch(e){}delete CL[id];});
+    try{if(typeof _saveDeletedClients==='function')_saveDeletedClients();}catch(e){}
+    try{if(typeof _serverDeleteClients==='function')_serverDeleteClients(ids);}catch(e){}
+    try{if(typeof saveClients==='function')saveClients();}catch(e){}
+    _lcBusy=false;
+    // Drop the removed ones from the working set and re-render so the count updates live.
+    _lcAll=_lcAll.filter(function(c){return CL[c.id];});
+    _lcSel=new Set();
+    _lc_render();
+  };
+  if(typeof confirmModal==='function')confirmModal({title:'Remove '+ids.length+' from your list?',body:'This removes them from SlickChart only — never from Square. Your protected clients (subscribers and anyone with your saved work) are untouched. You can bring real ones back anytime with “Rebuild client list from Square.”',action:'Remove'},go);
+  else go();
+}
 // ── Clean up your LIVE Square customer list (Settings → Your data) ───────────────────────────────
 // Rescue for a Square customer list contaminated with other people's clients. Lists YOUR connected
 // Square's customers, PROTECTS everyone who matches your (already-cleaned) SlickChart roster — by Square
@@ -4000,7 +4107,7 @@ function _sheetBar(){
     +'<button onclick="_sheetCloseFrom(this)" aria-label="Close" style="border:none;background:var(--p-surf2);width:32px;height:32px;border-radius:50%;color:var(--p-ink);font-size:18px;line-height:1;cursor:pointer;display:flex;align-items:center;justify-content:center;flex-shrink:0;">✕</button>'
     +'</div>';
 }
-function _sheetCloseFrom(btn){try{var ov=btn.closest('#sqp,#sq-cleanup,#photo-recover,#sq-rebuild,#exp-check');if(!ov)return;if((ov.id==='sqp'&&_sqpBusy)||(ov.id==='sq-rebuild'&&_sqrBusy)||(ov.id==='exp-check'&&_expBusy))return;ov.remove();if(ov.id==='sq-cleanup'||ov.id==='sq-rebuild'){try{if(typeof renderClients==='function')renderClients();}catch(e){}}}catch(e){}}
+function _sheetCloseFrom(btn){try{var ov=btn.closest('#sqp,#sq-cleanup,#photo-recover,#sq-rebuild,#exp-check,#list-cleanup');if(!ov)return;if((ov.id==='sqp'&&_sqpBusy)||(ov.id==='sq-rebuild'&&_sqrBusy)||(ov.id==='exp-check'&&_expBusy)||(ov.id==='list-cleanup'&&_lcBusy))return;ov.remove();if(ov.id==='sq-cleanup'||ov.id==='sq-rebuild'||ov.id==='list-cleanup'){try{if(typeof renderClients==='function')renderClients();}catch(e){}}}catch(e){}}
 function _sqp_box(html){var ov=document.getElementById('sqp');if(!ov)return;ov.innerHTML='<div style="background:var(--surf1);border-top:1px solid var(--p-line);border-radius:16px 16px 0 0;padding:18px;max-height:92%;overflow:auto;">'+_sheetBar()+html+'</div>';}
 async function _openSquarePurge(){
   var ov=document.getElementById('sqp');if(ov)ov.remove();
@@ -4043,6 +4150,11 @@ function _sqp_render(){
   var subN=_sqpAll.filter(function(c){return c.subscribed;}).length;
   var protN=_sqpAll.filter(function(c){return c.prot;}).length;   // matched OR subscribed
   var reviewable=_sqpAll.filter(function(c){return !c.prot;});   // not roster-matched AND not an email subscriber
+  // Leak-still-active check: how many NON-protected customers were created in the last 3 days? If the
+  // cross-account leak were truly closed, this should be ~0 (only your own genuinely-new customers).
+  // A pile of unfamiliar recent ones means something is still writing to your Square.
+  var _now=Date.now(),_recentCut=_now-3*86400000;
+  var recentN=reviewable.filter(function(c){return c.ts&&c.ts>=_recentCut;}).length;
   var qraw=_sqpQuery, q=_sqNormName(qraw), qd=qraw.replace(/\D/g,'');
   var shown=reviewable;
   if(q||qd){
@@ -4068,6 +4180,7 @@ function _sqp_render(){
   _sqp_box(
     '<div style="font-size:16px;font-weight:600;color:var(--p-ink);margin-bottom:4px;">Clean up Square customers</div>'
     +'<div style="font-size:12px;color:var(--p-mut);line-height:1.55;margin-bottom:10px;">'+_sqpAll.length+' customers in your connected Square. <b style="color:var(--p-green);">'+protN+' are protected</b> (hidden, can’t be deleted) — <b>'+subN+' email subscribers</b> (your real list, the count you see in Square Marketing)'+(matchedN?(' + '+matchedN+' matched to SlickChart'):'')+'. That leaves <b>'+reviewable.length+'</b> non-subscribers to review — this is where the strangers are. Narrow with their out-of-area code (type <b>734</b>) or by date, then delete. <b style="color:var(--p-red);">Deleting is permanent.</b></div>'
+    +(recentN?('<div style="background:var(--p-red-bg);border:1px solid var(--p-red);border-radius:9px;padding:9px 11px;margin-bottom:10px;font-size:11.5px;color:var(--p-red);line-height:1.5;"><b>⚠️ '+recentN+' non-subscriber'+(recentN===1?'':'s')+' added in the last 3 days.</b> If these aren’t people you added yourself, something may still be writing to your Square — sort is newest-first below, so check the top rows’ dates and tell me. If they’re all older than that, the leak is stopped and this is just the existing backlog to clear.</div>'):'<div style="background:var(--p-surf2);border:1px solid var(--p-line);border-radius:9px;padding:9px 11px;margin-bottom:10px;font-size:11.5px;color:var(--p-green);line-height:1.5;">✓ No unfamiliar customers added in the last 3 days — nothing new is being injected. What’s left is the existing backlog to clear.</div>')
     +'<div style="background:var(--p-amber-bg);border:1px solid var(--p-amber-line);border-radius:9px;padding:8px 11px;margin-bottom:10px;font-size:11.5px;color:var(--p-amber);line-height:1.5;">Back up first (Square Dashboard → Import/Export → Export). Type an area code (like 734) to pull up just those numbers — check they’re unfamiliar/“never visited”, then Select all shown → Delete. Rows tagged <b>APP</b> are also sure strangers.</div>'
     +(reviewable.length?(
       '<input placeholder="Search name, email, or phone — e.g. 734" value="'+_urlAttr(_sqpQuery)+'" oninput="_sqpQuery=this.value;_sqp_render();" style="width:100%;box-sizing:border-box;background:var(--p-surf);border:1px solid var(--p-line);border-radius:9px;padding:9px 11px;font-size:13px;color:var(--p-ink);margin-bottom:8px;">'
@@ -15359,6 +15472,8 @@ function renderAccount(){
     <div style="border-top:1px solid var(--p-line);"></div>
     <div onclick="_openPhotoRecovery()" style="display:flex;align-items:center;gap:11px;padding:13px 14px;cursor:pointer;"><div style="width:38px;height:38px;border-radius:10px;background:var(--p-blue-bg);display:flex;align-items:center;justify-content:center;flex-shrink:0;"><i class="ti ti-photo-search" style="font-size:18px;color:var(--p-blue);"></i></div><div style="flex:1;"><div style="font-size:14px;font-weight:500;color:var(--p-ink);">Recover lost photos</div><div style="font-size:12px;color:var(--p-mut);">Find &amp; restore before/after photos from every backup</div></div><i class="ti ti-chevron-right" style="font-size:16px;color:var(--p-mut);"></i></div>
     ${(function(){var n=(typeof _squareImportedIds==='function')?_squareImportedIds().length:0;return n?`<div style="border-top:1px solid var(--p-line);"></div><div onclick="_openSquareCleanup()" style="display:flex;align-items:center;gap:11px;padding:13px 14px;cursor:pointer;"><div style="width:38px;height:38px;border-radius:10px;background:var(--p-red-bg);display:flex;align-items:center;justify-content:center;flex-shrink:0;"><i class="ti ti-user-x" style="font-size:18px;color:var(--p-red);"></i></div><div style="flex:1;"><div style="font-size:14px;font-weight:500;color:var(--p-ink);">Remove imported Square clients</div><div style="font-size:12px;color:var(--p-mut);">${n} client${n===1?'':'s'} imported from Square · review &amp; remove</div></div><i class="ti ti-chevron-right" style="font-size:16px;color:var(--p-mut);"></i></div>`:'';})()}
+    <div style="border-top:1px solid var(--p-line);"></div>
+    <div onclick="_openListCleanup()" style="display:flex;align-items:center;gap:11px;padding:13px 14px;cursor:pointer;"><div style="width:38px;height:38px;border-radius:10px;background:var(--p-red-bg);display:flex;align-items:center;justify-content:center;flex-shrink:0;"><i class="ti ti-users-minus" style="font-size:18px;color:var(--p-red);"></i></div><div style="flex:1;"><div style="font-size:14px;font-weight:500;color:var(--p-ink);">Clean up my client list</div><div style="font-size:12px;color:var(--p-mut);">Remove strangers from SlickChart (protects your subscribers &amp; your work)</div></div><i class="ti ti-chevron-right" style="font-size:16px;color:var(--p-mut);"></i></div>
     <div style="border-top:1px solid var(--p-line);"></div>
     <div onclick="_openSquarePurge()" style="display:flex;align-items:center;gap:11px;padding:13px 14px;cursor:pointer;"><div style="width:38px;height:38px;border-radius:10px;background:var(--p-red-bg);display:flex;align-items:center;justify-content:center;flex-shrink:0;"><i class="ti ti-eraser" style="font-size:18px;color:var(--p-red);"></i></div><div style="flex:1;"><div style="font-size:14px;font-weight:500;color:var(--p-ink);">Clean up Square customer list</div><div style="font-size:12px;color:var(--p-mut);">Remove strangers from your live Square (protects your clients)</div></div><i class="ti ti-chevron-right" style="font-size:16px;color:var(--p-mut);"></i></div>
     <div style="border-top:1px solid var(--p-line);"></div>
