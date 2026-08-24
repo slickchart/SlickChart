@@ -4090,6 +4090,146 @@ function _lc_remove(){
   if(typeof confirmModal==='function')confirmModal({title:'Remove '+ids.length+' from your list?',body:'This removes them from SlickChart only — never from Square. Your protected clients (subscribers and anyone with your saved work) are untouched. You can bring real ones back anytime with “Rebuild client list from Square.”',action:'Remove'},go);
   else go();
 }
+// ── Match SlickChart to Square (Settings → Your data) ───────────────────────────────────────────
+// Once the provider has cleaned their Square directory by hand, Square IS the source of truth. This
+// reconciles the SlickChart roster to it: (1) REMOVE clients that are no longer in Square (the strangers
+// they just deleted) — but never one that carries their saved work; (2) offer to ADD Square customers
+// missing from SlickChart. Result: the two lists line up on the provider's real clients.
+function _sqCustIndex(list){
+  var ids=new Set(),emails=new Set(),phones=new Set(),names=new Set();
+  (list||[]).forEach(function(c){if(!c)return;
+    if(c.id)ids.add(String(c.id));
+    var em=String(c.email||'').toLowerCase().trim();if(em)emails.add(em);
+    var ph=_sqDigits(c.phone);if(ph.length>=7)phones.add(ph);
+    var nm=_sqNormName(c.name);if(nm)names.add(nm);
+  });
+  return {ids:ids,emails:emails,phones:phones,names:names};
+}
+function _clInSquare(c,idx){
+  c=c||{};
+  if(c.squareId&&idx.ids.has(String(c.squareId)))return true;
+  var em=String(c.email||'').toLowerCase().trim();if(em&&idx.emails.has(em))return true;
+  var ph=_sqDigits(c.phone);if(ph.length>=7&&idx.phones.has(ph))return true;
+  var nm=_sqNormName(c.name);if(nm&&idx.names.has(nm))return true;   // name match errs toward KEEPING
+  return false;
+}
+let _smBusy=false,_smOrphans=null,_smWorkKept=0,_smMissing=null,_smMissingPhone=null,_smSel=null,_smQuery='',_smShownIds=[],_smSqCount=0;
+function _smBox(html){var ov=document.getElementById('sq-match');if(!ov)return;ov.innerHTML='<div style="background:var(--surf1);border-top:1px solid var(--p-line);border-radius:16px 16px 0 0;padding:18px;max-height:92%;overflow:auto;">'+_sheetBar()+html+'</div>';}
+async function _openSquareMatch(){
+  var ov=document.getElementById('sq-match');if(ov)ov.remove();
+  ov=document.createElement('div');ov.id='sq-match';
+  ov.style.cssText='position:fixed;inset:0;margin:0 auto;width:390px;max-width:100%;z-index:10000;background:rgba(0,0,0,.6);display:flex;flex-direction:column;justify-content:flex-end;';
+  ov.onclick=function(e){if(_smBusy)return;if(e.target===ov)ov.remove();};
+  (document.querySelector('.shell')||document.body).appendChild(ov);
+  _smBox('<div style="font-size:16px;font-weight:600;color:var(--p-ink);margin-bottom:6px;">Match SlickChart to Square</div><div style="font-size:13px;color:var(--p-mut);padding:14px 0;text-align:center;"><div class="spin" style="margin:0 auto 10px;"></div>Comparing your two lists…</div>');
+  var data=null,err=null;
+  try{ data=await _sqFetch('/api/square/customers'); }catch(e){ err=e; }
+  if(err||!data||!Array.isArray(data.customers)){
+    var msg=(err&&err.code==='nosquare')?'Connect your OWN Square first (Settings → Apps & connections → Square), then run this.':((err&&err.message)||'Could not load your Square customers.');
+    _smBox('<div style="font-size:16px;font-weight:600;color:var(--p-ink);margin-bottom:8px;">Match SlickChart to Square</div><div style="font-size:13px;color:var(--p-mut);line-height:1.6;margin-bottom:14px;">'+_fileEsc(msg)+'</div><button onclick="_sheetCloseFrom(this)" class="btnp" style="width:100%;border-radius:10px;">Close</button>');
+    return;
+  }
+  _smSqCount=data.customers.length;
+  var sqIdx=_sqCustIndex(data.customers);
+  // Orphans = in SlickChart but NOT in your (clean) Square, and no saved work → safe to remove.
+  var orphans=[],workKept=0;
+  Object.keys(CL).forEach(function(id){
+    if(_clInSquare(CL[id],sqIdx))return;
+    if(_clientHasWork(id)){workKept++;return;}
+    orphans.push(id);
+  });
+  orphans.sort(function(a,b){return _lcParseTs(b)-_lcParseTs(a);});
+  _smOrphans=orphans;_smWorkKept=workKept;
+  // Missing = in Square but not yet in SlickChart. Split subscribers (safe) from phone-only (cautioned).
+  var clIdx=_sqMineIndex();
+  var missing=data.customers.filter(function(c){return c&&c.id&&!_sqCustIsMine(c,clIdx);});
+  _smMissing=missing.filter(function(c){return c.subscribed;});
+  _smMissingPhone=missing.filter(function(c){return !c.subscribed&&!_sqIsAppCreated(c.creationSource);});
+  _smSel=new Set(orphans);   // pre-select every orphan (they're not in Square and carry no work)
+  _smQuery='';
+  _sm_render();
+}
+function _sm_render(msg){
+  var ov=document.getElementById('sq-match');if(!ov||!_smOrphans)return;
+  var clN=Object.keys(CL).length;
+  var orphans=_smOrphans;
+  var q=_sqNormName(_smQuery),qd=_smQuery.replace(/\D/g,'');
+  var shown=orphans;
+  if(q||qd){shown=orphans.filter(function(id){var c=CL[id]||{};
+    if(q&&(_sqNormName(c.name).indexOf(q)>=0||String(c.email||'').toLowerCase().indexOf(_smQuery.toLowerCase())>=0))return true;
+    if(qd&&qd.length>=3&&_sqDigits(c.phone).indexOf(qd)>=0)return true;
+    return false;
+  });}
+  _smShownIds=shown.slice();
+  var rows=shown.slice(0,600).map(function(id){
+    var c=CL[id]||{};var sel=_smSel.has(id);
+    return '<label style="display:flex;align-items:center;gap:10px;padding:8px 10px;border:1px solid var(--p-line);border-radius:9px;margin-bottom:5px;cursor:pointer;background:var(--p-surf);">'
+      +'<input type="checkbox" '+(sel?'checked':'')+' onchange="_sm_toggle(\''+_jsAttr(id)+'\')" style="width:17px;height:17px;accent-color:var(--p-red);flex-shrink:0;">'
+      +'<div style="flex:1;min-width:0;"><div style="font-size:13px;color:var(--p-ink);">'+_fileEsc(c.name||'(no name)')+'</div><div style="font-size:11px;color:var(--p-mut);overflow:hidden;text-overflow:ellipsis;white-space:nowrap;">'+_fileEsc([c.email,c.phone].filter(Boolean).join(' · ')||'no contact on file')+'</div></div>'
+      +'</label>';
+  }).join('');
+  var selCount=_smSel.size;
+  var addSub=(_smMissing||[]).length,addPhone=(_smMissingPhone||[]).length;
+  _smBox(
+    '<div style="font-size:16px;font-weight:600;color:var(--p-ink);margin-bottom:4px;">Match SlickChart to Square</div>'
+    +'<div style="font-size:12px;color:var(--p-mut);line-height:1.55;margin-bottom:10px;">SlickChart has <b style="color:var(--p-ink);">'+clN+'</b> clients · your Square has <b style="color:var(--p-ink);">'+_smSqCount+'</b>. This lines them up on your real clients. Nothing here touches Square.</div>'
+    +(msg?('<div role="status" style="font-size:12.5px;color:var(--p-green);background:var(--p-surf2);border:1px solid var(--p-line);border-radius:9px;padding:9px 11px;margin-bottom:12px;">'+_fileEsc(msg)+'</div>'):'')
+    +(_smWorkKept?('<div style="font-size:11.5px;color:var(--p-green);background:var(--p-surf2);border:1px solid var(--p-line);border-radius:9px;padding:8px 11px;margin-bottom:10px;line-height:1.5;">🛡️ '+_smWorkKept+' client'+(_smWorkKept===1?'':'s')+' not in Square but carrying your saved work (notes, photos, forms) '+(_smWorkKept===1?'is':'are')+' kept — never removed.</div>'):'')
+    // ── Step 1: remove orphans ──
+    +'<div style="font-size:13px;font-weight:600;color:var(--p-ink);margin:4px 0 6px;">1 · Remove strangers still in SlickChart</div>'
+    +(orphans.length?(
+      '<div style="font-size:12px;color:var(--p-mut);line-height:1.5;margin-bottom:8px;"><b style="color:var(--p-red);">'+orphans.length+'</b> SlickChart client'+(orphans.length===1?'':'s')+' '+(orphans.length===1?'is':'are')+' no longer in your Square — these are the strangers you removed. None have your saved work, so they’re pre-checked. Untick any you want to keep.</div>'
+      +(orphans.length>12?'<input placeholder="Search these (name / email / phone)" value="'+_urlAttr(_smQuery)+'" oninput="_smQuery=this.value;_sm_render();" style="width:100%;box-sizing:border-box;background:var(--p-surf);border:1px solid var(--p-line);border-radius:9px;padding:9px 11px;font-size:13px;color:var(--p-ink);margin-bottom:8px;">':'')
+      +'<div style="display:flex;gap:8px;margin-bottom:10px;"><button onclick="_sm_all(1)" style="flex:1;background:none;border:1px solid var(--p-line);color:var(--p-mut);border-radius:8px;padding:7px;font-size:12px;cursor:pointer;font-family:inherit;">Select all shown ('+_smShownIds.length+')</button><button onclick="_sm_all(0)" style="flex:1;background:none;border:1px solid var(--p-line);color:var(--p-mut);border-radius:8px;padding:7px;font-size:12px;cursor:pointer;font-family:inherit;">Select none</button></div>'
+      +rows
+      +(shown.length>600?'<div style="font-size:11px;color:var(--p-mut);text-align:center;padding:6px;">Showing first 600 — search to narrow.</div>':'')
+      +'<button onclick="_sm_removeOrphans()" class="btnp" style="width:100%;border-radius:10px;margin-top:8px;background:var(--p-red);'+(selCount?'':'opacity:.5;')+'"><i class="ti ti-user-x"></i> Remove '+selCount+' from SlickChart</button>'
+    ):'<div style="font-size:12.5px;color:var(--p-green);line-height:1.5;padding:2px 0 6px;">✓ Every SlickChart client matches someone in your Square. Nothing extra to remove.</div>')
+    // ── Step 2: add missing ──
+    +((addSub||addPhone)?(
+      '<div style="border-top:1px solid var(--p-line);margin-top:14px;padding-top:12px;"></div>'
+      +'<div style="font-size:13px;font-weight:600;color:var(--p-ink);margin-bottom:6px;">2 · Add clients from Square not yet here</div>'
+      +(addSub?('<div style="font-size:12px;color:var(--p-mut);line-height:1.5;margin-bottom:8px;"><b style="color:var(--p-green);">'+addSub+'</b> of your email subscribers (real clients) aren’t in SlickChart yet.</div><button onclick="_sm_addMissing(\'sub\')" class="btnp" style="width:100%;border-radius:10px;margin-bottom:'+(addPhone?'10px':'0')+';"><i class="ti ti-download"></i> Add '+addSub+' subscriber'+(addSub===1?'':'s')+'</button>'):'')
+      +(addPhone?('<div style="font-size:11.5px;color:var(--p-mut);line-height:1.5;margin:'+(addSub?'4':'0')+'px 0 8px;">'+addPhone+' more are phone-only (no email). These are in your Square, so if your Square is clean they’re your real leads.</div><button onclick="_sm_addMissing(\'phone\')" style="width:100%;border-radius:10px;background:none;border:1px solid var(--p-line);color:var(--p-mut);padding:11px;font-size:13px;cursor:pointer;font-family:inherit;">Add '+addPhone+' phone-only contact'+(addPhone===1?'':'s')+'</button>'):'')
+    ):'')
+    +'<button onclick="_sheetCloseFrom(this)" style="width:100%;margin-top:10px;background:none;border:1px solid var(--p-line);color:var(--p-mut);border-radius:10px;padding:10px;font-size:13px;cursor:pointer;font-family:inherit;">Close</button>'
+  );
+}
+function _sm_toggle(id){if(!id)return;if(_smSel.has(id))_smSel.delete(id);else _smSel.add(id);_sm_render();}
+function _sm_all(on){_smSel=new Set();if(on)(_smShownIds||[]).forEach(function(id){if(id)_smSel.add(id);});_sm_render();}
+function _sm_removeOrphans(){
+  var ids=Array.from(_smSel).filter(function(id){return CL[id];});
+  if(!ids.length){_sm_render();return;}
+  var go=function(){
+    _smBusy=true;
+    ids.forEach(function(id){try{_cleanupClientData(id);}catch(e){}try{if(typeof _deletedClientIds==='object'&&_deletedClientIds)_deletedClientIds[id]=Date.now();}catch(e){}delete CL[id];});
+    try{if(typeof _saveDeletedClients==='function')_saveDeletedClients();}catch(e){}
+    try{if(typeof _serverDeleteClients==='function')_serverDeleteClients(ids);}catch(e){}
+    try{if(typeof saveClients==='function')saveClients();}catch(e){}
+    _smBusy=false;
+    _smOrphans=_smOrphans.filter(function(id){return CL[id];});
+    _smSel=new Set();
+    _sm_render('Removed '+ids.length+' from SlickChart. Your list now matches your Square.');
+  };
+  if(typeof confirmModal==='function')confirmModal({title:'Remove '+ids.length+' from SlickChart?',body:'These aren’t in your Square and have none of your saved work. This removes them from SlickChart only (never from Square). You can re-add anytime from Square.',action:'Remove'},go);
+  else go();
+}
+function _sm_addMissing(which){
+  var list=(which==='phone')?(_smMissingPhone||[]):(_smMissing||[]);if(!list.length){_sm_render();return;}
+  _smBusy=true;
+  var added=0;
+  try{
+    list.forEach(function(c){
+      var newId=(typeof _newClientId==='function')?_newClientId():('c'+Date.now()+Math.random().toString(36).slice(2,6));
+      CL[newId]=_sqMakeClient({id:c.id,name:c.name,email:c.email,phone:c.phone,birthday:c.birthday});
+      added++;
+    });
+    try{if(typeof saveClients==='function')saveClients();}catch(e){}
+  }catch(e){}
+  _smBusy=false;
+  if(which==='phone')_smMissingPhone=[];else _smMissing=[];
+  _sm_render('Added '+added+' client'+(added===1?'':'s')+' from your Square.');
+}
 // ── Clean up your LIVE Square customer list (Settings → Your data) ───────────────────────────────
 // Rescue for a Square customer list contaminated with other people's clients. Lists YOUR connected
 // Square's customers, PROTECTS everyone who matches your (already-cleaned) SlickChart roster — by Square
@@ -4134,7 +4274,7 @@ function _sheetBar(){
     +'<button onclick="_sheetCloseFrom(this)" aria-label="Close" style="border:none;background:var(--p-surf2);width:32px;height:32px;border-radius:50%;color:var(--p-ink);font-size:18px;line-height:1;cursor:pointer;display:flex;align-items:center;justify-content:center;flex-shrink:0;">✕</button>'
     +'</div>';
 }
-function _sheetCloseFrom(btn){try{var ov=btn.closest('#sqp,#sq-cleanup,#photo-recover,#sq-rebuild,#exp-check,#list-cleanup');if(!ov)return;if((ov.id==='sqp'&&_sqpBusy)||(ov.id==='sq-rebuild'&&_sqrBusy)||(ov.id==='exp-check'&&_expBusy)||(ov.id==='list-cleanup'&&_lcBusy))return;ov.remove();if(ov.id==='sq-cleanup'||ov.id==='sq-rebuild'||ov.id==='list-cleanup'){try{if(typeof renderClients==='function')renderClients();}catch(e){}}}catch(e){}}
+function _sheetCloseFrom(btn){try{var ov=btn.closest('#sqp,#sq-cleanup,#photo-recover,#sq-rebuild,#exp-check,#list-cleanup,#sq-match');if(!ov)return;if((ov.id==='sqp'&&_sqpBusy)||(ov.id==='sq-rebuild'&&_sqrBusy)||(ov.id==='exp-check'&&_expBusy)||(ov.id==='list-cleanup'&&_lcBusy)||(ov.id==='sq-match'&&_smBusy))return;ov.remove();if(ov.id==='sq-cleanup'||ov.id==='sq-rebuild'||ov.id==='list-cleanup'||ov.id==='sq-match'){try{if(typeof renderClients==='function')renderClients();}catch(e){}}}catch(e){}}
 function _sqp_box(html){var ov=document.getElementById('sqp');if(!ov)return;ov.innerHTML='<div style="background:var(--surf1);border-top:1px solid var(--p-line);border-radius:16px 16px 0 0;padding:18px;max-height:92%;overflow:auto;">'+_sheetBar()+html+'</div>';}
 async function _openSquarePurge(){
   var ov=document.getElementById('sqp');if(ov)ov.remove();
@@ -15520,6 +15660,8 @@ function renderAccount(){
     <div style="border-top:1px solid var(--p-line);"></div>
     <div onclick="_openPhotoRecovery()" style="display:flex;align-items:center;gap:11px;padding:13px 14px;cursor:pointer;"><div style="width:38px;height:38px;border-radius:10px;background:var(--p-blue-bg);display:flex;align-items:center;justify-content:center;flex-shrink:0;"><i class="ti ti-photo-search" style="font-size:18px;color:var(--p-blue);"></i></div><div style="flex:1;"><div style="font-size:14px;font-weight:500;color:var(--p-ink);">Recover lost photos</div><div style="font-size:12px;color:var(--p-mut);">Find &amp; restore before/after photos from every backup</div></div><i class="ti ti-chevron-right" style="font-size:16px;color:var(--p-mut);"></i></div>
     ${(function(){var n=(typeof _squareImportedIds==='function')?_squareImportedIds().length:0;return n?`<div style="border-top:1px solid var(--p-line);"></div><div onclick="_openSquareCleanup()" style="display:flex;align-items:center;gap:11px;padding:13px 14px;cursor:pointer;"><div style="width:38px;height:38px;border-radius:10px;background:var(--p-red-bg);display:flex;align-items:center;justify-content:center;flex-shrink:0;"><i class="ti ti-user-x" style="font-size:18px;color:var(--p-red);"></i></div><div style="flex:1;"><div style="font-size:14px;font-weight:500;color:var(--p-ink);">Remove imported Square clients</div><div style="font-size:12px;color:var(--p-mut);">${n} client${n===1?'':'s'} imported from Square · review &amp; remove</div></div><i class="ti ti-chevron-right" style="font-size:16px;color:var(--p-mut);"></i></div>`:'';})()}
+    <div style="border-top:1px solid var(--p-line);"></div>
+    <div onclick="_openSquareMatch()" style="display:flex;align-items:center;gap:11px;padding:13px 14px;cursor:pointer;"><div style="width:38px;height:38px;border-radius:10px;background:var(--p-green-bg,var(--p-surf2));display:flex;align-items:center;justify-content:center;flex-shrink:0;"><i class="ti ti-arrows-left-right" style="font-size:18px;color:var(--p-green);"></i></div><div style="flex:1;"><div style="font-size:14px;font-weight:500;color:var(--p-ink);">Match SlickChart to Square</div><div style="font-size:12px;color:var(--p-mut);">Line your SlickChart list up with your cleaned Square</div></div><i class="ti ti-chevron-right" style="font-size:16px;color:var(--p-mut);"></i></div>
     <div style="border-top:1px solid var(--p-line);"></div>
     <div onclick="_openListCleanup()" style="display:flex;align-items:center;gap:11px;padding:13px 14px;cursor:pointer;"><div style="width:38px;height:38px;border-radius:10px;background:var(--p-red-bg);display:flex;align-items:center;justify-content:center;flex-shrink:0;"><i class="ti ti-users-minus" style="font-size:18px;color:var(--p-red);"></i></div><div style="flex:1;"><div style="font-size:14px;font-weight:500;color:var(--p-ink);">Clean up my client list</div><div style="font-size:12px;color:var(--p-mut);">Remove strangers from SlickChart (protects your subscribers &amp; your work)</div></div><i class="ti ti-chevron-right" style="font-size:16px;color:var(--p-mut);"></i></div>
     <div style="border-top:1px solid var(--p-line);"></div>
