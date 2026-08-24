@@ -2159,6 +2159,69 @@ function _mergeTombstone(k,serverStr,localStr){
     return JSON.stringify(Object.assign({},(sv&&typeof sv==='object')?sv:{},(lv&&typeof lv==='object')?lv:{}));
   }catch(e){return null;}
 }
+// A stable identity for one chat message so the same message from two devices dedupes instead of
+// doubling: server-events carry evId, provider sends carry _mid, and legacy/auto messages fall back
+// to a content signature. Without this, sc_msgstore was plain-overwritten on pull — a stale device
+// could wipe messages (and provider-sent ones, which live ONLY here, were gone for good).
+function _msgKey(m){ if(!m)return ''; if(m.evId)return 'e:'+m.evId; if(m._mid)return 'm:'+m._mid; return 't:'+(m.from||'')+'|'+(m.text||'')+'|'+((m.imgs&&m.imgs.length)||0); }
+// Merge sc_msgstore: per client id, keep the UNION of messages (server ∪ local), deduped by _msgKey,
+// preserving local order then appending anything only the server had. Never drops a message either side
+// holds, so no pull can erase chat history. changed = local contributed something to push back.
+function _mergeMsgStore(serverStr,localStr){
+  try{
+    if(localStr==null)return null;   // fresh device — let the server copy load as-is
+    var sv=JSON.parse(serverStr||'{}'),lv=JSON.parse(localStr||'{}');
+    if(!sv||typeof sv!=='object'||!lv||typeof lv!=='object')return null;
+    var ids={};Object.keys(sv).forEach(function(i){ids[i]=1;});Object.keys(lv).forEach(function(i){ids[i]=1;});
+    var out={};var changed=false;
+    Object.keys(ids).forEach(function(id){
+      var s=Array.isArray(sv[id])?sv[id]:[],l=Array.isArray(lv[id])?lv[id]:[];
+      var seen={},arr=[];
+      l.forEach(function(m){var k=_msgKey(m);if(k&&seen[k])return;if(k)seen[k]=1;arr.push(m);});
+      s.forEach(function(m){var k=_msgKey(m);if(k&&seen[k])return;if(k)seen[k]=1;arr.push(m);});
+      out[id]=arr;
+      // Local held messages (or a whole thread) the server lacked → push the merged superset back.
+      if(arr.length>s.length)changed=true;
+    });
+    return {str:JSON.stringify(out),changed:changed};
+  }catch(e){return null;}
+}
+// Merge sc_threads by id. Read state is STICKY: once a thread is read (unread=false) on any device it
+// stays read on merge — a new client message re-sets unread=true through the event path, so this can't
+// hide a genuinely new message, it only stops a stale blob from resurrecting an already-cleared badge.
+function _mergeThreads(serverStr,localStr){
+  try{
+    if(localStr==null)return null;
+    var sv=JSON.parse(serverStr||'[]'),lv=JSON.parse(localStr||'[]');
+    if(!Array.isArray(sv)||!Array.isArray(lv))return null;
+    var byId={},order=[];
+    lv.forEach(function(t){if(t&&t.id){byId[t.id]=Object.assign({},t);order.push(t.id);}});
+    sv.forEach(function(t){if(!t||!t.id)return;
+      if(byId[t.id]){var cur=byId[t.id];
+        if(cur.unread===false||t.unread===false)cur.unread=false;   // sticky read
+      }else{byId[t.id]=Object.assign({},t);order.push(t.id);}
+    });
+    var out=order.map(function(id){return byId[id];});
+    var str=JSON.stringify(out);
+    // Push the merged superset back only when it actually differs from what the server sent, so two
+    // devices don't ping-pong identical blobs forever.
+    return {str:str,changed:(str!==(serverStr||'[]'))};
+  }catch(e){return null;}
+}
+// Merge sc_seen_events: union of both id lists (capped), never shrink. A pull that replaced this with a
+// stale device's shorter list is exactly what made already-seen client messages re-arrive as "unread."
+function _mergeSeenEvents(serverStr,localStr){
+  try{
+    if(localStr==null)return null;
+    var sv=JSON.parse(serverStr||'[]'),lv=JSON.parse(localStr||'[]');
+    if(!Array.isArray(sv)||!Array.isArray(lv))return null;
+    var seen={},out=[];
+    lv.concat(sv).forEach(function(id){if(id==null)return;if(seen[id])return;seen[id]=1;out.push(id);});
+    if(out.length>1000)out=out.slice(out.length-1000);
+    var changed=(out.length!==sv.length);   // local had ids the server lacked → push superset back
+    return {str:JSON.stringify(out),changed:changed};
+  }catch(e){return null;}
+}
 const Cloud={
   enabled:false,
   token:(function(){try{return localStorage.getItem('sc_token')||'';}catch(e){return '';}})(),
@@ -2207,6 +2270,19 @@ const Cloud={
         set(k,mergedStr);
         // If local had ids the server didn't, push the superset back so every device converges.
         if(mergedStr!==data[k]){try{this.push(k,mergedStr);}catch(e){}}
+        return;
+      }
+    }
+    // Chat data is append-only and provider-sent messages live ONLY in sc_msgstore, so a plain overwrite
+    // here let a stale device wipe history and (via sc_seen_events) resurrect read messages as unread.
+    // Merge these three the same way as sc_clients: union, never lose, push the superset back.
+    if(k==='sc_msgstore'||k==='sc_threads'||k==='sc_seen_events'){
+      const mm=(k==='sc_msgstore')?_mergeMsgStore(data[k],localStorage.getItem(k))
+              :(k==='sc_threads')?_mergeThreads(data[k],localStorage.getItem(k))
+              :_mergeSeenEvents(data[k],localStorage.getItem(k));
+      if(mm&&mm.str!=null){
+        set(k,mm.str);
+        if(mm.changed){try{this.push(k,mm.str);}catch(e){}}
         return;
       }
     }
