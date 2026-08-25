@@ -6426,7 +6426,7 @@ function _firstVisitNudgeHTML(cid,apptAt){
   // just after the visit, unless it's already been completed. We DON'T require the client to be
   // invited to the app first — sendCheckin() mints their link and texts it, so a returning client
   // with intake on file but no app invite yet (a common gap) still gets a prompt instead of nothing.
-  const ciDone=(typeof _checkinDone==='function')&&_checkinDone(cid,c);
+  const ciDone=(typeof _checkinDone==='function')&&_checkinDone(cid,c,apptAt);
   let hrs=(apptAt&&!isNaN(apptAt))?((apptAt.getTime()-Date.now())/3600000):((typeof _hoursUntilVisit==='function')?_hoursUntilVisit(c):null);
   if(hasIntake&&!ciDone&&hrs!=null&&hrs<=24&&hrs>=-3){
     out+=`<div onclick="event.stopPropagation();sendCheckin('${cid}')" style="border-top:1px solid var(--p-line3);background:var(--accent-tint);padding:9px 13px;display:flex;align-items:center;gap:8px;cursor:pointer;">
@@ -13278,17 +13278,31 @@ function _apptSig(s){
 // Just the calendar-day portion (month + day), for the looser fallback when one label carries a time and
 // the other doesn't after a reformat.
 function _apptDay(s){var sig=_apptSig(s);return sig?sig.split('@')[0]:'';}
-function _checkinDone(id,c){
+// Same signature, but from a real Date (the specific appointment a card is rendering) so we can compare
+// it against the stored checkinDoneFor label without relying on the client's generic nextVisit field.
+function _apptSigFromDate(d){try{if(!d||isNaN(d))return '';return (d.getMonth()+1)+'-'+d.getDate()+'@'+d.getHours()+':'+d.getMinutes();}catch(e){return '';}}
+function _checkinDone(id,c,apptAt){
   // Scoped to the CURRENT appointment: a check-in completed for a PRIOR visit must not suppress the
-  // nudge for a newly-booked one (the client app already keys this per-appointment). checkinDoneFor
-  // stores the nextVisit it was completed for.
+  // nudge for a newly-booked one. checkinDoneFor stores the nextVisit label it was completed for.
   if(!c||c.checkinDoneFor==null)return false;
-  var nv=c.nextVisit||'',cf=c.checkinDoneFor;
-  if(cf===nv)return true;                                   // exact match (fast path / unscheduled '' === '')
-  var sN=_apptSig(nv),sC=_apptSig(cf);
+  var cf=c.checkinDoneFor,sC=_apptSig(cf);
+  // When the caller gives us the SPECIFIC appointment date (the card's own a.at), judge against THAT —
+  // this is what makes a returning client (old check-in on file, new visit today) still get the nudge.
+  if(apptAt&&!isNaN(apptAt)){
+    var sA=_apptSigFromDate(apptAt);
+    if(sA&&sC){
+      if(sA===sC)return true;                                 // same appointment (date + time)
+      if(sA.split('@')[0]===sC.split('@')[0])return true;     // same calendar day (one side lacks a time)
+    }
+    return false;                                             // check-in was for a different day → not done for THIS visit
+  }
+  // No appointment passed: fall back to the client's stored nextVisit (legacy behavior for other callers).
+  var nv=c.nextVisit||'';
+  if(cf===nv)return true;                                     // exact match (fast path / unscheduled '' === '')
+  var sN=_apptSig(nv);
   if(sN&&sC){
-    if(sN===sC)return true;                                 // same appointment, different label FORMAT
-    if(_apptDay(nv)===_apptDay(cf))return true;             // same day, time reformatted or dropped
+    if(sN===sC)return true;                                   // same appointment, different label FORMAT
+    if(_apptDay(nv)===_apptDay(cf))return true;               // same day, time reformatted or dropped
   }
   return false;
 }
