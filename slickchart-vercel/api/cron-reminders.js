@@ -11,7 +11,7 @@
 // string. Each reminder-instance is claimed atomically (reminder_log) so it fires once even
 // though the cron runs every hour across the send window. Everything is best-effort and
 // gated on the client's own notification toggles + quiet hours.
-import { dbEnabled, sql } from '../lib/db.js';
+import { dbEnabled, sql, getKVValue } from '../lib/db.js';
 import {
   ensureClientTables, listAllClientPrefs, listPushSubs, deletePushSub, claimReminder, releaseReminder,
   logEvent, clearHealStartById
@@ -63,7 +63,23 @@ export default async function handler(req, res) {
   if (!pushConfigured()) { res.status(200).json({ ok: false, reason: 'push not configured' }); return; }
 
   const now = Date.now();
-  const summary = { checked: 0, apptBefore: 0, apptDay: 0, homecare: 0, aftercare: 0, devices: 0 };
+  const summary = { checked: 0, apptBefore: 0, apptDay: 0, homecare: 0, aftercare: 0, checkinMsg: 0, devices: 0 };
+  // Whether a provider has "auto-send pre-visit check-in" on (Settings → check-in). Cached per cron run
+  // so we don't re-query the provider's KV for every one of their clients. Defaults ON to match the
+  // app's default (checkinCfg.autoSend = {on:true}); only an explicit off disables it.
+  const ciAutoCache = new Map();
+  async function providerCiAutoOn(pid) {
+    if (!pid) return false;
+    if (ciAutoCache.has(pid)) return ciAutoCache.get(pid);
+    let on = true;
+    try {
+      let v = await getKVValue(pid, 'sc_checkin_cfg');
+      if (typeof v === 'string') { try { v = JSON.parse(v); } catch (e) { v = null; } }
+      if (v && v.autoSend) on = (v.autoSend.on !== false);
+    } catch (e) { on = true; }
+    ciAutoCache.set(pid, on);
+    return on;
+  }
   try {
     await ensureClientTables();
     const rows = await listAllClientPrefs();
@@ -113,6 +129,21 @@ export default async function handler(req, res) {
               body: (a.treatment ? a.treatment + ' ' : 'Your appointment ') + (a.label ? '· ' + a.label : '') + '. See you then!',
               screen: 'previsit'   // tap opens the pre-visit check-in / intake
             });
+            // Auto-send the PRE-VISIT CHECK-IN into the client's in-app message thread (~24h before),
+            // when this client's provider has auto-send on. This is the real "sends within the app 24h
+            // before" — it reaches clients who have the app (they're the ones with synced prefs/subs
+            // here); clients WITHOUT the app never get synced prefs, so they fall through to the
+            // provider's manual "text the check-in" nudge instead. Deduped by its own rkey.
+            if (row.provider_id && await providerCiAutoOn(row.provider_id)) {
+              due.push({
+                rkey: 'checkinmsg:' + apptL.date + ':' + a.at,
+                title: 'Pre-visit check-in',
+                body: 'Please take 2 minutes for your pre-visit check-in before your visit ✨',
+                ciMsg: 'Hi! Just a quick reminder to complete your pre-visit check-in before your visit so I’m all set for you ✨ Tap to open it — it only takes about 2 minutes.',
+                isCheckin: true,
+                screen: 'previsit'
+              });
+            }
           }
           // Morning-of reminder: appointment is today (client-local). Allow a few hours' grace on the
           // "hasn't passed" check so an early appointment (at or before the 7am window start) still
@@ -190,6 +221,12 @@ export default async function handler(req, res) {
         if (r.isHeal && row.provider_id) {
           try { await logEvent(row.provider_id, row.client_id, 'provider_message', { text: r.healMsg, photos: [], auto: true }); } catch (e) {}
         }
+        // Pre-visit check-in auto-send: write it into the client's real message thread (as if the
+        // provider sent it) so it persists in-app, not just as a transient push. Same thread-backed
+        // pattern as the aftercare drip above.
+        if (r.isCheckin && row.provider_id) {
+          try { await logEvent(row.provider_id, row.client_id, 'provider_message', { text: r.ciMsg, photos: [], auto: true, checkin: true }); } catch (e) {}
+        }
         // Deep-link the tap to the relevant screen (check-in/intake for appointment reminders, the
         // homecare routine, the message thread for aftercare) instead of always dropping on Home.
         const scr = r.screen || '';
@@ -200,9 +237,10 @@ export default async function handler(req, res) {
         // If NOTHING reached the client (transient push failure), release the claim so the next hourly run
         // retries. Skip for aftercare — its guidance is also written to the in-app thread above, so it isn't
         // lost, and re-running would duplicate that thread message.
-        if (!r.isHeal && (sent + nativeSent) === 0) { try { await releaseReminder(row.client_id, r.rkey); } catch (e) {} }
+        if (!r.isHeal && !r.isCheckin && (sent + nativeSent) === 0) { try { await releaseReminder(row.client_id, r.rkey); } catch (e) {} }
         summary.devices += sent + nativeSent;
-        if (r.rkey.startsWith('apptbefore')) summary.apptBefore++;
+        if (r.isCheckin) summary.checkinMsg++;
+        else if (r.rkey.startsWith('apptbefore')) summary.apptBefore++;
         else if (r.rkey.startsWith('apptday')) summary.apptDay++;
         else if (r.isHeal) summary.aftercare++;
         else summary.homecare++;

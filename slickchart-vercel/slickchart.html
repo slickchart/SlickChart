@@ -6428,12 +6428,26 @@ function _firstVisitNudgeHTML(cid,apptAt){
   // with intake on file but no app invite yet (a common gap) still gets a prompt instead of nothing.
   const ciDone=(typeof _checkinDone==='function')&&_checkinDone(cid,c,apptAt);
   let hrs=(apptAt&&!isNaN(apptAt))?((apptAt.getTime()-Date.now())/3600000):((typeof _hoursUntilVisit==='function')?_hoursUntilVisit(c):null);
+  // Auto-send only reaches clients who have the app (appJoined, from their opened_at). When it's on and
+  // the client is in the app, the check-in is sent into their in-app messages automatically (~24h out,
+  // server-side) — so show that it's handled instead of nagging. Clients who DON'T have the app can't be
+  // reached that way, so they still get the manual "text the check-in" nudge. Auto-send off → manual for all.
+  const _ciAutoOn=!!(typeof checkinCfg!=='undefined'&&checkinCfg&&checkinCfg.autoSend&&checkinCfg.autoSend.on);
+  const _joined=!!c.appJoined;
   if(hasIntake&&!ciDone&&hrs!=null&&hrs<=24&&hrs>=-3){
-    out+=`<div onclick="event.stopPropagation();sendCheckin('${cid}')" style="border-top:1px solid var(--p-line3);background:var(--accent-tint);padding:9px 13px;display:flex;align-items:center;gap:8px;cursor:pointer;">
-      <i class="ti ti-clipboard-heart" aria-hidden="true" style="font-size:14px;color:var(--accent-strong);flex-shrink:0;"></i>
-      <span style="flex:1;min-width:0;font-size:12px;color:var(--accent-strong);line-height:1.35;">Pre-visit check-in not done yet</span>
-      <span style="font-size:11px;font-weight:700;color:var(--accent-strong);white-space:nowrap;">Send check-in <i class="ti ti-chevron-right" aria-hidden="true" style="font-size:11px;"></i></span>
-    </div>`;
+    if(_ciAutoOn&&_joined){
+      out+=`<div style="border-top:1px solid var(--p-line3);background:var(--p-surf2);padding:9px 13px;display:flex;align-items:center;gap:8px;">
+        <i class="ti ti-clipboard-check" aria-hidden="true" style="font-size:14px;color:var(--p-green);flex-shrink:0;"></i>
+        <span style="flex:1;min-width:0;font-size:12px;color:var(--p-mut);line-height:1.35;">Check-in auto-sends in their app <i class="ti ti-check" style="font-size:11px;color:var(--p-green);"></i></span>
+      </div>`;
+    }else{
+      const _cta=_joined?'Send check-in':'Text check-in';
+      out+=`<div onclick="event.stopPropagation();sendCheckin('${cid}')" style="border-top:1px solid var(--p-line3);background:var(--accent-tint);padding:9px 13px;display:flex;align-items:center;gap:8px;cursor:pointer;">
+        <i class="ti ti-clipboard-heart" aria-hidden="true" style="font-size:14px;color:var(--accent-strong);flex-shrink:0;"></i>
+        <span style="flex:1;min-width:0;font-size:12px;color:var(--accent-strong);line-height:1.35;">Pre-visit check-in not done yet${_joined?'':' · not in the app'}</span>
+        <span style="font-size:11px;font-weight:700;color:var(--accent-strong);white-space:nowrap;">${_cta} <i class="ti ti-chevron-right" aria-hidden="true" style="font-size:11px;"></i></span>
+      </div>`;
+    }
   }
   return out;
 }
@@ -12091,7 +12105,7 @@ function renderCheckinSettings(){
       </div>
     </div>`:''}
   </div>
-  <div style="margin:0 16px 12px;background:var(--p-blue-bg);border:1px solid var(--p-blue-line);border-radius:10px;padding:10px 12px;display:flex;gap:8px;"><i class="ti ti-info-circle" style="font-size:13px;color:var(--p-blue);flex-shrink:0;margin-top:1px;"></i><span style="font-size:11px;color:var(--p-blue);line-height:1.5;">${checkinCfg.autoSend.on?`Once your texting is connected, check-ins send on their own <b>${checkinCfg.autoSend.when} before</b> each visit. Until then, send with one tap from a client's profile.`:'Automatic sending is off. You can still send a check-in any time from a client\u2019s profile.'}</span></div>
+  <div style="margin:0 16px 12px;background:var(--p-blue-bg);border:1px solid var(--p-blue-line);border-radius:10px;padding:10px 12px;display:flex;gap:8px;"><i class="ti ti-info-circle" style="font-size:13px;color:var(--p-blue);flex-shrink:0;margin-top:1px;"></i><span style="font-size:11px;color:var(--p-blue);line-height:1.5;">${checkinCfg.autoSend.on?`Check-ins auto-send into the app <b>${checkinCfg.autoSend.when} before</b> each visit for clients who\u2019ve joined the app. For anyone not in the app yet, your home screen shows a one-tap reminder to text it.`:'Automatic sending is off. You\u2019ll get a one-tap reminder on your home screen to send each check-in from a client\u2019s profile.'}</span></div>
 
   <div class="sh"><h2>Health & skin questions</h2></div>
   <div style="background:var(--surf2);border:1px solid var(--p-line);border-radius:12px;margin:0 16px 10px;overflow:hidden;">
@@ -19908,8 +19922,16 @@ async function syncClientEvents(){
         CL[sc.id]={name:nm,initials:((typeof _initials==='function'?_initials(nm):'')||'NC'),bg:col[0],tc:col[1],
           phone:sc.phone||'',email:sc.email||'',skin:'—',concerns:'—',allergies:'None noted',fitz:'—',
           lastVisit:'—',nextVisit:'Not scheduled',treatment:'New client',sessions:0,seriesTotal:0,touchUpDate:'—',
-          conditions:'',notes:'',_token:sc.token||''};
+          conditions:'',notes:'',_token:sc.token||'',appJoined:!!sc.opened_at};
         touchedClients=true;
+      });
+      // Keep appJoined current for EXISTING clients too: opened_at is set the first time a client opens
+      // their care space, so it's our reliable "has the app" signal. It decides who gets the pre-visit
+      // check-in auto-sent in-app (handled server-side) vs. who needs the provider's manual-text nudge.
+      j.clients.forEach(sc=>{
+        if(!sc||!sc.id)return; const cl=CL[sc.id]; if(!cl)return;
+        const joined=!!sc.opened_at;
+        if(!!cl.appJoined!==joined){cl.appJoined=joined;touchedClients=true;}
       });
     }
     // NOTE: events are marked seen at the very END of this function — after their derived data
