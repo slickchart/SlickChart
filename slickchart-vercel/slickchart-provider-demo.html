@@ -20234,7 +20234,51 @@ async function syncClientEvents(){
   }catch(e){}
   finally{_syncingEvents=false;}   // always release the guard, even on an early return above
 }
-setInterval(()=>{try{syncClientEvents();}catch(e){}},15000);
+// ── Founder-only: "new paid provider" in-app notification ──────────────────────────────────────
+// A little joy for the founder: pop an in-app notification + toast when a new provider PAYS. The
+// endpoint is gated to FOUNDER_EMAILS server-side, so a non-founder just gets 403 and we switch this
+// off for the session (no repeated calls). First run sets a baseline (so we don't announce every
+// existing paid provider at once); after that, only genuinely NEW paid signups notify — once each.
+let _founderPingsOff=false,_founderLastTs=0,_founderPollAt=0;
+function _loadFounderLastTs(){try{_founderLastTs=parseInt(localStorage.getItem('sc_founder_signup_ts')||'0',10)||0;}catch(e){}}
+async function _pollFounderSignups(force){
+  if(_founderPingsOff)return;
+  const tok=(typeof Cloud!=='undefined'&&Cloud&&Cloud.token)||'';if(!tok)return;
+  const now=Date.now();
+  if(!force&&_founderPollAt&&(now-_founderPollAt)<180000)return;   // at most once every ~3 min
+  _founderPollAt=now;
+  try{
+    const r=await fetch('/api/admin/signups?since='+(_founderLastTs||0),{headers:{'Authorization':'Bearer '+tok}});
+    if(r.status===403||r.status===401){_founderPingsOff=true;return;}   // not a founder → never poll again this session
+    if(!r.ok)return;
+    const j=await r.json().catch(()=>null);
+    if(!j||!j.ok||!Array.isArray(j.signups))return;
+    // Baseline on first ever run so we don't fire a burst for providers who paid before this feature.
+    if(!_founderLastTs){
+      const newest=j.signups.reduce((m,x)=>Math.max(m,x.ts||0),0);
+      if(newest){_founderLastTs=newest;try{localStorage.setItem('sc_founder_signup_ts',String(newest));}catch(e){}}
+      return;
+    }
+    const fresh=j.signups.filter(x=>x&&x.ts>_founderLastTs).sort((a,b)=>a.ts-b.ts);
+    if(!fresh.length)return;
+    fresh.forEach(s=>{
+      const nm=(s.name||s.email||'A new provider');
+      notifFeed.unshift({id:'paid:'+s.ts+':'+(s.email||''),type:'signup',icon:'ti-confetti',col:'var(--p-surf2)',ic:'var(--p-green)',
+        title:'💰 New paid provider!',body:nm+' just signed up'+(j.paidTotal?(' — that’s '+j.paidTotal+' paying providers now 🎉'):' 🎉'),
+        time:'Just now',ts:Date.now(),read:false});
+    });
+    _founderLastTs=Math.max(_founderLastTs,fresh[fresh.length-1].ts);
+    try{localStorage.setItem('sc_founder_signup_ts',String(_founderLastTs));}catch(e){}
+    try{if(typeof _saveNotifState==='function')_saveNotifState();}catch(e){}
+    try{if(typeof updateBadge==='function')updateBadge();}catch(e){}
+    try{if(document.getElementById('notif-feed-screen'))renderNotifFeed();}catch(e){}
+    const last=fresh[fresh.length-1],lastNm=(last.name||last.email||'A new provider');
+    try{if(typeof proToast==='function')proToast('💰 New paid provider: '+lastNm+'! 🎉',6000);}catch(e){}
+    try{if(_notifOn('newMessage')&&typeof providerSystemNotify==='function')providerSystemNotify('💰 New paid provider!',lastNm+' just signed up 🎉');}catch(e){}
+  }catch(e){}
+}
+try{_loadFounderLastTs();}catch(e){}
+setInterval(()=>{try{syncClientEvents();}catch(e){}try{_pollFounderSignups();}catch(e){}},15000);
 // React to a Square webhook: the server records recent Square activity (booking/payment/refund/
 // catalog change) into sc_square_activity, which the cloud pull brings down. When we see a newer one
 // than last handled, refresh the relevant live data and let the provider know — near-real-time.

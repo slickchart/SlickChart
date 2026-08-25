@@ -61,14 +61,19 @@ export default async function handler(req, res) {
       });
     } catch (e) { console.error('[signup] welcome email failed:', e && e.message || e); /* don't block signup on email failure */ }
 
-    // Founder ping: email whoever is set in FOUNDER_NOTIFY_EMAIL every time a new provider signs up,
-    // so the founder knows in real time as beta testers come through. Best-effort — never blocks or
-    // fails the signup. Set FOUNDER_NOTIFY_EMAIL in Vercel to turn it on.
+    // Founder ping: email whoever is set in FOUNDER_NOTIFY_EMAIL when a new provider signs up.
+    // Best-effort — never blocks or fails the signup. Set FOUNDER_NOTIFY_EMAIL in Vercel to override.
+    //
+    // Dedupe rule: a PAYING provider pays first, then creates the account, and the Stripe webhook
+    // already sent the single "💰 New PAID provider" email. So if this new account already has an
+    // active subscription, we SKIP this signup email — the founder gets exactly one email per paid
+    // signup instead of two. Free / not-yet-paid signups still ping (the webhook won't fire for them).
+    let _alreadyPaid = false;
+    try { _alreadyPaid = await hasActiveSubscription(email); } catch (e) { _alreadyPaid = false; }
     try {
-      // Default to the owner's inbox so signup pings work out of the box (no env setup needed) — this is
-      // why the first paid provider's signup was missed. FOUNDER_NOTIFY_EMAIL / FOUNDER_EMAILS override it.
+      // Default to the owner's inbox so signup pings work out of the box (no env setup needed).
       const notifyTo = String(process.env.FOUNDER_NOTIFY_EMAIL || process.env.FOUNDER_EMAILS || 'botanicalaestheticsbyashley@gmail.com').split(',')[0].trim();
-      if (notifyTo) {
+      if (notifyTo && !_alreadyPaid) {
         let total = 0;
         try { const c = await q`SELECT count(*)::int AS n FROM providers`; total = (c && c[0] && c[0].n) || 0; } catch (e) {}
         const when = new Date().toLocaleString('en-US', { timeZone: process.env.FOUNDER_TZ || 'America/Los_Angeles' });
