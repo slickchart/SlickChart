@@ -19945,6 +19945,25 @@ async function syncClientEvents(){
       j.clients.forEach(sc=>{
         if(!sc||!sc.id||CL[sc.id])return;
         if((typeof _deletedClientIds!=='undefined'&&_deletedClientIds[sc.id])||(typeof mergedSquareIds!=='undefined'&&mergedSquareIds[sc.id]))return;   // removed/merged — don't resurrect
+        // Before creating a NEW record for this server client, check whether it's actually an existing
+        // client under a different id — e.g. their Square-appointment record vs. their intake-link
+        // record. If so, ROUTE the server id into the existing one (merge map) instead of spawning a
+        // hidden duplicate. Without this, a client's completed intake attaches to the duplicate and
+        // never shows on the record the provider is looking at — the "completed her intake but it
+        // isn't in her profile" bug. Match by email, then name, then phone.
+        var _existId=(typeof _findExistingClientId==='function')?_findExistingClientId(sc.name,sc.email):null;
+        if(!_existId&&sc.phone&&typeof _sqDigits==='function'){
+          var _ph=_sqDigits(sc.phone);
+          if(_ph.length>=7)_existId=Object.keys(CL).find(function(k){return CL[k]&&typeof _sqDigits==='function'&&_sqDigits(CL[k].phone).length>=7&&_sqDigits(CL[k].phone)===_ph;})||null;
+        }
+        if(_existId&&_existId!==sc.id&&CL[_existId]){
+          _mergedInto[sc.id]=_existId;
+          if(sc.token&&!CL[_existId]._token)CL[_existId]._token=sc.token;   // carry the link token onto the kept record
+          if(sc.opened_at&&!CL[_existId].appJoined)CL[_existId].appJoined=true;
+          try{if(typeof _saveMergedInto==='function')_saveMergedInto();}catch(e){}
+          touchedClients=true;
+          return;   // routed to the existing record — its submitted forms will re-attach via reconcile below
+        }
         const nm=sc.name||'New client';const col=_pal[Object.keys(CL).length%_pal.length];
         CL[sc.id]={name:nm,initials:((typeof _initials==='function'?_initials(nm):'')||'NC'),bg:col[0],tc:col[1],
           phone:sc.phone||'',email:sc.email||'',skin:'—',concerns:'—',allergies:'None noted',fitz:'—',
