@@ -13,6 +13,7 @@
 import crypto from 'crypto';
 import { sql, ensureProvidersTable } from '../lib/db.js';
 import { sendEmail } from '../lib/email.js';
+import { sendNativeToProvider, fcmConfigured } from '../lib/fcm.js';
 
 // The owner's inbox for real-time milestone pings. Defaults to the built-in owner so a PAID signup is
 // never missed even before any env is configured; FOUNDER_NOTIFY_EMAIL / FOUNDER_EMAILS override it.
@@ -113,6 +114,23 @@ export default async function handler(req, res) {
               html: `<div style="font-family:-apple-system,Segoe UI,Roboto,sans-serif;max-width:440px;margin:0 auto;padding:8px;"><div style="font-size:22px;margin-bottom:6px;">💰 New PAID provider</div><div style="font-size:14px;color:#333;line-height:1.9;"><b>Name:</b> ${escHtml(name || '(not given)')}<br><b>Email:</b> ${escHtml(email)}</div><div style="font-size:13px;color:#2a7;margin-top:10px;">That's real revenue — congratulations! 🎉</div></div>`
             });
           } catch (e) { console.error('[stripe-webhook] founder paid-notify failed:', e && e.message || e); }
+          // Also PUSH the milestone to the founder's phone (native app), so it lands even when the app
+          // is closed — not just the in-app notification the app shows when it's open. Best-effort.
+          try {
+            if (fcmConfigured()) {
+              const founderEmails = String(process.env.FOUNDER_EMAILS || process.env.OWNER_EMAIL || founderNotifyEmail() || '')
+                .toLowerCase().split(',').map(s => s.trim()).filter(Boolean);
+              if (founderEmails.length) {
+                let paidTotal = 0;
+                try { const c = await q`SELECT count(*)::int AS n FROM subscriptions WHERE status = 'active'`; paidTotal = (c[0] && c[0].n) || 0; } catch (e) {}
+                const pushBody = (name || email) + ' just signed up' + (paidTotal ? ` — that's ${paidTotal} paying providers now 🎉` : ' 🎉');
+                const provs = await q`SELECT id FROM providers WHERE lower(email) = ANY(${founderEmails}::text[])`;
+                for (const pr of (provs || [])) {
+                  try { await sendNativeToProvider(pr.id, { title: '💰 New paid provider!', body: pushBody, url: '/slickchart', tag: 'paid-signup:' + email }); } catch (e) {}
+                }
+              }
+            }
+          } catch (e) { console.error('[stripe-webhook] founder paid-push failed:', e && e.message || e); }
         }
       }
     } else if (event.type === 'customer.subscription.updated' || event.type === 'customer.subscription.deleted') {
