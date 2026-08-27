@@ -10113,6 +10113,19 @@ async function _initNativeProvider(){
       }catch(e){}
     });
     PN.addListener('registrationError',function(){});
+    // Foreground pushes: when a push arrives while the app is OPEN, iOS/Android hand it to this listener
+    // and DON'T show an OS banner on their own (and LocalNotifications isn't bundled to post one). Without
+    // this handler a push that lands while the founder is using the app is completely silent — which is
+    // exactly why the "test push" looked like it did nothing when tapped from inside the app. Surface it
+    // in-app (toast) so a foregrounded push is at least visible; a true OS banner still needs the app
+    // backgrounded, or a native rebuild with iOS presentationOptions / LocalNotifications.
+    PN.addListener('pushNotificationReceived',function(n){
+      try{
+        const title=(n&&n.title)||'SlickChart';
+        const body=(n&&n.body)||'';
+        if(typeof proToast==='function')proToast((title?title+(body?' — ':''):'')+body,6000);
+      }catch(e){}
+    });
     PN.addListener('pushNotificationActionPerformed',function(a){
       try{const d=(a&&a.notification&&a.notification.data)||{};_queueDeepLink(_pushLinkFromData(d));}catch(e){}
     });
