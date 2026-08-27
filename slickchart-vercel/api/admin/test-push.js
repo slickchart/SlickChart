@@ -49,6 +49,14 @@ export default async function handler(req, res) {
       return;
     }
 
+    // Optional delay before sending, so the founder can close the app first and confirm a TRUE OS banner
+    // (a foreground push shows only an in-app toast). The SERVER holds the timer, so it fires even after
+    // the app is backgrounded/closed and the client fetch is abandoned. Clamped well under Vercel's 10s
+    // function limit so the send always completes.
+    let delayMs = 0;
+    try { delayMs = Math.max(0, Math.min(7, parseInt((req.query && req.query.delay) || (req.body && req.body.delay) || 0, 10) || 0)) * 1000; } catch (e) {}
+    if (delayMs) await new Promise(r => setTimeout(r, delayMs));
+
     // Send to the full set — exactly like a real paid-signup push.
     let sent = 0;
     for (const pid of providerIds) {
