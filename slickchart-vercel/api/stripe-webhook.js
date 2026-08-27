@@ -14,6 +14,7 @@ import crypto from 'crypto';
 import { sql, ensureProvidersTable } from '../lib/db.js';
 import { sendEmail } from '../lib/email.js';
 import { sendNativeToProvider, fcmConfigured } from '../lib/fcm.js';
+import { ensureClientTables, claimReminder } from '../lib/clients.js';
 
 // The owner's inbox for real-time milestone pings. Defaults to the built-in owner so a PAID signup is
 // never missed even before any env is configured; FOUNDER_NOTIFY_EMAIL / FOUNDER_EMAILS override it.
@@ -66,6 +67,62 @@ async function lookupCustomerEmail(customerId) {
   } catch (e) { return ''; }
 }
 
+// Ping the founder that a NEW provider is paying — email + native push to their phone — exactly ONCE
+// per provider, no matter WHICH Stripe event first marks them active (checkout.session.completed OR a
+// customer.subscription.updated that flips to 'active'). The old code fired this only inside the
+// checkout branch, gated on a read-then-write `wasNew` flag; when Stripe delivered the subscription
+// event first / out of order, the in-app toast still popped (the app's poller keys off
+// subscriptions.status='active') but the email + push were silently skipped. claimReminder gives an
+// atomic once-only claim (shared reminder_log), so overlapping deliveries, renewals, and duplicate
+// events never re-ping. Best-effort throughout: Stripe still needs its 200, so nothing here may throw.
+async function notifyFounderPaid(q, email) {
+  const em = String(email || '').trim().toLowerCase();
+  if (!em) return;
+  // Once-only across concurrent/overlapping webhook deliveries. If the claim itself errors (e.g. the
+  // table isn't there yet), fall through and notify anyway — better a rare duplicate than a missed ping.
+  try {
+    await ensureClientTables();
+    const first = await claimReminder('founder', 'paidnotify:' + em);
+    if (!first) return;
+  } catch (e) { console.error('[stripe-webhook] founder-notify claim failed (continuing):', e && e.message || e); }
+
+  let name = '';
+  try { const p = await q`SELECT name FROM providers WHERE lower(email) = ${em}`; name = (p[0] && p[0].name) || ''; } catch (e) {}
+
+  // ── Founder email ──────────────────────────────────────────────────────────
+  try {
+    const to = founderNotifyEmail();
+    if (to) await sendEmail({
+      to,
+      subject: `💰 New PAID SlickChart provider: ${name || em}`,
+      text: `A provider just started a paid subscription.\n\nName: ${name || '(not given)'}\nEmail: ${em}\n\nThat's real revenue — congratulations! 🎉`,
+      html: `<div style="font-family:-apple-system,Segoe UI,Roboto,sans-serif;max-width:440px;margin:0 auto;padding:8px;"><div style="font-size:22px;margin-bottom:6px;">💰 New PAID provider</div><div style="font-size:14px;color:#333;line-height:1.9;"><b>Name:</b> ${escHtml(name || '(not given)')}<br><b>Email:</b> ${escHtml(em)}</div><div style="font-size:13px;color:#2a7;margin-top:10px;">That's real revenue — congratulations! 🎉</div></div>`
+    });
+  } catch (e) { console.error('[stripe-webhook] founder paid-notify email failed:', e && e.message || e); }
+
+  // ── Native push to the founder's phone(s) ───────────────────────────────────
+  try {
+    if (fcmConfigured()) {
+      const founderEmails = String(process.env.FOUNDER_EMAILS || process.env.OWNER_EMAIL || founderNotifyEmail() || '')
+        .toLowerCase().split(',').map(s => s.trim()).filter(Boolean);
+      if (founderEmails.length) {
+        let paidTotal = 0;
+        try { const c = await q`SELECT count(*)::int AS n FROM subscriptions WHERE status = 'active'`; paidTotal = (c[0] && c[0].n) || 0; } catch (e) {}
+        const pushBody = (name || em) + ' just signed up' + (paidTotal ? ` — that's ${paidTotal} paying providers now 🎉` : ' 🎉');
+        const pushPayload = { title: '💰 New paid provider!', body: pushBody, url: '/slickchart', tag: 'paid-signup:' + em };
+        let pushed = 0;
+        for (const fe of founderEmails) {
+          try {
+            const provs = await q`SELECT id FROM providers WHERE lower(email) = ${fe}`;
+            for (const pr of (provs || [])) { try { pushed += (await sendNativeToProvider(pr.id, pushPayload)) || 0; } catch (e) {} }
+          } catch (e) {}
+        }
+        console.log('[stripe-webhook] paid-signup push: founders=' + founderEmails.length + ' devices=' + pushed + ' for=' + em);
+      }
+    }
+  } catch (e) { console.error('[stripe-webhook] founder paid-push failed:', e && e.message || e); }
+}
+
 export default async function handler(req, res) {
   if (req.method !== 'POST') { res.status(405).json({ error: 'Method not allowed' }); return; }
   const secret = process.env.STRIPE_WEBHOOK_SECRET || '';
@@ -91,55 +148,16 @@ export default async function handler(req, res) {
       const customerId = session.customer || null;
       const subscriptionId = session.subscription || null;
       if (email) {
-        // Was this a brand-new paying customer (vs. a returning/renewed one)? Notify the owner only on a
-        // genuinely NEW active subscription, so the "first paid provider" milestone can never be missed.
-        let wasNew = false;
-        try { const prev = await q`SELECT status FROM subscriptions WHERE email=${email}`; wasNew = !(prev[0] && prev[0].status === 'active'); } catch (e) {}
         await q`INSERT INTO subscriptions (email, stripe_customer_id, stripe_subscription_id, status, updated_at)
           VALUES (${email}, ${customerId}, ${subscriptionId}, 'active', now())
           ON CONFLICT (email) DO UPDATE SET
             stripe_customer_id=EXCLUDED.stripe_customer_id,
             stripe_subscription_id=EXCLUDED.stripe_subscription_id,
             status='active', updated_at=now()`;
-        if (wasNew) {
-          // Best-effort founder ping — must never block or fail the webhook (Stripe still needs its 200).
-          try {
-            const to = founderNotifyEmail();
-            let name = '';
-            try { const p = await q`SELECT name FROM providers WHERE email=${email}`; name = (p[0] && p[0].name) || ''; } catch (e) {}
-            if (to) await sendEmail({
-              to,
-              subject: `💰 New PAID SlickChart provider: ${name || email}`,
-              text: `A provider just started a paid subscription.\n\nName: ${name || '(not given)'}\nEmail: ${email}\n\nThat's real revenue — congratulations! 🎉`,
-              html: `<div style="font-family:-apple-system,Segoe UI,Roboto,sans-serif;max-width:440px;margin:0 auto;padding:8px;"><div style="font-size:22px;margin-bottom:6px;">💰 New PAID provider</div><div style="font-size:14px;color:#333;line-height:1.9;"><b>Name:</b> ${escHtml(name || '(not given)')}<br><b>Email:</b> ${escHtml(email)}</div><div style="font-size:13px;color:#2a7;margin-top:10px;">That's real revenue — congratulations! 🎉</div></div>`
-            });
-          } catch (e) { console.error('[stripe-webhook] founder paid-notify failed:', e && e.message || e); }
-          // Also PUSH the milestone to the founder's phone (native app), so it lands even when the app
-          // is closed — not just the in-app notification the app shows when it's open. Best-effort.
-          try {
-            if (fcmConfigured()) {
-              const founderEmails = String(process.env.FOUNDER_EMAILS || process.env.OWNER_EMAIL || founderNotifyEmail() || '')
-                .toLowerCase().split(',').map(s => s.trim()).filter(Boolean);
-              if (founderEmails.length) {
-                let paidTotal = 0;
-                try { const c = await q`SELECT count(*)::int AS n FROM subscriptions WHERE status = 'active'`; paidTotal = (c[0] && c[0].n) || 0; } catch (e) {}
-                const pushBody = (name || email) + ' just signed up' + (paidTotal ? ` — that's ${paidTotal} paying providers now 🎉` : ' 🎉');
-                // Look each founder up individually (simpler/sturdier than a batched array bind) and push
-                // to their phone(s). This is the same sendNativeToProvider path that client submissions
-                // already use successfully.
-                const pushPayload = { title: '💰 New paid provider!', body: pushBody, url: '/slickchart', tag: 'paid-signup:' + email };
-                let pushed = 0;
-                for (const fe of founderEmails) {
-                  try {
-                    const provs = await q`SELECT id FROM providers WHERE lower(email) = ${fe}`;
-                    for (const pr of (provs || [])) { try { pushed += (await sendNativeToProvider(pr.id, pushPayload)) || 0; } catch (e) {} }
-                  } catch (e) {}
-                }
-                console.log('[stripe-webhook] paid-signup push: founders=' + founderEmails.length + ' devices=' + pushed);
-              }
-            }
-          } catch (e) { console.error('[stripe-webhook] founder paid-push failed:', e && e.message || e); }
-        }
+        // Founder ping (email + native push), deduped once-per-provider. Fires here AND from the
+        // subscription-activated branch below, so whichever event Stripe delivers first wins and the
+        // push can't be lost to event ordering. Never blocks the webhook's 200.
+        await notifyFounderPaid(q, email);
       }
     } else if (event.type === 'customer.subscription.updated' || event.type === 'customer.subscription.deleted') {
       const sub = event.data.object;
@@ -151,19 +169,23 @@ export default async function handler(req, res) {
       const planAmount = sub.items && sub.items.data && sub.items.data[0] && sub.items.data[0].price
         ? sub.items.data[0].price.unit_amount : null;
       const existing = await q`SELECT email FROM subscriptions WHERE stripe_customer_id=${customerId}`;
+      let subEmail = (existing[0] && existing[0].email) || '';
       if (existing[0]) {
         await q`UPDATE subscriptions SET status=${status}, stripe_subscription_id=${sub.id},
           current_period_end=${periodEnd}, plan_amount=${planAmount}, updated_at=now()
           WHERE stripe_customer_id=${customerId}`;
       } else {
-        const email = await lookupCustomerEmail(customerId);
-        if (email) {
+        subEmail = await lookupCustomerEmail(customerId);
+        if (subEmail) {
           await q`INSERT INTO subscriptions (email, stripe_customer_id, stripe_subscription_id, status, current_period_end, plan_amount, updated_at)
-            VALUES (${email}, ${customerId}, ${sub.id}, ${status}, ${periodEnd}, ${planAmount}, now())
+            VALUES (${subEmail}, ${customerId}, ${sub.id}, ${status}, ${periodEnd}, ${planAmount}, now())
             ON CONFLICT (email) DO UPDATE SET status=EXCLUDED.status, stripe_subscription_id=EXCLUDED.stripe_subscription_id,
               current_period_end=EXCLUDED.current_period_end, plan_amount=EXCLUDED.plan_amount, updated_at=now()`;
         }
       }
+      // If THIS event is the one that made the provider active, ping the founder — deduped once-per-
+      // provider, so it fires exactly once whether the checkout event or this one lands first.
+      if (status === 'active' && subEmail) await notifyFounderPaid(q, subEmail);
     }
     res.status(200).json({ received: true });
   } catch (e) {
