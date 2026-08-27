@@ -13298,7 +13298,17 @@ function _apptSigFromDate(d){try{if(!d||isNaN(d))return '';return (d.getMonth()+
 function _checkinDone(id,c,apptAt){
   // Scoped to the CURRENT appointment: a check-in completed for a PRIOR visit must not suppress the
   // nudge for a newly-booked one. checkinDoneFor stores the nextVisit label it was completed for.
-  if(!c||c.checkinDoneFor==null)return false;
+  if(!c)return false;
+  // Robust signal that survives a missing checkinDoneFor stamp: a completed check-in whose timestamp
+  // lands in the window just before THIS appointment counts as done for it. This is the fix for "she
+  // completed her check-in but it still says she hasn't" — a new client's Square appointment often
+  // syncs onto the record AFTER their check-in arrives, so checkinDoneFor gets left blank. An OLD
+  // visit's check-in falls outside the window, so a returning client still correctly gets the nudge.
+  if(apptAt&&!isNaN(apptAt)&&c.lastCheckin&&c.lastCheckin.at){
+    var _at=+c.lastCheckin.at||0,_ap=apptAt.getTime();
+    if(_at&&_at<=_ap+12*3600000&&_at>=_ap-3*86400000)return true;
+  }
+  if(c.checkinDoneFor==null)return false;
   var cf=c.checkinDoneFor,sC=_apptSig(cf);
   // When the caller gives us the SPECIFIC appointment date (the card's own a.at), judge against THAT —
   // this is what makes a returning client (old check-in on file, new visit today) still get the nudge.
