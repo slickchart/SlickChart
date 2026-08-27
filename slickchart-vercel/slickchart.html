@@ -2133,7 +2133,7 @@ function _syncable(k){return typeof k==='string'&&k.indexOf('sc_')===0&&!_SYNC_S
 // refresh, before its push flushed) was wiped — resurrecting deleted clients, merged duplicates, and
 // dismissed flags. These keys are UNIONED with local on pull instead of overwritten. Object maps merge
 // by key; arrays merge by unique value.
-const _TOMB_OBJ={sc_deleted_clients:1,sc_hidden_square:1,sc_merged_ids:1,sc_merged_into:1};
+const _TOMB_OBJ={sc_deleted_clients:1,sc_hidden_square:1,sc_merged_ids:1,sc_merged_into:1,sc_ci_dismissed:1};
 const _TOMB_ARR={sc_flag_dismissed:1,sc_form_flag_dismissed:1,sc_ci_cleared:1,sc_ci_read:1,sc_home_dismissed:1,sc_notif_cleared:1,sc_notif_read:1};
 function _isTombstoneKey(k){return !!(_TOMB_OBJ[k]||_TOMB_ARR[k]);}
 // Merge the client roster per-client-id instead of whole-blob overwriting it, so two devices that edit
@@ -13332,7 +13332,7 @@ function _checkinDone(id,c,apptAt){
 }
 let _ciDismissed={};
 function loadCiDismissed(){try{const r=localStorage.getItem('sc_ci_dismissed');if(r)_ciDismissed=JSON.parse(r)||{};}catch(e){}}
-function saveCiDismissed(){try{localStorage.setItem('sc_ci_dismissed',JSON.stringify(_ciDismissed));}catch(e){}}
+function saveCiDismissed(){const v=JSON.stringify(_ciDismissed);try{localStorage.setItem('sc_ci_dismissed',v);}catch(e){}if(typeof _pushKeyNow==='function')_pushKeyNow('sc_ci_dismissed',v);}
 // One-time: restore an accidentally-dismissed sample Maya check-in nudge
 function _ciRestoreOnce(){
   try{
@@ -13344,10 +13344,15 @@ function _ciRestoreOnce(){
   }catch(e){}
 }
 // Clients within 2h of their appointment who still haven't completed the check-in (and not dismissed)
+// Stable dismissal key: keyed on the NORMALIZED appointment signature (month-day-time), not the raw
+// nextVisit label. The raw label reformats when Square re-syncs ("Thursday, August 27 · 12:00 PM" vs
+// "Aug 27 12:00PM"), which changed the key and made a dismissed check-in nudge silently come back.
+function _ciKey(id,c){return id+'|'+((c&&_apptSig(c.nextVisit))||(c&&c.nextVisit)||'');}
+function _ciIsDismissed(id,c){return !!(_ciDismissed[_ciKey(id,c)]||_ciDismissed[id+'|'+((c&&c.nextVisit)||'')]);}  // check both new + legacy key
 function _needsCheckin(){
   return Object.entries(CL).filter(([id,c])=>{
     if(!c||_checkinDone(id,c))return false;
-    if(_ciDismissed[id+'|'+((c.nextVisit)||'')])return false;
+    if(_ciIsDismissed(id,c))return false;
     const h=_hoursUntilVisit(c);
     return h!=null && h<=2 && h>=-2;
   });
@@ -13392,7 +13397,7 @@ function _swipeTile(inner,key,customAction){
   return `<div style="position:relative;margin:0 16px 10px;">${inner}<button onclick="event.stopPropagation();${action}" aria-label="Clear this card" title="Clear" style="position:absolute;top:7px;right:7px;z-index:4;width:24px;height:24px;border-radius:50%;background:rgba(0,0,0,.32);border:none;color:var(--p-ink);cursor:pointer;display:flex;align-items:center;justify-content:center;padding:0;line-height:0;"><i class="ti ti-x" style="font-size:14px;"></i></button></div>`;
 }
 function dismissCheckinNudge(id){
-  const c=CL[id];const key=id+'|'+((c&&c.nextVisit)||'');
+  const c=CL[id];const key=_ciKey(id,c);
   _ciDismissed[key]=true;saveCiDismissed();_lastCiDismiss=key;
   _ciUndoToast(((c&&c.name)?c.name.split(' ')[0]:'Reminder')+' cleared');
   _reRenderAttn();
