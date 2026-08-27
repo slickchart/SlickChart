@@ -19787,7 +19787,6 @@ function _clientIdByName(name){
 // Find the latest check-in for a client (by id or by name), so appointment views
 // can surface "this client already checked in" and link straight to it.
 function _checkinForClient(cid,name){
-  if(typeof checkins==='undefined'||!Array.isArray(checkins))return null;
   const norm=name?String(name).trim().toLowerCase():'';
   // Collect ALL matches, then return the most recent, don't trust array order.
   // New real check-ins are unshifted (newest-first), but undo-restore reinserts at
@@ -19796,20 +19795,35 @@ function _checkinForClient(cid,name){
   // it's absent (older stored records / seed), fall back to array position, where
   // a lower index means more recently unshifted.
   let best=null,bestAt=-Infinity,bestIdx=Infinity;
-  for(let i=0;i<checkins.length;i++){
-    const ci=checkins[i];
-    if(!ci)continue;
-    const match=(cid&&ci.clientId===cid)||(norm&&(ci.client||'').trim().toLowerCase()===norm);
-    if(!match)continue;
-    const at=(typeof ci.at==='number')?ci.at:null;
-    if(at!=null){
-      if(at>bestAt||(bestAt===-Infinity)){best=ci;bestAt=at;bestIdx=i;}
-    }else if(bestAt===-Infinity && i<bestIdx){
-      // no timestamped match yet, keep the earliest-indexed (newest unshifted) one
-      best=ci;bestIdx=i;
+  if(typeof checkins!=='undefined'&&Array.isArray(checkins)){
+    for(let i=0;i<checkins.length;i++){
+      const ci=checkins[i];
+      if(!ci)continue;
+      const match=(cid&&ci.clientId===cid)||(norm&&(ci.client||'').trim().toLowerCase()===norm);
+      if(!match)continue;
+      const at=(typeof ci.at==='number')?ci.at:null;
+      if(at!=null){
+        if(at>bestAt||(bestAt===-Infinity)){best=ci;bestAt=at;bestIdx=i;}
+      }else if(bestAt===-Infinity && i<bestIdx){
+        // no timestamped match yet, keep the earliest-indexed (newest unshifted) one
+        best=ci;bestIdx=i;
+      }
     }
   }
-  return best;
+  if(best)return best;
+  // Fallback: a completed check-in lives on the client record (c.lastCheckin) even when the
+  // checkins[] array entry never got created — the self-heal reconciliation path only sets
+  // lastCheckin, and a stale-device Cloud.pull() can drop the array. Surface it so "Today's
+  // appointments" shows the check-in is done. checkin-detail already rebuilds from lastCheckin.
+  let c=(cid&&typeof CL!=='undefined')?CL[cid]:null;
+  if(!c&&norm&&typeof CL!=='undefined'){for(const k in CL){if(CL[k]&&(CL[k].name||'').trim().toLowerCase()===norm){c=CL[k];cid=k;break;}}}
+  if(c&&c.lastCheckin&&c.lastCheckin.id){
+    const lc=c.lastCheckin;
+    return {id:lc.id,clientId:cid,client:c.name||name||'Client',dateLabel:lc.dateLabel||'',time:lc.time||'',
+      treatment:lc.treatment||'',groups:(lc.groups||[]).slice(),flagged:(lc.flagged||[]).slice(),notes:lc.notes||'',
+      photos:[],photoCount:lc.photoCount||0,read:true,at:lc.at||0};
+  }
+  return null;
 }
 // Whether the provider has written today's treatment notes for this client yet.
 // "Done" = a session summary saved today whose snapshot actually contains notes,
@@ -21170,11 +21184,11 @@ function renderTodayAppts(){
           <div><div style="font-size:14px;font-weight:500;color:var(--p-ink);">${_fileEsc(a.client)}</div><div style="font-size:12px;color:var(--p-mut);margin-top:2px;">${a.tx&&a.tx!=='Appointment'?_fileEsc(a.tx)+' \u00b7 ':''}${a.dur||a.durationMinutes||''} min${past?' \u00b7 done':''}</div></div>
           <div style="display:flex;align-items:center;gap:6px;"><div style="font-size:13px;font-weight:500;color:var(--p-ink);">${timeLbl}</div>${cid?`<i class="ti ti-chevron-right" style="font-size:14px;color:var(--p-mut);"></i>`:''}</div>
         </div>
-        ${ci?`<button onclick="event.stopPropagation();markCheckinRead('${ci.id}');nav('checkin-detail','${ci.id}')" style="margin-top:9px;width:100%;display:flex;align-items:center;gap:7px;background:var(--p-surf2);border:1px solid var(--p-green-line);border-radius:8px;padding:7px 10px;cursor:pointer;font-family:inherit;text-align:left;">
-          <i class="ti ${(ci.photos||[]).length?'ti-camera':'ti-clipboard-check'}" style="font-size:14px;color:var(--p-green);flex-shrink:0;"></i>
-          <span style="flex:1;font-size:12px;color:var(--p-green);font-weight:600;">Pre-visit check-in ready${(ci.flagged||[]).length?' \u00b7 '+ci.flagged.length+' flagged':''}${(ci.photos||[]).length?' \u00b7 '+(ci.photos||[]).length+' photo'+((ci.photos||[]).length>1?'s':''):''}</span>
+        ${ci?(()=>{const _cip=(ci.photos||[]).length||ci.photoCount||0;return `<button onclick="event.stopPropagation();markCheckinRead('${ci.id}');nav('checkin-detail','${ci.id}')" style="margin-top:9px;width:100%;display:flex;align-items:center;gap:7px;background:var(--p-surf2);border:1px solid var(--p-green-line);border-radius:8px;padding:7px 10px;cursor:pointer;font-family:inherit;text-align:left;">
+          <i class="ti ${_cip?'ti-camera':'ti-clipboard-check'}" style="font-size:14px;color:var(--p-green);flex-shrink:0;"></i>
+          <span style="flex:1;font-size:12px;color:var(--p-green);font-weight:600;">Pre-visit check-in ready${(ci.flagged||[]).length?' \u00b7 '+ci.flagged.length+' flagged':''}${_cip?' \u00b7 '+_cip+' photo'+(_cip>1?'s':''):''}</span>
           <i class="ti ti-chevron-right" style="font-size:13px;color:var(--p-green);flex-shrink:0;"></i>
-        </button>`:''}
+        </button>`;})():''}
         ${cid?(()=>{const done=_notesDoneToday(cid);return `<button onclick="event.stopPropagation();_notesFrom='today';nav('notes','${cid}')" style="margin-top:9px;width:100%;display:flex;align-items:center;gap:7px;background:${done?'var(--p-surf2)':'#241a08'};border:1px solid ${done?'#1a4a38':'#5a4318'};border-radius:8px;padding:7px 10px;cursor:pointer;font-family:inherit;text-align:left;">
           <i class="ti ${done?'ti-checkbox':'ti-writing'}" style="font-size:14px;color:${done?'var(--p-green)':'var(--p-amber)'};flex-shrink:0;"></i>
           <span style="flex:1;font-size:12px;color:${done?'var(--p-green)':'var(--p-amber)'};font-weight:600;">${done?'Treatment notes done':'Treatment notes not done yet'}</span>
