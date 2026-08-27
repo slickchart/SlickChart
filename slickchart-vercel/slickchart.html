@@ -15753,6 +15753,10 @@ function renderAccount(){
     <div style="border-top:1px solid var(--p-line);"></div>
     <div onclick="replayOnboarding()" style="display:flex;align-items:center;gap:11px;padding:13px 14px;cursor:pointer;"><div style="width:38px;height:38px;border-radius:10px;background:var(--accent-tint);display:flex;align-items:center;justify-content:center;flex-shrink:0;"><i class="ti ti-player-play" style="font-size:18px;color:var(--accent-strong);"></i></div><div style="flex:1;"><div style="font-size:14px;font-weight:500;color:var(--p-ink);">Replay Setup Tour</div><div style="font-size:12px;color:var(--p-mut);">See the guided first-run setup again</div></div><i class="ti ti-chevron-right" style="font-size:16px;color:var(--p-mut);"></i></div>
   </div></div>
+  ${_isFounder?`<div class="sh" style="margin-top:14px;"><h2>Founder tools</h2></div>
+  <div style="padding:0 16px;margin-bottom:20px;"><div style="background:var(--surf2);border:1px solid var(--p-line);border-radius:12px;overflow:hidden;">
+    <div onclick="_openProviderLookup()" style="display:flex;align-items:center;gap:11px;padding:13px 14px;cursor:pointer;"><div style="width:38px;height:38px;border-radius:10px;background:var(--p-blue-bg);display:flex;align-items:center;justify-content:center;flex-shrink:0;"><i class="ti ti-user-search" style="font-size:18px;color:var(--p-blue);"></i></div><div style="flex:1;"><div style="font-size:14px;font-weight:500;color:var(--p-ink);">Provider lookup &amp; reset</div><div style="font-size:12px;color:var(--p-mut);">Check a provider's account by email &amp; resend their reset link</div></div><i class="ti ti-chevron-right" style="font-size:16px;color:var(--p-mut);"></i></div>
+  </div></div>`:''}
   <div style="text-align:center;padding:14px;font-size:11px;color:var(--p-mut);">SlickChart · Version 1.0.3</div></div>`;
 }
 
@@ -20212,8 +20216,8 @@ async function syncClientEvents(){
 // endpoint is gated to FOUNDER_EMAILS server-side, so a non-founder just gets 403 and we switch this
 // off for the session (no repeated calls). First run sets a baseline (so we don't announce every
 // existing paid provider at once); after that, only genuinely NEW paid signups notify — once each.
-let _founderPingsOff=false,_founderLastTs=0,_founderPollAt=0;
-function _loadFounderLastTs(){try{_founderLastTs=parseInt(localStorage.getItem('sc_founder_signup_ts')||'0',10)||0;}catch(e){}}
+let _founderPingsOff=false,_founderLastTs=0,_founderPollAt=0,_isFounder=false;
+function _loadFounderLastTs(){try{_founderLastTs=parseInt(localStorage.getItem('sc_founder_signup_ts')||'0',10)||0;}catch(e){}try{_isFounder=localStorage.getItem('sc_is_founder')==='1';}catch(e){}}
 async function _pollFounderSignups(force){
   if(_founderPingsOff)return;
   const tok=(typeof Cloud!=='undefined'&&Cloud&&Cloud.token)||'';if(!tok)return;
@@ -20222,8 +20226,10 @@ async function _pollFounderSignups(force){
   _founderPollAt=now;
   try{
     const r=await fetch('/api/admin/signups?since='+(_founderLastTs||0),{headers:{'Authorization':'Bearer '+tok}});
-    if(r.status===403||r.status===401){_founderPingsOff=true;return;}   // not a founder → never poll again this session
+    if(r.status===403||r.status===401){_founderPingsOff=true;if(_isFounder){_isFounder=false;try{localStorage.removeItem('sc_is_founder');}catch(e){}}return;}   // not a founder
     if(!r.ok)return;
+    // A 200 means this account is a founder — unlock the founder tools in Settings.
+    if(!_isFounder){_isFounder=true;try{localStorage.setItem('sc_is_founder','1');}catch(e){}try{if(typeof _navCur!=='undefined'&&_navCur&&_navCur.screen==='account'&&typeof renderAccount==='function')renderAccount();}catch(e){}}
     const j=await r.json().catch(()=>null);
     if(!j||!j.ok||!Array.isArray(j.signups))return;
     // Baseline on first ever run so we don't fire a burst for providers who paid before this feature.
@@ -20249,6 +20255,55 @@ async function _pollFounderSignups(force){
     try{if(typeof proToast==='function')proToast('💰 New paid provider: '+lastNm+'! 🎉',6000);}catch(e){}
     try{if(_notifOn('newMessage')&&typeof providerSystemNotify==='function')providerSystemNotify('💰 New paid provider!',lastNm+' just signed up 🎉');}catch(e){}
   }catch(e){}
+}
+// ── Founder tool: provider lookup & resend reset (Settings → Founder tools) ─────────────────────
+function _openProviderLookup(){
+  var ov=document.getElementById('prov-lookup');if(ov)ov.remove();
+  ov=document.createElement('div');ov.id='prov-lookup';
+  ov.style.cssText='position:fixed;inset:0;margin:0 auto;width:390px;max-width:100%;z-index:10000;background:rgba(0,0,0,.6);display:flex;align-items:center;justify-content:center;padding:24px 16px;box-sizing:border-box;';
+  ov.onclick=function(e){if(e.target===ov)ov.remove();};
+  (document.querySelector('.shell')||document.body).appendChild(ov);
+  ov.innerHTML='<div style="background:var(--surf1);border:1px solid var(--p-line);width:100%;max-width:360px;border-radius:16px;padding:18px;">'
+    +'<div style="display:flex;align-items:center;justify-content:space-between;margin-bottom:10px;"><div style="font-size:15px;font-weight:600;color:var(--p-ink);">Provider lookup &amp; reset</div><button onclick="var o=document.getElementById(\'prov-lookup\');if(o)o.remove();" aria-label="Close" style="border:none;background:none;font-size:20px;color:var(--p-mut);cursor:pointer;line-height:1;">✕</button></div>'
+    +'<div style="font-size:12px;color:var(--p-mut);line-height:1.5;margin-bottom:12px;">Enter the email a provider signed up with. See if their account exists, whether it’s paid, and resend their password-reset link in one tap.</div>'
+    +'<input id="pl-email" type="email" inputmode="email" autocapitalize="off" spellcheck="false" placeholder="provider@email.com" onkeydown="if(event.key===\'Enter\')_pl_lookup()" style="width:100%;box-sizing:border-box;background:var(--p-surf);border:1px solid var(--p-line);border-radius:10px;padding:11px 12px;font-size:14px;color:var(--p-ink);margin-bottom:10px;">'
+    +'<button onclick="_pl_lookup()" class="btnp" style="width:100%;border-radius:10px;"><i class="ti ti-search"></i> Look up</button>'
+    +'<div id="pl-result" role="status" style="margin-top:12px;font-size:13px;line-height:1.55;"></div>'
+    +'</div>';
+  setTimeout(function(){try{document.getElementById('pl-email').focus();}catch(e){}},60);
+}
+function _pl_result(html){var el=document.getElementById('pl-result');if(el)el.innerHTML=html;}
+async function _pl_lookup(){
+  var el=document.getElementById('pl-email');var email=(el?el.value:'').trim().toLowerCase();
+  if(!email||!/.+@.+\..+/.test(email)){_pl_result('<span style="color:var(--p-red);">Enter a valid email.</span>');return;}
+  _pl_result('<span style="color:var(--p-mut);">Looking up…</span>');
+  var tok=(typeof Cloud!=='undefined'&&Cloud&&Cloud.token)||'';
+  try{
+    var r=await fetch('/api/admin/provider-lookup?email='+encodeURIComponent(email),{headers:{'Authorization':'Bearer '+tok}});
+    var j=await r.json().catch(function(){return {};});
+    if(r.status===403){_pl_result('<span style="color:var(--p-red);">Founder-only — add your login email to FOUNDER_EMAILS in Vercel.</span>');return;}
+    if(!r.ok||!j.ok){_pl_result('<span style="color:var(--p-red);">'+_fileEsc((j&&j.error)||'Lookup failed.')+'</span>');return;}
+    if(!j.exists){
+      _pl_result('<div style="background:var(--p-amber-bg);border:1px solid var(--p-amber-line);border-radius:9px;padding:10px 12px;color:var(--p-amber);line-height:1.55;">⚠️ <b>No account exists</b> for '+_fileEsc(email)+' yet'+(j.paid?' — but they <b>paid</b>, so the signup didn’t finish':'')+'. Have them create their account with this exact email at <b>slickchart.app</b> (their payment carries over).</div>');
+      return;
+    }
+    var created=j.createdAt?new Date(j.createdAt).toLocaleDateString('en-US',{month:'short',day:'numeric',year:'numeric'}):'—';
+    _pl_result('<div style="background:var(--p-surf);border:1px solid var(--p-line);border-radius:9px;padding:10px 12px;margin-bottom:10px;">'
+      +'<div style="color:var(--p-green);font-weight:600;margin-bottom:4px;">✓ Account exists</div>'
+      +'<div style="color:var(--p-mut);">Name: '+_fileEsc(j.name||'(none)')+'<br>Paid: '+(j.paid?'Yes 💰':'No')+'<br>Email verified: '+(j.verified?'Yes':'No')+'<br>Created: '+_fileEsc(created)+'</div></div>'
+      +'<button onclick="_pl_resend(\''+_jsAttr(email)+'\')" class="btnp" style="width:100%;border-radius:10px;"><i class="ti ti-mail"></i> Resend password reset link</button>');
+  }catch(e){_pl_result('<span style="color:var(--p-red);">Couldn’t reach the server. Try again.</span>');}
+}
+async function _pl_resend(email){
+  _pl_result('<span style="color:var(--p-mut);">Sending reset link…</span>');
+  var tok=(typeof Cloud!=='undefined'&&Cloud&&Cloud.token)||'';
+  try{
+    var r=await fetch('/api/admin/provider-lookup',{method:'POST',headers:{'Content-Type':'application/json','Authorization':'Bearer '+tok},body:JSON.stringify({email:email,action:'resend_reset'})});
+    var j=await r.json().catch(function(){return {};});
+    if(!r.ok){_pl_result('<span style="color:var(--p-red);">'+_fileEsc((j&&j.error)||'Could not send.')+'</span>');return;}
+    if(j.sent){_pl_result('<div style="background:var(--p-surf2);border:1px solid var(--p-green-line);border-radius:9px;padding:10px 12px;color:var(--p-green);line-height:1.55;">✓ '+_fileEsc(j.message||('Reset link sent to '+email))+'</div>');}
+    else{_pl_result('<div style="background:var(--p-amber-bg);border:1px solid var(--p-amber-line);border-radius:9px;padding:10px 12px;color:var(--p-amber);line-height:1.55;">'+_fileEsc(j.message||'No account for that email.')+'</div>');}
+  }catch(e){_pl_result('<span style="color:var(--p-red);">Couldn’t reach the server. Try again.</span>');}
 }
 try{_loadFounderLastTs();}catch(e){}
 setInterval(()=>{try{syncClientEvents();}catch(e){}try{_pollFounderSignups();}catch(e){}},15000);
