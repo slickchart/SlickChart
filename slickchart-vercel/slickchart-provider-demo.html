@@ -2167,6 +2167,32 @@ function _isTombstoneKey(k){return !!(_TOMB_OBJ[k]||_TOMB_ARR[k]);}
 // DIFFERENT clients both keep their edits (the old last-writer-wins dropped one device's whole change).
 // Newer per-client _uAt wins; a client on only one side is kept; deleted clients are never resurrected.
 // Same-client-both-edited still resolves to the newest copy (a rarer field-level conflict).
+// Even when one side's whole record wins by _uAt, append-only sub-collections must NEVER be dropped.
+// submittedForms/signedForms accumulate over time, and a sign-on-device intake lives ONLY on the client
+// record (it has no server event to heal from), so a plain last-writer-wins overwrite silently loses a
+// signed intake the other device holds — exactly how Josie's intake vanished. Union those arrays from
+// BOTH sides into the winning record. Returns true if the winner GREW (so the superset is pushed back).
+function _unionClientForms(winner,other){
+  if(!winner||!other||typeof winner!=='object'||typeof other!=='object')return false;
+  var grew=false;
+  // submittedForms: dedup by evId when present, else by formId+signed+date+title.
+  var sfKey=function(f){return f?(f.evId?('e:'+f.evId):('f:'+(f.formId||'')+'|'+(f.signed?1:0)+'|'+(f.date||'')+'|'+(f.title||''))):'';};
+  var w=Array.isArray(winner.submittedForms)?winner.submittedForms:[];
+  var o=Array.isArray(other.submittedForms)?other.submittedForms:[];
+  if(o.length){
+    var seen={};w.forEach(function(f){var k=sfKey(f);if(k)seen[k]=1;});
+    var add=[];o.forEach(function(f){var k=sfKey(f);if(k&&!seen[k]){seen[k]=1;add.push(f);}});
+    if(add.length){winner.submittedForms=w.concat(add);grew=true;}
+  }
+  // signedForms: union of titles.
+  var wg=Array.isArray(winner.signedForms)?winner.signedForms:[];
+  var og=Array.isArray(other.signedForms)?other.signedForms:[];
+  if(og.length){
+    var set={};wg.forEach(function(t){set[t]=1;});var addg=[];og.forEach(function(t){if(!set[t]){set[t]=1;addg.push(t);}});
+    if(addg.length){winner.signedForms=wg.concat(addg);grew=true;}
+  }
+  return grew;
+}
 function _mergeClients(serverStr,localStr){
   try{
     if(localStr==null)return null;   // fresh device with no local roster — let the server copy load as-is
@@ -2182,8 +2208,13 @@ function _mergeClients(serverStr,localStr){
       if(l&&!s){out[id]=l;changed=true;return;}       // local-only: server is missing it → push up
       if(!s&&!l)return;
       var su=(+(s&&s._uAt))||0,lu=(+(l&&l._uAt))||0;
-      if(su>lu){out[id]=s;}                           // server newer: take it, no push
-      else{out[id]=l;if(_clientSig(l)!==_clientSig(s))changed=true;}   // local newer/tie: push only if different
+      if(su>lu){                                      // server record wins…
+        var grewS=_unionClientForms(s,l);             // …but never at the cost of forms only local held
+        out[id]=s;if(grewS)changed=true;              // merged local forms in → push the superset back
+      }else{                                          // local newer/tie wins…
+        _unionClientForms(l,s);                       // …still absorb any forms only the server had
+        out[id]=l;if(_clientSig(l)!==_clientSig(s))changed=true;
+      }
     });
     return {str:JSON.stringify(out),changed:changed};
   }catch(e){return null;}
@@ -13278,9 +13309,27 @@ function submitSignOnDevice(fid,cid){
     _applyIntakeVitals(CL[cid],fid,q=>ans[q.id]);
     // store the signed form on the client's file so it lives in Forms & documents
     CL[cid].submittedForms=CL[cid].submittedForms||[];
-    if(!CL[cid].submittedForms.some(sf=>sf.formId===fid&&sf.signed))CL[cid].submittedForms.unshift({formId:fid,title:tmpl.name,answers:ans,flagged:[],date:'Today',signed:true});_captureBirthday(CL[cid],fid,ans);_capturePhotoConsent(CL[cid],fid,ans);_captureRefPhoto(cid,fid,ans);
+    var _sodForm=null;
+    if(!CL[cid].submittedForms.some(sf=>sf.formId===fid&&sf.signed)){_sodForm={formId:fid,title:tmpl.name,answers:ans,flagged:[],date:'Today',signed:true,qs:(tmpl&&Array.isArray(tmpl.qs))?tmpl.qs:null};CL[cid].submittedForms.unshift(_sodForm);}
+    _captureBirthday(CL[cid],fid,ans);_capturePhotoConsent(CL[cid],fid,ans);_captureRefPhoto(cid,fid,ans);
     try{if(typeof saveClients==='function')saveClients();}catch(e){}
     try{if(typeof _pushKeyNow==='function')_pushKeyNow('sc_clients',localStorage.getItem('sc_clients')||'');}catch(e){}   // push now so an in-person signed form can't be lost to the debounce
+    // Durability: also log this in-person form to the AUTHORITATIVE server event log, so it survives a
+    // stale-device / Square re-sync overwrite and re-attaches on any device (self-heal). Sign-on-device
+    // forms used to live ONLY in sc_clients, which is exactly how Josie's signed intake got lost. On
+    // success we stamp the returned event id onto the local record so the self-heal adopts it instead of
+    // adding a duplicate. Best-effort: an offline sign still shows locally and the union-merge protects it.
+    try{
+      var _sodTok=(typeof Cloud!=='undefined'&&Cloud&&Cloud.token)||'';
+      if(_sodTok&&_sodForm){
+        var _sodIdem='sod'+Date.now().toString(36)+Math.random().toString(36).slice(2,6);
+        fetch('/api/provider-form',{method:'POST',headers:{'Content-Type':'application/json','Authorization':'Bearer '+_sodTok},
+          body:JSON.stringify({clientId:cid,formId:fid,title:tmpl.name,answers:ans,flagged:[],signed:true,qs:_sodForm.qs,idem:_sodIdem})})
+          .then(function(r){return r&&r.ok?r.json():null;}).then(function(j){
+            if(j&&j.ok&&j.id){try{_sodForm.evId=j.id;if(typeof _markEventSeen==='function')_markEventSeen(j.id);if(typeof saveClients==='function')saveClients();if(typeof _pushKeyNow==='function')_pushKeyNow('sc_clients',localStorage.getItem('sc_clients')||'');}catch(e){}}
+          }).catch(function(){});
+      }
+    }catch(e){}
   }
   proToast(`${tmpl.name} signed ✓`);
   if(cid&&CL[cid])nav('client',cid);else nav('forms');
@@ -19937,6 +19986,10 @@ function _reconcileEventAttachments(events){
     if(kind==='form'){
       c.submittedForms=Array.isArray(c.submittedForms)?c.submittedForms:[];
       if(c.submittedForms.some(f=>f&&f.evId===ev.id))continue;   // already on the chart — nothing to heal
+      // Adopt a locally-created in-person (sign-on-device) form not yet linked to its server event:
+      // stamp the evId onto it rather than adding a duplicate. Matches on formId + signed flag.
+      const _adopt=c.submittedForms.find(f=>f&&!f.evId&&f.formId===payload.formId&&(!!f.signed===!!payload.signed));
+      if(_adopt){_adopt.evId=ev.id;touched=true;continue;}
       const title=payload.title||'Form';
       const formDate=_eventDateLabel(ev,payload.date||'Recent');
       c.submittedForms.unshift({formId:payload.formId,title,answers:payload.answers||{},flagged:payload.flagged||[],date:formDate,signed:!!payload.signed,evId:ev.id,qs:Array.isArray(payload.qs)?payload.qs:null});
