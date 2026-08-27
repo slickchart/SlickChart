@@ -124,10 +124,18 @@ export default async function handler(req, res) {
                 let paidTotal = 0;
                 try { const c = await q`SELECT count(*)::int AS n FROM subscriptions WHERE status = 'active'`; paidTotal = (c[0] && c[0].n) || 0; } catch (e) {}
                 const pushBody = (name || email) + ' just signed up' + (paidTotal ? ` — that's ${paidTotal} paying providers now 🎉` : ' 🎉');
-                const provs = await q`SELECT id FROM providers WHERE lower(email) = ANY(${founderEmails}::text[])`;
-                for (const pr of (provs || [])) {
-                  try { await sendNativeToProvider(pr.id, { title: '💰 New paid provider!', body: pushBody, url: '/slickchart', tag: 'paid-signup:' + email }); } catch (e) {}
+                // Look each founder up individually (simpler/sturdier than a batched array bind) and push
+                // to their phone(s). This is the same sendNativeToProvider path that client submissions
+                // already use successfully.
+                const pushPayload = { title: '💰 New paid provider!', body: pushBody, url: '/slickchart', tag: 'paid-signup:' + email };
+                let pushed = 0;
+                for (const fe of founderEmails) {
+                  try {
+                    const provs = await q`SELECT id FROM providers WHERE lower(email) = ${fe}`;
+                    for (const pr of (provs || [])) { try { pushed += (await sendNativeToProvider(pr.id, pushPayload)) || 0; } catch (e) {} }
+                  } catch (e) {}
                 }
+                console.log('[stripe-webhook] paid-signup push: founders=' + founderEmails.length + ' devices=' + pushed);
               }
             }
           } catch (e) { console.error('[stripe-webhook] founder paid-push failed:', e && e.message || e); }
