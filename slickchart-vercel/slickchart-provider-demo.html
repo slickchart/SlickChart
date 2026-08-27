@@ -15783,6 +15783,8 @@ function renderAccount(){
   ${_isFounder?`<div class="sh" style="margin-top:14px;"><h2>Founder tools</h2></div>
   <div style="padding:0 16px;margin-bottom:20px;"><div style="background:var(--surf2);border:1px solid var(--p-line);border-radius:12px;overflow:hidden;">
     <div onclick="_openProviderLookup()" style="display:flex;align-items:center;gap:11px;padding:13px 14px;cursor:pointer;"><div style="width:38px;height:38px;border-radius:10px;background:var(--p-blue-bg);display:flex;align-items:center;justify-content:center;flex-shrink:0;"><i class="ti ti-user-search" style="font-size:18px;color:var(--p-blue);"></i></div><div style="flex:1;"><div style="font-size:14px;font-weight:500;color:var(--p-ink);">Provider lookup &amp; reset</div><div style="font-size:12px;color:var(--p-mut);">Check a provider's account by email &amp; resend their reset link</div></div><i class="ti ti-chevron-right" style="font-size:16px;color:var(--p-mut);"></i></div>
+    <div style="border-top:1px solid var(--p-line);"></div>
+    <div onclick="_founderTestPush(this)" style="display:flex;align-items:center;gap:11px;padding:13px 14px;cursor:pointer;"><div style="width:38px;height:38px;border-radius:10px;background:var(--p-surf2);display:flex;align-items:center;justify-content:center;flex-shrink:0;"><i class="ti ti-bell-ringing" style="font-size:18px;color:var(--p-green);"></i></div><div style="flex:1;"><div style="font-size:14px;font-weight:500;color:var(--p-ink);">Test my push notifications</div><div style="font-size:12px;color:var(--p-mut);">Send a test push to your phone to confirm paid-signup alerts will arrive</div></div><i class="ti ti-chevron-right" style="font-size:16px;color:var(--p-mut);"></i></div>
   </div></div>`:''}
   <div style="text-align:center;padding:14px;font-size:11px;color:var(--p-mut);">SlickChart · Version 1.0.3</div></div>`;
 }
@@ -20282,6 +20284,27 @@ async function _pollFounderSignups(force){
     try{if(typeof proToast==='function')proToast('💰 New paid provider: '+lastNm+'! 🎉',6000);}catch(e){}
     try{if(_notifOn('newMessage')&&typeof providerSystemNotify==='function')providerSystemNotify('💰 New paid provider!',lastNm+' just signed up 🎉');}catch(e){}
   }catch(e){}
+}
+// ── Founder tool: send myself a test push (confirm the phone is registered) ─────────────────────
+async function _founderTestPush(rowEl){
+  const sub=rowEl&&rowEl.querySelector('div>div:nth-child(2)');
+  const setSub=t=>{try{if(sub)sub.textContent=t;}catch(e){}};
+  setSub('Sending a test push…');
+  const tok=(typeof Cloud!=='undefined'&&Cloud&&Cloud.token)||'';
+  try{
+    const r=await fetch('/api/admin/test-push',{method:'POST',headers:{'Authorization':'Bearer '+tok}});
+    const j=await r.json().catch(()=>({}));
+    const orig='Send a test push to your phone to confirm paid-signup alerts will arrive';
+    if(r.status===403){setSub('Founder-only.');}
+    else if(!r.ok||!j.ok){setSub((j&&j.error)||'Couldn’t send the test.');}
+    else{
+      const msg=j.message||'Done.';
+      if(typeof confirmModal==='function')confirmModal({title:(j.sent>0?'✅ Test push sent':(j.devices===0?'📱 No phone registered yet':'⚠️ Couldn’t deliver')),body:msg,action:'Got it',hideCancel:true},function(){});
+      else if(typeof proToast==='function')proToast(msg,7000);
+      setSub(j.devices===0?'No phone registered — install the app on your phone & allow notifications':((j.sent>0?'✓ Sent to '+j.sent+' device'+(j.sent===1?'':'s'):orig)));
+    }
+    setTimeout(()=>setSub(orig),8000);
+  }catch(e){setSub('Couldn’t reach the server. Try again.');}
 }
 // ── Founder tool: provider lookup & resend reset (Settings → Founder tools) ─────────────────────
 function _openProviderLookup(){
