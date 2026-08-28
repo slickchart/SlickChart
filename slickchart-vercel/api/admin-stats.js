@@ -92,12 +92,16 @@ export default async function handler(req, res) {
     try {
       const su = (await q`SELECT
           count(*) FILTER (WHERE status='active')::int   AS active,
+          count(*) FILTER (WHERE status='active' AND updated_at > now() - interval '7 days')::int  AS active_new7,
+          count(*) FILTER (WHERE status='active' AND updated_at > now() - interval '30 days')::int AS active_new30,
           count(*) FILTER (WHERE status='past_due')::int AS past_due,
           count(*) FILTER (WHERE status='canceled')::int AS canceled,
           count(*) FILTER (WHERE status='canceled' AND updated_at > now() - interval '30 days')::int AS canceled30
         FROM subscriptions`)[0] || {};
       subs = {
         active: su.active || 0,
+        new7: su.active_new7 || 0,
+        new30: su.active_new30 || 0,
         pastDue: su.past_due || 0,
         canceled: su.canceled || 0,
         canceled30: su.canceled30 || 0
