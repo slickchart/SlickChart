@@ -6494,9 +6494,13 @@ function _firstVisitNudgeHTML(cid,apptAt){
   const _joined=!!c.appJoined;
   if(hasIntake&&!ciDone&&hrs!=null&&hrs<=24&&hrs>=-3){
     if(_ciAutoOn&&_joined){
-      out+=`<div style="border-top:1px solid var(--p-line3);background:var(--p-surf2);padding:9px 13px;display:flex;align-items:center;gap:8px;">
+      // Auto-send reaches in-app clients, but the provider still needs a one-tap manual send as a
+      // fallback (a client may not really have the app, or she just wants to text it). Keep the
+      // reassurance AND make the row send on tap, with an explicit "Send now" CTA.
+      out+=`<div onclick="event.stopPropagation();sendCheckin('${cid}')" style="border-top:1px solid var(--p-line3);background:var(--p-surf2);padding:9px 13px;display:flex;align-items:center;gap:8px;cursor:pointer;">
         <i class="ti ti-clipboard-check" aria-hidden="true" style="font-size:14px;color:var(--p-green);flex-shrink:0;"></i>
         <span style="flex:1;min-width:0;font-size:12px;color:var(--p-mut);line-height:1.35;">Check-in auto-sends in their app <i class="ti ti-check" style="font-size:11px;color:var(--p-green);"></i></span>
+        <span style="font-size:11px;font-weight:700;color:var(--accent-strong);white-space:nowrap;">Send now <i class="ti ti-chevron-right" aria-hidden="true" style="font-size:11px;"></i></span>
       </div>`;
     }else{
       const _cta=_joined?'Send check-in':'Text check-in';
@@ -13418,6 +13422,35 @@ function _checkinDone(id,c,apptAt){
     if(_apptDay(nv)===_apptDay(cf))return true;               // same day, time reformatted or dropped
   }
   return false;
+}
+// Is this check-in actually for the given appointment, not a stale one from a prior visit? Same window
+// as _checkinDone's robust signal. "Today's appointments" uses this so a check-in only reads as done for
+// TODAY's visit — a month-old check-in on the client's file must never show as "ready" for today.
+function _ciMatchesVisit(ci,apptAt){
+  if(!ci)return false;
+  if(!apptAt||isNaN(apptAt))return true;                       // no appointment context → prior behavior
+  var at=(typeof ci.at==='number')?ci.at:0;
+  if(!at)return false;                                         // no timestamp → can't confirm it's for THIS visit
+  var ap=apptAt.getTime();
+  return at<=ap+12*3600000 && at>=ap-3*86400000;
+}
+// Compact "send the pre-visit check-in" button for a Today's-appointments card, shown when the check-in
+// isn't done for that visit yet. ALWAYS offers a manual send (opens the text sheet) — the provider needs
+// this fallback for clients who don't have the app, even when auto-send is on. When auto-send will reach
+// an in-app client, the copy just adds that it also auto-sends, but the manual option stays available.
+function _todayCheckinSendHTML(cid,apptAt){
+  var c=cid&&(typeof CL!=='undefined')&&CL[cid];if(!c)return '';
+  // Only prompt within the pre-visit window (24h out through just after), matching _firstVisitNudgeHTML.
+  var hrs=(apptAt&&!isNaN(apptAt))?((apptAt.getTime()-Date.now())/3600000):((typeof _hoursUntilVisit==='function')?_hoursUntilVisit(c):null);
+  if(hrs==null||hrs>24||hrs<-3)return '';
+  var autoOn=!!(typeof checkinCfg!=='undefined'&&checkinCfg&&checkinCfg.autoSend&&checkinCfg.autoSend.on);
+  var auto=autoOn&&!!c.appJoined;
+  var lbl=auto?'Check-in auto-sends in their app · send it now too':'Pre-visit check-in not done · send it';
+  return `<button onclick="event.stopPropagation();sendCheckin('${cid}')" style="margin-top:9px;width:100%;display:flex;align-items:center;gap:7px;background:var(--accent-tint);border:1px solid var(--accent);border-radius:8px;padding:7px 10px;cursor:pointer;font-family:inherit;text-align:left;">
+    <i class="ti ti-clipboard-heart" style="font-size:14px;color:var(--accent-strong);flex-shrink:0;"></i>
+    <span style="flex:1;font-size:12px;color:var(--accent-strong);font-weight:600;">${lbl}</span>
+    <span style="font-size:11px;font-weight:700;color:var(--accent-strong);white-space:nowrap;">Send <i class="ti ti-chevron-right" style="font-size:11px;"></i></span>
+  </button>`;
 }
 let _ciDismissed={};
 function loadCiDismissed(){try{const r=localStorage.getItem('sc_ci_dismissed');if(r)_ciDismissed=JSON.parse(r)||{};}catch(e){}}
@@ -21259,6 +21292,9 @@ function renderTodayAppts(){
     const past=a.at?(a.at<now):false;
     const timeLbl=a.at?a.at.toLocaleTimeString('en-US',{hour:'numeric',minute:'2-digit'}):(a.time||'');
     const ci=_checkinForClient(cid,a.client);
+    // Only treat the check-in as done for THIS visit if it actually falls in the pre-visit window \u2014 a
+    // stale check-in from a prior month on the client's file must not read as "ready" for today.
+    const ciReady=ci&&_ciMatchesVisit(ci,a.at);
     return `<div ${cid?`onclick="nav('client','${cid}')" style="cursor:pointer;"`:''} style="margin:0 16px 10px;background:var(--surf2);border:1px solid var(--p-line);border-radius:12px;overflow:hidden;display:flex;${past?'opacity:.7;':''}">
       <div style="width:4px;background:${a.ic||'var(--accent)'};flex-shrink:0;"></div>
       <div style="padding:11px 13px;flex:1;">
@@ -21266,11 +21302,11 @@ function renderTodayAppts(){
           <div><div style="font-size:14px;font-weight:500;color:var(--p-ink);">${_fileEsc(a.client)}</div><div style="font-size:12px;color:var(--p-mut);margin-top:2px;">${a.tx&&a.tx!=='Appointment'?_fileEsc(a.tx)+' \u00b7 ':''}${a.dur||a.durationMinutes||''} min${past?' \u00b7 done':''}</div></div>
           <div style="display:flex;align-items:center;gap:6px;"><div style="font-size:13px;font-weight:500;color:var(--p-ink);">${timeLbl}</div>${cid?`<i class="ti ti-chevron-right" style="font-size:14px;color:var(--p-mut);"></i>`:''}</div>
         </div>
-        ${ci?(()=>{const _cip=(ci.photos||[]).length||ci.photoCount||0;return `<button onclick="event.stopPropagation();markCheckinRead('${ci.id}');nav('checkin-detail','${ci.id}')" style="margin-top:9px;width:100%;display:flex;align-items:center;gap:7px;background:var(--p-surf2);border:1px solid var(--p-green-line);border-radius:8px;padding:7px 10px;cursor:pointer;font-family:inherit;text-align:left;">
+        ${ciReady?(()=>{const _cip=(ci.photos||[]).length||ci.photoCount||0;return `<button onclick="event.stopPropagation();markCheckinRead('${ci.id}');nav('checkin-detail','${ci.id}')" style="margin-top:9px;width:100%;display:flex;align-items:center;gap:7px;background:var(--p-surf2);border:1px solid var(--p-green-line);border-radius:8px;padding:7px 10px;cursor:pointer;font-family:inherit;text-align:left;">
           <i class="ti ${_cip?'ti-camera':'ti-clipboard-check'}" style="font-size:14px;color:var(--p-green);flex-shrink:0;"></i>
           <span style="flex:1;font-size:12px;color:var(--p-green);font-weight:600;">Pre-visit check-in ready${(ci.flagged||[]).length?' \u00b7 '+ci.flagged.length+' flagged':''}${_cip?' \u00b7 '+_cip+' photo'+(_cip>1?'s':''):''}</span>
           <i class="ti ti-chevron-right" style="font-size:13px;color:var(--p-green);flex-shrink:0;"></i>
-        </button>`;})():''}
+        </button>`;})():(cid?_todayCheckinSendHTML(cid,a.at):'')}
         ${cid?(()=>{const done=_notesDoneToday(cid);return `<button onclick="event.stopPropagation();_notesFrom='today';nav('notes','${cid}')" style="margin-top:9px;width:100%;display:flex;align-items:center;gap:7px;background:${done?'var(--p-surf2)':'#241a08'};border:1px solid ${done?'#1a4a38':'#5a4318'};border-radius:8px;padding:7px 10px;cursor:pointer;font-family:inherit;text-align:left;">
           <i class="ti ${done?'ti-checkbox':'ti-writing'}" style="font-size:14px;color:${done?'var(--p-green)':'var(--p-amber)'};flex-shrink:0;"></i>
           <span style="flex:1;font-size:12px;color:${done?'var(--p-green)':'var(--p-amber)'};font-weight:600;">${done?'Treatment notes done':'Treatment notes not done yet'}</span>
