@@ -13544,37 +13544,57 @@ function _demoPaymentSeed(){
     if(typeof _savePayments==='function')_savePayments();
   }catch(e){}
 }
+// Build the pre-visit check-in message + link for a client (shared by the picker and each send channel
+// so the text is identical no matter how it's sent).
+function _checkinMsg(id){
+  const c=CL[id]||{};
+  const first=(c.name||'there').split(' ')[0];
+  let link='';
+  try{ link=(typeof _clientAppLink==='function')?_clientAppLink(id):''; }catch(e){}
+  if(!link&&c._token){ link=_clientLinkBase()+'/space?c='+encodeURIComponent(c._token); }
+  const visit=(c.nextVisit&&c.nextVisit!=='Not scheduled'&&c.nextVisit!=='—')?(' before your '+String(c.nextVisit).split('·')[0].trim()+' visit'):'';
+  const signoff=(typeof bizInfo!=='undefined'&&bizInfo&&(bizInfo.ownerName||bizInfo.name))?(' – '+(bizInfo.ownerName||bizInfo.name)):'';
+  const msg=`Hi ${first}! Please take 2 minutes to complete your pre-visit check-in${visit} so I'm all set for you: ${link}${signoff}`;
+  return {msg,link,first};
+}
+// Send the pre-visit check-in — same text / email / copy picker every other client send uses, so all
+// the "Send" buttons behave identically.
 function sendCheckin(id){
   const c=CL[id];if(!c)return;
   // Never hand out a tokenless "/client" link (it lands the client in the sample/demo app). Mint the
   // token first if needed, then re-run so the message carries their real personal link.
   if(!c._token){ _withClientToken(id,function(){ sendCheckin(id); }); return; }
-  const first=(c.name||'there').split(' ')[0];
-  const phone=String(c.phone||'').trim();
-  const link=_clientAppLink(id);
-  const visit=(c.nextVisit&&c.nextVisit!=='Not scheduled'&&c.nextVisit!=='—')?(' before your '+String(c.nextVisit).split('·')[0].trim()+' visit'):'';
-  const signoff=(typeof bizInfo!=='undefined'&&bizInfo&&(bizInfo.ownerName||bizInfo.name))?(' – '+(bizInfo.ownerName||bizInfo.name)):'';
-  const msg=`Hi ${first}! Please take 2 minutes to complete your pre-visit check-in${visit} so I'm all set for you: ${link}${signoff}`;
-  window._ciMsg=msg;
-  const telDigits=phone.replace(/[^0-9+]/g,'');
-  const smsHref='sms:'+telDigits+'?&body='+encodeURIComponent(msg);
-  const esc=s=>String(s).replace(/&/g,'&amp;').replace(/</g,'&lt;').replace(/>/g,'&gt;');
-  const ov=document.createElement('div');ov.id='checkin-sheet';
+  const {msg,link,first}=_checkinMsg(id);
+  const row=(onclick,icon,title,sub)=>`<button onclick="${onclick}" style="display:flex;width:100%;align-items:center;gap:11px;padding:12px 14px;border:1px solid var(--p-line);background:var(--surf2);border-radius:10px;margin-bottom:8px;cursor:pointer;text-align:left;"><i class="ti ${icon}" style="font-size:18px;color:var(--accent-strong);"></i><div style="flex:1;min-width:0;"><div style="font-size:13px;font-weight:500;color:var(--p-ink);">${title}</div><div style="font-size:11px;color:var(--p-mut);">${sub}</div></div></button>`;
+  const ov=document.createElement('div');ov.id='send-prod-sheet';
   ov.style.cssText='position:fixed;top:0;bottom:0;left:0;right:0;margin:0 auto;width:390px;max-width:100%;z-index:9999;background:rgba(0,0,0,.6);display:flex;align-items:center;justify-content:center;padding:24px 16px;box-sizing:border-box;';
-  ov.onclick=e=>{if(e.target===ov)ov.remove();};
-  ov.innerHTML=`<div style="background:var(--surf1);border:1px solid var(--p-line);width:100%;border-radius:16px;padding:18px;">
-    <div style="display:flex;align-items:center;gap:10px;margin-bottom:12px;">
-      <div style="width:38px;height:38px;border-radius:9px;background:var(--p-surf2);display:flex;align-items:center;justify-content:center;flex-shrink:0;"><i class="ti ti-message" style="font-size:18px;color:var(--p-green);"></i></div>
-      <div style="flex:1;min-width:0;"><div style="font-size:15px;font-weight:600;color:var(--p-ink);">Send pre-visit check-in</div><div style="font-size:12px;color:var(--p-mut);">${phone?('To '+esc(c.name)+' · '+esc(_fmtPhone(phone))):'No phone number on file'}</div></div>
-      <button onclick="this.closest('#checkin-sheet').remove()" aria-label="Close" style="border:none;background:none;font-size:20px;color:var(--p-mut);cursor:pointer;line-height:1;">✕</button>
-    </div>
-    <div style="background:var(--p-surf);border:1px solid var(--p-line);border-radius:10px;padding:11px 13px;margin-bottom:12px;font-size:13px;color:var(--p-ink);line-height:1.55;">${esc(msg)}</div>
-    ${phone
-      ?`<a href="${smsHref}" onclick="setTimeout(function(){var s=document.getElementById('checkin-sheet');if(s)s.remove();},300)" class="btnp" style="display:flex;align-items:center;justify-content:center;gap:7px;border-radius:10px;padding:12px;text-decoration:none;margin-bottom:8px;"><i class="ti ti-send"></i> Open Messages</a>`
-      :`<div style="background:var(--p-surf3);border:1px solid var(--p-green-line);border-radius:10px;padding:10px 12px;margin-bottom:8px;font-size:12px;color:var(--p-mut2);line-height:1.5;">Add ${esc(first)}&#39;s phone number on their chart (Client details → Edit) to text in one tap. You can still copy the message below.</div>`}
-    <button onclick="_copyText(window._ciMsg,this)" class="btng" style="width:100%;justify-content:center;border-radius:10px;padding:11px;"><i class="ti ti-copy"></i> Copy message</button>
+  ov.onclick=e=>{if(e.target===ov)closeSendProd();};
+  ov.innerHTML=`<div style="background:var(--surf1);border:1px solid var(--p-line);width:100%;border-radius:16px;padding:16px;max-height:82%;overflow:auto;">
+    <div style="display:flex;align-items:center;gap:10px;margin-bottom:6px;"><div style="width:38px;height:38px;border-radius:10px;background:var(--accent-tint);display:flex;align-items:center;justify-content:center;flex-shrink:0;"><i class="ti ti-clipboard-heart" style="font-size:18px;color:var(--accent-strong);"></i></div><div style="flex:1;min-width:0;"><div style="font-size:15px;font-weight:500;color:var(--p-ink);">Send ${_fileEsc(first)} their check-in</div><div style="font-size:12px;color:var(--p-mut);">A 2-minute pre-visit check-in, no app or login needed</div></div><button onclick="closeSendProd()" aria-label="Close" style="border:none;background:none;font-size:20px;color:var(--p-mut);cursor:pointer;line-height:1;">✕</button></div>
+    <div style="margin:8px 0 14px;background:var(--p-surf);border:1px solid var(--p-line);border-radius:10px;padding:10px 12px;display:flex;align-items:center;gap:8px;"><i class="ti ti-world" style="font-size:14px;color:var(--p-mut);flex-shrink:0;"></i><span style="flex:1;font-size:12px;color:var(--p-mut);word-break:break-all;">${_fileEsc(link)}</span></div>
+    ${row("confirmSendCheckin('"+id+"','text')","ti-message-2","Send via text","Opens your messages with the check-in link")}
+    ${row("confirmSendCheckin('"+id+"','email')","ti-mail","Send via email","Emails ${_fileEsc(first)} their check-in link")}
+    ${row("confirmSendCheckin('"+id+"','copy')","ti-copy","Copy message","Paste it anywhere you message clients")}
   </div>`;
   (document.querySelector('.shell')||document.body).appendChild(ov);
+}
+function confirmSendCheckin(id,channel){
+  var _c0=CL[id]; if(_c0&&!_c0._token){ _withClientToken(id,function(){ confirmSendCheckin(id,channel); }); return; }
+  const c=CL[id];if(!c)return;
+  const {msg}=_checkinMsg(id);
+  if(channel==='copy'){ _copyToClipboard(msg,'Check-in message copied'); closeSendProd(); return; }
+  if(channel==='text'){
+    const num=(c&&c.phone)?String(c.phone).replace(/[^\d+]/g,''):'';
+    const sms='sms:'+num+(/(iphone|ipad|ipod|mac)/i.test(navigator.userAgent||'')?'&':'?')+'body='+encodeURIComponent(msg);
+    _openExternal(sms); closeSendProd(); proToast('Opening your messages…'); return;
+  }
+  if(channel==='email'){
+    const to=(c&&c.email)?encodeURIComponent(c.email):'';
+    const subject=encodeURIComponent('Your pre-visit check-in'+(typeof bizInfo!=='undefined'&&bizInfo&&bizInfo.name?(' · '+bizInfo.name):''));
+    const body=encodeURIComponent(msg);
+    _openExternal('mailto:'+to+'?subject='+subject+'&body='+body); closeSendProd(); proToast('Opening your email…'); return;
+  }
+  closeSendProd();
 }
 // ===== Client app sync + invites (Stage 2) =====
 function _cIni(c){return (c&&c.initials)||_initials((c&&c.name)||'')||'?';}
