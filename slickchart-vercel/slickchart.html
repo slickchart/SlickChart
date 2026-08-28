@@ -9791,21 +9791,24 @@ function shareSummaryLink(id){
   // create a duplicate.
   try{if(typeof _storeSummary==='function'&&!_skipSummaryStore){_storeSummary(id);}}catch(e){}
   _skipSummaryStore=false;
-  let linkUrl='';
-  try{ linkUrl=(typeof _clientAppLink==='function')?_clientAppLink(id):''; }catch(e){}
-  if(!linkUrl&&c._token){ linkUrl=_clientLinkBase()+'/space?c='+encodeURIComponent(c._token); }
-  const row=(onclick,icon,title,sub)=>`<button onclick="${onclick}" style="display:flex;width:100%;align-items:center;gap:11px;padding:12px 14px;border:1px solid var(--p-line);background:var(--surf2);border-radius:10px;margin-bottom:8px;cursor:pointer;text-align:left;"><i class="ti ${icon}" style="font-size:18px;color:var(--accent-strong);"></i><div style="flex:1;min-width:0;"><div style="font-size:13px;font-weight:500;color:var(--p-ink);">${title}</div><div style="font-size:11px;color:var(--p-mut);">${sub}</div></div></button>`;
-  const ov=document.createElement('div');ov.id='send-prod-sheet';
-  ov.style.cssText='position:fixed;top:0;bottom:0;left:0;right:0;margin:0 auto;width:390px;max-width:100%;z-index:9999;background:rgba(0,0,0,.6);display:flex;align-items:center;justify-content:center;padding:24px 16px;box-sizing:border-box;';
-  ov.onclick=e=>{if(e.target===ov)closeSendProd();};
-  ov.innerHTML=`<div style="background:var(--surf1);border:1px solid var(--p-line);width:100%;border-radius:16px;padding:16px;max-height:82%;overflow:auto;">
-    <div style="display:flex;align-items:center;gap:10px;margin-bottom:6px;"><div style="width:38px;height:38px;border-radius:10px;background:var(--accent-tint);display:flex;align-items:center;justify-content:center;flex-shrink:0;"><i class="ti ti-link" style="font-size:18px;color:var(--accent-strong);"></i></div><div style="flex:1;min-width:0;"><div style="font-size:15px;font-weight:500;color:var(--p-ink);">Send ${c.name.split(' ')[0]} a link</div><div style="font-size:12px;color:var(--p-mut);">They get their recap + routine, no app or login</div></div><button onclick="closeSendProd()" aria-label="Close" style="border:none;background:none;font-size:20px;color:var(--p-mut);cursor:pointer;line-height:1;">✕</button></div>
-    <div style="margin:8px 0 14px;background:var(--p-surf);border:1px solid var(--p-line);border-radius:10px;padding:10px 12px;display:flex;align-items:center;gap:8px;"><i class="ti ti-world" style="font-size:14px;color:var(--p-mut);flex-shrink:0;"></i><span style="flex:1;font-size:12px;color:var(--p-mut);word-break:break-all;">${linkUrl}</span></div>
-    ${row("confirmSendLink('"+id+"','text')","ti-message-2","Send via text","Opens with their recap and routine")}
-    ${row("confirmSendLink('"+id+"','email')","ti-mail","Send via email","Includes a link back to ${_fileEsc(c.name.split(' ')[0])}'s portal")}
-    ${row("confirmSendLink('"+id+"','copy')","ti-copy","Copy link","Paste it anywhere you message clients")}
-  </div>`;
-  (document.querySelector('.shell')||document.body).appendChild(ov);
+  try{if(typeof _postSummaryData==='function')_postSummaryData(id);}catch(e){}   // populate the client's link view now
+  if(id==='maya'){try{SlickBridge.post('magic-link',{clientId:'maya',providerId:'jess'});}catch(e){}}
+  const first=(c.name||'there').split(' ')[0];
+  let link='';
+  try{ link=(typeof _clientAppLink==='function')?_clientAppLink(id):''; }catch(e){}
+  if(!link&&c._token){ link=_clientLinkBase()+'/space?c='+encodeURIComponent(c._token); }
+  const _visitPhrase=_visitDatePhrase(_sendingSummaryDate||(sessionSummaries[id]&&sessionSummaries[id][0]&&(sessionSummaries[id][0]._draftDate||sessionSummaries[id][0].date))||'');
+  _sendingSummaryDate=null;
+  const msg=`Hi ${first}! Here's your visit summary and aftercare ${_visitPhrase}: ${link}`;
+  openSendSheet({
+    id,
+    title:'Send '+first+' a link',
+    subtitle:'They get their recap + routine, no app or login',
+    icon:'ti-link', iconBg:'var(--accent-tint)', iconColor:'var(--accent-strong)',
+    message:msg,
+    subject:'Your visit summary from '+((typeof bizInfo!=='undefined'&&bizInfo&&bizInfo.name)||'your appointment'),
+    appOption:false
+  });
 }
 // The date of the specific saved summary being shared (set by link/resend), so the outgoing
 // message says "from yesterday" / "from your visit on Jul 11" instead of always "from today".
@@ -9820,44 +9823,6 @@ function _visitDatePhrase(dateInput){
   if(days<=0)return 'from today';
   if(days===1)return 'from yesterday';
   return 'from your visit on '+d.toLocaleDateString('en-US',{month:'short',day:'numeric'});
-}
-function confirmSendLink(id,channel){
-  // Mint the client's real link token first if missing, so we never send a tokenless "/client" demo link.
-  var _c0=CL[id]; if(_c0&&!_c0._token){ _withClientToken(id,function(){ confirmSendLink(id,channel); }); return; }
-  _postSummaryData(id);   // populate the client's link view with the latest recap + routine
-  const _visitPhrase=_visitDatePhrase(_sendingSummaryDate||(sessionSummaries[id]&&sessionSummaries[id][0]&&(sessionSummaries[id][0]._draftDate||sessionSummaries[id][0].date))||'');
-  _sendingSummaryDate=null;
-  if(id==='maya'){try{SlickBridge.post('magic-link',{clientId:'maya',providerId:'jess'});}catch(e){}}
-  const c=CL[id];const f=(c.name||'there').split(' ')[0];
-  // Build the real shareable link for this client using the canonical helper.
-  let link='';
-  try{ link=(typeof _clientAppLink==='function')?_clientAppLink(id):''; }catch(e){}
-  if(!link&&c._token){ link=_clientLinkBase()+'/space?c='+encodeURIComponent(c._token); }
-  const msg=`Hi ${f}! Here's your visit summary and aftercare ${_visitPhrase}: ${link}`;
-  if(channel==='copy'){
-    _copyToClipboard(link,'Link copied');
-    closeSendProd();
-    return;
-  }
-  if(channel==='text'){
-    // Opens the device's SMS app pre-filled. Include the client's number if we have it.
-    const num=(c&&c.phone)?String(c.phone).replace(/[^\d+]/g,''):'';
-    const sms='sms:'+num+(/(iphone|ipad|ipod|mac)/i.test(navigator.userAgent||'')?'&':'?')+'body='+encodeURIComponent(msg);
-    _openExternal(sms);
-    closeSendProd();
-    proToast('Opening your messages…');
-    return;
-  }
-  if(channel==='email'){
-    const to=(c&&c.email)?encodeURIComponent(c.email):'';
-    const subject=encodeURIComponent('Your visit summary from '+(bizInfo.name||'your appointment'));
-    const body=encodeURIComponent(msg+'\n\nSee you next time!\n'+(_providerFirstName()||''));
-    _openExternal('mailto:'+to+'?subject='+subject+'&body='+body);
-    closeSendProd();
-    proToast('Opening your email…');
-    return;
-  }
-  closeSendProd();
 }
 // Reliable clipboard copy with a graceful fallback for older/embedded browsers.
 function _copyToClipboard(text,okMsg){
@@ -13564,37 +13529,16 @@ function sendCheckin(id){
   // Never hand out a tokenless "/client" link (it lands the client in the sample/demo app). Mint the
   // token first if needed, then re-run so the message carries their real personal link.
   if(!c._token){ _withClientToken(id,function(){ sendCheckin(id); }); return; }
-  const {msg,link,first}=_checkinMsg(id);
-  const row=(onclick,icon,title,sub)=>`<button onclick="${onclick}" style="display:flex;width:100%;align-items:center;gap:11px;padding:12px 14px;border:1px solid var(--p-line);background:var(--surf2);border-radius:10px;margin-bottom:8px;cursor:pointer;text-align:left;"><i class="ti ${icon}" style="font-size:18px;color:var(--accent-strong);"></i><div style="flex:1;min-width:0;"><div style="font-size:13px;font-weight:500;color:var(--p-ink);">${title}</div><div style="font-size:11px;color:var(--p-mut);">${sub}</div></div></button>`;
-  const ov=document.createElement('div');ov.id='send-prod-sheet';
-  ov.style.cssText='position:fixed;top:0;bottom:0;left:0;right:0;margin:0 auto;width:390px;max-width:100%;z-index:9999;background:rgba(0,0,0,.6);display:flex;align-items:center;justify-content:center;padding:24px 16px;box-sizing:border-box;';
-  ov.onclick=e=>{if(e.target===ov)closeSendProd();};
-  ov.innerHTML=`<div style="background:var(--surf1);border:1px solid var(--p-line);width:100%;border-radius:16px;padding:16px;max-height:82%;overflow:auto;">
-    <div style="display:flex;align-items:center;gap:10px;margin-bottom:6px;"><div style="width:38px;height:38px;border-radius:10px;background:var(--accent-tint);display:flex;align-items:center;justify-content:center;flex-shrink:0;"><i class="ti ti-clipboard-heart" style="font-size:18px;color:var(--accent-strong);"></i></div><div style="flex:1;min-width:0;"><div style="font-size:15px;font-weight:500;color:var(--p-ink);">Send ${_fileEsc(first)} their check-in</div><div style="font-size:12px;color:var(--p-mut);">A 2-minute pre-visit check-in, no app or login needed</div></div><button onclick="closeSendProd()" aria-label="Close" style="border:none;background:none;font-size:20px;color:var(--p-mut);cursor:pointer;line-height:1;">✕</button></div>
-    <div style="margin:8px 0 14px;background:var(--p-surf);border:1px solid var(--p-line);border-radius:10px;padding:10px 12px;display:flex;align-items:center;gap:8px;"><i class="ti ti-world" style="font-size:14px;color:var(--p-mut);flex-shrink:0;"></i><span style="flex:1;font-size:12px;color:var(--p-mut);word-break:break-all;">${_fileEsc(link)}</span></div>
-    ${row("confirmSendCheckin('"+id+"','text')","ti-message-2","Send via text","Opens your messages with the check-in link")}
-    ${row("confirmSendCheckin('"+id+"','email')","ti-mail","Send via email","Emails ${_fileEsc(first)} their check-in link")}
-    ${row("confirmSendCheckin('"+id+"','copy')","ti-copy","Copy message","Paste it anywhere you message clients")}
-  </div>`;
-  (document.querySelector('.shell')||document.body).appendChild(ov);
-}
-function confirmSendCheckin(id,channel){
-  var _c0=CL[id]; if(_c0&&!_c0._token){ _withClientToken(id,function(){ confirmSendCheckin(id,channel); }); return; }
-  const c=CL[id];if(!c)return;
-  const {msg}=_checkinMsg(id);
-  if(channel==='copy'){ _copyToClipboard(msg,'Check-in message copied'); closeSendProd(); return; }
-  if(channel==='text'){
-    const num=(c&&c.phone)?String(c.phone).replace(/[^\d+]/g,''):'';
-    const sms='sms:'+num+(/(iphone|ipad|ipod|mac)/i.test(navigator.userAgent||'')?'&':'?')+'body='+encodeURIComponent(msg);
-    _openExternal(sms); closeSendProd(); proToast('Opening your messages…'); return;
-  }
-  if(channel==='email'){
-    const to=(c&&c.email)?encodeURIComponent(c.email):'';
-    const subject=encodeURIComponent('Your pre-visit check-in'+(typeof bizInfo!=='undefined'&&bizInfo&&bizInfo.name?(' · '+bizInfo.name):''));
-    const body=encodeURIComponent(msg);
-    _openExternal('mailto:'+to+'?subject='+subject+'&body='+body); closeSendProd(); proToast('Opening your email…'); return;
-  }
-  closeSendProd();
+  const {msg,first}=_checkinMsg(id);
+  openSendSheet({
+    id,
+    title:'Send '+first+' their check-in',
+    subtitle:'A 2-minute pre-visit check-in, no app or login needed',
+    icon:'ti-clipboard-heart', iconBg:'var(--accent-tint)', iconColor:'var(--accent-strong)',
+    message:msg,
+    subject:'Your pre-visit check-in'+((typeof bizInfo!=='undefined'&&bizInfo&&bizInfo.name)?(' · '+bizInfo.name):''),
+    appOption:false
+  });
 }
 // ===== Client app sync + invites (Stage 2) =====
 function _cIni(c){return (c&&c.initials)||_initials((c&&c.name)||'')||'?';}
@@ -14214,34 +14158,93 @@ async function _confirmSentToApp(id){
   try{if(res.ok)_markInvited(id);}catch(e){}
   if(typeof proToast==='function'){ if(res.ok)proToast('Sent to '+first+'’s app ✓'); else proToast(res.msg,0); }
 }
+// ── UNIVERSAL client send sheet ─────────────────────────────────────────────────────────────────
+// ONE sheet for every "send something to a client" action, so they all look and behave identically:
+// an editable message PREVIEW + Copy / Text / Email (each reads the LIVE edited text at tap time), plus
+// an optional "Send to their app now" shortcut. This is what makes "preview + edit the ready message,
+// then send exactly that" universal. opts:
+//   id                       client id (phone/email pulled from their file)
+//   title, subtitle          header text
+//   icon, iconBg, iconColor  header icon styling
+//   message                  seed message (editable; keep the link inside it)
+//   subject                  email subject line
+//   appOption                show "Send to their app now" (default: true when the client has the app)
+//   iphoneNote               show the iPhone-contacts caveat (default false)
+//   onSend                   optional fn(id) run after a text/email/copy (e.g. _markInvited)
+let _sendSheetOpts=null;
+function openSendSheet(opts){
+  opts=opts||{};
+  const id=opts.id;const c=id&&CL[id];if(!c)return;
+  // Never open a send sheet whose link would be a tokenless "/client" demo link — mint the real token first.
+  if(!c._token){ _withClientToken(id,function(){ openSendSheet(opts); }); return; }
+  _sendSheetOpts=opts;
+  const first=_fileEsc((c.name||'there').split(' ')[0]);
+  const appOption=(opts.appOption!==false)&&!!c._token;
+  const iphoneNote=!!opts.iphoneNote;
+  const old=document.getElementById('usend-sheet');if(old)old.remove();
+  const ov=document.createElement('div');ov.id='usend-sheet';
+  ov.style.cssText='position:fixed;top:0;bottom:0;left:0;right:0;margin:0 auto;width:390px;max-width:100%;z-index:9999;background:rgba(0,0,0,.6);display:flex;align-items:center;justify-content:center;padding:24px 16px;box-sizing:border-box;';
+  ov.onclick=e=>{if(e.target===ov)closeSendSheet();};
+  ov.innerHTML=`<div style="background:var(--surf1);border:1px solid var(--p-line);width:100%;border-radius:16px;padding:18px;max-height:88%;overflow:auto;">
+    <div style="display:flex;align-items:center;gap:10px;margin-bottom:12px;"><div style="width:38px;height:38px;border-radius:9px;background:${opts.iconBg||'var(--accent-tint)'};display:flex;align-items:center;justify-content:center;flex-shrink:0;"><i class="ti ${opts.icon||'ti-send'}" style="font-size:18px;color:${opts.iconColor||'var(--accent-strong)'};"></i></div><div style="flex:1;min-width:0;"><div style="font-size:15px;font-weight:600;color:var(--p-ink);">${_fileEsc(opts.title||('Send to '+first))}</div><div style="font-size:12px;color:var(--p-mut);">${_fileEsc(opts.subtitle||'No app or login needed')}</div></div><button onclick="closeSendSheet()" aria-label="Close" style="border:none;background:none;font-size:20px;color:var(--p-mut);cursor:pointer;line-height:1;">✕</button></div>
+    <div style="display:flex;align-items:center;justify-content:space-between;margin-bottom:5px;"><span style="font-size:11px;font-weight:600;color:var(--p-mut2);letter-spacing:.05em;text-transform:uppercase;">Your message</span><span style="font-size:11px;color:var(--p-mut);">Tap to edit</span></div>
+    <textarea id="usend-msg" rows="6" style="width:100%;box-sizing:border-box;background:var(--p-surf);border:1px solid var(--p-line);border-radius:10px;padding:11px 12px;margin-bottom:6px;font-size:12.5px;color:var(--p-ink);line-height:1.55;font-family:inherit;resize:vertical;outline:none;">${String(opts.message||'').replace(/</g,'&lt;')}</textarea>
+    <div style="font-size:11px;color:var(--p-mut);margin-bottom:12px;line-height:1.45;">Edit anything you like — just keep the link so ${first} can open it.</div>
+    ${appOption?`<button onclick="_confirmSentToApp('${id}');closeSendSheet();" style="width:100%;border-radius:9px;padding:12px;margin-bottom:8px;display:flex;align-items:center;justify-content:center;gap:7px;background:var(--p-surf2);border:1px solid var(--p-green-line);color:var(--p-green);font-size:13px;font-weight:600;cursor:pointer;font-family:inherit;"><i class="ti ti-device-mobile-check"></i> Send to their app now</button>
+    <div style="font-size:11px;color:var(--p-mut);text-align:center;margin-bottom:10px;line-height:1.4;">It syncs straight to their app, no link needed. Or share below.</div>`:''}
+    ${iphoneNote?`<div style="display:flex;gap:7px;align-items:flex-start;background:var(--p-blue-bg);border:1px solid var(--p-blue-line);border-radius:9px;padding:8px 11px;margin-bottom:12px;"><i class="ti ti-info-circle" style="font-size:14px;color:var(--p-blue);flex-shrink:0;margin-top:1px;"></i><span style="font-size:11.5px;color:#8fbce8;line-height:1.5;">On an iPhone, the link may not be tappable until they save your number to their Contacts — that’s Apple blocking links from unknown senders, not a broken link.</span></div>`:''}
+    <div style="display:grid;grid-template-columns:1fr 1fr;gap:8px;margin-bottom:8px;">
+      <button onclick="_uSendCopy(this)" class="btnp" style="border-radius:9px;padding:11px;"><i class="ti ti-copy"></i> Copy message</button>
+      <button onclick="_uSendText()" class="btng" style="border-radius:9px;padding:11px;"><i class="ti ti-message"></i> Text it</button>
+    </div>
+    <button onclick="_uSendEmail()" class="btng" style="width:100%;border-radius:9px;padding:11px;justify-content:center;"><i class="ti ti-mail"></i> Email it</button>
+  </div>`;
+  (document.querySelector('.shell')||document.body).appendChild(ov);
+  setTimeout(function(){try{var t=document.getElementById('usend-msg');if(t){t.selectionStart=t.selectionEnd=t.value.length;}}catch(e){}},40);
+}
+function closeSendSheet(){const e=document.getElementById('usend-sheet');if(e)e.remove();}
+// The message is editable, so each channel reads the LIVE textarea at tap time (falling back to the seed).
+function _uSendVal(){const t=document.getElementById('usend-msg');const v=t?String(t.value||'').trim():'';return v||String((_sendSheetOpts&&_sendSheetOpts.message)||'');}
+function _uSendDone(){try{const o=_sendSheetOpts;if(o&&typeof o.onSend==='function')o.onSend(o.id);}catch(e){}}
+function _uSendText(){
+  const o=_sendSheetOpts||{};const c=CL[o.id]||{};const msg=_uSendVal();
+  _uSendDone();closeSendSheet();
+  if(typeof proToast==='function')proToast('Opening your messages…');
+  location.href=_smsHref(c.phone,msg);
+}
+function _uSendEmail(){
+  const o=_sendSheetOpts||{};const c=CL[o.id]||{};const msg=_uSendVal();
+  const href='mailto:'+encodeURIComponent(c.email||'').replace(/%40/g,'@')+'?subject='+encodeURIComponent(o.subject||'A message from your provider')+'&body='+encodeURIComponent(msg);
+  _uSendDone();closeSendSheet();
+  if(typeof proToast==='function')proToast('Opening your email…');
+  location.href=href;
+}
+function _uSendCopy(btn){
+  const msg=_uSendVal();
+  const done=function(){ if(btn){const o=btn.innerHTML;btn.innerHTML='<i class="ti ti-check"></i> Copied';setTimeout(function(){try{btn.innerHTML=o;}catch(e){}},1200);} if(typeof proToast==='function')proToast('Message copied'); };
+  const fail=function(){ if(typeof proToast==='function')proToast('Couldn’t copy — long-press the message to copy it'); };
+  _uSendDone();
+  try{ if(navigator.clipboard&&navigator.clipboard.writeText){ navigator.clipboard.writeText(msg).then(done).catch(function(){_copyFallback(msg,done,fail);}); return; } }catch(e){}
+  _copyFallback(msg,done,fail);
+}
+// Generic share sheet, now delegating to the universal editable send sheet. Used for forms, bundles, guides.
 function _shareClientLinkSheet(id,opts){
   const c=CL[id];if(!c)return;
   // Belt-and-suspenders: never open a share sheet whose link would be a tokenless "/client" demo link.
   if(!c._token){ _withClientToken(id,function(){ _shareClientLinkSheet(id,opts); }); return; }
   opts=opts||{};
-  const first=c.name.split(' ')[0];
+  const first=(c.name||'there').split(' ')[0];
   const link=_clientAppLink(id);
-  const msg=opts.msg||('Hi '+first+'! Here\u2019s your link:\n\n'+link);
-  const enc=encodeURIComponent(msg);
-  // iOS Messages only auto-links a URL on its own line and wants '&' (not '?') before the body.
-  const smsHref=_smsHref(c.phone,msg);   // addressed to the client automatically (from their file)
-  const old=document.getElementById('invite-sheet');if(old)old.remove();
-  const ov=document.createElement('div');ov.id='invite-sheet';
-  ov.style.cssText='position:fixed;top:0;bottom:0;left:0;right:0;margin:0 auto;width:390px;max-width:100%;z-index:9999;background:rgba(0,0,0,.6);display:flex;align-items:center;justify-content:center;padding:24px 16px;box-sizing:border-box;';
-  ov.onclick=e=>{if(e.target===ov)ov.remove();};
-  ov.innerHTML=`<div style="background:var(--surf1);border:1px solid var(--p-line);width:100%;border-radius:16px;padding:18px;">
-    <div style="display:flex;align-items:center;gap:10px;margin-bottom:12px;"><div style="width:38px;height:38px;border-radius:9px;background:${opts.iconBg||'var(--p-purple-bg)'};display:flex;align-items:center;justify-content:center;flex-shrink:0;"><i class="ti ${opts.icon||'ti-link'}" style="font-size:18px;color:${opts.iconColor||'var(--p-purple)'};"></i></div><div style="flex:1;min-width:0;"><div style="font-size:15px;font-weight:600;color:var(--p-ink);">${opts.title||('Send to '+first)}</div><div style="font-size:12px;color:var(--p-mut);">Opens in any browser \u00b7 installable on their phone</div></div><button onclick="this.closest('#invite-sheet').remove()" aria-label="Close" style="border:none;background:none;font-size:20px;color:var(--p-mut);cursor:pointer;line-height:1;">\u2715</button></div>
-    <div style="background:var(--p-surf);border:1px solid var(--p-line);border-radius:10px;padding:11px 12px;margin-bottom:12px;font-size:12.5px;color:var(--p-mut);line-height:1.55;overflow-wrap:anywhere;word-break:break-word;">${msg.replace(/</g,'&lt;')}</div>
-    <div style="display:flex;gap:7px;align-items:flex-start;background:var(--p-blue-bg);border:1px solid var(--p-blue-line);border-radius:9px;padding:8px 11px;margin-bottom:12px;"><i class="ti ti-info-circle" style="font-size:14px;color:var(--p-blue);flex-shrink:0;margin-top:1px;"></i><span style="font-size:11.5px;color:#8fbce8;line-height:1.5;">On an iPhone, the link may not be tappable until they save your number to their Contacts — that’s Apple blocking links from unknown senders, not a broken link.</span></div>
-    ${c._token?`<button onclick="_confirmSentToApp('${id}');this.closest('#invite-sheet').remove();" style="width:100%;border-radius:9px;padding:12px;margin-bottom:8px;display:flex;align-items:center;justify-content:center;gap:7px;background:var(--p-surf2);border:1px solid var(--p-green-line);color:var(--p-green);font-size:13px;font-weight:600;cursor:pointer;font-family:inherit;"><i class="ti ti-device-mobile-check"></i> Send to their app now</button>
-    <div style="font-size:11px;color:var(--p-mut);text-align:center;margin-bottom:10px;line-height:1.4;">It syncs straight to their app, no link needed. Or share a link below.</div>`:''}
-    <div style="display:grid;grid-template-columns:1fr 1fr;gap:8px;margin-bottom:8px;">
-      <button onclick="_copyText('${link}',this);_markInvited('${id}')" class="btnp" style="border-radius:9px;padding:11px;"><i class="ti ti-copy"></i> Copy link</button>
-      <button onclick="location.href='${smsHref}';_markInvited('${id}');this.closest('#invite-sheet').remove();" class="btng" style="border-radius:9px;padding:11px;"><i class="ti ti-message"></i> Text it</button>
-    </div>
-    <button onclick="location.href='mailto:'+encodeURIComponent('${_jsAttr(c.email||'')}').replace(/%40/g,'@')+'?subject=${encodeURIComponent(opts.subject||'A message from your provider')}&body=${enc}';_markInvited('${id}');this.closest('#invite-sheet').remove();" class="btng" style="width:100%;border-radius:9px;padding:11px;justify-content:center;"><i class="ti ti-mail"></i> Email it</button>
-  </div>`;
-  (document.querySelector('.shell')||document.body).appendChild(ov);
+  const msg=opts.msg||('Hi '+first+'! Here’s your link:\n\n'+link);
+  openSendSheet({
+    id,
+    title:opts.title||('Send to '+first),
+    subtitle:opts.subtitle||'Opens in any browser · installable on their phone',
+    icon:opts.icon||'ti-link', iconBg:opts.iconBg||'var(--p-purple-bg)', iconColor:opts.iconColor||'var(--p-purple)',
+    message:msg, subject:opts.subject||'A message from your provider',
+    appOption:true, iphoneNote:true,
+    onSend:(typeof _markInvited==='function'?_markInvited:null)
+  });
 }
 // Assigns a form to a client for real (same mechanism as "send to app"), then
 // either invites them (if they don't have the app yet, the invite link IS
