@@ -3,11 +3,50 @@
 // and how many bookings/invoices Square returns — so we can see WHY a list is empty.
 // Aggregate/technical info only; no client PII beyond counts.
 import { squareFetch as _sqf, sqContext, resolveLocationId } from '../../lib/square.js';
+import { sql } from '../../lib/db.js';
 
 export default async function handler(req, res) {
   const ctx = await sqContext(req, res); if (!ctx) return;
   const sf = (p, o) => _sqf(p, o, ctx.token);
-  const out = { usingLocationId: null, storedLocationId: ctx.locationId || null, locations: [], bookings: {}, invoices: {} };
+  const out = { usingLocationId: null, storedLocationId: ctx.locationId || null, locations: [], bookings: {}, invoices: {}, customers: {}, merchant: {} };
+
+  // ── WHY ARE STRANGERS IMPORTING? ─────────────────────────────────────────────────────────────
+  // The customer IMPORT reads this account's WHOLE Square customer directory. If foreign customers show
+  // up in the app, this account's Square directory itself contains them. Report the total and the newest
+  // few (with creation source) so ongoing pollution — a rising count / a burst of very recent creations —
+  // is visible, plus the merchant id and (founder only) whether ANY OTHER provider is connected to the
+  // SAME merchant, which is the cross-account signature.
+  try {
+    let count = 0, cursor = '', guard = 0, newest = [];
+    do {
+      const qs = new URLSearchParams({ limit: '100' });
+      if (cursor) qs.set('cursor', cursor);
+      const d = await sf('/v2/customers?' + qs.toString());
+      const cs = d.customers || [];
+      count += cs.length;
+      newest = newest.concat(cs.map(c => ({ created: c.created_at || '', src: c.creation_source || '' })));
+      cursor = d.cursor || '';
+    } while (cursor && ++guard < 80);
+    newest.sort((a, b) => String(b.created).localeCompare(String(a.created)));
+    out.customers = { total: count, newest: newest.slice(0, 10) };
+  } catch (e) { out.customers = { error: e.message }; }
+
+  try {
+    const q = sql();
+    const meRows = await q`SELECT merchant_id FROM square_connections WHERE provider_id=${ctx.providerId}`;
+    const mid = (meRows[0] && meRows[0].merchant_id) || null;
+    out.merchant.id = mid;
+    // Founder-gated cross-account check: does another provider share this merchant? (Don't expose other
+    // providers to a random caller — only the founder, for support.)
+    let email = '';
+    try { const p = await q`SELECT email FROM providers WHERE id=${ctx.providerId}`; email = String((p[0] && p[0].email) || '').toLowerCase(); } catch (e) {}
+    const founders = String(process.env.FOUNDER_EMAILS || process.env.OWNER_EMAIL || '').toLowerCase().split(',').map(s => s.trim()).filter(Boolean);
+    if (mid && email && founders.includes(email)) {
+      const others = await q`SELECT provider_id FROM square_connections WHERE merchant_id=${mid} AND provider_id <> ${ctx.providerId}`;
+      out.merchant.sharedWithOtherProviders = (others || []).map(r => r.provider_id);
+      out.merchant.isShared = (others || []).length > 0;
+    }
+  } catch (e) { out.merchant.error = e.message; }
   try {
     // all locations on the account
     try {

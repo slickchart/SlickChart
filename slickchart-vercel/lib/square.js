@@ -41,11 +41,18 @@ export function requireAuth(req, res) {
   return true;
 }
 
-// Core Square call. Pass an explicit token (per-provider); falls back to env token.
+// Core Square call. The caller MUST pass its own per-provider token.
+// SECURITY (data isolation — top priority): this NO LONGER falls back to the deployment-wide
+// SQUARE_ACCESS_TOKEN. That silent fallback was the exact mechanism behind the cross-account Square
+// leak — any call reaching here with a missing/empty token would read or WRITE against the owner's
+// merchant directory, mixing one account's customers into another's (and re-polluting a directory the
+// owner just cleaned). sqContext always resolves the provider's own token (and even the gated
+// legacy-owner path returns that token explicitly), so a falsy token here is a bug: fail loudly instead
+// of quietly touching the shared merchant.
 export async function squareFetch(path, { method = 'GET', body } = {}, token) {
   const cfg = squareConfig();
-  const bearer = token || cfg.token;
-  if (!bearer) { const err = new Error('No Square access token available.'); err.status = 401; throw err; }
+  const bearer = token || '';
+  if (!bearer) { const err = new Error('No Square access token for this request.'); err.status = 401; err.code = 'notoken'; throw err; }
   const headers = { 'Authorization': `Bearer ${bearer}`, 'Content-Type': 'application/json' };
   if (cfg.version) headers['Square-Version'] = cfg.version;
   const resp = await fetch(cfg.base + path, { method, headers, body: body ? JSON.stringify(body) : undefined });
@@ -134,6 +141,25 @@ export async function revokeToken({ accessToken, merchantId }) {
 export async function storeConnection(providerId, resp) {
   const q = sql();
   await ensureProvidersTable();
+  // DATA ISOLATION (top priority): a Square merchant directory must belong to exactly ONE SlickChart
+  // provider. If this merchant is already connected to a DIFFERENT provider, letting a second account
+  // connect it would give both the SAME customer list — each other's clients would sync in. That is the
+  // cross-account leak. Refuse the connect so one merchant can never feed two accounts. (A lookup hiccup
+  // must not block a legitimate connect, so only a confirmed clash throws.)
+  const mid = resp && resp.merchant_id;
+  if (mid) {
+    let clashProvider = null;
+    try {
+      const clash = await q`SELECT provider_id FROM square_connections WHERE merchant_id=${mid} AND provider_id <> ${providerId} LIMIT 1`;
+      clashProvider = clash && clash[0] && clash[0].provider_id;
+    } catch (e) { /* lookup failed — don't block a legit connect on a transient DB error */ }
+    if (clashProvider) {
+      console.error('[square] BLOCKED cross-account connect: merchant ' + mid + ' already linked to provider ' + clashProvider + ', refused for ' + providerId);
+      const e = new Error('This Square account is already connected to another SlickChart account. Disconnect it there first, or contact support.');
+      e.status = 409; e.code = 'merchant_taken';
+      throw e;
+    }
+  }
   let locationId = null;
   try { locationId = await resolveLocationId(resp.access_token, null); } catch (e) {}
   await q`INSERT INTO square_connections (provider_id, access_token, refresh_token, expires_at, merchant_id, location_id, connected_at, updated_at)
