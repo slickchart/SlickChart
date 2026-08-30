@@ -144,6 +144,14 @@ export async function ensureProvidersTable() {
   )`;
   await q`ALTER TABLE square_connections ADD COLUMN IF NOT EXISTS connected_at timestamptz DEFAULT now()`;
   await q`ALTER TABLE square_connections ADD COLUMN IF NOT EXISTS last_used_at timestamptz`;
+  // DATA ISOLATION (top priority): one Square merchant must belong to exactly ONE provider, enforced at
+  // the DATABASE level — not just the application guard in storeConnection (which can fail open on a DB
+  // hiccup or lose a race). A UNIQUE index makes it impossible for two provider rows to share a
+  // merchant_id, so the cross-account leak (two accounts on one Square directory) cannot recur. Postgres
+  // UNIQUE allows multiple NULLs, so connections without a merchant_id are unaffected. Best-effort: if the
+  // table still holds duplicate merchant_ids (pre-existing pollution), the index build fails and is
+  // skipped until those duplicates are severed — the app guard holds the line meanwhile.
+  try { await q`CREATE UNIQUE INDEX IF NOT EXISTS square_connections_merchant_uniq ON square_connections (merchant_id) WHERE merchant_id IS NOT NULL`; } catch (e) { /* duplicates still present — retried after cleanup */ }
   // Real Stripe payment status per email — this is the source of truth for
   // whether someone is allowed to have an account, and for the in-app billing
   // screen. Populated only by the Stripe webhook, never by the app itself.

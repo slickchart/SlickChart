@@ -8,8 +8,6 @@ export default function handler(req, res) {
   res.status(200).json({
     ok: true,
     environment: cfg.env,                 // "sandbox" or "production"
-    hasToken: Boolean(cfg.token),         // is SQUARE_ACCESS_TOKEN set?
-    hasAccessKey: Boolean(process.env.APP_SHARED_SECRET), // is APP_SHARED_SECRET set?
     locationPinned: Boolean(cfg.locationId),
     versionPinned: Boolean(cfg.version)
   });

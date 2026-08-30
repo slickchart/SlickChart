@@ -19060,22 +19060,11 @@ function _mergeSquareRetail(){
     }
   }catch(e){}
 }
-function _sqKey(force){
-  let k=sessionStorage.getItem('sc_sqkey')||'';
-  if(force||!k){
-    _inputSheet({title:'Enter your SlickChart access key',body:'The APP_SHARED_SECRET you set in Vercel.',placeholder:'Access key',value:k,action:'Save'},function(v){
-      if(v){try{sessionStorage.setItem('sc_sqkey',v);}catch(e){}if(typeof proToast==='function')proToast('Access key saved ✓');}
-    });
-  }
-  return k||'';
-}
 async function _sqFetch(path,opts){
   opts=opts||{};
   const headers={};
   const tok=(typeof Cloud!=='undefined'&&Cloud&&Cloud.token)||'';
-  if(tok)headers['Authorization']='Bearer '+tok;                 // identifies the provider → uses THEIR Square
-  let key='';try{key=sessionStorage.getItem('sc_sqkey')||'';}catch(e){}
-  if(key)headers['x-slickchart-key']=key;                        // optional legacy shared-key fallback
+  if(tok)headers['Authorization']='Bearer '+tok;                 // identifies the provider → uses THEIR OWN Square only
   const init={method:opts.method||'GET',headers};
   if(opts.body!==undefined){headers['Content-Type']='application/json';init.body=JSON.stringify(opts.body);}
   let resp;
@@ -19264,7 +19253,6 @@ function renderSquareSync(){
     <span style="font-size:11px;color:var(--p-mut);">Your Square Online shop link, the default <b>Buy</b> for your products</span>
     <input id="sq-shop-url" value="${((typeof bizInfo!=='undefined'&&bizInfo.shopUrl)||'').replace(/"/g,'&quot;')}" placeholder="yourshop.square.site" onchange="_saveShopUrl(this.value)" style="width:100%;margin-top:5px;background:var(--p-surf);border:1px solid var(--p-line);border-radius:9px;padding:10px 12px;font-size:13px;color:var(--p-ink);font-family:inherit;box-sizing:border-box;outline:none;">
   </div>
-  <div style="padding:0 16px;"><button onclick="_sqKey(true)" style="background:none;border:none;color:var(--p-mut);font-size:11px;cursor:pointer;padding:4px 0;"><i class="ti ti-key" style="font-size:11px;"></i> Change access key</button></div>
   ${selectedProfessions.includes('tattoo')?_depositSettingCard():''}
   <div id="sq-results" style="padding:6px 16px 20px;"></div>`;
   _sqCheckStatus();
@@ -19440,6 +19428,13 @@ async function _autoSyncCustomers(opts){
       if(!id||CL[id])return;   // already have them, don't overwrite their chart
       if(typeof mergedSquareIds!=='undefined'&&mergedSquareIds[id])return;   // was merged into another chart, don't re-add
       if(typeof _deletedClientIds!=='undefined'&&_deletedClientIds[id])return;   // provider removed them, don't resurrect
+      // DATA-ISOLATION guard: never AUTO-import the "stranger" signature — a customer created via the API
+      // (THIRD_PARTY) with NO email. That is exactly how cross-account leaked customers look; the
+      // provider's own clients have an email, or a Square-native creation source (DIRECTORY/APPOINTMENTS/
+      // ONLINE_STORE/etc.). This only holds back the automatic poll — a manual import can still bring one
+      // in on purpose — so even if a Square directory still has residual strangers, they don't silently
+      // flow into the roster.
+      if((typeof _sqIsAppCreated==='function')&&_sqIsAppCreated(c.creationSource)&&!(c.email&&String(c.email).trim()))return;
       CL[id]=_sqMakeClient(c);added++;
     });
     if(added){
@@ -20486,26 +20481,41 @@ async function _founderTestPush(rowEl,delaySec){
 // reads the whole directory, so a bloated/rising count is the pollution), the newest customers' dates +
 // creation source, and — founder only — whether ANY OTHER SlickChart account is connected to your SAME
 // Square merchant, which is the cross-account leak's signature.
+function _sqEsc(s){return String(s==null?'':s).replace(/&/g,'&amp;').replace(/</g,'&lt;').replace(/>/g,'&gt;');}
 async function _founderSquareCheck(rowEl){
   const sub=rowEl&&rowEl.querySelector('div>div:nth-child(2)');
   const orig='See your Square customer count & whether anyone else shares your merchant';
   const setSub=t=>{try{if(sub)sub.textContent=t;}catch(e){}};
   setSub('Checking your Square…');
   const tok=(typeof Cloud!=='undefined'&&Cloud&&Cloud.token)||'';
-  const esc=s=>String(s==null?'':s).replace(/&/g,'&amp;').replace(/</g,'&lt;').replace(/>/g,'&gt;');
   try{
-    const r=await fetch('/api/square/diag',{headers:{'Authorization':'Bearer '+tok}});
-    const j=await r.json().catch(()=>({}));
-    if(r.status===401||(j&&j.code==='nosquare')){setSub(orig);if(typeof proToast==='function')proToast('No Square is connected to this account — nothing imports from Square here.',7000);setTimeout(()=>setSub(orig),9000);return;}
-    if(!r.ok){setSub((j&&j.error)||'Could not check right now.');setTimeout(()=>setSub(orig),6000);return;}
-    const cust=j.customers||{},merch=j.merchant||{};
+    // Two reads: diag (customer total + newest sources) and the merchant connection list (who is
+    // connected to MY Square merchant — the cross-account signature).
+    const [dr,mr]=await Promise.all([
+      fetch('/api/square/diag',{headers:{'Authorization':'Bearer '+tok}}).then(r=>r.json().catch(()=>({}))).catch(()=>({})),
+      fetch('/api/admin/square-merchant',{headers:{'Authorization':'Bearer '+tok}}).then(r=>r.json().catch(()=>({}))).catch(()=>({}))
+    ]);
+    if(dr&&dr.code==='nosquare'&&!(mr&&mr.merchantId)){setSub(orig);if(typeof proToast==='function')proToast('No Square is connected to this account — nothing imports from Square here.',7000);setTimeout(()=>setSub(orig),9000);return;}
+    const cust=(dr&&dr.customers)||{};
     const total=(typeof cust.total==='number')?cust.total:'—';
     const newest=(Array.isArray(cust.newest)?cust.newest:[]).slice(0,6);
-    const newestHtml=newest.length?newest.map(n=>'<div style="font-size:12px;color:var(--p-mut);">• '+esc(n.created?String(n.created).slice(0,10):'?')+(n.src?(' · '+esc(n.src)):'')+'</div>').join(''):'<div style="font-size:12px;color:var(--p-mut);">(none)</div>';
+    const newestHtml=newest.length?newest.map(n=>'<div style="font-size:12px;color:var(--p-mut);">• '+_sqEsc(n.created?String(n.created).slice(0,10):'?')+(n.src?(' · '+_sqEsc(n.src)):'')+'</div>').join(''):'<div style="font-size:12px;color:var(--p-mut);">(none)</div>';
+    const conns=(mr&&Array.isArray(mr.connections))?mr.connections:[];
+    const mid=(mr&&mr.merchantId)||((dr&&dr.merchant&&dr.merchant.id))||'?';
+    const others=conns.filter(c=>!c.isSelf);
+    let connHtml='';
+    if(conns.length){
+      connHtml='<div style="font-size:11px;color:var(--p-mut2);text-transform:uppercase;letter-spacing:.05em;margin:14px 0 5px;">Accounts connected to your Square merchant ('+_sqEsc(mid)+')</div>';
+      connHtml+=conns.map(c=>{
+        const who=_sqEsc(c.email||c.name||c.providerId||'(unknown)');
+        if(c.isSelf)return '<div style="display:flex;align-items:center;gap:8px;padding:8px 10px;border:1px solid var(--p-green-line);background:var(--p-surf2);border-radius:9px;margin-bottom:6px;"><i class="ti ti-user-check" style="color:var(--p-green);font-size:15px;"></i><span style="flex:1;font-size:12.5px;color:var(--p-ink);">'+who+' <span style="color:var(--p-green);font-weight:600;">(you — keep)</span></span></div>';
+        return '<div style="display:flex;align-items:center;gap:8px;padding:8px 10px;border:1px solid #7a2a1a;background:#3a1512;border-radius:9px;margin-bottom:6px;"><i class="ti ti-alert-triangle" style="color:#f0a58f;font-size:15px;"></i><span style="flex:1;min-width:0;font-size:12.5px;color:#f0d0c4;word-break:break-word;">'+who+'</span><button onclick="_severSquareConn(\''+_sqEsc(c.providerId)+'\',this)" style="flex-shrink:0;border:none;background:#a03024;color:#fff;border-radius:8px;padding:6px 10px;font-size:11px;font-weight:700;cursor:pointer;font-family:inherit;">Disconnect</button></div>';
+      }).join('');
+    }
     let shareHtml;
-    if(merch.isShared){shareHtml='<div style="margin-top:12px;background:#3a1512;border:1px solid #7a2a1a;border-radius:9px;padding:10px 12px;font-size:12.5px;color:#f0a58f;line-height:1.5;">⚠️ <b>Shared merchant.</b> '+((merch.sharedWithOtherProviders||[]).length)+' other SlickChart account(s) are connected to your SAME Square merchant ('+esc(merch.id||'?')+'). That is the cross-account leak — screenshot this for Claude.</div>';}
-    else if(typeof merch.isShared!=='undefined'){shareHtml='<div style="margin-top:12px;background:var(--p-surf2);border:1px solid var(--p-green-line);border-radius:9px;padding:10px 12px;font-size:12.5px;color:var(--p-green);line-height:1.5;">✓ No other SlickChart account shares your Square merchant ('+esc(merch.id||'?')+').</div>';}
-    else{shareHtml=merch.id?'<div style="margin-top:12px;font-size:12px;color:var(--p-mut);">Merchant: '+esc(merch.id)+'</div>':'';}
+    if(others.length){shareHtml='<div style="margin-top:12px;background:#3a1512;border:1px solid #7a2a1a;border-radius:9px;padding:10px 12px;font-size:12.5px;color:#f0a58f;line-height:1.5;">⚠️ <b>Shared merchant.</b> '+others.length+' other account(s) are writing into your Square. Tap <b>Disconnect</b> on each one above to cut them off for good.</div>';}
+    else if(conns.length){shareHtml='<div style="margin-top:12px;background:var(--p-surf2);border:1px solid var(--p-green-line);border-radius:9px;padding:10px 12px;font-size:12.5px;color:var(--p-green);line-height:1.5;">✓ Only your account is connected to your Square merchant.</div>';}
+    else{shareHtml='';}
     var ov=document.getElementById('sq-check');if(ov)ov.remove();
     ov=document.createElement('div');ov.id='sq-check';
     ov.style.cssText='position:fixed;inset:0;margin:0 auto;width:390px;max-width:100%;z-index:10000;background:rgba(0,0,0,.6);display:flex;align-items:center;justify-content:center;padding:24px 16px;box-sizing:border-box;';
@@ -20513,14 +20523,34 @@ async function _founderSquareCheck(rowEl){
     (document.querySelector('.shell')||document.body).appendChild(ov);
     ov.innerHTML='<div style="background:var(--surf1);border:1px solid var(--p-line);width:100%;max-width:360px;border-radius:16px;padding:18px;max-height:86%;overflow:auto;">'
       +'<div style="display:flex;align-items:center;justify-content:space-between;margin-bottom:10px;"><div style="font-size:15px;font-weight:600;color:var(--p-ink);">🛡️ Square isolation check</div><button onclick="var o=document.getElementById(\'sq-check\');if(o)o.remove();" aria-label="Close" style="border:none;background:none;font-size:20px;color:var(--p-mut);cursor:pointer;line-height:1;">✕</button></div>'
-      +'<div style="font-size:13px;color:var(--p-ink);margin-bottom:2px;">Square customers in your directory: <b>'+esc(total)+'</b></div>'
+      +'<div style="font-size:13px;color:var(--p-ink);margin-bottom:2px;">Square customers in your directory: <b>'+_sqEsc(total)+'</b></div>'
       +'<div style="font-size:11px;color:var(--p-mut2);text-transform:uppercase;letter-spacing:.05em;margin:12px 0 5px;">Newest customers (date · source)</div>'
       +newestHtml
+      +connHtml
       +shareHtml
       +'</div>';
-    setSub(total+' Square customers'+(merch.isShared?' · ⚠️ shared':''));
+    setSub(total+' Square customers'+(others.length?' · ⚠️ '+others.length+' foreign':''));
   }catch(e){setSub('Could not reach the server. Try again.');}
   setTimeout(()=>setSub(orig),9000);
+}
+// Cut a foreign account off from the founder's Square merchant: revokes its token at Square + deletes the
+// connection, so it can no longer read or write the founder's customer directory. Founder-gated server-side.
+async function _severSquareConn(providerId,btn){
+  if(!providerId)return;
+  const go=function(){
+    if(btn){btn.disabled=true;btn.textContent='Disconnecting…';}
+    const tok=(typeof Cloud!=='undefined'&&Cloud&&Cloud.token)||'';
+    fetch('/api/admin/square-merchant',{method:'POST',headers:{'Content-Type':'application/json','Authorization':'Bearer '+tok},body:JSON.stringify({action:'sever',providerIds:[providerId]})})
+      .then(r=>r.json().catch(()=>({}))).then(function(j){
+        const ok=j&&j.ok&&Array.isArray(j.severed)&&j.severed[0]&&j.severed[0].ok;
+        if(typeof proToast==='function')proToast(ok?'Disconnected from your Square ✓':(((j.severed&&j.severed[0]&&j.severed[0].reason))||j.error||'Could not disconnect — try again'),6000);
+        // Refresh the panel so the list reflects the change.
+        var row=document.querySelector('#account-founder-sqcheck');
+        setTimeout(function(){try{_founderSquareCheck(row||document.createElement('div'));}catch(e){}},400);
+      }).catch(function(){if(typeof proToast==='function')proToast('Could not reach the server.',5000);if(btn){btn.disabled=false;btn.textContent='Disconnect';}});
+  };
+  if(typeof confirmModal==='function')confirmModal({title:'Disconnect this account?',body:'This revokes that account’s access to YOUR Square and removes its connection, so it can no longer add customers to your Square. Do this for any account that isn’t you.',action:'Disconnect',danger:true},function(ok){if(ok)go();});
+  else if(confirm('Disconnect this account from your Square?'))go();
 }
 // ── Founder tool: provider lookup & resend reset (Settings → Founder tools) ─────────────────────
 function _openProviderLookup(){

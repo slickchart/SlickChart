@@ -1,10 +1,10 @@
 // Shared Square helpers. Lives OUTSIDE /api so Vercel doesn't treat it as an endpoint.
 //
-// Two modes, transparently:
-//  1) Per-provider OAuth (multi-tenant): each provider connects their OWN Square
-//     account; we store their (encrypted) tokens in square_connections and use them.
-//  2) Legacy single-token: if a provider has no OAuth connection, we fall back to the
-//     deployment-wide SQUARE_ACCESS_TOKEN — so the original owner setup keeps working.
+// ONE mode only: per-provider OAuth (multi-tenant). Each provider connects their OWN Square account and
+// we store their encrypted tokens in square_connections, keyed by provider. There is NO shared/
+// deployment-wide token — the SQUARE_ACCESS_TOKEN + APP_SHARED_SECRET fallback that caused the
+// cross-account leak has been removed entirely, so no request can ever touch a Square account that
+// isn't the caller's own, and one Square merchant maps to exactly one provider (DB-enforced).
 import { sql, ensureProvidersTable, dbEnabled } from './db.js';
 import { verifyToken } from './auth.js';
 import { encrypt, decrypt } from './crypto.js';
@@ -14,7 +14,8 @@ export function squareConfig() {
   const base = env === 'production' ? 'https://connect.squareup.com' : 'https://connect.squareupsandbox.com';
   return {
     env, base,
-    token: process.env.SQUARE_ACCESS_TOKEN || '',        // legacy single-token fallback
+    // NOTE: no shared SQUARE_ACCESS_TOKEN here on purpose. Every provider uses their OWN OAuth token
+    // (square_connections); there is no deployment-wide token anymore, so no call can cross accounts.
     appId: process.env.SQUARE_APP_ID || '',
     appSecret: process.env.SQUARE_APP_SECRET || '',
     version: process.env.SQUARE_VERSION || '2026-05-20',
@@ -32,14 +33,6 @@ export const SQUARE_SCOPES = [
   'LOYALTY_READ', 'LOYALTY_WRITE', 'GIFTCARDS_READ', 'GIFTCARDS_WRITE'
 ].join('+');
 
-// Legacy shared-key gate (still used as a fallback path).
-export function requireAuth(req, res) {
-  const expected = process.env.APP_SHARED_SECRET || '';
-  const got = req.headers['x-slickchart-key'] || '';
-  if (!expected) { res.status(500).json({ error: 'Server is missing APP_SHARED_SECRET.' }); return false; }
-  if (got !== expected) { res.status(401).json({ error: 'Unauthorized — wrong or missing access key.' }); return false; }
-  return true;
-}
 
 // Core Square call. The caller MUST pass its own per-provider token.
 // SECURITY (data isolation — top priority): this NO LONGER falls back to the deployment-wide
@@ -220,40 +213,26 @@ export function providerFromReq(req) {
   return payload && payload.u ? payload.u : null;
 }
 
-// One call for data endpoints: returns { token, locationId } for the caller, or writes
-// an error and returns null. Order: provider's OAuth connection → legacy shared-key+env.
+// One call for data endpoints: returns { token, locationId, providerId } for the caller, or writes an
+// error and returns null. There is EXACTLY ONE token source: the authenticated provider's OWN Square
+// OAuth connection. There is NO shared/deployment-wide fallback of any kind — the shared
+// SQUARE_ACCESS_TOKEN + APP_SHARED_SECRET path that caused the cross-account leak has been removed
+// entirely, so no request can ever operate on a Square account that isn't the caller's own.
 export async function sqContext(req, res) {
   const providerId = providerFromReq(req);
-  if (providerId) {
-    try {
-      const conn = await getConnection(providerId);
-      if (conn && conn.token) {
-        try { const q = sql(); q`UPDATE square_connections SET last_used_at=now() WHERE provider_id=${providerId} AND (last_used_at IS NULL OR last_used_at < now() - interval '1 hour')`.catch(() => {}); } catch (e) {}
-        return { token: conn.token, locationId: conn.locationId, providerId };
-      }
-    } catch (e) { /* no own connection */ }
-    // A LOGGED-IN account must use its OWN connected Square. Never fall back to the deployment-wide
-    // shared SQUARE_ACCESS_TOKEN for an authenticated provider \u2014 that token belongs to a different
-    // Square account, so falling back to it serves one logged-in user another merchant's real customers
-    // (a cross-account data leak). Tell them to connect their own Square instead.
-    res.status(401).json({ error: 'Connect your own Square account to sync your customers.', code: 'nosquare' });
+  if (!providerId) {
+    res.status(401).json({ error: 'Please sign in to use Square.', code: 'nosquare' });
     return null;
   }
-  // Legacy fallback ONLY for the original single-tenant, NO-LOGIN setup (no authenticated provider at
-  // all), still gated behind the deployment's shared key. The normal signed-in app never reaches here.
-  //
-  // This shared deployment-wide SQUARE_ACCESS_TOKEN is the exact mechanism behind the cross-account
-  // Square incident, so it is now DISABLED by default and only activates when the deployment explicitly
-  // opts in with SQUARE_ALLOW_SHARED_TOKEN=1. In a multi-tenant deployment (every provider connects
-  // their own Square via OAuth) this flag stays unset, so even a leaked APP_SHARED_SECRET + a populated
-  // SQUARE_ACCESS_TOKEN can never hand an unauthenticated caller the owner's Square data. Set the flag
-  // only for a genuine single-tenant, self-hosted owner deployment.
-  const cfg = squareConfig();
-  const key = req.headers['x-slickchart-key'] || '';
-  const legacyAllowed = process.env.SQUARE_ALLOW_SHARED_TOKEN === '1';
-  if (legacyAllowed && cfg.token && process.env.APP_SHARED_SECRET && key === process.env.APP_SHARED_SECRET) {
-    return { token: cfg.token, locationId: cfg.locationId || null, providerId: 'owner' };
-  }
-  res.status(401).json({ error: 'Square isn\u2019t connected for this account yet.', code: 'nosquare' });
+  try {
+    const conn = await getConnection(providerId);
+    if (conn && conn.token) {
+      try { const q = sql(); q`UPDATE square_connections SET last_used_at=now() WHERE provider_id=${providerId} AND (last_used_at IS NULL OR last_used_at < now() - interval '1 hour')`.catch(() => {}); } catch (e) {}
+      return { token: conn.token, locationId: conn.locationId, providerId };
+    }
+  } catch (e) { /* fall through to nosquare */ }
+  // This account has no Square connected. Never fall back to any shared token — the provider must connect
+  // their OWN Square, so one account can never touch another's Square directory.
+  res.status(401).json({ error: 'Connect your own Square account to sync your customers.', code: 'nosquare' });
   return null;
 }

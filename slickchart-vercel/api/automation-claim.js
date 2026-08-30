@@ -6,7 +6,7 @@
 // idempotent, so the cron's later claim for those clients returns false and it skips them. Clients the
 // provider did NOT send to now stay unclaimed and still receive the scheduled send at its time.
 import { verifyToken } from '../lib/auth.js';
-import { dbEnabled } from '../lib/db.js';
+import { dbEnabled, sql } from '../lib/db.js';
 import { ensureClientTables, claimReminder } from '../lib/clients.js';
 
 function providerId(req) {
@@ -30,9 +30,14 @@ export default async function handler(req, res) {
   if (!autoId || !occ || !clientIds.length) { res.status(400).json({ error: 'Missing autoId, occ, or clientIds' }); return; }
   try {
     await ensureClientTables();
+    // DATA ISOLATION: only claim client ids that ACTUALLY belong to this provider — never write
+    // reminder_log rows keyed to another account's client ids from the request body.
+    let ownIds = [];
+    try { const rows = await sql()`SELECT id FROM clients WHERE provider_id=${provider} AND id = ANY(${clientIds}::text[])`; ownIds = (rows || []).map(r => String(r.id)); }
+    catch (e) { res.status(500).json({ error: 'claim failed' }); return; }
     const rkey = 'auto:' + provider + ':' + autoId + ':' + occ;
     let claimed = 0;
-    for (const cid of clientIds) {
+    for (const cid of ownIds) {
       try { if (await claimReminder(cid, rkey)) claimed++; } catch (e) {}
     }
     res.status(200).json({ ok: true, claimed });
