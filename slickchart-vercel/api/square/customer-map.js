@@ -20,34 +20,57 @@ export default async function handler(req, res) {
     } catch (e) { out.teamError = e.message; }
     const locName = {}; out.locations.forEach(l => { locName[l.id] = l.name; });
 
-    // Page bookings across a WIDE window (2 years back → 6 months forward). Each booking ties a customer
-    // to a location and (via its segments) a team member. Map each customer to the set of locations/teams
-    // they've ever booked with — real clients cluster on YOUR location/staff; the other provider's on theirs.
+    out.locationCount = out.locations.length;
     const custLoc = {}, custTeam = {};
     const now = Date.now();
-    const startMin = new Date(now - 730 * 86400000).toISOString();
-    const startMax = new Date(now + 180 * 86400000).toISOString();
-    let cursor = '', guard = 0;
-    do {
-      const qs = new URLSearchParams({ start_at_min: startMin, start_at_max: startMax, limit: '200' });
-      if (cursor) qs.set('cursor', cursor);
-      let d;
-      try { d = await sf('/v2/bookings?' + qs.toString()); } catch (e) { out.bookingsError = e.message; break; }
-      const bs = d.bookings || [];
-      out.bookingsScanned += bs.length;
-      for (const b of bs) {
-        const cid = b.customer_id; if (!cid) continue;
-        if (b.location_id) { (custLoc[cid] = custLoc[cid] || new Set()).add(b.location_id); }
-        const segs = b.appointment_segments || [];
-        for (const s of segs) { if (s && s.team_member_id) (custTeam[cid] = custTeam[cid] || new Set()).add(s.team_member_id); }
-      }
-      cursor = d.cursor || '';
-    } while (cursor && ++guard < 120);
+
+    // 1) BOOKINGS (Square Appointments) — ties a customer to a location + team member. Often only returns
+    //    upcoming, so it can be empty for old leaked records; that's fine, orders below cover the past.
+    {
+      const startMin = new Date(now - 730 * 86400000).toISOString();
+      const startMax = new Date(now + 180 * 86400000).toISOString();
+      let cursor = '', guard = 0;
+      do {
+        const qs = new URLSearchParams({ start_at_min: startMin, start_at_max: startMax, limit: '200' });
+        if (cursor) qs.set('cursor', cursor);
+        let d;
+        try { d = await sf('/v2/bookings?' + qs.toString()); } catch (e) { out.bookingsError = e.message; break; }
+        const bs = d.bookings || [];
+        out.bookingsScanned += bs.length;
+        for (const b of bs) {
+          const cid = b.customer_id; if (!cid) continue;
+          if (b.location_id) { (custLoc[cid] = custLoc[cid] || new Set()).add(b.location_id); }
+          for (const s of (b.appointment_segments || [])) { if (s && s.team_member_id) (custTeam[cid] = custTeam[cid] || new Set()).add(s.team_member_id); }
+        }
+        cursor = d.cursor || '';
+      } while (cursor && ++guard < 120);
+    }
+
+    // 2) ORDERS (payments/transactions) — this is what "couldn't delete: has orders attached" refers to,
+    //    and it covers PAST activity that bookings miss. Each order carries customer_id + location_id, so
+    //    a customer who only ever transacted at a location that isn't yours is the other provider's.
+    out.ordersScanned = 0;
+    if (out.locations.length) {
+      const locIds = out.locations.map(l => l.id);
+      let cursor = '', guard = 0;
+      const createdAtMin = new Date(now - 3 * 365 * 86400000).toISOString();
+      do {
+        const body = { location_ids: locIds, limit: 500, query: { filter: { date_time_filter: { created_at: { start_at: createdAtMin } } } }, return_entries: false };
+        if (cursor) body.cursor = cursor;
+        let d;
+        try { d = await sf('/v2/orders/search', { method: 'POST', body }); } catch (e) { out.ordersError = e.message; break; }
+        const orders = d.orders || [];
+        out.ordersScanned += orders.length;
+        for (const o of orders) { const cid = o.customer_id; if (cid && o.location_id) (custLoc[cid] = custLoc[cid] || new Set()).add(o.location_id); }
+        cursor = d.cursor || '';
+      } while (cursor && ++guard < 60);
+    }
 
     // Distinct customers per location / per team.
     const locCounts = {}, teamCounts = {};
     const custIds = new Set(Object.keys(custLoc).concat(Object.keys(custTeam)));
-    out.customersWithBookings = custIds.size;
+    out.customersWithActivity = custIds.size;
+    out.customersWithBookings = custIds.size; // back-comcompat
     for (const cid of custIds) {
       (custLoc[cid] ? Array.from(custLoc[cid]) : []).forEach(l => { locCounts[l] = (locCounts[l] || 0) + 1; });
       (custTeam[cid] ? Array.from(custTeam[cid]) : []).forEach(t => { teamCounts[t] = (teamCounts[t] || 0) + 1; });
@@ -60,7 +83,8 @@ export default async function handler(req, res) {
       let total = 0, cur = '', g = 0;
       do { const qs = new URLSearchParams({ limit: '100' }); if (cur) qs.set('cursor', cur); const d = await sf('/v2/customers?' + qs.toString()); total += (d.customers || []).length; cur = d.cursor || ''; } while (cur && ++g < 80);
       out.totalCustomers = total;
-      out.customersWithNoBookings = Math.max(0, total - out.customersWithBookings);
+      out.customersWithNoActivity = Math.max(0, total - out.customersWithActivity);
+      out.customersWithNoBookings = out.customersWithNoActivity; // back-compat
     } catch (e) {}
 
     res.status(200).json(out);

@@ -20607,14 +20607,17 @@ async function _founderSquareMap(rowEl){
     const j=await r.json().catch(()=>({}));
     if(r.status===401||(j&&j.code==='nosquare')){setSub(orig);if(typeof proToast==='function')proToast('Connect your Square first.',6000);setTimeout(()=>setSub(orig),8000);return;}
     if(!r.ok){setSub((j&&j.error)||'Could not analyze right now.');setTimeout(()=>setSub(orig),6000);return;}
-    const locs=(j.byLocation||[]),teams=(j.byTeam||[]);
-    const row=(name,n,total)=>{var pct=total?Math.round(100*n/total):0;return '<div style="display:flex;align-items:center;gap:8px;padding:7px 10px;border:1px solid var(--p-line);border-radius:9px;margin-bottom:6px;background:var(--p-surf);"><span style="flex:1;min-width:0;font-size:12.5px;color:var(--p-ink);word-break:break-word;">'+_sqEsc(name)+'</span><span style="font-size:12.5px;font-weight:700;color:var(--p-ink);white-space:nowrap;">'+n+'</span></div>';};
-    const cwb=j.customersWithBookings||0;
-    var html='<div style="font-size:11px;color:var(--p-mut2);text-transform:uppercase;letter-spacing:.05em;margin:2px 0 5px;">Customers by location</div>';
-    html+= locs.length? locs.map(l=>row(l.name,l.customers,cwb)).join('') : '<div style="font-size:12px;color:var(--p-mut);margin-bottom:6px;">Only one location (or no bookings found).</div>';
+    const locs=(j.byLocation||[]),teams=(j.byTeam||[]),allLocs=(j.locations||[]);
+    const row=(name,n)=>'<div style="display:flex;align-items:center;gap:8px;padding:7px 10px;border:1px solid var(--p-line);border-radius:9px;margin-bottom:6px;background:var(--p-surf);"><span style="flex:1;min-width:0;font-size:12.5px;color:var(--p-ink);word-break:break-word;">'+_sqEsc(name)+'</span><span style="font-size:12.5px;font-weight:700;color:var(--p-ink);white-space:nowrap;">'+n+'</span></div>';
+    const cwa=j.customersWithActivity||j.customersWithBookings||0;
+    var html='<div style="font-size:11px;color:var(--p-mut2);text-transform:uppercase;letter-spacing:.05em;margin:2px 0 5px;">Your Square locations ('+(allLocs.length||0)+')</div>';
+    html+= allLocs.length? allLocs.map(l=>row(l.name,'')).join('') : '<div style="font-size:12px;color:var(--p-mut);margin-bottom:6px;">None found.</div>';
+    html+='<div style="font-size:11px;color:var(--p-mut2);text-transform:uppercase;letter-spacing:.05em;margin:12px 0 5px;">Customers by location (from bookings + payments)</div>';
+    html+= locs.length? locs.map(l=>row(l.name,l.customers)).join('') : '<div style="font-size:12px;color:var(--p-mut);margin-bottom:6px;">No location split — customers here have no bookings or payments tied to a location.</div>';
     html+='<div style="font-size:11px;color:var(--p-mut2);text-transform:uppercase;letter-spacing:.05em;margin:12px 0 5px;">Customers by staff member</div>';
-    html+= teams.length? teams.map(t=>row(t.name,t.customers,cwb)).join('') : '<div style="font-size:12px;color:var(--p-mut);margin-bottom:6px;">No staff split found.</div>';
-    html+='<div style="margin-top:12px;background:var(--p-surf2);border:1px solid var(--p-line);border-radius:9px;padding:10px 12px;font-size:11.5px;color:var(--p-mut);line-height:1.5;">'+(j.totalCustomers!=null?('<b style="color:var(--p-ink);">'+j.totalCustomers+'</b> customers total · '):'')+'<b style="color:var(--p-ink);">'+cwb+'</b> have bookings'+((j.customersWithNoBookings!=null)?(' · <b style="color:var(--p-ink);">'+j.customersWithNoBookings+'</b> have none'):'')+'. If you see a location or staff name that <b>isn’t you</b> with a big count, that’s the other provider’s clients — screenshot this for Claude and I’ll build a removal that targets only that group.</div>';
+    html+= teams.length? teams.map(t=>row(t.name,t.customers)).join('') : '<div style="font-size:12px;color:var(--p-mut);margin-bottom:6px;">No staff split found.</div>';
+    var _neither=(j.customersWithNoActivity!=null)?(' · <b style="color:var(--p-ink);">'+j.customersWithNoActivity+'</b> have neither'):'';
+    html+='<div style="margin-top:12px;background:var(--p-surf2);border:1px solid var(--p-line);border-radius:9px;padding:10px 12px;font-size:11.5px;color:var(--p-mut);line-height:1.5;">'+(j.totalCustomers!=null?('<b style="color:var(--p-ink);">'+j.totalCustomers+'</b> customers · '):'')+'<b style="color:var(--p-ink);">'+cwa+'</b> have a booking or payment'+_neither+'. Bookings scanned: '+(j.bookingsScanned||0)+', payments scanned: '+(j.ordersScanned||0)+'. Screenshot this for Claude.</div>';
     var ov=document.getElementById('sq-map');if(ov)ov.remove();
     ov=document.createElement('div');ov.id='sq-map';
     ov.style.cssText='position:fixed;inset:0;margin:0 auto;width:390px;max-width:100%;z-index:10000;background:rgba(0,0,0,.6);display:flex;align-items:center;justify-content:center;padding:24px 16px;box-sizing:border-box;';
