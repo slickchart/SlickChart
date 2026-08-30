@@ -275,7 +275,14 @@ export async function listClients(providerId) {
 
 export async function getClientByToken(token) {
   const q = sql();
-  const rows = await q`SELECT * FROM clients WHERE token=${token}`;
+  // deleted_at IS NULL is a STRUCTURAL privacy guarantee: once a client is removed — whether the client
+  // deleted their own data (deleteClientData) or the provider removed them from their roster
+  // (markClientDeleted) — their magic link stops resolving here, so every client-facing endpoint that
+  // authenticates via this lookup (client-data, client-submit, client-messages, client-prefs,
+  // push-subscribe, guide-file client GET, …) goes dark at once. This does not depend on any single
+  // delete path remembering to rotate the token. A tombstoned client is never resurrected (upsertClient
+  // no-ops on a deleted row), so this can never wrongly hide an active client.
+  const rows = await q`SELECT * FROM clients WHERE token=${token} AND deleted_at IS NULL`;
   return rows[0] || null;
 }
 
