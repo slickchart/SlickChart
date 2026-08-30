@@ -155,11 +155,26 @@ export async function storeConnection(providerId, resp) {
   }
   let locationId = null;
   try { locationId = await resolveLocationId(resp.access_token, null); } catch (e) {}
-  await q`INSERT INTO square_connections (provider_id, access_token, refresh_token, expires_at, merchant_id, location_id, connected_at, updated_at)
-    VALUES (${providerId}, ${encrypt(resp.access_token)}, ${encrypt(resp.refresh_token)}, ${resp.expires_at || null}, ${resp.merchant_id || null}, ${locationId}, now(), now())
-    ON CONFLICT (provider_id) DO UPDATE SET access_token=EXCLUDED.access_token, refresh_token=EXCLUDED.refresh_token,
-      expires_at=EXCLUDED.expires_at, merchant_id=EXCLUDED.merchant_id, location_id=COALESCE(EXCLUDED.location_id, square_connections.location_id),
-      connected_at=COALESCE(square_connections.connected_at, now()), updated_at=now()`;
+  // The DB is the FINAL word: a UNIQUE index on merchant_id (lib/db.js) makes it physically impossible
+  // for two providers to hold the same Square merchant, even if the guard above ever fails open (DB
+  // hiccup) or two connects race. If the INSERT trips that unique index, surface it as the same clean
+  // "already connected to another account" refusal rather than a raw 500.
+  try {
+    await q`INSERT INTO square_connections (provider_id, access_token, refresh_token, expires_at, merchant_id, location_id, connected_at, updated_at)
+      VALUES (${providerId}, ${encrypt(resp.access_token)}, ${encrypt(resp.refresh_token)}, ${resp.expires_at || null}, ${resp.merchant_id || null}, ${locationId}, now(), now())
+      ON CONFLICT (provider_id) DO UPDATE SET access_token=EXCLUDED.access_token, refresh_token=EXCLUDED.refresh_token,
+        expires_at=EXCLUDED.expires_at, merchant_id=EXCLUDED.merchant_id, location_id=COALESCE(EXCLUDED.location_id, square_connections.location_id),
+        connected_at=COALESCE(square_connections.connected_at, now()), updated_at=now()`;
+  } catch (e) {
+    const msg = String((e && (e.code || e.message)) || '').toLowerCase();
+    if (msg.includes('23505') || msg.includes('square_connections_merchant_uniq') || msg.includes('unique')) {
+      console.error('[square] BLOCKED cross-account connect at DB constraint: merchant ' + mid + ' for provider ' + providerId);
+      const err = new Error('This Square account is already connected to another SlickChart account. Disconnect it there first, or contact support.');
+      err.status = 409; err.code = 'merchant_taken';
+      throw err;
+    }
+    throw e;
+  }
   return { locationId, merchantId: resp.merchant_id || null };
 }
 export async function disconnect(providerId) {
