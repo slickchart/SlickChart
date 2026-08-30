@@ -63,9 +63,16 @@ export default async function handler(req, res) {
       FROM square_connections sc LEFT JOIN providers p ON p.id = sc.provider_id
       WHERE sc.merchant_id = ${mid}
       ORDER BY sc.connected_at ASC NULLS FIRST`;
+    // Ensure + verify the DB-level "one Square merchant → one provider" lock. Now that duplicates are
+    // cleared this CREATE succeeds and future double-connects are refused by the database itself — not
+    // just the app guard. dbLock:true is provable proof the structural fix is live.
+    let dbLock = false;
+    try { await q`CREATE UNIQUE INDEX IF NOT EXISTS square_connections_merchant_uniq ON square_connections (merchant_id) WHERE merchant_id IS NOT NULL`; } catch (e) {}
+    try { const idx = await q`SELECT 1 FROM pg_indexes WHERE indexname = 'square_connections_merchant_uniq'`; dbLock = !!(idx && idx.length); } catch (e) {}
     res.status(200).json({
       ok: true,
       merchantId: mid,
+      dbLock,
       connections: (conns || []).map(c => ({
         providerId: c.provider_id,
         email: c.email || '',
