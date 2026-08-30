@@ -15952,6 +15952,8 @@ function renderAccount(){
     <div style="border-top:1px solid var(--p-line);"></div>
     <div onclick="_founderSquareCheck(this)" style="display:flex;align-items:center;gap:11px;padding:13px 14px;cursor:pointer;"><div style="width:38px;height:38px;border-radius:10px;background:var(--p-surf2);display:flex;align-items:center;justify-content:center;flex-shrink:0;"><i class="ti ti-shield-check" style="font-size:18px;color:var(--p-green);"></i></div><div style="flex:1;"><div style="font-size:14px;font-weight:500;color:var(--p-ink);">Square isolation check</div><div style="font-size:12px;color:var(--p-mut);">See your Square customer count &amp; whether anyone else shares your merchant</div></div><i class="ti ti-chevron-right" style="font-size:16px;color:var(--p-mut);"></i></div>
     <div style="border-top:1px solid var(--p-line);"></div>
+    <div onclick="_founderSquareMap(this)" style="display:flex;align-items:center;gap:11px;padding:13px 14px;cursor:pointer;"><div style="width:38px;height:38px;border-radius:10px;background:var(--p-blue-bg);display:flex;align-items:center;justify-content:center;flex-shrink:0;"><i class="ti ti-map-search" style="font-size:18px;color:var(--p-blue);"></i></div><div style="flex:1;"><div style="font-size:14px;font-weight:500;color:var(--p-ink);">Analyze my Square by location &amp; staff</div><div style="font-size:12px;color:var(--p-mut);">Read-only — finds where the other provider's clients live so we can separate them safely</div></div><i class="ti ti-chevron-right" style="font-size:16px;color:var(--p-mut);"></i></div>
+    <div style="border-top:1px solid var(--p-line);"></div>
     <div onclick="_openSquarePurge()" style="display:flex;align-items:center;gap:11px;padding:13px 14px;cursor:pointer;"><div style="width:38px;height:38px;border-radius:10px;background:var(--p-red-bg);display:flex;align-items:center;justify-content:center;flex-shrink:0;"><i class="ti ti-eraser" style="font-size:18px;color:var(--p-red);"></i></div><div style="flex:1;"><div style="font-size:14px;font-weight:500;color:var(--p-ink);">Clean up Square customers</div><div style="font-size:12px;color:var(--p-mut);">Review &amp; delete strangers from your Square by date, area code, or subscriber status</div></div><i class="ti ti-chevron-right" style="font-size:16px;color:var(--p-mut);"></i></div>
   </div></div>`:''}
   <div style="text-align:center;padding:14px;font-size:11px;color:var(--p-mut);">SlickChart · Version 1.0.3</div></div>`;
@@ -20590,6 +20592,39 @@ async function _founderSquareCheck(rowEl){
     setSub(total+' Square customers'+(others.length?' · ⚠️ '+others.length+' foreign':''));
   }catch(e){setSub('Could not reach the server. Try again.');}
   setTimeout(()=>setSub(orig),9000);
+}
+// Read-only: analyze the Square customer directory by LOCATION and STAFF. The other provider's clients
+// booked at their location / with their staff, so a big group under a location or team the founder
+// doesn't recognize is the leaked set — a signal that can't misclassify the founder's own clients.
+async function _founderSquareMap(rowEl){
+  const sub=rowEl&&rowEl.querySelector('div>div:nth-child(2)');
+  const orig='Read-only — finds where the other provider’s clients live so we can separate them safely';
+  const setSub=t=>{try{if(sub)sub.textContent=t;}catch(e){}};
+  setSub('Reading your Square (this can take a moment)…');
+  const tok=(typeof Cloud!=='undefined'&&Cloud&&Cloud.token)||'';
+  try{
+    const r=await fetch('/api/square/customer-map',{headers:{'Authorization':'Bearer '+tok}});
+    const j=await r.json().catch(()=>({}));
+    if(r.status===401||(j&&j.code==='nosquare')){setSub(orig);if(typeof proToast==='function')proToast('Connect your Square first.',6000);setTimeout(()=>setSub(orig),8000);return;}
+    if(!r.ok){setSub((j&&j.error)||'Could not analyze right now.');setTimeout(()=>setSub(orig),6000);return;}
+    const locs=(j.byLocation||[]),teams=(j.byTeam||[]);
+    const row=(name,n,total)=>{var pct=total?Math.round(100*n/total):0;return '<div style="display:flex;align-items:center;gap:8px;padding:7px 10px;border:1px solid var(--p-line);border-radius:9px;margin-bottom:6px;background:var(--p-surf);"><span style="flex:1;min-width:0;font-size:12.5px;color:var(--p-ink);word-break:break-word;">'+_sqEsc(name)+'</span><span style="font-size:12.5px;font-weight:700;color:var(--p-ink);white-space:nowrap;">'+n+'</span></div>';};
+    const cwb=j.customersWithBookings||0;
+    var html='<div style="font-size:11px;color:var(--p-mut2);text-transform:uppercase;letter-spacing:.05em;margin:2px 0 5px;">Customers by location</div>';
+    html+= locs.length? locs.map(l=>row(l.name,l.customers,cwb)).join('') : '<div style="font-size:12px;color:var(--p-mut);margin-bottom:6px;">Only one location (or no bookings found).</div>';
+    html+='<div style="font-size:11px;color:var(--p-mut2);text-transform:uppercase;letter-spacing:.05em;margin:12px 0 5px;">Customers by staff member</div>';
+    html+= teams.length? teams.map(t=>row(t.name,t.customers,cwb)).join('') : '<div style="font-size:12px;color:var(--p-mut);margin-bottom:6px;">No staff split found.</div>';
+    html+='<div style="margin-top:12px;background:var(--p-surf2);border:1px solid var(--p-line);border-radius:9px;padding:10px 12px;font-size:11.5px;color:var(--p-mut);line-height:1.5;">'+(j.totalCustomers!=null?('<b style="color:var(--p-ink);">'+j.totalCustomers+'</b> customers total · '):'')+'<b style="color:var(--p-ink);">'+cwb+'</b> have bookings'+((j.customersWithNoBookings!=null)?(' · <b style="color:var(--p-ink);">'+j.customersWithNoBookings+'</b> have none'):'')+'. If you see a location or staff name that <b>isn’t you</b> with a big count, that’s the other provider’s clients — screenshot this for Claude and I’ll build a removal that targets only that group.</div>';
+    var ov=document.getElementById('sq-map');if(ov)ov.remove();
+    ov=document.createElement('div');ov.id='sq-map';
+    ov.style.cssText='position:fixed;inset:0;margin:0 auto;width:390px;max-width:100%;z-index:10000;background:rgba(0,0,0,.6);display:flex;align-items:center;justify-content:center;padding:24px 16px;box-sizing:border-box;';
+    ov.onclick=function(e){if(e.target===ov)ov.remove();};
+    (document.querySelector('.shell')||document.body).appendChild(ov);
+    ov.innerHTML='<div style="background:var(--surf1);border:1px solid var(--p-line);width:100%;max-width:360px;border-radius:16px;padding:18px;max-height:86%;overflow:auto;">'
+      +'<div style="display:flex;align-items:center;justify-content:space-between;margin-bottom:10px;"><div style="font-size:15px;font-weight:600;color:var(--p-ink);">🗺️ Square by location &amp; staff</div><button onclick="var o=document.getElementById(\'sq-map\');if(o)o.remove();" aria-label="Close" style="border:none;background:none;font-size:20px;color:var(--p-mut);cursor:pointer;line-height:1;">✕</button></div>'
+      +html+'</div>';
+    setSub(orig);
+  }catch(e){setSub('Could not reach the server. Try again.');setTimeout(()=>setSub(orig),6000);}
 }
 // Cut a foreign account off from the founder's Square merchant: revokes its token at Square + deletes the
 // connection, so it can no longer read or write the founder's customer directory. Founder-gated server-side.
