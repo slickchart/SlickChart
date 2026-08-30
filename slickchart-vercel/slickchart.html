@@ -15893,6 +15893,8 @@ function renderAccount(){
     <div onclick="_founderTestPush(this)" style="display:flex;align-items:center;gap:11px;padding:13px 14px;cursor:pointer;"><div style="width:38px;height:38px;border-radius:10px;background:var(--p-surf2);display:flex;align-items:center;justify-content:center;flex-shrink:0;"><i class="ti ti-bell-ringing" style="font-size:18px;color:var(--p-green);"></i></div><div style="flex:1;"><div style="font-size:14px;font-weight:500;color:var(--p-ink);">Test my push notifications</div><div style="font-size:12px;color:var(--p-mut);">Send a test push to your phone to confirm paid-signup alerts will arrive</div></div><i class="ti ti-chevron-right" style="font-size:16px;color:var(--p-mut);"></i></div>
     <div style="border-top:1px solid var(--p-line);"></div>
     <div onclick="_founderTestPush(this,6)" style="display:flex;align-items:center;gap:11px;padding:13px 14px;cursor:pointer;"><div style="width:38px;height:38px;border-radius:10px;background:var(--p-surf2);display:flex;align-items:center;justify-content:center;flex-shrink:0;"><i class="ti ti-clock-bolt" style="font-size:18px;color:var(--p-green);"></i></div><div style="flex:1;"><div style="font-size:14px;font-weight:500;color:var(--p-ink);">Test with a delay — then close the app</div><div style="font-size:12px;color:var(--p-mut);">Sends 6s after you tap, so you can close the app and see the real lock-screen notification</div></div><i class="ti ti-chevron-right" style="font-size:16px;color:var(--p-mut);"></i></div>
+    <div style="border-top:1px solid var(--p-line);"></div>
+    <div onclick="_founderSquareCheck(this)" style="display:flex;align-items:center;gap:11px;padding:13px 14px;cursor:pointer;"><div style="width:38px;height:38px;border-radius:10px;background:var(--p-surf2);display:flex;align-items:center;justify-content:center;flex-shrink:0;"><i class="ti ti-shield-check" style="font-size:18px;color:var(--p-green);"></i></div><div style="flex:1;"><div style="font-size:14px;font-weight:500;color:var(--p-ink);">Square isolation check</div><div style="font-size:12px;color:var(--p-mut);">See your Square customer count &amp; whether anyone else shares your merchant</div></div><i class="ti ti-chevron-right" style="font-size:16px;color:var(--p-mut);"></i></div>
   </div></div>`:''}
   <div style="text-align:center;padding:14px;font-size:11px;color:var(--p-mut);">SlickChart · Version 1.0.3</div></div>`;
 }
@@ -20478,6 +20480,47 @@ async function _founderTestPush(rowEl,delaySec){
     }
     setTimeout(()=>setSub(orig),8000);
   }catch(e){setSub(delaySec?orig:'Couldn’t reach the server. Try again.');}
+}
+// ── Founder tool: Square isolation check ─────────────────────────────────────────────────────────
+// Reads /api/square/diag for THIS account: how many customers are in your Square directory (the import
+// reads the whole directory, so a bloated/rising count is the pollution), the newest customers' dates +
+// creation source, and — founder only — whether ANY OTHER SlickChart account is connected to your SAME
+// Square merchant, which is the cross-account leak's signature.
+async function _founderSquareCheck(rowEl){
+  const sub=rowEl&&rowEl.querySelector('div>div:nth-child(2)');
+  const orig='See your Square customer count & whether anyone else shares your merchant';
+  const setSub=t=>{try{if(sub)sub.textContent=t;}catch(e){}};
+  setSub('Checking your Square…');
+  const tok=(typeof Cloud!=='undefined'&&Cloud&&Cloud.token)||'';
+  const esc=s=>String(s==null?'':s).replace(/&/g,'&amp;').replace(/</g,'&lt;').replace(/>/g,'&gt;');
+  try{
+    const r=await fetch('/api/square/diag',{headers:{'Authorization':'Bearer '+tok}});
+    const j=await r.json().catch(()=>({}));
+    if(r.status===401||(j&&j.code==='nosquare')){setSub(orig);if(typeof proToast==='function')proToast('No Square is connected to this account — nothing imports from Square here.',7000);setTimeout(()=>setSub(orig),9000);return;}
+    if(!r.ok){setSub((j&&j.error)||'Could not check right now.');setTimeout(()=>setSub(orig),6000);return;}
+    const cust=j.customers||{},merch=j.merchant||{};
+    const total=(typeof cust.total==='number')?cust.total:'—';
+    const newest=(Array.isArray(cust.newest)?cust.newest:[]).slice(0,6);
+    const newestHtml=newest.length?newest.map(n=>'<div style="font-size:12px;color:var(--p-mut);">• '+esc(n.created?String(n.created).slice(0,10):'?')+(n.src?(' · '+esc(n.src)):'')+'</div>').join(''):'<div style="font-size:12px;color:var(--p-mut);">(none)</div>';
+    let shareHtml;
+    if(merch.isShared){shareHtml='<div style="margin-top:12px;background:#3a1512;border:1px solid #7a2a1a;border-radius:9px;padding:10px 12px;font-size:12.5px;color:#f0a58f;line-height:1.5;">⚠️ <b>Shared merchant.</b> '+((merch.sharedWithOtherProviders||[]).length)+' other SlickChart account(s) are connected to your SAME Square merchant ('+esc(merch.id||'?')+'). That is the cross-account leak — screenshot this for Claude.</div>';}
+    else if(typeof merch.isShared!=='undefined'){shareHtml='<div style="margin-top:12px;background:var(--p-surf2);border:1px solid var(--p-green-line);border-radius:9px;padding:10px 12px;font-size:12.5px;color:var(--p-green);line-height:1.5;">✓ No other SlickChart account shares your Square merchant ('+esc(merch.id||'?')+').</div>';}
+    else{shareHtml=merch.id?'<div style="margin-top:12px;font-size:12px;color:var(--p-mut);">Merchant: '+esc(merch.id)+'</div>':'';}
+    var ov=document.getElementById('sq-check');if(ov)ov.remove();
+    ov=document.createElement('div');ov.id='sq-check';
+    ov.style.cssText='position:fixed;inset:0;margin:0 auto;width:390px;max-width:100%;z-index:10000;background:rgba(0,0,0,.6);display:flex;align-items:center;justify-content:center;padding:24px 16px;box-sizing:border-box;';
+    ov.onclick=function(e){if(e.target===ov)ov.remove();};
+    (document.querySelector('.shell')||document.body).appendChild(ov);
+    ov.innerHTML='<div style="background:var(--surf1);border:1px solid var(--p-line);width:100%;max-width:360px;border-radius:16px;padding:18px;max-height:86%;overflow:auto;">'
+      +'<div style="display:flex;align-items:center;justify-content:space-between;margin-bottom:10px;"><div style="font-size:15px;font-weight:600;color:var(--p-ink);">🛡️ Square isolation check</div><button onclick="var o=document.getElementById(\'sq-check\');if(o)o.remove();" aria-label="Close" style="border:none;background:none;font-size:20px;color:var(--p-mut);cursor:pointer;line-height:1;">✕</button></div>'
+      +'<div style="font-size:13px;color:var(--p-ink);margin-bottom:2px;">Square customers in your directory: <b>'+esc(total)+'</b></div>'
+      +'<div style="font-size:11px;color:var(--p-mut2);text-transform:uppercase;letter-spacing:.05em;margin:12px 0 5px;">Newest customers (date · source)</div>'
+      +newestHtml
+      +shareHtml
+      +'</div>';
+    setSub(total+' Square customers'+(merch.isShared?' · ⚠️ shared':''));
+  }catch(e){setSub('Could not reach the server. Try again.');}
+  setTimeout(()=>setSub(orig),9000);
 }
 // ── Founder tool: provider lookup & resend reset (Settings → Founder tools) ─────────────────────
 function _openProviderLookup(){
