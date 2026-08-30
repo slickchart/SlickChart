@@ -4359,13 +4359,16 @@ function _sqCustIsMine(cust,idx){
 // app-created (protect it) so we never delete on a missing field.
 function _sqIsAppCreated(src){var s=String(src||'').toUpperCase();return s==='THIRD_PARTY'||s==='THIRD_PARTY_IMPORT';}
 function _sqSrcLabel(src){var s=String(src||'').toUpperCase().replace(/_/g,' ').toLowerCase();return s?s.replace(/\b\w/g,function(m){return m.toUpperCase();}):'Unknown';}
-let _sqpAll=null,_sqpSel=null,_sqpQuery='',_sqpBusy=false,_sqpAfter=0,_sqpAfterStr='',_sqpBefore=0,_sqpBeforeStr='',_sqpShownIds=[],_sqpInclMatched=false;
-// Effective protection. Email subscribers are ALWAYS protected (they're the real client list). Roster
-// "matched" normally protects too — but if strangers were auto-imported into the roster before the leak
-// was closed, they now falsely look "matched" and hide from cleanup. _sqpInclMatched drops the match
-// shield (keeping the subscriber shield) so those imported strangers can be reviewed and removed.
-function _sqpEffProt(c){ return !!(c && (c.subscribed || (c.matched && !_sqpInclMatched))); }
-function _sqp_toggleMatched(){ _sqpInclMatched=!_sqpInclMatched; _sqpSel=new Set(); _sqp_render(); }
+let _sqpAll=null,_sqpSel=null,_sqpQuery='',_sqpBusy=false,_sqpAfter=0,_sqpAfterStr='',_sqpBefore=0,_sqpBeforeStr='',_sqpShownIds=[],_sqpReviewAll=false;
+// Effective protection. Normally email subscribers + roster-matched customers are protected as "yours".
+// BUT when the injection is bad enough that the strangers ALSO carry emails (subscriber count is wildly
+// inflated) and got auto-imported (so they look matched), neither signal is trustworthy. _sqpReviewAll
+// drops BOTH shields so you can review purely by DATE — the one signal strangers can't fake, since they
+// arrived in a recent burst while your real clients accumulated over time. Rows stay tagged (SUB / IN
+// LIST / APP) so a real client is easy to spot and skip, and a date/area filter is required before
+// bulk-selecting.
+function _sqpEffProt(c){ if(_sqpReviewAll)return false; return !!(c && (c.subscribed || c.matched)); }
+function _sqp_toggleReviewAll(){ _sqpReviewAll=!_sqpReviewAll; _sqpSel=new Set(); _sqp_render(); }
 function _sqp_setAfter(v){_sqpAfterStr=v||'';try{_sqpAfter=v?new Date(v+'T00:00:00').getTime():0;}catch(e){_sqpAfter=0;}_sqp_render();}
 function _sqp_setBefore(v){_sqpBeforeStr=v||'';try{_sqpBefore=v?new Date(v+'T23:59:59').getTime():0;}catch(e){_sqpBefore=0;}_sqp_render();}
 // A sticky top bar (grab-handle + always-reachable ✕) for the full-height cleanup sheets, so a long
@@ -4419,10 +4422,10 @@ function _sqp_render(){
   var subN=_sqpAll.filter(function(c){return c.subscribed;}).length;
   var protN=_sqpAll.filter(function(c){return _sqpEffProt(c);}).length;
   var reviewable=_sqpAll.filter(function(c){return !_sqpEffProt(c);});
-  // Strangers auto-imported before the leak was closed now count as "matched" and hide here. Offer to
-  // include roster-matched non-subscribers so those can be caught. Only subscribers stay protected.
-  var matchedNonSub=_sqpAll.filter(function(c){return c.matched&&!c.subscribed;}).length;
-  var inclToggle=(matchedNonSub>0)?('<div onclick="_sqp_toggleMatched()" style="display:flex;align-items:center;gap:8px;background:'+(_sqpInclMatched?'var(--p-red-bg)':'var(--p-surf)')+';border:1px solid '+(_sqpInclMatched?'var(--p-red)':'var(--p-line)')+';border-radius:9px;padding:9px 11px;margin-bottom:10px;cursor:pointer;"><div style="width:18px;height:18px;border-radius:5px;border:2px solid '+(_sqpInclMatched?'var(--p-red)':'var(--p-mut)')+';background:'+(_sqpInclMatched?'var(--p-red)':'transparent')+';display:flex;align-items:center;justify-content:center;flex-shrink:0;">'+(_sqpInclMatched?'<i class="ti ti-check" style="font-size:12px;color:#fff;"></i>':'')+'</div><span style="flex:1;font-size:11.5px;color:'+(_sqpInclMatched?'var(--p-red)':'var(--p-ink)')+';line-height:1.45;">Also review the <b>'+matchedNonSub+'</b> non-subscriber'+(matchedNonSub===1?'':'s')+' already in my SlickChart list <span style="color:var(--p-mut);">(catches strangers that got auto-imported before the leak was closed — your email subscribers stay protected either way)</span></span></div>'):'';
+  // When the subscriber/match signals are polluted (strangers arrived WITH emails and/or got
+  // auto-imported), offer a "review everything by date" mode that drops both shields. It's always
+  // available, because either signal can be untrustworthy after a bad injection.
+  var inclToggle='<div onclick="_sqp_toggleReviewAll()" style="display:flex;align-items:center;gap:8px;background:'+(_sqpReviewAll?'var(--p-red-bg)':'var(--p-surf)')+';border:1px solid '+(_sqpReviewAll?'var(--p-red)':'var(--p-line)')+';border-radius:9px;padding:9px 11px;margin-bottom:10px;cursor:pointer;"><div style="width:18px;height:18px;border-radius:5px;border:2px solid '+(_sqpReviewAll?'var(--p-red)':'var(--p-mut)')+';background:'+(_sqpReviewAll?'var(--p-red)':'transparent')+';display:flex;align-items:center;justify-content:center;flex-shrink:0;">'+(_sqpReviewAll?'<i class="ti ti-check" style="font-size:12px;color:#fff;"></i>':'')+'</div><span style="flex:1;font-size:11.5px;color:'+(_sqpReviewAll?'var(--p-red)':'var(--p-ink)')+';line-height:1.45;"><b>Review ALL customers by date</b> <span style="color:var(--p-mut);">— use this if the subscriber count is wrong (strangers came in with emails too). Protections turn off, so <b>set a date range or area code first</b>, and check each row’s tags before deleting.</span></span></div>';
   // Leak-still-active check: how many NON-protected customers were created in the last 3 days? If the
   // cross-account leak were truly closed, this should be ~0 (only your own genuinely-new customers).
   // A pile of unfamiliar recent ones means something is still writing to your Square.
@@ -4466,13 +4469,13 @@ function _sqp_render(){
     var when='';try{if(c.createdAt)when=new Date(c.createdAt).toLocaleDateString('en-US',{month:'short',day:'numeric',year:'numeric'});}catch(e){}
     return '<label style="display:flex;align-items:center;gap:10px;padding:8px 10px;border:1px solid var(--p-line);border-radius:9px;margin-bottom:5px;cursor:pointer;background:var(--p-surf);">'
       +'<input type="checkbox" '+(sel?'checked':'')+' onchange="_sqp_toggle(\''+_jsAttr(c.id)+'\')" style="width:17px;height:17px;accent-color:var(--p-red);flex-shrink:0;">'
-      +'<div style="flex:1;min-width:0;"><div style="font-size:13px;color:var(--p-ink);">'+_fileEsc(c.name)+(c.appCreated?' <span style="font-size:9px;font-weight:700;color:var(--p-red);border:1px solid var(--p-red);border-radius:4px;padding:0 4px;">APP</span>':'')+'</div><div style="font-size:11px;color:var(--p-mut);overflow:hidden;text-overflow:ellipsis;white-space:nowrap;">'+_fileEsc([c.email,c.phone].filter(Boolean).join(' · ')||'no contact on file')+(when?(' · added '+when):'')+'</div></div>'
+      +'<div style="flex:1;min-width:0;"><div style="font-size:13px;color:var(--p-ink);">'+_fileEsc(c.name)+(c.appCreated?' <span style="font-size:9px;font-weight:700;color:var(--p-red);border:1px solid var(--p-red);border-radius:4px;padding:0 4px;">APP</span>':'')+(c.subscribed?' <span style="font-size:9px;font-weight:700;color:var(--p-green);border:1px solid var(--p-green);border-radius:4px;padding:0 4px;">SUB</span>':'')+(c.matched?' <span style="font-size:9px;font-weight:700;color:var(--p-blue);border:1px solid var(--p-blue);border-radius:4px;padding:0 4px;">LIST</span>':'')+'</div><div style="font-size:11px;color:var(--p-mut);overflow:hidden;text-overflow:ellipsis;white-space:nowrap;">'+_fileEsc([c.email,c.phone].filter(Boolean).join(' · ')||'no contact on file')+(when?(' · added '+when):'')+'</div></div>'
       +'</label>';
   }).join('');
   var selCount=_sqpSel.size;
   _sqp_box(
     '<div style="font-size:16px;font-weight:600;color:var(--p-ink);margin-bottom:4px;">Clean up Square customers</div>'
-    +'<div style="font-size:12px;color:var(--p-mut);line-height:1.55;margin-bottom:10px;">'+_sqpAll.length+' customers in your connected Square. <b style="color:var(--p-green);">'+subN+' email subscribers</b> are your protected real list (the count Square Marketing shows). '+((matchedNonSub&&!_sqpInclMatched)?('<b style="color:var(--p-red);">'+matchedNonSub+' non-subscriber'+(matchedNonSub===1?'':'s')+' are already in your SlickChart list</b> — some of these are the auto-imported strangers, hidden until you tick the box below.'):('That leaves <b>'+reviewable.length+'</b> non-subscriber'+(reviewable.length===1?'':'s')+' to review — narrow by out-of-area code (type <b>734</b>) or by date, then delete.'))+' <b style="color:var(--p-red);">Deleting is permanent.</b></div>'
+    +'<div style="font-size:12px;color:var(--p-mut);line-height:1.55;margin-bottom:10px;">'+_sqpAll.length+' customers in your connected Square. '+(_sqpReviewAll?('<b style="color:var(--p-red);">Reviewing everything by date — protections OFF.</b> Set a date range (the injection was recent) or an area code, check each row’s tags, then delete. Rows tagged <b style="color:var(--p-green);">SUB</b> or <b style="color:var(--p-blue);">LIST</b> may be real clients — skip those.'):('<b style="color:var(--p-green);">'+subN+' email subscribers + '+matchedN+' in your list</b> are protected here — but if that subscriber count looks too high, strangers came in with emails too: tick <b>Review ALL customers by date</b> below.'))+' <b style="color:var(--p-red);">Deleting is permanent.</b></div>'
     +inclToggle
     +(recentN?('<div style="background:var(--p-red-bg);border:1px solid var(--p-red);border-radius:9px;padding:9px 11px;margin-bottom:10px;font-size:11.5px;color:var(--p-red);line-height:1.5;"><b>⚠️ '+recentN+' non-subscriber'+(recentN===1?'':'s')+' added in the last 3 days.</b> If these aren’t people you added yourself, something may still be writing to your Square — sort is newest-first below, so check the top rows’ dates and tell me. If they’re all older than that, the leak is stopped and this is just the existing backlog to clear.</div>'):'<div style="background:var(--p-surf2);border:1px solid var(--p-line);border-radius:9px;padding:9px 11px;margin-bottom:10px;font-size:11.5px;color:var(--p-green);line-height:1.5;">✓ No unfamiliar customers added in the last 3 days — nothing new is being injected. What’s left is the existing backlog to clear.</div>')
     +'<div style="background:var(--p-amber-bg);border:1px solid var(--p-amber-line);border-radius:9px;padding:8px 11px;margin-bottom:10px;font-size:11.5px;color:var(--p-amber);line-height:1.5;">Back up first (Square Dashboard → Import/Export → Export). Type an area code (like 734) to pull up just those numbers — check they’re unfamiliar/“never visited”, then Select all shown → Delete. Rows tagged <b>APP</b> are also sure strangers.</div>'
