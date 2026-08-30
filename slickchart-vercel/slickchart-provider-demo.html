@@ -4394,7 +4394,11 @@ let _sqpAll=null,_sqpSel=null,_sqpQuery='',_sqpBusy=false,_sqpAfter=0,_sqpAfterS
 // arrived in a recent burst while your real clients accumulated over time. Rows stay tagged (SUB / IN
 // LIST / APP) so a real client is easy to spot and skip, and a date/area filter is required before
 // bulk-selecting.
-function _sqpEffProt(c){ if(_sqpReviewAll)return false; return !!(c && (c.subscribed || c.matched)); }
+// paidWithMe = has a real booking or payment with you (from /api/square/customer-map). This is the ONE
+// reliable "really my client" signal, so it protects UNCONDITIONALLY — even in Review-ALL mode, a client
+// who has transacted with you can never be selected for deletion. Review-ALL only drops the UNRELIABLE
+// shields (subscriber / roster-match).
+function _sqpEffProt(c){ if(c && c.paidWithMe)return true; if(_sqpReviewAll)return false; return !!(c && (c.subscribed || c.matched)); }
 function _sqp_toggleReviewAll(){ _sqpReviewAll=!_sqpReviewAll; _sqpSel=new Set(); _sqp_render(); }
 function _sqp_setAfter(v){_sqpAfterStr=v||'';try{_sqpAfter=v?new Date(v+'T00:00:00').getTime():0;}catch(e){_sqpAfter=0;}_sqp_render();}
 function _sqp_setBefore(v){_sqpBeforeStr=v||'';try{_sqpBefore=v?new Date(v+'T23:59:59').getTime():0;}catch(e){_sqpBefore=0;}_sqp_render();}
@@ -4432,9 +4436,15 @@ async function _openSquarePurge(){
     _sqp_box('<div style="font-size:16px;font-weight:600;color:var(--p-ink);margin-bottom:8px;">Clean up Square customers</div><div style="font-size:13px;color:var(--p-mut);line-height:1.6;margin-bottom:14px;">'+_fileEsc(msg)+'</div><button onclick="var o=document.getElementById(\'sqp\');if(o)o.remove();" class="btnp" style="width:100%;border-radius:10px;">Close</button>');
     return;
   }
+  // RELIABLE protection: which customers have actually booked or paid with you. A client who has
+  // transacted with you is provably real and must never be deletable. Best-effort — if this read fails,
+  // we just fall back to the (weaker) subscriber/match shields.
+  var _paidSet={};
+  try{ var mp=await _sqFetch('/api/square/customer-map'); (mp&&Array.isArray(mp.activeCustomerIds)?mp.activeCustomerIds:[]).forEach(function(id){if(id)_paidSet[id]=1;}); }catch(e){}
   var idx=_sqMineIndex();
   _sqpAll=data.customers.map(function(c){
     var matched=_sqCustIsMine(c,idx);
+    var paidWithMe=!!_paidSet[c.id];
     var appCreated=_sqIsAppCreated(c.creationSource);
     // Email subscribers are the provider's REAL clients: their Square Marketing subscriber count
     // matches their true list, while the injected strangers came in phone-only (no email) and are not
@@ -4444,7 +4454,7 @@ async function _openSquarePurge(){
     // Only a roster match OR an email subscription is a hard "yours". Creation source turned out NOT to
     // separate the strangers (many carry a native-looking source), so it's a hint, not a shield.
     return {id:c.id,name:c.name||'(no name)',email:c.email||'',phone:c.phone||'',
-      matched:matched,appCreated:appCreated,subscribed:subscribed,prot:(matched||subscribed),
+      matched:matched,appCreated:appCreated,subscribed:subscribed,paidWithMe:paidWithMe,prot:(paidWithMe||matched||subscribed),
       src:c.creationSource||'',createdAt:c.createdAt||'',
       ts:(function(){try{return c.createdAt?new Date(c.createdAt).getTime():0;}catch(e){return 0;}})()};
   });
@@ -4457,6 +4467,7 @@ function _sqp_render(){
   var ov=document.getElementById('sqp');if(!ov||!_sqpAll)return;
   var matchedN=_sqpAll.filter(function(c){return c.matched;}).length;
   var subN=_sqpAll.filter(function(c){return c.subscribed;}).length;
+  var paidN=_sqpAll.filter(function(c){return c.paidWithMe;}).length;
   var protN=_sqpAll.filter(function(c){return _sqpEffProt(c);}).length;
   var reviewable=_sqpAll.filter(function(c){return !_sqpEffProt(c);});
   // When the subscriber/match signals are polluted (strangers arrived WITH emails and/or got
@@ -4512,7 +4523,7 @@ function _sqp_render(){
   var selCount=_sqpSel.size;
   _sqp_box(
     '<div style="font-size:16px;font-weight:600;color:var(--p-ink);margin-bottom:4px;">Clean up Square customers</div>'
-    +'<div style="font-size:12px;color:var(--p-mut);line-height:1.55;margin-bottom:10px;">'+_sqpAll.length+' customers in your connected Square. '+(_sqpReviewAll?('<b style="color:var(--p-red);">Reviewing everything by date — protections OFF.</b> Set a date range (the injection was recent) or an area code, check each row’s tags, then delete. Rows tagged <b style="color:var(--p-green);">SUB</b> or <b style="color:var(--p-blue);">LIST</b> may be real clients — skip those.'):('<b style="color:var(--p-green);">'+subN+' email subscribers + '+matchedN+' in your list</b> are protected here — but if that subscriber count looks too high, strangers came in with emails too: tick <b>Review ALL customers by date</b> below.'))+' <b style="color:var(--p-red);">Deleting is permanent.</b></div>'
+    +'<div style="font-size:12px;color:var(--p-mut);line-height:1.55;margin-bottom:10px;">'+_sqpAll.length+' customers in your connected Square. <b style="color:var(--p-green);">'+paidN+' have booked or paid with you</b> — those are locked as yours and can NEVER be selected here, even in Review-ALL. '+(_sqpReviewAll?('<b style="color:var(--p-red);">Reviewing the rest by date — other shields OFF.</b> Set a date range or area code, check each row, then delete.'):('That leaves <b>'+reviewable.length+'</b> with no booking/payment to review — this is where the junk records are. Tick <b>Review ALL by date</b> below to see them all.'))+' <b style="color:var(--p-red);">Deleting is permanent.</b></div>'
     +inclToggle
     +(recentN?('<div style="background:var(--p-red-bg);border:1px solid var(--p-red);border-radius:9px;padding:9px 11px;margin-bottom:10px;font-size:11.5px;color:var(--p-red);line-height:1.5;"><b>⚠️ '+recentN+' non-subscriber'+(recentN===1?'':'s')+' added in the last 3 days.</b> If these aren’t people you added yourself, something may still be writing to your Square — sort is newest-first below, so check the top rows’ dates and tell me. If they’re all older than that, the leak is stopped and this is just the existing backlog to clear.</div>'):'<div style="background:var(--p-surf2);border:1px solid var(--p-line);border-radius:9px;padding:9px 11px;margin-bottom:10px;font-size:11.5px;color:var(--p-green);line-height:1.5;">✓ No unfamiliar customers added in the last 3 days — nothing new is being injected. What’s left is the existing backlog to clear.</div>')
     +'<div style="background:var(--p-amber-bg);border:1px solid var(--p-amber-line);border-radius:9px;padding:8px 11px;margin-bottom:10px;font-size:11.5px;color:var(--p-amber);line-height:1.5;">Back up first (Square Dashboard → Import/Export → Export). Type an area code (like 734) to pull up just those numbers — check they’re unfamiliar/“never visited”, then Select all shown → Delete. Rows tagged <b>APP</b> are also sure strangers.</div>'

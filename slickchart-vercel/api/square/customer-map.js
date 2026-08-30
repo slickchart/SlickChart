@@ -70,7 +70,10 @@ export default async function handler(req, res) {
     const locCounts = {}, teamCounts = {};
     const custIds = new Set(Object.keys(custLoc).concat(Object.keys(custTeam)));
     out.customersWithActivity = custIds.size;
-    out.customersWithBookings = custIds.size; // back-comcompat
+    out.customersWithBookings = custIds.size; // back-compat
+    // The RELIABLE "this is really my client" set: every customer who has a booking or a payment with you.
+    // A real client transacts; the leaked/junk records don't. The cleanup tool protects exactly these.
+    out.activeCustomerIds = Array.from(custIds);
     for (const cid of custIds) {
       (custLoc[cid] ? Array.from(custLoc[cid]) : []).forEach(l => { locCounts[l] = (locCounts[l] || 0) + 1; });
       (custTeam[cid] ? Array.from(custTeam[cid]) : []).forEach(t => { teamCounts[t] = (teamCounts[t] || 0) + 1; });
