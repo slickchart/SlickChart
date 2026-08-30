@@ -4488,14 +4488,18 @@ function _sqp_render(){
   var paidN=_sqpAll.filter(function(c){return c.paidWithMe;}).length;
   var protN=_sqpAll.filter(function(c){return _sqpEffProt(c);}).length;
   var reviewable=_sqpAll.filter(function(c){return !_sqpEffProt(c);});
-  // How many reviewable customers the database says belong to ANOTHER provider — the reliable leaked set.
-  _sqpForeignN=reviewable.filter(function(c){return c.foreign;}).length;
-  // The strongest, safest one-tap filter: show ONLY the customers a different provider owns. This is a fact
-  // from the database (matched by email/phone under another provider_id), not a heuristic — so it's the
-  // recommended way to pull up exactly the leaked records. Only shown when there are any.
+  // The DB-confirmed leaked set: customers a DIFFERENT provider owns (by email/phone in the database). This
+  // is a FACT, not a heuristic — so it OVERRIDES the weak subscriber/roster-match shields (the leaked
+  // strangers arrived WITH emails and auto-imported, so those shields wrongly protect them). The ONLY thing
+  // that still protects here is paidWithMe: a client who has actually booked/paid with you is never in this
+  // pool, even if the DB also shows them under another provider (someone who genuinely sees two providers).
+  var _foreignPool=_sqpAll.filter(function(c){return c.foreign && !c.paidWithMe;});
+  _sqpForeignN=_foreignPool.length;
+  // The strongest, safest one-tap filter: show ONLY the customers a different provider owns. Shown whenever
+  // there are any (independent of the subscriber/match shields, since those are what hide the leaked set).
   var foreignToggle='';
   if(_sqpForeignN>0||_sqpForeignOnly){
-    foreignToggle='<div onclick="_sqp_toggleForeignOnly()" style="display:flex;align-items:center;gap:8px;background:'+(_sqpForeignOnly?'var(--p-red-bg)':'var(--p-surf)')+';border:1px solid '+(_sqpForeignOnly?'var(--p-red)':'var(--p-red-line,var(--p-line))')+';border-radius:9px;padding:9px 11px;margin-bottom:10px;cursor:pointer;"><div style="width:18px;height:18px;border-radius:5px;border:2px solid '+(_sqpForeignOnly?'var(--p-red)':'var(--p-mut)')+';background:'+(_sqpForeignOnly?'var(--p-red)':'transparent')+';display:flex;align-items:center;justify-content:center;flex-shrink:0;">'+(_sqpForeignOnly?'<i class="ti ti-check" style="font-size:12px;color:#fff;"></i>':'')+'</div><span style="flex:1;font-size:11.5px;color:'+(_sqpForeignOnly?'var(--p-red)':'var(--p-ink)')+';line-height:1.45;"><b>Show only the '+_sqpForeignN+' that belong to another provider</b> <span style="color:var(--p-mut);">— matched to a client owned by a different SlickChart account (by email/phone in the database). This is the reliable leaked set. Your booked/paid clients stay locked and never appear here.</span></span></div>';
+    foreignToggle='<div onclick="_sqp_toggleForeignOnly()" style="display:flex;align-items:center;gap:8px;background:'+(_sqpForeignOnly?'var(--p-red-bg)':'var(--p-surf)')+';border:1px solid '+(_sqpForeignOnly?'var(--p-red)':'var(--p-red-line,var(--p-line))')+';border-radius:9px;padding:9px 11px;margin-bottom:10px;cursor:pointer;"><div style="width:18px;height:18px;border-radius:5px;border:2px solid '+(_sqpForeignOnly?'var(--p-red)':'var(--p-mut)')+';background:'+(_sqpForeignOnly?'var(--p-red)':'transparent')+';display:flex;align-items:center;justify-content:center;flex-shrink:0;">'+(_sqpForeignOnly?'<i class="ti ti-check" style="font-size:12px;color:#fff;"></i>':'')+'</div><span style="flex:1;font-size:11.5px;color:'+(_sqpForeignOnly?'var(--p-red)':'var(--p-ink)')+';line-height:1.45;"><b>Show only the '+_sqpForeignN+' that belong to another provider</b> <span style="color:var(--p-mut);">— matched to a client owned by a different SlickChart account (by email/phone in the database). This is the reliable leaked set, and it ignores the subscriber/list shields on purpose. Your booked/paid clients stay locked and never appear here.</span></span></div>';
   }
   // When the subscriber/match signals are polluted (strangers arrived WITH emails and/or got
   // auto-imported), offer a "review everything by date" mode that drops both shields. It's always
@@ -4527,8 +4531,9 @@ function _sqp_render(){
       +'</div>';
   }
   var qraw=_sqpQuery, q=_sqNormName(qraw), qd=qraw.replace(/\D/g,'');
-  var shown=reviewable;
-  if(_sqpForeignOnly){shown=shown.filter(function(c){return c.foreign;});}   // only the DB-confirmed leaked set
+  // Foreign-only draws from the DB-confirmed pool (which bypasses subscriber/match shields); otherwise the
+  // normal reviewable pool. paidWithMe clients are excluded from both, so they're never selectable.
+  var shown=_sqpForeignOnly?_foreignPool:reviewable;
   if(q||qd){
     shown=reviewable.filter(function(c){
       if(q&&(_sqNormName(c.name).indexOf(q)>=0||String(c.email||'').toLowerCase().indexOf(qraw.toLowerCase())>=0))return true;
@@ -4553,12 +4558,12 @@ function _sqp_render(){
   var selCount=_sqpSel.size;
   _sqp_box(
     '<div style="font-size:16px;font-weight:600;color:var(--p-ink);margin-bottom:4px;">Clean up Square customers</div>'
-    +'<div style="font-size:12px;color:var(--p-mut);line-height:1.55;margin-bottom:10px;">'+_sqpAll.length+' customers in your connected Square. <b style="color:var(--p-green);">'+paidN+' have booked or paid with you</b> — those are locked as yours and can NEVER be selected here, even in Review-ALL. '+(_sqpReviewAll?('<b style="color:var(--p-red);">Reviewing the rest by date — other shields OFF.</b> Set a date range or area code, check each row, then delete.'):('That leaves <b>'+reviewable.length+'</b> with no booking/payment to review — this is where the junk records are.'+(_sqpForeignN>0?' <b style="color:var(--p-red);">'+_sqpForeignN+'</b> of them belong to another provider — start with those.':' Tick <b>Review ALL by date</b> below to see them all.')))+' <b style="color:var(--p-red);">Deleting is permanent.</b></div>'
+    +'<div style="font-size:12px;color:var(--p-mut);line-height:1.55;margin-bottom:10px;">'+_sqpAll.length+' customers in your connected Square. <b style="color:var(--p-green);">'+paidN+' have booked or paid with you</b> — those are locked as yours and can NEVER be selected here, even in Review-ALL. '+(_sqpReviewAll?('<b style="color:var(--p-red);">Reviewing the rest by date — other shields OFF.</b> Set a date range or area code, check each row, then delete.'):('That leaves <b>'+reviewable.length+'</b> with no booking/payment to review.'+(_sqpForeignN>0?' Separately, <b style="color:var(--p-red);">'+_sqpForeignN+'</b> of your customers are confirmed to belong to another provider in the database — <b>start with the red button below</b> to pull up exactly those.':' This is where the junk records are. Tick <b>Review ALL by date</b> below to see them all.')))+' <b style="color:var(--p-red);">Deleting is permanent.</b></div>'
     +foreignToggle
     +inclToggle
     +(recentN?('<div style="background:var(--p-red-bg);border:1px solid var(--p-red);border-radius:9px;padding:9px 11px;margin-bottom:10px;font-size:11.5px;color:var(--p-red);line-height:1.5;"><b>⚠️ '+recentN+' non-subscriber'+(recentN===1?'':'s')+' added in the last 3 days.</b> If these aren’t people you added yourself, something may still be writing to your Square — sort is newest-first below, so check the top rows’ dates and tell me. If they’re all older than that, the leak is stopped and this is just the existing backlog to clear.</div>'):'<div style="background:var(--p-surf2);border:1px solid var(--p-line);border-radius:9px;padding:9px 11px;margin-bottom:10px;font-size:11.5px;color:var(--p-green);line-height:1.5;">✓ No unfamiliar customers added in the last 3 days — nothing new is being injected. What’s left is the existing backlog to clear.</div>')
     +'<div style="background:var(--p-amber-bg);border:1px solid var(--p-amber-line);border-radius:9px;padding:8px 11px;margin-bottom:10px;font-size:11.5px;color:var(--p-amber);line-height:1.5;">Back up first (Square Dashboard → Import/Export → Export). Type an area code (like 734) to pull up just those numbers — check they’re unfamiliar/“never visited”, then Select all shown → Delete. Rows tagged <b>APP</b> are also sure strangers.</div>'
-    +(reviewable.length?(
+    +((reviewable.length||_sqpForeignN)?(
       areaChips
       +'<input placeholder="Search name, email, or phone — e.g. 734" value="'+_urlAttr(_sqpQuery)+'" oninput="_sqpQuery=this.value;_sqp_render();" style="width:100%;box-sizing:border-box;background:var(--p-surf);border:1px solid var(--p-line);border-radius:9px;padding:9px 11px;font-size:13px;color:var(--p-ink);margin-bottom:8px;">'
       +(qd&&qd.length>=3?'<div style="font-size:11px;color:var(--p-amber);margin:-2px 0 8px;line-height:1.45;">Showing the '+_sqpShownIds.length+' whose phone contains "'+_fileEsc(qd)+'". If these are all the out-of-area strangers, tap “Select all shown” → Delete.</div>':'')
