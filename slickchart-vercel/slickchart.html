@@ -4510,7 +4510,7 @@ function _sqp_render(){
       +'<div style="display:flex;gap:8px;margin-bottom:10px;"><button onclick="_sqp_all(1)" style="flex:1;background:none;border:1px solid '+(dateSet?'var(--p-line)':'var(--p-line2)')+';color:'+(dateSet?'var(--p-mut)':'var(--p-mut2)')+';border-radius:8px;padding:7px;font-size:12px;cursor:pointer;font-family:inherit;">Select all shown ('+_sqpShownIds.length+')</button><button onclick="_sqp_all(0)" style="flex:1;background:none;border:1px solid var(--p-line);color:var(--p-mut);border-radius:8px;padding:7px;font-size:12px;cursor:pointer;font-family:inherit;">Select none</button></div>'
       +rows
       +(shown.length>600?'<div style="font-size:11px;color:var(--p-mut);text-align:center;padding:6px;">Showing first 600 — narrow with search or the dates.</div>':'')
-      +'<button onclick="_sqp_confirm()" class="btnp" style="width:100%;border-radius:10px;margin-top:8px;background:var(--p-red);'+(selCount?'':'opacity:.5;')+'"><i class="ti ti-trash"></i> Delete '+selCount+' from Square…</button>'
+      +'<button onclick="_sqp_confirm()" class="btnp" style="width:100%;border-radius:10px;margin-top:8px;background:var(--p-red);'+(selCount?'':'opacity:.5;')+'"><i class="ti ti-trash"></i> Remove '+selCount+' from my list…</button>'
     ):'<div style="font-size:13px;color:var(--p-green);padding:10px 2px;line-height:1.5;">Every Square customer is protected — an email subscriber or matched to a SlickChart client. Nothing to clean up. 🎉</div>')
     +'<button onclick="_sheetCloseFrom(this)" style="width:100%;margin-top:8px;background:none;border:1px solid var(--p-line);color:var(--p-mut);border-radius:10px;padding:10px;font-size:13px;cursor:pointer;font-family:inherit;">Close</button>'
   );
@@ -4519,13 +4519,24 @@ function _sqp_toggle(id){if(!id)return;if(_sqpSel.has(id))_sqpSel.delete(id);els
 function _sqp_all(on){_sqpSel=new Set();if(on)(_sqpShownIds||[]).forEach(function(id){if(id)_sqpSel.add(id);});_sqp_render();}
 function _sqp_confirm(){
   var n=_sqpSel.size;if(!n){_sqp_render();return;}
-  var protectedN=_sqpAll.filter(function(c){return c.prot;}).length;
-  _sqp_box('<div style="font-size:16px;font-weight:600;color:var(--p-red);margin-bottom:8px;">Delete '+n+' from your live Square?</div>'
-    +'<div style="font-size:13px;color:var(--p-mut);line-height:1.6;margin-bottom:14px;">This permanently removes '+n+' customer'+(n===1?'':'s')+' from your Square account. It cannot be undone. Your '+protectedN+' matched client'+(protectedN===1?'':'s')+' are not affected.<br><br>Type <b style="color:var(--p-ink);">DELETE</b> to confirm.</div>'
+  _sqp_box('<div style="font-size:16px;font-weight:600;color:var(--p-red);margin-bottom:8px;">Remove '+n+' from your list?</div>'
+    +'<div style="font-size:13px;color:var(--p-mut);line-height:1.6;margin-bottom:14px;">This removes '+n+' customer'+(n===1?'':'s')+' from your SlickChart Clients and blocks them from re-importing, and also deletes them from your Square account where Square allows it. Square won’t delete a customer that has appointments/orders attached — those stay in Square but are still removed from your app. It cannot be undone.<br><br>Type <b style="color:var(--p-ink);">DELETE</b> to confirm.</div>'
     +'<input id="sqp-confirm" autocapitalize="characters" placeholder="Type DELETE" oninput="var b=document.getElementById(\'sqp-go\');if(b){var ok=this.value.trim().toUpperCase()===\'DELETE\';b.disabled=!ok;b.style.opacity=ok?\'1\':\'.5\';}" style="width:100%;box-sizing:border-box;background:var(--p-surf);border:1px solid var(--p-line);border-radius:9px;padding:11px 12px;font-size:14px;color:var(--p-ink);margin-bottom:12px;letter-spacing:.08em;">'
-    +'<button id="sqp-go" disabled onclick="_sqp_execute()" class="btnp" style="width:100%;border-radius:10px;background:var(--p-red);opacity:.5;margin-bottom:8px;"><i class="ti ti-trash"></i> Permanently delete '+n+'</button>'
+    +'<button id="sqp-go" disabled onclick="_sqp_execute()" class="btnp" style="width:100%;border-radius:10px;background:var(--p-red);opacity:.5;margin-bottom:8px;"><i class="ti ti-trash"></i> Remove '+n+' from my list</button>'
     +'<button onclick="_sqp_render()" style="width:100%;background:none;border:1px solid var(--p-line);color:var(--p-mut);border-radius:10px;padding:10px;font-size:13px;cursor:pointer;font-family:inherit;">Cancel</button>');
   setTimeout(function(){var i=document.getElementById('sqp-confirm');if(i)try{i.focus();}catch(e){}},40);
+}
+// Remove a selected Square customer from THIS app's roster and tombstone it, so it leaves Clients and
+// can never re-import — done for EVERY selected id, whether or not Square itself allowed the delete.
+function _sqp_purgeFromRoster(sqid){
+  try{
+    var ck='sq_'+String(sqid||'').slice(0,10).toLowerCase().replace(/[^a-z0-9]/g,'');
+    try{if(CL[ck]&&typeof _cleanupClientData==='function')_cleanupClientData(ck);}catch(e){}
+    if(CL[ck])delete CL[ck];
+    // _markClientDeleted tombstones (sc_deleted_clients, a synced merge key), persists+pushes it, AND
+    // tells the server to drop the client row — so it stays gone on every device and can't re-import.
+    try{if(typeof _markClientDeleted==='function')_markClientDeleted(ck);else if(typeof _deletedClientIds==='object'&&_deletedClientIds)_deletedClientIds[ck]=Date.now();}catch(e){}
+  }catch(e){}
 }
 async function _sqp_execute(){
   var ids=Array.from(_sqpSel);if(!ids.length){_sqp_render();return;}
@@ -4533,36 +4544,30 @@ async function _sqp_execute(){
   var done=0,failed=0,total=ids.length,chunk=200;
   for(var i=0;i<ids.length;i+=chunk){
     var batch=ids.slice(i,i+chunk);
-    _sqp_box('<div style="font-size:16px;font-weight:600;color:var(--p-ink);margin-bottom:10px;">Deleting…</div><div style="font-size:13px;color:var(--p-mut);padding:8px 0;text-align:center;"><div class="spin" style="margin:0 auto 10px;"></div>'+Math.min(done+batch.length,total)+' of '+total+'…</div>');
+    _sqp_box('<div style="font-size:16px;font-weight:600;color:var(--p-ink);margin-bottom:10px;">Removing…</div><div style="font-size:13px;color:var(--p-mut);padding:8px 0;text-align:center;"><div class="spin" style="margin:0 auto 10px;"></div>'+Math.min(done+batch.length,total)+' of '+total+'…</div>');
     try{
       var r=await _sqFetch('/api/square/delete-customers',{method:'POST',body:{ids:batch}});
       done+=(r&&r.deletedCount)||0;
       failed+=(r&&Array.isArray(r.failed))?r.failed.length:0;
       var del=new Set((r&&r.deleted)||[]);
       _sqpAll=_sqpAll.filter(function(c){return !del.has(c.id);});
-      // Deleting a stranger from Square must also remove it from THIS app's roster, else it lingers in
-      // Clients (and the auto-import already won't re-add it). Match the same 'sq_'+id key the import uses,
-      // tombstone it so no device re-syncs it, and drop it from CL.
-      del.forEach(function(sqid){
-        try{
-          _sqpSel.delete(sqid);
-          var ck='sq_'+String(sqid||'').slice(0,10).toLowerCase().replace(/[^a-z0-9]/g,'');
-          if(CL[ck]){
-            try{if(typeof _cleanupClientData==='function')_cleanupClientData(ck);}catch(e){}
-            try{if(typeof _deletedClientIds==='object'&&_deletedClientIds)_deletedClientIds[ck]=Date.now();}catch(e){}
-            try{if(typeof _markClientDeleted==='function')_markClientDeleted(ck);}catch(e){}
-            delete CL[ck];
-          }
-        }catch(e){}
-      });
     }catch(e){ failed+=batch.length; }
+    // KEY: regardless of whether Square let us delete each one, remove ALL of THIS batch from your
+    // SlickChart roster + tombstone them. Square blocks deleting a customer that has appointments/orders
+    // (another provider's leaked clients have those), but you can still get them OUT of your app and stop
+    // them re-importing — which is what actually matters for your list.
+    batch.forEach(_sqp_purgeFromRoster);
   }
   try{if(typeof saveClients==='function')saveClients();}catch(e){}
+  try{if(typeof _pushKeyNow==='function'){_pushKeyNow('sc_clients',localStorage.getItem('sc_clients')||'');_pushKeyNow('sc_deleted_clients',localStorage.getItem('sc_deleted_clients')||'');}}catch(e){}
   try{if(typeof renderClients==='function'&&typeof _navCur!=='undefined'&&_navCur&&_navCur.screen==='clients')renderClients();}catch(e){}
   _sqpBusy=false;
+  var removedApp=total;
   _sqp_box('<div style="font-size:34px;text-align:center;margin-bottom:8px;">🧹</div>'
-    +'<div style="font-size:16px;font-weight:600;color:var(--p-ink);text-align:center;margin-bottom:6px;">Removed '+done+' from Square</div>'
-    +(failed?('<div style="font-size:12.5px;color:var(--p-amber);text-align:center;line-height:1.5;margin-bottom:12px;">'+failed+' couldn’t be deleted — Square blocks removing a customer that has appointments or orders attached. Delete those in the Square Dashboard, then re-run.</div>'):'<div style="font-size:12.5px;color:var(--p-mut);text-align:center;margin-bottom:12px;">Your Square customer list is cleaned up.</div>')
+    +'<div style="font-size:16px;font-weight:600;color:var(--p-ink);text-align:center;margin-bottom:6px;">Removed '+removedApp+' from your SlickChart list</div>'
+    +'<div style="font-size:12.5px;color:var(--p-green);text-align:center;line-height:1.5;margin-bottom:10px;">All '+removedApp+' are gone from your Clients and blocked from ever re-importing — this is the part that keeps your list clean.</div>'
+    +(done?('<div style="font-size:12px;color:var(--p-mut);text-align:center;line-height:1.5;margin-bottom:8px;">'+done+' were also deleted from Square itself.</div>'):'')
+    +(failed?('<div style="font-size:12px;color:var(--p-amber);text-align:center;line-height:1.5;margin-bottom:12px;">'+failed+' couldn’t be deleted from Square — Square won’t remove a customer that has appointments or orders attached (these are the leaked clients that already had bookings). They’ll stay in your Square account but are OUT of your SlickChart. To purge them from Square too, delete their appointments/orders in the Square Dashboard first, or leave them — they can’t touch your app now.</div>'):'')
     +'<button onclick="_sqp_render()" style="width:100%;background:none;border:1px solid var(--p-line);color:var(--p-mut);border-radius:10px;padding:10px;font-size:13px;cursor:pointer;font-family:inherit;margin-bottom:8px;">Review what’s left</button>'
     +'<button onclick="var o=document.getElementById(\'sqp\');if(o)o.remove();" class="btnp" style="width:100%;border-radius:10px;">Done</button>');
 }
@@ -19481,13 +19486,13 @@ async function _autoSyncCustomers(opts){
       if(!id||CL[id])return;   // already have them, don't overwrite their chart
       if(typeof mergedSquareIds!=='undefined'&&mergedSquareIds[id])return;   // was merged into another chart, don't re-add
       if(typeof _deletedClientIds!=='undefined'&&_deletedClientIds[id])return;   // provider removed them, don't resurrect
-      // DATA-ISOLATION guard: never AUTO-import the "stranger" signature — a customer created via the API
-      // (THIRD_PARTY) with NO email. That is exactly how cross-account leaked customers look; the
-      // provider's own clients have an email, or a Square-native creation source (DIRECTORY/APPOINTMENTS/
-      // ONLINE_STORE/etc.). This only holds back the automatic poll — a manual import can still bring one
-      // in on purpose — so even if a Square directory still has residual strangers, they don't silently
-      // flow into the roster.
-      if((typeof _sqIsAppCreated==='function')&&_sqIsAppCreated(c.creationSource)&&!(c.email&&String(c.email).trim()))return;
+      // DATA-ISOLATION guard: never AUTO-create a client from an API-created (THIRD_PARTY) Square
+      // customer. That is exactly how cross-account leaked customers look — including another provider's
+      // real clients that leaked in via a shared merchant (those DO have emails, so an email check isn't
+      // enough). Your OWN Square-native customers (DIRECTORY / APPOINTMENTS / ONLINE_STORE / IMPORT etc.)
+      // still auto-import. A manual import can still pull in an app-created one on purpose. This means no
+      // residual/foreign strangers in your Square can ever silently populate your roster again.
+      if((typeof _sqIsAppCreated==='function')&&_sqIsAppCreated(c.creationSource))return;
       CL[id]=_sqMakeClient(c);added++;
     });
     if(added){
