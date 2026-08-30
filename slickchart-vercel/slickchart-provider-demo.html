@@ -4386,7 +4386,13 @@ function _sqCustIsMine(cust,idx){
 // app-created (protect it) so we never delete on a missing field.
 function _sqIsAppCreated(src){var s=String(src||'').toUpperCase();return s==='THIRD_PARTY'||s==='THIRD_PARTY_IMPORT';}
 function _sqSrcLabel(src){var s=String(src||'').toUpperCase().replace(/_/g,' ').toLowerCase();return s?s.replace(/\b\w/g,function(m){return m.toUpperCase();}):'Unknown';}
-let _sqpAll=null,_sqpSel=null,_sqpQuery='',_sqpBusy=false,_sqpAfter=0,_sqpAfterStr='',_sqpBefore=0,_sqpBeforeStr='',_sqpShownIds=[];
+let _sqpAll=null,_sqpSel=null,_sqpQuery='',_sqpBusy=false,_sqpAfter=0,_sqpAfterStr='',_sqpBefore=0,_sqpBeforeStr='',_sqpShownIds=[],_sqpInclMatched=false;
+// Effective protection. Email subscribers are ALWAYS protected (they're the real client list). Roster
+// "matched" normally protects too — but if strangers were auto-imported into the roster before the leak
+// was closed, they now falsely look "matched" and hide from cleanup. _sqpInclMatched drops the match
+// shield (keeping the subscriber shield) so those imported strangers can be reviewed and removed.
+function _sqpEffProt(c){ return !!(c && (c.subscribed || (c.matched && !_sqpInclMatched))); }
+function _sqp_toggleMatched(){ _sqpInclMatched=!_sqpInclMatched; _sqpSel=new Set(); _sqp_render(); }
 function _sqp_setAfter(v){_sqpAfterStr=v||'';try{_sqpAfter=v?new Date(v+'T00:00:00').getTime():0;}catch(e){_sqpAfter=0;}_sqp_render();}
 function _sqp_setBefore(v){_sqpBeforeStr=v||'';try{_sqpBefore=v?new Date(v+'T23:59:59').getTime():0;}catch(e){_sqpBefore=0;}_sqp_render();}
 // A sticky top bar (grab-handle + always-reachable ✕) for the full-height cleanup sheets, so a long
@@ -4438,8 +4444,12 @@ function _sqp_render(){
   var ov=document.getElementById('sqp');if(!ov||!_sqpAll)return;
   var matchedN=_sqpAll.filter(function(c){return c.matched;}).length;
   var subN=_sqpAll.filter(function(c){return c.subscribed;}).length;
-  var protN=_sqpAll.filter(function(c){return c.prot;}).length;   // matched OR subscribed
-  var reviewable=_sqpAll.filter(function(c){return !c.prot;});   // not roster-matched AND not an email subscriber
+  var protN=_sqpAll.filter(function(c){return _sqpEffProt(c);}).length;
+  var reviewable=_sqpAll.filter(function(c){return !_sqpEffProt(c);});
+  // Strangers auto-imported before the leak was closed now count as "matched" and hide here. Offer to
+  // include roster-matched non-subscribers so those can be caught. Only subscribers stay protected.
+  var matchedNonSub=_sqpAll.filter(function(c){return c.matched&&!c.subscribed;}).length;
+  var inclToggle=(matchedNonSub>0)?('<div onclick="_sqp_toggleMatched()" style="display:flex;align-items:center;gap:8px;background:'+(_sqpInclMatched?'var(--p-red-bg)':'var(--p-surf)')+';border:1px solid '+(_sqpInclMatched?'var(--p-red)':'var(--p-line)')+';border-radius:9px;padding:9px 11px;margin-bottom:10px;cursor:pointer;"><div style="width:18px;height:18px;border-radius:5px;border:2px solid '+(_sqpInclMatched?'var(--p-red)':'var(--p-mut)')+';background:'+(_sqpInclMatched?'var(--p-red)':'transparent')+';display:flex;align-items:center;justify-content:center;flex-shrink:0;">'+(_sqpInclMatched?'<i class="ti ti-check" style="font-size:12px;color:#fff;"></i>':'')+'</div><span style="flex:1;font-size:11.5px;color:'+(_sqpInclMatched?'var(--p-red)':'var(--p-ink)')+';line-height:1.45;">Also review the <b>'+matchedNonSub+'</b> non-subscriber'+(matchedNonSub===1?'':'s')+' already in my SlickChart list <span style="color:var(--p-mut);">(catches strangers that got auto-imported before the leak was closed — your email subscribers stay protected either way)</span></span></div>'):'';
   // Leak-still-active check: how many NON-protected customers were created in the last 3 days? If the
   // cross-account leak were truly closed, this should be ~0 (only your own genuinely-new customers).
   // A pile of unfamiliar recent ones means something is still writing to your Square.
@@ -4489,7 +4499,8 @@ function _sqp_render(){
   var selCount=_sqpSel.size;
   _sqp_box(
     '<div style="font-size:16px;font-weight:600;color:var(--p-ink);margin-bottom:4px;">Clean up Square customers</div>'
-    +'<div style="font-size:12px;color:var(--p-mut);line-height:1.55;margin-bottom:10px;">'+_sqpAll.length+' customers in your connected Square. <b style="color:var(--p-green);">'+protN+' are protected</b> (hidden, can’t be deleted) — <b>'+subN+' email subscribers</b> (your real list, the count you see in Square Marketing)'+(matchedN?(' + '+matchedN+' matched to SlickChart'):'')+'. That leaves <b>'+reviewable.length+'</b> non-subscribers to review — this is where the strangers are. Narrow with their out-of-area code (type <b>734</b>) or by date, then delete. <b style="color:var(--p-red);">Deleting is permanent.</b></div>'
+    +'<div style="font-size:12px;color:var(--p-mut);line-height:1.55;margin-bottom:10px;">'+_sqpAll.length+' customers in your connected Square. <b style="color:var(--p-green);">'+subN+' email subscribers</b> are your protected real list (the count Square Marketing shows). '+((matchedNonSub&&!_sqpInclMatched)?('<b style="color:var(--p-red);">'+matchedNonSub+' non-subscriber'+(matchedNonSub===1?'':'s')+' are already in your SlickChart list</b> — some of these are the auto-imported strangers, hidden until you tick the box below.'):('That leaves <b>'+reviewable.length+'</b> non-subscriber'+(reviewable.length===1?'':'s')+' to review — narrow by out-of-area code (type <b>734</b>) or by date, then delete.'))+' <b style="color:var(--p-red);">Deleting is permanent.</b></div>'
+    +inclToggle
     +(recentN?('<div style="background:var(--p-red-bg);border:1px solid var(--p-red);border-radius:9px;padding:9px 11px;margin-bottom:10px;font-size:11.5px;color:var(--p-red);line-height:1.5;"><b>⚠️ '+recentN+' non-subscriber'+(recentN===1?'':'s')+' added in the last 3 days.</b> If these aren’t people you added yourself, something may still be writing to your Square — sort is newest-first below, so check the top rows’ dates and tell me. If they’re all older than that, the leak is stopped and this is just the existing backlog to clear.</div>'):'<div style="background:var(--p-surf2);border:1px solid var(--p-line);border-radius:9px;padding:9px 11px;margin-bottom:10px;font-size:11.5px;color:var(--p-green);line-height:1.5;">✓ No unfamiliar customers added in the last 3 days — nothing new is being injected. What’s left is the existing backlog to clear.</div>')
     +'<div style="background:var(--p-amber-bg);border:1px solid var(--p-amber-line);border-radius:9px;padding:8px 11px;margin-bottom:10px;font-size:11.5px;color:var(--p-amber);line-height:1.5;">Back up first (Square Dashboard → Import/Export → Export). Type an area code (like 734) to pull up just those numbers — check they’re unfamiliar/“never visited”, then Select all shown → Delete. Rows tagged <b>APP</b> are also sure strangers.</div>'
     +(reviewable.length?(
@@ -4532,9 +4543,25 @@ async function _sqp_execute(){
       failed+=(r&&Array.isArray(r.failed))?r.failed.length:0;
       var del=new Set((r&&r.deleted)||[]);
       _sqpAll=_sqpAll.filter(function(c){return !del.has(c.id);});
-      del.forEach(function(id){_sqpSel.delete(id);});
+      // Deleting a stranger from Square must also remove it from THIS app's roster, else it lingers in
+      // Clients (and the auto-import already won't re-add it). Match the same 'sq_'+id key the import uses,
+      // tombstone it so no device re-syncs it, and drop it from CL.
+      del.forEach(function(sqid){
+        try{
+          _sqpSel.delete(sqid);
+          var ck='sq_'+String(sqid||'').slice(0,10).toLowerCase().replace(/[^a-z0-9]/g,'');
+          if(CL[ck]){
+            try{if(typeof _cleanupClientData==='function')_cleanupClientData(ck);}catch(e){}
+            try{if(typeof _deletedClientIds==='object'&&_deletedClientIds)_deletedClientIds[ck]=Date.now();}catch(e){}
+            try{if(typeof _markClientDeleted==='function')_markClientDeleted(ck);}catch(e){}
+            delete CL[ck];
+          }
+        }catch(e){}
+      });
     }catch(e){ failed+=batch.length; }
   }
+  try{if(typeof saveClients==='function')saveClients();}catch(e){}
+  try{if(typeof renderClients==='function'&&typeof _navCur!=='undefined'&&_navCur&&_navCur.screen==='clients')renderClients();}catch(e){}
   _sqpBusy=false;
   _sqp_box('<div style="font-size:34px;text-align:center;margin-bottom:8px;">🧹</div>'
     +'<div style="font-size:16px;font-weight:600;color:var(--p-ink);text-align:center;margin-bottom:6px;">Removed '+done+' from Square</div>'
