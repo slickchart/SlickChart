@@ -13,7 +13,7 @@
 //                                           founder's OWN Square, nothing else.
 import { dbEnabled, sql } from '../../lib/db.js';
 import { verifyToken, isSessionValid } from '../../lib/auth.js';
-import { revokeToken } from '../../lib/square.js';
+import { revokeToken, enforceFounderMerchantIsolation } from '../../lib/square.js';
 import { decrypt } from '../../lib/crypto.js';
 
 function norm(s) { return String(s || '').trim().toLowerCase(); }
@@ -36,6 +36,13 @@ export default async function handler(req, res) {
     const meRows = await q`SELECT merchant_id FROM square_connections WHERE provider_id=${me}`;
     const mid = meRows[0] && meRows[0].merchant_id;
     if (!mid) { res.status(200).json({ ok: true, merchantId: null, connections: [], note: 'Your own account has no Square merchant connected.' }); return; }
+
+    // ── Lockdown: cut off ALL foreign accounts on my merchant + install the DB lock, in one action ──
+    if (req.method === 'POST' && (req.body && req.body.action) === 'lockdown') {
+      const iso = await enforceFounderMerchantIsolation();
+      res.status(200).json({ ok: true, merchantId: mid, lockdown: iso, severedCount: (iso.severed || []).length, dbLock: !!iso.dbLock });
+      return;
+    }
 
     // ── Sever foreign connections on MY merchant ──────────────────────────────
     if (req.method === 'POST' && (req.body && req.body.action) === 'sever') {

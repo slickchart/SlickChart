@@ -20680,6 +20680,8 @@ async function _founderSquareCheck(rowEl){
       +injHtml
       +connHtml
       +shareHtml
+      +'<button onclick="_sqLockdownNow(this)" style="width:100%;margin-top:12px;background:#a03024;border:none;color:#fff;border-radius:10px;padding:11px;font-size:13px;font-weight:700;cursor:pointer;font-family:inherit;"><i class="ti ti-lock"></i> Cut off ALL other accounts & lock my Square</button>'
+      +'<div style="font-size:11px;color:var(--p-mut);line-height:1.45;margin-top:6px;text-align:center;">Revokes every account except you from your Square merchant and installs the database lock so none can reconnect. Runs automatically every hour too.</div>'
       +'</div>';
     setSub(total+' Square customers'+(others.length?' · ⚠️ '+others.length+' foreign':''));
   }catch(e){setSub('Could not reach the server. Try again.');}
@@ -20741,6 +20743,25 @@ async function _severSquareConn(providerId,btn){
   // and calls it with NO arguments — so run the sever unconditionally here.
   if(typeof confirmModal==='function')confirmModal({title:'Disconnect this account?',body:'This revokes that account’s access to YOUR Square and removes its connection, so it can no longer add customers to your Square. Do this for any account that isn’t you.',action:'Disconnect',danger:true},function(){go();});
   else if(confirm('Disconnect this account from your Square?'))go();
+}
+// One tap: revoke + delete EVERY account except the founder from the founder's Square merchant, then
+// install the DB-level one-merchant-one-provider lock. This is the same sweep the hourly cron runs, so
+// the founder can force it immediately instead of waiting. Server is founder-gated and only ever touches
+// the founder's OWN merchant, only removing rows that aren't the founder.
+function _sqLockdownNow(btn){
+  const go=function(){
+    if(btn){btn.disabled=true;btn.textContent='Locking down…';}
+    const tok=(typeof Cloud!=='undefined'&&Cloud&&Cloud.token)||'';
+    fetch('/api/admin/square-merchant',{method:'POST',headers:{'Content-Type':'application/json','Authorization':'Bearer '+tok},body:JSON.stringify({action:'lockdown'})})
+      .then(r=>r.json().catch(()=>({}))).then(function(j){
+        const n=(j&&j.severedCount)||0; const locked=!!(j&&j.dbLock);
+        if(typeof proToast==='function')proToast(j&&j.ok?((n?('Cut off '+n+' other account'+(n===1?'':'s')+' from your Square. '):'No other accounts were connected. ')+(locked?'Lock is active — none can reconnect.':'Lock will finalize shortly.')):((j&&j.error)||'Could not complete — try again'),8000);
+        var row=document.querySelector('#account-founder-sqcheck');
+        setTimeout(function(){try{_founderSquareCheck(row||document.createElement('div'));}catch(e){}},600);
+      }).catch(function(){if(typeof proToast==='function')proToast('Could not reach the server.',5000);if(btn){btn.disabled=false;btn.textContent='Cut off ALL other accounts & lock my Square';}});
+  };
+  if(typeof confirmModal==='function')confirmModal({title:'Cut off all other accounts?',body:'This revokes and removes EVERY account except you from your Square merchant, and locks it so none can reconnect. Do this to stop another account’s clients from landing in your Square.',action:'Cut off & lock',danger:true},function(){go();});
+  else go();
 }
 // ── Founder tool: provider lookup & resend reset (Settings → Founder tools) ─────────────────────
 function _openProviderLookup(){

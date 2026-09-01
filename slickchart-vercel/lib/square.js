@@ -134,6 +134,14 @@ export async function revokeToken({ accessToken, merchantId }) {
 export async function storeConnection(providerId, resp) {
   const q = sql();
   await ensureProvidersTable();
+  // Make sure we KNOW the merchant before storing. If Square's token response didn't include a
+  // merchant_id, the clash guard below (gated on `if (mid)`) and the unique index (WHERE merchant_id IS
+  // NOT NULL) would both be silently skipped — a hole a second account could slip through with a null
+  // merchant. Resolve it from the token itself so isolation is always enforced. (Best-effort: a Square
+  // hiccup here shouldn't block a legit connect; the hourly sweep still catches any duplicate that forms.)
+  if (resp && !resp.merchant_id && resp.access_token) {
+    try { const m = await squareFetch('/v2/merchants', {}, resp.access_token); const mm = (m && m.merchant && m.merchant[0]) || null; if (mm && mm.id) resp.merchant_id = mm.id; } catch (e) {}
+  }
   // DATA ISOLATION (top priority): a Square merchant directory must belong to exactly ONE SlickChart
   // provider. If this merchant is already connected to a DIFFERENT provider, letting a second account
   // connect it would give both the SAME customer list — each other's clients would sync in. That is the
@@ -217,6 +225,54 @@ export async function getConnection(providerId) {
     } catch (e) { /* keep existing token; may still be valid */ }
   }
   return { token: access, locationId: row.location_id || null, merchantId: row.merchant_id || null };
+}
+
+// ── AUTONOMOUS ISOLATION ENFORCEMENT ─────────────────────────────────────────────────────────────
+// A Square merchant belongs to exactly ONE SlickChart provider. If a SECOND account is connected to the
+// same merchant, every one of its Square writes (customer creates from its own bookings/imports) lands in
+// the FIRST provider's customer directory — the cross-account leak. storeConnection blocks NEW duplicates,
+// but a duplicate that formed earlier keeps injecting until it's removed. This sweep removes them for good:
+// for every FOUNDER's merchant, it revokes at Square + deletes any OTHER account connected to it, then
+// (best-effort) installs the DB-level uniqueness lock. It only ever touches a founder's own merchant and
+// only removes accounts that are NOT the founder, so it can never sever a legitimate provider's own Square.
+// Runs autonomously from the hourly cron and on demand from the founder's isolation tool — no leak can
+// persist longer than one cron tick, and none can re-form while the founder stays connected.
+export async function enforceFounderMerchantIsolation() {
+  const out = { ran: true, merchants: [], severed: [], dbLock: false, errors: [] };
+  if (!dbEnabled()) { out.ran = false; return out; }
+  const founders = String(process.env.FOUNDER_EMAILS || process.env.OWNER_EMAIL || '')
+    .toLowerCase().split(',').map(s => s.trim()).filter(Boolean);
+  if (!founders.length) { out.ran = false; return out; }
+  const q = sql();
+  try {
+    // Founder provider ids → their merchant ids (only rows that actually have a merchant connected).
+    const fRows = await q`
+      SELECT sc.provider_id, sc.merchant_id
+      FROM square_connections sc
+      JOIN providers p ON p.id = sc.provider_id
+      WHERE lower(p.email) = ANY(${founders}::text[]) AND sc.merchant_id IS NOT NULL`;
+    for (const f of (fRows || [])) {
+      const mid = f.merchant_id, ownerPid = String(f.provider_id);
+      out.merchants.push(mid);
+      let foreign = [];
+      try { foreign = await q`SELECT provider_id, access_token FROM square_connections WHERE merchant_id = ${mid} AND provider_id <> ${ownerPid}`; }
+      catch (e) { out.errors.push('lookup ' + mid + ': ' + (e && e.message)); continue; }
+      for (const r of (foreign || [])) {
+        const pid = String(r.provider_id);
+        // Revoke at Square so the token is truly dead, then delete the row.
+        let revoked = false;
+        try { const at = decrypt(r.access_token); if (at) { await revokeToken({ accessToken: at }); revoked = true; } } catch (e) {}
+        try { await q`DELETE FROM square_connections WHERE provider_id = ${pid} AND merchant_id = ${mid}`; out.severed.push({ providerId: pid, merchantId: mid, revoked }); }
+        catch (e) { out.errors.push('delete ' + pid + ': ' + (e && e.message)); }
+      }
+    }
+    // Now that duplicates on founder merchants are cleared, install/verify the DB-level lock. (If other
+    // non-founder merchants still have duplicates elsewhere this global index may not create yet, but the
+    // app-level clash guard in storeConnection still refuses new duplicates in the meantime.)
+    try { await q`CREATE UNIQUE INDEX IF NOT EXISTS square_connections_merchant_uniq ON square_connections (merchant_id) WHERE merchant_id IS NOT NULL`; } catch (e) { out.errors.push('index: ' + (e && e.message)); }
+    try { const idx = await q`SELECT 1 FROM pg_indexes WHERE indexname = 'square_connections_merchant_uniq'`; out.dbLock = !!(idx && idx.length); } catch (e) {}
+  } catch (e) { out.errors.push('enforce: ' + (e && e.message)); }
+  return out;
 }
 
 // Identify the requesting provider from their SlickChart session (Bearer token).

@@ -18,6 +18,7 @@ import {
 } from '../lib/clients.js';
 import { pushConfigured, sendPushToAll } from '../lib/push.js';
 import { sendNativeToClient, fcmConfigured } from '../lib/fcm.js';
+import { enforceFounderMerchantIsolation } from '../lib/square.js';
 
 const HOUR = 3600 * 1000;
 
@@ -60,6 +61,11 @@ function authorized(req) {
 export default async function handler(req, res) {
   if (!authorized(req)) { res.status(401).json({ error: 'Unauthorized' }); return; }
   if (!dbEnabled()) { res.status(200).json({ ok: false, reason: 'db disabled' }); return; }
+  // DATA ISOLATION (top priority): every hour, forcibly remove any foreign account connected to a
+  // founder's Square merchant and (re)install the one-merchant-one-provider DB lock. This self-heals the
+  // cross-account leak continuously — a duplicate connection can't survive longer than one tick — and runs
+  // regardless of push config. Best-effort: never let it break the reminder run.
+  try { const iso = await enforceFounderMerchantIsolation(); if (iso && iso.severed && iso.severed.length) console.log('[cron] severed foreign Square connections:', JSON.stringify(iso.severed)); } catch (e) { console.error('[cron] isolation sweep failed:', e && e.message); }
   if (!pushConfigured()) { res.status(200).json({ ok: false, reason: 'push not configured' }); return; }
 
   const now = Date.now();
