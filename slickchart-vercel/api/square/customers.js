@@ -3,6 +3,7 @@
 //   Body: { name, email?, phone?, birthday?, note? }
 //   Requires the token to have "Customers (write)".
 import { squareFetch as _sqf, sqContext } from '../../lib/square.js';
+import { logSquareCreate } from '../../lib/db.js';
 
 export default async function handler(req, res) {
   const ctx = await sqContext(req, res); if (!ctx) return;
@@ -26,6 +27,7 @@ export default async function handler(req, res) {
             body: { limit: 1, query: { filter: { email_address: { exact: email } } } }
           });
           if (found.customers && found.customers[0]) {
+            try { await logSquareCreate(ctx.providerId, ctx.merchantId, 'customers', true); } catch (e) {}
             res.status(200).json({ ok: true, existing: true, customer: normalize(found.customers[0]) });
             return;
           }
@@ -45,6 +47,7 @@ export default async function handler(req, res) {
 
       const created = await sf('/v2/customers', { method: 'POST', body: payload });
       if (!created.customer || !created.customer.id) { res.status(502).json({ error: 'Square did not return a customer.' }); return; }
+      try { await logSquareCreate(ctx.providerId, ctx.merchantId, 'customers', false); } catch (e) {}
       res.status(200).json({ ok: true, existing: false, customer: normalize(created.customer) });
     } catch (e) {
       res.status(e.status || 500).json({ error: e.message, details: e.squareErrors || null });

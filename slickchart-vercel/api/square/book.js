@@ -12,6 +12,7 @@
 // Requires the token to have "Appointments (write)" + "Customers (write/read)".
 import { squareFetch as _sqf, sqContext, resolveLocationId } from '../../lib/square.js';
 import { sendEmail } from '../../lib/email.js';
+import { logSquareCreate } from '../../lib/db.js';
 
 function _esc(s) { return String(s == null ? '' : s).replace(/&/g, '&amp;').replace(/</g, '&lt;').replace(/>/g, '&gt;'); }
 
@@ -76,6 +77,7 @@ export default async function handler(req, res) {
           }
         });
         customerId = created.customer && created.customer.id;
+        try { await logSquareCreate(ctx.providerId, ctx.merchantId, 'book', false); } catch (e) {}
       }
     }
     if (!customerId) { res.status(400).json({ error: 'Could not find or create a customer for this booking.' }); return; }

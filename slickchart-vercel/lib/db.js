@@ -49,6 +49,36 @@ export async function getKVValue(owner, key) {
   return rows[0] ? rows[0].v : null;
 }
 
+// ── Square customer-creation audit ───────────────────────────────────────────────────────────────
+// Records EVERY time SlickChart creates a customer in a Square directory: which provider's login did it,
+// which merchant it landed in, and through which endpoint. This is the ground-truth recorder for the
+// recurring cross-account imports — the next creation names its own cause. No customer PII is stored
+// (no name/email/phone), only who/where/how, so it can't itself leak a client across accounts.
+let _createLogReady = false;
+export async function ensureSquareCreateLog() {
+  if (_createLogReady) return;
+  const q = sql();
+  await q`CREATE TABLE IF NOT EXISTS square_create_log (
+    id bigserial PRIMARY KEY,
+    provider_id text,
+    merchant_id text,
+    endpoint text,
+    existing boolean DEFAULT false,
+    created_at timestamptz DEFAULT now()
+  )`;
+  _createLogReady = true;
+}
+export async function logSquareCreate(providerId, merchantId, endpoint, existing) {
+  try {
+    await ensureSquareCreateLog();
+    const q = sql();
+    await q`INSERT INTO square_create_log (provider_id, merchant_id, endpoint, existing)
+      VALUES (${providerId ? String(providerId) : null}, ${merchantId ? String(merchantId) : null}, ${endpoint || null}, ${!!existing})`;
+    // Keep only the most recent ~2000 rows so this never grows unbounded.
+    await q`DELETE FROM square_create_log WHERE id < (SELECT COALESCE(MAX(id),0) - 2000 FROM square_create_log)`;
+  } catch (e) { /* auditing is best-effort — never break a create because logging failed */ }
+}
+
 // Uploaded files (guide PDFs, etc.) live in their own table keyed by (owner, id) rather
 // than inside the synced kv JSON blob — base64 files are far too large to ride the kv
 // sync (they blow the browser's localStorage quota and the request-body limit), which is

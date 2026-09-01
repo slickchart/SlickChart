@@ -299,7 +299,7 @@ export async function sqContext(req, res) {
     const conn = await getConnection(providerId);
     if (conn && conn.token) {
       try { const q = sql(); q`UPDATE square_connections SET last_used_at=now() WHERE provider_id=${providerId} AND (last_used_at IS NULL OR last_used_at < now() - interval '1 hour')`.catch(() => {}); } catch (e) {}
-      return { token: conn.token, locationId: conn.locationId, providerId };
+      return { token: conn.token, locationId: conn.locationId, providerId, merchantId: conn.merchantId || null };
     }
   } catch (e) { /* fall through to nosquare */ }
   // This account has no Square connected. Never fall back to any shared token — the provider must connect

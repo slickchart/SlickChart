@@ -4,6 +4,7 @@
 // ENABLED catalog taxes explicitly and reference them only on taxable lines (so a line
 // toggled "No tax" — e.g. a gift — is excluded). Then create + publish an emailed invoice.
 import { squareFetch as _sqf, sqContext, resolveLocationId } from '../../lib/square.js';
+import { logSquareCreate } from '../../lib/db.js';
 
 export default async function handler(req, res) {
   if (req.method !== 'POST') { res.status(405).json({ error: 'Method not allowed' }); return; }
@@ -65,6 +66,7 @@ export default async function handler(req, res) {
       const parts = String(b.name || 'Client').trim().split(/\s+/);
       const c = await sf('/v2/customers', { method: 'POST', body: { given_name: parts[0] || 'Client', family_name: parts.slice(1).join(' ') || undefined, email_address: email } });
       customerId = c.customer && c.customer.id;
+      try { await logSquareCreate(ctx.providerId, ctx.merchantId, 'invoice', false); } catch (e) {}
     }
 
     // order with EXPLICIT taxes (auto_apply_taxes is not allowed for invoice orders)
