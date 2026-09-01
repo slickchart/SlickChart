@@ -17,18 +17,39 @@ export default async function handler(req, res) {
   // is visible, plus the merchant id and (founder only) whether ANY OTHER provider is connected to the
   // SAME merchant, which is the cross-account signature.
   try {
-    let count = 0, cursor = '', guard = 0, newest = [];
+    let count = 0, cursor = '', guard = 0, all = [];
     do {
       const qs = new URLSearchParams({ limit: '100' });
       if (cursor) qs.set('cursor', cursor);
       const d = await sf('/v2/customers?' + qs.toString());
       const cs = d.customers || [];
       count += cs.length;
-      newest = newest.concat(cs.map(c => ({ created: c.created_at || '', src: c.creation_source || '' })));
+      all = all.concat(cs.map(c => ({ created: c.created_at || '', src: c.creation_source || '' })));
       cursor = d.cursor || '';
     } while (cursor && ++guard < 80);
-    newest.sort((a, b) => String(b.created).localeCompare(String(a.created)));
-    out.customers = { total: count, newest: newest.slice(0, 10) };
+    all.sort((a, b) => String(b.created).localeCompare(String(a.created)));
+    // Injection fingerprint: how many customers were created very recently, and by WHAT creation source.
+    //   THIRD_PARTY / THIRD_PARTY_IMPORT = created via an app/API (a SlickChart connection, or another
+    //     Square app authorized on this merchant).
+    //   IMPORT = a CSV imported in the Square Dashboard.  DIRECTORY = typed into the Dashboard by a person.
+    //   MERGE = a directory merge.  APPOINTMENTS / ONLINE_STORE / etc. = Square's own booking/store flows.
+    // A same-day burst all sharing one source tells us exactly which door is open.
+    const now = Date.now();
+    const since = (ms) => all.filter(c => c.created && (now - new Date(c.created).getTime()) <= ms).length;
+    const srcCounts = {}, recentSrcCounts = {};
+    for (const c of all) { const s = c.src || 'UNKNOWN'; srcCounts[s] = (srcCounts[s] || 0) + 1; }
+    for (const c of all.filter(c => c.created && (now - new Date(c.created).getTime()) <= 86400000)) {
+      const s = c.src || 'UNKNOWN'; recentSrcCounts[s] = (recentSrcCounts[s] || 0) + 1;
+    }
+    out.customers = {
+      total: count,
+      newest: all.slice(0, 10),
+      createdLast24h: since(86400000),
+      createdLast7d: since(7 * 86400000),
+      newestCreatedAt: (all[0] && all[0].created) || null,
+      sourceCounts: srcCounts,              // whole directory, by source
+      recentSourceCounts: recentSrcCounts   // last 24h only, by source — the active-injection fingerprint
+    };
   } catch (e) { out.customers = { error: e.message }; }
 
   try {

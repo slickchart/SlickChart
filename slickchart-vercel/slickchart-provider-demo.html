@@ -20634,6 +20634,20 @@ async function _founderSquareCheck(rowEl){
     const total=(typeof cust.total==='number')?cust.total:'—';
     const newest=(Array.isArray(cust.newest)?cust.newest:[]).slice(0,6);
     const newestHtml=newest.length?newest.map(n=>'<div style="font-size:12px;color:var(--p-mut);">• '+_sqEsc(n.created?String(n.created).slice(0,10):'?')+(n.src?(' · '+_sqEsc(n.src)):'')+'</div>').join(''):'<div style="font-size:12px;color:var(--p-mut);">(none)</div>';
+    // ACTIVE-INJECTION fingerprint: how many customers Square created in the last 24h, and by what source.
+    // A same-day burst all sharing one source points straight at the door that's open.
+    const rec24=(typeof cust.createdLast24h==='number')?cust.createdLast24h:null;
+    const recSrc=(cust.recentSourceCounts&&typeof cust.recentSourceCounts==='object')?cust.recentSourceCounts:{};
+    const recSrcArr=Object.keys(recSrc).sort((a,b)=>recSrc[b]-recSrc[a]);
+    const recSrcHtml=recSrcArr.length?recSrcArr.map(s=>'<div style="font-size:12px;color:#f0d0c4;">• <b>'+recSrc[s]+'</b> · '+_sqEsc(s)+(/THIRD_PARTY/.test(s)?' <span style="color:var(--p-mut2);">(created by an app/API)</span>':(/IMPORT/.test(s)?' <span style="color:var(--p-mut2);">(a Dashboard CSV import)</span>':(/DIRECTORY/.test(s)?' <span style="color:var(--p-mut2);">(typed into the Dashboard)</span>':(/MERGE/.test(s)?' <span style="color:var(--p-mut2);">(a directory merge)</span>':''))))+'</div>').join(''):'';
+    let injHtml='';
+    if(rec24!=null){
+      if(rec24>0){
+        injHtml='<div style="margin:12px 0 4px;background:#3a1512;border:1px solid #7a2a1a;border-radius:9px;padding:10px 12px;font-size:12.5px;color:#f0a58f;line-height:1.5;"><b>⚠️ '+rec24+' customer'+(rec24===1?'':'s')+' created in your Square in the last 24 hours.</b>'+(recSrcArr.length?' By source:':'')+'</div>'+recSrcHtml;
+      } else {
+        injHtml='<div style="margin:12px 0 4px;background:var(--p-surf2);border:1px solid var(--p-green-line);border-radius:9px;padding:10px 12px;font-size:12.5px;color:var(--p-green);line-height:1.5;">✓ 0 customers created in your Square in the last 24 hours — nothing is being written in right now.</div>';
+      }
+    }
     const conns=(mr&&Array.isArray(mr.connections))?mr.connections:[];
     const mid=(mr&&mr.merchantId)||((dr&&dr.merchant&&dr.merchant.id))||'?';
     const others=conns.filter(c=>!c.isSelf);
@@ -20663,6 +20677,7 @@ async function _founderSquareCheck(rowEl){
       +'<div style="font-size:13px;color:var(--p-ink);margin-bottom:2px;">Square customers in your directory: <b>'+_sqEsc(total)+'</b></div>'
       +'<div style="font-size:11px;color:var(--p-mut2);text-transform:uppercase;letter-spacing:.05em;margin:12px 0 5px;">Newest customers (date · source)</div>'
       +newestHtml
+      +injHtml
       +connHtml
       +shareHtml
       +'</div>';
