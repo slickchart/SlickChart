@@ -19382,12 +19382,25 @@ function _depositSettingCard(){
 async function _sqCheckStatus(){
   const el=document.getElementById('sq-status');if(!el)return;
   try{
-    const r=await fetch('/api/health');const h=await r.json();
-    el.innerHTML=`<div style="display:flex;flex-wrap:wrap;gap:6px;align-items:center;">
-      <span style="font-size:11px;color:var(--p-mut);text-transform:uppercase;letter-spacing:.05em;margin-right:2px;">${h.environment}</span>
-      ${_sqStatusBadge('Token',h.hasToken)}
-      ${_sqStatusBadge('Access key',h.hasAccessKey)}
-    </div>${(!h.hasToken||!h.hasAccessKey)?`<div style="font-size:11px;color:var(--p-amber);margin-top:8px;line-height:1.5;">Set the missing value${(!h.hasToken&&!h.hasAccessKey)?'s':''} in Vercel → Settings → Environment Variables, then redeploy.</div>`:''}`;
+    // OAuth is the ONLY supported path now — each provider connects their OWN Square with the button
+    // below. The old "Token / Access key" badges referred to the deprecated shared-token setup and would
+    // show red (and wrongly tell you to add a token in Vercel) even though nothing is wrong — adding that
+    // token back would reintroduce the cross-account leak. So show the real OAuth connection state instead.
+    const tok=(typeof Cloud!=='undefined'&&Cloud&&Cloud.token)||'';
+    const r=await fetch('/api/square/connection',tok?{headers:{'Authorization':'Bearer '+tok}}:{});
+    const c=await r.json().catch(()=>({}));
+    const env=(c&&c.env)||'production';
+    if(c&&c.oauth){
+      el.innerHTML=`<div style="display:flex;flex-wrap:wrap;gap:6px;align-items:center;">
+        <span style="font-size:11px;color:var(--p-mut);text-transform:uppercase;letter-spacing:.05em;margin-right:2px;">${_fileEsc(env)}</span>
+        <span style="font-size:11px;font-weight:700;color:var(--p-green);border:1px solid var(--p-green-line);border-radius:20px;padding:3px 9px;"><i class="ti ti-check" style="font-size:11px;"></i> Connected with your Square login</span>
+      </div><div style="font-size:11px;color:var(--p-green);margin-top:8px;line-height:1.5;">You're linked through your own Square login — no token to set up. Head to Import clients below to pull your data in.</div>`;
+    }else{
+      el.innerHTML=`<div style="display:flex;flex-wrap:wrap;gap:6px;align-items:center;">
+        <span style="font-size:11px;color:var(--p-mut);text-transform:uppercase;letter-spacing:.05em;margin-right:2px;">${_fileEsc(env)}</span>
+        <span style="font-size:11px;font-weight:700;color:var(--p-mut);border:1px solid var(--p-line);border-radius:20px;padding:3px 9px;">Not connected yet</span>
+      </div><div style="font-size:11px;color:var(--p-mut);margin-top:8px;line-height:1.5;">Tap <b>Connect with Square</b> below to link your own account. No tokens to copy.</div>`;
+    }
   }catch(e){
     el.innerHTML=`<div style="font-size:12px;color:var(--p-amber);line-height:1.5;">The sync service isn't reachable yet. This page works once SlickChart is deployed to Vercel (not when the file is opened directly on your computer).</div>`;
   }
