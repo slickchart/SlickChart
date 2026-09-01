@@ -5,9 +5,18 @@
 // deployment-wide token — the SQUARE_ACCESS_TOKEN + APP_SHARED_SECRET fallback that caused the
 // cross-account leak has been removed entirely, so no request can ever touch a Square account that
 // isn't the caller's own, and one Square merchant maps to exactly one provider (DB-enforced).
-import { sql, ensureProvidersTable, dbEnabled } from './db.js';
+import crypto from 'crypto';
+import { sql, ensureProvidersTable, dbEnabled, ensureSquareCreateLog } from './db.js';
 import { verifyToken } from './auth.js';
 import { encrypt, decrypt } from './crypto.js';
+
+// Short, non-reversible fingerprint of a Square access token, so the create audit can say WHOSE token
+// made a customer — without ever storing the token itself. The founder audit matches this against the
+// fingerprints of the known per-provider OAuth tokens; a create whose fingerprint matches none of them
+// was made with a RAW token (e.g. the app's static Production Access Token), which is the smoking gun.
+export function tokenFingerprint(token) {
+  try { return crypto.createHash('sha256').update(String(token || '')).digest('hex').slice(0, 16); } catch (e) { return ''; }
+}
 
 export function squareConfig() {
   const env = (process.env.SQUARE_ENV || 'sandbox').toLowerCase();
@@ -56,6 +65,19 @@ export async function squareFetch(path, { method = 'GET', body } = {}, token) {
     const err = new Error(detail || `Square API error (${resp.status})`);
     err.status = resp.status; err.squareErrors = data.errors; throw err;
   }
+  // UNIVERSAL create audit (backstop): every successful CreateCustomer passes through here, no matter which
+  // endpoint or token made it — including a raw/static token that never touches the per-provider OAuth code
+  // the higher-level logging watches. Record it with the token's fingerprint (never the token) so the
+  // founder audit can name WHOSE token created a customer, and flag any token that isn't a known login.
+  try {
+    if (method === 'POST' && /^\/v2\/customers(\?|$)/.test(path) && data && data.customer && data.customer.id) {
+      await ensureSquareCreateLog();
+      const fp = tokenFingerprint(bearer);
+      const merchantSeen = (data.customer && (data.customer.merchant_id || null)) || null;
+      sql()`INSERT INTO square_create_log (provider_id, merchant_id, endpoint, existing)
+        VALUES (${'fp:' + fp}, ${merchantSeen}, ${'squarefetch'}, ${false})`.catch(() => {});
+    }
+  } catch (e) { /* auditing is best-effort */ }
   return data;
 }
 

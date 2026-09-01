@@ -20640,18 +20640,23 @@ async function _founderSquareCheck(rowEl){
     // by a login that ISN'T you (which would be the cross-account bug). Only populates after this deploys.
     let clHtml='';
     if(cl&&cl.ok){
-      const byEp=(cl.created24hByEndpoint&&typeof cl.created24hByEndpoint==='object')?cl.created24hByEndpoint:{};
-      const eps=Object.keys(byEp).sort((a,b)=>byEp[b]-byEp[a]);
-      const epLabel=e=>e==='customers'?'Add-client / sync':(e==='book'?'Booking':(e==='invoice'?'Invoice':e));
-      const foreign=(cl.foreignCreators&&cl.foreignCreators.length)?cl.foreignCreators:[];
-      const tot=cl.created24hTotal||0;
-      clHtml='<div style="font-size:11px;color:var(--p-mut2);text-transform:uppercase;letter-spacing:.05em;margin:14px 0 5px;">What SlickChart created on your Square (last 24h)</div>';
-      if(!eps.length){clHtml+='<div style="font-size:12px;color:var(--p-green);">✓ SlickChart created 0 customers on your Square in the last 24h. If strangers still appeared, they were NOT created by SlickChart.</div>';}
-      else{
-        clHtml+='<div style="font-size:12.5px;color:var(--p-ink);margin-bottom:4px;">SlickChart created <b>'+tot+'</b> here via:</div>'
-          +eps.map(e=>'<div style="font-size:12px;color:var(--p-mut);">• <b style="color:var(--p-ink);">'+byEp[e]+'</b> — '+_sqEsc(epLabel(e))+'</div>').join('');
+      // WHO created customers in YOUR Square in the last 24h — resolved to a real login, or flagged as a
+      // raw token that belongs to no login. This is the definitive answer to "whose is doing this."
+      const into=cl.intoMyMerchant24h||0;
+      const by=(cl.intoMyMerchantBy&&typeof cl.intoMyMerchantBy==='object')?cl.intoMyMerchantBy:{};
+      const byArr=Object.keys(by).sort((a,b)=>by[b]-by[a]);
+      clHtml='<div style="font-size:11px;color:var(--p-mut2);text-transform:uppercase;letter-spacing:.05em;margin:14px 0 5px;">Who created customers in YOUR Square (last 24h)</div>';
+      if(!into){
+        clHtml+='<div style="font-size:12px;color:var(--p-green);line-height:1.5;">✓ 0 customers were created in your Square through SlickChart in the last 24h (by any login or token).</div>';
+      } else {
+        clHtml+='<div style="font-size:12.5px;color:#f0a58f;margin-bottom:4px;"><b>⚠️ '+into+'</b> customer'+(into===1?'':'s')+' created in your Square. By login:</div>'
+          +byArr.map(k=>{
+            var isYou=/\(you\)|isYou/.test(k)||(cl.byCreator||[]).some(c=>c.creator===k&&c.isYou);
+            var raw=/RAW TOKEN/i.test(k);
+            return '<div style="font-size:12px;color:'+(raw?'#f0a58f':'var(--p-ink)')+';line-height:1.5;">• <b>'+by[k]+'</b> — '+_sqEsc(k)+(raw?' <span style="color:var(--p-red);font-weight:700;">← not a login. A raw access token is doing this.</span>':(isYou?' <span style="color:var(--p-mut2);">(you)</span>':' <span style="color:var(--p-red);font-weight:700;">← NOT you</span>'))+'</div>';
+          }).join('')
+          +'<div style="margin-top:8px;background:#3a1512;border:1px solid #7a2a1a;border-radius:9px;padding:9px 11px;font-size:11.5px;color:#f0a58f;line-height:1.5;">Screenshot this for Claude — it names exactly whose token is writing into your Square.</div>';
       }
-      if(foreign.length){clHtml+='<div style="margin-top:8px;background:#3a1512;border:1px solid #7a2a1a;border-radius:9px;padding:9px 11px;font-size:12px;color:#f0a58f;line-height:1.5;">⚠️ <b>Cross-account create found.</b> A login that isn’t you created customers in YOUR Square: '+foreign.map(f=>_sqEsc(String(f))).join(', ')+'. Screenshot this for Claude.</div>';}
     }
     const conns=(mr&&Array.isArray(mr.connections))?mr.connections:[];
     const mid=(mr&&mr.merchantId)||((dr&&dr.merchant&&dr.merchant.id))||'?';

@@ -1,13 +1,15 @@
 // GET /api/admin/square-create-log — FOUNDER-ONLY, READ-ONLY.
 //
-// Answers the one question left about the recurring imports: WHAT is creating customers in the founder's
-// Square? Every SlickChart customer-create is recorded (provider_id, merchant_id, endpoint) with no PII.
-// This returns only the rows that landed in the FOUNDER's OWN merchant, so it can't expose another
-// provider's activity. Each row says which login (provider_id) made it and through which endpoint —
-// and flags any whose provider_id is NOT the founder (a create on the founder's merchant driven by a
-// DIFFERENT account's login, which would be the cross-account bug caught red-handed).
+// Names WHAT is creating customers in the founder's Square. Every SlickChart customer-create is recorded
+// two ways: at the endpoint level (with the acting provider id + merchant) and at the universal squareFetch
+// backstop (with a fingerprint of the token used — never the token). This resolves those fingerprints
+// against the known per-provider OAuth tokens, so it can say, for each creation in the FOUNDER's merchant,
+// whether it was made by the founder's own login, ANOTHER provider's login, or a RAW token that belongs to
+// no login at all (e.g. the app's static Production Access Token) — the cross-account smoking gun.
 import { dbEnabled, sql, ensureSquareCreateLog } from '../../lib/db.js';
 import { verifyToken, isSessionValid } from '../../lib/auth.js';
+import { tokenFingerprint } from '../../lib/square.js';
+import { decrypt } from '../../lib/crypto.js';
 
 function norm(s) { return String(s || '').trim().toLowerCase(); }
 
@@ -29,37 +31,61 @@ export default async function handler(req, res) {
     const q = sql();
     const meRows = await q`SELECT merchant_id FROM square_connections WHERE provider_id=${me}`;
     const mid = meRows[0] && meRows[0].merchant_id;
-    if (!mid) { res.status(200).json({ ok: true, merchantId: null, note: 'No Square merchant connected to your account.', recent: [], last24h: {}, foreignCreators: [] }); return; }
 
-    // Only creates that landed in MY merchant. No customer PII is stored, so this is who/where/how only.
-    const rows = await q`SELECT provider_id, endpoint, existing, created_at
-      FROM square_create_log WHERE merchant_id=${mid} ORDER BY id DESC LIMIT 200`;
+    // Build a fingerprint → login map from every connected provider's OWN token, plus provider emails and
+    // each provider's merchant. A create whose token fingerprint isn't in here was made by a RAW token.
+    const fpToProvider = {};      // fp -> providerId
+    const provMerchant = {};      // providerId -> merchant_id
+    try {
+      const conns = await q`SELECT provider_id, access_token, merchant_id FROM square_connections`;
+      for (const c of (conns || [])) {
+        provMerchant[String(c.provider_id)] = c.merchant_id || null;
+        try { const at = decrypt(c.access_token); if (at) fpToProvider[tokenFingerprint(at)] = String(c.provider_id); } catch (e) {}
+      }
+    } catch (e) {}
+    const provEmail = {};
+    try { const pr = await q`SELECT id, email FROM providers`; for (const r of (pr || [])) provEmail[String(r.id)] = r.email || ''; } catch (e) {}
 
-    const now = Date.now();
-    const within24 = (r) => r.created_at && (now - new Date(r.created_at).getTime()) <= 86400000;
-    const recent = (rows || []).map(r => ({
-      providerId: r.provider_id,
-      endpoint: r.endpoint || '',
-      existing: !!r.existing,
-      at: r.created_at ? new Date(r.created_at).getTime() : 0,
-      isSelf: String(r.provider_id) === me
-    }));
+    // Last 24h of creates (both endpoint rows and squarefetch fingerprint rows).
+    const rows = await q`SELECT provider_id, merchant_id, endpoint, existing, created_at
+      FROM square_create_log WHERE created_at >= now() - interval '24 hours' ORDER BY id DESC LIMIT 3000`;
 
-    // 24h summary by endpoint (new creates only, not "matched existing"), and the SMOKING GUN:
-    // any create on my merchant whose login was NOT me.
-    const last24 = recent.filter(r => within24({ created_at: r.at }));
-    const byEndpoint = {};
-    for (const r of last24) { if (r.existing) continue; const k = r.endpoint || 'unknown'; byEndpoint[k] = (byEndpoint[k] || 0) + 1; }
-    const foreignCreators = Array.from(new Set(last24.filter(r => !r.isSelf).map(r => r.providerId).filter(Boolean)));
+    // Resolve each create to: creator (a login email, or "RAW TOKEN"), and the merchant it landed in.
+    const creators = {};          // key: creatorLabel -> { count, merchants:Set }
+    let intoMyMerchant = 0; const intoMyMerchantBy = {};
+    for (const r of (rows || [])) {
+      if (r.existing) continue;                    // "matched an existing customer" is not a creation
+      let creatorId = null, creatorLabel = 'unknown';
+      const pid = String(r.provider_id || '');
+      if (pid.startsWith('fp:')) {
+        const fp = pid.slice(3);
+        creatorId = fpToProvider[fp] || null;
+        creatorLabel = creatorId ? (provEmail[creatorId] || ('provider ' + creatorId)) : 'RAW TOKEN (no login — e.g. a static access token)';
+      } else if (pid) {
+        creatorId = pid;
+        creatorLabel = provEmail[pid] || ('provider ' + pid);
+      }
+      // Which merchant did this create land in? Prefer the merchant recorded on the row; else the creator's.
+      const landed = r.merchant_id || (creatorId ? provMerchant[creatorId] : null) || null;
+      const c = creators[creatorLabel] || (creators[creatorLabel] = { count: 0, merchants: {} });
+      c.count++; if (landed) c.merchants[landed] = (c.merchants[landed] || 0) + 1;
+      if (mid && landed && String(landed) === String(mid)) { intoMyMerchant++; intoMyMerchantBy[creatorLabel] = (intoMyMerchantBy[creatorLabel] || 0) + 1; }
+    }
+
+    const byCreator = Object.keys(creators).map(k => ({
+      creator: k,
+      isYou: !!(provEmail[me] && k === provEmail[me]),
+      created: creators[k].count,
+      merchants: Object.keys(creators[k].merchants).map(m => ({ merchant: m, count: creators[k].merchants[m], isYourMerchant: !!(mid && String(m) === String(mid)) }))
+    })).sort((a, b) => b.created - a.created);
 
     res.status(200).json({
       ok: true,
-      merchantId: mid,
+      merchantId: mid || null,
       myProviderId: me,
-      created24hByEndpoint: byEndpoint,
-      created24hTotal: last24.filter(r => !r.existing).length,
-      foreignCreators,               // provider ids (not you) that created in YOUR merchant in 24h — should be empty
-      recent: recent.slice(0, 60)
+      intoMyMerchant24h: intoMyMerchant,                 // customers created IN YOUR Square in 24h (any token)
+      intoMyMerchantBy,                                  // ...broken down by who did it
+      byCreator                                          // every creator in 24h, what they created + where it landed
     });
   } catch (e) {
     console.error('[admin/square-create-log] failed:', e && e.message || e);
