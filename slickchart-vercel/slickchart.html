@@ -19352,6 +19352,7 @@ function renderSquareSync(){
     <div id="sqg-oauth-body"><button onclick="_sqConnect()" aria-label="Connect with Square" style="width:100%;background:#1C1C1C;color:#fff;border:none;border-radius:9px;padding:12px;font-size:13px;font-weight:700;cursor:pointer;font-family:inherit;display:flex;align-items:center;justify-content:center;gap:8px;"><svg width="16" height="16" viewBox="0 0 32 32" aria-hidden="true" style="flex-shrink:0;"><path fill="#fff" fill-rule="evenodd" d="M6.5 2h19A4.5 4.5 0 0 1 30 6.5v19a4.5 4.5 0 0 1-4.5 4.5h-19A4.5 4.5 0 0 1 2 25.5v-19A4.5 4.5 0 0 1 6.5 2Zm3.2 8.2a1.5 1.5 0 0 0-1.5 1.5v8.6a1.5 1.5 0 0 0 1.5 1.5h12.6a1.5 1.5 0 0 0 1.5-1.5v-8.6a1.5 1.5 0 0 0-1.5-1.5H9.7Z" clip-rule="evenodd"/></svg> Connect with Square</button></div>
   </div>
   <div style="padding:0 16px 10px;"><button onclick="nav('square-guide')" style="width:100%;background:var(--accent-tint);color:var(--accent-strong);border:1px solid var(--accent);border-radius:10px;padding:11px;font-size:13px;font-weight:600;cursor:pointer;font-family:inherit;display:flex;align-items:center;justify-content:center;gap:7px;"><i class="ti ti-help-circle" style="font-size:15px;"></i> New to this? Step-by-step setup guide</button></div>
+  ${(function(){var p=_squareImportPaused();return '<div style="margin:0 16px 10px;background:'+(p?'var(--p-amber-bg)':'var(--p-surf)')+';border:1px solid '+(p?'var(--p-amber-line)':'var(--p-line3)')+';border-radius:12px;padding:12px 14px;"><div style="display:flex;align-items:center;justify-content:space-between;gap:10px;"><div style="flex:1;min-width:0;"><div style="font-size:13px;font-weight:600;color:'+(p?'var(--p-amber)':'var(--p-ink)')+';">'+(p?'Auto-import from Square is PAUSED':'Auto-import from Square is on')+'</div><div style="font-size:11.5px;color:var(--p-mut);line-height:1.45;margin-top:2px;">'+(p?'Your client list won’t change on its own. New Square customers won’t be pulled in until you resume.':'New Square customers are pulled into your list automatically.')+'</div></div><button onclick="_toggleSquareImport()" style="flex-shrink:0;background:'+(p?'var(--p-green)':'var(--p-amber)')+';color:#fff;border:none;border-radius:9px;padding:9px 13px;font-size:12px;font-weight:700;cursor:pointer;font-family:inherit;">'+(p?'Resume':'Pause')+'</button></div></div>';})()}
   <div style="display:flex;gap:8px;padding:0 16px 6px;">
     <button onclick="_sqLoadCustomers()" style="flex:1;background:var(--accent);color:var(--accent-ink);border:none;border-radius:10px;padding:12px;font-size:13px;font-weight:600;cursor:pointer;font-family:inherit;"><i class="ti ti-users"></i> Import clients</button>
     <button onclick="_sqLoadAppointments()" style="flex:1;background:var(--surf2);color:var(--p-ink);border:1px solid var(--p-line);border-radius:10px;padding:12px;font-size:13px;font-weight:600;cursor:pointer;font-family:inherit;"><i class="ti ti-calendar"></i> Upcoming</button>
@@ -19527,10 +19528,24 @@ async function _autoSyncCatalog(opts){
 // edits you've made in the app are preserved) and never deletes anyone. Throttled, silent, and a
 // no-op when Square isn't connected or is unreachable.
 let _customerSyncing=false;
+// Owner control: pause the automatic Square→SlickChart customer import. When paused, the app STOPS
+// pulling customers in from Square on its own — used to keep the client list clean while a Square-side
+// source of unwanted customers is being cut off. Manual "Import clients" still works when explicitly tapped.
+function _squareImportPaused(){ try{ return localStorage.getItem('sc_square_import_paused')==='1'; }catch(e){ return false; } }
+function _toggleSquareImport(){
+  var paused=!_squareImportPaused();
+  try{ localStorage.setItem('sc_square_import_paused', paused?'1':'0'); }catch(e){}
+  if(typeof proToast==='function')proToast(paused?'Auto-import from Square paused — your list won’t change on its own':'Auto-import from Square resumed');
+  try{ if(typeof renderSquareSync==='function')renderSquareSync(); else if(typeof _navCur!=='undefined'&&_navCur&&typeof nav==='function')nav(_navCur.screen,_navCur.arg); }catch(e){}
+  if(!paused){ try{ _autoSyncCustomers({force:true}); }catch(e){} }
+}
 async function _autoSyncCustomers(opts){
   opts=opts||{};
   const tok=(typeof Cloud!=='undefined'&&Cloud&&Cloud.token)||'';
   if(!tok)return;   // only once signed in, the token identifies which Square account to read
+  // Owner paused the automatic import: do not pull anyone in from Square until they resume it. A manual
+  // import (opts.manual) is an explicit choice and still runs.
+  if(_squareImportPaused()&&!opts.manual)return;
   const now=Date.now();
   // Match the catalog poll cadence: at most once every 60s automatically. `force` bypasses it.
   if(!opts.force&&_autoSyncCustomers._lastAt&&(now-_autoSyncCustomers._lastAt)<60000)return;
