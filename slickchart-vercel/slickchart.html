@@ -2166,6 +2166,26 @@ function _unionClientForms(winner,other){
   }
   return grew;
 }
+// sc_attn_seen stamps when each "needs your attention" card was first seen, and that stamp is what
+// auto-retires the card after 24h. It accumulates like a tombstone set, so a plain whole-blob overwrite
+// on pull let a stale device drop stamps — the card re-stamped as brand new and bought itself another
+// day, over and over. Union both sides and keep the OLDEST stamp per key, so the clock only ever runs
+// forward and a cleared card can't be resurrected by whichever device happens to sync last.
+function _mergeAttnSeen(serverStr,localStr){
+  try{
+    if(localStr==null)return null;   // nothing local — let the plain overwrite run
+    var sv=JSON.parse(serverStr||'{}'),lv=JSON.parse(localStr||'{}');
+    if(!sv||typeof sv!=='object'||Array.isArray(sv))sv={};
+    if(!lv||typeof lv!=='object'||Array.isArray(lv))return null;
+    var out={},changed=false;
+    Object.keys(sv).forEach(function(k){out[k]=+sv[k]||0;});
+    Object.keys(lv).forEach(function(k){
+      var l=+lv[k]||0;
+      if(!(k in out)||l<out[k]){out[k]=l;changed=true;}   // local is older/new to the server → push it up
+    });
+    return {str:JSON.stringify(out),changed:changed};
+  }catch(e){return null;}
+}
 function _mergeClients(serverStr,localStr){
   try{
     if(localStr==null)return null;   // fresh device with no local roster — let the server copy load as-is
@@ -2323,9 +2343,10 @@ const Cloud={
     // Chat data is append-only and provider-sent messages live ONLY in sc_msgstore, so a plain overwrite
     // here let a stale device wipe history and (via sc_seen_events) resurrect read messages as unread.
     // Merge these three the same way as sc_clients: union, never lose, push the superset back.
-    if(k==='sc_msgstore'||k==='sc_threads'||k==='sc_seen_events'){
+    if(k==='sc_msgstore'||k==='sc_threads'||k==='sc_seen_events'||k==='sc_attn_seen'){
       const mm=(k==='sc_msgstore')?_mergeMsgStore(data[k],localStorage.getItem(k))
               :(k==='sc_threads')?_mergeThreads(data[k],localStorage.getItem(k))
+              :(k==='sc_attn_seen')?_mergeAttnSeen(data[k],localStorage.getItem(k))
               :_mergeSeenEvents(data[k],localStorage.getItem(k));
       if(mm&&mm.str!=null){
         set(k,mm.str);
@@ -5351,6 +5372,32 @@ function _reviewAckHome(id){
 // genuinely new flag or a newly completed form (different signature) surfaces again as its own card.
 function _flagSig(c){var f=c&&c.flaggedContra;if(!f)return '';return (f.form||'')+'|'+(f.date||'')+'|'+((f.items||[]).join('~'));}
 function _revSig(c){var s=c&&c.submittedForms&&c.submittedForms[0];if(!s)return '';return (s.evId||s.ts||s.date||'')+'|'+(s.title||'');}
+// How old is a submitted form in REAL time? The attention list used to age cards from the moment
+// THIS device first drew them, so a form completed months ago resurfaced as brand-new work on every
+// new browser/phone (and again whenever the first-seen clock got reset by a sync). Forms ingested from
+// the server carry `at` (ms). Older records only have a display label ("Mar 4"), which we parse —
+// year-less, so a label that lands in the future belongs to last year. Locally-created forms labelled
+// "Today"/"Recent" have no dependable date: return null and let the first-seen clock handle them.
+function _formAtMs(s){
+  if(!s)return null;
+  var n=+(s.at||s.ts||0);if(n>0)return n;
+  var lbl=String(s.date||'').trim();
+  if(!lbl||/^(today|yesterday|recent|just now)$/i.test(lbl))return null;
+  var y=new Date().getFullYear();
+  var d=new Date(lbl+' '+y);
+  if(isNaN(d.getTime())){d=new Date(lbl);if(isNaN(d.getTime()))return null;}
+  if(d.getTime()-Date.now()>604800000)d=new Date(lbl+' '+(y-1));   // year-less label that reads as future = last year
+  return isNaN(d.getTime())?null:d.getTime();
+}
+// A completed form the provider hasn't touched in over a day isn't "needs your attention" any more,
+// it's just history on the chart. Only judged when we know the real submission time.
+function _reviewStale(s){var t=_formAtMs(s);return t!=null&&(Date.now()-t)>86400000;}
+// Retire an attention key for good (same persisted set manual dismissal writes to), without re-saving
+// on every render once it's already in there.
+function _attnRetire(key){if(!_homeDismissed.has(key)){_homeDismissed.add(key);_saveHomeDismissed();}}
+// Tapping a review card to READ the form is the provider handling it — clear the card too, instead of
+// leaving it sitting there after she's already looked at it.
+function _openReviewCard(id){try{_reviewAckHome(id);}catch(e){}viewSubmittedForm(id,0);}
 // Index of the client's flagged submitted form (so a flagged card opens the exact form, not just the chart).
 function _flaggedFormIdx(c){return (c&&Array.isArray(c.submittedForms))?c.submittedForms.findIndex(function(f){return f&&f.flagged&&f.flagged.length;}):-1;}
 function _reRenderAttn(){
@@ -5439,7 +5486,7 @@ function _attnTilesHTML(){
       <div style="width:38px;height:38px;border-radius:9px;background:var(--p-red-bg);display:flex;align-items:center;justify-content:center;flex-shrink:0;margin-top:1px;"><i class="ti ti-alert-triangle" style="font-size:18px;color:var(--p-red);"></i></div>
       <div style="flex:1;min-width:0;"><div style="font-size:14px;font-weight:600;color:var(--p-red);">${_fileEsc(c.name.split(' ')[0])} flagged ${items.length} item${items.length!==1?'s':''} ${src}</div>${items.length?`<ul style="margin:4px 0 0;padding-left:16px;">${items.map(it=>`<li style="font-size:12px;color:var(--p-red);line-height:1.5;">${_fileEsc(it)}</li>`).join('')}</ul>`:''}<div style="font-size:11px;color:#a87878;margin-top:5px;">${tapHint}</div></div>
     </div>`,'flag-'+id,`_flagAckHome('${id}')`);}).join('');
-    h+=reviews.filter(([id,c])=>{const s=(c.submittedForms&&c.submittedForms[0])||{};const sig=String(s.evId||s.ts||s.date||'1');return c.reviewAck!==sig&&!_homeDismissed.has('rev-'+id)&&_attnFresh('rev-'+id);}).map(([id,c])=>_swipeTile(`<div onclick="viewSubmittedForm('${id}',0)" style="margin:0;background:var(--p-surf3);border:1px solid var(--p-line3);border-radius:12px;padding:11px 34px 11px 13px;display:flex;align-items:center;gap:11px;cursor:pointer;">
+    h+=reviews.filter(([id,c])=>{const s=(c.submittedForms&&c.submittedForms[0])||{};const sig=String(s.evId||s.ts||s.date||'1');if(c.reviewAck===sig||_homeDismissed.has('rev-'+id))return false;if(_reviewStale(s)){_attnRetire('rev-'+id);return false;}return _attnFresh('rev-'+id);}).map(([id,c])=>_swipeTile(`<div onclick="_openReviewCard('${id}')" style="margin:0;background:var(--p-surf3);border:1px solid var(--p-line3);border-radius:12px;padding:11px 34px 11px 13px;display:flex;align-items:center;gap:11px;cursor:pointer;">
       <div style="width:38px;height:38px;border-radius:9px;background:var(--p-green-bg);display:flex;align-items:center;justify-content:center;flex-shrink:0;"><i class="ti ti-clipboard-check" style="font-size:18px;color:var(--p-green);"></i></div>
       <div style="flex:1;min-width:0;"><div style="font-size:14px;font-weight:600;color:var(--p-green);">${_fileEsc(c.name.split(' ')[0])} completed ${_fileEsc(c.submittedForms[0].title)}</div><div style="font-size:12px;color:var(--p-mut2);margin-top:1px;">Tap to open the form</div></div>
     </div>`,'rev-'+id,`_reviewAckHome('${id}')`)).join('');
@@ -5728,7 +5775,7 @@ function _clientNeedsAttention(id,c){
   if((typeof _fcActive==='function'&&_fcActive(c))||c.flaggedContra)return true;
   if(typeof threads!=='undefined'&&Array.isArray(threads)&&threads.some(t=>t&&t.id===id&&t.unread))return true;
   if(typeof _vcStatus==='function'&&_vcStatus(id)==='needs-review')return true;
-  if(Array.isArray(c.submittedForms)&&c.submittedForms.length&&c.reviewAck!==String(((c.submittedForms[0]||{}).evId)||((c.submittedForms[0]||{}).ts)||((c.submittedForms[0]||{}).date)||'1'))return true;
+  if(Array.isArray(c.submittedForms)&&c.submittedForms.length&&c.reviewAck!==String(((c.submittedForms[0]||{}).evId)||((c.submittedForms[0]||{}).ts)||((c.submittedForms[0]||{}).date)||'1')&&!_reviewStale(c.submittedForms[0]))return true;
   return false;
 }
 function _clientNextApptMs(id){
@@ -13355,7 +13402,7 @@ function submitSignOnDevice(fid,cid){
     // store the signed form on the client's file so it lives in Forms & documents
     CL[cid].submittedForms=CL[cid].submittedForms||[];
     var _sodForm=null;
-    if(!CL[cid].submittedForms.some(sf=>sf.formId===fid&&sf.signed)){_sodForm={formId:fid,title:tmpl.name,answers:ans,flagged:[],date:'Today',signed:true,qs:(tmpl&&Array.isArray(tmpl.qs))?tmpl.qs:null};CL[cid].submittedForms.unshift(_sodForm);}
+    if(!CL[cid].submittedForms.some(sf=>sf.formId===fid&&sf.signed)){_sodForm={formId:fid,title:tmpl.name,answers:ans,flagged:[],date:'Today',at:Date.now(),signed:true,qs:(tmpl&&Array.isArray(tmpl.qs))?tmpl.qs:null};CL[cid].submittedForms.unshift(_sodForm);}
     _captureBirthday(CL[cid],fid,ans);_capturePhotoConsent(CL[cid],fid,ans);_captureRefPhoto(cid,fid,ans);
     try{if(typeof saveClients==='function')saveClients();}catch(e){}
     try{if(typeof _pushKeyNow==='function')_pushKeyNow('sc_clients',localStorage.getItem('sc_clients')||'');}catch(e){}   // push now so an in-person signed form can't be lost to the debounce
@@ -13522,16 +13569,22 @@ function _needsCheckin(){
 }
 let _lastCiDismiss=null;
 let _homeDismissed=new Set();
-function _loadHomeDismissed(){try{const raw=localStorage.getItem('sc_home_dismissed');if(raw){const arr=JSON.parse(raw);if(Array.isArray(arr))_homeDismissed=new Set(arr);}}catch(e){}}
-function _saveHomeDismissed(){const v=JSON.stringify([..._homeDismissed]);try{localStorage.setItem('sc_home_dismissed',v);}catch(e){}if(typeof _pushKeyNow==='function')_pushKeyNow('sc_home_dismissed',v);}
+// Union into the in-memory set rather than replacing it: a pull merges another device's dismissals
+// straight into localStorage, and _saveHomeDismissed re-reads through here before writing, so a
+// replace would silently drop whichever side wasn't loaded. (At boot the set is empty, so a union
+// behaves exactly like the old load.)
+function _loadHomeDismissed(){try{const raw=localStorage.getItem('sc_home_dismissed');if(raw){const arr=JSON.parse(raw);if(Array.isArray(arr))arr.forEach(function(k){_homeDismissed.add(k);});}}catch(e){}}
+function _saveHomeDismissed(){_loadHomeDismissed();const v=JSON.stringify([..._homeDismissed]);try{localStorage.setItem('sc_home_dismissed',v);}catch(e){}if(typeof _pushKeyNow==='function')_pushKeyNow('sc_home_dismissed',v);}
 // "Needs your attention" items (flagged intake, completed-form reviews) used to linger forever
 // they'd keep resurfacing even after the provider had handled them a day or more ago. We stamp the
 // moment each item first appears and auto-clear it for good once it's older than 24h, so the list
 // only ever holds things that are genuinely current. Manual swipe-to-clear still works and is
 // folded into the same persisted dismissal set, so a cleared item never comes back either.
 let _attnSeen={};
-function _loadAttnSeen(){try{const r=localStorage.getItem('sc_attn_seen');if(r)_attnSeen=JSON.parse(r)||{};}catch(e){}}
-function _saveAttnSeen(){const v=JSON.stringify(_attnSeen);try{localStorage.setItem('sc_attn_seen',v);}catch(e){}if(typeof _pushKeyNow==='function')_pushKeyNow('sc_attn_seen',v);}
+// Same union-don't-replace rule as _loadHomeDismissed, keeping the OLDEST stamp per card so the
+// 24h retirement clock only ever runs forward.
+function _loadAttnSeen(){try{const r=localStorage.getItem('sc_attn_seen');if(!r)return;const o=JSON.parse(r);if(!o||typeof o!=='object'||Array.isArray(o))return;Object.keys(o).forEach(function(k){const t=+o[k]||0;if(!t)return;if(!_attnSeen[k]||t<_attnSeen[k])_attnSeen[k]=t;});}catch(e){}}
+function _saveAttnSeen(){_loadAttnSeen();const v=JSON.stringify(_attnSeen);try{localStorage.setItem('sc_attn_seen',v);}catch(e){}if(typeof _pushKeyNow==='function')_pushKeyNow('sc_attn_seen',v);}
 function _attnFresh(key){
   const now=Date.now();const t=_attnSeen[key];
   if(!t){_attnSeen[key]=now;_saveAttnSeen();return true;}
@@ -20141,6 +20194,9 @@ let _evSyncedOnce=false;
 // client submitted last night but that the provider's app only picked up this morning gets
 // stamped "Today" — the "did it yesterday, shows as today" bug. Falls back to whatever label
 // the client sent, then a generic "Recent".
+// Numeric submission time from the server event, so an attention card can be aged by when the client
+// actually completed the form rather than when this device first rendered it.
+function _eventAtMs(ev){try{if(ev&&ev.created_at){const t=new Date(ev.created_at).getTime();if(!isNaN(t))return t;}}catch(e){}return Date.now();}
 function _eventDateLabel(ev,fallback){
   try{
     if(ev&&ev.created_at){
@@ -20186,7 +20242,7 @@ function _reconcileEventAttachments(events){
       if(_adopt){_adopt.evId=ev.id;touched=true;continue;}
       const title=payload.title||'Form';
       const formDate=_eventDateLabel(ev,payload.date||'Recent');
-      c.submittedForms.unshift({formId:payload.formId,title,answers:payload.answers||{},flagged:payload.flagged||[],date:formDate,signed:!!payload.signed,evId:ev.id,qs:Array.isArray(payload.qs)?payload.qs:null});
+      c.submittedForms.unshift({formId:payload.formId,title,answers:payload.answers||{},flagged:payload.flagged||[],date:formDate,at:_eventAtMs(ev),signed:!!payload.signed,evId:ev.id,qs:Array.isArray(payload.qs)?payload.qs:null});
       if(Array.isArray(c.pendingForms))c.pendingForms=c.pendingForms.filter(pf=>pf&&pf.formId!==payload.formId);
       try{
         if(typeof _applyIntakeVitals==='function'&&payload.formId)_applyIntakeVitals(c,payload.formId,q=>(payload.answers||{})[q.id],payload.qs);
@@ -20395,7 +20451,7 @@ async function syncClientEvents(){
         if(c){
           touchedClients=true;
           c.submittedForms=c.submittedForms||[];
-          c.submittedForms.unshift({formId:payload.formId,title,answers:payload.answers||{},flagged:payload.flagged||[],date:formDate,signed:!!payload.signed,evId:ev.id,qs:Array.isArray(payload.qs)?payload.qs:null});
+          c.submittedForms.unshift({formId:payload.formId,title,answers:payload.answers||{},flagged:payload.flagged||[],date:formDate,at:_eventAtMs(ev),signed:!!payload.signed,evId:ev.id,qs:Array.isArray(payload.qs)?payload.qs:null});
           if(Array.isArray(c.pendingForms))c.pendingForms=c.pendingForms.filter(pf=>pf.formId!==payload.formId);
           // Map the real answers onto the actual chart fields (allergies, medications,
           // conditions, skin type, etc.), this used to only happen for the manual
@@ -21324,7 +21380,7 @@ SlickBridge.on('form-completed',d=>{
   const cid=d.clientId||'maya';const c=CL[cid];if(!c)return;
   const title=d.title||(formTmpls[d.formId]&&formTmpls[d.formId].name)||'Form';
   c.submittedForms=c.submittedForms||[];
-  c.submittedForms.unshift({formId:d.formId,title,answers:d.answers||{},flagged:d.flagged||[],date:d.date||'Today',signed:!!d.signed});_captureBirthday(c,d.formId,d.answers||{},d.qs);
+  c.submittedForms.unshift({formId:d.formId,title,answers:d.answers||{},flagged:d.flagged||[],date:d.date||'Today',at:Date.now(),signed:!!d.signed});_captureBirthday(c,d.formId,d.answers||{},d.qs);
   // fill the chart vitals from the client's answers (same mapping the in-app flow uses)
   if(d.formId&&(formTmpls[d.formId]||(Array.isArray(d.qs)&&d.qs.length)))_applyIntakeVitals(c,d.formId,q=>(d.answers||{})[q.id],d.qs);
   if(d.signed){c.signedForms=c.signedForms||[];if(c.signedForms.indexOf(title)<0)c.signedForms.push(title);}
@@ -22569,7 +22625,7 @@ function _pfiSave(id,fid){
   try{_capturePhotoConsent(c,fid,answers);}catch(e){}
   try{_captureRefPhoto(id,fid,answers);}catch(e){}
   c.submittedForms=c.submittedForms||[];
-  c.submittedForms.unshift({formId:fid,title:t.name,answers,flagged,date:'Today',signed:false,filledBy:'provider'});
+  c.submittedForms.unshift({formId:fid,title:t.name,answers,flagged,date:'Today',at:Date.now(),signed:false,filledBy:'provider'});
   if(flagged.length)c.flaggedContra={form:t.name,items:flagged.slice(),date:'Today'};
   try{saveClients();}catch(e){}
   try{if(typeof _pushKeyNow==='function')_pushKeyNow('sc_clients',localStorage.getItem('sc_clients')||'');}catch(e){}
