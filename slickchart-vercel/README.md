@@ -79,6 +79,13 @@ Optional:
 |---|---|
 | `SQUARE_LOCATION_ID` | pin a specific location; leave unset to use your first active one |
 | `SQUARE_VERSION` | pin a Square API version (e.g. `2025-01-23`); leave unset for the default |
+| `GROQ_API_KEY` | turns on high-accuracy voice-note transcription (Groq Whisper). Without it, dictation falls back to the device's own speech-to-text. Get one at console.groq.com |
+| `GROQ_STT_MODEL` | override the transcription model; defaults to `whisper-large-v3-turbo` |
+| `TRANSCRIBE_BURST_LIMIT` | transcriptions allowed per caller per minute; defaults to `12` |
+
+To check whether high-accuracy transcription is live, open **`/api/transcribe`** in a browser: it
+returns `{"enabled":true}` when the key is set. The app shows the same thing in
+**Settings → AI features → Voice note transcription**.
 
 After adding them, **redeploy** (Vercel → Deployments → ⋯ → Redeploy) so the new
 values take effect.
