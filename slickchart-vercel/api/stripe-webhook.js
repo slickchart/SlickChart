@@ -6,6 +6,8 @@
 //   URL:    https://slickchart.app/api/stripe-webhook
 //   Events: checkout.session.completed, customer.subscription.updated,
 //           customer.subscription.deleted
+// Renewals arrive as customer.subscription.updated too, so they keep the subscription row fresh but
+// are deliberately SILENT — the founder is pinged once per provider, on their first payment only.
 // Copy the "Signing secret" it gives you into Vercel as STRIPE_WEBHOOK_SECRET.
 //
 // Vercel-specific: signature verification needs the exact raw request bytes,
@@ -67,24 +69,48 @@ async function lookupCustomerEmail(customerId) {
   } catch (e) { return ''; }
 }
 
+// Claim the right to announce this provider, exactly once, ever. A monthly renewal arrives as the very
+// same `customer.subscription.updated` with status=active as the first payment, so the claim — not the
+// event — is what makes the ping mean "new". Stamping subscriptions.paid_notified_at in a single
+// conditional UPDATE is atomic, permanent, and lives on the row it describes, so concurrent webhook
+// deliveries and twelve months of renewals all collapse to one announcement.
+// Returns true only for the caller that actually won the claim.
+async function claimPaidNotify(q, em) {
+  const rows = await q`UPDATE subscriptions SET paid_notified_at = now()
+    WHERE lower(email) = ${em} AND paid_notified_at IS NULL RETURNING email`;
+  return rows.length > 0;
+}
+
 // Ping the founder that a NEW provider is paying — email + native push to their phone — exactly ONCE
 // per provider, no matter WHICH Stripe event first marks them active (checkout.session.completed OR a
 // customer.subscription.updated that flips to 'active'). The old code fired this only inside the
 // checkout branch, gated on a read-then-write `wasNew` flag; when Stripe delivered the subscription
 // event first / out of order, the in-app toast still popped (the app's poller keys off
-// subscriptions.status='active') but the email + push were silently skipped. claimReminder gives an
-// atomic once-only claim (shared reminder_log), so overlapping deliveries, renewals, and duplicate
-// events never re-ping. Best-effort throughout: Stripe still needs its 200, so nothing here may throw.
+// subscriptions.status='active') but the email + push were silently skipped.
+// Best-effort throughout: Stripe still needs its 200, so nothing here may throw.
 async function notifyFounderPaid(q, email) {
   const em = String(email || '').trim().toLowerCase();
   if (!em) return;
-  // Once-only across concurrent/overlapping webhook deliveries. If the claim itself errors (e.g. the
-  // table isn't there yet), fall through and notify anyway — better a rare duplicate than a missed ping.
+  // Once-only claim. This used to run against reminder_log and, when the claim itself errored, notify
+  // anyway on the theory that a duplicate beat a missed ping — but with renewals flowing through the
+  // same branch, "notify anyway" meant every provider re-announced every month, forever. So the claim
+  // is now the subscription row itself, and a failure here stays SILENT (fall back to the old
+  // reminder_log claim first, and only give up if that's broken too). A rare missed ping is recoverable;
+  // a monthly false alarm per provider is not.
+  let claimed = false;
   try {
-    await ensureClientTables();
-    const first = await claimReminder('founder', 'paidnotify:' + em);
-    if (!first) return;
-  } catch (e) { console.error('[stripe-webhook] founder-notify claim failed (continuing):', e && e.message || e); }
+    claimed = await claimPaidNotify(q, em);
+  } catch (e) {
+    console.error('[stripe-webhook] paid-notify claim failed, trying reminder_log:', e && e.message || e);
+    try {
+      await ensureClientTables();
+      claimed = await claimReminder('founder', 'paidnotify:' + em);
+    } catch (e2) {
+      console.error('[stripe-webhook] paid-notify fallback claim failed, staying silent:', e2 && e2.message || e2);
+      return;
+    }
+  }
+  if (!claimed) return;   // already announced — a renewal, a retry, or a duplicate delivery
 
   let name = '';
   try { const p = await q`SELECT name FROM providers WHERE lower(email) = ${em}`; name = (p[0] && p[0].name) || ''; } catch (e) {}

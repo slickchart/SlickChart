@@ -194,6 +194,18 @@ export async function ensureProvidersTable() {
     current_period_end timestamptz,
     updated_at timestamptz DEFAULT now()
   )`;
+  // When the founder was told this provider started paying. It is the once-ever claim behind the
+  // "💰 New PAID provider" ping: a RENEWAL is just another `customer.subscription.updated` with
+  // status=active, indistinguishable from the first payment without a stamp like this, which is why
+  // every provider re-announced themselves every billing cycle.
+  //
+  // The two statements below are how the stamp gets backfilled EXACTLY once, with no race against a
+  // signup landing mid-deploy. Adding a column WITH a default backfills every existing row in the
+  // same statement, so everyone already subscribed is marked as "already announced"; dropping the
+  // default immediately after means rows inserted from here on start NULL and can still be claimed.
+  // On every later cold start the ADD is a no-op (IF NOT EXISTS) and the DROP DEFAULT is a no-op too.
+  await q`ALTER TABLE subscriptions ADD COLUMN IF NOT EXISTS paid_notified_at timestamptz DEFAULT now()`;
+  await q`ALTER TABLE subscriptions ALTER COLUMN paid_notified_at DROP DEFAULT`;
   // Real login sessions — one row per device/browser that's logged in, so the
   // Security screen can show genuine activity and "Revoke" can actually work.
   await q`CREATE TABLE IF NOT EXISTS sessions (
