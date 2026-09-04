@@ -46,6 +46,11 @@ this to read or write data that isn't theirs?* If yes, it's not done.
 When you notice a small bug, correctness issue, or clear optimization while working — especially anything
 in the data-safety category above — **just fix it**, don't only mention it. Keep fixes tight and verified.
 
+**Ship it too.** When the owner brings you a bug or a fix request, you have standing permission to merge
+to `main` and let Vercel deploy — don't stop to ask. Verify it first (section 2), then push. Say what you
+deployed. This covers ordinary fixes; still check in before anything destructive or irreversible
+(deleting data, schema drops, cancelling a live integration).
+
 ## 2. Verify before claiming "fixed"
 
 Never tell the owner something is fixed without proof. For JS/UI changes, drive the app headless with the
