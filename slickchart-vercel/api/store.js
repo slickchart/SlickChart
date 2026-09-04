@@ -2,6 +2,8 @@
 //   GET  -> { data: { key: value, ... } }            (everything, for hydration)
 //   PUT  -> body { items: { key: value, ... } }       (upsert many)
 //        -> body { key, value }                        (upsert one)
+// Most keys are last-writer-wins. A few append-only ones are MERGED server-side instead — see
+// UNION_SET_KEYS / OLDEST_WINS_KEYS below.
 import { sql, ensureTable, ensureProvidersTable, dbEnabled } from '../lib/db.js';
 import { verifyToken, isSessionValid } from '../lib/auth.js';
 
@@ -24,6 +26,23 @@ async function requireLogin(req, res, q) {
   if (!payload.u) { res.status(401).json({ error: 'Not logged in.' }); return null; }
   return payload.u;
 }
+
+// ── Keys the server must MERGE instead of overwrite ────────────────────────────
+// A whole-blob PUT is last-writer-wins, which is fine for settings but wrong for a set that only ever
+// grows. A device that has been open since before a dismissal was made on another device holds a
+// smaller set in memory; the moment it writes, it erases the newer dismissals for the whole account —
+// which is exactly why cleared "Needs your attention" cards kept coming back. The client merges on
+// pull, but a client can only merge what it has locally, so the authoritative merge has to happen
+// here where every device's writes land.
+//
+// Only strictly append-only keys belong in these lists. Deliberately EXCLUDED: sc_ci_cleared and
+// sc_ci_dismissed (an Undo removes entries) and sc_notif_cleared / sc_notif_read (capped to the most
+// recent 800/1200, so they are meant to shrink). Unioning those would break Undo and grow forever.
+const UNION_SET_KEYS = { sc_home_dismissed: 1 };   // array of dismissed card keys — add-only
+const OLDEST_WINS_KEYS = { sc_attn_seen: 1 };      // card key -> first-seen ms; earliest stamp wins,
+                                                   // so the 24h retirement clock can never be reset
+function isJsonArray(v) { try { return Array.isArray(JSON.parse(v)); } catch (e) { return false; } }
+function isJsonObject(v) { try { const o = JSON.parse(v); return !!o && typeof o === 'object' && !Array.isArray(o); } catch (e) { return false; } }
 
 export default async function handler(req, res) {
   if (!dbEnabled()) { res.status(500).json({ error: 'No database is configured.' }); return; }
@@ -53,6 +72,36 @@ export default async function handler(req, res) {
       const entries = Object.entries(items);
       for (const [k, v] of entries) {
         const val = v == null ? null : String(v);
+        if (UNION_SET_KEYS[k] && isJsonArray(val)) {
+          // Union, never replace. See UNION_SET_KEYS above.
+          await q`INSERT INTO kv (owner, k, v, updated_at)
+                  VALUES (${owner}, ${k}, ${val}, now())
+                  ON CONFLICT (owner, k) DO UPDATE SET v = (
+                    SELECT COALESCE(jsonb_agg(DISTINCT e), '[]'::jsonb)::text
+                    FROM jsonb_array_elements(
+                      (CASE WHEN jsonb_typeof(kv.v::jsonb)       = 'array' THEN kv.v::jsonb        ELSE '[]'::jsonb END) ||
+                      (CASE WHEN jsonb_typeof(EXCLUDED.v::jsonb) = 'array' THEN EXCLUDED.v::jsonb  ELSE '[]'::jsonb END)
+                    ) e
+                  ), updated_at = now()`;
+          continue;
+        }
+        if (OLDEST_WINS_KEYS[k] && isJsonObject(val)) {
+          // Keep the EARLIEST timestamp per key. See OLDEST_WINS_KEYS above.
+          await q`INSERT INTO kv (owner, k, v, updated_at)
+                  VALUES (${owner}, ${k}, ${val}, now())
+                  ON CONFLICT (owner, k) DO UPDATE SET v = (
+                    SELECT COALESCE(jsonb_object_agg(s.key, to_jsonb(s.val)), '{}'::jsonb)::text FROM (
+                      SELECT e.key, min(e.num) AS val FROM (
+                        SELECT key, (CASE WHEN jsonb_typeof(value) = 'number' THEN value::text::numeric ELSE 0 END) AS num
+                          FROM jsonb_each(CASE WHEN jsonb_typeof(kv.v::jsonb)       = 'object' THEN kv.v::jsonb       ELSE '{}'::jsonb END)
+                        UNION ALL
+                        SELECT key, (CASE WHEN jsonb_typeof(value) = 'number' THEN value::text::numeric ELSE 0 END) AS num
+                          FROM jsonb_each(CASE WHEN jsonb_typeof(EXCLUDED.v::jsonb) = 'object' THEN EXCLUDED.v::jsonb ELSE '{}'::jsonb END)
+                      ) e WHERE e.num > 0 GROUP BY e.key
+                    ) s
+                  ), updated_at = now()`;
+          continue;
+        }
         await q`INSERT INTO kv (owner, k, v, updated_at)
                 VALUES (${owner}, ${k}, ${val}, now())
                 ON CONFLICT (owner, k) DO UPDATE SET v = EXCLUDED.v, updated_at = now()`;
