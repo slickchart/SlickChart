@@ -2343,7 +2343,7 @@ const Cloud={
   async resetPw(token,pw){const r=await fetch('/api/reset',{method:'POST',headers:{'Content-Type':'application/json'},body:JSON.stringify({token,password:pw})});let j={};try{j=await r.json();}catch(e){}if(!r.ok)throw new Error((j&&j.error)||'Reset failed');return true;},
   async verifyEmail(token){try{const r=await fetch('/api/verify?token='+encodeURIComponent(token));return r.ok;}catch(e){return false;}},
   logout(){this.token='';try{localStorage.removeItem('sc_token');}catch(e){}},
-  async pull(){if(!this.token)return -1;let r;try{r=await fetch('/api/store',{headers:{'Authorization':'Bearer '+this.token}});}catch(e){return -1;}if(r.status===401){this.logout();return -1;}let j={};try{j=await r.json();}catch(e){}const data=(j&&j.data)||{};const set=this._origSet||localStorage.setItem.bind(localStorage);const keys=Object.keys(data);keys.forEach(k=>{try{
+  async pull(){if(!this.token)return -1;let r;try{r=await fetch('/api/store',{headers:{'Authorization':'Bearer '+this.token}});}catch(e){return -1;}if(r.status===401){this._authFailed=true;this.logout();return -1;}let j={};try{j=await r.json();}catch(e){}const data=(j&&j.data)||{};const set=this._origSet||localStorage.setItem.bind(localStorage);const keys=Object.keys(data);keys.forEach(k=>{try{
     // Never overwrite a key that still has a pending local write queued, that local value
     // is newer than whatever the server returned (e.g. a note saved moments before a reload,
     // whose debounced push hadn't flushed yet). Overwriting it here is silent data loss.
@@ -2540,6 +2540,19 @@ async function _cloudInit(){
   try{_initNativeProvider();}catch(e){}         // native App Store / Play build: status bar + push registration
   try{
     const n=await Cloud.pull();
+    // The server REJECTED this device's session (expired, revoked, or signed with an older
+    // SESSION_SECRET). pull() has already dropped the token, so every save, invite and sync from here
+    // would fail. Carrying on into the app leaves the provider looking signed in — their cached client
+    // list still renders — while nothing they do can reach the server: they only find out when an
+    // action dies with "Please sign in", which reads like a bug in that button rather than a lost
+    // session. Send them straight to sign-in and say plainly what happened.
+    if(Cloud._authFailed){
+      Cloud._authFailed=false;
+      try{localStorage.setItem('sc_session_expired','1');}catch(e){}
+      renderEntry();
+      setTimeout(function(){try{if(typeof proToast==='function')proToast('Your session expired — please sign in again. Nothing was lost, your clients and notes are safe on the server.',0);}catch(e){}},400);
+      return;
+    }
     if(n===0){
       // A brand-new account correctly seeds the cloud from local. But if THIS browser has
       // successfully pulled real cloud data before (sc_cloud_seeded), an empty pull now is almost
@@ -14087,7 +14100,7 @@ function _withClientToken(id,then){
   const c=CL[id];if(!c)return;
   if(c._token){ then(); return; }
   const tok=(typeof Cloud!=='undefined'&&Cloud&&Cloud.token)||'';
-  if(!tok){ if(typeof proToast==='function')proToast('Please sign in to your SlickChart account first, then try again.'); return; }
+  if(!tok){ _promptReSignIn(); return; }
   const first=(c.name||'your client').split(' ')[0];
   if(typeof proToast==='function')proToast('Preparing '+first+'’s secure link…',0);
   var _slow=setTimeout(function(){ if(document.getElementById('pro-toast')&&typeof proToast==='function')proToast('Still working — this can take a few extra seconds…',0); },4000);
@@ -14307,11 +14320,25 @@ async function sendFirstVisitPackage(id){
   // (+ photo release) is already waiting for them the moment they open the app.
   inviteClientToApp(id);
 }
+// A missing token here always means the same thing: this device's session ended (expired, revoked, or
+// invalidated server-side) while the app kept showing cached data. "Please sign in first" on its own
+// read as a broken button to a provider who could plainly see she WAS signed in, so say what actually
+// happened, reassure her nothing is lost, and give her the way back rather than a dead end.
+function _promptReSignIn(){
+  try{
+    if(typeof confirmModal==='function'){
+      confirmModal({title:'Your session ended',body:'This device got signed out, so sending is paused. Your clients, notes and photos are safe on the server. Sign in again and everything comes right back.',action:'Sign in'},function(){try{_doLogout();}catch(e){try{renderEntry();}catch(_){}}});
+      return;
+    }
+  }catch(e){}
+  try{if(typeof proToast==='function')proToast('Your session ended on this device — please sign in again. Nothing is lost.',0);}catch(e){}
+  setTimeout(function(){try{_doLogout();}catch(e){}},1500);
+}
 function inviteClientToApp(id){
   const c=CL[id];if(!c)return;
   if(!c._token){
     var _tok=(typeof Cloud!=='undefined'&&Cloud&&Cloud.token)||'';
-    if(!_tok){ proToast('Please sign in to your SlickChart account first'); return; }
+    if(!_tok){ _promptReSignIn(); return; }
     proToast('Preparing link\u2026',0);
     var _slowTimer=setTimeout(function(){
       if(document.getElementById('pro-toast'))proToast('Still working \u2014 this can take a few extra seconds if it\u2019s been a while\u2026',0);
