@@ -20953,11 +20953,54 @@ function _openProviderLookup(){
     +'<div style="font-size:12px;color:var(--p-mut);line-height:1.5;margin-bottom:12px;">Enter the email a provider signed up with. See if their account exists, whether it’s paid, and resend their password-reset link in one tap.</div>'
     +'<input id="pl-email" type="email" inputmode="email" autocapitalize="off" spellcheck="false" placeholder="provider@email.com" onkeydown="if(event.key===\'Enter\')_pl_lookup()" style="width:100%;box-sizing:border-box;background:var(--p-surf);border:1px solid var(--p-line);border-radius:10px;padding:11px 12px;font-size:14px;color:var(--p-ink);margin-bottom:10px;">'
     +'<button onclick="_pl_lookup()" class="btnp" style="width:100%;border-radius:10px;"><i class="ti ti-search"></i> Look up</button>'
+    +'<button onclick="_pl_scan()" class="btng" style="width:100%;border-radius:10px;margin-top:8px;justify-content:center;"><i class="ti ti-users"></i> Check everyone\u2019s sign-in</button>'
     +'<div id="pl-result" role="status" style="margin-top:12px;font-size:13px;line-height:1.55;"></div>'
     +'</div>';
   setTimeout(function(){try{document.getElementById('pl-email').focus();}catch(e){}},60);
 }
 function _pl_result(html){var el=document.getElementById('pl-result');if(el)el.innerHTML=html;}
+// Plain-language read on why a provider might be seeing "it says I'm not signed in but I am": their
+// saved token can no longer authenticate (revoked, or older than its 30-day life), while the app keeps
+// showing their cached clients. Signing out and back in is the fix.
+function _pl_ago(ms){if(!ms)return 'never';var d=Math.floor((Date.now()-ms)/86400000);return d<=0?'today':(d===1?'yesterday':(d+' days ago'));}
+function _pl_sessionHtml(se){
+  if(!se)return '';
+  if(!se.everLoggedIn){
+    return '<div style="background:var(--p-amber-bg);border:1px solid var(--p-amber-line);border-radius:9px;padding:10px 12px;margin-bottom:10px;color:var(--p-amber);line-height:1.55;">⚠️ <b>Never signed in</b> on any device. They paid but haven\u2019t completed a login yet.</div>';
+  }
+  if(se.tokenDead){
+    return '<div style="background:var(--p-red-bg);border:1px solid var(--p-red-line);border-radius:9px;padding:10px 12px;margin-bottom:10px;color:var(--p-red);line-height:1.55;">⚠️ <b>Signed out without knowing it.</b> '+(se.revoked?'Their session was revoked.':'Their last sign-in was '+_fileEsc(_pl_ago(se.lastLoginAt))+', so the saved login has expired.')+'<br>This is exactly the \u201cit says I\u2019m not signed in but I am\u201d report. <b>Ask them to sign out and back in</b> \u2014 nothing is lost.</div>';
+  }
+  return '<div style="background:var(--p-surf);border:1px solid var(--p-green-line);border-radius:9px;padding:10px 12px;margin-bottom:10px;color:var(--p-green);line-height:1.55;">✓ <b>Sign-in is healthy.</b> Last signed in '+_fileEsc(_pl_ago(se.lastLoginAt))+', last active '+_fileEsc(_pl_ago(se.lastSeenAt))+'.</div>';
+}
+async function _pl_scan(){
+  _pl_result('<span style="color:var(--p-mut);">Checking every paid provider\u2026</span>');
+  var tok=(typeof Cloud!=='undefined'&&Cloud&&Cloud.token)||'';
+  try{
+    var r=await fetch('/api/admin/provider-lookup?scan=1',{headers:{'Authorization':'Bearer '+tok}});
+    var j=await r.json().catch(function(){return {};});
+    if(r.status===403){_pl_result('<span style="color:var(--p-red);">Founder-only \u2014 add your login email to FOUNDER_EMAILS in Vercel.</span>');return;}
+    if(!r.ok||!j.ok){_pl_result('<span style="color:var(--p-red);">'+_fileEsc((j&&j.error)||'Scan failed.')+'</span>');return;}
+    var h='';
+    if(j.allPaidAffected){
+      h+='<div style="background:var(--p-red-bg);border:1px solid var(--p-red-line);border-radius:9px;padding:10px 12px;margin-bottom:10px;color:var(--p-red);line-height:1.55;">🚨 <b>Every paid provider is signed out.</b> That points at SESSION_SECRET changing in Vercel, which invalidates everyone\u2019s login at once. Check it before emailing anyone.</div>';
+    }
+    h+='<div style="background:var(--p-surf);border:1px solid var(--p-line);border-radius:9px;padding:10px 12px;margin-bottom:10px;color:var(--p-mut);line-height:1.7;">'
+      +'<b style="color:var(--p-ink);">'+j.paidProviders+'</b> paid providers<br>'
+      +'<span style="color:'+(j.stuckCount?'var(--p-red)':'var(--p-green)')+';"><b>'+j.stuckCount+'</b> signed out without knowing it</span><br>'
+      +'<span style="color:var(--p-mut);"><b>'+j.neverLoggedInCount+'</b> paid but never signed in</span><br>'
+      +'<span style="color:var(--p-green);"><b>'+j.healthy+'</b> healthy</span></div>';
+    function rows(list,label,col){
+      if(!list||!list.length)return '';
+      return '<div style="font-size:11px;font-weight:600;color:var(--p-mut2);letter-spacing:.05em;text-transform:uppercase;margin:10px 0 5px;">'+label+'</div>'
+        +list.map(function(p){return '<div style="background:var(--p-surf);border:1px solid var(--p-line);border-radius:8px;padding:8px 10px;margin-bottom:6px;line-height:1.5;"><div style="color:'+col+';font-weight:600;">'+_fileEsc(p.name||p.email)+'</div><div style="color:var(--p-mut);font-size:12px;">'+_fileEsc(p.email)+'<br>'+(p.lastLoginDaysAgo==null?'never signed in':('last sign-in '+p.lastLoginDaysAgo+'d ago'))+'</div></div>';}).join('');
+    }
+    h+=rows(j.stuck,'Need to sign out & back in','var(--p-red)');
+    h+=rows(j.neverLoggedIn,'Paid, signup never finished','var(--p-amber)');
+    if(!j.stuckCount&&!j.neverLoggedInCount)h+='<div style="color:var(--p-green);">✓ Everyone\u2019s sign-in is working.</div>';
+    _pl_result(h);
+  }catch(e){_pl_result('<span style="color:var(--p-red);">Couldn\u2019t reach the server. Try again.</span>');}
+}
 async function _pl_lookup(){
   var el=document.getElementById('pl-email');var email=(el?el.value:'').trim().toLowerCase();
   if(!email||!/.+@.+\..+/.test(email)){_pl_result('<span style="color:var(--p-red);">Enter a valid email.</span>');return;}
@@ -20976,6 +21019,7 @@ async function _pl_lookup(){
     _pl_result('<div style="background:var(--p-surf);border:1px solid var(--p-line);border-radius:9px;padding:10px 12px;margin-bottom:10px;">'
       +'<div style="color:var(--p-green);font-weight:600;margin-bottom:4px;">✓ Account exists</div>'
       +'<div style="color:var(--p-mut);">Name: '+_fileEsc(j.name||'(none)')+'<br>Paid: '+(j.paid?'Yes 💰':'No')+'<br>Email verified: '+(j.verified?'Yes':'No')+'<br>Created: '+_fileEsc(created)+'</div></div>'
+      +_pl_sessionHtml(j.session)
       +'<button onclick="_pl_resend(\''+_jsAttr(email)+'\')" class="btnp" style="width:100%;border-radius:10px;"><i class="ti ti-mail"></i> Resend password reset link</button>');
   }catch(e){_pl_result('<span style="color:var(--p-red);">Couldn’t reach the server. Try again.</span>');}
 }
