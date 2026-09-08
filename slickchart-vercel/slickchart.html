@@ -2297,17 +2297,24 @@ const Cloud={
     // A single flaky request here shouldn't quietly bounce a real visitor into
     // local demo mode instead of showing them login/signup, so retry a couple
     // times (with a short pause) before actually giving up.
+    // `statusUnknown` records that we never actually got an answer, which is NOT the same as the
+    // server telling us cloud sync is off. Treating those two the same is what stranded a provider
+    // in a local-only workspace — placeholder name, empty checklist, and no way to reach sign-in.
+    // A non-OK response (a 500, or an HTML error page) now retries too, instead of being read as "off".
+    this.statusUnknown=false;
     for(let attempt=0;attempt<3;attempt++){
       try{
         const r=await fetch('/api/cloud-status');
+        if(!r.ok)throw new Error('status-'+r.status);
         const j=await r.json();
-        this.enabled=!!(j&&j.enabled);
+        if(!j||typeof j.enabled!=='boolean')throw new Error('status-shape');
+        this.enabled=!!j.enabled;
         return this.enabled;
       }catch(e){
         if(attempt<2)await new Promise(res=>setTimeout(res,400));
       }
     }
-    this.enabled=false;
+    this.enabled=false;this.statusUnknown=true;
     return this.enabled;
   },
   async login(email,pw,totpCode){const r=await fetch('/api/login',{method:'POST',headers:{'Content-Type':'application/json'},body:JSON.stringify({email,password:pw,totpCode})});let j={};try{j=await r.json();}catch(e){}if(!r.ok||!j.token){const err=new Error((j&&j.error)||(j&&j.requiresTotp?'Enter your authenticator code':'Login failed'));err.requiresTotp=!!(j&&j.requiresTotp);throw err;}this.token=j.token;try{localStorage.setItem('sc_token',this.token);if(j.email)localStorage.setItem('sc_login_email',j.email);localStorage.setItem('sc_totp_enabled',j.totpEnabled?'1':'0');}catch(e){}return j;},
@@ -2503,6 +2510,15 @@ async function _cloudInit(){
   try{_initDeepLinks();}catch(e){}
   await Cloud.status();
   if(!Cloud.enabled){
+    // Local-only mode has NO sign-in anywhere, so landing here by mistake leaves a real provider
+    // completely stuck: the app opens on a placeholder workspace ("Good afternoon, Jessica", empty
+    // checklist) and there is no way to sign in OR out. Only take that path when we actually heard
+    // back that cloud sync is off AND this browser shows no sign of a real account.
+    if(Cloud.statusUnknown||_hasCloudAccountSigns()){
+      renderEntry();
+      setTimeout(function(){try{if(typeof proToast==='function')proToast('Couldn’t reach the server just now — sign in to sync, or check your connection and reload.',0);}catch(e){}},400);
+      return;
+    }
     // No database configured at all, this is a local-only, single-device setup.
     // There's no real account to onboard into, so open straight into the
     // pre-configured workspace instead of showing the wizard.
@@ -2612,6 +2628,13 @@ function _handleAuthParams(){
 // Unified front door. With no provider session, decide where to send someone: a client's device
 // (has a saved care-space link, never signed in as a provider) goes straight to their space; a
 // returning provider goes straight to sign-in; anyone else sees the welcome chooser.
+// Any trace that this browser has ever held a real SlickChart account. Used to make sure a provider is
+// never dropped into the sign-in-less local workspace, whatever the server says on a given load.
+function _hasCloudAccountSigns(){
+  try{
+    return !!(localStorage.getItem('sc_token')||localStorage.getItem('sc_login_email')||localStorage.getItem('sc_cloud_seeded'));
+  }catch(e){return false;}
+}
 function renderEntry(){
   let hasClient=false,hasProviderHist=false;
   try{hasClient=!!localStorage.getItem('sc_client_token');}catch(e){}
@@ -5583,6 +5606,28 @@ function _getAppBannerHTML(){
     </div>
   </div>`;
 }
+// Last-resort way back in. If Home ever renders with no session — a dropped token, an unreachable
+// cloud-status probe — this is the only visible route to sign-in, so a provider is never left looking
+// at a placeholder workspace with nowhere to go. Hidden on a genuine local-only install (no account
+// has ever existed in this browser and the server confirmed cloud sync is off), where sign-in is
+// meaningless. Not dismissible: being signed out is the one thing worth interrupting for.
+function _signedOutBannerHTML(){
+  try{
+    if(typeof Cloud==='undefined'||!Cloud)return '';
+    if(Cloud.token)return '';
+    if(!(Cloud.enabled||Cloud.statusUnknown||_hasCloudAccountSigns()))return '';
+    return `<div style="margin:0 16px 12px;background:var(--p-amber-bg);border:1px solid var(--p-amber-line);border-radius:14px;padding:13px 14px;">
+      <div style="display:flex;align-items:flex-start;gap:11px;">
+        <i class="ti ti-lock-open" aria-hidden="true" style="font-size:19px;color:var(--p-amber);flex-shrink:0;margin-top:1px;"></i>
+        <div style="flex:1;min-width:0;">
+          <div style="font-size:14px;font-weight:600;color:var(--p-ink);">You're not signed in</div>
+          <div style="font-size:12px;color:var(--p-amber);line-height:1.45;margin-top:2px;">This is a blank workspace, not your account. Sign in to see your own clients and notes — nothing of yours is lost.</div>
+        </div>
+      </div>
+      <button onclick="renderEntry()" class="btnp" style="width:100%;border-radius:10px;padding:11px;margin-top:11px;justify-content:center;"><i class="ti ti-login"></i> Sign in</button>
+    </div>`;
+  }catch(e){return '';}
+}
 function _dismissGetApp(){try{localStorage.setItem('sc_getapp_dismissed','1');}catch(e){}var b=document.getElementById('getapp-banner');if(b)b.remove();}
 function _markGetAppTapped(){try{localStorage.setItem('sc_getapp_dismissed','1');}catch(e){}}
 function renderHome(){
@@ -5598,6 +5643,7 @@ function renderHome(){
       <button onclick="nav('calendar')" aria-label="Open calendar" style="background:var(--surf1);border:none;border-radius:10px;padding:8px 12px;font-size:12px;color:var(--accent-strong);cursor:pointer;display:flex;align-items:center;gap:5px;min-width:44px;min-height:44px;"><i class="ti ti-calendar" aria-hidden="true" style="font-size:16px;"></i></button>
     </div>
   </div>
+  ${(function(){try{return _signedOutBannerHTML();}catch(e){return '';}})()}
   ${(function(){try{return _getAppBannerHTML();}catch(e){return '';}})()}
   ${(function(){try{const gs=_gettingStartedHTML();return gs?`<div id="getting-started-card" style="padding:0 16px;margin-bottom:12px;">${gs}</div>`:'';}catch(e){return '';}})()}
   <div style="display:flex;gap:8px;padding:0 16px;margin-bottom:10px;">
