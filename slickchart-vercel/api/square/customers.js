@@ -62,6 +62,11 @@ export default async function handler(req, res) {
     let cursor = '';
     let guard = 0; // safety stop so we never loop forever
 
+    // 100 pages x 100 = 10,000 customers. The old 25-page stop capped this at 2,500 and said nothing,
+    // which quietly breaks the cleanup tool on a badly-injected directory: everything past 2,500 is
+    // invisible to it, the protected/reviewable counts are wrong, and it can even report "all clean"
+    // while thousands of injected profiles sit unseen. If we DO hit the stop, say so in the response
+    // (`truncated`) so the UI can warn instead of showing a confidently wrong number.
     do {
       const qs = new URLSearchParams({ limit: '100' });
       if (cursor) qs.set('cursor', cursor);
@@ -69,10 +74,10 @@ export default async function handler(req, res) {
       (data.customers || []).forEach(c => customers.push(normalize(c)));
       cursor = data.cursor || '';
       guard++;
-    } while (cursor && guard < 25);
+    } while (cursor && guard < 100);
 
     customers.sort((a, b) => a.name.localeCompare(b.name));
-    res.status(200).json({ count: customers.length, customers });
+    res.status(200).json({ count: customers.length, customers, truncated: !!cursor });
   } catch (e) {
     res.status(e.status || 500).json({ error: e.message, details: e.squareErrors || null });
   }

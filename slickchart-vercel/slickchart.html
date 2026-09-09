@@ -4416,7 +4416,7 @@ function _sqCustIsMine(cust,idx){
 // app-created (protect it) so we never delete on a missing field.
 function _sqIsAppCreated(src){var s=String(src||'').toUpperCase();return s==='THIRD_PARTY'||s==='THIRD_PARTY_IMPORT';}
 function _sqSrcLabel(src){var s=String(src||'').toUpperCase().replace(/_/g,' ').toLowerCase();return s?s.replace(/\b\w/g,function(m){return m.toUpperCase();}):'Unknown';}
-let _sqpAll=null,_sqpSel=null,_sqpQuery='',_sqpBusy=false,_sqpAfter=0,_sqpAfterStr='',_sqpBefore=0,_sqpBeforeStr='',_sqpShownIds=[],_sqpReviewAll=false,_sqpForeignOnly=false,_sqpForeignN=0;
+let _sqpAll=null,_sqpSel=null,_sqpQuery='',_sqpBusy=false,_sqpAfter=0,_sqpAfterStr='',_sqpBefore=0,_sqpBeforeStr='',_sqpShownIds=[],_sqpReviewAll=false,_sqpForeignOnly=false,_sqpForeignN=0,_sqpTruncated=false;
 // Effective protection. Normally email subscribers + roster-matched customers are protected as "yours".
 // BUT when the injection is bad enough that the strangers ALSO carry emails (subscriber count is wildly
 // inflated) and got auto-imported (so they look matched), neither signal is trustworthy. _sqpReviewAll
@@ -4488,6 +4488,9 @@ async function _openSquarePurge(){
     (_rr[0]&&Array.isArray(_rr[0].activeCustomerIds)?_rr[0].activeCustomerIds:[]).forEach(function(id){if(id)_paidSet[id]=1;});
     (_rr[1]&&Array.isArray(_rr[1].foreignIds)?_rr[1].foreignIds:[]).forEach(function(id){if(id)_foreignSet[id]=1;});
   }catch(e){}
+  // Square paginates; the server stops after 10,000 customers. If it hit that stop, this list is
+  // INCOMPLETE — say so loudly rather than letting the counts below read as the whole picture.
+  _sqpTruncated=!!(data&&data.truncated);
   var idx=_sqMineIndex();
   _sqpAll=data.customers.map(function(c){
     var matched=_sqCustIsMine(c,idx);
@@ -4589,6 +4592,7 @@ function _sqp_render(){
   _sqp_box(
     '<div style="font-size:16px;font-weight:600;color:var(--p-ink);margin-bottom:4px;">Clean up Square customers</div>'
     +'<div style="font-size:12px;color:var(--p-mut);line-height:1.55;margin-bottom:10px;">'+_sqpAll.length+' customers in your connected Square. <b style="color:var(--p-green);">'+paidN+' have booked or paid with you</b> — those are locked as yours and can NEVER be selected here, even in Review-ALL. '+(_sqpReviewAll?('<b style="color:var(--p-red);">Reviewing the rest by date — other shields OFF.</b> Set a date range or area code, check each row, then delete.'):('That leaves <b>'+reviewable.length+'</b> with no booking/payment to review.'+(_sqpForeignN>0?' Separately, <b style="color:var(--p-red);">'+_sqpForeignN+'</b> of your customers are confirmed to belong to another provider in the database — <b>start with the red button below</b> to pull up exactly those.':' This is where the junk records are. Tick <b>Review ALL by date</b> below to see them all.')))+' <b style="color:var(--p-red);">Deleting is permanent.</b></div>'
+    +(_sqpTruncated?'<div style="background:var(--p-red-bg);border:1px solid var(--p-red);border-radius:9px;padding:9px 11px;margin-bottom:10px;font-size:11.5px;color:var(--p-red);line-height:1.5;"><b>⚠️ This list is cut off.</b> Your Square has more customers than this tool can load in one pass, so the counts below are only the first '+_sqpAll.length+'. Clear what\u2019s here, then re-open this to load the next batch \u2014 don\u2019t read \u201cnothing left\u201d as finished until this warning is gone.</div>':'')
     +foreignToggle
     +inclToggle
     +(recentN?('<div style="background:var(--p-red-bg);border:1px solid var(--p-red);border-radius:9px;padding:9px 11px;margin-bottom:10px;font-size:11.5px;color:var(--p-red);line-height:1.5;"><b>⚠️ '+recentN+' non-subscriber'+(recentN===1?'':'s')+' added in the last 3 days.</b> If these aren’t people you added yourself, something may still be writing to your Square — sort is newest-first below, so check the top rows’ dates and tell me. If they’re all older than that, the leak is stopped and this is just the existing backlog to clear.</div>'):'<div style="background:var(--p-surf2);border:1px solid var(--p-line);border-radius:9px;padding:9px 11px;margin-bottom:10px;font-size:11.5px;color:var(--p-green);line-height:1.5;">✓ No unfamiliar customers added in the last 3 days — nothing new is being injected. What’s left is the existing backlog to clear.</div>')
