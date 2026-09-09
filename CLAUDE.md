@@ -51,6 +51,11 @@ to `main` and let Vercel deploy — don't stop to ask. Verify it first (section 
 deployed. This covers ordinary fixes; still check in before anything destructive or irreversible
 (deleting data, schema drops, cancelling a live integration).
 
+This holds even when a session is set up to work on a feature branch. A branch is fine to develop on,
+but don't finish by parking the work there and asking permission to deploy — the owner has confirmed she
+always wants it shipped. Merge to `main` and push once it's verified. (Re-run section 2's checks against
+the merged result if `main` moved while you worked; the demos need rebuilding then too.)
+
 ## 2. Verify before claiming "fixed"
 
 Never tell the owner something is fixed without proof. For JS/UI changes, drive the app headless with the
