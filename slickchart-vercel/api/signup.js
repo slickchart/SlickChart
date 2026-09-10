@@ -4,6 +4,7 @@
 import { sql, ensureProvidersTable, dbEnabled, hasActiveSubscription } from '../lib/db.js';
 import { signToken, hashPassword, makeToken, createSession } from '../lib/auth.js';
 import { sendEmail, trustedOrigin, addToAudience, welcomeEmailHtml, welcomeEmailText } from '../lib/email.js';
+import { sendNativeToProvider, fcmConfigured } from '../lib/fcm.js';
 import crypto from 'crypto';
 
 // Escape user-supplied text before dropping it into the founder-notification HTML email.
@@ -70,12 +71,14 @@ export default async function handler(req, res) {
     // signup instead of two. Free / not-yet-paid signups still ping (the webhook won't fire for them).
     let _alreadyPaid = false;
     try { _alreadyPaid = await hasActiveSubscription(email); } catch (e) { _alreadyPaid = false; }
+    // Account number, shared by the founder email and the push below.
+    let _total = 0;
+    try { const c = await q`SELECT count(*)::int AS n FROM providers`; _total = (c && c[0] && c[0].n) || 0; } catch (e) {}
     try {
       // Default to the owner's inbox so signup pings work out of the box (no env setup needed).
       const notifyTo = String(process.env.FOUNDER_NOTIFY_EMAIL || process.env.FOUNDER_EMAILS || 'botanicalaestheticsbyashley@gmail.com').split(',')[0].trim();
       if (notifyTo && !_alreadyPaid) {
-        let total = 0;
-        try { const c = await q`SELECT count(*)::int AS n FROM providers`; total = (c && c[0] && c[0].n) || 0; } catch (e) {}
+        const total = _total;
         const when = new Date().toLocaleString('en-US', { timeZone: process.env.FOUNDER_TZ || 'America/Los_Angeles' });
         const optLine = b.optIn ? 'Yes' : 'No';
         await sendEmail({
@@ -94,6 +97,35 @@ export default async function handler(req, res) {
         });
       }
     } catch (e) { console.error('[signup] founder notify failed:', e && e.message || e); /* never block signup */ }
+
+    // ── Native push to the founder's phone(s) ─────────────────────────────────────────────
+    // The founder EMAIL above has always fired for a free signup, but the PUSH only ever existed in the
+    // paid path (stripe-webhook's notifyFounderPaid). In beta most providers don't pay on day one, so
+    // "a new provider signed up" reached the inbox and never the phone — which read as push being
+    // broken when it was simply never sent. Same sender, same founder lookup the webhook uses.
+    // Skipped when the account is already paying: the webhook's own push covers that one, so a paid
+    // signup still gets exactly one push, not two.
+    try {
+      if (fcmConfigured() && !_alreadyPaid) {
+        const founderEmails = String(process.env.FOUNDER_EMAILS || process.env.OWNER_EMAIL || process.env.FOUNDER_NOTIFY_EMAIL || 'botanicalaestheticsbyashley@gmail.com')
+          .toLowerCase().split(',').map(s => s.trim()).filter(Boolean);
+        if (founderEmails.length) {
+          const payload = {
+            title: '🎉 New provider signup!',
+            body: (name || email) + ' just created an account' + (_total ? ` — that's ${_total} accounts now` : ''),
+            url: '/slickchart', tag: 'signup:' + email
+          };
+          let pushed = 0;
+          for (const fe of founderEmails) {
+            try {
+              const provs = await q`SELECT id FROM providers WHERE lower(email) = ${fe}`;
+              for (const pr of (provs || [])) { try { pushed += (await sendNativeToProvider(pr.id, payload)) || 0; } catch (e) {} }
+            } catch (e) {}
+          }
+          console.log('[signup] new-signup push: founders=' + founderEmails.length + ' devices=' + pushed + ' for=' + email);
+        }
+      }
+    } catch (e) { console.error('[signup] founder push failed:', e && e.message || e); /* never block signup */ }
 
     const token = signToken({ u: id, e: email, sid: await createSession(q, id, req) }, secret);
     res.status(200).json({ token, name, email, verified: false });
