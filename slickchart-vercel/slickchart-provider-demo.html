@@ -2213,6 +2213,26 @@ function _mergeAttnSeen(serverStr,localStr){
     return {str:JSON.stringify(out),changed:changed};
   }catch(e){return null;}
 }
+// "I already cleared this card" is a DECISION, not data. It lives on the client record
+// (flaggedContra.ackHome, reviewAck, flagsReviewed), so whenever one side's copy of a client wins the
+// merge below, the other side's handled-marks were thrown away with it — and a card the provider had
+// already dismissed on one device came straight back on the next pull. Carry the marks across in BOTH
+// directions so they behave like the tombstone sets: union only, never lost. reviewAck stays a
+// signature comparison, so a genuinely NEW submission still raises a fresh card.
+function _carryHandledMarks(win,lose){
+  if(!win||!lose)return false;
+  var grew=false;
+  try{
+    if(lose.flaggedContra&&lose.flaggedContra.ackHome&&win.flaggedContra&&!win.flaggedContra.ackHome){win.flaggedContra.ackHome=true;grew=true;}
+    if(lose.reviewAck&&!win.reviewAck){win.reviewAck=lose.reviewAck;grew=true;}
+    if(Array.isArray(lose.flagsReviewed)&&lose.flagsReviewed.length){
+      var have=Array.isArray(win.flagsReviewed)?win.flagsReviewed.slice():[];
+      lose.flagsReviewed.forEach(function(sig){if(sig&&have.indexOf(sig)<0){have.push(sig);grew=true;}});
+      win.flagsReviewed=have;
+    }
+  }catch(e){}
+  return grew;
+}
 function _mergeClients(serverStr,localStr){
   try{
     if(localStr==null)return null;   // fresh device with no local roster — let the server copy load as-is
@@ -2230,9 +2250,11 @@ function _mergeClients(serverStr,localStr){
       var su=(+(s&&s._uAt))||0,lu=(+(l&&l._uAt))||0;
       if(su>lu){                                      // server record wins…
         var grewS=_unionClientForms(s,l);             // …but never at the cost of forms only local held
-        out[id]=s;if(grewS)changed=true;              // merged local forms in → push the superset back
+        if(_carryHandledMarks(s,l))grewS=true;        // …nor at the cost of cards already dismissed here
+        out[id]=s;if(grewS)changed=true;              // merged local state in → push the superset back
       }else{                                          // local newer/tie wins…
         _unionClientForms(l,s);                       // …still absorb any forms only the server had
+        _carryHandledMarks(l,s);                      // …and any dismissal made on the other device
         out[id]=l;if(_clientSig(l)!==_clientSig(s))changed=true;
       }
     });
@@ -15452,6 +15474,14 @@ function renderAccount(){
     <div style="border-top:1px solid var(--p-line);"></div>
     <div onclick="replayOnboarding()" style="display:flex;align-items:center;gap:11px;padding:13px 14px;cursor:pointer;"><div style="width:38px;height:38px;border-radius:10px;background:var(--accent-tint);display:flex;align-items:center;justify-content:center;flex-shrink:0;"><i class="ti ti-player-play" style="font-size:18px;color:var(--accent-strong);"></i></div><div style="flex:1;"><div style="font-size:14px;font-weight:500;color:var(--p-ink);">Replay Setup Tour</div><div style="font-size:12px;color:var(--p-mut);">See the guided first-run setup again</div></div><i class="ti ti-chevron-right" style="font-size:16px;color:var(--p-mut);"></i></div>
   </div></div>
+  ${_isFounder?`<div class="sh" style="margin-top:14px;"><h2>Founder tools</h2></div>
+  <div style="padding:0 16px;margin-bottom:20px;"><div style="background:var(--surf2);border:1px solid var(--p-line);border-radius:12px;overflow:hidden;">
+    <div onclick="nav('beta-stats')" style="display:flex;align-items:center;gap:11px;padding:13px 14px;cursor:pointer;"><div style="width:38px;height:38px;border-radius:10px;background:var(--p-blue-bg);display:flex;align-items:center;justify-content:center;flex-shrink:0;"><i class="ti ti-chart-line" style="font-size:18px;color:var(--p-blue);"></i></div><div style="flex:1;"><div style="font-size:14px;font-weight:500;color:var(--p-ink);">Growth Stats</div><div style="font-size:12px;color:var(--p-mut);">Providers, paid signups &amp; Square adoption</div></div><i class="ti ti-chevron-right" style="font-size:16px;color:var(--p-mut);"></i></div>
+    <div style="border-top:1px solid var(--p-line);"></div>
+    <div onclick="_founderTestPush(this)" style="display:flex;align-items:center;gap:11px;padding:13px 14px;cursor:pointer;"><div style="width:38px;height:38px;border-radius:10px;background:var(--p-surf2);display:flex;align-items:center;justify-content:center;flex-shrink:0;"><i class="ti ti-bell-ringing" style="font-size:18px;color:var(--p-green);"></i></div><div style="flex:1;"><div style="font-size:14px;font-weight:500;color:var(--p-ink);">Test my push notifications</div><div style="font-size:12px;color:var(--p-mut);">Send a test push to confirm new-signup alerts reach your phone</div></div><i class="ti ti-chevron-right" style="font-size:16px;color:var(--p-mut);"></i></div>
+    <div style="border-top:1px solid var(--p-line);"></div>
+    <div onclick="_founderTestPush(this,6)" style="display:flex;align-items:center;gap:11px;padding:13px 14px;cursor:pointer;"><div style="width:38px;height:38px;border-radius:10px;background:var(--p-surf2);display:flex;align-items:center;justify-content:center;flex-shrink:0;"><i class="ti ti-clock-bolt" style="font-size:18px;color:var(--p-green);"></i></div><div style="flex:1;"><div style="font-size:14px;font-weight:500;color:var(--p-ink);">Test with a delay &mdash; then close the app</div><div style="font-size:12px;color:var(--p-mut);">Sends 6s after you tap, so you can close the app and see a real lock-screen banner</div></div><i class="ti ti-chevron-right" style="font-size:16px;color:var(--p-mut);"></i></div>
+  </div></div>`:''}
   <div style="text-align:center;padding:14px;font-size:11px;color:var(--p-mut);">SlickChart · Version 1.0.3</div></div>`;
 }
 
@@ -20036,6 +20066,41 @@ async function _pollFounderSignups(force){
     try{if(typeof proToast==='function')proToast('💰 New paid provider: '+lastNm+'! 🎉',6000);}catch(e){}
     try{if(_notifOn('newMessage')&&typeof providerSystemNotify==='function')providerSystemNotify('💰 New paid provider!',lastNm+' just signed up 🎉');}catch(e){}
   }catch(e){}
+}
+// ── Founder tool: send myself a test push (confirm the phone is registered) ─────────────────────
+// delaySec>0 asks the SERVER to wait before sending, so the founder can close the app and confirm a
+// TRUE OS banner (a foreground push only shows an in-app toast). The server holds the timer, so it
+// fires even after the app is backgrounded and this fetch is abandoned.
+async function _founderTestPush(rowEl,delaySec){
+  const sub=rowEl&&rowEl.querySelector('div>div:nth-child(2)');
+  const orig=(delaySec?'Sends after a few seconds so you can close the app & see the real banner':'Send a test push to your phone to confirm paid-signup alerts will arrive');
+  const setSub=t=>{try{if(sub)sub.textContent=t;}catch(e){}};
+  const tok=(typeof Cloud!=='undefined'&&Cloud&&Cloud.token)||'';
+  if(delaySec){
+    // Count down visibly so she knows to close the app NOW. The request is already in flight on the
+    // server side; backgrounding the app doesn't stop the server from sending.
+    setSub('Close the app now — sending in '+delaySec+'s…');
+    if(typeof proToast==='function')proToast('⏳ Close the app now — your test notification arrives in '+delaySec+' seconds',Math.max(3000,delaySec*1000));
+  } else {
+    setSub('Sending a test push…');
+  }
+  try{
+    const r=await fetch('/api/admin/test-push'+(delaySec?('?delay='+delaySec):''),{method:'POST',headers:{'Authorization':'Bearer '+tok}});
+    const j=await r.json().catch(()=>({}));
+    if(r.status===403){setSub('Founder-only.');}
+    else if(!r.ok||!j.ok){setSub((j&&j.error)||'Couldn’t send the test.');}
+    else{
+      const msg=j.message||'Done.';
+      // On the delayed test the app is likely backgrounded/closed when the reply lands, so don't rely on
+      // a modal — the OS banner itself is the confirmation. Only pop the modal for the instant test.
+      if(!delaySec){
+        if(typeof confirmModal==='function')confirmModal({title:(j.sent>0?'✅ Test push sent':(j.devices===0?'📱 No phone registered yet':'⚠️ Couldn’t deliver')),body:msg,action:'Got it',hideCancel:true},function(){});
+        else if(typeof proToast==='function')proToast(msg,7000);
+      }
+      setSub(j.devices===0?'No phone registered — install the app on your phone & allow notifications':((j.sent>0?'✓ Sent to '+j.sent+' device'+(j.sent===1?'':'s'):orig)));
+    }
+    setTimeout(()=>setSub(orig),8000);
+  }catch(e){setSub(delaySec?orig:'Couldn’t reach the server. Try again.');}
 }
 try{_loadFounderLastTs();}catch(e){}
 setInterval(()=>{try{syncClientEvents();}catch(e){}try{_pollFounderSignups();}catch(e){}},15000);

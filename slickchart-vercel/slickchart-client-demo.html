@@ -5732,10 +5732,19 @@ function _applyRealClientData(j){
   client.name=_realName||'there';
   client.initials=_realName?_initialsOf(_realName):'';
   var p=client.providers.find(function(x){return x.id==='jess';})||client.providers[0];
-  if(d.studio)p.studio=d.studio;
+  // PROVIDER IDENTITY — always assign, never "only if the server sent one". These four used to be
+  // conditional, so a real client whose provider hadn't filled in their business info kept the DEMO
+  // esthetician's identity and saw "Jessica Lee, LE" of "Glowing Skin Studio" as their own provider.
+  // A missing value must fall back to neutral wording, never to the sample seed.
+  p.studio=String(d.studio||'').trim();
   p.website=d.website||'';   // real provider website (empty if unset), never inherit the demo domain
-  if(d.providerName){p.name=d.providerName;p.first=String(d.providerName).split(' ')[0]||p.first;p.initials=_initialsOf(d.providerName);}
-  if(d.brand)p.brand=d.brand;
+  var _pn=String(d.providerName||'').trim();
+  p.name=_pn;
+  p.first=_pn?(_pn.split(/\s+/)[0]||''):'';
+  p.initials=_pn?_initialsOf(_pn):'';
+  // Demo brand colours are part of the sample identity too — drop them unless the provider published
+  // their own; the app falls back to its default palette when brand is null.
+  p.brand=(d.brand&&typeof d.brand==='object')?d.brand:null;
   var prof=d.profile||{};
   // Contact info the provider has on file, shown read-back in the profile so a real client
   // sees their actual details (not the demo's), and can correct them (synced via 'contact').

@@ -20,6 +20,29 @@ export default async function handler(req, res) {
       const raw = await getKVValue(c.provider_id, 'sc_brand_colors');
       if (raw) data.brand = JSON.parse(raw);
     } catch (e) { /* fall back to whatever (if anything) was already in data.brand */ }
+    // Provider identity backfill. providerName/studio ride inside the client's own blob, written when
+    // the provider last published this client's space — so a client invited before the provider filled
+    // in their business info (or whose blob predates these fields) arrives with them blank, and the
+    // client app then has no real name to show. Fill them from the provider's live business info here.
+    // Scoped to c.provider_id, which comes from the token's own client row — never from the request.
+    try {
+      const needName = !String(data.providerName || '').trim();
+      const needStudio = !String(data.studio || '').trim();
+      if (needName || needStudio) {
+        const rawBiz = await getKVValue(c.provider_id, 'sc_bizinfo');
+        const biz = rawBiz ? JSON.parse(rawBiz) : null;
+        if (biz && typeof biz === 'object') {
+          if (needStudio && biz.name) data.studio = String(biz.name).trim();
+          if (needName) {
+            // Same derivation the provider app uses: owner name (or business name), first word only.
+            const who = String(biz.ownerName || biz.name || '').trim();
+            const first = who ? (who.split(',')[0].trim().split(/\s+/)[0] || '') : '';
+            if (first) data.providerName = first;
+          }
+          if (!String(data.website || '').trim() && biz.website) data.website = String(biz.website).trim();
+        }
+      }
+    } catch (e) { /* best-effort — the client app falls back to neutral wording, never the demo seed */ }
     try {
       const rawCat = await getKVValue(c.provider_id, 'sc_shop_catalog');
       if (rawCat) data.catalog = JSON.parse(rawCat);
