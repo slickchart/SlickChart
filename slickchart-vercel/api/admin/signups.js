@@ -29,18 +29,26 @@ export default async function handler(req, res) {
   try {
     const q = sql();
     const sinceMs = parseInt(req.query.since || '0', 10) || 0;
-    // Active subscriptions joined to the provider record for a display name. updated_at is when the
-    // subscription last went active (i.e. when they paid), which is what we sort/notify on.
-    const rows = await q`SELECT s.email, s.updated_at, s.plan_amount, p.name
+    // Active subscriptions joined to the provider record for a display name.
+    //
+    // The stamp here MUST be "when this provider first started paying", never updated_at. updated_at is
+    // rewritten by every subscription webhook — including a monthly RENEWAL, which is just another
+    // customer.subscription.updated with status still 'active'. The founder app treats any row newer
+    // than the last one it saw as a brand-new paid signup, so renewals re-announced every provider
+    // ("💰 New paid provider!") every billing cycle. The email and native push never had this problem
+    // because they claim subscriptions.paid_notified_at once and never again — so use that same
+    // once-ever stamp here and the in-app ping inherits the same guarantee. COALESCE to updated_at only
+    // for a row that somehow never got claimed, so it still sorts sensibly instead of vanishing.
+    const rows = await q`SELECT s.email, COALESCE(s.paid_notified_at, s.updated_at) AS first_paid_at, s.plan_amount, p.name
       FROM subscriptions s
       LEFT JOIN providers p ON lower(p.email) = lower(s.email)
       WHERE s.status = 'active'
-      ORDER BY s.updated_at DESC NULLS LAST
+      ORDER BY COALESCE(s.paid_notified_at, s.updated_at) DESC NULLS LAST
       LIMIT 50`;
     const all = (rows || []).map(r => ({
       name: r.name || '',
       email: r.email || '',
-      ts: r.updated_at ? (new Date(r.updated_at).getTime() || 0) : 0,
+      ts: r.first_paid_at ? (new Date(r.first_paid_at).getTime() || 0) : 0,
       amount: r.plan_amount || 0
     }));
     const signups = sinceMs ? all.filter(x => x.ts > sinceMs) : all;
