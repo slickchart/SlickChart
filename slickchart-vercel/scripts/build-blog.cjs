@@ -57,6 +57,7 @@ function parse(raw, slug) {
   if (meta.description.length > 160) throw new Error(slug + ': description is ' + meta.description.length + ' chars (max 160)');
   if (meta.description.length < 70) throw new Error(slug + ': description is only ' + meta.description.length + ' chars (aim for 110-160)');
   if (!meta.h1) meta.h1 = meta.title;
+  meta.draft = /^(true|yes|1)$/i.test(meta.draft || '');
   return { meta, body: m[2] };
 }
 
@@ -190,15 +191,24 @@ ${chromeHeader}`;
 
 // ── build ──────────────────────────────────────────────────────────────────
 if (!fs.existsSync(SRC)) { console.error('No blog-src/ directory — nothing to build.'); process.exit(1); }
-const files = fs.readdirSync(SRC).filter(f => f.endsWith('.md')).sort();
+// Posts are lowercase slugs (my-post.md). Files starting with an uppercase letter or an underscore
+// are documentation for whoever is writing posts (README.md, TOPICS.md) and are not built.
+const files = fs.readdirSync(SRC).filter(f => f.endsWith('.md') && !/^[A-Z_]/.test(f)).sort();
 if (!files.length) { console.error('blog-src/ has no .md posts.'); process.exit(1); }
 
-const posts = files.map(f => {
+const all = files.map(f => {
   const slug = f.replace(/\.md$/, '');
   if (!/^[a-z0-9][a-z0-9-]*$/.test(slug)) throw new Error(slug + ': slug must be lowercase letters, digits and hyphens');
   const { meta, body } = parse(fs.readFileSync(path.join(SRC, f), 'utf8'), slug);
   return { slug, meta, body, html: markdown(body), url: SITE + '/blog/' + slug };
 }).sort((a, b) => (a.meta.date < b.meta.date ? 1 : -1));   // newest first
+
+// A draft is written but NOT published: no page, no sitemap entry, no link from the index. It stays a
+// .md in blog-src/ until someone flips `draft: true` to false and rebuilds. That's what makes the weekly
+// scheduled write-up safe — nothing reaches the live site, or Ashley's byline, without a human saying so.
+const posts = all.filter(p => !p.meta.draft);
+const drafts = all.filter(p => p.meta.draft);
+if (!posts.length) { console.error('Every post is a draft — refusing to build an empty blog.'); process.exit(1); }
 
 fs.mkdirSync(OUT, { recursive: true });
 
@@ -282,5 +292,16 @@ const urls = STATIC_PAGES.map(s => `  <url>\n    <loc>${SITE}${s.loc}</loc>\n   
 fs.writeFileSync(path.join(ROOT, 'sitemap.xml'),
   `<?xml version="1.0" encoding="UTF-8"?>\n<urlset xmlns="http://www.sitemaps.org/schemas/sitemap/0.9">\n${urls.join('\n')}\n</urlset>\n`);
 
+// Remove pages for posts that were unpublished (flipped back to draft) or deleted, so the live site
+// never keeps serving something that's no longer in the source.
+for (const f of fs.readdirSync(OUT)) {
+  if (f === 'index.html' || !f.endsWith('.html')) continue;
+  if (!posts.some(p => p.slug + '.html' === f)) { fs.unlinkSync(path.join(OUT, f)); console.log('  removed stale page: blog/' + f); }
+}
+
 console.log('built blog/index.html + ' + posts.length + ' posts, and sitemap.xml (' + urls.length + ' urls)');
 posts.forEach(p => console.log('  /blog/' + p.slug + '  — ' + p.meta.title));
+if (drafts.length) {
+  console.log('\n' + drafts.length + ' draft' + (drafts.length === 1 ? '' : 's') + ' awaiting review (not published, not in sitemap):');
+  drafts.forEach(p => console.log('  blog-src/' + p.slug + '.md  — ' + p.meta.h1));
+}
