@@ -33,6 +33,10 @@ A scheduled Routine writes one new draft a week from `TOPICS.md`. It never publi
 it, and it goes live only when she says so. That's deliberate: posts carry her name and her
 professional credibility, and skin-treatment advice shouldn't go out unread.
 
+The Routine is bound to a single Claude session and reports there rather than by push or email. **When
+a new conversation starts it has to be re-pointed at that session or the weekly post silently stops** —
+see section 4 of the repo's `CLAUDE.md` for the ids and the procedure.
+
 ## Writing guidance
 
 - Genuinely useful beats keyword-stuffed. Google penalises mass-produced content made only to rank.
