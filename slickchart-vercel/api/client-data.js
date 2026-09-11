@@ -47,6 +47,19 @@ export default async function handler(req, res) {
       const rawCat = await getKVValue(c.provider_id, 'sc_shop_catalog');
       if (rawCat) data.catalog = JSON.parse(rawCat);
     } catch (e) { /* no catalog published yet — client shows recommended only */ }
+    // Courses this client has paid for. Stored per provider as one accumulating map keyed
+    // "<clientId>:<courseId>" (written by the Square webhook); we hand back only the ids belonging to
+    // THIS client, so one client's link can never reveal what another client bought.
+    try {
+      const rawBuys = await getKVValue(c.provider_id, 'sc_course_purchases');
+      if (rawBuys) {
+        const all = JSON.parse(rawBuys) || {};
+        const mine = {};
+        const prefix = String(c.id) + ':';
+        Object.keys(all).forEach(k => { if (k.indexOf(prefix) === 0) mine[k.slice(prefix.length)] = all[k]; });
+        if (Object.keys(mine).length) data.purchases = mine;
+      }
+    } catch (e) { /* nothing purchased yet, or unreadable — the course simply stays locked */ }
     try {
       const rawCfg = await getKVValue(c.provider_id, 'sc_checkin_cfg');
       if (rawCfg) data.checkinCfg = JSON.parse(rawCfg);

@@ -2115,7 +2115,7 @@ function _syncable(k){return typeof k==='string'&&k.indexOf('sc_')===0&&!_SYNC_S
 // refresh, before its push flushed) was wiped — resurrecting deleted clients, merged duplicates, and
 // dismissed flags. These keys are UNIONED with local on pull instead of overwritten. Object maps merge
 // by key; arrays merge by unique value.
-const _TOMB_OBJ={sc_deleted_clients:1,sc_hidden_square:1,sc_merged_ids:1,sc_merged_into:1,sc_ci_dismissed:1};
+const _TOMB_OBJ={sc_deleted_clients:1,sc_hidden_square:1,sc_merged_ids:1,sc_merged_into:1,sc_ci_dismissed:1,sc_course_purchases:1};
 const _TOMB_ARR={sc_flag_dismissed:1,sc_form_flag_dismissed:1,sc_ci_cleared:1,sc_ci_read:1,sc_home_dismissed:1,sc_notif_cleared:1,sc_notif_read:1};
 function _isTombstoneKey(k){return !!(_TOMB_OBJ[k]||_TOMB_ARR[k]);}
 // Merge the client roster per-client-id instead of whole-blob overwriting it, so two devices that edit
@@ -4325,7 +4325,7 @@ function loadAmazonAssociates(){try{const raw=localStorage.getItem('sc_amazon_as
 // One call to load everything above; wired into app init.
 function _loadPersistenceSweep(){
   loadClientRecs();loadRecReasons();loadClientHomecare();loadSessionSummaries();loadCapturedPhotos();
-  loadStaff();loadAutos();loadNotifSettings();loadCheckins();loadCourses();loadShopBundles();try{loadBodyMaps();}catch(e){}try{_probeWhisper();}catch(e){}
+  loadStaff();loadAutos();loadNotifSettings();loadCheckins();loadCourses();loadCoursePurchases();loadShopBundles();try{loadBodyMaps();}catch(e){}try{_probeWhisper();}catch(e){}
   loadAffiliateLinks();loadCustomNoteTemplates();loadClientHealingStage();loadAmazonAssociates();try{loadNeedlePresets();}catch(e){}try{loadHiddenSets();}catch(e){}
   try{loadSummaryDrafts();}catch(e){}
 }
@@ -7260,6 +7260,57 @@ async function _voiceSmartSave(){
   try{if(typeof saveProviderNoteDrafts==='function')saveProviderNoteDrafts();}catch(e){}
   _voiceAfterSave(id,'Filed into '+filled.length+' section'+(filled.length===1?'':'s')+' ✨',secs.map(x=>String(mapping[x.id]||'').trim()).filter(Boolean).join('\n'));
 }
+// ── Paid courses: a Buy button the client can actually use ───────────────────────────────────────
+// A course with a price is useless to a client if the only way to pay is to message the provider.
+// When a paid course is sent we mint a Square checkout link for THAT client and THAT course, carrying
+// a note ("SC1:<clientId>:<courseId>") that the Square webhook reads back on the completed payment to
+// unlock it automatically — see api/square/webhook.js. No Square, no link: the client then gets a
+// "message me" button instead, which is honest and still works (she invoices them).
+function _coursePriceCents(price){
+  const n=parseFloat(String(price||'').replace(/[^0-9.]/g,''));
+  return (isFinite(n)&&n>0)?Math.round(n*100):0;
+}
+function _courseIsPaid(co){return !!(co&&_coursePriceCents(co.price));}
+
+// Purchases recorded by the webhook. Accumulates forever and must merge, never overwrite — see the
+// sc_course_purchases entry in _TOMB_OBJ.
+let _coursePurchases={};
+function loadCoursePurchases(){try{const raw=localStorage.getItem('sc_course_purchases');if(raw){const o=JSON.parse(raw);if(o&&typeof o==='object')_coursePurchases=o;}}catch(e){}}
+function _coursePaidFor(clientId,courseId){loadCoursePurchases();return !!_coursePurchases[clientId+':'+courseId];}
+
+async function _mintCourseBuyUrl(clientId,co){
+  const cents=_coursePriceCents(co&&co.price);
+  if(!cents)return '';
+  const tok=(typeof Cloud!=='undefined'&&Cloud&&Cloud.token)||'';
+  if(!tok)return '';
+  try{
+    const c=(typeof CL!=='undefined'&&CL[clientId])||{};
+    const r=await fetch('/api/square/payment-link',{method:'POST',
+      headers:{'Content-Type':'application/json','Authorization':'Bearer '+tok},
+      body:JSON.stringify({amount:(cents/100),name:String(co.title||'Course').slice(0,255),
+        email:c.email||'',note:'SC1:'+clientId+':'+co.id})});
+    const j=await r.json().catch(()=>({}));
+    return (r.ok&&j&&j.url)?String(j.url):'';
+  }catch(e){return '';}
+}
+
+// Attach a checkout link to a course already assigned to this client. Safe to call repeatedly: it
+// no-ops for free courses, for one that already has a link, and for one already paid for.
+async function _ensureCourseBuyUrl(clientId,courseId){
+  const c=(typeof CL!=='undefined'&&CL[clientId])||null;
+  if(!c||!Array.isArray(c.pendingCourses))return '';
+  const pc=c.pendingCourses.find(x=>x&&x.id===courseId);
+  const co=(typeof courses!=='undefined'?courses.find(x=>x.id===courseId):null);
+  if(!pc||!co||!_courseIsPaid(co)||pc.buyUrl)return pc?(pc.buyUrl||''):'';
+  const url=await _mintCourseBuyUrl(clientId,co);
+  if(url){
+    pc.buyUrl=url;pc.priceAtSend=co.price||'';
+    try{if(typeof saveClients==='function')saveClients();}catch(e){}
+    try{if(typeof _persistAndSyncClient==='function')_persistAndSyncClient(clientId);}catch(e){}
+  }
+  return url;
+}
+
 // ── Voice note → product / guide / course recommendations ────────────────────────────────────────
 // The end of a treatment is when a provider knows exactly what a client needs and has the least time
 // to go find it. She already dictates the note; this reads that same note against her OWN catalog and
@@ -7381,7 +7432,10 @@ function _recSheetSend(clientId){
       if(!c.pendingGuides.some(pg=>pg&&pg.guideId===id)){c.pendingGuides.push({guideId:id,assignedAt:Date.now(),why:whyOf[key]||''});nG++;}
     }else if(kind==='courses'&&c){
       if(!Array.isArray(c.pendingCourses))c.pendingCourses=[];
-      if(!c.pendingCourses.some(pc=>pc&&pc.id===id)){c.pendingCourses.push({id,assignedAt:Date.now(),why:whyOf[key]||''});nC++;}
+      if(!c.pendingCourses.some(pc=>pc&&pc.id===id)){
+        c.pendingCourses.push({id,assignedAt:Date.now(),why:whyOf[key]||''});nC++;
+        try{if(typeof _ensureCourseBuyUrl==='function')setTimeout(function(){_ensureCourseBuyUrl(clientId,id);},0);}catch(e){}
+      }
     }
   });
   try{if(typeof saveClients==='function')saveClients();}catch(e){}
@@ -13291,8 +13345,14 @@ function _assembleClientData(id){
   // Full courses the provider assigned, rendered by the client's in-app course player.
   const pendingCourses=(Array.isArray(c.pendingCourses)?c.pendingCourses:[]).map(pc=>{
     const co=(typeof courses!=='undefined')?courses.find(x=>x.id===pc.id):null;
-    if(co){const out=(typeof _coursePayload==='function')?_coursePayload(co):null;if(out){pc.snapshot=out;return out;}}
-    return pc.snapshot||null;
+    let out=null;
+    if(co){out=(typeof _coursePayload==='function')?_coursePayload(co):null;if(out)pc.snapshot=out;}
+    if(!out)out=pc.snapshot||null;
+    if(!out)return null;
+    // The checkout link is per (client, course) — never share one between clients, or a payment would
+    // unlock the course for whoever the link was originally minted for.
+    return Object.assign({},out,{buyUrl:pc.buyUrl||'',why:pc.why||'',
+      paid:(typeof _coursePaidFor==='function')?_coursePaidFor(id,pc.id):false});
   }).filter(Boolean);
   // Active virtual-consult invite for this client (if any), so the invite reaches them
   // cross-device, not just via the same-browser SlickBridge. Dropped once they submit.
@@ -15492,6 +15552,9 @@ async function confirmSendCourse(courseId,cid){
     if(!c.pendingCourses.some(x=>x.id===co.id))c.pendingCourses.push({id:co.id,assignedAt:Date.now()});
     try{saveClients();}catch(e){}
     try{if(typeof _pushKeyNow==='function')_pushKeyNow('sc_clients',localStorage.getItem('sc_clients')||'');}catch(e){}
+    // Paid course → mint this client's own checkout link so their app shows a working Buy button.
+    // Runs in the background: the course is already sent, and no link just means a "message me" button.
+    try{if(typeof _ensureCourseBuyUrl==='function')_ensureCourseBuyUrl(cid,co.id);}catch(e){}
     if(!c._token){closeSendProd();if(typeof proToast==='function')proToast(`${c.name.split(' ')[0]} hasn't been invited to the app yet, invite them first, then this course will be waiting for them`);return;}
   }else if(cid!=='maya'){
     closeSendProd();

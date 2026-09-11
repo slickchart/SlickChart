@@ -1,4 +1,4 @@
-// POST /api/square/payment-link  { amount, name, email?, phone? }
+// POST /api/square/payment-link  { amount, name, email?, phone?, note? }
 // Creates a Square hosted checkout link (client pays on Square's secure page).
 import { squareFetch as _sqf, sqContext, resolveLocationId } from '../../lib/square.js';
 
@@ -16,6 +16,11 @@ export default async function handler(req, res) {
       idempotency_key: 'sc-pl-' + Date.now() + '-' + Math.random().toString(36).slice(2, 10),
       quick_pay: { name, price_money: { amount, currency: 'USD' }, location_id: locationId }
     };
+    // `note` rides onto the resulting Square Payment, which is what lets the webhook match a completed
+    // payment back to the client and course it was for (see api/square/webhook.js). Bounded length;
+    // Square rejects an over-long note and would fail the whole link.
+    const note = String(b.note || '').slice(0, 500).trim();
+    if (note) body.payment_note = note;
     if (b.email || b.phone) {
       body.pre_populated_data = {};
       if (b.email) body.pre_populated_data.buyer_email = b.email;

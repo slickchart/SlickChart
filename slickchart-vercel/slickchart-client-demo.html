@@ -1974,6 +1974,53 @@ function _downloadGuideFileById(fileId,fileName,fileType,btn){
 // ── COURSE PLAYER ── lessons the provider built; progress tracked locally per lesson.
 let _viewCourseId='',_viewLessonId='';
 function _findCourse(id){return (activeProvider().pendingCourses||[]).find(c=>c.id===id)||null;}
+// A course is locked only when it has a price AND hasn't been paid for. Free courses, and anything
+// sent before prices existed, open normally — a locked course the client can't pay for would be worse
+// than no course at all, so `co.paid` from the provider's own records also unlocks it.
+function _coursePriceCents(p){const n=parseFloat(String(p||'').replace(/[^0-9.]/g,''));return (isFinite(n)&&n>0)?Math.round(n*100):0;}
+function _coursePaid(co){
+  if(!co)return true;
+  if(co.paid)return true;
+  try{if((activeProvider().purchases||{})[co.id])return true;}catch(e){}
+  return false;
+}
+function _courseLocked(co){return !!(co&&_coursePriceCents(co.price)&&!_coursePaid(co));}
+function _courseBuyHTML(co){
+  if(!_courseLocked(co))return '';
+  const price=_txt(co.price||'');
+  if(co.buyUrl){
+    return `<div style="background:var(--c-card);border:1.5px solid var(--accent-a30);border-radius:14px;padding:15px 16px;margin-bottom:16px;">
+      <div style="font-size:13px;color:var(--c-mut);line-height:1.6;margin-bottom:11px;">This course is ${price}. Once your payment goes through it unlocks right here \u2014 nothing else to do, and nothing to download.</div>
+      <a href="${_urlAttr(co.buyUrl)}" target="_blank" rel="noopener" style="display:block;background:var(--accent);color:#fff;text-decoration:none;border-radius:10px;padding:13px;font-size:14px;font-weight:700;text-align:center;">Buy for ${price}</a>
+      <button onclick="_courseCheckPaid()" style="width:100%;margin-top:8px;background:none;border:none;color:var(--c-mut);font-size:12px;cursor:pointer;font-family:inherit;padding:6px;">Already paid? Refresh</button>
+    </div>`;
+  }
+  return `<div style="background:var(--c-card);border:1.5px solid var(--c-line);border-radius:14px;padding:15px 16px;margin-bottom:16px;">
+    <div style="font-size:13px;color:var(--c-mut);line-height:1.6;margin-bottom:11px;">This course is ${price}. Message ${_txt(client.providerFirst)} and she\u2019ll get you set up.</div>
+    <button onclick="nav('messages')" style="width:100%;background:var(--accent);color:#fff;border:none;border-radius:10px;padding:13px;font-size:14px;font-weight:700;cursor:pointer;font-family:inherit;">Message ${_txt(client.providerFirst)}</button>
+  </div>`;
+}
+// Coming back from Square: re-pull so a just-completed payment unlocks without a restart.
+function _courseCheckPaid(){
+  if(typeof showToast==='function')showToast('Checking\u2026',true);
+  try{
+    if(typeof _refreshProviderDataOnce==='function'){
+      _refreshProviderDataOnce().then(function(){
+        try{renderViewCourse();}catch(e){}
+        var co=_findCourse(_viewCourseId);
+        if(typeof showToast==='function')showToast(_courseLocked(co)?'No payment found yet \u2014 try again in a moment':'Unlocked, enjoy!',!_courseLocked(co));
+      });
+      return;
+    }
+  }catch(e){}
+  try{location.reload();}catch(e){}
+}
+// Tapping a lesson while the course is still locked: say why, don't just do nothing.
+function _courseLockedTap(){
+  var co=_findCourse(_viewCourseId);
+  if(typeof showToast==='function')showToast('Lessons open once this course is paid for',false);
+  try{if(co&&co.buyUrl)document.querySelector('a[href="'+_urlAttr(co.buyUrl)+'"]').scrollIntoView({behavior:'smooth',block:'center'});}catch(e){}
+}
 function _courseProgKey(){const p=activeProvider();return 'sc_course_prog_'+(p&&p.id||'jess');}
 function _courseProg(){try{return JSON.parse(localStorage.getItem(_courseProgKey())||'{}')||{};}catch(e){return {};}}
 function _courseSaveProg(o){try{localStorage.setItem(_courseProgKey(),JSON.stringify(o));}catch(e){}try{if(typeof _syncClientPrefsToServer==='function')_syncClientPrefsToServer();}catch(e){}}
@@ -1998,6 +2045,7 @@ function renderViewCourse(){
   if(!co){nav('home');return;}
   document.getElementById('tt').textContent=co.title;
   const lessons=co.lessons||[];const done=_courseDoneCount(co);const pct=lessons.length?Math.round(done/lessons.length*100):0;
+  const locked=_courseLocked(co);
   S.innerHTML=`
   ${co.cover?`<div style="height:150px;overflow:hidden;"><img src="${_imgSrc(co.cover)}" alt="" style="width:100%;height:100%;object-fit:cover;display:block;"></div>`:''}
   <div style="padding:16px;">
@@ -2005,8 +2053,9 @@ function renderViewCourse(){
     <div style="font-size:12px;color:var(--c-mut);margin-bottom:10px;">${lessons.length} lesson${lessons.length===1?'':'s'} · ${done}/${lessons.length} complete</div>
     <div style="height:6px;border-radius:3px;background:var(--c-surf2);overflow:hidden;margin-bottom:14px;"><div style="height:100%;width:${pct}%;background:var(--accent);border-radius:3px;transition:width .2s;"></div></div>
     ${co.desc?`<div style="font-size:13.5px;color:var(--c-ink);line-height:1.6;margin-bottom:16px;">${_txt(co.desc)}</div>`:''}
-    <div style="background:var(--c-card);border:1.5px solid var(--c-line);border-radius:14px;overflow:hidden;">
-      ${lessons.map((l,i)=>{const d=_lessonDone(co.id,l.id);return `<div onclick="_viewLessonId='${_jsAttr(l.id)}';nav('view-lesson')" role="button" style="display:flex;align-items:center;gap:12px;padding:13px 15px;${i<lessons.length-1?'border-bottom:1px solid var(--c-line);':''}cursor:pointer;">
+    ${_courseBuyHTML(co)}
+    <div style="background:var(--c-card);border:1.5px solid var(--c-line);border-radius:14px;overflow:hidden;${locked?'opacity:.55;':''}">
+      ${lessons.map((l,i)=>{const d=_lessonDone(co.id,l.id);return `<div onclick="${locked?'_courseLockedTap()':`_viewLessonId='${_jsAttr(l.id)}';nav('view-lesson')`}" role="button" style="display:flex;align-items:center;gap:12px;padding:13px 15px;${i<lessons.length-1?'border-bottom:1px solid var(--c-line);':''}cursor:pointer;">
         <div style="width:28px;height:28px;border-radius:50%;flex-shrink:0;display:flex;align-items:center;justify-content:center;background:${d?'var(--accent)':'#e7f0ec'};color:${d?'#fff':'#a89887'};font-size:13px;font-weight:700;">${d?'<i class="ti ti-check" style="font-size:15px;"></i>':(i+1)}</div>
         <div style="flex:1;min-width:0;"><div style="font-size:13.5px;font-weight:600;color:var(--c-ink);">${_txt(l.title||'Lesson '+(i+1))}</div><div style="font-size:11px;color:#a89887;">${[l.body?'Reading':'',l.videoUrl?'Video':'',l.docUrl?'Worksheet':'',(function(){const n=_clientLessonFiles(l).length;return n?(n>1?n+' files':'Download'):'';})()].filter(Boolean).join(' · ')||'Tap to open'}</div></div>
         <i class="ti ti-chevron-right" style="font-size:17px;color:#c9bdb0;flex-shrink:0;"></i>
@@ -5837,6 +5886,9 @@ function _applyRealClientData(j){
   p.pendingForms=Array.isArray(d.pendingForms)?d.pendingForms:[];
   p.pendingGuides=Array.isArray(d.pendingGuides)?d.pendingGuides:[];
   p.pendingCourses=Array.isArray(d.pendingCourses)?d.pendingCourses:[];
+  // Courses this client has paid for, recorded server-side when Square confirms the payment. The
+  // course itself already lives in their app; paying is what opens the lessons.
+  p.purchases=(d.purchases&&typeof d.purchases==='object')?d.purchases:{};
   p.services=Array.isArray(d.services)?d.services:[];   // provider's real service menu (for the request-appointment picker)
   // Store availability PER PROVIDER (like services) — it used to live on one global client field that
   // whichever provider synced last overwrote, so a multi-provider client saw the wrong open days/slots
@@ -5943,6 +5995,11 @@ function _clientDataFingerprint(j){
       (Array.isArray(d.summaries)&&d.summaries[0]&&d.summaries[0].note)||'',
       (Array.isArray(d.pendingForms)?d.pendingForms.map(f=>f.formId).join(','):''),
       (Array.isArray(d.pendingGuides)?d.pendingGuides.length:0),
+      // Courses: stamp id + paid state + whether a checkout link exists. Courses were missing from
+      // this token entirely, so a course sent (or PAID FOR) while the app was open never appeared or
+      // unlocked until a full reload — the one moment a client is most likely to be looking at it.
+      (Array.isArray(d.pendingCourses)?d.pendingCourses.map(function(c){return (c&&c.id||'')+'~'+((c&&c.paid)?'1':'0')+'~'+((c&&c.buyUrl)?'1':'0');}).join('|'):''),
+      (d.purchases&&typeof d.purchases==='object')?Object.keys(d.purchases).sort().join(','):'',
       // Detect an actual logo/brand CHANGE, not just presence, otherwise swapping one logo for
       // another (both non-empty) left this token identical and the poll never applied the new logo.
       _brandStamp(d.brand),(d.brand&&d.brand.primary)||'',(d.brand&&d.brand.secondary)||'',
