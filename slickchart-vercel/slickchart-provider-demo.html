@@ -792,7 +792,10 @@ let customNoteTemplates=[];
 let noteEditSecs=[];
 let clientRecs={maya:['a1','a2'],sophie:[],priya:['a3']};
 // Per-client, per-product "why you recommend it" note (shown to the client in place of the default line)
-let recReasons={maya:{a1:'Vitamin C to fade hyperpigmentation and protect from UV every day.',a2:'Mineral SPF that won\'t clog pores, essential after a Hydrafacial.'}};
+let recReasons=(function(){var d=(typeof window!=='undefined'&&window.__SC_DEMO_SEED__)||null;
+  // Why-notes attached to a product recommendation. Demo-only; a real provider starts empty.
+  return (d&&d.recReasons)?JSON.parse(JSON.stringify(d.recReasons)):{};
+})();
 function _recReason(id,aid){return (recReasons[id]||{})[aid]||'';}
 function _setRecReason(id,aid,val){(recReasons[id]=recReasons[id]||{})[aid]=val;_persistWorkspaceSoon();try{if(id!=='maya'&&typeof _scheduleSpecificClientSync==='function')_scheduleSpecificClientSync(id);}catch(e){}}
 
@@ -1035,9 +1038,9 @@ const protocols=[
 const _estyProtocols=protocols.slice();
 
 let courses=[
-  {id:'c1',title:'Chemical Peel Mastery',icon:'ti-flask',bg:'var(--p-surf2)',ic:'var(--p-green)',bdg:'bg',status:'Published',price:'$49',modules:6,duration:'45 min',enrolled:12,revenue:588,progress:100,desc:'A complete guide to at-home peel aftercare, what to expect, how to soothe, and when to call your esthetician.'},
-  {id:'c2',title:'SPF & Sun Care Guide',icon:'ti-sun',bg:'var(--p-amber-bg)',ic:'var(--accent-strong)',bdg:'ba',status:'Draft',price:'Free',modules:3,duration:'20 min',enrolled:0,revenue:0,progress:40,desc:'Breaking down SPF myths and building a daily sun protection routine that actually sticks.'},
-  {id:'c3',title:'Gua Sha & Facial Massage',icon:'ti-hand-stop',bg:'var(--p-purple-bg)',ic:'var(--p-purple)',bdg:'bp',status:'Draft',price:'$19',modules:4,duration:'30 min',enrolled:0,revenue:0,progress:15,desc:'A step-by-step video guide clients can follow at home between appointments.'},
+  {id:'c1',title:'Chemical Peel Mastery',icon:'ti-flask',bg:'var(--p-surf2)',ic:'var(--p-green)',bdg:'bg',status:'Draft',price:'$49',modules:6,duration:'45 min',enrolled:0,revenue:0,progress:0,desc:'A complete guide to at-home peel aftercare, what to expect, how to soothe, and when to call your esthetician.'},
+  {id:'c2',title:'SPF & Sun Care Guide',icon:'ti-sun',bg:'var(--p-amber-bg)',ic:'var(--accent-strong)',bdg:'ba',status:'Draft',price:'Free',modules:3,duration:'20 min',enrolled:0,revenue:0,progress:0,desc:'Breaking down SPF myths and building a daily sun protection routine that actually sticks.'},
+  {id:'c3',title:'Gua Sha & Facial Massage',icon:'ti-hand-stop',bg:'var(--p-purple-bg)',ic:'var(--p-purple)',bdg:'bp',status:'Draft',price:'$19',modules:4,duration:'30 min',enrolled:0,revenue:0,progress:0,desc:'A step-by-step video guide clients can follow at home between appointments.'},
 ];
 // Starter course ideas per profession. `courses` above is the live list (esty default);
 // applyProfessionConfig() swaps in the matching set so a hairstylist/coach doesn't see
@@ -7435,12 +7438,12 @@ function _voiceSave(text,toastMsg){
   draft.sections[secId]=(prev&&prev.trim()&&prev.trim()!=='No notes yet.')?(prev+'<br>'+text):text;
   providerNoteDrafts[id]=draft;
   if(typeof saveProviderNoteDrafts==='function'){try{saveProviderNoteDrafts();}catch(e){}}
-  _voiceAfterSave(id,toastMsg||'Voice note saved to your notes');
+  _voiceAfterSave(id,toastMsg||'Voice note saved to your notes',text);
 }
 // After a note is saved, don't just close — offer to add more. People routinely remember one more
 // thing right after they finish, and starting over from the Notes screen felt like a chore. Another
 // voice note appends to the SAME note (both save paths append), so "Add more" just records again.
-function _voiceAfterSave(id,toast){
+function _voiceAfterSave(id,toast,noteText){
   _voiceText='';_voiceSeed='';
   try{if(typeof renderNotes==='function'&&document.getElementById('ncontent'))renderNotes(id);}catch(e){}
   if(toast&&typeof proToast==='function')proToast(toast);
@@ -7451,7 +7454,19 @@ function _voiceAfterSave(id,toast){
       <div style="font-size:12.5px;color:var(--p-mut);line-height:1.55;margin-bottom:16px;">Forgot something? Add another voice note and it'll be added to this same note.</div>
     </div>
     <button onclick="_voiceAddMore()" style="width:100%;background:var(--accent);color:var(--accent-ink);border:none;border-radius:10px;padding:13px;font-size:14px;font-weight:700;cursor:pointer;font-family:inherit;display:flex;align-items:center;justify-content:center;gap:7px;"><i class="ti ti-microphone-2"></i> Add more</button>
-    <button onclick="_voiceClose()" style="width:100%;margin-top:8px;background:var(--surf2);border:1px solid var(--p-line);color:var(--p-mut);border-radius:10px;padding:12px;font-size:13px;font-weight:600;cursor:pointer;font-family:inherit;display:flex;align-items:center;justify-content:center;gap:6px;"><i class="ti ti-check"></i> Done</button>`);
+    <button onclick="_voiceClose()" style="width:100%;margin-top:8px;background:var(--surf2);border:1px solid var(--p-line);color:var(--p-mut);border-radius:10px;padding:12px;font-size:13px;font-weight:600;cursor:pointer;font-family:inherit;display:flex;align-items:center;justify-content:center;gap:6px;"><i class="ti ti-check"></i> Done</button>
+    <div id="rec-scan" style="display:none;align-items:center;justify-content:center;gap:7px;font-size:11.5px;color:var(--p-mut);margin-top:12px;"><div class="spin" style="width:13px;height:13px;"></div> Checking your catalog for anything to recommend\u2026</div>`);
+  // The suggestion pass runs AFTER the note is safely saved and never blocks it: if it finds nothing,
+  // errors, or the provider taps Done first, the saved screen just stays as it is.
+  if(typeof aiEnabled!=='undefined'&&aiEnabled&&String(noteText||'').trim()){
+    const scan=document.getElementById('rec-scan');if(scan)scan.style.display='flex';
+    _aiSuggestRecs(id,noteText).then(function(sug){
+      const still=document.getElementById('rec-scan');
+      if(!still)return;                       // provider already closed the overlay — don't yank it back
+      still.style.display='none';
+      if(sug)_recSheet(id,sug);
+    }).catch(function(){const el=document.getElementById('rec-scan');if(el)el.style.display='none';});
+  }
 }
 // Record another clip that appends to the note just saved.
 function _voiceAddMore(){const id=_voiceClientId;_voiceText='';_voiceSeed='';startVoiceNote(id);}
@@ -7497,7 +7512,148 @@ async function _voiceSmartSave(){
   });
   providerNoteDrafts[id]=draft;
   try{if(typeof saveProviderNoteDrafts==='function')saveProviderNoteDrafts();}catch(e){}
-  _voiceAfterSave(id,'Filed into '+filled.length+' section'+(filled.length===1?'':'s')+' ✨');
+  _voiceAfterSave(id,'Filed into '+filled.length+' section'+(filled.length===1?'':'s')+' ✨',secs.map(x=>String(mapping[x.id]||'').trim()).filter(Boolean).join('\n'));
+}
+// ── Voice note → product / guide / course recommendations ────────────────────────────────────────
+// The end of a treatment is when a provider knows exactly what a client needs and has the least time
+// to go find it. She already dictates the note; this reads that same note against her OWN catalog and
+// proposes what to send. It can only ever pick items that exist — ids are validated against the
+// catalog afterwards, so the model cannot invent a product she doesn't carry.
+const _REC_MAX={products:3,guides:2,courses:1};
+
+// Everything the provider could recommend, trimmed to what the model needs to choose well. Anything
+// already sent to this client is excluded so the sheet never proposes a duplicate.
+function _recCatalog(clientId){
+  const haveP=new Set((typeof clientRecs!=='undefined'&&clientRecs[clientId])||[]);
+  const c=(typeof CL!=='undefined'&&CL[clientId])||{};
+  const haveG=new Set((c.pendingGuides||[]).map(p=>p&&p.guideId));
+  const haveC=new Set((c.pendingCourses||[]).map(p=>p&&p.id));
+  const products=((typeof affiliateLinks!=='undefined'&&affiliateLinks)||[])
+    .filter(a=>a&&a.id&&a.name&&a.active!==false&&!haveP.has(a.id)).slice(0,60)
+    .map(a=>({id:a.id,name:String(a.name).slice(0,80),brand:String(a.brand||'').slice(0,40)}));
+  const seen={};
+  const guides=[].concat((typeof resources!=='undefined'&&resources)||[],(typeof customResources!=='undefined'&&customResources)||[])
+    .filter(g=>{if(!g||!g.id||!g.title||haveG.has(g.id)||seen[g.id])return false;seen[g.id]=1;return true;}).slice(0,40)
+    .map(g=>({id:g.id,title:String(g.title).slice(0,90),cat:String(g.cat||'').slice(0,40)}));
+  const crs=((typeof courses!=='undefined'&&courses)||[])
+    .filter(x=>x&&x.id&&x.title&&!haveC.has(x.id)).slice(0,20)
+    .map(x=>({id:x.id,title:String(x.title).slice(0,90),price:String(x.price||'').slice(0,12),desc:String(x.desc||'').slice(0,160)}));
+  return {products,guides,courses:crs};
+}
+
+// Ask for picks, then throw away anything that isn't a real id. Returns null when there is nothing
+// worth showing, so the caller can stay silent rather than opening an empty sheet.
+async function _aiSuggestRecs(clientId,noteText){
+  const note=String(noteText||'').trim();
+  if(!note||note.length<12)return null;
+  const cat=_recCatalog(clientId);
+  if(!cat.products.length&&!cat.guides.length&&!cat.courses.length)return null;
+  const prof=(typeof _profName==='function'?_profName():'provider');
+  const first=((((typeof CL!=='undefined'&&CL[clientId])||{}).name)||'the client').split(' ')[0];
+  const prompt='You are helping a '+prof+' finish a client visit. Below are her treatment notes for '+first
+    +', and her OWN catalog of retail products, guides and courses. Choose only what genuinely follows from the notes.\n\n'
+    +'RULES:\n'
+    +'- Pick ONLY from the catalog below, by exact id. Never invent an item.\n'
+    +'- Recommend at most '+_REC_MAX.products+' products, '+_REC_MAX.guides+' guides and '+_REC_MAX.courses+' course.\n'
+    +'- It is correct to return empty lists. Do not pad. If the notes do not support an item, leave it out.\n'
+    +'- For each pick write "why" as one short sentence addressed to the client, in the provider\'s warm, plain voice, '
+    +'referring to something actually in the notes. No hype, no medical claims, no promises of results.\n\n'
+    +'TREATMENT NOTES:\n"""\n'+note.slice(0,4000)+'\n"""\n\n'
+    +'CATALOG:\n'+JSON.stringify(cat)+'\n\n'
+    +'Return ONLY a JSON object: {"products":[{"id":"","why":""}],"guides":[{"id":"","why":""}],"courses":[{"id":"","why":""}]}. '
+    +'No markdown, no code fences, no commentary.';
+  let out=null;
+  try{out=_parseJSONObject(await _aiComplete([{role:'user',content:prompt}],900));}catch(e){return null;}
+  if(!out||typeof out!=='object')return null;
+  const pick=(arr,valid,max)=>{
+    const ok=new Set(valid.map(x=>x.id)),seen={},res=[];
+    (Array.isArray(arr)?arr:[]).forEach(r=>{
+      if(!r||!ok.has(r.id)||seen[r.id]||res.length>=max)return;
+      seen[r.id]=1;res.push({id:r.id,why:String(r.why||'').trim().slice(0,240)});
+    });
+    return res;
+  };
+  const sug={products:pick(out.products,cat.products,_REC_MAX.products),
+             guides:pick(out.guides,cat.guides,_REC_MAX.guides),
+             courses:pick(out.courses,cat.courses,_REC_MAX.courses)};
+  return (sug.products.length||sug.guides.length||sug.courses.length)?sug:null;
+}
+
+function _recLabel(kind,id){
+  if(kind==='products'){const a=(affiliateLinks||[]).find(x=>x.id===id);return a?{title:a.name,sub:a.brand||'Product'}:null;}
+  if(kind==='guides'){const g=(typeof _findGuide==='function')?_findGuide(id):null;return g?{title:g.title,sub:g.cat||'Guide'}:null;}
+  const co=(courses||[]).find(x=>x.id===id);
+  return co?{title:co.title,sub:(co.price&&!/^free$/i.test(co.price))?('Course · '+co.price):'Course'}:null;
+}
+
+// The review step. Nothing is sent until she taps send, every line can be unticked, and every "why"
+// is editable — it goes to the client in her name, so she has the last word on the wording.
+function _recSheet(clientId,sug){
+  const first=(((CL[clientId]||{}).name)||'your client').split(' ')[0];
+  const rows=[];
+  ['products','guides','courses'].forEach(kind=>{
+    (sug[kind]||[]).forEach(r=>{
+      const meta=_recLabel(kind,r.id);if(!meta)return;
+      const key=kind+':'+r.id;
+      rows.push(`<div style="background:var(--p-surf2);border:1px solid var(--p-line3);border-radius:11px;padding:11px 12px;margin-bottom:8px;">
+        <label style="display:flex;align-items:flex-start;gap:9px;cursor:pointer;">
+          <input type="checkbox" class="rec-pick" data-key="${_fileEsc(key)}" checked style="margin-top:2px;width:17px;height:17px;accent-color:var(--accent);flex-shrink:0;">
+          <span style="flex:1;min-width:0;">
+            <span style="display:block;font-size:13px;font-weight:600;color:var(--p-ink);">${_fileEsc(meta.title)}</span>
+            <span style="display:block;font-size:11px;color:var(--p-mut);margin-top:1px;">${_fileEsc(meta.sub)}</span>
+          </span>
+        </label>
+        <textarea class="rec-why" data-key="${_fileEsc(key)}" rows="2" placeholder="Why you're recommending this…" style="width:100%;margin-top:8px;background:var(--p-bg);border:1px solid var(--p-line);border-radius:8px;padding:8px 9px;font-size:12px;color:var(--p-ink);font-family:inherit;line-height:1.5;resize:vertical;outline:none;box-sizing:border-box;">${_fileEsc(r.why)}</textarea>
+      </div>`);
+    });
+  });
+  if(!rows.length){_voiceClose();return;}
+  _voiceOverlay(`<div style="display:flex;align-items:center;gap:8px;margin-bottom:4px;"><i class="ti ti-sparkles" aria-hidden="true" style="font-size:16px;color:var(--accent-strong);"></i><span style="font-size:15px;font-weight:600;color:var(--p-ink);">From your note</span></div>
+  <div style="font-size:12px;color:var(--p-mut);margin-bottom:11px;line-height:1.5;">Suggested from what you just dictated, out of your own catalog. Untick anything you don’t want, edit the wording, then send.</div>
+  <div style="max-height:46vh;overflow:auto;margin:0 -2px;padding:0 2px;">${rows.join('')}</div>
+  <button onclick="_recSheetSend('${_jsAttr(clientId)}')" style="width:100%;margin-top:12px;background:var(--accent);color:var(--accent-ink);border:none;border-radius:10px;padding:12px;font-size:14px;font-weight:700;cursor:pointer;font-family:inherit;display:flex;align-items:center;justify-content:center;gap:7px;"><i class="ti ti-send"></i> Send to ${_fileEsc(first)}’s app</button>
+  <button onclick="_voiceClose()" style="width:100%;margin-top:8px;background:var(--surf2);border:1px solid var(--p-line);color:var(--p-mut);border-radius:10px;padding:11px;font-size:13px;font-weight:600;cursor:pointer;font-family:inherit;">Not now</button>
+  <div style="font-size:11px;color:var(--p-mut);margin-top:10px;line-height:1.5;text-align:center;">Nothing is sent until you tap send. You can always change these on ${_fileEsc(first)}’s chart.</div>`);
+}
+
+// Commit the ticked rows through the same functions the manual pickers use, then push once.
+function _recSheetSend(clientId){
+  const picks=[...document.querySelectorAll('.rec-pick')].filter(x=>x.checked).map(x=>x.getAttribute('data-key'));
+  const whyOf={};
+  [...document.querySelectorAll('.rec-why')].forEach(t=>{whyOf[t.getAttribute('data-key')]=String(t.value||'').trim();});
+  if(!picks.length){_voiceClose();return;}
+  const c=CL[clientId];
+  let nP=0,nG=0,nC=0;
+  picks.forEach(key=>{
+    const i=key.indexOf(':'),kind=key.slice(0,i),id=key.slice(i+1);
+    if(kind==='products'){
+      if(typeof addClientProd==='function')addClientProd(clientId,id);
+      const w=whyOf[key];if(w&&typeof _setRecReason==='function')_setRecReason(clientId,id,w);
+      nP++;
+    }else if(kind==='guides'&&c){
+      if(!Array.isArray(c.pendingGuides))c.pendingGuides=[];
+      if(!c.pendingGuides.some(pg=>pg&&pg.guideId===id)){c.pendingGuides.push({guideId:id,assignedAt:Date.now(),why:whyOf[key]||''});nG++;}
+    }else if(kind==='courses'&&c){
+      if(!Array.isArray(c.pendingCourses))c.pendingCourses=[];
+      if(!c.pendingCourses.some(pc=>pc&&pc.id===id)){c.pendingCourses.push({id,assignedAt:Date.now(),why:whyOf[key]||''});nC++;}
+    }
+  });
+  try{if(typeof saveClients==='function')saveClients();}catch(e){}
+  try{if(typeof _persistAndSyncClient==='function')_persistAndSyncClient(clientId);}catch(e){}
+  const bits=[];
+  if(nP)bits.push(nP+' product'+(nP===1?'':'s'));
+  if(nG)bits.push(nG+' guide'+(nG===1?'':'s'));
+  if(nC)bits.push(nC+' course'+(nC===1?'':'s'));
+  const first=(((c||{}).name)||'your client').split(' ')[0];
+  const sent=bits.length?bits.join(' and '):'nothing new';
+  // An uninvited client has no app to receive anything — say so rather than implying it landed.
+  const waiting=(c&&!c._token);
+  _voiceOverlay(`<div style="text-align:center;">
+      <div style="width:54px;height:54px;border-radius:50%;background:var(--p-surf2);display:flex;align-items:center;justify-content:center;margin:2px auto 12px;"><i class="ti ti-check" style="font-size:27px;color:var(--p-green);"></i></div>
+      <div style="font-size:16px;font-weight:700;color:var(--p-ink);margin-bottom:4px;">Sent ${_fileEsc(sent)}</div>
+      <div style="font-size:12.5px;color:var(--p-mut);line-height:1.55;margin-bottom:16px;">${waiting?(_fileEsc(first)+' hasn’t been invited to the app yet — this will be waiting for them the moment they are.'):('It’s in '+_fileEsc(first)+'’s app now.')}</div>
+    </div>
+    <button onclick="_voiceClose()" style="width:100%;background:var(--accent);color:var(--accent-ink);border:none;border-radius:10px;padding:13px;font-size:14px;font-weight:700;cursor:pointer;font-family:inherit;">Done</button>`);
 }
 // Gathers whatever's in the active note format (typed or dictated) as readable text,
 // so the client summary card reflects the SAME notes shown in the notes step. Reads the
