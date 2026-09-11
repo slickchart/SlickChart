@@ -2153,8 +2153,12 @@ function _unionClientForms(winner,other){
   var w=Array.isArray(winner.submittedForms)?winner.submittedForms:[];
   var o=Array.isArray(other.submittedForms)?other.submittedForms:[];
   if(o.length){
-    var seen={};w.forEach(function(f){var k=sfKey(f);if(k)seen[k]=1;});
-    var add=[];o.forEach(function(f){var k=sfKey(f);if(k&&!seen[k]){seen[k]=1;add.push(f);}});
+    var seen={};w.forEach(function(f){var k=sfKey(f);if(k)seen[k]=f;});
+    // Carry a reviewed stamp across when both sides hold the same form: the winner's copy is kept, so
+    // without this a merge silently drops the "already handled" mark and resurrects the card.
+    var add=[];o.forEach(function(f){var k=sfKey(f);if(!k)return;
+      if(seen[k]){if(f.reviewedAt&&!seen[k].reviewedAt){seen[k].reviewedAt=f.reviewedAt;grew=true;}return;}
+      seen[k]=f;add.push(f);});
     if(add.length){winner.submittedForms=w.concat(add);grew=true;}
   }
   // signedForms: union of titles.
@@ -4698,7 +4702,14 @@ function _flagAckHome(id){
   _reRenderAttn();
 }
 function _reviewAckHome(id){
-  var c=CL[id];if(c){var s=(c.submittedForms&&c.submittedForms[0])||{};c.reviewAck=String(s.evId||s.ts||s.date||'1');try{if(typeof saveClients==='function')saveClients();}catch(e){}}
+  // Stamp the SUBMITTED FORM itself as reviewed, not only the client record. Everything else that
+  // suppressed this card was keyed on the client id ('rev-'+id) or on a signature derived from the
+  // form's position in the list — both of which can shift under a merge, a re-sync, or a re-keyed
+  // record, and when they shift a card the provider already cleared comes straight back. A flag living
+  // ON the form travels with the form, so the card cannot return for a submission she has handled.
+  var c=CL[id];if(c){var s=(c.submittedForms&&c.submittedForms[0])||null;
+    if(s)s.reviewedAt=Date.now();
+    c.reviewAck=String((s&&(s.evId||s.ts||s.date))||'1');try{if(typeof saveClients==='function')saveClients();}catch(e){}}
   _homeDismissed.add('rev-'+id);_saveHomeDismissed();
   try{if(typeof _pushKeyNow==='function')_pushKeyNow('sc_clients',localStorage.getItem('sc_clients')||'');}catch(e){}
   _reRenderAttn();
@@ -4726,7 +4737,16 @@ function _formAtMs(s){
 }
 // A completed form the provider hasn't touched in over a day isn't "needs your attention" any more,
 // it's just history on the chart. Only judged when we know the real submission time.
-function _reviewStale(s){var t=_formAtMs(s);return t!=null&&(Date.now()-t)>86400000;}
+function _reviewStale(s,key){
+  var t=_formAtMs(s);
+  // A legacy form can carry NO usable timestamp — older builds stored only a relative label ("Today",
+  // "Recent"), and _formAtMs deliberately refuses to guess a date from those. That left such a card
+  // permanently un-stale, so the 24h auto-retire never fired and it sat on Home forever. Fall back to
+  // when this card was FIRST SEEN, which _attnFresh already records and the server merges
+  // oldest-wins, so an undated submission still ages out a day after it first appeared.
+  if(t==null&&key)t=_attnSeen[key]||null;
+  return t!=null&&(Date.now()-t)>86400000;
+}
 // Retire an attention key for good (same persisted set manual dismissal writes to), without re-saving
 // on every render once it's already in there.
 function _attnRetire(key){if(!_homeDismissed.has(key)){_homeDismissed.add(key);_saveHomeDismissed();}}
@@ -4821,7 +4841,7 @@ function _attnTilesHTML(){
       <div style="width:38px;height:38px;border-radius:9px;background:var(--p-red-bg);display:flex;align-items:center;justify-content:center;flex-shrink:0;margin-top:1px;"><i class="ti ti-alert-triangle" style="font-size:18px;color:var(--p-red);"></i></div>
       <div style="flex:1;min-width:0;"><div style="font-size:14px;font-weight:600;color:var(--p-red);">${_fileEsc(c.name.split(' ')[0])} flagged ${items.length} item${items.length!==1?'s':''} ${src}</div>${items.length?`<ul style="margin:4px 0 0;padding-left:16px;">${items.map(it=>`<li style="font-size:12px;color:var(--p-red);line-height:1.5;">${_fileEsc(it)}</li>`).join('')}</ul>`:''}<div style="font-size:11px;color:#a87878;margin-top:5px;">${tapHint}</div></div>
     </div>`,'flag-'+id,`_flagAckHome('${id}')`);}).join('');
-    h+=reviews.filter(([id,c])=>{const s=(c.submittedForms&&c.submittedForms[0])||{};const sig=String(s.evId||s.ts||s.date||'1');if(c.reviewAck===sig||_homeDismissed.has('rev-'+id))return false;if(_reviewStale(s)){_attnRetire('rev-'+id);return false;}return _attnFresh('rev-'+id);}).map(([id,c])=>_swipeTile(`<div onclick="_openReviewCard('${id}')" style="margin:0;background:var(--p-surf3);border:1px solid var(--p-line3);border-radius:12px;padding:11px 34px 11px 13px;display:flex;align-items:center;gap:11px;cursor:pointer;">
+    h+=reviews.filter(([id,c])=>{const s=(c.submittedForms&&c.submittedForms[0])||{};const sig=String(s.evId||s.ts||s.date||'1');if(s.reviewedAt)return false;if(c.reviewAck===sig||_homeDismissed.has('rev-'+id))return false;if(_reviewStale(s,'rev-'+id)){_attnRetire('rev-'+id);return false;}return _attnFresh('rev-'+id);}).map(([id,c])=>_swipeTile(`<div onclick="_openReviewCard('${id}')" style="margin:0;background:var(--p-surf3);border:1px solid var(--p-line3);border-radius:12px;padding:11px 34px 11px 13px;display:flex;align-items:center;gap:11px;cursor:pointer;">
       <div style="width:38px;height:38px;border-radius:9px;background:var(--p-green-bg);display:flex;align-items:center;justify-content:center;flex-shrink:0;"><i class="ti ti-clipboard-check" style="font-size:18px;color:var(--p-green);"></i></div>
       <div style="flex:1;min-width:0;"><div style="font-size:14px;font-weight:600;color:var(--p-green);">${_fileEsc(c.name.split(' ')[0])} completed ${_fileEsc(c.submittedForms[0].title)}</div><div style="font-size:12px;color:var(--p-mut2);margin-top:1px;">Tap to open the form</div></div>
     </div>`,'rev-'+id,`_reviewAckHome('${id}')`)).join('');
