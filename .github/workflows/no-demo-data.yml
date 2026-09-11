@@ -1,0 +1,37 @@
+name: No demo data in the product
+
+# Sample data reached production once: a real client was shown another practitioner's name as her
+# own esthetician, and new accounts started out branded as the demo studio. The sample dataset now
+# lives only in scripts/demo-seed.js and demo-seed-client.js, which are injected into the public
+# demos at build time. This check keeps it that way.
+
+on:
+  push:
+    branches: [main]
+  pull_request:
+
+jobs:
+  check:
+    runs-on: ubuntu-latest
+    steps:
+      - uses: actions/checkout@v4
+      - uses: actions/setup-node@v4
+        with:
+          node-version: '20'
+
+      - name: No placeholder people in anything a provider or client loads
+        working-directory: slickchart-vercel
+        run: node scripts/check-no-demo-data.cjs
+
+      - name: Generated files are in sync with their sources
+        working-directory: slickchart-vercel
+        run: |
+          node scripts/build-demo.cjs
+          node scripts/build-client-page.cjs
+          node scripts/build-blog.cjs
+          if ! git diff --quiet; then
+            echo "::error::Generated files are stale. Run the build scripts and commit the result:"
+            git --no-pager diff --stat
+            exit 1
+          fi
+          echo "generated files: in sync"

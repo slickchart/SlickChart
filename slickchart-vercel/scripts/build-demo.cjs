@@ -45,6 +45,9 @@ const ISOLATION = `<script>
 // clients, can never be shown an invented person. That used to happen, and it is why this is split.
 // Injected before the app script so the seed exists by the time the app initialises.
 const DEMO_SEED = '<scr' + 'ipt>\n' + fs.readFileSync(path.join(__dirname, 'demo-seed.js'), 'utf8') + '\n</scr' + 'ipt>';
+// The client app's sample space. In the real client app this is fetched from /demo-seed-client.js only
+// when there is no token; inlining it here keeps the public demo self-contained.
+const CLIENT_SEED = '<scr' + 'ipt>\n' + fs.readFileSync(path.join(dir, 'demo-seed-client.js'), 'utf8') + '\n</scr' + 'ipt>';
 
 const RESET = `<script>
 function scResetDemo(){try{Object.keys(localStorage).filter(function(k){return k.indexOf("sc_")===0;}).forEach(function(k){localStorage.removeItem(k);});}catch(e){}location.reload();}
@@ -59,7 +62,7 @@ function bannerDiv(text) {
 
 const ANCHOR = '</style>\n</head>\n<body>';
 
-function build(srcFile, outFile, bannerText, withSeed) {
+function build(srcFile, outFile, bannerText, withSeed, withClientSeed) {
   const srcPath = path.join(dir, srcFile);
   const outPath = path.join(dir, outFile);
   let html = fs.readFileSync(srcPath, 'utf8');
@@ -78,6 +81,7 @@ function build(srcFile, outFile, bannerText, withSeed) {
     BANNER_CSS + '\n' + ANCHOR + '\n' +
     ISOLATION + '\n' +
     (withSeed ? DEMO_SEED + '\n' : '') +
+    (withClientSeed ? CLIENT_SEED + '\n' : '') +
     bannerDiv(bannerText) + '\n' +
     RESET + '\n';
 
@@ -101,6 +105,8 @@ build(
 build(
   'slickchart-client.html',
   'slickchart-client-demo.html',
-  '🧪 <b>Live demo</b> — viewing as client Maya Rodriguez, connected to Glowing Skin Studio.'
+  '🧪 <b>Live demo</b> — viewing as client Maya Rodriguez, connected to Glowing Skin Studio.',
+  false,  // no provider seed
+  true    // inject the sample client space: the client app itself no longer contains it
 );
 console.log('done.');
