@@ -39,6 +39,13 @@ const ISOLATION = `<script>
 }catch(e){}})();
 </script>`;
 
+// The sample data (Maya/Sophie/Priya, the example licences and retail products, and every seeding
+// routine) lives ONLY in scripts/demo-seed.js. The real app ships with none of it and reads
+// window.__SC_DEMO_SEED__, which nothing but this build ever sets — so a real provider, and their
+// clients, can never be shown an invented person. That used to happen, and it is why this is split.
+// Injected before the app script so the seed exists by the time the app initialises.
+const DEMO_SEED = '<scr' + 'ipt>\n' + fs.readFileSync(path.join(__dirname, 'demo-seed.js'), 'utf8') + '\n</scr' + 'ipt>';
+
 const RESET = `<script>
 function scResetDemo(){try{Object.keys(localStorage).filter(function(k){return k.indexOf("sc_")===0;}).forEach(function(k){localStorage.removeItem(k);});}catch(e){}location.reload();}
 </script>`;
@@ -52,7 +59,7 @@ function bannerDiv(text) {
 
 const ANCHOR = '</style>\n</head>\n<body>';
 
-function build(srcFile, outFile, bannerText) {
+function build(srcFile, outFile, bannerText, withSeed) {
   const srcPath = path.join(dir, srcFile);
   const outPath = path.join(dir, outFile);
   let html = fs.readFileSync(srcPath, 'utf8');
@@ -70,6 +77,7 @@ function build(srcFile, outFile, bannerText) {
   const replacement =
     BANNER_CSS + '\n' + ANCHOR + '\n' +
     ISOLATION + '\n' +
+    (withSeed ? DEMO_SEED + '\n' : '') +
     bannerDiv(bannerText) + '\n' +
     RESET + '\n';
 
@@ -87,7 +95,8 @@ function build(srcFile, outFile, bannerText) {
 build(
   'slickchart.html',
   'slickchart-provider-demo.html',
-  '🧪 <b>Live demo</b> — provider view, 3 sample clients already loaded (Maya, Sophie, Priya). Click around freely.'
+  '🧪 <b>Live demo</b> — provider view, 3 sample clients already loaded (Maya, Sophie, Priya). Click around freely.',
+  true   // inject the sample data: the provider app itself no longer contains any
 );
 build(
   'slickchart-client.html',
