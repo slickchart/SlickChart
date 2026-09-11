@@ -6743,6 +6743,7 @@ function _roomPhotosHTML(id){
   const before=_capturedFor(id,'before'),after=_capturedFor(id,'after');
   const hasB=before.length,hasA=after.length;
   const capBtn=(phase,has)=>`<button onclick="takePhoto('${id}','${phase}',()=>_rerenderRoomPhotos('${id}'))" style="width:100%;display:flex;flex-direction:column;align-items:center;gap:5px;background:${has?'var(--p-surf2)':'var(--p-surf)'};border:1.5px ${has?'solid #1a4a2a':'dashed #3a3a3a'};border-radius:10px;padding:13px 8px;cursor:pointer;font-family:inherit;"><i class="ti ${has?'ti-circle-check':'ti-camera'}" aria-hidden="true" style="font-size:21px;color:${has?'var(--p-green)':'var(--accent)'};"></i><span style="font-size:12px;font-weight:600;color:${has?'var(--p-green)':'#ccc'};">${has?phase.charAt(0).toUpperCase()+phase.slice(1)+' ✓':'Take '+phase.toUpperCase()}</span></button>
+  ${_ghostLink(id,phase,`()=>_rerenderRoomPhotos('${id}')`)}
   <button onclick="takePhoto('${id}','${phase}',()=>_rerenderRoomPhotos('${id}'),true)" style="width:100%;display:flex;align-items:center;justify-content:center;gap:5px;background:none;border:0;padding:6px 4px 0;cursor:pointer;font-family:inherit;"><i class="ti ti-photo" aria-hidden="true" style="font-size:13px;color:var(--p-mut);"></i><span style="font-size:11px;color:var(--p-mut);text-decoration:underline;">From library</span></button>`;
   return `
   <div style="display:flex;align-items:center;justify-content:space-between;margin-bottom:8px;">
@@ -8134,6 +8135,7 @@ function _renderPhotosView(id,c,_passed){
   <div style="padding:12px 16px 0;display:flex;align-items:center;justify-content:flex-end;">
     <div style="display:flex;gap:6px;">
       <button onclick="takePhoto('${id}','',()=>nav('photos','${id}'))" aria-label="Take photo now" style="background:var(--accent);color:var(--accent-ink);border:none;border-radius:8px;padding:7px 11px;font-size:12px;font-weight:600;cursor:pointer;display:flex;align-items:center;gap:5px;"><i class="ti ti-camera" aria-hidden="true" style="font-size:14px;"></i> Take photo</button>
+      ${_ghostAvailable(id,'',activeAngle)?`<button onclick="_ghostOpen('${id}','',()=>nav('photos','${id}'))" aria-label="Line up with the last ${activeAngle} photo" style="background:var(--p-surf2);color:var(--accent-strong);border:1px solid var(--p-line3);border-radius:8px;padding:7px 11px;font-size:12px;font-weight:600;cursor:pointer;display:flex;align-items:center;gap:5px;"><i class="ti ti-stack-2" aria-hidden="true" style="font-size:14px;"></i> Line up</button>`:''}
       <button onclick="openPhotoUpload('${id}')" style="background:var(--surf1);color:var(--p-mut);border:1px solid var(--p-line);border-radius:8px;padding:7px 11px;font-size:12px;font-weight:500;cursor:pointer;display:flex;align-items:center;gap:5px;"><i class="ti ti-photo-plus" aria-hidden="true" style="font-size:13px;"></i> Add</button>
       ${selectedProfessions.includes('tattoo')?`<button onclick="_openStencilOverlay('${id}')" aria-label="Stencil overlay" style="background:var(--p-purple-bg);color:var(--p-purple);border:1px solid var(--p-purple-line);border-radius:8px;padding:7px 11px;font-size:12px;font-weight:600;cursor:pointer;display:flex;align-items:center;gap:5px;"><i class="ti ti-stack-2" aria-hidden="true" style="font-size:13px;"></i> Stencil</button>`:''}
     </div>
@@ -9862,8 +9864,10 @@ async function _ncPhotoDataUrl(fromCamera,maxW){
   }catch(e){return null;}
 }
 // Opens the device camera; saves an auto date-stamped photo, then re-renders via `after`
-function takePhoto(clientId,phase,after,fromLibrary){
-  const save=url=>{
+// Commit one captured image: stamp it, keep it in the room draft, persist, tell the truth if the save
+// failed. Pulled out of takePhoto so the ghost-overlay camera lands photos through the exact same
+// path — a second save routine is how a before/after quietly stops syncing.
+function _commitPhoto(clientId,phase,url,after,angle){
     const ts=Date.now();
     if(!url){
         // A FileReader error (or no file) yields an empty url, don't create a phantom photo
@@ -9873,7 +9877,7 @@ function takePhoto(clientId,phase,after,fromLibrary){
         return;
       }
       if(!capturedPhotos[clientId])capturedPhotos[clientId]=[];
-      const rec={url:url,ts,phase:phase||'reference',angle:(typeof activeAngle!=='undefined'&&activeAngle!=='Inspiration')?activeAngle:'Front'};
+      const rec={url:url,ts,phase:phase||'reference',angle:angle||((typeof activeAngle!=='undefined'&&activeAngle!=='Inspiration')?activeAngle:'Front')};
       capturedPhotos[clientId].push(rec);
       // Mirror this session's before/after into the localStorage safety draft immediately, so it survives
       // an app kill / IDB eviction while the provider is out of the room (before the async cloud backup lands).
@@ -9895,7 +9899,9 @@ function takePhoto(clientId,phase,after,fromLibrary){
         }
         if(after)after();
       });
-  };
+}
+function takePhoto(clientId,phase,after,fromLibrary){
+  const save=url=>_commitPhoto(clientId,phase,url,after);
   // Native app: a fresh capture goes through the OS camera plugin; "From library" keeps the web picker.
   if(!fromLibrary&&_isNativeApp()){ _ncPhotoDataUrl(true,1600).then(function(d){ if(d)save(d); else if(after)after(); }); return; }
   const inp=_ensureCamInput(fromLibrary);inp.value='';inp.multiple=false;
@@ -9904,6 +9910,136 @@ function takePhoto(clientId,phase,after,fromLibrary){
     if(f){_downscaleImg(f,function(url){save(url);},1600);}else save('');
   };
   inp.click();
+}
+// ── Ghost overlay camera ─────────────────────────────────────────────────────────────────────────
+// A before/after only reads as progress if the two frames line up. Matching an old angle from memory
+// is the part providers get wrong, so this shows the previous photo of the SAME angle as a faint
+// layer over the live camera: line the face up with the ghost, shoot, and the pair matches.
+//
+// It does NOT replace the normal capture. The OS camera gives better image quality, so it stays the
+// default; this is an opt-in "line it up" mode that only appears when there is actually something to
+// line up with. Everything it captures goes through _commitPhoto, the same path as every other photo.
+let _ghost={stream:null,facing:'environment',ref:null,cid:'',phase:'',after:null,angle:''};
+
+// Which photo to ghost. Taking an AFTER? Line up with this visit's BEFORE at the same angle — that is
+// the pair a client actually sees side by side. Otherwise line up with the most recent photo at that
+// angle, which is what makes a months-long progress series comparable.
+function _ghostRef(clientId,phase,angle){
+  const list=(capturedPhotos[clientId]||[]).filter(p=>p&&p.url&&(p.angle||'Front')===(angle||'Front'));
+  if(!list.length)return null;
+  const byNewest=list.slice().sort((a,b)=>(b.ts||0)-(a.ts||0));
+  if(phase==='after'){
+    const b=byNewest.find(p=>p.phase==='before');
+    if(b)return b;
+  }
+  return byNewest[0]||null;
+}
+// The angle in play right now. Availability, the offer link and the capture all have to agree on it,
+// or the button offers to line up with a photo from a different angle entirely.
+function _ghostAngle(a){return a||((typeof activeAngle!=='undefined'&&activeAngle!=='Inspiration')?activeAngle:'Front');}
+function _ghostAvailable(clientId,phase,angle){
+  try{
+    if(!(navigator.mediaDevices&&navigator.mediaDevices.getUserMedia))return false;
+    return !!_ghostRef(clientId,phase,_ghostAngle(angle));
+  }catch(e){return false;}
+}
+
+function _ghostClose(){
+  try{if(_ghost.stream)_ghost.stream.getTracks().forEach(t=>{try{t.stop();}catch(e){}});}catch(e){}
+  _ghost.stream=null;
+  const ov=document.getElementById('ghost-cam');if(ov)ov.remove();
+  try{document.removeEventListener('keydown',_ghostKey);}catch(e){}
+}
+function _ghostKey(e){if(e&&e.key==='Escape')_ghostClose();}
+
+async function _ghostStart(){
+  const v=document.getElementById('ghost-video');if(!v)return;
+  try{if(_ghost.stream)_ghost.stream.getTracks().forEach(t=>{try{t.stop();}catch(e){}});}catch(e){}
+  try{
+    // Ask for a lot of pixels; the browser hands back the nearest the camera supports.
+    _ghost.stream=await navigator.mediaDevices.getUserMedia({audio:false,video:{
+      facingMode:{ideal:_ghost.facing},width:{ideal:1920},height:{ideal:1440}}});
+    v.srcObject=_ghost.stream;
+    await v.play().catch(()=>{});
+  }catch(e){
+    // Permission refused, no camera, or a WebView that won't hand one over. Don't strand the provider
+    // mid-treatment — say so once and drop straight into the normal camera.
+    const cid=_ghost.cid,phase=_ghost.phase,after=_ghost.after;
+    _ghostClose();
+    proToast('Couldn’t open the camera for line-up — using the normal camera instead.',4000);
+    takePhoto(cid,phase,after);
+  }
+}
+// Leave line-up mode but still take the photo the provider came here to take.
+function _ghostFallback(){
+  const cid=_ghost.cid,phase=_ghost.phase,after=_ghost.after;
+  _ghostClose();
+  takePhoto(cid,phase,after);
+}
+function _ghostFlip(){_ghost.facing=(_ghost.facing==='environment')?'user':'environment';_ghostStart();}
+function _ghostOpacity(val){
+  const g=document.getElementById('ghost-img');if(g)g.style.opacity=String(Math.max(0,Math.min(1,Number(val)||0)));
+  const l=document.getElementById('ghost-op-val');if(l)l.textContent=Math.round((Number(val)||0)*100)+'%';
+}
+
+function _ghostShoot(){
+  const v=document.getElementById('ghost-video');
+  if(!v||!v.videoWidth){proToast('Camera isn’t ready yet — give it a second.');return;}
+  // Cap at the same 1600px the rest of the app stores, so a ghost capture doesn't quietly become the
+  // one photo that blows through the storage budget.
+  const MAX=1600,vw=v.videoWidth,vh=v.videoHeight;
+  const sc=Math.min(1,MAX/Math.max(vw,vh));
+  const c=document.createElement('canvas');c.width=Math.round(vw*sc);c.height=Math.round(vh*sc);
+  let url='';
+  try{c.getContext('2d').drawImage(v,0,0,c.width,c.height);url=c.toDataURL('image/jpeg',0.86);}catch(e){url='';}
+  const cid=_ghost.cid,phase=_ghost.phase,after=_ghost.after,angle=_ghost.angle;
+  _ghostClose();
+  if(!url){proToast('Couldn’t capture that frame — please try again.');if(after)after();return;}
+  _commitPhoto(cid,phase,url,after,angle);
+}
+
+function _ghostOpen(clientId,phase,after,angle){
+  angle=_ghostAngle(angle);
+  const ref=_ghostRef(clientId,phase,angle);
+  if(!ref){takePhoto(clientId,phase,after);return;}
+  _ghostClose();
+  _ghost={stream:null,facing:'environment',ref,cid:clientId,phase:phase||'',after:after||null,angle};
+  let when='';try{when=new Date(ref.ts||Date.now()).toLocaleDateString('en-US',{month:'short',day:'numeric',year:'numeric'});}catch(e){}
+  const ov=document.createElement('div');ov.id='ghost-cam';
+  ov.style.cssText='position:fixed;inset:0;z-index:10001;background:#000;display:flex;flex-direction:column;';
+  ov.innerHTML=`
+  <div style="position:relative;flex:1;min-height:0;overflow:hidden;background:#000;">
+    <video id="ghost-video" playsinline autoplay muted style="position:absolute;inset:0;width:100%;height:100%;object-fit:cover;"></video>
+    <img id="ghost-img" src="${_imgSrc(ref.url)}" alt="" style="position:absolute;inset:0;width:100%;height:100%;object-fit:cover;opacity:.28;pointer-events:none;">
+    <div style="position:absolute;top:0;left:0;right:0;display:flex;align-items:flex-start;justify-content:space-between;gap:10px;padding:14px 14px 22px;background:linear-gradient(rgba(0,0,0,.62),transparent);">
+      <div style="font-size:12px;color:#fff;line-height:1.45;text-shadow:0 1px 3px rgba(0,0,0,.8);">
+        <div style="font-weight:700;">Lining up with ${_fileEsc(angle)}${when?(' · '+_fileEsc(when)):''}</div>
+        <div style="color:rgba(255,255,255,.72);">Match the faint image, then shoot.</div>
+      </div>
+      <button onclick="_ghostClose()" aria-label="Cancel" style="width:36px;height:36px;border:none;border-radius:50%;background:rgba(0,0,0,.5);color:#fff;font-size:17px;display:flex;align-items:center;justify-content:center;cursor:pointer;flex-shrink:0;"><i class="ti ti-x"></i></button>
+    </div>
+  </div>
+  <div style="flex-shrink:0;background:#000;padding:14px 18px calc(18px + env(safe-area-inset-bottom,0px));">
+    <div style="display:flex;align-items:center;gap:11px;margin-bottom:14px;">
+      <i class="ti ti-eye" aria-hidden="true" style="font-size:16px;color:rgba(255,255,255,.62);flex-shrink:0;"></i>
+      <input id="ghost-op" type="range" min="0" max="0.7" step="0.02" value="0.28" oninput="_ghostOpacity(this.value)" aria-label="Overlay strength" style="flex:1;accent-color:var(--accent);">
+      <span id="ghost-op-val" style="font-size:11.5px;color:rgba(255,255,255,.62);width:34px;text-align:right;flex-shrink:0;">28%</span>
+    </div>
+    <div style="display:flex;align-items:center;justify-content:space-between;gap:14px;">
+      <button onclick="_ghostFlip()" aria-label="Switch camera" style="width:46px;height:46px;border:none;border-radius:50%;background:#1b1b1b;color:#fff;font-size:19px;display:flex;align-items:center;justify-content:center;cursor:pointer;flex-shrink:0;"><i class="ti ti-switch-horizontal"></i></button>
+      <button onclick="_ghostShoot()" aria-label="Take photo" style="width:70px;height:70px;border:4px solid rgba(255,255,255,.85);border-radius:50%;background:#fff;cursor:pointer;flex-shrink:0;"></button>
+      <button onclick="_ghostFallback()" style="background:none;border:none;color:rgba(255,255,255,.62);font-size:11.5px;font-family:inherit;cursor:pointer;width:62px;line-height:1.35;flex-shrink:0;">Normal camera</button>
+    </div>
+  </div>`;
+  (document.querySelector('.shell')||document.body).appendChild(ov);
+  document.addEventListener('keydown',_ghostKey);
+  _ghostStart();
+}
+// The small link that offers the mode, rendered only when there is a same-angle photo to match.
+function _ghostLink(clientId,phase,afterCall){
+  const angle=_ghostAngle();
+  if(!_ghostAvailable(clientId,phase,angle))return '';
+  return `<button onclick="_ghostOpen('${_jsAttr(clientId)}','${_jsAttr(phase||'')}',${afterCall})" style="width:100%;display:flex;align-items:center;justify-content:center;gap:5px;background:none;border:0;padding:6px 4px 0;cursor:pointer;font-family:inherit;"><i class="ti ti-stack-2" aria-hidden="true" style="font-size:13px;color:var(--accent-strong);"></i><span style="font-size:11px;color:var(--accent-strong);text-decoration:underline;">Line up with last ${_fileEsc(angle.toLowerCase())} photo</span></button>`;
 }
 function _capturedFor(clientId,phase){return (capturedPhotos[clientId]||[]).filter(p=>!phase||p.phase===phase);}
 // Lets a provider re-tag any photo as Reference or Before/After after the fact.
