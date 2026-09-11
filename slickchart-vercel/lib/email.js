@@ -69,7 +69,7 @@ export function trustedOrigin() {
 
 // The welcome + thank-you email new providers get right after signing up.
 // Written to do three things: verify their email (functional), thank them for
-// joining the founding beta, and set the tone that this is a provider-built
+// thank them for signing up, and set the tone that this is a provider-built
 // app they're helping shape, not a finished product being handed to them.
 export function welcomeEmailHtml({ name, link }) {
   const first = String(name || '').trim().split(/\s+/)[0] || 'there';
@@ -78,14 +78,13 @@ export function welcomeEmailHtml({ name, link }) {
       <img src="https://slickchart.app/assets/slickchart-logo.png" width="46" height="46" alt="" style="display:inline-block;margin:0 0 8px;">
       <img src="https://slickchart.app/assets/wordmark-dark.png" height="26" alt="SlickChart" style="height:26px;display:inline-block;margin-bottom:6px;">
       <div style="display:none;font-size:22px;font-weight:700;margin-bottom:4px;">SlickChart</div>
-      <div style="font-size:13px;color:#a2beb9;letter-spacing:.04em;text-transform:uppercase;">Founding Beta</div>
     </div>
 
     <div style="padding:28px 6px 6px;">
       <p style="font-size:16px;line-height:1.7;margin:0 0 16px;">Hi ${esc(first)},</p>
-      <p style="font-size:16px;line-height:1.7;margin:0 0 16px;"><strong>Welcome to SlickChart, and genuinely, thank you.</strong> You just joined an exclusive group of providers helping build something new for our industry, and I don't take that lightly.</p>
+      <p style="font-size:16px;line-height:1.7;margin:0 0 16px;"><strong>Welcome to SlickChart, and genuinely, thank you.</strong> You just joined a group of providers helping build something new for our industry, and I don't take that lightly.</p>
       <p style="font-size:16px;line-height:1.7;color:#3a3a3a;margin:0 0 16px;">I'm Ashley, a solo esthetician. I built SlickChart myself, from my own treatment room, because the software made for our industry never felt like it was actually made <em>for us</em>. So this isn't a corporate product with a beauty-industry paint job. It's built by a provider, for providers, from the ground up.</p>
-      <p style="font-size:16px;line-height:1.7;color:#3a3a3a;margin:0 0 20px;">As a founding beta provider, you're not just a customer, you're a collaborator. Every question you ask, every rough edge you point out, and every "it would be great if it also did ___" makes this better, faster than I could ever manage building it alone. This app is going to get amazing, and you're one of the people making that happen.</p>
+      <p style="font-size:16px;line-height:1.7;color:#3a3a3a;margin:0 0 20px;">As a provider here, you're not just a customer, you're a collaborator. Every question you ask, every rough edge you point out, and every "it would be great if it also did ___" makes this better, faster than I could ever manage building it alone. This app is going to get amazing, and you're one of the people making that happen.</p>
 
       <div style="text-align:center;margin:26px 0;">
         <a href="${link}" style="background:#26c1b0;color:#03201e;text-decoration:none;font-weight:700;padding:14px 28px;border-radius:10px;display:inline-block;font-size:15px;">Verify your email &amp; get started</a>
@@ -129,11 +128,11 @@ export function welcomeEmailText({ name, link }) {
   const first = String(name || '').trim().split(/\s+/)[0] || 'there';
   return `Hi ${first},
 
-Welcome to SlickChart, and genuinely, thank you. You just joined an exclusive group of providers helping build something new for our industry.
+Welcome to SlickChart, and genuinely, thank you. You just joined a group of providers helping build something new for our industry.
 
 I'm Ashley, a solo esthetician. I built SlickChart myself, from my own treatment room, because the software made for our industry never felt like it was actually made for us.
 
-As a founding beta provider, you're a collaborator, not just a customer. Every question, every rough edge you flag, makes this better, faster than I could manage alone.
+As a provider here, you're a collaborator, not just a customer. Every question, every rough edge you flag, makes this better, faster than I could manage alone.
 
 Verify your email to get started (link expires in 24 hours):
 ${link}

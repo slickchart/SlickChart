@@ -1,7 +1,7 @@
 // SlickChart nurture / drip engine.
 //
 // Two automated email sequences, driven entirely off data the app already stores
-// (waitlist.created_at for leads, providers.created_at for founders) and sent through
+// (waitlist.created_at for leads, providers.created_at for providers) and sent through
 // the existing Resend sender in lib/email.js. No third-party automation tool needed.
 //
 // Design / safety:
@@ -12,7 +12,7 @@
 //     so a contact can never receive a burst even on a catch-up run.
 //   • Start guard: only contacts created on/after NURTURE_START (default: the day this
 //     shipped) are enrolled, so pre-existing/test contacts are never retroactively mailed.
-//   • Exit: a lead who has become a provider (founder) is dropped from the lead sequence.
+//   • Exit: a lead who has become a provider is dropped from the lead sequence.
 //   • Compliant: every email carries a working, signed one-click unsubscribe link, and
 //     opted-out addresses are excluded from all future sends.
 import crypto from 'crypto';
@@ -66,7 +66,7 @@ function footerText(email) {
 
 // ─── LEAD SEQUENCE ─────────────────────────────────────────────────────────────
 // From waitlist.created_at. A warm welcome + genuine free resource, then the two
-// stories that convert (Protect, Profit), then the founding-seat invite.
+// stories that convert (Protect, Profit), then the offer.
 export const LEAD_SEQUENCE = [
   {
     day: 0,
@@ -105,22 +105,22 @@ export const LEAD_SEQUENCE = [
   },
   {
     day: 6,
-    subject: (c) => (c.spotsLeft > 0 ? `Only ${c.spotsLeft} founding seats left` : 'Founding seats are almost gone'),
+    subject: () => 'Everything included, $10 a month',
     html: (c) => wrap(`
       <p>Hi ${esc(c.first)},</p>
-      <p>Quick and honest: the first 250 founders get SlickChart for <strong>$10/month, locked for life</strong>.${c.spotsLeft > 0 ? ` There are <strong>${c.spotsLeft}</strong> seats left.` : ' They’re nearly full.'}</p>
-      <p>When they’re gone, that price is gone for good. Full access, cancel anytime, no contracts, and I never take a cut of your sales. Your clients use the app free.</p>
-      ${btn(SITE, 'Claim your founding seat')}
+      <p>Quick and honest: SlickChart is <strong>$10/month</strong> with every feature unlocked — no higher tier, no setup fee, nothing held back.</p>
+      <p>Cancel anytime, no contracts, and I never take a cut of your sales. Your clients use the app free.</p>
+      ${btn(SITE, 'Start now')}
       <p>So glad you’re here — whatever you decide.</p>`, c.email),
-    text: (c) => `Hi ${c.first},\n\nThe first 250 founders get SlickChart for $10/month, locked for life.${c.spotsLeft > 0 ? ` There are ${c.spotsLeft} seats left.` : ' They’re nearly full.'}\n\nWhen they're gone, that price is gone. Full access, cancel anytime, no contracts, no cut of your sales. Clients use the app free.\n\nClaim your seat: ${SITE}\n\nWith love,\nAshley${footerText(c.email)}`,
+    text: (c) => `Hi ${c.first},\n\nSlickChart is $10/month with every feature unlocked — no higher tier, no setup fee, nothing held back.\n\nCancel anytime, no contracts, no cut of your sales. Clients use the app free.\n\nStart now: ${SITE}\n\nWith love,\nAshley${footerText(c.email)}`,
   },
 ];
 
-// ─── FOUNDER SEQUENCE ──────────────────────────────────────────────────────────
+// ─── PROVIDER SEQUENCE ──────────────────────────────────────────────────────────
 // From providers.created_at. The signup flow already sends the welcome+verify email
 // (day 0), so this is the follow-up onboarding: activate a feature, lock in protection,
 // turn on income, then ask for a testimonial + referral.
-export const FOUNDER_SEQUENCE = [
+export const PROVIDER_SEQUENCE = [
   {
     day: 2,
     subject: () => 'Chart your next client with your voice',
@@ -159,10 +159,10 @@ export const FOUNDER_SEQUENCE = [
     html: (c) => wrap(`
       <p>Hi ${esc(c.first)},</p>
       <p>If SlickChart has saved you time or a headache, two things would mean the world:</p>
-      <p style="margin:0 0 4px;">1. Send me a sentence or a 20-second video about your experience — I’d love to feature you (tagged, of course).<br>2. Know another solo pro who’d love this? Founding seats are almost gone — bring them in and you both keep the $10/month-for-life rate. Just share slickchart.app.</p>
-      <p>Thank you for being a founder. This is only the beginning. 🌿</p>
+      <p style="margin:0 0 4px;">1. Send me a sentence or a 20-second video about your experience — I’d love to feature you (tagged, of course).<br>2. Know another solo pro who’d love this? Just share slickchart.app.</p>
+      <p>Thank you for being here. This is only the beginning. 🌿</p>
       ${btn(SITE, 'Share SlickChart')}`, c.email),
-    text: (c) => `Hi ${c.first},\n\nIf SlickChart has saved you time or a headache, two favors:\n1. Send me a sentence or a 20-second video about your experience — I'd love to feature you.\n2. Know another solo pro who'd love this? Bring them in and you both keep the $10/month-for-life rate: slickchart.app\n\nThank you for being a founder. This is only the beginning.\n\nWith love,\nAshley${footerText(c.email)}`,
+    text: (c) => `Hi ${c.first},\n\nIf SlickChart has saved you time or a headache, two favors:\n1. Send me a sentence or a 20-second video about your experience — I'd love to feature you.\n2. Know another solo pro who'd love this? Send them over: slickchart.app\n\nThank you for being here. This is only the beginning.\n\nWith love,\nAshley${footerText(c.email)}`,
   },
 ];
 
@@ -224,31 +224,30 @@ export async function runNurture() {
   // Only enroll contacts created on/after this date (guards existing/test contacts).
   const startTs = process.env.NURTURE_START || '2026-07-13';
 
-  // Founding-seats-left, for the day-6 lead email (mirrors /api/spots).
-  const cap = parseInt(process.env.FOUNDING_CAP || '250', 10);
-  const base = parseInt(process.env.SPOTS_TAKEN_BASE || '0', 10);
-  let taken = base;
-  try { const r = await q`SELECT count(*)::int AS n FROM providers`; taken = Math.max(base, (r[0] && r[0].n) || 0); } catch (e) {}
-  const spotsLeft = Math.max(0, cap - Math.min(taken, cap));
 
-  const summary = { lead: 0, founder: 0, errors: 0 };
 
-  // Leads: on the waitlist, created since start, not yet a founder, not opted out.
+  const summary = { lead: 0, founder: 0, errors: 0 };   // keys match the stored seq values above
+
+  // Leads: on the waitlist, created since start, not yet a provider, not opted out.
   const leads = await q`
     SELECT email, name, extract(epoch from created_at)*1000 AS ts
     FROM waitlist
     WHERE created_at >= ${startTs}
       AND lower(email) NOT IN (SELECT lower(email) FROM providers)
       AND lower(email) NOT IN (SELECT email FROM nurture_optout)`;
-  for (const row of leads) { if (unsub.has(String(row.email || '').toLowerCase())) continue; await processContact(q, 'lead', LEAD_SEQUENCE, row, { spotsLeft }, summary); }
+  for (const row of leads) { if (unsub.has(String(row.email || '').toLowerCase())) continue; await processContact(q, 'lead', LEAD_SEQUENCE, row, {}, summary); }
 
-  // Founders: providers created since start, not opted out.
-  const founders = await q`
+  // Providers created since start, not opted out.
+  const providers = await q`
     SELECT email, name, extract(epoch from created_at)*1000 AS ts
     FROM providers
     WHERE created_at >= ${startTs}
       AND lower(email) NOT IN (SELECT email FROM nurture_optout)`;
-  for (const row of founders) { if (unsub.has(String(row.email || '').toLowerCase())) continue; await processContact(q, 'founder', FOUNDER_SEQUENCE, row, { spotsLeft }, summary); }
+  // NOTE: the seq key stays the literal 'founder'. It is a stored column in nurture_sends
+  // (email, seq, step) — the record of which emails each person has already had. Renaming it would
+  // make every existing provider look like they'd received nothing, and re-send them the whole
+  // sequence. The customer-facing wording is what changed, not this key.
+  for (const row of providers) { if (unsub.has(String(row.email || '').toLowerCase())) continue; await processContact(q, 'founder', PROVIDER_SEQUENCE, row, {}, summary); }
 
   return summary;
 }

@@ -19,7 +19,7 @@ Alt: **Charts, consent & income tools** (30)
 
 ## Promotional text (Apple, 170 char max — you can change this anytime without review)
 **Protect your practice and earn more — signed consent, before/after proof, license reminders, plus shop & courses, pre-built for your profession and ready day one.**
-*(~162/170 — protect · profit · turn-key. Good spot to rotate a Founding offer later.)*
+*(~162/170 — protect · profit · turn-key. Good spot to rotate a seasonal offer later.)*
 
 ---
 
