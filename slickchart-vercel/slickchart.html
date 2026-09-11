@@ -2355,10 +2355,11 @@ const Cloud={
     // Chat data is append-only and provider-sent messages live ONLY in sc_msgstore, so a plain overwrite
     // here let a stale device wipe history and (via sc_seen_events) resurrect read messages as unread.
     // Merge these three the same way as sc_clients: union, never lose, push the superset back.
-    if(k==='sc_msgstore'||k==='sc_threads'||k==='sc_seen_events'||k==='sc_attn_seen'){
+    if(k==='sc_msgstore'||k==='sc_threads'||k==='sc_seen_events'||k==='sc_attn_seen'||k==='sc_import_batches'){
       const mm=(k==='sc_msgstore')?_mergeMsgStore(data[k],localStorage.getItem(k))
               :(k==='sc_threads')?_mergeThreads(data[k],localStorage.getItem(k))
               :(k==='sc_attn_seen')?_mergeAttnSeen(data[k],localStorage.getItem(k))
+              :(k==='sc_import_batches')?_mergeImportBatches(data[k],localStorage.getItem(k))
               :_mergeSeenEvents(data[k],localStorage.getItem(k));
       if(mm&&mm.str!=null){
         set(k,mm.str);
@@ -16776,6 +16777,228 @@ function _parseCSV(text){
   if(field.length||row.length){row.push(field);rows.push(row);}
   return rows.filter(r=>r.length&&r.some(c=>String(c).trim()!==''));
 }
+// ── Migration engine ─────────────────────────────────────────────────────────────────────────────
+// Switching cost is the main reason people stay on software they dislike, so bringing a client list
+// across has to be finishable alone, previewable before it commits, and reversible afterwards.
+//
+// Per-platform column mappings are DATA (/import-profiles.json), not code: adding a platform is a
+// content change. Export steps are only shown for platforms whose path has actually been walked in
+// the live product — an unverified profile falls back to generic wording, because a wrong menu path
+// is worse than none.
+let _impProfiles=null,_impSource='',_impMapInfo=null,_impPending='';
+const _IMP_FALLBACK=[{id:'spreadsheet',label:'A spreadsheet or something else',verified:true,steps:['Save your sheet as CSV','Make sure the first row is column headings'],aliases:{}}];
+
+async function _loadImportProfiles(){
+  if(_impProfiles)return _impProfiles;
+  try{
+    const r=await fetch('/import-profiles.json',{cache:'no-store'});
+    const j=await r.json();
+    if(j&&Array.isArray(j.platforms)&&j.platforms.length)_impProfiles=j.platforms;
+  }catch(e){}
+  if(!_impProfiles)_impProfiles=_IMP_FALLBACK;   // offline or file missing: generic import still works
+  return _impProfiles;
+}
+function _impProfile(id){return (_impProfiles||[]).find(p=>p&&p.id===id)||null;}
+
+// Resolve one field to a column index using the platform's aliases, else a generic regex guess.
+// "First|Last" in an alias means: join those two columns into one value.
+function _impCol(headers,aliases,generic){
+  const H=headers.map(h=>String(h||'').trim().toLowerCase());
+  for(const a of (aliases||[])){
+    if(a.indexOf('|')>=0){
+      const parts=a.split('|').map(x=>H.indexOf(x.trim().toLowerCase()));
+      if(parts.every(i=>i>=0))return {join:parts,label:a.split('|').map(x=>x.trim()).join(' + ')};
+    }
+    const i=H.indexOf(a.trim().toLowerCase());
+    if(i>=0)return {idx:i,label:headers[i]};
+  }
+  if(generic){const i=H.findIndex(h=>generic.test(h));if(i>=0)return {idx:i,label:headers[i]};}
+  return null;
+}
+
+// Map rows for a platform. Returns everything the preview needs to be honest: which column fed which
+// field, which columns were ignored, and how many rows were skipped and why.
+function _mapWithProfile(rows,prof){
+  const info={mapped:[],used:{},unmapped:[],skipped:0,skipReason:'',headers:[]};
+  if(!rows||rows.length<2)return info;
+  const headers=rows[0].map(h=>String(h||'').trim());
+  info.headers=headers;
+  const al=(prof&&prof.aliases)||{};
+  const pick={
+    name:_impCol(headers,al.name,/^(client|customer|guest|patient|contact|full)?\s*name$|^(client|customer|guest|patient|contact)s?$/),
+    email:_impCol(headers,al.email,/e-?mail/),
+    phone:_impCol(headers,al.phone,/phone|mobile|cell/),
+    birthday:_impCol(headers,al.birthday,/birth|dob/),
+    notes:_impCol(headers,al.notes,/note|concern|comment/)
+  };
+  // A name may also be split across generic First/Last columns with no profile match.
+  if(!pick.name){
+    const H=headers.map(h=>h.toLowerCase());
+    const f=H.findIndex(h=>/first|given/.test(h)),l=H.findIndex(h=>/last|family|surname/.test(h));
+    if(f>=0||l>=0)pick.name={join:[f,l].filter(i=>i>=0),label:'First + Last'};
+    else{const i=H.findIndex(h=>h.includes('name')&&!/user|file/.test(h));if(i>=0)pick.name={idx:i,label:headers[i]};}
+  }
+  // Last resort: the first column, as long as it isn't already feeding another field and doesn't look
+  // like an id/email/phone/date. Exports with an unlabelled or oddly-named name column are common, and
+  // mapping nothing at all reads to the provider as "SlickChart can't import my list".
+  if(!pick.name&&headers.length){
+    const taken=new Set();Object.keys(pick).forEach(k=>{const q=pick[k];if(q)(q.join||[q.idx]).forEach(i=>taken.add(i));});
+    if(!taken.has(0)&&headers[0]&&!/^(id|ref|reference|code|e-?mail|phone|mobile|cell|date|created|birth|dob)\b/i.test(headers[0]))
+      pick.name={idx:0,label:headers[0]};
+  }
+  const usedIdx=new Set();
+  Object.keys(pick).forEach(k=>{const p=pick[k];if(!p)return;
+    info.used[k]=p.label;
+    (p.join||[p.idx]).forEach(i=>usedIdx.add(i));});
+  info.unmapped=headers.filter((h,i)=>h&&!usedIdx.has(i));
+  const val=(row,p)=>{if(!p)return '';
+    if(p.join)return p.join.map(i=>String(row[i]||'').trim()).filter(Boolean).join(' ').trim();
+    return String(row[p.idx]||'').trim();};
+  let noName=0;
+  for(let r=1;r<rows.length;r++){
+    const row=rows[r];
+    if(!row||!row.some(c=>String(c||'').trim())){info.skipped++;continue;}   // blank line
+    const name=val(row,pick.name);
+    if(!name){info.skipped++;noName++;continue;}
+    info.mapped.push({name,email:val(row,pick.email),phone:val(row,pick.phone),
+      birthday:val(row,pick.birthday),notes:val(row,pick.notes)});
+  }
+  if(noName)info.skipReason=noName+' row'+(noName===1?'':'s')+' had no name we could read';
+  else if(info.skipped)info.skipReason=info.skipped+' blank row'+(info.skipped===1?'':'s');
+  return info;
+}
+
+// ── Import batches: what makes undo possible ─────────────────────────────────────────────────────
+// A batch records exactly which client records an import created, so it can be reversed as a unit.
+// Kept for 30 days. Synced like everything else so an import on the phone can be undone on the Mac.
+let _impBatches=[];
+const _IMP_KEEP_MS=30*864e5;
+function _loadImpBatches(){try{const raw=localStorage.getItem('sc_import_batches');if(raw){const a=JSON.parse(raw);if(Array.isArray(a))_impBatches=a;}}catch(e){}}
+function _saveImpBatches(){
+  try{_impBatches=_impBatches.filter(b=>b&&b.at&&(Date.now()-b.at)<_IMP_KEEP_MS);}catch(e){}
+  const v=JSON.stringify(_impBatches);
+  try{localStorage.setItem('sc_import_batches',v);}catch(e){}
+  try{if(typeof _pushKeyNow==='function')_pushKeyNow('sc_import_batches',v);}catch(e){}
+}
+// Union by batch id, and a batch undone on ANY device stays undone — undo is a decision, and losing
+// it would silently re-import a list the provider deliberately rolled back.
+function _mergeImportBatches(serverStr,localStr){
+  try{
+    if(localStr==null)return null;
+    const sv=JSON.parse(serverStr||'[]'),lv=JSON.parse(localStr||'[]');
+    if(!Array.isArray(sv)||!Array.isArray(lv))return null;
+    const by={};let changed=false;
+    sv.forEach(b=>{if(b&&b.id)by[b.id]=Object.assign({},b);});
+    lv.forEach(b=>{if(!b||!b.id)return;
+      if(!by[b.id]){by[b.id]=Object.assign({},b);changed=true;return;}
+      if(b.undone&&!by[b.id].undone){by[b.id].undone=true;changed=true;}});
+    const out=Object.keys(by).map(k=>by[k]).filter(b=>b.at&&(Date.now()-b.at)<_IMP_KEEP_MS);
+    return {str:JSON.stringify(out),changed:changed||out.length!==sv.length};
+  }catch(e){return null;}
+}
+function _impRecordBatch(source,label,ids,rowCount,skipped,used){
+  if(!ids||!ids.length)return null;
+  _loadImpBatches();
+  const b={id:'ib_'+Date.now().toString(36),at:Date.now(),source:source||'',label:label||'CSV',
+    rows:rowCount||0,skipped:skipped||0,mapping:used||{},imported:ids.slice(),undone:false};
+  _impBatches.unshift(b);_saveImpBatches();
+  return b;
+}
+// Reverse a whole import. Tombstones each record so the roster sync can't bring it back, which is the
+// same mechanism a manual client delete uses.
+function _impUndo(batchId){
+  _loadImpBatches();
+  const b=_impBatches.find(x=>x&&x.id===batchId);
+  if(!b||b.undone)return 0;
+  let n=0;const gone=[];
+  (b.imported||[]).forEach(id=>{
+    if(!CL[id])return;
+    try{if(typeof _cleanupClientData==='function')_cleanupClientData(id);}catch(e){}
+    delete CL[id];
+    gone.push(id);n++;
+  });
+  // Tombstone as one set and tell the server once, or a big import's undo turns into a request storm.
+  if(gone.length){
+    try{gone.forEach(id=>{_deletedClientIds[id]=Date.now();});_saveDeletedClients();}catch(e){}
+    try{if(typeof _serverDeleteClients==='function')_serverDeleteClients(gone);}catch(e){}
+  }
+  b.undone=true;b.undoneAt=Date.now();_saveImpBatches();
+  try{if(typeof saveClients==='function')saveClients();}catch(e){}
+  try{if(typeof _pushKeyNow==='function')_pushKeyNow('sc_clients',localStorage.getItem('sc_clients')||'');}catch(e){}
+  return n;
+}
+
+// ── Import UI: pick where you're coming from, see what will happen, undo if it's wrong ───────────
+function _impEsc(s){return String(s==null?'':s).replace(/&/g,'&amp;').replace(/</g,'&lt;').replace(/>/g,'&gt;').replace(/"/g,'&quot;');}
+const _IMP_FIELD_LABEL={name:'Name',email:'Email',phone:'Phone',birthday:'Birthday',notes:'Notes'};
+
+function _impSetSource(id){
+  _impSource=id||'';
+  try{localStorage.setItem('sc_import_source',_impSource);}catch(e){}
+  _csvImportScreen('clients');
+  // Keep whatever they already pasted so switching platforms re-maps instead of starting over.
+  if(_impPending){const ta=document.getElementById('csv-text');if(ta){ta.value=_impPending;_csvPreview();}}
+}
+
+// The platform chips. Verified platforms first so the ones we can actually walk someone through lead.
+function _impSourceHTML(){
+  const list=(_impProfiles||[]).slice().sort((a,b)=>(b.verified?1:0)-(a.verified?1:0));
+  return '<div style="display:flex;flex-wrap:wrap;gap:7px;margin-bottom:12px;">'+list.map(p=>{
+    const on=p.id===_impSource;
+    return '<button onclick="_impSetSource(\''+_impEsc(p.id)+'\')" style="background:'+(on?'var(--accent)':'var(--p-surf2)')+';color:'+(on?'var(--accent-ink)':'var(--p-mut2)')+';border:1px solid '+(on?'var(--accent)':'var(--p-line3)')+';border-radius:999px;padding:7px 13px;font-size:12px;font-weight:'+(on?'700':'500')+';cursor:pointer;font-family:inherit;">'+_impEsc(p.label)+'</button>';
+  }).join('')+'</div>';
+}
+
+// Export instructions, but ONLY for a platform whose path we've actually followed. Everyone else gets
+// honest generic wording — sending someone hunting for a menu that doesn't exist is worse than this.
+function _impStepsHTML(){
+  const p=_impProfile(_impSource);
+  if(!p)return '';
+  if(p.verified&&(p.steps||[]).length){
+    return '<div style="background:var(--p-surf2);border:1px solid var(--p-line3);border-radius:10px;padding:12px 14px;margin-bottom:12px;">'
+      +'<div style="font-size:12px;font-weight:700;color:var(--p-ink);margin-bottom:7px;">How to get your CSV out of '+_impEsc(p.label)+'</div>'
+      +'<ol style="margin:0;padding-left:17px;font-size:12px;color:var(--p-mut2);line-height:1.8;">'+p.steps.map(s=>'<li>'+_impEsc(s)+'</li>').join('')+'</ol>'
+      +(p.note?'<div style="font-size:11.5px;color:var(--p-green);margin-top:8px;line-height:1.5;">'+_impEsc(p.note)+'</div>':'')
+      +(p.lastVerified?'<div style="font-size:10.5px;color:var(--p-mut);margin-top:8px;">Checked '+_impEsc(p.lastVerified)+' — if their menus have moved since, look for “Export” in your client list.</div>':'')
+      +'</div>';
+  }
+  return '<div style="background:var(--p-surf2);border:1px solid var(--p-line3);border-radius:10px;padding:12px 14px;margin-bottom:12px;">'
+    +'<div style="font-size:12px;color:var(--p-mut2);line-height:1.65;">We haven’t walked through '+_impEsc(p.label)+'’s export ourselves, so we won’t guess at their menus. Look for <b>Export</b> in your client or customer list and choose CSV. We already know '+_impEsc(p.label)+'’s column names, so the file will map correctly once you have it.</div></div>';
+}
+
+// §4.4 honesty: say what does NOT come over, before they import, not after.
+function _impHonestyHTML(){
+  return '<div style="font-size:11.5px;color:var(--p-mut);line-height:1.65;margin-top:14px;background:var(--surf1);border:1px solid var(--p-line3);border-radius:10px;padding:11px 13px;">'
+    +'<b style="color:var(--p-mut2);">What comes over, and what doesn’t.</b> Names, emails, phone numbers, birthdays and any notes in the file come across. '
+    +'Past treatment photos almost never can — most platforms don’t let you export them at all, so those stay where they are and your photo history here starts fresh. '
+    +'Appointment history and payments don’t come over either. Anyone already in SlickChart is skipped, and you can undo a whole import for 30 days.</div>';
+}
+
+function _impRecentHTML(){
+  _loadImpBatches();
+  const live=_impBatches.filter(b=>b&&!b.undone&&b.at&&(Date.now()-b.at)<_IMP_KEEP_MS);
+  if(!live.length)return '';
+  const when=t=>{const d=Math.floor((Date.now()-t)/864e5);return d<=0?'today':(d===1?'yesterday':(d+' days ago'));};
+  return '<div style="margin-top:16px;"><div style="font-size:12px;font-weight:700;color:var(--p-ink);margin-bottom:7px;">Recent imports</div>'
+    +live.map(b=>{
+      const src=_impProfile(b.source);
+      return '<div style="display:flex;align-items:center;gap:10px;background:var(--p-surf2);border:1px solid var(--p-line3);border-radius:10px;padding:10px 12px;margin-bottom:7px;">'
+        +'<div style="flex:1;min-width:0;"><div style="font-size:12.5px;color:var(--p-ink);font-weight:600;">'+b.imported.length+' client'+(b.imported.length===1?'':'s')+(src?(' from '+_impEsc(src.label)):'')+'</div>'
+        +'<div style="font-size:11px;color:var(--p-mut);margin-top:2px;">'+when(b.at)+(b.skipped?(' · '+b.skipped+' row'+(b.skipped===1?'':'s')+' skipped'):'')+'</div></div>'
+        +'<button onclick="_impUndoTap(\''+_impEsc(b.id)+'\')" style="background:transparent;color:var(--p-amber);border:1px solid var(--p-line3);border-radius:8px;padding:7px 12px;font-size:11.5px;font-weight:600;cursor:pointer;font-family:inherit;white-space:nowrap;">Undo</button></div>';
+    }).join('')
+    +'<div style="font-size:10.5px;color:var(--p-mut);line-height:1.5;">Undo removes only the clients that import created. Anything you’ve added or edited since stays. Imports older than 30 days drop off this list.</div></div>';
+}
+function _impUndoTap(id){
+  _loadImpBatches();
+  const b=_impBatches.find(x=>x&&x.id===id);
+  if(!b)return;
+  if(!confirm('Remove the '+b.imported.length+' client'+(b.imported.length===1?'':'s')+' this import added? Anything you’ve edited since will go with them.'))return;
+  const n=_impUndo(id);
+  proToast(n?('Removed '+n+' imported client'+(n===1?'':'s')):'Those clients were already gone');
+  _csvImportScreen('clients');
+}
+
 function _mapClientRows(rows){
   if(rows.length<2)return [];
   const H=rows[0].map(h=>String(h).trim().toLowerCase());
@@ -16810,7 +17033,7 @@ function _makeClientFromRow(row){
   return {name:row.name,initials,bg:'var(--p-amber-bg)',tc:'var(--accent-strong)',skin:'\u2014',concerns:row.notes||'\u2014',allergies:'None on file',fitz:'\u2014',lastVisit:'\u2014',nextVisit:'Not scheduled',treatment:'New client',sessions:0,seriesTotal:0,email:row.email||'',phone:row.phone||'',birthday:(typeof _normBirthday==='function'?_normBirthday(row.birthday):(row.birthday||''))||'',source:'import'};
 }
 function _importClientsFromRows(rows){
-  let n=0;(rows||[]).forEach((row,k)=>{
+  let n=0;const ids=[];(rows||[]).forEach((row,k)=>{
     // Duplicate = same email (a reliable unique key), OR same name when we can't tell them
     // apart by email. If both rows have emails and they DIFFER, treat them as different
     // people even if the name matches, two clients named "Maria Garcia" are common, and
@@ -16826,10 +17049,10 @@ function _importClientsFromRows(rows){
     if(dup)return;
     const base=(row.email||row.name).toLowerCase().replace(/[^a-z0-9]/g,'').slice(0,14)||('row'+k);
     let id='imp_'+base,x=1;while(CL[id]){id='imp_'+base+(x++);}
-    CL[id]=_makeClientFromRow(row);n++;
+    CL[id]=_makeClientFromRow(row);ids.push(id);n++;
   });
   if(typeof saveClients==='function')saveClients();
-  return n;
+  return {n,ids};
 }
 function _importProductsFromRows(rows){
   let n=0;(rows||[]).forEach(row=>{
@@ -16848,14 +17071,54 @@ function _csvPreviewHTML(n,noun,sample,fn){
   if(!n)return '<div style="font-size:12px;color:var(--p-amber);padding:10px 2px;line-height:1.5;">Couldn\u2019t find any '+noun+'s. Make sure the first row is column headers (like Name, Email, Phone).</div>';
   return '<div style="background:var(--p-surf2);border:1px solid var(--p-line3);border-radius:10px;padding:12px 14px;margin-top:10px;"><div style="font-size:13px;font-weight:600;color:var(--p-green);margin-bottom:6px;">Found '+n+' '+noun+(n===1?'':'s')+'</div><div style="font-size:12px;color:var(--p-mut2);line-height:1.7;margin-bottom:10px;">'+sample.map(x=>'\u2022 '+String(x).replace(/</g,'&lt;')).join('<br>')+(n>5?('<br>\u2026and '+(n-5)+' more'):'')+'</div><button onclick="'+fn+'" style="width:100%;background:var(--accent);color:var(--accent-ink);border:none;border-radius:9px;padding:11px;font-size:13px;font-weight:700;cursor:pointer;font-family:inherit;">Import '+n+' '+noun+(n===1?'':'s')+'</button></div>';
 }
+// The preview is the promise: nothing is written until she has seen which column fed which field,
+// which columns are being left behind, and how many rows we couldn't read.
+function _csvClientPreviewHTML(info){
+  const n=info.mapped.length;
+  if(!n){
+    const cols=info.headers.filter(Boolean);
+    return '<div style="font-size:12px;color:var(--p-amber);padding:10px 2px;line-height:1.6;">Couldn’t find any clients in that file.'
+      +(cols.length?(' The columns we saw were: '+cols.map(_impEsc).join(', ')+'. We need at least a name column.')
+                   :' Make sure the first row is the column headings (like Name, Email, Phone).')+'</div>';
+  }
+  const fields=Object.keys(_IMP_FIELD_LABEL);
+  const mappedRows=fields.filter(k=>info.used[k]).map(k=>'<div style="display:flex;gap:6px;"><span style="color:var(--p-mut);min-width:62px;">'+_IMP_FIELD_LABEL[k]+'</span><span style="color:var(--p-ink);">'+_impEsc(info.used[k])+'</span></div>').join('');
+  const missing=fields.filter(k=>!info.used[k]).map(k=>_IMP_FIELD_LABEL[k]);
+  const sample=info.mapped.slice(0,5).map(x=>'• '+_impEsc(x.name)+(x.email?(' · '+_impEsc(x.email)):(x.phone?(' · '+_impEsc(x.phone)):''))).join('<br>');
+  return '<div style="background:var(--p-surf2);border:1px solid var(--p-line3);border-radius:10px;padding:12px 14px;margin-top:10px;">'
+    +'<div style="font-size:13px;font-weight:600;color:var(--p-green);margin-bottom:8px;">Found '+n+' client'+(n===1?'':'s')+'</div>'
+    +'<div style="font-size:11.5px;line-height:1.75;margin-bottom:9px;">'+mappedRows+'</div>'
+    +(missing.length?'<div style="font-size:11px;color:var(--p-mut);margin-bottom:9px;line-height:1.5;">No column found for: '+missing.join(', ')+'. You can fill those in later.</div>':'')
+    +(info.unmapped.length?'<div style="font-size:11px;color:var(--p-mut);margin-bottom:9px;line-height:1.5;">Not bringing over: '+info.unmapped.map(_impEsc).join(', ')+'</div>':'')
+    +(info.skipped?'<div style="font-size:11px;color:var(--p-amber);margin-bottom:9px;line-height:1.5;">Skipping '+info.skipped+' row'+(info.skipped===1?'':'s')+(info.skipReason?(' — '+_impEsc(info.skipReason)):'')+'</div>':'')
+    +'<div style="font-size:12px;color:var(--p-mut2);line-height:1.7;margin-bottom:10px;">'+sample+(n>5?('<br>…and '+(n-5)+' more'):'')+'</div>'
+    +'<button onclick="_csvDoImport()" style="width:100%;background:var(--accent);color:var(--accent-ink);border:none;border-radius:9px;padding:11px;font-size:13px;font-weight:700;cursor:pointer;font-family:inherit;">Import '+n+' client'+(n===1?'':'s')+'</button></div>';
+}
 function _csvPreview(){
   const ta=document.getElementById('csv-text');const out=document.getElementById('csv-preview');if(!out)return;
-  const rows=_parseCSV(ta?ta.value:'');
-  if(rows.length<2){out.innerHTML='';return;}
-  if(_csvKind==='products'){const m=_mapProductRows(rows);window._csvProdRows=m;out.innerHTML=_csvPreviewHTML(m.length,'product',m.slice(0,5).map(x=>x.name+(x.brand?(' \u00b7 '+x.brand):'')),'_csvDoImportProducts()');}
-  else{const m=_mapClientRows(rows);window._csvRows=m;out.innerHTML=_csvPreviewHTML(m.length,'client',m.slice(0,5).map(x=>x.name+(x.email?(' \u00b7 '+x.email):'')),'_csvDoImport()');}
+  const raw=ta?ta.value:'';
+  const rows=_parseCSV(raw);
+  if(_csvKind==='products'){
+    if(rows.length<2){out.innerHTML='';return;}
+    const m=_mapProductRows(rows);window._csvProdRows=m;
+    out.innerHTML=_csvPreviewHTML(m.length,'product',m.slice(0,5).map(x=>x.name+(x.brand?(' \u00b7 '+x.brand):'')),'_csvDoImportProducts()');
+    return;
+  }
+  // Hold the pasted text so switching platforms re-maps the same file instead of losing it.
+  _impPending=raw;
+  if(rows.length<2){out.innerHTML='';_impMapInfo=null;return;}
+  const info=_mapWithProfile(rows,_impProfile(_impSource));
+  _impMapInfo=info;window._csvRows=info.mapped;
+  out.innerHTML=_csvClientPreviewHTML(info);
 }
-function _csvDoImport(){const n=_importClientsFromRows(window._csvRows||[]);proToast(n?('Imported '+n+' client'+(n===1?'':'s')+' \u2713'):'Those clients are already in SlickChart');nav('clients');}
+function _csvDoImport(){
+  const rows=window._csvRows||[],info=_impMapInfo;
+  const r=_importClientsFromRows(rows)||{n:0,ids:[]};
+  if(r.n)_impRecordBatch(_impSource,(_impProfile(_impSource)||{}).label||'CSV',r.ids,rows.length+((info&&info.skipped)||0),(info&&info.skipped)||0,(info&&info.used)||{});
+  _impPending='';
+  proToast(r.n?('Imported '+r.n+' client'+(r.n===1?'':'s')+' \u2713'):'Those clients are already in SlickChart');
+  nav('clients');
+}
 function _csvDoImportProducts(){const n=_importProductsFromRows(window._csvProdRows||[]);proToast(n?('Imported '+n+' product'+(n===1?'':'s')+' \u2713'):'Those products are already here');nav('shop');}
 function _csvImportScreen(kind){
   _csvKind=kind;const isProd=kind==='products';
@@ -16863,19 +17126,33 @@ function _csvImportScreen(kind){
   const ph=isProd?'Name, Brand, Link&#10;Product name, Brand, link.example.com':'Name, Email, Phone, Birthday&#10;First Last, their@email.com, 415-000-0000, 1990-01-01';
   const lead=isProd
     ?'Upload a <b>CSV</b> of the products you sell or recommend. We look for columns like Name, Brand, and Link.'
-    :'Export your clients from your old booking system, spreadsheet, or CRM as a <b>CSV</b> file, then upload it here. SlickChart auto-detects columns like Name, Email, Phone, and Birthday.';
+    :'Tell us where you\u2019re coming from and we\u2019ll read that platform\u2019s column names for you. You\u2019ll see exactly what\u2019s coming across before anything is saved.';
   S.innerHTML=`
   <div style="padding:14px 16px 4px;">
     <div style="font-size:15px;font-weight:600;color:var(--p-ink);margin-bottom:6px;">${isProd?'Import your product list':'Bring your clients over'}</div>
     <div style="font-size:13px;color:var(--p-mut);line-height:1.55;margin-bottom:14px;">${lead}</div>
+    ${isProd?'':_impSourceHTML()}
+    ${isProd?'':_impStepsHTML()}
     <label style="display:block;width:100%;background:var(--accent);color:var(--accent-ink);border-radius:10px;padding:12px;font-size:14px;font-weight:700;text-align:center;cursor:pointer;font-family:inherit;margin-bottom:10px;box-sizing:border-box;"><i class="ti ti-upload" style="font-size:15px;"></i> Choose a CSV file<input type="file" accept=".csv,text/csv,text/plain" onchange="_csvFile(this)" style="display:none;"></label>
     <div style="font-size:12px;color:var(--p-mut);text-align:center;margin-bottom:10px;">or paste it below</div>
     <textarea id="csv-text" oninput="_csvPreview()" placeholder="${ph}" style="width:100%;height:120px;background:var(--p-surf);border:1px solid var(--p-line);border-radius:10px;padding:11px 12px;font-size:12px;color:var(--p-ink);font-family:monospace;box-sizing:border-box;outline:none;resize:vertical;"></textarea>
     <div id="csv-preview"></div>
-    ${isProd?'':'<div style="font-size:11px;color:var(--p-mut);line-height:1.6;margin-top:14px;background:var(--surf1);border:1px solid var(--p-line3);border-radius:10px;padding:11px 13px;"><b style="color:var(--p-mut);">Tip:</b> Almost every system can export a CSV \u2014 look for \u201cExport\u201d in your clients list. The first row should be the column names. We\u2019ll skip anyone already in SlickChart.</div>'}
+    ${isProd?'':_impHonestyHTML()}
+    ${isProd?'':_impRecentHTML()}
   </div><div style="height:20px;"></div>`;
+  // A re-render (picking a different platform, or the profiles arriving) must not throw away a file
+  // she already pasted \u2014 put it back and re-map it against the new profile.
+  if(!isProd&&_impPending){const ta=document.getElementById('csv-text');if(ta){ta.value=_impPending;_csvPreview();}}
 }
-function renderImportClients(){_csvImportScreen('clients');}
+function renderImportClients(){
+  try{if(!_impSource)_impSource=localStorage.getItem('sc_import_source')||'';}catch(e){}
+  const had=!!_impProfiles;
+  _csvImportScreen('clients');
+  // Profiles are data fetched at runtime; draw immediately with what we have, then redraw once they land.
+  if(!had)_loadImportProfiles().then(()=>{
+    if(typeof _navCur!=='undefined'&&_navCur&&_navCur.screen==='import-clients')_csvImportScreen('clients');
+  });
+}
 function renderImportProducts(){_csvImportScreen('products');}
 
 async function _requestLiveSync(app){try{const k='sc_sync_requests';const cur=JSON.parse(localStorage.getItem(k)||'[]');if(cur.indexOf(app)<0)cur.push(app);localStorage.setItem(k,JSON.stringify(cur));}catch(e){}try{const tok=(typeof Cloud!=='undefined'&&Cloud&&Cloud.token)||'';await fetch('/api/sync-request',{method:'POST',headers:Object.assign({'Content-Type':'application/json'},tok?{'Authorization':'Bearer '+tok}:{}),body:JSON.stringify({app})});}catch(e){}proToast('Thanks \u2014 we\u2019ll prioritize '+app+' live sync');if(typeof _navCur!=='undefined'&&_navCur&&_navCur.screen==='switch-app')renderSwitchApp();}
