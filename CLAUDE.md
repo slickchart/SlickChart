@@ -75,6 +75,14 @@ The proxy blocks live `slickchart.app`, so test against the local file with rout
 - **Demos** are generated from the source HTML: run `node scripts/build-demo.cjs` **from
   `slickchart-vercel/`** after editing `slickchart.html` / `slickchart-client.html`, and commit the
   regenerated `*-demo.html`.
+- **Marketing pages are generated too.** `node scripts/build-switch.cjs` builds `/switch` from
+  `switch-src/`; `node scripts/build-blog.cjs` builds `/blog` from `blog-src/` **and owns
+  `sitemap.xml`** (it includes the switch pages, so run it last). Both share
+  `scripts/lib/site-chrome.cjs` + `md.cjs`. A `/switch/from-<platform>` page only publishes when it
+  has hand-written copy AND `import-profiles.json` marks that platform `verified: true` — meaning a
+  person actually followed its export path in the live product. Never set that flag from docs, a
+  search, or memory, and never generate those pages by swapping a name into a template (scaled
+  content abuse). See `switch-src/README.md`.
 - **Deploy:** Vercel auto-deploys from `main`. Push to `main`. JS runs live from the server, so JS fixes
   reach the native app without an app-store resubmit; native *plugin* changes need a rebuild.
 - **Git:** run git from the repo root `/home/user/SlickChart` (not the `slickchart-vercel/` subdir, or
