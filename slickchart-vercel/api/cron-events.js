@@ -12,7 +12,7 @@
 // automations and `sc_clients` for the client charts (which carry birthday + last-visit). Each send is
 // claimed atomically (reminder_log) so overlapping/hourly runs can't double-send.
 import { dbEnabled, sql, ensureTable } from '../lib/db.js';
-import { ensureClientTables, claimReminder, logEvent, listPushSubs, deletePushSub } from '../lib/clients.js';
+import { ensureClientTables, claimReminder, logEvent, listPushSubs, deletePushSub, spaceUrl, getClientToken } from '../lib/clients.js';
 import { pushConfigured, sendPushToAll } from '../lib/push.js';
 import { sendNativeToClient, fcmConfigured } from '../lib/fcm.js';
 
@@ -175,11 +175,13 @@ export default async function handler(req, res) {
           if (ev.kind === 'birthday') summary.birthdays++; else if (ev.kind === 'novisit') summary.novisits++; else summary.afters++;
 
           const title = ev.kind === 'birthday' ? 'A birthday note 🎂' : 'A note from your provider';
+          // This client's own space, never a tokenless link (which used to fall back to the SAMPLE).
+          const dlUrl = spaceUrl(await getClientToken(cid), 'messages');
           if (pushConfigured()) {
-            try { const subs = await listPushSubs(cid); if (subs && subs.length) summary.devices += await sendPushToAll(subs, { title, body: text.slice(0, 140), url: '/client?s=messages', tag: rkey, renotify: true, screen: 'messages' }, deletePushSub); } catch (e) {}
+            try { const subs = await listPushSubs(cid); if (subs && subs.length) summary.devices += await sendPushToAll(subs, { title, body: text.slice(0, 140), url: dlUrl, tag: rkey, renotify: true, screen: 'messages' }, deletePushSub); } catch (e) {}
           }
           if (fcmConfigured()) {
-            try { summary.devices += await sendNativeToClient(cid, { title, body: text.slice(0, 140), url: '/client?s=messages', tag: rkey, screen: 'messages' }); } catch (e) {}
+            try { summary.devices += await sendNativeToClient(cid, { title, body: text.slice(0, 140), url: dlUrl, tag: rkey, screen: 'messages' }); } catch (e) {}
           }
         }
         summary.automations++;

@@ -5,7 +5,11 @@
  * link never requests this file, so the bundle they load contains no invented practitioner. A real
  * client was once shown the demo esthetician's name as her own; this is the structural fix.
  */
-window.__SC_CLIENT_DEMO__ = {
+// Exposed as a FUNCTION, not an object literal: the sample check-in forms below reference the app's
+// own CI_DRINKS / CI_MUSIC / CI_LEVELS / CI_COVERING constants, which are declared later in the app
+// script. Evaluating this eagerly threw a ReferenceError and the seed was never assigned at all.
+// The app calls this once those constants exist (see _resolveClientDemoSeed).
+window.__SC_CLIENT_DEMO_FN__ = function(){ return {
   name:'Maya Rodriguez',initials:'MR',
   email:'maya@email.com',phone:'(510) 442-8801',
   activeProviderId:'jess',
@@ -241,4 +245,4 @@ window.__SC_CLIENT_DEMO__ = {
       ]},
     },
   ],
-};
+}; };

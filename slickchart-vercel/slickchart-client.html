@@ -869,6 +869,18 @@ const CI_BLANKETS=[['🛏️','Light blanket'],['🪨','Weighted blanket'],['�
 const CI_LEVELS=['Off','Low','Med','High'];                 // heated pad / blanket levels
 const CI_COVERING=[['🛏️','Light blanket'],['🪨','Weighted blanket'],['🚫','No blanket']];
 
+// The sample seed (demo-seed-client.js, or baked into a *-demo.html build) is a function because it
+// references the CI_* option sets just above. Call it now that they exist. Older seeds assigned the
+// object directly, so an already-assigned __SC_CLIENT_DEMO__ is left alone.
+function _resolveClientDemoSeed(){
+  try{
+    if(!window.__SC_CLIENT_DEMO__&&typeof window.__SC_CLIENT_DEMO_FN__==='function')
+      window.__SC_CLIENT_DEMO__=window.__SC_CLIENT_DEMO_FN__();
+  }catch(e){}
+  return window.__SC_CLIENT_DEMO__||null;
+}
+_resolveClientDemoSeed();
+
 // Maya's identity + all the providers she sees (each a SlickChart practice).
 // One login, switch between relationships, each with its own brand, appointments,
 // messages, summaries and booking. "jess" is the one connected to the provider app.
@@ -5939,13 +5951,21 @@ document.addEventListener('DOMContentLoaded', function() {
   try{_handleClientPushParams();}catch(e){}   // web-push tap → /client?s=<screen>; queue it for after data loads
   var _ctok=_getClientToken();
   if(_ctok){ _bootRealClient(_ctok); return; }
-  // NO TOKEN — the sample space. Its data is not in this bundle (a real client must never be able to
-  // load an invented practitioner), so fetch it first. If it can't load, say plainly that the link is
-  // needed rather than rendering a half-empty space that looks like a broken account.
+  // NO TOKEN. The sample space now requires an EXPLICIT opt-in and is never a fallback.
+  //
+  // It used to be what you got whenever a token couldn't be found, which is how a real client ends up
+  // looking at a sample practitioner and a sample client's chart. There are several ways to arrive here
+  // with no token through no fault of the provider — a push whose deep link carried no token, a
+  // home-screen shortcut installed before the manifest was tokenised, an in-app browser (Messages,
+  // Instagram) whose storage is partitioned so the remembered token is gone, a different device. In
+  // every one of those cases the right answer is "here's how to get your own link", never a stranger's
+  // data dressed up as yours. Sample data reaching a real client already happened once here; making the
+  // preview opt-in is what makes it structurally impossible rather than just unlikely.
+  if(!_samplePreviewRequested()){ _clientNeedsLink(); return; }
   if(!window.__SC_CLIENT_DEMO__){
     var _s=document.createElement('script');
     _s.src='/demo-seed-client.js';
-    _s.onload=function(){ try{ if(window.__SC_CLIENT_DEMO__)Object.assign(client,window.__SC_CLIENT_DEMO__); }catch(e){}
+    _s.onload=function(){ try{ var seed=_resolveClientDemoSeed(); if(seed)Object.assign(client,seed); }catch(e){}
       try{ _bootSampleClient(); }catch(e){} };
     _s.onerror=function(){ try{ _clientLinkError('Open the personal link your provider sent you to see your own space.'); }catch(e){} };
     document.head.appendChild(_s);
@@ -5953,6 +5973,41 @@ document.addEventListener('DOMContentLoaded', function() {
   }
   _bootSampleClient();
 });
+// The sample is a marketing/preview surface. Only an explicit request gets it.
+function _samplePreviewRequested(){
+  try{
+    // The generated *-demo.html files bake the sample seed straight into the page. That baked-in seed
+    // IS the explicit request — it only ever exists in a demo build (the no-demo-data check enforces
+    // that), never in the page a real client is served.
+    if(window.__SC_CLIENT_DEMO__||typeof window.__SC_CLIENT_DEMO_FN__==='function')return true;
+    var q=new URLSearchParams(location.search);
+    return q.get('preview')==='1'||q.get('demo')==='1';
+  }catch(e){ return false; }
+}
+// No token and no preview request: tell them plainly how to get into their own space, and give them a
+// way to do it themselves rather than a dead end.
+function _clientNeedsLink(){
+  var S=document.getElementById('S');
+  if(S)S.innerHTML='<div style="padding:56px 26px;text-align:center;">'
+    +'<div style="font-size:30px;margin-bottom:14px;">\u{1F517}</div>'
+    +'<div style="font-size:17px;font-weight:700;color:var(--c-ink);margin-bottom:8px;">Open your personal link</div>'
+    +'<div style="font-size:13.5px;color:var(--c-mut);line-height:1.65;margin-bottom:20px;">Your care space opens from the link your provider texted or emailed you \u2014 it\u2019s what tells us which space is yours. Tap that link and you\u2019re in; there\u2019s nothing to download and no password.</div>'
+    +'<button onclick="_askForMyLink()" style="width:100%;background:var(--accent);color:#fff;border:none;border-radius:10px;padding:13px;font-size:14px;font-weight:700;cursor:pointer;font-family:inherit;">Email me my link</button>'
+    +'<div style="font-size:11.5px;color:var(--c-mut);line-height:1.55;margin-top:12px;">We\u2019ll only ever send it to the email already on file with your provider.</div>'
+    +'</div>';
+  var nv=document.querySelector('.nav'); if(nv)nv.style.display='none';
+  try{document.title='SlickChart';}catch(e){}
+}
+// Self-serve link recovery. /api/client-link is deliberately non-enumerable: it always reports the same
+// thing and only ever mails the address already on file, so this can't be used to probe who exists.
+function _askForMyLink(){
+  var email='';
+  try{email=(window.prompt('What email did your provider use for you?')||'').trim();}catch(e){}
+  if(!email)return;
+  fetch('/api/client-link',{method:'POST',headers:{'Content-Type':'application/json'},body:JSON.stringify({email:email})})
+    .then(function(){ if(typeof showToast==='function')showToast('If that email is on file, your link is on its way',true); })
+    .catch(function(){ if(typeof showToast==='function')showToast('Couldn\u2019t send just now \u2014 please try again',false); });
+}
 function _bootSampleClient(){
   // No token \u2192 this is the SAMPLE/demo experience (demo "Maya" data). Always show a clear banner so a
   // client who opened an incomplete or outdated link doesn't mistake this sample for their own space

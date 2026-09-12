@@ -11,7 +11,7 @@
 // having recently opened their app to sync anything. Each (client, booking) is claimed atomically in
 // reminder_log so it sends exactly once even though the cron runs hourly across the 24h window.
 import { dbEnabled, sql, getKVValue } from '../lib/db.js';
-import { ensureClientTables, listPushSubs, deletePushSub, claimReminder, logEvent } from '../lib/clients.js';
+import { ensureClientTables, listPushSubs, deletePushSub, claimReminder, logEvent, spaceUrl } from '../lib/clients.js';
 import { getConnection, squareFetch } from '../lib/square.js';
 import { pushConfigured, sendPushToAll } from '../lib/push.js';
 import { sendNativeToClient, fcmConfigured } from '../lib/fcm.js';
@@ -117,7 +117,9 @@ export default async function handler(req, res) {
         try { await logEvent(provider, cl.id, 'provider_message', { text: CI_TEXT, photos: [], auto: true, checkin: true }); summary.sent++; } catch (e) {}
 
         // 2) Push so it surfaces even with the app closed. Deep-link the tap to the check-in screen.
-        const dlUrl = '/client?s=previsit';
+        // Carry THIS client's own token. A tokenless link left the app with no idea whose space to
+        // open, and when browser storage couldn't supply one it used to fall back to the SAMPLE space.
+        const dlUrl = spaceUrl(cl.token, 'previsit');
         const payload = { title: 'Pre-visit check-in', body: 'Please take 2 minutes for your check-in before your visit ✨', url: dlUrl, tag: 'checkin:' + b.id, renotify: true, screen: 'previsit' };
         let n = 0;
         if (pushConfigured() && subs.length) { try { n += await sendPushToAll(subs, payload, deletePushSub); } catch (e) {} }

@@ -273,6 +273,28 @@ export async function listClients(providerId) {
     FROM clients WHERE provider_id=${providerId} AND deleted_at IS NULL ORDER BY lower(name)`;
 }
 
+// ── Deep links into a client's own space ─────────────────────────────────────────────────────────
+// EVERY client-facing URL must carry that client's link token. A tokenless "/client?s=..." (which is
+// what every push used to send) lands them in the app with no idea who they are; the app then has only
+// a remembered token in browser storage to fall back on, and when that is missing — a new device, an
+// in-app browser with partitioned storage, cleared data — they used to be shown the SAMPLE space.
+// Passing the token removes the guesswork entirely. /space (not /client) because the installed provider
+// app claims /client and /client/* as Universal/App Links and would intercept the tap.
+export function spaceUrl(token, screen) {
+  if (!token) return '';
+  return '/space?c=' + encodeURIComponent(token) + (screen ? ('&s=' + encodeURIComponent(screen)) : '');
+}
+// Look up one client's link token by id, for senders that only carry the id.
+export async function getClientToken(clientId) {
+  if (!clientId) return '';
+  try {
+    await ensureClientTables();
+    const q = sql();
+    const rows = await q`SELECT token FROM clients WHERE id = ${clientId} LIMIT 1`;
+    return (rows[0] && rows[0].token) || '';
+  } catch (e) { return ''; }
+}
+
 export async function getClientByToken(token) {
   const q = sql();
   // deleted_at IS NULL is a STRUCTURAL privacy guarantee: once a client is removed — whether the client

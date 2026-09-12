@@ -4,7 +4,7 @@
 import { verifyToken } from '../lib/auth.js';
 import { dbEnabled } from '../lib/db.js';
 import { sql } from '../lib/db.js';
-import { ensureClientTables, logEvent, listPushSubs, deletePushSub } from '../lib/clients.js';
+import { ensureClientTables, logEvent, listPushSubs, deletePushSub, spaceUrl } from '../lib/clients.js';
 import { sendPushToAll } from '../lib/push.js';
 import { sendNativeToClient } from '../lib/fcm.js';
 
@@ -42,7 +42,9 @@ export default async function handler(req, res) {
   try {
     // Confirm this client actually belongs to this provider before logging anything.
     const q = sql();
-    const rows = await q`SELECT id, data FROM clients WHERE id=${clientId} AND provider_id=${provider}`;
+    // token comes back too: the push deep link must point at THIS client's own space, and the row is
+    // already scoped to the authenticated provider so it can't expose anyone else's link.
+    const rows = await q`SELECT id, data, token FROM clients WHERE id=${clientId} AND provider_id=${provider}`;
     if (!rows.length) { res.status(404).json({ error: 'Client not found' }); return; }
     const id = await logEvent(provider, clientId, 'provider_message', { text, photos }, idem);
 
@@ -61,10 +63,10 @@ export default async function handler(req, res) {
         await sendPushToAll(subs, {
           title: 'New message from ' + who,
           body: shortBody,
-          url: '/client?s=messages', tag: 'msg-' + clientId, renotify: true, screen: 'messages'
+          url: spaceUrl((rows[0] && rows[0].token) || '', 'messages'), tag: 'msg-' + clientId, renotify: true, screen: 'messages'
         }, deletePushSub);
         // Same message to the client's native app (Capacitor iOS/Android), if they installed it.
-        try { await sendNativeToClient(clientId, { title: 'New message from ' + who, body: shortBody, url: '/client?s=messages', tag: 'msg-' + clientId, screen: 'messages' }); } catch (e) {}
+        try { await sendNativeToClient(clientId, { title: 'New message from ' + who, body: shortBody, url: spaceUrl((rows[0] && rows[0].token) || '', 'messages'), tag: 'msg-' + clientId, screen: 'messages' }); } catch (e) {}
       }
     } catch (e) { /* push is best-effort */ }
 

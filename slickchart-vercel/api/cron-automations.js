@@ -18,7 +18,7 @@
 // they need per-client event evaluation and are left for a future job; they carry no `sendAt`, so they
 // are skipped safely.
 import { dbEnabled, sql, ensureTable } from '../lib/db.js';
-import { ensureClientTables, listClients, claimReminder, logEvent, listPushSubs, deletePushSub } from '../lib/clients.js';
+import { ensureClientTables, listClients, claimReminder, logEvent, listPushSubs, deletePushSub, spaceUrl, getClientToken } from '../lib/clients.js';
 import { pushConfigured, sendPushToAll } from '../lib/push.js';
 import { sendNativeToClient, fcmConfigured } from '../lib/fcm.js';
 
@@ -115,12 +115,14 @@ export default async function handler(req, res) {
           const first = (String(c.name || '').trim().split(/\s+/)[0]) || 'there';
           const text = d.msg.replace(/\{client_name\}/gi, first);
           try { await logEvent(owner, cid, 'provider_message', { text, photos: [], auto: true }); summary.messages++; } catch (e) {}
-          // Best-effort push on either channel.
+          // Best-effort push on either channel, always pointed at this client's OWN space: a tokenless
+          // link left the app guessing, and when storage couldn't supply a token it showed the SAMPLE.
+          const dlUrl = spaceUrl(await getClientToken(cid), 'messages');
           if (pushConfigured()) {
-            try { const subs = await listPushSubs(cid); if (subs && subs.length) { summary.devices += await sendPushToAll(subs, { title: 'New message', body: text.slice(0, 140), url: '/client?s=messages', tag: rkey, renotify: true, screen: 'messages' }, deletePushSub); } } catch (e) {}
+            try { const subs = await listPushSubs(cid); if (subs && subs.length) { summary.devices += await sendPushToAll(subs, { title: 'New message', body: text.slice(0, 140), url: dlUrl, tag: rkey, renotify: true, screen: 'messages' }, deletePushSub); } } catch (e) {}
           }
           if (fcmConfigured()) {
-            try { summary.devices += await sendNativeToClient(cid, { title: 'New message', body: text.slice(0, 140), url: '/client?s=messages', tag: rkey, screen: 'messages' }); } catch (e) {}
+            try { summary.devices += await sendNativeToClient(cid, { title: 'New message', body: text.slice(0, 140), url: dlUrl, tag: rkey, screen: 'messages' }); } catch (e) {}
           }
         }
       }

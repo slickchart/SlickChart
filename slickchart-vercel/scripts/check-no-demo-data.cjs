@@ -51,8 +51,37 @@ for (const rel of TARGETS) {
   });
 }
 
+// ── Rule 2: no client-facing link may be tokenless ───────────────────────────────────────────────
+// Every push notification deep link used to be a bare "/client?s=..." with no client token in it. The
+// client app then had only a remembered token in browser storage to identify them by, and when that
+// was missing (new device, an in-app browser with partitioned storage, cleared data) a REAL CLIENT was
+// shown the sample space — Ashley's clients hit exactly this on their pre-visit check-ins. Senders must
+// build these with spaceUrl(token, screen) so the link always says whose space to open.
+const LINK_DIRS = ['api', 'lib'];
+const LINK_RE = /url:\s*'\/client|['"`]\/client\?s=/;
+function walkJs(dir, out) {
+  const abs = path.join(root, dir);
+  if (!fs.existsSync(abs)) return out;
+  for (const e of fs.readdirSync(abs, { withFileTypes: true })) {
+    const rel = path.join(dir, e.name);
+    if (e.isDirectory()) walkJs(rel, out);
+    else if (e.name.endsWith('.js')) out.push(rel);
+  }
+  return out;
+}
+for (const rel of walkJs(LINK_DIRS[0], walkJs(LINK_DIRS[1], []))) {
+  const lines = fs.readFileSync(path.join(root, rel), 'utf8').split('\n');
+  lines.forEach((line, i) => {
+    if (/^\s*(\/\/|\*|\/\*)/.test(line)) return;   // comments explain the rule; they don't break it
+    if (LINK_RE.test(line)) {
+      console.error(`${rel}:${i + 1}  tokenless client link — use spaceUrl(token, screen) from lib/clients.js`);
+      bad++;
+    }
+  });
+}
+
 if (bad) {
-  console.error(`\n${bad} placeholder occurrence(s) in files a real provider loads.`);
+  console.error(`\n${bad} problem(s) in files a real provider or client loads.`);
   console.error('Sample data belongs in scripts/demo-seed.js, which only the public demo gets.');
   process.exit(1);
 }

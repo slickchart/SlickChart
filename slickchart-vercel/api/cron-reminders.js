@@ -14,7 +14,7 @@
 import { dbEnabled, sql } from '../lib/db.js';
 import {
   ensureClientTables, listAllClientPrefs, listPushSubs, deletePushSub, claimReminder, releaseReminder,
-  logEvent, clearHealStartById
+  logEvent, clearHealStartById, spaceUrl, getClientToken
 } from '../lib/clients.js';
 import { pushConfigured, sendPushToAll } from '../lib/push.js';
 import { sendNativeToClient, fcmConfigured } from '../lib/fcm.js';
@@ -202,7 +202,9 @@ export default async function handler(req, res) {
         // Deep-link the tap to the relevant screen (check-in/intake for appointment reminders, the
         // homecare routine, the message thread for aftercare) instead of always dropping on Home.
         const scr = r.screen || '';
-        const dlUrl = '/client' + (scr ? ('?s=' + encodeURIComponent(scr)) : '');
+        // Always this client's own space. A tokenless link left the app with nothing to identify them
+        // by, and when browser storage couldn't supply a remembered token it fell back to the SAMPLE.
+        const dlUrl = spaceUrl(await getClientToken(row.client_id), scr);
         const sent = await sendPushToAll(subs, { title: r.title, body: r.body, url: dlUrl, tag: r.rkey, renotify: true, screen: scr }, deletePushSub);
         let nativeSent = 0;
         if (hasNative) { try { nativeSent = await sendNativeToClient(row.client_id, { title: r.title, body: r.body, url: dlUrl, tag: r.rkey, screen: scr }); } catch (e) {} }
