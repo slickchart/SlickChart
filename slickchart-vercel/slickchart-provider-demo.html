@@ -5919,7 +5919,10 @@ function renderClient(id){
   <div class="sh"><h2>Recommended products</h2></div>
   <div style="padding:0 16px 4px;display:flex;align-items:center;justify-content:space-between;">
     <span style="font-size:12px;color:var(--p-mut);">What ${_fileEsc(c.name.split(' ')[0])} sees in their shop.</span>
+    <span style="display:flex;align-items:center;gap:14px;">
+    <button onclick="startProductDictate('${id}')" aria-label="Dictate product recommendations" style="border:none;background:none;color:var(--accent-strong);font-size:13px;cursor:pointer;display:flex;align-items:center;gap:3px;"><i class="ti ti-microphone" aria-hidden="true" style="font-size:14px;"></i> Say it</button>
     <button onclick="toggleSummaryProdPicker('${id}')" style="border:none;background:none;color:var(--accent-strong);font-size:13px;cursor:pointer;display:flex;align-items:center;gap:3px;"><i class="ti ti-plus" aria-hidden="true" style="font-size:13px;"></i> Add</button>
+    </span>
   </div>
   <div style="padding:0 16px;">${_recPickerHTML(id)}</div>
   ${(clientRecs[id]||[]).length===0?`<div style="background:var(--surf2);border:1px dashed var(--p-line);border-radius:12px;margin:0 16px 10px;padding:20px;display:flex;flex-direction:column;align-items:center;gap:6px;"><i class="ti ti-shopping-bag" aria-hidden="true" style="font-size:22px;color:var(--p-mut);"></i><span style="font-size:12px;color:var(--p-mut);">No products recommended yet, tap Add.</span></div>`:''}
@@ -7107,7 +7110,7 @@ function _voiceOverlay(html){
   if(!ov){ov=document.createElement('div');ov.id='voice-overlay';ov.style.cssText='position:fixed;inset:0;background:rgba(0,0,0,.72);z-index:9999;display:flex;align-items:center;justify-content:center;padding:24px 16px;box-sizing:border-box;';document.body.appendChild(ov);ov.addEventListener('click',e=>{if(e.target===ov)_voiceClose();});}
   ov.innerHTML=`<div style="width:100%;max-width:440px;background:var(--surf1);border:1px solid var(--p-line);border-radius:16px;padding:18px 18px 26px;box-sizing:border-box;">${html}</div>`;
 }
-function _voiceClose(){_voiceStopping=true;const ov=document.getElementById('voice-overlay');if(ov)ov.remove();try{if(_voiceRec)_voiceRec.stop();}catch(e){}_voiceRec=null;try{if(_voiceRecorder){if(_voiceRecorder.rec&&_voiceRecorder.rec.state&&_voiceRecorder.rec.state!=='inactive'){_voiceRecCancel=true;_voiceRecorder.rec.stop();}_stopStream(_voiceRecorder.stream);_voiceRecorder=null;}}catch(e){}}
+function _voiceClose(){_voiceStopping=true;_voiceMode='note';_recUnmatched=[];const ov=document.getElementById('voice-overlay');if(ov)ov.remove();try{if(_voiceRec)_voiceRec.stop();}catch(e){}_voiceRec=null;try{if(_voiceRecorder){if(_voiceRecorder.rec&&_voiceRecorder.rec.state&&_voiceRecorder.rec.state!=='inactive'){_voiceRecCancel=true;_voiceRecorder.rec.stop();}_stopStream(_voiceRecorder.stream);_voiceRecorder=null;}}catch(e){}}
 
 // ── High-accuracy dictation (Groq Whisper) ──────────────────────────────────────────────────
 // When GROQ_API_KEY is configured (probed into _whisperOn) and the device can record, we capture a
@@ -7394,17 +7397,18 @@ function _voicePreview(){
   const txt=raw.replace(/</g,'&lt;');
   const words=raw?raw.split(/\s+/).filter(Boolean).length:0;
   const meta=raw?(words+' word'+(words===1?'':'s')+' captured \u00b7 edit anything below before saving'):'Nothing was captured. Try Start over, or type your note below.';
-  _voiceOverlay(`<div style="display:flex;align-items:center;gap:8px;margin-bottom:4px;"><i class="ti ti-microphone" aria-hidden="true" style="font-size:16px;color:var(--accent-strong);"></i><span style="font-size:15px;font-weight:600;color:var(--p-ink);">Preview voice note</span></div>
+  _voiceOverlay(`<div style="display:flex;align-items:center;gap:8px;margin-bottom:4px;"><i class="ti ti-microphone" aria-hidden="true" style="font-size:16px;color:var(--accent-strong);"></i><span style="font-size:15px;font-weight:600;color:var(--p-ink);">${_voiceMode==='products'?'Products you named':'Preview voice note'}</span></div>
   <div style="font-size:12px;color:var(--p-mut);margin-bottom:10px;line-height:1.5;">${meta}</div>
   <textarea id="voice-ta" placeholder="Your transcribed note\u2026" style="width:100%;height:150px;background:var(--p-bg);border:1px solid var(--p-line);border-radius:10px;padding:11px;font-size:14px;color:var(--p-ink);font-family:inherit;line-height:1.6;resize:none;outline:none;box-sizing:border-box;">${txt}</textarea>
-  ${aiEnabled?`<button onclick="_voiceSmartSave()" style="width:100%;margin-top:12px;background:var(--accent);color:var(--accent-ink);border:none;border-radius:10px;padding:12px;font-size:14px;font-weight:700;cursor:pointer;font-family:inherit;display:flex;align-items:center;justify-content:center;gap:7px;"><i class="ti ti-sparkles"></i> Clean up &amp; file into sections</button>
-  <button onclick="_voiceSave(document.getElementById('voice-ta').value)" style="width:100%;margin-top:8px;background:var(--surf2);border:1px solid var(--p-line);color:var(--p-mut);border-radius:10px;padding:11px;font-size:13px;font-weight:600;cursor:pointer;font-family:inherit;display:flex;align-items:center;justify-content:center;gap:6px;"><i class="ti ti-check"></i> Save as-is (one note)</button>`
+  ${_voiceMode==='products'?`<button onclick="_voiceProductsMatch()" style="width:100%;margin-top:12px;background:var(--accent);color:var(--accent-ink);border:none;border-radius:10px;padding:12px;font-size:14px;font-weight:700;cursor:pointer;font-family:inherit;display:flex;align-items:center;justify-content:center;gap:7px;"><i class="ti ti-shopping-bag"></i> Match to my products</button>`
+  :aiEnabled?`<button onclick="_voiceSmartSave()" style="width:100%;margin-top:12px;background:var(--accent);color:var(--accent-ink);border:none;border-radius:10px;padding:12px;font-size:14px;font-weight:700;cursor:pointer;font-family:inherit;display:flex;align-items:center;justify-content:center;gap:7px;"><i class="ti ti-sparkles"></i> Clean up &amp; file into sections</button>
+  ${_voiceMode==='products'?'':`<button onclick="_voiceSave(document.getElementById('voice-ta').value)" style="width:100%;margin-top:8px;background:var(--surf2);border:1px solid var(--p-line);color:var(--p-mut);border-radius:10px;padding:11px;font-size:13px;font-weight:600;cursor:pointer;font-family:inherit;display:flex;align-items:center;justify-content:center;gap:6px;"><i class="ti ti-check"></i> Save as-is (one note)</button>`}`
   :`<button onclick="_voiceSave(document.getElementById('voice-ta').value)" style="width:100%;margin-top:12px;background:var(--accent);color:var(--accent-ink);border:none;border-radius:10px;padding:12px;font-size:14px;font-weight:600;cursor:pointer;font-family:inherit;display:flex;align-items:center;justify-content:center;gap:7px;"><i class="ti ti-check"></i> Save to notes</button>`}
   <div style="display:flex;gap:8px;margin-top:8px;">
     <button onclick="_voiceRedo()" style="flex:1;background:var(--surf2);border:1px solid var(--p-line);color:var(--p-mut);border-radius:10px;padding:11px;font-size:13px;font-weight:600;cursor:pointer;font-family:inherit;display:flex;align-items:center;justify-content:center;gap:6px;"><i class="ti ti-refresh"></i> Start over</button>
     <button onclick="_voiceCancel()" style="flex:1;background:none;border:1px solid var(--p-line);color:var(--p-mut);border-radius:10px;padding:11px;font-size:13px;cursor:pointer;font-family:inherit;">Cancel</button>
   </div>
-  <div style="font-size:11px;color:var(--p-mut);margin-top:10px;line-height:1.5;text-align:center;">${aiEnabled?'\u201cClean up &amp; file\u201d fixes wording and sorts your words into the matching note sections \u2014 review before saving.':'\u201cStart over\u201d clears this and records a fresh note. \u201cSave\u201d adds it to your provider notes.'}</div>`);
+  <div style="font-size:11px;color:var(--p-mut);margin-top:10px;line-height:1.5;text-align:center;">${_voiceMode==='products'?'We\u2019ll match what you named against your own product library and show you the list before anything is sent.':(aiEnabled?'\u201cClean up &amp; file\u201d fixes wording and sorts your words into the matching note sections \u2014 review before saving.':'\u201cStart over\u201d clears this and records a fresh note. \u201cSave\u201d adds it to your provider notes.')}</div>`);
   const ta=document.getElementById('voice-ta');if(ta){try{ta.focus();ta.setSelectionRange(ta.value.length,ta.value.length);}catch(e){}}
 }
 // Re-record from scratch. Confirm first if there's a real transcript so a good dictation
@@ -7514,6 +7518,237 @@ async function _voiceSmartSave(){
   try{if(typeof saveProviderNoteDrafts==='function')saveProviderNoteDrafts();}catch(e){}
   _voiceAfterSave(id,'Filed into '+filled.length+' section'+(filled.length===1?'':'s')+' ✨',secs.map(x=>String(mapping[x.id]||'').trim()).filter(Boolean).join('\n'));
 }
+// ── Dictating the recommended-products list ──────────────────────────────────────────────────────
+// "Add" then search then type a reason, three products deep, is the slowest thing in the notes screen
+// and it happens while a client is putting their shoes on. So the mic next to Recommended products
+// records the same way a note does, then matches what was said against the provider's OWN catalog.
+//
+// Matching runs locally FIRST (product names are distinctive, it costs nothing and works offline) and
+// the AI pass refines it and writes each "why". With AI off, the local match still works — you just
+// fill in the reasons yourself.
+let _voiceMode='note';            // 'note' | 'products' — which primary action the preview offers
+const _PROD_STOP={the:1,and:1,for:1,with:1,her:1,him:1,them:1,this:1,that:1,some:1,your:1,you:1,use:1,using:1,also:1,plus:1,then:1,recommend:1,recommended:1,add:1,adding:1,give:1,send:1,daily:1,night:1,morning:1};
+function _prodNorm(s){return String(s||'').toLowerCase().replace(/[^a-z0-9\s]/g,' ').replace(/\s+/g,' ').trim();}
+
+// Conservative local match: a whole product name in the transcript is decisive; otherwise distinctive
+// words carry it. A token that belongs to exactly one product in the catalog is worth more than a word
+// like "serum" that half the shelf shares.
+function _prodMatchLocal(text){
+  const t=' '+_prodNorm(text)+' ';
+  if(!t.trim())return [];
+  const live=((typeof affiliateLinks!=='undefined'&&affiliateLinks)||[]).filter(a=>a&&a.id&&a.name&&a.active!==false);
+  const freq={},bfreq={};
+  live.forEach(a=>{_prodNorm(a.name).split(' ').forEach(w=>{if(w.length>=4&&!_PROD_STOP[w])freq[w]=(freq[w]||0)+1;});
+    const b=_prodNorm(a.brand);if(b)bfreq[b]=(bfreq[b]||0)+1;});
+  const out=[];
+  live.forEach(a=>{
+    const name=_prodNorm(a.name),brand=_prodNorm(a.brand);
+    let score=0;
+    if(name&&t.indexOf(' '+name)>=0)score+=10;                                  // said the whole name
+    _prodNorm(a.name).split(' ').forEach(w=>{
+      if(w.length<4||_PROD_STOP[w])return;
+      if(t.indexOf(' '+w)<0)return;
+      score+=(freq[w]===1)?4:2;                                                 // unique word beats a shared one
+    });
+    // A brand on its own ("the EltaMD one") is enough only when she stocks exactly one product from
+    // that brand; otherwise it would light up her whole shelf from that line.
+    if(brand&&brand.length>=3&&t.indexOf(' '+brand)>=0)score+=(bfreq[brand]===1?4:1);
+    if(score>=4)out.push({id:a.id,score});
+  });
+  return out.sort((x,y)=>y.score-x.score).slice(0,6).map(x=>x.id);
+}
+
+// Start a dictation whose destination is the product list, not the note.
+function startProductDictate(clientId){
+  const live=((typeof affiliateLinks!=='undefined'&&affiliateLinks)||[]).filter(a=>a&&a.id&&a.name&&a.active!==false);
+  if(!live.length){
+    if(typeof proToast==='function')proToast('Add a product to your catalog first, then you can dictate recommendations.',4500);
+    return;
+  }
+  _voiceMode='products';_voiceText='';_voiceSeed='';
+  startVoiceNote(clientId);
+}
+
+// Turn the transcript into picks. Local match first, AI to refine and to write the reasons.
+async function _voiceProductsMatch(){
+  const ta=document.getElementById('voice-ta');
+  const raw=(ta?ta.value:(_voiceText||'')).trim();
+  if(!raw){_voiceClose();return;}
+  const id=_voiceClientId;
+  const local=_prodMatchLocal(raw);
+  const already=new Set((typeof clientRecs!=='undefined'&&clientRecs[id])||[]);
+  _voiceOverlay(`<div style="display:flex;align-items:center;gap:11px;padding:20px 2px;"><div class="spin"></div><div><div style="font-size:14px;font-weight:600;color:var(--p-ink);">Matching to your products…</div><div style="font-size:12px;color:var(--p-mut);margin-top:3px;">Finding what you named in your own catalog</div></div></div>`);
+  let res=null;
+  if(typeof aiEnabled!=='undefined'&&aiEnabled){
+    try{res=await _aiMatchProducts(id,raw,local);}catch(e){res=null;}
+  }
+  let picks=(res&&Array.isArray(res.picks))?res.picks:null;
+  let unmatched=(res&&Array.isArray(res.unmatched))?res.unmatched:null;
+  if(!picks||!picks.length){
+    // No AI, or it couldn't help: fall back to the local match with the reasons left blank, and work
+    // out what didn't land by checking each phrase she said against the catalog ourselves.
+    picks=local.filter(pid=>!already.has(pid)).map(pid=>({id:pid,why:''}));
+    if(!unmatched)unmatched=_recUnmatchedLocal(raw);
+  }
+  picks=picks.filter(p=>p&&p.id&&!already.has(p.id));
+  unmatched=(unmatched||[]).filter(Boolean);
+  if(!picks.length&&!unmatched.length){
+    _voiceOverlay(`<div style="font-size:15px;font-weight:600;color:var(--p-ink);margin-bottom:6px;">Couldn’t match that to a product</div>
+    <div style="font-size:12.5px;color:var(--p-mut);line-height:1.55;margin-bottom:12px;">Nothing in your catalog matched what you said, or it’s already on ${_fileEsc((((CL[id]||{}).name)||'their').split(' ')[0])}’s list. Here’s the transcript — you can fix a name and try again.</div>
+    <textarea id="voice-ta" style="width:100%;height:110px;background:var(--p-bg);border:1px solid var(--p-line);border-radius:10px;padding:11px;font-size:14px;color:var(--p-ink);font-family:inherit;line-height:1.6;resize:none;outline:none;box-sizing:border-box;">${_fileEsc(raw)}</textarea>
+    <button onclick="_voiceProductsMatch()" style="width:100%;margin-top:12px;background:var(--accent);color:var(--accent-ink);border:none;border-radius:10px;padding:12px;font-size:14px;font-weight:700;cursor:pointer;font-family:inherit;">Try again</button>
+    <div style="display:flex;gap:8px;margin-top:8px;">
+      <button onclick="_voiceRedo()" style="flex:1;background:var(--surf2);border:1px solid var(--p-line);color:var(--p-mut);border-radius:10px;padding:11px;font-size:13px;font-weight:600;cursor:pointer;font-family:inherit;">Record again</button>
+      <button onclick="_voiceClose()" style="flex:1;background:none;border:1px solid var(--p-line);color:var(--p-mut);border-radius:10px;padding:11px;font-size:13px;cursor:pointer;font-family:inherit;">Close</button>
+    </div>`);
+    return;
+  }
+  _recSheet(id,{products:picks.slice(0,6),guides:[],courses:[]},{
+    title:'Products you named',
+    lede:'Matched against your product library. Untick anything that isn’t right, edit the reason each one gets, then send.'
+      +(unmatched.length?' Anything we couldn’t find is flagged below — fix it, pick the right one, add it, or dismiss it.':''),
+    unmatched:unmatched
+  });
+}
+
+// The model's job here is narrow: map spoken phrases onto catalog ids and write the reason. The local
+// match is passed in as a hint but never as an instruction — an id it returns is still validated.
+async function _aiMatchProducts(clientId,raw,localIds){
+  const cat=_recCatalog(clientId);
+  if(!cat.products.length)return null;
+  const prof=(typeof _profName==='function'?_profName():'provider');
+  const first=((((typeof CL!=='undefined'&&CL[clientId])||{}).name)||'the client').split(' ')[0];
+  const prompt='A '+prof+' just dictated which retail products she wants to recommend to '+first
+    +' at the end of their visit. Map what she said onto HER catalog.\n\n'
+    +'RULES:\n'
+    +'- Return ONLY products from the catalog, by exact id. Never invent one.\n'
+    +'- She may name a product loosely, use a nickname, or mis-say it — match on intent.\n'
+    +'- Include a product ONLY if she actually named or clearly pointed at it. Return an empty list rather than guessing.\n'
+    +'- "why" is what '+first+' will read: one short sentence in the provider’s warm, plain voice, using any reason she gave. '
+    +'If she gave no reason, write a plain one-liner about what the product is for. No hype, no medical claims, no promised results.\n\n'
+    +'WHAT SHE SAID:\n"""\n'+String(raw).slice(0,2000)+'\n"""\n\n'
+    +(localIds&&localIds.length?('A simple text match suggested these ids (may be wrong, may be incomplete): '+JSON.stringify(localIds)+'\n\n'):'')
+    +'HER CATALOG:\n'+JSON.stringify(cat.products)+'\n\n'
+    +'- Anything she named that is NOT in the catalog goes in "unmatched" as the words she used, so she can '
+    +'add it to her library or correct it. Never force a rough match onto a different product just to avoid an '
+    +'unmatched entry \u2014 sending the wrong product is worse than flagging it.\n\n'
+    +'Return ONLY {"products":[{"id":"","why":""}],"unmatched":["what she said"]}. No markdown, no code fences, no commentary.';
+  const out=_parseJSONObject(await _aiComplete([{role:'user',content:prompt}],800));
+  if(!out||!Array.isArray(out.products))return null;
+  const ok=new Set(cat.products.map(p=>p.id)),seen={},res=[];
+  out.products.forEach(r=>{
+    if(!r||!ok.has(r.id)||seen[r.id]||res.length>=6)return;
+    seen[r.id]=1;res.push({id:r.id,why:String(r.why||'').trim().slice(0,240)});
+  });
+  const unmatched=(Array.isArray(out.unmatched)?out.unmatched:[])
+    .map(x=>String(x||'').trim()).filter(x=>x.length>1).slice(0,6);
+  return {picks:res,unmatched};
+}
+// ── Things she said that aren't in the library ────────────────────────────────────────────────────
+// Silently dropping a product she asked for is the worst outcome here: she'd walk away believing the
+// client got it. So anything we can't resolve to a real catalog id is shown, flagged, and has to be
+// dealt with — renamed and re-matched, mapped to an existing product by hand, added to the library on
+// the spot, or explicitly dismissed.
+let _recUnmatched=[];             // [{phrase, dropped}] — index is the row's identity
+
+// Split a dictation into the separate things she named, so each can be checked on its own.
+function _recPhrases(text){
+  return String(text||'')
+    .split(/[,;\n]|\band also\b|\balso\b|\bplus\b|\band then\b|\bthen\b|\band\b/i)
+    .map(p=>String(p||'').replace(/^[\s.\-—]+|[\s.\-—]+$/g,'').trim())
+    .filter(p=>{
+      if(p.length<4)return false;
+      const words=_prodNorm(p).split(' ').filter(w=>w.length>2&&!_PROD_STOP[w]);
+      return words.length>0;
+    }).slice(0,8);
+}
+// Offline fallback for "what didn't match": phrases that resolve to nothing in the catalog.
+function _recUnmatchedLocal(text){
+  return _recPhrases(text).filter(p=>!_prodMatchLocal(p).length);
+}
+
+function _recCatalogOptions(){
+  return ((typeof affiliateLinks!=='undefined'&&affiliateLinks)||[])
+    .filter(a=>a&&a.id&&a.name&&a.active!==false)
+    .map(a=>`<option value="${_fileEsc(a.id)}">${_fileEsc(a.name)}${a.brand?(' · '+_fileEsc(a.brand)):''}</option>`).join('');
+}
+
+function _recUnmatchedRowHTML(clientId,idx){
+  const u=_recUnmatched[idx];
+  if(!u||u.dropped)return '';
+  return `<div id="rec-um-${idx}" style="background:var(--p-amber-bg);border:1px solid var(--p-amber-line,var(--p-line3));border-radius:11px;padding:11px 12px;margin-bottom:8px;">
+    <div style="display:flex;align-items:center;gap:7px;margin-bottom:8px;">
+      <i class="ti ti-alert-triangle" aria-hidden="true" style="font-size:14px;color:var(--p-amber);flex-shrink:0;"></i>
+      <span style="font-size:11.5px;font-weight:700;color:var(--p-amber);flex:1;">Not in your product library</span>
+      <button onclick="_recDropUnmatched(${idx})" aria-label="Ignore this" style="border:none;background:none;color:var(--p-mut);cursor:pointer;padding:2px 4px;line-height:1;"><i class="ti ti-x" style="font-size:14px;"></i></button>
+    </div>
+    <div style="display:flex;gap:6px;margin-bottom:7px;">
+      <input id="rec-um-q-${idx}" value="${_fileEsc(u.phrase)}" placeholder="What you said…" style="flex:1;min-width:0;background:var(--p-bg);border:1px solid var(--p-line);border-radius:8px;padding:8px 9px;font-size:12.5px;color:var(--p-ink);font-family:inherit;outline:none;box-sizing:border-box;">
+      <button onclick="_recRetryPhrase('${_jsAttr(clientId)}',${idx})" style="background:var(--p-surf3);border:1px solid var(--p-line3);color:var(--p-ink);border-radius:8px;padding:8px 11px;font-size:12px;font-weight:600;cursor:pointer;font-family:inherit;white-space:nowrap;">Match</button>
+    </div>
+    <select onchange="if(this.value)_recResolvePick('${_jsAttr(clientId)}',${idx},this.value)" style="width:100%;background:var(--p-bg);border:1px solid var(--p-line);border-radius:8px;padding:8px 9px;font-size:12.5px;color:var(--p-ink);font-family:inherit;outline:none;box-sizing:border-box;margin-bottom:7px;">
+      <option value="">Pick from your catalog…</option>${_recCatalogOptions()}
+    </select>
+    <button onclick="_recAddNewProduct('${_jsAttr(clientId)}',${idx})" style="width:100%;background:var(--accent);color:var(--accent-ink);border:none;border-radius:8px;padding:9px;font-size:12.5px;font-weight:700;cursor:pointer;font-family:inherit;"><i class="ti ti-plus" style="font-size:12px;"></i> Add it to my library &amp; recommend</button>
+    <div style="font-size:10.5px;color:var(--p-mut);line-height:1.5;margin-top:7px;">Adding saves just the name for now — you can fill in the brand and buy links later under Shop.</div>
+  </div>`;
+}
+
+// Re-check an edited phrase against the catalog.
+function _recRetryPhrase(clientId,idx){
+  const el=document.getElementById('rec-um-q-'+idx);
+  const phrase=String(el?el.value:'').trim();
+  if(!phrase)return;
+  _recUnmatched[idx].phrase=phrase;
+  const hit=_prodMatchLocal(phrase)[0];
+  if(hit){_recResolvePick(clientId,idx,hit);return;}
+  if(typeof proToast==='function')proToast('Still nothing in your library matches that — pick one below, or add it.',4000);
+}
+
+// A flagged row becomes a normal, ticked recommendation row — so sending needs no special case.
+function _recResolvePick(clientId,idx,productId){
+  const a=((typeof affiliateLinks!=='undefined'&&affiliateLinks)||[]).find(x=>x&&x.id===productId);
+  const row=document.getElementById('rec-um-'+idx);
+  if(!a||!row)return;
+  if(((typeof clientRecs!=='undefined'&&clientRecs[clientId])||[]).indexOf(productId)>=0){
+    if(typeof proToast==='function')proToast(a.name+' is already on this list');
+    _recDropUnmatched(idx);return;
+  }
+  if([...document.querySelectorAll('.rec-pick')].some(x=>x.getAttribute('data-key')==='products:'+productId)){
+    if(typeof proToast==='function')proToast(a.name+' is already in this list');
+    _recDropUnmatched(idx);return;
+  }
+  _recUnmatched[idx].dropped=true;
+  row.outerHTML=_recRowHTML('products',productId,'',{title:a.name,sub:a.brand||'Product'});
+}
+
+// Create the product she named, with only the name filled in, then recommend it. Mid-visit she needs
+// this done in one tap; the brand and buy links can wait for the Shop screen.
+function _recAddNewProduct(clientId,idx){
+  const el=document.getElementById('rec-um-q-'+idx);
+  const name=String(el?el.value:(_recUnmatched[idx]||{}).phrase||'').trim().slice(0,80);
+  if(!name){if(typeof proToast==='function')proToast('Give it a name first');return;}
+  const dup=((typeof affiliateLinks!=='undefined'&&affiliateLinks)||[]).find(a=>a&&_prodNorm(a.name)===_prodNorm(name));
+  if(dup){_recResolvePick(clientId,idx,dup.id);return;}
+  const id='a'+Date.now()+Math.floor(Math.random()*1000);
+  affiliateLinks.push({id,name,brand:'',icon:'🛘',url:'',site:'',amazon:'',siteCode:'',urlCode:'',amazonCode:'',
+    inOffice:false,clicks:0,earnings:0,commission:'10%',active:true,custom:true});
+  try{if(typeof _markAffiliateCustom==='function')_markAffiliateCustom();}catch(e){}
+  try{if(typeof persistWorkspace==='function')persistWorkspace();}catch(e){}
+  try{if(typeof persistAffiliateLinks==='function')persistAffiliateLinks();}catch(e){}
+  if(typeof proToast==='function')proToast(name+' added to your library');
+  _recResolvePick(clientId,idx,id);
+}
+
+function _recDropUnmatched(idx){
+  if(_recUnmatched[idx])_recUnmatched[idx].dropped=true;
+  const row=document.getElementById('rec-um-'+idx);if(row)row.remove();
+  // If the sheet is now empty there is nothing left to send — say so rather than showing a bare button.
+  const left=document.querySelectorAll('.rec-pick').length+document.querySelectorAll('[id^="rec-um-"]').length;
+  const empty=document.getElementById('rec-empty');
+  if(empty)empty.style.display=left?'none':'block';
+}
+
 // ── Paid courses: a Buy button the client can actually use ───────────────────────────────────────
 // A course with a price is useless to a client if the only way to pay is to message the provider.
 // When a paid course is sent we mint a Square checkout link for THAT client and THAT course, carrying
@@ -7637,31 +7872,43 @@ function _recLabel(kind,id){
   return co?{title:co.title,sub:(co.price&&!/^free$/i.test(co.price))?('Course · '+co.price):'Course'}:null;
 }
 
+// One row shape for everything in the sheet, so a flagged row that gets resolved turns into exactly
+// the same markup as a matched one and _recSheetSend needs no special case for it.
+function _recRowHTML(kind,id,why,meta){
+  const key=kind+':'+id;
+  return `<div style="background:var(--p-surf2);border:1px solid var(--p-line3);border-radius:11px;padding:11px 12px;margin-bottom:8px;">
+    <label style="display:flex;align-items:flex-start;gap:9px;cursor:pointer;">
+      <input type="checkbox" class="rec-pick" data-key="${_fileEsc(key)}" checked style="margin-top:2px;width:17px;height:17px;accent-color:var(--accent);flex-shrink:0;">
+      <span style="flex:1;min-width:0;">
+        <span style="display:block;font-size:13px;font-weight:600;color:var(--p-ink);">${_fileEsc(meta.title)}</span>
+        <span style="display:block;font-size:11px;color:var(--p-mut);margin-top:1px;">${_fileEsc(meta.sub)}</span>
+      </span>
+    </label>
+    <textarea class="rec-why" data-key="${_fileEsc(key)}" rows="2" placeholder="Why you're recommending this…" style="width:100%;margin-top:8px;background:var(--p-bg);border:1px solid var(--p-line);border-radius:8px;padding:8px 9px;font-size:12px;color:var(--p-ink);font-family:inherit;line-height:1.5;resize:vertical;outline:none;box-sizing:border-box;">${_fileEsc(why||'')}</textarea>
+  </div>`;
+}
 // The review step. Nothing is sent until she taps send, every line can be unticked, and every "why"
 // is editable — it goes to the client in her name, so she has the last word on the wording.
-function _recSheet(clientId,sug){
+// `opts.unmatched` carries anything she named that ISN'T in her library; those rows are flagged and
+// each one has to be resolved or dismissed, never silently dropped.
+function _recSheet(clientId,sug,opts){
+  opts=opts||{};
   const first=(((CL[clientId]||{}).name)||'your client').split(' ')[0];
   const rows=[];
   ['products','guides','courses'].forEach(kind=>{
     (sug[kind]||[]).forEach(r=>{
       const meta=_recLabel(kind,r.id);if(!meta)return;
-      const key=kind+':'+r.id;
-      rows.push(`<div style="background:var(--p-surf2);border:1px solid var(--p-line3);border-radius:11px;padding:11px 12px;margin-bottom:8px;">
-        <label style="display:flex;align-items:flex-start;gap:9px;cursor:pointer;">
-          <input type="checkbox" class="rec-pick" data-key="${_fileEsc(key)}" checked style="margin-top:2px;width:17px;height:17px;accent-color:var(--accent);flex-shrink:0;">
-          <span style="flex:1;min-width:0;">
-            <span style="display:block;font-size:13px;font-weight:600;color:var(--p-ink);">${_fileEsc(meta.title)}</span>
-            <span style="display:block;font-size:11px;color:var(--p-mut);margin-top:1px;">${_fileEsc(meta.sub)}</span>
-          </span>
-        </label>
-        <textarea class="rec-why" data-key="${_fileEsc(key)}" rows="2" placeholder="Why you're recommending this…" style="width:100%;margin-top:8px;background:var(--p-bg);border:1px solid var(--p-line);border-radius:8px;padding:8px 9px;font-size:12px;color:var(--p-ink);font-family:inherit;line-height:1.5;resize:vertical;outline:none;box-sizing:border-box;">${_fileEsc(r.why)}</textarea>
-      </div>`);
+      rows.push(_recRowHTML(kind,r.id,r.why,meta));
     });
   });
-  if(!rows.length){_voiceClose();return;}
-  _voiceOverlay(`<div style="display:flex;align-items:center;gap:8px;margin-bottom:4px;"><i class="ti ti-sparkles" aria-hidden="true" style="font-size:16px;color:var(--accent-strong);"></i><span style="font-size:15px;font-weight:600;color:var(--p-ink);">From your note</span></div>
-  <div style="font-size:12px;color:var(--p-mut);margin-bottom:11px;line-height:1.5;">Suggested from what you just dictated, out of your own catalog. Untick anything you don’t want, edit the wording, then send.</div>
-  <div style="max-height:46vh;overflow:auto;margin:0 -2px;padding:0 2px;">${rows.join('')}</div>
+  _recUnmatched=(opts.unmatched||[]).filter(Boolean).slice(0,6).map(p=>({phrase:String(p).slice(0,80),dropped:false}));
+  const flagged=_recUnmatched.map((u,i)=>_recUnmatchedRowHTML(clientId,i)).join('');
+  if(!rows.length&&!flagged){_voiceClose();return;}
+  _voiceOverlay(`<div style="display:flex;align-items:center;gap:8px;margin-bottom:4px;"><i class="ti ti-sparkles" aria-hidden="true" style="font-size:16px;color:var(--accent-strong);"></i><span style="font-size:15px;font-weight:600;color:var(--p-ink);">${_fileEsc(opts.title||'From your note')}</span></div>
+  <div style="font-size:12px;color:var(--p-mut);margin-bottom:11px;line-height:1.5;">${_fileEsc(opts.lede||'Suggested from what you just dictated, out of your own catalog. Untick anything you don’t want, edit the wording, then send.')}</div>
+  <div style="max-height:46vh;overflow:auto;margin:0 -2px;padding:0 2px;">${rows.join('')}${flagged}
+    <div id="rec-empty" style="display:none;font-size:12px;color:var(--p-mut);line-height:1.55;padding:14px 2px;text-align:center;">Nothing left to send.</div>
+  </div>
   <button onclick="_recSheetSend('${_jsAttr(clientId)}')" style="width:100%;margin-top:12px;background:var(--accent);color:var(--accent-ink);border:none;border-radius:10px;padding:12px;font-size:14px;font-weight:700;cursor:pointer;font-family:inherit;display:flex;align-items:center;justify-content:center;gap:7px;"><i class="ti ti-send"></i> Send to ${_fileEsc(first)}’s app</button>
   <button onclick="_voiceClose()" style="width:100%;margin-top:8px;background:var(--surf2);border:1px solid var(--p-line);color:var(--p-mut);border-radius:10px;padding:11px;font-size:13px;font-weight:600;cursor:pointer;font-family:inherit;">Not now</button>
   <div style="font-size:11px;color:var(--p-mut);margin-top:10px;line-height:1.5;text-align:center;">Nothing is sent until you tap send. You can always change these on ${_fileEsc(first)}’s chart.</div>`);
@@ -7694,6 +7941,10 @@ function _recSheetSend(clientId){
   });
   try{if(typeof saveClients==='function')saveClients();}catch(e){}
   try{if(typeof _persistAndSyncClient==='function')_persistAndSyncClient(clientId);}catch(e){}
+  // addClientProd renders before the reason is set, so refresh once more or the notes screen shows
+  // the new product with an empty "why".
+  try{if(typeof renderProductRecs==='function')renderProductRecs(clientId);}catch(e){}
+  _recUnmatched=[];
   const bits=[];
   if(nP)bits.push(nP+' product'+(nP===1?'':'s'));
   if(nG)bits.push(nG+' guide'+(nG===1?'':'s'));
@@ -7814,7 +8065,10 @@ function renderNotes(id){
     <div style="padding:0 16px;margin-bottom:4px;">
       <div style="display:flex;align-items:center;justify-content:space-between;margin-bottom:8px;">
         <div style="font-size:11px;font-weight:500;color:var(--p-mut);text-transform:uppercase;letter-spacing:.07em;">Recommended products <span id="prod-count" style="color:var(--accent-strong);">${(clientRecs[id]||[]).length?'· '+(clientRecs[id]||[]).length:''}</span></div>
-        <button onclick="toggleProductPicker('${id}')" id="prod-add-btn" style="border:none;background:none;font-size:12px;color:var(--accent-strong);cursor:pointer;display:flex;align-items:center;gap:3px;"><i class="ti ti-plus" style="font-size:12px;"></i> Add</button>
+        <div style="display:flex;align-items:center;gap:12px;">
+          <button onclick="startProductDictate('${id}')" aria-label="Dictate product recommendations" style="border:none;background:none;font-size:12px;color:var(--accent-strong);cursor:pointer;display:flex;align-items:center;gap:3px;"><i class="ti ti-microphone" style="font-size:13px;"></i> Say it</button>
+          <button onclick="toggleProductPicker('${id}')" id="prod-add-btn" style="border:none;background:none;font-size:12px;color:var(--accent-strong);cursor:pointer;display:flex;align-items:center;gap:3px;"><i class="ti ti-plus" style="font-size:12px;"></i> Add</button>
+        </div>
       </div>
       <!-- Added products stay ANCHORED at the top so you can always see what's on the list while adding more -->
       <div id="prod-recs"></div>
