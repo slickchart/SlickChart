@@ -100,6 +100,8 @@ export default async function handler(req, res) {
             email: String((found.customer_details && found.customer_details.email) || found.customer_email || '').trim(),
             amountCents: Number.isFinite(found.amount_total) ? found.amount_total : null,
             currency: found.currency || null,
+            marketingOptIn: (found.consent && found.consent.promotions) === 'opt_in' ? true
+              : (found.consent && found.consent.promotions) === 'opt_out' ? false : undefined,
             notify: false
           });
         } catch (e) {}

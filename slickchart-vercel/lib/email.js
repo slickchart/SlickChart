@@ -21,13 +21,18 @@ export async function sendEmail({ to, subject, html, text, replyTo: replyToOverr
   return r.json();
 }
 
-export async function addToAudience(email, name) {
+// Pass audienceId to target a SPECIFIC list. Do that whenever the contact must not land in the
+// SlickChart list — the auto-pick fallback below grabs the account's FIRST audience, which would
+// quietly merge a different product's buyers into provider marketing. With audienceId given there is
+// no fallback: if that list isn't configured, nothing is added.
+export async function addToAudience(email, name, audienceId) {
   const key = process.env.RESEND_API_KEY || '';
   if (!key) { return { skipped: true }; }
+  if (audienceId === null || audienceId === '') { return { skipped: true, reason: 'no-audience-configured' }; }
   try {
     // Use RESEND_AUDIENCE_ID if provided; otherwise auto-pick the account's
     // default (first) audience so no ID needs to be configured by hand.
-    let aud = process.env.RESEND_AUDIENCE_ID || '';
+    let aud = audienceId || process.env.RESEND_AUDIENCE_ID || '';
     if (!aud) {
       const list = await fetch('https://api.resend.com/audiences', {
         headers: { 'Authorization': 'Bearer ' + key }

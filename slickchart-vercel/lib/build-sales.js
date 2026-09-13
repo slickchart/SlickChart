@@ -14,7 +14,7 @@
 // Nothing in here may throw at its callers: the webhook still owes Stripe a 200, and the buyer is
 // waiting on the unlock response.
 import { sql, dbEnabled, ensureTable, ensureBuildPurchasesTable } from './db.js';
-import { sendEmail, trustedOrigin } from './email.js';
+import { sendEmail, trustedOrigin, addToAudience } from './email.js';
 import { sendNativeToProvider, fcmConfigured } from './fcm.js';
 
 function escHtml(s) {
@@ -50,6 +50,8 @@ export async function recordBuildSale(sale) {
   const email = String((sale && sale.email) || '').trim().toLowerCase() || null;
   const amountCents = Number.isFinite(sale && sale.amountCents) ? sale.amountCents : null;
   const currency = String((sale && sale.currency) || '').toLowerCase() || null;
+  // true / false / null — null means this buyer was never shown the box (see the column comment).
+  const optIn = (sale && typeof sale.marketingOptIn === 'boolean') ? sale.marketingOptIn : null;
 
   let q;
   try {
@@ -57,12 +59,13 @@ export async function recordBuildSale(sale) {
     q = sql();
     // COALESCE keeps whatever the first writer knew: if the redirect recorded the sale without an
     // amount, a later webhook fills it in, and neither one blanks a field the other already set.
-    await q`INSERT INTO build_purchases (stripe_session_id, email, amount_cents, currency)
-      VALUES (${sid}, ${email}, ${amountCents}, ${currency})
+    await q`INSERT INTO build_purchases (stripe_session_id, email, amount_cents, currency, marketing_opt_in)
+      VALUES (${sid}, ${email}, ${amountCents}, ${currency}, ${optIn})
       ON CONFLICT (stripe_session_id) DO UPDATE SET
-        email        = COALESCE(build_purchases.email, EXCLUDED.email),
-        amount_cents = COALESCE(build_purchases.amount_cents, EXCLUDED.amount_cents),
-        currency     = COALESCE(build_purchases.currency, EXCLUDED.currency)`;
+        email            = COALESCE(build_purchases.email, EXCLUDED.email),
+        amount_cents     = COALESCE(build_purchases.amount_cents, EXCLUDED.amount_cents),
+        currency         = COALESCE(build_purchases.currency, EXCLUDED.currency),
+        marketing_opt_in = COALESCE(build_purchases.marketing_opt_in, EXCLUDED.marketing_opt_in)`;
   } catch (e) {
     console.error('[build-sales] could not record sale:', e && e.message || e);
     return;   // no row means no claim to make; better a missed ping than an unrecorded one
@@ -81,6 +84,15 @@ export async function recordBuildSale(sale) {
     console.error('[build-sales] notify claim failed, staying silent:', e && e.message || e);
     return;
   }
+  // The buyer list, built from recorded consent only. BUILD_AUDIENCE_ID is a SEPARATE Resend
+  // audience from the SlickChart one: these are two different products and their lists must not
+  // merge. If it isn't set, nothing goes to Resend — the consent is still stored on the row above,
+  // so no signup is lost and the list can be exported or synced later.
+  if (optIn === true && email) {
+    try { await addToAudience(email, '', String(process.env.BUILD_AUDIENCE_ID || '')); }
+    catch (e) { console.error('[build-sales] audience add failed:', e && e.message || e); }
+  }
+
   if (!claimed) return;   // the other path already announced this one
   if (sale && sale.notify === false) return;   // backfill: counted, deliberately silent
 

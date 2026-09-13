@@ -52,11 +52,13 @@ export default async function handler(req, res) {
       await sendAccessEmailOnce(email, sessionId, { videoUrl, artifactUrl });
     } catch (e) { console.error('[build-unlock] access email failed:', e && e.message || e); }
     try {
+      const promo = j.consent && j.consent.promotions;
       await recordBuildSale({
         sessionId,
         email,
         amountCents: Number.isFinite(j.amount_total) ? j.amount_total : null,
-        currency: j.currency || null
+        currency: j.currency || null,
+        marketingOptIn: promo === 'opt_in' ? true : (promo === 'opt_out' ? false : undefined)
       });
     } catch (e) { console.error('[build-unlock] recording the sale failed:', e && e.message || e); }
     res.setHeader('Cache-Control', 'no-store');

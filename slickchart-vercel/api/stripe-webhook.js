@@ -188,11 +188,15 @@ export default async function handler(req, res) {
       const mode = String(session.mode || '');
       const isBuildSale = String((session.metadata && session.metadata.product) || '') === 'build' || mode === 'payment';
       if (isBuildSale) {
+        const promo = session.consent && session.consent.promotions;
+      // Stripe reports the checkout tickbox as consent.promotions: 'opt_in' | 'opt_out' (absent if
+      // the buyer was never shown it, which stays null rather than becoming a no).
         await recordBuildSale({
           sessionId: String(session.id || ''),
           email,
           amountCents: Number.isFinite(session.amount_total) ? session.amount_total : null,
-          currency: session.currency || null
+          currency: session.currency || null,
+          marketingOptIn: promo === 'opt_in' ? true : (promo === 'opt_out' ? false : undefined)
         });
       } else if (email) {
         await q`INSERT INTO subscriptions (email, stripe_customer_id, stripe_subscription_id, status, updated_at)

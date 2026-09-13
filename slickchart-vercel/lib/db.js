@@ -238,6 +238,10 @@ export async function ensureBuildPurchasesTable() {
     notified_at timestamptz
   )`;
   await q`CREATE INDEX IF NOT EXISTS build_purchases_created ON build_purchases (created_at)`;
+  // Did this buyer tick the marketing box at checkout? NULL means they were never asked (every
+  // purchase made before the checkbox existed), which is NOT the same as saying no — so the export
+  // can tell "declined" apart from "unknown" instead of silently treating both as consent.
+  await q`ALTER TABLE build_purchases ADD COLUMN IF NOT EXISTS marketing_opt_in boolean`;
   _buildReady = true;
 }
 

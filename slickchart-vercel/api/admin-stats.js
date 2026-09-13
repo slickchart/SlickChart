@@ -119,14 +119,16 @@ export default async function handler(req, res) {
           count(*) FILTER (WHERE created_at > now() - interval '7 days')::int  AS new7,
           count(*) FILTER (WHERE created_at > now() - interval '30 days')::int AS new30,
           COALESCE(sum(amount_cents), 0)::bigint AS cents,
-          COALESCE(sum(amount_cents) FILTER (WHERE created_at > now() - interval '30 days'), 0)::bigint AS cents30
+          COALESCE(sum(amount_cents) FILTER (WHERE created_at > now() - interval '30 days'), 0)::bigint AS cents30,
+          count(DISTINCT lower(email)) FILTER (WHERE marketing_opt_in)::int AS opted_in
         FROM build_purchases`)[0] || {};
       build = {
         total: b.total || 0,
         new7: b.new7 || 0,
         new30: b.new30 || 0,
         cents: Number(b.cents || 0),
-        cents30: Number(b.cents30 || 0)
+        cents30: Number(b.cents30 || 0),
+        optedIn: b.opted_in || 0
       };
     } catch (e) { /* table not ready — leave build empty */ }
 
