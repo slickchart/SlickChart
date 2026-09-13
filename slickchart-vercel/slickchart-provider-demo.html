@@ -13967,6 +13967,16 @@ function sendCheckin(id){
 }
 // ===== Client app sync + invites (Stage 2) =====
 function _cIni(c){return (c&&c.initials)||_initials((c&&c.name)||'')||'?';}
+// Lightweight refs to the before/after photos a provider has chosen to share with this client:
+// id + meta only, never bytes (the client fetches each by id from /api/guide-file, authorised by
+// its own token). Split out so an owner's animals can carry their own sets the same way.
+function _progressPhotoRefs(cid){
+  const c=(typeof CL!=='undefined'&&CL[cid])||null;
+  if(!c||!c.sharePhotos||typeof capturedPhotos==='undefined')return [];
+  try{
+    return (capturedPhotos[cid]||[]).filter(p=>p&&(p.phase==='before'||p.phase==='after')&&p.url).map(p=>({pid:(typeof _photoPid==='function'?_photoPid(p):p.pid)||'',ts:p.ts||0,phase:p.phase,angle:p.angle||'',date:(function(){try{return new Date(p.ts||Date.now()).toLocaleDateString('en-US',{month:'short',day:'numeric',year:'numeric'});}catch(e){return '';}})()})).filter(x=>x.pid);
+  }catch(e){ return []; }
+}
 function _assembleClientData(id){
   const c=CL[id]||{};
   const studio=(typeof bizInfo!=='undefined'&&bizInfo&&bizInfo.name)||'';
@@ -14042,12 +14052,7 @@ function _assembleClientData(id){
   // Before/after progress photos for the client's OWN app view — only when the provider turned on
   // sharing for this client. Sends lightweight refs (pid + meta), not bytes; the client app fetches
   // each by id (the photo is backed up server-side), so this can't bloat the client data blob.
-  let progressPhotos=[];
-  try{
-    if(c.sharePhotos&&typeof capturedPhotos!=='undefined'){
-      progressPhotos=(capturedPhotos[id]||[]).filter(p=>p&&(p.phase==='before'||p.phase==='after')&&p.url).map(p=>({pid:(typeof _photoPid==='function'?_photoPid(p):p.pid)||'',ts:p.ts||0,phase:p.phase,angle:p.angle||'',date:(function(){try{return new Date(p.ts||Date.now()).toLocaleDateString('en-US',{month:'short',day:'numeric',year:'numeric'});}catch(e){return '';}})()})).filter(x=>x.pid);
-    }
-  }catch(e){}
+  const progressPhotos=_progressPhotoRefs(id);
   // The named routine (with the provider's "why" note) the provider last sent this client. Demo
   // clients get this live over SlickBridge; real clients only had the flat aftercare steps, so the
   // routine card + reasoning never showed. Carry it in the blob so real clients see it too.
@@ -14065,9 +14070,28 @@ function _assembleClientData(id){
   // contact number. NOTE: the provider's raw session `photos` are deliberately NOT sent — the client
   // only ever renders `progressPhotos` (the ones the provider explicitly shared), and shipping the
   // full clinical photo set would both bloat the blob (413s) and expose photos the client shouldn't see.
+  // An owner's space carries a compact record per animal: enough for them to follow each horse's
+  // progress without the provider having to invite every horse separately (they have no contact
+  // details and no link of their own — the owner IS the account). Photos ride as ids, like the
+  // owner's own set, so several horses can't bloat the blob.
+  let animals=[];
+  try{
+    if(typeof _animalsOf==='function'){
+      animals=_animalsOf(id).map(function(aid){
+        const a=CL[aid]||{};
+        return {id:aid,name:a.name||'',species:a.species||'Horse',
+          profile:{breed:a.skin||'',use:a.concerns||'',areas:a.allergies||'',work:a.fitz||'',vet:a.currentRoutine||'',conditions:a.conditions||''},
+          treatment:a.treatment||'',lastVisit:a.lastVisit||'',nextVisit:a.nextVisit||'',
+          sessions:a.sessions||0,seriesTotal:a.seriesTotal||0,
+          summaries:(Array.isArray(a.summaries)?a.summaries:[]).slice(0,8),
+          aftercare:((typeof getClientHomecare==='function'?getClientHomecare(aid):[])||[]),
+          progressPhotos:_progressPhotoRefs(aid)};
+      }).filter(function(x){return x.name;});
+    }
+  }catch(e){}
   const studioPhone=((typeof bizInfo!=='undefined'&&bizInfo&&bizInfo.phone)||'');
   const suggestedBooking=(c.suggestedBooking&&typeof c.suggestedBooking==='object'&&c.suggestedBooking.date&&c.suggestedBooking.time)?{date:c.suggestedBooking.date,time:c.suggestedBooking.time,treatment:c.suggestedBooking.treatment||''}:null;
-  return {studio,studioAddress,studioPhone,website,providerName,profile:{skin:c.skin||'',concerns:c.concerns||'',allergies:c.allergies||'',fitz:c.fitz||'',treatment:c.treatment||'',lastVisit:c.lastVisit||'',nextVisit:c.nextVisit||'',email:c.email||'',phone:c.phone||''},summaries,aftercare,products,routine,forms,pendingForms,pendingGuides,pendingCourses,progressPhotos,booking:{canRequest:true},suggestedBooking,availability,vcInvite,checkinCfg:checkinCfgOut,checkinReqAt:c.checkinReqAt||0,loyalty:loyaltyOut};
+  return {animals,studio,studioAddress,studioPhone,website,providerName,profile:{skin:c.skin||'',concerns:c.concerns||'',allergies:c.allergies||'',fitz:c.fitz||'',treatment:c.treatment||'',lastVisit:c.lastVisit||'',nextVisit:c.nextVisit||'',email:c.email||'',phone:c.phone||''},summaries,aftercare,products,routine,forms,pendingForms,pendingGuides,pendingCourses,progressPhotos,booking:{canRequest:true},suggestedBooking,availability,vcInvite,checkinCfg:checkinCfgOut,checkinReqAt:c.checkinReqAt||0,loyalty:loyaltyOut};
 }
 let _syncingClients=false,_clientSyncTimer=null;
 // Sync bookkeeping: have we pushed the whole roster at least once this session, is the next flush

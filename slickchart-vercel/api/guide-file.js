@@ -95,7 +95,11 @@ export default async function handler(req, res) {
           if (Array.isArray(o)) { for (const v of o) walk(v); return; }
           for (const k in o) {
             const v = o[k];
-            if ((k === 'fileId' || k === 'guideId') && typeof v === 'string' && v) allowed.add(v);
+            // 'pid' is how a shared before/after photo is referenced (progressPhotos, and each animal's
+            // own set for an owner with several). It was missing here, so a client asking for a photo
+            // that IS in their own blob got a 404 and the grid stayed empty. Same rule as the others:
+            // only ids that appear in THIS client's data are fetchable, so nothing widens across clients.
+            if ((k === 'fileId' || k === 'guideId' || k === 'pid') && typeof v === 'string' && v) allowed.add(v);
             else if (v && typeof v === 'object') walk(v);
           }
         })(cdata || {});

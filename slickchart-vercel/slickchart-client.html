@@ -1859,7 +1859,7 @@ function nav(screen){
     welcome:renderMagicLanding,
     'fill-form':renderFillForm,
     'view-guide':renderViewGuide,
-    'view-course':renderViewCourse,'view-lesson':renderViewLesson,
+    'view-course':renderViewCourse,'view-lesson':renderViewLesson,'view-animal':renderViewAnimal,
     library:renderLibrary,
   };
   const fn=routes[screen];
@@ -2218,6 +2218,7 @@ function renderHome(){
   </div>`).join('')}
 
   <!-- Courses the provider assigned (cleared ones live on in the library) -->
+  ${_homeAnimalsHTML()}
   ${_homeCourses().length?`<div class="sh"><h2>Your courses</h2></div>`+_homeCourses().map(co=>{const done=_courseDoneCount(co);const total=(co.lessons||[]).length;const pct=total?Math.round(done/total*100):0;return `
   <div style="margin:0 16px 14px;background:var(--c-card);border:1.5px solid var(--c-line);border-radius:14px;overflow:hidden;position:relative;">
     <button onclick="clearCourseFromHome('${_jsAttr(co.id)}',event)" aria-label="Clear from home, keeps it in your library" title="Clear from home" style="position:absolute;top:8px;right:8px;z-index:2;width:26px;height:26px;border-radius:50%;background:rgba(0,0,0,.35);border:none;color:#fff;cursor:pointer;display:flex;align-items:center;justify-content:center;"><i class="ti ti-x" style="font-size:14px;"></i></button>
@@ -2467,6 +2468,85 @@ function _ppBadges(p){
   return (p.phase?`<span style="position:absolute;top:5px;left:5px;background:${p.phase==='after'?'var(--accent)':'rgba(0,0,0,.7)'};color:#fff;font-size:8px;font-weight:700;padding:1px 6px;border-radius:5px;text-transform:uppercase;letter-spacing:.03em;">${_txt(p.phase)}</span>`:'')
     +(p.date?`<span style="position:absolute;bottom:4px;left:5px;right:5px;font-size:8.5px;color:#fff;text-shadow:0 1px 3px rgba(0,0,0,.75);font-weight:600;">${_txt(p.date)}</span>`:'');
 }
+// ── An owner's animals ───────────────────────────────────────────────────────────────────────────
+// One space, several horses. The owner is the account — the horses have no link, no login and no
+// contact details of their own — so each one appears here as its own page with its profile, visit
+// summaries, aftercare and before/after photos.
+let _viewAnimalId='';
+function _animals(){ try{ return (activeProvider().animals||[]).filter(function(a){return a&&a.id&&a.name;}); }catch(e){ return []; } }
+function _findAnimal(id){ return _animals().find(function(a){return a.id===id;})||null; }
+function _animalLine(a){
+  const p=(a&&a.profile)||{};
+  return [p.breed,p.use].map(function(x){return String(x||'').trim();}).filter(function(x){return x&&x!=='—';}).join(' · ');
+}
+
+function _homeAnimalsHTML(){
+  const list=_animals();
+  if(!list.length)return '';
+  return `<div class="sh"><h2>Your horses</h2></div>`+list.map(function(a){
+    const line=_animalLine(a);
+    const photos=(a.progressPhotos||[]).length;
+    const visits=(a.summaries||[]).length;
+    const bits=[];
+    if(visits)bits.push(visits+' visit'+(visits===1?'':'s'));
+    if(photos)bits.push(photos+' photo'+(photos===1?'':'s'));
+    if(a.lastVisit&&a.lastVisit!=='—')bits.push('Last '+a.lastVisit);
+    return `<div onclick="_viewAnimalId='${_jsAttr(a.id)}';nav('view-animal')" role="button" aria-label="${_txt(a.name)}" style="margin:0 16px 10px;background:var(--c-card);border:1.5px solid var(--c-line);border-radius:14px;padding:13px 15px;display:flex;align-items:center;gap:12px;cursor:pointer;">
+      <div style="width:42px;height:42px;border-radius:11px;background:var(--accent-lt);display:flex;align-items:center;justify-content:center;font-size:21px;flex-shrink:0;">\u{1F40E}</div>
+      <div style="flex:1;min-width:0;">
+        <div style="font-size:14px;font-weight:600;color:var(--c-ink);">${_txt(a.name)}</div>
+        ${line?`<div style="font-size:12px;color:var(--c-mut);margin-top:1px;overflow:hidden;text-overflow:ellipsis;white-space:nowrap;">${_txt(line)}</div>`:''}
+        ${bits.length?`<div style="font-size:11px;color:var(--c-mut);margin-top:3px;">${_txt(bits.join(' · '))}</div>`:''}
+      </div>
+      <i class="ti ti-chevron-right" style="font-size:17px;color:#c9bdb0;flex-shrink:0;"></i>
+    </div>`;
+  }).join('');
+}
+
+function renderViewAnimal(){
+  const a=_findAnimal(_viewAnimalId);
+  if(!a){nav('home');return;}
+  document.getElementById('tt').textContent=a.name;
+  const p=a.profile||{};
+  const rows=[['Breed & age',p.breed],['Discipline / use',p.use],['Areas treated',p.areas],['Work level',p.work],['Veterinarian',p.vet],['Known conditions',p.conditions]]
+    .filter(function(r){return String(r[1]||'').trim()&&String(r[1]).trim()!=='—';});
+  const photos=(a.progressPhotos||[]).filter(function(x){return x&&x.pid;}).slice().sort(function(x,y){return (y.ts||0)-(x.ts||0);});
+  const sums=(a.summaries||[]);
+  S.innerHTML=`
+  <div style="padding:16px;">
+    <a class="back" onclick="nav('home')" role="button" tabindex="0" style="display:inline-block;font-size:14px;margin-bottom:14px;color:var(--accent);cursor:pointer;">&larr; All horses</a>
+    <div style="display:flex;align-items:center;gap:12px;margin-bottom:14px;">
+      <div style="width:52px;height:52px;border-radius:13px;background:var(--accent-lt);display:flex;align-items:center;justify-content:center;font-size:26px;flex-shrink:0;">\u{1F40E}</div>
+      <div style="flex:1;min-width:0;">
+        <div id="page-heading" tabindex="-1" style="font-size:20px;font-weight:700;color:var(--c-ink);">${_txt(a.name)}</div>
+        ${_animalLine(a)?`<div style="font-size:12.5px;color:var(--c-mut);margin-top:2px;">${_txt(_animalLine(a))}</div>`:''}
+      </div>
+    </div>
+    ${(a.nextVisit&&!/not scheduled/i.test(a.nextVisit))?`<div style="background:var(--accent-lt);border-radius:12px;padding:11px 13px;margin-bottom:14px;font-size:13px;color:var(--c-ink);"><b>Next session</b> · ${_txt(a.nextVisit)}</div>`:''}
+    ${rows.length?`<div style="background:var(--c-card);border:1.5px solid var(--c-line);border-radius:14px;padding:6px 15px;margin-bottom:14px;">
+      ${rows.map(function(r,i){return `<div style="display:flex;gap:12px;padding:9px 0;${i<rows.length-1?'border-bottom:1px solid var(--c-line);':''}"><div style="font-size:12px;color:var(--c-mut);width:120px;flex-shrink:0;">${_txt(r[0])}</div><div style="flex:1;min-width:0;font-size:13px;color:var(--c-ink);">${_txt(r[1])}</div></div>`;}).join('')}
+    </div>`:''}
+    ${photos.length?`<div style="background:var(--c-card);border:1.5px solid var(--c-line);border-radius:14px;padding:14px;margin-bottom:14px;">
+      <div style="font-size:13px;font-weight:700;color:var(--c-ink);margin-bottom:3px;">${_txt(a.name)}’s progress photos</div>
+      <div style="font-size:12px;color:var(--c-mut);margin-bottom:11px;line-height:1.4;">Before &amp; after photos from their sessions. Tap any photo to view or save it.</div>
+      <div style="display:grid;grid-template-columns:repeat(3,1fr);gap:8px;">
+        ${photos.map(function(ph){return `<div id="pp-${_jsAttr(ph.pid)}" onclick="_openProgressPhoto('${_jsAttr(ph.pid)}')" role="button" aria-label="View or save photo" style="position:relative;aspect-ratio:3/4;border-radius:10px;overflow:hidden;background:var(--c-surf2);cursor:pointer;display:flex;align-items:center;justify-content:center;"><span style="font-size:11px;color:var(--c-mut);">…</span>${ph.date?`<span style="position:absolute;bottom:4px;left:5px;right:5px;font-size:8.5px;color:#fff;text-shadow:0 1px 3px rgba(0,0,0,.75);font-weight:600;">${_txt(ph.date)}</span>`:''}</div>`;}).join('')}
+      </div>
+    </div>`:''}
+    ${(a.aftercare&&a.aftercare.length)?`<div style="background:var(--c-card);border:1.5px solid var(--c-line);border-radius:14px;padding:14px;margin-bottom:14px;">
+      <div style="font-size:13px;font-weight:700;color:var(--c-ink);margin-bottom:9px;">Between sessions</div>
+      ${a.aftercare.map(function(st){return `<div style="display:flex;gap:9px;align-items:flex-start;margin-bottom:7px;"><span style="color:var(--accent);flex-shrink:0;">•</span><span style="font-size:13px;color:var(--c-ink);line-height:1.55;">${_txt(typeof st==='string'?st:((st&&(st.key||st.label))||''))}</span></div>`;}).join('')}
+    </div>`:''}
+    ${sums.length?`<div style="font-size:13px;font-weight:700;color:var(--c-ink);margin:0 0 9px;">Session notes</div>`+sums.map(function(sm){
+      return `<div style="background:var(--c-card);border:1.5px solid var(--c-line);border-radius:14px;padding:13px 15px;margin-bottom:9px;">
+        <div style="font-size:11px;color:var(--c-mut);margin-bottom:4px;">${_txt(sm.date||'')}${sm.treatment?(' · '+_txt(sm.treatment)):''}</div>
+        <div style="font-size:13px;color:var(--c-ink);line-height:1.6;">${_txt(sm.note||'')}</div>
+      </div>`;}).join(''):''}
+    ${(!rows.length&&!photos.length&&!sums.length)?`<div style="padding:30px 10px;text-align:center;color:var(--c-mut);font-size:13px;line-height:1.6;">Nothing here yet for ${_txt(a.name)}. Their profile, session notes and photos will show up as ${_txt(client.providerFirst||'your provider')} adds them.</div>`:''}
+    <div style="height:24px;"></div>
+  </div>`;
+  try{ _hydrateProgressPhotos(photos); }catch(e){}
+}
 function _progressPhotoSectionHTML(){
   const list=((activeProvider()||{}).progressPhotos||[]).filter(function(p){return p&&p.pid;});
   if(!list.length)return '';
@@ -2479,8 +2559,8 @@ function _progressPhotoSectionHTML(){
     </div>
   </div>`;
 }
-function _hydrateProgressPhotos(){
-  const list=((activeProvider()||{}).progressPhotos||[]).filter(function(p){return p&&p.pid;});
+function _hydrateProgressPhotos(only){
+  const list=(Array.isArray(only)?only:((activeProvider()||{}).progressPhotos||[])).filter(function(p){return p&&p.pid;});
   if(!list.length||!client._real||!client._token)return;
   list.forEach(function(p){
     const cell=document.getElementById('pp-'+p.pid);if(!cell)return;
@@ -2546,7 +2626,11 @@ function _showPhotoViewer(dataUrl,name,loading){
 }
 // Open a shared before/after photo (fetch its bytes if not already loaded), then show it with Save.
 function _openProgressPhoto(pid){
-  var list=((activeProvider()||{}).progressPhotos||[]);var p=null;
+  // An owner's photos and each of their animals' photos live in separate lists; search all of them so
+  // tapping a horse's photo opens it rather than silently doing nothing.
+  var list=((activeProvider()||{}).progressPhotos||[]).slice();
+  try{ (typeof _animals==='function'?_animals():[]).forEach(function(a){ (a.progressPhotos||[]).forEach(function(x){ list.push(x); }); }); }catch(e){}
+  var p=null;
   for(var i=0;i<list.length;i++){if(list[i]&&list[i].pid===pid){p=list[i];break;}}
   if(!p)return;
   var name='before-after'+(p.phase?('-'+p.phase):'')+(p.date?('-'+String(p.date).replace(/[^\w]+/g,'-')):'');
@@ -5624,6 +5708,9 @@ function _applyRealClientData(j){
   p.pendingForms=Array.isArray(d.pendingForms)?d.pendingForms:[];
   p.pendingGuides=Array.isArray(d.pendingGuides)?d.pendingGuides:[];
   p.pendingCourses=Array.isArray(d.pendingCourses)?d.pendingCourses:[];
+  // Animals on this owner's file. Each is a whole patient of its own — profile, visits, photos —
+  // published under the owner because the owner is the account holder.
+  p.animals=Array.isArray(d.animals)?d.animals:[];
   // Courses this client has paid for, recorded server-side when Square confirms the payment. The
   // course itself already lives in their app; paying is what opens the lessons.
   p.purchases=(d.purchases&&typeof d.purchases==='object')?d.purchases:{};
@@ -5738,6 +5825,9 @@ function _clientDataFingerprint(j){
       // unlocked until a full reload — the one moment a client is most likely to be looking at it.
       (Array.isArray(d.pendingCourses)?d.pendingCourses.map(function(c){return (c&&c.id||'')+'~'+((c&&c.paid)?'1':'0')+'~'+((c&&c.buyUrl)?'1':'0');}).join('|'):''),
       (d.purchases&&typeof d.purchases==='object')?Object.keys(d.purchases).sort().join(','):'',
+      // Animals: id + counts, so a horse added, a session note written, or a photo newly shared
+      // appears without the owner having to close and reopen the app.
+      (Array.isArray(d.animals)?d.animals.map(function(a){return (a&&a.id||'')+'~'+((a&&a.summaries||[]).length)+'~'+((a&&a.progressPhotos||[]).length)+'~'+((a&&a.name)||'');}).join('|'):''),
       // Detect an actual logo/brand CHANGE, not just presence, otherwise swapping one logo for
       // another (both non-empty) left this token identical and the poll never applied the new logo.
       _brandStamp(d.brand),(d.brand&&d.brand.primary)||'',(d.brand&&d.brand.secondary)||'',
