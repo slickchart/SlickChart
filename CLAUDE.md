@@ -116,6 +116,12 @@ notification channels. The blog's own docs — frontmatter, the draft/publish fl
 stating a competitor's pricing from memory, and the positioning to lead with — are in
 `slickchart-vercel/blog-src/README.md`; the topic queue and the strategy behind it are in `TOPICS.md`.
 
+## 4b. Where the last session left off
+
+`SESSION-HANDOFF.md` at the repo root records what shipped recently, what's still open or waiting on
+Ashley, and the collision points for anything new added to this deployment. Read it early — it's state,
+not rules, and it's where the "this is already done" and "this will fail silently" notes live.
+
 ## 5. Tone with the owner
 
 The owner (Ashley, a solo esthetician) runs her real business on this and has been through a stressful data
