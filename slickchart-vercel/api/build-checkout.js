@@ -26,6 +26,12 @@ export default async function handler(req, res) {
   form.set('cancel_url', origin + '/build');
   // Stripe collects the email; we need it to send the buyer their link so they can come back later.
   form.set('customer_creation', 'always');
+  // Tags this sale so the Stripe webhook can tell it apart from a SlickChart subscription checkout —
+  // both arrive as checkout.session.completed. Without this, a one-off roadmap sale would be written
+  // into `subscriptions` as an active paid provider. (The webhook also treats any mode='payment'
+  // session as a roadmap sale, so the guard holds even for a session created before this line shipped.)
+  form.set('metadata[product]', 'build');
+  form.set('payment_intent_data[metadata][product]', 'build');
   form.set('allow_promotion_codes', 'true');
   try {
     const r = await fetch('https://api.stripe.com/v1/checkout/sessions', {

@@ -221,6 +221,26 @@ export async function ensureProvidersTable() {
   _provReady = true;
 }
 
+// Build Your Own App — the $97 one-off. Deliberately NOT the subscriptions table: that table decides
+// who is allowed a SlickChart account (see hasActiveSubscription), and buying the roadmap does not make
+// someone a SlickChart subscriber. Keyed by the Stripe session id so the webhook and the success-page
+// redirect can both record the same sale without ever counting it twice.
+let _buildReady = false;
+export async function ensureBuildPurchasesTable() {
+  if (_buildReady) return;
+  const q = sql();
+  await q`CREATE TABLE IF NOT EXISTS build_purchases (
+    stripe_session_id text PRIMARY KEY,
+    email text,
+    amount_cents int,
+    currency text,
+    created_at timestamptz NOT NULL DEFAULT now(),
+    notified_at timestamptz
+  )`;
+  await q`CREATE INDEX IF NOT EXISTS build_purchases_created ON build_purchases (created_at)`;
+  _buildReady = true;
+}
+
 // Beta telemetry: one row per app-side event (a treatment note saved, or the
 // pulse survey shown). Aggregate-only — no client names or note content are
 // ever stored here, just which provider did what kind of action and when.

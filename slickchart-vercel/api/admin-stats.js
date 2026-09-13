@@ -2,7 +2,7 @@
 // Returns COUNTS only — no tokens, no emails, no per-provider data. Built to answer
 // "how many providers connected Square, and how many actively use it" for planning a
 // Square App Marketplace listing, plus beta-launch health (charting, pulse, subscriptions).
-import { sql, ensureProvidersTable, ensureBetaTable, dbEnabled } from '../lib/db.js';
+import { sql, ensureProvidersTable, ensureBetaTable, ensureBuildPurchasesTable, dbEnabled } from '../lib/db.js';
 import { verifyToken } from '../lib/auth.js';
 
 function claims(req) {
@@ -108,6 +108,28 @@ export default async function handler(req, res) {
       };
     } catch (e) { /* subscriptions table not ready — leave subs empty */ }
 
+    // ── Build Your Own App: the $97 one-off, counted on its own ──────────────
+    // Separate from `subs` on purpose. These buyers are not SlickChart providers and most never will
+    // be, so folding them into the subscription numbers would quietly overstate the business.
+    let build = {};
+    try {
+      await ensureBuildPurchasesTable();
+      const b = (await q`SELECT
+          count(*)::int AS total,
+          count(*) FILTER (WHERE created_at > now() - interval '7 days')::int  AS new7,
+          count(*) FILTER (WHERE created_at > now() - interval '30 days')::int AS new30,
+          COALESCE(sum(amount_cents), 0)::bigint AS cents,
+          COALESCE(sum(amount_cents) FILTER (WHERE created_at > now() - interval '30 days'), 0)::bigint AS cents30
+        FROM build_purchases`)[0] || {};
+      build = {
+        total: b.total || 0,
+        new7: b.new7 || 0,
+        new30: b.new30 || 0,
+        cents: Number(b.cents || 0),
+        cents30: Number(b.cents30 || 0)
+      };
+    } catch (e) { /* table not ready — leave build empty */ }
+
     const total = pv.total || 0, connected = sq.connected || 0;
     res.status(200).json({
       ok: true,
@@ -128,7 +150,8 @@ export default async function handler(req, res) {
       },
       charting,
       pulse,
-      subs
+      subs,
+      build
     });
   } catch (e) { console.error('[admin-stats] failed:', e && e.stack || e); res.status(500).json({ error: 'Something went wrong.' }); }
 }

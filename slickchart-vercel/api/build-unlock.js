@@ -11,6 +11,7 @@
 // without a deploy.
 import { sendEmail, trustedOrigin } from '../lib/email.js';
 import { dbEnabled, sql, ensureTable } from '../lib/db.js';
+import { recordBuildSale } from '../lib/build-sales.js';
 
 // Send the buyer their link once, so closing the tab doesn't lose it. Idempotent via a kv marker —
 // a refresh of the success page must not re-send. Failing to mark is not failing to unlock.
@@ -80,6 +81,16 @@ export default async function handler(req, res) {
     const email = String((j.customer_details && j.customer_details.email) || j.customer_email || '').trim();
     // Don't make the buyer wait on an email send to see their links.
     emailOnce(sessionId, email, { videoUrl, artifactUrl }).catch(() => {});
+    // Record the sale (and ping Ashley) from here too. The Stripe webhook normally gets there first,
+    // but this path has just had 'paid' confirmed by Stripe itself, so it's a safe second route in if
+    // the webhook is ever mis-subscribed. recordBuildSale claims the notification once per session id,
+    // so whichever arrives first announces and the other no-ops. Never blocks the buyer.
+    recordBuildSale({
+      sessionId,
+      email,
+      amountCents: Number.isFinite(j.amount_total) ? j.amount_total : null,
+      currency: j.currency || null
+    }).catch(() => {});
     res.setHeader('Cache-Control', 'no-store');
     res.status(200).json({ ok: true, videoUrl, artifactUrl, email });
   } catch (e) {

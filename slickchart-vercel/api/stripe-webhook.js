@@ -17,6 +17,7 @@ import { sql, ensureProvidersTable } from '../lib/db.js';
 import { sendEmail } from '../lib/email.js';
 import { sendNativeToProvider, fcmConfigured } from '../lib/fcm.js';
 import { ensureClientTables, claimReminder } from '../lib/clients.js';
+import { recordBuildSale } from '../lib/build-sales.js';
 
 // The owner's inbox for real-time milestone pings. Defaults to the built-in owner so a PAID signup is
 // never missed even before any env is configured; FOUNDER_NOTIFY_EMAIL / FOUNDER_EMAILS override it.
@@ -173,7 +174,27 @@ export default async function handler(req, res) {
       const email = ((session.customer_details && session.customer_details.email) || session.customer_email || '').trim().toLowerCase();
       const customerId = session.customer || null;
       const subscriptionId = session.subscription || null;
-      if (email) {
+
+      // Not every completed checkout on this Stripe account is a SlickChart subscription. The $97
+      // Build Your Own App roadmap is a one-off `mode: 'payment'` sale, and it arrives here as the
+      // very same checkout.session.completed event. Writing it into `subscriptions` would mark the
+      // buyer status='active' — which is exactly what login.js gates a paid SlickChart account on —
+      // so buying the roadmap would have silently handed someone a free subscription, pinged Ashley
+      // with "New PAID provider", and inflated the paying-provider count.
+      //
+      // Both signals are checked: the metadata build-checkout.js sets, and the mode. A subscription
+      // checkout is always mode='subscription', so anything in payment mode is by definition not one
+      // and must never reach the subscriptions table, tagged or not.
+      const mode = String(session.mode || '');
+      const isBuildSale = String((session.metadata && session.metadata.product) || '') === 'build' || mode === 'payment';
+      if (isBuildSale) {
+        await recordBuildSale({
+          sessionId: String(session.id || ''),
+          email,
+          amountCents: Number.isFinite(session.amount_total) ? session.amount_total : null,
+          currency: session.currency || null
+        });
+      } else if (email) {
         await q`INSERT INTO subscriptions (email, stripe_customer_id, stripe_subscription_id, status, updated_at)
           VALUES (${email}, ${customerId}, ${subscriptionId}, 'active', now())
           ON CONFLICT (email) DO UPDATE SET
