@@ -31,13 +31,15 @@ async function emailOnce(sessionId, to, links) {
       subject: 'Your Build Your Own App access',
       text: 'You\'re in. Here\'s everything:\n\n'
         + 'Start here (watch this first): ' + links.videoUrl + '\n\n'
-        + 'The system itself: ' + links.artifactUrl + '\n\n'
+        + 'The system itself: ' + links.artifactUrl + '\n'
+        + '(Pin it in Claude as soon as it opens - it then lives in your sidebar.)\n\n'
         + 'Keep this email — it\'s your way back in. You can also reopen your access page any time:\n'
         + back + '\n\n— Ashley',
       html: '<div style="font-family:-apple-system,Segoe UI,Roboto,sans-serif;font-size:15px;line-height:1.65;color:#1a2a28;">'
         + '<p>You’re in.</p>'
         + '<p><b>1. Start here</b> — watch this first:<br><a href="' + links.videoUrl + '">' + links.videoUrl + '</a></p>'
-        + '<p><b>2. The system itself</b>:<br><a href="' + links.artifactUrl + '">' + links.artifactUrl + '</a></p>'
+        + '<p><b>2. The system itself</b>:<br><a href="' + links.artifactUrl + '">' + links.artifactUrl + '</a><br>'
+        + '<span style="color:#5D5149;font-size:13.5px;">Pin it in Claude as soon as it opens \u2014 it then lives in your sidebar.</span></p>'
         + '<p>Keep this email — it’s your way back in. You can also <a href="' + back + '">reopen your access page</a> any time.</p>'
         + '<p>— Ashley</p></div>'
     });
@@ -56,7 +58,7 @@ export default async function handler(req, res) {
   if (!videoUrl || !artifactUrl) {
     // Never tell a paying customer "not found" because WE haven't finished configuring it.
     console.error('[build-unlock] BUILD_VIDEO_URL / BUILD_ARTIFACT_URL not set');
-    res.status(503).json({ ok: false, error: 'Your purchase went through — the materials are being finalised. Email support@slickchart.app and we’ll send them straight over.' });
+    res.status(503).json({ ok: false, error: 'Your purchase went through — the materials are being finalised. Email hello@slickchart.app and we’ll send them straight over.' });
     return;
   }
 
@@ -67,12 +69,12 @@ export default async function handler(req, res) {
     const j = await r.json().catch(() => ({}));
     if (!r.ok) {
       console.error('[build-unlock] stripe error', r.status, (j && j.error && j.error.message) || '');
-      res.status(r.status === 404 ? 404 : 502).json({ ok: false, error: 'We couldn’t find that purchase. If you’ve paid, email support@slickchart.app and we’ll sort it out right away.' });
+      res.status(r.status === 404 ? 404 : 502).json({ ok: false, error: 'We couldn’t find that purchase. If you’ve paid, email hello@slickchart.app and we’ll sort it out right away.' });
       return;
     }
     // paid | unpaid | no_payment_required. Only the first two exist here, and only 'paid' unlocks.
     if (String(j.payment_status || '') !== 'paid') {
-      res.status(402).json({ ok: false, error: 'That payment hasn’t completed. If your card was charged, email support@slickchart.app and we’ll get you in.' });
+      res.status(402).json({ ok: false, error: 'That payment hasn’t completed. If your card was charged, email hello@slickchart.app and we’ll get you in.' });
       return;
     }
     const email = String((j.customer_details && j.customer_details.email) || j.customer_email || '').trim();
@@ -82,6 +84,6 @@ export default async function handler(req, res) {
     res.status(200).json({ ok: true, videoUrl, artifactUrl, email });
   } catch (e) {
     console.error('[build-unlock] failed:', e && e.stack || e);
-    res.status(500).json({ ok: false, error: 'Something went wrong. Please refresh, or email support@slickchart.app.' });
+    res.status(500).json({ ok: false, error: 'Something went wrong. Please refresh, or email hello@slickchart.app.' });
   }
 }
