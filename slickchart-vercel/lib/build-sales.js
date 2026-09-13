@@ -153,7 +153,10 @@ export async function recordBuildSale(sale) {
 // Lives here rather than in build-unlock.js because two paths send it: the success redirect right
 // after paying, and /api/build-access when someone asks for it again because they lost the first one.
 export function accessEmailBody(sessionId, links) {
-  const back = trustedOrigin() + '/build/unlocked?session_id=' + encodeURIComponent(sessionId);
+  const origin = trustedOrigin();
+  const back = origin + '/build/unlocked?session_id=' + encodeURIComponent(sessionId);
+  const accessUrl = origin + '/build/access';
+  const accessLabel = accessUrl.replace(/^https?:\/\//, '');   // shown text must match where it goes
   return {
     subject: 'Your Build Your Own App access',
     text: 'You\'re in. Here\'s everything:\n\n'
@@ -163,17 +166,17 @@ export function accessEmailBody(sessionId, links) {
       + 'Using the Claude desktop app? Pinning is saved to your Claude account, not to a browser, so\n'
       + 'pin it once and it is in your sidebar there too. Then pick one place and stay in it - your\n'
       + 'ticks save where you tick them.\n\n'
-      + 'Keep this email - it\'s your way back in. You can also reopen your access page any time:\n'
-      + back + '\n\n'
-      + 'Lost this email? Get it sent again at ' + trustedOrigin() + '/build/access\n\n- Ashley',
+      + 'Your access page, any time: ' + back + '\n\n'
+      + 'Lost this email? You do not need it. Go to ' + accessUrl + ', put in the\n'
+      + 'email you paid with, and it comes straight back to you.\n\n- Ashley',
     html: '<div style="font-family:-apple-system,Segoe UI,Roboto,sans-serif;font-size:15px;line-height:1.65;color:#1a2a28;">'
       + '<p>You’re in.</p>'
       + '<p><b>1. Start here</b> — watch this first:<br><a href="' + links.videoUrl + '">' + links.videoUrl + '</a></p>'
       + '<p><b>2. The system itself</b>:<br><a href="' + links.artifactUrl + '">' + links.artifactUrl + '</a><br>'
       + '<span style="color:#5D5149;font-size:13.5px;">Pin it in Claude as soon as it opens — it then lives in your sidebar.</span></p>'
       + '<p style="font-size:13.5px;color:#5D5149;"><b style="color:#1a2a28;">Using the Claude desktop app?</b> Pinning is saved to your Claude account, not to a browser — pin it once and it’s in your sidebar there too. Then pick one place and stay in it: your ticks save where you tick them.</p>'
-      + '<p>Keep this email — it’s your way back in. You can also <a href="' + back + '">reopen your access page</a> any time.</p>'
-      + '<p style="font-size:13.5px;color:#5D5149;">Lost this email? <a href="' + trustedOrigin() + '/build/access">Have it sent again</a>.</p>'
+      + '<p>Your <a href="' + back + '">access page</a>, any time.</p>'
+      + '<p style="font-size:13.5px;color:#5D5149;"><b style="color:#1a2a28;">Lost this email?</b> You don\u2019t need it \u2014 go to <a href="' + accessUrl + '">' + accessLabel + '</a>, put in the email you paid with, and it comes straight back to you.</p>'
       + '<p>— Ashley</p></div>'
   };
 }
