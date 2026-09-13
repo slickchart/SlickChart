@@ -9,47 +9,7 @@
 //
 // The links themselves are env vars so Ashley can change the video or the Artifact URL in Vercel
 // without a deploy.
-import { sendEmail, trustedOrigin } from '../lib/email.js';
-import { dbEnabled, sql, ensureTable } from '../lib/db.js';
-import { recordBuildSale } from '../lib/build-sales.js';
-
-// Send the buyer their link once, so closing the tab doesn't lose it. Idempotent via a kv marker —
-// a refresh of the success page must not re-send. Failing to mark is not failing to unlock.
-async function emailOnce(sessionId, to, links) {
-  if (!to || !dbEnabled()) return;
-  try {
-    await ensureTable();
-    const q = sql();
-    const rows = await q`INSERT INTO kv (owner, k, v) VALUES ('build', ${'sent:' + sessionId}, ${String(Date.now())})
-      ON CONFLICT (owner, k) DO NOTHING RETURNING k`;
-    if (!rows || !rows.length) return;            // already sent for this purchase
-  } catch (e) { return; }                          // can't prove it's unsent → don't risk a duplicate
-  const origin = trustedOrigin();
-  const back = origin + '/build/unlocked?session_id=' + encodeURIComponent(sessionId);
-  try {
-    await sendEmail({
-      to,
-      subject: 'Your Build Your Own App access',
-      text: 'You\'re in. Here\'s everything:\n\n'
-        + 'Start here (watch this first): ' + links.videoUrl + '\n\n'
-        + 'The system itself: ' + links.artifactUrl + '\n'
-        + '(Pin it in Claude as soon as it opens - it then lives in your sidebar.)\n\n'
-        + 'Using the Claude desktop app? Pinning is saved to your Claude account, not to a browser, so\n'
-        + 'pin it once and it is in your sidebar there too. Then pick one place and stay in it - your\n'
-        + 'ticks save where you tick them.\n\n'
-        + 'Keep this email — it\'s your way back in. You can also reopen your access page any time:\n'
-        + back + '\n\n— Ashley',
-      html: '<div style="font-family:-apple-system,Segoe UI,Roboto,sans-serif;font-size:15px;line-height:1.65;color:#1a2a28;">'
-        + '<p>You’re in.</p>'
-        + '<p><b>1. Start here</b> — watch this first:<br><a href="' + links.videoUrl + '">' + links.videoUrl + '</a></p>'
-        + '<p><b>2. The system itself</b>:<br><a href="' + links.artifactUrl + '">' + links.artifactUrl + '</a><br>'
-        + '<span style="color:#5D5149;font-size:13.5px;">Pin it in Claude as soon as it opens \u2014 it then lives in your sidebar.</span></p>'
-        + '<p style="font-size:13.5px;color:#5D5149;"><b style="color:#1a2a28;">Using the Claude desktop app?</b> Pinning is saved to your Claude account, not to a browser \u2014 pin it once and it\u2019s in your sidebar there too. Then pick one place and stay in it: your ticks save where you tick them.</p>'
-        + '<p>Keep this email — it’s your way back in. You can also <a href="' + back + '">reopen your access page</a> any time.</p>'
-        + '<p>— Ashley</p></div>'
-    });
-  } catch (e) { console.error('[build-unlock] email failed:', e && e.message); }
-}
+import { recordBuildSale, sendAccessEmailOnce } from '../lib/build-sales.js';
 
 export default async function handler(req, res) {
   const sessionId = String((req.query && req.query.session_id) || '').trim();
@@ -83,18 +43,22 @@ export default async function handler(req, res) {
       return;
     }
     const email = String((j.customer_details && j.customer_details.email) || j.customer_email || '').trim();
-    // Don't make the buyer wait on an email send to see their links.
-    emailOnce(sessionId, email, { videoUrl, artifactUrl }).catch(() => {});
-    // Record the sale (and ping Ashley) from here too. The Stripe webhook normally gets there first,
-    // but this path has just had 'paid' confirmed by Stripe itself, so it's a safe second route in if
-    // the webhook is ever mis-subscribed. recordBuildSale claims the notification once per session id,
-    // so whichever arrives first announces and the other no-ops. Never blocks the buyer.
-    recordBuildSale({
-      sessionId,
-      email,
-      amountCents: Number.isFinite(j.amount_total) ? j.amount_total : null,
-      currency: j.currency || null
-    }).catch(() => {});
+    // These are AWAITED on purpose. They used to be fire-and-forget so the buyer wasn't kept waiting —
+    // but this runs as a serverless function, which is frozen the instant the response is sent, so a
+    // pending DB write plus an HTTPS call to Resend simply never finished. The first real buyer got a
+    // perfect access page and no email at all. Half a second of latency is the correct trade.
+    // Neither one may take the page down with it: the buyer has paid, and they see their links either way.
+    try {
+      await sendAccessEmailOnce(email, sessionId, { videoUrl, artifactUrl });
+    } catch (e) { console.error('[build-unlock] access email failed:', e && e.message || e); }
+    try {
+      await recordBuildSale({
+        sessionId,
+        email,
+        amountCents: Number.isFinite(j.amount_total) ? j.amount_total : null,
+        currency: j.currency || null
+      });
+    } catch (e) { console.error('[build-unlock] recording the sale failed:', e && e.message || e); }
     res.setHeader('Cache-Control', 'no-store');
     res.status(200).json({ ok: true, videoUrl, artifactUrl, email });
   } catch (e) {

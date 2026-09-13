@@ -13,8 +13,8 @@
 //
 // Nothing in here may throw at its callers: the webhook still owes Stripe a 200, and the buyer is
 // waiting on the unlock response.
-import { sql, dbEnabled, ensureBuildPurchasesTable } from './db.js';
-import { sendEmail } from './email.js';
+import { sql, dbEnabled, ensureTable, ensureBuildPurchasesTable } from './db.js';
+import { sendEmail, trustedOrigin } from './email.js';
 import { sendNativeToProvider, fcmConfigured } from './fcm.js';
 
 function escHtml(s) {
@@ -38,7 +38,11 @@ function money(cents, currency) {
  * Record one paid Build Your Own App checkout, and ping the founder exactly once for it.
  * Safe to call repeatedly with the same session id.
  *
- * @param {{sessionId:string, email?:string, amountCents?:number|null, currency?:string|null}} sale
+ * Pass notify:false to record a sale WITHOUT announcing it — used when recovering an older purchase
+ * that Ashley was never going to be pinged about anyway, so a backfill can't fire a "sold!" push
+ * days after the fact. The sale still counts in the stats; it is just stamped as already told.
+ *
+ * @param {{sessionId:string, email?:string, amountCents?:number|null, currency?:string|null, notify?:boolean}} sale
  */
 export async function recordBuildSale(sale) {
   const sid = String((sale && sale.sessionId) || '').trim();
@@ -78,6 +82,7 @@ export async function recordBuildSale(sale) {
     return;
   }
   if (!claimed) return;   // the other path already announced this one
+  if (sale && sale.notify === false) return;   // backfill: counted, deliberately silent
 
   // Running totals, for the "that's N now" line. Best-effort — a sale still announces without them.
   let total = 0, cents = 0;
@@ -130,4 +135,70 @@ export async function recordBuildSale(sale) {
       }
     }
   } catch (e) { console.error('[build-sales] founder push failed:', e && e.message || e); }
+}
+
+// ── The buyer's own access email ─────────────────────────────────────────────────────────────────
+// Lives here rather than in build-unlock.js because two paths send it: the success redirect right
+// after paying, and /api/build-access when someone asks for it again because they lost the first one.
+export function accessEmailBody(sessionId, links) {
+  const back = trustedOrigin() + '/build/unlocked?session_id=' + encodeURIComponent(sessionId);
+  return {
+    subject: 'Your Build Your Own App access',
+    text: 'You\'re in. Here\'s everything:\n\n'
+      + 'Start here (watch this first): ' + links.videoUrl + '\n\n'
+      + 'The system itself: ' + links.artifactUrl + '\n'
+      + '(Pin it in Claude as soon as it opens - it then lives in your sidebar.)\n\n'
+      + 'Using the Claude desktop app? Pinning is saved to your Claude account, not to a browser, so\n'
+      + 'pin it once and it is in your sidebar there too. Then pick one place and stay in it - your\n'
+      + 'ticks save where you tick them.\n\n'
+      + 'Keep this email - it\'s your way back in. You can also reopen your access page any time:\n'
+      + back + '\n\n'
+      + 'Lost this email? Get it sent again at ' + trustedOrigin() + '/build/access\n\n- Ashley',
+    html: '<div style="font-family:-apple-system,Segoe UI,Roboto,sans-serif;font-size:15px;line-height:1.65;color:#1a2a28;">'
+      + '<p>You’re in.</p>'
+      + '<p><b>1. Start here</b> — watch this first:<br><a href="' + links.videoUrl + '">' + links.videoUrl + '</a></p>'
+      + '<p><b>2. The system itself</b>:<br><a href="' + links.artifactUrl + '">' + links.artifactUrl + '</a><br>'
+      + '<span style="color:#5D5149;font-size:13.5px;">Pin it in Claude as soon as it opens — it then lives in your sidebar.</span></p>'
+      + '<p style="font-size:13.5px;color:#5D5149;"><b style="color:#1a2a28;">Using the Claude desktop app?</b> Pinning is saved to your Claude account, not to a browser — pin it once and it’s in your sidebar there too. Then pick one place and stay in it: your ticks save where you tick them.</p>'
+      + '<p>Keep this email — it’s your way back in. You can also <a href="' + back + '">reopen your access page</a> any time.</p>'
+      + '<p style="font-size:13.5px;color:#5D5149;">Lost this email? <a href="' + trustedOrigin() + '/build/access">Have it sent again</a>.</p>'
+      + '<p>— Ashley</p></div>'
+  };
+}
+
+/** Send the access email, no questions asked. Used by the "I lost my email" flow. */
+export async function sendAccessEmail(to, sessionId, links) {
+  if (!to) return;
+  const body = accessEmailBody(sessionId, links);
+  await sendEmail({ to, subject: body.subject, text: body.text, html: body.html });
+}
+
+/**
+ * Send the access email at most once per checkout, for the success redirect — a refresh of that page
+ * must not re-send.
+ *
+ * The marker is RELEASED if the send fails. The original version left it in place, so a send that
+ * never happened still looked sent and the buyer could never get the email, no matter how many times
+ * they reloaded. (That is on top of the real reason the first one went missing: the caller never
+ * awaited this, and a serverless function is frozen the moment it responds.)
+ */
+export async function sendAccessEmailOnce(to, sessionId, links) {
+  if (!to || !dbEnabled()) return;
+  let q;
+  try {
+    await ensureTable();
+    q = sql();
+    const rows = await q`INSERT INTO kv (owner, k, v) VALUES ('build', ${'sent:' + sessionId}, ${String(Date.now())})
+      ON CONFLICT (owner, k) DO NOTHING RETURNING k`;
+    if (!rows || !rows.length) return;            // already sent for this purchase
+  } catch (e) {
+    console.error('[build-sales] access-email claim failed:', e && e.message || e);
+    return;                                        // can't prove it's unsent → don't risk a duplicate
+  }
+  try {
+    await sendAccessEmail(to, sessionId, links);
+  } catch (e) {
+    console.error('[build-sales] access email failed, releasing the marker so a reload retries:', e && e.message || e);
+    try { await q`DELETE FROM kv WHERE owner = 'build' AND k = ${'sent:' + sessionId}`; } catch (e2) {}
+  }
 }
