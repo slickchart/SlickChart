@@ -10,8 +10,8 @@ break quietly if nobody touches it.
 
 `CLAUDE.md` §4 explains the mechanism. The current binding is:
 
-- trigger `trig_01B9Dy4ayviT2TCy6Tptd6oE`, cron `0 14 * * 1`
-- bound to session `session_01CZMvRH7xvPvUcct8SU5cbm`
+- trigger `trig_01GLnvYt3jrAhjPPCQZFY9Uw`, cron `0 14 * * 1`
+- bound to session `session_01E9AMWK4twG2pqR4mubE8kZ` (re-pointed 2026-09-13 from `session_01CZMvRH7xvPvUcct8SU5cbm`)
 
 **A Routine bound to a retired session delivers nowhere and fails silently** — no draft, no error,
 and Ashley would never see it stop. If you are a new session, run `list_triggers`, and if it is still
