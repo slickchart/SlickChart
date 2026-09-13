@@ -34,6 +34,9 @@ async function emailOnce(sessionId, to, links) {
         + 'Start here (watch this first): ' + links.videoUrl + '\n\n'
         + 'The system itself: ' + links.artifactUrl + '\n'
         + '(Pin it in Claude as soon as it opens - it then lives in your sidebar.)\n\n'
+        + 'Using the Claude desktop app? Pinning is saved to your Claude account, not to a browser, so\n'
+        + 'pin it once and it is in your sidebar there too. Then pick one place and stay in it - your\n'
+        + 'ticks save where you tick them.\n\n'
         + 'Keep this email — it\'s your way back in. You can also reopen your access page any time:\n'
         + back + '\n\n— Ashley',
       html: '<div style="font-family:-apple-system,Segoe UI,Roboto,sans-serif;font-size:15px;line-height:1.65;color:#1a2a28;">'
@@ -41,6 +44,7 @@ async function emailOnce(sessionId, to, links) {
         + '<p><b>1. Start here</b> — watch this first:<br><a href="' + links.videoUrl + '">' + links.videoUrl + '</a></p>'
         + '<p><b>2. The system itself</b>:<br><a href="' + links.artifactUrl + '">' + links.artifactUrl + '</a><br>'
         + '<span style="color:#5D5149;font-size:13.5px;">Pin it in Claude as soon as it opens \u2014 it then lives in your sidebar.</span></p>'
+        + '<p style="font-size:13.5px;color:#5D5149;"><b style="color:#1a2a28;">Using the Claude desktop app?</b> Pinning is saved to your Claude account, not to a browser \u2014 pin it once and it\u2019s in your sidebar there too. Then pick one place and stay in it: your ticks save where you tick them.</p>'
         + '<p>Keep this email — it’s your way back in. You can also <a href="' + back + '">reopen your access page</a> any time.</p>'
         + '<p>— Ashley</p></div>'
     });
