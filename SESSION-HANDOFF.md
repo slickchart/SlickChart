@@ -83,29 +83,31 @@ All on `main`, all deployed. Newest last:
 
 ---
 
-## 4. If the Build-Your-Own-App project lands in this repo
+## 4. Build Your Own App — built and live on this deployment
 
-A folder exists on Ashley's Mac at `~/Desktop/Build-Your-Own-App/` with a `deploy-to-repo/` containing
-`build/` (index, unlock, watch, css, images) and `api/build-unlock.js`, `api/build-webhook.js`.
-**Read its own `START-HERE.md` and `PROMPTS.md` before assuming anything** — the notes below are only
-the collisions to watch for if it deploys alongside SlickChart on the same Vercel project.
+Ashley's $97 product. Four files, no new infrastructure:
 
-- **Stripe webhook secret.** `api/stripe-webhook.js` already exists for SlickChart subscriptions and
-  reads `STRIPE_WEBHOOK_SECRET`. A second Stripe endpoint gets its **own** signing secret in the
-  Stripe dashboard — it must be a different env var (e.g. `BUILD_STRIPE_WEBHOOK_SECRET`), or one of
-  the two webhooks will reject every event.
-- **`vercel.json`** has `cleanUrls: true` and 9 rewrites. A new `build/` directory serves at `/build/*`
-  with `.html` stripped. `/build` → `build/index.html` works without a rewrite.
-- **Unlock links are the same shape as the bug just fixed in §2.** Whatever token `build-unlock.js`
-  issues: put it in the URL, never rely on browser storage to recover identity, and never fall back to
-  a shared/demo state when it's missing. Say "open your link" instead.
-- **`scripts/check-no-demo-data.cjs` scans every `.js`/`.html` under `api/` and `lib/`** for placeholder
-  names and tokenless `/client` links. New endpoints are in scope. Keep sample data out of them.
-- **`CLAUDE.md` §0 applies** to anything that touches the `kv` table, `clients`, or a provider token.
-  Scope every query to the authenticated caller; never authorize from a request field.
-- SlickChart's own deploy is `push to main` → Vercel. Same for anything added here.
+| File | Serves | Does |
+|---|---|---|
+| `build.html` | `/build` | the landing page |
+| `build-unlocked.html` | `/build/unlocked` (one `vercel.json` rewrite) | the access page |
+| `api/build-checkout.js` | | starts a Stripe Checkout Session |
+| `api/build-unlock.js` | | verifies the purchase, returns the links, emails them once |
 
----
+**The gate is stateless.** Stripe redirects to `/build/unlocked?session_id=cs_...`; that page asks our
+server, which asks *Stripe* whether the session is paid. A `cs_` id can't be forged into a paid one
+because we never take the caller's word for it. No buyers table, no licence keys, and **no second
+Stripe webhook** — which would have needed its own signing secret alongside SlickChart's
+`STRIPE_WEBHOOK_SECRET`. Don't add one unless there's a reason the success redirect can't cover.
+
+Config lives in Vercel env vars so price/video/Artifact changes are never a deploy:
+`BUILD_PRICE_ID`, `BUILD_VIDEO_URL` (YouTube, Vimeo or a direct `.mp4` — all three render),
+`BUILD_ARTIFACT_URL`. `STRIPE_SECRET_KEY` is already set for SlickChart. Until the two `BUILD_` URLs
+are set, a paid buyer is told their purchase went through and where to email — never "not found".
+
+There is also a `~/Desktop/Build-Your-Own-App/` folder on Ashley's Mac (START-HERE, PROMPTS, docs, the
+video). Nothing from it is in this repo; the four files above were written from scratch to keep it
+simple. If anything there needs porting, read it first rather than assuming.
 
 ## 5. House rules that are easy to miss
 
