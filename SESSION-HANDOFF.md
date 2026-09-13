@@ -1,4 +1,4 @@
-# Session handoff — 2026-09-13
+# Session handoff — 2026-09-13 (updated later the same day)
 
 Written at the end of a long session so the next one starts informed. `CLAUDE.md` is the standing
 guidance and still governs; this file is *state*: what shipped, what's unfinished, and what will
@@ -40,6 +40,11 @@ All on `main`, all deployed. Newest last:
 | `eaf643f` | **A real client can no longer reach the sample space, by construction** |
 | `d0dd96b` | Equine: one owner, several horses, each with its own chart |
 | `1bb5602` | Owners see each horse in their own app |
+| `22670c7` `49e91a1` | Build landing matched to slickchart.app: centred, opal pill buttons, hero order, mobile |
+| `4289749` | **A roadmap sale can no longer become a paid SlickChart subscription** — plus its own push and stats |
+| `84a3da1` | Access page explains the Claude desktop app, and warns that ticks save per browser |
+| `bf92fd1` | **Access email never sent** (fire-and-forget on serverless) — fixed, plus `/build/access` to get back in |
+| `1c71a6c` | Buyer list with real consent, kept separate from SlickChart's; logo points at `/build` |
 
 ### Things worth knowing about, not just reading in the diff
 
@@ -90,9 +95,13 @@ Ashley's $97 product. Four files, no new infrastructure:
 | File | Serves | Does |
 |---|---|---|
 | `build.html` | `/build` | the landing page |
-| `build-unlocked.html` | `/build/unlocked` (one `vercel.json` rewrite) | the access page |
+| `build-unlocked.html` | `/build/unlocked` (a `vercel.json` rewrite) | the access page |
+| `build-access.html` | `/build/access` (a `vercel.json` rewrite) | "I lost my email" — sends the links again |
 | `api/build-checkout.js` | | starts a Stripe Checkout Session |
 | `api/build-unlock.js` | | verifies the purchase, returns the links, emails them once |
+| `api/build-access.js` | | finds a buyer's paid sessions in Stripe and re-sends |
+| `api/admin/build-buyers.js` | | owner-only CSV of the buyer list |
+| `lib/build-sales.js` | | records a sale, pings the founder, owns the access email |
 
 **The gate is stateless.** Stripe redirects to `/build/unlocked?session_id=cs_...`; that page asks our
 server, which asks *Stripe* whether the session is paid. A `cs_` id can't be forged into a paid one
@@ -104,6 +113,32 @@ Config lives in Vercel env vars so price/video/Artifact changes are never a depl
 `BUILD_PRICE_ID`, `BUILD_VIDEO_URL` (YouTube, Vimeo or a direct `.mp4` — all three render),
 `BUILD_ARTIFACT_URL`. `STRIPE_SECRET_KEY` is already set for SlickChart. Until the two `BUILD_` URLs
 are set, a paid buyer is told their purchase went through and where to email — never "not found".
+
+### Four things here that already bit once — don't undo them
+
+1. **A roadmap sale is NOT a subscription.** Both arrive at `api/stripe-webhook.js` as
+   `checkout.session.completed`. The unguarded handler wrote the buyer into `subscriptions` with
+   `status='active'` — which is what `api/login.js` gates a paid SlickChart account on — so a $97
+   buyer got a free subscription, Ashley got a "New PAID provider" push, and the paid count was
+   wrong. The guard checks `metadata[product]=build` AND `mode`: a subscription checkout is always
+   `mode='subscription'`, so anything in payment mode can never reach that table. It really happened,
+   on 2026-09-13, to the first purchase.
+2. **Never fire-and-forget on a serverless function.** `build-unlock.js` started the access email and
+   the sale recording, then responded without awaiting them. Vercel freezes the function the instant
+   it responds, so the DB write and the Resend call never ran: the first buyer got a perfect access
+   page and no email. Both are awaited now. Same trap applies to anything added there later.
+3. **The once-only email marker releases on failure.** It used to be written before the send and left
+   in place if the send failed, so a purchase that never got its email looked sent forever and no
+   reload could fix it. `/build/access` deliberately has no marker — it always sends — which is the
+   way back in when a marker is already stuck.
+4. **Two products, two mailing lists.** `addToAudience` auto-picks the account's FIRST Resend audience
+   when none is named, so reusing it for buyers would merge them into SlickChart provider marketing.
+   It now takes an explicit audience; the build path passes `BUILD_AUDIENCE_ID` and adds nothing at
+   all when that is unset. Consent comes from Stripe's checkout tickbox
+   (`session.consent.promotions`) and is stored per purchase as yes / no / **null = never asked**.
+   Null is not consent — don't collapse it to a no, and don't market to it.
+
+Extra env vars beyond the three above: `BUILD_AUDIENCE_ID` (optional; unset = no Resend sync).
 
 There is also a `~/Desktop/Build-Your-Own-App/` folder on Ashley's Mac (START-HERE, PROMPTS, docs, the
 video). Nothing from it is in this repo; the four files above were written from scratch to keep it
