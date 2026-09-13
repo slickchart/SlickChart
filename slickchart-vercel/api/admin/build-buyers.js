@@ -12,6 +12,7 @@
 // token, never from anything in the request (CLAUDE.md §0.5).
 import { sql, ensureProvidersTable, ensureBuildPurchasesTable, dbEnabled } from '../../lib/db.js';
 import { verifyToken } from '../../lib/auth.js';
+import { excludedBuyerEmails } from '../../lib/build-sales.js';
 
 function claims(req) {
   const s = process.env.SESSION_SECRET || '';
@@ -45,6 +46,7 @@ export default async function handler(req, res) {
         extract(epoch from min(created_at)) * 1000 AS first_ts
       FROM build_purchases
       WHERE email IS NOT NULL AND email <> ''
+        AND lower(email) <> ALL(${excludedBuyerEmails()}::text[])
       GROUP BY lower(email)
       ORDER BY min(created_at) DESC
       LIMIT 5000`;

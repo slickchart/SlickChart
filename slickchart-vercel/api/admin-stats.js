@@ -4,6 +4,7 @@
 // Square App Marketplace listing, plus beta-launch health (charting, pulse, subscriptions).
 import { sql, ensureProvidersTable, ensureBetaTable, ensureBuildPurchasesTable, dbEnabled } from '../lib/db.js';
 import { verifyToken } from '../lib/auth.js';
+import { excludedBuyerEmails } from '../lib/build-sales.js';
 
 function claims(req) {
   const s = process.env.SESSION_SECRET || '';
@@ -114,21 +115,28 @@ export default async function handler(req, res) {
     let build = {};
     try {
       await ensureBuildPurchasesTable();
+      // Ashley's own test purchases are counted separately and reported as `hidden`, rather than
+      // dropped silently — a number that quietly disagrees with Stripe is worse than one that says
+      // why. An empty exclusion list matches nothing, so this is a no-op until it's configured.
+      const skip = excludedBuyerEmails();
       const b = (await q`SELECT
-          count(*)::int AS total,
-          count(*) FILTER (WHERE created_at > now() - interval '7 days')::int  AS new7,
-          count(*) FILTER (WHERE created_at > now() - interval '30 days')::int AS new30,
-          COALESCE(sum(amount_cents), 0)::bigint AS cents,
-          COALESCE(sum(amount_cents) FILTER (WHERE created_at > now() - interval '30 days'), 0)::bigint AS cents30,
-          count(DISTINCT lower(email)) FILTER (WHERE marketing_opt_in)::int AS opted_in
-        FROM build_purchases`)[0] || {};
+          count(*) FILTER (WHERE NOT hidden)::int AS total,
+          count(*) FILTER (WHERE NOT hidden AND created_at > now() - interval '7 days')::int  AS new7,
+          count(*) FILTER (WHERE NOT hidden AND created_at > now() - interval '30 days')::int AS new30,
+          COALESCE(sum(amount_cents) FILTER (WHERE NOT hidden), 0)::bigint AS cents,
+          COALESCE(sum(amount_cents) FILTER (WHERE NOT hidden AND created_at > now() - interval '30 days'), 0)::bigint AS cents30,
+          count(DISTINCT lower(email)) FILTER (WHERE NOT hidden AND marketing_opt_in)::int AS opted_in,
+          count(*) FILTER (WHERE hidden)::int AS hidden
+        FROM (SELECT *, (email IS NOT NULL AND lower(email) = ANY(${skip}::text[])) AS hidden
+              FROM build_purchases) bp`)[0] || {};
       build = {
         total: b.total || 0,
         new7: b.new7 || 0,
         new30: b.new30 || 0,
         cents: Number(b.cents || 0),
         cents30: Number(b.cents30 || 0),
-        optedIn: b.opted_in || 0
+        optedIn: b.opted_in || 0,
+        hidden: b.hidden || 0
       };
     } catch (e) { /* table not ready — leave build empty */ }
 

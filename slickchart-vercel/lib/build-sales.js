@@ -27,6 +27,18 @@ function founderNotifyEmail() {
   return String(process.env.FOUNDER_NOTIFY_EMAIL || process.env.FOUNDER_EMAILS || 'botanicalaestheticsbyashley@gmail.com').split(',')[0].trim();
 }
 
+// Emails whose purchases shouldn't show in the numbers — Ashley's own test buys. Set
+// BUILD_EXCLUDE_EMAILS in Vercel (comma separated).
+//
+// Why a filter and not a DELETE: the purchase is real in Stripe forever, and both /build/access and
+// /build/unlocked re-record from Stripe, so a deleted row simply comes back the next time either page
+// runs for that address. Filtering survives that. The row also stays on the books, which is the honest
+// version — the money did change hands.
+export function excludedBuyerEmails() {
+  return String(process.env.BUILD_EXCLUDE_EMAILS || '')
+    .toLowerCase().split(',').map(s => s.trim()).filter(Boolean);
+}
+
 function money(cents, currency) {
   if (!Number.isFinite(cents)) return '';
   const cur = String(currency || 'usd').toUpperCase();
