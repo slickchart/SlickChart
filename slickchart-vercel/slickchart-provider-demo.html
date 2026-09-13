@@ -1951,6 +1951,14 @@ function _seedMayaOnce(){ // demo-only: the body lives in scripts/demo-seed.js a
 // orphan forever: base64 photos/consults bloat storage, and old messages/summaries/recs linger.
 // (Financial records in _payments are intentionally kept, they stay manageable in the Payments
 // hub by name, and silently destroying tax history on a delete would be worse.)
+// An owner's animals are separate client records. Deleting the owner would otherwise leave each horse
+// pointing at a client that no longer exists — _ownerIdOf already treats that as unowned so nothing
+// disappears, but the provider should decide explicitly rather than discover it later.
+function _animalsWarning(id){
+  const n=(typeof _animalsOf==='function')?_animalsOf(id).length:0;
+  if(!n)return '';
+  return ' This owner has '+n+' '+_speciesWord(n!==1)+' on file; their charts, notes and photos are kept and become unlinked.';
+}
 function _cleanupClientData(id){
   try{
     if(typeof clientRecs!=='undefined')delete clientRecs[id];
@@ -1986,7 +1994,7 @@ function _cleanupClientData(id){
   try{if(typeof saveProviderNoteDrafts==='function')saveProviderNoteDrafts();}catch(e){}
   try{if(typeof persistWorkspace==='function')persistWorkspace();}catch(e){}
 }
-function deleteClient(id){if(!CL[id])return;const nm=(CL[id].name||'this client');const _go=function(){_cleanupClientData(id);delete CL[id];try{_markClientDeleted(id);}catch(e){}saveClients();if(typeof proToast==='function')proToast(nm+' removed');nav('clients');};if(typeof confirmModal==='function')confirmModal({title:'Remove '+nm+'?',body:'This removes their chart from this app only. It does NOT affect their record in Square.',action:'Remove'},_go);else _go();}
+function deleteClient(id){if(!CL[id])return;const nm=(CL[id].name||'this client');const _go=function(){_cleanupClientData(id);delete CL[id];try{_markClientDeleted(id);}catch(e){}saveClients();if(typeof proToast==='function')proToast(nm+' removed');nav('clients');};if(typeof confirmModal==='function')confirmModal({title:'Remove '+nm+'?',body:'This removes their chart from this app only. It does NOT affect their record in Square.'+((typeof _animalsWarning==='function')?_animalsWarning(id):''),action:'Remove'},_go);else _go();}
 
 // ══ Merge duplicate clients ══════════════════════════════════════════════════
 // Square lets you merge duplicate customers in its dashboard; this brings the same
@@ -2042,7 +2050,9 @@ function _isSquareClient(id){return String(id).indexOf('sq_')===0||!!(CL[id]&&CL
 // email, or a shared phone. Uses union-find so a chain (A~B by name, B~C by phone) groups
 // A, B and C together. Demo clients are never included.
 function _findDuplicateGroups(){
-  const ids=Object.keys(CL).filter(id=>!_MERGE_SKIP_IDS[id]);
+  // Animals are excluded outright. Two horses on one owner's file legitimately share that owner's
+  // phone and email, so they look like textbook duplicates — and merging them would destroy a chart.
+  const ids=Object.keys(CL).filter(id=>!_MERGE_SKIP_IDS[id]&&!(typeof _isAnimal==='function'&&_isAnimal(CL[id])));
   const parent={};const find=x=>{while(parent[x]!==x){parent[x]=parent[parent[x]];x=parent[x];}return x;};
   ids.forEach(id=>parent[id]=id);
   const union=(a,b)=>{const ra=find(a),rb=find(b);if(ra!==rb)parent[ra]=rb;};
@@ -2103,6 +2113,15 @@ function _mergeSideStores(keepId,dropId){
 function _mergeClientRecords(keepId,dropId){
   if(keepId===dropId||!CL[keepId]||!CL[dropId])return;
   const keep=CL[keepId],drop=CL[dropId];
+  // An animal is a whole chart (its own notes, photos, session history). Folding one into another
+  // record would quietly destroy that, and two horses sharing an owner's name and phone look exactly
+  // like a duplicate to the merge finder — so they are never mergeable.
+  if(typeof _isAnimal==='function'&&(_isAnimal(keep)||_isAnimal(drop))){
+    if(typeof proToast==='function')proToast('Horses aren\u2019t merged \u2014 each one keeps its own chart.');
+    return;
+  }
+  // Re-home the dropped owner's animals onto the survivor before the record goes.
+  try{ if(typeof _animalsOf==='function')_animalsOf(dropId).forEach(function(aid){ if(CL[aid])CL[aid].ownerId=keepId; }); }catch(e){}
   const listKeys={submittedForms:1,signedForms:1,pendingForms:1,pendingGuides:1,pendingCourses:1,sessions:1,seriesTotal:1};
   Object.keys(drop).forEach(k=>{if(listKeys[k])return;if(!(k in keep)||_isBlankVal(keep[k])){if(!_isBlankVal(drop[k]))keep[k]=drop[k];}});
   keep.submittedForms=_mergeArrUnique(keep.submittedForms,drop.submittedForms,sf=>(sf&&(sf.formId+'|'+(sf.date||'')+'|'+(sf.title||'')))||JSON.stringify(sf));
@@ -5286,8 +5305,136 @@ async function _aiDayRecap(force){
 // The client roster used to be a flat list of just names. These add an at-a-glance context line
 // (next appointment, else last visit, else the booked service) and small right-aligned indicators
 // so the provider can scan for who's coming up and who needs review without opening each chart.
+// ── One owner, several animals ───────────────────────────────────────────────────────────────────
+// In equine work the person who books, pays and gets texted is the OWNER, but the chart — lameness
+// grade, affected limbs, session photos, progress — belongs to a horse, and an owner usually has
+// several. Holding them all in one client record is wrong twice over: the notes blur together, and a
+// second horse has nowhere to live.
+//
+// So an animal IS a client record, linked to its owner by ownerId. That gets each horse its own
+// notes, photos, forms, session history and progress for free, because every one of those is already
+// keyed by client id — no re-keying of the app's core data, which is where this could have gone badly.
+// The owner keeps the contact details, the app invite and the message thread; an animal never gets its
+// own invite, and its contact actions route to the owner.
+function _animalMode(){
+  try{ return typeof selectedProfessions!=='undefined'&&Array.isArray(selectedProfessions)&&selectedProfessions.indexOf('equine')>=0; }catch(e){ return false; }
+}
+function _speciesWord(plural){ return plural?'horses':'horse'; }
+function _isAnimal(c){ return !!(c&&c.ownerId); }
+// The owner's id, but only when that owner still exists — a dangling ownerId (owner deleted, half-
+// synced device) must never hide an animal from the roster or strand it with no contact details.
+function _ownerIdOf(id){
+  const c=(typeof CL!=='undefined'&&CL[id])||null;
+  return (c&&c.ownerId&&CL[c.ownerId]&&c.ownerId!==id)?c.ownerId:'';
+}
+function _animalsOf(ownerId){
+  if(!ownerId||typeof CL==='undefined')return [];
+  return Object.keys(CL).filter(k=>CL[k]&&CL[k].ownerId===ownerId&&k!==ownerId)
+    .sort((a,b)=>String(CL[a].name||'').localeCompare(String(CL[b].name||''),undefined,{sensitivity:'base'}));
+}
+// Where to phone, text or email about this patient. An animal has no contact details of its own.
+function _contactClientId(id){ return _ownerIdOf(id)||id; }
+function _contactFor(id){ return (typeof CL!=='undefined'&&CL[_contactClientId(id)])||{}; }
+
+function _newAnimalId(){ return 'an_'+Date.now().toString(36)+Math.floor(Math.random()*1e4).toString(36); }
+
+// Add a horse to an owner. Name is all that's required — the rest of the equine profile is filled in
+// on the horse's own chart, which already has the right fields for this profession.
+function _addAnimalSheet(ownerId){
+  const o=(typeof CL!=='undefined'&&CL[ownerId])||null;
+  if(!o)return;
+  if(_isAnimal(o)){ if(typeof proToast==='function')proToast('Add horses to the owner’s file, not to another horse'); return; }
+  const sp=_speciesWord();
+  const ov=document.createElement('div');ov.id='add-animal-sheet';
+  ov.style.cssText='position:fixed;top:0;bottom:0;left:0;right:0;margin:0 auto;width:390px;max-width:100%;z-index:9999;background:rgba(0,0,0,.6);display:flex;align-items:center;justify-content:center;padding:24px 16px;box-sizing:border-box;';
+  ov.onclick=e=>{if(e.target===ov)ov.remove();};
+  ov.innerHTML=`<div style="background:var(--surf1);border:1px solid var(--p-line);width:100%;border-radius:16px;padding:16px;">
+    <div style="font-size:15px;font-weight:600;color:var(--p-ink);margin-bottom:4px;">Add a ${_fileEsc(sp)}</div>
+    <div style="font-size:12px;color:var(--p-mut);line-height:1.5;margin-bottom:12px;">Goes under ${_fileEsc((o.name||'this owner').split(' ')[0])}’s file with their own chart, notes and photos. You can fill in the rest on their page.</div>
+    <input id="an-name" placeholder="Name (e.g. Bella)" autocomplete="off" style="width:100%;background:var(--p-bg);border:1px solid var(--p-line);border-radius:10px;padding:11px 12px;font-size:14px;color:var(--p-ink);font-family:inherit;outline:none;box-sizing:border-box;margin-bottom:8px;">
+    <input id="an-breed" placeholder="Breed &amp; age (optional)" autocomplete="off" style="width:100%;background:var(--p-bg);border:1px solid var(--p-line);border-radius:10px;padding:11px 12px;font-size:14px;color:var(--p-ink);font-family:inherit;outline:none;box-sizing:border-box;margin-bottom:12px;">
+    <button onclick="_addAnimalSave('${_jsAttr(ownerId)}')" style="width:100%;background:var(--accent);color:var(--accent-ink);border:none;border-radius:10px;padding:12px;font-size:14px;font-weight:700;cursor:pointer;font-family:inherit;">Add ${_fileEsc(sp)}</button>
+    <button onclick="this.closest('#add-animal-sheet').remove()" style="width:100%;margin-top:8px;background:none;border:1px solid var(--p-line);color:var(--p-mut);border-radius:10px;padding:11px;font-size:13px;cursor:pointer;font-family:inherit;">Cancel</button>
+  </div>`;
+  (document.querySelector('.shell')||document.body).appendChild(ov);
+  setTimeout(()=>{const i=document.getElementById('an-name');if(i)try{i.focus();}catch(e){}},40);
+}
+function _addAnimalSave(ownerId){
+  const o=(typeof CL!=='undefined'&&CL[ownerId])||null;if(!o)return;
+  const nameEl=document.getElementById('an-name'),breedEl=document.getElementById('an-breed');
+  const name=String(nameEl?nameEl.value:'').trim().slice(0,60);
+  if(!name){ if(nameEl)try{nameEl.focus();}catch(e){} if(typeof proToast==='function')proToast('Give them a name first'); return; }
+  const breed=String(breedEl?breedEl.value:'').trim().slice(0,80);
+  const dup=_animalsOf(ownerId).find(k=>String(CL[k].name||'').trim().toLowerCase()===name.toLowerCase());
+  const sh=document.getElementById('add-animal-sheet');if(sh)sh.remove();
+  if(dup){ if(typeof proToast==='function')proToast(name+' is already on this file — opening their chart'); nav('client',dup); return; }
+  const palette=[['var(--p-purple-bg)','var(--p-purple)'],['var(--p-surf2)','var(--p-green)'],['var(--p-blue-bg)','var(--p-blue)'],['var(--p-red-bg)','var(--p-red)'],['var(--p-amber-bg)','var(--accent)']];
+  const col=palette[Object.keys(CL).length%palette.length];
+  const id=_newAnimalId();
+  CL[id]={name,initials:((typeof _initials==='function'?_initials(name):'')||name.slice(0,2).toUpperCase()),
+    bg:col[0],tc:col[1],ownerId,isAnimal:true,species:'Horse',
+    // Deliberately blank, not '—': the equine vitals on this chart map skin→"Breed & age",
+    // concerns→"Discipline / use" and so on, so a placeholder dash would read as real content.
+    skin:breed,concerns:'',allergies:'',fitz:'',currentRoutine:'',medications:'',conditions:'',
+    lastVisit:'—',nextVisit:'Not scheduled',treatment:'New patient',sessions:0,seriesTotal:0,notes:'',
+    email:'',phone:''};
+  try{if(typeof saveClients==='function')saveClients();}catch(e){}
+  if(typeof proToast==='function')proToast(name+' added to '+String(o.name||'this owner').split(' ')[0]+'’s file');
+  nav('client',id);
+}
+
+// The owner's chart gets a list of their animals; each row opens that animal's own chart.
+function _ownerAnimalsHTML(ownerId){
+  if(!_animalMode())return '';
+  const c=(typeof CL!=='undefined'&&CL[ownerId])||null;
+  if(!c||_isAnimal(c))return '';
+  const list=_animalsOf(ownerId);
+  const sp=_speciesWord(list.length!==1);
+  const rows=list.map(aid=>{
+    const a=CL[aid];
+    const bits=[a.skin,a.concerns].map(x=>String(x||'').trim()).filter(x=>x&&x!=='—');
+    return `<button onclick="nav('client','${_jsAttr(aid)}')" style="display:flex;width:100%;align-items:center;gap:10px;padding:10px 12px;background:var(--p-surf2);border:1px solid var(--p-line3);border-radius:10px;margin-bottom:7px;cursor:pointer;font-family:inherit;text-align:left;">
+      <div style="width:34px;height:34px;border-radius:9px;background:${_fileEsc(a.bg||'var(--p-surf3)')};display:flex;align-items:center;justify-content:center;font-size:15px;flex-shrink:0;">\u{1F40E}</div>
+      <div style="flex:1;min-width:0;"><div style="font-size:13.5px;font-weight:600;color:var(--p-ink);">${_fileEsc(a.name)}</div>
+      <div style="font-size:11px;color:var(--p-mut);overflow:hidden;text-overflow:ellipsis;white-space:nowrap;">${bits.length?_fileEsc(bits.join(' · ')):'Tap to fill in their profile'}</div></div>
+      <i class="ti ti-chevron-right" style="font-size:16px;color:var(--p-mut);flex-shrink:0;"></i>
+    </button>`;
+  }).join('');
+  return `<div style="margin:12px 16px 0;background:var(--surf1);border:1px solid var(--p-line3);border-radius:12px;padding:12px 14px;">
+    <div style="display:flex;align-items:center;justify-content:space-between;margin-bottom:9px;">
+      <div style="font-size:11px;font-weight:500;color:var(--p-mut);text-transform:uppercase;letter-spacing:.07em;">${list.length?(list.length+' '+_fileEsc(sp)):'Horses'}</div>
+      <button onclick="_addAnimalSheet('${_jsAttr(ownerId)}')" style="border:none;background:none;font-size:12px;color:var(--accent-strong);cursor:pointer;display:flex;align-items:center;gap:3px;font-family:inherit;"><i class="ti ti-plus" style="font-size:12px;"></i> Add</button>
+    </div>
+    ${rows||`<div style="font-size:12px;color:var(--p-mut);line-height:1.55;padding:4px 0 2px;">No horses on this file yet. Each one gets their own chart, notes, photos and progress — ${_fileEsc(String(c.name||'the owner').split(' ')[0])} stays the contact for all of them.</div>`}
+  </div>`;
+}
+
+// On an animal's chart, say plainly whose horse this is and give one tap back to the owner.
+function _animalOwnerHTML(id){
+  const oid=_ownerIdOf(id);
+  if(!oid)return '';
+  const o=CL[oid],a=CL[id]||{};
+  const sibs=_animalsOf(oid).filter(k=>k!==id);
+  return `<div style="margin:12px 16px 0;background:var(--p-surf2);border:1px solid var(--p-line3);border-radius:12px;padding:11px 13px;">
+    <div style="display:flex;align-items:center;gap:10px;">
+      <i class="ti ti-user" aria-hidden="true" style="font-size:15px;color:var(--accent-strong);flex-shrink:0;"></i>
+      <div style="flex:1;min-width:0;">
+        <div style="font-size:12.5px;color:var(--p-ink);line-height:1.4;">${_fileEsc(a.name||'This horse')} belongs to <b>${_fileEsc(o.name||'their owner')}</b></div>
+        <div style="font-size:11px;color:var(--p-mut);margin-top:1px;">Calls, texts, emails and the app all go to ${_fileEsc(String(o.name||'the owner').split(' ')[0])}${sibs.length?(' · '+sibs.length+' other '+_speciesWord(sibs.length!==1)):''}</div>
+      </div>
+      <button onclick="nav('client','${_jsAttr(oid)}')" style="background:var(--p-surf3);border:1px solid var(--p-line3);color:var(--p-ink);border-radius:8px;padding:7px 11px;font-size:11.5px;font-weight:600;cursor:pointer;font-family:inherit;white-space:nowrap;">Owner</button>
+    </div>
+    ${sibs.length?`<div style="display:flex;flex-wrap:wrap;gap:6px;margin-top:9px;">${sibs.map(sid=>`<button onclick="nav('client','${_jsAttr(sid)}')" style="background:var(--p-surf);border:1px solid var(--p-line3);color:var(--p-mut2);border-radius:999px;padding:5px 11px;font-size:11.5px;cursor:pointer;font-family:inherit;">\u{1F40E} ${_fileEsc(CL[sid].name)}</button>`).join('')}</div>`:''}
+  </div>`;
+}
 function _rosterSub(id,c){
   c=c||{};
+  // An owner's roster line leads with how many animals are on their file. The owner themselves is
+  // never treated, so "Last visit" on their row would be meaningless — the visits belong to a horse.
+  if(typeof _animalMode==='function'&&_animalMode()&&typeof _animalsOf==='function'&&!_isAnimal(c)){
+    const n=_animalsOf(id).length;
+    if(n)return {icon:'ti-horseshoe',color:'var(--accent-strong)',text:n+' '+_speciesWord(n!==1)+' on file'};
+  }
   const na=(typeof _nextApptForClient==='function')?_nextApptForClient(id):null;
   if(na&&na.dateLabel)return {icon:'ti-calendar-event',color:'var(--p-green)',text:'Next: '+na.dateLabel+(na.treatment?' · '+na.treatment:'')};
   if(c.lastVisit)return {icon:'ti-clock',color:'var(--p-mut)',text:'Last visit '+c.lastVisit+(c.treatment?' · '+c.treatment:'')};
@@ -5417,9 +5564,22 @@ function renderClients(){
     if(f==='attention')_ent=_ent.filter(([id,c])=>_clientNeedsAttention(id,c));
     else if(f==='upcoming')_ent=_ent.filter(([id])=>_clientNextApptMs(id)!=null);
     if(f==='upcoming'){_ent.sort((a,b)=>((_clientNextApptMs(a[0])==null?Infinity:_clientNextApptMs(a[0]))-(_clientNextApptMs(b[0])==null?Infinity:_clientNextApptMs(b[0]))));}
-    else{_ent.sort((a,b)=>String(a[1].name||'').localeCompare(String(b[1].name||''),undefined,{sensitivity:'base'}));}
+    else{
+      // Group animals under their owner: an owner sorts by their own name, an animal by its owner's
+      // name plus its own. Without this a horse would land alphabetically miles from its owner.
+      const _key=(id,c)=>{
+        const oid=(typeof _ownerIdOf==='function')?_ownerIdOf(id):'';
+        const own=oid?String((CL[oid]&&CL[oid].name)||''):String(c.name||'');
+        return own.toLowerCase()+(oid?('\u0001'+String(c.name||'').toLowerCase()):'\u0000');
+      };
+      _ent.sort((a,b)=>_key(a[0],a[1]).localeCompare(_key(b[0],b[1]),undefined,{sensitivity:'base'}));
+    }
     if(!_ent.length)return `<div style="margin:0 16px;background:var(--surf2);border:1px solid var(--p-line);border-radius:12px;padding:22px 16px;text-align:center;color:var(--p-mut);font-size:13px;">${f==='attention'?'Nothing needs your attention right now 🎉':'No clients with an upcoming appointment.'}</div>`;
-    return _ent.map(([id,c])=>{const _rs=_rosterSub(id,c),_rb=_rosterBadges(id,c);return `<div class="card client-card" data-search="${((c.name||'')+' '+(c.treatment||'')).toLowerCase().normalize('NFD').replace(/[̀-ͯ]/g,'').replace(/['‘’`"]/g,'').replace(/[^a-z0-9 ]/g,' ').replace(/\s+/g,' ').trim()}" onclick="nav('client','${id}')"><div class="row"><div style="flex:1;min-width:0;"><div style="display:flex;align-items:center;gap:7px;"><span style="font-size:15px;font-weight:500;color:var(--p-ink);">${_fileEsc(c.name)}</span>${(id==='maya'||id==='sophie'||id==='priya')?`<span onclick="event.stopPropagation();showDemoInfo()" title="What are demo clients?" style="font-size:9px;font-weight:700;color:var(--p-mut2);border:1px solid var(--p-green-line);background:var(--p-surf3);border-radius:4px;padding:1px 5px;letter-spacing:.03em;cursor:pointer;">DEMO</span>`:''}</div><div style="display:flex;align-items:center;gap:5px;margin-top:2px;font-size:12px;color:${_rs.color};overflow:hidden;"><i class="ti ${_rs.icon}" style="font-size:12px;flex-shrink:0;"></i><span style="overflow:hidden;text-overflow:ellipsis;white-space:nowrap;">${_fileEsc(_rs.text)}</span></div></div><div style="display:flex;align-items:center;gap:6px;flex-shrink:0;">${_rb}<i aria-hidden="true" class="ti ti-chevron-right" style="font-size:16px;color:var(--p-mut);"></i></div></div></div>`;}).join('');})()}
+    return _ent.map(([id,c])=>{const _rs=_rosterSub(id,c),_rb=_rosterBadges(id,c);
+      // An animal's row is searchable by its owner's name as well, so "Sarah" finds Sarah's horses.
+      const _oid=(typeof _ownerIdOf==='function')?_ownerIdOf(id):'';
+      const _extra=_oid?(' '+String((CL[_oid]&&CL[_oid].name)||'')):'';
+      return `<div class="card client-card" data-owner="${_oid?'1':''}"${_oid?' style="margin-left:26px;"':''} data-search="${((c.name||'')+' '+(c.treatment||'')+_extra).toLowerCase().normalize('NFD').replace(/[̀-ͯ]/g,'').replace(/['‘’`"]/g,'').replace(/[^a-z0-9 ]/g,' ').replace(/\s+/g,' ').trim()}" onclick="nav('client','${id}')"><div class="row"><div style="flex:1;min-width:0;"><div style="display:flex;align-items:center;gap:7px;"><span style="font-size:15px;font-weight:500;color:var(--p-ink);">${_oid?'\u{1F40E} ':''}${_fileEsc(c.name)}</span>${(id==='maya'||id==='sophie'||id==='priya')?`<span onclick="event.stopPropagation();showDemoInfo()" title="What are demo clients?" style="font-size:9px;font-weight:700;color:var(--p-mut2);border:1px solid var(--p-green-line);background:var(--p-surf3);border-radius:4px;padding:1px 5px;letter-spacing:.03em;cursor:pointer;">DEMO</span>`:''}</div><div style="display:flex;align-items:center;gap:5px;margin-top:2px;font-size:12px;color:${_rs.color};overflow:hidden;"><i class="ti ${_rs.icon}" style="font-size:12px;flex-shrink:0;"></i><span style="overflow:hidden;text-overflow:ellipsis;white-space:nowrap;">${_fileEsc(_rs.text)}</span></div></div><div style="display:flex;align-items:center;gap:6px;flex-shrink:0;">${_rb}<i aria-hidden="true" class="ti ti-chevron-right" style="font-size:16px;color:var(--p-mut);"></i></div></div></div>`;}).join('');})()}
   ${_noRes('clients-noresults','No clients match your search.')}`;
 }
 // ── "Ask your book": natural-language search over the client roster (who's due, allergies, etc.). ──
@@ -5791,12 +5951,19 @@ function renderClient(id){
   const c=CL[id];
   if(!c){if(typeof renderClients==='function'){return renderClients();}S.innerHTML='<div style="padding:30px 16px;color:var(--p-mut);text-align:center;">This client is no longer available.</div>';return;}
   if(_clientTabFor!==id){_clientTab='overview';_clientTabFor=id;}
+  // An animal has no contact details of its own — email, phone and birthday belong to its owner, and
+  // that's who every call, text and email actually goes to. Show (and edit) theirs rather than three
+  // empty rows that look like missing data.
+  const _oc=(typeof _ownerIdOf==='function')?_ownerIdOf(id):'';
+  const _ocC=_oc?(CL[_oc]||{}):c;
   document.getElementById('tt').textContent=c.name;
   S.innerHTML=`
   <div id="client-screen-${id}" hidden></div>
   <div style="padding:12px 16px 0;display:flex;align-items:center;justify-content:space-between;"><button onclick="exportClientFile('${id}')" aria-label="Export or print client file" style="background:var(--accent-tint);border:1px solid var(--accent-a30,var(--p-line3));color:var(--accent-strong);border-radius:8px;padding:5px 11px;font-size:11px;font-weight:600;cursor:pointer;display:inline-flex;align-items:center;gap:5px;font-family:inherit;"><i class="ti ti-file-download" style="font-size:13px;"></i> Export file</button><button onclick="deleteClient('${id}')" aria-label="Remove client" style="background:none;border:1px solid var(--p-red-line);color:var(--p-red);border-radius:8px;padding:5px 10px;font-size:11px;font-weight:600;cursor:pointer;display:inline-flex;align-items:center;gap:5px;font-family:inherit;"><i class="ti ti-trash" style="font-size:12px;"></i> Remove</button></div>
   <div style="padding:14px 16px 0;display:flex;flex-direction:column;align-items:center;gap:8px;">${av(c,64)}<div style="text-align:center;"><div style="font-size:18px;font-weight:500;color:var(--p-ink);">${_fileEsc(c.name)}</div><div style="font-size:13px;color:var(--p-mut);display:inline-flex;align-items:center;gap:6px;">${_fileEsc(c.treatment)} <button onclick="_editClientDetails('${id}')" style="border:1px solid var(--accent-a30,var(--p-line3));background:var(--accent-tint);color:var(--accent-strong);cursor:pointer;padding:3px 9px;border-radius:20px;line-height:1;display:inline-flex;align-items:center;gap:3px;font-size:11px;font-weight:600;font-family:inherit;"><i class="ti ti-pencil" style="font-size:11px;"></i> Edit</button></div></div></div>
-  <div style="margin:14px 16px 0;background:var(--surf1);border:1px solid var(--p-line3);border-radius:12px;padding:12px 14px;"><div style="display:flex;justify-content:space-between;align-items:center;margin-bottom:8px;"><span style="font-size:11px;color:var(--p-mut);text-transform:uppercase;letter-spacing:.06em;">Contact</span><button onclick="_editClientDetails('${id}')" style="background:var(--accent-tint);border:1px solid var(--accent-a30,var(--p-line3));color:var(--accent-strong);border-radius:8px;padding:4px 10px;font-size:11px;font-weight:600;cursor:pointer;font-family:inherit;"><i class="ti ti-pencil" style="font-size:11px;"></i> Edit</button></div><div style="font-size:13px;color:var(--p-mut);line-height:1.9;word-break:break-word;overflow-wrap:anywhere;"><div><i class="ti ti-mail" style="color:var(--p-mut);margin-right:7px;"></i>${c.email?String(c.email).replace(/</g,'&lt;'):'<span style="color:var(--p-mut);">No email</span>'}</div><div><i class="ti ti-phone" style="color:var(--p-mut);margin-right:7px;"></i>${c.phone?_fmtPhone(c.phone).replace(/</g,'&lt;'):'<span style="color:var(--p-mut);">No phone</span>'}</div><div><i class="ti ti-cake" style="color:var(--p-mut);margin-right:7px;"></i>${c.birthday?_fmtDOB(c.birthday):'<span style="color:var(--p-mut);">No date of birth</span>'}</div></div></div>
+  <div style="margin:14px 16px 0;background:var(--surf1);border:1px solid var(--p-line3);border-radius:12px;padding:12px 14px;"><div style="display:flex;justify-content:space-between;align-items:center;margin-bottom:8px;"><span style="font-size:11px;color:var(--p-mut);text-transform:uppercase;letter-spacing:.06em;">${_oc?('Contact \u00b7 '+_fileEsc(String(_ocC.name||'owner').split(' ')[0])):'Contact'}</span><button onclick="_editClientDetails('${_oc||id}')" style="background:var(--accent-tint);border:1px solid var(--accent-a30,var(--p-line3));color:var(--accent-strong);border-radius:8px;padding:4px 10px;font-size:11px;font-weight:600;cursor:pointer;font-family:inherit;"><i class="ti ti-pencil" style="font-size:11px;"></i> Edit</button></div><div style="font-size:13px;color:var(--p-mut);line-height:1.9;word-break:break-word;overflow-wrap:anywhere;"><div><i class="ti ti-mail" style="color:var(--p-mut);margin-right:7px;"></i>${_ocC.email?String(_ocC.email).replace(/</g,'&lt;'):'<span style="color:var(--p-mut);">No email</span>'}</div><div><i class="ti ti-phone" style="color:var(--p-mut);margin-right:7px;"></i>${_ocC.phone?_fmtPhone(_ocC.phone).replace(/</g,'&lt;'):'<span style="color:var(--p-mut);">No phone</span>'}</div>${_oc?'':`<div><i class="ti ti-cake" style="color:var(--p-mut);margin-right:7px;"></i>${c.birthday?_fmtDOB(c.birthday):'<span style="color:var(--p-mut);">No date of birth</span>'}</div>`}</div></div>
+  ${(typeof _animalOwnerHTML==='function')?_animalOwnerHTML(id):''}
+  ${(typeof _ownerAnimalsHTML==='function')?_ownerAnimalsHTML(id):''}
   ${c.flaggedContra?`<div style="margin:12px 16px 0;background:var(--p-red-bg);border:1px solid var(--p-red-line);border-radius:12px;padding:12px 14px;">
     <div style="display:flex;align-items:center;gap:8px;margin-bottom:6px;"><i class="ti ti-alert-triangle" style="font-size:16px;color:var(--p-red);"></i><span style="font-size:13px;font-weight:700;color:var(--p-red);">Flagged on intake, review before the visit</span></div>
     <div style="font-size:11px;color:var(--p-red);margin-bottom:7px;">${_fileEsc(c.name.split(' ')[0])} marked these on "${_fileEsc(c.flaggedContra.form)}" (${_fileEsc(c.flaggedContra.date)}):</div>
