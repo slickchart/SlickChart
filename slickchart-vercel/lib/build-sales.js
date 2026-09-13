@@ -169,15 +169,62 @@ export function accessEmailBody(sessionId, links) {
       + 'Your access page, any time: ' + back + '\n\n'
       + 'Lost this email? You do not need it. Go to ' + accessUrl + ', put in the\n'
       + 'email you paid with, and it comes straight back to you.\n\n- Ashley',
-    html: '<div style="font-family:-apple-system,Segoe UI,Roboto,sans-serif;font-size:15px;line-height:1.65;color:#1a2a28;">'
-      + '<p>You’re in.</p>'
-      + '<p><b>1. Start here</b> — watch this first:<br><a href="' + links.videoUrl + '">' + links.videoUrl + '</a></p>'
-      + '<p><b>2. The system itself</b>:<br><a href="' + links.artifactUrl + '">' + links.artifactUrl + '</a><br>'
-      + '<span style="color:#5D5149;font-size:13.5px;">Pin it in Claude as soon as it opens — it then lives in your sidebar.</span></p>'
-      + '<p style="font-size:13.5px;color:#5D5149;"><b style="color:#1a2a28;">Using the Claude desktop app?</b> Pinning is saved to your Claude account, not to a browser — pin it once and it’s in your sidebar there too. Then pick one place and stay in it: your ticks save where you tick them.</p>'
-      + '<p>Your <a href="' + back + '">access page</a>, any time.</p>'
-      + '<p style="font-size:13.5px;color:#5D5149;"><b style="color:#1a2a28;">Lost this email?</b> You don\u2019t need it \u2014 go to <a href="' + accessUrl + '">' + accessLabel + '</a>, put in the email you paid with, and it comes straight back to you.</p>'
-      + '<p>— Ashley</p></div>'
+    // Built to the same shape as the SlickChart welcome email (dark brand header, light body, cards)
+    // so the two read as one business. Email-safe throughout: tables not flex, inline styles only, no
+    // web fonts (Georgia stands in for Fraunces), and a solid teal under the gradient because Outlook
+    // drops background-image and would otherwise render dark text on nothing.
+    html: '<div style="background:#f4f8f7;padding:22px 10px;">'
+      + '<div style="font-family:-apple-system,BlinkMacSystemFont,Segoe UI,Roboto,sans-serif;max-width:560px;margin:0 auto;background:#ffffff;border-radius:16px;overflow:hidden;box-shadow:0 1px 3px rgba(0,0,0,.06);">'
+
+      + '<div style="background:#0a1719;padding:26px 24px;text-align:center;color:#eaf6f4;">'
+      // The wordmark is TEXT, not an image. Most mail clients block remote images by default, and the
+      // image version left a broken-image box sitting where the brand should be. The logo mark stays
+      // as an image because alt="" makes it vanish cleanly when blocked, rather than leaving a gap.
+      + '<img src="https://slickchart.app/assets/slickchart-logo.png" width="40" height="40" alt="" style="display:block;margin:0 auto 8px;border:0;background:#0a1719;">'
+      + '<div style="font-size:21px;font-weight:700;letter-spacing:-.01em;color:#eaf6f4;line-height:1.2;">Slick<span style="color:#2bc7ac;">Chart</span></div>'
+      + '<div style="height:1px;width:34px;background:#2bc7ac;opacity:.5;margin:11px auto;"></div>'
+      + '<div style="font-family:Georgia,\'Times New Roman\',serif;font-size:18px;color:#6fdca6;letter-spacing:.01em;">Build Your Own App</div>'
+      + '</div>'
+
+      + '<div style="padding:30px 26px 8px;color:#1a2a28;">'
+      + '<div style="font-family:Georgia,\'Times New Roman\',serif;font-size:30px;line-height:1.2;margin:0 0 8px;color:#0a1719;">You’re in.</div>'
+      + '<p style="font-size:15.5px;line-height:1.7;color:#5D5149;margin:0 0 26px;">Everything you bought is right here. Do them in order — the video first.</p>'
+
+      + '<table role="presentation" cellpadding="0" cellspacing="0" style="width:100%;border-collapse:collapse;margin:0 0 6px;"><tr>'
+      + '<td width="34" valign="top" style="padding:0 0 4px;"><div style="width:26px;height:26px;border-radius:50%;background:#2bc7a2;color:#03201e;font-size:13px;font-weight:700;text-align:center;line-height:26px;">1</div></td>'
+      + '<td valign="top" style="padding:0 0 4px;"><div style="font-family:Georgia,\'Times New Roman\',serif;font-size:19px;color:#0a1719;line-height:1.3;">Watch this first</div>'
+      + '<p style="font-size:14.5px;line-height:1.65;color:#5D5149;margin:5px 0 12px;">Short, and it’s the part that stops you starting in the wrong place.</p>'
+      + '<a href="' + links.videoUrl + '" style="background:#2bc7a2;background-image:linear-gradient(135deg,#19b8bf 0%,#2bc7a2 52%,#6fdca6 100%);color:#03201e;text-decoration:none;font-weight:700;padding:13px 26px;border-radius:999px;display:inline-block;font-size:15px;">Watch the intro &rarr;</a>'
+      + '</td></tr></table>'
+
+      + '<div style="height:1px;background:#e6eeec;margin:26px 0;"></div>'
+
+      + '<table role="presentation" cellpadding="0" cellspacing="0" style="width:100%;border-collapse:collapse;"><tr>'
+      + '<td width="34" valign="top" style="padding:0 0 4px;"><div style="width:26px;height:26px;border-radius:50%;background:#2bc7a2;color:#03201e;font-size:13px;font-weight:700;text-align:center;line-height:26px;">2</div></td>'
+      + '<td valign="top" style="padding:0 0 4px;"><div style="font-family:Georgia,\'Times New Roman\',serif;font-size:19px;color:#0a1719;line-height:1.3;">Open the system</div>'
+      + '<p style="font-size:14.5px;line-height:1.65;color:#5D5149;margin:5px 0 12px;">The Master Build Roadmap — every step, every prompt, in order.</p>'
+      + '<a href="' + links.artifactUrl + '" style="background:#2bc7a2;background-image:linear-gradient(135deg,#19b8bf 0%,#2bc7a2 52%,#6fdca6 100%);color:#03201e;text-decoration:none;font-weight:700;padding:13px 26px;border-radius:999px;display:inline-block;font-size:15px;">Open the roadmap &rarr;</a>'
+      + '</td></tr></table>'
+
+      + '<div style="background:#eef6f4;border-radius:12px;padding:17px 19px;margin:26px 0 0;">'
+      + '<div style="font-size:11.5px;font-weight:700;color:#1e9e88;text-transform:uppercase;letter-spacing:.06em;margin-bottom:9px;">Two things that save you a headache</div>'
+      + '<p style="font-size:14px;line-height:1.7;color:#3a3a3a;margin:0 0 10px;"><b>Pin it the moment it opens.</b> Use the menu on the page and choose Pin, and it lives in your sidebar instead of getting lost in old chats. Pinning is saved to your Claude account, not to a browser — so it’s in the desktop app too, with nothing to install.</p>'
+      + '<p style="font-size:14px;line-height:1.7;color:#3a3a3a;margin:0;"><b>Then pick one place and stay in it.</b> Your ticks save where you tick them, so if you start in the desktop app, keep going there.</p>'
+      + '</div>'
+
+      + '<div style="border:1px solid #e6eeec;border-radius:12px;padding:16px 19px;margin:14px 0 0;">'
+      + '<p style="font-size:13.5px;line-height:1.65;color:#5D5149;margin:0;"><b style="color:#1a2a28;">Lost this email?</b> You don’t need it. Go to <a href="' + accessUrl + '" style="color:#1e9e88;">' + accessLabel + '</a>, put in the email you paid with, and it comes straight back to you. Your <a href="' + back + '" style="color:#1e9e88;">access page</a> is always there too.</p>'
+      + '</div>'
+
+      + '<p style="font-size:15px;line-height:1.7;margin:26px 0 0;color:#1a2a28;">Go build it.<br><strong>Ashley</strong><br><span style="color:#999;font-size:13px;">Founder, SlickChart · Botanical Aesthetics</span></p>'
+      + '</div>'
+
+      + '<div style="padding:20px 26px 24px;text-align:center;">'
+      + '<p style="font-size:12px;line-height:1.6;color:#9aa8a5;margin:0;">Licensed to one buyer for their own use. Please don’t resell or share it.<br>'
+      + 'Questions? Just reply — it reaches me.</p>'
+      + '</div>'
+
+      + '</div></div>'
   };
 }
 

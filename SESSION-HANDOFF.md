@@ -140,6 +140,13 @@ are set, a paid buyer is told their purchase went through and where to email —
 
 Extra env vars beyond the three above: `BUILD_AUDIENCE_ID` (optional; unset = no Resend sync).
 
+**Rendering an email to look at it.** `CLAUDE.md` §3 says not to import `lib/*` locally because
+`@neondatabase/serverless` isn't installed — but a two-line stub at
+`slickchart-vercel/node_modules/@neondatabase/serverless/` (gitignored, already there) makes it
+importable, so `accessEmailBody()` can be rendered to real HTML and screenshotted instead of eyeballed
+as a string. That is how the branded access email was checked, including what it looks like with
+images blocked.
+
 There is also a `~/Desktop/Build-Your-Own-App/` folder on Ashley's Mac (START-HERE, PROMPTS, docs, the
 video). Nothing from it is in this repo; the four files above were written from scratch to keep it
 simple. If anything there needs porting, read it first rather than assuming.
