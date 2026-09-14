@@ -4276,7 +4276,7 @@ async function _restorePhotosFromCloud(){
 // starves everything else (Ashley opened the app to six of these holding 3MB, and nothing could save).
 // Shown at the bottom of More → Storage & backups. "Refresh and try again" is useless advice if
 // neither of us can tell which build a device is actually running. Bumped with every deploy.
-const SC_BUILD='2026-09-14 · b15';
+const SC_BUILD='2026-09-14 · b16';
 const _ROOM_DRAFT_PER_CLIENT=180000;   // chars of base64 per client draft
 const _ROOM_DRAFT_TOTAL=420000;        // chars of base64 across ALL drafts
 function _roomDraftKey(id){return 'sc_room_draft_'+(id||'');}
@@ -19837,7 +19837,8 @@ function _newsSeen(){try{if(_news[0])localStorage.setItem('sc_seen_news',String(
 
 function renderBetaStats(){
   setNav('more');document.getElementById('tt').textContent='Growth Stats';
-  S.innerHTML=`<div style="padding:14px 16px 4px;"><div style="font-size:13px;color:var(--p-mut);line-height:1.5;">Square adoption across your clients \u2014 the numbers you\u2019ll want when applying to the Square App Marketplace. \ud83d\udcc8</div></div><div id="bstat" style="padding:12px 16px;color:var(--p-mut);font-size:13px;">Loading\u2026</div>`;
+  S.innerHTML=`<div style="padding:14px 16px 4px;"><div style="font-size:13px;color:var(--p-mut);line-height:1.5;">Square adoption across your clients \u2014 the numbers you\u2019ll want when applying to the Square App Marketplace. \ud83d\udcc8</div></div><div id="emaillist" style="padding:0 16px;"></div><div id="bstat" style="padding:12px 16px;color:var(--p-mut);font-size:13px;">Loading\u2026</div>`;
+  _loadEmailList();
   _loadBetaStats();
 }
 async function _downloadWaitlistCSV(){
@@ -19868,6 +19869,51 @@ async function _downloadBuildBuyersCSV(){
     setTimeout(function(){URL.revokeObjectURL(url);},1500);
     proToast&&proToast('Buyer list downloaded');
   }catch(e){proToast&&proToast('Could not download right now');}
+}
+// One list, every product. `all` grabs the full picture including the people who said no and the
+// people who unsubscribed — the plain download is the mailable set, because that is the file that
+// gets imported into a mail tool six months from now, and a "no" surviving that trip is how
+// somebody gets emailed who asked not to be.
+async function _downloadEmailListCSV(all){
+  try{
+    const tok=(typeof Cloud!=='undefined'&&Cloud&&Cloud.token)||'';
+    const r=await fetch('/api/admin/contacts?format=csv'+(all?'&all=1':''),{headers:tok?{'Authorization':'Bearer '+tok}:{}});
+    if(r.status===403){proToast&&proToast('Owner only');return;}
+    if(!r.ok){proToast&&proToast('Could not download right now');return;}
+    const text=await r.text();
+    const url=URL.createObjectURL(new Blob([text],{type:'text/csv'}));
+    const a=document.createElement('a');a.href=url;a.download=all?'slickchart-email-list-everyone.csv':'slickchart-email-list.csv';
+    document.body.appendChild(a);a.click();a.remove();
+    setTimeout(function(){URL.revokeObjectURL(url);},1500);
+    proToast&&proToast(all?'Full list downloaded':'Email list downloaded');
+  }catch(e){proToast&&proToast('Could not download right now');}
+}
+// Loaded after the stats render, so a slow query never holds up the rest of the screen.
+async function _loadEmailList(){
+  const el=document.getElementById('emaillist');if(!el)return;
+  try{
+    const tok=(typeof Cloud!=='undefined'&&Cloud&&Cloud.token)||'';
+    const r=await fetch('/api/admin/contacts',{headers:tok?{'Authorization':'Bearer '+tok}:{}});
+    if(!r.ok){el.innerHTML='';return;}
+    const j=await r.json();const c=(j&&j.counts)||{};const by=c.bySource||{};
+    const row=function(label,n){return '<div style="display:flex;justify-content:space-between;font-size:13px;color:var(--p-ink);padding:6px 0;border-bottom:1px solid var(--p-line2);"><span>'+label+'</span><span style="font-weight:600;">'+(n||0)+'</span></div>';};
+    el.innerHTML=`<div style="margin-top:12px;background:var(--surf1);border:1px solid var(--p-line3);border-radius:14px;padding:14px 16px;">
+      <div style="font-size:11px;color:var(--p-mut);text-transform:uppercase;letter-spacing:.06em;margin-bottom:10px;">Email list \u2014 everything, in one place</div>
+      <div style="display:flex;align-items:flex-end;gap:18px;flex-wrap:wrap;margin-bottom:10px;">
+        <div><div style="font-size:28px;font-weight:700;color:var(--p-green);line-height:1;">${c.mailable||0}</div><div style="font-size:12px;color:var(--p-mut);margin-top:6px;">You can email</div></div>
+        <div><div style="font-size:28px;font-weight:700;color:var(--p-ink);line-height:1;">${c.total||0}</div><div style="font-size:12px;color:var(--p-mut);margin-top:6px;">People in total</div></div>
+      </div>
+      ${row('SlickChart accounts',by.slickchart)}
+      ${row('SlickChart waitlist',by.waitlist)}
+      ${row('Build Your Own App buyers',by.build)}
+      ${row('Free starter',by.freebie)}
+      <div style="font-size:11.5px;color:var(--p-mut);margin:10px 0 0;line-height:1.55;">Someone on two of these is one person here, not two. ${(c.unsubscribed||0)?'<b style="color:var(--p-ink);">'+c.unsubscribed+'</b> unsubscribed':'Nobody has unsubscribed'}${(c.notAsked||0)?' \u00b7 <b style="color:var(--p-ink);">'+c.notAsked+'</b> never asked about marketing':''}${(c.declined||0)?' \u00b7 <b style="color:var(--p-ink);">'+c.declined+'</b> said no':''}. Those are left out of the download.</div>
+      <div style="display:flex;gap:8px;flex-wrap:wrap;margin-top:12px;">
+        <button onclick="_downloadEmailListCSV(false)" style="flex:1;min-width:150px;background:#2BC7AC;border:none;color:#03201e;border-radius:10px;padding:11px 15px;font-size:13px;font-weight:700;cursor:pointer;font-family:inherit;"><i class="ti ti-download" style="margin-right:5px;"></i>Download list</button>
+        <button onclick="_downloadEmailListCSV(true)" style="background:transparent;border:1px solid var(--p-line3);color:var(--p-ink);border-radius:10px;padding:11px 14px;font-size:12.5px;font-weight:600;cursor:pointer;font-family:inherit;">Everyone</button>
+      </div>
+    </div>`;
+  }catch(e){el.innerHTML='';}
 }
 async function _loadBetaStats(){
   const el=document.getElementById('bstat');if(!el)return;
