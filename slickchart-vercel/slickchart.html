@@ -4074,7 +4074,7 @@ async function _restorePhotosFromCloud(){
 // starves everything else (Ashley opened the app to six of these holding 3MB, and nothing could save).
 // Shown at the bottom of More → Storage & backups. "Refresh and try again" is useless advice if
 // neither of us can tell which build a device is actually running. Bumped with every deploy.
-const SC_BUILD='2026-09-14 · b10';
+const SC_BUILD='2026-09-14 · b11';
 const _ROOM_DRAFT_PER_CLIENT=180000;   // chars of base64 per client draft
 const _ROOM_DRAFT_TOTAL=420000;        // chars of base64 across ALL drafts
 function _roomDraftKey(id){return 'sc_room_draft_'+(id||'');}
@@ -16938,6 +16938,131 @@ async function _deviceStorageStats(){
   out.evictable=await _evictableFileCache();
   return out;
 }
+// ── Clients that are no longer in Square ──────────────────────────────────────────────────────
+// The Square import is deliberately ADDITIVE — it never removes a client, because a sync glitch
+// that quietly deleted charts would be far worse than a stale name. The cost is that cleaning out
+// Square does not clean out SlickChart: Ashley's directory is 693 and her app held 836.
+//
+// So: compare the two, say exactly what the difference is, and let her remove the empties. Nothing
+// here deletes anything on its own, nothing touches Square, and a client with ANY chart data —
+// notes, forms, photos, messages, appointments — is never pre-selected, whatever Square says.
+function _normName(s){return String(s||'').toLowerCase().normalize('NFD').replace(/[̀-ͯ]/g,'').replace(/[^a-z0-9]/g,'');}
+function _normPhone(s){return String(s||'').replace(/[^0-9]/g,'').slice(-10);}
+function _clientChartWeight(c){
+  // What would be LOST by removing this record. Anything above zero means hands off by default.
+  let n=0;
+  try{
+    if(!c)return 0;
+    n+=(c.submittedForms||[]).length+(c.signedForms||[]).length;
+    n+=(c.sessions||[]).length;
+    if(c.notes&&String(c.notes).trim())n++;
+    if(c.lastCheckin)n++;
+    if(c.flaggedContra)n++;
+    try{n+=((typeof capturedPhotos!=='undefined'&&capturedPhotos[c.id])||[]).length;}catch(e){}
+    try{if(typeof vcSubmissions!=='undefined'&&vcSubmissions[c.id])n++;}catch(e){}
+    try{const ms=(typeof msgStore!=='undefined'&&msgStore[c.id])||null;if(ms&&ms.length)n+=ms.length;}catch(e){}
+  }catch(e){}
+  return n;
+}
+async function _fetchSquareDirectory(){
+  const tok=(typeof Cloud!=='undefined'&&Cloud&&Cloud.token)||'';
+  if(!tok)return null;
+  try{
+    const r=await fetch('/api/square/customers',{headers:{'Authorization':'Bearer '+tok}});
+    if(!r.ok)return null;
+    const j=await r.json();
+    const list=(j&&(j.customers||j.clients))||[];
+    if(!Array.isArray(list))return null;
+    return list;
+  }catch(e){return null;}
+}
+// Which of her SlickChart clients have no counterpart in the live Square directory?
+async function _clientsNotInSquare(){
+  const sq=await _fetchSquareDirectory();
+  if(!sq)return null;                       // could not ask Square — never guess, never offer to delete
+  const byId={},byEmail={},byPhone={},byName={};
+  sq.forEach(function(s){
+    if(!s)return;
+    if(s.id)byId[s.id]=1;
+    if(s.email)byEmail[String(s.email).toLowerCase()]=1;
+    const p=_normPhone(s.phone);if(p)byPhone[p]=1;
+    const n=_normName(s.name||((s.given_name||'')+' '+(s.family_name||'')));if(n)byName[n]=1;
+  });
+  const out=[];
+  Object.keys(CL||{}).forEach(function(id){
+    const c=CL[id];if(!c)return;
+    const sid=c.squareId||c.sqId||(String(id).indexOf('sq_')===0?String(id).slice(3):'');
+    if(sid&&byId[sid])return;
+    if(c.email&&byEmail[String(c.email).toLowerCase()])return;
+    const p=_normPhone(c.phone);if(p&&byPhone[p])return;
+    const n=_normName(c.name);if(n&&byName[n])return;
+    out.push({id:id,name:c.name||'(no name)',weight:_clientChartWeight(c)});
+  });
+  out.sort(function(a,b){return a.weight-b.weight||String(a.name).localeCompare(String(b.name));});
+  return {total:Object.keys(CL||{}).length,inSquare:sq.length,extra:out};
+}
+function _closeCleanup(){try{const el=document.getElementById('client-cleanup');if(el)el.remove();}catch(e){}}
+async function openClientCleanup(){
+  _closeCleanup();
+  const ov=document.createElement('div');ov.id='client-cleanup';
+  ov.style.cssText='position:fixed;top:0;bottom:0;left:0;right:0;margin:0 auto;width:390px;max-width:100%;z-index:99999;background:rgba(0,0,0,.72);display:flex;align-items:flex-end;justify-content:center;';
+  ov.onclick=function(e){if(e.target===ov)_closeCleanup();};
+  const shell=function(inner){return `<div role="dialog" aria-modal="true" aria-label="Clients not in Square" style="background:var(--surf2);border-top-left-radius:18px;border-top-right-radius:18px;width:100%;max-height:86%;overflow:auto;-webkit-overflow-scrolling:touch;border:1px solid var(--p-line);border-bottom:none;">
+    <div style="position:sticky;top:0;background:var(--surf2);padding:16px 18px 10px;border-bottom:1px solid var(--p-line2);display:flex;align-items:center;justify-content:space-between;gap:10px;">
+      <div><div style="font-size:15.5px;font-weight:700;color:var(--p-ink);">Tidy up your client list</div>
+      <div style="font-size:12px;color:var(--p-mut);margin-top:2px;">Compares this app against your Square directory</div></div>
+      <button onclick="_closeCleanup()" aria-label="Close" style="border:none;background:var(--surf1);color:var(--p-mut);border-radius:9px;width:30px;height:30px;flex-shrink:0;cursor:pointer;font-size:15px;">✕</button>
+    </div>
+    <div id="cleanup-body" style="padding:14px 18px 26px;">${inner}</div></div>`;};
+  ov.innerHTML=shell('<div style="padding:26px 0;text-align:center;font-size:13px;color:var(--p-mut);">Asking Square for your directory…</div>');
+  (document.querySelector('.shell')||document.body).appendChild(ov);
+
+  const rep=await _clientsNotInSquare();
+  const box=document.getElementById('cleanup-body');if(!box)return;
+  if(!rep){
+    box.innerHTML='<div style="padding:22px 0;text-align:center;font-size:13px;color:var(--p-mut);line-height:1.6;">Couldn’t reach your Square directory just now, so there is nothing safe to compare against.<br><br>Nothing has been changed. Try again in a moment.</div>';
+    return;
+  }
+  window._cleanupRep=rep;
+  const empties=rep.extra.filter(function(x){return x.weight===0;});
+  const withData=rep.extra.filter(function(x){return x.weight>0;});
+  box.innerHTML=`
+    <div style="font-size:13px;color:var(--p-ink);line-height:1.7;margin-bottom:14px;">
+      This app has <b>${rep.total}</b> client${rep.total===1?'':'s'}. Your Square directory has <b>${rep.inSquare}</b>.
+      ${rep.extra.length?`<b>${rep.extra.length}</b> ${rep.extra.length===1?'is':'are'} here but not in Square — almost always people you removed from Square later, since the import only ever adds.`:`Everything here matches Square. Nothing to tidy.`}
+    </div>
+    ${empties.length?`<div style="background:var(--surf1);border:1px solid var(--p-line);border-radius:13px;padding:14px;margin-bottom:12px;">
+      <div style="font-size:13.5px;font-weight:650;color:var(--p-ink);margin-bottom:5px;">${empties.length} with nothing on their chart</div>
+      <div style="font-size:12.5px;color:var(--p-mut);line-height:1.6;margin-bottom:11px;">No notes, forms, photos, messages or appointments — just a name. Removing these frees space and shortens every list. It does <b>not</b> touch Square.</div>
+      <button onclick="_runClientCleanup()" style="width:100%;background:var(--accent);color:var(--accent-ink);border:none;border-radius:10px;padding:11px;font-size:13px;font-weight:700;cursor:pointer;font-family:inherit;">Remove these ${empties.length}</button>
+    </div>`:''}
+    ${withData.length?`<div style="background:var(--surf1);border:1px solid var(--p-line3);border-radius:13px;padding:14px;">
+      <div style="font-size:13.5px;font-weight:650;color:var(--p-ink);margin-bottom:5px;">${withData.length} not in Square, but with real chart data</div>
+      <div style="font-size:12.5px;color:var(--p-mut);line-height:1.6;margin-bottom:10px;">These have notes, forms, photos or messages, so they are left alone. Remove any of them yourself from their own page if you want to.</div>
+      <div style="max-height:190px;overflow:auto;">${withData.slice(0,60).map(function(x){return `<div style="display:flex;justify-content:space-between;gap:10px;font-size:12px;color:var(--p-mut);padding:4px 0;border-top:1px solid var(--p-line2);"><span style="min-width:0;overflow:hidden;text-overflow:ellipsis;white-space:nowrap;">${_fileEsc(x.name)}</span><span style="flex-shrink:0;">${x.weight} item${x.weight===1?'':'s'}</span></div>`;}).join('')}</div>
+    </div>`:''}`;
+}
+function _runClientCleanup(){
+  const rep=window._cleanupRep;if(!rep)return;
+  const empties=rep.extra.filter(function(x){return x.weight===0;});
+  if(!empties.length)return;
+  const go=function(){
+    let n=0;
+    empties.forEach(function(x){
+      try{if(!CL[x.id])return;if(_clientChartWeight(CL[x.id])>0)return;   // re-checked at the moment of removal
+        _cleanupClientData(x.id);delete CL[x.id];try{_markClientDeleted(x.id);}catch(e){}n++;}catch(e){}
+    });
+    try{saveClients();}catch(e){}
+    try{if(typeof _pushKeyNow==='function')_pushKeyNow('sc_clients',_lsGet('sc_clients')||'');}catch(e){}
+    _closeCleanup();
+    if(typeof proToast==='function')proToast('Removed '+n+' client'+(n===1?'':'s')+' that weren’t in Square. Nothing in Square was changed.',0);
+    try{nav('clients');}catch(e){}
+  };
+  if(typeof confirmModal==='function')confirmModal({title:'Remove '+empties.length+' clients?',
+    body:'They are not in your Square directory and have nothing on their chart — no notes, forms, photos or messages. This only affects this app; Square is untouched.',
+    action:'Remove'},go);
+  else go();
+}
 function _closeStoragePanel(){try{const ov=document.getElementById('storage-panel');if(ov)ov.remove();}catch(e){}}
 async function openStoragePanel(){
   _closeStoragePanel();
@@ -18886,6 +19011,11 @@ function renderAccountBilling(){
     <div onclick="nav('export-data')" style="display:flex;align-items:center;gap:12px;background:var(--surf1);border:1px solid var(--p-line3);border-radius:12px;padding:13px 14px;margin-bottom:9px;cursor:pointer;">
       <div style="width:38px;height:38px;border-radius:10px;background:var(--accent-tint);display:flex;align-items:center;justify-content:center;flex-shrink:0;"><i class="ti ti-database-export" aria-hidden="true" style="font-size:18px;color:var(--accent-strong);"></i></div>
       <div style="flex:1;min-width:0;"><div style="font-size:14px;font-weight:600;color:var(--p-ink);">Export My Data</div><div style="font-size:12px;color:var(--p-mut);">Download everything as CSV or a full backup</div></div>
+      <i class="ti ti-chevron-right" aria-hidden="true" style="color:var(--p-mut);font-size:16px;"></i>
+    </div>
+    <div onclick="openClientCleanup()" style="display:flex;align-items:center;gap:12px;background:var(--surf1);border:1px solid var(--p-line3);border-radius:12px;padding:13px 14px;margin-bottom:9px;cursor:pointer;">
+      <div style="width:38px;height:38px;border-radius:10px;background:var(--p-blue-bg);display:flex;align-items:center;justify-content:center;flex-shrink:0;"><i class="ti ti-users-minus" aria-hidden="true" style="font-size:18px;color:var(--p-blue);"></i></div>
+      <div style="flex:1;min-width:0;"><div style="font-size:14px;font-weight:600;color:var(--p-ink);">Tidy up your client list</div><div style="font-size:12px;color:var(--p-mut);">Find clients that are no longer in Square</div></div>
       <i class="ti ti-chevron-right" aria-hidden="true" style="color:var(--p-mut);font-size:16px;"></i>
     </div>
     <div onclick="nav('delete-account')" style="display:flex;align-items:center;gap:12px;background:var(--surf1);border:1px solid var(--p-red-line);border-radius:12px;padding:13px 14px;cursor:pointer;">
