@@ -1571,7 +1571,7 @@ function removeDemoClients(){
   try{if(typeof _pushKeyNow==='function')_pushKeyNow('sc_hide_sample','1');}catch(e){}   // push now so a reload/resync can't un-hide the samples
   _purgeSample();
   try{const raw=localStorage.getItem('sc_clients');if(raw){const o=JSON.parse(raw)||{};['maya','sophie','priya'].forEach(id=>delete o[id]);localStorage.setItem('sc_clients',JSON.stringify(o));}}catch(e){}
-  try{if(typeof _pushKeyNow==='function'){_pushKeyNow('sc_clients',localStorage.getItem('sc_clients')||'');_pushKeyNow('sc_bookings',localStorage.getItem('sc_bookings')||'');}}catch(e){}
+  try{if(typeof _pushKeyNow==='function'){_pushKeyNow('sc_clients',_lsGet('sc_clients')||'');_pushKeyNow('sc_bookings',_lsGet('sc_bookings')||'');}}catch(e){}
   if(typeof proToast==='function')proToast('Demo clients removed');
   const sheet=document.getElementById('demo-info-sheet');if(sheet)sheet.remove();
   nav('clients');
@@ -1690,7 +1690,7 @@ function _clearSampleData(){
   try{if(typeof _pushKeyNow==='function')_pushKeyNow('sc_hide_sample','1');}catch(e){}
   _purgeSample();
   try{const raw=localStorage.getItem('sc_clients');if(raw){const o=JSON.parse(raw)||{};_SAMPLE_IDS.forEach(id=>delete o[id]);localStorage.setItem('sc_clients',JSON.stringify(o));}}catch(e){}
-  try{if(typeof _pushKeyNow==='function'){_pushKeyNow('sc_clients',localStorage.getItem('sc_clients')||'');_pushKeyNow('sc_bookings',localStorage.getItem('sc_bookings')||'');}}catch(e){}
+  try{if(typeof _pushKeyNow==='function'){_pushKeyNow('sc_clients',_lsGet('sc_clients')||'');_pushKeyNow('sc_bookings',_lsGet('sc_bookings')||'');}}catch(e){}
   if(typeof proToast==='function')proToast('Sample data removed');
   nav('home');
 }
@@ -2532,6 +2532,12 @@ const Cloud={
     // Never write down a key we would never push up. Device-local keys the account still holds from
     // before this rule would otherwise be restored onto this device on every single pull.
     if(_syncPrefixSkipped(k)){_staleDeviceLocalKeys.push(k);return;}
+    // Consult photos: keep the account copy (it is what survives a new phone) but land it in
+    // IndexedDB rather than in the 5MB localStorage allowance it used to dominate.
+    if(k==='sc_pro_vc_subs'){
+      try{if(_hydrateVcSubs(data[k])&&typeof persistVcState==='function')persistVcState();}catch(e){}
+      return;
+    }
     if(k==='sc_clients'){
       const m=_mergeClients(data[k],_lsGet(k));
       if(m&&m.str!=null){
@@ -4068,7 +4074,7 @@ async function _restorePhotosFromCloud(){
 // starves everything else (Ashley opened the app to six of these holding 3MB, and nothing could save).
 // Shown at the bottom of More → Storage & backups. "Refresh and try again" is useless advice if
 // neither of us can tell which build a device is actually running. Bumped with every deploy.
-const SC_BUILD='2026-09-14 · b7';
+const SC_BUILD='2026-09-14 · b8';
 const _ROOM_DRAFT_PER_CLIENT=180000;   // chars of base64 per client draft
 const _ROOM_DRAFT_TOTAL=420000;        // chars of base64 across ALL drafts
 function _roomDraftKey(id){return 'sc_room_draft_'+(id||'');}
@@ -4976,6 +4982,11 @@ function _markClientFormFlagsReviewed(c){
 // not just in the in-memory dismissed set — that set rode a debounced sync and a refresh's cloud
 // pull kept losing it, so the same cards came back. A brand-new flag replaces flaggedContra (no
 // ackHome), so it correctly resurfaces. The flag still shows on the client's chart.
+// NOTE for every "push the list NOW" below: they read through _lsGet, never localStorage directly.
+// On a device whose storage is full the local write has already failed, so localStorage still holds
+// the copy from BEFORE the change — and pushing that put a stale copy over the good one on the
+// server. Clearing an attention card wrote the ack, failed to store it, then actively uploaded the
+// version without the ack. That is why cleared cards kept coming back, every refresh, for weeks.
 function _flagAckHome(id){
   var c=CL[id];if(c&&c.flaggedContra){c.flaggedContra.ackHome=true;
     // Also mark the source check-in reviewed so a re-processed event can't rebuild the flag (same
@@ -4987,7 +4998,7 @@ function _flagAckHome(id){
   _homeDismissed.add('flag-'+id);_saveHomeDismissed();
   // saveClients only schedules a debounced sync; push the client list NOW too so a quick refresh's
   // cloud pull can't overwrite the ack with a stale copy (that was why cleared cards kept returning).
-  try{if(typeof _pushKeyNow==='function')_pushKeyNow('sc_clients',localStorage.getItem('sc_clients')||'');}catch(e){}
+  try{if(typeof _pushKeyNow==='function')_pushKeyNow('sc_clients',_lsGet('sc_clients')||'');}catch(e){}
   _reRenderAttn();
 }
 function _reviewAckHome(id){
@@ -5000,7 +5011,7 @@ function _reviewAckHome(id){
     if(s)s.reviewedAt=Date.now();
     c.reviewAck=String((s&&(s.evId||s.ts||s.date))||'1');try{if(typeof saveClients==='function')saveClients();}catch(e){}}
   _homeDismissed.add('rev-'+id);_saveHomeDismissed();
-  try{if(typeof _pushKeyNow==='function')_pushKeyNow('sc_clients',localStorage.getItem('sc_clients')||'');}catch(e){}
+  try{if(typeof _pushKeyNow==='function')_pushKeyNow('sc_clients',_lsGet('sc_clients')||'');}catch(e){}
   _reRenderAttn();
 }
 // Content signatures so a dismissed attention card stays dismissed for THAT specific flag/form, but a
@@ -6333,7 +6344,7 @@ function _doDismissFlag(id,then){const c=CL[id];
   if(c){c.flaggedContra=null;}try{if(typeof saveClients==='function')saveClients();}catch(e){}
   // saveClients only schedules a debounced sync; push the client list NOW so a refresh's cloud pull
   // can't restore the old flag (which is why "Mark reviewed" wasn't sticking).
-  try{if(typeof _pushKeyNow==='function')_pushKeyNow('sc_clients',localStorage.getItem('sc_clients')||'');}catch(e){}
+  try{if(typeof _pushKeyNow==='function')_pushKeyNow('sc_clients',_lsGet('sc_clients')||'');}catch(e){}
   if(typeof proToast==='function')proToast('Marked as reviewed');if(then==='log'&&typeof renderFlaggedIntakes==='function')renderFlaggedIntakes();else renderClient(id);}
 function viewSubmittedForm(id,i){
   const c=CL[id];if(!c||!c.submittedForms||!c.submittedForms[i])return;
@@ -8854,7 +8865,7 @@ function toggleSharePhotos(id){
   const c=CL[id];if(!c)return;
   c.sharePhotos=!c.sharePhotos;
   try{if(typeof saveClients==='function')saveClients();}catch(e){}
-  try{if(typeof _pushKeyNow==='function')_pushKeyNow('sc_clients',localStorage.getItem('sc_clients')||'');}catch(e){}
+  try{if(typeof _pushKeyNow==='function')_pushKeyNow('sc_clients',_lsGet('sc_clients')||'');}catch(e){}
   if(c.sharePhotos){try{if(typeof _backupPhotosToServer==='function')_backupPhotosToServer();}catch(e){}}
   try{if(typeof _syncSpecificClientsToServer==='function')_syncSpecificClientsToServer([id]);}catch(e){}
   if(typeof proToast==='function')proToast(c.sharePhotos?'Progress photos now visible in their app':'Progress photos hidden from their app');
@@ -9702,7 +9713,7 @@ function _storeSummary(id){
   c.lastServiceAt=Date.now();c.lastServiceTreatment=c.treatment||'';
   try{c.lastVisit=new Date().toLocaleDateString('en-US',{month:'short',day:'numeric',year:'numeric'});}catch(e){}
   try{if(typeof saveClients==='function')saveClients();}catch(e){}
-  try{if(typeof _pushKeyNow==='function')_pushKeyNow('sc_clients',localStorage.getItem('sc_clients')||'');}catch(e){}
+  try{if(typeof _pushKeyNow==='function')_pushKeyNow('sc_clients',_lsGet('sc_clients')||'');}catch(e){}
   // Deliver to the client's app NOW, not on the 2.5s roster debounce — otherwise closing the app
   // right after tapping Send meant the summary never reached them until the next client sync.
   try{if(typeof _syncSpecificClientsToServer==='function')_syncSpecificClientsToServer([id]);else if(typeof _scheduleClientSync==='function')_scheduleClientSync();}catch(e){}
@@ -11115,13 +11126,65 @@ let _vcBack='virtual';
 // Virtual consult is provider-initiated (usually a paid service), clients can't start one unprompted
 let vcInvites={maya:{invited:true,submitted:true},sophie:{invited:true},priya:{invited:true,submitted:true,reviewed:true}},vcFee=(function(){try{return localStorage.getItem('sc_vc_fee')||'';}catch(e){return '';}})();
 let vcSubmissions={}; // real client submissions keyed by clientId: {photos:[{label,src}],refs,goals,measures,date}
+// Consult submissions carry the client's photos as base64. On Ashley's device they were 1.4MB of a
+// 5MB allowance — the single biggest thing in it, for a handful of consults. Photo BYTES belong in
+// IndexedDB (hundreds of MB) like every other photo in the app; localStorage is for the small stuff.
+// The in-memory shape is unchanged, so every screen that reads `sub.photos[i].src` still works.
+//
+// Still pushed to the account, so a consult is not device-local — but the pull hydrates it into
+// IndexedDB rather than writing megabytes back into the 5MB box (see _hydrateVcSubs).
 function persistVcState(){
   try{localStorage.setItem('sc_pro_vc_invites',JSON.stringify(vcInvites));}catch(e){}
-  try{localStorage.setItem('sc_pro_vc_subs',JSON.stringify(vcSubmissions));}catch(e){/* image data may exceed quota, invites still persist */}
+  let v='';try{v=JSON.stringify(vcSubmissions);}catch(e){return;}
+  let stored=false;
+  try{
+    if(typeof _idb!=='undefined'&&_idb.available()){
+      stored=true;
+      _idb.set('vc_subs',v).then(function(ok){
+        // Only drop the old localStorage copy once IndexedDB has genuinely taken it.
+        if(ok!==false){try{localStorage.removeItem('sc_pro_vc_subs');}catch(e){}}
+        else{try{localStorage.setItem('sc_pro_vc_subs',v);}catch(e){}}
+      },function(){try{localStorage.setItem('sc_pro_vc_subs',v);}catch(e){}});
+    }
+  }catch(e){stored=false;}
+  if(!stored){try{localStorage.setItem('sc_pro_vc_subs',v);}catch(e){}}
+  // The account copy is what makes a consult survive a new phone. Pushed directly rather than via the
+  // setItem shim, because the local write no longer goes through localStorage at all.
+  try{if(typeof _pushKeyNow==='function')_pushKeyNow('sc_pro_vc_subs',v);}catch(e){}
+}
+// Take a consult blob (from IndexedDB, from the legacy localStorage copy, or straight off the sync)
+// and fold it into memory without ever putting the photos back in localStorage.
+function _hydrateVcSubs(raw){
+  try{
+    if(!raw)return false;
+    const o=JSON.parse(raw);
+    if(!o||typeof o!=='object')return false;
+    let added=false;
+    Object.keys(o).forEach(function(cid){
+      const incoming=o[cid];if(!incoming)return;
+      const have=vcSubmissions[cid];
+      const nPhotos=function(x){return (x&&Array.isArray(x.photos))?x.photos.length:0;};
+      // Never let a copy with FEWER photos replace one that has more — that is how a consult loses
+      // the pictures it was submitted with.
+      if(!have||nPhotos(incoming)>=nPhotos(have)){vcSubmissions[cid]=incoming;added=true;}
+    });
+    return added;
+  }catch(e){return false;}
 }
 function loadVcState(){
   try{const inv=localStorage.getItem('sc_pro_vc_invites');if(inv)vcInvites={...vcInvites,...JSON.parse(inv)};}catch(e){}
-  try{const sub=localStorage.getItem('sc_pro_vc_subs');if(sub)vcSubmissions={...vcSubmissions,...JSON.parse(sub)};}catch(e){}
+  // Legacy/localStorage copy first so nothing is missing for the first paint, then IndexedDB (the real
+  // home now) and the account copy layer in behind it. _hydrateVcSubs never lets a smaller set win.
+  try{const sub=(typeof _lsGet==='function')?_lsGet('sc_pro_vc_subs'):localStorage.getItem('sc_pro_vc_subs');if(sub)_hydrateVcSubs(sub);}catch(e){}
+  try{
+    if(typeof _idb!=='undefined'&&_idb.available()){
+      _idb.get('vc_subs').then(function(v){
+        if(v&&_hydrateVcSubs(typeof v==='string'?v:JSON.stringify(v))){
+          try{if(typeof _reRenderAttn==='function')_reRenderAttn();}catch(e){}
+        }
+      },function(){});
+    }
+  }catch(e){}
 }
 function inviteVirtualConsult(id,_force,_kind,_formId){
   const c=CL[id];if(!c)return;
@@ -12334,7 +12397,7 @@ async function confirmSendForm(fid,cid){
     _assignFormsToClient(c,sendIds);
     _assignGuidesToClient(c,guides);
     try{saveClients();}catch(e){}
-    try{if(typeof _pushKeyNow==='function')_pushKeyNow('sc_clients',localStorage.getItem('sc_clients')||'');}catch(e){}
+    try{if(typeof _pushKeyNow==='function')_pushKeyNow('sc_clients',_lsGet('sc_clients')||'');}catch(e){}
     if(!c._token){
       closeSendProd();
       proToast(`${c.name.split(' ')[0]} hasn't been invited to the app yet, invite them first, then this form will be waiting for them`);
@@ -12461,7 +12524,7 @@ function sendFormBundleToClient(bid,cid){
   if(!Array.isArray(c.pendingGuides))c.pendingGuides=[];
   (b.resourceIds||[]).forEach(rid=>{ if((typeof _findGuide==='function'&&_findGuide(rid))&&!c.pendingGuides.some(pg=>pg.guideId===rid))c.pendingGuides.push({guideId:rid,assignedAt:Date.now()}); });
   try{saveClients();}catch(e){}
-  try{if(typeof _pushKeyNow==='function')_pushKeyNow('sc_clients',localStorage.getItem('sc_clients')||'');}catch(e){}
+  try{if(typeof _pushKeyNow==='function')_pushKeyNow('sc_clients',_lsGet('sc_clients')||'');}catch(e){}
   if(!c._token){ inviteClientToApp(cid); return; }
   const first=c.name.split(' ')[0];
   const who=(typeof _providerFirstName==='function'&&_providerFirstName())?_providerFirstName():'Your provider';
@@ -13821,7 +13884,7 @@ function submitSignOnDevice(fid,cid){
     if(!CL[cid].submittedForms.some(sf=>sf.formId===fid&&sf.signed)){_sodForm={formId:fid,title:tmpl.name,answers:ans,flagged:[],date:'Today',at:Date.now(),signed:true,qs:(tmpl&&Array.isArray(tmpl.qs))?tmpl.qs:null};CL[cid].submittedForms.unshift(_sodForm);}
     _captureBirthday(CL[cid],fid,ans);_capturePhotoConsent(CL[cid],fid,ans);_captureRefPhoto(cid,fid,ans);
     try{if(typeof saveClients==='function')saveClients();}catch(e){}
-    try{if(typeof _pushKeyNow==='function')_pushKeyNow('sc_clients',localStorage.getItem('sc_clients')||'');}catch(e){}   // push now so an in-person signed form can't be lost to the debounce
+    try{if(typeof _pushKeyNow==='function')_pushKeyNow('sc_clients',_lsGet('sc_clients')||'');}catch(e){}   // push now so an in-person signed form can't be lost to the debounce
     // Durability: also log this in-person form to the AUTHORITATIVE server event log, so it survives a
     // stale-device / Square re-sync overwrite and re-attaches on any device (self-heal). Sign-on-device
     // forms used to live ONLY in sc_clients, which is exactly how Josie's signed intake got lost. On
@@ -13834,7 +13897,7 @@ function submitSignOnDevice(fid,cid){
         fetch('/api/provider-form',{method:'POST',headers:{'Content-Type':'application/json','Authorization':'Bearer '+_sodTok},
           body:JSON.stringify({clientId:cid,formId:fid,title:tmpl.name,answers:ans,flagged:[],signed:true,qs:_sodForm.qs,idem:_sodIdem})})
           .then(function(r){return r&&r.ok?r.json():null;}).then(function(j){
-            if(j&&j.ok&&j.id){try{_sodForm.evId=j.id;if(typeof _markEventSeen==='function')_markEventSeen(j.id);if(typeof saveClients==='function')saveClients();if(typeof _pushKeyNow==='function')_pushKeyNow('sc_clients',localStorage.getItem('sc_clients')||'');}catch(e){}}
+            if(j&&j.ok&&j.id){try{_sodForm.evId=j.id;if(typeof _markEventSeen==='function')_markEventSeen(j.id);if(typeof saveClients==='function')saveClients();if(typeof _pushKeyNow==='function')_pushKeyNow('sc_clients',_lsGet('sc_clients')||'');}catch(e){}}
           }).catch(function(){});
       }
     }catch(e){}
@@ -14862,7 +14925,7 @@ function shareFormLink(fid,cid){
   _assignFormsToClient(c,sendIds);
   try{_assignGuidesToClient(c,formGuideList(fid));}catch(e){} // carry any guides attached to this form
   try{saveClients();}catch(e){}
-  try{if(typeof _pushKeyNow==='function')_pushKeyNow('sc_clients',localStorage.getItem('sc_clients')||'');}catch(e){}
+  try{if(typeof _pushKeyNow==='function')_pushKeyNow('sc_clients',_lsGet('sc_clients')||'');}catch(e){}
   if(!c._token){ inviteClientToApp(cid); return; }
   const first=c.name.split(' ')[0];
   const who=(typeof _providerFirstName==='function'&&_providerFirstName())?_providerFirstName():'Your provider';
@@ -14988,7 +15051,7 @@ function renderChat(id){
   setNav('msgs');
   const c=CL[id];const t=threads.find(x=>x.id===id);if(t&&t.unread){t.unread=false;try{saveMessages();}catch(e){}
     // Push the read state NOW so a quick refresh's cloud pull can't restore the old unread copy.
-    try{if(typeof _pushKeyNow==='function')_pushKeyNow('sc_threads',localStorage.getItem('sc_threads')||'');}catch(e){}}
+    try{if(typeof _pushKeyNow==='function')_pushKeyNow('sc_threads',_lsGet('sc_threads')||'');}catch(e){}}
   // Reading the conversation must also clear its bell notifications — otherwise the inbox dot cleared but
   // the notification badge stayed lit forever (only tapping the notification card itself marked it read).
   try{var _mnChanged=false;notifFeed.forEach(function(n){if(n&&n.type==='message'&&n.action==='chat'&&n.data===id&&!n.read){n.read=true;_notifRead.add(n.id);_mnChanged=true;}});if(_mnChanged){_saveNotifState();if(typeof updateBadge==='function')updateBadge();}}catch(e){}
@@ -17250,7 +17313,7 @@ async function confirmSendCourse(courseId,cid){
     if(!Array.isArray(c.pendingCourses))c.pendingCourses=[];
     if(!c.pendingCourses.some(x=>x.id===co.id))c.pendingCourses.push({id:co.id,assignedAt:Date.now()});
     try{saveClients();}catch(e){}
-    try{if(typeof _pushKeyNow==='function')_pushKeyNow('sc_clients',localStorage.getItem('sc_clients')||'');}catch(e){}
+    try{if(typeof _pushKeyNow==='function')_pushKeyNow('sc_clients',_lsGet('sc_clients')||'');}catch(e){}
     // Paid course → mint this client's own checkout link so their app shows a working Buy button.
     // Runs in the background: the course is already sent, and no link just means a "message me" button.
     try{if(typeof _ensureCourseBuyUrl==='function')_ensureCourseBuyUrl(cid,co.id);}catch(e){}
@@ -18981,7 +19044,7 @@ function _impUndo(batchId){
   }
   b.undone=true;b.undoneAt=Date.now();_saveImpBatches();
   try{if(typeof saveClients==='function')saveClients();}catch(e){}
-  try{if(typeof _pushKeyNow==='function')_pushKeyNow('sc_clients',localStorage.getItem('sc_clients')||'');}catch(e){}
+  try{if(typeof _pushKeyNow==='function')_pushKeyNow('sc_clients',_lsGet('sc_clients')||'');}catch(e){}
   return n;
 }
 
@@ -19776,7 +19839,7 @@ function _markServiceComplete(id,treatment){
   c.lastServiceTreatment=(treatment&&String(treatment).trim())||c.treatment||'';
   try{c.lastVisit=new Date().toLocaleDateString('en-US',{month:'short',day:'numeric',year:'numeric'});}catch(e){}
   try{if(typeof saveClients==='function')saveClients();}catch(e){}
-  try{if(typeof _pushKeyNow==='function')_pushKeyNow('sc_clients',localStorage.getItem('sc_clients')||'');}catch(e){}
+  try{if(typeof _pushKeyNow==='function')_pushKeyNow('sc_clients',_lsGet('sc_clients')||'');}catch(e){}
   try{if(typeof _syncSpecificClientsToServer==='function')_syncSpecificClientsToServer([id]);}catch(e){}
 }
 // Explicit "mark this visit complete" from the Room, for a quick service with no summary or payment.
@@ -22220,15 +22283,15 @@ async function syncClientEvents(){
     // and the actual data rode the debounce, so a mid-window freeze recorded "seen" with no data.
     try{
       const flushes=[];
-      if(touchedRequests&&typeof _pushKeyNow==='function'){flushes.push(_pushKeyNow('sc_bookings',localStorage.getItem('sc_bookings')||''));}
-      if(touchedCheckins&&typeof _pushKeyNow==='function'){flushes.push(_pushKeyNow('sc_checkins',localStorage.getItem('sc_checkins')||''));}
-      if(touchedMsgs&&typeof _pushKeyNow==='function'){flushes.push(_pushKeyNow('sc_msgstore',localStorage.getItem('sc_msgstore')||''));flushes.push(_pushKeyNow('sc_threads',localStorage.getItem('sc_threads')||''));}
-      if(touchedClients&&typeof _pushKeyNow==='function'){flushes.push(_pushKeyNow('sc_clients',localStorage.getItem('sc_clients')||''));}
+      if(touchedRequests&&typeof _pushKeyNow==='function'){flushes.push(_pushKeyNow('sc_bookings',_lsGet('sc_bookings')||''));}
+      if(touchedCheckins&&typeof _pushKeyNow==='function'){flushes.push(_pushKeyNow('sc_checkins',_lsGet('sc_checkins')||''));}
+      if(touchedMsgs&&typeof _pushKeyNow==='function'){flushes.push(_pushKeyNow('sc_msgstore',_lsGet('sc_msgstore')||''));flushes.push(_pushKeyNow('sc_threads',_lsGet('sc_threads')||''));}
+      if(touchedClients&&typeof _pushKeyNow==='function'){flushes.push(_pushKeyNow('sc_clients',_lsGet('sc_clients')||''));}
       // Photos live in IndexedDB (device-local); backup to the server happens via _backupPhotosToServer
       // (per-photo, called from persistCapturedPhotos). Do NOT push the sc_captured_photos KV here — it's
       // empty on IDB devices and would overwrite any real server copy with '' (silent photo wipe).
       if(touchedPhotos){try{if(typeof _backupPhotosToServer==='function')_backupPhotosToServer();}catch(e){}}
-      if(touchedVc&&typeof _pushKeyNow==='function'){try{if(typeof persistVcState==='function')persistVcState();}catch(e){}flushes.push(_pushKeyNow('sc_pro_vc_subs',localStorage.getItem('sc_pro_vc_subs')||''));flushes.push(_pushKeyNow('sc_pro_vc_invites',localStorage.getItem('sc_pro_vc_invites')||''));}
+      if(touchedVc&&typeof _pushKeyNow==='function'){try{if(typeof persistVcState==='function')persistVcState();}catch(e){}flushes.push(_pushKeyNow('sc_pro_vc_subs',_lsGet('sc_pro_vc_subs')||''));flushes.push(_pushKeyNow('sc_pro_vc_invites',_lsGet('sc_pro_vc_invites')||''));}
       await Promise.all(flushes.map(p=>p&&p.catch?p.catch(()=>{}):p));
     }catch(e){}
     // Foreground cue: if genuinely new client activity arrived this pass (not the initial backlog),
@@ -23984,7 +24047,7 @@ function finishNewClient(){
       const ids=(typeof _isIntakeForm==='function'&&_isIntakeForm(cid))?_withPhotoRelease(cid):[cid];
       try{_assignFormsToClient(c2,ids);}catch(e){}
       try{if(typeof saveClients==='function')saveClients();}catch(e){}
-      try{if(typeof _pushKeyNow==='function')_pushKeyNow('sc_clients',localStorage.getItem('sc_clients')||'');}catch(e){}
+      try{if(typeof _pushKeyNow==='function')_pushKeyNow('sc_clients',_lsGet('sc_clients')||'');}catch(e){}
     }
     proToast(first+' added');
     if(pend){nav('calendar');_reopenBookingWith(name,pend);return;}
@@ -24071,7 +24134,7 @@ function _pfiSave(id,fid){
   c.submittedForms.unshift({formId:fid,title:t.name,answers,flagged,date:'Today',at:Date.now(),signed:false,filledBy:'provider'});
   if(flagged.length)c.flaggedContra={form:t.name,items:flagged.slice(),date:'Today'};
   try{saveClients();}catch(e){}
-  try{if(typeof _pushKeyNow==='function')_pushKeyNow('sc_clients',localStorage.getItem('sc_clients')||'');}catch(e){}
+  try{if(typeof _pushKeyNow==='function')_pushKeyNow('sc_clients',_lsGet('sc_clients')||'');}catch(e){}
   proToast('Intake saved \u2713');
   nav('client',id);
 }
