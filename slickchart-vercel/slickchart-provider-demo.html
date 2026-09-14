@@ -5086,14 +5086,30 @@ function _attnTilesHTML(){
     </div>
     <div style="flex:1;padding-right:18px;"><div style="font-size:14px;font-weight:600;color:var(--p-green);">New pre-visit check-in${newCheckins.length>1?'s':''}</div><div style="font-size:12px;color:var(--p-mut2);margin-top:1px;">${_clientNameLink(newCheckins[0].clientId,newCheckins[0].client,{color:'var(--p-green)'})}${(newCheckins[0].flagged&&newCheckins[0].flagged.length)?` · ${newCheckins[0].flagged.length} flagged`:''}, tap to review</div></div>
   </div>`,'cin','_dismissCinTile()'):''}
-  ${_vcPendingCount()&&!_homeDismissed.has('vc')?_swipeTile(`
+  ${(function(){
+    // Two bugs lived here. There was no age-out at all — every other tile uses _attnFresh, which
+    // retires a card a day after it first appears, but this one just showed for as long as the
+    // consult sat unreviewed, which is why one from six weeks ago was still on Home. And the swipe
+    // dismissed to the literal key 'vc': sc_home_dismissed is a union that never forgets, so a single
+    // swipe would have hidden EVERY future virtual consult, on every device, permanently.
+    // Keys are per consult now, and they age out like everything else. The consult itself is
+    // untouched and still waiting in the VC inbox; this tile is only the nudge.
+    const live=_vcPendingIds().filter(function(id){
+      const k='vc-'+id;
+      if(_homeDismissed.has(k))return false;
+      return _attnFresh(k);
+    });
+    if(!live.length)return '';
+    const n=live.length;
+    return _swipeTile(`
   <div onclick="nav('vc-inbox')" style="margin:0;background:linear-gradient(135deg,var(--p-surf2),var(--p-purple-bg));border:1px solid var(--p-purple-line);border-radius:12px;padding:12px 14px;display:flex;align-items:center;gap:11px;cursor:pointer;">
     <div style="width:40px;height:40px;border-radius:10px;background:var(--p-purple-bg);display:flex;align-items:center;justify-content:center;flex-shrink:0;position:relative;">
       <i class="ti ti-scan" style="font-size:20px;color:var(--p-purple);"></i>
-      <span style="position:absolute;top:-4px;right:-4px;min-width:18px;height:18px;padding:0 4px;background:#a891ec;border-radius:9px;font-size:10px;font-weight:700;color:#1a1338;display:flex;align-items:center;justify-content:center;border:2px solid var(--p-surf2);">${_vcPendingCount()}</span>
+      <span style="position:absolute;top:-4px;right:-4px;min-width:18px;height:18px;padding:0 4px;background:#a891ec;border-radius:9px;font-size:10px;font-weight:700;color:#1a1338;display:flex;align-items:center;justify-content:center;border:2px solid var(--p-surf2);">${n}</span>
     </div>
-    <div style="flex:1;padding-right:18px;"><div style="font-size:14px;font-weight:600;color:var(--p-purple);">Virtual consult${_vcPendingCount()>1?'s':''} to review</div><div style="font-size:12px;color:var(--p-purple);margin-top:1px;">Client photos submitted, tap to review &amp; send notes</div></div>
-  </div>`,'vc'):''}
+    <div style="flex:1;padding-right:18px;"><div style="font-size:14px;font-weight:600;color:var(--p-purple);">Virtual consult${n>1?'s':''} to review</div><div style="font-size:12px;color:var(--p-purple);margin-top:1px;">Client photos submitted, tap to review &amp; send notes</div></div>
+  </div>`,'vc-'+live[0],'_dismissVcTile()');
+  })()}
   ${(function(){
     // Brand-new clients with a first appointment coming up who haven't been set up yet —
     // nudge to send the first-visit package (invite + intake in one tap).
@@ -14007,6 +14023,15 @@ function _dismissReqTile(){
   let changed=false;
   list.forEach(b=>{if(b.status==='pending'&&!b.seen){b.seen=true;changed=true;}});
   if(changed)SlickBridge.setBookings(list);
+  _reRenderAttn();
+}
+// The client ids with a virtual consult waiting. _vcPendingCount() is this, counted.
+function _vcPendingIds(){
+  try{return Object.keys(CL).filter(id=>_vcStatus(id)==='needs-review'&&(_shotMode()?(_SAMPLE_IDS.indexOf(id)>=0):(_SAMPLE_IDS.indexOf(id)<0)));}catch(e){return [];}
+}
+// Clears the consults currently showing, not the tile forever.
+function _dismissVcTile(){
+  try{_vcPendingIds().forEach(function(id){_attnRetire('vc-'+id);});}catch(e){}
   _reRenderAttn();
 }
 function _dismissCinTile(){
