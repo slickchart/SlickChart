@@ -134,6 +134,39 @@ Suite: `t-snapshots.mjs` in the scratchpad, 44 assertions, including the two rea
 
 ---
 
+## 2d. The course builder, rebuilt around autosave (2026-09-14, late)
+
+After a long night of course-loss bugs Ashley said the plain truth: *"this whole process should be
+really simple and you have made this entirely too complicated... it is just a digital asset builder
+and there are tons out there."* She picked three changes. All three shipped.
+
+**Autosave replaced the Save button.** `_cbCommit(id,{silent})` is now the single writer; `saveCourse`
+is a thin alias for `_cbDone()` (save, then leave). A delegated `input`/`change` listener on
+`#cb-root` plus explicit `_cbTouch()` calls from every structural edit debounce a commit ~1.1s after
+the last change, and a chip in the builder header reports Editing / Saving / Saved / Saved to your
+account / Not saved yet — retrying. Things to keep true if you touch this:
+- `_cbCommit` **mutates the draft** after committing a file: `f.fileId=fid; delete f._newFileData`.
+  Without that every autosave re-uploads every file attached this session.
+- `l._removedFileIds` is cleared after each commit for the same reason.
+- an untitled course saves as "Untitled course" rather than being refused; `_cbHasContent()` stops an
+  opened-and-abandoned builder leaving a stray one behind.
+- `_cbDone` only clears `window._cbDraft` **after** a successful save. Clearing first and then
+  discovering the save failed is how you lose the thing you were trying to keep.
+
+**Lessons are a collapsible outline.** `window._cbOpen` keyed by lesson id; a closed row shows
+number, title and a summary (`3 files · video · 10 words`). `_cbSyncFromDOM()` still indexes by
+`.cb-lesson` position, so closed lessons (which render no inputs) are skipped and keep their content
+— there is a test for exactly that.
+
+**Upload state sits on the file.** `_cbFileState` keyed by `_cbFileKey(f)` — `f.fileId` once it has
+one, otherwise a `_uid` minted when the file is attached. That handle matters: during the upload the
+file has no server id yet, so keying on the id meant the spinner had nothing to attach to.
+
+Suites in the scratchpad: `t-builder` (36 assertions) covers all three. `t-quiet` covers the
+subtraction pass that took the recovery scaffolding off the Courses tab.
+
+---
+
 ## 3. Open threads — needs Ashley, or needs verifying
 
 1. **Square `payment.*` webhook subscription.** Paid-course auto-unlock depends on Square sending

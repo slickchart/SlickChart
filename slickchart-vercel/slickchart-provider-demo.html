@@ -16155,8 +16155,10 @@ function renderCourseBuilder(id){
   window._cbNewId=null;
   _cbInitDraft(c);
   S.innerHTML=`
-  <div style="padding:12px 16px 0;display:flex;align-items:center;justify-content:flex-end;">
-    <button onclick="saveCourse('${c?c.id:'new'}')" style="background:var(--accent);color:var(--accent-ink);border:none;border-radius:8px;padding:6px 14px;font-size:12px;font-weight:600;cursor:pointer;">Save</button>
+  <div id="cb-root">
+  <div style="padding:12px 16px 0;display:flex;align-items:center;justify-content:space-between;gap:10px;">
+    ${_cbStatusHTML()}
+    <button onclick="_cbDone()" style="background:var(--accent);color:var(--accent-ink);border:none;border-radius:8px;padding:6px 16px;font-size:12px;font-weight:600;cursor:pointer;">Done</button>
   </div>
   <div style="padding:12px 16px 0;">
     <div id="cb-cover-wrap" style="margin-bottom:14px;">${_cbCoverHTML()}</div>
@@ -16169,12 +16171,24 @@ function renderCourseBuilder(id){
     <div style="display:flex;align-items:center;justify-content:space-between;margin-bottom:8px;"><span class="fl-lbl" style="margin:0;">Lessons</span><span style="font-size:11px;color:var(--p-mut);">Add content, a video link, or a file to each</span></div>
     <div id="cb-lessons"></div>
     <button onclick="_cbAddLesson()" style="width:100%;border:1.5px dashed var(--p-line);border-radius:10px;padding:12px;display:flex;align-items:center;justify-content:center;gap:8px;font-size:13px;color:var(--accent-strong);background:none;cursor:pointer;margin:4px 0 18px;font-family:inherit;"><i class="ti ti-plus"></i> Add a lesson</button>
-    <button class="btnp" style="border-radius:8px;margin-bottom:12px;" onclick="saveCourse('${c?c.id:'new'}')"><i class="ti ti-check"></i> Save course</button>
     ${c?`<button onclick="deleteCourse('${_jsAttr(c.id)}')" style="width:100%;background:none;border:1px solid var(--p-red-line);color:var(--p-red);border-radius:8px;padding:11px;font-size:13px;font-weight:600;cursor:pointer;font-family:inherit;margin-bottom:22px;display:inline-flex;align-items:center;justify-content:center;gap:6px;"><i class="ti ti-trash" style="font-size:14px;"></i> Delete course</button>`:''}
+  </div>
   </div>`;
+  window._cbEditingId=id;
+  window._cbOpen={};
+  // A course you have just made opens on its first lesson; one you are coming back to opens closed,
+  // so you see the whole shape of it before diving into a lesson.
+  if(!c&&window._cbDraft&&window._cbDraft.lessons[0])_cbSetOpen(window._cbDraft.lessons[0],0,true);
   _cbRenderLessons();
-  // From here on the work is held on the server every 45s, so an unsaved course can't be lost to a
-  // closed tab, a dead battery, or a save that doesn't land. See _cvSnapshot.
+  _cbSetStatus('');
+  // Typing is the save. One delegated listener rather than an oninput on every field, so a field
+  // added later can never be the one that quietly isn't saved.
+  try{
+    const root=document.getElementById('cb-root');
+    if(root){root.addEventListener('input',_cbTouch);root.addEventListener('change',_cbTouch);}
+  }catch(e){}
+  // And the server copy on top: held every 45s and on the way out, so even an autosave that can't
+  // land locally isn't the only thing between her and an evening's work. See _cvSnapshot.
   try{_cbAutosaveStart(id);}catch(e){}
 }
 function _cbCoverHTML(){
@@ -16190,10 +16204,10 @@ function _cbCoverHTML(){
 function _cbPickCover(input){
   const f=input&&input.files&&input.files[0];if(!f)return;input.value='';
   const r=new FileReader();
-  r.onload=()=>{const img=new Image();img.onload=()=>{let w=img.width,h=img.height,max=1000;if(w>max||h>max){const s=Math.min(max/w,max/h);w=Math.round(w*s);h=Math.round(h*s);}const cv=document.createElement('canvas');cv.width=w;cv.height=h;cv.getContext('2d').drawImage(img,0,0,w,h);let data;try{data=cv.toDataURL('image/jpeg',0.8);}catch(e){data=String(r.result||'');}window._cbDraft.cover=data;const el=document.getElementById('cb-cover-wrap');if(el)el.innerHTML=_cbCoverHTML();};img.onerror=()=>{};img.src=String(r.result||'');};
+  r.onload=()=>{const img=new Image();img.onload=()=>{let w=img.width,h=img.height,max=1000;if(w>max||h>max){const s=Math.min(max/w,max/h);w=Math.round(w*s);h=Math.round(h*s);}const cv=document.createElement('canvas');cv.width=w;cv.height=h;cv.getContext('2d').drawImage(img,0,0,w,h);let data;try{data=cv.toDataURL('image/jpeg',0.8);}catch(e){data=String(r.result||'');}window._cbDraft.cover=data;const el=document.getElementById('cb-cover-wrap');if(el)el.innerHTML=_cbCoverHTML();_cbTouch();};img.onerror=()=>{};img.src=String(r.result||'');};
   r.readAsDataURL(f);
 }
-function _cbRemoveCover(){if(window._cbDraft)window._cbDraft.cover='';const el=document.getElementById('cb-cover-wrap');if(el)el.innerHTML=_cbCoverHTML();}
+function _cbRemoveCover(){if(window._cbDraft)window._cbDraft.cover='';const el=document.getElementById('cb-cover-wrap');if(el)el.innerHTML=_cbCoverHTML();_cbTouch();}
 // Read the current DOM inputs back into the draft before any structural change/save.
 function _cbSyncFromDOM(){
   const d=window._cbDraft;if(!d)return;
@@ -16205,32 +16219,73 @@ function _cbSyncFromDOM(){
     const dl=el.querySelector('.cbl-doc');if(dl)d.lessons[i].docUrl=dl.value;
   });
 }
+// ── The lesson outline ────────────────────────────────────────────────────────────────────────
+// Lessons are a list of rows, not a mile of open forms. A row says its number, its title and what is
+// in it; tap to open the one you are working on. A seven-lesson course with fifty worksheets is a
+// screen you can see all of instead of a scroll you get lost in.
+function _cbLessonKey(l,i){return (l&&l.id)||('i'+i);}
+function _cbIsOpen(l,i){try{return !!(window._cbOpen&&window._cbOpen[_cbLessonKey(l,i)]);}catch(e){return false;}}
+function _cbSetOpen(l,i,on){try{if(!window._cbOpen)window._cbOpen={};window._cbOpen[_cbLessonKey(l,i)]=!!on;}catch(e){}}
+function _cbToggleLesson(i){
+  _cbSyncFromDOM();
+  const d=window._cbDraft;if(!d||!d.lessons[i])return;
+  _cbSetOpen(d.lessons[i],i,!_cbIsOpen(d.lessons[i],i));
+  _cbRenderLessons();
+}
+function _cbLessonSummary(l){
+  const bits=[];
+  const files=Array.isArray(l.files)?l.files.length:0;
+  if(files)bits.push(files+' file'+(files===1?'':'s'));
+  if((l.videoUrl||'').trim())bits.push('video');
+  if((l.docUrl||'').trim())bits.push('link');
+  const words=String(l.body||'').trim().split(/\s+/).filter(Boolean).length;
+  if(words)bits.push(words+' word'+(words===1?'':'s'));
+  return bits.length?bits.join(' · '):'Empty';
+}
+function _cbRefreshLessonSummaries(){
+  try{
+    const d=window._cbDraft;if(!d)return;
+    document.querySelectorAll('#cb-lessons .cbl-sum').forEach(function(el,i){
+      if(d.lessons[i])el.textContent=_cbLessonSummary(d.lessons[i]);
+    });
+  }catch(e){}
+}
 function _cbRenderLessons(){
   const wrap=document.getElementById('cb-lessons');if(!wrap)return;
   const d=window._cbDraft||{lessons:[]};
   wrap.innerHTML=d.lessons.map((l,i)=>{
     const files=Array.isArray(l.files)?l.files:[];
-    return `<div class="cb-lesson" ondragover="_cbLessonDragOver(event,${i})" ondragleave="_cbFileDragLeave(event)" ondrop="_cbLessonDrop(event,${i})" style="background:var(--surf1);border:1px solid var(--p-line);border-radius:12px;padding:12px;margin-bottom:10px;">
-      <div style="display:flex;align-items:center;gap:8px;margin-bottom:8px;">
-        <div class="snum" draggable="true" title="Drag to reorder this lesson" style="cursor:grab;" ondragstart="_cbLessonDragStart(event,${i})" ondragend="_cbFileDragEnd(event)">${i+1}</div>
-        <input class="cbl-title" aria-label="Lesson title" value="${_jsAttr(l.title||'')}" placeholder="Lesson title" style="flex:1;background:var(--p-surf);border:1px solid var(--p-line);border-radius:8px;padding:8px 10px;font-size:13px;color:var(--p-ink);font-family:inherit;outline:none;">
-        <button onclick="_cbMoveLesson(${i},-1)" aria-label="Move up" ${i===0?'disabled':''} style="border:none;background:none;color:${i===0?'#315249':'#aaa'};cursor:${i===0?'default':'pointer'};padding:4px;"><i class="ti ti-chevron-up" style="font-size:16px;"></i></button>
-        <button onclick="_cbMoveLesson(${i},1)" aria-label="Move down" ${i===d.lessons.length-1?'disabled':''} style="border:none;background:none;color:${i===d.lessons.length-1?'#315249':'#aaa'};cursor:${i===d.lessons.length-1?'default':'pointer'};padding:4px;"><i class="ti ti-chevron-down" style="font-size:16px;"></i></button>
-        <button onclick="_cbRemoveLesson(${i})" aria-label="Delete lesson" style="border:none;background:none;color:var(--p-red);cursor:pointer;padding:4px;"><i class="ti ti-trash" style="font-size:15px;"></i></button>
+    const open=_cbIsOpen(l,i);
+    const stop='event.stopPropagation();';
+    return `<div class="cb-lesson" ondragover="_cbLessonDragOver(event,${i})" ondragleave="_cbFileDragLeave(event)" ondrop="_cbLessonDrop(event,${i})" style="background:var(--surf1);border:1px solid var(--p-line);border-radius:12px;padding:${open?'12px':'9px 12px'};margin-bottom:${open?'10px':'7px'};">
+      <div class="cbl-head" onclick="_cbToggleLesson(${i})" style="display:flex;align-items:center;gap:9px;cursor:pointer;${open?'margin-bottom:10px;':''}">
+        <div class="snum" draggable="true" title="Drag to reorder this lesson" style="cursor:grab;" ondragstart="${stop}_cbLessonDragStart(event,${i})" ondragend="_cbFileDragEnd(event)" onclick="${stop}">${i+1}</div>
+        <div style="flex:1;min-width:0;">
+          ${open
+            ? `<div style="font-size:11px;font-weight:700;letter-spacing:.07em;text-transform:uppercase;color:var(--p-mut);">Lesson ${i+1}</div>`
+            : `<div class="cbl-name" style="font-size:13.5px;color:${(l.title||'').trim()?'var(--p-ink)':'var(--p-mut)'};white-space:nowrap;overflow:hidden;text-overflow:ellipsis;">${_fileEsc((l.title||'').trim()||'Untitled lesson')}</div>
+               <div class="cbl-sum" style="font-size:11px;color:var(--p-mut);margin-top:1px;">${_fileEsc(_cbLessonSummary(l))}</div>`}
+        </div>
+        <button onclick="${stop}_cbMoveLesson(${i},-1)" aria-label="Move lesson up" ${i===0?'disabled':''} style="border:none;background:none;color:${i===0?'var(--p-line3)':'var(--p-mut)'};cursor:${i===0?'default':'pointer'};padding:3px;flex-shrink:0;"><i class="ti ti-chevron-up" style="font-size:15px;"></i></button>
+        <button onclick="${stop}_cbMoveLesson(${i},1)" aria-label="Move lesson down" ${i===d.lessons.length-1?'disabled':''} style="border:none;background:none;color:${i===d.lessons.length-1?'var(--p-line3)':'var(--p-mut)'};cursor:${i===d.lessons.length-1?'default':'pointer'};padding:3px;flex-shrink:0;"><i class="ti ti-chevron-down" style="font-size:15px;"></i></button>
+        <button onclick="${stop}_cbRemoveLesson(${i})" aria-label="Delete lesson" style="border:none;background:none;color:var(--p-red);cursor:pointer;padding:3px;flex-shrink:0;"><i class="ti ti-trash" style="font-size:15px;"></i></button>
+        <i class="ti ti-chevron-${open?'up':'down'}" aria-hidden="true" style="font-size:16px;color:var(--p-mut);flex-shrink:0;"></i>
       </div>
+      ${!open?'':`
+      <input class="cbl-title" aria-label="Lesson title" value="${_jsAttr(l.title||'')}" placeholder="Lesson title" style="width:100%;box-sizing:border-box;background:var(--p-surf);border:1px solid var(--p-line);border-radius:8px;padding:8px 10px;font-size:13px;color:var(--p-ink);font-family:inherit;outline:none;margin-bottom:8px;">
       <textarea class="cbl-body" aria-label="Lesson content" placeholder="Write the lesson (optional)…" style="width:100%;box-sizing:border-box;height:60px;resize:vertical;background:var(--p-surf);border:1px solid var(--p-line);border-radius:8px;padding:8px 10px;font-size:13px;color:var(--p-ink);font-family:inherit;outline:none;margin-bottom:8px;">${_fileEsc(l.body||'')}</textarea>
-      <div style="display:flex;align-items:center;gap:6px;margin-bottom:8px;"><i class="ti ti-video" style="font-size:15px;color:var(--p-mut);flex-shrink:0;"></i><input class="cbl-video" aria-label="Video link" value="${_jsAttr(l.videoUrl||'')}" placeholder="Video link (YouTube, Vimeo, Loom…)" style="flex:1;background:var(--p-surf);border:1px solid var(--p-line);border-radius:8px;padding:7px 10px;font-size:12.5px;color:var(--p-ink);font-family:inherit;outline:none;"></div>
-      <div style="display:flex;align-items:center;gap:6px;margin-bottom:8px;"><i class="ti ti-link" style="font-size:15px;color:var(--p-mut);flex-shrink:0;"></i><input class="cbl-doc" aria-label="Worksheet or document link" value="${_jsAttr(l.docUrl||'')}" placeholder="Worksheet / document link (Drive, Dropbox…)" style="flex:1;background:var(--p-surf);border:1px solid var(--p-line);border-radius:8px;padding:7px 10px;font-size:12.5px;color:var(--p-ink);font-family:inherit;outline:none;"></div>
+      <div style="display:flex;align-items:center;gap:6px;margin-bottom:8px;"><i class="ti ti-video" style="font-size:15px;color:var(--p-mut);flex-shrink:0;"></i><input class="cbl-video" aria-label="Video link" value="${_jsAttr(l.videoUrl||'')}" placeholder="Video link (YouTube, Vimeo, Loom…)" style="flex:1;min-width:0;background:var(--p-surf);border:1px solid var(--p-line);border-radius:8px;padding:7px 10px;font-size:12.5px;color:var(--p-ink);font-family:inherit;outline:none;"></div>
+      <div style="display:flex;align-items:center;gap:6px;margin-bottom:8px;"><i class="ti ti-link" style="font-size:15px;color:var(--p-mut);flex-shrink:0;"></i><input class="cbl-doc" aria-label="Worksheet or document link" value="${_jsAttr(l.docUrl||'')}" placeholder="Worksheet / document link (Drive, Dropbox…)" style="flex:1;min-width:0;background:var(--p-surf);border:1px solid var(--p-line);border-radius:8px;padding:7px 10px;font-size:12.5px;color:var(--p-ink);font-family:inherit;outline:none;"></div>
       <div style="font-size:11px;color:var(--p-mut);margin-bottom:8px;line-height:1.5;">Tip: for worksheets over 3MB, upload to Google Drive / Dropbox and paste the share link here — any size, no limit.</div>
       ${files.length>1?`<div style="display:flex;align-items:center;justify-content:space-between;gap:8px;margin-bottom:6px;"><span style="font-size:11px;color:var(--p-mut);">${files.length} files · clients see them in this order</span><button type="button" onclick="_cbSortLessonFiles(${i})" style="border:none;background:var(--accent-tint);color:var(--accent-strong);border-radius:7px;padding:5px 9px;font-size:11.5px;font-weight:600;cursor:pointer;font-family:inherit;display:inline-flex;align-items:center;gap:4px;"><i class="ti ti-sort-ascending-letters" style="font-size:13px;"></i> Sort by name</button></div>`:''}
-      ${files.map((f,fi)=>`<div class="cbf-row" draggable="true" ondragstart="_cbFileDragStart(event,${i},${fi})" ondragover="_cbFileDragOver(event,${i},${fi})" ondragleave="_cbFileDragLeave(event)" ondrop="_cbFileDrop(event,${i},${fi})" ondragend="_cbFileDragEnd(event)" style="display:flex;align-items:center;gap:6px;background:var(--p-surf);border:1px solid var(--p-line);border-radius:8px;padding:7px 8px;margin-bottom:6px;cursor:grab;"><span title="Drag to reorder" style="width:20px;height:20px;border-radius:50%;background:var(--p-surf2);color:var(--p-mut);display:flex;align-items:center;justify-content:center;font-size:10.5px;font-weight:600;flex-shrink:0;">${fi+1}</span><span style="flex:1;min-width:0;font-size:12.5px;color:var(--p-ink);overflow:hidden;text-overflow:ellipsis;white-space:nowrap;">${_fileEsc(f.fileName||'Attached file')}</span><button type="button" onclick="_cbMoveLessonFile(${i},${fi},-1)" aria-label="Move file up" ${fi===0?'disabled':''} style="border:none;background:none;color:${fi===0?'var(--p-line3)':'var(--p-mut)'};cursor:${fi===0?'default':'pointer'};padding:2px 3px;flex-shrink:0;"><i class="ti ti-chevron-up" style="font-size:15px;"></i></button><button type="button" onclick="_cbMoveLessonFile(${i},${fi},1)" aria-label="Move file down" ${fi===files.length-1?'disabled':''} style="border:none;background:none;color:${fi===files.length-1?'var(--p-line3)':'var(--p-mut)'};cursor:${fi===files.length-1?'default':'pointer'};padding:2px 3px;flex-shrink:0;"><i class="ti ti-chevron-down" style="font-size:15px;"></i></button><button type="button" onclick="_cbRemoveLessonFile(${i},${fi})" style="border:none;background:none;color:var(--p-red);font-size:12px;cursor:pointer;font-family:inherit;flex-shrink:0;padding-left:2px;">Remove</button></div>`).join('')}
-      <label for="cbl-file-${i}" style="display:inline-flex;align-items:center;gap:6px;font-size:12px;color:var(--accent-strong);cursor:pointer;"><i class="ti ti-file-upload" style="font-size:14px;"></i> ${files.length?'Add another file':'Attach files (PDF, image, doc)'}<input type="file" id="cbl-file-${i}" accept="application/pdf,image/*,.pdf,.doc,.docx,.txt,.csv" multiple style="display:none;" onchange="_cbPickLessonFile(${i},this)"></label>
+      ${files.map((f,fi)=>`<div class="cbf-row" draggable="true" ondragstart="_cbFileDragStart(event,${i},${fi})" ondragover="_cbFileDragOver(event,${i},${fi})" ondragleave="_cbFileDragLeave(event)" ondrop="_cbFileDrop(event,${i},${fi})" ondragend="_cbFileDragEnd(event)" style="display:flex;align-items:center;gap:6px;background:var(--p-surf);border:1px solid var(--p-line);border-radius:8px;padding:7px 8px;margin-bottom:6px;cursor:grab;"><span title="Drag to reorder" style="width:20px;height:20px;border-radius:50%;background:var(--p-surf2);color:var(--p-mut);display:flex;align-items:center;justify-content:center;font-size:10.5px;font-weight:600;flex-shrink:0;">${fi+1}</span><span style="flex:1;min-width:0;font-size:12.5px;color:var(--p-ink);overflow:hidden;text-overflow:ellipsis;white-space:nowrap;">${_fileEsc(f.fileName||'Attached file')}</span>${_cbFileStateHTML(_cbFileKey(f))}<button type="button" onclick="_cbMoveLessonFile(${i},${fi},-1)" aria-label="Move file up" ${fi===0?'disabled':''} style="border:none;background:none;color:${fi===0?'var(--p-line3)':'var(--p-mut)'};cursor:${fi===0?'default':'pointer'};padding:2px 3px;flex-shrink:0;"><i class="ti ti-chevron-up" style="font-size:15px;"></i></button><button type="button" onclick="_cbMoveLessonFile(${i},${fi},1)" aria-label="Move file down" ${fi===files.length-1?'disabled':''} style="border:none;background:none;color:${fi===files.length-1?'var(--p-line3)':'var(--p-mut)'};cursor:${fi===files.length-1?'default':'pointer'};padding:2px 3px;flex-shrink:0;"><i class="ti ti-chevron-down" style="font-size:15px;"></i></button><button type="button" onclick="_cbRemoveLessonFile(${i},${fi})" style="border:none;background:none;color:var(--p-red);font-size:12px;cursor:pointer;font-family:inherit;flex-shrink:0;padding-left:2px;">Remove</button></div>`).join('')}
+      <label for="cbl-file-${i}" style="display:inline-flex;align-items:center;gap:6px;font-size:12px;color:var(--accent-strong);cursor:pointer;"><i class="ti ti-file-upload" style="font-size:14px;"></i> ${files.length?'Add another file':'Attach files (PDF, image, doc)'}<input type="file" id="cbl-file-${i}" accept="application/pdf,image/*,.pdf,.doc,.docx,.txt,.csv" multiple style="display:none;" onchange="_cbPickLessonFile(${i},this)"></label>`}
     </div>`;
   }).join('');
 }
-function _cbAddLesson(){_cbSyncFromDOM();window._cbDraft.lessons.push(_cbNewLesson());_cbRenderLessons();}
-function _cbRemoveLesson(i){_cbSyncFromDOM();window._cbDraft.lessons.splice(i,1);if(!window._cbDraft.lessons.length)window._cbDraft.lessons.push(_cbNewLesson());_cbRenderLessons();}
-function _cbMoveLesson(i,dir){_cbSyncFromDOM();const a=window._cbDraft.lessons;const j=i+dir;if(j<0||j>=a.length)return;const t=a[i];a[i]=a[j];a[j]=t;_cbRenderLessons();}
+function _cbAddLesson(){_cbSyncFromDOM();const l=_cbNewLesson();window._cbDraft.lessons.push(l);_cbSetOpen(l,window._cbDraft.lessons.length-1,true);_cbRenderLessons();_cbTouch();}
+function _cbRemoveLesson(i){_cbSyncFromDOM();window._cbDraft.lessons.splice(i,1);if(!window._cbDraft.lessons.length)window._cbDraft.lessons.push(_cbNewLesson());_cbRenderLessons();_cbTouch();}
+function _cbMoveLesson(i,dir){_cbSyncFromDOM();const a=window._cbDraft.lessons;const j=i+dir;if(j<0||j>=a.length)return;const t=a[i];a[i]=a[j];a[j]=t;_cbRenderLessons();_cbTouch();}
 function _cbPickLessonFile(i,input){
   const picked=(input&&input.files)?Array.from(input.files):[];input.value='';
   if(!picked.length)return;
@@ -16240,11 +16295,11 @@ function _cbPickLessonFile(i,input){
   // handed it over and the reads happened to finish. Files already on the lesson keep their places.
   const batch=picked.slice().sort(function(a,b){return _natFileCmp(a&&a.name,b&&b.name);});
   const slot=[];let pending=batch.length;
-  const done=()=>{if(--pending<=0){slot.forEach(function(x){if(x)l.files.push(x);});_cbRenderLessons();}};
+  const done=()=>{if(--pending<=0){slot.forEach(function(x){if(x)l.files.push(x);});_cbRenderLessons();_cbTouch();}};
   batch.forEach((f,bi)=>{
     if(f.size>3*1024*1024){if(typeof proToast==='function')proToast('“'+(f.name||'That file')+'” is over 3MB — for a bigger file, paste a Drive/Dropbox link in the field above instead',0);done();return;}
     const r=new FileReader();
-    r.onload=e=>{slot[bi]={fileId:'',fileName:f.name||'file',fileType:f.type||'',_newFileData:String(e.target.result||'')};done();};
+    r.onload=e=>{slot[bi]={fileId:'',_uid:'u'+Math.random().toString(36).slice(2,9),fileName:f.name||'file',fileType:f.type||'',_newFileData:String(e.target.result||'')};done();};
     r.onerror=()=>{if(typeof proToast==='function')proToast('Could not read “'+(f.name||'a file')+'”');done();};
     r.readAsDataURL(f);
   });
@@ -16301,7 +16356,7 @@ function _cbFileDrop(e,li,fi){
   _cbSyncFromDOM();
   const l=window._cbDraft&&window._cbDraft.lessons[li];
   if(l&&Array.isArray(l.files))_cbMoveWithin(l.files,d.fi,fi);
-  _cbRenderLessons();
+  _cbRenderLessons();_cbTouch();
 }
 function _cbLessonDrop(e,li){
   e.preventDefault();
@@ -16310,7 +16365,7 @@ function _cbLessonDrop(e,li){
   _cbSyncFromDOM();
   const a=window._cbDraft&&window._cbDraft.lessons;
   if(Array.isArray(a))_cbMoveWithin(a,d.li,li);
-  _cbRenderLessons();
+  _cbRenderLessons();_cbTouch();
 }
 // Attachment order IS the order a client reads them in, so it has to be editable. Recovering a
 // course put every file back on the right lesson but in whatever order the device happened to hold
@@ -16321,7 +16376,7 @@ function _cbMoveLessonFile(i,fileIdx,dir){
   const l=window._cbDraft&&window._cbDraft.lessons[i];if(!l||!Array.isArray(l.files))return;
   const j=fileIdx+dir;if(j<0||j>=l.files.length)return;
   const t=l.files[fileIdx];l.files[fileIdx]=l.files[j];l.files[j]=t;
-  _cbRenderLessons();
+  _cbRenderLessons();_cbTouch();
 }
 // Numeric-aware, so "2 Macros" comes before "10 Macros" instead of after it. Ashley numbers her
 // worksheets, which makes this one tap instead of six moves — and it's what makes attaching a
@@ -16334,7 +16389,7 @@ function _cbSortLessonFiles(i){
   _cbSyncFromDOM();
   const l=window._cbDraft&&window._cbDraft.lessons[i];if(!l||!Array.isArray(l.files)||l.files.length<2)return;
   l.files.sort(function(a,b){return _natFileCmp(a&&a.fileName,b&&b.fileName);});
-  _cbRenderLessons();
+  _cbRenderLessons();_cbTouch();
   if(typeof proToast==='function')proToast('Files sorted by name');
 }
 function _cbRemoveLessonFile(i,fileIdx){
@@ -16342,45 +16397,59 @@ function _cbRemoveLessonFile(i,fileIdx){
   const f=l.files[fileIdx];if(!f)return;
   if(f.fileId){if(!Array.isArray(l._removedFileIds))l._removedFileIds=[];l._removedFileIds.push(f.fileId);}   // clean up on save
   l.files.splice(fileIdx,1);
-  _cbRenderLessons();
+  _cbRenderLessons();_cbTouch();
 }
-async function saveCourse(id){
-  // Tapping Save twice used to create the course TWICE — each call minted a fresh id from the clock.
-  // That is exactly what happens when a save looks like it did nothing and you press it again, which
-  // is how Ashley ended up with two copies of the same course.
-  if(window._cbSaving)return;
+// ── Committing the builder ────────────────────────────────────────────────────────────────────
+// One function writes a course, whether that came from autosave or from tapping Done. Autosave
+// passes {silent:true}: no toast, no navigation, and the draft stays exactly where it is because
+// she is still typing into it.
+//
+// The Save button is gone. Every bad moment in this feature came down to not knowing whether a save
+// had landed, and the honest fix is to stop asking her to land it. Every course builder worth
+// copying works this way.
+async function _cbCommit(id,opts){
+  const silent=!!(opts&&opts.silent);
+  if(window._cbSaving)return {ok:false,busy:true};
   _cbSyncFromDOM();
   const g=i=>{const el=document.getElementById(i);return el?el.value.trim():'';};
-  const title=g('cb-title');
-  if(!title){if(typeof proToast==='function')proToast('Give your course a title first');return;}
+  const d=window._cbDraft||{lessons:[]};
+  if(!_cbHasContent())return {ok:false,empty:true};
+  // An untitled course is still her work. Name it rather than refusing to keep it — she can rename
+  // it whenever, and "give it a title first" is exactly the kind of gate that loses an evening.
+  const title=g('cb-title')||'Untitled course';
   window._cbSaving=true;
-  const _btns=[].slice.call(document.querySelectorAll('[onclick^="saveCourse("]'));
-  _btns.forEach(function(b){b.disabled=true;b.style.opacity='.6';});
   try{
   const desc=g('cb-desc');
   const price=g('cb-price')||'Free';
   const statusEl=document.getElementById('cb-status');const status=statusEl?statusEl.value:'Draft';
-  const d=window._cbDraft||{lessons:[]};
-  // One id per builder session, so a second save updates the course the first one created.
-  // Random suffix, not just the clock. Two saves in the SAME MILLISECOND produced the SAME id,
-  // which is how two cards ended up sharing one — and deleting one of them then took both.
+  // One id per builder session, so the next autosave updates what the first one created.
+  // Random suffix, not just the clock: two saves in the SAME MILLISECOND produced the SAME id, and
+  // deleting one of the two cards then took both.
   const courseId=(id&&id!=='new')?id:(window._cbNewId||(window._cbNewId='c'+Date.now().toString(36)+Math.random().toString(36).slice(2,7)));
-  // Finalize lessons: upload any newly-attached files to server + IndexedDB, keep only refs. We
-  // collect the local-write promises and await them below so the bytes are committed before we
-  // leave the editor — that's what stops uploads vanishing when the app reloads right after a save.
   const _fileWrites=[];      // local commits: awaited, fast
-  const _fileUploads=[];     // server pushes: run after the course is saved
+  const _fileUploads=[];     // server pushes: run after the course row is saved
   const lessons=d.lessons.filter(l=>(l.title||'').trim()||l.body||l.videoUrl||l.docUrl||(_lessonFileList(l).length)).map(l=>{
-    const lid=l.id||('l'+Math.random().toString(36).slice(2,8));
+    const lid=l.id||(l.id='l'+Math.random().toString(36).slice(2,8));
     const out={id:lid,title:(l.title||'').trim()||'Lesson',body:l.body||'',videoUrl:(l.videoUrl||'').trim(),docUrl:(l.docUrl||'').trim(),files:[]};
     (Array.isArray(l.files)?l.files:[]).forEach(f=>{
       if(f._newFileData){
         const fid=f.fileId||(_courseFileId(courseId,lid)+'_'+Math.random().toString(36).slice(2,7));
-        (function(_fid,_nm,_ty,_dat){
+        const fkey=_cbFileKey(f);   // the handle the row on screen is already wearing
+        (function(_fid,_key,_nm,_ty,_dat){
           const _payload={name:_nm,type:_ty,data:_dat};
           _fileWrites.push(_persistGuideFileLocal(_fid,_payload,false));
-          _fileUploads.push(function(){return _uploadGuideFileToServer(_fid,_payload).then(function(r){return {ok:true,fileId:_fid,uploaded:!!(r&&r.ok),reason:(r&&r.reason)||''};});});
-        })(fid,f.fileName||'',f.fileType||'',f._newFileData);
+          _cbSetFileState(_key,'uploading');
+          _fileUploads.push(function(){
+            return _uploadGuideFileToServer(_fid,_payload).then(function(r){
+              _cbSetFileState(_key,(r&&r.ok)?'done':'failed');
+              if(_key!==_fid)_cbSetFileState(_fid,(r&&r.ok)?'done':'failed');
+              return {ok:true,fileId:_fid,uploaded:!!(r&&r.ok),reason:(r&&r.reason)||''};
+            });
+          });
+        })(fid,fkey,f.fileName||'',f.fileType||'',f._newFileData);
+        // The bytes are committed now, so the DRAFT stops carrying them. Without this every autosave
+        // would re-upload every file she had attached this session, over and over.
+        f.fileId=fid;delete f._newFileData;delete f._uid;
         out.files.push({fileId:fid,fileName:f.fileName||'',fileType:f.fileType||''});
       }else if(f.fileId){
         out.files.push({fileId:f.fileId,fileName:f.fileName||'',fileType:f.fileType||''});
@@ -16390,66 +16459,154 @@ async function saveCourse(id){
     // renderer (that only reads fileId/fileName) still shows at least the first attachment.
     if(out.files.length){out.fileId=out.files[0].fileId;out.fileName=out.files[0].fileName;out.fileType=out.files[0].fileType;}
     (Array.isArray(l._removedFileIds)?l._removedFileIds:[]).forEach(fid=>{if(fid&&!out.files.some(x=>x.fileId===fid))_fileWrites.push(_persistGuideFileLocal(fid,null,true));});
+    l._removedFileIds=[];   // done with; an autosave must not keep re-deleting them
     return out;
   });
   if(!lessons.length)lessons.push({id:'l1',title:'Lesson 1',body:'',videoUrl:'',fileId:'',fileName:'',fileType:''});
-  const existing=(id&&id!=='new')?courses.find(x=>x.id===id):null;
+  const existing=(id&&id!=='new')?courses.find(x=>x.id===id):(courses.find(x=>x&&x.id===courseId)||null);
   const base={title,desc,price,status,cover:d.cover||'',lessons,modules:lessons.length,moduleNames:lessons.map(l=>l.title),duration:lessons.length+' lesson'+(lessons.length===1?'':'s')};
   base._ts=Date.now();   // lets _mergeCourses keep the newer edit when two devices touched the same course
   if(existing){Object.assign(existing,base);delete existing.resources;}
   else{courses.push(Object.assign({id:courseId,icon:'ti-book',bg:'var(--p-purple-bg)',ic:'var(--p-purple)',bdg:'bp',enrolled:0,revenue:0,progress:0},base));}
-  // Re-creating a course with an id that was previously deleted must clear its tombstone, or the
-  // merge would filter out the new one as "deleted on purpose".
+  // Re-creating a course at an id that was previously deleted must clear its tombstone, or the merge
+  // would filter the new one out as "deleted on purpose".
   try{_loadHiddenCourses();if(hiddenCourses[courseId]||(existing&&hiddenCourses[existing.id])){delete hiddenCourses[courseId];if(existing)delete hiddenCourses[existing.id];_saveHiddenCourses();}}catch(e){}
   try{_markCoursesCustom();}catch(e){}
   let _coursePush=Promise.resolve({local:false,server:false});try{_coursePush=persistCourses()||_coursePush;}catch(e){}
-  // The course row and the custom flag still reach the server before we leave: a refresh right after
-  // saving used to be beaten by the boot pull, which then restored a stale server copy without the
-  // new course. That await stays.
-  // The file bytes are different. Only the LOCAL writes are awaited. They are fast and they are what stops a reload losing the
-  // bytes. The uploads used to be awaited here too, which is why Save looked dead for a minute on a
-  // course with 36 attachments — and why it read as "the button does nothing".
+  // Only the LOCAL file writes are awaited. They are fast, and they are what stops a reload losing
+  // the bytes. Awaiting the uploads here is what made Save look dead for a minute on a course with
+  // 36 attachments.
   try{await Promise.all(_fileWrites);}catch(e){}
   let _res={local:false,server:false};
   try{_res=await _coursePush;}catch(e){}
   try{if(typeof _pushKeyNow==='function')await _pushKeyNow('sc_courses_custom','1');}catch(e){}
   const _savedId=existing?existing.id:courseId;
-  // The durable copy. Independent of the synced blob, independent of this device's storage, and NOT
-  // removed by a later delete — this is what makes a lost course recoverable instead of gone.
+  // The durable copy: independent of the synced blob, independent of this device's storage, and not
+  // removed by a later delete.
   let _snap={ok:false};
   try{const _rec=courses.find(x=>x&&x.id===_savedId);if(_rec)_snap=await _cvSnapshot(_rec,'save');}catch(e){}
 
-  // Nothing reached this device AND nothing reached the server. The course exists only in memory and
-  // a refresh would take it. Say so plainly, keep the builder open with every word still in it, and
-  // do not print a ✓ — a false ✓ here is exactly how an evening's work got thrown away.
-  if(!_res.local&&!_res.server&&!_snap.ok){
-    if(typeof proToast==='function')proToast('Couldn’t save this course yet — it’s still on screen but not stored. Check your connection or free up space on this device, then press Save again.',0);
-    return;
-  }
-  try{_cbAutosaveStop();}catch(e){}
-  window._cbDraft=null;
-  if(typeof proToast==='function'){
-    // Local write failed (usually a full device) but the server has it. Worth saying, because this
-    // device will show the course again only after the next sync.
-    if(!_res.local&&(_res.server||_snap.ok)){
-      proToast('Saved to your account — this device is out of storage, so it’s backed up in the cloud rather than stored here.',0);
-    }else{
-      proToast((existing?'Course updated ✓':'Course created ✓')
-        +(_fileUploads.length?'  ·  uploading '+_fileUploads.length+' file'+(_fileUploads.length===1?'':'s')+' in the background':''));
-    }
-  }
-  // Files keep going after she has moved on. Marked pending up front so that if she closes the tab
-  // mid-upload the course still says so and the Upload files button is there when she comes back.
   if(_fileUploads.length){
     try{const _c=courses.find(x=>x.id===_savedId);if(_c){_c._filesPending=true;persistCourses();}}catch(e){}
     _uploadCourseFilesInBackground(_savedId,_fileUploads);
   }
-  _fgTab='courses';nav('forms');
-  }finally{
-    window._cbSaving=false;
-    try{_btns.forEach(function(b){b.disabled=false;b.style.opacity='';});}catch(e){}
-  }
+  return {ok:!!(_res.local||_res.server||_snap.ok),savedId:_savedId,local:_res.local,server:_res.server,
+          snap:!!_snap.ok,uploads:_fileUploads.length,isNew:!existing,silent:silent};
+  }finally{window._cbSaving=false;}
 }
+// Is there anything here worth keeping? Opening the builder and backing straight out must not leave
+// an "Untitled course" lying around.
+function _cbHasContent(){
+  try{
+    const el=document.getElementById('cb-title');
+    if(el&&String(el.value||'').trim())return true;
+    const d=window._cbDraft;if(!d)return false;
+    if(d.cover)return true;
+    return (d.lessons||[]).some(function(l){
+      return l&&((l.title||'').trim()||l.body||l.videoUrl||l.docUrl||(Array.isArray(l.files)&&l.files.length));
+    });
+  }catch(e){return false;}
+}
+// ── Autosave ──────────────────────────────────────────────────────────────────────────────────
+// Typing is the save. A quiet second after the last keystroke (or any structural change) the course
+// is written, and a small chip in the header says where it stands. There is no Save button to
+// forget, to press twice, or to have lie to you.
+const _CB_DEBOUNCE=1100;
+let _cbSaveTimer=null;
+function _cbStatusHTML(){
+  return `<span id="cb-status-chip" style="display:inline-flex;align-items:center;gap:5px;font-size:11.5px;color:var(--p-mut);min-height:18px;"></span>`;
+}
+function _cbSetStatus(st){
+  const el=document.getElementById('cb-status-chip');if(!el)return;
+  const V={
+    '':        ['',''                      ,'var(--p-mut)'],
+    pending:   ['ti-pencil','Editing…'     ,'var(--p-mut)'],
+    saving:    ['ti-loader-2','Saving…'    ,'var(--p-mut)'],
+    saved:     ['ti-check','Saved'         ,'var(--p-mut)'],
+    cloud:     ['ti-cloud-check','Saved to your account','var(--p-mut)'],
+    failed:    ['ti-alert-circle','Not saved yet — retrying','var(--p-red)']
+  }[st]||['',''];
+  el.style.color=V[2]||'var(--p-mut)';
+  el.innerHTML=V[1]?`<i class="ti ${V[0]}" style="font-size:13px;"></i>${_fileEsc(V[1])}`:'';
+}
+// Any edit — a keystroke, a reorder, a file — restarts the clock.
+function _cbTouch(){
+  if(!document.getElementById('cb-title'))return;
+  try{clearTimeout(_cbSaveTimer);}catch(e){}
+  _cbSetStatus('pending');
+  _cbSaveTimer=setTimeout(_cbAutosaveNow,_CB_DEBOUNCE);
+}
+async function _cbAutosaveNow(){
+  try{clearTimeout(_cbSaveTimer);}catch(e){}
+  _cbSaveTimer=null;
+  if(!document.getElementById('cb-title'))return;          // she left the builder
+  if(!_cbHasContent()){_cbSetStatus('');return;}
+  if(window._cbSaving){_cbTouch();return;}                 // a commit is already running; come back
+  _cbSetStatus('saving');
+  let r=null;
+  try{r=await _cbCommit(window._cbEditingId,{silent:true});}catch(e){}
+  if(!r||r.busy){_cbTouch();return;}
+  if(r.empty){_cbSetStatus('');return;}
+  // Once a brand-new course has been written it has a real id — keep editing THAT one.
+  if(r.savedId)window._cbEditingId=r.savedId;
+  if(r.ok)_cbSetStatus(r.local?'saved':'cloud');
+  else{_cbSetStatus('failed');_cbSaveTimer=setTimeout(_cbAutosaveNow,4000);}
+  try{if(typeof _cbRefreshLessonSummaries==='function')_cbRefreshLessonSummaries();}catch(e){}
+}
+// Leaving the builder commits immediately rather than waiting out the debounce.
+async function _cbFlushNow(){
+  try{clearTimeout(_cbSaveTimer);}catch(e){}
+  _cbSaveTimer=null;
+  if(!document.getElementById('cb-title')||!_cbHasContent())return null;
+  try{return await _cbCommit(window._cbEditingId,{silent:true});}catch(e){return null;}
+}
+
+// ── Per-file upload state ─────────────────────────────────────────────────────────────────────
+// The indicator belongs on the file, not in a banner on the course card two screens away.
+function _cbFileKey(f){
+  if(!f)return '';
+  if(f.fileId)return f.fileId;
+  if(!f._uid)f._uid='u'+Math.random().toString(36).slice(2,9);
+  return f._uid;
+}
+function _cbSetFileState(fid,st){
+  try{
+    if(!window._cbFileState)window._cbFileState={};
+    window._cbFileState[fid]=st;
+    const el=document.querySelector('.cbf-st[data-fid="'+String(fid).replace(/"/g,'')+'"]');
+    if(el)el.outerHTML=_cbFileStateHTML(fid);
+  }catch(e){}
+}
+function _cbFileStateHTML(fid){
+  const st=(window._cbFileState&&window._cbFileState[fid])||'';
+  const V={
+    uploading:['ti-loader-2','var(--p-mut)','Uploading…'],
+    done:     ['ti-cloud-check','var(--accent-strong)','Backed up — your clients can download this'],
+    failed:   ['ti-cloud-off','var(--p-red)','Only on this device — it will retry']
+  }[st];
+  const safe=String(fid||'').replace(/"/g,'');
+  if(!V)return `<span class="cbf-st" data-fid="${safe}" style="width:16px;flex-shrink:0;"></span>`;
+  return `<span class="cbf-st" data-fid="${safe}" title="${_fileEsc(V[2])}" style="flex-shrink:0;display:inline-flex;"><i class="ti ${V[0]}" style="font-size:14px;color:${V[1]};"></i></span>`;
+}
+// Done just leaves. The work is already saved — this button exists so there is an obvious way out,
+// not because anything depends on pressing it.
+async function _cbDone(){
+  const r=await _cbFlushNow();
+  // Only let go of the draft once it is actually somewhere. Clearing it first and then discovering
+  // the save failed is how you lose the thing you were trying to keep.
+  if(r&&!r.ok){
+    _cbSetStatus('failed');
+    _cbSaveTimer=setTimeout(_cbAutosaveNow,4000);   // keep trying while she reads this
+    if(typeof proToast==='function')proToast('Couldn\u2019t save this course yet \u2014 check your connection or free up space on this device. Your work is still on this screen, and it keeps trying.',0);
+    return;
+  }
+  try{_cbAutosaveStop();}catch(e){}
+  window._cbDraft=null;window._cbOpen={};
+  if(r&&r.uploads&&typeof proToast==='function')proToast('Uploading '+r.uploads+' lesson file'+(r.uploads===1?'':'s')+' in the background');
+  _fgTab='courses';nav('forms');
+}
+// Kept for anything that still calls it (and for the tests): save, then leave.
+async function saveCourse(id){if(id&&id!=='new')window._cbEditingId=id;return _cbDone();}
 
 // Delete a course — including the seeded/demo starter courses. Removes it from the list,
 // cleans up any attached lesson files (server + local), and marks the course set customized
