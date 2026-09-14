@@ -15753,6 +15753,9 @@ function renderCourseBuilder(id){
   setNav('more');
   document.getElementById('tt').textContent=id==='new'?'New course':'Edit course';
   const c=id==='new'?null:courses.find(x=>x.id===id);
+  // Each new-course session mints ONE id. Opening the builder clears it so the next course is a
+  // genuinely new one; saving twice inside a session then updates rather than creating a duplicate.
+  window._cbNewId=null;
   _cbInitDraft(c);
   S.innerHTML=`
   <div style="padding:12px 16px 0;display:flex;align-items:center;justify-content:flex-end;">
@@ -15850,15 +15853,24 @@ function _cbRemoveLessonFile(i,fileIdx){
   _cbRenderLessons();
 }
 async function saveCourse(id){
+  // Tapping Save twice used to create the course TWICE — each call minted a fresh id from the clock.
+  // That is exactly what happens when a save looks like it did nothing and you press it again, which
+  // is how Ashley ended up with two copies of the same course.
+  if(window._cbSaving)return;
   _cbSyncFromDOM();
   const g=i=>{const el=document.getElementById(i);return el?el.value.trim():'';};
   const title=g('cb-title');
   if(!title){if(typeof proToast==='function')proToast('Give your course a title first');return;}
+  window._cbSaving=true;
+  const _btns=[].slice.call(document.querySelectorAll('[onclick^="saveCourse("]'));
+  _btns.forEach(function(b){b.disabled=true;b.style.opacity='.6';});
+  try{
   const desc=g('cb-desc');
   const price=g('cb-price')||'Free';
   const statusEl=document.getElementById('cb-status');const status=statusEl?statusEl.value:'Draft';
   const d=window._cbDraft||{lessons:[]};
-  const courseId=(id&&id!=='new')?id:('c'+Date.now().toString(36));
+  // One id per builder session, so a second save updates the course the first one created.
+  const courseId=(id&&id!=='new')?id:(window._cbNewId||(window._cbNewId='c'+Date.now().toString(36)));
   // Finalize lessons: upload any newly-attached files to server + IndexedDB, keep only refs. We
   // collect the local-write promises and await them below so the bytes are committed before we
   // leave the editor — that's what stops uploads vanishing when the app reloads right after a save.
@@ -15918,6 +15930,10 @@ async function saveCourse(id){
     _uploadCourseFilesInBackground(_savedId,_fileUploads);
   }
   _fgTab='courses';nav('forms');
+  }finally{
+    window._cbSaving=false;
+    try{_btns.forEach(function(b){b.disabled=false;b.style.opacity='';});}catch(e){}
+  }
 }
 
 // Delete a course — including the seeded/demo starter courses. Removes it from the list,
