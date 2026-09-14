@@ -2405,6 +2405,14 @@ function _syncable(k){return typeof k==='string'&&k.indexOf('sc_')===0&&!_SYNC_S
 // copy could drop ids and resurrect a deleted guide. Same class of bug as sc_courses.
 const _TOMB_OBJ={sc_deleted_clients:1,sc_hidden_square:1,sc_merged_ids:1,sc_merged_into:1,sc_ci_dismissed:1,sc_course_purchases:1,sc_hidden_courses:1,sc_hidden_guides:1,sc_hidden_forms:1};
 const _TOMB_ARR={sc_flag_dismissed:1,sc_form_flag_dismissed:1,sc_ci_cleared:1,sc_ci_read:1,sc_home_dismissed:1,sc_notif_cleared:1,sc_notif_read:1};
+// One-way latches: once the provider has done the thing, it is done forever. These are plain '1'
+// strings, so they can't live in the tombstone tables — but they have the same failure mode. A device
+// that never got the flag would push its blank value, the server would take it, and the next pull
+// would clear it here: sample clients reappear (sc_hide_sample), or the course reseeder wakes back up
+// (sc_courses_custom) and overwrites real work with starter courses. Syncing may SET one of these,
+// never clear one.
+const _STICKY_TRUE={sc_hide_sample:1,sc_courses_custom:1,sc_affiliate_custom:1,sc_protocols_custom:1,sc_service_menu_custom:1,sc_photorelease_migrated:1};
+function _isStickyTrueKey(k){return !!_STICKY_TRUE[k];}
 function _isTombstoneKey(k){return !!(_TOMB_OBJ[k]||_TOMB_ARR[k]);}
 // Merge the client roster per-client-id instead of whole-blob overwriting it, so two devices that edit
 // DIFFERENT clients both keep their edits (the old last-writer-wins dropped one device's whole change).
@@ -2610,6 +2618,54 @@ function _mergeAuthoredById(serverStr,localStr,hiddenKey){
   const srvFiltered=JSON.stringify(srv.filter(c=>c&&c.id&&!hidden[c.id]));
   return {str:str,changed:str!==srvFiltered};
 }
+// sc_forms is one object holding four things: tmpls (the questions per form), guides (which guides
+// are attached to each form), custom (the forms the provider created) and emojis (icon overrides).
+// It rode the plain overwrite, so a stale device could drop a whole custom form — the same loss that
+// hit courses. Union all four: `custom` by id like any authored library, and the three id-keyed maps
+// by KEY PRESENCE (an emoji of '' means "hide the icon", so an empty value is real data, not absent).
+// Anything in sc_hidden_forms is stripped from all four, so a deleted form cannot come back and does
+// not leave its questions or attachments behind.
+function _mergeForms(serverStr,localStr){
+  let srv,loc;
+  try{srv=JSON.parse(serverStr||'null');}catch(e){return null;}
+  try{loc=JSON.parse(localStr||'null');}catch(e){loc=null;}
+  if(!srv||typeof srv!=='object')return null;
+  if(!loc||typeof loc!=='object')loc={};
+  let hidden={};
+  try{const h=localStorage.getItem('sc_hidden_forms');if(h){const o=JSON.parse(h);if(o&&typeof o==='object')hidden=o;}}catch(e){}
+
+  // custom forms: union by id, newer _ts wins, never resurrect a deleted one
+  const cs=Array.isArray(srv.custom)?srv.custom:[],cl=Array.isArray(loc.custom)?loc.custom:[];
+  const out=[],idx={};
+  const take=function(f,fromLocal){
+    if(!f||!f.id||hidden[f.id])return;
+    if(!(f.id in idx)){idx[f.id]=out.length;out.push(f);return;}
+    const cur=out[idx[f.id]],a=Number(cur&&cur._ts)||0,b=Number(f&&f._ts)||0;
+    if(b>a)out[idx[f.id]]=f;
+    else if(!a&&!b&&!fromLocal)out[idx[f.id]]=f;
+  };
+  cs.forEach(f=>take(f,false)); cl.forEach(f=>take(f,true));
+
+  // the three id-keyed maps: keep every key either side knows, server wins a genuine conflict
+  const mergeMap=function(a,b){
+    const o={};
+    if(b&&typeof b==='object')Object.keys(b).forEach(k=>{if(!hidden[k])o[k]=b[k];});   // local first
+    if(a&&typeof a==='object')Object.keys(a).forEach(k=>{if(!hidden[k])o[k]=a[k];});   // server overrides
+    return o;
+  };
+  const merged={
+    tmpls:mergeMap(srv.tmpls,loc.tmpls),
+    guides:mergeMap(srv.guides,loc.guides),
+    custom:out,
+    emojis:mergeMap(srv.emojis,loc.emojis)
+  };
+  const str=JSON.stringify(merged);
+  const srvView=JSON.stringify({
+    tmpls:mergeMap(srv.tmpls,null),guides:mergeMap(srv.guides,null),
+    custom:cs.filter(f=>f&&f.id&&!hidden[f.id]),emojis:mergeMap(srv.emojis,null)
+  });
+  return {str:str,changed:str!==srvView};
+}
 function _mergeCourses(serverStr,localStr){return _mergeAuthoredById(serverStr,localStr,'sc_hidden_courses');}
 // Custom guides are the provider's own writing and were overwritten the same way courses were.
 function _mergeResources(serverStr,localStr){return _mergeAuthoredById(serverStr,localStr,'sc_hidden_guides');}
@@ -2674,6 +2730,10 @@ const Cloud={
         return;
       }
     }
+    if(_isStickyTrueKey(k)){
+      const localOn=localStorage.getItem(k)==='1',serverOn=data[k]==='1';
+      if(localOn&&!serverOn){try{this.push(k,'1');}catch(e){}return;}   // keep ours, and tell the server
+    }
     if(_isTombstoneKey(k)){
       const mergedStr=_mergeTombstone(k,data[k],localStorage.getItem(k));
       if(mergedStr!=null){
@@ -2686,10 +2746,11 @@ const Cloud={
     // Chat data is append-only and provider-sent messages live ONLY in sc_msgstore, so a plain overwrite
     // here let a stale device wipe history and (via sc_seen_events) resurrect read messages as unread.
     // Merge these three the same way as sc_clients: union, never lose, push the superset back.
-    if(k==='sc_msgstore'||k==='sc_threads'||k==='sc_seen_events'||k==='sc_attn_seen'||k==='sc_import_batches'||k==='sc_courses'||k==='sc_resources'){
+    if(k==='sc_msgstore'||k==='sc_threads'||k==='sc_seen_events'||k==='sc_attn_seen'||k==='sc_import_batches'||k==='sc_courses'||k==='sc_resources'||k==='sc_forms'){
       const mm=(k==='sc_msgstore')?_mergeMsgStore(data[k],localStorage.getItem(k))
               :(k==='sc_courses')?_mergeCourses(data[k],localStorage.getItem(k))
               :(k==='sc_resources')?_mergeResources(data[k],localStorage.getItem(k))
+              :(k==='sc_forms')?_mergeForms(data[k],localStorage.getItem(k))
               :(k==='sc_threads')?_mergeThreads(data[k],localStorage.getItem(k))
               :(k==='sc_attn_seen')?_mergeAttnSeen(data[k],localStorage.getItem(k))
               :(k==='sc_import_batches')?_mergeImportBatches(data[k],localStorage.getItem(k))
@@ -13625,8 +13686,9 @@ function saveFormBuilder(tid,thenPreview){
   let id=tid;
   if(tid==='new'){
     id='custom'+(++customFormSeq);
-    customForms.push({id,name});
+    customForms.push({id,name,_ts:Date.now()});
   }
+  else{const _cf=customForms.find(f=>f&&f.id===id);if(_cf)_cf._ts=Date.now();}   // lets _mergeForms keep the newer edit
   formTmpls[id]={name,qs};
   // Emoji override: checkbox = hide icon (''); a typed emoji sets it; blank+unchecked reverts to the default tile.
   try{const hide=document.getElementById('form-emoji-hide');const ei=document.getElementById('form-emoji-input');
