@@ -1120,7 +1120,7 @@ function _coursesAreCustom(){try{return localStorage.getItem('sc_courses_custom'
 // _TOMB_OBJ), because a delete that leaves no record is indistinguishable from "never seeded" —
 // which is exactly why deleted sample courses kept reappearing.
 let hiddenCourses={};
-function _loadHiddenCourses(){try{const b=localStorage.getItem('sc_hidden_courses');if(b){const o=JSON.parse(b);if(o&&typeof o==='object')hiddenCourses=o;}}catch(e){}}
+function _loadHiddenCourses(){try{const b=(typeof _lsGet==='function')?_lsGet('sc_hidden_courses'):localStorage.getItem('sc_hidden_courses');if(b){const o=JSON.parse(b);if(o&&typeof o==='object')hiddenCourses=o;}}catch(e){}}
 function _saveHiddenCourses(){try{const v=JSON.stringify(hiddenCourses);localStorage.setItem('sc_hidden_courses',v);if(typeof _pushKeyNow==='function')_pushKeyNow('sc_hidden_courses',v);}catch(e){}}
 function _anyCourseDeleted(){try{_loadHiddenCourses();return Object.keys(hiddenCourses).length>0;}catch(e){return false;}}
 function _markCoursesCustom(){try{localStorage.setItem('sc_courses_custom','1');}catch(e){}try{if(typeof _pushKeyNow==='function')_pushKeyNow('sc_courses_custom','1');}catch(e){}}
@@ -1140,6 +1140,11 @@ function _reseedCoursesIfDefault(){
     // that has never been seeded — so the reseeder put them all straight back. A single deletion is
     // proof the provider has been here and made a decision: never reseed over that.
     if(_anyCourseDeleted())return;
+    // A published course is finished work. Nothing automatic gets to rewrite the shelf it sits on.
+    if((courses||[]).some(function(c){return c&&String(c.status||'')==='Published';})){
+      try{_markCoursesCustom();}catch(e){}
+      return;
+    }
     const next=_coursesDefaults();
     // Infer "customized" from the DATA, not just the sc_courses_custom flag. If the current set
     // holds any course that isn't one of the profession defaults (a course the provider made), or
@@ -2628,7 +2633,14 @@ function _mergeAuthoredById(serverStr,localStr,hiddenKey){
     if(!(c.id in idx)){idx[c.id]=out.length;out.push(c);return;}
     const cur=out[idx[c.id]];
     const a=Number(cur&&cur._ts)||0,b=Number(c&&c._ts)||0;
-    if(b>a)out[idx[c.id]]=c;                      // newer edit wins; tie keeps what is already there
+    // Published means finished. When two copies of the same course are equally old — or carry no
+    // timestamps at all — the one that is Published is the one she stands behind, so it is never
+    // quietly swapped for a Draft of the same thing. A genuinely NEWER edit still wins: that is her
+    // own work from another device, not an automatic process reaching into a published course.
+    const pubCur=String((cur&&cur.status)||'')==='Published',pubNew=String((c&&c.status)||'')==='Published';
+    if(b>a)out[idx[c.id]]=c;                      // newer edit wins
+    else if(b===a&&pubNew&&!pubCur)out[idx[c.id]]=c;
+    else if(b===a&&pubCur&&!pubNew){/* keep the published one */}
     else if(!a&&!b&&!fromLocal)out[idx[c.id]]=c;  // no timestamps either side: server copy, as before
   };
   srv.forEach(c=>take(c,false));
@@ -2737,13 +2749,13 @@ const Cloud={
   async resetPw(token,pw){const r=await fetch('/api/reset',{method:'POST',headers:{'Content-Type':'application/json'},body:JSON.stringify({token,password:pw})});let j={};try{j=await r.json();}catch(e){}if(!r.ok)throw new Error((j&&j.error)||'Reset failed');return true;},
   async verifyEmail(token){try{const r=await fetch('/api/verify?token='+encodeURIComponent(token));return r.ok;}catch(e){return false;}},
   logout(){this.token='';try{localStorage.removeItem('sc_token');}catch(e){}},
-  async pull(){if(!this.token)return -1;let r;try{r=await fetch('/api/store',{headers:{'Authorization':'Bearer '+this.token}});}catch(e){return -1;}if(r.status===401){this._authFailed=true;this.logout();return -1;}let j={};try{j=await r.json();}catch(e){}const data=(j&&j.data)||{};const set=this._origSet||localStorage.setItem.bind(localStorage);const keys=Object.keys(data);keys.forEach(k=>{try{
+  async pull(){if(!this.token)return -1;let r;try{r=await fetch('/api/store',{headers:{'Authorization':'Bearer '+this.token}});}catch(e){return -1;}if(r.status===401){this._authFailed=true;this.logout();return -1;}let j={};try{j=await r.json();}catch(e){}const data=(j&&j.data)||{};const keys=Object.keys(data);this._lastPulledKeys=new Set(keys);const set=(k,v)=>{_lsPersist(k,v);};keys.forEach(k=>{try{
     // Never overwrite a key that still has a pending local write queued, that local value
     // is newer than whatever the server returned (e.g. a note saved moments before a reload,
     // whose debounced push hadn't flushed yet). Overwriting it here is silent data loss.
     if(this._queue&&Object.prototype.hasOwnProperty.call(this._queue,k))return;
     if(k==='sc_clients'){
-      const m=_mergeClients(data[k],localStorage.getItem(k));
+      const m=_mergeClients(data[k],_lsGet(k));
       if(m&&m.str!=null){
         set(k,m.str);
         // Push the merged superset back only when THIS device contributed a client the server lacked or a
@@ -2753,11 +2765,11 @@ const Cloud={
       }
     }
     if(_isStickyTrueKey(k)){
-      const localOn=localStorage.getItem(k)==='1',serverOn=data[k]==='1';
+      const localOn=_lsGet(k)==='1',serverOn=data[k]==='1';
       if(localOn&&!serverOn){try{this.push(k,'1');}catch(e){}return;}   // keep ours, and tell the server
     }
     if(_isTombstoneKey(k)){
-      const mergedStr=_mergeTombstone(k,data[k],localStorage.getItem(k));
+      const mergedStr=_mergeTombstone(k,data[k],_lsGet(k));
       if(mergedStr!=null){
         set(k,mergedStr);
         // If local had ids the server didn't, push the superset back so every device converges.
@@ -2769,14 +2781,14 @@ const Cloud={
     // here let a stale device wipe history and (via sc_seen_events) resurrect read messages as unread.
     // Merge these three the same way as sc_clients: union, never lose, push the superset back.
     if(k==='sc_msgstore'||k==='sc_threads'||k==='sc_seen_events'||k==='sc_attn_seen'||k==='sc_import_batches'||k==='sc_courses'||k==='sc_resources'||k==='sc_forms'){
-      const mm=(k==='sc_msgstore')?_mergeMsgStore(data[k],localStorage.getItem(k))
-              :(k==='sc_courses')?_mergeCourses(data[k],localStorage.getItem(k))
-              :(k==='sc_resources')?_mergeResources(data[k],localStorage.getItem(k))
-              :(k==='sc_forms')?_mergeForms(data[k],localStorage.getItem(k))
-              :(k==='sc_threads')?_mergeThreads(data[k],localStorage.getItem(k))
-              :(k==='sc_attn_seen')?_mergeAttnSeen(data[k],localStorage.getItem(k))
-              :(k==='sc_import_batches')?_mergeImportBatches(data[k],localStorage.getItem(k))
-              :_mergeSeenEvents(data[k],localStorage.getItem(k));
+      const mm=(k==='sc_msgstore')?_mergeMsgStore(data[k],_lsGet(k))
+              :(k==='sc_courses')?_mergeCourses(data[k],_lsGet(k))
+              :(k==='sc_resources')?_mergeResources(data[k],_lsGet(k))
+              :(k==='sc_forms')?_mergeForms(data[k],_lsGet(k))
+              :(k==='sc_threads')?_mergeThreads(data[k],_lsGet(k))
+              :(k==='sc_attn_seen')?_mergeAttnSeen(data[k],_lsGet(k))
+              :(k==='sc_import_batches')?_mergeImportBatches(data[k],_lsGet(k))
+              :_mergeSeenEvents(data[k],_lsGet(k));
       if(mm&&mm.str!=null){
         set(k,mm.str);
         if(mm.changed){try{this.push(k,mm.str);}catch(e){}}
@@ -2784,7 +2796,7 @@ const Cloud={
       }
     }
     set(k,data[k]);
-  }catch(e){}});this._lastPulledKeys=new Set(keys);return keys.length;},
+  }catch(e){}});return keys.length;},
   pushAllLocal(){const items={};try{for(let i=0;i<localStorage.length;i++){const k=localStorage.key(i);if(_syncable(k))items[k]=localStorage.getItem(k);}}catch(e){}if(this.token&&Object.keys(items).length)return fetch('/api/store',{method:'PUT',headers:{'Content-Type':'application/json','Authorization':'Bearer '+this.token},body:JSON.stringify({items})}).catch(()=>{});},
   push(k,v){if(!this.enabled||!this.token)return;this._queue[k]=v;clearTimeout(this._timer);this._timer=setTimeout(()=>this._flush(),700);},
   // Flush any pending queued writes immediately during page unload. A normal fetch is often
@@ -2895,19 +2907,38 @@ function _lsEvictForSpace(need,writingKey){
   }catch(e){}
   return freed;
 }
+// Values that could NOT be written to this device because it is full. They are still correct — most
+// of them just came down from the server — so the app has to keep using them for this session.
+// Without this, a full device reads a stale localStorage, renders a screen missing the thing that
+// just synced, and looks for all the world like it lost the data.
+Cloud._mem={};
+// The single place that writes to this device. Returns null when it landed, or the error when it
+// could not. Tries once more after freeing space the server is confirmed to hold, and whatever it
+// still cannot store is kept in memory so this session is not left reading a stale copy.
+function _lsPersist(k,v){
+  const set=(typeof Cloud!=='undefined'&&Cloud&&Cloud._origSet)||localStorage.setItem.bind(localStorage);
+  const str=String(v==null?'':v);
+  try{set(k,str);try{delete Cloud._mem[k];}catch(e2){}return null;}catch(e){
+    try{
+      if(_lsEvictForSpace(str.length+65536,k)>0){
+        try{set(k,str);try{delete Cloud._mem[k];}catch(e3){}return null;}catch(e4){}
+      }
+    }catch(e5){}
+    try{Cloud._mem[k]=str;}catch(e6){}
+    return e;
+  }
+}
+// Read what this device SHOULD have, not just what it managed to store. A value held in memory is
+// there precisely because it is newer than whatever is on disk.
+function _lsGet(k){
+  try{if(Cloud&&Cloud._mem&&Object.prototype.hasOwnProperty.call(Cloud._mem,k))return Cloud._mem[k];}catch(e){}
+  try{return localStorage.getItem(k);}catch(e){return null;}
+}
 (function(){try{const _set=localStorage.setItem.bind(localStorage);Cloud._origSet=_set;localStorage.setItem=function(k,v){
   // Write to localStorage AND mirror to the server. Critically, a localStorage quota
   // failure (e.g. a big blob that no longer fits) must NOT stop the server push, otherwise
   // the data is lost on both sides. So the local write is isolated, and Cloud.push always runs.
-  var _lsErr=null;
-  try{_set(k,v);}catch(e){
-    _lsErr=e;
-    try{
-      if(_lsEvictForSpace(String(v==null?'':v).length+65536,k)>0){
-        try{_set(k,v);_lsErr=null;}catch(e2){_lsErr=e2;}
-      }
-    }catch(e3){}
-  }
+  var _lsErr=_lsPersist(k,v);
   try{if(_syncable(k))Cloud.push(k,v);}catch(e){}
   if(_lsErr)throw _lsErr;   // still surface quota errors to callers that check for them
 };}catch(e){}})();
@@ -4618,7 +4649,7 @@ function _pruneExpiredCheckins(){
 function persistCourses(){const v=JSON.stringify(courses);let _local=true;try{localStorage.setItem('sc_courses',v);}catch(e){_local=false;try{_persistFailWarn();}catch(e2){}}
   const p=(typeof _pushKeyNow==='function')?_pushKeyNow('sc_courses',v):Promise.resolve({ok:false,reason:'nopush'});
   return Promise.resolve(p).then(function(r){return {local:_local,server:!!(r&&r.ok)};},function(){return {local:_local,server:false};});}
-function loadCourses(){try{const raw=localStorage.getItem('sc_courses');if(raw){const arr=JSON.parse(raw);if(Array.isArray(arr))courses=_dedupeCourses(arr);}}catch(e){}}
+function loadCourses(){try{const raw=(typeof _lsGet==='function')?_lsGet('sc_courses'):localStorage.getItem('sc_courses');if(raw){const arr=JSON.parse(raw);if(Array.isArray(arr))courses=_dedupeCourses(arr);}}catch(e){}}
 // Collapse entries sharing an id, keeping the most recently edited. Two rows with one id is the
 // state that lets a single delete destroy both, so it is repaired on the way in, not tolerated.
 function _dedupeCourses(arr){
@@ -16560,7 +16591,12 @@ async function _cvReconcileOnBoot(){
       }catch(e){}
       if(!rec||!rec.id)continue;
       delete rec._filesPending;
-      rec._ts=Date.now();                 // newest wins in _mergeCourses, so the next sync keeps it
+      // Keep the snapshot's OWN age. Stamping a rescue with "now" makes it beat every other copy in
+      // _mergeCourses — including a newer, correct one arriving from the server — so an older
+      // backup could roll back edits (a lesson's file order, say) and then win forever. A rescue is
+      // a floor under the data, never a claim to be the latest word.
+      const _snapTs=Number(newest[cid]&&newest[cid].ts)||0;
+      rec._ts=Math.max(Number(rec._ts)||0,_snapTs)||_snapTs||Date.now();
       courses.push(rec);
       names.push(rec.title||'a course');
     }
@@ -16861,6 +16897,9 @@ async function recoverLostCourses(){
   if(!ids.length){if(typeof proToast==='function')proToast('Nothing to recover on this device.');return;}
   let made=0,files=0;
   ids.forEach(function(courseId){
+    // Never rebuild over a course that is still here — published or not. This path invents lesson
+    // titles, so landing it on real work would be destructive.
+    if((courses||[]).some(function(x){return x&&x.id===courseId;}))return;
     const lessonIds=Object.keys(found[courseId]);
     const lessons=lessonIds.map(function(lid,i){
       const fs=found[courseId][lid];files+=fs.length;
