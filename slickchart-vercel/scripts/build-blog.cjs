@@ -28,7 +28,10 @@ const STATIC_PAGES = [
   { loc: '/blog', priority: '0.8', changefreq: 'weekly' },
   { loc: '/privacy', priority: '0.3', changefreq: 'yearly' },
   { loc: '/terms', priority: '0.3', changefreq: 'yearly' },
-  { loc: '/support', priority: '0.4', changefreq: 'monthly' }
+  { loc: '/support', priority: '0.4', changefreq: 'monthly' },
+  // The free starter opt-in. /build is deliberately NOT here — a sales page doesn't need to be
+  // crawled — but /free is meant to spread, and every copy of the freebie links back to it.
+  { loc: '/free', priority: '0.9', changefreq: 'monthly' }
 ];
 
 // ── frontmatter ────────────────────────────────────────────────────────────
