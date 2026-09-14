@@ -17461,7 +17461,7 @@ function renderAccount(){
       ['ti-sparkles','var(--p-purple-bg)','var(--p-purple)','AI Features','Brief, voice notes & virtual consultations','ai-settings'],
       ['ti-bell','var(--p-surf2)','var(--p-green)','Notification preferences','Turn check-in, form &amp; reminder alerts on/off','notifications'],
       ['ti-help-circle','var(--p-blue-bg)','var(--p-blue)','Help','Search how-tos & troubleshooting','help'],
-      ['ti-lock','var(--accent-tint)','var(--accent)',_isNativeApp()?'Security':'Security & Billing',_isNativeApp()?'Password & two-factor authentication':'Password, 2FA, plan & invoices','security-billing'],
+      ['ti-lock','var(--accent-tint)','var(--accent)',_isNativeApp()?'Security':'Security & Billing',_isNativeApp()?'Password & two-factor authentication':'Password, 2FA, plan, invoices &amp; cancelling','security-billing'],
     ].map(([icon,bg,ic,name,desc,screen])=>`<div class="nr" style="padding:11px 14px;" ${screen?`onclick="nav('${screen}')"`:''}><div style="width:38px;height:38px;border-radius:10px;background:${bg};display:flex;align-items:center;justify-content:center;flex-shrink:0;"><i class="ti ${icon}" style="font-size:18px;color:${ic};"></i></div><div style="flex:1;"><div style="font-size:14px;font-weight:500;color:var(--p-ink);">${name}</div><div style="font-size:12px;color:var(--p-mut);">${desc}</div></div><i aria-hidden="true" class="ti ti-chevron-right" style="font-size:16px;color:var(--p-mut);"></i></div>`).join('')}
   </div>
   <button onclick="_doLogout()" style="width:100%;border:1px solid #555;background:none;border-radius:10px;padding:11px;font-size:14px;color:var(--p-mut);cursor:pointer;margin-top:10px;font-family:inherit;">Sign out</button>
@@ -21561,7 +21561,16 @@ const helpArticles=[
   {id:'msg-auto',cat:'Messaging & notifications',title:'Automated messages',kw:'automation automated message reminder schedule',body:`Messages → Automations lets you set up messages that go out automatically, like appointment reminders or check-in requests, on a schedule you choose.`},
 
   // Billing & account
-  {id:'bill-plan',cat:'Billing & account',title:'Managing your subscription',kw:'billing subscription plan payment card cancel',body:`Settings → Security & billing shows your current plan and lets you open the billing portal to update your card, view invoices, or change your plan.`},
+  {id:'bill-plan',cat:'Billing & account',title:'Managing your subscription',kw:'billing subscription plan payment card invoice receipt',body:`Settings → Security & billing shows your current plan, when it renews, and a button for your payment method and invoices.`},
+  {id:'bill-cancel',cat:'Billing & account',title:'How to cancel',kw:'cancel cancelling canceling stop end quit unsubscribe subscription close downgrade billing charge refund',body:`Settings → Security & billing → <b>Cancel subscription</b>. One confirmation and it is done — no email required, no phone call, nothing to ask us for.
+
+What happens: nothing further is charged, and you keep full access until the end of the period you have already paid for. That date is shown on the same screen.
+
+Your data is NOT deleted. Clients, notes, photos, forms and courses stay exactly as they are, and signing back in later picks up where you left off. If you want your data erased too, that is a separate choice: Settings → Security & billing → Delete my account.
+
+Changed your mind before the end date? The same screen has <b>Keep my subscription</b>.
+
+If anything on that screen does not work, email us and we will cancel it for you the same day. You should never have to chase anyone to stop paying.`},
   {id:'bill-sessions',cat:'Billing & account',title:'Active sessions & signing out other devices',kw:'active sessions device sign out logout security',body:`Settings → Security & billing → Active sessions shows every device currently signed into your account, with location and last-active time. You can revoke any session you don't recognize.`},
 
   // Security
@@ -21577,7 +21586,7 @@ const helpArticles=[
 // Payment-silent native app: the "Managing your subscription" help article describes the billing
 // portal / changing plans, so it's excluded from search, listing, and direct open in the native
 // shell. Web/PWA sees the full list unchanged.
-function _helpList(){return _isNativeApp()?helpArticles.filter(a=>a.id!=='bill-plan'):helpArticles;}
+function _helpList(){return _isNativeApp()?helpArticles.filter(a=>a.id!=='bill-plan'&&a.id!=='bill-cancel'):helpArticles;}
 function _searchHelp(q){
   q=(q||'').toLowerCase().trim();
   const list=_helpList();
@@ -24642,8 +24651,12 @@ async function _loadBillingStatus(){
 function _billingHTML(sub){
   const active=sub&&(sub.status==='active');
   const pastDue=sub&&sub.status==='past_due';
-  const statusLabel=active?'Active':pastDue?'Payment failed':sub?'Canceled':'No subscription found';
-  const statusColor=active?'bg':pastDue?'br':'bm';
+  // Stripe leaves a cancelled subscription 'active' until the paid-up period actually ends. Saying
+  // "Active \u2014 next billing date" to someone who has just cancelled is how they end up cancelling
+  // twice, or writing in to ask whether it worked.
+  const ending=!!(sub&&sub.cancel_at_period_end&&active);
+  const statusLabel=ending?'Ending':active?'Active':pastDue?'Payment failed':sub?'Canceled':'No subscription found';
+  const statusColor=ending?'bm':active?'bg':pastDue?'br':'bm';
   const amount=sub&&sub.plan_amount?('$'+(sub.plan_amount/100).toFixed(2)+'/month'):'$10.00/month';
   // Stripe sends current_period_end as UNIX seconds; new Date() expects milliseconds. A raw
   // seconds value would render as a 1970 date. Convert when it looks like seconds (< 1e12),
@@ -24665,10 +24678,19 @@ function _billingHTML(sub){
     ${sub?`
     <div style="background:var(--surf2);border:1px solid var(--p-line);border-radius:12px;overflow:hidden;margin-bottom:14px;">
       <div class="fr" style="padding:10px 14px;"><span class="fl">Status</span><span class="fv">${statusLabel}</span></div>
-      <div class="fr" style="padding:10px 14px;border:none;"><span class="fl">${pastDue?'Retry date':'Next billing date'}</span><span class="fv">${nextDate}</span></div>
+      <div class="fr" style="padding:10px 14px;border:none;"><span class="fl">${ending?'Access until':pastDue?'Retry date':'Next billing date'}</span><span class="fv">${nextDate}</span></div>
     </div>
-    <button class="btng" style="width:100%;margin-bottom:10px;" onclick="_openBillingPortal()"><i class="ti ti-credit-card" style="color:var(--accent-strong);"></i> Manage billing, payment method &amp; invoices</button>
-    <div style="font-size:11px;color:var(--p-mut);text-align:center;padding:0 8px;">Opens Stripe's secure billing portal \u2014 update your card, download invoices, or cancel from there.</div>
+    <button class="btng" style="width:100%;margin-bottom:10px;" onclick="_openBillingPortal()"><i class="ti ti-credit-card" style="color:var(--accent-strong);"></i> Payment method &amp; invoices</button>
+    ${ending?`
+    <button class="btng" style="width:100%;margin-bottom:10px;" onclick="_openBillingPortal('resume')"><i class="ti ti-rotate" style="color:var(--accent-strong);"></i> Keep my subscription</button>
+    <div style="font-size:11.5px;color:var(--p-mut);line-height:1.6;text-align:center;padding:0 6px;">You\u2019ve cancelled. Nothing more will be charged, and you keep everything until ${nextDate}. Change your mind before then and this puts it back.</div>
+    `:`
+    <button onclick="_openBillingPortal('cancel')" style="width:100%;background:none;border:1px solid var(--p-red-line);color:var(--p-red);border-radius:10px;padding:12px;font-size:13px;font-weight:600;cursor:pointer;font-family:inherit;margin-bottom:10px;">Cancel subscription</button>
+    <div style="font-size:11.5px;color:var(--p-mut);line-height:1.6;padding:0 2px;">
+      Cancelling takes one confirmation and stops any further charges. You keep full access until ${nextDate}, the end of the time you\u2019ve already paid for \u2014 and your clients, notes and photos stay exactly where they are.
+      Nothing is deleted by cancelling; if you want your data gone as well, that\u2019s <b>Delete my account</b> below.
+    </div>
+    `}
     `:`
     <div style="background:var(--surf2);border:1px solid var(--p-line);border-radius:12px;padding:16px;text-align:center;color:var(--p-mut);font-size:13px;margin-bottom:14px;">
       We don't have a billing record for this account yet. If you believe this is a mistake, reach out and we'll sort it out.
@@ -24676,17 +24698,26 @@ function _billingHTML(sub){
     `}
   </div>`;
 }
-async function _openBillingPortal(){
+// intent 'cancel' deep-links straight to Stripe's cancel screen, so "Cancel subscription" means one
+// confirmation rather than a hunt through a portal menu. 'resume' and no intent open the portal.
+async function _openBillingPortal(intent){
   if(_isNativeApp())return; // payment-silent: never open an external checkout/billing portal in-app
   const tok=(typeof Cloud!=='undefined'&&Cloud&&Cloud.token)||'';
   if(!tok)return;
   try{
-    const r=await fetch('/api/create-portal-session',{method:'POST',headers:{'Authorization':'Bearer '+tok}});
+    const r=await fetch('/api/create-portal-session',{method:'POST',
+      headers:{'Content-Type':'application/json','Authorization':'Bearer '+tok},
+      body:JSON.stringify({intent:intent||''})});
     const j=await r.json();
-    if(j&&j.url){window.location.href=j.url;}
-    else{proToast((j&&j.error)||'Could not open billing portal');}
-  }catch(e){proToast('Could not open billing portal');}
+    if(j&&j.url){window.location.href=j.url;return;}
+    // Never leave someone who is trying to cancel with a dead button and no way forward.
+    const why=(j&&j.error)||'Could not open the billing page';
+    proToast(why+'. Email '+_supportEmail()+' and we\u2019ll cancel it for you \u2014 same day.',0);
+  }catch(e){
+    proToast('Could not reach the billing page. Email '+_supportEmail()+' and we\u2019ll cancel it for you \u2014 same day.',0);
+  }
 }
+function _supportEmail(){try{return (window.SLICKCHART_SUPPORT_EMAIL||'hello@slickchart.app');}catch(e){return 'hello@slickchart.app';}}
 
 // ── ADD PARTNER ──
 function renderAddPartner(){

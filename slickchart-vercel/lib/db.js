@@ -200,6 +200,11 @@ export async function ensureProvidersTable() {
     current_period_end timestamptz,
     updated_at timestamptz DEFAULT now()
   )`;
+  // Stripe keeps a cancelled-but-not-yet-expired subscription at status='active' until the period
+  // actually ends. Without this flag the app told someone who had just cancelled that their plan was
+  // Active with a Next billing date — so they cancelled again, or wrote in asking why it hadn't
+  // worked. It had. We just weren't saying so.
+  try { await q`ALTER TABLE subscriptions ADD COLUMN IF NOT EXISTS cancel_at_period_end boolean NOT NULL DEFAULT false`; } catch (e) {}
   // When the founder was told this provider started paying. It is the once-ever claim behind the
   // "💰 New PAID provider" ping: a RENEWAL is just another `customer.subscription.updated` with
   // status=active, indistinguishable from the first payment without a stamp like this, which is why

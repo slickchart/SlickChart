@@ -228,10 +228,15 @@ export default async function handler(req, res) {
       } else {
         subEmail = await lookupCustomerEmail(customerId);
         if (subEmail) {
-          await q`INSERT INTO subscriptions (email, stripe_customer_id, stripe_subscription_id, status, current_period_end, plan_amount, updated_at)
-            VALUES (${subEmail}, ${customerId}, ${sub.id}, ${status}, ${periodEnd}, ${planAmount}, now())
+          // A cancellation that takes effect at the end of the period arrives as an ordinary
+          // subscription.updated with status still 'active'. Record the flag or the app cannot tell
+          // a live plan from one that is already on its way out.
+          const cancelAtEnd = !!(sub && sub.cancel_at_period_end);
+          await q`INSERT INTO subscriptions (email, stripe_customer_id, stripe_subscription_id, status, current_period_end, plan_amount, cancel_at_period_end, updated_at)
+            VALUES (${subEmail}, ${customerId}, ${sub.id}, ${status}, ${periodEnd}, ${planAmount}, ${cancelAtEnd}, now())
             ON CONFLICT (email) DO UPDATE SET status=EXCLUDED.status, stripe_subscription_id=EXCLUDED.stripe_subscription_id,
-              current_period_end=EXCLUDED.current_period_end, plan_amount=EXCLUDED.plan_amount, updated_at=now()`;
+              current_period_end=EXCLUDED.current_period_end, plan_amount=EXCLUDED.plan_amount,
+              cancel_at_period_end=EXCLUDED.cancel_at_period_end, updated_at=now()`;
         }
       }
       // If THIS event is the one that made the provider active, ping the founder — deduped once-per-
