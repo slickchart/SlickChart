@@ -138,7 +138,23 @@ are set, a paid buyer is told their purchase went through and where to email —
    (`session.consent.promotions`) and is stored per purchase as yes / no / **null = never asked**.
    Null is not consent — don't collapse it to a no, and don't market to it.
 
-Extra env vars beyond the three above: `BUILD_AUDIENCE_ID` (optional; unset = no Resend sync).
+Extra env vars beyond the three above:
+
+- `BUILD_EXCLUDE_EMAILS` — comma separated; their purchases are left out of the stats and the buyer
+  export (Ashley's own test buys). Deliberately does NOT suppress the push or the access email, so a
+  test purchase still exercises the whole delivery path.
+- `BUILD_AUDIENCE_ID` — **leave unset.** Ashley's Resend account has ONE audience, holding her 40
+  SlickChart contacts. Pointing this at it merges the two products' mailing lists, which is the exact
+  thing the separate variable exists to prevent. Her plan surfaces Segments (groupings) and **Topics**
+  (subscription categories, "let users choose the content they want to receive") — Topics is the right
+  mechanism: a buyer on a "Build Your Own App" topic can't be reached by a SlickChart broadcast even
+  in a shared audience. Not built yet: resend.com is blocked by this environment's egress proxy, so
+  the exact API shape for topics is unverified and guessing it would fail silently (the audience call
+  swallows its own errors). Get the snippet from the `</>` button on the dashboard's Topics tab first.
+  If a topic is ever created, make it NON-default — a default topic auto-subscribes the existing 40.
+
+Buyer consent is stored on `build_purchases.marketing_opt_in` regardless of any of this, so nothing is
+lost while the Resend side is undecided; `/api/admin/build-buyers?format=csv` exports it.
 
 **Rendering an email to look at it.** `CLAUDE.md` §3 says not to import `lib/*` locally because
 `@neondatabase/serverless` isn't installed — but a two-line stub at
