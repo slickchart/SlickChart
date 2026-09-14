@@ -1116,11 +1116,19 @@ const coursesByProf={
 // Signature + reseed so courses follow the provider's profession until they customize.
 function _coursesSig(arr){return (arr||[]).map(c=>String(c.id||'')+'|'+String(c.title||'')).join(',');}
 function _coursesAreCustom(){try{return localStorage.getItem('sc_courses_custom')==='1';}catch(e){return false;}}
+// Courses the provider deleted. Durable and unioned across devices (sc_hidden_courses is in
+// _TOMB_OBJ), because a delete that leaves no record is indistinguishable from "never seeded" —
+// which is exactly why deleted sample courses kept reappearing.
+let hiddenCourses={};
+function _loadHiddenCourses(){try{const b=localStorage.getItem('sc_hidden_courses');if(b){const o=JSON.parse(b);if(o&&typeof o==='object')hiddenCourses=o;}}catch(e){}}
+function _saveHiddenCourses(){try{const v=JSON.stringify(hiddenCourses);localStorage.setItem('sc_hidden_courses',v);if(typeof _pushKeyNow==='function')_pushKeyNow('sc_hidden_courses',v);}catch(e){}}
+function _anyCourseDeleted(){try{_loadHiddenCourses();return Object.keys(hiddenCourses).length>0;}catch(e){return false;}}
 function _markCoursesCustom(){try{localStorage.setItem('sc_courses_custom','1');}catch(e){}try{if(typeof _pushKeyNow==='function')_pushKeyNow('sc_courses_custom','1');}catch(e){}}
 function _coursesDefaults(){
   const profs=(typeof selectedProfessions!=='undefined'&&Array.isArray(selectedProfessions)&&selectedProfessions.length)?selectedProfessions:[];
   const seen=new Set();const out=[];
-  profs.forEach(pr=>{(coursesByProf[pr]||[]).forEach(c=>{if(!seen.has(c.id)){seen.add(c.id);out.push(Object.assign({},c));}});});
+  try{_loadHiddenCourses();}catch(e){}
+  profs.forEach(pr=>{(coursesByProf[pr]||[]).forEach(c=>{if(hiddenCourses[c.id])return;if(!seen.has(c.id)){seen.add(c.id);out.push(Object.assign({},c));}});});
   // Never fall back to esty courses — a profession with no course set (or none selected) gets an
   // empty Courses tab, not someone else's skincare courses. Equine etc. seed their own above.
   return out;
@@ -1128,6 +1136,10 @@ function _coursesDefaults(){
 function _reseedCoursesIfDefault(){
   try{
     if(_coursesAreCustom())return;
+    // Deleting every sample course leaves an empty list, which looks identical to a brand-new account
+    // that has never been seeded — so the reseeder put them all straight back. A single deletion is
+    // proof the provider has been here and made a decision: never reseed over that.
+    if(_anyCourseDeleted())return;
     const next=_coursesDefaults();
     // Infer "customized" from the DATA, not just the sc_courses_custom flag. If the current set
     // holds any course that isn't one of the profession defaults (a course the provider made), or
@@ -2388,7 +2400,7 @@ function _syncable(k){return typeof k==='string'&&k.indexOf('sc_')===0&&!_SYNC_S
 // refresh, before its push flushed) was wiped — resurrecting deleted clients, merged duplicates, and
 // dismissed flags. These keys are UNIONED with local on pull instead of overwritten. Object maps merge
 // by key; arrays merge by unique value.
-const _TOMB_OBJ={sc_deleted_clients:1,sc_hidden_square:1,sc_merged_ids:1,sc_merged_into:1,sc_ci_dismissed:1,sc_course_purchases:1};
+const _TOMB_OBJ={sc_deleted_clients:1,sc_hidden_square:1,sc_merged_ids:1,sc_merged_into:1,sc_ci_dismissed:1,sc_course_purchases:1,sc_hidden_courses:1};
 const _TOMB_ARR={sc_flag_dismissed:1,sc_form_flag_dismissed:1,sc_ci_cleared:1,sc_ci_read:1,sc_home_dismissed:1,sc_notif_cleared:1,sc_notif_read:1};
 function _isTombstoneKey(k){return !!(_TOMB_OBJ[k]||_TOMB_ARR[k]);}
 // Merge the client roster per-client-id instead of whole-blob overwriting it, so two devices that edit
@@ -2558,6 +2570,42 @@ function _mergeThreads(serverStr,localStr){
 }
 // Merge sc_seen_events: union of both id lists (capped), never shrink. A pull that replaced this with a
 // stale device's shorter list is exactly what made already-seen client messages re-arrive as "unread."
+// Courses are hours of the provider's work and were riding the DEFAULT OVERWRITE, like any ordinary
+// setting. That is what made a real course vanish: a second device holding a stale sc_courses pushed
+// its old list, the server took it wholesale, and the next pull here replaced the good list with the
+// old one. Union by id instead, so a course that exists on either side survives, and push the
+// superset back. Anything the provider deleted is filtered out via the sc_hidden_courses tombstone,
+// so the union can never resurrect it.
+// Conflicts on the same id take the newer _ts when both sides have one (saveCourse stamps it);
+// without timestamps the server copy wins, which is the old behaviour — the bug being fixed here is
+// losing a whole course, not which edit of one wins.
+function _mergeCourses(serverStr,localStr){
+  let srv,loc;
+  try{srv=JSON.parse(serverStr||'[]');}catch(e){return null;}
+  try{loc=JSON.parse(localStr||'[]');}catch(e){loc=[];}
+  if(!Array.isArray(srv))return null;
+  if(!Array.isArray(loc))loc=[];
+  let hidden={};
+  try{const h=localStorage.getItem('sc_hidden_courses');if(h){const o=JSON.parse(h);if(o&&typeof o==='object')hidden=o;}}catch(e){}
+  const out=[],idx={};
+  const take=function(c,fromLocal){
+    if(!c||!c.id)return;
+    if(hidden[c.id])return;                       // deleted on purpose — never bring it back
+    if(!(c.id in idx)){idx[c.id]=out.length;out.push(c);return;}
+    const cur=out[idx[c.id]];
+    const a=Number(cur&&cur._ts)||0,b=Number(c&&c._ts)||0;
+    if(b>a)out[idx[c.id]]=c;                      // newer edit wins; tie keeps what is already there
+    else if(!a&&!b&&!fromLocal)out[idx[c.id]]=c;  // no timestamps either side: server copy, as before
+  };
+  srv.forEach(c=>take(c,false));
+  loc.forEach(c=>take(c,true));
+  const str=JSON.stringify(out);
+  // changed = this device is contributing something the server did not have, so the superset is
+  // worth pushing back. Compare against the server's own filtered view so a blob that only differs
+  // by key order does not ping-pong between devices forever.
+  const srvFiltered=JSON.stringify(srv.filter(c=>c&&c.id&&!hidden[c.id]));
+  return {str:str,changed:str!==srvFiltered};
+}
 function _mergeSeenEvents(serverStr,localStr){
   try{
     if(localStr==null)return null;
@@ -2631,8 +2679,9 @@ const Cloud={
     // Chat data is append-only and provider-sent messages live ONLY in sc_msgstore, so a plain overwrite
     // here let a stale device wipe history and (via sc_seen_events) resurrect read messages as unread.
     // Merge these three the same way as sc_clients: union, never lose, push the superset back.
-    if(k==='sc_msgstore'||k==='sc_threads'||k==='sc_seen_events'||k==='sc_attn_seen'||k==='sc_import_batches'){
+    if(k==='sc_msgstore'||k==='sc_threads'||k==='sc_seen_events'||k==='sc_attn_seen'||k==='sc_import_batches'||k==='sc_courses'){
       const mm=(k==='sc_msgstore')?_mergeMsgStore(data[k],localStorage.getItem(k))
+              :(k==='sc_courses')?_mergeCourses(data[k],localStorage.getItem(k))
               :(k==='sc_threads')?_mergeThreads(data[k],localStorage.getItem(k))
               :(k==='sc_attn_seen')?_mergeAttnSeen(data[k],localStorage.getItem(k))
               :(k==='sc_import_batches')?_mergeImportBatches(data[k],localStorage.getItem(k))
@@ -15657,6 +15706,7 @@ let hiddenForms={},hiddenGuides={};
 function loadHiddenSets(){
   try{const a=localStorage.getItem('sc_hidden_forms');if(a){const o=JSON.parse(a);if(o&&typeof o==='object')hiddenForms=o;}}catch(e){}
   try{const b=localStorage.getItem('sc_hidden_guides');if(b){const o=JSON.parse(b);if(o&&typeof o==='object')hiddenGuides=o;}}catch(e){}
+  try{_loadHiddenCourses();}catch(e){}
 }
 function _saveHiddenForms(){try{const v=JSON.stringify(hiddenForms);localStorage.setItem('sc_hidden_forms',v);if(typeof _pushKeyNow==='function')_pushKeyNow('sc_hidden_forms',v);}catch(e){}}
 function _saveHiddenGuides(){try{const v=JSON.stringify(hiddenGuides);localStorage.setItem('sc_hidden_guides',v);if(typeof _pushKeyNow==='function')_pushKeyNow('sc_hidden_guides',v);}catch(e){}}
@@ -15991,8 +16041,12 @@ async function saveCourse(id){
   if(!lessons.length)lessons.push({id:'l1',title:'Lesson 1',body:'',videoUrl:'',fileId:'',fileName:'',fileType:''});
   const existing=(id&&id!=='new')?courses.find(x=>x.id===id):null;
   const base={title,desc,price,status,cover:d.cover||'',lessons,modules:lessons.length,moduleNames:lessons.map(l=>l.title),duration:lessons.length+' lesson'+(lessons.length===1?'':'s')};
+  base._ts=Date.now();   // lets _mergeCourses keep the newer edit when two devices touched the same course
   if(existing){Object.assign(existing,base);delete existing.resources;}
   else{courses.push(Object.assign({id:courseId,icon:'ti-book',bg:'var(--p-purple-bg)',ic:'var(--p-purple)',bdg:'bp',enrolled:0,revenue:0,progress:0},base));}
+  // Re-creating a course with an id that was previously deleted must clear its tombstone, or the
+  // merge would filter out the new one as "deleted on purpose".
+  try{_loadHiddenCourses();if(hiddenCourses[courseId]||(existing&&hiddenCourses[existing.id])){delete hiddenCourses[courseId];if(existing)delete hiddenCourses[existing.id];_saveHiddenCourses();}}catch(e){}
   try{_markCoursesCustom();}catch(e){}
   let _coursePush=Promise.resolve();try{_coursePush=persistCourses()||Promise.resolve();}catch(e){}
   // Wait for the course, the custom flag, and its files to actually reach the server before leaving.
@@ -16022,6 +16076,10 @@ async function deleteCourse(id){
   // course no client has are negligible; keeping them is the safe trade.
   const i=courses.findIndex(x=>x.id===id);if(i>=0)courses.splice(i,1);
   try{_markCoursesCustom();}catch(e){}
+  // Record the deletion itself, not just "this set is customized". Without this a stale device's
+  // sc_courses simply re-added the course on the next sync, and an emptied list looked unseeded to
+  // the reseeder. Pushed immediately so the delete reaches the server ahead of any other device.
+  try{_loadHiddenCourses();hiddenCourses[id]=1;_saveHiddenCourses();}catch(e){}
   // Await the persist + the custom-flag push before leaving, same as saveCourse — otherwise a fast
   // reload lets the boot pull restore the stale server copy and the deleted course silently returns.
   try{await Promise.all([persistCourses()||Promise.resolve(),(typeof _pushKeyNow==='function'?_pushKeyNow('sc_courses_custom','1'):Promise.resolve())]);}catch(e){}
