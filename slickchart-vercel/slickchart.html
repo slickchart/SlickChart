@@ -2745,6 +2745,9 @@ async function _cloudInit(){
       }catch(e){}
     }
     _reloadAll();
+    // The sync has had its say. If a course is missing from this device but the account still has a
+    // backup of it, put it back now rather than waiting for her to notice and go looking.
+    try{_cvReconcileOnBoot();}catch(e){}
   }catch(e){}
   // Make sure the client-facing shop catalog is on the server, and (if a logo is set locally) that
   // the brand is too, so both reach clients even if an earlier save never synced.
@@ -16129,6 +16132,64 @@ function _cbAutosaveStart(id){
 }
 function _cbAutosaveStop(){try{if(_cvTimer)clearInterval(_cvTimer);}catch(e){}_cvTimer=null;try{window.removeEventListener('pagehide',_cbAutosaveFlush);}catch(e){}}
 
+// Tell the server this course was thrown away on purpose. The device's own delete list lives in
+// localStorage, which is exactly the thing that stops working when the device is full — so without
+// this, a delete made on a full phone would be undone by the boot restore below.
+function _cvMarkDeleted(courseId){
+  if(!_cvCan()||!courseId)return Promise.resolve({ok:false});
+  return fetch('/api/course-versions',{method:'POST',headers:{'Content-Type':'application/json','Authorization':'Bearer '+Cloud.token},
+    body:JSON.stringify({courseId:String(courseId),deleted:true})})
+    .then(function(r){return {ok:!!(r&&r.ok)};},function(){return {ok:false};});
+}
+// ── The safety net, made automatic ────────────────────────────────────────────────────────────
+// A manual "find a lost course" button is only a safety net for someone who knows to look for it.
+// Ashley's course kept disappearing on a refresh, and being told to go and restore it is not the
+// same as it not disappearing. So on every boot, after the sync has settled: any course the server
+// holds a backup of, that isn't in the library and wasn't deleted on purpose, comes straight back.
+//
+// Two independent guards stop a deliberate delete being undone — the device's own tombstone, and
+// the server-side delete mark above. If both are somehow missing the course reappears, which is
+// visible and one tap to fix; the alternative is silently losing an evening's work, which is not.
+let _cvReconciled=false;
+async function _cvReconcileOnBoot(){
+  if(_cvReconciled||!_cvCan())return;
+  _cvReconciled=true;
+  try{
+    const list=await _cvFetchList();
+    if(!list||!list.length)return;
+    try{_loadHiddenCourses();}catch(e){}
+    const have={};(courses||[]).forEach(function(c){if(c&&c.id)have[c.id]=1;});
+    const newest={};
+    list.forEach(function(v){
+      if(!v||!v.courseId||v.deleted)return;
+      if(have[v.courseId])return;                                        // still on the shelf
+      try{if(hiddenCourses&&hiddenCourses[v.courseId])return;}catch(e){}  // deleted on purpose
+      if(!newest[v.courseId]||(v.ts||0)>(newest[v.courseId].ts||0))newest[v.courseId]=v;
+    });
+    const ids=Object.keys(newest).slice(0,25);
+    if(!ids.length)return;
+    const names=[];
+    for(const cid of ids){
+      let rec=null;
+      try{
+        const r=await fetch('/api/course-versions?id='+encodeURIComponent(newest[cid].id),{headers:{'Authorization':'Bearer '+Cloud.token}});
+        if(r.ok){const j=await r.json();if(j&&j.version&&j.version.payload)rec=JSON.parse(j.version.payload);}
+      }catch(e){}
+      if(!rec||!rec.id)continue;
+      delete rec._filesPending;
+      rec._ts=Date.now();                 // newest wins in _mergeCourses, so the next sync keeps it
+      courses.push(rec);
+      names.push(rec.title||'a course');
+    }
+    if(!names.length)return;
+    try{_markCoursesCustom();}catch(e){}
+    try{await (persistCourses()||Promise.resolve());}catch(e){}
+    try{if(typeof _reRenderAttn==='function'&&document.getElementById('forms-screen')){_fgTab='courses';nav('forms');}}catch(e){}
+    if(typeof proToast==='function')proToast(names.length===1
+      ? ('“'+String(names[0]).slice(0,50)+'” was missing from this device — put back from your account backup.')
+      : (names.length+' courses were missing from this device — put back from your account backups.'),0);
+  }catch(e){}
+}
 function _cvFetchList(){
   if(!_cvCan())return Promise.resolve(null);
   return fetch('/api/course-versions',{headers:{'Authorization':'Bearer '+Cloud.token}})
@@ -16247,9 +16308,34 @@ async function _evictableFileCache(){
     if(Object.prototype.hasOwnProperty.call(size,id)){drop.push(String(k));bytes+=size[id];}});
   return {drop:drop,bytes:bytes,localCount:local.length,onlyHere:local.length-drop.length};
 }
+// There are TWO separate limits here and they are not interchangeable — which is the whole reason
+// clearing space didn't fix anything:
+//
+//   1. localStorage: a hard ~5MB per site in Safari that does NOT grow. Every setting, client
+//      record, course record and delete list lives here. This is the one that fills up, and this
+//      is the one whose failure loses a save.
+//   2. The origin quota (what navigator.storage.estimate reports, hundreds of MB): IndexedDB,
+//      where lesson file BYTES live. Clearing cached files frees this pool.
+//
+// Emptying pool 2 does nothing for pool 1. The panel used to show only pool 2, so it reported
+// plenty of room while the limit that was actually failing was invisible.
+function _lsUsage(){
+  const keys=[];let total=0;
+  try{
+    for(let i=0;i<localStorage.length;i++){
+      const k=localStorage.key(i);if(!k)continue;
+      let n=0;try{n=(localStorage.getItem(k)||'').length+k.length;}catch(e){}
+      total+=n;keys.push({k:k,n:n});
+    }
+  }catch(e){}
+  keys.sort(function(a,b){return b.n-a.n;});
+  return {total:total*2,keys:keys.slice(0,8)};   // UTF-16: Safari counts two bytes per character
+}
+const _LS_CAP=5*1024*1024;
 async function _deviceStorageStats(){
   const out={usage:0,quota:0};
   try{if(navigator.storage&&navigator.storage.estimate){const e=await navigator.storage.estimate();out.usage=e.usage||0;out.quota=e.quota||0;}}catch(e){}
+  out.ls=_lsUsage();
   out.evictable=await _evictableFileCache();
   return out;
 }
@@ -16272,27 +16358,42 @@ async function openStoragePanel(){
 }
 function _renderStorageBody(st){
   const box=document.getElementById('storage-body');if(!box)return;
+  const ls=st.ls||{total:0,keys:[]};
+  const lsPct=Math.min(100,Math.round(ls.total/_LS_CAP*100));
+  const lsTight=lsPct>=80;
   const pct=(st.quota>0)?Math.min(100,Math.round(st.usage/st.quota*100)):0;
-  const tight=st.quota>0&&pct>=85;
   const ev=st.evictable;
   box.innerHTML=`
-    ${st.quota>0?`<div style="margin-bottom:16px;">
-      <div style="display:flex;justify-content:space-between;font-size:12.5px;color:var(--p-ink);margin-bottom:6px;"><span>${_bytesLabel(st.usage)} used</span><span style="color:var(--p-mut);">of about ${_bytesLabel(st.quota)}</span></div>
-      <div style="height:9px;border-radius:6px;background:var(--p-surf2);overflow:hidden;"><div style="height:100%;width:${pct}%;background:${tight?'var(--p-red)':'var(--accent)'};"></div></div>
-      ${tight?`<div style="font-size:11.5px;color:var(--p-red);margin-top:7px;line-height:1.5;">This device is nearly full. That is why saves have been failing here — your work still backs up to your account, but freeing space fixes it properly.</div>`:''}
-    </div>`:`<div style="font-size:12.5px;color:var(--p-mut);margin-bottom:16px;line-height:1.55;">This browser doesn’t report how much space it has given the app.</div>`}
-    ${ev===null?`<div style="background:var(--surf1);border:1px solid var(--p-line);border-radius:13px;padding:14px;font-size:12.5px;color:var(--p-mut);line-height:1.6;">Couldn’t check which files are backed up to your account right now, so nothing will be cleared. Try again when you’re online.</div>`
+    <div style="margin-bottom:8px;">
+      <div style="display:flex;justify-content:space-between;font-size:12.5px;color:var(--p-ink);margin-bottom:6px;"><span><b>App data</b> — ${_bytesLabel(ls.total)} used</span><span style="color:var(--p-mut);">limit ${_bytesLabel(_LS_CAP)}</span></div>
+      <div style="height:9px;border-radius:6px;background:var(--p-surf2);overflow:hidden;"><div style="height:100%;width:${lsPct}%;background:${lsTight?'var(--p-red)':'var(--accent)'};"></div></div>
+      <div style="font-size:11.5px;color:${lsTight?'var(--p-red)':'var(--p-mut)'};margin-top:7px;line-height:1.55;">
+        ${lsTight?'This is the limit that has been failing your saves. The browser caps it at 5MB per site and it does not grow.'
+                 :'Your settings, clients, notes and course records. This is the limit that matters for saving.'}
+        Clearing cached lesson files does <b>not</b> free it — that is a different, much larger pool.
+      </div>
+    </div>
+    ${ls.keys.length?`<div style="background:var(--surf1);border:1px solid var(--p-line);border-radius:13px;padding:12px 13px;margin-bottom:14px;">
+      <div style="font-size:12px;font-weight:650;color:var(--p-ink);margin-bottom:8px;">What's using it</div>
+      ${ls.keys.map(function(r){return `<div style="display:flex;justify-content:space-between;gap:10px;font-size:11.5px;color:var(--p-mut);padding:3px 0;"><span style="min-width:0;overflow:hidden;text-overflow:ellipsis;white-space:nowrap;">${_fileEsc(_LS_LABELS[r.k]||r.k)}</span><span style="flex-shrink:0;color:var(--p-ink);">${_bytesLabel(r.n*2)}</span></div>`;}).join('')}
+    </div>`:''}
+    ${st.quota>0?`<div style="margin-bottom:14px;">
+      <div style="display:flex;justify-content:space-between;font-size:12.5px;color:var(--p-ink);margin-bottom:6px;"><span><b>Cached files</b> — ${_bytesLabel(st.usage)} used</span><span style="color:var(--p-mut);">of about ${_bytesLabel(st.quota)}</span></div>
+      <div style="height:9px;border-radius:6px;background:var(--p-surf2);overflow:hidden;"><div style="height:100%;width:${pct}%;background:var(--accent);"></div></div>
+      <div style="font-size:11.5px;color:var(--p-mut);margin-top:7px;line-height:1.55;">Lesson and guide files kept here so they open instantly. A separate, much larger pool — clearing it does <b>not</b> free the app-data limit above.</div>
+    </div>`:''}
+    ${ev===null?`<div style="background:var(--surf1);border:1px solid var(--p-line);border-radius:13px;padding:14px;font-size:12.5px;color:var(--p-mut);line-height:1.6;">Couldn't check which files are backed up to your account right now, so nothing will be cleared. Try again when you're online.</div>`
     :`<div style="background:var(--surf1);border:1px solid var(--p-line);border-radius:13px;padding:14px;">
       <div style="font-size:13.5px;font-weight:650;color:var(--p-ink);margin-bottom:5px;">Cached lesson &amp; guide files</div>
       <div style="font-size:12.5px;color:var(--p-mut);line-height:1.6;margin-bottom:11px;">
         ${ev.drop.length
-          ? `<b style="color:var(--p-ink);">${ev.drop.length} file${ev.drop.length===1?'':'s'} (${_bytesLabel(ev.bytes)})</b> are saved in your account and also kept here for speed. Clearing the copies here frees that space — the files stay in your courses and download again the moment anyone opens them.`
+          ? `<b style="color:var(--p-ink);">${ev.drop.length} file${ev.drop.length===1?'':'s'} (${_bytesLabel(ev.bytes)})</b> are saved in your account and also kept here for speed. Clearing the copies here frees the <b>cached files</b> pool above — not the app-data limit — and the files download again the moment anyone opens them.`
           : `Nothing to clear. Every file kept here is already the only copy, or there are none.`}
         ${ev.onlyHere>0?`<br><br>${ev.onlyHere} file${ev.onlyHere===1?' is':'s are'} only on this device and will be left alone. Use <b>Upload files</b> on the course to back ${ev.onlyHere===1?'it':'them'} up first.`:''}
       </div>
-      ${ev.drop.length?`<button onclick="freeUpDeviceSpace()" style="width:100%;background:var(--accent);color:var(--accent-ink);border:none;border-radius:10px;padding:11px;font-size:13px;font-weight:700;cursor:pointer;font-family:inherit;">Free up ${_bytesLabel(ev.bytes)}</button>`:''}
+      ${ev.drop.length?`<button onclick="freeUpDeviceSpace()" style="width:100%;background:var(--accent);color:var(--accent-ink);border:none;border-radius:10px;padding:11px;font-size:13px;font-weight:700;cursor:pointer;font-family:inherit;">Free up ${_bytesLabel(ev.bytes)} of cached files</button>`:''}
     </div>`}
-    <div style="font-size:11.5px;color:var(--p-mut);line-height:1.6;margin-top:14px;">Your courses, clients, notes and photos are not touched by this.</div>`;
+    <div style="font-size:11.5px;color:var(--p-mut);line-height:1.6;margin-top:14px;">Your courses, clients, notes and photos are not touched by this. Courses are backed up to your account and put back automatically if this device loses them.</div>`;
 }
 async function freeUpDeviceSpace(){
   const btn=document.querySelector('#storage-body button[onclick="freeUpDeviceSpace()"]');
@@ -16376,6 +16477,9 @@ async function recoverLostCourses(){
   });
   try{_markCoursesCustom();}catch(e){}
   try{await (persistCourses()||Promise.resolve());}catch(e){}
+  // Back these up straight away — a rebuilt course is hours of retyping waiting to happen and
+  // should not be the one kind of course with no copy on the server.
+  try{for(const c of courses.slice(-made)){await _cvSnapshot(c,'save');}}catch(e){}
   if(typeof proToast==='function')proToast('Recovered '+made+' course'+(made===1?'':'s')+' with '+files+' file'+(files===1?'':'s')+' still attached. Lesson titles and text need retyping.',0);
   _fgTab='courses';nav('forms');
 }
@@ -16395,7 +16499,7 @@ async function deleteCourse(id){
   // Vitality Reset Program. While a duplicate remains, removing the single row is the whole job.
   try{
     const _stillThere=(courses||[]).some(x=>x&&x.id===id);
-    if(!_stillThere){_loadHiddenCourses();hiddenCourses[id]=1;_saveHiddenCourses();}
+    if(!_stillThere){_loadHiddenCourses();hiddenCourses[id]=1;_saveHiddenCourses();try{_cvMarkDeleted(id);}catch(e){}}
   }catch(e){}
   // Await the persist + the custom-flag push before leaving, same as saveCourse — otherwise a fast
   // reload lets the boot pull restore the stale server copy and the deleted course silently returns.

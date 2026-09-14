@@ -247,10 +247,15 @@ export async function ensureCourseVersionsTable() {
     course_id text NOT NULL,
     title text,
     kind text NOT NULL DEFAULT 'save',
+    deleted boolean NOT NULL DEFAULT false,
     payload text NOT NULL,
     created_at timestamptz NOT NULL DEFAULT now()
   )`;
   try { await q`ALTER TABLE course_versions ADD COLUMN IF NOT EXISTS kind text NOT NULL DEFAULT 'save'`; } catch (e) {}
+  // A delete has to be durable somewhere OTHER than the device, or a phone whose storage is full
+  // can't record it — and then the boot restore below would helpfully put back a course that was
+  // thrown away on purpose. Snapshots are KEPT when this is set, so a manual restore still works.
+  try { await q`ALTER TABLE course_versions ADD COLUMN IF NOT EXISTS deleted boolean NOT NULL DEFAULT false`; } catch (e) {}
   await q`CREATE INDEX IF NOT EXISTS course_versions_owner_course ON course_versions (owner, course_id, created_at DESC)`;
   await q`CREATE INDEX IF NOT EXISTS course_versions_owner_time ON course_versions (owner, created_at DESC)`;
   _cvReady = true;

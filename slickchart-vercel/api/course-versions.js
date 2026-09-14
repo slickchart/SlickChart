@@ -74,7 +74,7 @@ export default async function handler(req, res) {
       }
       // The list deliberately does not ship payloads — a provider with a dozen courses would pull
       // megabytes just to render a list of dates.
-      const rows = await q`SELECT id, course_id, title, kind,
+      const rows = await q`SELECT id, course_id, title, kind, deleted,
                                   length(payload) AS bytes,
                                   extract(epoch from created_at) * 1000 AS ts
                              FROM course_versions
@@ -84,7 +84,7 @@ export default async function handler(req, res) {
       res.setHeader('Cache-Control', 'no-store');
       res.status(200).json({ ok: true, versions: rows.map(r => ({
         id: Number(r.id), courseId: r.course_id, title: r.title || '', kind: r.kind || 'save',
-        bytes: Number(r.bytes || 0), ts: Math.round(Number(r.ts))
+        deleted: r.deleted === true, bytes: Number(r.bytes || 0), ts: Math.round(Number(r.ts))
       })) });
       return;
     }
@@ -94,6 +94,15 @@ export default async function handler(req, res) {
       const courseId = String(body.courseId || '').trim().slice(0, 200);
       const title = String(body.title || '').trim().slice(0, 300);
       const kind = String(body.kind || 'save') === 'draft' ? 'draft' : 'save';
+      // A deliberate delete, recorded where the device's storage can't lose it. The snapshots stay
+      // — this only stops the boot restore treating the course as something that went missing.
+      if (body.deleted === true) {
+        if (!courseId) { res.status(400).json({ error: 'Which course?' }); return; }
+        await q`UPDATE course_versions SET deleted = true WHERE owner = ${owner} AND course_id = ${courseId}`;
+        res.status(200).json({ ok: true, deleted: true });
+        return;
+      }
+
       let payload = body.payload;
       if (payload && typeof payload === 'object') { try { payload = JSON.stringify(payload); } catch (e) { payload = ''; } }
       payload = String(payload || '');
@@ -105,11 +114,18 @@ export default async function handler(req, res) {
       const last = await q`SELECT payload FROM course_versions
                             WHERE owner = ${owner} AND course_id = ${courseId} AND kind = ${kind}
                             ORDER BY created_at DESC LIMIT 1`;
-      if (last.length && last[0].payload === payload) { res.status(200).json({ ok: true, unchanged: true }); return; }
+      if (last.length && last[0].payload === payload) {
+        try { await q`UPDATE course_versions SET deleted = false WHERE owner = ${owner} AND course_id = ${courseId} AND deleted = true`; } catch (e) {}
+        res.status(200).json({ ok: true, unchanged: true });
+        return;
+      }
 
       const ins = await q`INSERT INTO course_versions (owner, course_id, title, kind, payload)
                           VALUES (${owner}, ${courseId}, ${title}, ${kind}, ${payload})
                           RETURNING id`;
+      // Saving a course means it exists again — clear any earlier delete mark, so re-creating a
+      // course at an id that was once deleted isn't skipped by the boot restore forever after.
+      try { await q`UPDATE course_versions SET deleted = false WHERE owner = ${owner} AND course_id = ${courseId} AND deleted = true`; } catch (e) {}
 
       // Prune this course's own history only. Saves and autosaves are kept separately so a burst of
       // autosaves can never evict the real saved versions.
