@@ -3781,6 +3781,9 @@ const _idb=(function(){
     available:function(){return !_bad && typeof indexedDB!=='undefined' && !!indexedDB;},
     get:function(k){return _db().then(function(d){return new Promise(function(res,rej){try{const t=d.transaction('kv','readonly');const rq=t.objectStore('kv').get(k);rq.onsuccess=function(){res(rq.result);};rq.onerror=function(){rej();};}catch(e){rej();}});}).catch(function(){return undefined;});},
     set:function(k,v){return _db().then(function(d){return new Promise(function(res,rej){try{const t=d.transaction('kv','readwrite');t.objectStore('kv').put(v,k);t.oncomplete=function(){res(true);};t.onerror=function(){rej();};}catch(e){rej();}});}).catch(function(){return false;});},
+    // Enumerate stored keys. Needed to find lesson files whose course record is gone, which is the
+    // only thing left to rebuild from after a course is lost.
+    keys:function(){return _db().then(function(d){return new Promise(function(res,rej){try{const t=d.transaction('kv','readonly');const rq=t.objectStore('kv').getAllKeys();rq.onsuccess=function(){res(rq.result||[]);};rq.onerror=function(){rej();};}catch(e){rej();}});}).catch(function(){return [];});},
     del:function(k){return _db().then(function(d){return new Promise(function(res,rej){try{const t=d.transaction('kv','readwrite');t.objectStore('kv').delete(k);t.oncomplete=function(){res(true);};t.onerror=function(){rej();};}catch(e){rej();}});}).catch(function(){return false;});}
   };
 })();
@@ -11765,7 +11768,9 @@ function switchFgTab(tab){
   const fc=document.getElementById('fg-forms-content');const gc=document.getElementById('fg-guides-content');const cc=document.getElementById('fg-courses-content');
   if(fc)fc.style.display=tab==='forms'?'':'none';
   if(gc){gc.style.display=tab==='guides'?'':'none';if(tab==='guides'&&!gc.getAttribute('data-built')){gc.innerHTML=_guidesTabHTML();gc.setAttribute('data-built','1');}}
-  if(cc){cc.style.display=tab==='courses'?'':'none';if(tab==='courses'&&!cc.getAttribute('data-built')){cc.innerHTML=_coursesTabHTML();cc.setAttribute('data-built','1');}}
+  if(cc){cc.style.display=tab==='courses'?'':'none';if(tab==='courses'&&!cc.getAttribute('data-built')){cc.innerHTML=_coursesTabHTML();cc.setAttribute('data-built','1');}
+    // Offer to rebuild from lesson files on this device whose course record is gone.
+    if(tab==='courses'){try{setTimeout(_offerCourseRecovery,0);}catch(e){}}}
 }
 // Built-in form definitions per profession (label + card metadata). Module-level so the
 // forms library, the "send to client" sheet, and the bundle editor all draw from one list.
@@ -11991,6 +11996,7 @@ function renderForms(){
   </div>
   <div id="fg-guides-content" style="display:${_fgTab==='guides'?'':'none'};" ${_fgTab==='guides'?'data-built="1"':''}>${_fgTab==='guides'?_guidesTabHTML():''}</div>
   <div id="fg-courses-content" style="display:${_fgTab==='courses'?'':'none'};" ${_fgTab==='courses'?'data-built="1"':''}>${_fgTab==='courses'?_coursesTabHTML():''}</div>`;
+  if(_fgTab==='courses'){try{setTimeout(_offerCourseRecovery,0);}catch(e){}}
 }
 function filterForms(q){
   q=_normSearch(q);
@@ -15627,6 +15633,7 @@ function _coursesTabHTML(){
       </div>
     </div>`).join('')}
     ${_noRes('courses-noresults','No courses match your search.')}
+    <div id="course-recover"></div>
     <div style="height:16px;"></div>`;
 }
 // ── COURSES ── A lesson-based course builder (think Teachable, streamlined for a solo
@@ -15953,6 +15960,76 @@ async function saveCourse(id){
 // Delete a course — including the seeded/demo starter courses. Removes it from the list,
 // cleans up any attached lesson files (server + local), and marks the course set customized
 // so a deleted starter course doesn't get reseeded back on the next load.
+// ── RECOVERING A LOST COURSE ─────────────────────────────────────────────────────────────────────
+// Lesson files are stored under gfile_cfile_<courseId>_<lessonId>_<rand>, and each payload keeps the
+// original filename. So even when the course record itself is gone, the files still say which course
+// and which lesson they belonged to. That is enough to rebuild the shape of the course with every
+// attachment back in the right place — the titles and the writing are gone, but re-attaching three
+// dozen PDFs is the part that actually costs an evening.
+// Offer recovery only when this device is holding lesson files whose course is gone. No orphans,
+// no button — so it stays out of the way once its job is done (CLAUDE.md \u00a75).
+async function _offerCourseRecovery(){
+  try{
+    const el=document.getElementById('course-recover');if(!el)return;
+    const found=await _findOrphanCourseFiles();
+    const ids=Object.keys(found);if(!ids.length)return;
+    let n=0;ids.forEach(cid=>Object.keys(found[cid]).forEach(lid=>{n+=found[cid][lid].length;}));
+    el.innerHTML=`<div style="margin:14px 0 0;background:var(--p-amber-bg);border:1px solid var(--p-line3);border-radius:14px;padding:15px 17px;">
+      <div style="font-size:13.5px;font-weight:700;color:var(--p-ink);margin-bottom:5px;">${n} lesson file${n===1?'':'s'} from a course that is no longer here</div>
+      <div style="font-size:12.5px;color:var(--p-mut);line-height:1.55;margin-bottom:11px;">This device still has ${n===1?'it':'them'}. Rebuilding the course from ${n===1?'it':'them'} puts every file back on the right lesson \u2014 you would only need to retype the lesson titles and text.</div>
+      <button onclick="recoverLostCourses()" style="background:var(--accent);color:var(--accent-ink);border:none;border-radius:9px;padding:10px 15px;font-size:13px;font-weight:700;cursor:pointer;font-family:inherit;"><i class="ti ti-restore" style="margin-right:5px;"></i>Rebuild from ${n===1?'this file':'these files'}</button>
+    </div>`;
+  }catch(e){}
+}
+async function _findOrphanCourseFiles(){
+  const out={};
+  try{
+    if(typeof _idb==='undefined'||!_idb.available())return out;
+    const keys=await _idb.keys();
+    const have={};(courses||[]).forEach(c=>{if(c&&c.id)have[c.id]=1;});
+    for(const k of (keys||[])){
+      const key=String(k||'');
+      if(key.indexOf('gfile_cfile_')!==0)continue;
+      const parts=key.slice('gfile_cfile_'.length).split('_');
+      if(parts.length<2)continue;
+      const courseId=parts[0],lessonId=parts[1];
+      if(!courseId||!lessonId||have[courseId])continue;      // still on the shelf, nothing to recover
+      let meta=null;try{meta=await _idb.get(key);}catch(e){}
+      if(!meta)continue;
+      const fileId=key.slice('gfile_'.length);
+      out[courseId]=out[courseId]||{};
+      out[courseId][lessonId]=out[courseId][lessonId]||[];
+      out[courseId][lessonId].push({fileId:fileId,fileName:meta.name||'file',fileType:meta.type||''});
+    }
+  }catch(e){}
+  return out;
+}
+async function recoverLostCourses(){
+  const found=await _findOrphanCourseFiles();
+  const ids=Object.keys(found);
+  if(!ids.length){if(typeof proToast==='function')proToast('Nothing to recover on this device.');return;}
+  let made=0,files=0;
+  ids.forEach(function(courseId){
+    const lessonIds=Object.keys(found[courseId]);
+    const lessons=lessonIds.map(function(lid,i){
+      const fs=found[courseId][lid];files+=fs.length;
+      return {id:lid,title:'Lesson '+(i+1),body:'',videoUrl:'',docUrl:'',files:fs,
+              fileId:fs[0]&&fs[0].fileId,fileName:fs[0]&&fs[0].fileName,fileType:fs[0]&&fs[0].fileType};
+    });
+    // A course that was deleted carries a tombstone, and the merge honours it — so recovery has to
+    // lift that too, or the next sync would quietly remove the course we just put back.
+    try{_loadHiddenCourses();if(hiddenCourses[courseId]){delete hiddenCourses[courseId];_saveHiddenCourses();}}catch(e){}
+    courses.push({id:courseId,title:'Recovered course \u2014 rename me',icon:'ti-book',bg:'var(--p-purple-bg)',
+      ic:'var(--p-purple)',bdg:'bp',status:'Draft',price:'Free',enrolled:0,revenue:0,progress:0,
+      desc:'',cover:'',lessons:lessons,modules:lessons.length,moduleNames:lessons.map(l=>l.title),
+      duration:lessons.length+' lesson'+(lessons.length===1?'':'s'),_ts:Date.now(),_filesPending:true});
+    made++;
+  });
+  try{_markCoursesCustom();}catch(e){}
+  try{await (persistCourses()||Promise.resolve());}catch(e){}
+  if(typeof proToast==='function')proToast('Recovered '+made+' course'+(made===1?'':'s')+' with '+files+' file'+(files===1?'':'s')+' still attached. Lesson titles and text need retyping.',0);
+  _fgTab='courses';nav('forms');
+}
 async function deleteCourse(id){
   const c=courses.find(x=>x.id===id);if(!c)return;
   const _go=async function(){
