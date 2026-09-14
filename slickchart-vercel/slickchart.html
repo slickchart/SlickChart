@@ -4273,7 +4273,19 @@ function _pruneExpiredCheckins(){
   return false;
 }
 function persistCourses(){const v=JSON.stringify(courses);try{localStorage.setItem('sc_courses',v);}catch(e){}return (typeof _pushKeyNow==='function')?_pushKeyNow('sc_courses',v):Promise.resolve();}
-function loadCourses(){try{const raw=localStorage.getItem('sc_courses');if(raw){const arr=JSON.parse(raw);if(Array.isArray(arr))courses=arr;}}catch(e){}}
+function loadCourses(){try{const raw=localStorage.getItem('sc_courses');if(raw){const arr=JSON.parse(raw);if(Array.isArray(arr))courses=_dedupeCourses(arr);}}catch(e){}}
+// Collapse entries sharing an id, keeping the most recently edited. Two rows with one id is the
+// state that lets a single delete destroy both, so it is repaired on the way in, not tolerated.
+function _dedupeCourses(arr){
+  const out=[],idx={};
+  (arr||[]).forEach(function(c){
+    if(!c||!c.id){out.push(c);return;}
+    if(!(c.id in idx)){idx[c.id]=out.length;out.push(c);return;}
+    const cur=out[idx[c.id]];
+    if((Number(c._ts)||0)>(Number(cur&&cur._ts)||0))out[idx[c.id]]=c;
+  });
+  return out;
+}
 // Protocols persistence, `protocols` is a const array reset from profession defaults on
 // every applyProfessionConfig(), so like courses we mark it "custom" once the provider
 // edits it and restore the saved set over the defaults (mutating in place, since it's const).
@@ -15870,7 +15882,9 @@ async function saveCourse(id){
   const statusEl=document.getElementById('cb-status');const status=statusEl?statusEl.value:'Draft';
   const d=window._cbDraft||{lessons:[]};
   // One id per builder session, so a second save updates the course the first one created.
-  const courseId=(id&&id!=='new')?id:(window._cbNewId||(window._cbNewId='c'+Date.now().toString(36)));
+  // Random suffix, not just the clock. Two saves in the SAME MILLISECOND produced the SAME id,
+  // which is how two cards ended up sharing one — and deleting one of them then took both.
+  const courseId=(id&&id!=='new')?id:(window._cbNewId||(window._cbNewId='c'+Date.now().toString(36)+Math.random().toString(36).slice(2,7)));
   // Finalize lessons: upload any newly-attached files to server + IndexedDB, keep only refs. We
   // collect the local-write promises and await them below so the bytes are committed before we
   // leave the editor — that's what stops uploads vanishing when the app reloads right after a save.
@@ -15950,7 +15964,13 @@ async function deleteCourse(id){
   // Record the deletion itself, not just "this set is customized". Without this a stale device's
   // sc_courses simply re-added the course on the next sync, and an emptied list looked unseeded to
   // the reseeder. Pushed immediately so the delete reaches the server ahead of any other device.
-  try{_loadHiddenCourses();hiddenCourses[id]=1;_saveHiddenCourses();}catch(e){}
+  // Only when no other entry still carries this id. A tombstone hides an id EVERYWHERE, so
+  // tombstoning one of two cards that share an id erases BOTH — which is exactly what happened to
+  // Vitality Reset Program. While a duplicate remains, removing the single row is the whole job.
+  try{
+    const _stillThere=(courses||[]).some(x=>x&&x.id===id);
+    if(!_stillThere){_loadHiddenCourses();hiddenCourses[id]=1;_saveHiddenCourses();}
+  }catch(e){}
   // Await the persist + the custom-flag push before leaving, same as saveCourse — otherwise a fast
   // reload lets the boot pull restore the stale server copy and the deleted course silently returns.
   try{await Promise.all([persistCourses()||Promise.resolve(),(typeof _pushKeyNow==='function'?_pushKeyNow('sc_courses_custom','1'):Promise.resolve())]);}catch(e){}
