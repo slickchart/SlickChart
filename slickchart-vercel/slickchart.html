@@ -2146,7 +2146,10 @@ function _syncable(k){return typeof k==='string'&&k.indexOf('sc_')===0&&!_SYNC_S
 // refresh, before its push flushed) was wiped — resurrecting deleted clients, merged duplicates, and
 // dismissed flags. These keys are UNIONED with local on pull instead of overwritten. Object maps merge
 // by key; arrays merge by unique value.
-const _TOMB_OBJ={sc_deleted_clients:1,sc_hidden_square:1,sc_merged_ids:1,sc_merged_into:1,sc_ci_dismissed:1,sc_course_purchases:1,sc_hidden_courses:1};
+// sc_hidden_guides / sc_hidden_forms are {id:1} maps of what the provider deleted. They were pushed
+// immediately but NOT registered here, so the map itself rode the plain overwrite: a stale device's
+// copy could drop ids and resurrect a deleted guide. Same class of bug as sc_courses.
+const _TOMB_OBJ={sc_deleted_clients:1,sc_hidden_square:1,sc_merged_ids:1,sc_merged_into:1,sc_ci_dismissed:1,sc_course_purchases:1,sc_hidden_courses:1,sc_hidden_guides:1,sc_hidden_forms:1};
 const _TOMB_ARR={sc_flag_dismissed:1,sc_form_flag_dismissed:1,sc_ci_cleared:1,sc_ci_read:1,sc_home_dismissed:1,sc_notif_cleared:1,sc_notif_read:1};
 function _isTombstoneKey(k){return !!(_TOMB_OBJ[k]||_TOMB_ARR[k]);}
 // Merge the client roster per-client-id instead of whole-blob overwriting it, so two devices that edit
@@ -2325,14 +2328,15 @@ function _mergeThreads(serverStr,localStr){
 // Conflicts on the same id take the newer _ts when both sides have one (saveCourse stamps it);
 // without timestamps the server copy wins, which is the old behaviour — the bug being fixed here is
 // losing a whole course, not which edit of one wins.
-function _mergeCourses(serverStr,localStr){
+// Shared by courses and custom guides: union by id, drop anything tombstoned, prefer the newer _ts.
+function _mergeAuthoredById(serverStr,localStr,hiddenKey){
   let srv,loc;
   try{srv=JSON.parse(serverStr||'[]');}catch(e){return null;}
   try{loc=JSON.parse(localStr||'[]');}catch(e){loc=[];}
   if(!Array.isArray(srv))return null;
   if(!Array.isArray(loc))loc=[];
   let hidden={};
-  try{const h=localStorage.getItem('sc_hidden_courses');if(h){const o=JSON.parse(h);if(o&&typeof o==='object')hidden=o;}}catch(e){}
+  try{const h=localStorage.getItem(hiddenKey);if(h){const o=JSON.parse(h);if(o&&typeof o==='object')hidden=o;}}catch(e){}
   const out=[],idx={};
   const take=function(c,fromLocal){
     if(!c||!c.id)return;
@@ -2352,6 +2356,9 @@ function _mergeCourses(serverStr,localStr){
   const srvFiltered=JSON.stringify(srv.filter(c=>c&&c.id&&!hidden[c.id]));
   return {str:str,changed:str!==srvFiltered};
 }
+function _mergeCourses(serverStr,localStr){return _mergeAuthoredById(serverStr,localStr,'sc_hidden_courses');}
+// Custom guides are the provider's own writing and were overwritten the same way courses were.
+function _mergeResources(serverStr,localStr){return _mergeAuthoredById(serverStr,localStr,'sc_hidden_guides');}
 function _mergeSeenEvents(serverStr,localStr){
   try{
     if(localStr==null)return null;
@@ -2425,9 +2432,10 @@ const Cloud={
     // Chat data is append-only and provider-sent messages live ONLY in sc_msgstore, so a plain overwrite
     // here let a stale device wipe history and (via sc_seen_events) resurrect read messages as unread.
     // Merge these three the same way as sc_clients: union, never lose, push the superset back.
-    if(k==='sc_msgstore'||k==='sc_threads'||k==='sc_seen_events'||k==='sc_attn_seen'||k==='sc_import_batches'||k==='sc_courses'){
+    if(k==='sc_msgstore'||k==='sc_threads'||k==='sc_seen_events'||k==='sc_attn_seen'||k==='sc_import_batches'||k==='sc_courses'||k==='sc_resources'){
       const mm=(k==='sc_msgstore')?_mergeMsgStore(data[k],localStorage.getItem(k))
               :(k==='sc_courses')?_mergeCourses(data[k],localStorage.getItem(k))
+              :(k==='sc_resources')?_mergeResources(data[k],localStorage.getItem(k))
               :(k==='sc_threads')?_mergeThreads(data[k],localStorage.getItem(k))
               :(k==='sc_attn_seen')?_mergeAttnSeen(data[k],localStorage.getItem(k))
               :(k==='sc_import_batches')?_mergeImportBatches(data[k],localStorage.getItem(k))
