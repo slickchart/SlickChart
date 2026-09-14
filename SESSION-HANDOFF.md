@@ -64,6 +64,38 @@ All on `main`, all deployed. Newest last:
 
 ---
 
+## 2b. Cloud.pull() — which keys merge, and which still don't (2026-09-14)
+
+Ashley lost a course she had built three times, while deleted sample courses kept returning. Root
+cause was `CLAUDE.md` §0 rule 6: `sc_courses` rode the DEFAULT OVERWRITE, so whichever device synced
+last won wholesale. Deleting recorded nothing, and the reseeder could not tell "deleted them all"
+from "new account", so it re-seeded samples and pushed them. Guides, forms and several flags had the
+same shape of hole. Fixed across `4bf9827`, `7a5cedc`, `a2663d9`.
+
+Three mechanisms now, and any new synced key needs the right one:
+
+1. **Authored libraries** (`sc_courses`, `sc_resources`, and `sc_forms`' `custom` array) go through
+   `_mergeAuthoredById(server, local, hiddenKey)` — union by id, newer `_ts` wins, tombstoned ids
+   dropped. Stamp `_ts` wherever the record is saved or the newer edit cannot win.
+2. **Delete lists** (`sc_hidden_courses`, `sc_hidden_guides`, `sc_hidden_forms`, …) belong in
+   `_TOMB_OBJ`/`_TOMB_ARR` so they UNION. A delete list that overwrites is worse than none: a stale
+   device's shorter copy silently un-deletes things.
+3. **One-way latches** (`_STICKY_TRUE`: `sc_hide_sample`, `sc_courses_custom`, `sc_*_custom`,
+   `sc_photorelease_migrated`) are plain `'1'` strings. Sync may SET one, never clear one. A cleared
+   `sc_courses_custom` is what let the reseeder overwrite real courses.
+
+**Still on the plain overwrite and still at risk**, all the same authored-library shape:
+`sc_protocols`, `sc_service_menu`, `sc_docs`, `sc_routines`, `sc_vendors`, `sc_staff`,
+`sc_inventory`. Nobody has reported losing one yet. Genuine last-write-wins settings (`sc_tax_rate`,
+`sc_brand_colors`, `sc_wsname`, `sc_note_fmt`, `sc_ai`) are correct as overwrites — this is a
+specific list, not "merge everything".
+
+The suite lives in the scratchpad as `t-courses.mjs` (27 assertions, drives the real
+`Cloud.pull()` merge functions against stale-server fixtures). Worth re-creating if a future session
+touches this area.
+
+---
+
 ## 3. Open threads — needs Ashley, or needs verifying
 
 1. **Square `payment.*` webhook subscription.** Paid-course auto-unlock depends on Square sending
