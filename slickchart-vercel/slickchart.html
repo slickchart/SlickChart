@@ -1419,7 +1419,29 @@ function _persistFailWarn(){
   // silently, the in-memory change shows in the UI but is gone on reload. Warn once per
   // session so they can free space (e.g. export/clear old photos) rather than lose data unaware.
   if(_storageWarned)return;_storageWarned=true;
-  try{if(typeof proToast==='function')proToast('Device storage is full, recent changes may not be saved. Clear space or export photos.');}catch(e){}
+  // Sticky (duration 0) and specific. The old version auto-dismissed before it could be read, so the
+  // only thing a full device produced was work quietly not saving. It also now says what is safe:
+  // when there is a cloud session, the data still reaches the account even though this device is full.
+  let _where='';try{_where=_lsBiggestKeyLabel();}catch(e){}
+  const _cloud=(function(){try{return typeof Cloud!=='undefined'&&Cloud&&!!Cloud.token;}catch(e){return false;}})();
+  try{if(typeof proToast==='function')proToast('This device is out of storage, so new changes may not be kept here.'
+    +(_cloud?' They still back up to your account.':'')
+    +(_where?' Most of the space is used by '+_where+'.':'')
+    +' Open More → Device storage to clear space safely.',0);}catch(e){}
+}
+// Plain-language name for whatever is filling localStorage, so the warning points somewhere instead
+// of just saying "full".
+const _LS_LABELS={sc_captured_photos:'before/after photos',sc_pro_vc_subs:'consult submissions',sc_msgstore:'message history',
+  sc_clients:'client records',sc_docs:'uploaded documents',sc_photo_index:'the photo index',sc_courses:'courses',
+  sc_forms:'forms',sc_resources:'guides',sc_photo_backed:'the photo backup list'};
+function _lsBiggestKeyLabel(){
+  let best='',n=0;
+  try{for(let i=0;i<localStorage.length;i++){const k=localStorage.key(i);if(!k)continue;let len=0;
+    try{len=(localStorage.getItem(k)||'').length;}catch(e){}
+    if(len>n){n=len;best=k;}}}catch(e){}
+  if(!best||n<200000)return '';
+  const mb=(n/1048576);
+  return (_LS_LABELS[best]||best)+' ('+(mb>=1?mb.toFixed(1)+'MB':Math.round(n/1024)+'KB')+')';
 }
 // Per-client "updated at" tracking, so two devices editing DIFFERENT clients converge instead of the
 // whole-roster blob last-writer-wins clobbering each other. We stamp _uAt only on clients whose content
@@ -4275,7 +4297,13 @@ function _pruneExpiredCheckins(){
   if(checkins.length!==before){try{persistCheckins();}catch(e){}try{if(typeof updateBadge==='function')updateBadge();}catch(e){}return true;}
   return false;
 }
-function persistCourses(){const v=JSON.stringify(courses);try{localStorage.setItem('sc_courses',v);}catch(e){}return (typeof _pushKeyNow==='function')?_pushKeyNow('sc_courses',v):Promise.resolve();}
+// Resolves {local,server} — whether the write actually landed on this device and whether it reached
+// the server. Both used to be swallowed, which is how a course could be “saved” into nowhere: a full
+// localStorage threw (caught, ignored) and the push failed (caught, ignored), and the only copy left
+// was the one in memory, gone on the next refresh.
+function persistCourses(){const v=JSON.stringify(courses);let _local=true;try{localStorage.setItem('sc_courses',v);}catch(e){_local=false;try{_persistFailWarn();}catch(e2){}}
+  const p=(typeof _pushKeyNow==='function')?_pushKeyNow('sc_courses',v):Promise.resolve({ok:false,reason:'nopush'});
+  return Promise.resolve(p).then(function(r){return {local:_local,server:!!(r&&r.ok)};},function(){return {local:_local,server:false};});}
 function loadCourses(){try{const raw=localStorage.getItem('sc_courses');if(raw){const arr=JSON.parse(raw);if(Array.isArray(arr))courses=_dedupeCourses(arr);}}catch(e){}}
 // Collapse entries sharing an id, keeping the most recently edited. Two rows with one id is the
 // state that lets a single delete destroy both, so it is repaired on the way in, not tolerated.
@@ -15604,7 +15632,10 @@ function _findGuide(id){return resources.find(g=>g.id===id)||Object.values(guide
 // Direct, immediate upsert of one KV key to the server, bypasses the debounced Cloud.push
 // so a save reliably reaches the server (and thus other devices) right away. Used for guides
 // and bundles, which a provider often builds on the web then expects on their phone.
-function _pushKeyNow(k,v){try{if(typeof Cloud==='undefined'||!Cloud||!Cloud.token)return Promise.resolve();return fetch('/api/store',{method:'PUT',headers:{'Content-Type':'application/json','Authorization':'Bearer '+Cloud.token},body:JSON.stringify({key:k,value:String(v)})}).catch(function(){});}catch(e){return Promise.resolve();}}
+// Resolves {ok:true} only when the server actually accepted the write. This used to swallow every
+// failure into a resolved promise, so a caller could `await` it, get nothing back, and tell the
+// provider “saved ✓” when the request had 401'd or 500'd. Callers that don't care can still ignore it.
+function _pushKeyNow(k,v){try{if(typeof Cloud==='undefined'||!Cloud||!Cloud.token)return Promise.resolve({ok:false,reason:'nocloud'});return fetch('/api/store',{method:'PUT',headers:{'Content-Type':'application/json','Authorization':'Bearer '+Cloud.token},body:JSON.stringify({key:k,value:String(v)})}).then(function(r){return {ok:!!(r&&r.ok),status:(r&&r.status)||0};},function(){return {ok:false,reason:'network'};});}catch(e){return Promise.resolve({ok:false,reason:'error'});}}
 function persistCustomResources(){const v=JSON.stringify(customResources);try{localStorage.setItem('sc_resources',v);}catch(e){}_pushKeyNow('sc_resources',v);}
 function loadCustomResources(){try{const raw=localStorage.getItem('sc_resources');if(raw){const a=JSON.parse(raw);if(Array.isArray(a))customResources=a;}}catch(e){}}
 // Courses now live as the third tab inside the unified Forms · Guides · Courses screen.
@@ -15633,6 +15664,9 @@ function _coursesTabHTML(){
       </div>
     </div>`).join('')}
     ${_noRes('courses-noresults','No courses match your search.')}
+    <div style="padding:4px 16px 0;display:flex;justify-content:center;">
+      <button onclick="openCourseHistory()" style="border:none;background:none;color:var(--p-mut);font-size:12px;cursor:pointer;font-family:inherit;display:inline-flex;align-items:center;gap:5px;padding:6px 10px;"><i class="ti ti-history" style="font-size:13px;"></i> Course backups &amp; find a lost course</button>
+    </div>
     <div id="course-recover"></div>
     <div style="height:16px;"></div>`;
 }
@@ -15795,6 +15829,9 @@ function renderCourseBuilder(id){
     ${c?`<button onclick="deleteCourse('${_jsAttr(c.id)}')" style="width:100%;background:none;border:1px solid var(--p-red-line);color:var(--p-red);border-radius:8px;padding:11px;font-size:13px;font-weight:600;cursor:pointer;font-family:inherit;margin-bottom:22px;display:inline-flex;align-items:center;justify-content:center;gap:6px;"><i class="ti ti-trash" style="font-size:14px;"></i> Delete course</button>`:''}
   </div>`;
   _cbRenderLessons();
+  // From here on the work is held on the server every 45s, so an unsaved course can't be lost to a
+  // closed tab, a dead battery, or a save that doesn't land. See _cvSnapshot.
+  try{_cbAutosaveStart(id);}catch(e){}
 }
 function _cbCoverHTML(){
   const d=window._cbDraft||{};
@@ -15929,7 +15966,7 @@ async function saveCourse(id){
   // merge would filter out the new one as "deleted on purpose".
   try{_loadHiddenCourses();if(hiddenCourses[courseId]||(existing&&hiddenCourses[existing.id])){delete hiddenCourses[courseId];if(existing)delete hiddenCourses[existing.id];_saveHiddenCourses();}}catch(e){}
   try{_markCoursesCustom();}catch(e){}
-  let _coursePush=Promise.resolve();try{_coursePush=persistCourses()||Promise.resolve();}catch(e){}
+  let _coursePush=Promise.resolve({local:false,server:false});try{_coursePush=persistCourses()||_coursePush;}catch(e){}
   // The course row and the custom flag still reach the server before we leave: a refresh right after
   // saving used to be beaten by the boot pull, which then restored a stale server copy without the
   // new course. That await stays.
@@ -15937,12 +15974,33 @@ async function saveCourse(id){
   // bytes. The uploads used to be awaited here too, which is why Save looked dead for a minute on a
   // course with 36 attachments — and why it read as "the button does nothing".
   try{await Promise.all(_fileWrites);}catch(e){}
-  try{await Promise.all([_coursePush,(typeof _pushKeyNow==='function'?_pushKeyNow('sc_courses_custom','1'):Promise.resolve())]);}catch(e){}
-  window._cbDraft=null;
+  let _res={local:false,server:false};
+  try{_res=await _coursePush;}catch(e){}
+  try{if(typeof _pushKeyNow==='function')await _pushKeyNow('sc_courses_custom','1');}catch(e){}
   const _savedId=existing?existing.id:courseId;
+  // The durable copy. Independent of the synced blob, independent of this device's storage, and NOT
+  // removed by a later delete — this is what makes a lost course recoverable instead of gone.
+  let _snap={ok:false};
+  try{const _rec=courses.find(x=>x&&x.id===_savedId);if(_rec)_snap=await _cvSnapshot(_rec,'save');}catch(e){}
+
+  // Nothing reached this device AND nothing reached the server. The course exists only in memory and
+  // a refresh would take it. Say so plainly, keep the builder open with every word still in it, and
+  // do not print a ✓ — a false ✓ here is exactly how an evening's work got thrown away.
+  if(!_res.local&&!_res.server&&!_snap.ok){
+    if(typeof proToast==='function')proToast('Couldn’t save this course yet — it’s still on screen but not stored. Check your connection or free up space on this device, then press Save again.',0);
+    return;
+  }
+  try{_cbAutosaveStop();}catch(e){}
+  window._cbDraft=null;
   if(typeof proToast==='function'){
-    proToast((existing?'Course updated ✓':'Course created ✓')
-      +(_fileUploads.length?'  ·  uploading '+_fileUploads.length+' file'+(_fileUploads.length===1?'':'s')+' in the background':''));
+    // Local write failed (usually a full device) but the server has it. Worth saying, because this
+    // device will show the course again only after the next sync.
+    if(!_res.local&&(_res.server||_snap.ok)){
+      proToast('Saved to your account — this device is out of storage, so it’s backed up in the cloud rather than stored here.',0);
+    }else{
+      proToast((existing?'Course updated ✓':'Course created ✓')
+        +(_fileUploads.length?'  ·  uploading '+_fileUploads.length+' file'+(_fileUploads.length===1?'':'s')+' in the background':''));
+    }
   }
   // Files keep going after she has moved on. Marked pending up front so that if she closes the tab
   // mid-upload the course still says so and the Upload files button is there when she comes back.
@@ -15961,6 +16019,268 @@ async function saveCourse(id){
 // cleans up any attached lesson files (server + local), and marks the course set customized
 // so a deleted starter course doesn't get reseeded back on the next load.
 // ── RECOVERING A LOST COURSE ─────────────────────────────────────────────────────────────────────
+// ── COURSE SNAPSHOTS ── the safety net under the course builder ───────────────────────────────
+// A course used to live in exactly ONE place: the synced sc_courses blob. Anything that went wrong
+// with that blob took the whole course with it and there was nothing underneath — a bad merge, a
+// mis-aimed delete, or a device whose localStorage was full so the write threw and was swallowed.
+// That is how the same course was lost close to ten times. Patching each cause one at a time was
+// never going to end; the fix is to stop the blob being the only copy.
+//
+// Every save — and an autosave every 45s while the builder is open, so even a course that has never
+// been saved once is held — writes an immutable copy to the server. Those copies are append-only and
+// DELETING A COURSE DOES NOT REMOVE THEM, because a wrong delete is one of the ways work vanished.
+// "Find a lost course" below lists every snapshot and puts one back with its lesson files reattached.
+//
+// A snapshot is the course RECORD only. File bytes live in their own store and are referenced by id,
+// so a course with 700 attachments still snapshots to a few KB.
+const _CV_AUTOSAVE_MS=45000;
+let _cvTimer=null,_cvLastSig='';
+function _cvCan(){try{return typeof Cloud!=='undefined'&&Cloud&&!!Cloud.token;}catch(e){return false;}}
+function _cvStrip(c){
+  try{
+    const o=JSON.parse(JSON.stringify(c||{}));
+    delete o._filesPending;delete o._pendingFiles;
+    (Array.isArray(o.lessons)?o.lessons:[]).forEach(function(l){
+      if(!l)return;delete l._removedFileIds;
+      (Array.isArray(l.files)?l.files:[]).forEach(function(f){if(f)delete f._newFileData;});
+    });
+    return o;
+  }catch(e){return null;}
+}
+function _cvSnapshot(course,kind){
+  if(!_cvCan())return Promise.resolve({ok:false,reason:'nocloud'});
+  const o=_cvStrip(course);
+  if(!o||!o.id)return Promise.resolve({ok:false,reason:'empty'});
+  let payload='';try{payload=JSON.stringify(o);}catch(e){return Promise.resolve({ok:false,reason:'json'});}
+  return fetch('/api/course-versions',{method:'POST',headers:{'Content-Type':'application/json','Authorization':'Bearer '+Cloud.token},
+    body:JSON.stringify({courseId:o.id,title:o.title||'',kind:(kind==='draft'?'draft':'save'),payload:payload})})
+    .then(function(r){return r.ok?{ok:true}:{ok:false,status:r.status};},function(){return {ok:false,reason:'network'};});
+}
+// Build a course-record-shaped object from whatever is in the builder RIGHT NOW, so an autosave
+// captures a course that has never been saved even once.
+function _cbDraftRecord(id){
+  try{
+    if(!document.getElementById('cb-title'))return null;
+    _cbSyncFromDOM();
+    const d=window._cbDraft;if(!d)return null;
+    const g=function(i){const el=document.getElementById(i);return el?String(el.value||'').trim():'';};
+    const cid=(id&&id!=='new')?id:(window._cbNewId||(window._cbNewId='c'+Date.now().toString(36)+Math.random().toString(36).slice(2,7)));
+    const lessons=(d.lessons||[]).map(function(l,i){
+      return {id:l.id||('l'+i),title:(l.title||'').trim(),body:l.body||'',videoUrl:(l.videoUrl||'').trim(),docUrl:(l.docUrl||'').trim(),
+        files:(Array.isArray(l.files)?l.files:[]).filter(function(f){return f&&f.fileId;})
+              .map(function(f){return {fileId:f.fileId,fileName:f.fileName||'',fileType:f.fileType||''};})};
+    });
+    const st=document.getElementById('cb-status');
+    return {id:cid,title:g('cb-title'),desc:g('cb-desc'),price:g('cb-price')||'Free',status:st?st.value:'Draft',
+      cover:d.cover||'',lessons:lessons,modules:lessons.length,moduleNames:lessons.map(function(l){return l.title;}),
+      duration:lessons.length+' lesson'+(lessons.length===1?'':'s'),icon:'ti-book',bg:'var(--p-purple-bg)',
+      ic:'var(--p-purple)',bdg:'bp',enrolled:0,revenue:0,progress:0,_ts:Date.now()};
+  }catch(e){return null;}
+}
+function _cbAutosaveTick(){
+  const rec=_cbDraftRecord(window._cbAutosaveId);
+  if(!rec)return;
+  // Don't snapshot an empty builder, and don't stack identical copies over an untouched screen.
+  if(!rec.title&&!(rec.lessons||[]).some(function(l){return l.title||l.body||l.videoUrl||l.docUrl||(l.files||[]).length;}))return;
+  let sig='';try{sig=JSON.stringify(Object.assign({},rec,{_ts:0}));}catch(e){}
+  if(sig&&sig===_cvLastSig)return;
+  _cvLastSig=sig;
+  _cvSnapshot(rec,'draft');
+}
+function _cbAutosaveFlush(){try{if(_cvTimer)_cbAutosaveTick();}catch(e){}}
+function _cbAutosaveStart(id){
+  _cbAutosaveStop();
+  window._cbAutosaveId=id;_cvLastSig='';
+  try{_cvTimer=setInterval(function(){
+    if(!document.getElementById('cb-title')){_cbAutosaveStop();return;}   // navigated away
+    _cbAutosaveTick();
+  },_CV_AUTOSAVE_MS);}catch(e){}
+  // Closing the tab mid-build is exactly when the autosave matters most.
+  try{window.addEventListener('pagehide',_cbAutosaveFlush);}catch(e){}
+}
+function _cbAutosaveStop(){try{if(_cvTimer)clearInterval(_cvTimer);}catch(e){}_cvTimer=null;try{window.removeEventListener('pagehide',_cbAutosaveFlush);}catch(e){}}
+
+function _cvFetchList(){
+  if(!_cvCan())return Promise.resolve(null);
+  return fetch('/api/course-versions',{headers:{'Authorization':'Bearer '+Cloud.token}})
+    .then(function(r){return r.ok?r.json():null;}).then(function(j){return j?((j.versions)||[]):null;})
+    .catch(function(){return null;});
+}
+function _cvCloseHistory(){try{const ov=document.getElementById('course-history');if(ov)ov.remove();}catch(e){}}
+function _cvWhen(ts){
+  try{
+    const d=new Date(Number(ts)||0);const now=Date.now();const diff=now-d.getTime();
+    const t=d.toLocaleTimeString([],{hour:'numeric',minute:'2-digit'});
+    if(diff<60000)return 'just now';
+    if(d.toDateString()===new Date(now).toDateString())return 'Today '+t;
+    if(d.toDateString()===new Date(now-86400000).toDateString())return 'Yesterday '+t;
+    return d.toLocaleDateString([],{month:'short',day:'numeric'})+' '+t;
+  }catch(e){return '';}
+}
+// Every backup this account holds, newest first, grouped by course. Courses that are no longer in the
+// library are listed FIRST and labelled — that is what someone opening this screen came here for.
+async function openCourseHistory(){
+  _cvCloseHistory();
+  const ov=document.createElement('div');ov.id='course-history';
+  ov.style.cssText='position:fixed;top:0;bottom:0;left:0;right:0;margin:0 auto;width:390px;max-width:100%;z-index:99999;background:rgba(0,0,0,.72);display:flex;align-items:flex-end;justify-content:center;';
+  ov.onclick=function(e){if(e.target===ov)_cvCloseHistory();};
+  const shell=function(inner){return `<div role="dialog" aria-modal="true" aria-label="Course backups" style="background:var(--surf2);border-top-left-radius:18px;border-top-right-radius:18px;width:100%;max-height:86%;overflow:auto;-webkit-overflow-scrolling:touch;border:1px solid var(--p-line);border-bottom:none;">
+    <div style="position:sticky;top:0;background:var(--surf2);padding:16px 18px 10px;border-bottom:1px solid var(--p-line2);display:flex;align-items:center;justify-content:space-between;gap:10px;">
+      <div><div style="font-size:15.5px;font-weight:700;color:var(--p-ink);">Course backups</div>
+      <div style="font-size:12px;color:var(--p-mut);margin-top:2px;">Every save is kept. Nothing here is deleted when a course is.</div></div>
+      <button onclick="_cvCloseHistory()" aria-label="Close" style="border:none;background:var(--surf1);color:var(--p-mut);border-radius:9px;width:30px;height:30px;flex-shrink:0;cursor:pointer;font-size:15px;">✕</button>
+    </div>
+    <div style="padding:12px 18px 26px;">${inner}</div></div>`;};
+  ov.innerHTML=shell('<div style="padding:26px 0;text-align:center;font-size:13px;color:var(--p-mut);">Loading your backups…</div>');
+  (document.querySelector('.shell')||document.body).appendChild(ov);
+
+  const list=await _cvFetchList();
+  const box=ov.querySelector('div[role="dialog"] > div:last-child');
+  if(!box)return;
+  if(list===null){
+    box.innerHTML='<div style="padding:22px 0;text-align:center;font-size:13px;color:var(--p-mut);line-height:1.6;">Couldn’t reach your backups right now.<br>Check your connection and try again.</div>';
+    return;
+  }
+  if(!list.length){
+    box.innerHTML='<div style="padding:22px 0;text-align:center;font-size:13px;color:var(--p-mut);line-height:1.6;">No backups yet.<br>The next course you save will be kept here automatically.</div>';
+    return;
+  }
+  const have={};(courses||[]).forEach(function(c){if(c&&c.id)have[c.id]=1;});
+  const groups={};const order=[];
+  list.forEach(function(v){if(!groups[v.courseId]){groups[v.courseId]=[];order.push(v.courseId);}groups[v.courseId].push(v);});
+  order.sort(function(a,b){
+    const la=have[a]?1:0,lb=have[b]?1:0;            // gone-from-library first
+    if(la!==lb)return la-lb;
+    return (groups[b][0].ts||0)-(groups[a][0].ts||0);
+  });
+  box.innerHTML=order.map(function(cid){
+    const vs=groups[cid];const gone=!have[cid];
+    const name=(vs.find(function(v){return v.title;})||{}).title||'Untitled course';
+    return `<div style="background:var(--surf1);border:1px solid ${gone?'var(--p-line3)':'var(--p-line)'};border-radius:13px;padding:13px 14px;margin-bottom:11px;">
+      <div style="font-size:13.5px;font-weight:650;color:var(--p-ink);">${_fileEsc(name)}</div>
+      <div style="font-size:11.5px;color:${gone?'var(--accent-strong)':'var(--p-mut)'};margin:3px 0 9px;">${gone?'Not in your library right now — restore it below':'In your library · '+vs.length+' backup'+(vs.length===1?'':'s')}</div>
+      ${vs.slice(0,8).map(function(v){return `<div style="display:flex;align-items:center;gap:9px;padding:7px 0;border-top:1px solid var(--p-line2);">
+        <div style="flex:1;min-width:0;"><div style="font-size:12.5px;color:var(--p-ink);">${_fileEsc(_cvWhen(v.ts))}</div>
+        <div style="font-size:11px;color:var(--p-mut);">${v.kind==='draft'?'Autosave while editing':'Saved'}</div></div>
+        <button onclick="restoreCourseVersion(${Number(v.id)||0})" style="border:none;background:var(--accent-tint);color:var(--accent-strong);border-radius:8px;padding:6px 11px;font-size:12px;font-weight:650;cursor:pointer;font-family:inherit;flex-shrink:0;">Restore</button>
+      </div>`;}).join('')}
+    </div>`;
+  }).join('');
+}
+async function restoreCourseVersion(vid){
+  if(!_cvCan()){if(typeof proToast==='function')proToast('Sign in to restore from your backups.');return;}
+  let v=null;
+  try{const r=await fetch('/api/course-versions?id='+encodeURIComponent(vid),{headers:{'Authorization':'Bearer '+Cloud.token}});if(r.ok){const j=await r.json();v=j&&j.version;}}catch(e){}
+  let rec=null;try{rec=v&&v.payload?JSON.parse(v.payload):null;}catch(e){}
+  if(!rec||!rec.id){if(typeof proToast==='function')proToast('That backup couldn’t be read. Try another one.');return;}
+  rec._ts=Date.now();                 // newest wins in _mergeCourses, so the restore survives the next sync
+  delete rec._filesPending;
+  // A deleted course carries a tombstone and the merge honours it. Lifting it is what stops the next
+  // sync from quietly removing exactly what we just put back.
+  try{_loadHiddenCourses();if(hiddenCourses[rec.id]){delete hiddenCourses[rec.id];_saveHiddenCourses();}}catch(e){}
+  const i=courses.findIndex(function(x){return x&&x.id===rec.id;});
+  if(i>=0)courses[i]=Object.assign({},courses[i],rec);else courses.push(rec);
+  try{_markCoursesCustom();}catch(e){}
+  let res={local:false,server:false};
+  try{res=await (persistCourses()||Promise.resolve({}));}catch(e){}
+  try{await _cvSnapshot(rec,'save');}catch(e){}
+  _cvCloseHistory();
+  if(typeof proToast==='function')proToast('“'+String(rec.title||'Course').slice(0,60)+'” is back'+(res.server?'':' on this device')+'. Lesson files reattach automatically.',0);
+  _fgTab='courses';nav('forms');
+}
+// ── DEVICE STORAGE ── why "storage is full" keeps happening, and the one safe thing to clear.
+// Lesson and guide files are uploaded to the account and then CACHED on this device so they open
+// instantly and work offline. A course with hundreds of attachments will fill the whole allowance
+// the browser gives this app — and once that allowance is gone EVERY local save fails, which is how
+// a course that looked saved wasn't. Dropping cached copies the SERVER still holds is lossless:
+// opening the file downloads it again (see _guideFilePayload) and re-caches it.
+function _bytesLabel(n){
+  n=Number(n)||0;
+  if(n>=1073741824)return (n/1073741824).toFixed(1)+' GB';
+  if(n>=1048576)return (n/1048576).toFixed(n>=10485760?0:1)+' MB';
+  return Math.max(1,Math.round(n/1024))+' KB';
+}
+// Local file caches whose bytes the server is confirmed to still have. Returns null if we can't ask
+// the server — in that case we drop NOTHING, because an unverified delete is a real delete.
+async function _evictableFileCache(){
+  if(!_cvCan())return null;
+  let server=null;
+  try{
+    const r=await fetch('/api/guide-file?list=files',{headers:{'Authorization':'Bearer '+Cloud.token}});
+    if(r.ok){const j=await r.json();server=(j&&j.files)||[];}
+  }catch(e){}
+  if(!server)return null;
+  const size={};server.forEach(function(f){if(f&&f.id)size[f.id]=Number(f.size)||0;});
+  let keys=[];try{keys=(typeof _idb!=='undefined'&&_idb.available())?await _idb.keys():[];}catch(e){}
+  const local=(keys||[]).filter(function(k){return String(k).indexOf('gfile_')===0;});
+  const drop=[];let bytes=0;
+  local.forEach(function(k){const id=String(k).slice(6);
+    if(Object.prototype.hasOwnProperty.call(size,id)){drop.push(String(k));bytes+=size[id];}});
+  return {drop:drop,bytes:bytes,localCount:local.length,onlyHere:local.length-drop.length};
+}
+async function _deviceStorageStats(){
+  const out={usage:0,quota:0};
+  try{if(navigator.storage&&navigator.storage.estimate){const e=await navigator.storage.estimate();out.usage=e.usage||0;out.quota=e.quota||0;}}catch(e){}
+  out.evictable=await _evictableFileCache();
+  return out;
+}
+function _closeStoragePanel(){try{const ov=document.getElementById('storage-panel');if(ov)ov.remove();}catch(e){}}
+async function openStoragePanel(){
+  _closeStoragePanel();
+  const ov=document.createElement('div');ov.id='storage-panel';
+  ov.style.cssText='position:fixed;top:0;bottom:0;left:0;right:0;margin:0 auto;width:390px;max-width:100%;z-index:99999;background:rgba(0,0,0,.72);display:flex;align-items:flex-end;justify-content:center;';
+  ov.onclick=function(e){if(e.target===ov)_closeStoragePanel();};
+  const shell=function(inner){return `<div role="dialog" aria-modal="true" aria-label="Device storage" style="background:var(--surf2);border-top-left-radius:18px;border-top-right-radius:18px;width:100%;max-height:86%;overflow:auto;-webkit-overflow-scrolling:touch;border:1px solid var(--p-line);border-bottom:none;">
+    <div style="position:sticky;top:0;background:var(--surf2);padding:16px 18px 10px;border-bottom:1px solid var(--p-line2);display:flex;align-items:center;justify-content:space-between;gap:10px;">
+      <div><div style="font-size:15.5px;font-weight:700;color:var(--p-ink);">Device storage</div>
+      <div style="font-size:12px;color:var(--p-mut);margin-top:2px;">Space this app is using on this device</div></div>
+      <button onclick="_closeStoragePanel()" aria-label="Close" style="border:none;background:var(--surf1);color:var(--p-mut);border-radius:9px;width:30px;height:30px;flex-shrink:0;cursor:pointer;font-size:15px;">✕</button>
+    </div>
+    <div id="storage-body" style="padding:14px 18px 26px;">${inner}</div></div>`;};
+  ov.innerHTML=shell('<div style="padding:26px 0;text-align:center;font-size:13px;color:var(--p-mut);">Checking…</div>');
+  (document.querySelector('.shell')||document.body).appendChild(ov);
+  _renderStorageBody(await _deviceStorageStats());
+}
+function _renderStorageBody(st){
+  const box=document.getElementById('storage-body');if(!box)return;
+  const pct=(st.quota>0)?Math.min(100,Math.round(st.usage/st.quota*100)):0;
+  const tight=st.quota>0&&pct>=85;
+  const ev=st.evictable;
+  box.innerHTML=`
+    ${st.quota>0?`<div style="margin-bottom:16px;">
+      <div style="display:flex;justify-content:space-between;font-size:12.5px;color:var(--p-ink);margin-bottom:6px;"><span>${_bytesLabel(st.usage)} used</span><span style="color:var(--p-mut);">of about ${_bytesLabel(st.quota)}</span></div>
+      <div style="height:9px;border-radius:6px;background:var(--p-surf2);overflow:hidden;"><div style="height:100%;width:${pct}%;background:${tight?'var(--p-red)':'var(--accent)'};"></div></div>
+      ${tight?`<div style="font-size:11.5px;color:var(--p-red);margin-top:7px;line-height:1.5;">This device is nearly full. That is why saves have been failing here — your work still backs up to your account, but freeing space fixes it properly.</div>`:''}
+    </div>`:`<div style="font-size:12.5px;color:var(--p-mut);margin-bottom:16px;line-height:1.55;">This browser doesn’t report how much space it has given the app.</div>`}
+    ${ev===null?`<div style="background:var(--surf1);border:1px solid var(--p-line);border-radius:13px;padding:14px;font-size:12.5px;color:var(--p-mut);line-height:1.6;">Couldn’t check which files are backed up to your account right now, so nothing will be cleared. Try again when you’re online.</div>`
+    :`<div style="background:var(--surf1);border:1px solid var(--p-line);border-radius:13px;padding:14px;">
+      <div style="font-size:13.5px;font-weight:650;color:var(--p-ink);margin-bottom:5px;">Cached lesson &amp; guide files</div>
+      <div style="font-size:12.5px;color:var(--p-mut);line-height:1.6;margin-bottom:11px;">
+        ${ev.drop.length
+          ? `<b style="color:var(--p-ink);">${ev.drop.length} file${ev.drop.length===1?'':'s'} (${_bytesLabel(ev.bytes)})</b> are saved in your account and also kept here for speed. Clearing the copies here frees that space — the files stay in your courses and download again the moment anyone opens them.`
+          : `Nothing to clear. Every file kept here is already the only copy, or there are none.`}
+        ${ev.onlyHere>0?`<br><br>${ev.onlyHere} file${ev.onlyHere===1?' is':'s are'} only on this device and will be left alone. Use <b>Upload files</b> on the course to back ${ev.onlyHere===1?'it':'them'} up first.`:''}
+      </div>
+      ${ev.drop.length?`<button onclick="freeUpDeviceSpace()" style="width:100%;background:var(--accent);color:var(--accent-ink);border:none;border-radius:10px;padding:11px;font-size:13px;font-weight:700;cursor:pointer;font-family:inherit;">Free up ${_bytesLabel(ev.bytes)}</button>`:''}
+    </div>`}
+    <div style="font-size:11.5px;color:var(--p-mut);line-height:1.6;margin-top:14px;">Your courses, clients, notes and photos are not touched by this.</div>`;
+}
+async function freeUpDeviceSpace(){
+  const btn=document.querySelector('#storage-body button[onclick="freeUpDeviceSpace()"]');
+  if(btn){btn.disabled=true;btn.style.opacity='.6';btn.textContent='Clearing…';}
+  // Re-check rather than trusting what was on screen: never delete a local copy without confirming,
+  // right now, that the server still has that exact file.
+  const ev=await _evictableFileCache();
+  if(!ev||!ev.drop.length){
+    if(typeof proToast==='function')proToast('Nothing to clear right now.');
+    _renderStorageBody(await _deviceStorageStats());return;
+  }
+  let n=0;
+  for(const k of ev.drop){try{await _idb.del(k);n++;}catch(e){}}
+  try{_storageWarned=false;}catch(e){}   // let a genuinely new quota problem warn again
+  if(typeof proToast==='function')proToast('Freed '+_bytesLabel(ev.bytes)+' — '+n+' file'+(n===1?'':'s')+' cleared from this device. They’re still in your courses.',0);
+  _renderStorageBody(await _deviceStorageStats());
+}
 // Lesson files are stored under gfile_cfile_<courseId>_<lessonId>_<rand>, and each payload keeps the
 // original filename. So even when the course record itself is gone, the files still say which course
 // and which lesson they belonged to. That is enough to rebuild the shape of the course with every
@@ -20612,6 +20932,7 @@ function renderMore(){
   <div class="sh"><h2>Help &amp; more</h2></div>
   ${_moreRow('ti-settings','var(--p-surf)','#bbb','Settings','Profile, branding, apps, AI &amp; billing','account')}
   ${_moreRow('ti-help-circle','var(--p-blue-bg)','var(--p-blue)','Help','Search how-tos &amp; troubleshooting','help')}
+  <div class="card" onclick="openStoragePanel()"><div class="row"><div style="width:44px;height:44px;border-radius:10px;background:var(--p-surf2);display:flex;align-items:center;justify-content:center;flex-shrink:0;"><i class="ti ti-database" style="font-size:20px;color:var(--p-blue);"></i></div><div style="flex:1;min-width:0;"><div style="font-size:14px;font-weight:500;color:var(--p-ink);">Device storage</div><div style="font-size:12px;color:#999;">See what this app is using &amp; free up space</div></div><i aria-hidden="true" class="ti ti-chevron-right" style="font-size:16px;color:var(--p-mut);flex-shrink:0;"></i></div></div>
   <div class="card" onclick="_previewClientApp()"><div class="row"><div style="width:44px;height:44px;border-radius:10px;background:var(--accent-tint);display:flex;align-items:center;justify-content:center;flex-shrink:0;"><i class="ti ti-device-mobile-check" style="font-size:20px;color:var(--accent-strong);"></i></div><div style="flex:1;min-width:0;"><div style="font-size:14px;font-weight:500;color:var(--p-ink);">Preview what your client sees</div><div style="font-size:12px;color:var(--p-mut);">Opens a sample of the client app</div></div><i aria-hidden="true" class="ti ti-external-link" style="font-size:16px;color:var(--p-mut);flex-shrink:0;"></i></div></div>
   ${_moreRow('ti-download','var(--p-surf2)','var(--p-green)','Download your data','Services, sales &amp; clients as a spreadsheet','export-data')}
   <div class="card" onclick="replayOnboarding()"><div class="row"><div style="width:44px;height:44px;border-radius:10px;background:var(--p-surf2);display:flex;align-items:center;justify-content:center;flex-shrink:0;"><i class="ti ti-refresh" style="font-size:20px;color:var(--p-green);"></i></div><div style="flex:1;min-width:0;"><div style="font-size:14px;font-weight:500;color:var(--p-ink);">Setup walkthrough</div><div style="font-size:12px;color:#999;">Replay the quick first-run setup</div></div><i aria-hidden="true" class="ti ti-chevron-right" style="font-size:16px;color:var(--p-mut);flex-shrink:0;"></i></div></div>

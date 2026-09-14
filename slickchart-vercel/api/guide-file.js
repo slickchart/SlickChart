@@ -74,6 +74,22 @@ export default async function handler(req, res) {
         res.status(200).json({ ok: true, photos: (rows || []).map(r => ({ id: r.id, type: r.type || '', size: Number(r.size) || 0, updated_at: r.updated_at })) });
         return;
       }
+      // Which file ids this provider has ON THE SERVER, with sizes and no bytes. The device keeps a
+      // local cache of these bytes so lesson files open instantly offline; on a phone that has filled
+      // up, that cache is the first thing that should go, and the only safe way to drop a copy is to
+      // know the server still has it. Settings → Free up space uses exactly this list.
+      if (req.query && String(req.query.list) === 'files') {
+        await ensureProvidersTable();
+        const owner = await providerOwner(req);
+        if (!owner) { res.status(401).json({ error: 'Not logged in.' }); return; }
+        const q = sql();
+        const rows = await q`SELECT id, length(coalesce(data, '')) AS size
+          FROM files WHERE owner = ${owner} AND data IS NOT NULL AND left(id, 3) <> 'ph_'
+          ORDER BY updated_at DESC LIMIT 20000`;
+        res.setHeader('Cache-Control', 'no-store');
+        res.status(200).json({ ok: true, files: (rows || []).map(r => ({ id: r.id, size: Number(r.size) || 0 })) });
+        return;
+      }
       const id = String((req.query && req.query.id) || '').slice(0, 160);
       if (!id) { res.status(400).json({ error: 'Missing file id.' }); return; }
       let owner = null;

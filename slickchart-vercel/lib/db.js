@@ -221,6 +221,35 @@ export async function ensureProvidersTable() {
   _provReady = true;
 }
 
+// Course snapshots — the safety net under the course builder.
+//
+// A course lives in the synced `sc_courses` blob, which means a bad merge, a mis-aimed delete, or a
+// stale device can take it away, and until now there was nothing underneath. Hours of work depended
+// on one blob staying correct. Every save now also writes an immutable snapshot here, scoped to the
+// provider, and deleting a course does NOT delete its snapshots. Losing work becomes recoverable by
+// construction rather than by luck.
+//
+// The payload is the course record only — lesson files live in their own storage and are referenced
+// by id — so a snapshot is a few KB even for a big course.
+let _cvReady = false;
+export async function ensureCourseVersionsTable() {
+  if (_cvReady) return;
+  const q = sql();
+  await q`CREATE TABLE IF NOT EXISTS course_versions (
+    id bigserial PRIMARY KEY,
+    owner text NOT NULL,
+    course_id text NOT NULL,
+    title text,
+    kind text NOT NULL DEFAULT 'save',
+    payload text NOT NULL,
+    created_at timestamptz NOT NULL DEFAULT now()
+  )`;
+  try { await q`ALTER TABLE course_versions ADD COLUMN IF NOT EXISTS kind text NOT NULL DEFAULT 'save'`; } catch (e) {}
+  await q`CREATE INDEX IF NOT EXISTS course_versions_owner_course ON course_versions (owner, course_id, created_at DESC)`;
+  await q`CREATE INDEX IF NOT EXISTS course_versions_owner_time ON course_versions (owner, created_at DESC)`;
+  _cvReady = true;
+}
+
 // Build Your Own App — the $97 one-off. Deliberately NOT the subscriptions table: that table decides
 // who is allowed a SlickChart account (see hasActiveSubscription), and buying the roadmap does not make
 // someone a SlickChart subscriber. Keyed by the Stripe session id so the webhook and the success-page

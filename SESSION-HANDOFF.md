@@ -96,6 +96,44 @@ touches this area.
 
 ---
 
+## 2c. Course snapshots — the blob is no longer the only copy (2026-09-14)
+
+Section 2b fixed the *merge*. It did not fix the *architecture*: a course still lived in exactly one
+place, so anything that went wrong with `sc_courses` took the whole course with it. Ashley lost the
+same course close to ten times, and the last two causes were not merge bugs at all:
+
+- **A full device.** `persistCourses()` did `try{localStorage.setItem(...)}catch(e){}`. On a phone
+  whose origin quota was exhausted — hundreds of cached lesson files will do it — that threw,
+  silently.
+- **A silent push.** `_pushKeyNow` ended in `.catch(function(){})`, so a 401/500 resolved like a
+  success. `saveCourse` awaited it and printed "Course created ✓" with the course stored nowhere at
+  all. Refresh, gone, no error, ever.
+
+What is in place now:
+
+1. **`/api/course-versions`** (`lib/db.js` → `ensureCourseVersionsTable`). Every save writes an
+   immutable, owner-scoped snapshot; the builder also autosaves one every 45s and on `pagehide`, so
+   a course that has never been saved once is still held. **Deleting a course deliberately does NOT
+   delete its snapshots** — a wrong delete was one of the ways work vanished. Keeps 20 saves + 3
+   autosaves per course; payload is the course record only (no file bytes) so it is a few KB.
+2. **Courses tab → "Course backups & find a lost course"** (`openCourseHistory`). Lists every
+   snapshot, courses missing from the library FIRST and labelled. `restoreCourseVersion` puts one
+   back, lifts its tombstone, and stamps a fresh `_ts` so the next sync can't undo the restore.
+3. **`persistCourses()` / `_pushKeyNow` now report.** They resolve `{local,server}` / `{ok}`.
+   `saveCourse` prints ✓ only when something actually landed; if nothing did it says so, **keeps the
+   builder open with the work still in it**, and does not clear the draft. Don't re-swallow these.
+4. **More → Device storage** (`openStoragePanel`). Shows `navigator.storage.estimate()` and clears
+   cached lesson/guide file bytes — but ONLY ids that `/api/guide-file?list=files` confirms the
+   server still holds, re-checked at the moment of deletion. If that list can't be fetched it drops
+   nothing. Files re-download on demand via `_guideFilePayload`.
+5. The "storage is full" toast is sticky now and names the biggest consumer. It used to
+   auto-dismiss before it could be read, which is why this went undiagnosed for weeks.
+
+Suite: `t-snapshots.mjs` in the scratchpad, 44 assertions, including the two real-world scenarios
+(device full + push failing; device full + server down).
+
+---
+
 ## 3. Open threads — needs Ashley, or needs verifying
 
 1. **Square `payment.*` webhook subscription.** Paid-course auto-unlock depends on Square sending
