@@ -35,13 +35,49 @@ export default async function handler(req, res) {
       if (!id) { res.status(400).json({ error: 'Missing file id.' }); return; }
       const name = b.name ? String(b.name).slice(0, 400) : '';
       const type = b.type ? String(b.type).slice(0, 160) : '';
+      const q = sql();
+
+      // ── Chunked upload ────────────────────────────────────────────────────────────────────
+      // A 3MB PDF is ~4.2MB once base64'd, which sits right on the platform's request-body limit
+      // and on the edge of what one database write finishes inside the function timeout. That is
+      // why a handful of a course's attachments failed every time while the rest went through, and
+      // why retrying the whole 4MB body never helped. Pieces are small, fast, and cheap to retry.
+      //
+      // Piece 0 REPLACES the row's data and marks it incomplete; later pieces append in order; the
+      // last one marks it complete. Nothing serves the file until then (see getFileRow).
+      const part = (b.part && typeof b.part === 'object') ? b.part : null;
+      if (part) {
+        const index = Math.max(0, Number(part.index) || 0);
+        const total = Math.max(1, Number(part.total) || 1);
+        const chunk = String(part.data == null ? '' : part.data);
+        if (chunk.length > 1200000) { res.status(413).json({ error: 'Chunk too large.' }); return; }
+        if (index >= total) { res.status(400).json({ error: 'Bad chunk index.' }); return; }
+        const last = (index === total - 1);
+        if (index === 0) {
+          await q`INSERT INTO files (owner, id, name, type, data, complete, updated_at)
+                  VALUES (${owner}, ${id}, ${name}, ${type}, ${chunk}, ${last}, now())
+                  ON CONFLICT (owner, id) DO UPDATE SET name = EXCLUDED.name, type = EXCLUDED.type,
+                    data = EXCLUDED.data, complete = EXCLUDED.complete, updated_at = now()`;
+        } else {
+          // Append only onto a row that is mid-upload. If piece 0 never landed, or the row was
+          // already completed by another attempt, this writes nothing and the client restarts —
+          // far better than silently building a corrupt file out of two interleaved attempts.
+          const r = await q`UPDATE files SET data = COALESCE(data, '') || ${chunk},
+                                   complete = ${last}, updated_at = now()
+                             WHERE owner = ${owner} AND id = ${id} AND complete = false
+                             RETURNING id`;
+          if (!r.length) { res.status(409).json({ error: 'Upload out of sync. Start this file again.' }); return; }
+        }
+        res.status(200).json({ ok: true, part: index, complete: last });
+        return;
+      }
+
       const data = b.data == null ? null : String(b.data);
       // ~7M chars of base64 ≈ 5 MB binary; the client caps uploads well below this.
       if (data && data.length > 7000000) { res.status(413).json({ error: 'File too large.' }); return; }
-      const q = sql();
-      await q`INSERT INTO files (owner, id, name, type, data, updated_at)
-              VALUES (${owner}, ${id}, ${name}, ${type}, ${data}, now())
-              ON CONFLICT (owner, id) DO UPDATE SET name = EXCLUDED.name, type = EXCLUDED.type, data = EXCLUDED.data, updated_at = now()`;
+      await q`INSERT INTO files (owner, id, name, type, data, complete, updated_at)
+              VALUES (${owner}, ${id}, ${name}, ${type}, ${data}, true, now())
+              ON CONFLICT (owner, id) DO UPDATE SET name = EXCLUDED.name, type = EXCLUDED.type, data = EXCLUDED.data, complete = true, updated_at = now()`;
       res.status(200).json({ ok: true });
       return;
     }
@@ -84,7 +120,7 @@ export default async function handler(req, res) {
         if (!owner) { res.status(401).json({ error: 'Not logged in.' }); return; }
         const q = sql();
         const rows = await q`SELECT id, length(coalesce(data, '')) AS size
-          FROM files WHERE owner = ${owner} AND data IS NOT NULL AND left(id, 3) <> 'ph_'
+          FROM files WHERE owner = ${owner} AND data IS NOT NULL AND complete IS NOT FALSE AND left(id, 3) <> 'ph_'
           ORDER BY updated_at DESC LIMIT 20000`;
         res.setHeader('Cache-Control', 'no-store');
         res.status(200).json({ ok: true, files: (rows || []).map(r => ({ id: r.id, size: Number(r.size) || 0 })) });

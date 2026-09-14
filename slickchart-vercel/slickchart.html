@@ -11798,7 +11798,7 @@ function switchFgTab(tab){
   if(gc){gc.style.display=tab==='guides'?'':'none';if(tab==='guides'&&!gc.getAttribute('data-built')){gc.innerHTML=_guidesTabHTML();gc.setAttribute('data-built','1');}}
   if(cc){cc.style.display=tab==='courses'?'':'none';if(tab==='courses'&&!cc.getAttribute('data-built')){cc.innerHTML=_coursesTabHTML();cc.setAttribute('data-built','1');}
     // Offer to rebuild from lesson files on this device whose course record is gone.
-    if(tab==='courses'){try{setTimeout(_offerCourseRecovery,0);}catch(e){}}}
+    if(tab==='courses'){try{setTimeout(_offerCourseRecovery,0);}catch(e){}try{setTimeout(_autoRetryPendingCourseFiles,2500);}catch(e){}}}
 }
 // Built-in form definitions per profession (label + card metadata). Module-level so the
 // forms library, the "send to client" sheet, and the bundle editor all draw from one list.
@@ -12024,7 +12024,7 @@ function renderForms(){
   </div>
   <div id="fg-guides-content" style="display:${_fgTab==='guides'?'':'none'};" ${_fgTab==='guides'?'data-built="1"':''}>${_fgTab==='guides'?_guidesTabHTML():''}</div>
   <div id="fg-courses-content" style="display:${_fgTab==='courses'?'':'none'};" ${_fgTab==='courses'?'data-built="1"':''}>${_fgTab==='courses'?_coursesTabHTML():''}</div>`;
-  if(_fgTab==='courses'){try{setTimeout(_offerCourseRecovery,0);}catch(e){}}
+  if(_fgTab==='courses'){try{setTimeout(_offerCourseRecovery,0);}catch(e){}try{setTimeout(_autoRetryPendingCourseFiles,2500);}catch(e){}}
 }
 function filterForms(q){
   q=_normSearch(q);
@@ -24568,31 +24568,78 @@ function _runLimited(makers,limit){
     pump();
   });
 }
-// No toast in here any more. It fired once PER FILE, so a bad connection buried the screen under
-// dozens of identical sticky messages. The caller reports once, with a count and a real next step.
-// Retries once on a transient failure; never on 413, where retrying cannot help.
-function _uploadGuideFileToServer(id,payload,_isRetry){
+// Uploads a file's bytes to the server, in PIECES when it's big.
+//
+// This is the thing that kept stranding a handful of a course's attachments while the rest went
+// through. A 3MB PDF is ~4.2MB once base64'd, which sits right on the platform's request-body limit
+// and on the edge of what one database write finishes inside the function timeout — so the big
+// files failed, every time, and re-sending the same 4.2MB body was never going to fix it. Pieces are
+// small, fast, and cheap to retry, and the server only serves the file once the last piece lands.
+//
+// No toast in here. It fired once PER FILE, so a bad connection buried the screen under dozens of
+// identical sticky messages. The caller reports once, with a count and a real next step.
+const _UP_CHUNK=600000;   // chars of base64 per request — roughly 450KB of the actual file
+const _UP_TRIES=3;
+function _upSleep(ms){return new Promise(function(r){setTimeout(r,ms);});}
+function _upReason(st){
+  if(st===413)return 'toobig';
+  if(st===401)return 'signedout';
+  if(!st)return 'network';
+  return 'http'+st;
+}
+async function _putFileBody(body){
   try{
-    if(typeof Cloud==='undefined'||!Cloud||!Cloud.token)return Promise.resolve({ok:false,reason:'signedout'});
-    return fetch('/api/guide-file',{method:'PUT',headers:{'Content-Type':'application/json','Authorization':'Bearer '+Cloud.token},body:JSON.stringify({id,name:payload.name||'',type:payload.type||'',data:payload.data})})
-      .then(r=>{
-        if(r.ok)return {ok:true};
-        if(r.status===413)return {ok:false,reason:'toobig'};
-        if(!_isRetry)return new Promise(function(res){setTimeout(function(){res(_uploadGuideFileToServer(id,payload,true));},900);});
-        return {ok:false,reason:'http'};
-      })
-      .catch(()=>{
-        if(!_isRetry)return new Promise(function(res){setTimeout(function(){res(_uploadGuideFileToServer(id,payload,true));},900);});
-        return {ok:false,reason:'network'};
-      });
-  }catch(e){return Promise.resolve({ok:false,reason:'error'});}
+    const r=await fetch('/api/guide-file',{method:'PUT',headers:{'Content-Type':'application/json','Authorization':'Bearer '+Cloud.token},body:JSON.stringify(body)});
+    return r.ok?{ok:true}:{ok:false,status:r.status};
+  }catch(e){return {ok:false,status:0};}
+}
+// One request, with backoff. 413 (too big for the platform), 401 (signed out) and 409 (pieces out of
+// step) are answers, not hiccups — repeating the request cannot change any of them.
+async function _putFileWithRetry(body){
+  let last={ok:false,status:0};
+  for(let a=0;a<_UP_TRIES;a++){
+    if(a)await _upSleep(700*Math.pow(2,a-1)+Math.floor(Math.random()*300));
+    last=await _putFileBody(body);
+    if(last.ok)return last;
+    if(last.status===413||last.status===401||last.status===409)return last;
+  }
+  return last;
+}
+async function _uploadGuideFileToServer(id,payload){
+  try{
+    if(typeof Cloud==='undefined'||!Cloud||!Cloud.token)return {ok:false,reason:'signedout'};
+    const data=String((payload&&payload.data)||'');
+    if(!data)return {ok:false,reason:'missing'};
+    const meta={id:id,name:(payload&&payload.name)||'',type:(payload&&payload.type)||''};
+    if(data.length<=_UP_CHUNK){
+      const r=await _putFileWithRetry(Object.assign({},meta,{data:data}));
+      return r.ok?{ok:true}:{ok:false,reason:_upReason(r.status),status:r.status};
+    }
+    const total=Math.ceil(data.length/_UP_CHUNK);
+    let restarts=0;
+    for(let i=0;i<total;i++){
+      const r=await _putFileWithRetry(Object.assign({},meta,{part:{index:i,total:total,data:data.slice(i*_UP_CHUNK,(i+1)*_UP_CHUNK)}}));
+      if(r.ok)continue;
+      // 409: this file's pieces got out of step (an overlapping attempt, or piece 0 never landed).
+      // Start the file over rather than leave a corrupt half on the server. Once only.
+      if(r.status===409&&i>0&&restarts<1){
+        restarts++;
+        const first=await _putFileWithRetry(Object.assign({},meta,{part:{index:0,total:total,data:data.slice(0,_UP_CHUNK)}}));
+        if(!first.ok)return {ok:false,reason:_upReason(first.status),status:first.status};
+        i=0;continue;   // the loop's i++ resumes at piece 1
+      }
+      return {ok:false,reason:_upReason(r.status),status:r.status};
+    }
+    return {ok:true};
+  }catch(e){return {ok:false,reason:'error'};}
 }
 // Re-upload a saved course's lesson files from this device's local copy.
 // saveCourse only ever uploads files that were JUST attached (they carry _newFileData), so saving a
 // course again re-uploads nothing — the old "save again on a stronger connection" advice could not
 // work. This reads the bytes back out of IndexedDB and sends them, which is what actually fixes a
 // course whose files are stranded on one device.
-async function retryCourseFileUploads(courseId){
+async function retryCourseFileUploads(courseId,opts){
+  const _quiet=!!(opts&&opts.quiet);
   const c=(courses||[]).find(x=>x.id===courseId);if(!c)return;
   const all=[];(c.lessons||[]).forEach(l=>{(Array.isArray(l.files)?l.files:[]).forEach(f=>{if(f&&f.fileId)all.push(f);});});
   // Only the ones that actually failed last time. Re-sending 33 files that already landed to fix 3 is
@@ -24601,7 +24648,7 @@ async function retryCourseFileUploads(courseId){
   const files=only?all.filter(f=>only.indexOf(f.fileId)>=0):all;
   if(!files.length){if(typeof proToast==='function')proToast('This course has no attached files.');return;}
   if(typeof Cloud==='undefined'||!Cloud||!Cloud.token){if(typeof proToast==='function')proToast('Log in first so the files have somewhere to go.');return;}
-  if(typeof proToast==='function')proToast('Uploading '+files.length+' file'+(files.length===1?'':'s')+'\u2026',0);
+  if(!_quiet&&typeof proToast==='function')proToast('Uploading '+files.length+' file'+(files.length===1?'':'s')+'\u2026',0);
   const makers=files.map(function(f){return async function(){
     let local=null;
     try{if(typeof _idb!=='undefined'&&_idb.available())local=await _idb.get('gfile_'+f.fileId);}catch(e){}
@@ -24609,26 +24656,47 @@ async function retryCourseFileUploads(courseId){
     const r=await _uploadGuideFileToServer(f.fileId,{name:local.name||f.fileName||'',type:local.type||f.fileType||'',data:local.data});
     return {ok:true,fileId:f.fileId,uploaded:!!(r&&r.ok),reason:(r&&r.reason)||''};
   };});
-  const rs=await _runLimited(makers,3);
+  const rs=await _runLimited(makers,2);
   const bad=rs.filter(r=>r&&r.uploaded===false);
   const missing=bad.filter(r=>r.reason==='missing').length;
   const toobig=bad.filter(r=>r.reason==='toobig').length;
   if(!bad.length){
     c._filesPending=false;c._pendingFiles=null;try{await (persistCourses()||Promise.resolve());}catch(e){}
-    if(typeof proToast==='function')proToast('All '+files.length+' file'+(files.length===1?'':'s')+' uploaded \u2713');
+    if(typeof proToast==='function')proToast(_quiet?('Finished uploading '+files.length+' lesson file'+(files.length===1?'':'s')+' \u2713  \u00b7  ready to send'):('All '+files.length+' file'+(files.length===1?'':'s')+' uploaded \u2713'));
   }else{
     c._filesPending=true;c._pendingFiles=bad.map(r=>r.fileId).filter(Boolean);
     try{await (persistCourses()||Promise.resolve());}catch(e){}
-    const conn=bad.length-toobig-missing;
+    const out=bad.filter(r=>r.reason==='signedout').length;
+    const conn=bad.length-toobig-missing-out;
+    // The exact server code, when there is one. "A connection problem" was a guess, and when the
+    // guess was wrong it sent her round the same loop for hours.
+    const codes=[];bad.forEach(function(r){const m=/^http(\d+)$/.exec(String(r.reason||''));if(m&&codes.indexOf(m[1])<0)codes.push(m[1]);});
     let msg=bad.length+' of '+files.length+' still didn\u2019t upload.';
     if(toobig)msg+=' '+toobig+' '+(toobig===1?'is':'are')+' too large to sync \u2014 replace with a smaller file.';
     if(missing)msg+=' '+missing+' '+(missing===1?'is':'are')+' not on this device \u2014 open the course on the device you uploaded from.';
-    // "The rest" only makes sense when some OTHER reason accounted for the others.
-    if(conn>0)msg+=(toobig||missing)?(' The other '+conn+' look like a connection problem \u2014 tap Upload files again.'):
-      (' '+(conn===1?'It looks':'They look')+' like a connection problem \u2014 tap Upload files again and only '+(conn===1?'that one':'those '+conn)+' will be retried.');
-    if(typeof proToast==='function')proToast(msg,0);
+    if(out)msg+=' You\u2019ve been signed out \u2014 log in again and tap Upload files.';
+    if(conn>0)msg+=(toobig||missing||out)?(' The other '+conn+' failed'+(codes.length?' (error '+codes.join('/')+')':'')+' \u2014 tap Upload files again.'):
+      (' '+(conn===1?'It':'They')+' failed'+(codes.length?' with error '+codes.join('/'):'')+' \u2014 tap Upload files again and only '+(conn===1?'that one':'those '+conn)+' will be retried.');
+    if(!_quiet&&typeof proToast==='function')proToast(msg,0);
   }
-  try{if(typeof nav==='function'){_fgTab='courses';nav('forms');}}catch(e){}
+  if(!_quiet){try{if(typeof nav==='function'){_fgTab='courses';nav('forms');}}catch(e){}}
+  else{try{if(document.getElementById('forms-screen')){_fgTab='courses';nav('forms');}}catch(e){}}
+  return !bad.length;
+}
+// Keep trying on her behalf. A course whose files are stranded used to sit there until she noticed
+// the amber banner and tapped Upload files — and if that attempt failed too, she had to notice
+// all over again. Now the app picks it up itself a few seconds after opening, quietly, and only says
+// anything when it finishes the job.
+let _autoRetriedFiles=false;
+function _autoRetryPendingCourseFiles(){
+  if(_autoRetriedFiles)return;
+  try{
+    if(typeof Cloud==='undefined'||!Cloud||!Cloud.token)return;
+    const pending=(courses||[]).filter(function(c){return c&&c._filesPending;});
+    if(!pending.length)return;
+    _autoRetriedFiles=true;
+    (async function(){for(const c of pending){try{await retryCourseFileUploads(c.id,{quiet:true});}catch(e){}}})();
+  }catch(e){}
 }
 function _deleteGuideFileFromServer(id){try{if(typeof Cloud!=='undefined'&&Cloud&&Cloud.token)fetch('/api/guide-file?id='+encodeURIComponent(id),{method:'DELETE',headers:{'Authorization':'Bearer '+Cloud.token}}).catch(()=>{});}catch(e){}}
 // Persist a guide's file: store the bytes locally (IndexedDB) + on the server, or remove
@@ -24661,7 +24729,7 @@ function _persistGuideFileLocal(id,draft,prevHadFile){
 // provider has moved on. Reports once at the end and flags the course if anything is still local.
 function _uploadCourseFilesInBackground(courseId,makers){
   if(!makers||!makers.length)return;
-  _runLimited(makers,3).then(function(rs){
+  _runLimited(makers,2).then(function(rs){
     const bad=rs.filter(r=>r&&r.uploaded===false);
     const c=(courses||[]).find(x=>x.id===courseId);
     if(c){c._filesPending=bad.length>0;c._pendingFiles=bad.length?bad.map(r=>r.fileId).filter(Boolean):null;try{persistCourses();}catch(e){}}

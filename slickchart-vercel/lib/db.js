@@ -97,12 +97,18 @@ export async function ensureFilesTable() {
     updated_at timestamptz DEFAULT now(),
     PRIMARY KEY (owner, id)
   )`;
+  // Chunked uploads: a file arrives in pieces, so between the first piece and the last the row holds
+  // a TRUNCATED file. `complete` marks that window. Existing rows default to true, and a whole-file
+  // upload sets it true in the same statement, so nothing changes for the non-chunked path.
+  try { await q`ALTER TABLE files ADD COLUMN IF NOT EXISTS complete boolean NOT NULL DEFAULT true`; } catch (e) {}
   _filesReady = true;
 }
 export async function getFileRow(owner, id) {
   await ensureFilesTable();
   const q = sql();
-  const rows = await q`SELECT id, name, type, data FROM files WHERE owner = ${owner} AND id = ${id}`;
+  // Never hand back a half-uploaded file: a truncated base64 string renders as a corrupt download,
+  // which is worse than a missing one because it looks like it worked.
+  const rows = await q`SELECT id, name, type, data FROM files WHERE owner = ${owner} AND id = ${id} AND complete IS NOT FALSE`;
   return rows[0] || null;
 }
 
