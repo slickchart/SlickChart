@@ -5,6 +5,7 @@
 // a manual test).
 import { dbEnabled } from '../lib/db.js';
 import { runNurture } from '../lib/nurture.js';
+import { runFreeFunnel } from '../lib/free-funnel.js';
 
 function authorized(req) {
   const secret = process.env.CRON_SECRET || '';
@@ -18,11 +19,24 @@ function authorized(req) {
 export default async function handler(req, res) {
   if (!authorized(req)) { res.status(401).json({ error: 'Unauthorized' }); return; }
   if (!dbEnabled()) { res.status(200).json({ ok: false, reason: 'db disabled' }); return; }
+  // Run the two independently. They share the once-only table but nothing else, and a failure in
+  // one must not stop the other from sending — a broken free funnel should never silently take the
+  // SlickChart onboarding emails down with it.
+  const out = { ok: true };
   try {
-    const summary = await runNurture();
-    res.status(200).json({ ok: true, ...summary });
+    Object.assign(out, await runNurture());
   } catch (e) {
-    console.error('[cron-nurture] failed:', e && e.stack || e);
-    console.error('[cron-nurture] failed:', e && e.message); res.status(500).json({ error: 'cron failed' });
+    out.nurtureError = true;
+    console.error('[cron-nurture] nurture failed:', e && e.stack || e);
   }
+  try {
+    const free = await runFreeFunnel();
+    out.free = free.free;
+    out.errors = (out.errors || 0) + (free.errors || 0);
+  } catch (e) {
+    out.freeError = true;
+    console.error('[cron-nurture] free funnel failed:', e && e.stack || e);
+  }
+  if (out.nurtureError && out.freeError) { res.status(500).json({ error: 'cron failed' }); return; }
+  res.status(200).json(out);
 }

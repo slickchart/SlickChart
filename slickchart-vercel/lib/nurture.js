@@ -253,7 +253,10 @@ export async function runNurture() {
 }
 
 // Send at most one email per contact per run: the earliest due, not-yet-sent step.
-async function processContact(q, seq, sequence, row, ctx, summary) {
+// `sender` overrides who it comes from — the free starter funnel is a different product with a
+// different audience, so it sends as Ashley rather than as SlickChart. Exported so that funnel can
+// reuse this loop (the once-only claim and the one-per-run pacing) rather than copying it.
+export async function processContact(q, seq, sequence, row, ctx, summary, sender) {
   const email = String(row.email || '').trim().toLowerCase();
   if (!email) return;
   const daysSince = (Date.now() - Number(row.ts)) / 86400000;
@@ -265,10 +268,26 @@ async function processContact(q, seq, sequence, row, ctx, summary) {
     // Claim atomically. If nothing returned, this step was already sent → try the next.
     const claimed = await q`INSERT INTO nurture_sends (email, seq, step) VALUES (${email}, ${seq}, ${i})
       ON CONFLICT (email, seq, step) DO NOTHING RETURNING email`;
-    if (!claimed.length) continue;
+    if (!claimed.length) {
+      // ...unless it was claimed SECONDS ago, which means another run is mid-flight for this
+      // contact right now. Moving on to the next step there is how two overlapping runs (a manual
+      // trigger landing on top of the scheduled one, say) put two emails in someone's inbox minutes
+      // apart instead of days. The "one email per contact per run" pacing has to hold across
+      // concurrent runs too, so stop on this contact and let the other run finish its one.
+      const fresh = await q`SELECT email FROM nurture_sends
+        WHERE email = ${email} AND seq = ${seq} AND step = ${i}
+          AND sent_at > now() - interval '10 minutes'`;
+      if (fresh.length) return;
+      continue;
+    }
     const c = { ...ctx, first, email };
     try {
-      await sendEmail({ to: email, from: FROM, replyTo: REPLY_TO, subject: step.subject(c), html: step.html(c), text: step.text(c) });
+      await sendEmail({
+        to: email,
+        from: (sender && sender.from) || FROM,
+        replyTo: (sender && sender.replyTo) || REPLY_TO,
+        subject: step.subject(c), html: step.html(c), text: step.text(c)
+      });
       summary[seq]++;
     } catch (e) {
       // Release the claim so a transient failure retries next run.
