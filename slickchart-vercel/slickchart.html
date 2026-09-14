@@ -2673,6 +2673,20 @@ function _lsEvictForSpace(need,writingKey){
   }catch(e){}
 })();
 function _reloadAll(){try{
+  // FIRST, and before applyProfessionConfig() below. Two separate bugs met here and between them
+  // they are the plainest version of "my course disappeared":
+  //
+  //   1. Every other library was reloaded after a cloud pull; courses were not. So a course that
+  //      arrived from the server was written into storage and then never read into the app.
+  //   2. applyProfessionConfig() calls _reseedCoursesIfDefault(), which decides whether the provider
+  //      has courses of her own by looking at the IN-MEMORY list. Running it against the stale
+  //      pre-sync array meant it saw an empty shelf, concluded this was an unseeded account, and
+  //      wrote the sample courses straight over the real ones that had just been pulled down.
+  //
+  // Loading the real set here fixes both: the tab renders what actually synced, and the reseeder
+  // judges real data instead of an array from before the sync.
+  if(typeof _loadHiddenCourses==='function')_loadHiddenCourses();
+  if(typeof loadCourses==='function')loadCourses();
   loadProfessions();applyProfessionConfig();
   if(typeof loadCustomResources==='function')loadCustomResources();if(typeof _loadSummaryGuides==='function')_loadSummaryGuides();
   if(typeof loadBundles==='function')bundles=loadBundles();   // refresh form/guide bundles pulled from another device (loadForms above already reloads formGuides)
@@ -2684,6 +2698,7 @@ function _reloadAll(){try{
   if(typeof loadAi==='function')loadAi();
   if(typeof loadForms==='function')loadForms();
   loadBizInfo();_syncProviderAvatar();_syncHeaderLogo();loadClients();loadMergedIds();loadMergedInto();loadDeletedClients();loadHiddenSquare();loadMessages();loadInv();loadVendors();_loadPersistenceSweep();try{_initCapturedPhotos();}catch(e){}_loadHomeDismissed();_loadAttnSeen();loadProviderNoteDrafts();if(typeof loadSessionSummaries==='function')loadSessionSummaries();if(!_sampleHidden()){_seedMayaOnce();}else{_purgeSample();}try{_purgeRemovedClients();}catch(e){}_seedBirthdays();if(!_sampleHidden()&&typeof _demoCheckinSeed==='function')_demoCheckinSeed();
+  if(typeof loadCoursePurchases==='function')loadCoursePurchases();
   if(typeof loadWorkspace==='function')loadWorkspace();
   if(typeof loadSquareCatalog==='function'){loadSquareCatalog();_mergeSquareRetail();}
   if(typeof loadCheckinCfg==='function')loadCheckinCfg();
