@@ -167,6 +167,63 @@ subtraction pass that took the recovery scaffolding off the Courses tab.
 
 ---
 
+## 2e. The 5MB box is no longer where the business lives (2026-09-14, b15)
+
+Ashley: *"that storage is still super full when the app is barely being used… this is meant to be a
+whole practice management system."* She was right, and it was structural. Safari caps localStorage at
+**5MB per site and it does not grow**. Her one month of real use was already at 2.0MB: 652 client
+records (787KB), the Square catalogue (368KB), her logo (186KB), the delete list (144KB). A full year
+of notes, forms and photos would have hit the ceiling, and past the ceiling every save on the device
+silently no-ops — the original "my course disappeared".
+
+**Any value ≥ 24KB now lives in IndexedDB (~76GB) instead.** Measured on her data shape: the capped
+box went **1354KB → 15KB**, with all 652 clients still loaded.
+
+How it works (`slickchart.html`, near `_lsPersist`):
+
+- `_offloadEligible(k,len)` decides. It offloads **only** keys that are (a) big, (b) `_syncable` —
+  so the account always holds a copy and a wiped IndexedDB costs nothing — and (c) on a device with
+  an account signed in. Never in the demo.
+- Two families are **excluded by name and must stay excluded**: `sc_room_draft_*` (the crash-safety
+  copy of photos taken minutes ago) and `sc_captured_photos` (written only when an IndexedDB write
+  has already failed). Being *outside* IndexedDB is the entire point of both — moving them in would
+  put the backup in the same place as the thing it backs up.
+- `localStorage.getItem` / `removeItem` are now patched alongside the existing `setItem` patch, so
+  all ~155 existing read sites work unchanged. **Do not add code that enumerates `localStorage`
+  directly** — use `_lsAllKeys()` (localStorage ∪ offloaded) and `_lsGet(k)`. Enumerating raw is how
+  `pushAllLocal`, the boot catch-up and the sign-out sweep would each have silently skipped the
+  client list.
+- `_hydrateOffloaded()` runs at the **top of `_cloudInit`, before the pull and before `_reloadAll`**.
+  Nothing may read storage before it finishes.
+
+**Isolation (CLAUDE.md §0).** This introduced exactly one new way to leak across accounts: IndexedDB
+is not touched by the sign-out sweep that walked localStorage. Two defences, both tested in
+`t-isolate`, and *neither may be removed*:
+
+1. `_doLogout` (now `async`) enumerates with `_lsAllKeys()` and **awaits** `_purgeOffloaded()` before
+   `location.reload()` — the reload was cancelling the in-flight IndexedDB deletes.
+2. The offloaded store is stamped with the account it belongs to (`lskv-owner`). `_hydrateOffloaded`
+   purges rather than reads anything stamped for a different account, and loads nothing at all when
+   no account is signed in. This is what covers an interrupted sign-out (force-quit, crash).
+
+Server side is untouched: `/api/store` is still `WHERE owner = ${owner}` with `owner` from the
+verified token only. This change moves bytes between two places on one device; it adds no endpoint
+and changes nothing about how identity is derived.
+
+**Also fixed on the way (a real bug, not a consequence).** `_payments`, `_importedProducts`,
+`manualAppts`, `_svcMenu`, `_deletedSquareIds`, `_notifCleared`, `_notifRead` and `affiliateLinks`
+were read **once, during script parse** — before the account pull — and never re-read. On a device
+that had just signed in, the in-memory copy stayed empty while storage held the real list, and the
+next save wrote the empty version straight back over it. Payments are money records. They are now
+re-read by `_reloadTopLevelStores()` at the top of `_reloadAll()`, ahead of `applyProfessionConfig()`
+(which judges whether the service menu is still at its defaults).
+
+Suites: `t-offload` (24 assertions), `t-isolate` (11). `t-quota`, `t-fullsync` and `t-reconcile` were
+updated — the old quota/eviction path is still tested, now through `sc_captured_photos`, which is the
+key that genuinely cannot move.
+
+---
+
 ## 3. Open threads — needs Ashley, or needs verifying
 
 1. **Square `payment.*` webhook subscription.** Paid-course auto-unlock depends on Square sending

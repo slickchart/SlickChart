@@ -1694,7 +1694,16 @@ const _LS_LABELS={sc_captured_photos:'before/after photos',sc_pro_vc_subs:'consu
   sc_clients:'client records',sc_docs:'uploaded documents',sc_photo_index:'the photo index',sc_courses:'courses',
   sc_forms:'forms',sc_resources:'guides',sc_photo_backed:'the photo backup list',sc_square_catalog:'your Square product catalog',
   sc_brand_colors:'your logo & brand colours',sc_routines:'routines',sc_protocols:'protocols',sc_service_menu:'your service menu',
-  sc_inventory:'inventory',sc_threads:'message threads',sc_notif_feed:'notifications'};
+  sc_inventory:'inventory',sc_threads:'message threads',sc_notif_feed:'notifications',
+  sc_deleted_clients:'the \u201cdon\u2019t bring these back\u201d list',sc_merged_ids:'merged duplicates',sc_merged_into:'merged duplicates',
+  sc_payments:'payment records',sc_affiliate_links:'your shop products',sc_shop_catalog:'the shop your clients see',
+  sc_imported_products:'imported products',sc_manual_appts:'appointments you added by hand',sc_vendors:'vendors',
+  sc_course_purchases:'course purchases',sc_hidden_square:'Square products you removed',sc_deleted_sq:'Square products you removed',
+  sc_home_dismissed:'cards you\u2019ve cleared',sc_attn_seen:'cards you\u2019ve cleared',sc_seen_events:'forms already filed',
+  sc_pro_vc_invites:'consult invites',sc_provider_note_drafts:'unfinished notes',sc_session_summaries:'visit summaries',
+  sc_checkin_cfg:'check-in settings',sc_notif_settings:'notification settings',sc_client_recs:'client recommendations',
+  sc_autos:'automations',sc_bus:'your business details',sc_workspace:'workspace settings',sc_partners:'partners',
+  sc_ai:'assistant settings',sc_bundles:'form & guide bundles',sc_tax_rate:'tax rate',sc_manual_appts:'appointments you added by hand'};
 // A key like sc_room_draft_sq_08t3yxqvac means nothing to anyone. Name it for what it is.
 function _lsLabel(k){
   if(_LS_LABELS[k])return _LS_LABELS[k];
@@ -2835,7 +2844,7 @@ const Cloud={
     }
     set(k,data[k]);
   }catch(e){}});if(_staleDeviceLocalKeys.length)this._dropStaleDeviceLocal(_staleDeviceLocalKeys);return keys.length;},
-  pushAllLocal(){const items={};try{for(let i=0;i<localStorage.length;i++){const k=localStorage.key(i);if(_syncable(k))items[k]=localStorage.getItem(k);}}catch(e){}if(this.token&&Object.keys(items).length)return fetch('/api/store',{method:'PUT',headers:{'Content-Type':'application/json','Authorization':'Bearer '+this.token},body:JSON.stringify({items})}).catch(()=>{});},
+  pushAllLocal(){const items={};try{_lsAllKeys().forEach(function(k){if(_syncable(k))items[k]=_lsGet(k);});}catch(e){}if(this.token&&Object.keys(items).length)return fetch('/api/store',{method:'PUT',headers:{'Content-Type':'application/json','Authorization':'Bearer '+this.token},body:JSON.stringify({items})}).catch(()=>{});},
   push(k,v){if(!this.enabled||!this.token)return;this._queue[k]=v;clearTimeout(this._timer);this._timer=setTimeout(()=>this._flush(),700);},
   // Flush any pending queued writes immediately during page unload. A normal fetch is often
   // killed when the page navigates away, so use a keepalive fetch (which the browser is allowed
@@ -2950,12 +2959,163 @@ function _lsEvictForSpace(need,writingKey){
 // Without this, a full device reads a stale localStorage, renders a screen missing the thing that
 // just synced, and looks for all the world like it lost the data.
 Cloud._mem={};
+// ── The 5MB box is for settings. The business itself lives in IndexedDB ──────────────────────
+// localStorage is a hard ~5MB per site in Safari and it does NOT grow. That is generous for flags
+// and preferences and nowhere near enough for a practice: 650 client records alone came to 787KB,
+// the Square catalogue another 368KB, a logo 186KB, the "don't bring these back" delete list 144KB
+// — half the ceiling before a single year of treatment notes, photos and forms. Past the ceiling
+// every save on the device silently no-ops, which is how a course could look saved and be gone on
+// the next refresh.
+//
+// IndexedDB sits on the same device and holds ~76GB. So any value big enough to matter is written
+// THERE instead, mirrored in memory for this session, and hydrated back into memory at boot before
+// anything reads it. Reads stay transparent: localStorage.getItem is patched below, so all ~155
+// existing call sites keep working untouched. Sync is unchanged — the setItem patch still pushes
+// every value to the account exactly as before, and the account stays the source of truth.
+const _LS_OFFLOAD_MIN=24*1024;          // characters; ~48KB of Safari's UTF-16 budget
+const _OFF_PREFIX='lskv_';
+Cloud._offloaded=Object.create(null);   // key -> true: this key lives in IndexedDB, not localStorage
+Cloud._offBad=Object.create(null);      // key -> 1: IndexedDB refused it, don't keep retrying
+// _idb is declared further down this file, so a very early write would hit its temporal dead zone.
+// `typeof` does not shield against a TDZ reference, so the try/catch is the guard.
+function _idbOK(){try{return (_idb&&_idb.available&&_idb.available())?_idb:null;}catch(e){return null;}}
+// Two families of value must stay in the small box no matter how big they get, because being OUTSIDE
+// IndexedDB is the entire point of them: sc_room_draft_* (the crash-safety copy of photos taken minutes
+// ago) and sc_captured_photos (written only when an IndexedDB write has already failed). Moving either
+// into IndexedDB would put the backup in the same place as the thing it is backing up.
+const _LS_NO_OFFLOAD={sc_captured_photos:1};
+function _offloadEligible(k,len){
+  try{
+    if(window.__SC_DEMO__)return false;     // the demo's in-memory shim must never reach the real IndexedDB
+    if(_LS_KEEP_LOCAL[k]||_LS_NO_OFFLOAD[k])return false;
+    // Only ever offload a key the ACCOUNT also holds. That way even a wiped or evicted IndexedDB
+    // costs nothing — the next pull brings it straight back. Local-only keys stay where they are,
+    // and so does everything on a device with no account signed in (there, local IS the only copy).
+    if(!_syncable(k))return false;
+    if(!(typeof Cloud!=='undefined'&&Cloud&&Cloud.token))return false;
+    if(Cloud._offBad[k])return false;
+    if(!_idbOK())return false;
+    return Cloud._offloaded[k]===true||len>=_LS_OFFLOAD_MIN;
+  }catch(e){return false;}
+}
+// Every key this device holds, wherever it lives. Enumerating localStorage alone would now miss the
+// big ones — and the two places that enumerate are exactly the ones that push local data UP to the
+// account, so missing them would mean a new device seeded the account with everything except the
+// client list.
+function _lsAllKeys(){
+  const out=[],seen=Object.create(null);
+  try{for(let i=0;i<localStorage.length;i++){const k=localStorage.key(i);if(k&&!seen[k]){seen[k]=1;out.push(k);}}}catch(e){}
+  try{Object.keys(Cloud._offloaded).forEach(function(k){if(!seen[k]){seen[k]=1;out.push(k);}});}catch(e){}
+  return out;
+}
+// Which account this device's offloaded cache belongs to. The token's payload is base64url JSON and
+// carries `u` (the provider id). Read only — nothing is authorized on it; the server verifies every
+// request. It exists so this device can tell whose cache is sitting in IndexedDB.
+const _OFF_OWNER_KEY='lskv-owner';
+function _tokenOwner(){
+  let data='';
+  try{
+    const t=(typeof Cloud!=='undefined'&&Cloud&&Cloud.token)||Cloud._origGet('sc_token')||'';
+    data=String(t).split('.')[0];if(!data)return '';
+    const b=atob(data.replace(/-/g,'+').replace(/_/g,'/')+'==='.slice((data.length+3)%4));
+    const o=JSON.parse(b);
+    if(o&&o.u)return String(o.u);
+  }catch(e){}
+  // Couldn't read the provider id out of it. Fall back to the token's own payload: still unique per
+  // account, so a different account is still refused. The cost is only that a fresh login on the same
+  // account re-downloads instead of reusing what is here — never that the wrong cache is read.
+  return data?('t:'+data):'';
+}
+// Wipe every offloaded value from this device. Signing out must clear these exactly like it clears
+// localStorage — otherwise one provider's client list would still be sitting here when the next
+// person signs in on the same device, and the boot hydration would load it before the pull.
+async function _purgeOffloaded(){
+  const d=_idbOK();if(!d)return 0;
+  let n=0;
+  try{
+    const keys=await d.keys();
+    for(const raw of keys){
+      const kk=String(raw||'');
+      if(kk!==_OFF_OWNER_KEY&&kk.indexOf(_OFF_PREFIX)!==0)continue;
+      try{await d.del(kk);n++;}catch(e){}
+      if(kk.indexOf(_OFF_PREFIX)===0){const k=kk.slice(_OFF_PREFIX.length);try{delete Cloud._offloaded[k];delete Cloud._mem[k];}catch(e){}}
+    }
+  }catch(e){}
+  return n;
+}
+// Load every offloaded value back into memory BEFORE anything reads it, then move anything oversized
+// that is still sitting in the small box out of it. Runs once, at the top of _cloudInit, ahead of the
+// account pull and _reloadAll.
+async function _hydrateOffloaded(){
+  const out={loaded:0,moved:0,freed:0};
+  const d=_idbOK();if(!d)return out;
+  // Whose cache is this? If it belongs to a different account — a sign-out that was interrupted, a
+  // shared device — throw the whole thing away rather than read a single byte of it. Nothing here is
+  // ever the only copy: every offloaded key is one the account also holds.
+  try{
+    const me=_tokenOwner();
+    if(!me)return out;                       // signed out: there is no account this cache could belong to
+    let stamped='';try{stamped=(await d.get(_OFF_OWNER_KEY))||'';}catch(e){}
+    if(stamped&&stamped!==me){await _purgeOffloaded();return out;}
+    if(stamped!==me){try{await d.set(_OFF_OWNER_KEY,me);}catch(e){}}
+  }catch(e){}
+  try{
+    const keys=await d.keys();
+    for(const raw of keys){
+      const kk=String(raw||'');
+      if(kk.indexOf(_OFF_PREFIX)!==0)continue;
+      const k=kk.slice(_OFF_PREFIX.length);
+      let v;try{v=await d.get(kk);}catch(e){continue;}
+      if(typeof v!=='string')continue;
+      Cloud._mem[k]=v;Cloud._offloaded[k]=true;out.loaded++;
+      // A leftover copy in the small box is always the older one — once a key is offloaded, writes
+      // only ever go to IndexedDB — so drop it and give the space back.
+      try{if(Cloud._origGet(k)!=null)Cloud._origRemove(k);}catch(e){}
+    }
+  }catch(e){}
+  // First run after this change: everything is still in the small box. Move the big ones now, so the
+  // space comes back immediately instead of whenever each key next happens to be written.
+  try{
+    const big=[];
+    for(let i=0;i<localStorage.length;i++){
+      const k=localStorage.key(i);if(!k)continue;
+      if(Cloud._offloaded[k])continue;
+      let n=0;try{n=(Cloud._origGet(k)||'').length;}catch(e){}
+      if(n>=_LS_OFFLOAD_MIN&&_offloadEligible(k,n))big.push(k);
+    }
+    for(const k of big){
+      let v=null;try{v=Cloud._origGet(k);}catch(e){}
+      if(v==null)continue;
+      let ok=false;try{ok=await d.set(_OFF_PREFIX+k,v);}catch(e){ok=false;}
+      if(!ok){Cloud._offBad[k]=1;continue;}       // leave it where it is rather than risk losing it
+      Cloud._mem[k]=v;Cloud._offloaded[k]=true;
+      try{Cloud._origRemove(k);}catch(e){}
+      out.moved++;out.freed+=v.length*2;
+    }
+  }catch(e){}
+  return out;
+}
 // The single place that writes to this device. Returns null when it landed, or the error when it
-// could not. Tries once more after freeing space the server is confirmed to hold, and whatever it
-// still cannot store is kept in memory so this session is not left reading a stale copy.
-function _lsPersist(k,v){
+// could not. Big values go to IndexedDB; the rest try localStorage, retry once after freeing space
+// the server is confirmed to hold, and whatever still cannot be stored is kept in memory so this
+// session is not left reading a stale copy.
+function _lsPersist(k,v,_noOffload){
   const set=(typeof Cloud!=='undefined'&&Cloud&&Cloud._origSet)||localStorage.setItem.bind(localStorage);
   const str=String(v==null?'':v);
+  if(!_noOffload&&_offloadEligible(k,str.length)){
+    // Memory first, so this session reads the new value even before IndexedDB acknowledges it.
+    Cloud._mem[k]=str;Cloud._offloaded[k]=true;
+    try{(Cloud._origRemove||localStorage.removeItem.bind(localStorage))(k);}catch(e){}
+    try{
+      const pr=_idbOK().set(_OFF_PREFIX+k,str);
+      if(pr&&pr.then)pr.then(function(ok){
+        // IndexedDB refused it. Fall back to the small box rather than leave the value in memory
+        // alone, where a refresh would lose it. (The account copy is pushed either way.)
+        if(!ok){Cloud._offBad[k]=1;try{delete Cloud._offloaded[k];}catch(e){}try{_lsPersist(k,str,true);}catch(e){}}
+      });
+    }catch(e){Cloud._offBad[k]=1;try{delete Cloud._offloaded[k];}catch(e2){}return _lsPersist(k,str,true);}
+    return null;
+  }
   try{set(k,str);try{delete Cloud._mem[k];}catch(e2){}return null;}catch(e){
     try{
       if(_lsEvictForSpace(str.length+65536,k)>0){
@@ -2972,7 +3132,23 @@ function _lsGet(k){
   try{if(Cloud&&Cloud._mem&&Object.prototype.hasOwnProperty.call(Cloud._mem,k))return Cloud._mem[k];}catch(e){}
   try{return localStorage.getItem(k);}catch(e){return null;}
 }
-(function(){try{const _set=localStorage.setItem.bind(localStorage);Cloud._origSet=_set;localStorage.setItem=function(k,v){
+(function(){try{const _set=localStorage.setItem.bind(localStorage);Cloud._origSet=_set;
+  const _get=localStorage.getItem.bind(localStorage);Cloud._origGet=_get;
+  const _rm=localStorage.removeItem.bind(localStorage);Cloud._origRemove=_rm;
+  // Reads come from memory whenever memory is the authority for that key: a big value that now lives
+  // in IndexedDB, or a value this device was too full to store. Patching the one read path keeps all
+  // ~155 existing localStorage.getItem call sites correct without touching any of them.
+  localStorage.getItem=function(k){
+    try{if(Cloud._mem&&Object.prototype.hasOwnProperty.call(Cloud._mem,k))return Cloud._mem[k];}catch(e){}
+    return _get(k);
+  };
+  // Removing an offloaded key has to clear IndexedDB and memory too, or it would come straight back
+  // on the next boot. Keys that are not offloaded behave exactly as before.
+  localStorage.removeItem=function(k){
+    try{if(Cloud._offloaded[k]){delete Cloud._offloaded[k];try{delete Cloud._mem[k];}catch(e2){}const d=_idbOK();if(d)d.del(_OFF_PREFIX+k);}}catch(e){}
+    return _rm(k);
+  };
+  localStorage.setItem=function(k,v){
   // Write to localStorage AND mirror to the server. Critically, a localStorage quota
   // failure (e.g. a big blob that no longer fits) must NOT stop the server push, otherwise
   // the data is lost on both sides. So the local write is isolated, and Cloud.push always runs.
@@ -2995,7 +3171,25 @@ function _lsGet(k){
     window.addEventListener('online',function(){try{if(typeof Cloud!=='undefined'&&Cloud&&Cloud.token&&Cloud._queue&&Object.keys(Cloud._queue).length)Cloud._flush();}catch(e){}});
   }catch(e){}
 })();
+// A handful of stores are read ONCE, while the script is still parsing, and never read again. That
+// is before the account pull has run — so on a device that has just signed in, or any time a key is
+// restored from the account, the in-memory copy stayed empty while storage held the real list, and
+// the next save wrote the empty version straight back over it. Payments is the one that matters most:
+// those are money records. Re-read them here, on the same pass as every other loader, and before
+// applyProfessionConfig() gets to judge whether the service menu is still at its defaults.
+function _reloadTopLevelStores(){
+  const J=function(k){try{return JSON.parse(_lsGet(k)||'null');}catch(e){return null;}};
+  try{const a=J('sc_payments');if(Array.isArray(a))_payments=a;}catch(e){}
+  try{const a=J('sc_imported_products');if(Array.isArray(a))_importedProducts=a;}catch(e){}
+  try{const a=J('sc_manual_appts');if(Array.isArray(a)){a.forEach(function(x){if(x&&!x.id)x.id='ma_'+Math.random().toString(36).slice(2,10);});manualAppts=a;}}catch(e){}
+  try{const a=J('sc_service_menu');if(Array.isArray(a)&&a.length)_svcMenu=a;}catch(e){}
+  try{const a=J('sc_deleted_sq');if(Array.isArray(a))_deletedSquareIds=new Set(a);}catch(e){}
+  try{const a=J('sc_notif_cleared');if(Array.isArray(a))_notifCleared=new Set(a);}catch(e){}
+  try{const a=J('sc_notif_read');if(Array.isArray(a))_notifRead=new Set(a);}catch(e){}
+  try{if(typeof loadAffiliateLinks==='function')loadAffiliateLinks();}catch(e){}
+}
 function _reloadAll(){try{
+  try{_reloadTopLevelStores();}catch(e){}
   // FIRST, and before applyProfessionConfig() below. Two separate bugs met here and between them
   // they are the plainest version of "my course disappeared":
   //
@@ -3054,6 +3248,9 @@ async function _cloudInit(){
     return;
   }
   if(_handleAuthParams())return;
+  // Bring the big values back out of IndexedDB and into memory BEFORE the pull, before _reloadAll,
+  // and before anything renders. Nothing below may read storage until this has finished.
+  try{await _hydrateOffloaded();}catch(e){}
   // Register the native client-link handler NOW, before any early return below. A client-only user
   // (no provider session) taps their emailed "/client?c=<token>" Universal/App Link, iOS/Android opens
   // the installed app, and we must route that tap into their care space. Previously this only ran for
@@ -3119,10 +3316,9 @@ async function _cloudInit(){
       try{
         const pulled=Cloud._lastPulledKeys||new Set();
         const missing={};
-        for(let i=0;i<localStorage.length;i++){
-          const k=localStorage.key(i);
-          if(_syncable(k)&&!pulled.has(k))missing[k]=localStorage.getItem(k);
-        }
+        _lsAllKeys().forEach(function(k){
+          if(_syncable(k)&&!pulled.has(k))missing[k]=_lsGet(k);
+        });
         if(Object.keys(missing).length&&Cloud.token){
           await fetch('/api/store',{method:'PUT',headers:{'Content-Type':'application/json','Authorization':'Bearer '+Cloud.token},body:JSON.stringify({items:missing})}).catch(()=>{});
         }
@@ -3380,7 +3576,7 @@ function doResetPw(){
   if(pw.length<8){if(er)er.textContent=t('min8');return;}
   Cloud.resetPw(_resetToken,pw).then(()=>{_resetToken='';_loginMode='login';renderLogin();const e2=document.getElementById('login-err');if(e2){e2.style.color='var(--p-green)';e2.textContent=t('pw_updated');}}).catch(e=>{const er=document.getElementById('login-err');if(er)er.textContent=(e&&e.message)||'Reset failed';});
 }
-function _doLogout(){
+async function _doLogout(){
   // Revoke THIS session server-side first (while we still hold the token), so signing out actually
   // invalidates the token everywhere — not just on this device. keepalive lets it complete even as we
   // navigate away. Best-effort: local sign-out proceeds regardless.
@@ -3394,9 +3590,15 @@ function _doLogout(){
   // Guard on Cloud.enabled so a local-only user (whose only copy IS local) isn't wiped.
   try{
     if(typeof Cloud!=='undefined'&&Cloud&&Cloud.enabled){
-      const kill=[];
-      for(let i=0;i<localStorage.length;i++){const k=localStorage.key(i);if(k&&k.indexOf('sc_')===0&&k!=='sc_login_email')kill.push(k);}
+      // _lsAllKeys(), not localStorage alone: the big keys now live in IndexedDB, and leaving them
+      // behind would hand this account's client list to whoever signs in next on this device.
+      // removeItem is patched to clear the IndexedDB copy too; _purgeOffloaded is the belt and braces.
+      const kill=_lsAllKeys().filter(k=>k&&k.indexOf('sc_')===0&&k!=='sc_login_email');
       kill.forEach(k=>{try{localStorage.removeItem(k);}catch(e){}});
+      // AWAIT this one. IndexedDB deletes are asynchronous and the reload below cancels anything
+      // still in flight — which left the whole offloaded client list on the device after sign-out.
+      // Capped so a wedged IndexedDB can still never trap someone on a device they want to leave.
+      try{await Promise.race([_purgeOffloaded(),new Promise(r=>setTimeout(r,2500))]);}catch(e){}
     }
   }catch(e){}
   _loginMode='login';
@@ -4328,7 +4530,7 @@ async function _restorePhotosFromCloud(){
 // starves everything else (Ashley opened the app to six of these holding 3MB, and nothing could save).
 // Shown at the bottom of More → Storage & backups. "Refresh and try again" is useless advice if
 // neither of us can tell which build a device is actually running. Bumped with every deploy.
-const SC_BUILD='2026-09-14 · b14';
+const SC_BUILD='2026-09-14 · b15';
 const _ROOM_DRAFT_PER_CLIENT=180000;   // chars of base64 per client draft
 const _ROOM_DRAFT_TOTAL=420000;        // chars of base64 across ALL drafts
 function _roomDraftKey(id){return 'sc_room_draft_'+(id||'');}
@@ -17153,15 +17355,28 @@ async function _evictableFileCache(){
 // plenty of room while the limit that was actually failing was invisible.
 function _lsUsage(){
   const keys=[];let total=0;
+  // Read past the getItem patch: this has to measure what is REALLY in the 5MB box, not what the app
+  // would get back for a key that now lives in IndexedDB.
+  const g=(typeof Cloud!=='undefined'&&Cloud&&Cloud._origGet)||localStorage.getItem.bind(localStorage);
   try{
     for(let i=0;i<localStorage.length;i++){
       const k=localStorage.key(i);if(!k)continue;
-      let n=0;try{n=(localStorage.getItem(k)||'').length+k.length;}catch(e){}
+      let n=0;try{n=(g(k)||'').length+k.length;}catch(e){}
       total+=n;keys.push({k:k,n:n});
     }
   }catch(e){}
   keys.sort(function(a,b){return b.n-a.n;});
-  return {total:total*2,keys:keys.slice(0,8)};   // UTF-16: Safari counts two bytes per character
+  // And what moved out to the big pool, so the panel can show where it went instead of it appearing
+  // to have vanished.
+  const off=[];let offTotal=0;
+  try{
+    Object.keys((Cloud&&Cloud._offloaded)||{}).forEach(function(k){
+      let n=0;try{n=((Cloud._mem[k]!=null?Cloud._mem[k]:'')+'').length+k.length;}catch(e){}
+      offTotal+=n;off.push({k:k,n:n});
+    });
+    off.sort(function(a,b){return b.n-a.n;});
+  }catch(e){}
+  return {total:total*2,keys:keys.slice(0,8),off:off.slice(0,8),offTotal:offTotal*2,offCount:off.length};   // UTF-16: Safari counts two bytes per character
 }
 const _LS_CAP=5*1024*1024;
 // "932KB of client records" is not an answer anyone can act on. Break it down from the records
@@ -17348,13 +17563,18 @@ function _renderStorageBody(st){
       <div style="height:9px;border-radius:6px;background:var(--p-surf2);overflow:hidden;"><div style="height:100%;width:${lsPct}%;background:${lsTight?'var(--p-red)':'var(--accent)'};"></div></div>
       <div style="font-size:11.5px;color:${lsTight?'var(--p-red)':'var(--p-mut)'};margin-top:7px;line-height:1.55;">
         ${lsTight?'This is the limit that has been failing your saves. The browser caps it at 5MB per site and it does not grow.'
-                 :'Your settings, clients, notes and course records. This is the limit that matters for saving.'}
+                 :'Settings and small lists only. Anything that grows with your business — clients, notes, forms, your catalogue, your logo — is kept in the large pool below instead, so this limit stays out of your way.'}
         Clearing cached lesson files does <b>not</b> free it — that is a different, much larger pool.
       </div>
     </div>
-    ${ls.keys.length?`<div style="background:var(--surf1);border:1px solid var(--p-line);border-radius:13px;padding:12px 13px;margin-bottom:14px;">
-      <div style="font-size:12px;font-weight:650;color:var(--p-ink);margin-bottom:8px;">What's using it</div>
+    ${(ls.offCount||0)?`<div style="background:var(--surf1);border:1px solid var(--p-line);border-radius:13px;padding:12px 13px;margin-bottom:14px;">
+      <div style="font-size:12px;font-weight:650;color:var(--p-ink);margin-bottom:4px;">Kept in the large pool — ${_bytesLabel(ls.offTotal)}</div>
+      <div style="font-size:11px;color:var(--p-mut);line-height:1.6;margin-bottom:8px;">${ls.offCount} item${ls.offCount===1?'':'s'} moved out of the 5MB limit above. Same device, same speed, room to grow — and every one of these is also saved in your account.</div>
       ${(function(){const d=_clientDataBreakdown();return d?`<div style="font-size:11px;color:var(--p-mut);line-height:1.6;margin:-2px 0 8px;padding-bottom:8px;border-bottom:1px solid var(--p-line2);">Client records: ${d.clients} client${d.clients===1?'':'s'} \u00b7 ${d.forms} saved form${d.forms===1?'':'s'}${d.qsBytes?(' \u00b7 <b>'+_bytesLabel(d.qsBytes)+'</b> of that is the question wording stored on every form'):''}${d.photoBytes?(' \u00b7 '+_bytesLabel(d.photoBytes)+' of images'):''}</div>`:'';})()}
+      ${ls.off.map(function(r){return `<div style="display:flex;justify-content:space-between;gap:10px;font-size:11.5px;color:var(--p-mut);padding:3px 0;"><span style="min-width:0;overflow:hidden;text-overflow:ellipsis;white-space:nowrap;">${_fileEsc(_lsLabel(r.k))}</span><span style="flex-shrink:0;color:var(--p-ink);">${_bytesLabel(r.n*2)}</span></div>`;}).join('')}
+    </div>`:''}
+    ${ls.keys.length?`<div style="background:var(--surf1);border:1px solid var(--p-line);border-radius:13px;padding:12px 13px;margin-bottom:14px;">
+      <div style="font-size:12px;font-weight:650;color:var(--p-ink);margin-bottom:8px;">What's still in the 5MB limit</div>
       ${ls.keys.map(function(r){return `<div style="display:flex;justify-content:space-between;gap:10px;font-size:11.5px;color:var(--p-mut);padding:3px 0;"><span style="min-width:0;overflow:hidden;text-overflow:ellipsis;white-space:nowrap;">${_fileEsc(_lsLabel(r.k))}</span><span style="flex-shrink:0;color:var(--p-ink);">${_bytesLabel(r.n*2)}</span></div>`;}).join('')}
     </div>`:''}
     ${st.quota>0?`<div style="margin-bottom:14px;">
@@ -20713,10 +20933,10 @@ async function _confirmDeleteAccount(){
   // 2) Wipe ALL local data for this account (including the login email + token), so nothing
   //    lingers on this device. Unlike logout, deletion removes everything.
   try{
-    const kill=[];
-    for(let i=0;i<localStorage.length;i++){const k=localStorage.key(i);if(typeof k==='string'&&k.indexOf('sc_')===0)kill.push(k);}
+    const kill=(typeof _lsAllKeys==='function'?_lsAllKeys():Object.keys(localStorage)).filter(k=>typeof k==='string'&&k.indexOf('sc_')===0);
     kill.forEach(k=>{try{localStorage.removeItem(k);}catch(e){}});
     try{sessionStorage.removeItem('sc_sqkey');}catch(e){}
+  try{if(typeof _purgeOffloaded==='function')_purgeOffloaded();}catch(e){}
   try{if(typeof _idb!=='undefined'&&_idb.del)_idb.del('captured_photos');}catch(e){}
   }catch(e){}
   // 3) Drop the auth session and any cached app shell, then return to a clean start.

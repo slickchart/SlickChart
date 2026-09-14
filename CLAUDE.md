@@ -87,6 +87,15 @@ The proxy blocks live `slickchart.app`, so test against the local file with rout
   reach the native app without an app-store resubmit; native *plugin* changes need a rebuild.
 - **Git:** run git from the repo root `/home/user/SlickChart` (not the `slickchart-vercel/` subdir, or
   pathspecs won't match).
+- **Device storage:** localStorage is a hard 5MB in Safari and does not grow, so it holds settings and
+  small lists only. Any value ≥ 24KB is written to IndexedDB instead (`_lsPersist` → `_offloadEligible`),
+  mirrored in memory, and hydrated back by `_hydrateOffloaded()` at the top of `_cloudInit`. `getItem`,
+  `setItem` and `removeItem` are all patched, so ordinary call sites need no change — but **never
+  enumerate `localStorage` directly**: use `_lsAllKeys()` (localStorage ∪ offloaded) and `_lsGet(k)`,
+  or you will silently skip the client list. `sc_room_draft_*` and `sc_captured_photos` are excluded on
+  purpose (they exist as the backup *outside* IndexedDB) and must stay excluded. Signing out must clear
+  the offloaded store too — `_doLogout` awaits `_purgeOffloaded()`, and the store is stamped with its
+  owner so another account's cache is thrown away rather than read. See SESSION-HANDOFF §2e.
 - **DB:** Postgres (Neon) via `lib/db.js`. Tables: `clients`, `client_events`, `kv` (per-owner key/value
   sync store), `providers`, `square_connections`, plus small helpers. `@neondatabase/serverless` isn't
   installed in the scratch env, so `node --check` a file for syntax rather than importing it locally.
