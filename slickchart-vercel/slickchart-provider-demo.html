@@ -4328,7 +4328,7 @@ async function _restorePhotosFromCloud(){
 // starves everything else (Ashley opened the app to six of these holding 3MB, and nothing could save).
 // Shown at the bottom of More → Storage & backups. "Refresh and try again" is useless advice if
 // neither of us can tell which build a device is actually running. Bumped with every deploy.
-const SC_BUILD='2026-09-14 · b9';
+const SC_BUILD='2026-09-14 · b10';
 const _ROOM_DRAFT_PER_CLIENT=180000;   // chars of base64 per client draft
 const _ROOM_DRAFT_TOTAL=420000;        // chars of base64 across ALL drafts
 function _roomDraftKey(id){return 'sc_room_draft_'+(id||'');}
@@ -5423,8 +5423,21 @@ function _attnTilesHTML(){
       // Cleared once = cleared for everything that existed at that moment. A form with no usable date
       // counts as "existed then", because it certainly did — it is the undated ones that used to slip
       // back through every other guard.
-      if(c.attnClearedAt){const _t=_formAtMs(s);if(_t==null||_t<=c.attnClearedAt)return false;}
-      if(c.reviewAck===sig||_homeDismissed.has('rev-'+id))return false;if(_reviewStale(s,'rev-'+id)){_attnRetire('rev-'+id);return false;}return _attnFresh('rev-'+id);}).map(([id,c])=>_swipeTile(`<div onclick="_openReviewCard('${id}')" style="margin:0;background:var(--p-surf3);border:1px solid var(--p-line3);border-radius:12px;padding:11px 34px 11px 13px;display:flex;align-items:center;gap:11px;cursor:pointer;">
+      const _t=_formAtMs(s);
+      const _isNewWork=!!(c.attnClearedAt&&_t!=null&&_t>c.attnClearedAt);
+      if(!_isNewWork){
+        if(c.attnClearedAt)return false;
+        // The rest of these are keyed on the CLIENT, not the submission — 'rev-'+id went into the
+        // dismissed set the first time she cleared this client, which then suppressed every future
+        // form they ever sent. Real work, silently swallowed. They only apply to a client who has
+        // never been cleared at all; once there is a cleared-at time, that is the judge.
+        if(c.reviewAck===sig||_homeDismissed.has('rev-'+id))return false;
+        if(_reviewStale(s,'rev-'+id)){_attnRetire('rev-'+id);return false;}
+        return _attnFresh('rev-'+id);
+      }
+      // Newer than the last time she cleared this client: genuinely new work. Its own 24h clock, keyed
+      // per SUBMISSION, so it still retires itself and cannot be blocked by an older clearing.
+      return _attnFresh('rev-'+id+':'+sig);}).map(([id,c])=>_swipeTile(`<div onclick="_openReviewCard('${id}')" style="margin:0;background:var(--p-surf3);border:1px solid var(--p-line3);border-radius:12px;padding:11px 34px 11px 13px;display:flex;align-items:center;gap:11px;cursor:pointer;">
       <div style="width:38px;height:38px;border-radius:9px;background:var(--p-green-bg);display:flex;align-items:center;justify-content:center;flex-shrink:0;"><i class="ti ti-clipboard-check" style="font-size:18px;color:var(--p-green);"></i></div>
       <div style="flex:1;min-width:0;"><div style="font-size:14px;font-weight:600;color:var(--p-green);">${_fileEsc(c.name.split(' ')[0])} completed ${_fileEsc(c.submittedForms[0].title)}</div><div style="font-size:12px;color:var(--p-mut2);margin-top:1px;">Tap to open the form</div></div>
     </div>`,'rev-'+id,`_reviewAckHome('${id}')`)).join('');
@@ -5571,7 +5584,14 @@ function renderHome(){
     // `anyAttn` gate used looser predicates than the tiles' handled-state filters (ackHome / _homeDismissed
     // / _attnFresh / reviewAck), so it stayed lit after the last tile was cleared.
     const _tiles=_attnTilesHTML();
-    return (_tiles&&_tiles.trim())?('<div class="sh"><h2>Needs your attention</h2></div>'+_tiles):'';
+    if(!_tiles||!_tiles.trim())return '';
+    // With 836 clients synced from Square, a backlog of completed intakes is dozens of cards deep.
+    // Clearing them one at a time, three on screen at once, is indistinguishable from them coming
+    // back — you clear three, three more appear, forever. One button ends it.
+    return '<div class="sh" style="display:flex;align-items:baseline;justify-content:space-between;gap:10px;">'
+      +'<h2 style="margin:0;">Needs your attention</h2>'
+      +'<button onclick="_clearAllAttn()" style="border:none;background:none;color:var(--accent-strong);font-size:12.5px;font-weight:600;cursor:pointer;font-family:inherit;padding:2px 0;">Clear all</button>'
+      +'</div>'+_tiles;
   })()}
   <div class="sh"><h2>Up next</h2></div>
   ${(()=>{
@@ -14336,6 +14356,31 @@ function _attnFresh(key){
   if(!t){_attnSeen[key]=now;_saveAttnSeen();return true;}
   if(now-t>86400000){if(!_homeDismissed.has(key)){_homeDismissed.add(key);_saveHomeDismissed();}return false;}
   return true;
+}
+// Clear every attention card at once. Each one goes through the SAME handler a tap on its ✕ uses,
+// so nothing is special-cased and nothing is left half-cleared — flagged intakes get the flag
+// acknowledgement, completed forms get the review stamp, and every client gets the cleared-at time
+// that keeps it from coming back.
+function _clearAllAttn(){
+  const done=[];
+  try{
+    Object.keys(CL||{}).forEach(function(id){
+      const c=CL[id];if(!c)return;
+      const hasFlag=!!(c.flaggedContra&&!c.flaggedContra.ackHome);
+      const hasRev=!!((c.submittedForms||[])[0]&&!(c.submittedForms||[])[0].reviewedAt);
+      if(!hasFlag&&!hasRev)return;
+      if(hasFlag){try{_flagAckHome(id);}catch(e){}}
+      if(hasRev){try{_reviewAckHome(id);}catch(e){}}
+      done.push(id);
+    });
+    // The non-client tiles (booking requests, check-in nudges) clear the same way their own ✕ does.
+    try{if(typeof _dismissReqTile==='function')_dismissReqTile();}catch(e){}
+    try{if(typeof _vcPendingIds==='function')(_vcPendingIds()||[]).forEach(function(vid){try{_dismissVcTile(vid);}catch(e){}});}catch(e){}
+  }catch(e){}
+  try{if(typeof saveClients==='function')saveClients();}catch(e){}
+  try{if(typeof _pushKeyNow==='function')_pushKeyNow('sc_clients',_lsGet('sc_clients')||'');}catch(e){}
+  try{_reRenderAttn();}catch(e){}
+  if(typeof proToast==='function')proToast(done.length?('Cleared '+done.length+' item'+(done.length===1?'':'s')+'. New ones will still come through.'):'Nothing left to clear.');
 }
 function _dismissTile(k){_homeDismissed.add(k);_saveHomeDismissed();_reRenderAttn();}
 // "Swipe to clear" on the Home banners for bookings/check-ins now genuinely marks them
