@@ -124,6 +124,11 @@ export function welcomeEmailHtml({ name, link }) {
         </p>
       </div>
 
+      <div style="background:#f6f7f8;border-radius:12px;padding:16px 18px;margin:0 0 20px;">
+        <div style="font-size:12px;font-weight:700;color:#666;text-transform:uppercase;letter-spacing:.06em;margin-bottom:8px;">If you ever want to cancel</div>
+        <p style="font-size:14px;line-height:1.7;color:#3a3a3a;margin:0;">Settings &rarr; Security &amp; Billing &rarr; <strong>Cancel subscription</strong>. One tap, no email required, no phone call. You keep full access to the end of the month you have already paid for, and <strong>nothing is deleted</strong> &mdash; your clients, notes and photos stay exactly where they are.<br><br>Using the iPhone app? Cancelling lives on the web: sign in at <a href="https://slickchart.app/slickchart" style="color:#1e9e88;">slickchart.app</a>. And if anything gets in your way, just reply to this email and I will cancel it for you the same day.</p>
+      </div>
+
       <p style="font-size:16px;line-height:1.7;color:#3a3a3a;margin:0 0 6px;">Something confusing, broken, or missing? Just reply to this email, or tap <strong>Share beta feedback</strong> right in the app. I read every single one myself.</p>
       <p style="font-size:16px;line-height:1.7;margin:22px 0 0;">Thank you for being here from the start.<br>With love,<br><strong>Ashley</strong><br><span style="color:#888;font-size:13px;">Founder, SlickChart · Botanical Aesthetics</span></p>
     </div>
@@ -158,6 +163,9 @@ Getting started:
 3. Add or import your clients, whenever you're ready
 4. Invite them to their own private client app, one tap each
 5. Remove the sample data once your real clients are in
+
+If you ever want to cancel:
+Settings -> Security & Billing -> Cancel subscription. One tap, no email required, no phone call. You keep full access to the end of the month you have already paid for, and nothing is deleted -- your clients, notes and photos stay exactly where they are. Using the iPhone app? Cancelling lives on the web: sign in at https://slickchart.app/slickchart. And if anything gets in your way, just reply to this email and I will cancel it for you the same day.
 
 Something confusing, broken, or missing? Just reply to this email, or tap "Share beta feedback" in the app. I read every one myself.
 

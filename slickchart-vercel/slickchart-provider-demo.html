@@ -16789,7 +16789,10 @@ function _cbAutosaveStop(){try{if(_cvTimer)clearInterval(_cvTimer);}catch(e){}_c
 // this, a delete made on a full phone would be undone by the boot restore below.
 function _cvMarkDeleted(courseId){
   if(!_cvCan()||!courseId)return Promise.resolve({ok:false});
-  return fetch('/api/course-versions',{method:'POST',headers:{'Content-Type':'application/json','Authorization':'Bearer '+Cloud.token},
+  // keepalive: a delete is very often the last thing someone does before closing the tab, and a normal
+  // fetch is cancelled when the page goes away. Losing this mark is how a deliberately deleted course
+  // gets helpfully restored on the next launch.
+  return fetch('/api/course-versions',{method:'POST',keepalive:true,headers:{'Content-Type':'application/json','Authorization':'Bearer '+Cloud.token},
     body:JSON.stringify({courseId:String(courseId),deleted:true})})
     .then(function(r){return {ok:!!(r&&r.ok)};},function(){return {ok:false};});
 }
@@ -17222,6 +17225,7 @@ async function recoverLostCourses(){
 async function deleteCourse(id){
   const c=courses.find(x=>x.id===id);if(!c)return;
   const _go=async function(){
+  let _delMark=Promise.resolve();
   // NOTE: deliberately do NOT delete the lesson files from the server here — a client who was
   // already sent this course still downloads them by id (sent = permanent). Orphaned files for a
   // course no client has are negligible; keeping them is the safe trade.
@@ -17235,15 +17239,30 @@ async function deleteCourse(id){
   // Vitality Reset Program. While a duplicate remains, removing the single row is the whole job.
   try{
     const _stillThere=(courses||[]).some(x=>x&&x.id===id);
-    if(!_stillThere){_loadHiddenCourses();hiddenCourses[id]=1;_saveHiddenCourses();try{_cvMarkDeleted(id);}catch(e){}}
+    if(!_stillThere){_loadHiddenCourses();hiddenCourses[id]=1;_saveHiddenCourses();
+      // AWAITED below, not fired and forgotten. This is the record that survives a device whose
+      // storage is too full to keep its own delete list; losing it to a fast refresh means the boot
+      // restore helpfully puts back a course that was thrown away on purpose.
+      try{_delMark=_cvMarkDeleted(id);}catch(e){}}
   }catch(e){}
   // Await the persist + the custom-flag push before leaving, same as saveCourse — otherwise a fast
   // reload lets the boot pull restore the stale server copy and the deleted course silently returns.
-  try{await Promise.all([persistCourses()||Promise.resolve(),(typeof _pushKeyNow==='function'?_pushKeyNow('sc_courses_custom','1'):Promise.resolve())]);}catch(e){}
+  // allSettled, not all: Promise.all abandons the moment ONE of these rejects, so a failed local
+  // persist meant we stopped waiting for the server-side delete mark — the one record that survives a
+  // device too full to keep its own delete list.
+  try{await Promise.allSettled([persistCourses()||Promise.resolve(),(typeof _pushKeyNow==='function'?_pushKeyNow('sc_courses_custom','1'):Promise.resolve()),_delMark]);}catch(e){}
   if(typeof proToast==='function')proToast('Course deleted');
   _fgTab='courses';nav('forms');
   };
-  if(typeof confirmModal==='function')confirmModal({title:'Delete this course?',body:'“'+String(c.title||'this course').replace(/\s+/g,' ').trim()+'” will be removed from your library. Clients you already sent it to keep their copy.',action:'Delete'},function(){_go();});else _go();
+  // Returns a promise that settles when the DELETE has finished, not when the dialog closes. The
+  // work behind it — the tombstone, the pushes, the server-side delete mark — is what matters, and a
+  // caller (or a test) that cannot await it cannot know whether any of it landed.
+  if(typeof confirmModal==='function'){
+    return new Promise(function(res){
+      confirmModal({title:'Delete this course?',body:'“'+String(c.title||'this course').replace(/\s+/g,' ').trim()+'” will be removed from your library. Clients you already sent it to keep their copy.',action:'Delete'},function(){window._cbDeleting=_go().then(res,res);});
+    });
+  }
+  return (window._cbDeleting=_go());
 }
 
 // ── SHOP ──
@@ -18969,7 +18988,20 @@ function renderAccountBilling(){
       <a href="/terms" target="_blank" rel="noopener" style="font-size:12px;font-weight:600;color:var(--accent-strong);text-decoration:none;">Terms of Service</a>
     </div>
   </div>`;
-  S.innerHTML=_sec+(_native?'':'<div class="sh" style="margin-top:10px;padding-top:8px;border-top:1px solid var(--p-line);"><h2>Subscription & billing</h2></div>'+_bill)+_privacy;
+  // The app is payment-silent by design, but "no billing section at all" left a provider on the phone
+  // with no idea where to cancel — and no way to find out from inside the app. This states where it
+  // lives and opens it. It manages an existing account; it is not a purchase flow.
+  const _nativeBilling=!_native?'':`
+  <div class="sh" style="margin-top:10px;padding-top:8px;border-top:1px solid var(--p-line);"><h2>Subscription</h2></div>
+  <div style="padding:0 16px 20px;">
+    <div style="background:var(--surf1);border:1px solid var(--p-line3);border-radius:12px;padding:14px 15px;">
+      <div style="font-size:13.5px;color:var(--p-ink);line-height:1.6;margin-bottom:10px;">Your subscription is managed on the web.</div>
+      <div style="font-size:12.5px;color:var(--p-mut);line-height:1.65;margin-bottom:12px;">Sign in at <b>slickchart.app</b> \u2192 Settings \u2192 Security &amp; Billing to see your plan, update your card, or <b>cancel</b>. Cancelling stops any further charges and never deletes your data.</div>
+      <button onclick="_openExternal('https://slickchart.app/slickchart')" style="width:100%;background:var(--surf2);border:1px solid var(--p-line);color:var(--accent-strong);border-radius:10px;padding:11px;font-size:13px;font-weight:600;cursor:pointer;font-family:inherit;display:flex;align-items:center;justify-content:center;gap:6px;"><i class="ti ti-external-link" style="font-size:15px;"></i> Open slickchart.app</button>
+      <div style="font-size:11.5px;color:var(--p-mut);line-height:1.6;margin-top:10px;">Or email <b>${_supportEmail()}</b> and we\u2019ll cancel it for you the same day.</div>
+    </div>
+  </div>`;
+  S.innerHTML=_sec+(_native?_nativeBilling:'<div class="sh" style="margin-top:10px;padding-top:8px;border-top:1px solid var(--p-line);"><h2>Subscription & billing</h2></div>'+_bill)+_privacy;
   _loadSessions(); // re-run against the final DOM, same reason as below
   _loadTotpState(); // re-run against the final DOM, same reason as below
   if(!_native)_loadBillingStatus(); // re-run against the final DOM, the call inside renderSubscriptionBilling() above targeted a node that just got replaced
@@ -21661,7 +21693,15 @@ Your data is NOT deleted. Clients, notes, photos, forms and courses stay exactly
 
 Changed your mind before the end date? The same screen has <b>Keep my subscription</b>.
 
-If anything on that screen does not work, email us and we will cancel it for you the same day. You should never have to chase anyone to stop paying.`},
+If anything on that screen does not work, email support@slickchart.app and we will cancel it for you the same day. You should never have to chase anyone to stop paying.`,nativeBody:`Your subscription is managed on the web, not in this app.
+
+Sign in at slickchart.app → Settings → Security & Billing → Cancel subscription. One confirmation and it is done. Settings → Security in this app has a button that opens it for you.
+
+What happens: nothing further is charged, and you keep full access until the end of the period you have already paid for.
+
+Your data is NOT deleted. Clients, notes, photos, forms and courses stay exactly as they are.
+
+Prefer not to? Email support@slickchart.app and we will cancel it for you the same day.`},
   {id:'bill-sessions',cat:'Billing & account',title:'Active sessions & signing out other devices',kw:'active sessions device sign out logout security',body:`Settings → Security & billing → Active sessions shows every device currently signed into your account, with location and last-active time. You can revoke any session you don't recognize.`},
 
   // Security
@@ -21677,7 +21717,15 @@ If anything on that screen does not work, email us and we will cancel it for you
 // Payment-silent native app: the "Managing your subscription" help article describes the billing
 // portal / changing plans, so it's excluded from search, listing, and direct open in the native
 // shell. Web/PWA sees the full list unchanged.
-function _helpList(){return _isNativeApp()?helpArticles.filter(a=>a.id!=='bill-plan'&&a.id!=='bill-cancel'):helpArticles;}
+function _helpList(){
+  if(!_isNativeApp())return helpArticles;
+  // On the phone the billing screens don't exist, so drop the plan article and swap the cancel one
+  // for the version that says where cancelling actually happens. Never leave someone who searches
+  // "cancel" with no answer at all.
+  return helpArticles.filter(a=>a.id!=='bill-plan').map(function(a){
+    return (a.id==='bill-cancel'&&a.nativeBody)?Object.assign({},a,{body:a.nativeBody}):a;
+  });
+}
 function _searchHelp(q){
   q=(q||'').toLowerCase().trim();
   const list=_helpList();
@@ -24808,7 +24856,7 @@ async function _openBillingPortal(intent){
     proToast('Could not reach the billing page. Email '+_supportEmail()+' and we\u2019ll cancel it for you \u2014 same day.',0);
   }
 }
-function _supportEmail(){try{return (window.SLICKCHART_SUPPORT_EMAIL||'hello@slickchart.app');}catch(e){return 'hello@slickchart.app';}}
+function _supportEmail(){try{return (window.SLICKCHART_SUPPORT_EMAIL||'support@slickchart.app');}catch(e){return 'support@slickchart.app';}}
 
 // ── ADD PARTNER ──
 function renderAddPartner(){
