@@ -16011,9 +16011,6 @@ function _coursesTabHTML(){
       </div>
     </div>`).join('')}
     ${_noRes('courses-noresults','No courses match your search.')}
-    <div style="padding:4px 16px 0;display:flex;justify-content:center;">
-      <button onclick="openCourseHistory()" style="border:none;background:none;color:var(--p-mut);font-size:12px;cursor:pointer;font-family:inherit;display:inline-flex;align-items:center;gap:5px;padding:6px 10px;"><i class="ti ti-history" style="font-size:13px;"></i> Course backups &amp; find a lost course</button>
-    </div>
     <div id="course-recover"></div>
     <div style="height:16px;"></div>`;
 }
@@ -16615,6 +16612,30 @@ function _cvFetchList(){
     .then(function(r){return r.ok?r.json():null;}).then(function(j){return j?((j.versions)||[]):null;})
     .catch(function(){return null;});
 }
+// Course ids the account holds a backup for, deleted ones included.
+async function _cvKnownCourseIds(){
+  const out={};
+  try{const list=await _cvFetchList();(list||[]).forEach(function(v){if(v&&v.courseId)out[v.courseId]=1;});}catch(e){}
+  return out;
+}
+// Courses the account has a backup of that aren't on this device and weren't deleted on purpose.
+async function _cvLostCourses(){
+  const out=[];
+  try{
+    const list=await _cvFetchList();if(!list||!list.length)return out;
+    try{_loadHiddenCourses();}catch(e){}
+    const have={};(courses||[]).forEach(function(c){if(c&&c.id)have[c.id]=1;});
+    const seen={};
+    list.forEach(function(v){
+      if(!v||!v.courseId||v.deleted||seen[v.courseId])return;
+      if(have[v.courseId])return;
+      try{if(hiddenCourses&&hiddenCourses[v.courseId])return;}catch(e){}
+      if(_isPlaceholderCourseTitle(v.title))return;
+      seen[v.courseId]=1;out.push(v);
+    });
+  }catch(e){}
+  return out;
+}
 function _cvCloseHistory(){try{const ov=document.getElementById('course-history');if(ov)ov.remove();}catch(e){}}
 function _cvWhen(ts){
   try{
@@ -16812,7 +16833,10 @@ function _renderStorageBody(st){
       </div>
       ${ev.drop.length?`<button onclick="freeUpDeviceSpace()" style="width:100%;background:var(--accent);color:var(--accent-ink);border:none;border-radius:10px;padding:11px;font-size:13px;font-weight:700;cursor:pointer;font-family:inherit;">Free up ${_bytesLabel(ev.bytes)} of cached files</button>`:''}
     </div>`}
-    <div style="font-size:11.5px;color:var(--p-mut);line-height:1.6;margin-top:14px;">Your courses, clients, notes and photos are not touched by this. Courses are backed up to your account and put back automatically if this device loses them.</div>`;
+    <div style="margin-top:16px;padding-top:14px;border-top:1px solid var(--p-line2);">
+      <button onclick="_closeStoragePanel();openCourseHistory();" style="width:100%;background:var(--surf1);border:1px solid var(--p-line);color:var(--p-ink);border-radius:10px;padding:11px;font-size:13px;font-weight:600;cursor:pointer;font-family:inherit;display:flex;align-items:center;justify-content:center;gap:6px;"><i class="ti ti-history" style="font-size:15px;color:var(--accent-strong);"></i> Course backups</button>
+      <div style="font-size:11.5px;color:var(--p-mut);line-height:1.6;margin-top:10px;">Every save is kept, and a course comes back on its own if this device loses one. This is here for when you want an earlier version.</div>
+    </div>`;
 }
 async function freeUpDeviceSpace(){
   const btn=document.querySelector('#storage-body button[onclick="freeUpDeviceSpace()"]');
@@ -16837,12 +16861,35 @@ async function freeUpDeviceSpace(){
 // dozen PDFs is the part that actually costs an evening.
 // Offer recovery only when this device is holding lesson files whose course is gone. No orphans,
 // no button — so it stays out of the way once its job is done (CLAUDE.md \u00a75).
+// The Courses tab is for her courses. Recovery only speaks up when something is ACTUALLY missing,
+// and then it says one thing and offers one button. The standing backups link and the leftover-files
+// banner were scaffolding from a bad week and belong out of the daily path (CLAUDE.md §5). The
+// backups screen still exists, in More → Storage & backups.
 async function _offerCourseRecovery(){
   try{
     const el=document.getElementById('course-recover');if(!el)return;
+    // A course the account has a backup of that isn't on the shelf: the one case worth interrupting
+    // her for, and one tap to fix.
+    try{
+      const lost=await _cvLostCourses();
+      if(lost.length){
+        el.innerHTML=`<div style="margin:14px 0 0;background:var(--surf2);border:1px solid var(--p-line3);border-radius:14px;padding:15px 17px;">
+          <div style="font-size:13.5px;font-weight:700;color:var(--p-ink);margin-bottom:5px;">${lost.length===1?('\u201c'+_fileEsc(String(lost[0].title||'A course').slice(0,50))+'\u201d isn\u2019t here'):(lost.length+' courses aren\u2019t here')}</div>
+          <div style="font-size:12.5px;color:var(--p-mut);line-height:1.55;margin-bottom:11px;">Your account still has ${lost.length===1?'it':'them'} backed up.</div>
+          <button onclick="openCourseHistory()" style="background:var(--accent);color:var(--accent-ink);border:none;border-radius:9px;padding:10px 15px;font-size:13px;font-weight:700;cursor:pointer;font-family:inherit;"><i class="ti ti-restore" style="margin-right:5px;"></i>Put ${lost.length===1?'it':'them'} back</button>
+        </div>`;
+        return;
+      }
+    }catch(e){}
     if(_orphanBannerDismissed())return;
     const found=await _findOrphanCourseFiles();
     const ids=Object.keys(found);if(!ids.length)return;
+    // Leftover files from an old rebuild are not news. Only offer this last-resort path when the
+    // account has no backup covering them — otherwise restoring is the better answer anyway.
+    try{
+      const covered=await _cvKnownCourseIds();
+      if(covered&&ids.every(function(id){return covered[id];}))return;
+    }catch(e){}
     let n=0;ids.forEach(cid=>Object.keys(found[cid]).forEach(lid=>{n+=found[cid][lid].length;}));
     el.innerHTML=`<div style="margin:14px 0 0;background:var(--p-amber-bg);border:1px solid var(--p-line3);border-radius:14px;padding:15px 17px;">
       <div style="font-size:13.5px;font-weight:700;color:var(--p-ink);margin-bottom:5px;">${n} lesson file${n===1?'':'s'} from a course that is no longer here</div>
@@ -21506,7 +21553,7 @@ function renderMore(){
   <div class="sh"><h2>Help &amp; more</h2></div>
   ${_moreRow('ti-settings','var(--p-surf)','#bbb','Settings','Profile, branding, apps, AI &amp; billing','account')}
   ${_moreRow('ti-help-circle','var(--p-blue-bg)','var(--p-blue)','Help','Search how-tos &amp; troubleshooting','help')}
-  <div class="card" onclick="openStoragePanel()"><div class="row"><div style="width:44px;height:44px;border-radius:10px;background:var(--p-surf2);display:flex;align-items:center;justify-content:center;flex-shrink:0;"><i class="ti ti-database" style="font-size:20px;color:var(--p-blue);"></i></div><div style="flex:1;min-width:0;"><div style="font-size:14px;font-weight:500;color:var(--p-ink);">Device storage</div><div style="font-size:12px;color:#999;">See what this app is using &amp; free up space</div></div><i aria-hidden="true" class="ti ti-chevron-right" style="font-size:16px;color:var(--p-mut);flex-shrink:0;"></i></div></div>
+  <div class="card" onclick="openStoragePanel()"><div class="row"><div style="width:44px;height:44px;border-radius:10px;background:var(--p-surf2);display:flex;align-items:center;justify-content:center;flex-shrink:0;"><i class="ti ti-database" style="font-size:20px;color:var(--p-blue);"></i></div><div style="flex:1;min-width:0;"><div style="font-size:14px;font-weight:500;color:var(--p-ink);">Storage &amp; backups</div><div style="font-size:12px;color:#999;">Free up space, or put back a lost course</div></div><i aria-hidden="true" class="ti ti-chevron-right" style="font-size:16px;color:var(--p-mut);flex-shrink:0;"></i></div></div>
   <div class="card" onclick="_previewClientApp()"><div class="row"><div style="width:44px;height:44px;border-radius:10px;background:var(--accent-tint);display:flex;align-items:center;justify-content:center;flex-shrink:0;"><i class="ti ti-device-mobile-check" style="font-size:20px;color:var(--accent-strong);"></i></div><div style="flex:1;min-width:0;"><div style="font-size:14px;font-weight:500;color:var(--p-ink);">Preview what your client sees</div><div style="font-size:12px;color:var(--p-mut);">Opens a sample of the client app</div></div><i aria-hidden="true" class="ti ti-external-link" style="font-size:16px;color:var(--p-mut);flex-shrink:0;"></i></div></div>
   ${_moreRow('ti-download','var(--p-surf2)','var(--p-green)','Download your data','Services, sales &amp; clients as a spreadsheet','export-data')}
   <div class="card" onclick="replayOnboarding()"><div class="row"><div style="width:44px;height:44px;border-radius:10px;background:var(--p-surf2);display:flex;align-items:center;justify-content:center;flex-shrink:0;"><i class="ti ti-refresh" style="font-size:20px;color:var(--p-green);"></i></div><div style="flex:1;min-width:0;"><div style="font-size:14px;font-weight:500;color:var(--p-ink);">Setup walkthrough</div><div style="font-size:12px;color:#999;">Replay the quick first-run setup</div></div><i aria-hidden="true" class="ti ti-chevron-right" style="font-size:16px;color:var(--p-mut);flex-shrink:0;"></i></div></div>
