@@ -16132,7 +16132,8 @@ function _cbRenderLessons(){
       <div style="display:flex;align-items:center;gap:6px;margin-bottom:8px;"><i class="ti ti-video" style="font-size:15px;color:var(--p-mut);flex-shrink:0;"></i><input class="cbl-video" aria-label="Video link" value="${_jsAttr(l.videoUrl||'')}" placeholder="Video link (YouTube, Vimeo, Loom…)" style="flex:1;background:var(--p-surf);border:1px solid var(--p-line);border-radius:8px;padding:7px 10px;font-size:12.5px;color:var(--p-ink);font-family:inherit;outline:none;"></div>
       <div style="display:flex;align-items:center;gap:6px;margin-bottom:8px;"><i class="ti ti-link" style="font-size:15px;color:var(--p-mut);flex-shrink:0;"></i><input class="cbl-doc" aria-label="Worksheet or document link" value="${_jsAttr(l.docUrl||'')}" placeholder="Worksheet / document link (Drive, Dropbox…)" style="flex:1;background:var(--p-surf);border:1px solid var(--p-line);border-radius:8px;padding:7px 10px;font-size:12.5px;color:var(--p-ink);font-family:inherit;outline:none;"></div>
       <div style="font-size:11px;color:var(--p-mut);margin-bottom:8px;line-height:1.5;">Tip: for worksheets over 3MB, upload to Google Drive / Dropbox and paste the share link here — any size, no limit.</div>
-      ${files.map((f,fi)=>`<div style="display:flex;align-items:center;gap:8px;background:var(--p-surf);border:1px solid var(--p-line);border-radius:8px;padding:8px 10px;margin-bottom:6px;"><i class="ti ti-paperclip" style="font-size:15px;color:var(--accent-strong);flex-shrink:0;"></i><span style="flex:1;min-width:0;font-size:12.5px;color:var(--p-ink);overflow:hidden;text-overflow:ellipsis;white-space:nowrap;">${_fileEsc(f.fileName||'Attached file')}</span><button onclick="_cbRemoveLessonFile(${i},${fi})" style="border:none;background:none;color:var(--p-red);font-size:12px;cursor:pointer;font-family:inherit;">Remove</button></div>`).join('')}
+      ${files.length>1?`<div style="display:flex;align-items:center;justify-content:space-between;gap:8px;margin-bottom:6px;"><span style="font-size:11px;color:var(--p-mut);">${files.length} files · clients see them in this order</span><button type="button" onclick="_cbSortLessonFiles(${i})" style="border:none;background:var(--accent-tint);color:var(--accent-strong);border-radius:7px;padding:5px 9px;font-size:11.5px;font-weight:600;cursor:pointer;font-family:inherit;display:inline-flex;align-items:center;gap:4px;"><i class="ti ti-sort-ascending-letters" style="font-size:13px;"></i> Sort by name</button></div>`:''}
+      ${files.map((f,fi)=>`<div style="display:flex;align-items:center;gap:6px;background:var(--p-surf);border:1px solid var(--p-line);border-radius:8px;padding:7px 8px;margin-bottom:6px;"><span style="width:20px;height:20px;border-radius:50%;background:var(--p-surf2);color:var(--p-mut);display:flex;align-items:center;justify-content:center;font-size:10.5px;font-weight:600;flex-shrink:0;">${fi+1}</span><span style="flex:1;min-width:0;font-size:12.5px;color:var(--p-ink);overflow:hidden;text-overflow:ellipsis;white-space:nowrap;">${_fileEsc(f.fileName||'Attached file')}</span><button type="button" onclick="_cbMoveLessonFile(${i},${fi},-1)" aria-label="Move file up" ${fi===0?'disabled':''} style="border:none;background:none;color:${fi===0?'var(--p-line3)':'var(--p-mut)'};cursor:${fi===0?'default':'pointer'};padding:2px 3px;flex-shrink:0;"><i class="ti ti-chevron-up" style="font-size:15px;"></i></button><button type="button" onclick="_cbMoveLessonFile(${i},${fi},1)" aria-label="Move file down" ${fi===files.length-1?'disabled':''} style="border:none;background:none;color:${fi===files.length-1?'var(--p-line3)':'var(--p-mut)'};cursor:${fi===files.length-1?'default':'pointer'};padding:2px 3px;flex-shrink:0;"><i class="ti ti-chevron-down" style="font-size:15px;"></i></button><button type="button" onclick="_cbRemoveLessonFile(${i},${fi})" style="border:none;background:none;color:var(--p-red);font-size:12px;cursor:pointer;font-family:inherit;flex-shrink:0;padding-left:2px;">Remove</button></div>`).join('')}
       <label for="cbl-file-${i}" style="display:inline-flex;align-items:center;gap:6px;font-size:12px;color:var(--accent-strong);cursor:pointer;"><i class="ti ti-file-upload" style="font-size:14px;"></i> ${files.length?'Add another file':'Attach files (PDF, image, doc)'}<input type="file" id="cbl-file-${i}" accept="application/pdf,image/*,.pdf,.doc,.docx,.txt,.csv" multiple style="display:none;" onchange="_cbPickLessonFile(${i},this)"></label>
     </div>`;
   }).join('');
@@ -16145,15 +16146,43 @@ function _cbPickLessonFile(i,input){
   if(!picked.length)return;
   _cbSyncFromDOM();
   const l=window._cbDraft.lessons[i];if(!l)return;if(!Array.isArray(l.files))l.files=[];
-  let pending=picked.length;
-  const done=()=>{if(--pending<=0)_cbRenderLessons();};
-  picked.forEach(f=>{
+  // Attach a whole folder at once and it lands in name order, not in whatever order the picker
+  // handed it over and the reads happened to finish. Files already on the lesson keep their places.
+  const batch=picked.slice().sort(function(a,b){return _natFileCmp(a&&a.name,b&&b.name);});
+  const slot=[];let pending=batch.length;
+  const done=()=>{if(--pending<=0){slot.forEach(function(x){if(x)l.files.push(x);});_cbRenderLessons();}};
+  batch.forEach((f,bi)=>{
     if(f.size>3*1024*1024){if(typeof proToast==='function')proToast('“'+(f.name||'That file')+'” is over 3MB — for a bigger file, paste a Drive/Dropbox link in the field above instead',0);done();return;}
     const r=new FileReader();
-    r.onload=e=>{l.files.push({fileId:'',fileName:f.name||'file',fileType:f.type||'',_newFileData:String(e.target.result||'')});done();};
+    r.onload=e=>{slot[bi]={fileId:'',fileName:f.name||'file',fileType:f.type||'',_newFileData:String(e.target.result||'')};done();};
     r.onerror=()=>{if(typeof proToast==='function')proToast('Could not read “'+(f.name||'a file')+'”');done();};
     r.readAsDataURL(f);
   });
+}
+// Attachment order IS the order a client reads them in, so it has to be editable. Recovering a
+// course put every file back on the right lesson but in whatever order the device happened to hold
+// them, and without this the only way to fix a seven-file lesson was to remove and re-attach all
+// seven. Same up/down control as the lessons themselves.
+function _cbMoveLessonFile(i,fileIdx,dir){
+  _cbSyncFromDOM();
+  const l=window._cbDraft&&window._cbDraft.lessons[i];if(!l||!Array.isArray(l.files))return;
+  const j=fileIdx+dir;if(j<0||j>=l.files.length)return;
+  const t=l.files[fileIdx];l.files[fileIdx]=l.files[j];l.files[j]=t;
+  _cbRenderLessons();
+}
+// Numeric-aware, so "2 Macros" comes before "10 Macros" instead of after it. Ashley numbers her
+// worksheets, which makes this one tap instead of six moves — and it's what makes attaching a
+// whole folder at once practical.
+function _natFileCmp(a,b){
+  try{return String(a||'').localeCompare(String(b||''),undefined,{numeric:true,sensitivity:'base'});}
+  catch(e){return String(a||'')<String(b||'')?-1:1;}
+}
+function _cbSortLessonFiles(i){
+  _cbSyncFromDOM();
+  const l=window._cbDraft&&window._cbDraft.lessons[i];if(!l||!Array.isArray(l.files)||l.files.length<2)return;
+  l.files.sort(function(a,b){return _natFileCmp(a&&a.fileName,b&&b.fileName);});
+  _cbRenderLessons();
+  if(typeof proToast==='function')proToast('Files sorted by name');
 }
 function _cbRemoveLessonFile(i,fileIdx){
   _cbSyncFromDOM();const l=window._cbDraft.lessons[i];if(!l||!Array.isArray(l.files))return;
