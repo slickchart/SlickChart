@@ -16139,7 +16139,7 @@ async function saveCourse(id){
         (function(_fid,_nm,_ty,_dat){
           const _payload={name:_nm,type:_ty,data:_dat};
           _fileWrites.push(_persistGuideFileLocal(_fid,_payload,false));
-          _fileUploads.push(function(){return _uploadGuideFileToServer(_fid,_payload).then(function(r){return {ok:true,uploaded:!!(r&&r.ok),reason:(r&&r.reason)||''};});});
+          _fileUploads.push(function(){return _uploadGuideFileToServer(_fid,_payload).then(function(r){return {ok:true,fileId:_fid,uploaded:!!(r&&r.ok),reason:(r&&r.reason)||''};});});
         })(fid,f.fileName||'',f.fileType||'',f._newFileData);
         out.files.push({fileId:fid,fileName:f.fileName||'',fileType:f.fileType||''});
       }else if(f.fileId){
@@ -24430,29 +24430,38 @@ function _uploadGuideFileToServer(id,payload,_isRetry){
 // course whose files are stranded on one device.
 async function retryCourseFileUploads(courseId){
   const c=(courses||[]).find(x=>x.id===courseId);if(!c)return;
-  const files=[];(c.lessons||[]).forEach(l=>{(Array.isArray(l.files)?l.files:[]).forEach(f=>{if(f&&f.fileId)files.push(f);});});
+  const all=[];(c.lessons||[]).forEach(l=>{(Array.isArray(l.files)?l.files:[]).forEach(f=>{if(f&&f.fileId)all.push(f);});});
+  // Only the ones that actually failed last time. Re-sending 33 files that already landed to fix 3 is
+  // slow, burns her connection, and makes a stubborn file look like a bigger problem than it is.
+  const only=Array.isArray(c._pendingFiles)&&c._pendingFiles.length?c._pendingFiles:null;
+  const files=only?all.filter(f=>only.indexOf(f.fileId)>=0):all;
   if(!files.length){if(typeof proToast==='function')proToast('This course has no attached files.');return;}
   if(typeof Cloud==='undefined'||!Cloud||!Cloud.token){if(typeof proToast==='function')proToast('Log in first so the files have somewhere to go.');return;}
   if(typeof proToast==='function')proToast('Uploading '+files.length+' file'+(files.length===1?'':'s')+'\u2026',0);
   const makers=files.map(function(f){return async function(){
     let local=null;
     try{if(typeof _idb!=='undefined'&&_idb.available())local=await _idb.get('gfile_'+f.fileId);}catch(e){}
-    if(!local||!local.data)return {ok:true,uploaded:false,reason:'missing'};
+    if(!local||!local.data)return {ok:true,fileId:f.fileId,uploaded:false,reason:'missing'};
     const r=await _uploadGuideFileToServer(f.fileId,{name:local.name||f.fileName||'',type:local.type||f.fileType||'',data:local.data});
-    return {ok:true,uploaded:!!(r&&r.ok),reason:(r&&r.reason)||''};
+    return {ok:true,fileId:f.fileId,uploaded:!!(r&&r.ok),reason:(r&&r.reason)||''};
   };});
   const rs=await _runLimited(makers,3);
   const bad=rs.filter(r=>r&&r.uploaded===false);
   const missing=bad.filter(r=>r.reason==='missing').length;
   const toobig=bad.filter(r=>r.reason==='toobig').length;
   if(!bad.length){
-    c._filesPending=false;try{await (persistCourses()||Promise.resolve());}catch(e){}
+    c._filesPending=false;c._pendingFiles=null;try{await (persistCourses()||Promise.resolve());}catch(e){}
     if(typeof proToast==='function')proToast('All '+files.length+' file'+(files.length===1?'':'s')+' uploaded \u2713');
   }else{
+    c._filesPending=true;c._pendingFiles=bad.map(r=>r.fileId).filter(Boolean);
+    try{await (persistCourses()||Promise.resolve());}catch(e){}
+    const conn=bad.length-toobig-missing;
     let msg=bad.length+' of '+files.length+' still didn\u2019t upload.';
     if(toobig)msg+=' '+toobig+' '+(toobig===1?'is':'are')+' too large to sync \u2014 replace with a smaller file.';
     if(missing)msg+=' '+missing+' '+(missing===1?'is':'are')+' not on this device \u2014 open the course on the device you uploaded from.';
-    if(bad.length-toobig-missing>0)msg+=' The rest look like a connection problem \u2014 try again.';
+    // "The rest" only makes sense when some OTHER reason accounted for the others.
+    if(conn>0)msg+=(toobig||missing)?(' The other '+conn+' look like a connection problem \u2014 tap Upload files again.'):
+      (' '+(conn===1?'It looks':'They look')+' like a connection problem \u2014 tap Upload files again and only '+(conn===1?'that one':'those '+conn)+' will be retried.');
     if(typeof proToast==='function')proToast(msg,0);
   }
   try{if(typeof nav==='function'){_fgTab='courses';nav('forms');}}catch(e){}
@@ -24491,7 +24500,7 @@ function _uploadCourseFilesInBackground(courseId,makers){
   _runLimited(makers,3).then(function(rs){
     const bad=rs.filter(r=>r&&r.uploaded===false);
     const c=(courses||[]).find(x=>x.id===courseId);
-    if(c){c._filesPending=bad.length>0;try{persistCourses();}catch(e){}}
+    if(c){c._filesPending=bad.length>0;c._pendingFiles=bad.length?bad.map(r=>r.fileId).filter(Boolean):null;try{persistCourses();}catch(e){}}
     if(!bad.length){
       if(typeof proToast==='function')proToast(makers.length+' file'+(makers.length===1?'':'s')+' finished uploading \u2713');
     }else{
