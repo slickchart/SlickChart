@@ -15951,14 +15951,16 @@ function _coursesTabHTML(){
       <div style="padding:10px 12px;">
         <div style="display:flex;justify-content:space-between;align-items:center;margin-bottom:3px;"><div style="font-size:14px;font-weight:500;color:var(--p-ink);">${_fileEsc(c.title)}</div><span class="bdg ${c.bdg}" style="font-size:12px;">${_fileEsc(c.status)}</span></div>
         <div style="font-size:12px;color:var(--p-mut);">${c.modules} modules · ${_fileEsc(c.duration)} · ${_fileEsc(c.price)}</div>
-        ${c._filesPending?`<div style="margin-top:7px;background:var(--p-amber-bg);border:1px solid var(--p-line2);border-radius:8px;padding:7px 9px;font-size:11.5px;color:var(--p-ink);line-height:1.45;">Some lesson files are only on this device — clients can't download them yet.</div>`:''}
+        ${c._filesPending?(_courseUploadBusy(c.id)
+          ? `<div style="margin-top:7px;background:var(--accent-tint);border:1px solid var(--p-line2);border-radius:8px;padding:7px 9px;font-size:11.5px;color:var(--p-ink);line-height:1.45;"><i class="ti ti-cloud-upload" style="font-size:12px;margin-right:4px;"></i>Uploading lesson files… you can carry on adding lessons.</div>`
+          : `<div style="margin-top:7px;background:var(--p-amber-bg);border:1px solid var(--p-line2);border-radius:8px;padding:7px 9px;font-size:11.5px;color:var(--p-ink);line-height:1.45;">Some lesson files are only on this device — clients can't download them yet.</div>`):''}
       </div>
       <div style="border-top:1px solid var(--p-line2);padding:8px 12px;display:flex;gap:8px;align-items:center;">
         <button onclick="nav('course-builder','${c.id}')" style="border:none;background:none;font-size:12px;color:var(--accent-strong);cursor:pointer;text-align:left;"><i class="ti ti-pencil" style="font-size:12px;"></i> Edit</button>
         <button onclick="nav('course-detail','${c.id}')" style="border:none;background:none;font-size:12px;color:var(--p-mut);cursor:pointer;"><i class="ti ti-eye" style="font-size:12px;"></i> Preview</button>
         <button onclick="deleteCourse('${_jsAttr(c.id)}')" aria-label="Delete course" style="border:none;background:none;font-size:12px;color:var(--p-red);cursor:pointer;"><i class="ti ti-trash" style="font-size:12px;"></i> Delete</button>
         <div style="flex:1;"></div>
-        ${c._filesPending?`<button onclick="retryCourseFileUploads('${_jsAttr(c.id)}')" style="border:none;background:var(--p-amber-bg);color:var(--accent-strong);border-radius:7px;padding:5px 10px;font-size:12px;font-weight:600;cursor:pointer;margin-right:6px;"><i class="ti ti-cloud-upload" style="font-size:12px;"></i> Upload files</button>`:''}
+        ${(c._filesPending&&!_courseUploadBusy(c.id))?`<button onclick="retryCourseFileUploads('${_jsAttr(c.id)}')" style="border:none;background:var(--p-amber-bg);color:var(--accent-strong);border-radius:7px;padding:5px 10px;font-size:12px;font-weight:600;cursor:pointer;margin-right:6px;"><i class="ti ti-cloud-upload" style="font-size:12px;"></i> Upload files</button>`:''}
         <button onclick="sendCourseToClient('${c.id}')" style="border:none;background:var(--accent-tint);color:var(--accent-strong);border-radius:7px;padding:5px 10px;font-size:12px;font-weight:600;cursor:pointer;"><i class="ti ti-send" style="font-size:12px;"></i> Send to client</button>
       </div>
     </div>`).join('')}
@@ -25158,7 +25160,19 @@ async function _uploadGuideFileToServer(id,payload){
 // course whose files are stranded on one device.
 async function retryCourseFileUploads(courseId,opts){
   const _quiet=!!(opts&&opts.quiet);
+  // Same queue as the save-time upload. Tapping this while the background pass was still running used
+  // to start a competing upload of the SAME files; with files sent in pieces those interleave and the
+  // server refuses the out-of-step pieces, so both fail. Wait for the run in progress instead, then
+  // pick up from what actually still needs sending.
+  if(_courseUploadBusy(courseId)){
+    if(!_quiet&&typeof proToast==='function')proToast('Already uploading — finishing that first…');
+    try{await (_upChain[courseId]||Promise.resolve());}catch(e){}
+  }
   const c=(courses||[]).find(x=>x.id===courseId);if(!c)return;
+  if(!c._filesPending&&!(Array.isArray(c._pendingFiles)&&c._pendingFiles.length)){
+    if(!_quiet&&typeof proToast==='function')proToast('All lesson files are uploaded ✓');
+    return true;
+  }
   const all=[];(c.lessons||[]).forEach(l=>{(Array.isArray(l.files)?l.files:[]).forEach(f=>{if(f&&f.fileId)all.push(f);});});
   // Only the ones that actually failed last time. Re-sending 33 files that already landed to fix 3 is
   // slow, burns her connection, and makes a stubborn file look like a bigger problem than it is.
@@ -25174,7 +25188,7 @@ async function retryCourseFileUploads(courseId,opts){
     const r=await _uploadGuideFileToServer(f.fileId,{name:local.name||f.fileName||'',type:local.type||f.fileType||'',data:local.data});
     return {ok:true,fileId:f.fileId,uploaded:!!(r&&r.ok),reason:(r&&r.reason)||''};
   };});
-  const rs=await _runLimited(makers,2);
+  const rs=await _runCourseUpload(courseId,function(){return _runLimited(makers,2);});
   const bad=rs.filter(r=>r&&r.uploaded===false);
   const missing=bad.filter(r=>r.reason==='missing').length;
   const toobig=bad.filter(r=>r.reason==='toobig').length;
@@ -25206,11 +25220,30 @@ async function retryCourseFileUploads(courseId,opts){
 // all over again. Now the app picks it up itself a few seconds after opening, quietly, and only says
 // anything when it finishes the job.
 let _autoRetriedFiles=false;
+// ── One uploader per course, ever ─────────────────────────────────────────────────────────────
+// Saving a course starts a background upload. The automatic retry could start a SECOND one for the
+// same course while the first was still going — and with files now sent in pieces, two uploads of
+// the same file interleave, the server refuses the out-of-step pieces (409), and the whole thing
+// fails. Then doing it by hand afterwards worked, because by then it was the only one running. That
+// is exactly the "I have to tap Upload files before it works for real" loop.
+//
+// So every upload for a course goes through one queue. A second request waits for the first to
+// finish rather than fighting it — and by the time it runs, _pendingFiles is accurate, so it only
+// retries what genuinely failed.
+const _upChain={},_upActive={};
+function _courseUploadBusy(id){return (_upActive[id]||0)>0;}
+function _runCourseUpload(id,fn){
+  _upActive[id]=(_upActive[id]||0)+1;
+  const prev=_upChain[id]||Promise.resolve();
+  const run=prev.catch(function(){}).then(fn);
+  _upChain[id]=run.catch(function(){}).then(function(){_upActive[id]=Math.max(0,(_upActive[id]||1)-1);});
+  return run;
+}
 function _autoRetryPendingCourseFiles(){
   if(_autoRetriedFiles)return;
   try{
     if(typeof Cloud==='undefined'||!Cloud||!Cloud.token)return;
-    const pending=(courses||[]).filter(function(c){return c&&c._filesPending;});
+    const pending=(courses||[]).filter(function(c){return c&&c._filesPending&&!_courseUploadBusy(c.id);});
     if(!pending.length)return;
     _autoRetriedFiles=true;
     (async function(){for(const c of pending){try{await retryCourseFileUploads(c.id,{quiet:true});}catch(e){}}})();
@@ -25247,7 +25280,7 @@ function _persistGuideFileLocal(id,draft,prevHadFile){
 // provider has moved on. Reports once at the end and flags the course if anything is still local.
 function _uploadCourseFilesInBackground(courseId,makers){
   if(!makers||!makers.length)return;
-  _runLimited(makers,2).then(function(rs){
+  _runCourseUpload(courseId,function(){return _runLimited(makers,2);}).then(function(rs){
     const bad=rs.filter(r=>r&&r.uploaded===false);
     const c=(courses||[]).find(x=>x.id===courseId);
     if(c){c._filesPending=bad.length>0;c._pendingFiles=bad.length?bad.map(r=>r.fileId).filter(Boolean):null;try{persistCourses();}catch(e){}}
