@@ -4074,7 +4074,7 @@ async function _restorePhotosFromCloud(){
 // starves everything else (Ashley opened the app to six of these holding 3MB, and nothing could save).
 // Shown at the bottom of More → Storage & backups. "Refresh and try again" is useless advice if
 // neither of us can tell which build a device is actually running. Bumped with every deploy.
-const SC_BUILD='2026-09-14 · b8';
+const SC_BUILD='2026-09-14 · b9';
 const _ROOM_DRAFT_PER_CLIENT=180000;   // chars of base64 per client draft
 const _ROOM_DRAFT_TOTAL=420000;        // chars of base64 across ALL drafts
 function _roomDraftKey(id){return 'sc_room_draft_'+(id||'');}
@@ -4988,7 +4988,8 @@ function _markClientFormFlagsReviewed(c){
 // server. Clearing an attention card wrote the ack, failed to store it, then actively uploaded the
 // version without the ack. That is why cleared cards kept coming back, every refresh, for weeks.
 function _flagAckHome(id){
-  var c=CL[id];if(c&&c.flaggedContra){c.flaggedContra.ackHome=true;
+  var c=CL[id];if(c){c.attnClearedAt=Date.now();}
+  if(c&&c.flaggedContra){c.flaggedContra.ackHome=true;
     // Also mark the source check-in reviewed so a re-processed event can't rebuild the flag (same
     // permanent guard the Flagged Intakes "Mark reviewed" uses). Without this, clearing from Home
     // left the check-in un-dismissed and it came back on refresh.
@@ -5009,7 +5010,14 @@ function _reviewAckHome(id){
   // ON the form travels with the form, so the card cannot return for a submission she has handled.
   var c=CL[id];if(c){var s=(c.submittedForms&&c.submittedForms[0])||null;
     if(s)s.reviewedAt=Date.now();
-    c.reviewAck=String((s&&(s.evId||s.ts||s.date))||'1');try{if(typeof saveClients==='function')saveClients();}catch(e){}}
+    c.reviewAck=String((s&&(s.evId||s.ts||s.date))||'1');
+    // The one that actually holds. Everything else here is keyed on a signature, a position in a
+    // list, or a separate dismissal set — all of which can shift under a merge, a re-sync, or a
+    // device that could not write. A TIME on the client record cannot: nothing that already existed
+    // when she cleared it is "needs your attention" again, ever. Only a genuinely newer submission
+    // gets to raise a card, which is the whole point of the section.
+    c.attnClearedAt=Date.now();
+    try{if(typeof saveClients==='function')saveClients();}catch(e){}}
   _homeDismissed.add('rev-'+id);_saveHomeDismissed();
   try{if(typeof _pushKeyNow==='function')_pushKeyNow('sc_clients',_lsGet('sc_clients')||'');}catch(e){}
   _reRenderAttn();
@@ -5157,7 +5165,12 @@ function _attnTilesHTML(){
       <div style="width:38px;height:38px;border-radius:9px;background:var(--p-red-bg);display:flex;align-items:center;justify-content:center;flex-shrink:0;margin-top:1px;"><i class="ti ti-alert-triangle" style="font-size:18px;color:var(--p-red);"></i></div>
       <div style="flex:1;min-width:0;"><div style="font-size:14px;font-weight:600;color:var(--p-red);">${_fileEsc(c.name.split(' ')[0])} flagged ${items.length} item${items.length!==1?'s':''} ${src}</div>${items.length?`<ul style="margin:4px 0 0;padding-left:16px;">${items.map(it=>`<li style="font-size:12px;color:var(--p-red);line-height:1.5;">${_fileEsc(it)}</li>`).join('')}</ul>`:''}<div style="font-size:11px;color:#a87878;margin-top:5px;">${tapHint}</div></div>
     </div>`,'flag-'+id,`_flagAckHome('${id}')`);}).join('');
-    h+=reviews.filter(([id,c])=>{const s=(c.submittedForms&&c.submittedForms[0])||{};const sig=String(s.evId||s.ts||s.date||'1');if(s.reviewedAt)return false;if(c.reviewAck===sig||_homeDismissed.has('rev-'+id))return false;if(_reviewStale(s,'rev-'+id)){_attnRetire('rev-'+id);return false;}return _attnFresh('rev-'+id);}).map(([id,c])=>_swipeTile(`<div onclick="_openReviewCard('${id}')" style="margin:0;background:var(--p-surf3);border:1px solid var(--p-line3);border-radius:12px;padding:11px 34px 11px 13px;display:flex;align-items:center;gap:11px;cursor:pointer;">
+    h+=reviews.filter(([id,c])=>{const s=(c.submittedForms&&c.submittedForms[0])||{};const sig=String(s.evId||s.ts||s.date||'1');if(s.reviewedAt)return false;
+      // Cleared once = cleared for everything that existed at that moment. A form with no usable date
+      // counts as "existed then", because it certainly did — it is the undated ones that used to slip
+      // back through every other guard.
+      if(c.attnClearedAt){const _t=_formAtMs(s);if(_t==null||_t<=c.attnClearedAt)return false;}
+      if(c.reviewAck===sig||_homeDismissed.has('rev-'+id))return false;if(_reviewStale(s,'rev-'+id)){_attnRetire('rev-'+id);return false;}return _attnFresh('rev-'+id);}).map(([id,c])=>_swipeTile(`<div onclick="_openReviewCard('${id}')" style="margin:0;background:var(--p-surf3);border:1px solid var(--p-line3);border-radius:12px;padding:11px 34px 11px 13px;display:flex;align-items:center;gap:11px;cursor:pointer;">
       <div style="width:38px;height:38px;border-radius:9px;background:var(--p-green-bg);display:flex;align-items:center;justify-content:center;flex-shrink:0;"><i class="ti ti-clipboard-check" style="font-size:18px;color:var(--p-green);"></i></div>
       <div style="flex:1;min-width:0;"><div style="font-size:14px;font-weight:600;color:var(--p-green);">${_fileEsc(c.name.split(' ')[0])} completed ${_fileEsc(c.submittedForms[0].title)}</div><div style="font-size:12px;color:var(--p-mut2);margin-top:1px;">Tap to open the form</div></div>
     </div>`,'rev-'+id,`_reviewAckHome('${id}')`)).join('');
@@ -16851,6 +16864,28 @@ function _lsUsage(){
   return {total:total*2,keys:keys.slice(0,8)};   // UTF-16: Safari counts two bytes per character
 }
 const _LS_CAP=5*1024*1024;
+// "932KB of client records" is not an answer anyone can act on. Break it down from the records
+// themselves so the next fix aims at whatever is actually big, rather than at my best guess.
+function _clientDataBreakdown(){
+  try{
+    if(typeof CL==='undefined'||!CL)return null;
+    const ids=Object.keys(CL);if(!ids.length)return null;
+    let forms=0,qsBytes=0,photoBytes=0;
+    ids.forEach(function(id){
+      const c=CL[id];if(!c)return;
+      (c.submittedForms||[]).concat(c.signedForms||[]).forEach(function(f){
+        if(!f)return;forms++;
+        if(f.qs){try{qsBytes+=JSON.stringify(f.qs).length*2;}catch(e){}}
+      });
+      try{
+        const raw=JSON.stringify(c);
+        const m=raw.match(/data:image\/[a-z]+;base64,[A-Za-z0-9+\/=]+/g);
+        if(m)m.forEach(function(x){photoBytes+=x.length*2;});
+      }catch(e){}
+    });
+    return {clients:ids.length,forms:forms,qsBytes:qsBytes,photoBytes:photoBytes};
+  }catch(e){return null;}
+}
 async function _deviceStorageStats(){
   const out={usage:0,quota:0};
   try{if(navigator.storage&&navigator.storage.estimate){const e=await navigator.storage.estimate();out.usage=e.usage||0;out.quota=e.quota||0;}}catch(e){}
@@ -16894,6 +16929,7 @@ function _renderStorageBody(st){
     </div>
     ${ls.keys.length?`<div style="background:var(--surf1);border:1px solid var(--p-line);border-radius:13px;padding:12px 13px;margin-bottom:14px;">
       <div style="font-size:12px;font-weight:650;color:var(--p-ink);margin-bottom:8px;">What's using it</div>
+      ${(function(){const d=_clientDataBreakdown();return d?`<div style="font-size:11px;color:var(--p-mut);line-height:1.6;margin:-2px 0 8px;padding-bottom:8px;border-bottom:1px solid var(--p-line2);">Client records: ${d.clients} client${d.clients===1?'':'s'} \u00b7 ${d.forms} saved form${d.forms===1?'':'s'}${d.qsBytes?(' \u00b7 <b>'+_bytesLabel(d.qsBytes)+'</b> of that is the question wording stored on every form'):''}${d.photoBytes?(' \u00b7 '+_bytesLabel(d.photoBytes)+' of images'):''}</div>`:'';})()}
       ${ls.keys.map(function(r){return `<div style="display:flex;justify-content:space-between;gap:10px;font-size:11.5px;color:var(--p-mut);padding:3px 0;"><span style="min-width:0;overflow:hidden;text-overflow:ellipsis;white-space:nowrap;">${_fileEsc(_lsLabel(r.k))}</span><span style="flex-shrink:0;color:var(--p-ink);">${_bytesLabel(r.n*2)}</span></div>`;}).join('')}
     </div>`:''}
     ${st.quota>0?`<div style="margin-bottom:14px;">
