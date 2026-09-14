@@ -4242,8 +4242,24 @@ function _buildPhotoIndex(){
 }
 function _persistPhotoIndex(){try{const v=JSON.stringify(_buildPhotoIndex());localStorage.setItem('sc_photo_index',v);if(typeof _pushKeyNow==='function')_pushKeyNow('sc_photo_index',v);}catch(e){}}
 let _photoBackedUp=null;
-function _loadPhotoBackedUp(){if(_photoBackedUp)return _photoBackedUp;_photoBackedUp=new Set();try{const raw=localStorage.getItem('sc_photo_backed');if(raw)JSON.parse(raw).forEach(function(x){_photoBackedUp.add(x);});}catch(e){}return _photoBackedUp;}
-function _markPhotoBackedUp(pid){const s=_loadPhotoBackedUp();if(!s.has(pid)){s.add(pid);try{const v=JSON.stringify([...s].slice(-6000));localStorage.setItem('sc_photo_backed',v);if(typeof _pushKeyNow==='function')_pushKeyNow('sc_photo_backed',v);}catch(e){}}}
+// THE DEADLOCK. This list is what lets a room draft be dropped: a photo confirmed on the server no
+// longer needs its localStorage safety copy. Both halves of it used to depend on a successful
+// localStorage write — so once the device filled up, recording "this photo is backed up" failed
+// silently, no draft could ever be pruned, and the device could never get out of the hole by itself.
+// That is why the space kept coming back within hours no matter how often it was cleared.
+//
+// Now: reads go through _lsGet (so a value held in memory after a failed write still counts), and the
+// push to the account happens whether or not the local write landed — the account copy comes back on
+// the next sync and breaks the loop for good.
+function _loadPhotoBackedUp(){if(_photoBackedUp)return _photoBackedUp;_photoBackedUp=new Set();try{const raw=(typeof _lsGet==='function')?_lsGet('sc_photo_backed'):localStorage.getItem('sc_photo_backed');if(raw)JSON.parse(raw).forEach(function(x){_photoBackedUp.add(x);});}catch(e){}return _photoBackedUp;}
+function _markPhotoBackedUp(pid){
+  const s=_loadPhotoBackedUp();
+  if(s.has(pid))return;
+  s.add(pid);
+  let v='';try{v=JSON.stringify([...s].slice(-6000));}catch(e){return;}
+  try{localStorage.setItem('sc_photo_backed',v);}catch(e){}          // may fail on a full device — fine
+  try{if(typeof _pushKeyNow==='function')_pushKeyNow('sc_photo_backed',v);}catch(e){}   // this must run regardless
+}
 let _photoBackupRunning=false;
 function _backupPhotosToServer(){
   try{
@@ -4304,6 +4320,9 @@ async function _restorePhotosFromCloud(){
 // Hard ceilings for the room-photo safety copies. These live in localStorage, which is capped at 5MB
 // for the whole site and does not grow — so this store has to stay a small, bounded slice of it or it
 // starves everything else (Ashley opened the app to six of these holding 3MB, and nothing could save).
+// Shown at the bottom of More → Storage & backups. "Refresh and try again" is useless advice if
+// neither of us can tell which build a device is actually running. Bumped with every deploy.
+const SC_BUILD='2026-09-14 · b7';
 const _ROOM_DRAFT_PER_CLIENT=180000;   // chars of base64 per client draft
 const _ROOM_DRAFT_TOTAL=420000;        // chars of base64 across ALL drafts
 function _roomDraftKey(id){return 'sc_room_draft_'+(id||'');}
@@ -17087,7 +17106,8 @@ function _renderStorageBody(st){
     <div style="margin-top:16px;padding-top:14px;border-top:1px solid var(--p-line2);">
       <button onclick="_closeStoragePanel();openCourseHistory();" style="width:100%;background:var(--surf1);border:1px solid var(--p-line);color:var(--p-ink);border-radius:10px;padding:11px;font-size:13px;font-weight:600;cursor:pointer;font-family:inherit;display:flex;align-items:center;justify-content:center;gap:6px;"><i class="ti ti-history" style="font-size:15px;color:var(--accent-strong);"></i> Course backups</button>
       <div style="font-size:11.5px;color:var(--p-mut);line-height:1.6;margin-top:10px;">Every save is kept, and a course comes back on its own if this device loses one. This is here for when you want an earlier version.</div>
-    </div>`;
+    </div>
+    <div style="font-size:11px;color:var(--p-mut);text-align:center;margin-top:14px;">App version ${_fileEsc(SC_BUILD)}</div>`;
 }
 async function freeUpDeviceSpace(){
   const btn=document.querySelector('#storage-body button[onclick="freeUpDeviceSpace()"]');
