@@ -4074,7 +4074,7 @@ async function _restorePhotosFromCloud(){
 // starves everything else (Ashley opened the app to six of these holding 3MB, and nothing could save).
 // Shown at the bottom of More → Storage & backups. "Refresh and try again" is useless advice if
 // neither of us can tell which build a device is actually running. Bumped with every deploy.
-const SC_BUILD='2026-09-14 · b13';
+const SC_BUILD='2026-09-14 · b14';
 const _ROOM_DRAFT_PER_CLIENT=180000;   // chars of base64 per client draft
 const _ROOM_DRAFT_TOTAL=420000;        // chars of base64 across ALL drafts
 function _roomDraftKey(id){return 'sc_room_draft_'+(id||'');}
@@ -17056,7 +17056,7 @@ function _runClientCleanup(){
     try{saveClients();}catch(e){}
     try{if(typeof _pushKeyNow==='function')_pushKeyNow('sc_clients',_lsGet('sc_clients')||'');}catch(e){}
     _closeCleanup();
-    if(typeof proToast==='function')proToast('Removed '+n+' client'+(n===1?'':'s')+' that weren’t in Square. Nothing in Square was changed.',0);
+    if(typeof proToast==='function')proToast('Removed '+n+' client'+(n===1?'':'s')+' that weren’t in Square. Nothing in Square was changed.',6000);
     try{nav('clients');}catch(e){}
   };
   if(typeof confirmModal==='function')confirmModal({title:'Remove '+empties.length+' clients?',
@@ -17757,12 +17757,17 @@ function proToast(msg,ms,tone){
   t.style.cssText='position:fixed;bottom:88px;left:0;right:0;margin:0 auto;width:max-content;max-width:90%;background:'+bg+';border:1px solid '+bd+';color:'+fg+';border-radius:10px;padding:10px 16px;font-size:13px;z-index:600;white-space:normal;display:flex;align-items:center;gap:7px;box-shadow:0 6px 24px rgba(0,0,0,.4);';
   t.innerHTML=`<i class="ti ${ic}" aria-hidden="true" style="font-size:14px;flex-shrink:0;"></i><span></span>`;
   const _span=t.querySelector('span');if(_span)_span.textContent=String(msg==null?'':msg);
+  // Tap anywhere on a toast to get rid of it. Every toast is dismissable, so a message can
+  // never trap the screen while she is trying to work.
+  t.style.cursor='pointer';t.title='Tap to dismiss';
+  t.addEventListener('click',function(){try{t.remove();}catch(e){}if(_proToastTimer){clearTimeout(_proToastTimer);_proToastTimer=null;}});
   (document.querySelector('.shell')||document.body).appendChild(t);
-  // Never let a toast stick forever, even errors auto-dismiss. A permanently-pinned error
-  // toast used to persist across navigation and appear on unrelated screens. Errors get a
-  // longer read time (6s) than the default success toast, but always clear.
-  const dur=(ms===0)?(isErr?6000:0):(ms||2800);
-  if(dur>0)_proToastTimer=setTimeout(()=>{t.remove();_proToastTimer=null;},dur);
+  // Never let a toast stick forever. `ms===0` means "give this one a long read" (callers use it
+  // for warnings and for in-flight progress messages that a later toast replaces) — it does NOT
+  // mean permanent. It used to: non-error toasts passed 0 got no timer at all, so a confirmation
+  // like "Removed 187 clients" stayed pinned across every screen until the app was reloaded.
+  const dur=(ms===0)?(isErr?6000:9000):(ms||2800);
+  _proToastTimer=setTimeout(()=>{t.remove();_proToastTimer=null;},dur);
 }
 let _proToastTimer=null;
 // Alias some screens/handlers call instead of proToast
