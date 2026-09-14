@@ -1,4 +1,4 @@
-# Session handoff — 2026-09-13 (updated later the same day)
+# Session handoff — 2026-09-13 (last updated 2026-09-14 evening, b16)
 
 Written at the end of a long session so the next one starts informed. `CLAUDE.md` is the standing
 guidance and still governs; this file is *state*: what shipped, what's unfinished, and what will
@@ -11,7 +11,12 @@ break quietly if nobody touches it.
 `CLAUDE.md` §4 explains the mechanism. The current binding is:
 
 - trigger `trig_01GLnvYt3jrAhjPPCQZFY9Uw`, cron `0 14 * * 1`
-- bound to session `session_01E9AMWK4twG2pqR4mubE8kZ` (re-pointed 2026-09-13 from `session_01CZMvRH7xvPvUcct8SU5cbm`)
+- bound to `persistent_session_id: cse_014uZePRTjnrVD5MwGzq6Tde` (was recorded here as
+  `session_01E9AMWK4twG2pqR4mubE8kZ`; `list_triggers` reports the `cse_` id)
+- **It fired on 2026-09-14 at 14:03 UTC and Ashley never saw a draft.** Checked from
+  `session_01CZMvRH7xvPvUcct8SU5cbm`, which is not the bound session. That is the exact silent
+  failure this section exists to prevent: the wake was delivered somewhere she is not reading.
+  **Whichever session she is actually using should re-point this to itself, then tell her.**
 
 **A Routine bound to a retired session delivers nowhere and fails silently** — no draft, no error,
 and Ashley would never see it stop. If you are a new session, run `list_triggers`, and if it is still
@@ -224,6 +229,65 @@ key that genuinely cannot move.
 
 ---
 
+## 2f. The free starter funnel (2026-09-14 evening, b16)
+
+A lead magnet for Build Your Own App: a free artifact ("Your First Screen"), an opt-in page, and six
+emails. Her plan is `FREE-FUNNEL.md` (she pasted it in chat; not in the repo).
+
+**The pieces.** `free.html` → `/free` (cleanUrls, no rewrite). `api/free-signup.js` records the
+address and sends the artifact link instantly. `lib/free-funnel.js` holds the emails, the table, and
+the run. Five follow-ups on days 1/3/5/7/10 ride the existing cron. Three ways through from `/build`:
+a strip above the sticky nav (scrolls away), a block after the final CTA, a footer line. `/free` is
+in `sitemap.xml`; `/build` deliberately is not.
+
+**Where the funnel's rules live, so they are not re-litigated:**
+
+- **`free_signups`, never `waitlist`.** The waitlist feeds the SlickChart provider sequence — a
+  person who wanted an app-building freebie would have started getting esthetician software emails.
+- **`FREE_AUDIENCE_ID` is deliberately UNSET, and topics are deliberately NOT wired.** Her Resend
+  account has ONE audience. Putting freebie signups in it makes them reachable by SlickChart
+  broadcasts — the same contamination, pointed the other way. Doing it properly needs two topics
+  (one per product), both opt-out, every contact assigned. Not worth it until she broadcasts to
+  freebie signups. **The `free_signups` table is the real list**; the cron reads it, not Resend.
+  - She created a Resend topic **"Build Your Own App", opt-out, private** and verified all 40
+    SlickChart contacts are NOT on it. **In Resend, "opt-in" means subscribed by default** (their
+    words: "every contact in the audience is treated as subscribed automatically, including contacts
+    added later"). It reads backwards. The setting cannot be changed after creation — delete and
+    recreate. Getting this wrong once already put all 40 on the topic.
+  - To wire it later you need the **Update Contact Topics API** page from Resend's docs. Do not guess
+    the shape: `addToAudience` swallows its own errors, so a wrong guess subscribes nobody and looks
+    like it worked. resend.com is blocked by this environment's egress proxy.
+- **Buyers exit by SQL filter, not by a removal at purchase time** (`runFreeFunnel`'s query excludes
+  `build_purchases`). That is why it cannot be missed: it covers the Stripe webhook path, the
+  `/build/unlocked` path, purchases made before this shipped, and a webhook that never arrived.
+- **One opt-out silences everything.** `nurture_optout` is shared by all three sequences. So when
+  testing the unsubscribe link, use a throwaway `+alias` — never a real address.
+- The signup route answers identically whether an address is new, already on the list, or
+  unsubscribed (CLAUDE.md §0.4), is rate-limited per address and per IP, and sends once per address
+  with a 24h re-ask window so a lost email is not a dead end.
+
+**Also fixed in the shared engine** (helps the SlickChart sequences too): a failed send-claim meant
+"already sent, try the next step" even when the claim was seconds old, so two overlapping runs — a
+manual `?key=` trigger landing on the scheduled one — could send two emails minutes apart. A claim
+under ten minutes old now stops that contact for the run.
+
+**One email list across all three products.** `api/admin/contacts.js` (owner-only) folds `providers`,
+`waitlist`, `build_purchases` and `free_signups` into one deduped list, carrying consent honestly
+(`opted in` / `customer` / `not asked` / `no`) plus `unsubscribed`. **The CSV exports mailable people
+only** — that file is what gets imported into a mail tool months later, and a "no" surviving the trip
+is how someone gets emailed who declined; `&all=1` gives the full picture. Surfaced as a card at the
+top of Growth Stats.
+
+Suites in the scratchpad: `t-free` (26, the page), `t-freeapi` (30, the signup route), `t-freedrip`
+(28, the five follow-ups), `t-buildfree` (20, the paths in from /build), `t-contacts` (40, the list
+and its owner gate), `t-emaillist` (12, the card). Each was sabotaged to confirm it tests something —
+two of them passed at first with the fix removed, so do that check.
+
+**Env vars she has set:** `FREE_ROADMAP_URL`, `BUSINESS_ADDRESS`. Optional and unset on purpose:
+`FREE_AUDIENCE_ID`, `FREE_FROM` (defaults to `Ashley <hello@slickchart.app>`), `FREE_REPLY_TO`.
+
+---
+
 ## 3. Open threads — needs Ashley, or needs verifying
 
 1. **Square `payment.*` webhook subscription.** Paid-course auto-unlock depends on Square sending
@@ -245,6 +309,16 @@ key that genuinely cannot move.
    submitted. Ashley chose to leave it. Offer to pull that list before it's forgotten.
 7. **Landing FAQ** still promises a new profession "usually ready within a few days at no extra cost."
    Ashley's own commitment, deliberately left alone.
+8. **The free funnel has never been run end to end by a human.** Everything is tested headless and
+   the env vars are set, but as of this handoff nobody has signed up at `/free` on a real phone and
+   watched the email arrive. The checklist she has: bad address is refused → real signup with a
+   `+alias` → email arrives → link opens the artifact → signing up twice sends nothing → tomorrow the
+   day-1 email lands. Ask whether she ran it.
+9. **The numbers in free-funnel emails 5 and 7 are unverified** — Claude's plan at $20–100/mo, Apple
+   $99/yr, Google $25 once, the 28-day D-U-N-S. Her own claims from her own build, left exactly as
+   she wrote them. Prices move; she was asked to re-read before the first send.
+10. **`BUILD_EXCLUDE_EMAILS`** is still unset in Vercel. Her own test purchases therefore count in
+   the Build Your Own App stats.
 
 ---
 
