@@ -1692,15 +1692,28 @@ function _persistFailWarn(){
 // of just saying "full".
 const _LS_LABELS={sc_captured_photos:'before/after photos',sc_pro_vc_subs:'consult submissions',sc_msgstore:'message history',
   sc_clients:'client records',sc_docs:'uploaded documents',sc_photo_index:'the photo index',sc_courses:'courses',
-  sc_forms:'forms',sc_resources:'guides',sc_photo_backed:'the photo backup list'};
+  sc_forms:'forms',sc_resources:'guides',sc_photo_backed:'the photo backup list',sc_square_catalog:'your Square product catalog',
+  sc_brand_colors:'your logo & brand colours',sc_routines:'routines',sc_protocols:'protocols',sc_service_menu:'your service menu',
+  sc_inventory:'inventory',sc_threads:'message threads',sc_notif_feed:'notifications'};
+// A key like sc_room_draft_sq_08t3yxqvac means nothing to anyone. Name it for what it is.
+function _lsLabel(k){
+  if(_LS_LABELS[k])return _LS_LABELS[k];
+  if(String(k||'').indexOf('sc_room_draft_')===0){
+    var cid=String(k).slice('sc_room_draft_'.length);
+    var nm='';try{nm=(typeof CL!=='undefined'&&CL[cid]&&CL[cid].name)||'';}catch(e){}
+    return 'unsent photos'+(nm?(' \u2014 '+nm):'');
+  }
+  return k;
+}
 function _lsBiggestKeyLabel(){
   let best='',n=0;
   try{for(let i=0;i<localStorage.length;i++){const k=localStorage.key(i);if(!k)continue;let len=0;
     try{len=(localStorage.getItem(k)||'').length;}catch(e){}
     if(len>n){n=len;best=k;}}}catch(e){}
-  if(!best||n<200000)return '';
+  if(!best||n<100000)return '';
+  n=n*2;                       // UTF-16, same as the storage panel counts it
   const mb=(n/1048576);
-  return (_LS_LABELS[best]||best)+' ('+(mb>=1?mb.toFixed(1)+'MB':Math.round(n/1024)+'KB')+')';
+  return _lsLabel(best)+' ('+(mb>=1?mb.toFixed(1)+'MB':Math.round(n/1024)+'KB')+')';
 }
 // Per-client "updated at" tracking, so two devices editing DIFFERENT clients converge instead of the
 // whole-roster blob last-writer-wins clobbering each other. We stamp _uAt only on clients whose content
@@ -2421,7 +2434,13 @@ try{document.addEventListener('keydown',function(e){
 function saveProfessions(){try{(function(_v){localStorage.setItem('sc_professions',_v);if(typeof _pushKeyNow==='function')_pushKeyNow('sc_professions',_v);return _v;})(JSON.stringify(selectedProfessions));}catch(e){}}
 function loadProfessions(){try{const raw=localStorage.getItem('sc_professions');if(raw){const a=JSON.parse(raw);if(Array.isArray(a)&&a.length)selectedProfessions=a;}}catch(e){}}
 const _SYNC_SKIP={sc_token:1,sc_sqkey:1,sc_bus:1,sc_chart_activity:1,sc_pulse:1,sc_cloud_seeded:1};
-function _syncable(k){return typeof k==='string'&&k.indexOf('sc_')===0&&!_SYNC_SKIP[k];}
+// Whole FAMILIES of keys that must never leave the device. sc_room_draft_* is the crash-safety copy of
+// photos taken minutes ago — megabytes of base64 whose real backup is the photo store, not this. It was
+// syncing: every draft pushed ~1MB into the account, and every pull wrote them all back onto every
+// device. That is why clearing space never stuck — the next sync refilled it.
+const _SYNC_SKIP_PREFIX=['sc_room_draft_'];
+function _syncPrefixSkipped(k){try{return _SYNC_SKIP_PREFIX.some(function(p){return String(k).indexOf(p)===0;});}catch(e){return false;}}
+function _syncable(k){return typeof k==='string'&&k.indexOf('sc_')===0&&!_SYNC_SKIP[k]&&!_syncPrefixSkipped(k);}
 // Monotonic "tombstone" sets: deletes/hides/merges/dismissals that must only ever GROW. On a plain
 // pull the whole-blob server copy overwrote local, so a delete made on one device (or moments before a
 // refresh, before its push flushed) was wiped — resurrecting deleted clients, merged duplicates, and
@@ -2749,11 +2768,24 @@ const Cloud={
   async resetPw(token,pw){const r=await fetch('/api/reset',{method:'POST',headers:{'Content-Type':'application/json'},body:JSON.stringify({token,password:pw})});let j={};try{j=await r.json();}catch(e){}if(!r.ok)throw new Error((j&&j.error)||'Reset failed');return true;},
   async verifyEmail(token){try{const r=await fetch('/api/verify?token='+encodeURIComponent(token));return r.ok;}catch(e){return false;}},
   logout(){this.token='';try{localStorage.removeItem('sc_token');}catch(e){}},
-  async pull(){if(!this.token)return -1;let r;try{r=await fetch('/api/store',{headers:{'Authorization':'Bearer '+this.token}});}catch(e){return -1;}if(r.status===401){this._authFailed=true;this.logout();return -1;}let j={};try{j=await r.json();}catch(e){}const data=(j&&j.data)||{};const keys=Object.keys(data);this._lastPulledKeys=new Set(keys);const set=(k,v)=>{_lsPersist(k,v);};keys.forEach(k=>{try{
+  // Device-local keys the server is still holding from before they were excluded. Cleared out of the
+  // account after the pull, so they stop occupying space there and stop arriving on new devices.
+  async _dropStaleDeviceLocal(keys){
+    try{
+      if(!this.token||!keys||!keys.length)return;
+      const items={};keys.slice(0,200).forEach(function(k){items[k]=null;});
+      await fetch('/api/store',{method:'PUT',headers:{'Content-Type':'application/json','Authorization':'Bearer '+this.token},body:JSON.stringify({items:items})}).catch(function(){});
+      console.log('[Cloud] cleared '+Object.keys(items).length+' device-local key(s) from the account');
+    }catch(e){}
+  },
+  async pull(){if(!this.token)return -1;let r;try{r=await fetch('/api/store',{headers:{'Authorization':'Bearer '+this.token}});}catch(e){return -1;}if(r.status===401){this._authFailed=true;this.logout();return -1;}let j={};try{j=await r.json();}catch(e){}const data=(j&&j.data)||{};const _staleDeviceLocalKeys=[];const keys=Object.keys(data);this._lastPulledKeys=new Set(keys);const set=(k,v)=>{_lsPersist(k,v);};keys.forEach(k=>{try{
     // Never overwrite a key that still has a pending local write queued, that local value
     // is newer than whatever the server returned (e.g. a note saved moments before a reload,
     // whose debounced push hadn't flushed yet). Overwriting it here is silent data loss.
     if(this._queue&&Object.prototype.hasOwnProperty.call(this._queue,k))return;
+    // Never write down a key we would never push up. Device-local keys the account still holds from
+    // before this rule would otherwise be restored onto this device on every single pull.
+    if(_syncPrefixSkipped(k)){_staleDeviceLocalKeys.push(k);return;}
     if(k==='sc_clients'){
       const m=_mergeClients(data[k],_lsGet(k));
       if(m&&m.str!=null){
@@ -2796,7 +2828,7 @@ const Cloud={
       }
     }
     set(k,data[k]);
-  }catch(e){}});return keys.length;},
+  }catch(e){}});if(_staleDeviceLocalKeys.length)this._dropStaleDeviceLocal(_staleDeviceLocalKeys);return keys.length;},
   pushAllLocal(){const items={};try{for(let i=0;i<localStorage.length;i++){const k=localStorage.key(i);if(_syncable(k))items[k]=localStorage.getItem(k);}}catch(e){}if(this.token&&Object.keys(items).length)return fetch('/api/store',{method:'PUT',headers:{'Content-Type':'application/json','Authorization':'Bearer '+this.token},body:JSON.stringify({items})}).catch(()=>{});},
   push(k,v){if(!this.enabled||!this.token)return;this._queue[k]=v;clearTimeout(this._timer);this._timer=setTimeout(()=>this._flush(),700);},
   // Flush any pending queued writes immediately during page unload. A normal fetch is often
@@ -2970,6 +3002,10 @@ function _reloadAll(){try{
   //
   // Loading the real set here fixes both: the tab renders what actually synced, and the reseeder
   // judges real data instead of an array from before the sync.
+  // Reclaim the room-photo safety copies first: they are the biggest thing in localStorage and the
+  // prune used to run only AFTER a write had already failed, which is far too late — by then every
+  // other save on the device is failing too.
+  try{if(typeof _pruneRoomDrafts==='function')_pruneRoomDrafts();}catch(e){}
   if(typeof _loadHiddenCourses==='function')_loadHiddenCourses();
   if(typeof loadCourses==='function')loadCourses();
   loadProfessions();applyProfessionConfig();
@@ -4265,7 +4301,48 @@ async function _restorePhotosFromCloud(){
 // eviction, so we mirror the just-captured before/after here and restore it on room re-entry. Each photo
 // is dropped from the draft once it's confirmed backed up to the cloud (which can then restore it),
 // keeping this store small and bounded. This is what finally stops "I lose my before photos every time."
+// Hard ceilings for the room-photo safety copies. These live in localStorage, which is capped at 5MB
+// for the whole site and does not grow — so this store has to stay a small, bounded slice of it or it
+// starves everything else (Ashley opened the app to six of these holding 3MB, and nothing could save).
+const _ROOM_DRAFT_PER_CLIENT=180000;   // chars of base64 per client draft
+const _ROOM_DRAFT_TOTAL=420000;        // chars of base64 across ALL drafts
 function _roomDraftKey(id){return 'sc_room_draft_'+(id||'');}
+// Newest drafts win the budget; the oldest are dropped until the whole store fits. Every photo here
+// is a COPY — the real one is in IndexedDB and, once backed up, on the server — so dropping the
+// oldest safety copy costs nothing but the belt-and-braces for a session from days ago.
+function _enforceRoomDraftBudget(){
+  try{
+    var rows=[];
+    for(var i=0;i<localStorage.length;i++){
+      var k=localStorage.key(i);if(!k||k.indexOf('sc_room_draft_')!==0)continue;
+      var raw='';try{raw=localStorage.getItem(k)||'';}catch(e){}
+      var up=0;try{up=(JSON.parse(raw||'{}')||{}).updated||0;}catch(e){}
+      rows.push({k:k,n:raw.length,up:up});
+    }
+    rows.sort(function(a,b){return (b.up||0)-(a.up||0);});   // newest first
+    var used=0;
+    rows.forEach(function(r,ri){
+      if(used+r.n<=_ROOM_DRAFT_TOTAL){used+=r.n;return;}
+      // Over budget. TRIM this draft to what still fits rather than throwing the whole thing away —
+      // one recent before/after kept is worth far more than a tidy empty store. The newest draft
+      // always keeps at least its newest photo.
+      var room=Math.max(0,_ROOM_DRAFT_TOTAL-used);
+      var v=null;try{v=JSON.parse(localStorage.getItem(r.k)||'null');}catch(e){}
+      var photos=(v&&Array.isArray(v.photos))?v.photos.slice().sort(function(a,b){return (b.ts||0)-(a.ts||0);}):[];
+      var keep=[],spent=0;
+      for(var i=0;i<photos.length;i++){
+        var n=String((photos[i]&&photos[i].url)||'').length;
+        if(keep.length&&spent+n>room)break;
+        if(!keep.length&&ri>0&&n>room)break;      // nothing fits, and this isn't the newest draft
+        keep.push(photos[i]);spent+=n;
+      }
+      if(!keep.length){try{localStorage.removeItem(r.k);}catch(e){}return;}
+      keep.reverse();
+      try{localStorage.setItem(r.k,JSON.stringify({photos:keep,updated:v&&v.updated||Date.now()}));used+=spent;}
+      catch(e){try{localStorage.removeItem(r.k);}catch(e2){}}
+    });
+  }catch(e){}
+}
 function _roomDraftGet(id){try{var raw=localStorage.getItem(_roomDraftKey(id));var v=raw?JSON.parse(raw):null;return (v&&Array.isArray(v.photos))?v:null;}catch(e){return null;}}
 function _roomDraftWrite(id,photos){
   try{
@@ -4286,7 +4363,19 @@ function _syncRoomDraftPhotos(id){
     var backed=(typeof _loadPhotoBackedUp==='function')?_loadPhotoBackedUp():new Set();
     var recentCut=Date.now()-2*86400000;
     var arr=(capturedPhotos[id]||[]).filter(function(p){return p&&p.url&&(p.phase==='before'||p.phase==='after')&&(p.ts||0)>=recentCut&&!(p.pid&&backed.has(p.pid));});
-    if(arr.length>8)arr=arr.slice(-8);   // bound localStorage to the last few of the current session
+    // Bound by BYTES, newest first. The old cap was "the last 8 photos", but 8 full-size before/afters
+    // is ~1MB and the entire app-data budget is 5MB — five clients mid-session filled the device, and
+    // then nothing on it could save. The vulnerable window is the last few minutes, not the last eight
+    // shots, so a small budget loses nothing real.
+    arr=arr.slice().sort(function(a,b){return (b.ts||0)-(a.ts||0);});
+    var kept=[],used=0;
+    for(var _i=0;_i<arr.length;_i++){
+      var _n=String((arr[_i]&&arr[_i].url)||'').length;
+      if(kept.length&&used+_n>_ROOM_DRAFT_PER_CLIENT)break;
+      kept.push(arr[_i]);used+=_n;
+      if(kept.length>=4)break;
+    }
+    arr=kept.reverse();
     var mini=arr.map(function(p){return {pid:(typeof _photoPid==='function'?_photoPid(p):(p.pid||'')),url:p.url,ts:p.ts||0,phase:p.phase||'',angle:p.angle||''};});
     _roomDraftWrite(id,mini);
   }catch(e){}
@@ -4319,6 +4408,7 @@ function _pruneRoomDrafts(){
       if(!keep){try{localStorage.removeItem(key);}catch(e){}}
     }
   }catch(e){}
+  try{_enforceRoomDraftBudget();}catch(e){}
 }
 // ── Photo recovery (Settings → Your data → Recover lost photos) ──────────────────────────────────
 // A rescue path for "my before/afters vanished." It surfaces EVERY place a photo might be hiding —
@@ -4850,6 +4940,7 @@ function loadAmazonAssociates(){try{const raw=localStorage.getItem('sc_amazon_as
 // One call to load everything above; wired into app init.
 function _loadPersistenceSweep(){
   loadClientRecs();loadRecReasons();loadClientHomecare();loadSessionSummaries();loadCapturedPhotos();
+  try{if(typeof _pruneRoomDrafts==='function')_pruneRoomDrafts();}catch(e){}
   loadStaff();loadAutos();loadNotifSettings();loadCheckins();loadCourses();loadCoursePurchases();loadShopBundles();try{loadBodyMaps();}catch(e){}try{_probeWhisper();}catch(e){}
   loadAffiliateLinks();loadCustomNoteTemplates();loadClientHealingStage();loadAmazonAssociates();try{loadNeedlePresets();}catch(e){}try{loadHiddenSets();}catch(e){}
   try{loadSummaryDrafts();}catch(e){}
@@ -16972,7 +17063,7 @@ function _renderStorageBody(st){
     </div>
     ${ls.keys.length?`<div style="background:var(--surf1);border:1px solid var(--p-line);border-radius:13px;padding:12px 13px;margin-bottom:14px;">
       <div style="font-size:12px;font-weight:650;color:var(--p-ink);margin-bottom:8px;">What's using it</div>
-      ${ls.keys.map(function(r){return `<div style="display:flex;justify-content:space-between;gap:10px;font-size:11.5px;color:var(--p-mut);padding:3px 0;"><span style="min-width:0;overflow:hidden;text-overflow:ellipsis;white-space:nowrap;">${_fileEsc(_LS_LABELS[r.k]||r.k)}</span><span style="flex-shrink:0;color:var(--p-ink);">${_bytesLabel(r.n*2)}</span></div>`;}).join('')}
+      ${ls.keys.map(function(r){return `<div style="display:flex;justify-content:space-between;gap:10px;font-size:11.5px;color:var(--p-mut);padding:3px 0;"><span style="min-width:0;overflow:hidden;text-overflow:ellipsis;white-space:nowrap;">${_fileEsc(_lsLabel(r.k))}</span><span style="flex-shrink:0;color:var(--p-ink);">${_bytesLabel(r.n*2)}</span></div>`;}).join('')}
     </div>`:''}
     ${st.quota>0?`<div style="margin-bottom:14px;">
       <div style="display:flex;justify-content:space-between;font-size:12.5px;color:var(--p-ink);margin-bottom:6px;"><span><b>Cached files</b> — ${_bytesLabel(st.usage)} used</span><span style="color:var(--p-mut);">of about ${_bytesLabel(st.quota)}</span></div>
