@@ -15862,14 +15862,19 @@ async function saveCourse(id){
   // Finalize lessons: upload any newly-attached files to server + IndexedDB, keep only refs. We
   // collect the local-write promises and await them below so the bytes are committed before we
   // leave the editor — that's what stops uploads vanishing when the app reloads right after a save.
-  const _fileWrites=[];
+  const _fileWrites=[];      // local commits: awaited, fast
+  const _fileUploads=[];     // server pushes: run after the course is saved
   const lessons=d.lessons.filter(l=>(l.title||'').trim()||l.body||l.videoUrl||l.docUrl||(_lessonFileList(l).length)).map(l=>{
     const lid=l.id||('l'+Math.random().toString(36).slice(2,8));
     const out={id:lid,title:(l.title||'').trim()||'Lesson',body:l.body||'',videoUrl:(l.videoUrl||'').trim(),docUrl:(l.docUrl||'').trim(),files:[]};
     (Array.isArray(l.files)?l.files:[]).forEach(f=>{
       if(f._newFileData){
         const fid=f.fileId||(_courseFileId(courseId,lid)+'_'+Math.random().toString(36).slice(2,7));
-        (function(_fid,_nm,_ty,_dat){_fileWrites.push(function(){return _persistGuideFile(_fid,{name:_nm,type:_ty,data:_dat},false);});})(fid,f.fileName||'',f.fileType||'',f._newFileData);
+        (function(_fid,_nm,_ty,_dat){
+          const _payload={name:_nm,type:_ty,data:_dat};
+          _fileWrites.push(_persistGuideFileLocal(_fid,_payload,false));
+          _fileUploads.push(function(){return _uploadGuideFileToServer(_fid,_payload).then(function(r){return {ok:true,uploaded:!!(r&&r.ok),reason:(r&&r.reason)||''};});});
+        })(fid,f.fileName||'',f.fileType||'',f._newFileData);
         out.files.push({fileId:fid,fileName:f.fileName||'',fileType:f.fileType||''});
       }else if(f.fileId){
         out.files.push({fileId:f.fileId,fileName:f.fileName||'',fileType:f.fileType||''});
@@ -15878,7 +15883,7 @@ async function saveCourse(id){
     // Back-compat: mirror the first file into the legacy single-file fields so an older client
     // renderer (that only reads fileId/fileName) still shows at least the first attachment.
     if(out.files.length){out.fileId=out.files[0].fileId;out.fileName=out.files[0].fileName;out.fileType=out.files[0].fileType;}
-    (Array.isArray(l._removedFileIds)?l._removedFileIds:[]).forEach(fid=>{if(fid&&!out.files.some(x=>x.fileId===fid))_fileWrites.push(function(){return _persistGuideFile(fid,null,true);});});
+    (Array.isArray(l._removedFileIds)?l._removedFileIds:[]).forEach(fid=>{if(fid&&!out.files.some(x=>x.fileId===fid))_fileWrites.push(_persistGuideFileLocal(fid,null,true));});
     return out;
   });
   if(!lessons.length)lessons.push({id:'l1',title:'Lesson 1',body:'',videoUrl:'',fileId:'',fileName:'',fileType:''});
@@ -15892,27 +15897,26 @@ async function saveCourse(id){
   try{_loadHiddenCourses();if(hiddenCourses[courseId]||(existing&&hiddenCourses[existing.id])){delete hiddenCourses[courseId];if(existing)delete hiddenCourses[existing.id];_saveHiddenCourses();}}catch(e){}
   try{_markCoursesCustom();}catch(e){}
   let _coursePush=Promise.resolve();try{_coursePush=persistCourses()||Promise.resolve();}catch(e){}
-  // Wait for the course, the custom flag, and its files to actually reach the server before leaving.
-  // A refresh right after saving used to be beaten by the boot pull, which then restored a stale
-  // server copy (no new course) — awaiting the writes makes the server current first, so it can't.
-  let _fileResults=[];
-  try{_fileResults=await _runLimited(_fileWrites,3);}catch(e){}
+  // The course row and the custom flag still reach the server before we leave: a refresh right after
+  // saving used to be beaten by the boot pull, which then restored a stale server copy without the
+  // new course. That await stays.
+  // The file bytes are different. Only the LOCAL writes are awaited. They are fast and they are what stops a reload losing the
+  // bytes. The uploads used to be awaited here too, which is why Save looked dead for a minute on a
+  // course with 36 attachments — and why it read as "the button does nothing".
+  try{await Promise.all(_fileWrites);}catch(e){}
   try{await Promise.all([_coursePush,(typeof _pushKeyNow==='function'?_pushKeyNow('sc_courses_custom','1'):Promise.resolve())]);}catch(e){}
   window._cbDraft=null;
-  // If a lesson file saved locally but didn't reach the server, the course is safe but the client
-  // couldn't download that file yet — tell the provider honestly instead of a clean "saved".
-  const _failed=_fileResults.filter(r=>r&&r.ok&&r.uploaded===false).length;
-  // Flagged on the course itself so the card can offer a retry that actually works. Saving again
-  // does NOT re-upload — only files attached in that session carry their bytes — so telling her to
-  // "save again" was advice that could never fix it.
-  try{const _c=courses.find(x=>x.id===(existing?existing.id:courseId));if(_c)_c._filesPending=_failed>0;}catch(e){}
-  if(_failed){try{await (persistCourses()||Promise.resolve());}catch(e){}}
-  if(_failed&&typeof proToast==='function'){
-    const _big=_fileResults.filter(r=>r&&r.reason==='toobig').length;
-    proToast('Course saved, but '+_failed+' file'+(_failed>1?'s':'')+" didn't reach the cloud"
-      +(_big?' ('+_big+' too large to sync)':'')
-      +" — your client can't download "+(_failed>1?'them':'it')+" yet. Tap Upload files on the course to try again.",0);
-  }else if(typeof proToast==='function'){proToast(existing?'Course updated ✓':'Course created ✓');}
+  const _savedId=existing?existing.id:courseId;
+  if(typeof proToast==='function'){
+    proToast((existing?'Course updated ✓':'Course created ✓')
+      +(_fileUploads.length?'  ·  uploading '+_fileUploads.length+' file'+(_fileUploads.length===1?'':'s')+' in the background':''));
+  }
+  // Files keep going after she has moved on. Marked pending up front so that if she closes the tab
+  // mid-upload the course still says so and the Upload files button is there when she comes back.
+  if(_fileUploads.length){
+    try{const _c=courses.find(x=>x.id===_savedId);if(_c){_c._filesPending=true;persistCourses();}}catch(e){}
+    _uploadCourseFilesInBackground(_savedId,_fileUploads);
+  }
   _fgTab='courses';nav('forms');
 }
 
@@ -24193,6 +24197,41 @@ function _deleteGuideFileFromServer(id){try{if(typeof Cloud!=='undefined'&&Cloud
 // have settled, so callers (saveCourse / saveResource) can warn if the file didn't reach the server
 // — the copy clients actually download. `uploaded:false` means the record was saved but the file is
 // local-only for now.
+// Commit a file's bytes to THIS DEVICE only, and resolve as soon as that's done.
+// The server upload is deliberately NOT part of this: local is fast and is what protects the work
+// from a reload, while the upload is slow and belongs in the background. Bundling them is what made
+// Save sit there for a minute on a course with 36 attachments.
+function _persistGuideFileLocal(id,draft,prevHadFile){
+  try{
+    if(draft&&draft.data){
+      const payload={name:draft.name||'',type:draft.type||'',data:draft.data};
+      if(typeof _idb!=='undefined'&&_idb.available()){try{return Promise.resolve(_idb.set('gfile_'+id,payload)).then(function(){return payload;},function(){return payload;});}catch(e){}}
+      return Promise.resolve(payload);
+    }else if(!draft&&prevHadFile){
+      _deleteGuideFileFromServer(id);
+      if(typeof _idb!=='undefined'&&_idb.available()){try{return Promise.resolve(_idb.del('gfile_'+id)).then(function(){return null;},function(){return null;});}catch(e){}}
+    }
+  }catch(e){}
+  return Promise.resolve(null);
+}
+// Push a course's newly-attached files to the server after the course is already saved and the
+// provider has moved on. Reports once at the end and flags the course if anything is still local.
+function _uploadCourseFilesInBackground(courseId,makers){
+  if(!makers||!makers.length)return;
+  _runLimited(makers,3).then(function(rs){
+    const bad=rs.filter(r=>r&&r.uploaded===false);
+    const c=(courses||[]).find(x=>x.id===courseId);
+    if(c){c._filesPending=bad.length>0;try{persistCourses();}catch(e){}}
+    if(!bad.length){
+      if(typeof proToast==='function')proToast(makers.length+' file'+(makers.length===1?'':'s')+' finished uploading \u2713');
+    }else{
+      const big=bad.filter(r=>r.reason==='toobig').length;
+      if(typeof proToast==='function')proToast(bad.length+' of '+makers.length+" file"+(makers.length===1?'':'s')+" didn't reach the cloud"
+        +(big?' ('+big+' too large to sync)':'')+' \u2014 tap Upload files on the course to retry.',0);
+    }
+    try{if(typeof _reRenderAttn==='function'&&document.getElementById('forms-screen')){_fgTab='courses';nav('forms');}}catch(e){}
+  });
+}
 function _persistGuideFile(id,draft,prevHadFile){
   try{
     if(draft&&draft.data){
