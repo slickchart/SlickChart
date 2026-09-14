@@ -4074,7 +4074,7 @@ async function _restorePhotosFromCloud(){
 // starves everything else (Ashley opened the app to six of these holding 3MB, and nothing could save).
 // Shown at the bottom of More → Storage & backups. "Refresh and try again" is useless advice if
 // neither of us can tell which build a device is actually running. Bumped with every deploy.
-const SC_BUILD='2026-09-14 · b11';
+const SC_BUILD='2026-09-14 · b12';
 const _ROOM_DRAFT_PER_CLIENT=180000;   // chars of base64 per client draft
 const _ROOM_DRAFT_TOTAL=420000;        // chars of base64 across ALL drafts
 function _roomDraftKey(id){return 'sc_room_draft_'+(id||'');}
@@ -22149,7 +22149,34 @@ let _evSyncedOnce=false;
 // the client sent, then a generic "Recent".
 // Numeric submission time from the server event, so an attention card can be aged by when the client
 // actually completed the form rather than when this device first rendered it.
-function _eventAtMs(ev){try{if(ev&&ev.created_at){const t=new Date(ev.created_at).getTime();if(!isNaN(t))return t;}}catch(e){}return Date.now();}
+// When an event carries no usable created_at, the honest answer is "unknown" — NOT "now".
+// Returning Date.now() stamped the submission with the moment THIS DEVICE happened to process the
+// event, and events are re-processed whenever the seen-list rolls over (it is capped at 1000). So a
+// form from months ago was re-dated to the present on every launch, read as brand-new work forever,
+// and came back the next day no matter what was done to the dismissal logic. null lets _formAtMs say
+// "undated", which every caller already handles.
+function _eventAtMs(ev){try{if(ev&&ev.created_at){const t=new Date(ev.created_at).getTime();if(!isNaN(t))return t;}}catch(e){}return null;}
+// Re-processing the same event must not stack another copy of the form. It used to unshift a fresh
+// entry every time, which grew the list, changed which form was "first", and quietly dropped the
+// reviewedAt stamp that says she has already dealt with it.
+function _addOrUpdateSubmittedForm(c,rec){
+  try{
+    if(!c||!rec)return;
+    if(!Array.isArray(c.submittedForms))c.submittedForms=[];
+    const i=rec.evId?c.submittedForms.findIndex(function(f){return f&&f.evId===rec.evId;}):-1;
+    if(i>=0){
+      const prev=c.submittedForms[i];
+      // Keep what only this device knows: that she has already reviewed it, and the date we had if
+      // the event cannot supply one.
+      c.submittedForms[i]=Object.assign({},prev,rec,{
+        at:(rec.at!=null?rec.at:prev.at),
+        reviewedAt:prev.reviewedAt
+      });
+      return;
+    }
+    c.submittedForms.unshift(rec);
+  }catch(e){}
+}
 function _eventDateLabel(ev,fallback){
   try{
     if(ev&&ev.created_at){
@@ -22195,7 +22222,7 @@ function _reconcileEventAttachments(events){
       if(_adopt){_adopt.evId=ev.id;touched=true;continue;}
       const title=payload.title||'Form';
       const formDate=_eventDateLabel(ev,payload.date||'Recent');
-      c.submittedForms.unshift({formId:payload.formId,title,answers:payload.answers||{},flagged:payload.flagged||[],date:formDate,at:_eventAtMs(ev),signed:!!payload.signed,evId:ev.id,qs:Array.isArray(payload.qs)?payload.qs:null});
+      _addOrUpdateSubmittedForm(c,{formId:payload.formId,title,answers:payload.answers||{},flagged:payload.flagged||[],date:formDate,at:_eventAtMs(ev),signed:!!payload.signed,evId:ev.id,qs:Array.isArray(payload.qs)?payload.qs:null});
       if(Array.isArray(c.pendingForms))c.pendingForms=c.pendingForms.filter(pf=>pf&&pf.formId!==payload.formId);
       try{
         if(typeof _applyIntakeVitals==='function'&&payload.formId)_applyIntakeVitals(c,payload.formId,q=>(payload.answers||{})[q.id],payload.qs);
@@ -22404,7 +22431,7 @@ async function syncClientEvents(){
         if(c){
           touchedClients=true;
           c.submittedForms=c.submittedForms||[];
-          c.submittedForms.unshift({formId:payload.formId,title,answers:payload.answers||{},flagged:payload.flagged||[],date:formDate,at:_eventAtMs(ev),signed:!!payload.signed,evId:ev.id,qs:Array.isArray(payload.qs)?payload.qs:null});
+          _addOrUpdateSubmittedForm(c,{formId:payload.formId,title,answers:payload.answers||{},flagged:payload.flagged||[],date:formDate,at:_eventAtMs(ev),signed:!!payload.signed,evId:ev.id,qs:Array.isArray(payload.qs)?payload.qs:null});
           if(Array.isArray(c.pendingForms))c.pendingForms=c.pendingForms.filter(pf=>pf.formId!==payload.formId);
           // Map the real answers onto the actual chart fields (allergies, medications,
           // conditions, skin type, etc.), this used to only happen for the manual
