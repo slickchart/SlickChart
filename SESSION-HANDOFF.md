@@ -317,11 +317,11 @@ asserts all of this.
    submitted. Ashley chose to leave it. Offer to pull that list before it's forgotten.
 7. **Landing FAQ** still promises a new profession "usually ready within a few days at no extra cost."
    Ashley's own commitment, deliberately left alone.
-8. **The free funnel has never been run end to end by a human.** Everything is tested headless and
-   the env vars are set, but as of this handoff nobody has signed up at `/free` on a real phone and
-   watched the email arrive. The checklist she has: bad address is refused → real signup with a
-   `+alias` → email arrives → link opens the artifact → signing up twice sends nothing → tomorrow the
-   day-1 email lands. Ask whether she ran it.
+8. ~~**The free funnel has never been run end to end by a human.**~~ **CLOSED 2026-09-15 — Ashley ran
+   the whole checklist herself and the emails arrived:** bad address refused → real signup with a
+   `+alias` → email arrives → link opens the artifact → signing up twice sends nothing → the day-1
+   email lands. Don't re-open this; if something in the funnel changes, re-run it rather than
+   asking her again.
 9. **The numbers in free-funnel emails 5 and 7 are unverified** — Claude's plan at $20–100/mo, Apple
    $99/yr, Google $25 once, the 28-day D-U-N-S. Her own claims from her own build, left exactly as
    she wrote them. Prices move; she was asked to re-read before the first send.
