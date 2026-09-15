@@ -340,6 +340,51 @@ claims were changed.
 
 ---
 
+## 2h. The app's readability and design pass (2026-09-15)
+
+Ashley: people are getting confused by the app, and she suspected the reading level was too high.
+**It wasn't.** Measured headless across eight screens: interface prose was already plain, and only a
+handful of strings were hard. What was actually wrong was physical, not verbal.
+
+**Careful: readability formulas do not work on interface text.** Flesch-Kincaid scores "Sync now" at
+grade -3.0 and "Save changes" at grade 2.9, rating the confusing word six grades *easier*. They count
+syllables, not familiarity. Score prose (onboarding, help, emails) only; never labels or buttons. For
+a button the test is to cover it and ask someone what they think tapping it does.
+
+**What shipped:**
+- **Text size.** Sentence-length text was rendering at 12px. All 3,024 inline `font-size`
+  declarations remapped onto one scale (12/14/16/18/22/26). Body is now 16px, secondary 14px, 12px
+  for metadata only. Sentences under 16px went 10 -> 3 on Home, 5 -> 1 on Clients.
+  **`.ni span` (tab bar labels) is deliberately back at 11px** - the bump collided the six tabs at
+  phone width. Tab labels are micro-labels; do not raise them.
+- **Radii** remapped (832 declarations) onto 2/4/8/12/16/24; 14 distinct values down to 7.
+- **Tokens.** Added type/space/radius/motion tokens at `:root`. The app had 43 colour variables and
+  no other scale, which is why values like 13.3333px and 9px radius existed.
+- **Tap targets.** One rule gives borderless text buttons a 44px hit area without changing text size:
+  `button[style*="border:none"][style*="background:none"]`. App-wide, targets failing the WCAG 2.2 AA
+  24px floor went 92/261 (35%) -> 11/261 (4%). Resources alone: 59 failures -> 1.
+- **`prefers-reduced-motion`** block added (WCAG 2.3.3).
+- **Strings people hit when stuck.** One told a provider to "redeploy". Note `_loadSessions`'
+  "No session activity recorded yet" is the SIGN-IN list, not client visits - it became "No sign-ins
+  recorded yet"; a context-free rewrite would have made it "No visits yet", which is wrong.
+
+**Still open, deliberately not done:** Resources still nests two tab rows (Forms & guides / My docs /
+Partners, then Forms / Guides / Courses). That is a structural redesign, and the evidence says depth
+costs more than breadth. Also unbuilt: contextual surfacing (photos, consent, products, invoice
+belong *inside* an open client rather than as global peers), a visible "Saved" stamp plus undo
+toasts, and curated themes for the client-facing side.
+
+**Do not "simplify" by cutting features.** The Office 2007 case is the counter-example: the most
+requested features already existed and could not be found. And choice-overload failed to replicate
+(meta-analysis, ~50 studies, effect near zero) - though its moderators (time pressure, high stakes)
+describe an esthetician mid-treatment, so the in-treatment flow is where density actually matters.
+
+**Verification method, reusable:** the scratchpad scripts drive the demo build headless and measure
+tap targets, contrast, font-size-by-text-length, clipping and page overflow per screen at 320px and
+390px. Re-run them after any UI change.
+
+---
+
 ## 3. Open threads — needs Ashley, or needs verifying
 
 1. **Square `payment.*` webhook subscription.** Paid-course auto-unlock depends on Square sending
