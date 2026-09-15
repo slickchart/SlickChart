@@ -11023,6 +11023,21 @@ function _initDeepLinks(){
 }
 // Native-only setup: dark status bar + OS push registration (APNs/FCM). No-op on the web/PWA. Sending
 // these still needs Firebase/APNs — see PUSH-NATIVE-SETUP.md.
+// Registers the OS push token once a session exists. Waits through sign-in (up to ~2min) and
+// retries a few times on a failed POST, because a silently dropped token means no push at all.
+function _flushNativePushTok(tries){
+  tries=tries||0;
+  var d=window._nativePushTok; if(!d||!d.value)return;
+  var t=(typeof Cloud!=='undefined'&&Cloud&&Cloud.token)||'';
+  if(!t){ if(tries<40)setTimeout(function(){_flushNativePushTok(tries+1);},3000); return; }
+  fetch('/api/native-push',{method:'POST',headers:{'Content-Type':'application/json','Authorization':'Bearer '+t},
+    body:JSON.stringify({platform:d.platform,token:d.value})})
+    .then(function(r){
+      if(r&&r.ok){ window._nativePushTok=null; console.log('[push] device token registered'); }
+      else { console.warn('[push] token POST failed',r&&r.status); if(tries<6)setTimeout(function(){_flushNativePushTok(tries+1);},5000); }
+    })
+    .catch(function(e){ console.warn('[push] token POST error',e&&e.message); if(tries<6)setTimeout(function(){_flushNativePushTok(tries+1);},5000); });
+}
 let _nativeProviderInit=false;
 async function _initNativeProvider(){
   try{
@@ -11036,11 +11051,14 @@ async function _initNativeProvider(){
     if(perm.receive!=='granted')perm=await PN.requestPermissions();
     if(perm.receive!=='granted')return;
     PN.addListener('registration',function(tok){
+      // The OS can hand back the device token BEFORE sign-in finishes. This used to just
+      // `return` when Cloud.token was empty, dropping the token for the whole app run with no
+      // retry — the phone then has no row in native_push_tokens and every push silently
+      // reaches 0 devices. Hold the token and keep trying until there's a session.
       try{
-        const t=(typeof Cloud!=='undefined'&&Cloud&&Cloud.token)||'';
-        if(!t||!tok||!tok.value)return;
-        const platform=(window.Capacitor.getPlatform&&window.Capacitor.getPlatform())||'';
-        fetch('/api/native-push',{method:'POST',headers:{'Content-Type':'application/json','Authorization':'Bearer '+t},body:JSON.stringify({platform,token:tok.value})}).catch(function(){});
+        if(!tok||!tok.value)return;
+        window._nativePushTok={platform:(window.Capacitor.getPlatform&&window.Capacitor.getPlatform())||'',value:tok.value};
+        _flushNativePushTok(0);
       }catch(e){}
     });
     PN.addListener('registrationError',function(){});
