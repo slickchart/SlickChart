@@ -296,6 +296,50 @@ asserts all of this.
 
 ---
 
+## 2g. The /build and landing page rewrite (2026-09-15)
+
+Ashley asked for `/build` to carry more feeling: the dream of building something that is hers, time
+and location freedom, and the potential of life-changing money. Four research threads ran (conversion
+evidence, emotional copywriting craft, income-claim/processor rules, competitor teardown). WebFetch is
+blocked by this environment's egress proxy, so findings came via search, not primary sources.
+
+**What shipped on `/build`:** a hero built on ownership rather than credentials; a new "Your hands can
+only be in one room at a time" section naming time, location and financial freedom explicitly; a "why
+you, specifically" identity beat; a process-flavoured "what this looks like on a Tuesday" section; a
+revised close; two extra in-flow CTAs. Zero em dashes (her instruction) across both pages.
+
+**The income-claims line, so it is not re-litigated.** Ashley asked for the money language and
+reaffirmed it after being shown the risk; it is in, worded as *possibility* with the no-promise
+sentence adjacent rather than in the footer. What the research established, and what should not be
+quietly undone:
+- An earnings claim is about the BUYER'S future money. Her own past result, already qualified as
+  "my result, not a forecast", is a different category and is fine. Keep her Stripe records forever.
+- A disclaimer does NOT cure a contradicting claim (FTC .com Disclosures). The footer disclaimer works
+  only while the rest of the page agrees with it. Do not add a promise above it.
+- **Never publish a buyer testimonial about money.** That triggers the Endorsement Guides, which would
+  require disclosing what buyers *generally* earn. Process testimonials only ("I shipped it in seven
+  weeks"). The FTC fake-review rule (in force Oct 2024) also means any free access given in exchange
+  for a review must be disclosed.
+- **`api/build-checkout.js` and `api/stripe-webhook.js` share one `STRIPE_SECRET_KEY`.** The roadmap
+  and SlickChart subscriptions are the same Stripe account, so a copy-driven risk action on `/build`
+  would freeze provider billing. Separating them was raised with Ashley and is still open.
+
+**Biggest un-actioned lever:** the page has zero testimonials. Spiegel/Northwestern found purchase
+likelihood ~270% higher at five reviews vs none, flattening after five, and peaking around 4.0-4.7
+stars rather than a perfect 5.0. Real buyers exist since 2026-09-13. Asking them is worth more than
+any further copy work.
+
+**Corrected in passing:** an earlier claim in this session that `/build` had "9 screens with no buy
+button" was wrong. Both pages have a sticky CTA (`#bar` on `/build`, `position:sticky` header on the
+landing page), so a button is always on screen. The added in-flow CTAs are a modest gain, not a fix
+for a missing affordance.
+
+**Landing page (`index.html`):** already carried the recognition beat and three named testimonials, so
+it got tuning only: em dashes removed, three in-flow CTAs added (longest gap 20.5 -> 6 screens). No
+claims were changed.
+
+---
+
 ## 3. Open threads — needs Ashley, or needs verifying
 
 1. **Square `payment.*` webhook subscription.** Paid-course auto-unlock depends on Square sending
