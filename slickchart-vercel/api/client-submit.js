@@ -83,14 +83,22 @@ export default async function handler(req, res) {
         // event's id (which the app stores as the check-in / submitted-form id). A same-origin url with
         // the same three params lets a web-push tap route through the app's boot-time deep-link parser.
         const deepUrl = '/slickchart?n=' + encodeURIComponent(kind) + '&c=' + encodeURIComponent(String(c.id)) + '&i=' + encodeURIComponent(String(id));
-        await sendNativeToProvider(c.provider_id, {
+        const sent = await sendNativeToProvider(c.provider_id, {
           title: who + ' ' + LABEL[kind],
           body: 'Tap to review in SlickChart.',
           url: deepUrl, tag: 'client-' + c.id,
           kind, clientId: String(c.id), itemId: String(id)
         });
+        // sendNativeToProvider returns how many devices it reached, and returns 0 for
+        // "no FCM service account" and "no registered device" alike. Silence there is why a
+        // provider can stop getting pushes and have nothing to look at. Say so in the log.
+        if (!sent) console.warn('[client-submit] push reached 0 devices for kind=' + kind +
+          ' provider=' + c.provider_id + ' (no registered device token, or FCM not configured)');
       }
-    } catch (e) { /* push is best-effort */ }
+    } catch (e) {
+      // Still never fails the client's submit, but no longer vanishes.
+      console.error('[client-submit] push failed for kind=' + kind + ':', (e && e.stack) || e);
+    }
     res.status(200).json({ ok: true, id });
   } catch (e) { console.error('[client-submit] failed:', e && e.stack || e); res.status(e.status || 500).json({ error: 'Something went wrong. Please try again.' }); }
 }

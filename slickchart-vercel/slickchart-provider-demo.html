@@ -181,11 +181,6 @@ details[open]>summary .sh-chev{transform:rotate(180deg);}
 button[style*="border:none"][style*="background:none"]{
   min-height:44px; display:inline-flex; align-items:center; justify-content:center;
 }
-
-/* Flattened Resources tabs: switchFgTab() toggles .active on #fg-forms/guides/
-   courses, so the pill has to take its selected look from the class, not from
-   the inline style it was rendered with. */
-.fgpill.active{background:var(--accent)!important;color:var(--accent-ink)!important;cursor:default}
 #sc-demo-banner{position:fixed;top:0;left:0;right:0;z-index:99999;background:linear-gradient(90deg,#2a231b,#1a1208);border-bottom:1px solid #3c3227;color:#f3ecdf;font-family:-apple-system,BlinkMacSystemFont,'Segoe UI',sans-serif;font-size:12.5px;display:flex;align-items:center;justify-content:center;gap:12px;padding:9px 14px;flex-wrap:wrap;text-align:center;}#sc-demo-banner b{color:#C8A882;}#sc-demo-banner button{background:none;border:1px solid #6b5d45;color:#C8A882;border-radius:20px;padding:4px 12px;font-size:11.5px;font-weight:600;cursor:pointer;font-family:inherit;}#sc-demo-banner button:hover{border-color:#C8A882;}html,body{height:100%;margin:0;}.shell{height:100vh !important;max-height:100vh !important;min-height:0 !important;}
 </style>
 </head>
@@ -12577,7 +12572,7 @@ function _guidesTabHTML(){
 }
 function switchFgTab(tab){
   _fgTab=tab;
-  ['forms','guides','courses'].forEach(t=>{const el=document.getElementById('fg-'+t);if(el){el.classList.toggle('active',t===tab);if(el.getAttribute('role')==='tab'){if(t===tab)el.setAttribute('aria-selected','true');else el.removeAttribute('aria-selected');}}});
+  ['forms','guides','courses'].forEach(t=>{const el=document.getElementById('fg-'+t);if(el)el.classList.toggle('active',t===tab);});
   const fc=document.getElementById('fg-forms-content');const gc=document.getElementById('fg-guides-content');const cc=document.getElementById('fg-courses-content');
   if(fc)fc.style.display=tab==='forms'?'':'none';
   if(gc){gc.style.display=tab==='guides'?'':'none';if(tab==='guides'&&!gc.getAttribute('data-built')){gc.innerHTML=_guidesTabHTML();gc.setAttribute('data-built','1');}}
@@ -12772,7 +12767,12 @@ function renderForms(){
   const checkinSub=sections.length>1?`Sends on its own before every visit · Covers all ${sections.length} kinds of work you do`:'Auto-sends before every appointment · Fully customizable';
 
   S.innerHTML=`
-  ${_flatResourceTabs()}
+  ${_sectionTabBar('forms')}
+  <div class="tab-bar" style="margin-top:6px;">
+    <button class="tab ${_fgTab==='forms'?'active':''}" id="fg-forms" onclick="switchFgTab('forms')">Forms</button>
+    <button class="tab ${_fgTab==='guides'?'active':''}" id="fg-guides" onclick="switchFgTab('guides')">Guides</button>
+    <button class="tab ${_fgTab==='courses'?'active':''}" id="fg-courses" onclick="switchFgTab('courses')">Courses</button>
+  </div>
   <div id="fg-forms-content" style="display:${_fgTab==='forms'?'':'none'};">
   <div style="padding:12px 16px 8px;display:flex;justify-content:space-between;align-items:center;"><span style="font-size:16px;color:var(--p-mut);">Your saved forms</span><button onclick="nav('form-builder','new')" style="background:var(--accent);color:var(--accent-ink);border:none;border-radius:8px;padding:7px 12px;font-size:16px;font-weight:500;cursor:pointer;display:flex;align-items:center;gap:4px;"><i class="ti ti-plus" style="font-size:16px;"></i> New form</button></div>
   <div style="padding:0 16px 4px;"><div style="position:relative;"><i class="ti ti-search" aria-hidden="true" style="position:absolute;left:11px;top:50%;transform:translateY(-50%);font-size:16px;color:var(--p-mut);"></i><input id="forms-search" oninput="filterForms(this.value)" placeholder="Search forms…" style="width:100%;background:var(--surf1);border:1px solid var(--p-line);border-radius:12px;padding:9px 11px 9px 34px;font-size:16px;color:var(--p-ink);font-family:inherit;box-sizing:border-box;outline:none;"></div></div>
@@ -20214,19 +20214,6 @@ async function _loadBetaStats(){
       ${card('Square connected',(s.connected||0),(s.merchants||0)+' unique seller'+((s.merchants===1)?'':'s')+' · '+(s.connectRate||0)+'% of providers','var(--p-green)')}
       ${card('Active sellers (30d)',(s.activeMerchants30!=null?s.activeMerchants30:(s.active30||0)),(s.activeMerchants7!=null?s.activeMerchants7:(s.active7||0))+' in last 7 days · Square counts these','#c8924a')}
     </div>
-    ${(function(){
-      // Square App Marketplace requires 5 ACTIVE SELLERS (distinct merchants recently active). Show progress
-      // against that bar off the same live numbers, so "connected providers" vs "unique sellers" is never
-      // confusing when deciding whether we're eligible to apply.
-      const sellers=(s.activeMerchants30!=null?s.activeMerchants30:(s.merchants||0));
-      const need=5, hit=sellers>=need;
-      const nullNote=(s.nullMerchant>0)?` · ${s.nullMerchant} connection${s.nullMerchant===1?'':'s'} missing a merchant ID`:'';
-      return `<div style="margin-top:10px;background:${hit?'var(--p-surf2)':'var(--surf1)'};border:1px solid ${hit?'var(--p-green-line)':'var(--p-line3)'};border-radius:16px;padding:14px 16px;">
-        <div style="display:flex;align-items:center;gap:8px;margin-bottom:6px;"><i class="ti ti-${hit?'circle-check':'target'}" style="font-size:16px;color:${hit?'var(--p-green)':'#c8924a'};"></i><span style="font-size:16px;font-weight:700;color:var(--p-ink);">App Marketplace readiness</span></div>
-        <div style="font-size:16px;color:var(--p-mut);line-height:1.55;">Square requires <b style="color:var(--p-ink);">5 active sellers</b> (distinct businesses, recently active) to apply. You have <b style="color:${hit?'var(--p-green)':'#c8924a'};">${sellers} of ${need}</b>${hit?' — you meet the bar. 🎉':' — '+(need-sellers)+' to go.'}${nullNote}</div>
-        <div style="font-size:14px;color:var(--p-mut2);margin-top:6px;line-height:1.5;">“Square connected” counts provider accounts (one per login); a seller is a distinct Square business. These differ when two of your providers connect the same Square account, or a connection didn’t capture a merchant ID.</div>
-      </div>`;
-    })()}
     <div style="margin-top:10px;background:var(--surf1);border:1px solid var(--p-line3);border-radius:16px;padding:16px;display:flex;align-items:center;justify-content:space-between;gap:12px;">
       <div><div style="font-size:26px;font-weight:700;color:var(--p-purple);line-height:1;">${(j.waitlist&&j.waitlist.count)||0}</div><div style="font-size:16px;color:var(--p-mut);margin-top:6px;">On the waitlist</div></div>
       <button onclick="_downloadWaitlistCSV()" style="background:#2BC7AC;border:none;color:#03201e;border-radius:12px;padding:11px 15px;font-size:16px;font-weight:700;cursor:pointer;font-family:inherit;white-space:nowrap;"><i class="ti ti-download" style="margin-right:5px;"></i>Download CSV</button>
@@ -22369,7 +22356,6 @@ function renderHelpArticle(id){
 const _SECTION_GROUPS=[
   {title:'Services & products',tabs:[['service-menu','Services'],['shop','Products']]},
   {title:'Inventory & suppliers',tabs:[['inventory','Inventory'],['vendors','Suppliers']]},
-  {title:'Resources',tabs:[['forms','Forms & guides'],['vault','My docs'],['partners','Partners']]},
 ];
 function _sectionGroupFor(screen){return _SECTION_GROUPS.find(g=>g.tabs.some(t=>t[0]===screen));}
 function _sectionTitle(active){const g=_sectionGroupFor(active);return g?g.title:'';}
@@ -22378,20 +22364,6 @@ function _sectionTabBar(active){
   return `<div role="tablist" style="display:flex;gap:4px;margin:12px 16px 6px;background:var(--p-surf3);border:1px solid var(--p-line3);border-radius:12px;padding:4px;">`+
     g.tabs.map(([scr,lbl])=>`<button role="tab" ${scr===active?'aria-selected="true"':`onclick="nav('${scr}')"`} style="flex:1;border:none;border-radius:8px;padding:8px 6px;font-size:16px;font-weight:600;cursor:${scr===active?'default':'pointer'};font-family:inherit;background:${scr===active?'var(--accent)':'transparent'};color:${scr===active?'var(--accent-ink)':'var(--p-mut)'};white-space:nowrap;">${lbl}</button>`).join('')+
     `</div>`;
-}
-
-function _flatResourceTabs(){
-  // One row instead of two. Same five destinations, one level of hierarchy
-  // removed: Forms/Guides/Courses switch in place, My docs/Partners navigate.
-  const items=[['forms','Forms'],['guides','Guides'],['courses','Courses'],
-               ['vault','Docs'],['partners','Partners']];
-  return `<div role="tablist" style="display:flex;gap:4px;margin:12px 16px 6px;background:var(--p-surf3);border:1px solid var(--p-line3);border-radius:12px;padding:4px;overflow-x:auto;-webkit-overflow-scrolling:touch;">`+
-    items.map(([k,lbl])=>{
-      const sub=(k==='forms'||k==='guides'||k==='courses');
-      const on=sub&&_fgTab===k;
-      const act=sub?`switchFgTab('${k}')`:`nav('${k}')`;
-      return `<button role="tab" ${sub?`id="fg-${k}" class="fgpill${on?' active':''}"`:''} ${on?'aria-selected="true"':`onclick="${act}"`} style="flex:1 0 auto;border:none;border-radius:8px;padding:8px 7px;font-size:14px;font-weight:600;min-height:44px;cursor:${on?'default':'pointer'};font-family:inherit;background:${on?'var(--accent)':'transparent'};color:${on?'var(--accent-ink)':'var(--p-mut)'};white-space:nowrap;">${lbl}</button>`;
-    }).join('')+`</div>`;
 }
 
 // ── In-depth walkthrough ──────────────────────────────────────────────────
@@ -22460,7 +22432,8 @@ function renderMore(){
   ${urgentDocs.length?`<div style="background:var(--p-red-bg);border:1px solid var(--p-red-line);border-radius:12px;margin:0 16px 10px;padding:10px 12px;display:flex;gap:8px;align-items:flex-start;"><i class="ti ti-alert-circle" style="font-size:16px;color:var(--p-red);flex-shrink:0;margin-top:1px;"></i><div style="flex:1;min-width:0;"><div style="font-size:16px;font-weight:500;color:var(--p-red);">${urgentDocs.length} document${urgentDocs.length>1?'s':''} need attention</div><div style="font-size:14px;color:#aa5555;">${urgentDocs.map(d=>_fileEsc(d.name)).join(' · ')}</div><button onclick="nav('vault')" style="border:none;background:none;color:var(--accent-strong);font-size:16px;cursor:pointer;margin-top:6px;padding:2px 0;font-weight:500;display:block;">View My Docs →</button></div></div>`:''}
   ${_moreRow('ti-list-details','var(--p-purple-bg)','var(--p-purple)','Services &amp; products','Your menu, prices, protocols &amp; the products you sell','service-menu')}
   ${_moreRow('ti-package','var(--accent-tint)','var(--accent)','Inventory &amp; suppliers','Track stock, reorder alerts &amp; vendor contacts','inventory')}
-  ${_moreRow('ti-folders','var(--p-blue-bg)','var(--p-blue)','Resources','Forms, guides, courses, documents &amp; partners','forms')}
+  ${_moreRow('ti-folders','var(--p-blue-bg)','var(--p-blue)','Resources','Forms, guides &amp; courses','forms')}
+  ${_moreRow('ti-file-certificate','var(--p-surf2)','var(--p-green)','My docs','Licence, insurance &amp; certificates, with renewal reminders','vault')}
   <div class="sh"><h2>Help &amp; more</h2></div>
   ${_moreRow('ti-settings','var(--p-surf)','#bbb','Settings','Profile, branding, apps, AI &amp; billing','account')}
   ${_moreRow('ti-help-circle','var(--p-blue-bg)','var(--p-blue)','Help','Search how-tos &amp; troubleshooting','help')}
