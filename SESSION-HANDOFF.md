@@ -385,6 +385,39 @@ tap targets, contrast, font-size-by-text-length, clipping and page overflow per 
 
 ---
 
+## 2i. The client file is one page now (2026-09-15)
+
+**Note on history:** the commit that shipped this is titled "PROPOSAL (branch only): one client file,
+no tabs" (`25bff91`). It is NOT a proposal any more - Ashley asked for it and it was merged to `main`.
+The title is stale, not the state.
+
+The client chart used to carry a four-tab bar (Overview / Forms / Care / Setup) *and* action buttons,
+so it had two navigation systems on one screen. Measured: Overview 0.96 screens, Forms **0.20**
+(169px, 20 words, two buttons), Care 1.47, Setup 0.35 - **3.0 screens total**. A four-tab system for
+three screens about one person is what made it feel complicated.
+
+The tab bar is gone and every section renders in sequence. 2,802px inside `main.scr`, 3.9 screens of
+ordinary scrolling, nothing hidden. The whole change is five lines: the `${_clientTabBar(id)}` call
+and the four `${_clientTab==='x'?'':' hidden'}` conditionals. `_clientTabBar` and `_setClientTab`
+still exist but are unused - nothing else ever called them.
+
+**The finding that matters more than the change.** `Recommended Products` ("What Maya sees in their
+shop", drag to order) and `Virtual Consult` (AI skin analysis, "Invite Maya to a new virtual consult")
+were ALREADY BUILT and ALREADY SCOPED PER CLIENT. They were behind the Care tab. The new landing page
+leads with the shoppable homecare plan and virtual consults, and the app was hiding both one tap deep.
+Before building anything new for the income angle, look at what is already there.
+
+**A rejected design, so it is not re-attempted.** An earlier pass added a "Recommend & earn" group
+(Homecare / Send form / Products) to Today's visit. Ashley correctly rejected it: it duplicated the
+Forms tab and the Care tab, which is the opposite of simplifying. Adding shortcuts next to an existing
+navigation system makes a screen more complex, not less. Removing the tabs was the right move instead.
+
+**Still not client-scoped:** `nav('shop')` appears 7 times and is never scoped to a client, so
+recommending a product still means leaving the chart for the global shop. That is the one genuine gap
+on the earning path.
+
+---
+
 ## 3. Open threads — needs Ashley, or needs verifying
 
 1. **Square `payment.*` webhook subscription.** Paid-course auto-unlock depends on Square sending
