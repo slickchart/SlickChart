@@ -283,6 +283,14 @@ Suites in the scratchpad: `t-free` (26, the page), `t-freeapi` (30, the signup r
 and its owner gate), `t-emaillist` (12, the card). Each was sabotaged to confirm it tests something —
 two of them passed at first with the fix removed, so do that check.
 
+**Branding (corrected 2026-09-15 after she saw the first real email).** These carry SlickChart's own
+chrome — the logo and wordmark images, `#0a1719` ground, `#26c1b0` teal — identical to the SlickChart
+nurture emails, with "Build Your Own App" as the kicker where those put their tagline, and signed
+"Ashley / Founder, SlickChart". They are NOT branded "with Ashley": it is SlickChart's product.
+What they still leave out is the Botanical Aesthetics line, which is her esthetics business. The
+wordmark carries `alt="SlickChart"` because mail clients block remote images by default. `t-freedrip`
+asserts all of this.
+
 **Env vars she has set:** `FREE_ROADMAP_URL`, `BUSINESS_ADDRESS`. Optional and unset on purpose:
 `FREE_AUDIENCE_ID`, `FREE_FROM` (defaults to `Ashley <hello@slickchart.app>`), `FREE_REPLY_TO`.
 

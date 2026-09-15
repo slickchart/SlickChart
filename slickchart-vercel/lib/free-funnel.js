@@ -1,9 +1,10 @@
 // The free starter funnel — "Your First Screen".
 //
-// A separate product from SlickChart the app, so it keeps a separate everything: its own table
-// (free_signups), its own Resend audience (FREE_AUDIENCE_ID), its own from-address, and its own
-// email chrome without the Botanical Aesthetics signature, which belongs to the esthetics business
-// and not to this. What it DOES share with lib/nurture.js is the part that must never fork: the
+// A separate product from SlickChart the app, so it keeps a separate list (free_signups) and its own
+// from-address. It is still SlickChart's product, though, so the emails carry SlickChart's branding —
+// logo, wordmark, teal — and are signed "Founder, SlickChart". What they leave out is the Botanical
+// Aesthetics line: that is her esthetics business and has nothing to do with building apps.
+// What this DOES share with lib/nurture.js is the part that must never fork: the
 // signed unsubscribe token and the nurture_optout / nurture_sends tables, so one opt-out silences
 // every kind of email and no step can ever be sent twice.
 import { sql, ensureBuildPurchasesTable } from './db.js';
@@ -27,25 +28,32 @@ export function freeUnsubUrl(email) {
   return SITE + '/api/unsubscribe?e=' + encodeURIComponent(String(email || '').toLowerCase()) + '&t=' + unsubToken(email);
 }
 
+// The same chrome as the SlickChart emails — the real logo and wordmark, the same dark ground and
+// the same teal — so this reads as a SlickChart product rather than as a different company. The
+// product name is the kicker line where the SlickChart emails put their tagline.
+//
+// The wordmark carries alt="SlickChart" because most mail clients block remote images by default;
+// with images off the header still says SlickChart and names the product, instead of going blank.
 export function freeWrap(bodyHtml, email) {
   return `<div style="font-family:-apple-system,Segoe UI,Roboto,sans-serif;max-width:560px;margin:0 auto;padding:8px;color:#1a1a1a;">
-    <div style="background:#050F10;border-radius:14px;padding:22px 24px;text-align:center;color:#EAF6F4;">
-      <div style="font-size:19px;font-weight:700;letter-spacing:-.01em;">Build Your Own App</div>
-      <div style="font-size:12px;color:#A2BEB9;letter-spacing:.05em;text-transform:uppercase;margin-top:2px;">with Ashley</div>
+    <div style="background:#0a1719;border-radius:14px;padding:22px 24px;text-align:center;color:#eaf6f4;">
+      <img src="https://slickchart.app/assets/slickchart-logo.png" width="42" height="42" alt="" style="display:inline-block;margin:0 0 6px;">
+      <img src="https://slickchart.app/assets/wordmark-dark.png" height="24" alt="SlickChart" style="height:24px;display:inline-block;">
+      <div style="font-size:12px;color:#a2beb9;letter-spacing:.05em;text-transform:uppercase;">Build Your Own App</div>
     </div>
     <div style="padding:26px 6px 6px;font-size:16px;line-height:1.7;color:#2a2a2a;">
       ${bodyHtml}
-      <p style="font-size:16px;line-height:1.7;margin:22px 0 0;">Ashley</p>
+      <p style="font-size:16px;line-height:1.7;margin:22px 0 0;"><strong>Ashley</strong><br><span style="color:#888;font-size:13px;">Founder, SlickChart</span></p>
     </div>
     <div style="margin-top:22px;padding-top:14px;border-top:1px solid #eee;text-align:center;font-size:12px;color:#9a9a9a;line-height:1.6;">
       You're getting this because you asked for the free starter at ${esc(SITE.replace(/^https?:\/\//, ''))}/free.<br>
-      <a href="${freeUnsubUrl(email)}" style="color:#9a9a9a;text-decoration:underline;">Unsubscribe</a>${ADDR ? '<br>' + esc(ADDR) : ''}
+      <a href="${freeUnsubUrl(email)}" style="color:#9a9a9a;text-decoration:underline;">Unsubscribe</a> &middot; SlickChart${ADDR ? '<br>' + esc(ADDR) : ''}
     </div>
   </div>`;
 }
 
 export function freeBtn(href, label) {
-  return `<div style="text-align:center;margin:24px 0;"><a href="${esc(href)}" style="background:#2bc7a2;color:#03201E;text-decoration:none;font-weight:700;padding:14px 28px;border-radius:10px;display:inline-block;font-size:15px;">${esc(label)}</a></div>`;
+  return `<div style="text-align:center;margin:24px 0;"><a href="${esc(href)}" style="background:#26c1b0;color:#03201e;text-decoration:none;font-weight:700;padding:14px 28px;border-radius:10px;display:inline-block;font-size:15px;">${esc(label)}</a></div>`;
 }
 
 export function freeFooterText(email) {
@@ -99,7 +107,8 @@ By the end you will have a screen of your own idea that you can tap on your phon
 
 I will check in tomorrow.
 
-Ashley${freeFooterText(email)}`;
+Ashley
+Founder, SlickChart${freeFooterText(email)}`;
 }
 
 // ── The five follow-ups ─────────────────────────────────────────────────────────────────────
@@ -131,7 +140,8 @@ YOU SKIPPED THE INTERVIEW. It feels slow to answer questions when you could just
 
 YOU DID NOT MAKE THE PROJECT. Without one, every new chat forgets your app and you start explaining it from scratch. Make the Project, then start again. It takes two minutes and it saves you hours.
 
-Ashley${freeFooterText(c.email)}`,
+Ashley
+Founder, SlickChart${freeFooterText(c.email)}`,
   },
   {
     day: 3,
@@ -142,7 +152,7 @@ Ashley${freeFooterText(c.email)}`,
       <p>So you ask it to fix that, and something else breaks. Four days later you are trying to get back to where you were on Tuesday.</p>
       <p>That happened to me. Here is what stops it.</p>
       <p>Say this every single time, in every new chat:</p>
-      <p style="background:#f4f7f6;border-left:3px solid #2bc7a2;padding:14px 16px;margin:18px 0;"><strong>Change only this: [the thing]. Keep everything else exactly the same.</strong></p>
+      <p style="background:#f4f7f6;border-left:3px solid #26c1b0;padding:14px 16px;margin:18px 0;"><strong>Change only this: [the thing]. Keep everything else exactly the same.</strong></p>
       <p>That is it. Those words. Every time. It sounds too simple to matter and it is the single most useful thing I know about building this way.</p>
       <p>There is a way to make it permanent so you never have to type it again, and that is in the full system. But start saying it out loud today.</p>`, c.email),
     text: (c) => `Day one is the easy part. I want to tell you about day eight.
@@ -161,7 +171,8 @@ That is it. Those words. Every time. It sounds too simple to matter and it is th
 
 There is a way to make it permanent so you never have to type it again, and that is in the full system. But start saying it out loud today.
 
-Ashley${freeFooterText(c.email)}`,
+Ashley
+Founder, SlickChart${freeFooterText(c.email)}`,
   },
   {
     day: 5,
@@ -197,7 +208,8 @@ So money was never the expensive part. Six weeks of figuring out what order to d
 
 The full system, $97: ${BUILD}
 
-Ashley${freeFooterText(c.email)}`,
+Ashley
+Founder, SlickChart${freeFooterText(c.email)}`,
   },
   {
     day: 7,
@@ -224,7 +236,8 @@ The whole roadmap is built that way. Everything that waits on somebody else star
 
 See the full six weeks: ${BUILD}
 
-Ashley${freeFooterText(c.email)}`,
+Ashley
+Founder, SlickChart${freeFooterText(c.email)}`,
   },
   {
     day: 10,
@@ -254,7 +267,8 @@ Get the full system: ${BUILD}
 
 Either way, I am glad you built something.
 
-Ashley${freeFooterText(c.email)}`,
+Ashley
+Founder, SlickChart${freeFooterText(c.email)}`,
   },
 ];
 
