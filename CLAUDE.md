@@ -106,8 +106,10 @@ A scheduled Routine writes one blog draft every Monday and reports it in the con
 review. It never publishes: new posts carry `draft: true`, which produces no page and no sitemap entry,
 so nothing reaches the live site until she says so.
 
-**The Routine is BOUND TO ONE SESSION.** As of 2026-09-13 that is session
-`session_01E9AMWK4twG2pqR4mubE8kZ`, trigger `trig_01GLnvYt3jrAhjPPCQZFY9Uw`, cron `0 14 * * 1`.
+**The Routine is BOUND TO ONE SESSION.** As of 2026-09-15 that is session
+`session_01A4GwJis96cYnvN4yMbpBtt`, trigger `trig_01Kpq3HtFnWqgea1bUozHbbM`, cron `0 14 * * 1`.
+(Re-pointed 2026-09-15 from `trig_01GLnvYt3jrAhjPPCQZFY9Uw` / `cse_014uZePRTjnrVD5MwGzq6Tde`, which
+fired on 2026-09-14 into a session Ashley was not reading. That old trigger is deleted.)
 
 **If you are a new session, check this early and fix it.** A Routine bound to a retired session delivers
 nowhere, and the weekly post stops without any error Ashley would ever see. Run `list_triggers`; if

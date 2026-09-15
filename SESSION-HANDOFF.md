@@ -10,13 +10,13 @@ break quietly if nobody touches it.
 
 `CLAUDE.md` §4 explains the mechanism. The current binding is:
 
-- trigger `trig_01GLnvYt3jrAhjPPCQZFY9Uw`, cron `0 14 * * 1`
-- bound to `persistent_session_id: cse_014uZePRTjnrVD5MwGzq6Tde` (was recorded here as
-  `session_01E9AMWK4twG2pqR4mubE8kZ`; `list_triggers` reports the `cse_` id)
-- **It fired on 2026-09-14 at 14:03 UTC and Ashley never saw a draft.** Checked from
-  `session_01CZMvRH7xvPvUcct8SU5cbm`, which is not the bound session. That is the exact silent
-  failure this section exists to prevent: the wake was delivered somewhere she is not reading.
-  **Whichever session she is actually using should re-point this to itself, then tell her.**
+- trigger `trig_01Kpq3HtFnWqgea1bUozHbbM`, cron `0 14 * * 1`, next run 2026-09-21 14:04 UTC
+- bound to `persistent_session_id: session_01A4GwJis96cYnvN4yMbpBtt`
+- **Re-pointed 2026-09-15 at Ashley's request.** The previous trigger
+  (`trig_01GLnvYt3jrAhjPPCQZFY9Uw`, bound to `cse_014uZePRTjnrVD5MwGzq6Tde`) fired on 2026-09-14 at
+  14:03 UTC and she never saw the draft — the wake landed in a session she was not reading. It has
+  been deleted and re-created with the identical prompt, bound to the session above. That is the
+  silent failure this section exists to prevent; check the binding again in any new session.
 
 **A Routine bound to a retired session delivers nowhere and fails silently** — no draft, no error,
 and Ashley would never see it stop. If you are a new session, run `list_triggers`, and if it is still
