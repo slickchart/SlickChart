@@ -248,6 +248,15 @@
   .su-msg{margin-top:14px;font-size:14px;min-height:20px;}
   .freecta{display:inline-block;margin-top:18px;border:1px solid var(--line);border-radius:999px;padding:11px 20px;color:var(--ink);text-decoration:none;font-weight:600;font-size:16px;}
   .freecta:hover{border-color:var(--gold);color:var(--gold);}
+  .footsub{max-width:440px;margin:0 auto 22px;text-align:center;}
+  .footsub label{display:block;font-size:14px;color:var(--muted);line-height:1.55;margin-bottom:10px;}
+  .footsub-row{display:flex;gap:8px;}
+  .footsub input{flex:1;min-width:0;background:var(--bg);border:1px solid var(--line);border-radius:10px;
+    padding:12px 13px;font-size:16px;color:var(--ink);font-family:inherit;outline:none;min-height:44px;}
+  .footsub input:focus{border-color:var(--gold);}
+  .footsub button{white-space:nowrap;min-height:44px;}
+  .fs-msg{margin-top:9px;font-size:14px;min-height:18px;}
+  .fs-msg.ok{color:#79c99a;} .fs-msg.err{color:#e88;}
   .su-msg.ok{color:#79c99a;} .su-msg.err{color:#e88;}
   .tag{position:absolute;top:-11px;left:30px;background:var(--gold);color:var(--gold-ink);
     font-size:11px;font-weight:700;letter-spacing:.05em;padding:4px 12px;border-radius:999px;text-transform:uppercase;}
@@ -1071,6 +1080,14 @@
 <footer>
   <div class="wrap foot">
     <div class="brand"><img class="brand-logo" src="/assets/slickchart-logo.png" alt="" width="30" height="30"><span>Slick<span class="brandc">Chart</span></span></div>
+    <form class="footsub" id="footsub" novalidate>
+      <label for="fs-email">Free: the consent &amp; aftercare checklist every solo pro should keep on file.</label>
+      <div class="footsub-row">
+        <input id="fs-email" type="email" placeholder="you@email.com" autocomplete="email" aria-label="Your email">
+        <button class="btn btn-gold" type="submit">Send it</button>
+      </div>
+      <div class="fs-msg" id="fs-msg" role="status"></div>
+    </form>
     <div class="links">
       <a href="/slickchart">Log in / open the app</a>
       <a href="#faq">FAQ</a>
@@ -1092,6 +1109,29 @@
   var STRIPE_LINK = "https://buy.stripe.com/14AeVc0YH1Qd2DO1yl4wM00";
 
   document.querySelectorAll('a[data-cta]').forEach(function(a){ a.setAttribute('href', STRIPE_LINK); });
+
+  /* footer checklist capture -> /api/waitlist (the SlickChart list, separate from /free) */
+  (function(){
+    var f=document.getElementById('footsub'); if(!f)return;
+    var em=document.getElementById('fs-email'), msg=document.getElementById('fs-msg'),
+        btn=f.querySelector('button');
+    f.addEventListener('submit', function(e){
+      e.preventDefault();
+      var email=(em&&em.value||'').trim();
+      if(!/^[^@\s]+@[^@\s]+\.[^@\s]+$/.test(email)){ msg.className='fs-msg err'; msg.textContent='Please enter a valid email.'; return; }
+      btn.disabled=true; msg.className='fs-msg'; msg.textContent='Sending\u2026';
+      fetch('/api/waitlist',{method:'POST',headers:{'Content-Type':'application/json'},body:JSON.stringify({email:email})})
+        .then(function(r){ return r.json(); })
+        .then(function(d){
+          if(!d||!d.ok) throw new Error('x');
+          msg.className='fs-msg ok';
+          msg.innerHTML='On its way. <a href="/consent-aftercare-checklist.pdf" target="_blank" rel="noopener" style="color:var(--gold);font-weight:700;text-decoration:underline;">Download it now</a>';
+          if(em)em.value='';
+        })
+        .catch(function(){ msg.className='fs-msg err'; msg.textContent='Something went wrong, please try again.'; })
+        .then(function(){ btn.disabled=false; });
+    });
+  })();
 
   /* provider/client live-demo toggle (swaps the iframe src) */
   (function(){
