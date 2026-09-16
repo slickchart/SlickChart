@@ -100,32 +100,44 @@ The proxy blocks live `slickchart.app`, so test against the local file with rout
   sync store), `providers`, `square_connections`, plus small helpers. `@neondatabase/serverless` isn't
   installed in the scratch env, so `node --check` a file for syntax rather than importing it locally.
 
-## 4. The weekly blog draft — RE-POINT THIS IN A NEW SESSION
+## 4. The weekly blog drafts — RE-POINT THESE IN A NEW SESSION
 
-A scheduled Routine writes one blog draft every Monday and reports it in the conversation for Ashley to
-review. It never publishes: new posts carry `draft: true`, which produces no page and no sitemap entry,
-so nothing reaches the live site until she says so.
+**There are TWO blogs and TWO Routines.** Each writes one draft every Monday and reports it in the
+conversation for Ashley to review. Neither publishes: new posts carry `draft: true`, which produces no
+page and no sitemap entry, so nothing reaches the live site until she says so.
 
-**The Routine is BOUND TO ONE SESSION.** As of 2026-09-15 that is session
-`session_01A4GwJis96cYnvN4yMbpBtt`, trigger `trig_01Kpq3HtFnWqgea1bUozHbbM`, cron `0 14 * * 1`.
-(Re-pointed 2026-09-15 from `trig_01GLnvYt3jrAhjPPCQZFY9Uw` / `cse_014uZePRTjnrVD5MwGzq6Tde`, which
-fired on 2026-09-14 into a session Ashley was not reading. That old trigger is deleted.)
+| Blog | Source | Served at | Routine | Cron |
+|---|---|---|---|---|
+| SlickChart (solo estheticians) | `blog-src/` | `/blog` | "Weekly SlickChart blog draft" `trig_01Kpq3HtFnWqgea1bUozHbbM` | `0 14 * * 1` |
+| Build Your Own App | `build-blog-src/` | `/build/blog` | "Weekly Build blog draft" `trig_01JeGumaZUvUoy6aBCSxJS38` | `0 15 * * 1` |
 
-**If you are a new session, check this early and fix it.** A Routine bound to a retired session delivers
-nowhere, and the weekly post stops without any error Ashley would ever see. Run `list_triggers`; if
-"Weekly SlickChart blog draft" is bound to a session that isn't this one, re-point it: delete it and
-re-create it with the same prompt from here (`create_trigger` with NO `create_new_session_on_fire` and
+**Both Routines are BOUND TO ONE SESSION.** As of 2026-09-16 that is
+`session_01A4GwJis96cYnvN4yMbpBtt` for both.
+(The SlickChart one was re-pointed 2026-09-15 from `trig_01GLnvYt3jrAhjPPCQZFY9Uw` /
+`cse_014uZePRTjnrVD5MwGzq6Tde`, which fired on 2026-09-14 into a session Ashley was not reading. That
+old trigger is deleted. The Build one was created 2026-09-16.)
+
+**If you are a new session, check this early and fix it — for BOTH.** A Routine bound to a retired
+session delivers nowhere, and the weekly post stops without any error Ashley would ever see. Run
+`list_triggers`; if either Routine is bound to a session that isn't this one, re-point it: delete it and
+re-create it with the same prompt (`create_trigger` with NO `create_new_session_on_fire` and
 NO `persistent_session_id` binds to the calling session). Update the ids above, and tell Ashley you
-moved it.
+moved them.
 
 **Do not "fix" this by making it spawn a fresh session per fire.** That was tried on 2026-09-10 and
 failed silently — the spawned session had no repo checkout, so it produced no draft, no commit, and
 reported SUCCEEDED anyway. Bound-to-a-live-session is the arrangement that works.
 
-Ashley wants the report in the conversation, not as push or email, so the Routine stores no
-notification channels. The blog's own docs — frontmatter, the draft/publish flow, the rule against
-stating a competitor's pricing from memory, and the positioning to lead with — are in
-`slickchart-vercel/blog-src/README.md`; the topic queue and the strategy behind it are in `TOPICS.md`.
+Ashley wants the report in the conversation, not as push or email, so neither Routine stores
+notification channels. Each blog's own docs — frontmatter, the draft/publish flow, the writing rules,
+and the positioning to lead with — are in its own `README.md`, and its topic queue in its own
+`TOPICS.md`: `slickchart-vercel/blog-src/` for SlickChart (where the rule against stating a
+competitor's pricing from memory lives) and `slickchart-vercel/build-blog-src/` for Build (where the
+**no income claims, ever** rule lives — that one is FTC exposure, not style).
+
+**One script builds both blogs.** `node scripts/build-blog.cjs` reads both source folders and owns
+`sitemap.xml`. Don't split it: a second generator writing its own sitemap would silently clobber the
+first one's entries.
 
 ## 4b. Where the last session left off
 

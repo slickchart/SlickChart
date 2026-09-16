@@ -1,10 +1,14 @@
 #!/usr/bin/env node
-/* Build the SlickChart blog.
+/* Build both blogs.
  *
- * Sources:  blog-src/<slug>.md   — frontmatter + a small markdown subset
- * Outputs:  blog/index.html      — the blog index      (served at /blog)
- *           blog/<slug>.html     — one page per post   (served at /blog/<slug>)
- *           sitemap.xml          — regenerated to include every public page
+ * Sources:  blog-src/<slug>.md        — the SlickChart blog (solo estheticians)
+ *           build-blog-src/<slug>.md  — the Build Your Own App blog
+ * Outputs:  blog/…                    — served at /blog
+ *           build-blog/…              — served at /build/blog (vercel.json rewrite)
+ *           sitemap.xml               — regenerated to include every public page
+ *
+ * ONE script builds both on purpose: sitemap.xml lists every page from both blogs, so a second
+ * generator writing its own sitemap would silently clobber the first one's entries.
  *
  * Run from slickchart-vercel/:  node scripts/build-blog.cjs
  *
@@ -19,13 +23,39 @@ const { guides: switchGuides } = require('./lib/switch-guides.cjs');
 const { markdown } = require('./lib/md.cjs');
 
 const ROOT = path.resolve(__dirname, '..');
-const SRC = path.join(ROOT, 'blog-src');
-const OUT = path.join(ROOT, 'blog');
+// Each blog: where the markdown lives, where the pages go, the URL base, and the chrome that
+// differs between them (index copy, the end-of-post CTA, the breadcrumb label).
+const BLOGS = [{
+  key: 'SlickChart', src: 'blog-src', out: 'blog', base: '/blog', crumb: 'Blog',
+  indexTitle: 'The SlickChart Blog | Guides for solo estheticians',
+  indexDesc: 'Practical guides for solo estheticians: client charting and SOAP notes, consent forms, pricing, rebooking, and running a one-person treatment room.',
+  indexKeywords: 'esthetician blog, solo esthetician, esthetician software, esthetician app, esthetician business tips',
+  indexH1: 'The SlickChart Blog',
+  indexLede: 'Practical guides for solo estheticians &mdash; charting, client care, and the unglamorous business bits that keep a one-person treatment room running.',
+  blogName: 'The SlickChart Blog',
+  blogDesc: 'Practical guides for solo estheticians on charting, client care, and running the business side.',
+  ctaText: 'SlickChart is the charting and client app built for solo estheticians &mdash; notes, photos, forms and payments in one place.',
+  ctaHref: '/slickchart', ctaLabel: 'Try SlickChart free',
+  headerCta: { href: '/slickchart', label: 'Open the app' }
+}, {
+  key: 'Build', src: 'build-blog-src', out: 'build-blog', base: '/build/blog', crumb: 'Build blog',
+  indexTitle: 'Build Your Own App | SlickChart',
+  indexDesc: 'How a working esthetician built and shipped her own app with AI and no coding background: what to do first, what it costs, and where people get stuck.',
+  indexKeywords: 'build your own app, build an app with AI, app without coding, Claude Code, no code app, ship an app',
+  indexH1: 'Build Your Own App',
+  indexLede: 'I built SlickChart with no coding background. These are the parts nobody explains: what to do first, what it actually costs, and where people get stuck.',
+  blogName: 'Build Your Own App',
+  blogDesc: 'Notes on building and shipping your own app with AI, from someone who did it without a coding background.',
+  ctaText: 'Turn your idea into a clickable demo of your own app, on your phone, in about seventy minutes. Free, no coding.',
+  ctaHref: '/free', ctaLabel: 'Get the free starter',
+  headerCta: { href: '/build', label: 'Build your own app' }
+}];
 
 // Static pages that belong in the sitemap alongside the blog.
 const STATIC_PAGES = [
   { loc: '/', priority: '1.0', changefreq: 'weekly' },
   { loc: '/blog', priority: '0.8', changefreq: 'weekly' },
+  { loc: '/build/blog', priority: '0.8', changefreq: 'weekly' },
   { loc: '/privacy', priority: '0.3', changefreq: 'yearly' },
   { loc: '/terms', priority: '0.3', changefreq: 'yearly' },
   { loc: '/support', priority: '0.4', changefreq: 'monthly' },
@@ -66,100 +96,114 @@ const pretty = d => new Date(d + 'T12:00:00Z').toLocaleDateString('en-US', { mon
 
 // ── shared page chrome ─────────────────────────────────────────────────────
 // ── build ──────────────────────────────────────────────────────────────────
-if (!fs.existsSync(SRC)) { console.error('No blog-src/ directory — nothing to build.'); process.exit(1); }
-// Posts are lowercase slugs (my-post.md). Files starting with an uppercase letter or an underscore
-// are documentation for whoever is writing posts (README.md, TOPICS.md) and are not built.
-const files = fs.readdirSync(SRC).filter(f => f.endsWith('.md') && !/^[A-Z_]/.test(f)).sort();
-if (!files.length) { console.error('blog-src/ has no .md posts.'); process.exit(1); }
+const built = [];   // every PUBLISHED post across both blogs, for the sitemap
 
-const all = files.map(f => {
-  const slug = f.replace(/\.md$/, '');
-  if (!/^[a-z0-9][a-z0-9-]*$/.test(slug)) throw new Error(slug + ': slug must be lowercase letters, digits and hyphens');
-  const { meta, body } = parse(fs.readFileSync(path.join(SRC, f), 'utf8'), slug);
-  return { slug, meta, body, html: markdown(body), url: SITE + '/blog/' + slug };
-}).sort((a, b) => (a.meta.date < b.meta.date ? 1 : -1));   // newest first
+for (const B of BLOGS) {
+  const SRC = path.join(ROOT, B.src);
+  const OUT = path.join(ROOT, B.out);
+  if (!fs.existsSync(SRC)) { console.error('No ' + B.src + '/ directory — nothing to build for ' + B.key + '.'); process.exit(1); }
+  // Posts are lowercase slugs (my-post.md). Files starting with an uppercase letter or an underscore
+  // are documentation for whoever is writing posts (README.md, TOPICS.md) and are not built.
+  const files = fs.readdirSync(SRC).filter(f => f.endsWith('.md') && !/^[A-Z_]/.test(f)).sort();
+  if (!files.length) { console.error(B.src + '/ has no .md posts.'); process.exit(1); }
 
-// A draft is written but NOT published: no page, no sitemap entry, no link from the index. It stays a
-// .md in blog-src/ until someone flips `draft: true` to false and rebuilds. That's what makes the weekly
-// scheduled write-up safe — nothing reaches the live site, or Ashley's byline, without a human saying so.
-const posts = all.filter(p => !p.meta.draft);
-const drafts = all.filter(p => p.meta.draft);
-if (!posts.length) { console.error('Every post is a draft — refusing to build an empty blog.'); process.exit(1); }
+  const all = files.map(f => {
+    const slug = f.replace(/\.md$/, '');
+    if (!/^[a-z0-9][a-z0-9-]*$/.test(slug)) throw new Error(slug + ': slug must be lowercase letters, digits and hyphens');
+    const { meta, body } = parse(fs.readFileSync(path.join(SRC, f), 'utf8'), slug);
+    return { slug, meta, body, html: markdown(body), url: SITE + B.base + '/' + slug };
+  }).sort((a, b) => (a.meta.date < b.meta.date ? 1 : -1));   // newest first
 
-fs.mkdirSync(OUT, { recursive: true });
+  // A draft is written but NOT published: no page, no sitemap entry, no link from the index. It stays a
+  // .md until someone flips `draft: true` to false and rebuilds. That's what makes the weekly scheduled
+  // write-up safe — nothing reaches the live site, or Ashley's byline, without a human saying so.
+  const posts = all.filter(p => !p.meta.draft);
+  const drafts = all.filter(p => p.meta.draft);
+  if (!posts.length) { console.error('Every ' + B.key + ' post is a draft — refusing to build an empty blog.'); process.exit(1); }
 
-// One page per post
-for (const p of posts) {
-  const related = posts.filter(o => o.slug !== p.slug).slice(0, 2);
-  const jsonld = {
-    '@context': 'https://schema.org',
-    '@graph': [{
-      '@type': 'BlogPosting',
-      headline: p.meta.h1,
-      description: p.meta.description,
-      datePublished: p.meta.date,
-      dateModified: p.meta.updated || p.meta.date,
-      author: { '@type': 'Person', name: 'Ashley Watson' },
-      publisher: { '@type': 'Organization', name: 'SlickChart', logo: { '@type': 'ImageObject', url: SITE + '/icon-512.png' } },
-      mainEntityOfPage: { '@type': 'WebPage', '@id': p.url },
-      image: SITE + '/assets/og-image-marine.jpg',
-      inLanguage: 'en-US'
-    }, {
-      '@type': 'BreadcrumbList',
-      itemListElement: [
-        { '@type': 'ListItem', position: 1, name: 'Home', item: SITE + '/' },
-        { '@type': 'ListItem', position: 2, name: 'Blog', item: SITE + '/blog' },
-        { '@type': 'ListItem', position: 3, name: p.meta.h1, item: p.url }
-      ]
-    }]
-  };
-  const html = head({
-    title: p.meta.title + TITLE_SUFFIX, description: p.meta.description, canonical: p.url,
-    keywords: p.meta.keywords, jsonld, ogType: 'article'
-  })
-    + `\n<main><div class="wrap">
-<a class="back" href="/blog">&larr; All posts</a>
+  fs.mkdirSync(OUT, { recursive: true });
+
+  // One page per post
+  for (const p of posts) {
+    const related = posts.filter(o => o.slug !== p.slug).slice(0, 2);
+    const jsonld = {
+      '@context': 'https://schema.org',
+      '@graph': [{
+        '@type': 'BlogPosting',
+        headline: p.meta.h1,
+        description: p.meta.description,
+        datePublished: p.meta.date,
+        dateModified: p.meta.updated || p.meta.date,
+        author: { '@type': 'Person', name: 'Ashley Watson' },
+        publisher: { '@type': 'Organization', name: 'SlickChart', logo: { '@type': 'ImageObject', url: SITE + '/icon-512.png' } },
+        mainEntityOfPage: { '@type': 'WebPage', '@id': p.url },
+        image: SITE + '/assets/og-image-marine.jpg',
+        inLanguage: 'en-US'
+      }, {
+        '@type': 'BreadcrumbList',
+        itemListElement: [
+          { '@type': 'ListItem', position: 1, name: 'Home', item: SITE + '/' },
+          { '@type': 'ListItem', position: 2, name: B.crumb, item: SITE + B.base },
+          { '@type': 'ListItem', position: 3, name: p.meta.h1, item: p.url }
+        ]
+      }]
+    };
+    const html = head({
+      title: p.meta.title + TITLE_SUFFIX, description: p.meta.description, canonical: p.url,
+      keywords: p.meta.keywords, jsonld, ogType: 'article', headerCta: B.headerCta
+    })
+      + `\n<main><div class="wrap">
+<a class="back" href="${B.base}">&larr; All posts</a>
 <article>
 <h1>${esc(p.meta.h1)}</h1>
 <p class="meta">${esc(pretty(p.meta.date))} &middot; ${esc(readTime(p.body))}</p>
 ${p.html}
 </article>
 <div class="endcta">
-  <p>SlickChart is the charting and client app built for solo estheticians &mdash; notes, photos, forms and payments in one place.</p>
-  <a class="cta" href="/slickchart">Try SlickChart free</a>
+  <p>${B.ctaText}</p>
+  <a class="cta" href="${B.ctaHref}">${B.ctaLabel}</a>
 </div>
 ${related.length ? `<h2>Keep reading</h2>\n` + related.map(r =>
-      `<a class="card" href="/blog/${r.slug}"><h2>${esc(r.meta.h1)}</h2><p>${esc(r.meta.description)}</p></a>`).join('\n') : ''}
+        `<a class="card" href="${B.base}/${r.slug}"><h2>${esc(r.meta.h1)}</h2><p>${esc(r.meta.description)}</p></a>`).join('\n') : ''}
 </div></main>\n${chromeFooter}\n</body>\n</html>\n`;
-  fs.writeFileSync(path.join(OUT, p.slug + '.html'), html);
-}
+    fs.writeFileSync(path.join(OUT, p.slug + '.html'), html);
+  }
 
-// Index
-const indexJsonld = {
-  '@context': 'https://schema.org',
-  '@type': 'Blog',
-  name: 'The SlickChart Blog',
-  description: 'Practical guides for solo estheticians on charting, client care, and running the business side.',
-  url: SITE + '/blog',
-  publisher: { '@type': 'Organization', name: 'SlickChart', url: SITE },
-  blogPost: posts.map(p => ({ '@type': 'BlogPosting', headline: p.meta.h1, description: p.meta.description, datePublished: p.meta.date, url: p.url }))
-};
-fs.writeFileSync(path.join(OUT, 'index.html'), head({
-  title: 'The SlickChart Blog | Guides for solo estheticians',
-  description: 'Practical guides for solo estheticians: client charting and SOAP notes, consent forms, pricing, rebooking, and running a one-person treatment room.',
-  canonical: SITE + '/blog',
-  keywords: 'esthetician blog, solo esthetician, esthetician software, esthetician app, esthetician business tips',
-  jsonld: indexJsonld, ogType: 'website'
-})
-  + `\n<main><div class="wrap">
-<h1>The SlickChart Blog</h1>
-<p class="lede">Practical guides for solo estheticians &mdash; charting, client care, and the unglamorous business bits that keep a one-person treatment room running.</p>
-${posts.map(p => `<a class="card" href="/blog/${p.slug}">
+  // Index
+  const indexJsonld = {
+    '@context': 'https://schema.org',
+    '@type': 'Blog',
+    name: B.blogName,
+    description: B.blogDesc,
+    url: SITE + B.base,
+    publisher: { '@type': 'Organization', name: 'SlickChart', url: SITE },
+    blogPost: posts.map(p => ({ '@type': 'BlogPosting', headline: p.meta.h1, description: p.meta.description, datePublished: p.meta.date, url: p.url }))
+  };
+  fs.writeFileSync(path.join(OUT, 'index.html'), head({
+    title: B.indexTitle, description: B.indexDesc, canonical: SITE + B.base,
+    keywords: B.indexKeywords, jsonld: indexJsonld, ogType: 'website', headerCta: B.headerCta
+  })
+    + `\n<main><div class="wrap">
+<h1>${B.indexH1}</h1>
+<p class="lede">${B.indexLede}</p>
+${posts.map(p => `<a class="card" href="${B.base}/${p.slug}">
   <h2>${esc(p.meta.h1)}</h2>
   <p>${esc(p.meta.description)}</p>
   <p class="meta">${esc(pretty(p.meta.date))} &middot; ${esc(readTime(p.body))}</p>
 </a>`).join('\n')}
 </div></main>\n${chromeFooter}\n</body>\n</html>\n`);
+
+  // Remove pages for posts that were unpublished (flipped back to draft) or deleted, so the live site
+  // never keeps serving something that's no longer in the source.
+  for (const f of fs.readdirSync(OUT)) {
+    if (f === 'index.html' || !f.endsWith('.html')) continue;
+    if (!posts.some(p => p.slug + '.html' === f)) { fs.unlinkSync(path.join(OUT, f)); console.log('  removed stale page: ' + B.out + '/' + f); }
+  }
+
+  built.push({ B, posts, drafts });
+}
+
+const posts = built.flatMap(b => b.posts);   // sitemap covers both blogs
 
 // Sitemap — static pages + every post, so a new post is never orphaned.
 const today = new Date().toISOString().slice(0, 10);
@@ -171,16 +215,12 @@ const urls = STATIC_PAGES.map(s => `  <url>\n    <loc>${SITE}${s.loc}</loc>\n   
 fs.writeFileSync(path.join(ROOT, 'sitemap.xml'),
   `<?xml version="1.0" encoding="UTF-8"?>\n<urlset xmlns="http://www.sitemaps.org/schemas/sitemap/0.9">\n${urls.join('\n')}\n</urlset>\n`);
 
-// Remove pages for posts that were unpublished (flipped back to draft) or deleted, so the live site
-// never keeps serving something that's no longer in the source.
-for (const f of fs.readdirSync(OUT)) {
-  if (f === 'index.html' || !f.endsWith('.html')) continue;
-  if (!posts.some(p => p.slug + '.html' === f)) { fs.unlinkSync(path.join(OUT, f)); console.log('  removed stale page: blog/' + f); }
-}
-
-console.log('built blog/index.html + ' + posts.length + ' posts, and sitemap.xml (' + urls.length + ' urls)');
-posts.forEach(p => console.log('  /blog/' + p.slug + '  — ' + p.meta.title));
-if (drafts.length) {
-  console.log('\n' + drafts.length + ' draft' + (drafts.length === 1 ? '' : 's') + ' awaiting review (not published, not in sitemap):');
-  drafts.forEach(p => console.log('  blog-src/' + p.slug + '.md  — ' + p.meta.h1));
+console.log('built sitemap.xml (' + urls.length + ' urls)');
+for (const { B, posts, drafts } of built) {
+  console.log('\n' + B.out + '/index.html + ' + posts.length + ' post' + (posts.length === 1 ? '' : 's') + ':');
+  posts.forEach(p => console.log('  ' + B.base + '/' + p.slug + '  — ' + p.meta.title));
+  if (drafts.length) {
+    console.log('  ' + drafts.length + ' draft' + (drafts.length === 1 ? '' : 's') + ' awaiting review (not published, not in sitemap):');
+    drafts.forEach(p => console.log('    ' + B.src + '/' + p.slug + '.md  — ' + p.meta.h1));
+  }
 }

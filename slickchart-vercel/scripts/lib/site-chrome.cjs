@@ -56,18 +56,21 @@ footer a:hover{color:var(--gold)}
 const HEAD_FONTS = '<link rel="preconnect" href="https://fonts.googleapis.com"><link rel="preconnect" href="https://fonts.gstatic.com" crossorigin>'
   + '<link href="https://fonts.googleapis.com/css2?family=Fraunces:opsz,wght@9..144,400;9..144,600&family=Inter:wght@400;500;600&display=swap" rel="stylesheet">';
 
-const chromeHeader = `<header class="site"><div class="wrap">
+// The header CTA differs per section: the esthetician pages send you to the app, the Build blog
+// sends you to the product it belongs to. Everything else about the header is shared.
+const headerWith = (ctaHref, ctaLabel) => `<header class="site"><div class="wrap">
   <a class="brand" href="/"><img src="/assets/slickchart-logo.png" alt="" width="28" height="28"><span>Slick<span class="brandc">Chart</span></span></a>
-  <a class="cta" href="/slickchart">Open the app</a>
+  <a class="cta" href="${ctaHref}">${ctaLabel}</a>
 </div></header>`;
+const chromeHeader = headerWith('/slickchart', 'Open the app');
 
 const chromeFooter = `<footer><div class="wrap">
-  <a href="/">Home</a><a href="/blog">Blog</a><a href="/switch">Switching</a><a href="/privacy">Privacy</a><a href="/terms">Terms</a>
+  <a href="/">Home</a><a href="/blog">Blog</a><a href="/build/blog">Build blog</a><a href="/switch">Switching</a><a href="/privacy">Privacy</a><a href="/terms">Terms</a>
   <a href="mailto:support@slickchart.app">Contact</a>
   <div class="tiny">SlickChart &middot; Made for solo beauty &amp; wellness pros &middot; Pleasant Hill, CA</div>
 </div></footer>`;
 
-function head({ title, description, canonical, keywords, jsonld, ogType }) {
+function head({ title, description, canonical, keywords, jsonld, ogType, headerCta }) {
   return `<!doctype html>
 <html lang="en">
 <head>
@@ -99,7 +102,7 @@ ${HEAD_FONTS}
 <script type="application/ld+json">${JSON.stringify(jsonld)}</script>
 </head>
 <body>
-${chromeHeader}`;
+${headerCta ? headerWith(headerCta.href, headerCta.label) : chromeHeader}`;
 }
 
-module.exports = { SITE, TITLE_SUFFIX, esc, CSS, HEAD_FONTS, chromeHeader, chromeFooter, head };
+module.exports = { SITE, TITLE_SUFFIX, esc, CSS, HEAD_FONTS, headerWith, chromeHeader, chromeFooter, head };

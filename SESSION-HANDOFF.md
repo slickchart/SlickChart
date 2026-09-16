@@ -1,4 +1,4 @@
-# Session handoff — 2026-09-13 (last updated 2026-09-14 evening, b16)
+# Session handoff — 2026-09-13 (last updated 2026-09-16, the Build blog)
 
 Written at the end of a long session so the next one starts informed. `CLAUDE.md` is the standing
 guidance and still governs; this file is *state*: what shipped, what's unfinished, and what will
@@ -6,12 +6,18 @@ break quietly if nobody touches it.
 
 ---
 
-## 1. READ THIS FIRST — the Monday blog Routine is bound to a session
+## 1. READ THIS FIRST — the Monday blog Routines are bound to a session
 
-`CLAUDE.md` §4 explains the mechanism. The current binding is:
+`CLAUDE.md` §4 explains the mechanism. **There are TWO of them now**, one per blog:
 
-- trigger `trig_01Kpq3HtFnWqgea1bUozHbbM`, cron `0 14 * * 1`, next run 2026-09-21 14:04 UTC
-- bound to `persistent_session_id: session_01A4GwJis96cYnvN4yMbpBtt`
+- **SlickChart blog** (`blog-src/` → `/blog`): trigger `trig_01Kpq3HtFnWqgea1bUozHbbM`,
+  cron `0 14 * * 1`, next run 2026-09-21 14:04 UTC
+- **Build blog** (`build-blog-src/` → `/build/blog`): trigger `trig_01JeGumaZUvUoy6aBCSxJS38`,
+  cron `0 15 * * 1`, next run 2026-09-21 15:01 UTC, created 2026-09-16
+- both bound to `persistent_session_id: session_01A4GwJis96cYnvN4yMbpBtt`
+
+**Nothing was broken about the 2026-09-14 Monday miss.** That Monday fell *before* the 2026-09-15
+re-point, so the draft went to the old session. The re-pointed Routine has not had a Monday yet.
 - **Re-pointed 2026-09-15 at Ashley's request.** The previous trigger
   (`trig_01GLnvYt3jrAhjPPCQZFY9Uw`, bound to `cse_014uZePRTjnrVD5MwGzq6Tde`) fired on 2026-09-14 at
   14:03 UTC and she never saw the draft — the wake landed in a session she was not reading. It has
@@ -19,10 +25,10 @@ break quietly if nobody touches it.
   silent failure this section exists to prevent; check the binding again in any new session.
 
 **A Routine bound to a retired session delivers nowhere and fails silently** — no draft, no error,
-and Ashley would never see it stop. If you are a new session, run `list_triggers`, and if it is still
-pointing at a session that isn't you, delete it and re-create it with the same prompt (`create_trigger`
-with **no** `create_new_session_on_fire` and **no** `persistent_session_id` binds it to you). Then
-update the ids in `CLAUDE.md` §4 and tell Ashley you moved it.
+and Ashley would never see it stop. If you are a new session, run `list_triggers`, and for **each** of
+the two, if it is still pointing at a session that isn't you, delete it and re-create it with the same
+prompt (`create_trigger` with **no** `create_new_session_on_fire` and **no** `persistent_session_id`
+binds it to you). Then update the ids in `CLAUDE.md` §4 and tell Ashley you moved them.
 
 Do **not** "fix" this by making it spawn a fresh session per fire. That was tried on 2026-09-10 and
 failed silently — the spawned session had no repo checkout, produced nothing, and reported SUCCEEDED.
@@ -415,6 +421,50 @@ navigation system makes a screen more complex, not less. Removing the tabs was t
 **Still not client-scoped:** `nav('shop')` appears 7 times and is never scoped to a client, so
 recommending a product still means leaving the chart for the global shop. That is the one genuine gap
 on the earning path.
+
+---
+
+## 2j. The Build blog (2026-09-16)
+
+`/build/blog` is a second blog for the Build Your Own App product, launched with five posts. Same
+machinery as the SlickChart blog, and deliberately **one script builds both**.
+
+**Why one script.** `scripts/build-blog.cjs` owns `sitemap.xml`. A second generator writing its own
+sitemap would silently clobber the first one's entries, and nobody would notice until search traffic
+dropped. So the script grew a `BLOGS` config array instead: source folder, output folder, URL base,
+index copy, breadcrumb label, end-of-post CTA, and header CTA per blog. Adding a *post* needs no
+script change; adding a *third blog* is one entry in that array.
+
+- **Source:** `slickchart-vercel/build-blog-src/` (+ its own `README.md` and `TOPICS.md`)
+- **Output:** `build-blog/`, rewritten to `/build/blog` and `/build/blog/:slug` in `vercel.json`
+  (same pattern as `/build/unlocked` → `/build-unlocked`; `cleanUrls` resolves the `.html`)
+- **Five posts, all dated 2026-09-16:** you do not need to learn to code; the Google Play rule that
+  costs a month; what building an app actually costs; Claude Chat or Claude Code; you might not need
+  the app stores. They were all written on that date, so they carry that date. Nothing is backdated.
+
+**The refactor was verified not to change the existing blog.** The pre-refactor `blog/` output was
+snapshotted and diffed after: byte-identical except the one footer nav line below. Do that again if
+you touch the generator.
+
+**Two chrome changes that affect every generated page:**
+
+1. `chromeFooter` gained a `Build blog` link, so `blog/`, `switch/` and `build-blog/` all changed by
+   exactly that one line.
+2. `chromeHeader` is now `headerWith(href, label)` with `chromeHeader` kept as the default
+   (`/slickchart`, "Open the app"). `head()` takes an optional `headerCta`. The Build blog passes
+   `/build`, "Build your own app", because sending someone reading about app costs to the esthetician
+   provider app was a funnel leak.
+
+**The writing rules are not stylistic and are in `build-blog-src/README.md`.** The important one:
+**no income claims, ever** — no numbers, no ranges, no "life-changing money", none implied through a
+story. That is FTC exposure under Ashley's own name, and it is the same boundary `/build` itself
+holds. Second: **no em dashes**, consistent with `/build` and `/free`. Third: platform rules and fees
+change, so a post either fetches the current policy page and cites it, or frames it as what Ashley
+planned around in her own build and tells the reader to check. Fourth: don't hand over the roadmap's
+ordered sequence for free — the blog argues the *why*, the $97 product is the ordered *how*.
+
+The end-of-post CTA points at `/free`, not `/build`, on purpose: the blog is top-of-funnel and `/free`
+is where the email capture is.
 
 ---
 
