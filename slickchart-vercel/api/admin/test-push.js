@@ -11,7 +11,7 @@
 // report both counts so a mismatch is visible instead of mysterious.
 import { dbEnabled, sql } from '../../lib/db.js';
 import { verifyToken, isSessionValid } from '../../lib/auth.js';
-import { sendNativeToProvider, fcmConfigured } from '../../lib/fcm.js';
+import { pushReport, fcmConfigured } from '../../lib/fcm.js';
 
 function norm(s) { return String(s || '').trim().toLowerCase(); }
 
@@ -57,22 +57,39 @@ export default async function handler(req, res) {
     try { delayMs = Math.max(0, Math.min(7, parseInt((req.query && req.query.delay) || (req.body && req.body.delay) || 0, 10) || 0)) * 1000; } catch (e) {}
     if (delayMs) await new Promise(r => setTimeout(r, delayMs));
 
-    // Send to the full set — exactly like a real paid-signup push.
+    // Send to the full set — exactly like a real paid-signup push. pushReport gives back WHY each
+    // device did or didn't get it, which a bare count never could.
     let sent = 0;
+    const results = [];
     for (const pid of providerIds) {
-      try { sent += (await sendNativeToProvider(pid, { title: '✅ Test push', body: 'Your SlickChart push notifications are working 🎉', url: '/slickchart', tag: 'test-push', renotify: true })) || 0; } catch (e) {}
+      try {
+        const r = await pushReport('provider', pid, { title: '✅ Test push', body: 'Your SlickChart push notifications are working 🎉', url: '/slickchart', tag: 'test-push', renotify: true });
+        sent += r.sent || 0;
+        for (const one of (r.results || [])) results.push(one);
+      } catch (e) {}
     }
+
+    // An iPhone registered through the current native app hands back an APNs token, and the iOS
+    // project has no Firebase SDK to turn that into an FCM one — so FCM can never deliver to it. That
+    // is a build-side gap, not a stale token, and telling her to "re-open the app" would be a
+    // wild goose chase. Name it exactly.
+    const apns = results.filter(r => r.shape === 'apns');
 
     let message;
     if (devices === 0) {
       message = 'No phone is registered yet. Open the SlickChart app on your PHONE (not desktop), make sure you’re logged in, and allow notifications when it asks — then try this again.';
+    } else if (apns.length && sent === 0) {
+      message = 'Found your iPhone, and this is the bug: the iPhone app hands back an Apple push token, but the server currently only sends through Firebase, which can’t deliver to an Apple token. So every push has been failing silently. This is not something you can fix by re-opening the app — tell Claude you saw the "Apple token" result and it’ll fix the server side.';
     } else if (sent > 0) {
       message = 'Sent to ' + sent + ' of your device' + (sent === 1 ? '' : 's') + ' — you should see it on your phone in a few seconds (lock the phone / close the app first, since an open app may not show a banner). If it arrives, your paid-signup pushes will too. 🎉';
       if (devicesSession === 0) message += ' (Heads up: your phone is registered under a different provider record than this session — the real paid-signup push handles that, and now so does this test.)';
+      if (apns.length) message += ' One of your devices is an iPhone that can’t receive push yet — tell Claude.';
     } else {
-      message = devices + ' device' + (devices === 1 ? '' : 's') + ' registered, but the push didn’t go through (the token may be stale). Re-open the app on your phone with notifications on, then try again.';
+      const why = (results.find(r => r.error) || {}).error || '';
+      message = devices + ' device' + (devices === 1 ? '' : 's') + ' registered, but the push didn’t go through' + (why ? ' (' + why + ')' : '') + '. Re-open the app on your phone with notifications on, then try again — and if it still fails, tell Claude what this said.';
     }
-    res.status(200).json({ ok: true, fcm: true, devices, devicesSession, sent, providers: providerIds.length, message });
+    // `results` is the diagnostic payload: platform, token shape and the real error per device.
+    res.status(200).json({ ok: true, fcm: true, devices, devicesSession, sent, providers: providerIds.length, results, message });
   } catch (e) {
     console.error('[admin/test-push] failed:', e && e.message || e);
     res.status(500).json({ error: 'Something went wrong.' });

@@ -12,6 +12,7 @@ import { tooManyAttempts, tooManyAttemptsByIp, recordAttempt } from '../lib/auth
 import { sendEmail, addToAudience } from '../lib/email.js';
 import { ensureNurtureTables } from '../lib/nurture.js';
 import { ensureFreeTables, freeSender, WELCOME_SUBJECT, welcomeHtml, welcomeText } from '../lib/free-funnel.js';
+import { pushFounders, fcmConfigured } from '../lib/fcm.js';
 
 // One address may ask 3 times an hour (fat fingers, a lost email, a second device). One IP may ask
 // 20 times an hour, which is generous for a household or an office and useless for a script.
@@ -112,6 +113,25 @@ export default async function handler(req, res) {
       res.status(502).json({ ok: false, error: 'I couldn’t get that email out just now.' });
       return;
     }
+
+    // ── Tell Ashley someone signed up ─────────────────────────────────────────
+    // This sits AFTER the once-only claim above, which is the point: a repeat submit that sends no
+    // email also sends no push, so the phone buzzes exactly once per person, same as the inbox.
+    // Best-effort and last — a push problem must never turn a successful signup into an error for
+    // the person who just handed over their address.
+    try {
+      if (fcmConfigured()) {
+        const total = await (async () => {
+          try { const r = await q`SELECT count(*)::int AS n FROM free_signups`; return (r[0] && r[0].n) || 0; } catch (e) { return 0; }
+        })();
+        const pushed = await pushFounders({
+          title: '🎁 New free starter signup!',
+          body: email + ' just grabbed the free starter' + (total ? ` — that's ${total} on the list now` : ''),
+          url: '/slickchart', tag: 'free:' + email
+        });
+        console.log('[free-signup] founder push: devices=' + pushed + ' for=' + email);
+      }
+    } catch (e) { console.error('[free-signup] founder push failed:', e && e.message || e); }
 
     res.status(200).json({ ok: true });
   } catch (e) {
