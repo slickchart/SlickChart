@@ -489,9 +489,18 @@ already announced. A Build roadmap sale used to write a row into `subscriptions`
 and roadmap buyers are exactly who the `/build` funnel sends to SlickChart. That matches Ashley's own
 observation that alerts stopped when `/build` launched.
 
-**The dedupe is now inverted, deliberately.** Both alerts always fire and say "already subscribed"
-when the flag is set. A duplicate ping is a small annoyance; a missed signup is the thing that costs
-her. Don't reinstate the skip.
+**The dedupe was restored on the right signal (2026-09-17, later).** Inverting it stopped the silence
+but gave Ashley TWO pings per paying provider, and she only wants the PAID one. The fix is to gate on
+`subscriptions.paid_notified_at` — stamped by the webhook at the moment it actually announces someone
+— instead of `hasActiveSubscription()`. "Already told" is safe to skip; "probably paid" is not.
+
+- webhook already announced them → the signup ping is silent
+- never announced → it fires, so there is no gap
+- looks paid but never announced → it fires AND flags "check this one", because that is the stale
+  roadmap-sale row giving somebody SlickChart free
+
+**Never gate a founder alert on `hasActiveSubscription()` again.** That is the exact mistake that
+silenced real signups for days.
 
 **`notify_log` (lib/notify-log.js)** records one row per founder-notification attempt: masked
 address, whether it was skipped and why, devices found, devices sent, and which link broke. The
