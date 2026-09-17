@@ -240,12 +240,16 @@ export async function upsertClient(providerId, c) {
     // its data instead of being dropped, and — critically — a write that carries NO pending forms can
     // never wipe an intake the other write already stored: if the incoming blob's pendingForms is empty
     // but the stored one isn't, we keep the stored pendingForms. Token stays the first-issued one.
+    // phone is COALESCEd rather than overwritten below: several call sites build the client list by
+    // hand, and one of them omitting phone silently wiped the column for every client — which broke
+    // check-in auto-send for anyone who books with a phone number and no email, since the cron
+    // matches a Square customer to a client by email OR phone.
     await q`INSERT INTO clients (id, provider_id, token, name, email, phone, data, created_at, updated_at)
       VALUES (${id}, ${providerId}, ${token}, ${(c && c.name) || ''}, ${(c && c.email) || ''}, ${(c && c.phone) || ''}, ${data}::jsonb, ${now}, ${now})
       ON CONFLICT (id) DO UPDATE SET
         name = EXCLUDED.name,
         email = EXCLUDED.email,
-        phone = EXCLUDED.phone,
+        phone = COALESCE(NULLIF(EXCLUDED.phone, ''), clients.phone),
         updated_at = EXCLUDED.updated_at,
         data = CASE
           WHEN COALESCE(CASE WHEN jsonb_typeof(EXCLUDED.data->'pendingForms')='array' THEN jsonb_array_length(EXCLUDED.data->'pendingForms') END, 0) = 0
@@ -261,7 +265,8 @@ export async function upsertClient(providerId, c) {
     const back = await q`SELECT token FROM clients WHERE id=${id} AND provider_id=${providerId}`;
     if (back[0] && back[0].token) token = back[0].token;
   } else {
-    await q`UPDATE clients SET name=${(c && c.name) || ''}, email=${(c && c.email) || ''}, phone=${(c && c.phone) || ''}, data=${data}::jsonb, updated_at=${now}
+    await q`UPDATE clients SET name=${(c && c.name) || ''}, email=${(c && c.email) || ''},
+      phone=COALESCE(NULLIF(${(c && c.phone) || ''}, ''), phone), data=${data}::jsonb, updated_at=${now}
       WHERE id=${id} AND provider_id=${providerId}`;
   }
   return { id, token, name: (c && c.name) || '', email: (c && c.email) || '' };

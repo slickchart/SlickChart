@@ -14363,7 +14363,11 @@ function _needsCheckin(){
     if(!c||_checkinDone(id,c))return false;
     if(_ciIsDismissed(id,c))return false;
     const h=_hoursUntilVisit(c);
-    return h!=null && h<=2 && h>=-2;
+    // The day of the visit, not a two-hour sliver around it. A check-in is useful any time before
+    // the appointment, so the nudge runs from 24h out (when auto-send fires) until shortly after the
+    // start — that way a 2pm client still shows up in the morning, when there is time to do anything
+    // about it. It only ever lists clients whose check-in is not done.
+    return h!=null && h<=24 && h>=-2;
   });
 }
 let _lastCiDismiss=null;
@@ -14704,7 +14708,10 @@ async function _syncSpecificClientsToServer(ids,opts){
   opts=opts||{};
   const tok=(typeof Cloud!=='undefined'&&Cloud&&Cloud.token)||'';
   if(!tok){ if(opts.toast)proToast('Sign in to sync your clients'); return null; }
-  const list=(ids||[]).filter(id=>CL[id]).map(id=>({id:id,name:CL[id].name||'',email:CL[id].email||'',data:_assembleClientData(id)}));
+  // phone travels with the record: the check-in auto-sender matches a Square customer to a client
+  // by email OR phone, and a client who books with a phone number and no email could never be matched
+  // while this payload left it out — so their check-in never auto-sent.
+  const list=(ids||[]).filter(id=>CL[id]).map(id=>({id:id,name:CL[id].name||'',email:CL[id].email||'',phone:CL[id].phone||'',data:_assembleClientData(id)}));
   if(!list.length)return {ok:true,clients:[]};
   try{
     const r=await fetch('/api/clients',{method:'POST',headers:{'Content-Type':'application/json','Authorization':'Bearer '+tok},body:JSON.stringify({clients:list})});
@@ -14741,7 +14748,7 @@ async function _syncClientsToServer(opts){
   if(!tok){ if(opts.toast)proToast('Sign in to sync your clients'); return null; }
   if(_syncingClients)return null; _syncingClients=true;
   try{
-    const list=Object.keys(CL).map(id=>({id:id,name:CL[id].name||'',email:CL[id].email||'',data:_assembleClientData(id)}));
+    const list=Object.keys(CL).map(id=>({id:id,name:CL[id].name||'',email:CL[id].email||'',phone:CL[id].phone||'',data:_assembleClientData(id)}));
     const r=await fetch('/api/clients',{method:'POST',headers:{'Content-Type':'application/json','Authorization':'Bearer '+tok},body:JSON.stringify({clients:list})});
     let j={};try{j=await r.json();}catch(e){}
     if(r.ok&&j&&j.ok&&Array.isArray(j.clients)){
