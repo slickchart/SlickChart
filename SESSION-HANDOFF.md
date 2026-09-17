@@ -1,4 +1,4 @@
-# Session handoff — 2026-09-13 (last updated 2026-09-17, push + the Build blog)
+# Session handoff — 2026-09-13 (last updated 2026-09-17, pre-visit check-ins + push)
 
 Written at the end of a long session so the next one starts informed. `CLAUDE.md` is the standing
 guidance and still governs; this file is *state*: what shipped, what's unfinished, and what will
@@ -527,6 +527,61 @@ row is the record. Don't add it back.
 
 ---
 
+## 2l. Pre-visit check-ins: three bugs, one morning (2026-09-17)
+
+Ashley: no nudges on Up Next or Today's, Sheri's check-in showed "ready" but opened to one from
+**August 20**, and nothing auto-sent. Her instinct was that a recent change broke it. It hadn't —
+**every check-in and appointment function is byte-identical to before the design pass** (diffed
+`_checkinDone`, `_ciMatchesVisit`, `_checkinForClient`, `_needsCheckin`, `_hoursUntilVisit`,
+`_apptSig`, `_apptsToday`, `_realApptsMerged`, `_loadSquareAppts`, `sendCheckin` and 8 more; the only
+change in any of them was font-size values). Check that before assuming damage.
+
+**1. The sync re-dated old check-ins to now.** It stamped
+`at: ev.created_at ? (new Date(ev.created_at).getTime() || Date.now()) : Date.now()`. That runs on
+EVERY sync including for month-old events, so any check-in whose `created_at` would not parse got
+today's timestamp — and `_ciMatchesVisit` judged "is this for the visit in front of me" on exactly
+that. Unparseable now means `0`, which every consumer already reads as "cannot confirm".
+
+**2. `checkinDoneFor` copied the client's CURRENT `nextVisit`.** The check-in log auto-clears, so old
+events get re-adopted on a later sync — and it then stamped last month's check-in against TODAY's
+appointment. `_checkinDone` read today as done, which is what removed the nudges.
+
+**The durable rule: judge on the check-in's own stated visit, not its timestamp.** A check-in carries
+the label it was submitted for ("Thursday, August 20 at 10:00 AM") and that label is never rewritten.
+`_ciMatchesVisit` compares it at day resolution and only falls back to `at` when there is no usable
+label; `_checkinDone` and `_stampCheckinDone` both route through it, so a corrupted timestamp can
+never claim a visit on its own. `_stampCheckinDone` also REPAIRS a bad stamp, so files heal on the
+next sync. The live-arrival path (`SlickBridge` `checkin-submitted`) is deliberately untouched —
+that one genuinely is happening now.
+
+**3. Auto-send never worked for phone-only clients.** `cron-checkins` matches a Square customer to a
+client by email OR phone. Both client-sync payloads in `slickchart.html` are built by hand as
+`{id, name, email, data}` — **phone was not in them** — and `upsertClient` wrote
+`phone = ${c.phone || ''}` on both paths, so every sync actively BLANKED the column. Anyone booking
+through Square with a phone and no email could never be matched. Phone is now in both payloads and
+is `COALESCE`d on write so a caller that omits it can't blank a stored one. **If you add a third
+sync call site, include phone.**
+
+**The day-of nudge window.** `_needsCheckin` only surfaced a client within ±2 HOURS of their
+appointment, so at 8am a 2pm client showed nothing. Now 24h out through shortly after the start,
+which is what Ashley means by "if it isn't done on the day, nudge me".
+
+**A Square load failure no longer hides.** `_loadSquareAppts` caught everything silently, so the
+schedule fell back to `manualAppts`/`confirmedAppts` (weeks old) while looking live, `nextVisit` was
+never re-stamped, and the nudges stopped. It now records why, shows a banner on Today's and This
+week's with Try again / Reconnect Square, and retries instead of latching for the session.
+`lib/square.js` logs a failed token refresh and returns null for an already-expired connection.
+**This was NOT Ashley's bug** — her schedule was always correct, and she said so before I listened.
+The banner is still right to have.
+
+**Tone note, and it was fair.** Mid-session: *"I am tired of you adding founder buttons that clog up
+my app and make me do extra work. this should be things you can find on your own."* Correct. The
+three real fixes came from diffing the code and reproducing her exact case headless, not from
+instrumentation. Reach for a diagnostic surface only when there is genuinely no other way, and prefer
+an error state where the problem shows over a tool in Admin.
+
+---
+
 ## 3. Open threads — needs Ashley, or needs verifying
 
 1. **Square `payment.*` webhook subscription.** Paid-course auto-unlock depends on Square sending
@@ -561,13 +616,19 @@ row is the record. Don't add it back.
     a free SlickChart subscription nobody paid for, because `subscriptions` is what decides who gets
     a paid account. **Nothing has been deleted** — that is a live billing decision and it is Ashley's
     to make. Ask before writing to that table.
-11. **iPhone push needs the APNs key added in Vercel.** The sender is built, tested and deployed,
+11. **Did check-in auto-send actually start working?** The phone fix only helps once clients re-sync
+    and a booking enters the 24h window, so the first real test is the morning after 2026-09-17. If a
+    client still gets nothing, the remaining candidates are the `hasApp` gate (the server needs
+    `opened_at` or a push subscription) and `autoSendOn` reading a `sc_checkin_cfg` KV copy that
+    disagrees with what the app shows.
+12. **iPhone push needs the APNs key added in Vercel.** The sender is built, tested and deployed,
     but dormant until `APNS_KEY_P8` / `APNS_KEY_ID` / `APNS_TEAM_ID` exist. Ashley is on Android so
     nothing of hers is blocked; any iPhone provider gets no push until this is done.
-12. **Did the signup fix work?** The next real provider signup settles it. `notify_log` records the
-    outcome either way, and the founder test tool reports it. If alerts are still missed while the
-    log says `sent=1`, the problem is on the device, not the server.
-13. **`BUILD_EXCLUDE_EMAILS`** is still unset in Vercel. Her own test purchases therefore count in
+13. ~~**Did the signup fix work?**~~ **CONFIRMED 2026-09-17 — Ashley: "push notifications are
+    working again".** The cause was the `_alreadyPaid` gate in `api/signup.js` suppressing BOTH the
+    founder email and the push (see 2k). Do not reinstate that skip. `notify_log` still records every
+    attempt if it ever regresses.
+14. **`BUILD_EXCLUDE_EMAILS`** is still unset in Vercel. Her own test purchases therefore count in
    the Build Your Own App stats.
 
 ---
