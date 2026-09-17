@@ -582,6 +582,38 @@ an error state where the problem shows over a tool in Admin.
 
 ---
 
+## 2m. Paid, but no account (2026-09-17)
+
+A provider paid, never got the welcome email, and could not log in. **Paying and creating the
+account are two separate steps.** Stripe checkout writes a `subscriptions` row; the person must then
+come back and create a provider account with the SAME email, which is what issues the password.
+
+**The welcome email is the tell.** It is sent only inside `api/signup.js`. No welcome email means
+signup never ran, which means there is no `providers` row, which is why login says "Email or password
+is incorrect" — that message is deliberately generic so it cannot be used to enumerate accounts, so
+it reads identically for "wrong password" and "no account at all".
+
+**First thing to ask a locked-out payer:** have them try *Create an account* with the exact email
+they paid with. If it goes through, that was it. If it says the account already exists, then signup
+DID run and the welcome email failed — a different bug worth chasing.
+
+`api/cron-orphan-checkout.js` (hourly, :40) now closes the gap: active subscriptions older than 3h
+with no matching provider account get emailed a one-tap link to finish, and after 48h Ashley is
+pushed and emailed so a person can step in. Both steps claimed once in `nurture_sends`.
+
+**Two rules in there worth not undoing:**
+- It only considers rows with a real `stripe_subscription_id`. A Build roadmap sale used to write a
+  `subscriptions` row with none, and those buyers must never be told to finish setting up a
+  SlickChart account they did not buy.
+- An unsubscribed person is never emailed but IS still escalated to Ashley. Opting out of marketing
+  must not mean silently staying locked out of something they pay for.
+
+`?signup=1&email=` opens the Create-account form with the address prefilled (`_signupEmail`, used for
+one render and deliberately never written to localStorage, so it cannot mark a client's device as a
+returning provider).
+
+---
+
 ## 3. Open threads — needs Ashley, or needs verifying
 
 1. **Square `payment.*` webhook subscription.** Paid-course auto-unlock depends on Square sending
@@ -628,7 +660,12 @@ an error state where the problem shows over a tool in Admin.
     working again".** The cause was the `_alreadyPaid` gate in `api/signup.js` suppressing BOTH the
     founder email and the push (see 2k). Do not reinstate that skip. `notify_log` still records every
     attempt if it ever regresses.
-14. **`BUILD_EXCLUDE_EMAILS`** is still unset in Vercel. Her own test purchases therefore count in
+14. **baremarissajoi@gmail.com** — the provider who paid and could not log in (2026-09-17). Ashley
+    sent her the "Create an account with the same email" steps. **Find out which branch she landed
+    on:** if creating the account worked, the rescue cron now covers that case for everyone. If it
+    said the account already existed, then signup ran and the WELCOME EMAIL failed to send, which is
+    a separate and more serious bug affecting every new provider — chase it.
+15. **`BUILD_EXCLUDE_EMAILS`** is still unset in Vercel. Her own test purchases therefore count in
    the Build Your Own App stats.
 
 ---
