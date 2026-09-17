@@ -2321,8 +2321,8 @@ function loadNotifPrefs(){
     // Client-set routine reminders. `set` records that they have been through this control at all,
     // which is what stops the old fixed morning nudge from quietly coming back once they turn both
     // slots off — "no reminders" has to mean no reminders.
-    homecareAM:{on:false,hour:8,set:false},
-    homecarePM:{on:false,hour:20,set:false},
+    homecareAM:{on:false,hour:8,min:0,set:false},
+    homecarePM:{on:false,hour:20,min:0,set:false},
     summaryReady:true,
     messagereply:true,
     quietStart:'21:00',
@@ -2938,21 +2938,28 @@ function renderHomecare(){
 // their own local time; the server places it using the timezone the app already syncs. Whole hours
 // only — the reminder cron runs hourly, so offering minutes would be promising precision that does
 // not exist.
-function _hcHourLabel(h){ h=((parseInt(h,10)||0)%24+24)%24; const ap=h<12?'AM':'PM'; const hh=h%12||12; return hh+':00 '+ap; }
+function _hcHourLabel(h,m){
+  h=((parseInt(h,10)||0)%24+24)%24; m=Math.max(0,Math.min(59,parseInt(m,10)||0));
+  const ap=h<12?'AM':'PM'; const hh=h%12||12;
+  return hh+':'+(m<10?'0':'')+m+' '+ap;
+}
+// "HH:MM" for <input type="time">, which is always 24-hour regardless of how the phone displays it.
+function _hc24(h,m){
+  h=((parseInt(h,10)||0)%24+24)%24; m=Math.max(0,Math.min(59,parseInt(m,10)||0));
+  return (h<10?'0':'')+h+':'+(m<10?'0':'')+m;
+}
 function _hcSlotHTML(slot){
-  const p=loadNotifPrefs(); const cfg=p['homecare'+slot]||{on:false,hour:slot==='AM'?8:20};
-  const on=!!cfg.on, hour=parseInt(cfg.hour,10);
-  const range=slot==='AM'?[4,5,6,7,8,9,10,11]:[12,13,14,15,16,17,18,19,20,21,22,23];
+  const p=loadNotifPrefs(); const cfg=p['homecare'+slot]||{on:false,hour:slot==='AM'?8:20,min:0};
+  const on=!!cfg.on, hour=parseInt(cfg.hour,10), min=parseInt(cfg.min,10)||0;
   return `<div style="display:flex;align-items:center;gap:10px;padding:11px 0;${slot==='AM'?'border-bottom:1px solid var(--c-line);':''}">
     <i class="ti ti-${slot==='AM'?'sun':'moon'}" aria-hidden="true" style="font-size:17px;color:${on?'var(--accent)':'var(--c-mut)'};flex-shrink:0;width:20px;text-align:center;"></i>
     <div style="flex:1;min-width:0;">
       <div style="font-size:13px;font-weight:600;color:var(--c-ink);">${slot==='AM'?'Morning':'Evening'}</div>
-      <div style="font-size:11px;color:var(--c-mut);">${on?'Reminds you at '+_hcHourLabel(hour):'Off'}</div>
+      <div style="font-size:11px;color:var(--c-mut);">${on?'Reminds you at '+_hcHourLabel(hour,min):'Off'}</div>
     </div>
-    <select aria-label="${slot==='AM'?'Morning':'Evening'} reminder time" onchange="_hcSetHour('${slot}',this.value)" ${on?'':'disabled'}
-      style="font-family:inherit;font-size:12px;padding:6px 8px;border-radius:8px;border:1px solid var(--c-line);background:var(--c-card);color:var(--c-ink);${on?'':'opacity:.45;'}">
-      ${range.map(function(h){return '<option value="'+h+'"'+(h===hour?' selected':'')+'>'+_hcHourLabel(h)+'</option>';}).join('')}
-    </select>
+    <input type="time" step="900" value="${_hc24(hour,min)}" aria-label="${slot==='AM'?'Morning':'Evening'} reminder time"
+      onchange="_hcSetTime('${slot}',this.value)" ${on?'':'disabled'}
+      style="font-family:inherit;font-size:13px;padding:6px 8px;border-radius:8px;border:1px solid var(--c-line);background:var(--c-card);color:var(--c-ink);${on?'':'opacity:.45;'}">
     <button role="switch" aria-checked="${on?'true':'false'}" aria-label="${slot==='AM'?'Morning':'Evening'} routine reminder"
       onclick="_hcToggle('${slot}')"
       style="flex-shrink:0;width:46px;height:28px;min-height:28px;border-radius:999px;border:none;cursor:pointer;padding:0;position:relative;background:${on?'var(--accent)':'#d8d3cc'};transition:background .15s;">
@@ -2990,11 +2997,14 @@ function _hcToggle(slot){
   cfg.on=!cfg.on;
   _hcSave(p);
 }
-function _hcSetHour(slot,v){
+function _hcSetTime(slot,v){
   const p=loadNotifPrefs();
-  const cfg=p['homecare'+slot]||(p['homecare'+slot]={on:false,hour:slot==='AM'?8:20});
-  const h=parseInt(v,10);
-  if(!isNaN(h)&&h>=0&&h<=23)cfg.hour=h;
+  const cfg=p['homecare'+slot]||(p['homecare'+slot]={on:false,hour:slot==='AM'?8:20,min:0});
+  const m=String(v||'').match(/^(\d{1,2}):(\d{2})$/);
+  if(m){
+    const h=parseInt(m[1],10), mi=parseInt(m[2],10);
+    if(h>=0&&h<=23&&mi>=0&&mi<=59){cfg.hour=h;cfg.min=mi;}
+  }
   _hcSave(p);
 }
 // Says plainly why a reminder might not arrive, instead of leaving them to wonder.
@@ -3005,7 +3015,13 @@ function _hcRemindHint(){
     const anyOn=(p.homecareAM&&p.homecareAM.on)||(p.homecarePM&&p.homecarePM.on);
     if(!anyOn){ el.textContent='Pick a time and we’ll nudge you to keep up with your routine.'; return; }
     const perm=(typeof Notification!=='undefined')?Notification.permission:'unsupported';
-    if(perm==='granted'){ el.textContent='Reminders are on. You can change the time any time.'; el.style.color='var(--c-mut)'; }
+    if(perm==='granted'){
+      // Only mention the delay when their chosen minute is not one this job actually lands on, so the
+      // common case (a quarter-hour time) reads clean instead of apologetic.
+      const offStep=['AM','PM'].some(function(sl){var c=p['homecare'+sl];return c&&c.on&&((parseInt(c.min,10)||0)%15!==0);});
+      el.textContent=offStep?'Reminders are on. They arrive within about 15 minutes of the time you pick.':'Reminders are on. You can change the time any time.';
+      el.style.color='var(--c-mut)';
+    }
     else if(perm==='denied'){ el.innerHTML='Notifications are blocked in your browser settings, so these can’t come through yet.'; el.style.color='#b06a4a'; }
     else { el.textContent='Allow notifications when your browser asks, so these can reach you.'; el.style.color='#b06a4a'; }
   }catch(e){}

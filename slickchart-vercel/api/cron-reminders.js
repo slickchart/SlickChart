@@ -21,6 +21,10 @@ import { sendNativeToClient, nativePushConfigured } from '../lib/fcm.js';
 import { enforceFounderMerchantIsolation } from '../lib/square.js';
 
 const HOUR = 3600 * 1000;
+// How often Vercel Cron invokes this (vercel.json). Client-set routine reminders need finer than
+// hourly to honour a time like 7:30, and this is the window a slot is considered "due" in. Keep the
+// two in step: a schedule change without changing this either double-sends or drops reminders.
+const RUN_EVERY_MIN = 15;
 
 // Local wall-clock hour + calendar date for a moment, in a given IANA timezone.
 function localParts(tz, ms) {
@@ -65,7 +69,10 @@ export default async function handler(req, res) {
   // founder's Square merchant and (re)install the one-merchant-one-provider DB lock. This self-heals the
   // cross-account leak continuously — a duplicate connection can't survive longer than one tick — and runs
   // regardless of push config. Best-effort: never let it break the reminder run.
-  try { const iso = await enforceFounderMerchantIsolation(); if (iso && iso.severed && iso.severed.length) console.log('[cron] severed foreign Square connections:', JSON.stringify(iso.severed)); } catch (e) { console.error('[cron] isolation sweep failed:', e && e.message); }
+  // Once an hour, not on every run. This job went from hourly to every 15 minutes for the routine
+  // reminders, and the isolation sweep talks to Square — running it 4x as often buys nothing and
+  // spends real API budget.
+  if (new Date().getUTCMinutes() < RUN_EVERY_MIN) try { const iso = await enforceFounderMerchantIsolation(); if (iso && iso.severed && iso.severed.length) console.log('[cron] severed foreign Square connections:', JSON.stringify(iso.severed)); } catch (e) { console.error('[cron] isolation sweep failed:', e && e.message); }
   if (!pushConfigured()) { res.status(200).json({ ok: false, reason: 'push not configured' }); return; }
 
   const now = Date.now();
@@ -90,13 +97,20 @@ export default async function handler(req, res) {
       // hours: the default quiet window is 21:00-08:00, so an 8pm or 7am routine reminder — exactly
       // the times a skincare routine happens — would otherwise be silently swallowed by a setting the
       // client never associated with it. A time you explicitly asked for is not an interruption.
+      // This job runs every 15 minutes (see vercel.json), so a slot fires on the first run at or after
+      // its chosen minute. A time on the quarter hour lands exactly; anything else lands within the
+      // same 15-minute window rather than being missed entirely.
       const hcSlots = [];
       if (notif.homecareReminder !== false && rem.hasHomecare) {
+        const nowMin = nowL.hour * 60 + nowL.min;
         for (const slot of ['AM', 'PM']) {
           const cfg = notif['homecare' + slot];
           if (!cfg || !cfg.on) continue;
           const h = parseInt(cfg.hour, 10);
-          if (!Number.isFinite(h) || h < 0 || h > 23 || h !== nowL.hour) continue;
+          const m = parseInt(cfg.min, 10) || 0;
+          if (!Number.isFinite(h) || h < 0 || h > 23 || m < 0 || m > 59) continue;
+          const delta = nowMin - (h * 60 + m);
+          if (delta < 0 || delta >= RUN_EVERY_MIN) continue;
           hcSlots.push({
             rkey: 'homecare' + slot + ':' + nowL.date,
             title: slot === 'AM' ? 'Morning routine' : 'Evening routine',
