@@ -9406,9 +9406,16 @@ function _compareSessionsFor(id){
 // Per-client control: whether this client can see their own before/after progress photos in their
 // app. Off by default (clinical photos stay private to the chart). Turning it on syncs the photo
 // refs into their client-data and backs the bytes up so their app can fetch them.
+// Is this client allowed to see their own before/after photos? ON unless the provider explicitly
+// turned it off. The flag is tri-state on purpose: undefined (never touched) reads as shared, and
+// only an explicit `false` hides them — so switching the default on does not require rewriting every
+// existing client record, and a provider who deliberately turned it off stays off.
+//
+// A client only ever sees their OWN photos; nothing here can widen that.
+function _photosShared(c){ return !!c && c.sharePhotos !== false; }
 function toggleSharePhotos(id){
   const c=CL[id];if(!c)return;
-  c.sharePhotos=!c.sharePhotos;
+  c.sharePhotos=!_photosShared(c);
   try{if(typeof saveClients==='function')saveClients();}catch(e){}
   try{if(typeof _pushKeyNow==='function')_pushKeyNow('sc_clients',_lsGet('sc_clients')||'');}catch(e){}
   if(c.sharePhotos){try{if(typeof _backupPhotosToServer==='function')_backupPhotosToServer();}catch(e){}}
@@ -9451,10 +9458,10 @@ function _renderPhotosView(id,c,_passed){
       ${selectedProfessions.includes('tattoo')?`<button onclick="_openStencilOverlay('${id}')" aria-label="Stencil overlay" style="background:var(--p-purple-bg);color:var(--p-purple);border:1px solid var(--p-purple-line);border-radius:8px;padding:7px 11px;font-size:16px;font-weight:600;cursor:pointer;display:flex;align-items:center;gap:5px;"><i class="ti ti-stack-2" aria-hidden="true" style="font-size:16px;"></i> Stencil</button>`:''}
     </div>
   </div>
-  <div style="margin:10px 16px 0;background:var(--surf1);border:1px solid ${c.sharePhotos?'var(--accent-a30,#123a2c)':'var(--p-chip)'};border-radius:12px;padding:10px 12px;display:flex;align-items:center;gap:10px;">
-    <i class="ti ti-${c.sharePhotos?'eye':'eye-off'}" aria-hidden="true" style="font-size:16px;color:${c.sharePhotos?'var(--accent)':'#888'};flex-shrink:0;"></i>
-    <div style="flex:1;min-width:0;"><div style="font-size:16px;font-weight:600;color:var(--p-ink);">${c.sharePhotos?'Visible in '+_fileEsc(c.name.split(' ')[0])+'’s app':'Private to your chart'}</div><div style="font-size:14px;color:var(--p-mut);line-height:1.4;">${c.sharePhotos?'They can see their before &amp; after progress in their app.':'Turn on to let this client view their own progress photos.'}</div></div>
-    ${togBtn(!!c.sharePhotos,"toggleSharePhotos('"+id+"')",'Show progress photos in the client’s app')}
+  <div style="margin:10px 16px 0;background:var(--surf1);border:1px solid ${_photosShared(c)?'var(--accent-a30,#123a2c)':'var(--p-chip)'};border-radius:12px;padding:10px 12px;display:flex;align-items:center;gap:10px;">
+    <i class="ti ti-${_photosShared(c)?'eye':'eye-off'}" aria-hidden="true" style="font-size:16px;color:${_photosShared(c)?'var(--accent)':'#888'};flex-shrink:0;"></i>
+    <div style="flex:1;min-width:0;"><div style="font-size:16px;font-weight:600;color:var(--p-ink);">${_photosShared(c)?'Visible in '+_fileEsc(c.name.split(' ')[0])+'’s app':'Private to your chart'}</div><div style="font-size:14px;color:var(--p-mut);line-height:1.4;">${_photosShared(c)?'They can see their before &amp; after progress in their app.':'Hidden from this client. Turn on to let them view their own progress photos.'}</div></div>
+    ${togBtn(_photosShared(c),"toggleSharePhotos('"+id+"')",'Show progress photos in the client’s app')}
   </div>
 
   <div style="padding:10px 16px 4px;display:flex;align-items:center;justify-content:space-between;">
@@ -14801,7 +14808,7 @@ function _cIni(c){return (c&&c.initials)||_initials((c&&c.name)||'')||'?';}
 // its own token). Split out so an owner's animals can carry their own sets the same way.
 function _progressPhotoRefs(cid){
   const c=(typeof CL!=='undefined'&&CL[cid])||null;
-  if(!c||!c.sharePhotos||typeof capturedPhotos==='undefined')return [];
+  if(!c||!_photosShared(c)||typeof capturedPhotos==='undefined')return [];
   try{
     return (capturedPhotos[cid]||[]).filter(p=>p&&(p.phase==='before'||p.phase==='after')&&p.url).map(p=>({pid:(typeof _photoPid==='function'?_photoPid(p):p.pid)||'',ts:p.ts||0,phase:p.phase,angle:p.angle||'',date:(function(){try{return new Date(p.ts||Date.now()).toLocaleDateString('en-US',{month:'short',day:'numeric',year:'numeric'});}catch(e){return '';}})()})).filter(x=>x.pid);
   }catch(e){ return []; }
