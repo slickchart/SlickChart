@@ -499,15 +499,27 @@ founder test tool reads the last five back, so a test that passes while real ale
 so. Provider signups and build sales both record. Addresses are masked going in — never store the
 full one.
 
-**iOS push has never worked and still doesn't.** The iOS project has no Firebase SDK (stock
+**iOS push goes straight to Apple now (`lib/apns.js`).** The iOS project has no Firebase SDK (stock
 `AppDelegate.swift`, nothing in `Package.swift`, `GoogleService-Info.plist` unread), so
-`@capacitor/push-notifications` returns a raw APNs token. The server sends everything through FCM,
-which rejected it — and the old code read that rejection as a dead token and **deleted the row**, so
-an iPhone registered, lost its token on the first send, and reached zero devices forever. `sendFcm`
-now recognises the shape, refuses before any network call, and does not prune. Fixing delivery needs
-either an APNs sender server-side (no rebuild, needs the `.p8` in Vercel) or Firebase added to the
-iOS target (needs a rebuild and resubmit). Ashley is on Android, so this was not her bug — but it is
-real and still open for any iPhone provider.
+`@capacitor/push-notifications` returns a raw APNs token. Everything used to go through FCM, which
+rejected it — and the old code read that rejection as a dead token and **deleted the row**, so an
+iPhone registered, lost its token on the first send, and reached zero devices forever.
+
+Fixed by sending to Apple directly rather than rebuilding the app: the tokens already stored are
+exactly what APNs wants, so **no App Store resubmit was needed**. `lib/fcm.js` routes per token by
+its SHAPE (colon = FCM, plain hex = APNs), not the stored platform label, because the shape is what
+decides which service can deliver it. `nativePushConfigured()` is the gate to use — `lib/push.js`
+exports a `pushConfigured()` of its own for web push, hence the name.
+
+**It needs four env vars in Vercel and they are not set yet:** `APNS_KEY_P8`, `APNS_KEY_ID`,
+`APNS_TEAM_ID` (plus optional `APNS_BUNDLE_ID`, `APNS_ENV`). The `.p8` already uploaded to Firebase
+works; one key serves both, and a lost one can be re-created without breaking Firebase. Until they
+are set, iPhone push is a clean no-op that names the missing config, and Android is untouched. Full
+setup, plus the sandbox-vs-production token trap, is in `PUSH-NATIVE-SETUP.md`.
+
+**Never prune on a credentials error.** `Unregistered` and `BadDeviceToken` mean the token is dead;
+`InvalidProviderToken` and friends mean *we* are misconfigured, and deleting a registration over a
+wrong env var is how this whole bug started.
 
 **Free-starter signups deliberately do NOT push.** Ashley wants her phone to buzz for provider
 signups and roadmap sales only. A push was added and then removed at her request; the `free_signups`
@@ -549,10 +561,13 @@ row is the record. Don't add it back.
     a free SlickChart subscription nobody paid for, because `subscriptions` is what decides who gets
     a paid account. **Nothing has been deleted** — that is a live billing decision and it is Ashley's
     to make. Ask before writing to that table.
-11. **Did the signup fix work?** The next real provider signup settles it. `notify_log` records the
+11. **iPhone push needs the APNs key added in Vercel.** The sender is built, tested and deployed,
+    but dormant until `APNS_KEY_P8` / `APNS_KEY_ID` / `APNS_TEAM_ID` exist. Ashley is on Android so
+    nothing of hers is blocked; any iPhone provider gets no push until this is done.
+12. **Did the signup fix work?** The next real provider signup settles it. `notify_log` records the
     outcome either way, and the founder test tool reports it. If alerts are still missed while the
     log says `sent=1`, the problem is on the device, not the server.
-12. **`BUILD_EXCLUDE_EMAILS`** is still unset in Vercel. Her own test purchases therefore count in
+13. **`BUILD_EXCLUDE_EMAILS`** is still unset in Vercel. Her own test purchases therefore count in
    the Build Your Own App stats.
 
 ---
