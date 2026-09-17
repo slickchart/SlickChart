@@ -1,4 +1,4 @@
-# Session handoff — 2026-09-13 (last updated 2026-09-16, the Build blog)
+# Session handoff — 2026-09-13 (last updated 2026-09-17, push + the Build blog)
 
 Written at the end of a long session so the next one starts informed. `CLAUDE.md` is the standing
 guidance and still governs; this file is *state*: what shipped, what's unfinished, and what will
@@ -468,6 +468,53 @@ is where the email capture is.
 
 ---
 
+## 2k. Why signup alerts went silent (2026-09-17)
+
+Ashley missed two real provider signups. Both founder test pushes delivered to her Android phone,
+which is what made this take so long: **the test was proving a different claim than the one that
+mattered.**
+
+**The two lookups were not the same.** `test-push` resolved her phone as
+`{this session's provider id} ∪ {providers whose email is in FOUNDER_EMAILS}`. A signup or sale push
+runs server-side with no session, so it only ever had the second half. A broken
+`FOUNDER_EMAILS → providers.email → native_push_tokens` chain therefore passed the test via the
+session id and reached nobody for real. `test-push` now sends down the real chain first and only
+falls back to the session id when that finds nothing, saying so when it does. **A passing test now
+means the real path passed.** Don't undo that.
+
+**The actual gate.** `api/signup.js` skipped BOTH the founder email and the founder push whenever
+`hasActiveSubscription(email)` was true, to avoid double-pinging a paid signup the Stripe webhook
+already announced. A Build roadmap sale used to write a row into `subscriptions` (fixed forward in
+`4289749`; the rows written before it remain), so a roadmap buyer looks "already paying" forever —
+and roadmap buyers are exactly who the `/build` funnel sends to SlickChart. That matches Ashley's own
+observation that alerts stopped when `/build` launched.
+
+**The dedupe is now inverted, deliberately.** Both alerts always fire and say "already subscribed"
+when the flag is set. A duplicate ping is a small annoyance; a missed signup is the thing that costs
+her. Don't reinstate the skip.
+
+**`notify_log` (lib/notify-log.js)** records one row per founder-notification attempt: masked
+address, whether it was skipped and why, devices found, devices sent, and which link broke. The
+founder test tool reads the last five back, so a test that passes while real alerts vanish now says
+so. Provider signups and build sales both record. Addresses are masked going in — never store the
+full one.
+
+**iOS push has never worked and still doesn't.** The iOS project has no Firebase SDK (stock
+`AppDelegate.swift`, nothing in `Package.swift`, `GoogleService-Info.plist` unread), so
+`@capacitor/push-notifications` returns a raw APNs token. The server sends everything through FCM,
+which rejected it — and the old code read that rejection as a dead token and **deleted the row**, so
+an iPhone registered, lost its token on the first send, and reached zero devices forever. `sendFcm`
+now recognises the shape, refuses before any network call, and does not prune. Fixing delivery needs
+either an APNs sender server-side (no rebuild, needs the `.p8` in Vercel) or Firebase added to the
+iOS target (needs a rebuild and resubmit). Ashley is on Android, so this was not her bug — but it is
+real and still open for any iPhone provider.
+
+**Free-starter signups deliberately do NOT push.** Ashley wants her phone to buzz for provider
+signups and roadmap sales only. A push was added and then removed at her request; the `free_signups`
+row is the record. Don't add it back.
+
+---
+
 ## 3. Open threads — needs Ashley, or needs verifying
 
 1. **Square `payment.*` webhook subscription.** Paid-course auto-unlock depends on Square sending
@@ -497,7 +544,15 @@ is where the email capture is.
 9. **The numbers in free-funnel emails 5 and 7 are unverified** — Claude's plan at $20–100/mo, Apple
    $99/yr, Google $25 once, the 28-day D-U-N-S. Her own claims from her own build, left exactly as
    she wrote them. Prices move; she was asked to re-read before the first send.
-10. **`BUILD_EXCLUDE_EMAILS`** is still unset in Vercel. Her own test purchases therefore count in
+10. **Stray `subscriptions` rows from pre-fix roadmap sales.** "Check for stray subscription rows"
+    in Admin tools lists them (founder-only, read-only, `api/admin/stale-subs.js`). Each one is also
+    a free SlickChart subscription nobody paid for, because `subscriptions` is what decides who gets
+    a paid account. **Nothing has been deleted** — that is a live billing decision and it is Ashley's
+    to make. Ask before writing to that table.
+11. **Did the signup fix work?** The next real provider signup settles it. `notify_log` records the
+    outcome either way, and the founder test tool reports it. If alerts are still missed while the
+    log says `sent=1`, the problem is on the device, not the server.
+12. **`BUILD_EXCLUDE_EMAILS`** is still unset in Vercel. Her own test purchases therefore count in
    the Build Your Own App stats.
 
 ---
