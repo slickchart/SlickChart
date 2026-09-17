@@ -187,20 +187,33 @@ async function sendToOwner(ownerKind, ownerId, payload) {
 // Several places announce something to Ashley's phone (a new provider signup, a Build roadmap sale,
 // a free-starter signup) and each had grown its own copy of this same lookup. Returns how many
 // devices were reached. Best-effort: never throws, and a missing config just yields 0.
-export async function pushFounders(payload) {
-  if (!serviceAccount()) return 0;
-  const emails = String(process.env.FOUNDER_EMAILS || process.env.OWNER_EMAIL || process.env.FOUNDER_NOTIFY_EMAIL || 'botanicalaestheticsbyashley@gmail.com')
+export async function pushFoundersReport(payload) {
+  const out = { sent: 0, devices: 0, emails: [], providerIds: [], results: [] };
+  if (!serviceAccount()) { out.error = 'fcm not configured'; return out; }
+  out.emails = String(process.env.FOUNDER_EMAILS || process.env.OWNER_EMAIL || process.env.FOUNDER_NOTIFY_EMAIL || 'botanicalaestheticsbyashley@gmail.com')
     .toLowerCase().split(',').map(s => s.trim()).filter(Boolean);
-  if (!emails.length) return 0;
-  let pushed = 0;
-  for (const fe of emails) {
+  if (!out.emails.length) { out.error = 'no founder email configured'; return out; }
+  for (const fe of out.emails) {
     try {
       const q = sql();
       const provs = await q`SELECT id FROM providers WHERE lower(email) = ${fe}`;
-      for (const pr of (provs || [])) { try { pushed += (await sendToOwner('provider', pr.id, payload)) || 0; } catch (e) {} }
-    } catch (e) {}
+      for (const pr of (provs || [])) {
+        out.providerIds.push(String(pr.id));
+        try {
+          const r = await pushReport('provider', pr.id, payload);
+          out.sent += r.sent || 0;
+          out.devices += r.devices || 0;
+          for (const one of (r.results || [])) out.results.push(one);
+        } catch (e) {}
+      }
+    } catch (e) { out.error = 'db'; }
   }
-  return pushed;
+  return out;
+}
+
+export async function pushFounders(payload) {
+  const r = await pushFoundersReport(payload);
+  return r.sent;
 }
 
 // Push to a client's native app(s) (their phone). owner_kind 'client', keyed by client id.

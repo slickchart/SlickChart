@@ -11,7 +11,7 @@
 // report both counts so a mismatch is visible instead of mysterious.
 import { dbEnabled, sql } from '../../lib/db.js';
 import { verifyToken, isSessionValid } from '../../lib/auth.js';
-import { pushReport, fcmConfigured } from '../../lib/fcm.js';
+import { pushReport, pushFoundersReport, fcmConfigured } from '../../lib/fcm.js';
 
 function norm(s) { return String(s || '').trim().toLowerCase(); }
 
@@ -57,16 +57,31 @@ export default async function handler(req, res) {
     try { delayMs = Math.max(0, Math.min(7, parseInt((req.query && req.query.delay) || (req.body && req.body.delay) || 0, 10) || 0)) * 1000; } catch (e) {}
     if (delayMs) await new Promise(r => setTimeout(r, delayMs));
 
-    // Send to the full set — exactly like a real paid-signup push. pushReport gives back WHY each
-    // device did or didn't get it, which a bare count never could.
-    let sent = 0;
-    const results = [];
-    for (const pid of providerIds) {
-      try {
-        const r = await pushReport('provider', pid, { title: '✅ Test push', body: 'Your SlickChart push notifications are working 🎉', url: '/slickchart', tag: 'test-push', renotify: true });
-        sent += r.sent || 0;
-        for (const one of (r.results || [])) results.push(one);
-      } catch (e) {}
+    // Send down the REAL path first. This used to send to the session-union set, which meant a
+    // passing test proved only "this phone can receive a push" — not "a new-signup push would reach
+    // it". Those are different lookups: a signup/sale push runs server-side with no session, so it
+    // can only find the founder by FOUNDER_EMAILS -> providers.email -> native_push_tokens. If that
+    // chain is broken, the old test still passed and the real alert still went nowhere, which is
+    // exactly the gap being chased here. So: exercise the real chain, and only fall back to the
+    // session id if it comes up empty — reporting that it did.
+    const founder = await pushFoundersReport({ title: '✅ Test push', body: 'Your SlickChart push notifications are working 🎉', url: '/slickchart', tag: 'test-push', renotify: true });
+    let sent = founder.sent || 0;
+    const results = (founder.results || []).slice();
+    const founderDevices = founder.devices || 0;
+
+    // Fallback: the founder-email chain found no device, so confirm the phone itself still works by
+    // sending the way the old test did. A banner from THIS means the phone is fine and the lookup is
+    // what's broken.
+    let viaFallback = false;
+    if (founderDevices === 0) {
+      for (const pid of providerIds) {
+        try {
+          const r = await pushReport('provider', pid, { title: '✅ Test push (fallback)', body: 'Your phone works, but new-signup alerts are not finding it 🎉', url: '/slickchart', tag: 'test-push', renotify: true });
+          if (r.devices) viaFallback = true;
+          sent += r.sent || 0;
+          for (const one of (r.results || [])) results.push(one);
+        } catch (e) {}
+      }
     }
 
     // An iPhone registered through the current native app hands back an APNs token, and the iOS
@@ -76,20 +91,28 @@ export default async function handler(req, res) {
     const apns = results.filter(r => r.shape === 'apns');
 
     let message;
-    if (devices === 0) {
+    if (devices === 0 && founderDevices === 0) {
       message = 'No phone is registered yet. Open the SlickChart app on your PHONE (not desktop), make sure you’re logged in, and allow notifications when it asks — then try this again.';
+    } else if (founderDevices === 0 && viaFallback) {
+      message = 'Found the bug. Your phone works fine, but a new-signup alert looks you up by your founder email, and that lookup finds no phone — so real signup pushes have been going nowhere while this test passed. You should still get a banner just now (that was the fallback). Tell Claude: "founder lookup finds 0 devices."';
     } else if (apns.length && sent === 0) {
       message = 'Found your iPhone, and this is the bug: the iPhone app hands back an Apple push token, but the server currently only sends through Firebase, which can’t deliver to an Apple token. So every push has been failing silently. This is not something you can fix by re-opening the app — tell Claude you saw the "Apple token" result and it’ll fix the server side.';
     } else if (sent > 0) {
-      message = 'Sent to ' + sent + ' of your device' + (sent === 1 ? '' : 's') + ' — you should see it on your phone in a few seconds (lock the phone / close the app first, since an open app may not show a banner). If it arrives, your paid-signup pushes will too. 🎉';
-      if (devicesSession === 0) message += ' (Heads up: your phone is registered under a different provider record than this session — the real paid-signup push handles that, and now so does this test.)';
+      message = 'Sent to ' + sent + ' of your device' + (sent === 1 ? '' : 's') + ' — you should see it on your phone in a few seconds (lock the phone / close the app first, since an open app may not show a banner). This went down the exact same path a real new-signup alert uses, so if it arrives, signup alerts will too. 🎉';
+      if (devicesSession === 0) message += ' (Heads up: your phone is registered under a different provider record than this session — the real signup push handles that, and so does this test.)';
       if (apns.length) message += ' One of your devices is an iPhone that can’t receive push yet — tell Claude.';
     } else {
       const why = (results.find(r => r.error) || {}).error || '';
       message = devices + ' device' + (devices === 1 ? '' : 's') + ' registered, but the push didn’t go through' + (why ? ' (' + why + ')' : '') + '. Re-open the app on your phone with notifications on, then try again — and if it still fails, tell Claude what this said.';
     }
     // `results` is the diagnostic payload: platform, token shape and the real error per device.
-    res.status(200).json({ ok: true, fcm: true, devices, devicesSession, sent, providers: providerIds.length, results, message });
+    // founderDevices vs devices is the one comparison that matters: the first is what a real signup
+    // push can reach, the second is what this session can reach. They should be equal.
+    res.status(200).json({
+      ok: true, fcm: true, devices, devicesSession, sent, providers: providerIds.length, results, message,
+      founderDevices, founderSent: founder.sent || 0, founderEmails: founder.emails || [],
+      founderProviders: (founder.providerIds || []).length, viaFallback
+    });
   } catch (e) {
     console.error('[admin/test-push] failed:', e && e.message || e);
     res.status(500).json({ error: 'Something went wrong.' });
