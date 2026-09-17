@@ -83,7 +83,29 @@ export default async function handler(req, res) {
 
       const nowL = localParts(rem.tz, now);
       if (nowL.hour < 0) continue;
-      if (inQuiet(notif, nowL.hour, nowL.min)) continue;
+      const quiet = inQuiet(notif, nowL.hour, nowL.min);
+
+      // Homecare reminders the client SET THEMSELVES, at the hour they picked (their local time).
+      // Two slots, morning and evening, each independently on/off. These deliberately ignore quiet
+      // hours: the default quiet window is 21:00-08:00, so an 8pm or 7am routine reminder — exactly
+      // the times a skincare routine happens — would otherwise be silently swallowed by a setting the
+      // client never associated with it. A time you explicitly asked for is not an interruption.
+      const hcSlots = [];
+      if (notif.homecareReminder !== false && rem.hasHomecare) {
+        for (const slot of ['AM', 'PM']) {
+          const cfg = notif['homecare' + slot];
+          if (!cfg || !cfg.on) continue;
+          const h = parseInt(cfg.hour, 10);
+          if (!Number.isFinite(h) || h < 0 || h > 23 || h !== nowL.hour) continue;
+          hcSlots.push({
+            rkey: 'homecare' + slot + ':' + nowL.date,
+            title: slot === 'AM' ? 'Morning routine' : 'Evening routine',
+            body: slot === 'AM' ? 'Time for your morning routine ✨' : 'Time for your evening routine ✨',
+            screen: 'homecare'
+          });
+        }
+      }
+      if (quiet && !hcSlots.length) continue;
 
       // Day-based reminders fire during the client's local morning window. This works the
       // same whether the cron runs hourly (fires once, at the first morning hit — deduped)
@@ -91,8 +113,9 @@ export default async function handler(req, res) {
       // vercel.json). It avoids tying the appointment reminder to an exact hours-away
       // window, which a once-daily cron would almost always miss.
       const MORNING_LO = 7, MORNING_HI = 11;
-      const inMorning = nowL.hour >= MORNING_LO && nowL.hour <= MORNING_HI;
+      const inMorning = !quiet && nowL.hour >= MORNING_LO && nowL.hour <= MORNING_HI;
       const due = [];
+      for (const s of hcSlots) due.push(s);
 
       // Reminders for EVERY upcoming appointment across the client's providers. Newer clients sync an
       // `appts` array (one per provider); older ones sync a single scalar apptAt — fall back to that so
@@ -136,8 +159,12 @@ export default async function handler(req, res) {
           }
         }
       }
-      // Daily homecare nudge in the local morning, for clients who have a homecare routine.
-      if (notif.homecareReminder !== false && rem.hasHomecare && inMorning) {
+      // Fallback for clients who have never set their own times: the original single morning nudge.
+      // Anyone who has configured a slot gets only what they asked for, so turning both off is a real
+      // "stop reminding me" rather than silently reverting to the old behaviour.
+      const hcConfigured = !!((notif.homecareAM && notif.homecareAM.on) || (notif.homecarePM && notif.homecarePM.on)
+        || (notif.homecareAM && notif.homecareAM.set) || (notif.homecarePM && notif.homecarePM.set));
+      if (notif.homecareReminder !== false && rem.hasHomecare && inMorning && !hcConfigured) {
         due.push({
           rkey: 'homecare:' + nowL.date,
           title: 'Homecare reminder',
