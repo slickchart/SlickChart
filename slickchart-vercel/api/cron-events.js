@@ -14,7 +14,7 @@
 import { dbEnabled, sql, ensureTable } from '../lib/db.js';
 import { ensureClientTables, claimReminder, logEvent, listPushSubs, deletePushSub, spaceUrl, getClientToken } from '../lib/clients.js';
 import { pushConfigured, sendPushToAll } from '../lib/push.js';
-import { sendNativeToClient, fcmConfigured } from '../lib/fcm.js';
+import { sendNativeToClient, nativePushConfigured } from '../lib/fcm.js';
 
 const HOUR = 3600 * 1000;
 const DAY = 24 * HOUR;
@@ -180,7 +180,7 @@ export default async function handler(req, res) {
           if (pushConfigured()) {
             try { const subs = await listPushSubs(cid); if (subs && subs.length) summary.devices += await sendPushToAll(subs, { title, body: text.slice(0, 140), url: dlUrl, tag: rkey, renotify: true, screen: 'messages' }, deletePushSub); } catch (e) {}
           }
-          if (fcmConfigured()) {
+          if (nativePushConfigured()) {
             try { summary.devices += await sendNativeToClient(cid, { title, body: text.slice(0, 140), url: dlUrl, tag: rkey, screen: 'messages' }); } catch (e) {}
           }
         }

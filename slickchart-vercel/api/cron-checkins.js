@@ -14,7 +14,7 @@ import { dbEnabled, sql, getKVValue } from '../lib/db.js';
 import { ensureClientTables, listPushSubs, deletePushSub, claimReminder, logEvent, spaceUrl } from '../lib/clients.js';
 import { getConnection, squareFetch } from '../lib/square.js';
 import { pushConfigured, sendPushToAll } from '../lib/push.js';
-import { sendNativeToClient, fcmConfigured } from '../lib/fcm.js';
+import { sendNativeToClient, nativePushConfigured } from '../lib/fcm.js';
 
 const HOUR = 3600 * 1000;
 const CI_TEXT = 'Hi! Just a quick reminder to complete your pre-visit check-in before your visit so I’m all set for you ✨ Tap to open it — it only takes about 2 minutes.';
@@ -123,7 +123,7 @@ export default async function handler(req, res) {
         const payload = { title: 'Pre-visit check-in', body: 'Please take 2 minutes for your check-in before your visit ✨', url: dlUrl, tag: 'checkin:' + b.id, renotify: true, screen: 'previsit' };
         let n = 0;
         if (pushConfigured() && subs.length) { try { n += await sendPushToAll(subs, payload, deletePushSub); } catch (e) {} }
-        if (fcmConfigured()) { try { n += await sendNativeToClient(cl.id, payload); } catch (e) {} }
+        if (nativePushConfigured()) { try { n += await sendNativeToClient(cl.id, payload); } catch (e) {} }
         summary.devices += n;
       }
     }

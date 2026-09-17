@@ -15,7 +15,7 @@
 import crypto from 'crypto';
 import { sql, ensureProvidersTable } from '../lib/db.js';
 import { sendEmail } from '../lib/email.js';
-import { sendNativeToProvider, fcmConfigured } from '../lib/fcm.js';
+import { sendNativeToProvider, nativePushConfigured } from '../lib/fcm.js';
 import { ensureClientTables, claimReminder } from '../lib/clients.js';
 import { recordBuildSale } from '../lib/build-sales.js';
 
@@ -129,7 +129,7 @@ async function notifyFounderPaid(q, email) {
 
   // ── Native push to the founder's phone(s) ───────────────────────────────────
   try {
-    if (fcmConfigured()) {
+    if (nativePushConfigured()) {
       const founderEmails = String(process.env.FOUNDER_EMAILS || process.env.OWNER_EMAIL || founderNotifyEmail() || '')
         .toLowerCase().split(',').map(s => s.trim()).filter(Boolean);
       if (founderEmails.length) {

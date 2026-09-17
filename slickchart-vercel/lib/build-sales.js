@@ -15,7 +15,7 @@
 // waiting on the unlock response.
 import { sql, dbEnabled, ensureTable, ensureBuildPurchasesTable } from './db.js';
 import { sendEmail, trustedOrigin, addToAudience } from './email.js';
-import { pushFoundersReport, fcmConfigured } from './fcm.js';
+import { pushFoundersReport, nativePushConfigured } from './fcm.js';
 import { recordNotify } from './notify-log.js';
 
 function escHtml(s) {
@@ -145,8 +145,8 @@ export async function recordBuildSale(sale) {
   // leaves the same readable trace instead of nothing. A sale is the one alert worth least guessing.
   let skipped = '', devices = 0, sentCount = 0, detail = '';
   try {
-    if (!fcmConfigured()) {
-      skipped = 'FIREBASE_SERVICE_ACCOUNT not set';
+    if (!nativePushConfigured()) {
+      skipped = 'no push transport configured (FIREBASE_SERVICE_ACCOUNT for Android, APNS_KEY_P8 for iPhone)';
     } else {
       const body = (price ? price + ' — ' : '') + who
         + (total ? ` · that's ${total} sold 🎉` : ' 🎉');

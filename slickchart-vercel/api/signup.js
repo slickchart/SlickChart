@@ -4,7 +4,7 @@
 import { sql, ensureProvidersTable, dbEnabled, hasActiveSubscription } from '../lib/db.js';
 import { signToken, hashPassword, makeToken, createSession } from '../lib/auth.js';
 import { sendEmail, trustedOrigin, addToAudience, welcomeEmailHtml, welcomeEmailText } from '../lib/email.js';
-import { pushFoundersReport, fcmConfigured } from '../lib/fcm.js';
+import { pushFoundersReport, nativePushConfigured } from '../lib/fcm.js';
 import { recordNotify } from '../lib/notify-log.js';
 import crypto from 'crypto';
 
@@ -117,8 +117,8 @@ export default async function handler(req, res) {
     // also makes a stale subscription row visible instead of invisible.
     let _pushSkipped = '', _pushDevices = 0, _pushSent = 0, _pushDetail = '';
     try {
-      if (!fcmConfigured()) {
-        _pushSkipped = 'FIREBASE_SERVICE_ACCOUNT not set';
+      if (!nativePushConfigured()) {
+        _pushSkipped = 'no push transport configured (FIREBASE_SERVICE_ACCOUNT for Android, APNS_KEY_P8 for iPhone)';
       } else {
         const r = await pushFoundersReport({
           title: _alreadyPaid ? '🎉 New signup (already subscribed)' : '🎉 New provider signup!',

@@ -10,6 +10,7 @@
 // does for web push.
 import crypto from 'crypto';
 import { sql } from './db.js';
+import { sendApns, apnsConfigured } from './apns.js';
 
 let _sa = undefined; // undefined = unchecked, object = parsed, null = unusable
 function serviceAccount() {
@@ -37,6 +38,11 @@ function serviceAccount() {
 }
 
 export function fcmConfigured() { return !!serviceAccount(); }
+// Is ANY native transport usable? Android goes through FCM, iOS straight to Apple, and either can be
+// configured without the other. Callers that gate on "can we push natively at all" want this, not
+// fcmConfigured(). Named for the transport because lib/push.js exports a pushConfigured() of its own
+// for WEB push, and several files import both.
+export function nativePushConfigured() { return !!serviceAccount() || apnsConfigured(); }
 
 function b64url(input) {
   return Buffer.from(input).toString('base64').replace(/\+/g, '-').replace(/\//g, '_').replace(/=+$/, '');
@@ -103,12 +109,12 @@ export async function sendFcm(token, payload) {
   const sa = serviceAccount();
   if (!sa) return { ok: false, skipped: true };
   if (!token) return { ok: false, error: 'no token' };
-  // An APNs token can never be delivered through FCM. Fail it here rather than round-tripping to
-  // Google for a 400, and crucially do NOT mark it `gone` — it's a real, live device token, and
-  // deleting it destroys the only evidence of what's wrong.
+  // An APNs token can never be delivered through FCM. Reaching here means APNs isn't configured
+  // (sendToOwner routes iOS tokens to lib/apns.js when it is). Never mark it `gone` — it's a real,
+  // live device token, and deleting it would destroy the registration over a missing env var.
   if (tokenShape(token) === 'apns') {
-    console.error('[fcm] refusing to send an APNs device token through FCM — the iOS app has no Firebase SDK, so this token can only be delivered via APNs directly');
-    return { ok: false, error: 'apns-token-no-firebase' };
+    console.error('[fcm] iOS token with no APNs credentials configured — set APNS_KEY_P8 / APNS_KEY_ID / APNS_TEAM_ID');
+    return { ok: false, error: 'apns-not-configured' };
   }
   const at = await accessToken();
   if (!at) return { ok: false, error: 'no access token' };
@@ -159,7 +165,7 @@ export async function sendFcm(token, payload) {
 // made a broken iPhone push take days to pin down.
 export async function pushReport(ownerKind, ownerId, payload) {
   const empty = { sent: 0, devices: 0, results: [] };
-  if (!serviceAccount() || !ownerId) return { ...empty, error: !ownerId ? 'no owner' : 'fcm not configured' };
+  if (!nativePushConfigured() || !ownerId) return { ...empty, error: !ownerId ? 'no owner' : 'no push transport configured' };
   let rows;
   try {
     const q = sql();
@@ -168,8 +174,10 @@ export async function pushReport(ownerKind, ownerId, payload) {
   let sent = 0;
   const results = [];
   for (const row of (rows || [])) {
-    const r = await sendFcm(row.token, payload);
+    // Pick the transport from the token itself rather than the stored platform string: the shape is
+    // what actually decides which service can deliver it, and it can't drift the way a label can.
     const shape = tokenShape(row.token);
+    const r = shape === 'apns' ? await sendApns(row.token, payload) : await sendFcm(row.token, payload);
     if (r.ok) sent++;
     else if (r.gone) { try { const q = sql(); await q`DELETE FROM native_push_tokens WHERE token=${row.token}`; } catch (e) {} }
     results.push({ platform: row.platform || '', shape, ok: !!r.ok, gone: !!r.gone, error: r.error || '' });
@@ -189,7 +197,7 @@ async function sendToOwner(ownerKind, ownerId, payload) {
 // devices were reached. Best-effort: never throws, and a missing config just yields 0.
 export async function pushFoundersReport(payload) {
   const out = { sent: 0, devices: 0, emails: [], providerIds: [], results: [] };
-  if (!serviceAccount()) { out.error = 'fcm not configured'; return out; }
+  if (!nativePushConfigured()) { out.error = 'no push transport configured'; return out; }
   out.emails = String(process.env.FOUNDER_EMAILS || process.env.OWNER_EMAIL || process.env.FOUNDER_NOTIFY_EMAIL || 'botanicalaestheticsbyashley@gmail.com')
     .toLowerCase().split(',').map(s => s.trim()).filter(Boolean);
   if (!out.emails.length) { out.error = 'no founder email configured'; return out; }

@@ -17,7 +17,7 @@ import {
   logEvent, clearHealStartById, spaceUrl, getClientToken
 } from '../lib/clients.js';
 import { pushConfigured, sendPushToAll } from '../lib/push.js';
-import { sendNativeToClient, fcmConfigured } from '../lib/fcm.js';
+import { sendNativeToClient, nativePushConfigured } from '../lib/fcm.js';
 import { enforceFounderMerchantIsolation } from '../lib/square.js';
 
 const HOUR = 3600 * 1000;
@@ -185,7 +185,7 @@ export default async function handler(req, res) {
       // app. A native-only install has no web-push subscription, so don't skip on empty `subs`
       // alone; check for a native token too before deciding there's no one to notify.
       let hasNative = false;
-      if (fcmConfigured()) {
+      if (nativePushConfigured()) {
         try { const q = sql(); const nt = await q`SELECT 1 FROM native_push_tokens WHERE owner_kind='client' AND owner_id=${row.client_id} LIMIT 1`; hasNative = !!(nt && nt.length); } catch (e) {}
       }
       if (!subs.length && !hasNative) continue;

@@ -11,7 +11,8 @@
 // report both counts so a mismatch is visible instead of mysterious.
 import { dbEnabled, sql } from '../../lib/db.js';
 import { verifyToken, isSessionValid } from '../../lib/auth.js';
-import { pushReport, pushFoundersReport, fcmConfigured } from '../../lib/fcm.js';
+import { pushReport, pushFoundersReport, nativePushConfigured } from '../../lib/fcm.js';
+import { apnsConfigured, apnsTarget } from '../../lib/apns.js';
 import { recentNotifies } from '../../lib/notify-log.js';
 
 function norm(s) { return String(s || '').trim().toLowerCase(); }
@@ -45,8 +46,8 @@ export default async function handler(req, res) {
     try { const r = await q`SELECT count(*)::int AS n FROM native_push_tokens WHERE owner_kind = 'provider' AND owner_id = ANY(${providerIds}::text[])`; devices = (r[0] && r[0].n) || 0; } catch (e) {}
     try { const r = await q`SELECT count(*)::int AS n FROM native_push_tokens WHERE owner_kind = 'provider' AND owner_id = ${String(payload.u)}`; devicesSession = (r[0] && r[0].n) || 0; } catch (e) {}
 
-    if (!fcmConfigured()) {
-      res.status(200).json({ ok: true, fcm: false, devices, devicesSession, sent: 0, message: 'Push notifications aren’t configured on the server yet (FCM). That’s a one-time server setup — tell Claude and it’ll walk you through it.' });
+    if (!nativePushConfigured()) {
+      res.status(200).json({ ok: true, fcm: false, devices, devicesSession, sent: 0, message: 'Push notifications aren’t configured on the server yet. That’s a one-time server setup — tell Claude and it’ll walk you through it.' });
       return;
     }
 
@@ -97,11 +98,13 @@ export default async function handler(req, res) {
     } else if (founderDevices === 0 && viaFallback) {
       message = 'Found the bug. Your phone works fine, but a new-signup alert looks you up by your founder email, and that lookup finds no phone — so real signup pushes have been going nowhere while this test passed. You should still get a banner just now (that was the fallback). Tell Claude: "founder lookup finds 0 devices."';
     } else if (apns.length && sent === 0) {
-      message = 'Found your iPhone, and this is the bug: the iPhone app hands back an Apple push token, but the server currently only sends through Firebase, which can’t deliver to an Apple token. So every push has been failing silently. This is not something you can fix by re-opening the app — tell Claude you saw the "Apple token" result and it’ll fix the server side.';
+      message = apnsConfigured()
+        ? 'Found your iPhone and tried Apple directly, but the send was refused: ' + ((apns.find(r => r.error) || {}).error || 'no reason given') + '. Most often that means the Apple key details are wrong, or the app was installed from Xcode (sandbox) while the server is set to production. Tell Claude what this said.'
+        : 'Found your iPhone, but the Apple push key isn’t set on the server yet, so nothing can be delivered to it. Android is unaffected. Tell Claude "the iPhone needs the APNs key" and it’ll walk you through adding it — no app update needed.';
     } else if (sent > 0) {
       message = 'Sent to ' + sent + ' of your device' + (sent === 1 ? '' : 's') + ' — you should see it on your phone in a few seconds (lock the phone / close the app first, since an open app may not show a banner). This went down the exact same path a real new-signup alert uses, so if it arrives, signup alerts will too. 🎉';
       if (devicesSession === 0) message += ' (Heads up: your phone is registered under a different provider record than this session — the real signup push handles that, and so does this test.)';
-      if (apns.length) message += ' One of your devices is an iPhone that can’t receive push yet — tell Claude.';
+      if (apns.length && !apnsConfigured()) message += ' One of your devices is an iPhone, and the Apple push key isn’t set on the server yet — tell Claude.';
     } else {
       const why = (results.find(r => r.error) || {}).error || '';
       message = devices + ' device' + (devices === 1 ? '' : 's') + ' registered, but the push didn’t go through' + (why ? ' (' + why + ')' : '') + '. Re-open the app on your phone with notifications on, then try again — and if it still fails, tell Claude what this said.';
@@ -127,6 +130,7 @@ export default async function handler(req, res) {
       ok: true, fcm: true, devices, devicesSession, sent, providers: providerIds.length, results, message,
       founderDevices, founderSent: founder.sent || 0, founderEmails: founder.emails || [],
       founderProviders: (founder.providerIds || []).length, viaFallback,
+      apns: apnsTarget(),
       recent: recent.map(r => ({ at: r.at, kind: r.kind, subject: r.subject, skipped: r.skipped, devices: r.devices, sent: r.sent, detail: r.detail }))
     });
   } catch (e) {
