@@ -244,7 +244,19 @@ export async function getConnection(providerId) {
         refresh_token=${encrypt(r.refresh_token || refresh)}, expires_at=${r.expires_at || null}, updated_at=now()
         WHERE provider_id=${providerId}`;
       access = r.access_token;
-    } catch (e) { /* keep existing token; may still be valid */ }
+    } catch (e) {
+      // Keep the existing token — it may still be valid for a few more days. But say so loudly: a
+      // refresh that quietly fails is how a connection dies on its own. Everything downstream then
+      // degrades silently (appointments stop syncing, pre-visit check-ins stop auto-sending), and the
+      // only visible symptom is a schedule that looks fine but is weeks out of date.
+      console.error('[square] token refresh FAILED for provider ' + providerId + ' (expires ' + row.expires_at + '):', (e && e.message) || e);
+    }
+  }
+  // Already past its expiry: the token cannot work, and handing it back makes every caller fail with
+  // an ambiguous 401 instead of a clear "not connected". Say it plainly and return nothing.
+  if (row.expires_at && new Date(row.expires_at).getTime() <= Date.now()) {
+    console.error('[square] connection for provider ' + providerId + ' EXPIRED at ' + row.expires_at + ' and could not be refreshed — they must reconnect Square');
+    return null;
   }
   return { token: access, locationId: row.location_id || null, merchantId: row.merchant_id || null };
 }

@@ -23764,7 +23764,11 @@ async function _loadSquareAppts(force){
   if(_sqApptsState==='loading')return;
   const hasKey=(typeof Cloud!=='undefined'&&Cloud&&Cloud.token)?'1':'';
   if(!hasKey){_sqApptsState='off';return;}                 // not signed in to cloud, keep sample data
-  if(!force&&(_sqApptsState==='ok'||_sqApptsState==='error'))return; // already attempted
+  if(!force&&_sqApptsState==='ok')return;                   // already loaded
+  // An 'error' used to latch for the whole session, so one blip meant the schedule stayed stale until
+  // the app was restarted. Retry, but not on every render: once a minute is enough to recover on its
+  // own without hammering Square.
+  if(!force&&_sqApptsState==='error'&&(Date.now()-(_sqApptsErrAt||0))<60000)return;
   _sqApptsState='loading';
   let _changed=true;
   try{
@@ -23785,7 +23789,15 @@ async function _loadSquareAppts(force){
     // Keep the Google/Apple sync-out feed current with live Square bookings too, and reflect each
     // client's next appointment so it shows in their client app.
     if(_changed){try{_rebuildCalendarFeed();}catch(e){}try{_stampClientNextVisit(true);}catch(e){}}
-  }catch(e){_sqApptsState='error';squareAppts=null;}
+  }catch(e){
+    // A failed Square load used to be completely silent: squareAppts went null, the screen quietly
+    // fell back to manualAppts/confirmedAppts (which can be weeks old), nextVisit was never re-stamped
+    // so the check-in nudges stopped, and nothing anywhere said Square was unreachable. A stale
+    // schedule that looks live is worse than an error, so record it and show it.
+    _sqApptsState='error';squareAppts=null;_sqApptsErrAt=Date.now();
+    _sqApptsErr=(e&&e.code==='nosquare')?'nosquare':((e&&e.code==='auth')?'auth':((e&&e.code==='network')?'network':'other'));
+    try{console.error('[square] appointments load failed:',_sqApptsErr,e&&e.message);}catch(_){}
+  }
   // Refresh the visible screen if it shows appointments (without touching nav history). A background
   // poll only repaints when the data actually changed (avoids flicker), but a manual Refresh (force)
   // must ALWAYS repaint — otherwise, if the refetch returns the same set, the screen that briefly
@@ -23876,6 +23888,31 @@ async function _syncSquareClientsNow(){
   }
 }
 function _apptsLive(){return _sqApptsState==='ok'&&Array.isArray(squareAppts);}
+// Why the last Square appointment load failed, and when. Drives the banner below; '' means no failure.
+var _sqApptsErr='',_sqApptsErrAt=0;
+// The banner shown wherever appointments are listed when Square could not be reached. It matters
+// because everything downstream quietly degrades when this happens: the schedule falls back to
+// whatever was saved locally (often weeks old), each client's "next visit" stops being re-stamped, so
+// the pre-visit check-in nudges stop appearing, and the server-side auto-sender can't see today's
+// bookings either. Telling her plainly beats three mysteries.
+function _sqApptsErrHTML(){
+  if(_sqApptsState!=='error'||!_sqApptsErr)return '';
+  var reconnect=(_sqApptsErr==='nosquare'||_sqApptsErr==='auth');
+  var msg=reconnect
+    ? 'Square is not connected right now, so this is the last schedule saved on this device and may be out of date. Pre-visit check-ins do not auto-send while Square is disconnected.'
+    : 'Could not reach Square just now, so this is the last schedule saved on this device and may be out of date.';
+  return `<div style="margin:0 16px 10px;background:var(--p-amber-bg,#241a08);border:1px solid var(--p-amber,#5a4318);border-radius:12px;padding:11px 13px;display:flex;gap:9px;align-items:flex-start;">
+    <i class="ti ti-alert-triangle" style="font-size:18px;color:var(--p-amber);flex-shrink:0;margin-top:1px;"></i>
+    <div style="flex:1;min-width:0;">
+      <div style="font-size:16px;font-weight:600;color:var(--p-amber);">Showing a saved schedule</div>
+      <div style="font-size:16px;color:var(--p-mut);margin-top:3px;line-height:1.5;">${msg}</div>
+      <div style="margin-top:8px;display:flex;gap:8px;flex-wrap:wrap;">
+        <button onclick="event.stopPropagation();_loadSquareAppts(true)" style="background:var(--accent);color:var(--accent-ink);border:none;border-radius:8px;padding:8px 12px;font-size:16px;font-weight:600;cursor:pointer;font-family:inherit;min-height:44px;">Try again</button>
+        ${reconnect?`<button onclick="event.stopPropagation();nav('settings')" style="background:none;border:1px solid var(--p-line);color:var(--p-ink);border-radius:8px;padding:8px 12px;font-size:16px;font-weight:600;cursor:pointer;font-family:inherit;min-height:44px;">Reconnect Square</button>`:''}
+      </div>
+    </div>
+  </div>`;
+}
 // A real provider account — sample data removed, or signed in to the cloud. Such an account must
 // NEVER be shown the fabricated sample appointments (_apptsData); it looks exactly like data loss.
 function _isRealApptAcct(){return _sampleHidden()||(typeof Cloud!=='undefined'&&Cloud&&!!Cloud.token);}
@@ -23932,6 +23969,7 @@ function renderWeekAppts(){
     <div style="font-size:16px;color:var(--p-mut);">${week.length} appointment${week.length===1?'':'s'} this week</div>
     ${live?`<button onclick="_loadSquareAppts(true);renderWeekAppts()" style="margin-top:8px;background:none;border:none;color:var(--accent-strong);font-size:16px;font-weight:600;cursor:pointer;font-family:inherit;padding:0;"><i class="ti ti-refresh" style="font-size:16px;"></i> Refresh</button>`:''}
   </div>
+  ${_sqApptsErrHTML()}
   ${!week.length?`
   <div style="margin:14px 16px;text-align:center;color:var(--p-mut);font-size:16px;padding:30px 20px;background:var(--surf1);border:1px solid var(--p-line3);border-radius:12px;">
     <i class="ti ti-calendar-off" style="font-size:26px;color:var(--p-mut2);"></i>
@@ -24009,6 +24047,7 @@ function renderTodayAppts(){
     <div style="font-size:16px;color:var(--p-mut);">${today.length} appointment${today.length===1?'':'s'} today \u00b7 stays here all day so you can go back and finish notes anytime.</div>
     ${real?`<button onclick="_loadSquareAppts(true)" style="margin-top:8px;background:none;border:none;color:var(--accent-strong);font-size:16px;font-weight:600;cursor:pointer;font-family:inherit;padding:0;"><i class="ti ti-refresh" style="font-size:16px;"></i> Refresh</button>`:''}
   </div>
+  ${_sqApptsErrHTML()}
   ${!today.length?`
   <div style="margin:14px 16px;text-align:center;color:var(--p-mut);font-size:16px;padding:30px 20px;background:var(--surf1);border:1px solid var(--p-line3);border-radius:12px;">
     <i class="ti ti-calendar-off" style="font-size:26px;color:var(--p-mut2);"></i>
