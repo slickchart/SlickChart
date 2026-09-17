@@ -17895,6 +17895,8 @@ function renderAccount(){
     <div onclick="_founderTestPush(this)" style="display:flex;align-items:center;gap:11px;padding:13px 14px;cursor:pointer;"><div style="width:38px;height:38px;border-radius:12px;background:var(--p-surf2);display:flex;align-items:center;justify-content:center;flex-shrink:0;"><i class="ti ti-bell-ringing" style="font-size:18px;color:var(--p-green);"></i></div><div style="flex:1;"><div style="font-size:16px;font-weight:500;color:var(--p-ink);">Test my push notifications</div><div style="font-size:16px;color:var(--p-mut);">Send a test push to confirm new-signup alerts reach your phone</div></div><i class="ti ti-chevron-right" style="font-size:16px;color:var(--p-mut);"></i></div>
     <div style="border-top:1px solid var(--p-line);"></div>
     <div onclick="_founderTestPush(this,6)" style="display:flex;align-items:center;gap:11px;padding:13px 14px;cursor:pointer;"><div style="width:38px;height:38px;border-radius:12px;background:var(--p-surf2);display:flex;align-items:center;justify-content:center;flex-shrink:0;"><i class="ti ti-clock-bolt" style="font-size:18px;color:var(--p-green);"></i></div><div style="flex:1;"><div style="font-size:16px;font-weight:500;color:var(--p-ink);">Test with a delay &mdash; then close the app</div><div style="font-size:16px;color:var(--p-mut);">Sends 6s after you tap, so you can close the app and see a real lock-screen banner</div></div><i class="ti ti-chevron-right" style="font-size:16px;color:var(--p-mut);"></i></div>
+    <div style="border-top:1px solid var(--p-line);"></div>
+    <div onclick="_founderStaleSubs(this)" style="display:flex;align-items:center;gap:11px;padding:13px 14px;cursor:pointer;"><div style="width:38px;height:38px;border-radius:12px;background:var(--p-surf2);display:flex;align-items:center;justify-content:center;flex-shrink:0;"><i class="ti ti-receipt-off" style="font-size:18px;color:var(--p-green);"></i></div><div style="flex:1;"><div style="font-size:16px;font-weight:500;color:var(--p-ink);">Check for stray subscription rows</div><div style="font-size:16px;color:var(--p-mut);">Roadmap buyers who look like paying subscribers. Read-only, changes nothing</div></div><i class="ti ti-chevron-right" style="font-size:16px;color:var(--p-mut);"></i></div>
   </div></div>`:''}
   <div style="text-align:center;padding:14px;font-size:14px;color:var(--p-mut);">SlickChart · Version 1.0.3</div></div>`;
 }
@@ -22917,6 +22919,35 @@ async function _pollFounderSignups(force){
     try{if(typeof proToast==='function')proToast('💰 New paid provider: '+lastNm+'! 🎉',6000);}catch(e){}
     try{if(_notifOn('newMessage')&&typeof providerSystemNotify==='function')providerSystemNotify('💰 New paid provider!',lastNm+' just signed up 🎉');}catch(e){}
   }catch(e){}
+}
+// ── Founder tool: stray subscription rows ────────────────────────────────────────
+// A roadmap sale used to write a row into `subscriptions`. Those rows make a buyer look like a
+// paying SlickChart subscriber, which granted them a paid account and (until it was fixed) silenced
+// their signup alert. This only LISTS them — nothing here changes a billing row.
+async function _founderStaleSubs(rowEl){
+  const sub=rowEl&&rowEl.querySelector('div>div:nth-child(2)');
+  const orig='Roadmap buyers who look like paying subscribers. Read-only, changes nothing';
+  const setSub=t=>{try{if(sub)sub.textContent=t;}catch(e){}};
+  const tok=(typeof Cloud!=='undefined'&&Cloud&&Cloud.token)||'';
+  setSub('Checking\u2026');
+  try{
+    const r=await fetch('/api/admin/stale-subs',{headers:{'Authorization':'Bearer '+tok}});
+    const j=await r.json().catch(()=>({}));
+    if(r.status===403){setSub('Owner-only.');}
+    else if(!r.ok||!j.ok){setSub((j&&j.error)||'Couldn\u2019t check.');}
+    else{
+      const n=(j.roadmap||[]).length;
+      const lines=(j.roadmap||[]).slice(0,12).map(function(x){
+        return x.email+' \u00b7 '+x.status+(x.hasSlickChartAccount?' \u00b7 has an account':' \u00b7 no account yet');
+      });
+      const body=(j.message||'')+(lines.length?'\n\n'+lines.join('\n'):'')
+        +'\n\nNothing has been changed. Tell Claude if you want these cleared.';
+      if(typeof confirmModal==='function')confirmModal({title:(n?'\u26a0\ufe0f '+n+' stray row'+(n===1?'':'s'):'\u2705 Nothing stray'),body:body,action:'Got it',hideCancel:true},function(){});
+      else if(typeof proToast==='function')proToast(body,9000);
+      setSub(n?(n+' stray row'+(n===1?'':'s')+' \u2014 nothing changed'):'\u2713 None found');
+    }
+    setTimeout(()=>setSub(orig),9000);
+  }catch(e){ setSub('Couldn\u2019t check \u2014 try again.'); setTimeout(()=>setSub(orig),6000); }
 }
 // ── Founder tool: send myself a test push (confirm the phone is registered) ─────────────────────
 // delaySec>0 asks the SERVER to wait before sending, so the founder can close the app and confirm a
