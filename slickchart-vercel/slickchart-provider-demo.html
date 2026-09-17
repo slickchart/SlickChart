@@ -3390,13 +3390,27 @@ function _setLang(l){if(!I18N[l])return;_lang=l;try{localStorage.setItem('sc_lan
 }
 let _loginMode='login';let _resetToken='';let _resetSentTo='';let _pendingTotpEmail='';let _pendingTotpPw='';
 function _setLoginMode(m){_loginMode=m;renderLogin();}
-function _prefillEmail(){try{return localStorage.getItem('sc_login_email')||'';}catch(e){return '';}}
+// Set when someone arrives from the "finish creating your account" rescue email, so the address they
+// paid with is already in the box. Deliberately NOT written to localStorage: it is a convenience for
+// this one render, not a claim that this browser belongs to a returning provider.
+let _signupEmail='';
+function _prefillEmail(){try{return _signupEmail||localStorage.getItem('sc_login_email')||'';}catch(e){return _signupEmail||'';}}
 function _handleAuthParams(){
   try{
     const p=new URLSearchParams(location.search);
     const v=p.get('verify'), r=p.get('reset');
     if(v){Cloud.verifyEmail(v).then(ok=>{if(typeof proToast==='function')proToast(ok?'Email verified \u2713':'That verification link has expired');});try{const u=new URL(location.href);u.searchParams.delete('verify');history.replaceState({},'',u);}catch(e){}}
     if(r){_resetToken=r;_loginMode='newpw';try{const u=new URL(location.href);u.searchParams.delete('reset');history.replaceState({},'',u);}catch(e){}renderLogin();return true;}
+    // ?signup=1[&email=] — the link in the paid-but-no-account rescue email. Someone has already
+    // paid and simply never created the account, so drop them straight on the Create-account form
+    // with their address filled in rather than on a sign-in screen that will reject them.
+    if(p.get('signup')){
+      const em=String(p.get('email')||'').trim();
+      if(em&&em.indexOf('@')>0)_signupEmail=em;
+      _loginMode='signup';
+      try{const u=new URL(location.href);u.searchParams.delete('signup');u.searchParams.delete('email');history.replaceState({},'',u);}catch(e){}
+      renderLogin();return true;
+    }
     const sq=p.get('sq');
     if(sq){const reason=p.get('reason');setTimeout(()=>{if(typeof proToast==='function')proToast(sq==='connected'?'Square connected \u2713':'Square connection failed'+(reason?': '+reason:''));},500);try{const u=new URL(location.href);u.searchParams.delete('sq');u.searchParams.delete('reason');history.replaceState({},'',u);}catch(e){}}
   }catch(e){}
