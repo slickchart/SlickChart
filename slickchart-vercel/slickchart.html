@@ -14238,6 +14238,31 @@ function _apptDay(s){var sig=_apptSig(s);return sig?sig.split('@')[0]:'';}
 // Same signature, but from a real Date (the specific appointment a card is rendering) so we can compare
 // it against the stored checkinDoneFor label without relying on the client's generic nextVisit field.
 function _apptSigFromDate(d){try{if(!d||isNaN(d))return '';return (d.getMonth()+1)+'-'+d.getDate()+'@'+d.getHours()+':'+d.getMinutes();}catch(e){return '';}}
+// Should a check-in submitted at `atMs` count as done for the client's CURRENT nextVisit?
+//
+// This exists because the events sync re-adopts OLD check-in events. The check-in log auto-clears as
+// it ages, so a month-old check-in comes back around on a later sync — and the code then copied the
+// client's nextVisit AT THAT MOMENT into checkinDoneFor. That stamps last month's check-in against
+// TODAY's appointment, and from then on the app believes today's check-in is already done: the
+// home-screen nudge never appears, and Today's appointments shows it complete while pointing at a
+// check-in from weeks ago. Same window _ciMatchesVisit uses, so the two always agree.
+// Takes the CHECK-IN, not just its timestamp, so the same label-first rule as _ciMatchesVisit
+// applies — a check-in whose `at` an earlier sync rewrote to "now" must not be able to claim the
+// upcoming visit just because its corrupted timestamp lands in the window.
+function _ciIsForNextVisit(c,ci){
+  if(!c)return false;
+  var h=(typeof _hoursUntilVisit==='function')?_hoursUntilVisit(c):null;
+  if(h==null)return true;                 // nothing scheduled — no upcoming visit to wrongly claim
+  if(!ci)return false;
+  return _ciMatchesVisit(ci,new Date(Date.now()+h*3600000));
+}
+// Record a check-in against the upcoming visit only when it really is for that visit, and repair a
+// stamp an earlier sync got wrong so a client's file heals itself instead of staying stuck.
+function _stampCheckinDone(c,ci){
+  if(!c)return;
+  if(_ciIsForNextVisit(c,ci)){c.checkinDone=true;c.checkinDoneFor=(c.nextVisit||'');return;}
+  if(c.checkinDoneFor&&c.nextVisit&&c.checkinDoneFor===c.nextVisit){c.checkinDone=false;c.checkinDoneFor='';}
+}
 function _checkinDone(id,c,apptAt){
   // Scoped to the CURRENT appointment: a check-in completed for a PRIOR visit must not suppress the
   // nudge for a newly-booked one. checkinDoneFor stores the nextVisit label it was completed for.
@@ -14248,8 +14273,10 @@ function _checkinDone(id,c,apptAt){
   // syncs onto the record AFTER their check-in arrives, so checkinDoneFor gets left blank. An OLD
   // visit's check-in falls outside the window, so a returning client still correctly gets the nudge.
   if(apptAt&&!isNaN(apptAt)&&c.lastCheckin&&c.lastCheckin.at){
-    var _at=+c.lastCheckin.at||0,_ap=apptAt.getTime();
-    if(_at&&_at<=_ap+12*3600000&&_at>=_ap-3*86400000)return true;
+    // Via _ciMatchesVisit so the check-in's own stated visit wins over a timestamp the sync may have
+    // rewritten — otherwise a re-dated month-old check-in marks today's visit done and the nudge
+    // never appears.
+    if(_ciMatchesVisit(c.lastCheckin,apptAt))return true;
   }
   if(c.checkinDoneFor==null)return false;
   var cf=c.checkinDoneFor,sC=_apptSig(cf);
@@ -14279,6 +14306,16 @@ function _checkinDone(id,c,apptAt){
 function _ciMatchesVisit(ci,apptAt){
   if(!ci)return false;
   if(!apptAt||isNaN(apptAt))return true;                       // no appointment context → prior behavior
+  // A check-in carries the visit it was completed FOR (dateLabel, e.g. "Thursday, August 20 at
+  // 10:00 AM"). Judge on that first, because it is the one signal that cannot be rewritten: the
+  // events sync re-dates a check-in whose created_at won't parse to Date.now(), which made a
+  // month-old check-in read as "ready" for today's appointment. The label it was submitted with
+  // never changes. Compared at day resolution so a reformat or a slight time change still matches.
+  var sig=(typeof _apptSig==='function')?_apptSig(ci.dateLabel||''):'';
+  if(sig){
+    var sA=(typeof _apptSigFromDate==='function')?_apptSigFromDate(apptAt):'';
+    if(sA)return sig.split('@')[0]===sA.split('@')[0];
+  }
   var at=(typeof ci.at==='number')?ci.at:0;
   if(!at)return false;                                         // no timestamp → can't confirm it's for THIS visit
   var ap=apptAt.getTime();
@@ -22550,7 +22587,7 @@ function _reconcileEventAttachments(events){
       // Store only a photo count on the roster (localStorage) — the images themselves live in the
       // check-in log + capturedPhotos, so keeping base64 here just bloats the tiny sc_clients cap.
       c.lastCheckin={id:ev.id,dateLabel:payload.dateLabel||'',time:payload.time||'',treatment:payload.treatment||'',groups:(payload.groups||[]).slice(),flagged:(payload.flagged||[]).slice(),notes:payload.notes||'',photoCount:ciPhotos.length,at:at||Date.now()};
-      c.checkinDone=true;c.checkinDoneFor=(c.nextVisit||'');
+      _stampCheckinDone(c,{dateLabel:payload.dateLabel||'',at:at});
       if(payload.flagged&&payload.flagged.length&&!((typeof _isCheckinDismissed==='function')&&_isCheckinDismissed(ev.id))&&typeof _mergeContra==='function'){
         const _fd=[];(payload.groups||[]).forEach(g=>{(g.rows||[]).forEach(r=>{if(r&&r.flagged)_fd.push({label:r.label||'',detail:(r.detail||'').trim()});});});
         c.flaggedContra=_mergeContra(c.flaggedContra,{form:'Pre-visit check-in',items:payload.flagged.slice(),details:_fd,checkinId:ev.id,date:payload.dateLabel||'Recent'});
@@ -22680,14 +22717,18 @@ async function syncClientEvents(){
         const ciPhotos=(Array.isArray(payload.photos)?payload.photos:[]).filter(_validImgSrc);
         const ci={id:ev.id,providerId:'me',clientId:cid,client:name,dateLabel:payload.dateLabel||'',time:payload.time||'',
           treatment:payload.treatment||'',groups:payload.groups||[],flagged:payload.flagged||[],notes:payload.notes||'',
-          photos:ciPhotos,read:false,at:(ev.created_at?(new Date(ev.created_at).getTime()||Date.now()):Date.now())};
+          // NEVER fall back to Date.now() here. This runs on every sync, including for events from
+          // weeks ago, so stamping "now" on one whose created_at won't parse silently re-dates an old
+          // check-in to today — which is what made a month-old one show as ready for today's visit.
+          // 0 means "unknown", and the consumers already treat unknown as "cannot confirm".
+          photos:ciPhotos,read:false,at:(ev.created_at?(new Date(ev.created_at).getTime()||0):0)};
         // Don't re-add a check-in the provider already cleared from the log, and never add a
         // duplicate of one already showing (both caused check-ins to reappear/pile up on refresh).
         const _ciDup=checkins.some(x=>x.id===ci.id);
         const _ciCleared=(typeof _isCheckinClearedLog==='function')&&_isCheckinClearedLog(ci.id);
         if(!_ciDup&&!_ciCleared)checkins.unshift(ci);
         if(c){
-          c.checkinDone=true;c.checkinDoneFor=(c.nextVisit||'');touchedClients=true;
+          _stampCheckinDone(c,ci);touchedClients=true;
           // Keep only the MOST RECENT check-in on the client's file, a new one
           // overwrites the previous, so providers can always reference the latest
           // without check-ins accumulating on the chart forever. Stamp `at` with the check-in's
