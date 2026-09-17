@@ -4222,8 +4222,20 @@ function persistCapturedPhotos(){
 // ── Photo cloud backup ── IndexedDB is device-local; these back photo BYTES to the server (by a
 // per-photo id, reusing the guide-file store) and keep a small metadata INDEX synced via localStorage,
 // so a new device / reinstall can restore every before/after instead of losing them.
+// A photo's pid is its permanent name: the client's app stores the pids it was given and fetches the
+// bytes by them later. Assigning one in memory without writing it down meant a reload could hand the
+// SAME photo a DIFFERENT pid, and every reference the client already held stopped resolving — their
+// Journey tab quietly went empty. So whenever one is minted, persist it.
+let _pidDirty=null;
 function _photoPid(p){
-  if(p&&!p.pid){try{p.pid='ph_'+Date.now().toString(36)+Math.random().toString(36).slice(2,9);}catch(e){p.pid='ph_'+Math.random().toString(36).slice(2,12);}}
+  if(p&&!p.pid){
+    try{p.pid='ph_'+Date.now().toString(36)+Math.random().toString(36).slice(2,9);}catch(e){p.pid='ph_'+Math.random().toString(36).slice(2,12);}
+    // Debounced: a render can mint dozens at once, and one write covers them all.
+    try{
+      if(_pidDirty)clearTimeout(_pidDirty);
+      _pidDirty=setTimeout(function(){_pidDirty=null;try{if(typeof persistCapturedPhotos==='function')persistCapturedPhotos();}catch(e){}},400);
+    }catch(e){}
+  }
   return p&&p.pid;
 }
 function _buildPhotoIndex(){
