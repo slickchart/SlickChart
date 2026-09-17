@@ -15,7 +15,8 @@
 // waiting on the unlock response.
 import { sql, dbEnabled, ensureTable, ensureBuildPurchasesTable } from './db.js';
 import { sendEmail, trustedOrigin, addToAudience } from './email.js';
-import { sendNativeToProvider, fcmConfigured } from './fcm.js';
+import { pushFoundersReport, fcmConfigured } from './fcm.js';
+import { recordNotify } from './notify-log.js';
 
 function escHtml(s) {
   return String(s == null ? '' : s).replace(/[&<>"']/g, c => ({ '&': '&amp;', '<': '&lt;', '>': '&gt;', '"': '&quot;', "'": '&#39;' }[c]));
@@ -140,25 +141,27 @@ export async function recordBuildSale(sale) {
   } catch (e) { console.error('[build-sales] founder email failed:', e && e.message || e); }
 
   // ── Native push to the founder's phone(s) ──────────────────────────────────
+  // Same founder lookup and the same recorded outcome as a provider signup, so a missed sale alert
+  // leaves the same readable trace instead of nothing. A sale is the one alert worth least guessing.
+  let skipped = '', devices = 0, sentCount = 0, detail = '';
   try {
-    if (fcmConfigured()) {
-      const founderEmails = String(process.env.FOUNDER_EMAILS || process.env.OWNER_EMAIL || founderNotifyEmail() || '')
-        .toLowerCase().split(',').map(s => s.trim()).filter(Boolean);
-      if (founderEmails.length) {
-        const body = (price ? price + ' — ' : '') + who
-          + (total ? ` · that's ${total} sold 🎉` : ' 🎉');
-        const payload = { title: '🚀 Build Your Own App sold!', body, url: '/slickchart', tag: 'build-sale:' + sid };
-        let pushed = 0;
-        for (const fe of founderEmails) {
-          try {
-            const provs = await q`SELECT id FROM providers WHERE lower(email) = ${fe}`;
-            for (const pr of (provs || [])) { try { pushed += (await sendNativeToProvider(pr.id, payload)) || 0; } catch (e) {} }
-          } catch (e) {}
-        }
-        console.log('[build-sales] sale push: founders=' + founderEmails.length + ' devices=' + pushed + ' session=' + sid);
-      }
+    if (!fcmConfigured()) {
+      skipped = 'FIREBASE_SERVICE_ACCOUNT not set';
+    } else {
+      const body = (price ? price + ' — ' : '') + who
+        + (total ? ` · that's ${total} sold 🎉` : ' 🎉');
+      const r = await pushFoundersReport({ title: '🚀 Build Your Own App sold!', body, url: '/slickchart', tag: 'build-sale:' + sid });
+      devices = r.devices || 0; sentCount = r.sent || 0;
+      if (!r.providerIds || !r.providerIds.length) detail = 'no provider row matches FOUNDER_EMAILS (' + (r.emails || []).join('|') + ')';
+      else if (!devices) detail = 'founder provider row found, but no phone registered under it';
+      else if (!sentCount) detail = ((r.results || [])[0] || {}).error || 'device found but the send failed';
+      console.log('[build-sales] sale push: devices=' + devices + ' sent=' + sentCount + ' session=' + sid + (detail ? ' — ' + detail : ''));
     }
-  } catch (e) { console.error('[build-sales] founder push failed:', e && e.message || e); }
+  } catch (e) {
+    skipped = 'threw: ' + ((e && e.message) || 'unknown');
+    console.error('[build-sales] founder push failed:', e && e.message || e);
+  }
+  await recordNotify({ kind: 'build-sale', subject: (sale && sale.email) || '', skipped, devices, sent: sentCount, detail });
 }
 
 // ── The buyer's own access email ─────────────────────────────────────────────────────────────────

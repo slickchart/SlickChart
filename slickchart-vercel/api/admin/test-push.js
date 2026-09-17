@@ -12,6 +12,7 @@
 import { dbEnabled, sql } from '../../lib/db.js';
 import { verifyToken, isSessionValid } from '../../lib/auth.js';
 import { pushReport, pushFoundersReport, fcmConfigured } from '../../lib/fcm.js';
+import { recentNotifies } from '../../lib/notify-log.js';
 
 function norm(s) { return String(s || '').trim().toLowerCase(); }
 
@@ -105,13 +106,28 @@ export default async function handler(req, res) {
       const why = (results.find(r => r.error) || {}).error || '';
       message = devices + ' device' + (devices === 1 ? '' : 's') + ' registered, but the push didn’t go through' + (why ? ' (' + why + ')' : '') + '. Re-open the app on your phone with notifications on, then try again — and if it still fails, tell Claude what this said.';
     }
+    // What actually happened on the last few REAL signups. A test that passes while real alerts go
+    // missing is the exact situation this tool existed to catch and didn't, so it now reports the
+    // real events alongside its own result rather than only proving itself.
+    let recent = [];
+    try { recent = await recentNotifies(5); } catch (e) {}
+    if (recent.length) {
+      const bad = recent.filter(r => !r.sent);
+      message += bad.length
+        ? ' — but ' + bad.length + ' of the last ' + recent.length + ' real signups reached nobody: ' + (bad[0].skipped || bad[0].detail || 'reason not recorded') + '. Tell Claude that line.'
+        : ' The last ' + recent.length + ' real signups all reached your phone too.';
+    } else {
+      message += ' No real signups have come through since this logging went live, so the next one will be recorded either way.';
+    }
+
     // `results` is the diagnostic payload: platform, token shape and the real error per device.
     // founderDevices vs devices is the one comparison that matters: the first is what a real signup
     // push can reach, the second is what this session can reach. They should be equal.
     res.status(200).json({
       ok: true, fcm: true, devices, devicesSession, sent, providers: providerIds.length, results, message,
       founderDevices, founderSent: founder.sent || 0, founderEmails: founder.emails || [],
-      founderProviders: (founder.providerIds || []).length, viaFallback
+      founderProviders: (founder.providerIds || []).length, viaFallback,
+      recent: recent.map(r => ({ at: r.at, kind: r.kind, subject: r.subject, skipped: r.skipped, devices: r.devices, sent: r.sent, detail: r.detail }))
     });
   } catch (e) {
     console.error('[admin/test-push] failed:', e && e.message || e);
