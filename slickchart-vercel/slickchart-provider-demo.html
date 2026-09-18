@@ -468,7 +468,7 @@ const S=document.getElementById('S');
 // resets when I save it" and there was no way to tell whether her phone had any of them — a whole
 // day was spent debugging code she may not have been running. Shown at the bottom of Settings, so
 // the answer is a screenshot away. Bump it on every ship.
-const APP_BUILD='2026-09-18e';
+const APP_BUILD='2026-09-18f';
 
 
 /* ════════════════════════════════════════════════════════════════
@@ -772,7 +772,16 @@ let msgStore={
   sophie:[{from:'me',text:'Hi Sophie! Reminder, your chemical peel consent form is still waiting for your signature before tomorrow. 💌',time:'Yesterday'},{from:'them',text:'Oh gosh I totally forgot! Signing now 🙈',time:'Yesterday'},{from:'me',text:'No worries at all! See you tomorrow at 12:30 PM ✨',time:'Yesterday'}],
 };
 
-function saveMessages(){try{localStorage.setItem('sc_msgstore',JSON.stringify(msgStore));localStorage.setItem('sc_threads',JSON.stringify(threads));}catch(e){}}
+// A message the provider sent lives ONLY here — there is no other copy. These two rode the 700ms
+// debounced queue alone, which is exactly the path that silently stopped landing for one provider
+// (her business hours went two days without reaching the account while every immediately-pushed
+// setting stayed current). A lost settings push is an annoyance; a lost message is a message a
+// client never gets. Push both the moment they change, like every other record.
+function saveMessages(){try{
+  const m=JSON.stringify(msgStore),t=JSON.stringify(threads);
+  localStorage.setItem('sc_msgstore',m);localStorage.setItem('sc_threads',t);
+  if(typeof _pushKeyNow==='function'){_pushKeyNow('sc_msgstore',m);_pushKeyNow('sc_threads',t);}
+}catch(e){}}
 function loadMessages(){
   try{const raw=localStorage.getItem('sc_msgstore');if(raw){const parsed=JSON.parse(raw);if(parsed&&typeof parsed==='object'){Object.keys(msgStore).forEach(k=>delete msgStore[k]);Object.keys(parsed).forEach(k=>{msgStore[k]=parsed[k];});}}}catch(e){}
   try{const raw=localStorage.getItem('sc_threads');if(raw){const arr=JSON.parse(raw);if(Array.isArray(arr)){threads.length=0;arr.forEach(t=>threads.push(t));}}}catch(e){}
@@ -2476,6 +2485,24 @@ const _SYNC_SKIP={sc_token:1,sc_sqkey:1,sc_bus:1,sc_chart_activity:1,sc_pulse:1,
 const _SYNC_SKIP_PREFIX=['sc_room_draft_'];
 function _syncPrefixSkipped(k){try{return _SYNC_SKIP_PREFIX.some(function(p){return String(k).indexOf(p)===0;});}catch(e){return false;}}
 function _syncable(k){return typeof k==='string'&&k.indexOf('sc_')===0&&!_SYNC_SKIP[k]&&!_syncPrefixSkipped(k);}
+// What KIND of thing is this stored value? Judging a value on its own isn't enough: `123` is a
+// perfectly good value for a latch and total corruption for the vendor list. So we compare shapes —
+// a key that holds a list on the device can't suddenly be a number, and one that holds an object
+// can't suddenly be a bare string. Those are not edits, they are damage.
+function _syncShape(str){
+  if(str==null)return 'missing';
+  const v=String(str);
+  if(!v.length)return 'empty';
+  if(v==='null'||v==='undefined')return 'nothing';
+  const c=v[0];
+  if(c==='{'||c==='['){
+    try{ const o=JSON.parse(v); return Array.isArray(o)?'list':((o&&typeof o==='object')?'record':'plain'); }
+    catch(e){ return 'broken'; }
+  }
+  return 'plain';   // '1' latches, ids, hex colours, note-format names — legitimately not JSON
+}
+// Could the app have meant to store this at all?
+function _usableSyncValue(str){ const sh=_syncShape(str); return sh!=='missing'&&sh!=='empty'&&sh!=='nothing'&&sh!=='broken'; }
 // Monotonic "tombstone" sets: deletes/hides/merges/dismissals that must only ever GROW. On a plain
 // pull the whole-blob server copy overwrote local, so a delete made on one device (or moments before a
 // refresh, before its push flushed) was wiped — resurrecting deleted clients, merged duplicates, and
@@ -2863,7 +2890,34 @@ const Cloud={
       console.log('[Cloud] cleared '+Object.keys(items).length+' device-local key(s) from the account');
     }catch(e){}
   },
-  async pull(){if(!this.token)return -1;let r;try{r=await fetch('/api/store',{headers:{'Authorization':'Bearer '+this.token}});}catch(e){return -1;}if(r.status===401){this._authFailed=true;this.logout();return -1;}let j={};try{j=await r.json();}catch(e){}const data=(j&&j.data)||{};const _staleDeviceLocalKeys=[];const keys=Object.keys(data);this._lastPulledKeys=new Set(keys);const set=(k,v)=>{_lsPersist(k,v);};keys.forEach(k=>{try{
+  async pull(){if(!this.token)return -1;let r;try{r=await fetch('/api/store',{headers:{'Authorization':'Bearer '+this.token}});}catch(e){return -1;}if(r.status===401){this._authFailed=true;this.logout();return -1;}let j={};try{j=await r.json();}catch(e){}const data=(j&&j.data)||{};const _staleDeviceLocalKeys=[];const keys=Object.keys(data);this._lastPulledKeys=new Set(keys);const set=(k,v)=>{_lsPersist(k,v);};
+  // THE LAST LINE BEFORE DATA LOSS. Every merge below bails out with `return null` when it can't
+  // make sense of a side — and "I can't tell" then fell through to this plain overwrite, which is
+  // "take the server's copy". Those are not the same answer, and the second one destroys work: one
+  // provider's account was holding the four characters `null` for her business hours, and every
+  // single load wrote that over a device that had real hours on it. She could not win by re-entering
+  // them. Every merge had that same shape of hole, including the one guarding the whole client list
+  // and the one guarding every message ever sent, so it is caught HERE, once, for every key —
+  // merged or not — rather than eleven times in eleven functions.
+  const setFromServer=(k,v)=>{
+    const local=(function(){try{return _lsGet(k);}catch(e){return null;}})();
+    const sv=_syncShape(v),lv=_syncShape(local);
+    const svBad=(sv==='nothing'||sv==='broken'||sv==='empty');
+    // A list or a record on this device can never be replaced by a bare string or a number. That is
+    // not a provider changing something, it is a value that got mangled somewhere.
+    const shrunk=((lv==='record'||lv==='list')&&sv==='plain');
+    if(svBad||shrunk){
+      if(lv!=='missing'&&lv!=='nothing'&&lv!=='broken'&&lv!=='empty'){
+        try{this.push(k,local);}catch(e){}   // keep ours, and repair the account so it stops spreading
+        try{console.warn('[Cloud] account copy of '+k+' is '+sv+' where this device has a '+lv+' \u2014 kept this device\'s copy and pushed it back');}catch(e){}
+        return;
+      }
+      // Nothing worth keeping on either side. Storing the junk would only re-poison this device.
+      if(svBad){try{console.warn('[Cloud] ignoring unusable account copy of '+k);}catch(e){}return;}
+    }
+    set(k,v);
+  };
+  keys.forEach(k=>{try{
     // Never overwrite a key that still has a pending local write queued, that local value
     // is newer than whatever the server returned (e.g. a note saved moments before a reload,
     // whose debounced push hadn't flushed yet). Overwriting it here is silent data loss.
@@ -2926,7 +2980,7 @@ const Cloud={
         return;
       }
     }
-    set(k,data[k]);
+    setFromServer(k,data[k]);
   }catch(e){}});if(_staleDeviceLocalKeys.length)this._dropStaleDeviceLocal(_staleDeviceLocalKeys);return keys.length;},
   pushAllLocal(){const items={};try{_lsAllKeys().forEach(function(k){if(_syncable(k))items[k]=_lsGet(k);});}catch(e){}if(this.token&&Object.keys(items).length)return fetch('/api/store',{method:'PUT',headers:{'Content-Type':'application/json','Authorization':'Bearer '+this.token},body:JSON.stringify({items})}).catch(()=>{});},
   push(k,v){if(!this.enabled||!this.token)return;this._queue[k]=v;clearTimeout(this._timer);this._timer=setTimeout(()=>this._flush(),700);},
@@ -3233,6 +3287,15 @@ function _lsGet(k){
     return _rm(k);
   };
   localStorage.setItem=function(k,v){
+  // Never let the word `null` become a saved value. JSON.stringify(undefinedYet) produces the four
+  // characters "null", which then push to the account and come back down over every device forever
+  // — that is precisely how one provider's business hours were destroyed for three days. Clearing a
+  // setting is removeItem, never a write of "null", so this can only ever be a variable that had not
+  // been filled in yet. Refuse it and say so, rather than storing a landmine.
+  if(_syncable(k)&&!_usableSyncValue(v)&&v!=null&&String(v).length){
+    try{console.warn('[SlickChart] refused to save '+k+' as '+JSON.stringify(String(v).slice(0,40))+' — that is a bug at the call site, not a value');}catch(e){}
+    return;
+  }
   // Write to localStorage AND mirror to the server. Critically, a localStorage quota
   // failure (e.g. a big blob that no longer fits) must NOT stop the server push, otherwise
   // the data is lost on both sides. So the local write is isolated, and Cloud.push always runs.
@@ -3285,7 +3348,8 @@ function _healAvailability(){
     const fixed=normalizeAvail(null);
     SlickBridge.setAvailability(_stampNow(fixed));
     try{if(typeof _pushKeyNow==='function')_pushKeyNow('sc_availability',JSON.stringify(fixed));}catch(e){}
-    console.warn('[SlickChart] business hours were unusable ('+JSON.stringify(raw)+') — reset to defaults and pushed');
+    // Nothing stored at all is a brand-new account being seeded, not damage being repaired.
+    if(raw!=null)console.warn('[SlickChart] business hours were unusable ('+JSON.stringify(String(raw).slice(0,40))+') — reset to defaults and pushed');
   }catch(e){}
 }
 function _reloadAll(){try{
@@ -5394,7 +5458,7 @@ function _buildShopCatalog(){
 function _syncShopCatalog(){
   try{
     const cat=_buildShopCatalog();
-    try{localStorage.setItem('sc_shop_catalog',JSON.stringify(cat));}catch(e){}
+    try{const _v=JSON.stringify(cat);localStorage.setItem('sc_shop_catalog',_v);if(typeof _pushKeyNow==='function')_pushKeyNow('sc_shop_catalog',_v);}catch(e){}
     if(typeof Cloud!=='undefined'&&Cloud&&Cloud.token){
       fetch('/api/store',{method:'PUT',headers:{'Content-Type':'application/json','Authorization':'Bearer '+Cloud.token},body:JSON.stringify({items:{sc_shop_catalog:JSON.stringify(cat)}})}).catch(()=>{});
     }
@@ -11895,7 +11959,7 @@ let vcSubmissions={}; // real client submissions keyed by clientId: {photos:[{la
 // Still pushed to the account, so a consult is not device-local — but the pull hydrates it into
 // IndexedDB rather than writing megabytes back into the 5MB box (see _hydrateVcSubs).
 function persistVcState(){
-  try{localStorage.setItem('sc_pro_vc_invites',JSON.stringify(vcInvites));}catch(e){}
+  try{const _v=JSON.stringify(vcInvites);localStorage.setItem('sc_pro_vc_invites',_v);if(typeof _pushKeyNow==='function')_pushKeyNow('sc_pro_vc_invites',_v);}catch(e){}
   let v='';try{v=JSON.stringify(vcSubmissions);}catch(e){return;}
   let stored=false;
   try{
@@ -18542,7 +18606,7 @@ function _persistOnboarding(){
     if(onboardData.biz.name)workspace.name=onboardData.biz.name;
     saveProfessions();
     (function(_v){localStorage.setItem('sc_bizinfo',_v);if(typeof _pushKeyNow==='function')_pushKeyNow('sc_bizinfo',_v);return _v;})(JSON.stringify(_stampNow(bizInfo)));
-    (function(_v){localStorage.setItem('sc_wsname',_v);if(typeof _pushKeyNow==='function')_pushKeyNow('sc_wsname',_v);})(workspace.name);
+    (function(_v){if(!String(_v||'').trim())return;localStorage.setItem('sc_wsname',_v);if(typeof _pushKeyNow==='function')_pushKeyNow('sc_wsname',_v);})(workspace.name);   // never push a blank studio name over a real one
     try{applyProfessionConfig();}catch(e){}
     SlickBridge.setAvailability(normalizeAvail(onboardData.avail));   // feeds the client booking flow (per-day)
   }catch(e){}
@@ -19875,7 +19939,7 @@ function saveBizInfo(quiet){
   // is full, and it pushes to the account BEFORE throwing — so the account has the change while this
   // device still holds the old copy, which is exactly what "I saved it and it reverted" looks like.
   let _saveErr=null;
-  try{(function(_v){localStorage.setItem('sc_bizinfo',_v);if(typeof _pushKeyNow==='function')_pushKeyNow('sc_bizinfo',_v);return _v;})(JSON.stringify(_stampNow(bizInfo)));(function(_v){localStorage.setItem('sc_wsname',_v);if(typeof _pushKeyNow==='function')_pushKeyNow('sc_wsname',_v);})(workspace.name);}catch(e){_saveErr=e;}
+  try{(function(_v){localStorage.setItem('sc_bizinfo',_v);if(typeof _pushKeyNow==='function')_pushKeyNow('sc_bizinfo',_v);return _v;})(JSON.stringify(_stampNow(bizInfo)));(function(_v){if(!String(_v||'').trim())return;localStorage.setItem('sc_wsname',_v);if(typeof _pushKeyNow==='function')_pushKeyNow('sc_wsname',_v);})(workspace.name);}catch(e){_saveErr=e;}
   // Hours were the ONLY one of these settings without an immediate push — business info, studio name,
   // branding and forms all call _pushKeyNow, hours rode the 700ms debounced queue alone. On one
   // provider's account that showed up exactly as you'd predict: the other four rows were minutes old

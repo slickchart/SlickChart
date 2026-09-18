@@ -856,6 +856,59 @@ device vs account for both; get it before theorising again.
 
 ---
 
+## 2r. The bug sweep: closing the whole family, not one more instance (2026-09-18)
+
+Ashley, after the third round on the same provider: *"I feel like we are coming across so many that
+are unnecessary. is there anything you can do to bug sweep?"* She is right — §2b, §2n and §2q were
+three faces of one bug, so the sweep went after the family rather than the instances.
+
+**Finding 1 — every merge had the hole that ate her hours.** Eleven `_mergeX` functions, and all of
+them bail with `return null` when they can't make sense of a side. In `Cloud.pull()` that fell
+through to the plain overwrite — so "I can't tell" and "take the server's copy" were the same answer,
+and the second one destroys work. `_mergeClients` guards the entire client list. `_mergeMsgStore`
+guards every message ever sent. Any junk in those account rows would have wiped the device.
+
+Fixed **once, at the call site** (`setFromServer` in `Cloud.pull`) rather than eleven times, so it
+also covers the seven keys that have **no merge at all** and were listed in §2b as still at risk
+(`sc_protocols`, `sc_service_menu`, `sc_docs`, `sc_routines`, `sc_vendors`, `sc_staff`,
+`sc_inventory`). The rule it enforces: **an account copy that is nothing, broken, or a shape smaller
+than what the device holds never overwrites the device** — the device's copy is kept and pushed back,
+repairing the account. `_syncShape()` compares shapes, because judging a value alone isn't enough:
+`123` is fine for a latch and is corruption for the vendor list.
+
+**Finding 2 — the app could still create the poison.** `JSON.stringify(notFilledInYet)` produces the
+four characters `null`, which is exactly how §2q started. The patched `setItem` now refuses to store
+that for a synced key and logs the call site instead. Clearing a setting is `removeItem`; a write of
+`"null"` is always a bug.
+
+**Finding 3 — messages rode the same fragile path her hours did.** Hours were lost because
+`sc_availability` was the only setting without an immediate `_pushKeyNow` — it alone used the 700ms
+debounced queue, and on her account that queue silently stopped landing. A sweep of all 111 written
+keys found 24 more on the queue alone. Most are dismissals nobody would miss; four carried real work
+and now push immediately: **`sc_msgstore` and `sc_threads` (a provider-sent message has no other copy
+anywhere)**, `sc_pro_vc_invites`, `sc_shop_catalog`.
+
+**Finding 4 — an empty studio name was being pushed over a real one.** Two write sites wrote
+`sc_wsname` unconditionally, so a save with a blank business name published a blank studio name to
+every client. Both now skip a blank.
+
+**Also checked, clean:** all 103 `persist*`/`save*` functions were called cold (the state that created
+the `null`) — none wrote a bad value, and the only three that threw simply require an argument the UI
+always supplies.
+
+**Suite: `hostile.mjs`.** Sets up a real workspace (client, hours, branding, an edited form, vendors,
+inventory), then poisons **all 27 account keys** with `null` / `undefined` / `""` / a bare string / a
+number / broken JSON, and relaunches the same browser profile. Everything survives, the account is
+repaired from the device, and nothing junk lands. Run it after touching `Cloud.pull()`.
+
+**What was deliberately NOT done:** giving the seven unmerged keys a real per-item merge
+(`_mergeAuthoredById` + tombstones, as courses and resources have). They are now safe from *junk*,
+but a stale device can still overwrite newer data on those keys. That is a real remaining gap and a
+much bigger change — each needs its own "a delete must not resurrect" story — and it did not belong
+in a same-day push while Ashley is supporting live providers. It is open thread §3.16.
+
+---
+
 ## 3. Open threads — needs Ashley, or needs verifying
 
 1. ~~**Square `payment.*` webhook subscription.**~~ **CLOSED 2026-09-18 — it is subscribed and has
@@ -910,6 +963,12 @@ device vs account for both; get it before theorising again.
     a separate and more serious bug affecting every new provider — chase it.
 15. **`BUILD_EXCLUDE_EMAILS`** is still unset in Vercel. Her own test purchases therefore count in
    the Build Your Own App stats.
+16. **Seven synced keys still have no per-item merge** — `sc_protocols`, `sc_service_menu`, `sc_docs`,
+   `sc_routines`, `sc_vendors`, `sc_staff`, `sc_inventory`. Since §2r they are safe from junk (the
+   `setFromServer` guard), but a stale device can still overwrite newer data on them: edit vendors on
+   the phone, then open a laptop tab that has been sitting open since yesterday, and the laptop wins.
+   The fix is the `_mergeAuthoredById` + tombstone pattern courses and resources already use, one key
+   at a time, each with its own "a delete must not come back" test. Not a same-day change.
 
 ---
 
