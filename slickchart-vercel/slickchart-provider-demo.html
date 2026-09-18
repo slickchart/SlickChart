@@ -464,6 +464,13 @@ function scResetDemo(){try{Object.keys(localStorage).filter(function(k){return k
 <script>
 const S=document.getElementById('S');
 
+// Which build a provider is actually running. Three fixes went out for one provider's "everything
+// resets when I save it" and there was no way to tell whether her phone had any of them — a whole
+// day was spent debugging code she may not have been running. Shown at the bottom of Settings, so
+// the answer is a screenshot away. Bump it on every ship.
+const APP_BUILD='2026-09-18d';
+
+
 /* ════════════════════════════════════════════════════════════════
    SLICKBRIDGE, cross-app channel (provider tab ⇆ client tab)
    Mirror of the client bridge. Same keys, same origin.
@@ -3294,6 +3301,111 @@ function _reloadAll(){try{
   // stayed the old in-memory value and the theme was never re-derived) until a full cold reload.
   try{ if(typeof loadBrandColors==='function')brandColors=loadBrandColors(); if(typeof applyTheme==='function')applyTheme(); if(typeof _syncHeaderLogo==='function')_syncHeaderLogo(); }catch(e){}
 }catch(e){}}
+// ── SELF-CHECK ───────────────────────────────────────────────────────────────────────────────────
+// Reached only by opening /slickchart?selfcheck=1 — there is no button for it anywhere, on purpose.
+// A provider reported every save reverting. Three fixes shipped on three theories and none of them
+// was it, because nobody could see what was actually happening on HER phone: whether the write hits
+// the device, whether it reaches the account, whether it survives coming back, or whether her app
+// even has the fix in it. This answers all four, in order, and prints something she can screenshot.
+// It writes and deletes one canary key and touches nothing else she owns.
+async function _runSelfCheck(){
+  const L=[];
+  const line=(label,ok,detail)=>L.push({label:label,ok:ok,detail:detail||''});
+  const esc=(x)=>_fileEsc(String(x==null?'':x));
+
+  line('Build running on this device', true, APP_BUILD);
+  // Feature probes beat a version string: these cannot go stale or be mistyped.
+  line('Has the "don\u2019t lose what you typed" fix', typeof _flushSettingsEdits==='function', typeof _flushSettingsEdits==='function'?'yes':'NO \u2014 this device is on older code');
+  line('Has the stamped settings merge', typeof _mergeStamped==='function' && typeof _stampNow==='function', (typeof _mergeStamped==='function')?'yes':'NO \u2014 this device is on older code');
+
+  // 1. does a write survive on this device at all
+  const canary='sc_selfcheck_'+Date.now();
+  const val='v'+Math.random().toString(36).slice(2,10);
+  let wrote=false,readBack=null;
+  try{ localStorage.setItem(canary,val); wrote=true; }catch(e){ line('Saving to this device', false, 'refused: '+(e&&e.name||'error')); }
+  if(wrote){ try{ readBack=localStorage.getItem(canary); }catch(e){} line('Saving to this device', readBack===val, readBack===val?'works':'wrote, but read back '+(readBack===null?'nothing':'something else')); }
+
+  // 2. is there a signed-in account to save into
+  const tok=(typeof Cloud!=='undefined'&&Cloud&&Cloud.token)||'';
+  line('Signed in to a SlickChart account', !!tok, tok?'yes':'NO \u2014 nothing can reach the server');
+
+  // 3. does it reach the account, and come back
+  let put=null,got=null;
+  if(tok){
+    try{
+      const r=await fetch('/api/store',{method:'PUT',headers:{'Content-Type':'application/json','Authorization':'Bearer '+tok},body:JSON.stringify({items:{[canary]:val}})});
+      put=r.status;
+      line('Sending it to your account', r.ok, r.ok?'accepted':('server said '+r.status+(r.status===401?' \u2014 signed out, so every save is being refused':'')));
+    }catch(e){ line('Sending it to your account', false, 'could not reach the server'); }
+    try{
+      const r2=await fetch('/api/store',{headers:{'Authorization':'Bearer '+tok},cache:'no-store'});
+      const j=await r2.json(); got=(j&&j.data&&j.data[canary])||null;
+      line('Reading it back from your account', got===val, got===val?'came back correctly':(got===null?'NOT THERE \u2014 the save did not stick':'came back different'));
+    }catch(e){ line('Reading it back from your account', false, 'could not reach the server'); }
+    // tidy up after ourselves
+    try{ await fetch('/api/store',{method:'PUT',headers:{'Content-Type':'application/json','Authorization':'Bearer '+tok},body:JSON.stringify({items:{[canary]:null}})}); }catch(e){}
+  }
+  try{ localStorage.removeItem(canary); }catch(e){}
+
+  // 4. the three settings that keep reverting: what does this device hold, and what does the account
+  //    hold, and which one is newer. A device copy that is newer than the account copy means her
+  //    edits are not getting out; the reverse with an old device copy means they are not coming back.
+  const keys=['sc_bizinfo','sc_availability','sc_brand_colors','sc_forms'];
+  let server={};
+  if(tok){ try{ const r=await fetch('/api/store',{headers:{'Authorization':'Bearer '+tok},cache:'no-store'}); const j=await r.json(); server=(j&&j.data)||{}; }catch(e){} }
+  const when=(t)=>{ const n=Number(t)||0; if(!n)return 'no timestamp'; const m=Math.round((Date.now()-n)/60000); return m<1?'just now':(m<60?m+' min ago':Math.round(m/60)+'h ago'); };
+  const stampOf=(str)=>{ try{ const o=JSON.parse(str||'null'); return (o&&typeof o==='object')?(Number(o._ts)||0):0; }catch(e){ return 0; } };
+  const rows=keys.map(k=>{
+    let local=null; try{ local=(typeof _lsGet==='function')?_lsGet(k):localStorage.getItem(k); }catch(e){}
+    const sv=server[k]==null?null:String(server[k]);
+    return {k:k, onDevice:local!=null, onAccount:sv!=null,
+      deviceBytes:local?local.length:0, accountBytes:sv?sv.length:0,
+      deviceEdited:when(stampOf(local)), accountEdited:when(stampOf(sv)),
+      same:(local!=null&&sv!=null&&local===sv)};
+  });
+
+  // 5. room to store things (the theory that was wrong the first time — kept so it is ruled out, fast)
+  let quota='unknown';
+  try{ if(navigator.storage&&navigator.storage.estimate){ const e=await navigator.storage.estimate(); quota=Math.round((e.usage||0)/1048576)+'MB used of '+Math.round((e.quota||0)/1048576)+'MB'; } }catch(e){}
+  let lsBytes=0; try{ (typeof _lsAllKeys==='function'?_lsAllKeys():Object.keys(localStorage)).forEach(function(k){ try{ lsBytes+=((typeof _lsGet==='function'?_lsGet(k):localStorage.getItem(k))||'').length; }catch(e){} }); }catch(e){}
+  line('Room to store things', true, Math.round(lsBytes/1024)+'KB of settings on this device \u00b7 '+quota);
+
+  const plain=[
+    'SlickChart self-check \u2014 '+new Date().toLocaleString(),
+    'build '+APP_BUILD
+  ].concat(L.map(x=>(x.ok?'OK   ':'FAIL ')+x.label+(x.detail?' \u2014 '+x.detail:'')))
+   .concat([''],rows.map(r=>r.k+': device '+(r.onDevice?r.deviceBytes+'B, edited '+r.deviceEdited:'MISSING')
+     +' | account '+(r.onAccount?r.accountBytes+'B, edited '+r.accountEdited:'MISSING')
+     +(r.onDevice&&r.onAccount?(r.same?' | identical':' | DIFFERENT'):'')))
+   .join('\n');
+
+  document.getElementById('tt').textContent='Self-check';
+  S.innerHTML='<div style="padding:14px 16px;">'
+    +'<div style="font-size:16px;color:var(--p-mut);line-height:1.6;margin-bottom:14px;">This checks whether saving works on this device and reaches your account. Nothing here changes your data. Screenshot it, or tap Copy and paste it in a message.</div>'
+    +'<div style="background:var(--surf2);border:1px solid var(--p-line);border-radius:12px;overflow:hidden;margin-bottom:14px;">'
+    +L.map(function(x,i){return '<div style="display:flex;align-items:flex-start;gap:10px;padding:11px 12px;'+(i<L.length-1?'border-bottom:1px solid var(--p-line2);':'')+'">'
+      +'<i class="ti '+(x.ok?'ti-circle-check':'ti-alert-triangle')+'" style="font-size:18px;flex-shrink:0;color:'+(x.ok?'var(--p-green)':'var(--p-red)')+';"></i>'
+      +'<div style="flex:1;min-width:0;"><div style="font-size:16px;color:var(--p-ink);">'+esc(x.label)+'</div>'
+      +(x.detail?'<div style="font-size:14px;color:var(--p-mut);margin-top:2px;line-height:1.4;">'+esc(x.detail)+'</div>':'')+'</div></div>';}).join('')
+    +'</div>'
+    +'<div style="font-size:14px;font-weight:500;color:var(--p-mut);text-transform:uppercase;letter-spacing:.07em;margin-bottom:8px;">Your settings, here vs your account</div>'
+    +'<div style="background:var(--surf2);border:1px solid var(--p-line);border-radius:12px;overflow:hidden;margin-bottom:14px;">'
+    +rows.map(function(r,i){var bad=(!r.onAccount&&r.onDevice)||(!r.onDevice&&r.onAccount);
+      return '<div style="padding:11px 12px;'+(i<rows.length-1?'border-bottom:1px solid var(--p-line2);':'')+'">'
+      +'<div style="font-size:16px;color:var(--p-ink);">'+esc({sc_bizinfo:'Business info',sc_availability:'Business hours',sc_brand_colors:'Branding & logo',sc_forms:'Forms'}[r.k]||r.k)+'</div>'
+      +'<div style="font-size:14px;color:'+(bad?'var(--p-red)':'var(--p-mut)')+';margin-top:3px;line-height:1.5;">This device: '+(r.onDevice?esc(r.deviceBytes)+' bytes, edited '+esc(r.deviceEdited):'nothing saved')
+      +'<br>Your account: '+(r.onAccount?esc(r.accountBytes)+' bytes, edited '+esc(r.accountEdited):'nothing saved')
+      +(r.onDevice&&r.onAccount?('<br>'+(r.same?'Both match.':'They do not match.')):'')+'</div></div>';}).join('')
+    +'</div>'
+    +'<button onclick="_copySelfCheck()" class="btnp" style="border-radius:8px;width:100%;"><i class="ti ti-copy"></i> Copy this report</button>'
+    +'<div style="height:24px;"></div></div>';
+  window.__SC_SELFCHECK__=plain;
+}
+function _copySelfCheck(){
+  const t=window.__SC_SELFCHECK__||'';
+  try{ if(typeof _copyToClipboard==='function'){_copyToClipboard(t,'Report copied \u2014 paste it in a message');return;} }catch(e){}
+  try{ navigator.clipboard.writeText(t); if(typeof proToast==='function')proToast('Report copied \u2014 paste it in a message'); }catch(e){ if(typeof proToast==='function')proToast('Couldn\u2019t copy \u2014 screenshot this screen instead'); }
+}
 async function _cloudInit(){
   // Public landing-page demo: never touch a real account or the server. The demo banner installs an
   // in-memory localStorage shim and sets this flag, so we skip Cloud/login entirely and open the
@@ -3311,6 +3423,18 @@ async function _cloudInit(){
   // Bring the big values back out of IndexedDB and into memory BEFORE the pull, before _reloadAll,
   // and before anything renders. Nothing below may read storage until this has finished.
   try{await _hydrateOffloaded();}catch(e){}
+  // /slickchart?selfcheck=1 — no button, no menu entry, only this link.
+  //
+  // Deliberately BEFORE the rest of boot. A rejected session makes Cloud.pull() drop the token and
+  // bounce to sign-in, which is exactly the state most worth diagnosing and exactly the state that
+  // would stop this from ever running. Going first also means what it prints for the device is what
+  // was on the device BEFORE the pull had a chance to overwrite it.
+  try{
+    if(new URLSearchParams(location.search).get('selfcheck')==='1'){
+      try{await _runSelfCheck();}catch(e){try{S.innerHTML='<div style="padding:24px 16px;font-size:16px;color:var(--p-ink);">The self-check could not finish: '+_fileEsc(String(e&&e.message||e))+'</div>';}catch(e2){}}
+      return;
+    }
+  }catch(e){}
   // Register the native client-link handler NOW, before any early return below. A client-only user
   // (no provider session) taps their emailed "/client?c=<token>" Universal/App Link, iOS/Android opens
   // the installed app, and we must route that tap into their care space. Previously this only ran for
@@ -18326,8 +18450,10 @@ function renderAccount(){
     <div onclick="_founderTestPush(this,6)" style="display:flex;align-items:center;gap:11px;padding:13px 14px;cursor:pointer;"><div style="width:38px;height:38px;border-radius:12px;background:var(--p-surf2);display:flex;align-items:center;justify-content:center;flex-shrink:0;"><i class="ti ti-clock-bolt" style="font-size:18px;color:var(--p-green);"></i></div><div style="flex:1;"><div style="font-size:16px;font-weight:500;color:var(--p-ink);">Test with a delay &mdash; then close the app</div><div style="font-size:16px;color:var(--p-mut);">Sends 6s after you tap, so you can close the app and see a real lock-screen banner</div></div><i class="ti ti-chevron-right" style="font-size:16px;color:var(--p-mut);"></i></div>
     <div style="border-top:1px solid var(--p-line);"></div>
     <div onclick="_founderStaleSubs(this)" style="display:flex;align-items:center;gap:11px;padding:13px 14px;cursor:pointer;"><div style="width:38px;height:38px;border-radius:12px;background:var(--p-surf2);display:flex;align-items:center;justify-content:center;flex-shrink:0;"><i class="ti ti-receipt-off" style="font-size:18px;color:var(--p-green);"></i></div><div style="flex:1;"><div style="font-size:16px;font-weight:500;color:var(--p-ink);">Check for stray subscription rows</div><div style="font-size:16px;color:var(--p-mut);">Roadmap buyers who look like paying subscribers. Read-only, changes nothing</div></div><i class="ti ti-chevron-right" style="font-size:16px;color:var(--p-mut);"></i></div>
+    <div style="border-top:1px solid var(--p-line);"></div>
+    <div onclick="_founderKvHealth(this)" style="display:flex;align-items:center;gap:11px;padding:13px 14px;cursor:pointer;"><div style="width:38px;height:38px;border-radius:12px;background:var(--p-surf2);display:flex;align-items:center;justify-content:center;flex-shrink:0;"><i class="ti ti-stethoscope" style="font-size:18px;color:var(--p-green);"></i></div><div style="flex:1;"><div style="font-size:16px;font-weight:500;color:var(--p-ink);">Are a provider’s saves landing?</div><div style="font-size:16px;color:var(--p-mut);">When their settings last reached the server. Timestamps &amp; sizes only, never their data</div></div><i class="ti ti-chevron-right" style="font-size:16px;color:var(--p-mut);"></i></div>
   </div></div>`:''}
-  <div style="text-align:center;padding:14px;font-size:14px;color:var(--p-mut);">SlickChart · Version 1.0.3</div></div>`;
+  <div style="text-align:center;padding:14px;font-size:14px;color:var(--p-mut);">SlickChart · Version 1.0.3 · build ${_fileEsc(APP_BUILD)}</div></div>`;
 }
 
 
@@ -23425,6 +23551,43 @@ async function _founderStaleSubs(rowEl){
       else if(typeof proToast==='function')proToast(body,9000);
       setSub(n?(n+' stray row'+(n===1?'':'s')+' \u2014 nothing changed'):'\u2713 None found');
     }
+    setTimeout(()=>setSub(orig),9000);
+  }catch(e){ setSub('Couldn\u2019t check \u2014 try again.'); setTimeout(()=>setSub(orig),6000); }
+}
+// ── Founder tool: is a provider's data actually reaching the server? ─────────────────────
+// When a provider says "it saves and then resets", the first thing worth knowing is whether her
+// saves land at all — a fresh row means the write works and the bug is on the way back down; a stale
+// or missing one means the push is failing and everything else is a distraction. Days went into
+// guessing at this. It reads timestamps and sizes only: never a provider's actual data.
+async function _founderKvHealth(rowEl){
+  const sub=rowEl&&rowEl.querySelector('div>div:nth-child(2)');
+  const orig='When their settings last reached the server. Timestamps & sizes only, never their data';
+  const setSub=t=>{try{if(sub)sub.textContent=t;}catch(e){}};
+  const email=(typeof prompt==='function')?prompt('Which provider? (their sign-in email)'):'';
+  if(!email)return;
+  const tok=(typeof Cloud!=='undefined'&&Cloud&&Cloud.token)||'';
+  setSub('Checking\u2026');
+  try{
+    const r=await fetch('/api/admin/kv-health?email='+encodeURIComponent(String(email).trim()),{headers:{'Authorization':'Bearer '+tok}});
+    const j=await r.json().catch(()=>({}));
+    if(!r.ok||!j.ok){setSub((j&&j.error)||'Couldn\u2019t check.');setTimeout(()=>setSub(orig),8000);return;}
+    const ago=(n)=>n==null?'never':(n<90?'just now':(n<5400?Math.round(n/60)+' min ago':(n<172800?Math.round(n/3600)+'h ago':Math.round(n/86400)+' days ago')));
+    const label={sc_bizinfo:'Business info',sc_wsname:'Studio name',sc_availability:'Business hours',sc_brand_colors:'Branding & logo',sc_forms:'Forms'};
+    const lines=(j.watched||[]).map(function(w){
+      if(!w.onServer)return (label[w.key]||w.key)+': NEVER reached the server';
+      let t=(label[w.key]||w.key)+': saved '+ago(w.writtenSecondsAgo)+' ('+w.bytes+' bytes)';
+      // A row written long after the edit stamped inside it = an older copy pushed back over her edit.
+      if(typeof w.appStampSecondsAgo==='number'&&(w.appStampSecondsAgo-w.writtenSecondsAgo)>600)t+=' \u2014 but the edit inside it is '+ago(w.appStampSecondsAgo)+', so something pushed an OLD copy over it';
+      else if(w.appStamp===null&&(w.key in {sc_bizinfo:1,sc_availability:1,sc_brand_colors:1}))t+=' \u2014 no edit stamp, so it was written by an older build';
+      return t;
+    });
+    const sess=j.sessions?('\n\nSign-ins: '+j.sessions.live+' live of '+j.sessions.total+' \u00b7 last seen '+ago(j.sessions.lastSeenSecondsAgo)
+      +(j.sessions.live===0?'\nNO LIVE SESSION \u2014 every save from their device is being refused.':'')):'';
+    const body=j.provider.email+'\n'+j.totalKeys+' things saved, '+Math.round(j.totalBytes/1024)+'KB total\n\n'+lines.join('\n')+sess
+      +'\n\n(Timestamps and sizes only \u2014 none of their actual data was read.)';
+    if(typeof confirmModal==='function')confirmModal({title:'Saves for this provider',body:body,action:'Got it',hideCancel:true},function(){});
+    else if(typeof proToast==='function')proToast(body,0);
+    setSub('Checked \u00b7 '+j.totalKeys+' keys');
     setTimeout(()=>setSub(orig),9000);
   }catch(e){ setSub('Couldn\u2019t check \u2014 try again.'); setTimeout(()=>setSub(orig),6000); }
 }
