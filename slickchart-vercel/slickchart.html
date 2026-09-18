@@ -214,7 +214,7 @@ const S=document.getElementById('S');
 // resets when I save it" and there was no way to tell whether her phone had any of them — a whole
 // day was spent debugging code she may not have been running. Shown at the bottom of Settings, so
 // the answer is a screenshot away. Bump it on every ship.
-const APP_BUILD='2026-09-18g';
+const APP_BUILD='2026-09-18h';
 
 
 /* ════════════════════════════════════════════════════════════════
@@ -3227,13 +3227,39 @@ async function _runSelfCheck(){
   if(tok){ try{ const r=await fetch('/api/store',{headers:{'Authorization':'Bearer '+tok},cache:'no-store'}); const j=await r.json(); server=(j&&j.data)||{}; }catch(e){} }
   const when=(t)=>{ const n=Number(t)||0; if(!n)return 'no timestamp'; const m=Math.round((Date.now()-n)/60000); return m<1?'just now':(m<60?m+' min ago':Math.round(m/60)+'h ago'); };
   const stampOf=(str)=>{ try{ const o=JSON.parse(str||'null'); return (o&&typeof o==='object')?(Number(o._ts)||0):0; }catch(e){ return 0; } };
+  // Forms are the one key that legitimately differs between the two sides: the device copy has the
+  // forms she DELETED stripped out of it (sc_hidden_forms), while the account keeps the raw copy.
+  // The byte counts therefore disagree by design, and printing "they do not match" for that is
+  // crying wolf about healthy data — it sent us looking for a bug that wasn't there. Count what is
+  // actually in each side instead, and say when a difference is just her deletions.
+  const formCounts=function(str){
+    try{
+      const o=JSON.parse(str||'null')||{};
+      return {tmpls:Object.keys(o.tmpls||{}).length,guides:Object.keys(o.guides||{}).length,custom:(o.custom||[]).length};
+    }catch(e){return null;}
+  };
+  let hiddenForms=0;
+  try{const h=(typeof _lsGet==='function')?_lsGet('sc_hidden_forms'):localStorage.getItem('sc_hidden_forms');
+    const o=JSON.parse(h||'{}')||{};hiddenForms=Object.keys(o).length;}catch(e){}
   const rows=keys.map(k=>{
     let local=null; try{ local=(typeof _lsGet==='function')?_lsGet(k):localStorage.getItem(k); }catch(e){}
     const sv=server[k]==null?null:String(server[k]);
-    return {k:k, onDevice:local!=null, onAccount:sv!=null,
+    const r={k:k, onDevice:local!=null, onAccount:sv!=null,
       deviceBytes:local?local.length:0, accountBytes:sv?sv.length:0,
       deviceEdited:when(stampOf(local)), accountEdited:when(stampOf(sv)),
       same:(local!=null&&sv!=null&&local===sv)};
+    if(k==='sc_forms'){
+      const d=formCounts(local),a=formCounts(sv);
+      if(d&&a){
+        r.counts=d.tmpls+' forms, '+d.custom+' of your own, '+d.guides+' guides';
+        r.acctCounts=a.tmpls+' forms, '+a.custom+' of your own, '+a.guides+' guides';
+        // A device that is smaller by exactly what she deleted is correct, not broken.
+        const gap=(a.tmpls-d.tmpls)+(a.custom-d.custom)+(a.guides-d.guides);
+        r.explained=(gap>=0&&gap<=hiddenForms);
+        r.hiddenForms=hiddenForms;
+      }
+    }
+    return r;
   });
 
   // 5. room to store things (the theory that was wrong the first time — kept so it is ruled out, fast)
@@ -3248,7 +3274,8 @@ async function _runSelfCheck(){
   ].concat(L.map(x=>(x.ok?'OK   ':'FAIL ')+x.label+(x.detail?' \u2014 '+x.detail:'')))
    .concat([''],rows.map(r=>r.k+': device '+(r.onDevice?r.deviceBytes+'B, edited '+r.deviceEdited:'MISSING')
      +' | account '+(r.onAccount?r.accountBytes+'B, edited '+r.accountEdited:'MISSING')
-     +(r.onDevice&&r.onAccount?(r.same?' | identical':' | DIFFERENT'):'')))
+     +(r.onDevice&&r.onAccount?(r.same?' | identical':(r.explained?' | differs only by '+r.hiddenForms+' deleted form(s) — expected':' | DIFFERENT')):'')
+     +(r.counts?' | device has '+r.counts+'; account has '+r.acctCounts:'')))
    .join('\n');
 
   document.getElementById('tt').textContent='Self-check';
@@ -3265,12 +3292,12 @@ async function _runSelfCheck(){
     +'</div>'
     +'<div style="font-size:14px;font-weight:500;color:var(--p-mut);text-transform:uppercase;letter-spacing:.07em;margin-bottom:8px;">Your settings, here vs your account</div>'
     +'<div style="background:var(--surf2);border:1px solid var(--p-line);border-radius:12px;overflow:hidden;margin-bottom:14px;">'
-    +rows.map(function(r,i){var bad=(!r.onAccount&&r.onDevice)||(!r.onDevice&&r.onAccount);
+    +rows.map(function(r,i){var bad=((!r.onAccount&&r.onDevice)||(!r.onDevice&&r.onAccount))||(r.onDevice&&r.onAccount&&!r.same&&r.counts&&!r.explained);
       return '<div style="padding:11px 12px;'+(i<rows.length-1?'border-bottom:1px solid var(--p-line2);':'')+'">'
       +'<div style="font-size:16px;color:var(--p-ink);">'+esc({sc_bizinfo:'Business info',sc_availability:'Business hours',sc_brand_colors:'Branding & logo',sc_forms:'Forms'}[r.k]||r.k)+'</div>'
-      +'<div style="font-size:14px;color:'+(bad?'var(--p-red)':'var(--p-mut)')+';margin-top:3px;line-height:1.5;">This device: '+(r.onDevice?esc(r.deviceBytes)+' bytes, edited '+esc(r.deviceEdited):'nothing saved')
-      +'<br>Your account: '+(r.onAccount?esc(r.accountBytes)+' bytes, edited '+esc(r.accountEdited):'nothing saved')
-      +(r.onDevice&&r.onAccount?('<br>'+(r.same?'Both match.':'They do not match.')):'')+'</div></div>';}).join('')
+      +'<div style="font-size:14px;color:'+(bad?'var(--p-red)':'var(--p-mut)')+';margin-top:3px;line-height:1.5;">This device: '+(r.counts?esc(r.counts):(r.onDevice?esc(r.deviceBytes)+' bytes, edited '+esc(r.deviceEdited):'nothing saved'))
+      +'<br>Your account: '+(r.acctCounts?esc(r.acctCounts):(r.onAccount?esc(r.accountBytes)+' bytes, edited '+esc(r.accountEdited):'nothing saved'))
+      +(r.onDevice&&r.onAccount?('<br>'+(r.same?'Both match.':(r.explained?('The only difference is the '+esc(r.hiddenForms)+' form'+(r.hiddenForms===1?'':'s')+' you deleted, which your account still keeps a copy of. That is normal.'):'They do not match.'))):'')+'</div></div>';}).join('')
     +'</div>'
     +'<button onclick="_copySelfCheck()" class="btnp" style="border-radius:8px;width:100%;"><i class="ti ti-copy"></i> Copy this report</button>'
     +'<button onclick="_leaveSelfCheck()" class="btng" style="border-radius:8px;width:100%;margin-top:8px;">Back to SlickChart</button>'

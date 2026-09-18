@@ -849,10 +849,24 @@ later can no longer win, and that a save with no hours loaded can't write `null`
   Per-key size, last write, and the app's own `_ts` stamp. **Metadata only — it never reads a stored
   value**, and must stay that way. This is what found the four bytes.
 
-**Still open for this provider:** branding (85KB) and forms (94KB) were fresh on the server, so their
-resets are a different mechanism from hours — both are over the 24KB offload threshold and live in
-IndexedDB on the device (§2e), so suspect the hydrate path, not the sync. Get her self-check output
-before theorising again — and see the warning below about WHERE she runs it.
+**CLOSED on the evidence.** Her self-check, run inside the real app on build `2026-09-18g`, came back
+green the whole way down: the write lands on the device, she is signed in, it reaches the account, and
+**it comes back correctly** — the round trip nobody had ever tested. Business hours read **372 bytes,
+edited 1 min ago, both sides matching**, where the day before they were 4 bytes and two days stale.
+That is the §2q fix confirmed on her phone rather than in a test. Business info and branding matched
+byte for byte. Storage: 220KB on a device with 9.8GB free, so the very first theory was wrong by four
+orders of magnitude.
+
+The one row that read "They do not match" was **forms — and that difference is correct**. The device
+copy has the forms she deleted stripped out of it (`_mergeForms` filters `sc_hidden_forms`); the
+account keeps the raw copy. 2,236 bytes is about one form template. The report was crying wolf about
+healthy data, which is the same mistake the webhook check made the day before with
+`urlMatchesThisHost`, and it sent us looking for a bug that did not exist. **The forms row now counts
+what is actually in each side (forms / her own / guides), says when a difference is only her
+deletions, and keeps flagging a real mismatch.** Tested all three ways in `formsrow.mjs`.
+
+**A tool that reports a false alarm costs exactly as much as a bug.** Twice now. Before adding a
+check, work out what a HEALTHY system looks like through it — and make sure that reads as healthy.
 
 **The first self-check came back from the wrong browser, and every line of it was meaningless.**
 It reported no session and nothing saved for any of the four settings, while the founder tool showed
