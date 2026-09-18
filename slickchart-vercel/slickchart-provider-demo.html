@@ -1701,21 +1701,17 @@ const movementAffiliateLinks=[
 
 // ── PROFESSION SWITCH HELPER ──
 // Switches active note templates, checkin config, protocols, and affiliate links to match selected profession
-let _storageWarned=false;
-function _persistFailWarn(){
-  // A failed critical write (usually quota-exceeded) would otherwise lose a provider's edit
-  // silently, the in-memory change shows in the UI but is gone on reload. Warn once per
-  // session so they can free space (e.g. export/clear old photos) rather than lose data unaware.
-  if(_storageWarned)return;_storageWarned=true;
-  // Sticky (duration 0) and specific. The old version auto-dismissed before it could be read, so the
-  // only thing a full device produced was work quietly not saving. It also now says what is safe:
-  // when there is a cloud session, the data still reaches the account even though this device is full.
-  let _where='';try{_where=_lsBiggestKeyLabel();}catch(e){}
-  const _cloud=(function(){try{return typeof Cloud!=='undefined'&&Cloud&&!!Cloud.token;}catch(e){return false;}})();
-  try{if(typeof proToast==='function')proToast('This device is out of storage, so new changes may not be kept here.'
-    +(_cloud?' They still back up to your account.':'')
-    +(_where?' Most of the space is used by '+_where+'.':'')
-    +' Open More → Device storage to clear space safely.',0);}catch(e){}
+// A record blob (clients, courses, visit summaries) that localStorage refused. This used to put a
+// sticky "this device is out of storage" banner on the provider's screen, and that message has now
+// been wrong more often than right: the patched setItem offloads anything big to IndexedDB and pushes
+// to the account BEFORE it throws, so by the time we get here the change is already on the server and
+// comes back on the next load. Telling her to go clear space over a save that did not actually lose
+// anything is alarming and useless. Log it and move on.
+//
+// Photos are the exception and still say so at the point of capture (_commitPhoto / the stencil
+// overlay): a photo that will not store IS lost, right then, and she has to know.
+function _persistFailWarn(e){
+  try{console.warn('[SlickChart] localStorage refused a record write (account copy still pushed)',e);}catch(_){}
 }
 // Plain-language name for whatever is filling localStorage, so the warning points somewhere instead
 // of just saying "full".
@@ -1743,16 +1739,6 @@ function _lsLabel(k){
   }
   return k;
 }
-function _lsBiggestKeyLabel(){
-  let best='',n=0;
-  try{for(let i=0;i<localStorage.length;i++){const k=localStorage.key(i);if(!k)continue;let len=0;
-    try{len=(localStorage.getItem(k)||'').length;}catch(e){}
-    if(len>n){n=len;best=k;}}}catch(e){}
-  if(!best||n<100000)return '';
-  n=n*2;                       // UTF-16, same as the storage panel counts it
-  const mb=(n/1048576);
-  return _lsLabel(best)+' ('+(mb>=1?mb.toFixed(1)+'MB':Math.round(n/1024)+'KB')+')';
-}
 // Per-client "updated at" tracking, so two devices editing DIFFERENT clients converge instead of the
 // whole-roster blob last-writer-wins clobbering each other. We stamp _uAt only on clients whose content
 // actually changed since load/last-save (compared against a baseline signature that excludes _uAt), and
@@ -1767,7 +1753,7 @@ function _clientSig(c){try{return JSON.stringify(c,function(k,v){return k==='_uA
 // subsequent edits get a fresh _uAt.
 function _seedClientSigCache(){try{_clientSigCache={};Object.keys(CL).forEach(function(id){var c=CL[id];if(c&&typeof c==='object')_clientSigCache[id]=_clientSig(c);});}catch(e){}}
 function _stampClientChanges(){try{Object.keys(CL).forEach(function(id){var c=CL[id];if(!c||typeof c!=='object')return;var sig=_clientSig(c);if(_clientSigCache[id]!==sig){c._uAt=Date.now();_clientSigCache[id]=sig;_dirtyClientIds[id]=1;}});}catch(e){}}
-function saveClients(opts){let _ok=true;try{_stampClientChanges();}catch(e){}try{localStorage.setItem('sc_clients',JSON.stringify(CL));}catch(e){_ok=false;_persistFailWarn();} if(!(opts&&opts.noSync)&&typeof _scheduleClientSyncDirty==='function')_scheduleClientSyncDirty();return _ok;}
+function saveClients(opts){let _ok=true;try{_stampClientChanges();}catch(e){}try{localStorage.setItem('sc_clients',JSON.stringify(CL));}catch(e){_ok=false;_persistFailWarn(e);} if(!(opts&&opts.noSync)&&typeof _scheduleClientSyncDirty==='function')_scheduleClientSyncDirty();return _ok;}
 function _editClientDetails(id){
   const c=CL[id]; if(!c)return;
   const ex=document.getElementById('cl-edit'); if(ex)ex.remove();
@@ -4451,7 +4437,7 @@ function persistRecReasons(){try{(function(_v){localStorage.setItem('sc_rec_reas
 function loadRecReasons(){try{const raw=localStorage.getItem('sc_rec_reasons');if(raw){const v=JSON.parse(raw);if(v&&typeof v==='object')recReasons=v;}}catch(e){}}
 function persistClientHomecare(){try{(function(_v){localStorage.setItem('sc_client_homecare',_v);if(typeof _pushKeyNow==='function')_pushKeyNow('sc_client_homecare',_v);return _v;})(JSON.stringify(clientHomecare));}catch(e){}}
 function loadClientHomecare(){try{const raw=localStorage.getItem('sc_client_homecare');if(raw){const v=JSON.parse(raw);if(v&&typeof v==='object')clientHomecare=v;}}catch(e){}}
-function persistSessionSummaries(){const v=JSON.stringify(sessionSummaries);try{localStorage.setItem('sc_session_summaries',v);}catch(e){if(typeof _persistFailWarn==='function')_persistFailWarn();}if(typeof _pushKeyNow==='function')_pushKeyNow('sc_session_summaries',v);}
+function persistSessionSummaries(){const v=JSON.stringify(sessionSummaries);try{localStorage.setItem('sc_session_summaries',v);}catch(e){if(typeof _persistFailWarn==='function')_persistFailWarn(e);}if(typeof _pushKeyNow==='function')_pushKeyNow('sc_session_summaries',v);}
 function loadSessionSummaries(){try{const raw=localStorage.getItem('sc_session_summaries');if(raw){const v=JSON.parse(raw);if(v&&typeof v==='object')sessionSummaries=v;}}catch(e){}}
 // Provider's chosen note format (default: free form). Persisted so it sticks across reloads
 // and syncs across devices, and so applyProfessionConfig doesn't reset it every boot.
@@ -5064,7 +5050,7 @@ function _pruneExpiredCheckins(){
 // the server. Both used to be swallowed, which is how a course could be “saved” into nowhere: a full
 // localStorage threw (caught, ignored) and the push failed (caught, ignored), and the only copy left
 // was the one in memory, gone on the next refresh.
-function persistCourses(){const v=JSON.stringify(courses);let _local=true;try{localStorage.setItem('sc_courses',v);}catch(e){_local=false;try{_persistFailWarn();}catch(e2){}}
+function persistCourses(){const v=JSON.stringify(courses);let _local=true;try{localStorage.setItem('sc_courses',v);}catch(e){_local=false;try{_persistFailWarn(e);}catch(e2){}}
   const p=(typeof _pushKeyNow==='function')?_pushKeyNow('sc_courses',v):Promise.resolve({ok:false,reason:'nopush'});
   return Promise.resolve(p).then(function(r){return {local:_local,server:!!(r&&r.ok)};},function(){return {local:_local,server:false};});}
 function loadCourses(){try{const raw=(typeof _lsGet==='function')?_lsGet('sc_courses'):localStorage.getItem('sc_courses');if(raw){const arr=JSON.parse(raw);if(Array.isArray(arr))courses=_dedupeCourses(arr);}}catch(e){}}
@@ -17862,7 +17848,6 @@ async function freeUpDeviceSpace(){
   }
   let n=0;
   for(const k of ev.drop){try{await _idb.del(k);n++;}catch(e){}}
-  try{_storageWarned=false;}catch(e){}   // let a genuinely new quota problem warn again
   if(typeof proToast==='function')proToast('Freed '+_bytesLabel(ev.bytes)+' — '+n+' file'+(n===1?'':'s')+' cleared from this device. They’re still in your courses.',0);
   _renderStorageBody(await _deviceStorageStats());
 }
@@ -19731,8 +19716,7 @@ function copyHoursToAll(){
 }
 // A local write that did not land. The account copy is already on its way (the storage patch pushes
 // before it throws), so there is nothing here for the provider to do and nothing worth putting on
-// her screen — a genuinely full device is reported once per session by _persistFailWarn. Log it so
-// it shows up in a console trace, and leave the UI alone.
+// her screen. Log it so it shows up in a console trace, and leave the UI alone.
 function _noteWriteRefused(what,e){
   try{console.warn('[SlickChart] local write refused for '+(what||'a setting')+' (account copy still pushed)',e);}catch(_){}
 }

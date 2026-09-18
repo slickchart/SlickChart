@@ -697,6 +697,19 @@ created, and an explicit Save re-arms the signature so the `nav()` that follows 
 needs a Save at the bottom too. If a value only exists in an input until a button is pressed, leaving
 the screen has to persist it.
 
+**The old `_persistFailWarn` banner is gone too** (Ashley's call, same session). It was a sticky
+"this device is out of storage, open More → Device storage" toast on any refused write to
+`sc_clients` / `sc_courses` / `sc_session_summaries`. Since the IndexedDB offload (§2e) the patched
+`setItem` sends anything big to IndexedDB and **pushes to the account before it throws**, so by the
+time that handler runs the change is already on the server and returns on the next load — the banner
+was alarming a provider about a save that had not lost anything. It now logs to the console only.
+`_lsBiggestKeyLabel` and `_storageWarned` went with it; `_lsLabel` / `_LS_LABELS` stay, the Device
+storage panel still uses them.
+
+**Photos are the deliberate exception and must keep saying so.** `_commitPhoto` and the stencil
+overlay still toast about a full device, because a photo that will not store really is lost at that
+moment and is not on the server. Don't "tidy" those two to match.
+
 ---
 
 ## 3. Open threads — needs Ashley, or needs verifying
