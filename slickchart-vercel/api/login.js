@@ -5,6 +5,7 @@
 import { signToken, verifyPassword, tooManyAttempts, tooManyAttemptsByIp, recordAttempt, clearAttempts, createSession } from '../lib/auth.js';
 import { sql, ensureProvidersTable, dbEnabled, hasActiveSubscription } from '../lib/db.js';
 import { verifyToken as verifyTotp } from '../lib/totp.js';
+import { liveSubForEmail, repairSubscriptionRow } from '../lib/stripe-subs.js';
 
 // A valid-format (salt:hash) decoy so an UNKNOWN email still runs the same slow scrypt a known one does.
 // Without it, the intentionally-generic "Email or password is incorrect" reply leaked which emails are
@@ -68,8 +69,19 @@ export default async function handler(req, res) {
           if (!exempt) {
             try {
               if (!(await hasActiveSubscription(email))) {
-                res.status(402).json({ error: 'Your subscription isn’t active. Please renew to continue.', checkoutUrl: process.env.STRIPE_PAYMENT_LINK || '' });
-                return;
+                // Our row says no. Before turning away someone who may well be paying, ask Stripe —
+                // `subscriptions` is one row per email while Stripe allows several customers per
+                // address, so an accidental double signup means cancelling the duplicate can stamp
+                // 'canceled' over the subscription still being paid for. Stripe is the source of
+                // truth; if it says they are live, let them in and repair the row on the way past.
+                const live = await liveSubForEmail(email);
+                if (live) {
+                  console.log('[login] ' + email + ' looked inactive locally but Stripe has live subscription ' + live.id);
+                  await repairSubscriptionRow(email, live);
+                } else {
+                  res.status(402).json({ error: 'Your subscription isn’t active. Please renew to continue.', checkoutUrl: process.env.STRIPE_PAYMENT_LINK || '' });
+                  return;
+                }
               }
             } catch (e) { /* fail open — don't block on a billing lookup failure */ }
           }

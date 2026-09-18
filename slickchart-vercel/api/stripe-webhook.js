@@ -18,6 +18,7 @@ import { sendEmail } from '../lib/email.js';
 import { sendNativeToProvider, nativePushConfigured } from '../lib/fcm.js';
 import { ensureClientTables, claimReminder } from '../lib/clients.js';
 import { recordBuildSale } from '../lib/build-sales.js';
+import { liveSubForEmail } from '../lib/stripe-subs.js';
 
 // The owner's inbox for real-time milestone pings. Defaults to the built-in owner so a PAID signup is
 // never missed even before any env is configured; FOUNDER_NOTIFY_EMAIL / FOUNDER_EMAILS override it.
@@ -68,37 +69,6 @@ async function lookupCustomerEmail(customerId) {
     const j = await r.json();
     return (j && j.email || '').toLowerCase();
   } catch (e) { return ''; }
-}
-
-// Does this email still have a LIVE subscription in Stripe, other than the one this event is about?
-//
-// `subscriptions` is one row per email, but Stripe allows several customers with the same address —
-// which is what happens when someone accidentally signs up twice. Both customers then write to the
-// same row, so cancelling the duplicate stamped status='canceled' over the row that was tracking the
-// subscription still being paid for, and the provider was locked out of an account they own.
-//
-// Stripe is the source of truth, so ask it. Returns the surviving subscription, or null.
-async function liveSubForEmail(email, excludeSubId) {
-  const key = process.env.STRIPE_SECRET_KEY || '';
-  if (!key || !email) return null;
-  const get = async (url) => {
-    try {
-      const r = await fetch(url, { headers: { Authorization: 'Bearer ' + key } });
-      if (!r.ok) return null;
-      return await r.json();
-    } catch (e) { return null; }
-  };
-  const customers = await get('https://api.stripe.com/v1/customers?limit=100&email=' + encodeURIComponent(email));
-  for (const c of ((customers && customers.data) || [])) {
-    if (!c || !c.id) continue;
-    // `status=all` then filter, so a trialing subscription counts too.
-    const subs = await get('https://api.stripe.com/v1/subscriptions?limit=100&status=all&customer=' + encodeURIComponent(c.id));
-    for (const sub of ((subs && subs.data) || [])) {
-      if (!sub || !sub.id || sub.id === excludeSubId) continue;
-      if (sub.status === 'active' || sub.status === 'trialing') return sub;
-    }
-  }
-  return null;
 }
 
 // Claim the right to announce this provider, exactly once, ever. A monthly renewal arrives as the very
