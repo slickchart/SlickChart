@@ -623,6 +623,40 @@ returning provider).
 
 ---
 
+## 2n. Saved settings were being thrown away by the next pull (2026-09-18)
+
+A provider reported business hours, logo and forms resetting all day. Ashley's guess was that it was
+our deploying. **Half right: the deploys raised the odds, they were not the cause.** Two real bugs,
+both reproduced against the live code before fixing.
+
+**1. `_mergeForms` discarded every edit to an existing form.** The three id-keyed maps (`tmpls`,
+`guides`, `emojis`) were merged with an unconditional *server overrides local*. `Cloud.pull()` runs on
+every app load, so a save + successful push was still undone by the next pull putting the stock copy
+back. The giveaway in the report: a **brand-new** form survived (no server id to win with), which is
+why it reads as "resets to the defaults" rather than "save is broken". The `custom` array directly
+above already used a `_ts` comparison — the maps were simply never given one. Now newer-wins, with
+`persistForms` stamping `_ts` on **only the entries whose content changed**, so a routine save cannot
+make one device's whole form set outrank another device's real edits.
+
+**2. `sc_bizinfo` and `sc_brand_colors` had no merge at all.** They fell through to the pull's plain
+`set(k, data[k])`, so the server copy overwrote the device. Any edit not yet on the server — failed
+push, or a reload landing first — was gone. Both now use `_mergeStamped` (stamped last-writer-wins,
+pushes back when local is newer). `_stampNow()` stamps them at every save site.
+
+**Unstamped data keeps the old behaviour**, so nothing written before this changes meaning.
+
+**The general rule this is the third instance of:** anything in `Cloud.pull()` that is not explicitly
+merged is *overwritten by the server*. `sc_clients`, `sc_msgstore`, `sc_threads`, `sc_seen_events`,
+tombstones, courses, resources and forms have merges; everything else does not. **If you add a synced
+key a provider can edit, it needs a merge or a stamp — a plain overwrite means their edit is one pull
+away from vanishing.** CLAUDE.md §0.6 says this; it keeps being learned the hard way.
+
+**Deploying while a provider is working is not harmless.** Every deploy makes their app reload, every
+load pulls, and every pull is a chance to lose an unsynced edit. Worth timing deploys away from her
+working hours where possible, independent of these fixes.
+
+---
+
 ## 3. Open threads — needs Ashley, or needs verifying
 
 1. **Square `payment.*` webhook subscription.** Paid-course auto-unlock depends on Square sending
