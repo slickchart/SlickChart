@@ -2713,6 +2713,26 @@ function _mergeAuthoredById(serverStr,localStr,hiddenKey){
 // by KEY PRESENCE (an emoji of '' means "hide the icon", so an empty value is real data, not absent).
 // Anything in sc_hidden_forms is stripped from all four, so a deleted form cannot come back and does
 // not leave its questions or attachments behind.
+// Settings blobs that are ONE object rather than a collection: business info (including opening
+// hours) and brand colours / logo. These had no merge at all, so the pull's plain overwrite put the
+// server copy back over whatever was on the device. If an edit had not reached the server yet — a
+// failed push, or simply a reload landing first — it was gone, and the setting "reset" itself.
+//
+// Stamped last-writer-wins: whichever side was edited more recently is kept, and when local wins the
+// caller pushes it back so every device converges on it. Unstamped data behaves exactly as before.
+// Records WHEN this device last edited a settings blob. _mergeStamped compares these, so without it
+// a local edit has no way to prove it is newer than the server's copy.
+function _stampNow(o){ try{ if(o&&typeof o==='object')o._ts=Date.now(); }catch(e){} return o; }
+function _mergeStamped(serverStr,localStr){
+  let srv=null,loc=null;
+  try{srv=JSON.parse(serverStr||'null');}catch(e){return null;}
+  try{loc=JSON.parse(localStr||'null');}catch(e){loc=null;}
+  if(!srv||typeof srv!=='object')return null;
+  if(!loc||typeof loc!=='object')return {str:serverStr,changed:false};
+  const a=Number(srv._ts)||0,b=Number(loc._ts)||0;
+  if(b>a)return {str:localStr,changed:true};   // this device's edit is newer — keep it, push it back
+  return {str:serverStr,changed:false};
+}
 function _mergeForms(serverStr,localStr){
   let srv,loc;
   try{srv=JSON.parse(serverStr||'null');}catch(e){return null;}
@@ -2734,11 +2754,29 @@ function _mergeForms(serverStr,localStr){
   };
   cs.forEach(f=>take(f,false)); cl.forEach(f=>take(f,true));
 
-  // the three id-keyed maps: keep every key either side knows, server wins a genuine conflict
-  const mergeMap=function(a,b){
+  // The three id-keyed maps: keep every key either side knows, NEWER WINS on a genuine conflict.
+  //
+  // This used to be an unconditional "server overrides local", which quietly discarded every edit a
+  // provider made to a form that already existed on the server. Saving worked, the push went out, and
+  // then the next pull — on any app reload — put the stock copy straight back. A brand-new form
+  // survived (the server had no such id to win with), which is exactly why it read as "my forms keep
+  // resetting to the defaults" rather than as saving being broken. `custom` forms above already
+  // resolved this with a _ts comparison; the maps were simply never given one.
+  //
+  // Unstamped on both sides still falls back to server-wins, so nothing changes for data written
+  // before this shipped.
+  const mergeMap=function(srvMap,locMap){
     const o={};
-    if(b&&typeof b==='object')Object.keys(b).forEach(k=>{if(!hidden[k])o[k]=b[k];});   // local first
-    if(a&&typeof a==='object')Object.keys(a).forEach(k=>{if(!hidden[k])o[k]=a[k];});   // server overrides
+    const put=function(src,k,fromLocal){
+      if(hidden[k])return;
+      const v=src[k];
+      if(!(k in o)){o[k]=v;return;}
+      const a=Number(o[k]&&o[k]._ts)||0,b=Number(v&&v._ts)||0;
+      if(b>a)o[k]=v;                        // newer edit wins, whichever side it came from
+      else if(!a&&!b&&!fromLocal)o[k]=v;    // neither stamped → previous behaviour
+    };
+    if(locMap&&typeof locMap==='object')Object.keys(locMap).forEach(k=>put(locMap,k,true));
+    if(srvMap&&typeof srvMap==='object')Object.keys(srvMap).forEach(k=>put(srvMap,k,false));
     return o;
   };
   const merged={
@@ -2853,6 +2891,14 @@ const Cloud={
     // Chat data is append-only and provider-sent messages live ONLY in sc_msgstore, so a plain overwrite
     // here let a stale device wipe history and (via sc_seen_events) resurrect read messages as unread.
     // Merge these three the same way as sc_clients: union, never lose, push the superset back.
+    if(k==='sc_bizinfo'||k==='sc_brand_colors'){
+      const ms=_mergeStamped(data[k],_lsGet(k));
+      if(ms&&ms.str!=null){
+        set(k,ms.str);
+        if(ms.changed){try{this.push(k,ms.str);}catch(e){}}
+        return;
+      }
+    }
     if(k==='sc_msgstore'||k==='sc_threads'||k==='sc_seen_events'||k==='sc_attn_seen'||k==='sc_import_batches'||k==='sc_courses'||k==='sc_resources'||k==='sc_forms'){
       const mm=(k==='sc_msgstore')?_mergeMsgStore(data[k],_lsGet(k))
               :(k==='sc_courses')?_mergeCourses(data[k],_lsGet(k))
@@ -13145,9 +13191,30 @@ function filterFormGuides(q){
   document.querySelectorAll('.fg-row').forEach(c=>{const m=!q||(c.getAttribute('data-search')||'').includes(q);c.style.display=m?'':'none';if(m)total++;});
   const nr=document.getElementById('fg-noresults');if(nr)nr.style.display=(q&&total===0)?'':'none';
 }
+// Stamp _ts on the entries whose content actually changed since the last write. Only changed ones,
+// so an ordinary save can't make this device's whole form set look newer than another device's real
+// edits. Without a stamp the merge on pull has no way to tell an edit from the copy it replaced.
+let _formsSnap=null;
+function _stampChangedEntries(map,prevMap,now){
+  if(!map||typeof map!=='object')return;
+  Object.keys(map).forEach(function(k){
+    const v=map[k]; if(!v||typeof v!=='object')return;
+    let before=null,after=null;
+    try{before=(prevMap&&prevMap[k])?JSON.stringify(Object.assign({},prevMap[k],{_ts:undefined})):null;}catch(e){}
+    try{after=JSON.stringify(Object.assign({},v,{_ts:undefined}));}catch(e){}
+    if(before!==after)v._ts=now;
+  });
+}
 function persistForms(){
+  const now=Date.now();
+  let prev=_formsSnap;
+  if(!prev){try{prev=JSON.parse(_lsGet('sc_forms')||'null');}catch(e){prev=null;}}
+  _stampChangedEntries(formTmpls,prev&&prev.tmpls,now);
+  _stampChangedEntries(formGuides,prev&&prev.guides,now);
+  _stampChangedEntries(formEmojis,prev&&prev.emojis,now);
   const v=JSON.stringify({tmpls:formTmpls,guides:formGuides,custom:customForms,emojis:formEmojis});
   try{localStorage.setItem('sc_forms',v);}catch(e){}
+  try{_formsSnap=JSON.parse(v);}catch(e){_formsSnap=null;}
   try{if(typeof _pushKeyNow==='function')_pushKeyNow('sc_forms',v);}catch(e){}   // immediate push so a fast refresh can't lose the change
 }
 function loadForms(){
@@ -18284,7 +18351,7 @@ function _persistOnboarding(){
     bizInfo.ownerName=onboardData.biz.owner||bizInfo.ownerName;_syncProviderAvatar();
     if(onboardData.biz.name)workspace.name=onboardData.biz.name;
     saveProfessions();
-    (function(_v){localStorage.setItem('sc_bizinfo',_v);if(typeof _pushKeyNow==='function')_pushKeyNow('sc_bizinfo',_v);return _v;})(JSON.stringify(bizInfo));
+    (function(_v){localStorage.setItem('sc_bizinfo',_v);if(typeof _pushKeyNow==='function')_pushKeyNow('sc_bizinfo',_v);return _v;})(JSON.stringify(_stampNow(bizInfo)));
     (function(_v){localStorage.setItem('sc_wsname',_v);if(typeof _pushKeyNow==='function')_pushKeyNow('sc_wsname',_v);})(workspace.name);
     try{applyProfessionConfig();}catch(e){}
     SlickBridge.setAvailability(normalizeAvail(onboardData.avail));   // feeds the client booking flow (per-day)
@@ -19331,7 +19398,7 @@ function loadBrandColors(){
   return{primary:'#2BC7AC',secondary:'#1E8FCE'};
 }
 let brandColors=loadBrandColors();
-function saveBrandColors(){try{(function(_v){localStorage.setItem('sc_brand_colors',_v);if(typeof _pushKeyNow==='function')_pushKeyNow('sc_brand_colors',_v);return _v;})(JSON.stringify(brandColors));}catch(e){}}
+function saveBrandColors(){try{(function(_v){localStorage.setItem('sc_brand_colors',_v);if(typeof _pushKeyNow==='function')_pushKeyNow('sc_brand_colors',_v);return _v;})(JSON.stringify(_stampNow(brandColors)));}catch(e){}}
 
 // Derive readable ink + dark tints from any accent, then drive the whole app
 function _ink(hex){const h=String(hex==null?'':hex).replace('#','');const r=parseInt(h.slice(0,2),16),g=parseInt(h.slice(2,4),16),b=parseInt(h.slice(4,6),16);if(!isFinite(r)||!isFinite(g)||!isFinite(b))return'#ffffff';return((r*299+g*587+b*114)/1000)>=140?'#181410':'#ffffff';}
@@ -19518,7 +19585,7 @@ function _updateBrandPreview(){
 function _syncBrandNow(cb){
   try{
     if(typeof Cloud==='undefined'||!Cloud||!Cloud.token){if(cb)cb(false);return;}
-    fetch('/api/store',{method:'PUT',headers:{'Content-Type':'application/json','Authorization':'Bearer '+Cloud.token},body:JSON.stringify({items:{sc_brand_colors:JSON.stringify(brandColors)}})})
+    fetch('/api/store',{method:'PUT',headers:{'Content-Type':'application/json','Authorization':'Bearer '+Cloud.token},body:JSON.stringify({items:{sc_brand_colors:JSON.stringify(_stampNow(brandColors))}})})
       .then(function(r){if(cb)cb(!!(r&&r.ok));})
       .catch(function(){if(cb)cb(false);});
   }catch(e){if(cb)cb(false);}
@@ -19586,7 +19653,7 @@ function saveBizInfo(){
   Object.keys(map).forEach(k=>{const v=g(map[k]);if(v!==undefined)bizInfo[k]=v;});
   if(bizInfo.name)workspace.name=bizInfo.name;
   if(_bizLoc())workspace.location=_bizLoc();
-  try{(function(_v){localStorage.setItem('sc_bizinfo',_v);if(typeof _pushKeyNow==='function')_pushKeyNow('sc_bizinfo',_v);return _v;})(JSON.stringify(bizInfo));(function(_v){localStorage.setItem('sc_wsname',_v);if(typeof _pushKeyNow==='function')_pushKeyNow('sc_wsname',_v);})(workspace.name);}catch(e){}
+  try{(function(_v){localStorage.setItem('sc_bizinfo',_v);if(typeof _pushKeyNow==='function')_pushKeyNow('sc_bizinfo',_v);return _v;})(JSON.stringify(_stampNow(bizInfo)));(function(_v){localStorage.setItem('sc_wsname',_v);if(typeof _pushKeyNow==='function')_pushKeyNow('sc_wsname',_v);})(workspace.name);}catch(e){}
   SlickBridge.setAvailability(bizHours);
   _syncProviderAvatar();
   // Studio name and booking availability live only in each client's synced blob (not the shared
@@ -21735,7 +21802,7 @@ function _shopUrl(){return String((typeof bizInfo!=='undefined'&&bizInfo.shopUrl
 function _saveShopUrl(v){
   if(typeof bizInfo==='undefined')return;
   bizInfo.shopUrl=String(v||'').trim().replace(/^https?:\/\//i,'').replace(/\/+$/,'');
-  try{(function(_v){localStorage.setItem('sc_bizinfo',_v);if(typeof _pushKeyNow==='function')_pushKeyNow('sc_bizinfo',_v);return _v;})(JSON.stringify(bizInfo));}catch(e){}
+  try{(function(_v){localStorage.setItem('sc_bizinfo',_v);if(typeof _pushKeyNow==='function')_pushKeyNow('sc_bizinfo',_v);return _v;})(JSON.stringify(_stampNow(bizInfo)));}catch(e){}
   const shop=bizInfo.shopUrl;
   // Point each Square product's Buy link at its own page ({shop}/product/{permalink}) when we know the
   // slug, else the shop-all page. Only for auto-set links — never clobber a hand-pasted exact URL.
