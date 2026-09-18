@@ -1264,9 +1264,40 @@ question every one of these reports has really been.
 Suite: `formsdiag.mjs` (a device-only form is named; nothing is flagged when both sides agree),
 `xdev.mjs` (the two-device round trip, small and offloaded).
 
-**If it happens again:** get the self-check BEFORE re-creating the form. If it says "only on this
+### FOUND IT: a new form was born with a DELETED form's id
+
+Her self-check settled it in one line: `sc_forms` **identical** on device and account, 1 custom form
+on both. Nothing failed to send — the form was **removed at both ends**.
+
+Custom form ids were `'custom'+(++customFormSeq)`, and `customFormSeq` is rebuilt on every load from
+the forms that STILL EXIST (`loadForms`, from `d.custom`). Deleting a form does not free its id:
+`sc_hidden_forms` keeps it for ever, on purpose, so a deleted form cannot come back on the next sync
+(`_TOMB_OBJ`, and `_mergeForms` strips anything in it).
+
+**So deleting `custom2` put the number back in circulation.** The next form she created was handed
+`custom2` — an id on the permanent deleted list — and was therefore filtered out of every list that
+renders forms (`customForms.filter(cf=>!hiddenForms[cf.id])`) and stripped by `_mergeForms` the moment
+it synced. It said *Form saved* and was never seen again.
+
+**Her guide survived because guide ids are `'g-custom-'+Date.now()`**, and course ids are
+`'c'+time+random`. Forms were the only library using a reusable counter. That is the entire reason one
+crossed over and the other did not — not the network, not the size, not §2u.
+
+Fix: `_newCustomFormId()` skips any id that is taken (`hiddenForms`, `formTmpls`, `customForms`, and
+the stored `sc_hidden_forms` in case it is not in memory yet) and falls back to a timestamped id after
+1000 tries. `loadForms` also seeds the counter from the tombstones and the templates, so it rarely has
+to skip. Deletion is unchanged — a deleted form stays deleted.
+
+Suite: `formid.mjs` — the full history (make two, delete one, reopen, make a third), asserting the new
+form keeps its own id, renders immediately, survives a reload, reaches the account, appears on a second
+device, and that the deleted one stays gone on both. `idreuse.mjs` is the bare before/after repro.
+
+**Nothing recovers her lost form.** It is not on the device or the account; it has to be remade.
+
+**If a form goes missing again:** get the self-check BEFORE re-creating it. If it says "only on this
 device", the save never left the phone and the push path is the place to look. If the account has it
-and the computer does not, it is the merge or `loadForms()`, not the push.
+and the other device does not, it is the merge or `loadForms()`. If BOTH sides agree and the form is
+simply absent, it was deleted — look at ids and tombstones, as here.
 
 ---
 

@@ -214,7 +214,7 @@ const S=document.getElementById('S');
 // resets when I save it" and there was no way to tell whether her phone had any of them — a whole
 // day was spent debugging code she may not have been running. Shown at the bottom of Settings, so
 // the answer is a screenshot away. Bump it on every ship.
-const APP_BUILD='2026-09-18p';
+const APP_BUILD='2026-09-18q';
 
 
 /* ════════════════════════════════════════════════════════════════
@@ -13741,6 +13741,16 @@ function loadForms(){
     if(d.emojis&&typeof d.emojis==='object'){formEmojis={};Object.assign(formEmojis,d.emojis);}
     if(Array.isArray(d.custom)){customForms.length=0;d.custom.forEach(c=>customForms.push(c));
       customFormSeq=Math.max(0,...d.custom.map(c=>parseInt(String(c.id||'').replace('custom',''),10)||0));}
+    // Deleted forms are gone from `custom` but their ids live for ever in sc_hidden_forms, so a
+    // counter rebuilt from the survivors alone hands the next new form a dead id. Count the
+    // tombstones and the templates too. _newCustomFormId() below is the real guard; this just means
+    // it almost never has to skip.
+    try{
+      const ids=[];
+      try{const h=JSON.parse(localStorage.getItem('sc_hidden_forms')||'{}');if(h&&typeof h==='object')ids.push.apply(ids,Object.keys(h));}catch(e){}
+      try{ids.push.apply(ids,Object.keys(d.tmpls||{}));}catch(e){}
+      ids.forEach(function(id){const n=parseInt(String(id||'').replace('custom',''),10)||0;if(n>customFormSeq)customFormSeq=n;});
+    }catch(e){}
   }catch(e){}
   // A saved copy of formTmpls may predate the auto-added photo-release / reference-photo
   // questions and would wipe them on merge, re-inject so they're always present.
@@ -14774,6 +14784,26 @@ function _isPhotoType(t){return t==='Photo upload'||t==='File upload';}
 let nextQIdLocal=20;
 let customForms=[];     // user-created forms, surfaced in their own section
 let customFormSeq=0;
+// An id for a form she just built.
+//
+// This used to be a bare ++counter, and the counter was rebuilt on every load from the forms that
+// still EXIST. Deleting a form does not free its id: sc_hidden_forms keeps it for ever, precisely so
+// a deleted form cannot come back on the next sync. So deleting "custom2" and later making a new
+// form handed the new one the dead id — and it was then filtered out of every list that renders
+// forms and stripped by _mergeForms the moment it synced. She saved a form, it said Form saved, and
+// it was never seen again. Guides and courses never had this because their ids carry a timestamp.
+function _newCustomFormId(){
+  const taken=function(id){
+    try{if(typeof hiddenForms!=='undefined'&&hiddenForms&&hiddenForms[id])return true;}catch(e){}
+    try{if(typeof formTmpls!=='undefined'&&formTmpls&&formTmpls[id])return true;}catch(e){}
+    try{if(typeof customForms!=='undefined'&&customForms.some(function(f){return f&&f.id===id;}))return true;}catch(e){}
+    // The tombstone list may not be in memory yet on a screen that never loaded it.
+    try{const h=JSON.parse(localStorage.getItem('sc_hidden_forms')||'{}');if(h&&h[id])return true;}catch(e){}
+    return false;
+  };
+  for(let i=0;i<1000;i++){ const id='custom'+(++customFormSeq); if(!taken(id))return id; }
+  return 'custom_'+Date.now().toString(36)+Math.random().toString(36).slice(2,6);
+}
 function _formTypeOptions(sel){return Object.keys(typeIcons).map(t=>`<option value="${t}" ${t===sel?'selected':''}>${t}</option>`).join('');}
 function _qRowHTML(q){
   const opts=q.options&&q.options.length?JSON.stringify(q.options).replace(/'/g,'&#39;'):'[]';
@@ -14918,7 +14948,7 @@ function saveFormBuilder(tid,thenPreview,quiet){
   }
   let id=tid;
   if(tid==='new'){
-    id='custom'+(++customFormSeq);
+    id=_newCustomFormId();
     customForms.push({id,name,_ts:Date.now()});
   }
   else{const _cf=customForms.find(f=>f&&f.id===id);if(_cf)_cf._ts=Date.now();}   // lets _mergeForms keep the newer edit
