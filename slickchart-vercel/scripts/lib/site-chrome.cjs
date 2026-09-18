@@ -70,7 +70,11 @@ const chromeFooter = `<footer><div class="wrap">
   <div class="tiny">SlickChart &middot; Made for solo beauty &amp; wellness pros &middot; Pleasant Hill, CA</div>
 </div></footer>`;
 
-function head({ title, description, canonical, keywords, jsonld, ogType, headerCta }) {
+// ogImage: the picture that shows when a link is shared. Defaults to the SlickChart one; the Build
+// blog passes its own, because a Build page previewing as a SlickChart client-engagement graphic
+// tells whoever sees it the wrong thing about what they are about to open.
+function head({ title, description, canonical, keywords, jsonld, ogType, headerCta, ogImage }) {
+  const share = `${SITE}/assets/${ogImage || 'og-image-marine.jpg?v=4'}`;
   return `<!doctype html>
 <html lang="en">
 <head>
@@ -89,14 +93,14 @@ ${keywords ? `<meta name="keywords" content="${esc(keywords)}">\n` : ''}<link re
 <meta property="og:title" content="${esc(title)}">
 <meta property="og:description" content="${esc(description)}">
 <meta property="og:url" content="${esc(canonical)}">
-<meta property="og:image" content="${SITE}/assets/og-image-marine.jpg?v=4">
+<meta property="og:image" content="${share}">
 <meta property="og:image:width" content="1200">
 <meta property="og:image:height" content="630">
 <meta property="og:locale" content="en_US">
 <meta name="twitter:card" content="summary_large_image">
 <meta name="twitter:title" content="${esc(title)}">
 <meta name="twitter:description" content="${esc(description)}">
-<meta name="twitter:image" content="${SITE}/assets/og-image-marine.jpg?v=4">
+<meta name="twitter:image" content="${share}">
 ${HEAD_FONTS}
 <style>${CSS}</style>
 <script type="application/ld+json">${JSON.stringify(jsonld)}</script>

@@ -48,7 +48,8 @@ const BLOGS = [{
   blogDesc: 'Notes on building and shipping your own app with AI, from someone who did it without a coding background.',
   ctaText: 'Turn your idea into a clickable demo of your own app, on your phone, in about seventy minutes. Free, no coding.',
   ctaHref: '/free', ctaLabel: 'Get the free starter',
-  headerCta: { href: '/build', label: 'Build your own app' }
+  headerCta: { href: '/build', label: 'Build your own app' },
+  ogImage: 'og-build.jpg?v=1'
 }];
 
 // Static pages that belong in the sitemap alongside the blog.
@@ -137,7 +138,7 @@ for (const B of BLOGS) {
         author: { '@type': 'Person', name: 'Ashley Watson' },
         publisher: { '@type': 'Organization', name: 'SlickChart', logo: { '@type': 'ImageObject', url: SITE + '/icon-512.png' } },
         mainEntityOfPage: { '@type': 'WebPage', '@id': p.url },
-        image: SITE + '/assets/og-image-marine.jpg',
+        image: SITE + '/assets/' + (B.ogImage || 'og-image-marine.jpg?v=4').split('?')[0],
         inLanguage: 'en-US'
       }, {
         '@type': 'BreadcrumbList',
@@ -150,7 +151,7 @@ for (const B of BLOGS) {
     };
     const html = head({
       title: p.meta.title + TITLE_SUFFIX, description: p.meta.description, canonical: p.url,
-      keywords: p.meta.keywords, jsonld, ogType: 'article', headerCta: B.headerCta
+      keywords: p.meta.keywords, jsonld, ogType: 'article', headerCta: B.headerCta, ogImage: B.ogImage
     })
       + `\n<main><div class="wrap">
 <a class="back" href="${B.base}">&larr; All posts</a>
@@ -181,7 +182,7 @@ ${related.length ? `<h2>Keep reading</h2>\n` + related.map(r =>
   };
   fs.writeFileSync(path.join(OUT, 'index.html'), head({
     title: B.indexTitle, description: B.indexDesc, canonical: SITE + B.base,
-    keywords: B.indexKeywords, jsonld: indexJsonld, ogType: 'website', headerCta: B.headerCta
+    keywords: B.indexKeywords, jsonld: indexJsonld, ogType: 'website', headerCta: B.headerCta, ogImage: B.ogImage
   })
     + `\n<main><div class="wrap">
 <h1>${B.indexH1}</h1>
