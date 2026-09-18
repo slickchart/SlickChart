@@ -92,17 +92,22 @@ export default async function handler(req, res) {
     const host = req.headers['host'] || '';
     const derived = proto + '://' + host + '/api/square/webhook';
     res.setHeader('Cache-Control', 'no-store');
+    // What matters is that `signatureCheckedAgainst` equals the Notification URL registered in
+    // Square, character for character. It has NOT got to match the domain this check was opened on:
+    // this deployment answers on more than one hostname, and an earlier version of this reply
+    // compared the two and reported a mismatch that meant nothing.
     res.status(200).json({
       ok: true,
       ready: hasKey,
       signingKeySet: hasKey,
-      registerThisUrl: pinned || derived,
+      signatureCheckedAgainst: pinned || derived,
       pinnedUrlSet: !!pinned,
-      urlMatchesThisHost: !pinned || pinned === derived,
       subscribeTo: ['payment.created', 'payment.updated'],
-      note: hasKey
-        ? 'Signing key is set. Square must also have this URL registered and those events ticked.'
-        : 'SQUARE_WEBHOOK_SIGNATURE_KEY is NOT set in Vercel — every Square event is being ignored.'
+      note: !hasKey
+        ? 'SQUARE_WEBHOOK_SIGNATURE_KEY is NOT set in Vercel — every Square event is being ignored.'
+        : (pinned
+          ? 'Signing key is set. Signatures are checked against the pinned URL above, which must be the exact Notification URL in Square. It does not need to match the domain you opened this on.'
+          : 'Signing key is set, but no SQUARE_WEBHOOK_URL is pinned, so signatures are checked against whichever hostname the request arrives on. Pin it to the exact Notification URL registered in Square.')
     });
     return;
   }
