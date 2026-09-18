@@ -468,7 +468,7 @@ const S=document.getElementById('S');
 // resets when I save it" and there was no way to tell whether her phone had any of them — a whole
 // day was spent debugging code she may not have been running. Shown at the bottom of Settings, so
 // the answer is a screenshot away. Bump it on every ship.
-const APP_BUILD='2026-09-18n';
+const APP_BUILD='2026-09-18o';
 
 
 /* ════════════════════════════════════════════════════════════════
@@ -12717,11 +12717,18 @@ async function _loadConsultLink(){
 }
 async function _setConsultSlug(){
   const tok=(typeof Cloud!=='undefined'&&Cloud&&Cloud.token)||'';
-  if(!tok){if(typeof proToast==='function')proToast('Sign in to set up your consult link');return;}
-  _inputSheet({title:'Choose your consult link name',body:'Letters, numbers, and hyphens.',placeholder:'your-name',value:_consultSlug||_consultSuggestion||'',action:'Save'},async function(raw){
+  if(!tok){if(typeof proToast==='function')proToast('Sign in to set up your link');return;}
+  // ONE name serves both public pages — /book/<name> and /consult/<name> — so this sheet is reached
+  // from the Booking link screen just as often as from Virtual Consultations. Calling it "your
+  // consult link name" there was simply wrong, so the wording names both.
+  _inputSheet({title:'Choose your link name',body:'Letters, numbers, and hyphens. The same name is used for your booking link and your consult link.',placeholder:'your-name',value:_consultSlug||_consultSuggestion||'',action:'Save'},async function(raw){
     if(!raw)return;
     try{const r=await fetch('/api/consult-slug',{method:'PUT',headers:{'Content-Type':'application/json','Authorization':'Bearer '+tok},body:JSON.stringify({slug:raw})});const j=await r.json();
-      if(r.ok&&j&&j.ok){_consultSlug=j.slug;if(typeof proToast==='function')proToast('Consult link ready ✓');if(activeVirtualTab==='upload')switchVTab('upload');}
+      if(r.ok&&j&&j.ok){_consultSlug=j.slug;if(typeof proToast==='function')proToast('Your link name is ready ✓');
+        if(activeVirtualTab==='upload')switchVTab('upload');
+        // Whichever screen sent her here needs redrawing, or she saves a name and watches the screen
+        // carry on asking her to pick one.
+        try{ if(_navCur&&_navCur.screen==='booking-link'&&typeof renderBookingLink==='function')renderBookingLink(); }catch(e){}}
       else{if(typeof proToast==='function')proToast((j&&j.error)||'Could not set that link');}
     }catch(e){if(typeof proToast==='function')proToast('Could not set that link');}
   });

@@ -1058,6 +1058,13 @@ only their imports pointed at stubs, because `@neondatabase/serverless` isn't in
 copy has to be re-made after editing any of them, or the suites quietly test yesterday's code. That
 happened once and reported a false failure.
 
+**The name sheet belongs to BOTH links.** `_setConsultSlug()` is reached from the Booking link screen
+as often as from Virtual Consultations, and it used to open saying *"Choose your consult link name"*
+with a *"Consult link ready"* toast — wrong wording on the booking screen, where Ashley spotted it. It
+now says *"Choose your link name … The same name is used for your booking link and your consult
+link."* It also re-renders the Booking link screen on save: it set `_consultSlug` and refreshed only
+the Virtual Consultations tab, so saving a name there left the screen still asking her to pick one.
+
 **How she finds it: the CALENDAR, not just Settings.** Ashley: *"accessing the link via the
 booking/calendar section would make more sense"*. `_calBookLinkRowHTML()` puts a **Your booking link**
 row on the Calendar directly under Booking requests — always present so she knows the feature exists,
