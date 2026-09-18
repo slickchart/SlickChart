@@ -205,4 +205,88 @@ export function consultLeadEmailText({ providerName, name, email, phone, message
   return lines.join('\n');
 }
 
+// ── Public booking link ─────────────────────────────────────────────────────────────────────────
+// Two emails when someone books through a provider's public link. The one to the PERSON BOOKING is
+// the one that was missing: they saw a confirmation on screen and then heard nothing, which for a
+// stranger who just handed over their details reads as "did that work?". Reply-To is set to the
+// provider so answering the email reaches her, not our support inbox.
+//
+// `confirmed` is the difference between the two states the link can produce: instant mode books the
+// slot outright, request mode asks. The wording has to be honest about which happened, because
+// "You're booked" for something she hasn't agreed to yet is how someone turns up to a locked door.
+export function bookingGuestEmailHtml({ bizName, name, when, treatment, confirmed, note, depositUrl, depositLabel, address, phone }) {
+  const first = (String(name || '').trim().split(/\s+/)[0]) || 'there';
+  const head = confirmed ? 'You’re booked' : 'Request sent';
+  const lede = confirmed
+    ? `Your appointment with ${esc(bizName)} is confirmed.`
+    : `${esc(bizName)} has your request and will confirm shortly — or suggest another time if that one’s taken.`;
+  const row = (label, val) => val ? `<tr><td style="padding:6px 12px 6px 0;font-size:13px;color:#7a948c;white-space:nowrap;vertical-align:top;">${esc(label)}</td><td style="padding:6px 0;font-size:14px;color:#1a1a1a;overflow-wrap:anywhere;">${esc(val)}</td></tr>` : '';
+  return `<div style="font-family:-apple-system,Segoe UI,Roboto,sans-serif;max-width:520px;margin:0 auto;padding:8px;color:#1a1a1a;">
+    <div style="background:#0a1719;border-radius:14px;padding:22px 24px;color:#eaf6f4;">
+      <div style="font-size:12px;color:#a2beb9;letter-spacing:.06em;text-transform:uppercase;margin-bottom:4px;">${esc(bizName)}</div>
+      <div style="font-size:20px;font-weight:700;">${head}</div>
+    </div>
+    <div style="padding:20px 6px 6px;">
+      <p style="font-size:15px;line-height:1.7;color:#3a3a3a;margin:0 0 16px;">Hi ${esc(first)} — ${lede}</p>
+      <table role="presentation" style="width:100%;border-collapse:collapse;margin-bottom:18px;">
+        ${row(confirmed ? 'When' : 'You asked for', when)}${row('What', treatment)}${row('Where', address)}${row('Their phone', phone)}
+      </table>
+      ${depositUrl ? `<div style="background:#fff6e8;border:1px solid #f0d9b5;border-radius:12px;padding:14px 16px;margin-bottom:18px;">
+        <div style="font-size:14px;line-height:1.6;color:#3a3a3a;margin-bottom:11px;">${esc(depositLabel || 'A deposit is needed to hold this appointment.')}</div>
+        <a href="${depositUrl}" style="background:#26c1b0;color:#03201e;text-decoration:none;font-weight:700;padding:12px 24px;border-radius:10px;display:inline-block;font-size:14px;">Pay the deposit</a>
+      </div>` : ''}
+      ${note ? `<div style="background:#eef6f4;border-radius:12px;padding:14px 16px;font-size:14px;line-height:1.6;color:#3a3a3a;white-space:pre-wrap;overflow-wrap:anywhere;margin-bottom:18px;">${esc(note)}</div>` : ''}
+      <p style="font-size:13px;line-height:1.7;color:#7a948c;margin:0;">Need to change or cancel? Just reply to this email — it goes straight to ${esc(bizName)}.</p>
+    </div>
+  </div>`;
+}
+export function bookingGuestEmailText({ bizName, name, when, treatment, confirmed, note, depositUrl, depositLabel, address, phone }) {
+  const first = (String(name || '').trim().split(/\s+/)[0]) || 'there';
+  const lines = [confirmed ? 'You’re booked' : 'Request sent', ''];
+  lines.push('Hi ' + first + ' — ' + (confirmed
+    ? 'Your appointment with ' + bizName + ' is confirmed.'
+    : bizName + ' has your request and will confirm shortly, or suggest another time if that one is taken.'));
+  lines.push('');
+  lines.push((confirmed ? 'When: ' : 'You asked for: ') + (when || ''));
+  if (treatment) lines.push('What: ' + treatment);
+  if (address) lines.push('Where: ' + address);
+  if (phone) lines.push('Their phone: ' + phone);
+  if (depositUrl) { lines.push('', depositLabel || 'A deposit is needed to hold this appointment.', 'Pay the deposit: ' + depositUrl); }
+  if (note) lines.push('', note);
+  lines.push('', 'Need to change or cancel? Reply to this email — it goes straight to ' + bizName + '.');
+  return lines.join('\n');
+}
+// And the provider's own copy. She already gets a push, but a push is gone the moment it is swiped
+// and it does not carry the person's email and phone.
+export function bookingProviderEmailHtml({ name, email, phone, when, treatment, confirmed, note, link }) {
+  const row = (label, val) => val ? `<tr><td style="padding:6px 12px 6px 0;font-size:13px;color:#7a948c;white-space:nowrap;vertical-align:top;">${esc(label)}</td><td style="padding:6px 0;font-size:14px;color:#1a1a1a;overflow-wrap:anywhere;">${esc(val)}</td></tr>` : '';
+  return `<div style="font-family:-apple-system,Segoe UI,Roboto,sans-serif;max-width:520px;margin:0 auto;padding:8px;color:#1a1a1a;">
+    <div style="background:#0a1719;border-radius:14px;padding:22px 24px;color:#eaf6f4;">
+      <div style="font-size:12px;color:#a2beb9;letter-spacing:.06em;text-transform:uppercase;margin-bottom:4px;">${confirmed ? 'Booked from your link' : 'New booking request'}</div>
+      <div style="font-size:20px;font-weight:700;">${esc(name || 'Someone')} · ${esc(when || '')}</div>
+    </div>
+    <div style="padding:20px 6px 6px;">
+      <table role="presentation" style="width:100%;border-collapse:collapse;margin-bottom:18px;">
+        ${row('What', treatment)}${row('Email', email)}${row('Phone', phone)}
+      </table>
+      ${note ? `<div style="background:#eef6f4;border-radius:12px;padding:14px 16px;font-size:14px;line-height:1.6;color:#3a3a3a;white-space:pre-wrap;overflow-wrap:anywhere;margin-bottom:18px;">${esc(note)}</div>` : ''}
+      <p style="font-size:14px;line-height:1.7;color:#3a3a3a;margin:0 0 18px;">${confirmed
+        ? 'This one is already on your calendar — they picked a time you had open.'
+        : 'Open SlickChart to confirm it, suggest another time, or decline.'}</p>
+      ${link ? `<div><a href="${link}" style="background:#26c1b0;color:#03201e;text-decoration:none;font-weight:700;padding:12px 24px;border-radius:10px;display:inline-block;font-size:14px;">Open SlickChart</a></div>` : ''}
+    </div>
+  </div>`;
+}
+export function bookingProviderEmailText({ name, email, phone, when, treatment, confirmed, note, link }) {
+  const lines = [confirmed ? 'Booked from your link' : 'New booking request', ''];
+  lines.push((name || 'Someone') + ' · ' + (when || ''));
+  if (treatment) lines.push('What: ' + treatment);
+  if (email) lines.push('Email: ' + email);
+  if (phone) lines.push('Phone: ' + phone);
+  if (note) lines.push('', note);
+  lines.push('', confirmed ? 'This one is already on your calendar.' : 'Open SlickChart to confirm, suggest another time, or decline.');
+  if (link) lines.push('', link);
+  return lines.join('\n');
+}
+
 function esc(s) { return String(s == null ? '' : s).replace(/[&<>"']/g, c => ({ '&': '&amp;', '<': '&lt;', '>': '&gt;', '"': '&quot;', "'": '&#39;' }[c])); }

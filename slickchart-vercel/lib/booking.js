@@ -26,12 +26,20 @@ const DAY_KEYS = ['sun', 'mon', 'tue', 'wed', 'thu', 'fri', 'sat'];
 export const DEFAULT_CONFIG = {
   on: false,
   mode: 'request',
-  slotMins: 60,
+  slotMins: 60,         // default appointment length, when a service doesn't set its own
+  bufferMins: 0,        // breathing room she keeps between appointments
   leadHours: 12,        // no same-hour surprises; she needs notice
   horizonDays: 60,      // how far ahead the page will let someone book
-  services: [],         // names only; empty means "use her service menu"
+  services: [],         // [{name, mins, deposit}]; empty means "use her service menu"
   note: '',
-  requirePhone: true
+  requirePhone: true,
+  // Square sends its own booking confirmations, so a provider using it would get two of everything.
+  // Both of these are hers to switch off rather than something we decide for her.
+  emailGuest: true,     // confirmation to the person booking
+  emailMe: true,        // her own copy, which carries their email and phone (a push does not)
+  depositOn: false,
+  depositAmount: 0,     // dollars; a service can override with its own
+  depositLabel: ''
 };
 
 function clampInt(v, lo, hi, dflt) {
@@ -49,12 +57,31 @@ export async function getBookingConfig(providerId) {
       cfg.on = !!o.on;
       cfg.mode = (o.mode === 'instant') ? 'instant' : 'request';
       cfg.slotMins = clampInt(o.slotMins, 15, 480, DEFAULT_CONFIG.slotMins);
+      cfg.bufferMins = clampInt(o.bufferMins, 0, 240, DEFAULT_CONFIG.bufferMins);
       cfg.leadHours = clampInt(o.leadHours, 0, 720, DEFAULT_CONFIG.leadHours);
       cfg.horizonDays = clampInt(o.horizonDays, 1, 365, DEFAULT_CONFIG.horizonDays);
       cfg.note = String(o.note || '').slice(0, 400);
       cfg.requirePhone = o.requirePhone !== false;
+      cfg.emailGuest = o.emailGuest !== false;
+      cfg.emailMe = o.emailMe !== false;
+      cfg.depositOn = !!o.depositOn;
+      cfg.depositAmount = Math.max(0, Math.min(10000, Math.round((parseFloat(o.depositAmount) || 0) * 100) / 100));
+      cfg.depositLabel = String(o.depositLabel || '').slice(0, 200);
+      // Services were names only to begin with. Both shapes are accepted, for ever — a provider who
+      // set hers up before durations existed must not have her list silently emptied.
       if (Array.isArray(o.services)) {
-        cfg.services = o.services.map(s => String((s && s.name) || s || '').trim()).filter(Boolean).slice(0, 40);
+        cfg.services = o.services.map(function (x) {
+          const name = String((x && x.name) || x || '').trim();
+          if (!name) return null;
+          const out = { name: name.slice(0, 120) };
+          const mins = clampInt(x && x.mins, 5, 480, 0);
+          if (mins) out.mins = mins;
+          // An explicit 0 means "no deposit on THIS one, whatever my usual is" and has to survive;
+          // only an absent value falls back to her usual amount.
+          const rawDep = (x && x.deposit != null && x.deposit !== '') ? parseFloat(x.deposit) : NaN;
+          if (isFinite(rawDep)) out.deposit = Math.max(0, Math.min(10000, Math.round(rawDep * 100) / 100));
+          return out;
+        }).filter(Boolean).slice(0, 40);
       }
     }
   } catch (e) { /* unreadable settings must never take the page down — defaults are safe (off) */ }
@@ -78,18 +105,33 @@ export async function getHours(providerId) {
   } catch (e) { return null; }
 }
 
-// What she offers. Her chosen list wins; otherwise her service menu; otherwise one generic option.
+// What she offers, always as [{name, mins, deposit}]. Her booking-page list wins; otherwise her
+// service menu; otherwise one generic option so the page is never empty.
 export async function getServices(providerId, cfg) {
   if (cfg && cfg.services && cfg.services.length) return cfg.services;
   try {
     const raw = await getKVValue(providerId, 'sc_service_menu');
     const a = raw ? JSON.parse(raw) : null;
     if (Array.isArray(a)) {
-      const names = a.map(s => String((s && s.name) || '').trim()).filter(Boolean).slice(0, 40);
+      const names = a.map(s => String((s && s.name) || '').trim()).filter(Boolean).slice(0, 40).map(n => ({ name: n }));
       if (names.length) return names;
     }
   } catch (e) {}
-  return ['Appointment'];
+  return [{ name: 'Appointment' }];
+}
+// The one she picked, matched by name. Falls back to the first, so a stale name from a cached page
+// can never book a service that no longer exists.
+export function pickService(services, name) {
+  const want = String(name || '').trim();
+  return (services || []).find(s => s.name === want) || (services || [])[0] || { name: 'Appointment' };
+}
+// How long this service takes, and what it needs up front.
+export function serviceMins(svc, cfg) { return (svc && svc.mins) || (cfg && cfg.slotMins) || 60; }
+export function serviceDeposit(svc, cfg) {
+  if (!cfg || !cfg.depositOn) return 0;
+  const own = (svc && svc.deposit != null) ? svc.deposit : null;
+  const d = (own != null) ? own : (cfg.depositAmount || 0);
+  return d > 0 ? d : 0;
 }
 
 // ── time helpers ────────────────────────────────────────────────────────────────────────────────
@@ -127,9 +169,13 @@ function dayKeyOf(dateISO) {
 // Square call fails we do not quietly fall back to "just the SlickChart ones": that would publish
 // times she is actually booked and hand her a double booking. A caller that gets null must fall
 // back to taking a request instead of showing slots.
-export async function busyRanges(providerId, dateISO, defaultMins) {
+export async function busyRanges(providerId, dateISO, defaultMins, bufferMins) {
   const out = [];
   const dur = Math.max(5, parseInt(defaultMins, 10) || 60);
+  // Her buffer is padded onto BOTH ends of everything already booked, so a new appointment can never
+  // land flush against an existing one from either side. One number, applied symmetrically, rather
+  // than a "before" and an "after" she'd have to reason about.
+  const pad = Math.max(0, parseInt(bufferMins, 10) || 0);
 
   // 1. Appointments made in the app.
   try {
@@ -140,7 +186,7 @@ export async function busyRanges(providerId, dateISO, defaultMins) {
         if (!a || isoDay(a.date) !== dateISO) return;
         const s = toMins(a.time);
         if (s == null) return;
-        out.push({ start: s, end: s + (parseInt(a.dur, 10) > 0 ? parseInt(a.dur, 10) : dur) });
+        out.push({ start: s - pad, end: s + (parseInt(a.dur, 10) > 0 ? parseInt(a.dur, 10) : dur) + pad });
       });
     }
   } catch (e) { return null; }   // her own calendar is unreadable — do not guess
@@ -164,7 +210,7 @@ export async function busyRanges(providerId, dateISO, defaultMins) {
         const s = local.getHours() * 60 + local.getMinutes();
         let mins = 0;
         (b.appointment_segments || []).forEach(seg => { mins += parseInt(seg.duration_minutes, 10) || 0; });
-        out.push({ start: s, end: s + (mins > 0 ? mins : dur) });
+        out.push({ start: s - pad, end: s + (mins > 0 ? mins : dur) + pad });
       });
     } catch (e) {
       return null;   // she has Square but we could not read it — never publish a half-informed slot list
@@ -175,7 +221,7 @@ export async function busyRanges(providerId, dateISO, defaultMins) {
 
 // The times someone can actually pick for one day. [] means nothing free; null means we could not
 // tell (see busyRanges) and the caller should take a request instead.
-export async function openSlots(providerId, dateISO, cfg, hours) {
+export async function openSlots(providerId, dateISO, cfg, hours, serviceName) {
   const day = isoDay(dateISO);
   if (!day) return [];
   const hrs = hours || await getHours(providerId);
@@ -186,12 +232,16 @@ export async function openSlots(providerId, dateISO, cfg, hours) {
   const open = toMins(h.start), close = toMins(h.end);
   if (open == null || close == null || close <= open) return [];
 
-  const busy = await busyRanges(providerId, day, cfg.slotMins);
+  // How long THIS service takes. A 20-minute brow tidy and a 2-hour facial should not offer the same
+  // grid, and a long one must not be offered in a gap it cannot finish inside.
+  const svc = serviceName ? pickService(await getServices(providerId, cfg), serviceName) : null;
+  const step = svc ? serviceMins(svc, cfg) : cfg.slotMins;
+
+  const busy = await busyRanges(providerId, day, cfg.slotMins, cfg.bufferMins);
   if (busy === null) return null;
 
   // Not in the past, and not inside her notice window.
   const earliest = Date.now() + cfg.leadHours * 3600000;
-  const step = cfg.slotMins;
   const out = [];
   for (let t = open; t + step <= close; t += step) {
     const when = new Date(day + 'T00:00:00');
@@ -210,3 +260,38 @@ export function openDayKeys(hours) {
   return DAY_KEYS.filter(d => hours[d] && hours[d].open);
 }
 export { DAY_KEYS };
+
+// ── Deposits ────────────────────────────────────────────────────────────────────────────────────
+// A deposit needs somewhere for the money to actually land, and the only payment rail a provider has
+// here is her own Square. So deposits are offered ONLY when Square is connected — the settings
+// screen says that rather than letting her switch on something that cannot take a payment.
+//
+// The link is minted per booking and carries a note tying it to that person and that appointment, so
+// she can see in Square what each payment was for. Failure is never fatal: the booking still stands
+// and she can chase the deposit herself, which is far better than losing the appointment because a
+// payment link could not be created.
+export async function depositLinkFor(providerId, { amount, serviceName, email, clientId }) {
+  const cents = Math.round((parseFloat(amount) || 0) * 100);
+  if (!cents || cents <= 0) return '';
+  let conn = null;
+  try { conn = await getConnection(providerId); } catch (e) { return ''; }
+  if (!conn || !conn.token) return '';
+  try {
+    const body = {
+      idempotency_key: 'sc-dep-' + Date.now() + '-' + Math.random().toString(36).slice(2, 10),
+      quick_pay: {
+        name: ('Deposit — ' + (serviceName || 'Appointment')).slice(0, 255),
+        price_money: { amount: cents, currency: 'USD' },
+        location_id: conn.locationId || undefined
+      },
+      payment_note: ('SCDEP:' + String(clientId || '').slice(0, 40)).slice(0, 500)
+    };
+    if (email) body.pre_populated_data = { buyer_email: String(email).slice(0, 160) };
+    const d = await squareFetch('/v2/online-checkout/payment-links', { method: 'POST', body }, conn.token);
+    return (d && d.payment_link && d.payment_link.url) || '';
+  } catch (e) { return ''; }
+}
+// Can she offer deposits at all? The settings screen asks this so it can explain, not just refuse.
+export async function depositsPossible(providerId) {
+  try { const c = await getConnection(providerId); return !!(c && c.token); } catch (e) { return false; }
+}

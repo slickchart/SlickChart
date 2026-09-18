@@ -468,7 +468,7 @@ const S=document.getElementById('S');
 // resets when I save it" and there was no way to tell whether her phone had any of them — a whole
 // day was spent debugging code she may not have been running. Shown at the bottom of Settings, so
 // the answer is a screenshot away. Bump it on every ship.
-const APP_BUILD='2026-09-18j';
+const APP_BUILD='2026-09-18k';
 
 
 /* ════════════════════════════════════════════════════════════════
@@ -12246,7 +12246,9 @@ function _setVcFee(val,btn){
 // lands in Booking Requests, which she already knows how to work. "Book instantly" is better for the
 // person booking, but it necessarily shows when she is busy — the screen says that in plain words
 // rather than burying it, because it is her call to make and she can only make it if she is told.
-let bookCfg={on:false,mode:'request',slotMins:60,leadHours:12,horizonDays:60,note:'',requirePhone:true};
+let bookCfg={on:false,mode:'request',slotMins:60,bufferMins:0,leadHours:12,horizonDays:60,note:'',requirePhone:true,
+  emailGuest:true,emailMe:true,depositOn:false,depositAmount:0,depositLabel:'',services:[]};
+let _bookSquare=null;   // null = not checked yet; deposits need her own Square to take the money
 function loadBookCfg(){
   try{const raw=localStorage.getItem('sc_booking_page');if(raw){const o=JSON.parse(raw);if(o&&typeof o==='object')bookCfg=Object.assign(bookCfg,o);}}catch(e){}
 }
@@ -12266,6 +12268,76 @@ function _bookNote(){
     bookCfg.note=String(v||'').slice(0,400);saveBookCfg();renderBookingLink();
   });
 }
+// Her services, with a length each. Empty means "use my service menu", which is what most providers
+// will want — one list to keep up to date, not two.
+function _bookServices(){
+  if(Array.isArray(bookCfg.services)&&bookCfg.services.length)return bookCfg.services;
+  const out=[];
+  try{(_svcMenu||[]).forEach(function(sv){if(sv&&sv.name)out.push({name:String(sv.name)});});}catch(e){}
+  return out;
+}
+function _bookUseMenu(){
+  // Copy her menu in so each one can be given its own length, rather than editing a phantom list.
+  bookCfg.services=_bookServices().map(function(s){return {name:s.name};});
+  saveBookCfg();renderBookingLink();
+}
+function _bookSvcMins(i,v){
+  const list=(bookCfg.services||[]).slice();
+  if(!list[i])return;
+  const n=parseInt(v,10);
+  if(n>0)list[i].mins=n;else delete list[i].mins;
+  bookCfg.services=list;saveBookCfg();renderBookingLink();
+}
+function _bookSvcDeposit(i){
+  const list=(bookCfg.services||[]).slice();const svc=list[i];if(!svc)return;
+  _inputSheet({title:'Deposit for '+svc.name,body:'Leave blank to use your usual deposit. Enter 0 for no deposit on this one.',
+    placeholder:'25',value:(svc.deposit!=null?String(svc.deposit):''),action:'Save'},function(v){
+    const txt=String(v||'').trim();
+    const n=parseFloat(txt.replace(/[^0-9.]/g,''));
+    // Blank means "use my usual"; a typed 0 means "no deposit for this one" and must stick.
+    if(!txt)delete svc.deposit;else if(isFinite(n)&&n>=0)svc.deposit=Math.max(0,Math.round(n*100)/100);else delete svc.deposit;
+    bookCfg.services=list;saveBookCfg();renderBookingLink();
+  });
+}
+function _bookSvcRemove(i){
+  const list=(bookCfg.services||[]).slice();list.splice(i,1);
+  bookCfg.services=list;saveBookCfg();renderBookingLink();
+}
+function _bookSvcAdd(){
+  _inputSheet({title:'Add a service',body:'What people can book you for.',placeholder:'Signature facial',value:'',action:'Add'},function(v){
+    const nm=String(v||'').trim();if(!nm)return;
+    bookCfg.services=(bookCfg.services||[]).concat([{name:nm.slice(0,120)}]);
+    saveBookCfg();renderBookingLink();
+  });
+}
+// Deposits need somewhere for the money to land, and the only rail a provider has is her own Square.
+async function _bookCheckSquare(){
+  if(_bookSquare!==null)return _bookSquare;
+  try{const st=(typeof _sqConnState==='function')?await _sqConnState():null;_bookSquare=!!(st&&st.oauth);}
+  catch(e){_bookSquare=false;}
+  try{ if(_navCur&&_navCur.screen==='booking-link')renderBookingLink(); }catch(e){}
+  return _bookSquare;
+}
+function _bookDepositToggle(){
+  if(!bookCfg.depositOn&&_bookSquare===false){
+    if(typeof confirmModal==='function')confirmModal({title:'Deposits need Square',
+      body:'A deposit has to be paid somewhere, and SlickChart uses your own Square to take it. Connect Square in Settings → Integrations and this turns on.',
+      action:'Got it',hideCancel:true},function(){});
+    else if(typeof proToast==='function')proToast('Connect Square first — deposits are taken through your own Square account.',0);
+    return;
+  }
+  bookCfg.depositOn=!bookCfg.depositOn;
+  if(bookCfg.depositOn&&!(bookCfg.depositAmount>0))bookCfg.depositAmount=25;
+  saveBookCfg();renderBookingLink();
+}
+function _bookDepositAmount(){
+  _inputSheet({title:'Usual deposit',body:'Charged when someone books, unless a service sets its own.',placeholder:'25',
+    value:(bookCfg.depositAmount>0?String(bookCfg.depositAmount):''),action:'Save'},function(v){
+    const n=parseFloat(String(v||'').replace(/[^0-9.]/g,''));
+    bookCfg.depositAmount=(isFinite(n)&&n>0)?Math.round(n*100)/100:0;
+    saveBookCfg();renderBookingLink();
+  });
+}
 function _bookOpenPreview(){
   const u=_bookFull();if(!u){_setConsultSlug();return;}
   try{window.open(u,'_blank','noopener');}catch(e){if(typeof proToast==='function')proToast('Open '+u);}
@@ -12274,6 +12346,7 @@ function renderBookingLink(){
   setNav('more');
   document.getElementById('tt').textContent='Booking link';
   if(_consultSlug===null){try{_loadBookingSlug();}catch(e){}}
+  if(_bookSquare===null){try{_bookCheckSquare();}catch(e){}}
   const live=bookCfg.on&&!!_consultSlug;
   const disp=_consultSlug?_fileEsc(_consultHost()+'/book/'+_consultSlug):'';
   const full=_jsAttr(_bookFull());
@@ -12322,7 +12395,8 @@ function renderBookingLink(){
     ${modeCard('request','Ask me first','They ask for a day and time inside your hours. It lands in Booking Requests and you confirm, suggest another time, or decline — the same as when a client books from their app.','')}
     ${modeCard('instant','Book it instantly','They see your genuinely free times and the appointment is made straight away. Less back and forth for both of you.','Heads up: this shows when you’re already booked. Anyone with the link can see which times are taken, though never who with.')}
     <div style="background:var(--surf2);border:1px solid var(--p-line);border-radius:12px;overflow:hidden;margin:14px 0 16px;">
-      ${numRow('How long is an appointment','slotMins',[[15,'15 min'],[30,'30 min'],[45,'45 min'],[60,'1 hour'],[90,'1½ hours'],[120,'2 hours'],[180,'3 hours']])}
+      ${numRow('Default appointment length','slotMins',[[15,'15 min'],[30,'30 min'],[45,'45 min'],[60,'1 hour'],[90,'1½ hours'],[120,'2 hours'],[180,'3 hours']])}
+      ${numRow('Gap between appointments','bufferMins',[[0,'None'],[5,'5 min'],[10,'10 min'],[15,'15 min'],[20,'20 min'],[30,'30 min'],[45,'45 min'],[60,'1 hour']])}
       ${numRow('Least notice you’ll take','leadHours',[[0,'None'],[2,'2 hours'],[12,'12 hours'],[24,'1 day'],[48,'2 days'],[72,'3 days'],[168,'1 week']])}
       ${numRow('How far ahead they can book','horizonDays',[[14,'2 weeks'],[30,'1 month'],[60,'2 months'],[90,'3 months'],[180,'6 months']])}
       <div style="display:flex;align-items:center;gap:11px;padding:12px 14px;border-bottom:1px solid var(--p-line2);">
@@ -12335,6 +12409,58 @@ function renderBookingLink(){
         <i class="ti ti-chevron-right" style="font-size:16px;color:var(--p-mut);"></i>
       </div>
     </div>
+    <div style="font-size:14px;font-weight:500;color:var(--p-mut);text-transform:uppercase;letter-spacing:.07em;margin-bottom:8px;">What they can book</div>
+    ${(function(){
+      const list=_bookServices();
+      const own=Array.isArray(bookCfg.services)&&bookCfg.services.length;
+      if(!list.length)return `<div style="background:var(--surf2);border:1px dashed var(--p-line);border-radius:12px;padding:16px;margin-bottom:14px;font-size:16px;color:var(--p-mut);line-height:1.55;">Add a service below, or set up your <b>Service menu</b> first and this will use it.</div>
+        <button class="btng" style="width:100%;margin-bottom:16px;" onclick="_bookSvcAdd()"><i class="ti ti-plus"></i> Add a service</button>`;
+      const mins=[[0,'Default'],[15,'15 min'],[20,'20 min'],[30,'30 min'],[45,'45 min'],[60,'1 hour'],[90,'1\u00bd hours'],[120,'2 hours'],[180,'3 hours'],[240,'4 hours']];
+      return `<div style="background:var(--surf2);border:1px solid var(--p-line);border-radius:12px;overflow:hidden;margin-bottom:10px;">
+      ${list.map(function(sv,i){return `<div style="padding:11px 12px;${i<list.length-1?'border-bottom:1px solid var(--p-line2);':''}">
+        <div style="display:flex;align-items:center;gap:10px;">
+          <div style="flex:1;min-width:0;font-size:16px;color:var(--p-ink);">${_fileEsc(sv.name)}</div>
+          ${own?`<select onchange="_bookSvcMins(${i},this.value)" aria-label="How long ${_jsAttr(sv.name)} takes" style="background:var(--p-bg);border:1px solid var(--p-line);border-radius:8px;padding:7px 5px;font-size:16px;color:var(--p-ink);font-family:inherit;flex-shrink:0;">
+            ${mins.map(function(m){return '<option value="'+m[0]+'"'+(((sv.mins||0)===m[0])?' selected':'')+'>'+m[1]+'</option>';}).join('')}
+          </select>
+          <button onclick="_bookSvcRemove(${i})" aria-label="Remove ${_jsAttr(sv.name)}" style="border:none;background:none;color:var(--p-mut);cursor:pointer;font-size:18px;flex-shrink:0;padding:2px 4px;"><i class="ti ti-x"></i></button>`
+          :`<span style="font-size:14px;color:var(--p-mut);flex-shrink:0;">${bookCfg.slotMins} min</span>`}
+        </div>
+        ${(own&&bookCfg.depositOn)?`<div onclick="_bookSvcDeposit(${i})" style="font-size:14px;color:var(--accent-strong);margin-top:5px;cursor:pointer;">${sv.deposit>0?('Deposit $'+sv.deposit):(sv.deposit===0?'No deposit':('Deposit $'+(bookCfg.depositAmount||0)+' (your usual)'))} \u00b7 change</div>`:''}
+      </div>`;}).join('')}
+      </div>
+      ${own?`<button class="btng" style="width:100%;margin-bottom:16px;" onclick="_bookSvcAdd()"><i class="ti ti-plus"></i> Add a service</button>`
+      :`<div style="font-size:14px;color:var(--p-mut);line-height:1.55;margin-bottom:16px;">These come from your <b>Service menu</b>. To give each one its own length or deposit, <span onclick="_bookUseMenu()" style="color:var(--accent-strong);cursor:pointer;font-weight:600;">set them up here</span>.</div>`}`;
+    })()}
+    <div style="font-size:14px;font-weight:500;color:var(--p-mut);text-transform:uppercase;letter-spacing:.07em;margin-bottom:8px;">Deposits</div>
+    <div style="background:var(--surf2);border:1px solid var(--p-line);border-radius:12px;overflow:hidden;margin-bottom:16px;">
+      <div style="display:flex;align-items:center;gap:11px;padding:13px 14px;${bookCfg.depositOn?'border-bottom:1px solid var(--p-line2);':''}">
+        <div style="flex:1;min-width:0;"><div style="font-size:16px;font-weight:500;color:var(--p-ink);">Ask for a deposit</div>
+        <div style="font-size:14px;color:var(--p-mut);line-height:1.4;margin-top:2px;">${_bookSquare===false?'Needs your Square connected \u2014 that\u2019s where the money lands.':'They get a link to pay as soon as they book. Paid through your own Square.'}</div></div>
+        ${togBtn(!!bookCfg.depositOn,'_bookDepositToggle()','Ask for a deposit')}
+      </div>
+      ${bookCfg.depositOn?`<div onclick="_bookDepositAmount()" style="display:flex;align-items:center;gap:11px;padding:13px 14px;cursor:pointer;">
+        <div style="flex:1;min-width:0;font-size:16px;color:var(--p-ink);">Usual deposit</div>
+        <div style="font-size:16px;color:var(--accent-strong);font-weight:600;">$${_fileEsc(String(bookCfg.depositAmount||0))}</div>
+        <i class="ti ti-chevron-right" style="font-size:16px;color:var(--p-mut);"></i></div>`:''}
+    </div>
+    <div style="font-size:14px;font-weight:500;color:var(--p-mut);text-transform:uppercase;letter-spacing:.07em;margin-bottom:8px;">Confirmation emails</div>
+    <div style="background:var(--surf2);border:1px solid var(--p-line);border-radius:12px;overflow:hidden;margin-bottom:10px;">
+      <div style="display:flex;align-items:center;gap:11px;padding:13px 14px;border-bottom:1px solid var(--p-line2);">
+        <div style="flex:1;min-width:0;"><div style="font-size:16px;color:var(--p-ink);">Email the person booking</div>
+        <div style="font-size:14px;color:var(--p-mut);line-height:1.4;margin-top:2px;">What they booked, when, and how to reach you.</div></div>
+        ${togBtn(bookCfg.emailGuest!==false,'_bookSet(\'emailGuest\',!(bookCfg.emailGuest!==false))','Email the person booking')}
+      </div>
+      <div style="display:flex;align-items:center;gap:11px;padding:13px 14px;">
+        <div style="flex:1;min-width:0;"><div style="font-size:16px;color:var(--p-ink);">Email me a copy</div>
+        <div style="font-size:14px;color:var(--p-mut);line-height:1.4;margin-top:2px;">Carries their email and phone, which a push notification doesn\u2019t.</div></div>
+        ${togBtn(bookCfg.emailMe!==false,'_bookSet(\'emailMe\',!(bookCfg.emailMe!==false))','Email me a copy')}
+      </div>
+    </div>
+    ${_bookSquare?`<div style="background:var(--p-surf2);border:1px solid var(--p-line);border-radius:12px;padding:11px 13px;margin-bottom:16px;font-size:14px;color:var(--p-mut2);line-height:1.55;display:flex;gap:8px;align-items:flex-start;">
+      <i class="ti ti-mail-cog" style="font-size:16px;flex-shrink:0;margin-top:1px;"></i>
+      <div>You have Square connected, and Square sends its own booking confirmations. Turn these off if you\u2019d rather not send two.</div>
+    </div>`:''}
     <div style="background:var(--p-surf2);border:1px solid var(--p-green-line);border-radius:12px;padding:11px 13px;margin-bottom:20px;font-size:14px;color:var(--p-mut2);line-height:1.55;display:flex;gap:8px;align-items:flex-start;">
       <i class="ti ti-clock-hour-4" style="font-size:16px;flex-shrink:0;margin-top:1px;"></i>
       <div>Your page only offers times inside the hours you set in <b>Business &amp; Branding</b>. Change your hours there and this follows automatically.</div>

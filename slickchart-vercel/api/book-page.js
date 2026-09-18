@@ -6,7 +6,7 @@
 // lookup, same no-login shell — so the two public pages look like one product.
 import { dbEnabled, getKVValue } from '../lib/db.js';
 import { getProviderBySlug } from '../lib/consult.js';
-import { getBookingConfig, getServices, getHours, openDayKeys, toMins, DAY_KEYS } from '../lib/booking.js';
+import { getBookingConfig, getServices, getHours, openDayKeys, toMins, DAY_KEYS, serviceMins, serviceDeposit } from '../lib/booking.js';
 
 function esc(s) { return String(s == null ? '' : s).replace(/[&<>"']/g, c => ({ '&': '&amp;', '<': '&lt;', '>': '&gt;', '"': '&quot;', "'": '&#39;' }[c])); }
 // JSON.stringify escapes quotes but NOT `<`, so a business name containing `</script>` would break
@@ -113,7 +113,12 @@ export default async function handler(req, res) {
     <label for="f-email">Email</label><input class="f" id="f-email" type="email" autocomplete="email" inputmode="email">
     <label for="f-phone">Phone${cfg.requirePhone ? '' : ' (optional)'}</label><input class="f" id="f-phone" type="tel" autocomplete="tel" inputmode="tel">
     <label for="f-svc">What for</label>
-    <select class="f" id="f-svc">${services.map(s => `<option>${esc(s)}</option>`).join('')}</select>
+    <select class="f" id="f-svc" onchange="onSvc()">${services.map(sv => {
+      const mins = serviceMins(sv, cfg), dep = serviceDeposit(sv, cfg);
+      const bits = [mins + ' min']; if (dep > 0) bits.push('$' + dep + ' deposit');
+      return `<option value="${esc(sv.name)}">${esc(sv.name)} \u00b7 ${esc(bits.join(' \u00b7 '))}</option>`;
+    }).join('')}</select>
+    <div id="depnote" class="muted" style="display:none;margin:-8px 0 14px;"></div>
     <label for="f-date">Day</label><input class="f" id="f-date" type="date">
     <div id="timewrap">
       <label for="f-time">Time</label>
@@ -130,9 +135,13 @@ export default async function handler(req, res) {
     const boot = `<script>
 var SLUG=${jsStr(slug)}, MODE=${jsStr(cfg.mode)}, OPEN=${JSON.stringify(openDays)},
     HORIZON=${cfg.horizonDays}, ACCENT=${jsStr(accent)}, DONEIC='\\u2713';
+// name → {mins, deposit}, so the page can say what each one costs in time and money up front.
+var SVC=${JSON.stringify(services.reduce((m, sv) => { m[sv.name] = { mins: serviceMins(sv, cfg), dep: serviceDeposit(sv, cfg) }; return m; }, {}))};
 var DKEY=['sun','mon','tue','wed','thu','fri','sat'];
 var picked='', slotsFor='';
 function $(id){return document.getElementById(id);}
+// Anything that came back over the wire gets escaped before it touches innerHTML.
+function eh(s){return String(s==null?'':s).replace(/[&<>"]/g,function(c){return {'&':'&amp;','<':'&lt;','>':'&gt;','"':'&quot;'}[c];});}
 function show(m){var e=$('err');e.textContent=m;e.style.display=m?'block':'none';if(m)window.scrollTo({top:0,behavior:'smooth'});}
 function iso(d){return d.getFullYear()+'-'+String(d.getMonth()+1).padStart(2,'0')+'-'+String(d.getDate()).padStart(2,'0');}
 // First day she is actually open, so the date field never opens on a day that cannot be booked.
@@ -141,6 +150,14 @@ function setupDate(){
   var el=$('f-date'); var t=new Date(); t.setHours(12,0,0,0);
   el.min=iso(t); var max=new Date(t); max.setDate(max.getDate()+HORIZON); el.max=iso(max);
   el.value=firstOpen(); el.addEventListener('change',onDate); onDate();
+}
+// A different service can be a different length, so the open times change with it.
+function onSvc(){
+  var s=SVC[$('f-svc').value]||{};
+  var d=$('depnote');
+  if(d){ d.style.display=(s.dep>0)?'':'none';
+    if(s.dep>0)d.textContent='This one needs a $'+s.dep+' deposit. You\\u2019ll get a link to pay it as soon as you book.'; }
+  onDate();
 }
 function onDate(){
   var v=$('f-date').value; picked='';
@@ -151,12 +168,12 @@ function onDate(){
 // Request mode: any time inside her hours, she decides.
 function freeTime(){ $('slots').innerHTML=''; var t=$('f-time'); t.style.display=''; }
 function loadSlots(v){
-  slotsFor=v;
+  slotsFor=v+'|'+$('f-svc').value;
   $('f-time').style.display='none';
   $('slots').innerHTML='<div class="muted">Finding open times\\u2026</div>';
-  fetch('/api/book-slots?slug='+encodeURIComponent(SLUG)+'&date='+encodeURIComponent(v))
+  fetch('/api/book-slots?slug='+encodeURIComponent(SLUG)+'&date='+encodeURIComponent(v)+'&service='+encodeURIComponent($('f-svc').value))
     .then(function(r){return r.json();}).then(function(j){
-      if(slotsFor!==v)return;   // a later day was picked while this was in flight
+      if(slotsFor!==v+'|'+$('f-svc').value)return;   // a later day or service was picked while this was in flight
       // The server could not see the whole calendar, so it will not promise a slot is free.
       // Fall back to asking, rather than offering a time that might already be taken.
       if(j&&j.unknown){ MODE='request'; $('go').textContent='Request this time'; freeTime(); return; }
@@ -196,18 +213,23 @@ $('go').addEventListener('click',function(){
         if(x.j&&x.j.code==='taken'&&MODE==='instant'){ show(x.j.error); loadSlots($('f-date').value); return; }
         return show((x.j&&x.j.error)||'Something went wrong. Please try again.');
       }
+      var durl=String(x.j.depositUrl||''); if(durl.slice(0,8)!=='https://')durl='';
+      var dep=durl?('<div style="margin-top:20px;"><p style="font-size:14px;color:#6b5d52;line-height:1.6;margin-bottom:12px;">'
+        +eh(x.j.depositLabel||'A deposit is needed to hold this appointment.')+'</p>'
+        +'<a class="btn" style="display:block;text-decoration:none;text-align:center;" href="'+eh(durl)+'">Pay the deposit</a></div>'):'';
       document.querySelector('.wrap').innerHTML='<div class="done"><div class="ic">'+DONEIC+'</div><h2>'
         +(x.j.confirmed?'You\\u2019re booked':'Request sent')+'</h2><p>'
         +(x.j.confirmed
-          ? 'Your appointment is set for <b>'+x.j.when+'</b>. Check your email for the details.'
-          : 'They\\u2019ll confirm <b>'+x.j.when+'</b>, or suggest another time if that one\\u2019s taken. Watch your email.')
-        +'</p></div>';
+          ? 'Your appointment is set for <b>'+eh(x.j.when)+'</b>. Check your email for the details.'
+          : 'They\\u2019ll confirm <b>'+eh(x.j.when)+'</b>, or suggest another time if that one\\u2019s taken. Watch your email.')
+        +'</p>'+dep+'</div>';
       window.scrollTo(0,0);
     })
     .catch(function(){ b.disabled=false; b.textContent=MODE==='instant'?'Book this time':'Request this time'; show('Couldn\\u2019t reach the server. Please try again.'); });
 });
 if(MODE==='instant')$('go').textContent='Book this time';
 setupDate();
+onSvc();
 </script>`;
 
     res.status(200).send(shell(inner + boot, {

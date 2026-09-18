@@ -13,7 +13,11 @@
 import { dbEnabled, sql } from '../lib/db.js';
 import { getProviderBySlug } from '../lib/consult.js';
 import { ensureClientTables, upsertClient, logEvent, genToken } from '../lib/clients.js';
-import { getBookingConfig, getServices, getHours, openSlots, toMins, isoDay, DAY_KEYS } from '../lib/booking.js';
+import { getBookingConfig, getServices, getHours, openSlots, toMins, isoDay, DAY_KEYS,
+         pickService, serviceMins, serviceDeposit, depositLinkFor } from '../lib/booking.js';
+import { sendEmail, trustedOrigin, bookingGuestEmailHtml, bookingGuestEmailText,
+         bookingProviderEmailHtml, bookingProviderEmailText } from '../lib/email.js';
+import { getKVValue } from '../lib/db.js';
 
 const _hits = new Map();
 function burstOk(key, limit, windowMs) {
@@ -64,35 +68,38 @@ export default async function handler(req, res) {
     // The time has to be one she actually offers — a request is not a free-text field into her diary.
     const hours = await getHours(prov.id);
     if (!hours) { res.status(409).json({ error: 'This provider has not set their hours yet.' }); return; }
+    const services = await getServices(prov.id, cfg);
+    const svc = pickService(services, service);
+    const mins = serviceMins(svc, cfg);
     const within = (function () {
       const d = new Date(date + 'T12:00:00');
       if (isNaN(d)) return false;
       const h = hours[DAY_KEYS[d.getDay()]];
       if (!h || !h.open) return false;
       const t = toMins(time), o = toMins(h.start), c = toMins(h.end);
-      return t != null && o != null && c != null && t >= o && (t + cfg.slotMins) <= c;
+      // The whole appointment has to finish inside her hours, not merely start inside them.
+      return t != null && o != null && c != null && t >= o && (t + mins) <= c;
     })();
     if (!within) { res.status(409).json({ error: 'That time is outside their hours. Please pick another.' }); return; }
 
     // Not in the past, not beyond how far ahead she takes bookings.
-    const when = new Date(date + 'T00:00:00');
-    when.setHours(Math.floor(toMins(time) / 60), toMins(time) % 60, 0, 0);
-    if (when.getTime() < Date.now() + cfg.leadHours * 3600000) { res.status(409).json({ error: 'That time has passed or is too soon. Please pick another.' }); return; }
-    if (when.getTime() > Date.now() + cfg.horizonDays * 86400000) { res.status(409).json({ error: 'That is further ahead than they take bookings.' }); return; }
+    const at = new Date(date + 'T00:00:00');
+    at.setHours(Math.floor(toMins(time) / 60), toMins(time) % 60, 0, 0);
+    if (at.getTime() < Date.now() + cfg.leadHours * 3600000) { res.status(409).json({ error: 'That time has passed or is too soon. Please pick another.' }); return; }
+    if (at.getTime() > Date.now() + cfg.horizonDays * 86400000) { res.status(409).json({ error: 'That is further ahead than they take bookings.' }); return; }
 
     // Instant mode promises the slot is genuinely free, so re-check it at submit time rather than
     // trusting what the page showed a few minutes ago. If we cannot be certain (see busyRanges),
     // take it as a request instead of risking a double booking.
     let confirmed = false;
     if (cfg.mode === 'instant') {
-      const slots = await openSlots(prov.id, date, cfg, hours);
+      const slots = await openSlots(prov.id, date, cfg, hours, svc.name);
       if (slots === null) confirmed = false;
       else if (slots.indexOf(time) < 0) { res.status(409).json({ error: 'Sorry — that time was just taken. Please pick another.', code: 'taken' }); return; }
       else confirmed = true;
     }
 
-    const services = await getServices(prov.id, cfg);
-    const treatment = (service && services.indexOf(service) >= 0) ? service : (services[0] || 'Appointment');
+    const treatment = svc.name;
 
     await ensureClientTables();
     const q = sql();
@@ -112,13 +119,55 @@ export default async function handler(req, res) {
     let lbl = date;
     try { lbl = new Date(date + 'T12:00:00').toLocaleDateString('en-US', { weekday: 'long', month: 'long', day: 'numeric' }); } catch (e) {}
     await logEvent(prov.id, clientId, 'booking', {
-      treatment, date, dateLabel: lbl, time,
-      note: note + (confirmed ? '' : ''),
-      via: 'booking-link',
-      autoConfirmed: confirmed
+      treatment, date, dateLabel: lbl, time, dur: mins,
+      note, via: 'booking-link', autoConfirmed: confirmed
     });
 
-    res.status(200).json({ ok: true, confirmed, when: lbl + ' at ' + time, treatment });
+    const when = lbl + ' at ' + time;
+
+    // A deposit, if she asks for one and has Square to take it. Never fatal: a link we could not mint
+    // must not cost her the appointment — she can chase it herself.
+    let depositUrl = '', depositAmount = serviceDeposit(svc, cfg);
+    if (depositAmount > 0) {
+      try { depositUrl = await depositLinkFor(prov.id, { amount: depositAmount, serviceName: treatment, email, clientId }); }
+      catch (e) { depositUrl = ''; }
+    }
+    const depositLabel = depositUrl
+      ? (cfg.depositLabel || ('A $' + depositAmount + ' deposit holds this appointment.'))
+      : '';
+
+    // Emails. Both are optional — a provider on Square already gets confirmations from Square and
+    // would otherwise receive two of everything (Ashley's note). Neither failure affects the booking:
+    // it is already recorded, and an email that did not send must not turn a successful booking into
+    // an error on the person's screen.
+    let biz = {};
+    try { const raw = await getKVValue(prov.id, 'sc_bizinfo'); if (raw) biz = JSON.parse(raw) || {}; } catch (e) {}
+    const bizName = String(biz.name || prov.name || 'Your appointment').trim();
+    const addr = [biz.address, biz.city, biz.state].filter(Boolean).join(', ');
+    if (cfg.emailGuest !== false) {
+      try {
+        await sendEmail({
+          to: email,
+          replyTo: prov.email || undefined,   // answering reaches HER, not our support inbox
+          subject: (confirmed ? 'Booked: ' : 'Request sent: ') + when + ' — ' + bizName,
+          html: bookingGuestEmailHtml({ bizName, name, when, treatment, confirmed, note: cfg.note, depositUrl, depositLabel, address: addr, phone: biz.phone }),
+          text: bookingGuestEmailText({ bizName, name, when, treatment, confirmed, note: cfg.note, depositUrl, depositLabel, address: addr, phone: biz.phone })
+        });
+      } catch (e) { console.error('[book-request] guest email failed:', e && e.message); }
+    }
+    if (cfg.emailMe !== false && prov.email) {
+      try {
+        await sendEmail({
+          to: prov.email,
+          replyTo: email,                      // so she can just hit reply to reach them
+          subject: (confirmed ? 'Booked: ' : 'Booking request: ') + name + ' — ' + when,
+          html: bookingProviderEmailHtml({ name, email, phone, when, treatment, confirmed, note, link: trustedOrigin() + '/slickchart' }),
+          text: bookingProviderEmailText({ name, email, phone, when, treatment, confirmed, note, link: trustedOrigin() + '/slickchart' })
+        });
+      } catch (e) { console.error('[book-request] provider email failed:', e && e.message); }
+    }
+
+    res.status(200).json({ ok: true, confirmed, when, treatment, depositUrl, depositLabel });
   } catch (e) {
     console.error('[book-request] failed:', e && e.stack || e);
     res.status(500).json({ error: 'Something went wrong. Please try again.' });

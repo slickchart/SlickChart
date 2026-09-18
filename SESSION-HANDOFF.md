@@ -1014,13 +1014,56 @@ Whoever books becomes a real client (find-or-create by email, scoped to her acco
 arrives as an ordinary `booking` event — same inbox, same push, same confirm flow as a client booking
 from their own app. No new screens on the provider side beyond the settings one.
 
-Suites: `bk/slots.mjs` (free/busy and slot maths against a stubbed db + Square), `bookpage.mjs` (the
-public page driven in both modes, including the no-slot fallback and a slot taken mid-form) and
-`booklink.mjs` (her settings screen).
+### What came next, the same day — emails, deposits, per-service lengths, buffers
 
-**Not built, deliberately:** no confirmation email to the person booking yet — they see the result on
-screen and she gets the request, but nothing lands in their inbox. That is the first thing to add.
-Deposits, per-service durations and buffers between appointments are all unbuilt too.
+**Confirmation emails, and both are OPTIONAL.** Ashley: *"make sure booking emails is an option
+because those with square will already have those … is optional"*. Two switches in
+`sc_booking_page`, both defaulting to on:
+* `emailGuest` — the person booking gets a confirmation. Its reply-to is HER, not our support
+  inbox, so a reply reaches her.
+* `emailMe` — her own copy, carrying their email and phone (the push does not). Reply-to is the
+  guest.
+
+Both are honest about which mode it was: *"You're booked"* vs *"She'll confirm"*. The settings
+screen tells a Square-connected provider that Square sends its own, so she can turn ours off rather
+than sending two of everything. Templates: `bookingGuestEmail{Html,Text}` /
+`bookingProviderEmail{Html,Text}` in `lib/email.js`.
+
+**Per-service lengths.** `cfg.services` is now `[{name, mins, deposit}]`. **The old name-only shape
+is still accepted, for ever** — a provider who set hers up before durations existed must never have
+her list silently emptied. `openSlots()` steps by the CHOSEN service's length, so picking a 90-minute
+facial re-asks the server and gets a different grid than a 30-minute consult. The public page
+re-fetches on every service change.
+
+**Buffers.** `cfg.bufferMins`, padded onto **both ends** of every busy range — one number applied
+symmetrically, rather than a "before" and an "after" she'd have to reason about.
+
+**Deposits** ride her own Square, the only payment rail a provider has here, so the toggle refuses to
+switch on without it and says why. `depositLinkFor()` mints a Square payment link; a default amount
+with a per-service override. **An explicit `0` on a service means "no deposit on this one", and
+survives the round trip** — the input sheet promises that in words, so `getBookingConfig` keeps a
+stored zero instead of treating it as absent. If the link cannot be minted, **the booking still
+stands** and simply carries no link: a Square hiccup must never cost her the appointment. The link
+shows on the confirmation screen and in the guest email.
+
+The confirmation screen escapes everything that came back over the wire and drops a deposit URL that
+is not `https://` — nothing from a response can inject markup into a public page.
+
+Suites: `bk/slots.mjs` (free/busy and slot maths against a stubbed db + Square), `bk/svc.mjs`
+(services, lengths, deposits, the legacy shape), `bk/req.mjs` (the POST end to end, both emails,
+deposits), `bookpage.mjs` (the public page driven in all three configurations, including the no-slot
+fallback, a slot taken mid-form, and a hostile deposit link) and `booklink.mjs` (her settings
+screen). Those suites live in the scratchpad and run the real `lib/booking.js` / `api/book-*.js` with
+only their imports pointed at stubs, because `@neondatabase/serverless` isn't installed here — so a
+copy has to be re-made after editing any of them, or the suites quietly test yesterday's code. That
+happened once and reported a false failure.
+
+**How she finds it:** Settings → **Booking link** → choose a handle if she has none → turn it on →
+pick a mode → Copy or Share. The link is `slickchart.app/book/<handle>`.
+
+**Still not built:** nothing cancels or reschedules from the public link — that goes through her.
+Deposits are a link to pay, not a hold: nothing checks whether it was actually paid before the
+appointment.
 
 ---
 
