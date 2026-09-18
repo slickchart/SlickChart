@@ -940,6 +940,38 @@ in a same-day push while Ashley is supporting live providers. It is open thread 
 
 ---
 
+## 2s. The provider's own calendar is hers — no booking hours (2026-09-18)
+
+Right after §2q confirmed her hours were saving, the same provider said her calendar still wouldn't
+let her book inside them and looked "stuck on the default hours". It was not a sync bug at all.
+
+**Her three booking pickers were hardcoded dropdowns**, and none of them had anything to do with her
+saved hours: a new appointment offered 9:00 AM – 4:00 PM, editing one offered 9–6, and suggesting a
+time back to a client offered 8–8. A provider whose day starts at 7:30 simply had no 7:30 to pick,
+so whatever she saved, booking behaved like the defaults.
+
+Ashley: *"booking hours should just never be restricted — for the provider"*, *"they should be able
+to manually book whatever they want."* Right: **business hours bound what CLIENTS may request; they
+were never meant to bind her.**
+
+All three are now a native time field — any hour, any minute, including 6:15am and 7:45pm — and the
+new-appointment date no longer blocks past dates, so a visit can be logged after the fact.
+`_time24()` / `_time12()` convert between the field's 24-hour value and the `"2:30 PM"` the app
+stores and displays everywhere else, so nothing downstream changed.
+
+**Not touched:** the Square booking sheet, whose slots come from Square's own availability search.
+That is Square's rule, not ours, and "Add locally instead" is already on that screen as the way past
+it. If a provider reports being blocked there, that is the answer — don't try to override Square.
+
+Suite: `anytime.mjs` — conversion both directions, a 7:30 AM and a 7:45 PM booking, a 6:15 AM edit, a
+7:30 AM suggestion reaching the client in friendly form, and past dates allowed.
+
+**The lesson worth keeping:** when a provider says a setting "isn't taking effect", check what the
+consuming screen actually reads before assuming the setting is broken. Two of these three pickers had
+never read her hours at all.
+
+---
+
 ## 3. Open threads — needs Ashley, or needs verifying
 
 1. ~~**Square `payment.*` webhook subscription.**~~ **CLOSED 2026-09-18 — it is subscribed and has

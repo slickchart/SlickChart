@@ -214,7 +214,7 @@ const S=document.getElementById('S');
 // resets when I save it" and there was no way to tell whether her phone had any of them — a whole
 // day was spent debugging code she may not have been running. Shown at the bottom of Settings, so
 // the answer is a screenshot away. Bump it on every ship.
-const APP_BUILD='2026-09-18h';
+const APP_BUILD='2026-09-18i';
 
 
 /* ════════════════════════════════════════════════════════════════
@@ -23899,7 +23899,7 @@ function sendSuggestion(id){
   const dEl=document.getElementById('sug-date-'+id);
   const tEl=document.getElementById('sug-time-'+id);
   const sd=dEl&&dEl.value?dEl.value:b.date;
-  const st=tEl&&tEl.value?tEl.value:b.time;
+  const st=tEl&&tEl.value?_time12(tEl.value):b.time;   // the field is 24h; the client sees "2:30 PM"
   b.status='suggested';b.suggestedDate=sd;b.suggestedTime=st;b.decidedAt=Date.now();
   SlickBridge.setBookings(all);
   SlickBridge.post('booking-suggested',{...b,suggestedDate:sd,suggestedTime:st});
@@ -23930,8 +23930,6 @@ function requestCard(b){
   // originally requested time. Otherwise a requested slot with no matching option (e.g. 5:00 PM) made the
   // <select> silently fall back to its first option (9:00 AM), so tapping Send suggested a time the
   // provider never chose — the client then one-tap "accepts" 9:00 AM.
-  const times=['8:00 AM','9:00 AM','10:00 AM','11:00 AM','12:00 PM','1:00 PM','2:00 PM','3:00 PM','4:00 PM','5:00 PM','6:00 PM','7:00 PM','8:00 PM'];
-  if(b.time&&times.indexOf(b.time)<0)times.unshift(b.time);
   return`
   <div style="margin:0 16px 10px;background:var(--surf2);border:1px solid var(--accent-tint2);border-radius:16px;overflow:hidden;">
     <div style="padding:13px 14px;">
@@ -23954,9 +23952,7 @@ function requestCard(b){
         <div style="font-size:16px;font-weight:600;color:var(--accent-strong);margin-bottom:8px;">Suggest another time</div>
         <div style="display:flex;gap:8px;">
           <input type="date" id="sug-date-${b.id}" value="${_fileEsc(b.date)}" style="flex:1;background:var(--surf2);border:1px solid var(--p-chip2);border-radius:8px;padding:8px;font-size:16px;color:var(--p-ink);font-family:inherit;color-scheme:dark;">
-          <select id="sug-time-${b.id}" style="flex:1;background:var(--surf2);border:1px solid var(--p-chip2);border-radius:8px;padding:8px;font-size:16px;color:var(--p-ink);font-family:inherit;">
-            ${times.map(t=>`<option value="${t}"${t===b.time?' selected':''}>${t}</option>`).join('')}
-          </select>
+          <input type="time" id="sug-time-${b.id}" aria-label="Suggested time" value="${_fileEsc(_time24(b.time))}" style="flex:1;background:var(--surf2);border:1px solid var(--p-chip2);border-radius:8px;padding:8px;font-size:16px;color:var(--p-ink);font-family:inherit;color-scheme:dark;">
         </div>
         <button onclick="sendSuggestion('${b.id}')" style="width:100%;margin-top:9px;background:var(--accent-tint);color:var(--accent-strong);border:1px solid var(--accent-tint2);border-radius:8px;padding:9px;font-size:16px;font-weight:600;cursor:pointer;"><i class="ti ti-send" style="font-size:16px;"></i> Send suggestion to ${_fileEsc(b.client.split(' ')[0])}</button>
       </div>`:''}
@@ -24404,6 +24400,27 @@ function _apptWhen(dateStr,timeStr){
   return d;
 }
 function _apptTimeStr(d){return d.toLocaleTimeString('en-US',{hour:'numeric',minute:'2-digit'});}
+// The provider's own calendar is HERS — any hour, any minute. Her three booking pickers used to be
+// fixed dropdowns (9-4 for a new appointment, 9-6 to edit one, 8-8 to suggest a time), which is why a
+// provider whose saved hours started at 7:30am could not book at 7:30am: the list simply had no such
+// option, and her booking times looked "stuck on the defaults" no matter what she saved. Business
+// hours bound what CLIENTS may request; they were never meant to bind her. These convert between the
+// "2:30 PM" the app stores and the 24-hour value a native time field uses.
+function _time24(s){
+  var m=String(s||'').trim().match(/^(\d{1,2}):(\d{2})\s*([AaPp][Mm])?$/);
+  if(!m)return '';
+  var h=parseInt(m[1],10),mi=m[2],ap=(m[3]||'').toUpperCase();
+  if(ap==='PM'&&h!==12)h+=12; if(ap==='AM'&&h===12)h=0;
+  if(!(h>=0&&h<=23))return '';
+  return String(h).padStart(2,'0')+':'+mi;
+}
+function _time12(s){
+  var v=String(s||'').trim();
+  if(/[AaPp][Mm]$/.test(v))return v;                      // already the friendly form, leave it
+  var m=v.match(/^(\d{1,2}):(\d{2})/); if(!m)return v;
+  var h=parseInt(m[1],10),mi=m[2],ap=(h<12)?'AM':'PM',hh=h%12; if(hh===0)hh=12;
+  return hh+':'+mi+' '+ap;
+}
 // A few realistic sample appointments anchored to the REAL week -- only used in demo/sample mode
 // (no Square, sample data visible) so the calendar looks alive without hardcoded past dates.
 function _sampleCalAppts(){
@@ -24598,15 +24615,13 @@ function openApptDetail(source,id){
     _adLoadSlots(id);
   } else if(source==='manual'){
     var a=_manualApptById(id);if(!a){if(typeof proToast==='function')proToast('That appointment is no longer here');return;}
-    var times=['9:00 AM','10:00 AM','11:00 AM','12:00 PM','1:00 PM','2:00 PM','3:00 PM','4:00 PM','5:00 PM','6:00 PM'];
     var txs=_apptTxOptions();
     if(a.tx&&txs.indexOf(a.tx)<0)txs.unshift(a.tx);
-    if(a.time&&times.indexOf(a.time)<0)times.unshift(a.time);
     _apptSheetShell(
       '<div style="font-size:16px;font-weight:600;color:var(--p-ink);margin-bottom:14px;">Edit appointment</div>'
       +'<span class="fl-lbl">Client</span><input class="fi" id="ad-client" list="ad-clients" autocomplete="off" value="'+String(a.client||'').replace(/"/g,'&quot;')+'" style="margin-bottom:12px;">'+_clientDatalistHTML('ad-clients')
       +'<span class="fl-lbl">Treatment</span><select class="fi" id="ad-tx" style="margin-bottom:12px;">'+txs.map(function(t){return '<option'+(t===a.tx?' selected':'')+'>'+_fileEsc(t)+'</option>';}).join('')+'</select>'
-      +'<div style="display:flex;gap:10px;margin-bottom:16px;"><div style="flex:1;"><span class="fl-lbl">Date</span><input type="date" class="fi" id="ad-mdate" value="'+(a.date||'')+'" style="color-scheme:dark;"></div><div style="flex:1;"><span class="fl-lbl">Time</span><select class="fi" id="ad-mtime">'+times.map(function(t){return '<option'+(t===a.time?' selected':'')+'>'+t+'</option>';}).join('')+'</select></div></div>'
+      +'<div style="display:flex;gap:10px;margin-bottom:16px;"><div style="flex:1;"><span class="fl-lbl">Date</span><input type="date" class="fi" id="ad-mdate" value="'+(a.date||'')+'" style="color-scheme:dark;"></div><div style="flex:1;"><span class="fl-lbl">Time</span><input type="time" class="fi" id="ad-mtime" aria-label="Appointment time" value="'+_time24(a.time)+'" style="color-scheme:dark;"></div></div>'
       +'<button class="btnp" style="border-radius:12px;" onclick="_manualApptSave('+_jsStr2(id)+')"><i class="ti ti-check"></i> Save changes</button>'
       +'<button onclick="_manualApptDelete('+_jsStr2(id)+')" style="width:100%;margin-top:9px;background:var(--p-red-bg);border:1px solid var(--p-red-line);color:var(--p-red);border-radius:12px;padding:12px;font-size:16px;font-weight:600;cursor:pointer;font-family:inherit;"><i class="ti ti-trash"></i> Delete appointment</button>'
       +'<button onclick="_closeApptSheet()" style="width:100%;margin-top:8px;background:none;border:none;color:var(--p-mut);font-size:16px;cursor:pointer;padding:6px;">Close</button>'
@@ -24658,7 +24673,7 @@ function _manualApptSave(id){
   var a=_manualApptById(id);if(!a){_closeApptSheet();return;}
   var name=((document.getElementById('ad-client')||{}).value||'').trim();if(!name){if(typeof proToast==='function')proToast('Enter a client name');return;}
   var tx=(document.getElementById('ad-tx')||{}).value||'Treatment';
-  var date=(document.getElementById('ad-mdate')||{}).value||a.date;var time=(document.getElementById('ad-mtime')||{}).value||a.time;
+  var date=(document.getElementById('ad-mdate')||{}).value||a.date;var time=_time12((document.getElementById('ad-mtime')||{}).value||'')||a.time;
   var commit=function(){
     a.client=name;a.tx=tx;a.date=date;a.time=time;a.clientId=_matchClientByName(name)||undefined;
     try{a.dateLabel=new Date(date+'T12:00:00').toLocaleDateString('en-US',{weekday:'long',month:'long',day:'numeric'});}catch(e){}
@@ -24690,8 +24705,6 @@ function _matchClientByName(name){var nm=String(name||'').trim().toLowerCase();i
 function openLocalQuickAdd(prefillDate){
   const existing=document.getElementById('qa-modal');if(existing)existing.remove();
   const _dv=(typeof prefillDate==='string'&&/^\d{4}-\d{2}-\d{2}$/.test(prefillDate))?prefillDate:_isoToday();
-  const _min=(_dv<_isoToday())?_dv:_isoToday();
-  const times=['9:00 AM','10:00 AM','11:00 AM','12:00 PM','1:00 PM','2:00 PM','3:00 PM','4:00 PM'];
   const txs=_apptTxOptions();
   const m=document.createElement('div');
   m.id='qa-modal';
@@ -24709,8 +24722,8 @@ function openLocalQuickAdd(prefillDate){
     <span class="fl-lbl">Treatment</span>
     <select class="fi" id="qa-tx" style="margin-bottom:12px;">${txs.map(t=>`<option>${t}</option>`).join('')}</select>
     <div style="display:flex;gap:10px;margin-bottom:16px;">
-      <div style="flex:1;"><span class="fl-lbl">Date</span><input type="date" class="fi" id="qa-date" value="${_dv}" min="${_min}" style="color-scheme:dark;"></div>
-      <div style="flex:1;"><span class="fl-lbl">Time</span><select class="fi" id="qa-time">${times.map(t=>`<option${t==='10:00 AM'?' selected':''}>${t}</option>`).join('')}</select></div>
+      <div style="flex:1;"><span class="fl-lbl">Date</span><input type="date" class="fi" id="qa-date" value="${_dv}" style="color-scheme:dark;"></div>
+      <div style="flex:1;"><span class="fl-lbl">Time</span><input type="time" class="fi" id="qa-time" value="10:00" aria-label="Appointment time" style="color-scheme:dark;"></div>
     </div>
     <button class="btnp" style="border-radius:12px;" onclick="saveQuickAdd()"><i class="ti ti-check"></i> Add appointment</button>
     <button onclick="document.getElementById('qa-modal').remove()" style="width:100%;margin-top:9px;background:none;border:none;font-size:16px;color:var(--p-mut);cursor:pointer;padding:6px;">Cancel</button>
@@ -24738,7 +24751,7 @@ function _reopenBookingWith(name,draft){
     if(draft){
       const tel=document.getElementById('qa-tx');if(tel&&draft.tx)tel.value=draft.tx;
       const del=document.getElementById('qa-date');if(del&&draft.date)del.value=draft.date;
-      const tml=document.getElementById('qa-time');if(tml&&draft.time)tml.value=draft.time;
+      const tml=document.getElementById('qa-time');if(tml&&draft.time)tml.value=_time24(draft.time)||draft.time;
     }
   }catch(e){}},0);
 }
@@ -24772,7 +24785,7 @@ function saveQuickAdd(){
   if(!name){if(typeof proToast==='function')proToast('Enter a client name first');const el=document.getElementById('qa-client');if(el)el.focus();return;}
   const tx=document.getElementById('qa-tx')?.value||'Treatment';
   const date=document.getElementById('qa-date')?.value||_isoToday();
-  const time=document.getElementById('qa-time')?.value||'10:00 AM';
+  const time=_time12(document.getElementById('qa-time')?.value||'10:00');
   const clientId=_matchClientByName(name);
   const commit=function(){
     let lbl=date;try{lbl=new Date(date+'T12:00:00').toLocaleDateString('en-US',{weekday:'long',month:'long',day:'numeric'});}catch(e){}
