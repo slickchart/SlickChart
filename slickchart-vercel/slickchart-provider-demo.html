@@ -476,7 +476,10 @@ const SlickBridge=(function(){
   let bc=null;
   try{bc=new BroadcastChannel('slickchart');}catch(e){bc=null;}
   function read(key,fallback){try{const v=localStorage.getItem(key);return v?JSON.parse(v):fallback;}catch(e){return fallback;}}
-  function write(key,val){try{localStorage.setItem(key,JSON.stringify(val));}catch(e){}}
+  // Returns false when the write did NOT land (a full device throws here). Callers that tell the
+  // provider "saved" must check it — silently swallowing this is how a save can claim success and
+  // then show the old value the moment the screen re-renders.
+  function write(key,val){try{localStorage.setItem(key,JSON.stringify(val));return true;}catch(e){return false;}}
   function emit(type,payload){(handlers[type]||[]).forEach(fn=>{try{fn(payload);}catch(e){console.warn(e);}});}
   let _seen=null;
   try{const cur=read(K_BUS,null);if(cur&&cur.id)_seen=cur.id;}catch(e){}
@@ -2891,7 +2894,7 @@ const Cloud={
     // Chat data is append-only and provider-sent messages live ONLY in sc_msgstore, so a plain overwrite
     // here let a stale device wipe history and (via sc_seen_events) resurrect read messages as unread.
     // Merge these three the same way as sc_clients: union, never lose, push the superset back.
-    if(k==='sc_bizinfo'||k==='sc_brand_colors'){
+    if(k==='sc_bizinfo'||k==='sc_brand_colors'||k==='sc_availability'){
       const ms=_mergeStamped(data[k],_lsGet(k));
       if(ms&&ms.str!=null){
         set(k,ms.str);
@@ -13213,7 +13216,7 @@ function persistForms(){
   _stampChangedEntries(formGuides,prev&&prev.guides,now);
   _stampChangedEntries(formEmojis,prev&&prev.emojis,now);
   const v=JSON.stringify({tmpls:formTmpls,guides:formGuides,custom:customForms,emojis:formEmojis});
-  try{localStorage.setItem('sc_forms',v);}catch(e){}
+  try{localStorage.setItem('sc_forms',v);}catch(e){try{_storageFullToast('Your forms');}catch(e2){}}
   try{_formsSnap=JSON.parse(v);}catch(e){_formsSnap=null;}
   try{if(typeof _pushKeyNow==='function')_pushKeyNow('sc_forms',v);}catch(e){}   // immediate push so a fast refresh can't lose the change
 }
@@ -19398,7 +19401,10 @@ function loadBrandColors(){
   return{primary:'#2BC7AC',secondary:'#1E8FCE'};
 }
 let brandColors=loadBrandColors();
-function saveBrandColors(){try{(function(_v){localStorage.setItem('sc_brand_colors',_v);if(typeof _pushKeyNow==='function')_pushKeyNow('sc_brand_colors',_v);return _v;})(JSON.stringify(_stampNow(brandColors)));}catch(e){}}
+function saveBrandColors(){
+  try{(function(_v){localStorage.setItem('sc_brand_colors',_v);if(typeof _pushKeyNow==='function')_pushKeyNow('sc_brand_colors',_v);return _v;})(JSON.stringify(_stampNow(brandColors)));return true;}
+  catch(e){_storageFullToast('Your branding');return false;}
+}
 
 // Derive readable ink + dark tints from any accent, then drive the whole app
 function _ink(hex){const h=String(hex==null?'':hex).replace('#','');const r=parseInt(h.slice(0,2),16),g=parseInt(h.slice(2,4),16),b=parseInt(h.slice(4,6),16);if(!isFinite(r)||!isFinite(g)||!isFinite(b))return'#ffffff';return((r*299+g*587+b*114)/1000)>=140?'#181410':'#ffffff';}
@@ -19647,20 +19653,33 @@ function copyHoursToAll(){
   const c=document.getElementById('biz-hours');if(c)c.innerHTML=bizHoursRows();
   proToast('Applied Monday\'s hours to all open days');
 }
+// A save that could not be written to THIS device. The change did reach the account (the storage
+// patch pushes before it throws), but every screen renders from the device copy, so it will keep
+// showing the old value here until space is freed. Say that, rather than "saved".
+function _storageFullToast(what){
+  try{
+    proToast((what||'That')+" is saved to your account, but this device is out of storage so it may still show the old version here. Open Settings → Storage to free space, or sign in on another device.",9000);
+  }catch(e){}
+}
 function saveBizInfo(){
   const g=id=>{const e=document.getElementById(id);return e?e.value:undefined;};
   const map={name:'bi-name',ownerName:'bi-owner',email:'bi-email',phone:'bi-phone',address:'bi-address',city:'bi-city',state:'bi-state',zip:'bi-zip',license:'bi-license',website:'bi-website',instagram:'bi-instagram'};
   Object.keys(map).forEach(k=>{const v=g(map[k]);if(v!==undefined)bizInfo[k]=v;});
   if(bizInfo.name)workspace.name=bizInfo.name;
   if(_bizLoc())workspace.location=_bizLoc();
-  try{(function(_v){localStorage.setItem('sc_bizinfo',_v);if(typeof _pushKeyNow==='function')_pushKeyNow('sc_bizinfo',_v);return _v;})(JSON.stringify(_stampNow(bizInfo)));(function(_v){localStorage.setItem('sc_wsname',_v);if(typeof _pushKeyNow==='function')_pushKeyNow('sc_wsname',_v);})(workspace.name);}catch(e){}
-  SlickBridge.setAvailability(bizHours);
+  // Track whether this device actually accepted the write. The patched setItem throws when storage
+  // is full, and it pushes to the account BEFORE throwing — so the account has the change while this
+  // device still holds the old copy, which is exactly what "I saved it and it reverted" looks like.
+  let _saveErr=null;
+  try{(function(_v){localStorage.setItem('sc_bizinfo',_v);if(typeof _pushKeyNow==='function')_pushKeyNow('sc_bizinfo',_v);return _v;})(JSON.stringify(_stampNow(bizInfo)));(function(_v){localStorage.setItem('sc_wsname',_v);if(typeof _pushKeyNow==='function')_pushKeyNow('sc_wsname',_v);})(workspace.name);}catch(e){_saveErr=e;}
+  if(SlickBridge.setAvailability(_stampNow(bizHours))===false)_saveErr=_saveErr||new Error('availability');
   _syncProviderAvatar();
   // Studio name and booking availability live only in each client's synced blob (not the shared
   // KV), so push a roster sync, otherwise real clients keep stale hours/studio until some other
   // action happens to sync. Full-roster since these are shared across all clients.
   try{if(typeof _scheduleClientSync==='function')_scheduleClientSync();}catch(e){}
-  proToast('Business info & hours saved ✨');
+  if(_saveErr)_storageFullToast('Your business info');
+  else proToast('Business info & hours saved ✨');
 }
 
 
