@@ -34,9 +34,11 @@ export function slugify(s) {
 }
 // 3–40 chars, letters/numbers/hyphens, must start & end alphanumeric.
 export function validSlug(s) { return /^[a-z0-9][a-z0-9-]{1,38}[a-z0-9]$/.test(String(s || '')); }
-// Reserved names a provider can't claim (impersonation / confusion). Slugs are namespaced under
-// /consult/ so they can't shadow app routes; this just blocks obvious impersonation handles.
-const RESERVED_SLUGS = new Set(['admin','administrator','support','help','helpdesk','official','login','signin','signup','register','api','www','root','staff','team','slickchart','consult','client','clients','account','settings','billing','security','moderator','mod','system','info','contact','sales','billing-support']);
+// Reserved names a provider can't claim (impersonation / confusion). One slug now serves BOTH her
+// public pages — /consult/<slug> and /book/<slug> — so she has a single handle to share rather than
+// two to remember. They are namespaced under those paths and can't shadow app routes; this list just
+// blocks obvious impersonation handles.
+const RESERVED_SLUGS = new Set(['admin','administrator','support','help','helpdesk','official','login','signin','signup','register','api','www','root','staff','team','slickchart','consult','book','booking','bookings','client','clients','account','settings','billing','security','moderator','mod','system','info','contact','sales','billing-support']);
 export function reservedSlug(s) { return RESERVED_SLUGS.has(String(s || '').toLowerCase()); }
 
 export async function getProviderBySlug(slug) {
