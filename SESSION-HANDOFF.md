@@ -712,6 +712,54 @@ moment and is not on the server. Don't "tidy" those two to match.
 
 ---
 
+## 2p. A paid course could only ever be unlocked by a Square webhook (2026-09-18)
+
+A client bought one of Ashley's courses and said she never got it. The send path is fine — traced end
+to end headless (provider `confirmSendCourse` → `_assembleClientData` → `/api/clients` → the client's
+blob → `/api/client-data` → the client app): the course arrives, with its lessons, and renders. What
+it renders as is **locked**, and that is where the real problem was.
+
+**A paid course opened on exactly one condition:** an entry in the provider's `sc_course_purchases`,
+and the only thing in the whole product that could write one was Square delivering a `payment.*`
+webhook for the checkout link in the client's app. That chain has at least five links that each fail
+silently — `payment.*` subscribed in the Square app, `SQUARE_WEBHOOK_SIGNATURE_KEY` set (without it
+the handler answers `not-configured` and does nothing), `SQUARE_WEBHOOK_URL` matching exactly, a
+`square_connections` row for the merchant, and the event actually arriving. Open thread §3.1 has said
+since 2026-09-14 that nobody has ever confirmed the first one.
+
+**And it only covered one way of paying.** Cash, an invoice, Venmo, a card taken in person — no
+`SC1:` note exists, so no webhook can ever fire, so the course stays locked *forever*. The client's
+"Already paid? Refresh" only re-read the same blob, so it could never help; the provider had no
+screen anywhere showing that a course she'd sent was sitting locked, and no way to open it.
+
+Three fixes:
+
+1. **The provider can open it.** Course detail now has a **"Sent to"** list — everyone the course went
+   to, and whether it's open, locked waiting on payment, or waiting on an invite. A locked row gets a
+   **Mark paid** button (`_confirmMarkCoursePaid` → `_markCoursePaid`), which records the purchase,
+   pushes it, and republishes that client's blob so it opens in their app immediately. **One-way on
+   purpose:** `sc_course_purchases` is union-merged (`_TOMB_OBJ`), so a removal would come straight
+   back on the next pull — don't add an undo that silently doesn't work.
+2. **"Already paid? Refresh" asks Square** — new `POST /api/course-paid` `{t, courseId}`. It looks up
+   a COMPLETED payment carrying that link's `SC1:<clientId>:<courseId>` note and records the unlock
+   itself, so the webhook is now the *fast* path rather than the *only* path. Isolation: provider,
+   client id and Square token all come from the client's own row via the link token, the courseId is
+   honoured only if already assigned to that client, both ids are `SAFE_ID`-checked before reaching a
+   key. Bounded to 3 pages of `/v2/payments` with a per-instance 4s throttle.
+3. **"Sent ✓" stopped lying.** `/api/clients` answers `ok:true` even when an individual row's upsert
+   threw — those come back in `failed`, the saved ones in `clients`. `_pushClientNow` checked only
+   `ok`, so a client whose blob never saved still produced "Sent". It now checks both, and every send
+   flow that routes through it (courses, forms, guides) inherits the fix.
+
+Suite: `coursefix.mjs` in the scratchpad — a row that fails to save doesn't say Sent, a good one still
+does, the course screen shows locked/paid state, Mark paid reaches both the account and the client's
+blob, and the client app then opens the course.
+
+**§3.1 is still open and still worth 10 minutes of Ashley's time** — this makes the automatic path
+recoverable, it does not prove it works.
+
+---
+
 ## 3. Open threads — needs Ashley, or needs verifying
 
 1. **Square `payment.*` webhook subscription.** Paid-course auto-unlock depends on Square sending

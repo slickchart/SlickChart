@@ -8681,6 +8681,55 @@ function _courseIsPaid(co){return !!(co&&_coursePriceCents(co.price));}
 let _coursePurchases={};
 function loadCoursePurchases(){try{const raw=localStorage.getItem('sc_course_purchases');if(raw){const o=JSON.parse(raw);if(o&&typeof o==='object')_coursePurchases=o;}}catch(e){}}
 function _coursePaidFor(clientId,courseId){loadCoursePurchases();return !!_coursePurchases[clientId+':'+courseId];}
+// Everyone this course has been sent to, newest first.
+function _courseRecipients(courseId){
+  const out=[];
+  try{Object.keys(CL).forEach(function(cid){
+    const c=CL[cid];if(!c||!Array.isArray(c.pendingCourses))return;
+    const pc=c.pendingCourses.find(function(x){return x&&x.id===courseId;});
+    if(pc)out.push({cid:cid,name:c.name||'Client',hasLink:!!c._token,assignedAt:pc.assignedAt||0});
+  });}catch(e){}
+  out.sort(function(a,b){return (b.assignedAt||0)-(a.assignedAt||0);});
+  return out;
+}
+// A paid course opens for a client only when a payment is on record, and the only thing that could
+// ever put one there was Square's payment.* webhook firing on the checkout link in their app. Anyone
+// who paid another way — cash, an invoice, a card taken in person, Venmo — had no path to open the
+// course at all, and no one could see that or do anything about it. The provider knows who has paid
+// her. Let her say so.
+//
+// One-way on purpose: sc_course_purchases is a union-merged map (see _TOMB_OBJ), so removing an entry
+// here would simply come back on the next pull. Better to not offer an undo than to fake one.
+async function _markCoursePaid(cid,courseId){
+  loadCoursePurchases();
+  const key=cid+':'+courseId;
+  if(_coursePurchases[key])return true;
+  _coursePurchases[key]={at:Date.now(),by:'provider'};
+  let ok=true;
+  try{
+    const v=JSON.stringify(_coursePurchases);
+    try{localStorage.setItem('sc_course_purchases',v);}catch(e){ok=false;}
+    if(typeof _pushKeyNow==='function'){const r=await _pushKeyNow('sc_course_purchases',v);if(r&&r.ok===false)ok=false;}
+  }catch(e){ok=false;}
+  // The client's app reads `paid` out of their OWN synced blob, so republish it now — otherwise the
+  // course stays locked on their side until some unrelated sync happens to run.
+  try{if(typeof _pushClientNow==='function'){const r=await _pushClientNow(cid);if(r&&!r.ok)ok=false;}}catch(e){ok=false;}
+  return ok;
+}
+function _confirmMarkCoursePaid(cid,courseId){
+  const c=(typeof CL!=='undefined')?CL[cid]:null;
+  const co=(typeof courses!=='undefined')?courses.find(function(x){return x.id===courseId;}):null;
+  const nm=String((c&&c.name)||'this client').split(' ')[0];
+  const go=async function(){
+    const ok=await _markCoursePaid(cid,courseId);
+    if(typeof proToast==='function')proToast(ok?('Unlocked for '+nm+' — every lesson opens in their app now'):'Marked it here, but it couldn’t reach the server — check your connection and tap it again',ok?3200:0);
+    try{nav('course-detail',courseId);}catch(e){}
+  };
+  if(typeof confirmModal==='function')confirmModal({title:'Open this course for '+nm+'?',
+    body:'Every lesson of “'+((co&&co.title)||'this course')+'” unlocks in their app. Use this when they have already paid you some other way — cash, an invoice, or a card you took in person. It can’t be undone from here.',
+    action:'Mark as paid'},go);
+  else go();
+}
 
 async function _mintCourseBuyUrl(clientId,co){
   const cents=_coursePriceCents(co&&co.price);
@@ -15137,7 +15186,16 @@ async function _pushClientNow(cid){
     if(typeof _specificSyncTimers!=='undefined'&&_specificSyncTimers[cid]){clearTimeout(_specificSyncTimers[cid]);delete _specificSyncTimers[cid];}
     const res=await _syncSpecificClientsToServer([cid],{});
     if(res===null)return {ok:false,msg:'You’re signed out of your SlickChart account — sign in, then tap Send again.'};
-    if(res&&res.ok&&Array.isArray(res.clients))return {ok:true};
+    if(res&&res.ok&&Array.isArray(res.clients)){
+      // /api/clients answers ok:true even when an INDIVIDUAL row failed to save — those come back in
+      // `failed`, and the saved ones in `clients`. Reading only `ok` is how "Sent ✓" could appear for a
+      // client whose blob never actually changed: she is told it went, the client never gets it, and
+      // nothing anywhere says otherwise.
+      const failed=Array.isArray(res.failed)?res.failed:[];
+      if(failed.some(f=>f&&f.id===cid))return {ok:false,msg:'The server couldn’t save this one — it may be too large (a big cover image or photo). Try again, or use a smaller image.'};
+      if(!res.clients.some(x=>x&&x.id===cid))return {ok:false,msg:'The server didn’t confirm that one — check your connection and tap Send again.'};
+      return {ok:true};
+    }
     if(res&&res.error==='Not signed in')return {ok:false,msg:'You’re signed out — sign in to your account, then tap Send again.'};
     return {ok:false,msg:(res&&res.error)||'Couldn’t reach the server — check your connection and tap Send again.'};
   }catch(e){return {ok:false,msg:'Couldn’t reach the server — check your connection and tap Send again.'};}
@@ -16727,6 +16785,27 @@ function renderCourseDetail(id){
     <div style="background:var(--surf2);border:1px solid var(--p-line);border-radius:12px;overflow:hidden;margin-bottom:14px;">
       ${lessons.length?lessons.map((l,idx)=>{const bits=[];if(l.body)bits.push('Reading');if(l.videoUrl)bits.push('Video');if(l.docUrl)bits.push('Worksheet');const _nf=_lessonFileList(l).length;if(_nf)bits.push(_nf>1?_nf+' files':'Download');return `<div onclick="_openLessonView('${c.id}',${idx})" role="button" tabindex="0" style="display:flex;align-items:center;gap:10px;padding:11px 12px;cursor:pointer;${idx<lessons.length-1?'border-bottom:1px solid var(--p-line2);':''}"><div class="snum">${idx+1}</div><div style="flex:1;min-width:0;"><div style="font-size:16px;color:var(--p-ink);">${_fileEsc(l.title||'Untitled lesson')}</div>${bits.length?`<div style="font-size:14px;color:var(--p-mut);margin-top:2px;">${bits.join(' · ')}</div>`:'<div style="font-size:14px;color:var(--p-mut);margin-top:2px;">Tap to open</div>'}</div><i class="ti ti-chevron-right" style="font-size:16px;color:var(--p-mut2);flex-shrink:0;"></i></div>`;}).join(''):'<div style="padding:14px 12px;font-size:16px;color:var(--p-mut);">No lessons yet, tap Edit to build your course.</div>'}
     </div>
+    ${(function(){
+      // Who has it, and can they actually open it. Without this there was nowhere in the app to see
+      // that a course you sent is sitting locked on someone's phone waiting for a payment record
+      // that may never arrive.
+      const rec=(typeof _courseRecipients==='function')?_courseRecipients(c.id):[];
+      if(!rec.length)return '';
+      const costs=(typeof _courseIsPaid==='function')&&_courseIsPaid(c);
+      return `<div style="font-size:14px;font-weight:500;color:var(--p-mut);text-transform:uppercase;letter-spacing:.07em;margin-bottom:8px;">Sent to</div>
+      <div style="background:var(--surf2);border:1px solid var(--p-line);border-radius:12px;overflow:hidden;margin-bottom:14px;">
+      ${rec.map(function(r,ri){
+        const paid=(typeof _coursePaidFor==='function')&&_coursePaidFor(r.cid,c.id);
+        const open=!costs||paid;
+        const state=!r.hasLink?'Not invited to the app yet — invite them and it’s waiting':(open?(costs?'Paid · open':'Open'):'Locked — waiting on payment');
+        const col=!r.hasLink?'var(--p-amber)':(open?'var(--p-green)':'var(--p-mut)');
+        return `<div style="display:flex;align-items:center;gap:10px;padding:11px 12px;${ri<rec.length-1?'border-bottom:1px solid var(--p-line2);':''}">
+          <div style="flex:1;min-width:0;"><div style="font-size:16px;color:var(--p-ink);">${_fileEsc(r.name)}</div>
+          <div style="font-size:14px;color:${col};margin-top:2px;line-height:1.4;">${state}</div></div>
+          ${(costs&&!paid&&r.hasLink)?`<button onclick="_confirmMarkCoursePaid('${_jsAttr(r.cid)}','${_jsAttr(c.id)}')" style="border:1px solid var(--p-line);background:var(--surf1);color:var(--accent-strong);border-radius:8px;padding:6px 11px;font-size:16px;font-weight:600;cursor:pointer;font-family:inherit;flex-shrink:0;">Mark paid</button>`:''}
+        </div>`;}).join('')}
+      </div>`;
+    })()}
     <div style="display:flex;gap:8px;margin-bottom:20px;">
       <button class="btnp" style="flex:2;border-radius:8px;" onclick="sendCourseToClient('${c.id}')"><i class="ti ti-send"></i> Send to a client</button>
       <button class="btng" style="flex:1;" onclick="nav('course-builder','${c.id}')" aria-label="Edit course"><i class="ti ti-pencil"></i></button>

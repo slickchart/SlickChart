@@ -1744,19 +1744,34 @@ function _courseBuyHTML(co){
   </div>`;
 }
 // Coming back from Square: re-pull so a just-completed payment unlocks without a restart.
+// "Already paid? Refresh". This used to only re-read the same data blob, which could never help:
+// the course unlocks off a payment record written by Square's payment.* webhook, so if that webhook
+// never arrived — not subscribed, signing key unset, URL mismatch — someone who had genuinely paid
+// was stuck on a locked course forever with a button that did nothing. Ask the server to check the
+// provider's own Square for the payment FIRST (/api/course-paid), then re-read.
 function _courseCheckPaid(){
   if(typeof showToast==='function')showToast('Checking\u2026',true);
+  var done=function(){
+    try{
+      if(typeof _refreshProviderDataOnce==='function'){
+        _refreshProviderDataOnce().then(function(){
+          try{renderViewCourse();}catch(e){}
+          var co=_findCourse(_viewCourseId);
+          var open=!_courseLocked(co);
+          if(typeof showToast==='function')showToast(open?'Unlocked, enjoy!':'No payment found yet \u2014 if you paid another way, message '+(client.providerFirst||'your provider')+' and they can open it for you',open);
+        });
+        return;
+      }
+    }catch(e){}
+    try{location.reload();}catch(e){}
+  };
+  var tok='';try{tok=client._token||'';}catch(e){}
+  if(!tok||!_viewCourseId){done();return;}
   try{
-    if(typeof _refreshProviderDataOnce==='function'){
-      _refreshProviderDataOnce().then(function(){
-        try{renderViewCourse();}catch(e){}
-        var co=_findCourse(_viewCourseId);
-        if(typeof showToast==='function')showToast(_courseLocked(co)?'No payment found yet \u2014 try again in a moment':'Unlocked, enjoy!',!_courseLocked(co));
-      });
-      return;
-    }
-  }catch(e){}
-  try{location.reload();}catch(e){}
+    fetch('/api/course-paid',{method:'POST',headers:{'Content-Type':'application/json'},
+      body:JSON.stringify({t:tok,courseId:_viewCourseId})}).then(function(r){return r.json();})
+      .then(function(){done();}).catch(function(){done();});
+  }catch(e){done();}
 }
 // Tapping a lesson while the course is still locked: say why, don't just do nothing.
 function _courseLockedTap(){
