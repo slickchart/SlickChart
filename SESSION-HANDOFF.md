@@ -792,6 +792,70 @@ refunds and catalog sync, which still ride the webhook.
 
 ---
 
+## 2q. FOUND IT: her account was holding the four characters `null` (2026-09-18)
+
+Third report from the same provider (`sunkissedbeautyllc1@gmail.com`), after two fixes shipped on
+theories that were not her problem. Ashley: *"it doesnt happen in mine."* Correct — it was data, not
+code, and nothing in the repo could show it. The founder tool (§below) printed her account in one
+line: **business hours, 4 bytes, last written 2 days ago, no edit stamp.** Four bytes is the string
+`null`. Business info 274B and branding 85KB were minutes old; only hours were dead.
+
+**The loop, start to finish:**
+
+1. `let bizHours=null`, filled in only when the Business info screen renders. A `saveBizInfo()` that
+   ran before that did `SlickBridge.setAvailability(null)` → `JSON.stringify(null)` → the four
+   characters `null` written to `sc_availability`, and pushed to her account.
+2. Every load after that, `Cloud.pull()` ran `_mergeStamped("null", <her real hours>)`. It parsed the
+   server side to `null`, failed `typeof srv!=='object'`, and **returned `null` meaning "no opinion"**
+   — which sent the caller to its plain overwrite. So the pull wrote `"null"` over a device that had
+   perfectly good hours on it.
+3. `renderBizInfo` → `normalizeAvail(null)` → the stock Mon–Sat 9–5. **"My hours reset to default."**
+4. She re-entered them and saved. The device write landed. The push did not, because
+   **`sc_availability` was the only one of these settings without an immediate `_pushKeyNow`** — it
+   alone rode the 700ms debounced queue. That is exactly what the account showed: four rows minutes
+   old, hours untouched for two days.
+5. Next load, back to step 2. Re-entering them could never win.
+
+**Four fixes, all shipped together:**
+
+* `_mergeStamped` **never lets an unusable account copy overwrite a usable device copy.** It keeps the
+  device copy and pushes it back, repairing the account row instead of spreading it. This is the
+  general fix — it protects `sc_bizinfo` and `sc_brand_colors` from the same shape of poisoning.
+* `SlickBridge.setAvailability` **refuses anything that is not a real object**, so `null` can't be
+  stored again by any caller.
+* `saveBizInfo` normalizes the hours before writing and **pushes them immediately**, like every other
+  setting.
+* `_healAvailability()` in `_reloadAll` **repairs an account already holding junk** — an account
+  poisoned on both sides could not fix itself, since every load re-read the junk. Real defaults on
+  both sides beat `null` on both sides, and her next edit has something to change.
+
+**The rule:** a merge that returns "no opinion" must not fall through to an overwrite. "I can't tell"
+and "take the server's copy" are different answers, and the second one destroys data.
+
+Suite: `riquelle.mjs` in the scratchpad — boots against her exact account state, proves the junk is
+cleared on load, that hours set + saved survive navigation AND a reload, that a junk value arriving
+later can no longer win, and that a save with no hours loaded can't write `null` again.
+
+### The instruments, which are the reason this took an hour instead of another day
+
+* **Build stamp** at the bottom of Settings (`APP_BUILD`). Bump it on every ship. Two days were spent
+  debugging fixes a provider may never have received.
+* **`/slickchart?selfcheck=1`** — no button, no menu entry, only the link. Walks the save path in
+  order (device write → live session → reaches the account → **comes back**) and prints device vs
+  account for the four settings, with which side was edited more recently. Runs *before* the rest of
+  boot on purpose: a rejected session drops the token and bounces to sign-in, which is both the state
+  most worth seeing and the state that would stop the check running.
+* **Admin tools → "Are a provider's saves landing?"** (`api/admin/kv-health.js`, founder-only).
+  Per-key size, last write, and the app's own `_ts` stamp. **Metadata only — it never reads a stored
+  value**, and must stay that way. This is what found the four bytes.
+
+**Still open for this provider:** branding (85KB) and forms (94KB) were fresh on the server, so their
+resets are a different mechanism from hours — both are over the 24KB offload threshold and live in
+IndexedDB on the device (§2e), so suspect the hydrate path, not the sync. Her self-check output shows
+device vs account for both; get it before theorising again.
+
+---
+
 ## 3. Open threads — needs Ashley, or needs verifying
 
 1. ~~**Square `payment.*` webhook subscription.**~~ **CLOSED 2026-09-18 — it is subscribed and has

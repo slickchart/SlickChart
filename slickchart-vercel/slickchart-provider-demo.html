@@ -468,7 +468,7 @@ const S=document.getElementById('S');
 // resets when I save it" and there was no way to tell whether her phone had any of them — a whole
 // day was spent debugging code she may not have been running. Shown at the bottom of Settings, so
 // the answer is a screenshot away. Bump it on every ship.
-const APP_BUILD='2026-09-18d';
+const APP_BUILD='2026-09-18e';
 
 
 /* ════════════════════════════════════════════════════════════════
@@ -509,7 +509,11 @@ const SlickBridge=(function(){
     setBookings:(arr)=>write(K_BOOKINGS,arr),
     upsertBooking(b){const all=read(K_BOOKINGS,[]);const i=all.findIndex(x=>x.id===b.id);if(i>=0)all[i]=b;else all.unshift(b);write(K_BOOKINGS,all);return b;},
     getAvailability:()=>read(K_AVAIL,null),
-    setAvailability:(a)=>write(K_AVAIL,a),
+    // Hours are one object, always. bizHours starts as null and is only filled in when the Business
+    // info screen renders, so a save that ran before that wrote the four characters `null` here — and
+    // then pushed them to the account, where they came back down over every device on every load.
+    // Refuse to store anything that isn't a real object; the caller keeps what it had.
+    setAvailability:(a)=>(a&&typeof a==='object'&&!Array.isArray(a))?write(K_AVAIL,a):false,
   };
 })();
 
@@ -2719,12 +2723,24 @@ function _mergeAuthoredById(serverStr,localStr,hiddenKey){
 // Records WHEN this device last edited a settings blob. _mergeStamped compares these, so without it
 // a local edit has no way to prove it is newer than the server's copy.
 function _stampNow(o){ try{ if(o&&typeof o==='object')o._ts=Date.now(); }catch(e){} return o; }
+//
+// A provider's business hours came back to their defaults on every single app load for three days.
+// The account was holding the four characters `null` for sc_availability. This function returned
+// `null` for that ("no opinion"), which sent the caller to its PLAIN OVERWRITE — so every pull wrote
+// the string "null" over a device that had perfectly good hours on it, normalizeAvail(null) handed
+// back the stock Mon-Sat 9-5, and she watched her hours reset again. Re-entering them could not win:
+// one bad value on the account re-poisoned the device forever.
+//
+// An unusable account copy is now never written over a usable device copy. The device copy is kept
+// AND pushed back, which repairs the account row instead of spreading it.
 function _mergeStamped(serverStr,localStr){
-  let srv=null,loc=null;
-  try{srv=JSON.parse(serverStr||'null');}catch(e){return null;}
-  try{loc=JSON.parse(localStr||'null');}catch(e){loc=null;}
-  if(!srv||typeof srv!=='object')return null;
-  if(!loc||typeof loc!=='object')return {str:serverStr,changed:false};
+  let srv,loc;
+  const usable=function(o){return !!o&&typeof o==='object'&&!Array.isArray(o);};
+  try{srv=JSON.parse(serverStr==null?'null':serverStr);}catch(e){srv=undefined;}
+  try{loc=JSON.parse(localStr==null?'null':localStr);}catch(e){loc=undefined;}
+  const sOk=usable(srv),lOk=usable(loc);
+  if(!sOk)return lOk?{str:localStr,changed:true}:null;   // heal the account from the device, or abstain
+  if(!lOk)return {str:serverStr,changed:false};
   const a=Number(srv._ts)||0,b=Number(loc._ts)||0;
   if(b>a)return {str:localStr,changed:true};   // this device's edit is newer — keep it, push it back
   return {str:serverStr,changed:false};
@@ -3256,8 +3272,25 @@ function _reloadTopLevelStores(){
   try{const a=J('sc_notif_read');if(Array.isArray(a))_notifRead=new Set(a);}catch(e){}
   try{if(typeof loadAffiliateLinks==='function')loadAffiliateLinks();}catch(e){}
 }
+// An account that already holds junk for its business hours (the string `null`, or anything that
+// isn't one object) cannot fix itself: every load reads it, hands normalizeAvail nothing, and shows
+// the stock hours again. The merge above stops it SPREADING; this clears it. Runs after the pull, so
+// by now local holds the best copy either side has — if that is still unusable, real defaults on
+// both sides beat `null` on both sides, and her next save has something to edit instead of a hole.
+function _healAvailability(){
+  try{
+    let raw=null;try{raw=(typeof _lsGet==='function')?_lsGet('sc_availability'):localStorage.getItem('sc_availability');}catch(e){}
+    let o;try{o=JSON.parse(raw==null?'null':raw);}catch(e){o=undefined;}
+    if(o&&typeof o==='object'&&!Array.isArray(o))return;
+    const fixed=normalizeAvail(null);
+    SlickBridge.setAvailability(_stampNow(fixed));
+    try{if(typeof _pushKeyNow==='function')_pushKeyNow('sc_availability',JSON.stringify(fixed));}catch(e){}
+    console.warn('[SlickChart] business hours were unusable ('+JSON.stringify(raw)+') — reset to defaults and pushed');
+  }catch(e){}
+}
 function _reloadAll(){try{
   try{_reloadTopLevelStores();}catch(e){}
+  try{_healAvailability();}catch(e){}
   // FIRST, and before applyProfessionConfig() below. Two separate bugs met here and between them
   // they are the plainest version of "my course disappeared":
   //
@@ -19843,7 +19876,16 @@ function saveBizInfo(quiet){
   // device still holds the old copy, which is exactly what "I saved it and it reverted" looks like.
   let _saveErr=null;
   try{(function(_v){localStorage.setItem('sc_bizinfo',_v);if(typeof _pushKeyNow==='function')_pushKeyNow('sc_bizinfo',_v);return _v;})(JSON.stringify(_stampNow(bizInfo)));(function(_v){localStorage.setItem('sc_wsname',_v);if(typeof _pushKeyNow==='function')_pushKeyNow('sc_wsname',_v);})(workspace.name);}catch(e){_saveErr=e;}
-  if(SlickBridge.setAvailability(_stampNow(bizHours))===false)_saveErr=_saveErr||new Error('availability');
+  // Hours were the ONLY one of these settings without an immediate push — business info, studio name,
+  // branding and forms all call _pushKeyNow, hours rode the 700ms debounced queue alone. On one
+  // provider's account that showed up exactly as you'd predict: the other four rows were minutes old
+  // and hours hadn't been written in two days. Same treatment as everything else now.
+  const _av=(typeof normalizeAvail==='function')?normalizeAvail(bizHours):bizHours;
+  if(_av&&typeof _av==='object'){
+    bizHours=_av;
+    if(SlickBridge.setAvailability(_stampNow(_av))===false)_saveErr=_saveErr||new Error('availability');
+    try{if(typeof _pushKeyNow==='function')_pushKeyNow('sc_availability',JSON.stringify(_av));}catch(e){}
+  }
   _syncProviderAvatar();
   // Studio name and booking availability live only in each client's synced blob (not the shared
   // KV), so push a roster sync, otherwise real clients keep stale hours/studio until some other
