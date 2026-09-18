@@ -972,6 +972,58 @@ never read her hours at all.
 
 ---
 
+## 2t. The public booking link (2026-09-18)
+
+A provider asked for a link she could put on her website and her Instagram bio so someone who is not
+a client yet can book her. Most of it already existed — this mostly joined up pieces.
+
+| | |
+|---|---|
+| `/book/<slug>` | `api/book-page.js` — branded, no login, same shell as the consult page |
+| `GET /api/book-slots` | free times for one day (instant mode only) |
+| `POST /api/book-request` | creates the booking |
+| `lib/booking.js` | settings, hours, free/busy, slot maths |
+| Settings → **Booking link** | `renderBookingLink()`, config in `sc_booking_page` |
+
+**One handle, two pages.** The slug is the SAME one the consult link uses (`providers.consult_slug`),
+so `/consult/<slug>` and `/book/<slug>` are both hers and she has one thing to share. `book`,
+`booking` and `bookings` were added to the reserved list.
+
+**Two modes, and the PROVIDER picks** (Ashley: *"let them make the setting"*):
+* **Ask me first** — they request a day and time inside her posted hours; it lands in Booking
+  Requests and she confirms / suggests / declines. Her calendar stays completely private.
+* **Book it instantly** — the page shows genuinely free times and books straight in. Works for every
+  provider, not only Square ones, because we already know her hours and her calendar.
+
+Instant mode inevitably reveals when she is busy. **The setting says so on the screen, in plain
+words.** It is her trade to make and she can only make it if she is told — don't quietly soften that
+copy later.
+
+**The guard worth keeping:** `busyRanges()` returns **null**, not a partial answer, when it cannot
+see the whole calendar (she has Square connected but Square is unreachable). Every caller treats null
+as "take a request instead". Publishing a half-informed slot list hands her a double booking, which
+is worse than asking. The slot is re-checked at submit, so one taken while someone filled the form is
+caught rather than accepted.
+
+**Isolation:** the provider is resolved from the SLUG, never from anything a caller sends. Free/busy
+is reduced to times before it leaves `lib/booking.js` — never what she is booked with or who with.
+The reply is identical whether or not that email was already on file, because a public form that said
+"welcome back" would be an enumeration oracle for her client list. Rate limited per IP and per slug.
+
+Whoever books becomes a real client (find-or-create by email, scoped to her account) and the booking
+arrives as an ordinary `booking` event — same inbox, same push, same confirm flow as a client booking
+from their own app. No new screens on the provider side beyond the settings one.
+
+Suites: `bk/slots.mjs` (free/busy and slot maths against a stubbed db + Square), `bookpage.mjs` (the
+public page driven in both modes, including the no-slot fallback and a slot taken mid-form) and
+`booklink.mjs` (her settings screen).
+
+**Not built, deliberately:** no confirmation email to the person booking yet — they see the result on
+screen and she gets the request, but nothing lands in their inbox. That is the first thing to add.
+Deposits, per-service durations and buffers between appointments are all unbuilt too.
+
+---
+
 ## 3. Open threads — needs Ashley, or needs verifying
 
 1. ~~**Square `payment.*` webhook subscription.**~~ **CLOSED 2026-09-18 — it is subscribed and has

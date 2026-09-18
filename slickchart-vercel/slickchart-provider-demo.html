@@ -468,7 +468,7 @@ const S=document.getElementById('S');
 // resets when I save it" and there was no way to tell whether her phone had any of them — a whole
 // day was spent debugging code she may not have been running. Shown at the bottom of Settings, so
 // the answer is a screenshot away. Bump it on every ship.
-const APP_BUILD='2026-09-18i';
+const APP_BUILD='2026-09-18j';
 
 
 /* ════════════════════════════════════════════════════════════════
@@ -3384,6 +3384,7 @@ function _reloadAll(){try{
   if(typeof loadAi==='function')loadAi();
   if(typeof loadForms==='function')loadForms();
   loadBizInfo();_syncProviderAvatar();_syncHeaderLogo();loadClients();loadMergedIds();loadMergedInto();loadDeletedClients();loadHiddenSquare();loadMessages();loadInv();loadVendors();_loadPersistenceSweep();try{_initCapturedPhotos();}catch(e){}_loadHomeDismissed();_loadAttnSeen();loadProviderNoteDrafts();if(typeof loadSessionSummaries==='function')loadSessionSummaries();if(!_sampleHidden()){_seedMayaOnce();}else{_purgeSample();}try{_purgeRemovedClients();}catch(e){}_seedBirthdays();if(!_sampleHidden()&&typeof _demoCheckinSeed==='function')_demoCheckinSeed();
+  try{if(typeof loadBookCfg==='function')loadBookCfg();}catch(e){}
   if(typeof loadWorkspace==='function')loadWorkspace();
   if(typeof loadSquareCatalog==='function'){loadSquareCatalog();_mergeSquareRetail();}
   if(typeof loadCheckinCfg==='function')loadCheckinCfg();
@@ -5607,14 +5608,14 @@ let _ncLastStep=-1;
 function nav(screen,data){
   try{if(typeof _flushSettingsEdits==='function')_flushSettingsEdits();}catch(e){}
   try{if(typeof _savePersistenceSweep==='function')_savePersistenceSweep();}catch(e){}
-  const titles={home:'Home',clients:'Clients',forms:'Forms, Guides & Courses',messages:'Messages',pro:'Pro',more:'More',account:'Account',branding:'Branding',shop:'Shop',partners:'Partners',learn:'Courses',virtual:'Virtual Consultations',protocols:'Protocols',vault:'My Docs',inventory:'Inventory',vendors:'Vendors',calendar:'Calendar','today-appts':"Today's appointments",'week-appts':"This week's appointments",'week-clients':"This week's clients",room:'Session','data-setup':'Get set up','import-clients':'Import clients','import-products':'Import products','switch-app':'Switch apps','connect-calendar':'Sync calendar','checkout':'Take payment','whats-new':"What’s new",'feedback-inbox':'Feedback inbox','beta-stats':'Growth stats','payments':'Payments','build-invoice':'Build invoice','service-menu':'Service menu','export-data':'Export Data','reports':'Reports'};
+  const titles={home:'Home',clients:'Clients',forms:'Forms, Guides & Courses',messages:'Messages',pro:'Pro',more:'More',account:'Account',branding:'Branding',shop:'Shop',partners:'Partners',learn:'Courses',virtual:'Virtual Consultations',protocols:'Protocols',vault:'My Docs',inventory:'Inventory',vendors:'Vendors',calendar:'Calendar','today-appts':"Today's appointments",'week-appts':"This week's appointments",'week-clients':"This week's clients",room:'Session','data-setup':'Get set up','import-clients':'Import clients','import-products':'Import products','switch-app':'Switch apps','connect-calendar':'Sync calendar','checkout':'Take payment','whats-new':"What’s new",'feedback-inbox':'Feedback inbox','beta-stats':'Growth stats','payments':'Payments','build-invoice':'Build invoice','service-menu':'Service menu','export-data':'Export Data','reports':'Reports','booking-link':'Booking link'};
   document.getElementById('tt').innerHTML='Slick<span class="brandc">Chart</span>';
   document.title='SlickChart' + (titles[screen] ? ', '+titles[screen] : '');
   if(timerInt&&screen!=='room'){clearInterval(timerInt);timerInt=null;}
   const routes={
     home:renderHome,clients:renderClients,forms:renderForms,messages:renderMessages,
     pro:renderMore,more:renderMore,walkthrough:renderWalkthrough,account:renderAccount,branding:renderBranding,
-    'biz-info':renderBizInfo,'business-branding':renderBusinessBranding,'security-billing':renderAccountBilling,'delete-account':renderDeleteAccount,'team-access':renderTeamAccess,'notifications':renderNotifications,'notifications-feed':renderNotifFeed,'integrations':renderIntegrations,'square-sync':renderSquareSync,'square-guide':renderSquareGuide,
+    'biz-info':renderBizInfo,'business-branding':renderBusinessBranding,'booking-link':renderBookingLink,'security-billing':renderAccountBilling,'delete-account':renderDeleteAccount,'team-access':renderTeamAccess,'notifications':renderNotifications,'notifications-feed':renderNotifFeed,'integrations':renderIntegrations,'square-sync':renderSquareSync,'square-guide':renderSquareGuide,
     shop:renderShop,partners:renderPartners,learn:renderLearn,virtual:renderVirtual,'vc-inbox':renderVcInbox,'routine-builder':renderRoutineBuilder,
     protocols:renderProtocols,automations:()=>{renderMessages();setTimeout(()=>showMsgTab('autos'),0);},
     vault:renderVault,inventory:renderInventory,vendors:renderVendors,
@@ -12236,6 +12237,117 @@ function _setVcFee(val,btn){
   vcFee=val;                                    // '' for Free, or a preset like '$25'
   _persist();                                    // re-render so the right pill shows active
 }
+// ── PUBLIC BOOKING LINK ──────────────────────────────────────────────────────────────────────────
+// One link she can put on her website and in her Instagram bio, so someone who is not a client yet
+// can book her. It shares the SAME handle as her consult link (/book/<slug> and /consult/<slug>), so
+// there is one thing to remember and one thing to share.
+//
+// She chooses how it behaves. "Ask me first" keeps her calendar completely private and everything
+// lands in Booking Requests, which she already knows how to work. "Book instantly" is better for the
+// person booking, but it necessarily shows when she is busy — the screen says that in plain words
+// rather than burying it, because it is her call to make and she can only make it if she is told.
+let bookCfg={on:false,mode:'request',slotMins:60,leadHours:12,horizonDays:60,note:'',requirePhone:true};
+function loadBookCfg(){
+  try{const raw=localStorage.getItem('sc_booking_page');if(raw){const o=JSON.parse(raw);if(o&&typeof o==='object')bookCfg=Object.assign(bookCfg,o);}}catch(e){}
+}
+function saveBookCfg(){
+  try{const v=JSON.stringify(bookCfg);localStorage.setItem('sc_booking_page',v);if(typeof _pushKeyNow==='function')_pushKeyNow('sc_booking_page',v);}catch(e){}
+}
+function _bookFull(){return _consultSlug?('https://'+_consultHost()+'/book/'+_consultSlug):'';}
+function _bookSet(k,v){bookCfg[k]=v;saveBookCfg();renderBookingLink();}
+function _bookToggle(){
+  if(!bookCfg.on&&!_consultSlug){ _setConsultSlug(); return; }   // no handle yet — claim one first
+  bookCfg.on=!bookCfg.on;saveBookCfg();
+  if(typeof proToast==='function')proToast(bookCfg.on?'Your booking link is live':'Booking link turned off');
+  renderBookingLink();
+}
+function _bookNote(){
+  _inputSheet({title:'Add a note to your booking page',body:'One line people see before they book. Parking, where to find you, a deposit policy.',placeholder:'Free parking behind the building.',value:bookCfg.note||'',action:'Save'},function(v){
+    bookCfg.note=String(v||'').slice(0,400);saveBookCfg();renderBookingLink();
+  });
+}
+function _bookOpenPreview(){
+  const u=_bookFull();if(!u){_setConsultSlug();return;}
+  try{window.open(u,'_blank','noopener');}catch(e){if(typeof proToast==='function')proToast('Open '+u);}
+}
+function renderBookingLink(){
+  setNav('more');
+  document.getElementById('tt').textContent='Booking link';
+  if(_consultSlug===null){try{_loadBookingSlug();}catch(e){}}
+  const live=bookCfg.on&&!!_consultSlug;
+  const disp=_consultSlug?_fileEsc(_consultHost()+'/book/'+_consultSlug):'';
+  const full=_jsAttr(_bookFull());
+  const modeCard=function(id,title,desc,warn){
+    const on=bookCfg.mode===id;
+    return `<button onclick="_bookSet('mode','${id}')" style="display:block;width:100%;text-align:left;background:var(--surf2);border:1.5px solid ${on?'var(--accent)':'var(--p-line)'};border-radius:12px;padding:13px 14px;margin-bottom:9px;cursor:pointer;font-family:inherit;">
+      <div style="display:flex;align-items:center;gap:10px;">
+        <div style="width:20px;height:20px;border-radius:50%;border:1.5px solid ${on?'var(--accent)':'var(--p-chip2)'};background:${on?'var(--accent)':'transparent'};display:flex;align-items:center;justify-content:center;flex-shrink:0;">${on?'<i class="ti ti-check" style="font-size:14px;color:var(--accent-ink);"></i>':''}</div>
+        <div style="font-size:16px;font-weight:600;color:var(--p-ink);">${title}</div>
+      </div>
+      <div style="font-size:14px;color:var(--p-mut);line-height:1.5;margin-top:6px;padding-left:30px;">${desc}</div>
+      ${warn?`<div style="font-size:14px;color:var(--p-amber);line-height:1.5;margin-top:6px;padding-left:30px;">${warn}</div>`:''}
+    </button>`;};
+  const numRow=function(label,key,opts,suffix){
+    return `<div style="display:flex;align-items:center;justify-content:space-between;gap:12px;padding:12px 14px;border-bottom:1px solid var(--p-line2);">
+      <div style="flex:1;min-width:0;font-size:16px;color:var(--p-ink);">${label}</div>
+      <select onchange="_bookSet('${key}',parseInt(this.value,10))" style="background:var(--p-bg);border:1px solid var(--p-line);border-radius:8px;padding:8px 6px;font-size:16px;color:var(--p-ink);font-family:inherit;flex-shrink:0;">
+        ${opts.map(function(o){return '<option value="'+o[0]+'"'+(bookCfg[key]===o[0]?' selected':'')+'>'+o[1]+'</option>';}).join('')}
+      </select></div>`;};
+  S.innerHTML=`
+  <div style="padding:14px 16px 0;">
+    <div style="font-size:16px;color:var(--p-mut);line-height:1.6;margin-bottom:14px;">A link anyone can use to book with you — put it on your website, or in your Instagram bio. They don’t need the app and they don’t need to be a client yet; whoever books lands on your client list.</div>
+    ${!_consultSlug?`<div style="background:var(--surf2);border:1px solid var(--accent);border-radius:12px;padding:14px;margin-bottom:14px;">
+      <div style="font-size:16px;color:var(--p-mut);line-height:1.55;margin-bottom:11px;">First, pick your link name. It’s the same handle as your consult link, so you only have one to share.</div>
+      <button class="btnp" style="width:100%;border-radius:8px;justify-content:center;" onclick="_setConsultSlug()"><i class="ti ti-link"></i> Choose my link name</button>
+    </div>`:`
+    <div style="background:var(--surf2);border:1px solid ${live?'var(--accent)':'var(--p-line)'};border-radius:12px;padding:14px;margin-bottom:14px;">
+      <div style="font-size:14px;font-weight:500;color:var(--p-mut);text-transform:uppercase;letter-spacing:.07em;margin-bottom:6px;">Your booking link</div>
+      <div style="font-size:16px;color:${live?'var(--accent-strong)':'var(--p-mut)'};font-weight:500;margin-bottom:4px;word-break:break-all;">${disp}</div>
+      <div style="font-size:14px;color:${live?'var(--p-green)':'var(--p-mut)'};margin-bottom:10px;">${live?'Live — anyone with this link can book you.':'Turned off — the link shows a "not active" page.'}</div>
+      <div style="display:flex;gap:8px;">
+        <button class="btng" style="flex:1;" onclick="_copyToClipboard('${full}','Booking link copied')"><i class="ti ti-copy"></i> Copy</button>
+        <button class="btng" style="flex:1;" onclick="_shareOrCopy('${full}','Book an appointment')"><i class="ti ti-share"></i> Share</button>
+        <button class="btng" style="flex:0 0 auto;" onclick="_bookOpenPreview()" aria-label="Preview the page"><i class="ti ti-eye"></i></button>
+      </div>
+    </div>`}
+    <div style="background:var(--surf2);border:1px solid var(--p-line);border-radius:12px;margin-bottom:16px;">
+      <div style="display:flex;align-items:center;gap:11px;padding:13px 14px;">
+        <div style="flex:1;min-width:0;"><div style="font-size:16px;font-weight:500;color:var(--p-ink);">Take bookings from this link</div>
+        <div style="font-size:14px;color:var(--p-mut);line-height:1.4;margin-top:2px;">Turn off any time — the link stops working, nothing is deleted.</div></div>
+        ${togBtn(live,'_bookToggle()','Take bookings from this link')}
+      </div>
+    </div>
+    ${bookCfg.on?`
+    <div style="font-size:14px;font-weight:500;color:var(--p-mut);text-transform:uppercase;letter-spacing:.07em;margin-bottom:8px;">When someone picks a time</div>
+    ${modeCard('request','Ask me first','They ask for a day and time inside your hours. It lands in Booking Requests and you confirm, suggest another time, or decline — the same as when a client books from their app.','')}
+    ${modeCard('instant','Book it instantly','They see your genuinely free times and the appointment is made straight away. Less back and forth for both of you.','Heads up: this shows when you’re already booked. Anyone with the link can see which times are taken, though never who with.')}
+    <div style="background:var(--surf2);border:1px solid var(--p-line);border-radius:12px;overflow:hidden;margin:14px 0 16px;">
+      ${numRow('How long is an appointment','slotMins',[[15,'15 min'],[30,'30 min'],[45,'45 min'],[60,'1 hour'],[90,'1½ hours'],[120,'2 hours'],[180,'3 hours']])}
+      ${numRow('Least notice you’ll take','leadHours',[[0,'None'],[2,'2 hours'],[12,'12 hours'],[24,'1 day'],[48,'2 days'],[72,'3 days'],[168,'1 week']])}
+      ${numRow('How far ahead they can book','horizonDays',[[14,'2 weeks'],[30,'1 month'],[60,'2 months'],[90,'3 months'],[180,'6 months']])}
+      <div style="display:flex;align-items:center;gap:11px;padding:12px 14px;border-bottom:1px solid var(--p-line2);">
+        <div style="flex:1;min-width:0;font-size:16px;color:var(--p-ink);">Require a phone number</div>
+        ${togBtn(bookCfg.requirePhone!==false,'_bookSet(\'requirePhone\',!(bookCfg.requirePhone!==false))','Require a phone number')}
+      </div>
+      <div onclick="_bookNote()" style="display:flex;align-items:center;gap:11px;padding:13px 14px;cursor:pointer;">
+        <div style="flex:1;min-width:0;"><div style="font-size:16px;color:var(--p-ink);">Note on the page</div>
+        <div style="font-size:14px;color:var(--p-mut);line-height:1.4;margin-top:2px;">${bookCfg.note?_fileEsc(bookCfg.note):'Parking, where to find you, a deposit policy…'}</div></div>
+        <i class="ti ti-chevron-right" style="font-size:16px;color:var(--p-mut);"></i>
+      </div>
+    </div>
+    <div style="background:var(--p-surf2);border:1px solid var(--p-green-line);border-radius:12px;padding:11px 13px;margin-bottom:20px;font-size:14px;color:var(--p-mut2);line-height:1.55;display:flex;gap:8px;align-items:flex-start;">
+      <i class="ti ti-clock-hour-4" style="font-size:16px;flex-shrink:0;margin-top:1px;"></i>
+      <div>Your page only offers times inside the hours you set in <b>Business &amp; Branding</b>. Change your hours there and this follows automatically.</div>
+    </div>`:'<div style="height:16px;"></div>'}
+  </div>`;
+}
+// The handle is shared with the consult link, so reuse that loader and re-render once it lands.
+async function _loadBookingSlug(){
+  if(_loadBookingSlug._busy)return; _loadBookingSlug._busy=true;
+  try{ await _loadConsultLink(); }catch(e){}
+  _loadBookingSlug._busy=false;
+  try{ if(_navCur&&_navCur.screen==='booking-link')renderBookingLink(); }catch(e){}
+}
 // ── Public "request a consult" link, real, backed by /api/consult-slug + /api/consult-requests ──
 let _consultSlug=null;        // null = not loaded, '' = none set yet, else the claimed slug
 let _consultSuggestion='';
@@ -18589,6 +18701,7 @@ function renderAccount(){
       ['ti-plug','var(--p-purple-bg)','var(--p-purple)','Apps & connections','Square, calendar & shop connections','integrations'],
       ['ti-stethoscope','var(--p-surf2)','var(--p-green)','My Profession','Note formats, forms & terminology','profession-settings'],
       ['ti-building','var(--p-blue-bg)','var(--p-blue)','Business & Branding','Info, logo, colors & client-facing look','business-branding'],
+      ['ti-calendar-plus','var(--p-green-bg)','var(--p-green)','Booking link','A link for your website & Instagram bio so anyone can book you','booking-link'],
       ['ti-users-group','var(--p-surf2)','var(--p-green)','Team Access','Let an employee use this account too','team-access'],
       ['ti-sparkles','var(--p-purple-bg)','var(--p-purple)','AI Features','Brief, voice notes & virtual consultations','ai-settings'],
       ['ti-bell','var(--p-surf2)','var(--p-green)','Notification preferences','Turn check-in, form &amp; reminder alerts on/off','notifications'],
