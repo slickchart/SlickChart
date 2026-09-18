@@ -214,7 +214,7 @@ const S=document.getElementById('S');
 // resets when I save it" and there was no way to tell whether her phone had any of them — a whole
 // day was spent debugging code she may not have been running. Shown at the bottom of Settings, so
 // the answer is a screenshot away. Bump it on every ship.
-const APP_BUILD='2026-09-18o';
+const APP_BUILD='2026-09-18p';
 
 
 /* ════════════════════════════════════════════════════════════════
@@ -3393,6 +3393,21 @@ async function _runSelfCheck(){
       return {tmpls:Object.keys(o.tmpls||{}).length,guides:Object.keys(o.guides||{}).length,custom:(o.custom||[]).length};
     }catch(e){return null;}
   };
+  // The names of the forms she built herself, so "3 vs 4" becomes "Spicule Peel Consent is on this
+  // phone but not on your account". Counts told her something was wrong; names say what.
+  const formNames=function(str){
+    try{
+      const o=JSON.parse(str||'null')||{};
+      const out={};
+      (o.custom||[]).forEach(function(f){ if(f&&f.id)out[f.id]=String((o.tmpls&&o.tmpls[f.id]&&o.tmpls[f.id].name)||f.name||f.id); });
+      return out;
+    }catch(e){return null;}
+  };
+  const onlyIn=function(a,b){
+    const out=[];
+    try{Object.keys(a||{}).forEach(function(id){ if(!b||!(id in b))out.push(a[id]); });}catch(e){}
+    return out;
+  };
   let hiddenForms=0;
   try{const h=(typeof _lsGet==='function')?_lsGet('sc_hidden_forms'):localStorage.getItem('sc_hidden_forms');
     const o=JSON.parse(h||'{}')||{};hiddenForms=Object.keys(o).length;}catch(e){}
@@ -3412,6 +3427,9 @@ async function _runSelfCheck(){
         const gap=(a.tmpls-d.tmpls)+(a.custom-d.custom)+(a.guides-d.guides);
         r.explained=(gap>=0&&gap<=hiddenForms);
         r.hiddenForms=hiddenForms;
+        const dn=formNames(local),an=formNames(sv);
+        r.onlyHere=onlyIn(dn,an);      // made on this device, never reached the account
+        r.onlyAcct=onlyIn(an,dn);      // on the account, not on this device
       }
     }
     return r;
@@ -3430,7 +3448,9 @@ async function _runSelfCheck(){
    .concat([''],rows.map(r=>r.k+': device '+(r.onDevice?r.deviceBytes+'B, edited '+r.deviceEdited:'MISSING')
      +' | account '+(r.onAccount?r.accountBytes+'B, edited '+r.accountEdited:'MISSING')
      +(r.onDevice&&r.onAccount?(r.same?' | identical':(r.explained?' | differs only by '+r.hiddenForms+' deleted form(s) — expected':' | DIFFERENT')):'')
-     +(r.counts?' | device has '+r.counts+'; account has '+r.acctCounts:'')))
+     +(r.counts?' | device has '+r.counts+'; account has '+r.acctCounts:'')
+     +((r.onlyHere&&r.onlyHere.length)?' | ONLY ON THIS DEVICE: '+r.onlyHere.join(', '):'')
+     +((r.onlyAcct&&r.onlyAcct.length)?' | only on the account: '+r.onlyAcct.join(', '):'')))
    .join('\n');
 
   document.getElementById('tt').textContent='Self-check';
@@ -3452,7 +3472,10 @@ async function _runSelfCheck(){
       +'<div style="font-size:16px;color:var(--p-ink);">'+esc({sc_bizinfo:'Business info',sc_availability:'Business hours',sc_brand_colors:'Branding & logo',sc_forms:'Forms'}[r.k]||r.k)+'</div>'
       +'<div style="font-size:14px;color:'+(bad?'var(--p-red)':'var(--p-mut)')+';margin-top:3px;line-height:1.5;">This device: '+(r.counts?esc(r.counts):(r.onDevice?esc(r.deviceBytes)+' bytes, edited '+esc(r.deviceEdited):'nothing saved'))
       +'<br>Your account: '+(r.acctCounts?esc(r.acctCounts):(r.onAccount?esc(r.accountBytes)+' bytes, edited '+esc(r.accountEdited):'nothing saved'))
-      +(r.onDevice&&r.onAccount?('<br>'+(r.same?'Both match.':(r.explained?('The only difference is the '+esc(r.hiddenForms)+' form'+(r.hiddenForms===1?'':'s')+' you deleted, which your account still keeps a copy of. That is normal.'):'They do not match.'))):'')+'</div></div>';}).join('')
+      +(r.onDevice&&r.onAccount?('<br>'+(r.same?'Both match.':(r.explained?('The only difference is the '+esc(r.hiddenForms)+' form'+(r.hiddenForms===1?'':'s')+' you deleted, which your account still keeps a copy of. That is normal.'):'They do not match.'))):'')
+      +((r.onlyHere&&r.onlyHere.length)?'<br><b style="color:var(--p-red);">Only on this device, not on your account: '+esc(r.onlyHere.join(', '))+'</b> \u2014 it will not appear on your other devices.':'')
+      +((r.onlyAcct&&r.onlyAcct.length)?'<br>On your account but not on this device: '+esc(r.onlyAcct.join(', ')):'')
+      +'</div></div>';}).join('')
     +'</div>'
     +'<button onclick="_copySelfCheck()" class="btnp" style="border-radius:8px;width:100%;"><i class="ti ti-copy"></i> Copy this report</button>'
     +'<button onclick="_leaveSelfCheck()" class="btng" style="border-radius:8px;width:100%;margin-top:8px;">Back to SlickChart</button>'

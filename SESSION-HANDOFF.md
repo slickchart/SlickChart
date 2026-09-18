@@ -1233,6 +1233,43 @@ which is Ashley's call rather than a silent optimisation.
 
 ---
 
+## 2w. A form made on the phone did not reach the computer (2026-09-18)
+
+Ashley made "Spicule Peel Consent" on her phone; it saved, she closed the app, opened the browser on
+her computer and it was not there. The aftercare GUIDE she made at the same moment **was** there.
+
+**Not reproduced on the shipped build.** `xdev.mjs` drives two browser contexts against one shared
+fake account: make a custom form and a custom guide on device A, close it, open device B. Both cross
+over. Re-run with `sc_forms` padded past 24KB so it is offloaded to IndexedDB on the "phone" (the one
+way her device genuinely differs, and the shape of §2u): both still cross over.
+
+The likely explanation is that her phone was on the build from before §2u/§2v, both of which were
+live on it at the time and both of which could do exactly this:
+* §2u — a phone whose `sc_forms` is offloaded read it before IndexedDB answered, so the app was
+  holding the DEFAULT form set when she saved.
+* §2v — `Cloud.push()` began `if(!this.enabled)return`, and before `status()` answered that only
+  meant "not asked yet", so anything saved in the first seconds of a cold open was silently dropped.
+
+**Rather than guess again, the self-check now NAMES the difference.** Its forms row already compared
+counts; counts tell you something is wrong, not what. `formNames()` + `onlyIn()` list the forms she
+built herself that exist on one side and not the other:
+
+> **Only on this device, not on your account: Spicule Peel Consent** — it will not appear on your
+> other devices.
+
+and the reverse for anything on the account but missing locally. Both lines are in the copyable text
+report too. One screenshot now answers "did my save reach my account, or only my phone?", which is the
+question every one of these reports has really been.
+
+Suite: `formsdiag.mjs` (a device-only form is named; nothing is flagged when both sides agree),
+`xdev.mjs` (the two-device round trip, small and offloaded).
+
+**If it happens again:** get the self-check BEFORE re-creating the form. If it says "only on this
+device", the save never left the phone and the push path is the place to look. If the account has it
+and the computer does not, it is the merge or `loadForms()`, not the push.
+
+---
+
 ## 3. Open threads — needs Ashley, or needs verifying
 
 1. ~~**Square `payment.*` webhook subscription.**~~ **CLOSED 2026-09-18 — it is subscribed and has
