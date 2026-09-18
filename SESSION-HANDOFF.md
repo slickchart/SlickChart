@@ -1162,6 +1162,70 @@ currently in the big box and still loading.
 
 ---
 
+## 2v. Why opening the app felt slow, and what it actually was (2026-09-18)
+
+Ashley: *"when i first open the app it takes a minute for everything to load and looks like theres
+nothing there, square isnt connected, etc. … this feels very low-end."* Measured rather than guessed,
+with a 400ms-per-request network. Three separate things, none of them the 2.5MB file:
+
+**1. Boot uploaded forty times and changed nothing.** Every loader that normalises or re-seeds a value
+on load wrote it straight back, one HTTP request each — `sc_shop_catalog` alone went up **seven
+times, byte-identical**. 29 uploads, 54KB, on an app open that edited nothing. A phone runs about six
+connections at once, so **the requests that mattered — the client list, the Square status — queued
+behind that storm.** That is the whole of "it takes a minute" and most of "Square isn't connected".
+
+Fixes, in `Cloud` and `_pushKeyNow`:
+* `Cloud._serverSeen` — what the account holds, seeded from the pull and updated on every confirmed
+  write. A push whose value is identical **sends nothing**. An echo of the pull is not a save.
+* `_pushKeyNow` now **batches**: calls in the same 25ms become one request with many keys, which
+  `/api/store` has always accepted. It still resolves per-caller to `{ok}`, so nothing that awaits it
+  changed. It also now **re-queues on failure** into the retrying queue instead of reporting the
+  failure and forgetting the value.
+* `Cloud._booting` — while booting, writes queue but do not send. `Cloud.bootDone()` (after
+  `nav('home')`) drops everything identical to the account's copy, folds the two queues into one and
+  sends once. A 6-second failsafe and every early-return path also call it, because a queue that only
+  ever holds things back must never be able to strand them.
+* `_syncShopCatalog` was sending the same bytes **twice** — once via `_pushKeyNow`, once via a direct
+  fetch that existed only because `localStorage.setItem` might throw. `_pushKeyNow` is already
+  independent of localStorage, so the second one is gone. `_syncBrandNow` routes through it too.
+* The boot "catch up keys the server never got" block feeds the same queue instead of its own request.
+
+**Result: first-ever boot 41 calls / 29 uploads / 54KB → 18 calls / 4 uploads / 10KB. Reopening an
+already-synced account: 12 calls, 1 upload.**
+
+**2. Nothing was drawn until the network answered.** Home rendered only after `Cloud.status()` AND the
+pull — so a cold open showed a bare navigation bar and nothing else for a second or more, with all the
+data sitting on the device the whole time. `_cloudInit` now calls `nav('home')` **before the first
+network call**, guarded on `Cloud.token && sc_onboarded` (a first-run wizard must not be skipped), and
+the existing `nav('home')` after the pull refreshes it. Safe because hydration (§2u) has already run,
+so what it draws from is real.
+
+**First real content on screen: ~1.1s → ~210ms, and no longer depends on the connection at all.**
+
+**3. It said "Connect Square" to providers who have Square.** For the first second `_sqApptsState` is
+`idle`/`loading` and the empty-state copy read that as "not connected". `_sqSettled()` now gates it:
+until there is something true to say it says *"Checking your schedule…"*. A provider who genuinely has
+no Square still gets the real prompt the moment the answer arrives.
+
+**A data-loss bug fell out of this.** `Cloud.push()` began `if(!this.enabled||!this.token)return;` —
+and before `status()` answers, `enabled:false` only means *we have not asked yet*. **Anything saved in
+the first seconds of a cold open was silently dropped.** (The boot "catch up missing keys" block was
+papering over it.) That window got easier to reach the moment Home started drawing early. `_statusKnown`
+now distinguishes the two, and a save made before the answer is queued rather than discarded.
+`flushBeacon` also drains the immediate-push batch, so a refresh mid-boot cannot lose a held write.
+
+Suites: `bootfeel.mjs` (what is on screen in the first second, the Square copy, and the call counts),
+`ttfc.mjs` (time to first content at three network speeds), `beacon.mjs` (a save made mid-boot survives
+a refresh), `boot2.mjs`/`boot3.mjs`/`boot4.mjs` (the raw request timelines — `boot3` prints whether a
+repeated write's value actually differed, which is how the seven identical uploads were found).
+
+**Not changed, on purpose:** `setInterval(…,15000)` still polls `syncClientEvents()` and
+`_pollFounderSignups()` every 15 seconds, including when the app is in the background. Pausing that
+while hidden would save a phone real battery, but it changes how quickly a new booking or form appears,
+which is Ashley's call rather than a silent optimisation.
+
+---
+
 ## 3. Open threads — needs Ashley, or needs verifying
 
 1. ~~**Square `payment.*` webhook subscription.**~~ **CLOSED 2026-09-18 — it is subscribed and has

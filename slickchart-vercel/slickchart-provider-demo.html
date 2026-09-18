@@ -468,7 +468,7 @@ const S=document.getElementById('S');
 // resets when I save it" and there was no way to tell whether her phone had any of them — a whole
 // day was spent debugging code she may not have been running. Shown at the bottom of Settings, so
 // the answer is a screenshot away. Bump it on every ship.
-const APP_BUILD='2026-09-18m';
+const APP_BUILD='2026-09-18n';
 
 
 /* ════════════════════════════════════════════════════════════════
@@ -2848,6 +2848,9 @@ function _mergeSeenEvents(serverStr,localStr){
 }
 const Cloud={
   enabled:false,
+  // Has status() actually answered yet? `enabled:false` means two very different things before and
+  // after that answer, and push() below used to treat them the same and silently DROP the save.
+  _statusKnown:false,
   token:(function(){try{return localStorage.getItem('sc_token')||'';}catch(e){return '';}})(),
   _origSet:null,_queue:{},_timer:null,
   async status(){
@@ -2865,13 +2868,13 @@ const Cloud={
         if(!r.ok)throw new Error('status-'+r.status);
         const j=await r.json();
         if(!j||typeof j.enabled!=='boolean')throw new Error('status-shape');
-        this.enabled=!!j.enabled;
+        this.enabled=!!j.enabled;this._statusKnown=true;
         return this.enabled;
       }catch(e){
         if(attempt<2)await new Promise(res=>setTimeout(res,400));
       }
     }
-    this.enabled=false;this.statusUnknown=true;
+    this.enabled=false;this.statusUnknown=true;this._statusKnown=true;
     return this.enabled;
   },
   async login(email,pw,totpCode){const r=await fetch('/api/login',{method:'POST',headers:{'Content-Type':'application/json'},body:JSON.stringify({email,password:pw,totpCode})});let j={};try{j=await r.json();}catch(e){}if(!r.ok||!j.token){const err=new Error((j&&j.error)||(j&&j.requiresTotp?'Enter your authenticator code':'Login failed'));err.requiresTotp=!!(j&&j.requiresTotp);throw err;}this.token=j.token;try{localStorage.setItem('sc_token',this.token);if(j.email)localStorage.setItem('sc_login_email',j.email);localStorage.setItem('sc_totp_enabled',j.totpEnabled?'1':'0');}catch(e){}return j;},
@@ -2890,7 +2893,12 @@ const Cloud={
       console.log('[Cloud] cleared '+Object.keys(items).length+' device-local key(s) from the account');
     }catch(e){}
   },
-  async pull(){if(!this.token)return -1;let r;try{r=await fetch('/api/store',{headers:{'Authorization':'Bearer '+this.token}});}catch(e){return -1;}if(r.status===401){this._authFailed=true;this.logout();return -1;}let j={};try{j=await r.json();}catch(e){}const data=(j&&j.data)||{};const _staleDeviceLocalKeys=[];const keys=Object.keys(data);this._lastPulledKeys=new Set(keys);const set=(k,v)=>{_lsPersist(k,v);};
+  async pull(){if(!this.token)return -1;let r;try{r=await fetch('/api/store',{headers:{'Authorization':'Bearer '+this.token}});}catch(e){return -1;}if(r.status===401){this._authFailed=true;this.logout();return -1;}let j={};try{j=await r.json();}catch(e){}const data=(j&&j.data)||{};const _staleDeviceLocalKeys=[];const keys=Object.keys(data);this._lastPulledKeys=new Set(keys);
+    // What the account holds, as of right now. Boot re-persists a lot of what it just read (a
+    // normalised list, a re-seeded default), and each of those used to be its own upload. Knowing
+    // the account's copy means an echo of the pull costs nothing instead of a round trip.
+    try{if(!this._serverSeen)this._serverSeen=Object.create(null);keys.forEach(k=>{this._serverSeen[k]=data[k];});}catch(e){}
+    const set=(k,v)=>{_lsPersist(k,v);};
   // THE LAST LINE BEFORE DATA LOSS. Every merge below bails out with `return null` when it can't
   // make sense of a side — and "I can't tell" then fell through to this plain overwrite, which is
   // "take the server's copy". Those are not the same answer, and the second one destroys work: one
@@ -2983,7 +2991,50 @@ const Cloud={
     setFromServer(k,data[k]);
   }catch(e){}});if(_staleDeviceLocalKeys.length)this._dropStaleDeviceLocal(_staleDeviceLocalKeys);return keys.length;},
   pushAllLocal(){const items={};try{_lsAllKeys().forEach(function(k){if(_syncable(k))items[k]=_lsGet(k);});}catch(e){}if(this.token&&Object.keys(items).length)return fetch('/api/store',{method:'PUT',headers:{'Content-Type':'application/json','Authorization':'Bearer '+this.token},body:JSON.stringify({items})}).catch(()=>{});},
-  push(k,v){if(!this.enabled||!this.token)return;this._queue[k]=v;clearTimeout(this._timer);this._timer=setTimeout(()=>this._flush(),700);},
+  // Opening the app is not an edit. Every loader that normalises or re-seeds a value on load writes
+  // it straight back, and boot alone produced FORTY uploads whose contents were byte-for-byte what
+  // was already on the account. A phone runs about six connections at once, so the calls that
+  // actually matter — the client list, the Square status — queued behind that and the provider sat
+  // looking at an empty screen that said Square wasn't connected.
+  //
+  // So while booting, queue but do not send. Nothing is dropped: the queue is flushed once the pull
+  // has told us what the account actually holds, minus everything that turned out to be identical.
+  // A genuine edit made in those first moments rides the same queue and lands with it, and pagehide's
+  // keepalive beacon still covers a refresh mid-boot.
+  _booting:true,
+  // Nothing may sit in the queue for ever because some path out of boot was missed or threw. Worst
+  // case this fires and the held writes go out as one request, which is still better than forty.
+  _bootFailsafe:(function(){try{return setTimeout(function(){try{Cloud.bootDone();}catch(e){}},6000);}catch(e){return 0;}})(),
+  bootDone(){
+    if(!this._booting)return;
+    this._booting=false;
+    try{clearTimeout(this._bootFailsafe);}catch(e){}
+    try{const q=this._queue,seen=this._serverSeen||{};
+      for(const k in q){ if(Object.prototype.hasOwnProperty.call(seen,k)&&seen[k]===String(q[k]))delete q[k]; }
+    }catch(e){}
+    // The debounced queue and the immediate-push batch both hold boot's leftovers, and they overlap.
+    // Fold one into the other so boot ends with ONE request rather than two near-identical ones.
+    try{
+      if(Object.keys(this._queue).length){
+        if(!this._pushBatch)this._pushBatch={items:Object.create(null),waiters:[],timer:0};
+        for(const k in this._queue){ if(!(k in this._pushBatch.items))this._pushBatch.items[k]=String(this._queue[k]); }
+        this._queue={};clearTimeout(this._timer);
+      }
+    }catch(e){}
+    try{if(typeof _pushFlushNow==='function')_pushFlushNow();}catch(e){}
+  },
+  push(k,v){
+    if(!this.token)return;
+    // Before status() has answered, "not enabled" only means "we have not asked yet". Dropping the
+    // save here lost anything typed in the first seconds of a cold open — a window that got easier
+    // to hit once Home started drawing before the network answered. Queue it instead; if cloud sync
+    // really is off, the queue simply never flushes, and nothing was lost by holding it.
+    if(!this.enabled&&this._statusKnown&&!this.statusUnknown)return;
+    // Identical to what the account already holds — an echo of the pull, not an edit.
+    try{if(this._serverSeen&&Object.prototype.hasOwnProperty.call(this._serverSeen,k)&&this._serverSeen[k]===String(v)&&!(k in this._queue))return;}catch(e){}
+    this._queue[k]=v;
+    if(this._booting)return;               // held until the pull says what is actually needed
+    clearTimeout(this._timer);this._timer=setTimeout(()=>this._flush(),700);},
   // Flush any pending queued writes immediately during page unload. A normal fetch is often
   // killed when the page navigates away, so use a keepalive fetch (which the browser is allowed
   // to complete even as the page closes) against the same authenticated endpoint. This prevents
@@ -2992,6 +3043,15 @@ const Cloud={
     try{
       if(!this.token)return;
       const items=this._queue;
+      // Immediate pushes are now batched, and during boot that batch is deliberately held open. If
+      // the page goes away first those items would be lost, so they ride the beacon too.
+      try{
+        if(this._pushBatch){
+          const b=this._pushBatch;this._pushBatch=null;clearTimeout(b.timer);
+          for(const k in b.items){ if(!(k in items))items[k]=b.items[k]; }
+          (b.waiters||[]).forEach(function(w){try{w({ok:false,reason:'unloading'});}catch(e){}});
+        }
+      }catch(e){}
       if(!items||!Object.keys(items).length)return;
       this._queue={};clearTimeout(this._timer);
       fetch('/api/store',{method:'PUT',keepalive:true,headers:{'Content-Type':'application/json','Authorization':'Bearer '+this.token},body:JSON.stringify({items})}).catch(()=>{});
@@ -3012,6 +3072,8 @@ const Cloud={
     if(!Object.keys(items).length)return;
     fetch('/api/store',{method:'PUT',headers:{'Content-Type':'application/json','Authorization':'Bearer '+this.token},body:JSON.stringify({items})})
       .then(r=>{
+        // Confirmed on the account, so an identical push later is a no-op rather than a round trip.
+        if(r&&r.ok){try{if(!this._serverSeen)this._serverSeen=Object.create(null);for(const k in items)this._serverSeen[k]=items[k];}catch(e){}}
         // A 401 here means this device's session was revoked (e.g. the provider used
         // "sign out all other devices" elsewhere). Don't mislabel it as a connection
         // problem and keep retrying against a dead token, sign this device out cleanly.
@@ -3711,6 +3773,17 @@ async function _cloudInit(){
   // signed-in providers (further down), so a client tapping their link just landed back on the front
   // door — an endless loop with no way into their profile. Safe/no-op on web and when not native.
   try{_initDeepLinks();}catch(e){}
+  // DRAW SOMETHING NOW, before the first network call.
+  //
+  // The first screen used to wait for the status check AND the pull, so opening the app on mobile
+  // data meant a second or more of bare navigation bar and nothing else. That reads as "it's broken",
+  // not "it's loading" — and the data was on the device the whole time.
+  //
+  // A token plus a finished setup wizard is enough to know this is a signed-in provider and that Home
+  // is the right screen. Everything it needs is already in memory (hydration ran above). The pull
+  // refreshes it a moment later via the nav('home') at the end of boot, and if the session turns out
+  // to be expired the pull sends her to sign-in exactly as before.
+  try{ if(Cloud.token&&localStorage.getItem('sc_onboarded'))nav('home'); }catch(e){}
   await Cloud.status();
   if(!Cloud.enabled){
     // Local-only mode has NO sign-in anywhere, so landing here by mistake leaves a real provider
@@ -3718,6 +3791,7 @@ async function _cloudInit(){
     // checklist) and there is no way to sign in OR out. Only take that path when we actually heard
     // back that cloud sync is off AND this browser shows no sign of a real account.
     if(Cloud.statusUnknown||_hasCloudAccountSigns()){
+      try{Cloud.bootDone();}catch(e){}
       renderEntry();
       setTimeout(function(){try{if(typeof proToast==='function')proToast('Couldn’t reach the server just now — sign in to sync, or check your connection and reload.',0);}catch(e){}},400);
       return;
@@ -3728,7 +3802,7 @@ async function _cloudInit(){
     if(!localStorage.getItem('sc_onboarded'))localStorage.setItem('sc_onboarded','1');
     nav('home');return;
   }
-  if(!Cloud.token){renderEntry();return;}      // database is on but no session — unified front door
+  if(!Cloud.token){try{Cloud.bootDone();}catch(e){}renderEntry();return;}      // database is on but no session — unified front door
   try{_initNativeProvider();}catch(e){}         // native App Store / Play build: status bar + push registration
   try{
     const n=await Cloud.pull();
@@ -3740,6 +3814,7 @@ async function _cloudInit(){
     // session. Send them straight to sign-in and say plainly what happened.
     if(Cloud._authFailed){
       Cloud._authFailed=false;
+      try{Cloud.bootDone();}catch(e){}
       try{localStorage.setItem('sc_session_expired','1');}catch(e){}
       renderEntry();
       setTimeout(function(){try{if(typeof proToast==='function')proToast('Your session expired — please sign in again. Nothing was lost, your clients and notes are safe on the server.',0);}catch(e){}},400);
@@ -3773,9 +3848,9 @@ async function _cloudInit(){
         _lsAllKeys().forEach(function(k){
           if(_syncable(k)&&!pulled.has(k))missing[k]=_lsGet(k);
         });
-        if(Object.keys(missing).length&&Cloud.token){
-          await fetch('/api/store',{method:'PUT',headers:{'Content-Type':'application/json','Authorization':'Bearer '+Cloud.token},body:JSON.stringify({items:missing})}).catch(()=>{});
-        }
+        // Into the same queue the rest of boot uses, rather than a request of its own: boot is about
+        // to flush once, and these keys are usually already sitting in it.
+        Object.keys(missing).forEach(function(k){try{Cloud.push(k,missing[k]);}catch(e){}});
       }catch(e){}
     }
     _reloadAll();
@@ -3789,6 +3864,9 @@ async function _cloudInit(){
   try{if(typeof _syncBrandNow==='function'&&typeof brandColors!=='undefined'&&brandColors&&brandColors.logoDataUrl)_syncBrandNow();}catch(e){}
   nav('home');
   try{_handlePushParams();}catch(e){}   // a web-push tap lands on /slickchart?n=..&c=..&i=.. — route to that item
+  // Boot is over. Everything the loaders wrote back has been compared against what the pull said the
+  // account already holds; whatever genuinely differs goes up now, in one request instead of forty.
+  try{Cloud.bootDone();}catch(e){}
   try{syncClientEvents();}catch(e){}
 }
 // ── Internationalization (i18n) ──────────────────────────────────────────────
@@ -5631,10 +5709,12 @@ function _buildShopCatalog(){
 function _syncShopCatalog(){
   try{
     const cat=_buildShopCatalog();
-    try{const _v=JSON.stringify(cat);localStorage.setItem('sc_shop_catalog',_v);if(typeof _pushKeyNow==='function')_pushKeyNow('sc_shop_catalog',_v);}catch(e){}
-    if(typeof Cloud!=='undefined'&&Cloud&&Cloud.token){
-      fetch('/api/store',{method:'PUT',headers:{'Content-Type':'application/json','Authorization':'Bearer '+Cloud.token},body:JSON.stringify({items:{sc_shop_catalog:JSON.stringify(cat)}})}).catch(()=>{});
-    }
+    const _v=JSON.stringify(cat);
+    try{localStorage.setItem('sc_shop_catalog',_v);}catch(e){}
+    // _pushKeyNow reaches the account whether or not the line above threw, so the extra direct fetch
+    // that used to sit here was sending the very same bytes a second time. Boot calls this more than
+    // once, which is how one value became seven uploads.
+    try{if(typeof _pushKeyNow==='function')_pushKeyNow('sc_shop_catalog',_v);}catch(e){}
   }catch(e){}
 }
 function loadAffiliateLinks(){try{const raw=localStorage.getItem('sc_affiliate_links');if(raw){const arr=JSON.parse(raw);if(Array.isArray(arr))affiliateLinks=arr;}}catch(e){}}
@@ -6345,6 +6425,8 @@ function renderHome(){
     if(_gsState().realCount===0){
       return '<div class="card"><div style="padding:18px 16px;text-align:center;color:var(--p-mut);font-size:16px;">Add your first client to start booking and charting.<div style="font-size:16px;margin-top:7px;"><a href="#" onclick="nav(\'new-client\');return false;" style="color:var(--accent-strong);font-weight:600;">Add your first client \u2192</a></div><div style="font-size:14px;color:var(--p-mut);margin-top:6px;">Use Square? <a href="#" onclick="nav(\'data-setup\');return false;" style="color:var(--accent-strong);">Connect &amp; import \u2192</a></div></div></div>';
     }
+    if(typeof _sqSettled==='function'&&!_sqSettled())
+      return '<div class="card"><div style="padding:18px 16px;text-align:center;color:var(--p-mut);font-size:16px;">Checking your schedule\u2026</div></div>';
     return '<div class="card"><div style="padding:18px 16px;text-align:center;color:var(--p-mut);font-size:16px;">Connect Square, or add appointments yourself, to see what\u2019s coming up.<div style="font-size:16px;color:var(--p-mut);margin-top:4px;"><a href="#" onclick="nav(\'data-setup\');return false;" style="color:var(--accent-strong);">Get set up \u2192</a></div></div></div>';
   })()}
   ${!_homeDismissed.has('preview-client')?_swipeTile(`
@@ -17279,7 +17361,81 @@ function _findGuide(id){return resources.find(g=>g.id===id)||Object.values(guide
 // Resolves {ok:true} only when the server actually accepted the write. This used to swallow every
 // failure into a resolved promise, so a caller could `await` it, get nothing back, and tell the
 // provider “saved ✓” when the request had 401'd or 500'd. Callers that don't care can still ignore it.
-function _pushKeyNow(k,v){try{if(typeof Cloud==='undefined'||!Cloud||!Cloud.token)return Promise.resolve({ok:false,reason:'nocloud'});return fetch('/api/store',{method:'PUT',headers:{'Content-Type':'application/json','Authorization':'Bearer '+Cloud.token},body:JSON.stringify({key:k,value:String(v)})}).then(function(r){return {ok:!!(r&&r.ok),status:(r&&r.status)||0};},function(){return {ok:false,reason:'network'};});}catch(e){return Promise.resolve({ok:false,reason:'error'});}}
+// Save one key to the account straight away, without waiting for the ordinary 700ms debounce.
+//
+// It used to be literally one fetch per call, and boot alone made TWENTY-NINE of them: every loader
+// that normalises or re-seeds a value on load pushed that value straight back up, one request each,
+// 54KB in total, on an app open that had changed nothing. A phone allows about six connections at a
+// time, so the requests that actually matter — the client list, the Square status — queued behind
+// that storm. That is why a provider opened the app to an empty screen saying Square was not
+// connected for the best part of a minute.
+//
+// Two changes, neither of which weakens the promise this function makes (the value IS on the account
+// by the time the returned promise resolves ok):
+//
+//   1. A push whose value is byte-for-byte what the account already holds sends NOTHING. That is not
+//      a save, it is an echo of the pull that just happened.
+//   2. Calls made in the same moment are coalesced into one request with many keys, which the
+//      endpoint has always accepted. Twenty-one requests become one.
+//
+// Everything still resolves to {ok}, callers that await it are unchanged, and a failure still reports
+// a failure — a save that silently did nothing would be far worse than a slow one.
+// State hangs off Cloud rather than module-level bindings: _pushKeyNow is called from functions
+// declared far earlier in this file, and a `let` here would be in its temporal dead zone for them.
+const _PUSH_COALESCE_MS=25;
+function _pushState(){
+  if(!Cloud._serverSeen)Cloud._serverSeen=Object.create(null);   // what this device knows the account holds
+  return Cloud;
+}
+function _pushFlushNow(){
+  const batch=Cloud._pushBatch; Cloud._pushBatch=null;
+  if(!batch)return;
+  clearTimeout(batch.timer);
+  const items=batch.items, waiters=batch.waiters;
+  const settle=function(r){ waiters.forEach(function(w){try{w(r);}catch(e){}}); };
+  let tok='';try{tok=(typeof Cloud!=='undefined'&&Cloud&&Cloud.token)||'';}catch(e){}
+  if(!tok){settle({ok:false,reason:'nocloud'});return;}
+  // The pull may have arrived since these were queued and proved some of them identical.
+  try{const seen=_pushState()._serverSeen||{};
+    for(const k in items){ if(Object.prototype.hasOwnProperty.call(seen,k)&&seen[k]===items[k])delete items[k]; }
+  }catch(e){}
+  if(!Object.keys(items).length){settle({ok:true,reason:'unchanged'});return;}
+  // A failed immediate push used to be reported and then forgotten, leaving the value on the device
+  // only. Hand it to the ordinary queue, which retries with backoff and is drained by the unload
+  // beacon. The caller is still told it did not land.
+  const requeue=function(){try{
+    for(const k in items){ if(!(k in Cloud._queue))Cloud._queue[k]=items[k]; }
+    if(!Cloud._booting){clearTimeout(Cloud._timer);Cloud._timer=setTimeout(function(){Cloud._flush(1);},1500);}
+  }catch(e){}};
+  fetch('/api/store',{method:'PUT',headers:{'Content-Type':'application/json','Authorization':'Bearer '+tok},
+    body:JSON.stringify({items:items})})
+    .then(function(r){
+      const ok=!!(r&&r.ok);
+      // Only remember what the account holds once the account has confirmed it. Recording it
+      // optimistically would let a failed push suppress the retry that follows.
+      if(ok){try{_pushState();Object.keys(items).forEach(function(k){Cloud._serverSeen[k]=items[k];});}catch(e){}}
+      else requeue();
+      settle({ok:ok,status:(r&&r.status)||0});
+    },function(){ requeue(); settle({ok:false,reason:'network'}); });
+}
+function _pushKeyNow(k,v){
+  try{
+    if(typeof Cloud==='undefined'||!Cloud||!Cloud.token)return Promise.resolve({ok:false,reason:'nocloud'});
+    _pushState();
+    const val=String(v);
+    // Already on the account, unchanged. Nothing to send.
+    if(Object.prototype.hasOwnProperty.call(Cloud._serverSeen,k)&&Cloud._serverSeen[k]===val)
+      return Promise.resolve({ok:true,reason:'unchanged'});
+    if(!Cloud._pushBatch){
+      // While booting the batch is held open rather than timed, and Cloud.bootDone() sends it.
+      Cloud._pushBatch={items:Object.create(null),waiters:[],
+        timer:Cloud._booting?0:setTimeout(_pushFlushNow,_PUSH_COALESCE_MS)};
+    }
+    Cloud._pushBatch.items[k]=val;
+    return new Promise(function(res){Cloud._pushBatch.waiters.push(res);});
+  }catch(e){return Promise.resolve({ok:false,reason:'error'});}
+}
+
 function persistCustomResources(){const v=JSON.stringify(customResources);try{localStorage.setItem('sc_resources',v);}catch(e){}_pushKeyNow('sc_resources',v);}
 function loadCustomResources(){try{const raw=localStorage.getItem('sc_resources');if(raw){const a=JSON.parse(raw);if(Array.isArray(a))customResources=a;}}catch(e){}}
 // Courses now live as the third tab inside the unified Forms · Guides · Courses screen.
@@ -20281,9 +20437,10 @@ function _updateBrandPreview(){
 function _syncBrandNow(cb){
   try{
     if(typeof Cloud==='undefined'||!Cloud||!Cloud.token){if(cb)cb(false);return;}
-    fetch('/api/store',{method:'PUT',headers:{'Content-Type':'application/json','Authorization':'Bearer '+Cloud.token},body:JSON.stringify({items:{sc_brand_colors:JSON.stringify(_stampNow(brandColors))}})})
-      .then(function(r){if(cb)cb(!!(r&&r.ok));})
-      .catch(function(){if(cb)cb(false);});
+    // _pushKeyNow is equally independent of localStorage and also batches and de-duplicates, so a
+    // boot that re-sends an unchanged logo costs nothing. It still reports whether it landed.
+    _pushKeyNow('sc_brand_colors',JSON.stringify(_stampNow(brandColors)))
+      .then(function(r){if(cb)cb(!!(r&&r.ok));},function(){if(cb)cb(false);});
   }catch(e){if(cb)cb(false);}
 }
 function _uploadLogo(){
@@ -24814,6 +24971,11 @@ async function _syncSquareClientsNow(){
   }
 }
 function _apptsLive(){return _sqApptsState==='ok'&&Array.isArray(squareAppts);}
+// Do we KNOW yet whether her schedule is connected? For the first second or so of every app open we
+// do not — the request is still in flight. Telling a provider who uses Square to "connect Square" in
+// that window is simply wrong, and it is the thing that makes a perfectly healthy app look broken on
+// launch. Say nothing until there is something true to say.
+function _sqSettled(){try{return _sqApptsState!=='idle'&&_sqApptsState!=='loading';}catch(e){return true;}}
 // Why the last Square appointment load failed, and when. Drives the banner below; '' means no failure.
 var _sqApptsErr='',_sqApptsErrAt=0;
 // The banner shown wherever appointments are listed when Square could not be reached. It matters
@@ -24878,7 +25040,9 @@ function renderWeekAppts(){
   document.getElementById('tt').textContent="This week's appointments";
   _loadSquareAppts();
   const live=_isRealApptAcct();   // real accounts group/format by the appointment's Date (.at); demo uses .day
-  const _weekEmptyHint=live?'<div style="font-size:16px;color:var(--p-mut);margin-top:4px;line-height:1.5;">Book one from the calendar, or connect Square to sync your schedule.</div>':'<div style="font-size:16px;color:var(--p-mut);margin-top:4px;line-height:1.5;">Connect Square to sync your real schedule, or add appointments yourself.</div>';
+  const _weekEmptyHint=(typeof _sqSettled==='function'&&!_sqSettled())
+    ?'<div style="font-size:16px;color:var(--p-mut);margin-top:4px;line-height:1.5;">Checking your schedule\u2026</div>'
+    :(live?'<div style="font-size:16px;color:var(--p-mut);margin-top:4px;line-height:1.5;">Book one from the calendar, or connect Square to sync your schedule.</div>':'<div style="font-size:16px;color:var(--p-mut);margin-top:4px;line-height:1.5;">Connect Square to sync your real schedule, or add appointments yourself.</div>');
   const week=_apptsThisWeek();
   // Group/label by the real timestamp whenever every appt carries one (live Square, synced sample,
   // manual & confirmed bookings all do) — only the pure legacy demo rows fall back to .day/.time.
