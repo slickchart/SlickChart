@@ -70,6 +70,37 @@ async function lookupCustomerEmail(customerId) {
   } catch (e) { return ''; }
 }
 
+// Does this email still have a LIVE subscription in Stripe, other than the one this event is about?
+//
+// `subscriptions` is one row per email, but Stripe allows several customers with the same address —
+// which is what happens when someone accidentally signs up twice. Both customers then write to the
+// same row, so cancelling the duplicate stamped status='canceled' over the row that was tracking the
+// subscription still being paid for, and the provider was locked out of an account they own.
+//
+// Stripe is the source of truth, so ask it. Returns the surviving subscription, or null.
+async function liveSubForEmail(email, excludeSubId) {
+  const key = process.env.STRIPE_SECRET_KEY || '';
+  if (!key || !email) return null;
+  const get = async (url) => {
+    try {
+      const r = await fetch(url, { headers: { Authorization: 'Bearer ' + key } });
+      if (!r.ok) return null;
+      return await r.json();
+    } catch (e) { return null; }
+  };
+  const customers = await get('https://api.stripe.com/v1/customers?limit=100&email=' + encodeURIComponent(email));
+  for (const c of ((customers && customers.data) || [])) {
+    if (!c || !c.id) continue;
+    // `status=all` then filter, so a trialing subscription counts too.
+    const subs = await get('https://api.stripe.com/v1/subscriptions?limit=100&status=all&customer=' + encodeURIComponent(c.id));
+    for (const sub of ((subs && subs.data) || [])) {
+      if (!sub || !sub.id || sub.id === excludeSubId) continue;
+      if (sub.status === 'active' || sub.status === 'trialing') return sub;
+    }
+  }
+  return null;
+}
+
 // Claim the right to announce this provider, exactly once, ever. A monthly renewal arrives as the very
 // same `customer.subscription.updated` with status=active as the first payment, so the claim — not the
 // event — is what makes the ping mean "new". Stamping subscriptions.paid_notified_at in a single
@@ -221,9 +252,36 @@ export default async function handler(req, res) {
         ? sub.items.data[0].price.unit_amount : null;
       const existing = await q`SELECT email FROM subscriptions WHERE stripe_customer_id=${customerId}`;
       let subEmail = (existing[0] && existing[0].email) || '';
+
+      // Before recording a cancellation, make sure this email has nothing else live. A duplicate
+      // signup means two Stripe customers share one address and therefore one row here; without this
+      // check, cancelling the accidental second subscription marks the whole email inactive and the
+      // provider is locked out of the plan they are still paying for.
+      let effStatus = status, effSub = sub, effCustomer = customerId;
+      if (status !== 'active') {
+        const lookupEmail = subEmail || await lookupCustomerEmail(customerId);
+        if (lookupEmail) {
+          const alive = await liveSubForEmail(lookupEmail, sub.id);
+          if (alive) {
+            console.log('[stripe-webhook] ' + lookupEmail + ' still has live subscription ' + alive.id
+              + ' — not marking inactive on ' + sub.id);
+            effStatus = 'active';
+            effSub = alive;
+            effCustomer = alive.customer || customerId;
+            subEmail = lookupEmail;
+          }
+        }
+      }
+      const effPeriodEnd = effSub.current_period_end ? new Date(effSub.current_period_end * 1000).toISOString() : null;
+      const effPlanAmount = effSub.items && effSub.items.data && effSub.items.data[0] && effSub.items.data[0].price
+        ? effSub.items.data[0].price.unit_amount : null;
+
       if (existing[0]) {
-        await q`UPDATE subscriptions SET status=${status}, stripe_subscription_id=${sub.id},
-          current_period_end=${periodEnd}, plan_amount=${planAmount}, updated_at=now()
+        // Point the row at whichever subscription is actually live, so a later event for the
+        // cancelled one can be recognised as being about a different subscription.
+        await q`UPDATE subscriptions SET status=${effStatus}, stripe_subscription_id=${effSub.id},
+          stripe_customer_id=${effCustomer}, current_period_end=${effPeriodEnd}, plan_amount=${effPlanAmount},
+          cancel_at_period_end=${!!effSub.cancel_at_period_end}, updated_at=now()
           WHERE stripe_customer_id=${customerId}`;
       } else {
         subEmail = await lookupCustomerEmail(customerId);
@@ -231,9 +289,9 @@ export default async function handler(req, res) {
           // A cancellation that takes effect at the end of the period arrives as an ordinary
           // subscription.updated with status still 'active'. Record the flag or the app cannot tell
           // a live plan from one that is already on its way out.
-          const cancelAtEnd = !!(sub && sub.cancel_at_period_end);
+          const cancelAtEnd = !!(effSub && effSub.cancel_at_period_end);
           await q`INSERT INTO subscriptions (email, stripe_customer_id, stripe_subscription_id, status, current_period_end, plan_amount, cancel_at_period_end, updated_at)
-            VALUES (${subEmail}, ${customerId}, ${sub.id}, ${status}, ${periodEnd}, ${planAmount}, ${cancelAtEnd}, now())
+            VALUES (${subEmail}, ${effCustomer}, ${effSub.id}, ${effStatus}, ${effPeriodEnd}, ${effPlanAmount}, ${cancelAtEnd}, now())
             ON CONFLICT (email) DO UPDATE SET status=EXCLUDED.status, stripe_subscription_id=EXCLUDED.stripe_subscription_id,
               current_period_end=EXCLUDED.current_period_end, plan_amount=EXCLUDED.plan_amount,
               cancel_at_period_end=EXCLUDED.cancel_at_period_end, updated_at=now()`;
@@ -241,7 +299,7 @@ export default async function handler(req, res) {
       }
       // If THIS event is the one that made the provider active, ping the founder — deduped once-per-
       // provider, so it fires exactly once whether the checkout event or this one lands first.
-      if (status === 'active' && subEmail) await notifyFounderPaid(q, subEmail);
+      if (effStatus === 'active' && subEmail) await notifyFounderPaid(q, subEmail);
     }
     res.status(200).json({ received: true });
   } catch (e) {
