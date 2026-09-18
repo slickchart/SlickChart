@@ -4,22 +4,20 @@
 //
 // Mirrors api/consult-page.js in shape and styling deliberately — same slug system, same brand
 // lookup, same no-login shell — so the two public pages look like one product.
-import { dbEnabled, getKVValue } from '../lib/db.js';
+import { dbEnabled } from '../lib/db.js';
 import { getProviderBySlug } from '../lib/consult.js';
+import { readBrand, brandVars, brandRowHtml, BRAND_CSS, esc } from '../lib/public-brand.js';
 import { getBookingConfig, getServices, getHours, openDayKeys, toMins, DAY_KEYS, serviceMins, serviceDeposit } from '../lib/booking.js';
 
-function esc(s) { return String(s == null ? '' : s).replace(/[&<>"']/g, c => ({ '&': '&amp;', '<': '&lt;', '>': '&gt;', '"': '&quot;', "'": '&#39;' }[c])); }
 // JSON.stringify escapes quotes but NOT `<`, so a business name containing `</script>` would break
 // out of the inline script. Escape the terminator so provider-controlled text can never inject.
 function jsStr(s) { return JSON.stringify(String(s == null ? '' : s)).replace(/</g, '\\u003c').replace(/>/g, '\\u003e'); }
-function hex(c, fb) { c = String(c == null ? '' : c).trim(); if (/^#?[0-9a-fA-F]{6}$/.test(c)) return c[0] === '#' ? c : ('#' + c); if (/^#?[0-9a-fA-F]{3}$/.test(c)) { const x = c.replace('#', ''); return '#' + x[0] + x[0] + x[1] + x[1] + x[2] + x[2]; } return fb; }
-function normUrl(u) { u = String(u || '').trim(); if (!u) return ''; return /^https?:\/\//i.test(u) ? u : ('https://' + u); }
-function initialsOf(n) { const p = String(n || '').trim().split(/\s+/).filter(Boolean); return ((p[0] || '?')[0] + (p[1] ? p[1][0] : '')).toUpperCase(); }
 function pretty(t) { const m = toMins(t); if (m == null) return ''; const h = Math.floor(m / 60), mi = m % 60; const ap = h < 12 ? 'am' : 'pm'; let hh = h % 12; if (hh === 0) hh = 12; return hh + (mi ? ':' + String(mi).padStart(2, '0') : '') + ap; }
 
 function shell(inner, o) {
   o = o || {};
   const accent = o.accent || '#2BC7AC';
+  const vars = o.vars || ('--accent:' + accent + ';--accent2:' + accent + ';--accent-ink:#ffffff;');
   const title = esc(o.title || 'Book an appointment');
   const ogDesc = esc(o.ogDesc || 'Book an appointment.');
   return `<!DOCTYPE html><html lang="en"><head><meta charset="UTF-8">
@@ -35,36 +33,31 @@ function shell(inner, o) {
 <meta name="twitter:description" content="${ogDesc}">
 <style>
 *{box-sizing:border-box;margin:0;padding:0;}
-:root{--accent:${esc(accent)};}
+:root{${vars}}
 body{font-family:-apple-system,BlinkMacSystemFont,'Segoe UI',sans-serif;background:#f5f0eb;color:#1a1a1a;display:flex;justify-content:center;min-height:100vh;}
 .wrap{width:100%;max-width:460px;padding:28px 22px 56px;}
-.brandrow{display:flex;align-items:center;gap:11px;margin-bottom:22px;}
-.avatar{width:46px;height:46px;border-radius:13px;background:var(--accent);color:#fff;display:flex;align-items:center;justify-content:center;font-size:19px;font-weight:700;flex-shrink:0;}
-.biz{font-size:17px;font-weight:700;line-height:1.2;}
-.web{font-size:12px;color:#8a7a6c;margin-top:2px;}
-.web a{color:var(--accent);text-decoration:none;}
 h1{font-size:23px;font-weight:700;line-height:1.25;margin-bottom:8px;}
 .sub{font-size:14px;color:#6b5d52;line-height:1.6;margin-bottom:22px;}
 label{display:block;font-size:12px;font-weight:600;color:#5a4a3a;margin:0 0 6px;}
 .f{width:100%;background:#fff;border:1.5px solid #e8ddd3;border-radius:12px;padding:13px 14px;font-size:16px;color:#1a1a1a;font-family:inherit;margin-bottom:16px;outline:none;}
 .f:focus{border-color:var(--accent);}
 textarea.f{height:90px;resize:none;line-height:1.5;}
-.btn{width:100%;background:var(--accent);color:#fff;border:none;border-radius:12px;padding:15px;font-size:16px;font-weight:700;cursor:pointer;font-family:inherit;}
+.btn{width:100%;background:linear-gradient(135deg,var(--accent),var(--accent2));color:var(--accent-ink);border:none;border-radius:12px;padding:15px;font-size:16px;font-weight:700;cursor:pointer;font-family:inherit;}
 .btn:disabled{opacity:.55;cursor:default;}
 .err{background:#fdecec;border:1px solid #f3c6c6;color:#a33;border-radius:10px;padding:10px 13px;font-size:13px;margin-bottom:16px;display:none;}
 .hours{background:#fff;border:1.5px solid #e8ddd3;border-radius:12px;padding:12px 14px;margin-bottom:20px;font-size:13px;color:#6b5d52;line-height:1.7;}
 .hours b{color:#1a1a1a;font-weight:600;}
 .slots{display:flex;flex-wrap:wrap;gap:8px;margin-bottom:16px;min-height:20px;}
 .slot{border:1.5px solid #e8ddd3;background:#fff;border-radius:999px;padding:9px 15px;font-size:15px;cursor:pointer;font-family:inherit;color:#1a1a1a;}
-.slot[aria-pressed="true"]{background:var(--accent);border-color:var(--accent);color:#fff;font-weight:700;}
+.slot[aria-pressed="true"]{background:var(--accent);border-color:var(--accent);color:var(--accent-ink);font-weight:700;}
 .muted{font-size:13px;color:#8a7a6c;line-height:1.6;margin-bottom:16px;}
 .foot{margin-top:26px;text-align:center;font-size:11px;color:#6b5d52;line-height:1.6;}
 .done{text-align:center;padding:40px 10px;}
-.done .ic{width:64px;height:64px;border-radius:18px;background:var(--accent);color:#fff;display:flex;align-items:center;justify-content:center;font-size:32px;margin:0 auto 18px;}
+.done .ic{width:64px;height:64px;border-radius:18px;background:linear-gradient(135deg,var(--accent),var(--accent2));color:var(--accent-ink);display:flex;align-items:center;justify-content:center;font-size:32px;margin:0 auto 18px;}
 .done h2{font-size:21px;font-weight:700;margin-bottom:8px;}
 .done p{font-size:14px;color:#6b5d52;line-height:1.6;}
 @media (prefers-color-scheme:dark){body{background:#141210;color:#f0ebe4;}.f,.hours,.slot{background:#1e1b18;border-color:#332e28;color:#f0ebe4;}.sub,.done p,.foot,.hours,.muted{color:#b3a596;}.hours b{color:#f0ebe4;}.err{background:#2a1414;border-color:#5a2a2a;color:#e8a0a0;}}
-</style></head><body><div class="wrap">${inner}</div></body></html>`;
+${BRAND_CSS}</style></head><body><div class="wrap">${inner}</div></body></html>`;
 }
 
 function notActive() {
@@ -77,12 +70,11 @@ export default async function handler(req, res) {
   const slug = String((req.query && req.query.slug) || '').toLowerCase();
   if (!dbEnabled() || !slug) { res.status(404).send(notActive()); return; }
 
-  let prov = null, biz = {}, brand = {};
+  let prov = null;
   try {
     prov = await getProviderBySlug(slug);
     if (!prov) { res.status(404).send(notActive()); return; }
-    try { const raw = await getKVValue(prov.id, 'sc_bizinfo'); if (raw) biz = JSON.parse(raw) || {}; } catch (e) { biz = {}; }
-    try { const raw = await getKVValue(prov.id, 'sc_brand_colors'); if (raw) brand = JSON.parse(raw) || {}; } catch (e) { brand = {}; }
+    const brand = await readBrand(prov.id, prov.name);
 
     const cfg = await getBookingConfig(prov.id);
     if (!cfg.on) { res.status(404).send(notActive()); return; }
@@ -91,23 +83,19 @@ export default async function handler(req, res) {
     const services = await getServices(prov.id, cfg);
     const openDays = openDayKeys(hours);
 
-    const accent = hex(brand.primary, '#2BC7AC');
-    const bizName = String(biz.name || prov.name || 'Book an appointment').trim();
-    const site = normUrl(biz.website);
+    const accent = brand.accent;
+    const bizName = brand.name || 'Book an appointment';
     const DAY_LABEL = { sun: 'Sunday', mon: 'Monday', tue: 'Tuesday', wed: 'Wednesday', thu: 'Thursday', fri: 'Friday', sat: 'Saturday' };
     const hoursHtml = DAY_KEYS.filter(d => hours[d] && hours[d].open)
       .map(d => `<div><b>${DAY_LABEL[d]}</b> · ${esc(pretty(hours[d].start))} – ${esc(pretty(hours[d].end))}</div>`).join('') || '<div>Hours on request</div>';
 
     const inner = `
-  <div class="brandrow">
-    <div class="avatar">${esc(initialsOf(bizName))}</div>
-    <div><div class="biz">${esc(bizName)}</div>${site ? `<div class="web"><a href="${esc(site)}" target="_blank" rel="noopener">${esc(site.replace(/^https?:\/\//, ''))}</a></div>` : ''}</div>
-  </div>
+  ${brandRowHtml(Object.assign({}, brand, { name: bizName }))}
   <div id="form">
     <h1>Book an appointment</h1>
     <p class="sub">${cfg.mode === 'instant'
       ? 'Pick a time that works and it’s yours — you’ll get a confirmation by email.'
-      : 'Tell them when suits you. They’ll confirm, or suggest another time if that one’s taken.'}${cfg.note ? ' ' + esc(cfg.note) : ''}</p>
+      : 'Pick a day and time that suits you. ' + esc(bizName) + ' will confirm, or suggest another time if that one’s taken.'}${cfg.note ? ' ' + esc(cfg.note) : ''}</p>
     <div class="err" id="err"></div>
     <label for="f-name">Your name</label><input class="f" id="f-name" autocomplete="name">
     <label for="f-email">Email</label><input class="f" id="f-email" type="email" autocomplete="email" inputmode="email">
@@ -125,15 +113,15 @@ export default async function handler(req, res) {
       <div class="slots" id="slots"></div>
       <input class="f" id="f-time" type="time" style="display:none;">
     </div>
-    <div class="hours"><div style="margin-bottom:5px;"><b>Their hours</b></div>${hoursHtml}</div>
+    <div class="hours"><div style="margin-bottom:5px;"><b>Hours</b></div>${hoursHtml}</div>
     <label for="f-note">Anything they should know (optional)</label>
     <textarea class="f" id="f-note" placeholder="First time, something you're working on, a question…"></textarea>
     <button class="btn" id="go" type="button">Request this time</button>
   </div>
-  <div class="foot">Powered by SlickChart</div>`;
+  <div class="foot">Powered by SlickChart · Your details are shared only with ${esc(bizName)}.</div>`;
 
     const boot = `<script>
-var SLUG=${jsStr(slug)}, MODE=${jsStr(cfg.mode)}, OPEN=${JSON.stringify(openDays)},
+var SLUG=${jsStr(slug)}, MODE=${jsStr(cfg.mode)}, BIZ=${jsStr(bizName)}, OPEN=${JSON.stringify(openDays)},
     HORIZON=${cfg.horizonDays}, ACCENT=${jsStr(accent)}, DONEIC='\\u2713';
 // name → {mins, deposit}, so the page can say what each one costs in time and money up front.
 var SVC=${JSON.stringify(services.reduce((m, sv) => { m[sv.name] = { mins: serviceMins(sv, cfg), dep: serviceDeposit(sv, cfg) }; return m; }, {}))};
@@ -221,7 +209,7 @@ $('go').addEventListener('click',function(){
         +(x.j.confirmed?'You\\u2019re booked':'Request sent')+'</h2><p>'
         +(x.j.confirmed
           ? 'Your appointment is set for <b>'+eh(x.j.when)+'</b>. Check your email for the details.'
-          : 'They\\u2019ll confirm <b>'+eh(x.j.when)+'</b>, or suggest another time if that one\\u2019s taken. Watch your email.')
+          : eh(BIZ)+' will confirm <b>'+eh(x.j.when)+'</b>, or suggest another time if that one\\u2019s taken. Watch your email.')
         +'</p>'+dep+'</div>';
       window.scrollTo(0,0);
     })
@@ -233,7 +221,7 @@ onSvc();
 </script>`;
 
     res.status(200).send(shell(inner + boot, {
-      accent, title: 'Book with ' + bizName,
+      accent, vars: brandVars(brand), title: 'Book with ' + bizName,
       ogDesc: (cfg.mode === 'instant' ? 'Pick a time and book instantly.' : 'Request an appointment.') + ' ' + bizName
     }));
   } catch (e) {

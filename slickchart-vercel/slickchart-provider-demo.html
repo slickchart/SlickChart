@@ -468,7 +468,7 @@ const S=document.getElementById('S');
 // resets when I save it" and there was no way to tell whether her phone had any of them — a whole
 // day was spent debugging code she may not have been running. Shown at the bottom of Settings, so
 // the answer is a screenshot away. Bump it on every ship.
-const APP_BUILD='2026-09-18k';
+const APP_BUILD='2026-09-18l';
 
 
 /* ════════════════════════════════════════════════════════════════
@@ -12257,6 +12257,30 @@ function saveBookCfg(){
 }
 function _bookFull(){return _consultSlug?('https://'+_consultHost()+'/book/'+_consultSlug):'';}
 function _bookSet(k,v){bookCfg[k]=v;saveBookCfg();renderBookingLink();}
+// The Calendar is where a provider looks for anything to do with bookings, so her public link lives
+// there too \u2014 not only buried in Settings. Always present, so she knows the feature exists; honest
+// about whether it is actually live, so she never hands out a link that is switched off.
+function _calBookLinkRowHTML(){
+  const row=function(inner){return '<div onclick="nav(\'booking-link\')" aria-label="Your booking link" style="margin:8px 16px 2px;background:var(--surf1);border:1px solid var(--p-line2);border-radius:12px;padding:11px 14px;display:flex;align-items:center;gap:11px;cursor:pointer;">'+inner+'</div>';};
+  const ic=function(col,bg){return '<div style="width:34px;height:34px;border-radius:8px;background:'+bg+';display:flex;align-items:center;justify-content:center;flex-shrink:0;"><i class="ti ti-link" style="font-size:18px;color:'+col+';"></i></div>';};
+  const chev='<i class="ti ti-chevron-right" style="font-size:18px;color:var(--p-mut);"></i>';
+  if(_consultSlug===null){
+    return row(ic('var(--p-mut2)','var(--surf2)')
+      +'<div style="flex:1;min-width:0;"><div style="font-size:16px;font-weight:600;color:var(--p-ink);">Your booking link</div>'
+      +'<div style="font-size:16px;color:var(--p-mut);margin-top:1px;">Loading\u2026</div></div>');
+  }
+  if(bookCfg.on&&_consultSlug){
+    const full=_fileEsc(_bookFull());
+    return row(ic('var(--p-green)','var(--p-green-bg)')
+      +'<div style="flex:1;min-width:0;"><div style="font-size:16px;font-weight:600;color:var(--p-ink);">Your booking link</div>'
+      +'<div style="font-size:16px;color:var(--accent-strong);margin-top:1px;overflow:hidden;text-overflow:ellipsis;white-space:nowrap;">'+_fileEsc(_consultHost()+'/book/'+_consultSlug)+'</div></div>'
+      +'<button onclick="event.stopPropagation();_copyToClipboard(\''+full+'\',\'Booking link copied\')" aria-label="Copy your booking link" style="background:var(--surf2);border:1px solid var(--p-line);color:var(--p-mut2);border-radius:8px;padding:6px 11px;font-size:14px;font-weight:600;cursor:pointer;font-family:inherit;flex-shrink:0;"><i class="ti ti-copy" style="font-size:14px;"></i> Copy</button>');
+  }
+  const sub=_consultSlug?'Turned off \u2014 tap to turn it back on':'Let anyone book you from your website or Instagram bio';
+  return row(ic('var(--p-mut2)','var(--surf2)')
+    +'<div style="flex:1;min-width:0;"><div style="font-size:16px;font-weight:600;color:var(--p-ink);">Your booking link</div>'
+    +'<div style="font-size:16px;color:var(--p-mut);margin-top:1px;">'+sub+'</div></div>'+chev);
+}
 function _bookToggle(){
   if(!bookCfg.on&&!_consultSlug){ _setConsultSlug(); return; }   // no handle yet — claim one first
   bookCfg.on=!bookCfg.on;saveBookCfg();
@@ -12472,7 +12496,8 @@ async function _loadBookingSlug(){
   if(_loadBookingSlug._busy)return; _loadBookingSlug._busy=true;
   try{ await _loadConsultLink(); }catch(e){}
   _loadBookingSlug._busy=false;
-  try{ if(_navCur&&_navCur.screen==='booking-link')renderBookingLink(); }catch(e){}
+  try{ if(_navCur&&_navCur.screen==='booking-link')renderBookingLink();
+       else if(_navCur&&_navCur.screen==='calendar')renderCalendar(); }catch(e){}
 }
 // ── Public "request a consult" link, real, backed by /api/consult-slug + /api/consult-requests ──
 let _consultSlug=null;        // null = not loaded, '' = none set yet, else the claimed slug
@@ -25011,6 +25036,7 @@ function renderCalendar(){
   document.getElementById('tt').textContent='Calendar';
   _stampClientNextVisit();
   _loadSquareAppts();
+  if(_consultSlug===null){try{_loadBookingSlug();}catch(e){}}
   var live=_apptsLive();
   var appts=_allApptsUnified();
   // In sample/demo mode (sample data on, no live Square) still surface the Square-synced badge so the
@@ -25055,6 +25081,7 @@ function renderCalendar(){
     +'<div style="width:34px;height:34px;border-radius:8px;background:var(--surf2);display:flex;align-items:center;justify-content:center;flex-shrink:0;"><i class="ti ti-calendar-plus" style="font-size:18px;color:var(--p-mut2);"></i></div>'
     +'<div style="flex:1;"><div style="font-size:16px;font-weight:600;color:var(--p-ink);">Booking requests</div><div style="font-size:16px;color:var(--p-mut);margin-top:1px;">None waiting — client requests land here</div></div>'
     +'<i class="ti ti-chevron-right" style="font-size:18px;color:var(--p-mut);"></i></div>'))
+  +_calBookLinkRowHTML()
   +'<div style="padding:12px 16px 6px;display:flex;align-items:center;gap:8px;">'
     +'<div style="font-size:16px;font-weight:600;color:var(--p-ink);flex:1;">'+monthLbl+(showSquareBadge?' <span style="display:inline-flex;align-items:center;gap:3px;font-size:12px;font-weight:700;color:var(--p-green);background:var(--p-surf2);border:1px solid var(--p-green-line);padding:1px 6px;border-radius:24px;vertical-align:middle;"><span style="width:5px;height:5px;border-radius:50%;background:#4ec49a;"></span>SQUARE</span>':'')+'</div>'
     +'<button onclick="_calToday()" style="background:none;border:1px solid var(--p-line);color:var(--accent-strong);border-radius:8px;padding:4px 9px;font-size:14px;font-weight:600;cursor:pointer;font-family:inherit;">Today</button>'

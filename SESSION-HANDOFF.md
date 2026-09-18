@@ -1058,8 +1058,47 @@ only their imports pointed at stubs, because `@neondatabase/serverless` isn't in
 copy has to be re-made after editing any of them, or the suites quietly test yesterday's code. That
 happened once and reported a false failure.
 
-**How she finds it:** Settings → **Booking link** → choose a handle if she has none → turn it on →
-pick a mode → Copy or Share. The link is `slickchart.app/book/<handle>`.
+**How she finds it: the CALENDAR, not just Settings.** Ashley: *"accessing the link via the
+booking/calendar section would make more sense"*. `_calBookLinkRowHTML()` puts a **Your booking link**
+row on the Calendar directly under Booking requests — always present so she knows the feature exists,
+and honest about its state: the live URL with a **Copy** button when it is on, *"Turned off — tap to
+turn it back on"* when it is not, and an invitation when she has no handle yet. It never shows a URL
+that would not work. Tapping the row opens the settings screen; Copy stops the tap from navigating.
+`renderCalendar()` kicks off `_loadBookingSlug()` and is re-rendered when the handle lands.
+
+The settings row (Settings → **Booking link**) stays — that is where the configuration lives. The
+Calendar is where she goes to *grab the link*. Full path: choose a handle → turn it on → pick a mode
+→ Copy or Share. The link is `slickchart.app/book/<handle>`.
+
+### The two public pages now carry HER branding (`lib/public-brand.js`)
+
+Ashley: *"let's make sure that the way it looks carries over their branding."* Whoever opens
+`/book/<slug>` or `/consult/<slug>` has never heard of SlickChart — as far as they are concerned the
+page IS her business. Both pages used to show only her accent colour and her initials in a square.
+Now, from `sc_brand_colors` + `sc_bizinfo`:
+
+* **Her logo** in place of the initials square (initials remain the fallback).
+* **Both brand colours**, as `linear-gradient(135deg, primary, secondary)` on the button, the mark and
+  the confirmation tick — the same gradient the app's own Branding preview shows her, so the page
+  matches what she approved.
+* **Her tagline** under the business name.
+* Copy speaks as HER: *"Pick a day and time that suits you. Sunkissed Beauty will confirm…"*, **Hours**
+  rather than *"Their hours"*, and the footer says her details go only to that business.
+
+**Two contrast bugs fixed while in there**, both of which hit a provider with a pale brand colour:
+`inkOn()` picks the text colour ON her accent (white on cream was unreadable), and `accentText()`
+walks her accent toward black — or toward white on the dark theme — until a link rendered in it can
+actually be read. Her own website link was cream-on-cream before this.
+
+**One module, deliberately.** The two pages are meant to look like one product and two copies of this
+would drift. `lib/public-brand.js` owns `readBrand()`, `brandVars()`, `brandRowHtml()` and
+`BRAND_CSS`; both pages import them and keep only their own page-specific styling. `logoSrc()` accepts
+only `data:image/…` or `https:` — a `data:text/html` "logo" would be a script running on her own
+booking page.
+
+Suite: `calbook.mjs` (the Calendar row in all three states, including that Copy does not navigate).
+The branded pages are rendered by `bk/render.mjs` / `bk/crender.mjs`, with a deliberately pale-brand
+variant so the contrast maths stays honest.
 
 **Still not built:** nothing cancels or reschedules from the public link — that goes through her.
 Deposits are a link to pay, not a hold: nothing checks whether it was actually paid before the

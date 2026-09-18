@@ -2,20 +2,18 @@
 // virtual consult from a specific provider. Resolves the slug to a provider, pulls their business
 // name / website / brand color from their synced settings, and renders a self-contained form that
 // posts to /api/consult-request. No client login required (these are new leads, not clients yet).
-import { dbEnabled, getKVValue } from '../lib/db.js';
+import { dbEnabled } from '../lib/db.js';
 import { getProviderBySlug } from '../lib/consult.js';
-
-function esc(s) { return String(s == null ? '' : s).replace(/[&<>"']/g, c => ({ '&': '&amp;', '<': '&lt;', '>': '&gt;', '"': '&quot;', "'": '&#39;' }[c])); }
+import { readBrand, brandVars, brandRowHtml, BRAND_CSS, esc } from '../lib/public-brand.js';
 // JSON.stringify escapes quotes/backslashes but NOT `<`, so a value containing `</script>`
 // would break out of the inline <script>. Escape the script-terminator + line separators so a
 // provider-controlled business name can never inject markup into a prospect's page.
 function jsStr(s) { return JSON.stringify(String(s == null ? '' : s)).replace(/</g, '\\u003c').replace(/>/g, '\\u003e'); }
-function hex(c, fb) { c = String(c == null ? '' : c).trim(); if (/^#?[0-9a-fA-F]{6}$/.test(c)) return c[0] === '#' ? c : ('#' + c); if (/^#?[0-9a-fA-F]{3}$/.test(c)) { const x = c.replace('#', ''); return '#' + x[0] + x[0] + x[1] + x[1] + x[2] + x[2]; } return fb; }
-function normUrl(u) { u = String(u || '').trim(); if (!u) return ''; return /^https?:\/\//i.test(u) ? u : ('https://' + u); }
 
 function shell(inner, opts) {
   const o = opts || {};
   const accent = o.accent || '#C8A882';
+  const vars = o.vars || ('--accent:' + accent + ';--accent2:' + accent + ';--accent-ink:#ffffff;');
   const title = esc(o.title || 'Virtual consult');
   // Social-share preview: this page is made to be shared (Instagram bio, a text, a website link),
   // so give it a proper title/description card. noindex still keeps it out of search engines —
@@ -35,30 +33,25 @@ function shell(inner, opts) {
 <meta name="twitter:description" content="${ogDesc}">
 <style>
 *{box-sizing:border-box;margin:0;padding:0;}
-:root{--accent:${esc(accent)};}
+:root{${vars}}
 body{font-family:-apple-system,BlinkMacSystemFont,'Segoe UI',sans-serif;background:#f5f0eb;color:#1a1a1a;display:flex;justify-content:center;min-height:100vh;padding:0;}
 .wrap{width:100%;max-width:460px;padding:28px 22px 56px;}
-.brandrow{display:flex;align-items:center;gap:11px;margin-bottom:22px;}
-.avatar{width:46px;height:46px;border-radius:13px;background:var(--accent);color:#fff;display:flex;align-items:center;justify-content:center;font-size:19px;font-weight:700;flex-shrink:0;}
-.biz{font-size:17px;font-weight:700;line-height:1.2;}
-.web{font-size:12px;color:#8a7a6c;margin-top:2px;}
-.web a{color:var(--accent);text-decoration:none;}
 h1{font-size:23px;font-weight:700;line-height:1.25;margin-bottom:8px;}
 .sub{font-size:14px;color:#6b5d52;line-height:1.6;margin-bottom:22px;}
 label{display:block;font-size:12px;font-weight:600;color:#5a4a3a;margin:0 0 6px;}
 .f{width:100%;background:#fff;border:1.5px solid #e8ddd3;border-radius:12px;padding:13px 14px;font-size:15px;color:#1a1a1a;font-family:inherit;margin-bottom:16px;outline:none;}
 .f:focus{border-color:var(--accent);}
 textarea.f{height:110px;resize:none;line-height:1.5;}
-.btn{width:100%;background:var(--accent);color:#fff;border:none;border-radius:12px;padding:15px;font-size:16px;font-weight:700;cursor:pointer;font-family:inherit;}
+.btn{width:100%;background:linear-gradient(135deg,var(--accent),var(--accent2));color:var(--accent-ink);border:none;border-radius:12px;padding:15px;font-size:16px;font-weight:700;cursor:pointer;font-family:inherit;}
 .btn:disabled{opacity:.55;cursor:default;}
 .err{background:#fdecec;border:1px solid #f3c6c6;color:#a33;border-radius:10px;padding:10px 13px;font-size:13px;margin-bottom:16px;display:none;}
 .foot{margin-top:26px;text-align:center;font-size:11px;color:#6b5d52;line-height:1.6;}
 .done{text-align:center;padding:40px 10px;}
-.done .ic{width:64px;height:64px;border-radius:18px;background:var(--accent);color:#fff;display:flex;align-items:center;justify-content:center;font-size:32px;margin:0 auto 18px;}
+.done .ic{width:64px;height:64px;border-radius:18px;background:linear-gradient(135deg,var(--accent),var(--accent2));color:var(--accent-ink);display:flex;align-items:center;justify-content:center;font-size:32px;margin:0 auto 18px;}
 .done h2{font-size:21px;font-weight:700;margin-bottom:8px;}
 .done p{font-size:14px;color:#6b5d52;line-height:1.6;}
 @media (prefers-color-scheme:dark){body{background:#141210;color:#f0ebe4;}.f{background:#1e1b18;border-color:#332e28;color:#f0ebe4;}.sub,.done p,.foot{color:#b3a596;}.err{background:#2a1414;border-color:#5a2a2a;color:#e8a0a0;}}
-</style></head><body><div class="wrap">${inner}</div></body></html>`;
+${BRAND_CSS}</style></head><body><div class="wrap">${inner}</div></body></html>`;
 }
 
 function notFoundPage() {
@@ -71,27 +64,19 @@ export default async function handler(req, res) {
   const slug = String((req.query && req.query.slug) || '').toLowerCase();
   if (!dbEnabled() || !slug) { res.status(404).send(notFoundPage()); return; }
 
-  let prov = null, biz = {}, brand = {};
+  let prov = null, brand = null;
   try {
     prov = await getProviderBySlug(slug);
-    if (prov) {
-      try { const raw = await getKVValue(prov.id, 'sc_bizinfo'); if (raw) biz = JSON.parse(raw) || {}; } catch (e) { biz = {}; }
-      try { const raw = await getKVValue(prov.id, 'sc_brand_colors'); if (raw) brand = JSON.parse(raw) || {}; } catch (e) { brand = {}; }
-    }
+    if (prov) brand = await readBrand(prov.id, prov.name, '#C8A882');
   } catch (e) { res.status(500).send(notFoundPage()); return; }
   if (!prov) { res.status(404).send(notFoundPage()); return; }
 
-  const bizName = String(biz.name || prov.name || 'Virtual consult').slice(0, 80);
-  const website = normUrl(biz.website || '');
-  const webLabel = String(biz.website || '').replace(/^https?:\/\//i, '');
-  const accent = hex(brand.primary, '#C8A882');
-  const initial = (bizName.trim()[0] || '✦').toUpperCase();
+  const bizName = (brand.name || 'Virtual consult').slice(0, 80);
+  brand = Object.assign({}, brand, { name: bizName });
+  const accent = brand.accent;
 
   const inner = `
-  <div class="brandrow">
-    <div class="avatar">${esc(initial)}</div>
-    <div><div class="biz">${esc(bizName)}</div>${website ? `<div class="web"><a href="${esc(website)}" target="_blank" rel="noopener nofollow">${esc(webLabel)}</a></div>` : ''}</div>
-  </div>
+  ${brandRowHtml(brand)}
   <div id="form-view">
     <h1>Request a virtual consult</h1>
     <div class="sub">Share a bit about what you’re hoping for and ${esc(bizName)} will follow up to set up your consult.</div>
@@ -141,6 +126,7 @@ export default async function handler(req, res) {
 
   res.status(200).send(shell(inner, {
     accent,
+    vars: brandVars(brand),
     title: 'Consult · ' + bizName,
     ogTitle: 'Request a consult with ' + bizName,
     ogDesc: 'Share a bit about what you’re hoping for and ' + bizName + ' will follow up to set up your virtual consult.'
