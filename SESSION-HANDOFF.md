@@ -657,6 +657,48 @@ working hours where possible, independent of these fixes.
 
 ---
 
+## 2o. The rest of that same report: the edit never reached a save at all (2026-09-18)
+
+The provider in §2n came back after those fixes still saying hours, branding and forms reset when she
+moved to another part of the app — **on a brand-new profile, her first login**.
+
+**I got this wrong once first, and it is worth recording why.** Three unrelated features failing the
+same way pointed me at the one thing they share, the device's storage, so I shipped a toast telling
+her she was out of space. Ashley's answer was correct on both counts: a first-login account cannot be
+full, and telling a provider that is embarrassing when it isn't even true. **A brand-new account holds
+about 20KB in localStorage after a full walk through the app** — measured headless, the number is not
+close to the 5MB cap. That message is gone. Check the claim before shipping the message.
+
+**The actual cause needs no sync bug at all.** Every settings editor is DOM-only until its own Save is
+pressed, and the two longest screens made that easy to miss:
+
+* **"Business & Branding" was two forms in one screen with TWO Save buttons.** `saveBizInfo()` saved
+  the business half, `saveBranding()` saved the branding half, neither touched the other. Fill in your
+  details and hours, scroll past the fold, press the Save you can see — that one saved the branding,
+  dropped everything above it, and toasted success.
+* **The form builder's Save was at the top of the question list**, with nothing at the bottom, so the
+  natural way out of a long form discarded every edit.
+
+Either way, leaving the screen dropped the work silently and returning re-rendered the stored value.
+It is worst on a new profile because that is when someone fills a long settings screen from scratch.
+
+Now: both buttons on that screen save both halves (`saveBusinessBranding`), there is a Save at the end
+of both long screens, and **`nav()` + `pagehide` flush whatever editor is open before leaving**
+(`_flushSettingsEdits`) — quietly, no toast.
+
+**The guards on that flush matter, don't remove them.** Each screen records a signature when it opens
+(`_bizSig` / `_brandSigOpen` / `_fbInitialSig`); an untouched screen writes **nothing**. Without that,
+merely visiting Business & Branding would re-stamp `_ts` and outrank a genuinely newer edit from
+another device — the flush would have become instance four of §2n. An abandoned new form is not
+created, and an explicit Save re-arms the signature so the `nav()` that follows it doesn't save twice
+(which for a new form made a duplicate).
+
+**Design rule this leaves behind:** one screen, one Save, and a screen longer than a phone viewport
+needs a Save at the bottom too. If a value only exists in an input until a button is pressed, leaving
+the screen has to persist it.
+
+---
+
 ## 3. Open threads — needs Ashley, or needs verifying
 
 1. **Square `payment.*` webhook subscription.** Paid-course auto-unlock depends on Square sending
