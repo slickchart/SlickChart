@@ -69,7 +69,43 @@ async function recordCoursePurchase(q, providerId, evt, type) {
   }
 }
 
+// The canonical https URL Square must be pointed at — and the one the signature is verified against.
+// SQUARE_WEBHOOK_URL wins when set, because behind a proxy the host header can differ from the URL
+// Square actually called, and a mismatch there fails every signature silently.
+function webhookUrl(req) {
+  if (process.env.SQUARE_WEBHOOK_URL) return process.env.SQUARE_WEBHOOK_URL;
+  const proto = (req.headers['x-forwarded-proto'] || 'https').split(',')[0];
+  const host = req.headers['host'] || '';
+  const path = String(req.url || '/api/square/webhook').split('?')[0];
+  return proto + '://' + host + path;
+}
+
 export default async function handler(req, res) {
+  // A plain GET is a setup check, not an event: it says whether this endpoint is configured well
+  // enough to unlock a paid course, and what exact URL to register in Square. Nothing secret is
+  // returned — only whether the signing key exists, never any part of it. Without this the only way
+  // to know the key was missing was that paid courses quietly never unlocked.
+  if (req.method === 'GET') {
+    const hasKey = !!(process.env.SQUARE_WEBHOOK_SIGNATURE_KEY || '');
+    const pinned = process.env.SQUARE_WEBHOOK_URL || '';
+    const proto = (req.headers['x-forwarded-proto'] || 'https').split(',')[0];
+    const host = req.headers['host'] || '';
+    const derived = proto + '://' + host + '/api/square/webhook';
+    res.setHeader('Cache-Control', 'no-store');
+    res.status(200).json({
+      ok: true,
+      ready: hasKey,
+      signingKeySet: hasKey,
+      registerThisUrl: pinned || derived,
+      pinnedUrlSet: !!pinned,
+      urlMatchesThisHost: !pinned || pinned === derived,
+      subscribeTo: ['payment.created', 'payment.updated'],
+      note: hasKey
+        ? 'Signing key is set. Square must also have this URL registered and those events ticked.'
+        : 'SQUARE_WEBHOOK_SIGNATURE_KEY is NOT set in Vercel — every Square event is being ignored.'
+    });
+    return;
+  }
   if (req.method !== 'POST') { res.status(405).json({ error: 'Method not allowed' }); return; }
   const raw = await readRaw(req);
 
@@ -78,9 +114,7 @@ export default async function handler(req, res) {
     const key = process.env.SQUARE_WEBHOOK_SIGNATURE_KEY || '';
     const sig = req.headers['x-square-hmacsha256-signature'] || '';
     if (!key) { res.status(200).json({ ok: false, note: 'not-configured' }); return; }  // accept-but-ignore until configured
-    const proto = (req.headers['x-forwarded-proto'] || 'https').split(',')[0];
-    const host = req.headers['host'] || '';
-    const url = process.env.SQUARE_WEBHOOK_URL || (proto + '://' + host + (req.url || '/api/square/webhook'));
+    const url = webhookUrl(req);
     const expected = crypto.createHmac('sha256', key).update(url + raw).digest('base64');
     const a = Buffer.from(expected); const b = Buffer.from(String(sig));
     if (a.length !== b.length || !crypto.timingSafeEqual(a, b)) { res.status(401).json({ error: 'bad signature' }); return; }
