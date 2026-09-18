@@ -1106,6 +1106,62 @@ appointment.
 
 ---
 
+## 2u. Branding and forms "resetting to default" — the async storage race (2026-09-18)
+
+**This is the second half of Riquelle's problem, and it is NOT the same bug as the hours.** The hours
+were the four characters `null` sitting on her account (§2q). Her branding and her forms kept resetting
+after that was fixed, and the cause is completely separate.
+
+**What was happening.** Values ≥ 24KB do not live in localStorage — they are offloaded to IndexedDB
+(§2e). IndexedDB is **asynchronous**. But two of the app's loaders run during SCRIPT EVALUATION,
+before `_cloudInit` has even been called, let alone `await _hydrateOffloaded()`:
+
+* `let brandColors = loadBrandColors();`
+* `loadForms();` near the bottom of the file
+
+For a provider whose branding or form library is big enough to have been offloaded — **a logo alone
+clears 24KB** — both reads came back empty and both loaders fell back to the built-in defaults: stock
+teal, no logo, no tagline, the bundled intake form, zero custom forms. `_reloadAll()` fixed it up, but
+only **after the pull**, which on a phone is seconds later.
+
+So she opened the app, saw her branding gone, did the only sensible thing — set it again and saved —
+and **that save wrote the defaults over the real copy on her account.** Measured on the repro: her
+`sc_brand_colors` went from 40,153 characters to **63**. Logo gone, tagline gone, custom form gone,
+from every device, permanently.
+
+Ashley's own account was fine throughout, which is exactly what you would expect: her settings are
+under the 24KB line, so they never left localStorage and the loaders always found them. **"It works on
+mine" was a symptom of the bug, not evidence against it.**
+
+**The fix, in three parts:**
+1. **`sc_off_index`** — a tiny device-local list, in localStorage, of which keys currently live in
+   IndexedDB. It is the one thing that can be read synchronously at script-eval time. Never synced.
+2. **A write guard.** `_awaitingHydration(k)` is true while the index says a key is in IndexedDB and
+   memory does not have it yet. The patched `setItem` **refuses** such a write, because anything
+   computed in that state was built on a hole. It only ever holds writes back, so every exit from
+   `_hydrateOffloaded()` releases it, `_cloudInit` releases it unconditionally after the await, and an
+   8-second failsafe timer releases it if nothing ever answers. **A guard that can only refuse must
+   never be able to stick.**
+3. **`_reloadAfterHydrate()`** — re-runs the loaders the moment IndexedDB answers, instead of waiting
+   for the pull, and redraws the current screen. The window where she can see defaults drops from
+   "until the network returns" to a few milliseconds. Only runs on a device that actually had
+   something offloaded, so a small account pays nothing.
+
+**Already-lost data is not recoverable from here.** Branding is last-writer-wins, and the defaults were
+written more recently than the real thing. Forms are unioned by id, so a custom form still sitting on
+another of her devices WILL come back on that device's next sync — but anything that only ever existed
+on the damaged device is gone. She has to set her logo and colours once more; this time it sticks.
+
+Suite: `hydrate.mjs` — the full repro (offload, reopen on a slow pull, save during the window, assert
+the account is intact), the guard in isolation, and four device shapes that must be unaffected: a new
+account, a device with no IndexedDB, a signed-out device, and a key too small to ever be offloaded.
+`riq4.mjs` is the bare before/after repro if this ever needs re-demonstrating.
+
+The self-check now reports both: whether this device has the fix, and whether any settings are
+currently in the big box and still loading.
+
+---
+
 ## 3. Open threads — needs Ashley, or needs verifying
 
 1. ~~**Square `payment.*` webhook subscription.**~~ **CLOSED 2026-09-18 — it is subscribed and has

@@ -214,7 +214,7 @@ const S=document.getElementById('S');
 // resets when I save it" and there was no way to tell whether her phone had any of them — a whole
 // day was spent debugging code she may not have been running. Shown at the bottom of Settings, so
 // the answer is a screenshot away. Bump it on every ship.
-const APP_BUILD='2026-09-18l';
+const APP_BUILD='2026-09-18m';
 
 
 /* ════════════════════════════════════════════════════════════════
@@ -2858,6 +2858,43 @@ Cloud._mem={};
 // every value to the account exactly as before, and the account stays the source of truth.
 const _LS_OFFLOAD_MIN=24*1024;          // characters; ~48KB of Safari's UTF-16 budget
 const _OFF_PREFIX='lskv_';
+// Which keys currently live in IndexedDB instead of localStorage, as a plain list in the small box.
+//
+// This exists because IndexedDB is ASYNC and the app is not. The top-level `let brandColors =
+// loadBrandColors()` and the `loadForms()` at the bottom of this file both run during script
+// evaluation — before _hydrateOffloaded() has had a chance to put anything back. For a provider
+// whose branding or form library is big enough to have been offloaded (a logo alone clears 24KB),
+// those reads came back EMPTY and the app quietly fell back to stock defaults: default teal, no
+// logo, the bundled intake form, no custom forms. She then re-entered her branding over the top of
+// what looked like a reset, saved, and that save destroyed the real copy on her account too.
+//
+// This index is the one thing we can check synchronously. It is device-local (never synced) and tiny.
+const _OFF_INDEX_KEY='sc_off_index';
+_SYNC_SKIP[_OFF_INDEX_KEY]=1; _LS_KEEP_LOCAL[_OFF_INDEX_KEY]=1;
+function _offIndexRead(){
+  try{const raw=(Cloud._origGet||localStorage.getItem.bind(localStorage))(_OFF_INDEX_KEY);
+    const a=raw?JSON.parse(raw):null; if(!Array.isArray(a))return Object.create(null);
+    const m=Object.create(null); a.forEach(function(k){if(typeof k==='string')m[k]=true;}); return m;
+  }catch(e){return Object.create(null);}
+}
+// The index as it stood when this page loaded. Frozen on purpose: it is the answer to "was this key
+// in IndexedDB before we had a chance to look?", which cannot change mid-boot.
+let _offAtBoot=Object.create(null);
+function _offIndexWrite(){
+  try{const a=Object.keys(Cloud._offloaded||{}).filter(function(k){return Cloud._offloaded[k]===true;});
+    (Cloud._origSet||localStorage.setItem.bind(localStorage))(_OFF_INDEX_KEY,JSON.stringify(a));}catch(e){}
+}
+// True while a key's real value is still sitting in IndexedDB, unread. Anything computed from a read
+// in this state is built on a hole, so it must not be written back.
+let _hydrated=false;
+const _pendingHydrationWrites=Object.create(null);
+// Belt and braces: a guard that only ever refuses writes must never be able to stick. If anything at
+// all goes wrong before hydration reports back, release it and let the app save normally again.
+try{setTimeout(function(){ if(!_hydrated){ _hydrated=true;
+  try{console.warn('[SlickChart] IndexedDB did not answer in time — releasing the write guard');}catch(e){}
+  try{if(typeof _reloadAfterHydrate==='function')_reloadAfterHydrate();}catch(e){} } },8000);}catch(e){}
+function _awaitingHydration(k){ return !_hydrated && _offAtBoot[k]===true && !(Cloud._mem&&Object.prototype.hasOwnProperty.call(Cloud._mem,k)); }
+try{_offAtBoot=_offIndexRead();}catch(e){}
 Cloud._offloaded=Object.create(null);   // key -> true: this key lives in IndexedDB, not localStorage
 Cloud._offBad=Object.create(null);      // key -> 1: IndexedDB refused it, don't keep retrying
 // _idb is declared further down this file, so a very early write would hit its temporal dead zone.
@@ -2932,15 +2969,18 @@ async function _purgeOffloaded(){
 // account pull and _reloadAll.
 async function _hydrateOffloaded(){
   const out={loaded:0,moved:0,freed:0};
-  const d=_idbOK();if(!d)return out;
+  // The guard below only ever HOLDS BACK writes, so every path out of this function has to release
+  // it. A device with no IndexedDB, or one that is signed out, has nothing in the async box at all.
+  const done=function(){_hydrated=true;return out;};
+  const d=_idbOK();if(!d)return done();
   // Whose cache is this? If it belongs to a different account — a sign-out that was interrupted, a
   // shared device — throw the whole thing away rather than read a single byte of it. Nothing here is
   // ever the only copy: every offloaded key is one the account also holds.
   try{
     const me=_tokenOwner();
-    if(!me)return out;                       // signed out: there is no account this cache could belong to
+    if(!me)return done();                    // signed out: there is no account this cache could belong to
     let stamped='';try{stamped=(await d.get(_OFF_OWNER_KEY))||'';}catch(e){}
-    if(stamped&&stamped!==me){await _purgeOffloaded();return out;}
+    if(stamped&&stamped!==me){await _purgeOffloaded();return done();}
     if(stamped!==me){try{await d.set(_OFF_OWNER_KEY,me);}catch(e){}}
   }catch(e){}
   try{
@@ -2951,7 +2991,7 @@ async function _hydrateOffloaded(){
       const k=kk.slice(_OFF_PREFIX.length);
       let v;try{v=await d.get(kk);}catch(e){continue;}
       if(typeof v!=='string')continue;
-      Cloud._mem[k]=v;Cloud._offloaded[k]=true;out.loaded++;
+      Cloud._mem[k]=v;Cloud._offloaded[k]=true;out.loaded++;_offIndexWrite();
       // A leftover copy in the small box is always the older one — once a key is offloaded, writes
       // only ever go to IndexedDB — so drop it and give the space back.
       try{if(Cloud._origGet(k)!=null)Cloud._origRemove(k);}catch(e){}
@@ -2972,12 +3012,39 @@ async function _hydrateOffloaded(){
       if(v==null)continue;
       let ok=false;try{ok=await d.set(_OFF_PREFIX+k,v);}catch(e){ok=false;}
       if(!ok){Cloud._offBad[k]=1;continue;}       // leave it where it is rather than risk losing it
-      Cloud._mem[k]=v;Cloud._offloaded[k]=true;
+      Cloud._mem[k]=v;Cloud._offloaded[k]=true;_offIndexWrite();
       try{Cloud._origRemove(k);}catch(e){}
       out.moved++;out.freed+=v.length*2;
     }
   }catch(e){}
-  return out;
+  try{_offIndexWrite();}catch(e){}
+  return done();
+}
+// Everything the app read during script evaluation was read BEFORE IndexedDB answered. For a
+// provider whose branding or forms live there, the app is right now holding stock defaults with her
+// real data a few milliseconds away. Re-read the loaders that touch those keys immediately — not
+// after the pull, which on a slow phone is seconds later and is long enough for her to look at a
+// "reset" screen and save over it.
+function _reloadAfterHydrate(){
+  try{if(typeof loadForms==='function')loadForms();}catch(e){}
+  try{if(typeof loadBrandColors==='function')brandColors=loadBrandColors();}catch(e){}
+  try{if(typeof applyTheme==='function')applyTheme();}catch(e){}
+  try{if(typeof _syncHeaderLogo==='function')_syncHeaderLogo();}catch(e){}
+  try{if(typeof _syncProviderAvatar==='function')_syncProviderAvatar();}catch(e){}
+  try{if(typeof loadBizInfo==='function')loadBizInfo();}catch(e){}
+  try{if(typeof loadClients==='function')loadClients();}catch(e){}
+  try{if(typeof loadCourses==='function')loadCourses();}catch(e){}
+  try{if(typeof loadCustomResources==='function')loadCustomResources();}catch(e){}
+  try{if(typeof rebuildResources==='function')rebuildResources();}catch(e){}
+  try{if(typeof loadMessages==='function')loadMessages();}catch(e){}
+  try{if(typeof loadWorkspace==='function')loadWorkspace();}catch(e){}
+  try{if(typeof loadInv==='function')loadInv();}catch(e){}
+  try{if(typeof loadVendors==='function')loadVendors();}catch(e){}
+  try{if(typeof loadRoutines==='function')loadRoutines();}catch(e){}
+  try{if(typeof loadSquareCatalog==='function')loadSquareCatalog();}catch(e){}
+  try{_reloadTopLevelStores();}catch(e){}
+  // A screen may already be on display, drawn from the defaults. Draw it again now it is real.
+  try{if(_navCur&&typeof nav==='function')nav(_navCur.screen,_navCur.arg);}catch(e){}
 }
 // The single place that writes to this device. Returns null when it landed, or the error when it
 // could not. Big values go to IndexedDB; the rest try localStorage, retry once after freeing space
@@ -2988,7 +3055,7 @@ function _lsPersist(k,v,_noOffload){
   const str=String(v==null?'':v);
   if(!_noOffload&&_offloadEligible(k,str.length)){
     // Memory first, so this session reads the new value even before IndexedDB acknowledges it.
-    Cloud._mem[k]=str;Cloud._offloaded[k]=true;
+    Cloud._mem[k]=str;Cloud._offloaded[k]=true;_offIndexWrite();
     try{(Cloud._origRemove||localStorage.removeItem.bind(localStorage))(k);}catch(e){}
     try{
       const pr=_idbOK().set(_OFF_PREFIX+k,str);
@@ -3029,7 +3096,8 @@ function _lsGet(k){
   // Removing an offloaded key has to clear IndexedDB and memory too, or it would come straight back
   // on the next boot. Keys that are not offloaded behave exactly as before.
   localStorage.removeItem=function(k){
-    try{if(Cloud._offloaded[k]){delete Cloud._offloaded[k];try{delete Cloud._mem[k];}catch(e2){}const d=_idbOK();if(d)d.del(_OFF_PREFIX+k);}}catch(e){}
+    try{if(Cloud._offloaded[k]){delete Cloud._offloaded[k];try{delete Cloud._mem[k];}catch(e2){}const d=_idbOK();if(d)d.del(_OFF_PREFIX+k);try{_offIndexWrite();}catch(e3){}}}catch(e){}
+    try{delete _offAtBoot[k];}catch(e){}
     return _rm(k);
   };
   localStorage.setItem=function(k,v){
@@ -3040,6 +3108,16 @@ function _lsGet(k){
   // been filled in yet. Refuse it and say so, rather than storing a landmine.
   if(_syncable(k)&&!_usableSyncValue(v)&&v!=null&&String(v).length){
     try{console.warn('[SlickChart] refused to save '+k+' as '+JSON.stringify(String(v).slice(0,40))+' — that is a bug at the call site, not a value');}catch(e){}
+    return;
+  }
+  // This key's real value is still in IndexedDB and has not been read back yet, so whatever is being
+  // written here was computed from a hole — in practice the stock defaults the loaders fall back to.
+  // Writing it would replace her logo, her colours or her whole form library with the built-in ones,
+  // on this device AND on her account, which is exactly how a provider lost hers. Refuse, and
+  // remember the key so the loaders are re-run the moment IndexedDB answers.
+  if(_awaitingHydration(k)){
+    try{_pendingHydrationWrites[k]=1;}catch(e){}
+    try{console.warn('[SlickChart] held back a write to '+k+' — its real value is still loading');}catch(e){}
     return;
   }
   // Write to localStorage AND mirror to the server. Critically, a localStorage quota
@@ -3178,6 +3256,20 @@ async function _runSelfCheck(){
   // Feature probes beat a version string: these cannot go stale or be mistyped.
   line('Has the "don\u2019t lose what you typed" fix', typeof _flushSettingsEdits==='function', typeof _flushSettingsEdits==='function'?'yes':'NO \u2014 this device is on older code');
   line('Has the stamped settings merge', typeof _mergeStamped==='function' && typeof _stampNow==='function', (typeof _mergeStamped==='function')?'yes':'NO \u2014 this device is on older code');
+  line('Has the "big settings load before anything saves" fix', typeof _awaitingHydration==='function', (typeof _awaitingHydration==='function')?'yes':'NO \u2014 this device is on older code');
+  // The exact shape of the bug that reset one provider's branding and forms: her logo and her form
+  // library were too big for localStorage, so they live in IndexedDB, which answers asynchronously.
+  // Anything that read them before it answered got nothing and fell back to the built-in defaults.
+  try{
+    const off=(typeof Cloud!=='undefined'&&Cloud&&Cloud._offloaded)?Object.keys(Cloud._offloaded):[];
+    const NAMES={sc_brand_colors:'your logo & brand colours',sc_forms:'your forms',sc_clients:'your client list',
+      sc_courses:'your courses',sc_msgstore:'your messages',sc_resources:'your guides'};
+    if(off.length){
+      const ready=(typeof _hydrated!=='undefined')&&_hydrated;
+      line('Settings too big for the small box', ready,
+        off.map(function(k){return NAMES[k]||k;}).join(', ')+' \u2014 '+(ready?'loaded from the big box':'STILL LOADING, which is the state that used to lose them'));
+    }
+  }catch(e){}
 
   // 1. does a write survive on this device at all
   const canary='sc_selfcheck_'+Date.now();
@@ -3335,7 +3427,18 @@ async function _cloudInit(){
   if(_handleAuthParams())return;
   // Bring the big values back out of IndexedDB and into memory BEFORE the pull, before _reloadAll,
   // and before anything renders. Nothing below may read storage until this has finished.
-  try{await _hydrateOffloaded();}catch(e){}
+  let _hy=null;
+  try{_hy=await _hydrateOffloaded();}catch(e){}
+  _hydrated=true;
+  // Only a device that actually had something in IndexedDB paid the cost of reading defaults first,
+  // and only that device needs the re-read. A small account is untouched by any of this.
+  try{
+    const held=Object.keys(_pendingHydrationWrites).length;
+    if((_hy&&(_hy.loaded||_hy.moved))||held){
+      _reloadAfterHydrate();
+      if(held)console.warn('[SlickChart] '+held+' write(s) were held back until IndexedDB answered, and the real values are now loaded');
+    }
+  }catch(e){}
   // /slickchart?selfcheck=1 — no button, no menu entry, only this link.
   //
   // Deliberately BEFORE the rest of boot. A rejected session makes Cloud.pull() drop the token and
