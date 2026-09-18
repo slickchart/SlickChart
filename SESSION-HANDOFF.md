@@ -751,21 +751,54 @@ Three fixes:
    `ok`, so a client whose blob never saved still produced "Sent". It now checks both, and every send
    flow that routes through it (courses, forms, guides) inherits the fix.
 
-Suite: `coursefix.mjs` in the scratchpad — a row that fails to save doesn't say Sent, a good one still
-does, the course screen shows locked/paid state, Mark paid reaches both the account and the client's
-blob, and the client app then opens the course.
+**Then Ashley removed the lock entirely, later the same day, and she was right to.** Her words: *"this
+would be really confusing for a provider and they would never know to go into a course and mark it
+unlocked"* and *"if i send it that means they should be able to open it."* Marking paid by hand is a
+step nobody would discover, on a screen nobody would think to open, to fix a problem they could not
+see. It only existed to prop up a lock that could be wrong.
 
-**§3.1 is still open and still worth 10 minutes of Ashley's time** — this makes the automatic path
-recoverable, it does not prove it works.
+**So: nothing a provider sends is locked. Sending IS the permission.** Gone in both apps and on the
+server — `_courseLocked` / `_coursePaid` / `_courseBuyHTML` / `_courseCheckPaid` / `_courseLockedTap`
+in the client; `_coursePaidFor` / `_markCoursePaid` / `_confirmMarkCoursePaid` / `_mintCourseBuyUrl` /
+`_ensureCourseBuyUrl` / `_coursePurchases` in the provider app; `paid` and `buyUrl` out of the synced
+course payload; `recordCoursePurchase` out of the Square webhook; `data.purchases` out of
+`/api/client-data`; and `api/course-paid.js` deleted outright, one day old.
+
+What stayed: the **"Sent to"** list on course detail (who has it, and whether they've been invited to
+the app yet) — that part was useful and isn't about money. `/api/square/payment-link` stays too; it
+is still how she takes payments and invoices, just not how a course opens. `sc_course_purchases`
+keeps its `_TOMB_OBJ` merge entry and its storage-panel label so a legacy key on an old device merges
+instead of clobbering; nothing reads it.
+
+**The rule this leaves:** providers take payment their own way and then send the thing. Do not add a
+gate whose "unlocked" state depends on an external event arriving — when it doesn't arrive, the
+failure is invisible on both sides and the person who paid is the one who suffers.
+
+Suites in the scratchpad: `nolock.mjs` (a $49 course sends with no checkout link minted, no `paid` or
+`buyUrl` in the blob, both lessons tappable in the client, a lesson really opens, nothing routes to a
+lock) and `oldblob.mjs` (a client whose stored data still carries `paid:false` and a stale `buyUrl`
+from before today — those are ignored and the course opens, so nobody needs re-sending).
+
+**§3.1 (is Square's `payment.*` webhook subscribed?) is CLOSED — it was, all along.** Ashley's webhook
+logs show `payment.created` and `payment.updated` delivering to
+`https://slick-chart.vercel.app/api/square/webhook` and returning 200, which only happens after the
+signature check passes. The Square side was configured correctly the whole time. Whatever kept that
+one course locked was further down — almost certainly a payment made outside the in-app link, which
+is exactly the case the lock could never handle. Moot now.
+
+`GET /api/square/webhook` is a setup check (signing key present, the URL signatures are verified
+against, which events to subscribe) and returns nothing secret. It remains useful for bookings,
+refunds and catalog sync, which still ride the webhook.
 
 ---
 
 ## 3. Open threads — needs Ashley, or needs verifying
 
-1. **Square `payment.*` webhook subscription.** Paid-course auto-unlock depends on Square sending
-   `payment.updated` to `/api/square/webhook`. The handler and signature check exist and are tested,
-   but nobody has confirmed `payment.*` is actually subscribed in the Square app settings. A $1 test
-   course on herself would settle it. The client's "Already paid? Refresh" button is the safety net.
+1. ~~**Square `payment.*` webhook subscription.**~~ **CLOSED 2026-09-18 — it is subscribed and has
+   been all along.** Her webhook logs show `payment.created` / `payment.updated` delivering and
+   returning 200 (which only happens after our signature check passes). Paid-course unlocking no
+   longer exists anyway (§2p). The webhook still carries bookings, refunds and catalog sync, and
+   `GET /api/square/webhook` reports whether it is configured.
 2. **Progress photos may never have reached real clients.** `/api/guide-file` only allowlisted
    `fileId`/`guideId`, not `pid`, so a client's own shared before/afters 404'd silently. Fixed in
    `1bb5602` — but Ashley should turn on photo sharing for one client and open their link to confirm.
