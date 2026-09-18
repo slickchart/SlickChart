@@ -1026,7 +1026,15 @@ never read her hours at all.
     a separate and more serious bug affecting every new provider — chase it.
 15. **`BUILD_EXCLUDE_EMAILS`** is still unset in Vercel. Her own test purchases therefore count in
    the Build Your Own App stats.
-16. **Seven synced keys still have no per-item merge** — `sc_protocols`, `sc_service_menu`, `sc_docs`,
+16. **`sunkissedbeautyllc1@gmail.com` gets a deliberately FREE month on 2026-10-15.** Ashley comped
+   Riquelle one month for her patience through the §2q hours bug, via a Stripe coupon
+   ("Thank you — 1 month on us", 100% off, duration `once`) applied to her subscription on
+   2026-09-18. **Her Oct 15 invoice will be $0.00 and that is correct — not a billing failure.** Her
+   subscription stays `active` throughout, so nothing in the app changes (a coupon was chosen over
+   pausing or cancelling precisely because `canceled` locks a provider out, which is what happened to
+   her once already). Plan is $10.00/month, billing on the 15th. Nothing to do; this note exists so
+   nobody "fixes" it.
+17. **Seven synced keys still have no per-item merge** — `sc_protocols`, `sc_service_menu`, `sc_docs`,
    `sc_routines`, `sc_vendors`, `sc_staff`, `sc_inventory`. Since §2r they are safe from junk (the
    `setFromServer` guard), but a stale device can still overwrite newer data on them: edit vendors on
    the phone, then open a laptop tab that has been sitting open since yesterday, and the laptop wins.
