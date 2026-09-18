@@ -214,7 +214,7 @@ const S=document.getElementById('S');
 // resets when I save it" and there was no way to tell whether her phone had any of them — a whole
 // day was spent debugging code she may not have been running. Shown at the bottom of Settings, so
 // the answer is a screenshot away. Bump it on every ship.
-const APP_BUILD='2026-09-18f';
+const APP_BUILD='2026-09-18g';
 
 
 /* ════════════════════════════════════════════════════════════════
@@ -3144,6 +3144,23 @@ function _reloadAll(){try{
   // stayed the old in-memory value and the theme was never re-derived) until a full cold reload.
   try{ if(typeof loadBrandColors==='function')brandColors=loadBrandColors(); if(typeof applyTheme==='function')applyTheme(); if(typeof _syncHeaderLogo==='function')_syncHeaderLogo(); }catch(e){}
 }catch(e){}}
+// Five taps on the version line at the bottom of Settings opens the self-check. There is no button
+// for it and nothing in any menu, so it clutters nothing — but unlike the ?selfcheck=1 link it works
+// INSIDE the installed app. That matters: a link tapped from a message opens Safari or Chrome, and on
+// a phone where SlickChart was added to the home screen that is a separate box with its own storage.
+// The first provider sent a report that was entirely red because of exactly that, and none of it was
+// about the app she was actually using.
+let _verTaps=0,_verTapT=null;
+function _versionTap(){
+  _verTaps++;
+  clearTimeout(_verTapT);
+  _verTapT=setTimeout(function(){_verTaps=0;},1600);
+  if(_verTaps>=5){
+    _verTaps=0;
+    try{if(typeof proToast==='function')proToast('Running a save check\u2026',1500);}catch(e){}
+    try{_runSelfCheck();}catch(e){try{if(typeof proToast==='function')proToast('Couldn\u2019t run the check');}catch(e2){}}
+  }
+}
 // ── SELF-CHECK ───────────────────────────────────────────────────────────────────────────────────
 // Reached only by opening /slickchart?selfcheck=1 — there is no button for it anywhere, on purpose.
 // A provider reported every save reverting. Three fixes shipped on three theories and none of them
@@ -3170,7 +3187,19 @@ async function _runSelfCheck(){
 
   // 2. is there a signed-in account to save into
   const tok=(typeof Cloud!=='undefined'&&Cloud&&Cloud.token)||'';
-  line('Signed in to a SlickChart account', !!tok, tok?'yes':'NO \u2014 nothing can reach the server');
+  // No session AND nothing saved is not a broken account \u2014 it is a browser that has never been
+  // the app. Tapping a link opens Safari or Chrome, and on a phone where SlickChart was added to the
+  // home screen that is a separate box from the installed app, with its own storage. The report that
+  // comes back is all red and all meaningless, and it cost a round to work that out.
+  let _anySaved=false;
+  try{['sc_bizinfo','sc_availability','sc_brand_colors','sc_forms','sc_clients','sc_professions'].forEach(function(k){
+    let v=null;try{v=(typeof _lsGet==='function')?_lsGet(k):localStorage.getItem(k);}catch(e){}
+    if(v!=null&&String(v).length>2)_anySaved=true;
+  });}catch(e){}
+  const _wrongBrowser=!tok&&!_anySaved;
+  line('Signed in to a SlickChart account', !!tok, tok?'yes':(_wrongBrowser
+    ?'NO \u2014 and nothing is saved here either, so this is NOT the browser you use SlickChart in'
+    :'NO \u2014 signed out on this device, so nothing can be saved to the account'));
 
   // 3. does it reach the account, and come back
   let put=null,got=null;
@@ -3223,8 +3252,11 @@ async function _runSelfCheck(){
    .join('\n');
 
   document.getElementById('tt').textContent='Self-check';
+  const _intro=_wrongBrowser
+    ? '<div style="background:var(--p-amber-bg);border:1px solid var(--p-amber);border-radius:12px;padding:12px 14px;margin-bottom:14px;font-size:16px;color:var(--p-ink);line-height:1.6;"><b>This isn\u2019t the app.</b> Nothing is signed in here and nothing is saved here, so this browser has never been your SlickChart. Tapping a link opens a different browser from the app on your home screen \u2014 they don\u2019t share anything.<br><br><b>Do this instead:</b> open SlickChart the way you normally do, go to <b>More \u2192 Settings</b>, scroll to the very bottom, and tap the small <b>SlickChart \u00b7 Version</b> line five times. The same check opens, with your real answers in it.</div>'
+    : '<div style="font-size:16px;color:var(--p-mut);line-height:1.6;margin-bottom:14px;">This checks whether saving works on this device and reaches your account. Nothing here changes your data. Screenshot it, or tap Copy and paste it in a message.</div>';
   S.innerHTML='<div style="padding:14px 16px;">'
-    +'<div style="font-size:16px;color:var(--p-mut);line-height:1.6;margin-bottom:14px;">This checks whether saving works on this device and reaches your account. Nothing here changes your data. Screenshot it, or tap Copy and paste it in a message.</div>'
+    +_intro
     +'<div style="background:var(--surf2);border:1px solid var(--p-line);border-radius:12px;overflow:hidden;margin-bottom:14px;">'
     +L.map(function(x,i){return '<div style="display:flex;align-items:flex-start;gap:10px;padding:11px 12px;'+(i<L.length-1?'border-bottom:1px solid var(--p-line2);':'')+'">'
       +'<i class="ti '+(x.ok?'ti-circle-check':'ti-alert-triangle')+'" style="font-size:18px;flex-shrink:0;color:'+(x.ok?'var(--p-green)':'var(--p-red)')+';"></i>'
@@ -3241,8 +3273,18 @@ async function _runSelfCheck(){
       +(r.onDevice&&r.onAccount?('<br>'+(r.same?'Both match.':'They do not match.')):'')+'</div></div>';}).join('')
     +'</div>'
     +'<button onclick="_copySelfCheck()" class="btnp" style="border-radius:8px;width:100%;"><i class="ti ti-copy"></i> Copy this report</button>'
+    +'<button onclick="_leaveSelfCheck()" class="btng" style="border-radius:8px;width:100%;margin-top:8px;">Back to SlickChart</button>'
     +'<div style="height:24px;"></div></div>';
   window.__SC_SELFCHECK__=plain;
+}
+// The check replaces the whole screen before the app boots, so give her a way out that doesn't
+// involve editing a web address on a phone.
+function _leaveSelfCheck(){
+  try{
+    const u=new URL(location.href);u.searchParams.delete('selfcheck');
+    if(location.href!==u.toString()){location.replace(u.toString());return;}
+  }catch(e){}
+  try{location.reload();}catch(e){}
 }
 function _copySelfCheck(){
   const t=window.__SC_SELFCHECK__||'';
@@ -18296,7 +18338,7 @@ function renderAccount(){
     <div style="border-top:1px solid var(--p-line);"></div>
     <div onclick="_founderKvHealth(this)" style="display:flex;align-items:center;gap:11px;padding:13px 14px;cursor:pointer;"><div style="width:38px;height:38px;border-radius:12px;background:var(--p-surf2);display:flex;align-items:center;justify-content:center;flex-shrink:0;"><i class="ti ti-stethoscope" style="font-size:18px;color:var(--p-green);"></i></div><div style="flex:1;"><div style="font-size:16px;font-weight:500;color:var(--p-ink);">Are a provider’s saves landing?</div><div style="font-size:16px;color:var(--p-mut);">When their settings last reached the server. Timestamps &amp; sizes only, never their data</div></div><i class="ti ti-chevron-right" style="font-size:16px;color:var(--p-mut);"></i></div>
   </div></div>`:''}
-  <div style="text-align:center;padding:14px;font-size:14px;color:var(--p-mut);">SlickChart · Version 1.0.3 · build ${_fileEsc(APP_BUILD)}</div></div>`;
+  <div onclick="_versionTap()" style="text-align:center;padding:14px;font-size:14px;color:var(--p-mut);cursor:default;-webkit-user-select:none;user-select:none;">SlickChart · Version 1.0.3 · build ${_fileEsc(APP_BUILD)}</div></div>`;
 }
 
 

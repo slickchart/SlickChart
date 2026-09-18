@@ -851,8 +851,25 @@ later can no longer win, and that a save with no hours loaded can't write `null`
 
 **Still open for this provider:** branding (85KB) and forms (94KB) were fresh on the server, so their
 resets are a different mechanism from hours — both are over the 24KB offload threshold and live in
-IndexedDB on the device (§2e), so suspect the hydrate path, not the sync. Her self-check output shows
-device vs account for both; get it before theorising again.
+IndexedDB on the device (§2e), so suspect the hydrate path, not the sync. Get her self-check output
+before theorising again — and see the warning below about WHERE she runs it.
+
+**The first self-check came back from the wrong browser, and every line of it was meaningless.**
+It reported no session and nothing saved for any of the four settings, while the founder tool showed
+her account holding 58 keys and 222KB with six live sign-ins. Both were true: she tapped the link from
+a message, which opens Safari or Chrome — and on a phone where SlickChart was added to the home
+screen, **that is a different storage box from the installed app.** A link can therefore never reach
+the app a provider is actually using.
+
+Two changes so it can't happen again:
+* The check **detects it**: no session AND nothing stored means it was never this app, and it says so
+  in plain words at the top instead of printing a wall of red, plus a "Back to SlickChart" button
+  (it replaces the whole screen before boot, and editing a URL on a phone is not a thing to ask of
+  someone).
+* **Five taps on the version line at the bottom of Settings runs it**, which works INSIDE the
+  installed app. No button, no menu entry, nothing added to the UI — it is the text that was already
+  there. That is the route to give a provider; `?selfcheck=1` is only for someone on a desktop
+  browser they actually sign in with.
 
 ---
 
