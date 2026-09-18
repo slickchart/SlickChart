@@ -3237,7 +3237,7 @@ function _lsGet(k){
 // mobile/desktop reliably; beforeunload is a desktop backstop.
 (function(){
   try{
-    const flush=function(){try{if(typeof _flushWorkspacePersist==='function')_flushWorkspacePersist();}catch(e){}try{if(typeof Cloud!=='undefined'&&Cloud.flushBeacon)Cloud.flushBeacon();}catch(e){}};
+    const flush=function(){try{if(typeof _flushSettingsEdits==='function')_flushSettingsEdits();}catch(e){}try{if(typeof _flushWorkspacePersist==='function')_flushWorkspacePersist();}catch(e){}try{if(typeof Cloud!=='undefined'&&Cloud.flushBeacon)Cloud.flushBeacon();}catch(e){}};
     window.addEventListener('pagehide',flush);
     window.addEventListener('beforeunload',flush);
     document.addEventListener('visibilitychange',function(){if(document.visibilityState==='hidden')flush();});
@@ -5292,12 +5292,45 @@ function _savePersistenceSweep(){
   persistStaff();persistAutos();persistNotifSettings();persistCheckins();persistCourses();persistShopBundles();
   persistAffiliateLinks();persistCustomNoteTemplates();persistClientHealingStage();persistAmazonAssociates();}catch(e){}
 }
+// ── DON'T THROW AWAY WHAT SHE TYPED ──────────────────────────────────────────────────────────────
+// Every settings editor here is DOM-only until its own Save button is pressed, and the two longest
+// ones make that very easy to miss. "Business & Branding" is two separate forms stacked into one
+// screen with TWO Save buttons, so pressing the one she could see saved that half and silently
+// discarded the other. The form builder's Save sat at the top of a question list long enough to
+// scroll well past. In both cases leaving the screen dropped the edit with no warning at all, and
+// coming back re-rendered the old value — which from her side is exactly "I edited it, I hit save,
+// and it reset itself when I went somewhere else".
+//
+// So nothing on screen is lost on the way out: whatever editor is open is harvested and persisted
+// before we navigate away or the page goes. Quiet — no toast, this is not an event, it's just not
+// losing her work.
+function _flushSettingsEdits(){
+  try{
+    if(document.getElementById('bi-name')&&typeof saveBizInfo==='function'){
+      const sig=_bizInfoSig();
+      if(!(sig!=null&&_bizSig!=null&&sig===_bizSig))saveBizInfo(true);
+    }
+  }catch(e){}
+  try{
+    if(document.getElementById('brand-tagline')&&typeof saveBranding==='function'){
+      const sig=_brandSig();
+      if(!(sig!=null&&_brandSigOpen!=null&&sig===_brandSigOpen))saveBranding(true);
+    }
+  }catch(e){}
+  try{
+    if(document.getElementById('qlist')&&document.getElementById('form-name-input')&&typeof saveFormBuilder==='function'){
+      const tid=(_navCur&&_navCur.screen==='form-builder')?_navCur.data:null;
+      if(tid&&tid!==_fbSavedTid)saveFormBuilder(tid,false,true);
+    }
+  }catch(e){}
+}
 function navBack(){if(_navStack.length){const prev=_navStack.pop();_navBacking=true;nav(prev.screen,prev.data);_navBacking=false;}}
 // Reset the screen to the top, used by multi-step flows when advancing so each step starts at the
 // top of the fields instead of wherever the previous step was scrolled to.
 function _provScrollTop(){try{S.scrollTop=0;}catch(e){}try{window.scrollTo(0,0);}catch(e){}}
 let _ncLastStep=-1;
 function nav(screen,data){
+  try{if(typeof _flushSettingsEdits==='function')_flushSettingsEdits();}catch(e){}
   try{if(typeof _savePersistenceSweep==='function')_savePersistenceSweep();}catch(e){}
   const titles={home:'Home',clients:'Clients',forms:'Forms, Guides & Courses',messages:'Messages',pro:'Pro',more:'More',account:'Account',branding:'Branding',shop:'Shop',partners:'Partners',learn:'Courses',virtual:'Virtual Consultations',protocols:'Protocols',vault:'My Docs',inventory:'Inventory',vendors:'Vendors',calendar:'Calendar','today-appts':"Today's appointments",'week-appts':"This week's appointments",'week-clients':"This week's clients",room:'Session','data-setup':'Get set up','import-clients':'Import clients','import-products':'Import products','switch-app':'Switch apps','connect-calendar':'Sync calendar','checkout':'Take payment','whats-new':"What’s new",'feedback-inbox':'Feedback inbox','beta-stats':'Growth stats','payments':'Payments','build-invoice':'Build invoice','service-menu':'Service menu','export-data':'Export Data','reports':'Reports'};
   document.getElementById('tt').innerHTML='Slick<span class="brandc">Chart</span>';
@@ -12797,6 +12830,19 @@ function _profFormIds(){return _profFormDefs().map(f=>f.id);}
 // Provider-set emoji override for a form; '' = deliberately no icon, undefined = use default tile.
 let formEmojis={};
 let _formIconImgDraft=null;   // staged uploaded image (data URL) for the form being edited
+// State for the form builder's leave-flush (see _flushSettingsEdits). _fbSavedTid is the editor tid
+// already written, so navigating away right after a Save doesn't write the same screen twice — which
+// for a brand-new form would create a duplicate. _fbInitialSig is what the screen looked like when it
+// opened, so walking away from a form she didn't actually touch persists nothing.
+let _fbSavedTid=null,_fbInitialSig=null;
+// Everything the builder would save, as one comparable string.
+function _fbSig(tid){
+  try{
+    const r=_readFormBuilder(tid);
+    const hide=document.getElementById('form-emoji-hide'),ei=document.getElementById('form-emoji-input');
+    return JSON.stringify([r.name,r.qs,!!(hide&&hide.checked),(ei&&ei.value)||'',_formIconImgDraft||'']);
+  }catch(e){return null;}
+}
 function _formEmoji(fid){return (fid in formEmojis)?formEmojis[fid]:undefined;}
 function _onFormIconFile(input){
   const f=input&&input.files&&input.files[0];if(!f)return;
@@ -13216,7 +13262,7 @@ function persistForms(){
   _stampChangedEntries(formGuides,prev&&prev.guides,now);
   _stampChangedEntries(formEmojis,prev&&prev.emojis,now);
   const v=JSON.stringify({tmpls:formTmpls,guides:formGuides,custom:customForms,emojis:formEmojis});
-  try{localStorage.setItem('sc_forms',v);}catch(e){try{_storageFullToast('Your forms');}catch(e2){}}
+  try{localStorage.setItem('sc_forms',v);}catch(e){try{_noteWriteRefused('forms',e);}catch(e2){}}
   try{_formsSnap=JSON.parse(v);}catch(e){_formsSnap=null;}
   try{if(typeof _pushKeyNow==='function')_pushKeyNow('sc_forms',v);}catch(e){}   // immediate push so a fast refresh can't lose the change
 }
@@ -14288,6 +14334,7 @@ function _qRowHTML(q){
 }
 function renderFormBuilder(tid){
   setNav('pro');
+  _fbSavedTid=null;_fbInitialSig=null;
   const tmpl=formTmpls[tid]||formTmpls.new;
   document.getElementById('tt').textContent=tid==='new'?'New form':'Edit form';
   S.innerHTML=`
@@ -14311,10 +14358,12 @@ function renderFormBuilder(tid){
   <div id="qlist" style="padding:0 16px;">
     ${_orderedFormQs(tmpl.qs).map(q=>_qRowHTML(q)).join('')}
   </div>
-  <button onclick="addFormQ()" style="width:calc(100% - 32px);margin:0 16px 16px;border:1.5px dashed var(--p-line);border-radius:12px;padding:12px;display:flex;align-items:center;justify-content:center;gap:8px;font-size:16px;color:var(--p-mut);background:none;cursor:pointer;"><i class="ti ti-plus"></i> Add a question</button>`;
+  <button onclick="addFormQ()" style="width:calc(100% - 32px);margin:0 16px 12px;border:1.5px dashed var(--p-line);border-radius:12px;padding:12px;display:flex;align-items:center;justify-content:center;gap:8px;font-size:16px;color:var(--p-mut);background:none;cursor:pointer;"><i class="ti ti-plus"></i> Add a question</button>
+  <button onclick="saveFormBuilder('${tid}')" style="width:calc(100% - 32px);margin:0 16px 20px;border:none;background:var(--accent);border-radius:12px;padding:13px;font-size:16px;font-weight:600;color:var(--accent-ink);cursor:pointer;">Save form</button>`;
   // Grow each question-label textarea to fit its full text, so long consent lines wrap and are
   // fully readable instead of being clipped to one line.
   _sizeQLabels();
+  _fbInitialSig=_fbSig(tid);
 }
 function _sizeQLabels(){try{document.querySelectorAll('#qlist .q-label').forEach(t=>{t.style.height='auto';t.style.height=t.scrollHeight+'px';});}catch(e){}}
 function _changeQType(sel){
@@ -14377,11 +14426,17 @@ function _readFormBuilder(tid){
   qs.sort((a,b)=>(a.type==='Signature'?1:0)-(b.type==='Signature'?1:0));
   return {name,qs,blankCount:_blankCount};
 }
-function saveFormBuilder(tid,thenPreview){
+function saveFormBuilder(tid,thenPreview,quiet){
   const {name,qs,blankCount}=_readFormBuilder(tid);
-  // If any question rows have no label, don't silently drop them, tell the provider
-  // and highlight the empty ones so it's obvious what to fix.
-  if(blankCount>0){
+  // Leaving the screen saves whatever is finished rather than asking about it: an unnamed row is
+  // simply left out (it carries no content anyway), and a brand-new form with nothing in it is not
+  // created at all. Only an explicit Save stops to ask her to name a question.
+  if(quiet){
+    const sig=_fbSig(tid);
+    if(sig!=null&&_fbInitialSig!=null&&sig===_fbInitialSig)return;   // she opened it and left it alone
+    if(tid==='new'&&!(name||'').trim()&&!qs.length)return;
+  }
+  else if(blankCount>0){
     let firstEmpty=null;
     document.querySelectorAll('#qlist .qrow').forEach(row=>{
       const inp=row.querySelector('.q-label');
@@ -14411,6 +14466,8 @@ function saveFormBuilder(tid,thenPreview){
   }catch(e){}
   _formIconImgDraft=null;
   persistForms();
+  _fbSavedTid=tid;_fbInitialSig=_fbSig(tid);
+  if(quiet)return;
   if(thenPreview){nav('form-preview',id);return;}
   proToast('Form saved');
   nav('forms');
@@ -19403,7 +19460,7 @@ function loadBrandColors(){
 let brandColors=loadBrandColors();
 function saveBrandColors(){
   try{(function(_v){localStorage.setItem('sc_brand_colors',_v);if(typeof _pushKeyNow==='function')_pushKeyNow('sc_brand_colors',_v);return _v;})(JSON.stringify(_stampNow(brandColors)));return true;}
-  catch(e){_storageFullToast('Your branding');return false;}
+  catch(e){_noteWriteRefused('branding',e);return false;}
 }
 
 // Derive readable ink + dark tints from any accent, then drive the whole app
@@ -19505,11 +19562,13 @@ function brandColorBlock(which,label,sub,presets){
     </div>
   </div>`;
 }
-function saveBranding(){
+function saveBranding(quiet){
   const tEl=document.getElementById('brand-tagline'),wEl=document.getElementById('brand-welcome');
   if(tEl)brandColors.tagline=tEl.value.trim();
   if(wEl)brandColors.welcomeMessage=wEl.value.trim();
   saveBrandColors();applyTheme();_syncHeaderLogo();
+  _brandSigOpen=_brandSig();
+  if(quiet){_syncBrandNow();return;}
   // Branding reaches clients via the shared store (api/client-data.js). Force a DIRECT push of the
   // FULL brand (logo + colors) now, not just the debounced localStorage-hook sync \u2014 the logo
   // data URL is big enough that the hook can silently fail, which is why a changed logo wasn't
@@ -19575,6 +19634,7 @@ function renderBranding(){
     <div style="background:var(--surf2);border:1px solid var(--p-line);border-radius:12px;margin-bottom:8px;">${['Client intake forms','Consent & waiver forms','Pre-visit check-in','Virtual consultation reviews','Partner intro emails'].map(lbl=>`<div style="display:flex;justify-content:space-between;align-items:center;padding:8px 14px;border-bottom:1px solid var(--p-line2);"><span style="font-size:16px;color:var(--p-ink);">${lbl}</span><i class="ti ti-check" style="color:var(--p-green);font-size:16px;"></i></div>`).join('')}</div>
     <div style="font-size:14px;color:var(--p-mut);padding:0 2px 22px;">Your branding always shows everywhere a client sees you \u2014 this isn't a per-item toggle yet.</div>
   </div>`;
+  _brandSigOpen=_brandSig();
 }
 function _updateBrandPreview(){
   const tag=(document.getElementById('brand-tagline')||{}).value||'';
@@ -19629,6 +19689,22 @@ function halfHourOptions(){
   return out;
 }
 let bizHours=null;
+// What the Business info / Branding screens looked like when they opened. _flushSettingsEdits
+// compares against these so simply visiting a screen and leaving doesn't re-stamp and re-push a
+// setting — only an actual edit does, which keeps a newer change from another device safe.
+let _bizSig=null,_brandSigOpen=null;
+function _bizInfoSig(){
+  try{
+    const g=id=>{const e=document.getElementById(id);return e?e.value:null;};
+    return JSON.stringify([['bi-name','bi-owner','bi-email','bi-phone','bi-address','bi-city','bi-state','bi-zip','bi-license','bi-website','bi-instagram'].map(g),bizHours]);
+  }catch(e){return null;}
+}
+function _brandSig(){
+  try{
+    const g=id=>{const e=document.getElementById(id);return e?e.value:null;};
+    return JSON.stringify([g('brand-tagline'),g('brand-welcome'),brandColors.primary,brandColors.secondary,String(brandColors.logoDataUrl||'').length]);
+  }catch(e){return null;}
+}
 function toggleBizDay(k){bizHours[k].open=!bizHours[k].open;const c=document.getElementById('biz-hours');if(c)c.innerHTML=bizHoursRows();}
 function setBizHour(k,which,v){bizHours[k][which]=v;}
 function bizHoursRows(){
@@ -19653,15 +19729,14 @@ function copyHoursToAll(){
   const c=document.getElementById('biz-hours');if(c)c.innerHTML=bizHoursRows();
   proToast('Applied Monday\'s hours to all open days');
 }
-// A save that could not be written to THIS device. The change did reach the account (the storage
-// patch pushes before it throws), but every screen renders from the device copy, so it will keep
-// showing the old value here until space is freed. Say that, rather than "saved".
-function _storageFullToast(what){
-  try{
-    proToast((what||'That')+" is saved to your account, but this device is out of storage so it may still show the old version here. Open Settings → Storage to free space, or sign in on another device.",9000);
-  }catch(e){}
+// A local write that did not land. The account copy is already on its way (the storage patch pushes
+// before it throws), so there is nothing here for the provider to do and nothing worth putting on
+// her screen — a genuinely full device is reported once per session by _persistFailWarn. Log it so
+// it shows up in a console trace, and leave the UI alone.
+function _noteWriteRefused(what,e){
+  try{console.warn('[SlickChart] local write refused for '+(what||'a setting')+' (account copy still pushed)',e);}catch(_){}
 }
-function saveBizInfo(){
+function saveBizInfo(quiet){
   const g=id=>{const e=document.getElementById(id);return e?e.value:undefined;};
   const map={name:'bi-name',ownerName:'bi-owner',email:'bi-email',phone:'bi-phone',address:'bi-address',city:'bi-city',state:'bi-state',zip:'bi-zip',license:'bi-license',website:'bi-website',instagram:'bi-instagram'};
   Object.keys(map).forEach(k=>{const v=g(map[k]);if(v!==undefined)bizInfo[k]=v;});
@@ -19678,16 +19753,28 @@ function saveBizInfo(){
   // KV), so push a roster sync, otherwise real clients keep stale hours/studio until some other
   // action happens to sync. Full-roster since these are shared across all clients.
   try{if(typeof _scheduleClientSync==='function')_scheduleClientSync();}catch(e){}
-  if(_saveErr)_storageFullToast('Your business info');
-  else proToast('Business info & hours saved ✨');
+  if(_saveErr)_noteWriteRefused('business info',_saveErr);
+  _bizSig=_bizInfoSig();
+  if(!quiet)proToast('Business info & hours saved ✨');
 }
 
 
+// One screen, one Save. This view stacks two independent forms, each of which used to carry its own
+// Save that persisted only its own half — so filling in business info, scrolling down past the fold
+// and pressing the Save she could see saved the branding and threw the business info away (and the
+// other way round). Both buttons now save both halves.
+function saveBusinessBranding(){
+  try{saveBizInfo(true);}catch(e){}
+  try{saveBranding(true);}catch(e){}
+  try{proToast('Business info, hours & branding saved \u2728');}catch(e){}
+}
 function renderBusinessBranding(){
   renderBizInfo();const _biz=S.innerHTML;
   renderBranding();const _brand=S.innerHTML;
   document.getElementById('tt').textContent='Business & Branding';
-  S.innerHTML=_biz+'<div class="sh" style="margin-top:10px;padding-top:8px;border-top:1px solid var(--p-line);"><h2>Branding & logo</h2></div>'+_brand;
+  const _both=function(h){return String(h).split('onclick="saveBizInfo()"').join('onclick="saveBusinessBranding()"').split('onclick="saveBranding()"').join('onclick="saveBusinessBranding()"');};
+  S.innerHTML=_both(_biz)+'<div class="sh" style="margin-top:10px;padding-top:8px;border-top:1px solid var(--p-line);"><h2>Branding & logo</h2></div>'+_both(_brand)
+    +'<div style="padding:0 16px 24px;"><button onclick="saveBusinessBranding()" style="width:100%;border:none;background:var(--accent);border-radius:12px;padding:13px;font-size:16px;font-weight:600;color:var(--accent-ink);cursor:pointer;">Save business info &amp; branding</button></div>';
 }
 function renderAccountBilling(){
   renderPasswordSecurity();const _sec=S.innerHTML;
@@ -19768,6 +19855,7 @@ function renderBizInfo(){
 
     <button class="btnp" style="border-radius:8px;margin-bottom:20px;" onclick="saveBizInfo()"><i class="ti ti-check"></i> Save changes</button>
   </div>`;
+  _bizSig=_bizInfoSig();
 }
 function renderNotifications(){
   document.getElementById('tt').textContent='Notification preferences';
