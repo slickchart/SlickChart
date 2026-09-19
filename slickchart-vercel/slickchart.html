@@ -214,7 +214,7 @@ const S=document.getElementById('S');
 // resets when I save it" and there was no way to tell whether her phone had any of them — a whole
 // day was spent debugging code she may not have been running. Shown at the bottom of Settings, so
 // the answer is a screenshot away. Bump it on every ship.
-const APP_BUILD='2026-09-19i';
+const APP_BUILD='2026-09-19j';
 
 
 /* ════════════════════════════════════════════════════════════════
@@ -3064,11 +3064,12 @@ function _tokenOwner(){
   let data='';
   try{
     const t=(typeof Cloud!=='undefined'&&Cloud&&Cloud.token)||Cloud._origGet('sc_token')||'';
-    // [1] is the PAYLOAD. This read [0], the header — which is the same `eyJhbGciOiJIUzI1NiJ9` for
-    // every token ever minted, so this returned an IDENTICAL value for every account. The offloaded
-    // IndexedDB cache is stamped with it precisely so another account's cached data is thrown away
-    // rather than read (CLAUDE.md §0), and that check could never fire.
-    data=String(t).split('.')[1];if(!data)return '';
+    // [0] IS the payload: these tokens are `b64url(payload).hmac` — TWO parts, not a three-part JWT
+    // (lib/auth.js signToken). Changing this to [1] read the SIGNATURE, which differs per session, so
+    // every device fell back to 't:'+signature and no two devices on the same account could ever
+    // agree. The original was right, and the owner guard it feeds (another account's offloaded cache
+    // is purged rather than read, CLAUDE.md §0) has been working correctly all along.
+    data=String(t).split('.')[0];if(!data)return '';
     const b=atob(data.replace(/-/g,'+').replace(/_/g,'/')+'==='.slice((data.length+3)%4));
     const o=JSON.parse(b);
     if(o&&o.u)return String(o.u);

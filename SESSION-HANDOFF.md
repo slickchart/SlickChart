@@ -1471,18 +1471,38 @@ The self-check now prints it:
 **Get that line from BOTH devices before touching sync code again.** Different → the answer is a
 sign-in problem, not a merge problem. Suite: `whichrow.mjs`.
 
-### A §0 bug found while adding it
+### CORRECTION: there was no §0 bug, and "fixing" it created one
 
-`_tokenOwner()` did `String(t).split('.')[0]` — the JWT **header**, not the payload. Every token ever
-minted has the same header (`eyJhbGciOiJIUzI1NiJ9`), so it returned an **identical value for every
-account**, always via the `'t:'+data` fallback.
+I claimed `_tokenOwner()`'s `split('.')[0]` was reading a JWT header and shipped `[1]` in `19i`.
+**Wrong.** These tokens are `b64url(payload) + '.' + hmac` — **TWO parts** (`lib/auth.js signToken`),
+so `[0]` IS the payload and the original code was correct. `[1]` is the SIGNATURE, which differs per
+session, so on `19i` every device fell back to `'t:'+signature` and no two devices on the same account
+could agree. Both of Ashley's reports showed that useless value. Reverted in `19j` and covered by
+`tokrow.mjs`, which builds tokens the way `signToken` actually does (two devices, same account,
+different sessions → same id; different account → different id).
 
-That value stamps the offloaded IndexedDB cache with its owner, and `_hydrateOffloaded()` compares it
-specifically so **another account's cached data on a shared device is thrown away rather than read**.
-That comparison could never fail, so the guard has never once fired. Now reads `[1]`.
+The owner guard it feeds (another account's offloaded cache is purged rather than read) **was working
+correctly all along.** Do not "fix" it again without reading `signToken` first.
 
-Existing devices will see their stamp change and purge the offload cache once — harmless by design:
-every offloaded key is one the account also holds, and the pull restores it.
+**Lesson: read the code that MINTS a value before writing code that parses it.** This cost a build and
+sent Ashley to run a diagnostic that could not work.
+
+### What her two reports (both on `19i`) actually established
+
+* `sc_forms` is **byte-identical on the phone, the computer and the account** (82,355B), and **both
+  devices list `Spicule Peel Consent (custom2)`** under "mine here" and "mine on account". Neither
+  reports a name disagreement. **The data has arrived on the computer.**
+* Her phone showed `sc_brand_colors` device 13 min ago vs account **1 min ago, DIFFERENT** — the
+  account carrying an update her COMPUTER made two minutes earlier. **Both devices are on the same
+  account row**, so the §2ab theory is dead.
+* Her phone restored *"2 courses were missing from this device — put back from your account backups."*
+  Sync is actively working.
+
+**So if the computer's Forms screen still does not show the form, the data is there and the LIST is
+hiding it** — a display filter (`_formHidden` / `hiddenForms`), not sync. That is the next place to
+look, and it is a much smaller surface. Her last screenshot of that screen was from an older build,
+before `19e` stopped the list hiding forms the merge had kept, so it needs re-checking before
+assuming.
 
 ---
 
