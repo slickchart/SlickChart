@@ -1292,7 +1292,43 @@ Suite: `formid.mjs` — the full history (make two, delete one, reopen, make a t
 form keeps its own id, renders immediately, survives a reload, reaches the account, appears on a second
 device, and that the deleted one stays gone on both. `idreuse.mjs` is the bare before/after repro.
 
-**Nothing recovers her lost form.** It is not on the device or the account; it has to be remade.
+**That fix was the wrong layer, and the rebuild proved it.** She remade the form on the fixed build
+and it STILL did not reach her computer. Skipping the ids *this device* knows were deleted only works
+if the device knows every deletion ever made on any device — and that assumption cannot hold:
+
+* Deleted ids are permanent and are UNIONED across devices (`_mergeTombstone`).
+* But `customFormSeq` is rebuilt **per device** from the forms that still exist.
+
+So a phone can hand a new form a number a computer retired months ago and never told it about in time.
+The form then looks perfectly fine on the phone, while on the computer it is invisible AND stripped by
+`_mergeForms` — **and the computer pushes that stripped copy back, deleting it from the account.** That
+is exactly what her self-check showed: device and account identical, one custom form, no error anywhere.
+
+**Real fix, two parts:**
+
+1. **Form ids are now unique by construction** — `'custom_'+Date.now().toString(36)+random`, the same
+   shape guides (`'g-custom-'+Date.now()`) and courses (`'c'+time+random`) have always used. A
+   timestamped id cannot collide with any historical `customN` tombstone from any device, ever.
+   **That guides and courses never had this bug is the diagnosis, not a coincidence** — it is why her
+   aftercare guide crossed over and the consent form did not.
+2. **`_healGhostForms()` repairs the damage with no action from her.** A form that EXISTS and whose id
+   is on the deleted list is a contradiction — deleting removes the form and tombstones the id in one
+   step, so holding both is damage, never intent. The heal re-keys such a form (moving its `tmpls`,
+   `guides` and `emojis` entries with it) to a fresh unique id and persists, which pushes it. It runs
+   in `_reloadAll()` after the pull (both forms and tombstones settled) and in `_reloadAfterHydrate()`.
+   A genuinely deleted form is absent from `customForms`, so it is never resurrected.
+
+The self-check also now lists her own forms **with their ids** on both sides, and flags the
+contradiction directly: *"On your deleted list even though it still exists: … a form in this state is
+invisible everywhere and cannot sync."*
+
+Suites: `ghostheal.mjs` — the exact divergence (the computer retired `custom2`, the phone did not know,
+the phone's form carries `custom2`): the phone repairs it, the questions travel with it, the repair
+reaches the account, the computer finally shows it, the retired id stays retired, and a form she really
+deleted is not resurrected. `ghost.mjs` covers the self-check detection.
+
+**Her lost form:** if her phone still holds it, opening the app re-keys it and it appears everywhere.
+If it was already stripped on both sides, it has to be remade once — and will then stay.
 
 **If a form goes missing again:** get the self-check BEFORE re-creating it. If it says "only on this
 device", the save never left the phone and the push path is the place to look. If the account has it

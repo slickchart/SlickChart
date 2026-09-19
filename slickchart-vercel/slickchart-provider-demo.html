@@ -468,7 +468,7 @@ const S=document.getElementById('S');
 // resets when I save it" and there was no way to tell whether her phone had any of them — a whole
 // day was spent debugging code she may not have been running. Shown at the bottom of Settings, so
 // the answer is a screenshot away. Bump it on every ship.
-const APP_BUILD='2026-09-18q';
+const APP_BUILD='2026-09-19a';
 
 
 /* ════════════════════════════════════════════════════════════════
@@ -3343,6 +3343,7 @@ async function _hydrateOffloaded(){
 // "reset" screen and save over it.
 function _reloadAfterHydrate(){
   try{if(typeof loadForms==='function')loadForms();}catch(e){}
+  try{if(typeof _healGhostForms==='function')_healGhostForms();}catch(e){}
   try{if(typeof loadBrandColors==='function')brandColors=loadBrandColors();}catch(e){}
   try{if(typeof applyTheme==='function')applyTheme();}catch(e){}
   try{if(typeof _syncHeaderLogo==='function')_syncHeaderLogo();}catch(e){}
@@ -3523,6 +3524,9 @@ function _reloadAll(){try{
   try{if(typeof _migrateGuideFiles==='function')_migrateGuideFiles();}catch(e){}
   if(typeof loadAi==='function')loadAi();
   if(typeof loadForms==='function')loadForms();
+  // Runs after the pull, so both the forms and the deleted list are settled. Repairs a form stuck
+  // with a retired id — which is invisible and unsyncable — and pushes the repair up.
+  try{if(typeof _healGhostForms==='function')_healGhostForms();}catch(e){}
   loadBizInfo();_syncProviderAvatar();_syncHeaderLogo();loadClients();loadMergedIds();loadMergedInto();loadDeletedClients();loadHiddenSquare();loadMessages();loadInv();loadVendors();_loadPersistenceSweep();try{_initCapturedPhotos();}catch(e){}_loadHomeDismissed();_loadAttnSeen();loadProviderNoteDrafts();if(typeof loadSessionSummaries==='function')loadSessionSummaries();if(!_sampleHidden()){_seedMayaOnce();}else{_purgeSample();}try{_purgeRemovedClients();}catch(e){}_seedBirthdays();if(!_sampleHidden()&&typeof _demoCheckinSeed==='function')_demoCheckinSeed();
   try{if(typeof loadBookCfg==='function')loadBookCfg();}catch(e){}
   if(typeof loadWorkspace==='function')loadWorkspace();
@@ -3684,6 +3688,18 @@ async function _runSelfCheck(){
         const dn=formNames(local),an=formNames(sv);
         r.onlyHere=onlyIn(dn,an);      // made on this device, never reached the account
         r.onlyAcct=onlyIn(an,dn);      // on the account, not on this device
+        // A form that exists AND is on the deleted list is a contradiction, and it is invisible:
+        // every list that renders forms filters the deleted ones out, and the sync strips them. This
+        // is the shape of the bug where a new form was handed a dead id, and of anything like it.
+        r.ghosts=[];
+        try{
+          const hid=JSON.parse(((typeof _lsGet==='function')?_lsGet('sc_hidden_forms'):localStorage.getItem('sc_hidden_forms'))||'{}')||{};
+          const both=Object.assign({},an,dn);
+          Object.keys(both).forEach(function(id){ if(hid[id])r.ghosts.push(both[id]+' ('+id+')'); });
+        }catch(e){}
+        // Her own forms, named with their ids, so two devices can be compared at a glance.
+        r.mine=Object.keys(dn).map(function(id){return dn[id]+' ('+id+')';});
+        r.mineAcct=Object.keys(an).map(function(id){return an[id]+' ('+id+')';});
       }
     }
     return r;
@@ -3703,8 +3719,11 @@ async function _runSelfCheck(){
      +' | account '+(r.onAccount?r.accountBytes+'B, edited '+r.accountEdited:'MISSING')
      +(r.onDevice&&r.onAccount?(r.same?' | identical':(r.explained?' | differs only by '+r.hiddenForms+' deleted form(s) — expected':' | DIFFERENT')):'')
      +(r.counts?' | device has '+r.counts+'; account has '+r.acctCounts:'')
+     +((r.mine&&r.mine.length)?' | mine here: '+r.mine.join(', '):'')
+     +((r.mineAcct&&r.mineAcct.length)?' | mine on account: '+r.mineAcct.join(', '):'')
      +((r.onlyHere&&r.onlyHere.length)?' | ONLY ON THIS DEVICE: '+r.onlyHere.join(', '):'')
-     +((r.onlyAcct&&r.onlyAcct.length)?' | only on the account: '+r.onlyAcct.join(', '):'')))
+     +((r.onlyAcct&&r.onlyAcct.length)?' | only on the account: '+r.onlyAcct.join(', '):'')
+     +((r.ghosts&&r.ghosts.length)?' | ON THE DELETED LIST BUT STILL EXISTS: '+r.ghosts.join(', '):'')))
    .join('\n');
 
   document.getElementById('tt').textContent='Self-check';
@@ -3727,8 +3746,11 @@ async function _runSelfCheck(){
       +'<div style="font-size:14px;color:'+(bad?'var(--p-red)':'var(--p-mut)')+';margin-top:3px;line-height:1.5;">This device: '+(r.counts?esc(r.counts):(r.onDevice?esc(r.deviceBytes)+' bytes, edited '+esc(r.deviceEdited):'nothing saved'))
       +'<br>Your account: '+(r.acctCounts?esc(r.acctCounts):(r.onAccount?esc(r.accountBytes)+' bytes, edited '+esc(r.accountEdited):'nothing saved'))
       +(r.onDevice&&r.onAccount?('<br>'+(r.same?'Both match.':(r.explained?('The only difference is the '+esc(r.hiddenForms)+' form'+(r.hiddenForms===1?'':'s')+' you deleted, which your account still keeps a copy of. That is normal.'):'They do not match.'))):'')
+      +((r.mine&&r.mine.length)?'<br>Your own forms here: '+esc(r.mine.join(', ')):'')
+      +((r.mineAcct&&r.mineAcct.length)?'<br>Your own forms on the account: '+esc(r.mineAcct.join(', ')):'')
       +((r.onlyHere&&r.onlyHere.length)?'<br><b style="color:var(--p-red);">Only on this device, not on your account: '+esc(r.onlyHere.join(', '))+'</b> \u2014 it will not appear on your other devices.':'')
       +((r.onlyAcct&&r.onlyAcct.length)?'<br>On your account but not on this device: '+esc(r.onlyAcct.join(', ')):'')
+      +((r.ghosts&&r.ghosts.length)?'<br><b style="color:var(--p-red);">On your deleted list even though it still exists: '+esc(r.ghosts.join(', '))+'</b> \u2014 a form in this state is invisible everywhere and cannot sync.':'')
       +'</div></div>';}).join('')
     +'</div>'
     +'<button onclick="_copySelfCheck()" class="btnp" style="border-radius:8px;width:100%;"><i class="ti ti-copy"></i> Copy this report</button>'
@@ -15047,16 +15069,58 @@ let customFormSeq=0;
 // forms and stripped by _mergeForms the moment it synced. She saved a form, it said Form saved, and
 // it was never seen again. Guides and courses never had this because their ids carry a timestamp.
 function _newCustomFormId(){
+  // UNIQUE BY CONSTRUCTION, like guides ('g-custom-'+Date.now()) and courses ('c'+time+random).
+  //
+  // Skipping the ids this device knows were deleted is not enough, and that is the whole lesson here.
+  // Deleted ids live for ever and are UNIONED across every device (_mergeTombstone), but the counter
+  // was rebuilt per device from the forms that still exist. So a phone could hand a new form the
+  // number that a computer had retired months earlier and never told it about in time. The form then
+  // looked fine on the phone, and on the computer it was invisible AND stripped by the merge — which
+  // then pushed the stripped copy back, deleting it from the account.
+  //
+  // A timestamped id cannot collide with any historical 'customN' tombstone, from any device, ever.
+  // Guides and courses have always been minted this way and have never once had this problem.
   const taken=function(id){
     try{if(typeof hiddenForms!=='undefined'&&hiddenForms&&hiddenForms[id])return true;}catch(e){}
     try{if(typeof formTmpls!=='undefined'&&formTmpls&&formTmpls[id])return true;}catch(e){}
     try{if(typeof customForms!=='undefined'&&customForms.some(function(f){return f&&f.id===id;}))return true;}catch(e){}
-    // The tombstone list may not be in memory yet on a screen that never loaded it.
     try{const h=JSON.parse(localStorage.getItem('sc_hidden_forms')||'{}');if(h&&h[id])return true;}catch(e){}
     return false;
   };
-  for(let i=0;i<1000;i++){ const id='custom'+(++customFormSeq); if(!taken(id))return id; }
-  return 'custom_'+Date.now().toString(36)+Math.random().toString(36).slice(2,6);
+  for(let i=0;i<50;i++){
+    const id='custom_'+Date.now().toString(36)+Math.random().toString(36).slice(2,7);
+    if(!taken(id))return id;
+  }
+  return 'custom_'+Date.now().toString(36)+Math.random().toString(36).slice(2,9);
+}
+// Repair a form that is already in the broken state: it exists, and its id is on the deleted list.
+//
+// That combination cannot happen on purpose — deleting a form removes it from customForms/formTmpls
+// AND tombstones the id, in one step, so anything holding both is damage. Such a form is invisible in
+// every list that renders forms and is stripped by _mergeForms the moment it syncs, so it can never
+// reach her other devices. Give it a fresh unique id and it simply works again, with nothing for her
+// to do but open the app.
+function _healGhostForms(){
+  try{
+    if(typeof customForms==='undefined'||!Array.isArray(customForms))return 0;
+    let hid={};
+    try{hid=JSON.parse(localStorage.getItem('sc_hidden_forms')||'{}')||{};}catch(e){}
+    try{if(typeof hiddenForms!=='undefined'&&hiddenForms)hid=Object.assign({},hid,hiddenForms);}catch(e){}
+    let n=0;
+    customForms.forEach(function(f){
+      if(!f||!f.id||!hid[f.id])return;
+      const oldId=f.id,newId=_newCustomFormId();
+      f.id=newId;f._ts=Date.now();
+      const move=function(m){try{if(m&&Object.prototype.hasOwnProperty.call(m,oldId)){m[newId]=m[oldId];delete m[oldId];}}catch(e){}};
+      try{move(formTmpls);}catch(e){}
+      try{move(formGuides);}catch(e){}
+      try{move(formEmojis);}catch(e){}
+      n++;
+      try{console.warn('[SlickChart] form "'+(f.name||newId)+'" was carrying a deleted id ('+oldId+') \u2014 re-keyed to '+newId+' so it can sync again');}catch(e){}
+    });
+    if(n){try{persistForms();}catch(e){}}
+    return n;
+  }catch(e){return 0;}
 }
 function _formTypeOptions(sel){return Object.keys(typeIcons).map(t=>`<option value="${t}" ${t===sel?'selected':''}>${t}</option>`).join('');}
 function _qRowHTML(q){
