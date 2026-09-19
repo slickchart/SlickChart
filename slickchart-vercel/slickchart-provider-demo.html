@@ -468,7 +468,7 @@ const S=document.getElementById('S');
 // resets when I save it" and there was no way to tell whether her phone had any of them — a whole
 // day was spent debugging code she may not have been running. Shown at the bottom of Settings, so
 // the answer is a screenshot away. Bump it on every ship.
-const APP_BUILD='2026-09-19b';
+const APP_BUILD='2026-09-19c';
 
 
 /* ════════════════════════════════════════════════════════════════
@@ -14020,7 +14020,15 @@ function filterFormGuides(q){
 // so an ordinary save can't make this device's whole form set look newer than another device's real
 // edits. Without a stamp the merge on pull has no way to tell an edit from the copy it replaced.
 let _formsSnap=null;
+// Stamp only what actually changed since the last saved copy.
+//
+// When prevMap is missing we CANNOT KNOW what changed, and the old behaviour was to stamp every
+// entry with `now`. On a device whose sc_forms lives in IndexedDB that ran before the value had been
+// read back, so all 75 bundled templates were stamped as edited-this-second and pushed. Those
+// timestamps then beat every genuine edit on every device, for ever. Saying "I don't know" has to
+// mean leaving the stamps alone, not claiming authorship of everything.
 function _stampChangedEntries(map,prevMap,now){
+  if(!prevMap||typeof prevMap!=='object')return;
   if(!map||typeof map!=='object')return;
   Object.keys(map).forEach(function(k){
     const v=map[k]; if(!v||typeof v!=='object')return;
@@ -14031,6 +14039,13 @@ function _stampChangedEntries(map,prevMap,now){
   });
 }
 function persistForms(){
+  // Her forms are still in IndexedDB and have not been read back, so formTmpls/customForms right now
+  // are the BUNDLED DEFAULTS, not hers. Saving that would overwrite her real library on the account.
+  // The loaders are re-run the moment IndexedDB answers (_reloadAfterHydrate), so nothing is lost by
+  // waiting.
+  try{ if(typeof _awaitingHydration==='function'&&_awaitingHydration('sc_forms')){
+    try{console.warn('[SlickChart] not saving forms yet \u2014 the real ones are still loading');}catch(e){}
+    return; } }catch(e){}
   const now=Date.now();
   let prev=_formsSnap;
   if(!prev){try{prev=JSON.parse(_lsGet('sc_forms')||'null');}catch(e){prev=null;}}
@@ -15304,7 +15319,9 @@ function saveFormBuilder(tid,thenPreview,quiet){
     customForms.push({id,name,_ts:Date.now()});
   }
   else{const _cf=customForms.find(f=>f&&f.id===id);if(_cf)_cf._ts=Date.now();}   // lets _mergeForms keep the newer edit
-  formTmpls[id]={name,qs};
+  // Stamp the edit here rather than relying on a diff against a snapshot that may not exist: this is
+  // a deliberate save of THIS form, and it must win any merge against an older copy elsewhere.
+  formTmpls[id]={name,qs,_ts:Date.now()};
   // Emoji override: checkbox = hide icon (''); a typed emoji sets it; blank+unchecked reverts to the default tile.
   try{const hide=document.getElementById('form-emoji-hide');const ei=document.getElementById('form-emoji-input');
     if(_formIconImgDraft){formEmojis[id]=_formIconImgDraft;}
@@ -17579,6 +17596,15 @@ function _pushFlushNow(){
 function _pushKeyNow(k,v){
   try{
     if(typeof Cloud==='undefined'||!Cloud||!Cloud.token)return Promise.resolve({ok:false,reason:'nocloud'});
+    // The same rule the patched setItem follows, and the hole that made it useless: this key's real
+    // value is still in IndexedDB, unread, so whatever is being pushed was computed from a hole.
+    // setItem refused the LOCAL write while this pushed the same bad value straight to the ACCOUNT,
+    // where it beat every other device. That is how a provider's form renames kept reverting.
+    if(typeof _awaitingHydration==='function'&&_awaitingHydration(k)){
+      try{_pendingHydrationWrites[k]=1;}catch(e){}
+      try{console.warn('[SlickChart] held back a push of '+k+' '+'\u2014'+' its real value is still loading');}catch(e){}
+      return Promise.resolve({ok:false,reason:'loading'});
+    }
     _pushState();
     const val=String(v);
     // Already on the account, unchanged. Nothing to send.

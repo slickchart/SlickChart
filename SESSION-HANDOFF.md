@@ -1371,6 +1371,54 @@ the missing-form diagnosis (§2w) is still UNCONFIRMED against her real data for
 
 ---
 
+## 2y. THE form bug: boot pushed the DEFAULT forms over her real ones (2026-09-19)
+
+**This is the actual root cause of the missing form AND the reverting renames.** §2w's id theory was
+wrong; so was the round before it. The clue that cracked it was Ashley mentioning a second symptom:
+*"i keep changing microneedling consent to microchanneling consent and it keeps going back."* A
+bundled template reverting has nothing to do with custom-form ids — both symptoms are `sc_forms`
+edits not surviving, so they had to be one bug.
+
+**The mechanism.** `sc_forms` is ~82KB, so it is offloaded to IndexedDB (§2e), which answers
+asynchronously. Boot's `loadForms()` runs during script evaluation, reads nothing, and leaves
+`formTmpls` as the **bundled defaults** with `customForms` empty. A migration
+(`_migrateSkinConcernLongText`, `_migratePhotoReleaseWording`, `_ensureBundledFormQs`) then calls
+`persistForms()`. With no previous copy to diff against, `_stampChangedEntries` stamped **all 75
+templates with `now`** — and `persistForms` pushed that to the account.
+
+Measured on the repro: an 83,934-byte push carrying `custom: 0`. Those timestamps beat every genuine
+edit on every device, for ever, and the empty `custom` array wipes her own forms. **It fired on every
+single app open**, which is why three fixes in a row changed nothing.
+
+§2u's write guard was supposed to stop exactly this and did not: it guards the patched
+`localStorage.setItem`, while `persistForms()` calls `_pushKeyNow()` **separately**, straight to the
+account. The local write was refused and the bad value was uploaded anyway.
+
+**Fix, four parts:**
+1. `_pushKeyNow()` honours `_awaitingHydration(k)` — the hole. A value computed from an unread key is
+   never sent, not locally and not to the account.
+2. `persistForms()` returns early while `sc_forms` is awaiting hydration. `_reloadAfterHydrate()`
+   re-runs the loaders the moment IndexedDB answers, so nothing is lost by waiting.
+3. **`_stampChangedEntries` no longer stamps anything when `prevMap` is missing.** "I cannot tell what
+   changed" must mean leaving the stamps alone, not claiming authorship of all 75. This is the root
+   fix and it protects every other path into that function.
+4. `saveFormBuilder` stamps the edited template explicitly (`formTmpls[id]={name,qs,_ts}`) rather than
+   relying on a diff against a snapshot that may not exist.
+
+Suite: `formstamp.mjs` — a pre-hydration boot pushes NOTHING, her rename and her own form both survive
+it, a real edit afterwards still reaches the account, and `_stampChangedEntries(map,null,now)` stamps
+nothing. `bulkstamp.mjs` is the bare before/after repro (before the fix it prints
+`HER RENAME WAS REVERTED ON THE ACCOUNT: true`).
+
+**Her account still holds the defaults** — days of every-boot overwrites. The rename has to be redone
+once after this ships; it will stick.
+
+**The lesson:** two symptoms that look unrelated are evidence, not noise. The rename reverting was
+diagnostic in a way the missing form never was, because it ruled out every id-based theory in one
+line. Ask for the second symptom sooner.
+
+---
+
 ## 3. Open threads — needs Ashley, or needs verifying
 
 1. ~~**Square `payment.*` webhook subscription.**~~ **CLOSED 2026-09-18 — it is subscribed and has
