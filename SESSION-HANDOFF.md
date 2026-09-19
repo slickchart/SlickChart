@@ -1337,6 +1337,40 @@ simply absent, it was deleted — look at ids and tombstones, as here.
 
 ---
 
+## 2x. The devices were never running the fixes (2026-09-19)
+
+**Read this before debugging anything a provider reports.** Three fixes for the missing-form bug went
+to `main` and each one came back "nothing changed". The fourth message finally said it: *"they are
+both on the build ending in q."* Build `q` is `bc02260` — the fix BEFORE the real one. **Her devices
+had never run the code being tested.** Every "still broken" was a report about old code, and each
+reply aimed the next fix somewhere further from the truth.
+
+Nothing in the app could say which build a device was on, and `slickchart.html` is 2.5MB behind a
+service worker, so a stale copy is quiet and easy.
+
+**Now the app checks itself:**
+* `lib/app-build.js` holds THE stamp. `slickchart.html` carries the same string in its own
+  `APP_BUILD` (it is standalone and cannot import), and **`scripts/check-build-stamp.cjs` fails if the
+  two drift** — a mismatch would tell every device it is stale, for ever.
+* `api/build-id.js` returns it. Public, no auth, no account data: one version string, identical for
+  everyone, `Cache-Control: no-store`.
+* `_checkForNewBuild()` runs after `Cloud.bootDone()`. Different from `APP_BUILD` → clear every cache,
+  update the service worker registration, beacon anything pending, reload. A `sessionStorage` latch
+  keyed on the live build means a misconfiguration can never become a reload loop, and an empty or
+  failed answer does nothing.
+
+**Run `node scripts/check-build-stamp.cjs` alongside `check-no-demo-data.cjs` after touching either
+file.** Bumping `APP_BUILD` in the HTML alone is now a build failure, on purpose.
+
+Suite: `buildcheck.mjs` — up-to-date device does not reload, stale device reloads exactly once, empty
+answer ignored.
+
+**The lesson, bluntly:** when a provider says a fix did not work, confirm the build they are on before
+believing the fix failed. Three rounds of increasingly wrong theories came out of skipping that, and
+the missing-form diagnosis (§2w) is still UNCONFIRMED against her real data for exactly this reason.
+
+---
+
 ## 3. Open threads — needs Ashley, or needs verifying
 
 1. ~~**Square `payment.*` webhook subscription.**~~ **CLOSED 2026-09-18 — it is subscribed and has

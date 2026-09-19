@@ -468,7 +468,7 @@ const S=document.getElementById('S');
 // resets when I save it" and there was no way to tell whether her phone had any of them — a whole
 // day was spent debugging code she may not have been running. Shown at the bottom of Settings, so
 // the answer is a screenshot away. Bump it on every ship.
-const APP_BUILD='2026-09-19a';
+const APP_BUILD='2026-09-19b';
 
 
 /* ════════════════════════════════════════════════════════════════
@@ -3912,7 +3912,41 @@ async function _cloudInit(){
   // Boot is over. Everything the loaders wrote back has been compared against what the pull said the
   // account already holds; whatever genuinely differs goes up now, in one request instead of forty.
   try{Cloud.bootDone();}catch(e){}
+  try{_checkForNewBuild();}catch(e){}
   try{syncClientEvents();}catch(e){}
+}
+// Is this device running the build that is actually live?
+//
+// It kept not being. Three fixes shipped while a provider's phone and computer both sat on an older
+// copy, and nothing anywhere could say so \u2014 so each fix read as "still broken" and the next one was
+// aimed at the wrong thing. A 2.5MB single file behind a service worker can go stale quietly; the app
+// has to notice by itself.
+//
+// /api/build-id is one version string, no account data. If it differs from the build in this page,
+// this page is old: clear the caches and reload, once. The sessionStorage latch means a
+// misconfiguration can never turn this into a reload loop.
+let _buildCheckDone=false;
+async function _checkForNewBuild(){
+  if(_buildCheckDone)return; _buildCheckDone=true;
+  try{
+    const r=await fetch('/api/build-id',{cache:'no-store'});
+    if(!r||!r.ok)return;
+    const j=await r.json();
+    const live=String((j&&j.build)||'');
+    if(!live||live===APP_BUILD)return;
+    let tried='';try{tried=sessionStorage.getItem('sc_build_reload')||'';}catch(e){}
+    if(tried===live)return;                       // already reloaded for this one and still stale
+    try{sessionStorage.setItem('sc_build_reload',live);}catch(e){}
+    try{console.warn('[SlickChart] running '+APP_BUILD+' but '+live+' is live '+'\u2014'+' refreshing');}catch(e){}
+    try{ if(window.caches&&caches.keys){ const ks=await caches.keys(); await Promise.all(ks.map(function(k){return caches.delete(k);})); } }catch(e){}
+    try{ if(navigator.serviceWorker&&navigator.serviceWorker.getRegistrations){
+      const rs=await navigator.serviceWorker.getRegistrations();
+      await Promise.all(rs.map(function(x){return x.update&&x.update();}));
+    } }catch(e){}
+    // Everything pending is already flushed (bootDone ran above, and pagehide beacons the rest).
+    try{if(typeof Cloud!=='undefined'&&Cloud&&Cloud.flushBeacon)Cloud.flushBeacon();}catch(e){}
+    setTimeout(function(){try{location.reload();}catch(e){}},400);
+  }catch(e){}
 }
 // ── Internationalization (i18n) ──────────────────────────────────────────────
 // Square operates in English, Spanish, French, and Japanese markets. We localize
