@@ -171,6 +171,13 @@ The proxy blocks live `slickchart.app`, so test against the local file with rout
   them back — SESSION-HANDOFF §2ae has the evidence and what is already ruled out.**
 - **Compare sync values by MEANING, not bytes** (`_sameSyncValue`). Loaders normalise as they read,
   so identical data comes back with its keys reordered and an exact string compare calls it an edit.
+- **Before every commit: `node scripts/check-generated.cjs`** (from `slickchart-vercel/`). It runs all
+  four build scripts and fails if anything generated changed — the same thing CI checks. A commit
+  once carried a demo page 17 lines behind `slickchart.html` because the demo was built and then the
+  source was edited again; the build went red and sent an alarming email on a day full of real
+  fixes. Nothing a provider uses was affected (the demos are the public sample), but one command
+  makes it impossible. NOTE: GitHub emails the failure and not the recovery, so when a red build
+  turns up, check whether a LATER run went green before treating it as live.
 - **DB:** Postgres (Neon) via `lib/db.js`. Tables: `clients`, `client_events`, `kv` (per-owner key/value
   sync store), `providers`, `square_connections`, plus small helpers. `@neondatabase/serverless` isn't
   installed in the scratch env, so `node --check` a file for syntax rather than importing it locally.
