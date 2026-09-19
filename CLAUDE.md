@@ -56,6 +56,30 @@ but don't finish by parking the work there and asking permission to deploy — t
 always wants it shipped. Merge to `main` and push once it's verified. (Re-run section 2's checks against
 the merged result if `main` moved while you worked; the demos need rebuilding then too.)
 
+## 1b. What Ashley reports is GROUND TRUTH — write it down, never re-derive it
+
+She is looking at the running app on her own devices. You are looking at source code. When the two
+disagree, **she is right and your reading is wrong.** This is not politeness, it is accuracy: every
+time an inference from the code has contradicted something she stated, the inference has been wrong.
+
+A day was lost on one bug because she said, in her first message and several times after, *"I made it
+on my phone and it isn't showing on my computer."* Later a self-check was read as implying the
+opposite, that was believed over her account of it, and the next fix was aimed at the wrong machine.
+The direction had been established from the start.
+
+So, before writing any code for a reported problem:
+
+1. **Keep a running list of what she has OBSERVED** — which device, what she did, what she saw. In
+   `SESSION-HANDOFF.md` under the bug. Facts she reported, not conclusions drawn from them.
+2. **A new theory that contradicts an item on that list is wrong.** Discard the theory, not the
+   observation. If it seems to genuinely conflict, ask one short clarifying question — do not resolve
+   it by picking whichever suits the theory.
+3. **Ask which device** any screenshot, report or symptom came from, and record it. The same
+   self-check means opposite things from a phone and from a computer.
+4. **Never re-litigate a fact she has already given.** If it is on the list, it is settled.
+5. A fix that ships and changes nothing means **the reproduction was not her situation.** Go back to
+   her observations, not to a fresh theory.
+
 ## 2. Verify before claiming "fixed"
 
 Never tell the owner something is fixed without proof. For JS/UI changes, drive the app headless with the

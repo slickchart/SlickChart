@@ -1455,6 +1455,37 @@ deletion, the stamps are cleared, both render, and a form deleted TODAY stays de
 
 ---
 
+## 2z-FACTS. What Ashley OBSERVED, in her words. Treat as settled.
+
+**Do not contradict anything in this list with a theory read out of the code. See CLAUDE.md §1b.**
+Add to it as she reports; never argue with it.
+
+| # | She observed | When |
+|---|---|---|
+| 1 | Made a form ("Spicule Peel Consent") **on the phone**, saved, closed the app. **Not on the computer.** | first report |
+| 2 | The aftercare GUIDE made at the same moment **did** reach the computer. | first report |
+| 3 | Remade the form after a fix; **still not on the computer**. | after `19a` |
+| 4 | Renames a form (Microneedling → Microchanneling) and **it goes back to the old name**. | after `19c` |
+| 5 | "The spicule form and the microchanneling edit are **on my phone but not computer**." | after `19d` |
+| 6 | Both devices confirmed on the **same latest build** each time she reports. | throughout |
+| 7 | Screenshot, PHONE: shows "Microchanneling consent" AND "Spicule Peel Consent" under Custom Forms. | `19e` |
+| 8 | Screenshot, COMPUTER: shows "Microneedling consent", **no Custom Forms section at all**. | `19e` |
+| 9 | Guide title "Microchanneling aftercare" **does** show on the computer, on the same screen as the un-renamed form. | `19e` |
+| 10 | Self-check (PHONE): `sc_forms` device == account, byte-identical, no name disagreements, Spicule present on both. | `19e` |
+
+**What these facts prove, without any code reading:**
+* The direction is **phone → computer**, and it has been stated since the first message (1, 3, 5, 7, 8).
+* `sc_resources` syncs between the very same two devices; only `sc_forms` fails (2, 9).
+* Her account HOLDS the edits — fact 10 is from the phone, and the phone's copy matches the account
+  (10 + 7). **So the COMPUTER discards them on arrival**, it is not a push problem.
+* The forms screen can show nothing while the data is present (8 + 10).
+
+**Fact 10 was misread once** as "the account does not have her edits", by not recording which device
+it came from — which contradicted facts 1, 3 and 5 and cost a build aimed at the wrong machine.
+**Always record the device.**
+
+---
+
 ## 2z. STILL NOT FIXED after five builds — read this before touching forms again
 
 **Status: UNRESOLVED.** Builds `q`, `19a`, `19b`, `19c`, `19d`, `19e` all shipped fixes for this and
