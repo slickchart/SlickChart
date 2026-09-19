@@ -468,7 +468,7 @@ const S=document.getElementById('S');
 // resets when I save it" and there was no way to tell whether her phone had any of them — a whole
 // day was spent debugging code she may not have been running. Shown at the bottom of Settings, so
 // the answer is a screenshot away. Bump it on every ship.
-const APP_BUILD='2026-09-19m';
+const APP_BUILD='2026-09-19n';
 
 
 /* ════════════════════════════════════════════════════════════════
@@ -2511,7 +2511,7 @@ function _usableSyncValue(str){ const sh=_syncShape(str); return sh!=='missing'&
 // sc_hidden_guides / sc_hidden_forms are {id:1} maps of what the provider deleted. They were pushed
 // immediately but NOT registered here, so the map itself rode the plain overwrite: a stale device's
 // copy could drop ids and resurrect a deleted guide. Same class of bug as sc_courses.
-const _TOMB_OBJ={sc_deleted_clients:1,sc_hidden_square:1,sc_merged_ids:1,sc_merged_into:1,sc_ci_dismissed:1,sc_course_purchases:1,sc_hidden_courses:1,sc_hidden_guides:1,sc_hidden_forms:1};
+const _TOMB_OBJ={sc_deleted_appts:1,sc_deleted_clients:1,sc_hidden_square:1,sc_merged_ids:1,sc_merged_into:1,sc_ci_dismissed:1,sc_course_purchases:1,sc_hidden_courses:1,sc_hidden_guides:1,sc_hidden_forms:1};
 const _TOMB_ARR={sc_flag_dismissed:1,sc_form_flag_dismissed:1,sc_ci_cleared:1,sc_ci_read:1,sc_home_dismissed:1,sc_notif_cleared:1,sc_notif_read:1};
 // One-way latches: once the provider has done the thing, it is done forever. These are plain '1'
 // strings, so they can't live in the tombstone tables — but they have the same failure mode. A device
@@ -2872,6 +2872,11 @@ function _mergeForms(serverStr,localStr){
 function _mergeCourses(serverStr,localStr){return _mergeAuthoredById(serverStr,localStr,'sc_hidden_courses');}
 // Custom guides are the provider's own writing and were overwritten the same way courses were.
 function _mergeResources(serverStr,localStr){return _mergeAuthoredById(serverStr,localStr,'sc_hidden_guides');}
+// Appointments she typed in by hand are real bookings, and sc_manual_appts rode the plain overwrite:
+// a device that had not synced since before she added one would push its older list back and the
+// appointment would be gone from every device. Union by id like any authored library, with
+// sc_deleted_appts as the delete record so a union can never resurrect one she cancelled.
+function _mergeAppts(serverStr,localStr){return _mergeAuthoredById(serverStr,localStr,'sc_deleted_appts');}
 function _mergeSeenEvents(serverStr,localStr){
   try{
     if(localStr==null)return null;
@@ -3018,10 +3023,11 @@ const Cloud={
         return;
       }
     }
-    if(k==='sc_msgstore'||k==='sc_threads'||k==='sc_seen_events'||k==='sc_attn_seen'||k==='sc_import_batches'||k==='sc_courses'||k==='sc_resources'||k==='sc_forms'){
+    if(k==='sc_msgstore'||k==='sc_threads'||k==='sc_seen_events'||k==='sc_attn_seen'||k==='sc_import_batches'||k==='sc_courses'||k==='sc_resources'||k==='sc_forms'||k==='sc_manual_appts'){
       const mm=(k==='sc_msgstore')?_mergeMsgStore(data[k],_lsGet(k))
               :(k==='sc_courses')?_mergeCourses(data[k],_lsGet(k))
               :(k==='sc_resources')?_mergeResources(data[k],_lsGet(k))
+              :(k==='sc_manual_appts')?_mergeAppts(data[k],_lsGet(k))
               :(k==='sc_forms')?_mergeForms(data[k],_lsGet(k))
               :(k==='sc_threads')?_mergeThreads(data[k],_lsGet(k))
               :(k==='sc_attn_seen')?_mergeAttnSeen(data[k],_lsGet(k))
@@ -3566,7 +3572,11 @@ function _reloadTopLevelStores(){
   const J=function(k){try{return JSON.parse(_lsGet(k)||'null');}catch(e){return null;}};
   try{const a=J('sc_payments');if(Array.isArray(a))_payments=a;}catch(e){}
   try{const a=J('sc_imported_products');if(Array.isArray(a))_importedProducts=a;}catch(e){}
-  try{const a=J('sc_manual_appts');if(Array.isArray(a)){a.forEach(function(x){if(x&&!x.id)x.id='ma_'+Math.random().toString(36).slice(2,10);});manualAppts=a;}}catch(e){}
+  try{const a=J('sc_manual_appts');if(Array.isArray(a)){a.forEach(function(x){if(x&&!x.id)x.id='ma_'+Math.random().toString(36).slice(2,10);});manualAppts=a;
+    // An appointment cancelled on another device must not come back here. The merge already strips
+    // it on the way in; this also covers a list that was stored before the cancellation synced.
+    try{if(typeof _pruneDeletedAppts==='function'&&_pruneDeletedAppts())_saveManualAppts();}catch(e){}
+  }}catch(e){}
   try{const a=J('sc_service_menu');if(Array.isArray(a)&&a.length)_svcMenu=a;}catch(e){}
   try{const a=J('sc_deleted_sq');if(Array.isArray(a))_deletedSquareIds=new Set(a);}catch(e){}
   try{const a=J('sc_notif_cleared');if(Array.isArray(a))_notifCleared=new Set(a);}catch(e){}
@@ -24151,7 +24161,28 @@ _cloudInit();
 // pushes the appointment onto the calendar and notifies the client.
 // ════════════════════════════════════════════════════════════════
 let confirmedAppts=[];           // appts confirmed via the booking flow (session; re-seeded from bookings)
-let manualAppts=(function(){try{var a=JSON.parse(localStorage.getItem('sc_manual_appts')||'[]');if(!Array.isArray(a))return [];a.forEach(function(x){if(x&&!x.id)x.id='ma_'+Math.random().toString(36).slice(2,10);});return a;}catch(e){return [];}})();
+let manualAppts=(function(){try{var a=JSON.parse(localStorage.getItem('sc_manual_appts')||'[]');if(!Array.isArray(a))return [];a.forEach(function(x){if(x&&!x.id)x.id='ma_'+Math.random().toString(36).slice(2,10);});
+  // Honour the cancelled list on the very first paint too, before any sync has run.
+  try{var g=JSON.parse(localStorage.getItem('sc_deleted_appts')||'{}')||{};a=a.filter(function(x){return !(x&&x.id&&g[x.id]);});}catch(e){}
+  return a;}catch(e){return [];}})();
+// Cancelled appointments: id -> when. Unioned across devices via _TOMB_OBJ, so a delete made on
+// the phone is not undone by a computer that still has the appointment in its list.
+function _deletedAppts(){try{const o=JSON.parse(_lsGet('sc_deleted_appts')||'{}');return (o&&typeof o==='object')?o:{};}catch(e){return {};}}
+function _apptDeleted(id){
+  try{const o=_deletedAppts();o[id]=Date.now();const v=JSON.stringify(o);
+    localStorage.setItem('sc_deleted_appts',v);
+    if(typeof _pushKeyNow==='function')_pushKeyNow('sc_deleted_appts',v);}catch(e){}
+}
+// Drop anything on the cancelled list. Runs on every load, so an appointment deleted on another
+// device disappears here too instead of lingering until something else rewrote the list.
+function _pruneDeletedAppts(){
+  try{
+    const gone=_deletedAppts();if(!Object.keys(gone).length)return false;
+    const before=manualAppts.length;
+    for(let i=manualAppts.length-1;i>=0;i--){const a=manualAppts[i];if(a&&a.id&&gone[a.id])manualAppts.splice(i,1);}
+    return manualAppts.length!==before;
+  }catch(e){return false;}
+}
 function _saveManualAppts(){try{(function(_v){localStorage.setItem('sc_manual_appts',_v);if(typeof _pushKeyNow==='function')_pushKeyNow('sc_manual_appts',_v);return _v;})(JSON.stringify(manualAppts));}catch(e){}}
 let suggestOpenFor=null;         // id of request whose "suggest" panel is open
 
@@ -26031,7 +26062,7 @@ function _manualApptSave(id){
   var tx=(document.getElementById('ad-tx')||{}).value||'Treatment';
   var date=(document.getElementById('ad-mdate')||{}).value||a.date;var time=_time12((document.getElementById('ad-mtime')||{}).value||'')||a.time;
   var commit=function(){
-    a.client=name;a.tx=tx;a.date=date;a.time=time;a.clientId=_matchClientByName(name)||undefined;
+    a.client=name;a.tx=tx;a.date=date;a.time=time;a.clientId=_matchClientByName(name)||undefined;a._ts=Date.now();   // newest edit wins the cross-device merge
     try{a.dateLabel=new Date(date+'T12:00:00').toLocaleDateString('en-US',{weekday:'long',month:'long',day:'numeric'});}catch(e){}
     _saveManualAppts();try{_rebuildCalendarFeed();}catch(e){}
     _closeApptSheet();if(typeof proToast==='function')proToast('Appointment updated ✓');renderCalendar();
@@ -26041,7 +26072,7 @@ function _manualApptSave(id){
   else commit();
 }
 function _manualApptDelete(id){
-  var go=function(){var i=(manualAppts||[]).findIndex(function(x){return x.id===id;});if(i>=0){manualAppts.splice(i,1);_saveManualAppts();try{_rebuildCalendarFeed();}catch(e){}try{_stampClientNextVisit(true);}catch(e){}}_closeApptSheet();if(typeof proToast==='function')proToast('Appointment deleted');renderCalendar();};
+  var go=function(){var i=(manualAppts||[]).findIndex(function(x){return x.id===id;});if(i>=0){manualAppts.splice(i,1);_apptDeleted(id);_saveManualAppts();try{_rebuildCalendarFeed();}catch(e){}try{_stampClientNextVisit(true);}catch(e){}}_closeApptSheet();if(typeof proToast==='function')proToast('Appointment deleted');renderCalendar();};
   confirmModal({title:'Delete appointment?',body:'This removes it from your calendar and your synced Google/Apple feed.',action:'Delete'},go);
 }
 
@@ -26145,7 +26176,7 @@ function saveQuickAdd(){
   const clientId=_matchClientByName(name);
   const commit=function(){
     let lbl=date;try{lbl=new Date(date+'T12:00:00').toLocaleDateString('en-US',{weekday:'long',month:'long',day:'numeric'});}catch(e){}
-    manualAppts.unshift({id:'ma_'+Math.random().toString(36).slice(2,10),clientId:clientId||undefined,client:name,tx,date,dateLabel:lbl,time,ic:'var(--accent-strong)'});_saveManualAppts();try{_rebuildCalendarFeed();}catch(e){}
+    manualAppts.unshift({id:'ma_'+Math.random().toString(36).slice(2,10),clientId:clientId||undefined,client:name,tx,date,dateLabel:lbl,time,ic:'var(--accent-strong)',_ts:Date.now()});_saveManualAppts();try{_rebuildCalendarFeed();}catch(e){}
     const m=document.getElementById('qa-modal');if(m)m.remove();
     renderCalendar();
   };

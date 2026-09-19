@@ -1556,9 +1556,16 @@ device and requires it on the other. Before: courses and staff failed. After: al
   * `scripts/check-merge-coverage.cjs` — a NEW accumulating synced key may not join the plain
     -overwrite path (CLAUDE.md §0.6) without a recorded decision.
   * `scratchpad/sweep-crossdevice.mjs` — the ten-library A→B runtime sweep.
-* **Still open (thread 16):** `sc_manual_appts` accumulates and plain-overwrites. A stale device can
-  drop a manually-added appointment. That is a real booking; give it a per-item merge with a delete
-  record (a blind union would resurrect cancelled ones). Also unmerged and listed in
+* **`sc_manual_appts` now MERGES** (`2026-09-19n`). It was the sharpest of the unmerged keys — a
+  device that had not synced since before she added an appointment would push its older list back
+  and the booking was gone everywhere. It now uses `_mergeAppts` → `_mergeAuthoredById` with
+  **`sc_deleted_appts`** as the delete record, which is in `_TOMB_OBJ` so cancellations union across
+  devices and a merge can never resurrect one. Appointments are stamped `_ts` on create AND on edit
+  so the newer version wins; `_pruneDeletedAppts()` strips cancelled ones on load, and the
+  first-paint initialiser honours the list too. Covered by `scratchpad/appts.mjs`, which checks all
+  four directions: phone→computer, computer→phone, a stale device cannot wipe a booking, and a
+  cancellation sticks.
+* **Still open (thread 16):** the remaining unmerged accumulating keys listed in
   `check-merge-coverage.cjs`: `sc_note_drafts`, `sc_photo_index`, `sc_pro_vc_invites`,
   `sc_sent_routines`, `sc_summary_guides`, `sc_imported_products`, `sc_deleted_sq`, plus the older
   set (inventory, vendors, bundles, protocols, staff, docs, …).

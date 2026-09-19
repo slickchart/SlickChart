@@ -126,6 +126,24 @@ The proxy blocks live `slickchart.app`, so test against the local file with rout
   reloading after a sync, with no error anywhere. It cost eleven builds. Independent loaders each get
   their own wrapper (`_reloadStep`), failures are recorded, and the self-check prints them. See
   SESSION-HANDOFF §2ac.
+- **Sweeps that run in CI** (`.github/workflows/no-demo-data.yml`) — all three exist because a real
+  bug got past everything else:
+  - `check-reload-coverage.cjs`: every loader that reads a synced `sc_*` key must be a step in
+    `_reloadAll()`. If it isn't, a change made on one device lands on another device's disk and
+    never reaches its screen. A sweep found **26** loaders in that state.
+  - `check-merge-coverage.cjs`: a NEW synced key that accumulates data may not join the plain
+    -overwrite path (§0.6) without a recorded decision.
+  - `scratchpad/sweep-crossdevice.mjs` (run by hand): makes a real item in ten libraries on one
+    device and requires it on the other. Run it after ANY change to sync, storage or a loader.
+- **A merge needs a delete record.** Union-by-id without one resurrects everything the provider
+  deleted. `_mergeAuthoredById(server, local, hiddenKey)` is the shared implementation; the delete
+  key goes in `_TOMB_OBJ` so cancellations union across devices too. Appointments use
+  `sc_deleted_appts`, forms `sc_hidden_forms`, courses `sc_hidden_courses`, guides
+  `sc_hidden_guides`. Stamp `_ts` on create AND on edit, or the newer version cannot win.
+- **Boot's own write-backs are not edits.** Loaders normalise and re-seed on open, which queues a
+  write of the DEFAULTS. `Cloud.pull()` skips keys with a pending local write, so those write-backs
+  made it skip the account's real data and then push the defaults up over it. `Cloud._bootQueued`
+  marks them so the guard ignores them. See SESSION-HANDOFF §2ad.
 - **DB:** Postgres (Neon) via `lib/db.js`. Tables: `clients`, `client_events`, `kv` (per-owner key/value
   sync store), `providers`, `square_connections`, plus small helpers. `@neondatabase/serverless` isn't
   installed in the scratch env, so `node --check` a file for syntax rather than importing it locally.

@@ -62,8 +62,8 @@ const KNOWN=new Set(['sc_inventory','sc_vendors','sc_bundles','sc_protocols','sc
   'sc_wsname',               // one workspace name
   'sc_room_state_',          // per-room device state, not synced provider data
   // Reviewed and ACCUMULATING — these can lose data if a stale device pulls. Tracked as thread 16.
-  // sc_manual_appts is the sharpest of them: a manually-added appointment is a real booking.
-  'sc_manual_appts','sc_note_drafts','sc_photo_index','sc_pro_vc_invites','sc_sent_routines',
+  // (sc_manual_appts was the sharpest of them and now MERGES — _mergeAppts + sc_deleted_appts.)
+  'sc_note_drafts','sc_photo_index','sc_pro_vc_invites','sc_sent_routines',
   'sc_summary_guides','sc_imported_products','sc_deleted_sq']);
 
 const unreviewed=[...accum].filter(k=>!merged.has(k)&&!KNOWN.has(k)
