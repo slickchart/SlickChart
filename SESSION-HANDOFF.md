@@ -1455,6 +1455,52 @@ deletion, the stamps are cleared, both render, and a form deleted TODAY stays de
 
 ---
 
+## 2z. STILL NOT FIXED after five builds — read this before touching forms again
+
+**Status: UNRESOLVED.** Builds `q`, `19a`, `19b`, `19c`, `19d`, `19e` all shipped fixes for this and
+none changed what Ashley sees. Do not ship a sixth theory.
+
+**What is actually established:**
+* Her phone holds the edits (a renamed template, a custom form). Her computer does not.
+* Guide titles (`sc_resources`) sync fine between the same two devices. Only `sc_forms` fails.
+* Her self-check has shown `sc_forms` device and account **byte-identical**, and has shown
+  `Spicule Peel Consent (custom2)` present on BOTH device and account — while the Forms screen showed
+  nothing. Data present, screen empty.
+* A single-device rename through the real UI (Forms → Edit → Save → back) works: memory, storage and
+  the card all update (`cardrename.mjs`). So the plain save path is NOT broken.
+
+**What has been fixed along the way** (all real, none sufficient): the bulk-stamp poisoning
+(§2y), repairs running before the pull and uploading a stale copy (§2y follow-up), undated tombstones
+being absolute (`_tombBeats`), and — in `19e` — the screen still filtering on raw `hiddenForms[id]`
+while the merge had moved to `_tombBeats`, so the sync could KEEP a form the list then hid
+(`_formHidden`, suite `uifilter.mjs`). That last one matches "present in the data, invisible on
+screen" exactly and may or may not be the whole story.
+
+**WHY FIVE FIXES MISSED: every one was reasoned from code, never verified against her data.** Each
+reproduced a plausible version of her symptoms in a test, went green, and changed nothing for her —
+which proves the reproduction was not her situation. Stop reproducing guesses.
+
+**The one thing that splits the problem** is now in the self-check, added in `19e`: it compares form
+NAMES between device and account and prints the disagreements —
+
+> Form names that disagree: “Microneedling consent” here vs “Microchanneling consent” on the account
+
+* Account has her new name → the phone's push works, the COMPUTER is rejecting it → the merge, and
+  `_mergeForms` narrows it to `hidden[]` or the per-template `_ts` comparison; nothing else in it is
+  conditional.
+* Account has the OLD name → the edit never left the phone → the push path, and five builds have been
+  aimed at the wrong machine.
+
+Those need opposite fixes. **Get that line from the COMPUTER before writing any more code.** Suite:
+`namediff.mjs`.
+
+**Diagnostics that exist** (all behind five taps on the version stamp, no everyday UI): per-key device
+vs account bytes and edit times, her own forms with ids on both sides, forms on the deleted list that
+still exist, and now the name disagreements. `mergeprobe.mjs` calls `_mergeForms` directly with two
+blobs when the merge itself needs ruling in or out.
+
+---
+
 ## 3. Open threads — needs Ashley, or needs verifying
 
 1. ~~**Square `payment.*` webhook subscription.**~~ **CLOSED 2026-09-18 — it is subscribed and has

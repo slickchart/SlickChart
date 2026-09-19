@@ -468,7 +468,7 @@ const S=document.getElementById('S');
 // resets when I save it" and there was no way to tell whether her phone had any of them — a whole
 // day was spent debugging code she may not have been running. Shown at the bottom of Settings, so
 // the answer is a screenshot away. Bump it on every ship.
-const APP_BUILD='2026-09-19d';
+const APP_BUILD='2026-09-19e';
 
 
 /* ════════════════════════════════════════════════════════════════
@@ -2783,6 +2783,17 @@ function _mergeStamped(serverStr,localStr){
 // It still deletes an item that has no timestamp of its own — old deleted forms stay deleted — but it
 // does NOT outrank an item carrying a real one. Resurrecting a form she can delete again in one tap
 // is a far smaller harm than silently destroying one she just made.
+// Is this form hidden FROM THE SCREEN? Must be the same question the merge asks, or the sync keeps a
+// form and the list hides it anyway — present in her data, invisible in the app, which is exactly
+// what it looked like from her side.
+function _formHidden(id,itemTs){
+  try{
+    const h=(typeof hiddenForms!=='undefined'&&hiddenForms)?hiddenForms:{};
+    if(!h[id])return false;
+    if(itemTs==null&&typeof formTmpls!=='undefined'&&formTmpls[id])itemTs=formTmpls[id]._ts;
+    return _tombBeats(h[id],itemTs);
+  }catch(e){return false;}
+}
 function _tombBeats(tomb,itemTs){
   const t=Number(tomb)||0, i=Number(itemTs)||0;
   if(!i)return true;          // item has no date: previous behaviour, the deletion wins
@@ -3723,6 +3734,18 @@ async function _runSelfCheck(){
         // Her own forms, named with their ids, so two devices can be compared at a glance.
         r.mine=Object.keys(dn).map(function(id){return dn[id]+' ('+id+')';});
         r.mineAcct=Object.keys(an).map(function(id){return an[id]+' ('+id+')';});
+        // WHICH form names disagree between this device and the account. This is the one line that
+        // settles "is my edit on the account and being rejected here, or did it never leave the
+        // device I made it on" — the question five blind fixes were guessing at.
+        r.nameDiffs=[];
+        try{
+          const dt=(JSON.parse(local||'{}').tmpls)||{}, at=(JSON.parse(sv||'{}').tmpls)||{};
+          Object.keys(dt).forEach(function(k){
+            const a=(dt[k]&&dt[k].name)||'', bN=(at[k]&&at[k].name)||'';
+            if(at[k]&&a&&bN&&a!==bN)r.nameDiffs.push('\u201c'+a+'\u201d here vs \u201c'+bN+'\u201d on the account');
+          });
+          r.nameDiffs=r.nameDiffs.slice(0,6);
+        }catch(e){}
       }
     }
     return r;
@@ -3746,6 +3769,7 @@ async function _runSelfCheck(){
      +((r.mineAcct&&r.mineAcct.length)?' | mine on account: '+r.mineAcct.join(', '):'')
      +((r.onlyHere&&r.onlyHere.length)?' | ONLY ON THIS DEVICE: '+r.onlyHere.join(', '):'')
      +((r.onlyAcct&&r.onlyAcct.length)?' | only on the account: '+r.onlyAcct.join(', '):'')
+     +((r.nameDiffs&&r.nameDiffs.length)?' | NAMES DISAGREE: '+r.nameDiffs.join('; '):'')
      +((r.ghosts&&r.ghosts.length)?' | ON THE DELETED LIST BUT STILL EXISTS: '+r.ghosts.join(', '):'')))
    .join('\n');
 
@@ -3773,6 +3797,7 @@ async function _runSelfCheck(){
       +((r.mineAcct&&r.mineAcct.length)?'<br>Your own forms on the account: '+esc(r.mineAcct.join(', ')):'')
       +((r.onlyHere&&r.onlyHere.length)?'<br><b style="color:var(--p-red);">Only on this device, not on your account: '+esc(r.onlyHere.join(', '))+'</b> \u2014 it will not appear on your other devices.':'')
       +((r.onlyAcct&&r.onlyAcct.length)?'<br>On your account but not on this device: '+esc(r.onlyAcct.join(', ')):'')
+      +((r.nameDiffs&&r.nameDiffs.length)?'<br><b style="color:var(--p-red);">Form names that disagree: '+esc(r.nameDiffs.join('; '))+'</b>':'')
       +((r.ghosts&&r.ghosts.length)?'<br><b style="color:var(--p-red);">On your deleted list even though it still exists: '+esc(r.ghosts.join(', '))+'</b> \u2014 a form in this state is invisible everywhere and cannot sync.':'')
       +'</div></div>';}).join('')
     +'</div>'
@@ -13626,7 +13651,7 @@ function _profFormDefs(){
   // old catalog name. Push a copy so the shared _FORM_DEFS_BY_PROF catalog is never mutated.
   profs.forEach(p=>{_FORM_DEFS_BY_PROF[p][1].forEach(f=>{if(!seen[f.id]){seen[f.id]=1;const _t=(typeof formTmpls!=='undefined'&&formTmpls[f.id])?formTmpls[f.id]:null;out.push((_t&&_t.name&&_t.name!==f.name)?Object.assign({},f,{name:_t.name}):f);}});});
   (typeof customForms!=='undefined'?customForms:[]).forEach(cf=>{if(seen[cf.id])return;const t=formTmpls[cf.id]||cf;seen[cf.id]=1;out.push({icon:'ti-file-text',bg:'var(--accent-tint)',ic:'var(--accent-strong)',name:(t.name||cf.name||'Custom form'),sub:(((formTmpls[cf.id]&&formTmpls[cf.id].qs)||[]).length)+' questions · custom',id:cf.id});});
-  return (typeof hiddenForms!=='undefined')?out.filter(f=>!hiddenForms[f.id]):out;
+  return (typeof hiddenForms!=='undefined')?out.filter(f=>!_formHidden(f.id)):out;
 }
 function _profFormIds(){return _profFormDefs().map(f=>f.id);}
 // Provider-set emoji override for a form; '' = deliberately no icon, undefined = use default tile.
@@ -13744,12 +13769,12 @@ function renderForms(){
   </div>
   <div style="margin:2px 16px 0;padding:9px 12px;background:var(--p-blue-bg);border:1px solid var(--p-blue-line);border-radius:12px;display:flex;gap:8px;"><i class="ti ti-info-circle" style="font-size:16px;color:var(--p-blue);flex-shrink:0;margin-top:1px;"></i><span style="font-size:16px;color:var(--p-blue);line-height:1.5;">Connect aftercare guides to any form, switch to the <b>Guides</b> tab to manage them. Connected guides send with the form in one tap.</span></div>
   </div>
-  ${sections.map((p,si)=>{const[label,forms]=F[p];const list=forms.filter(f=>!hiddenForms[f.id]);if(!list.length)return'';return`
+  ${sections.map((p,si)=>{const[label,forms]=F[p];const list=forms.filter(f=>!_formHidden(f.id));if(!list.length)return'';return`
   <div class="form-section">
   <div class="sh"><h2>${label} · intake &amp; consent</h2></div>
   ${list.map(f=>_formCard(f)).join('')}
   </div>`;}).join('')}
-  ${(function(){const cf2=customForms.filter(cf=>!hiddenForms[cf.id]);return cf2.length?`<div class="form-section"><div class="sh"><h2>Custom forms</h2></div>${cf2.map(cf=>_formCard({icon:'ti-file-text',bg:'var(--accent-tint)',ic:'var(--accent-strong)',name:(formTmpls[cf.id]||cf).name||cf.name,sub:`${(formTmpls[cf.id]&&formTmpls[cf.id].qs.length)||0} questions · custom`,id:cf.id})).join('')}</div>`:'';})()}
+  ${(function(){const cf2=customForms.filter(cf=>!_formHidden(cf.id,cf._ts));return cf2.length?`<div class="form-section"><div class="sh"><h2>Custom forms</h2></div>${cf2.map(cf=>_formCard({icon:'ti-file-text',bg:'var(--accent-tint)',ic:'var(--accent-strong)',name:(formTmpls[cf.id]||cf).name||cf.name,sub:`${(formTmpls[cf.id]&&formTmpls[cf.id].qs.length)||0} questions · custom`,id:cf.id})).join('')}</div>`:'';})()}
   <div id="forms-noresults" style="display:none;padding:30px 16px;text-align:center;color:var(--p-mut);font-size:16px;">No forms match your search.</div>
   <div style="height:16px;"></div>
   </div>
