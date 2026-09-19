@@ -1529,9 +1529,17 @@ function _applyCheckinDoneFromMap(){
 // list. A form the provider RE-sends gets a new assignedAt, so it correctly reappears.
 let _formsDoneMap=(function(){try{return JSON.parse(localStorage.getItem('sc_forms_done')||'{}')||{};}catch(e){return {};}})();
 function _formDoneKey(provId,formId){return String(provId)+'|'+String(formId);}
+// The mark is written OPTIMISTICALLY, before the submit has landed, so the pre-visit flow does not
+// stall on the network. _ffRestore clears it if the submit fails — but only while the app is still
+// running. Close the app, lose signal, or have the tab killed mid-submit and the mark survives
+// forever in this device's storage, hiding a form the provider is still waiting on. A new link
+// cannot clear it, which is exactly what a provider reported: banner no, link no, new link no.
+//
+// So record WHEN it was marked, and let _applyFormsDoneFromMap stop trusting it once the evidence
+// runs out. Old entries are a bare assignedAt and still work.
 function _markFormDone(provId,pf){
   if(!pf)return;
-  _formsDoneMap[_formDoneKey(provId,pf.formId)]=pf.assignedAt||'';
+  _formsDoneMap[_formDoneKey(provId,pf.formId)]={a:(pf.assignedAt||''),t:Date.now()};
   try{localStorage.setItem('sc_forms_done',JSON.stringify(_formsDoneMap));}catch(e){}
   _syncClientPrefsToServer();
 }
@@ -1544,17 +1552,46 @@ function _unmarkFormDone(provId,pf){
   try{localStorage.setItem('sc_forms_done',JSON.stringify(_formsDoneMap));}catch(e){}
   _syncClientPrefsToServer();
 }
-// Drop from every provider's pending list any form the client has already submitted (matching
-// the exact instance by assignedAt). A re-send has a newer assignedAt, so it is left in place.
+// How long a mark is trusted on its own. It exists to bridge the gap between this client submitting
+// and the provider's app processing it — minutes, normally. Past this, if the provider STILL lists
+// the form as pending and has no record of the submission, the submission never landed and the form
+// has to come back. Erring this way asks a client to fill something twice at worst; erring the other
+// way loses the form silently, which is what happened.
+const _FORM_DONE_TRUST_MS=12*60*60*1000;
+// Did the provider actually receive this form? Their copy of submittedForms is the proof.
+function _providerHasSubmission(p,formId,title){
+  try{
+    // `forms` is the provider's list of what they have RECEIVED from this client. Older payloads
+    // carry no formId, so fall back to the title for those.
+    // A real client's received forms arrive in client._forms; p.forms is the demo list. Check both.
+    return (client._forms||[]).concat(p.forms||[]).some(function(f){
+      if(!f)return false;
+      if(f.formId)return f.formId===formId;
+      return !!title&&String(f.title||'')===String(title);
+    });
+  }catch(e){return false;}
+}
+// Drop from every provider's pending list any form the client has already submitted (matching the
+// exact instance by assignedAt). A re-send has a newer assignedAt, so it is left in place.
 function _applyFormsDoneFromMap(){
   try{(client.providers||[]).forEach(function(p){
-    if(p&&Array.isArray(p.pendingForms)){
-      p.pendingForms=p.pendingForms.filter(function(pf){
-        if(!pf)return false;
-        const k=_formDoneKey(p.id,pf.formId);
-        return !(_formsDoneMap[k]!==undefined&&_formsDoneMap[k]===(pf.assignedAt||''));
-      });
-    }
+    if(!p||!Array.isArray(p.pendingForms))return;
+    p.pendingForms=p.pendingForms.filter(function(pf){
+      if(!pf)return false;
+      const k=_formDoneKey(p.id,pf.formId);
+      const m=_formsDoneMap[k];
+      if(m===undefined)return true;
+      const markedAt=(m&&typeof m==='object')?Number(m.t||0):0;
+      const instance=(m&&typeof m==='object')?m.a:m;
+      if(instance!==(pf.assignedAt||''))return true;          // a re-send: a new instance, show it
+      if(_providerHasSubmission(p,pf.formId,pf.title))return false;   // genuinely received: stay hidden
+      // No proof it arrived. Trust the mark only briefly, then let the form come back.
+      if(markedAt&&(Date.now()-markedAt)>_FORM_DONE_TRUST_MS){
+        try{delete _formsDoneMap[k];localStorage.setItem('sc_forms_done',JSON.stringify(_formsDoneMap));}catch(e){}
+        return true;
+      }
+      return false;
+    });
   });}catch(e){}
 }
 function _collectClientPrefs(){

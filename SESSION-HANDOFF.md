@@ -1539,30 +1539,37 @@ Verified by `scratchpad/resend.mjs`: first send and re-send now produce differen
 entry on the list. Note the test needs an ~8ms gap; two sends inside the same millisecond are
 indistinguishable by design and harmless.
 
-### (1) THE DISAPPEARANCE — a real gap closed, but NOT her symptom. Still open.
+### (1) THE DISAPPEARANCE — SOLVED (`2026-09-19u`). It was the client's own device.
 
-There IS a real gap and it is fixed: in `slickchart-client.html` the pre-visit block did
+Her third detail settled it: *"neither the banner nor clicking the link worked, i also sent a NEW
+link and that didn't pull it up in their app either."* A new link rules out everything provider-side
+— and nothing provider-side removes a pending form except a real submission event
+(`slickchart.html:24345` and `:24558`). So the form was on the server's pending list the whole time
+and the CLIENT's app was hiding it.
 
-```js
-if(past)return '';
-const apptPassed=(APPT && APPT.getTime()<=Date.now());
-if(apptPassed)return '';          // takes the assigned FORMS away with the check-in card
-```
+**Why.** `_ffSubmit` marks the form done OPTIMISTICALLY, before the submit lands, so the pre-visit
+flow does not stall on the network. `_ffRestore` un-marks it if the submit fails — but only while
+the app is still running. Close the app, lose signal, or have the tab killed mid-submit and the mark
+survives in THAT DEVICE's `sc_forms_done` for ever. No link the provider sends can clear it. That is
+all three of her symptoms at once: banner gone, link shows nothing, new link shows nothing.
 
-so an assigned form was time-gated along with the check-in. Assigned forms are now returned before
-those checks (`_previsitSectionHTML()` renders the forms panel alone when forms exist, so no
-check-in card comes back with it), and the standalone section also covers the case where the
-appointment DAY has gone by.
+**Three fixes, all covered by `scratchpad/formspersist.mjs` (13 checks):**
 
-**But this is not confirmed to be her bug.** `scratchpad/formspersist.mjs` passes against the
-UNFIXED client too: with an appointment one minute in the past, the form was still reachable on the
-client's Home. So the form is surfaced somewhere else as well (the Home to-do list around
-`slickchart-client.html:1892` / `:1966` is the likely one) and her clients are hitting a different
-surface.
+1. *The mark expires when nothing backs it up.* `_FORM_DONE_TRUST_MS` = 12h. If the provider still
+   lists the form as pending and has no record of receiving it, the mark stops being trusted and the
+   form returns on its own.
+2. *A form genuinely received stays hidden.* `_providerHasSubmission()` reads `client._forms` (a real
+   client's received-forms list; `p.forms` is the demo one) and the provider payload now carries
+   `formId` on those entries as the proof. Nobody is asked to fill the same thing twice.
+3. *Re-sending works* — see (2) above, `_assignPending`. That is the immediate escape hatch when a
+   client is sitting in front of her.
 
-**Next session:** ask which surface the client was looking at — the Home banner, the to-do list
-further down, or the original link in the text/email landing on a page that says nothing is pending.
-Do not guess; three surfaces render pending forms and only one has been ruled out.
+Plus the time-gate gap closed earlier in this section: an unfinished form is no longer taken away
+with the check-in card when the appointment time passes.
+
+**Field names that cost time here:** the provider payload calls received forms `forms` (not
+`submittedForms`), and on the client a REAL client's copy is `client._forms`, while `p.forms` is
+demo-only. `p.submittedForms` does not exist on the client at all.
 
 ---
 
