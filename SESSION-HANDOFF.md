@@ -1455,6 +1455,49 @@ deletion, the stamps are cleared, both render, and a form deleted TODAY stays de
 
 ---
 
+## 2aa. THE ROOT CAUSE: every account stored the app's own 75 built-in form templates
+
+Ashley, after six failed builds: *"this is an account with barely anything because its brand new,
+only 2 forms … you're saying that the upload is too big … that is a tiny amount of information when
+talking about businesses with full practices. if this is an issue with 2 forms how is this supposed to
+handle what it is supposed to."*
+
+**She was right and the §2v/batch-size explanation was treating a symptom.** Measured on a brand-new,
+never-touched account (`whatsinit.mjs`):
+
+```
+sc_forms total : 82,434 bytes
+of which tmpls : 81,232 bytes across 75 templates
+her own forms  : 0  (2 bytes)
+```
+
+`persistForms()` wrote **all 75 built-in templates** — which ship inside `slickchart.html` — into every
+provider's `kv` row, including `equine-intake`. Then `_mergeForms.mergeMap` compared all 75 per-entry
+by `_ts` on every sync between devices. **A rename of ONE form was competing with bookkeeping on 74
+templates she had never opened**, and that is where her edits kept dying. It also explains the 1.5MB
+account, the oversized batch, and the "couldn't back up" banner — all downstream of this.
+
+**Fix:** `persistForms()` stores only templates that DIFFER from the bundled set. `_snapshotBundled()`
+captures the pristine templates at the top of the first `loadForms()` (before anything stored is
+merged over them); `_isBundledUnchanged()` compares ignoring `_ts`. Anything absent falls back to the
+copy inside the app, which is what `loadForms()` already did.
+
+**82,434 bytes → 1,204. The merge surface goes from 75 entries to however many she actually edited.**
+
+Old accounts still carrying the fat blob load unchanged and shrink on their next save (covered).
+
+Suite: `slimforms.mjs` — renames a built-in form through the real UI, asserts the account stores ONE
+template, a second fresh device shows the rename, all other built-ins are still present, and a legacy
+fat blob loads then shrinks while keeping the rename. `whatsinit.mjs` prints the breakdown any time
+this needs re-measuring.
+
+**The lesson, and it is hers:** when a provider says the amount of data is implausible for the
+symptom, believe it and go measure, rather than explaining why the symptom is reasonable. Six builds
+were spent downstream of a number that should have been questioned the first time it appeared
+(her self-check showed `sc_forms` at 81KB on day one).
+
+---
+
 ## 2z-FACTS. What Ashley OBSERVED, in her words. Treat as settled.
 
 **Do not contradict anything in this list with a theory read out of the code. See CLAUDE.md §1b.**

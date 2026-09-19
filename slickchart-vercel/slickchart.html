@@ -214,7 +214,7 @@ const S=document.getElementById('S');
 // resets when I save it" and there was no way to tell whether her phone had any of them — a whole
 // day was spent debugging code she may not have been running. Shown at the bottom of Settings, so
 // the answer is a screenshot away. Bump it on every ship.
-const APP_BUILD='2026-09-19g';
+const APP_BUILD='2026-09-19h';
 
 
 /* ════════════════════════════════════════════════════════════════
@@ -13926,7 +13926,22 @@ function persistForms(){
   _stampChangedEntries(formTmpls,prev&&prev.tmpls,now);
   _stampChangedEntries(formGuides,prev&&prev.guides,now);
   _stampChangedEntries(formEmojis,prev&&prev.emojis,now);
-  const v=JSON.stringify({tmpls:formTmpls,guides:formGuides,custom:customForms,emojis:formEmojis});
+  // STORE ONLY WHAT SHE CHANGED.
+  //
+  // This used to write all 75 built-in templates into her account — 82KB on an account with no forms
+  // at all, including an equine intake she will never open. Every device then argued over all 75 of
+  // them on every sync, which is how a rename to ONE form kept losing to bookkeeping on templates she
+  // had never touched. Her own edits are a couple of hundred bytes; that is what belongs on her
+  // account. Anything absent here simply falls back to the version inside the app, which is what
+  // loadForms() already does.
+  const tmplsOut={};
+  try{
+    Object.keys(formTmpls).forEach(function(k){
+      if(_BUNDLED_TMPLS&&_isBundledUnchanged(k,formTmpls[k]))return;   // identical to the app's copy
+      tmplsOut[k]=formTmpls[k];
+    });
+  }catch(e){}
+  const v=JSON.stringify({tmpls:(_BUNDLED_TMPLS?tmplsOut:formTmpls),guides:formGuides,custom:customForms,emojis:formEmojis});
   try{_formSaveLog('saved '+v.length+'B, '+Object.keys(formTmpls).length+' forms, '+customForms.length+' of her own');}catch(e){}
   try{localStorage.setItem('sc_forms',v);}catch(e){try{_noteWriteRefused('forms',e);}catch(e2){}}
   // Did the device actually keep it? An offloaded key writes through memory + IndexedDB, and a
@@ -13935,7 +13950,22 @@ function persistForms(){
   try{_formsSnap=JSON.parse(v);}catch(e){_formsSnap=null;}
   try{if(typeof _pushKeyNow==='function')_pushKeyNow('sc_forms',v);}catch(e){}   // immediate push so a fast refresh can't lose the change
 }
+// The built-in templates, exactly as the app ships them, captured before anything stored is merged
+// over the top. persistForms() uses this to store ONLY what she actually changed.
+let _BUNDLED_TMPLS=null;
+function _snapshotBundled(){
+  try{ if(!_BUNDLED_TMPLS&&typeof formTmpls!=='undefined')_BUNDLED_TMPLS=JSON.parse(JSON.stringify(formTmpls)); }catch(e){}
+}
+// Is this template still exactly what the app ships? Compared without _ts, which is bookkeeping.
+function _isBundledUnchanged(id,v){
+  try{
+    if(!_BUNDLED_TMPLS||!Object.prototype.hasOwnProperty.call(_BUNDLED_TMPLS,id))return false;
+    const strip=function(o){const c=Object.assign({},o);delete c._ts;return JSON.stringify(c);};
+    return strip(_BUNDLED_TMPLS[id])===strip(v);
+  }catch(e){return false;}
+}
 function loadForms(){
+  _snapshotBundled();
   try{
     const raw=localStorage.getItem('sc_forms');if(!raw)return;
     const d=JSON.parse(raw)||{};
