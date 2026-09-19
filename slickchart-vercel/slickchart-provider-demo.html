@@ -468,7 +468,7 @@ const S=document.getElementById('S');
 // resets when I save it" and there was no way to tell whether her phone had any of them — a whole
 // day was spent debugging code she may not have been running. Shown at the bottom of Settings, so
 // the answer is a screenshot away. Bump it on every ship.
-const APP_BUILD='2026-09-19f';
+const APP_BUILD='2026-09-19g';
 
 
 /* ════════════════════════════════════════════════════════════════
@@ -3104,10 +3104,37 @@ const Cloud={
     clearTimeout(this._timer);
     this._timer=setTimeout(()=>this._flush(n+1),Math.min(1500*Math.pow(2,n),60000));
   },
+  // How much may go in ONE request. Her settings total ~1.5MB, and coalescing boot into a single
+  // upload (done to stop forty tiny ones) meant sending all of it at once — which her account
+  // rejected, so her computer showed "Changes couldn't back up to the cloud yet" and sat in a retry
+  // loop, never syncing at all. Batching was right; batching without a ceiling was not.
+  _MAX_BATCH:350000,
   _flush(retryCount){
     if(!this.token)return;
     const items=this._queue;this._queue={};
     if(!Object.keys(items).length)return;
+    // Split anything oversized across several requests, keeping the rest queued for the next one.
+    // A single key larger than the ceiling still goes on its own — better one big request than a
+    // batch that can never succeed.
+    try{
+      const keys=Object.keys(items);
+      let used=0; const send={}; let held=0;
+      for(const k of keys){
+        const len=String(items[k]==null?'':items[k]).length+k.length+8;
+        if(used&&used+len>this._MAX_BATCH){ this._queue[k]=items[k]; held++; continue; }
+        send[k]=items[k]; used+=len;
+      }
+      if(held){
+        for(const k in send)delete items[k];
+        for(const k in items){ if(!(k in this._queue))this._queue[k]=items[k]; }
+        clearTimeout(this._timer); this._timer=setTimeout(()=>this._flush(0),250);
+        return this._send(send,retryCount);
+      }
+    }catch(e){}
+    return this._send(items,retryCount);
+  },
+  _send(items,retryCount){
+    if(!this.token)return;
     fetch('/api/store',{method:'PUT',headers:{'Content-Type':'application/json','Authorization':'Bearer '+this.token},body:JSON.stringify({items})})
       .then(r=>{
         // Confirmed on the account, so an identical push later is a no-op rather than a round trip.
@@ -17746,6 +17773,21 @@ function _pushFlushNow(){
     for(const k in items){ if(Object.prototype.hasOwnProperty.call(seen,k)&&seen[k]===items[k])delete items[k]; }
   }catch(e){}
   if(!Object.keys(items).length){settle({ok:true,reason:'unchanged'});return;}
+  // Same ceiling as the debounced queue: one enormous request is one her account rejects, and then
+  // nothing syncs at all. Anything over it rides the ordinary queue, which sends in chunks.
+  try{
+    let used=0; const over=[];
+    Object.keys(items).forEach(function(k){
+      const len=String(items[k]==null?'':items[k]).length+k.length+8;
+      if(used&&used+len>Cloud._MAX_BATCH){over.push(k);return;}
+      used+=len;
+    });
+    if(over.length){
+      over.forEach(function(k){ if(!(k in Cloud._queue))Cloud._queue[k]=items[k]; delete items[k]; });
+      try{clearTimeout(Cloud._timer);Cloud._timer=setTimeout(function(){Cloud._flush(0);},250);}catch(e){}
+    }
+  }catch(e){}
+  if(!Object.keys(items).length){settle({ok:true,reason:'queued'});return;}
   // A failed immediate push used to be reported and then forgotten, leaving the value on the device
   // only. Hand it to the ordinary queue, which retries with backoff and is drained by the unload
   // beacon. The caller is still told it did not land.

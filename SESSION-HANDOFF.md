@@ -1472,6 +1472,8 @@ Add to it as she reports; never argue with it.
 | 8 | Screenshot, COMPUTER: shows "Microneedling consent", **no Custom Forms section at all**. | `19e` |
 | 9 | Guide title "Microchanneling aftercare" **does** show on the computer, on the same screen as the un-renamed form. | `19e` |
 | 10 | Self-check (PHONE): `sc_forms` device == account, byte-identical, no name disagreements, Spicule present on both. | `19e` |
+| 11 | **COMPUTER shows the banner "Changes couldn't back up to the cloud yet, they're saved on this device and will sync when you're back online."** | `19f` |
+| 12 | Re-edited and saved on the PHONE first, then checked the computer — still not there. | `19f` |
 
 **What these facts prove, without any code reading:**
 * The direction is **phone → computer**, and it has been stated since the first message (1, 3, 5, 7, 8).
@@ -1479,6 +1481,19 @@ Add to it as she reports; never argue with it.
 * Her account HOLDS the edits — fact 10 is from the phone, and the phone's copy matches the account
   (10 + 7). **So the COMPUTER discards them on arrival**, it is not a push problem.
 * The forms screen can show nothing while the data is present (8 + 10).
+
+**Fact 11 is the one that mattered and it came from her screen, not from code.** That banner is only
+shown by `Cloud._flush` when the PUT to `/api/store` comes back NOT-OK and the items are re-queued
+(`_retryLater`). So her computer **could not write to her account at all**, and sat in a retry loop
+pushing its stale copy. Nothing on the receiving side could work while that was true.
+
+**Cause: a batch with no ceiling, which I introduced.** §2v coalesced boot's forty small uploads into
+ONE request. Her settings total ~1.5MB (`sc_forms` 82KB, `sc_brand_colors` 95KB, client list,
+payments, Square catalog…), so that single PUT was big enough to fail. Batching was right; batching
+without a limit was not. `Cloud._MAX_BATCH` (350KB) now splits a flush across requests, holding the
+remainder in the queue, and `_pushKeyNow`'s batch hands anything over the ceiling to that same queue.
+A single key larger than the ceiling still goes alone. Suite: `batchsize.mjs` — 5×300KB queued at once
+goes out as five requests, none oversized, every key lands.
 
 **Fact 10 was misread once** as "the account does not have her edits", by not recording which device
 it came from — which contradicted facts 1, 3 and 5 and cost a build aimed at the wrong machine.
