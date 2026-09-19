@@ -152,6 +152,16 @@ The proxy blocks live `slickchart.app`, so test against the local file with rout
      about one run in three. It now returns immediately while `Cloud._booting`.
   **Anything new that writes on a timer, a nav, or an unload needs the same guard.** See
   SESSION-HANDOFF §2ad.
+- **Scale harnesses** (`scratchpad/`, run by hand): `freshaudit.mjs` boots a BRAND-NEW account and
+  reports every key it stores and byte it uploads — none of it is her data, so anything it finds is
+  the app seeding itself into her account (a fresh profile is 7.8KB; it was 82KB before slim forms).
+  `scaleaudit.mjs` seeds a busy practice (~3MB) and reports boot timing, every upload with its
+  largest keys, per-screen render time and DOM nodes, and device storage by key. Run both after any
+  change to sync, storage or a loader. **Open, serious, unfixed: on a busy account boot uploads 5
+  stock courses over her 60 and the account holds only those for ~3.6s until a second pull merges
+  them back — SESSION-HANDOFF §2ae has the evidence and what is already ruled out.**
+- **Compare sync values by MEANING, not bytes** (`_sameSyncValue`). Loaders normalise as they read,
+  so identical data comes back with its keys reordered and an exact string compare calls it an edit.
 - **DB:** Postgres (Neon) via `lib/db.js`. Tables: `clients`, `client_events`, `kv` (per-owner key/value
   sync store), `providers`, `square_connections`, plus small helpers. `@neondatabase/serverless` isn't
   installed in the scratch env, so `node --check` a file for syntax rather than importing it locally.

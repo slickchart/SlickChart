@@ -468,7 +468,7 @@ const S=document.getElementById('S');
 // resets when I save it" and there was no way to tell whether her phone had any of them — a whole
 // day was spent debugging code she may not have been running. Shown at the bottom of Settings, so
 // the answer is a screenshot away. Bump it on every ship.
-const APP_BUILD='2026-09-19o';
+const APP_BUILD='2026-09-19p';
 
 
 /* ════════════════════════════════════════════════════════════════
@@ -2503,6 +2503,30 @@ function _syncShape(str){
   return 'plain';   // '1' latches, ids, hex colours, note-format names — legitimately not JSON
 }
 // Could the app have meant to store this at all?
+// IS THIS THE SAME VALUE THE ACCOUNT ALREADY HOLDS?
+//
+// Not "is it the same string" — that is what every echo check used to ask. Loaders normalise as they
+// read (dedupe, stamp, re-serialise), so identical data comes back with its keys in a different
+// order and an exact compare calls it an edit. Compare the MEANING instead: parse both and
+// stringify with sorted keys. A re-serialise stops counting as a change; a real change still does.
+// Non-JSON values fall back to the string compare. Capped, because canonicalising something huge is
+// not worth doing to save one request.
+const _SAME_MAX=3000000;
+function _stableJson(v){
+  if(v===null||typeof v!=='object')return JSON.stringify(v);
+  if(Array.isArray(v))return '['+v.map(_stableJson).join(',')+']';
+  return '{'+Object.keys(v).sort().map(function(k){return JSON.stringify(k)+':'+_stableJson(v[k]);}).join(',')+'}';
+}
+function _sameSyncValue(a,b){
+  try{
+    const A=String(a==null?'':a),B=String(b==null?'':b);
+    if(A===B)return true;
+    if(A.length>_SAME_MAX||B.length>_SAME_MAX)return false;
+    const ca=A.charCodeAt(0),cb=B.charCodeAt(0);         // only worth parsing objects/arrays
+    if(!((ca===123||ca===91)&&(cb===123||cb===91)))return false;
+    return _stableJson(JSON.parse(A))===_stableJson(JSON.parse(B));
+  }catch(e){return false;}
+}
 function _usableSyncValue(str){ const sh=_syncShape(str); return sh!=='missing'&&sh!=='empty'&&sh!=='nothing'&&sh!=='broken'; }
 // Monotonic "tombstone" sets: deletes/hides/merges/dismissals that must only ever GROW. On a plain
 // pull the whole-blob server copy overwrote local, so a delete made on one device (or moments before a
@@ -3064,7 +3088,7 @@ const Cloud={
     this._booting=false;
     try{clearTimeout(this._bootFailsafe);}catch(e){}
     try{const q=this._queue,seen=this._serverSeen||{};
-      for(const k in q){ if(Object.prototype.hasOwnProperty.call(seen,k)&&seen[k]===String(q[k]))delete q[k]; }
+      for(const k in q){ if(Object.prototype.hasOwnProperty.call(seen,k)&&_sameSyncValue(seen[k],q[k]))delete q[k]; }
     }catch(e){}
     // The debounced queue and the immediate-push batch both hold boot's leftovers, and they overlap.
     // Fold one into the other so boot ends with ONE request rather than two near-identical ones.
@@ -3085,7 +3109,7 @@ const Cloud={
     // really is off, the queue simply never flushes, and nothing was lost by holding it.
     if(!this.enabled&&this._statusKnown&&!this.statusUnknown)return;
     // Identical to what the account already holds — an echo of the pull, not an edit.
-    try{if(this._serverSeen&&Object.prototype.hasOwnProperty.call(this._serverSeen,k)&&this._serverSeen[k]===String(v)&&!(k in this._queue))return;}catch(e){}
+    try{if(this._serverSeen&&Object.prototype.hasOwnProperty.call(this._serverSeen,k)&&_sameSyncValue(this._serverSeen[k],v)&&!(k in this._queue))return;}catch(e){}
     this._queue[k]=v;
     // Remember which keys were queued DURING BOOT. Those are loaders and re-seeders writing their
     // normalised defaults straight back — not her editing anything. The pull's "don't overwrite a
@@ -17954,7 +17978,7 @@ function _pushFlushNow(){
   if(!tok){settle({ok:false,reason:'nocloud'});return;}
   // The pull may have arrived since these were queued and proved some of them identical.
   try{const seen=_pushState()._serverSeen||{};
-    for(const k in items){ if(Object.prototype.hasOwnProperty.call(seen,k)&&seen[k]===items[k])delete items[k]; }
+    for(const k in items){ if(Object.prototype.hasOwnProperty.call(seen,k)&&_sameSyncValue(seen[k],items[k]))delete items[k]; }
   }catch(e){}
   if(!Object.keys(items).length){settle({ok:true,reason:'unchanged'});return;}
   // Same ceiling as the debounced queue: one enormous request is one her account rejects, and then
@@ -18005,7 +18029,7 @@ function _pushKeyNow(k,v){
     _pushState();
     const val=String(v);
     // Already on the account, unchanged. Nothing to send.
-    if(Object.prototype.hasOwnProperty.call(Cloud._serverSeen,k)&&Cloud._serverSeen[k]===val)
+    if(Object.prototype.hasOwnProperty.call(Cloud._serverSeen,k)&&_sameSyncValue(Cloud._serverSeen[k],val))
       return Promise.resolve({ok:true,reason:'unchanged'});
     if(!Cloud._pushBatch){
       // While booting the batch is held open rather than timed, and Cloud.bootDone() sends it.

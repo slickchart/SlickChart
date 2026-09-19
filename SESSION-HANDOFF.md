@@ -1508,6 +1508,81 @@ assuming.
 
 ---
 
+## 2ae. SCALE SWEEP (`2026-09-19p`) — measured, with one fix and one UNFIXED data-loss window
+
+Ashley asked for a sweep for data bloat and scale problems. Two harnesses do the measuring, both in
+`scratchpad/`; **run them after any change to sync, storage or a loader**:
+
+* `freshaudit.mjs` — boots a BRAND-NEW account against an empty server and reports every key it
+  stores and every byte it uploads. Nothing there is her data, so everything it finds is the app
+  seeding itself into her account.
+* `scaleaudit.mjs` — seeds a busy practice (800 clients, 60 courses, 150 guides, 400 products, 300
+  services, 250 stock items, 300 appointments, ~3MB) and reports boot timing, every upload with its
+  largest keys, per-screen render time and DOM node counts, and device storage by key.
+
+### GOOD: a new profile is clean
+
+**7.8KB across 20 keys**, nothing offloaded to IndexedDB. The slim-forms work holds — `sc_forms` is
+not stored at all for a fresh account (it was 82KB). Largest are `sc_shop_catalog` 1.9KB,
+`sc_affiliate_links` 1.6KB, `sc_courses` 1.5KB. Boot makes 5 upload requests totalling 17.6KB, of
+which **#1 and #2 are near-duplicates 21ms apart** — worth a look, not urgent.
+
+### ⚠️ UNFIXED, AND THE MOST SERIOUS THING HERE: boot briefly wipes her courses from the account
+
+Reproduced on **every** run of `scaleaudit.mjs`. The account-side course count, logged per request:
+
+```
+ 263ms   GET  — account holds her 60 courses
+ 459ms   PUT  — device uploads 5 STOCK courses  <-- her 60 are gone from the account
+3624ms   GET  — account holds 5
+4116ms   PUT  — merge restores them: 65
+```
+
+For ~3.6 seconds on every boot of a busy account, **the account holds five built-in courses instead
+of sixty**. A second device syncing in that window adopts the stock list. `_mergeCourses` is the
+only thing preventing permanent loss, and a merge must not be load-bearing. It also leaves 5 app
+defaults stamped on her account for good (60 in, 65 out) — the same family as the 82KB templates.
+
+**What is ruled out** (each tried, measured, and reverted because it changed nothing):
+* a stock-content predicate in `_mergeAuthoredById` — the merge is NOT the path;
+* a boot-shrink guard inside `persistCourses()` — **the 459ms upload does not go through
+  `persistCourses` at all**, which is the single most useful fact for whoever picks this up;
+* holding the push batch until the first pull (`Cloud._pulled`) — the write happens AFTER the first
+  pull, so the guard never applied.
+
+**Start here:** find what writes `sc_courses` at ~459ms. It is not `persistCourses`. Candidates not
+yet eliminated: `Cloud.pushAllLocal()`, the "catch up keys the pull did not return" block in
+`_cloudInit` (`Cloud._lastPulledKeys`), or a direct `localStorage.setItem('sc_courses', …)`. Wrap
+`Cloud.push` and `_pushKeyNow` for ALL sizes (the probe used in this session only logged >20KB,
+which is why the 1.5KB stock write stayed invisible for so long) and log a stack trace.
+
+### 1MB re-uploaded on every boot of a busy account
+
+Unchanged data: 469KB `sc_clients`, 294KB `sc_courses`, 130KB `sc_affiliate_links`, 70KB
+`sc_shop_catalog`. **Partly addressed:** every echo check compared exact STRINGS, and loaders
+re-serialise with different key order, so identical data read as an edit. `_sameSyncValue()` now
+compares canonical JSON in all four places (`push`, `_pushKeyNow`, `bootDone`, `_pushFlushNow`).
+This did not by itself remove the 1MB, because those values genuinely differ at push time — for
+courses because of the bug above, and for `sc_shop_catalog` because it is DERIVED data rebuilt from
+products, stored, synced, and pushed twice per boot. Derived data arguably should not be a synced
+key at all.
+
+### Rendering: every row, every time
+
+No virtualisation or paging anywhere. 800 clients ⇒ **9,639 DOM nodes** (192ms), shop 7,620 (84ms),
+inventory 4,780 (112ms). Fine at this size, linear from here: 3,000 clients is ~36,000 nodes and
+seconds of layout on a phone, plus the memory. Worth paging the Clients, Shop and Inventory lists
+before a practice that size arrives.
+
+### Not a problem, checked
+
+Messages do NOT lose data across devices — an earlier reading of that was an artefact of seeding
+`sc_msgstore` without matching `sc_threads`. With threads seeded the account keeps all 404KB.
+Device storage totals 2.71MB with only 0.02MB in the 5MB localStorage box; the ≥24KB offload is
+doing its job.
+
+---
+
 ## 2ad. THE ROOT CAUSE, found by a sweep: boot's own write-back made the pull SKIP the key
 
 `2026-09-19m`. This is almost certainly the real answer to *"I made it on my phone and it isn't on
