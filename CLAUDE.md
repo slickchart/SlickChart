@@ -120,6 +120,12 @@ The proxy blocks live `slickchart.app`, so test against the local file with rout
   purpose (they exist as the backup *outside* IndexedDB) and must stay excluded. Signing out must clear
   the offloaded store too — `_doLogout` awaits `_purgeOffloaded()`, and the store is stamped with its
   owner so another account's cache is thrown away rather than read. See SESSION-HANDOFF §2e.
+- **One `try{}catch{}` around a list of loaders is a silent single point of failure.** `_reloadAll()`
+  was ~30 bare statements in one try. A throw in statement 6 meant `loadForms()` (statement 14) and
+  every loader after it never ran — so her forms, clients, messages and Square all silently stopped
+  reloading after a sync, with no error anywhere. It cost eleven builds. Independent loaders each get
+  their own wrapper (`_reloadStep`), failures are recorded, and the self-check prints them. See
+  SESSION-HANDOFF §2ac.
 - **DB:** Postgres (Neon) via `lib/db.js`. Tables: `clients`, `client_events`, `kv` (per-owner key/value
   sync store), `providers`, `square_connections`, plus small helpers. `@neondatabase/serverless` isn't
   installed in the scratch env, so `node --check` a file for syntax rather than importing it locally.

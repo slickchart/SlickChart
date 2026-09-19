@@ -1504,6 +1504,81 @@ look, and it is a much smaller surface. Her last screenshot of that screen was f
 before `19e` stopped the list hiding forms the merge had kept, so it needs re-checking before
 assuming.
 
+**ANSWERED — see §2ac. It was neither sync nor a display filter. `loadForms()` never ran.**
+
+---
+
+## 2ac. SOLVED — `_reloadAll()` was one try/catch, so one bad record hid her whole app (`2026-09-19k`)
+
+This is the answer to the bug that cost eleven builds: *"I made a form on my phone and it isn't
+showing on my computer,"* and *"I keep renaming Microneedling consent to Microchanneling consent and
+it keeps going back."*
+
+**It was never a sync bug.** Every sync fix shipped for it was aimed at the wrong thing, which is why
+every one of them changed nothing.
+
+### The mechanism
+
+`_reloadAll()` — the function that re-reads every library into the app after a cloud pull — was
+written as **one `try{ … }catch(e){}` wrapping about thirty bare statements**:
+
+```js
+function _reloadAll(){try{
+  …
+  if(typeof loadCourses==='function')loadCourses();          // <- statement 6
+  loadProfessions();applyProfessionConfig();
+  …
+  if(typeof loadForms==='function')loadForms();              // <- statement 14
+  loadBizInfo(); … loadClients(); … loadMessages(); … loadInv(); …
+}catch(e){}}
+```
+
+A throw in **any** of those statements jumps straight to the outer `catch`, which swallows it. Every
+statement after it never runs — and the app shows no error at all.
+
+So one malformed record anywhere in her data (a course, a guide, a bundle) meant:
+
+* `loadForms()` never ran → `formTmpls` and `customForms` stayed at the **built-in defaults**.
+* The Forms screen therefore showed **"Microneedling consent"** (the bundled name) and **no Custom
+  forms section** — while `sc_forms` on that same device held the rename and the custom form.
+* `loadClients()`, `loadMessages()`, `loadInv()`, `loadSquareCatalog()` never ran either — which is
+  exactly her other report: *"it takes a minute for everything to load and looks like there's
+  nothing there, Square isn't connected."* Same single cause.
+
+### Why every self-check said everything was fine
+
+The self-check reads **stored** data (`_lsGet('sc_forms')`). Storage was always correct — that is why
+it kept reporting `device 82355B | account 82355B | identical | mine here: Spicule Peel Consent
+(custom2)`. The screen reads **memory**. The gap between them was the whole bug, and nothing printed
+it.
+
+### Reproduction (`scratchpad/reloadstep.mjs`, now a suite test)
+
+A computer with its own IndexedDB profile, a phone that renames a built-in and adds a custom form,
+and **one** reload step made to throw. Output before the fix — her screenshot, exactly:
+
+```
+pc  stored custom : ["Spicule Peel Consent"]     <- on the disk
+pc  memory custom : []                            <- not in the app
+pc  sections      : [… no "Custom forms" …]
+pc  cards         : [… "Microneedling consent" …]   <- the old name
+pc  hidden        : {}                            <- nothing was being filtered
+```
+
+### The fix
+
+Each step runs inside its own `_reloadStep(name, fn)`. A step that throws is recorded and the
+remaining steps still run. **Nothing in that list may depend on the step before it succeeding.**
+
+The self-check now prints **"Parts of the app that failed to reload"** with the step name, so a
+future instance of this is one screenshot, not eleven builds.
+
+### The lesson worth keeping
+
+`try{ … 30 statements … }catch(e){}` is not error handling, it is a silent single point of failure.
+Anywhere a list of independent loaders shares one catch, one bad record takes out all of them. Check
+`_reloadAfterHydrate()` stays per-step wrapped too (it already is).
+
 ---
 
 ## 2aa. THE ROOT CAUSE: every account stored the app's own 75 built-in form templates

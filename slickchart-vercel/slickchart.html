@@ -214,7 +214,7 @@ const S=document.getElementById('S');
 // resets when I save it" and there was no way to tell whether her phone had any of them — a whole
 // day was spent debugging code she may not have been running. Shown at the bottom of Settings, so
 // the answer is a screenshot away. Bump it on every ship.
-const APP_BUILD='2026-09-19j';
+const APP_BUILD='2026-09-19k';
 
 
 /* ════════════════════════════════════════════════════════════════
@@ -3313,9 +3313,25 @@ function _healAvailability(){
     if(raw!=null)console.warn('[SlickChart] business hours were unusable ('+JSON.stringify(String(raw).slice(0,40))+') — reset to defaults and pushed');
   }catch(e){}
 }
-function _reloadAll(){try{
-  try{_reloadTopLevelStores();}catch(e){}
-  try{_healAvailability();}catch(e){}
+// What failed the last time the app reloaded its libraries after a sync. The self-check prints it.
+let _reloadFails=[];
+// ONE step, on its own. This wrapper is the whole point of the rewrite below: _reloadAll used to be
+// thirty bare statements inside a single try/catch, so a throw anywhere in the middle silently took
+// out EVERY step after it — forms, clients, messages, inventory, Square. That is exactly the shape of
+// "I made a form on my phone and it isn't showing on my computer": the form was on the device, and
+// loadForms(), nine statements down, simply never ran. It also explains an app that opens looking
+// empty with Square disconnected. Nothing in this list may depend on the step before it succeeding.
+function _reloadStep(name,fn){
+  try{fn();}catch(e){
+    try{_reloadFails.push(name+': '+((e&&e.message)||e));if(_reloadFails.length>12)_reloadFails.shift();}catch(e2){}
+    try{console.warn('[SlickChart] reload step "'+name+'" failed — the rest still ran',e);}catch(e2){}
+  }
+}
+function _reloadAll(){
+  _reloadFails=[];
+  const S=_reloadStep;
+  S('top-level stores',function(){_reloadTopLevelStores();});
+  S('availability',function(){_healAvailability();});
   // FIRST, and before applyProfessionConfig() below. Two separate bugs met here and between them
   // they are the plainest version of "my course disappeared":
   //
@@ -3331,39 +3347,59 @@ function _reloadAll(){try{
   // Reclaim the room-photo safety copies first: they are the biggest thing in localStorage and the
   // prune used to run only AFTER a write had already failed, which is far too late — by then every
   // other save on the device is failing too.
-  try{if(typeof _pruneRoomDrafts==='function')_pruneRoomDrafts();}catch(e){}
-  if(typeof _loadHiddenCourses==='function')_loadHiddenCourses();
-  if(typeof loadCourses==='function')loadCourses();
-  loadProfessions();applyProfessionConfig();
-  if(typeof loadCustomResources==='function')loadCustomResources();if(typeof _loadSummaryGuides==='function')_loadSummaryGuides();
-  if(typeof loadBundles==='function')bundles=loadBundles();   // refresh form/guide bundles pulled from another device (loadForms above already reloads formGuides)
+  S('room drafts',function(){if(typeof _pruneRoomDrafts==='function')_pruneRoomDrafts();});
+  S('hidden courses',function(){if(typeof _loadHiddenCourses==='function')_loadHiddenCourses();});
+  S('courses',function(){if(typeof loadCourses==='function')loadCourses();});
+  S('professions',function(){loadProfessions();applyProfessionConfig();});
+  S('custom guides',function(){if(typeof loadCustomResources==='function')loadCustomResources();});
+  S('summary guides',function(){if(typeof _loadSummaryGuides==='function')_loadSummaryGuides();});
+  S('bundles',function(){if(typeof loadBundles==='function')bundles=loadBundles();});
   // applyProfessionConfig() above already rebuilt `resources`, but it ran BEFORE the just-pulled
   // custom guides were loaded, so rebuild again now, or guides/bundles synced from another device
   // (e.g. created on the web, opened on the phone) never make it into the visible list.
-  if(typeof rebuildResources==='function')rebuildResources();
-  try{if(typeof _migrateGuideFiles==='function')_migrateGuideFiles();}catch(e){}
-  if(typeof loadAi==='function')loadAi();
-  if(typeof loadForms==='function')loadForms();
+  S('guide list',function(){if(typeof rebuildResources==='function')rebuildResources();});
+  S('guide files',function(){if(typeof _migrateGuideFiles==='function')_migrateGuideFiles();});
+  S('ai settings',function(){if(typeof loadAi==='function')loadAi();});
+  // THE one that must never be skipped: her forms, her renames, her custom forms.
+  S('forms',function(){if(typeof loadForms==='function')loadForms();});
   // Runs after the pull, so both the forms and the deleted list are settled. Repairs a form stuck
   // with a retired id — which is invisible and unsyncable — and pushes the repair up.
-  try{if(typeof _healBulkStamps==='function')_healBulkStamps();}catch(e){}
-  try{if(typeof _healGhostForms==='function')_healGhostForms();}catch(e){}
-  loadBizInfo();_syncProviderAvatar();_syncHeaderLogo();loadClients();loadMergedIds();loadMergedInto();loadDeletedClients();loadHiddenSquare();loadMessages();loadInv();loadVendors();_loadPersistenceSweep();try{_initCapturedPhotos();}catch(e){}_loadHomeDismissed();_loadAttnSeen();loadProviderNoteDrafts();if(typeof loadSessionSummaries==='function')loadSessionSummaries();if(!_sampleHidden()){_seedMayaOnce();}else{_purgeSample();}try{_purgeRemovedClients();}catch(e){}_seedBirthdays();if(!_sampleHidden()&&typeof _demoCheckinSeed==='function')_demoCheckinSeed();
-  try{if(typeof loadBookCfg==='function')loadBookCfg();}catch(e){}
-  if(typeof loadWorkspace==='function')loadWorkspace();
-  if(typeof loadSquareCatalog==='function'){loadSquareCatalog();_mergeSquareRetail();}
-  if(typeof loadCheckinCfg==='function')loadCheckinCfg();
-  if(typeof loadCiDismissed==='function')loadCiDismissed();
-  if(typeof _ciRestoreOnce==='function')_ciRestoreOnce();
-  if(typeof loadVcState==='function')loadVcState();
-  if(typeof loadPartners==='function')loadPartners();
-  if(typeof loadRoutines==='function')loadRoutines();
-  if(typeof loadVisionEndpoint==='function')loadVisionEndpoint();
+  S('form stamps',function(){if(typeof _healBulkStamps==='function')_healBulkStamps();});
+  S('ghost forms',function(){if(typeof _healGhostForms==='function')_healGhostForms();});
+  S('business info',function(){loadBizInfo();});
+  S('avatar',function(){_syncProviderAvatar();});
+  S('header logo',function(){_syncHeaderLogo();});
+  S('clients',function(){loadClients();});
+  S('merged clients',function(){loadMergedIds();loadMergedInto();});
+  S('deleted clients',function(){loadDeletedClients();});
+  S('hidden square clients',function(){loadHiddenSquare();});
+  S('messages',function(){loadMessages();});
+  S('inventory',function(){loadInv();});
+  S('vendors',function(){loadVendors();});
+  S('persistence sweep',function(){_loadPersistenceSweep();});
+  S('captured photos',function(){_initCapturedPhotos();});
+  S('home dismissed',function(){_loadHomeDismissed();_loadAttnSeen();});
+  S('note drafts',function(){loadProviderNoteDrafts();});
+  S('session summaries',function(){if(typeof loadSessionSummaries==='function')loadSessionSummaries();});
+  S('sample client',function(){if(!_sampleHidden()){_seedMayaOnce();}else{_purgeSample();}});
+  S('removed clients',function(){_purgeRemovedClients();});
+  S('birthdays',function(){_seedBirthdays();});
+  S('check-in demo',function(){if(!_sampleHidden()&&typeof _demoCheckinSeed==='function')_demoCheckinSeed();});
+  S('booking settings',function(){if(typeof loadBookCfg==='function')loadBookCfg();});
+  S('workspace',function(){if(typeof loadWorkspace==='function')loadWorkspace();});
+  S('square catalog',function(){if(typeof loadSquareCatalog==='function'){loadSquareCatalog();_mergeSquareRetail();}});
+  S('check-in settings',function(){if(typeof loadCheckinCfg==='function')loadCheckinCfg();});
+  S('check-in dismissed',function(){if(typeof loadCiDismissed==='function')loadCiDismissed();});
+  S('check-in restore',function(){if(typeof _ciRestoreOnce==='function')_ciRestoreOnce();});
+  S('gift cards',function(){if(typeof loadVcState==='function')loadVcState();});
+  S('partners',function(){if(typeof loadPartners==='function')loadPartners();});
+  S('routines',function(){if(typeof loadRoutines==='function')loadRoutines();});
+  S('vision endpoint',function(){if(typeof loadVisionEndpoint==='function')loadVisionEndpoint();});
   // Re-apply branding after a cross-device pull. Without this, changing the logo/brand colors on the
   // web never reflected on the phone (the new sc_brand_colors was pulled into storage, but brandColors
   // stayed the old in-memory value and the theme was never re-derived) until a full cold reload.
-  try{ if(typeof loadBrandColors==='function')brandColors=loadBrandColors(); if(typeof applyTheme==='function')applyTheme(); if(typeof _syncHeaderLogo==='function')_syncHeaderLogo(); }catch(e){}
-}catch(e){}}
+  S('branding',function(){if(typeof loadBrandColors==='function')brandColors=loadBrandColors();if(typeof applyTheme==='function')applyTheme();if(typeof _syncHeaderLogo==='function')_syncHeaderLogo();});
+}
 // Five taps on the version line at the bottom of Settings opens the self-check. There is no button
 // for it and nothing in any menu, so it clutters nothing — but unlike the ?selfcheck=1 link it works
 // INSIDE the installed app. That matters: a link tapped from a message opens Safari or Chrome, and on
@@ -3553,6 +3589,17 @@ async function _runSelfCheck(){
   try{ if(navigator.storage&&navigator.storage.estimate){ const e=await navigator.storage.estimate(); quota=Math.round((e.usage||0)/1048576)+'MB used of '+Math.round((e.quota||0)/1048576)+'MB'; } }catch(e){}
   let lsBytes=0; try{ (typeof _lsAllKeys==='function'?_lsAllKeys():Object.keys(localStorage)).forEach(function(k){ try{ lsBytes+=((typeof _lsGet==='function'?_lsGet(k):localStorage.getItem(k))||'').length; }catch(e){} }); }catch(e){}
   line('Room to store things', true, Math.round(lsBytes/1024)+'KB of settings on this device \u00b7 '+quota);
+  // Did every library actually reload after the last sync? This is the line that would have found
+  // the "my form is on the phone but not the computer" bug in one screenshot instead of ten builds:
+  // one step throwing used to stop every step after it, so her form WAS on the device and the step
+  // that reads it into the app never ran.
+  try{
+    if(typeof _reloadFails!=='undefined'&&_reloadFails&&_reloadFails.length){
+      line('Parts of the app that failed to reload', false, _reloadFails.join(' \u00b7 ')+' \u2014 anything below a failure still loaded, but these did not');
+    } else if(typeof _reloadFails!=='undefined'){
+      line('Every part of the app reloaded after syncing', true, 'all steps ran');
+    }
+  }catch(e){}
   // What happened the last few times a form was saved, straight from the app rather than guessed at.
   try{
     if(typeof _formSaves!=='undefined'&&_formSaves&&_formSaves.length){
