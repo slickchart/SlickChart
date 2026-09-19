@@ -468,7 +468,7 @@ const S=document.getElementById('S');
 // resets when I save it" and there was no way to tell whether her phone had any of them — a whole
 // day was spent debugging code she may not have been running. Shown at the bottom of Settings, so
 // the answer is a screenshot away. Bump it on every ship.
-const APP_BUILD='2026-09-19k';
+const APP_BUILD='2026-09-19l';
 
 
 /* ════════════════════════════════════════════════════════════════
@@ -3457,6 +3457,15 @@ function _lsPersist(k,v,_noOffload){
       });
     }catch(e){Cloud._offBad[k]=1;try{delete Cloud._offloaded[k];}catch(e2){}return _lsPersist(k,str,true);}
     return null;
+  }
+  // This value is small enough for the small box. If this key USED to be in the big one, the copy
+  // sitting in IndexedDB is now stale — and _hydrateOffloaded() on the next boot would read it back
+  // into memory and DELETE the fresh small-box copy, silently reverting this write. That is a rename
+  // that comes back, or a new form that is there until you reload. Retire the big-box copy first.
+  if(Cloud._offloaded&&Cloud._offloaded[k]){
+    try{delete Cloud._offloaded[k];}catch(e0){}
+    try{const d=_idbOK();if(d)d.del(_OFF_PREFIX+k);}catch(e0){}
+    try{_offIndexWrite();}catch(e0){}
   }
   try{set(k,str);try{delete Cloud._mem[k];}catch(e2){}return null;}catch(e){
     try{
@@ -13840,6 +13849,27 @@ function _formCard(f){
 function renderForms(){
   setNav('pro');
   try{if(typeof loadHiddenSets==='function')loadHiddenSets();}catch(e){}   // apply deletes even if this renders before the persistence sweep
+  // THIS SCREEN SHOWS WHAT IS SAVED ON THE DEVICE. Not what some in-memory array happens to hold.
+  //
+  // A form she made on her phone sat on her computer's disk, correct, and correct on her account,
+  // for days — every self-check said `mine here: Spicule Peel Consent (custom2)` and `identical`
+  // — while this screen showed the built-in defaults and no Custom forms section at all. Several
+  // theories about WHY the in-memory copy was behind were each wrong. The screen should not depend
+  // on any of them: if it is on the disk, it renders.
+  //
+  // Storage is never behind memory — persistForms() writes and pushes on every single save — so
+  // taking the disk as the authority here can only ever add what memory is missing, never lose an
+  // edit. Deleting a form rewrites storage without it, so deletes still stick.
+  try{if(typeof loadForms==='function')loadForms();}catch(e){}
+  try{
+    const _st=JSON.parse(((typeof _lsGet==='function')?_lsGet('sc_forms'):localStorage.getItem('sc_forms'))||'{}')||{};
+    if(_st.tmpls)Object.keys(_st.tmpls).forEach(function(k){if(_st.tmpls[k])formTmpls[k]=_st.tmpls[k];});
+    if(Array.isArray(_st.custom)){
+      const _have={};customForms.forEach(function(c){if(c&&c.id)_have[c.id]=1;});
+      _st.custom.forEach(function(c){if(c&&c.id&&!_have[c.id])customForms.push(c);});
+    }
+    if(_st.guides&&typeof _st.guides==='object')Object.keys(_st.guides).forEach(function(k){if(!(k in formGuides))formGuides[k]=_st.guides[k];});
+  }catch(e){}
   document.getElementById('tt').textContent=_sectionTitle('forms');
   const has=p=>selectedProfessions.includes(p);
   const F=_FORM_DEFS_BY_PROF;

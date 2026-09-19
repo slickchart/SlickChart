@@ -1508,6 +1508,36 @@ assuming.
 
 ---
 
+## 2ac-FACTS. What Ashley OBSERVED on build `2026-09-19k` (8:36 PM, her computer)
+
+Her words and her numbers. These are settled — do not re-derive them, do not adopt a theory that
+contradicts one (CLAUDE.md §1b).
+
+13. **`Every part of the app reloaded after syncing — all steps ran`.** No reload step threw. The
+    §2ac fix below is real but it was NOT her bug. The reproduction matched her screenshot and was
+    not her situation.
+14. `Which account row this device saves to — p_bc6d4fe33c…` — a real provider row, so the
+    `_tokenOwner` revert landed and both devices agree.
+15. `sc_forms: device 82355B | account 82355B | identical | 76 forms, 1 of your own, 17 guides |
+    mine here: Spicule Peel Consent (custom2) | mine on account: Spicule Peel Consent (custom2)`.
+    **No ghost line and no NAMES DISAGREE line** — and both ARE included in the plain-text report
+    she pastes, so their absence is real evidence, not a gap in the report.
+16. The Forms screen at 8:35 PM still showed `Microneedling consent` and **no Custom forms section**.
+17. *"the spicule form has never carried over but the spicule guide has. same with the
+    microchanneling"* — the GUIDE crosses devices every time; the FORM never has, not once.
+18. *"these should carry over the same way the courses do. my new courses i've made show both on
+    computer and phone"* — courses cross devices fine.
+19. Her self-check's big-box line names what lives in IndexedDB: `sc_affiliate_links, your logo &
+    brand colours, sc_client_homecare, your client list, sc_deleted_clients, **your forms**,
+    sc_merged_into, sc_payments, sc_shop_catalog, sc_square_catalog`. **Courses and guides are not
+    in it.** The one library that will not cross devices is the one stored differently from the two
+    that do.
+
+**Read 17 + 18 + 19 together.** That is the shape of the bug, in her own observations, and it points
+at the offload path (`_lsPersist` / `_hydrateOffloaded`), not at sync and not at the form list.
+
+---
+
 ## 2ac. SOLVED — `_reloadAll()` was one try/catch, so one bad record hid her whole app (`2026-09-19k`)
 
 This is the answer to the bug that cost eleven builds: *"I made a form on my phone and it isn't
