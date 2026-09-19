@@ -1540,7 +1540,28 @@ the guard only for keys NOT in that set, and drops the boot-queued write before 
 copy. A genuine edit made during boot still wins; a default write-back no longer does.
 
 **Found by `scratchpad/sweep-crossdevice.mjs`**, which makes a real item in ten libraries on one
-device and requires it on the other. Before: courses and staff failed. After: all ten pass.
+device and requires it on the other. Before the fix, courses and staff failed every time.
+
+### ⚠️ NOT FULLY FIXED — courses and staff are still INTERMITTENT. Start here next session.
+
+`_bootQueued` is a real improvement but it is **not sufficient**. Measured on `2026-09-19n`:
+
+* `scratchpad/sweep-crossdevice.mjs` — persistent browser profile, real IndexedDB — passes roughly
+  one run in three for **courses** and **staff**. All eight other libraries pass every time.
+* `/tmp/trace.mjs` — the same scenario in a FRESH context with no IndexedDB profile — passes 5/5,
+  with `Cloud._bootQueued` correctly holding `sc_staff` and `sc_courses`.
+* The account copy is correct on every run (verified by dumping STORE), so the phone's push is fine.
+  **The flake is on the receiving device, and the variable is IndexedDB.**
+
+So the next thing to look at is the ASYNC hydration race, not the queue:
+`_hydrateOffloaded()` is awaited at the top of `_cloudInit`, and `_reloadAfterHydrate()` — which
+calls `loadCourses()` among others — is supposed to run before the pull. Under a real IndexedDB
+profile that ordering appears not to hold every time, and when it slips, the loaders write defaults
+over the freshly pulled data. Instrument the ORDER of `_hydrateOffloaded` → pull →
+`_reloadAfterHydrate` → `_reloadAll` across runs before changing anything.
+
+Do NOT report courses/staff cross-device as fixed. Three earlier theories on the forms bug were each
+confirmed by a green test and were each wrong; an intermittent green is weaker still.
 
 ---
 
