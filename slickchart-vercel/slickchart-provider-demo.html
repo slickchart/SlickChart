@@ -468,7 +468,7 @@ const S=document.getElementById('S');
 // resets when I save it" and there was no way to tell whether her phone had any of them — a whole
 // day was spent debugging code she may not have been running. Shown at the bottom of Settings, so
 // the answer is a screenshot away. Bump it on every ship.
-const APP_BUILD='2026-09-19e';
+const APP_BUILD='2026-09-19f';
 
 
 /* ════════════════════════════════════════════════════════════════
@@ -2790,6 +2790,8 @@ function _formHidden(id,itemTs){
   try{
     const h=(typeof hiddenForms!=='undefined'&&hiddenForms)?hiddenForms:{};
     if(!h[id])return false;
+    // It survived the merge, so it is on the account and wanted. An undated deletion does not hide it.
+    if((Number(h[id])||0)<=1&&itemTs!=null)return false;
     if(itemTs==null&&typeof formTmpls!=='undefined'&&formTmpls[id])itemTs=formTmpls[id]._ts;
     return _tombBeats(h[id],itemTs);
   }catch(e){return false;}
@@ -2814,7 +2816,13 @@ function _mergeForms(serverStr,localStr){
   const out=[],idx={};
   const take=function(f,fromLocal){
     if(!f||!f.id)return;
-    if(hidden[f.id]&&_tombBeats(hidden[f.id],f._ts))return;
+    // An UNDATED (legacy) deletion must not kill a form the ACCOUNT is currently carrying. Deleting a
+    // form removes it from the account as well as tombstoning the id, so a form still sitting on the
+    // account is one some device actively wants — it is not the thing that was deleted, it only
+    // inherited the id back when ids were a recycled counter. Undated means "cannot prove it is
+    // newer", and that must not be enough to silently destroy her work.
+    const legacyTomb=(Number(hidden[f.id])||0)<=1;
+    if(hidden[f.id]&&!(legacyTomb&&!fromLocal)&&_tombBeats(hidden[f.id],f._ts))return;
     if(!(f.id in idx)){idx[f.id]=out.length;out.push(f);return;}
     const cur=out[idx[f.id]],a=Number(cur&&cur._ts)||0,b=Number(f&&f._ts)||0;
     if(b>a)out[idx[f.id]]=f;
@@ -2837,7 +2845,8 @@ function _mergeForms(serverStr,localStr){
     const o={};
     const put=function(src,k,fromLocal){
       const v=src[k];
-      if(hidden[k]&&_tombBeats(hidden[k],v&&v._ts))return;
+      const legacyT=(Number(hidden[k])||0)<=1;
+      if(hidden[k]&&!(legacyT&&!fromLocal)&&_tombBeats(hidden[k],v&&v._ts))return;
       if(!(k in o)){o[k]=v;return;}
       const a=Number(o[k]&&o[k]._ts)||0,b=Number(v&&v._ts)||0;
       if(b>a)o[k]=v;                        // newer edit wins, whichever side it came from
@@ -2856,7 +2865,7 @@ function _mergeForms(serverStr,localStr){
   const str=JSON.stringify(merged);
   const srvView=JSON.stringify({
     tmpls:mergeMap(srv.tmpls,null),guides:mergeMap(srv.guides,null),
-    custom:cs.filter(f=>f&&f.id&&!(hidden[f.id]&&_tombBeats(hidden[f.id],f._ts))),emojis:mergeMap(srv.emojis,null)
+    custom:cs.filter(f=>f&&f.id&&!(hidden[f.id]&&(Number(hidden[f.id])||0)>1&&_tombBeats(hidden[f.id],f._ts))),emojis:mergeMap(srv.emojis,null)
   });
   return {str:str,changed:str!==srvView};
 }
@@ -3756,6 +3765,15 @@ async function _runSelfCheck(){
   try{ if(navigator.storage&&navigator.storage.estimate){ const e=await navigator.storage.estimate(); quota=Math.round((e.usage||0)/1048576)+'MB used of '+Math.round((e.quota||0)/1048576)+'MB'; } }catch(e){}
   let lsBytes=0; try{ (typeof _lsAllKeys==='function'?_lsAllKeys():Object.keys(localStorage)).forEach(function(k){ try{ lsBytes+=((typeof _lsGet==='function'?_lsGet(k):localStorage.getItem(k))||'').length; }catch(e){} }); }catch(e){}
   line('Room to store things', true, Math.round(lsBytes/1024)+'KB of settings on this device \u00b7 '+quota);
+  // What happened the last few times a form was saved, straight from the app rather than guessed at.
+  try{
+    if(typeof _formSaves!=='undefined'&&_formSaves&&_formSaves.length){
+      const badSave=_formSaves.some(function(x){return /\u2717|held/.test(x);});
+      line('Recent form saves', !badSave, _formSaves.join(' \u00b7 '));
+    } else if(typeof _formSaves!=='undefined'){
+      line('Recent form saves', true, 'none since the app opened \u2014 save a form, then run this again');
+    }
+  }catch(e){}
 
   const plain=[
     'SlickChart self-check \u2014 '+new Date().toLocaleString(),
@@ -14089,13 +14107,45 @@ function _stampChangedEntries(map,prevMap,now){
     if(before!==after)v._ts=now;
   });
 }
+// A short record of what happened on the last few form saves, shown in the self-check. Five rounds
+// of this were spent guessing whether a save even reached storage; the app should just say.
+let _formSaves=[];
+function _formSaveLog(what){
+  try{ _formSaves.push(new Date().toLocaleTimeString()+' '+what); if(_formSaves.length>8)_formSaves.shift(); }catch(e){}
+}
+// Did that save actually land on the account? Reads back the single key (not her whole workspace)
+// and checks the name is really there. A save that says "Form saved" and did not is the thing that
+// made this impossible to diagnose, so now it says either way.
+async function _verifyFormSave(id,expectName,attempt){
+  try{
+    const tok=(typeof Cloud!=='undefined'&&Cloud&&Cloud.token)||'';
+    if(!tok||!id)return;
+    await new Promise(function(r){setTimeout(r,900);});
+    let j=null;
+    try{ const r=await fetch('/api/store?key=sc_forms',{headers:{'Authorization':'Bearer '+tok},cache:'no-store'}); j=await r.json(); }catch(e){}
+    const raw=(j&&j.data&&j.data.sc_forms)||'';
+    let got=null;try{const o=JSON.parse(raw||'{}');got=(o.tmpls&&o.tmpls[id]&&o.tmpls[id].name)||null;}catch(e){}
+    if(got===expectName){ _formSaveLog('\u2713 "'+expectName+'" confirmed on the account'); return; }
+    if((attempt||0)<1){
+      _formSaveLog('not on the account yet, pushing again');
+      try{ _pushKeyNow('sc_forms',_lsGet('sc_forms')||''); }catch(e){}
+      return _verifyFormSave(id,expectName,(attempt||0)+1);
+    }
+    _formSaveLog('\u2717 account still says '+(got==null?'(nothing)':'"'+got+'"'));
+    try{ if(typeof proToast==='function')proToast('Saved on this device, but it hasn\u2019t reached your account yet \u2014 it will retry. If it keeps happening, run the self-check.',0); }catch(e){}
+  }catch(e){}
+}
 function persistForms(){
   // Her forms are still in IndexedDB and have not been read back, so formTmpls/customForms right now
   // are the BUNDLED DEFAULTS, not hers. Saving that would overwrite her real library on the account.
   // The loaders are re-run the moment IndexedDB answers (_reloadAfterHydrate), so nothing is lost by
   // waiting.
   try{ if(typeof _awaitingHydration==='function'&&_awaitingHydration('sc_forms')){
-    try{console.warn('[SlickChart] not saving forms yet \u2014 the real ones are still loading');}catch(e){}
+    // DO NOT DROP IT. This used to just return, so an edit made in that window vanished with no
+    // warning. Come back the moment her real forms have loaded and save it then.
+    try{console.warn('[SlickChart] her forms are still loading \u2014 holding this save, will retry');}catch(e){}
+    try{_formSaveLog('held \u2014 forms still loading');}catch(e){}
+    try{clearTimeout(persistForms._retry);persistForms._retry=setTimeout(function(){try{persistForms();}catch(e){}},600);}catch(e){}
     return; } }catch(e){}
   const now=Date.now();
   let prev=_formsSnap;
@@ -14104,7 +14154,11 @@ function persistForms(){
   _stampChangedEntries(formGuides,prev&&prev.guides,now);
   _stampChangedEntries(formEmojis,prev&&prev.emojis,now);
   const v=JSON.stringify({tmpls:formTmpls,guides:formGuides,custom:customForms,emojis:formEmojis});
+  try{_formSaveLog('saved '+v.length+'B, '+Object.keys(formTmpls).length+' forms, '+customForms.length+' of her own');}catch(e){}
   try{localStorage.setItem('sc_forms',v);}catch(e){try{_noteWriteRefused('forms',e);}catch(e2){}}
+  // Did the device actually keep it? An offloaded key writes through memory + IndexedDB, and a
+  // silent failure there looked exactly like a sync problem for days.
+  try{ const back=_lsGet('sc_forms'); if(back!==v)_formSaveLog('\u2717 this device did NOT keep it (read back '+(back==null?'nothing':back.length+'B')+')'); }catch(e){}
   try{_formsSnap=JSON.parse(v);}catch(e){_formsSnap=null;}
   try{if(typeof _pushKeyNow==='function')_pushKeyNow('sc_forms',v);}catch(e){}   // immediate push so a fast refresh can't lose the change
 }
@@ -15444,6 +15498,8 @@ function saveFormBuilder(tid,thenPreview,quiet){
   _formIconImgDraft=null;
   persistForms();
   _fbSavedTid=tid;_fbInitialSig=_fbSig(tid);
+  // She tapped Save. Confirm it really reached the account rather than telling her it did.
+  try{ if(!quiet)_verifyFormSave(id,name); }catch(e){}
   if(quiet)return;
   if(thenPreview){nav('form-preview',id);return;}
   proToast('Form saved');

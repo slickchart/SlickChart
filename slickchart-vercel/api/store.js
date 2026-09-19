@@ -56,6 +56,17 @@ export default async function handler(req, res) {
     const q = sql();
 
     if (req.method === 'GET') {
+      // ?key=sc_forms reads ONE key. The app uses it to confirm a save actually reached the account
+      // without pulling the provider's whole workspace (~1.5MB) every time she taps Save. Same owner
+      // scoping as the full read: the owner comes from the verified token, never from the request.
+      const one = String((req.query && req.query.key) || '');
+      if (one) {
+        const rows = await q`SELECT k, v FROM kv WHERE owner = ${owner} AND k = ${one}`;
+        const data = {};
+        rows.forEach(r => { data[r.k] = r.v; });
+        res.status(200).json({ data, count: rows.length });
+        return;
+      }
       const rows = await q`SELECT k, v FROM kv WHERE owner = ${owner}`;
       const data = {};
       rows.forEach(r => { data[r.k] = r.v; });

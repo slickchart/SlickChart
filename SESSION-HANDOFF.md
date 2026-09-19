@@ -1496,8 +1496,36 @@ Those need opposite fixes. **Get that line from the COMPUTER before writing any 
 
 **Diagnostics that exist** (all behind five taps on the version stamp, no everyday UI): per-key device
 vs account bytes and edit times, her own forms with ids on both sides, forms on the deleted list that
-still exist, and now the name disagreements. `mergeprobe.mjs` calls `_mergeForms` directly with two
-blobs when the merge itself needs ruling in or out.
+still exist, the name disagreements, and a log of the last few form saves. `mergeprobe.mjs` calls
+`_mergeForms` directly with two blobs when the merge itself needs ruling in or out.
+
+### The direction, finally established (build `19f`)
+
+Two screenshots settled it: her PHONE shows "Microchanneling consent" and "Spicule Peel Consent"
+under Custom Forms; her COMPUTER shows neither. Her self-check reported **no name disagreement**,
+which is only possible if that report came from the phone — so **the account HAS her edits and the
+COMPUTER discards them on arrival.**
+
+**ALWAYS ASK WHICH DEVICE A SELF-CHECK CAME FROM.** The same report means opposite things depending
+on the answer, and one hour was spent concluding the exact reverse from it.
+
+`19f`, two changes:
+1. **An UNDATED (legacy) tombstone no longer strips a form the ACCOUNT is carrying.** Deleting removes
+   a form from the account as well as tombstoning the id, so a form still on the account is one some
+   device actively wants — it only inherited the id back when ids were a recycled counter. Undated
+   means "cannot prove it is newer", which must not be enough to destroy her work. A DATED deletion
+   still works normally, on both the merge and the screen (`_formHidden` agrees). Suite:
+   `legacytomb.mjs`.
+2. **A form save now verifies itself.** `_verifyFormSave()` reads back the single key
+   (`GET /api/store?key=sc_forms`, added for this — owner still from the verified token) and confirms
+   the name is really on the account. Not there → push again → still not there → tell her plainly
+   instead of saying "Form saved". Every save is recorded in `_formSaves` and printed by the
+   self-check. Suite: `verify.mjs`.
+   Also: the hydration guard in `persistForms()` used to `return` silently, which DROPPED an edit made
+   in that window. It now retries after 600ms.
+
+**Why this matters more than the fix itself:** the app now reports whether a save reached the account
+at the moment it happens. Five builds were spent guessing at that one fact.
 
 ---
 
