@@ -140,10 +140,18 @@ The proxy blocks live `slickchart.app`, so test against the local file with rout
   key goes in `_TOMB_OBJ` so cancellations union across devices too. Appointments use
   `sc_deleted_appts`, forms `sc_hidden_forms`, courses `sc_hidden_courses`, guides
   `sc_hidden_guides`. Stamp `_ts` on create AND on edit, or the newer version cannot win.
-- **Boot's own write-backs are not edits.** Loaders normalise and re-seed on open, which queues a
-  write of the DEFAULTS. `Cloud.pull()` skips keys with a pending local write, so those write-backs
-  made it skip the account's real data and then push the defaults up over it. `Cloud._bootQueued`
-  marks them so the guard ignores them. See SESSION-HANDOFF §2ad.
+- **Boot's own write-backs are not edits — in BOTH paths.** During boot the in-memory libraries hold
+  the DEFAULTS, because the account's data has not been read in yet, so anything that persists or
+  queues during boot is writing defaults over real data. This bit twice:
+  1. *The queue.* Loaders normalise and re-seed on open, queuing a write of the defaults.
+     `Cloud.pull()` skips keys with a pending local write, so it skipped the account's real data and
+     then pushed the defaults up over it. `Cloud._bootQueued` marks those so the guard ignores them.
+  2. *Navigation.* `_savePersistenceSweep()` persists everything on every `nav()`, and boot
+     navigates (Home draws before the network answers). A nav landing between the pull storing the
+     account copy and `_reloadAll()` reading it back wrote the defaults over it — racy, so it failed
+     about one run in three. It now returns immediately while `Cloud._booting`.
+  **Anything new that writes on a timer, a nav, or an unload needs the same guard.** See
+  SESSION-HANDOFF §2ad.
 - **DB:** Postgres (Neon) via `lib/db.js`. Tables: `clients`, `client_events`, `kv` (per-owner key/value
   sync store), `providers`, `square_connections`, plus small helpers. `@neondatabase/serverless` isn't
   installed in the scratch env, so `node --check` a file for syntax rather than importing it locally.

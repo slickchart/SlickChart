@@ -1542,30 +1542,30 @@ copy. A genuine edit made during boot still wins; a default write-back no longer
 **Found by `scratchpad/sweep-crossdevice.mjs`**, which makes a real item in ten libraries on one
 device and requires it on the other. Before the fix, courses and staff failed every time.
 
-### ⚠️ NOT FULLY FIXED — courses and staff are still INTERMITTENT. Start here next session.
+### RESOLVED (`2026-09-19o`) — it was `_savePersistenceSweep()` on boot's own navigations
 
-`_bootQueued` is a real improvement but it is **not sufficient**. Measured on `2026-09-19n`:
+The intermittent half of this was a SECOND instance of the same principle, one layer down.
 
-* `scratchpad/sweep-crossdevice.mjs` — persistent browser profile, real IndexedDB — passes roughly
-  one run in three for **courses** and **staff**. All eight other libraries pass every time.
-* `/tmp/trace.mjs` — the same scenario in a FRESH context with no IndexedDB profile — passes 5/5,
-  with `Cloud._bootQueued` correctly holding `sc_staff` and `sc_courses`.
-* The account copy is correct on every run (verified by dumping STORE), so the phone's push is fine.
-  **The flake is on the receiving device, and the variable is IndexedDB.**
+`_savePersistenceSweep()` is the "persist everything on every navigation" safety net, called from
+`nav()` (and from `pagehide`). Boot navigates — Home draws before the network answers — so it ran
+during boot, when there are no edits to protect and the in-memory libraries still hold the DEFAULTS.
 
-So the next thing to look at is the ASYNC hydration race, not the queue:
-`_hydrateOffloaded()` is awaited at the top of `_cloudInit`, and `_reloadAfterHydrate()` — which
-calls `loadCourses()` among others — is supposed to run before the pull. Under a real IndexedDB
-profile that ordering appears not to hold every time, and when it slips, the loaders write defaults
-over the freshly pulled data. Instrument the ORDER of `_hydrateOffloaded` → pull →
-`_reloadAfterHydrate` → `_reloadAll` across runs before changing anything.
+If one of those boot navs landed in the window **after** the pull stored the account copy and
+**before** `_reloadAll()` read it back into memory, it wrote the defaults over the real data on disk
+and pushed them up. A race, which is why it reproduced about one run in three rather than every time.
 
-Do NOT report courses/staff cross-device as fixed. Three earlier theories on the forms bug were each
-confirmed by a green test and were each wrong; an intermittent green is weaker still.
+**Fix:** `_savePersistenceSweep()` returns immediately while `Cloud._booting`. Same principle as
+`Cloud._bootQueued` — boot's own write-backs are not edits — applied to the navigation path instead
+of the queue path.
 
----
+**How it was found, worth repeating:** the sweep said the ACCOUNT had the course and the receiving
+device's STORED copy did not. That rules out every theory about loaders and merges and points at one
+thing: something wrote over the pulled data after it landed. `/tmp/coursefail.mjs` reproduced it on
+the first run by replaying the sweep's exact scenario and dumping account vs stored vs memory.
 
-## 2ad-b. What the full sweep found and fixed (`2026-09-19m`)
+**Measured after the fix:** `sweep-crossdevice.mjs` 6/6 green (it was failing 2 runs in 3), and the
+isolated course repro 4/4. Staff is no longer part of the app at all (see below).
+
 
 * **26 loaders read synced keys but were never re-run after a cloud pull** — shop products, shop
   bundles, protocols, staff, homecare, recommendations, note templates, note format, documents,

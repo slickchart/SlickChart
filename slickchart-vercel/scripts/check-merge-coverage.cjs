@@ -41,7 +41,7 @@ s.split('\n').forEach(function(line){
 // Already known and accepted as riding the plain overwrite. Each one is real work (a per-item merge
 // needs a delete record too, or a union would resurrect deleted rows) and is tracked as thread 16.
 // DO NOT add to this list to silence the check — that is the whole point of it.
-const KNOWN=new Set(['sc_inventory','sc_vendors','sc_bundles','sc_protocols','sc_staff','sc_docs',
+const KNOWN=new Set(['sc_inventory','sc_vendors','sc_bundles','sc_protocols','sc_docs',
   'sc_autos','sc_body_maps','sc_summary_drafts','sc_client_homecare','sc_client_recs','sc_rec_reasons',
   'sc_custom_note_templates','sc_needle_presets','sc_checkins','sc_session_summaries','sc_routines',
   'sc_shop_bundles','sc_affiliate_links','sc_workspace','sc_notif_settings','sc_amazon_assoc',

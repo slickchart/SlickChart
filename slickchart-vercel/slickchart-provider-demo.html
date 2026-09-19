@@ -468,7 +468,7 @@ const S=document.getElementById('S');
 // resets when I save it" and there was no way to tell whether her phone had any of them — a whole
 // day was spent debugging code she may not have been running. Shown at the bottom of Settings, so
 // the answer is a screenshot away. Bump it on every ship.
-const APP_BUILD='2026-09-19n';
+const APP_BUILD='2026-09-19o';
 
 
 /* ════════════════════════════════════════════════════════════════
@@ -2477,7 +2477,8 @@ try{document.addEventListener('keydown',function(e){
 // ── Cloud sync (database + login). Falls back to local-only until configured. ──
 function saveProfessions(){try{(function(_v){localStorage.setItem('sc_professions',_v);if(typeof _pushKeyNow==='function')_pushKeyNow('sc_professions',_v);return _v;})(JSON.stringify(selectedProfessions));}catch(e){}}
 function loadProfessions(){try{const raw=localStorage.getItem('sc_professions');if(raw){const a=JSON.parse(raw);if(Array.isArray(a)&&a.length)selectedProfessions=a;}}catch(e){}}
-const _SYNC_SKIP={sc_token:1,sc_sqkey:1,sc_bus:1,sc_chart_activity:1,sc_pulse:1,sc_cloud_seeded:1};
+const _SYNC_SKIP={sc_staff:1,   /* retired: SlickChart is for solo providers, so there is no staff roster */
+  sc_token:1,sc_sqkey:1,sc_bus:1,sc_chart_activity:1,sc_pulse:1,sc_cloud_seeded:1};
 // Whole FAMILIES of keys that must never leave the device. sc_room_draft_* is the crash-safety copy of
 // photos taken minutes ago — megabytes of base64 whose real backup is the photo store, not this. It was
 // syncing: every draft pushed ~1MB into the account, and every pull wrote them all back onto every
@@ -3706,7 +3707,6 @@ function _reloadAll(){
   S('needle presets',function(){if(typeof loadNeedlePresets==='function')loadNeedlePresets();});
   S('notification settings',function(){if(typeof loadNotifSettings==='function')loadNotifSettings();});
   S('protocols',function(){if(typeof loadProtocols==='function')loadProtocols();});
-  S('staff',function(){if(typeof loadStaff==='function')loadStaff();});
   S('suggested forms',function(){if(typeof loadSuggestedFormsOverride==='function')loadSuggestedFormsOverride();});
   S('summary drafts',function(){if(typeof loadSummaryDrafts==='function')loadSummaryDrafts();});
   S('deleted forms & guides',function(){if(typeof loadHiddenSets==='function')loadHiddenSets();});
@@ -4951,11 +4951,9 @@ const browClientData={
   priya:{treatment:'Brow Wax & Tint',skin:'Fitzpatrick IV · Oily',concerns:'Overgrown shape',allergies:'None known'},
 };
 
-let workspaceMode = false; // false = my view, true = studio overview
 
 const workspace=(function(){var d=(typeof window!=='undefined'&&window.__SC_DEMO_SEED__)||null;return (d&&d.workspace)?JSON.parse(JSON.stringify(d.workspace)):{name:'',plan:'',location:''};})();
 
-const staff=(function(){var d=(typeof window!=='undefined'&&window.__SC_DEMO_SEED__)||null;return (d&&d.staff)?JSON.parse(JSON.stringify(d.staff)):[];})();   // studio-overview fixture: demo only
 
 // Global AI preference
 let aiEnabled=true;
@@ -5734,8 +5732,6 @@ async function _initCapturedPhotos(){
   // isn't on the server yet. Both run in the background so boot isn't blocked.
   try{setTimeout(function(){try{_restorePhotosFromCloud();}catch(e){}try{_backupPhotosToServer();}catch(e){}},1200);}catch(e){}
 }
-function persistStaff(){try{(function(_v){localStorage.setItem('sc_staff',_v);if(typeof _pushKeyNow==='function')_pushKeyNow('sc_staff',_v);return _v;})(JSON.stringify(staff));}catch(e){}}
-function loadStaff(){try{const raw=localStorage.getItem('sc_staff');if(raw){const arr=JSON.parse(raw);if(Array.isArray(arr)&&arr.length){staff.length=0;arr.forEach(x=>staff.push(x));}}}catch(e){}}
 function persistAutos(){try{(function(_v){localStorage.setItem('sc_autos',_v);if(typeof _pushKeyNow==='function')_pushKeyNow('sc_autos',_v);return _v;})(JSON.stringify(autos));}catch(e){}}
 function loadAutos(){try{const raw=localStorage.getItem('sc_autos');if(raw){const arr=JSON.parse(raw);if(Array.isArray(arr))autos=arr;}}catch(e){}}
 function persistNotifSettings(){try{const v=JSON.stringify(notifSettings);localStorage.setItem('sc_notif_settings',v);if(typeof _pushKeyNow==='function')_pushKeyNow('sc_notif_settings',v);}catch(e){}}
@@ -6029,7 +6025,7 @@ function loadAmazonAssociates(){try{const raw=localStorage.getItem('sc_amazon_as
 function _loadPersistenceSweep(){
   loadClientRecs();loadRecReasons();loadClientHomecare();loadSessionSummaries();loadCapturedPhotos();
   try{if(typeof _pruneRoomDrafts==='function')_pruneRoomDrafts();}catch(e){}
-  loadStaff();loadAutos();loadNotifSettings();loadCheckins();loadCourses();loadShopBundles();try{loadBodyMaps();}catch(e){}try{_probeWhisper();}catch(e){}
+  loadAutos();loadNotifSettings();loadCheckins();loadCourses();loadShopBundles();try{loadBodyMaps();}catch(e){}try{_probeWhisper();}catch(e){}
   loadAffiliateLinks();loadCustomNoteTemplates();loadClientHealingStage();loadAmazonAssociates();try{loadNeedlePresets();}catch(e){}try{loadHiddenSets();}catch(e){}
   try{loadSummaryDrafts();}catch(e){}
 }
@@ -6043,13 +6039,21 @@ let _wsPersistTimer=null;
 function _persistWorkspaceSoon(){if(_wsPersistTimer)clearTimeout(_wsPersistTimer);_wsPersistTimer=setTimeout(function(){_wsPersistTimer=null;try{persistWorkspace();}catch(e){}},500);}
 function _flushWorkspacePersist(){if(_wsPersistTimer){clearTimeout(_wsPersistTimer);_wsPersistTimer=null;try{persistWorkspace();}catch(e){}}}
 function _savePersistenceSweep(){
+  // NOT WHILE BOOTING. This is a safety net for edits, and during boot there are no edits — only
+  // the in-memory DEFAULTS, because the account's real data has not been loaded into the app yet.
+  // nav() calls this, and boot navigates (Home draws before the network answers). If one of those
+  // navs landed in the window after the pull stored the account copy and before _reloadAll() read
+  // it back into memory, this wrote the DEFAULTS straight over her real data on disk — and pushed
+  // them. That is the "I made it on my phone and it isn't on my computer" bug, and it is racy,
+  // which is why it reproduced about one run in three rather than every time.
+  try{if(typeof Cloud!=='undefined'&&Cloud&&Cloud._booting)return;}catch(e){}
   // Session summaries and captured photos are intentionally NOT swept here, they're the heavy
   // stores (summaries can be large; captured photos are base64 megabytes) and are already persisted
   // at every mutation site (capture/add/edit/event-ingest). Re-serializing them on every nav() was
   // pure overhead that made navigation jankier as a provider's photo library grew.
   try{_flushWorkspacePersist();
   persistClientRecs();persistRecReasons();persistClientHomecare();
-  persistStaff();persistAutos();persistNotifSettings();persistCheckins();persistCourses();persistShopBundles();
+  persistAutos();persistNotifSettings();persistCheckins();persistCourses();persistShopBundles();
   persistAffiliateLinks();persistCustomNoteTemplates();persistClientHealingStage();persistAmazonAssociates();}catch(e){}
 }
 // ── DON'T THROW AWAY WHAT SHE TYPED ──────────────────────────────────────────────────────────────
@@ -6139,8 +6143,6 @@ function nav(screen,data){
     'profession-detail':()=>renderProfessionDetail(data),
     'subscription-billing':renderSubscriptionBilling,
     revenue:renderRevenue,
-    'staff-detail':()=>renderStaffDetail(data),
-    'invite-staff':renderInviteStaff,
     calendar:renderCalendar,
     'today-appts':renderTodayAppts,
     'week-appts':renderWeekAppts,
@@ -22566,7 +22568,7 @@ function renderTeamAccess(){
   </div>
   <div style="padding:0 16px 24px;">
     <button onclick="nav('security-billing')" style="width:100%;background:var(--surf1);border:1px solid var(--p-line);color:var(--p-ink);border-radius:12px;padding:12px;font-size:16px;font-weight:600;cursor:pointer;font-family:inherit;"><i class="ti ti-lock" aria-hidden="true"></i> Manage password &amp; sign-in</button>
-    <div style="font-size:14px;color:var(--p-mut);line-height:1.55;margin-top:12px;text-align:center;">SlickChart doesn\u2019t have separate staff logins or per-person edit history, and there\u2019s no date for one. Tell us if it matters to you \u2014 it helps us decide what to build, but treat it as not coming rather than coming.</div>
+    <div style="font-size:14px;color:var(--p-mut);line-height:1.55;margin-top:12px;text-align:center;">SlickChart is built for solo providers, so there are no separate staff logins and no per-person edit history \u2014 that\u2019s a deliberate decision, not something on the way. Sharing one login, as above, is the supported way to let someone help.</div>
   </div>`;
 }
 // ── Self-serve account deletion (privacy / right-to-erasure) ──
@@ -26884,191 +26886,6 @@ async function _revokeSession(id){
 
 // ── SUBSCRIPTION & BILLING ──
 // ── STUDIO OVERVIEW (OWNER / BUSINESS VIEW) ──
-function renderStudio(){
-  setNav('home');
-  document.getElementById('tt').textContent='Studio Overview';
-  const totalRev=staff.filter(s=>s.status==='active').reduce((a,s)=>a+s.revenue,0);
-  const totalAppt=staff.filter(s=>s.status==='active').reduce((a,s)=>a+s.apptToday,0);
-  const totalClients=staff.reduce((a,s)=>a+s.clients,0);
-  const days=['Mon','Tue','Wed','Thu','Fri','Sat','Sun'];
-  const dayKeys=['mon','tue','wed','thu','fri','sat','sun'];
-
-  S.innerHTML=`
-  <div style="padding:16px 16px 8px;display:flex;align-items:center;justify-content:space-between;">
-    <div>
-      <div id="page-heading" tabindex="-1" style="font-size:22px;font-weight:600;color:var(--p-ink);">${_fileEsc(workspace.name)}</div>
-      <div style="font-size:16px;color:var(--p-mut);">Thursday, Jun 26 · ${workspace.plan} plan</div>
-    </div>
-    <span style="font-size:14px;background:var(--accent-tint);color:var(--accent-strong);padding:4px 10px;border-radius:24px;font-weight:600;border:1px solid var(--accent-a44);">Owner</span>
-  </div>
-
-  <!-- Studio stats -->
-  <div style="display:grid;grid-template-columns:1fr 1fr 1fr;gap:7px;padding:0 16px;margin-bottom:12px;">
-    ${[["Today's appts",totalAppt,'var(--p-ink)'],['Active staff',staff.filter(s=>s.status==='active').length,'var(--p-green)'],['Total clients',totalClients,'var(--accent)']].map(([l,v,c])=>`
-    <div style="background:var(--surf1);border:1px solid var(--p-line);border-radius:12px;padding:10px 12px;">
-      <div style="font-size:12px;color:var(--p-mut);margin-bottom:4px;line-height:1.3;">${l}</div>
-      <div style="font-size:22px;font-weight:700;color:${c};">${v}</div>
-    </div>`).join('')}
-  </div>
-
-  <!-- Staff roster -->
-  <div style="padding:0 16px 7px;display:flex;align-items:center;justify-content:space-between;">
-    <div style="font-size:14px;font-weight:600;color:var(--p-mut);text-transform:uppercase;letter-spacing:.07em;">Staff (${staff.length})</div>
-    <button onclick="nav('invite-staff')" style="border:none;background:none;color:var(--accent-strong);font-size:16px;cursor:pointer;font-weight:500;"><i class="ti ti-user-plus" style="font-size:16px;"></i> Invite</button>
-  </div>
-  ${_searchBar('Search staff by name or role…','.staff-card','staff-noresults')}
-  ${staff.map(s=>`
-  <div onclick="nav('staff-detail','${s.id}')" class="staff-card" data-search="${((s.name||'')+' '+(s.title||'')+' '+(s.role||'')).toLowerCase().normalize('NFD').replace(/[̀-ͯ]/g,'').replace(/['‘’`"]/g,'').replace(/[^a-z0-9 ]/g,' ').replace(/\s+/g,' ').trim()}" style="background:var(--surf2);border:1px solid var(--p-line);border-radius:12px;margin:0 16px 8px;overflow:hidden;cursor:pointer;">
-    <div style="padding:12px 14px;display:flex;align-items:center;gap:12px;">
-      <div style="position:relative;flex-shrink:0;">
-        <div style="width:42px;height:42px;border-radius:50%;background:${s.bg};display:flex;align-items:center;justify-content:center;font-size:16px;font-weight:700;color:${s.tc};">${_fileEsc(s.initials)}</div>
-        <div style="position:absolute;bottom:1px;right:1px;width:10px;height:10px;border-radius:50%;background:${s.status==='active'?'var(--p-green)':s.status==='on-leave'?'var(--p-red)':'#666'};border:2px solid var(--p-line2);"></div>
-      </div>
-      <div style="flex:1;min-width:0;">
-        <div style="display:flex;align-items:center;gap:6px;">
-          <div style="font-size:16px;font-weight:500;color:var(--p-ink);">${_fileEsc(s.name)}</div>
-          ${s.role==='Owner'?`<span style="font-size:12px;background:var(--accent-tint);color:var(--accent-strong);padding:1px 7px;border-radius:12px;font-weight:600;">Owner</span>`:''}
-        </div>
-        <div style="font-size:16px;color:var(--p-mut);">${_fileEsc(s.title)}</div>
-        <div style="font-size:14px;color:${s.status==='active'?'var(--p-green)':s.status==='on-leave'?'var(--p-red)':'var(--p-mut)'};margin-top:2px;">${s.status==='active'?`${s.apptToday} appts today`:s.status==='on-leave'?'On leave':'Inactive'}</div>
-      </div>
-      <i aria-hidden="true" class="ti ti-chevron-right" style="font-size:16px;color:var(--p-mut2);"></i>
-    </div>
-    <!-- Weekly availability strip -->
-    <div style="border-top:1px solid var(--p-line2);padding:7px 14px;display:flex;gap:5px;">
-      ${dayKeys.map((d,i)=>`<div style="flex:1;text-align:center;"><div style="font-size:12px;color:var(--p-mut2);margin-bottom:3px;">${days[i].slice(0,1)}</div><div style="width:20px;height:20px;border-radius:50%;background:${s.schedule[d]?s.tc+'30':'var(--p-surf)'};display:flex;align-items:center;justify-content:center;margin:0 auto;">${s.schedule[d]?`<div style="width:6px;height:6px;border-radius:50%;background:${s.tc};"></div>`:''}</div></div>`).join('')}
-    </div>
-  </div>`).join('')}
-  ${_noRes('staff-noresults','No staff match your search.')}
-  <div style="height:12px;"></div>`;
-}
-
-function renderStaffDetail(id){
-  setNav('home');
-  const s=staff.find(x=>x.id===id)||staff[0];
-  document.getElementById('tt').textContent=s.name;
-  const days=['Mon','Tue','Wed','Thu','Fri','Sat','Sun'];
-  const dayKeys=['mon','tue','wed','thu','fri','sat','sun'];
-  S.innerHTML=`
-  <div style="padding:12px 16px 0;display:flex;align-items:center;justify-content:flex-end;">
-    ${s.role!=='Owner'?`<button onclick="confirmModal({title:'Remove staff member',body:'Remove ${_jsAttr(s.name)} from the studio? Their client records will be archived.',action:'Remove'},'()=>{}')" style="border:none;background:none;color:var(--p-red);font-size:16px;cursor:pointer;"><i class="ti ti-user-minus" style="font-size:16px;"></i></button>`:''}
-  </div>
-
-  <div style="padding:14px 16px 0;display:flex;flex-direction:column;align-items:center;gap:8px;text-align:center;">
-    <div style="position:relative;">
-      <div style="width:72px;height:72px;border-radius:50%;background:${s.bg};display:flex;align-items:center;justify-content:center;font-size:26px;font-weight:700;color:${s.tc};border:3px solid ${s.tc}30;">${_fileEsc(s.initials)}</div>
-      <div style="position:absolute;bottom:2px;right:2px;width:14px;height:14px;border-radius:50%;background:${s.status==='active'?'var(--p-green)':'var(--p-red)'};border:2px solid #0b1816;"></div>
-    </div>
-    <div>
-      <div style="font-size:18px;font-weight:600;color:var(--p-ink);">${_fileEsc(s.name)}</div>
-      <div style="font-size:16px;color:var(--p-mut);">${_fileEsc(s.title)}</div>
-    </div>
-    <div style="display:flex;gap:6px;">
-      <span style="font-size:14px;background:var(--surf2);border:1px solid var(--p-chip2);color:var(--p-mut);padding:3px 10px;border-radius:24px;">${_fileEsc(s.role)}</span>
-      <span style="font-size:14px;background:${s.status==='active'?'var(--p-surf2)':'var(--p-red-bg)'};color:${s.status==='active'?'var(--p-green)':'var(--p-red)'};padding:3px 10px;border-radius:24px;">${s.status==='active'?'Active':'On leave'}</span>
-    </div>
-  </div>
-
-  <!-- Performance stats -->
-  <div style="display:grid;grid-template-columns:1fr 1fr;gap:7px;padding:14px 16px 0;">
-    ${[['Appts today',s.apptToday,'var(--accent)'],['Clients',s.clients,'var(--p-ink)']].map(([l,v,c])=>`
-    <div style="background:var(--surf1);border:1px solid var(--p-line);border-radius:12px;padding:10px 12px;text-align:center;">
-      <div style="font-size:22px;font-weight:700;color:${c};">${v}</div>
-      <div style="font-size:14px;color:var(--p-mut);margin-top:3px;">${l}</div>
-    </div>`).join('')}
-  </div>
-
-  <!-- Specialties -->
-  <div class="sh" style="margin-top:10px;"><h2>Specialties</h2></div>
-  <div style="display:flex;flex-wrap:wrap;gap:6px;padding:0 16px;">
-    ${s.specialties.map(sp=>`<span style="font-size:16px;padding:5px 12px;border-radius:24px;background:var(--surf2);border:1px solid var(--p-chip2);color:var(--p-mut);">${_fileEsc(sp)}</span>`).join('')}
-  </div>
-
-  <!-- Schedule -->
-  <div class="sh" style="margin-top:12px;"><h2>Weekly schedule</h2></div>
-  <div style="background:var(--surf2);border:1px solid var(--p-line);border-radius:12px;margin:0 16px 12px;overflow:hidden;">
-    ${dayKeys.map((d,i)=>`
-    <div style="display:flex;align-items:center;padding:10px 14px;border-bottom:${i<6?'1px solid #122523':'none'};">
-      <span style="font-size:16px;color:${s.schedule[d]?'var(--p-ink)':'#555'};width:80px;">${days[i]}</span>
-      ${s.schedule[d]
-        ?`<span style="font-size:16px;color:var(--p-green);">✓ Available</span>`
-        :`<span style="font-size:16px;color:#315249;">Off</span>`}
-    </div>`).join('')}
-  </div>
-
-  <!-- Actions -->
-  <div style="padding:0 16px 20px;display:flex;gap:8px;">
-    <button class="btnp" style="flex:2;border-radius:12px;" onclick="nav('messages')"><i class="ti ti-message-circle" aria-hidden="true"></i> Message</button>
-    <button class="btng" style="flex:1;border-radius:12px;" onclick="nav('calendar')"><i class="ti ti-calendar" aria-hidden="true"></i> Schedule</button>
-  </div>`;
-}
-
-function renderInviteStaff(){
-  setNav('home');
-  document.getElementById('tt').textContent='Invite Staff';
-  const roles=['Esthetician','Nail Technician','Lash Technician','Massage Therapist','Barber','Hair Stylist','Front Desk','Manager'];
-  S.innerHTML=`
-  
-  <div style="padding:12px 16px 6px;">
-    <div style="font-size:18px;font-weight:600;color:var(--p-ink);margin-bottom:4px;">Invite a team member</div>
-    <div style="font-size:16px;color:var(--p-mut);line-height:1.6;">They'll receive an email to create their account and join ${_fileEsc(workspace.name)}.</div>
-  </div>
-
-  <div style="padding:0 16px;">
-    <div style="font-size:16px;color:var(--p-mut);font-weight:500;text-transform:uppercase;letter-spacing:.07em;margin-bottom:8px;">Name</div>
-    <input class="fi" aria-label="Staff member name" placeholder="Full name" style="margin-bottom:14px;">
-
-    <div style="font-size:16px;color:var(--p-mut);font-weight:500;text-transform:uppercase;letter-spacing:.07em;margin-bottom:8px;">Email</div>
-    <input class="fi" type="email" aria-label="Email address" placeholder="email@example.com" style="margin-bottom:14px;">
-
-    <div style="font-size:16px;color:var(--p-mut);font-weight:500;text-transform:uppercase;letter-spacing:.07em;margin-bottom:8px;">Role / profession</div>
-    <div style="display:flex;flex-wrap:wrap;gap:7px;margin-bottom:14px;">
-      ${roles.map((r,i)=>`<button onclick="this.parentElement.querySelectorAll('button').forEach(b=>b.style.background='var(--p-surf3)');this.parentElement.querySelectorAll('button').forEach(b=>b.style.borderColor='var(--p-line)');this.parentElement.querySelectorAll('button').forEach(b=>b.style.color='var(--p-mut)');this.style.background='var(--accent-tint)';this.style.borderColor='var(--accent)';this.style.color='var(--accent-strong)'" style="padding:7px 14px;border:1px solid var(--p-line);background:var(--surf2);color:var(--p-mut);border-radius:24px;font-size:16px;cursor:pointer;font-weight:500;">${r}</button>`).join('')}
-    </div>
-
-    <div style="font-size:16px;color:var(--p-mut);font-weight:500;text-transform:uppercase;letter-spacing:.07em;margin-bottom:8px;">Access level</div>
-    <div style="background:var(--surf2);border:1px solid var(--p-line);border-radius:12px;overflow:hidden;margin-bottom:14px;">
-      ${[
-        ['Staff','Can manage own clients, notes, schedule, and earnings','ti-user'],
-        ['Manager','Can view all staff clients and performance','ti-users'],
-        ['Front desk','Can manage bookings and intake only, no clinical notes','ti-calendar'],
-      ].map(([role,desc,icon],i,arr)=>`
-      <div onclick="this.parentElement.querySelectorAll('div').forEach(d=>{d.style.background='var(--p-surf3)';d.style.borderColor='transparent';});this.style.background='var(--accent-tint)';this.style.borderLeft='3px solid var(--accent)';" style="padding:11px 14px;border-bottom:${i<arr.length-1?'1px solid #122523':'none'};cursor:pointer;border-left:3px solid transparent;${i===0?'background:var(--accent-tint);border-left:3px solid var(--accent);':''}">
-        <div style="display:flex;align-items:center;gap:8px;margin-bottom:3px;">
-          <i class="ti ${icon}" aria-hidden="true" style="font-size:16px;color:var(--accent-strong);"></i>
-          <span style="font-size:16px;font-weight:500;color:var(--p-ink);">${role}</span>
-        </div>
-        <div style="font-size:16px;color:var(--p-mut);padding-left:22px;">${desc}</div>
-      </div>`).join('')}
-    </div>
-
-    <button class="btnp" style="border-radius:12px;margin-bottom:12px;" onclick="submitInvite()"><i class="ti ti-send" aria-hidden="true"></i> Send invite</button>
-
-    <div style="margin-top:4px;background:var(--surf2);border:1px solid var(--p-line);border-radius:12px;padding:12px 14px;">
-      <div style="font-size:16px;font-weight:500;color:var(--p-mut);margin-bottom:6px;">Or share invite link</div>
-      <div style="display:flex;gap:8px;align-items:center;">
-        <div style="flex:1;background:var(--p-surf);border:1px solid var(--p-chip2);border-radius:8px;padding:8px 12px;font-size:16px;color:var(--p-mut);overflow:hidden;text-overflow:ellipsis;white-space:nowrap;">slickchart.app/join/gss-x7k29m</div>
-        <button class="btng" style="flex-shrink:0;padding:8px 12px;" onclick="showToast('Invite link copied!')" aria-label="Copy invite link"><i class="ti ti-copy" aria-hidden="true"></i></button>
-      </div>
-    </div>
-  </div>`;
-}
-
-function submitInvite(){
-  S.innerHTML=`
-  <div style="display:flex;flex-direction:column;align-items:center;justify-content:center;min-height:60vh;padding:24px;text-align:center;">
-    <div style="width:72px;height:72px;background:var(--p-surf2);border-radius:50%;display:flex;align-items:center;justify-content:center;margin-bottom:16px;">
-      <i class="ti ti-mail-check" aria-hidden="true" style="font-size:36px;color:var(--p-green);"></i>
-    </div>
-    <div style="font-size:22px;font-weight:600;color:var(--p-ink);margin-bottom:8px;">Invite sent!</div>
-    <div style="font-size:16px;color:var(--p-mut);line-height:1.7;margin-bottom:24px;">They'll get an email with a link to create their account and join ${_fileEsc(workspace.name)}. You'll be notified when they accept.</div>
-    <div style="display:flex;flex-direction:column;gap:8px;width:100%;max-width:240px;">
-      <button class="btnp" style="border-radius:12px;" onclick="nav('invite-staff')"><i class="ti ti-user-plus" aria-hidden="true"></i> Invite another</button>
-      <button class="btng" style="border-radius:12px;" onclick="nav('team-access')">Back to team</button>
-    </div>
-  </div>`;
-}
-
 function renderRevenue(){
   // Analytics is consolidated into the real, data-driven Reports screen. This older
   // Revenue view held only hardcoded demo figures, so anything landing here now gets
