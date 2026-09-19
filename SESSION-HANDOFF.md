@@ -1455,6 +1455,37 @@ deletion, the stamps are cleared, both render, and a form deleted TODAY stays de
 
 ---
 
+## 2ab. CHECK THIS FIRST when a provider says two devices don't sync
+
+`/api/store` keys every read and write on `payload.u` from the verified token — **either a provider id
+or the literal `'owner'`** for the legacy single-tenant login (see `requireLogin`). Two devices signed
+in on the same email through different paths use **different `kv` rows**: each device perfectly
+self-consistent, its self-check reporting device == account, and neither ever seeing the other's
+edits. That is indistinguishable from "sync is broken" from the outside, and **no amount of reading
+the sync code can rule it out** — the sync would be working correctly the whole time.
+
+The self-check now prints it:
+
+> Which account row this device saves to — `prov_a1b2c3d4e…` — this MUST be identical on every device
+
+**Get that line from BOTH devices before touching sync code again.** Different → the answer is a
+sign-in problem, not a merge problem. Suite: `whichrow.mjs`.
+
+### A §0 bug found while adding it
+
+`_tokenOwner()` did `String(t).split('.')[0]` — the JWT **header**, not the payload. Every token ever
+minted has the same header (`eyJhbGciOiJIUzI1NiJ9`), so it returned an **identical value for every
+account**, always via the `'t:'+data` fallback.
+
+That value stamps the offloaded IndexedDB cache with its owner, and `_hydrateOffloaded()` compares it
+specifically so **another account's cached data on a shared device is thrown away rather than read**.
+That comparison could never fail, so the guard has never once fired. Now reads `[1]`.
+
+Existing devices will see their stamp change and purge the offload cache once — harmless by design:
+every offloaded key is one the account also holds, and the pull restores it.
+
+---
+
 ## 2aa. THE ROOT CAUSE: every account stored the app's own 75 built-in form templates
 
 Ashley, after six failed builds: *"this is an account with barely anything because its brand new,

@@ -468,7 +468,7 @@ const S=document.getElementById('S');
 // resets when I save it" and there was no way to tell whether her phone had any of them — a whole
 // day was spent debugging code she may not have been running. Shown at the bottom of Settings, so
 // the answer is a screenshot away. Bump it on every ship.
-const APP_BUILD='2026-09-19h';
+const APP_BUILD='2026-09-19i';
 
 
 /* ════════════════════════════════════════════════════════════════
@@ -3318,7 +3318,11 @@ function _tokenOwner(){
   let data='';
   try{
     const t=(typeof Cloud!=='undefined'&&Cloud&&Cloud.token)||Cloud._origGet('sc_token')||'';
-    data=String(t).split('.')[0];if(!data)return '';
+    // [1] is the PAYLOAD. This read [0], the header — which is the same `eyJhbGciOiJIUzI1NiJ9` for
+    // every token ever minted, so this returned an IDENTICAL value for every account. The offloaded
+    // IndexedDB cache is stamped with it precisely so another account's cached data is thrown away
+    // rather than read (CLAUDE.md §0), and that check could never fire.
+    data=String(t).split('.')[1];if(!data)return '';
     const b=atob(data.replace(/-/g,'+').replace(/_/g,'/')+'==='.slice((data.length+3)%4));
     const o=JSON.parse(b);
     if(o&&o.u)return String(o.u);
@@ -3683,6 +3687,16 @@ async function _runSelfCheck(){
   line('Signed in to a SlickChart account', !!tok, tok?'yes':(_wrongBrowser
     ?'NO \u2014 and nothing is saved here either, so this is NOT the browser you use SlickChart in'
     :'NO \u2014 signed out on this device, so nothing can be saved to the account'));
+  // WHICH ROW this device reads and writes. /api/store is keyed on the token's `u`, which is either a
+  // provider id or the literal 'owner' for the legacy single-tenant login. Two devices on the same
+  // email but different sign-in paths use DIFFERENT rows: each perfectly self-consistent, neither
+  // ever seeing the other's edits — indistinguishable from "sync is broken", and the one thing no
+  // amount of reading the sync code can rule out. Compare this line across her devices.
+  try{
+    const who=(typeof _tokenOwner==='function')?_tokenOwner():'';
+    const short=who?(who==='owner'?'owner (legacy single-tenant login)':(String(who).slice(0,12)+'\u2026')):'(could not read it)';
+    line('Which account row this device saves to', !!who, short+' \u2014 this MUST be identical on every device');
+  }catch(e){}
 
   // 3. does it reach the account, and come back
   let put=null,got=null;
