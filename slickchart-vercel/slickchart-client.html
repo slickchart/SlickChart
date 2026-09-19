@@ -2118,15 +2118,22 @@ function renderHome(){
       <span style="font-size:13px;font-weight:600;color:var(--accent-lt2);">Get directions</span>
     </a>`:''}
     ${(()=>{
+      // With no appointment on the books yet, assigned forms are hoisted into their own labeled section
+      // below (so they don't read as buried inside a "Not scheduled" card) — skip them here.
+      if(noAppt)return '';
+      // A FORM SHE ASSIGNED DOES NOT EXPIRE. Clients routinely fill these in the waiting room, a
+      // minute after their appointment time — and until this, the time checks below took the forms
+      // away with the check-in card, so there was no way back to them. An unfinished form is work
+      // she is still waiting on: it stays until it is submitted, whatever the clock says.
+      // _previsitSectionHTML() renders the forms panel on its own when forms exist, so no check-in
+      // card comes back with it.
+      const hasForms=(activeProvider().pendingForms||[]).length>0;
+      if(hasForms)return _previsitSectionHTML();
       if(past)return '';   // whole appointment day has passed
       // Time-precise "appointment has started/passed" — the check-in / "check-in complete" card goes
       // away once the actual appointment time is reached, not just at end of day.
       const apptPassed=(APPT&&!isNaN(APPT.getTime())&&APPT.getTime()<=Date.now());
       if(apptPassed)return '';
-      const hasForms=(activeProvider().pendingForms||[]).length>0;   // explicitly-assigned forms always show until done
-      // With no appointment on the books yet, assigned forms are hoisted into their own labeled section
-      // below (so they don't read as buried inside a "Not scheduled" card) — skip them here.
-      if(noAppt)return '';
       // The plain pre-visit check-in only appears inside the 24h window before the appointment, and
       // doesn't reappear for the next visit until it's again within 24h.
       const withinWindow=isFinite(client.hoursUntilNext)&&client.hoursUntilNext<=_checkinWindowHours();
@@ -2140,7 +2147,12 @@ function renderHome(){
   ${(()=>{
     const noAppt=(client.daysUntilNext==null||!isFinite(client.daysUntilNext));
     const hasForms=(activeProvider().pendingForms||[]).length>0;
-    if(!noAppt||!hasForms)return '';
+    if(!hasForms)return '';
+    // Shown when there is no appointment booked, AND when the appointment day itself has gone by:
+    // in that case the appointment card above no longer renders, and without this an unfinished
+    // form would have nowhere left to appear.
+    const dayGone=!noAppt&&isFinite(client.daysUntilNext)&&client.daysUntilNext<0;
+    if(!noAppt&&!dayGone)return '';
     return `<div style="margin:0 16px 14px;">
       <div style="font-size:11px;font-weight:700;color:var(--c-mut);text-transform:uppercase;letter-spacing:.08em;margin:0 2px 7px;">From ${_txt(client.providerFirst)}</div>
       ${_previsitSectionHTML({standalone:true})}

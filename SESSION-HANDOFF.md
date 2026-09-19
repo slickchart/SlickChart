@@ -1508,6 +1508,64 @@ assuming.
 
 ---
 
+## 2ah. Forms sent to clients: re-send FIXED, "disappears after the appointment" NOT REPRODUCED
+
+Ashley reported two things (`2026-09-19t`):
+
+1. a pending form vanishes from the client's app once their appointment time passes — even by a
+   minute — so a client filling it in the waiting room cannot get back to it;
+2. a client who opened the link but did not finish never sees it again, however many times she
+   re-sends it.
+
+### (2) RE-SEND — real, fixed, verified
+
+The client app hides anything whose `(formId + assignedAt)` is in its `sc_forms_done` map. **Five of
+the six provider-side send paths skipped a form that was already on the pending list**, leaving the
+old `assignedAt` untouched:
+
+```js
+if(formTmpls[fid] && !c.pendingForms.some(pf=>pf.formId===fid))
+  c.pendingForms.push({formId:fid, assignedAt:Date.now()});   // already there ? do nothing
+```
+
+So once the client's app had marked it done — which happens on an incomplete or failed submit as
+well as a real one — re-sending changed nothing at all. Same id, same timestamp, still filtered.
+
+`_assignPending(list, key, id)` now refreshes `assignedAt` when the item is already pending, and all
+six sites (forms AND guides) use it. `_assignFormsToClient` — the FIRST-VISIT PACKAGE path — already
+did this correctly, which is why that one send sometimes worked when others did not.
+
+Verified by `scratchpad/resend.mjs`: first send and re-send now produce different instances with one
+entry on the list. Note the test needs an ~8ms gap; two sends inside the same millisecond are
+indistinguishable by design and harmless.
+
+### (1) THE DISAPPEARANCE — a real gap closed, but NOT her symptom. Still open.
+
+There IS a real gap and it is fixed: in `slickchart-client.html` the pre-visit block did
+
+```js
+if(past)return '';
+const apptPassed=(APPT && APPT.getTime()<=Date.now());
+if(apptPassed)return '';          // takes the assigned FORMS away with the check-in card
+```
+
+so an assigned form was time-gated along with the check-in. Assigned forms are now returned before
+those checks (`_previsitSectionHTML()` renders the forms panel alone when forms exist, so no
+check-in card comes back with it), and the standalone section also covers the case where the
+appointment DAY has gone by.
+
+**But this is not confirmed to be her bug.** `scratchpad/formspersist.mjs` passes against the
+UNFIXED client too: with an appointment one minute in the past, the form was still reachable on the
+client's Home. So the form is surfaced somewhere else as well (the Home to-do list around
+`slickchart-client.html:1892` / `:1966` is the likely one) and her clients are hitting a different
+surface.
+
+**Next session:** ask which surface the client was looking at — the Home banner, the to-do list
+further down, or the original link in the text/email landing on a page that says nothing is pending.
+Do not guess; three surfaces render pending forms and only one has been ruled out.
+
+---
+
 ## 2ag. BOOKING-LINK FLOW: full audit (`2026-09-19s`)
 
 Ashley asked for every function in the new booking-link flow to be checked. `scratchpad/bookflow.mjs`

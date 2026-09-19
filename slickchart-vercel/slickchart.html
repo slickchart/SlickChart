@@ -214,7 +214,7 @@ const S=document.getElementById('S');
 // resets when I save it" and there was no way to tell whether her phone had any of them — a whole
 // day was spent debugging code she may not have been running. Shown at the bottom of Settings, so
 // the answer is a screenshot away. Bump it on every ship.
-const APP_BUILD='2026-09-19s';
+const APP_BUILD='2026-09-19t';
 
 
 /* ════════════════════════════════════════════════════════════════
@@ -7954,7 +7954,7 @@ function _cfsSendGuide(gid,cid){
   if(!c||!r)return;
   if(cid==='maya'){try{SlickBridge.post('resource-shared',{providerId:'jess',clientId:'maya',resource:{guideId:r.id,title:r.title,icon:r.icon,cat:r.cat,url:r.url||'',tips:r.tips||[],files:_guideFileList(r),fileName:r.fileName||'',fileType:r.fileType||'',hasFile:!!(r.hasFile||r.fileData),fileData:r.fileData||''}});}catch(e){}proToast('Sent '+r.title+' to Maya');return;}
   if(!Array.isArray(c.pendingGuides))c.pendingGuides=[];
-  if(!c.pendingGuides.some(pg=>pg.guideId===r.id))c.pendingGuides.push({guideId:r.id,assignedAt:Date.now()});
+  _assignPending(c.pendingGuides,'guideId',r.id);
   try{saveClients();}catch(e){}
   _shareGuideLink(cid,r);
 }
@@ -14078,12 +14078,27 @@ function _renderSendBundleClients(bid,q){const el=document.getElementById('sbp-l
 // Real send: assigns every form + resource in the bundle to the client, then
 // either invites them (if new) or shares their real link, works identically
 // whether the client already has the app or not.
+// SENDING SOMETHING THE CLIENT ALREADY HAS PENDING IS A RE-SEND, and a re-send has to arrive as a
+// NEW instance. The client app hides anything whose (id + assignedAt) is in its "already done" map,
+// so every one of these call sites used to skip a form that was still on the list and leave the old
+// assignedAt in place. If the client had opened the link — or their app had marked it done after a
+// submit that did not complete — the form was invisible to them, and re-sending it changed nothing,
+// however many times she sent it. Refreshing assignedAt makes the client's app treat it as a fresh
+// assignment and show it again.
+function _assignPending(list,key,id,extra){
+  if(!Array.isArray(list))return list;
+  const cur=list.find(function(x){return x&&x[key]===id;});
+  if(cur){cur.assignedAt=Date.now();return list;}   // re-send: same item, new instance
+  const e={};e[key]=id;e.assignedAt=Date.now();
+  list.push(Object.assign(e,extra||{}));
+  return list;
+}
 // One-off bundle send, same real mechanism as a saved bundle, without
 // needing to create one first (used by "Send all together" on suggestions).
 function _sendAdHocBundle(cid,formIds){
   const c=CL[cid];if(!c)return;
   if(!Array.isArray(c.pendingForms))c.pendingForms=[];
-  (formIds||[]).forEach(fid=>{ if(formTmpls[fid]&&!c.pendingForms.some(pf=>pf.formId===fid))c.pendingForms.push({formId:fid,assignedAt:Date.now()}); });
+  (formIds||[]).forEach(fid=>{ if(formTmpls[fid])_assignPending(c.pendingForms,'formId',fid); });
   try{saveClients();}catch(e){}
   if(!c._token){ inviteClientToApp(cid); return; }
   const first=c.name.split(' ')[0];
@@ -14099,9 +14114,9 @@ function _sendAdHocBundle(cid,formIds){
 function sendFormBundleToClient(bid,cid){
   const b=bundles.find(x=>x.id===bid);const c=CL[cid];if(!b||!c)return;
   if(!Array.isArray(c.pendingForms))c.pendingForms=[];
-  (b.formIds||[]).forEach(fid=>{ if(formTmpls[fid]&&!c.pendingForms.some(pf=>pf.formId===fid))c.pendingForms.push({formId:fid,assignedAt:Date.now()}); });
+  (b.formIds||[]).forEach(fid=>{ if(formTmpls[fid])_assignPending(c.pendingForms,'formId',fid); });
   if(!Array.isArray(c.pendingGuides))c.pendingGuides=[];
-  (b.resourceIds||[]).forEach(rid=>{ if((typeof _findGuide==='function'&&_findGuide(rid))&&!c.pendingGuides.some(pg=>pg.guideId===rid))c.pendingGuides.push({guideId:rid,assignedAt:Date.now()}); });
+  (b.resourceIds||[]).forEach(rid=>{ if(typeof _findGuide==='function'&&_findGuide(rid))_assignPending(c.pendingGuides,'guideId',rid); });
   try{saveClients();}catch(e){}
   try{if(typeof _pushKeyNow==='function')_pushKeyNow('sc_clients',_lsGet('sc_clients')||'');}catch(e){}
   if(!c._token){ inviteClientToApp(cid); return; }
@@ -16598,7 +16613,7 @@ function _assignFormsToClient(c,formIds){
 // guides, so they must be assigned too. De-duped by guide id.
 function _assignGuidesToClient(c,guides){
   if(!Array.isArray(c.pendingGuides))c.pendingGuides=[];
-  (guides||[]).forEach(g=>{const gid=(g&&(g.id||g.guideId))||g;if(gid&&!c.pendingGuides.some(pg=>pg.guideId===gid))c.pendingGuides.push({guideId:gid,assignedAt:Date.now()});});
+  (guides||[]).forEach(g=>{const gid=(g&&(g.id||g.guideId))||g;if(gid)_assignPending(c.pendingGuides,'guideId',gid);});
 }
 async function sendFirstVisitPackage(id){
   const c=CL[id];if(!c)return;
@@ -20138,7 +20153,7 @@ function confirmSendResource(ri,cid){
   const c=CL[cid];if(!c){closeSendProd();return;}
   if(r.id){
     if(!Array.isArray(c.pendingGuides))c.pendingGuides=[];
-    if(!c.pendingGuides.some(pg=>pg.guideId===r.id))c.pendingGuides.push({guideId:r.id,assignedAt:Date.now()});
+    _assignPending(c.pendingGuides,'guideId',r.id);
     try{saveClients();}catch(e){}
   }
   closeSendProd();
