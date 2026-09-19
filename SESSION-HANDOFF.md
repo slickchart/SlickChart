@@ -1508,6 +1508,63 @@ assuming.
 
 ---
 
+## 2ad. THE ROOT CAUSE, found by a sweep: boot's own write-back made the pull SKIP the key
+
+`2026-09-19m`. This is almost certainly the real answer to *"I made it on my phone and it isn't on
+my computer"*, and it is a whole CLASS of the bug, not one library.
+
+`Cloud.pull()` had this guard:
+
+```js
+// Never overwrite a key that still has a pending local write queued
+if(this._queue && hasOwnProperty(this._queue,k)) return;
+```
+
+The intent is right: a note saved moments before a reload must not be clobbered. But it could not
+tell **her edit** apart from **boot's own write-back of defaults**. Every loader that normalises or
+re-seeds a value writes it straight back on open — the code already notes this produced *forty*
+identical uploads per boot.
+
+So on a device that had just opened:
+
+1. loaders queue `sc_staff`, `sc_courses`, … with the built-in defaults,
+2. the pull sees a pending write for those keys and **skips them entirely**,
+3. the account's real data never lands on the device,
+4. the queued defaults then flush and **overwrite the account**.
+
+The stale side wins and uploads itself — which is exactly why both devices kept reporting the same
+bytes while her data was missing from one of them.
+
+**Fix:** `Cloud.push()` records keys queued while `_booting` in `Cloud._bootQueued`. The pull honours
+the guard only for keys NOT in that set, and drops the boot-queued write before storing the account
+copy. A genuine edit made during boot still wins; a default write-back no longer does.
+
+**Found by `scratchpad/sweep-crossdevice.mjs`**, which makes a real item in ten libraries on one
+device and requires it on the other. Before: courses and staff failed. After: all ten pass.
+
+---
+
+## 2ad-b. What the full sweep found and fixed (`2026-09-19m`)
+
+* **26 loaders read synced keys but were never re-run after a cloud pull** — shop products, shop
+  bundles, protocols, staff, homecare, recommendations, note templates, note format, documents,
+  needle presets, notification settings, automations, body maps, check-in log, healing stages,
+  summary drafts, suggested forms, deleted forms/guides, and more. Same bug as the course that
+  vanished: the data lands on the disk and never reaches the app. All are now `_reloadStep`s.
+* **Three permanent checks** so none of it silently returns:
+  * `scripts/check-reload-coverage.cjs` — every loader reading a synced key must be in `_reloadAll`.
+  * `scripts/check-merge-coverage.cjs` — a NEW accumulating synced key may not join the plain
+    -overwrite path (CLAUDE.md §0.6) without a recorded decision.
+  * `scratchpad/sweep-crossdevice.mjs` — the ten-library A→B runtime sweep.
+* **Still open (thread 16):** `sc_manual_appts` accumulates and plain-overwrites. A stale device can
+  drop a manually-added appointment. That is a real booking; give it a per-item merge with a delete
+  record (a blind union would resurrect cancelled ones). Also unmerged and listed in
+  `check-merge-coverage.cjs`: `sc_note_drafts`, `sc_photo_index`, `sc_pro_vc_invites`,
+  `sc_sent_routines`, `sc_summary_guides`, `sc_imported_products`, `sc_deleted_sq`, plus the older
+  set (inventory, vendors, bundles, protocols, staff, docs, …).
+
+---
+
 ## 2ac-FACTS. What Ashley OBSERVED on build `2026-09-19k` (8:36 PM, her computer)
 
 Her words and her numbers. These are settled — do not re-derive them, do not adopt a theory that

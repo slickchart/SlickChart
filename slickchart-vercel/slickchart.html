@@ -214,7 +214,7 @@ const S=document.getElementById('S');
 // resets when I save it" and there was no way to tell whether her phone had any of them — a whole
 // day was spent debugging code she may not have been running. Shown at the bottom of Settings, so
 // the answer is a screenshot away. Bump it on every ship.
-const APP_BUILD='2026-09-19l';
+const APP_BUILD='2026-09-19m';
 
 
 /* ════════════════════════════════════════════════════════════════
@@ -2713,7 +2713,14 @@ const Cloud={
     // Never overwrite a key that still has a pending local write queued, that local value
     // is newer than whatever the server returned (e.g. a note saved moments before a reload,
     // whose debounced push hadn't flushed yet). Overwriting it here is silent data loss.
-    if(this._queue&&Object.prototype.hasOwnProperty.call(this._queue,k))return;
+    // A pending local write is newer than the server's copy and must not be overwritten — UNLESS it
+    // was queued by boot's own write-back of defaults, in which case the server's copy is the real
+    // data and skipping it loses her work.
+    if(this._queue&&Object.prototype.hasOwnProperty.call(this._queue,k)
+       &&!(this._bootQueued&&this._bootQueued[k])){return;}
+    // Boot wrote this key back from defaults before the account answered. Drop that queued write so
+    // it cannot flush over the account copy we are about to store.
+    if(this._bootQueued&&this._bootQueued[k]){try{delete this._queue[k];}catch(e){}}
     // Never write down a key we would never push up. Device-local keys the account still holds from
     // before this rule would otherwise be restored onto this device on every single pull.
     if(_syncPrefixSkipped(k)){_staleDeviceLocalKeys.push(k);return;}
@@ -2786,6 +2793,8 @@ const Cloud={
   // A genuine edit made in those first moments rides the same queue and lands with it, and pagehide's
   // keepalive beacon still covers a refresh mid-boot.
   _booting:true,
+  // Keys queued while _booting — loaders writing their defaults back, not edits. See push()/pull().
+  _bootQueued:{},
   // Nothing may sit in the queue for ever because some path out of boot was missed or threw. Worst
   // case this fires and the held writes go out as one request, which is still better than forty.
   _bootFailsafe:(function(){try{return setTimeout(function(){try{Cloud.bootDone();}catch(e){}},6000);}catch(e){return 0;}})(),
@@ -2817,7 +2826,12 @@ const Cloud={
     // Identical to what the account already holds — an echo of the pull, not an edit.
     try{if(this._serverSeen&&Object.prototype.hasOwnProperty.call(this._serverSeen,k)&&this._serverSeen[k]===String(v)&&!(k in this._queue))return;}catch(e){}
     this._queue[k]=v;
-    if(this._booting)return;               // held until the pull says what is actually needed
+    // Remember which keys were queued DURING BOOT. Those are loaders and re-seeders writing their
+    // normalised defaults straight back — not her editing anything. The pull's "don't overwrite a
+    // pending local write" guard must not treat them as edits, or the account's real data is skipped
+    // and this device's defaults are pushed over it. That is how a library made on one device never
+    // reached the other while both ends reported the same bytes: the stale side won and uploaded.
+    if(this._booting){try{this._bootQueued[k]=1;}catch(e){}return;}   // held until the pull says what is actually needed
     clearTimeout(this._timer);this._timer=setTimeout(()=>this._flush(),700);},
   // Flush any pending queued writes immediately during page unload. A normal fetch is often
   // killed when the page navigates away, so use a keepalive fetch (which the browser is allowed
@@ -3407,6 +3421,37 @@ function _reloadAll(){
   // Re-apply branding after a cross-device pull. Without this, changing the logo/brand colors on the
   // web never reflected on the phone (the new sc_brand_colors was pulled into storage, but brandColors
   // stayed the old in-memory value and the theme was never re-derived) until a full cold reload.
+  // EVERY library that reads a synced key has to be re-read after a cloud pull, or a change made on
+  // another device is written into this device's storage and then never loaded into the app — which
+  // is what made a course vanish once, and what made her forms refuse to cross from her phone. A
+  // sweep found twenty-six more loaders in exactly that state; they are all here now.
+  // sc_captured_photos is deliberately NOT in this list: it is excluded from sync on purpose.
+  S('shop products',function(){if(typeof loadAffiliateLinks==='function')loadAffiliateLinks();});
+  S('shop bundles',function(){if(typeof loadShopBundles==='function')loadShopBundles();});
+  S('amazon links',function(){if(typeof loadAmazonAssociates==='function')loadAmazonAssociates();});
+  S('automations',function(){if(typeof loadAutos==='function')loadAutos();});
+  S('body maps',function(){if(typeof loadBodyMaps==='function')loadBodyMaps();});
+  S('check-in log',function(){if(typeof loadCheckins==='function')loadCheckins();});
+  S('healing stages',function(){if(typeof loadClientHealingStage==='function')loadClientHealingStage();});
+  S('homecare',function(){if(typeof loadClientHomecare==='function')loadClientHomecare();});
+  S('recommendations',function(){if(typeof loadClientRecs==='function')loadClientRecs();});
+  S('recommendation reasons',function(){if(typeof loadRecReasons==='function')loadRecReasons();});
+  S('note templates',function(){if(typeof loadCustomNoteTemplates==='function')loadCustomNoteTemplates();});
+  S('note format',function(){if(typeof loadNoteFmt==='function')loadNoteFmt();});
+  S('documents',function(){if(typeof loadDocs==='function')loadDocs();});
+  S('needle presets',function(){if(typeof loadNeedlePresets==='function')loadNeedlePresets();});
+  S('notification settings',function(){if(typeof loadNotifSettings==='function')loadNotifSettings();});
+  S('protocols',function(){if(typeof loadProtocols==='function')loadProtocols();});
+  S('staff',function(){if(typeof loadStaff==='function')loadStaff();});
+  S('suggested forms',function(){if(typeof loadSuggestedFormsOverride==='function')loadSuggestedFormsOverride();});
+  S('summary drafts',function(){if(typeof loadSummaryDrafts==='function')loadSummaryDrafts();});
+  S('deleted forms & guides',function(){if(typeof loadHiddenSets==='function')loadHiddenSets();});
+  S('import batches',function(){if(typeof _loadImpBatches==='function')_loadImpBatches();});
+  S('room state',function(){if(typeof _loadRoomState==='function')_loadRoomState();});
+  S('deposit settings',function(){if(typeof _loadDepositHandled==='function')_loadDepositHandled();});
+  S('two-factor state',function(){if(typeof _loadTotpState==='function')_loadTotpState();});
+  S('square status',function(){if(typeof _loadIntegSquareStatus==='function')_loadIntegSquareStatus();});
+  S('photo backup state',function(){if(typeof _loadPhotoBackedUp==='function')_loadPhotoBackedUp();});
   S('branding',function(){if(typeof loadBrandColors==='function')brandColors=loadBrandColors();if(typeof applyTheme==='function')applyTheme();if(typeof _syncHeaderLogo==='function')_syncHeaderLogo();});
 }
 // Five taps on the version line at the bottom of Settings opens the self-check. There is no button
