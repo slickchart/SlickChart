@@ -1508,6 +1508,53 @@ assuming.
 
 ---
 
+## 2ag. BOOKING-LINK FLOW: full audit (`2026-09-19s`)
+
+Ashley asked for every function in the new booking-link flow to be checked. `scratchpad/bookflow.mjs`
+drives the whole provider side and is now in the suite — **15 checks, all passing**:
+
+* a request from the public link lands as pending and raises a notification;
+* a RE-DELIVERED event duplicates neither the request nor the notification;
+* confirm → out of pending, marked confirmed, and an appointment appears on the calendar;
+* decline → out of pending, marked declined;
+* suggest another time → marked suggested, nothing left pending;
+* clearing a notification removes it, and it stays gone when the event is re-delivered AND after a
+  full reload; decisions survive the reload too.
+
+### Real hole found: "deleted stays deleted" had a CEILING
+
+`_saveNotifState()` kept only the newest **800** cleared ids and 1200 read ids; `_mergeSeenEvents`
+kept **1000** event ids. Measured in `scratchpad/notifcap.mjs`: after 900 further dismissals, a
+specific cleared notification **was pushed off the list**, losing its protection entirely. It did not
+resurface in that run only because its booking still existed — the ingest is idempotent only while
+the booking is present (`if(_existBk)return;`), so had the booking been missing, the notification
+would have come back. A busy practice passes 800 dismissals in a season.
+
+All three ceilings are now **5000**. They exist only to stop unbounded growth, so they belong where a
+real practice will not reach them for years. ~20 bytes an id ⇒ ~100KB, which the ≥24KB offload moves
+to IndexedDB by itself rather than spending the 5MB localStorage budget.
+
+### Server side, read and verified
+
+* `api/book-request.js` — resolves the provider by slug; refuses when booking is off; requires the
+  WHOLE appointment to fit inside her hours (not just the start); enforces `leadHours` and
+  `horizonDays`; in instant mode re-checks the slot at submit and falls back to a plain request
+  rather than risk a double-book; find-or-create is scoped `WHERE provider_id = ...`; `upsertClient`
+  and `logEvent` both carry the provider id; rate-limited per IP (6/min) and per slug (30/min).
+* `api/book-slots.js` — returns free time strings only. No client data of any kind.
+* `api/consult-request.js` / `consult-requests.js` — public side resolves by slug; provider side
+  takes the id from the verified token and `listConsultRequests(provider)` is scoped.
+
+### Still worth knowing
+
+The ingest's idempotence depends on the booking still being in `sc_bookings`
+(`if(_existBk)return;`). §2af gave that key a merge so a stale copy can no longer drop one, and the
+5000-id horizons mean a cleared id survives far longer — but the two protections are related. If a
+booking is ever genuinely removed while its event id is still live, it WILL come back as pending.
+That is by design (the event is real), but it is the mechanism behind the original report.
+
+---
+
 ## 2af. "Every time I deleted an appointment request it came back" — FIXED (`2026-09-19r`)
 
 A provider reported this on 2026-09-18. It is **not** the same thing as the appointment merge in

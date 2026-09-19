@@ -214,7 +214,7 @@ const S=document.getElementById('S');
 // resets when I save it" and there was no way to tell whether her phone had any of them — a whole
 // day was spent debugging code she may not have been running. Shown at the bottom of Settings, so
 // the answer is a screenshot away. Bump it on every ship.
-const APP_BUILD='2026-09-19r';
+const APP_BUILD='2026-09-19s';
 
 
 /* ════════════════════════════════════════════════════════════════
@@ -2766,7 +2766,10 @@ function _mergeSeenEvents(serverStr,localStr){
     if(!Array.isArray(sv)||!Array.isArray(lv))return null;
     var seen={},out=[];
     lv.concat(sv).forEach(function(id){if(id==null)return;if(seen[id])return;seen[id]=1;out.push(id);});
-    if(out.length>1000)out=out.slice(out.length-1000);
+    // Same reasoning as the notification lists above: an event id that ages off this list becomes
+    // "fresh" again, and anything the provider had already dealt with can be re-ingested. Keep a
+    // horizon a busy practice will not reach for years.
+    if(out.length>5000)out=out.slice(out.length-5000);
     var changed=(out.length!==sv.length);   // local had ids the server lacked → push superset back
     return {str:JSON.stringify(out),changed:changed};
   }catch(e){return null;}
@@ -4867,9 +4870,16 @@ function unreadCount(){return notifFeed.filter(n=>!n.read).length;}
 // as synced monotonic sets and re-apply them whenever the feed is rebuilt/rendered.
 let _notifCleared=(function(){try{return new Set(JSON.parse(localStorage.getItem('sc_notif_cleared')||'[]'));}catch(e){return new Set();}})();
 let _notifRead=(function(){try{return new Set(JSON.parse(localStorage.getItem('sc_notif_read')||'[]'));}catch(e){return new Set();}})();
+// These lists are what makes "I cleared that" STICK. Once an id falls off, the thing she dismissed
+// has no protection left: if its booking is ever missing when the event is re-delivered, the ingest
+// treats it as new and it comes back. The old ceilings were 800 cleared / 1200 read, which a busy
+// practice passes in a season — measured: 900 further clears pushed a specific dismissal off the
+// end. The ceilings exist only to stop unbounded growth, so put them where a real practice will not
+// reach them for years. At ~20 bytes an id this is ~100KB, which the ≥24KB offload moves to
+// IndexedDB on its own rather than spending the 5MB localStorage budget.
 function _saveNotifState(){try{
-  const c=Array.from(_notifCleared);if(c.length>800)c.splice(0,c.length-800);
-  const r=Array.from(_notifRead);if(r.length>1200)r.splice(0,r.length-1200);
+  const c=Array.from(_notifCleared);if(c.length>5000)c.splice(0,c.length-5000);
+  const r=Array.from(_notifRead);if(r.length>5000)r.splice(0,r.length-5000);
   const cv=JSON.stringify(c),rv=JSON.stringify(r);
   localStorage.setItem('sc_notif_cleared',cv);localStorage.setItem('sc_notif_read',rv);
   if(typeof _pushKeyNow==='function'){_pushKeyNow('sc_notif_cleared',cv);_pushKeyNow('sc_notif_read',rv);}
