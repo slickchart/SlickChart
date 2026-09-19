@@ -152,6 +152,15 @@ The proxy blocks live `slickchart.app`, so test against the local file with rout
      about one run in three. It now returns immediately while `Cloud._booting`.
   **Anything new that writes on a timer, a nav, or an unload needs the same guard.** See
   SESSION-HANDOFF §2ad.
+  **But do NOT gate a new guard on `Cloud._booting`:** `bootDone()` clears it BEFORE flushing the
+  boot batch, so a boot-time upload reads as post-boot. Four fixes failed on exactly that.
+- **An upload may only shrink a library if the missing ids were DELETED.** `_dropBootShrinks()` runs
+  on every upload path and compares against `Cloud._serverSeen`; dropped ids must appear in one of
+  the `_TOMB_OBJ`/`_TOMB_ARR` delete lists or the key is held back. This is what stops a device
+  putting its starter content over a real account (§2ae).
+- **`scripts/check-tenant-isolation.cjs` (CI)** reads every endpoint for §0.1: identity from a
+  request field, and SQL on a per-provider table with no owner in it. Its ALLOW list holds three
+  reviewed exceptions — re-read those files if they change rather than trusting the entry.
 - **Scale harnesses** (`scratchpad/`, run by hand): `freshaudit.mjs` boots a BRAND-NEW account and
   reports every key it stores and byte it uploads — none of it is her data, so anything it finds is
   the app seeding itself into her account (a fresh profile is 7.8KB; it was 82KB before slim forms).

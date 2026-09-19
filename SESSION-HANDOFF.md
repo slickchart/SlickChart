@@ -1527,34 +1527,50 @@ not stored at all for a fresh account (it was 82KB). Largest are `sc_shop_catalo
 `sc_affiliate_links` 1.6KB, `sc_courses` 1.5KB. Boot makes 5 upload requests totalling 17.6KB, of
 which **#1 and #2 are near-duplicates 21ms apart** — worth a look, not urgent.
 
-### ⚠️ UNFIXED, AND THE MOST SERIOUS THING HERE: boot briefly wipes her courses from the account
+### FIXED (`2026-09-19q`): boot no longer wipes her courses from the account
 
-Reproduced on **every** run of `scaleaudit.mjs`. The account-side course count, logged per request:
+The bug: on a busy account the pull stored her 60 courses, and moments later an upload replaced them
+with the app's 5 built-in ones. The account held five stock courses instead of sixty until the next
+pull merged them back, and any device syncing in that window would have adopted the stock list.
 
-```
- 263ms   GET  — account holds her 60 courses
- 459ms   PUT  — device uploads 5 STOCK courses  <-- her 60 are gone from the account
-3624ms   GET  — account holds 5
-4116ms   PUT  — merge restores them: 65
-```
+**Why four earlier attempts all missed.** `bootDone()` sets `_booting = false` BEFORE it flushes the
+boot batch, so the offending upload is always technically post-boot. Every guard written against
+`Cloud._booting` was reading a flag that had already been cleared. A diagnostic line inside the
+guard printed `booting=false; serverSeen has key=true; sending 5 vs account 60` and settled it in
+one run, after tracing at `setItem`, `fetch`, `sendBeacon` and XHR had all come back empty (the
+write never touches disk, and the app's own patched `setItem` can swallow it).
 
-For ~3.6 seconds on every boot of a busy account, **the account holds five built-in courses instead
-of sixty**. A second device syncing in that window adopts the stock list. `_mergeCourses` is the
-only thing preventing permanent loss, and a merge must not be load-bearing. It also leaves 5 app
-defaults stamped on her account for good (60 in, 65 out) — the same family as the 82KB templates.
+**The fix carries no timing at all.** `_dropBootShrinks()` runs on every upload path (`_send` for
+the queue, `_pushFlushNow` for the batch). An upload that DROPS entries the account is known to
+hold (`Cloud._serverSeen`) is allowed only when **every dropped id is on a delete list** — the union
+of the `_TOMB_OBJ` / `_TOMB_ARR` keys (`sc_hidden_courses`, `sc_hidden_forms`, `sc_deleted_clients`,
+`sc_deleted_appts`, …). Deleting really deletes; losing things does not.
 
-**What is ruled out** (each tried, measured, and reverted because it changed nothing):
-* a stock-content predicate in `_mergeAuthoredById` — the merge is NOT the path;
-* a boot-shrink guard inside `persistCourses()` — **the 459ms upload does not go through
-  `persistCourses` at all**, which is the single most useful fact for whoever picks this up;
-* holding the push batch until the first pull (`Cloud._pulled`) — the write happens AFTER the first
-  pull, so the guard never applied.
+Verified at 1000 clients: the account reports her 60 courses at BOTH pulls instead of dipping to 5.
+`appts.mjs` still passes, which is the check that matters — a cancelled appointment still syncs as
+deleted, because the cancellation is tombstoned and the guard consults exactly those lists.
 
-**Start here:** find what writes `sc_courses` at ~459ms. It is not `persistCourses`. Candidates not
-yet eliminated: `Cloud.pushAllLocal()`, the "catch up keys the pull did not return" block in
-`_cloudInit` (`Cloud._lastPulledKeys`), or a direct `localStorage.setItem('sc_courses', …)`. Wrap
-`Cloud.push` and `_pushKeyNow` for ALL sizes (the probe used in this session only logged >20KB,
-which is why the 1.5KB stock write stayed invisible for so long) and log a stack trace.
+**Residual, not fixed:** 5 app-default courses still end up merged onto the account (60 in, 65 out).
+That is bloat, not loss, and it is the same family as the 82KB templates. The union merge treats the
+device's starter content as data worth keeping; a stock-content predicate was tried and reverted
+because it changed nothing while the real bug was still live. Worth retrying now that it is fixed.
+
+### Server-side isolation: swept and clean
+
+`scripts/check-tenant-isolation.cjs` (now in CI) reads all **106** endpoint files for the two shapes
+§0.1 forbids: an owner-ish identity taken from `req.body` / `req.query`, and SQL against a
+per-provider table (`clients`, `kv`, `client_events`, `square_connections`, `providers`,
+`course_versions`) with no owner column in the statement. Four hits, all three files read by hand
+and correct:
+
+* `admin/kv-health.js` and `admin/provider-lookup.js` — both verify the token, check the session is
+  still valid, and gate on `FOUNDER_EMAILS` using the **token's** email. The email in the request is
+  the subject being looked up, never the authorizer.
+* `request-reset.js` — the email is necessarily the input; it always returns 200 and is rate-limited
+  per email, so it reveals nothing (§0.4).
+
+Recorded in the script's ALLOW list with reasons. **If any of those three files changes, re-read it
+rather than trusting the allow entry.**
 
 ### 1MB re-uploaded on every boot of a busy account
 
