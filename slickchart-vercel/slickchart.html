@@ -214,7 +214,7 @@ const S=document.getElementById('S');
 // resets when I save it" and there was no way to tell whether her phone had any of them — a whole
 // day was spent debugging code she may not have been running. Shown at the bottom of Settings, so
 // the answer is a screenshot away. Bump it on every ship.
-const APP_BUILD='2026-09-19c';
+const APP_BUILD='2026-09-19d';
 
 
 /* ════════════════════════════════════════════════════════════════
@@ -2518,6 +2518,23 @@ function _mergeStamped(serverStr,localStr){
   if(b>a)return {str:localStr,changed:true};   // this device's edit is newer — keep it, push it back
   return {str:serverStr,changed:false};
 }
+// Does this tombstone outrank this item? A deletion only beats an item that is OLDER than it.
+//
+// A form the account is actively carrying, created after the deletion, is not the deleted form — it
+// just inherited its id back when ids were a recycled counter. Treating the tombstone as absolute
+// deleted it again on every sync, invisibly, which is exactly what happened to a real provider's
+// consent form: present on her phone and her account, stripped on her computer, no error anywhere.
+//
+// A legacy tombstone (the literal 1) carries no date, so it cannot prove it is newer than anything.
+// It still deletes an item that has no timestamp of its own — old deleted forms stay deleted — but it
+// does NOT outrank an item carrying a real one. Resurrecting a form she can delete again in one tap
+// is a far smaller harm than silently destroying one she just made.
+function _tombBeats(tomb,itemTs){
+  const t=Number(tomb)||0, i=Number(itemTs)||0;
+  if(!i)return true;          // item has no date: previous behaviour, the deletion wins
+  if(t<=1)return false;       // legacy, undated deletion vs a dated item: keep the item
+  return t>=i;                // a dated deletion only wins over something older than it
+}
 function _mergeForms(serverStr,localStr){
   let srv,loc;
   try{srv=JSON.parse(serverStr||'null');}catch(e){return null;}
@@ -2531,7 +2548,8 @@ function _mergeForms(serverStr,localStr){
   const cs=Array.isArray(srv.custom)?srv.custom:[],cl=Array.isArray(loc.custom)?loc.custom:[];
   const out=[],idx={};
   const take=function(f,fromLocal){
-    if(!f||!f.id||hidden[f.id])return;
+    if(!f||!f.id)return;
+    if(hidden[f.id]&&_tombBeats(hidden[f.id],f._ts))return;
     if(!(f.id in idx)){idx[f.id]=out.length;out.push(f);return;}
     const cur=out[idx[f.id]],a=Number(cur&&cur._ts)||0,b=Number(f&&f._ts)||0;
     if(b>a)out[idx[f.id]]=f;
@@ -2553,8 +2571,8 @@ function _mergeForms(serverStr,localStr){
   const mergeMap=function(srvMap,locMap){
     const o={};
     const put=function(src,k,fromLocal){
-      if(hidden[k])return;
       const v=src[k];
+      if(hidden[k]&&_tombBeats(hidden[k],v&&v._ts))return;
       if(!(k in o)){o[k]=v;return;}
       const a=Number(o[k]&&o[k]._ts)||0,b=Number(v&&v._ts)||0;
       if(b>a)o[k]=v;                        // newer edit wins, whichever side it came from
@@ -2573,7 +2591,7 @@ function _mergeForms(serverStr,localStr){
   const str=JSON.stringify(merged);
   const srvView=JSON.stringify({
     tmpls:mergeMap(srv.tmpls,null),guides:mergeMap(srv.guides,null),
-    custom:cs.filter(f=>f&&f.id&&!hidden[f.id]),emojis:mergeMap(srv.emojis,null)
+    custom:cs.filter(f=>f&&f.id&&!(hidden[f.id]&&_tombBeats(hidden[f.id],f._ts))),emojis:mergeMap(srv.emojis,null)
   });
   return {str:str,changed:str!==srvView};
 }
@@ -3089,7 +3107,11 @@ async function _hydrateOffloaded(){
 // "reset" screen and save over it.
 function _reloadAfterHydrate(){
   try{if(typeof loadForms==='function')loadForms();}catch(e){}
-  try{if(typeof _healGhostForms==='function')_healGhostForms();}catch(e){}
+  // NO REPAIRS HERE. This runs BEFORE the pull, so the only copy of her forms in hand is this
+  // device's own — possibly a stale one. Both repairs end in persistForms(), which pushes, so
+  // healing here uploaded a stale copy over the good one on the account and then pulled it back.
+  // That is a data-loss bug, and it is why her phone's edits kept dying on the computer. The repairs
+  // belong in _reloadAll(), after the pull, when local IS the merged superset.
   try{if(typeof loadBrandColors==='function')brandColors=loadBrandColors();}catch(e){}
   try{if(typeof applyTheme==='function')applyTheme();}catch(e){}
   try{if(typeof _syncHeaderLogo==='function')_syncHeaderLogo();}catch(e){}
@@ -3272,6 +3294,7 @@ function _reloadAll(){try{
   if(typeof loadForms==='function')loadForms();
   // Runs after the pull, so both the forms and the deleted list are settled. Repairs a form stuck
   // with a retired id — which is invisible and unsyncable — and pushes the repair up.
+  try{if(typeof _healBulkStamps==='function')_healBulkStamps();}catch(e){}
   try{if(typeof _healGhostForms==='function')_healGhostForms();}catch(e){}
   loadBizInfo();_syncProviderAvatar();_syncHeaderLogo();loadClients();loadMergedIds();loadMergedInto();loadDeletedClients();loadHiddenSquare();loadMessages();loadInv();loadVendors();_loadPersistenceSweep();try{_initCapturedPhotos();}catch(e){}_loadHomeDismissed();_loadAttnSeen();loadProviderNoteDrafts();if(typeof loadSessionSummaries==='function')loadSessionSummaries();if(!_sampleHidden()){_seedMayaOnce();}else{_purgeSample();}try{_purgeRemovedClients();}catch(e){}_seedBirthdays();if(!_sampleHidden()&&typeof _demoCheckinSeed==='function')_demoCheckinSeed();
   try{if(typeof loadBookCfg==='function')loadBookCfg();}catch(e){}
@@ -3595,6 +3618,9 @@ async function _cloudInit(){
   }
   if(!Cloud.token){try{Cloud.bootDone();}catch(e){}renderEntry();return;}      // database is on but no session — unified front door
   try{_initNativeProvider();}catch(e){}         // native App Store / Play build: status bar + push registration
+  // Before the pull, because the merge weighs timestamps and this device may still be carrying the
+  // fake ones an old boot wrote. Local write only.
+  try{if(typeof _healBulkStampsStored==='function')_healBulkStampsStored();}catch(e){}
   try{
     const n=await Cloud.pull();
     // The server REJECTED this device's session (expired, revoked, or signed with an older
@@ -14895,6 +14921,67 @@ function _newCustomFormId(){
 // every list that renders forms and is stripped by _mergeForms the moment it syncs, so it can never
 // reach her other devices. Give it a fresh unique id and it simply works again, with nothing for her
 // to do but open the app.
+// Undo the damage the bulk stamp already did to THIS device's copy.
+//
+// Until today, a boot that could not read sc_forms yet re-stamped all 75 bundled templates with the
+// same millisecond and saved that. Those timestamps then beat every genuine edit made anywhere, for
+// ever — so a rename made on a phone could never land on a computer that had done one of those boots.
+// Stopping new ones does nothing for the ones already sitting in her data.
+//
+// A real edit session cannot stamp five templates in the SAME millisecond. That signature is the bulk
+// stamp and nothing else, so those stamps are cleared. An unstamped entry loses to any dated edit
+// from another device, which is exactly what should happen: they were never really edits.
+// The same repair, but on the STORED copy and BEFORE the pull, writing locally only.
+//
+// It has to happen first: the merge decides per template by timestamp, so a device still carrying
+// the bulk stamps rejects the other device's genuine edit before any later repair can run. And it
+// must not push — at this point the pull has not happened, so this device's copy is not yet the
+// merged truth and uploading it would overwrite the good copy on the account.
+function _healBulkStampsStored(){
+  try{
+    let raw=null;try{raw=_lsGet('sc_forms');}catch(e){}
+    if(!raw)return 0;
+    let d=null;try{d=JSON.parse(raw);}catch(e){return 0;}
+    if(!d||typeof d!=='object'||!d.tmpls||typeof d.tmpls!=='object')return 0;
+    const byTs={};
+    Object.keys(d.tmpls).forEach(function(k){
+      const t=Number(d.tmpls[k]&&d.tmpls[k]._ts)||0;
+      if(t)(byTs[t]=byTs[t]||[]).push(k);
+    });
+    let n=0;
+    Object.keys(byTs).forEach(function(t){
+      const ks=byTs[t];
+      if(ks.length<5)return;
+      ks.forEach(function(k){try{delete d.tmpls[k]._ts;n++;}catch(e){}});
+    });
+    if(!n)return 0;
+    try{_lsPersist('sc_forms',JSON.stringify(d));}catch(e){}   // local only: never push from here
+    try{_formsSnap=null;}catch(e){}
+    try{console.warn('[SlickChart] cleared '+n+' form timestamps written all at once by an old boot bug \u2014 your other devices\u2019 edits can arrive again');}catch(e){}
+    return n;
+  }catch(e){return 0;}
+}
+function _healBulkStamps(){
+  try{
+    if(typeof formTmpls==='undefined'||!formTmpls)return 0;
+    const byTs={};
+    Object.keys(formTmpls).forEach(function(k){
+      const t=Number(formTmpls[k]&&formTmpls[k]._ts)||0;
+      if(t)(byTs[t]=byTs[t]||[]).push(k);
+    });
+    let n=0;
+    Object.keys(byTs).forEach(function(t){
+      const ks=byTs[t];
+      if(ks.length<5)return;                       // a genuine edit never does five in one millisecond
+      ks.forEach(function(k){try{delete formTmpls[k]._ts;n++;}catch(e){}});
+    });
+    if(n){
+      try{console.warn('[SlickChart] cleared '+n+' form timestamps that were written all at once by an old boot bug \u2014 edits from your other devices can arrive again');}catch(e){}
+      try{persistForms();}catch(e){}
+    }
+    return n;
+  }catch(e){return 0;}
+}
 function _healGhostForms(){
   try{
     if(typeof customForms==='undefined'||!Array.isArray(customForms))return 0;
@@ -17255,7 +17342,10 @@ function deleteFormCard(id){
     try{if(typeof persistForms==='function')persistForms();}catch(e){}
   }
   // Remember the removal (a custom form could share an id space; harmless to also hide it).
-  hiddenForms[id]=1;_saveHiddenForms();
+  // WHEN it was deleted, not just that it was. An undated tombstone is absolute for ever, which is
+  // how one device's old deletion silently ate a form another device had since created with the same
+  // id. Legacy entries are the number 1, and _tombBeats() treats those as ancient.
+  hiddenForms[id]=Date.now();_saveHiddenForms();
   if(typeof proToast==='function')proToast('Form deleted');
   if(typeof renderForms==='function')renderForms();
   };

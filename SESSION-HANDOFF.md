@@ -1417,6 +1417,42 @@ once after this ships; it will stick.
 diagnostic in a way the missing form never was, because it ruled out every id-based theory in one
 line. Ask for the second symptom sooner.
 
+### §2y still was not enough — the RESIDUAL damage, and a self-inflicted wound
+
+§2y stops new poisoning. It does nothing for the poison already sitting in her data, and her next
+sentence was the one that actually cracked it: *"the spicule form and the microchanneling edit are on
+my phone but not computer."* Phone and account both correct; **the COMPUTER was rejecting them.**
+That is a one-sided problem, and `_mergeForms` narrows it to exactly two causes, because every other
+path in it is an unconditional union.
+
+**1. A bug I introduced in §2y, same day.** Both repairs (`_healGhostForms`, `_healBulkStamps`) were
+wired into `_reloadAfterHydrate()`, which runs **BEFORE `Cloud.pull()`**. Both end in
+`persistForms()`, which pushes. So the computer healed its own STALE copy and uploaded it over the
+good one on the account, then pulled its own stale data back — on every open. A repair that runs
+before the pull is a data-loss bug. **Repairs belong in `_reloadAll()`, after the pull, when local IS
+the merged superset.**
+
+**2. Poisoned timestamps, and timing matters.** Her computer's copy carries all 75 templates stamped
+with one identical millisecond. `mergeMap` decides per template by `_ts`, so those beat her phone's
+genuine rename. `_healBulkStamps()` clears them, but running it after the pull is **too late** — the
+merge has already rejected the edit. `_healBulkStampsStored()` now cleans the STORED copy **before**
+`Cloud.pull()`, writing through `_lsPersist` (local only, never pushes, because pre-pull this device
+is not yet the truth). Five templates sharing one millisecond cannot be real edits; that signature is
+the bulk stamp and nothing else.
+
+**3. Undated tombstones are absolute for ever.** `hidden[id]` stripped a form regardless of age, so
+the computer's long-ago deletion of `custom2` silently discarded the form her phone had since created
+with that id — the only way a server-side form fails to reach a device. Deletions now record WHEN
+(`hiddenForms[id]=Date.now()`), and `_tombBeats()` lets a deletion win only over something older than
+it. A legacy tombstone (the literal `1`) still deletes an undated item — old deleted forms stay
+deleted — but does NOT outrank a form carrying a real timestamp. Resurrecting a form she can delete
+in one tap beats silently destroying one she just made.
+
+Suite: `twodev.mjs` — her exact setup (edits on the phone and the account; the computer bulk-stamped
+and holding `{custom2:1}`): the computer accepts the rename, the form arrives despite the old
+deletion, the stamps are cleared, both render, and a form deleted TODAY stays deleted.
+`mergeprobe.mjs` calls `_mergeForms` directly when the merge itself needs ruling in or out.
+
 ---
 
 ## 3. Open threads — needs Ashley, or needs verifying
