@@ -468,7 +468,7 @@ const S=document.getElementById('S');
 // resets when I save it" and there was no way to tell whether her phone had any of them — a whole
 // day was spent debugging code she may not have been running. Shown at the bottom of Settings, so
 // the answer is a screenshot away. Bump it on every ship.
-const APP_BUILD='2026-09-19q';
+const APP_BUILD='2026-09-19r';
 
 
 /* ════════════════════════════════════════════════════════════════
@@ -2750,6 +2750,42 @@ function _mergeMsgStore(serverStr,localStr){
     return {str:JSON.stringify(out),changed:changed};
   }catch(e){return null;}
 }
+// A DECISION ON A BOOKING REQUEST IS STICKY.
+//
+// A provider reported that every time she cleared an appointment request it came back. sc_bookings
+// was synced but rode the PLAIN OVERWRITE with no merge and no delete record, so a device holding
+// an older copy could put the request back to `pending` — undoing a decline. Worse, the incoming
+// event ingest treats a request it cannot find as new (`if(_existBk)return;`), so once a stale copy
+// dropped a booking, the next sync RE-CREATED it as pending. That is the loop she described.
+//
+// Union by id — a real request is never lost — and once a request has been decided (confirmed,
+// declined or suggested) that decision wins over any copy that still says pending, whichever side
+// it came from. Two decisions are settled by the newer decidedAt. `seen` is sticky the same way
+// thread read-state is: cleared on any device means cleared everywhere.
+function _bookingDecided(b){return !!(b&&b.status&&b.status!=='pending');}
+function _mergeBookings(serverStr,localStr){
+  try{
+    if(localStr==null)return null;                    // fresh device: take the account copy as-is
+    const sv=JSON.parse(serverStr||'[]'),lv=JSON.parse(localStr||'[]');
+    if(!Array.isArray(sv)||!Array.isArray(lv))return null;
+    const out=[],idx={};
+    const take=function(b){
+      if(!b||!b.id)return;
+      if(!(b.id in idx)){idx[b.id]=out.length;out.push(Object.assign({},b));return;}
+      const cur=out[idx[b.id]];
+      const curD=_bookingDecided(cur),newD=_bookingDecided(b);
+      let win=cur;
+      if(newD&&!curD)win=b;                                          // a decision beats "pending"
+      else if(newD&&curD&&(Number(b.decidedAt)||0)>(Number(cur.decidedAt)||0))win=b;
+      const merged=Object.assign({},win);
+      merged.seen=!!(cur.seen||b.seen);                              // cleared anywhere = cleared
+      out[idx[b.id]]=merged;
+    };
+    lv.forEach(take);sv.forEach(take);
+    const str=JSON.stringify(out);
+    return {str:str,changed:str!==JSON.stringify(sv)};
+  }catch(e){return null;}
+}
 // Merge sc_threads by id. Read state is STICKY: once a thread is read (unread=false) on any device it
 // stays read on merge — a new client message re-sets unread=true through the event path, so this can't
 // hide a genuinely new message, it only stops a stale blob from resurrecting an already-cleared badge.
@@ -3108,11 +3144,12 @@ const Cloud={
         return;
       }
     }
-    if(k==='sc_msgstore'||k==='sc_threads'||k==='sc_seen_events'||k==='sc_attn_seen'||k==='sc_import_batches'||k==='sc_courses'||k==='sc_resources'||k==='sc_forms'||k==='sc_manual_appts'){
+    if(k==='sc_msgstore'||k==='sc_threads'||k==='sc_seen_events'||k==='sc_attn_seen'||k==='sc_import_batches'||k==='sc_courses'||k==='sc_resources'||k==='sc_forms'||k==='sc_manual_appts'||k==='sc_bookings'){
       const mm=(k==='sc_msgstore')?_mergeMsgStore(data[k],_lsGet(k))
               :(k==='sc_courses')?_mergeCourses(data[k],_lsGet(k))
               :(k==='sc_resources')?_mergeResources(data[k],_lsGet(k))
               :(k==='sc_manual_appts')?_mergeAppts(data[k],_lsGet(k))
+              :(k==='sc_bookings')?_mergeBookings(data[k],_lsGet(k))
               :(k==='sc_forms')?_mergeForms(data[k],_lsGet(k))
               :(k==='sc_threads')?_mergeThreads(data[k],_lsGet(k))
               :(k==='sc_attn_seen')?_mergeAttnSeen(data[k],_lsGet(k))

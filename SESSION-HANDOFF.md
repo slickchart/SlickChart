@@ -1508,6 +1508,56 @@ assuming.
 
 ---
 
+## 2af. "Every time I deleted an appointment request it came back" — FIXED (`2026-09-19r`)
+
+A provider reported this on 2026-09-18. It is **not** the same thing as the appointment merge in
+§2ad-b: booking REQUESTS live in `sc_bookings` (SlickBridge), not `sc_manual_appts`.
+
+`sc_bookings` was synced (it starts `sc_`, and is not in `_SYNC_SKIP`) but rode the **plain
+overwrite** with no merge and no delete record. So a device holding an older copy could put a
+request back to `pending`, undoing a decline. And the incoming-event ingest treats a request it
+cannot find as new:
+
+```js
+let _existBk=null;try{_existBk=(SlickBridge.getBookings()||[]).find(x=>x&&x.id===ev.id);}catch(e){}
+if(_existBk)return;                       // idempotent ONLY while the booking is still in the list
+```
+
+so once a stale copy dropped a booking, the next sync **re-created it as pending**. That is the loop
+she described. (Note `_mergeSeenEvents` caps at 1000 ids, so on a busy account old events do become
+"fresh" again — which is what feeds the re-create.)
+
+**Why the merge-coverage check never flagged it:** SlickBridge writes through a generic
+`write(key,val)` helper rather than a literal `setItem('sc_bookings', JSON.stringify(x))`, and the
+detector scans for the literal form. **Worth widening.**
+
+**Fix:** `_mergeBookings()` in the pull dispatch. Union by id so a real request is never lost; a
+DECIDED request (confirmed / declined / suggested) beats any copy that still says pending, whichever
+side it came from; two decisions are settled by the newer `decidedAt`; and `seen` is sticky the way
+thread read-state is.
+
+**Proved by A/B** (`scratchpad/bookreq.mjs`, now in the suite). Without the merge:
+
+```
+2. she declines it on the computer.   account: bk1:declined/seen
+3. the phone (still stale) syncs.     account: bk1:pending/unseen
+4. she reopens the computer.          request is: pending; pending list shows 1   <-- her report
+```
+
+With it, step 4 reads `declined`, the pending list is empty, and the account heals back to
+`declined/seen`. Step 3 still shows the account being overwritten — that is expected; what matters
+is that her device no longer adopts it.
+
+### Regression this introduced and fixed in the same build
+
+`_dropBootShrinks` (§2ae) first treated ANY object losing a key as lost data. `sc_brand_colors` is a
+settings blob whose keys are FIELDS, so clearing a setting looked like deletion and the save was
+blocked — `hydrate.mjs` caught it. `_idsOf()` is now deliberately narrow: an array counts only when
+every entry carries an `id`, and an object counts only when every value is itself a record (a map
+like `sc_clients`). Settings blobs are not collections and the guard skips them.
+
+---
+
 ## 2ae. SCALE SWEEP (`2026-09-19p`) — measured, with one fix and one UNFIXED data-loss window
 
 Ashley asked for a sweep for data bloat and scale problems. Two harnesses do the measuring, both in

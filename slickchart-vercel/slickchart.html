@@ -214,7 +214,7 @@ const S=document.getElementById('S');
 // resets when I save it" and there was no way to tell whether her phone had any of them — a whole
 // day was spent debugging code she may not have been running. Shown at the bottom of Settings, so
 // the answer is a screenshot away. Bump it on every ship.
-const APP_BUILD='2026-09-19q';
+const APP_BUILD='2026-09-19r';
 
 
 /* ════════════════════════════════════════════════════════════════
@@ -2287,11 +2287,26 @@ function _sameSyncValue(a,b){
 // is allowed only when every dropped id is on a delete list (the _TOMB_OBJ keys — sc_hidden_courses,
 // sc_hidden_forms, sc_deleted_clients, sc_deleted_appts and the rest). Deleting really does delete;
 // losing things does not.
+// The ids in a COLLECTION OF RECORDS — a list of courses, a map of clients. Deliberately narrow:
+// a settings blob like sc_brand_colors is an object too, and its keys are FIELDS, not records.
+// Clearing a setting legitimately removes a field, and an earlier version of this guard read that
+// as losing data and blocked the save. So: an array counts only when its entries carry ids, and an
+// object counts only when every value is itself a record.
 function _idsOf(str){
   try{
     const v=JSON.parse(str);
-    if(Array.isArray(v))return v.map(function(x){return x&&x.id;}).filter(Boolean);
-    if(v&&typeof v==='object')return Object.keys(v);
+    if(Array.isArray(v)){
+      if(!v.length)return [];
+      const withId=v.filter(function(x){return x&&typeof x==='object'&&x.id;});
+      if(withId.length!==v.length)return null;                 // not a clean record list
+      return withId.map(function(x){return String(x.id);});
+    }
+    if(v&&typeof v==='object'){
+      const ks=Object.keys(v);
+      if(!ks.length)return [];
+      if(!ks.every(function(k){const x=v[k];return x&&typeof x==='object'&&!Array.isArray(x);}))return null;
+      return ks;                                                // a record map, e.g. sc_clients
+    }
   }catch(e){}
   return null;                                  // not a collection — this guard does not apply
 }
@@ -2494,6 +2509,42 @@ function _mergeMsgStore(serverStr,localStr){
       if(arr.length>s.length)changed=true;
     });
     return {str:JSON.stringify(out),changed:changed};
+  }catch(e){return null;}
+}
+// A DECISION ON A BOOKING REQUEST IS STICKY.
+//
+// A provider reported that every time she cleared an appointment request it came back. sc_bookings
+// was synced but rode the PLAIN OVERWRITE with no merge and no delete record, so a device holding
+// an older copy could put the request back to `pending` — undoing a decline. Worse, the incoming
+// event ingest treats a request it cannot find as new (`if(_existBk)return;`), so once a stale copy
+// dropped a booking, the next sync RE-CREATED it as pending. That is the loop she described.
+//
+// Union by id — a real request is never lost — and once a request has been decided (confirmed,
+// declined or suggested) that decision wins over any copy that still says pending, whichever side
+// it came from. Two decisions are settled by the newer decidedAt. `seen` is sticky the same way
+// thread read-state is: cleared on any device means cleared everywhere.
+function _bookingDecided(b){return !!(b&&b.status&&b.status!=='pending');}
+function _mergeBookings(serverStr,localStr){
+  try{
+    if(localStr==null)return null;                    // fresh device: take the account copy as-is
+    const sv=JSON.parse(serverStr||'[]'),lv=JSON.parse(localStr||'[]');
+    if(!Array.isArray(sv)||!Array.isArray(lv))return null;
+    const out=[],idx={};
+    const take=function(b){
+      if(!b||!b.id)return;
+      if(!(b.id in idx)){idx[b.id]=out.length;out.push(Object.assign({},b));return;}
+      const cur=out[idx[b.id]];
+      const curD=_bookingDecided(cur),newD=_bookingDecided(b);
+      let win=cur;
+      if(newD&&!curD)win=b;                                          // a decision beats "pending"
+      else if(newD&&curD&&(Number(b.decidedAt)||0)>(Number(cur.decidedAt)||0))win=b;
+      const merged=Object.assign({},win);
+      merged.seen=!!(cur.seen||b.seen);                              // cleared anywhere = cleared
+      out[idx[b.id]]=merged;
+    };
+    lv.forEach(take);sv.forEach(take);
+    const str=JSON.stringify(out);
+    return {str:str,changed:str!==JSON.stringify(sv)};
   }catch(e){return null;}
 }
 // Merge sc_threads by id. Read state is STICKY: once a thread is read (unread=false) on any device it
@@ -2854,11 +2905,12 @@ const Cloud={
         return;
       }
     }
-    if(k==='sc_msgstore'||k==='sc_threads'||k==='sc_seen_events'||k==='sc_attn_seen'||k==='sc_import_batches'||k==='sc_courses'||k==='sc_resources'||k==='sc_forms'||k==='sc_manual_appts'){
+    if(k==='sc_msgstore'||k==='sc_threads'||k==='sc_seen_events'||k==='sc_attn_seen'||k==='sc_import_batches'||k==='sc_courses'||k==='sc_resources'||k==='sc_forms'||k==='sc_manual_appts'||k==='sc_bookings'){
       const mm=(k==='sc_msgstore')?_mergeMsgStore(data[k],_lsGet(k))
               :(k==='sc_courses')?_mergeCourses(data[k],_lsGet(k))
               :(k==='sc_resources')?_mergeResources(data[k],_lsGet(k))
               :(k==='sc_manual_appts')?_mergeAppts(data[k],_lsGet(k))
+              :(k==='sc_bookings')?_mergeBookings(data[k],_lsGet(k))
               :(k==='sc_forms')?_mergeForms(data[k],_lsGet(k))
               :(k==='sc_threads')?_mergeThreads(data[k],_lsGet(k))
               :(k==='sc_attn_seen')?_mergeAttnSeen(data[k],_lsGet(k))
