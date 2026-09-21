@@ -33,7 +33,6 @@ rates that weren't obvious up front; and fear of migration.
 
 ### High-intent — people comparing or shopping right now
 
-- [ ] Square Appointments and client charting: what it does, what it doesn't, and how to fill the gap
 - [ ] The real cost of esthetician software in 2026: add-ons, processing rates, and what's actually included
 - [ ] Do you need to leave your booking system to get proper client charting? (No — here's why)
 - [ ] Best software for a solo esthetician in 2026: an honest category breakdown
@@ -80,6 +79,7 @@ rates that weren't obvious up front; and fear of migration.
 
 ## Done
 
+- [x] Square Appointments and client charting — DRAFT 2026-09-21 as blog-src/square-appointments-client-charting.md
 - [x] Esthetician client charting — published 2026-09-10 as blog-src/esthetician-client-charting.md
 - [x] Choosing an esthetician app — published 2026-09-10 as blog-src/choosing-an-esthetician-app.md
 - [x] Solo esthetician rebooking — published 2026-09-10 as blog-src/solo-esthetician-rebooking.md

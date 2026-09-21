@@ -11,20 +11,23 @@ const {execFileSync}=require('child_process');
 const path=require('path');
 const here=__dirname, root=path.join(here,'..','..');
 const steps=['build-demo.cjs','build-client-page.cjs','build-switch.cjs','build-blog.cjs'];
+// Compare the tracked diff BEFORE and AFTER building, and report only what the BUILD changed.
+// Checking "is the tree dirty" afterwards would flag the author's own edits too — writing a blog
+// post and then running this would blame TOPICS.md, which the build never touched.
+const diffNames=()=>{
+  try{return execFileSync('git',['diff','--name-only'],{cwd:root,encoding:'utf8'}).split('\n').filter(Boolean);}
+  catch(e){console.error('check-generated: could not read git diff');process.exit(2);}
+};
+const before=new Set(diffNames());
 for(const s of steps){
   try{execFileSync(process.execPath,[path.join(here,s)],{cwd:path.join(here,'..'),stdio:'ignore'});}
   catch(e){console.error('check-generated: '+s+' failed to run');process.exit(2);}
 }
-// Tracked changes only, exactly as CI's `git diff --quiet` does. A new untracked file is the
-// author adding something, not a generated file drifting.
-let out='';
-try{out=execFileSync('git',['diff','--name-only'],{cwd:root,encoding:'utf8'});}catch(e){
-  console.error('check-generated: could not read git diff');process.exit(2);}
-const dirty=out.split('\n').filter(Boolean);
-if(dirty.length){
-  console.error('check-generated: generated files are STALE. Rebuilding changed these:\n');
-  dirty.forEach(l=>console.error('  '+l));
+const changed=diffNames().filter(f=>!before.has(f));
+if(changed.length){
+  console.error('check-generated: generated files were STALE. Building changed:\n');
+  changed.forEach(f=>console.error('  '+f));
   console.error('\nThey are rebuilt now — commit them with your change.');
   process.exit(1);
 }
-console.log('generated: in sync ('+steps.length+' build scripts, nothing changed)');
+console.log('generated: in sync ('+steps.length+' build scripts, nothing the build owns changed)');
