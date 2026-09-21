@@ -17,8 +17,6 @@ committed to anything, the later ones are for people mid-build.
 
 ## Queue
 
-- [ ] **How to describe your app so you get back what you meant.** The skill that replaces coding.
-      One screen at a time, say what should not change, ask for the plan before the code.
 - [ ] **What to build: the shape of an idea that works.** Careful framing — `/build` says it does not
       help you find an idea, so this is about *recognising* whether the one you have is the right
       size, not generating one. One job, one person, done weekly by hand.
@@ -51,3 +49,7 @@ committed to anything, the later ones are for people mid-build.
 - Comparisons to other build-an-app courses by name. Nothing to gain, and their pricing changes.
 - Tutorials that duplicate the roadmap step by step. The blog argues the *why*; the product is the
   ordered *how*. A post that hands over the sequence for free removes the reason to buy it.
+
+## Done
+
+- [x] **How to describe your app so you get back what you meant** — DRAFT 2026-09-21 as build-blog-src/describing-what-you-want-built.md
