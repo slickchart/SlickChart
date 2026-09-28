@@ -17,9 +17,6 @@ committed to anything, the later ones are for people mid-build.
 
 ## Queue
 
-- [ ] **What to build: the shape of an idea that works.** Careful framing — `/build` says it does not
-      help you find an idea, so this is about *recognising* whether the one you have is the right
-      size, not generating one. One job, one person, done weekly by hand.
 - [ ] **The first seven days.** What to actually do in week one, including the slow things to start
       immediately because they finish on their own.
 - [ ] **How to check an app when you cannot read code.** Use it like a person. Try to break it. What
@@ -52,4 +49,5 @@ committed to anything, the later ones are for people mid-build.
 
 ## Done
 
+- [x] **What to build: the shape of an idea that works** — DRAFT 2026-09-28 as build-blog-src/the-shape-of-an-idea-that-works.md
 - [x] **How to describe your app so you get back what you meant** — DRAFT 2026-09-21 as build-blog-src/describing-what-you-want-built.md
