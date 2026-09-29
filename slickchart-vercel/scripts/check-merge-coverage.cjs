@@ -49,7 +49,7 @@ const KNOWN=new Set(['sc_inventory','sc_vendors','sc_bundles','sc_protocols','sc
   'sc_autos','sc_summary_drafts',
   'sc_custom_note_templates','sc_needle_presets','sc_checkins','sc_routines',
   'sc_shop_bundles','sc_affiliate_links','sc_notif_settings','sc_amazon_assoc',
-  'sc_healing_stage','sc_note_fmt','sc_suggested_forms','sc_square_catalog','sc_payments',
+  'sc_note_fmt','sc_suggested_forms','sc_square_catalog','sc_payments',
   'sc_provider_note_drafts','sc_deleted_clients','sc_shop_catalog','sc_affiliate_custom','sc_partners',
   // Reviewed and correct as plain-overwrite — ONE record for the account, so last-write-wins is
   // the right behaviour and a merge would add risk without adding safety:
@@ -67,8 +67,8 @@ const KNOWN=new Set(['sc_inventory','sc_vendors','sc_bundles','sc_protocols','sc
   'sc_room_state_',          // per-room device state, not synced provider data
   // Reviewed and ACCUMULATING — these can lose data if a stale device pulls. Tracked as thread 16.
   // (sc_manual_appts was the sharpest of them and now MERGES — _mergeAppts + sc_deleted_appts.)
-  'sc_note_drafts','sc_photo_index','sc_pro_vc_invites','sc_sent_routines',
-  'sc_summary_guides','sc_imported_products','sc_deleted_sq']);
+  'sc_pro_vc_invites','sc_sent_routines',
+  'sc_imported_products','sc_deleted_sq']);
 
 const unreviewed=[...accum].filter(k=>!merged.has(k)&&!KNOWN.has(k)
   &&!skipPrefixes.some(p=>k.indexOf(p)===0)).sort();
@@ -82,3 +82,10 @@ if(unreviewed.length){
   process.exit(1);
 }
 console.log('merge-coverage: clean ('+merged.size+' keys merge on pull; '+stillOpen.length+' known unmerged, tracked as thread 16)');
+// --list prints the ones still riding the plain overwrite. They are the shortlist for the next
+// pass; a provider already lost client records to this class of bug, so keep the list visible
+// rather than buried in a Set literal.
+if(process.argv.indexOf('--list')>=0&&stillOpen.length){
+  console.log('\nstill plain-overwrite:');
+  stillOpen.forEach(k=>console.log('  '+k));
+}

@@ -2364,3 +2364,36 @@ it is gone and we should say so plainly.
 
 **Still unknown, worth asking her:** which device(s) she uses, and whether "about an hour" is
 wall-clock since entry or since she reopened the app. The fix does not depend on the answer.
+
+### Follow-on, same day: four more per-client maps (build 2026-09-29b)
+
+Same shape, same delete record, same mechanism — so they went in behind the first fix rather than
+waiting for someone else to lose data to them:
+
+- `sc_photo_index`  `{clientId: [photo…]}`. DERIVED from `capturedPhotos`, and merging is still
+  right: this is how a device learns which photos the ACCOUNT holds for a client, including ones
+  taken on the other device that this one has never downloaded. Diana's first message said
+  "updating my clients' photos and notes", so this one is arguably part of her report too.
+- `sc_note_drafts`  `{clientId: {date,sections,templateId}}` — unfinished visit notes.
+- `sc_healing_stage`  `{clientId: <index>}` — a scalar per client, so `_idsOf` still will not treat
+  it as a record collection (correct: an object of scalars is a settings blob). The union on pull is
+  the protection here, not the shrink guard.
+- `sc_summary_guides`  `{clientId: [{kind,id}]}`.
+
+All four already `delete <map>[id]` on client delete and fold on client merge, so
+`sc_deleted_clients` / `sc_merged_ids` is the right delete record and no new tombstone was needed.
+
+Verified headlessly: photos keep both clients when the device only downloaded one; a client only the
+device has is kept AND pushed back; the shrink guard refuses a photo index that lost a client, but
+still allows the upload when that client was genuinely deleted. The earlier regression checks
+(clearing a brand colour still uploads, a real delete still uploads) all still pass, and
+`sweep-crossdevice.mjs` is clean.
+
+merge-coverage: 52 -> 56 merged, 39 -> 35 still plain-overwrite.
+
+`check-merge-coverage.cjs --list` now prints the remaining ones. The next pass is the authored
+LIBRARIES (`sc_docs`, `sc_protocols`, `sc_custom_note_templates`, `sc_needle_presets`, `sc_autos`,
+`sc_inventory`, `sc_vendors`, `sc_shop_bundles`, `sc_partners`, `sc_payments`, `sc_checkins`). Those
+are arrays of authored records and each one needs a DELETE RECORD before it can union, or the merge
+resurrects everything the provider deleted — that is the real work, and it is why they were not done
+here. The rest of the open list is genuinely one-record-per-account settings and is correct as is.
