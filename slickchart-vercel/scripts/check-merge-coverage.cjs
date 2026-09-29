@@ -22,7 +22,7 @@ const skip=new RegExp("const _SYNC_SKIP=\\{([^}]*)\\}").exec(s);
 if(skip)[...skip[1].matchAll(/(sc_[a-z0-9_]+)\s*:/g)].forEach(x=>merged.add(x[1]));
 const pre=/const _SYNC_SKIP_PREFIX=\[([^\]]*)\]/.exec(s);
 const skipPrefixes=pre?[...pre[1].matchAll(/['"]([^'"]+)['"]/g)].map(x=>x[1]):[];
-['_TOMB_OBJ','_TOMB_ARR','_STICKY_TRUE','_CLIENT_MAP_KEYS'].forEach(n=>{
+['_TOMB_OBJ','_TOMB_ARR','_STICKY_TRUE','_CLIENT_MAP_KEYS','_LIB_TOMB'].forEach(n=>{
   const m=new RegExp('const '+n+'=\\{([^}]*)\\}').exec(s);
   if(m)[...m[1].matchAll(/(sc_[a-z0-9_]+)\s*:/g)].forEach(x=>merged.add(x[1]));
 });
@@ -45,12 +45,12 @@ s.split('\n').forEach(function(line){
 // sc_workspace blob came OFF this list on 2026-09-29: they are per-client maps and now merge by
 // client (_mergeClientMap / _mergeWorkspace, registered in _CLIENT_MAP_KEYS). A second provider lost
 // several clients' notes, summaries and product plans to exactly this gap.
-const KNOWN=new Set(['sc_inventory','sc_vendors','sc_bundles','sc_protocols','sc_docs',
-  'sc_autos','sc_summary_drafts',
-  'sc_custom_note_templates','sc_needle_presets','sc_checkins','sc_routines',
-  'sc_shop_bundles','sc_affiliate_links','sc_notif_settings','sc_amazon_assoc',
-  'sc_note_fmt','sc_suggested_forms','sc_square_catalog','sc_payments',
-  'sc_provider_note_drafts','sc_deleted_clients','sc_shop_catalog','sc_affiliate_custom','sc_partners',
+const KNOWN=new Set([
+  'sc_summary_drafts',
+  'sc_routines',
+  'sc_affiliate_links','sc_notif_settings','sc_amazon_assoc',
+  'sc_note_fmt','sc_suggested_forms','sc_square_catalog',
+  'sc_provider_note_drafts','sc_deleted_clients','sc_shop_catalog','sc_affiliate_custom',
   // Reviewed and correct as plain-overwrite — ONE record for the account, so last-write-wins is
   // the right behaviour and a merge would add risk without adding safety:
   'sc_captured_photos',      // the crash-safety copy that lives OUTSIDE IndexedDB (CLAUDE.md §3)

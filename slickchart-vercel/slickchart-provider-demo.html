@@ -468,7 +468,7 @@ const S=document.getElementById('S');
 // resets when I save it" and there was no way to tell whether her phone had any of them — a whole
 // day was spent debugging code she may not have been running. Shown at the bottom of Settings, so
 // the answer is a screenshot away. Bump it on every ship.
-const APP_BUILD='2026-09-29b';
+const APP_BUILD='2026-09-29c';
 
 
 /* ════════════════════════════════════════════════════════════════
@@ -1941,10 +1941,13 @@ function _purgeSample(){
       if(kept.length!==bk.length)SlickBridge.setBookings(kept);
     }
   }catch(e){}
-  try{docs=docs.filter(d=>_SAMPLE_DOC_IDS.indexOf(d.id)<0);}catch(e){}
+  try{docs.forEach(function(d){if(d&&_SAMPLE_DOC_IDS.indexOf(d.id)>=0)_libForget('sc_docs',d);});
+     docs=docs.filter(d=>_SAMPLE_DOC_IDS.indexOf(d.id)<0);}catch(e){}
   try{if(typeof notifFeed!=='undefined')notifFeed=notifFeed.filter(n=>_SAMPLE_NOTIF_IDS.indexOf(n.id)<0);}catch(e){}
-  try{if(typeof checkins!=='undefined')checkins=checkins.filter(c=>_SAMPLE_CHECKIN_IDS.indexOf(c.id)<0);}catch(e){}
-  try{if(typeof _payments!=='undefined'){const before=_payments.length;_payments=_payments.filter(p=>_SAMPLE_IDS.indexOf(p.clientId)<0);if(_payments.length!==before&&typeof _savePayments==='function')_savePayments();}}catch(e){}
+  try{if(typeof checkins!=='undefined'){
+     checkins.forEach(function(c){if(c&&_SAMPLE_CHECKIN_IDS.indexOf(c.id)>=0&&typeof _markCheckinClearedLog==='function')_markCheckinClearedLog(c.id);});
+     checkins=checkins.filter(c=>_SAMPLE_CHECKIN_IDS.indexOf(c.id)<0);}}catch(e){}
+  try{if(typeof _payments!=='undefined'){const before=_payments.length;_payments.forEach(function(p){if(p&&_SAMPLE_IDS.indexOf(p.clientId)>=0)_libForget('sc_payments',p);});_payments=_payments.filter(p=>_SAMPLE_IDS.indexOf(p.clientId)<0);if(_payments.length!==before&&typeof _savePayments==='function')_savePayments();}}catch(e){}
   try{
     if(typeof threads!=='undefined'&&typeof msgStore!=='undefined'){
       let changed=false;
@@ -1977,10 +1980,10 @@ function _purgeSample(){
   // Strip the seeded demo inventory / vendors / partners / automations (tagged _sample) so a real
   // provider who removes the demo isn't left with fake stock, rep contacts, referral businesses, or
   // "active" automations they never created. Their own added items (no _sample) are kept.
-  try{ if(typeof inv!=='undefined'){ inv=inv.filter(x=>!(x&&x._sample)); if(typeof saveInv==='function')saveInv(); } }catch(e){}
-  try{ if(typeof vendors!=='undefined'){ for(let i=vendors.length-1;i>=0;i--){ if(vendors[i]&&vendors[i]._sample)vendors.splice(i,1); } if(typeof saveVendors==='function')saveVendors(); } }catch(e){}
-  try{ if(typeof partners!=='undefined'){ partners=partners.filter(x=>!(x&&x._sample)); if(typeof persistPartners==='function')persistPartners(); } }catch(e){}
-  try{ if(typeof autos!=='undefined'){ autos=autos.filter(x=>!(x&&x._sample)); if(typeof persistAutos==='function')persistAutos(); } }catch(e){}
+  try{ if(typeof inv!=='undefined'){ inv.forEach(function(x){if(x&&x._sample)_libForget('sc_inventory',x);}); inv=inv.filter(x=>!(x&&x._sample)); if(typeof saveInv==='function')saveInv(); } }catch(e){}
+  try{ if(typeof vendors!=='undefined'){ for(let i=vendors.length-1;i>=0;i--){ if(vendors[i]&&vendors[i]._sample){_libForget('sc_vendors',vendors[i]);vendors.splice(i,1);} } if(typeof saveVendors==='function')saveVendors(); } }catch(e){}
+  try{ if(typeof partners!=='undefined'){ partners.forEach(function(x){if(x&&x._sample)_libForget('sc_partners',x);}); partners=partners.filter(x=>!(x&&x._sample)); if(typeof persistPartners==='function')persistPartners(); } }catch(e){}
+  try{ if(typeof autos!=='undefined'){ autos.forEach(function(x){if(x&&x._sample)_libForget('sc_autos',x);}); autos=autos.filter(x=>!(x&&x._sample)); if(typeof persistAutos==='function')persistAutos(); } }catch(e){}
 }
 function _todayLabel(){try{return new Date().toLocaleDateString('en-US',{weekday:'long',month:'long',day:'numeric'});}catch(e){return '';}}
 function _clearSampleData(){
@@ -2641,7 +2644,10 @@ function _usableSyncValue(str){ const sh=_syncShape(str); return sh!=='missing'&
 // sc_hidden_guides / sc_hidden_forms are {id:1} maps of what the provider deleted. They were pushed
 // immediately but NOT registered here, so the map itself rode the plain overwrite: a stale device's
 // copy could drop ids and resurrect a deleted guide. Same class of bug as sc_courses.
-const _TOMB_OBJ={sc_deleted_appts:1,sc_deleted_clients:1,sc_hidden_square:1,sc_merged_ids:1,sc_merged_into:1,sc_ci_dismissed:1,sc_course_purchases:1,sc_hidden_courses:1,sc_hidden_guides:1,sc_hidden_forms:1};
+const _TOMB_OBJ={sc_deleted_docs:1,sc_deleted_protocols:1,sc_deleted_note_tmpls:1,sc_deleted_needle_presets:1,
+  sc_deleted_autos:1,sc_deleted_inv:1,sc_deleted_vendors:1,sc_deleted_shop_bundles:1,sc_deleted_bundles:1,
+  sc_deleted_partners:1,sc_deleted_payments:1,
+  sc_deleted_appts:1,sc_deleted_clients:1,sc_hidden_square:1,sc_merged_ids:1,sc_merged_into:1,sc_ci_dismissed:1,sc_course_purchases:1,sc_hidden_courses:1,sc_hidden_guides:1,sc_hidden_forms:1};
 const _TOMB_ARR={sc_flag_dismissed:1,sc_form_flag_dismissed:1,sc_ci_cleared:1,sc_ci_read:1,sc_home_dismissed:1,sc_notif_cleared:1,sc_notif_read:1};
 // One-way latches: once the provider has done the thing, it is done forever. These are plain '1'
 // strings, so they can't live in the tombstone tables — but they have the same failure mode. A device
@@ -2652,6 +2658,67 @@ const _TOMB_ARR={sc_flag_dismissed:1,sc_form_flag_dismissed:1,sc_ci_cleared:1,sc
 const _STICKY_TRUE={sc_hide_sample:1,sc_courses_custom:1,sc_affiliate_custom:1,sc_protocols_custom:1,sc_service_menu_custom:1,sc_photorelease_migrated:1,sc_orphan_dismissed:1};
 function _isStickyTrueKey(k){return !!_STICKY_TRUE[k];}
 function _isTombstoneKey(k){return !!(_TOMB_OBJ[k]||_TOMB_ARR[k]);}
+// ── Authored libraries ────────────────────────────────────────────────────────
+// Arrays of records the provider made herself. Each one plain-overwrote, so a device holding a
+// partial copy could wipe the account's. They could not simply union, because a union with no
+// delete record resurrects everything she ever deleted — so each gets a delete record here, and
+// every delete site calls _libForget.
+//
+// sc_checkins reuses sc_ci_cleared, which already existed, is already pushed immediately, and is
+// already UNmarked by Undo. Nothing new was needed for it.
+// sc_custom_note_templates, sc_needle_presets and sc_shop_bundles have no delete UI at all today;
+// they still get a key so that when one is added it has somewhere to record it.
+const _LIB_TOMB={
+  sc_docs:'sc_deleted_docs',
+  sc_protocols:'sc_deleted_protocols',
+  sc_custom_note_templates:'sc_deleted_note_tmpls',
+  sc_needle_presets:'sc_deleted_needle_presets',
+  sc_autos:'sc_deleted_autos',
+  sc_inventory:'sc_deleted_inv',
+  sc_vendors:'sc_deleted_vendors',
+  sc_shop_bundles:'sc_deleted_shop_bundles',
+  sc_bundles:'sc_deleted_bundles',
+  sc_partners:'sc_deleted_partners',
+  sc_payments:'sc_deleted_payments',
+  sc_checkins:'sc_ci_cleared'
+};
+// Vendors, inventory rows and partners are stored WITHOUT ids. A generated id would differ on every
+// device and the union would duplicate them, so their identity is derived from what the provider
+// actually typed. Both devices compute the same key for the same row.
+const _LIB_NATURAL={
+  sc_vendors:function(v){return 'n:'+String((v&&v.name)||'').trim().toLowerCase();},
+  sc_partners:function(v){return 'n:'+String((v&&v.name)||'').trim().toLowerCase();},
+  sc_inventory:function(v){return 'n:'+String((v&&v.name)||'').trim().toLowerCase()+'|'+String((v&&v.sku)||'');}
+};
+function _libKeyFn(libKey){
+  const nat=_LIB_NATURAL[libKey];
+  return function(x){
+    if(!x||typeof x!=='object')return '';
+    if(x.id)return String(x.id);
+    if(!nat)return '';
+    const k=nat(x);
+    return (k==='n:'||k==='n:|')?'':k;            // nothing typed yet — no identity to key on
+  };
+}
+// Record that this record was deleted on purpose, so the merge never brings it back.
+function _libForget(libKey,item){
+  try{
+    const tk=_LIB_TOMB[libKey];
+    if(!tk||tk==='sc_ci_cleared')return;          // check-ins keep their own log, which Undo unmarks
+    const k=(item&&typeof item==='object')?_libKeyFn(libKey)(item):String(item||'');
+    if(!k)return;
+    let o={};
+    try{
+      const raw=(typeof _lsGet==='function')?_lsGet(tk):localStorage.getItem(tk);
+      const p=JSON.parse(raw||'null');
+      if(p&&typeof p==='object'&&!Array.isArray(p))o=p;
+    }catch(e){}
+    o[k]=Date.now();
+    const v=JSON.stringify(o);
+    localStorage.setItem(tk,v);
+    if(typeof _pushKeyNow==='function')_pushKeyNow(tk,v);   // push NOW — a delete must not ride the debounce
+  }catch(e){}
+}
 // Keys that are a map of { clientId: that client's stuff }. They merge by client on pull, so one
 // device's not-yet-loaded copy can never erase another's work. See _mergeClientMap.
 // sc_photo_index is DERIVED from capturedPhotos, and merging it is still right: it is how a device
@@ -2873,30 +2940,50 @@ function _mergeThreads(serverStr,localStr){
 // without timestamps the server copy wins, which is the old behaviour — the bug being fixed here is
 // losing a whole course, not which edit of one wins.
 // Shared by courses and custom guides: union by id, drop anything tombstoned, prefer the newer _ts.
-function _mergeAuthoredById(serverStr,localStr,hiddenKey){
+// A delete record, whatever shape it is stored in. Object maps ({id:ts}) and plain arrays of ids
+// (sc_ci_cleared) both occur, and reading an array as a map made every lookup miss — which would
+// let a merge resurrect everything the provider had cleared.
+function _tombSet(keys){
+  const out={};
+  [].concat(keys||[]).forEach(function(tk){
+    try{
+      const raw=(typeof _lsGet==='function')?_lsGet(tk):localStorage.getItem(tk);
+      const v=JSON.parse(raw||'null');
+      if(Array.isArray(v))v.forEach(function(x){if(x!=null)out[String(x)]=1;});
+      else if(v&&typeof v==='object')Object.keys(v).forEach(function(x){out[x]=1;});
+    }catch(e){}
+  });
+  return out;
+}
+function _mergeAuthoredById(serverStr,localStr,hiddenKey,opts){
   let srv,loc;
   try{srv=JSON.parse(serverStr||'[]');}catch(e){return null;}
   try{loc=JSON.parse(localStr||'[]');}catch(e){loc=[];}
   if(!Array.isArray(srv))return null;
   if(!Array.isArray(loc))loc=[];
-  let hidden={};
-  try{const h=localStorage.getItem(hiddenKey);if(h){const o=JSON.parse(h);if(o&&typeof o==='object')hidden=o;}}catch(e){}
+  const keyOf=(opts&&opts.keyFn)||function(c){return (c&&c.id)?String(c.id):'';};
+  // Vendors, inventory rows and partners are stored WITHOUT ids. Dropping them for want of one
+  // would be the very loss this merge exists to prevent, so an unkeyed record is kept as it is.
+  const keepUnkeyed=!!(opts&&opts.keepUnkeyed);
+  const hidden=_tombSet(hiddenKey);
   const out=[],idx={};
   const take=function(c,fromLocal){
-    if(!c||!c.id)return;
-    if(hidden[c.id])return;                       // deleted on purpose — never bring it back
-    if(!(c.id in idx)){idx[c.id]=out.length;out.push(c);return;}
-    const cur=out[idx[c.id]];
+    if(!c)return;
+    const cid=keyOf(c);
+    if(!cid){if(keepUnkeyed)out.push(c);return;}
+    if(hidden[cid])return;                        // deleted on purpose — never bring it back
+    if(!(cid in idx)){idx[cid]=out.length;out.push(c);return;}
+    const cur=out[idx[cid]];
     const a=Number(cur&&cur._ts)||0,b=Number(c&&c._ts)||0;
-    // Published means finished. When two copies of the same course are equally old — or carry no
-    // timestamps at all — the one that is Published is the one she stands behind, so it is never
-    // quietly swapped for a Draft of the same thing. A genuinely NEWER edit still wins: that is her
-    // own work from another device, not an automatic process reaching into a published course.
+    // Published means finished. When two copies are equally old — or carry no timestamps at all —
+    // the one that is Published is the one she stands behind, so it is never quietly swapped for a
+    // Draft of the same thing. A genuinely NEWER edit still wins: that is her own work from another
+    // device, not an automatic process reaching into a published item.
     const pubCur=String((cur&&cur.status)||'')==='Published',pubNew=String((c&&c.status)||'')==='Published';
-    if(b>a)out[idx[c.id]]=c;                      // newer edit wins
-    else if(b===a&&pubNew&&!pubCur)out[idx[c.id]]=c;
+    if(b>a)out[idx[cid]]=c;                       // newer edit wins
+    else if(b===a&&pubNew&&!pubCur)out[idx[cid]]=c;
     else if(b===a&&pubCur&&!pubNew){/* keep the published one */}
-    else if(!a&&!b&&!fromLocal)out[idx[c.id]]=c;  // no timestamps either side: server copy, as before
+    else if(!a&&!b&&!fromLocal)out[idx[cid]]=c;   // no timestamps either side: server copy, as before
   };
   srv.forEach(c=>take(c,false));
   loc.forEach(c=>take(c,true));
@@ -2904,7 +2991,12 @@ function _mergeAuthoredById(serverStr,localStr,hiddenKey){
   // changed = this device is contributing something the server did not have, so the superset is
   // worth pushing back. Compare against the server's own filtered view so a blob that only differs
   // by key order does not ping-pong between devices forever.
-  const srvFiltered=JSON.stringify(srv.filter(c=>c&&c.id&&!hidden[c.id]));
+  const srvFiltered=JSON.stringify(srv.filter(function(c){
+    if(!c)return false;
+    const k=keyOf(c);
+    if(!k)return keepUnkeyed;
+    return !hidden[k];
+  }));
   return {str:str,changed:str!==srvFiltered};
 }
 // sc_forms is one object holding four things: tmpls (the questions per form), guides (which guides
@@ -3318,6 +3410,14 @@ const Cloud={
       if(mw&&mw.str!=null){
         set(k,mw.str);
         if(mw.changed){try{this.push(k,mw.str);}catch(e){}}
+        return;
+      }
+    }
+    if(_LIB_TOMB[k]){
+      const ml=_mergeAuthoredById(data[k],_lsGet(k),_LIB_TOMB[k],{keyFn:_libKeyFn(k),keepUnkeyed:true});
+      if(ml&&ml.str!=null){
+        set(k,ml.str);
+        if(ml.changed){try{this.push(k,ml.str);}catch(e){}}
         return;
       }
     }
@@ -14451,7 +14551,7 @@ function _toggleBundleItem(bid,field,itemId){
 }
 function _deleteBundle(bid){
   confirmModal({title:'Delete this bundle?',body:'This only removes the bundle, not any forms or guides already sent.',action:'Delete'},()=>{
-    bundles=bundles.filter(x=>x.id!==bid);saveBundles();nav('bundles');
+    _libForget('sc_bundles',bid);bundles=bundles.filter(x=>x.id!==bid);saveBundles();nav('bundles');
   });
 }
 // Pick which client to send a bundle to.
@@ -17744,7 +17844,7 @@ function renderDocDetail(id){
     </div>
     <div style="font-size:14px;font-weight:500;color:var(--p-mut);text-transform:uppercase;letter-spacing:.07em;margin-bottom:8px;">Renewal reminders</div>
     <div style="background:var(--surf2);border:1px solid var(--p-line);border-radius:12px;margin-bottom:14px;">${(()=>{const rem=d.reminders||{d90:true,d30:true,d0:false};return [['90 days before','d90'],['30 days before','d30'],['On expiry day','d0']].map(([l,k])=>`<div style="display:flex;justify-content:space-between;align-items:center;padding:8px 14px;border-bottom:1px solid var(--p-line2);"><span style="font-size:16px;color:var(--p-ink);">${l}</span>${togBtn(rem[k]!==false,"toggleDocReminder('"+d.id+"','"+k+"')",'Reminder '+l)}</div>`).join('');})()}</div>
-    <div style="display:flex;gap:8px;margin-bottom:20px;"><button class="btng" style="flex:1;" onclick="nav('edit-doc','${d.id}')"><i class="ti ti-pencil"></i> Edit</button><button onclick="confirmModal({title:'Delete document',body:'This will permanently remove this document from your vault. This can\'t be undone.',action:'Delete'},'()=>{docs=docs.filter(x=>x.id!==\'${d.id}\');saveDocs();nav(\'vault\')}')" style="flex:1;background:var(--p-red-bg);border:1px solid var(--p-red-line);border-radius:12px;padding:9px;font-size:16px;color:var(--p-red);cursor:pointer;"><i class="ti ti-trash"></i> Delete</button></div>
+    <div style="display:flex;gap:8px;margin-bottom:20px;"><button class="btng" style="flex:1;" onclick="nav('edit-doc','${d.id}')"><i class="ti ti-pencil"></i> Edit</button><button onclick="confirmModal({title:'Delete document',body:'This will permanently remove this document from your vault. This can\'t be undone.',action:'Delete'},'()=>{_libForget(\'sc_docs\',\'${d.id}\');docs=docs.filter(x=>x.id!==\'${d.id}\');saveDocs();nav(\'vault\')}')" style="flex:1;background:var(--p-red-bg);border:1px solid var(--p-red-line);border-radius:12px;padding:9px;font-size:16px;color:var(--p-red);cursor:pointer;"><i class="ti ti-trash"></i> Delete</button></div>
   </div>`;
 }
 function renderEditDoc(id){
@@ -17912,7 +18012,7 @@ function deleteInventoryItem(i){
   // Capture the item object, not the index, if the array changes between opening
   // this dialog and confirming, indexOf re-resolves to the right item (or -1 if it's
   // already gone), instead of a frozen index silently deleting the wrong row.
-  confirmModal({title:'Remove item',body:'Remove "'+(item.name||'this item')+'" from your inventory?',action:'Delete'},function(){const ix=inv.indexOf(item);if(ix>=0){inv.splice(ix,1);saveInv();}nav('inventory');});
+  confirmModal({title:'Remove item',body:'Remove "'+(item.name||'this item')+'" from your inventory?',action:'Delete'},function(){const ix=inv.indexOf(item);if(ix>=0){_libForget('sc_inventory',item);inv.splice(ix,1);saveInv();}nav('inventory');});
 }
 function renderAddInventoryItem(i){
   setNav('pro');
@@ -20415,7 +20515,7 @@ function _composeBroadcast(){ _openSendSheet({title:'Send to clients',message:''
 function _deleteAutomation(i,after){
   const a=autos[i];if(!a)return;
   confirmModal({title:'Delete automation',body:'Delete \''+((a.name||'this automation'))+'\'? It will stop sending immediately.',action:'Delete'},function(){
-    const ix=autos.indexOf(a);if(ix>=0)autos.splice(ix,1);
+    const ix=autos.indexOf(a);if(ix>=0){_libForget('sc_autos',a);autos.splice(ix,1);}
     try{persistAutos();}catch(e){}  // was missing, deleted automation reappeared on reload
     if(after==='messages')nav('messages');else showMsgTab('autos');
   });
@@ -23101,7 +23201,7 @@ async function _biSend(){
     const d=await _sqFetch('/api/square/invoice',{method:'POST',body});
     delete _coIdemKeys[_isig]; // sent, a later identical invoice should be a new, intentional one
     const _rec=_addPayment({clientId:cid,clientName:c.name,amount:(d.total!=null?d.total:_coTotal())||0,taxAmount:(d.tax||0),method:'Square',status:'unpaid',date:_todayISO(),note:'Invoice \u00b7 '+items.length+' items',source:'square',squareInvoiceId:d.invoiceId,publicUrl:d.url,items:items.map(it=>({name:it.name,price:it.price,qty:it.qty||1,variationId:it.variationId||null,kind:it.kind||'service',note:it.note||'',taxable:(it.taxable!==false)}))});
-    if(_biEditId){const _i=_payments.findIndex(x=>x.id===_biEditId);if(_i>=0&&_payments[_i].id!==_rec.id)_payments.splice(_i,1);_biEditId='';_savePayments();}
+    if(_biEditId){const _i=_payments.findIndex(x=>x.id===_biEditId);if(_i>=0&&_payments[_i].id!==_rec.id){_libForget('sc_payments',_payments[_i]);_payments.splice(_i,1);}_biEditId='';_savePayments();}
     if(typeof proToast==='function')proToast('Invoice sent \u2713');
     nav('payments');
   }catch(e){_coErr(e.message||'Could not send the invoice.',_coRecon(e));}finally{_coActionLock=false;}
@@ -23113,7 +23213,7 @@ function _biSaveUnpaid(){
   if(!items.length)return _coErr(_coItems.length?'Set a price on each line item first.':'Add at least one line item.');
   const note=items.map(it=>((it.qty||1)>1?(it.qty+'\u00d7 '):'')+it.name).join(', ')+(_coTip?' \u00b7 tip requested':'');
   const _wasEdit=!!_biEditId;   // capture before we clear it, so the toast reads correctly
-  if(_biEditId){const _i=_payments.findIndex(x=>x.id===_biEditId);if(_i>=0)_payments.splice(_i,1);_biEditId='';}
+  if(_biEditId){const _i=_payments.findIndex(x=>x.id===_biEditId);if(_i>=0){_libForget('sc_payments',_payments[_i]);_payments.splice(_i,1);}_biEditId='';}
   _addPayment({clientId:cid,clientName:c.name,amount:_coTotal(),method:'Invoice',status:'unpaid',date:_todayISO(),note:note,source:'manual',taxRate:_taxRate,taxAmount:_coTaxAmt(),items:items.map(it=>({name:it.name,price:it.price,qty:it.qty||1,variationId:it.variationId||null,kind:it.kind||'service',note:it.note||'',taxable:(it.taxable!==false)}))});
   if(typeof proToast==='function')proToast(_wasEdit?'Invoice updated':'Invoice saved as unpaid');
   nav('payments');
@@ -23170,7 +23270,7 @@ function renderPayments(){
   try{_paySyncSquare(true);}catch(e){}
 }
 function _payMarkPaid(idv){const p=_payments.find(x=>x.id===idv);if(p&&p.status!=='refunded'&&p.status!=='canceled'){p.status='paid';if(!p.paidDate)p.paidDate=(typeof _todayISO==='function'?_todayISO():'');const _ok=_savePayments();if(_ok===false&&typeof proToast==='function')proToast('Couldn’t save that — your device storage may be full. The change may not stick on reload.',0);}if(typeof _navCur!=='undefined'&&_navCur&&_navCur.screen==='payments')renderPayments();}
-function _payDeleteDo(idv){const i=_payments.findIndex(x=>x.id===idv);if(i>=0){if(_payments[i]&&_payments[i].squareInvoiceId)_markSquareDeleted(_payments[i].squareInvoiceId);_payments.splice(i,1);_savePayments();if(typeof proToast==='function')proToast('Payment removed');}const _m=document.getElementById('pay-detail');if(_m)_m.remove();if(typeof _navCur!=='undefined'&&_navCur&&_navCur.screen==='payments')renderPayments();}
+function _payDeleteDo(idv){const i=_payments.findIndex(x=>x.id===idv);if(i>=0){if(_payments[i]&&_payments[i].squareInvoiceId)_markSquareDeleted(_payments[i].squareInvoiceId);_libForget('sc_payments',_payments[i]);_payments.splice(i,1);_savePayments();if(typeof proToast==='function')proToast('Payment removed');}const _m=document.getElementById('pay-detail');if(_m)_m.remove();if(typeof _navCur!=='undefined'&&_navCur&&_navCur.screen==='payments')renderPayments();}
 function _payDelete(idv){if(typeof confirmModal==='function'){confirmModal({title:'Remove this payment?',body:'This removes the payment record. It can’t be undone.',action:'Remove'},function(){_payDeleteDo(idv);});}else{_payDeleteDo(idv);}}
 function _payOpen(idv){
   const p=_payments.find(x=>x.id===idv); if(!p)return;
@@ -23248,7 +23348,7 @@ async function _biTextLink(){
     const d=await _sqFetch('/api/square/payment-link',{method:'POST',body:{amount:amt,name:name||'Service',email:c.email||'',phone:c.phone||''}});
     if(!d.url)throw new Error('No link was returned.');
     const _rec=_addPayment({clientId:cid,clientName:c.name,amount:amt,taxAmount:_coTaxAmt(),method:'Square',status:'unpaid',date:_todayISO(),note:'Payment link \u00b7 '+(name||'Service'),source:'square',publicUrl:d.url,items:items.map(it=>({name:it.name,price:it.price,qty:it.qty||1,variationId:it.variationId||null,kind:it.kind||'service',note:it.note||'',taxable:(it.taxable!==false)}))});
-    if(_biEditId){const _i=_payments.findIndex(x=>x.id===_biEditId);if(_i>=0&&_payments[_i].id!==_rec.id)_payments.splice(_i,1);_biEditId='';_savePayments();}
+    if(_biEditId){const _i=_payments.findIndex(x=>x.id===_biEditId);if(_i>=0&&_payments[_i].id!==_rec.id){_libForget('sc_payments',_payments[_i]);_payments.splice(_i,1);}_biEditId='';_savePayments();}
     const first=String(c.name||'there').split(' ')[0];
     const msg='Hi '+first+'! Here\u2019s your payment link for $'+amt.toFixed(2)+': '+d.url;
     location.href='sms:'+(c.phone?encodeURIComponent(c.phone):'')+'?&body='+encodeURIComponent(msg);
@@ -24195,7 +24295,7 @@ function saveProtocol(){
     proToast('Protocol saved \u2713');nav('protocol-detail',id);
   }
 }
-function deleteProtocol(id){const pr=protocols.find(x=>x.id===id);if(!pr)return;confirmModal({title:'Delete protocol',body:'Delete "'+(pr.name||'this protocol')+'"? This cannot be undone.',action:'Delete'},"()=>{const ix=protocols.findIndex(x=>x.id==='"+id+"');if(ix>=0){protocols.splice(ix,1);_markProtocolsCustom();persistProtocols();}nav('protocols')}");}
+function deleteProtocol(id){const pr=protocols.find(x=>x.id===id);if(!pr)return;confirmModal({title:'Delete protocol',body:'Delete "'+(pr.name||'this protocol')+'"? This cannot be undone.',action:'Delete'},"()=>{const ix=protocols.findIndex(x=>x.id==='"+id+"');if(ix>=0){_libForget('sc_protocols',protocols[ix]);protocols.splice(ix,1);_markProtocolsCustom();persistProtocols();}nav('protocols')}");}
 
 // ── MORE ──
 // ── Help center ──
@@ -27472,7 +27572,7 @@ function saveEditPartner(i){
 }
 function persistPartners(){try{(function(_v){localStorage.setItem('sc_partners',_v);if(typeof _pushKeyNow==='function')_pushKeyNow('sc_partners',_v);return _v;})(JSON.stringify(partners));}catch(e){}}
 function loadPartners(){try{const raw=localStorage.getItem('sc_partners');if(raw){const arr=JSON.parse(raw);if(Array.isArray(arr))partners=arr;}}catch(e){}}
-function removePartner(i){const _go=function(){partners.splice(i,1);persistPartners();if(typeof proToast==='function')proToast('Partner removed');nav('partners');};if(typeof confirmModal==='function')confirmModal({title:'Remove partner?',body:'This removes this partner from your network.',action:'Remove'},_go);else _go();}
+function removePartner(i){const _go=function(){_libForget('sc_partners',partners[i]);partners.splice(i,1);persistPartners();if(typeof proToast==='function')proToast('Partner removed');nav('partners');};if(typeof confirmModal==='function')confirmModal({title:'Remove partner?',body:'This removes this partner from your network.',action:'Remove'},_go);else _go();}
 
 // ── ADD/EDIT AUTOMATION ──
 const triggerOptions=['24 hours after appointment','48 hours after Chemical Peel','72 hours after Microneedling','1 week after appointment','2 weeks after appointment',"On client's birthday","Client hasn't visited in 60 days","Client hasn't visited in 90 days",'Before appointment (24h reminder)','New intake form received'];
@@ -28724,7 +28824,7 @@ function saveVendor(editIdx){
     nav('vendors');
   }
 }
-function deleteVendor(i){const v=vendors[i];if(!v)return;confirmModal({title:'Delete vendor',body:'Remove '+(v.name||'this vendor')+' from your directory? This cannot be undone.',action:'Delete'},function(){const ix=vendors.indexOf(v);if(ix>=0){vendors.splice(ix,1);
+function deleteVendor(i){const v=vendors[i];if(!v)return;confirmModal({title:'Delete vendor',body:'Remove '+(v.name||'this vendor')+' from your directory? This cannot be undone.',action:'Delete'},function(){const ix=vendors.indexOf(v);if(ix>=0){_libForget('sc_vendors',v);vendors.splice(ix,1);
   // Inventory references vendors by array index, remap so items don't silently point at the
   // wrong vendor (and a wrong reorder link) after the splice shifts every later index down.
   try{if(typeof inv!=='undefined'&&Array.isArray(inv)){inv.forEach(function(it){if(it&&typeof it.vendorIdx==='number'){if(it.vendorIdx===ix)it.vendorIdx=null;else if(it.vendorIdx>ix)it.vendorIdx--;}});if(typeof saveInv==='function')saveInv();}}catch(e){}

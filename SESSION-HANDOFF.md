@@ -2397,3 +2397,69 @@ LIBRARIES (`sc_docs`, `sc_protocols`, `sc_custom_note_templates`, `sc_needle_pre
 are arrays of authored records and each one needs a DELETE RECORD before it can union, or the merge
 resurrects everything the provider deleted — that is the real work, and it is why they were not done
 here. The rest of the open list is genuinely one-record-per-account settings and is correct as is.
+
+### §2aj. The authored libraries now merge too (build 2026-09-29c) — thread 16 mostly closed
+
+Ashley asked for the rest of the list after the Diana fix. Twelve libraries of records the provider
+made herself moved off the plain-overwrite path.
+
+**Why they could not simply union:** a union with no delete record resurrects everything she ever
+deleted. So each got one, and every delete site records it.
+
+| library | key | delete record |
+|---|---|---|
+| documents | `sc_docs` | `sc_deleted_docs` |
+| protocols | `sc_protocols` | `sc_deleted_protocols` |
+| note templates | `sc_custom_note_templates` | `sc_deleted_note_tmpls` |
+| needle presets | `sc_needle_presets` | `sc_deleted_needle_presets` |
+| automations | `sc_autos` | `sc_deleted_autos` |
+| inventory | `sc_inventory` | `sc_deleted_inv` |
+| vendors | `sc_vendors` | `sc_deleted_vendors` |
+| shop bundles | `sc_shop_bundles` | `sc_deleted_shop_bundles` |
+| form & guide bundles | `sc_bundles` | `sc_deleted_bundles` |
+| partners | `sc_partners` | `sc_deleted_partners` |
+| payments | `sc_payments` | `sc_deleted_payments` |
+| check-ins | `sc_checkins` | `sc_ci_cleared` (already existed) |
+
+All eleven new records are in `_TOMB_OBJ`, so the delete records themselves union across devices.
+
+**Three things this turned up that were not obvious:**
+
+1. **`vendors`, `inv` and `partners` are stored with NO `id` field at all.** `_mergeAuthoredById`
+   skipped any record without one, so using it unchanged would have DROPPED every vendor, every
+   inventory row and every partner — the exact loss it exists to prevent. Their identity is now
+   derived from what the provider typed (`_LIB_NATURAL`: name, or name+sku for inventory), which is
+   stable across devices in a way a generated id would not be. A row with nothing typed in it yet
+   has no identity, so it is kept as-is rather than dropped (`keepUnkeyed`).
+2. **`sc_ci_cleared` is an ARRAY, not an `{id:ts}` map.** The old hidden-key read did
+   `hidden[c.id]` against whatever it parsed, so reading an array would have missed every lookup and
+   silently resurrected every cleared check-in. `_tombSet()` now normalises either shape.
+3. **Hiding the demo content is a delete too.** Without a record of it the union brings the samples
+   straight back from the other device, and for libraries whose rows carry ids the shrink guard
+   refuses the upload outright — so "hide the sample data" would have quietly stopped reaching the
+   account. All seven sample-purge sites now record it.
+
+**Verified headless** (`scratchpad/libs.mjs`): account's extra documents kept; a document only this
+device made is kept AND pushed back; a deleted document stays gone even though the other device
+still has it; vendors with no ids union by typed name with no drops and no duplicates; a delete of
+an id-less vendor sticks; inventory keyed on name+sku keeps two rows of the same name distinct; an
+empty un-typed row is kept rather than dropped; a cleared check-in stays cleared through the
+array-shaped record; a newer edit still wins; `_mergeCourses` behaviour unchanged. Plus the standing
+regressions: clearing a brand colour still uploads, a shrunk document list is refused, a genuinely
+deleted document uploads fine.
+
+`sweep-crossdevice.mjs` clean. Fresh account writes ZERO delete-record keys (checked directly), so
+none of this seeds anything into a new profile.
+
+merge-coverage: **56 -> 79 merged, 35 -> 23 still plain-overwrite.**
+
+**What is deliberately left**, and it is now nearly all correct as plain overwrite: one-record
+settings (`sc_booking_page`, `sc_checkin_cfg`, `sc_login_email`, `sc_professions`,
+`sc_service_menu`, `sc_totp_enabled`, `sc_wsname`, `sc_calendar_feed`, `sc_deposit_handled`,
+`sc_summary_guide_optout`, `sc_notif_settings`, `sc_room_state_`), the deliberate exclusions
+(`sc_captured_photos`), and a handful that are derived from Square or are genuinely per-account
+lists nobody has decided about yet: `sc_affiliate_links`, `sc_amazon_assoc`, `sc_imported_products`,
+`sc_square_catalog`, `sc_deleted_sq`, `sc_suggested_forms`, `sc_routines`, `sc_sent_routines`,
+`sc_summary_drafts`, `sc_pro_vc_invites`. `sc_affiliate_links` is the most substantial of those (the
+product catalogue) and is the obvious next one, but its custom products already ride
+`sc_workspace.customProducts`, which DOES merge now, so the loss window is much narrower.
