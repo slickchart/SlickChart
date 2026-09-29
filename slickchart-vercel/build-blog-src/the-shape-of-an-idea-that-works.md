@@ -4,7 +4,7 @@ h1: What to build: the shape of an idea that works
 description: You already have an idea. This is about checking whether it is the right size to finish, which is what decides whether you ever ship it.
 date: 2026-09-28
 keywords: first app idea, how to scope an app, app idea too big, build your first app, what app should i build
-draft: true
+draft: false
 ---
 
 This is not a post about finding an idea. If you are reading this you almost certainly have one already, probably one you have been turning over for a while.

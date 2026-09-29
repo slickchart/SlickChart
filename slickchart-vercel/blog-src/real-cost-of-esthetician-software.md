@@ -4,7 +4,7 @@ h1: The real cost of esthetician software: add-ons, processing rates, and what's
 description: The monthly price is the smallest part of it. Here's how to work out what your software actually costs you, using your own numbers.
 date: 2026-09-28
 keywords: esthetician software cost, salon software pricing, esthetician software hidden fees, card processing rates esthetician, booking software cost
-draft: true
+draft: false
 ---
 
 Every few weeks someone in a facebook group asks what a particular booking app costs, and gets fourteen different answers. All of them are right. That's the problem.

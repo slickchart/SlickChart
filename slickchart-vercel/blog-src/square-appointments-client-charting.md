@@ -4,7 +4,7 @@ h1: Square Appointments and client charting: what it does, what it doesn't, and 
 description: Square handles booking and payments well. Here's a five-minute audit of what your own account really keeps for notes, photos and consent forms.
 date: 2026-09-21
 keywords: square appointments esthetician, square client notes, square appointments charting, esthetician consent forms square, square appointments intake forms
-draft: true
+draft: false
 ---
 
 A lot of solo estheticians land on Square for sensible reasons. It books clients, it takes payment, it sends reminders, the card reader is cheap, and you were probably already using it before you thought of yourself as a business. None of that is a mistake, and this post isn't going to tell you to rip it out.

@@ -4,7 +4,7 @@ h1: How to describe your app so you get back what you meant
 description: The skill that replaced coding for me is describing things clearly. One screen at a time, what must not change, and the plan before the code.
 date: 2026-09-21
 keywords: how to prompt ai to build an app, describe app to ai, build an app with ai, ai app builder mistakes, non technical founder ai
-draft: true
+draft: false
 ---
 
 I am an esthetician. Before I built my app I had never opened a code editor, and I built the whole thing between clients over six weeks. The part everyone asks about is the code, and the code is genuinely the easy part now. You describe a screen, you get working code back.
