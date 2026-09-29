@@ -37,6 +37,16 @@ Hard rules — never violate:
    (`_mergeClients`, `_mergeMsgStore`, `_mergeThreads`, `_mergeSeenEvents`, `_mergeTombstone`) that union
    and push the superset back. If you add a new synced key that accumulates data, give it a merge too —
    do not let it ride the default overwrite.
+7. **A per-client map is a library too.** `{clientId: that client's stuff}` — `sc_client_recs` (the
+   product plan), `sc_client_homecare`, `sc_session_summaries`, `sc_rec_reasons`, `sc_body_maps` —
+   merges by client via `_mergeClientMap` (`_CLIENT_MAP_KEYS`). A device that had not read a client's
+   entry yet used to write the map back without it and the account lost that client's plan, homecare
+   list or summaries **entirely**. Union by client; the account's copy still wins where both sides
+   have the client, so nothing inside an entry changes. **`sc_workspace` is the dangerous one:** it is
+   a COMPOUND blob that carries copies of three of those maps, `loadWorkspace()` assigns them straight
+   over the live objects, and `persistWorkspace()` pushes it immediately on every edit — so a stale
+   copy of that one key clobbers the product plans even when the dedicated keys merge correctly. It
+   has `_mergeWorkspace`. Anything new that bundles several libraries into one key needs the same.
 
 When you add or change any endpoint, ask: *Could a different account, or an unauthenticated caller, use
 this to read or write data that isn't theirs?* If yes, it's not done.
@@ -154,6 +164,14 @@ The proxy blocks live `slickchart.app`, so test against the local file with rout
   SESSION-HANDOFF §2ad.
   **But do NOT gate a new guard on `Cloud._booting`:** `bootDone()` clears it BEFORE flushing the
   boot batch, so a boot-time upload reads as post-boot. Four fixes failed on exactly that.
+- **`_idsOf` has to RECOGNISE the shape or the shrink guard silently skips the key.** It returns
+  null for anything it does not read as a record collection, and `_dropBootShrinks` then does
+  nothing at all for that key — no warning, no trace. It missed two whole shapes: a map whose
+  values are LISTS (`{clientId:['p1','p2']}` — the product plans) and a compound blob whose values
+  are mixed (`sc_workspace`, handled separately by `_compoundIds`). Both are now covered. Keep the
+  rule narrow in the other direction though: an object of SCALARS is a settings blob, clearing a
+  field there is legitimate, and an earlier version of this guard read that as data loss and blocked
+  the save. There is a regression test for exactly that.
 - **An upload may only shrink a library if the missing ids were DELETED.** `_dropBootShrinks()` runs
   on every upload path and compares against `Cloud._serverSeen`; dropped ids must appear in one of
   the `_TOMB_OBJ`/`_TOMB_ARR` delete lists or the key is held back. This is what stops a device

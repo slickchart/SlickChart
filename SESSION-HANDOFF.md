@@ -2277,3 +2277,90 @@ simple. If anything there needs porting, read it first rather than assuming.
 - Run git from the repo root `/home/user/SlickChart`, build scripts from `slickchart-vercel/`.
 - Tone with Ashley: plain answers, own failures without defensiveness, don't over-claim. She runs her
   real business on this and has been through a data scare.
+
+---
+
+## §2ai. Diana (esthieguild@gmail.com) — "all my info is deleted after about an hour". OPEN.
+
+A SECOND provider, not Ashley, on her own account. Reported by email over four days.
+**These are HER OBSERVATIONS. Per CLAUDE.md §1b they are ground truth — do not re-derive
+them, do not discard one because a theory needs it to be false.**
+
+1. **Sep 25, 7:48 PM** — "I checked again, and after about an hour, all of my saved client
+   information — including notes, summaries, and product plans — is deleted. I even purchased
+   the subscription after storing the data, but it is still gone. I have tried starting a new
+   session, saving it, and sending it, but nothing seems to work."
+2. **Sep 26, 12:16 PM** — "I love it so far but it looks like all my info is just deleted after
+   a hour. Let me know if you can find it to[o] cause I know a few clients I added stuff and I
+   can't remember it all."
+3. **Sep 29 (relayed by Ashley)** — "I'm still getting used to the new system... I've been
+   updating my clients' photos and notes, but when I check back a day or two later, the changes
+   aren't saved. This is happening when I use the AI brief to categorize product notes —
+   specifically on items I save for myself but mark not to send yet. Am I uploading these
+   incorrectly?"
+
+Facts to hold on to, in her words, NOT conclusions drawn from them:
+- The window she names is **about an hour**. Twice.
+- What is lost: client **notes, summaries, product plans, photos**.
+- She is a **new account** ("still getting used to the new system", Re: Welcome to SlickChart
+  on 9/25).
+- She **bought the subscription after** the data was already stored, and the data was still gone.
+- She tried **a new session, saving, and sending** — none of it helped.
+- The path she names is the **AI brief → categorize product notes → saved for herself, marked
+  NOT to send yet**.
+- She expects it back: "let me know if you can find it."
+
+NOT yet established (do not assume either way without asking her):
+- Which device(s). One or two. Phone, computer, or both.
+- Whether "an hour" is wall-clock since entry, or since she closed the app.
+- Whether she was signed in the whole time.
+
+### What was found, 2026-09-29 — and it matches her report exactly
+
+**The mechanism.** `sc_workspace` is a COMPOUND blob written by `persistWorkspace()` holding
+`clientRecs` (the product plan), `recReasons` and `clientHomecare`. `loadWorkspace()` assigns all
+three straight over the live objects. It was pushed immediately on every edit, plain-overwrote on
+pull, and — because its shape is mixed (three objects AND an array) — `_idsOf()` returned null for
+it, so `_dropBootShrinks()` skipped it entirely. The dedicated keys were no better off:
+`sc_client_recs`, `sc_client_homecare` and `sc_session_summaries` are maps whose values are ARRAYS,
+a shape `_idsOf()` also returned null for.
+
+So a device holding a partial copy could upload a map with clients missing, over the account's full
+copy, **with no guard and no warning**. The entry lost is not a field — it is that client's whole
+product plan, homecare list or set of visit summaries. Which is what she lost, and what she named.
+
+The path she named — AI brief, categorize product notes, save for herself, not sent — is
+`_setRecReason()` -> `_persistWorkspaceSoon()` -> `persistWorkspace()`, i.e. the blob above.
+
+**Reproduced on the shipped build (2026-09-19u)** before changing anything: given an account holding
+three clients' plans and a device holding one, `_dropBootShrinks` ALLOWED the upload for both
+`sc_client_recs` and `sc_workspace`, and `_idsOf` returned null for both shapes.
+
+**Fixed in 2026-09-29a:**
+- `_mergeClientMap` + `_CLIENT_MAP_KEYS` — `sc_client_recs`, `sc_client_homecare`,
+  `sc_session_summaries`, `sc_rec_reasons`, `sc_body_maps` union BY CLIENT on pull. The account's
+  copy still wins where both sides have the client, so nothing inside an entry changes behaviour;
+  the only change is that a whole client's entry can no longer vanish. Deleted/merged clients
+  (`_goneClientIds`, which unions the live `_deletedClientIds` map with the on-disk record) are
+  dropped rather than resurrected.
+- `_mergeWorkspace` — the same union for the three maps inside the blob, plus union-by-id for the
+  provider's own custom products.
+- `_idsOf` now recognises a map whose every value is an array. Deliberately narrow: an object of
+  scalars is still not a record collection, because clearing a setting must still sync.
+- `_compoundIds` teaches `_dropBootShrinks` to look INSIDE `sc_workspace`, namespaced per field.
+- `check-merge-coverage.cjs` reads `_CLIENT_MAP_KEYS`; those six keys came off the thread-16 list
+  (46 -> 52 merged, 44 -> 39 still unmerged).
+
+**Verified headlessly**, both directions: stale device keeps all three clients on pull; a client only
+the device has is kept AND pushed back; a deleted client is not resurrected; the bad upload is
+refused for both keys; clearing a brand colour STILL uploads (the regression a previous session
+caused here); a genuine delete still uploads. `sweep-crossdevice.mjs` passes, no page errors.
+
+**Recovery.** The `kv` table keeps no history (`SET v = EXCLUDED.v`), so nothing can be read back
+from the server. BUT `_mergeClientMap` pushes the superset back — so if ANY of her devices still
+holds those entries locally, opening the app on that device on this build restores them to the
+account by itself. Worth having her open every device she has used. If they were wiped everywhere,
+it is gone and we should say so plainly.
+
+**Still unknown, worth asking her:** which device(s) she uses, and whether "about an hour" is
+wall-clock since entry or since she reopened the app. The fix does not depend on the answer.

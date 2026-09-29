@@ -214,7 +214,7 @@ const S=document.getElementById('S');
 // resets when I save it" and there was no way to tell whether her phone had any of them — a whole
 // day was spent debugging code she may not have been running. Shown at the bottom of Settings, so
 // the answer is a screenshot away. Bump it on every ship.
-const APP_BUILD='2026-09-19u';
+const APP_BUILD='2026-09-29a';
 
 
 /* ════════════════════════════════════════════════════════════════
@@ -2304,8 +2304,14 @@ function _idsOf(str){
     if(v&&typeof v==='object'){
       const ks=Object.keys(v);
       if(!ks.length)return [];
-      if(!ks.every(function(k){const x=v[k];return x&&typeof x==='object'&&!Array.isArray(x);}))return null;
-      return ks;                                                // a record map, e.g. sc_clients
+      if(ks.every(function(k){const x=v[k];return x&&typeof x==='object'&&!Array.isArray(x);}))return ks;   // a record map, e.g. sc_clients
+      // A per-client map whose entries are LISTS: sc_client_recs (the product plan),
+      // sc_client_homecare, sc_session_summaries. _idsOf used to return null for these, so the shrink
+      // guard skipped them completely and a device could quietly upload a map with clients missing.
+      // Requiring EVERY value to be an array keeps this narrow — a settings blob holds scalars, so
+      // clearing a setting still does not read as losing records.
+      if(ks.every(function(k){return Array.isArray(v[k]);}))return ks;
+      return null;
     }
   }catch(e){}
   return null;                                  // not a collection — this guard does not apply
@@ -2325,6 +2331,26 @@ function _allDeletedIds(){
   }catch(e){}
   return out;
 }
+// A compound blob is not a record collection itself, but it CARRIES them. sc_workspace holds three
+// per-client maps plus the provider's own custom products, and because its own shape is mixed
+// (objects AND an array) _idsOf could not see inside it — so the shrink guard skipped the one key
+// that carries the product plans. Namespace the inner ids per field, so a client dropped from one
+// map still counts even when another map kept it.
+const _WS_CLIENT_MAPS=['clientRecs','recReasons','clientHomecare'];
+function _compoundIds(k,str){
+  if(k!=='sc_workspace')return null;
+  try{
+    const v=JSON.parse(str);
+    if(!_isPlainObj(v))return null;
+    const out=[];
+    _WS_CLIENT_MAPS.forEach(function(f){
+      if(_isPlainObj(v[f]))Object.keys(v[f]).forEach(function(id){out.push(f+':'+id);});
+    });
+    if(Array.isArray(v.customProducts))v.customProducts.forEach(function(p){if(p&&p.id)out.push('customProducts:'+String(p.id));});
+    return out;
+  }catch(e){}
+  return null;
+}
 function _dropBootShrinks(items,where){
   try{
     const seen=(typeof Cloud!=='undefined'&&Cloud&&Cloud._serverSeen)||null;
@@ -2332,13 +2358,17 @@ function _dropBootShrinks(items,where){
     let gone=null;
     for(const k in items){
       if(!Object.prototype.hasOwnProperty.call(seen,k))continue;
-      const had=_idsOf(seen[k]); if(!had||!had.length)continue;
-      const now=_idsOf(items[k]); if(!now)continue;
+      const compound=_compoundIds(k,seen[k]);
+      const had=compound||_idsOf(seen[k]); if(!had||!had.length)continue;
+      const now=compound?_compoundIds(k,items[k]):_idsOf(items[k]); if(!now)continue;
       const have={};now.forEach(function(id){have[id]=1;});
       const lost=had.filter(function(id){return !have[id];});
       if(!lost.length)continue;
       if(gone===null)gone=_allDeletedIds();
-      const unexplained=lost.filter(function(id){return !gone[id];});
+      const unexplained=lost.filter(function(id){
+        // compound ids are "field:id" — the delete lists hold the bare id
+        return !gone[compound?id.slice(id.indexOf(':')+1):id];
+      });
       if(unexplained.length){
         try{console.warn('[SlickChart] refused to drop '+unexplained.length+' item(s) from '+k+
           ' on the account \u2014 they are not on any deleted list ('+where+'): '+unexplained.slice(0,5).join(', '));}catch(e){}
@@ -2368,6 +2398,9 @@ const _TOMB_ARR={sc_flag_dismissed:1,sc_form_flag_dismissed:1,sc_ci_cleared:1,sc
 const _STICKY_TRUE={sc_hide_sample:1,sc_courses_custom:1,sc_affiliate_custom:1,sc_protocols_custom:1,sc_service_menu_custom:1,sc_photorelease_migrated:1,sc_orphan_dismissed:1};
 function _isStickyTrueKey(k){return !!_STICKY_TRUE[k];}
 function _isTombstoneKey(k){return !!(_TOMB_OBJ[k]||_TOMB_ARR[k]);}
+// Keys that are a map of { clientId: that client's stuff }. They merge by client on pull, so one
+// device's not-yet-loaded copy can never erase another's work. See _mergeClientMap.
+const _CLIENT_MAP_KEYS={sc_client_recs:1,sc_client_homecare:1,sc_session_summaries:1,sc_rec_reasons:1,sc_body_maps:1};
 // Merge the client roster per-client-id instead of whole-blob overwriting it, so two devices that edit
 // DIFFERENT clients both keep their edits (the old last-writer-wins dropped one device's whole change).
 // Newer per-client _uAt wins; a client on only one side is kept; deleted clients are never resurrected.
@@ -2654,6 +2687,99 @@ function _mergeStamped(serverStr,localStr){
   if(b>a)return {str:localStr,changed:true};   // this device's edit is newer — keep it, push it back
   return {str:serverStr,changed:false};
 }
+// ── Per-client maps ───────────────────────────────────────────────────────────
+// { clientId: that client's stuff }. sc_client_recs (the product plan), sc_client_homecare,
+// sc_session_summaries, sc_rec_reasons, sc_body_maps — and the SAME three maps again inside the
+// sc_workspace blob, which is what persistWorkspace() writes and loadWorkspace() reads back over
+// the live objects.
+//
+// Every one of them rode the plain overwrite. A device that had not yet loaded a client's entry
+// wrote the map back without it, and the account lost that client's product plan, homecare list or
+// visit summaries outright — not one field, the whole entry. A second provider lost several clients'
+// notes, summaries and product plans this way and could not get them back.
+//
+// Union BY CLIENT. An entry only one side has is kept and pushed back. An entry BOTH sides have is
+// left exactly as the account has it, which is what happened before this function existed — so
+// nothing about the contents of a client's own entry changes here. The only thing that changes is
+// that a whole client's entry can no longer vanish because the other device had not read it yet.
+// A client on the deleted/merged record is dropped rather than resurrected.
+// NB: _deletedClientIds is already taken — it is the live { id: ts } map that client deletion writes.
+// This reads the same record off disk and unions it with the merge record, so the merge below sees a
+// delete made moments ago on this device as well as one that arrived from another.
+function _goneClientIds(){
+  const out={};
+  try{if(typeof _deletedClientIds==='object'&&_deletedClientIds)Object.keys(_deletedClientIds).forEach(function(x){out[x]=1;});}catch(e){}
+  ['sc_deleted_clients','sc_merged_ids'].forEach(function(tk){
+    try{
+      const raw=(typeof _lsGet==='function')?_lsGet(tk):localStorage.getItem(tk);
+      const v=JSON.parse(raw||'null');
+      if(Array.isArray(v))v.forEach(function(x){if(x!=null)out[String(x)]=1;});
+      else if(v&&typeof v==='object')Object.keys(v).forEach(function(x){out[x]=1;});
+    }catch(e){}
+  });
+  return out;
+}
+function _isPlainObj(o){return !!o&&typeof o==='object'&&!Array.isArray(o);}
+// Union two { id: value } maps. The account's value wins where both have the id; ids only the device
+// has are added. Returns null when there is nothing sane to merge.
+function _unionById(a,b,gone,onAdd){
+  const out={};
+  Object.keys(a).forEach(function(id){if(!gone[id])out[id]=a[id];});
+  Object.keys(b).forEach(function(id){
+    if(gone[id]||Object.prototype.hasOwnProperty.call(out,id))return;
+    out[id]=b[id];if(onAdd)onAdd(id);
+  });
+  return out;
+}
+function _mergeClientMap(serverStr,localStr){
+  let srv,loc;
+  try{srv=JSON.parse(serverStr==null?'null':serverStr);}catch(e){srv=undefined;}
+  try{loc=JSON.parse(localStr==null?'null':localStr);}catch(e){loc=undefined;}
+  const sOk=_isPlainObj(srv),lOk=_isPlainObj(loc);
+  if(!sOk)return lOk?{str:localStr,changed:true}:null;   // heal the account from the device, or abstain
+  if(!lOk)return {str:serverStr,changed:false};
+  const gone=_goneClientIds();
+  let changed=false;
+  const out=_unionById(srv,loc,gone,function(){changed=true;});
+  // The account was still carrying entries for clients that have since been deleted. Dropping them
+  // is a real change and worth pushing, so every device stops carrying them too.
+  if(!changed&&Object.keys(out).length!==Object.keys(srv).length)changed=true;
+  return {str:JSON.stringify(out),changed:changed};
+}
+// sc_workspace is a COMPOUND blob: three per-client maps plus the provider's own custom products and
+// their per-product flags. It is pushed immediately on every edit (persistWorkspace), and
+// loadWorkspace() assigns clientRecs / recReasons / clientHomecare straight out of it — so a stale
+// copy of this one key clobbers the product plans even if the dedicated keys merge perfectly.
+function _mergeWorkspace(serverStr,localStr){
+  let srv,loc;
+  try{srv=JSON.parse(serverStr==null?'null':serverStr);}catch(e){srv=undefined;}
+  try{loc=JSON.parse(localStr==null?'null':localStr);}catch(e){loc=undefined;}
+  const sOk=_isPlainObj(srv),lOk=_isPlainObj(loc);
+  if(!sOk)return lOk?{str:localStr,changed:true}:null;
+  if(!lOk)return {str:serverStr,changed:false};
+  const gone=_goneClientIds();
+  const out=Object.assign({},srv);
+  let changed=false;
+  const mark=function(){changed=true;};
+  _WS_CLIENT_MAPS.forEach(function(f){
+    out[f]=_unionById(_isPlainObj(srv[f])?srv[f]:{},_isPlainObj(loc[f])?loc[f]:{},gone,mark);
+    if(!changed&&_isPlainObj(srv[f])&&Object.keys(out[f]).length!==Object.keys(srv[f]).length)changed=true;
+  });
+  // Custom products are records the provider authored. Union by id so a product made on one device is
+  // never dropped by the other; there is no per-product delete record, and losing one is the harm.
+  const seen={},cp=[];
+  (Array.isArray(srv.customProducts)?srv.customProducts:[]).forEach(function(p){if(p&&p.id&&!seen[p.id]){seen[p.id]=1;cp.push(p);}});
+  (Array.isArray(loc.customProducts)?loc.customProducts:[]).forEach(function(p){if(p&&p.id&&!seen[p.id]){seen[p.id]=1;cp.push(p);changed=true;}});
+  out.customProducts=cp;
+  // Per-product flags: the account's value stands; a product only this device knows keeps its own.
+  ['inOffice','codes'].forEach(function(f){
+    const a=_isPlainObj(srv[f])?srv[f]:{},b=_isPlainObj(loc[f])?loc[f]:{};
+    const m=Object.assign({},a);
+    Object.keys(b).forEach(function(id){if(!Object.prototype.hasOwnProperty.call(m,id)){m[id]=b[id];changed=true;}});
+    out[f]=m;
+  });
+  return {str:JSON.stringify(out),changed:changed};
+}
 // Does this tombstone outrank this item? A deletion only beats an item that is OLDER than it.
 //
 // A form the account is actively carrying, created after the deletion, is not the deleted form — it
@@ -2922,6 +3048,25 @@ const Cloud={
       if(mm&&mm.str!=null){
         set(k,mm.str);
         if(mm.changed){try{this.push(k,mm.str);}catch(e){}}
+        return;
+      }
+    }
+    // Per-client maps and the workspace blob that duplicates three of them. Union by client so a
+    // device that had not read a client's entry yet can never upload the map without it. See
+    // _mergeClientMap.
+    if(k==='sc_workspace'){
+      const mw=_mergeWorkspace(data[k],_lsGet(k));
+      if(mw&&mw.str!=null){
+        set(k,mw.str);
+        if(mw.changed){try{this.push(k,mw.str);}catch(e){}}
+        return;
+      }
+    }
+    if(_CLIENT_MAP_KEYS[k]){
+      const mc=_mergeClientMap(data[k],_lsGet(k));
+      if(mc&&mc.str!=null){
+        set(k,mc.str);
+        if(mc.changed){try{this.push(k,mc.str);}catch(e){}}
         return;
       }
     }
