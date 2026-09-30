@@ -468,7 +468,7 @@ const S=document.getElementById('S');
 // resets when I save it" and there was no way to tell whether her phone had any of them — a whole
 // day was spent debugging code she may not have been running. Shown at the bottom of Settings, so
 // the answer is a screenshot away. Bump it on every ship.
-const APP_BUILD='2026-09-29c';
+const APP_BUILD='2026-09-30a';
 
 
 /* ════════════════════════════════════════════════════════════════
@@ -1968,6 +1968,7 @@ function _purgeSample(){
   try{
     if(typeof affiliateLinks!=='undefined'){
       const before=affiliateLinks.length;
+      affiliateLinks.forEach(function(a){if(a&&_SAMPLE_PRODUCT_IDS.indexOf(a.id)>=0)_libForget('sc_affiliate_links',a);});
       affiliateLinks=affiliateLinks.filter(a=>_SAMPLE_PRODUCT_IDS.indexOf(a.id)<0);
       if(affiliateLinks.length!==before&&typeof persistWorkspace==='function')persistWorkspace();
     }
@@ -2644,7 +2645,7 @@ function _usableSyncValue(str){ const sh=_syncShape(str); return sh!=='missing'&
 // sc_hidden_guides / sc_hidden_forms are {id:1} maps of what the provider deleted. They were pushed
 // immediately but NOT registered here, so the map itself rode the plain overwrite: a stale device's
 // copy could drop ids and resurrect a deleted guide. Same class of bug as sc_courses.
-const _TOMB_OBJ={sc_deleted_docs:1,sc_deleted_protocols:1,sc_deleted_note_tmpls:1,sc_deleted_needle_presets:1,
+const _TOMB_OBJ={sc_deleted_products:1,sc_deleted_docs:1,sc_deleted_protocols:1,sc_deleted_note_tmpls:1,sc_deleted_needle_presets:1,
   sc_deleted_autos:1,sc_deleted_inv:1,sc_deleted_vendors:1,sc_deleted_shop_bundles:1,sc_deleted_bundles:1,
   sc_deleted_partners:1,sc_deleted_payments:1,
   sc_deleted_appts:1,sc_deleted_clients:1,sc_hidden_square:1,sc_merged_ids:1,sc_merged_into:1,sc_ci_dismissed:1,sc_course_purchases:1,sc_hidden_courses:1,sc_hidden_guides:1,sc_hidden_forms:1};
@@ -2680,7 +2681,13 @@ const _LIB_TOMB={
   sc_bundles:'sc_deleted_bundles',
   sc_partners:'sc_deleted_partners',
   sc_payments:'sc_deleted_payments',
-  sc_checkins:'sc_ci_cleared'
+  sc_checkins:'sc_ci_cleared',
+  // The shop catalogue. sc_hidden_square stays the authority for a Square product removed by hand —
+  // it survives a reconnect, which is the point of it. sc_deleted_products covers everything else:
+  // her own products, the demo ones once hidden, and the Square ones dropped by a disconnect or by
+  // a catalog sync that no longer lists them. Those last two are CLEARED again if Square comes back
+  // carrying the same product, because they were never her decision to delete.
+  sc_affiliate_links:['sc_deleted_products','sc_hidden_square']
 };
 // Vendors, inventory rows and partners are stored WITHOUT ids. A generated id would differ on every
 // device and the union would duplicate them, so their identity is derived from what the provider
@@ -2703,7 +2710,7 @@ function _libKeyFn(libKey){
 // Record that this record was deleted on purpose, so the merge never brings it back.
 function _libForget(libKey,item){
   try{
-    const tk=_LIB_TOMB[libKey];
+    const tk0=_LIB_TOMB[libKey],tk=Array.isArray(tk0)?tk0[0]:tk0;   // write to the library's OWN record
     if(!tk||tk==='sc_ci_cleared')return;          // check-ins keep their own log, which Undo unmarks
     const k=(item&&typeof item==='object')?_libKeyFn(libKey)(item):String(item||'');
     if(!k)return;
@@ -2717,6 +2724,22 @@ function _libForget(libKey,item){
     const v=JSON.stringify(o);
     localStorage.setItem(tk,v);
     if(typeof _pushKeyNow==='function')_pushKeyNow(tk,v);   // push NOW — a delete must not ride the debounce
+  }catch(e){}
+}
+// The opposite of _libForget: this record was never the provider's decision. A Square product that
+// came back into her catalog is not a product she deleted, so the automatic removal is withdrawn.
+// It deliberately does NOT touch sc_hidden_square, so a product she removed by hand stays removed.
+function _libUnforget(libKey,id){
+  try{
+    const tk0=_LIB_TOMB[libKey],tk=Array.isArray(tk0)?tk0[0]:tk0;
+    if(!tk||tk==='sc_ci_cleared'||!id)return;
+    const raw=(typeof _lsGet==='function')?_lsGet(tk):localStorage.getItem(tk);
+    const o=JSON.parse(raw||'null');
+    if(!o||typeof o!=='object'||Array.isArray(o)||!(String(id) in o))return;
+    delete o[String(id)];
+    const v=JSON.stringify(o);
+    localStorage.setItem(tk,v);
+    if(typeof _pushKeyNow==='function')_pushKeyNow(tk,v);
   }catch(e){}
 }
 // Keys that are a map of { clientId: that client's stuff }. They merge by client on pull, so one
@@ -3116,11 +3139,15 @@ function _mergeWorkspace(serverStr,localStr){
     out[f]=_unionById(_isPlainObj(srv[f])?srv[f]:{},_isPlainObj(loc[f])?loc[f]:{},gone,mark);
     if(!changed&&_isPlainObj(srv[f])&&Object.keys(out[f]).length!==Object.keys(srv[f]).length)changed=true;
   });
-  // Custom products are records the provider authored. Union by id so a product made on one device is
-  // never dropped by the other; there is no per-product delete record, and losing one is the harm.
+  // Custom products are records the provider authored, and this blob carries a COPY of them beside
+  // sc_affiliate_links. Union by id so a product made on one device is never dropped by the other —
+  // but honour the same delete records, or a product she deleted comes back through this key even
+  // though the catalogue itself got it right.
+  const goneP=_tombSet(_LIB_TOMB.sc_affiliate_links);
   const seen={},cp=[];
-  (Array.isArray(srv.customProducts)?srv.customProducts:[]).forEach(function(p){if(p&&p.id&&!seen[p.id]){seen[p.id]=1;cp.push(p);}});
-  (Array.isArray(loc.customProducts)?loc.customProducts:[]).forEach(function(p){if(p&&p.id&&!seen[p.id]){seen[p.id]=1;cp.push(p);changed=true;}});
+  (Array.isArray(srv.customProducts)?srv.customProducts:[]).forEach(function(p){if(p&&p.id&&!seen[p.id]&&!goneP[p.id]){seen[p.id]=1;cp.push(p);}});
+  (Array.isArray(loc.customProducts)?loc.customProducts:[]).forEach(function(p){if(p&&p.id&&!seen[p.id]&&!goneP[p.id]){seen[p.id]=1;cp.push(p);changed=true;}});
+  try{if(!changed&&Array.isArray(srv.customProducts)&&cp.length!==srv.customProducts.length)changed=true;}catch(e){}
   out.customProducts=cp;
   // Per-product flags: the account's value stands; a product only this device knows keeps its own.
   ['inOffice','codes'].forEach(function(f){
@@ -23719,6 +23746,7 @@ function _mergeSquareRetail(){
       if(p==null||p.id==null||p.id==='')return;   // no reliable id → can't dedup or link it; skip
       const id='sq_'+String(p.id).toLowerCase().replace(/[^a-z0-9]/g,'').slice(0,14);
       if(typeof _hiddenSquareIds!=='undefined'&&_hiddenSquareIds[id])return;   // provider removed this from their shop — don't re-add
+      try{_libUnforget('sc_affiliate_links',id);}catch(e){}   // Square carries it again: an automatic drop was never her decision
       const priceLabel=(p.price!=null)?('$'+(Math.round(p.price*100)/100)):'';
       const brand=[p.category||'',priceLabel].filter(Boolean).join(' · ')||'Your product';
       // Best automatic deep link to the product's own page: {shop}/product/{permalink}. Falls back to
@@ -23751,7 +23779,7 @@ function _mergeSquareRetail(){
     // because a sync came back empty/failed.
     if(Array.isArray(squareCatalog.retail)&&squareCatalog.retail.length){
       const _live=new Set(squareCatalog.retail.filter(p=>p&&p.id!=null&&p.id!=='').map(p=>String(p.id)));
-      for(let i=affiliateLinks.length-1;i>=0;i--){const a=affiliateLinks[i];if(a&&a.source==='square'&&a.squareId!=null&&!_live.has(String(a.squareId)))affiliateLinks.splice(i,1);}
+      for(let i=affiliateLinks.length-1;i>=0;i--){const a=affiliateLinks[i];if(a&&a.source==='square'&&a.squareId!=null&&!_live.has(String(a.squareId))){try{_libForget('sc_affiliate_links',a);}catch(e){}affiliateLinks.splice(i,1);}}
     }
   }catch(e){}
 }
@@ -23790,7 +23818,7 @@ async function _sqDisconnect(){
   // Clear the cached Square catalog and drop Square-sourced products, so a later reconnect (possibly a
   // DIFFERENT Square account) doesn't leave the old account's products mixed into the shop and recs.
   try{squareCatalog={retail:[],services:[],syncedAt:Date.now()};if(typeof saveSquareCatalog==='function')saveSquareCatalog();}catch(e){}
-  try{let _ch=false;for(let i=affiliateLinks.length-1;i>=0;i--){const a=affiliateLinks[i];if(a&&(a.source==='square'||String(a.id||'').indexOf('sq_')===0)){affiliateLinks.splice(i,1);_ch=true;}}if(_ch&&typeof persistAffiliateLinks==='function')persistAffiliateLinks();}catch(e){}
+  try{let _ch=false;for(let i=affiliateLinks.length-1;i>=0;i--){const a=affiliateLinks[i];if(a&&(a.source==='square'||String(a.id||'').indexOf('sq_')===0)){try{_libForget('sc_affiliate_links',a);}catch(e){}affiliateLinks.splice(i,1);_ch=true;}}if(_ch&&typeof persistAffiliateLinks==='function')persistAffiliateLinks();}catch(e){}
   proToast('Square disconnected');
   if(typeof nav==='function')nav('square-guide');
 }
@@ -24555,7 +24583,10 @@ try{
   // Products live in the initial declaration, so they re-seed every reload. If sample
   // data is hidden, strip the demo ones again now that everything's loaded.
   if(_sampleHidden()){try{
-    if(typeof affiliateLinks!=='undefined')affiliateLinks=affiliateLinks.filter(a=>_SAMPLE_PRODUCT_IDS.indexOf(a.id)<0);
+    if(typeof affiliateLinks!=='undefined'){
+      affiliateLinks.forEach(function(a){if(a&&_SAMPLE_PRODUCT_IDS.indexOf(a.id)>=0)_libForget('sc_affiliate_links',a);});
+      affiliateLinks=affiliateLinks.filter(a=>_SAMPLE_PRODUCT_IDS.indexOf(a.id)<0);
+    }
   }catch(e){}}
   if(typeof loadSquareCatalog==='function'){loadSquareCatalog();_mergeSquareRetail();}  // bring in synced Square retail products
   // Silent background refresh from Square shortly after boot, so catalog changes appear automatically.
@@ -27961,6 +27992,7 @@ function deleteAffiliate(ei){
     // If it's a Square-synced product, remember the deletion so the next catalog sync doesn't
     // resurrect it (services/gift-cards you don't want to retail stay gone).
     if(_a&&(_a.source==='square'||String(_a.id||'').indexOf('sq_')===0)){try{_hiddenSquareIds[_a.id]=Date.now();_saveHiddenSquare();}catch(e){}}
+    try{_libForget('sc_affiliate_links',_a);}catch(e){}   // her OWN products had no delete record at all
     try{_markAffiliateCustom();}catch(e){}   // deleting even a demo product is a customization — don't reseed it back
     affiliateLinks.splice(ei,1);
     persistWorkspace();

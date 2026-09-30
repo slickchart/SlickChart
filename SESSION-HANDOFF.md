@@ -2463,3 +2463,49 @@ lists nobody has decided about yet: `sc_affiliate_links`, `sc_amazon_assoc`, `sc
 `sc_summary_drafts`, `sc_pro_vc_invites`. `sc_affiliate_links` is the most substantial of those (the
 product catalogue) and is the obvious next one, but its custom products already ride
 `sc_workspace.customProducts`, which DOES merge now, so the loss window is much narrower.
+
+### §2ak. The shop catalogue (build 2026-09-30a) — and a regression from §2ai fixed with it
+
+`sc_affiliate_links` now merges. It needed more care than the other libraries because a product can
+leave the catalogue four different ways, and only two of them are the provider's decision.
+
+**Two delete records, deliberately:**
+- `sc_hidden_square` (already existed) stays the authority for a Square product she removed BY HAND.
+  It survives a reconnect, which is the whole point of it.
+- `sc_deleted_products` (new, in `_TOMB_OBJ`) covers everything else: her own products, the demo ones
+  once hidden, and Square products dropped by a disconnect or by a catalog sync that no longer lists
+  them.
+
+**Automatic removals are withdrawable.** A disconnect or a reconcile is not her deciding to delete a
+product, so `_libUnforget()` clears that record when Square carries the product again. It
+deliberately does NOT touch `sc_hidden_square`, so a by-hand removal stays removed — there is a test
+for exactly that (`unforget_leaves_manual`).
+
+**Her own products had NO delete record at all.** `deleteAffiliate` only recorded Square ones. So
+without this, a union would have brought back every product she ever deleted.
+
+#### The regression this caught, from §2ai yesterday
+
+`sc_workspace` carries a COPY of her custom products (`customProducts`), and the union I added to
+`_mergeWorkspace` yesterday had no delete record. So as of yesterday's build, deleting a custom
+product could be undone by the other device handing it back through the workspace key — even once
+the catalogue itself got it right. `_mergeWorkspace` now consults the same two records.
+
+It was live for one day. Worth remembering the shape of the mistake: **adding a union to a compound
+blob silently re-opened a delete path that the dedicated key had covered.** Any future merge on a
+key that duplicates another key's records has to share that key's delete record.
+
+**Verified headless**, merge functions AND the real `deleteAffiliate` flow driven end to end with
+`confirmModal` stubbed: her own deleted product stays gone; the workspace no longer resurrects it
+but still unions genuinely new products; a by-hand Square removal survives; an automatic Square drop
+holds and is then withdrawn when Square carries the product again; the shrink guard refuses a
+shrunk catalogue but allows one whose losses are recorded. All earlier suites still pass,
+`sweep-crossdevice.mjs` clean, fresh account still writes zero delete-record keys.
+
+merge-coverage: **79 -> 81 merged, 23 -> 22 still plain-overwrite.**
+
+What remains is genuinely settled: one-record settings, the deliberate exclusions
+(`sc_captured_photos`), Square-derived caches that rebuild themselves (`sc_square_catalog`,
+`sc_imported_products`, `sc_deleted_sq`), and a few small per-account lists (`sc_routines`,
+`sc_sent_routines`, `sc_summary_drafts`, `sc_suggested_forms`, `sc_pro_vc_invites`,
+`sc_amazon_assoc`). None of those is a library of authored work.

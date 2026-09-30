@@ -48,7 +48,7 @@ s.split('\n').forEach(function(line){
 const KNOWN=new Set([
   'sc_summary_drafts',
   'sc_routines',
-  'sc_affiliate_links','sc_notif_settings','sc_amazon_assoc',
+  'sc_notif_settings','sc_amazon_assoc',
   'sc_note_fmt','sc_suggested_forms','sc_square_catalog',
   'sc_provider_note_drafts','sc_deleted_clients','sc_shop_catalog','sc_affiliate_custom',
   // Reviewed and correct as plain-overwrite — ONE record for the account, so last-write-wins is
