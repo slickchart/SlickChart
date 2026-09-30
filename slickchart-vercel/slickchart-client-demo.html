@@ -3876,7 +3876,7 @@ function _submitFillForm(){
     showToast('Sent \u2713');
     nav('home');
   };
-  const _ffPayload={formId:pf.formId,title:pf.title,answers,flagged,signed,date:dateLabel,qs:qs.map(function(q){return {id:q.id,label:q.label,type:q.type};}),_idem:_ffStableIdem(pf)};
+  const _ffPayload={formId:pf.formId,title:pf.title,answers,flagged,signed,date:dateLabel,qs:qs.map(function(q){return {id:q.id,label:q.label,type:q.type};}),_idem:_ffStableIdem(pf),_lock:'f:'+pf.formId};
   if(client._real){
     const p=activeProvider();
     // Optimistically mark this form done and glide STRAIGHT into the next pre-visit step, so the intake
@@ -4601,7 +4601,7 @@ function _submitPrevisitPackage(){
   const prov=activeProvider();
   const pay=_ciBuildPayload();
   const ciFlaggedLc=(pay.flagged||[]).map(f=>String(f).toLowerCase());
-  const ffPayload={formId:pf.formId,title:pf.title,answers:c.answers,flagged:c.flagged,signed:c.signed,date:c.dateLabel,qs:c.qs.map(function(q){return {id:q.id,label:q.label,type:q.type};}),_idem:_ffStableIdem(pf)};
+  const ffPayload={formId:pf.formId,title:pf.title,answers:c.answers,flagged:c.flagged,signed:c.signed,date:c.dateLabel,qs:c.qs.map(function(q){return {id:q.id,label:q.label,type:q.type};}),_idem:_ffStableIdem(pf),_lock:'f:'+pf.formId};
   const ciPayload={client:client.name,treatment:client.treatment,dateLabel:client.nextDate,time:client.nextTime,groups:pay.groups,flagged:pay.flagged,notes:pay.notes,photos:pay.photos||[],_idem:_ciStableIdem(prov)};
 
   // Connected demo provider (landing-page demo bridge): file both, then show the all-set screen.
@@ -5382,7 +5382,7 @@ function submitClientForm(fid){
     // provider, confirm before marking it complete, so a dropped submit is retryable.
     const btn=(typeof event!=='undefined'&&event&&event.target&&event.target.closest)?event.target.closest('button'):null;
     if(btn){btn.disabled=true;btn.textContent='Sending…';}
-    _clientSubmit('form',{formId:fid,title:f.title,answers,flagged,signed:true,signature:_signName,date:'Today',_idem:_ffStableIdem(_idemPf)})
+    _clientSubmit('form',{formId:fid,title:f.title,answers,flagged,signed:true,signature:_signName,date:'Today',_idem:_ffStableIdem(_idemPf),_lock:'f:'+fid})
       .then(function(res){
         if(res&&res.duplicate)return;   // first submit already in flight — ignore the double-tap, don't flash an error
         if(res&&res.ok!==false)_finishSigned();
@@ -5967,7 +5967,11 @@ function _clientSubmit(kind,payload,_retried){
       _clientSubmitInFlight[_lk]=true;
     }
     var _clear=function(v){if(!_retried)_clientSubmitInFlight[_lk]=false;return v;};
-    return fetch('/api/client-submit',{method:'POST',headers:{'Content-Type':'application/json'},body:JSON.stringify({t:tok,kind:kind,payload:payload||{}})})
+    // _lock only names the in-flight slot on this device; it is not part of the submission, so keep
+    // it out of the blob the provider stores. Copy rather than mutate — the retry reuses this object.
+    var _body=payload||{};
+    try{if(_body._lock!==undefined){_body=Object.assign({},_body);delete _body._lock;}}catch(e){_body=payload||{};}
+    return fetch('/api/client-submit',{method:'POST',headers:{'Content-Type':'application/json'},body:JSON.stringify({t:tok,kind:kind,payload:_body})})
       .then(function(r){
         // A non-OK HTTP status means it did NOT reach the provider, treat as failure so
         // callers on critical paths (check-in, booking, forms) don't show a false "sent".

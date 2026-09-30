@@ -2509,3 +2509,49 @@ What remains is genuinely settled: one-record settings, the deliberate exclusion
 `sc_imported_products`, `sc_deleted_sq`), and a few small per-account lists (`sc_routines`,
 `sc_sent_routines`, `sc_summary_drafts`, `sc_suggested_forms`, `sc_pro_vc_invites`,
 `sc_amazon_assoc`). None of those is a library of authored work.
+
+## §2al. Riquelle — "not receiving forms back that her clients are filling out". FOUND AND FIXED.
+
+**Her observation (ground truth, CLAUDE.md §1b):** clients fill out forms and she does not receive
+them. Ashley asked her to check whether they appear in the client file under saved forms; **that
+answer had not come back when this was fixed**, so the question is still open and still worth having.
+
+**The bug, reproduced on the shipped build before anything was changed.**
+
+`_clientSubmit()` in slickchart-client.html blocks a double-tap with an in-flight lock keyed on
+`kind + (payload._lock || '')`. **No form submission ever passed a `_lock`** — all three payload
+construction sites (the pre-visit form, the package form, the signed consent) omitted it. So every
+form on the device shared the single key `'form'`.
+
+That collides with the deliberately optimistic pre-visit flow. On submit the app removes the form
+from `pendingForms`, calls `_markFormDone`, fires the submit **in the background**, and immediately
+`_advancePrevisitFlow()`s to the next item — which, for a multi-form package, is ANOTHER FORM. The
+flow is built for this: `_previsitProgressHTML` renders "Step X of N" and the comments talk about
+"a two-form package".
+
+So: form 1 is still in flight, the client fills in form 2 and submits, `_clientSubmitInFlight['form']`
+is still true, and form 2 returns `{ok:false,error:'inflight',duplicate:true}` **without ever being
+sent**. Both callers then do `if(res&&res.duplicate)return;` — which is correct for a genuine
+double-tap of the SAME form, but here it means no restore, no error toast, nothing. Form 2 stays
+removed from the to-do list and marked done.
+
+**The client believes they finished. The provider never receives it. Nothing logs anywhere.**
+Intermittent by nature: it depends on how fast the client moves against how slow the network is,
+which is exactly why it looks random and why it hits a first-visit package hardest.
+
+**Fix:** every form payload now carries `_lock:'f:'+formId`, so the lock is per FORM. A real
+double-tap of the same form is still deduped (and `_idem` still covers it server-side); two
+different forms no longer collide. `_lock` is also now stripped from the body before the POST — it
+names an in-flight slot on the device and has no business in the provider's stored event.
+
+**Verified headless** (`scratchpad/formlock.mjs` reproduces, `formlock2.mjs` proves the fix):
+before, only form 1 reached the network; after, both do. A double-tap of the same form still sends
+once and still reports `duplicate`. A form and a check-in submitted together both go. `_lock` never
+appears in a stored payload.
+
+`api/client-page.js` regenerated (CLAUDE.md §3 — the client HTML is embedded there).
+
+**Not ruled out, and worth asking her:** if her answer comes back "yes, they ARE in the client file
+under saved forms", then the submission did arrive and the problem is in how she is being told about
+it (notification / the Forms screen), not in the submit — a different bug from this one. This fix is
+correct either way, but it would not be her whole story.
