@@ -2555,3 +2555,67 @@ appears in a stored payload.
 under saved forms", then the submission did arrive and the problem is in how she is being told about
 it (notification / the Forms screen), not in the submit — a different bug from this one. This fix is
 correct either way, but it would not be her whole story.
+
+### §2ai (cont.) Diana's follow-up, 2026-09-30 11:18 PM — HER OBSERVATIONS, ground truth
+
+Received after builds 2026-09-29a/b/c shipped. Verbatim facts, not conclusions:
+
+5. **"I am following up on the app issue on my phone."** — the device is her PHONE. (Still not
+   stated whether she also uses a computer. Do not assume either way.)
+6. **"It works for some clients, but it is still deleting notes for others."**
+7. **"For some profiles, old notes DO appear, and other data like home care, products, and photos
+   are saved properly"** — so homecare, the product plan and photos are now behaving. Those are
+   exactly the keys fixed in 2026-09-29a/b. Partial confirmation the merge work landed.
+8. **"...but the SERVICE SUMMARIES remain inconsistent."** — narrowed to `sc_session_summaries`,
+   which DOES merge as of 2026-09-29a. So the remaining fault is not the merge.
+9. **THE WORKAROUND, and it is the diagnosis:** "if I check a client's service summary, close it,
+   return to the client list, and click on the client again, the issue seems to temporarily
+   resolve."
+
+**What 9 means.** Re-navigating makes the summaries appear. So the data IS on the device — it is the
+SCREEN that is not reading it. This is the same shape as Ashley's eleven-build forms bug, where the
+fix that finally worked was making `renderForms()` read from disk on every draw rather than trusting
+the in-memory copy. Treat a "navigate away and back fixes it" report as a RENDER/STALE-MEMORY bug,
+not a sync bug.
+
+Do not re-open the merge for this. Facts 7 and 8 together say the sync is now delivering the data;
+fact 9 says the screen is showing a stale in-memory copy of it.
+
+#### Found and fixed, build 2026-10-01a — and her workaround WAS the diagnosis
+
+Two defects, both in "the data arrived but the screen never asked again":
+
+1. **`_reloadAll()` never redrew anything.** It reads every library back into memory after the
+   account pull and then just ended. On a phone, where the pull is seconds behind the first tap, a
+   provider can open a client BEFORE her data lands, and that screen goes on showing what it drew
+   from the defaults for as long as she stays on it. Her summaries were on the device AND in memory;
+   the screen simply never asked again. Navigating out and back in is a redraw by hand — which is
+   exactly the workaround she found.
+2. **`_reloadAfterHydrate()` passed `_navCur.arg`, which has never existed.** `_navCur` is
+   `{screen,data}`. So the one redraw that did exist navigated with an undefined argument, and a
+   client screen bounced to the client list instead of redrawing.
+
+Both now go through one `_redrawCurrentScreen()`, which refuses to redraw while an INPUT/TEXTAREA/
+contentEditable has focus or a `confirm-modal` is open — never yank a screen out from under someone
+mid-sentence.
+
+Also applied the renderForms lesson to `renderSummaryHistory()` and `renderClient()`: both read
+`sc_session_summaries` off the DISK at draw time. Storage is never behind memory, so this can only
+add what memory is missing.
+
+**Reproduced on the shipped build, then proved fixed** (`scratchpad/redraw2.mjs`). Note `_navCur` is
+a `let`, so `window._navCur=…` does NOT reach the app's binding — the first version of this test set
+it that way, measured nothing, and passed. It has to drive the real `nav()`.
+
+| | shipped (2026-09-30a) | 2026-10-01a |
+|---|---|---|
+| `_reloadAll` redraws the open screen | no, zero nav calls | yes, `('client','cDIANA')` |
+| summary on disk only, memory empty | screen says **"No summaries yet"** | renders it |
+| redraw while typing | — | suppressed |
+| redraw with a dialog open | — | suppressed |
+
+That middle row is her report word for word: the note is on the device and the screen says it is gone.
+
+**Caveat worth keeping:** this explains a summary that is PRESENT but not SHOWN. If she comes back
+and says a summary is still missing after a full close-and-reopen of the app, that is a different
+fault and the merge is back in scope.

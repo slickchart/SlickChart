@@ -468,7 +468,7 @@ const S=document.getElementById('S');
 // resets when I save it" and there was no way to tell whether her phone had any of them — a whole
 // day was spent debugging code she may not have been running. Shown at the bottom of Settings, so
 // the answer is a screenshot away. Bump it on every ship.
-const APP_BUILD='2026-09-30a';
+const APP_BUILD='2026-10-01a';
 
 
 /* ════════════════════════════════════════════════════════════════
@@ -3849,6 +3849,30 @@ async function _hydrateOffloaded(){
 // real data a few milliseconds away. Re-read the loaders that touch those keys immediately — not
 // after the pull, which on a slow phone is seconds later and is long enough for her to look at a
 // "reset" screen and save over it.
+// THE DATA ARRIVING IS NOT THE SAME AS THE SCREEN SHOWING IT.
+//
+// _reloadAll() reads every library back into memory after the account pull, and then stopped. It
+// never redrew. So on a phone — where the pull is seconds behind the first tap — a provider could
+// open a client BEFORE her data arrived, and that screen went on showing what it drew from the
+// defaults for as long as she stayed on it. Her summaries were on the device and in memory, and the
+// screen simply never asked again.
+//
+// A second provider found the workaround before we found the bug: "check a client's service summary,
+// close it, return to the client list, and click on the client again, and it resolves." That is a
+// redraw by hand. This does it for her.
+//
+// _navCur is {screen,data} — _reloadAfterHydrate was passing _navCur.arg, which has never existed,
+// so its redraw navigated with an undefined argument and a client screen bounced to the client list.
+function _redrawCurrentScreen(){
+  try{
+    if(typeof _navCur==='undefined'||!_navCur||typeof nav!=='function')return;
+    // Never yank a screen out from under someone mid-sentence, or close a dialog they are reading.
+    const ae=document.activeElement;
+    if(ae&&(ae.tagName==='INPUT'||ae.tagName==='TEXTAREA'||ae.isContentEditable))return;
+    if(document.getElementById('confirm-modal'))return;
+    nav(_navCur.screen,_navCur.data);
+  }catch(e){}
+}
 function _reloadAfterHydrate(){
   try{if(typeof loadForms==='function')loadForms();}catch(e){}
   // NO REPAIRS HERE. This runs BEFORE the pull, so the only copy of her forms in hand is this
@@ -3873,7 +3897,7 @@ function _reloadAfterHydrate(){
   try{if(typeof loadSquareCatalog==='function')loadSquareCatalog();}catch(e){}
   try{_reloadTopLevelStores();}catch(e){}
   // A screen may already be on display, drawn from the defaults. Draw it again now it is real.
-  try{if(_navCur&&typeof nav==='function')nav(_navCur.screen,_navCur.arg);}catch(e){}
+  _redrawCurrentScreen();
 }
 // The single place that writes to this device. Returns null when it landed, or the error when it
 // could not. Big values go to IndexedDB; the rest try localStorage, retry once after freeing space
@@ -4134,6 +4158,8 @@ function _reloadAll(){
   S('square status',function(){if(typeof _loadIntegSquareStatus==='function')_loadIntegSquareStatus();});
   S('photo backup state',function(){if(typeof _loadPhotoBackedUp==='function')_loadPhotoBackedUp();});
   S('branding',function(){if(typeof loadBrandColors==='function')brandColors=loadBrandColors();if(typeof applyTheme==='function')applyTheme();if(typeof _syncHeaderLogo==='function')_syncHeaderLogo();});
+  // Everything above is now in memory. Put it on the screen she is actually looking at.
+  S('redraw',function(){_redrawCurrentScreen();});
 }
 // Five taps on the version line at the bottom of Settings opens the self-check. There is no button
 // for it and nothing in any menu, so it clutters nothing — but unlike the ?selfcheck=1 link it works
@@ -7894,6 +7920,8 @@ function _gpNoteType(id){clearTimeout(_gpNoteTimer);_gpNoteTimer=setTimeout(func
 function _gpNoteSave(id){var el=document.getElementById('gpnote-'+id);var c=CL[id];if(!c||!el)return;var v=el.value;if((c.gpNote||'')===(v||''))return;c.gpNote=v;try{saveClients();}catch(e){}}
 function renderClient(id){
   setNav('clients');
+  // The saved-summaries count on this screen is what a provider reads as "my notes are gone".
+  try{if(typeof loadSessionSummaries==='function')loadSessionSummaries();}catch(e){}
   _recEditCtx='profile';
   const c=CL[id];
   if(!c){if(typeof renderClients==='function'){return renderClients();}S.innerHTML='<div style="padding:30px 16px;color:var(--p-mut);text-align:center;">This client is no longer available.</div>';return;}
@@ -11511,6 +11539,10 @@ function _storeSummary(id){
 }
 function renderSummaryHistory(id){
   setNav('clients');
+  // Same rule as renderForms: if it is on the disk, it renders. Storage is never behind memory —
+  // persistSessionSummaries() writes on every save — so reading it here can only add what memory is
+  // missing, never lose anything.
+  try{if(typeof loadSessionSummaries==='function')loadSessionSummaries();}catch(e){}
   const c=CL[id];if(!c){nav('clients');return;}const list=sessionSummaries[id]||[];
   document.getElementById('tt').textContent='Session Summaries';
   S.innerHTML=`
