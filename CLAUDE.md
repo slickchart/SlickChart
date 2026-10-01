@@ -245,6 +245,25 @@ first one's entries.
 Ashley, and the collision points for anything new added to this deployment. Read it early — it's state,
 not rules, and it's where the "this is already done" and "this will fail silently" notes live.
 
+## 4c. Drafting replies to PROVIDERS (standing rule from Ashley)
+
+When Ashley asks for a reply to a provider who reported a bug, these are emails to a busy
+esthetician, not a status report.
+
+- **Do NOT explain what went wrong.** No mechanism, no cause, no "here is why it happened". She has
+  said plainly that providers do not need it and probably do not want it. One short line that it is
+  fixed is enough.
+- **Lead with thank you.** Name the specific thing they did that helped, if there was one (Diana's
+  navigate-away-and-back workaround was the whole diagnosis). People who report bugs well are worth
+  keeping.
+- **Ask for whatever is still unknown**, and say plainly what would help. This is usually the real
+  job of the email.
+- **Say what they should do**, if anything, in a numbered or bolded step.
+- **Be honest about what might not be recoverable.** Never promise data is coming back.
+- Reading level around 3rd grade, short sentences, **no em dashes**, fewer words is better.
+
+The long technical version belongs in this conversation and in SESSION-HANDOFF.md, not in the email.
+
 ## 5. Tone with the owner
 
 The owner (Ashley, a solo esthetician) runs her real business on this and has been through a stressful data
