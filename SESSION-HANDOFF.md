@@ -2673,3 +2673,40 @@ fresh account still writes zero delete-record keys.
 **Not built, on purpose:** no repeating "add another product" FORM field type. The routine step is
 bespoke UI inside the consult, which is where it belongs; a general repeater in the form builder is a
 much bigger change and nothing needs it yet.
+
+### §2am (cont.) Consult types are the provider's to edit (build 2026-10-01c)
+
+Ashley, on the new invite sheet: *"it says Consult type and has a check for Skin Analysis. I'm not
+sure why this is there if that is the only option."* She was right, and the reason is worth keeping:
+`_vcKindOptions()` returned exactly ONE option per PROFESSION ticked, so an esthetician-only account
+got a single radio button and no way to run a brow or lash analysis at all. Fifteen consult profiles
+existed in the code; she could reach one of them.
+
+**Now:** `sc_vc_types` is a normal authored library — merges by id via `_mergeAuthoredById`, delete
+record `sc_deleted_vc_types` in `_TOMB_OBJ`, loader in `_reloadAll`. (83 keys merge, up from 81.)
+
+- `_vcCatalogue()` is all 15 built-in consults regardless of profession. That is the menu she ADDS
+  from, which is what lets an esthetician add "Brow analysis".
+- `_vcAllTypes()` = her saved types, then the defaults matching her professions, minus hidden.
+- **Nothing is seeded to storage.** A provider who never opens the editor has an empty
+  `sc_vc_types` and still sees sensible defaults. This was deliberate: seeding a library at boot is
+  the §2ad/§2ae write-back-over-real-data trap, and a fresh account still writes zero keys (checked).
+- Each type has a `kind` (the base profile, which drives the photo prompts and the AI analysis copy)
+  plus her own `title` and `photoLabels`. So "Brow analysis" gets brow metrics, not skin ones.
+- **Editing a BUILT-IN makes a copy and hides the original** via `_libForget('sc_vc_types','def:<kind>')`,
+  so the list never shows both. Synthetic `def:` ids are why a default can be hidden with nothing
+  stored for it.
+- An empty photo list is legitimate and means a consult with no photos. The invite sheet's "will be
+  asked for" summary drops the photo line for those, and follows the SELECTED type rather than the
+  first one.
+- `_vcProfileFor()` now prefers the labels captured ON THE INVITE. A type renamed or deleted later
+  does not change a consult she already sent.
+
+**Verified headless** (`scratchpad/vctypes.mjs`, `sheet2.mjs`): esthetician-only starts at exactly
+"Skin analysis" as before; catalogue is 15 and includes brow and lash; adding a brow analysis gets
+`kind:'brow'` and brow photo prompts; editing a built-in renames with NO duplicate; a custom photo
+prompt sticks and travels on the invite; the review screen follows the invited type; delete sticks.
+Sheet: add button, per-row edit pencil, photo count follows the selection, photo line disappears for
+a photo-free type.
+
+All earlier suites pass, sweep clean, five CI sweeps pass, generated in sync.

@@ -214,7 +214,7 @@ const S=document.getElementById('S');
 // resets when I save it" and there was no way to tell whether her phone had any of them — a whole
 // day was spent debugging code she may not have been running. Shown at the bottom of Settings, so
 // the answer is a screenshot away. Bump it on every ship.
-const APP_BUILD='2026-10-01b';
+const APP_BUILD='2026-10-01c';
 
 
 /* ════════════════════════════════════════════════════════════════
@@ -2391,7 +2391,7 @@ function _usableSyncValue(str){ const sh=_syncShape(str); return sh!=='missing'&
 // sc_hidden_guides / sc_hidden_forms are {id:1} maps of what the provider deleted. They were pushed
 // immediately but NOT registered here, so the map itself rode the plain overwrite: a stale device's
 // copy could drop ids and resurrect a deleted guide. Same class of bug as sc_courses.
-const _TOMB_OBJ={sc_deleted_products:1,sc_deleted_docs:1,sc_deleted_protocols:1,sc_deleted_note_tmpls:1,sc_deleted_needle_presets:1,
+const _TOMB_OBJ={sc_deleted_vc_types:1,sc_deleted_products:1,sc_deleted_docs:1,sc_deleted_protocols:1,sc_deleted_note_tmpls:1,sc_deleted_needle_presets:1,
   sc_deleted_autos:1,sc_deleted_inv:1,sc_deleted_vendors:1,sc_deleted_shop_bundles:1,sc_deleted_bundles:1,
   sc_deleted_partners:1,sc_deleted_payments:1,
   sc_deleted_appts:1,sc_deleted_clients:1,sc_hidden_square:1,sc_merged_ids:1,sc_merged_into:1,sc_ci_dismissed:1,sc_course_purchases:1,sc_hidden_courses:1,sc_hidden_guides:1,sc_hidden_forms:1};
@@ -2433,7 +2433,10 @@ const _LIB_TOMB={
   // her own products, the demo ones once hidden, and the Square ones dropped by a disconnect or by
   // a catalog sync that no longer lists them. Those last two are CLEARED again if Square comes back
   // carrying the same product, because they were never her decision to delete.
-  sc_affiliate_links:['sc_deleted_products','sc_hidden_square']
+  sc_affiliate_links:['sc_deleted_products','sc_hidden_square'],
+  // Her consult types. Hiding a BUILT-IN records its synthetic 'def:<kind>' id here, which is how a
+  // default she does not want stays gone without anything having to be stored for it.
+  sc_vc_types:'sc_deleted_vc_types'
 };
 // Vendors, inventory rows and partners are stored WITHOUT ids. A generated id would differ on every
 // device and the union would duplicate them, so their identity is derived from what the provider
@@ -3891,6 +3894,7 @@ function _reloadAll(){
   S('note templates',function(){if(typeof loadCustomNoteTemplates==='function')loadCustomNoteTemplates();});
   S('note format',function(){if(typeof loadNoteFmt==='function')loadNoteFmt();});
   S('documents',function(){if(typeof loadDocs==='function')loadDocs();});
+  S('consult types',function(){if(typeof loadVcTypes==='function')loadVcTypes();});
   S('needle presets',function(){if(typeof loadNeedlePresets==='function')loadNeedlePresets();});
   S('notification settings',function(){if(typeof loadNotifSettings==='function')loadNotifSettings();});
   S('protocols',function(){if(typeof loadProtocols==='function')loadProtocols();});
@@ -12780,7 +12784,9 @@ function inviteVirtualConsult(id,_force,_kind,_formId,_routine){
   // A fresh invite opens the "configure this consult" sheet (pick type + optionally attach a form);
   // the sheet's Send button calls back with an explicit kind (+formId) which we honor directly.
   let v;
-  if(_kind){const o=(typeof _vcKindOptions==='function'?_vcKindOptions():[]).find(x=>x.kind===_kind);v=o?o.profile:_vcProfile();}
+  if(_kind){const _o=(typeof _vcKindOptions==='function'?_vcKindOptions():[]);
+    const o=_o.find(x=>x.id===_kind)||_o.find(x=>x.kind===_kind);
+    v=o?o.profile:_vcProfile();}
   else{_vcInvitePickerSheet(id,(typeof _vcKindOptions==='function')?_vcKindOptions():[]);return;}
   // Attach an intake form to the consult by assigning it through the normal pending-form flow, so the
   // client fills it with the same robust form experience and it lands in their chart.
@@ -13438,6 +13444,12 @@ function _vcProfileFor(id){
   try{
     var sub=(typeof vcSubmissions!=='undefined')&&vcSubmissions[id];
     var inv=(typeof vcInvites!=='undefined')&&vcInvites[id];
+    // The invite captured its own labels and title when it was sent. Prefer those: a custom type may
+    // since have been renamed or removed, and the consult she sent is still the consult she sent.
+    if(inv&&Array.isArray(inv.photoLabels)&&inv.kind){
+      return Object.assign({},_vcBaseProfile(inv.kind),{title:inv.title||'Virtual consult',short:inv.title||'Consult',
+        photoLabels:inv.photoLabels,refTitle:inv.refTitle||null,refLabels:inv.refLabels||null});
+    }
     var k=(sub&&sub.kind)||(inv&&inv.kind)||'';
     if(k&&typeof _vcKindOptions==='function'){var o=_vcKindOptions().find(function(x){return x&&x.kind===k;});if(o&&o.profile)return o.profile;}
   }catch(e){}
@@ -13596,14 +13608,78 @@ function _vcProfileForProf(prof){
   const saved=selectedProfessions;
   try{selectedProfessions=[prof];return _vcProfile();}finally{selectedProfessions=saved;}
 }
-function _vcKindOptions(){
-  const seen={};const opts=[];
-  (selectedProfessions||[]).forEach(p=>{
+// CONSULT TYPES ARE HERS TO EDIT.
+//
+// This used to return exactly one option per PROFESSION she had ticked, so an esthetician opened the
+// invite sheet, saw a single radio button labelled "Skin analysis", and could not tell why it was a
+// choice at all. An esthetician who also does brows had no way to run a brow analysis.
+//
+// Now: her saved types first, then the defaults that match her professions, minus anything she has
+// hidden. Nothing is seeded to storage — a provider who never opens the editor has an empty
+// sc_vc_types and still sees sensible defaults, so this cannot write anything into a new account.
+let vcTypes=[];
+function loadVcTypes(){try{const raw=(typeof _lsGet==='function')?_lsGet('sc_vc_types'):localStorage.getItem('sc_vc_types');if(raw){const a=JSON.parse(raw);if(Array.isArray(a))vcTypes=a;}}catch(e){}}
+function persistVcTypes(){try{const v=JSON.stringify(vcTypes);localStorage.setItem('sc_vc_types',v);if(typeof _pushKeyNow==='function')_pushKeyNow('sc_vc_types',v);}catch(e){}}
+// Every consult the app knows how to run, whatever she ticked at signup. This is the menu she picks
+// from when ADDING a type, which is what lets an esthetician add a brow or lash analysis.
+function _vcCatalogue(){
+  const seen={},out=[];
+  try{
+    (allProfessions||[]).forEach(function(p){
+      let v=null;try{v=_vcProfileForProf(p.id);}catch(e){v=null;}
+      if(v&&v.kind&&!seen[v.kind]){seen[v.kind]=1;out.push(_vcTypeFromProfile(v));}
+    });
+  }catch(e){}
+  return out;
+}
+function _vcTypeFromProfile(v){
+  return {id:'def:'+v.kind,title:v.title,kind:v.kind,icon:v.icon||'ti-camera',
+    photoLabels:Array.isArray(v.photoLabels)?v.photoLabels.slice():[],
+    refTitle:v.refTitle||null,refLabels:Array.isArray(v.refLabels)?v.refLabels.slice():null,_builtin:true};
+}
+// The defaults that fit her professions — what this function used to return on its own.
+function _vcProfTypes(){
+  const seen={},out=[];
+  (selectedProfessions||[]).forEach(function(p){
     let v=null;try{v=_vcProfileForProf(p);}catch(e){v=null;}
-    if(v&&v.kind&&!seen[v.kind]){seen[v.kind]=1;opts.push({kind:v.kind,title:v.title,icon:v.icon||'ti-camera',profile:v});}
+    if(v&&v.kind&&!seen[v.kind]){seen[v.kind]=1;out.push(_vcTypeFromProfile(v));}
   });
-  if(!opts.length){const v=_vcProfile();opts.push({kind:v.kind,title:v.title,icon:v.icon||'ti-camera',profile:v});}
-  return opts;
+  if(!out.length){try{out.push(_vcTypeFromProfile(_vcProfile()));}catch(e){}}
+  return out;
+}
+function _vcAllTypes(){
+  const gone=(typeof _tombSet==='function')?_tombSet(_LIB_TOMB.sc_vc_types):{};
+  const out=[],seen={};
+  (Array.isArray(vcTypes)?vcTypes:[]).forEach(function(t){
+    if(!t||!t.id||gone[t.id]||seen[t.id])return;seen[t.id]=1;out.push(t);
+  });
+  _vcProfTypes().forEach(function(t){
+    if(gone[t.id]||seen[t.id])return;seen[t.id]=1;out.push(t);
+  });
+  return out;
+}
+// The underlying profile for a kind — this is what drives the AI analysis copy, so a custom type
+// named "Brow analysis" still gets brow metrics rather than skin ones.
+function _vcBaseProfile(kind){
+  try{
+    const found=(allProfessions||[]).map(function(p){try{return _vcProfileForProf(p.id);}catch(e){return null;}})
+      .find(function(v){return v&&v.kind===kind;});
+    if(found)return found;
+  }catch(e){}
+  return _vcProfile();
+}
+function _vcTypeProfile(t){
+  const base=_vcBaseProfile(t&&t.kind);
+  return Object.assign({},base,{
+    title:t.title||base.title, short:t.title||base.short, icon:t.icon||base.icon,
+    photoLabels:Array.isArray(t.photoLabels)?t.photoLabels:base.photoLabels,
+    refTitle:(t.refTitle!==undefined)?t.refTitle:base.refTitle,
+    refLabels:(t.refLabels!==undefined)?t.refLabels:base.refLabels});
+}
+function _vcKindOptions(){
+  return _vcAllTypes().map(function(t){
+    return {id:t.id,kind:t.kind,title:t.title,icon:t.icon||'ti-camera',profile:_vcTypeProfile(t),builtin:!!t._builtin};
+  });
 }
 // "Configure this consult" sheet: choose the consult TYPE (sets which photos the client is asked for)
 // and optionally ATTACH one of your own intake forms, which the client fills through the normal form
@@ -13618,9 +13694,10 @@ function _vcInvitePickerSheet(id,opts){
   ov.style.cssText='position:fixed;inset:0;margin:0 auto;width:390px;max-width:100%;z-index:99999;background:rgba(0,0,0,.65);display:flex;align-items:flex-end;justify-content:center;';
   ov.onclick=e=>{if(e.target===ov)ov.remove();};
   const typeRows=opts.map((o,i)=>`<label style="display:flex;align-items:center;gap:10px;padding:11px 12px;border:1px solid var(--p-line);border-radius:12px;margin-bottom:7px;cursor:pointer;background:var(--surf1);">
-    <input type="radio" name="vc-type" value="${esc(o.kind)}" ${i===0?'checked':''} style="accent-color:var(--accent-strong);width:16px;height:16px;flex-shrink:0;">
+    <input type="radio" name="vc-type" value="${esc(o.id)}" data-photos="${(o.profile&&Array.isArray(o.profile.photoLabels))?o.profile.photoLabels.length:0}" ${i===0?'checked':''} onchange="_vcAsksSync()" style="accent-color:var(--accent-strong);width:16px;height:16px;flex-shrink:0;">
     <i class="ti ${o.icon}" style="font-size:16px;color:var(--accent-strong);flex-shrink:0;"></i>
     <span style="flex:1;font-size:16px;color:var(--p-ink);">${esc(o.title)}</span>
+    <button onclick="event.preventDefault();event.stopPropagation();_vcEditType('${esc(id)}','${esc(o.id)}')" aria-label="Edit ${esc(o.title)}" style="background:none;border:none;color:var(--p-mut);cursor:pointer;padding:3px 2px;flex-shrink:0;"><i class="ti ti-pencil" style="font-size:15px;"></i></button>
   </label>`).join('');
   const formOpts=`<option value="">No extra form</option>`+forms.map(f=>`<option value="${esc(f.id)}">${esc(f.name||'Form')}</option>`).join('');
   const firstKind=(opts&&opts[0])||null;
@@ -13628,7 +13705,7 @@ function _vcInvitePickerSheet(id,opts){
   const asksHTML=`<div style="background:var(--surf1);border:1px solid var(--p-line3);border-radius:12px;padding:11px 13px;margin-bottom:14px;">
     <div style="font-size:14px;font-weight:600;color:var(--p-mut);text-transform:uppercase;letter-spacing:.05em;margin-bottom:7px;">${esc(first)} will be asked for</div>
     <div id="vc-asks" style="font-size:16px;color:var(--p-ink);line-height:1.9;">
-      ${photoN?`<div><i class="ti ti-camera" style="color:var(--accent-strong);width:18px;"></i> ${photoN} photo${photoN===1?'':'s'}</div>`:''}
+      <div id="vc-ask-photo-row" style="${photoN?'':'display:none;'}"><i class="ti ti-camera" style="color:var(--accent-strong);width:18px;"></i> <span id="vc-ask-photo-n">${photoN} photo${photoN===1?'':'s'}</span></div>
       <div id="vc-ask-routine-row"><i class="ti ti-list-check" style="color:var(--accent-strong);width:18px;"></i> The products they use at home</div>
       <div><i class="ti ti-message-circle" style="color:var(--accent-strong);width:18px;"></i> What they are hoping for</div>
       <div id="vc-ask-form-row" style="display:none;"><i class="ti ti-file-text" style="color:var(--accent-strong);width:18px;"></i> <span id="vc-ask-form-name">Your form</span></div>
@@ -13640,6 +13717,7 @@ function _vcInvitePickerSheet(id,opts){
     ${asksHTML}
     <div style="font-size:14px;font-weight:600;color:var(--p-mut);text-transform:uppercase;letter-spacing:.05em;margin-bottom:8px;">Consult type</div>
     ${typeRows}
+    <button onclick="_vcEditType('${esc(id)}','')" style="width:100%;background:none;border:1px dashed var(--p-line);border-radius:12px;padding:10px;font-size:16px;font-weight:600;color:var(--accent-strong);cursor:pointer;font-family:inherit;margin-bottom:2px;"><i class="ti ti-plus" style="font-size:15px;"></i> Add a consult type</button>
     <label style="display:flex;align-items:flex-start;gap:10px;padding:11px 12px;border:1px solid var(--p-line);border-radius:12px;margin:12px 0 2px;cursor:pointer;background:var(--surf1);">
       <input type="checkbox" id="vc-ask-routine" checked onchange="_vcAsksSync()" style="accent-color:var(--accent-strong);width:16px;height:16px;flex-shrink:0;margin-top:2px;">
       <span style="flex:1;">
@@ -13657,6 +13735,13 @@ function _vcInvitePickerSheet(id,opts){
 }
 // The summary above is the promise this sheet makes. Keep it true as she toggles things.
 function _vcAsksSync(){
+  try{
+    const sel=document.querySelector('input[name="vc-type"]:checked');
+    const n=sel?(parseInt(sel.getAttribute('data-photos'),10)||0):0;
+    const pRow=document.getElementById('vc-ask-photo-row'),pN=document.getElementById('vc-ask-photo-n');
+    if(pRow)pRow.style.display=n?'':'none';
+    if(pN)pN.textContent=n+' photo'+(n===1?'':'s');
+  }catch(e){}
   try{
     const rt=document.getElementById('vc-ask-routine'),rtRow=document.getElementById('vc-ask-routine-row');
     if(rt&&rtRow)rtRow.style.display=rt.checked?'':'none';
@@ -13728,10 +13813,116 @@ function _vcRoutineReviewHTML(id,sub){
       +'</div></div>';
   }catch(e){return '';}
 }
+// ── the consult type editor ───────────────────────────────────────────────────
+// Add a type, rename one, change which photos it asks the client for, or remove one she never uses.
+// Editing a BUILT-IN makes a copy of it and hides the original, so the list never shows both.
+let _vcTypeDraft=null;
+function _vcEditType(clientId,typeId){
+  const all=_vcAllTypes();
+  const existing=typeId?all.find(function(t){return t&&t.id===typeId;}):null;
+  _vcTypeDraft=existing
+    ? {id:existing.id,title:existing.title||'',kind:existing.kind||'skin',icon:existing.icon||'ti-camera',
+       photoLabels:(Array.isArray(existing.photoLabels)?existing.photoLabels.slice():[]),
+       refTitle:existing.refTitle||null,refLabels:existing.refLabels||null,
+       _builtin:!!existing._builtin,_from:existing.id}
+    : {id:'',title:'',kind:'',icon:'ti-camera',photoLabels:[],refTitle:null,refLabels:null,_builtin:false,_from:''};
+  try{const sh=document.getElementById('vc-type-sheet');if(sh)sh.remove();}catch(e){}
+  _vcTypeEditorSheet(clientId);
+}
+// Starting from an existing consult gives her the right photo prompts and the right AI analysis for
+// free — an esthetician adding "Brow analysis" should not have to invent what to photograph.
+function _vcTypeStartFrom(kind){
+  const base=_vcCatalogue().find(function(t){return t.kind===kind;});
+  if(!base||!_vcTypeDraft)return;
+  _vcTypeDraft.kind=base.kind;
+  _vcTypeDraft.icon=base.icon;
+  if(!_vcTypeDraft.title)_vcTypeDraft.title=base.title;
+  if(!_vcTypeDraft.photoLabels.length)_vcTypeDraft.photoLabels=base.photoLabels.slice();
+  _vcTypeDraft.refTitle=base.refTitle;_vcTypeDraft.refLabels=base.refLabels;
+  _vcTypeEditorSheet(_vcTypeDraft._clientId||'');
+}
+function _vcTypeSetTitle(v){if(_vcTypeDraft)_vcTypeDraft.title=String(v||'');}
+function _vcTypeSetPhoto(i,v){if(_vcTypeDraft&&_vcTypeDraft.photoLabels[i]!==undefined)_vcTypeDraft.photoLabels[i]=String(v||'');}
+function _vcTypeAddPhoto(cid){if(!_vcTypeDraft)return;_vcTypeDraft.photoLabels.push('');_vcTypeEditorSheet(cid);}
+function _vcTypeRemovePhoto(cid,i){if(!_vcTypeDraft)return;_vcTypeDraft.photoLabels.splice(i,1);_vcTypeEditorSheet(cid);}
+function _vcTypeSave(cid){
+  if(!_vcTypeDraft)return;
+  const d=_vcTypeDraft;
+  const title=String(d.title||'').trim();
+  if(!title){if(typeof proToast==='function')proToast('Give this consult type a name');return;}
+  if(!d.kind){if(typeof proToast==='function')proToast('Choose what to start from');return;}
+  const labels=d.photoLabels.map(function(x){return String(x||'').trim();}).filter(Boolean);
+  const rec={id:(d.id&&!d._builtin)?d.id:('vct_'+Date.now().toString(36)),
+    title:title,kind:d.kind,icon:d.icon||'ti-camera',photoLabels:labels,
+    refTitle:d.refTitle||null,refLabels:d.refLabels||null,_ts:Date.now()};
+  const ix=vcTypes.findIndex(function(t){return t&&t.id===rec.id;});
+  if(ix>=0)vcTypes[ix]=rec;else vcTypes.push(rec);
+  // editing a built-in replaces it rather than sitting beside it
+  if(d._builtin&&d._from&&typeof _libForget==='function'){try{_libForget('sc_vc_types',d._from);}catch(e){}}
+  try{persistVcTypes();}catch(e){}
+  _vcTypeDraft=null;
+  try{const sh=document.getElementById('vc-type-editor');if(sh)sh.remove();}catch(e){}
+  if(typeof proToast==='function')proToast(ix>=0?'Consult type updated':'Consult type added');
+  if(cid)_vcInvitePickerSheet(cid,_vcKindOptions());
+}
+function _vcTypeDelete(cid){
+  if(!_vcTypeDraft||!_vcTypeDraft.id)return;
+  const d=_vcTypeDraft,nm=d.title||'this consult type';
+  const go=function(){
+    try{_libForget('sc_vc_types',d.id);}catch(e){}
+    const ix=vcTypes.findIndex(function(t){return t&&t.id===d.id;});
+    if(ix>=0)vcTypes.splice(ix,1);
+    try{persistVcTypes();}catch(e){}
+    _vcTypeDraft=null;
+    try{const sh=document.getElementById('vc-type-editor');if(sh)sh.remove();}catch(e){}
+    if(typeof proToast==='function')proToast(nm+' removed');
+    if(cid)_vcInvitePickerSheet(cid,_vcKindOptions());
+  };
+  if(typeof confirmModal==='function')confirmModal({title:'Remove '+nm+'?',body:'It stops appearing when you invite someone. Consults you already sent are not affected.',action:'Remove'},go);
+  else go();
+}
+function _vcTypeEditorSheet(cid){
+  if(!_vcTypeDraft)return;
+  _vcTypeDraft._clientId=cid||'';
+  const d=_vcTypeDraft;
+  const esc=function(x){return String(x==null?'':x).replace(/&/g,'&amp;').replace(/</g,'&lt;').replace(/>/g,'&gt;').replace(/"/g,'&quot;');};
+  const old=document.getElementById('vc-type-editor');if(old)old.remove();
+  const ov=document.createElement('div');ov.id='vc-type-editor';
+  ov.style.cssText='position:fixed;inset:0;margin:0 auto;width:390px;max-width:100%;z-index:100000;background:rgba(0,0,0,.65);display:flex;align-items:flex-end;justify-content:center;';
+  ov.onclick=function(e){if(e.target===ov){ov.remove();_vcTypeDraft=null;}};
+  const isNew=!d.id;
+  const cat=_vcCatalogue();
+  const startRows=cat.map(function(t){
+    const on=d.kind===t.kind;
+    return '<button onclick="_vcTypeStartFrom(\''+esc(t.kind)+'\')" style="border:1px solid '+(on?'var(--accent)':'var(--p-line)')+';background:'+(on?'var(--accent-tint)':'var(--surf1)')+';color:'+(on?'var(--accent-strong)':'var(--p-ink)')+';border-radius:24px;padding:6px 12px;font-size:15px;cursor:pointer;font-family:inherit;margin:0 6px 6px 0;">'+esc(t.title)+'</button>';
+  }).join('');
+  const photoRows=d.photoLabels.map(function(l,i){
+    return '<div style="display:flex;gap:7px;align-items:center;margin-bottom:6px;">'
+      +'<input value="'+esc(l)+'" oninput="_vcTypeSetPhoto('+i+',this.value)" placeholder="e.g. Front, relaxed" class="fi" style="flex:1;margin:0;">'
+      +'<button onclick="_vcTypeRemovePhoto(\''+esc(cid)+'\','+i+')" aria-label="Remove this photo" style="background:none;border:none;color:var(--p-mut);cursor:pointer;padding:4px;"><i class="ti ti-x" style="font-size:15px;"></i></button></div>';
+  }).join('');
+  ov.innerHTML='<div style="background:var(--surf2);border:1px solid var(--p-line);border-radius:16px 16px 0 0;width:100%;padding:18px 16px calc(18px + env(safe-area-inset-bottom,0px));max-height:88%;overflow-y:auto;">'
+    +'<div style="font-size:16px;font-weight:600;color:var(--p-ink);margin-bottom:4px;">'+(isNew?'Add a consult type':'Edit consult type')+'</div>'
+    +'<div style="font-size:16px;color:var(--p-mut);margin-bottom:14px;">These are the consults you can invite someone to. Name it whatever you call it.</div>'
+    +'<div style="font-size:14px;font-weight:600;color:var(--p-mut);text-transform:uppercase;letter-spacing:.05em;margin-bottom:8px;">Name</div>'
+    +'<input value="'+esc(d.title)+'" oninput="_vcTypeSetTitle(this.value)" placeholder="e.g. Brow analysis" class="fi" style="margin-bottom:14px;">'
+    +'<div style="font-size:14px;font-weight:600;color:var(--p-mut);text-transform:uppercase;letter-spacing:.05em;margin-bottom:4px;">Based on</div>'
+    +'<div style="font-size:14px;color:var(--p-mut);line-height:1.5;margin-bottom:8px;">Sets the photo prompts and the analysis you get back. You can change the photos below.</div>'
+    +'<div style="margin-bottom:14px;">'+startRows+'</div>'
+    +'<div style="font-size:14px;font-weight:600;color:var(--p-mut);text-transform:uppercase;letter-spacing:.05em;margin-bottom:4px;">Photos to ask for</div>'
+    +'<div style="font-size:14px;color:var(--p-mut);line-height:1.5;margin-bottom:8px;">Leave this empty for a consult with no photos at all.</div>'
+    +photoRows
+    +'<button onclick="_vcTypeAddPhoto(\''+esc(cid)+'\')" style="width:100%;background:none;border:1px dashed var(--p-line);border-radius:10px;padding:9px;font-size:16px;color:var(--accent-strong);cursor:pointer;font-family:inherit;margin-bottom:16px;"><i class="ti ti-plus" style="font-size:14px;"></i> Add a photo prompt</button>'
+    +'<button onclick="_vcTypeSave(\''+esc(cid)+'\')" class="btnp" style="border-radius:12px;padding:12px;margin-bottom:8px;"><i class="ti ti-check"></i> Save</button>'
+    +(isNew?'':'<button onclick="_vcTypeDelete(\''+esc(cid)+'\')" style="width:100%;background:none;border:1px solid var(--p-red-line);color:var(--p-red);border-radius:12px;padding:10px;font-size:16px;font-weight:600;cursor:pointer;font-family:inherit;margin-bottom:8px;">Remove this type</button>')
+    +'<button onclick="document.getElementById(\'vc-type-editor\').remove();_vcTypeDraft=null;" style="width:100%;background:none;border:none;color:var(--p-mut);font-size:16px;cursor:pointer;font-family:inherit;padding:6px;">Cancel</button>'
+    +'</div>';
+  (document.querySelector('.shell')||document.body).appendChild(ov);
+}
 function _vcSendInvite(id){
   const sheet=document.getElementById('vc-type-sheet');
   const kindEl=sheet&&sheet.querySelector('input[name="vc-type"]:checked');
-  const kind=kindEl?kindEl.value:'';
+  const kind=kindEl?kindEl.value:'';   // now a TYPE id (def:<kind> for a built-in)
   const formSel=document.getElementById('vc-attach-form');
   const formId=formSel?formSel.value:'';
   if(sheet)sheet.remove();
