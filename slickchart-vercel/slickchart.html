@@ -214,7 +214,7 @@ const S=document.getElementById('S');
 // resets when I save it" and there was no way to tell whether her phone had any of them — a whole
 // day was spent debugging code she may not have been running. Shown at the bottom of Settings, so
 // the answer is a screenshot away. Bump it on every ship.
-const APP_BUILD='2026-10-01a';
+const APP_BUILD='2026-10-01b';
 
 
 /* ════════════════════════════════════════════════════════════════
@@ -12771,7 +12771,7 @@ function loadVcState(){
     }
   }catch(e){}
 }
-function inviteVirtualConsult(id,_force,_kind,_formId){
+function inviteVirtualConsult(id,_force,_kind,_formId,_routine){
   const c=CL[id];if(!c)return;
   if(!_force && typeof _vcStatus==='function' && _vcStatus(id)==='needs-review'){
     // A submission is waiting for review, re-inviting would drop it from the "Needs review" queue.
@@ -12790,7 +12790,8 @@ function inviteVirtualConsult(id,_force,_kind,_formId){
   // labels ON the invite so the client asks for the RIGHT shots per profession (and none at all for
   // photo-free consults like nutrition/coaching) instead of re-deriving a skin-face grid.
   vcInvites[id]={...(vcInvites[id]||{}),invited:true,submitted:false,reviewed:false,invitedAt:Date.now(),
-    kind:v.kind,title:v.title,photoLabels:Array.isArray(v.photoLabels)?v.photoLabels:[],refTitle:v.refTitle||null,refLabels:Array.isArray(v.refLabels)?v.refLabels:null};
+    kind:v.kind,title:v.title,photoLabels:Array.isArray(v.photoLabels)?v.photoLabels:[],refTitle:v.refTitle||null,refLabels:Array.isArray(v.refLabels)?v.refLabels:null,
+    routine:(_routine!==false)};   // ON unless she turned it off for this invite
   try{persistVcState();}catch(e){}
   try{SlickBridge.post('virtual-consult-invite',{providerId:'jess',clientId:id,kind:v.kind,title:v.title,fee:vcFee,photoLabels:Array.isArray(v.photoLabels)?v.photoLabels:[],refTitle:v.refTitle||null,refLabels:Array.isArray(v.refLabels)?v.refLabels:null});}catch(e){}
   const _inviteMsg=`I'd love to do a virtual ${v.kind==='skin'?'skin':v.kind} consult before your next visit, I've sent an invite to your app. Upload a few photos and I'll send my notes back. ✨`;
@@ -13621,19 +13622,111 @@ function _vcInvitePickerSheet(id,opts){
     <i class="ti ${o.icon}" style="font-size:16px;color:var(--accent-strong);flex-shrink:0;"></i>
     <span style="flex:1;font-size:16px;color:var(--p-ink);">${esc(o.title)}</span>
   </label>`).join('');
-  const formOpts=`<option value="">No form — photos only</option>`+forms.map(f=>`<option value="${esc(f.id)}">${esc(f.name||'Form')}</option>`).join('');
+  const formOpts=`<option value="">No extra form</option>`+forms.map(f=>`<option value="${esc(f.id)}">${esc(f.name||'Form')}</option>`).join('');
+  const firstKind=(opts&&opts[0])||null;
+  const photoN=(firstKind&&firstKind.profile&&Array.isArray(firstKind.profile.photoLabels))?firstKind.profile.photoLabels.length:0;
+  const asksHTML=`<div style="background:var(--surf1);border:1px solid var(--p-line3);border-radius:12px;padding:11px 13px;margin-bottom:14px;">
+    <div style="font-size:14px;font-weight:600;color:var(--p-mut);text-transform:uppercase;letter-spacing:.05em;margin-bottom:7px;">${esc(first)} will be asked for</div>
+    <div id="vc-asks" style="font-size:16px;color:var(--p-ink);line-height:1.9;">
+      ${photoN?`<div><i class="ti ti-camera" style="color:var(--accent-strong);width:18px;"></i> ${photoN} photo${photoN===1?'':'s'}</div>`:''}
+      <div id="vc-ask-routine-row"><i class="ti ti-list-check" style="color:var(--accent-strong);width:18px;"></i> The products they use at home</div>
+      <div><i class="ti ti-message-circle" style="color:var(--accent-strong);width:18px;"></i> What they are hoping for</div>
+      <div id="vc-ask-form-row" style="display:none;"><i class="ti ti-file-text" style="color:var(--accent-strong);width:18px;"></i> <span id="vc-ask-form-name">Your form</span></div>
+    </div>
+  </div>`;
   ov.innerHTML=`<div style="background:var(--surf2);border:1px solid var(--p-line);border-radius:16px 16px 0 0;width:100%;padding:18px 16px calc(18px + env(safe-area-inset-bottom,0px));max-height:82%;overflow-y:auto;">
     <div style="font-size:16px;font-weight:600;color:var(--p-ink);margin-bottom:4px;">Virtual consult for ${esc(first)}</div>
-    <div style="font-size:16px;color:var(--p-mut);margin-bottom:14px;">Choose the consult type and, if you like, attach one of your intake forms.</div>
+    <div style="font-size:16px;color:var(--p-mut);margin-bottom:14px;">Here is exactly what they will see.</div>
+    ${asksHTML}
     <div style="font-size:14px;font-weight:600;color:var(--p-mut);text-transform:uppercase;letter-spacing:.05em;margin-bottom:8px;">Consult type</div>
     ${typeRows}
-    <div style="font-size:14px;font-weight:600;color:var(--p-mut);text-transform:uppercase;letter-spacing:.05em;margin:14px 0 8px;">Attach a form <span style="font-weight:400;text-transform:none;letter-spacing:0;">(optional)</span></div>
-    <select id="vc-attach-form" class="fi" style="margin-bottom:6px;">${formOpts}</select>
+    <label style="display:flex;align-items:flex-start;gap:10px;padding:11px 12px;border:1px solid var(--p-line);border-radius:12px;margin:12px 0 2px;cursor:pointer;background:var(--surf1);">
+      <input type="checkbox" id="vc-ask-routine" checked onchange="_vcAsksSync()" style="accent-color:var(--accent-strong);width:16px;height:16px;flex-shrink:0;margin-top:2px;">
+      <span style="flex:1;">
+        <span style="font-size:16px;color:var(--p-ink);display:block;">Ask what they use at home</span>
+        <span style="font-size:14px;color:var(--p-mut);display:block;margin-top:2px;line-height:1.5;">They list their products and how each one feels, so you can go through it and write back.</span>
+      </span>
+    </label>
+    <div style="font-size:14px;font-weight:600;color:var(--p-mut);text-transform:uppercase;letter-spacing:.05em;margin:14px 0 8px;">Add one of your forms <span style="font-weight:400;text-transform:none;letter-spacing:0;">(optional)</span></div>
+    <select id="vc-attach-form" class="fi" style="margin-bottom:6px;" onchange="_vcAsksSync()">${formOpts}</select>
     <button onclick="document.getElementById('vc-type-sheet').remove();nav('form-builder','new');" style="background:none;border:none;color:var(--accent-strong);font-size:16px;cursor:pointer;font-family:inherit;padding:2px 0 14px;"><i class="ti ti-plus" style="font-size:16px;"></i> Build a new form</button>
     <button onclick="_vcSendInvite('${id}')" class="btnp" style="border-radius:12px;padding:12px;margin-bottom:8px;"><i class="ti ti-send"></i> Send invite</button>
     <button onclick="document.getElementById('vc-type-sheet').remove()" style="width:100%;background:none;border:none;color:var(--p-mut);font-size:16px;cursor:pointer;font-family:inherit;padding:6px;">Cancel</button>
   </div>`;
   (document.querySelector('.shell')||document.body).appendChild(ov);
+}
+// The summary above is the promise this sheet makes. Keep it true as she toggles things.
+function _vcAsksSync(){
+  try{
+    const rt=document.getElementById('vc-ask-routine'),rtRow=document.getElementById('vc-ask-routine-row');
+    if(rt&&rtRow)rtRow.style.display=rt.checked?'':'none';
+    const sel=document.getElementById('vc-attach-form'),fRow=document.getElementById('vc-ask-form-row'),fName=document.getElementById('vc-ask-form-name');
+    if(sel&&fRow){
+      const on=!!sel.value;
+      fRow.style.display=on?'':'none';
+      if(on&&fName)fName.textContent=(sel.options[sel.selectedIndex]||{}).text||'Your form';
+    }
+  }catch(e){}
+}
+function _vcRoutineSetFeedback(cid,i,val){
+  try{
+    const sub=vcSubmissions[cid];if(!sub||!Array.isArray(sub.routine)||!sub.routine[i])return;
+    sub.routine[i].feedback=String(val||'');
+    _vcRoutineSaveSoon(cid);
+  }catch(e){}
+}
+function _vcRoutineSetNote(cid,val){
+  try{
+    const sub=vcSubmissions[cid];if(!sub)return;
+    sub.routineNote=String(val||'');
+    _vcRoutineSaveSoon(cid);
+  }catch(e){}
+}
+// Typing fires on every keystroke; writing the whole submission blob (it holds photos) each time
+// would be brutal on a phone. Same debounce the rec-reason boxes use.
+let _vcRtTimer=null;
+function _vcRoutineSaveSoon(cid){
+  if(_vcRtTimer)clearTimeout(_vcRtTimer);
+  _vcRtTimer=setTimeout(function(){
+    _vcRtTimer=null;
+    try{if(typeof persistVcState==='function')persistVcState();}catch(e){}
+    try{if(cid&&typeof _scheduleSpecificClientSync==='function')_scheduleSpecificClientSync(cid);}catch(e){}
+  },600);
+}
+function _vcRoutineReviewHTML(id,sub){
+  try{
+    const items=(sub&&Array.isArray(sub.routine))?sub.routine:[];
+    const c=CL[id]||{};
+    const first=_fileEsc(String(c.name||'').split(' ')[0]||'they');
+    if(!items.length){
+      const inv=(typeof vcInvites!=='undefined')?vcInvites[id]:null;
+      if(!(inv&&inv.submitted))return '';
+      return '<div style="background:var(--surf2);border:1px solid var(--p-line);border-radius:12px;padding:12px 14px;margin-bottom:12px;">'
+        +'<div style="font-size:14px;font-weight:600;color:var(--p-mut);text-transform:uppercase;letter-spacing:.06em;margin-bottom:6px;">What '+first+' uses at home</div>'
+        +'<div style="font-size:16px;color:var(--p-mut);line-height:1.6;">They did not list anything this time.</div></div>';
+    }
+    const rows=items.map(function(x,i){
+      const nm=_fileEsc(x.name||''),wh=_fileEsc(x.when||''),nt=_fileEsc(x.note||'');
+      return '<div style="border-top:1px solid var(--p-line3);padding:11px 0 3px;">'
+        +'<div style="display:flex;align-items:center;gap:8px;flex-wrap:wrap;margin-bottom:3px;">'
+        +'<span style="font-size:16px;font-weight:500;color:var(--p-ink);">'+nm+'</span>'
+        +(wh?'<span style="font-size:14px;color:var(--p-mut);background:var(--surf1);border-radius:24px;padding:2px 9px;">'+wh+'</span>':'')
+        +'</div>'
+        +(nt?'<div style="font-size:16px;color:var(--p-mut);line-height:1.5;margin-bottom:6px;">“'+nt+'”</div>':'')
+        +'<textarea oninput="_vcRoutineSetFeedback(\''+id+'\','+i+',this.value)" placeholder="What do you want '+first+' to know about this one?" rows="2" '
+        +'style="width:100%;background:var(--surf1);border:1px solid var(--p-line);border-radius:8px;padding:8px 10px;font-size:16px;color:var(--p-ink);font-family:inherit;resize:vertical;">'+_fileEsc(x.feedback||'')+'</textarea>'
+        +'</div>';
+    }).join('');
+    return '<div style="background:var(--surf2);border:1px solid var(--p-line);border-radius:12px;padding:12px 14px;margin-bottom:12px;">'
+      +'<div style="font-size:14px;font-weight:600;color:var(--p-mut);text-transform:uppercase;letter-spacing:.06em;margin-bottom:2px;">What '+first+' uses at home</div>'
+      +'<div style="font-size:16px;color:var(--p-mut);line-height:1.5;margin-bottom:4px;">'+items.length+' product'+(items.length===1?'':'s')+'. Anything you write here goes to '+first+' when you mark this reviewed.</div>'
+      +rows
+      +'<div style="border-top:1px solid var(--p-line3);padding-top:11px;margin-top:8px;">'
+      +'<div style="font-size:14px;font-weight:600;color:var(--p-mut);text-transform:uppercase;letter-spacing:.06em;margin-bottom:6px;">Overall</div>'
+      +'<textarea oninput="_vcRoutineSetNote(\''+id+'\',this.value)" placeholder="Your thoughts on the routine as a whole" rows="3" '
+      +'style="width:100%;background:var(--surf1);border:1px solid var(--p-line);border-radius:8px;padding:8px 10px;font-size:16px;color:var(--p-ink);font-family:inherit;resize:vertical;">'+_fileEsc((sub&&sub.routineNote)||'')+'</textarea>'
+      +'</div></div>';
+  }catch(e){return '';}
 }
 function _vcSendInvite(id){
   const sheet=document.getElementById('vc-type-sheet');
@@ -13642,7 +13735,9 @@ function _vcSendInvite(id){
   const formSel=document.getElementById('vc-attach-form');
   const formId=formSel?formSel.value:'';
   if(sheet)sheet.remove();
-  inviteVirtualConsult(id,true,kind||undefined,formId||undefined);
+  const rtEl=sheet&&sheet.querySelector('#vc-ask-routine');
+  const routine=rtEl?!!rtEl.checked:true;
+  inviteVirtualConsult(id,true,kind||undefined,formId||undefined,routine);
 }
 function renderVirtualClient(id){
   setNav('clients');
@@ -13678,6 +13773,7 @@ function renderVirtualClient(id){
       ${refItems.map(o=>realImg(o,'ti-sparkles','var(--p-purple-bg)','var(--p-purple)')).join('')}
     </div>`:''}
     ${sub&&sub.goals?`<div style="background:var(--surf2);border:1px solid var(--p-line);border-radius:12px;padding:12px 14px;margin-bottom:12px;"><div style="font-size:14px;font-weight:600;color:var(--p-mut);text-transform:uppercase;letter-spacing:.06em;margin-bottom:6px;">What ${_fileEsc(c.name.split(' ')[0])} is hoping for</div><div style="font-size:16px;color:var(--p-ink);line-height:1.6;">${_fileEsc(sub.goals)}</div></div>`:''}
+    ${_vcRoutineReviewHTML(id,sub)}
     <div style="background:var(--p-purple-bg);border:1px solid var(--p-purple-line);border-radius:12px;padding:14px;margin-bottom:12px;">
       <div style="display:flex;align-items:center;gap:8px;margin-bottom:10px;"><span class="aic"><i class="ti ti-sparkles" style="font-size:16px;"></i> ${v.analysisTitle}</span><span id="vc-analysis-tag" style="font-size:14px;color:${initialSrc==='sample'?'#666':'var(--p-green)'};">${hasReal&&initialSrc==='sample'?'Analyzing photo…':_vcSourceLabel(initialSrc)}</span></div>
       <div id="vc-analysis-body">${_metricCardsHTML(initialMetrics)}</div>
@@ -16427,6 +16523,19 @@ function _assembleClientData(id){
       // plus any brand/Amazon/in-office option — instead of collapsing everything into a single link.
       url:a.url||'',site:a.site||'',siteCode:a.siteCode||'',urlCode:a.urlCode||'',inOffice:!!a.inOffice,amazon:((typeof amazonBuyUrl==='function'?amazonBuyUrl(a):'')||''),amazonCode:a.amazonCode||''}:null;}).filter(Boolean);
   }catch(e){}
+  // The routine she reviewed, with what she wrote back. Only sent once she has actually reviewed it,
+  // so a client never sees a half-finished audit.
+  let routineReview=null;
+  try{
+    const sub=(typeof vcSubmissions!=='undefined')?vcSubmissions[id]:null;
+    const inv=(typeof vcInvites!=='undefined')?vcInvites[id]:null;
+    if(sub&&Array.isArray(sub.routine)&&sub.routine.length&&inv&&inv.reviewed){
+      const items=sub.routine.map(function(x){return {name:x.name||'',when:x.when||'',note:x.note||'',feedback:x.feedback||''};});
+      if(items.some(function(x){return x.feedback;})||String(sub.routineNote||'').trim()){
+        routineReview={date:sub.date||'',note:String(sub.routineNote||''),items:items};
+      }
+    }
+  }catch(e){}
   let summaries=Array.isArray(c.summaries)?c.summaries:[];
   // Do NOT fabricate a summary when there isn't one. Previously this auto-generated
   // a generic "Your <treatment> visit" line, which read as random filler the provider
@@ -16471,7 +16580,8 @@ function _assembleClientData(id){
       // Prefer the labels captured on the invite; fall back to the current profile for older invites.
       const vp=(vi&&vi.kind)?vi:((typeof _vcProfile==='function')?_vcProfile():{});
       vcInvite={kind:vp.kind||'skin',title:vp.title||'Virtual consult',fee:(typeof vcFee!=='undefined'?vcFee:'')||'',invitedAt:vi.invitedAt||0,
-        photoLabels:Array.isArray(vp.photoLabels)?vp.photoLabels:null,refTitle:vp.refTitle||null,refLabels:Array.isArray(vp.refLabels)?vp.refLabels:null};}
+        photoLabels:Array.isArray(vp.photoLabels)?vp.photoLabels:null,refTitle:vp.refTitle||null,refLabels:Array.isArray(vp.refLabels)?vp.refLabels:null,
+        routine:(vi.routine!==false)};}
   }catch(e){}
   // Before/after progress photos for the client's OWN app view — only when the provider turned on
   // sharing for this client. Sends lightweight refs (pid + meta), not bytes; the client app fetches
@@ -16515,7 +16625,7 @@ function _assembleClientData(id){
   }catch(e){}
   const studioPhone=((typeof bizInfo!=='undefined'&&bizInfo&&bizInfo.phone)||'');
   const suggestedBooking=(c.suggestedBooking&&typeof c.suggestedBooking==='object'&&c.suggestedBooking.date&&c.suggestedBooking.time)?{date:c.suggestedBooking.date,time:c.suggestedBooking.time,treatment:c.suggestedBooking.treatment||''}:null;
-  return {animals,studio,studioAddress,studioPhone,website,providerName,profile:{skin:c.skin||'',concerns:c.concerns||'',allergies:c.allergies||'',fitz:c.fitz||'',treatment:c.treatment||'',lastVisit:c.lastVisit||'',nextVisit:c.nextVisit||'',email:c.email||'',phone:c.phone||''},summaries,aftercare,products,routine,forms,pendingForms,pendingGuides,pendingCourses,progressPhotos,booking:{canRequest:true},suggestedBooking,availability,vcInvite,checkinCfg:checkinCfgOut,checkinReqAt:c.checkinReqAt||0,loyalty:loyaltyOut};
+  return {animals,studio,studioAddress,studioPhone,website,providerName,profile:{skin:c.skin||'',concerns:c.concerns||'',allergies:c.allergies||'',fitz:c.fitz||'',treatment:c.treatment||'',lastVisit:c.lastVisit||'',nextVisit:c.nextVisit||'',email:c.email||'',phone:c.phone||''},summaries,aftercare,products,routine,forms,pendingForms,pendingGuides,pendingCourses,progressPhotos,booking:{canRequest:true},suggestedBooking,availability,vcInvite,routineReview,checkinCfg:checkinCfgOut,checkinReqAt:c.checkinReqAt||0,loyalty:loyaltyOut};
 }
 let _syncingClients=false,_clientSyncTimer=null;
 // Sync bookkeeping: have we pushed the whole roster at least once this session, is the next flush
@@ -24626,6 +24736,19 @@ function _eventDateLabel(ev,fallback){
 // site already guards with _imgSrc, but validating at ingest means a crafted photo string
 // (e.g. `x" onerror=…`) never even persists onto the chart / capturedPhotos / vcSubmissions.
 function _validImgSrc(u){return typeof u==='string'&&(/^data:image\//i.test(u)||/^https?:\/\//i.test(u)||/^blob:/i.test(u));}
+// What the client listed they are using at home. Free text they typed, so it is length-capped and
+// stripped the same way every other client-supplied value is before it goes anywhere near a screen.
+function _sanRoutine(arr){
+  if(!Array.isArray(arr))return [];
+  return arr.slice(0,60).map(function(o){
+    return {
+      name:String((o&&o.name)||'').slice(0,120),
+      when:String((o&&o.when)||'').slice(0,40),
+      note:String((o&&o.note)||'').slice(0,400),
+      feedback:String((o&&o.feedback)||'').slice(0,1200)
+    };
+  }).filter(function(o){return !!o.name;});
+}
 function _sanVcPhotos(arr){return (Array.isArray(arr)?arr:[]).map(o=>({label:String((o&&o.label)||''),src:(o&&_validImgSrc(o.src))?o.src:''}));}
 // Self-healing reconciliation: make sure every form / pre-visit check-in in the authoritative event
 // log is actually reflected on its client's chart. This fixes the "intake keeps vanishing" bug where a
@@ -24933,6 +25056,7 @@ async function syncClientEvents(){
         touchedNotif=true;
       }else if(ev.kind==='vc_submit'){
         vcSubmissions[cid]={photos:_sanVcPhotos(payload.photos),refs:(Array.isArray(payload.refs)&&payload.refs.length)?_sanVcPhotos(payload.refs):null,goals:payload.goals||'',measures:payload.measures||null,
+          routine:_sanRoutine(payload.routine),
           date:_eventDateLabel(ev,payload.date||'Today'),kind:payload.kind||'skin',title:payload.title||'Virtual consult'};
         vcInvites[cid]={...(vcInvites[cid]||{}),invited:true,submitted:true,reviewed:false};   // a fresh submission must return to "needs review", even if a prior one was reviewed
         try{if(typeof persistVcState==='function')persistVcState();}catch(e){}

@@ -2619,3 +2619,57 @@ That middle row is her report word for word: the note is on the device and the s
 **Caveat worth keeping:** this explains a summary that is PRESENT but not SHOWN. If she comes back
 and says a summary is still missing after a full close-and-reopen of the app, that is a different
 fault and the merge is back in scope.
+
+## §2am. Product audit, built into Virtual Consult (build 2026-10-01b)
+
+Diana asked for a way to write down client notes outside the session summary, so she could do product
+audits after clients send their current routines. Ashley's call: build it as a feature, make the
+routine step part of the consult BY DEFAULT, and make the invite setup obvious.
+
+**Why it went in Virtual Consult rather than anywhere else:** VC already was invite -> client
+submits -> provider reviews -> responds. The flow existed; only the routine was missing from it.
+
+**What was added.**
+
+*Client (slickchart-client.html)*
+- A "What you use now" step on the consult submit screen, shown unless the invite says otherwise.
+  Three fields per product — name, when (Morning/Night/Both/Now and then), and how it feels — chosen
+  so it can be filled standing in a bathroom reading labels, not at a desk.
+- Rides `_vcSubmitState.routine`, so it persists in the SAME draft as the photos. A failed send or a
+  reload no longer loses a typed routine (`persistVcDraft` now counts routine rows as content).
+- A photo-free consult can now be submitted on a routine alone, not just typed goals.
+- Blank "Add a product" rows are dropped on submit (`_vcRoutineClean`).
+
+*Provider (slickchart.html)*
+- `_sanRoutine()` caps and strips every client-typed field before it reaches a screen, like
+  `_sanVcPhotos` does for images.
+- The review screen gets the audit itself: one feedback box per product plus ONE overall box,
+  because the useful thing to say is usually about the shape of the routine, not a single bottle.
+  Writes debounce (600ms) before persisting — the submission blob holds photos, so a keystroke-rate
+  write would be brutal on a phone.
+- Stored on `vcSubmissions[cid]` (`sc_pro_vc_subs`) and the flag on `vcInvites[cid]`
+  (`sc_pro_vc_invites`). **No new synced key**, deliberately — both already sync and neither needed
+  a new merge decision.
+- The invite sheet now opens with "<Name> will be asked for" listing photos, their products, their
+  goals and any attached form, and `_vcAsksSync()` keeps that list honest as she toggles things.
+  That was Ashley's second ask: a provider could not previously tell what an invite would send
+  without sending one.
+
+*Back to the client*
+- `routineReview` travels in `_assembleClientData`, **only once the consult is marked reviewed** and
+  only if something was actually written. A client never sees a half-finished audit.
+- Rendered at the top of "Your Routine" in the client app, and folded into the change signature so a
+  new review actually re-renders.
+
+**Verified headless end to end** (`scratchpad/audit.mjs`, `invitesheet.mjs`): the step shows and
+hides with the invite flag; blank rows drop; the draft survives a reload; the submission carries the
+routine; the provider screen lists products with the client's own notes; nothing reaches the client
+before review and everything does after; the client app renders it. Invite sheet: summary present,
+toggle on by default, summary tracks the toggle, and the invite carries true/false correctly.
+
+All earlier suites pass, `sweep-crossdevice.mjs` clean, five CI sweeps pass, generated in sync, a
+fresh account still writes zero delete-record keys.
+
+**Not built, on purpose:** no repeating "add another product" FORM field type. The routine step is
+bespoke UI inside the consult, which is where it belongs; a general repeater in the form builder is a
+much bigger change and nothing needs it yet.
