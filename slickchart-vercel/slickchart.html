@@ -214,7 +214,7 @@ const S=document.getElementById('S');
 // resets when I save it" and there was no way to tell whether her phone had any of them — a whole
 // day was spent debugging code she may not have been running. Shown at the bottom of Settings, so
 // the answer is a screenshot away. Bump it on every ship.
-const APP_BUILD='2026-10-01c';
+const APP_BUILD='2026-10-02a';
 
 
 /* ════════════════════════════════════════════════════════════════
@@ -2524,6 +2524,26 @@ function _unionClientForms(winner,other){
       seen[k]=f;add.push(f);});
     if(add.length){winner.submittedForms=w.concat(add);grew=true;}
   }
+  // summaries: the client-facing copy of each visit, which lives ONLY here. _mergeClients picks a
+  // winning client record wholesale, so without this union the loser's summaries were dropped — and
+  // the record that had just gained a summary was often the loser. Dedup by day, newest ts wins.
+  var sKey=function(x){return x?String(x._draftDate||x.ts||((x.date||'')+'|'+(x.title||''))):'';};
+  var ws=Array.isArray(winner.summaries)?winner.summaries:[];
+  var os=Array.isArray(other.summaries)?other.summaries:[];
+  if(os.length){
+    var sIdx={};ws.forEach(function(x,i){var k=sKey(x);if(k)sIdx[k]=i;});
+    var sAdd=[],sRep=false;
+    os.forEach(function(x){
+      var k=sKey(x);if(!k)return;
+      if(sIdx[k]===undefined){sIdx[k]=ws.length+sAdd.length;sAdd.push(x);return;}
+      var cur=ws[sIdx[k]];
+      if((Number(x&&x.ts)||0)>(Number(cur&&cur.ts)||0)){ws[sIdx[k]]=x;sRep=true;}
+    });
+    if(sAdd.length||sRep){
+      winner.summaries=ws.concat(sAdd).sort(function(p,q){return (Number(q&&q.ts)||0)-(Number(p&&p.ts)||0);});
+      grew=true;
+    }
+  }
   // signedForms: union of titles.
   var wg=Array.isArray(winner.signedForms)?winner.signedForms:[];
   var og=Array.isArray(other.signedForms)?other.signedForms:[];
@@ -2845,16 +2865,51 @@ function _goneClientIds(){
 function _isPlainObj(o){return !!o&&typeof o==='object'&&!Array.isArray(o);}
 // Union two { id: value } maps. The account's value wins where both have the id; ids only the device
 // has are added. Returns null when there is nothing sane to merge.
-function _unionById(a,b,gone,onAdd){
+function _unionById(a,b,gone,onAdd,mergeVal){
   const out={};
   Object.keys(a).forEach(function(id){if(!gone[id])out[id]=a[id];});
   Object.keys(b).forEach(function(id){
-    if(gone[id]||Object.prototype.hasOwnProperty.call(out,id))return;
+    if(gone[id])return;
+    if(Object.prototype.hasOwnProperty.call(out,id)){
+      // BOTH sides hold this client. Keeping the account's copy and dropping the device's is what
+      // lost a summary saved minutes earlier: the account simply had not received it yet.
+      if(!mergeVal)return;
+      const m=mergeVal(out[id],b[id]);
+      if(m&&m.changed){out[id]=m.value;if(onAdd)onAdd(id);}
+      else if(m)out[id]=m.value;
+      return;
+    }
     out[id]=b[id];if(onAdd)onAdd(id);
   });
   return out;
 }
-function _mergeClientMap(serverStr,localStr){
+// Per-client values that are APPEND-ONLY LISTS, with the identity of one entry.
+//
+// A visit summary is the case that matters: the account holds [older] and the device holds
+// [justSaved, older]. Union by day, newest timestamp wins a collision. Anything NOT listed here
+// keeps the old behaviour (the account's copy stands) because removing an item from it is a real
+// edit — a product taken off a plan must not come back.
+const _CLIENT_MAP_LIST={
+  sc_session_summaries:function(x){return x?String(x._draftDate||x.ts||x.date||''):'';},
+  sc_photo_index:function(x){return x?String(x.pid||x.ts||''):'';}
+};
+function _unionEntryLists(keyFn,aArr,bArr){
+  if(!Array.isArray(aArr)||!Array.isArray(bArr))return null;
+  const out=[],idx={};let changed=false;
+  const take=function(x,fromLocal){
+    const k=keyFn(x);
+    if(!k){out.push(x);if(fromLocal)changed=true;return;}
+    if(!(k in idx)){idx[k]=out.length;out.push(x);if(fromLocal)changed=true;return;}
+    const cur=out[idx[k]];
+    const ca=Number(cur&&cur.ts)||0,cb=Number(x&&x.ts)||0;
+    if(cb>ca){out[idx[k]]=x;if(fromLocal)changed=true;}
+  };
+  aArr.forEach(function(x){take(x,false);});
+  bArr.forEach(function(x){take(x,true);});
+  out.sort(function(p,q){return (Number(q&&q.ts)||0)-(Number(p&&p.ts)||0);});
+  return {value:out,changed:changed};
+}
+function _mergeClientMap(serverStr,localStr,mapKey){
   let srv,loc;
   try{srv=JSON.parse(serverStr==null?'null':serverStr);}catch(e){srv=undefined;}
   try{loc=JSON.parse(localStr==null?'null':localStr);}catch(e){loc=undefined;}
@@ -2863,7 +2918,9 @@ function _mergeClientMap(serverStr,localStr){
   if(!lOk)return {str:serverStr,changed:false};
   const gone=_goneClientIds();
   let changed=false;
-  const out=_unionById(srv,loc,gone,function(){changed=true;});
+  const listKey=_CLIENT_MAP_LIST[mapKey]||null;
+  const out=_unionById(srv,loc,gone,function(){changed=true;},
+    listKey?function(a,b){return _unionEntryLists(listKey,a,b);}:null);
   // The account was still carrying entries for clients that have since been deleted. Dropping them
   // is a real change and worth pushing, so every device stops carrying them too.
   if(!changed&&Object.keys(out).length!==Object.keys(srv).length)changed=true;
@@ -3198,7 +3255,7 @@ const Cloud={
       }
     }
     if(_CLIENT_MAP_KEYS[k]){
-      const mc=_mergeClientMap(data[k],_lsGet(k));
+      const mc=_mergeClientMap(data[k],_lsGet(k),k);
       if(mc&&mc.str!=null){
         set(k,mc.str);
         if(mc.changed){try{this.push(k,mc.str);}catch(e){}}

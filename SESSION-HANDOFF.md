@@ -2710,3 +2710,78 @@ Sheet: add button, per-row edit pencil, photo count follows the selection, photo
 a photo-free type.
 
 All earlier suites pass, sweep clean, five CI sweeps pass, generated in sync.
+
+### §2ai (cont.) Diana, 2026-10-02 — THE REDRAW FIX DID NOT FIX IT. New observations.
+
+Build 2026-10-01a shipped the redraw fix. She is still losing summaries. **CLAUDE.md §1b rule 5: a
+fix that ships and changes nothing means the reproduction was not her situation.** Do not defend the
+redraw theory. These are her words:
+
+10. "The client-friendly summaries not appearing in my app."
+11. "When I open a client's profile, it displays **'no saved summaries' and 'no sessions'**."
+12. "However, **all other information remains intact, including photos, home care routines, product
+    analysis guides, and saved notes**." — so this is NOT a general data-loss problem. It is
+    specific to summaries + the journey.
+13. "**I am no longer able to preview the client-facing view.**"
+14. "I recently completed and saved a client summary **less than an hour ago**, but **after logging
+    out and logging back in, the summary had disappeared**." ← NEW AND SPECIFIC. Logout/login.
+15. "so whether I leave it open, or I have to close it out, **the summary just keeps disappearing**."
+16. "And so does **their journey**."
+
+Screenshots show: the Session Summary COMPOSER with a 10-step homecare routine, products and an
+aftercare guide all populated; Treatment Notes with Provider notes filled in; Progress Photos with
+real before photos and a "1 session" badge. So she is composing real summaries and the rest of the
+chart is healthy.
+
+**What fact 14 means and why it matters most.** `_doLogout` awaits `_purgeOffloaded()` — signing out
+deliberately wipes the IndexedDB offloaded store (CLAUDE.md §3). So ANY key that did not reach the
+SERVER is destroyed by a logout. "Saved an hour ago, logged out, gone" is the signature of
+`sc_session_summaries` never reaching the account, not of a stale screen.
+
+So the question is no longer "why is the screen not showing it" (that was 2026-10-01a, and it was a
+real bug, just not hers). It is **"why does a saved summary not reach the server"**.
+
+Do not re-litigate 12: photos, homecare, guides and notes ARE fine. Whatever this is, it is specific
+to summaries and the journey, and it must explain why those two and nothing else.
+
+#### FOUND. Build 2026-10-02a. Two merges dropped the summary she had just saved.
+
+A summary lives in TWO places, and **both discarded it**:
+
+1. **`sc_session_summaries`** — `{clientId:[summaries]}`. `_mergeClientMap` (added 2026-09-29a)
+   unions BY CLIENT and, where both sides hold a client, **keeps the account's copy**. I wrote that
+   deliberately — "nothing inside an entry changes" — and it is exactly wrong for a list that grows.
+   Account holds `[lastWeek]`, her phone holds `[justSaved, lastWeek]`, the pull keeps `[lastWeek]`.
+2. **`c.summaries`** inside `sc_clients` — the client-facing copy, which lives ONLY there.
+   `_unionClientForms` unions `submittedForms` and `signedForms` and **never touched `summaries`**,
+   so `_mergeClients` picking a winning record wholesale dropped the loser's summaries. That is
+   pre-existing, not mine.
+
+Why only summaries and the journey: photos, homecare, product plans and notes all live in their own
+keys, which merge correctly. Summaries are the only thing that lived solely in these two.
+
+Why logging out finished the job: `_doLogout` purges the offloaded store, so anything that never
+reached the account is destroyed. Both merges ALSO returned `changed:false`, so the device never
+even tried to push the superset back. That is her fact 14 exactly.
+
+**Fixed:** `_unionById` takes an optional per-value merge; `_CLIENT_MAP_LIST` names the per-client
+maps whose entries ACCUMULATE (`sc_session_summaries`, `sc_photo_index`) and those union by day with
+the newest `ts` winning. Everything not on that list keeps the old behaviour on purpose — removing a
+product from a plan is a real edit and must not be undone. `_unionClientForms` now unions
+`summaries` the same way.
+
+**Reproduced on her build, then proved fixed:**
+
+| | her build | 2026-10-02a |
+|---|---|---|
+| `sc_session_summaries` keeps the just-saved one | **no** | yes |
+| `c.summaries` keeps it | **no** | yes |
+| device pushes the superset back | **no** | yes |
+| same-day EDIT wins without duplicating | yes | yes |
+| a product removed from a plan stays removed | yes | yes |
+
+**Recovery:** both merges now push the superset, so any device still holding her summaries will
+restore them to the account on open. If every device has been logged out since, they are gone.
+
+**Lesson for CLAUDE.md:** "union by client" is not enough when the per-client value is itself a
+growing list. A merge has to know whether the thing inside accumulates.

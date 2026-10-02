@@ -47,6 +47,17 @@ Hard rules — never violate:
    over the live objects, and `persistWorkspace()` pushes it immediately on every edit — so a stale
    copy of that one key clobbers the product plans even when the dedicated keys merge correctly. It
    has `_mergeWorkspace`. Anything new that bundles several libraries into one key needs the same.
+8. **Union by client is NOT enough when the per-client value is itself a growing list.**
+   `_mergeClientMap` keeps the ACCOUNT's copy where both sides hold a client. For
+   `sc_session_summaries` that silently dropped a visit summary saved minutes earlier — the account
+   held `[lastWeek]`, the phone held `[justSaved, lastWeek]`, and the pull kept `[lastWeek]`. Worse,
+   it returned `changed:false`, so the device never pushed the superset back either, and the next
+   logout (which purges the offloaded store) destroyed it. `_CLIENT_MAP_LIST` names the maps whose
+   entries ACCUMULATE; those union by entry with the newest `_ts` winning. Do NOT add a key to it
+   whose entries can legitimately be REMOVED (`sc_client_recs`, `sc_client_homecare`): unioning
+   those resurrects a product she took off a plan. Ask of every merge: does the thing INSIDE grow?
+   And remember a client's own record carries `c.summaries` — the client-facing copy lives only
+   there, so `_unionClientForms` has to union it too.
 
 When you add or change any endpoint, ask: *Could a different account, or an unauthenticated caller, use
 this to read or write data that isn't theirs?* If yes, it's not done.
