@@ -468,7 +468,7 @@ const S=document.getElementById('S');
 // resets when I save it" and there was no way to tell whether her phone had any of them — a whole
 // day was spent debugging code she may not have been running. Shown at the bottom of Settings, so
 // the answer is a screenshot away. Bump it on every ship.
-const APP_BUILD='2026-10-02a';
+const APP_BUILD='2026-10-02b';
 
 
 /* ════════════════════════════════════════════════════════════════
@@ -3147,6 +3147,38 @@ const _CLIENT_MAP_LIST={
   sc_session_summaries:function(x){return x?String(x._draftDate||x.ts||x.date||''):'';},
   sc_photo_index:function(x){return x?String(x.pid||x.ts||''):'';}
 };
+// The per-client maps whose value is an OBJECT rather than a list, and what to do when both sides
+// hold the same client:
+//   'map'     — a bag of independent entries keyed by id. Union the keys; the account wins a
+//               collision. sc_rec_reasons is {productId: "why I picked this for you"}, which is the
+//               AI-brief product note a provider types. Keeping the account's whole bag threw away
+//               a note typed for any product the account had no note for — the ORIGINAL report.
+//               Clearing a note leaves the key with an empty string, so a union resurrects nothing.
+//   'stamped' — ONE record per client carrying ts. Newer wins.
+const _CLIENT_MAP_OBJ={sc_rec_reasons:'map',sc_body_maps:'stamped',sc_note_drafts:'stamped'};
+function _unionInnerMap(a,b){
+  if(!_isPlainObj(a)||!_isPlainObj(b))return null;
+  const out=Object.assign({},a);let changed=false;
+  Object.keys(b).forEach(function(k){
+    if(Object.prototype.hasOwnProperty.call(out,k))return;   // the account's answer stands
+    out[k]=b[k];changed=true;
+  });
+  return {value:out,changed:changed};
+}
+function _newerStamped(a,b){
+  if(!_isPlainObj(a)||!_isPlainObj(b))return null;
+  const at=Number(a.ts)||0,bt=Number(b.ts)||0;
+  if(bt>at)return {value:b,changed:true};
+  return {value:a,changed:false};
+}
+function _clientMapInner(mapKey){
+  const listFn=_CLIENT_MAP_LIST[mapKey];
+  if(listFn)return function(a,b){return _unionEntryLists(listFn,a,b);};
+  const mode=_CLIENT_MAP_OBJ[mapKey];
+  if(mode==='map')return _unionInnerMap;
+  if(mode==='stamped')return _newerStamped;
+  return null;   // everything else: the account's copy stands, as before
+}
 function _unionEntryLists(keyFn,aArr,bArr){
   if(!Array.isArray(aArr)||!Array.isArray(bArr))return null;
   const out=[],idx={};let changed=false;
@@ -3172,9 +3204,7 @@ function _mergeClientMap(serverStr,localStr,mapKey){
   if(!lOk)return {str:serverStr,changed:false};
   const gone=_goneClientIds();
   let changed=false;
-  const listKey=_CLIENT_MAP_LIST[mapKey]||null;
-  const out=_unionById(srv,loc,gone,function(){changed=true;},
-    listKey?function(a,b){return _unionEntryLists(listKey,a,b);}:null);
+  const out=_unionById(srv,loc,gone,function(){changed=true;},_clientMapInner(mapKey));
   // The account was still carrying entries for clients that have since been deleted. Dropping them
   // is a real change and worth pushing, so every device stops carrying them too.
   if(!changed&&Object.keys(out).length!==Object.keys(srv).length)changed=true;
@@ -3196,7 +3226,10 @@ function _mergeWorkspace(serverStr,localStr){
   let changed=false;
   const mark=function(){changed=true;};
   _WS_CLIENT_MAPS.forEach(function(f){
-    out[f]=_unionById(_isPlainObj(srv[f])?srv[f]:{},_isPlainObj(loc[f])?loc[f]:{},gone,mark);
+    // recReasons here is the same {productId: note} bag as sc_rec_reasons. Merge it the same way, or
+    // this blob hands back the account's copy and undoes the fix on the dedicated key.
+    const inner=(f==='recReasons')?_unionInnerMap:null;
+    out[f]=_unionById(_isPlainObj(srv[f])?srv[f]:{},_isPlainObj(loc[f])?loc[f]:{},gone,mark,inner);
     if(!changed&&_isPlainObj(srv[f])&&Object.keys(out[f]).length!==Object.keys(srv[f]).length)changed=true;
   });
   // Custom products are records the provider authored, and this blob carries a COPY of them beside
@@ -9204,7 +9237,7 @@ function saveTreatment(id,screen){
     // modal) so the re-render after a treatment change never drops unsaved keystrokes.
     try{
       const t=noteTemplates[activeNoteTemplate]||noteTemplates.soap;const dateEl=document.getElementById('wn-date');
-      if(dateEl){const sections={};t.sections.forEach(s=>{const el=document.getElementById('wn-sec-'+s.id);if(el)sections[s.id]=el.value;});providerNoteDrafts[id]={date:dateEl.value||_isoToday(),sections,templateId:activeNoteTemplate};if(typeof saveProviderNoteDrafts==='function')saveProviderNoteDrafts();}
+      if(dateEl){const sections={};t.sections.forEach(s=>{const el=document.getElementById('wn-sec-'+s.id);if(el)sections[s.id]=el.value;});providerNoteDrafts[id]={date:dateEl.value||_isoToday(),sections,templateId:activeNoteTemplate,ts:Date.now()};if(typeof saveProviderNoteDrafts==='function')saveProviderNoteDrafts();}
     }catch(e){}
     renderWriteNote(id);
   }
@@ -10351,7 +10384,7 @@ function _snapshotWriteNoteNow(id){
     const dateVal=dateEl.value||_isoToday();
     const sections={};
     t.sections.forEach(s=>{const el=document.getElementById('wn-sec-'+s.id);if(el)sections[s.id]=el.value;});
-    providerNoteDrafts[id]={date:dateVal,sections,templateId:activeNoteTemplate};
+    providerNoteDrafts[id]={date:dateVal,sections,templateId:activeNoteTemplate,ts:Date.now()};
     if(typeof saveProviderNoteDrafts==='function')saveProviderNoteDrafts();
   }catch(e){}
 }
@@ -10608,7 +10641,7 @@ function _commitWriteNote(id){
   const dateVal=(dateEl&&dateEl.value)||_isoToday();
   const sections={};
   t.sections.forEach(s=>{const el=document.getElementById('wn-sec-'+s.id);sections[s.id]=el?el.value:'';});
-  providerNoteDrafts[id]={date:dateVal,sections,templateId:activeNoteTemplate};
+  providerNoteDrafts[id]={date:dateVal,sections,templateId:activeNoteTemplate,ts:Date.now()};
   saveProviderNoteDrafts();
   // Reflect this note in the client's real session history too, so it shows
   // under Previous sessions and stays sorted correctly by the date chosen.

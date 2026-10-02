@@ -2785,3 +2785,45 @@ restore them to the account on open. If every device has been logged out since, 
 
 **Lesson for CLAUDE.md:** "union by client" is not enough when the per-client value is itself a
 growing list. A merge has to know whether the thing inside accumulates.
+
+#### Sweep of EVERY Diana complaint, build 2026-10-02b
+
+Rather than wait for her to find the next one, each thing she has ever reported was turned into a
+check (`scratchpad/diana.mjs`), run against the previous build and this one. Four were STILL broken
+after the summary fix, including her very first report.
+
+The common shape: `_mergeClientMap` kept the ACCOUNT's copy of a client wholesale. That is right for
+a list where removal is meaningful and wrong for everything else.
+
+| her words | key | was | now |
+|---|---|---|---|
+| "product plans" | `sc_client_recs` | ok | ok |
+| **"AI brief to categorize product notes, items I save for myself"** | `sc_rec_reasons` | **LOST** | fixed |
+| "home care" | `sc_client_homecare` | ok | ok |
+| "photos" | `sc_photo_index` | ok | ok |
+| "saved notes" | `sc_note_drafts` | **LOST** | fixed |
+| "service summaries" | `sc_session_summaries` | fixed 10-02a | ok |
+| "their journey" | `c.summaries` | fixed 10-02a | ok |
+| body map placement | `sc_body_maps` | **LOST** | fixed |
+| the workspace copy of the product notes | `sc_workspace.recReasons` | **LOST** | fixed |
+
+`_CLIENT_MAP_OBJ` names the shape of each: `'map'` unions a bag of independent entries by key (the
+account wins a collision — `sc_rec_reasons` is `{productId: note}`, and clearing one leaves an empty
+string rather than removing the key, so a union resurrects nothing); `'stamped'` means ONE record per
+client carrying `ts`, newest wins. `providerNoteDrafts` had no timestamp at any of its three write
+sites, so it now carries one.
+
+Three guards are asserted every run and must never flip: a product REMOVED from a plan stays
+removed, a same-day summary EDIT updates rather than duplicating, and a DELETED client is not
+resurrected.
+
+**Still not addressed, and she should be told rather than left to discover it:** "I am no longer able
+to preview the client-facing view." `_previewClientApp()` opens `/client?preview=1`, which is the
+no-token path and loads the DEMO client from `demo-seed-client.js`. **There is no preview of a
+REAL client's app.** She is most likely describing the Client summary tab going empty, which the
+summary fix covers — but if she literally means the Home "See what your clients see" tile, that has
+never shown her own client's data and no fix here changes that. Worth a product decision.
+
+Also never explained: her "after about an hour". Nothing in the app runs on an hour timer; the
+likeliest reading is "next time I looked". Not worth chasing unless she repeats it with a tighter
+observation.
