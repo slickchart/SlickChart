@@ -468,7 +468,7 @@ const S=document.getElementById('S');
 // resets when I save it" and there was no way to tell whether her phone had any of them — a whole
 // day was spent debugging code she may not have been running. Shown at the bottom of Settings, so
 // the answer is a screenshot away. Bump it on every ship.
-const APP_BUILD='2026-10-02b';
+const APP_BUILD='2026-10-03a';
 
 
 /* ════════════════════════════════════════════════════════════════
@@ -2762,6 +2762,8 @@ const _CLIENT_MAP_KEYS={sc_client_recs:1,sc_client_homecare:1,sc_session_summari
 // record (it has no server event to heal from), so a plain last-writer-wins overwrite silently loses a
 // signed intake the other device holds — exactly how Josie's intake vanished. Union those arrays from
 // BOTH sides into the winning record. Returns true if the winner GREW (so the superset is pushed back).
+let _repairedClientIds=Object.create(null);
+function _noteClientRepaired(id){try{if(id)_repairedClientIds[id]=1;}catch(e){}}
 function _unionClientForms(winner,other){
   if(!winner||!other||typeof winner!=='object'||typeof other!=='object')return false;
   var grew=false;
@@ -2865,6 +2867,7 @@ function _mergeClients(serverStr,localStr){
       if(su>lu){                                      // server record wins…
         var grewS=_unionClientForms(s,l);             // …but never at the cost of forms only local held
         if(_carryHandledMarks(s,l))grewS=true;        // …nor at the cost of cards already dismissed here
+        if(grewS)_noteClientRepaired(id);             // the client's own app needs this blob again
         out[id]=s;if(grewS)changed=true;              // merged local state in → push the superset back
       }else{                                          // local newer/tie wins…
         _unionClientForms(l,s);                       // …still absorb any forms only the server had
@@ -4252,6 +4255,18 @@ function _reloadAll(){
   S('square status',function(){if(typeof _loadIntegSquareStatus==='function')_loadIntegSquareStatus();});
   S('photo backup state',function(){if(typeof _loadPhotoBackedUp==='function')_loadPhotoBackedUp();});
   S('branding',function(){if(typeof loadBrandColors==='function')brandColors=loadBrandColors();if(typeof applyTheme==='function')applyTheme();if(typeof _syncHeaderLogo==='function')_syncHeaderLogo();});
+  // A client whose chart the merge just healed has to be re-sent to the CLIENT's app too, or she
+  // sees her summary come back and the client still sees nothing.
+  S('resend healed clients',function(){
+    let ids=[];
+    try{ids=Object.keys(_repairedClientIds||{});}catch(e){}
+    if(!ids.length)return;
+    _repairedClientIds=Object.create(null);
+    ids.forEach(function(cid){
+      try{if(CL[cid]&&typeof _scheduleSpecificClientSync==='function')_scheduleSpecificClientSync(cid);}catch(e){}
+    });
+    try{console.warn('[SlickChart] re-sending '+ids.length+' healed client(s) to their app: '+ids.slice(0,5).join(', '));}catch(e){}
+  });
   // Everything above is now in memory. Put it on the screen she is actually looking at.
   S('redraw',function(){_redrawCurrentScreen();});
 }

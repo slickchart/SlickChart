@@ -2827,3 +2827,64 @@ never shown her own client's data and no fix here changes that. Worth a product 
 Also never explained: her "after about an hour". Nothing in the app runs on an hour timer; the
 likeliest reading is "next time I looked". Not worth chasing unless she repeats it with a tighter
 observation.
+
+### §2ai (cont.) Diana, 2026-10-03 — "I DIDN'T LOG OUT". The logout half of §2ai was wrong.
+
+17. **"I didn't log out, and this issue isn't occurring anywhere else."** ← kills the logout
+    explanation. A pull can still drop a summary without a logout, but do NOT lean on logout again.
+18. "When I checked earlier, the notes were still there, so I made them client-friendly and sent them."
+19. "The summary was visible on her app at first, but when I checked again **20 minutes later**, the
+    summary was gone **and the notes were no longer client-friendly**."
+20. "I am unable to preview what she sees."
+21. "this seems to be affecting **just the same summary**" — ONE summary, one client (Jennifer Ashley).
+22. The client is a friend, so she can get reports from the client's side too.
+
+**HER SCREENSHOTS ARE A TIMELINE, and they are the most useful thing yet:**
+
+| time | screen | what it says |
+|---|---|---|
+| 6:21 | Jennifer's profile | **"1 saved summary"** · Last: Sep 30, 2026 |
+| 6:24 | Session Summaries | **"1 summary"**, card shows the CLIENT-FRIENDLY text: *"Today was your very first facial, Jennifer, and you're already on a great path…"* |
+| 6:55 | Jennifer's profile | **"0 saved summaries"** · "Finish a session to save one here" |
+| 6:55 | Client summary tab | the note is now the RAW PROVIDER TEXT: *"Here's a recap of your visit, Jennifer: Performed the Restore Facial, including a Chocolate Enzyme treatment…"* |
+| 6:55 | Provider notes | intact, and its TREATMENT PERFORMED box is that same raw sentence |
+
+So within ~30 minutes, with no logout: the saved summary went 1 -> 0, and the client-facing note
+REVERTED from her client-friendly rewrite to the raw provider note.
+
+**That revert is the strongest clue in the whole thread.** The Client summary tab is rebuilding its
+note from `providerNoteDrafts` because the saved summary record is gone. One cause, two symptoms.
+
+So: something deletes the summary record **on a timer or a poll**, without a logout. That points at
+the periodic client/event sync rather than at boot. Check `syncClientEvents()` and anything that
+rebuilds `CL[id]` from the server's `clients` table — a server client record carries no `summaries`,
+so overwriting the local record with it would wipe `c.summaries` on every poll.
+
+#### Build 2026-10-03a — the client's own app was never healed
+
+**Her screenshots predate the fix.** The 2026-10-02a/b merge fixes cover her exact record shapes,
+verified directly (`scratchpad/jen.mjs`): server record with NO `summaries` key at all and a newer
+`_uAt` (which is what `syncClientEvents` creates for a client that arrived via an intake link), server
+record with an EMPTY array, account map holding an empty list for the client, account map missing the
+client. All four now keep her summary and push it back.
+
+**Mechanism, settled.** `syncClientEvents()` runs every 15s but only ADDS to a client record;
+`_reconcileEventAttachments` likewise. Nothing on a timer empties summaries. The only thing that ever
+did is `_mergeClients` on a PULL, and a phone PWA re-boots whenever it is backgrounded — which is why
+it looked like a 20-30 minute timer and why "whether I leave it open or close it" made no difference.
+No logout required, which matches fact 17.
+
+**The hole this build closes.** The client's app does NOT read `sc_clients`. It reads the per-client
+blob this device POSTs to `/api/clients`. So the merge could heal the provider's chart and the CLIENT
+still saw nothing — exactly "the summary was visible on her app at first, but when I checked again it
+was gone". `_mergeClients` now records every client it healed in `_repairedClientIds`, and a new
+`_reloadAll` step re-sends those blobs via `_scheduleSpecificClientSync` once the loaders have read
+the merged data back into memory.
+
+Verified: chart healed, client queued, resend scheduled, queue cleared after, and nothing queued when
+there was nothing to heal.
+
+**What to ask her, and nothing else:** whether it STILL happens today, on this build. Her screenshots
+are from before the fix shipped, so they cannot tell us. If it recurs on 2026-10-03a, the next thing
+to get is her client's side — the client is a friend and Diana offered — because that distinguishes
+"the account lost it" from "the client's app is not re-reading it".
