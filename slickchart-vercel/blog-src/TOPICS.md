@@ -33,7 +33,6 @@ rates that weren't obvious up front; and fear of migration.
 
 ### High-intent — people comparing or shopping right now
 
-- [ ] Do you need to leave your booking system to get proper client charting? (No — here's why)
 - [ ] Best software for a solo esthetician in 2026: an honest category breakdown
 - [ ] What to look for in waxing studio software when you're a one-person shop
 - [ ] PMU software: booking, consent forms, and healed-result photos without three subscriptions
@@ -78,6 +77,7 @@ rates that weren't obvious up front; and fear of migration.
 
 ## Done
 
+- [x] Do you need to leave your booking system to get proper client charting? — DRAFT 2026-10-05 as blog-src/leave-booking-system-for-charting.md
 - [x] The real cost of esthetician software — DRAFT 2026-09-28 as blog-src/real-cost-of-esthetician-software.md
 - [x] Square Appointments and client charting — DRAFT 2026-09-21 as blog-src/square-appointments-client-charting.md
 - [x] Esthetician client charting — published 2026-09-10 as blog-src/esthetician-client-charting.md
