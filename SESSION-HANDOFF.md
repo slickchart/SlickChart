@@ -2817,12 +2817,13 @@ Three guards are asserted every run and must never flip: a product REMOVED from 
 removed, a same-day summary EDIT updates rather than duplicating, and a DELETED client is not
 resurrected.
 
-**Still not addressed, and she should be told rather than left to discover it:** "I am no longer able
-to preview the client-facing view." `_previewClientApp()` opens `/client?preview=1`, which is the
-no-token path and loads the DEMO client from `demo-seed-client.js`. **There is no preview of a
-REAL client's app.** She is most likely describing the Client summary tab going empty, which the
-summary fix covers — but if she literally means the Home "See what your clients see" tile, that has
-never shown her own client's data and no fix here changes that. Worth a product decision.
+**CLOSED by Ashley, 2026-10-06 — do not re-open this one.** The open question was what Diana meant
+by "I am no longer able to preview the client-facing view": `_previewClientApp()` opens
+`/client?preview=1`, the no-token path, which loads the DEMO client from `demo-seed-client.js`, so
+there is no preview of a REAL client's app. The reading that matters is the Client summary tab going
+empty, and the summary fixes cover that. Ashley's call: "let go of the part that is open and small, i
+think we got it." Leave the Home "See what your clients see" tile as it is. Record kept only so a
+later session does not rediscover it and start chasing her for an answer.
 
 Also never explained: her "after about an hour". Nothing in the app runs on an hour timer; the
 likeliest reading is "next time I looked". Not worth chasing unless she repeats it with a tighter
