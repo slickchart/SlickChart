@@ -2888,3 +2888,89 @@ there was nothing to heal.
 are from before the fix shipped, so they cannot tell us. If it recurs on 2026-10-03a, the next thing
 to get is her client's side — the client is a friend and Diana offered — because that distinguishes
 "the account lost it" from "the client's app is not re-reading it".
+
+### §2ai (cont.) Diana, 2026-10-05 21:58 — BETTER but not fixed, and now NARROW
+
+23. **"The issue is still occurring. While the time between deletions is LONGER, the client summary
+    ultimately disappears."** ← the fixes helped. Partial progress, not a miss.
+24. **"All other sections, products, home care, the guide, and my notes, remain intact."**
+25. **"The problem is specifically with the CLIENT SUMMARY, which fails to display, preventing
+    clients from seeing their journey."**
+26. **"It appears that everything is saving correctly except for the client summary."**
+
+So the provider-side store (`sc_session_summaries`) and everything else now survive. What still goes
+is `c.summaries`, the CLIENT-FACING copy that lives only inside the client record.
+
+"Longer between deletions" is the tell: a merge either drops a thing or it does not, it does not get
+slower. Something SIZE- or COUNT-dependent is more likely — a cap or a trim that only bites once the
+record grows. Look for anything that trims the client blob to fit, and at the `.slice(0,8)` on
+summaries in the sync payload.
+
+### FOUND IT: the server replaced the whole client blob, so any device could wipe the summaries
+
+`lib/clients.js` → `upsertClient()` wrote `data=${data}::jsonb` — the posted blob REPLACED the stored
+one outright. Every sync from every device does this, for every client in the roster
+(`_syncClientsToServer` posts `Object.keys(CL)`), and the posted `summaries` is just
+`CL[id].summaries` as that device happens to hold it. So one device whose copy of a client had no
+summaries yet destroyed the account's copy of them — and `clients.data` is the ONLY place the
+client-facing summaries live, which is exactly why her products, home care, guide and notes (all
+`kv`, all merging since §2ai) survived while the summary did not.
+
+It also explains "the time between deletions is longer" without reaching for a size-dependent trim.
+There is no such trim — the `.slice(0,8)` guessed at in observation 26's note is on the `animals`
+sub-records only, not on `summaries`. The provider-side merges made the device's own copy correct
+far more often, so it takes longer for a stale device to be the one that pushes. One unprotected
+write was still enough, and no merge running on device A can protect the server from device B.
+
+**The fix is in the statement, both branches** (`UPDATE`, and `INSERT … ON CONFLICT DO UPDATE`):
+
+```sql
+data = inc.d || COALESCE((
+  SELECT jsonb_object_agg(k, clients.data->k)
+    FROM (VALUES ('summaries'),('pendingForms')) AS t(k)
+   WHERE <stored k is a non-empty array> AND <incoming k is empty or absent>
+), '{}'::jsonb)
+```
+
+- An incoming EMPTY or ABSENT array never replaces a stored non-empty one. Narrow on purpose: it
+  does not merge the lists, and a genuine shrink from 3 to 1 still lands. It stops the drop to zero.
+- A shallow `||` overlay, so a blob that never had these keys does not sprout them.
+- Both length tests sit INSIDE a `CASE`. SQL does not promise to evaluate `AND` left to right, and
+  the first version threw `cannot get array length of a scalar` on a corrupted value — which would
+  have failed that client's whole sync. The test below caught it.
+- Cost, deliberately accepted: deleting your LAST summary needs a second write to stick. Visible and
+  recoverable; losing the journey is not.
+- Because the account's copy now survives, `_unionClientForms` hands it back to every device on the
+  next pull. The guard repairs as well as protects. Summaries already destroyed before this shipped
+  are only recoverable from a device that still holds them.
+
+### The same look found a cross-account write hole (§0.1)
+
+`ON CONFLICT (id) DO UPDATE` was conditioned on `clients.deleted_at IS NULL` and nothing else, while
+the app minted client ids as `'c' + Date.now()` (bumped by 1 on a LOCAL clash only). Two providers
+adding — or importing — clients at the same moment mint the same id, and the second provider's write
+then replaced the first provider's row: her client's name, email, phone and whole data blob, summaries
+included, inside her account. Found by a test asserting §0.1, not by reading.
+
+- `DO UPDATE` now also requires `clients.provider_id = EXCLUDED.provider_id`, so a cross-account
+  write matches no row.
+- The re-read after it already existed; if it comes back empty the id belongs to someone else, and
+  `upsertClient` now throws `id_taken`. `api/clients` reports that client in `failed` and the
+  provider is told it could not be saved. A phantom token would have meant a client link that
+  silently never worked.
+- `_newClientId()` now appends a random tail. 2000 ids minted inside one millisecond, no duplicates.
+
+### How to re-run the SQL tests
+
+`slickchart-vercel/scripts/test-clients-sql.mjs` (committed, not in CI) boots a throwaway PostgreSQL
+16 cluster, stubs `lib/db.js` onto it through
+psql, imports the REAL `upsertClient`, and asserts 21 cases — the guard, the shrink that must still
+land, the keys that must not be invented, junk on either side, the `ON CONFLICT` path, cross-account
+rejection, the tombstone, and `phone` still being COALESCEd. Run it from the repo root after ANY
+change to `lib/clients.js`:
+
+    cd slickchart-vercel && node scripts/test-clients-sql.mjs
+
+`@neondatabase/serverless` is not installed in the scratch env, which is why it goes through psql.
+`initdb` refuses to run as root, so the script hands the cluster to a throwaway `pgtest` user and
+makes its socket dir world-traversable. All 21 green on 2026-10-06a.

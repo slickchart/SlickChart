@@ -468,7 +468,7 @@ const S=document.getElementById('S');
 // resets when I save it" and there was no way to tell whether her phone had any of them — a whole
 // day was spent debugging code she may not have been running. Shown at the bottom of Settings, so
 // the answer is a screenshot away. Bump it on every ship.
-const APP_BUILD='2026-10-03a';
+const APP_BUILD='2026-10-06a';
 
 
 /* ════════════════════════════════════════════════════════════════
@@ -27258,11 +27258,14 @@ function renderNCBasicStep(){
   </div>`;
 }
 function _newClientId(){
-  // Base on the timestamp, but guarantee uniqueness: if two clients are created within the
-  // same millisecond (or two creation paths fire close together), bump until the id is free
-  // so the second client can't overwrite the first in CL.
-  let base=Date.now(),id='c'+base;
-  while(CL[id]){base++;id='c'+base;}
+  // Timestamp for ordering, plus a RANDOM tail, plus the local uniqueness loop.
+  // The random tail is not cosmetic: this id is the PRIMARY KEY of the server's `clients` table,
+  // which every account shares. A plain 'c'+Date.now() (bumped by 1 on a local clash) means two
+  // providers adding — or importing — clients at the same moment mint the SAME id, and one
+  // account's client then lands on top of the other's row. lib/clients.js now refuses that write,
+  // and this keeps it from happening in the first place.
+  let id='c'+Date.now()+Math.random().toString(36).slice(2,7);
+  while(CL[id])id='c'+Date.now()+Math.random().toString(36).slice(2,7);
   return id;
 }
 // Before minting a brand-new client, see if this person is ALREADY in the roster — otherwise "Add a

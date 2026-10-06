@@ -217,6 +217,32 @@ export function genToken() { return crypto.randomBytes(16).toString('base64url')
 
 // Create or update a client for a provider. Keeps the existing link token so a
 // client's link never changes once issued.
+// Parts of a client's data blob that must never be wiped by a sync that simply did not have them in
+// hand. The blob is REPLACED wholesale on every write, which is right for most of it (name, profile,
+// aftercare) and catastrophic for the two lists that live ONLY here.
+//
+// A provider lost the same client summary over and over. Her phone would sync that client for an
+// unrelated reason while its in-memory copy of the summaries was briefly empty, and the whole-blob
+// write destroyed the account's good copy, so the client's own app lost her journey too. The
+// provider-side merges (CLAUDE.md §0.7/§0.8) made it rarer, which is exactly what she reported
+// ("the time between deletions is longer"), but a merge running on one device cannot protect the
+// server from a write sent by another.
+//
+// So the server refuses the destructive case: an incoming EMPTY (or absent) array never replaces a
+// stored non-empty one. Deliberately narrow. It does not merge the two lists and it does not stop a
+// genuine shrink from 3 to 1 — it stops the drop to zero, the one that destroys a record nobody can
+// get back. The cost is that deleting your LAST summary needs a second write to stick; that is
+// visible and recoverable, unlike silently losing the journey.
+//
+// The protected keys are the VALUES list in both statements below (summaries, pendingForms). The
+// guard runs INSIDE the statement on purpose — a read-then-write in JS would race two concurrent
+// syncs, which is how this blob got clobbered to begin with. Add a key to both lists if you add
+// another append-only list to the client blob, and keep the expression a shallow `||` overlay: it
+// touches only the protected keys, and adds nothing to a blob that never had them.
+//
+// Both length tests are wrapped in a CASE rather than guarded by a separate `jsonb_typeof(...)='array'
+// AND ...`: SQL does not promise to evaluate AND left to right, and Postgres happily ran
+// jsonb_array_length on a corrupted scalar value and threw, failing the whole sync.
 export async function upsertClient(providerId, c) {
   const q = sql();
   const now = Date.now();
@@ -244,6 +270,14 @@ export async function upsertClient(providerId, c) {
     // hand, and one of them omitting phone silently wiped the column for every client — which broke
     // check-in auto-send for anyone who books with a phone number and no email, since the cron
     // matches a Square customer to a client by email OR phone.
+    //
+    // ON CONFLICT is on (id) alone, because id is the PRIMARY KEY — so without the provider_id
+    // condition on the DO UPDATE, a collision across ACCOUNTS clobbers the other provider's row:
+    // her client's name, email, phone and whole data blob replaced by a stranger's, inside her
+    // account, with her summaries gone. Not hypothetical: the app mints ids as 'c' + Date.now(),
+    // bumping by 1 on a local clash, so two providers adding (or importing) clients at the same
+    // moment land on the same ids. With the condition the cross-account write simply matches no
+    // row, and the re-read below turns that into a reported failure instead of silent data loss.
     await q`INSERT INTO clients (id, provider_id, token, name, email, phone, data, created_at, updated_at)
       VALUES (${id}, ${providerId}, ${token}, ${(c && c.name) || ''}, ${(c && c.email) || ''}, ${(c && c.phone) || ''}, ${data}::jsonb, ${now}, ${now})
       ON CONFLICT (id) DO UPDATE SET
@@ -251,23 +285,48 @@ export async function upsertClient(providerId, c) {
         email = EXCLUDED.email,
         phone = COALESCE(NULLIF(EXCLUDED.phone, ''), clients.phone),
         updated_at = EXCLUDED.updated_at,
-        data = CASE
-          WHEN COALESCE(CASE WHEN jsonb_typeof(EXCLUDED.data->'pendingForms')='array' THEN jsonb_array_length(EXCLUDED.data->'pendingForms') END, 0) = 0
-               AND COALESCE(CASE WHEN jsonb_typeof(clients.data->'pendingForms')='array' THEN jsonb_array_length(clients.data->'pendingForms') END, 0) > 0
-            THEN jsonb_set(EXCLUDED.data, '{pendingForms}', clients.data->'pendingForms')
-          ELSE EXCLUDED.data
-        END
-      WHERE clients.deleted_at IS NULL`;
+        data = EXCLUDED.data || COALESCE((
+          SELECT jsonb_object_agg(k, clients.data->k)
+            FROM (VALUES ('summaries'),('pendingForms')) AS t(k)
+           WHERE COALESCE(CASE WHEN jsonb_typeof(clients.data->k) = 'array'
+                               THEN jsonb_array_length(clients.data->k) END, 0) > 0
+             AND COALESCE(CASE WHEN jsonb_typeof(EXCLUDED.data->k) = 'array'
+                               THEN jsonb_array_length(EXCLUDED.data->k) END, 0) = 0
+        ), '{}'::jsonb)
+      WHERE clients.deleted_at IS NULL
+        AND clients.provider_id = EXCLUDED.provider_id`;
     // A concurrent upsert of this same new id may have won the INSERT with a *different* token
     // (ON CONFLICT DO NOTHING keeps the first write). Re-read so we return the token that was
     // actually persisted — otherwise the loser hands back a token that isn't in the DB, i.e. a
     // dead client link. Cheap: only runs on brand-new clients.
     const back = await q`SELECT token FROM clients WHERE id=${id} AND provider_id=${providerId}`;
-    if (back[0] && back[0].token) token = back[0].token;
+    if (back[0] && back[0].token) { token = back[0].token; }
+    else {
+      // Nothing of ours is there: this id is held by ANOTHER account (or is tombstoned). Say so
+      // instead of returning a token that isn't in the database — api/clients lists the client in
+      // `failed` and the provider gets told it couldn't be saved, which is recoverable. Returning
+      // a phantom token is not: her client's link would silently never work.
+      const e = new Error('client id already in use');
+      e.code = 'id_taken';
+      throw e;
+    }
   } else {
-    await q`UPDATE clients SET name=${(c && c.name) || ''}, email=${(c && c.email) || ''},
-      phone=COALESCE(NULLIF(${(c && c.phone) || ''}, ''), phone), data=${data}::jsonb, updated_at=${now}
-      WHERE id=${id} AND provider_id=${providerId}`;
+    // One CTE so the posted blob is sent as a single bound parameter even though the guard reads it
+    // twice. `inc.d` is what was just posted; `clients.data` is still the stored row's value here.
+    await q`WITH inc AS (SELECT ${data}::jsonb AS d)
+      UPDATE clients SET name=${(c && c.name) || ''}, email=${(c && c.email) || ''},
+        phone=COALESCE(NULLIF(${(c && c.phone) || ''}, ''), clients.phone),
+        data = inc.d || COALESCE((
+          SELECT jsonb_object_agg(k, clients.data->k)
+            FROM (VALUES ('summaries'),('pendingForms')) AS t(k)
+           WHERE COALESCE(CASE WHEN jsonb_typeof(clients.data->k) = 'array'
+                               THEN jsonb_array_length(clients.data->k) END, 0) > 0
+             AND COALESCE(CASE WHEN jsonb_typeof(inc.d->k) = 'array'
+                               THEN jsonb_array_length(inc.d->k) END, 0) = 0
+        ), '{}'::jsonb),
+        updated_at=${now}
+      FROM inc
+      WHERE clients.id=${id} AND clients.provider_id=${providerId}`;
   }
   return { id, token, name: (c && c.name) || '', email: (c && c.email) || '' };
 }
