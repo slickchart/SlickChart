@@ -4,7 +4,7 @@ h1: Do you need to leave your booking system to get proper client charting?
 description: Short answer: no. Here's how to tell whether switching is actually worth it, and what it really costs you to do it.
 date: 2026-10-05
 keywords: esthetician charting, switch booking software, client charting without migrating, esthetician software migration, add charting to square
-draft: true
+draft: false
 ---
 
 This question turns up in every beauty-pro group, usually phrased as frustration rather than a question: *"my booking app is fine but the notes are useless, do I just move everything?"*

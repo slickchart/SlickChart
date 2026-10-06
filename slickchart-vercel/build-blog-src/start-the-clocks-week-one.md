@@ -4,7 +4,7 @@ h1: The first seven days: start the clocks that run without you
 description: Week one is not about building. It is about starting every wait you can, so the waiting happens underneath the work instead of after it.
 date: 2026-10-05
 keywords: first week building an app, how long does it take to launch an app, app store waiting times, build your first app timeline
-draft: true
+draft: false
 ---
 
 I am an esthetician. I built my app between clients over six weeks, with no prior tech background, and got it into both app stores. The thing I would most like to go back and tell myself has nothing to do with code.
