@@ -3040,7 +3040,40 @@ rather than "data gone".
 3. There is no third copy to recover from once the owner blobs' `animals` have been overwritten,
    which is why that guard shipped in the same build.
 
-### Hazard found while looking, NOT shipped (no observation supports it)
+### 2026-10-07, from Ashley: she was on her PHONE, and the workspace STILL SAYS EQUINE
+
+Both answers matter, and together they finish the story.
+
+**Equine is intact → the `sc_professions` hazard below is RULED OUT by observation.** Do not spend
+another minute on it. Her symptom was the links, not the mode.
+
+**Phone → found how the linkless records were born, and it is worse than the merge.**
+`syncClientEvents()` runs on a **15 second interval** and on **window focus** — i.e. every time a
+backgrounded PWA comes back. It had no guard that this device had read its own roster yet. On a
+phone the roster lives in IndexedDB (§2e), hydration is async, and boot has more awaits after it
+before `loadClients()` runs, so a cold phone's boot can easily outlast a tick. In that window `CL`
+is empty, and the fill path — the one that exists so a client created elsewhere isn't dropped —
+**recreates the ENTIRE roster as blank skeletons**: no notes, no owner link, `treatment:'New
+client'`. `scratchpad/prehydrate.mjs` proves it on `2026-10-07a` and shows it blocked on `b`.
+
+Why she lost ONLY the grouping, which is the part that confused me: a skeleton carries **no `_uAt`
+at all**, so `lu` is 0 and the ACCOUNT's real record wins the next merge, restoring her notes; the
+per-client kv maps and `_unionClientForms` restore the summaries and forms. Nothing restored
+`ownerId`, because nothing knew about it. **Hers is the only account with a field that lives on the
+record and is not covered by any union** — which is exactly why hers is the only account where this
+surfaced at all, and why it read as "the horses reset" instead of "my charts are blank".
+
+Fixed by `_rosterNotReadYet()`, which compares what is on disk against what is in memory rather than
+adding a flag or trusting boot order: ids this device has SAVED but not LOADED mean the read has not
+happened. Deliberately false when there is no roster anywhere, so a brand-new provider still receives
+a client created elsewhere (§2ah's "her intake never came through" fix — asserted, not assumed).
+
+**Anything else that writes onto client records from a timer, a focus handler or an unload needs the
+same question asked.** `_savePersistenceSweep` already returns while booting; `syncClientEvents` was
+the one with a 15s interval AND a focus listener. Do NOT gate such a guard on `Cloud._booting`
+(§2ad): `bootDone()` clears it before the boot batch flushes.
+
+### Hazard found while looking, NOT shipped (ruled out 2026-10-07 — see above)
 
 `_animalMode()` is `selectedProfessions.indexOf('equine')>=0`, and `sc_professions` is a
 plain-overwrite sync key ("one selection" in check-merge-coverage). If the account's copy were ever

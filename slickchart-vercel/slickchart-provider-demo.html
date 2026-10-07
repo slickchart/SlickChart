@@ -468,7 +468,7 @@ const S=document.getElementById('S');
 // resets when I save it" and there was no way to tell whether her phone had any of them — a whole
 // day was spent debugging code she may not have been running. Shown at the bottom of Settings, so
 // the answer is a screenshot away. Bump it on every ship.
-const APP_BUILD='2026-10-07a';
+const APP_BUILD='2026-10-07b';
 
 
 /* ════════════════════════════════════════════════════════════════
@@ -25444,10 +25444,39 @@ function _reconcileEventAttachments(events){
   if(touched){try{saveClients();}catch(e){}}
   return touched;
 }
+// HAS THIS DEVICE READ ITS ROSTER YET?
+//
+// On a phone the roster is big enough to live in IndexedDB (§2e), which comes back asynchronously,
+// and boot has more awaits after that before loadClients() runs. Anything that writes onto client
+// records in that window is writing over a roster it cannot see. Answered by comparing what is on
+// disk against what is in memory, so there is no new flag to keep in sync and no assumption about
+// boot order: ids this device has SAVED but has not LOADED mean the read has not happened yet.
+// Deliberately false for an account with no roster at all — a brand-new provider must still be able
+// to receive a client created elsewhere.
+function _rosterNotReadYet(){
+  try{
+    if(typeof _awaitingHydration==='function'&&_awaitingHydration('sc_clients'))return true;
+    let raw=null;
+    try{raw=(typeof _lsGet==='function')?_lsGet('sc_clients'):localStorage.getItem('sc_clients');}catch(e){}
+    if(!raw)return false;
+    const o=JSON.parse(raw);
+    if(!o||typeof o!=='object')return false;
+    const gone=(typeof _deletedClientIds==='object'&&_deletedClientIds)||{};
+    const merged=(typeof mergedSquareIds==='object'&&mergedSquareIds)||{};
+    return Object.keys(o).some(function(k){return !CL[k]&&!gone[k]&&!merged[k];});
+  }catch(e){return false;}
+}
 async function syncClientEvents(){
   if(_syncingEvents)return;
   const tok=(typeof Cloud!=='undefined'&&Cloud&&Cloud.token)||'';
   if(!tok)return;
+  // This runs on a 15 SECOND INTERVAL and on window FOCUS — i.e. every time a backgrounded phone
+  // comes back — so it lands in that window routinely, and a cold phone's boot can take longer than
+  // one tick. Every branch below writes ONTO a client record, and the fill further down CREATES one
+  // for any server client CL hasn't got: with the roster unread that recreates the ENTIRE roster as
+  // blank skeletons — no notes, no owner link, "New client" — which then win the next merge on their
+  // fresh timestamps. Verified reachable in scratchpad/prehydrate.mjs. Waiting costs one tick.
+  if(_rosterNotReadYet())return;
   _syncingEvents=true;
   try{
     const r=await fetch('/api/clients',{headers:{'Authorization':'Bearer '+tok}});
