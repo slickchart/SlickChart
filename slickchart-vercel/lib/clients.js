@@ -234,7 +234,15 @@ export function genToken() { return crypto.randomBytes(16).toString('base64url')
 // get back. The cost is that deleting your LAST summary needs a second write to stick; that is
 // visible and recoverable, unlike silently losing the journey.
 //
-// The protected keys are the VALUES list in both statements below (summaries, pendingForms). The
+// `animals` is protected for the same reason and is load-bearing twice over: for the equestrian
+// trade it is the owner's list of their horses, each with that horse's own summaries and photos, so
+// an empty one wipes what the owner sees in their app — AND it is the only copy of the owner-to-horse
+// grouping that lives anywhere but the provider's own roster, which makes it the last fallback if a
+// device ever loses the links (see _carryAnimalLink in slickchart.html). For a provider with no
+// animals it is always empty on both sides, so the guard never fires for them.
+//
+// The protected keys are the VALUES list in both statements below (summaries, pendingForms,
+// animals). The
 // guard runs INSIDE the statement on purpose — a read-then-write in JS would race two concurrent
 // syncs, which is how this blob got clobbered to begin with. Add a key to both lists if you add
 // another append-only list to the client blob, and keep the expression a shallow `||` overlay: it
@@ -287,7 +295,7 @@ export async function upsertClient(providerId, c) {
         updated_at = EXCLUDED.updated_at,
         data = EXCLUDED.data || COALESCE((
           SELECT jsonb_object_agg(k, clients.data->k)
-            FROM (VALUES ('summaries'),('pendingForms')) AS t(k)
+            FROM (VALUES ('summaries'),('pendingForms'),('animals')) AS t(k)
            WHERE COALESCE(CASE WHEN jsonb_typeof(clients.data->k) = 'array'
                                THEN jsonb_array_length(clients.data->k) END, 0) > 0
              AND COALESCE(CASE WHEN jsonb_typeof(EXCLUDED.data->k) = 'array'
@@ -318,7 +326,7 @@ export async function upsertClient(providerId, c) {
         phone=COALESCE(NULLIF(${(c && c.phone) || ''}, ''), clients.phone),
         data = inc.d || COALESCE((
           SELECT jsonb_object_agg(k, clients.data->k)
-            FROM (VALUES ('summaries'),('pendingForms')) AS t(k)
+            FROM (VALUES ('summaries'),('pendingForms'),('animals')) AS t(k)
            WHERE COALESCE(CASE WHEN jsonb_typeof(clients.data->k) = 'array'
                                THEN jsonb_array_length(clients.data->k) END, 0) > 0
              AND COALESCE(CASE WHEN jsonb_typeof(inc.d->k) = 'array'

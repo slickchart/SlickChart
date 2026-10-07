@@ -214,7 +214,7 @@ const S=document.getElementById('S');
 // resets when I save it" and there was no way to tell whether her phone had any of them — a whole
 // day was spent debugging code she may not have been running. Shown at the bottom of Settings, so
 // the answer is a screenshot away. Bump it on every ship.
-const APP_BUILD='2026-10-06a';
+const APP_BUILD='2026-10-07a';
 
 
 /* ════════════════════════════════════════════════════════════════
@@ -2595,6 +2595,29 @@ function _carryHandledMarks(win,lose){
   }catch(e){}
   return grew;
 }
+// AN ANIMAL'S LINK TO ITS OWNER IS NOT AN EDIT — IT IS STRUCTURE, AND IT LIVES IN ONE PLACE.
+// For the equestrian trade a horse IS a client record, tied to its owner by `ownerId` (with
+// `isAnimal` and `species` alongside it). Nothing in the app ever unlinks a horse: the only writes
+// are _addAnimalSave creating one and a client merge re-pointing it at the kept owner. But
+// _mergeClients takes ONE WHOLE RECORD by _uAt, and the horses-under-owners edit never taught it
+// about those fields — so a copy written before the link existed, or one built by the server-list
+// fill path in syncClientEvents (which has no way to know an owner), replaced a copy that had it.
+// The provider is entering session notes, a pull lands, and EVERY horse in the account is suddenly
+// its own client. It happens in both directions, so it cannot be fixed by preferring one side.
+// Carry the link onto whichever record won whenever that record hasn't got one. Safe precisely
+// because no deliberate action ever removes it, and a dangling ownerId is already handled
+// (_ownerIdOf ignores an owner that is no longer in the roster). Returns true when it carried
+// something, so the merged superset is pushed back and the account is repaired too.
+function _carryAnimalLink(win,lose){
+  if(!win||!lose||typeof win!=='object'||typeof lose!=='object')return false;
+  var ch=false;
+  if(!win.ownerId&&lose.ownerId){win.ownerId=lose.ownerId;ch=true;}
+  if(win.ownerId){
+    if(!win.isAnimal&&lose.isAnimal){win.isAnimal=true;ch=true;}
+    if(!win.species&&lose.species){win.species=lose.species;ch=true;}
+  }
+  return ch;
+}
 function _mergeClients(serverStr,localStr){
   try{
     if(localStr==null)return null;   // fresh device with no local roster — let the server copy load as-is
@@ -2613,12 +2636,14 @@ function _mergeClients(serverStr,localStr){
       if(su>lu){                                      // server record wins…
         var grewS=_unionClientForms(s,l);             // …but never at the cost of forms only local held
         if(_carryHandledMarks(s,l))grewS=true;        // …nor at the cost of cards already dismissed here
+        if(_carryAnimalLink(s,l))grewS=true;          // …nor at the cost of a horse's link to its owner
         if(grewS)_noteClientRepaired(id);             // the client's own app needs this blob again
         out[id]=s;if(grewS)changed=true;              // merged local state in → push the superset back
       }else{                                          // local newer/tie wins…
         _unionClientForms(l,s);                       // …still absorb any forms only the server had
         _carryHandledMarks(l,s);                      // …and any dismissal made on the other device
-        out[id]=l;if(_clientSig(l)!==_clientSig(s))changed=true;
+        var carried=_carryAnimalLink(l,s);            // …and the owner link, if only the account had it
+        out[id]=l;if(carried||_clientSig(l)!==_clientSig(s))changed=true;
       }
     });
     return {str:JSON.stringify(out),changed:changed};
@@ -7254,6 +7279,63 @@ function _animalOwnerHTML(id){
     ${sibs.length?`<div style="display:flex;flex-wrap:wrap;gap:6px;margin-top:9px;">${sibs.map(sid=>`<button onclick="nav('client','${_jsAttr(sid)}')" style="background:var(--p-surf);border:1px solid var(--p-line3);color:var(--p-mut2);border-radius:999px;padding:5px 11px;font-size:14px;cursor:pointer;font-family:inherit;">\u{1F40E} ${_fileEsc(CL[sid].name)}</button>`).join('')}</div>`:''}
   </div>`;
 }
+// RECOVERY, and the control that should have existed from the start: an unlinked horse had no way
+// back to its owner. _addAnimalSheet only ever CREATES a new one, so re-linking a horse that already
+// has a chart — notes, photos, summaries, a year of visits — meant retyping the lot or losing it.
+// When a merge dropped the links (see _carryAnimalLink) that was the difference between a five
+// second repair and a ruined file.
+//
+// Offered only on an equine account, and only for a client with no owner AND no horses of its own,
+// so an owner's own chart never shows it. There is deliberately no "unlink": nothing in the app
+// records an unlink, so _carryAnimalLink would put the link straight back. Picking a DIFFERENT owner
+// is how a mistake gets corrected, and that re-point does survive a merge.
+function _ownerCandidates(id){
+  if(typeof CL==='undefined')return [];
+  return Object.keys(CL).filter(function(k){
+    if(k===id||!CL[k])return false;
+    if(_ownerIdOf(k))return false;                       // another horse, not an owner
+    var nm=String(CL[k].name||'').trim();
+    return !!nm&&nm.toLowerCase()!=='(no name)';
+  }).sort(function(a,b){return String(CL[a].name||'').localeCompare(String(CL[b].name||''),undefined,{sensitivity:'base'});});
+}
+function _linkOwnerHTML(id){
+  if(typeof _animalMode!=='function'||!_animalMode())return '';
+  const c=(typeof CL!=='undefined'&&CL[id])||null;
+  if(!c||_ownerIdOf(id)||_animalsOf(id).length)return '';
+  if(!_ownerCandidates(id).length)return '';
+  return `<div style="margin:12px 16px 0;background:var(--p-surf2);border:1px dashed var(--p-line3);border-radius:12px;padding:11px 13px;display:flex;align-items:center;gap:10px;">
+    <div style="font-size:18px;flex-shrink:0;">\u{1F40E}</div>
+    <div style="flex:1;min-width:0;font-size:16px;color:var(--p-ink);line-height:1.4;">Is this a horse? Put them on their owner's file and everything here stays as it is.</div>
+    <button onclick="_linkOwnerSheet('${_jsAttr(id)}')" style="background:var(--accent);border:none;color:var(--accent-ink);border-radius:8px;padding:7px 11px;font-size:14px;font-weight:600;cursor:pointer;font-family:inherit;white-space:nowrap;">Choose owner</button>
+  </div>`;
+}
+function _linkOwnerSheet(id){
+  const c=(typeof CL!=='undefined'&&CL[id])||null;if(!c)return;
+  const ex=document.getElementById('link-owner-sheet');if(ex)ex.remove();
+  const list=_ownerCandidates(id);
+  const m=document.createElement('div');m.id='link-owner-sheet';
+  m.style.cssText='position:fixed;top:0;bottom:0;left:0;right:0;margin:0 auto;width:390px;max-width:100%;z-index:9999;background:rgba(0,0,0,.6);display:flex;flex-direction:column;justify-content:flex-end;';
+  m.onclick=function(e){if(e.target===m)m.remove();};
+  m.innerHTML='<div style="background:var(--surf1);border-top:1px solid var(--p-line);border-radius:16px 16px 0 0;padding:18px;max-height:80%;overflow:auto;">'
+    +'<div style="width:36px;height:4px;background:var(--p-chip);border-radius:2px;margin:0 auto 14px;"></div>'
+    +'<div style="font-size:16px;font-weight:600;color:var(--p-ink);margin-bottom:4px;">Whose horse is '+_fileEsc(c.name||'this')+'?</div>'
+    +'<div style="font-size:16px;color:var(--p-mut);line-height:1.5;margin-bottom:12px;">Their chart, notes, photos and session history all stay exactly where they are.</div>'
+    +list.map(function(k){return '<button onclick="_linkOwnerSave(\''+_jsAttr(id)+'\',\''+_jsAttr(k)+'\')" style="display:flex;width:100%;align-items:center;gap:10px;padding:11px 12px;background:var(--p-surf2);border:1px solid var(--p-line3);border-radius:12px;margin-bottom:7px;cursor:pointer;font-family:inherit;text-align:left;">'
+      +'<div style="flex:1;min-width:0;"><div style="font-size:16px;font-weight:600;color:var(--p-ink);">'+_fileEsc(CL[k].name||'')+'</div>'
+      +'<div style="font-size:14px;color:var(--p-mut);">'+(_animalsOf(k).length?(_animalsOf(k).length+' '+_fileEsc(_speciesWord(_animalsOf(k).length!==1))+' on file'):_fileEsc(CL[k].email||CL[k].phone||'No contact on file'))+'</div></div>'
+      +'<i class="ti ti-chevron-right" style="font-size:16px;color:var(--p-mut);flex-shrink:0;"></i></button>';}).join('')
+    +'</div>';
+  document.body.appendChild(m);
+}
+function _linkOwnerSave(id,ownerId){
+  const c=(typeof CL!=='undefined'&&CL[id])||null,o=(typeof CL!=='undefined'&&CL[ownerId])||null;
+  if(!c||!o||id===ownerId)return;
+  c.ownerId=ownerId;c.isAnimal=true;if(!c.species)c.species='Horse';
+  const sh=document.getElementById('link-owner-sheet');if(sh)sh.remove();
+  try{if(typeof saveClients==='function')saveClients();}catch(e){}
+  if(typeof proToast==='function')proToast(String(c.name||'They')+' is on '+String(o.name||'their owner').split(' ')[0]+'\u2019s file now');
+  try{if(typeof nav==='function')nav('client',id);}catch(e){}
+}
 function _rosterSub(id,c){
   c=c||{};
   // An owner's roster line leads with how many animals are on their file. The owner themselves is
@@ -7793,6 +7875,7 @@ function renderClient(id){
   <div style="padding:14px 16px 0;display:flex;flex-direction:column;align-items:center;gap:8px;">${av(c,64)}<div style="text-align:center;"><div style="font-size:18px;font-weight:500;color:var(--p-ink);">${_fileEsc(c.name)}</div><div style="font-size:16px;color:var(--p-mut);display:inline-flex;align-items:center;gap:6px;">${_fileEsc(c.treatment)} <button onclick="_editClientDetails('${id}')" style="border:1px solid var(--accent-a30,var(--p-line3));background:var(--accent-tint);color:var(--accent-strong);cursor:pointer;padding:3px 9px;border-radius:24px;line-height:1;display:inline-flex;align-items:center;gap:3px;font-size:14px;font-weight:600;font-family:inherit;"><i class="ti ti-pencil" style="font-size:14px;"></i> Edit</button></div></div></div>
   <div style="margin:14px 16px 0;background:var(--surf1);border:1px solid var(--p-line3);border-radius:12px;padding:12px 14px;"><div style="display:flex;justify-content:space-between;align-items:center;margin-bottom:8px;"><span style="font-size:14px;color:var(--p-mut);text-transform:uppercase;letter-spacing:.06em;">${_oc?('Contact \u00b7 '+_fileEsc(String(_ocC.name||'owner').split(' ')[0])):'Contact'}</span><button onclick="_editClientDetails('${_oc||id}')" style="background:var(--accent-tint);border:1px solid var(--accent-a30,var(--p-line3));color:var(--accent-strong);border-radius:8px;padding:4px 10px;font-size:14px;font-weight:600;cursor:pointer;font-family:inherit;"><i class="ti ti-pencil" style="font-size:14px;"></i> Edit</button></div><div style="font-size:16px;color:var(--p-mut);line-height:1.9;word-break:break-word;overflow-wrap:anywhere;"><div><i class="ti ti-mail" style="color:var(--p-mut);margin-right:7px;"></i>${_ocC.email?String(_ocC.email).replace(/</g,'&lt;'):'<span style="color:var(--p-mut);">No email</span>'}</div><div><i class="ti ti-phone" style="color:var(--p-mut);margin-right:7px;"></i>${_ocC.phone?_fmtPhone(_ocC.phone).replace(/</g,'&lt;'):'<span style="color:var(--p-mut);">No phone</span>'}</div>${_oc?'':`<div><i class="ti ti-cake" style="color:var(--p-mut);margin-right:7px;"></i>${c.birthday?_fmtDOB(c.birthday):'<span style="color:var(--p-mut);">No date of birth</span>'}</div>`}</div></div>
   ${(typeof _animalOwnerHTML==='function')?_animalOwnerHTML(id):''}
+  ${(typeof _linkOwnerHTML==='function')?_linkOwnerHTML(id):''}
   ${(typeof _ownerAnimalsHTML==='function')?_ownerAnimalsHTML(id):''}
   ${c.flaggedContra?`<div style="margin:12px 16px 0;background:var(--p-red-bg);border:1px solid var(--p-red-line);border-radius:12px;padding:12px 14px;">
     <div style="display:flex;align-items:center;gap:8px;margin-bottom:6px;"><i class="ti ti-alert-triangle" style="font-size:16px;color:var(--p-red);"></i><span style="font-size:16px;font-weight:700;color:var(--p-red);">Flagged on intake, review before the visit</span></div>

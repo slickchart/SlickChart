@@ -142,7 +142,20 @@ await upsertClient(P, { id: 'c6', name: 'Back', data: { summaries: [S2] } });
 d = await stored('c6');
 ok('tombstoned client not resurrected', d.secret === 'A' && d.summaries[0].id === 's1', d);
 
-// --- 10. phone is still COALESCEd, never blanked
+// --- 10. `animals` — the equestrian owner's list of horses, which carries each horse's own
+// summaries and is the last fallback copy of the owner-to-horse grouping.
+const H1 = { id: 'h1', name: 'Thunder', species: 'Horse', summaries: [S1] };
+await upsertClient(P, { id: 'c8', name: 'Sarah', data: { animals: [H1], profile: {} } });
+await upsertClient(P, { id: 'c8', name: 'Sarah', data: { animals: [], profile: { a: 1 } } });
+d = await stored('c8');
+ok("empty animals does NOT wipe the owner's horses", d.animals.length === 1, d);
+await upsertClient(P, { id: 'c8', name: 'Sarah', data: { animals: [H1, { id: 'h2', name: 'Biscuit' }] } });
+ok('a second horse still lands', (await stored('c8')).animals.length === 2);
+await upsertClient(P, { id: 'c9', name: 'Esty', data: { profile: {} } });
+await upsertClient(P, { id: 'c9', name: 'Esty', data: { profile: { a: 1 } } });
+ok('no animals key invented for a provider with none', !('animals' in (await stored('c9'))));
+
+// --- 11. phone is still COALESCEd, never blanked
 await upsertClient(P, { id: 'c7', name: 'Ph', phone: '555-0100', data: {} });
 await upsertClient(P, { id: 'c7', name: 'Ph', data: {} });
 const ph = await q`SELECT phone, name FROM clients WHERE id='c7'`;

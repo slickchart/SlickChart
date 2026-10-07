@@ -2975,3 +2975,80 @@ change to `lib/clients.js`:
 `@neondatabase/serverless` is not installed in the scratch env, which is why it goes through psql.
 `initdb` refuses to run as root, so the script hands the cluster to a throwaway `pgtest` user and
 makes its socket dir world-traversable. All 21 green on 2026-10-06a.
+
+## 2aj. HEATHER (equestrian): every horse became its own client, mid-session (2026-10-07)
+
+**What she OBSERVED** (ground truth — §1b; device not yet asked, ask her):
+
+1. She is the equestrian provider. Horses were put **under the owner's client profile**, because an
+   owner has more than one horse. Hers is the only account set up this way.
+2. **While entering session notes today** it "suddenly reset" so the **horses are all their own
+   clients** again.
+3. Ashley told her **not to close the app**.
+
+### Mechanism, reproduced
+
+A horse IS a client record, tied to its owner by `ownerId` on the horse (`_isAnimal`, `_ownerIdOf`,
+`_animalsOf`). `_mergeClients` picks **ONE WHOLE RECORD** by `_uAt` — it unions forms, summaries and
+handled-marks inside the record, but everything else is take-it-or-leave-it. The horses-under-owners
+edit added `ownerId`/`isAnimal`/`species` and nobody taught the merge about them, so a copy written
+before the link existed — or one built by the `syncClientEvents` fill path, which gets its fields from
+the server `clients` row and has no way to know an owner — **replaced a copy that had the link**. A
+pull lands while she is typing notes and every horse in the account is suddenly a top-level client.
+
+It happens in BOTH directions (account copy newer, or device copy newer), so preferring one side
+fixes nothing. `scratchpad/heather.mjs` reproduces it: run it against `2026-10-06a` and every "link"
+assertion comes back empty; against `2026-10-07a` all 13 pass.
+
+**Her charts were never lost.** The repro confirms the records keep their notes, photos and summaries
+through the merge — only the grouping broke, which is why it reads as "reset to their own clients"
+rather than "data gone".
+
+**What it was NOT:** `_mergeClients` is byte-identical across every commit from `2ab179d` through
+`4ba4d8e`, so none of the merge work for Diana caused this. Checked, because Ashley asked directly.
+
+### Fixed
+
+- **`_carryAnimalLink(win,lose)`**, called in both branches of `_mergeClients`: carry `ownerId` (and
+  `isAnimal`/`species` with it) onto the winning record whenever the winner hasn't got one. Safe
+  because **nothing in the app ever unlinks a horse** — the only writes are `_addAnimalSave` creating
+  one and the client-merge re-point at line ~1970 — so there is no deliberate action to undo. A
+  dangling `ownerId` was already harmless (`_ownerIdOf` ignores an owner that is not in the roster).
+  Returns true when it carried, so the merged superset is pushed back and the ACCOUNT is repaired
+  too, not just the device that noticed.
+- **A re-point still wins**: winner `ownerId=B` + loser `ownerId=A` keeps B (asserted).
+- **Regular providers are untouched**: no link is invented on an ordinary client (asserted).
+- **`animals` joined the protected keys in `lib/clients.js`** (§ above). It is the owner's list of
+  their horses, each with that horse's own summaries and photos, so an empty one wipes what the owner
+  sees in their app — AND it is the only copy of the grouping that lives anywhere but the provider's
+  roster, which makes it the last fallback if a device ever loses the links. For a provider with no
+  animals it is empty on both sides and the guard never fires.
+- **"Choose owner" — the control that should have existed from the start.** An unlinked horse had no
+  way back: `_addAnimalSheet` only ever CREATES one, so re-linking a horse that already had a chart
+  meant retyping it or losing it. `_linkOwnerHTML`/`_linkOwnerSheet`/`_linkOwnerSave` offer it on an
+  equine account for a client with no owner AND no horses of its own, so an owner's own chart never
+  shows it, and a non-equine provider never sees it. **Deliberately no "unlink":** nothing records
+  one, so `_carryAnimalLink` would put the link straight back — picking a different owner is how a
+  mistake gets corrected. `scratchpad/heatherui.mjs` drives it end to end (18 assertions).
+
+### Recovery, in order
+
+1. The carry re-links automatically on the next pull **if either side still holds `ownerId`**. One
+   refresh on `2026-10-07a`.
+2. If both sides lost it, **"Choose owner"** on each horse's chart puts it back in seconds, with
+   every note, photo and summary intact.
+3. There is no third copy to recover from once the owner blobs' `animals` have been overwritten,
+   which is why that guard shipped in the same build.
+
+### Hazard found while looking, NOT shipped (no observation supports it)
+
+`_animalMode()` is `selectedProfessions.indexOf('equine')>=0`, and `sc_professions` is a
+plain-overwrite sync key ("one selection" in check-merge-coverage). If the account's copy were ever
+the stock default `['esty','wax','lash','brow']`, a pull would replace her selection and
+`_ownerAnimalsHTML` + `_rosterSub` would stop showing horses account-wide (the roster indent would
+survive — it reads `_ownerIdOf` directly). Only `saveProfessions()` writes that key and all three
+call sites are deliberate taps, so this is unreached by inspection, and nothing she reported points
+at it. Left alone on purpose: guessing a "non-default beats default" rule onto a sync key would lose
+a genuine profession switch made on another device, and a speculative guard on a sync key is exactly
+what caused the one-day `customProducts` regression. **Ask her whether the workspace still says
+Equine before touching it.**
