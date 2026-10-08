@@ -214,7 +214,7 @@ const S=document.getElementById('S');
 // resets when I save it" and there was no way to tell whether her phone had any of them — a whole
 // day was spent debugging code she may not have been running. Shown at the bottom of Settings, so
 // the answer is a screenshot away. Bump it on every ship.
-const APP_BUILD='2026-10-08e';
+const APP_BUILD='2026-10-08f';
 
 
 /* ════════════════════════════════════════════════════════════════
@@ -14490,6 +14490,63 @@ function _vcRoutineSaveSoon(cid){
     try{if(cid&&typeof _scheduleSpecificClientSync==='function')_scheduleSpecificClientSync(cid);}catch(e){}
   },600);
 }
+// KEEP / CHANGE / STOP.
+//
+// The most repeated sentiment in the client half of the research is not wanting to be sold to: the
+// dominant complaint about paid skin consults is that they "felt like sales pitches rather than
+// professional services", and the one client who described a written plan she paid for wanted to
+// know WHY each thing was chosen for her. Telling someone what to KEEP from the shelf they already
+// own costs nothing, proves she actually looked, and is the cheapest possible counter to that.
+//
+// The data was already being captured — she writes a note per product — so this adds the one-tap
+// verdict and composes all three groups into her notes. No new storage: the verdict rides the
+// routine rows on the submission she already has.
+const _VERDICTS=[['keep','Keep','var(--p-green)'],['change','Change','var(--accent-strong)'],['stop','Stop','var(--p-red)']];
+function _vcRoutineSetVerdict(cid,i,val){
+  try{
+    const sub=vcSubmissions[cid];if(!sub||!Array.isArray(sub.routine)||!sub.routine[i])return;
+    sub.routine[i].verdict=(sub.routine[i].verdict===val)?'':val;   // tapping it again clears it
+    if(typeof _vcRoutineSaveSoon==='function')_vcRoutineSaveSoon(cid);
+    renderVirtualClient(cid);
+  }catch(e){}
+}
+function _vcVerdictPillsHTML(cid,i,cur){
+  return '<div style="display:flex;gap:5px;margin-bottom:6px;">'+_VERDICTS.map(function(v){
+    const on=cur===v[0];
+    return '<button onclick="_vcRoutineSetVerdict(\''+_jsAttr(cid)+'\','+i+',\''+v[0]+'\')" style="border:1px solid '+(on?v[2]:'var(--p-line3)')+';background:'+(on?v[2]:'var(--surf1)')+';color:'+(on?'#fff':'var(--p-mut2)')+';border-radius:24px;padding:3px 11px;font-size:14px;font-weight:500;cursor:pointer;font-family:inherit;">'+v[1]+'</button>';
+  }).join('')+'</div>';
+}
+// Composed in HER words where she wrote them, and silent about products she did not judge.
+function _vcKeepChangeStopText(cid){
+  const sub=vcSubmissions[cid];
+  const items=(sub&&Array.isArray(sub.routine))?sub.routine:[];
+  const groups={keep:[],change:[],stop:[]};
+  items.forEach(function(x){
+    if(!x||!x.verdict||!groups[x.verdict])return;
+    const fb=String(x.feedback||'').trim();
+    groups[x.verdict].push('- '+String(x.name||'').trim()+(fb?' \u2014 '+fb:''));
+  });
+  const parts=[];
+  if(groups.keep.length)parts.push('Keep using\n'+groups.keep.join('\n'));
+  if(groups.change.length)parts.push('Worth changing\n'+groups.change.join('\n'));
+  if(groups.stop.length)parts.push('Stop for now\n'+groups.stop.join('\n'));
+  return parts.join('\n\n');
+}
+function _vcKeepChangeStopInsert(cid){
+  const txt=_vcKeepChangeStopText(cid);
+  if(!txt){if(typeof proToast==='function')proToast('Mark a few products Keep, Change or Stop first');return;}
+  const ta=document.getElementById('vc-review-notes');if(!ta)return;
+  const cur=String(ta.value||'');
+  if(!cur.trim())ta.value=txt;
+  else{
+    try{
+      const a=ta.selectionStart==null?cur.length:ta.selectionStart;
+      ta.value=cur.slice(0,a)+(cur.slice(0,a).endsWith('\n')?'':'\n\n')+txt+cur.slice(a);
+    }catch(e){ta.value=cur+'\n\n'+txt;}
+  }
+  try{ta.focus();}catch(e){}
+  if(typeof proToast==='function')proToast('Added to your notes');
+}
 function _vcRoutineReviewHTML(id,sub){
   try{
     const items=(sub&&Array.isArray(sub.routine))?sub.routine:[];
@@ -14510,6 +14567,7 @@ function _vcRoutineReviewHTML(id,sub){
         +(wh?'<span style="font-size:14px;color:var(--p-mut);background:var(--surf1);border-radius:24px;padding:2px 9px;">'+wh+'</span>':'')
         +'</div>'
         +(nt?'<div style="font-size:16px;color:var(--p-mut);line-height:1.5;margin-bottom:6px;">“'+nt+'”</div>':'')
+        +_vcVerdictPillsHTML(id,i,x.verdict||'')
         +'<textarea oninput="_vcRoutineSetFeedback(\''+id+'\','+i+',this.value)" placeholder="What do you want '+first+' to know about this one?" rows="2" '
         +'style="width:100%;background:var(--surf1);border:1px solid var(--p-line);border-radius:8px;padding:8px 10px;font-size:16px;color:var(--p-ink);font-family:inherit;resize:vertical;">'+_fileEsc(x.feedback||'')+'</textarea>'
         +'</div>';
@@ -14698,6 +14756,7 @@ function renderVirtualClient(id){
     <div style="font-size:14px;font-weight:500;color:var(--p-mut);text-transform:uppercase;letter-spacing:.07em;margin-bottom:8px;">Your expert notes</div>
     ${(typeof _vcFollowUpPickerHTML==='function')?_vcFollowUpPickerHTML(id):''}
     ${(typeof _starterChipsHTML==='function')?_starterChipsHTML():''}
+    ${(sub&&Array.isArray(sub.routine)&&sub.routine.some(function(x){return x&&x.verdict;}))?`<button onclick="_vcKeepChangeStopInsert('${_jsAttr(id)}')" style="background:var(--p-surf2);border:1px solid var(--p-line3);color:var(--p-ink);border-radius:8px;padding:7px 12px;font-size:14px;cursor:pointer;font-family:inherit;margin-bottom:8px;"><i class="ti ti-list-check" style="font-size:14px;"></i> Add keep / change / stop</button>`:''}
     <textarea id="vc-review-notes" class="fi" style="height:180px;resize:vertical;line-height:1.6;margin-bottom:8px;" placeholder="Confirm the look in pro terms, answer their questions, recommend a treatment plan and next steps..."></textarea>
     <button class="btnp" style="border-radius:8px;margin-top:8px;margin-bottom:8px;" onclick="if(sendVcReview('${id}')){${back}}"><i class="ti ti-send"></i> Send review to ${_fileEsc(c.name.split(' ')[0])}</button>
   </div>`;
@@ -17438,8 +17497,8 @@ function _assembleClientData(id){
     const sub=(typeof vcSubmissions!=='undefined')?vcSubmissions[id]:null;
     const inv=(typeof vcInvites!=='undefined')?vcInvites[id]:null;
     if(sub&&Array.isArray(sub.routine)&&sub.routine.length&&inv&&inv.reviewed){
-      const items=sub.routine.map(function(x){return {name:x.name||'',when:x.when||'',note:x.note||'',feedback:x.feedback||''};});
-      if(items.some(function(x){return x.feedback;})||String(sub.routineNote||'').trim()){
+      const items=sub.routine.map(function(x){return {name:x.name||'',when:x.when||'',note:x.note||'',feedback:x.feedback||'',verdict:x.verdict||''};});
+      if(items.some(function(x){return x.feedback||x.verdict;})||String(sub.routineNote||'').trim()){
         routineReview={date:sub.date||'',note:String(sub.routineNote||''),items:items};
       }
     }
@@ -25653,7 +25712,9 @@ function _sanRoutine(arr){
       name:String((o&&o.name)||'').slice(0,120),
       when:String((o&&o.when)||'').slice(0,40),
       note:String((o&&o.note)||'').slice(0,400),
-      feedback:String((o&&o.feedback)||'').slice(0,1200)
+      feedback:String((o&&o.feedback)||'').slice(0,1200),
+      // keep / change / stop. Anything else is dropped rather than trusted.
+      verdict:(['keep','change','stop'].indexOf(String((o&&o.verdict)||''))>=0)?String(o.verdict):''
     };
   }).filter(function(o){return !!o.name;});
 }

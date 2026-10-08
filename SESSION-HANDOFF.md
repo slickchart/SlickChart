@@ -3346,6 +3346,32 @@ that a new date re-arms it, that Check in now messages the client in her own wor
 that Done clears silently, that it is blocked before the roster is read and fires once it is, and
 that the date survives a stale account copy in both directions.
 
+### Shipped: keep / change / stop (`2026-10-08f`) — recommendation #7
+
+The most repeated sentiment in the client half of the research is not wanting to be sold to: paid
+skin consults "felt like sales pitches rather than professional services", and the one client who
+described a written plan she paid for wanted to know WHY each thing was chosen for her. Telling
+someone what to KEEP from the shelf they already own costs nothing, proves she looked, and is the
+cheapest available counter to that complaint.
+
+The data was already captured — she writes a note per product in the routine review — so this adds
+a one-tap verdict (Keep / Change / Stop, tap again to clear) and a button that composes all three
+groups into her notes, in her own words where she wrote them. **No new storage:** the verdict rides
+the routine rows on the submission, `_sanRoutine` whitelists it to the three values, and it travels
+to the client in `routineReview` alongside the feedback.
+
+Client side shows it as a coloured chip, and **a Keep with no note still renders** — "keep using
+this" is the whole point of the exercise, so filtering on `feedback` alone would have hidden exactly
+the message worth sending. The composer is silent about products she did not judge and emits no
+empty group headings.
+
+The insert follows the note-starter rule: fills an empty box, otherwise drops in at the cursor, never
+overwrites what she has typed.
+
+Note for whoever runs the test: `routineReview` only ships once `vcInvites[id].reviewed` is true,
+which is deliberate (a client must never see a half-finished audit), and the client-side screen is
+`homecare`. Both tripped the first run of `scratchpad/keepstop.mjs` (20 assertions across both apps).
+
 ### Still to do, in this order (SUPERSEDED — see the revised table in `reports/Virtual consult research verified.md` §4)
 
 2. **The structured plan document.** The central recommendation. Today `sendVcReview` reads ONE
