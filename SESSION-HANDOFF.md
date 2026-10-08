@@ -3258,6 +3258,43 @@ diagnose or treat it.
 heading is `text-transform:uppercase` and Chrome's `innerText` returns the TRANSFORMED text, so those
 two checks are case-insensitive on purpose.
 
+### Shipped: note starters (`2026-10-08d`) — what is left of #5 without a plan builder
+
+Ashley declined the structured plan document, so #5 reduces from "plan-builder templates" to
+**reusable starting text for the consult notes box**, which needs no container and keeps most of the
+value. #12 (the client-visible diff) is DEAD without issued plans. #7 (keep/change/stop) survives as
+an insert into the notes and is next.
+
+`sc_note_starters`, array of `{id,name,body,_ts}`, in `_LIB_TOMB` → `sc_deleted_starters`, so it
+merges through `_mergeAuthoredById` with no new merge code. Loader is a `_reloadStep`.
+merge-coverage 84→85, reload-coverage 79→80.
+
+**Two shipped starters, corrective and holistic, and they are not filler.** Each one prompts the
+three things the ONE client in the whole corpus who described receiving a paid written plan said
+were missing: she wished the provider had explained *why she selected a certain routine and products
+and why for me, and explained what I should see or expect*. So every starter has **"Why these, for
+you"**, **"What you should see, and when"**, and a what-if line. Asserted in the test, so a future
+edit cannot quietly drop them.
+
+The holistic/corrective split is **sections, not tone**: the holistic one carries "Food, water and
+sleep" and "Stress and your cycle"; the corrective one deliberately does not. That is the research
+finding that holistic practice is a declared professional identity which changes what is IN the plan.
+
+Wording follows the verified comprehension evidence: **named parts of the day, never clock times**
+(89% vs 77%, Davis 2009 n=359), asserted by a regex in the test. **No product count anywhere**, per
+Ashley's standing decision.
+
+Defaults live in code and are never written to storage (fresh account still seeds 6 keys, 0 tombs).
+An edited default is an override with the same id; a removed one is a tombstone, which is why
+`_starterList()` reads the delete record via `_tombSet` rather than just the array.
+
+Insert behaviour is the one real hazard and it is asserted: a starter **never overwrites text she has
+already typed** — it fills an empty box, otherwise it drops in at the cursor. A starting point that
+eats three paragraphs of real work is worse than no starting point.
+
+`scratchpad/starters.mjs` — 23 assertions including the no-clock-times regex, that removing a shipped
+starter survives a pull, and that one written on another device arrives.
+
 ### Still to do, in this order (SUPERSEDED — see the revised table in `reports/Virtual consult research verified.md` §4)
 
 2. **The structured plan document.** The central recommendation. Today `sendVcReview` reads ONE

@@ -468,7 +468,7 @@ const S=document.getElementById('S');
 // resets when I save it" and there was no way to tell whether her phone had any of them — a whole
 // day was spent debugging code she may not have been running. Shown at the bottom of Settings, so
 // the answer is a screenshot away. Bump it on every ship.
-const APP_BUILD='2026-10-08c';
+const APP_BUILD='2026-10-08d';
 
 
 /* ════════════════════════════════════════════════════════════════
@@ -2691,7 +2691,8 @@ const _LIB_TOMB={
   // Her consult types. Hiding a BUILT-IN records its synthetic 'def:<kind>' id here, which is how a
   // default she does not want stays gone without anything having to be stored for it.
   sc_vc_types:'sc_deleted_vc_types',
-  sc_msg_templates:'sc_deleted_msg_tmpls'
+  sc_msg_templates:'sc_deleted_msg_tmpls',
+  sc_note_starters:'sc_deleted_starters'
 };
 // Vendors, inventory rows and partners are stored WITHOUT ids. A generated id would differ on every
 // device and the union would duplicate them, so their identity is derived from what the provider
@@ -4269,6 +4270,7 @@ function _reloadAll(){
   S('documents',function(){if(typeof loadDocs==='function')loadDocs();});
   S('consult types',function(){if(typeof loadVcTypes==='function')loadVcTypes();});
   S('message wording',function(){if(typeof loadMsgTemplates==='function')loadMsgTemplates();});
+  S('note starters',function(){if(typeof loadNoteStarters==='function')loadNoteStarters();});
   S('needle presets',function(){if(typeof loadNeedlePresets==='function')loadNeedlePresets();});
   S('notification settings',function(){if(typeof loadNotifSettings==='function')loadNotifSettings();});
   S('protocols',function(){if(typeof loadProtocols==='function')loadProtocols();});
@@ -13455,6 +13457,132 @@ async function _doSendVcReview(id,notes){
   else if(st&&st.status==='failed'){if(typeof proToast==='function')proToast('Couldn’t reach '+((c&&c.name.split(' ')[0])||'your client')+' — tap the message to resend',0,'error');}
   else{if(typeof proToast==='function')proToast('Review sent to '+((c&&c.name.split(' ')[0])||'client'));}
 }
+// STARTING POINTS FOR THE NOTES — what is left of "plan templates" without a plan builder.
+//
+// She writes her consult notes into one empty box. Template rigidity is the most consistent
+// complaint about every incumbent in the research, and the niche-snapshot market exists because solo
+// operators will pay a stranger rather than build from empty. So: reusable starting text she picks,
+// edits in place, and can rewrite.
+//
+// The two shipped ones are not filler. They prompt the three things the ONE client in the whole
+// corpus who described receiving a paid written plan said were missing — she "wish[ed] she explained
+// why she selected a certain routine and products and why for me, and explained what I should see or
+// expect". So every starter asks for the reason, the timeline and the what-if. The holistic and
+// corrective split is not a tone setting: a holistic practice gathers diet, sleep and stress and a
+// corrective one does not, so they are different SECTIONS, which is why there are two.
+//
+// Wording follows the comprehension evidence: named parts of the day ("in the morning"), never clock
+// times — 89% vs 77% in a 359-patient study, and "twice a day" collapses to 33% for a low-literacy
+// reader. There is no product count anywhere in these, by the owner's standing decision.
+const _STARTER_DEFAULTS=[
+  {id:'corrective',name:'Corrective / clinical',body:"What I saw\n\nWhat we are working on first\n\nIn the morning\n1. \n2. \n\nAt night\n1. \n2. \n\nTwice a week\n\nWhy these, for you\n\nWhat you should see, and when\n\nIf your skin feels tight, stings, or flakes\n\nWhen I want to see you again"},
+  {id:'holistic',name:'Holistic / whole-person',body:"What I saw\n\nWhat your skin is asking for\n\nIn the morning\n1. \n2. \n\nAt night\n1. \n2. \n\nWeekly ritual\n\nFood, water and sleep\n\nStress and your cycle\n\nWhy these, for you\n\nWhat you should see, and when\n\nIf something does not feel right\n\nWhen I want to see you again"}
+];
+let noteStarters=[];
+function loadNoteStarters(){try{const raw=localStorage.getItem('sc_note_starters');if(raw){const a=JSON.parse(raw);if(Array.isArray(a))noteStarters=a;}}catch(e){}}
+function saveNoteStarters(){try{(function(_v){localStorage.setItem('sc_note_starters',_v);if(typeof _pushKeyNow==='function')_pushKeyNow('sc_note_starters',_v);return _v;})(JSON.stringify(noteStarters));}catch(e){}}
+// Defaults live in code and are never written to storage, so a brand-new account still seeds nothing.
+// A default she edited is an override with the same id; one she deleted is a tombstone, which is why
+// this has to read the delete record rather than just the array.
+function _starterList(){
+  const gone=(typeof _tombSet==='function')?_tombSet(_LIB_TOMB.sc_note_starters):{};
+  const own={};
+  (Array.isArray(noteStarters)?noteStarters:[]).forEach(function(t){if(t&&t.id)own[String(t.id)]=t;});
+  const out=[];
+  _STARTER_DEFAULTS.forEach(function(d){
+    if(gone[d.id])return;
+    out.push(own[d.id]?{id:d.id,name:own[d.id].name||d.name,body:own[d.id].body||'',edited:true}:{id:d.id,name:d.name,body:d.body,edited:false});
+  });
+  Object.keys(own).forEach(function(k){
+    if(gone[k]||_STARTER_DEFAULTS.some(function(d){return d.id===k;}))return;
+    out.push({id:k,name:own[k].name||'Untitled',body:own[k].body||'',edited:true,custom:true});
+  });
+  return out;
+}
+function _starterBody(id){const t=_starterList().find(function(x){return x.id===id;});return t?t.body:'';}
+// Dropped in at the cursor, or appended, and NEVER over the top of what she has already typed — a
+// starting point that eats three paragraphs of real work is worse than no starting point.
+function _starterInsert(id){
+  const ta=document.getElementById('vc-review-notes');if(!ta)return;
+  const body=_starterBody(id);if(!body)return;
+  const cur=String(ta.value||'');
+  if(!cur.trim()){ta.value=body;}
+  else{
+    try{
+      const a=ta.selectionStart==null?cur.length:ta.selectionStart;
+      ta.value=cur.slice(0,a)+(cur.slice(0,a).endsWith('\n')?'':'\n\n')+body+cur.slice(a);
+    }catch(e){ta.value=cur+'\n\n'+body;}
+  }
+  try{ta.focus();}catch(e){}
+  if(typeof proToast==='function')proToast('Dropped in, now make it yours');
+}
+function _starterChipsHTML(){
+  const list=_starterList();
+  if(!list.length)return '';
+  return `<div style="display:flex;flex-wrap:wrap;gap:6px;align-items:center;margin-bottom:8px;">
+    <span style="font-size:14px;color:var(--p-mut);">Start from:</span>
+    ${list.map(function(t){return '<button onclick="_starterInsert(\''+_jsAttr(t.id)+'\')" style="background:var(--p-surf2);border:1px solid var(--p-line3);color:var(--p-ink);border-radius:999px;padding:5px 11px;font-size:14px;cursor:pointer;font-family:inherit;">'+_fileEsc(t.name)+'</button>';}).join('')}
+    <button onclick="nav('virtual');setTimeout(function(){switchVTab('upload');},60);" style="background:none;border:none;color:var(--accent-strong);font-size:14px;cursor:pointer;font-family:inherit;padding:5px 4px;">Edit these</button>
+  </div>`;
+}
+// The manager, beside the message wording, since both are "what my clients get sent".
+function _starterCardHTML(){
+  const list=_starterList();
+  return `<div style="background:var(--surf2);border:1px solid var(--p-line);border-radius:12px;overflow:hidden;margin-bottom:16px;">
+    <div style="padding:12px 12px 8px;">
+      <div style="font-size:16px;font-weight:500;color:var(--p-ink);">Your note starters</div>
+      <div style="font-size:14px;color:var(--p-mut);line-height:1.5;margin-top:2px;">Headings you drop into a consult review so you are not typing from blank.</div>
+    </div>
+    ${list.map(function(t){return '<button onclick="_starterEdit(\''+_jsAttr(t.id)+'\')" style="display:flex;width:100%;align-items:center;gap:10px;padding:10px 12px;background:none;border:none;border-bottom:1px solid var(--p-line2);cursor:pointer;font-family:inherit;text-align:left;"><div style="flex:1;min-width:0;"><div style="font-size:16px;font-weight:500;color:var(--p-ink);">'+_fileEsc(t.name)+(t.edited?' <span style="font-size:14px;font-weight:400;color:var(--p-green);">\u00b7 yours</span>':'')+'</div><div style="font-size:14px;color:var(--p-mut);overflow:hidden;text-overflow:ellipsis;white-space:nowrap;">'+_fileEsc(String(t.body||'').replace(/\n+/g,' \u00b7 ').slice(0,70))+'</div></div><i class="ti ti-pencil" style="font-size:16px;color:var(--accent-strong);flex-shrink:0;"></i></button>';}).join('')}
+    <button onclick="_starterEdit('')" style="display:flex;width:100%;align-items:center;gap:7px;padding:11px 12px;background:none;border:none;cursor:pointer;font-family:inherit;color:var(--accent-strong);font-size:16px;font-weight:500;"><i class="ti ti-plus" style="font-size:16px;"></i> Add one of your own</button>
+  </div>`;
+}
+let _starterEditing='';
+function _starterEdit(id){
+  _starterEditing=String(id||'');
+  const t=_starterEditing?_starterList().find(function(x){return x.id===_starterEditing;}):null;
+  const isDefault=_STARTER_DEFAULTS.some(function(d){return d.id===_starterEditing;});
+  const ex=document.getElementById('starter-sheet');if(ex)ex.remove();
+  const m=document.createElement('div');m.id='starter-sheet';
+  m.style.cssText='position:fixed;top:0;bottom:0;left:0;right:0;margin:0 auto;width:390px;max-width:100%;z-index:9999;background:rgba(0,0,0,.6);display:flex;flex-direction:column;justify-content:flex-end;';
+  m.onclick=function(e){if(e.target===m)m.remove();};
+  m.innerHTML='<div style="background:var(--surf1);border-top:1px solid var(--p-line);border-radius:16px 16px 0 0;padding:18px;max-height:92%;overflow:auto;">'
+    +'<div style="width:36px;height:4px;background:var(--p-chip);border-radius:2px;margin:0 auto 14px;"></div>'
+    +'<div style="font-size:16px;font-weight:600;color:var(--p-ink);margin-bottom:12px;">'+(t?'Edit starter':'New starter')+'</div>'
+    +'<span class="fl-lbl">Name (only you see this)</span>'
+    +'<input class="fi" id="starter-name" value="'+_fileEsc((t&&t.name)||'')+'" placeholder="e.g. Barrier repair, first visit" style="margin-bottom:12px;">'
+    +'<span class="fl-lbl">Headings your client sees</span>'
+    +'<textarea id="starter-body" class="fi" style="width:100%;min-height:190px;resize:vertical;line-height:1.55;margin-bottom:12px;">'+_fileEsc((t&&t.body)||'')+'</textarea>'
+    +'<button onclick="_starterSave()" class="btnp" style="width:100%;border-radius:12px;padding:12px;font-size:16px;font-weight:700;margin-bottom:8px;">Save</button>'
+    +(t?('<button onclick="_starterDelete()" style="width:100%;background:none;border:none;color:var(--p-mut);font-size:16px;cursor:pointer;font-family:inherit;padding:6px;">'+(isDefault?'Remove this one':'Delete')+'</button>'):'')
+    +'</div>';
+  document.body.appendChild(m);
+}
+function _starterSave(){
+  const n=document.getElementById('starter-name'),b=document.getElementById('starter-body');
+  if(!n||!b)return;
+  const name=String(n.value||'').trim().slice(0,60),body=String(b.value||'').trim();
+  if(!name||!body){if(typeof proToast==='function')proToast('Give it a name and some headings');return;}
+  const id=_starterEditing||('st_'+Date.now().toString(36)+Math.random().toString(36).slice(2,6));
+  const i=noteStarters.findIndex(function(x){return x&&x.id===id;});
+  if(i>=0)noteStarters[i]={...noteStarters[i],name,body,_ts:Date.now()};
+  else noteStarters.push({id,name,body,_ts:Date.now()});
+  try{if(typeof _libUnforget==='function')_libUnforget('sc_note_starters',id);}catch(e){}
+  saveNoteStarters();
+  const sh=document.getElementById('starter-sheet');if(sh)sh.remove();
+  if(typeof proToast==='function')proToast('Saved');
+  try{switchVTab('upload');}catch(e){}
+}
+function _starterDelete(){
+  if(!_starterEditing)return;
+  const id=_starterEditing;
+  try{_libForget('sc_note_starters',id);}catch(e){}
+  noteStarters=noteStarters.filter(function(x){return !(x&&x.id===id);});
+  saveNoteStarters();
+  const sh=document.getElementById('starter-sheet');if(sh)sh.remove();
+  if(typeof proToast==='function')proToast('Removed');
+  try{switchVTab('upload');}catch(e){}
+}
 // What a client ticked on the safety block. Whitelisted and coerced: this arrives from a client's
 // device, so nothing unknown gets through and nothing renders unescaped downstream.
 const _VC_FLAG_LABELS={
@@ -14004,6 +14132,7 @@ function switchVTab(tab){
         <div style="font-size:14px;color:var(--p-mut);">${vcFee?'Charged before clients submit their photos':'This consult is free, tap a price above only if you charge for it.'}</div>
       </div>
       ${(typeof _msgCardHTML==='function')?_msgCardHTML():''}
+      ${(typeof _starterCardHTML==='function')?_starterCardHTML():''}
     </div>
     ${_consultRequestsHTML()}`;
     if(_consultSlug===null)_loadConsultLink();
@@ -14679,7 +14808,8 @@ function renderVirtualClient(id){
       ${v.questions.map(q=>`<div style="font-size:16px;color:var(--p-mut);padding:8px 0;border-bottom:1px solid var(--p-line2);display:flex;align-items:center;gap:6px;"><i class="ti ti-question-mark" style="font-size:16px;color:var(--accent-strong);flex-shrink:0;"></i>${q}</div>`).join('')}
     </div>
     <div style="font-size:14px;font-weight:500;color:var(--p-mut);text-transform:uppercase;letter-spacing:.07em;margin-bottom:8px;">Your expert notes</div>
-    <textarea id="vc-review-notes" class="fi" style="height:100px;resize:none;line-height:1.6;margin-bottom:8px;" placeholder="Confirm the look in pro terms, answer their questions, recommend a treatment plan and next steps..."></textarea>
+    ${(typeof _starterChipsHTML==='function')?_starterChipsHTML():''}
+    <textarea id="vc-review-notes" class="fi" style="height:180px;resize:vertical;line-height:1.6;margin-bottom:8px;" placeholder="Confirm the look in pro terms, answer their questions, recommend a treatment plan and next steps..."></textarea>
     <button class="btnp" style="border-radius:8px;margin-top:8px;margin-bottom:8px;" onclick="if(sendVcReview('${id}')){${back}}"><i class="ti ti-send"></i> Send review to ${_fileEsc(c.name.split(' ')[0])}</button>
   </div>`;
   // Run the analysis hook (server vision model if configured, else on-device pixel measurements),
