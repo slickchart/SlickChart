@@ -3349,6 +3349,53 @@ any of the three, so **ask which screen she typed them on** rather than assuming
 summaries and forms now do. Adding one means a provider-only store, not the client-visible blob.
 Worth doing, too big to rush in the middle of an incident.
 
+### 2026-10-08: "PHONE." THE ROOT CAUSE, found and fixed (`2026-10-08s`)
+
+One word from Ashley finished it. **A record the APP INVENTED was beating a record the PROVIDER
+TYPED, on timestamps, and taking her notes with it.**
+
+The chain, every link verified:
+
+1. On a phone the roster lives in **IndexedDB** (§2e, ≥24KB offloads). Hers went — eviction, a
+   purge, an owner-stamp mismatch; it does not matter which.
+2. Boot found nothing, so `syncClientEvents`' fill path rebuilt the WHOLE roster from the server's
+   client list as placeholder charts: `skin/concerns/fitz` `—`, `allergies` `None noted`,
+   `treatment` `New client`. **Carrying the real NAME**, because the fill path takes it from the
+   server row.
+3. `saveClients()` runs `_stampClientChanges()`, which stamps `_uAt = Date.now()` on **any record
+   whose signature it has not seen before** — so every placeholder was stamped as the freshest copy
+   in existence.
+4. On the next pull `_mergeClients` compared `_uAt` and the placeholder won. `_unionClientForms`
+   saved her forms and summaries. **Nothing saved her `notes`, `conditions`, `skin`, `concerns`,
+   `allergies`, `fitz`, `treatment` or `sessions`.** The winner was then pushed back up.
+
+**§2aj is now WRONG where it says a skeleton "carries no `_uAt` at all, so `lu` is 0 and the
+account's real record wins".** That was true when it was written. `_stampClientChanges` makes it
+false. **Do not trust that line.** Left in place above with this correction rather than edited out,
+because the reasoning it encodes is exactly the trap.
+
+**Fixed with two independent guards**, because one of them is the kind of thing that gets undone:
+
+- **`_mergeClients` decides on CONTENT, not clocks.** `_isPlaceholderChart(c)` — nothing but a name
+  and the app's own placeholder text — and where one side is a placeholder and the other is not,
+  the real one wins outright whatever the timestamps say, with forms/handled-marks/owner-link still
+  carried across both ways. **The name is deliberately ignored** in that test: the placeholder
+  carries the real name, so judging by name lets it pass as hers. Two REAL records still resolve by
+  timestamp, asserted, or ordinary editing would freeze.
+- **The fill path seeds `_clientSigCache[id]`** so its placeholder is never stamped as an edit in
+  the first place.
+
+`_isBlankSkeleton` (the stricter, name-aware one) stays as the SYNC filter only: a record she has
+NAMED still goes to the server even if otherwise empty, or adding a client would never get a link
+token. Only nameless ones are held back — which is what the nine nameless rows were.
+
+**Proof it is real, not a theory:** `scratchpad/ghostprobe.mjs` states the case in isolation and
+runs on either build. On the build she is running: *her note LOST, skin `—`, treatment "New
+client", sessions 0.* With the fix: *note KEPT, skin "sensitive", treatment "Equine laser",
+sessions 4.* `scratchpad/ghostwin.mjs` is the full 22 assertions, including that a horse keeps its
+owner link and its notes, that forms union from both sides, and that normal newest-wins editing is
+untouched.
+
 **Still unknown, and it decides the root cause — ASK HER (§1b.3):** whether the 2 missing clients are
 the 2 that had horses, which device she is looking at now, and whether anything she did could read as
 a delete. Do not pick whichever answer suits a theory.

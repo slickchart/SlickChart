@@ -214,7 +214,7 @@ const S=document.getElementById('S');
 // resets when I save it" and there was no way to tell whether her phone had any of them — a whole
 // day was spent debugging code she may not have been running. Shown at the bottom of Settings, so
 // the answer is a screenshot away. Bump it on every ship.
-const APP_BUILD='2026-10-08r';
+const APP_BUILD='2026-10-08s';
 
 
 /* ════════════════════════════════════════════════════════════════
@@ -2695,6 +2695,31 @@ function _mergeClients(serverStr,localStr){
       if(l&&!s){out[id]=l;changed=true;return;}       // local-only: server is missing it → push up
       if(!s&&!l)return;
       var su=(+(s&&s._uAt))||0,lu=(+(l&&l._uAt))||0;
+      // A record the APP INVENTED must never beat one the provider TYPED, whatever the clocks say.
+      //
+      // This is what happened to Heather, on her phone. Her local storage went (the roster lives in
+      // IndexedDB on a phone — §2e), boot found nothing, and syncClientEvents' fill path rebuilt
+      // the whole roster from the server's client list as placeholder charts. saveClients() then
+      // ran _stampClientChanges(), which stamps ANY record whose signature it has not seen before —
+      // so every one of those placeholders got _uAt = NOW and beat the account's real record on the
+      // very next pull. _unionClientForms saved her forms and summaries; nothing saved her NOTES,
+      // her skin/concerns/allergies, or anything else she had typed.
+      //
+      // SESSION-HANDOFF §2aj said a skeleton "carries no _uAt at all, so lu is 0 and the account's
+      // real record wins". That was true when it was written and is NOT true now. Timestamps cannot
+      // be trusted to express this, so it is decided on content instead.
+      var sSkel=_isPlaceholderChart(s),lSkel=_isPlaceholderChart(l);
+      if(sSkel!==lSkel){
+        var real=sSkel?l:s,ghost=sSkel?s:l;
+        _unionClientForms(real,ghost);
+        _carryHandledMarks(real,ghost);
+        var c2=_carryAnimalLink(real,ghost);
+        out[id]=real;
+        if(sSkel){                                    // the ACCOUNT holds the placeholder: push ours
+          changed=true;
+        }else if(c2){ changed=true; }
+        return;
+      }
       if(su>lu){                                      // server record wins…
         var grewS=_unionClientForms(s,l);             // …but never at the cost of forms only local held
         if(_carryHandledMarks(s,l))grewS=true;        // …nor at the cost of cards already dismissed here
@@ -18181,20 +18206,31 @@ function _noteSignedOut(){
 // came from. A record is a skeleton only if she has typed NOTHING into it anywhere — a client she
 // has only named is hers and still syncs.
 const _SKEL_WORDS=/^(—|-|–|n\/a|none|none noted|not scheduled|new client|unknown|)$/i;
-function _isBlankSkeleton(c){
+// Is there ANYTHING in this record beyond a name and the app's own placeholder text? The NAME is
+// deliberately not considered: the fill path builds its placeholder from the server's client list,
+// so it carries the real name — "Ingatara Perry" with em-dashes for every field is still a record
+// the app invented, and judging it by the name would let it pass as hers.
+function _isPlaceholderChart(c){
   if(!c||typeof c!=='object')return false;
-  const nm=String(c.name||'').trim();
-  if(nm&&!/^new client$/i.test(nm))return false;                 // she named them: hers
   if(String(c.email||'').trim()||String(c.phone||'').trim())return false;
   if(String(c.notes||'').trim()||String(c.conditions||'').trim())return false;
   if((Array.isArray(c.summaries)&&c.summaries.length)||(Array.isArray(c.submittedForms)&&c.submittedForms.length))return false;
   if((Array.isArray(c.signedForms)&&c.signedForms.length)||(Array.isArray(c.pendingForms)&&c.pendingForms.length))return false;
   if(c.ownerId||c.isAnimal)return false;                          // a horse's link is real data
   if(Number(c.sessions)>0)return false;
-  const typed=['skin','concerns','allergies','fitz','treatment'].some(function(k){
+  return !['skin','concerns','allergies','fitz','treatment'].some(function(k){
     return !_SKEL_WORDS.test(String(c[k]||'').trim());
   });
-  return !typed;
+}
+// The stricter one, used to decide what to SEND to the server. A record she has NAMED still syncs
+// even if it is otherwise empty, because a brand-new client needs to reach the server to be issued
+// a link token — refusing to send it would break adding a client. Only the nameless ones are held
+// back, which is what the nine nameless rows on Heather's account were.
+function _isBlankSkeleton(c){
+  if(!c||typeof c!=='object')return false;
+  const nm=String(c.name||'').trim();
+  if(nm&&!/^new client$/i.test(nm))return false;                 // she named them: hers
+  return _isPlaceholderChart(c);
 }
 async function _syncSpecificClientsToServer(ids,opts){
   opts=opts||{};
@@ -26516,6 +26552,13 @@ async function syncClientEvents(){
           phone:sc.phone||'',email:sc.email||'',skin:'—',concerns:'—',allergies:'None noted',fitz:'—',
           lastVisit:'—',nextVisit:'Not scheduled',treatment:'New client',sessions:0,seriesTotal:0,touchUpDate:'—',
           conditions:'',notes:'',_token:sc.token||'',appJoined:!!sc.opened_at};
+        // This is a PLACEHOLDER, not an edit. saveClients() runs _stampClientChanges(), which
+        // stamps _uAt=now on any record whose signature it has not seen — so without this the
+        // placeholder looks like the freshest copy in existence and beats the account's real
+        // record on the next pull. Seeding the cache means "already accounted for, nothing typed".
+        // _mergeClients ALSO refuses to let a placeholder win on content, so this is the first of
+        // two independent guards rather than the only one.
+        try{if(typeof _clientSigCache==='object'&&_clientSigCache)_clientSigCache[sc.id]=_clientSig(CL[sc.id]);}catch(e){}
         touchedClients=true;
       });
       // Keep appJoined current for EXISTING clients too: opened_at is set the first time a client opens
