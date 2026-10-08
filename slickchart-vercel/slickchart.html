@@ -214,7 +214,7 @@ const S=document.getElementById('S');
 // resets when I save it" and there was no way to tell whether her phone had any of them — a whole
 // day was spent debugging code she may not have been running. Shown at the bottom of Settings, so
 // the answer is a screenshot away. Bump it on every ship.
-const APP_BUILD='2026-10-08g';
+const APP_BUILD='2026-10-08h';
 
 
 /* ════════════════════════════════════════════════════════════════
@@ -2394,8 +2394,22 @@ function _usableSyncValue(str){ const sh=_syncShape(str); return sh!=='missing'&
 const _TOMB_OBJ={sc_deleted_vc_types:1,sc_deleted_products:1,sc_deleted_docs:1,sc_deleted_protocols:1,sc_deleted_note_tmpls:1,sc_deleted_needle_presets:1,
   sc_deleted_autos:1,sc_deleted_inv:1,sc_deleted_vendors:1,sc_deleted_shop_bundles:1,sc_deleted_bundles:1,
   sc_deleted_partners:1,sc_deleted_payments:1,
-  sc_deleted_appts:1,sc_deleted_clients:1,sc_hidden_square:1,sc_merged_ids:1,sc_merged_into:1,sc_ci_dismissed:1,sc_course_purchases:1,sc_hidden_courses:1,sc_hidden_guides:1,sc_hidden_forms:1};
-const _TOMB_ARR={sc_flag_dismissed:1,sc_form_flag_dismissed:1,sc_ci_cleared:1,sc_ci_read:1,sc_home_dismissed:1,sc_notif_cleared:1,sc_notif_read:1};
+  sc_deleted_appts:1,sc_deleted_clients:1,sc_hidden_square:1,sc_merged_ids:1,sc_merged_into:1,sc_ci_dismissed:1,sc_course_purchases:1,sc_hidden_courses:1,sc_hidden_guides:1,sc_hidden_forms:1,
+  // Added 2026-10-08 in the thread-16 pass. Both are RECORDS OF SOMETHING ALREADY DONE, so a plain
+  // overwrite does not merely lose data, it UNDOES an action:
+  // sc_deposit_handled maps an invoice id to when she was prompted about that deposit. Lose it and the
+  //   client is prompted a second time for the same invoice, which is money-adjacent and visible.
+  // sc_summary_guide_optout maps a client id to the default guides she REMOVED from their summary.
+  //   Lose it and the guides she took off come back. Its entries CAN be un-removed (line ~10939), so
+  //   a blind union would resurrect an un-removal — the shallow per-client union is deliberate: last
+  //   write wins per CLIENT rather than for the whole key, which is strictly better than overwrite.
+  sc_deposit_handled:1,sc_summary_guide_optout:1};
+const _TOMB_ARR={sc_flag_dismissed:1,sc_form_flag_dismissed:1,sc_ci_cleared:1,sc_ci_read:1,sc_home_dismissed:1,sc_notif_cleared:1,sc_notif_read:1,
+  // Added 2026-10-08 in the thread-16 pass. Both are append-only id lists where an overwrite undoes
+  // an action: sc_deleted_sq is the Square products she DELETED (lose it and they come back — the
+  // same resurrect bug the shop catalogue had), and sc_imported_products is what she has already
+  // imported (lose it and a re-import duplicates her whole product list).
+  sc_deleted_sq:1,sc_imported_products:1};
 // One-way latches: once the provider has done the thing, it is done forever. These are plain '1'
 // strings, so they can't live in the tombstone tables — but they have the same failure mode. A device
 // that never got the flag would push its blank value, the server would take it, and the next pull
@@ -2437,6 +2451,9 @@ const _LIB_TOMB={
   // Her consult types. Hiding a BUILT-IN records its synthetic 'def:<kind>' id here, which is how a
   // default she does not want stays gone without anything having to be stored for it.
   sc_vc_types:'sc_deleted_vc_types',
+  // Her prices. Authored, ids on every row, and a real delete path — so it merges by id with a delete
+  // record, instead of a laptop with yesterday's menu overwriting a price she changed this morning.
+  sc_service_menu:'sc_deleted_svc',
   sc_msg_templates:'sc_deleted_msg_tmpls',
   sc_note_starters:'sc_deleted_starters',
   sc_reminders:'sc_deleted_reminders'
@@ -23889,7 +23906,7 @@ function _apptTxOptions(){
   return out;
 }
 function _svcSet(i,k,v){if(_svcMenu[i]){_svcMenu[i][k]=v;_markSvcMenuCustom();_saveSvcMenu();}}
-function _svcDelDo(i){_svcMenu.splice(i,1);_markSvcMenuCustom();_saveSvcMenu();renderServiceMenu();}
+function _svcDelDo(i){const _gone=_svcMenu[i];try{if(_gone&&typeof _libForget==='function')_libForget('sc_service_menu',_gone);}catch(e){}_svcMenu.splice(i,1);_markSvcMenuCustom();_saveSvcMenu();renderServiceMenu();}
 function _svcDel(i){const sv=_svcMenu[i];if(sv&&String(sv.name||'').trim()&&typeof confirmModal==='function'){confirmModal({title:'Delete this service?',body:'Remove “'+String(sv.name).trim()+'” from your service menu.',action:'Delete'},function(){_svcDelDo(i);});}else{_svcDelDo(i);}}
 function _svcAdd(){_svcMenu.push({id:'svc_'+Date.now().toString(36),name:'',price:0});_markSvcMenuCustom();_saveSvcMenu();renderServiceMenu();}
 

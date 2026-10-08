@@ -57,11 +57,8 @@ const KNOWN=new Set([
   'sc_calendar_feed',        // one feed token, not a list
   'sc_booking_page',         // one booking-page config
   'sc_checkin_cfg',          // one pre-visit check-in config
-  'sc_deposit_handled',      // one deposit setting
   'sc_login_email',          // one email
   'sc_professions',          // one selection
-  'sc_service_menu',         // one menu (sc_service_menu_custom is the sticky flag that guards it)
-  'sc_summary_guide_optout', // one flag set
   'sc_totp_enabled',         // one flag
   'sc_wsname',               // one workspace name
   'sc_room_state_',          // per-room device state, not synced provider data
@@ -71,7 +68,12 @@ const KNOWN=new Set([
   // client with the newest-stamped entry winning (_CLIENT_MAP_KEYS + _CLIENT_MAP_OBJ), because it
   // carries the follow-up date the provider set and a stale device could erase her reminder.
   'sc_sent_routines',
-  'sc_imported_products','sc_deleted_sq']);
+  // 2026-10-08 thread-16 pass — five keys came OFF this list and now merge:
+  //   sc_deposit_handled, sc_summary_guide_optout  -> _TOMB_OBJ  (records of something already done)
+  //   sc_deleted_sq, sc_imported_products          -> _TOMB_ARR  (append-only id lists)
+  //   sc_service_menu                              -> _LIB_TOMB  (authored, has ids and a delete path)
+  // Each was an overwrite that UNDID an action rather than merely losing data.
+  ]);
 
 const unreviewed=[...accum].filter(k=>!merged.has(k)&&!KNOWN.has(k)
   &&!skipPrefixes.some(p=>k.indexOf(p)===0)).sort();

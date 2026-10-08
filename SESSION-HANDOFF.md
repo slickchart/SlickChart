@@ -3441,6 +3441,49 @@ The public key in `slickchart.html` is the SAME one the client app embeds and mu
 env var. First live check: enable notifications on a device, set a reminder two minutes out, and hit
 `/api/cron-provider-reminders?key=$CRON_SECRET`.
 
+### 2026-10-08: the thread-16 pass. 21 unprotected keys down to 16, and 12 of those are correct.
+
+Ashley asked for a deliberate pass rather than waiting for each key to cost a provider their data.
+**merge-coverage: 87 → 92 keys merging; 21 → 16 known unmerged.**
+
+The five that moved share a property worth naming: every one was a **record of something already
+done**, so a plain overwrite did not merely lose data, it **UNDID AN ACTION**.
+
+| key | was | now | what an overwrite did |
+|---|---|---|---|
+| `sc_deleted_sq` | overwrite | `_TOMB_ARR` | a Square product she deleted came back |
+| `sc_imported_products` | overwrite | `_TOMB_ARR` | a re-import duplicated her whole catalogue |
+| `sc_deposit_handled` | overwrite | `_TOMB_OBJ` | a client was prompted twice for the same deposit |
+| `sc_summary_guide_optout` | overwrite | `_TOMB_OBJ` | guides she removed from a summary reappeared |
+| `sc_service_menu` | overwrite | `_LIB_TOMB` (`sc_deleted_svc`) | a laptop with yesterday's menu reverted a price |
+
+`sc_service_menu` needed its delete site taught to write the record (`_svcDelDo` now calls
+`_libForget`), or the union would have resurrected a service she removed. Asserted.
+`sc_summary_guide_optout`'s entries CAN be un-removed, so §0.8 forbids a blind entry union — the
+shallow per-client union is deliberate: last write wins per CLIENT, not for the whole key.
+
+**A trap worth remembering: `check-merge-coverage.cjs` parses these registries with `[^}]*`, so a
+BRACE INSIDE A COMMENT truncates the capture and silently hides every key after it.** Two keys read
+as unprotected until I took the braces out of my own comment. If a key you just registered still
+shows as plain-overwrite, look for a `{` in the comment above it.
+
+**The 16 that remain, honestly split.** Twelve are correct as last-write-wins — one record for the
+account, where a merge would add risk without adding safety: `sc_amazon_assoc`, `sc_booking_page`,
+`sc_calendar_feed` (derived from appointments, regenerated), `sc_captured_photos` (deliberate, §3),
+`sc_checkin_cfg`, `sc_login_email`, `sc_notif_settings`, `sc_professions`, `sc_room_state_`
+(device-local), `sc_square_catalog` (a cache, re-fetched), `sc_totp_enabled`, `sc_wsname`.
+
+**Four are still genuinely at risk, and each needs real design rather than a registry line:**
+- `sc_routines` — her authored routine templates, shaped `profession -> [templates with ids]`. A
+  map-of-lists, and `deleteRoutineTemplate` means entries can be removed, so it needs a delete record
+  AND a map-of-lists merge. `_LIB_TOMB` expects a flat array, so this is a new shape.
+- `sc_sent_routines` — `profession -> {clientId: routine}`. Same nesting problem.
+- `sc_summary_drafts` — one `{note, obs}` pair she is mid-way through typing. A stale device can wipe
+  a draft in progress. Wants newest-wins, which needs a stamp.
+- `sc_suggested_forms` — an override array.
+Doing any of these half-correctly is worse than leaving them, which is why they are named here rather
+than rushed. `scratchpad/thread16.mjs` (12 assertions) covers the five that shipped.
+
 ### Still to do, in this order (SUPERSEDED — see the revised table in `reports/Virtual consult research verified.md` §4)
 
 2. **The structured plan document.** The central recommendation. Today `sendVcReview` reads ONE
