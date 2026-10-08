@@ -214,7 +214,7 @@ const S=document.getElementById('S');
 // resets when I save it" and there was no way to tell whether her phone had any of them — a whole
 // day was spent debugging code she may not have been running. Shown at the bottom of Settings, so
 // the answer is a screenshot away. Bump it on every ship.
-const APP_BUILD='2026-10-08h';
+const APP_BUILD='2026-10-08i';
 
 
 /* ════════════════════════════════════════════════════════════════
@@ -24694,9 +24694,13 @@ function _depositNotify(cands){
 
 function renderConnectCalendar(){
   setNav('account');document.getElementById('tt').textContent='Sync Calendar';
+  // Asked once per session; the re-render only happens when an answer actually arrived, which is the
+  // loop that hung the Reminders screen earlier today.
+  if(_gcalState===null&&typeof _gcalStatus==='function')_gcalStatus().then(function(){try{if(_gcalState!==null&&document.getElementById('tt')&&document.getElementById('tt').textContent==='Sync Calendar')renderConnectCalendar();}catch(e){}});
   S.innerHTML=`
   <div style="padding:14px 16px 4px;">
-    <div style="font-size:16px;font-weight:600;color:var(--p-ink);margin-bottom:6px;">Sync to Google &amp; Apple Calendar</div>
+    ${(typeof _gcalCardHTML==='function')?_gcalCardHTML():''}
+    <div style="font-size:16px;font-weight:600;color:var(--p-ink);margin-bottom:6px;">Or subscribe, one way</div>
     <div style="font-size:16px;color:var(--p-mut);line-height:1.55;margin-bottom:14px;">Subscribe once and your SlickChart appointments appear in your Google or Apple calendar automatically \u2014 and stay updated. This is one-way (SlickChart \u2192 your calendar).</div>
     <div id="cal-feed-box" style="background:var(--surf1);border:1px solid var(--p-line3);border-radius:12px;padding:13px 14px;margin-bottom:16px;font-size:16px;color:var(--p-mut);">Preparing your private calendar link\u2026</div>
     <div style="font-size:14px;font-weight:600;color:var(--p-mut);text-transform:uppercase;letter-spacing:.06em;margin:6px 0 8px;">Google Calendar</div>
@@ -25770,7 +25774,104 @@ function _pruneDeletedAppts(){
     return manualAppts.length!==before;
   }catch(e){return false;}
 }
-function _saveManualAppts(){try{(function(_v){localStorage.setItem('sc_manual_appts',_v);if(typeof _pushKeyNow==='function')_pushKeyNow('sc_manual_appts',_v);return _v;})(JSON.stringify(manualAppts));}catch(e){}}
+// ── GOOGLE CALENDAR, TWO-WAY ─────────────────────────────────────────────────────────────────────
+//
+// Ashley chose full two-way on 2026-10-08. Outbound is this: after any appointment change, hand the
+// whole list to the server, which creates what is new, PATCHES what moved and deletes what she
+// cancelled (lib/google-cal.js). Sending the WHOLE list rather than a diff is deliberate — the diff
+// would have to survive an offline edit, a merge from another device and a failed request, and
+// reconciling the full list is both simpler and self-healing.
+//
+// A RESCHEDULE IS A PATCH on the stored event id, never a delete-and-recreate. That is the exact
+// failure the research found in GoHighLevel: deleting and remaking the event re-fires "booked"
+// without firing "cancelled" and breaks everything downstream.
+let _gcalState=null;        // null = not asked yet
+let _gcalTimer=null;
+function _gcalAppts(){
+  // Minutes from midnight, because that is what the booking engine and the server both work in.
+  return (typeof manualAppts!=='undefined'?manualAppts:[]).map(function(a){
+    if(!a||!a.id||!a.date||!a.time)return null;
+    const t=String(a.time).match(/^(\d{1,2}):(\d{2})/);
+    if(!t)return null;
+    let h=parseInt(t[1],10),m=parseInt(t[2],10);
+    if(/pm/i.test(a.time)&&h<12)h+=12;
+    if(/am/i.test(a.time)&&h===12)h=0;
+    const d=new Date(a.date);
+    if(isNaN(d))return null;
+    const pad=function(n){return String(n).padStart(2,'0');};
+    return {id:String(a.id),dateISO:d.getFullYear()+'-'+pad(d.getMonth()+1)+'-'+pad(d.getDate()),
+      startMins:h*60+m,durMins:parseInt(a.dur,10)||60,
+      title:((a.client?String(a.client)+' — ':'')+String(a.tx||'Appointment')),notes:String(a.notes||'')};
+  }).filter(Boolean);
+}
+async function _gcalPush(){
+  try{
+    const tok=(typeof Cloud!=='undefined'&&Cloud&&Cloud.token)||'';
+    if(!tok)return null;
+    if(_gcalState&&_gcalState.connected===false)return null;     // nothing to push to
+    const r=await fetch('/api/google-cal',{method:'POST',headers:{'Content-Type':'application/json','Authorization':'Bearer '+tok},
+      body:JSON.stringify({appts:_gcalAppts()})});
+    const j=await r.json().catch(function(){return null;});
+    if(j&&j.reason==='reconnect'&&_gcalState)_gcalState.needsReconnect=true;
+    return j;
+  }catch(e){return null;}
+}
+// Debounced: adding three appointments in a row is one push, not three.
+function _gcalPushSoon(){
+  if(_gcalState&&_gcalState.connected===false)return;
+  if(_gcalTimer)clearTimeout(_gcalTimer);
+  _gcalTimer=setTimeout(function(){_gcalTimer=null;_gcalPush();},2500);
+}
+async function _gcalStatus(){
+  try{
+    const tok=(typeof Cloud!=='undefined'&&Cloud&&Cloud.token)||'';
+    if(!tok){_gcalState={connected:false,configured:false};return _gcalState;}
+    const r=await fetch('/api/google-cal',{headers:{'Authorization':'Bearer '+tok}});
+    if(!r.ok){_gcalState={connected:false,configured:false};return _gcalState;}
+    const j=await r.json();
+    _gcalState=j||{connected:false,configured:false};
+    return _gcalState;
+  }catch(e){_gcalState={connected:false,configured:false};return _gcalState;}
+}
+async function _gcalDisconnect(){
+  try{
+    const tok=(typeof Cloud!=='undefined'&&Cloud&&Cloud.token)||'';
+    await fetch('/api/google-cal',{method:'DELETE',headers:{'Authorization':'Bearer '+tok}}).catch(function(){});
+    _gcalState={connected:false,configured:(_gcalState&&_gcalState.configured)||false};
+    if(typeof proToast==='function')proToast('Google Calendar disconnected');
+    try{nav('connect-calendar');}catch(e){}
+  }catch(e){}
+}
+function _gcalCardHTML(){
+  const st=_gcalState;
+  if(st&&st.configured===false&&!st.connected){
+    return `<div style="background:var(--surf2);border:1px solid var(--p-line);border-radius:12px;padding:12px 14px;margin-bottom:14px;">
+      <div style="font-size:16px;font-weight:600;color:var(--p-ink);margin-bottom:3px;">Two-way sync</div>
+      <div style="font-size:16px;color:var(--p-mut);line-height:1.55;">Not switched on for this deployment yet. The one-way subscribe link below works now.</div>
+    </div>`;
+  }
+  if(st&&st.connected){
+    const when=st.lastOk?new Date(st.lastOk).toLocaleString('en-US',{month:'short',day:'numeric',hour:'numeric',minute:'2-digit'}):'not yet';
+    return `<div style="background:${st.needsReconnect?'var(--p-red-bg)':'var(--p-surf2)'};border:1px solid ${st.needsReconnect?'var(--p-red-line)':'var(--p-line3)'};border-radius:12px;padding:12px 14px;margin-bottom:14px;">
+      <div style="font-size:16px;font-weight:600;color:var(--p-ink);margin-bottom:3px;">${st.needsReconnect?'Google needs reconnecting':'Two-way sync is on'}</div>
+      <div style="font-size:16px;color:var(--p-mut);line-height:1.55;margin-bottom:9px;">${st.needsReconnect
+        ?'Google stopped accepting the connection, so your own events are not blocking bookings right now. Reconnect to fix it.'
+        :'Your appointments appear in Google straight away, and your own Google events block client bookings.<br><span style="font-size:14px;">Last checked '+_fileEsc(when)+'</span>'}</div>
+      <div style="display:flex;gap:8px;flex-wrap:wrap;">
+        ${st.needsReconnect&&st.authUrl?`<a href="${_urlAttr(st.authUrl)}" class="btnp" style="display:inline-block;text-decoration:none;border-radius:8px;padding:9px 14px;font-size:16px;font-weight:600;">Reconnect Google</a>`:''}
+        <button onclick="_gcalDisconnect()" style="background:var(--surf1);border:1px solid var(--p-line3);color:var(--p-mut2);border-radius:8px;padding:9px 12px;font-size:16px;cursor:pointer;font-family:inherit;">Disconnect</button>
+      </div>
+      <div style="font-size:14px;color:var(--p-mut);line-height:1.5;margin-top:9px;">An event you mark <b>Free</b> in Google does not block anything, which is how Google defines it.</div>
+    </div>`;
+  }
+  return `<div style="background:var(--p-blue-bg);border:1px solid var(--p-blue-line);border-radius:12px;padding:12px 14px;margin-bottom:14px;">
+    <div style="font-size:16px;font-weight:600;color:var(--p-ink);margin-bottom:3px;">Two-way sync with Google</div>
+    <div style="font-size:16px;color:var(--p-mut);line-height:1.55;margin-bottom:10px;">Connect once and it works both ways: your SlickChart appointments appear in Google immediately, and anything in your own Google calendar blocks clients from booking that time.</div>
+    ${(st&&st.authUrl)?`<a href="${_urlAttr(st.authUrl)}" class="btnp" style="display:inline-block;text-decoration:none;border-radius:8px;padding:9px 14px;font-size:16px;font-weight:600;"><i class="ti ti-brand-google" style="font-size:16px;"></i> Connect Google Calendar</a>`:'<div style="font-size:14px;color:var(--p-mut);">Checking…</div>'}
+  </div>`;
+}
+function _saveManualAppts(){try{(function(_v){localStorage.setItem('sc_manual_appts',_v);if(typeof _pushKeyNow==='function')_pushKeyNow('sc_manual_appts',_v);return _v;})(JSON.stringify(manualAppts));}catch(e){}
+  try{if(typeof _gcalPushSoon==='function')_gcalPushSoon();}catch(e){}}
 let suggestOpenFor=null;         // id of request whose "suggest" panel is open
 
 function pendingRequests(){return SlickBridge.getBookings().filter(b=>b.status==='pending');}

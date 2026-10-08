@@ -43,7 +43,9 @@ started = true;
 
 const hdir = path.join(root, 'h');
 fs.mkdirSync(hdir);
-fs.writeFileSync(path.join(hdir, 'db.js'), STUB.replace('__PSQL__', PGBIN + '/psql').replace('__SOCK__', sock).replace('__PORT__', PORT).replace('__USER__', USER));
+// lib/google-cal.js also imports dbEnabled, so the stub has to provide it.
+fs.writeFileSync(path.join(hdir, 'db.js'), STUB.replace('__PSQL__', PGBIN + '/psql').replace('__SOCK__', sock).replace('__PORT__', PORT).replace('__USER__', USER)
+  + '\nexport function dbEnabled() { return true; }\n');
 fs.writeFileSync(path.join(hdir, 'clients.mjs'), fs.readFileSync(path.join(VERCEL, 'lib', 'clients.js'), 'utf8'));
 if (asRoot) sh('chown -R ' + USER + ' ' + root);
 
@@ -160,6 +162,26 @@ await upsertClient(P, { id: 'c7', name: 'Ph', phone: '555-0100', data: {} });
 await upsertClient(P, { id: 'c7', name: 'Ph', data: {} });
 const ph = await q`SELECT phone, name FROM clients WHERE id='c7'`;
 ok('phone survives a write that omits it', ph[0].phone === '555-0100', ph);
+
+// --- 12. google_connections: a token REFRESH returns no refresh_token, and the upsert must keep the
+// one we already hold. Nulling it turns a working two-way calendar into a dead one an hour later,
+// silently, and the only symptom is bookings stopping being blocked.
+const gsrc = fs.readFileSync(path.join(VERCEL, 'lib', 'google-cal.js'), 'utf8');
+fs.writeFileSync(path.join(hdir, 'gcal.mjs'), gsrc);
+const G = await import(path.join(hdir, 'gcal.mjs'));
+await G.ensureGoogleTable();
+await G.saveGoogleConnection('prov_G', { access_token: 'at1', refresh_token: 'rt1', expires_in: 3600 });
+let g = await G.getGoogleConnection('prov_G');
+ok('google: first connect stores both tokens', g.access_token === 'at1' && g.refresh_token === 'rt1', g);
+await G.saveGoogleConnection('prov_G', { access_token: 'at2', expires_in: 3600 });   // a refresh
+g = await G.getGoogleConnection('prov_G');
+ok('google: refresh keeps the refresh token', g.refresh_token === 'rt1', g);
+ok('google: refresh updates the access token', g.access_token === 'at2', g);
+ok('google: reconnect clears a stale error', g.last_error === null, g);
+const gOther = await G.getGoogleConnection('prov_H');
+ok('google: another provider has no connection', gOther === null || gOther === undefined, gOther);
+await G.deleteGoogleConnection('prov_G');
+ok('google: disconnect removes the row', !(await G.getGoogleConnection('prov_G')));
 
 console.log(fails ? '\n' + fails + ' FAILURE(S)' : '\nall green');
 process.exitCode = fails ? 1 : 0;

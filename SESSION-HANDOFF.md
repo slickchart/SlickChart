@@ -3484,6 +3484,63 @@ account, where a merge would add risk without adding safety: `sc_amazon_assoc`, 
 Doing any of these half-correctly is worse than leaving them, which is why they are named here rather
 than rushed. `scratchpad/thread16.mjs` (12 assertions) covers the five that shipped.
 
+### Shipped: GOOGLE CALENDAR TWO-WAY (`2026-10-08i`) — recommendation #15, the last one
+
+**Ashley chose FULL TWO-WAY on 2026-10-08**, from a question that showed her the permission
+trade-off side by side. The recommendation in the report was busy-blocking only; she picked the
+stronger option knowing the token is more powerful. Recorded because it is her decision, not a
+default to quietly revisit.
+
+**Scope is `calendar.events`, NOT full `calendar`.** It does everything two-way needs — read, create,
+update, delete EVENTS — but cannot delete a whole calendar or change who she shared one with.
+Narrower than what she was shown, identical in capability for this feature. Do not widen it without
+a reason.
+
+**§0 asset class.** `google_connections`, one row per provider, every read/write scoped by the
+provider id from a verified session, and **no fallback of any kind** — no deployment calendar, no
+"use the owner's". The OAuth `state` is a short-lived SIGNED token carrying the provider id, not the
+id itself: otherwise anyone could hand the callback a state naming another account and attach their
+own Google login to her calendar.
+
+**Inbound** (`googleBusyMinutes`): reads `events.list` rather than freeBusy, because with this scope
+we can see which events are OURS (tagged `slickchartApptId`) and skip them — reading back the
+appointment we just wrote would otherwise look like a second commitment on the same slot. Wired into
+`lib/booking.js` `busyRanges()` as source 3, following that file's own rule: **if she HAS a
+connection and we cannot read it, return null** so the page takes a request instead of publishing a
+slot list that does not know about her morning. An event she marks **Free** does not block, which is
+Google's own meaning of the flag and is said in plain words on the settings screen because it WILL
+be reported as a bug.
+
+**Outbound** (`syncApptsToGoogle`): **a reschedule is a PATCH on the stored event id, never a
+delete-and-recreate** — that is the exact failure the research found in GoHighLevel, where deleting
+and remaking re-fires "booked" without firing "cancelled". The event id map lives in
+`google_connections.event_map`. The app sends the WHOLE appointment list rather than a diff, because
+a diff would have to survive an offline edit, a cross-device merge and a failed request; reconciling
+the full list is simpler and self-healing. A 404/410 on PATCH means she deleted it in Google, so it
+is recreated.
+
+**The seven-day trap, which is the most-reported failure in this whole category:** a Google OAuth app
+left in **"Testing" publishing status issues refresh tokens that expire after 7 DAYS**. That is
+almost certainly the real story behind every "it worked for a week then stopped" complaint in the
+research. Code cannot fix it — the app must be PUBLISHED in the Google console. What the code does is
+record the failure on the row and surface **"Google needs reconnecting"** with the honest line that
+her events are not blocking bookings right now, rather than silently returning no busy time.
+
+Also: the token upsert COALESCEs `refresh_token`, because a refresh exchange returns none and nulling
+it would turn a working connection into a dead one an hour later, silently. Asserted in
+`scripts/test-clients-sql.mjs` (now 30 cases) against real PostgreSQL.
+
+`scratchpad/gcal.mjs` — 21 assertions: the appointment conversion (including that **12:00 PM does not
+become midnight** and midnight is not treated as falsy), no push when disconnected, three saves in a
+burst pushing ONCE, all three screen states, and the render-loop guard.
+
+**NOT verified here, and it needs doing before telling a provider it works:** no live OAuth round
+trip, no real event written, no real busy block read. Needs `GOOGLE_CLIENT_ID` and
+`GOOGLE_CLIENT_SECRET` set, the redirect URI `<origin>/api/google-cal-callback` registered in the
+Google console, and the consent screen **published** (see the seven-day trap). Until the env vars
+exist the settings card says "Not switched on for this deployment yet" and the one-way subscribe link
+keeps working.
+
 ### Still to do, in this order (SUPERSEDED — see the revised table in `reports/Virtual consult research verified.md` §4)
 
 2. **The structured plan document.** The central recommendation. Today `sendVcReview` reads ONE

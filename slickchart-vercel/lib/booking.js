@@ -20,6 +20,7 @@
 // leaves this module; the appointments it was computed from never go over the wire.
 import { sql, getKVValue } from './db.js';
 import { getConnection, squareFetch } from './square.js';
+import { getGoogleConnection, googleBusyMinutes } from './google-cal.js';
 
 const DAY_KEYS = ['sun', 'mon', 'tue', 'wed', 'thu', 'fri', 'sat'];
 
@@ -216,6 +217,22 @@ export async function busyRanges(providerId, dateISO, defaultMins, bufferMins) {
       return null;   // she has Square but we could not read it — never publish a half-informed slot list
     }
   }
+
+  // 3. Her own life, from Google Calendar, if she connected it. This is the half of "calendar sync"
+  // providers actually buy: a dentist appointment in Google has to stop a client booking that slot.
+  //
+  // Same rule as the two sources above, and for the same reason: if she HAS a connection and we
+  // cannot read it, return null rather than publishing a slot list that does not know about her
+  // morning. A double-booking costs her a client; "request a time instead" costs a few seconds.
+  // An absent connection is not a failure and simply contributes nothing.
+  try {
+    const gconn = await getGoogleConnection(providerId);
+    if (gconn) {
+      const gbusy = await googleBusyMinutes(providerId, dateISO);
+      gbusy.forEach(b => { out.push({ start: b.start - pad, end: b.end + pad }); });
+    }
+  } catch (e) { return null; }
+
   return out;
 }
 
