@@ -468,7 +468,7 @@ const S=document.getElementById('S');
 // resets when I save it" and there was no way to tell whether her phone had any of them — a whole
 // day was spent debugging code she may not have been running. Shown at the bottom of Settings, so
 // the answer is a screenshot away. Bump it on every ship.
-const APP_BUILD='2026-10-08d';
+const APP_BUILD='2026-10-08e';
 
 
 /* ════════════════════════════════════════════════════════════════
@@ -2753,7 +2753,7 @@ function _libUnforget(libKey,id){
 // learns which photos the ACCOUNT holds for a client, including ones taken on the other device that
 // this one has never downloaded. sc_healing_stage holds a scalar per client rather than a list; the
 // union is by client either way.
-const _CLIENT_MAP_KEYS={sc_client_recs:1,sc_client_homecare:1,sc_session_summaries:1,sc_rec_reasons:1,sc_body_maps:1,
+const _CLIENT_MAP_KEYS={sc_client_recs:1,sc_client_homecare:1,sc_session_summaries:1,sc_rec_reasons:1,sc_body_maps:1,sc_pro_vc_invites:1,
   sc_photo_index:1,sc_note_drafts:1,sc_healing_stage:1,sc_summary_guides:1};
 // Merge the client roster per-client-id instead of whole-blob overwriting it, so two devices that edit
 // DIFFERENT clients both keep their edits (the old last-writer-wins dropped one device's whole change).
@@ -3185,7 +3185,11 @@ const _CLIENT_MAP_LIST={
 //               a note typed for any product the account had no note for — the ORIGINAL report.
 //               Clearing a note leaves the key with an empty string, so a union resurrects nothing.
 //   'stamped' — ONE record per client carrying ts. Newer wins.
-const _CLIENT_MAP_OBJ={sc_rec_reasons:'map',sc_body_maps:'stamped',sc_note_drafts:'stamped'};
+// sc_pro_vc_invites is per-client CONSULT STATE, and it now carries a follow-up date the provider set
+// and expects to be reminded about. It rode the plain overwrite, so a laptop holding an older copy
+// could silently erase a reminder she had set on her phone — the exact class of loss as §2ai, and a
+// reminder that can vanish is not a reminder. Stamped, so the newest state per client wins.
+const _CLIENT_MAP_OBJ={sc_rec_reasons:'map',sc_body_maps:'stamped',sc_note_drafts:'stamped',sc_pro_vc_invites:'stamped'};
 function _unionInnerMap(a,b){
   if(!_isPlainObj(a)||!_isPlainObj(b))return null;
   const out=Object.assign({},a);let changed=false;
@@ -4271,6 +4275,7 @@ function _reloadAll(){
   S('consult types',function(){if(typeof loadVcTypes==='function')loadVcTypes();});
   S('message wording',function(){if(typeof loadMsgTemplates==='function')loadMsgTemplates();});
   S('note starters',function(){if(typeof loadNoteStarters==='function')loadNoteStarters();});
+  S('consult follow-ups',function(){if(typeof _vcSyncFollowUpNotifs==='function')_vcSyncFollowUpNotifs();});
   S('needle presets',function(){if(typeof loadNeedlePresets==='function')loadNeedlePresets();});
   S('notification settings',function(){if(typeof loadNotifSettings==='function')loadNotifSettings();});
   S('protocols',function(){if(typeof loadProtocols==='function')loadProtocols();});
@@ -5546,6 +5551,7 @@ let notifSettings={
   formSigned:true,
   photoUploaded:true,
   docExpiring:true,
+  consultFollowUp:true,
   lowInventory:true,
   newMessage:true,
   rebookReminder:false,
@@ -5624,7 +5630,7 @@ function av(c,sz=40){
   if(c&&typeof c.avatar==='string'&&/^data:image\//.test(c.avatar)){
     return`<div aria-hidden="true" style="width:${sz}px;height:${sz}px;border-radius:50%;overflow:hidden;background:${c.bg};flex-shrink:0;"><img src="${_imgSrc(c.avatar)}" alt="" loading="lazy" decoding="async" style="width:100%;height:100%;object-fit:cover;display:block;"></div>`;
   }
-  return`<div aria-hidden="true" style="width:${sz}px;height:${sz}px;border-radius:50%;background:${c.bg};display:flex;align-items:center;justify-content:center;font-size:${sz>50?22:13}px;font-weight:500;color:${c.tc};flex-shrink:0;">${c.initials}</div>`;
+  return`<div aria-hidden="true" style="width:${sz}px;height:${sz}px;border-radius:50%;background:${c.bg};display:flex;align-items:center;justify-content:center;font-size:${sz>50?22:13}px;font-weight:500;color:${c.tc};flex-shrink:0;">${c.initials||''}</div>`;
 }
 // Provider's own initials, derived from their name (not hardcoded).
 function _providerInitials(){
@@ -7253,7 +7259,9 @@ function renderHome(){
       const ut=threads.filter(t=>t.unread);const um=ut.length;
       const umSub=um?('from '+_fileEsc((CL[ut[0].id]&&CL[ut[0].id].name)?CL[ut[0].id].name.split(' ')[0]:ut[0].id)):'all caught up';
       const fc=Object.values(CL).filter(c=>_fcActive(c)).length;const dr=_docsNeedRenewal();
+      const fu=(typeof _vcFollowUpsDue==='function')?_vcFollowUpsDue().length:0;
       const third=fc?["Flagged intakes",String(fc),"review before visit","var(--p-red)","flagged-intakes"]
+        :fu?["Follow-ups due",String(fu),"you said you'd check in","var(--accent)","virtual"]
         :dr?["Docs expiring",String(dr),"need renewal","var(--p-red)","vault"]
         :["Documents","OK","all current","var(--p-green)","vault"];
       return [
@@ -13168,7 +13176,23 @@ let vcSubmissions={}; // real client submissions keyed by clientId: {photos:[{la
 //
 // Still pushed to the account, so a consult is not device-local — but the pull hydrates it into
 // IndexedDB rather than writing megabytes back into the 5MB box (see _hydrateVcSubs).
+// `ts` is what the stamped merge compares, so it has to be bumped whenever an invite's state actually
+// changes — and done HERE rather than at each mutation site, because there are nine of those and the
+// tenth one somebody adds would silently stop merging correctly. Same shape as _stampClientChanges.
+let _vcInviteSig={};
+function _stampVcInvites(){
+  try{
+    Object.keys(vcInvites||{}).forEach(function(cid){
+      const v=vcInvites[cid];
+      if(!v||typeof v!=='object')return;
+      let sig='';try{sig=JSON.stringify(v,function(k,val){return k==='ts'?undefined:val;});}catch(e){return;}
+      if(_vcInviteSig[cid]!==sig){v.ts=Date.now();_vcInviteSig[cid]=sig;}
+    });
+  }catch(e){}
+}
+function _seedVcInviteSig(){try{_vcInviteSig={};Object.keys(vcInvites||{}).forEach(function(cid){const v=vcInvites[cid];if(v&&typeof v==='object')_vcInviteSig[cid]=JSON.stringify(v,function(k,val){return k==='ts'?undefined:val;});});}catch(e){}}
 function persistVcState(){
+  try{_stampVcInvites();}catch(e){}
   try{const _v=JSON.stringify(vcInvites);localStorage.setItem('sc_pro_vc_invites',_v);if(typeof _pushKeyNow==='function')_pushKeyNow('sc_pro_vc_invites',_v);}catch(e){}
   let v='';try{v=JSON.stringify(vcSubmissions);}catch(e){return;}
   let stored=false;
@@ -13208,6 +13232,7 @@ function _hydrateVcSubs(raw){
 }
 function loadVcState(){
   try{const inv=localStorage.getItem('sc_pro_vc_invites');if(inv)vcInvites={...vcInvites,...JSON.parse(inv)};}catch(e){}
+  try{_seedVcInviteSig();}catch(e){}   // a load is not an edit: do not restamp what we just read
   // Legacy/localStorage copy first so nothing is missing for the first paint, then IndexedDB (the real
   // home now) and the account copy layer in behind it. _hydrateVcSubs never lets a smaller set win.
   try{const sub=(typeof _lsGet==='function')?_lsGet('sc_pro_vc_subs'):localStorage.getItem('sc_pro_vc_subs');if(sub)_hydrateVcSubs(sub);}catch(e){}
@@ -13284,12 +13309,14 @@ const _MSG_DEFAULTS={
   vc_invite:"I'd love to do a virtual {consult} consult before your next visit, I've sent an invite to your app. Upload a few photos and I'll send my notes back. \u2728",
   vc_review:'Your virtual consult review is ready \ud83d\udccb',
   vc_retake:"I had a look at your photos and I can't see {consult} clearly enough to give you good advice. Could you send a couple more? There are tips at the top of the page. - {me}",
+  vc_followup:"Hi {client}, it's been a few weeks since your consult. How is your skin getting on with the routine? Anything feeling tight, or any step you've dropped? Send me a photo in the same light as last time and I'll tell you what I can see. - {me}",
   vc_refer:"Thank you for telling me. What you described is worth having a doctor look at, rather than me. Please book in with your GP or a dermatologist. I'm not able to diagnose or treat it, and I'd rather you were seen properly. I'm still here for your skincare once you've been. - {me}"
 };
 const _MSG_LABELS={
   vc_invite:{name:'Consult invite',when:'Sent when you invite a client to a virtual consult.'},
   vc_review:{name:'Review ready',when:'The first line when you send your notes back. Your notes follow underneath.'},
   vc_retake:{name:'Asking for better photos',when:"Sent when you tap Ask for new photos, instead of reviewing photos you can't read."},
+  vc_followup:{name:'Follow-up check-in',when:'Sent when you tap Check in now on a consult follow-up.'},
   vc_refer:{name:'Suggesting a doctor',when:'Sent when a client flags pain, bleeding, a changing mole, or something spreading.'}
 };
 // {consult} only means anything on the invite, so it is offered only there.
@@ -13297,7 +13324,8 @@ const _MSG_TOKENS={
   vc_invite:['client','me','business','consult','fee'],
   vc_review:['client','me','business'],
   vc_retake:['client','me','business','consult'],
-  vc_refer:['client','me','business']
+  vc_refer:['client','me','business'],
+  vc_followup:['client','me','business']
 };
 let msgTemplates=[];
 function loadMsgTemplates(){try{const raw=localStorage.getItem('sc_msg_templates');if(raw){const a=JSON.parse(raw);if(Array.isArray(a))msgTemplates=a;}}catch(e){}}
@@ -13355,7 +13383,7 @@ function _msgCardHTML(){
       <div style="font-size:16px;font-weight:500;color:var(--p-ink);">What your clients get sent</div>
       <div style="font-size:14px;color:var(--p-mut);line-height:1.5;margin-top:2px;">These go out in your name. Edit them to sound like you.</div>
     </div>
-    ${row('vc_invite')}${row('vc_review')}${row('vc_retake')}${row('vc_refer')}
+    ${row('vc_invite')}${row('vc_review')}${row('vc_retake')}${row('vc_refer')}${row('vc_followup')}
   </div>`;
 }
 let _msgEditing='';
@@ -13456,6 +13484,107 @@ async function _doSendVcReview(id,notes){
   if(st&&st.status==='pending'){if(typeof proToast==='function')proToast('Review saved — it’ll send to '+((c&&c.name.split(' ')[0])||'your client')+' when they open their app');}
   else if(st&&st.status==='failed'){if(typeof proToast==='function')proToast('Couldn’t reach '+((c&&c.name.split(' ')[0])||'your client')+' — tap the message to resend',0,'error');}
   else{if(typeof proToast==='function')proToast('Review sent to '+((c&&c.name.split(' ')[0])||'client'));}
+}
+// FOLLOW-UP REMINDERS — the date she sets, and the app telling HER about it.
+//
+// The evidence here is thinner than the first research round claimed and the honest version is: the
+// 12-week structured follow-up is a real clinical guideline anchor (NICE NG198, 2021), the one trial
+// of asynchronous photo follow-ups used a 6-week cycle and 91% of patients preferred it to coming
+// in, and there is NO trial establishing the best interval for adherence. The adherence-cliff
+// figures that justified a fixed week-6 schedule trace to a 17-patient pilot whose primary result
+// was null. So the app offers sensible intervals and SHE picks. It does not insist.
+//
+// HOW THE REMINDER ACTUALLY FIRES, and its honest limit. notifFeed is rebuilt from its sources every
+// session rather than persisted, so this GENERATES the reminder from the stored date on every reload
+// instead of pushing one entry once — which makes it idempotent, survives a reinstall, and shows up
+// on whichever device she opens. The id is stable per (client, date), so re-generating never
+// duplicates it, dismissing it sticks (via _notifCleared, which unions across devices), and moving
+// the date re-arms it as a new reminder.
+//
+// It cannot reach her while the app is CLOSED. Provider push does not exist on this deployment:
+// push_subscriptions is keyed by client_id and providerSystemNotify only fires a local browser
+// notification while a tab is open and hidden. So this is an in-app reminder that is impossible to
+// miss once she opens the app — feed, Home, and the consult list — plus a system notification if the
+// app happens to be open in the background. Real provider push is a separate build (a provider
+// subscription table, VAPID for providers, and a cron) and should not be implied here.
+const _VC_FOLLOWUP_CHOICES=[['2 weeks',14],['6 weeks',42],['12 weeks',84]];
+function _vcFollowUpId(cid,at){return 'vcfu:'+cid+':'+at;}
+function _vcFollowUpsDue(now){
+  now=now||Date.now();
+  const out=[];
+  try{
+    Object.keys(vcInvites||{}).forEach(function(cid){
+      const inv=vcInvites[cid];
+      if(!inv||!inv.followUpAt||inv.followUpDone)return;
+      if(!CL[cid])return;                                  // deleted or not loaded yet
+      if(+inv.followUpAt>now)return;
+      out.push({id:cid,at:+inv.followUpAt});
+    });
+  }catch(e){}
+  return out.sort(function(a,b){return a.at-b.at;});
+}
+// Generated on every reload. Guarded on the roster actually being in memory — the same trap that
+// recreated a whole roster as blank skeletons (§2aj): a reminder generated before CL is read would
+// silently skip every client.
+function _vcSyncFollowUpNotifs(){
+  if(typeof _rosterNotReadYet==='function'&&_rosterNotReadYet())return 0;
+  const due=_vcFollowUpsDue();
+  let added=0;
+  due.forEach(function(d){
+    const nid=_vcFollowUpId(d.id,d.at);
+    if(_notifCleared&&_notifCleared.has(nid))return;        // she dismissed this one
+    if(notifFeed.some(function(n){return n&&n.id===nid;}))return;
+    const nm=String((CL[d.id]&&CL[d.id].name)||'your client').split(' ')[0];
+    notifFeed.unshift({id:nid,type:'vc-followup',icon:'ti-calendar-check',col:'var(--accent-tint)',ic:'var(--accent-strong)',
+      title:'Follow-up due: '+nm,body:'You said you\u2019d check in on '+nm+'\u2019s consult today.',
+      time:'Today',ts:d.at,read:_notifRead&&_notifRead.has(nid),action:'client',data:d.id});
+    added++;
+    if(_notifOn('consultFollowUp'))try{providerSystemNotify('Follow-up due: '+nm,'You said you\u2019d check in on their consult today.');}catch(e){}
+  });
+  if(added){try{_applyNotifState();}catch(e){}try{updateBadge();}catch(e){}}
+  return added;
+}
+function _vcSetFollowUp(cid,days){
+  const inv=vcInvites[cid];if(!inv)return;
+  if(!days){vcInvites[cid]={...inv,followUpAt:0,followUpDone:0};}
+  else{
+    const at=Date.now()+days*86400000;
+    vcInvites[cid]={...inv,followUpAt:at,followUpDone:0};   // a new date re-arms the reminder
+  }
+  try{persistVcState();}catch(e){}
+}
+function _vcFollowUpDone(cid){
+  const inv=vcInvites[cid];if(!inv)return;
+  vcInvites[cid]={...inv,followUpDone:Date.now()};
+  try{persistVcState();}catch(e){}
+  try{const nid=_vcFollowUpId(cid,+inv.followUpAt);if(typeof clearNotif==='function')clearNotif(nid);}catch(e){}
+  if(typeof proToast==='function')proToast('Follow-up cleared');
+  try{nav('virtual');}catch(e){}
+}
+// The check-in itself: a message, not a nudge. The only follow-up contact evidence that points
+// anywhere says educational content helps and bare daily reminders do nothing, so the default text
+// asks her client a real question rather than saying "just checking in".
+async function vcFollowUpNow(cid){
+  const c=CL[cid];if(!c)return;
+  const msg=_msgText('vc_followup',cid);
+  let _mid;try{_mid=(self.crypto&&crypto.randomUUID)?crypto.randomUUID():(Date.now().toString(36)+Math.random().toString(36).slice(2));}catch(e){_mid=Date.now().toString(36)+Math.random().toString(36).slice(2);}
+  try{if(!msgStore[cid])msgStore[cid]=[];msgStore[cid].push({from:'me',text:msg,time:'Just now',ts:Date.now(),_mid,status:'sending'});const t=threads.find(x=>x.id===cid);if(t)t.preview='How is your skin getting on?';saveMessages();}catch(e){}
+  try{await _sendProviderMessageToClient(cid,msg,[],false,undefined,_mid);}catch(e){}
+  _vcFollowUpDone(cid);
+}
+// The picker, shown on the review screen before she sends.
+function _vcFollowUpPickerHTML(cid){
+  const inv=vcInvites[cid]||{};
+  const at=+inv.followUpAt||0;
+  const set=at?new Date(at).toLocaleDateString('en-US',{month:'short',day:'numeric'}):'';
+  return `<div style="margin:0 0 10px;">
+    <div style="display:flex;flex-wrap:wrap;gap:6px;align-items:center;">
+      <span style="font-size:14px;color:var(--p-mut);">Check back in:</span>
+      ${_VC_FOLLOWUP_CHOICES.map(function(ch){const on=at&&Math.abs(at-(Date.now()+ch[1]*86400000))<43200000;return '<button onclick="_vcSetFollowUp(\''+_jsAttr(cid)+'\','+ch[1]+');renderVirtualClient(\''+_jsAttr(cid)+'\')" class="pill '+(on?'active':'')+'">'+ch[0]+'</button>';}).join('')}
+      ${at?('<button onclick="_vcSetFollowUp(\''+_jsAttr(cid)+'\',0);renderVirtualClient(\''+_jsAttr(cid)+'\')" style="background:none;border:none;color:var(--p-mut);font-size:14px;cursor:pointer;font-family:inherit;padding:5px 4px;">No reminder</button>'):''}
+    </div>
+    ${at?('<div style="font-size:14px;color:var(--p-green);margin-top:5px;"><i class="ti ti-bell" style="font-size:14px;"></i> We\u2019ll remind you on '+_fileEsc(set)+' when you open the app.</div>'):'<div style="font-size:14px;color:var(--p-mut);margin-top:5px;">Optional. Pick one and the app reminds you.</div>'}
+  </div>`;
 }
 // STARTING POINTS FOR THE NOTES — what is left of "plan templates" without a plan builder.
 //
@@ -13680,6 +13809,18 @@ function renderVcInbox(){
   const order={'needs-review':0,'awaiting':1,'reviewed':2};
   rows.sort((a,b)=>order[a.status]-order[b.status]);
   const needs=rows.filter(r=>r.status==='needs-review').length;
+  // Follow-ups she promised, first — they are time-bound in a way a review queue is not.
+  const _fuDue=((typeof _vcFollowUpsDue==='function')?_vcFollowUpsDue():[]).filter(function(d){return _vcVisible(d.id);});
+  const _fuHTML=_fuDue.length?('<div class="sh"><h2>Follow-ups due</h2></div>'+_fuDue.map(function(d){
+    const c=CL[d.id]||{};const nm=String(c.name||'client');
+    return '<div style="background:var(--accent-tint);border:1px solid var(--accent);border-radius:12px;margin:0 16px 10px;padding:12px 14px;">'
+      +'<div style="font-size:16px;font-weight:600;color:var(--p-ink);margin-bottom:2px;">'+_fileEsc(nm)+'</div>'
+      +'<div style="font-size:16px;color:var(--p-mut);line-height:1.5;margin-bottom:9px;">You set a check-in for '+_fileEsc(new Date(d.at).toLocaleDateString('en-US',{month:'short',day:'numeric'}))+'.</div>'
+      +'<div style="display:flex;gap:8px;">'
+      +'<button onclick="vcFollowUpNow(\''+_jsAttr(d.id)+'\')" style="flex:1;background:var(--accent);border:none;color:var(--accent-ink);border-radius:8px;padding:9px;font-size:16px;font-weight:600;cursor:pointer;font-family:inherit;">Check in now</button>'
+      +'<button onclick="_vcFollowUpDone(\''+_jsAttr(d.id)+'\')" style="background:var(--surf1);border:1px solid var(--p-line3);color:var(--p-mut2);border-radius:8px;padding:9px 12px;font-size:16px;cursor:pointer;font-family:inherit;">Done</button>'
+      +'</div></div>';
+  }).join('')):'';
   const card=r=>{const m=meta[r.status];const kindLabel=r.sub&&r.sub.title?r.sub.title:_vcProfile().short;const date=r.sub&&r.sub.date?r.sub.date:'';const tap=r.status==='awaiting'?`nav('client','${r.id}')`:`_vcBack='inbox';nav('virtual-client','${r.id}')`;
     return `<button class="vc-card" data-search="${(r.c.name+' '+m.label+' '+kindLabel).toLowerCase().normalize('NFD').replace(/[̀-ͯ]/g,'').replace(/['‘’`"]/g,'').replace(/[^a-z0-9 ]/g,' ').replace(/\s+/g,' ').trim()}" onclick="${tap}" style="display:block;width:calc(100% - 32px);text-align:left;box-sizing:border-box;background:var(--surf2);border:1px solid var(--p-line);border-radius:12px;margin:0 16px 10px;padding:12px 14px;cursor:pointer;font-family:inherit;">
       <div style="display:flex;align-items:center;gap:11px;">
@@ -13697,7 +13838,8 @@ function renderVcInbox(){
     <button onclick="_vcInvitePicker()" style="border:1px solid var(--accent);background:var(--accent-tint);color:var(--accent-strong);border-radius:8px;padding:7px 12px;font-size:16px;font-weight:600;cursor:pointer;font-family:inherit;white-space:nowrap;flex-shrink:0;"><i class="ti ti-mail-share" style="font-size:16px;"></i> Invite</button>
   </div>
   ${rows.length?_searchBar('Search consults…','.vc-card','vc-inbox-noresults'):''}
-  ${rows.length===0?emptyState({icon:'ti-scan',title:'No virtual consults yet',body:'Invite a client to submit photos before their visit. Tap Invite to start one.'}):''}
+  ${(rows.length===0&&!_fuDue.length)?emptyState({icon:'ti-scan',title:'No virtual consults yet',body:'Invite a client to submit photos before their visit. Tap Invite to start one.'}):''}
+  ${_fuHTML}
   ${section('Needs review','needs-review')}
   ${section('Awaiting photos','awaiting')}
   ${section('Reviewed','reviewed')}
@@ -14808,6 +14950,7 @@ function renderVirtualClient(id){
       ${v.questions.map(q=>`<div style="font-size:16px;color:var(--p-mut);padding:8px 0;border-bottom:1px solid var(--p-line2);display:flex;align-items:center;gap:6px;"><i class="ti ti-question-mark" style="font-size:16px;color:var(--accent-strong);flex-shrink:0;"></i>${q}</div>`).join('')}
     </div>
     <div style="font-size:14px;font-weight:500;color:var(--p-mut);text-transform:uppercase;letter-spacing:.07em;margin-bottom:8px;">Your expert notes</div>
+    ${(typeof _vcFollowUpPickerHTML==='function')?_vcFollowUpPickerHTML(id):''}
     ${(typeof _starterChipsHTML==='function')?_starterChipsHTML():''}
     <textarea id="vc-review-notes" class="fi" style="height:180px;resize:vertical;line-height:1.6;margin-bottom:8px;" placeholder="Confirm the look in pro terms, answer their questions, recommend a treatment plan and next steps..."></textarea>
     <button class="btnp" style="border-radius:8px;margin-top:8px;margin-bottom:8px;" onclick="if(sendVcReview('${id}')){${back}}"><i class="ti ti-send"></i> Send review to ${_fileEsc(c.name.split(' ')[0])}</button>
@@ -22590,7 +22733,7 @@ function renderNotifications(){
   <div style="margin:10px 16px;background:var(--p-blue-bg);border:1px solid var(--p-blue-line);border-radius:12px;padding:10px 12px;font-size:16px;color:var(--p-blue);">Notifications are sent via push notification and email. You can customize below.</div>
   ${[
     {section:'Client activity',items:[['newCheckin','New Check-In Submitted','Before appointments'],['formSigned','Consent Form Signed','When a client signs'],['photoUploaded','Photos Uploaded','Virtual consultation']]},
-    {section:'Business alerts',items:[['docExpiring','Document Expiring','90 & 30 days before'],['lowInventory','Low Inventory Alert','When items hit reorder threshold'],['newMessage','New Message Received','All client messages']]},
+    {section:'Business alerts',items:[['consultFollowUp','Consult follow-up due','On the date you set when you send a review'],['docExpiring','Document Expiring','90 & 30 days before'],['lowInventory','Low Inventory Alert','When items hit reorder threshold'],['newMessage','New Message Received','All client messages']]},
     {section:'Reports',items:[['rebookReminder','Rebook Reminders','When clients are overdue'],['weeklyReport','Weekly Summary','Every Monday morning']]},
   ].map(group=>`
     <div class="sh"><h2>${group.section}</h2></div>
@@ -26325,7 +26468,7 @@ async function _founderTestPush(rowEl,delaySec){
   }catch(e){setSub(delaySec?orig:'Couldn’t reach the server. Try again.');}
 }
 try{_loadFounderLastTs();}catch(e){}
-setInterval(()=>{try{syncClientEvents();}catch(e){}try{_pollFounderSignups();}catch(e){}},15000);
+setInterval(()=>{try{syncClientEvents();}catch(e){}try{_pollFounderSignups();}catch(e){}try{if(typeof _vcSyncFollowUpNotifs==='function')_vcSyncFollowUpNotifs();}catch(e){}},15000);
 // React to a Square webhook: the server records recent Square activity (booking/payment/refund/
 // catalog change) into sc_square_activity, which the cloud pull brings down. When we see a newer one
 // than last handled, refresh the relevant live data and let the provider know — near-real-time.

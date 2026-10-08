@@ -3295,6 +3295,57 @@ eats three paragraphs of real work is worse than no starting point.
 `scratchpad/starters.mjs` — 23 assertions including the no-clock-times regex, that removing a shipped
 starter survives a pull, and that one written on another device arrives.
 
+### Shipped: follow-up date + a reminder that actually fires (`2026-10-08e`) — recommendation #6
+
+Ashley asked for two things specifically: that the app remind HER on the date, and that the reminder
+**actually work**. Both are built; the honest limit is stated below and must not be overstated to her.
+
+**The date.** Chips on the review screen (2 / 6 / 12 weeks, or none) writing `followUpAt` onto the
+invite. Intervals are hers to pick and the app does not insist: the week-6 schedule the first
+research round justified traces to a 17-patient pilot whose primary result was null. 12 weeks is the
+real guideline anchor (NICE NG198, 2021) and 6 weeks is the one asynchronous photo cadence that was
+trialled (91% of patients preferred it to coming in).
+
+**How the reminder fires.** `notifFeed` is rebuilt from its sources each session rather than
+persisted, so `_vcSyncFollowUpNotifs()` GENERATES the reminder from the stored date on every reload
+and on the existing 15s poll. Consequences, all deliberate: idempotent, survives a reinstall, fires
+on whichever device she opens, and the id is stable per (client, date) so re-generating never
+duplicates, dismissing sticks through `_notifCleared` (which unions across devices), and moving the
+date re-arms it as a new reminder. It surfaces in three places so it cannot be missed — the
+notification feed, the Home third tile (a due follow-up now outranks a document renewal, because it
+is a promise to a client), and a "Follow-ups due" block at the top of the consult inbox with
+**Check in now** / **Done**.
+
+Guarded on `_rosterNotReadYet()` — a reminder generated before `CL` is read would silently skip every
+client, which is the §2aj trap. Asserted.
+
+**THE HONEST LIMIT, do not oversell it: this cannot reach her while the app is CLOSED.** Provider
+push does not exist on this deployment — `push_subscriptions` is keyed by `client_id`, and
+`providerSystemNotify` only fires a local browser notification while a tab is open and hidden. So it
+is an in-app reminder plus a system notification if the app happens to be open in the background.
+Real provider push is a separate build: a provider subscription table, VAPID keys for providers, and
+a cron. Told to Ashley plainly on 2026-10-08.
+
+**A data-safety fix came with it, and it was necessary rather than optional.**
+`sc_pro_vc_invites` rode the PLAIN OVERWRITE (it was in check-merge-coverage's KNOWN list), so a
+laptop holding an older copy could silently erase a follow-up date set on her phone — and a reminder
+that can vanish is not a reminder. It is a per-client map, so it now merges by client with the
+newest-stamped entry winning (`_CLIENT_MAP_KEYS` + `_CLIENT_MAP_OBJ: 'stamped'`). `_newerStamped`
+compares `ts`, so `persistVcState()` stamps `ts` on any entry whose content changed, via a signature
+cache (`_stampVcInvites`) rather than at each of the nine mutation sites — the tenth one somebody
+adds would otherwise silently stop merging. `loadVcState` reseeds the signatures so reading the
+account's copy is not treated as an edit. merge-coverage 85→86 keys, 22→21 known unmerged.
+
+Also fixed in passing: `av()` rendered `${c.initials}` with no fallback, so a client record without
+initials printed the literal text "undefined" in the roster. One-token guard.
+
+`scratchpad/followup.mjs` — 35 assertions. It MOVES THE CLOCK rather than trusting the code: sets a
+date in the past and proves the reminder appears, never duplicates across three generations, is
+counted by the badge, shows on Home and in the inbox, that dismissal sticks through a regenerate,
+that a new date re-arms it, that Check in now messages the client in her own wording and clears it,
+that Done clears silently, that it is blocked before the roster is read and fires once it is, and
+that the date survives a stale account copy in both directions.
+
 ### Still to do, in this order (SUPERSEDED — see the revised table in `reports/Virtual consult research verified.md` §4)
 
 2. **The structured plan document.** The central recommendation. Today `sendVcReview` reads ONE

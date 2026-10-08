@@ -67,7 +67,10 @@ const KNOWN=new Set([
   'sc_room_state_',          // per-room device state, not synced provider data
   // Reviewed and ACCUMULATING — these can lose data if a stale device pulls. Tracked as thread 16.
   // (sc_manual_appts was the sharpest of them and now MERGES — _mergeAppts + sc_deleted_appts.)
-  'sc_pro_vc_invites','sc_sent_routines',
+  // sc_pro_vc_invites came OFF this list on 2026-10-08: it is a per-client map and now merges by
+  // client with the newest-stamped entry winning (_CLIENT_MAP_KEYS + _CLIENT_MAP_OBJ), because it
+  // carries the follow-up date the provider set and a stale device could erase her reminder.
+  'sc_sent_routines',
   'sc_imported_products','sc_deleted_sq']);
 
 const unreviewed=[...accum].filter(k=>!merged.has(k)&&!KNOWN.has(k)
