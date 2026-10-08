@@ -214,7 +214,7 @@ const S=document.getElementById('S');
 // resets when I save it" and there was no way to tell whether her phone had any of them — a whole
 // day was spent debugging code she may not have been running. Shown at the bottom of Settings, so
 // the answer is a screenshot away. Bump it on every ship.
-const APP_BUILD='2026-10-08l';
+const APP_BUILD='2026-10-08m';
 
 
 /* ════════════════════════════════════════════════════════════════
@@ -21726,10 +21726,14 @@ function confirmModal(opts,action){
   ov.onclick=e=>{if(e.target===ov)close();};
   // Announced as a modal dialog, labelled by its title and described by its body, so
   // a screen-reader user hears what they're confirming instead of nothing.
-  ov.innerHTML=`<div role="dialog" aria-modal="true" aria-labelledby="_cf-title" aria-describedby="_cf-body" style="background:var(--surf2);border:1px solid var(--p-line);border-radius:16px;padding:20px;max-width:340px;width:100%;box-shadow:0 12px 40px rgba(0,0,0,.5);">
-    <div id="_cf-title" style="font-size:16px;font-weight:600;color:var(--p-ink);margin-bottom:8px;">${esc(opts.title||'Are you sure?')}</div>
-    <div id="_cf-body" style="font-size:16px;color:var(--p-mut);line-height:1.55;margin-bottom:18px;">${esc(opts.body||'')}</div>
-    <div style="display:flex;gap:8px;">
+  // A LONG body used to push the buttons off the bottom of the screen with nothing scrollable, so
+  // the dialog could not be read OR dismissed — you were simply stuck. The dialog is now a column
+  // capped to the viewport, the body is the only part that scrolls, and the buttons stay pinned
+  // where they can always be reached. whitespace:pre-wrap so a multi-line body keeps its lines.
+  ov.innerHTML=`<div role="dialog" aria-modal="true" aria-labelledby="_cf-title" aria-describedby="_cf-body" style="background:var(--surf2);border:1px solid var(--p-line);border-radius:16px;padding:20px;max-width:340px;width:100%;max-height:calc(100vh - 48px);display:flex;flex-direction:column;box-shadow:0 12px 40px rgba(0,0,0,.5);">
+    <div id="_cf-title" style="font-size:16px;font-weight:600;color:var(--p-ink);margin-bottom:8px;flex-shrink:0;">${esc(opts.title||'Are you sure?')}</div>
+    <div id="_cf-body" style="font-size:16px;color:var(--p-mut);line-height:1.55;margin-bottom:18px;flex:1 1 auto;min-height:0;overflow-y:auto;-webkit-overflow-scrolling:touch;white-space:pre-wrap;">${esc(opts.body||'')}</div>
+    <div style="display:flex;gap:8px;flex-shrink:0;">
       <button id="_cf-cancel" class="btng" style="flex:1;border-radius:12px;padding:11px;">Cancel</button>
       <button id="_cf-ok" style="flex:1;border:none;border-radius:12px;padding:11px;font-size:16px;font-weight:600;cursor:pointer;font-family:inherit;background:${danger?'var(--p-red-bg)':'var(--accent)'};color:${danger?'#ff9b9b':'var(--accent-ink)'};">${esc(opts.action||'Confirm')}</button>
     </div>
@@ -26880,7 +26884,7 @@ async function _founderClientRecover(rowEl){
   const typed=(typeof prompt==='function')?prompt('Which provider? Their name or their sign-in email'):'';
   if(!typed)return;
   const tok=(typeof Cloud!=='undefined'&&Cloud&&Cloud.token)||'';
-  setSub('Looking\u2026');
+  setSub('Looking…');
   // A name is enough. If it matches more than one provider the server hands back the list rather
   // than guessing, and she picks from it — a restore always goes out by exact email.
   let email=String(typed).trim();
@@ -26895,84 +26899,175 @@ async function _founderClientRecover(rowEl){
     let got=await look(email.indexOf('@')<0);
     if(got.ok&&got.j&&got.j.ok&&got.j.needsPick){
       const list=(got.j.matches||[]);
-      const pickBody=list.map((m,i)=>(i+1)+'. '+(m.name||'(no name)')+'  \u2014  '+m.email).join('\n');
+      const pickBody=list.map((m,i)=>(i+1)+'. '+(m.name||'(no name)')+'  —  '+m.email).join('\n');
       const pick=(typeof prompt==='function')?prompt('More than one provider matches:\n\n'+pickBody+'\n\nType the number, or paste the email'):'';
       if(!pick){setSub(orig);return;}
       const n=parseInt(String(pick).trim(),10);
       email=(n>=1&&n<=list.length)?list[n-1].email:String(pick).trim();
-      setSub('Looking\u2026');
+      setSub('Looking…');
       got=await look(false);
     }
-    if(!got.ok||!got.j||!got.j.ok){setSub((got.j&&got.j.error)||'Couldn\u2019t look that up.');setTimeout(()=>setSub(orig),8000);return;}
+    if(!got.ok||!got.j||!got.j.ok){setSub((got.j&&got.j.error)||'Couldn’t look that up.');setTimeout(()=>setSub(orig),8000);return;}
     j=got.j;
-  }catch(e){ setSub('Couldn\u2019t reach the server.'); setTimeout(()=>setSub(orig),6000); return; }
-
-  const c=j.counts||{};
-  const del=(j.clients||[]).filter(x=>x.deleted);
-  const lines=[];
-  lines.push(j.provider.email);
-  lines.push(c.rowsLive+' client'+(c.rowsLive===1?'':'s')+' showing, '+c.rowsDeleted+' removed but still on the server');
-  if(c.rosterIds!=null)lines.push('Their app\u2019s own list knows about '+c.rosterIds);
-  lines.push('');
-  // What each recoverable client still has. Counts only - this never reads their notes.
-  (j.clients||[]).forEach(function(x){
-    const h=x.has||{};
-    const bits=[];
-    if(h.summaries)bits.push(h.summaries+' summar'+(h.summaries===1?'y':'ies'));
-    if(h.profileFilled)bits.push(h.profileFilled+' chart field'+(h.profileFilled===1?'':'s'));
-    if(h.forms)bits.push(h.forms+' form'+(h.forms===1?'':'s'));
-    if(h.progressPhotos)bits.push(h.progressPhotos+' photo'+(h.progressPhotos===1?'':'s'));
-    const an=Array.isArray(h.animals)?h.animals:[];
-    if(an.length){
-      const asum=an.reduce((n,a)=>n+(a.summaries||0),0);
-      bits.push(an.length+' animal'+(an.length===1?'':'s')+(asum?(' with '+asum+' summar'+(asum===1?'y':'ies')):''));
-    }
-    lines.push((x.deleted?'REMOVED  ':'showing  ')+(x.name||x.id)+(bits.length?' \u2014 '+bits.join(', '):' \u2014 nothing stored')); 
-    an.forEach(function(a){ lines.push('             \u00b7 '+(a.name||'(unnamed)')+(a.summaries?(' \u2014 '+a.summaries+' summar'+(a.summaries===1?'y':'ies')):'')); });
-  });
-  // THE question on an equine account: did these clients vanish, or are they now horses under an
-  // owner? "4 became 2" reads as catastrophic either way, but only one of them is data loss.
-  const nest=j.nestedUnder||{};
-  const moved=(j.clients||[]).filter(x=>nest[x.id]);
-  if(moved.length){
-    lines.push('\nNOT LOST \u2014 '+moved.length+' of these are now listed as an animal under another client:');
-    moved.forEach(function(x){ const n=nest[x.id];
-      lines.push('  \u00b7 '+(x.name||x.id)+' is now \u201c'+(n.animalName||'')+'\u201d under '+(n.ownerName||n.ownerId)); });
-    lines.push('Their charts moved a level down rather than going missing. Restoring rows will not change that.');
+  }catch(e){ setSub('Couldn’t reach the server.'); setTimeout(()=>setSub(orig),6000); return; }
+  setSub(orig);
+  _recoverState=j;
+  renderClientRecover();
+}
+// The diagnosis, as a SCREEN rather than a confirm box. The first version put the whole thing in a
+// modal; on a real account that is twenty-odd lines, the modal had no scroll, and Ashley was left
+// looking at a wall of text she could not scroll or dismiss. Worse, it offered ONE "Restore all"
+// button — and on the account that mattered, 12 of the removed rows were blanks and duplicates, so
+// the single button would have put her roster back in a worse state than it started.
+let _recoverState=null, _recoverPick={};
+// Is this removed row safe to put back on its own? Three things make it NOT obvious:
+//   no name          — a blank skeleton the app created, never a real client
+//   nothing stored   — no chart, no summaries, nothing to recover
+//   a live namesake  — the same person is already showing, so this is the duplicate she removed
+// Edit distance, capped — only used to FLAG a near-miss name, never to decide anything on its own.
+function _recoverEdits(a,b){
+  if(Math.abs(a.length-b.length)>2)return 9;
+  const m=a.length,n=b.length,d=[];
+  for(let i=0;i<=m;i++)d[i]=[i];
+  for(let jj=0;jj<=n;jj++)d[0][jj]=jj;
+  for(let i=1;i<=m;i++)for(let jj=1;jj<=n;jj++)
+    d[i][jj]=Math.min(d[i-1][jj]+1,d[i][jj-1]+1,d[i-1][jj-1]+(a[i-1]===b[jj-1]?0:1));
+  return d[m][n];
+}
+function _recoverRisk(c,liveNames){
+  if(!c.name)return 'blank';
+  const h=c.has||{};
+  // REAL CONTENT only. On the account this was built for, almost every row reported "5 chart
+  // fields" — so chart fields alone carry no information and must not tick a box on their own.
+  // Summaries, forms, photos and animals are the things that are actually hers to lose.
+  const content=(h.summaries||0)+(h.forms||0)+(h.progressPhotos||0)+((h.animals||[]).length);
+  const nm=c.name.trim().toLowerCase();
+  if(liveNames[nm])return 'dupe';
+  // "Rainer" removed while "Reiner" is showing is probably the same horse typed twice — but
+  // probably is not enough to decide for her, so it is flagged and left for her to judge.
+  // Checked BEFORE the empty case: all three leave the box unticked, so this only chooses which
+  // reason she is shown, and "there is already a Reiner" is the one that helps her decide.
+  const near=Object.keys(liveNames).find(function(x){return x!==nm&&_recoverEdits(x,nm)<=2;});
+  if(near)return 'near:'+near;
+  if(!content)return 'empty';
+  return '';
+}
+function renderClientRecover(){
+  const j=_recoverState;if(!j)return;
+  document.getElementById('tt').textContent='Recover clients';
+  const esc=(x)=>_fileEsc(String(x==null?'':x));
+  const all=j.clients||[], nest=j.nestedUnder||{};
+  const liveNames={};
+  all.forEach(function(c){ if(!c.deleted&&c.name)liveNames[c.name.trim().toLowerCase()]=1; });
+  const removed=all.filter(c=>c.deleted), showing=all.filter(c=>!c.deleted);
+  // Default the ticks the FIRST time only, so her choices survive a re-render.
+  if(!_recoverPick._seeded){
+    _recoverPick={_seeded:1};
+    removed.forEach(function(c){ if(!_recoverRisk(c,liveNames))_recoverPick[c.id]=1; });
   }
-  if(j.missingFromRoster&&j.missingFromRoster.length)
-    lines.push('\n'+j.missingFromRoster.length+' client(s) are on the server but MISSING from their app\u2019s list.');
-  if(j.deletedRecordIds&&j.deletedRecordIds.length)
-    lines.push('\nTheir device asked to remove '+j.deletedRecordIds.length+' client(s), so the removal came FROM the app, not the server.');
-  else if(c.rowsDeleted)
-    lines.push('\nTheir device has NO record of removing anyone \u2014 so these were not removed by them on purpose.');
-
-  const body=lines.join('\n');
-  if(!del.length){
-    if(typeof confirmModal==='function')confirmModal({title:'What the server holds',body:body+'\n\n(Counts only \u2014 none of their notes were read.)',action:'Got it',hideCancel:true},function(){});
-    setSub('Checked \u00b7 nothing removed to restore');
-    setTimeout(()=>setSub(orig),9000);
-    return;
-  }
-  const go=async function(){
-    setSub('Restoring\u2026');
-    try{
-      const r2=await fetch('/api/admin/client-recover',{method:'POST',headers:{'Content-Type':'application/json','Authorization':'Bearer '+tok},
-        body:JSON.stringify({email:j.provider.email,restoreIds:del.map(x=>x.id)})});
-      const j2=await r2.json().catch(()=>({}));
-      if(!r2.ok||!j2.ok){setSub((j2&&j2.error)||'Restore failed.');setTimeout(()=>setSub(orig),8000);return;}
-      const names=(j2.clients||[]).map(x=>x.name||x.id).join(', ');
-      if(typeof confirmModal==='function')confirmModal({title:'Put back',
-        body:j2.restored+' client'+(j2.restored===1?'':'s')+' restored'+(names?': '+names:'')+'.\n\nThey need to open the app and pull down to refresh for it to show on their device.',
-        action:'Got it',hideCancel:true},function(){});
-      setSub('Restored '+j2.restored);
-      setTimeout(()=>setSub(orig),9000);
-    }catch(e){ setSub('Restore failed \u2014 try again.'); setTimeout(()=>setSub(orig),6000); }
+  const bits=function(c){
+    const h=c.has||{},out=[];
+    if(h.summaries)out.push(h.summaries+' summar'+(h.summaries===1?'y':'ies'));
+    if(h.profileFilled)out.push(h.profileFilled+' chart field'+(h.profileFilled===1?'':'s'));
+    if(h.forms)out.push(h.forms+' form'+(h.forms===1?'':'s'));
+    if(h.progressPhotos)out.push(h.progressPhotos+' photo'+(h.progressPhotos===1?'':'s'));
+    const an=h.animals||[];
+    if(an.length){const t=an.reduce((n,a)=>n+(a.summaries||0),0);
+      out.push(an.length+' animal'+(an.length===1?'':'s')+(t?(' with '+t+' summar'+(t===1?'y':'ies')):''));}
+    return out.length?out.join(' · '):'nothing stored';
   };
-  if(typeof confirmModal==='function')confirmModal({title:'Put these clients back?',
-    body:body+'\n\nRestoring puts the '+del.length+' removed client'+(del.length===1?'':'s')+' back on their account with everything above. It changes nothing else, and can be undone by removing them again.',
-    action:'Restore '+del.length},go);
-  else go();
+  const WHY={blank:'no name — an empty record the app made, not a real client',
+             empty:'only basic details — no notes, summaries, forms or photos to bring back',
+             dupe:'the same name is ALREADY showing — this looks like the duplicate she removed'};
+  const why=function(risk){
+    if(risk.indexOf('near:')===0)return 'a very similar name is already showing (“'+risk.slice(5)+'”) — possibly the same one typed twice';
+    return WHY[risk]||'';
+  };
+  const row=function(c){
+    const risk=_recoverRisk(c,liveNames), on=!!_recoverPick[c.id];
+    const an=(c.has&&c.has.animals)||[];
+    return '<label style="display:flex;gap:10px;align-items:flex-start;padding:11px 12px;border-bottom:1px solid var(--p-line2);cursor:pointer;">'
+      +'<input type="checkbox" '+(on?'checked':'')+' onchange="_recoverToggle(\''+esc(c.id)+'\')" style="width:17px;height:17px;margin-top:2px;accent-color:var(--accent-strong);flex-shrink:0;">'
+      +'<div style="flex:1;min-width:0;">'
+        +'<div style="font-size:16px;color:var(--p-ink);">'+esc(c.name||'(no name)')+'</div>'
+        +'<div style="font-size:14px;color:var(--p-mut);line-height:1.45;">'+esc(bits(c))+'</div>'
+        +(risk?'<div style="font-size:14px;color:var(--p-amber);line-height:1.45;margin-top:2px;">'+esc(why(risk))+'</div>':'')
+        +(an.length?'<div style="font-size:14px;color:var(--p-mut);margin-top:2px;">'+an.map(a=>'· '+esc(a.name||'(unnamed)')+(a.summaries?(' — '+a.summaries+' summaries'):'')).join('<br>')+'</div>':'')
+      +'</div></label>';
+  };
+  const nestedRows=all.filter(c=>nest[c.id]);
+  const picked=removed.filter(c=>_recoverPick[c.id]);
+  S.innerHTML='<div style="padding:12px 16px 90px;">'
+    +'<div style="font-size:16px;color:var(--p-mut);line-height:1.6;margin-bottom:14px;">'
+      +'<b>'+esc(j.provider.email)+'</b><br>'
+      +showing.length+' showing in their app · '+removed.length+' removed but still on the server'
+      +((j.counts&&j.counts.rosterIds!=null)?('<br>Their app’s own list knows about '+j.counts.rosterIds):'')
+      +'</div>'
+    +(nestedRows.length?('<div style="background:var(--p-green-bg);border:1px solid var(--p-green);border-radius:12px;padding:11px 13px;margin-bottom:14px;font-size:16px;color:var(--p-ink);line-height:1.55;">'
+      +'<b>Not lost — '+nestedRows.length+' of these are now an animal under another client.</b><br>'
+      +nestedRows.map(c=>esc(c.name||c.id)+' → under '+esc((nest[c.id].ownerName)||nest[c.id].ownerId)).join('<br>')
+      +'<br><span style="font-size:14px;color:var(--p-mut);">Their charts moved a level down. Putting rows back will not change this.</span></div>'):'')
+    +((j.deletedRecordIds&&j.deletedRecordIds.length)
+      ? '<div style="background:var(--p-amber-bg);border:1px solid var(--p-amber);border-radius:12px;padding:11px 13px;margin-bottom:14px;font-size:16px;color:var(--p-ink);line-height:1.55;">Their device asked to remove '+j.deletedRecordIds.length+' client(s), so the removal came <b>from the app</b>, not the server. Some of those were probably meant.</div>'
+      : (removed.length?'<div style="background:var(--p-red-bg);border:1px solid var(--p-red-line);border-radius:12px;padding:11px 13px;margin-bottom:14px;font-size:16px;color:var(--p-ink);line-height:1.55;">Their device has <b>no record of removing anyone</b>, so these were not removed on purpose.</div>':''))
+    +(removed.length?('<div class="sh"><h2>Removed — tick what to put back</h2></div>'
+      +'<div style="font-size:14px;color:var(--p-mut);line-height:1.5;margin:0 0 8px;">Only the ones that look like real clients are ticked. Blanks and duplicates are left off, because putting those back makes their list worse.</div>'
+      +'<div style="background:var(--surf2);border:1px solid var(--p-line);border-radius:12px;overflow:hidden;margin-bottom:8px;">'
+      +removed.map(row).join('')+'</div>'
+      +'<div style="display:flex;gap:8px;margin-bottom:18px;">'
+        +'<button onclick="_recoverAll(1)" style="flex:1;background:var(--surf1);border:1px solid var(--p-line3);color:var(--p-mut2);border-radius:8px;padding:9px;font-size:16px;cursor:pointer;font-family:inherit;">Tick all</button>'
+        +'<button onclick="_recoverAll(0)" style="flex:1;background:var(--surf1);border:1px solid var(--p-line3);color:var(--p-mut2);border-radius:8px;padding:9px;font-size:16px;cursor:pointer;font-family:inherit;">Untick all</button>'
+      +'</div>'):'<div style="font-size:16px;color:var(--p-mut);margin-bottom:18px;">Nothing is removed on the server, so there is nothing to put back.</div>')
+    +'<div class="sh"><h2>Still showing</h2></div>'
+    +'<div style="background:var(--surf2);border:1px solid var(--p-line);border-radius:12px;overflow:hidden;">'
+    +showing.map(function(c){const an=(c.has&&c.has.animals)||[];
+      return '<div style="padding:11px 12px;border-bottom:1px solid var(--p-line2);">'
+        +'<div style="font-size:16px;color:var(--p-ink);">'+esc(c.name||'(no name)')+'</div>'
+        +'<div style="font-size:14px;color:var(--p-mut);line-height:1.45;">'+esc(bits(c))+'</div>'
+        +(an.length?'<div style="font-size:14px;color:var(--p-mut);margin-top:2px;">'+an.map(a=>'· '+esc(a.name||'(unnamed)')+(a.summaries?(' — '+a.summaries+' summaries'):'')).join('<br>')+'</div>':'')
+        +'</div>';}).join('')
+    +'</div>'
+    +'<div style="font-size:14px;color:var(--p-mut);line-height:1.5;margin-top:14px;">Counts only — none of their notes were read.</div>'
+    +'</div>'
+    +(removed.length?('<div style="position:sticky;bottom:0;background:var(--surf1);border-top:1px solid var(--p-line);padding:12px 16px;">'
+      +'<button onclick="_recoverRun()" id="rec-go" style="width:100%;background:var(--accent);color:var(--accent-ink);border:none;border-radius:12px;padding:13px;font-size:16px;font-weight:600;cursor:pointer;font-family:inherit;">'
+      +(picked.length?('Put back '+picked.length+' client'+(picked.length===1?'':'s')):'Nothing ticked')+'</button></div>'):'');
+}
+function _recoverToggle(id){ if(_recoverPick[id])delete _recoverPick[id];else _recoverPick[id]=1; renderClientRecover(); }
+function _recoverAll(on){
+  const j=_recoverState;if(!j)return;
+  (j.clients||[]).filter(c=>c.deleted).forEach(function(c){ if(on)_recoverPick[c.id]=1;else delete _recoverPick[c.id]; });
+  renderClientRecover();
+}
+async function _recoverRun(){
+  const j=_recoverState;if(!j)return;
+  const ids=(j.clients||[]).filter(c=>c.deleted&&_recoverPick[c.id]).map(c=>c.id);
+  if(!ids.length){if(typeof proToast==='function')proToast('Tick the ones to put back first');return;}
+  const btn=document.getElementById('rec-go');
+  const names=(j.clients||[]).filter(c=>ids.indexOf(c.id)>=0).map(c=>c.name||'(no name)');
+  const go=async function(){
+    if(btn){btn.disabled=true;btn.textContent='Putting back…';}
+    try{
+      const tok=(typeof Cloud!=='undefined'&&Cloud&&Cloud.token)||'';
+      const r=await fetch('/api/admin/client-recover',{method:'POST',headers:{'Content-Type':'application/json','Authorization':'Bearer '+tok},
+        body:JSON.stringify({email:j.provider.email,restoreIds:ids})});
+      const j2=await r.json().catch(()=>({}));
+      if(!r.ok||!j2.ok){if(typeof proToast==='function')proToast((j2&&j2.error)||'Could not put them back');if(btn){btn.disabled=false;btn.textContent='Put back '+ids.length;}return;}
+      if(typeof confirmModal==='function')confirmModal({title:'Put back',
+        body:j2.restored+' client'+(j2.restored===1?'':'s')+' restored.\n\n'+(j2.clients||[]).map(x=>'· '+(x.name||x.id)).join('\n')
+          +'\n\nThey need to open the app and pull down to refresh before it shows on their device.',
+        action:'Got it',hideCancel:true},function(){});
+      // Re-read, so the screen shows the real state rather than what we hoped happened.
+      _recoverPick={};
+      const r3=await fetch('/api/admin/client-recover?email='+encodeURIComponent(j.provider.email),{headers:{'Authorization':'Bearer '+((typeof Cloud!=='undefined'&&Cloud&&Cloud.token)||'')}});
+      const j3=await r3.json().catch(()=>null);
+      if(j3&&j3.ok){_recoverState=j3;renderClientRecover();}
+    }catch(e){ if(typeof proToast==='function')proToast('Could not reach the server'); if(btn){btn.disabled=false;btn.textContent='Put back '+ids.length;} }
+  };
+  confirmModal({title:'Put these back?',
+    body:'Putting back '+ids.length+' client'+(ids.length===1?'':'s')+':\n\n'+names.map(n=>'· '+n).join('\n')
+      +'\n\nThis can be undone by removing them again.',
+    action:'Put back '+ids.length},go);
 }
 // ── Founder tool: send myself a test push (confirm the phone is registered) ─────────────────────
 // delaySec>0 asks the SERVER to wait before sending, so the founder can close the app and confirm a

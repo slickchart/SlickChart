@@ -3202,6 +3202,55 @@ delete) and `_impUndo` (an explicit "undo this import") call `_serverDeleteClien
 So `deletedRecordIds` coming back EMPTY while rows are tombstoned would be genuinely new and worth
 chasing hard.
 
+### 2026-10-08, FIRST REAL RUN on her account — what it actually said
+
+Ashley ran it and sent a screenshot. **The output was so long the confirm modal could not be
+scrolled or dismissed — she was stuck on it.** Two things were wrong and both are fixed
+(`2026-10-08m`):
+
+1. **`confirmModal` had no scroll at all.** A long body pushed the buttons off the bottom of the
+   screen with nothing scrollable, so the dialog could be neither read nor closed. The dialog is now
+   a flex column capped to the viewport, the body is the only scrolling part, the buttons stay
+   pinned, and `white-space:pre-wrap` keeps multi-line bodies readable. **This was never specific to
+   this tool — any long modal did it to a provider.**
+2. **The diagnosis is a SCREEN now** (`renderClientRecover`), not a modal, with a checkbox per
+   removed client and a sticky action bar.
+
+**And the output itself showed the single "Restore all" button was dangerous.** Her account holds:
+
+- **many rows with NO NAME** — both removed and showing. These are blank skeletons, almost certainly
+  the pre-hydration bug in §2aj (`syncClientEvents` recreating the roster before it had been read).
+- **duplicate names**: `Dena Fitzpatrick` showing AND removed, `Ingatara Perry` showing AND removed,
+  `Sue` showing twice, and `Rainer` removed against `Reiner` showing — a one-letter near-miss.
+- **12 ids in her device's `sc_deleted_clients`** — so the removals came FROM the app, not the
+  server. Some of those were certainly deliberate tidying of exactly those duplicates.
+- **6 live rows missing from her roster blob.**
+- **4 of the "missing" clients are horses now nested under owners** (Amber, Bear, Reiner under
+  Ingatara Perry; Kona under Sue) — the `nestedUnder` check earned itself immediately.
+
+So restoring all 12 would have put the blanks and the duplicates back and left her roster WORSE
+than it started. The screen now ticks only what is defensible and explains every row it leaves off:
+
+| left unticked | why |
+|---|---|
+| `blank` | no name — an empty record the app made |
+| `dupe` | the exact name is already showing |
+| `near:<name>` | a name within 2 edits is already showing (Rainer/Reiner) |
+| `empty` | named, but no summaries, forms, photos or animals to bring back |
+
+**`profileFilled` is NOT evidence.** Almost every row on her account reported "5 chart fields", so
+chart fields alone carry no information and must never tick a box. Only summaries, forms, photos and
+animals count as content. A near-miss is checked BEFORE the empty case: all three leave the box
+unticked, so the ordering only chooses which reason she is shown, and "there is already a Reiner" is
+the one that helps her decide.
+
+**Verification:** `scratchpad/recover2.mjs` — 27 assertions driving the screen with her real shape
+(blanks, exact duplicates, the Rainer/Reiner near-miss, four nested horses), including that exactly
+ONE box is ticked by default, that tick-all/untick-all work, that an empty selection posts nothing,
+that the restore posts only the ticked ids, and that a 120-line modal now scrolls with its OK button
+on screen. `scratchpad/recover.mjs` was rewritten (15 assertions) to cover the LOOKUP side only —
+its old modal-body assertions died with the modal.
+
 **Still unknown, and it decides the root cause — ASK HER (§1b.3):** whether the 2 missing clients are
 the 2 that had horses, which device she is looking at now, and whether anything she did could read as
 a delete. Do not pick whichever answer suits a theory.
