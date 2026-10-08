@@ -214,7 +214,7 @@ const S=document.getElementById('S');
 // resets when I save it" and there was no way to tell whether her phone had any of them — a whole
 // day was spent debugging code she may not have been running. Shown at the bottom of Settings, so
 // the answer is a screenshot away. Bump it on every ship.
-const APP_BUILD='2026-10-08f';
+const APP_BUILD='2026-10-08g';
 
 
 /* ════════════════════════════════════════════════════════════════
@@ -2438,7 +2438,8 @@ const _LIB_TOMB={
   // default she does not want stays gone without anything having to be stored for it.
   sc_vc_types:'sc_deleted_vc_types',
   sc_msg_templates:'sc_deleted_msg_tmpls',
-  sc_note_starters:'sc_deleted_starters'
+  sc_note_starters:'sc_deleted_starters',
+  sc_reminders:'sc_deleted_reminders'
 };
 // Vendors, inventory rows and partners are stored WITHOUT ids. A generated id would differ on every
 // device and the union would duplicate them, so their identity is derived from what the provider
@@ -4021,7 +4022,9 @@ function _reloadAll(){
   S('consult types',function(){if(typeof loadVcTypes==='function')loadVcTypes();});
   S('message wording',function(){if(typeof loadMsgTemplates==='function')loadMsgTemplates();});
   S('note starters',function(){if(typeof loadNoteStarters==='function')loadNoteStarters();});
+  S('reminders',function(){if(typeof loadReminders==='function')loadReminders();});
   S('consult follow-ups',function(){if(typeof _vcSyncFollowUpNotifs==='function')_vcSyncFollowUpNotifs();});
+  S('my reminders',function(){if(typeof _syncReminderNotifs==='function')_syncReminderNotifs();});
   S('needle presets',function(){if(typeof loadNeedlePresets==='function')loadNeedlePresets();});
   S('notification settings',function(){if(typeof loadNotifSettings==='function')loadNotifSettings();});
   S('protocols',function(){if(typeof loadProtocols==='function')loadProtocols();});
@@ -5298,6 +5301,7 @@ let notifSettings={
   photoUploaded:true,
   docExpiring:true,
   consultFollowUp:true,
+  ownReminders:true,
   lowInventory:true,
   newMessage:true,
   rebookReminder:false,
@@ -6436,7 +6440,7 @@ let _ncLastStep=-1;
 function nav(screen,data){
   try{if(typeof _flushSettingsEdits==='function')_flushSettingsEdits();}catch(e){}
   try{if(typeof _savePersistenceSweep==='function')_savePersistenceSweep();}catch(e){}
-  const titles={home:'Home',clients:'Clients',forms:'Forms, Guides & Courses',messages:'Messages',pro:'Pro',more:'More',account:'Account',branding:'Branding',shop:'Shop',partners:'Partners',learn:'Courses',virtual:'Virtual Consultations',protocols:'Protocols',vault:'My Docs',inventory:'Inventory',vendors:'Vendors',calendar:'Calendar','today-appts':"Today's appointments",'week-appts':"This week's appointments",'week-clients':"This week's clients",room:'Session','data-setup':'Get set up','import-clients':'Import clients','import-products':'Import products','switch-app':'Switch apps','connect-calendar':'Sync calendar','checkout':'Take payment','whats-new':"What’s new",'feedback-inbox':'Feedback inbox','beta-stats':'Growth stats','payments':'Payments','build-invoice':'Build invoice','service-menu':'Service menu','export-data':'Export Data','reports':'Reports','booking-link':'Booking link'};
+  const titles={home:'Home',clients:'Clients',forms:'Forms, Guides & Courses',messages:'Messages',pro:'Pro',more:'More',account:'Account',branding:'Branding',shop:'Shop',partners:'Partners',learn:'Courses',virtual:'Virtual Consultations',protocols:'Protocols',vault:'My Docs',inventory:'Inventory',vendors:'Vendors',calendar:'Calendar','today-appts':"Today's appointments",'week-appts':"This week's appointments",'week-clients':"This week's clients",room:'Session','data-setup':'Get set up','import-clients':'Import clients','import-products':'Import products','switch-app':'Switch apps','connect-calendar':'Sync calendar','checkout':'Take payment','whats-new':"What’s new",'feedback-inbox':'Feedback inbox','beta-stats':'Growth stats','payments':'Payments','build-invoice':'Build invoice','service-menu':'Service menu','export-data':'Export Data','reports':'Reports','booking-link':'Booking link','reminders':'Reminders'};
   document.getElementById('tt').innerHTML='Slick<span class="brandc">Chart</span>';
   document.title='SlickChart' + (titles[screen] ? ', '+titles[screen] : '');
   if(timerInt&&screen!=='room'){clearInterval(timerInt);timerInt=null;}
@@ -6488,7 +6492,7 @@ function nav(screen,data){
     'week-appts':renderWeekAppts,
     'week-clients':renderWeekClients,
     requests:renderRequests,
-    'data-setup':renderDataSetup,'invite-clients':renderInviteClients,'import-clients':renderImportClients,'import-products':renderImportProducts,'switch-app':renderSwitchApp,'connect-calendar':renderConnectCalendar,'whats-new':renderWhatsNew,'feedback-inbox':renderFeedbackInbox,'beta-stats':renderBetaStats,'payments':renderPayments,'build-invoice':renderBuildInvoice,'service-menu':renderServiceMenu,'export-data':renderExportCenter,'reports':renderReports,
+    'data-setup':renderDataSetup,'invite-clients':renderInviteClients,'import-clients':renderImportClients,'import-products':renderImportProducts,'switch-app':renderSwitchApp,'connect-calendar':renderConnectCalendar,'whats-new':renderWhatsNew,'feedback-inbox':renderFeedbackInbox,'beta-stats':renderBetaStats,'payments':renderPayments,'build-invoice':renderBuildInvoice,'service-menu':renderServiceMenu,reminders:renderReminders,'export-data':renderExportCenter,'reports':renderReports,
     checkins:renderCheckins,
     'checkin-detail':()=>renderCheckinDetail(data),
     'add-partner':renderAddPartner,
@@ -13230,6 +13234,267 @@ async function _doSendVcReview(id,notes){
   if(st&&st.status==='pending'){if(typeof proToast==='function')proToast('Review saved — it’ll send to '+((c&&c.name.split(' ')[0])||'your client')+' when they open their app');}
   else if(st&&st.status==='failed'){if(typeof proToast==='function')proToast('Couldn’t reach '+((c&&c.name.split(' ')[0])||'your client')+' — tap the message to resend',0,'error');}
   else{if(typeof proToast==='function')proToast('Review sent to '+((c&&c.name.split(' ')[0])||'client'));}
+}
+// ── HER OWN REMINDERS, AND REAL PUSH ─────────────────────────────────────────────────────────────
+//
+// Until now the provider app could not reach her when it was closed: push_subscriptions is keyed by
+// client_id and providerSystemNotify only fires while a tab is open and hidden. So "remind me" meant
+// "hope she opens the app". provider_push_subscriptions + api/provider-push + the
+// cron-provider-reminders job fix that, and this is the front end for both halves.
+//
+// A reminder is hers to write about anything — order stock, renew insurance, call a client back —
+// with an optional repeat and an optional client it belongs to. One-off or repeating, the server
+// DERIVES occurrences from the original time rather than storing a next-fire date, so nothing drifts
+// and nothing double-sends. See api/cron-provider-reminders.js.
+const VAPID_PUBLIC_KEY='BI0MVqsF4ydcwZFAAoz1sOu3Cu7foQIAvnQ56SkbvMYAGZEs2XbyOvjPeT-YpMRpF0Z-wMJ5ITyCSl0g73mQ25M';
+function _urlB64ToUint8(base64){
+  const pad='='.repeat((4-(base64.length%4))%4);
+  const b=(base64+pad).replace(/-/g,'+').replace(/_/g,'/');
+  const raw=atob(b);const arr=new Uint8Array(raw.length);
+  for(let i=0;i<raw.length;i++)arr[i]=raw.charCodeAt(i);
+  return arr;
+}
+const _REPEATS=[['','Once'],['daily','Every day'],['weekly','Every week'],['monthly','Every month']];
+let reminders=[];
+let _pushDevices=null;              // null = not asked yet
+let _pushAsked=false;               // asked ONCE, however it went
+function loadReminders(){try{const raw=localStorage.getItem('sc_reminders');if(raw){const a=JSON.parse(raw);if(Array.isArray(a))reminders=a;}}catch(e){}}
+function saveReminders(){try{(function(_v){localStorage.setItem('sc_reminders',_v);if(typeof _pushKeyNow==='function')_pushKeyNow('sc_reminders',_v);return _v;})(JSON.stringify(reminders));}catch(e){}}
+function _remDue(now){
+  now=now||Date.now();
+  return (Array.isArray(reminders)?reminders:[]).filter(function(r){
+    return r&&r.id&&!r.done&&!r.off&&+r.at&&+r.at<=now;
+  }).sort(function(a,b){return (+a.at)-(+b.at);});
+}
+function _remUpcoming(now){
+  now=now||Date.now();
+  return (Array.isArray(reminders)?reminders:[]).filter(function(r){
+    return r&&r.id&&!r.done&&!r.off&&+r.at&&+r.at>now;
+  }).sort(function(a,b){return (+a.at)-(+b.at);});
+}
+// Same generation model as the consult follow-ups: built from stored dates on every reload, with a
+// stable id per (reminder, date) so it never duplicates, dismissing sticks, and changing the time
+// re-arms it. Guarded on the roster being read for the same reason as §2aj.
+function _syncReminderNotifs(){
+  if(typeof _rosterNotReadYet==='function'&&_rosterNotReadYet())return 0;
+  let added=0;
+  _remDue().forEach(function(r){
+    const nid='rem:'+r.id+':'+(+r.at);
+    if(_notifCleared&&_notifCleared.has(nid))return;
+    if(notifFeed.some(function(n){return n&&n.id===nid;}))return;
+    notifFeed.unshift({id:nid,type:'reminder',icon:'ti-bell',col:'var(--accent-tint)',ic:'var(--accent-strong)',
+      title:String(r.title||'Reminder'),body:String(r.note||'')||'Tap to open',time:'Today',ts:+r.at,
+      read:_notifRead&&_notifRead.has(nid),action:r.clientId?'client':'reminders',data:r.clientId||''});
+    added++;
+    if(_notifOn('ownReminders'))try{providerSystemNotify(String(r.title||'Reminder'),String(r.note||''));}catch(e){}
+  });
+  if(added){try{_applyNotifState();}catch(e){}try{updateBadge();}catch(e){}}
+  return added;
+}
+function _remSave(rec){
+  if(!rec||!rec.title||!rec.at)return false;
+  const i=reminders.findIndex(function(x){return x&&x.id===rec.id;});
+  if(i>=0)reminders[i]={...reminders[i],...rec,_ts:Date.now()};
+  else reminders.push({...rec,_ts:Date.now()});
+  try{if(typeof _libUnforget==='function')_libUnforget('sc_reminders',rec.id);}catch(e){}
+  saveReminders();
+  return true;
+}
+function _remDone(id){
+  const i=reminders.findIndex(function(x){return x&&x.id===id;});
+  if(i<0)return;
+  const r=reminders[i];
+  // A repeating reminder is never "done" — marking it done would kill every future occurrence. Push
+  // its start past now instead, so the next occurrence is the next one due.
+  if(r.repeat){
+    const step=r.repeat==='daily'?86400000:r.repeat==='weekly'?604800000:0;
+    if(step){let at=+r.at;const now=Date.now();while(at<=now)at+=step;reminders[i]={...r,at,_ts:Date.now()};}
+    else{const d=new Date(+r.at);while(d.getTime()<=Date.now())d.setMonth(d.getMonth()+1);reminders[i]={...r,at:d.getTime(),_ts:Date.now()};}
+  }else{
+    reminders[i]={...r,done:Date.now(),_ts:Date.now()};
+  }
+  saveReminders();
+  try{if(typeof clearNotif==='function')clearNotif('rem:'+id+':'+(+r.at));}catch(e){}
+  if(typeof proToast==='function')proToast(r.repeat?'Done, set for next time':'Done');
+  try{renderReminders();}catch(e){}
+}
+function _remDelete(id){
+  try{_libForget('sc_reminders',id);}catch(e){}
+  reminders=reminders.filter(function(x){return !(x&&x.id===id);});
+  saveReminders();
+  const sh=document.getElementById('rem-sheet');if(sh)sh.remove();
+  if(typeof proToast==='function')proToast('Deleted');
+  try{renderReminders();}catch(e){}
+}
+// ── Turning real push on ──────────────────────────────────────────────────────────────────────
+// EVERY path out of this must leave _pushDevices non-null. It used to return early on a missing
+// token or a non-ok response WITHOUT setting it, and renderReminders re-rendered itself whenever it
+// was still null — so a signed-out or failing status check spun the screen in an endless
+// render/fetch loop that hung the app. _pushAsked makes it at most one attempt per session.
+async function _pushStatus(){
+  _pushAsked=true;
+  try{
+    const tok=(typeof Cloud!=='undefined'&&Cloud&&Cloud.token)||'';
+    if(!tok){_pushDevices=0;return null;}
+    const r=await fetch('/api/provider-push',{headers:{'Authorization':'Bearer '+tok}});
+    if(!r.ok){_pushDevices=0;return null;}
+    const j=await r.json();
+    _pushDevices=(j&&typeof j.devices==='number')?j.devices:0;
+    return j;
+  }catch(e){if(_pushDevices===null)_pushDevices=0;return null;}
+}
+async function _pushEnable(){
+  try{
+    if(!('serviceWorker'in navigator)||!('PushManager'in window)){proToast('This device can\u2019t do notifications');return false;}
+    if(typeof Notification==='undefined'){proToast('This device can\u2019t do notifications');return false;}
+    let perm=Notification.permission;
+    if(perm==='default')perm=await Notification.requestPermission();
+    if(perm!=='granted'){proToast('Notifications are blocked \u2014 turn them on for SlickChart in your browser or phone settings',0);return false;}
+    const tok=(typeof Cloud!=='undefined'&&Cloud&&Cloud.token)||'';
+    if(!tok){proToast('Sign in first');return false;}
+    const reg=await navigator.serviceWorker.ready;
+    let sub=await reg.pushManager.getSubscription();
+    if(!sub)sub=await reg.pushManager.subscribe({userVisibleOnly:true,applicationServerKey:_urlB64ToUint8(VAPID_PUBLIC_KEY)});
+    if(!sub){proToast('Could not turn notifications on');return false;}
+    const r=await fetch('/api/provider-push',{method:'POST',headers:{'Content-Type':'application/json','Authorization':'Bearer '+tok},body:JSON.stringify({subscription:sub})});
+    const j=await r.json().catch(function(){return null;});
+    if(!r.ok||!j||!j.ok){proToast((j&&j.error)||'Could not turn notifications on');return false;}
+    _pushDevices=j.devices||1;
+    proToast('Notifications on for this device');
+    try{renderReminders();}catch(e){}
+    return true;
+  }catch(e){proToast('Could not turn notifications on');return false;}
+}
+async function _pushDisable(){
+  try{
+    const tok=(typeof Cloud!=='undefined'&&Cloud&&Cloud.token)||'';
+    const reg=await navigator.serviceWorker.ready;
+    const sub=await reg.pushManager.getSubscription();
+    if(sub){
+      await fetch('/api/provider-push',{method:'DELETE',headers:{'Content-Type':'application/json','Authorization':'Bearer '+tok},body:JSON.stringify({endpoint:sub.endpoint})}).catch(function(){});
+      try{await sub.unsubscribe();}catch(e){}
+    }
+    _pushDevices=0;
+    proToast('Notifications off for this device');
+    try{renderReminders();}catch(e){}
+  }catch(e){}
+}
+// The screen. Due first, because a reminder she has already missed matters more than one next week.
+function renderReminders(){
+  setNav('more');
+  document.getElementById('tt').textContent='Reminders';
+  const due=_remDue(),up=_remUpcoming();
+  const doneN=(Array.isArray(reminders)?reminders:[]).filter(function(r){return r&&r.done;}).length;
+  const when=function(ms){
+    const d=new Date(+ms);const now=new Date();
+    const sameDay=d.toDateString()===now.toDateString();
+    const t=d.toLocaleTimeString('en-US',{hour:'numeric',minute:'2-digit'});
+    return sameDay?('Today, '+t):(d.toLocaleDateString('en-US',{weekday:'short',month:'short',day:'numeric'})+', '+t);
+  };
+  const row=function(r,isDue){
+    const rep=(_REPEATS.find(function(x){return x[0]===(r.repeat||'');})||['',''])[1];
+    const who=r.clientId&&CL[r.clientId]?String(CL[r.clientId].name||'').split(' ')[0]:'';
+    return '<div style="background:'+(isDue?'var(--accent-tint)':'var(--surf2)')+';border:1px solid '+(isDue?'var(--accent)':'var(--p-line)')+';border-radius:12px;margin:0 16px 10px;padding:12px 14px;">'
+      +'<div style="display:flex;align-items:flex-start;gap:10px;">'
+      +'<div style="flex:1;min-width:0;">'
+      +'<div style="font-size:16px;font-weight:600;color:var(--p-ink);">'+_fileEsc(r.title||'Reminder')+'</div>'
+      +(r.note?'<div style="font-size:16px;color:var(--p-mut);line-height:1.5;margin-top:2px;">'+_fileEsc(r.note)+'</div>':'')
+      +'<div style="font-size:14px;color:'+(isDue?'var(--accent-strong)':'var(--p-mut)')+';margin-top:4px;">'+_fileEsc(when(r.at))+(r.repeat?(' \u00b7 '+_fileEsc(rep)):'')+(who?(' \u00b7 '+_fileEsc(who)):'')+'</div>'
+      +'</div>'
+      +'<button onclick="_remEdit(\''+_jsAttr(r.id)+'\')" style="background:none;border:none;color:var(--accent-strong);font-size:16px;cursor:pointer;font-family:inherit;flex-shrink:0;"><i class="ti ti-pencil" style="font-size:16px;"></i></button>'
+      +'</div>'
+      +(isDue?('<div style="display:flex;gap:8px;margin-top:9px;">'
+        +(r.clientId&&CL[r.clientId]?'<button onclick="nav(\'client\',\''+_jsAttr(r.clientId)+'\')" style="flex:1;background:var(--surf1);border:1px solid var(--p-line3);color:var(--p-ink);border-radius:8px;padding:8px;font-size:16px;cursor:pointer;font-family:inherit;">Open '+_fileEsc(who||'client')+'</button>':'')
+        +'<button onclick="_remDone(\''+_jsAttr(r.id)+'\')" style="flex:1;background:var(--accent);border:none;color:var(--accent-ink);border-radius:8px;padding:8px;font-size:16px;font-weight:600;cursor:pointer;font-family:inherit;">Done</button>'
+        +'</div>'):'')
+      +'</div>';
+  };
+  const pushOn=_pushDevices>0;
+  S.innerHTML=`
+  <div style="padding:12px 16px 0;">
+    <div style="background:${pushOn?'var(--p-surf2)':'var(--p-blue-bg)'};border:1px solid ${pushOn?'var(--p-line3)':'var(--p-blue-line)'};border-radius:12px;padding:12px 14px;margin-bottom:14px;">
+      <div style="font-size:16px;font-weight:600;color:var(--p-ink);margin-bottom:3px;">${pushOn?'Notifications are on':'Get these on your phone'}</div>
+      <div style="font-size:16px;color:var(--p-mut);line-height:1.5;margin-bottom:${pushOn?'9':'10'}px;">${pushOn
+        ?'This device will buzz when a reminder is due, even with the app closed. Turn it on once on every device you use.'
+        :'Right now reminders only show when you open the app. Turn notifications on and SlickChart can reach you when it\u2019s closed.'}</div>
+      <div style="display:flex;gap:8px;">
+        ${pushOn
+          ?'<button onclick="_pushDisable()" style="background:var(--surf1);border:1px solid var(--p-line3);color:var(--p-mut2);border-radius:8px;padding:8px 12px;font-size:16px;cursor:pointer;font-family:inherit;">Turn off here</button>'
+          :'<button onclick="_pushEnable()" class="btnp" style="border-radius:8px;padding:9px 14px;font-size:16px;font-weight:600;"><i class="ti ti-bell" style="font-size:16px;"></i> Turn on notifications</button>'}
+      </div>
+    </div>
+    <button onclick="_remEdit('')" class="btnp" style="width:100%;border-radius:12px;padding:12px;font-size:16px;font-weight:700;margin-bottom:16px;"><i class="ti ti-plus" style="font-size:16px;"></i> New reminder</button>
+  </div>
+  ${due.length?('<div class="sh"><h2>Due now <span style="color:var(--accent-strong);">('+due.length+')</span></h2></div>'+due.map(function(r){return row(r,true);}).join('')):''}
+  ${up.length?('<div class="sh"><h2>Coming up</h2></div>'+up.map(function(r){return row(r,false);}).join('')):''}
+  ${(!due.length&&!up.length)?emptyState({icon:'ti-bell',title:'No reminders',body:'Set one for anything \u2014 order stock, renew your licence, call a client back. SlickChart will tell you when it\u2019s time.',action:'New reminder',screen:'reminders'}):''}
+  ${doneN?('<div style="text-align:center;padding:4px 16px 18px;"><button onclick="_remClearDone()" style="background:none;border:none;color:var(--p-mut);font-size:16px;cursor:pointer;font-family:inherit;">Clear '+doneN+' finished</button></div>'):'<div style="height:16px;"></div>'}`;
+  // Asked once per session, and only re-rendered when the answer actually arrived — see _pushStatus.
+  if(_pushDevices===null&&!_pushAsked)_pushStatus().then(function(){try{if(_pushDevices!==null&&document.getElementById('tt')&&document.getElementById('tt').textContent==='Reminders')renderReminders();}catch(e){}});
+}
+function _remClearDone(){
+  (Array.isArray(reminders)?reminders:[]).filter(function(r){return r&&r.done;}).forEach(function(r){try{_libForget('sc_reminders',r.id);}catch(e){}});
+  reminders=reminders.filter(function(r){return !(r&&r.done);});
+  saveReminders();
+  try{renderReminders();}catch(e){}
+}
+let _remEditing='';
+function _remEdit(id){
+  _remEditing=String(id||'');
+  const r=_remEditing?(reminders.find(function(x){return x&&x.id===_remEditing;})||null):null;
+  // Default to tomorrow morning: a reminder with no time set is the one failure mode that makes the
+  // whole feature feel broken, so the field is never empty.
+  const def=r?new Date(+r.at):(function(){const d=new Date();d.setDate(d.getDate()+1);d.setHours(9,0,0,0);return d;})();
+  const pad=function(n){return String(n).padStart(2,'0');};
+  const dv=def.getFullYear()+'-'+pad(def.getMonth()+1)+'-'+pad(def.getDate());
+  const tv=pad(def.getHours())+':'+pad(def.getMinutes());
+  const ex=document.getElementById('rem-sheet');if(ex)ex.remove();
+  const m=document.createElement('div');m.id='rem-sheet';
+  m.style.cssText='position:fixed;top:0;bottom:0;left:0;right:0;margin:0 auto;width:390px;max-width:100%;z-index:9999;background:rgba(0,0,0,.6);display:flex;flex-direction:column;justify-content:flex-end;';
+  m.onclick=function(e){if(e.target===m)m.remove();};
+  const clientOpts=['<option value="">Not about a client</option>'].concat(Object.keys(CL).filter(function(k){
+    const nm=String((CL[k]&&CL[k].name)||'').trim();return nm&&nm.toLowerCase()!=='(no name)';
+  }).sort(function(a,b){return String(CL[a].name||'').localeCompare(String(CL[b].name||''),undefined,{sensitivity:'base'});})
+   .map(function(k){return '<option value="'+_jsAttr(k)+'"'+((r&&r.clientId===k)?' selected':'')+'>'+_fileEsc(CL[k].name||'')+'</option>';})).join('');
+  m.innerHTML='<div style="background:var(--surf1);border-top:1px solid var(--p-line);border-radius:16px 16px 0 0;padding:18px;max-height:92%;overflow:auto;">'
+    +'<div style="width:36px;height:4px;background:var(--p-chip);border-radius:2px;margin:0 auto 14px;"></div>'
+    +'<div style="font-size:16px;font-weight:600;color:var(--p-ink);margin-bottom:12px;">'+(r?'Edit reminder':'New reminder')+'</div>'
+    +'<span class="fl-lbl">What do you need to do?</span>'
+    +'<input class="fi" id="rem-title" value="'+_fileEsc((r&&r.title)||'')+'" placeholder="e.g. Order more serum" style="margin-bottom:12px;">'
+    +'<span class="fl-lbl">Note (optional)</span>'
+    +'<textarea id="rem-note" class="fi" style="width:100%;min-height:60px;resize:vertical;margin-bottom:12px;">'+_fileEsc((r&&r.note)||'')+'</textarea>'
+    +'<div style="display:flex;gap:8px;margin-bottom:12px;">'
+    +'<div style="flex:1;"><span class="fl-lbl">Date</span><input class="fi" type="date" id="rem-date" value="'+dv+'"></div>'
+    +'<div style="flex:1;"><span class="fl-lbl">Time</span><input class="fi" type="time" id="rem-time" value="'+tv+'"></div>'
+    +'</div>'
+    +'<span class="fl-lbl">Repeat</span>'
+    +'<select class="fi" id="rem-repeat" style="margin-bottom:12px;">'+_REPEATS.map(function(x){return '<option value="'+x[0]+'"'+(((r&&r.repeat)||'')===x[0]?' selected':'')+'>'+x[1]+'</option>';}).join('')+'</select>'
+    +'<span class="fl-lbl">About a client?</span>'
+    +'<select class="fi" id="rem-client" style="margin-bottom:14px;">'+clientOpts+'</select>'
+    +'<button onclick="_remSaveFromSheet()" class="btnp" style="width:100%;border-radius:12px;padding:12px;font-size:16px;font-weight:700;margin-bottom:8px;">Save</button>'
+    +(r?('<button onclick="_remDelete(\''+_jsAttr(r.id)+'\')" style="width:100%;background:none;border:none;color:var(--p-mut);font-size:16px;cursor:pointer;font-family:inherit;padding:6px;">Delete</button>'):'')
+    +'</div>';
+  document.body.appendChild(m);
+  try{document.getElementById('rem-title').focus();}catch(e){}
+}
+function _remSaveFromSheet(){
+  const t=document.getElementById('rem-title'),n=document.getElementById('rem-note');
+  const d=document.getElementById('rem-date'),tm=document.getElementById('rem-time');
+  const rp=document.getElementById('rem-repeat'),cl=document.getElementById('rem-client');
+  if(!t||!d||!tm)return;
+  const title=String(t.value||'').trim().slice(0,80);
+  if(!title){if(typeof proToast==='function')proToast('What do you need to do?');try{t.focus();}catch(e){}return;}
+  // Parsed as LOCAL time, which is what she typed, and stored as an absolute instant so the server
+  // never has to guess a timezone.
+  const parts=String(d.value||'').split('-'),tp=String(tm.value||'09:00').split(':');
+  const at=new Date(+parts[0],(+parts[1])-1,+parts[2],+tp[0]||0,+tp[1]||0,0,0).getTime();
+  if(!at||isNaN(at)){if(typeof proToast==='function')proToast('Pick a date and time');return;}
+  const id=_remEditing||('rm_'+Date.now().toString(36)+Math.random().toString(36).slice(2,6));
+  _remSave({id,title,note:String((n&&n.value)||'').trim().slice(0,400),at,
+    repeat:String((rp&&rp.value)||''),clientId:String((cl&&cl.value)||''),done:0,off:0});
+  const sh=document.getElementById('rem-sheet');if(sh)sh.remove();
+  if(typeof proToast==='function')proToast(_pushDevices>0?'Saved, we\u2019ll buzz you':'Saved');
+  try{renderReminders();}catch(e){}
 }
 // FOLLOW-UP REMINDERS — the date she sets, and the app telling HER about it.
 //
@@ -22538,7 +22803,7 @@ function renderNotifications(){
   <div style="margin:10px 16px;background:var(--p-blue-bg);border:1px solid var(--p-blue-line);border-radius:12px;padding:10px 12px;font-size:16px;color:var(--p-blue);">Notifications are sent via push notification and email. You can customize below.</div>
   ${[
     {section:'Client activity',items:[['newCheckin','New Check-In Submitted','Before appointments'],['formSigned','Consent Form Signed','When a client signs'],['photoUploaded','Photos Uploaded','Virtual consultation']]},
-    {section:'Business alerts',items:[['consultFollowUp','Consult follow-up due','On the date you set when you send a review'],['docExpiring','Document Expiring','90 & 30 days before'],['lowInventory','Low Inventory Alert','When items hit reorder threshold'],['newMessage','New Message Received','All client messages']]},
+    {section:'Business alerts',items:[['ownReminders','My reminders','Anything you set yourself'],['consultFollowUp','Consult follow-up due','On the date you set when you send a review'],['docExpiring','Document Expiring','90 & 30 days before'],['lowInventory','Low Inventory Alert','When items hit reorder threshold'],['newMessage','New Message Received','All client messages']]},
     {section:'Reports',items:[['rebookReminder','Rebook Reminders','When clients are overdue'],['weeklyReport','Weekly Summary','Every Monday morning']]},
   ].map(group=>`
     <div class="sh"><h2>${group.section}</h2></div>
@@ -25383,6 +25648,7 @@ function renderMore(){
   ${_moreRow('ti-package','var(--accent-tint)','var(--accent)','Inventory &amp; suppliers','Track stock, reorder alerts &amp; vendor contacts','inventory')}
   ${_moreRow('ti-folders','var(--p-blue-bg)','var(--p-blue)','Resources','Forms, guides &amp; courses','forms')}
   ${_moreRow('ti-file-certificate','var(--p-surf2)','var(--p-green)','My docs','Licence, insurance &amp; certificates, with renewal reminders','vault')}
+  ${_moreRow('ti-bell','var(--accent-tint)','var(--accent)','Reminders',(function(){try{const n=(typeof _remDue==='function')?_remDue().length:0;return n?(n+' due now'):'Set a nudge for anything you need to remember';}catch(e){return 'Set a nudge for anything you need to remember';}})(),'reminders',(function(){try{return (typeof _remDue==='function')&&_remDue().length>0;}catch(e){return false;}})())}
   <div class="sh"><h2>Help &amp; more</h2></div>
   ${_moreRow('ti-settings','var(--p-surf)','#bbb','Settings','Profile, branding, apps, AI &amp; billing','account')}
   ${_moreRow('ti-help-circle','var(--p-blue-bg)','var(--p-blue)','Help','Search how-tos &amp; troubleshooting','help')}
@@ -26275,7 +26541,7 @@ async function _founderTestPush(rowEl,delaySec){
   }catch(e){setSub(delaySec?orig:'Couldn’t reach the server. Try again.');}
 }
 try{_loadFounderLastTs();}catch(e){}
-setInterval(()=>{try{syncClientEvents();}catch(e){}try{_pollFounderSignups();}catch(e){}try{if(typeof _vcSyncFollowUpNotifs==='function')_vcSyncFollowUpNotifs();}catch(e){}},15000);
+setInterval(()=>{try{syncClientEvents();}catch(e){}try{_pollFounderSignups();}catch(e){}try{if(typeof _vcSyncFollowUpNotifs==='function')_vcSyncFollowUpNotifs();}catch(e){}try{if(typeof _syncReminderNotifs==='function')_syncReminderNotifs();}catch(e){}},15000);
 // React to a Square webhook: the server records recent Square activity (booking/payment/refund/
 // catalog change) into sc_square_activity, which the cloud pull brings down. When we see a newer one
 // than last handled, refresh the relevant live data and let the provider know — near-real-time.

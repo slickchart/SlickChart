@@ -3372,6 +3372,75 @@ Note for whoever runs the test: `routineReview` only ships once `vcInvites[id].r
 which is deliberate (a client must never see a half-finished audit), and the client-side screen is
 `homecare`. Both tripped the first run of `scratchpad/keepstop.mjs` (20 assertions across both apps).
 
+### Shipped: PROVIDER PUSH + a reminder system for anything (`2026-10-08g`)
+
+Ashley asked for two things: make provider push actually work, and give her editable reminders for
+anything she needs. Both are in. This is the thing §2 of the follow-up note said was "a separate
+build" — it is now built.
+
+**Server (new):**
+- `provider_push_subscriptions` (id, provider_id, endpoint, sub, created_at) with a UNIQUE index on
+  (provider_id, endpoint), so re-subscribing a device updates instead of accumulating dead endpoints
+  that every reminder then fans out to. `lib/provider-push.js`; every read/write scoped by the
+  provider id from a VERIFIED session (§0.1). The one cross-owner read is `listReminderOwners`,
+  named so it is obvious, grouped per owner and never merged.
+- `api/provider-push.js` — POST/DELETE/GET, Bearer session + `isSessionValid`, provider id NEVER
+  from the body. The endpoint is run through `validPushEndpoint` before storage because we later
+  POST to it (SSRF).
+- `api/cron-provider-reminders.js`, registered in `vercel.json` at `*/15 * * * *`, auth fails CLOSED
+  without `CRON_SECRET` like the client cron. Sends her own reminders AND consult follow-ups, each
+  gated on her notification toggles.
+
+**Two design decisions worth not undoing:**
+1. **Repeats are DERIVED, never stored.** The cron never writes back to her kv rows — that would race
+   her app's own sync, which is how merges lose data. `dueOccurrence()` computes the latest
+   occurrence from the original time plus the interval, and the dedupe key carries that timestamp. So
+   "every week" needs no stored next-fire date, cannot drift, and editing the time just produces
+   different keys. **A real bug was found here:** stepping `setMonth()` repeatedly turns Jan 31 into
+   Mar 3 and the drift compounds until the occurrence falls outside the live window and the reminder
+   silently never fires again. Now computed from the original day-of-month, clamped to the target
+   month's length, in UTC. `scratchpad/occ.mjs` has 21 assertions on this alone.
+2. **Claim before send**, reusing `reminder_log` with the provider id in the client_id column under a
+   `prov:` prefix so the namespaces cannot collide. If the send reaches zero devices the claim is
+   released so the next tick retries. A 48h stale window stops enabling push from blasting every
+   reminder whose date has ever passed — the cost is that an occurrence missed by >48h of downtime is
+   skipped, which is the right trade.
+
+**App:** `sc_reminders` (array of `{id,title,note,at,repeat,clientId,done,off,_ts}`) in `_LIB_TOMB` →
+`sc_deleted_reminders`, so it merges and deletes stick. A Reminders screen (More → Reminders, with a
+due count on the row), add/edit sheet with title, note, date, time, repeat and an optional client,
+and a one-tap push enrolment card. `_syncReminderNotifs()` generates in-app reminders the same way
+the consult follow-ups do (stable id, no duplicates, sticky dismissal, roster guard).
+merge-coverage 86→87, reload-coverage 80→81.
+
+**A repeating reminder is never marked "done"** — that would kill every future occurrence. Done rolls
+it forward to the next occurrence instead. Asserted.
+
+**TWO REAL BUGS the tests caught, both mine:**
+1. `renderReminders()` re-rendered itself whenever `_pushDevices` was still null, and `_pushStatus()`
+   returned early WITHOUT setting it on a missing token or a non-ok response — an **infinite
+   render/fetch loop that hung the whole app** for any signed-out or failing status check. Every path
+   out of `_pushStatus` now sets it, and `_pushAsked` caps it at one attempt per session.
+2. The monthly drift above.
+
+**Harness gotchas, recorded so the next session does not lose an hour to them:**
+- `pkill -f <pattern>` matches THIS shell's own command line when the pattern appears in it, so it
+  kills the command that issued it. Use `pkill -x chrome` (match the executable name).
+- Orphaned Chromium processes accumulate from killed Playwright runs and then every new launch hangs.
+  Check `ps aux | grep -c "[c]hrome"` first.
+- `newContext({permissions:[...]})` and `addInitScript` both hang in this environment. Use
+  `b.newPage()` and stub browser APIs INSIDE the evaluate.
+- Playwright matches routes in REVERSE registration order — register the generic `**/api/**` FIRST.
+- `innerText` returns CSS-TRANSFORMED text, so a `.sh h2` heading compares as title case.
+- Files written to `/tmp` do not persist here; use the scratchpad directory.
+
+**Still NOT done, and it is the honest limit of this build:** nothing has been verified against a
+real push service or a real Vercel cron run. `VAPID_PUBLIC_KEY`/`VAPID_PRIVATE_KEY` and `CRON_SECRET`
+must be set in the environment or the endpoint reports `push not configured` and the cron no-ops.
+The public key in `slickchart.html` is the SAME one the client app embeds and must match the server's
+env var. First live check: enable notifications on a device, set a reminder two minutes out, and hit
+`/api/cron-provider-reminders?key=$CRON_SECRET`.
+
 ### Still to do, in this order (SUPERSEDED — see the revised table in `reports/Virtual consult research verified.md` §4)
 
 2. **The structured plan document.** The central recommendation. Today `sendVcReview` reads ONE
