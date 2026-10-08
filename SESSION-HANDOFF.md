@@ -3473,16 +3473,63 @@ account, where a merge would add risk without adding safety: `sc_amazon_assoc`, 
 `sc_checkin_cfg`, `sc_login_email`, `sc_notif_settings`, `sc_professions`, `sc_room_state_`
 (device-local), `sc_square_catalog` (a cache, re-fetched), `sc_totp_enabled`, `sc_wsname`.
 
-**Four are still genuinely at risk, and each needs real design rather than a registry line:**
-- `sc_routines` — her authored routine templates, shaped `profession -> [templates with ids]`. A
-  map-of-lists, and `deleteRoutineTemplate` means entries can be removed, so it needs a delete record
-  AND a map-of-lists merge. `_LIB_TOMB` expects a flat array, so this is a new shape.
-- `sc_sent_routines` — `profession -> {clientId: routine}`. Same nesting problem.
-- `sc_summary_drafts` — one `{note, obs}` pair she is mid-way through typing. A stale device can wipe
-  a draft in progress. Wants newest-wins, which needs a stamp.
-- `sc_suggested_forms` — an override array.
-Doing any of these half-correctly is worse than leaving them, which is why they are named here rather
-than rushed. `scratchpad/thread16.mjs` (12 assertions) covers the five that shipped.
+**Four were still genuinely at risk.** They SHIPPED the same day — see the next section. The note
+that stood here ("doing any of these half-correctly is worse than leaving them") was right about the
+shapes: no two of them wanted the same merge. `scratchpad/thread16.mjs` (12 assertions) covers the
+five in the table above.
+
+### 2026-10-08: the last four keys. Thread 16 is CLOSED. (`2026-10-08j`)
+
+**merge-coverage: 92 → 97 keys merging; 16 → 12 known unmerged, and all twelve are the reviewed
+last-write-wins list above.** Nothing accumulating rides the plain overwrite any more.
+
+| key | shape | merge | why not an existing one |
+|---|---|---|---|
+| `sc_routines` | `{profKey:[{id,...}]}` | `_mergeAuthoredMap` + `sc_deleted_routines` | `_mergeAuthoredById` only reads a flat array |
+| `sc_sent_routines` | `{profKey:{clientId:rec}}` | `_mergeSentRoutines` | per-client union one level IN, and the outer keys are NOT client ids |
+| `sc_summary_drafts` | `{note:{cid:text},obs:{cid:text}}` | `_mergeSummaryDrafts` | two per-client maps in one compound key, needing a stamp PER CLIENT |
+| `sc_suggested_forms` | a selection set | `_mergeStamped` | a union is actively WRONG here |
+
+**Three things in there are worth not re-deriving:**
+
+1. **`sc_suggested_forms` must NOT union.** It is the checkbox list of forms suggested on every
+   client, where unticking is a real removal and an EMPTY list means "go back to automatic". A union
+   would re-tick what she unticked and she could never clear the list — §0.8, read in the other
+   direction. Stamped last-write-wins is what a checkbox screen should do. It is stored as
+   `{list:[...],_ts}` now; a bare array is the legacy shape and is still read.
+2. **`sc_summary_drafts` needed PER-CLIENT stamps, not one for the key.** One stamp would mean a
+   draft typed for Jen on the phone clobbers one typed for Pat on the laptop. `persistSummaryDrafts`
+   keeps a snapshot of what it last wrote and stamps **only the clients that changed** — stamping
+   them all would make this device win conflicts over drafts it never touched, which is the bug
+   wearing the fix's clothes. `loadSummaryDrafts` seeds that snapshot from what it READ, or the
+   first save after a load restamps everything. Clearing a draft leaves an empty STRING rather than
+   removing the key, so a union could never have resurrected deleted text — but presence alone also
+   cannot order two copies, which is exactly why the stamp is required.
+3. **`_compoundIds` read three of these WRONG, which is worse than not reading them.** `_idsOf` saw
+   `sc_routines` as "every value is an array" and returned the PROFESSION NAMES as the ids — so
+   losing every routine in a bucket read as no loss at all, because the bucket was still there. Same
+   for `sc_sent_routines`, and `sc_summary_drafts` came back as `['note','obs']`. All three are now
+   namespaced per field (`esty:rt123`, `note:cid`) inside `_compoundIds`, which `_dropBootShrinks`
+   prefers over `_idsOf`. **If you add a compound blob, put it in `_compoundIds` — the shrink guard
+   looking at the wrong level of a blob is silent.**
+
+Also: `_MAP_LIB_TOMB` is a new registry (`_LIB_TOMB`'s shape one level in) and
+`check-merge-coverage.cjs` had to be taught to read it, or the key reports unmerged while being
+perfectly merged. `_libForget` consults both registries. Routine ids gained a random tail
+(`rt<time><rand>`), same reason as client ids.
+
+**Verification.** `scratchpad/last4.mjs` — 48 assertions on the merges and the real call sites.
+`scratchpad/last4pull.mjs` — the four through the REAL `Cloud.pull()`: **it loses all four on the
+previous build and keeps all four on this one.** `scratchpad/rtdel.mjs` — 5 assertions driving the
+actual delete button, proving the delete record is written and the merge refuses to bring the
+routine back while leaving the others alone.
+
+**A trap this cost me, worth the line:** `Cloud.pull()` takes NO ARGUMENT, it fetches `/api/store`
+itself. The first version of `last4pull.mjs` passed the account payload in as an argument, so pull
+saw an empty account, changed nothing, and the test PASSED ON THE BROKEN BUILD. A merge test that
+cannot fail is not a test. Serve the account copy from the ROUTE, and clear `Cloud._queue` first —
+pull deliberately skips any key with a pending local write, which will also make it pass for the
+wrong reason.
 
 ### Shipped: GOOGLE CALENDAR TWO-WAY (`2026-10-08i`) — recommendation #15, the last one
 

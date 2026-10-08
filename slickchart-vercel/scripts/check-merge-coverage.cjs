@@ -22,7 +22,10 @@ const skip=new RegExp("const _SYNC_SKIP=\\{([^}]*)\\}").exec(s);
 if(skip)[...skip[1].matchAll(/(sc_[a-z0-9_]+)\s*:/g)].forEach(x=>merged.add(x[1]));
 const pre=/const _SYNC_SKIP_PREFIX=\[([^\]]*)\]/.exec(s);
 const skipPrefixes=pre?[...pre[1].matchAll(/['"]([^'"]+)['"]/g)].map(x=>x[1]):[];
-['_TOMB_OBJ','_TOMB_ARR','_STICKY_TRUE','_CLIENT_MAP_KEYS','_LIB_TOMB'].forEach(n=>{
+// _MAP_LIB_TOMB is _LIB_TOMB's shape one level in: { profKey: [records] }, routed to
+// _mergeAuthoredMap. A registry this check does not read is a registry it cannot credit, and the
+// key would report as unmerged while being perfectly merged.
+['_TOMB_OBJ','_TOMB_ARR','_STICKY_TRUE','_CLIENT_MAP_KEYS','_LIB_TOMB','_MAP_LIB_TOMB'].forEach(n=>{
   const m=new RegExp('const '+n+'=\\{([^}]*)\\}').exec(s);
   if(m)[...m[1].matchAll(/(sc_[a-z0-9_]+)\s*:/g)].forEach(x=>merged.add(x[1]));
 });
@@ -46,10 +49,8 @@ s.split('\n').forEach(function(line){
 // client (_mergeClientMap / _mergeWorkspace, registered in _CLIENT_MAP_KEYS). A second provider lost
 // several clients' notes, summaries and product plans to exactly this gap.
 const KNOWN=new Set([
-  'sc_summary_drafts',
-  'sc_routines',
   'sc_notif_settings','sc_amazon_assoc',
-  'sc_note_fmt','sc_suggested_forms','sc_square_catalog',
+  'sc_note_fmt','sc_square_catalog',
   'sc_provider_note_drafts','sc_deleted_clients','sc_shop_catalog','sc_affiliate_custom',
   // Reviewed and correct as plain-overwrite — ONE record for the account, so last-write-wins is
   // the right behaviour and a merge would add risk without adding safety:
@@ -67,12 +68,17 @@ const KNOWN=new Set([
   // sc_pro_vc_invites came OFF this list on 2026-10-08: it is a per-client map and now merges by
   // client with the newest-stamped entry winning (_CLIENT_MAP_KEYS + _CLIENT_MAP_OBJ), because it
   // carries the follow-up date the provider set and a stale device could erase her reminder.
-  'sc_sent_routines',
   // 2026-10-08 thread-16 pass — five keys came OFF this list and now merge:
   //   sc_deposit_handled, sc_summary_guide_optout  -> _TOMB_OBJ  (records of something already done)
   //   sc_deleted_sq, sc_imported_products          -> _TOMB_ARR  (append-only id lists)
   //   sc_service_menu                              -> _LIB_TOMB  (authored, has ids and a delete path)
   // Each was an overwrite that UNDID an action rather than merely losing data.
+  // 2026-10-08, the last four. Each needed its own shape, which is why they were left until now:
+  //   sc_routines       -> _mergeAuthoredMap + sc_deleted_routines  ({profKey:[records]})
+  //   sc_sent_routines  -> _mergeSentRoutines                       ({profKey:{clientId:rec}})
+  //   sc_summary_drafts -> _mergeSummaryDrafts                      (two per-client maps + stamps)
+  //   sc_suggested_forms-> _mergeStamped                            (a selection set; unticking is
+  //                        a real removal, so a union would re-tick what she unticked — §0.8)
   ]);
 
 const unreviewed=[...accum].filter(k=>!merged.has(k)&&!KNOWN.has(k)

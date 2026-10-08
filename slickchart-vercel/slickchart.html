@@ -2341,17 +2341,50 @@ function _allDeletedIds(){
 // that carries the product plans. Namespace the inner ids per field, so a client dropped from one
 // map still counts even when another map kept it.
 const _WS_CLIENT_MAPS=['clientRecs','recReasons','clientHomecare'];
+// Three more blobs are compound in the same way, and _idsOf read all three WRONG rather than not at
+// all — which is worse, because it looked like the guard was working:
+//   sc_routines       {profKey:[{id,..}]}        every value is an array, so _idsOf returned the
+//                                               PROFESSION names as the ids. Losing every routine in
+//                                               a bucket read as no loss at all, because the bucket
+//                                               was still there.
+//   sc_sent_routines  {profKey:{clientId:rec}}   same, one level further in.
+//   sc_summary_drafts {note:{cid:text},obs:{..}} every value is an object, so it returned
+//                                               ['note','obs'] (and now '_ts'). An old build
+//                                               uploading without the stamps would have read as
+//                                               losing a record, and the drafts themselves had no
+//                                               protection whatsoever.
+// Namespacing the inner ids per field fixes all three: a routine or a draft dropped from one bucket
+// counts even when the bucket itself survives.
 function _compoundIds(k,str){
-  if(k!=='sc_workspace')return null;
   try{
     const v=JSON.parse(str);
     if(!_isPlainObj(v))return null;
     const out=[];
-    _WS_CLIENT_MAPS.forEach(function(f){
-      if(_isPlainObj(v[f]))Object.keys(v[f]).forEach(function(id){out.push(f+':'+id);});
-    });
-    if(Array.isArray(v.customProducts))v.customProducts.forEach(function(p){if(p&&p.id)out.push('customProducts:'+String(p.id));});
-    return out;
+    if(k==='sc_workspace'){
+      _WS_CLIENT_MAPS.forEach(function(f){
+        if(_isPlainObj(v[f]))Object.keys(v[f]).forEach(function(id){out.push(f+':'+id);});
+      });
+      if(Array.isArray(v.customProducts))v.customProducts.forEach(function(p){if(p&&p.id)out.push('customProducts:'+String(p.id));});
+      return out;
+    }
+    if(k==='sc_summary_drafts'){
+      ['note','obs'].forEach(function(f){
+        if(_isPlainObj(v[f]))Object.keys(v[f]).forEach(function(id){out.push(f+':'+id);});
+      });
+      return out;
+    }
+    if(k==='sc_routines'){
+      Object.keys(v).forEach(function(pk){
+        if(Array.isArray(v[pk]))v[pk].forEach(function(x){if(x&&x.id)out.push(pk+':'+String(x.id));});
+      });
+      return out;
+    }
+    if(k==='sc_sent_routines'){
+      Object.keys(v).forEach(function(pk){
+        if(_isPlainObj(v[pk]))Object.keys(v[pk]).forEach(function(id){out.push(pk+':'+id);});
+      });
+      return out;
+    }
   }catch(e){}
   return null;
 }
@@ -2403,7 +2436,12 @@ const _TOMB_OBJ={sc_deleted_vc_types:1,sc_deleted_products:1,sc_deleted_docs:1,s
   //   Lose it and the guides she took off come back. Its entries CAN be un-removed (line ~10939), so
   //   a blind union would resurrect an un-removal — the shallow per-client union is deliberate: last
   //   write wins per CLIENT rather than for the whole key, which is strictly better than overwrite.
-  sc_deposit_handled:1,sc_summary_guide_optout:1};
+  sc_deposit_handled:1,sc_summary_guide_optout:1,
+  // sc_routines (her saved routine templates) merges by id per profession, and a union by id with no
+  // delete record resurrects every routine she ever deleted. This is that record. It is NOT in
+  // _LIB_TOMB because the library is a MAP of lists rather than one list, so the dispatch routes it
+  // to _mergeAuthoredMap instead of _mergeAuthoredById.
+  sc_deleted_routines:1};
 const _TOMB_ARR={sc_flag_dismissed:1,sc_form_flag_dismissed:1,sc_ci_cleared:1,sc_ci_read:1,sc_home_dismissed:1,sc_notif_cleared:1,sc_notif_read:1,
   // Added 2026-10-08 in the thread-16 pass. Both are append-only id lists where an overwrite undoes
   // an action: sc_deleted_sq is the Square products she DELETED (lose it and they come back — the
@@ -2461,6 +2499,10 @@ const _LIB_TOMB={
 // Vendors, inventory rows and partners are stored WITHOUT ids. A generated id would differ on every
 // device and the union would duplicate them, so their identity is derived from what the provider
 // actually typed. Both devices compute the same key for the same row.
+// Libraries that are a MAP of authored lists rather than one flat list: { profKey: [records] }.
+// They get the same delete record and the same union-by-id, one bucket at a time. Kept out of
+// _LIB_TOMB so the pull dispatch does not hand a map to _mergeAuthoredById, which only reads arrays.
+const _MAP_LIB_TOMB={sc_routines:'sc_deleted_routines'};
 const _LIB_NATURAL={
   sc_vendors:function(v){return 'n:'+String((v&&v.name)||'').trim().toLowerCase();},
   sc_partners:function(v){return 'n:'+String((v&&v.name)||'').trim().toLowerCase();},
@@ -2479,7 +2521,7 @@ function _libKeyFn(libKey){
 // Record that this record was deleted on purpose, so the merge never brings it back.
 function _libForget(libKey,item){
   try{
-    const tk0=_LIB_TOMB[libKey],tk=Array.isArray(tk0)?tk0[0]:tk0;   // write to the library's OWN record
+    const tk0=_LIB_TOMB[libKey]||_MAP_LIB_TOMB[libKey],tk=Array.isArray(tk0)?tk0[0]:tk0;   // write to the library's OWN record
     if(!tk||tk==='sc_ci_cleared')return;          // check-ins keep their own log, which Undo unmarks
     const k=(item&&typeof item==='object')?_libKeyFn(libKey)(item):String(item||'');
     if(!k)return;
@@ -3049,6 +3091,107 @@ function _mergeWorkspace(serverStr,localStr){
   });
   return {str:JSON.stringify(out),changed:changed};
 }
+// ── The last four keys off the plain-overwrite path ──────────────────────────
+// Each needed its own shape; none of them could ride an existing merge.
+//
+// 1. sc_routines  { profKey: [ {id,name,items,note} ] }
+// Her saved routine templates, bucketed by profession. Authored, with ids and a real delete path, so
+// it is _mergeAuthoredById — once per bucket. The profession keys are NOT client ids, so
+// _goneClientIds must not touch them: 'esty' is not a deleted client.
+function _mergeAuthoredMap(serverStr,localStr,hiddenKey,opts){
+  let srv,loc;
+  try{srv=JSON.parse(serverStr==null?'null':serverStr);}catch(e){srv=undefined;}
+  try{loc=JSON.parse(localStr==null?'null':localStr);}catch(e){loc=undefined;}
+  // The ORIGINAL shape was a bare array (esthetics only), and loadRoutines() still reads that. Lift
+  // it here too, or a device still holding the old shape falls through to the plain overwrite.
+  const lift=function(x){return Array.isArray(x)?{esty:x}:x;};
+  srv=lift(srv);loc=lift(loc);
+  const sOk=_isPlainObj(srv),lOk=_isPlainObj(loc);
+  if(!sOk)return lOk?{str:localStr,changed:true}:null;   // heal the account from the device, or abstain
+  if(!lOk)return {str:serverStr,changed:false};
+  const buckets={};
+  Object.keys(srv).forEach(function(b){buckets[b]=1;});
+  Object.keys(loc).forEach(function(b){buckets[b]=1;});
+  const out={};let changed=false;
+  Object.keys(buckets).forEach(function(b){
+    const a=Array.isArray(srv[b])?srv[b]:[],d=Array.isArray(loc[b])?loc[b]:[];
+    const m=_mergeAuthoredById(JSON.stringify(a),JSON.stringify(d),hiddenKey,opts);
+    let val=null;
+    if(m&&m.str!=null){try{val=JSON.parse(m.str);}catch(e){val=null;}if(m.changed)changed=true;}
+    out[b]=Array.isArray(val)?val:a;
+  });
+  return {str:JSON.stringify(out),changed:changed};
+}
+// 2. sc_sent_routines  { profKey: { clientId: {name,items,products,date,ts} } }
+// WHICH routine each client was sent. One record per client, no delete path anywhere in the app, and
+// resendRoutine() edits the record in place — so: union by client inside each bucket, newest ts wins
+// a collision. These inner keys ARE client ids, so a deleted client is dropped rather than revived.
+function _mergeSentRoutines(serverStr,localStr){
+  let srv,loc;
+  try{srv=JSON.parse(serverStr==null?'null':serverStr);}catch(e){srv=undefined;}
+  try{loc=JSON.parse(localStr==null?'null':localStr);}catch(e){loc=undefined;}
+  const sOk=_isPlainObj(srv),lOk=_isPlainObj(loc);
+  if(!sOk)return lOk?{str:localStr,changed:true}:null;
+  if(!lOk)return {str:serverStr,changed:false};
+  const gone=_goneClientIds();
+  const buckets={};
+  Object.keys(srv).forEach(function(b){buckets[b]=1;});
+  Object.keys(loc).forEach(function(b){buckets[b]=1;});
+  const out={};let changed=false;
+  const mark=function(){changed=true;};
+  Object.keys(buckets).forEach(function(b){
+    const a=_isPlainObj(srv[b])?srv[b]:{},d=_isPlainObj(loc[b])?loc[b]:{};
+    out[b]=_unionById(a,d,gone,mark,_newerStamped);
+    if(!changed&&Object.keys(out[b]).length!==Object.keys(a).length)changed=true;
+  });
+  return {str:JSON.stringify(out),changed:changed};
+}
+// 3. sc_summary_drafts  { note:{clientId:text}, obs:{clientId:text}, _ts:{note:{},obs:{}} }
+// TWO per-client maps in ONE compound key — the sc_workspace hazard again (§0.7), and pushed
+// immediately on every keystroke-ish save. `note` is the wording she edited for a client's visit
+// summary; `obs` is the observation the CLIENT sees. Both are text she typed and nobody else can
+// reproduce.
+//
+// Union by client, per field. The twist is that clearing a draft leaves an EMPTY STRING rather than
+// removing the key, so a union can never resurrect text she deleted — but it also means presence
+// alone cannot order two copies. Hence a stamp per client per field: where both sides hold a client,
+// the newer edit wins; where only one does, it is kept; unstamped on both sides keeps the account's
+// copy, exactly as before. Per-CLIENT stamps and not one for the whole key, or a draft typed for
+// Jen on the phone would clobber one typed for Pat on the laptop.
+function _mergeSummaryDrafts(serverStr,localStr){
+  let srv,loc;
+  try{srv=JSON.parse(serverStr==null?'null':serverStr);}catch(e){srv=undefined;}
+  try{loc=JSON.parse(localStr==null?'null':localStr);}catch(e){loc=undefined;}
+  const sOk=_isPlainObj(srv),lOk=_isPlainObj(loc);
+  if(!sOk)return lOk?{str:localStr,changed:true}:null;
+  if(!lOk)return {str:serverStr,changed:false};
+  const gone=_goneClientIds();
+  const tsOf=function(o,f,id){
+    try{const t=o&&o._ts;const m=t&&t[f];return (m&&Number(m[id]))||0;}catch(e){return 0;}
+  };
+  const out={note:{},obs:{},_ts:{note:{},obs:{}}};
+  let changed=false;
+  ['note','obs'].forEach(function(f){
+    const a=_isPlainObj(srv[f])?srv[f]:{},d=_isPlainObj(loc[f])?loc[f]:{};
+    const ids={};
+    Object.keys(a).forEach(function(id){ids[id]=1;});
+    Object.keys(d).forEach(function(id){ids[id]=1;});
+    Object.keys(ids).forEach(function(id){
+      if(gone[id])return;                                  // deleted or merged away
+      const hasA=Object.prototype.hasOwnProperty.call(a,id);
+      const hasD=Object.prototype.hasOwnProperty.call(d,id);
+      const ta=tsOf(srv,f,id),td=tsOf(loc,f,id);
+      let val,ts;
+      if(hasA&&hasD){ if(td>ta){val=d[id];ts=td;changed=true;} else {val=a[id];ts=ta;} }
+      else if(hasA){ val=a[id];ts=ta; }
+      else { val=d[id];ts=td;changed=true; }
+      out[f][id]=val;
+      if(ts)out._ts[f][id]=ts;
+    });
+    if(!changed&&Object.keys(out[f]).length!==Object.keys(a).length)changed=true;
+  });
+  return {str:JSON.stringify(out),changed:changed};
+}
 // Does this tombstone outrank this item? A deletion only beats an item that is OLDER than it.
 //
 // A form the account is actively carrying, created after the deletion, is not the deleted form — it
@@ -3295,7 +3438,11 @@ const Cloud={
     // Chat data is append-only and provider-sent messages live ONLY in sc_msgstore, so a plain overwrite
     // here let a stale device wipe history and (via sc_seen_events) resurrect read messages as unread.
     // Merge these three the same way as sc_clients: union, never lose, push the superset back.
-    if(k==='sc_bizinfo'||k==='sc_brand_colors'||k==='sc_availability'){
+    // sc_suggested_forms is a SELECTION SET: the checkbox list of forms she wants suggested on every
+    // client, where unticking is a real removal and an empty list means "go back to automatic". So a
+    // union is exactly wrong here (§0.8) — it would re-tick forms she deliberately unticked and she
+    // could never clear the list. Stamped last-writer-wins is what a checkbox screen should do.
+    if(k==='sc_bizinfo'||k==='sc_brand_colors'||k==='sc_availability'||k==='sc_suggested_forms'){
       const ms=_mergeStamped(data[k],_lsGet(k));
       if(ms&&ms.str!=null){
         set(k,ms.str);
@@ -3328,6 +3475,30 @@ const Cloud={
       if(mw&&mw.str!=null){
         set(k,mw.str);
         if(mw.changed){try{this.push(k,mw.str);}catch(e){}}
+        return;
+      }
+    }
+    if(k==='sc_summary_drafts'){
+      const md=_mergeSummaryDrafts(data[k],_lsGet(k));
+      if(md&&md.str!=null){
+        set(k,md.str);
+        if(md.changed){try{this.push(k,md.str);}catch(e){}}
+        return;
+      }
+    }
+    if(k==='sc_sent_routines'){
+      const msr=_mergeSentRoutines(data[k],_lsGet(k));
+      if(msr&&msr.str!=null){
+        set(k,msr.str);
+        if(msr.changed){try{this.push(k,msr.str);}catch(e){}}
+        return;
+      }
+    }
+    if(_MAP_LIB_TOMB[k]){
+      const mam=_mergeAuthoredMap(data[k],_lsGet(k),_MAP_LIB_TOMB[k],{keyFn:_libKeyFn(k)});
+      if(mam&&mam.str!=null){
+        set(k,mam.str);
+        if(mam.changed){try{this.push(k,mam.str);}catch(e){}}
         return;
       }
     }
@@ -8240,8 +8411,14 @@ function resendFormToClient(cid,fid){
 }
 // ── Per-client forms storage: intakes, consents, signed forms ──
 // ── Suggest forms to send based on the booked treatment ──
-function loadSuggestedFormsOverride(){try{const s=localStorage.getItem('sc_suggested_forms');if(s)return JSON.parse(s);}catch(e){}return null;}
-function saveSuggestedFormsOverride(){try{(function(_v){localStorage.setItem('sc_suggested_forms',_v);if(typeof _pushKeyNow==='function')_pushKeyNow('sc_suggested_forms',_v);return _v;})(JSON.stringify(suggestedFormsOverride||[]));}catch(e){}}
+// Stored as {list:[...],_ts} so _mergeStamped can tell which device ticked the boxes last. A bare
+// array is the original shape and is still read, so nothing is lost on the way up.
+function loadSuggestedFormsOverride(){try{const s=localStorage.getItem('sc_suggested_forms');if(s){
+  const v=JSON.parse(s);
+  if(Array.isArray(v))return v;
+  if(v&&typeof v==='object'&&Array.isArray(v.list))return v.list;
+}}catch(e){}return null;}
+function saveSuggestedFormsOverride(){try{(function(_v){localStorage.setItem('sc_suggested_forms',_v);if(typeof _pushKeyNow==='function')_pushKeyNow('sc_suggested_forms',_v);return _v;})(JSON.stringify(_stampNow({list:suggestedFormsOverride||[]})));}catch(e){}}
 let suggestedFormsOverride=loadSuggestedFormsOverride();
 // True once the client has actually submitted or signed an intake form. Used to nudge (booked but
 // no intake) on the client card and in the client list — a sent-but-not-filled intake still counts
@@ -11018,8 +11195,38 @@ let summarySendOn={};      // per-session: off by default, provider opts in befo
 // The edited/AI summary note and the client-facing observation are CLIENT-FACING drafts that were
 // in-memory only — a reload before Send lost them (their oninput handlers called persistWorkspace,
 // which never stored them). Persist them immediately to their own synced key so they survive.
-function persistSummaryDrafts(){try{const v=JSON.stringify({note:summaryNoteDraft,obs:summaryObsDraft});localStorage.setItem('sc_summary_drafts',v);if(typeof _pushKeyNow==='function')_pushKeyNow('sc_summary_drafts',v);}catch(e){}}
-function loadSummaryDrafts(){try{const raw=localStorage.getItem('sc_summary_drafts');if(raw){const v=JSON.parse(raw);if(v&&typeof v==='object'){if(v.note&&typeof v.note==='object')summaryNoteDraft=v.note;if(v.obs&&typeof v.obs==='object')summaryObsDraft=v.obs;}}}catch(e){}}
+// WHEN this device last changed each client's draft, per field. _mergeSummaryDrafts compares these,
+// so without them a draft typed on the phone cannot prove it is newer than the account's copy.
+let _summaryDraftTs={note:{},obs:{}};
+// What was last written to disk, so persist can stamp ONLY the clients that actually changed.
+// Stamping every client on every save would make this device win conflicts over drafts it never
+// touched — which is the bug, wearing the fix's clothes.
+let _summaryDraftLast={note:{},obs:{}};
+function persistSummaryDrafts(){try{
+  const now=Date.now();
+  [['note',summaryNoteDraft],['obs',summaryObsDraft]].forEach(function(pair){
+    const f=pair[0],cur=(pair[1]&&typeof pair[1]==='object')?pair[1]:{},last=_summaryDraftLast[f]||{};
+    Object.keys(cur).forEach(function(id){if(last[id]!==cur[id])_summaryDraftTs[f][id]=now;});
+    _summaryDraftLast[f]=Object.assign({},cur);
+  });
+  const v=JSON.stringify({note:summaryNoteDraft,obs:summaryObsDraft,_ts:_summaryDraftTs});
+  localStorage.setItem('sc_summary_drafts',v);if(typeof _pushKeyNow==='function')_pushKeyNow('sc_summary_drafts',v);
+}catch(e){}}
+function loadSummaryDrafts(){
+  try{const raw=localStorage.getItem('sc_summary_drafts');if(raw){const v=JSON.parse(raw);if(v&&typeof v==='object'){
+    if(v.note&&typeof v.note==='object')summaryNoteDraft=v.note;
+    if(v.obs&&typeof v.obs==='object')summaryObsDraft=v.obs;
+    if(v._ts&&typeof v._ts==='object'){
+      if(v._ts.note&&typeof v._ts.note==='object')_summaryDraftTs.note=v._ts.note;
+      if(v._ts.obs&&typeof v._ts.obs==='object')_summaryDraftTs.obs=v._ts.obs;
+    }
+  }}}catch(e){}
+  // Seed the snapshot from what was just READ. Reading is not editing: without this the first save
+  // after a load stamps every draft on the device as edited-just-now.
+  try{
+    _summaryDraftLast={note:Object.assign({},summaryNoteDraft),obs:Object.assign({},summaryObsDraft)};
+  }catch(e){}
+}
 function _summaryGuard(id){
   if(!summarySendOn[id]){ if(typeof proToast==='function')proToast('Turn on "Send to '+((CL[id]&&CL[id].name.split(' ')[0])||'client')+'\u2019s app" above first'); return false; }
   return true;
@@ -21066,7 +21273,9 @@ function saveRoutineTemplate(){
   if(!routineDraft.items.length){if(typeof proToast==='function')proToast('Add at least one product first');return;}
   const list=currentSavedRoutines();
   const existing=list.find(r=>r.name.toLowerCase()===name.toLowerCase());
-  const tpl={id:existing?existing.id:'rt'+Date.now(),name,items:routineDraft.items.slice(),note:routineDraft.note||''};
+  // _ts on create AND on edit, or the newer version cannot win the merge (CLAUDE.md §3).
+  const tpl={id:existing?existing.id:'rt'+Date.now()+Math.random().toString(36).slice(2,6),
+    name,items:routineDraft.items.slice(),note:routineDraft.note||'',_ts:Date.now()};
   if(existing)Object.assign(existing,tpl);else list.push(tpl);
   persistRoutines();
   if(typeof proToast==='function')proToast(existing?'Template updated':'Saved as a template');
@@ -21081,6 +21290,10 @@ function loadRoutineTemplate(id){
 function deleteRoutineTemplate(id){
   const _go=function(){
     const k=_routineProfKey();
+    // Record the delete FIRST. Union-by-id with no delete record brings every deleted routine back
+    // on the next sync, and _libForget pushes the record immediately rather than on the debounce.
+    try{const victim=(savedRoutinesByProf[k]||[]).find(x=>x&&x.id===id);
+      if(victim&&typeof _libForget==='function')_libForget('sc_routines',victim);}catch(e){}
     savedRoutinesByProf[k]=(savedRoutinesByProf[k]||[]).filter(x=>x.id!==id);
     persistRoutines();
     renderRoutineBuilder();
@@ -21092,7 +21305,7 @@ async function resendRoutine(cid){
   if(!clientRecs[cid])clientRecs[cid]=[];
   (sent.items||[]).forEach(aid=>{if(!clientRecs[cid].includes(aid))clientRecs[cid].push(aid);});
   if(cid==='maya'){try{SlickBridge.post('routine-recommended',{providerId:'jess',clientId:'maya',routine:{name:sent.name,note:sent.note||'',products:sent.products||[]}});}catch(e){}}
-  sent.date='Just now';persistSentRoutines();
+  sent.date='Just now';sent.ts=Date.now();persistSentRoutines();
   try{if(typeof persistWorkspace==='function')persistWorkspace();}catch(e){}  // persist the clientRecs additions above
   const c=CL[cid];
   renderRoutineBuilder();
@@ -21182,7 +21395,8 @@ async function confirmSendRoutine(cid){
     if(a)products.push({name:a.name,brand:a.brand,icon:a.icon,url:a.url||'',amazon:(typeof amazonBuyUrl==='function'?amazonBuyUrl(a):''),site:a.site||'',inOffice:!!a.inOffice,siteCode:a.siteCode||'',urlCode:a.urlCode||'',amazonCode:a.amazonCode||'',why:(typeof _recReason==='function'?_recReason(cid,aid):'')});
   });
   if(cid==='maya'){try{SlickBridge.post('routine-recommended',{providerId:'jess',clientId:'maya',routine:{name,note,products}});}catch(e){}}
-  currentSentRoutines()[cid]={name,note,items:routineDraft.items.slice(),products,date:'Just now'};
+  // `date` is a label for the screen ('Just now'), which cannot order two devices' copies. ts can.
+  currentSentRoutines()[cid]={name,note,items:routineDraft.items.slice(),products,date:'Just now',ts:Date.now()};
   persistSentRoutines();
   _persistAndSyncClient(cid);
   closeSendProd();
