@@ -468,7 +468,7 @@ const S=document.getElementById('S');
 // resets when I save it" and there was no way to tell whether her phone had any of them — a whole
 // day was spent debugging code she may not have been running. Shown at the bottom of Settings, so
 // the answer is a screenshot away. Bump it on every ship.
-const APP_BUILD='2026-10-08b';
+const APP_BUILD='2026-10-08c';
 
 
 /* ════════════════════════════════════════════════════════════════
@@ -13281,18 +13281,21 @@ function inviteVirtualConsult(id,_force,_kind,_formId,_routine){
 const _MSG_DEFAULTS={
   vc_invite:"I'd love to do a virtual {consult} consult before your next visit, I've sent an invite to your app. Upload a few photos and I'll send my notes back. \u2728",
   vc_review:'Your virtual consult review is ready \ud83d\udccb',
-  vc_retake:"I had a look at your photos and I can't see {consult} clearly enough to give you good advice. Could you send a couple more? There are tips at the top of the page. - {me}"
+  vc_retake:"I had a look at your photos and I can't see {consult} clearly enough to give you good advice. Could you send a couple more? There are tips at the top of the page. - {me}",
+  vc_refer:"Thank you for telling me. What you described is worth having a doctor look at, rather than me. Please book in with your GP or a dermatologist. I'm not able to diagnose or treat it, and I'd rather you were seen properly. I'm still here for your skincare once you've been. - {me}"
 };
 const _MSG_LABELS={
   vc_invite:{name:'Consult invite',when:'Sent when you invite a client to a virtual consult.'},
   vc_review:{name:'Review ready',when:'The first line when you send your notes back. Your notes follow underneath.'},
-  vc_retake:{name:'Asking for better photos',when:"Sent when you tap Ask for new photos, instead of reviewing photos you can't read."}
+  vc_retake:{name:'Asking for better photos',when:"Sent when you tap Ask for new photos, instead of reviewing photos you can't read."},
+  vc_refer:{name:'Suggesting a doctor',when:'Sent when a client flags pain, bleeding, a changing mole, or something spreading.'}
 };
 // {consult} only means anything on the invite, so it is offered only there.
 const _MSG_TOKENS={
   vc_invite:['client','me','business','consult','fee'],
   vc_review:['client','me','business'],
-  vc_retake:['client','me','business','consult']
+  vc_retake:['client','me','business','consult'],
+  vc_refer:['client','me','business']
 };
 let msgTemplates=[];
 function loadMsgTemplates(){try{const raw=localStorage.getItem('sc_msg_templates');if(raw){const a=JSON.parse(raw);if(Array.isArray(a))msgTemplates=a;}}catch(e){}}
@@ -13350,7 +13353,7 @@ function _msgCardHTML(){
       <div style="font-size:16px;font-weight:500;color:var(--p-ink);">What your clients get sent</div>
       <div style="font-size:14px;color:var(--p-mut);line-height:1.5;margin-top:2px;">These go out in your name. Edit them to sound like you.</div>
     </div>
-    ${row('vc_invite')}${row('vc_review')}${row('vc_retake')}
+    ${row('vc_invite')}${row('vc_review')}${row('vc_retake')}${row('vc_refer')}
   </div>`;
 }
 let _msgEditing='';
@@ -13451,6 +13454,63 @@ async function _doSendVcReview(id,notes){
   if(st&&st.status==='pending'){if(typeof proToast==='function')proToast('Review saved — it’ll send to '+((c&&c.name.split(' ')[0])||'your client')+' when they open their app');}
   else if(st&&st.status==='failed'){if(typeof proToast==='function')proToast('Couldn’t reach '+((c&&c.name.split(' ')[0])||'your client')+' — tap the message to resend',0,'error');}
   else{if(typeof proToast==='function')proToast('Review sent to '+((c&&c.name.split(' ')[0])||'client'));}
+}
+// What a client ticked on the safety block. Whitelisted and coerced: this arrives from a client's
+// device, so nothing unknown gets through and nothing renders unescaped downstream.
+const _VC_FLAG_LABELS={
+  hurt:'Something hurts, bleeds, or is not healing',
+  mole:'A spot or mole is new, or has changed',
+  fast:'It came on fast, or is spreading',
+  cycle:'Periods or body hair have changed'
+};
+function _sanVcFlags(x){
+  if(!x||typeof x!=='object')return null;
+  const out={};let any=false;
+  Object.keys(_VC_FLAG_LABELS).forEach(function(k){if(x[k]){out[k]=true;any=true;}});
+  const n=String(x.note==null?'':x.note).trim().slice(0,400);
+  if(n){out.note=n;any=true;}
+  return any?out:null;
+}
+function _vcFlaggedKeys(sub){
+  const f=sub&&sub.flags;if(!f||typeof f!=='object')return [];
+  return Object.keys(_VC_FLAG_LABELS).filter(function(k){return !!f[k];});
+}
+// The block at the top of the review, when she ticked something. Amber, not red: this is "look at
+// this before you write a plan", not an emergency, and over-alarming a provider teaches her to
+// ignore it. There is deliberately no "all clear" or "looks fine" control anywhere in this flow —
+// 3 of 14 clinicians in the secret-shopper study told a patient a nodular melanoma was benign, and
+// the app should be structurally incapable of recording that. The only dispositions are a plan, a
+// request for better photos, and a referral.
+function _vcFlagBannerHTML(id,sub){
+  const keys=_vcFlaggedKeys(sub);
+  const note=(sub&&sub.flags&&sub.flags.note)||'';
+  if(!keys.length&&!note)return '';
+  const first=String((CL[id]&&CL[id].name)||'They').split(' ')[0];
+  return `<div style="margin:0 16px 12px;background:var(--p-amber-bg,#fdf6e7);border:1px solid var(--accent);border-radius:12px;padding:12px 14px;">
+    <div style="display:flex;align-items:center;gap:7px;margin-bottom:7px;">
+      <i class="ti ti-alert-triangle" style="font-size:16px;color:var(--accent-strong);"></i>
+      <span style="font-size:16px;font-weight:600;color:var(--p-ink);">${_fileEsc(first)} flagged something</span>
+    </div>
+    ${keys.map(function(k){return '<div style="font-size:16px;color:var(--p-ink);line-height:1.5;margin-bottom:3px;">\u2022 '+_fileEsc(_VC_FLAG_LABELS[k])+'</div>';}).join('')}
+    ${note?('<div style="font-size:16px;color:var(--p-mut);line-height:1.5;margin-top:6px;font-style:italic;">\u201c'+_fileEsc(note)+'\u201d</div>'):''}
+    <div style="font-size:14px;color:var(--p-mut);line-height:1.5;margin-top:8px;">Pain, bleeding, a changing mole or something spreading is a doctor\u2019s call, not a treatment plan.</div>
+    <button onclick="confirmModal({title:'Send them to a doctor?',body:'This sends ${_jsAttr(first)} a short message suggesting they get it looked at, and records that you referred them. You can still send notes afterwards.',action:'Suggest a doctor'},'()=>vcReferToDoctor(\'${_jsAttr(id)}\')')" style="width:100%;margin-top:10px;background:var(--accent);border:none;color:var(--accent-ink);border-radius:8px;padding:9px;font-size:16px;font-weight:600;cursor:pointer;font-family:inherit;"><i class="ti ti-stethoscope" style="font-size:16px;"></i> Suggest they see a doctor</button>
+  </div>`;
+}
+// A referral is a RECORDED disposition, not a message she has to remember sending. It does not close
+// the consult: she can still send her notes afterwards, because "see someone about that spot" and
+// "here is your routine" are not mutually exclusive.
+async function vcReferToDoctor(id){
+  const c=CL[id];if(!c)return;
+  const msg=_msgText('vc_refer',id);
+  vcInvites[id]={...(vcInvites[id]||{}),referredAt:Date.now()};
+  try{persistVcState();}catch(e){}
+  let _mid;try{_mid=(self.crypto&&crypto.randomUUID)?crypto.randomUUID():(Date.now().toString(36)+Math.random().toString(36).slice(2));}catch(e){_mid=Date.now().toString(36)+Math.random().toString(36).slice(2);}
+  try{if(!msgStore[id])msgStore[id]=[];msgStore[id].push({from:'me',text:msg,time:'Just now',ts:Date.now(),_mid,status:'sending'});const t=threads.find(x=>x.id===id);if(t)t.preview='Worth getting that looked at';saveMessages();}catch(e){}
+  try{await _sendProviderMessageToClient(id,msg,[],false,undefined,_mid);}catch(e){}
+  try{if(typeof _pushClientNow==='function')await _pushClientNow(id);}catch(e){}
+  if(typeof proToast==='function')proToast('Referral sent and recorded');
+  try{renderVirtualClient(id);}catch(e){}
 }
 // ASK FOR NEW PHOTOS — the state this flow never had.
 //
@@ -14585,6 +14645,8 @@ function renderVirtualClient(id){
   const initialSummary=(cached&&cached.summary)||'';
   S.innerHTML=`
   <div id="virtual-client-screen"></div>
+  ${(typeof _vcFlagBannerHTML==='function')?_vcFlagBannerHTML(id,sub):''}
+  ${(vcInvites[id]&&vcInvites[id].referredAt)?`<div style="margin:0 16px 12px;background:var(--p-surf2);border:1px solid var(--p-line3);border-radius:12px;padding:10px 13px;font-size:16px;color:var(--p-mut);line-height:1.5;"><i class="ti ti-stethoscope" style="font-size:16px;color:var(--p-green);"></i> You referred them to a doctor on ${_fileEsc(new Date(vcInvites[id].referredAt).toLocaleDateString('en-US',{month:'short',day:'numeric'}))}.</div>`:''}
   <div style="padding:12px 16px 0;display:flex;align-items:center;justify-content:flex-end;gap:8px;">
     <button style="border:1px solid var(--p-line3);background:var(--surf1);border-radius:8px;padding:6px 12px;font-size:16px;color:var(--p-mut2);cursor:pointer;font-weight:500;" onclick="confirmModal({title:'Ask for new photos?',body:'This sends ${_jsAttr(String((CL[id]&&CL[id].name)||'your client').split(' ')[0])} a message and reopens the photo screen on their phone, with the tips at the top. Everything they already sent is kept.',action:'Ask for new photos'},'()=>vcAskForRetake(\'${_jsAttr(id)}\')')"><i class="ti ti-camera-off" style="font-size:16px;"></i> Can't read these</button>
     <button style="border:none;background:var(--accent);border-radius:8px;padding:6px 14px;font-size:16px;color:var(--accent-ink);cursor:pointer;font-weight:500;" onclick="sendVcReview('${id}');${back}">Send review</button>
@@ -25912,7 +25974,7 @@ async function syncClientEvents(){
         touchedNotif=true;
       }else if(ev.kind==='vc_submit'){
         vcSubmissions[cid]={photos:_sanVcPhotos(payload.photos),refs:(Array.isArray(payload.refs)&&payload.refs.length)?_sanVcPhotos(payload.refs):null,goals:payload.goals||'',measures:payload.measures||null,
-          routine:_sanRoutine(payload.routine),
+          routine:_sanRoutine(payload.routine),flags:_sanVcFlags(payload.flags),
           date:_eventDateLabel(ev,payload.date||'Today'),kind:payload.kind||'skin',title:payload.title||'Virtual consult'};
         vcInvites[cid]={...(vcInvites[cid]||{}),invited:true,submitted:true,reviewed:false};   // a fresh submission must return to "needs review", even if a prior one was reviewed
         try{if(typeof persistVcState==='function')persistVcState();}catch(e){}
@@ -26632,7 +26694,7 @@ SlickBridge.on('form-completed',d=>{
 
 SlickBridge.on('virtual-consult-submitted',d=>{
   const cid=d.clientId||'maya';
-  vcSubmissions[cid]={photos:_sanVcPhotos(d.photos),refs:(Array.isArray(d.refs)&&d.refs.length)?_sanVcPhotos(d.refs):null,goals:d.goals||'',measures:d.measures||null,date:d.date||'Today',kind:d.kind||'skin',title:d.title||'Virtual consult'};
+  vcSubmissions[cid]={photos:_sanVcPhotos(d.photos),refs:(Array.isArray(d.refs)&&d.refs.length)?_sanVcPhotos(d.refs):null,goals:d.goals||'',measures:d.measures||null,flags:_sanVcFlags(d.flags),date:d.date||'Today',kind:d.kind||'skin',title:d.title||'Virtual consult'};
   vcInvites[cid]={...(vcInvites[cid]||{}),invited:true,submitted:true,reviewed:false};   // a fresh submission must return to "needs review", even if a prior one was reviewed
   try{persistVcState();}catch(e){}
   const nm=(CL[cid]&&CL[cid].name.split(' ')[0])||'A client';

@@ -743,7 +743,7 @@ SlickBridge.on('session-summary',s=>{
 SlickBridge.on('virtual-consult-invite',d=>{
   // provider-initiated only, this unlocks the client's ability to submit a virtual consult
   vcInvite={kind:d.kind||'skin',title:d.title||'Virtual consult',fee:d.fee||'',providerFirst:client.providerFirst,photoLabels:Array.isArray(d.photoLabels)?d.photoLabels:undefined,refLabels:Array.isArray(d.refLabels)?d.refLabels:undefined,refTitle:d.refTitle||undefined};
-  _vcSubmitState={photos:{},refs:{},routine:[]};
+  _vcSubmitState={photos:{},refs:{},routine:[],flags:{}};
   try{persistInvite();}catch(e){}
   pushNotify({type:'vcInvite',icon:'ti-camera',col:'#f3eefc',ic:'#8b6fc7',title:client.providerFirst+' invited you to a virtual consult',body:'Submit a few photos so they can review before your visit.',onclick:()=>{client.activeProviderId='jess';applyActiveProvider();nav('virtual-submit');}});
   if(currentScreen==='journey'||currentScreen==='home')nav(currentScreen);
@@ -1459,7 +1459,7 @@ let currentScreen='home';
 // Session summary history + virtual consult invite state
 let _summaryIdx=0,_summaryFrom='home';
 let vcInvite=null; // set when the provider invites the client to a virtual consult
-let _vcSubmitState={photos:{},refs:{},routine:[]};
+let _vcSubmitState={photos:{},refs:{},routine:[],flags:{}};
 (function(){const j=client.providers&&client.providers.find(p=>p.id==='jess');if(j){j.virtualConsults=[{date:'Jun 26, 2026',kind:'skin',title:'Skin analysis',photos:['Front','Left side','Right side'],refs:null}];}})();
 
 // Progress photos, angle tabs + drag-to-compare state (the session photos are per-provider)
@@ -4844,6 +4844,46 @@ function _vcCheckHTML(n){
     <div style="font-size:11px;color:var(--c-mut);line-height:1.5;margin-top:5px;">Tap any photo to take it again.</div>
   </div>`;
 }
+// SAFETY SCREENING — four questions, and they exist because of four documented misses.
+//
+// The failure mode of consumer skin consults was never misreading the photo, it was NOT ASKING. In
+// the 2016 secret-shopper study a bacterial folliculitis was called acne by 10 of 12 clinicians, not
+// one clinician in a case written to show hormonal acne raised the hormonal cause, and 3 of 14 told
+// a patient a nodular melanoma looked fine. Each question below maps to one of those.
+//
+// This is TRIAGE, not assessment. An esthetician cannot diagnose, and North Carolina's scope is
+// written as "improving the appearance of the skin" — so pain, bleeding and non-healing are outside
+// the licence by the statute's own words, which is a better referral rule than any blog list. The
+// wording is plain and deliberately un-alarming: it asks what she has noticed, never what it is.
+function _vcFlagList(){
+  return [
+    ['hurt','Something hurts, bleeds, or is not healing'],
+    ['mole','A spot or mole is new, or has changed'],
+    ['fast','It came on fast, or is spreading'],
+    ['cycle','My periods or body hair have changed']
+  ];
+}
+function _vcFlagSet(k,on){
+  if(!_vcSubmitState.flags||typeof _vcSubmitState.flags!=='object')_vcSubmitState.flags={};
+  _vcSubmitState.flags[k]=!!on;
+  try{persistVcDraft();}catch(e){}
+}
+function _vcFlagNote(v){
+  if(!_vcSubmitState.flags||typeof _vcSubmitState.flags!=='object')_vcSubmitState.flags={};
+  _vcSubmitState.flags.note=String(v||'').slice(0,400);
+  try{persistVcDraft();}catch(e){}
+}
+function _vcFlagsHTML(){
+  const f=(_vcSubmitState.flags&&typeof _vcSubmitState.flags==='object')?_vcSubmitState.flags:{};
+  return `<div style="font-size:12px;font-weight:600;color:var(--c-mut);text-transform:uppercase;letter-spacing:.06em;margin-bottom:6px;">Anything a doctor should see?</div>
+  <div style="font-size:11px;color:var(--c-mut);line-height:1.5;margin-bottom:8px;">Tick any that apply. Some things need a doctor, not a facial, and ${_txt(client.providerFirst||'your provider')} would rather point you there.</div>
+  <div style="background:var(--c-card);border:1.5px solid var(--c-line);border-radius:12px;padding:4px 12px;margin-bottom:10px;">
+    ${_vcFlagList().map(function(it){const on=!!f[it[0]];return `<label style="display:flex;gap:9px;align-items:flex-start;padding:9px 0;border-bottom:1px solid var(--c-line);cursor:pointer;">
+      <input type="checkbox" ${on?'checked':''} onchange="_vcFlagSet('${it[0]}',this.checked)" style="margin-top:2px;width:16px;height:16px;flex-shrink:0;accent-color:var(--accent,#4a8c7a);">
+      <span style="font-size:12px;color:var(--c-ink);line-height:1.5;">${_txt(it[1])}</span></label>`;}).join('')}
+    <textarea oninput="_vcFlagNote(this.value)" placeholder="Anything else worrying you? (optional)" style="width:100%;background:none;border:none;padding:9px 0;font-size:12px;color:var(--c-ink);height:46px;resize:none;font-family:inherit;line-height:1.5;box-sizing:border-box;outline:none;">${_txt((f.note)||'')}</textarea>
+  </div>`;
+}
 // Toggle the submit button as the client types (photo-free consults) or after photo capture.
 function _vcSyncSubmit(){
   const btn=document.getElementById('vc-submit-btn');if(!btn)return;
@@ -4954,6 +4994,7 @@ function renderVirtualSubmit(){
     ${sets.refs?`<div style="font-size:12px;font-weight:600;color:var(--c-mut);text-transform:uppercase;letter-spacing:.06em;margin-bottom:8px;display:flex;align-items:center;gap:5px;"><i class="ti ti-photo-star" style="font-size:13px;color:#8b6fc7;"></i> ${_txt(sets.refTitle||'Inspiration / references')}</div>
     <div style="display:grid;grid-template-columns:1fr 1fr 1fr;gap:8px;margin-bottom:18px;">${sets.refs.map(l=>tile(l,'refs')).join('')}</div>`:''}`}
     ${_vcRoutineHTML()}
+    ${_vcFlagsHTML()}
     <div style="font-size:12px;font-weight:600;color:var(--c-mut);text-transform:uppercase;letter-spacing:.06em;margin-bottom:8px;">${photoFree?'Tell '+_txt(client.providerFirst)+' about your goals':'What are you hoping for?'}</div>
     <textarea id="vc-goals" oninput="_vcSyncSubmit()" placeholder="Tell ${_txt(client.providerFirst)} what you'd love, any concerns, and questions…" style="width:100%;background:var(--c-card);border:1.5px solid var(--c-line);border-radius:12px;padding:12px;font-size:13px;color:var(--c-ink);height:84px;resize:none;font-family:inherit;line-height:1.6;box-sizing:border-box;outline:none;margin-bottom:16px;">${_txt(_vcSubmitState.goals||'')}</textarea>
     <button id="vc-submit-btn" onclick="submitVirtualConsult()" ${canSubmit?'':'disabled'} style="width:100%;background:${canSubmit?'var(--accent)':'#d9e7e1'};color:${canSubmit?'var(--accent-ink)':'var(--c-mut)'};border:none;border-radius:12px;padding:13px;font-size:15px;font-weight:700;cursor:${canSubmit?'pointer':'default'};font-family:inherit;margin-bottom:20px;"><i class="ti ti-send"></i> <span id="vc-submit-label">${ctaLabel}</span></button>
@@ -4974,7 +5015,8 @@ function submitVirtualConsult(){
   const goals=(document.getElementById('vc-goals')||{}).value||'';
   const date=new Date().toLocaleDateString('en-US',{month:'short',day:'numeric',year:'numeric'});
   const routine=(typeof _vcRoutineClean==='function')?_vcRoutineClean():[];
-  const entry={date,kind:inv.kind,title:inv.title,photos,refs:(refs&&refs.length)?refs:null,goals,routine};
+  const flags=(_vcSubmitState.flags&&typeof _vcSubmitState.flags==='object')?_vcSubmitState.flags:null;
+  const entry={date,kind:inv.kind,title:inv.title,photos,refs:(refs&&refs.length)?refs:null,goals,routine,flags};
   // compute real measurements from the first photo, then hand the submission (images + measures) to the provider
   const firstSrc=(photos[0]||{}).src||'';
   // Only consume the invite once the submission is safely away. The old code recorded the
@@ -4985,7 +5027,7 @@ function submitVirtualConsult(){
     const j=client.providers.find(p=>p.id==='jess');
     if(j){j.virtualConsults=j.virtualConsults||[];j.virtualConsults.unshift(entry);try{persistVirtualConsults();}catch(e){}}
     try{if(inv&&inv.invitedAt)localStorage.setItem('sc_vc_submitted',String(inv.invitedAt));}catch(e){}
-    vcInvite=null;_vcSubmitState={photos:{},refs:{},routine:[]};try{persistInvite();}catch(e){}try{persistVcDraft();}catch(e){}
+    vcInvite=null;_vcSubmitState={photos:{},refs:{},routine:[],flags:{}};try{persistInvite();}catch(e){}try{persistVcDraft();}catch(e){}
     if(typeof pushNotify==='function')pushNotify({type:'vcSubmitted',icon:'ti-check',col:'#e9f7f0',ic:'#4ec49a',title:'Consult submitted',body:client.providerFirst+' will review your photos and send notes back.'});
     nav('journey');
   };
@@ -5007,8 +5049,8 @@ function loadInvite(){try{const raw=localStorage.getItem('sc_client_invite');if(
 // Persist the in-progress virtual-consult photos so a failed submit + app close doesn't lose every
 // photo the client took (the invite was already persisted; the photos were memory-only, contradicting
 // the "we keep the invite and photos so they can retry" promise). Cleared on successful submit.
-function persistVcDraft(){try{if(_vcSubmitState&&(Object.keys(_vcSubmitState.photos||{}).length||Object.keys(_vcSubmitState.refs||{}).length||String(_vcSubmitState.goals||'').trim()||(_vcSubmitState.routine||[]).length))localStorage.setItem('sc_vc_draft',JSON.stringify(_vcSubmitState));else localStorage.removeItem('sc_vc_draft');}catch(e){}}
-function loadVcDraft(){try{const raw=localStorage.getItem('sc_vc_draft');if(raw){const o=JSON.parse(raw);if(o&&typeof o==='object'&&o.photos)_vcSubmitState={photos:o.photos||{},refs:o.refs||{},goals:o.goals||'',routine:Array.isArray(o.routine)?o.routine:[]};}}catch(e){}}
+function persistVcDraft(){try{if(_vcSubmitState&&(Object.keys(_vcSubmitState.photos||{}).length||Object.keys(_vcSubmitState.refs||{}).length||String(_vcSubmitState.goals||'').trim()||(_vcSubmitState.routine||[]).length||Object.keys(_vcSubmitState.flags||{}).length))localStorage.setItem('sc_vc_draft',JSON.stringify(_vcSubmitState));else localStorage.removeItem('sc_vc_draft');}catch(e){}}
+function loadVcDraft(){try{const raw=localStorage.getItem('sc_vc_draft');if(raw){const o=JSON.parse(raw);if(o&&typeof o==='object'&&o.photos)_vcSubmitState={photos:o.photos||{},refs:o.refs||{},goals:o.goals||'',routine:Array.isArray(o.routine)?o.routine:[],flags:(o.flags&&typeof o.flags==='object')?o.flags:{}};}}catch(e){}}
 function _toggleSummaryGuide(gi){
   var tips=document.getElementById('sg-tips-'+gi);var chev=document.getElementById('sg-chev-'+gi);
   if(!tips)return;
@@ -6023,7 +6065,7 @@ function _applyServerVcInvite(vi){
   if(iat&&iat===_vcSubmittedInviteId())return;
   if(!vcInvite||String(vcInvite.invitedAt||'')!==iat){
     vcInvite={kind:vi.kind,title:vi.title||'Virtual consult',fee:vi.fee||'',providerFirst:client.providerFirst,invitedAt:vi.invitedAt||0,photoLabels:Array.isArray(vi.photoLabels)?vi.photoLabels:undefined,refLabels:Array.isArray(vi.refLabels)?vi.refLabels:undefined,refTitle:vi.refTitle||undefined};
-    _vcSubmitState={photos:{},refs:{},routine:[]};
+    _vcSubmitState={photos:{},refs:{},routine:[],flags:{}};
     try{persistInvite();}catch(e){}try{persistVcDraft();}catch(e){}   // a new invite starts a fresh draft
   }
   let notified='';try{notified=localStorage.getItem('sc_vc_notified')||'';}catch(e){}

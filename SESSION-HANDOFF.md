@@ -3220,6 +3220,44 @@ can reword it. It no-ops if nothing has been submitted yet.
 including that the tips stay collapsed once dismissed, that a photo-free consult is never nagged,
 that her edited wording is what goes out, and that the submission survives the ask.
 
+### Shipped: the escalation path (`2026-10-08c`) — recommendation #3
+
+Four documented misses, four questions. In the 2016 secret-shopper study a bacterial folliculitis was
+called acne by **10 of 12** clinicians, **not one** clinician in a case written to show a hormonal
+cause raised it, and **3 of 14** told a patient a nodular melanoma looked fine. The failure mode of
+consumer skin consults was never misreading the photo — it was NOT ASKING.
+
+**Client side**: `_vcFlagsHTML()` adds "Anything a doctor should see?" — four ticks (hurts/bleeds/not
+healing · a spot or mole changed · came on fast or spreading · periods or body hair changed) plus an
+optional note. Shown for photo-free consults too, because this is triage, not photo triage. A tick
+alone now keeps the draft alive (`persistVcDraft` previously needed a photo, goals or a routine row)
+and `loadVcDraft` restores it.
+
+The referral rule is taken from **statute, not a blog list**: North Carolina's scope is written as
+"improving the appearance of the skin", so pain, bleeding and non-healing are outside the licence by
+the statute's own words.
+
+**Provider side**: `_sanVcFlags()` whitelists and coerces (unknown keys dropped, note trimmed to 400),
+and the flags ride the three ingest paths plus `_hydrateVcSubs` (which takes the whole blob, so
+`sc_pro_vc_subs` needed no change — no new synced key, no new merge decision).
+`_vcFlagBannerHTML()` puts an amber block at the top of the review listing what she ticked, quoting
+her note, and offering `vcReferToDoctor(id)`.
+
+**THE STRUCTURAL RULE, asserted in the test: there is no control anywhere in this flow that can say a
+lesion is fine.** No "all clear", no "benign", no "nothing to worry about". The only dispositions are
+a plan, a request for better photos, and a referral. That is the direct answer to the 3-of-14 finding
+and it must stay true — `escalate.mjs` fails if any of those words appear on the review screen.
+
+A referral is a recorded disposition (`referredAt` on the invite), not a message she has to remember
+sending, and it does **not** close the consult: "see someone about that spot" and "here is your
+routine" are not mutually exclusive, so Send review stays available and the screen shows the referral
+date. The wording is the fourth editable template (`vc_refer`) and says plainly that she cannot
+diagnose or treat it.
+
+`scratchpad/escalate.mjs` — 32 assertions across both apps. Note for whoever runs it: the section
+heading is `text-transform:uppercase` and Chrome's `innerText` returns the TRANSFORMED text, so those
+two checks are case-insensitive on purpose.
+
 ### Still to do, in this order (SUPERSEDED — see the revised table in `reports/Virtual consult research verified.md` §4)
 
 2. **The structured plan document.** The central recommendation. Today `sendVcReview` reads ONE
