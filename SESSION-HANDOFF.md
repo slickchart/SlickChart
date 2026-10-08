@@ -3086,6 +3086,93 @@ a genuine profession switch made on another device, and a speculative guard on a
 what caused the one-day `customProducts` regression. **Ask her whether the workspace still says
 Equine before touching it.**
 
+## 2aj-2. HEATHER, AGAIN and WORSE: clients themselves missing (2026-10-08) — OPEN
+
+**What she OBSERVED** (ground truth, §1b — do NOT re-litigate any line of this):
+
+1. **She had 4 clients. The app now shows only 2.**
+2. **Two of her clients had multiple horses.**
+3. **Multiple session summaries, notes and photos are gone.**
+4. Ashley: this is priority #1, her work must not be lost.
+
+**Still true from 2aj (asked and answered on 2026-10-07, settled):**
+5. She was on her **PHONE**.
+6. Her workspace **still says Equine**.
+
+**NOT YET ASKED — ask, do not assume:**
+- Are the 2 MISSING clients the same 2 that had horses? (Likely, but it decides whether this is the
+  owner-record path or the roster path, so it is worth one question.)
+- Which device is she looking at NOW — the same phone, or a computer?
+- Did she do anything that could read as a delete (a swipe, a merge-duplicates, a "remove")?
+
+**2aj is a DIFFERENT symptom and its fix is not in question here.** There, the grouping broke and the
+charts were intact. Here the CLIENTS are missing. Do not assume one caused the other, and do not
+assume `2026-10-07b` failed — §1b.5 says a fix that ships and changes nothing means the reproduction
+was not her situation, and this is a new report, not the old one recurring.
+
+### The fact that matters most, established 2026-10-08 by reading the code
+
+**The server NEVER hard-deletes a provider's client.** `markClientDeleted` (lib/clients.js) only sets
+`deleted_at`; the row, its `data` jsonb (notes, summaries, the `animals` list with each horse's own
+summaries and photos), its PII and its `client_events` rows ALL SURVIVE. `listClients` filters on
+`deleted_at IS NULL`, which is the only reason they stop appearing. `deleteClientData` is the
+CLIENT-initiated erasure and is a different path she cannot have hit.
+
+So unless something outside the app deleted rows, **her data is still in the database and a restore is
+an UPDATE setting `deleted_at=NULL`.** Establish that before writing any merge fix: the recovery and
+the root cause are two separate jobs and the recovery comes first.
+
+**Second fact, as useful as the first: `clients.data` is an UNTOUCHED BACKUP nobody has ever read
+back.** `_assembleClientData` sends the whole assembled blob per client on every roster sync — her
+`summaries`, `forms`, `profile`, `progressPhotos` refs, and crucially **`animals`: every HORSE with
+its own name, species, treatment and `summaries` (capped at 8 each)**. But `GET /api/clients` returns
+only `id, token, name, email, phone, invited_at, opened_at, updated_at` via `listClients` — the
+`data` column is **never** read back by the app. It has been accumulating as a write-only backup the
+whole time. For an equine account it is the only place outside her device where the horse-level
+charts exist.
+
+**What is NOT in it, so do NOT promise it:** the provider's own clinical session `photos` are
+deliberately never sent (the comment in `_assembleClientData` says so — blob size and the client
+shouldn't see them). `progressPhotos` are REFS, not image data. So notes and summaries are
+recoverable from the server; **her raw clinical photos are only on her device.** Say that plainly to
+Ashley rather than letting "photos" ride along in a list of things coming back.
+
+### SHIPPED the same hour: the founder tool to actually get them back (`2026-10-08k`)
+
+`api/admin/client-recover.js` + "Get a provider's clients back" in the existing founder-only Admin
+tools section on the Account screen (NOT a new button in the everyday UI — §5).
+
+- **GET `?email=`** — the diagnosis. Rows total / showing / removed, per client the COUNTS of
+  summaries, chart fields, forms and photo refs, **each animal by name with its own summary count**,
+  the roster blob's shape and ids, `missingFromRoster` / `missingFromTable` (rows present but the
+  account's `sc_clients` forgot them — the OTHER way a client vanishes), and
+  `deletedRecordIds` from her `sc_deleted_clients`. That last one is the key question answered:
+  **a device delete record means she really removed them; an empty one means something removed them
+  for her.**
+- **POST `{restoreIds}`** — clears `deleted_at`, scoped to that provider, only on rows already
+  tombstoned AND still carrying a name (so a CLIENT's own erasure via `deleteClientData` is never
+  undone). Reversible by removing again. Idempotent.
+- **POST `{exportIds}`** — the full blob per id, for rebuilding by hand if the roster is beyond
+  repair. Content, so it is explicit and per-id and never part of the diagnosis.
+- Privacy line held: the diagnosis returns NAMES and COUNTS, never record content (asserted).
+  Founder-gated on the verified token's email; added to `check-tenant-isolation`'s ALLOW as the
+  tenth reviewed exception, and it is the only one of the three admin tools that WRITES.
+
+**Verified:** `scripts/test-client-recover.mjs` — 36 assertions against a REAL PostgreSQL 16 with her
+exact situation seeded (4 clients, 2 soft-deleted, 2 owners with horses carrying their own
+summaries). It proves the row, its summaries and its horses all survive `markClientDeleted`, that
+the restore brings them back with the horse summaries intact, that another provider's client cannot
+be restored or exported through her email, and that a client's own erasure is refused.
+`scratchpad/recover.mjs` — 26 assertions driving the real UI.
+
+**Two bugs the real database caught that a mock never would have:** `coalesce(data,'')` on a `jsonb`
+column 500s the whole lookup ("invalid input syntax for type json" — it needs `data::text`), and a
+column aliased `t` collides with the row alias in any `row_to_json(t)` wrapper. Run that script
+after ANY change to this endpoint.
+
+**Still unknown, and it decides the root cause — ASK HER:** whether the 2 missing clients are the 2
+with horses, which device she is looking at now, and whether anything she did could read as a delete.
+
 ## 2ak. The virtual consult work (2026-10-08) — from the research in `reports/`
 
 `reports/Virtual consult platform upgrades.md` is the research behind this. Read its "three requests"

@@ -214,7 +214,7 @@ const S=document.getElementById('S');
 // resets when I save it" and there was no way to tell whether her phone had any of them — a whole
 // day was spent debugging code she may not have been running. Shown at the bottom of Settings, so
 // the answer is a screenshot away. Bump it on every ship.
-const APP_BUILD='2026-10-08j';
+const APP_BUILD='2026-10-08k';
 
 
 /* ════════════════════════════════════════════════════════════════
@@ -21541,6 +21541,7 @@ function renderAccount(){
     <div style="border-top:1px solid var(--p-line);"></div>
     <div onclick="_founderStaleSubs(this)" style="display:flex;align-items:center;gap:11px;padding:13px 14px;cursor:pointer;"><div style="width:38px;height:38px;border-radius:12px;background:var(--p-surf2);display:flex;align-items:center;justify-content:center;flex-shrink:0;"><i class="ti ti-receipt-off" style="font-size:18px;color:var(--p-green);"></i></div><div style="flex:1;"><div style="font-size:16px;font-weight:500;color:var(--p-ink);">Check for stray subscription rows</div><div style="font-size:16px;color:var(--p-mut);">Roadmap buyers who look like paying subscribers. Read-only, changes nothing</div></div><i class="ti ti-chevron-right" style="font-size:16px;color:var(--p-mut);"></i></div>
     <div style="border-top:1px solid var(--p-line);"></div>
+    <div onclick="_founderClientRecover(this)" style="display:flex;align-items:center;gap:11px;padding:13px 14px;border-bottom:1px solid var(--p-line2);cursor:pointer;"><div style="width:38px;height:38px;border-radius:12px;background:var(--p-surf2);display:flex;align-items:center;justify-content:center;flex-shrink:0;"><i class="ti ti-restore" style="font-size:18px;color:var(--p-green);"></i></div><div style="flex:1;"><div style="font-size:16px;font-weight:500;color:var(--p-ink);">Get a provider&rsquo;s clients back</div><div style="font-size:16px;color:var(--p-mut);">Shows what the server still holds for them, and offers to put it back</div></div><i class="ti ti-chevron-right" style="font-size:16px;color:var(--p-mut);"></i></div>
     <div onclick="_founderKvHealth(this)" style="display:flex;align-items:center;gap:11px;padding:13px 14px;cursor:pointer;"><div style="width:38px;height:38px;border-radius:12px;background:var(--p-surf2);display:flex;align-items:center;justify-content:center;flex-shrink:0;"><i class="ti ti-stethoscope" style="font-size:18px;color:var(--p-green);"></i></div><div style="flex:1;"><div style="font-size:16px;font-weight:500;color:var(--p-ink);">Are a provider’s saves landing?</div><div style="font-size:16px;color:var(--p-mut);">When their settings last reached the server. Timestamps &amp; sizes only, never their data</div></div><i class="ti ti-chevron-right" style="font-size:16px;color:var(--p-mut);"></i></div>
   </div></div>`:''}
   <div onclick="_versionTap()" style="text-align:center;padding:14px;font-size:14px;color:var(--p-mut);cursor:default;-webkit-user-select:none;user-select:none;">SlickChart · Version 1.0.3 · build ${_fileEsc(APP_BUILD)}</div></div>`;
@@ -26866,6 +26867,83 @@ async function _founderKvHealth(rowEl){
     setSub('Checked \u00b7 '+j.totalKeys+' keys');
     setTimeout(()=>setSub(orig),9000);
   }catch(e){ setSub('Couldn\u2019t check \u2014 try again.'); setTimeout(()=>setSub(orig),6000); }
+}
+// ── Founder tool: get a provider's clients back ─────────────────────────────────────────────────
+// Heather reported 4 clients down to 2 with summaries and notes gone. The thing nobody could see is
+// WHERE her data was: still in the clients table, still in the account's roster blob, or genuinely
+// gone. This asks the database and says so in plain words, then offers to put back exactly what it
+// found. Read-only until she taps Restore.
+async function _founderClientRecover(rowEl){
+  const sub=rowEl&&rowEl.querySelector('div>div:nth-child(2)');
+  const orig='Shows what the server still holds for them, and offers to put it back';
+  const setSub=t=>{try{if(sub)sub.textContent=t;}catch(e){}};
+  const email=(typeof prompt==='function')?prompt('Which provider? (their sign-in email)'):'';
+  if(!email)return;
+  const tok=(typeof Cloud!=='undefined'&&Cloud&&Cloud.token)||'';
+  setSub('Looking\u2026');
+  let j=null;
+  try{
+    const r=await fetch('/api/admin/client-recover?email='+encodeURIComponent(String(email).trim()),{headers:{'Authorization':'Bearer '+tok}});
+    j=await r.json().catch(()=>({}));
+    if(!r.ok||!j.ok){setSub((j&&j.error)||'Couldn\u2019t look that up.');setTimeout(()=>setSub(orig),8000);return;}
+  }catch(e){ setSub('Couldn\u2019t reach the server.'); setTimeout(()=>setSub(orig),6000); return; }
+
+  const c=j.counts||{};
+  const del=(j.clients||[]).filter(x=>x.deleted);
+  const lines=[];
+  lines.push(j.provider.email);
+  lines.push(c.rowsLive+' client'+(c.rowsLive===1?'':'s')+' showing, '+c.rowsDeleted+' removed but still on the server');
+  if(c.rosterIds!=null)lines.push('Their app\u2019s own list knows about '+c.rosterIds);
+  lines.push('');
+  // What each recoverable client still has. Counts only - this never reads their notes.
+  (j.clients||[]).forEach(function(x){
+    const h=x.has||{};
+    const bits=[];
+    if(h.summaries)bits.push(h.summaries+' summar'+(h.summaries===1?'y':'ies'));
+    if(h.profileFilled)bits.push(h.profileFilled+' chart field'+(h.profileFilled===1?'':'s'));
+    if(h.forms)bits.push(h.forms+' form'+(h.forms===1?'':'s'));
+    if(h.progressPhotos)bits.push(h.progressPhotos+' photo'+(h.progressPhotos===1?'':'s'));
+    const an=Array.isArray(h.animals)?h.animals:[];
+    if(an.length){
+      const asum=an.reduce((n,a)=>n+(a.summaries||0),0);
+      bits.push(an.length+' animal'+(an.length===1?'':'s')+(asum?(' with '+asum+' summar'+(asum===1?'y':'ies')):''));
+    }
+    lines.push((x.deleted?'REMOVED  ':'showing  ')+(x.name||x.id)+(bits.length?' \u2014 '+bits.join(', '):' \u2014 nothing stored')); 
+    an.forEach(function(a){ lines.push('             \u00b7 '+(a.name||'(unnamed)')+(a.summaries?(' \u2014 '+a.summaries+' summar'+(a.summaries===1?'y':'ies')):'')); });
+  });
+  if(j.missingFromRoster&&j.missingFromRoster.length)
+    lines.push('\n'+j.missingFromRoster.length+' client(s) are on the server but MISSING from their app\u2019s list.');
+  if(j.deletedRecordIds&&j.deletedRecordIds.length)
+    lines.push('\nTheir device asked to remove '+j.deletedRecordIds.length+' client(s), so the removal came FROM the app, not the server.');
+  else if(c.rowsDeleted)
+    lines.push('\nTheir device has NO record of removing anyone \u2014 so these were not removed by them on purpose.');
+
+  const body=lines.join('\n');
+  if(!del.length){
+    if(typeof confirmModal==='function')confirmModal({title:'What the server holds',body:body+'\n\n(Counts only \u2014 none of their notes were read.)',action:'Got it',hideCancel:true},function(){});
+    setSub('Checked \u00b7 nothing removed to restore');
+    setTimeout(()=>setSub(orig),9000);
+    return;
+  }
+  const go=async function(){
+    setSub('Restoring\u2026');
+    try{
+      const r2=await fetch('/api/admin/client-recover',{method:'POST',headers:{'Content-Type':'application/json','Authorization':'Bearer '+tok},
+        body:JSON.stringify({email:String(email).trim(),restoreIds:del.map(x=>x.id)})});
+      const j2=await r2.json().catch(()=>({}));
+      if(!r2.ok||!j2.ok){setSub((j2&&j2.error)||'Restore failed.');setTimeout(()=>setSub(orig),8000);return;}
+      const names=(j2.clients||[]).map(x=>x.name||x.id).join(', ');
+      if(typeof confirmModal==='function')confirmModal({title:'Put back',
+        body:j2.restored+' client'+(j2.restored===1?'':'s')+' restored'+(names?': '+names:'')+'.\n\nThey need to open the app and pull down to refresh for it to show on their device.',
+        action:'Got it',hideCancel:true},function(){});
+      setSub('Restored '+j2.restored);
+      setTimeout(()=>setSub(orig),9000);
+    }catch(e){ setSub('Restore failed \u2014 try again.'); setTimeout(()=>setSub(orig),6000); }
+  };
+  if(typeof confirmModal==='function')confirmModal({title:'Put these clients back?',
+    body:body+'\n\nRestoring puts the '+del.length+' removed client'+(del.length===1?'':'s')+' back on their account with everything above. It changes nothing else, and can be undone by removing them again.',
+    action:'Restore '+del.length},go);
+  else go();
 }
 // ── Founder tool: send myself a test push (confirm the phone is registered) ─────────────────────
 // delaySec>0 asks the SERVER to wait before sending, so the founder can close the app and confirm a

@@ -29,6 +29,12 @@ const ALLOW={
   // up, never the authorizer — which is exactly what §0.5 requires. Re-read them if either changes.
   'admin/kv-health.js':'founder-gated via the verified token email; query email is the lookup subject',
   'admin/provider-lookup.js':'founder-gated via the verified token email; email is the lookup subject',
+  // Same gate again, and the only one of the three that WRITES. Every statement in it is scoped to
+  // the owner resolved from that email (`provider_id=${owner}`), the restore only clears deleted_at
+  // on a row that is already tombstoned AND still carries a name (so a client's own erasure is
+  // never undone), and the export is per-id and never part of the diagnosis. Re-read it if it
+  // changes — it can hand a provider's client records to whoever passes the founder gate.
+  'admin/client-recover.js':'founder-gated via the verified token email; email is the lookup subject, every query scoped to that provider',
   // Passwordless reset: the email IS the input by nature. Non-enumerable — always 200, rate-limited
   // per email, and a request for an unknown address behaves identically to a known one (§0.4).
   'request-reset.js':'passwordless reset; always returns 200 and is rate-limited, so it reveals nothing',
