@@ -81,17 +81,46 @@ export default async function handler(req, res) {
   const q = sql();
 
   const email = norm((req.query && req.query.email) || (req.body && req.body.email) || '');
-  if (!email) { res.status(400).json({ error: 'Pass the provider email.' }); return; }
+  // `q` is a NAME (or part of one). Ashley knows "Heather Hinkle" and "the only equine provider";
+  // she does not know the sign-in email, and making her go and find it is friction on exactly the
+  // day a provider is upset. Resolved to an email below, and never used to authorize anything.
+  const nameQ = String((req.query && req.query.q) || (req.body && req.body.q) || '').trim();
+  if (!email && !nameQ) { res.status(400).json({ error: 'Pass the provider email, or a name to search for.' }); return; }
 
   try {
     await ensureProvidersTable();
     await ensureTable();
     await ensureClientTables();
-    const pr = await q`SELECT id, email, name FROM providers WHERE lower(email) = ${email}`;
-    if (!pr.length) { res.status(404).json({ error: 'No provider with that email.' }); return; }
+    let pr;
+    if (email) {
+      pr = await q`SELECT id, email, name FROM providers WHERE lower(email) = ${email}`;
+      if (!pr.length) { res.status(404).json({ error: 'No provider with that email.' }); return; }
+    } else {
+      // Name search. Matches the name OR the address, so a half-remembered either way still lands.
+      // Strip the LIKE wildcards so a typed % or _ cannot become "match everything" — and then
+      // require something left to search on, or `%` alone listed every provider on the deployment.
+      const bare = nameQ.toLowerCase().replace(/[%_\\]/g, '').trim();
+      if (bare.length < 2) { res.status(400).json({ error: 'Type at least two letters of their name.' }); return; }
+      const like = '%' + bare + '%';
+      const hits = await q`SELECT id, email, name FROM providers
+        WHERE lower(coalesce(name,'')) LIKE ${like} OR lower(coalesce(email,'')) LIKE ${like}
+        ORDER BY lower(coalesce(name,'')) LIMIT 25`;
+      if (!hits.length) { res.status(404).json({ error: 'No provider matches \u201c' + nameQ + '\u201d.' }); return; }
+      if (hits.length > 1) {
+        // Ambiguous on purpose: never guess which provider's records to touch. Hand back the list
+        // and let the founder pick, with no diagnosis run and nothing written.
+        res.status(200).json({ ok: true, needsPick: true,
+          matches: hits.map(h => ({ email: h.email, name: h.name || '' })) });
+        return;
+      }
+      pr = hits;
+    }
     const owner = String(pr[0].id);
 
     if (req.method === 'POST') {
+      // A write names its provider by EMAIL, always. A name search can be ambiguous, and
+      // "restore whoever this probably means" is not a thing this endpoint will do.
+      if (!email) { res.status(400).json({ error: 'Restoring needs the exact provider email.' }); return; }
       const body = req.body || {};
       const restoreIds = Array.isArray(body.restoreIds) ? body.restoreIds.slice(0, 500).map(String) : [];
       const exportIds = Array.isArray(body.exportIds) ? body.exportIds.slice(0, 50).map(String) : [];

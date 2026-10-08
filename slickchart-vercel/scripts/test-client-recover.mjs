@@ -124,8 +124,40 @@ ok('no token -> 401', (await call('GET', { query: { email: 'heather@example.com'
 ok('not a founder -> 403', (await call('GET', { token: tokenFor('someone@else.com'), query: { email: 'heather@example.com' } })).code === 403);
 ok('unknown provider -> 404', (await call('GET', { token: tokenFor('ashley@slickchart.app'), query: { email: 'nobody@example.com' } })).code === 404);
 
+// ── name search: she knows "Heather Hinkle", not the sign-in email ───────────
+let r;
+await q`UPDATE providers SET name='Heather Hinkle' WHERE id=${H}`;
+r = await call('GET', { token: tokenFor('ashley@slickchart.app'), query: { q: 'hinkle' } });
+ok('finds her by surname', r.code === 200 && r.body.ok && !r.body.needsPick && r.body.provider.id === H, r.body && r.body.provider);
+r = await call('GET', { token: tokenFor('ashley@slickchart.app'), query: { q: 'Heather Hinkle' } });
+ok('finds her by full name', r.code === 200 && r.body.ok && r.body.provider.id === H);
+r = await call('GET', { token: tokenFor('ashley@slickchart.app'), query: { q: 'HINK' } });
+ok('name search ignores case', r.code === 200 && r.body.ok && r.body.provider.id === H);
+r = await call('GET', { token: tokenFor('ashley@slickchart.app'), query: { q: 'heather@exam' } });
+ok('a partial EMAIL works in the name box too', r.code === 200 && r.body.ok && r.body.provider.id === H);
+r = await call('GET', { token: tokenFor('ashley@slickchart.app'), query: { q: 'nobody-like-this' } });
+ok('no match -> 404', r.code === 404, r.code);
+// Two providers matching must NEVER be guessed at.
+await q`UPDATE providers SET name='Heather Other' WHERE id=${OTHER}`;
+r = await call('GET', { token: tokenFor('ashley@slickchart.app'), query: { q: 'heather' } });
+ok('ambiguous -> hands back the list, no diagnosis', r.code === 200 && r.body.needsPick === true && (r.body.matches || []).length === 2, r.body);
+ok('the pick list carries no client data', JSON.stringify(r.body).indexOf('Dana Reed') < 0);
+// A WRITE must never resolve by name.
+r = await call('POST', { token: tokenFor('ashley@slickchart.app'), body: { q: 'hinkle', restoreIds: ['c_owner1'] } });
+ok('restore refuses a name, demands the exact email', r.code === 400, r.code);
+ok('name search is still founder-gated', (await call('GET', { token: tokenFor('x@y.com'), query: { q: 'hinkle' } })).code === 403);
+// A % or _ typed into the box must not turn into a wildcard match-everything. This FAILED the first
+// time: stripping the wildcards left an empty string, so `%` listed every provider on the deployment.
+r = await call('GET', { token: tokenFor('ashley@slickchart.app'), query: { q: '%' } });
+ok('a bare % is rejected, not treated as match-all', r.code === 400, r.code);
+r = await call('GET', { token: tokenFor('ashley@slickchart.app'), query: { q: '%hink%' } });
+ok('wildcards around a real name still find her', r.code === 200 && r.body.ok && r.body.provider.id === H, r.code);
+r = await call('GET', { token: tokenFor('ashley@slickchart.app'), query: { q: 'h' } });
+ok('one letter is rejected', r.code === 400, r.code);
+await q`UPDATE providers SET name='Other' WHERE id=${OTHER}`;
+
 // ── the diagnosis ────────────────────────────────────────────────────────────
-let r = await call('GET', { token: tokenFor('ashley@slickchart.app'), query: { email: 'HEATHER@example.com ' } });
+r = await call('GET', { token: tokenFor('ashley@slickchart.app'), query: { email: 'HEATHER@example.com ' } });
 ok('diagnosis 200 (email normalised)', r.code === 200 && r.body && r.body.ok, r.code);
 const j = r.body || {};
 ok('reports 4 rows total', j.counts && j.counts.rowsTotal === 4, j.counts);

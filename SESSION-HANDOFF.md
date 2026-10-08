@@ -3158,12 +3158,20 @@ tools section on the Account screen (NOT a new button in the everyday UI — §5
   Founder-gated on the verified token's email; added to `check-tenant-isolation`'s ALLOW as the
   tenth reviewed exception, and it is the only one of the three admin tools that WRITES.
 
-**Verified:** `scripts/test-client-recover.mjs` — 36 assertions against a REAL PostgreSQL 16 with her
+**Search by NAME, not just email (`2026-10-08l`).** Ashley asked for Heather's email and nobody has
+it — it is not in the repo and it should not be. She knows the NAME. So `?q=` takes a name or part
+of one and matches the provider's name OR address: one hit runs the diagnosis, several hand back the
+list for her to pick from (never a guess), none is a 404. A WRITE still demands the exact email, and
+the app posts the RESOLVED email rather than what she typed. Two real bugs came out of testing it:
+typed LIKE wildcards had to be stripped, and once stripped, a bare `%` left an EMPTY search that
+matched every provider on the deployment — so a search now needs two real letters.
+
+**Verified:** `scripts/test-client-recover.mjs` — 53 assertions against a REAL PostgreSQL 16 with her
 exact situation seeded (4 clients, 2 soft-deleted, 2 owners with horses carrying their own
 summaries). It proves the row, its summaries and its horses all survive `markClientDeleted`, that
 the restore brings them back with the horse summaries intact, that another provider's client cannot
 be restored or exported through her email, and that a client's own erasure is refused.
-`scratchpad/recover.mjs` — 26 assertions driving the real UI.
+`scratchpad/recover.mjs` — 40 assertions driving the real UI.
 
 **Two bugs the real database caught that a mock never would have:** `coalesce(data,'')` on a `jsonb`
 column 500s the whole lookup ("invalid input syntax for type json" — it needs `data::text`), and a

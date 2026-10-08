@@ -214,7 +214,7 @@ const S=document.getElementById('S');
 // resets when I save it" and there was no way to tell whether her phone had any of them — a whole
 // day was spent debugging code she may not have been running. Shown at the bottom of Settings, so
 // the answer is a screenshot away. Bump it on every ship.
-const APP_BUILD='2026-10-08k';
+const APP_BUILD='2026-10-08l';
 
 
 /* ════════════════════════════════════════════════════════════════
@@ -26877,15 +26877,34 @@ async function _founderClientRecover(rowEl){
   const sub=rowEl&&rowEl.querySelector('div>div:nth-child(2)');
   const orig='Shows what the server still holds for them, and offers to put it back';
   const setSub=t=>{try{if(sub)sub.textContent=t;}catch(e){}};
-  const email=(typeof prompt==='function')?prompt('Which provider? (their sign-in email)'):'';
-  if(!email)return;
+  const typed=(typeof prompt==='function')?prompt('Which provider? Their name or their sign-in email'):'';
+  if(!typed)return;
   const tok=(typeof Cloud!=='undefined'&&Cloud&&Cloud.token)||'';
   setSub('Looking\u2026');
+  // A name is enough. If it matches more than one provider the server hands back the list rather
+  // than guessing, and she picks from it — a restore always goes out by exact email.
+  let email=String(typed).trim();
+  const look=async function(byName){
+    const qs=byName?('q='+encodeURIComponent(email)):('email='+encodeURIComponent(email));
+    const r=await fetch('/api/admin/client-recover?'+qs,{headers:{'Authorization':'Bearer '+tok}});
+    const jj=await r.json().catch(()=>({}));
+    return {ok:r.ok,j:jj};
+  };
   let j=null;
   try{
-    const r=await fetch('/api/admin/client-recover?email='+encodeURIComponent(String(email).trim()),{headers:{'Authorization':'Bearer '+tok}});
-    j=await r.json().catch(()=>({}));
-    if(!r.ok||!j.ok){setSub((j&&j.error)||'Couldn\u2019t look that up.');setTimeout(()=>setSub(orig),8000);return;}
+    let got=await look(email.indexOf('@')<0);
+    if(got.ok&&got.j&&got.j.ok&&got.j.needsPick){
+      const list=(got.j.matches||[]);
+      const pickBody=list.map((m,i)=>(i+1)+'. '+(m.name||'(no name)')+'  \u2014  '+m.email).join('\n');
+      const pick=(typeof prompt==='function')?prompt('More than one provider matches:\n\n'+pickBody+'\n\nType the number, or paste the email'):'';
+      if(!pick){setSub(orig);return;}
+      const n=parseInt(String(pick).trim(),10);
+      email=(n>=1&&n<=list.length)?list[n-1].email:String(pick).trim();
+      setSub('Looking\u2026');
+      got=await look(false);
+    }
+    if(!got.ok||!got.j||!got.j.ok){setSub((got.j&&got.j.error)||'Couldn\u2019t look that up.');setTimeout(()=>setSub(orig),8000);return;}
+    j=got.j;
   }catch(e){ setSub('Couldn\u2019t reach the server.'); setTimeout(()=>setSub(orig),6000); return; }
 
   const c=j.counts||{};
@@ -26939,7 +26958,7 @@ async function _founderClientRecover(rowEl){
     setSub('Restoring\u2026');
     try{
       const r2=await fetch('/api/admin/client-recover',{method:'POST',headers:{'Content-Type':'application/json','Authorization':'Bearer '+tok},
-        body:JSON.stringify({email:String(email).trim(),restoreIds:del.map(x=>x.id)})});
+        body:JSON.stringify({email:j.provider.email,restoreIds:del.map(x=>x.id)})});
       const j2=await r2.json().catch(()=>({}));
       if(!r2.ok||!j2.ok){setSub((j2&&j2.error)||'Restore failed.');setTimeout(()=>setSub(orig),8000);return;}
       const names=(j2.clients||[]).map(x=>x.name||x.id).join(', ');
