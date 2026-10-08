@@ -3085,3 +3085,58 @@ at it. Left alone on purpose: guessing a "non-default beats default" rule onto a
 a genuine profession switch made on another device, and a speculative guard on a sync key is exactly
 what caused the one-day `customProducts` regression. **Ask her whether the workspace still says
 Equine before touching it.**
+
+## 2ak. The virtual consult work (2026-10-08) — from the research in `reports/`
+
+`reports/Virtual consult platform upgrades.md` is the research behind this. Read its "three requests"
+section before touching the consult feature. The finding that orders the work: **the written
+follow-up IS the product** — it is what the client was promised, the after-hours labour a feature can
+displace, the carrier of her product revenue, and where scope-of-practice exposure lives.
+
+**Ashley's standing decision, 2026-10-08: NO CAP on the number of products in a plan.** The research
+argues for 3-5 (adherence, and a practitioner guide on overwhelming clients) and she has read that
+and decided against it: "some people need more and I dont want a cap." Do not add a cap, and do not
+add a nag either. This is settled — do not re-raise it.
+
+### Shipped: her words, not ours (`2026-10-08a`)
+
+Every client-facing consult message was a hardcoded sentence, identical for every provider on the
+deployment, sparkle emoji included. A provider running a corrective practice could not change it.
+
+- `sc_msg_templates`, an array of `{id,text,_ts}`, registered in `_LIB_TOMB` →
+  `sc_deleted_msg_tmpls`, so it merges on pull through the existing `_mergeAuthoredById` path with
+  **no new merge code** and a reset on one device is not undone by another. Loader is a
+  `_reloadStep` ('message wording'). merge-coverage 83→84 keys, reload-coverage 78→79 loaders.
+- `_MSG_DEFAULTS` holds the sentences that used to be hardcoded, so **an unedited template sends
+  byte-identical text to what shipped before** (asserted). "Reset to default" DELETES the record
+  rather than copying the default text in, so a reset copy cannot freeze and miss a later fix.
+- Tokens (`{client} {me} {business} {consult} {fee}`) resolve from live app data at send time.
+  Deliberately NOT a second store of constants: she renames her business once and every message she
+  has written follows. An unknown token is left as typed, never blanked — `{colour}` is a typo, and
+  silently deleting it from the message her client receives is the worse failure.
+- Editor lives on the Virtual Consultations settings tab under the fee, not in Settings: that is
+  where she already sets the fee and the consult types. Token chips insert at the cursor; the preview
+  uses her REAL business name and first name with a stand-in client.
+- `_msgRaw` already looks up a per-consult-type override (`vc_invite:<typeId>`) first, so adding that
+  editor later needs no storage change. Nothing writes those ids yet.
+
+`scratchpad/wording.mjs` (17 assertions, incl. the stale-device merge and that a re-save clears the
+tombstone) and `scratchpad/wordingui.mjs` (8, drives the real buttons).
+
+### Still to do, in this order
+
+2. **The structured plan document.** The central recommendation. Today `sendVcReview` reads ONE
+   textarea and `_doSendVcReview` pastes it into a chat bubble. Sections, required fields (amount as
+   a physical referent, named slot, order, named days), slot as the organising key, delivered as a
+   client-facing page at the magic link with the chat message reduced to a pointer. No product cap.
+3. Reusable plan templates, holistic and corrective, shipped pre-written and editable.
+4. Follow-up date on every plan + week-2 and week-6 check-ins (week 6 is the adherence cliff).
+5. Compose the product-audit verdicts into the plan as keep / change / stop.
+6. Language guardrails: no field that can call a lesion benign.
+7-11. Photo nudge, intake additions, per-purpose photo consent, plan versioning, ghosted retake.
+12. Google Calendar busy-time import (inbound only, per-provider OAuth in a `square_connections`
+    -shaped table — §0 asset class). Large, last.
+
+Rejected with reasons in the report: client-facing AI skin scores, AI that writes her message, a
+workflow canvas, a platform storefront or default affiliate links, a fee-credit ledger, in-house
+video, clinical photo apparatus, shipped ramp/purging timelines, spintax.

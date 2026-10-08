@@ -214,7 +214,7 @@ const S=document.getElementById('S');
 // resets when I save it" and there was no way to tell whether her phone had any of them — a whole
 // day was spent debugging code she may not have been running. Shown at the bottom of Settings, so
 // the answer is a screenshot away. Bump it on every ship.
-const APP_BUILD='2026-10-07b';
+const APP_BUILD='2026-10-08a';
 
 
 /* ════════════════════════════════════════════════════════════════
@@ -2436,7 +2436,8 @@ const _LIB_TOMB={
   sc_affiliate_links:['sc_deleted_products','sc_hidden_square'],
   // Her consult types. Hiding a BUILT-IN records its synthetic 'def:<kind>' id here, which is how a
   // default she does not want stays gone without anything having to be stored for it.
-  sc_vc_types:'sc_deleted_vc_types'
+  sc_vc_types:'sc_deleted_vc_types',
+  sc_msg_templates:'sc_deleted_msg_tmpls'
 };
 // Vendors, inventory rows and partners are stored WITHOUT ids. A generated id would differ on every
 // device and the union would duplicate them, so their identity is derived from what the provider
@@ -4013,6 +4014,7 @@ function _reloadAll(){
   S('note format',function(){if(typeof loadNoteFmt==='function')loadNoteFmt();});
   S('documents',function(){if(typeof loadDocs==='function')loadDocs();});
   S('consult types',function(){if(typeof loadVcTypes==='function')loadVcTypes();});
+  S('message wording',function(){if(typeof loadMsgTemplates==='function')loadMsgTemplates();});
   S('needle presets',function(){if(typeof loadNeedlePresets==='function')loadNeedlePresets();});
   S('notification settings',function(){if(typeof loadNotifSettings==='function')loadNotifSettings();});
   S('protocols',function(){if(typeof loadProtocols==='function')loadProtocols();});
@@ -12988,7 +12990,9 @@ function inviteVirtualConsult(id,_force,_kind,_formId,_routine){
     routine:(_routine!==false)};   // ON unless she turned it off for this invite
   try{persistVcState();}catch(e){}
   try{SlickBridge.post('virtual-consult-invite',{providerId:'jess',clientId:id,kind:v.kind,title:v.title,fee:vcFee,photoLabels:Array.isArray(v.photoLabels)?v.photoLabels:[],refTitle:v.refTitle||null,refLabels:Array.isArray(v.refLabels)?v.refLabels:null});}catch(e){}
-  const _inviteMsg=`I'd love to do a virtual ${v.kind==='skin'?'skin':v.kind} consult before your next visit, I've sent an invite to your app. Upload a few photos and I'll send my notes back. ✨`;
+  // {consult} resolves to the same word this sentence used to interpolate, so an unedited template
+  // sends byte-identical text to what shipped before.
+  const _inviteMsg=_msgText('vc_invite',id,{consult:(v.kind==='skin'?'skin':v.kind)},v.id||null);
   if(!msgStore[id])msgStore[id]=[];
   // Tracked bubble (_mid + status) so the invite message flushes when the client joins and shows a
   // real failed/retry state instead of an optimistic toast that can't be recovered.
@@ -13004,6 +13008,163 @@ function inviteVirtualConsult(id,_force,_kind,_formId,_routine){
   renderClient(id);
 }
 // ── Virtual consult inbox (all clients, by status) ──
+// ── HER WORDS, NOT OURS ───────────────────────────────────────────────────────
+// Every client-facing message the app sends was a hardcoded sentence, identical for every provider
+// on the deployment — including a sparkle emoji. A provider who runs a clinical, corrective practice
+// was sending her clients wording she would never write, and could not change it. The research is
+// blunt about why that matters: there is a live market selling estheticians client-email templates
+// on the single promise that they will not sound like templates, and holistic versus corrective is
+// a declared professional identity, not a tone preference.
+//
+// The default is the sentence that used to be hardcoded, so nothing changes until she edits it, and
+// "Reset to default" is a DELETE (tombstoned via _LIB_TOMB) rather than a copy of the default text —
+// otherwise her reset copy would freeze and never pick up a later improvement to the default.
+//
+// Tokens resolve from live app data at send time, which is deliberately not a second store of
+// constants to maintain: she renames her business in one place and every message she has ever
+// written follows. (GoHighLevel sells this as "custom values"; the reason it exists is that a
+// provider who changes her booking link will not go hunting through every template she owns.)
+const _MSG_DEFAULTS={
+  vc_invite:"I'd love to do a virtual {consult} consult before your next visit, I've sent an invite to your app. Upload a few photos and I'll send my notes back. \u2728",
+  vc_review:'Your virtual consult review is ready \ud83d\udccb'
+};
+const _MSG_LABELS={
+  vc_invite:{name:'Consult invite',when:'Sent when you invite a client to a virtual consult.'},
+  vc_review:{name:'Review ready',when:'The first line when you send your notes back. Your notes follow underneath.'}
+};
+// {consult} only means anything on the invite, so it is offered only there.
+const _MSG_TOKENS={
+  vc_invite:['client','me','business','consult','fee'],
+  vc_review:['client','me','business']
+};
+let msgTemplates=[];
+function loadMsgTemplates(){try{const raw=localStorage.getItem('sc_msg_templates');if(raw){const a=JSON.parse(raw);if(Array.isArray(a))msgTemplates=a;}}catch(e){}}
+function saveMsgTemplates(){try{(function(_v){localStorage.setItem('sc_msg_templates',_v);if(typeof _pushKeyNow==='function')_pushKeyNow('sc_msg_templates',_v);return _v;})(JSON.stringify(msgTemplates));}catch(e){}}
+// A per-consult-type override is looked up first ('vc_invite:<typeId>'), so the storage shape does
+// not have to change when that gets its own editor. Nothing writes those ids yet.
+function _msgRaw(id,typeId){
+  try{
+    const find=k=>msgTemplates.find(t=>t&&t.id===k&&typeof t.text==='string');
+    const over=typeId?find(id+':'+typeId):null;
+    if(over)return over.text;
+    const own=find(id);
+    if(own)return own.text;
+  }catch(e){}
+  return _MSG_DEFAULTS[id]||'';
+}
+function _msgIsEdited(id,typeId){try{return !!msgTemplates.find(t=>t&&t.id===((typeId?id+':'+typeId:id))&&typeof t.text==='string');}catch(e){return false;}}
+// Unknown tokens are left exactly as typed rather than blanked: a provider who writes {colour} has
+// made a typo, and silently deleting it from the message she sends her client is the worse failure.
+function _msgFill(text,ctx){
+  ctx=ctx||{};
+  return String(text==null?'':text).replace(/\{([a-z_]{1,20})\}/g,function(whole,tok){
+    return Object.prototype.hasOwnProperty.call(ctx,tok)?String(ctx[tok]==null?'':ctx[tok]):whole;
+  });
+}
+function _msgCtx(clientId,extra){
+  const c=(clientId&&typeof CL!=='undefined'&&CL[clientId])||null;
+  const ctx={
+    client:String((c&&c.name)||'').trim().split(' ')[0]||'there',
+    me:((typeof _providerFirstName==='function'&&_providerFirstName())||'')||'your esthetician',
+    business:((typeof bizInfo!=='undefined'&&bizInfo&&bizInfo.name)||'')||'the studio',
+    fee:((typeof vcFee!=='undefined'&&vcFee)||'free')
+  };
+  if(extra)Object.keys(extra).forEach(function(k){ctx[k]=extra[k];});
+  return ctx;
+}
+function _msgText(id,clientId,extra,typeId){return _msgFill(_msgRaw(id,typeId),_msgCtx(clientId,extra));}
+// The editor. Reached from the Virtual Consultations screen, not buried in Settings, because that is
+// where she is already setting the fee and the consult types.
+function _msgCardHTML(){
+  const row=function(id){
+    const L=_MSG_LABELS[id]||{name:id,when:''};
+    const txt=_msgRaw(id);
+    const edited=_msgIsEdited(id);
+    return `<button onclick="_msgEditSheet('${_jsAttr(id)}')" style="display:flex;width:100%;align-items:center;gap:10px;padding:10px 12px;background:none;border:none;border-bottom:1px solid var(--p-line2);cursor:pointer;font-family:inherit;text-align:left;">
+      <div style="flex:1;min-width:0;">
+        <div style="font-size:16px;font-weight:500;color:var(--p-ink);">${_fileEsc(L.name)}${edited?' <span style="font-size:14px;font-weight:400;color:var(--p-green);">\u00b7 yours</span>':''}</div>
+        <div style="font-size:14px;color:var(--p-mut);overflow:hidden;text-overflow:ellipsis;white-space:nowrap;">${_fileEsc(txt)}</div>
+      </div>
+      <i class="ti ti-pencil" style="font-size:16px;color:var(--accent-strong);flex-shrink:0;"></i>
+    </button>`;
+  };
+  return `<div style="background:var(--surf2);border:1px solid var(--p-line);border-radius:12px;overflow:hidden;margin-bottom:16px;">
+    <div style="padding:12px 12px 8px;">
+      <div style="font-size:16px;font-weight:500;color:var(--p-ink);">What your clients get sent</div>
+      <div style="font-size:14px;color:var(--p-mut);line-height:1.5;margin-top:2px;">These go out in your name. Edit them to sound like you.</div>
+    </div>
+    ${row('vc_invite')}${row('vc_review')}
+  </div>`;
+}
+let _msgEditing='';
+function _msgEditSheet(id){
+  if(!_MSG_DEFAULTS[id])return;
+  _msgEditing=id;
+  const L=_MSG_LABELS[id]||{name:id,when:''};
+  const ex=document.getElementById('msg-edit-sheet');if(ex)ex.remove();
+  const toks=_MSG_TOKENS[id]||[];
+  const m=document.createElement('div');m.id='msg-edit-sheet';
+  m.style.cssText='position:fixed;top:0;bottom:0;left:0;right:0;margin:0 auto;width:390px;max-width:100%;z-index:9999;background:rgba(0,0,0,.6);display:flex;flex-direction:column;justify-content:flex-end;';
+  m.onclick=function(e){if(e.target===m)m.remove();};
+  m.innerHTML='<div style="background:var(--surf1);border-top:1px solid var(--p-line);border-radius:16px 16px 0 0;padding:18px;max-height:92%;overflow:auto;">'
+    +'<div style="width:36px;height:4px;background:var(--p-chip);border-radius:2px;margin:0 auto 14px;"></div>'
+    +'<div style="font-size:16px;font-weight:600;color:var(--p-ink);margin-bottom:3px;">'+_fileEsc(L.name)+'</div>'
+    +'<div style="font-size:16px;color:var(--p-mut);line-height:1.5;margin-bottom:12px;">'+_fileEsc(L.when)+'</div>'
+    +'<textarea id="msg-edit-ta" class="fi" oninput="_msgPreviewUpdate()" style="width:100%;min-height:110px;resize:vertical;line-height:1.5;margin-bottom:10px;">'+_fileEsc(_msgRaw(id))+'</textarea>'
+    +(toks.length?('<div style="font-size:14px;color:var(--p-mut);margin-bottom:6px;">Tap to drop in:</div><div style="display:flex;flex-wrap:wrap;gap:6px;margin-bottom:12px;">'
+      +toks.map(function(t){return '<button onclick="_msgInsertToken(\''+_jsAttr(t)+'\')" style="background:var(--accent-tint);border:1px solid var(--accent);color:var(--accent-strong);border-radius:999px;padding:5px 11px;font-size:14px;cursor:pointer;font-family:inherit;">{'+_fileEsc(t)+'}</button>';}).join('')+'</div>'):'')
+    +'<div style="font-size:14px;font-weight:500;color:var(--p-mut);text-transform:uppercase;letter-spacing:.07em;margin-bottom:6px;">What she receives</div>'
+    +'<div id="msg-edit-prev" style="background:var(--p-surf2);border:1px solid var(--p-line3);border-radius:12px;padding:11px 13px;font-size:16px;color:var(--p-ink);line-height:1.5;white-space:pre-wrap;margin-bottom:14px;"></div>'
+    +'<button onclick="_msgSave()" class="btnp" style="width:100%;border-radius:12px;padding:12px;font-size:16px;font-weight:700;margin-bottom:8px;">Save</button>'
+    +(_msgIsEdited(id)?'<button onclick="_msgReset()" style="width:100%;background:none;border:none;color:var(--p-mut);font-size:16px;cursor:pointer;font-family:inherit;padding:6px;">Reset to the original wording</button>':'')
+    +'</div>';
+  document.body.appendChild(m);
+  _msgPreviewUpdate();
+  try{document.getElementById('msg-edit-ta').focus();}catch(e){}
+}
+function _msgInsertToken(tok){
+  const ta=document.getElementById('msg-edit-ta');if(!ta)return;
+  const t='{'+tok+'}';
+  try{
+    const a=ta.selectionStart==null?ta.value.length:ta.selectionStart,b=ta.selectionEnd==null?a:ta.selectionEnd;
+    ta.value=ta.value.slice(0,a)+t+ta.value.slice(b);
+    ta.selectionStart=ta.selectionEnd=a+t.length;
+  }catch(e){ta.value+=t;}
+  ta.focus();_msgPreviewUpdate();
+}
+// The preview uses her REAL business name and her own first name, with a stand-in client, so she can
+// see whether the sentence actually reads right before a client gets it.
+function _msgPreviewUpdate(){
+  const ta=document.getElementById('msg-edit-ta'),out=document.getElementById('msg-edit-prev');
+  if(!ta||!out)return;
+  const ctx=_msgCtx('',{client:'Sarah',consult:'skin'});
+  out.textContent=_msgFill(ta.value,ctx)+(_msgEditing==='vc_review'?'\n\n(your notes appear here)':'');
+}
+function _msgSave(){
+  const ta=document.getElementById('msg-edit-ta');if(!ta||!_msgEditing)return;
+  const txt=String(ta.value||'').trim();
+  if(!txt){if(typeof proToast==='function')proToast('Write something first, or reset it to the original');return;}
+  const id=_msgEditing;
+  const i=msgTemplates.findIndex(t=>t&&t.id===id);
+  if(i>=0)msgTemplates[i]={...msgTemplates[i],text:txt,_ts:Date.now()};
+  else msgTemplates.push({id:id,text:txt,_ts:Date.now()});
+  // A reset tombstones the id; saving again has to clear that or the pull would delete her new one.
+  try{if(typeof _libUnforget==='function')_libUnforget('sc_msg_templates',id);}catch(e){}
+  saveMsgTemplates();
+  const sh=document.getElementById('msg-edit-sheet');if(sh)sh.remove();
+  if(typeof proToast==='function')proToast('Saved, your clients will get this wording');
+  try{if(typeof switchVTab==='function')switchVTab('upload');}catch(e){}
+}
+function _msgReset(){
+  if(!_msgEditing)return;
+  const id=_msgEditing;
+  try{_libForget('sc_msg_templates',id);}catch(e){}
+  msgTemplates=msgTemplates.filter(t=>!(t&&t.id===id));
+  saveMsgTemplates();
+  const sh=document.getElementById('msg-edit-sheet');if(sh)sh.remove();
+  if(typeof proToast==='function')proToast('Back to the original wording');
+  try{if(typeof switchVTab==='function')switchVTab('upload');}catch(e){}
+}
 function _vcStatus(id){const inv=vcInvites[id]||{};if(inv.reviewed)return 'reviewed';if(inv.submitted)return 'needs-review';if(inv.invited)return 'awaiting';return 'none';}
 // Count consults awaiting review, honoring social-media/content mode the same way the inbox does:
 // sample clients' demo consults only count in content mode; real clients' consults only count in
@@ -13023,9 +13184,9 @@ function sendVcReview(id){
 async function _doSendVcReview(id,notes){
   const c=CL[id];
   vcInvites[id]={...(vcInvites[id]||{}),invited:true,submitted:true,reviewed:true};try{persistVcState();}catch(e){}
-  const msg='Your virtual consult review is ready 📋\n\n'+notes;
+  const msg=_msgText('vc_review',id)+'\n\n'+notes;
   let _mid;try{_mid=(self.crypto&&crypto.randomUUID)?crypto.randomUUID():(Date.now().toString(36)+Math.random().toString(36).slice(2));}catch(e){_mid=Date.now().toString(36)+Math.random().toString(36).slice(2);}
-  try{if(!msgStore[id])msgStore[id]=[];msgStore[id].push({from:'me',text:msg,time:'Just now',ts:Date.now(),_mid,status:'sending'});const t=threads.find(x=>x.id===id);if(t)t.preview='Your consult review is ready 📋';saveMessages();}catch(e){}
+  try{if(!msgStore[id])msgStore[id]=[];msgStore[id].push({from:'me',text:msg,time:'Just now',ts:Date.now(),_mid,status:'sending'});const t=threads.find(x=>x.id===id);if(t)t.preview=_msgText('vc_review',id);saveMessages();}catch(e){}
   if(id==='maya'){try{SlickBridge.post('client-message',{text:msg,imgs:[],providerId:'jess',time:'Just now',ts:Date.now()});}catch(e){}try{if(typeof _setProviderMsgStatus==='function')_setProviderMsgStatus(id,_mid,'sent');}catch(e){}}
   else{try{await _sendProviderMessageToClient(id,msg,[],false,undefined,_mid);}catch(e){}}
   try{if(typeof _pushClientNow==='function')await _pushClientNow(id);}catch(e){}
@@ -13497,6 +13658,7 @@ function switchVTab(tab){
         <div style="display:flex;gap:8px;margin-bottom:8px;">${(function(){const preset=[['Free',''],['$15','$15'],['$25','$25'],['$49','$49']];const isPreset=preset.some(pr=>pr[1]===vcFee);const pills=preset.map(pr=>`<button class="pill ${pr[1]===vcFee?'active':''}" onclick="_setVcFee('${pr[1]}',this)">${pr[0]}</button>`);pills.push(`<button class="pill ${(!isPreset&&vcFee)?'active':''}" onclick="_setVcFee('__custom__',this)">${(!isPreset&&vcFee)?_fileEsc(vcFee):'Custom'}</button>`);return pills.join('');})()}</div>
         <div style="font-size:14px;color:var(--p-mut);">${vcFee?'Charged before clients submit their photos':'This consult is free, tap a price above only if you charge for it.'}</div>
       </div>
+      ${(typeof _msgCardHTML==='function')?_msgCardHTML():''}
     </div>
     ${_consultRequestsHTML()}`;
     if(_consultSlug===null)_loadConsultLink();
