@@ -3123,7 +3123,70 @@ deployment, sparkle emoji included. A provider running a corrective practice cou
 `scratchpad/wording.mjs` (17 assertions, incl. the stale-device merge and that a re-save clears the
 tombstone) and `scratchpad/wordingui.mjs` (8, drives the real buttons).
 
-### Still to do, in this order
+### 2026-10-08, SECOND ROUND: the primary sources were read, and ~27 claims did not survive
+
+Ashley opened the network policy, so `reports/Virtual consult research verified.md` is the round that
+actually read PubMed/PMC, the AAD, vendor help centres, GoHighLevel's own docs and (via the RSS
+endpoints — Reddit's HTML and JSON are both 403) practitioner threads. **It supersedes the first
+report wherever they disagree.** Read its §2 before quoting any number from the first one.
+
+**The corrections that change what we build:**
+- The adherence figures that justified a week-6 check-in trace to ONE pilot trial, **n=17, primary
+  result null (p=0.67)**, and "48% at 3 months" is not in the cited paper at all. The check-in keeps
+  its merit and loses its evidence: ship it as a date SHE sets, 12-week reassessment anchored to
+  NICE NG198, and make the interim contact deliver CONTENT, not a nudge.
+- The comprehension rule was **mapped backwards**. Named periods ("in the morning") 89%, clock times
+  ("8 a.m.") 77% (Davis 2009, n=359). The plan builder must emit **periods, not clock times**.
+- **IGA 0-4 is reversed and dead** as the severity primitive: remote global-grade inter-rater kappa
+  0.3119, against r=0.871 for lesion counts; structured per-site beat global in the only lay-rater
+  study. If an appearance record ever ships: per-region presence/absence, within-client only.
+- The **North Carolina "intent of the service" ruling says the OPPOSITE** of what the first report
+  inferred — it is permissive, pulling dermaplaning and microneedling INTO scope. Delete that
+  rationale. The real constraint from the same document: no diagnosing, and calling a practice
+  "Medical" or "Master" is fraudulent misrepresentation under N.C.G.S. §88B-24.
+- **Purging has no trial support** and is contradicted (vehicle flared MORE than tretinoin in severe
+  acne). Struck from any shipped copy.
+- **Plan versioning is not a white space** — Practice Better and SimplePractice both document it. The
+  defensible gap narrowed to the **client-visible diff**.
+- **$15-$65** is the solo-practitioner consult price band in their own words; the first report's
+  $150-$300 was brand and celebrity storefronts.
+- **No practitioner in two rounds ever asked software for tone control**, and the register around
+  AI-written client copy is open hostility. Editable wording (shipped) is justified by Ashley's
+  provider asking for it and as a defensive precondition — never as market validation, never as a
+  marketing line, and the no-AI-authored-client-message rejection is hardened.
+
+**NEW #2, the best-evidenced item in the whole corpus: in-app capture coaching** with a
+review-and-resubmit loop. Brief standardised instruction took diagnostic accuracy 79%→84% in a
+360-patient randomised design; 10-40% of patient photos are low quality; 22 of 54 needed resubmission
+in a trial. Nobody in the market does guided capture. **#3 escalation structure** also moved up:
+10 of 12 clinicians called folliculitis "acne" and every clinician missed PCOS in a written-for-it
+case, so "looks like acne" is the dangerous default, not the safe one. Treatment concordance
+(38-45%) is far worse than diagnostic (79-87%) — the PLAN is the weak link, which is the argument
+for revise-and-reissue over a one-shot verdict.
+
+**ASCP insurance — Ashley to confirm with her own carrier, flagged to her 2026-10-08.** The five
+conditions (client in a state where she is licensed; full intake for new clients; **must be able to
+SEE the client**; **sessions live and not prerecorded**; within scope) exist verbatim at
+`https://ascpskincare.com/node/2466`, verified by fetching it directly after two subagents disagreed.
+They are explicitly "expanded emergency coverage... conditional based on the unique COVID-19
+pandemic circumstances", and nothing has replaced them. ASCP's own guidance elsewhere recommends
+"scheduled email exchanges" as a legitimate consult tier, which contradicts "live and not
+prerecorded". So: coverage for an async photo consult is UNKNOWN and carrier-specific. Do not build
+a guardrail that cites ASCP as requiring it, and do not state any of it as coverage advice.
+
+**§2 of that report lists every figure BARRED from customer-facing use or a pitch** — the Houts
+85%/14% pictograph figure, the +15-point demonstration lift, 86%→36%, "48% at 3 months", "79-94%
+concordance", "21% wrongly reassured", the purging timeline, Perfect Corp's 95%, the 3-5 product
+ceiling, the $150-$300 band, and any consult conversion rate. **Blog and marketing copy must not use
+these.** This sits alongside the existing rule against stating a competitor's pricing from memory.
+
+**Compliance is now law, not hygiene, in one place:** RCW 19.373.040(1)(c) gives a Washington client
+the right to deletion "including from archived and backup systems". A union-by-id merge that
+resurrects a deleted record is therefore a **compliance failure, not just a bug** — so every delete
+path for client records, photos, plans and consent flags needs a tombstone that unions across
+devices and propagates into the offloaded store. §0.8 and `_purgeOffloaded` are part of that story.
+
+### Still to do, in this order (SUPERSEDED — see the revised table in `reports/Virtual consult research verified.md` §4)
 
 2. **The structured plan document.** The central recommendation. Today `sendVcReview` reads ONE
    textarea and `_doSendVcReview` pastes it into a chat bubble. Sections, required fields (amount as
