@@ -3251,6 +3251,32 @@ that the restore posts only the ticked ids, and that a 120-line modal now scroll
 on screen. `scratchpad/recover.mjs` was rewritten (15 assertions) to cover the LOOKUP side only —
 its old modal-body assertions died with the modal.
 
+### Second run (`2026-10-08n`): "Nothing ticked", and she could not send me the screen
+
+Her account is **`alohaheather@hotmail.com` · 10 showing · 12 removed · the app's own list knows
+about 4.** Two more things were wrong and both are fixed:
+
+1. **Every one of the 12 removed rows failed the tick test, so the button just said "Nothing
+   ticked" and the screen offered no verdict at all.** That reads like the tool gave up. It now
+   counts WHY each row was left off and leads with a sentence: either "N look like real clients to
+   put back" or **"None of the N removed rows look like a real client"** followed by the breakdown
+   (how many have no name, duplicate someone showing, nearly duplicate, or have nothing stored) and
+   the thing that actually matters to Ashley: *nothing of theirs is sitting removed on the server.
+   The clutter is the problem, not lost work.* A true "nothing to recover" is a good answer, but
+   only when it is said out loud.
+2. **The screen is longer than a phone can screenshot** — she told me twice she could not show it
+   to me. There is now a **Copy this as text** button at the TOP (above the list, so it needs no
+   scrolling), same escape hatch as the self-check. `_recoverText()` emits the provider, the counts,
+   the NOT-LOST nesting, every removed row with `[x]`/`[ ]` and its reason, every showing row, the
+   missing-from-roster count and the device delete-record count.
+
+**Note the roster number: her app's own list knows about 4, while 10 rows are live on the server.**
+That is a second, separate problem from the removals and it has not been chased yet.
+
+**Verification:** `scratchpad/recover2.mjs` is now 43 assertions, including the verdict in both
+directions (something to restore / nothing worth restoring) and that the copied text carries every
+section with its tick marks and reasons.
+
 **Still unknown, and it decides the root cause — ASK HER (§1b.3):** whether the 2 missing clients are
 the 2 that had horses, which device she is looking at now, and whether anything she did could read as
 a delete. Do not pick whichever answer suits a theory.

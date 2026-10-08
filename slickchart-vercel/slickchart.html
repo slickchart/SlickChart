@@ -214,7 +214,7 @@ const S=document.getElementById('S');
 // resets when I save it" and there was no way to tell whether her phone had any of them — a whole
 // day was spent debugging code she may not have been running. Shown at the bottom of Settings, so
 // the answer is a screenshot away. Bump it on every ship.
-const APP_BUILD='2026-10-08m';
+const APP_BUILD='2026-10-08n';
 
 
 /* ════════════════════════════════════════════════════════════════
@@ -26997,12 +26997,32 @@ function renderClientRecover(){
   };
   const nestedRows=all.filter(c=>nest[c.id]);
   const picked=removed.filter(c=>_recoverPick[c.id]);
+  // Count WHY each removed row was left off, so the top of the screen gives a verdict instead of a
+  // dead "Nothing ticked" button. On a messy account every single row can be a blank or a
+  // duplicate, and "none of these are worth putting back" is a real and reassuring answer — but
+  // only if it is stated. The first run said nothing at all, which reads like the tool gave up.
+  const tally={blank:0,dupe:0,near:0,empty:0,ok:0};
+  removed.forEach(function(c){const k=_recoverRisk(c,liveNames);
+    tally[k.indexOf('near:')===0?'near':(k||'ok')]++;});
+  const junk=tally.blank+tally.dupe+tally.near+tally.empty;
+  const verdict=tally.ok
+    ? '<b>'+tally.ok+' look like real clients to put back.</b> They are ticked below.'
+      +(junk?(' The other '+junk+' are blanks or duplicates and are left off.'):'')
+    : (removed.length
+        ? '<b>None of the '+removed.length+' removed rows look like a real client.</b> '
+          +[tally.blank?(tally.blank+' have no name'):'',tally.dupe?(tally.dupe+' duplicate someone still showing'):'',
+            tally.near?(tally.near+' nearly duplicate a name still showing'):'',tally.empty?(tally.empty+' have nothing stored on them'):'']
+            .filter(Boolean).join(', ')+'.'
+          +'<br><span style="font-size:15px;">That is good news: nothing of theirs is sitting removed on the server. The clutter is the problem, not lost work.</span>'
+        : '<b>Nothing is removed on the server.</b>');
   S.innerHTML='<div style="padding:12px 16px 90px;">'
-    +'<div style="font-size:16px;color:var(--p-mut);line-height:1.6;margin-bottom:14px;">'
+    +'<div style="font-size:16px;color:var(--p-mut);line-height:1.6;margin-bottom:12px;">'
       +'<b>'+esc(j.provider.email)+'</b><br>'
       +showing.length+' showing in their app · '+removed.length+' removed but still on the server'
       +((j.counts&&j.counts.rosterIds!=null)?('<br>Their app’s own list knows about '+j.counts.rosterIds):'')
       +'</div>'
+    +'<div style="background:var(--p-surf2);border:1px solid var(--p-line3);border-radius:12px;padding:11px 13px;margin-bottom:12px;font-size:16px;color:var(--p-ink);line-height:1.55;">'+verdict+'</div>'
+    +'<button onclick="_recoverCopy()" style="width:100%;background:var(--surf1);border:1px solid var(--p-line3);color:var(--p-mut2);border-radius:10px;padding:10px;font-size:16px;cursor:pointer;font-family:inherit;margin-bottom:16px;"><i class="ti ti-copy" style="font-size:16px;"></i> Copy this as text</button>'
     +(nestedRows.length?('<div style="background:var(--p-green-bg);border:1px solid var(--p-green);border-radius:12px;padding:11px 13px;margin-bottom:14px;font-size:16px;color:var(--p-ink);line-height:1.55;">'
       +'<b>Not lost — '+nestedRows.length+' of these are now an animal under another client.</b><br>'
       +nestedRows.map(c=>esc(c.name||c.id)+' → under '+esc((nest[c.id].ownerName)||nest[c.id].ownerId)).join('<br>')
@@ -27032,6 +27052,46 @@ function renderClientRecover(){
     +(removed.length?('<div style="position:sticky;bottom:0;background:var(--surf1);border-top:1px solid var(--p-line);padding:12px 16px;">'
       +'<button onclick="_recoverRun()" id="rec-go" style="width:100%;background:var(--accent);color:var(--accent-ink);border:none;border-radius:12px;padding:13px;font-size:16px;font-weight:600;cursor:pointer;font-family:inherit;">'
       +(picked.length?('Put back '+picked.length+' client'+(picked.length===1?'':'s')):'Nothing ticked')+'</button></div>'):'');
+}
+// The screen is longer than a phone can screenshot, and the whole point is being able to send it
+// to someone who can read it. Same escape hatch as the self-check: one button, plain text.
+function _recoverText(){
+  const j=_recoverState;if(!j)return '';
+  const all=j.clients||[],nest=j.nestedUnder||{};
+  const liveNames={};
+  all.forEach(function(c){if(!c.deleted&&c.name)liveNames[c.name.trim().toLowerCase()]=1;});
+  const bits=function(c){
+    const h=c.has||{},o=[];
+    if(h.summaries)o.push(h.summaries+' summaries');
+    if(h.profileFilled)o.push(h.profileFilled+' chart fields');
+    if(h.forms)o.push(h.forms+' forms');
+    if(h.progressPhotos)o.push(h.progressPhotos+' photos');
+    (h.animals||[]).forEach(function(a){o.push('animal: '+(a.name||'?')+(a.summaries?(' ('+a.summaries+' summaries)'):''));});
+    return o.length?o.join(', '):'nothing stored';
+  };
+  const L=['SlickChart recovery — '+j.provider.email,
+    (all.filter(c=>!c.deleted).length)+' showing, '+(all.filter(c=>c.deleted).length)+' removed but still on the server',
+    'Their app’s list knows about '+((j.counts&&j.counts.rosterIds!=null)?j.counts.rosterIds:'?'),''];
+  const nd=all.filter(c=>nest[c.id]);
+  if(nd.length){L.push('NOT LOST — now an animal under another client:');
+    nd.forEach(c=>L.push('  '+(c.name||c.id)+' -> under '+((nest[c.id].ownerName)||nest[c.id].ownerId)));L.push('');}
+  L.push('REMOVED ('+all.filter(c=>c.deleted).length+'):');
+  all.filter(c=>c.deleted).forEach(function(c){
+    const risk=_recoverRisk(c,liveNames);
+    L.push('  ['+(_recoverPick[c.id]?'x':' ')+'] '+(c.name||'(no name)')+' — '+bits(c)
+      +(risk?('  <<'+(risk.indexOf('near:')===0?('near-duplicate of '+risk.slice(5)):risk)+'>>'):''));
+  });
+  L.push('');L.push('SHOWING ('+all.filter(c=>!c.deleted).length+'):');
+  all.filter(c=>!c.deleted).forEach(function(c){L.push('  '+(c.name||'(no name)')+' — '+bits(c));});
+  if(j.missingFromRoster&&j.missingFromRoster.length)L.push('','On the server but missing from their app’s list: '+j.missingFromRoster.length);
+  L.push('Device delete record: '+((j.deletedRecordIds&&j.deletedRecordIds.length)||0)+' id(s)');
+  return L.join('\n');
+}
+function _recoverCopy(){
+  const t=_recoverText();
+  try{ if(typeof _copyToClipboard==='function'){_copyToClipboard(t,'Copied — paste it in a message');return;} }catch(e){}
+  try{ navigator.clipboard.writeText(t); if(typeof proToast==='function')proToast('Copied — paste it in a message'); }
+  catch(e){ if(typeof proToast==='function')proToast('Couldn’t copy — screenshot instead'); }
 }
 function _recoverToggle(id){ if(_recoverPick[id])delete _recoverPick[id];else _recoverPick[id]=1; renderClientRecover(); }
 function _recoverAll(on){
