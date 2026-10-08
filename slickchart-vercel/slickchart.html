@@ -214,7 +214,7 @@ const S=document.getElementById('S');
 // resets when I save it" and there was no way to tell whether her phone had any of them — a whole
 // day was spent debugging code she may not have been running. Shown at the bottom of Settings, so
 // the answer is a screenshot away. Bump it on every ship.
-const APP_BUILD='2026-10-08i';
+const APP_BUILD='2026-10-08j';
 
 
 /* ════════════════════════════════════════════════════════════════
@@ -4277,6 +4277,32 @@ async function _runSelfCheck(){
       line('Recent form saves', !badSave, _formSaves.join(' \u00b7 '));
     } else if(typeof _formSaves!=='undefined'){
       line('Recent form saves', true, 'none since the app opened \u2014 save a form, then run this again');
+    }
+  }catch(e){}
+
+  // Google Calendar. The useful fact here is the exact address that has to be registered in the
+  // Google console: a wrong one fails with "redirect_uri_mismatch" and nothing in the app says
+  // which host it tried. Printed here rather than on a screen she uses every day.
+  try{
+    // ASK AGAIN, don't reuse what is cached. Boot calls this before the token is loaded, so the
+    // cached answer is the no-token answer {connected:false,configured:false} — reporting that as
+    // "not switched on" would be a diagnostic screen stating the opposite of the truth.
+    if(tok&&typeof _gcalStatus==='function'){ await _gcalStatus().catch(function(){}); }
+    const g=(typeof _gcalState!=='undefined')?_gcalState:null;
+    if(!tok){
+      // nothing to say about Google without a login; the sign-in line above already covers it
+    } else if(!g||g.answered!==true){
+      line('Google Calendar', false, 'could not check \u2014 the app did not get an answer from the server, so this says nothing either way');
+    } else if(g&&g.connected){
+      line('Google Calendar', !g.needsReconnect, g.needsReconnect
+        ?'connected but Google is refusing it \u2014 reconnect from Sync Calendar'
+        :'connected both ways');
+    } else if(g&&g.configured===false){
+      line('Google Calendar', true, 'not switched on for this deployment yet'
+        +(g.redirectUri?(' \u00b7 register this address with Google: '+g.redirectUri):''));
+    } else if(g){
+      line('Google Calendar', true, 'set up, not connected on this account yet'
+        +(g.redirectUri?(' \u00b7 address registered with Google must be: '+g.redirectUri):''));
     }
   }catch(e){}
 
@@ -25822,16 +25848,20 @@ function _gcalPushSoon(){
   if(_gcalTimer)clearTimeout(_gcalTimer);
   _gcalTimer=setTimeout(function(){_gcalTimer=null;_gcalPush();},2500);
 }
+// `answered` separates "the server told us it is not set up" from "we never got an answer". The
+// card looks the same either way, but the self-check must not report a network failure as a
+// settings fact — that is how a diagnostic screen sends someone off to fix the wrong thing.
 async function _gcalStatus(){
+  const unknown=function(){ return {connected:false,configured:false,answered:false}; };
   try{
     const tok=(typeof Cloud!=='undefined'&&Cloud&&Cloud.token)||'';
-    if(!tok){_gcalState={connected:false,configured:false};return _gcalState;}
+    if(!tok){_gcalState=unknown();return _gcalState;}
     const r=await fetch('/api/google-cal',{headers:{'Authorization':'Bearer '+tok}});
-    if(!r.ok){_gcalState={connected:false,configured:false};return _gcalState;}
+    if(!r.ok){_gcalState=unknown();return _gcalState;}
     const j=await r.json();
-    _gcalState=j||{connected:false,configured:false};
+    _gcalState=j?Object.assign({answered:true},j):unknown();
     return _gcalState;
-  }catch(e){_gcalState={connected:false,configured:false};return _gcalState;}
+  }catch(e){_gcalState=unknown();return _gcalState;}
 }
 async function _gcalDisconnect(){
   try{
@@ -25844,7 +25874,7 @@ async function _gcalDisconnect(){
 }
 function _gcalCardHTML(){
   const st=_gcalState;
-  if(st&&st.configured===false&&!st.connected){
+  if(st&&st.answered===true&&st.configured===false&&!st.connected){
     return `<div style="background:var(--surf2);border:1px solid var(--p-line);border-radius:12px;padding:12px 14px;margin-bottom:14px;">
       <div style="font-size:16px;font-weight:600;color:var(--p-ink);margin-bottom:3px;">Two-way sync</div>
       <div style="font-size:16px;color:var(--p-mut);line-height:1.55;">Not switched on for this deployment yet. The one-way subscribe link below works now.</div>

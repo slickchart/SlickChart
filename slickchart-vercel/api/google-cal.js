@@ -28,7 +28,16 @@ async function requireLogin(req, res, q) {
   return String(payload.u);
 }
 
-export function redirectUri(req) { return appOrigin(req) + '/api/google-cal-callback'; }
+// Google only redirects to a redirect_uri REGISTERED in the Google console, and the same string
+// has to come back on the token exchange. Prefer APP_ORIGIN when it is set explicitly, so there is
+// exactly ONE address to register no matter which host she reached the app on (slickchart.app,
+// www., a vercel preview). With APP_ORIGIN unset this is the request host, as it was before, so
+// nothing changes on a deployment that has not set it.
+export function redirectUri(req) {
+  const env = String(process.env.APP_ORIGIN || '').trim().replace(/\/+$/, '');
+  const base = /^https?:\/\/[^/\s]+$/i.test(env) ? env : appOrigin(req);
+  return base + '/api/google-cal-callback';
+}
 
 export default async function handler(req, res) {
   if (!dbEnabled()) { res.status(200).json({ ok: false, reason: 'nodb' }); return; }
@@ -63,7 +72,10 @@ export default async function handler(req, res) {
         lastOk: (conn && Number(conn.last_ok)) || 0,
         needsReconnect: !!(conn && conn.last_error),
         lastError: (conn && conn.last_error) || '',
-        authUrl
+        authUrl,
+        // The exact string that must be registered in the Google console. Surfaced so the
+        // self-check can print it rather than anyone having to guess which host to use.
+        redirectUri: redirectUri(req)
       });
       return;
     }
