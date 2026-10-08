@@ -279,6 +279,21 @@ export async function upsertClient(providerId, c) {
     // check-in auto-send for anyone who books with a phone number and no email, since the cron
     // matches a Square customer to a client by email OR phone.
     //
+    // THE PROTECTED KEYS. An incoming blob whose list is EMPTY never wipes a stored list that
+    // isn't. It started as summaries/pendingForms/animals; `forms`, `progressPhotos` and
+    // `pendingGuides` were added 2026-10-08 after Heather reported missing forms.
+    //
+    // `forms` is built from the client's submittedForms/signedForms, so it IS the record that an
+    // intake was completed. It was unprotected, and the app was pushing up PLACEHOLDER records it
+    // had invented itself (a chart with no name and em-dashes for every field) — each of those
+    // carries forms:[] and summaries:[], so the stored forms were overwritten with nothing while
+    // the stored summaries survived. That is why her account showed summaries intact on some rows
+    // and zero forms on every single one. The app no longer pushes those placeholders
+    // (_isBlankSkeleton), and now the server will not accept the damage even if something does.
+    //
+    // Anything added here must be a list that only ever GROWS by itself. Do NOT add a list the
+    // provider can legitimately empty, or clearing it becomes impossible (§0.8, read the other way).
+    //
     // ON CONFLICT is on (id) alone, because id is the PRIMARY KEY — so without the provider_id
     // condition on the DO UPDATE, a collision across ACCOUNTS clobbers the other provider's row:
     // her client's name, email, phone and whole data blob replaced by a stranger's, inside her
@@ -295,7 +310,7 @@ export async function upsertClient(providerId, c) {
         updated_at = EXCLUDED.updated_at,
         data = EXCLUDED.data || COALESCE((
           SELECT jsonb_object_agg(k, clients.data->k)
-            FROM (VALUES ('summaries'),('pendingForms'),('animals')) AS t(k)
+            FROM (VALUES ('summaries'),('pendingForms'),('animals'),('forms'),('progressPhotos'),('pendingGuides')) AS t(k)
            WHERE COALESCE(CASE WHEN jsonb_typeof(clients.data->k) = 'array'
                                THEN jsonb_array_length(clients.data->k) END, 0) > 0
              AND COALESCE(CASE WHEN jsonb_typeof(EXCLUDED.data->k) = 'array'
@@ -326,7 +341,7 @@ export async function upsertClient(providerId, c) {
         phone=COALESCE(NULLIF(${(c && c.phone) || ''}, ''), clients.phone),
         data = inc.d || COALESCE((
           SELECT jsonb_object_agg(k, clients.data->k)
-            FROM (VALUES ('summaries'),('pendingForms'),('animals')) AS t(k)
+            FROM (VALUES ('summaries'),('pendingForms'),('animals'),('forms'),('progressPhotos'),('pendingGuides')) AS t(k)
            WHERE COALESCE(CASE WHEN jsonb_typeof(clients.data->k) = 'array'
                                THEN jsonb_array_length(clients.data->k) END, 0) > 0
              AND COALESCE(CASE WHEN jsonb_typeof(inc.d->k) = 'array'

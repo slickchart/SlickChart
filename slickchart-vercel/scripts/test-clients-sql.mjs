@@ -77,6 +77,25 @@ let d = await stored('c1');
 ok('empty summaries does NOT wipe stored', d.summaries && d.summaries.length === 2, d);
 ok('rest of the blob still updates', d.profile && d.profile.skin === 'oily', d);
 
+// --- 1b. FORMS. Heather reported missing forms: `forms` carries the record that an intake was
+// completed, it was NOT protected, and the app was pushing up placeholder charts that carry
+// forms:[]. Each of those wiped the stored forms while leaving summaries alone — which is exactly
+// what her account looked like.
+const FM = { formId: 'intake', title: 'Equine intake', status: 'signed', date: '2026-10-01' };
+await upsertClient(P, { id: 'cF', name: 'Heather client', data: { forms: [FM], summaries: [S1], progressPhotos: [{ pid: 'p1' }], pendingGuides: [{ guideId: 'g1' }] } });
+ok('seed stored the form', (await stored('cF')).forms.length === 1);
+await upsertClient(P, { id: 'cF', name: 'Heather client', data: { forms: [], summaries: [], progressPhotos: [], pendingGuides: [] } });
+let f = await stored('cF');
+ok('a placeholder push does NOT wipe her forms', f.forms && f.forms.length === 1, f.forms);
+ok('...nor her progress photos', f.progressPhotos && f.progressPhotos.length === 1, f.progressPhotos);
+ok('...nor her pending guides', f.pendingGuides && f.pendingGuides.length === 1, f.pendingGuides);
+ok('...and summaries still hold too', f.summaries && f.summaries.length === 1);
+// A GENUINE change must still land: she deletes one of two forms.
+await upsertClient(P, { id: 'cF', name: 'Heather client', data: { forms: [FM, { formId: 'x', title: 'Second' }] } });
+ok('two forms stored', (await stored('cF')).forms.length === 2);
+await upsertClient(P, { id: 'cF', name: 'Heather client', data: { forms: [FM] } });
+ok('a real 2 -> 1 form change is allowed', (await stored('cF')).forms.length === 1);
+
 // --- 2. key absent entirely (not just empty)
 await upsertClient(P, { id: 'c1', name: 'Jen', data: { profile: { skin: 'combo' } } });
 d = await stored('c1');

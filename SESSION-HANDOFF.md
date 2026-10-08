@@ -3321,6 +3321,34 @@ per-client libraries (`libraries` in the GET: clients, entries and bytes per key
 the screen and the copied text both show them, so the next look answers it. **Do not conclude the
 summaries are lost until that number is seen.**
 
+### 2026-10-08: "she had made notes, and she should have forms" — the forms answer (`2026-10-08r`)
+
+**FORMS: found, and fixed.** `clients.data.forms` is built from the client's
+`submittedForms`/`signedForms`, so it IS the record that an intake was completed. It was **not in
+the protected-keys list**, and the app was pushing up placeholder charts it had invented itself —
+each carrying `forms:[]` and `summaries:[]`. Summaries were protected; forms were not. So every
+placeholder push wiped the stored forms and left the summaries alone, **which is exactly the shape
+of her account: zero forms on every single row.** `forms`, `progressPhotos` and `pendingGuides`
+have joined `summaries`/`pendingForms`/`animals` in BOTH branches of `upsertClient`. Asserted in
+`scripts/test-clients-sql.mjs` (now 37, against real PostgreSQL), including that a GENUINE 2→1
+form change still lands — a guard that cannot be emptied legitimately is its own bug (§0.8 the
+other way round).
+
+**NOTES: a different store, and worth knowing before anyone hunts for them.** A provider's chart
+notes (`c.notes`, `c.conditions`) are **deliberately NOT in `clients.data`** — that blob is served
+straight to the CLIENT by `api/client-data.js`, so putting her private clinical notes in it would
+hand them to the client. Correct as it stands; do not "fix" it by adding them. The consequence is
+that her chart notes exist in exactly two places: **her device, and the account's `sc_clients`
+roster blob.** There is no third copy. Her roster blob holds 4 clients.
+
+Session summaries are a third thing again: `sc_session_summaries` (per-client map in kv) for the
+provider's copy, and `c.summaries` for the client-facing one. "Notes" from a provider could mean
+any of the three, so **ask which screen she typed them on** rather than assuming.
+
+**Durability gap, noted not acted on:** chart notes have no independent server backup the way
+summaries and forms now do. Adding one means a provider-only store, not the client-visible blob.
+Worth doing, too big to rush in the middle of an incident.
+
 **Still unknown, and it decides the root cause — ASK HER (§1b.3):** whether the 2 missing clients are
 the 2 that had horses, which device she is looking at now, and whether anything she did could read as
 a delete. Do not pick whichever answer suits a theory.
