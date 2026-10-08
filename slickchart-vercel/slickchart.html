@@ -214,7 +214,7 @@ const S=document.getElementById('S');
 // resets when I save it" and there was no way to tell whether her phone had any of them — a whole
 // day was spent debugging code she may not have been running. Shown at the bottom of Settings, so
 // the answer is a screenshot away. Bump it on every ship.
-const APP_BUILD='2026-10-08t';
+const APP_BUILD='2026-10-08v';
 
 
 /* ════════════════════════════════════════════════════════════════
@@ -3416,6 +3416,13 @@ const Cloud={
     }
     set(k,v);
   };
+  // BEFORE ANY MERGE RUNS. If this device holds more than the account does, photograph its copy
+  // to the account's history first. A computer that has been closed for a week can be the last
+  // place a provider's notes still exist, and the moment it opens, the merge decides their fate —
+  // if it decides wrong, nobody ever knew the copy was there. This does not try to win the
+  // argument, it just makes sure the evidence survives it. See rescueDeviceCopy.
+  try{this._rescueRicherLocal(data);}catch(e){}
+
   keys.forEach(k=>{try{
     // Never overwrite a key that still has a pending local write queued, that local value
     // is newer than whatever the server returned (e.g. a note saved moments before a reload,
@@ -3545,6 +3552,70 @@ const Cloud={
     }
     setFromServer(k,data[k]);
   }catch(e){}});if(_staleDeviceLocalKeys.length)this._dropStaleDeviceLocal(_staleDeviceLocalKeys);return keys.length;},
+  // Keys worth rescuing: the libraries she BUILDS. Mirrors TRACKED in lib/kv-history.js — if you
+  // add one there, add it here, or a device can hold the only copy of it and never offer it up.
+  _RESCUE_KEYS:['sc_clients','sc_session_summaries','sc_client_recs','sc_client_homecare',
+    'sc_body_maps','sc_note_drafts','sc_summary_drafts','sc_rec_reasons','sc_pro_vc_invites',
+    'sc_summary_guides','sc_workspace','sc_forms','sc_courses','sc_resources','sc_protocols',
+    'sc_docs','sc_msgstore','sc_affiliate_links','sc_service_menu','sc_reminders',
+    'sc_msg_templates','sc_routines','sc_sent_routines','sc_photo_index','sc_inventory'],
+  _rescued:false,
+  _countEntries(str){
+    if(str==null)return 0;
+    try{const v=JSON.parse(String(str));
+      if(Array.isArray(v))return v.length;
+      if(v&&typeof v==='object')return Object.keys(v).length;
+      return 0;}catch(e){return 0;}
+  },
+  // Counting top-level entries alone misses the worst case. These libraries are mostly
+  // {clientId: [things]}, and the damage that hit Diana was six clients STILL THERE with every
+  // summary list emptied — same count, everything gone. So weigh one level in as well. Mirrors
+  // contentWeight() in lib/kv-history.js; keep the two the same.
+  _weigh(str){
+    if(str==null)return 0;
+    try{const v=JSON.parse(String(str));
+      if(Array.isArray(v))return v.length;
+      if(!v||typeof v!=='object')return 0;
+      let n=0;
+      Object.keys(v).forEach(function(k){
+        n++;const inner=v[k];
+        if(Array.isArray(inner))n+=inner.length;
+        else if(inner&&typeof inner==='object')n+=Object.keys(inner).length;
+      });
+      return n;}catch(e){return 0;}
+  },
+  _rescueRicherLocal(data){
+    if(this._rescued||!this.token)return;
+    this._rescued=true;                      // once per session: this is a rescue, not a sync
+    const out={};let bytes=0;
+    this._RESCUE_KEYS.forEach(function(k){
+      let mine=null;try{mine=_lsGet(k);}catch(e){}
+      if(mine==null||String(mine).length<2)return;
+      // The ACCOUNT MUST ALREADY HOLD THIS KEY. A rescue is for a copy that LOST content, not for
+      // a key the account never had — boot seeds the stock courses, forms and protocols before the
+      // first pull, and without this every brand-new device would "rescue" its own starter content
+      // into the history of an empty account. (This cannot be gated on Cloud._booting instead:
+      // bootDone() clears that before the boot batch flushes — §2ad, four fixes failed on it.)
+      if(!data||data[k]==null)return;
+      const mineN=Cloud._countEntries(mine),theirsN=Cloud._countEntries(data[k]);
+      const theirs=String(data[k]);
+      // Richer by entry count, by WEIGHT (entries emptied in place — Diana's case), or simply
+      // much bigger text in the same shape (Heather's notes going to '').
+      const richer=(mineN>theirsN)
+        ||(Cloud._weigh(mine)>Cloud._weigh(theirs))
+        ||(mineN>0&&mineN===theirsN&&String(mine).length>theirs.length*1.25&&String(mine).length>2048);
+      if(!richer)return;
+      if(bytes+String(mine).length>3000000)return;       // one request, bounded
+      out[k]=String(mine);bytes+=String(mine).length;
+    });
+    if(!Object.keys(out).length)return;
+    try{
+      fetch('/api/store',{method:'PUT',keepalive:true,
+        headers:{'Content-Type':'application/json','Authorization':'Bearer '+this.token},
+        body:JSON.stringify({rescue:out})}).catch(function(){});
+      try{console.warn('[SlickChart] this device held more than the account for: '+Object.keys(out).join(', ')+' \u2014 sent a copy to the account history before merging');}catch(e){}
+    }catch(e){}
+  },
   pushAllLocal(){const items={};try{_lsAllKeys().forEach(function(k){if(_syncable(k))items[k]=_lsGet(k);});}catch(e){}if(this.token&&Object.keys(items).length)return fetch('/api/store',{method:'PUT',headers:{'Content-Type':'application/json','Authorization':'Bearer '+this.token},body:JSON.stringify({items})}).catch(()=>{});},
   // Opening the app is not an edit. Every loader that normalises or re-seeds a value on load writes
   // it straight back, and boot alone produced FORTY uploads whose contents were byte-for-byte what

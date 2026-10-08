@@ -6,7 +6,7 @@
 // UNION_SET_KEYS / OLDEST_WINS_KEYS below.
 import { sql, ensureTable, ensureProvidersTable, dbEnabled } from '../lib/db.js';
 import { verifyToken, isSessionValid } from '../lib/auth.js';
-import { snapshotBeforeWrite } from '../lib/kv-history.js';
+import { snapshotBeforeWrite, rescueDeviceCopy } from '../lib/kv-history.js';
 
 async function requireLogin(req, res, q) {
   const secret = process.env.SESSION_SECRET || '';
@@ -77,6 +77,19 @@ export default async function handler(req, res) {
 
     if (req.method === 'PUT' || req.method === 'POST') {
       const body = req.body || {};
+
+      // A device photographing its own copy before the merge runs. Writes ONLY to history, never
+      // to kv — see rescueDeviceCopy. Handled before `items` so a rescue is never mistaken for a
+      // save, and so a device holding the last good copy of someone's work can hand it over
+      // without that copy having to win an argument first.
+      if (body.rescue && typeof body.rescue === 'object') {
+        let out = { saved: 0 };
+        try { out = await rescueDeviceCopy(owner, body.rescue); }
+        catch (e) { console.error('[store] rescue failed:', e && e.message); }
+        res.status(200).json({ ok: true, rescued: out.saved });
+        return;
+      }
+
       let items = body.items;
       if (!items && body.key !== undefined) items = { [body.key]: body.value };
       if (!items || typeof items !== 'object') { res.status(400).json({ error: 'Nothing to save.' }); return; }

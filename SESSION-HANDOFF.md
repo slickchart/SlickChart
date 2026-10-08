@@ -3448,8 +3448,46 @@ growing write keeping nothing, pruning capped at 8 with the NEWEST kept, and the
 one provider cannot restore another's version, a listing never leaks another's rows, and the
 listing carries metadata only, never the stored value.
 
+### The second half: a device rescues its OWN copy before the merge runs (`2026-10-08v`)
+
+Ashley: *"can you just assume she has a computer that may still hold it and see what you can do."*
+
+The scenario, and it is a good one: a provider loses work on one device while another — a computer
+closed for a week — still has the real thing on its disk. **The moment she opens it, it syncs, and
+whatever the merge decides is final.** If the merge gets it wrong, the last copy in existence is
+gone and nobody ever knew it was there.
+
+`Cloud._rescueRicherLocal(data)` runs **inside `pull()`, before the key loop** — i.e. before any
+merge touches anything. If this device holds more than the account does, it POSTs its copy to
+`/api/store` as `{rescue:{...}}`, which `rescueDeviceCopy()` writes **only to `kv_history`, never
+to `kv`**. It is not an opinion about who should win; it is a photograph taken before the argument
+starts. The merge then runs exactly as it would have. `device-snapshot` rows are kept deepest
+(10 per key) because they are the only copies that came off a DEVICE rather than out of the
+account.
+
+**Three rules that are load-bearing, with the reason each one exists:**
+
+1. **The account must ALREADY hold the key.** Boot seeds stock courses, forms and protocols before
+   the first pull, so without this every brand-new device would "rescue" its own starter content
+   into an empty account's history. A rescue is for a copy that LOST content, not for a key the
+   account never had. **This could not be gated on `Cloud._booting` instead** — `bootDone()` clears
+   that before the boot batch flushes (§2ad, four fixes died on exactly that).
+2. **Richer is measured by WEIGHT, not just entry count.** `_weigh()` counts top-level entries plus
+   anything one level inside them, because the damage that hit Diana was six clients STILL THERE
+   with every summary list emptied — identical count, everything gone. `contentWeight()` in
+   `lib/kv-history.js` is the same function server-side and `snapshotReason` now uses it too;
+   **keep the two in step.**
+3. **Once per session, and never signed out.** A rescue is not a sync.
+
+**Verified: `scratchpad/rescue.mjs`, 15 assertions** — that it fires on her exact shape and carries
+the real notes and all ten clients, that it goes BEFORE any ordinary save, that an identical or
+poorer device sends nothing, that a same-count-but-emptied account triggers it, that starter
+content is not rescued while the real loss still is, once-per-session, and that a signed-out device
+sends nothing at all.
+
 **What this does NOT do, stated so nobody assumes otherwise:** it starts from the day it ships.
-It cannot bring back what was lost before it existed, including Heather's notes.
+It cannot bring back what was lost before it existed, including Heather's notes — unless a device
+somewhere still holds them, which is exactly the case this was built for.
 
 ## 2ak. The virtual consult work (2026-10-08) — from the research in `reports/`
 

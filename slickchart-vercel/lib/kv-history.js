@@ -51,10 +51,12 @@ export const TRACKED = {
   sc_routines: 1, sc_sent_routines: 1, sc_photo_index: 1, sc_inventory: 1
 };
 
-const KEEP_SHRINK = 8, KEEP_DAILY = 14;
+// device-snapshot is kept deepest on purpose: it is the only copy that came off a device rather
+// than out of the account, so it is the one that can still hold work the account never received.
+const KEEP_SHRINK = 8, KEEP_DAILY = 14, KEEP_DEVICE = 10;
 
-// How much is IN a value, as a count of top-level entries. This is the number that matters: bytes
-// move around when a loader normalises, but "47 clients became 9" is unambiguous.
+// How much is IN a value. Top-level entries is the headline number — "47 clients became 9" is
+// unambiguous where bytes are not, because a loader normalising keys moves bytes around.
 export function itemCount(str) {
   if (str == null) return 0;
   try {
@@ -62,6 +64,27 @@ export function itemCount(str) {
     if (Array.isArray(v)) return v.length;
     if (v && typeof v === 'object') return Object.keys(v).length;
     return 0;
+  } catch (e) { return 0; }
+}
+// ...but the count alone misses the worst case. These libraries are mostly {clientId: [things]},
+// and the damage that actually happened to Diana was SIX CLIENTS STILL THERE with every summary
+// list emptied — identical top-level count, everything gone. So weight counts one level in as
+// well: top-level entries, plus the length of any array inside them. 6 clients holding 12
+// summaries weighs 18; the same 6 clients holding none weighs 6.
+export function contentWeight(str) {
+  if (str == null) return 0;
+  try {
+    const v = JSON.parse(String(str));
+    if (Array.isArray(v)) return v.length;
+    if (!v || typeof v !== 'object') return 0;
+    let n = 0;
+    for (const k of Object.keys(v)) {
+      n++;
+      const inner = v[k];
+      if (Array.isArray(inner)) n += inner.length;
+      else if (inner && typeof inner === 'object') n += Object.keys(inner).length;
+    }
+    return n;
   } catch (e) { return 0; }
 }
 
@@ -75,10 +98,10 @@ export function snapshotReason(oldVal, newVal, lastDaily, now) {
   if (String(oldVal) === String(newVal)) return '';
   const newItems = itemCount(newVal);
   const oldBytes = String(oldVal).length, newBytes = newVal == null ? 0 : String(newVal).length;
-  // THE SIGNATURE: fewer entries than before, or a big drop in size with the same count (an entry
-  // that was emptied out rather than removed — Heather's notes going to '' inside a kept record).
-  if (newItems < oldItems) return 'shrink';
-  if (oldBytes > 2048 && newBytes < oldBytes * 0.75) return 'shrink';
+  // THE SIGNATURE, in order of how clearly it says "something was lost":
+  if (newItems < oldItems) return 'shrink';                                    // entries removed
+  if (contentWeight(newVal) < contentWeight(oldVal)) return 'shrink';          // emptied in place
+  if (oldBytes > 2048 && newBytes < oldBytes * 0.75) return 'shrink';          // text gutted
   // Otherwise keep one a day, so there is always a yesterday.
   const t = now || Date.now();
   if (!lastDaily || (t - new Date(lastDaily).getTime()) > 20 * 3600 * 1000) return 'daily';
@@ -118,6 +141,42 @@ export async function snapshotBeforeWrite(owner, items) {
   return { saved };
 }
 
+// A DEVICE'S OWN COPY, captured before sync can touch it.
+//
+// The case this exists for: a provider loses work on one device, and another device — a computer
+// that has been closed for a week — still has the real thing sitting on its disk. The moment she
+// opens it, it syncs, and whatever the merge decides is final. If the merge gets it wrong, the
+// last good copy in existence is gone and nobody ever knew it was there.
+//
+// So before a pull applies anything, a device that holds MORE than the account does sends its copy
+// here. This writes ONLY to history, never to kv: it is not an opinion about who should win, it is
+// a photograph taken before the argument starts. The merge then runs exactly as it would have.
+export async function rescueDeviceCopy(owner, items) {
+  const keys = Object.keys(items || {}).filter(k => TRACKED[k]);
+  if (!keys.length) return { saved: 0 };
+  const q = sql();
+  await ensureHistoryTable();
+  let saved = 0;
+  for (const k of keys) {
+    const v = items[k];
+    if (v == null || String(v).length < 2) continue;
+    const n = itemCount(v);
+    if (n < 1) continue;
+    try {
+      // Don't stack identical photographs: if the newest device-snapshot for this key is already
+      // byte-identical, one is enough.
+      const prev = await q`SELECT v FROM kv_history WHERE owner=${owner} AND k=${k}
+        AND reason='device-snapshot' ORDER BY saved_at DESC LIMIT 1`;
+      if (prev.length && String(prev[0].v) === String(v)) continue;
+      await q`INSERT INTO kv_history (owner, k, v, bytes, items, reason)
+        VALUES (${owner}, ${k}, ${String(v)}, ${String(v).length}, ${n}, 'device-snapshot')`;
+      saved++;
+      await pruneKey(owner, k);
+    } catch (e) { /* a rescue must never break the boot it runs in */ }
+  }
+  return { saved };
+}
+
 // Keep the newest few of each reason and drop the rest. Done per key as it grows rather than as a
 // sweep, so there is no cron to forget and no unbounded table.
 export async function pruneKey(owner, k) {
@@ -137,6 +196,13 @@ export async function pruneKey(owner, k) {
       ) ranked
       WHERE (rn > ${KEEP_DAILY}) )
       AND reason='daily' AND owner=${owner} AND k=${k}`;
+    await q`DELETE FROM kv_history WHERE id IN (
+      SELECT id FROM (
+        SELECT id, row_number() OVER (PARTITION BY reason ORDER BY saved_at DESC) AS rn
+          FROM kv_history WHERE owner=${owner} AND k=${k}
+      ) ranked
+      WHERE (rn > ${KEEP_DEVICE}) )
+      AND reason='device-snapshot' AND owner=${owner} AND k=${k}`;
   } catch (e) {}
 }
 
