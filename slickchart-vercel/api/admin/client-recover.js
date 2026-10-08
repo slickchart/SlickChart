@@ -60,7 +60,11 @@ function describe(dataRaw) {
     // The fields a provider actually types into a chart. "Has a chart" is more useful than a
     // field list when deciding whether a row is worth restoring.
     profileFilled: ['skin', 'concerns', 'allergies', 'fitz', 'treatment'].filter(k => String(p[k] || '').trim()).length,
+    // `id` here is the HORSE'S OWN CLIENT ID — _animalsOf() finds CL records whose ownerId is this
+    // client, so an animal entry is a client record. That is what makes "did this client vanish, or
+    // did it become a horse under an owner?" answerable rather than guessable (see nestedUnder).
     animals: animals.map(a => ({
+      id: String((a && a.id) || ''),
       name: String((a && a.name) || ''),
       species: String((a && a.species) || ''),
       summaries: arr(a && a.summaries),
@@ -180,6 +184,17 @@ export default async function handler(req, res) {
     let events = 0;
     try { const ev = await q`SELECT count(*)::int AS n FROM client_events WHERE provider_id=${owner}`; events = (ev[0] && ev[0].n) || 0; } catch (e) {}
 
+    // Which clients are now listed as a HORSE under another client. On the equestrian account this
+    // is the whole question: "4 clients became 2" reads as catastrophic loss, but if the 2 that
+    // stopped showing are now horses nested under their owners, nothing was lost and restoring rows
+    // would achieve nothing — the charts just moved a level down. Only the database can settle it.
+    const nestedUnder = {};
+    clients.forEach(c => {
+      ((c.has && c.has.animals) || []).forEach(a => {
+        if (a.id) nestedUnder[a.id] = { ownerId: c.id, ownerName: c.name, animalName: a.name };
+      });
+    });
+
     const live = clients.filter(c => !c.deleted);
     res.status(200).json({
       ok: true,
@@ -198,6 +213,7 @@ export default async function handler(req, res) {
       missingFromRoster: rosterIds ? live.filter(c => rosterIds.indexOf(c.id) < 0).map(c => c.id) : null,
       missingFromTable: rosterIds ? rosterIds.filter(id => !clients.some(c => c.id === id)) : null,
       deletedRecordIds: deletedRecord,
+      nestedUnder,
       kv
     });
   } catch (e) {

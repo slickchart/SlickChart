@@ -142,6 +142,21 @@ ok('sees no other provider\'s client', !(j.clients || []).some(c => c.id === 'c_
 // Her device has NO delete record -> so the removal did not come from her tapping delete.
 ok('reports no device delete record', Array.isArray(j.deletedRecordIds) && j.deletedRecordIds.length === 0, j.deletedRecordIds);
 
+// ── "did they vanish, or become horses?" — the question that decides everything ──
+// Seed it the way 2aj's fix would leave it: the two horses are CLIENT ROWS of their own, and each
+// owner's blob lists them as animals, carrying the horse's own client id.
+await upsertClient(H, { id: 'c_comet', name: 'Comet', data: { summaries: [{ id: 'k1' }] } });
+await upsertClient(H, { id: 'c_pepper', name: 'Pepper', data: { summaries: [] } });
+await upsertClient(H, { id: 'c_nest', name: 'Nest Owner', data: {
+  animals: [{ id: 'c_comet', name: 'Comet', species: 'Horse', summaries: [{ id: 'n1' }, { id: 'n2' }] },
+            { id: 'c_pepper', name: 'Pepper', species: 'Horse', summaries: [] }] } });
+r = await call('GET', { token: tokenFor('ashley@slickchart.app'), query: { email: 'heather@example.com' } });
+const nest = (r.body || {}).nestedUnder || {};
+ok('spots a client that is now a horse under an owner', !!(nest.c_comet && nest.c_comet.ownerId === 'c_nest'), nest.c_comet);
+ok('names the owner it moved under', !!(nest.c_comet && nest.c_comet.ownerName === 'Nest Owner'), nest.c_comet);
+ok('spots the second horse too', !!(nest.c_pepper && nest.c_pepper.ownerId === 'c_nest'));
+ok('a plain client is NOT reported as nested', !nest.c_plain1 && !nest.c_nest, Object.keys(nest));
+
 // A roster blob that has forgotten a live client is the OTHER way a client vanishes.
 await q`INSERT INTO kv (owner,k,v) VALUES (${H},'sc_clients',${JSON.stringify({ c_plain1: { id: 'c_plain1', name: 'Sam Gray' } })})
   ON CONFLICT (owner,k) DO UPDATE SET v=EXCLUDED.v`;
@@ -153,7 +168,10 @@ ok('spots a live client missing from the roster', (r.body.missingFromRoster || [
 r = await call('POST', { token: tokenFor('ashley@slickchart.app'), body: { email: 'heather@example.com', restoreIds: ['c_owner1', 'c_owner2'] } });
 ok('restore 200', r.code === 200 && r.body.ok, r.code);
 ok('restored both', r.body.restored === 2, r.body);
-ok('all 4 clients show again', (await listClients(H)).length === 4);
+{
+  const names = (await listClients(H)).map(x => x.id);
+  ok('both owners show again', names.indexOf('c_owner1') >= 0 && names.indexOf('c_owner2') >= 0, names);
+}
 blob = (await q`SELECT data FROM clients WHERE id='c_owner1' AND provider_id=${H}`)[0].data;
 blob = typeof blob === 'string' ? JSON.parse(blob) : blob;
 ok('restored WITH her horses and their summaries', blob.animals.length === 2 && blob.animals[0].summaries.length === 3, blob.animals && blob.animals.length);

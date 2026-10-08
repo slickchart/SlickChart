@@ -3170,8 +3170,33 @@ column 500s the whole lookup ("invalid input syntax for type json" — it needs 
 column aliased `t` collides with the row alias in any `row_to_json(t)` wrapper. Run that script
 after ANY change to this endpoint.
 
-**Still unknown, and it decides the root cause — ASK HER:** whether the 2 missing clients are the 2
-with horses, which device she is looking at now, and whether anything she did could read as a delete.
+### The hypothesis the tool exists to SETTLE, not to assume
+
+**"4 clients became 2" has two completely different causes and only one of them is data loss.**
+
+An animal entry in `clients.data` carries the HORSE'S OWN CLIENT ID (`_animalsOf` finds CL records
+whose `ownerId` is this client, so an animal IS a client record). So the diagnosis computes
+`nestedUnder`: any client that is now listed as an animal under another client. If the two that
+stopped showing are now horses nested under their owners, **nothing was lost** — 2aj's
+`_carryAnimalLink` re-linked them, the roster correctly stopped showing them as top-level clients,
+and their charts moved one level down. The tool says "NOT LOST", names where each one went, and says
+plainly that restoring rows will not change it.
+
+**This is a hypothesis, not a conclusion, and it CONTRADICTS what she reported ("notes and photos
+are all gone"). §1b.2 applies: her observation stands and the theory does not.** The point of
+putting it in the tool is that the database settles it in one tap instead of anyone arguing from
+inference — which is exactly how a day was lost last time. If `rowsDeleted` is 0, all rows are live
+and the summary counts are intact, it is a display problem and restoring achieves nothing. If rows
+ARE tombstoned, the restore is the fix.
+
+**No automatic path tombstones a client server-side.** Audited: only `_markClientDeleted` (a manual
+delete) and `_impUndo` (an explicit "undo this import") call `_serverDeleteClients`. Both need a tap.
+So `deletedRecordIds` coming back EMPTY while rows are tombstoned would be genuinely new and worth
+chasing hard.
+
+**Still unknown, and it decides the root cause — ASK HER (§1b.3):** whether the 2 missing clients are
+the 2 that had horses, which device she is looking at now, and whether anything she did could read as
+a delete. Do not pick whichever answer suits a theory.
 
 ## 2ak. The virtual consult work (2026-10-08) — from the research in `reports/`
 
