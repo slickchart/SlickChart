@@ -214,7 +214,7 @@ const S=document.getElementById('S');
 // resets when I save it" and there was no way to tell whether her phone had any of them — a whole
 // day was spent debugging code she may not have been running. Shown at the bottom of Settings, so
 // the answer is a screenshot away. Bump it on every ship.
-const APP_BUILD='2026-10-08a';
+const APP_BUILD='2026-10-08b';
 
 
 /* ════════════════════════════════════════════════════════════════
@@ -13026,16 +13026,19 @@ function inviteVirtualConsult(id,_force,_kind,_formId,_routine){
 // provider who changes her booking link will not go hunting through every template she owns.)
 const _MSG_DEFAULTS={
   vc_invite:"I'd love to do a virtual {consult} consult before your next visit, I've sent an invite to your app. Upload a few photos and I'll send my notes back. \u2728",
-  vc_review:'Your virtual consult review is ready \ud83d\udccb'
+  vc_review:'Your virtual consult review is ready \ud83d\udccb',
+  vc_retake:"I had a look at your photos and I can't see {consult} clearly enough to give you good advice. Could you send a couple more? There are tips at the top of the page. - {me}"
 };
 const _MSG_LABELS={
   vc_invite:{name:'Consult invite',when:'Sent when you invite a client to a virtual consult.'},
-  vc_review:{name:'Review ready',when:'The first line when you send your notes back. Your notes follow underneath.'}
+  vc_review:{name:'Review ready',when:'The first line when you send your notes back. Your notes follow underneath.'},
+  vc_retake:{name:'Asking for better photos',when:"Sent when you tap Ask for new photos, instead of reviewing photos you can't read."}
 };
 // {consult} only means anything on the invite, so it is offered only there.
 const _MSG_TOKENS={
   vc_invite:['client','me','business','consult','fee'],
-  vc_review:['client','me','business']
+  vc_review:['client','me','business'],
+  vc_retake:['client','me','business','consult']
 };
 let msgTemplates=[];
 function loadMsgTemplates(){try{const raw=localStorage.getItem('sc_msg_templates');if(raw){const a=JSON.parse(raw);if(Array.isArray(a))msgTemplates=a;}}catch(e){}}
@@ -13093,7 +13096,7 @@ function _msgCardHTML(){
       <div style="font-size:16px;font-weight:500;color:var(--p-ink);">What your clients get sent</div>
       <div style="font-size:14px;color:var(--p-mut);line-height:1.5;margin-top:2px;">These go out in your name. Edit them to sound like you.</div>
     </div>
-    ${row('vc_invite')}${row('vc_review')}
+    ${row('vc_invite')}${row('vc_review')}${row('vc_retake')}
   </div>`;
 }
 let _msgEditing='';
@@ -13194,6 +13197,34 @@ async function _doSendVcReview(id,notes){
   if(st&&st.status==='pending'){if(typeof proToast==='function')proToast('Review saved — it’ll send to '+((c&&c.name.split(' ')[0])||'your client')+' when they open their app');}
   else if(st&&st.status==='failed'){if(typeof proToast==='function')proToast('Couldn’t reach '+((c&&c.name.split(' ')[0])||'your client')+' — tap the message to resend',0,'error');}
   else{if(typeof proToast==='function')proToast('Review sent to '+((c&&c.name.split(' ')[0])||'client'));}
+}
+// ASK FOR NEW PHOTOS — the state this flow never had.
+//
+// Photo quality is the measured weak point of asynchronous review: 10-40% of client-submitted photos
+// are too poor to read, and in one trial 22 of 54 clients had to resubmit. Until now a provider
+// looking at an unusable photo had two bad options — review it anyway and guess, or message the
+// client by hand while the consult sat in "needs review" forever. No platform in the research ships
+// a resubmission state at all.
+//
+// It reuses the invite nonce rather than inventing anything: the client's app remembers which
+// invitedAt it submitted for (sc_vc_submitted), so a fresh invitedAt reopens the capture screen on
+// her phone with the guidance at the top. Nothing is thrown away — her photos and her answers stay
+// on the submission, so if she sends two better shots the provider still has the first set.
+async function vcAskForRetake(id){
+  const c=CL[id];if(!c)return;
+  const inv=vcInvites[id]||{};
+  if(!inv.submitted){if(typeof proToast==='function')proToast('They have not sent photos yet');return;}
+  const v=(typeof _vcProfileFor==='function')?_vcProfileFor(id):null;
+  const msg=_msgText('vc_retake',id,{consult:(v&&v.kind==='skin')?'your skin':((v&&v.kind)||'the area')},(v&&v.id)||null);
+  // Back to awaiting, with a NEW nonce so her app treats it as a fresh ask.
+  vcInvites[id]={...inv,invited:true,submitted:false,reviewed:false,invitedAt:Date.now(),retakeAsked:Date.now()};
+  try{persistVcState();}catch(e){}
+  let _mid;try{_mid=(self.crypto&&crypto.randomUUID)?crypto.randomUUID():(Date.now().toString(36)+Math.random().toString(36).slice(2));}catch(e){_mid=Date.now().toString(36)+Math.random().toString(36).slice(2);}
+  try{if(!msgStore[id])msgStore[id]=[];msgStore[id].push({from:'me',text:msg,time:'Just now',ts:Date.now(),_mid,status:'sending'});const t=threads.find(x=>x.id===id);if(t)t.preview='Could you send a couple more photos?';saveMessages();}catch(e){}
+  try{await _sendProviderMessageToClient(id,msg,[],false,undefined,_mid);}catch(e){}
+  try{if(typeof _pushClientNow==='function')await _pushClientNow(id);}catch(e){}
+  if(typeof proToast==='function')proToast('Asked '+String(c.name||'them').split(' ')[0]+' for new photos');
+  try{nav('virtual');}catch(e){}
 }
 function renderVcInbox(){
   setNav('clients');
@@ -14300,7 +14331,8 @@ function renderVirtualClient(id){
   const initialSummary=(cached&&cached.summary)||'';
   S.innerHTML=`
   <div id="virtual-client-screen"></div>
-  <div style="padding:12px 16px 0;display:flex;align-items:center;justify-content:flex-end;">
+  <div style="padding:12px 16px 0;display:flex;align-items:center;justify-content:flex-end;gap:8px;">
+    <button style="border:1px solid var(--p-line3);background:var(--surf1);border-radius:8px;padding:6px 12px;font-size:16px;color:var(--p-mut2);cursor:pointer;font-weight:500;" onclick="confirmModal({title:'Ask for new photos?',body:'This sends ${_jsAttr(String((CL[id]&&CL[id].name)||'your client').split(' ')[0])} a message and reopens the photo screen on their phone, with the tips at the top. Everything they already sent is kept.',action:'Ask for new photos'},'()=>vcAskForRetake(\'${_jsAttr(id)}\')')"><i class="ti ti-camera-off" style="font-size:16px;"></i> Can't read these</button>
     <button style="border:none;background:var(--accent);border-radius:8px;padding:6px 14px;font-size:16px;color:var(--accent-ink);cursor:pointer;font-weight:500;" onclick="sendVcReview('${id}');${back}">Send review</button>
   </div>
   <div style="padding:10px 16px 0;display:flex;align-items:center;gap:10px;">${av(c,40)}<div><div style="font-size:16px;font-weight:500;color:var(--p-ink);">${_clientNameLink(id,c.name,{color:'var(--p-ink)'})}</div><div style="font-size:16px;color:var(--p-mut);">Submitted ${vcStamp} · ${_fileEsc(c.concerns)}</div></div></div>

@@ -3186,6 +3186,40 @@ resurrects a deleted record is therefore a **compliance failure, not just a bug*
 path for client records, photos, plans and consent flags needs a tombstone that unions across
 devices and propagates into the offloaded store. §0.8 and `_purgeOffloaded` are part of that story.
 
+### Shipped: coach the camera, and let her ask again (`2026-10-08b`) — recommendation #2
+
+Ashley's call on 2026-10-08: **skip the structured plan document (#1) entirely** and work the rest of
+the list in order. Items 5, 7 and 12 in the revised table are pieces OF that document, so they are
+parked rather than built — flag them when reached, do not build a container she declined.
+
+The evidence: brief standardised instruction before capture moved diagnostic agreement **79%→84% in a
+360-patient randomised design**, 10-40% of client-submitted photos are too poor to read, and 22 of 54
+clients had to resubmit in one trial. **No platform in the research ships guided capture or a
+resubmission state** — both halves are differentiators, not catch-up.
+
+**Client side** (`slickchart-client.html`): `_vcTipsHTML()` puts six 3rd-grade lines above the photo
+grid — daylight, flash off, clean skin, phone straight on, arm's length plus one closer, nothing in
+the way — open the first time, collapsible, remembered per device in `sc_vc_tips_seen` (device-local
+UI convenience, deliberately NOT synced). `_vcTileHint()` derives a per-shot hint from the
+provider's OWN label, so a brow or hair consult gets the right hint with nothing to configure; the
+distances are worded as "arm's length" and "a hand's width" because the only published patient
+protocol's 50cm/15cm means nothing to someone holding a phone. `_vcCheckHTML()` appears only once a
+photo exists. All of it is hidden for a photo-free consult. Flash is phrased as a plain instruction
+because ISIC and CLOSE-UP actively contradict each other on it.
+
+**Provider side**: "Can't read these" beside Send review → `vcAskForRetake(id)`. It reuses the
+invite nonce rather than inventing state: the client app remembers which `invitedAt` it submitted for
+(`sc_vc_submitted`), so a fresh `invitedAt` reopens the capture screen on her phone with the tips at
+the top. **Her submission is kept** — photos, goals and routine all stay, so a second pair of shots
+adds to the first set rather than replacing it. No new synced key, so no new merge decision.
+
+The message is the third editable template (`vc_retake`), so it rides the §2ak wording system and she
+can reword it. It no-ops if nothing has been submitted yet.
+
+`scratchpad/capture.mjs` — 29 assertions across BOTH apps in one run (17 client, 12 provider),
+including that the tips stay collapsed once dismissed, that a photo-free consult is never nagged,
+that her edited wording is what goes out, and that the submission survives the ask.
+
 ### Still to do, in this order (SUPERSEDED — see the revised table in `reports/Virtual consult research verified.md` §4)
 
 2. **The structured plan document.** The central recommendation. Today `sendVcReview` reads ONE

@@ -4778,6 +4778,72 @@ function _vcSets(inv){
   const refs=(kind==='hair'||kind==='brow'||kind==='lash')?['Inspiration 1','Inspiration 2','Reference']:null;
   return {photos,refs,refTitle:refs?'Inspiration / references':null,photoFree:false};
 }
+// COACHING THE CAMERA. The best-measured lever in the whole teledermatology evidence base is not a
+// smarter reviewer, it is a better photo: brief standardised instruction before capture took
+// diagnostic agreement from 79% to 84% in a 360-patient randomised design, and between 10% and 40%
+// of patient-submitted photos are too poor to read (22 of 54 clients had to resubmit in one trial).
+// Nobody in this market ships guided capture, so this is cheap and it is the differentiator.
+//
+// Deliberately six lines at a 3rd-grade reading level, shown BEFORE the grid rather than as a help
+// link nobody opens. Published guidance is all written for clinicians photographing in a clinic, so
+// what is here is the part that transfers: light, angle, distance, and nothing in the way. Flash is
+// the one point where the guidelines actively disagree with each other, so it is phrased as a plain
+// instruction rather than a reason.
+function _vcTips(){
+  return [
+    ['ti-sun','Face a window. Daylight is best.'],
+    ['ti-bolt-off','Turn the flash off. No filters.'],
+    ['ti-mood-smile','Clean skin, no makeup on the area.'],
+    ['ti-device-mobile','Hold the phone straight on, not tilted up or down.'],
+    ['ti-arrows-maximize','Arm\'s length for the whole area. Move closer for one.'],
+    ['ti-eye','Nothing in the way. Tie hair back, take glasses off.']
+  ];
+}
+function _vcTipsSeen(){try{return localStorage.getItem('sc_vc_tips_seen')==='1';}catch(e){return false;}}
+function _vcTipsToggle(){
+  const b=document.getElementById('vc-tips-body'),c=document.getElementById('vc-tips-caret');
+  if(!b)return;
+  const open=b.style.display!=='none';
+  b.style.display=open?'none':'block';
+  if(c)c.style.transform=open?'rotate(0deg)':'rotate(180deg)';
+  if(open){try{localStorage.setItem('sc_vc_tips_seen','1');}catch(e){}}
+}
+function _vcTipsHTML(){
+  const open=!_vcTipsSeen();
+  return `<div style="background:var(--c-card);border:1.5px solid var(--c-line);border-radius:12px;margin-bottom:14px;overflow:hidden;">
+    <button onclick="_vcTipsToggle()" style="display:flex;width:100%;align-items:center;gap:8px;padding:11px 12px;background:none;border:none;cursor:pointer;font-family:inherit;text-align:left;">
+      <i class="ti ti-camera-check" style="font-size:15px;color:var(--accent-strong,#4a8c7a);flex-shrink:0;"></i>
+      <span style="flex:1;font-size:13px;font-weight:700;color:var(--c-ink);">How to take these photos</span>
+      <i id="vc-tips-caret" class="ti ti-chevron-down" style="font-size:14px;color:var(--c-mut);transform:rotate(${open?180:0}deg);transition:transform .15s;"></i>
+    </button>
+    <div id="vc-tips-body" style="display:${open?'block':'none'};padding:0 12px 11px;">
+      ${_vcTips().map(function(t){return '<div style="display:flex;gap:8px;align-items:flex-start;margin-bottom:7px;"><i class="ti '+t[0]+'" style="font-size:13px;color:var(--c-mut);flex-shrink:0;margin-top:2px;"></i><span style="font-size:12px;color:var(--c-ink);line-height:1.5;">'+_txt(t[1])+'</span></div>';}).join('')}
+      <div style="font-size:11px;color:var(--c-mut);line-height:1.5;padding-top:3px;">Taking these again later? Same room, same time of day, so the two can be compared.</div>
+    </div>
+  </div>`;
+}
+// A hint per shot, read off the label the provider chose, so it works for a brow or a hair consult
+// without the provider configuring anything. The published patient protocol with real distances uses
+// an overview at about 50cm and a close-up at about 15cm, which is roughly arm's length and a hand's
+// width — stated that way because nobody measures their arm in centimetres.
+function _vcTileHint(label){
+  const l=String(label||'').toLowerCase();
+  if(/close|closer|macro|detail|zoom/.test(l))return 'About a hand\'s width away';
+  if(/side|profile|left|right|angle|oblique/.test(l))return 'Turn your head, phone stays straight';
+  if(/back|behind|crown|nape/.test(l))return 'Ask someone, or use a mirror';
+  if(/relax|open|closed|raised|smile/.test(l))return 'Hold still, eyes level with the lens';
+  return 'Arm\'s length, facing the light';
+}
+// A last look before it goes. The resubmission rate in the trials is the reason this exists: it is
+// far cheaper for her to retake a blurry photo now than for the provider to ask, wait, and re-review.
+function _vcCheckHTML(n){
+  if(!n)return '';
+  return `<div style="background:#fbf7ef;border:1px solid #ecdfc8;border-radius:12px;padding:10px 12px;margin-bottom:16px;">
+    <div style="font-size:12px;font-weight:700;color:var(--c-ink);margin-bottom:6px;">Before you send, have a look</div>
+    ${['Can you see the area clearly?','Is it sharp, not blurry?','Is the light even, with no big shadow?'].map(function(q){return '<div style="display:flex;gap:7px;align-items:flex-start;margin-bottom:4px;"><i class="ti ti-circle-check" style="font-size:12px;color:#b89a5e;flex-shrink:0;margin-top:2px;"></i><span style="font-size:12px;color:var(--c-ink);line-height:1.5;">'+q+'</span></div>';}).join('')}
+    <div style="font-size:11px;color:var(--c-mut);line-height:1.5;margin-top:5px;">Tap any photo to take it again.</div>
+  </div>`;
+}
 // Toggle the submit button as the client types (photo-free consults) or after photo capture.
 function _vcSyncSubmit(){
   const btn=document.getElementById('vc-submit-btn');if(!btn)return;
@@ -4871,7 +4937,7 @@ function renderVirtualSubmit(){
   }
   const inv=vcInvite;const sets=_vcSets(inv);const photoFree=!!sets.photoFree;
   window._vcPhotoFree=photoFree;
-  const tile=(label,kind)=>{const slot=_vcSubmitState[kind][label];const added=slot&&slot.src;return `<button onclick="_vcCapture('${kind}','${_jsAttr(label)}')" style="border-radius:10px;background:${added?'#000':'#f4faf8'};border:1.5px ${added?'solid var(--accent)':'dashed #d8ccbe'};aspect-ratio:3/4;display:flex;flex-direction:column;align-items:center;justify-content:center;gap:5px;cursor:pointer;position:relative;font-family:inherit;padding:0;overflow:hidden;">${added?`<img src="${_imgSrc(slot.src)}" alt="${_urlAttr(label)}" style="width:100%;height:100%;object-fit:cover;"><span style="position:absolute;top:4px;right:4px;background:var(--accent);color:var(--accent-ink);border-radius:50%;width:18px;height:18px;display:flex;align-items:center;justify-content:center;"><i class="ti ti-check" style="font-size:11px;"></i></span><span style="position:absolute;bottom:0;left:0;right:0;background:linear-gradient(transparent,rgba(0,0,0,.7));color:#fff;font-size:9px;font-weight:600;padding:8px 4px 3px;text-align:center;">${_txt(label)}</span>`:`<i class="ti ti-camera-plus" style="font-size:22px;color:var(--c-mut);"></i><span style="font-size:10px;color:var(--c-mut);font-weight:600;text-align:center;line-height:1.2;padding:0 4px;">${_txt(label)}</span>`}</button>`;};
+  const tile=(label,kind)=>{const slot=_vcSubmitState[kind][label];const added=slot&&slot.src;return `<button onclick="_vcCapture('${kind}','${_jsAttr(label)}')" style="border-radius:10px;background:${added?'#000':'#f4faf8'};border:1.5px ${added?'solid var(--accent)':'dashed #d8ccbe'};aspect-ratio:3/4;display:flex;flex-direction:column;align-items:center;justify-content:center;gap:5px;cursor:pointer;position:relative;font-family:inherit;padding:0;overflow:hidden;">${added?`<img src="${_imgSrc(slot.src)}" alt="${_urlAttr(label)}" style="width:100%;height:100%;object-fit:cover;"><span style="position:absolute;top:4px;right:4px;background:var(--accent);color:var(--accent-ink);border-radius:50%;width:18px;height:18px;display:flex;align-items:center;justify-content:center;"><i class="ti ti-check" style="font-size:11px;"></i></span><span style="position:absolute;bottom:0;left:0;right:0;background:linear-gradient(transparent,rgba(0,0,0,.7));color:#fff;font-size:9px;font-weight:600;padding:8px 4px 3px;text-align:center;">${_txt(label)}</span>`:`<i class="ti ti-camera-plus" style="font-size:22px;color:var(--c-mut);"></i><span style="font-size:10px;color:var(--c-mut);font-weight:600;text-align:center;line-height:1.2;padding:0 4px;">${_txt(label)}</span><span style="font-size:9px;color:var(--c-mut);line-height:1.25;text-align:center;padding:2px 3px 0;opacity:.8;">${_txt(kind==='photos'?_vcTileHint(label):'')}</span>`}</button>`;};
   const photoCount=Object.values(_vcSubmitState.photos).filter(p=>p&&p.src).length;
   const _rtCount=(typeof _vcRoutineClean==='function')?_vcRoutineClean().length:0;
   const canSubmit=photoFree?((((_vcSubmitState||{}).goals||'').trim().length>0)||_rtCount>0):(photoCount>0);
@@ -4882,8 +4948,9 @@ function renderVirtualSubmit(){
     <div style="font-size:19px;font-weight:700;color:var(--c-ink);margin-bottom:3px;">${_txt(inv.title)}</div>
     <div style="font-size:13px;color:var(--c-mut);line-height:1.5;margin-bottom:6px;">${_txt(client.providerFirst)} invited you to a virtual consult.</div>
     <div style="background:var(--c-ai-bg);border:1px solid #e6dcf5;border-radius:10px;padding:9px 12px;margin-bottom:16px;display:flex;gap:7px;align-items:flex-start;"><i class="ti ti-bulb" style="font-size:13px;color:#8b6fc7;flex-shrink:0;margin-top:1px;"></i><span style="font-size:11px;color:var(--c-mut);line-height:1.5;">${photoFree?('Share your goals, habits, and any questions below — no photos needed. '+_txt(client.providerFirst)+' will review and send personalized notes back.'):('Add clear, well-lit photos'+(sets.refs?', plus any inspiration / reference photos of the look you want':'')+'. '+_txt(client.providerFirst)+' reviews and sends expert notes back.')}</span></div>
-    ${photoFree?'':`<div style="font-size:12px;font-weight:600;color:var(--c-mut);text-transform:uppercase;letter-spacing:.06em;margin-bottom:8px;">Your photos</div>
-    <div style="display:grid;grid-template-columns:1fr 1fr 1fr;gap:8px;margin-bottom:${sets.refs?'16':'18'}px;">${sets.photos.map(l=>tile(l,'photos')).join('')}</div>
+    ${photoFree?'':`${_vcTipsHTML()}<div style="font-size:12px;font-weight:600;color:var(--c-mut);text-transform:uppercase;letter-spacing:.06em;margin-bottom:8px;">Your photos</div>
+    <div style="display:grid;grid-template-columns:1fr 1fr 1fr;gap:8px;margin-bottom:${sets.refs?'16':'12'}px;">${sets.photos.map(l=>tile(l,'photos')).join('')}</div>
+    ${_vcCheckHTML(photoCount)}
     ${sets.refs?`<div style="font-size:12px;font-weight:600;color:var(--c-mut);text-transform:uppercase;letter-spacing:.06em;margin-bottom:8px;display:flex;align-items:center;gap:5px;"><i class="ti ti-photo-star" style="font-size:13px;color:#8b6fc7;"></i> ${_txt(sets.refTitle||'Inspiration / references')}</div>
     <div style="display:grid;grid-template-columns:1fr 1fr 1fr;gap:8px;margin-bottom:18px;">${sets.refs.map(l=>tile(l,'refs')).join('')}</div>`:''}`}
     ${_vcRoutineHTML()}
