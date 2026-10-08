@@ -3277,6 +3277,50 @@ That is a second, separate problem from the removals and it has not been chased 
 directions (something to restore / nothing worth restoring) and that the copied text carries every
 section with its tick marks and reasons.
 
+### 2026-10-08, THE ANSWER (`2026-10-08q`). Ashley: "stop building tools I have to go into."
+
+Fair, and she was right. Her pasted output answered it anyway. **Three findings, two code fixes,
+and Heather has to do nothing.**
+
+**1. "5 chart fields" on every single row was MY BUG, and it hid the whole picture.** The fill path
+in `syncClientEvents` seeds a placeholder chart — skin/concerns/fitz `—`, allergies `None noted`,
+treatment `New client`. `describe()` counted those as filled, so a COMPLETELY EMPTY skeleton scored
+5 out of 5 and every row on her account looked like it held a chart. Placeholders are the app's
+words, not hers, and no longer count. **Every "5 chart fields, nothing else" row on her account is
+an empty shell, not a lost chart.**
+
+**2. Nine nameless rows were labelled `<<dupe>>` — also mine.** `if(!c.name)` reads `' '` as a real
+name, so nine blank rows matched each other on the empty string and were each told "the same name
+is ALREADY showing". Trim first. The box stayed unticked either way, but a wrong REASON is how time
+gets wasted here.
+
+**3. HER APP HEALS ITSELF. Verified, not assumed.** `scratchpad/heal.mjs` seeds her exact state —
+10 live on the server, roster knows 4, ids in the delete record — and `syncClientEvents`' fill path
+brings the missing ones back on open: all four horses return, existing records keep their real
+notes, removed clients stay removed, and the second "Sue" is routed into the first rather than
+spawning a duplicate chart (9, not 10, and 9 is the right answer — the first version of that test
+called it a failure). **So the fix for "my clients are missing" is: open the app and leave it open
+a moment.**
+
+**The cause, now fixed: blank shells were being PUSHED UP.** `_isBlankSkeleton()` + both sync
+payload builders. `upsertClient` protects summaries, pendingForms and animals from being wiped, but
+NOT the profile — so a placeholder profile overwrote the real one on the account, and that is also
+where the nine nameless server rows came from. A record is a skeleton only if she has typed nothing
+anywhere: a name, an email, a phone, notes, a summary, a form, a session count or **an `ownerId`
+(a horse's link is real data — Heather's whole setup)** all make it hers and it still syncs.
+`scratchpad/skel.mjs`, 21 assertions, most of them the must-still-sync direction.
+
+**What her account actually holds:** 10 live rows, of which most are empty shells; real duplicates
+(Sue twice, Dena and Ingatara removed as dupes of ones still showing, Rainer vs Reiner); four horses
+correctly nested. **Nothing she typed is sitting deleted on the server.**
+
+**STILL OPEN — the one thing not yet answered:** not a single client row carries a summary. The
+provider's own summaries live in the kv store (`sc_session_summaries`), NOT in `clients.data`, so
+their absence from the client rows proves nothing either way. The endpoint now counts the
+per-client libraries (`libraries` in the GET: clients, entries and bytes per key, counts only) and
+the screen and the copied text both show them, so the next look answers it. **Do not conclude the
+summaries are lost until that number is seen.**
+
 **Still unknown, and it decides the root cause — ASK HER (§1b.3):** whether the 2 missing clients are
 the 2 that had horses, which device she is looking at now, and whether anything she did could read as
 a delete. Do not pick whichever answer suits a theory.

@@ -57,9 +57,14 @@ function describe(dataRaw) {
     pendingForms: arr(d.pendingForms),
     progressPhotos: arr(d.progressPhotos),
     products: arr(d.products),
-    // The fields a provider actually types into a chart. "Has a chart" is more useful than a
-    // field list when deciding whether a row is worth restoring.
-    profileFilled: ['skin', 'concerns', 'allergies', 'fitz', 'treatment'].filter(k => String(p[k] || '').trim()).length,
+    // The fields a provider actually TYPED. The app seeds a new client record with placeholders —
+    // skin '—', concerns '—', allergies 'None noted', fitz '—', treatment 'New client' — so a
+    // COMPLETELY EMPTY skeleton scored 5 out of 5 and every row on the real account read as
+    // "5 chart fields". That made the number meaningless and the whole diagnosis read as though
+    // nothing was wrong. Placeholders are the app's words, not hers, so they do not count.
+    profileFilled: ['skin', 'concerns', 'allergies', 'fitz', 'treatment']
+      .filter(k => { const v = String(p[k] || '').trim();
+        return v && !/^(—|-|–|n\/a|none|none noted|not scheduled|new client|unknown)$/i.test(v); }).length,
     // `id` here is the HORSE'S OWN CLIENT ID — _animalsOf() finds CL records whose ownerId is this
     // client, so an animal entry is a client record. That is what makes "did this client vanish, or
     // did it become a horse under an owner?" answerable rather than guessable (see nestedUnder).
@@ -210,6 +215,33 @@ export default async function handler(req, res) {
       deletedRecord = (dr || []).map(x => String(x.id));
     } catch (e) { deletedRecord = null; }
 
+    // ── The OTHER place a provider's work lives ──────────────────────────────
+    // clients.data carries the CLIENT-FACING copy of a chart. The provider's own session
+    // summaries, product plans, body maps and note drafts live in the kv store as per-client maps
+    // ({clientId: [...]}), and NOTHING above would show them. On Heather's account every single
+    // client row reported chart fields and zero summaries, which looks like catastrophic loss
+    // until you check here — so this is counted, per key, before anyone concludes anything.
+    // Counts only: the number of clients the map covers and the number of entries inside. No value
+    // text is ever selected into this function.
+    const LIBS = ['sc_session_summaries', 'sc_client_recs', 'sc_client_homecare', 'sc_body_maps',
+      'sc_photo_index', 'sc_note_drafts', 'sc_summary_drafts', 'sc_rec_reasons',
+      'sc_pro_vc_invites', 'sc_healing_stage', 'sc_summary_guides', 'sc_workspace', 'sc_clients'];
+    const libraries = {};
+    for (const key of LIBS) {
+      const meta = kv[key];
+      if (!meta) { libraries[key] = { onServer: false }; continue; }
+      const out = { onServer: true, bytes: meta.bytes, at: meta.at };
+      try {
+        const c = await q`SELECT count(*)::int AS clients,
+            coalesce(sum(CASE WHEN jsonb_typeof(entry.value)='array'
+                              THEN jsonb_array_length(entry.value) ELSE 0 END),0)::int AS entries
+          FROM kv, jsonb_each(kv.v::jsonb) AS entry
+          WHERE kv.owner=${owner} AND kv.k=${key} AND jsonb_typeof(kv.v::jsonb)='object'`;
+        if (c && c[0]) { out.clients = Number(c[0].clients) || 0; out.entries = Number(c[0].entries) || 0; }
+      } catch (e) { out.unreadable = true; }
+      libraries[key] = out;
+    }
+
     let events = 0;
     try { const ev = await q`SELECT count(*)::int AS n FROM client_events WHERE provider_id=${owner}`; events = (ev[0] && ev[0].n) || 0; } catch (e) {}
 
@@ -243,6 +275,7 @@ export default async function handler(req, res) {
       missingFromTable: rosterIds ? rosterIds.filter(id => !clients.some(c => c.id === id)) : null,
       deletedRecordIds: deletedRecord,
       nestedUnder,
+      libraries,
       kv
     });
   } catch (e) {

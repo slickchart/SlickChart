@@ -166,6 +166,16 @@ const o1 = (j.clients || []).find(c => c.id === 'c_owner1');
 ok('names the removed client', !!(o1 && o1.name === 'Dana Reed'), o1 && o1.name);
 ok('counts her summaries', !!(o1 && o1.has.summaries === 1), o1 && o1.has);
 ok('counts her chart fields', !!(o1 && o1.has.profileFilled === 2), o1 && o1.has.profileFilled);
+// A brand-new EMPTY record is seeded with placeholders. It must score ZERO, not five — scoring
+// five is what made every row on the real account look like it held a chart.
+await upsertClient(H, { id: 'c_skel', name: 'Skeleton', data: { profile: {
+  skin: '\u2014', concerns: '\u2014', allergies: 'None noted', fitz: '\u2014',
+  treatment: 'New client', lastVisit: '\u2014', nextVisit: 'Not scheduled' }, summaries: [], animals: [] } });
+{
+  const rr = await call('GET', { token: tokenFor('ashley@slickchart.app'), query: { email: 'heather@example.com' } });
+  const sk = (rr.body.clients || []).find(c => c.id === 'c_skel');
+  ok('an empty skeleton scores 0 chart fields, not 5', !!(sk && sk.has.profileFilled === 0), sk && sk.has);
+}
 ok('lists both horses by name', !!(o1 && o1.has.animals.length === 2 && o1.has.animals[0].name === 'Comet'), o1 && o1.has.animals);
 ok('counts each horse\'s summaries', !!(o1 && o1.has.animals[0].summaries === 3 && o1.has.animals[1].summaries === 2));
 ok('NEVER returns note content', JSON.stringify(j.clients||[]).indexOf('Session 1') < 0 && JSON.stringify(j.clients||[]).indexOf('stiffness') < 0);
@@ -195,6 +205,28 @@ await q`INSERT INTO kv (owner,k,v) VALUES (${H},'sc_clients',${JSON.stringify({ 
 r = await call('GET', { token: tokenFor('ashley@slickchart.app'), query: { email: 'heather@example.com' } });
 ok('reads the roster blob shape', r.body.roster && r.body.roster.shape === 'object', r.body.roster);
 ok('spots a live client missing from the roster', (r.body.missingFromRoster || []).indexOf('c_plain2') >= 0, r.body.missingFromRoster);
+
+// ── the provider-side store: where her SUMMARIES actually live ───────────────
+// Every client row on the real account reported chart fields and ZERO summaries, which reads as
+// catastrophic loss. The provider's own summaries are a per-client map in kv, not in clients.data,
+// so the tool has to count them or the wrong conclusion is unavoidable.
+await q`INSERT INTO kv (owner,k,v) VALUES (${H},'sc_session_summaries',${JSON.stringify({
+  c_owner1: [{ id: 's1' }, { id: 's2' }, { id: 's3' }], c_plain1: [{ id: 's4' }] })})
+  ON CONFLICT (owner,k) DO UPDATE SET v=EXCLUDED.v`;
+await q`INSERT INTO kv (owner,k,v) VALUES (${H},'sc_client_recs',${JSON.stringify({ c_owner1: ['p1','p2'] })})
+  ON CONFLICT (owner,k) DO UPDATE SET v=EXCLUDED.v`;
+await q`INSERT INTO kv (owner,k,v) VALUES (${H},'sc_body_maps','not json at all')
+  ON CONFLICT (owner,k) DO UPDATE SET v=EXCLUDED.v`;
+r = await call('GET', { token: tokenFor('ashley@slickchart.app'), query: { email: 'heather@example.com' } });
+const libs = (r.body || {}).libraries || {};
+ok('counts the clients a summary map covers', libs.sc_session_summaries && libs.sc_session_summaries.clients === 2, libs.sc_session_summaries);
+ok('counts the summaries INSIDE it', libs.sc_session_summaries && libs.sc_session_summaries.entries === 4, libs.sc_session_summaries);
+ok('reports its size', libs.sc_session_summaries && libs.sc_session_summaries.bytes > 0);
+ok('counts a product-plan map the same way', libs.sc_client_recs && libs.sc_client_recs.clients === 1 && libs.sc_client_recs.entries === 2, libs.sc_client_recs);
+ok('a key with no row says so', libs.sc_note_drafts && libs.sc_note_drafts.onServer === false, libs.sc_note_drafts);
+ok('unparseable json does not 500 the whole lookup', !!libs.sc_body_maps && r.code === 200, libs.sc_body_maps);
+ok('the roster blob is counted too', !!libs.sc_clients, libs.sc_clients);
+ok('library counts carry NO content', JSON.stringify(libs).indexOf('p1') < 0 && JSON.stringify(libs).indexOf('s1') < 0);
 
 // ── the restore ──────────────────────────────────────────────────────────────
 r = await call('POST', { token: tokenFor('ashley@slickchart.app'), body: { email: 'heather@example.com', restoreIds: ['c_owner1', 'c_owner2'] } });

@@ -214,7 +214,7 @@ const S=document.getElementById('S');
 // resets when I save it" and there was no way to tell whether her phone had any of them — a whole
 // day was spent debugging code she may not have been running. Shown at the bottom of Settings, so
 // the answer is a screenshot away. Bump it on every ship.
-const APP_BUILD='2026-10-08n';
+const APP_BUILD='2026-10-08q';
 
 
 /* ════════════════════════════════════════════════════════════════
@@ -18171,6 +18171,31 @@ function _noteSignedOut(){
   if(typeof proToast==='function')proToast('You’ve been signed out — sign in again to keep sending to clients and syncing.',0);
 }
 // Sync only the given client ids (fast path for invites) instead of the whole roster.
+// A record the APP invented, not one she made. syncClientEvents' fill path creates a placeholder
+// chart for any server client this device has not got — name 'New client' (or none), skin/concerns/
+// fitz '—', allergies 'None noted', treatment 'New client'. Those are the app's words.
+//
+// Pushing one of those UP is how a real chart gets quietly degraded: upsertClient protects
+// summaries, pendingForms and animals from being wiped, but NOT the profile, so a placeholder
+// profile overwrites the real one on the account. It is also where the nameless rows on the server
+// came from. A record is a skeleton only if she has typed NOTHING into it anywhere — a client she
+// has only named is hers and still syncs.
+const _SKEL_WORDS=/^(—|-|–|n\/a|none|none noted|not scheduled|new client|unknown|)$/i;
+function _isBlankSkeleton(c){
+  if(!c||typeof c!=='object')return false;
+  const nm=String(c.name||'').trim();
+  if(nm&&!/^new client$/i.test(nm))return false;                 // she named them: hers
+  if(String(c.email||'').trim()||String(c.phone||'').trim())return false;
+  if(String(c.notes||'').trim()||String(c.conditions||'').trim())return false;
+  if((Array.isArray(c.summaries)&&c.summaries.length)||(Array.isArray(c.submittedForms)&&c.submittedForms.length))return false;
+  if((Array.isArray(c.signedForms)&&c.signedForms.length)||(Array.isArray(c.pendingForms)&&c.pendingForms.length))return false;
+  if(c.ownerId||c.isAnimal)return false;                          // a horse's link is real data
+  if(Number(c.sessions)>0)return false;
+  const typed=['skin','concerns','allergies','fitz','treatment'].some(function(k){
+    return !_SKEL_WORDS.test(String(c[k]||'').trim());
+  });
+  return !typed;
+}
 async function _syncSpecificClientsToServer(ids,opts){
   opts=opts||{};
   const tok=(typeof Cloud!=='undefined'&&Cloud&&Cloud.token)||'';
@@ -18178,7 +18203,7 @@ async function _syncSpecificClientsToServer(ids,opts){
   // phone travels with the record: the check-in auto-sender matches a Square customer to a client
   // by email OR phone, and a client who books with a phone number and no email could never be matched
   // while this payload left it out — so their check-in never auto-sent.
-  const list=(ids||[]).filter(id=>CL[id]).map(id=>({id:id,name:CL[id].name||'',email:CL[id].email||'',phone:CL[id].phone||'',data:_assembleClientData(id)}));
+  const list=(ids||[]).filter(id=>CL[id]&&!_isBlankSkeleton(CL[id])).map(id=>({id:id,name:CL[id].name||'',email:CL[id].email||'',phone:CL[id].phone||'',data:_assembleClientData(id)}));
   if(!list.length)return {ok:true,clients:[]};
   try{
     const r=await fetch('/api/clients',{method:'POST',headers:{'Content-Type':'application/json','Authorization':'Bearer '+tok},body:JSON.stringify({clients:list})});
@@ -18224,7 +18249,7 @@ async function _syncClientsToServer(opts){
   if(!tok){ if(opts.toast)proToast('Sign in to sync your clients'); return null; }
   if(_syncingClients)return null; _syncingClients=true;
   try{
-    const list=Object.keys(CL).map(id=>({id:id,name:CL[id].name||'',email:CL[id].email||'',phone:CL[id].phone||'',data:_assembleClientData(id)}));
+    const list=Object.keys(CL).filter(id=>!_isBlankSkeleton(CL[id])).map(id=>({id:id,name:CL[id].name||'',email:CL[id].email||'',phone:CL[id].phone||'',data:_assembleClientData(id)}));
     const r=await fetch('/api/clients',{method:'POST',headers:{'Content-Type':'application/json','Authorization':'Bearer '+tok},body:JSON.stringify({clients:list})});
     let j={};try{j=await r.json();}catch(e){}
     if(r.ok&&j&&j.ok&&Array.isArray(j.clients)){
@@ -26935,13 +26960,17 @@ function _recoverEdits(a,b){
   return d[m][n];
 }
 function _recoverRisk(c,liveNames){
-  if(!c.name)return 'blank';
+  // Trim FIRST. A row whose name is whitespace is nameless, but `!c.name` reads ' ' as a real
+  // name, so nine blank rows on Heather's account were all labelled "the same name is ALREADY
+  // showing" — they were matching each other on the empty string. The box stayed unticked either
+  // way, but the reason she was shown was wrong, and a wrong reason is how time gets wasted here.
+  const nm=String(c.name||'').trim().toLowerCase();
+  if(!nm)return 'blank';
   const h=c.has||{};
   // REAL CONTENT only. On the account this was built for, almost every row reported "5 chart
   // fields" — so chart fields alone carry no information and must not tick a box on their own.
   // Summaries, forms, photos and animals are the things that are actually hers to lose.
   const content=(h.summaries||0)+(h.forms||0)+(h.progressPhotos||0)+((h.animals||[]).length);
-  const nm=c.name.trim().toLowerCase();
   if(liveNames[nm])return 'dupe';
   // "Rainer" removed while "Reiner" is showing is probably the same horse typed twice — but
   // probably is not enough to decide for her, so it is flagged and left for her to judge.
@@ -26958,7 +26987,7 @@ function renderClientRecover(){
   const esc=(x)=>_fileEsc(String(x==null?'':x));
   const all=j.clients||[], nest=j.nestedUnder||{};
   const liveNames={};
-  all.forEach(function(c){ if(!c.deleted&&c.name)liveNames[c.name.trim().toLowerCase()]=1; });
+  all.forEach(function(c){ const n=String(c.name||'').trim().toLowerCase(); if(!c.deleted&&n)liveNames[n]=1; });
   const removed=all.filter(c=>c.deleted), showing=all.filter(c=>!c.deleted);
   // Default the ticks the FIRST time only, so her choices survive a re-render.
   if(!_recoverPick._seeded){
@@ -26995,6 +27024,27 @@ function renderClientRecover(){
         +(an.length?'<div style="font-size:14px;color:var(--p-mut);margin-top:2px;">'+an.map(a=>'· '+esc(a.name||'(unnamed)')+(a.summaries?(' — '+a.summaries+' summaries'):'')).join('<br>')+'</div>':'')
       +'</div></label>';
   };
+  // What her WORK looks like in the other store. The client rows carry the client-facing copy;
+  // the provider's own summaries, plans and maps live here, and if they are missing from BOTH
+  // then it is real loss rather than a display problem.
+  const LIBLBL={sc_session_summaries:'Session summaries',sc_client_recs:'Product plans',
+    sc_client_homecare:'Homecare lists',sc_body_maps:'Body maps',sc_photo_index:'Photo index',
+    sc_note_drafts:'Note drafts',sc_summary_drafts:'Summary drafts',sc_rec_reasons:'Product notes',
+    sc_pro_vc_invites:'Consult state',sc_healing_stage:'Healing stage',sc_summary_guides:'Summary guides',
+    sc_workspace:'Workspace blob',sc_clients:'Client roster'};
+  const libs=j.libraries||{};
+  const libRows=Object.keys(LIBLBL).filter(function(k){return libs[k];}).map(function(k){
+    const L=libs[k];
+    const val=!L.onServer?'not on the server'
+      :(L.unreadable?(Math.round((L.bytes||0)/1024)+'KB, could not read inside')
+        :((L.clients||0)+' client'+((L.clients||0)===1?'':'s')
+          +((L.entries||0)?(' · '+L.entries+' entries'):'')
+          +' · '+Math.round((L.bytes||0)/1024)+'KB'));
+    const bad=!L.onServer||(!L.clients&&!L.unreadable);
+    return '<div style="display:flex;justify-content:space-between;gap:10px;padding:9px 12px;border-bottom:1px solid var(--p-line2);">'
+      +'<div style="font-size:16px;color:var(--p-ink);">'+esc(LIBLBL[k])+'</div>'
+      +'<div style="font-size:14px;color:'+(bad?'var(--p-red)':'var(--p-mut)')+';text-align:right;">'+esc(val)+'</div></div>';
+  }).join('');
   const nestedRows=all.filter(c=>nest[c.id]);
   const picked=removed.filter(c=>_recoverPick[c.id]);
   // Count WHY each removed row was left off, so the top of the screen gives a verdict instead of a
@@ -27047,6 +27097,9 @@ function renderClientRecover(){
         +(an.length?'<div style="font-size:14px;color:var(--p-mut);margin-top:2px;">'+an.map(a=>'· '+esc(a.name||'(unnamed)')+(a.summaries?(' — '+a.summaries+' summaries'):'')).join('<br>')+'</div>':'')
         +'</div>';}).join('')
     +'</div>'
+    +(libRows?('<div class="sh" style="margin-top:16px;"><h2>Their saved work</h2></div>'
+      +'<div style="font-size:14px;color:var(--p-mut);line-height:1.5;margin:0 0 8px;">The client rows above hold what the CLIENT sees. The provider’s own summaries, plans and maps live here. Red means empty or missing.</div>'
+      +'<div style="background:var(--surf2);border:1px solid var(--p-line);border-radius:12px;overflow:hidden;">'+libRows+'</div>'):'')
     +'<div style="font-size:14px;color:var(--p-mut);line-height:1.5;margin-top:14px;">Counts only — none of their notes were read.</div>'
     +'</div>'
     +(removed.length?('<div style="position:sticky;bottom:0;background:var(--surf1);border-top:1px solid var(--p-line);padding:12px 16px;">'
@@ -27059,7 +27112,7 @@ function _recoverText(){
   const j=_recoverState;if(!j)return '';
   const all=j.clients||[],nest=j.nestedUnder||{};
   const liveNames={};
-  all.forEach(function(c){if(!c.deleted&&c.name)liveNames[c.name.trim().toLowerCase()]=1;});
+  all.forEach(function(c){const n=String(c.name||'').trim().toLowerCase();if(!c.deleted&&n)liveNames[n]=1;});
   const bits=function(c){
     const h=c.has||{},o=[];
     if(h.summaries)o.push(h.summaries+' summaries');
@@ -27083,6 +27136,20 @@ function _recoverText(){
   });
   L.push('');L.push('SHOWING ('+all.filter(c=>!c.deleted).length+'):');
   all.filter(c=>!c.deleted).forEach(function(c){L.push('  '+(c.name||'(no name)')+' — '+bits(c));});
+  const libs2=j.libraries||{};
+  const LBL={sc_session_summaries:'Session summaries',sc_client_recs:'Product plans',
+    sc_client_homecare:'Homecare lists',sc_body_maps:'Body maps',sc_photo_index:'Photo index',
+    sc_note_drafts:'Note drafts',sc_summary_drafts:'Summary drafts',sc_rec_reasons:'Product notes',
+    sc_pro_vc_invites:'Consult state',sc_healing_stage:'Healing stage',sc_summary_guides:'Summary guides',
+    sc_workspace:'Workspace blob',sc_clients:'Client roster'};
+  const lk=Object.keys(LBL).filter(function(k){return libs2[k];});
+  if(lk.length){
+    L.push('','THEIR SAVED WORK (the provider-side store):');
+    lk.forEach(function(k){const x=libs2[k];
+      L.push('  '+LBL[k]+': '+(!x.onServer?'NOT ON THE SERVER'
+        :(x.unreadable?(Math.round((x.bytes||0)/1024)+'KB, unreadable')
+          :((x.clients||0)+' clients, '+(x.entries||0)+' entries, '+Math.round((x.bytes||0)/1024)+'KB'))));});
+  }
   if(j.missingFromRoster&&j.missingFromRoster.length)L.push('','On the server but missing from their app’s list: '+j.missingFromRoster.length);
   L.push('Device delete record: '+((j.deletedRecordIds&&j.deletedRecordIds.length)||0)+' id(s)');
   return L.join('\n');
