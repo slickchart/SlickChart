@@ -3400,6 +3400,57 @@ untouched.
 the 2 that had horses, which device she is looking at now, and whether anything she did could read as
 a delete. Do not pick whichever answer suits a theory.
 
+## 2al. THE SAFETY NET: version history for every library (2026-10-08, `2026-10-08t`)
+
+Ashley, after the fourth incident: *"this has happened several times where something happens and
+it loses all my clients summaries, notes, things we have made as providers and you can't get them
+back. I need you to build in a safeguard so this stops happening. it is ridiculous and embarassing
+to have to tell my providers that we lost their hard work when they did nothing wrong."*
+
+She is right, and the pattern is worth stating plainly: **every fix before this was reactive.**
+Diana's summaries, Riquelle's forms, Heather's horse links, Heather's notes. Four different causes,
+four correct fixes, and each one arrived after a provider had already lost work — because we only
+ever learned which field was unprotected by watching someone lose it.
+
+**This does not try to be another correct merge. It assumes the NEXT merge bug exists and has not
+been found, and makes it undoable.**
+
+### `lib/kv-history.js` + a snapshot in `api/store.js`
+
+Before any save overwrites a tracked library, the OLD value is kept if the write would shrink it.
+
+| reason | when | kept |
+|---|---|---|
+| `shrink` | the new value holds FEWER entries, or is >25% smaller at over 2KB | newest 8 per key |
+| `daily` | the first write of a day, so there is always a yesterday | newest 14 per key |
+| `before-restore` | written by a restore, so a restore is itself undoable | — |
+
+`TRACKED` is the libraries she BUILDS (sc_clients first — chart notes live there and nowhere else),
+not settings: a settings blob is one record and cheap to retype, and versioning it would be most of
+the storage for none of the value. A write that grows or leaves a library the same size keeps
+nothing, which is nearly all of them, so a quiet day costs one row per key.
+
+**Two things that are deliberate and must not be "tidied":**
+1. **The snapshot is wrapped in try/catch in `api/store.js` and a failure lets the save proceed.**
+   A seatbelt that can stop the car is worse than none.
+2. **`restoreVersion` keeps the CURRENT value before writing the old one back**, and ABORTS if it
+   cannot. The only thing worse than losing data is a recovery tool that destroys the last copy.
+
+Shown on the recovery screen as **Earlier copies**, newest first, each row saying how many items
+that copy held — "Client roster — 47 items" against a live 9 makes the choice obvious — with a
+Put back button per row. Read via `GET /api/admin/client-recover` (`history`), restored via
+`POST {restoreVersionId}`. Founder-gated like the rest of that endpoint.
+
+**Verified: `scripts/test-kv-history.mjs`, 24 assertions against a REAL PostgreSQL 16**, written as
+the incidents themselves: Heather's 10 real clients replaced by placeholders (caught, restored,
+**notes back**), Diana's same-client-count-but-summaries-emptied (caught by size, restored), a
+growing write keeping nothing, pruning capped at 8 with the NEWEST kept, and the §0.1 isolation —
+one provider cannot restore another's version, a listing never leaks another's rows, and the
+listing carries metadata only, never the stored value.
+
+**What this does NOT do, stated so nobody assumes otherwise:** it starts from the day it ships.
+It cannot bring back what was lost before it existed, including Heather's notes.
+
 ## 2ak. The virtual consult work (2026-10-08) — from the research in `reports/`
 
 `reports/Virtual consult platform upgrades.md` is the research behind this. Read its "three requests"

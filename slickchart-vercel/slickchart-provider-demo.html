@@ -468,7 +468,7 @@ const S=document.getElementById('S');
 // resets when I save it" and there was no way to tell whether her phone had any of them — a whole
 // day was spent debugging code she may not have been running. Shown at the bottom of Settings, so
 // the answer is a screenshot away. Bump it on every ship.
-const APP_BUILD='2026-10-08s';
+const APP_BUILD='2026-10-08t';
 
 
 /* ════════════════════════════════════════════════════════════════
@@ -27397,6 +27397,29 @@ function renderClientRecover(){
     +(libRows?('<div class="sh" style="margin-top:16px;"><h2>Their saved work</h2></div>'
       +'<div style="font-size:14px;color:var(--p-mut);line-height:1.5;margin:0 0 8px;">The client rows above hold what the CLIENT sees. The provider’s own summaries, plans and maps live here. Red means empty or missing.</div>'
       +'<div style="background:var(--surf2);border:1px solid var(--p-line);border-radius:12px;overflow:hidden;">'+libRows+'</div>'):'')
+    +(function(){
+      // EARLIER COPIES. The point of the whole safety net: whatever went wrong and whichever
+      // merge was at fault, there is something to go back to. Shown newest first, with how much
+      // each copy held, so "47 clients" against "9 clients" makes the choice obvious.
+      const hs=(j.history||[]).filter(function(x){return x&&x.k;});
+      if(!hs.length)return '';
+      const LBL2=Object.assign({},LIBLBL);
+      const when=function(t){try{return new Date(t).toLocaleString('en-US',{month:'short',day:'numeric',hour:'numeric',minute:'2-digit'});}catch(e){return '';}};
+      const WHY2={shrink:'kept because this save made it smaller',daily:'the daily copy',
+                  'before-restore':'kept just before an earlier restore'};
+      return '<div class="sh" style="margin-top:16px;"><h2>Earlier copies</h2></div>'
+        +'<div style="font-size:14px;color:var(--p-mut);line-height:1.5;margin:0 0 8px;">Saved automatically before anything made one of their libraries smaller. Putting one back keeps a copy of what is there now, so it can be undone.</div>'
+        +'<div style="background:var(--surf2);border:1px solid var(--p-line);border-radius:12px;overflow:hidden;">'
+        +hs.slice(0,30).map(function(x){
+          return '<div style="display:flex;align-items:center;gap:10px;padding:10px 12px;border-bottom:1px solid var(--p-line2);">'
+            +'<div style="flex:1;min-width:0;">'
+              +'<div style="font-size:16px;color:var(--p-ink);">'+esc(LBL2[x.k]||x.k)+' \u2014 '+(x.items||0)+' item'+((x.items||0)===1?'':'s')+'</div>'
+              +'<div style="font-size:14px;color:var(--p-mut);">'+esc(when(x.saved_at))+' \u00b7 '+esc(WHY2[x.reason]||x.reason||'')+'</div>'
+            +'</div>'
+            +'<button onclick="_recoverRollback('+Number(x.id)+',\''+esc(LBL2[x.k]||x.k)+'\','+(x.items||0)+')" style="background:var(--surf1);border:1px solid var(--p-line3);color:var(--p-ink);border-radius:8px;padding:8px 12px;font-size:16px;cursor:pointer;font-family:inherit;flex-shrink:0;">Put back</button>'
+            +'</div>';}).join('')
+        +'</div>';
+    })()
     +'<div style="font-size:14px;color:var(--p-mut);line-height:1.5;margin-top:14px;">Counts only — none of their notes were read.</div>'
     +'</div>'
     +(removed.length?('<div style="position:sticky;bottom:0;background:var(--surf1);border-top:1px solid var(--p-line);padding:12px 16px;">'
@@ -27456,6 +27479,25 @@ function _recoverCopy(){
   try{ if(typeof _copyToClipboard==='function'){_copyToClipboard(t,'Copied — paste it in a message');return;} }catch(e){}
   try{ navigator.clipboard.writeText(t); if(typeof proToast==='function')proToast('Copied — paste it in a message'); }
   catch(e){ if(typeof proToast==='function')proToast('Couldn’t copy — screenshot instead'); }
+}
+async function _recoverRollback(id,label,items){
+  const j=_recoverState;if(!j)return;
+  confirmModal({title:'Go back to this copy?',
+    body:'This puts '+label+' back to the copy with '+items+' item'+(items===1?'':'s')+' in it.\n\nWhat is there now is kept first, so this can be undone. They will need to open the app and pull down to refresh.',
+    action:'Put it back'},async function(){
+    try{
+      const tok=(typeof Cloud!=='undefined'&&Cloud&&Cloud.token)||'';
+      const r=await fetch('/api/admin/client-recover',{method:'POST',headers:{'Content-Type':'application/json','Authorization':'Bearer '+tok},
+        body:JSON.stringify({email:j.provider.email,restoreVersionId:id})});
+      const out=await r.json().catch(()=>({}));
+      if(!r.ok||!out.ok){if(typeof proToast==='function')proToast((out&&out.error)||'Could not put it back');return;}
+      if(typeof proToast==='function')proToast('Put back \u2014 '+out.items+' item'+(out.items===1?'':'s'));
+      // Re-read so the screen shows what is actually there now.
+      const r2=await fetch('/api/admin/client-recover?email='+encodeURIComponent(j.provider.email),{headers:{'Authorization':'Bearer '+tok}});
+      const j2=await r2.json().catch(()=>null);
+      if(j2&&j2.ok){_recoverState=j2;_recoverPick={};renderClientRecover();}
+    }catch(e){ if(typeof proToast==='function')proToast('Could not reach the server'); }
+  });
 }
 function _recoverToggle(id){ if(_recoverPick[id])delete _recoverPick[id];else _recoverPick[id]=1; renderClientRecover(); }
 function _recoverAll(on){

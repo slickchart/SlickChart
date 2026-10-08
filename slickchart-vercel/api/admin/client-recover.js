@@ -26,6 +26,7 @@
 import { dbEnabled, sql, ensureTable, ensureProvidersTable } from '../../lib/db.js';
 import { verifyToken, isSessionValid } from '../../lib/auth.js';
 import { ensureClientTables } from '../../lib/clients.js';
+import { listHistory, restoreVersion, ensureHistoryTable } from '../../lib/kv-history.js';
 
 function norm(s) { return String(s || '').trim().toLowerCase(); }
 
@@ -147,6 +148,14 @@ export default async function handler(req, res) {
         return;
       }
 
+      // Put a whole library back to an earlier copy. The current value is kept first, inside
+      // restoreVersion, so this is itself undoable.
+      if (body.restoreVersionId) {
+        const out = await restoreVersion(owner, body.restoreVersionId);
+        res.status(out.ok ? 200 : 400).json(out.ok ? { ok: true, ...out } : { error: out.error });
+        return;
+      }
+
       if (exportIds.length) {
         const out = [];
         for (const id of exportIds) {
@@ -242,6 +251,11 @@ export default async function handler(req, res) {
       libraries[key] = out;
     }
 
+    // Earlier copies of her libraries, kept automatically before anything shrank them. Metadata
+    // only — when, how many entries it held, and why it was kept.
+    let history = [];
+    try { await ensureHistoryTable(); history = await listHistory(owner); } catch (e) {}
+
     let events = 0;
     try { const ev = await q`SELECT count(*)::int AS n FROM client_events WHERE provider_id=${owner}`; events = (ev[0] && ev[0].n) || 0; } catch (e) {}
 
@@ -276,6 +290,7 @@ export default async function handler(req, res) {
       deletedRecordIds: deletedRecord,
       nestedUnder,
       libraries,
+      history,
       kv
     });
   } catch (e) {

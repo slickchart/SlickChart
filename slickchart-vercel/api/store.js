@@ -6,6 +6,7 @@
 // UNION_SET_KEYS / OLDEST_WINS_KEYS below.
 import { sql, ensureTable, ensureProvidersTable, dbEnabled } from '../lib/db.js';
 import { verifyToken, isSessionValid } from '../lib/auth.js';
+import { snapshotBeforeWrite } from '../lib/kv-history.js';
 
 async function requireLogin(req, res, q) {
   const secret = process.env.SESSION_SECRET || '';
@@ -81,6 +82,16 @@ export default async function handler(req, res) {
       if (!items || typeof items !== 'object') { res.status(400).json({ error: 'Nothing to save.' }); return; }
 
       const entries = Object.entries(items);
+
+      // SAFETY NET. Before anything is overwritten, keep the old value of any library this write
+      // SHRINKS. Four separate incidents have now ended with a provider's work gone and no way
+      // back; each had a different cause and each was only understood afterwards. This assumes the
+      // next cause exists and has not been found yet, and makes it undoable regardless.
+      // Deliberately wrapped: history is a seatbelt, and a seatbelt that can stop the car is worse
+      // than none. A save must still succeed if this fails.
+      try { await snapshotBeforeWrite(owner, items); }
+      catch (e) { console.error('[store] history snapshot failed (save continues):', e && e.message); }
+
       for (const [k, v] of entries) {
         const val = v == null ? null : String(v);
         if (UNION_SET_KEYS[k] && isJsonArray(val)) {
