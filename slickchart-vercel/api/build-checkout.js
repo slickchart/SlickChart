@@ -8,6 +8,25 @@
 // second webhook: Stripe is the source of truth for "did this person pay", so we just ask it.
 import { trustedOrigin } from '../lib/email.js';
 
+// Stripe's own sentence is the only thing that distinguishes an archived price from a restricted
+// key from a bad parameter combination, and it is worth having. What must NOT travel with it is any
+// identifier. The hard part is that Stripe ids and Stripe PARAMETER NAMES are both snake_case, and
+// the parameter names (consent_collection, customer_creation, line_items) are exactly the useful
+// part — a first attempt redacted those too and left the message meaningless. So:
+//   1. the known id/key prefixes go unconditionally, however many segments follow (sk_live_… too),
+//   2. anything whose LAST underscore segment contains a digit is an id, not an English word,
+//   3. any long bare alphanumeric run, in case an id ever turns up unprefixed.
+// A parameter name survives all three, because its segments are lowercase words with no digits.
+const _ID_PREFIX = /\b(?:price|prod|acct|cus|sub|si|pi|seti|ch|in|il|cs|req|sk|pk|rk|whsec|tok|card|ba|po|re|tr|txn|evt|plan|promo|cpn|file|link)_[A-Za-z0-9_]+\b/g;
+const _ID_DIGITY = /\b[A-Za-z]{2,14}(?:_[A-Za-z0-9]+)*_[A-Za-z0-9]*[0-9][A-Za-z0-9]*\b/g;
+function safeStripeMessage(m) {
+  return String(m == null ? '' : m)
+    .replace(_ID_PREFIX, '[id]')
+    .replace(_ID_DIGITY, '[id]')
+    .replace(/\b[A-Za-z0-9]{24,}\b/g, '[id]')
+    .slice(0, 300);
+}
+
 export default async function handler(req, res) {
   if (req.method !== 'POST') { res.status(405).json({ error: 'Method not allowed' }); return; }
   const key = process.env.STRIPE_SECRET_KEY || '';
@@ -54,7 +73,8 @@ export default async function handler(req, res) {
       console.error('[build-checkout] stripe error', r.status, se.code || '', se.param || '', se.message || '');
       res.status(502).json({ error: 'Couldn’t start checkout.',
         code: String(se.code || se.type || ('http_' + r.status)).slice(0, 60),
-        param: String(se.param || '').slice(0, 60) });
+        param: String(se.param || '').slice(0, 60),
+        detail: safeStripeMessage(se.message) });
       return;
     }
     res.status(200).json({ url: j.url });
