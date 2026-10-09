@@ -3741,6 +3741,70 @@ menu or shop has no persistent tax setting — only the per-line toggle on the i
 from Square, which is where it is configured. If a provider asks for that, it needs a small
 name-keyed override key, and that is a NEW synced key, so §0.6 and `check-merge-coverage` apply.
 
+---
+
+## 2an. ROOT CAUSE of "the two lists never merged": a queued write skipped the merge (2026-10-09, `2026-10-09j`)
+
+**Ashley's fact, from the 2aj-2 diagnosis:** Heather's account held Ingatara Perry and not Sue; her
+phone held Sue and not Ingatara Perry. Inverted, for days, through many pulls. `_mergeClients` is a
+union, so the first sync should have ended it. **This is why it never ran.**
+
+`Cloud.pull()` opens with the "never overwrite a key that still has a pending local write" guard,
+which **`return`s**. That return sits above *every* merge in the function, not just above the plain
+overwrite at the bottom. And `sc_clients` almost always HAS a pending write — `saveClients()`
+persists and calls `_scheduleClientSyncDirty()` on every edit. So the roster merge was skipped on
+essentially every pull: the account's clients never arrived, and the device kept pushing its own
+list back up. Two complete-but-different rosters, neither absorbing the other.
+
+**Skipping was never protecting anything.** Every save does `localStorage.setItem(...)` FIRST and
+queues the network push after, and `this._queue[k]=v` holds that same value — so the `_lsGet(k)` the
+merge reads already contains the pending edit. The merge keeps it *and* absorbs the account's data.
+Only the plain overwrite (`setFromServer`, i.e. "take the server's copy") can actually lose it.
+
+Reproduced on the shipped build: with a queued write, pulling an account that held Ingatara Perry
+left the phone with `["Kona","Sue"]` and her notes never came across. Fixed build: all four arrive
+and the unpushed edit is still there.
+
+### Narrowed to sc_clients ON PURPOSE — do not widen without reading this
+
+`sc_clients` is let through because its merge is a **true union** (per client, newer `_uAt` wins), so
+it cannot drop the queued edit. The rest keep the skip, because **they are not all unions**:
+
+- `_mergeStamped` (`sc_bizinfo`, `sc_brand_colors`, `sc_availability`, `sc_suggested_forms`) is
+  last-writer-wins on ONE blob. An unpushed edit with no `_ts` loses to the server outright. That is
+  §2n / §2u — "saved settings were being thrown away by the next pull" — and letting the merge run
+  here would bring it straight back.
+- `_mergeClientMap` keeps the **ACCOUNT's** copy where both sides hold a client (§0.7), so an
+  unpushed change to an existing client's product plan would be discarded.
+
+There is a regression test for both: an unpushed business name with no `_ts` and an unpushed
+`sc_client_recs` entry each survive a pull whose server copy would otherwise win. **If you widen the
+allow-list, prove the merge is a union first.**
+
+### Two theories checked and KILLED on the way — do not re-chase
+
+1. **A device-only delete record re-killing her clients.** `sc_deleted_clients` is in `_TOMB_OBJ` and
+   `_saveDeletedClients` calls `_pushKeyNow`, so a phone tombstone DOES reach the account — and the
+   server's list came back empty (the `ghosts` check). Second time this theory has failed. It is dead.
+2. **An orphaned nest hiding her.** `_ownerIdOf()` already returns `''` for a dangling `ownerId`, and
+   `renderClients` indents by `_ownerIdOf` rather than filtering by `_isAnimal`, so a horse whose
+   owner is missing still renders at top level. I had started building a heal for this and checked the
+   render first; there was nothing to heal. `_isAnimal(c)` is only `!!c.ownerId` — the invisibility
+   this *looks* like does not exist.
+
+### Where Heather stands
+
+Ashley ran **"Add 6 to their list"** (repairRoster) on 2026-10-09, so the account's roster now holds
+all 10 live clients with `ownerId`/`isAnimal` rebuilt from the `clients` table. With this build the
+pull will actually merge, so her phone should absorb them on a close-and-reopen. **Her photos are
+device-only and still gone.** Unconfirmed as of this writing: whether her screen now shows Ingatara
+Perry and the three horses.
+
+Note `repairRoster` does NOT write `sc_undeleted_clients`, and deliberately so — nothing in the app
+ever REMOVES an id from that key (it is grow-only in `_TOMB_OBJ`, written only by `_recoverUnDelete`),
+so stamping live clients into it would make them impossible to delete afterwards. It was not needed
+here anyway, since there are no tombstones for them.
+
 ## 2ak. The virtual consult work (2026-10-08) — from the research in `reports/`
 
 `reports/Virtual consult platform upgrades.md` is the research behind this. Read its "three requests"
