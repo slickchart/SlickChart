@@ -14,7 +14,7 @@ export default async function handler(req, res) {
   const price = process.env.BUILD_PRICE_ID || '';
   if (!key || !price) {
     console.error('[build-checkout] missing STRIPE_SECRET_KEY or BUILD_PRICE_ID');
-    res.status(500).json({ error: 'Checkout isn’t set up yet. Please try again shortly.' });
+    res.status(500).json({ error: 'Checkout isn’t set up yet.', code: 'not_configured' });
     return;
   }
   const origin = trustedOrigin();
@@ -45,14 +45,21 @@ export default async function handler(req, res) {
     });
     const j = await r.json().catch(() => ({}));
     if (!r.ok || !j.url) {
-      // Stripe's raw error can name price ids and account state — log it, don't return it.
-      console.error('[build-checkout] stripe error', r.status, (j && j.error && j.error.message) || '');
-      res.status(502).json({ error: 'Couldn’t start checkout. Please try again.' });
+      // Stripe's raw MESSAGE can name price ids and account state, so it stays in the log. The
+      // `code` and `param` are a fixed Stripe enum and a parameter NAME — neither carries an id, a
+      // key or anything about the account — so they come back in a field the page never renders.
+      // Without them a dead checkout looks identical whether the price was archived, the key is in
+      // the wrong mode, or Stripe is down, and the only way to tell was Vercel's logs.
+      const se = (j && j.error) || {};
+      console.error('[build-checkout] stripe error', r.status, se.code || '', se.param || '', se.message || '');
+      res.status(502).json({ error: 'Couldn’t start checkout.',
+        code: String(se.code || se.type || ('http_' + r.status)).slice(0, 60),
+        param: String(se.param || '').slice(0, 60) });
       return;
     }
     res.status(200).json({ url: j.url });
   } catch (e) {
     console.error('[build-checkout] failed:', e && e.stack || e);
-    res.status(500).json({ error: 'Couldn’t start checkout. Please try again.' });
+    res.status(500).json({ error: 'Couldn’t start checkout.', code: 'unreachable' });
   }
 }
