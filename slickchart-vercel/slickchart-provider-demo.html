@@ -468,7 +468,7 @@ const S=document.getElementById('S');
 // resets when I save it" and there was no way to tell whether her phone had any of them — a whole
 // day was spent debugging code she may not have been running. Shown at the bottom of Settings, so
 // the answer is a screenshot away. Bump it on every ship.
-const APP_BUILD='2026-10-09e';
+const APP_BUILD='2026-10-09f';
 
 
 /* ════════════════════════════════════════════════════════════════
@@ -2691,6 +2691,9 @@ const _TOMB_OBJ={sc_deleted_vc_types:1,sc_deleted_products:1,sc_deleted_docs:1,s
   //   a blind union would resurrect an un-removal — the shallow per-client union is deliberate: last
   //   write wins per CLIENT rather than for the whole key, which is strictly better than overwrite.
   sc_deposit_handled:1,sc_summary_guide_optout:1,
+  // The counterweight to sc_deleted_clients. Itself grow-only: once the owner says a client was
+  // removed by mistake, no device may quietly forget that and delete them again.
+  sc_undeleted_clients:1,
   // sc_routines (her saved routine templates) merges by id per profession, and a union by id with no
   // delete record resurrects every routine she ever deleted. This is that record. It is NOT in
   // _LIB_TOMB because the library is a MAP of lists rather than one list, so the dispatch routes it
@@ -2939,7 +2942,8 @@ function _mergeClients(serverStr,localStr){
     if(localStr==null)return null;   // fresh device with no local roster — let the server copy load as-is
     var sv=JSON.parse(serverStr||'{}'),lv=JSON.parse(localStr||'{}');
     if(!sv||typeof sv!=='object'||!lv||typeof lv!=='object')return null;
-    var del=(typeof _deletedClientIds==='object'&&_deletedClientIds)||{};
+    var del=Object.assign({},(typeof _deletedClientIds==='object'&&_deletedClientIds)||{});
+    try{Object.keys(_unDeletedClientIds()).forEach(function(x){delete del[x];});}catch(e){}
     var ids={};Object.keys(sv).forEach(function(i){ids[i]=1;});Object.keys(lv).forEach(function(i){ids[i]=1;});
     var out={};var changed=false;   // changed = local contributed something the server needs (push it back)
     Object.keys(ids).forEach(function(id){
@@ -3218,6 +3222,20 @@ function _mergeStamped(serverStr,localStr){
 // NB: _deletedClientIds is already taken — it is the live { id: ts } map that client deletion writes.
 // This reads the same record off disk and unions it with the merge record, so the merge below sees a
 // delete made moments ago on this device as well as one that arrived from another.
+// Ids the owner has explicitly brought BACK. sc_deleted_clients is a tombstone set: it unions on
+// pull and only ever grows, so an id sitting in it on two devices can never be removed by editing
+// either one. This is the counterweight, applied AFTER that union — the only thing that can undo a
+// delete that was wrong. Heather lost Ingatara Perry and three horses to exactly that: alive on
+// the server, in the delete record, and therefore deleted again on every single refresh.
+function _unDeletedClientIds(){
+  const out={};
+  try{
+    const raw=(typeof _lsGet==='function')?_lsGet('sc_undeleted_clients'):localStorage.getItem('sc_undeleted_clients');
+    const v=JSON.parse(raw||'null');
+    if(v&&typeof v==='object'&&!Array.isArray(v))Object.keys(v).forEach(function(x){out[x]=1;});
+  }catch(e){}
+  return out;
+}
 function _goneClientIds(){
   const out={};
   try{if(typeof _deletedClientIds==='object'&&_deletedClientIds)Object.keys(_deletedClientIds).forEach(function(x){out[x]=1;});}catch(e){}
@@ -3229,6 +3247,7 @@ function _goneClientIds(){
       else if(v&&typeof v==='object')Object.keys(v).forEach(function(x){out[x]=1;});
     }catch(e){}
   });
+  try{Object.keys(_unDeletedClientIds()).forEach(function(x){delete out[x];});}catch(e){}
   return out;
 }
 function _isPlainObj(o){return !!o&&typeof o==='object'&&!Array.isArray(o);}
@@ -26821,7 +26840,8 @@ function _rosterNotReadYet(){
     if(!raw)return false;
     const o=JSON.parse(raw);
     if(!o||typeof o!=='object')return false;
-    const gone=(typeof _deletedClientIds==='object'&&_deletedClientIds)||{};
+    const gone=Object.assign({},(typeof _deletedClientIds==='object'&&_deletedClientIds)||{});
+    try{Object.keys(_unDeletedClientIds()).forEach(function(x){delete gone[x];});}catch(e){}
     const merged=(typeof mergedSquareIds==='object'&&mergedSquareIds)||{};
     return Object.keys(o).some(function(k){return !CL[k]&&!gone[k]&&!merged[k];});
   }catch(e){return false;}
@@ -26857,7 +26877,7 @@ async function syncClientEvents(){
       const _pal=[['var(--p-purple-bg)','var(--p-purple)'],['var(--p-surf2)','var(--p-green)'],['var(--p-blue-bg)','var(--p-blue)'],['var(--p-red-bg)','var(--p-red)'],['var(--p-amber-bg)','var(--accent)']];
       j.clients.forEach(sc=>{
         if(!sc||!sc.id||CL[sc.id])return;
-        if((typeof _deletedClientIds!=='undefined'&&_deletedClientIds[sc.id])||(typeof mergedSquareIds!=='undefined'&&mergedSquareIds[sc.id]))return;   // removed/merged — don't resurrect
+        if((typeof _deletedClientIds!=='undefined'&&_deletedClientIds[sc.id]&&!_unDeletedClientIds()[sc.id])||(typeof mergedSquareIds!=='undefined'&&mergedSquareIds[sc.id]))return;   // removed/merged — don't resurrect unless the owner undid the delete
         // Before creating a NEW record for this server client, check whether it's actually an existing
         // client under a different id — e.g. their Square-appointment record vs. their intake-link
         // record. If so, ROUTE the server id into the existing one (merge map) instead of spawning a
@@ -27505,6 +27525,19 @@ function renderClientRecover(){
       +showing.length+' showing in their app · '+removed.length+' removed but still on the server'
       +((j.counts&&j.counts.rosterIds!=null)?('<br>Their app’s own list knows about '+j.counts.rosterIds):'')
       +'</div>'
+    +(function(){
+      // THE ONE THAT KEEPS UNDOING ITSELF. A client alive on the server whose id is also in the
+      // device's delete record is removed again on EVERY refresh — and refreshing is exactly what
+      // we keep telling providers to do.
+      const g=j.ghosts||[];
+      if(!g.length)return '';
+      return '<div style="background:var(--p-red-bg);border:2px solid var(--p-red-line);border-radius:12px;padding:12px 14px;margin-bottom:12px;font-size:16px;color:var(--p-ink);line-height:1.6;">'
+        +'<b>'+g.length+' client'+(g.length===1?' is':'s are')+' being deleted again every time they refresh.</b><br>'
+        +g.map(function(x){return '\u00b7 '+esc(x.name||x.id);}).join('<br>')
+        +'<div style="font-size:14px;color:var(--p-mut);margin:6px 0 10px;">These are alive on the server, but their ids are on this account\u2019s \u201cdo not bring back\u201d list, so every sync removes them again. Undoing it has to happen on the account, or their device just puts it back.</div>'
+        +'<button onclick="_recoverUnDelete()" class="btnp" style="width:100%;border-radius:10px;padding:11px;font-size:16px;font-weight:600;">Bring '+(g.length===1?'this client':'these '+g.length)+' back for good</button>'
+        +'</div>';
+    })()
     +typedBox
     +notesVerdict
     +'<div style="background:var(--p-surf2);border:1px solid var(--p-line3);border-radius:12px;padding:11px 13px;margin-bottom:12px;font-size:16px;color:var(--p-ink);line-height:1.55;">'+verdict+'</div>'
@@ -27616,7 +27649,8 @@ function _recoverText(){
     +(x.summaries?(', '+x.summaries+' summaries'):'')+(x.forms?(', '+x.forms+' forms'):''));});
   dt.forEach(function(x){const w=(j.clients||[]).find(function(c){return c.id===x.id;});
     typedLines.push('  unfinished note '+((w&&w.name)||x.id)+': '+x.chars+' characters, '+x.sections+' sections'+(x.date?(', '+x.date):''));});
-  const L=['SlickChart recovery — '+j.provider.email, notesLine].concat(typedLines).concat([
+  const gl=(j.ghosts||[]).map(function(x){return '  DELETED AGAIN EVERY REFRESH: '+(x.name||x.id);});
+  const L=['SlickChart recovery — '+j.provider.email, notesLine].concat(gl).concat(typedLines).concat([
     (all.filter(c=>!c.deleted).length)+' showing, '+(all.filter(c=>c.deleted).length)+' removed but still on the server',
     'Their app’s list knows about '+((j.counts&&j.counts.rosterIds!=null)?j.counts.rosterIds:'?'),'']);
   const nd=all.filter(c=>nest[c.id]);
@@ -27671,6 +27705,27 @@ async function _recoverSetSrc(){
     if(!jb||!jb.ok){if(typeof proToast==='function')proToast((jb&&jb.error)||'Could not read that backup');return;}
     _recoverBackup=jb;renderClientRecover();
   }catch(e){ if(typeof proToast==='function')proToast('Could not reach the server'); }
+}
+async function _recoverUnDelete(){
+  const j=_recoverState;if(!j)return;
+  const g=j.ghosts||[];if(!g.length)return;
+  confirmModal({title:'Bring them back?',
+    body:g.map(function(x){return '\u00b7 '+(x.name||x.id);}).join('\n')
+      +'\n\nThese are on the server already. This takes their ids off the account\u2019s do-not-restore list so the next sync stops removing them.\n\nThey will need to close the app and open it again.',
+    action:'Bring back '+g.length},async function(){
+    try{
+      const tok=(typeof Cloud!=='undefined'&&Cloud&&Cloud.token)||'';
+      const r=await fetch('/api/admin/client-recover',{method:'POST',headers:{'Content-Type':'application/json','Authorization':'Bearer '+tok},
+        body:JSON.stringify({email:j.provider.email,unDeleteIds:g.map(function(x){return x.id;})})});
+      const out=await r.json().catch(()=>({}));
+      if(!r.ok||!out.ok){if(typeof proToast==='function')proToast((out&&out.error)||'Could not bring them back');return;}
+      confirmModal({title:'Done',body:out.unDeleted+' client'+(out.unDeleted===1?'':'s')+' will stop being removed.\n\nAsk them to CLOSE the app completely and open it again \u2014 a pull-to-refresh alone may not be enough.',
+        action:'Got it',hideCancel:true},function(){});
+      const r2=await fetch('/api/admin/client-recover?email='+encodeURIComponent(j.provider.email),{headers:{'Authorization':'Bearer '+tok}});
+      const j2=await r2.json().catch(()=>null);
+      if(j2&&j2.ok){_recoverState=j2;_recoverPick={};renderClientRecover();}
+    }catch(e){ if(typeof proToast==='function')proToast('Could not reach the server'); }
+  });
 }
 async function _recoverImport(){
   const j=_recoverState;if(!j)return;

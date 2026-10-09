@@ -3631,6 +3631,48 @@ and they are not.
 one read path keeps all ~155 existing call sites correct"). Only ENUMERATION is forbidden. That is
 why `_exportAllData` was broken and these are fine.
 
+### THE ACTUAL BUG, found by making her refresh: a DELETE THAT UNDOES ITSELF (`2026-10-09f`)
+
+**What she OBSERVED after refreshing (ground truth, §1b):** Sue is there but **Kona is not under
+her** and **Sue's photos are gone**; **Ingatara Perry is gone entirely**, and **Amber, Bear and
+Reiner are all gone.**
+
+The server lists every one of those as a LIVE client. So the refresh — the thing we had just told
+her to do — **deleted them again.**
+
+**Why.** `_mergeClients` drops any client whose id is in `_deletedClientIds`, on every pull. Four
+of her live clients have their ids in that record. `sc_deleted_clients` is a TOMBSTONE SET: it
+unions on pull and only ever grows, so clearing it on the account alone is useless (her device
+pushes the ids back) and clearing it on her device alone is useless (the account pushes them
+back). **There was no way, anywhere in the app, to undo a delete that was wrong.** Every refresh
+re-applied it, forever.
+
+**`sc_undeleted_clients` is the counterweight**, applied AFTER the union — the only thing that can
+outrank an entry sitting on both sides. Honoured in `_goneClientIds`, in `_mergeClients`'s own
+`del` set, and in `syncClientEvents`' fill path, so a resurrected client is not dropped again by
+any of the three. Registered in `_TOMB_OBJ` so it is itself grow-only: once the owner says a
+removal was a mistake, no device may quietly forget that.
+
+The recovery screen computes `ghosts` — live rows whose id is in the delete record — and leads
+with **"N clients are being deleted again every time they refresh"**, naming them, with one button
+that writes both halves (clears the ids from `sc_deleted_clients` AND adds them to
+`sc_undeleted_clients`) on the ACCOUNT.
+
+**Tell the provider to CLOSE the app and reopen, not just pull to refresh**, so the counterweight
+is read before the merge runs.
+
+**Verified: `scratchpad/undel.mjs`, 10 assertions.** It reproduces her exact state — four live on
+the server, three ids in the delete record on both sides — and asserts: without the counterweight
+they stay gone (the bug she is living in); with it they come back, the owner record keeps its
+notes, **the horses keep their `ownerId`**, Sue is untouched, **they survive three more refreshes**,
+and a client she really DID delete still stays deleted. It fails on the previous build.
+
+**A harness trap worth keeping:** `Cloud.pull()` writes `sc_clients` to disk; `CL` is only rebuilt
+by `loadClients()`, which the real app runs via `_reloadAll` after every pull. The first version of
+this test checked `CL` straight after `pull()` and reported six false failures.
+
+**Her photos: still device-only, still gone.** Nothing here changes that.
+
 **What none of this reaches:** session photos live on the provider's device, not the server.
 
 ## 2ak. The virtual consult work (2026-10-08) — from the research in `reports/`

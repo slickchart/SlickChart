@@ -156,6 +156,32 @@ export default async function handler(req, res) {
         return;
       }
 
+      // Bring a client back that the delete record keeps killing. Two writes, and BOTH are needed:
+      // the tombstone set unions on pull, so clearing it on the account alone lets her device push
+      // the same ids straight back. `sc_undeleted_clients` is the counterweight the app reads after
+      // the union, which is the only way to outrank an entry that is already on both sides.
+      if (Array.isArray(body.unDeleteIds) && body.unDeleteIds.length) {
+        const ids = body.unDeleteIds.slice(0, 200).map(String);
+        let cleared = 0;
+        try {
+          const cur = await q`SELECT v FROM kv WHERE owner=${owner} AND k='sc_deleted_clients'`;
+          const o = cur.length ? (JSON.parse(cur[0].v) || {}) : {};
+          ids.forEach(id => { if (Object.prototype.hasOwnProperty.call(o, id)) { delete o[id]; cleared++; } });
+          await q`INSERT INTO kv (owner,k,v,updated_at) VALUES (${owner},'sc_deleted_clients',${JSON.stringify(o)},now())
+            ON CONFLICT (owner,k) DO UPDATE SET v=EXCLUDED.v, updated_at=now()`;
+        } catch (e) { res.status(500).json({ error: 'Could not update the delete record.' }); return; }
+        try {
+          const cur2 = await q`SELECT v FROM kv WHERE owner=${owner} AND k='sc_undeleted_clients'`;
+          const u = cur2.length ? (JSON.parse(cur2[0].v) || {}) : {};
+          const now2 = Date.now();
+          ids.forEach(id => { u[id] = now2; });
+          await q`INSERT INTO kv (owner,k,v,updated_at) VALUES (${owner},'sc_undeleted_clients',${JSON.stringify(u)},now())
+            ON CONFLICT (owner,k) DO UPDATE SET v=EXCLUDED.v, updated_at=now()`;
+        } catch (e) { res.status(500).json({ error: 'Could not record the undelete.' }); return; }
+        res.status(200).json({ ok: true, unDeleted: ids.length, clearedFromRecord: cleared });
+        return;
+      }
+
       if (exportIds.length) {
         const out = [];
         for (const id of exportIds) {
@@ -315,6 +341,20 @@ export default async function handler(req, res) {
       });
     });
 
+    // THE SELF-REPEATING DELETE. _mergeClients drops any client whose id is in the device's
+    // sc_deleted_clients, on EVERY pull. So a row that is alive and well on the server, whose id
+    // is also sitting in that delete record, disappears again every single time she refreshes —
+    // and refreshing is exactly what we keep telling providers to do. Heather watched Ingatara
+    // Perry and three horses vanish on a refresh while the server listed all four as live.
+    //
+    // The delete record is a tombstone set: it UNIONS on pull and only ever grows, so clearing it
+    // on one device achieves nothing. It has to be cleared on the account AND on her device, which
+    // is why this is reported loudly rather than quietly patched.
+    const delSet = {};
+    (deletedRecord || []).forEach(id => { delSet[String(id)] = 1; });
+    const ghosts = clients.filter(c => !c.deleted && delSet[c.id])
+      .map(c => ({ id: c.id, name: c.name, has: c.has }));
+
     const live = clients.filter(c => !c.deleted);
     res.status(200).json({
       ok: true,
@@ -333,6 +373,7 @@ export default async function handler(req, res) {
       missingFromRoster: rosterIds ? live.filter(c => rosterIds.indexOf(c.id) < 0).map(c => c.id) : null,
       missingFromTable: rosterIds ? rosterIds.filter(id => !clients.some(c => c.id === id)) : null,
       deletedRecordIds: deletedRecord,
+      ghosts,
       nestedUnder,
       libraries,
       typed,
