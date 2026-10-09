@@ -10,7 +10,7 @@
 const {execFileSync}=require('child_process');
 const path=require('path');
 const here=__dirname, root=path.join(here,'..','..');
-const steps=['build-demo.cjs','build-client-page.cjs','build-switch.cjs','build-blog.cjs'];
+const steps=['build-demo.cjs','build-client-page.cjs','build-switch.cjs','build-blog.cjs','build-feature-map.cjs'];
 // Compare the tracked diff BEFORE and AFTER building, and report only what the BUILD changed.
 // Checking "is the tree dirty" afterwards would flag the author's own edits too — writing a blog
 // post and then running this would blame TOPICS.md, which the build never touched.

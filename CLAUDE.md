@@ -101,6 +101,40 @@ So, before writing any code for a reported problem:
 5. A fix that ships and changes nothing means **the reproduction was not her situation.** Go back to
    her observations, not to a fresh theory.
 
+## 1c. NEVER say a feature doesn't exist without checking `FEATURES.md` first
+
+This cost a day and nearly cost a provider 38 photos. Asked why photos weren't saved to the server,
+a session answered that they were device-only and told Ashley Heather's were gone. **They had been
+uploaded, one at a time, to the server for three weeks.** The claim came from reading a single
+comment in `_exportAllData` — "Session photos are not included, they stay on this device" — which is
+true of the EXPORT and says nothing about backup. `_backupPhotosToServer` was three functions away.
+Nothing was missing but a grep.
+
+`FEATURES.md` at the repo root is generated from the source by `scripts/build-feature-map.cjs` and
+checked by `check-generated.cjs`, so it cannot drift. It holds:
+
+- **What leaves the device** — every client→server call with the function that reaches it, following
+  helper chains up to 3 hops. **This is the answer to "is X saved anywhere."** It over-reports on
+  purpose: a spurious row costs a moment, a missing one cost a day.
+- Every endpoint with its methods, auth gate and purpose; every server table; every synced `sc_*`
+  key and exactly how it merges; and every recovery/repair path **with whether anything can reach
+  it**.
+
+The rules:
+
+1. **Read it before answering any "does SlickChart do X" or "is X saved / recoverable" question.**
+   An absence there is evidence; your memory of the code is not.
+2. **Never tell Ashley a capability is missing, or that data is unrecoverable, from inference.**
+   Grep first. Every single time an inference has contradicted the code, the inference was wrong.
+3. **A recovery tool flagged "NO — nothing calls it" is a bug**, not a spare part. `_openPhotoRecovery`
+   sat unreachable for weeks — working code, no button — while a provider was told her work was gone.
+   Wire it up or delete it.
+4. Regenerate it when you add an endpoint, a synced key, or a recovery path. `check-generated.cjs`
+   runs it and fails the build if the committed copy is stale, so this is enforced, not remembered.
+
+Being wrong about what the product does is worse than not knowing, because Ashley acts on it: she
+tells a provider their work is gone. "I'll check" is always available and costs one command.
+
 ## 2. Verify before claiming "fixed"
 
 Never tell the owner something is fixed without proof. For JS/UI changes, drive the app headless with the
@@ -201,7 +235,7 @@ The proxy blocks live `slickchart.app`, so test against the local file with rout
 - **Compare sync values by MEANING, not bytes** (`_sameSyncValue`). Loaders normalise as they read,
   so identical data comes back with its keys reordered and an exact string compare calls it an edit.
 - **Before every commit: `node scripts/check-generated.cjs`** (from `slickchart-vercel/`). It runs all
-  four build scripts and fails if anything generated changed — the same thing CI checks. A commit
+  five build scripts (the four page builders plus `build-feature-map.cjs`, see §1c) and fails if anything generated changed — the same thing CI checks. A commit
   once carried a demo page 17 lines behind `slickchart.html` because the demo was built and then the
   source was edited again; the build went red and sent an alarming email on a day full of real
   fixes. Nothing a provider uses was affected (the demos are the public sample), but one command
