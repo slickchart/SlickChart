@@ -3,6 +3,7 @@
 // history, and cancellation are all handled by Stripe directly rather than
 // rebuilt by hand in the app.
 import { verifyToken } from '../lib/auth.js';
+import { safeStripeMessage } from '../lib/stripe-safe.js';
 import { dbEnabled, getSubscription } from '../lib/db.js';
 import { appOrigin } from '../lib/email.js';
 
@@ -66,7 +67,15 @@ export default async function handler(req, res) {
       j = await r.json().catch(() => ({}));
       if (r.ok) { res.status(200).json({ ok: true, url: j.url, cancelFlow: false }); return; }
     }
-    if (!r.ok) { res.status(502).json({ error: (j && j.error && j.error.message) || 'Could not open billing portal.' }); return; }
+    if (!r.ok) {
+      // Stripe's raw message was going straight to the browser here, which can name a customer id
+      // or the account's portal configuration. Same treatment as build-checkout: log it whole,
+      // return it with every identifier stripped, in a field separate from what she is shown.
+      const sm = (j && j.error && j.error.message) || '';
+      console.error('[create-portal-session] stripe error', r.status, sm);
+      res.status(502).json({ error: 'Could not open billing portal.', detail: safeStripeMessage(sm) });
+      return;
+    }
     res.status(200).json({ ok: true, url: j.url, cancelFlow: wantsCancel });
   } catch (e) { console.error('[create-portal-session] failed:', e && e.stack || e); res.status(e.status || 500).json({ error: 'Something went wrong. Please try again.' }); }
 }

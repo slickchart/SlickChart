@@ -6,6 +6,7 @@ const dir=fs.mkdtempSync(path.join(os.tmpdir(),'co-'));
 fs.mkdirSync(path.join(dir,'lib'),{recursive:true}); fs.mkdirSync(path.join(dir,'api'),{recursive:true});
 fs.writeFileSync(path.join(dir,'package.json'),'{"type":"module"}');
 fs.writeFileSync(path.join(dir,'lib','email.js'),"export function trustedOrigin(){return 'https://slickchart.app';}");
+fs.copyFileSync(path.join(V,'lib','stripe-safe.js'),path.join(dir,'lib','stripe-safe.js'));
 fs.writeFileSync(path.join(dir,'api','build-checkout.mjs'),fs.readFileSync(path.join(V,'api','build-checkout.js'),'utf8'));
 process.env.STRIPE_SECRET_KEY='sk_live_51Habc123XYZ'; process.env.BUILD_PRICE_ID='price_1QabcDEF2ghIJKlm';
 const { default: handler } = await import(path.join(dir,'api','build-checkout.mjs'));
