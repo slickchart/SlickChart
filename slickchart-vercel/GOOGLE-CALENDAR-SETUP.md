@@ -18,16 +18,23 @@ both imperfect:
 | Who can connect | Only emails you type into a list, up to 100 | Anyone with a Google account |
 | How long it lasts | **Breaks after 7 days, every time** | Keeps working |
 | What the provider sees | A warning screen | A warning screen |
-| Limit | 100 test users | **100 providers, ever, for this project** |
+| Limit | 100 test users | 100 providers **until verification finishes** |
 
 Two things matter here:
 
 1. **Testing mode is not usable for real providers.** The connection dies after 7 days and the
    provider just sees their calendar stop working. Use it only to prove the setup works, with your
    own email, then move on.
-2. **The 100 limit in production is for the lifetime of the Google project and cannot be reset or
-   raised.** Once 100 providers have connected, provider 101 cannot, until Google finishes its
-   review. So submit for review early, not when you hit the limit.
+2. **The 100 limit is how far you get BEFORE verification, not a ceiling on the product.** Google's
+   wording is that an app "will be limited to 100 new users **until it is verified**", and
+   verification removes both the warning screen and the cap. That is how every large app on calendar
+   scopes operates; there is no enterprise deal, they just got verified. What "cannot be reset" means
+   is narrower: you cannot ask Google to clear the counter so you can serve another 100 while still
+   unverified. So the pressure is the review CLOCK, not the ceiling — submit early because review
+   takes weeks, not because 100 is all you will ever get.
+   *(Google's docs do not say in words whether the 100 already used still count after verification.
+   The strong inference is no, since a cap surviving verification would make verification pointless,
+   but it is an inference. Do not state it as fact to anyone.)*
 
 **Recommended:** do steps 1 to 6, test it on your own account, then publish (step 7) and submit for
 review (step 8) the same day. The review takes weeks, so starting it early is the whole trick.
@@ -143,20 +150,38 @@ If both work, the feature is real. Only then tell a provider it exists.
 **Publish:** on the consent screen page, click **Publish app**. This is what stops the 7-day
 breakage. Do it before any provider uses it.
 
-**Submit for review:** on the same page, submit for verification. Google will ask for:
+**Submit for review:** on the same page, submit for verification.
 
-- A justification for the permission. Something like: *SlickChart writes the provider's own
+**Check this first, it decides whether verification costs money.** Google has two tiers. *Sensitive*
+scopes need an ordinary review. *Restricted* scopes also need CASA, a paid third-party security
+assessment that runs to thousands and weeks. `calendar.events` is **sensitive**, not restricted —
+the restricted ones are Gmail, Drive and Chat. Some third-party guides wrongly lump Calendar in with
+CASA. Confirm it yourself rather than trusting them or this file: in the Cloud console, the consent
+screen's **Data Access** section shows how Google classifies the exact scopes you picked.
+
+What a submission needs:
+
+- **Domain verification.** `slickchart.app` verified in Google Search Console, under the same
+  account. Every domain in the project needs it, the redirect URI's included.
+- **Brand verification.** A homepage on that domain that says what the app does. It cannot be only a
+  login page. The landing page already qualifies.
+- **A consent screen whose scopes match the request exactly.** A mismatch is a rejection.
+- **A justification for the permission.** Something like: *SlickChart writes the provider's own
   appointments to their Google Calendar, and reads only the start and end times of their existing
   events so clients cannot book a time the provider is already busy.*
-- A link to the privacy policy. `https://slickchart.app/privacy` already has a Google Calendar
-  section written for this, including the Limited Use wording Google looks for, and it documents
-  the **Keep client names out of Google** setting — a reviewer asking "why does this app need to
-  write a person's name to a calendar" can see the provider is able to turn that off and still get
-  the feature.
-- Proof you own `slickchart.app` (Google Search Console).
-- A short screen recording showing a provider connecting the calendar and the sync working.
+- **The privacy policy.** `https://slickchart.app/privacy` already has a Google Calendar section
+  written for this, including the Limited Use wording Google looks for, and it documents the
+  **Keep client names out of Google** setting — a reviewer asking "why does this app need to write a
+  person's name to a calendar" can see the provider can turn that off and keep the feature.
+- **A demo video, which is where most rejections happen.** It has to show the whole flow end to end:
+  the app, signing in, the FULL OAuth consent screen with the real scopes, granting, and then the
+  data ACTUALLY BEING USED — an appointment appearing in Google Calendar, and a Google event blocking
+  a booking slot. Same app name and branding as the submission, consent screen in English. Film it
+  once, carefully, after step 8 works on your own account. A rejected video is another round trip.
+- **A contact email you watch.** Google emails questions and the clock stops while they wait.
 
-Expect weeks, not days.
+Timing varies. One guide puts a complete sensitive-scope submission at around ten days; developer
+forum threads show longer once there is back-and-forth. Plan for weeks.
 
 ---
 
