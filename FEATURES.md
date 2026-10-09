@@ -228,6 +228,7 @@ saved anywhere", not "does this always call that".
 | `_fcOpenAction` | `/api/provider-form` | via `submitSignOnDevice` |
 | `_fetchSquareDirectory` | `/api/square/customers` | direct |
 | `_fetchSquareTaxRate` | `/api/square/tax-rate` | direct |
+| `_fillGcalPill` | `/api/google-cal` | via `_gcalStatus` |
 | `_finalizeGuideFiles` | `/api/guide-file` | via `_deleteGuideFileFromServer` |
 | `_firstVisitNudgeHTML` | `/api/clients` | via `_syncSpecificClientsToServer` |
 | `_flagAckHome` | `/api/clients` | via `syncClientEvents` |
@@ -258,6 +259,7 @@ saved anywhere", not "does this always call that".
 | `_gcalSetPrivacy` | `/api/google-cal` | direct |
 | `_gcalSetPrivacy` | `/api/provider-form` | via `submitSignOnDevice` |
 | `_gcalStatus` | `/api/google-cal` | direct |
+| `_gcalStatusCached` | `/api/google-cal` | via `_gcalStatus` |
 | `_getGuideFile` | `/api/guide-file` | direct |
 | `_gettingStartedHTML` | `/api/clients` | via `syncClientEvents` |
 | `_gettingStartedHTML` | `/api/provider-form` | via `submitSignOnDevice` |
@@ -302,6 +304,7 @@ saved anywhere", not "does this always call that".
 | `_loadConsultRequests` | `/api/consult-slug` | via `_loadConsultLink` |
 | `_loadEmailList` | `/api/admin/contacts` | direct |
 | `_loadFeedbackInbox` | `/api/feedback` | direct |
+| `_loadIntegGcalStatus` | `/api/google-cal` | via `_gcalStatus` |
 | `_loadIntegSquareStatus` | `/api/square/connection` | via `_sqConnState` |
 | `_loadPersistenceSweep` | `/api/transcribe` | via `_probeWhisper` |
 | `_loadSessions` | `/api/sessions` | direct |
@@ -852,6 +855,7 @@ saved anywhere", not "does this always call that".
 | `renderHome` | `/api/provider-form` | via `submitSignOnDevice` |
 | `renderHome` | `/api/square/appointments` | via `_loadSquareAppts` |
 | `renderIntegrations` | `/api/clients` | via `syncClientEvents` |
+| `renderIntegrations` | `/api/google-cal` | via `_gcalStatus` |
 | `renderIntegrations` | `/api/provider-form` | via `submitSignOnDevice` |
 | `renderIntegrations` | `/api/square/connection` | via `_sqConnState` |
 | `renderInventory` | `/api/clients` | via `syncClientEvents` |

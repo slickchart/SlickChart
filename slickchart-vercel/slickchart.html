@@ -214,7 +214,7 @@ const S=document.getElementById('S');
 // resets when I save it" and there was no way to tell whether her phone had any of them — a whole
 // day was spent debugging code she may not have been running. Shown at the bottom of Settings, so
 // the answer is a screenshot away. Bump it on every ship.
-const APP_BUILD='2026-10-09r';
+const APP_BUILD='2026-10-09s';
 
 
 /* ════════════════════════════════════════════════════════════════
@@ -25300,7 +25300,8 @@ function renderIntegrations(){
   <div style="background:var(--surf2);border:1px solid var(--p-line);border-radius:12px;margin:0 16px 10px;overflow:hidden;">
     <div style="padding:12px 14px;display:flex;align-items:center;gap:12px;">
       <div style="width:44px;height:44px;border-radius:12px;background:var(--p-blue-bg);display:flex;align-items:center;justify-content:center;flex-shrink:0;"><i class="ti ti-calendar" style="font-size:22px;color:var(--p-blue);"></i></div>
-      <div style="flex:1;min-width:0;"><div style="font-size:16px;font-weight:500;color:var(--p-ink);">Google &amp; Apple Calendar</div><div style="font-size:16px;color:var(--p-mut);">One-way \u2014 your appointments show up there</div></div>
+      <div style="flex:1;min-width:0;"><div style="font-size:16px;font-weight:500;color:var(--p-ink);">Google &amp; Apple Calendar</div><div id="integ-gcal-sub" style="font-size:16px;color:var(--p-mut);">One-way \u2014 your appointments show up there</div></div>
+      <span id="integ-gcal-badge" style="font-size:14px;color:var(--p-mut);">Checking\u2026</span>
     </div>
     <div style="border-top:1px solid var(--p-line2);padding:8px 14px;">
       <button onclick="nav('connect-calendar')" style="border:none;background:none;font-size:16px;color:var(--accent-strong);cursor:pointer;font-family:inherit;"><i class="ti ti-settings" style="font-size:16px;"></i> Set up</button>
@@ -25309,6 +25310,7 @@ function renderIntegrations(){
   <div style="margin:0 16px 10px;"><button onclick="nav('switch-app')" style="width:100%;background:var(--surf1);border:1px solid var(--p-line);color:var(--p-ink);border-radius:12px;padding:11px;font-size:16px;font-weight:600;cursor:pointer;font-family:inherit;"><i class="ti ti-arrow-right-circle" style="font-size:16px;color:var(--accent-strong);"></i> Switching from another app</button></div>
   <div style="height:16px;"></div>`;
   _loadIntegSquareStatus();
+  if(typeof _loadIntegGcalStatus==='function')_loadIntegGcalStatus();
 }
 async function _loadIntegSquareStatus(){
   const badge=document.getElementById('integ-square-badge');if(!badge)return;
@@ -26297,6 +26299,50 @@ async function _gcalStatus(){
     _gcalState=j?Object.assign({answered:true},j):unknown();
     return _gcalState;
   }catch(e){_gcalState=unknown();return _gcalState;}
+}
+// Whether Google is connected has to be visible from the screens she actually looks at, not only
+// from Sync Calendar. She opened the calendar, saw the SQUARE badge with nothing beside it, and had
+// no way to tell a working sync from one that had quietly stopped. Both call sites fill an empty
+// span after the answer lands instead of re-rendering the screen, so neither can loop the way the
+// Reminders screen did, and a screen she has already navigated away from is simply skipped.
+async function _gcalStatusCached(){
+  try{
+    if(_gcalState&&_gcalState.answered)return _gcalState;
+    return await _gcalStatus();
+  }catch(e){ return null; }
+}
+function _gcalPillHTML(){
+  const st=(typeof _gcalState!=='undefined')?_gcalState:null;
+  if(!(st&&st.answered&&st.connected))return '';
+  const bad=!!st.needsReconnect;
+  return ' <span style="display:inline-flex;align-items:center;gap:3px;font-size:12px;font-weight:700;vertical-align:middle;padding:1px 6px;border-radius:24px;'
+    +(bad?'color:var(--p-amber);background:var(--p-amber-bg);border:1px solid var(--p-amber-line);'
+         :'color:var(--p-green);background:var(--p-surf2);border:1px solid var(--p-green-line);')
+    +'"><span style="width:5px;height:5px;border-radius:50%;background:'+(bad?'#e0a33a':'#4ec49a')+';"></span>'
+    +(bad?'RECONNECT':'GOOGLE')+'</span>';
+}
+async function _fillGcalPill(id){
+  if(!document.getElementById(id))return;
+  await _gcalStatusCached();
+  const el=document.getElementById(id); if(!el)return;
+  el.innerHTML=_gcalPillHTML();
+}
+async function _loadIntegGcalStatus(){
+  if(!document.getElementById('integ-gcal-badge'))return;
+  const st=await _gcalStatusCached();
+  const b=document.getElementById('integ-gcal-badge'), sub=document.getElementById('integ-gcal-sub');
+  if(!b)return;
+  if(st&&st.answered&&st.connected&&!st.needsReconnect){
+    b.textContent='Connected'; b.style.color='var(--p-green)';
+    if(sub)sub.textContent='Two-way with Google \u2014 and subscribe one-way on Apple';
+  }else if(st&&st.answered&&st.connected){
+    b.textContent='Reconnect'; b.style.color='var(--p-amber)';
+    if(sub)sub.textContent='Google stopped accepting the connection';
+  }else{
+    // Not connected to Google is NOT "nothing works" — the one-way Apple/Google subscribe is always
+    // there — so this stays blank rather than reading as a broken integration.
+    b.textContent='';
+  }
 }
 // Keep client names out of Google. Her appointments still block the slot, which is the whole point
 // of the sync; what stops travelling is the client's NAME and the appointment notes. Stored on her
@@ -28787,7 +28833,7 @@ function renderCalendar(){
     +'<i class="ti ti-chevron-right" style="font-size:18px;color:var(--p-mut);"></i></div>'))
   +_calBookLinkRowHTML()
   +'<div style="padding:12px 16px 6px;display:flex;align-items:center;gap:8px;">'
-    +'<div style="font-size:16px;font-weight:600;color:var(--p-ink);flex:1;">'+monthLbl+(showSquareBadge?' <span style="display:inline-flex;align-items:center;gap:3px;font-size:12px;font-weight:700;color:var(--p-green);background:var(--p-surf2);border:1px solid var(--p-green-line);padding:1px 6px;border-radius:24px;vertical-align:middle;"><span style="width:5px;height:5px;border-radius:50%;background:#4ec49a;"></span>SQUARE</span>':'')+'</div>'
+    +'<div style="font-size:16px;font-weight:600;color:var(--p-ink);flex:1;">'+monthLbl+(showSquareBadge?' <span style="display:inline-flex;align-items:center;gap:3px;font-size:12px;font-weight:700;color:var(--p-green);background:var(--p-surf2);border:1px solid var(--p-green-line);padding:1px 6px;border-radius:24px;vertical-align:middle;"><span style="width:5px;height:5px;border-radius:50%;background:#4ec49a;"></span>SQUARE</span>':'')+'<span id="cal-gcal-badge"></span></div>'
     +'<button onclick="_calToday()" style="background:none;border:1px solid var(--p-line);color:var(--accent-strong);border-radius:8px;padding:4px 9px;font-size:14px;font-weight:600;cursor:pointer;font-family:inherit;">Today</button>'
     +'<button onclick="_calGo(-1)" aria-label="Previous month" style="background:var(--surf1);border:1px solid var(--p-line);color:var(--p-mut);border-radius:8px;width:30px;height:28px;cursor:pointer;"><i class="ti ti-chevron-left" style="font-size:16px;"></i></button>'
     +'<button onclick="_calGo(1)" aria-label="Next month" style="background:var(--surf1);border:1px solid var(--p-line);color:var(--p-mut);border-radius:8px;width:30px;height:28px;cursor:pointer;"><i class="ti ti-chevron-right" style="font-size:16px;"></i></button>'
@@ -28804,6 +28850,7 @@ function renderCalendar(){
     '<div style="margin:4px 16px 6px;"><button onclick="openQuickAdd(\''+selKey+'\')" style="width:100%;background:var(--surf2);border:1.5px dashed var(--p-line);border-radius:12px;padding:13px;display:flex;flex-direction:column;align-items:center;gap:5px;cursor:pointer;font-family:inherit;"><i aria-hidden="true" class="ti ti-plus" style="font-size:18px;color:var(--p-mut);"></i><span style="font-size:16px;color:var(--p-mut);">Add appointment on '+selDate.toLocaleDateString('en-US',{month:'short',day:'numeric'})+'</span></button></div>')
   +(upcoming.length?('<div style="border-top:1px solid var(--p-line2);padding:12px 16px 6px;"><div style="font-size:16px;font-weight:500;color:var(--p-ink);">Upcoming</div></div>'
     +upcoming.map(function(a){var dl=a.when.toLocaleDateString('en-US',{weekday:'short',month:'short',day:'numeric'});return _apptRowHTML(Object.assign({},a,{sub:dl+' · '+a.sub}));}).join('')):'');
+  if(typeof _fillGcalPill==='function')_fillGcalPill('cal-gcal-badge');
 }
 
 // ── Appointment detail: reschedule/cancel (Square) + edit/delete (manual) ──
