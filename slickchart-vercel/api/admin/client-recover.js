@@ -370,7 +370,17 @@ export default async function handler(req, res) {
       roster: { shape: rosterShape, ids: rosterIds },
       // Rows the table has (not deleted) that the account's roster blob has forgotten, and the
       // reverse. Either direction explains a client vanishing from her screen.
-      missingFromRoster: rosterIds ? live.filter(c => rosterIds.indexOf(c.id) < 0).map(c => c.id) : null,
+      // BY NAME. The count alone ("6 missing") sent me chasing a wrong theory twice. Which rows
+      // the account's own roster blob has forgotten is the thing that says whether her app is
+      // rendering a short list or dropping clients it was given.
+      missingFromRoster: rosterIds
+        ? live.filter(c => rosterIds.indexOf(c.id) < 0).map(c => ({ id: c.id, name: c.name }))
+        : null,
+      // ...and what the roster blob DOES hold, which is what her app actually draws.
+      rosterHas: rosterIds
+        ? rosterIds.map(id => { const c = clients.find(x => x.id === id);
+            return { id, name: c ? c.name : '(not in the clients table)', deleted: c ? c.deleted : null }; })
+        : null,
       missingFromTable: rosterIds ? rosterIds.filter(id => !clients.some(c => c.id === id)) : null,
       deletedRecordIds: deletedRecord,
       ghosts,

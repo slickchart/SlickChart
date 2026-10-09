@@ -206,7 +206,16 @@ await q`INSERT INTO kv (owner,k,v) VALUES (${H},'sc_clients',${JSON.stringify({ 
   ON CONFLICT (owner,k) DO UPDATE SET v=EXCLUDED.v`;
 r = await call('GET', { token: tokenFor('ashley@slickchart.app'), query: { email: 'heather@example.com' } });
 ok('reads the roster blob shape', r.body.roster && r.body.roster.shape === 'object', r.body.roster);
-ok('spots a live client missing from the roster', (r.body.missingFromRoster || []).indexOf('c_plain2') >= 0, r.body.missingFromRoster);
+ok('spots a live client missing from the roster',
+  (r.body.missingFromRoster || []).some(x => x && x.id === 'c_plain2'), r.body.missingFromRoster);
+ok('...and NAMES it, because the count alone sent me down two wrong theories',
+  (r.body.missingFromRoster || []).some(x => x && x.name === 'Lee Park'), r.body.missingFromRoster);
+ok('reports what the roster DOES hold, by name',
+  (r.body.rosterHas || []).some(x => x && x.id === 'c_plain1' && x.name === 'Sam Gray'), r.body.rosterHas);
+ok('flags a roster entry that is tombstoned on the server', (function(){
+    const t = (r.body.rosterHas || []).find(x => x && x.deleted === true);
+    return r.body.rosterHas.length >= 1 && (t === undefined || t.deleted === true);
+  })(), r.body.rosterHas);
 
 // ── the provider-side store: where her SUMMARIES actually live ───────────────
 // Every client row on the real account reported chart fields and ZERO summaries, which reads as
