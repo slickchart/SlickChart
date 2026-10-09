@@ -81,7 +81,19 @@ On the **Scopes** step:
    https://www.googleapis.com/auth/calendar.events
    ```
 
-3. Tick it. Update. Save and continue.
+3. **Six rows come back, not one** — the filter matches anything starting with that text. Tick only
+   the FIRST one, the plain `.../auth/calendar.events` whose description is **"View and edit events
+   on all your calendars"**. Leave the other five alone:
+
+   | Row | Why not |
+   |---|---|
+   | `calendar.events.owned` | says "and **delete** events" — the app never deletes, and asking for delete makes the review harder |
+   | `calendar.events.readonly` | cannot write, so two-way sync would not work |
+   | `calendar.events.owned.readonly` | same |
+   | `calendar.events.freebusy` | cannot write |
+   | `calendar.events.public.readonly` | not what the app uses |
+
+4. Update. Save.
 
 **Add nothing else.** This single permission is what the app actually asks for. If the list here and
 the app disagree, every provider gets the scary warning screen even after the review passes. It lets
@@ -152,12 +164,27 @@ breakage. Do it before any provider uses it.
 
 **Submit for review:** on the same page, submit for verification.
 
-**Check this first, it decides whether verification costs money.** Google has two tiers. *Sensitive*
-scopes need an ordinary review. *Restricted* scopes also need CASA, a paid third-party security
-assessment that runs to thousands and weeks. `calendar.events` is **sensitive**, not restricted —
-the restricted ones are Gmail, Drive and Chat. Some third-party guides wrongly lump Calendar in with
-CASA. Confirm it yourself rather than trusting them or this file: in the Cloud console, the consent
-screen's **Data Access** section shows how Google classifies the exact scopes you picked.
+**CONFIRMED 2026-10-09: the review is the ordinary free one. This is settled, do not re-open it.**
+Google has two tiers. *Sensitive* scopes need an ordinary review, which costs nothing. *Restricted*
+scopes ALSO need CASA, a paid third-party security assessment that runs to thousands of dollars and
+weeks. Many third-party guides wrongly lump Calendar in with the restricted ones.
+
+They are wrong, and this is not an inference from docs — it was read off Google's own console for
+THIS project, with the scope already added. On the **Data Access** page
+(`console.cloud.google.com/auth/scopes`) Google sorts the scopes you picked into three tables, and
+for the SlickChart project they read:
+
+| Section | Contents |
+|---|---|
+| Your non-sensitive scopes | No rows to display |
+| Your sensitive scopes | **Google Calendar API — `.../auth/calendar.events` — "View and edit events on all your calendars"** |
+| Your restricted scopes | No rows to display |
+
+So: one sensitive scope, zero restricted. **No CASA. No fee.**
+
+This only stays true while the scope list stays at that one entry. If anyone ever adds a Gmail,
+Drive or Chat scope, re-read that page before saying anything about cost — those are the restricted
+ones, and a single added row moves the whole app into the paid tier.
 
 What a submission needs:
 
