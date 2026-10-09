@@ -3594,6 +3594,43 @@ already on the chart is left untouched, and non-form events and unknown clients 
 It passes on the shipped build, which is how we know her forms return without anyone doing
 anything.
 
+### 2026-10-08, FOUND: Heather's session notes were never lost
+
+After the character counter shipped, her own account answered it:
+
+```
+TYPED AND STILL ON THE SERVER: 565 characters
+  chart Ingatara Perry: 0 notes, 33 conditions, 115 chart detail, 1 forms
+  unfinished note Amber: 163 characters, 1 sections, 2026-10-06
+  unfinished note Sue:   144 characters, 1 sections, 2026-10-06
+  unfinished note Bear:   86 characters, 1 sections, 2026-10-06
+```
+
+**Three session notes, on three of her horses, dated 6 October, with her words in them.** She was
+writing up the 6th's sessions on the 7th when the app reset, which is exactly what she described.
+393 characters of session notes plus 148 of chart detail on Ingatara Perry. They were in
+`sc_note_drafts` the whole time — a different key from the roster, which is why the thing that
+emptied her charts never touched them. **Nobody had looked inside it, including me, for two days.**
+
+**Why the search took so long, worth keeping:** every summary view rounded to KB, and "3 clients,
+1KB" reads as empty. The answer only appeared once the tool counted CHARACTERS SHE TYPED and
+excluded the app's own placeholder words. If a provider says work is missing, count the characters
+before concluding anything.
+
+**Checked, and she is safe to open them.** The note template is recomputed from
+`selectedProfessions` on every load, and equine has no template of its own, so a draft can be read
+back under a different one. `_noteSectionsFor()` already folds a foreign-template draft's text into
+the current format's first field, in the preview AND the editor, and it survives a save.
+`scratchpad/notesafe.mjs` proves all three: carried, visible on both screens, and still there after
+`_wnSave`. **Her notes are not one screen-visit from being destroyed** — I thought they might be,
+and they are not.
+
+**A false alarm I talked myself out of, so nobody re-raises it:** ~40 call sites read
+`localStorage.getItem('sc_*')` directly, which looks like the offload bug. It is not.
+`localStorage.getItem` is PATCHED to read from memory for offloaded keys (line ~4112, "patching the
+one read path keeps all ~155 existing call sites correct"). Only ENUMERATION is forbidden. That is
+why `_exportAllData` was broken and these are fine.
+
 **What none of this reaches:** session photos live on the provider's device, not the server.
 
 ## 2ak. The virtual consult work (2026-10-08) — from the research in `reports/`
