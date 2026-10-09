@@ -3553,6 +3553,47 @@ entries and cannot see it. Sorting on weight alone put the EMPTY branch first an
 recommended the useless one. Weight decides, bytes break the tie, and `worthIt` gained the same
 same-shape-but-more-text case.
 
+### THE ANSWER, 2026-10-08: the history window is 6 HOURS. Heather's notes are not recoverable.
+
+Ashley tried the branch and Neon said it plainly:
+
+> **Date is beyond the history retention. The earliest available point is Oct 8, 2026 12:19 pm.**
+
+She is on the **Free plan, whose history window is 6 hours and cannot be raised** — Neon's plans
+page gives 6h Free / up to 7 days Launch / up to 30 days Scale, and scheduled backups are a paid
+feature. The loss was **before 1:41pm on 7 October**, roughly a day outside it.
+
+**So the point-in-time route is closed for Heather, and closed for Diana too** (hers is older
+still). The `recover-import` tooling is built, tested and live, and it will work the next time
+something happens inside the window — but it cannot reach this one. Do not spend more of her time
+on it, and do not imply otherwise to a provider.
+
+**The lever that actually matters now is the plan.** 6 hours means a loss noticed the next morning
+is already unrecoverable by this route. Launch (7 days) would have saved Heather's notes. That is
+Ashley's call and a money question, not a technical one — but it should be put to her as the
+concrete trade it is.
+
+**What makes it survivable anyway: today's safety net does NOT depend on Neon's window.**
+`kv_history` is ordinary rows in her database — 8 shrink + 14 daily + 10 device-snapshot + 20
+from-backup per key — so the 6-hour limit has no bearing on it. The hole that lost Heather's notes
+is closed going forward regardless of the plan.
+
+### Her FORMS come back on their own — verified, and I nearly shipped a duplicate of it
+
+`client_events` is append-only and never pruned. I wrote a heal pass to re-attach form events
+whose `evId` is missing from a chart, tested it, and then found **`_reconcileEventAttachments()`
+already does exactly that** — and does it better: it adopts a locally-created sign-on-device form
+rather than duplicating it, handles check-ins, and re-applies intake vitals, birthday and photo
+consent. It runs on every `syncClientEvents`, and crucially it does NOT filter on `sc_seen_events`,
+which is what makes it work for submissions marked seen weeks ago. **My version was removed.**
+
+`scratchpad/formheal.mjs` (12 assertions) is kept because the FACT is worth being able to re-prove:
+two clients with their forms wiped off their charts and every event already marked seen get them
+back with their answers, signatures and real dates, a second sync adds no duplicates, an entry
+already on the chart is left untouched, and non-form events and unknown clients are ignored.
+It passes on the shipped build, which is how we know her forms return without anyone doing
+anything.
+
 **What none of this reaches:** session photos live on the provider's device, not the server.
 
 ## 2ak. The virtual consult work (2026-10-08) — from the research in `reports/`
