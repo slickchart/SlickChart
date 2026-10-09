@@ -53,7 +53,7 @@ export const TRACKED = {
 
 // device-snapshot is kept deepest on purpose: it is the only copy that came off a device rather
 // than out of the account, so it is the one that can still hold work the account never received.
-const KEEP_SHRINK = 8, KEEP_DAILY = 14, KEEP_DEVICE = 10;
+const KEEP_SHRINK = 8, KEEP_DAILY = 14, KEEP_DEVICE = 10, KEEP_BACKUP = 20;
 
 // How much is IN a value. Top-level entries is the headline number — "47 clients became 9" is
 // unambiguous where bytes are not, because a loader normalising keys moves bytes around.
@@ -203,6 +203,15 @@ export async function pruneKey(owner, k) {
       ) ranked
       WHERE (rn > ${KEEP_DEVICE}) )
       AND reason='device-snapshot' AND owner=${owner} AND k=${k}`;
+    // from-backup rows came out of a point-in-time branch during a real incident. They are the
+    // deepest-kept of all, because there is no way to make another one once the branch is gone.
+    await q`DELETE FROM kv_history WHERE id IN (
+      SELECT id FROM (
+        SELECT id, row_number() OVER (PARTITION BY reason ORDER BY saved_at DESC) AS rn
+          FROM kv_history WHERE owner=${owner} AND k=${k}
+      ) ranked
+      WHERE (rn > ${KEEP_BACKUP}) )
+      AND reason='from-backup' AND owner=${owner} AND k=${k}`;
   } catch (e) {}
 }
 

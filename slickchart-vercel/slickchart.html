@@ -214,7 +214,7 @@ const S=document.getElementById('S');
 // resets when I save it" and there was no way to tell whether her phone had any of them — a whole
 // day was spent debugging code she may not have been running. Shown at the bottom of Settings, so
 // the answer is a screenshot away. Bump it on every ship.
-const APP_BUILD='2026-10-08v';
+const APP_BUILD='2026-10-09a';
 
 
 /* ════════════════════════════════════════════════════════════════
@@ -27051,6 +27051,13 @@ async function _founderClientRecover(rowEl){
   }catch(e){ setSub('Couldn’t reach the server.'); setTimeout(()=>setSub(orig),6000); return; }
   setSub(orig);
   _recoverState=j;
+  // Is a point-in-time branch connected? Only asked here, so the screen can offer the one thing
+  // that reaches work the account itself no longer has.
+  try{
+    const rb=await fetch('/api/admin/recover-import?email='+encodeURIComponent(j.provider.email),{headers:{'Authorization':'Bearer '+tok}});
+    const jb=await rb.json().catch(()=>null);
+    _recoverBackup=(jb&&jb.ok)?jb:null;
+  }catch(e){ _recoverBackup=null; }
   renderClientRecover();
 }
 // The diagnosis, as a SCREEN rather than a confirm box. The first version put the whole thing in a
@@ -27058,7 +27065,7 @@ async function _founderClientRecover(rowEl){
 // looking at a wall of text she could not scroll or dismiss. Worse, it offered ONE "Restore all"
 // button — and on the account that mattered, 12 of the removed rows were blanks and duplicates, so
 // the single button would have put her roster back in a worse state than it started.
-let _recoverState=null, _recoverPick={};
+let _recoverState=null, _recoverPick={}, _recoverBackup=null;
 // Is this removed row safe to put back on its own? Three things make it NOT obvious:
 //   no name          — a blank skeleton the app created, never a real client
 //   nothing stored   — no chart, no summaries, nothing to recover
@@ -27186,6 +27193,22 @@ function renderClientRecover(){
       +((j.counts&&j.counts.rosterIds!=null)?('<br>Their app’s own list knows about '+j.counts.rosterIds):'')
       +'</div>'
     +'<div style="background:var(--p-surf2);border:1px solid var(--p-line3);border-radius:12px;padding:11px 13px;margin-bottom:12px;font-size:16px;color:var(--p-ink);line-height:1.55;">'+verdict+'</div>'
+    +(function(){
+      // FROM THE BACKUP. Shown first, because it is the only thing on this screen that can reach
+      // work the live account no longer holds at all.
+      const bk=_recoverBackup;
+      if(!bk||!bk.configured)return '';
+      const worth=(bk.keys||[]).filter(function(x){return x.worthIt;});
+      if(!worth.length)return '<div style="background:var(--p-surf2);border:1px solid var(--p-line3);border-radius:12px;padding:11px 13px;margin-bottom:12px;font-size:16px;color:var(--p-mut);line-height:1.55;">A recovery branch is connected, and it holds nothing more than the account already has.</div>';
+      return '<div style="background:var(--p-blue-bg);border:1px solid var(--p-blue-line);border-radius:12px;padding:12px 14px;margin-bottom:12px;font-size:16px;color:var(--p-ink);line-height:1.55;">'
+        +'<b>The backup holds more than the account does.</b><br>'
+        +worth.map(function(x){
+          return esc(LIBLBL[x.key]||x.key)+' \u2014 backup '+x.backupItems+', live '+x.liveItems;
+        }).join('<br>')
+        +'<div style="font-size:14px;color:var(--p-mut);margin:6px 0 10px;">Bringing these across adds them as Earlier copies below. Nothing live changes until you put one back.</div>'
+        +'<button onclick="_recoverImport()" class="btnp" style="width:100%;border-radius:10px;padding:11px;font-size:16px;font-weight:600;">Bring these across</button>'
+        +'</div>';
+    })()
     +'<button onclick="_recoverCopy()" style="width:100%;background:var(--surf1);border:1px solid var(--p-line3);color:var(--p-mut2);border-radius:10px;padding:10px;font-size:16px;cursor:pointer;font-family:inherit;margin-bottom:16px;"><i class="ti ti-copy" style="font-size:16px;"></i> Copy this as text</button>'
     +(nestedRows.length?('<div style="background:var(--p-green-bg);border:1px solid var(--p-green);border-radius:12px;padding:11px 13px;margin-bottom:14px;font-size:16px;color:var(--p-ink);line-height:1.55;">'
       +'<b>Not lost — '+nestedRows.length+' of these are now an animal under another client.</b><br>'
@@ -27223,7 +27246,9 @@ function renderClientRecover(){
       const LBL2=Object.assign({},LIBLBL);
       const when=function(t){try{return new Date(t).toLocaleString('en-US',{month:'short',day:'numeric',hour:'numeric',minute:'2-digit'});}catch(e){return '';}};
       const WHY2={shrink:'kept because this save made it smaller',daily:'the daily copy',
-                  'before-restore':'kept just before an earlier restore'};
+                  'before-restore':'kept just before an earlier restore',
+                  'device-snapshot':'a copy taken off one of their devices',
+                  'from-backup':'brought across from the database backup'};
       return '<div class="sh" style="margin-top:16px;"><h2>Earlier copies</h2></div>'
         +'<div style="font-size:14px;color:var(--p-mut);line-height:1.5;margin:0 0 8px;">Saved automatically before anything made one of their libraries smaller. Putting one back keeps a copy of what is there now, so it can be undone.</div>'
         +'<div style="background:var(--surf2);border:1px solid var(--p-line);border-radius:12px;overflow:hidden;">'
@@ -27296,6 +27321,25 @@ function _recoverCopy(){
   try{ if(typeof _copyToClipboard==='function'){_copyToClipboard(t,'Copied — paste it in a message');return;} }catch(e){}
   try{ navigator.clipboard.writeText(t); if(typeof proToast==='function')proToast('Copied — paste it in a message'); }
   catch(e){ if(typeof proToast==='function')proToast('Couldn’t copy — screenshot instead'); }
+}
+async function _recoverImport(){
+  const j=_recoverState;if(!j)return;
+  const tok=(typeof Cloud!=='undefined'&&Cloud&&Cloud.token)||'';
+  try{
+    const r=await fetch('/api/admin/recover-import',{method:'POST',headers:{'Content-Type':'application/json','Authorization':'Bearer '+tok},
+      body:JSON.stringify({email:j.provider.email})});
+    const out=await r.json().catch(()=>({}));
+    if(!r.ok||!out.ok){if(typeof proToast==='function')proToast((out&&out.error)||'Could not bring it across');return;}
+    confirmModal({title:'Brought across',
+      body:out.imported+' librar'+(out.imported===1?'y':'ies')+' from the backup are now in Earlier copies below:\n\n'
+        +(out.keys||[]).map(function(x){return '\u00b7 '+x.key+' \u2014 '+x.items+' items';}).join('\n')
+        +'\n\nNothing live has changed. Look at them, then tap Put back on the ones you want.',
+      action:'Got it',hideCancel:true},function(){});
+    // Re-read so Earlier copies shows what just arrived.
+    const r2=await fetch('/api/admin/client-recover?email='+encodeURIComponent(j.provider.email),{headers:{'Authorization':'Bearer '+tok}});
+    const j2=await r2.json().catch(()=>null);
+    if(j2&&j2.ok){_recoverState=j2;_recoverPick={};renderClientRecover();}
+  }catch(e){ if(typeof proToast==='function')proToast('Could not reach the server'); }
 }
 async function _recoverRollback(id,label,items){
   const j=_recoverState;if(!j)return;

@@ -35,6 +35,11 @@ const ALLOW={
   // never undone), and the export is per-id and never part of the diagnosis. Re-read it if it
   // changes — it can hand a provider's client records to whoever passes the founder gate.
   'admin/client-recover.js':'founder-gated via the verified token email; email is the lookup subject, every query scoped to that provider',
+  // Same gate. It reads a SECOND database (a point-in-time branch, from RECOVERY_DATABASE_URL —
+  // an env var, never a request field) but resolves the provider id on the LIVE database first and
+  // uses that id to read the branch, so a stale branch can never decide whose history is written.
+  // It writes only to kv_history, never to live kv. Re-read it if it changes.
+  'admin/recover-import.js':'founder-gated; provider id resolved live then used to read the backup branch; writes history only',
   // Passwordless reset: the email IS the input by nature. Non-enumerable — always 200, rate-limited
   // per email, and a request for an unknown address behaves identically to a known one (§0.4).
   'request-reset.js':'passwordless reset; always returns 200 and is rate-limited, so it reveals nothing',

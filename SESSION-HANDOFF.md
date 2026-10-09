@@ -3485,9 +3485,52 @@ poorer device sends nothing, that a same-count-but-emptied account triggers it, 
 content is not rescued while the real loss still is, once-per-session, and that a signed-out device
 sends nothing at all.
 
-**What this does NOT do, stated so nobody assumes otherwise:** it starts from the day it ships.
-It cannot bring back what was lost before it existed, including Heather's notes — unless a device
-somewhere still holds them, which is exactly the case this was built for.
+### The third route, and the only one that reaches work already lost: the DATABASE'S OWN HISTORY
+
+Ashley: *"if her notes were once in the server we should be able to figure out how to get them
+back."* Then, which is what made it possible: **"they were never gone before today"**, corrected
+to **"it was gone yesterday not today"** — so the loss is dated **7→8 October 2026**, inside Neon's
+history retention window.
+
+**Neon keeps a point-in-time history of the whole database** (the window length depends on the
+plan: the FAQ numbers are 6 hours Free / 7 days Launch / 30 days Scale, which is worth checking in
+the console rather than trusting). A **branch** created from a timestamp inside that window freezes
+that state permanently, so it survives the window closing. **Making the branch is the only part of
+any of this with a deadline.**
+
+`api/admin/recover-import.js` + `RECOVER-LOST-WORK.md` (the runbook, written for Ashley to follow):
+
+- `RECOVERY_DATABASE_URL` (an env var, never a request field) points at the branch.
+- `GET ?email=` previews what the branch holds against what is live, per library, counts only.
+- `POST` copies the worthwhile ones into `kv_history` as `from-backup` — **never into live `kv`**.
+  They appear under "Earlier copies" and a human puts them back deliberately. An import that
+  silently overwrote live data would be the same class of mistake that caused all of this.
+- Surfaced at the TOP of the recovery screen as "The backup holds more than the account does",
+  with a per-library backup-vs-live count, only when a branch is actually connected.
+- The provider id is resolved on the LIVE database and then used to read the branch, so a stale
+  branch can never decide whose history gets written. `from-backup` rows are kept deepest of all
+  (20 per key): once the branch is gone there is no way to make another.
+
+**This is per-provider, so it covers DIANA too** — Ashley asked, and the answer is yes, with one
+caveat: her loss is older, so whether it is still inside the retention window is the open question,
+and the branch creation screen answers it immediately (a date outside the window cannot be chosen).
+
+**Verified: `scripts/test-recover-import.mjs`, 22 assertions against TWO REAL PostgreSQL
+databases** — one standing in for the live account, one for the branch, with
+`@neondatabase/serverless` stubbed to the second. It asserts the preview sees 10 in the backup
+against 9 live, that **her notes are in what gets imported**, that **LIVE DATA IS NOT TOUCHED**,
+that a second provider imports into her OWN history and leaves the first alone, that settings keys
+and already-fine keys are ignored, that the preview carries no stored values, and that a bad
+connection string is reported rather than swallowed.
+
+**Also still true and independent of all of the above: `client_events` is append-only and is never
+pruned** (only deleted with the client or the account). Form submissions are logged there with
+their full answers (`logEvent(..., 'form', {title, formId, answers, flagged, signed, qs})`), so a
+client's completed intake is reconstructible even when the chart copy was wiped — and the provider
+GET already feeds a client-side self-heal off it. Summaries and chart notes are NOT in the event
+log; do not go looking for them there.
+
+**What none of this reaches:** session photos live on the provider's device, not the server.
 
 ## 2ak. The virtual consult work (2026-10-08) — from the research in `reports/`
 

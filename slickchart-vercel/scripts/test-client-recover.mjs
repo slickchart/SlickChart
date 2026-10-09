@@ -48,6 +48,8 @@ fs.mkdirSync(api, { recursive: true }); fs.mkdirSync(lib, { recursive: true });
 fs.writeFileSync(path.join(lib, 'db.js'), STUB.replace('__PSQL__', PGBIN + '/psql').replace('__SOCK__', sock).replace('__PORT__', PORT).replace('__USER__', USER));
 fs.writeFileSync(path.join(lib, 'auth.js'), AUTHSTUB);
 fs.writeFileSync(path.join(lib, 'clients.js'), fs.readFileSync(path.join(VERCEL, 'lib', 'clients.js'), 'utf8'));
+// client-recover.js imports the history lib for the "Earlier copies" section.
+fs.writeFileSync(path.join(lib, 'kv-history.js'), fs.readFileSync(path.join(VERCEL, 'lib', 'kv-history.js'), 'utf8'));
 fs.writeFileSync(path.join(api, 'client-recover.mjs'), fs.readFileSync(path.join(VERCEL, 'api', 'admin', 'client-recover.js'), 'utf8'));
 fs.writeFileSync(path.join(root, 'package.json'), '{"type":"module"}');
 if (asRoot) sh('chown -R ' + USER + ' ' + root);
