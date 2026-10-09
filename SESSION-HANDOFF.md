@@ -4510,3 +4510,44 @@ loop the way the Reminders screen did, and a screen already navigated away from 
   not a badge for something unbuilt. `/api/calendar-url` issues the private feed, `/api/calendar`
   serves the `.ics`, and `renderConnectCalendar` carries subscribe steps for iPhone/iPad and Mac.
   What does NOT exist is two-way Apple (CalDAV).
+
+### 2ap-2. The availability window was asking for the wrong day (`2026-10-09u`)
+
+Found while chasing her "tomorrow should have both 2pm and 4pm, only 4pm shows". **It is NOT the
+cause of that symptom** — 2pm Saturday was inside the old window too — but it is real and it was
+silently costing her evening bookings.
+
+Vercel runs in UTC. `api/square/availability.js` built its search window with
+`new Date('2026-10-10T00:00:00')`, which parsed on the server means midnight **UTC**. Measured:
+
+```
+server asked Square for : 2026-10-10T00:00:00Z -> 2026-10-10T23:59:59Z
+which in her time is    : Fri, Oct 9, 5:00 PM  -> Sat, Oct 10, 4:59 PM
+```
+
+So asking for Saturday asked for **Friday 5pm through Saturday 4:59pm**. Two consequences, both
+silent: every Saturday slot from 5pm on was never searched, and a Friday evening slot could be
+returned and rendered as one of Saturday's.
+
+Now `zonedDayRange(date, tz)` in `lib/square.js` builds the window in the SHOP's timezone, read
+from the Square location (`resolveLocationTz`). Unknown timezone keeps the old UTC behaviour rather
+than guessing an offset. `zonedDateKey` additionally drops any slot that is not on the requested
+day in her timezone, so a window that is slightly wrong can never surface as a wrong-day slot.
+
+**The part that looked right and was not:** the first version sampled the offset once at noon and
+applied it to both ends of the day. That is wrong on the two days a year the offset changes — it
+made 2026-11-01 come out 24 hours instead of 25, and started 2026-03-08 an hour before midnight.
+`zonedWallToUtc` now solves each end by iteration. Both DST days are asserted.
+
+`scripts/check-square-daywindow.cjs` (CI) extracts the helpers from `lib/square.js` verbatim every
+run — no hand-kept copy that can drift — and asserts local midnight to 23:59:59 across four
+timezones, both DST days, the UTC fallback, and that an 8pm appointment is inside the window.
+Confirmed to FAIL (exit 1) against the original implementation.
+
+The response now also carries `tz`, `searched:{from,to}` and `returned`, so the next time a provider
+says a time is missing, what was actually asked for is in the answer instead of being guessed at.
+
+**STILL OPEN: why Square returns no 2pm.** Not diagnosed, not guessed at. The decisive comparison is
+whether Square's own booking page offers 2pm for that same service on that day. If it does, the bug
+is ours; if it does not, it is her Square Appointments availability or the service's
+duration/buffers. Do not write a cause into an email before that comparison is made (§4c).

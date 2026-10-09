@@ -3,7 +3,7 @@
 // Square computes these against the seller's booking availability, the service's duration, its
 // buffer-before/buffer-after settings, AND existing bookings — so surfacing only these slots is
 // what prevents double-booking and honors the time each service needs to block.
-import { squareFetch as _sqf, sqContext, resolveLocationId } from '../../lib/square.js';
+import { squareFetch as _sqf, sqContext, resolveLocationId, resolveLocationTz, zonedDayRange, zonedDateKey } from '../../lib/square.js';
 
 export default async function handler(req, res) {
   if (req.method !== 'POST') { res.status(405).json({ error: 'Method not allowed' }); return; }
@@ -19,13 +19,16 @@ export default async function handler(req, res) {
     const locationId = await resolveLocationId(ctx.token, ctx.locationId);
     if (!locationId) { res.status(400).json({ error: 'No Square location found for this account.' }); return; }
 
-    // Day window. Square requires start_at >= now and the range <= 32 days, so clamp the lower
-    // bound to "now" for today and skip a fully-past day.
+    // Day window, in the SHOP's timezone. Vercel runs in UTC, so parsing the date here used to
+    // ask Square for 5pm the previous day through 4:59pm the requested one (Pacific) — every
+    // evening slot silently missing, and the previous evening's slots offered as this day's.
+    // Square requires start_at >= now and the range <= 32 days, so clamp the lower bound to "now"
+    // for today and skip a fully-past day.
+    const tz = await resolveLocationTz(ctx.token, locationId);
+    const { start: dayStart, end: dayEnd } = zonedDayRange(date, tz);
     const now = new Date();
-    const dayStart = new Date(date + 'T00:00:00');
-    const dayEnd = new Date(date + 'T23:59:59');
     const startAt = (dayStart > now ? dayStart : now);
-    if (startAt >= dayEnd) { res.status(200).json({ slots: [] }); return; }
+    if (startAt >= dayEnd) { res.status(200).json({ slots: [], tz }); return; }
 
     const seg = { service_variation_id: svid };
     if (teamMemberId) seg.team_member_id_filter = { any: [teamMemberId] };
@@ -40,10 +43,15 @@ export default async function handler(req, res) {
     const slots = (d.availabilities || [])
       .map(a => { const s = (a.appointment_segments || [])[0] || {}; return { startAt: a.start_at, teamMemberId: s.team_member_id || teamMemberId || '' }; })
       .filter(s => s.startAt)
+      // Belt and braces: a slot that is not on the requested day in HER timezone never shows,
+      // whatever the window did. Offering the wrong day is worse than offering nothing.
+      .filter(s => zonedDateKey(s.startAt, tz) === date)
       .sort((x, y) => x.startAt.localeCompare(y.startAt))
       .filter(s => (seen[s.startAt] ? false : (seen[s.startAt] = true)));
 
-    res.status(200).json({ slots });
+    // searched/tz are for the self-check: when a provider says a time is missing, the first
+    // question is what window was actually asked for, and guessing at that cost a round trip.
+    res.status(200).json({ slots, tz, searched: { from: startAt.toISOString(), to: dayEnd.toISOString() }, returned: (d.availabilities || []).length });
   } catch (e) {
     res.status(e.status || 500).json({ error: e.message, details: e.squareErrors || null, code: e.status === 403 ? 'reconnect' : undefined });
   }

@@ -91,6 +91,72 @@ export async function resolveLocationId(token, stored) {
   return pick ? pick.id : null;
 }
 
+// ── Location timezone & day windows ──────────────────────────────────────────
+// A booking day is a day in HER shop's timezone, never the server's. Vercel runs in UTC, so
+// `new Date('2026-10-10T00:00:00')` parsed there is 5pm the PREVIOUS day in Pacific — searching
+// "Saturday" actually asked Square for Friday 5pm through Saturday 4:59pm. That silently dropped
+// every Saturday evening slot and could offer a Friday evening slot labelled as Saturday.
+
+// Square's location carries an IANA timezone. Null when we cannot tell, and callers then fall back
+// to the old UTC behaviour rather than guessing at an offset.
+export async function resolveLocationTz(token, stored) {
+  try {
+    const data = await squareFetch('/v2/locations', {}, token);
+    const all = data.locations || [];
+    const pick = (stored && all.find(l => l.id === stored))
+      || all.filter(l => l.status === 'ACTIVE')[0] || all[0];
+    const tz = pick && pick.timezone;
+    return (typeof tz === 'string' && tz.includes('/')) ? tz : null;
+  } catch (e) { return null; }
+}
+
+// The offset `tz` is at a given instant, in ms. Positive east of UTC.
+function tzOffsetAt(instant, tz) {
+  const parts = Object.fromEntries(new Intl.DateTimeFormat('en-US', {
+    timeZone: tz, hour12: false, year: 'numeric', month: '2-digit',
+    day: '2-digit', hour: '2-digit', minute: '2-digit', second: '2-digit'
+  }).formatToParts(instant).filter(p => p.type !== 'literal').map(p => [p.type, p.value]));
+  const asIfUTC = Date.UTC(+parts.year, +parts.month - 1, +parts.day,
+    (+parts.hour) % 24, +parts.minute, +parts.second);
+  return asIfUTC - instant.getTime();
+}
+
+// The UTC instant of a wall-clock time in `tz`. Solved by iteration rather than by probing a fixed
+// hour: a single offset taken at noon and applied to both ends of the day is wrong on the two days
+// a year the offset changes, which made a 25-hour day come out 24 hours long and started the
+// following spring's day an hour before midnight. Two passes converge everywhere.
+function zonedWallToUtc(Y, M, D, h, mi, sec, tz) {
+  const naive = Date.UTC(Y, M - 1, D, h, mi, sec);
+  let guess = naive;
+  for (let i = 0; i < 2; i++) guess = naive - tzOffsetAt(new Date(guess), tz);
+  return new Date(guess);
+}
+
+// The UTC instants bounding 'YYYY-MM-DD' as lived in `tz`.
+export function zonedDayRange(dateStr, tz) {
+  const [Y, M, D] = String(dateStr).split('-').map(Number);
+  if (!tz) return { start: new Date(dateStr + 'T00:00:00Z'), end: new Date(dateStr + 'T23:59:59Z'), tz: null };
+  try {
+    return {
+      start: zonedWallToUtc(Y, M, D, 0, 0, 0, tz),
+      end: zonedWallToUtc(Y, M, D, 23, 59, 59, tz),
+      tz
+    };
+  } catch (e) {
+    return { start: new Date(dateStr + 'T00:00:00Z'), end: new Date(dateStr + 'T23:59:59Z'), tz: null };
+  }
+}
+
+// The 'YYYY-MM-DD' an instant falls on in `tz` — used to drop a slot Square returned from the
+// neighbouring day, so a window that is slightly wrong can never surface as a wrong-day slot.
+export function zonedDateKey(instant, tz) {
+  if (!tz) return new Date(instant).toISOString().slice(0, 10);
+  try {
+    return new Intl.DateTimeFormat('en-CA', { timeZone: tz, year: 'numeric', month: '2-digit', day: '2-digit' })
+      .format(new Date(instant));
+  } catch (e) { return new Date(instant).toISOString().slice(0, 10); }
+}
+
 // ── OAuth ────────────────────────────────────────────────────────────────────
 // The redirect_uri MUST byte-for-byte match the Redirect URL registered in the Square
 // Developer Dashboard, or Square rejects the authorize call with "Invalid value for
