@@ -4547,7 +4547,19 @@ Confirmed to FAIL (exit 1) against the original implementation.
 The response now also carries `tz`, `searched:{from,to}` and `returned`, so the next time a provider
 says a time is missing, what was actually asked for is in the answer instead of being guessed at.
 
-**STILL OPEN: why Square returns no 2pm.** Not diagnosed, not guessed at. The decisive comparison is
-whether Square's own booking page offers 2pm for that same service on that day. If it does, the bug
-is ours; if it does not, it is her Square Appointments availability or the service's
-duration/buffers. Do not write a cause into an email before that comparison is made (§4c).
+**RESOLVED, and there was no bug.** Ashley found it: her Square is set to refuse bookings less than
+**24 hours** out. She was looking at 3:26pm Friday, so the earliest bookable time was 3:26pm
+Saturday — 2pm Saturday fell inside the notice period and 4pm cleared it. Square returned exactly
+one slot because exactly one was bookable. SlickChart showed what Square said, which is the whole
+point of surfacing only Square's availability search.
+
+Worth keeping for the pattern, not the bug: three plausible causes were in play (the timezone
+window, the service's duration/buffers, Square's booking rules) and the one that was true was the
+account setting nobody had asked about. The theory that got closest to shipping as an explanation
+was the timezone window, which was a genuine bug found on the way and still had nothing to do with
+the symptom. **A real bug found while investigating is not the answer to the thing you were
+investigating.** Saying "this is real, and it is not your problem" is the honest move, and it is
+what kept a wrong cause out of the conversation.
+
+Nothing was built for this. A banner explaining the 24-hour rule was considered and not added: the
+behaviour is correct, she understood it immediately once she saw it, and §5 says not to pile on.
