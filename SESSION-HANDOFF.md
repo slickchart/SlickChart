@@ -4563,3 +4563,43 @@ what kept a wrong cause out of the conversation.
 
 Nothing was built for this. A banner explaining the 24-hour rule was considered and not added: the
 behaviour is correct, she understood it immediately once she saw it, and §5 says not to pile on.
+
+### 2ap-3. Google Calendar two-way sync VERIFIED BOTH DIRECTIONS (2026-10-09)
+
+Ashley ran both tests on her own account and both passed.
+
+- **SlickChart to Google:** an appointment added in SlickChart appears on her Google Calendar.
+- **Google to SlickChart:** an event on her Google Calendar stops that time being offered on her
+  booking link.
+
+The feature is real and may be described to providers as working. Two caveats that still hold:
+
+1. **It is still in Testing mode, so the connection dies every 7 days until she publishes.** That
+   is step 9 of `GOOGLE-CALENDAR-SETUP.md` and it has NOT been done as of this writing. When it
+   breaks, the symptom is her own Google events quietly no longer blocking bookings — which the
+   amber `RECONNECT` pill on the Calendar screen now makes visible (§2ap).
+2. **Only the SlickChart booking link consults Google, never the Square booking page.** The
+   blocking lives in `lib/booking.js`, used by `api/book-page.js`, `api/book-slots.js` and
+   `api/book-request.js`. Square has no knowledge of her Google calendar and cannot have. Anyone
+   testing this against the Square flow will see no blocking and wrongly conclude it is broken.
+
+**How to test it without getting a false pass**, because two notice rules can hide a slot for the
+wrong reason — Square's own minimum booking notice (hers is 24 hours) and SlickChart's `leadHours`
+(default 12):
+
+1. Pick a day two or more days out, clearing both.
+2. Confirm on the booking link that the target time IS offered. **This step is the test.** Skipped,
+   a time that was never offered is indistinguishable from one Google blocked.
+3. Add a Google event at that time, left as Busy — "Free" is honoured deliberately.
+4. Reload: the time is gone.
+
+If the booking page stops offering slots at all and switches to taking a request, that is NOT a
+pass. `busyRanges` returned null, meaning there is a Google connection it could not read, and it
+refuses to publish a slot list it is unsure of rather than risk a double booking.
+
+### 2ap-4. The Square booking sheet had no way out (`2026-10-09v`)
+
+`openSquareBook` rendered a header with no close control. Tapping the backdrop worked but nothing
+said so, and the local quick-add modal beside it has had a visible **Cancel** all along, so the
+inconsistency was the giveaway. Added an X in the header: 36x44 tap target, inside the card at
+390px, no horizontal overflow, modal removed on tap, header and LIVE badge unchanged.
