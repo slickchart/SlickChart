@@ -468,7 +468,7 @@ const S=document.getElementById('S');
 // resets when I save it" and there was no way to tell whether her phone had any of them — a whole
 // day was spent debugging code she may not have been running. Shown at the bottom of Settings, so
 // the answer is a screenshot away. Bump it on every ship.
-const APP_BUILD='2026-10-09p';
+const APP_BUILD='2026-10-09q';
 
 
 /* ════════════════════════════════════════════════════════════════
@@ -26514,6 +26514,9 @@ function _gcalAppts(){
     const pad=function(n){return String(n).padStart(2,'0');};
     return {id:String(a.id),dateISO:d.getFullYear()+'-'+pad(d.getMonth()+1)+'-'+pad(d.getDate()),
       startMins:h*60+m,durMins:parseInt(a.dur,10)||60,
+      // client and tx travel SEPARATELY as well as composed: with "keep names out of Google" on, the
+      // server builds the title from tx alone, and it cannot do that from a pre-joined string.
+      client:String(a.client||''),tx:String(a.tx||'Appointment'),
       title:((a.client?String(a.client)+' — ':'')+String(a.tx||'Appointment')),notes:String(a.notes||'')};
   }).filter(Boolean);
 }
@@ -26550,6 +26553,41 @@ async function _gcalStatus(){
     return _gcalState;
   }catch(e){_gcalState=unknown();return _gcalState;}
 }
+// Keep client names out of Google. Her appointments still block the slot, which is the whole point
+// of the sync; what stops travelling is the client's NAME and the appointment notes. Stored on her
+// connection row server-side, not here, so a device running older JS cannot push a name after she
+// has turned it off. Toggling re-pushes, and because the sync PATCHes every mapped event, names
+// already sitting in Google are rewritten rather than left behind — a privacy switch that only
+// applied to future appointments would be worse than none, because it would read as done.
+function _gcalPrivacyRowHTML(){
+  const on=!!(_gcalState&&_gcalState.privateTitles);
+  return '<div style="display:flex;align-items:flex-start;justify-content:space-between;gap:10px;margin-top:11px;padding-top:11px;border-top:1px solid var(--p-line3);">'
+    +'<div style="flex:1;min-width:0;"><div style="font-size:16px;color:var(--p-ink);">Keep client names out of Google</div>'
+    +'<div style="font-size:14px;color:var(--p-mut);line-height:1.45;">'+(on
+      ? 'Google shows the service and the time only. Names and notes stay in SlickChart.'
+      : 'Google events currently show the client\u2019s name and your appointment notes.')+'</div></div>'
+    +'<button id="gcal-priv" onclick="_gcalSetPrivacy('+(on?'false':'true')+')" style="flex-shrink:0;border-radius:8px;padding:5px 10px;font-size:12px;font-weight:600;cursor:pointer;font-family:inherit;white-space:nowrap;'
+    +(on?'background:var(--p-surf2);border:1px solid var(--p-line3);color:var(--p-green);">On'
+        :'background:var(--p-amber-bg);border:1px solid var(--p-amber-line);color:var(--p-amber);">Off')
+    +'</button></div>';
+}
+async function _gcalSetPrivacy(next){
+  const b=document.getElementById('gcal-priv');
+  if(b){b.disabled=true;b.textContent='…';}
+  try{
+    const tok=(typeof Cloud!=='undefined'&&Cloud&&Cloud.token)||'';
+    if(!tok)return;
+    const r=await fetch('/api/google-cal',{method:'PATCH',headers:{'Content-Type':'application/json','Authorization':'Bearer '+tok},
+      body:JSON.stringify({privateTitles:!!next})});
+    const j=await r.json().catch(function(){return null;});
+    if(!j||!j.ok){if(typeof proToast==='function')proToast('Could not change that — try again');return;}
+    if(_gcalState)_gcalState.privateTitles=!!j.privateTitles;
+    // Rewrite what is already in Google so the change is retroactive, not just going forward.
+    try{await _gcalPush();}catch(e){}
+    if(typeof proToast==='function')proToast(j.privateTitles?'Client names removed from Google ✓':'Client names will show in Google');
+  }catch(e){ if(typeof proToast==='function')proToast('Could not change that — try again'); }
+  finally{ try{if(typeof nav==='function'&&typeof _navCur!=='undefined'&&_navCur)nav(_navCur.screen,_navCur.data);}catch(e){} }
+}
 async function _gcalDisconnect(){
   try{
     const tok=(typeof Cloud!=='undefined'&&Cloud&&Cloud.token)||'';
@@ -26578,6 +26616,7 @@ function _gcalCardHTML(){
         ${st.needsReconnect&&st.authUrl?`<a href="${_urlAttr(st.authUrl)}" class="btnp" style="display:inline-block;text-decoration:none;border-radius:8px;padding:9px 14px;font-size:16px;font-weight:600;">Reconnect Google</a>`:''}
         <button onclick="_gcalDisconnect()" style="background:var(--surf1);border:1px solid var(--p-line3);color:var(--p-mut2);border-radius:8px;padding:9px 12px;font-size:16px;cursor:pointer;font-family:inherit;">Disconnect</button>
       </div>
+      ${_gcalPrivacyRowHTML()}
       <div style="font-size:14px;color:var(--p-mut);line-height:1.5;margin-top:9px;">An event you mark <b>Free</b> in Google does not block anything, which is how Google defines it.</div>
     </div>`;
   }

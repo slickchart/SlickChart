@@ -50,6 +50,10 @@ export async function ensureGoogleTable() {
     created_at bigint,
     updated_at bigint
   )`;
+  // Whether a client's NAME may travel to Google. Off by default, which is the behaviour every
+  // existing connection already has — changing what a provider's calendar shows underneath her
+  // without being asked would be its own surprise. ALTER for rows that predate the column.
+  try { await q`ALTER TABLE google_connections ADD COLUMN IF NOT EXISTS private_titles boolean DEFAULT false`; } catch (e) {}
   _ready = true;
 }
 
@@ -214,14 +218,25 @@ async function saveEventMap(providerId, map) {
   await q`UPDATE google_connections SET event_map=${JSON.stringify(map || {})}, updated_at=${Date.now()}
     WHERE provider_id=${String(providerId)}`;
 }
-function eventBody(a) {
+// The event as Google will store it. `private` is the provider's "keep client names out of Google"
+// setting, read from her connection row rather than from the request, so a device running older JS
+// cannot push a name after she has turned it off.
+//
+// What leaves SlickChart when it is ON: the service name, the date, the time and the length. No
+// client name and no appointment notes — the notes are the other place a name or a clinical detail
+// would ride along, and a title scrubbed of the name is worth nothing if the description still has
+// it. Busy time still blocks the slot, which is the whole point of the sync.
+function eventBody(a, isPrivate) {
   const start = new Date(a.dateISO + 'T00:00:00');
   const mins = Math.max(5, parseInt(a.durMins, 10) || 60);
   start.setHours(Math.floor(a.startMins / 60), a.startMins % 60, 0, 0);
   const end = new Date(start.getTime() + mins * 60000);
   return {
-    summary: String(a.title || 'Appointment').slice(0, 300),
-    description: String(a.notes || '').slice(0, 2000),
+    summary: (isPrivate
+      ? String(a.tx || 'Appointment')
+      : String(a.title || ((a.client ? a.client + ' \u2014 ' : '') + (a.tx || 'Appointment')) || 'Appointment')
+      ).slice(0, 300),
+    description: isPrivate ? '' : String(a.notes || '').slice(0, 2000),
     start: { dateTime: start.toISOString() },
     end: { dateTime: end.toISOString() },
     extendedProperties: { private: { [TAG_KEY]: String(a.id) } }
@@ -234,13 +249,14 @@ export async function syncApptsToGoogle(providerId, appts) {
   const access = await googleAccessToken(providerId);
   if (!access) return out;
   const conn = await getGoogleConnection(providerId);
+  const isPrivate = !!(conn && conn.private_titles);
   const map = eventMapOf(conn);
   const want = new Map();
   (Array.isArray(appts) ? appts : []).forEach(a => { if (a && a.id && a.dateISO && a.startMins != null) want.set(String(a.id), a); });
   const hdr = { 'Content-Type': 'application/json', Authorization: 'Bearer ' + access };
 
   for (const [id, a] of want) {
-    const body = eventBody(a);
+    const body = eventBody(a, isPrivate);
     try {
       if (map[id]) {
         const r = await fetch(EVENTS_URL + '/' + encodeURIComponent(map[id]), { method: 'PATCH', headers: hdr, body: JSON.stringify(body) });

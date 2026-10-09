@@ -149,13 +149,27 @@ breakage. Do it before any provider uses it.
   appointments to their Google Calendar, and reads only the start and end times of their existing
   events so clients cannot book a time the provider is already busy.*
 - A link to the privacy policy. `https://slickchart.app/privacy` already has a Google Calendar
-  section written for this, including the Limited Use wording Google looks for.
+  section written for this, including the Limited Use wording Google looks for, and it documents
+  the **Keep client names out of Google** setting — a reviewer asking "why does this app need to
+  write a person's name to a calendar" can see the provider is able to turn that off and still get
+  the feature.
 - Proof you own `slickchart.app` (Google Search Console).
 - A short screen recording showing a provider connecting the calendar and the sync working.
 
 Expect weeks, not days.
 
 ---
+
+## A setting worth knowing about before you offer this to providers
+
+**Sync Calendar → Keep client names out of Google.** Off by default, which is the behaviour any
+existing connection already has. With it on, a Google event carries the service name and the time
+only, with no client name and no booking note, and the slot is still blocked. Turning it on rewrites
+events already on the calendar rather than only applying to new ones.
+
+It is stored on the provider's connection row on the server, not on her device, so a phone running
+older code cannot push a name after she has turned it off. Worth mentioning to any provider who
+shares a calendar with staff or family, or whose phone shows calendar titles on the lock screen.
 
 ## What providers will see while the review is pending
 

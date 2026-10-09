@@ -251,8 +251,12 @@ saved anywhere", not "does this always call that".
 | `_gcalDisconnect` | `/api/clients` | via `syncClientEvents` |
 | `_gcalDisconnect` | `/api/google-cal` | direct |
 | `_gcalDisconnect` | `/api/provider-form` | via `submitSignOnDevice` |
+| `_gcalPrivacyRowHTML` | `/api/google-cal` | via `_gcalSetPrivacy` |
 | `_gcalPush` | `/api/google-cal` | direct |
 | `_gcalPushSoon` | `/api/google-cal` | via `_gcalPush` |
+| `_gcalSetPrivacy` | `/api/clients` | via `syncClientEvents` |
+| `_gcalSetPrivacy` | `/api/google-cal` | direct |
+| `_gcalSetPrivacy` | `/api/provider-form` | via `submitSignOnDevice` |
 | `_gcalStatus` | `/api/google-cal` | direct |
 | `_getGuideFile` | `/api/guide-file` | direct |
 | `_gettingStartedHTML` | `/api/clients` | via `syncClientEvents` |
@@ -1108,7 +1112,7 @@ Plus every synced `sc_*` key below, which rides `/api/store`.
 | `/api/feedback` | GET, POST | provider session | POST /api/feedback  { message, rating?, kind?, timeSaved? }  → logs a provider's beta feedback |
 | `/api/free-signup` | POST | **public** | POST /api/free-signup  { email }  → join the free starter list and get the link emailed now. |
 | `/api/google-cal-callback` | — | provider session | GET /api/google-cal-callback?code=…&state=… |
-| `/api/google-cal` | GET, POST, DELETE | provider session | GET    /api/google-cal            → { connected, configured, lastOk, needsReconnect, authUrl } |
+| `/api/google-cal` | GET, PATCH, POST, DELETE | provider session | GET    /api/google-cal            → { connected, configured, lastOk, needsReconnect, authUrl } |
 | `/api/guide-file` | PUT, POST, DELETE, GET | provider session, client link token | storage for provider-uploaded guide files (PDFs, images, docs). |
 | `/api/health` | — | **public** | GET /api/health |
 | `/api/login` | POST | founder | POST /api/login  { email, password, totpCode? }  (email omitted => legacy APP_PASSWORD owner) |

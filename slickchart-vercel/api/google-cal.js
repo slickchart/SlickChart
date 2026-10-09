@@ -72,11 +72,23 @@ export default async function handler(req, res) {
         lastOk: (conn && Number(conn.last_ok)) || 0,
         needsReconnect: !!(conn && conn.last_error),
         lastError: (conn && conn.last_error) || '',
+        privateTitles: !!(conn && conn.private_titles),
         authUrl,
         // The exact string that must be registered in the Google console. Surfaced so the
         // self-check can print it rather than anyone having to guess which host to use.
         redirectUri: redirectUri(req)
       });
+      return;
+    }
+
+    // Turn the client-name redaction on or off. Separate from the appointment push so it can be
+    // changed before a connection exists and before any name has ever been sent.
+    if (req.method === 'PATCH') {
+      const want = !!(req.body && req.body.privateTitles);
+      const q = sql();
+      await q`UPDATE google_connections SET private_titles=${want}, updated_at=${Date.now()}
+        WHERE provider_id=${providerId}`;
+      res.status(200).json({ ok: true, privateTitles: want });
       return;
     }
 
