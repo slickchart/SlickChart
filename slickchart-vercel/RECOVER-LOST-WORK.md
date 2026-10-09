@@ -16,10 +16,21 @@ So: make the branch first, work out what to do with it second.
 1. Go to **console.neon.tech** and open the SlickChart project.
 2. Left menu: **Branches** → **New branch**.
 3. Name it something you will recognise: `before-heather-loss`.
-4. For the starting point, choose **a specific date and time**, and pick a time **before the loss**.
-   Heather's work was there on **7 October** and gone on **8 October**, so pick something safely
-   before that, for example **7 October, 6:00am**.
-5. Create it.
+4. **Auto-delete: set this to Never.** It defaults to *After 1 day*, which would throw away the
+   one frozen copy of her work tomorrow. This is the single easiest way to lose the thing you came
+   here to save.
+5. **Choose "Branch data and schema FROM A PAST POINT IN TIME".** The option selected by default
+   is *Branch data and schema*, which means "up to this moment" — that copies today's already
+   broken data and is of no use at all. The past-point-in-time option is the whole point.
+6. Pick a time safely **before** the loss. Heather's work was there on **6 October** and gone by
+   the **7th**, so **6 October, 11:00pm** is a safe choice. Going back a little further costs
+   nothing: the only risk is missing work done in the hours just before the loss, and you can see
+   that by comparing the counts before you put anything back.
+7. Create it.
+
+> Branches are instant and only use storage once you change them, so making **two** at different
+> times — one just before the loss, one a day earlier — is cheap and gives you something to
+> compare. If the earlier one holds more, use that.
 
 That branch is now a permanent, read-only-if-you-leave-it-alone copy of the whole database as it
 was at that moment. **Nothing about your live data changes.** Creating a branch is not a restore.
