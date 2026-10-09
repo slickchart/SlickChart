@@ -3530,6 +3530,29 @@ client's completed intake is reconstructible even when the chart copy was wiped 
 GET already feeds a client-side self-heal off it. Summaries and chart notes are NOT in the event
 log; do not go looking for them there.
 
+**WHAT HEATHER OBSERVED, dated (ground truth, §1b — this is what the timestamp hangs on):** she
+was part-way through **three** sets of notes on **7 October**. She finished **two**. The app then
+reset (horses out of the owner profiles — the 2aj symptom) **before the third**, and **her notes
+went at that moment**. She messaged Ashley at **1:41pm on 7 October**.
+
+So the loss is before 1:41pm on the 7th, and a branch taken from the 6th — which is what the first
+version of the runbook recommended — **would have missed the two sets she had just finished.**
+That is the work she is most upset about. Corrected: as late as possible while still before the
+loss, starting at 1:30pm on the 7th.
+
+**`RECOVERY_DATABASE_URL` therefore takes a COMMA-SEPARATED LIST.** Picking the timestamp is
+guesswork and making her redeploy once per guess during an incident is not a reasonable thing to
+ask. Every branch is read, each labelled by its branch name from the host part of the string
+(never the credential), one unreachable branch reports itself without stopping the others, and
+they are listed richest first.
+
+**Ranking them needed BYTES as well as weight, and this is worth keeping:** two branches taken
+either side of her writing weigh exactly the same — 10 clients, 3 fields each — because the
+damage was notes **emptied inside records that all still existed**. `contentWeight` counts
+entries and cannot see it. Sorting on weight alone put the EMPTY branch first and would have
+recommended the useless one. Weight decides, bytes break the tie, and `worthIt` gained the same
+same-shape-but-more-text case.
+
 **What none of this reaches:** session photos live on the provider's device, not the server.
 
 ## 2ak. The virtual consult work (2026-10-08) — from the research in `reports/`

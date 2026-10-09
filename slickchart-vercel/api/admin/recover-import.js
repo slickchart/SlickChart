@@ -44,20 +44,32 @@ export default async function handler(req, res) {
   const founder = await requireFounder(req, res);
   if (!founder) return;
 
-  const src = String(process.env.RECOVERY_DATABASE_URL || '').trim();
-  if (!src) {
+  // SEVERAL branches at once, comma-separated. Picking the timestamp is guesswork — too late and
+  // the branch holds the already-broken data, too early and it is missing the work done that
+  // morning, which is the work she is most upset about. The honest answer is to make a ladder of
+  // branches and look at all of them, and making her redeploy once per branch during an incident
+  // is not a reasonable thing to ask. Each one is labelled by its branch name where Neon puts one
+  // in the connection string, otherwise by position.
+  const srcList = String(process.env.RECOVERY_DATABASE_URL || '')
+    .split(',').map(x => x.trim()).filter(Boolean);
+  if (!srcList.length) {
     res.status(200).json({ ok: true, configured: false,
-      hint: 'Set RECOVERY_DATABASE_URL in Vercel to a Neon branch created from before the loss, then redeploy.' });
+      hint: 'Set RECOVERY_DATABASE_URL in Vercel to one or more Neon branch connection strings (comma-separated), then redeploy.' });
     return;
   }
+  // A connection string is a credential. Only ever label a branch by something safe to show.
+  const labelOf = (cs, i) => {
+    try {
+      const host = String(cs).split('@')[1] || '';
+      const first = host.split('.')[0] || '';
+      return first ? first.slice(0, 40) : ('backup ' + (i + 1));
+    } catch (e) { return 'backup ' + (i + 1); }
+  };
 
   const email = norm((req.query && req.query.email) || (req.body && req.body.email) || '');
   if (!email) { res.status(400).json({ error: 'Pass the provider email.' }); return; }
 
   const q = sql();
-  let from;
-  try { from = neon(src); }
-  catch (e) { res.status(400).json({ error: 'That recovery connection string could not be used.' }); return; }
 
   try {
     await ensureProvidersTable(); await ensureTable(); await ensureHistoryTable();
@@ -68,36 +80,56 @@ export default async function handler(req, res) {
     if (!pr.length) { res.status(404).json({ error: 'No provider with that email.' }); return; }
     const owner = String(pr[0].id);
 
-    // What the branch holds, and what is live now, side by side. Counts only.
-    let oldRows = [];
-    try { oldRows = await from`SELECT k, v FROM kv WHERE owner = ${owner}`; }
-    catch (e) { res.status(502).json({ error: 'Could not read the recovery branch: ' + (e && e.message || 'failed') }); return; }
     const liveRows = await q`SELECT k, v FROM kv WHERE owner = ${owner}`;
     const live = {}; liveRows.forEach(r => { live[r.k] = r.v; });
 
-    const compare = oldRows
-      .filter(r => TRACKED[r.k])
-      .map(r => ({
+    // Read every branch. One unreachable branch reports itself and does not stop the others —
+    // during an incident, a partial answer now beats a complete answer after another redeploy.
+    const branches = [];
+    for (let i = 0; i < srcList.length; i++) {
+      const label = labelOf(srcList[i], i);
+      let rows = null, err = '';
+      try { rows = await neon(srcList[i])`SELECT k, v FROM kv WHERE owner = ${owner}`; }
+      catch (e) { err = (e && e.message) || 'could not be read'; }
+      if (!rows) { branches.push({ label, error: err, keys: [] }); continue; }
+      const byKey = {}; rows.forEach(r => { byKey[r.k] = r.v; });
+      const keys = rows.filter(r => TRACKED[r.k]).map(r => ({
         key: r.k,
         backupItems: itemCount(r.v), backupWeight: contentWeight(r.v), backupBytes: String(r.v || '').length,
         liveItems: itemCount(live[r.k]), liveWeight: contentWeight(live[r.k]), liveBytes: String(live[r.k] || '').length
-      }))
-      // Only the ones where the backup is actually BETTER are worth importing. A key that is the
-      // same or richer live is noise, and offering it would bury the rows that matter.
-      .map(x => Object.assign(x, { worthIt: x.backupWeight > x.liveWeight || x.backupItems > x.liveItems }))
-      .sort((a, b) => (b.backupWeight - b.liveWeight) - (a.backupWeight - a.liveWeight));
+      })).map(x => Object.assign(x, { worthIt: x.backupWeight > x.liveWeight || x.backupItems > x.liveItems
+        // Same shape, materially more text in it: notes that were emptied rather than removed.
+        || (x.backupWeight === x.liveWeight && x.backupBytes > x.liveBytes * 1.1 && x.backupBytes > 512) }))
+        .sort((a, b) => (b.backupWeight - b.liveWeight) - (a.backupWeight - a.liveWeight));
+      branches.push({ label, keys, worth: keys.filter(x => x.worthIt).length,
+        totalWeight: keys.reduce((n, x) => n + x.backupWeight, 0),
+        totalBytes: keys.reduce((n, x) => n + x.backupBytes, 0), _byKey: byKey });
+    }
+    // Richest first, because that is the branch to look at. Weight decides it, and BYTES break the
+    // tie — weight counts entries, and the damage here was notes emptied INSIDE records that all
+    // still existed, so two branches can weigh exactly the same while one of them has her writing
+    // in it and the other does not. Ranking on weight alone put the emptier branch first.
+    branches.sort((a, b) =>
+      ((b.totalWeight || 0) - (a.totalWeight || 0)) || ((b.totalBytes || 0) - (a.totalBytes || 0)));
 
     if (req.method === 'GET') {
       res.status(200).json({ ok: true, configured: true, provider: { id: owner, email: pr[0].email },
-        keys: compare, worth: compare.filter(x => x.worthIt).length });
+        branches: branches.map(b => ({ label: b.label, error: b.error, worth: b.worth,
+          totalWeight: b.totalWeight, totalBytes: b.totalBytes, keys: b.keys })),
+        // The best branch's keys, so a caller that only understands one backup still works.
+        keys: (branches[0] && branches[0].keys) || [], worth: (branches[0] && branches[0].worth) || 0 });
       return;
     }
 
     if (req.method === 'POST') {
+      // Import from the named branch, or from the richest one when none is named.
+      const wantLabel = String((req.body && req.body.branch) || '').trim();
+      const chosen = wantLabel ? branches.find(b => b.label === wantLabel) : branches.find(b => !b.error);
+      if (!chosen || chosen.error) { res.status(400).json({ error: 'That backup could not be read.' }); return; }
       const want = Array.isArray(req.body && req.body.importKeys) ? req.body.importKeys.map(String) : null;
-      const pick = compare.filter(x => (want ? want.indexOf(x.key) >= 0 : x.worthIt));
+      const pick = (chosen.keys || []).filter(x => (want ? want.indexOf(x.key) >= 0 : x.worthIt));
       if (!pick.length) { res.status(400).json({ error: 'Nothing worth importing was selected.' }); return; }
-      const byKey = {}; oldRows.forEach(r => { byKey[r.k] = r.v; });
+      const byKey = chosen._byKey || {};
       const done = [];
       for (const x of pick) {
         const v = byKey[x.key];
@@ -109,7 +141,7 @@ export default async function handler(req, res) {
           done.push({ key: x.key, items: itemCount(v) });
         } catch (e) { /* one bad key must not lose the rest */ }
       }
-      res.status(200).json({ ok: true, imported: done.length, keys: done,
+      res.status(200).json({ ok: true, imported: done.length, keys: done, branch: chosen.label,
         note: 'Imported as restorable versions. Nothing live was changed — review them under Earlier copies and put back what you want.' });
       return;
     }

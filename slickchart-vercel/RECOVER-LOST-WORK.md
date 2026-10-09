@@ -22,15 +22,25 @@ So: make the branch first, work out what to do with it second.
 5. **Choose "Branch data and schema FROM A PAST POINT IN TIME".** The option selected by default
    is *Branch data and schema*, which means "up to this moment" — that copies today's already
    broken data and is of no use at all. The past-point-in-time option is the whole point.
-6. Pick a time safely **before** the loss. Heather's work was there on **6 October** and gone by
-   the **7th**, so **6 October, 11:00pm** is a safe choice. Going back a little further costs
-   nothing: the only risk is missing work done in the hours just before the loss, and you can see
-   that by comparing the counts before you put anything back.
-7. Create it.
+6. Pick a time **as late as you can while still being before the loss.** This is the one real
+   judgement call, and it cuts both ways:
+   - **too late** and the branch holds the already-broken data (harmless, just useless)
+   - **too early** and it is missing the work done that morning, which is usually the work the
+     provider is most upset about
 
-> Branches are instant and only use storage once you change them, so making **two** at different
-> times — one just before the loss, one a day earlier — is cheap and gives you something to
-> compare. If the earlier one holds more, use that.
+   For Heather: she was doing three sets of notes on **7 October**, finished two, and the app
+   reset before the third. She messaged at **1:41pm**. So the loss is somewhere before 1:41pm that
+   day, and the two completed sets are worth protecting. **Try 1:30pm on 7 October first.**
+7. **Check the timezone the picker is using.** If it shows UTC rather than your own time, add 7
+   hours (1:30pm Pacific = 20:30 UTC). Getting this wrong by seven hours lands in completely the
+   wrong place and looks like the recovery failed.
+8. Create it.
+
+> **Make several, not one.** Branches are instant, cost nothing until you change them, and
+> `RECOVERY_DATABASE_URL` takes a comma-separated list — so one redeploy compares all of them. For
+> Heather: **1:30pm, 1:00pm, 11:00am and 8:00am on 7 October.** The screen lists them richest
+> first with how much each holds, and you pick. Guessing a single timestamp during an incident and
+> redeploying between each guess is a miserable way to work.
 
 That branch is now a permanent, read-only-if-you-leave-it-alone copy of the whole database as it
 was at that moment. **Nothing about your live data changes.** Creating a branch is not a restore.
@@ -48,7 +58,8 @@ you choose it, and that is your answer.
 
 1. In Neon, open the new branch and copy its **connection string**.
 2. Vercel → your project → **Settings → Environment Variables**.
-3. Add `RECOVERY_DATABASE_URL` for **Production**, pasted exactly.
+3. Add `RECOVERY_DATABASE_URL` for **Production**. **Several branches go in one value, separated
+   by commas** — paste them all and you only redeploy once.
 4. **Redeploy** (Deployments → the latest → Redeploy). Environment variables only reach the app on
    a new deploy.
 
