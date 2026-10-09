@@ -468,7 +468,7 @@ const S=document.getElementById('S');
 // resets when I save it" and there was no way to tell whether her phone had any of them — a whole
 // day was spent debugging code she may not have been running. Shown at the bottom of Settings, so
 // the answer is a screenshot away. Bump it on every ship.
-const APP_BUILD='2026-10-09i';
+const APP_BUILD='2026-10-09j';
 
 
 /* ════════════════════════════════════════════════════════════════
@@ -3703,8 +3703,29 @@ const Cloud={
     // A pending local write is newer than the server's copy and must not be overwritten — UNLESS it
     // was queued by boot's own write-back of defaults, in which case the server's copy is the real
     // data and skipping it loses her work.
-    if(this._queue&&Object.prototype.hasOwnProperty.call(this._queue,k)
-       &&!(this._bootQueued&&this._bootQueued[k])){return;}
+    // A pending local write only has to beat the PLAIN OVERWRITE at the bottom of this function.
+    // Returning here instead skipped every MERGE below too, and that is how a device and an account
+    // can hold two different client lists for days and never reconcile: sc_clients almost always has
+    // a queued write (saveClients persists and schedules a sync on every edit), so the roster merge
+    // never ran, the account's clients never arrived, and this device kept pushing its own list up.
+    // Heather's account held Ingatara Perry and not Sue while her phone held Sue and not Ingatara
+    // Perry — inverted, for days, through many pulls.
+    // Skipping was never protecting the pending write anyway: every save writes localStorage FIRST
+    // and queues the network push after, and the queue holds that same value, so _lsGet(k) below
+    // already contains it. The merges all read _lsGet(k) and union / prefer-the-newer, so running
+    // them keeps the pending edit AND absorbs the account's data. Only the plain overwrite, which
+    // means "take the server's copy", can actually lose it — so only that is gated now.
+    const _pendingLocal=!!(this._queue&&Object.prototype.hasOwnProperty.call(this._queue,k)
+       &&!(this._bootQueued&&this._bootQueued[k]));
+    // ...but only sc_clients is let through, deliberately. Its merge is a TRUE UNION: per client,
+    // with the newer _uAt winning, so it cannot drop the queued edit (verified — the edit survives
+    // and the account's clients arrive). The other merges are not all safe to run here:
+    // _mergeStamped (sc_bizinfo, sc_brand_colors, sc_availability, sc_suggested_forms) is
+    // last-writer-wins on one blob, and _mergeClientMap keeps the ACCOUNT's copy where both sides
+    // hold a client — either would discard an edit that has not been pushed yet, which is the very
+    // loss the guard was added for. Those keep the skip. If you widen this, prove the merge is a
+    // union first.
+    if(_pendingLocal&&k!=='sc_clients')return;
     // Boot wrote this key back from defaults before the account answered. Drop that queued write so
     // it cannot flush over the account copy we are about to store.
     if(this._bootQueued&&this._bootQueued[k]){try{delete this._queue[k];}catch(e){}}
@@ -3823,6 +3844,9 @@ const Cloud={
         return;
       }
     }
+    // No merge claimed this key, so the only thing left is "take the server's copy" — which is
+    // exactly what must not happen on top of an edit that has not been pushed yet.
+    if(_pendingLocal)return;
     setFromServer(k,data[k]);
   }catch(e){}});if(_staleDeviceLocalKeys.length)this._dropStaleDeviceLocal(_staleDeviceLocalKeys);return keys.length;},
   // Keys worth rescuing: the libraries she BUILDS. Mirrors TRACKED in lib/kv-history.js — if you
