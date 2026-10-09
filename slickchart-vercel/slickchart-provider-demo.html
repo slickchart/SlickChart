@@ -468,7 +468,7 @@ const S=document.getElementById('S');
 // resets when I save it" and there was no way to tell whether her phone had any of them — a whole
 // day was spent debugging code she may not have been running. Shown at the bottom of Settings, so
 // the answer is a screenshot away. Bump it on every ship.
-const APP_BUILD='2026-10-09h';
+const APP_BUILD='2026-10-09i';
 
 
 /* ════════════════════════════════════════════════════════════════
@@ -24260,18 +24260,34 @@ function _coFlatten(d){
   add(d.services,'service');add(d.retail,'product');
   return out;
 }
+// Her own Taxable / No tax choice wins over whatever Square's catalog implies for the same item
+// name. The Square entries are concatenated first in _coEnsureMenu, so the dedupe there keeps THEM
+// — without this, a service she marked "No tax" in her own service menu still billed as taxable and
+// the toggle looked like it did nothing. Only an explicit choice overrides: taxable == null means
+// she never set one, so Square's default stands. Applied on the cached path too, or a change she
+// just made would not reach an invoice for up to a minute.
+function _coApplyTaxChoices(list){
+  try{
+    const by={};
+    try{(_svcMenu||[]).forEach(sv=>{if(sv&&sv.name&&sv.taxable!=null)by[String(sv.name).toLowerCase().trim()]=(sv.taxable!==false);});}catch(e){}
+    try{(affiliateLinks||[]).forEach(a=>{if(a&&a.name&&a.taxable!=null)by[String(a.name).toLowerCase().trim()]=(a.taxable!==false);});}catch(e){}
+    (list||[]).forEach(m=>{const k=String((m&&m.name)||'').toLowerCase().trim();if(Object.prototype.hasOwnProperty.call(by,k))m.taxable=by[k];});
+  }catch(e){}
+  return list;
+}
 async function _coEnsureMenu(){
   // Reuse the cached menu only if it's fresh (under 60s old). Beyond that, refetch from Square so a
   // price changed there shows up in checkout even if the background sync hasn't fired yet.
-  if(_coMenu&&(Date.now()-_coMenuAt)<60000)return _coMenu;
+  if(_coMenu&&(Date.now()-_coMenuAt)<60000)return _coApplyTaxChoices(_coMenu);
   let sq=[];
   try{const d=await _sqFetch('/api/square/catalog');sq=_coFlatten(d);}catch(e){sq=[];}
   try{const bo=await _sqFetch('/api/square/booking-options');(bo.services||[]).forEach(sv=>{if(sv&&sv.name)sq.push({name:sv.name,price:sv.price||0,variationId:sv.variationId||null,kind:'service',taxable:false});});}catch(e){}
   const localSvc=[];try{(_svcMenu||[]).forEach(sv=>{if(sv&&sv.name)localSvc.push({name:sv.name,price:sv.price||0,variationId:null,kind:'service',taxable:sv.taxable!==false});});}catch(e){}
   try{if(typeof _applyImportedProducts==='function')_applyImportedProducts();}catch(e){}
-  const local=[];try{(affiliateLinks||[]).forEach(a=>{if(a&&a.name)local.push({name:a.name,price:a.price||0,variationId:null,kind:'product',taxable:true});});}catch(e){}
+  const local=[];try{(affiliateLinks||[]).forEach(a=>{if(a&&a.name)local.push({name:a.name,price:a.price||0,variationId:null,kind:'product',taxable:a.taxable!==false});});}catch(e){}
   const seen={};const merged=[];sq.concat(localSvc,local).forEach(m=>{const k=(m.name||'').toLowerCase();if(k&&!seen[k]){seen[k]=1;merged.push(m);}});
   merged.sort((a,b)=>{const as=a.kind==='service'?0:1,bs=b.kind==='service'?0:1;if(as!==bs)return as-bs;const ap=(+a.price>0)?0:1,bp=(+b.price>0)?0:1;if(ap!==bp)return ap-bp;return String(a.name).localeCompare(String(b.name));});
+  _coApplyTaxChoices(merged);
   _coMenu=merged;_coMenuAt=Date.now();return _coMenu;
 }
 function _coValidItems(){return _coItems.filter(it=>it.variationId||(+it.price)>0).map(it=>Object.assign({},it,{name:(it.name&&String(it.name).trim())||'Item'}));}
@@ -24555,10 +24571,14 @@ function _apptTxOptions(){
   if(!out.length)add('Consultation');
   return out;
 }
-function _svcSet(i,k,v){if(_svcMenu[i]){_svcMenu[i][k]=v;_markSvcMenuCustom();_saveSvcMenu();}}
+function _svcSet(i,k,v){if(_svcMenu[i]){_svcMenu[i][k]=v;_svcMenu[i]._ts=Date.now();_markSvcMenuCustom();_saveSvcMenu();}}
+// Flip one service between Taxable and No tax. This has to read _svcMenu at CLICK time: the row's
+// onclick used to carry `(sv.taxable===false)`, which is the map callback's local variable, so the
+// attribute evaluated in global scope, threw ReferenceError, and the button did nothing at all.
+function _svcTaxToggle(i){const sv=_svcMenu[i];if(!sv)return;_svcSet(i,'taxable',(sv.taxable===false));renderServiceMenu();}
 function _svcDelDo(i){const _gone=_svcMenu[i];try{if(_gone&&typeof _libForget==='function')_libForget('sc_service_menu',_gone);}catch(e){}_svcMenu.splice(i,1);_markSvcMenuCustom();_saveSvcMenu();renderServiceMenu();}
 function _svcDel(i){const sv=_svcMenu[i];if(sv&&String(sv.name||'').trim()&&typeof confirmModal==='function'){confirmModal({title:'Delete this service?',body:'Remove “'+String(sv.name).trim()+'” from your service menu.',action:'Delete'},function(){_svcDelDo(i);});}else{_svcDelDo(i);}}
-function _svcAdd(){_svcMenu.push({id:'svc_'+Date.now().toString(36),name:'',price:0});_markSvcMenuCustom();_saveSvcMenu();renderServiceMenu();}
+function _svcAdd(){_svcMenu.push({id:'svc_'+Date.now().toString(36),name:'',price:0,_ts:Date.now()});_markSvcMenuCustom();_saveSvcMenu();renderServiceMenu();}
 
 
 // ── Reports (accountant-ready): income summary, sales tax, reconciliation, transaction detail ──
@@ -24935,7 +24955,7 @@ function _exportAllData(){
 
 function renderServiceMenu(){
   setNav('pro');document.getElementById('tt').textContent=_sectionTitle('service-menu');
-  const rows=_svcMenu.map((sv,i)=>`<div style="display:flex;align-items:center;gap:8px;background:var(--surf1);border:1px solid var(--p-line3);border-radius:12px;padding:10px 12px;margin:0 16px 8px;"><input value="${String(sv.name||'').replace(/"/g,'&quot;')}" oninput="_svcSet(${i},'name',this.value)" placeholder="Service name" style="flex:1;min-width:0;background:none;border:none;border-bottom:1px solid var(--p-line);color:var(--p-ink);font-size:16px;font-family:inherit;outline:none;padding-bottom:3px;"><span style="color:var(--p-mut);font-size:16px;">$</span><input value="${sv.price||''}" inputmode="decimal" oninput="_svcSet(${i},'price',Math.max(0,parseFloat(this.value)||0))" placeholder="0" style="width:60px;background:var(--p-surf);border:1px solid var(--p-line);border-radius:8px;padding:6px;color:var(--p-ink);font-size:16px;font-family:inherit;text-align:right;"><button onclick="_svcSet(${i},'taxable',(sv.taxable===false));renderServiceMenu()" style="background:${sv.taxable===false?'var(--p-amber-bg)':'var(--p-surf2)'};border:1px solid ${sv.taxable===false?'var(--p-amber-line)':'var(--p-line3)'};color:${sv.taxable===false?'var(--p-amber)':'var(--p-green)'};border-radius:8px;padding:4px 8px;font-size:12px;font-weight:600;cursor:pointer;font-family:inherit;white-space:nowrap;flex-shrink:0;">${sv.taxable===false?'No tax':'Taxable'}</button><button onclick="_svcDel(${i})" aria-label="Delete service" style="background:none;border:none;color:var(--p-red);cursor:pointer;font-size:16px;padding:2px;"><i class="ti ti-trash"></i></button></div>`).join('');
+  const rows=_svcMenu.map((sv,i)=>`<div style="display:flex;align-items:center;gap:8px;background:var(--surf1);border:1px solid var(--p-line3);border-radius:12px;padding:10px 12px;margin:0 16px 8px;"><input value="${String(sv.name||'').replace(/"/g,'&quot;')}" oninput="_svcSet(${i},'name',this.value)" placeholder="Service name" style="flex:1;min-width:0;background:none;border:none;border-bottom:1px solid var(--p-line);color:var(--p-ink);font-size:16px;font-family:inherit;outline:none;padding-bottom:3px;"><span style="color:var(--p-mut);font-size:16px;">$</span><input value="${sv.price||''}" inputmode="decimal" oninput="_svcSet(${i},'price',Math.max(0,parseFloat(this.value)||0))" placeholder="0" style="width:60px;background:var(--p-surf);border:1px solid var(--p-line);border-radius:8px;padding:6px;color:var(--p-ink);font-size:16px;font-family:inherit;text-align:right;"><button onclick="_svcTaxToggle(${i})" style="background:${sv.taxable===false?'var(--p-amber-bg)':'var(--p-surf2)'};border:1px solid ${sv.taxable===false?'var(--p-amber-line)':'var(--p-line3)'};color:${sv.taxable===false?'var(--p-amber)':'var(--p-green)'};border-radius:8px;padding:4px 8px;font-size:12px;font-weight:600;cursor:pointer;font-family:inherit;white-space:nowrap;flex-shrink:0;">${sv.taxable===false?'No tax':'Taxable'}</button><button onclick="_svcDel(${i})" aria-label="Delete service" style="background:none;border:none;color:var(--p-red);cursor:pointer;font-size:16px;padding:2px;"><i class="ti ti-trash"></i></button></div>`).join('');
   S.innerHTML=`
   ${_sectionTabBar('service-menu')}
   <div style="padding:14px 16px 8px;"><div style="font-size:16px;color:var(--p-mut);line-height:1.5;">Your services and prices. These appear in the <b>Add from menu</b> picker when you build an invoice \u2014 no Square required.</div></div>
@@ -30473,6 +30493,10 @@ function renderAddAffiliate(ei){
       <div style="flex:1;"><span class="fl-lbl">Brand</span><input class="fi" id="af-brand" aria-label="Brand name" placeholder="e.g. The Ordinary" value="${(p.brand||'').replace(/"/g,'&quot;')}"></div>
       <div style="width:64px;"><span class="fl-lbl">Icon</span><input class="fi" id="af-icon" aria-label="Product icon emoji" value="${p.icon||'🛍️'}" style="font-size:22px;text-align:center;"></div>
     </div>
+    <div style="display:flex;align-items:center;justify-content:space-between;gap:10px;margin-bottom:12px;background:var(--surf1);border:1px solid var(--p-line);border-radius:8px;padding:10px 12px;">
+      <div style="flex:1;min-width:0;"><div style="font-size:16px;color:var(--p-ink);">Sales tax</div><div style="font-size:14px;color:var(--p-mut);line-height:1.4;">Used when you add this product to an invoice. You can still change it on a single invoice.</div></div>
+      <button id="af-tax" onclick="_afTaxToggle()" aria-label="Sales tax on this product" style="border-radius:8px;padding:5px 9px;font-size:12px;font-weight:600;cursor:pointer;font-family:inherit;white-space:nowrap;flex-shrink:0;background:var(--p-surf2);border:1px solid var(--p-line3);color:var(--p-green);">Taxable</button>
+    </div>
     <div style="font-size:14px;font-weight:500;color:var(--p-mut);text-transform:uppercase;letter-spacing:.07em;margin:6px 0 8px;">Where clients can buy</div>
     <label style="display:flex;align-items:center;gap:8px;margin-bottom:12px;background:var(--surf1);border:1px solid var(--p-line);border-radius:8px;padding:10px 12px;font-size:16px;color:var(--p-ink);cursor:pointer;"><input type="checkbox" id="af-inoffice" ${p.inOffice?'checked':''} style="width:17px;height:17px;accent-color:var(--accent-strong);flex-shrink:0;"> <i class="ti ti-building-store" style="font-size:16px;color:var(--accent-strong);"></i> Available in office (clients buy from you)</label>
     <span class="fl-lbl">Your website / store link</span><input class="fi" id="af-site" aria-label="Your website link" placeholder="glowingskinstudio.com/shop/..." value="${(p.site||'').replace(/"/g,'&quot;')}" style="margin-bottom:6px;">
@@ -30488,7 +30512,20 @@ function renderAddAffiliate(ei){
     ${editing?`<button onclick="deleteAffiliate(${ei})" style="width:100%;background:none;border:1px solid var(--p-red-line);color:var(--p-red);border-radius:8px;padding:11px;font-size:16px;font-weight:600;cursor:pointer;font-family:inherit;margin-bottom:20px;"><i class="ti ti-trash" style="font-size:16px;"></i> Delete this product</button>`:''}
   </div>`;
   window._afComm=p.commission||'10%';
+  window._afTaxable=(p.taxable!==false);
+  _afTaxPaint();
 }
+// The product tax button. Kept on window (like _afComm) because the editor is re-rendered as a
+// string; the paint reads window._afTaxable so a tap and a fresh render agree.
+function _afTaxPaint(){
+  const b=document.getElementById('af-tax');if(!b)return;
+  const off=(window._afTaxable===false);
+  b.textContent=off?'No tax':'Taxable';
+  b.style.background=off?'var(--p-amber-bg)':'var(--p-surf2)';
+  b.style.borderColor=off?'var(--p-amber-line)':'var(--p-line3)';
+  b.style.color=off?'var(--p-amber)':'var(--p-green)';
+}
+function _afTaxToggle(){window._afTaxable=(window._afTaxable===false);_afTaxPaint();}
 function deleteAffiliate(ei){
   if(typeof ei!=='number'||!affiliateLinks[ei])return;
   const nm=affiliateLinks[ei].name||'this product';
@@ -30520,12 +30557,13 @@ function saveAffiliate(ei){
   const amazonCode=(document.getElementById('af-amazon-code')?.value||'').trim();
   const inOffice=!!document.getElementById('af-inoffice')?.checked;
   const commission=window._afComm||'10%';
+  const taxable=(window._afTaxable!==false);
   if(typeof ei==='number'&&affiliateLinks[ei]){
     // The provider just set the store link by hand — mark it manual so a Square resync never
     // overwrites their exact product URL with an auto-built one.
-    Object.assign(affiliateLinks[ei],{name,brand,icon,url,site,amazon,siteCode,urlCode,amazonCode,inOffice,commission,siteAuto:false,nameAuto:false});
+    Object.assign(affiliateLinks[ei],{name,brand,icon,url,site,amazon,siteCode,urlCode,amazonCode,inOffice,commission,taxable,siteAuto:false,nameAuto:false,_ts:Date.now()});
   }else{
-    affiliateLinks.push({id:'a'+Date.now(),name,brand,icon,url,site,amazon,siteCode,urlCode,amazonCode,inOffice,clicks:0,earnings:0,commission,active:true,custom:true});
+    affiliateLinks.push({id:'a'+Date.now(),name,brand,icon,url,site,amazon,siteCode,urlCode,amazonCode,inOffice,clicks:0,earnings:0,commission,taxable,active:true,custom:true,_ts:Date.now()});
   }
   try{_markAffiliateCustom();}catch(e){}
   persistWorkspace();
