@@ -4433,3 +4433,80 @@ keeps working.
 Rejected with reasons in the report: client-facing AI skin scores, AI that writes her message, a
 workflow canvas, a platform storefront or default affiliate links, a fee-credit ledger, in-house
 video, clinical photo apparatus, shipped ramp/purging timelines, spintax.
+
+## 2ap. Google Calendar two-way is LIVE, and the "10am" that was never checked (2026-10-09, `2026-10-09t`)
+
+### Google Calendar: setup finished, feature is real
+
+Ashley completed the whole Google Cloud sequence on 2026-10-09 and connected her own calendar.
+`GOOGLE-CALENDAR-SETUP.md` is now a walked-through document, not a plan. What is settled:
+
+- Project `SlickChart` (id `slickchart-511121`), owner `ashley@slickchart.app`, **No organization**.
+  The no-org parent is load-bearing: it means Google never offers the **Internal** user type, and
+  Internal would have meant only she could ever connect a calendar. That trap is now impossible.
+- **The verification review is the ordinary free one. Settled with evidence, do not re-open it.**
+  Read off the console's own Data Access page for this project with the scope added: sensitive 1
+  row (`calendar.events`), restricted 0 rows. No CASA, no fee. Section 9 of the setup doc has the
+  table. It only stays true while the scope list stays at that one entry.
+- Redirect URIs registered: `https://slickchart.app/api/google-cal-callback` AND the `www.` form,
+  as insurance against `APP_ORIGIN` ever being unset.
+- Still TODO: **publish the app** (step 9). Until then the connection is Testing-mode and dies
+  every 7 days, and only emails on the test-user list can connect at all.
+
+**Still unverified by her at the time of writing:** that appointments actually move in both
+directions. The green card only proves the OAuth handshake. Direction 2 (a Google event blocking a
+client booking) is the one that fails quietly and is the whole point of the feature.
+
+### What she OBSERVED (§1b — facts, not conclusions)
+
+1. On the Calendar screen, the month header showed a `SQUARE` badge and **nothing for Google**, so
+   there was no way to tell a live sync from one that had silently stopped. (Fixed, below.)
+2. Opening **Book in Square** for **10/10/2026**, the slot picker said *"Live availability isn't
+   enabled for this account, enter a time"* and pre-filled **10:00 AM**.
+3. **"10am tomorrow is not actually available."** The pre-filled time was wrong, and she was
+   already booked then.
+
+### Two bugs behind observation 2 and 3
+
+**(a) The message asserted a cause it did not know.** `_sqLoadSlots`'s catch printed "Live
+availability isn't enabled for this account" over *every* failure of
+`POST /api/square/availability` — an expired token needing a reconnect, a service with no bookable
+team member, a Square outage, a dropped connection. The endpoint returns a real reason and
+`_sqFetch` carries it in `e.message`; the catch threw it away. It now prints Square's own message,
+plus a reconnect hint when the code is `auth`/`nosquare`. **This is the diagnostic that will say
+why her availability lookup is failing** — she had not reopened the sheet on the new build yet.
+
+**(b) A hardcoded `value="10:00"` on the fallback time input.** With no slots to show, the box
+arrived pre-filled with 10:00, which reads as *"SlickChart checked and 10am is open."* Nothing had
+been checked. The input is now blank with an amber line saying the time is not checked against her
+calendar and Square will refuse it if she is already booked. `_sqDoBook` already rejected a blank
+time with "Pick a time", so nothing downstream changed.
+
+The general rule, and the reason this is written down: **a suggested value is a claim.** Pre-filling
+a time in the one code path where the app has no availability data is the UI equivalent of telling a
+provider something is safe without checking — the same failure as §4c, in a different costume.
+
+### Google connection state is now visible where she looks
+
+`_gcalPillHTML` / `_fillGcalPill` / `_loadIntegGcalStatus` (near `_gcalStatus`).
+
+| State | Calendar month header | Integrations card badge | Integrations subtitle |
+|---|---|---|---|
+| connected, healthy | `• GOOGLE` green | `Connected` green | Two-way with Google — and subscribe one-way on Apple |
+| connected, refusing | `• RECONNECT` amber | `Reconnect` amber | Google stopped accepting the connection |
+| not connected | *(blank)* | *(blank)* | One-way — your appointments show up there |
+
+**Not connected deliberately prints nothing** rather than "Not connected": the one-way Apple/Google
+ICS subscribe works regardless, so that wording would have claimed a working feature was off.
+
+Both call sites fill an empty span after the answer lands rather than re-rendering, so neither can
+loop the way the Reminders screen did, and a screen already navigated away from is skipped.
+
+### Also this build
+
+- Integrations: removed the "That's the whole list — there's no Shopify, Mailchimp, Zapier or
+  Instagram" paragraph. The blue line at the top of the same screen already says it.
+- **`Google & Apple Calendar` keeps its name.** Checked before touching it: the Apple path is real,
+  not a badge for something unbuilt. `/api/calendar-url` issues the private feed, `/api/calendar`
+  serves the `.ics`, and `renderConnectCalendar` carries subscribe steps for iPhone/iPad and Mac.
+  What does NOT exist is two-way Apple (CalDAV).

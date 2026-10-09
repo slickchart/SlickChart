@@ -214,7 +214,7 @@ const S=document.getElementById('S');
 // resets when I save it" and there was no way to tell whether her phone had any of them — a whole
 // day was spent debugging code she may not have been running. Shown at the bottom of Settings, so
 // the answer is a screenshot away. Bump it on every ship.
-const APP_BUILD='2026-10-09s';
+const APP_BUILD='2026-10-09t';
 
 
 /* ════════════════════════════════════════════════════════════════
@@ -29123,9 +29123,25 @@ function _sqLoadSlots(){
     if(!slots.length){box.innerHTML='<div style="color:var(--p-amber);font-size:16px;padding:9px 11px;background:var(--p-amber-bg);border:1px solid var(--p-amber-line);border-radius:8px;">No open times on this day, try another date.</div>';return;}
     box.innerHTML='<div style="display:flex;flex-wrap:wrap;gap:6px;">'+slots.map(function(s,i){var lbl=new Date(s.startAt).toLocaleTimeString('en-US',{hour:'numeric',minute:'2-digit'});return '<button type="button" class="sqslot" data-i="'+i+'" onclick="_sqPickSlot('+i+')" style="background:var(--surf2);border:1px solid var(--p-line);color:var(--p-ink);border-radius:8px;padding:7px 11px;font-size:16px;cursor:pointer;font-family:inherit;">'+lbl+'</button>';}).join('')+'</div>';
   }).catch(function(e){
-    // Availability search unavailable (e.g. Appointments availability not configured yet), fall back
-    // to a free time entry so booking still works; Square will reject a genuinely conflicting time.
-    _sqSlots=null;box.innerHTML='<div style="color:var(--p-mut);font-size:14px;margin-bottom:6px;">Live availability isn’t enabled for this account, enter a time.</div><input type="time" class="fi" id="sqb-time-fb" value="10:00" style="color-scheme:dark;">';
+    // Availability search failed, so fall back to a free time entry and let Square reject a
+    // genuinely conflicting time. But SAY WHY. The old copy here asserted one cause ("live
+    // availability isn't enabled for this account") over every possible failure — an expired token
+    // needing a reconnect, a service with no bookable team member, a Square outage, a dropped
+    // connection — and sent the reader looking at their Square settings for a problem that was
+    // somewhere else. _sqFetch already carries Square's own message; print it.
+    _sqSlots=null;
+    var why=String((e&&e.message)||'').trim();
+    var reconnect=(e&&(e.code==='auth'||e.code==='nosquare'));
+    box.innerHTML='<div style="color:var(--p-mut);font-size:14px;margin-bottom:6px;line-height:1.45;">Square didn’t return open times, so enter one below.'
+      +(why?'<br><span style="color:var(--p-amber);">'+_fileEsc(why)+'</span>':'')
+      +(reconnect?'<br><span style="color:var(--p-amber);">Reconnect Square under Integrations and this comes back.</span>':'')
+      +'</div>'
+      // Blank, never a default. This box used to arrive pre-filled with 10:00, which read as
+      // "SlickChart checked and 10am is open" when nothing had been checked at all — she caught it
+      // offering a time she was already booked for. A suggested time here is a claim about her
+      // calendar, and this is the one path where the app has no idea.
+      +'<input type="time" class="fi" id="sqb-time-fb" value="" style="color-scheme:dark;">'
+      +'<div style="color:var(--p-amber);font-size:14px;margin-top:5px;line-height:1.45;"><i class="ti ti-alert-triangle" style="font-size:14px;"></i> This time is not checked against your calendar. Square will refuse it if you are already booked.</div>';
   });
 }
 function _sqPickSlot(i){
