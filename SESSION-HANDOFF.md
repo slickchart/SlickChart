@@ -3882,6 +3882,38 @@ across devices — runs INSIDE `_mergeClients`, so while the merge was being ski
 never absorbed the account's summaries and kept posting its own. Those two plus this one are three
 separate causes of the same symptom. **Unverified by Diana as of this writing.**
 
+### HER SECOND SENTENCE WAS A SEPARATE BUG: "without the summary, she cannot view anything else"
+
+Taken literally, and it was literally true. The client app's home card — "Latest summary &
+aftercare" — is the ONLY route from home into the Session Summary screen, and that screen is where
+a visit's **aftercare guides** and **homecare routine** are rendered. They are fields on the
+summary entry (`s.guides`, `s.homecare`), not screens of their own.
+
+That card was gated on `activeProvider().summaryNote`, and `summaryNote` is set to
+`d.summaries[0].note` — the newest summary's NOTE TEXT only. So a summary carrying guides and a
+routine but no written note hid the card completely, and the client could not reach either. The
+content was on their phone the whole time with no way in. Journey is the only other route and it
+lists the same summaries.
+
+`_latestSummaryCard()` now gates on the entry carrying ANY content — note, guides or homecare — and
+when there is no note it shows what is inside instead of a blank line ("Your aftercare guides and
+homecare routine"). A summary with nothing in it still shows nothing, so a brand-new client does
+not get an empty card.
+
+Verified in a browser against both builds. On the SHIPPED build a summary with guides and a routine
+but no note gives no card and no route; on this one it gives both, and the guide and the routine
+render. A normal summary is unchanged, and an empty one still shows nothing.
+
+Also deleted `_hasHadVisit()`. Nothing called it (§1c.3) and its comment claimed it hid the "After
+your visit" area, which it did not — the inline `summaryNote` check did, and that was the bug. A
+dead function whose comment describes behaviour the app does not have is worse than no comment; it
+was read as documentation while hunting this.
+
+**Two test mistakes worth remembering**, both of which made a broken build look fine: matching on
+`document.body.innerHTML` picked up the page's own inline `<script>`, so the assertion passed on an
+empty roster; and `nav('home')` while already on home is a no-op, so the DOM under test was stale
+from the previous case. Assert on `innerText` and force a real re-render.
+
 ## 2ak. The virtual consult work (2026-10-08) — from the research in `reports/`
 
 `reports/Virtual consult platform upgrades.md` is the research behind this. Read its "three requests"

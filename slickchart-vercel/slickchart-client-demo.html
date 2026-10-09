@@ -2330,19 +2330,6 @@ function _previsitSectionHTML(opts){
     </div>
   </div>`;
 }
-// Has this client actually been in yet? Used to hide the whole "After your visit" area (summary,
-// homecare routine) from a brand-new client who hasn't had their first appointment, showing a
-// "latest summary" to someone who's never visited was confusing.
-function _hasHadVisit(){
-  const p=activeProvider()||{};
-  return !!(
-    (p.summaryNote&&String(p.summaryNote).trim())||
-    (Array.isArray(p.progress)&&p.progress.length)||
-    (Array.isArray(p.homecare)&&p.homecare.length)||
-    (Array.isArray(p.recLog)&&p.recLog.length)||
-    (client.lastVisit&&client.lastVisit!=='—'&&client.lastVisit!=='—')
-  );
-}
 function renderHome(){
   setNav('home');
   try{document.getElementById('tt').innerHTML='Slick<span class="brandc">Chart</span>';}catch(e){}
@@ -2476,7 +2463,7 @@ function renderHome(){
 
   <!-- ── AFTER YOUR VISIT ── surfaced high (right under the appointment card) and accent-emphasized,
        so the latest summary + aftercare is the focus, especially when there's no upcoming visit. -->
-  ${(activeProvider().summaryNote&&String(activeProvider().summaryNote).trim())?`
+  ${(function(){const _sc=_latestSummaryCard();return !_sc?'':`
   <div class="sh"><h2>After your visit</h2></div>
   <div style="margin:0 16px 14px;background:var(--c-card);border:1.5px solid var(--accent);border-radius:14px;overflow:hidden;cursor:pointer;box-shadow:0 2px 12px rgba(21,138,128,.16);" onclick="_summaryIdx=0;_summaryFrom='home';nav('summary')" role="button" aria-label="View latest session summary and aftercare">
     <div style="padding:12px 16px;display:flex;align-items:center;gap:12px;">
@@ -2487,8 +2474,8 @@ function renderHome(){
       </div>
       <i aria-hidden="true" class="ti ti-chevron-right" style="font-size:16px;color:var(--c-mut);"></i>
     </div>
-    <div style="padding:0 16px 12px;font-size:13px;color:var(--c-mut);line-height:1.6;">${_txt(activeProvider().summaryNote)}</div>
-  </div>`:''}
+    <div style="padding:0 16px 12px;font-size:13px;color:var(--c-mut);line-height:1.6;">${_sc.note?_txt(_sc.note):_txt(_sc.blurb)}</div>
+  </div>`;})()}
 
   <!-- Pending guides from provider (cleared ones live on in the library) -->
   ${_homeGuides().map(pg=>`
@@ -2739,6 +2726,27 @@ function openGalleryPhoto(i){
 // from the provider — the provider still keeps the summary on their side.
 function _summaryKey(s){return String((s&&(s.id||s.date))||'');}
 function _hiddenSummarySet(){try{return JSON.parse(localStorage.getItem('sc_client_hidden_summaries')||'{}')||{};}catch(e){return {};}}
+// What the home "After your visit" card should show, or null for "do not show it".
+// That card is the ONLY route into the Session Summary screen from home, and that screen is where a
+// visit's AFTERCARE GUIDES and HOMECARE ROUTINE live — they are fields on the summary entry, not
+// screens of their own. It used to be gated on `summaryNote`, which is only the newest summary's
+// NOTE TEXT, so a summary sent with guides and a routine but no written note hid the card outright
+// and the client could not reach either of them. Diana reported exactly this: "without the summary,
+// she cannot view anything else." Gate on the entry carrying ANY content instead.
+function _latestSummaryCard(){
+  try{
+    const list=(typeof _visibleSummaries==='function')?_visibleSummaries():((activeProvider()||{}).summaries||[]);
+    const s=list&&list[0];
+    if(!s)return null;
+    const note=String(s.note||(activeProvider()||{}).summaryNote||'').trim();
+    const guides=(s.guides&&s.guides.length)||0;
+    const steps=(s.homecare&&s.homecare.length)||0;
+    if(!note&&!guides&&!steps)return null;
+    const blurb=note?'':(guides&&steps)?'Your aftercare guides and homecare routine'
+      :guides?('Your aftercare guide'+(guides===1?'':'s')):'Your homecare routine';
+    return {note:note,blurb:blurb};
+  }catch(e){return null;}
+}
 function _visibleSummaries(){
   const prov=activeProvider();const hidden=_hiddenSummarySet();const pid=String(prov.id||prov.providerId||'');
   // The array is already newest-first (index 0 = Latest), so filtering preserves that order.
