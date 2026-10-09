@@ -280,6 +280,21 @@ export async function upsertClient(providerId, c) {
     // matches a Square customer to a client by email OR phone.
     //
     // THE PROTECTED KEYS. An incoming blob whose list is EMPTY never wipes a stored list that
+    // EMPTY WAS NOT THE ONLY WAY TO LOSE THEM. The first version of this guard only blocked an
+    // incoming EMPTY array from replacing a stored non-empty one, and said so: "a genuine shrink
+    // from 3 to 1 still lands. It stops the drop to zero." That left the case Diana kept hitting —
+    // a device replaying an OLDER non-empty list over a newer one. Her client's summary appeared,
+    // then was replaced later by a stale copy, while her notes, guides and products (which live in
+    // kv and already merge) stayed put. She reported it still happening on 2026-10-07, the day
+    // AFTER the empty-only guard shipped, which is what proved the guard was not the whole fix.
+    // So the write is also refused when it is demonstrably STALE. The app stamps _uAt on a client
+    // whose content actually changed (_stampClientChanges) and now sends it, so an incoming blob
+    // older than the stored one cannot replace these keys. A NEWER write with fewer entries still
+    // lands, which is what keeps deleting a summary possible — unioning here would resurrect
+    // deleted ones, the §0.8 trap. Every test sits inside a CASE: SQL does not promise
+    // left-to-right AND, and a scalar where an array was expected already threw once and failed
+    // that client's whole sync. An incoming blob with no _uAt reads as 0, which only loses to a
+    // stored stamp that exists — so nothing changes until a stamped write has landed.
     // isn't. It started as summaries/pendingForms/animals; `forms`, `progressPhotos` and
     // `pendingGuides` were added 2026-10-08 after Heather reported missing forms.
     //
@@ -313,8 +328,12 @@ export async function upsertClient(providerId, c) {
             FROM (VALUES ('summaries'),('pendingForms'),('animals'),('forms'),('progressPhotos'),('pendingGuides')) AS t(k)
            WHERE COALESCE(CASE WHEN jsonb_typeof(clients.data->k) = 'array'
                                THEN jsonb_array_length(clients.data->k) END, 0) > 0
-             AND COALESCE(CASE WHEN jsonb_typeof(EXCLUDED.data->k) = 'array'
-                               THEN jsonb_array_length(EXCLUDED.data->k) END, 0) = 0
+             AND (COALESCE(CASE WHEN jsonb_typeof(EXCLUDED.data->k) = 'array'
+                                THEN jsonb_array_length(EXCLUDED.data->k) END, 0) = 0
+                  OR COALESCE(CASE WHEN jsonb_typeof(EXCLUDED.data->'_uAt') = 'number'
+                                   THEN (EXCLUDED.data->>'_uAt')::bigint END, 0)
+                     < COALESCE(CASE WHEN jsonb_typeof(clients.data->'_uAt') = 'number'
+                                     THEN (clients.data->>'_uAt')::bigint END, 0))
         ), '{}'::jsonb)
       WHERE clients.deleted_at IS NULL
         AND clients.provider_id = EXCLUDED.provider_id`;
@@ -344,8 +363,12 @@ export async function upsertClient(providerId, c) {
             FROM (VALUES ('summaries'),('pendingForms'),('animals'),('forms'),('progressPhotos'),('pendingGuides')) AS t(k)
            WHERE COALESCE(CASE WHEN jsonb_typeof(clients.data->k) = 'array'
                                THEN jsonb_array_length(clients.data->k) END, 0) > 0
-             AND COALESCE(CASE WHEN jsonb_typeof(inc.d->k) = 'array'
-                               THEN jsonb_array_length(inc.d->k) END, 0) = 0
+             AND (COALESCE(CASE WHEN jsonb_typeof(inc.d->k) = 'array'
+                                THEN jsonb_array_length(inc.d->k) END, 0) = 0
+                  OR COALESCE(CASE WHEN jsonb_typeof(inc.d->'_uAt') = 'number'
+                                   THEN (inc.d->>'_uAt')::bigint END, 0)
+                     < COALESCE(CASE WHEN jsonb_typeof(clients.data->'_uAt') = 'number'
+                                     THEN (clients.data->>'_uAt')::bigint END, 0))
         ), '{}'::jsonb),
         updated_at=${now}
       FROM inc

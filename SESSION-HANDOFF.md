@@ -3805,6 +3805,83 @@ ever REMOVES an id from that key (it is grow-only in `_TOMB_OBJ`, written only b
 so stamping live clients into it would make them impossible to delete afterwards. It was not needed
 here anyway, since there are no tombstones for them.
 
+---
+
+## 2ao. OPEN — DIANA: the client's Session Summary disappears after a while (2026-10-09)
+
+**What Diana OBSERVED. Facts only, recorded before any theory (§1b, §1d).**
+
+From her email, 2026-10-08 12:46 AM:
+
+1. The client is **Jennifer Ashley**.
+2. She **updated Jennifer's information in the morning**.
+3. It **stayed visible past "the usual 20 minutes"** — so the normal behaviour she has been living
+   with is that it vanishes within about 20 minutes. This is the second time she has given a
+   TIMEFRAME and it is the strongest clue in the report.
+4. **By that evening it had disappeared again.**
+5. Her own read: *"It seems like the summary stays for a limited time and then automatically
+   deletes itself after a certain period."*
+6. **Everything else works: notes, guides and products are fine.** Only the summary goes.
+7. **"Without the summary, she cannot view anything else."** A SECOND symptom, and possibly a
+   second bug: the client's space gates the rest of its content behind the summary existing.
+
+**Device, from the screenshots she attached (ask was §1b.3):** both are the CLIENT's phone —
+Android Chrome on `slickchart.app/space`, the client PWA, timestamped 9:38 and 9:39 AM. NOT
+Diana's provider app. At that moment the summary WAS showing:
+- Home → *After Your Visit* → "Latest summary & aftercare — Jennifer summery · from Diana", full
+  text rendering correctly.
+- Session Summary screen → *Your aftercare guides* (Facial & extractions aftercare, "Jennifer
+  Ashley car") and *Your homecare routine* (5 steps) all present.
+
+So the content reaches the client's phone intact and then goes away later. It is not a write
+that never happened.
+
+**Not yet established.** Whether the provider-side copy survives (needs the §1d paste for Diana's
+account), and whether the disappearance is an expiry, an overwrite by a later push, or a
+client-side cache.
+
+**Do not repeat yesterday's mistake:** no one tells Diana anything is lost until the recovery
+screen's verdict line says so, with numbers (§4c).
+
+### The timing is the whole answer, and it says the Oct 6 fix was NOT enough
+
+Her email is 2026-10-08 00:46, and "this morning / this evening" in it means **2026-10-07**. The
+empty-only guard (`df65af5`, "Stop any one device wiping a client's summaries") shipped
+**2026-10-06 15:40**. So her report is from the day AFTER that fix. §1b.5: a fix that ships and
+changes nothing means the reproduction was not her situation. It was not a miss — observation 23
+("the time between deletions is LONGER") says it helped — but it was not the whole cause.
+
+### FOUND IT (2026-10-09, `2026-10-09n`): empty was never the only way to lose them
+
+The Oct 6 guard refused an incoming EMPTY array over a stored non-empty one, and its own note said
+"a genuine shrink from 3 to 1 still lands. It stops the drop to zero." That is precisely the hole:
+**a stale device replaying an OLDER, NON-EMPTY summaries list** sailed straight through it. The
+client-facing summaries live only in `clients.data`, every device posts the whole roster, and the
+posted list is just `CL[id].summaries` as that device happens to hold it — so the newest summary
+was replaced by an older copy while notes, guides and products (all `kv`, all merging) stayed.
+
+The server could not tell stale from fresh because **`_uAt` never reached it.** The app has
+maintained a per-client stamp for the device-side merge since §2ai, and `_assembleClientData`
+simply did not include it. It does now, and `upsertClient` refuses to let these keys be replaced
+by a blob whose `_uAt` is older than the stored one — in BOTH branches.
+
+Why not union the lists: §0.8. Deleting a summary has to stay possible, and a union would
+resurrect deleted ones. A NEWER write with fewer entries still lands; only a demonstrably older
+one is refused.
+
+Asserted against real PostgreSQL (`test-clients-sql.mjs`): an older write cannot replace the
+summaries and the newest stays newest; a newer write with fewer entries still lands so deleting
+works; a newer empty write still cannot wipe to zero; two unstamped blobs behave exactly as
+before; a non-numeric `_uAt` does not throw and fail the client's whole sync (the scalar-vs-array
+lesson from the first version); and the same protection covers `forms` and `progressPhotos`.
+
+**Also relevant, shipped the same night and BEFORE this was found:** `0671a22` (the pending-write
+guard made `Cloud.pull()` skip the roster merge entirely) and `897988a` (the same for
+`_CLIENT_MAP_LIST`). Those matter here because `_unionClientForms` — which unions `c.summaries`
+across devices — runs INSIDE `_mergeClients`, so while the merge was being skipped Diana's device
+never absorbed the account's summaries and kept posting its own. Those two plus this one are three
+separate causes of the same symptom. **Unverified by Diana as of this writing.**
+
 ## 2ak. The virtual consult work (2026-10-08) — from the research in `reports/`
 
 `reports/Virtual consult platform upgrades.md` is the research behind this. Read its "three requests"

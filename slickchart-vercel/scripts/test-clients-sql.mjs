@@ -69,6 +69,37 @@ const F1 = { id: 'f1', formId: 'intake' };
 
 await ensureClientTables();
 
+// --- 1b. THE CASE THE EMPTY-ONLY GUARD MISSED (Diana, reported 2026-10-07) -------------------
+// A stale device replaying an OLDER, NON-EMPTY summaries list over a newer one. Empty was never
+// the only way to lose them, and this is the shape she kept hitting after the empty guard shipped.
+await upsertClient(P, { id: 'cs', name: 'Jennifer', data: { _uAt: 2000, summaries: [S2, S1], profile: {} } });
+ok('stale-case seed stored 2 summaries', (await stored('cs')).summaries.length === 2);
+// the stale device: older stamp, one old summary
+await upsertClient(P, { id: 'cs', name: 'Jennifer', data: { _uAt: 1000, summaries: [S1], profile: {} } });
+let ds = await stored('cs');
+ok('an OLDER write cannot replace the summaries', ds.summaries.length === 2, ds.summaries);
+ok('and the newest summary is still the newest', ds.summaries[0].ts === S2.ts, ds.summaries[0]);
+// a NEWER write with fewer entries must still land, or deleting a summary becomes impossible (§0.8)
+await upsertClient(P, { id: 'cs', name: 'Jennifer', data: { _uAt: 3000, summaries: [S1], profile: {} } });
+ds = await stored('cs');
+ok('a NEWER write with fewer summaries still lands (delete works)', ds.summaries.length === 1, ds.summaries);
+// a newer write may still not wipe to zero — the original guard stays in force
+await upsertClient(P, { id: 'cs', name: 'Jennifer', data: { _uAt: 4000, summaries: [], profile: {} } });
+ok('a newer EMPTY write still cannot wipe to zero', (await stored('cs')).summaries.length === 1);
+// an unstamped blob behaves exactly as before against an unstamped row
+await upsertClient(P, { id: 'cu', name: 'NoStamp', data: { summaries: [S2, S1], profile: {} } });
+await upsertClient(P, { id: 'cu', name: 'NoStamp', data: { summaries: [S1], profile: {} } });
+ok('no stamps on either side: unchanged behaviour, the shrink lands', (await stored('cu')).summaries.length === 1);
+// a junk _uAt must not throw and fail the whole client's sync (the scalar-vs-array lesson)
+await upsertClient(P, { id: 'cj', name: 'Junk', data: { _uAt: 'tomorrow', summaries: [S2], profile: {} } });
+ok('a non-numeric _uAt does not break the write', (await stored('cj')).summaries.length === 1);
+// the same protection covers the other client-facing keys, not just summaries
+await upsertClient(P, { id: 'cf', name: 'Forms', data: { _uAt: 2000, forms: [{ formId: 'f1' }], progressPhotos: ['p1'], profile: {} } });
+await upsertClient(P, { id: 'cf', name: 'Forms', data: { _uAt: 1000, forms: [], progressPhotos: [], profile: {} } });
+const df = await stored('cf');
+ok('a stale write cannot drop forms either', (df.forms || []).length === 1, df.forms);
+ok('nor progress photos', (df.progressPhotos || []).length === 1, df.progressPhotos);
+
 // --- 1. the bug: an UPDATE whose blob has no summaries must not wipe the stored ones
 await upsertClient(P, { id: 'c1', name: 'Jen', data: { summaries: [S2, S1], profile: { skin: 'dry' } } });
 ok('seed stored 2 summaries', (await stored('c1')).summaries.length === 2);
