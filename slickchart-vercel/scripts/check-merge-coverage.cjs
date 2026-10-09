@@ -34,9 +34,15 @@ const skipPrefixes=pre?[...pre[1].matchAll(/['"]([^'"]+)['"]/g)].map(x=>x[1]):[]
 // shapes exist in this file: a direct setItem(k, JSON.stringify(x)), and the wrapped
 // (function(_v){ localStorage.setItem(k,_v); _pushKeyNow(k,_v); })(JSON.stringify(x)) form. Scan by
 // line so neither shape is missed — a key this check does not SEE is a key it cannot protect.
+// The stringify is not always on the SAME line as the write. _markPhotoBackedUp builds `v` on one
+// line and writes it on the next, so a same-line scan could not see sc_photo_backed at all — a
+// synced, append-only id list riding the plain overwrite, invisible to this check. Look at a small
+// window around each write instead.
 const accum=new Set();
-s.split('\n').forEach(function(line){
-  if(line.indexOf('JSON.stringify(')<0)return;
+const lines=s.split('\n');
+lines.forEach(function(line,i){
+  const near=lines.slice(Math.max(0,i-3),i+2).join('\n');
+  if(near.indexOf('JSON.stringify(')<0)return;
   [...line.matchAll(/setItem\(\s*['"](sc_[a-z0-9_]+)['"]/g)].forEach(m=>accum.add(m[1]));
   [...line.matchAll(/_pushKeyNow\(\s*['"](sc_[a-z0-9_]+)['"]/g)].forEach(m=>accum.add(m[1]));
 });
@@ -49,6 +55,9 @@ s.split('\n').forEach(function(line){
 // client (_mergeClientMap / _mergeWorkspace, registered in _CLIENT_MAP_KEYS). A second provider lost
 // several clients' notes, summaries and product plans to exactly this gap.
 const KNOWN=new Set([
+  // ONE scalar for the account ('off' | 'notify' | 'auto'), not a collection — last-write-wins is
+  // the right answer and there is nothing to union. Surfaced when this check's window widened.
+  'sc_deposit_mode',
   'sc_notif_settings','sc_amazon_assoc',
   'sc_note_fmt','sc_square_catalog',
   'sc_provider_note_drafts','sc_deleted_clients','sc_shop_catalog','sc_affiliate_custom',

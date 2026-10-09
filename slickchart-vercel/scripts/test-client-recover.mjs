@@ -14,7 +14,7 @@ import fs from 'fs';
 import os from 'os';
 import path from 'path';
 
-const STUB = "import { execFileSync } from 'child_process';\nlet n = 0;\nfunction lit(v) {\n  if (v === null || v === undefined) return 'NULL';\n  if (typeof v === 'number') return String(v);\n  if (typeof v === 'boolean') return v ? 'true' : 'false';\n  const tag = 'q' + (n++);\n  return '$' + tag + '$' + String(v) + '$' + tag + '$';\n}\nfunction run(text) {\n  const trimmed = text.trim().replace(/;\\s*$/, '');\n  const isSelect = /^select/i.test(trimmed);\n  const returning = !isSelect && /\\breturning\\b/i.test(trimmed);\n  // A data-modifying statement with RETURNING cannot sit in a FROM clause; it has to be a CTE.\n  const q = isSelect\n    ? \"SELECT COALESCE(json_agg(row_to_json(t)),'[]') FROM (\" + trimmed + \") t\"\n    : returning\n      ? \"WITH t AS (\" + trimmed + \") SELECT COALESCE(json_agg(row_to_json(t)),'[]') FROM t\"\n      : trimmed;\n  const out = execFileSync('__PSQL__',\n    ['-h', '__SOCK__', '-p', '__PORT__', '-U', '__USER__', '-d', 'postgres', '-A', '-t', '-X', '-v', 'ON_ERROR_STOP=1', '-c', q],\n    { encoding: 'utf8' });\n  return (isSelect || returning) ? JSON.parse(out.trim() || '[]') : [];\n}\nexport function sql() {\n  return function (strings, ...vals) {\n    let text = '';\n    strings.forEach((s, i) => { text += s; if (i < vals.length) text += lit(vals[i]); });\n    return Promise.resolve(run(text));\n  };\n}\nexport function dbEnabled() { return true; }\nexport async function ensureTable() { await sql()`CREATE TABLE IF NOT EXISTS kv (owner text NOT NULL, k text NOT NULL, v text, updated_at timestamptz DEFAULT now(), PRIMARY KEY (owner,k))`; }\nexport async function ensureProvidersTable() { await sql()`CREATE TABLE IF NOT EXISTS providers (id text PRIMARY KEY, email text, name text, created_at bigint)`; }\n";
+const STUB = "import { execFileSync } from 'child_process';\nlet n = 0;\nfunction lit(v) {\n  if (v === null || v === undefined) return 'NULL';\n  if (typeof v === 'number') return String(v);\n  if (typeof v === 'boolean') return v ? 'true' : 'false';\n  const tag = 'q' + (n++);\n  return '$' + tag + '$' + String(v) + '$' + tag + '$';\n}\nfunction run(text) {\n  const trimmed = text.trim().replace(/;\\s*$/, '');\n  const isSelect = /^select/i.test(trimmed);\n  const returning = !isSelect && /\\breturning\\b/i.test(trimmed);\n  // A data-modifying statement with RETURNING cannot sit in a FROM clause; it has to be a CTE.\n  const q = isSelect\n    ? \"SELECT COALESCE(json_agg(row_to_json(t)),'[]') FROM (\" + trimmed + \") t\"\n    : returning\n      ? \"WITH t AS (\" + trimmed + \") SELECT COALESCE(json_agg(row_to_json(t)),'[]') FROM t\"\n      : trimmed;\n  const out = execFileSync('__PSQL__',\n    ['-h', '__SOCK__', '-p', '__PORT__', '-U', '__USER__', '-d', 'postgres', '-A', '-t', '-X', '-v', 'ON_ERROR_STOP=1', '-c', q],\n    { encoding: 'utf8' });\n  return (isSelect || returning) ? JSON.parse(out.trim() || '[]') : [];\n}\nexport function sql() {\n  return function (strings, ...vals) {\n    let text = '';\n    strings.forEach((s, i) => { text += s; if (i < vals.length) text += lit(vals[i]); });\n    return Promise.resolve(run(text));\n  };\n}\nexport function dbEnabled() { return true; }\nexport async function ensureTable() { await sql()`CREATE TABLE IF NOT EXISTS kv (owner text NOT NULL, k text NOT NULL, v text, updated_at timestamptz DEFAULT now(), PRIMARY KEY (owner,k))`; }\nexport async function ensureProvidersTable() { await sql()`CREATE TABLE IF NOT EXISTS providers (id text PRIMARY KEY, email text, name text, created_at bigint)`; }\nexport async function ensureFilesTable() { await sql()`CREATE TABLE IF NOT EXISTS files (owner text NOT NULL, id text NOT NULL, name text, type text, data text, updated_at timestamptz DEFAULT now(), PRIMARY KEY (owner,id))`; }\n";
 
 // The founder gate reads the TOKEN's email. The token is opaque to the endpoint, so the stub decodes
 // a plain JSON token — which lets the test drive the gate itself (founder / not founder / no token).
@@ -349,6 +349,39 @@ ok('export carries the horses and their summaries', exBlob.animals[0].summaries.
 ok('export is only what was asked for', r.body.clients.length === 1);
 r = await call('POST', { token: tokenFor('someone@else.com'), body: { email: 'heather@example.com', exportIds: ['c_owner1'] } });
 ok('export is founder-gated too', r.code === 403);
+
+// ── the photo report ──────────────────────────────────────────────────────────
+// Photos do NOT live in the kv blob: each is a row in `files`. The report's job is to say which of
+// them are RECOVERABLE — bytes on the server that her photo index no longer names, which is the
+// case _recoverUnindexedServerPhotos can pull back. Seed all three states and check it says so.
+await q`CREATE TABLE IF NOT EXISTS files (owner text NOT NULL, id text NOT NULL, name text, type text, data text, updated_at timestamptz DEFAULT now(), PRIMARY KEY (owner,id))`;
+await q`INSERT INTO files (owner,id,name,type,data) VALUES
+  (${H},'pid_indexed','', 'image/jpeg',  ${'x'.repeat(2048)}),
+  (${H},'pid_orphan1','', 'image/jpeg',  ${'x'.repeat(1024)}),
+  (${H},'pid_orphan2','', 'image/jpeg',  ${'x'.repeat(1024)}),
+  (${H},'a_guide_pdf','g','application/pdf',${'x'.repeat(4096)}),
+  (${OTHER},  'pid_someone_else','','image/jpeg',${'x'.repeat(1024)})
+  ON CONFLICT (owner,id) DO NOTHING`;
+// Her index names one photo that is on the server, and one whose bytes never made it.
+await q`INSERT INTO kv (owner,k,v) VALUES (${H},'sc_photo_index',${JSON.stringify({
+  c_owner1: [{ pid: 'pid_indexed', ts: 1 }, { pid: 'pid_never_uploaded', ts: 2 }]
+})}) ON CONFLICT (owner,k) DO UPDATE SET v=EXCLUDED.v`;
+
+r = await call('GET', { token: tokenFor('ashley@slickchart.app'), query: { email: 'heather@example.com' } });
+const ph = r.body.photos;
+ok('the photo report is there', !!ph && !ph.error, ph);
+ok('counts only IMAGE rows, not guide attachments', ph.onServer === 3, ph.onServer);
+ok('does not count another provider\'s photos', ph.onServer === 3, ph.onServer);
+ok('reports the bytes held', ph.bytes >= 4096, ph.bytes);
+ok('names what the index names', ph.indexNames === 2, ph.indexNames);
+ok('finds the RECOVERABLE orphans', ph.orphanBytes.length === 2
+  && ph.orphanBytes.indexOf('pid_orphan1') >= 0 && ph.orphanBytes.indexOf('pid_orphan2') >= 0, ph.orphanBytes);
+ok('flags an index entry whose bytes are gone', ph.missingBytes.length === 1
+  && ph.missingBytes[0].pid === 'pid_never_uploaded', ph.missingBytes);
+ok('breaks it down per client, by name', ph.byClient.c_owner1
+  && ph.byClient.c_owner1.indexed === 2 && ph.byClient.c_owner1.onServer === 1, ph.byClient);
+r = await call('GET', { token: tokenFor('someone@else.com'), query: { email: 'heather@example.com' } });
+ok('the photo report is founder-gated with everything else', r.code === 403);
 
 console.log(fails ? '\n' + fails + ' FAILED' : '\nall green');
 process.exit(fails ? 1 : 0);

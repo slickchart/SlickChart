@@ -23,7 +23,7 @@
 // not needed to decide what to restore. The export DOES return content, because recovering it is
 // the point, and it is therefore an explicit, per-id action and never part of the diagnosis.
 // Owner-only, resolved from the VERIFIED token's email — never from anything in the request (§0.5).
-import { dbEnabled, sql, ensureTable, ensureProvidersTable } from '../../lib/db.js';
+import { dbEnabled, sql, ensureTable, ensureProvidersTable, ensureFilesTable } from '../../lib/db.js';
 import { verifyToken, isSessionValid } from '../../lib/auth.js';
 import { ensureClientTables } from '../../lib/clients.js';
 import { listHistory, restoreVersion, ensureHistoryTable, itemCount } from '../../lib/kv-history.js';
@@ -422,6 +422,57 @@ export default async function handler(req, res) {
       .map(c => ({ id: c.id, name: c.name, has: c.has }));
 
     const live = clients.filter(c => !c.deleted);
+    // ── Photos ───────────────────────────────────────────────────────────────
+    // Photos do NOT ride the kv blob. Each one is a row in `files`, keyed by owner + photo id,
+    // uploaded per-photo by _backupPhotosToServer (shipped 2026-09-13). sc_photo_index maps
+    // clientId -> [{pid,...}] and is the ONLY thing _restorePhotosFromCloud reads, so a photo whose
+    // BYTES are on the server but whose index entry is gone is invisible to her app while being
+    // perfectly recoverable. Report both sides so that gap is visible instead of guessed at.
+    const photos = { onServer: 0, bytes: 0, indexNames: 0, orphanBytes: [], missingBytes: [], byClient: {} };
+    try {
+      // /api/guide-file creates this on every request, so it exists wherever a photo was ever
+      // uploaded — but creating it here too means the report says "0 photos" rather than erroring
+      // on an account that has never uploaded one.
+      await ensureFilesTable();
+      const frows = await q`SELECT id, type, length(coalesce(data,'')) AS bytes
+        FROM files WHERE owner=${owner}`;
+      const fileIds = new Set();
+      (frows || []).forEach(f => {
+        // A guide or course attachment is a file too; only the image rows are session photos.
+        if (!/^image\//i.test(String(f.type || ''))) return;
+        fileIds.add(String(f.id));
+        photos.onServer++;
+        photos.bytes += Number(f.bytes) || 0;
+      });
+      let idx = {};
+      try {
+        const r0 = await q`SELECT v FROM kv WHERE owner=${owner} AND k='sc_photo_index'`;
+        idx = r0.length ? (JSON.parse(r0[0].v) || {}) : {};
+      } catch (e) { idx = {}; }
+      const named = new Set();
+      Object.keys(idx || {}).forEach(cid => {
+        const list = Array.isArray(idx[cid]) ? idx[cid] : [];
+        const c0 = (clients || []).find(x => x.id === cid);
+        photos.byClient[cid] = { name: c0 ? (c0.name || '') : '(not in the clients table)',
+          indexed: list.length, onServer: 0 };
+        list.forEach(m => {
+          const pid = String((m && m.pid) || '');
+          if (!pid) return;
+          named.add(pid);
+          photos.indexNames++;
+          if (fileIds.has(pid)) photos.byClient[cid].onServer++;
+          else photos.missingBytes.push({ clientId: cid, pid });
+        });
+      });
+      // Bytes on the server that NOTHING points at any more. These are the recoverable ones: the
+      // photo survived its upload and only the index entry that names it was lost.
+      fileIds.forEach(id => { if (!named.has(id)) photos.orphanBytes.push(id); });
+      photos.missingBytes = photos.missingBytes.slice(0, 200);
+      photos.orphanBytes = photos.orphanBytes.slice(0, 500);
+    } catch (e) {
+      photos.error = (e && e.message) || String(e);
+    }
+
     res.status(200).json({
       ok: true,
       provider: { id: owner, email: pr[0].email, name: pr[0].name || '' },
@@ -454,6 +505,7 @@ export default async function handler(req, res) {
       libraries,
       typed,
       history,
+      photos,
       kv
     });
   } catch (e) {

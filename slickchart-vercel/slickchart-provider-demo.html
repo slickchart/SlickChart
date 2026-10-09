@@ -468,7 +468,7 @@ const S=document.getElementById('S');
 // resets when I save it" and there was no way to tell whether her phone had any of them — a whole
 // day was spent debugging code she may not have been running. Shown at the bottom of Settings, so
 // the answer is a screenshot away. Bump it on every ship.
-const APP_BUILD='2026-10-09j';
+const APP_BUILD='2026-10-09k';
 
 
 /* ════════════════════════════════════════════════════════════════
@@ -2699,7 +2699,7 @@ const _TOMB_OBJ={sc_deleted_vc_types:1,sc_deleted_products:1,sc_deleted_docs:1,s
   // _LIB_TOMB because the library is a MAP of lists rather than one list, so the dispatch routes it
   // to _mergeAuthoredMap instead of _mergeAuthoredById.
   sc_deleted_routines:1};
-const _TOMB_ARR={sc_flag_dismissed:1,sc_form_flag_dismissed:1,sc_ci_cleared:1,sc_ci_read:1,sc_home_dismissed:1,sc_notif_cleared:1,sc_notif_read:1,
+const _TOMB_ARR={sc_photo_backed:1,sc_flag_dismissed:1,sc_form_flag_dismissed:1,sc_ci_cleared:1,sc_ci_read:1,sc_home_dismissed:1,sc_notif_cleared:1,sc_notif_read:1,
   // Added 2026-10-08 in the thread-16 pass. Both are append-only id lists where an overwrite undoes
   // an action: sc_deleted_sq is the Square products she DELETED (lose it and they come back — the
   // same resurrect bug the shop catalogue had), and sc_imported_products is what she has already
@@ -3725,7 +3725,15 @@ const Cloud={
     // hold a client — either would discard an edit that has not been pushed yet, which is the very
     // loss the guard was added for. Those keep the skip. If you widen this, prove the merge is a
     // union first.
-    if(_pendingLocal&&k!=='sc_clients')return;
+    // The _CLIENT_MAP_LIST keys join sc_clients for the same reason: those are the per-client maps
+    // whose entries ACCUMULATE (§0.8), and _mergeClientMap unions them entry by entry with the
+    // newest _ts winning — a union, so a queued write cannot be dropped by it. This matters as much
+    // as the roster did: sc_photo_index is how a device learns which photos the ACCOUNT holds, and
+    // _restorePhotosFromCloud only downloads what that index names. _persistPhotoIndex pushes on
+    // every capture, so the key almost always had a queued write and the merge was skipped — a
+    // photo taken on the phone was uploaded fine, and then the computer never heard it existed.
+    // sc_session_summaries is the other one, and it is the key from §0.8 that lost a visit summary.
+    if(_pendingLocal&&k!=='sc_clients'&&!_CLIENT_MAP_LIST[k])return;
     // Boot wrote this key back from defaults before the account answered. Drop that queued write so
     // it cannot flush over the account copy we are about to store.
     if(this._bootQueued&&this._bootQueued[k]){try{delete this._queue[k];}catch(e){}}
@@ -21958,6 +21966,8 @@ function renderAccount(){
     <div style="border-top:1px solid var(--p-line);"></div>
     <div style="display:flex;align-items:center;gap:11px;padding:13px 14px;"><div style="width:38px;height:38px;border-radius:12px;background:var(--p-purple-bg);display:flex;align-items:center;justify-content:center;flex-shrink:0;"><i class="ti ti-camera" style="font-size:18px;color:var(--p-purple);"></i></div><div style="flex:1;min-width:0;"><div style="font-size:16px;font-weight:500;color:var(--p-ink);">Social media content mode</div><div style="font-size:16px;color:var(--p-mut);line-height:1.4;">Show only sample clients (Maya, Sophie, Priya) so you can screenshot or screen-record your app for social media &amp; marketing. Hides your real clients — nothing is deleted.</div></div>${togBtn(_shotMode(),'_setShotMode(!'+_shotMode()+')','Toggle social media content mode')}</div>
     <div style="border-top:1px solid var(--p-line);"></div>
+    <div onclick="_openPhotoRecovery()" style="display:flex;align-items:center;gap:11px;padding:13px 14px;cursor:pointer;"><div style="width:38px;height:38px;border-radius:12px;background:var(--p-blue-bg);display:flex;align-items:center;justify-content:center;flex-shrink:0;"><i class="ti ti-photo-search" style="font-size:18px;color:var(--p-blue);"></i></div><div style="flex:1;"><div style="font-size:16px;font-weight:500;color:var(--p-ink);">Recover lost photos</div><div style="font-size:16px;color:var(--p-mut);">Find before/after photos this device stopped showing</div></div><i class="ti ti-chevron-right" style="font-size:16px;color:#4a7a64;"></i></div>
+    <div style="border-top:1px solid var(--p-line);"></div>
     <div onclick="replayOnboarding()" style="display:flex;align-items:center;gap:11px;padding:13px 14px;cursor:pointer;"><div style="width:38px;height:38px;border-radius:12px;background:var(--accent-tint);display:flex;align-items:center;justify-content:center;flex-shrink:0;"><i class="ti ti-player-play" style="font-size:18px;color:var(--accent-strong);"></i></div><div style="flex:1;"><div style="font-size:16px;font-weight:500;color:var(--p-ink);">Replay Setup Tour</div><div style="font-size:16px;color:var(--p-mut);">See the guided first-run setup again</div></div><i class="ti ti-chevron-right" style="font-size:16px;color:var(--p-mut);"></i></div>
   </div></div>
   ${_isFounder?`<div class="sh" style="margin-top:14px;"><h2>Admin tools</h2></div>
@@ -27669,7 +27679,21 @@ function renderClientRecover(){
       +j.rosterHas.map(function(x){return '<div style="padding:9px 12px;border-bottom:1px solid var(--p-line2);font-size:16px;color:var(--p-ink);">'+esc(x.name||'(no name)')+(x.deleted?' <span style="color:var(--p-red);font-size:14px;">tombstoned on the server</span>':'')+'</div>';}).join('')
       +((j.missingFromRoster&&j.missingFromRoster.length)?j.missingFromRoster.map(function(x){return '<div style="padding:9px 12px;border-bottom:1px solid var(--p-line2);font-size:16px;color:var(--p-red);">'+esc((x&&x.name)||(x&&x.id)||'')+' \u2014 on the server, NOT in their list</div>';}).join(''):'')
       +'</div>'):'')
-    +'<div style="font-size:14px;color:var(--p-mut);line-height:1.5;margin-top:14px;">Counts only — none of their notes were read.</div>'
+    +((j.photos)?('<div class="sh" style="margin-top:16px;"><h2>Photos on the server</h2></div>'
+      +'<div style="font-size:14px;color:var(--p-mut);line-height:1.5;margin:0 0 8px;">Photos are not in the synced blob \u2014 each one is uploaded on its own and kept per account. <b>Bytes on the server</b> is what actually survives a lost phone. <b>Nothing points at these</b> are photos that uploaded fine and only lost the entry that names them, which is the recoverable kind.</div>'
+      +'<div style="background:var(--surf2);border:1px solid var(--p-line);border-radius:12px;padding:11px 13px;font-size:16px;color:var(--p-ink);line-height:1.7;">'
+      +'Bytes on the server: <b>'+(j.photos.onServer||0)+'</b>'+((j.photos.bytes)?(' \u00b7 '+Math.round((j.photos.bytes||0)/1024)+'KB'):'')+'<br>'
+      +'Named by their photo index: <b>'+(j.photos.indexNames||0)+'</b><br>'
+      +'Nothing points at these: <b>'+((j.photos.orphanBytes&&j.photos.orphanBytes.length)||0)+'</b><br>'
+      +'Index names them but no bytes: <b>'+((j.photos.missingBytes&&j.photos.missingBytes.length)||0)+'</b>'
+      +(j.photos.error?('<br><span style="color:var(--p-red);font-size:14px;">Could not read: '+esc(j.photos.error)+'</span>'):'')
+      +'</div>'
+      +((j.photos.byClient&&Object.keys(j.photos.byClient).length)?('<div style="background:var(--surf2);border:1px solid var(--p-line);border-radius:12px;overflow:hidden;margin-top:8px;">'
+        +Object.keys(j.photos.byClient).map(function(cid){var x=j.photos.byClient[cid];
+          return '<div style="padding:9px 12px;border-bottom:1px solid var(--p-line2);font-size:16px;color:var(--p-ink);">'+esc(x.name||'(no name)')
+            +' <span style="color:var(--p-mut);font-size:14px;">'+(x.onServer||0)+' of '+(x.indexed||0)+' on the server</span></div>';}).join('')
+        +'</div>'):'')):'')
+    +'<div style="font-size:14px;color:var(--p-mut);line-height:1.5;margin-top:14px;">Counts only — none of their notes were read, and no photo was opened.</div>'
     +'</div>'
     +(removed.length?('<div style="position:sticky;bottom:0;background:var(--surf1);border-top:1px solid var(--p-line);padding:12px 16px;">'
       +'<button onclick="_recoverRun()" id="rec-go" style="width:100%;background:var(--accent);color:var(--accent-ink);border:none;border-radius:12px;padding:13px;font-size:16px;font-weight:600;cursor:pointer;font-family:inherit;">'
@@ -27740,6 +27764,16 @@ function _recoverText(){
   if(j.missingFromRoster&&j.missingFromRoster.length){
     L.push('','ON THE SERVER BUT MISSING FROM THEIR APP’S LIST ('+j.missingFromRoster.length+'):');
     j.missingFromRoster.forEach(function(x){L.push('  '+((x&&x.name)||(x&&x.id)||String(x)));});
+  }
+  if(j.photos){
+    L.push('','PHOTOS ON THE SERVER (not in the synced blob \u2014 uploaded one at a time):');
+    L.push('  bytes actually on the server: '+(j.photos.onServer||0)+((j.photos.bytes)?('  ('+Math.round((j.photos.bytes||0)/1024)+'KB)'):''));
+    L.push('  named by their photo index:  '+(j.photos.indexNames||0));
+    L.push('  on the server, nothing points at them (RECOVERABLE): '+((j.photos.orphanBytes&&j.photos.orphanBytes.length)||0));
+    L.push('  index names them but the bytes are not there:        '+((j.photos.missingBytes&&j.photos.missingBytes.length)||0));
+    if(j.photos.error)L.push('  could not read: '+j.photos.error);
+    try{Object.keys(j.photos.byClient||{}).forEach(function(cid){var x=j.photos.byClient[cid];
+      L.push('    '+(x.name||'(no name)')+': '+(x.onServer||0)+' of '+(x.indexed||0)+' on the server');});}catch(e){}
   }
   L.push('Device delete record: '+((j.deletedRecordIds&&j.deletedRecordIds.length)||0)+' id(s)');
   return L.join('\n');
