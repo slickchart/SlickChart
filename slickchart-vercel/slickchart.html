@@ -214,7 +214,7 @@ const S=document.getElementById('S');
 // resets when I save it" and there was no way to tell whether her phone had any of them — a whole
 // day was spent debugging code she may not have been running. Shown at the bottom of Settings, so
 // the answer is a screenshot away. Bump it on every ship.
-const APP_BUILD='2026-10-09b';
+const APP_BUILD='2026-10-09d';
 
 
 /* ════════════════════════════════════════════════════════════════
@@ -24633,20 +24633,25 @@ function _exportAllData(){
   const data={};
   let count=0;
   try{
-    for(let i=0;i<localStorage.length;i++){
-      const k=localStorage.key(i);
-      if(typeof k!=='string'||k.indexOf('sc_')!==0||SKIP[k])continue;
-      const raw=localStorage.getItem(k);
-      // Store parsed JSON where possible so the export is readable, else the raw string.
+    // _lsAllKeys(), NOT localStorage directly. This enumerated localStorage and so SILENTLY LEFT
+    // OUT THE CLIENT LIST: anything 24KB or over lives in IndexedDB (§3), and on a phone sc_clients
+    // always is. "Everything (Full Backup)" was handing providers a file with no clients, no
+    // charts and no notes in it — the one file they would reach for after losing exactly those.
+    // Found while looking for somewhere Heather's notes might still exist. Nobody had checked that
+    // the backup she might have taken was a backup at all.
+    _lsAllKeys().forEach(function(k){
+      if(typeof k!=='string'||k.indexOf('sc_')!==0||SKIP[k])return;
+      const raw=_lsGet(k);
+      if(raw==null)return;
       try{data[k]=JSON.parse(raw);}catch(e){data[k]=raw;}
       count++;
-    }
+    });
   }catch(e){}
   const payload={
     _export:'SlickChart account data',
     _generated:new Date().toISOString(),
     _account:(function(){try{return localStorage.getItem('sc_login_email')||'(local account)';}catch(e){return '(local account)';}})(),
-    _note:'This is a complete copy of the data SlickChart stores for your account. Keep it somewhere safe. You can keep working normally, exporting does not change or remove anything.',
+    _note:'This is a complete copy of the data SlickChart stores for your account, including your client list, charts and notes. Keep it somewhere safe. You can keep working normally, exporting does not change or remove anything. Session photos are not included \u2014 they stay on this device.',
     _keys:count,
     data
   };
@@ -27171,6 +27176,28 @@ function renderClientRecover(){
       +'<div style="font-size:16px;color:var(--p-ink);">'+esc(LIBLBL[k])+'</div>'
       +'<div style="font-size:14px;color:'+(bad?'var(--p-red)':'var(--p-mut)')+';text-align:right;">'+esc(val)+'</div></div>';
   }).join('');
+  // THE QUESTION EVERYTHING HAS BEEN ABOUT: are her written notes still on the server?
+  //
+  // Session notes are providerNoteDrafts -> sc_note_drafts, which is a DIFFERENT key from the
+  // client roster. The roster was overwritten record-by-record by placeholders that won on their
+  // timestamps; sc_note_drafts merges per client and a device holding no entry for a client
+  // contributes nothing to it, so it is not damaged by the same failure. That means the notes can
+  // still be sitting there while every chart looks blank — and nobody had looked.
+  const nd=libs.sc_note_drafts, sd=libs.sc_summary_drafts, ss=libs.sc_session_summaries;
+  const notesHere=[['Session notes',nd],['Visit summaries',ss],['Summary drafts',sd]]
+    .filter(function(x){return x[1]&&x[1].onServer&&(x[1].clients||0)>0;});
+  const notesVerdict=notesHere.length
+    ? '<div style="background:var(--p-green-bg);border:1px solid var(--p-green);border-radius:12px;padding:12px 14px;margin-bottom:12px;font-size:16px;color:var(--p-ink);line-height:1.6;">'
+      +'<b>Their written work IS still on the server.</b><br>'
+      +notesHere.map(function(x){return esc(x[0])+' \u2014 '+x[1].clients+' client'+(x[1].clients===1?'':'s')
+        +((x[1].entries||0)?(', '+x[1].entries+' entries'):'')+', '+Math.round((x[1].bytes||0)/1024)+'KB';}).join('<br>')
+      +'<div style="font-size:14px;color:var(--p-mut);margin-top:6px;">This is stored separately from the client list, so it survives the thing that empties charts. If it is not showing in their app, that is a display problem, not lost work.</div></div>'
+    : ((nd||ss||sd)
+      ? '<div style="background:var(--p-red-bg);border:1px solid var(--p-red-line);border-radius:12px;padding:12px 14px;margin-bottom:12px;font-size:16px;color:var(--p-ink);line-height:1.6;">'
+        +'<b>No written notes or summaries are on the server for this provider.</b>'
+        +'<div style="font-size:14px;color:var(--p-mut);margin-top:6px;">Checked session notes, visit summaries and summary drafts. Try a backup branch or a device that has not synced.</div></div>'
+      : '');
+
   const nestedRows=all.filter(c=>nest[c.id]);
   const picked=removed.filter(c=>_recoverPick[c.id]);
   // Count WHY each removed row was left off, so the top of the screen gives a verdict instead of a
@@ -27197,6 +27224,7 @@ function renderClientRecover(){
       +showing.length+' showing in their app · '+removed.length+' removed but still on the server'
       +((j.counts&&j.counts.rosterIds!=null)?('<br>Their app’s own list knows about '+j.counts.rosterIds):'')
       +'</div>'
+    +notesVerdict
     +'<div style="background:var(--p-surf2);border:1px solid var(--p-line3);border-radius:12px;padding:11px 13px;margin-bottom:12px;font-size:16px;color:var(--p-ink);line-height:1.55;">'+verdict+'</div>'
     +(function(){
       // FROM THE BACKUP. Shown first, because it is the only thing on this screen that can reach
@@ -27293,7 +27321,10 @@ function _recoverText(){
     (h.animals||[]).forEach(function(a){o.push('animal: '+(a.name||'?')+(a.summaries?(' ('+a.summaries+' summaries)'):''));});
     return o.length?o.join(', '):'nothing stored';
   };
-  const L=['SlickChart recovery — '+j.provider.email,
+  const nd2=(j.libraries||{}).sc_note_drafts,ss2=(j.libraries||{}).sc_session_summaries;
+  const notesLine=(nd2&&nd2.clients)?('SESSION NOTES ARE ON THE SERVER: '+nd2.clients+' clients, '+(nd2.entries||0)+' entries, '+Math.round((nd2.bytes||0)/1024)+'KB')
+    :((ss2&&ss2.clients)?('VISIT SUMMARIES ARE ON THE SERVER: '+ss2.clients+' clients'):'NO written notes or summaries on the server.');
+  const L=['SlickChart recovery — '+j.provider.email, notesLine,
     (all.filter(c=>!c.deleted).length)+' showing, '+(all.filter(c=>c.deleted).length)+' removed but still on the server',
     'Their app’s list knows about '+((j.counts&&j.counts.rosterIds!=null)?j.counts.rosterIds:'?'),''];
   const nd=all.filter(c=>nest[c.id]);
