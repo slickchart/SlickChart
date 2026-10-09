@@ -278,6 +278,37 @@ ok('NONE OF THEIR WORDS ARE RETURNED',
   JSON.stringify(ty).indexOf('Comet favouring') < 0 && JSON.stringify(ty).indexOf('Sound at walk') < 0
   && JSON.stringify(ty).indexOf('arthritic') < 0);
 
+// ── REPAIRING THE LIST HER APP ACTUALLY DRAWS ────────────────────────────────
+// Her app renders sc_clients, not the clients table, and on the real account the two had drifted
+// completely apart. This adds the live clients the list has forgotten, and must never touch one
+// that is already there — that list is the only place her typed notes live.
+await q`INSERT INTO kv (owner,k,v) VALUES (${H},'sc_clients',${JSON.stringify({
+  c_owner1: { name: 'Dana Reed', notes: 'HER TYPED NOTE', skin: 'sensitive', _uAt: 5 } })})
+  ON CONFLICT (owner,k) DO UPDATE SET v=EXCLUDED.v`;
+r = await call('POST', { token: tokenFor('ashley@slickchart.app'), body: { email: 'heather@example.com', repairRoster: true } });
+ok('repair 200', r.code === 200 && r.body.ok, r.body);
+ok('added the forgotten ones', (r.body.addedToRoster || 0) >= 3, r.body.addedToRoster);
+{
+  const rr = await q`SELECT v FROM kv WHERE owner=${H} AND k='sc_clients'`;
+  const ros = JSON.parse(rr[0].v);
+  ok('HER TYPED NOTE WAS NOT TOUCHED', ros.c_owner1 && ros.c_owner1.notes === 'HER TYPED NOTE', ros.c_owner1);
+  ok('...and neither was her chart field', ros.c_owner1 && ros.c_owner1.skin === 'sensitive');
+  ok('the forgotten clients are in the list now', !!(ros.c_plain1 && ros.c_plain2), Object.keys(ros));
+  ok('a horse comes back UNDER ITS OWNER', !!(ros.c_comet && ros.c_comet.ownerId === 'c_nest' && ros.c_comet.isAnimal === true), ros.c_comet);
+  ok('new entries carry no _uAt, so her device\'s copy still wins', !ros.c_plain1._uAt, ros.c_plain1);
+  ok('a tombstoned client is NOT added back', !ros.c_erased, Object.keys(ros));
+  ok('the previous list was kept first', (await q`SELECT count(*)::int AS n FROM kv_history
+    WHERE owner=${H} AND k='sc_clients' AND reason='before-restore'`)[0].n >= 1);
+}
+r = await call('POST', { token: tokenFor('ashley@slickchart.app'), body: { email: 'heather@example.com', repairRoster: true } });
+ok('running it again says there is nothing to do', r.code === 400, r.body);
+ok('repair is founder-gated', (await call('POST', { token: tokenFor('x@y.com'),
+  body: { email: 'heather@example.com', repairRoster: true } })).code === 403);
+{
+  const other = await q`SELECT v FROM kv WHERE owner=${OTHER} AND k='sc_clients'`;
+  ok('another provider\'s list was not touched', other.length === 0 || JSON.parse(other[0].v).x, other.length);
+}
+
 // ── the restore ──────────────────────────────────────────────────────────────
 r = await call('POST', { token: tokenFor('ashley@slickchart.app'), body: { email: 'heather@example.com', restoreIds: ['c_owner1', 'c_owner2'] } });
 ok('restore 200', r.code === 200 && r.body.ok, r.code);

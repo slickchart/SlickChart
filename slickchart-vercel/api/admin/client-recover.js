@@ -26,7 +26,7 @@
 import { dbEnabled, sql, ensureTable, ensureProvidersTable } from '../../lib/db.js';
 import { verifyToken, isSessionValid } from '../../lib/auth.js';
 import { ensureClientTables } from '../../lib/clients.js';
-import { listHistory, restoreVersion, ensureHistoryTable } from '../../lib/kv-history.js';
+import { listHistory, restoreVersion, ensureHistoryTable, itemCount } from '../../lib/kv-history.js';
 
 function norm(s) { return String(s || '').trim().toLowerCase(); }
 
@@ -179,6 +179,72 @@ export default async function handler(req, res) {
             ON CONFLICT (owner,k) DO UPDATE SET v=EXCLUDED.v, updated_at=now()`;
         } catch (e) { res.status(500).json({ error: 'Could not record the undelete.' }); return; }
         res.status(200).json({ ok: true, unDeleted: ids.length, clearedFromRecord: cleared });
+        return;
+      }
+
+      // ADD THE LIVE CLIENTS THE ACCOUNT'S OWN LIST HAS FORGOTTEN.
+      //
+      // Her app draws from sc_clients, not from the clients table. On Heather's account those two
+      // had drifted completely apart — the account's list held Ingatara Perry and not Sue, while
+      // her phone showed Sue and not Ingatara Perry. Neither side had ever absorbed the other.
+      //
+      // This only ADDS. A client already in the list is left exactly as it is, because the list is
+      // where her typed notes live and the clients table copy does not have them. New entries are
+      // built from the clients table (name, contact, profile, and the ownerId/isAnimal links that
+      // keep a horse under its owner) and carry NO _uAt, so the moment her device has a better
+      // copy of one, _mergeClients prefers hers.
+      if (body.repairRoster) {
+        const rv = await q`SELECT v FROM kv WHERE owner=${owner} AND k='sc_clients'`;
+        let roster = {};
+        try { roster = rv.length ? (JSON.parse(rv[0].v) || {}) : {}; } catch (e) { roster = {}; }
+        if (!rv.length) { res.status(400).json({ error: 'That account has no client list to repair.' }); return; }
+        // Keep what is there first. This writes the one place her notes live.
+        try { await ensureHistoryTable(); } catch (e) {}
+        try {
+          await q`INSERT INTO kv_history (owner, k, v, bytes, items, reason)
+            VALUES (${owner},'sc_clients',${rv[0].v},${String(rv[0].v || '').length},${itemCount(rv[0].v)},'before-restore')`;
+        } catch (e) {
+          console.error('[client-recover] roster backup failed:', (e && e.message) || e);
+          res.status(500).json({ error: 'Could not keep a copy first, so nothing was changed.' }); return;
+        }
+
+        // Self-contained: `clients` and `nestedUnder` are built further down for the GET, which
+        // runs AFTER this branch — referencing them here is a TDZ ReferenceError, not a value.
+        const liveRows = await q`SELECT id, name, email, phone, data FROM clients
+          WHERE provider_id=${owner} AND deleted_at IS NULL`;
+        // Who is an animal under whom, from the same rows.
+        const nested = {};
+        liveRows.forEach(r2 => {
+          let dd = {}; try { dd = typeof r2.data === 'string' ? JSON.parse(r2.data) : (r2.data || {}); } catch (e) { dd = {}; }
+          (Array.isArray(dd.animals) ? dd.animals : []).forEach(a => {
+            if (a && a.id) nested[String(a.id)] = { ownerId: r2.id };
+          });
+        });
+        const added = [];
+        for (const row0 of liveRows) {
+          if (roster[row0.id]) continue;
+          const row = [row0];
+          let d = {};
+          try { d = typeof row[0].data === 'string' ? JSON.parse(row[0].data) : (row[0].data || {}); } catch (e) { d = {}; }
+          const p = (d.profile && typeof d.profile === 'object') ? d.profile : {};
+          const keep = v => { const x = String(v == null ? '' : v).trim(); return x || ''; };
+          roster[row0.id] = {
+            name: row[0].name || '', email: row[0].email || '', phone: row[0].phone || '',
+            skin: keep(p.skin), concerns: keep(p.concerns), allergies: keep(p.allergies),
+            fitz: keep(p.fitz), treatment: keep(p.treatment),
+            lastVisit: keep(p.lastVisit), nextVisit: keep(p.nextVisit),
+            summaries: Array.isArray(d.summaries) ? d.summaries : []
+          };
+          // A horse belongs under its owner. Rebuild the link from whichever client lists it.
+          const owner2 = nested[row0.id];
+          if (owner2) { roster[row0.id].ownerId = owner2.ownerId; roster[row0.id].isAnimal = true; }
+          added.push({ id: row0.id, name: row[0].name || '' });
+        }
+        if (!added.length) { res.status(400).json({ error: 'Their list already has every live client.' }); return; }
+        await q`INSERT INTO kv (owner,k,v,updated_at) VALUES (${owner},'sc_clients',${JSON.stringify(roster)},now())
+          ON CONFLICT (owner,k) DO UPDATE SET v=EXCLUDED.v, updated_at=now()`;
+        res.status(200).json({ ok: true, addedToRoster: added.length, clients: added,
+          note: 'Added to the account list only. Nothing that was already there was changed, and the previous list is kept under Earlier copies.' });
         return;
       }
 
