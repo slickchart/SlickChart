@@ -3675,6 +3675,72 @@ this test checked `CL` straight after `pull()` and reported six false failures.
 
 **What none of this reaches:** session photos live on the provider's device, not the server.
 
+---
+
+## 2am. A button that threw on every tap, and the bug class behind it (2026-10-09, `2026-10-09i`)
+
+Ashley: **"the toggle doesnt work in services"**. Observed on the running app. She was right.
+
+The service row's Taxable / No tax button was rendered as:
+
+```js
+onclick="_svcSet(${i},'taxable',(sv.taxable===false));renderServiceMenu()"
+```
+
+`sv` is the `map` callback's local variable and it was **never interpolated** — it sat in the
+onclick attribute as literal text. An inline handler evaluates in GLOBAL scope at click time, where
+`sv` does not exist, so every tap threw `ReferenceError: sv is not defined` and did nothing. No
+toast, no console she would look at, no change. Reproduced on the shipped build: `taxable=false`
+before the tap, `taxable=false` after, one error.
+
+**This is the bug class to remember:** inside a template-literal row, anything in an `on*=` handler
+that is not wrapped in `${...}` is dead text evaluated later against `window`. It reads perfectly in
+review — I had read this exact line earlier in the session and called the feature working. The fix
+is a named helper that re-reads the array at click time (`_svcTaxToggle(i)`), which is also the
+pattern the checkout rows already used (`_coItems[${i}]`, properly interpolated).
+
+I swept every `on(click|input|change|focus|blur|keyup|keydown|submit|touchstart|touchend)=` attribute
+in `slickchart.html` and `slickchart-client.html` for the same shape. **This was the only real
+instance.** The other ten candidates are sentence-ending periods inside `confirmModal` prose
+("…and all their sample data.") and genuine globals (`location.href`, `slickchart.app`). A CI check
+for it would be 10/11 false positives, so there isn't one — the sweep script is the record.
+
+### The other three things in the same path
+
+1. **Products had no tax setting at all.** `renderAddAffiliate` had no control, `saveAffiliate`
+   never wrote one, and `_coEnsureMenu` hardcoded `taxable:true` for every product. There was
+   nothing to toggle. Added a Taxable / No tax button to the product editor, persisted in both the
+   edit and the create branch, and checkout now reads `a.taxable!==false` so an untouched product
+   behaves exactly as before. Square-synced products live in `affiliateLinks` too, so they get the
+   control for free.
+2. **Square's default was beating her own choice.** `_coEnsureMenu` concatenates `sq` FIRST, so the
+   dedupe keeps the Square entry — a service she marked "No tax" in her own menu still billed as
+   taxable. `_coApplyTaxChoices(list)` now lets an EXPLICIT local choice win by name, and runs on
+   the 60s cache path too (otherwise a change she just made would not reach an invoice for up to a
+   minute). `taxable == null` means she never chose, and Square's default stands.
+3. **Neither `_svcSet` nor `saveAffiliate` stamped `_ts`.** Both `sc_service_menu` and
+   `sc_affiliate_links` merge by id through `_mergeAuthoredById`, whose last tie-break is
+   `if(!a&&!b&&!fromLocal) → take the SERVER copy`. With no timestamp on either side her change
+   loses to the other device's older copy. Confirmed on the shipped build: her No-tax went in, the
+   stale copy won, `taxable` came back `true`. This is CLAUDE.md's "stamp `_ts` on create AND on
+   edit" and it was simply missing — it would have reverted a price or a renamed service the same
+   way, not just the tax flag. Both now stamp on create and on edit.
+
+So the one report covered a dead button, a missing feature, a precedence bug and a silent
+cross-device revert, all in the same two screens.
+
+Verified headless (37 checks): both rows toggle independently and persist to `sc_service_menu`,
+survive a reload, mark the menu custom so it is never reseeded, the product saves/reopens/flips
+back, a new product still defaults to taxable, checkout honours services and products, an untouched
+product is unchanged, a one-invoice override still does not change the product, her stamped change
+beats a stale copy, a stale copy does not revert a newer one, and a deleted service is not
+resurrected. All six CI sweeps clean, demos rebuilt, CI green.
+
+**Still open from this, deliberately:** a Square catalog item she has never added to her own service
+menu or shop has no persistent tax setting — only the per-line toggle on the invoice. Its tax comes
+from Square, which is where it is configured. If a provider asks for that, it needs a small
+name-keyed override key, and that is a NEW synced key, so §0.6 and `check-merge-coverage` apply.
+
 ## 2ak. The virtual consult work (2026-10-08) — from the research in `reports/`
 
 `reports/Virtual consult platform upgrades.md` is the research behind this. Read its "three requests"
