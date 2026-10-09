@@ -473,8 +473,36 @@ export default async function handler(req, res) {
       photos.error = (e && e.message) || String(e);
     }
 
+    // ── The verdict ──────────────────────────────────────────────────────────
+    // The numbers above were all present and correct the day a draft email still told a provider
+    // her notes might be gone. Scattered counts need interpreting, and interpreting is where it
+    // went wrong twice in one day. So the answer to the only question that matters — IS ANYTHING
+    // ACTUALLY LOST — is computed here and rendered as a sentence, not left to be inferred.
+    const verdict = (() => {
+      const chars = (typed.roster || []).reduce((a, c) => a + c.notes + c.conditions + c.chart, 0);
+      const draftChars = (typed.noteDrafts || []).reduce((a, d) => a + (d.chars || 0), 0);
+      const withWords = (typed.roster || []).filter(c => (c.notes + c.conditions + c.chart) > 0).length;
+      const sums = (typed.roster || []).reduce((a, c) => a + (c.summaries || 0), 0);
+      const safe = [], unknown = [];
+      if (chars) safe.push(chars + ' characters of notes and chart detail across ' + withWords + ' client' + (withWords === 1 ? '' : 's'));
+      else unknown.push('no typed notes found in their client list');
+      if (draftChars) safe.push(draftChars + ' characters in unfinished note drafts');
+      if (sums) safe.push(sums + ' saved visit summar' + (sums === 1 ? 'y' : 'ies'));
+      if (photos.onServer) safe.push(photos.onServer + ' photo' + (photos.onServer === 1 ? '' : 's'));
+      else unknown.push('no photos on the server');
+      return {
+        safe, unknown,
+        noteChars: chars, draftChars, summaries: sums, photos: photos.onServer,
+        // The sentence to repeat. Never write "lost" to a provider without this saying so.
+        line: safe.length
+          ? ('ON THE SERVER RIGHT NOW: ' + safe.join('; ') + '. This is NOT lost \u2014 do not tell them it is.')
+          : 'Nothing of theirs was found on the server. Say what was checked, and check Earlier copies before calling it lost.'
+      };
+    })();
+
     res.status(200).json({
       ok: true,
+      verdict,
       provider: { id: owner, email: pr[0].email, name: pr[0].name || '' },
       counts: {
         rowsTotal: clients.length,

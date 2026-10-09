@@ -126,6 +126,12 @@ The rules:
    An absence there is evidence; your memory of the code is not.
 2. **Never tell Ashley a capability is missing, or that data is unrecoverable, from inference.**
    Grep first. Every single time an inference has contradicted the code, the inference was wrong.
+2b. **"Does the feature exist" and "did THIS provider's data survive" are different questions, and
+   grepping only answers the first.** Heather's notes were on the server AND the diagnosis saying so
+   was already in the conversation, and a loss sentence still got drafted. For a specific provider,
+   the only acceptable evidence is the founder recovery screen's own numbers — typed characters per
+   client, library sizes, `Earlier copies`, and the photo counts. Read them, quote them, then speak.
+   If those numbers are not in front of you, the answer is "I need to check", never "it is gone".
 3. **A recovery tool flagged "NO — nothing calls it" is a bug**, not a spare part. `_openPhotoRecovery`
    sat unreachable for weeks — working code, no button — while a provider was told her work was gone.
    Wire it up or delete it.
@@ -134,6 +140,41 @@ The rules:
 
 Being wrong about what the product does is worse than not knowing, because Ashley acts on it: she
 tells a provider their work is gone. "I'll check" is always available and costs one command.
+
+## 1d. A provider reported a problem — the intake, in this order
+
+The 2026-10-09 session cost Ashley hours it did not need to, and almost none of that was the bug.
+It was asking her to run the same screen FOUR times because each round added a diagnostic that
+should have been there already, plus three wrong theories chased in between. Heather's notes and
+photos were on the server the whole time. Do it in this order instead.
+
+**1. Write down what the provider OBSERVED, before any theory.** §1b. Which device, what they did,
+what they saw. Into `SESSION-HANDOFF.md` under the bug. A later theory that contradicts an item on
+that list is wrong — discard the theory, not the observation.
+
+**2. Ask Ashley for ONE paste, once.** Admin → Recover clients → the provider's email → **Copy**.
+That paste is deliberately complete, so do not ask for a second run unless the data genuinely
+changed. It contains:
+
+- `>>> ` **the verdict** — whether their work is on the server, in words. Read this FIRST.
+- what they typed, per client, in characters, including unfinished note drafts
+- every client: showing / removed / re-nested under another client
+- their saved libraries and sizes, and which are missing server-side
+- what their app's OWN list holds vs what the server has — the two can be inverted
+- photos: on the server, named by the index, recoverable orphans, index entries with no bytes
+- Earlier copies kept automatically, which is what can be put back
+- their device's delete record
+
+**3. Read the verdict line before writing a single word to anyone.** §4c. If it says the work is on
+the server, it is not lost, and no email may say otherwise.
+
+**4. Only then form a theory,** and check it against the observation list from step 1 before acting.
+
+**5. Check `FEATURES.md` before concluding a capability is missing.** §1c. Twice in one day a
+feature that existed was reported as absent.
+
+If something is missing from that paste, ADD IT TO THE PASTE in the same change as the fix, so the
+next provider costs one round trip. That is the whole point of it being one screen.
 
 ## 2. Verify before claiming "fixed"
 
@@ -304,7 +345,23 @@ esthetician, not a status report.
 - **Ask for whatever is still unknown**, and say plainly what would help. This is usually the real
   job of the email.
 - **Say what they should do**, if anything, in a numbered or bolded step.
-- **Be honest about what might not be recoverable.** Never promise data is coming back.
+- **NEVER write that data is lost, gone, or may not come back, unless a CHECK PROVED IT — in this
+  conversation, with numbers.** This rule exists because it was broken twice in one day. A draft to
+  Heather said "the notes you were part way through may not come back" when the diagnosis, pasted
+  into this very conversation an hour earlier, showed her notes ON THE SERVER: 565 characters across
+  Amber, Sue and Bear plus Ingatara Perry's chart detail. The same day, she was told Heather's
+  photos were device-only and gone; 38 of them were on the server and recoverable.
+  Grepping is not enough — the photo claim was checked and still wrong, because one comment about
+  the EXPORT was read as a statement about backup. The bar is a NUMBER from the recovery diagnosis
+  (§1c), not a reading of the code.
+  - Default to "we are checking," never to "it is gone."
+  - If a check has not been run, the sentence does not go in the email. Ask Ashley to run it.
+  - Say precisely WHAT was checked and what was not. "The two sets you finished are safe, I am
+    unsure about the third" is honest. "Your notes may be lost" was not.
+  - Telling a provider their work is gone when it is not is the single most damaging thing that can
+    be done here: Ashley has to send it, and then unsend it.
+- **Be honest about what might not be recoverable.** Never promise data is coming back either — once
+  a check shows something genuinely absent, say so plainly rather than leaving hope open.
 - Reading level around 3rd grade, short sentences, **no em dashes**, fewer words is better.
 
 The long technical version belongs in this conversation and in SESSION-HANDOFF.md, not in the email.

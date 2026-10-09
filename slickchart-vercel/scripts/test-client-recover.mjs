@@ -383,5 +383,27 @@ ok('breaks it down per client, by name', ph.byClient.c_owner1
 r = await call('GET', { token: tokenFor('someone@else.com'), query: { email: 'heather@example.com' } });
 ok('the photo report is founder-gated with everything else', r.code === 403);
 
+// ── the verdict ───────────────────────────────────────────────────────────────
+// The sentence that has to be right, because it is the one that stops a provider being told their
+// work is gone when it is not. Heather's real shape: notes in the roster AND photos on the server.
+r = await call('GET', { token: tokenFor('ashley@slickchart.app'), query: { email: 'heather@example.com' } });
+const v = r.body.verdict;
+ok('there is a verdict', !!v && !!v.line, v);
+ok('it counts the typed notes', v.noteChars > 0, v.noteChars);
+ok('it counts the photos', v.photos === 3, v.photos);
+ok('it says the work is ON THE SERVER', /ON THE SERVER RIGHT NOW/.test(v.line), v.line);
+ok('it says NOT to call it lost', /do not tell them it is/i.test(v.line), v.line);
+ok('it never calls surviving work lost', !/^Nothing of theirs/.test(v.line), v.line);
+
+// An account that genuinely has nothing must NOT get the reassuring sentence.
+await q`INSERT INTO providers (id,email,name) VALUES ('prov_empty','empty@example.com','Empty') ON CONFLICT (id) DO NOTHING`;
+r = await call('GET', { token: tokenFor('ashley@slickchart.app'), query: { email: 'empty@example.com' } });
+const ev = r.body.verdict;
+ok('an empty account gets the other verdict', /Nothing of theirs was found/.test(ev.line), ev.line);
+ok('and it still does not say "lost"', !/\blost\b/.test(ev.line.replace(/calling it lost/,'')), ev.line);
+ok('it tells you to check Earlier copies first', /Earlier copies/.test(ev.line), ev.line);
+ok('the verdict is founder-gated like everything else',
+   (await call('GET', { token: tokenFor('someone@else.com'), query: { email: 'heather@example.com' } })).code === 403);
+
 console.log(fails ? '\n' + fails + ' FAILED' : '\nall green');
 process.exit(fails ? 1 : 0);

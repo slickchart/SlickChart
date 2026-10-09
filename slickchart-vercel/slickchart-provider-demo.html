@@ -468,7 +468,7 @@ const S=document.getElementById('S');
 // resets when I save it" and there was no way to tell whether her phone had any of them — a whole
 // day was spent debugging code she may not have been running. Shown at the bottom of Settings, so
 // the answer is a screenshot away. Bump it on every ship.
-const APP_BUILD='2026-10-09k';
+const APP_BUILD='2026-10-09m';
 
 
 /* ════════════════════════════════════════════════════════════════
@@ -27673,6 +27673,10 @@ function renderClientRecover(){
       +j.missingFromRoster.map(function(x){return '\u00b7 '+esc((x&&x.name)||(x&&x.id)||'');}).join('<br>')
       +'<div style="font-size:14px;color:var(--p-mut);margin:6px 0 10px;">Adding them only ADDS. Anything already in the list is left exactly as it is, because that list is where their typed notes live, and the previous version is kept under Earlier copies.</div>'
       +'<button onclick="_recoverRepairRoster()" class="btnp" style="width:100%;border-radius:10px;padding:11px;font-size:16px;font-weight:600;">Add '+j.missingFromRoster.length+' to their list</button></div>'):'')
+    +((j.verdict)?('<div style="margin:12px 16px 4px;background:'+((j.verdict.safe&&j.verdict.safe.length)?'var(--p-surf2)':'var(--p-amber-bg)')+';border:1px solid '+((j.verdict.safe&&j.verdict.safe.length)?'var(--p-green)':'var(--p-amber-line)')+';border-radius:12px;padding:12px 14px;">'
+      +'<div style="font-size:16px;font-weight:700;color:'+((j.verdict.safe&&j.verdict.safe.length)?'var(--p-green)':'var(--p-amber)')+';margin-bottom:4px;">'+((j.verdict.safe&&j.verdict.safe.length)?'Their work is on the server':'Nothing found on the server')+'</div>'
+      +'<div style="font-size:16px;color:var(--p-ink);line-height:1.55;">'+esc(j.verdict.line||'')+'</div>'
+      +'</div>'):'')
     +((j.rosterHas&&j.rosterHas.length)?('<div class="sh" style="margin-top:16px;"><h2>What their app actually draws</h2></div>'
       +'<div style="font-size:14px;color:var(--p-mut);line-height:1.5;margin:0 0 8px;">Their app renders its own saved list, not the server\u2019s. If a client is on the server but not in here, their app has never been told about them.</div>'
       +'<div style="background:var(--surf2);border:1px solid var(--p-line);border-radius:12px;overflow:hidden;">'
@@ -27733,6 +27737,10 @@ function _recoverText(){
     (all.filter(c=>!c.deleted).length)+' showing, '+(all.filter(c=>c.deleted).length)+' removed but still on the server',
     'Their app’s list knows about '+((j.counts&&j.counts.rosterIds!=null)?j.counts.rosterIds:'?'),'']);
   const nd=all.filter(c=>nest[c.id]);
+  // The verdict goes FIRST, before any count, because the counts were all present and correct on
+  // the day a provider was nearly told her notes were gone. A paste that leads with this cannot be
+  // skim-read into the wrong answer.
+  try{if(j.verdict&&j.verdict.line){L.push('>>> '+j.verdict.line);L.push('');}}catch(e){}
   if(nd.length){L.push('NOT LOST — now an animal under another client:');
     nd.forEach(c=>L.push('  '+(c.name||c.id)+' -> under '+((nest[c.id].ownerName)||nest[c.id].ownerId)));L.push('');}
   L.push('REMOVED ('+all.filter(c=>c.deleted).length+'):');
@@ -27775,6 +27783,18 @@ function _recoverText(){
     try{Object.keys(j.photos.byClient||{}).forEach(function(cid){var x=j.photos.byClient[cid];
       L.push('    '+(x.name||'(no name)')+': '+(x.onServer||0)+' of '+(x.indexed||0)+' on the server');});}catch(e){}
   }
+  // Earlier copies is the RECOVERY ROUTE, so it belongs in the paste too. Without it the paste says
+  // what is there now and nothing about what could be put back, which is half an answer.
+  try{
+    const hk=Object.keys(j.history||{}).filter(function(k){return (j.history[k]||[]).length;});
+    if(hk.length){
+      L.push('','EARLIER COPIES KEPT AUTOMATICALLY (what can be put back):');
+      hk.forEach(function(k){const v=j.history[k]||[];const top=v[0]||{};
+        L.push('  '+k+': '+v.length+' copy'+(v.length===1?'':'ies')+', newest '+(top.at||top.created_at||'?')+' ('+(top.items!=null?(top.items+' items'):((Math.round((top.bytes||0)/1024))+'KB'))+')');});
+    }else{
+      L.push('','EARLIER COPIES: none kept for this account yet.');
+    }
+  }catch(e){}
   L.push('Device delete record: '+((j.deletedRecordIds&&j.deletedRecordIds.length)||0)+' id(s)');
   return L.join('\n');
 }
