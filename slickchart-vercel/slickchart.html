@@ -214,7 +214,7 @@ const S=document.getElementById('S');
 // resets when I save it" and there was no way to tell whether her phone had any of them — a whole
 // day was spent debugging code she may not have been running. Shown at the bottom of Settings, so
 // the answer is a screenshot away. Bump it on every ship.
-const APP_BUILD='2026-10-09a';
+const APP_BUILD='2026-10-09b';
 
 
 /* ════════════════════════════════════════════════════════════════
@@ -27054,7 +27054,9 @@ async function _founderClientRecover(rowEl){
   // Is a point-in-time branch connected? Only asked here, so the screen can offer the one thing
   // that reaches work the account itself no longer has.
   try{
-    const rb=await fetch('/api/admin/recover-import?email='+encodeURIComponent(j.provider.email),{headers:{'Authorization':'Bearer '+tok}});
+    const rb=await fetch('/api/admin/recover-import',{method:'POST',
+      headers:{'Content-Type':'application/json','Authorization':'Bearer '+tok},
+      body:JSON.stringify({email:j.provider.email,preview:true,sourceUrl:_recoverSrc||''})});
     const jb=await rb.json().catch(()=>null);
     _recoverBackup=(jb&&jb.ok)?jb:null;
   }catch(e){ _recoverBackup=null; }
@@ -27066,6 +27068,9 @@ async function _founderClientRecover(rowEl){
 // button — and on the account that mattered, 12 of the removed rows were blanks and duplicates, so
 // the single button would have put her roster back in a worse state than it started.
 let _recoverState=null, _recoverPick={}, _recoverBackup=null;
+// The backup connection string, IN MEMORY ONLY for this screen. Never localStorage: it is a
+// database credential and it has no business surviving the tab.
+let _recoverSrc='';
 // Is this removed row safe to put back on its own? Three things make it NOT obvious:
 //   no name          — a blank skeleton the app created, never a real client
 //   nothing stored   — no chart, no summaries, nothing to recover
@@ -27197,7 +27202,11 @@ function renderClientRecover(){
       // FROM THE BACKUP. Shown first, because it is the only thing on this screen that can reach
       // work the live account no longer holds at all.
       const bk=_recoverBackup;
-      if(!bk||!bk.configured)return '';
+      if(!bk)return '';
+      if(!bk.configured)return '<div style="background:var(--p-surf2);border:1px solid var(--p-line3);border-radius:12px;padding:11px 13px;margin-bottom:12px;font-size:16px;color:var(--p-mut);line-height:1.55;">'
+        +'<b style="color:var(--p-ink);">Got a backup to check?</b><br>'
+        +'If you made a Neon branch from before the loss, paste its connection string and this will show you what it holds. It only ever reads it.'
+        +'<button onclick="_recoverSetSrc()" style="width:100%;margin-top:9px;background:var(--surf1);border:1px solid var(--p-line3);color:var(--p-ink);border-radius:8px;padding:10px;font-size:16px;cursor:pointer;font-family:inherit;">Use a backup branch</button></div>';
       const worth=(bk.keys||[]).filter(function(x){return x.worthIt;});
       if(!worth.length)return '<div style="background:var(--p-surf2);border:1px solid var(--p-line3);border-radius:12px;padding:11px 13px;margin-bottom:12px;font-size:16px;color:var(--p-mut);line-height:1.55;">A recovery branch is connected, and it holds nothing more than the account already has.</div>';
       return '<div style="background:var(--p-blue-bg);border:1px solid var(--p-blue-line);border-radius:12px;padding:12px 14px;margin-bottom:12px;font-size:16px;color:var(--p-ink);line-height:1.55;">'
@@ -27205,7 +27214,7 @@ function renderClientRecover(){
         +worth.map(function(x){
           return esc(LIBLBL[x.key]||x.key)+' \u2014 backup '+x.backupItems+', live '+x.liveItems;
         }).join('<br>')
-        +'<div style="font-size:14px;color:var(--p-mut);margin:6px 0 10px;">Bringing these across adds them as Earlier copies below. Nothing live changes until you put one back.</div>'
+        +'<div style="font-size:14px;color:var(--p-mut);margin:6px 0 10px;">Bringing these across adds them as Earlier copies below. <b>Nothing live changes</b> until you put one back, and that only affects this one provider.</div>'
         +'<button onclick="_recoverImport()" class="btnp" style="width:100%;border-radius:10px;padding:11px;font-size:16px;font-weight:600;">Bring these across</button>'
         +'</div>';
     })()
@@ -27322,12 +27331,30 @@ function _recoverCopy(){
   try{ navigator.clipboard.writeText(t); if(typeof proToast==='function')proToast('Copied — paste it in a message'); }
   catch(e){ if(typeof proToast==='function')proToast('Couldn’t copy — screenshot instead'); }
 }
+// Ask for the branch's connection string once, hold it in memory, re-read the screen with it.
+// This exists so a recovery needs no environment variable and no redeploy — just make the branch
+// and paste the string.
+async function _recoverSetSrc(){
+  const v=(typeof prompt==='function')?prompt('Paste the connection string of the backup branch.\n\nSeveral can be separated by commas. It is used to read the backup and is not saved anywhere.'):'';
+  if(!v)return;
+  _recoverSrc=String(v).trim();
+  const j=_recoverState;if(!j)return;
+  try{
+    const tok=(typeof Cloud!=='undefined'&&Cloud&&Cloud.token)||'';
+    const rb=await fetch('/api/admin/recover-import',{method:'POST',
+      headers:{'Content-Type':'application/json','Authorization':'Bearer '+tok},
+      body:JSON.stringify({email:j.provider.email,preview:true,sourceUrl:_recoverSrc})});
+    const jb=await rb.json().catch(()=>null);
+    if(!jb||!jb.ok){if(typeof proToast==='function')proToast((jb&&jb.error)||'Could not read that backup');return;}
+    _recoverBackup=jb;renderClientRecover();
+  }catch(e){ if(typeof proToast==='function')proToast('Could not reach the server'); }
+}
 async function _recoverImport(){
   const j=_recoverState;if(!j)return;
   const tok=(typeof Cloud!=='undefined'&&Cloud&&Cloud.token)||'';
   try{
     const r=await fetch('/api/admin/recover-import',{method:'POST',headers:{'Content-Type':'application/json','Authorization':'Bearer '+tok},
-      body:JSON.stringify({email:j.provider.email})});
+      body:JSON.stringify({email:j.provider.email,sourceUrl:_recoverSrc||''})});
     const out=await r.json().catch(()=>({}));
     if(!r.ok||!out.ok){if(typeof proToast==='function')proToast((out&&out.error)||'Could not bring it across');return;}
     confirmModal({title:'Brought across',

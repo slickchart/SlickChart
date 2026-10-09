@@ -1,114 +1,91 @@
 # Getting a provider's lost work back out of the database
 
-**Do step 1 today. It is the only step with a deadline.**
+**Read this first, because it is the thing people are right to worry about.**
 
-The database (Neon) keeps its own history of every change for a window of time. Inside that window
-a provider's data from before a loss is still there and can be read. Once the window passes, it is
-gone for good. Making a **branch** freezes that moment permanently, so it survives the window
-closing.
-
-So: make the branch first, work out what to do with it second.
+> ## Nothing here rolls your database back.
+>
+> Making a branch takes a **photograph** of a moment in the past. It does not touch your live
+> data, your providers' data, or anything you changed today. Your live database carries on
+> exactly as it is.
+>
+> Bringing a branch's contents into SlickChart adds them as **Earlier copies** to look at. Still
+> nothing live changes. Only when you tap **Put back** does anything change, and that affects
+> **one library for one provider**, and keeps a copy of what was there so you can undo it.
+>
+> **The one button that WOULD roll everything back is Neon's "Restore".** Do not use it. It
+> overwrites your live database and every provider loses everything since that moment. You never
+> need it. You want **Branches → New branch**, which is a different thing entirely.
 
 ---
 
-## 1. Make the branch — do this before anything else
+## 1. Make the branch (2 minutes, and the only step with a deadline)
 
-1. Go to **console.neon.tech** and open the SlickChart project.
-2. Left menu: **Branches** → **New branch**.
-3. Name it something you will recognise: `before-heather-loss`.
-4. **Auto-delete: set this to Never.** It defaults to *After 1 day*, which would throw away the
-   one frozen copy of her work tomorrow. This is the single easiest way to lose the thing you came
-   here to save.
-5. **Choose "Branch data and schema FROM A PAST POINT IN TIME".** The option selected by default
-   is *Branch data and schema*, which means "up to this moment" — that copies today's already
-   broken data and is of no use at all. The past-point-in-time option is the whole point.
-6. Pick a time **as late as you can while still being before the loss.** This is the one real
-   judgement call, and it cuts both ways:
-   - **too late** and the branch holds the already-broken data (harmless, just useless)
-   - **too early** and it is missing the work done that morning, which is usually the work the
-     provider is most upset about
+The database keeps its own history for a limited window. Inside that window the data from before
+a loss is still readable. A branch freezes that moment permanently so it survives the window
+closing. That is why this step is worth doing even before you decide what to do next.
 
-   For Heather: she was doing three sets of notes on **7 October**, finished two, and the app
-   reset before the third. She messaged at **1:41pm**. So the loss is somewhere before 1:41pm that
-   day, and the two completed sets are worth protecting. **Try 1:30pm on 7 October first.**
-7. **Check the timezone the picker is using.** If it shows UTC rather than your own time, add 7
-   hours (1:30pm Pacific = 20:30 UTC). Getting this wrong by seven hours lands in completely the
-   wrong place and looks like the recovery failed.
-8. Create it.
+1. **console.neon.tech** → the SlickChart project → **Branches** → **New branch**.
+2. Name it: `heather-1330`.
+3. **Auto-delete: Never.** It defaults to *After 1 day*, which would throw away the copy tomorrow.
+4. **Choose "Branch data and schema FROM A PAST POINT IN TIME."** The default option means "up to
+   this moment", which copies the already-broken data and is no use.
+5. Pick the time: **7 October, 1:30pm.** Heather finished two of three sets of notes that morning
+   and messaged at 1:41pm, so just before that is as close as you can get while still being safe.
+   **If the picker is showing UTC rather than your own time, use 20:30 instead.**
+6. Create.
 
-> **Make several, not one.** Branches are instant, cost nothing until you change them, and
-> `RECOVERY_DATABASE_URL` takes a comma-separated list — so one redeploy compares all of them. For
-> Heather: **1:30pm, 1:00pm, 11:00am and 8:00am on 7 October.** The screen lists them richest
-> first with how much each holds, and you pick. Guessing a single timestamp during an incident and
-> redeploying between each guess is a miserable way to work.
+Branches are instant and cost nothing until you change them, so if you want a fallback make a
+second one at **11:00am** the same day. You can check both at once.
 
-That branch is now a permanent, read-only-if-you-leave-it-alone copy of the whole database as it
-was at that moment. **Nothing about your live data changes.** Creating a branch is not a restore.
+## 2. Copy its connection string
 
-> **Check your retention window while you are there** — Settings → Storage (or the project's
-> history retention setting). If it is only a few hours, a loss from yesterday may already be out
-> of reach, and that is worth knowing straight away rather than after an hour of work. If it is
-> short, raise it now so the NEXT incident has room.
+Open the new branch in Neon and copy the connection string. That is all you need from Neon.
 
-**Also make a branch for Diana** if you want to try recovering her work too. Same steps, but pick a
-time before HER loss. If that date is outside the retention window, the branch option will not let
-you choose it, and that is your answer.
+## 3. Paste it into SlickChart
 
-## 2. Point SlickChart at the branch
+**Account → Admin tools → "Get a provider's clients back"** → type the provider's name →
+**"Use a backup branch"** → paste.
 
-1. In Neon, open the new branch and copy its **connection string**.
-2. Vercel → your project → **Settings → Environment Variables**.
-3. Add `RECOVERY_DATABASE_URL` for **Production**. **Several branches go in one value, separated
-   by commas** — paste them all and you only redeploy once.
-4. **Redeploy** (Deployments → the latest → Redeploy). Environment variables only reach the app on
-   a new deploy.
+No environment variables. No redeploy. The string is used to read the backup and is not saved
+anywhere. Several can be pasted at once, separated by commas.
 
-## 3. Bring the work across
-
-In SlickChart: **Account → Admin tools → "Get a provider's clients back"**, type the provider's
-name, and the screen now has a **From the backup** section at the top when a recovery branch is
-connected.
-
-It shows, per library, what the backup holds against what is live:
+You will see something like:
 
 ```
-Client roster        backup 10 clients   ·   live 9      worth bringing back
-Session summaries    backup 31 entries   ·   live 0      worth bringing back
+The backup holds more than the account does.
+Client roster       backup 10, live 9
+Session summaries   backup 31, live 0
 ```
 
-Tap **Bring these across**. That copies them in as **Earlier copies** — it does **not** change
-anything live. Then scroll to Earlier copies, look at what arrived, and tap **Put back** on the
-ones you want.
+## 4. Bring it across, then look before you put anything back
 
-Two safety rules this follows on purpose:
+**Bring these across** copies them in as **Earlier copies**. Nothing live has changed yet.
 
-- **Nothing live is overwritten by the import.** A human looks at it first.
-- **Putting one back keeps a copy of what is there now**, so it can be undone.
+Scroll to Earlier copies, see what arrived and how much each holds, and tap **Put back** on what
+you want. That one keeps a copy of the current version first, so it can be undone.
 
-## 4. Tell the provider to refresh
+## 5. Tell the provider
 
-They need to open the app and pull down to refresh before it shows on their device.
+They open the app and pull down to refresh.
 
-## 5. Tidy up
+## 6. Afterwards
 
-1. Vercel → remove `RECOVERY_DATABASE_URL` → redeploy.
-2. In Neon, delete the branch once you are sure you are done. A branch costs storage.
+Delete the branch in Neon once you are sure you are finished. It costs storage while it exists.
 
 ---
 
 ## If the window has already passed
 
-Then the database genuinely does not have it any more and I will say so rather than pretend.
-Two things are still worth trying:
+Then the database genuinely does not have it any more, and I would rather say so than keep you
+hoping. Two things are still worth trying:
 
 - **A device that has not synced since the loss.** The app now photographs a device's own copy to
   the account's history the moment it opens, before anything can overwrite it. An untouched
   computer or tablet is a real chance.
-- **Forms specifically.** Client form submissions are written to a separate append-only log that
-  nothing overwrites, so a client's completed intake can be rebuilt even when the chart copy was
-  wiped. That is independent of all of the above.
+- **Forms.** Client form submissions are written to a separate append-only log that nothing
+  overwrites, so a completed intake can be rebuilt even when the chart copy was wiped. That works
+  regardless of the window.
 
-## What this cannot reach
+## What no recovery reaches
 
-Photos taken in a session are stored on the provider's own device, not on the server, so no
-database recovery brings those back.
+Session photos are stored on the provider's own device, not on the server.

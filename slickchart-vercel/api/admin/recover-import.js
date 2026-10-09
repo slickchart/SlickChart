@@ -44,17 +44,22 @@ export default async function handler(req, res) {
   const founder = await requireFounder(req, res);
   if (!founder) return;
 
-  // SEVERAL branches at once, comma-separated. Picking the timestamp is guesswork — too late and
-  // the branch holds the already-broken data, too early and it is missing the work done that
-  // morning, which is the work she is most upset about. The honest answer is to make a ladder of
-  // branches and look at all of them, and making her redeploy once per branch during an incident
-  // is not a reasonable thing to ask. Each one is labelled by its branch name where Neon puts one
-  // in the connection string, otherwise by position.
-  const srcList = String(process.env.RECOVERY_DATABASE_URL || '')
+  // WHERE THE BACKUP CONNECTION STRING COMES FROM.
+  //
+  // `sourceUrl` in the body is the normal way, and it exists to spare the owner an environment
+  // variable and two redeploys in the middle of an incident. Her reaction to the env-var version
+  // was "this feels very confusing and like a lot of work", and she was right: make the branch,
+  // paste the string, done. RECOVERY_DATABASE_URL still works for an unattended run.
+  //
+  // It is a CREDENTIAL. It arrives over TLS on a founder-gated route, is used and discarded, is
+  // never stored, and is NEVER written to a log or echoed in a response — which is also why the
+  // preview is a POST: a query string lands in access logs. Nothing below may log `src`.
+  const bodySrc = String((req.body && req.body.sourceUrl) || '').trim();
+  const srcList = (bodySrc || String(process.env.RECOVERY_DATABASE_URL || ''))
     .split(',').map(x => x.trim()).filter(Boolean);
   if (!srcList.length) {
-    res.status(200).json({ ok: true, configured: false,
-      hint: 'Set RECOVERY_DATABASE_URL in Vercel to one or more Neon branch connection strings (comma-separated), then redeploy.' });
+    res.status(200).json({ ok: true, configured: false, needsUrl: true,
+      hint: 'Paste the connection string of a Neon branch taken from before the loss.' });
     return;
   }
   // A connection string is a credential. Only ever label a branch by something safe to show.
@@ -90,7 +95,8 @@ export default async function handler(req, res) {
       const label = labelOf(srcList[i], i);
       let rows = null, err = '';
       try { rows = await neon(srcList[i])`SELECT k, v FROM kv WHERE owner = ${owner}`; }
-      catch (e) { err = (e && e.message) || 'could not be read'; }
+      // Scrubbed: a driver error can quote the DSN it was handed, password and all.
+      catch (e) { err = String((e && e.message) || 'could not be read').replace(/postgres(ql)?:\/\/\S+/gi, '[connection string]').slice(0, 120); }
       if (!rows) { branches.push({ label, error: err, keys: [] }); continue; }
       const byKey = {}; rows.forEach(r => { byKey[r.k] = r.v; });
       const keys = rows.filter(r => TRACKED[r.k]).map(r => ({
@@ -112,7 +118,7 @@ export default async function handler(req, res) {
     branches.sort((a, b) =>
       ((b.totalWeight || 0) - (a.totalWeight || 0)) || ((b.totalBytes || 0) - (a.totalBytes || 0)));
 
-    if (req.method === 'GET') {
+    if (req.method === 'GET' || (req.body && req.body.preview)) {
       res.status(200).json({ ok: true, configured: true, provider: { id: owner, email: pr[0].email },
         branches: branches.map(b => ({ label: b.label, error: b.error, worth: b.worth,
           totalWeight: b.totalWeight, totalBytes: b.totalBytes, keys: b.keys })),
@@ -148,7 +154,9 @@ export default async function handler(req, res) {
 
     res.status(405).json({ error: 'Method not allowed' });
   } catch (e) {
-    console.error('[recover-import] failed:', e && e.stack || e);
+    // Only the message, never the stack or anything carrying the connection string. A Neon driver
+    // error can quote the DSN it was handed, password included, straight into the log.
+    console.error('[recover-import] failed:', (e && e.message) ? String(e.message).slice(0, 120) : 'error');
     res.status(500).json({ error: 'Import failed.' });
   }
 }
