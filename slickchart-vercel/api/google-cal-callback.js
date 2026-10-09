@@ -38,7 +38,7 @@ export default async function handler(req, res) {
         'Google did not send the long-term permission. Please remove SlickChart from your Google account permissions and connect again.'));
       return;
     }
-    await saveGoogleConnection(String(payload.u), tokens);
+    await saveGoogleConnection(String(payload.u), tokens, { privateTitles: payload.p === 1 });
     res.status(200).end(page('Calendar connected',
       'Your Google Calendar is linked. Your SlickChart appointments will appear there, and your own events will block client bookings.'));
   } catch (e) {

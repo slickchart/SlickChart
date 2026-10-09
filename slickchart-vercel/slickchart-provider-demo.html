@@ -468,7 +468,7 @@ const S=document.getElementById('S');
 // resets when I save it" and there was no way to tell whether her phone had any of them — a whole
 // day was spent debugging code she may not have been running. Shown at the bottom of Settings, so
 // the answer is a screenshot away. Bump it on every ship.
-const APP_BUILD='2026-10-09v';
+const APP_BUILD='2026-10-09w';
 
 
 /* ════════════════════════════════════════════════════════════════
@@ -26547,7 +26547,7 @@ async function _gcalStatus(){
   try{
     const tok=(typeof Cloud!=='undefined'&&Cloud&&Cloud.token)||'';
     if(!tok){_gcalState=unknown();return _gcalState;}
-    const r=await fetch('/api/google-cal',{headers:{'Authorization':'Bearer '+tok}});
+    const r=await fetch('/api/google-cal'+(_gcalPrivateWanted?'?private=1':''),{headers:{'Authorization':'Bearer '+tok}});
     if(!r.ok){_gcalState=unknown();return _gcalState;}
     const j=await r.json();
     _gcalState=j?Object.assign({answered:true},j):unknown();
@@ -26604,6 +26604,40 @@ async function _loadIntegGcalStatus(){
 // has turned it off. Toggling re-pushes, and because the sync PATCHes every mapped event, names
 // already sitting in Google are rewritten rather than left behind — a privacy switch that only
 // applied to future appointments would be worse than none, because it would read as done.
+// Her privacy choice BEFORE she connects. The switch below used to live only on the connected
+// card, so the only way to reach it was to connect first — and by then the first sync had already
+// pushed client names into Google. Held in memory only: it matters for the seconds between opening
+// this screen and tapping Connect, after which the server row is the one true answer.
+// Defaults to OFF, matching what connecting has always done; the card says plainly which it is.
+let _gcalPrivateWanted=false;
+function _gcalPreConnectPrivacyHTML(){
+  const on=_gcalPrivateWanted;
+  return '<div style="display:flex;align-items:flex-start;justify-content:space-between;gap:10px;margin-top:11px;padding-top:11px;border-top:1px solid var(--p-blue-line);">'
+    +'<div style="flex:1;min-width:0;"><div style="font-size:16px;color:var(--p-ink);">Keep client names out of Google</div>'
+    +'<div style="font-size:14px;color:var(--p-mut);line-height:1.45;">'+(on
+      ? 'Google will show the service and the time only. Names and notes stay in SlickChart.'
+      : 'Google events will show the client\u2019s name and your appointment notes.')+'</div></div>'
+    +'<button onclick="_gcalSetPreConnectPrivacy('+(on?'false':'true')+')" style="flex-shrink:0;border-radius:8px;padding:5px 10px;font-size:12px;font-weight:600;cursor:pointer;font-family:inherit;white-space:nowrap;'
+    +(on?'background:var(--p-surf2);border:1px solid var(--p-line3);color:var(--p-green);">On'
+        :'background:var(--p-amber-bg);border:1px solid var(--p-amber-line);color:var(--p-amber);">Off')
+    +'</button></div>';
+}
+// Re-asks for the status, because the consent link is minted server-side and the choice travels
+// inside its SIGNED state. Flipping the switch without re-minting would hand Google the old link
+// and connect with the opposite setting.
+async function _gcalSetPreConnectPrivacy(next){
+  _gcalPrivateWanted=!!next;
+  _gcalState=null;
+  try{ if(typeof _gcalStatus==='function') await _gcalStatus(); }catch(e){}
+  // Redraw this screen directly rather than through nav(): nav() depends on _navCur being the
+  // screen we are standing on, and the whole point of the re-render is that the consent LINK has
+  // changed. A stale link here would connect with the opposite setting, silently.
+  try{
+    const tt=document.getElementById('tt');
+    if(tt&&tt.textContent==='Sync Calendar'&&typeof renderConnectCalendar==='function'){ renderConnectCalendar(); return; }
+    if(typeof nav==='function'&&typeof _navCur!=='undefined'&&_navCur) nav(_navCur.screen,_navCur.data);
+  }catch(e){}
+}
 function _gcalPrivacyRowHTML(){
   const on=!!(_gcalState&&_gcalState.privateTitles);
   return '<div style="display:flex;align-items:flex-start;justify-content:space-between;gap:10px;margin-top:11px;padding-top:11px;border-top:1px solid var(--p-line3);">'
@@ -26669,6 +26703,7 @@ function _gcalCardHTML(){
     <div style="font-size:16px;font-weight:600;color:var(--p-ink);margin-bottom:3px;">Two-way sync with Google</div>
     <div style="font-size:16px;color:var(--p-mut);line-height:1.55;margin-bottom:10px;">Connect once and it works both ways: your SlickChart appointments appear in Google immediately, and anything in your own Google calendar blocks clients from booking that time.</div>
     ${(st&&st.authUrl)?`<a href="${_urlAttr(st.authUrl)}" class="btnp" style="display:inline-block;text-decoration:none;border-radius:8px;padding:9px 14px;font-size:16px;font-weight:600;"><i class="ti ti-brand-google" style="font-size:16px;"></i> Connect Google Calendar</a>`:'<div style="font-size:14px;color:var(--p-mut);">Checking…</div>'}
+    ${(st&&st.authUrl&&typeof _gcalPreConnectPrivacyHTML==='function')?_gcalPreConnectPrivacyHTML():''}
   </div>`;
 }
 function _saveManualAppts(){try{(function(_v){localStorage.setItem('sc_manual_appts',_v);if(typeof _pushKeyNow==='function')_pushKeyNow('sc_manual_appts',_v);return _v;})(JSON.stringify(manualAppts));}catch(e){}

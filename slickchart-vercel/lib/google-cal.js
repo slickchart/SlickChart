@@ -65,10 +65,16 @@ export async function getGoogleConnection(providerId) {
   return rows[0] || null;
 }
 
-export async function saveGoogleConnection(providerId, t) {
+// `opts.privateTitles` is the choice she made on the connect screen BEFORE granting, carried here
+// inside the SIGNED state token (never a raw query parameter — §0.1). It has to be applied as the
+// row is created: the privacy switch only existed on the connected card, so the only way to reach
+// it was to connect first, and by then the first sync had already put client names into Google.
+// Left undefined, the column default stands and a reconnect keeps whatever she chose before.
+export async function saveGoogleConnection(providerId, t, opts) {
   if (!providerId) return false;
   const q = sql();
   const now = Date.now();
+  const wantPrivate = (opts && typeof opts.privateTitles === 'boolean') ? opts.privateTitles : null;
   const expires = now + (Math.max(60, parseInt(t && t.expires_in, 10) || 3600) * 1000);
   // A refresh exchange returns NO refresh_token. COALESCE keeps the one we already have rather than
   // nulling it, which would silently turn a working connection into a dead one.
@@ -84,6 +90,12 @@ export async function saveGoogleConnection(providerId, t) {
       last_ok = EXCLUDED.last_ok,
       last_error = NULL,
       updated_at = EXCLUDED.updated_at`;
+  // Applied separately so the INSERT above stays one statement and a reconnect that carries no
+  // explicit choice cannot quietly reset a preference she already set.
+  if (wantPrivate !== null) {
+    await q`UPDATE google_connections SET private_titles=${wantPrivate}, updated_at=${now}
+            WHERE provider_id=${String(providerId)}`;
+  }
   return true;
 }
 

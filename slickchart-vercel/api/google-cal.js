@@ -54,7 +54,11 @@ export default async function handler(req, res) {
         // The state is a SHORT-LIVED SIGNED TOKEN carrying the provider id, not the id itself —
         // otherwise anyone could hand the callback a state naming another account and have that
         // account's calendar connected to their Google login.
-        const st = signToken({ u: providerId, k: 'gcal' }, process.env.SESSION_SECRET || '', 600);
+        // Her pre-connect privacy choice rides INSIDE the signed state, so the callback cannot be
+        // handed a different one by a crafted URL. The `private` query param is safe to read here
+        // because this endpoint is already behind requireLogin and only ever acts on that caller.
+        const wantPrivate = String((req.query && req.query.private) || '') === '1';
+        const st = signToken({ u: providerId, k: 'gcal', p: wantPrivate ? 1 : 0 }, process.env.SESSION_SECRET || '', 600);
         const p = new URLSearchParams({
           client_id: process.env.GOOGLE_CLIENT_ID || '',
           redirect_uri: redirectUri(req),

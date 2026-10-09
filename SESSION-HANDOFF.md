@@ -4603,3 +4603,40 @@ refuses to publish a slot list it is unsure of rather than risk a double booking
 said so, and the local quick-add modal beside it has had a visible **Cancel** all along, so the
 inconsistency was the giveaway. Added an X in the header: 36x44 tap target, inside the card at
 390px, no horizontal overflow, modal removed on tap, header and LIVE badge unchanged.
+
+### 2ap-5. The privacy switch was unreachable until after it mattered (`2026-10-09w`)
+
+Ashley disconnected her calendar to record the OAuth demo video, went to turn on **Keep client
+names out of Google** first, and could not find it. It was not a navigation problem. The row is
+rendered by `_gcalPrivacyRowHTML()`, which only runs inside the CONNECTED branch of
+`_gcalCardHTML()`. Disconnected, it does not exist.
+
+Which means the only way to reach the privacy choice was to connect first — and the first sync had
+already written client names and appointment notes into Google by then. `disconnectGoogle` DELETEs
+the row, so connect-toggle-disconnect does not preserve the preference either. There was no order
+of operations that got names out of Google before they went in.
+
+The choice now appears on the not-connected card too, and travels with the grant:
+
+- `_gcalPreConnectPrivacyHTML()` renders the row beside **Connect Google Calendar**.
+- `_gcalSetPreConnectPrivacy()` re-fetches the status with `?private=1`, because the consent link
+  is minted SERVER-side and the choice rides inside its signed state. Flipping the switch without
+  re-minting would hand Google the old link and connect with the opposite setting, silently. It
+  re-renders by calling `renderConnectCalendar()` directly rather than through `nav()`, which
+  depends on `_navCur` pointing at this screen.
+- `api/google-cal.js` reads `?private=1` — safe, that endpoint is behind `requireLogin` and only
+  ever acts on the authenticated caller — and signs it into the state as `p`.
+- `api/google-cal-callback.js` passes `{privateTitles: payload.p === 1}` to
+  `saveGoogleConnection`, which applies it as the row is created.
+
+**§0.1 note:** the flag is in the SIGNED state, never a raw query parameter at the callback. Tested:
+a tampered state and a state signed with a different secret both fail to verify, so nobody can
+force a setting onto another account's connection. Verified in the browser that the rendered
+consent link itself changes with the switch, which is the thing that actually had to be true.
+
+Default stays OFF, matching what connecting has always done. Flipping the product default to
+private-by-default was deliberately NOT done unilaterally — it is Ashley's call and she was asked.
+
+`saveGoogleConnection(providerId, tokens, opts)` applies the flag in a second UPDATE rather than in
+the INSERT, so a reconnect that carries no explicit choice cannot quietly reset a preference she
+already set.

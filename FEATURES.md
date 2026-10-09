@@ -252,9 +252,15 @@ saved anywhere", not "does this always call that".
 | `_gcalDisconnect` | `/api/clients` | via `syncClientEvents` |
 | `_gcalDisconnect` | `/api/google-cal` | direct |
 | `_gcalDisconnect` | `/api/provider-form` | via `submitSignOnDevice` |
+| `_gcalPreConnectPrivacyHTML` | `/api/calendar-url` | via `_loadCalFeedUrl` |
+| `_gcalPreConnectPrivacyHTML` | `/api/google-cal` | via `_gcalStatus` |
 | `_gcalPrivacyRowHTML` | `/api/google-cal` | via `_gcalSetPrivacy` |
 | `_gcalPush` | `/api/google-cal` | direct |
 | `_gcalPushSoon` | `/api/google-cal` | via `_gcalPush` |
+| `_gcalSetPreConnectPrivacy` | `/api/calendar-url` | via `_loadCalFeedUrl` |
+| `_gcalSetPreConnectPrivacy` | `/api/clients` | via `syncClientEvents` |
+| `_gcalSetPreConnectPrivacy` | `/api/google-cal` | via `_gcalStatus` |
+| `_gcalSetPreConnectPrivacy` | `/api/provider-form` | via `submitSignOnDevice` |
 | `_gcalSetPrivacy` | `/api/clients` | via `syncClientEvents` |
 | `_gcalSetPrivacy` | `/api/google-cal` | direct |
 | `_gcalSetPrivacy` | `/api/provider-form` | via `submitSignOnDevice` |
