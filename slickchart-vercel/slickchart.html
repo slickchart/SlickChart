@@ -214,7 +214,7 @@ const S=document.getElementById('S');
 // resets when I save it" and there was no way to tell whether her phone had any of them — a whole
 // day was spent debugging code she may not have been running. Shown at the bottom of Settings, so
 // the answer is a screenshot away. Bump it on every ship.
-const APP_BUILD='2026-10-09d';
+const APP_BUILD='2026-10-09e';
 
 
 /* ════════════════════════════════════════════════════════════════
@@ -27183,6 +27183,33 @@ function renderClientRecover(){
   // timestamps; sc_note_drafts merges per client and a device holding no entry for a client
   // contributes nothing to it, so it is not damaged by the same failure. That means the notes can
   // still be sitting there while every chart looks blank — and nobody had looked.
+  // Characters she actually TYPED, per client, in the two places her writing lives. Rounded
+  // kilobytes could not answer this: "3 clients, 1KB" is three real notes or three empty shells.
+  const ty=j.typed||{};
+  const rosterTyped=(ty.roster||[]).filter(function(x){return (x.notes+x.conditions+x.chart)>0;});
+  const draftsTyped=(ty.noteDrafts||[]).filter(function(x){return x.chars>0;});
+  const typedTotal=rosterTyped.reduce(function(n,x){return n+x.notes+x.conditions+x.chart;},0)
+    +draftsTyped.reduce(function(n,x){return n+x.chars;},0);
+  const typedBox=(rosterTyped.length||draftsTyped.length)
+    ? '<div style="background:var(--p-green-bg);border:1px solid var(--p-green);border-radius:12px;padding:12px 14px;margin-bottom:12px;font-size:16px;color:var(--p-ink);line-height:1.6;">'
+      +'<b>'+typedTotal.toLocaleString()+' characters they typed are still on the server.</b>'
+      +(rosterTyped.length?('<div style="margin-top:6px;">In their charts:</div>'
+        +rosterTyped.slice(0,12).map(function(x){
+          const bits=[];if(x.notes)bits.push(x.notes+' chars of notes');
+          if(x.conditions)bits.push(x.conditions+' of conditions');if(x.chart)bits.push(x.chart+' of chart detail');
+          if(x.summaries)bits.push(x.summaries+' summaries');if(x.forms)bits.push(x.forms+' forms');
+          return '\u00b7 '+esc(x.name||x.id)+' \u2014 '+bits.join(', ');}).join('<br>')):'')
+      +(draftsTyped.length?('<div style="margin-top:6px;">Unfinished session notes:</div>'
+        +draftsTyped.slice(0,12).map(function(x){
+          const who=(_recoverState.clients||[]).find(function(c){return c.id===x.id;});
+          return '\u00b7 '+esc((who&&who.name)||x.id)+' \u2014 '+x.chars+' characters across '+x.sections+' section'+(x.sections===1?'':'s')
+            +(x.date?(', dated '+esc(x.date)):'');}).join('<br>')):'')
+      +'<div style="font-size:14px;color:var(--p-mut);margin-top:7px;">Counts of characters only, their words were not read. If this is more than their app is showing, the writing is there and it is a display problem.</div></div>'
+    : ((ty.roster||ty.noteDrafts)
+      ? '<div style="background:var(--p-red-bg);border:1px solid var(--p-red-line);border-radius:12px;padding:12px 14px;margin-bottom:12px;font-size:16px;color:var(--p-ink);line-height:1.6;">'
+        +'<b>Nothing they typed is left on the server.</b>'
+        +'<div style="font-size:14px;color:var(--p-mut);margin-top:6px;">Checked every chart in their account list and every unfinished session note. All empty.</div></div>'
+      : '');
   const nd=libs.sc_note_drafts, sd=libs.sc_summary_drafts, ss=libs.sc_session_summaries;
   const notesHere=[['Session notes',nd],['Visit summaries',ss],['Summary drafts',sd]]
     .filter(function(x){return x[1]&&x[1].onServer&&(x[1].clients||0)>0;});
@@ -27224,6 +27251,7 @@ function renderClientRecover(){
       +showing.length+' showing in their app · '+removed.length+' removed but still on the server'
       +((j.counts&&j.counts.rosterIds!=null)?('<br>Their app’s own list knows about '+j.counts.rosterIds):'')
       +'</div>'
+    +typedBox
     +notesVerdict
     +'<div style="background:var(--p-surf2);border:1px solid var(--p-line3);border-radius:12px;padding:11px 13px;margin-bottom:12px;font-size:16px;color:var(--p-ink);line-height:1.55;">'+verdict+'</div>'
     +(function(){
@@ -27324,9 +27352,19 @@ function _recoverText(){
   const nd2=(j.libraries||{}).sc_note_drafts,ss2=(j.libraries||{}).sc_session_summaries;
   const notesLine=(nd2&&nd2.clients)?('SESSION NOTES ARE ON THE SERVER: '+nd2.clients+' clients, '+(nd2.entries||0)+' entries, '+Math.round((nd2.bytes||0)/1024)+'KB')
     :((ss2&&ss2.clients)?('VISIT SUMMARIES ARE ON THE SERVER: '+ss2.clients+' clients'):'NO written notes or summaries on the server.');
-  const L=['SlickChart recovery — '+j.provider.email, notesLine,
+  const ty2=j.typed||{};
+  const rt=(ty2.roster||[]).filter(function(x){return (x.notes+x.conditions+x.chart)>0;});
+  const dt=(ty2.noteDrafts||[]).filter(function(x){return x.chars>0;});
+  const typedTot=rt.reduce(function(n,x){return n+x.notes+x.conditions+x.chart;},0)+dt.reduce(function(n,x){return n+x.chars;},0);
+  const typedLines=[];
+  typedLines.push(typedTot?('TYPED AND STILL ON THE SERVER: '+typedTot+' characters'):'NOTHING THEY TYPED IS LEFT ON THE SERVER.');
+  rt.forEach(function(x){typedLines.push('  chart '+(x.name||x.id)+': '+x.notes+' notes, '+x.conditions+' conditions, '+x.chart+' chart detail'
+    +(x.summaries?(', '+x.summaries+' summaries'):'')+(x.forms?(', '+x.forms+' forms'):''));});
+  dt.forEach(function(x){const w=(j.clients||[]).find(function(c){return c.id===x.id;});
+    typedLines.push('  unfinished note '+((w&&w.name)||x.id)+': '+x.chars+' characters, '+x.sections+' sections'+(x.date?(', '+x.date):''));});
+  const L=['SlickChart recovery — '+j.provider.email, notesLine].concat(typedLines).concat([
     (all.filter(c=>!c.deleted).length)+' showing, '+(all.filter(c=>c.deleted).length)+' removed but still on the server',
-    'Their app’s list knows about '+((j.counts&&j.counts.rosterIds!=null)?j.counts.rosterIds:'?'),''];
+    'Their app’s list knows about '+((j.counts&&j.counts.rosterIds!=null)?j.counts.rosterIds:'?'),'']);
   const nd=all.filter(c=>nest[c.id]);
   if(nd.length){L.push('NOT LOST — now an animal under another client:');
     nd.forEach(c=>L.push('  '+(c.name||c.id)+' -> under '+((nest[c.id].ownerName)||nest[c.id].ownerId)));L.push('');}

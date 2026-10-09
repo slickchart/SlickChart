@@ -256,6 +256,51 @@ export default async function handler(req, res) {
     let history = [];
     try { await ensureHistoryTable(); history = await listHistory(owner); } catch (e) {}
 
+    // ── LOOK INSIDE THE TWO PLACES HER WRITING WOULD BE ─────────────────────
+    // Rounded kilobytes hid the answer: "Note drafts: 3 clients, 1KB" could be three real notes or
+    // three empty shells, and "Client roster: 4 clients, 22KB" could be four full charts. Chart
+    // notes (c.notes / c.conditions) live in the ROSTER blob and nowhere else, and session notes
+    // live in sc_note_drafts. So count the actual CHARACTERS OF TYPING per client, in both.
+    //
+    // Still counts only — the number of characters she wrote, never the words. That is enough to
+    // answer "is her work there", which is the only question that matters here.
+    const typed = { roster: [], noteDrafts: [] };
+    try {
+      const rv = await q`SELECT v FROM kv WHERE owner=${owner} AND k='sc_clients'`;
+      const obj = rv.length ? JSON.parse(rv[0].v) : null;
+      if (obj && typeof obj === 'object') {
+        Object.keys(obj).forEach(id => {
+          const c = obj[id] || {};
+          const len = x => String(x == null ? '' : x).trim().length;
+          // The app seeds placeholders, so its own words do not count as her typing.
+          const real = x => { const v = String(x == null ? '' : x).trim();
+            return /^(—|-|–|n\/a|none|none noted|not scheduled|new client|unknown|)$/i.test(v) ? 0 : v.length; };
+          typed.roster.push({ id, name: String(c.name || ''),
+            notes: len(c.notes), conditions: len(c.conditions),
+            chart: real(c.skin) + real(c.concerns) + real(c.allergies) + real(c.fitz) + real(c.treatment),
+            summaries: Array.isArray(c.summaries) ? c.summaries.length : 0,
+            forms: (Array.isArray(c.submittedForms) ? c.submittedForms.length : 0) });
+        });
+        typed.roster.sort((a, b) => (b.notes + b.conditions + b.chart) - (a.notes + a.conditions + a.chart));
+      }
+    } catch (e) { typed.rosterError = true; }
+    try {
+      const dv = await q`SELECT v FROM kv WHERE owner=${owner} AND k='sc_note_drafts'`;
+      const obj = dv.length ? JSON.parse(dv[0].v) : null;
+      if (obj && typeof obj === 'object') {
+        Object.keys(obj).forEach(id => {
+          const d = obj[id] || {};
+          const secs = (d && typeof d.sections === 'object' && d.sections) ? d.sections : {};
+          let chars = 0, filled = 0;
+          Object.keys(secs).forEach(k2 => { const t = String(secs[k2] == null ? '' : secs[k2]).trim();
+            if (t) { chars += t.length; filled++; } });
+          typed.noteDrafts.push({ id, chars, sections: filled,
+            date: String(d.date || ''), templateId: String(d.templateId || ''), ts: Number(d.ts) || 0 });
+        });
+        typed.noteDrafts.sort((a, b) => b.chars - a.chars);
+      }
+    } catch (e) { typed.noteDraftsError = true; }
+
     let events = 0;
     try { const ev = await q`SELECT count(*)::int AS n FROM client_events WHERE provider_id=${owner}`; events = (ev[0] && ev[0].n) || 0; } catch (e) {}
 
@@ -290,6 +335,7 @@ export default async function handler(req, res) {
       deletedRecordIds: deletedRecord,
       nestedUnder,
       libraries,
+      typed,
       history,
       kv
     });

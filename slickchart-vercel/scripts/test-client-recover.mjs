@@ -230,6 +230,45 @@ ok('unparseable json does not 500 the whole lookup', !!libs.sc_body_maps && r.co
 ok('the roster blob is counted too', !!libs.sc_clients, libs.sc_clients);
 ok('library counts carry NO content', JSON.stringify(libs).indexOf('p1') < 0 && JSON.stringify(libs).indexOf('s1') < 0);
 
+// ── DID SHE TYPE ANYTHING THAT IS STILL THERE? ───────────────────────────────
+// Rounded kilobytes could not answer this. These assert the character counts, because the whole
+// question "is her work gone" comes down to whether those numbers are zero.
+await q`INSERT INTO kv (owner,k,v) VALUES (${H},'sc_clients',${JSON.stringify({
+  c_real: { name: 'Ingatara Perry', notes: 'Comet favouring the near hind. Recheck in two weeks.',
+            conditions: 'arthritic changes', skin: 'sensitive', concerns: 'stiffness',
+            allergies: 'None noted', fitz: '\u2014', treatment: 'Equine laser',
+            summaries: [{ id: 's1' }], submittedForms: [{ title: 'Intake' }] },
+  c_shell: { name: 'Shell', notes: '', conditions: '', skin: '\u2014', concerns: '\u2014',
+             allergies: 'None noted', fitz: '\u2014', treatment: 'New client' } })})
+  ON CONFLICT (owner,k) DO UPDATE SET v=EXCLUDED.v`;
+await q`INSERT INTO kv (owner,k,v) VALUES (${H},'sc_note_drafts',${JSON.stringify({
+  c_real: { date: '2026-10-07', templateId: 'soap', ts: 1,
+            sections: { s: 'Sound at walk, short on the right hind.', o: 'Heat over the fetlock.', a: '', p: 'Laser 3x' } },
+  c_empty: { date: '2026-10-07', templateId: 'soap', sections: { s: '', o: '' } } })})
+  ON CONFLICT (owner,k) DO UPDATE SET v=EXCLUDED.v`;
+r = await call('GET', { token: tokenFor('ashley@slickchart.app'), query: { email: 'heather@example.com' } });
+const ty = (r.body || {}).typed || {};
+const real = (ty.roster || []).find(x => x.id === 'c_real');
+ok('counts the characters of a real chart note',
+  !!(real && real.notes === 'Comet favouring the near hind. Recheck in two weeks.'.length), real);
+ok('counts conditions separately', !!(real && real.conditions === 'arthritic changes'.length), real);
+ok('counts chart detail but NOT the placeholders',
+  !!(real && real.chart === ('sensitive'.length + 'stiffness'.length + 'Equine laser'.length)), real && real.chart);
+ok('counts summaries and forms on the chart', !!(real && real.summaries === 1 && real.forms === 1), real);
+const shell = (ty.roster || []).find(x => x.id === 'c_shell');
+ok('an empty shell counts ZERO typed characters', !!(shell && shell.notes === 0 && shell.conditions === 0 && shell.chart === 0), shell);
+ok('the chart with typing is listed first', !!((ty.roster || [])[0] || {}).id && ty.roster[0].id === 'c_real', (ty.roster || []).map(x => x.id));
+const dr = (ty.noteDrafts || []).find(x => x.id === 'c_real');
+ok('counts an unfinished session note\'s characters',
+  !!(dr && dr.chars === ('Sound at walk, short on the right hind.'.length + 'Heat over the fetlock.'.length + 'Laser 3x'.length)), dr);
+ok('counts only the sections with words in them', !!(dr && dr.sections === 3), dr);
+ok('carries the note date and template', !!(dr && dr.date === '2026-10-07' && dr.templateId === 'soap'), dr);
+const dre = (ty.noteDrafts || []).find(x => x.id === 'c_empty');
+ok('an empty draft counts zero', !!(dre && dre.chars === 0 && dre.sections === 0), dre);
+ok('NONE OF THEIR WORDS ARE RETURNED',
+  JSON.stringify(ty).indexOf('Comet favouring') < 0 && JSON.stringify(ty).indexOf('Sound at walk') < 0
+  && JSON.stringify(ty).indexOf('arthritic') < 0);
+
 // ── the restore ──────────────────────────────────────────────────────────────
 r = await call('POST', { token: tokenFor('ashley@slickchart.app'), body: { email: 'heather@example.com', restoreIds: ['c_owner1', 'c_owner2'] } });
 ok('restore 200', r.code === 200 && r.body.ok, r.code);
