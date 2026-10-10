@@ -250,9 +250,69 @@ then the union of all five tabs after. **19/19 sections carried over, none lost.
 differences were 3-word windows straddling a seam where two adjacent sections now sit in different
 tabs. Allergies render on every tab for clients who have them, confirming the strip is sticky.
 
-## 12. Still open
+## 12. The product consult's guided questions — BUILT (`2026-10-10d`)
 
-- **Product consult has no guided questions yet.** The row is there under its agreed name, and
+> *"do research on a good included template for a product consult guided questions and then make
+> that editable just like the photo consult"*
+
+**Product consult is now a real built-in consult type** (`_vcProductProfile`, kind `product`, no
+photos) that appears in the consult catalogue alongside the per-profession ones. It is appended
+rather than derived from `allProfessions`, because it is not a profession — it is a second kind of
+consult any of them can send.
+
+### The included template, and why it is in this order
+
+`_vcProductQuestions()`. Ordered **safety first**, because the consistent finding across
+esthetician consultation guidance is that **current actives and medications are the most frequently
+missed question**, and they are the ones that decide whether a recommendation is safe.
+
+1. What are you using now, morning and night? Include your sunscreen.
+2. Is anything stinging, burning, or breaking you out?
+3. Are you using a retinol, an acid, or anything a doctor gave you?
+4. Any allergies, or anything your skin reacts to?
+5. Are you pregnant or breastfeeding?
+6. Any peels, laser, waxing or injectables in the last month?
+7. What would you most like to change?
+8. Is there an amount you would rather not go over?
+
+Sources: Luminous Skin Lab's 2026 new-esthetician consultation guide; them-ethod's skin assessment
+checklist; Dermascope on client intake forms; Pabau's facial consultation form guide. Budget (8)
+is not from the research — no source covered it — it is Ashley's own, from her mock.
+
+Eight, not more. Short wins completion, and she can add.
+
+### Editable exactly like the photo list
+
+The consult type editor already had **Photos to ask for**; it now has **Questions to ask** beside
+it, working the same way: reword in place, reorder with the arrows, remove, **Add a question**, and
+**Put the suggested questions back** for when she has edited it into a corner. Saved on the consult
+TYPE (`sc_vc_types`), so it is set up once and comes back the same for every client. Blank rows are
+dropped on save, so an empty box is never asked of a client.
+
+**The questions travel ON the invite**, exactly like `photoLabels`. Editing the type later cannot
+rewrite a consult already out with a client.
+
+Client side: each question is its own numbered box, saved as she types (so closing the app
+mid-answer loses nothing), none required — *"Answer what you can. You can skip any of them."* A
+half-answered consult is worth far more than an abandoned one.
+
+Answers come back **paired with the question they answered**, because sending bare answers would
+make the record unreadable the moment she edits the question set, and she is encouraged to edit it.
+They are sanitised on both ingest paths (`_sanVcAnswers`, capped and escaped on render) and shown
+to her above "what they are hoping for".
+
+Verified headless end to end: template present and in the catalogue, the type carries the questions
+and no photos, the editor renders all 8 rows with the section, help text, add and reset; edit,
+reorder, add and remove all work; blank rows dropped; edits persist to `vcTypes`; reset restores.
+Client renders one box per question, no photo grid, and holds the answers. No page errors.
+
+## 13. Still open
+
+- **The rest of the consult step-through from the mock** — the just-for-her vs save-for-everyone
+  choice on a one-off reword, suggested plan changes quoting the client's words back, and the
+  change flags on both sides. Designed in §4–§7, not built.
+- **The old item:** product consult guided questions — now done, see §12.
+ The row is there under its agreed name, and
   `_productConsult()` says plainly that the questions are next and opens the product plan the
   consult will write into — rather than being a row that silently does nothing.
 - The consult step-throughs from the prototype (editable saved questions, the just-for-her vs

@@ -742,8 +742,8 @@ SlickBridge.on('session-summary',s=>{
 
 SlickBridge.on('virtual-consult-invite',d=>{
   // provider-initiated only, this unlocks the client's ability to submit a photo consult
-  vcInvite={kind:d.kind||'skin',title:d.title||'Photo consult',fee:d.fee||'',providerFirst:client.providerFirst,photoLabels:Array.isArray(d.photoLabels)?d.photoLabels:undefined,refLabels:Array.isArray(d.refLabels)?d.refLabels:undefined,refTitle:d.refTitle||undefined};
-  _vcSubmitState={photos:{},refs:{},routine:[],flags:{}};
+  vcInvite={kind:d.kind||'skin',title:d.title||'Photo consult',fee:d.fee||'',providerFirst:client.providerFirst,askQuestions:Array.isArray(d.askQuestions)?d.askQuestions:undefined,photoLabels:Array.isArray(d.photoLabels)?d.photoLabels:undefined,refLabels:Array.isArray(d.refLabels)?d.refLabels:undefined,refTitle:d.refTitle||undefined};
+  _vcSubmitState={photos:{},refs:{},routine:[],flags:{},answers:{}};
   try{persistInvite();}catch(e){}
   pushNotify({type:'vcInvite',icon:'ti-camera',col:'#f3eefc',ic:'#8b6fc7',title:client.providerFirst+' invited you to a photo consult',body:'Submit a few photos so they can review before your visit.',onclick:()=>{client.activeProviderId='jess';applyActiveProvider();nav('virtual-submit');}});
   if(currentScreen==='journey'||currentScreen==='home')nav(currentScreen);
@@ -1459,7 +1459,7 @@ let currentScreen='home';
 // Session summary history + photo consult invite state
 let _summaryIdx=0,_summaryFrom='home';
 let vcInvite=null; // set when the provider invites the client to a photo consult
-let _vcSubmitState={photos:{},refs:{},routine:[],flags:{}};
+let _vcSubmitState={photos:{},refs:{},routine:[],flags:{},answers:{}};
 (function(){const j=client.providers&&client.providers.find(p=>p.id==='jess');if(j){j.virtualConsults=[{date:'Jun 26, 2026',kind:'skin',title:'Skin analysis',photos:['Front','Left side','Right side'],refs:null}];}})();
 
 // Progress photos, angle tabs + drag-to-compare state (the session photos are per-provider)
@@ -4973,6 +4973,31 @@ function _vcRoutineHTML(){
     +body
     +'<button onclick="_vcRoutineAdd()" style="width:100%;background:var(--c-card);border:1.5px dashed var(--c-line);border-radius:12px;padding:11px;font-size:14px;font-weight:600;color:var(--accent);cursor:pointer;font-family:inherit;margin-bottom:18px;"><i class="ti ti-plus" style="font-size:14px;"></i> Add a product</button>';
 }
+// The questions her provider set on this consult type. One box each, numbered, so a client on a
+// phone answers them one at a time instead of facing a single empty "tell me everything" box.
+// None are required: a half-answered consult is far more useful than one she abandons.
+function _vcAskHTML(){
+  const qs=(vcInvite&&Array.isArray(vcInvite.askQuestions))?vcInvite.askQuestions.filter(function(q){return String(q||'').trim();}):[];
+  if(!qs.length)return '';
+  if(!_vcSubmitState.answers||typeof _vcSubmitState.answers!=='object')_vcSubmitState.answers={};
+  const a=_vcSubmitState.answers;
+  return '<div style="font-size:12px;font-weight:600;color:var(--c-mut);text-transform:uppercase;letter-spacing:.06em;margin-bottom:8px;">A few questions</div>'
+    +qs.map(function(q,i){
+      const v=String(a[i]==null?'':a[i]);
+      return '<div style="margin-bottom:12px;">'
+        +'<div style="font-size:13px;font-weight:600;color:var(--c-ink);margin-bottom:6px;line-height:1.45;">'+_txt(q)+'</div>'
+        +'<textarea id="vc-ask-'+i+'" oninput="_vcSetAnswer('+i+',this.value)" rows="2" placeholder="Your answer…" '
+        +'style="width:100%;background:var(--c-card);border:1.5px solid var(--c-line);border-radius:12px;padding:10px 12px;font-size:13px;color:var(--c-ink);resize:none;font-family:inherit;line-height:1.6;box-sizing:border-box;outline:none;">'
+        +_txt(v)+'</textarea></div>';
+    }).join('')
+    +'<div style="font-size:11.5px;color:var(--c-mut);margin:-4px 0 14px;line-height:1.5;">Answer what you can. You can skip any of them.</div>';
+}
+// Saved as she types, same as the photo draft, so closing the app mid-answer loses nothing.
+function _vcSetAnswer(i,v){
+  if(!_vcSubmitState.answers||typeof _vcSubmitState.answers!=='object')_vcSubmitState.answers={};
+  _vcSubmitState.answers[i]=String(v==null?'':v).slice(0,2000);
+  try{persistVcDraft();}catch(e){}
+}
 function renderVirtualSubmit(){
   setNav('journey');
   document.getElementById('tt').textContent='Photo consult';
@@ -5005,6 +5030,7 @@ function renderVirtualSubmit(){
     <div style="display:grid;grid-template-columns:1fr 1fr 1fr;gap:8px;margin-bottom:18px;">${sets.refs.map(l=>tile(l,'refs')).join('')}</div>`:''}`}
     ${_vcRoutineHTML()}
     ${_vcFlagsHTML()}
+    ${_vcAskHTML()}
     <div style="font-size:12px;font-weight:600;color:var(--c-mut);text-transform:uppercase;letter-spacing:.06em;margin-bottom:8px;">${photoFree?'Tell '+_txt(client.providerFirst)+' about your goals':'What are you hoping for?'}</div>
     <textarea id="vc-goals" oninput="_vcSyncSubmit()" placeholder="Tell ${_txt(client.providerFirst)} what you'd love, any concerns, and questions…" style="width:100%;background:var(--c-card);border:1.5px solid var(--c-line);border-radius:12px;padding:12px;font-size:13px;color:var(--c-ink);height:84px;resize:none;font-family:inherit;line-height:1.6;box-sizing:border-box;outline:none;margin-bottom:16px;">${_txt(_vcSubmitState.goals||'')}</textarea>
     <button id="vc-submit-btn" onclick="submitVirtualConsult()" ${canSubmit?'':'disabled'} style="width:100%;background:${canSubmit?'var(--accent)':'#d9e7e1'};color:${canSubmit?'var(--accent-ink)':'var(--c-mut)'};border:none;border-radius:12px;padding:13px;font-size:15px;font-weight:700;cursor:${canSubmit?'pointer':'default'};font-family:inherit;margin-bottom:20px;"><i class="ti ti-send"></i> <span id="vc-submit-label">${ctaLabel}</span></button>
@@ -5026,7 +5052,12 @@ function submitVirtualConsult(){
   const date=new Date().toLocaleDateString('en-US',{month:'short',day:'numeric',year:'numeric'});
   const routine=(typeof _vcRoutineClean==='function')?_vcRoutineClean():[];
   const flags=(_vcSubmitState.flags&&typeof _vcSubmitState.flags==='object')?_vcSubmitState.flags:null;
-  const entry={date,kind:inv.kind,title:inv.title,photos,refs:(refs&&refs.length)?refs:null,goals,routine,flags};
+  // Pair each answer with the question it answered. Sending bare answers would make the record
+  // unreadable the moment she edits the question set, and she is encouraged to edit it.
+  const askQs=(inv&&Array.isArray(inv.askQuestions))?inv.askQuestions.filter(function(q){return String(q||'').trim();}):[];
+  const _ans=(_vcSubmitState.answers&&typeof _vcSubmitState.answers==='object')?_vcSubmitState.answers:{};
+  const answers=askQs.map(function(q,i){return {q:String(q),a:String(_ans[i]==null?'':_ans[i]).trim()};}).filter(function(x){return x.a;});
+  const entry={date,kind:inv.kind,title:inv.title,photos,refs:(refs&&refs.length)?refs:null,goals,routine,flags,answers:answers.length?answers:null};
   // compute real measurements from the first photo, then hand the submission (images + measures) to the provider
   const firstSrc=(photos[0]||{}).src||'';
   // Only consume the invite once the submission is safely away. The old code recorded the
@@ -5037,15 +5068,15 @@ function submitVirtualConsult(){
     const j=client.providers.find(p=>p.id==='jess');
     if(j){j.virtualConsults=j.virtualConsults||[];j.virtualConsults.unshift(entry);try{persistVirtualConsults();}catch(e){}}
     try{if(inv&&inv.invitedAt)localStorage.setItem('sc_vc_submitted',String(inv.invitedAt));}catch(e){}
-    vcInvite=null;_vcSubmitState={photos:{},refs:{},routine:[],flags:{}};try{persistInvite();}catch(e){}try{persistVcDraft();}catch(e){}
+    vcInvite=null;_vcSubmitState={photos:{},refs:{},routine:[],flags:{},answers:{}};try{persistInvite();}catch(e){}try{persistVcDraft();}catch(e){}
     if(typeof pushNotify==='function')pushNotify({type:'vcSubmitted',icon:'ti-check',col:'#e9f7f0',ic:'#4ec49a',title:'Consult submitted',body:client.providerFirst+' will review your photos and send notes back.'});
     nav('journey');
   };
   const fail=()=>{_restoreBtn();if(typeof showToast==='function')showToast('Couldn’t send your consult, please check your connection and try again.',false);};
   _imgMeasures(firstSrc).catch(()=>null).then(measures=>{
-    try{SlickBridge.post('virtual-consult-submitted',{providerId:'jess',clientId:'maya',kind:inv.kind,title:inv.title,date,photos,refs:entry.refs,goals,measures,routine});}catch(e){}
+    try{SlickBridge.post('virtual-consult-submitted',{providerId:'jess',clientId:'maya',kind:inv.kind,title:inv.title,date,photos,refs:entry.refs,goals,measures,routine,answers});}catch(e){}
     if(client._real){
-      return _clientSubmit('vc_submit',{kind:inv.kind,title:inv.title,date,photos,refs:entry.refs,goals,measures,routine})
+      return _clientSubmit('vc_submit',{kind:inv.kind,title:inv.title,date,photos,refs:entry.refs,goals,measures,routine,answers})
         .then(res=>{if(res&&res.ok)finalize();else if(res&&res.duplicate){/* already sending, ignore double tap */}else fail();})
         .catch(fail);
     }
@@ -6074,8 +6105,8 @@ function _applyServerVcInvite(vi){
   const iat=String(vi.invitedAt||'');
   if(iat&&iat===_vcSubmittedInviteId())return;
   if(!vcInvite||String(vcInvite.invitedAt||'')!==iat){
-    vcInvite={kind:vi.kind,title:vi.title||'Photo consult',fee:vi.fee||'',providerFirst:client.providerFirst,invitedAt:vi.invitedAt||0,photoLabels:Array.isArray(vi.photoLabels)?vi.photoLabels:undefined,refLabels:Array.isArray(vi.refLabels)?vi.refLabels:undefined,refTitle:vi.refTitle||undefined};
-    _vcSubmitState={photos:{},refs:{},routine:[],flags:{}};
+    vcInvite={kind:vi.kind,title:vi.title||'Photo consult',fee:vi.fee||'',providerFirst:client.providerFirst,invitedAt:vi.invitedAt||0,askQuestions:Array.isArray(vi.askQuestions)?vi.askQuestions:undefined,photoLabels:Array.isArray(vi.photoLabels)?vi.photoLabels:undefined,refLabels:Array.isArray(vi.refLabels)?vi.refLabels:undefined,refTitle:vi.refTitle||undefined};
+    _vcSubmitState={photos:{},refs:{},routine:[],flags:{},answers:{}};
     try{persistInvite();}catch(e){}try{persistVcDraft();}catch(e){}   // a new invite starts a fresh draft
   }
   let notified='';try{notified=localStorage.getItem('sc_vc_notified')||'';}catch(e){}

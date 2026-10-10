@@ -214,7 +214,7 @@ const S=document.getElementById('S');
 // resets when I save it" and there was no way to tell whether her phone had any of them — a whole
 // day was spent debugging code she may not have been running. Shown at the bottom of Settings, so
 // the answer is a screenshot away. Bump it on every ship.
-const APP_BUILD='2026-10-10c';
+const APP_BUILD='2026-10-10d';
 
 
 /* ════════════════════════════════════════════════════════════════
@@ -13572,9 +13572,12 @@ function inviteVirtualConsult(id,_force,_kind,_formId,_routine){
   // photo-free consults like nutrition/coaching) instead of re-deriving a skin-face grid.
   vcInvites[id]={...(vcInvites[id]||{}),invited:true,submitted:false,reviewed:false,invitedAt:Date.now(),
     kind:v.kind,title:v.title,photoLabels:Array.isArray(v.photoLabels)?v.photoLabels:[],refTitle:v.refTitle||null,refLabels:Array.isArray(v.refLabels)?v.refLabels:null,
+    // The questions travel ON the invite, exactly like photoLabels, so the client is asked the set
+    // as it stood when she sent it. Editing the type later cannot rewrite a consult already out.
+    askQuestions:Array.isArray(v.askQuestions)?v.askQuestions.slice():[],
     routine:(_routine!==false)};   // ON unless she turned it off for this invite
   try{persistVcState();}catch(e){}
-  try{SlickBridge.post('virtual-consult-invite',{providerId:'jess',clientId:id,kind:v.kind,title:v.title,fee:vcFee,photoLabels:Array.isArray(v.photoLabels)?v.photoLabels:[],refTitle:v.refTitle||null,refLabels:Array.isArray(v.refLabels)?v.refLabels:null});}catch(e){}
+  try{SlickBridge.post('virtual-consult-invite',{providerId:'jess',clientId:id,kind:v.kind,title:v.title,fee:vcFee,photoLabels:Array.isArray(v.photoLabels)?v.photoLabels:[],refTitle:v.refTitle||null,askQuestions:Array.isArray(v.askQuestions)?v.askQuestions.slice():[],refLabels:Array.isArray(v.refLabels)?v.refLabels:null});}catch(e){}
   // {consult} resolves to the same word this sentence used to interpolate, so an unedited template
   // sends byte-identical text to what shipped before.
   const _inviteMsg=_msgText('vc_invite',id,{consult:(v.kind==='skin'?'skin':v.kind)},v.id||null);
@@ -15153,6 +15156,34 @@ function loadVcTypes(){try{const raw=(typeof _lsGet==='function')?_lsGet('sc_vc_
 function persistVcTypes(){try{const v=JSON.stringify(vcTypes);localStorage.setItem('sc_vc_types',v);if(typeof _pushKeyNow==='function')_pushKeyNow('sc_vc_types',v);}catch(e){}}
 // Every consult the app knows how to run, whatever she ticked at signup. This is the menu she picks
 // from when ADDING a type, which is what lets an esthetician add a brow or lash analysis.
+// The product consult: no photos, questions instead. The default set below is ordered SAFETY
+// FIRST, because the consistent finding across esthetician consultation guidance is that current
+// actives and medications are the most frequently MISSED question, and they are the ones that
+// decide whether a recommendation is safe: a retinoid or acid already in use, a prescription
+// topical, a recent peel or laser, pregnancy or nursing. Those come before the goal question.
+// Wording is short and plain because the person answering is a client on a phone, not a clinician.
+// It asks, it never diagnoses. She can reword, reorder or delete any of it.
+// Sources: Luminous Skin Lab new-esthetician consultation guide (2026); them-ethod skin assessment
+// checklist; Dermascope on client intake forms; Pabau facial consultation form guide.
+function _vcProductQuestions(){
+  return [
+    'What are you using now, morning and night? Include your sunscreen.',
+    'Is anything stinging, burning, or breaking you out?',
+    'Are you using a retinol, an acid, or anything a doctor gave you?',
+    'Any allergies, or anything your skin reacts to?',
+    'Are you pregnant or breastfeeding?',
+    'Any peels, laser, waxing or injectables in the last month?',
+    'What would you most like to change?',
+    'Is there an amount you would rather not go over?'
+  ];
+}
+function _vcProductProfile(){
+  return {kind:'product',title:'Product consult',short:'Product consult',icon:'ti-flask',
+    photoLabels:[],refTitle:null,refLabels:null,
+    analysisTitle:'Their answers',
+    askQuestions:_vcProductQuestions(),
+    metrics:[],terminology:[],questions:[]};
+}
 function _vcCatalogue(){
   const seen={},out=[];
   try{
@@ -15161,11 +15192,15 @@ function _vcCatalogue(){
       if(v&&v.kind&&!seen[v.kind]){seen[v.kind]=1;out.push(_vcTypeFromProfile(v));}
     });
   }catch(e){}
+  // A product consult is not a profession, it is a SECOND kind of consult any of them can send, so
+  // it is appended here rather than derived from allProfessions like the others.
+  try{ if(!seen['product']){ seen['product']=1; out.push(_vcTypeFromProfile(_vcProductProfile())); } }catch(e){}
   return out;
 }
 function _vcTypeFromProfile(v){
   return {id:'def:'+v.kind,title:v.title,kind:v.kind,icon:v.icon||'ti-camera',
     photoLabels:Array.isArray(v.photoLabels)?v.photoLabels.slice():[],
+    askQuestions:Array.isArray(v.askQuestions)?v.askQuestions.slice():[],
     refTitle:v.refTitle||null,refLabels:Array.isArray(v.refLabels)?v.refLabels.slice():null,_builtin:true};
 }
 // The defaults that fit her professions — what this function used to return on its own.
@@ -15427,11 +15462,29 @@ function _vcTypeStartFrom(kind){
   _vcTypeDraft.icon=base.icon;
   if(!_vcTypeDraft.title)_vcTypeDraft.title=base.title;
   if(!_vcTypeDraft.photoLabels.length)_vcTypeDraft.photoLabels=base.photoLabels.slice();
+  if(!Array.isArray(_vcTypeDraft.askQuestions)||!_vcTypeDraft.askQuestions.length)
+    _vcTypeDraft.askQuestions=(base.askQuestions||[]).slice();
   _vcTypeDraft.refTitle=base.refTitle;_vcTypeDraft.refLabels=base.refLabels;
   _vcTypeEditorSheet(_vcTypeDraft._clientId||'');
 }
 function _vcTypeSetTitle(v){if(_vcTypeDraft)_vcTypeDraft.title=String(v||'');}
 function _vcTypeSetPhoto(i,v){if(_vcTypeDraft&&_vcTypeDraft.photoLabels[i]!==undefined)_vcTypeDraft.photoLabels[i]=String(v||'');}
+function _vcTypeSetAsk(i,v){if(_vcTypeDraft&&Array.isArray(_vcTypeDraft.askQuestions)&&_vcTypeDraft.askQuestions[i]!==undefined)_vcTypeDraft.askQuestions[i]=String(v||'');}
+function _vcTypeAddAsk(cid){if(!_vcTypeDraft)return;if(!Array.isArray(_vcTypeDraft.askQuestions))_vcTypeDraft.askQuestions=[];_vcTypeDraft.askQuestions.push('');_vcTypeEditorSheet(cid);}
+function _vcTypeRemoveAsk(cid,i){if(!_vcTypeDraft||!Array.isArray(_vcTypeDraft.askQuestions))return;_vcTypeDraft.askQuestions.splice(i,1);_vcTypeEditorSheet(cid);}
+// Order is the order they are asked in, so moving one matters.
+function _vcTypeMoveAsk(cid,i,dir){
+  if(!_vcTypeDraft||!Array.isArray(_vcTypeDraft.askQuestions))return;
+  const a=_vcTypeDraft.askQuestions,j=i+dir;
+  if(j<0||j>=a.length)return;
+  const t=a[i];a[i]=a[j];a[j]=t;_vcTypeEditorSheet(cid);
+}
+// Puts the researched set back, for when she has edited it into a corner.
+function _vcTypeResetAsk(cid){
+  if(!_vcTypeDraft)return;
+  _vcTypeDraft.askQuestions=(typeof _vcProductQuestions==='function')?_vcProductQuestions().slice():[];
+  _vcTypeEditorSheet(cid);
+}
 function _vcTypeAddPhoto(cid){if(!_vcTypeDraft)return;_vcTypeDraft.photoLabels.push('');_vcTypeEditorSheet(cid);}
 function _vcTypeRemovePhoto(cid,i){if(!_vcTypeDraft)return;_vcTypeDraft.photoLabels.splice(i,1);_vcTypeEditorSheet(cid);}
 function _vcTypeSave(cid){
@@ -15441,8 +15494,10 @@ function _vcTypeSave(cid){
   if(!title){if(typeof proToast==='function')proToast('Give this consult type a name');return;}
   if(!d.kind){if(typeof proToast==='function')proToast('Choose what to start from');return;}
   const labels=d.photoLabels.map(function(x){return String(x||'').trim();}).filter(Boolean);
+  // Blank rows are dropped on save, so an empty box she never filled in is never asked of a client.
+  const asks=(Array.isArray(d.askQuestions)?d.askQuestions:[]).map(function(x){return String(x||'').trim();}).filter(Boolean);
   const rec={id:(d.id&&!d._builtin)?d.id:('vct_'+Date.now().toString(36)),
-    title:title,kind:d.kind,icon:d.icon||'ti-camera',photoLabels:labels,
+    title:title,kind:d.kind,icon:d.icon||'ti-camera',photoLabels:labels,askQuestions:asks,
     refTitle:d.refTitle||null,refLabels:d.refLabels||null,_ts:Date.now()};
   const ix=vcTypes.findIndex(function(t){return t&&t.id===rec.id;});
   if(ix>=0)vcTypes[ix]=rec;else vcTypes.push(rec);
@@ -15485,6 +15540,18 @@ function _vcTypeEditorSheet(cid){
     const on=d.kind===t.kind;
     return '<button onclick="_vcTypeStartFrom(\''+esc(t.kind)+'\')" style="border:1px solid '+(on?'var(--accent)':'var(--p-line)')+';background:'+(on?'var(--accent-tint)':'var(--surf1)')+';color:'+(on?'var(--accent-strong)':'var(--p-ink)')+';border-radius:24px;padding:6px 12px;font-size:15px;cursor:pointer;font-family:inherit;margin:0 6px 6px 0;">'+esc(t.title)+'</button>';
   }).join('');
+  const asks=Array.isArray(d.askQuestions)?d.askQuestions:[];
+  const askRows=asks.map(function(q,i){
+    return '<div style="display:flex;gap:6px;align-items:flex-start;margin-bottom:6px;">'
+      +'<span style="flex-shrink:0;width:20px;height:20px;border-radius:50%;background:var(--accent-tint);color:var(--accent-strong);font-size:11px;font-weight:700;display:flex;align-items:center;justify-content:center;margin-top:9px;">'+(i+1)+'</span>'
+      +'<textarea oninput="_vcTypeSetAsk('+i+',this.value)" rows="2" placeholder="e.g. What are you using now, morning and night?" class="fi" style="flex:1;margin:0;resize:none;line-height:1.45;">'+esc(q)+'</textarea>'
+      +'<span style="display:flex;flex-direction:column;gap:1px;flex-shrink:0;">'
+      +'<button onclick="_vcTypeMoveAsk(\''+esc(cid)+'\','+i+',-1)" aria-label="Move up" '+(i===0?'disabled':'')+' style="background:none;border:none;color:var(--p-mut);cursor:pointer;padding:2px 4px;opacity:'+(i===0?'.3':'1')+';"><i class="ti ti-chevron-up" style="font-size:14px;"></i></button>'
+      +'<button onclick="_vcTypeMoveAsk(\''+esc(cid)+'\','+i+',1)" aria-label="Move down" '+(i===asks.length-1?'disabled':'')+' style="background:none;border:none;color:var(--p-mut);cursor:pointer;padding:2px 4px;opacity:'+(i===asks.length-1?'.3':'1')+';"><i class="ti ti-chevron-down" style="font-size:14px;"></i></button>'
+      +'</span>'
+      +'<button onclick="_vcTypeRemoveAsk(\''+esc(cid)+'\','+i+')" aria-label="Remove this question" style="background:none;border:none;color:var(--p-mut);cursor:pointer;padding:4px;margin-top:7px;flex-shrink:0;"><i class="ti ti-x" style="font-size:15px;"></i></button>'
+      +'</div>';
+  }).join('');
   const photoRows=d.photoLabels.map(function(l,i){
     return '<div style="display:flex;gap:7px;align-items:center;margin-bottom:6px;">'
       +'<input value="'+esc(l)+'" oninput="_vcTypeSetPhoto('+i+',this.value)" placeholder="e.g. Front, relaxed" class="fi" style="flex:1;margin:0;">'
@@ -15502,6 +15569,11 @@ function _vcTypeEditorSheet(cid){
     +'<div style="font-size:14px;color:var(--p-mut);line-height:1.5;margin-bottom:8px;">Leave this empty for a consult with no photos at all.</div>'
     +photoRows
     +'<button onclick="_vcTypeAddPhoto(\''+esc(cid)+'\')" style="width:100%;background:none;border:1px dashed var(--p-line);border-radius:10px;padding:9px;font-size:16px;color:var(--accent-strong);cursor:pointer;font-family:inherit;margin-bottom:16px;"><i class="ti ti-plus" style="font-size:14px;"></i> Add a photo prompt</button>'
+    +'<div style="font-size:14px;font-weight:600;color:var(--p-mut);text-transform:uppercase;letter-spacing:.05em;margin-bottom:4px;">Questions to ask</div>'
+    +'<div style="font-size:14px;color:var(--p-mut);line-height:1.5;margin-bottom:8px;">They answer these in their app before it reaches you. Reword any of them, change the order, or take one out \u2014 it is saved for every client you send this to.</div>'
+    +askRows
+    +'<button onclick="_vcTypeAddAsk(\''+esc(cid)+'\')" style="width:100%;background:none;border:1px dashed var(--p-line);border-radius:10px;padding:9px;font-size:16px;color:var(--accent-strong);cursor:pointer;font-family:inherit;margin-bottom:6px;"><i class="ti ti-plus"></i> Add a question</button>'
+    +((typeof _vcProductQuestions==='function'&&d.kind==='product')?'<button onclick="_vcTypeResetAsk(\''+esc(cid)+'\')" style="width:100%;background:none;border:none;color:var(--p-mut);font-size:14px;cursor:pointer;font-family:inherit;padding:4px;margin-bottom:12px;">Put the suggested questions back</button>':'<div style="height:8px;"></div>')
     +'<button onclick="_vcTypeSave(\''+esc(cid)+'\')" class="btnp" style="border-radius:12px;padding:12px;margin-bottom:8px;"><i class="ti ti-check"></i> Save</button>'
     +(isNew?'':'<button onclick="_vcTypeDelete(\''+esc(cid)+'\')" style="width:100%;background:none;border:1px solid var(--p-red-line);color:var(--p-red);border-radius:12px;padding:10px;font-size:16px;font-weight:600;cursor:pointer;font-family:inherit;margin-bottom:8px;">Remove this type</button>')
     +'<button onclick="document.getElementById(\'vc-type-editor\').remove();_vcTypeDraft=null;" style="width:100%;background:none;border:none;color:var(--p-mut);font-size:16px;cursor:pointer;font-family:inherit;padding:6px;">Cancel</button>'
@@ -15555,6 +15627,7 @@ function renderVirtualClient(id){
     <div style="display:grid;grid-template-columns:1fr 1fr 1fr;gap:6px;margin-bottom:14px;">
       ${refItems.map(o=>realImg(o,'ti-sparkles','var(--p-purple-bg)','var(--p-purple)')).join('')}
     </div>`:''}
+    ${(sub&&Array.isArray(sub.answers)&&sub.answers.length)?`<div style="background:var(--surf2);border:1px solid var(--p-line);border-radius:12px;padding:12px 14px;margin-bottom:12px;"><div style="font-size:14px;font-weight:600;color:var(--p-mut);text-transform:uppercase;letter-spacing:.06em;margin-bottom:8px;">What ${_fileEsc(c.name.split(' ')[0])} answered</div>${sub.answers.map(qa=>`<div style="margin-bottom:10px;"><div style="font-size:14px;color:var(--p-mut);line-height:1.45;margin-bottom:2px;">${_fileEsc(qa.q)}</div><div style="font-size:16px;color:var(--p-ink);line-height:1.6;">${_fileEsc(qa.a)}</div></div>`).join('')}</div>`:''}
     ${sub&&sub.goals?`<div style="background:var(--surf2);border:1px solid var(--p-line);border-radius:12px;padding:12px 14px;margin-bottom:12px;"><div style="font-size:14px;font-weight:600;color:var(--p-mut);text-transform:uppercase;letter-spacing:.06em;margin-bottom:6px;">What ${_fileEsc(c.name.split(' ')[0])} is hoping for</div><div style="font-size:16px;color:var(--p-ink);line-height:1.6;">${_fileEsc(sub.goals)}</div></div>`:''}
     ${_vcRoutineReviewHTML(id,sub)}
     <div style="background:var(--p-purple-bg);border:1px solid var(--p-purple-line);border-radius:12px;padding:14px;margin-bottom:12px;">
@@ -26860,6 +26933,17 @@ function _sanRoutine(arr){
     };
   }).filter(function(o){return !!o.name;});
 }
+// Answers arrive from the client, so they are capped and trimmed here and escaped on render.
+function _sanVcAnswers(a){
+  if(!Array.isArray(a))return null;
+  const out=a.map(function(x){
+    if(!x||typeof x!=='object')return null;
+    const q=String(x.q==null?'':x.q).slice(0,400).trim();
+    const v=String(x.a==null?'':x.a).slice(0,2000).trim();
+    return (q&&v)?{q:q,a:v}:null;
+  }).filter(Boolean).slice(0,40);
+  return out.length?out:null;
+}
 function _sanVcPhotos(arr){return (Array.isArray(arr)?arr:[]).map(o=>({label:String((o&&o.label)||''),src:(o&&_validImgSrc(o.src))?o.src:''}));}
 // Self-healing reconciliation: make sure every form / pre-visit check-in in the authoritative event
 // log is actually reflected on its client's chart. This fixes the "intake keeps vanishing" bug where a
@@ -27203,7 +27287,7 @@ async function syncClientEvents(){
         providerSystemNotify('Data deletion request',`${name} requested deletion of their data.`);
         touchedNotif=true;
       }else if(ev.kind==='vc_submit'){
-        vcSubmissions[cid]={photos:_sanVcPhotos(payload.photos),refs:(Array.isArray(payload.refs)&&payload.refs.length)?_sanVcPhotos(payload.refs):null,goals:payload.goals||'',measures:payload.measures||null,
+        vcSubmissions[cid]={photos:_sanVcPhotos(payload.photos),refs:(Array.isArray(payload.refs)&&payload.refs.length)?_sanVcPhotos(payload.refs):null,goals:payload.goals||'',answers:_sanVcAnswers(payload.answers),measures:payload.measures||null,
           routine:_sanRoutine(payload.routine),flags:_sanVcFlags(payload.flags),
           date:_eventDateLabel(ev,payload.date||'Today'),kind:payload.kind||'skin',title:payload.title||'Photo consult'};
         vcInvites[cid]={...(vcInvites[cid]||{}),invited:true,submitted:true,reviewed:false};   // a fresh submission must return to "needs review", even if a prior one was reviewed
@@ -28519,7 +28603,7 @@ SlickBridge.on('form-completed',d=>{
 
 SlickBridge.on('virtual-consult-submitted',d=>{
   const cid=d.clientId||'maya';
-  vcSubmissions[cid]={photos:_sanVcPhotos(d.photos),refs:(Array.isArray(d.refs)&&d.refs.length)?_sanVcPhotos(d.refs):null,goals:d.goals||'',measures:d.measures||null,flags:_sanVcFlags(d.flags),date:d.date||'Today',kind:d.kind||'skin',title:d.title||'Photo consult'};
+  vcSubmissions[cid]={photos:_sanVcPhotos(d.photos),refs:(Array.isArray(d.refs)&&d.refs.length)?_sanVcPhotos(d.refs):null,goals:d.goals||'',answers:_sanVcAnswers(d.answers),measures:d.measures||null,flags:_sanVcFlags(d.flags),date:d.date||'Today',kind:d.kind||'skin',title:d.title||'Photo consult'};
   vcInvites[cid]={...(vcInvites[cid]||{}),invited:true,submitted:true,reviewed:false};   // a fresh submission must return to "needs review", even if a prior one was reviewed
   try{persistVcState();}catch(e){}
   const nm=(CL[cid]&&CL[cid].name.split(' ')[0])||'A client';
