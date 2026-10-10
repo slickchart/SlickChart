@@ -468,7 +468,7 @@ const S=document.getElementById('S');
 // resets when I save it" and there was no way to tell whether her phone had any of them — a whole
 // day was spent debugging code she may not have been running. Shown at the bottom of Settings, so
 // the answer is a screenshot away. Bump it on every ship.
-const APP_BUILD='2026-10-10h';
+const APP_BUILD='2026-10-10i';
 
 
 /* ════════════════════════════════════════════════════════════════
@@ -4878,10 +4878,50 @@ async function _runSelfCheck(){
     }
   }catch(e){}
 
+  // Why is a check-in nudge still showing? Twice now a fix for this shipped on a theory and the
+  // card stayed up, so the answer goes in the ONE paste instead of costing another round trip
+  // (§1d). Dumps every field the decision actually reads, for exactly the clients still nudging.
+  const ciDiag=[];
+  try{
+    const nud=(typeof _needsCheckin==='function')?_needsCheckin():[];
+    ciDiag.push('CHECK-IN NUDGES SHOWING: '+nud.length);
+    const log=(typeof checkins!=='undefined'&&Array.isArray(checkins))?checkins:[];
+    ciDiag.push('check-in log holds '+log.length+' entr'+(log.length===1?'y':'ies')
+      +(log.length?(' for clientIds: '+log.map(function(x){return String((x&&x.clientId)||'(none)');}).join(', ')):''));
+    ciDiag.push('CL keys: '+Object.keys(CL).slice(0,40).join(', '));
+    nud.forEach(function(pair){
+      const id=pair[0],c=pair[1]||{};
+      const d=(typeof _visitDateOf==='function')?_visitDateOf(c):null;
+      const m=function(ci){try{return (typeof _ciMatchesVisit==='function'&&d)?String(_ciMatchesVisit(ci,d)):'n/a';}catch(e){return 'err';}};
+      ciDiag.push('');
+      ciDiag.push('-- '+String(c.name||id)+'  (id '+id+')');
+      ciDiag.push('   nextVisit raw   : '+JSON.stringify(c.nextVisit||''));
+      ciDiag.push('   parsed visit    : '+(d?d.toString():'NULL (could not parse nextVisit)'));
+      ciDiag.push('   hours until     : '+String((typeof _hoursUntilVisit==='function')?_hoursUntilVisit(c):'n/a'));
+      ciDiag.push('   checkinDoneFor  : '+JSON.stringify(c.checkinDoneFor==null?null:c.checkinDoneFor));
+      if(c.lastCheckin){
+        ciDiag.push('   lastCheckin     : dateLabel='+JSON.stringify(c.lastCheckin.dateLabel||'')
+          +' at='+(c.lastCheckin.at?new Date(c.lastCheckin.at).toString():'(none)')
+          +' -> matches this visit? '+m(c.lastCheckin));
+      } else {
+        ciDiag.push('   lastCheckin     : ABSENT on this client record');
+      }
+      const mine=log.filter(function(x){return x&&String(x.clientId||'')===String(id);});
+      ciDiag.push('   log entries for this client: '+mine.length);
+      mine.forEach(function(x,i){
+        ciDiag.push('     ['+i+'] dateLabel='+JSON.stringify(x.dateLabel||'')
+          +' at='+(x.at?new Date(x.at).toString():'(none)')
+          +' -> matches? '+m(x));
+      });
+      try{ciDiag.push('   _ciIsDismissed  : '+String((typeof _ciIsDismissed==='function')?_ciIsDismissed(id,c):'n/a'));}catch(e){}
+      try{ciDiag.push('   _checkinDone    : '+String((typeof _checkinDone==='function')?_checkinDone(id,c):'n/a'));}catch(e){}
+    });
+  }catch(e){ ciDiag.push('check-in diagnosis failed: '+(e&&e.message)); }
+
   const plain=[
     'SlickChart self-check \u2014 '+new Date().toLocaleString(),
     'build '+APP_BUILD
-  ].concat(L.map(x=>(x.ok?'OK   ':'FAIL ')+x.label+(x.detail?' \u2014 '+x.detail:'')))
+  ].concat([''],ciDiag,['']).concat(L.map(x=>(x.ok?'OK   ':'FAIL ')+x.label+(x.detail?' \u2014 '+x.detail:'')))
    .concat([''],rows.map(r=>r.k+': device '+(r.onDevice?r.deviceBytes+'B, edited '+r.deviceEdited:'MISSING')
      +' | account '+(r.onAccount?r.accountBytes+'B, edited '+r.accountEdited:'MISSING')
      +(r.onDevice&&r.onAccount?(r.same?' | identical':(r.explained?' | differs only by '+r.hiddenForms+' deleted form(s) — expected':' | DIFFERENT')):'')
