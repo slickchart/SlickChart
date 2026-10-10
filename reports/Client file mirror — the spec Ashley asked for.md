@@ -217,10 +217,47 @@ Both apps said **Virtual consult** in seven different casings, and called the sa
 event) and `virtual-submit` (a nav key) — because they are protocol, not language, and renaming
 them would break in-flight invites. Never rename those without a migration.
 
-## 11. Still open
+## 11. BUILT INTO THE REAL APP (`2026-10-10c`)
 
-- **Top tabs vs bottom bar** — toggle is in the prototype, not decided.
-- **Product consult does not exist in the live app.** Only the photo consult is built.
+> *"lets go ahead and build this full new client file"* / *"lets try the tabs on top like the
+> mirror showed"*
+
+**Tabs on top — decided.** The vitals strip and the tab row travel together as ONE sticky block
+(`_clientStickyHTML`), so the strip cannot be scrolled away, which is the entire point of promoting
+allergies out of the details list.
+
+What was there before: `_clientTabBar` and `_setClientTab` existed but **`_clientTabBar` was never
+called**, so all four panes rendered stacked as one long unlabelled scroll. Same class of bug as
+`_openPhotoRecovery` (CLAUDE.md §1c): working machinery, no way to reach it.
+
+| Tab | Holds | Mirror dot |
+|---|---|---|
+| **Visit** | Today's visit actions, **Send to …**, Private notes, pre-visit check-in, photo consult | |
+| **Journey** | Session summaries | ● |
+| **Photos** | Photo library + consent state | |
+| **Homecare** | Recommended routine, recommended products | ● |
+| **Her file** | Client details, suggested forms, forms & documents, app invite, Square | |
+
+New: `_clientVitalsHTML` (labels come from `_vitalsConfig()` so an equine or movement practice gets
+its own words, not "Skin type"), `_mirrorNoteHTML`, `_sendToClientHTML`, `_clientPhotosTabHTML`,
+`_clientStickyHTML`.
+
+**"None known" is an answer, not an alert** — it never renders as a red chip, because a red chip
+that is usually meaningless trains her to ignore red.
+
+**Verified nothing was lost:** captured the full rendered text of the old screen for three clients,
+then the union of all five tabs after. **19/19 sections carried over, none lost.** The only
+differences were 3-word windows straddling a seam where two adjacent sections now sit in different
+tabs. Allergies render on every tab for clients who have them, confirming the strip is sticky.
+
+## 12. Still open
+
+- **Product consult has no guided questions yet.** The row is there under its agreed name, and
+  `_productConsult()` says plainly that the questions are next and opens the product plan the
+  consult will write into — rather than being a row that silently does nothing.
+- The consult step-throughs from the prototype (editable saved questions, the just-for-her vs
+  save-for-everyone choice, suggested plan changes quoting the client's words, change flags) are
+  **designed and specced in §4–§7 above but not built in the app yet.**
 - **The two-store summary problem — the real blocker, diagnosed and NOT fixed.** The chart reads
   `sessionSummaries[id]` while the client app reads `c.summaries`. Two stores for one thing. This
   is stage 1 of the redesign: the mirror cannot be honest while the two sides read different

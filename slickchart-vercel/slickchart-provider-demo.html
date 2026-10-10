@@ -468,7 +468,7 @@ const S=document.getElementById('S');
 // resets when I save it" and there was no way to tell whether her phone had any of them — a whole
 // day was spent debugging code she may not have been running. Shown at the bottom of Settings, so
 // the answer is a screenshot away. Bump it on every ship.
-const APP_BUILD='2026-10-10b';
+const APP_BUILD='2026-10-10c';
 
 
 /* ════════════════════════════════════════════════════════════════
@@ -8465,17 +8465,151 @@ async function _loadClientLoyalty(id){
 //   • Setup    — first-visit package / invites / check-in settings, Square
 // Tab is preserved across re-renders of the same client (so editing a routine doesn't bounce you back
 // to Overview) and resets to Overview when a different client is opened.
-let _clientTab='overview', _clientTabFor=null;
+let _clientTab='visit', _clientTabFor=null;
 function _clientTabHasFlag(c){return !!(c&&(c.flaggedContra||(c.lastCheckin&&c.lastCheckin.flagged&&c.lastCheckin.flagged.length)||(Array.isArray(c.submittedForms)&&c.submittedForms.some(f=>f&&f.flagged&&f.flagged.length))));}
+// ── The client file: a mirror of the client's own app ────────────────────────────────────────────
+// Ashley: "what if we had the client file mirror what the client sees on their app?" The tabs carry
+// the SAME names as her client's app (Journey, Homecare), with the provider-only ones beside them,
+// so there is one mental model instead of two. reports/"Client file mirror" holds the full spec.
+
+// The safety strip. It is STICKY WITH THE TABS, not part of the scrolling page, because the one
+// thing she said matters most is that an allergy is on screen whichever tab she is in. Labels come
+// from _vitalsConfig(), so a movement or equine practice gets its own words rather than "Skin type".
+function _clientVitalsHTML(id){
+  const c=CL[id];if(!c)return '';
+  const cfg=(typeof _vitalsConfig==='function')?_vitalsConfig():[];
+  const lab=function(k){const f=cfg.find(function(x){return x.key===k;});return f?f.label:k;};
+  const val=function(k){const v=String(c[k]==null?'':c[k]).trim();return (!v||v==='—')?'':v;};
+  // "None known" is an ANSWER, not an alert. Showing it as a red chip would train her to ignore red.
+  const isNone=function(v){return /^(none|none known|n\/?a|no|nil|non)\b/i.test(v);};
+  const chip=function(tone,txt,extra){
+    const col=tone==='alert'?'var(--p-red)':(tone==='warn'?'var(--p-amber)':'var(--p-mut)');
+    const bg=tone==='alert'?'var(--p-red-bg)':(tone==='warn'?'var(--p-amber-bg)':'var(--p-surf2)');
+    const ln=tone==='alert'?'var(--p-red-line)':(tone==='warn'?'var(--p-amber-line)':'var(--p-line3)');
+    return '<span style="display:inline-flex;align-items:center;gap:4px;border-radius:999px;padding:3px 9px;font-size:12px;font-weight:600;max-width:100%;'
+      +'background:'+bg+';border:1px solid '+ln+';color:'+col+';">'+(extra||'')+'<span style="overflow:hidden;text-overflow:ellipsis;white-space:nowrap;">'+_fileEsc(txt)+'</span></span>';
+  };
+  const chips=[];
+  if(c.flaggedContra)chips.push('<button onclick="_setClientTab(\''+id+'\',\'file\')" style="font:inherit;cursor:pointer;background:none;border:0;padding:0;max-width:100%;">'
+    +chip('alert','Flagged on intake','<i class="ti ti-alert-triangle" style="font-size:12px;"></i>')+'</button>');
+  const al=val('allergies'); if(al&&!isNone(al))chips.push(chip('alert',lab('allergies')+': '+al,'<i class="ti ti-alert-triangle" style="font-size:12px;"></i>'));
+  const cond=val('conditions'); if(cond&&!isNone(cond))chips.push(chip('warn',cond));
+  const meds=val('medications'); if(meds&&!isNone(meds))chips.push(chip('warn',lab('medications')+': '+meds));
+  const preg=val('pregnancy'); if(preg&&/^y/i.test(preg))chips.push(chip('warn',lab('pregnancy')));
+  const out=(Array.isArray(c.pendingForms)?c.pendingForms.length:0);
+  if(out)chips.push('<button onclick="_setClientTab(\''+id+'\',\'file\')" style="font:inherit;cursor:pointer;background:none;border:0;padding:0;">'
+    +chip('warn',out+' form'+(out>1?'s':'')+' not back')+'</button>');
+  if(!chips.length)chips.push(chip('','Nothing flagged','<i class="ti ti-check" style="font-size:12px;color:var(--p-green);"></i>'));
+
+  const na=(typeof _nextApptForClient==='function')?_nextApptForClient(id):null;
+  const when=na&&na.dateLabel?(_fileEsc(na.dateLabel)+(na.treatment?(' · '+_fileEsc(na.treatment)):'')):'';
+
+  // Three facts, and they are the three she named: the concern/goal, the type, the scale. Two lines
+  // each rather than one, because truncating an allergy or a goal to fit a tile is the wrong failure.
+  const facts=[['concerns',val('concerns')],['skin',val('skin')],['fitz',val('fitz')]]
+    .map(function(pair){
+      const k=pair[0],v=pair[1];
+      return '<div style="background:var(--surf2);border:1px solid var(--p-line3);border-radius:9px;padding:6px 8px;min-width:0;">'
+        +'<div style="font-size:10px;letter-spacing:.05em;text-transform:uppercase;color:var(--p-mut2,var(--p-mut));line-height:1.25;margin-bottom:1px;overflow:hidden;text-overflow:ellipsis;white-space:nowrap;">'+_fileEsc(lab(k))+'</div>'
+        +'<div style="font-size:12.5px;font-weight:600;line-height:1.3;color:'+(v?'var(--p-ink)':'var(--p-mut)')+';display:-webkit-box;-webkit-line-clamp:2;-webkit-box-orient:vertical;overflow:hidden;">'+_fileEsc(v||'—')+'</div></div>';
+    }).join('');
+
+  return '<div style="padding:9px 16px 10px;border-bottom:1px solid var(--p-line2);background:var(--p-surf);">'
+    +'<div style="display:flex;gap:6px;flex-wrap:wrap;margin-bottom:'+(when?'7px':'8px')+';">'+chips.join('')+'</div>'
+    +(when?('<div style="font-size:13px;color:var(--p-mut);margin-bottom:8px;"><b style="color:var(--accent-strong);font-weight:650;">'+when+'</b></div>'):'')
+    +'<div style="display:grid;grid-template-columns:repeat(3,1fr);gap:6px;">'+facts+'</div></div>';
+}
+
+// One line saying the client is looking at this same tab, so she never has to wonder.
+function _mirrorNoteHTML(tabName,extra){
+  return '<div style="margin:12px 16px 2px;display:flex;gap:8px;align-items:flex-start;background:var(--p-blue-bg);border:1px solid var(--p-blue-line);border-radius:11px;padding:9px 11px;font-size:13px;color:var(--p-blue);line-height:1.5;">'
+    +'<i class="ti ti-eye" style="font-size:15px;flex-shrink:0;margin-top:1px;"></i>'
+    +'<span><b>They see this too</b> — their app calls it '+_fileEsc(tabName)+' as well. '+_fileEsc(extra||'')+'</span></div>';
+}
+
+// Everything that LEAVES for the client, in one place, under the names Ashley chose.
+function _sendToClientHTML(id){
+  const c=CL[id];if(!c)return '';
+  const first=_fileEsc(String(c.name||'').split(' ')[0]||'them');
+  const nG=(typeof resources!=='undefined'&&Array.isArray(resources))?resources.length:0;
+  const nC=(typeof courses!=='undefined'&&Array.isArray(courses))?courses.length:0;
+  const nOut=(Array.isArray(c.pendingForms)?c.pendingForms.length:0);
+  const nSum=(typeof sessionSummaries!=='undefined'&&sessionSummaries[id])?sessionSummaries[id].length:0;
+  const row=function(icon,colour,name,sub,act){
+    return '<button onclick="'+act+'" style="width:100%;text-align:left;background:var(--surf2);border:1px solid var(--p-line);border-radius:12px;padding:11px 13px;margin-bottom:8px;display:flex;align-items:center;gap:11px;cursor:pointer;font-family:inherit;min-height:56px;">'
+      +'<i class="ti '+icon+'" style="font-size:19px;width:22px;text-align:center;color:'+colour+';flex-shrink:0;"></i>'
+      +'<span style="flex:1;min-width:0;"><span style="display:block;font-size:16px;font-weight:600;color:var(--p-ink);">'+name+'</span>'
+      +'<span style="display:block;font-size:14px;color:var(--p-mut);line-height:1.4;">'+sub+'</span></span>'
+      +'<i class="ti ti-chevron-right" style="font-size:16px;color:var(--p-mut);flex-shrink:0;"></i></button>';
+  };
+  return '<div class="sh"><h2>Send to '+first+'</h2></div>'
+    +'<div style="padding:0 16px 2px;"><div style="font-size:14px;color:var(--p-mut);margin:-2px 0 9px;line-height:1.5;">Everything here lands in their app. They get a notification.</div>'
+    +row('ti-camera','var(--p-purple)','Photo consult','They send photos from home, you reply when you have a minute',"inviteVirtualConsult('"+id+"')")
+    +row('ti-flask','var(--p-blue)','Product consult','A few questions, then you build their product plan',"_productConsult('"+id+"')")
+    +row('ti-file-text','var(--accent-strong)','Forms','Intake, consent, or one you wrote'+(nOut?(' · '+nOut+' still out'):''),"openClientFormSender('"+id+"')")
+    +row('ti-book','var(--p-amber)','Guides + Courses',nG+' guide'+(nG===1?'':'s')+', '+nC+' course'+(nC===1?'':'s'),"openClientFormSender('"+id+"')")
+    +row('ti-pencil','var(--p-green)','Session summary',nSum?(nSum+' saved · they read it in Journey'):'Written when you finish a session',"nav('summary-history','"+id+"')")
+    +'</div>';
+}
+
+// The product consult's guided questions are not built yet. Rather than a dead row or a fake one,
+// this opens the product plan it will write into and says plainly what is missing — a row that
+// quietly does nothing is how a provider stops trusting the whole screen.
+function _productConsult(id){
+  if(typeof confirmModal==='function'){
+    confirmModal({title:'Product consult',
+      body:'The guided questions for this are the next thing being built. For now this opens their product plan, which is what the consult writes into.',
+      action:'Open their plan'},function(){try{_setClientTab(id,'homecare');}catch(e){}});
+    return;
+  }
+  try{_setClientTab(id,'homecare');}catch(e){}
+}
+
+// Photos get their own tab because she reaches for them far more often than anything in the file.
+function _clientPhotosTabHTML(id){
+  const c=CL[id]||{};
+  const consent=c.photoConsent
+    ? ((c.photoConsent.beforeAfter?'✓':'✗')+' Before/after · '+(c.photoConsent.socialMedia?'✓':'✗')+' Social/portfolio')
+    : 'Captured once they sign an intake';
+  const tone=c.photoConsent?'var(--p-green)':'var(--p-mut)';
+  return '<div style="padding:14px 16px 4px;">'
+    +'<button class="btnp" onclick="nav(\'photos\',\''+id+'\')" style="width:100%;justify-content:center;border-radius:12px;padding:12px;font-size:16px;font-weight:600;">'
+    +'<i class="ti ti-camera" style="font-size:17px;"></i> Open their photos</button>'
+    +'<div style="margin-top:10px;background:var(--surf2);border:1px solid var(--p-line);border-radius:12px;padding:11px 13px;">'
+    +'<div style="font-size:14px;color:var(--p-mut);text-transform:uppercase;letter-spacing:.06em;margin-bottom:4px;">Photo consent</div>'
+    +'<div style="font-size:15px;color:'+tone+';line-height:1.5;">'+_fileEsc(consent)+'</div>'
+    +(c.photoConsent&&!c.photoConsent.socialMedia?'<div style="font-size:13px;color:var(--p-mut);margin-top:6px;line-height:1.5;">They have not agreed to marketing use, so sharing these anywhere public is not covered.</div>':'')
+    +'</div></div>';
+}
+
+// Vitals and tabs travel together as ONE sticky block: the strip is only useful if it cannot be
+// scrolled away, which is the whole point of promoting allergies out of the details list.
+function _clientStickyHTML(id){
+  return '<div style="position:sticky;top:0;z-index:6;background:var(--p-surf);">'
+    +((typeof _clientVitalsHTML==='function')?_clientVitalsHTML(id):'')
+    +((typeof _clientTabBar==='function')?_clientTabBar(id):'')
+    +'</div>';
+}
 function _clientTabBar(id){
   const c=CL[id]||{};
   const dot='<span style="width:7px;height:7px;border-radius:50%;background:#e87070;flex-shrink:0;"></span>';
-  const tabs=[['overview','Overview',false],['forms','Forms',_clientTabHasFlag(c)],['care','Care',false],['setup','Setup',false]];
-  return `<div class="ctbar" role="tablist" style="position:sticky;top:0;z-index:5;display:flex;gap:4px;padding:8px 16px 10px;margin-top:6px;background:linear-gradient(#0b1816,#0b1816 72%,rgba(17,17,17,0));">
-    ${tabs.map(([k,l,flag])=>{const on=_clientTab===k;return `<button role="tab" aria-selected="${on}" data-tab="${k}" class="ctseg" onclick="_setClientTab('${id}','${k}')" style="flex:1;display:inline-flex;align-items:center;justify-content:center;gap:5px;padding:8px 4px;border-radius:8px;font-family:inherit;font-size:16px;font-weight:600;cursor:pointer;border:1px solid ${on?'var(--accent-a30,#123a2c)':'var(--p-chip)'};background:${on?'var(--accent-tint)':'var(--p-surf)'};color:${on?'var(--accent)':'var(--p-mut)'};">${l}${flag?dot:''}</button>`;}).join('')}
+  // A blue dot marks a tab the CLIENT has too, under the same name. It is deliberately a different
+  // colour from the red "needs you" dot: one says they can see this, the other says do something.
+  const mirror='<span title="Your client has this tab too" style="position:absolute;top:4px;right:6px;width:5px;height:5px;border-radius:50%;background:var(--p-blue);"></span>';
+  const nOut=(Array.isArray(c.pendingForms)?c.pendingForms.length:0);
+  const tabs=[
+    ['visit','Visit','ti-player-play',false,false],
+    ['journey','Journey','ti-timeline',false,true],
+    ['photos','Photos','ti-camera',false,false],
+    ['homecare','Homecare','ti-sparkles',false,true],
+    ['file','Her file','ti-folder',(_clientTabHasFlag(c)||!!nOut),false]
+  ];
+  return `<div class="ctbar" role="tablist" style="display:flex;gap:4px;padding:8px 10px 9px;border-bottom:1px solid var(--p-line2);background:var(--p-surf);">
+    ${tabs.map(([k,l,ic,flag,mir])=>{const on=_clientTab===k;return `<button role="tab" aria-selected="${on}" data-tab="${k}" class="ctseg" onclick="_setClientTab('${id}','${k}')" style="position:relative;flex:1;min-width:0;display:inline-flex;flex-direction:column;align-items:center;justify-content:center;gap:2px;padding:7px 2px 6px;border-radius:9px;font-family:inherit;font-size:11.5px;font-weight:600;cursor:pointer;border:1px solid ${on?'var(--accent-a30,#123a2c)':'var(--p-chip)'};background:${on?'var(--accent-tint)':'var(--p-surf)'};color:${on?'var(--accent)':'var(--p-mut)'};"><i class="ti ${ic}" style="font-size:16px;"></i><span style="overflow:hidden;text-overflow:ellipsis;white-space:nowrap;max-width:100%;">${l}</span>${mir?mirror:''}${flag?`<span style="position:absolute;top:4px;left:6px;width:7px;height:7px;border-radius:50%;background:#e87070;"></span>`:''}</button>`;}).join('')}
   </div>`;
 }
 function _setClientTab(id,tab){
+  if(['visit','journey','photos','homecare','file'].indexOf(tab)<0)tab='visit';
   _clientTab=tab;_clientTabFor=id;
   document.querySelectorAll('.ctab').forEach(p=>{p.hidden=(p.getAttribute('data-tab')!==tab);});
   document.querySelectorAll('.ctseg').forEach(b=>{
@@ -8498,7 +8632,7 @@ function renderClient(id){
   _recEditCtx='profile';
   const c=CL[id];
   if(!c){if(typeof renderClients==='function'){return renderClients();}S.innerHTML='<div style="padding:30px 16px;color:var(--p-mut);text-align:center;">This client is no longer available.</div>';return;}
-  if(_clientTabFor!==id){_clientTab='overview';_clientTabFor=id;}
+  if(_clientTabFor!==id){_clientTab='visit';_clientTabFor=id;}
   // An animal has no contact details of its own — email, phone and birthday belong to its owner, and
   // that's who every call, text and email actually goes to. Show (and edit) theirs rather than three
   // empty rows that look like missing data.
@@ -8545,7 +8679,8 @@ function renderClient(id){
      </div>`:''}
     </div>`;
   })()}
-  <div class="ctab" data-tab="overview">
+  ${(typeof _clientStickyHTML==='function')?_clientStickyHTML(id):''}
+  <div class="ctab" data-tab="visit"${_clientTab==='visit'?'':' hidden'}>
   <div class="sh" style="padding-top:6px;"><h2>Today’s visit</h2></div>
   <div style="display:grid;grid-template-columns:1fr 1fr;gap:8px;padding:0 16px 8px;">
     <button class="btnp" style="border-radius:12px;padding:9px;" onclick="nav('brief','${id}')"><i class="ti ${aiEnabled?'ti-brain':'ti-file-text'}"></i> ${aiEnabled?'AI Brief':'Visit Brief'}</button>
@@ -8558,42 +8693,11 @@ function renderClient(id){
   </div>
   ${(function(){var _b=_clientBalance(id);return _b>0?'<div style="padding:0 16px 8px;"><div style="background:var(--p-amber-bg);border:1px solid var(--p-amber-line);border-radius:8px;padding:8px 12px;font-size:16px;color:var(--p-amber);display:flex;justify-content:space-between;"><span>Balance due</span><b>$'+_fmtMoney(_b)+'</b></div></div>':'';})()}
   <div style="padding:0 16px 14px;"><button class="btnp" onclick="nav('checkout','${id}')" style="width:100%;justify-content:center;border-radius:12px;"><i class="ti ti-cash"></i> Take payment</button></div>
+  ${(typeof _sendToClientHTML==='function')?_sendToClientHTML(id):''}
   <div class="sh"><h2>Private notes</h2></div>
   <div style="padding:0 16px 14px;">
     <textarea id="gpnote-${id}" placeholder="Notes to yourself about ${_fileEsc((c.name||'').split(' ')[0]||'this client')} — birthdays, events, preferences, anything to remember." oninput="_gpNoteType('${id}')" onblur="_gpNoteSave('${id}')" style="width:100%;box-sizing:border-box;min-height:72px;resize:vertical;background:var(--surf1);border:1px solid var(--p-line);border-radius:12px;padding:11px 13px;font-size:16px;line-height:1.5;color:var(--p-ink);font-family:inherit;">${_fileEsc(c.gpNote||'')}</textarea>
     <div style="font-size:14px;color:var(--p-mut);margin-top:5px;display:flex;align-items:center;gap:4px;"><i class="ti ti-lock" style="font-size:14px;"></i> Private to you — saved automatically, never shown to the client.</div>
-  </div>
-  <div class="sh" style="display:flex;align-items:center;justify-content:space-between;"><h2>Client details</h2><button onclick="editVitals('${id}')" style="border:1px solid var(--accent-a30,var(--p-line3));background:var(--accent-tint);color:var(--accent-strong);cursor:pointer;padding:4px 11px;border-radius:24px;font-size:14px;font-weight:600;font-family:inherit;display:inline-flex;align-items:center;gap:4px;margin-right:16px;"><i class="ti ti-pencil" style="font-size:14px;"></i> Edit</button></div>
-  <div style="padding:0 16px;">
-    ${_vitalsConfig().filter(f=>!f.med||(c[f.key]&&String(c[f.key]).trim()&&c[f.key]!=='—')).map(f=>`<div class="fr"><span class="fl">${f.label}</span><span class="fv"${f.key==='concerns'?' style="font-size:16px;"':''}>${_fileEsc(c[f.key]||'—')}</span></div>`).join('')}
-    ${c.photoConsent?`<div class="fr"><span class="fl">Photo consent</span><span class="fv" style="font-size:16px;">${c.photoConsent.beforeAfter?'\u2713 Before/after':'\u2717 Before/after'} \u00b7 ${c.photoConsent.socialMedia?'\u2713 Social/portfolio':'\u2717 Social/portfolio'}</span></div>`:`<div class="fr"><span class="fl">Photo consent</span><span class="fv" style="font-size:16px;color:var(--p-mut);">Captured once they sign an intake</span></div>`}
-  </div>
-  </div>
-  <div class="ctab" data-tab="forms">
-  ${(function(){const sug=(typeof _suggestedFormsFor==='function')?_suggestedFormsFor(c):[];if(!sug.length)return '';
-    if(!window._sugChecked)window._sugChecked={};
-    sug.forEach(k=>{if(window._sugChecked[k]===undefined)window._sugChecked[k]=true;});
-    return `
-  <div class="sh" style="display:flex;align-items:center;justify-content:space-between;"><h2>Suggested for this visit</h2><button onclick="nav('edit-suggested-forms')" style="border:none;background:none;color:var(--accent-strong);font-size:14px;cursor:pointer;">Edit</button></div>
-  <div style="padding:0 16px 6px;">
-    <div style="background:linear-gradient(135deg,var(--p-surf2),var(--p-purple-bg));border:1px solid var(--p-purple-line);border-radius:12px;padding:12px 14px;">
-      <div style="display:flex;align-items:flex-start;gap:7px;margin-bottom:4px;"><i class="ti ti-bulb" aria-hidden="true" style="font-size:16px;color:var(--p-purple);margin-top:1px;flex-shrink:0;"></i><span style="font-size:16px;color:var(--p-ink);line-height:1.45;">Booked for <b style="color:var(--p-purple);">${_fileEsc(c.treatment||'a visit')}</b>, you may want to send:</span></div>
-      ${sug.map(k=>`<label style="display:flex;align-items:center;gap:9px;padding:9px 0 2px;cursor:pointer;">
-        <input type="checkbox" ${window._sugChecked[k]?'checked':''} onchange="window._sugChecked['${k}']=this.checked" style="width:16px;height:16px;accent-color:var(--accent-strong);flex-shrink:0;">
-        <span style="flex:1;min-width:0;font-size:16px;color:var(--p-purple);">${_fileEsc(formTmpls[k].name)}</span>
-        <button onclick="renderSignOnDevice('${k}','${id}')" class="btng" style="padding:5px 10px;font-size:14px;border-radius:8px;">Sign here</button>
-      </label>`).join('')}
-      <button onclick="_sendCheckedSuggestions('${id}')" class="btnp" style="width:100%;border-radius:8px;padding:9px;margin-top:10px;font-size:16px;"><i class="ti ti-send"></i> Send selected</button>
-    </div>
-  </div>`;})()}
-  <div class="sh"><h2>Forms &amp; documents</h2></div>
-  <div style="padding:0 16px 6px;">
-    <button onclick="nav('client-forms','${id}')" style="width:100%;background:var(--surf2);border:1px solid ${c.flaggedContra?'var(--p-red-line)':'var(--p-chip)'};border-radius:12px;padding:12px 14px;display:flex;align-items:center;gap:11px;cursor:pointer;font-family:inherit;text-align:left;">
-      <div style="width:38px;height:38px;border-radius:8px;background:${c.flaggedContra?'var(--p-red-bg)':'var(--accent-tint)'};display:flex;align-items:center;justify-content:center;flex-shrink:0;"><i class="ti ti-folder" aria-hidden="true" style="font-size:18px;color:${c.flaggedContra?'var(--p-red)':'var(--accent)'};"></i></div>
-      <div style="flex:1;min-width:0;">${(function(){const subs=c.submittedForms||[];const extra=(c.signedForms||[]).filter(x=>!subs.some(s=>s.title===x)).length;const n=subs.length+extra;return `<div style="font-size:16px;font-weight:500;color:var(--p-ink);">${n} form${n===1?'':'s'} on file</div><div style="font-size:14px;color:var(--p-mut);">${n?'Intakes, consents &amp; signed forms, tap to view':'Send an intake or consent to get started'}</div>`;})()}</div>
-      <i class="ti ti-chevron-right" aria-hidden="true" style="font-size:16px;color:var(--p-mut);"></i>
-    </button>
-    <button onclick="openClientFormSender('${id}')" class="btnp" style="width:100%;border-radius:12px;margin-top:8px;padding:11px;"><i class="ti ti-send" aria-hidden="true"></i> Send a form to ${_fileEsc(c.name.split(' ')[0])}</button>
   </div>
   ${c.lastCheckin?`<div class="sh"><h2>Latest pre-visit check-in</h2></div>
   <div style="padding:0 16px 6px;">
@@ -8603,8 +8707,43 @@ function renderClient(id){
       <i class="ti ti-chevron-right" aria-hidden="true" style="font-size:16px;color:var(--p-mut);"></i>
     </button>
   </div>`:''}
+  <div class="sh"><h2>Photo consult</h2></div>
+  ${(()=>{const v=_vcProfileFor(id);const inv=vcInvites[id]||{};const nm=c.name.split(' ')[0];
+  if(inv.submitted){const _sub=vcSubmissions[id];const _rmx=(_sub&&_sub.measures&&typeof _metricsFromMeasures==='function')?_metricsFromMeasures(v.kind,_sub.measures):null;const _mx=(_rmx&&_rmx.length)?_rmx:v.metrics;const _dl=(_rmx&&_rmx.length)?'AI detected':'Sample analysis';const det=_mx.map(m=>m[0]+' '+m[1]).slice(0,4).join(' · ');return `
+  <div style="background:var(--surf2);border:1px solid var(--p-line);border-radius:12px;margin:0 16px 14px;overflow:hidden;">
+    <div style="padding:12px 14px;display:flex;align-items:center;gap:12px;">
+      <div style="width:38px;height:38px;border-radius:8px;background:var(--p-purple-bg);display:flex;align-items:center;justify-content:center;flex-shrink:0;"><i class="ti ${v.icon}" style="font-size:18px;color:var(--p-purple);"></i></div>
+      <div style="flex:1;min-width:0;"><div style="font-size:16px;font-weight:500;color:var(--p-ink);">${v.short}</div><div style="font-size:16px;color:var(--p-mut);">Submitted today${(v.photoLabels&&v.photoLabels.length)?' · '+v.photoLabels.length+' photos'+(v.refLabels?' + '+v.refLabels.length+' refs':''):''}</div></div>
+      <span class="aic" style="font-size:16px;"><i class="ti ti-sparkles" style="font-size:16px;"></i> AI ready</span>
+    </div>
+    <div style="background:var(--p-purple-bg);border-top:1px solid var(--p-purple-line);padding:10px 14px;">
+      <div style="font-size:14px;font-weight:500;color:var(--p-purple);margin-bottom:4px;text-transform:uppercase;letter-spacing:.07em;">${_dl}</div>
+      <div style="font-size:16px;color:var(--p-mut);line-height:1.5;">${det}</div>
+    </div>
+    <div style="border-top:1px solid var(--p-line);padding:6px 6px;">
+      <button onclick="_vcBack='client';nav('virtual-client','${id}')" style="border:none;background:none;font-size:16px;color:var(--accent-strong);cursor:pointer;display:flex;align-items:center;gap:4px;width:100%;justify-content:space-between;padding:8px;font-family:inherit;"><span style="display:flex;align-items:center;gap:6px;"><i class="ti ti-photo" style="font-size:16px;"></i> Review ${v.refLabels?'photos &amp; refs':'photos'} &amp; send notes</span><i class="ti ti-chevron-right" style="font-size:16px;"></i></button>
+    </div>
+    <div style="border-top:1px solid var(--p-line);padding:10px 12px;">
+      <button onclick="inviteVirtualConsult('${id}')" style="width:100%;background:var(--accent-tint);border:1px solid var(--accent-a30,var(--p-line3));border-radius:8px;padding:10px;font-size:16px;font-weight:600;color:var(--accent-strong);cursor:pointer;font-family:inherit;display:flex;align-items:center;justify-content:center;gap:6px;"><i class="ti ti-mail-share" style="font-size:16px;"></i> Invite ${nm} to a new photo consult</button>
+      <div style="font-size:12px;color:var(--p-mut);text-align:center;margin-top:6px;line-height:1.4;">You initiate it, clients can't start one on their own.</div>
+    </div>
+  </div>`;}
+  return `
+  <div style="background:var(--surf2);border:1px solid var(--p-line);border-radius:12px;margin:0 16px 14px;padding:14px;">
+    <div style="display:flex;gap:11px;align-items:flex-start;margin-bottom:12px;">
+      <div style="width:38px;height:38px;border-radius:8px;background:var(--p-purple-bg);display:flex;align-items:center;justify-content:center;flex-shrink:0;"><i class="ti ${v.icon}" style="font-size:18px;color:var(--p-purple);"></i></div>
+      <div style="flex:1;min-width:0;"><div style="font-size:16px;font-weight:600;color:var(--p-ink);">${v.title}</div><div style="font-size:16px;color:var(--p-mut);line-height:1.5;margin-top:2px;">Invite ${nm} to submit photos before their visit, review with AI and confirm the look in the right terms.</div></div>
+    </div>
+    ${inv.invited?`
+    <div style="display:flex;align-items:center;gap:8px;background:var(--p-blue-bg);border:1px solid var(--p-blue-line);border-radius:8px;padding:9px 12px;margin-bottom:10px;"><i class="ti ti-clock" style="font-size:16px;color:var(--p-blue);"></i><span style="font-size:16px;color:var(--p-blue);flex:1;">Invited · awaiting ${nm}'s photos</span></div>
+    <button onclick="inviteVirtualConsult('${id}')" style="width:100%;background:var(--surf1);border:1px solid var(--p-line);border-radius:8px;padding:10px;font-size:16px;color:var(--p-mut);cursor:pointer;font-family:inherit;"><i class="ti ti-send" style="font-size:16px;"></i> Resend invite</button>`
+    :`
+    <div style="display:flex;align-items:center;gap:7px;background:var(--accent-a08);border:1px solid var(--accent-a20,var(--p-line3));border-radius:8px;padding:9px 12px;margin-bottom:10px;"><i class="ti ti-lock" style="font-size:16px;color:var(--accent-strong);"></i><span style="font-size:14px;color:var(--p-mut);line-height:1.4;">Provider-initiated, clients can't start one on their own.</span></div>
+    <button onclick="inviteVirtualConsult('${id}')" class="btnp" style="width:100%;border-radius:8px;padding:11px;"><i class="ti ti-mail-share"></i> Invite ${nm} to a photo consult</button>`}
+  </div>`;})()}
   </div>
-  <div class="ctab" data-tab="care">
+  <div class="ctab" data-tab="journey"${_clientTab==='journey'?'':' hidden'}>
+  ${(typeof _mirrorNoteHTML==='function')?_mirrorNoteHTML('Journey','Anything in Private notes stays with you.'):''}
   <div class="sh"><h2>Session summaries</h2></div>
   <div style="padding:0 16px 6px;">
     <button onclick="nav('summary-history','${id}')" style="width:100%;background:var(--surf2);border:1px solid var(--p-line);border-radius:12px;padding:12px 14px;display:flex;align-items:center;gap:11px;cursor:pointer;font-family:inherit;text-align:left;">
@@ -8613,6 +8752,12 @@ function renderClient(id){
       <i class="ti ti-chevron-right" aria-hidden="true" style="font-size:16px;color:var(--p-mut);"></i>
     </button>
   </div>
+  </div>
+  <div class="ctab" data-tab="photos"${_clientTab==='photos'?'':' hidden'}>
+  ${(typeof _clientPhotosTabHTML==='function')?_clientPhotosTabHTML(id):''}
+  </div>
+  <div class="ctab" data-tab="homecare"${_clientTab==='homecare'?'':' hidden'}>
+  ${(typeof _mirrorNoteHTML==='function')?_mirrorNoteHTML('Homecare','What you put here is what they open at home.'):''}
   <div class="sh"><h2>Recommended routine</h2></div>
   <div style="background:var(--surf2);border:1px solid var(--p-line);border-radius:12px;margin:0 16px 10px;padding:14px;">
     <div style="font-size:16px;color:var(--p-mut);line-height:1.5;margin-bottom:12px;">Homecare ${_fileEsc(c.name.split(' ')[0])} follows between visits. Shared with their session summary, so it reaches their app when you send one.</div>
@@ -8669,42 +8814,38 @@ function renderClient(id){
     </div>
   </div>`;}).join('')}
   ${(clientRecs[id]||[]).length>1?`<div style="padding:0 16px 6px;font-size:14px;color:var(--p-mut);">Drag, or use ▲ ▼, to set the order ${_fileEsc(c.name.split(' ')[0])} sees.</div>`:''}
-  <div class="sh"><h2>Photo consult</h2></div>
-  ${(()=>{const v=_vcProfileFor(id);const inv=vcInvites[id]||{};const nm=c.name.split(' ')[0];
-  if(inv.submitted){const _sub=vcSubmissions[id];const _rmx=(_sub&&_sub.measures&&typeof _metricsFromMeasures==='function')?_metricsFromMeasures(v.kind,_sub.measures):null;const _mx=(_rmx&&_rmx.length)?_rmx:v.metrics;const _dl=(_rmx&&_rmx.length)?'AI detected':'Sample analysis';const det=_mx.map(m=>m[0]+' '+m[1]).slice(0,4).join(' · ');return `
-  <div style="background:var(--surf2);border:1px solid var(--p-line);border-radius:12px;margin:0 16px 14px;overflow:hidden;">
-    <div style="padding:12px 14px;display:flex;align-items:center;gap:12px;">
-      <div style="width:38px;height:38px;border-radius:8px;background:var(--p-purple-bg);display:flex;align-items:center;justify-content:center;flex-shrink:0;"><i class="ti ${v.icon}" style="font-size:18px;color:var(--p-purple);"></i></div>
-      <div style="flex:1;min-width:0;"><div style="font-size:16px;font-weight:500;color:var(--p-ink);">${v.short}</div><div style="font-size:16px;color:var(--p-mut);">Submitted today${(v.photoLabels&&v.photoLabels.length)?' · '+v.photoLabels.length+' photos'+(v.refLabels?' + '+v.refLabels.length+' refs':''):''}</div></div>
-      <span class="aic" style="font-size:16px;"><i class="ti ti-sparkles" style="font-size:16px;"></i> AI ready</span>
-    </div>
-    <div style="background:var(--p-purple-bg);border-top:1px solid var(--p-purple-line);padding:10px 14px;">
-      <div style="font-size:14px;font-weight:500;color:var(--p-purple);margin-bottom:4px;text-transform:uppercase;letter-spacing:.07em;">${_dl}</div>
-      <div style="font-size:16px;color:var(--p-mut);line-height:1.5;">${det}</div>
-    </div>
-    <div style="border-top:1px solid var(--p-line);padding:6px 6px;">
-      <button onclick="_vcBack='client';nav('virtual-client','${id}')" style="border:none;background:none;font-size:16px;color:var(--accent-strong);cursor:pointer;display:flex;align-items:center;gap:4px;width:100%;justify-content:space-between;padding:8px;font-family:inherit;"><span style="display:flex;align-items:center;gap:6px;"><i class="ti ti-photo" style="font-size:16px;"></i> Review ${v.refLabels?'photos &amp; refs':'photos'} &amp; send notes</span><i class="ti ti-chevron-right" style="font-size:16px;"></i></button>
-    </div>
-    <div style="border-top:1px solid var(--p-line);padding:10px 12px;">
-      <button onclick="inviteVirtualConsult('${id}')" style="width:100%;background:var(--accent-tint);border:1px solid var(--accent-a30,var(--p-line3));border-radius:8px;padding:10px;font-size:16px;font-weight:600;color:var(--accent-strong);cursor:pointer;font-family:inherit;display:flex;align-items:center;justify-content:center;gap:6px;"><i class="ti ti-mail-share" style="font-size:16px;"></i> Invite ${nm} to a new photo consult</button>
-      <div style="font-size:12px;color:var(--p-mut);text-align:center;margin-top:6px;line-height:1.4;">You initiate it, clients can't start one on their own.</div>
-    </div>
-  </div>`;}
-  return `
-  <div style="background:var(--surf2);border:1px solid var(--p-line);border-radius:12px;margin:0 16px 14px;padding:14px;">
-    <div style="display:flex;gap:11px;align-items:flex-start;margin-bottom:12px;">
-      <div style="width:38px;height:38px;border-radius:8px;background:var(--p-purple-bg);display:flex;align-items:center;justify-content:center;flex-shrink:0;"><i class="ti ${v.icon}" style="font-size:18px;color:var(--p-purple);"></i></div>
-      <div style="flex:1;min-width:0;"><div style="font-size:16px;font-weight:600;color:var(--p-ink);">${v.title}</div><div style="font-size:16px;color:var(--p-mut);line-height:1.5;margin-top:2px;">Invite ${nm} to submit photos before their visit, review with AI and confirm the look in the right terms.</div></div>
-    </div>
-    ${inv.invited?`
-    <div style="display:flex;align-items:center;gap:8px;background:var(--p-blue-bg);border:1px solid var(--p-blue-line);border-radius:8px;padding:9px 12px;margin-bottom:10px;"><i class="ti ti-clock" style="font-size:16px;color:var(--p-blue);"></i><span style="font-size:16px;color:var(--p-blue);flex:1;">Invited · awaiting ${nm}'s photos</span></div>
-    <button onclick="inviteVirtualConsult('${id}')" style="width:100%;background:var(--surf1);border:1px solid var(--p-line);border-radius:8px;padding:10px;font-size:16px;color:var(--p-mut);cursor:pointer;font-family:inherit;"><i class="ti ti-send" style="font-size:16px;"></i> Resend invite</button>`
-    :`
-    <div style="display:flex;align-items:center;gap:7px;background:var(--accent-a08);border:1px solid var(--accent-a20,var(--p-line3));border-radius:8px;padding:9px 12px;margin-bottom:10px;"><i class="ti ti-lock" style="font-size:16px;color:var(--accent-strong);"></i><span style="font-size:14px;color:var(--p-mut);line-height:1.4;">Provider-initiated, clients can't start one on their own.</span></div>
-    <button onclick="inviteVirtualConsult('${id}')" class="btnp" style="width:100%;border-radius:8px;padding:11px;"><i class="ti ti-mail-share"></i> Invite ${nm} to a photo consult</button>`}
-  </div>`;})()}
   </div>
-  <div class="ctab" data-tab="setup">
+  <div class="ctab" data-tab="file"${_clientTab==='file'?'':' hidden'}>
+  <div class="sh" style="display:flex;align-items:center;justify-content:space-between;"><h2>Client details</h2><button onclick="editVitals('${id}')" style="border:1px solid var(--accent-a30,var(--p-line3));background:var(--accent-tint);color:var(--accent-strong);cursor:pointer;padding:4px 11px;border-radius:24px;font-size:14px;font-weight:600;font-family:inherit;display:inline-flex;align-items:center;gap:4px;margin-right:16px;"><i class="ti ti-pencil" style="font-size:14px;"></i> Edit</button></div>
+  <div style="padding:0 16px;">
+    ${_vitalsConfig().filter(f=>!f.med||(c[f.key]&&String(c[f.key]).trim()&&c[f.key]!=='—')).map(f=>`<div class="fr"><span class="fl">${f.label}</span><span class="fv"${f.key==='concerns'?' style="font-size:16px;"':''}>${_fileEsc(c[f.key]||'—')}</span></div>`).join('')}
+    ${c.photoConsent?`<div class="fr"><span class="fl">Photo consent</span><span class="fv" style="font-size:16px;">${c.photoConsent.beforeAfter?'\u2713 Before/after':'\u2717 Before/after'} \u00b7 ${c.photoConsent.socialMedia?'\u2713 Social/portfolio':'\u2717 Social/portfolio'}</span></div>`:`<div class="fr"><span class="fl">Photo consent</span><span class="fv" style="font-size:16px;color:var(--p-mut);">Captured once they sign an intake</span></div>`}
+  </div>
+  ${(function(){const sug=(typeof _suggestedFormsFor==='function')?_suggestedFormsFor(c):[];if(!sug.length)return '';
+    if(!window._sugChecked)window._sugChecked={};
+    sug.forEach(k=>{if(window._sugChecked[k]===undefined)window._sugChecked[k]=true;});
+    return `
+  <div class="sh" style="display:flex;align-items:center;justify-content:space-between;"><h2>Suggested for this visit</h2><button onclick="nav('edit-suggested-forms')" style="border:none;background:none;color:var(--accent-strong);font-size:14px;cursor:pointer;">Edit</button></div>
+  <div style="padding:0 16px 6px;">
+    <div style="background:linear-gradient(135deg,var(--p-surf2),var(--p-purple-bg));border:1px solid var(--p-purple-line);border-radius:12px;padding:12px 14px;">
+      <div style="display:flex;align-items:flex-start;gap:7px;margin-bottom:4px;"><i class="ti ti-bulb" aria-hidden="true" style="font-size:16px;color:var(--p-purple);margin-top:1px;flex-shrink:0;"></i><span style="font-size:16px;color:var(--p-ink);line-height:1.45;">Booked for <b style="color:var(--p-purple);">${_fileEsc(c.treatment||'a visit')}</b>, you may want to send:</span></div>
+      ${sug.map(k=>`<label style="display:flex;align-items:center;gap:9px;padding:9px 0 2px;cursor:pointer;">
+        <input type="checkbox" ${window._sugChecked[k]?'checked':''} onchange="window._sugChecked['${k}']=this.checked" style="width:16px;height:16px;accent-color:var(--accent-strong);flex-shrink:0;">
+        <span style="flex:1;min-width:0;font-size:16px;color:var(--p-purple);">${_fileEsc(formTmpls[k].name)}</span>
+        <button onclick="renderSignOnDevice('${k}','${id}')" class="btng" style="padding:5px 10px;font-size:14px;border-radius:8px;">Sign here</button>
+      </label>`).join('')}
+      <button onclick="_sendCheckedSuggestions('${id}')" class="btnp" style="width:100%;border-radius:8px;padding:9px;margin-top:10px;font-size:16px;"><i class="ti ti-send"></i> Send selected</button>
+    </div>
+  </div>`;})()}
+  <div class="sh"><h2>Forms &amp; documents</h2></div>
+  <div style="padding:0 16px 6px;">
+    <button onclick="nav('client-forms','${id}')" style="width:100%;background:var(--surf2);border:1px solid ${c.flaggedContra?'var(--p-red-line)':'var(--p-chip)'};border-radius:12px;padding:12px 14px;display:flex;align-items:center;gap:11px;cursor:pointer;font-family:inherit;text-align:left;">
+      <div style="width:38px;height:38px;border-radius:8px;background:${c.flaggedContra?'var(--p-red-bg)':'var(--accent-tint)'};display:flex;align-items:center;justify-content:center;flex-shrink:0;"><i class="ti ti-folder" aria-hidden="true" style="font-size:18px;color:${c.flaggedContra?'var(--p-red)':'var(--accent)'};"></i></div>
+      <div style="flex:1;min-width:0;">${(function(){const subs=c.submittedForms||[];const extra=(c.signedForms||[]).filter(x=>!subs.some(s=>s.title===x)).length;const n=subs.length+extra;return `<div style="font-size:16px;font-weight:500;color:var(--p-ink);">${n} form${n===1?'':'s'} on file</div><div style="font-size:14px;color:var(--p-mut);">${n?'Intakes, consents &amp; signed forms, tap to view':'Send an intake or consent to get started'}</div>`;})()}</div>
+      <i class="ti ti-chevron-right" aria-hidden="true" style="font-size:16px;color:var(--p-mut);"></i>
+    </button>
+    <button onclick="openClientFormSender('${id}')" class="btnp" style="width:100%;border-radius:12px;margin-top:8px;padding:11px;"><i class="ti ti-send" aria-hidden="true"></i> Send a form to ${_fileEsc(c.name.split(' ')[0])}</button>
+  </div>
   <div style="padding:14px 16px 4px;"><button class="btng" onclick="inviteClientToApp('${id}')" style="width:100%;justify-content:center;"><i class="ti ti-device-mobile" style="color:var(--p-purple);"></i> ${c.appInvited?'Resend app invite':'Invite to the app'}</button>${c.appInvited?`<div style="font-size:14px;color:var(--p-green);text-align:center;margin-top:6px;"><i class="ti ti-check" style="font-size:16px;"></i> Already invited — send it again anytime</div>`:''}</div>
   ${selectedProfessions.includes('tattoo')?`<div style="padding:0 16px 14px;">
     ${_aftercareDripActive(c)

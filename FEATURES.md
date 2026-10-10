@@ -141,6 +141,8 @@ saved anywhere", not "does this always call that".
 | `_clearSampleData` | `/api/provider-form` | via `submitSignOnDevice` |
 | `_clientNameLink` | `/api/clients` | via `syncClientEvents` |
 | `_clientNameLink` | `/api/provider-form` | via `submitSignOnDevice` |
+| `_clientPhotosTabHTML` | `/api/clients` | via `syncClientEvents` |
+| `_clientPhotosTabHTML` | `/api/provider-form` | via `submitSignOnDevice` |
 | `_clientPickerBody` | `/api/clients` | via `syncClientEvents` |
 | `_clientPickerBody` | `/api/provider-form` | via `submitSignOnDevice` |
 | `_clientSendCode` | `/api/client-code` | direct |
