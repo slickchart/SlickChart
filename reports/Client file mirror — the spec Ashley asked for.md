@@ -70,7 +70,7 @@ a notification."* Five rows, in this order, **named exactly this**:
 | **Product consult** | A few questions, then you build her product plan |
 | **Forms** | Intake, consent, or one you wrote · 1 still out |
 | **Guides + Courses** | 7 guides, 3 courses · last sent 6 Oct |
-| **Visit summary** | Written when you finish a session · she reads it in Journey |
+| **Session summary** | Written when you finish a session · she reads it in Journey |
 
 Separately below, **Just for you → Private notes**, with *"Jennifer never sees these"* said plainly.
 
@@ -199,11 +199,28 @@ amber (which means "needs you"):
 
 ---
 
-## 10. Still open
+## 10. Naming, unified across both apps — settled and SHIPPED (`2026-10-10b`)
+
+> *"client app should match photo/product consult names, and name them the same as session
+> summaries please"*
+
+Both apps said **Virtual consult** in seven different casings, and called the same object a
+**session summary** in some places and a **visit summary** in others.
+
+- **Virtual consult → Photo consult**, everywhere, both apps. The live app only ever had ONE consult
+  and it is photo-based; the `kind` field (`skin`, `hair`…) is the PRACTICE type, not photo vs
+  product. **Product consult does not exist in the code yet** — it is new work from the mock.
+- **One name for the summary: "Session summary".** Ashley chose it over "Visit summary" when asked.
+  Sentence case everywhere, so no more `Session Summary` / `Visit summaries` drift.
+
+88 replacements. Only hyphenated identifiers keep the old word — `virtual-consult-invite` (the wire
+event) and `virtual-submit` (a nav key) — because they are protocol, not language, and renaming
+them would break in-flight invites. Never rename those without a migration.
+
+## 11. Still open
 
 - **Top tabs vs bottom bar** — toggle is in the prototype, not decided.
-- **Whether the client app renames "virtual consult" to "Photo consult" / "Product consult"** to
-  match. Her naming was settled for the provider side; the client side has not been changed yet.
+- **Product consult does not exist in the live app.** Only the photo consult is built.
 - **The two-store summary problem — the real blocker, diagnosed and NOT fixed.** The chart reads
   `sessionSummaries[id]` while the client app reads `c.summaries`. Two stores for one thing. This
   is stage 1 of the redesign: the mirror cannot be honest while the two sides read different
