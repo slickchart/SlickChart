@@ -273,11 +273,11 @@ missed question**, and they are the ones that decide whether a recommendation is
 5. Are you pregnant or breastfeeding?
 6. Any peels, laser, waxing or injectables in the last month?
 7. What would you most like to change?
-8. Is there an amount you would rather not go over?
+8. Is there a dollar amount you would rather not go over?
 
 Sources: Luminous Skin Lab's 2026 new-esthetician consultation guide; them-ethod's skin assessment
 checklist; Dermascope on client intake forms; Pabau's facial consultation form guide. Budget (8)
-is not from the research — no source covered it — it is Ashley's own, from her mock.
+is not from the research — no source covered it — it is Ashley's own, from her mock, and she asked for it to say "dollar amount" so there is no doubt what is being asked.
 
 Eight, not more. Short wins completion, and she can add.
 
