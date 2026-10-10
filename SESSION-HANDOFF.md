@@ -4754,3 +4754,55 @@ theorise a third cause.
 
 **The rule, again:** ask the evidence, not the bookkeeping. Both passes of this bug came from
 trusting a derived copy over the record of what arrived.
+
+### 2aq-3. The check-in nudge, THIRD pass — the evidence, at last (2026-10-10, `2026-10-10j`)
+
+Two fixes shipped on a theory and the card stayed up both times. The diagnosis added in
+`2026-10-10i` finally produced facts, from her own device:
+
+```
+CHECK-IN NUDGES SHOWING: 1
+check-in log holds 0 entries
+-- Trich Overbo  (id sq_qr8azpt77k)
+   nextVisit raw   : "Saturday, October 10 · 12:00 PM"
+   parsed visit    : Sat Oct 10 2026 12:00:00 GMT-0700   (ok)
+   hours until     : -0.897
+   checkinDoneFor  : "Not scheduled"
+   lastCheckin     : dateLabel="Friday, July 31"  at=Thu Oct 08 2026 15:29:56  -> matches? false
+   log entries for this client: 0
+   _checkinDone    : false
+```
+
+**Neither of my two theories was the cause.** `nextVisit` parses fine, the visit date is right, the
+client id is fine. Three separate things are wrong, and none of them is the matcher:
+
+1. **`checkinDoneFor` holds the literal string `"Not scheduled"`.** Both write sites did
+   `c.checkinDoneFor=(c.nextVisit||'')` with no check that `nextVisit` is a DATE. A check-in
+   arrived before her first appointment had synced onto the record, so the words "Not scheduled"
+   were written in as the visit it was for. `_apptSig` returns '' for it, so it can never match
+   anything — and on read it is indistinguishable from a real label. **FIXED in this build:** both
+   sites now stamp only a label that parses, else blank. Blank is honest: a check-in happened,
+   which visit is unknown.
+2. **`lastCheckin` is corrupt.** Label says **Friday, July 31**; timestamp says **Oct 8**. Trich is
+   a NEW client whose FIRST visit is Oct 10, so a July check-in cannot be hers. This is the
+   documented "events sync re-adopts an old check-in and re-dates it to now" problem that
+   `_ciIsForNextVisit` was written to defend against — the defence worked, the data is bad.
+3. **The whole check-in log is EMPTY — 0 entries, all clients.** `sc_checkins` IS synced
+   (`_pushKeyNow`, delete record `sc_ci_cleared`), so this is not one device missing it.
+
+**NOT fixed, and deliberately not papered over:** the app holds no valid record that Trich checked
+in. Making the matcher fall through to the timestamp when the label disagrees would have marked
+this "done" — but the only timestamp available is Oct 8, which is when an event was re-adopted,
+not necessarily when anyone checked in. **A false "done" means she walks into a treatment without
+having read a check-in. That is worse than a nudge that will not go away**, so the conservative
+behaviour stays until we know where the check-ins actually went.
+
+Open question put to Ashley: WHERE did she see that Ashley and Trich completed theirs — the
+check-in inbox, the client's own app, or an email? That decides whether this is a delivery bug
+(never arrived) or a retention bug (arrived, then the log was emptied).
+
+The diagnosis now also prints the `sc_ci_cleared` count, because a cleared check-in is REMOVED from
+the log and that would explain an empty log on an account that definitely received some.
+
+**The lesson, for the third time in one bug:** two fixes were written from reading code, and both
+were wrong. The one that produced an answer was instrumentation. Reach for the paste sooner.

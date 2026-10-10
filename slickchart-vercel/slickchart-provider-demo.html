@@ -468,7 +468,7 @@ const S=document.getElementById('S');
 // resets when I save it" and there was no way to tell whether her phone had any of them — a whole
 // day was spent debugging code she may not have been running. Shown at the bottom of Settings, so
 // the answer is a screenshot away. Bump it on every ship.
-const APP_BUILD='2026-10-10i';
+const APP_BUILD='2026-10-10j';
 
 
 /* ════════════════════════════════════════════════════════════════
@@ -4888,7 +4888,12 @@ async function _runSelfCheck(){
     const log=(typeof checkins!=='undefined'&&Array.isArray(checkins))?checkins:[];
     ciDiag.push('check-in log holds '+log.length+' entr'+(log.length===1?'y':'ies')
       +(log.length?(' for clientIds: '+log.map(function(x){return String((x&&x.clientId)||'(none)');}).join(', ')):''));
-    ciDiag.push('CL keys: '+Object.keys(CL).slice(0,40).join(', '));
+    ciDiag.push('CL keys: '+Object.keys(CL).length+' clients');
+    try{
+      const cl=_lsGet('sc_ci_cleared');
+      const n=cl?(JSON.parse(cl)||[]).length:0;
+      ciDiag.push('check-ins marked cleared/read: '+n+(n?' (cleared ones are REMOVED from the log above)':''));
+    }catch(e){ciDiag.push('check-ins marked cleared: could not read');}
     nud.forEach(function(pair){
       const id=pair[0],c=pair[1]||{};
       const d=(typeof _visitDateOf==='function')?_visitDateOf(c):null;
@@ -18402,7 +18407,12 @@ function _ciIsForNextVisit(c,ci){
 // stamp an earlier sync got wrong so a client's file heals itself instead of staying stuck.
 function _stampCheckinDone(c,ci){
   if(!c)return;
-  if(_ciIsForNextVisit(c,ci)){c.checkinDone=true;c.checkinDoneFor=(c.nextVisit||'');return;}
+  // Only stamp a label that is actually a DATE. Trich's record carried checkinDoneFor:"Not
+  // scheduled" — a check-in arrived before her first appointment had synced onto the record, and
+  // the literal words got written in as the visit it was for. That can never match anything, and
+  // on read it is indistinguishable from a real label, so it silently hid the truth. Blank is
+  // honest: it says a check-in happened but which visit is unknown.
+  if(_ciIsForNextVisit(c,ci)){c.checkinDone=true;c.checkinDoneFor=(_apptSig(c.nextVisit||'')?(c.nextVisit||''):'');return;}
   if(c.checkinDoneFor&&c.nextVisit&&c.checkinDoneFor===c.nextVisit){c.checkinDone=false;c.checkinDoneFor='';}
 }
 // The check-in LOG is the authoritative record of what actually arrived from a client. c.lastCheckin
@@ -28885,7 +28895,9 @@ SlickBridge.on('checkin-submitted',ci=>{
   checkins.unshift({...ci,read:false,at:(typeof ci.at==='number'?ci.at:Date.now())});
   try{if(typeof persistCheckins==='function')persistCheckins();}catch(e){}  // was missing, inbox check-in lost on reload
   if(ci.clientId&&CL[ci.clientId]){
-    CL[ci.clientId].checkinDone=true;CL[ci.clientId].checkinDoneFor=(CL[ci.clientId].nextVisit||'');
+    // Same rule as the other write site: a label that is not a date is not a label.
+    CL[ci.clientId].checkinDone=true;
+    CL[ci.clientId].checkinDoneFor=(_apptSig(CL[ci.clientId].nextVisit||'')?(CL[ci.clientId].nextVisit||''):'');
     // Most recent check-in only, overwrites the previous on the client file.
     CL[ci.clientId].lastCheckin={id:ci.id,dateLabel:ci.dateLabel,time:ci.time,treatment:ci.treatment,groups:(ci.groups||[]).slice(),flagged:(ci.flagged||[]).slice(),notes:ci.notes||'',photoCount:(ci.photos||[]).length,at:Date.now()};
     // Raise the contraindication alert (chart banner / Room Alerts / Home needs-attention) for flagged
