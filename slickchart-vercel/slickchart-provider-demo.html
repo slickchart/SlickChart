@@ -468,7 +468,7 @@ const S=document.getElementById('S');
 // resets when I save it" and there was no way to tell whether her phone had any of them — a whole
 // day was spent debugging code she may not have been running. Shown at the bottom of Settings, so
 // the answer is a screenshot away. Bump it on every ship.
-const APP_BUILD='2026-10-10m';
+const APP_BUILD='2026-10-10n';
 
 
 /* ════════════════════════════════════════════════════════════════
@@ -981,6 +981,125 @@ function removeHomecareTag(id,idx,ctx){
     }};
     _aftercareUndoToast('Removed “'+String(removed)+'”');
   }
+}
+// ── Homecare: build a routine step from a product she already sells ─────────────────────────────
+// The routine is a flat list of STRINGS. That is the shape that reaches the client app and the
+// shape sc_client_homecare merges as (CLAUDE.md §0.7), so a picked product composes into ONE line
+// — "Cica Cleanser — leave on as a mask at night" — rather than becoming a new record shape
+// that every consumer, the client app and the merge would all have to learn. The instructions are
+// part of the line the client reads, which is the part that matters.
+function _hcCompose(name,instr){
+  const n=String(name==null?'':name).trim(), t=String(instr==null?'':instr).trim();
+  if(!n)return t;
+  return t?(n+' — '+t):n;
+}
+// Already in the routine? Matched loosely on the product name, because the line carries
+// instructions after it and an exact compare would offer a duplicate of something already there.
+function _hcMentions(id,name){
+  const n=String(name==null?'':name).trim().toLowerCase();
+  if(!n)return false;
+  try{ return getClientHomecare(id).some(function(x){return String(x==null?'':x).toLowerCase().indexOf(n)>=0;}); }
+  catch(e){ return false; }
+}
+// Her catalogue, with the ones already on THIS client's product plan first — those are the ones
+// she is most likely to want, and she has usually already written a reason for them.
+function _hcProducts(id){
+  const out=[],seen={};
+  const all=(typeof affiliateLinks!=='undefined'&&Array.isArray(affiliateLinks))?affiliateLinks:[];
+  const recs=(typeof clientRecs!=='undefined'&&clientRecs&&Array.isArray(clientRecs[id]))?clientRecs[id]:[];
+  recs.forEach(function(aid){
+    const a=all.find(function(x){return x&&x.id===aid;});
+    if(a&&a.active!==false&&!seen[a.id]){seen[a.id]=1;out.push({a:a,rec:true});}
+  });
+  all.forEach(function(a){
+    if(a&&a.active!==false&&a.name&&!seen[a.id]){seen[a.id]=1;out.push({a:a,rec:false});}
+  });
+  return out;
+}
+// Chips above the add box: products on their plan that the routine does not mention yet. This is
+// the "suggest my recommended products" part — it only ever offers what she already chose for
+// this client, so it cannot invent a recommendation.
+function _hcSuggestHTML(id,ctx){
+  let list=[];
+  try{ list=_hcProducts(id).filter(function(x){return x.rec&&!_hcMentions(id,x.a.name);}); }catch(e){ return ''; }
+  if(!list.length)return '';
+  return '<div style="margin-bottom:10px;">'
+    +'<div style="font-size:14px;color:var(--p-mut);margin-bottom:6px;">On their product plan, not in the routine yet:</div>'
+    +'<div style="display:flex;flex-wrap:wrap;gap:6px;">'
+    +list.slice(0,8).map(function(x){
+      return '<button onclick="_hcPickProduct(\''+_jsAttr(id)+'\',\''+_jsAttr(x.a.id)+'\',\''+_jsAttr(ctx||'profile')+'\')" '
+        +'style="background:var(--accent-tint);border:1px solid var(--accent-a30,var(--p-line3));color:var(--accent-strong);border-radius:24px;padding:6px 12px;font-size:14px;font-weight:600;cursor:pointer;font-family:inherit;">'
+        +'+ '+_fileEsc(x.a.name)+'</button>';
+    }).join('')
+    +'</div></div>';
+}
+// The picker. Lists her plan first, then the rest of the catalogue, with a search box.
+function _hcPickerSheet(id,ctx,q){
+  const old=document.getElementById('hc-picker');if(old)old.remove();
+  let items=[];
+  try{ items=_hcProducts(id); }catch(e){ items=[]; }
+  const needle=String(q==null?'':q).trim().toLowerCase();
+  const shown=needle?items.filter(function(x){
+    return ((x.a.name||'')+' '+(x.a.brand||'')).toLowerCase().indexOf(needle)>=0;
+  }):items;
+  const ov=document.createElement('div');ov.id='hc-picker';
+  ov.style.cssText='position:fixed;inset:0;margin:0 auto;width:390px;max-width:100%;z-index:100000;background:rgba(0,0,0,.65);display:flex;align-items:flex-end;justify-content:center;';
+  ov.onclick=function(e){if(e.target===ov)ov.remove();};
+  const row=function(x){
+    const a=x.a;
+    return '<button onclick="_hcPickProduct(\''+_jsAttr(id)+'\',\''+_jsAttr(a.id)+'\',\''+_jsAttr(ctx||'profile')+'\')" '
+      +'style="width:100%;text-align:left;display:flex;align-items:center;gap:10px;background:var(--surf2);border:1px solid var(--p-line);border-radius:12px;padding:10px 12px;margin-bottom:7px;cursor:pointer;font-family:inherit;min-height:52px;">'
+      +'<i class="ti ti-flask" style="font-size:17px;color:var(--p-mut);flex-shrink:0;"></i>'
+      +'<span style="flex:1;min-width:0;"><span style="display:block;font-size:16px;font-weight:600;color:var(--p-ink);overflow:hidden;text-overflow:ellipsis;white-space:nowrap;">'+_fileEsc(a.name)+'</span>'
+      +(a.brand?('<span style="display:block;font-size:14px;color:var(--p-mut);">'+_fileEsc(a.brand)+'</span>'):'')+'</span>'
+      +(x.rec?'<span style="flex-shrink:0;font-size:12px;font-weight:700;color:var(--accent-strong);background:var(--accent-tint);border-radius:24px;padding:3px 9px;">On their plan</span>':'')
+      +(_hcMentions(id,a.name)?'<span style="flex-shrink:0;font-size:12px;color:var(--p-mut);">already in</span>':'')
+      +'</button>';
+  };
+  ov.innerHTML='<div style="background:var(--surf1);border:1px solid var(--p-line);border-radius:16px 16px 0 0;width:100%;padding:16px 14px calc(16px + env(safe-area-inset-bottom,0px));max-height:86%;overflow-y:auto;">'
+    +'<div style="font-size:16px;font-weight:600;color:var(--p-ink);margin-bottom:3px;">Add a product to the routine</div>'
+    +'<div style="font-size:14px;color:var(--p-mut);margin-bottom:12px;line-height:1.5;">Pick one of yours, then add the instructions in their words.</div>'
+    +'<input id="hc-pick-q" value="'+_jsAttr(q||'')+'" placeholder="Search your products…" oninput="_hcPickerSheet(\''+_jsAttr(id)+'\',\''+_jsAttr(ctx||'profile')+'\',this.value)" '
+    +'style="width:100%;box-sizing:border-box;background:var(--p-surf);border:1px solid var(--p-chip2);border-radius:8px;padding:9px 11px;font-size:16px;color:var(--p-ink);font-family:inherit;margin-bottom:12px;">'
+    +(shown.length?shown.slice(0,60).map(row).join('')
+      :'<div style="font-size:16px;color:var(--p-mut);padding:14px 2px;line-height:1.6;">'
+        +(items.length?'Nothing matches that.':'No products in your catalogue yet. You can still type any step by hand below.')+'</div>')
+    +'<button onclick="document.getElementById(\'hc-picker\').remove();" style="width:100%;background:none;border:none;color:var(--p-mut);font-size:16px;cursor:pointer;font-family:inherit;padding:10px;">Cancel</button>'
+    +'</div>';
+  (document.querySelector('.shell')||document.body).appendChild(ov);
+  try{const qi=document.getElementById('hc-pick-q');if(qi&&q!=null){qi.focus();qi.setSelectionRange(qi.value.length,qi.value.length);}}catch(e){}
+}
+// Second step: the product is chosen, now the instructions. Prefilled with the reason she already
+// wrote for this product on this client's plan, because that is usually most of the sentence.
+function _hcPickProduct(id,aid,ctx){
+  const all=(typeof affiliateLinks!=='undefined'&&Array.isArray(affiliateLinks))?affiliateLinks:[];
+  const a=all.find(function(x){return x&&x.id===aid;});
+  if(!a)return;
+  let why='';
+  try{ why=(typeof _recReason==='function')?(_recReason(id,aid)||''):''; }catch(e){}
+  const old=document.getElementById('hc-picker');if(old)old.remove();
+  const ov=document.createElement('div');ov.id='hc-picker';
+  ov.style.cssText='position:fixed;inset:0;margin:0 auto;width:390px;max-width:100%;z-index:100000;background:rgba(0,0,0,.65);display:flex;align-items:flex-end;justify-content:center;';
+  ov.onclick=function(e){if(e.target===ov)ov.remove();};
+  ov.innerHTML='<div style="background:var(--surf1);border:1px solid var(--p-line);border-radius:16px 16px 0 0;width:100%;padding:16px 14px calc(16px + env(safe-area-inset-bottom,0px));max-height:86%;overflow-y:auto;">'
+    +'<div style="font-size:16px;font-weight:600;color:var(--p-ink);margin-bottom:12px;">Add to the routine</div>'
+    +'<div style="font-size:14px;font-weight:600;color:var(--p-mut);text-transform:uppercase;letter-spacing:.05em;margin-bottom:6px;">Product</div>'
+    +'<input id="hc-name" value="'+_jsAttr(a.name||'')+'" style="width:100%;box-sizing:border-box;background:var(--p-surf);border:1px solid var(--p-chip2);border-radius:8px;padding:9px 11px;font-size:16px;color:var(--p-ink);font-family:inherit;margin-bottom:14px;">'
+    +'<div style="font-size:14px;font-weight:600;color:var(--p-mut);text-transform:uppercase;letter-spacing:.05em;margin-bottom:6px;">How to use it</div>'
+    +'<div style="font-size:14px;color:var(--p-mut);line-height:1.5;margin-bottom:6px;">This is what they read at home. Morning, night, how often — not clock times.</div>'
+    +'<textarea id="hc-instr" rows="2" placeholder="e.g. Night, leave on as a mask" style="width:100%;box-sizing:border-box;background:var(--p-surf);border:1px solid var(--p-chip2);border-radius:8px;padding:9px 11px;font-size:16px;color:var(--p-ink);font-family:inherit;line-height:1.5;resize:none;margin-bottom:14px;">'+_fileEsc(why)+'</textarea>'
+    +'<button onclick="_hcAddPicked(\''+_jsAttr(id)+'\',\''+_jsAttr(ctx||'profile')+'\')" class="btnp" style="border-radius:12px;padding:12px;margin-bottom:8px;"><i class="ti ti-plus"></i> Add to routine</button>'
+    +'<button onclick="_hcPickerSheet(\''+_jsAttr(id)+'\',\''+_jsAttr(ctx||'profile')+'\')" style="width:100%;background:none;border:none;color:var(--p-mut);font-size:16px;cursor:pointer;font-family:inherit;padding:8px;">Back to the list</button>'
+    +'</div>';
+  (document.querySelector('.shell')||document.body).appendChild(ov);
+  try{document.getElementById('hc-instr').focus();}catch(e){}
+}
+function _hcAddPicked(id,ctx){
+  const nEl=document.getElementById('hc-name'), iEl=document.getElementById('hc-instr');
+  const line=_hcCompose(nEl?nEl.value:'', iEl?iEl.value:'');
+  const sh=document.getElementById('hc-picker');if(sh)sh.remove();
+  if(!line){if(typeof proToast==='function')proToast('Give the step a name first');return;}
+  addHomecareTag(id,line,ctx||'profile');
 }
 function _rerenderHomecare(id,ctx){
   if(ctx==='profile')renderClient(id);else renderSessionSummary(id);
@@ -8860,8 +8979,10 @@ function renderClient(id){
         <button onclick="removeHomecareTag('${id}',${i},'profile')" aria-label="Remove routine step" style="border:none;background:none;color:var(--p-mut);cursor:pointer;font-size:18px;line-height:1;padding:2px 6px;flex-shrink:0;">×</button>
       </div>`).join('')||'<div style="font-size:16px;color:var(--p-mut);">No routine steps yet, add one below.</div>'}
     </div>
+    ${(typeof _hcSuggestHTML==='function')?_hcSuggestHTML(id,'profile'):''}
+    <button onclick="_hcPickerSheet('${id}','profile')" style="width:100%;background:var(--surf1);border:1px dashed var(--p-line);color:var(--accent-strong);border-radius:8px;padding:9px;font-size:16px;font-weight:600;cursor:pointer;font-family:inherit;margin-bottom:8px;display:flex;align-items:center;justify-content:center;gap:7px;"><i class="ti ti-flask" style="font-size:16px;"></i> Add one of your products</button>
     <div style="display:flex;gap:8px;">
-      <input id="routine-add-${id}" aria-label="Add a routine step" placeholder="Add a routine step…" style="flex:1;background:var(--p-surf);border:1px solid var(--p-chip2);border-radius:8px;padding:8px 11px;font-size:16px;color:var(--p-ink);font-family:inherit;" onkeydown="if(event.key==='Enter')_addRoutineFromProfile('${id}','profile')">
+      <input id="routine-add-${id}" aria-label="Add a routine step" placeholder="Or type anything…" style="flex:1;background:var(--p-surf);border:1px solid var(--p-chip2);border-radius:8px;padding:8px 11px;font-size:16px;color:var(--p-ink);font-family:inherit;" onkeydown="if(event.key==='Enter')_addRoutineFromProfile('${id}','profile')">
       <button onclick="_addRoutineFromProfile('${id}','profile')" style="border:none;background:var(--accent);color:var(--accent-ink);border-radius:8px;padding:8px 14px;font-size:16px;font-weight:600;cursor:pointer;white-space:nowrap;">+ Add</button>
     </div>
   </div>
