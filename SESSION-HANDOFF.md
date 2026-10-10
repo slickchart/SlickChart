@@ -4840,3 +4840,75 @@ claims a check-in is handled when it is not.
 warning go away, because another screen contradicted it. When two screens disagree, find out which
 one is lying BEFORE changing either. And a green tick is a claim — it should never be the house
 style for "we will do this for you later".
+
+### 2aq-5. ROOT CAUSE of the empty check-in log, and the corrupt record (`2026-10-10m`)
+
+Both of the things left open in 2aq-4 are now explained and fixed. Neither is subtle once seen.
+
+#### The empty log: a date parser that demanded a year the labels never carry
+
+`_ciDayISO(label)` opened with:
+
+```js
+if(!/\b\d{4}\b/.test(s))return '';     // require a four-digit year
+```
+
+Every label the app produces is **`"Saturday, October 10 · 12:00 PM"`** — month and day, **no
+year**. The client sends `dateLabel: client.nextDate`, and that is how `nextDate` is formatted. So
+`_ciDayISO` returned `''` for **every real check-in**.
+
+Now look at what that disables in `_pruneExpiredCheckins`:
+
+```
+Rule 1 : day && day <  today  -> delete
+KEEP   : day && day >= today  -> keep        <-- never reached, day is always ''
+Rule 2 : at && (now-at) > 24h -> delete      <-- so EVERYTHING lands here
+```
+
+The protective branch exists precisely because, in its own words, *"clients are encouraged to check
+in early, so an early (>24h old) submission for a future visit must not be pruned before the
+appointment even happens."* The parser silently disabled it. **Every check-in was deleted 24 hours
+after it was submitted — which is the day before most appointments.** Measured before the fix: a
+check-in for an appointment TODAY, submitted 26h ago → DELETED. Same for one for TOMORROW.
+
+This is silent data loss, not just a missing nudge: the client's answers, flags, notes and photos
+all go with it.
+
+Fixed two ways:
+1. `_ciDayISO` now parses what the app actually writes — month+day with no year, bare `Oct 10`,
+   numeric `M/D`, and full dates with a time suffix (the old path failed on `", 2026 · 12:00 PM"`
+   too). With no year on the label it picks the year landing NEAREST today, so a December label
+   read in January resolves to last year rather than this one; getting that backwards deletes a
+   check-in.
+2. Rule 2 now asks the CLIENT before deleting: if `_hoursUntilVisit` says their visit is today or
+   still ahead, the check-in is kept whatever its label says. A check-in is the client's own words;
+   losing one because its label could not be dated is the worst outcome available here.
+
+Verified: appointment today or tomorrow submitted 26h ago → KEPT; last week → DELETED (the log
+still drains); `"Not scheduled"` with a visit today → KEPT; `"Not scheduled"` with no visit and
+26h old → DELETED.
+
+#### The corrupt record: the same fallback, fixed in one place and missed in the other
+
+In the SAME function, on the SAME event:
+
+- line ~27297, the LOG write: `at:(ev.created_at?(new Date(ev.created_at).getTime()||0):0)` with a
+  comment reading *"NEVER fall back to Date.now() here... 0 means unknown"*.
+- line ~27125, the `c.lastCheckin` write: **`at: at||Date.now()`** — the exact fallback the line
+  below warns against.
+
+The sync runs over events weeks old, so any whose `created_at` will not parse got stamped with
+today. That is Trich's record exactly: `dateLabel="Friday, July 31"` with `at=Thu Oct 08`. Now
+`at||0`, matching the log. Every consumer already treats 0 as "cannot confirm".
+
+**This stops new corruption; it does not repair Trich's existing record.** That one will be
+replaced by her next real check-in. No repair sweep was written, because rewriting a stored
+timestamp from a guess is how the corruption happened in the first place.
+
+#### The pattern worth carrying
+
+Both bugs are a correct rule defeated by a silent helper: a protective branch that never ran
+because its input was always empty, and a fallback banned in one line and left in the line above
+it. Neither showed as an error. **When a guard looks right but the behaviour is wrong, check what
+its inputs actually evaluate to before rewriting the guard** — three passes of this bug were spent
+rewriting guards whose inputs were the problem.

@@ -214,7 +214,7 @@ const S=document.getElementById('S');
 // resets when I save it" and there was no way to tell whether her phone had any of them — a whole
 // day was spent debugging code she may not have been running. Shown at the bottom of Settings, so
 // the answer is a screenshot away. Bump it on every ship.
-const APP_BUILD='2026-10-10k';
+const APP_BUILD='2026-10-10m';
 
 
 /* ════════════════════════════════════════════════════════════════
@@ -6514,15 +6514,40 @@ function loadCheckins(){try{const raw=localStorage.getItem('sc_checkins');if(raw
 function _ciDayISO(label){
   if(!label)return '';
   const s=String(label).trim();if(!s)return '';
-  if(!/\b\d{4}\b/.test(s))return '';
-  // Route through _dateToTime, which parses ISO YYYY-MM-DD as LOCAL midnight. Using
-  // Date.parse directly would treat an ISO date-only string as UTC midnight, shifting the
-  // day earlier in US timezones, which could clear a check-in a day before its appointment.
-  const t=(typeof _dateToTime==='function')?_dateToTime(s):Date.parse(s);
-  if(!t||isNaN(t))return '';
-  const d=new Date(t);
-  return d.getFullYear()+'-'+String(d.getMonth()+1).padStart(2,'0')+'-'+String(d.getDate()).padStart(2,'0');
+  // Labels that carry a real year (ISO, or a full date) go through the existing parser first.
+  // Routed via _dateToTime, which reads ISO YYYY-MM-DD as LOCAL midnight; Date.parse would treat
+  // it as UTC and shift the day earlier in US timezones, clearing a check-in a day early.
+  if(/\b\d{4}\b/.test(s)){
+    const t0=(typeof _dateToTime==='function')?_dateToTime(s):Date.parse(s);
+    if(t0&&!isNaN(t0)){const d0=new Date(t0);
+      return d0.getFullYear()+'-'+String(d0.getMonth()+1).padStart(2,'0')+'-'+String(d0.getDate()).padStart(2,'0');}
+  }
+  // THE BUG THIS FIXES: it used to `return ''` for anything without a four-digit year. Every label
+  // the app actually produces is "Saturday, October 10 · 12:00 PM" — month and day, no year. So
+  // this returned '' for EVERY real check-in, which disabled the "keep it until the appointment
+  // happens" branch in _pruneExpiredCheckins and dropped every check-in through Rule 2, deleting
+  // it 24h after submission — the day before most appointments. That is why the log was empty.
+  const t=s.toLowerCase();
+  const mons={jan:0,feb:1,mar:2,apr:3,may:4,jun:5,jul:6,aug:7,sep:8,oct:9,nov:10,dec:11};
+  let mo=null,day=null;
+  const mm=t.match(/(jan|feb|mar|apr|may|jun|jul|aug|sep|oct|nov|dec)[a-z]*\.?\s+(\d{1,2})/);
+  if(mm){mo=mons[mm[1]];day=parseInt(mm[2],10);}
+  else{const nd=t.match(/\b(\d{1,2})[\/\-](\d{1,2})\b/);if(nd){mo=parseInt(nd[1],10)-1;day=parseInt(nd[2],10);}}
+  if(mo==null||day==null||isNaN(mo)||isNaN(day))return '';
+  // No year on the label, so pick the one that lands NEAREST today. A December label read in
+  // January belongs to last year, not this one, and getting that backwards deletes a check-in.
+  const now=new Date(),y=now.getFullYear();
+  let best=null,bestGap=Infinity;
+  [y-1,y,y+1].forEach(function(yy){
+    const d=new Date(yy,mo,day,12,0,0);
+    if(isNaN(d))return;
+    const gap=Math.abs(d.getTime()-now.getTime());
+    if(gap<bestGap){bestGap=gap;best=d;}
+  });
+  if(!best)return '';
+  return best.getFullYear()+'-'+String(best.getMonth()+1).padStart(2,'0')+'-'+String(best.getDate()).padStart(2,'0');
 }
+
 // Auto-clear pre-visit check-ins so the log doesn't accumulate. Two independent rules, either
 // of which retires a check-in: (1) its appointment day has fully passed, or (2) it was submitted
 // more than 24 hours ago (using the `at` timestamp). Rule 2 is the catch-all for real check-ins
@@ -6554,7 +6579,17 @@ function _pruneExpiredCheckins(){
     // for a future visit must not be pruned before the appointment even happens.
     if(day&&day>=today)return true;
     // Rule 2: no upcoming appointment date to protect it, and submitted more than 24h ago.
-    if(at&&(now-at)>DAY_MS)return false;
+    // Before deleting, ask the CLIENT whether they still have a visit coming. The label is not the
+    // only place that answer lives, and a check-in is the client's own words — losing one because
+    // its label could not be dated is the worst outcome available here.
+    if(at&&(now-at)>DAY_MS){
+      try{
+        const _c=(ci.clientId&&typeof CL!=='undefined')?CL[ci.clientId]:null;
+        const _h=(_c&&typeof _hoursUntilVisit==='function')?_hoursUntilVisit(_c):null;
+        if(_h!=null&&_h>=-24)return true;      // their visit is today or still ahead — keep it
+      }catch(e){}
+      return false;
+    }
     // Rule 3: no usable timestamp AND no datable appointment label. A fresh check-in always
     // has `at`, so this can only be an old legacy/"Not scheduled" record that Rules 1–2 can't
     // date, clear it rather than stranding it in the log forever.
@@ -27087,7 +27122,13 @@ function _reconcileEventAttachments(events){
       const ciPhotos=(Array.isArray(payload.photos)?payload.photos:[]).filter(_validImgSrc);
       // Store only a photo count on the roster (localStorage) — the images themselves live in the
       // check-in log + capturedPhotos, so keeping base64 here just bloats the tiny sc_clients cap.
-      c.lastCheckin={id:ev.id,dateLabel:payload.dateLabel||'',time:payload.time||'',treatment:payload.treatment||'',groups:(payload.groups||[]).slice(),flagged:(payload.flagged||[]).slice(),notes:payload.notes||'',photoCount:ciPhotos.length,at:at||Date.now()};
+      // at||0, NOT at||Date.now(). The log write a few lines down already refuses that
+      // fallback for exactly this reason, and this line was missed: this runs on EVERY sync,
+      // including events weeks old, so stamping "now" on one whose created_at will not parse
+      // re-dates an old check-in to today. That is how a record ended up labelled "Friday,
+      // July 31" carrying a timestamp of October 8. 0 means unknown, and every consumer
+      // already treats unknown as "cannot confirm".
+      c.lastCheckin={id:ev.id,dateLabel:payload.dateLabel||'',time:payload.time||'',treatment:payload.treatment||'',groups:(payload.groups||[]).slice(),flagged:(payload.flagged||[]).slice(),notes:payload.notes||'',photoCount:ciPhotos.length,at:at||0};
       _stampCheckinDone(c,{dateLabel:payload.dateLabel||'',at:at});
       if(payload.flagged&&payload.flagged.length&&!((typeof _isCheckinDismissed==='function')&&_isCheckinDismissed(ev.id))&&typeof _mergeContra==='function'){
         const _fd=[];(payload.groups||[]).forEach(g=>{(g.rows||[]).forEach(r=>{if(r&&r.flagged)_fd.push({label:r.label||'',detail:(r.detail||'').trim()});});});
