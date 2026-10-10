@@ -214,7 +214,7 @@ const S=document.getElementById('S');
 // resets when I save it" and there was no way to tell whether her phone had any of them — a whole
 // day was spent debugging code she may not have been running. Shown at the bottom of Settings, so
 // the answer is a screenshot away. Bump it on every ship.
-const APP_BUILD='2026-10-10j';
+const APP_BUILD='2026-10-10k';
 
 
 /* ════════════════════════════════════════════════════════════════
@@ -8825,9 +8825,14 @@ function _firstVisitNudgeHTML(cid,apptAt){
       // Auto-send reaches in-app clients, but the provider still needs a one-tap manual send as a
       // fallback (a client may not really have the app, or she just wants to text it). Keep the
       // reassurance AND make the row send on tap, with an explicit "Send now" CTA.
-      out+=`<div onclick="event.stopPropagation();sendCheckin('${cid}')" style="border-top:1px solid var(--p-line3);background:var(--p-surf2);padding:9px 13px;display:flex;align-items:center;gap:8px;cursor:pointer;">
-        <i class="ti ti-clipboard-check" aria-hidden="true" style="font-size:16px;color:var(--p-green);flex-shrink:0;"></i>
-        <span style="flex:1;min-width:0;font-size:16px;color:var(--p-mut);line-height:1.35;">Check-in auto-sends in their app <i class="ti ti-check" style="font-size:14px;color:var(--p-green);"></i></span>
+      // This row renders ONLY when the check-in is NOT done — it is the auto-send reassurance, not a
+      // completion. It used to read "Check-in auto-sends in their app" with a green tick on a calm
+      // grey background, and Ashley reasonably read that as "they have done it" while Home was
+      // correctly saying they had not. Two screens, one truth, opposite messages. It now leads with
+      // the same words as the other branch and keeps the auto-send part as the reassurance it is.
+      out+=`<div onclick="event.stopPropagation();sendCheckin('${cid}')" style="border-top:1px solid var(--p-line3);background:var(--accent-tint);padding:9px 13px;display:flex;align-items:center;gap:8px;cursor:pointer;">
+        <i class="ti ti-clipboard-heart" aria-hidden="true" style="font-size:16px;color:var(--accent-strong);flex-shrink:0;"></i>
+        <span style="flex:1;min-width:0;font-size:16px;color:var(--accent-strong);line-height:1.35;">Pre-visit check-in not done yet · it auto-sends in their app</span>
         <span style="font-size:14px;font-weight:700;color:var(--accent-strong);white-space:nowrap;">Send now <i class="ti ti-chevron-right" aria-hidden="true" style="font-size:14px;"></i></span>
       </div>`;
     }else{
@@ -18261,9 +18266,15 @@ function _todayCheckinSendHTML(cid,apptAt){
   // Only prompt within the pre-visit window (24h out through just after), matching _firstVisitNudgeHTML.
   var hrs=(apptAt&&!isNaN(apptAt))?((apptAt.getTime()-Date.now())/3600000):((typeof _hoursUntilVisit==='function')?_hoursUntilVisit(c):null);
   if(hrs==null||hrs>24||hrs<-3)return '';
+  // The comment above says "shown when the check-in isn't done for that visit yet" - but it never
+  // asked. So a client who HAD checked in still got a "send it" prompt on this card.
+  if(typeof _checkinDone==='function'&&_checkinDone(cid,c,apptAt))return '';
   var autoOn=!!(typeof checkinCfg!=='undefined'&&checkinCfg&&checkinCfg.autoSend&&checkinCfg.autoSend.on);
   var auto=autoOn&&!!c.appJoined;
-  var lbl=auto?'Check-in auto-sends in their app · send it now too':'Pre-visit check-in not done · send it';
+  // Both labels lead with the same fact, because both only appear when it is NOT done. The auto
+  // version used to open with "Check-in auto-sends in their app", which reads as handled - Home
+  // said not done, this said the opposite, and the provider believed this one.
+  var lbl=auto?'Pre-visit check-in not done · it auto-sends in their app':'Pre-visit check-in not done · send it';
   return `<button onclick="event.stopPropagation();sendCheckin('${cid}')" style="margin-top:9px;width:100%;display:flex;align-items:center;gap:7px;background:var(--accent-tint);border:1px solid var(--accent);border-radius:8px;padding:7px 10px;cursor:pointer;font-family:inherit;text-align:left;">
     <i class="ti ti-clipboard-heart" style="font-size:16px;color:var(--accent-strong);flex-shrink:0;"></i>
     <span style="flex:1;font-size:16px;color:var(--accent-strong);font-weight:600;">${lbl}</span>

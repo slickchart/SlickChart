@@ -4806,3 +4806,37 @@ the log and that would explain an empty log on an account that definitely receiv
 
 **The lesson, for the third time in one bug:** two fixes were written from reading code, and both
 were wrong. The one that produced an answer was instrumentation. Reach for the paste sooner.
+
+### 2aq-4. RESOLVED — the nudge was right, the other screen was lying (`2026-10-10k`)
+
+Ashley: *"i got notifications and when I got to 'todays appointments' it shows them completed"*.
+That sentence ended a three-round bug, and the answer is the opposite of what was being chased.
+
+**Today's appointments was showing a green tick for a check-in that was NOT done.**
+
+Two renderers draw that row, and BOTH only appear when the check-in is outstanding:
+
+- The appointment-card branch said **"Check-in auto-sends in their app ✓"** — green clipboard icon,
+  green tick, calm grey background. It means "we will send it for you". It reads as "they did it".
+- `_todayCheckinSendHTML` said **"Check-in auto-sends in their app · send it now too"**, and worse,
+  **never called `_checkinDone` at all** despite a comment directly above it claiming it is "shown
+  when the check-in isn't done for that visit yet". So it also prompted for clients who HAD
+  checked in.
+
+So Home said not done, Today's said done, and the provider believed the reassuring one. Every fix
+in 2aq, 2aq-2 and 2aq-3 was aimed at silencing a nudge **that was telling the truth**.
+
+Fixed: both rows now lead with *"Pre-visit check-in not done"* and keep the auto-send part as the
+reassurance it actually is; `_todayCheckinSendHTML` returns '' when the check-in is done.
+
+Verified headless, Today's row against Home's verdict, in all three states: not-done/auto-on,
+not-done/auto-off, and done (no row at all). They agree everywhere.
+
+**Still open and NOT papered over:** the check-in log is empty and Trich's `lastCheckin` is corrupt
+(July label, October timestamp) — see 2aq-3. Those remain. What changed is that the app no longer
+claims a check-in is handled when it is not.
+
+**The lesson, and it is the expensive one:** three rounds were spent trying to make a correct
+warning go away, because another screen contradicted it. When two screens disagree, find out which
+one is lying BEFORE changing either. And a green tick is a claim — it should never be the house
+style for "we will do this for you later".
