@@ -4706,3 +4706,51 @@ an unrelated form correctly NOT an intake ✓, no forms correctly NOT an intake 
 **A nudge must key on the evidence, not the paperwork.** Every one of these asked "did we record
 that we asked?" when the question is "has the client done it?". Any new attention tile should be
 checked against a client who completed the thing on a device other than the one looking.
+
+### 2aq-2. The check-in nudge, second pass: ask the LOG (2026-10-10, `2026-10-10h`)
+
+**What Ashley OBSERVED (§1b):** on 2026-10-10 at 11:47, Home still showed *"Ashley hasn't done their
+check-in"* and *"Trich hasn't done their check-in"*, both "New client · Saturday, Oct 10". **Both
+had completed their check-ins the day before.** Build `2026-10-10a` was already live, so the first
+fix was not enough.
+
+Two holes, one of them in that first fix.
+
+**(a) Mine.** The guard added in §2aq read
+`if((!apptAt||isNaN(apptAt))&&c.lastCheckin&&c.lastCheckin.at&&...)`. The `.at` requirement is
+wrong: `_ciMatchesVisit` judges on the check-in's own stated visit label FIRST and only falls back
+to the timestamp, so it does not need one. And `at` is genuinely absent on some records — of the
+three places that write `c.lastCheckin`, one stores `at: ci.at`, which is undefined on older
+events. Every such record was thrown away before `_ciMatchesVisit` ever saw it.
+
+**(b) The bigger one: `_checkinDone` never consulted the check-in log.** The global `checkins`
+array is the authoritative record of what actually arrived from a client. `c.lastCheckin` is only a
+convenience copy of the newest one, and `checkinDoneFor` is a stamp that routinely goes missing
+(§2aq). The function asked the two derived signals and never the source. `_checkinLogMatches(id,
+apptAt)` now scans the log, on BOTH the Home path and the appointment-card path.
+
+Safe by construction: every log match still goes through `_ciMatchesVisit`, which compares the
+check-in's own stated visit DAY against the appointment, and the log auto-clears as it ages. A
+stale check-in cannot claim an upcoming visit.
+
+Verified headless, with the visit placed inside the nudge window (a mistake worth remembering: the
+first run put the visit at today noon, which was already hours past in the container's clock, so
+the nudge never fired and every row trivially "passed"):
+
+| Case | Result |
+|---|---|
+| lastCheckin with `at` | cleared |
+| lastCheckin, `at` undefined ← hole (a) | cleared |
+| only in the check-in log ← hole (b) | cleared |
+| log entry with no timestamp | cleared |
+| nothing at all | still nudges |
+| month-old check-in only | still nudges |
+| log entry for a DIFFERENT client | still nudges |
+
+**NOT yet confirmed against her actual records.** Both holes are real and either would produce
+exactly what she saw, but which one hit Ashley and Trich is unproven. If it persists after
+`2026-10-10h`, the next step is to look at one of those two client records directly rather than
+theorise a third cause.
+
+**The rule, again:** ask the evidence, not the bookkeeping. Both passes of this bug came from
+trusting a derived copy over the record of what arrived.

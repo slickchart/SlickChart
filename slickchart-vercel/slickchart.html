@@ -214,7 +214,7 @@ const S=document.getElementById('S');
 // resets when I save it" and there was no way to tell whether her phone had any of them — a whole
 // day was spent debugging code she may not have been running. Shown at the bottom of Settings, so
 // the answer is a screenshot away. Bump it on every ship.
-const APP_BUILD='2026-10-10g';
+const APP_BUILD='2026-10-10h';
 
 
 /* ════════════════════════════════════════════════════════════════
@@ -18111,6 +18111,21 @@ function _stampCheckinDone(c,ci){
   if(_ciIsForNextVisit(c,ci)){c.checkinDone=true;c.checkinDoneFor=(c.nextVisit||'');return;}
   if(c.checkinDoneFor&&c.nextVisit&&c.checkinDoneFor===c.nextVisit){c.checkinDone=false;c.checkinDoneFor='';}
 }
+// The check-in LOG is the authoritative record of what actually arrived from a client. c.lastCheckin
+// is only a convenience copy of the newest one, and one of the three ingest paths writes it with
+// `at: ci.at`, which is undefined on older records. So "did they check in for this visit" has to ask
+// the log, not just the copy. The log auto-clears as it ages, and every match still goes through
+// _ciMatchesVisit, so a stale check-in cannot claim an upcoming visit.
+function _checkinLogMatches(id,apptAt){
+  try{
+    if(!id||!apptAt||isNaN(apptAt))return false;
+    if(typeof checkins==='undefined'||!Array.isArray(checkins))return false;
+    if(typeof _ciMatchesVisit!=='function')return false;
+    return checkins.some(function(ci){
+      return ci&&String(ci.clientId||'')===String(id)&&_ciMatchesVisit(ci,apptAt);
+    });
+  }catch(e){return false;}
+}
 function _checkinDone(id,c,apptAt){
   // Scoped to the CURRENT appointment: a check-in completed for a PRIOR visit must not suppress the
   // nudge for a newly-booked one. checkinDoneFor stores the nextVisit label it was completed for.
@@ -18121,15 +18136,23 @@ function _checkinDone(id,c,apptAt){
   // completed tomorrow's check-in still read as "not done" on Home. Derive the visit from the
   // record so every caller asks the same question. _ciMatchesVisit compares the check-in's own
   // stated visit day against it, so a returning client's old check-in still cannot match.
-  if((!apptAt||isNaN(apptAt))&&c.lastCheckin&&c.lastCheckin.at&&typeof _visitDateOf==='function'){
+  if((!apptAt||isNaN(apptAt))&&typeof _visitDateOf==='function'){
     const _d=_visitDateOf(c);
-    if(_d&&typeof _ciMatchesVisit==='function'&&_ciMatchesVisit(c.lastCheckin,_d))return true;
+    if(_d){
+      // No `&&c.lastCheckin.at` here: _ciMatchesVisit judges on the check-in's own stated visit
+      // first and only falls back to the timestamp, so demanding a timestamp threw away every
+      // record whose ingest path left it undefined — which is why a completed check-in still read
+      // as outstanding the next morning.
+      if(c.lastCheckin&&typeof _ciMatchesVisit==='function'&&_ciMatchesVisit(c.lastCheckin,_d))return true;
+      if(_checkinLogMatches(id,_d))return true;
+    }
   }
   // Robust signal that survives a missing checkinDoneFor stamp: a completed check-in whose timestamp
   // lands in the window just before THIS appointment counts as done for it. This is the fix for "she
   // completed her check-in but it still says she hasn't" — a new client's Square appointment often
   // syncs onto the record AFTER their check-in arrives, so checkinDoneFor gets left blank. An OLD
   // visit's check-in falls outside the window, so a returning client still correctly gets the nudge.
+  if(apptAt&&!isNaN(apptAt)&&_checkinLogMatches(id,apptAt))return true;
   if(apptAt&&!isNaN(apptAt)&&c.lastCheckin&&c.lastCheckin.at){
     // Via _ciMatchesVisit so the check-in's own stated visit wins over a timestamp the sync may have
     // rewritten — otherwise a re-dated month-old check-in marks today's visit done and the nudge
