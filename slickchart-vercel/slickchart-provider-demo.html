@@ -468,7 +468,7 @@ const S=document.getElementById('S');
 // resets when I save it" and there was no way to tell whether her phone had any of them — a whole
 // day was spent debugging code she may not have been running. Shown at the bottom of Settings, so
 // the answer is a screenshot away. Bump it on every ship.
-const APP_BUILD='2026-10-09w';
+const APP_BUILD='2026-10-10a';
 
 
 /* ════════════════════════════════════════════════════════════════
@@ -7434,7 +7434,12 @@ function _attnTilesHTML(){
     // Brand-new clients with a first appointment coming up who haven't been set up yet —
     // nudge to send the first-visit package (invite + intake in one tap).
     var cands=_shotFilterEntries(Object.entries(CL)).filter(function(e){var id=e[0],c=e[1];
-      return c&&String(c.name||'').trim()&&!c.lastVisit&&!c.appInvited&&(_clientApptSoonMs(id)!=null)&&!_homeDismissed.has('fvp-'+id);
+      // appInvited alone was the test, so if that flag never landed (sent from another device, or
+      // the invite went out some other way) the nudge stayed up even though the client had already
+      // filled the intake in. A completed intake is proof the package is done; trust it over the flag.
+      if(!c||!String(c.name||'').trim())return false;
+      if(typeof _hasIntakeOnFile==='function'&&_hasIntakeOnFile(c))return false;
+      return !c.lastVisit&&!c.appInvited&&(_clientApptSoonMs(id)!=null)&&!_homeDismissed.has('fvp-'+id);
     }).sort(function(a,b){return (_clientApptSoonMs(a[0])||Infinity)-(_clientApptSoonMs(b[0])||Infinity);}).slice(0,3);
     return cands.map(function(e){var id=e[0],c=e[1];var na=(typeof _nextApptForClient==='function')?_nextApptForClient(id):null;return _swipeTile(`
     <div onclick="sendFirstVisitPackage('${id}')" style="margin:0;background:linear-gradient(135deg,var(--p-surf2),var(--p-green-bg));border:1px solid var(--p-green-line);border-radius:12px;padding:12px 14px;display:flex;align-items:center;gap:11px;cursor:pointer;">
@@ -8826,6 +8831,17 @@ let suggestedFormsOverride=loadSuggestedFormsOverride();
 // as "needs intake" so we keep prompting until it's really done.
 function _hasIntakeOnFile(c){
   if(!c)return false;
+  // Match the form's ID first. This used to read TITLES only, so an intake the provider had renamed
+  // — "New client form", "Health history", anything without the word intake in it — never counted
+  // as on file, and "First-visit package not done yet" stayed up forever after the client had
+  // actually completed it. Submissions carry formId, and the package sends _ncIntakeFormId().
+  const intakeFid=(typeof _ncIntakeFormId==='function')?_ncIntakeFormId():null;
+  const byId=(c.submittedForms||[]).some(function(sf){
+    const fid=String((sf&&sf.formId)||'');
+    if(!fid)return false;
+    return (intakeFid&&fid===intakeFid)||/(^|-)intake$/.test(fid);
+  });
+  if(byId)return true;
   const names=[...((c.submittedForms||[]).map(s=>s&&s.title)),...((c.signedForms||[])||[])];
   return names.some(n=>/intake/i.test(String(n||'')));
 }
@@ -18054,7 +18070,12 @@ function _soonVisitLabel(minsAhead){
   return mon+' '+d.getDate()+' · '+h+':'+mm+' '+ap;
 }
 // Parse a nextVisit string into hours-from-now (null if unscheduled/unparseable)
-function _hoursUntilVisit(c){
+// The visit a nudge is judging, as a Date. _hoursUntilVisit always did this parse and then threw
+// the Date away, so a caller holding only the client record had nothing to hand _checkinDone — and
+// without an appointment _checkinDone cannot use its robust signal and falls back to the one stamp
+// that is known to go missing. Exposing it is what lets the Home nudge ask the same question the
+// appointment cards ask.
+function _visitDateOf(c){
   const s=String((c&&c.nextVisit)||'');
   if(!s||/not scheduled/i.test(s))return null;
   const m=s.match(/([A-Za-z]{3,})\s+(\d{1,2}).*?(\d{1,2}):(\d{2})\s*(AM|PM)/i);
@@ -18065,7 +18086,11 @@ function _hoursUntilVisit(c){
   const now=new Date();const day=parseInt(m[2],10),min=parseInt(m[4],10);
   let d=new Date(now.getFullYear(),mo,day,h,min,0);
   if((d-now)/86400000 < -60)d=new Date(now.getFullYear()+1,mo,day,h,min,0);
-  return (d-now)/3600000;
+  return d;
+}
+function _hoursUntilVisit(c){
+  const d=_visitDateOf(c);
+  return d?((d-new Date())/3600000):null;
 }
 // A FORMAT-INSENSITIVE signature of an appointment label (month + day + time). The stored nextVisit gets
 // rewritten in different formats by different code paths — a booking confirmation stamps "Aug 20 · 10:00
@@ -18121,6 +18146,16 @@ function _checkinDone(id,c,apptAt){
   // Scoped to the CURRENT appointment: a check-in completed for a PRIOR visit must not suppress the
   // nudge for a newly-booked one. checkinDoneFor stores the nextVisit label it was completed for.
   if(!c)return false;
+  // The Home nudge calls this with NO appointment, which skipped the robust signal below and left
+  // the answer resting entirely on checkinDoneFor — the stamp that goes missing when a Square
+  // appointment syncs onto the record after the check-in arrives. So a client who had plainly
+  // completed tomorrow's check-in still read as "not done" on Home. Derive the visit from the
+  // record so every caller asks the same question. _ciMatchesVisit compares the check-in's own
+  // stated visit day against it, so a returning client's old check-in still cannot match.
+  if((!apptAt||isNaN(apptAt))&&c.lastCheckin&&c.lastCheckin.at&&typeof _visitDateOf==='function'){
+    const _d=_visitDateOf(c);
+    if(_d&&typeof _ciMatchesVisit==='function'&&_ciMatchesVisit(c.lastCheckin,_d))return true;
+  }
   // Robust signal that survives a missing checkinDoneFor stamp: a completed check-in whose timestamp
   // lands in the window just before THIS appointment counts as done for it. This is the fix for "she
   // completed her check-in but it still says she hasn't" — a new client's Square appointment often

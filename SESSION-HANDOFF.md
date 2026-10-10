@@ -4640,3 +4640,69 @@ private-by-default was deliberately NOT done unilaterally — it is Ashley's cal
 `saveGoogleConnection(providerId, tokens, opts)` applies the flag in a second UPDATE rather than in
 the INSERT, so a reconnect that carries no explicit choice cannot quietly reset a preference she
 already set.
+
+## 2aq. "Needs your attention" kept asking for work the client had already done (2026-10-10, `2026-10-10a`)
+
+### What Ashley OBSERVED (§1b — facts, before any theory)
+
+1. She sends pre-visit check-ins for the NEXT DAY's clients.
+2. The clients complete them.
+3. "Needs your attention" still says their **pre-visit check-in** is not completed.
+4. Same for the **first-visit package** — still says not done after the client has done it.
+
+### Two different root causes, one shape
+
+Both tiles were judging a BOOKKEEPING STAMP instead of the evidence the work was actually done.
+This is the same failure as §4c in a different costume: asserting a state rather than checking it.
+
+**(a) The check-in nudge never got to ask the right question.**
+
+`_checkinDone(id, c, apptAt)` already carries a robust signal, added for exactly this symptom: a
+`lastCheckin` whose own stated visit matches the appointment counts as done, even when
+`checkinDoneFor` was never stamped — which happens routinely, because a Square appointment often
+syncs onto the record AFTER the client's check-in arrives.
+
+That signal is gated on `apptAt`. And `_needsCheckin()` called `_checkinDone(id, c)` with **no
+appointment at all**, so it was skipped every time and the answer fell back to `checkinDoneFor` —
+the one stamp known to go missing. The fix existed and was unreachable from the Home nudge.
+
+`_hoursUntilVisit(c)` had already parsed `c.nextVisit` into a Date and thrown it away. That parse is
+now `_visitDateOf(c)`, and `_checkinDone` derives the visit from the record when the caller passed
+none. Purely additive: it can only turn "not done" into "done", and only via `_ciMatchesVisit`,
+which compares the check-in's own stated visit DAY, so a returning client's month-old check-in still
+cannot suppress tomorrow's nudge.
+
+**(b) `_hasIntakeOnFile` matched on the form's TITLE.**
+
+`names.some(n => /intake/i.test(n))`. An intake the provider renamed — "New client form", "Health
+history", anything without the literal word — never counted as on file, so **"First-visit package
+not done yet"** stayed up permanently after the client had completed it. Submissions carry `formId`
+and the package sends `_ncIntakeFormId()`, so it now matches on the id first and keeps the title
+check as a fallback.
+
+**(c) The Home first-visit tile tested `!c.appInvited` and nothing else.** If that flag never landed
+— sent from another device, or invited by some other route — the tile stayed up although the client
+had already filled the intake in. A completed intake is proof the package is done, and now clears it.
+
+### Verified headless (no page errors)
+
+Check-in nudge, visit tomorrow in every case:
+
+| Client | Before | After |
+|---|---|---|
+| completed, `checkinDoneFor` missing (HER CASE) | nudges | **cleared** |
+| nothing completed | nudges | nudges |
+| returning client, month-old check-in on file | nudges | nudges |
+| `checkinDoneFor` stamped correctly | cleared | cleared |
+
+First-visit tile: new client with nothing done → shows; **intake completed but `appInvited` unset →
+cleared**; `appInvited` set → cleared; unrelated form only → shows; returning client → cleared.
+
+Intake detection: renamed intake matched by `formId` ✓, legacy title match ✓, id ending `-intake` ✓,
+an unrelated form correctly NOT an intake ✓, no forms correctly NOT an intake ✓.
+
+### The rule worth carrying
+
+**A nudge must key on the evidence, not the paperwork.** Every one of these asked "did we record
+that we asked?" when the question is "has the client done it?". Any new attention tile should be
+checked against a client who completed the thing on a device other than the one looking.
