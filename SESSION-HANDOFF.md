@@ -4912,3 +4912,24 @@ because its input was always empty, and a fallback banned in one line and left i
 it. Neither showed as an error. **When a guard looks right but the behaviour is wrong, check what
 its inputs actually evaluate to before rewriting the guard** — three passes of this bug were spent
 rewriting guards whose inputs were the problem.
+
+### 2ap-6. Google Calendar verification SUBMITTED (2026-10-11)
+
+The whole thing is done and filed. Project, scope, publish, test, video, justification,
+questionnaire — all complete. `GOOGLE-CALENDAR-SETUP.md` now opens with a DONE banner carrying the
+project id, the settled sensitive-not-restricted finding, the registered redirect URIs and the
+video link, so no future session re-walks a finished runbook.
+
+Video: <https://youtu.be/Ipozwy8xdv0> (unlisted). Submitted 2026-10-11.
+
+**Status: waiting on Google.** Weeks, not days. They email `ashley@slickchart.app`. Until it
+clears, providers see the unverified-app screen and the 100-user cap applies; nothing breaks.
+
+The check-in Routine (`trig_01SxGru6k59NVPvBEWFmhDNK`, fires 2026-11-09) was **re-pointed** — its
+prompt still described the setup as outstanding and would have walked her through work she had
+already finished, which is exactly the waste §1d exists to stop. It now asks one question: what did
+Google say.
+
+Still undecided, and not pushed: whether "Keep client names out of Google" should default ON for
+new connections. It defaults OFF today, so a new connection sends client names and appointment
+notes to Google. Ashley was asked once and has not said.

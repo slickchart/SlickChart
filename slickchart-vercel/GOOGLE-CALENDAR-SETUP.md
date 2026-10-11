@@ -1,5 +1,28 @@
 # Google Calendar two-way sync — setup (one-time)
 
+> ## DONE. Submitted for verification 2026-10-11.
+>
+> Everything below was carried out on 2026-10-09 to 2026-10-11. **Do not walk anyone through it
+> again.** It is kept as the record of what was done and what the settings are.
+>
+> | | |
+> |---|---|
+> | Cloud project | `SlickChart`, id `slickchart-511121`, owner `ashley@slickchart.app`, no organization |
+> | Scope | `calendar.events` only. **Sensitive, NOT restricted** — read off the console's own Data Access page, so the review is the ordinary free one. No CASA, no fee. Settled. |
+> | Redirect URIs | `https://slickchart.app/api/google-cal-callback` and the `www.` form |
+> | Publishing | **Published** (In production) |
+> | Tested | Two-way sync verified by Ashley in BOTH directions |
+> | Demo video | <https://youtu.be/Ipozwy8xdv0> (unlisted) |
+> | Submitted | 2026-10-11 — justification, video link, Additional info, questionnaire |
+>
+> **Status: waiting on Google.** Reviews take weeks. They email `ashley@slickchart.app`; an
+> unanswered question stalls the queue. Current status:
+> <https://console.cloud.google.com/auth/verification>
+>
+> Until it clears, providers still see the "Google hasn't verified this app" screen
+> (Advanced → Go to slickchart.app) and the 100-user cap applies. Nothing breaks while waiting.
+> A check-in Routine fires 2026-11-09.
+
 The app code is finished and live. What is left is giving Google permission, which happens on
 Google's website, not in the code. It takes about 30 minutes.
 
