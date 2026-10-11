@@ -6,8 +6,12 @@ name: No demo data in the product
 # demos at build time. This check keeps it that way.
 
 on:
+  # Every branch, not just main. Since 2026-10-11 a change is tested on its own Vercel preview
+  # and only promoted to main overnight (see deploy-at-2am.yml), and that promotion REFUSES a
+  # commit with no green checks on it. If these sweeps only ran on main they would run after the
+  # deploy they are meant to gate.
   push:
-    branches: [main]
+    branches: ['**']
   pull_request:
 
 jobs:
@@ -55,16 +59,11 @@ jobs:
         working-directory: slickchart-vercel
         run: node scripts/check-square-daywindow.cjs
 
+      # Run the SAME script CLAUDE.md §3 tells a contributor to run before committing, rather than
+      # a hand-copied list of build steps. The copy had drifted: it ran four builders and missed
+      # build-feature-map.cjs, so a stale FEATURES.md passed CI even though §1c rule 4 says this
+      # check is what makes it impossible. FEATURES.md being wrong is how a provider gets told her
+      # photos are gone when they are on the server, so it is not a cosmetic generated file.
       - name: Generated files are in sync with their sources
         working-directory: slickchart-vercel
-        run: |
-          node scripts/build-demo.cjs
-          node scripts/build-client-page.cjs
-          node scripts/build-switch.cjs
-          node scripts/build-blog.cjs
-          if ! git diff --quiet; then
-            echo "::error::Generated files are stale. Run the build scripts and commit the result:"
-            git --no-pager diff --stat
-            exit 1
-          fi
-          echo "generated files: in sync"
+        run: node scripts/check-generated.cjs

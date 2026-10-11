@@ -4933,3 +4933,77 @@ Google say.
 Still undecided, and not pushed: whether "Keep client names out of Google" should default ON for
 new connections. It defaults OFF today, so a new connection sends client names and appointment
 notes to Google. Ashley was asked once and has not said.
+
+---
+
+## 2ar. Deploys no longer land on providers mid-day — the release train (2026-10-11)
+
+**Her report:** *"now Im running into a problem where when I edit is messing with providers currently
+on the app."* She brought five deployment rules from ChatGPT and asked what I thought. **What the
+providers actually SAW is still unanswered** — I asked and she answered the policy question instead,
+so §1b's observation list for this one is still empty. Ask before theorising about a mechanism.
+
+**Her decision:** adopt "never push to main, branch + preview for everything", **with the carve-out**
+that a bug she reported and is waiting on ships immediately. Then: *"can we make that at a schedule
+time - lets say 2am, to be sure it doesn't glitch the app for providres?"*
+
+**Built.** `CLAUDE.md` §1a is now the authority; §1's old standing permission to push `main` is gone
+and §3's deploy bullet points at §1a. `.github/workflows/deploy-at-2am.yml` promotes `release` to
+`main` at 09:00 UTC (2am PDT / 1am PST — one cron, no DST dance, both inside her window), fast-forward
+only, refusing any commit whose checks are not green and no-opping when `release == main`.
+`workflow_dispatch` is the ship-it-now button. **`release` is her approval; nothing goes on it that she
+has not said yes to.**
+
+**`release` does not exist yet** — deliberately. The workflow handles that ("nothing has been
+approved") so it was safe to land first. Create it from `main` when she confirms the mechanism.
+
+**Also changed, because the train depends on it:** `no-demo-data.yml` now runs on `branches: ['**']`
+instead of only `main`. It used to run *after* the deploy it is meant to gate, and the 2am promotion
+refuses a commit with no checks, so a branch that CI never saw could never ship.
+
+### What a preview URL cannot do (verified, not assumed)
+
+- It uses the **real database and real env vars**. No staging DB exists. A preview is live data.
+- **Square and Google OAuth cannot complete on it.** `SQUARE_REDIRECT_URI` (lib/square.js:169) and
+  `APP_ORIGIN` (api/google-cal.js:36) are pinned to the live origin on purpose, so Connect sends her
+  back to `slickchart.app` to finish.
+- **Crons do not fire on previews** — Vercel runs `vercel.json` crons on production only. So a preview
+  cannot double-send reminders, check-ins or nurture mail.
+- **Open: nobody has recorded the Vercel preview URL pattern.** The project is `slick-chart`; branch
+  previews are `slick-chart-git-<branch>-<scope>.vercel.app` and the `<scope>` is not written down
+  anywhere in this repo, and long branch names get truncated and hashed. Ashley has been asked to paste
+  one preview URL from the Vercel dashboard once. **Write the scope here when she does**, so the next
+  session can hand her a URL instead of asking again.
+
+### Two generic rules that were already true — don't "fix" them again
+
+Rules 3 and 4 of her list (backward-compatible migrations, never run migrations against production
+without asking) describe something this codebase does not have. There is **no migrations folder**;
+every schema change is `CREATE TABLE IF NOT EXISTS` / `ADD COLUMN IF NOT EXISTS` inside the lib that
+needs it (30 in lib/db.js, 8 in lib/clients.js, 3 in lib/nurture.js, 2 each in lib/consult.js and
+lib/google-cal.js, 1 elsewhere), run by the endpoint. There is no `DROP TABLE`, `DROP COLUMN`,
+`RENAME COLUMN`, `RENAME TO` or `TRUNCATE` anywhere in `lib/` or `api/` — the only grep hit is a
+comment at lib/db.js:101. Add-only is already the only thing the code can do.
+
+Rule 5 (autosave every form) is also largely already there: `providerNoteDrafts` (43 refs),
+`summaryNoteDraft` (30), `sc_note_drafts` (12), `sc_room_draft_*` (11), `sc_provider_note_drafts`,
+and the consult answers added 2026-10-10 save per keystroke. If she names a form where typing was
+lost, find that one rather than re-auditing all of them.
+
+### The compatibility that actually bites here
+
+A deploy does **not** reload an open page. `_checkForNewBuild` (slickchart.html:5011) runs once from
+`_cloudInit`, is latched by `_buildCheckDone` and a `sessionStorage` key, and flushes pending writes
+before reloading — so it can only fire at boot. A provider therefore picks up new code **at her next
+launch**, which means she may run the OLD build against the NEW server for days, and her second device
+for weeks. So the thing to keep backward-compatible is **API response shapes and synced `sc_*` key
+shapes**, not SQL columns. Add fields, keep reading the old shape, never rename or repurpose one the
+shipped build reads. §1a says this too.
+
+### Fixed in passing (§1, and it was load-bearing)
+
+CI's "Generated files are in sync" step was a **hand-copied list of four build scripts** and had
+drifted from `check-generated.cjs`, which runs **five**. The missing one was `build-feature-map.cjs`,
+so a stale `FEATURES.md` passed CI — while `CLAUDE.md` §1c rule 4 claims that check makes staleness
+impossible, and §1c exists because a wrong answer about what the product saves nearly cost Heather 38
+photos. CI now runs `node scripts/check-generated.cjs`, the same command §3 tells a contributor to run.

@@ -1,0 +1,111 @@
+name: Deploy at 2am (promote release → main)
+
+# Ashley's rule, 2026-10-11: an edit must not land on providers while they are using the app.
+#
+# Nothing reaches providers until SHE says so, and even then not until the small hours:
+#
+#   1. a change is developed on a branch and she tests it on its Vercel preview
+#   2. when she approves it, the branch is fast-forwarded into `release`
+#   3. this job promotes `release` to `main` overnight, and Vercel deploys from `main`
+#
+# So `release` IS the approval. Nothing is ever pushed to it that she has not said yes to, and
+# this job never invents work — if `release` and `main` are the same commit it does nothing.
+#
+# A note on the hour: GitHub's cron is UTC and has no concept of daylight saving, so one fixed
+# time cannot be 2am Pacific all year. 09:00 UTC is 2am during PDT and 1am during PST. Both are
+# inside the window she asked for, so this takes the simpler schedule over a DST dance.
+
+on:
+  schedule:
+    - cron: '0 9 * * *'
+  workflow_dispatch:        # "ship it now" — Actions tab → Run workflow
+
+permissions:
+  contents: write           # the fast-forward push to main
+  checks: read              # reading the check runs on the approved commit
+
+env:
+  RELEASE_BRANCH: release
+
+jobs:
+  promote:
+    runs-on: ubuntu-latest
+    steps:
+      - uses: actions/checkout@v4
+        with:
+          fetch-depth: 0    # merge-base needs real history, not a shallow clone
+
+      - name: Is there anything approved waiting to ship?
+        id: queue
+        run: |
+          set -euo pipefail
+          if ! git rev-parse --verify "origin/$RELEASE_BRANCH" >/dev/null 2>&1; then
+            echo "No '$RELEASE_BRANCH' branch exists, so nothing has been approved. Nothing to do."
+            echo "go=no" >> "$GITHUB_OUTPUT"
+            exit 0
+          fi
+          rel=$(git rev-parse "origin/$RELEASE_BRANCH")
+          main=$(git rev-parse origin/main)
+          echo "release: $rel"
+          echo "main:    $main"
+          if [ "$rel" = "$main" ]; then
+            echo "release and main are the same commit. Nothing approved is waiting. Nothing to do."
+            echo "go=no" >> "$GITHUB_OUTPUT"
+            exit 0
+          fi
+          # Fast-forward only, on purpose. If main has moved on its own since release was cut, the
+          # two have diverged and promoting would either lose that commit or need a merge nobody
+          # reviewed. Stop and say so instead — a red build emails her, a silent skip would not.
+          if ! git merge-base --is-ancestor "$main" "$rel"; then
+            echo "::error::'$RELEASE_BRANCH' is not a fast-forward of main — they have diverged."
+            echo "Someone pushed to main directly, or release was built on an older main."
+            echo "Fix: merge main into $RELEASE_BRANCH, re-test the preview, and let this run again."
+            exit 1
+          fi
+          echo "go=yes" >> "$GITHUB_OUTPUT"
+          echo "sha=$rel" >> "$GITHUB_OUTPUT"
+
+      - name: Every check on that exact commit must be green
+        if: steps.queue.outputs.go == 'yes'
+        env:
+          GH_TOKEN: ${{ github.token }}
+          REPO: ${{ github.repository }}
+          SHA: ${{ steps.queue.outputs.sha }}
+        run: |
+          set -euo pipefail
+          # The sweeps in no-demo-data.yml already ran on this commit when it was pushed to the
+          # release branch. Because this promotion is a FAST-FORWARD, main ends up on that very
+          # same sha, so those results carry over unchanged — there is nothing left to re-run.
+          runs=$(gh api "repos/$REPO/commits/$SHA/check-runs" --paginate \
+                   --jq '.check_runs[] | [.name, .status, (.conclusion // "pending")] | @tsv')
+          if [ -z "$runs" ]; then
+            echo "::error::No checks have reported on $SHA. Refusing to deploy an unchecked commit."
+            exit 1
+          fi
+          echo "$runs"
+          bad=0
+          while IFS=$'\t' read -r name status conclusion; do
+            [ -z "$name" ] && continue
+            if [ "$status" != "completed" ]; then
+              echo "::error::check '$name' is still $status — not deploying a half-checked commit."
+              bad=1
+            elif [ "$conclusion" != "success" ] && [ "$conclusion" != "neutral" ] && [ "$conclusion" != "skipped" ]; then
+              echo "::error::check '$name' concluded '$conclusion'."
+              bad=1
+            fi
+          done <<< "$runs"
+          [ "$bad" -eq 0 ] || exit 1
+          echo "all checks green on $SHA"
+
+      - name: Fast-forward main (Vercel deploys from here)
+        if: steps.queue.outputs.go == 'yes'
+        env:
+          SHA: ${{ steps.queue.outputs.sha }}
+        run: |
+          set -euo pipefail
+          git push origin "$SHA:refs/heads/main"
+          echo "main is now $SHA — Vercel will deploy it."
+          echo "### Deployed to providers" >> "$GITHUB_STEP_SUMMARY"
+          echo "" >> "$GITHUB_STEP_SUMMARY"
+          echo "\`main\` fast-forwarded to \`$SHA\`." >> "$GITHUB_STEP_SUMMARY"
+          git --no-pager log --oneline "$SHA" -10 >> "$GITHUB_STEP_SUMMARY"

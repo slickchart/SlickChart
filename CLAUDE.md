@@ -67,15 +67,69 @@ this to read or write data that isn't theirs?* If yes, it's not done.
 When you notice a small bug, correctness issue, or clear optimization while working — especially anything
 in the data-safety category above — **just fix it**, don't only mention it. Keep fixes tight and verified.
 
-**Ship it too.** When the owner brings you a bug or a fix request, you have standing permission to merge
-to `main` and let Vercel deploy — don't stop to ask. Verify it first (section 2), then push. Say what you
-deployed. This covers ordinary fixes; still check in before anything destructive or irreversible
-(deleting data, schema drops, cancelling a live integration).
+**Ship it, but through §1a.** Never leave verified work parked on a branch with a question attached —
+Ashley has said repeatedly she always wants fixes shipped, and "shall I deploy?" is not a question she
+wants to answer. But as of **2026-10-11 she no longer wants pushes landing on `main` mid-day**, because
+an edit reached providers while they were working. §1a is the route. Follow it; don't go round it, and
+don't go back to pushing `main` directly.
 
-This holds even when a session is set up to work on a feature branch. A branch is fine to develop on,
-but don't finish by parking the work there and asking permission to deploy — the owner has confirmed she
-always wants it shipped. Merge to `main` and push once it's verified. (Re-run section 2's checks against
-the merged result if `main` moved while you worked; the demos need rebuilding then too.)
+## 1a. How work reaches providers — the release train (her rule, 2026-10-11)
+
+She asked for this after an edit disturbed providers who were using the app. **Do not push to `main`.**
+
+1. **Develop on a branch.** One branch per change, as the session is set up to do anyway.
+2. **Verify it yourself first** (§2, plus the sweeps in §3 if you touched sync, storage or a loader).
+   The gate below is hers, not a substitute for yours.
+3. **Push the branch** and give her its Vercel preview URL so she can click it. CI runs on every
+   branch push, so the sweeps have reported before she looks.
+4. **She says ship it.** Then fast-forward `release` to that commit and push `release`.
+5. **`.github/workflows/deploy-at-2am.yml`** promotes `release` to `main` at 09:00 UTC (2am Pacific in
+   summer, 1am in winter) and Vercel deploys. It is fast-forward only, it refuses a commit whose
+   checks are not green, and it does nothing at all when `release` and `main` already match.
+   `workflow_dispatch` on that workflow is the "ship it now" button.
+
+**`release` IS her approval.** Nothing may be pushed to it that she has not said yes to. That is the
+whole mechanism — treat a push to `release` exactly as seriously as a push to `main` used to be.
+
+**The one carve-out she granted:** if she reports something broken and is waiting on the fix, verify it
+and promote it the same way but immediately — merge to `release` and run the workflow by hand (or push
+`release`, then dispatch it). That is for *her reported bugs*, not for features, and not for anything
+touching sync, storage or a loader, which always waits for the overnight run.
+
+Still check in before anything destructive or irreversible (deleting data, dropping a column,
+cancelling a live integration) — the train does not make those safe.
+
+### What a preview URL can and cannot test
+
+- **A preview uses the REAL database and the REAL env vars.** There is no staging database. Anything
+  done on a preview is live data. Never tell her a preview is a safe place to try deleting something.
+- **Square and Google OAuth cannot be completed on a preview.** `SQUARE_REDIRECT_URI`
+  (`lib/square.js`) and `APP_ORIGIN` (`api/google-cal.js`) are pinned to the live origin on purpose,
+  so Connect bounces her back to `slickchart.app` to finish. Those two flows are only testable after
+  promotion.
+- **Crons do not run on previews** (Vercel runs `vercel.json` crons on production only), so a preview
+  cannot double-send reminders or check-ins.
+
+### The compatibility that actually matters here (not SQL)
+
+Generic advice says "make migrations backward-compatible". That is already true and is not the risk:
+there is no migrations folder, every schema change is `CREATE TABLE IF NOT EXISTS` / `ADD COLUMN IF
+NOT EXISTS` inside the lib that needs it, and there is no `DROP`, `RENAME` or `TRUNCATE` anywhere in
+`lib/` or `api/`. Keep it that way — add columns, never rename or drop one the live code reads, and
+make a removal a separate change she approves on its own.
+
+The real exposure is that **the app's JavaScript is served live, so a provider who has the app open
+keeps running the OLD code against the NEW server until she next launches it** (the build check in
+`_checkForNewBuild` runs once at boot and is latched, so a deploy never reloads a page out from under
+her — a provider picks up new code at her next launch, not mid-note). So:
+
+- **An API response shape must stay readable by the previous build.** Add fields; never rename,
+  repurpose or remove one the shipped build reads.
+- **A synced `sc_*` key's shape must stay readable by the previous build**, and the new build must
+  still read the old shape — for at least one release, in practice longer, because a provider's
+  second device may not have launched in weeks. Keep reading both. This is why the homecare lines
+  added on 2026-10-10 stayed plain strings instead of becoming objects.
+- Changing either of those is exactly the case for the overnight run, never the carve-out.
 
 ## 1b. What Ashley reports is GROUND TRUTH — write it down, never re-derive it
 
@@ -203,8 +257,10 @@ The proxy blocks live `slickchart.app`, so test against the local file with rout
   person actually followed its export path in the live product. Never set that flag from docs, a
   search, or memory, and never generate those pages by swapping a name into a template (scaled
   content abuse). See `switch-src/README.md`.
-- **Deploy:** Vercel auto-deploys from `main`. Push to `main`. JS runs live from the server, so JS fixes
-  reach the native app without an app-store resubmit; native *plugin* changes need a rebuild.
+- **Deploy:** Vercel auto-deploys from `main`, but **you do not push `main`** — §1a does, overnight,
+  from `release`. JS runs live from the server, so JS fixes reach the native app without an app-store
+  resubmit; native *plugin* changes need a rebuild. Because the JS is live, the previous build stays
+  in use on any device that has not relaunched — see §1a on shape compatibility.
 - **Git:** run git from the repo root `/home/user/SlickChart` (not the `slickchart-vercel/` subdir, or
   pathspecs won't match).
 - **Device storage:** localStorage is a hard 5MB in Safari and does not grow, so it holds settings and
