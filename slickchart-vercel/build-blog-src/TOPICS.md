@@ -17,8 +17,6 @@ committed to anything, the later ones are for people mid-build.
 
 ## Queue
 
-- [ ] **How to check an app when you cannot read code.** Use it like a person. Try to break it. What
-      "tested" means for someone non-technical.
 - [ ] **The four safety mistakes that cover most of the risk.** Written for someone who is about to
       charge money and store other people's information. No scaremongering.
 - [ ] **Why your app needs a privacy policy and terms before you submit anywhere.** Real URLs, real
@@ -47,6 +45,7 @@ committed to anything, the later ones are for people mid-build.
 
 ## Done
 
+- [x] **How to check an app when you cannot read code** — DRAFT 2026-10-12 as build-blog-src/testing-an-app-you-cannot-read.md
 - [x] **The first seven days** — DRAFT 2026-10-05 as build-blog-src/start-the-clocks-week-one.md
 - [x] **What to build: the shape of an idea that works** — DRAFT 2026-09-28 as build-blog-src/the-shape-of-an-idea-that-works.md
 - [x] **How to describe your app so you get back what you meant** — DRAFT 2026-09-21 as build-blog-src/describing-what-you-want-built.md
