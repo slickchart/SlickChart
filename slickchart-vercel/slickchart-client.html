@@ -4458,9 +4458,23 @@ function rebookHourlySlots(dayObj){
   for(let t=Math.ceil(startMin/60)*60;t<endMin;t+=60){const h=Math.floor(t/60)%24;let hr=h%12;if(hr===0)hr=12;slots.push(`${hr}:00 ${h<12?'AM':'PM'}`);}
   return slots;
 }
+// Theme tokens, never hardcoded #fff. A white card with var(--c-ink) text is near-invisible in dark
+// mode, because --c-ink is a LIGHT colour there: pale text on a white chip. That is what Ashley
+// reported as "not ADA visibility compliant" on 2026-10-12, and it was literally unreadable.
+// aria-pressed so the choice is announced, not only coloured.
 function rebookTimeBtnHTML(t){
   const on=rebookState.time===t;
-  return`<button onclick="rebookState.time='${t}';document.querySelectorAll('.time-btn').forEach(b=>{b.style.background=b.textContent==='${t}'?'var(--accent)':'#fff';b.style.color=b.textContent==='${t}'?'#fff':'#54645e';b.style.borderColor=b.textContent==='${t}'?'var(--accent)':'#d9e7e1';})" class="time-btn" style="border:1.5px solid ${on?'var(--accent)':'#d9e7e1'};background:${on?'var(--accent)':'#fff'};color:${on?'#fff':'#54645e'};border-radius:8px;padding:9px 4px;font-size:12px;cursor:pointer;font-weight:500;">${t}</button>`;
+  return`<button onclick="selectRebookTime('${t}')" class="time-btn" data-time="${t}" aria-pressed="${on?'true':'false'}" style="border:1.5px solid ${on?RB_SEL_BG:'var(--c-line)'};background:${on?RB_SEL_BG:'var(--c-card)'};color:${on?RB_SEL_INK:'var(--c-ink)'};border-radius:8px;padding:10px 4px;font-size:13px;cursor:pointer;font-weight:600;font-family:inherit;">${t}</button>`;
+}
+function selectRebookTime(t){
+  rebookState.time=t;
+  document.querySelectorAll('.time-btn').forEach(function(b){
+    const on=b.dataset.time===t;
+    b.style.background=on?RB_SEL_BG:'var(--c-card)';
+    b.style.color=on?RB_SEL_INK:'var(--c-ink)';
+    b.style.borderColor=on?RB_SEL_BG:'var(--c-line)';
+    b.setAttribute('aria-pressed',on?'true':'false');
+  });
 }
 function refreshRebookTimes(){
   const c=document.getElementById('rebook-times');if(!c||!rebookAvail)return;
@@ -4471,28 +4485,99 @@ function refreshRebookTimes(){
   c.innerHTML=slots.length?slots.map(rebookTimeBtnHTML).join(''):`<div style="grid-column:1/-1;text-align:center;font-size:12px;color:var(--c-mut);padding:12px;">Pick a date above to see available times</div>`;
 }
 
-// One preferred-date button. Built by a helper (like the time buttons) so selecting a date can
-// re-render it correctly. The old inline onclick only recolored the BUTTON, not its nested day/
-// date/month text, so a selected date turned dark (accent) while the number stayed near-black —
-// unreadable "black on dark green" for a green brand. selectRebookDate recolors text + chrome.
-function rebookDateBtnHTML(d){
-  const on=rebookState.date===d.key;
-  return `<button onclick="selectRebookDate('${d.key}')" class="date-btn" data-key="${d.key}" style="flex-shrink:0;width:54px;border:1.5px solid ${on?'var(--accent)':'#d9e7e1'};background:${on?'var(--accent)':'#fff'};border-radius:10px;padding:8px 4px;cursor:pointer;text-align:center;">
-    <div class="db-day" style="font-size:10px;font-weight:600;color:${on?'rgba(255,255,255,.9)':'#5b6b65'};margin-bottom:3px;">${d.day}</div>
-    <div class="db-date" style="font-size:18px;font-weight:700;color:${on?'#fff':'var(--c-ink)'};">${d.date}</div>
-    <div class="db-mon" style="font-size:10px;color:${on?'rgba(255,255,255,.9)':'#5b6b65'};margin-top:2px;">${d.month}</div>
-  </button>`;
+// A MONTH CALENDAR, not a scrolling strip of 14 days. Ashley, 2026-10-12: "I would rather this be a
+// calendar format than a scroll list (follow square's format)", and "it should not have any limit on
+// how far out they can pick" — the strip stopped at 14 open days, which landed around five weeks out.
+// Forward navigation is unlimited; back stops at the current month because you cannot request a past
+// visit.
+//
+// Colours come from theme tokens throughout. The old strip hardcoded a #fff card and painted the day
+// number with var(--c-ink), which is LIGHT in dark mode: pale digits on a white chip, the thing she
+// reported as not ADA compliant. Disabled days are conveyed by aria-disabled and by text, not by
+// colour alone.
+// SELECTED state colours are a matched, hardcoded PAIR on purpose, and that is not the mistake the
+// old code made. The old code hardcoded the BACKGROUND (#fff) while letting the text follow the
+// theme, so in dark mode they drifted apart to a 1.11 contrast ratio. These two always move
+// together. --accent (#0F8A7E) under --accent-ink is only 4.07, and a 15px/13px bold label is under
+// WCAG's large-text threshold (14pt bold), so it needs the full 4.5. #ffffff on #0C7268 is 5.80.
+const RB_SEL_BG='#0C7268', RB_SEL_INK='#ffffff';
+let rebookMonth=null;          // {y, m} of the month on screen
+function _rbFirstMonth(base){ return {y:base.getFullYear(), m:base.getMonth()}; }
+function _rbYMD(dt){ return dt.getFullYear()+'-'+String(dt.getMonth()+1).padStart(2,'0')+'-'+String(dt.getDate()).padStart(2,'0'); }
+// Earliest requestable day: tomorrow. A request is for a future visit, not same-day.
+function _rbMinDate(){
+  const base=(client._real)?new Date():new Date('2026-07-18T12:00:00');
+  const d=new Date(base.getFullYear(),base.getMonth(),base.getDate());
+  d.setDate(d.getDate()+1);
+  return d;
+}
+function _rbDayOpen(dt){
+  if(!rebookAvail)return false;
+  const o=rebookAvail[REBOOK_DAYKEYS[dt.getDay()]];
+  return !!(o&&o.open);
+}
+function rebookCalendarHTML(){
+  const min=_rbMinDate();
+  if(!rebookMonth)rebookMonth=_rbFirstMonth(min);
+  const y=rebookMonth.y,m=rebookMonth.m;
+  const first=new Date(y,m,1);
+  const label=first.toLocaleDateString('en-US',{month:'long',year:'numeric'});
+  const atFloor=(y===min.getFullYear()&&m===min.getMonth());
+  const dim=new Date(y,m+1,0).getDate();
+  const lead=first.getDay();
+  const cell=function(inner,extra){return '<div style="aspect-ratio:1;display:flex;align-items:center;justify-content:center;'+(extra||'')+'">'+inner+'</div>';};
+  let cells='';
+  for(let i=0;i<lead;i++)cells+=cell('');
+  for(let day=1;day<=dim;day++){
+    const dt=new Date(y,m,day);
+    const key=_rbYMD(dt);
+    const past=dt<min;
+    const open=_rbDayOpen(dt);
+    const sel=rebookState.date===key;
+    const can=!past&&open;
+    if(!can){
+      // Muted AND marked up as unavailable, so it is not colour alone doing the work.
+      cells+=cell('<span aria-disabled="true" aria-label="'+day+', '+(past?'past':'closed')+'" style="font-size:15px;color:var(--c-mut2);opacity:.55;">'+day+'</span>');
+    }else{
+      cells+='<button onclick="selectRebookDate(\''+key+'\')" class="cal-day" data-key="'+key+'" aria-pressed="'+(sel?'true':'false')+'"'
+        +' aria-label="'+dt.toLocaleDateString('en-US',{weekday:'long',month:'long',day:'numeric'})+'"'
+        +' style="width:100%;aspect-ratio:1;border-radius:10px;border:1.5px solid '+(sel?RB_SEL_BG:'var(--c-line)')+';background:'+(sel?RB_SEL_BG:'var(--c-card)')+';color:'+(sel?RB_SEL_INK:'var(--c-ink)')+';font-size:15px;font-weight:600;cursor:pointer;font-family:inherit;">'+day+'</button>';
+    }
+  }
+  const navBtn=function(dir,disabled,lbl){
+    return '<button '+(disabled?'disabled ':'')+'onclick="rebookMonthStep('+dir+')" aria-label="'+lbl+'"'
+      +' style="width:38px;height:38px;border-radius:10px;border:1px solid var(--c-line);background:var(--c-card);color:'+(disabled?'var(--c-mut2)':'var(--c-ink)')+';font-size:18px;cursor:'+(disabled?'default':'pointer')+';opacity:'+(disabled?'.45':'1')+';font-family:inherit;">'+(dir<0?'\u2039':'\u203a')+'</button>';
+  };
+  return '<div style="padding:0 16px;">'
+    +'<div style="display:flex;align-items:center;justify-content:space-between;margin-bottom:10px;">'
+      +navBtn(-1,atFloor,'Previous month')
+      +'<div aria-live="polite" style="font-size:15px;font-weight:600;color:var(--c-ink);">'+label+'</div>'
+      +navBtn(1,false,'Next month')
+    +'</div>'
+    +'<div style="display:grid;grid-template-columns:repeat(7,1fr);gap:4px;margin-bottom:4px;">'
+      +['S','M','T','W','T','F','S'].map(function(d,i){return '<div aria-hidden="true" style="text-align:center;font-size:11px;font-weight:600;color:var(--c-mut);">'+d+'</div>';}).join('')
+    +'</div>'
+    +'<div style="display:grid;grid-template-columns:repeat(7,1fr);gap:4px;">'+cells+'</div>'
+  +'</div>';
+}
+function rebookMonthStep(dir){
+  if(!rebookMonth)return;
+  let y=rebookMonth.y,m=rebookMonth.m+dir;
+  if(m<0){m=11;y--;} if(m>11){m=0;y++;}
+  const min=_rbMinDate();
+  if(y<min.getFullYear()||(y===min.getFullYear()&&m<min.getMonth()))return;   // never before this month
+  rebookMonth={y:y,m:m};
+  const host=document.getElementById('rebook-cal');
+  if(host)host.innerHTML=rebookCalendarHTML();
 }
 function selectRebookDate(key){
   rebookState.date=key;
-  document.querySelectorAll('.date-btn').forEach(b=>{
+  document.querySelectorAll('.cal-day').forEach(function(b){
     const on=b.dataset.key===key;
-    b.style.background=on?'var(--accent)':'#fff';
-    b.style.borderColor=on?'var(--accent)':'#d9e7e1';
-    const day=b.querySelector('.db-day'),date=b.querySelector('.db-date'),mon=b.querySelector('.db-mon');
-    if(day)day.style.color=on?'rgba(255,255,255,.9)':'#5b6b65';
-    if(date)date.style.color=on?'#fff':'var(--c-ink)';
-    if(mon)mon.style.color=on?'rgba(255,255,255,.9)':'#5b6b65';
+    b.style.background=on?RB_SEL_BG:'var(--c-card)';
+    b.style.borderColor=on?RB_SEL_BG:'var(--c-line)';
+    b.style.color=on?RB_SEL_INK:'var(--c-ink)';
+    b.setAttribute('aria-pressed',on?'true':'false');
   });
   refreshRebookTimes();
 }
@@ -4515,33 +4600,17 @@ function renderRebook(){
   // to the provider's current treatment (or their first published service) so it's never empty.
   if(!rebookState.treatment)rebookState.treatment=(activeProvider().treatment||client.treatment||treatments[0]||'Appointment');
 
-  // Generate next 14 available dates honoring provider's open days, starting from
-  // today (real clients) or the pinned demo day. Real clients must never be shown a
-  // past date to "request".
-  const dates=[];
-  const _ymd=dt=>dt.getFullYear()+'-'+String(dt.getMonth()+1).padStart(2,'0')+'-'+String(dt.getDate()).padStart(2,'0');
-  const _base=(client._real)?new Date():new Date('2026-07-18T12:00:00');
-  const d=new Date(_base.getFullYear(),_base.getMonth(),_base.getDate());
-  // Start from tomorrow, a rebook request is for a future visit, not same-day.
-  d.setDate(d.getDate()+1);
-  let guard=0;
-  while(dates.length<14&&guard<120){
-    guard++;
-    const dk=REBOOK_DAYKEYS[d.getDay()];
-    if(avail[dk]&&avail[dk].open){
-      dates.push({
-        key:_ymd(d),  // local date parts, not toISOString (which is UTC and can shift the day)
-        day:d.toLocaleDateString('en-US',{weekday:'short'}),
-        date:d.getDate(),
-        month:d.toLocaleDateString('en-US',{month:'short'}),
-      });
-    }
-    d.setDate(d.getDate()+1);
-  }
+  // No 14-day horizon any more. The calendar renders whole months and pages forward without limit
+  // (Ashley, 2026-10-12: "it should not have any limit on how far out they can pick"); the old loop
+  // stopped after 14 OPEN days, which on a four-day week ran out about five weeks ahead.
+  // Open the calendar on the month containing the first requestable day, each time the screen is
+  // entered fresh, rather than wherever it was left.
+  const anyDayOpen=REBOOK_DAYKEYS.some(function(k){return avail[k]&&avail[k].open;});
+  rebookMonth=_rbFirstMonth(_rbMinDate());
   // Times are shown ONLY for a date the client has actually selected — not defaulted to the first
   // available day. Showing slots before any date is highlighted made clients tap a time, hit Send, and
   // get "pick a date and time first" even though visible times looked selectable.
-  const selectedKey=(rebookState.date&&dates.some(x=>x.key===rebookState.date))?rebookState.date:null;
+  const selectedKey=rebookState.date||null;
   const initialDayObj=selectedKey?avail[REBOOK_DAYKEYS[new Date(selectedKey+'T12:00:00').getDay()]]:null;
   const times=initialDayObj?rebookHourlySlots(initialDayObj):[];
 
@@ -4565,11 +4634,7 @@ function renderRebook(){
 
   <!-- Date picker -->
   <div class="sh"><h2>Preferred date</h2></div>
-  ${dates.length?`<div style="padding:0 16px;overflow-x:auto;scrollbar-width:none;">
-    <div style="display:flex;gap:7px;padding-bottom:4px;min-width:max-content;">
-      ${dates.map(rebookDateBtnHTML).join('')}
-    </div>
-  </div>`:`<div style="margin:0 16px 4px;background:var(--c-card);border:1.5px solid var(--c-line);border-radius:12px;padding:16px;text-align:center;"><div style="font-size:13px;color:var(--c-mut);line-height:1.55;">${_txt(client.providerFirst)} doesn't have online booking days set up right now.</div><button onclick="nav('messages')" class="btnp" style="border-radius:9px;margin-top:10px;padding:9px 16px;"><i class="ti ti-message"></i> Message ${_txt(client.providerFirst)} to schedule</button></div>`}
+  ${anyDayOpen?`<div id="rebook-cal">${rebookCalendarHTML()}</div>`:`<div style="margin:0 16px 4px;background:var(--c-card);border:1.5px solid var(--c-line);border-radius:12px;padding:16px;text-align:center;"><div style="font-size:13px;color:var(--c-mut);line-height:1.55;">${_txt(client.providerFirst)} doesn't have online booking days set up right now.</div><button onclick="nav('messages')" class="btnp" style="border-radius:9px;margin-top:10px;padding:9px 16px;"><i class="ti ti-message"></i> Message ${_txt(client.providerFirst)} to schedule</button></div>`}
 
   <!-- Time picker -->
   <div class="sh"><h2>Preferred time</h2></div>

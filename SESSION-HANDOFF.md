@@ -5214,3 +5214,71 @@ every row beneath it, so the answer belongs there rather than being hidden once 
 
 Verified in the browser: present on Visit and on Their file, absent from the other three, first in the
 list in both states, and clicking it calls `inviteClientToApp` with the right client id.
+
+---
+
+## 2au. Client appointment-request screen + the still-duplicated photo consult (2026-10-12, OPEN)
+
+### What Ashley OBSERVED — her words, recorded before any theory (§1b, §1d)
+
+Four screenshots, her **phone**, Chrome, on the LIVE site (`slickchart.app/space?c=...`), so the
+client app as a real client sees it.
+
+1. *"the redundant photo consult section at the bottom of client file is still there."* **Still** —
+   this was supposedly de-duplicated on 2026-10-10. It was not, or not fully. My own tab sweep
+   earlier today printed `... Photo consult | ... | Review photos & send notes | Invite Maya to a new
+   photo consult` on the Visit tab and I did not notice it. She did.
+2. *"coloring on 'request appointment' and the preferred dates are not good or ADA visibility
+   compliant."* In the screenshots the date chips are a WHITE card with very pale mint numerals —
+   the day number is the least readable thing on the screen. The "Request an appointment" button on
+   the client home reads as disabled/grey.
+3. *"the preferred dates is only showing up to 11/5 and it should not have any limit on how far out
+   they can pick."* Screenshot 1 ends at Thu 5 Nov.
+4. *"I would rather this be a calendar format than a scroll list (follow square's format)."*
+5. *"it is showing preferred times that are not available - i would rather it only show actual
+   available times."* Screenshot 4: picking Thu 5 Nov offers 10:00 AM through 5:00 PM on the hour,
+   which is a generated grid, not her real openings. Note 11/5 10:00 AM is the slot she confirmed
+   for Callie, so it is NOT free and is being offered.
+
+### Not yet established
+
+### Done 2026-10-12 — items 1 to 4
+
+**1. The duplicate photo consult.** The 2026-10-10 guard only hid the card when NO consult existed.
+When one did, the card still carried its own "Invite <name> to a new photo consult" button directly
+under the Send-to row that does exactly that, under a second heading also reading "Photo consult".
+Removed the button; the heading now names the state ("Photo consult · ready to review" /
+"· waiting on <name>"). The card's "Review photos & send notes" stays, it is not a duplicate.
+
+**2. Contrast.** The date chips hardcoded `background:#fff` but coloured the number with
+`var(--c-ink)`, which is `#eaf6f4` in dark mode. **Measured: 1.11 contrast ratio.** That is not a
+matter of taste, it is invisible. Everything now uses theme tokens: 12.77–17.40 in both themes.
+The SELECTED state is a matched hardcoded pair `#ffffff` on `#0C7268` (5.80) — `--accent` under
+`--accent-ink` is only 4.07, and a 15px bold label is under WCAG's 14pt-bold large-text threshold so
+it needs the full 4.5. **The pair is hardcoded on BOTH sides deliberately**, which is the opposite of
+the original bug: there the background was fixed while the text followed the theme, so they drifted.
+
+**3 + 4. A month calendar, no horizon.** The strip generated 14 OPEN days, which on a four-day week
+ran out about five weeks ahead. Replaced with a month grid plus ‹ › paging: forward is unlimited,
+back stops at the current month. Closed and past days are muted AND carry `aria-disabled` with a
+label, so the state is not conveyed by colour alone. Verified by driving the client demo: paged
+July→October, eight back-steps stopped at July, picking a day shows times, no console errors.
+
+### STILL OPEN — item 5, real availability. Needs a new endpoint.
+
+**The client app calls no Square endpoint at all.** Its whole surface is `/api/client-data`,
+`client-prefs`, `client-submit`, `client-messages`, `client-link`, `client-delete`, `guide-file`,
+`ai`, `native-push`, `push-subscribe`. Times come from `rebookHourlySlots()`, which builds whole
+hours from the provider's configured weekday hours — a generated grid, never her real openings. That
+is why 11/5 10:00 AM was offered while Callie already had it.
+
+Fixing it needs a **client-facing availability endpoint**, and that is a §0 change, not a tweak:
+
+- It must authorise on the client's magic-link token and return **free start times only** — no other
+  client's name, no appointment details, nothing but times. Showing that a slot is taken is what any
+  booking page does; showing WHO has it would be a leak.
+- It must resolve the provider from the token, never from a request field (§0.1).
+- `scripts/check-tenant-isolation.cjs` will need to see it, and it should get a CI check of its own.
+- The calendar should then grey out whole days with no availability, which is the same data.
+
+Do not bolt this onto `/api/square/availability`: that one authorises a logged-in PROVIDER.
