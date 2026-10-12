@@ -5425,5 +5425,65 @@ then a conflict has no obviously right answer and a bug can corrupt her real Squ
 shape, which gets her the same outcome: **Square owns services when Square is connected** — the app
 reads them (duration, buffers, processing time) and shows them read-only with a "edit in Square"
 link, and the app's own editable service menu stays for providers with no Square. One source of
-truth, no conflict class, and it matches what availability already does. **Put this to her before
-building either.**
+truth, no conflict class, and it matches what availability already does.
+
+### DECIDED 2026-10-12: **Square owns services.** Her words: *"let square own them"*
+
+So, when Square is connected:
+
+- The app **reads** her services from Square and shows their real options — duration, the extra time
+  blocked after, processing time — rather than keeping its own copy.
+- Those options are **read-only in SlickChart**, with a link out to Square to change them.
+- **The app never writes a service back into her Square catalog.** That is the whole point of the
+  decision: no second master, no conflict to resolve, and no code path that can damage her live menu.
+- The app's own editable service menu **stays** for providers with no Square connected. It is not
+  removed, it is just not the authority when Square is there.
+
+**Do not re-litigate this** (§1b rule 4). She was given both options with the trade stated and chose
+this one. She also asked to be **asked again in a month** in case she changes her mind — a one-shot
+reminder is set for 2026-11-12. If she does change it, two-way sync becomes a real project with a
+conflict-resolution design, not a toggle.
+
+### Still to build
+
+The reading side. **Before building, confirm against Square's live API docs which fields actually
+carry "block extra time" and "processing time"** — `listBookableServices` currently reads
+`service_duration` and nothing else, and the rest must not be guessed at from memory (§3's rule about
+platform facts). Then surface them on the service screen and keep using them for availability, which
+already goes through Square anyway (§2av).
+
+---
+
+## 2ax. A booking request shows in her real app but not on the Vercel preview (2026-10-12, OPEN)
+
+### What Ashley OBSERVED — verbatim, before any theory
+
+1. *"i sent myself a booking request to test and it doesn't show on the vercel preview"*
+2. *"only my real app which doesnt have the updates yet"*
+
+So: the request **arrived and is visible in the live app**, and is **absent from the preview**. It is
+not lost. Whatever the cause, nothing has gone missing — do not tell her anything has.
+
+### Diagnosis (code, 2026-10-12) — expected behaviour, not a bug
+
+The path a booking request takes:
+
+1. Client app calls `_clientSubmit('booking', …)` → **`/api/client-submit`** → a row in
+   `client_events`. It is on the SERVER from that moment. (It also writes `SlickBridge.upsertBooking`
+   locally, which is what makes it instant on the same origin, but the server row is the real one.)
+2. The provider app's `syncClientEvents()` picks up **unseen** events, materialises the booking into
+   `sc_bookings`, notifies, and marks the event seen at the very END — after the derived data is
+   flushed, deliberately, so a killed poll cannot record "seen" with nothing saved.
+3. `sc_seen_events` **and** `sc_bookings` are both synced keys. `_mergeBookings` unions by id and a
+   device with no local copy takes the account copy whole.
+
+So a SECOND app (the preview is exactly that) does not re-process the event — her real app already
+marked it seen, and that seen-state syncs. It receives the booking through the synced `sc_bookings`
+copy instead. Which means the preview needs two things that are easy to miss: **signed in to the same
+account on that domain**, and **a completed pull after her real app pushed `sc_bookings`**.
+
+The preview is a different origin (`slick-chart-git-…vercel.app`), so it shares no browser storage
+with `slickchart.app` and starts empty. Nothing carries over until it signs in and syncs.
+
+**This is working as designed and the design is sound** — note the ordering in step 2, which exists
+precisely so a request cannot be marked seen without being saved. Do not "fix" it.
