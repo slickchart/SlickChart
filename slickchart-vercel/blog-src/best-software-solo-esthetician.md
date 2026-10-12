@@ -4,7 +4,7 @@ h1: Best software for a solo esthetician in 2026: an honest category breakdown
 description: Four kinds of software, what each is really built for, and prices I checked myself in October 2026. The honest version, not a ranking.
 date: 2026-10-12
 keywords: best esthetician software, solo esthetician software, esthetician charting software, esthetician software pricing 2026, esthetician software comparison
-draft: true
+draft: false
 ---
 
 Every "best software" roundup I've read has the same flaw. It ranks products that aren't trying to do the same job — a booking platform and a clinical records system end up on the same list, one of them wins, and you still have no idea whether the winner solves *your* problem.

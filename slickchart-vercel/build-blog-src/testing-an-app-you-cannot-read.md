@@ -4,7 +4,7 @@ h1: How to check your own app when you cannot read the code
 description: You cannot read the code, but you can be the person using it. A practical way to test your own app, and the two questions that catch real bugs.
 date: 2026-10-12
 keywords: how to test an app you built with ai, testing an app without coding, check an app before launch, non technical app testing, test your own app
-draft: true
+draft: false
 ---
 
 Once your app starts working, a particular worry turns up: *I cannot read any of this, so how would I know if it is broken?*
@@ -63,8 +63,6 @@ If your app stores anything at all, that pair of questions is worth more than ev
 Write the list down. Once. On paper is fine.
 
 The reason is not organisation, it is memory. You will fix something next month and quietly break something you tested in week two, and you will not think to check it because it worked last time you looked. Running the same short list before every release is what stops that, and it is the entire idea behind proper testing, minus the jargon.
-
-Mine was about fifteen lines and took ten minutes to run.
 
 ## What this will not tell you
 
