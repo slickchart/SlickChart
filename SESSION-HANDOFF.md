@@ -4971,8 +4971,16 @@ only, refusing any commit whose checks are not green and no-opping when `release
 `workflow_dispatch` is the ship-it-now button. **`release` is her approval; nothing goes on it that she
 has not said yes to.**
 
-**`release` does not exist yet** — deliberately. The workflow handles that ("nothing has been
-approved") so it was safe to land first. Create it from `main` when she confirms the mechanism.
+**`release` is created from the approved commit, not from `main`.** The workflow handles its absence
+("nothing has been approved") so it was safe to land the workflow first.
+
+**THE BOOTSTRAP CATCH (2026-10-12).** GitHub runs `schedule` and `workflow_dispatch` only from the
+DEFAULT branch, so `deploy-at-2am.yml` does nothing whatsoever until the file is itself on `main`.
+The train cannot start itself: the first promotion must be a manual `git push origin release:main`,
+and there is no way around it. That one push was put to Ashley rather than done quietly, because
+"never push main" was her rule from the day before. Once `main` carries the file, every promotion
+after it is the job's and nobody pushes `main` again. **If `main` has the workflow, the bootstrap is
+done.**
 
 **Also changed, because the train depends on it:** `no-demo-data.yml` now runs on `branches: ['**']`
 instead of only `main`. It used to run *after* the deploy it is meant to gate, and the 2am promotion
