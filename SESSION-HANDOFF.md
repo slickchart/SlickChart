@@ -5932,3 +5932,61 @@ services" and keeps one answer instead of two, but it changes what strangers see
 `/book`, which she did not specifically ask for. Say so plainly; if she wants the public page to keep
 its own curated list, move the `cfg.services` check above `squareServices()` in `listServices()` —
 that is the only line involved.
+
+### 2026-10-12, 4:14pm: she was testing the CLIENT app on the LIVE site, not the preview
+
+She reported the colours, the 14-day date strip and the services all unchanged: *"none of the edits
+seem to be working in preview"*. The address bar in her screenshots read **`slickchart.app/space?c=…`**.
+The provider app link I had been giving her was the preview; her client link was not, and nobody had
+said so. The client space on the preview is the SAME path on the preview host:
+
+```
+https://slick-chart-git-<branch>-slick-chart.vercel.app/space?c=<her token>
+```
+
+**Give her BOTH links whenever a change touches `slickchart-client.html`.** Her screenshots are the
+only way these get checked, and an hour went into re-reading code that was never running.
+
+On the preview the month calendar, the removed date horizon and the Square service names all worked.
+
+### Then, on the preview: two real findings
+
+**1. The "Request an appointment" button was unreadable — measured 1.36:1.**
+
+The next-appointment card is an always-dark gradient (`--accent-tint` → `--accent-tint2`) and its own
+text correctly uses `--accent-onDark` (`_mixLight(p,0.80)`). The three action buttons inside it used
+`--accent-lt2`, which `_scApplyTheme` sets to `_mixDark(p,0.24)` in dark mode — a DARK colour on a
+dark card. Measured `rgb(4,33,30)` on `#031d1a`: **1.36:1**. Now `--accent-onDark`: **8.41:1**.
+
+**Do NOT blanket-replace `--accent-lt2` elsewhere.** Two other tint cards use it too, but at least one
+is on a `rgba(255,255,255,.35)` pill where a dark colour is correct. Those were left alone and are
+unverified, not fixed.
+
+**2. Preferred service is a dropdown now, not a side-scrolling chip row.**
+
+Her words: *"the preferred services is too long and it is not intuitive to have to scroll to the side
+to find - how about a drop down menu instead with no description?"* Her Square services are named like
+`Acne Skin Treatment - Focus on active breakouts and acne scarring`, so the chips ran off-screen with
+the useful part cut off.
+
+`_svcShort()` shortens **only what is displayed**. The value in `rebookState` and on the request stays
+the full Square name, because `matchSquareService()` and the availability lookup match on it — trim
+that and the request books the wrong service or none. It drops a trailing clause only when there is a
+spaced dash AND the tail is three or more words, so variants survive:
+
+```
+shows "Acne Skin Treatment"   -> sends "Acne Skin Treatment - Focus on active breakouts and acne scarring"
+shows "Signature Facial"      -> sends "Signature Facial"
+shows "Dermaplane - 30 min"   -> sends "Dermaplane - 30 min"
+shows "Back - Chest"          -> sends "Back - Chest"
+```
+
+Changing the dropdown calls `refreshRebookTimes()`, because her Square rules are per service and the
+open times change with it.
+
+### Proof
+
+`scratchpad/test-rebook-service-ui.mjs` — contrast computed against BOTH ends of the gradient
+(`getComputedStyle` reads a gradient as transparent, CLAUDE.md §2) with the button's own
+`rgba(255,255,255,.12)` overlay composited in, plus the dropdown's labels, values and that it no
+longer scrolls sideways. Negative control against `HEAD`: **1.36:1** and no dropdown.

@@ -2129,17 +2129,17 @@ function renderHome(){
     <!-- Actions + the pre-visit checklist, all wrapped inside this one card -->
     <div style="display:flex;gap:8px;margin-top:14px;">
       <button onclick="nav('rebook')" style="flex:1;background:rgba(255,255,255,.12);border:1px solid rgba(255,255,255,.22);border-radius:10px;padding:10px;display:flex;align-items:center;justify-content:center;gap:7px;cursor:pointer;">
-        <i class="ti ti-calendar-plus" aria-hidden="true" style="font-size:15px;color:var(--accent-lt2);"></i>
-        <span style="font-size:13px;font-weight:600;color:var(--accent-lt2);">${noAppt?'Request an appointment':past?'Request your next visit':'Request another visit'}</span>
+        <i class="ti ti-calendar-plus" aria-hidden="true" style="font-size:15px;color:var(--accent-onDark);"></i>
+        <span style="font-size:13px;font-weight:600;color:var(--accent-onDark);">${noAppt?'Request an appointment':past?'Request your next visit':'Request another visit'}</span>
       </button>
       ${(noAppt||past)?'':`<button onclick="openCalModal()" aria-label="Add to calendar" style="flex:1;background:rgba(255,255,255,.12);border:1px solid rgba(255,255,255,.22);border-radius:10px;padding:10px;display:flex;align-items:center;justify-content:center;gap:7px;cursor:pointer;">
-        <i class="ti ti-calendar-check" aria-hidden="true" style="font-size:15px;color:var(--accent-lt2);"></i>
-        <span style="font-size:13px;font-weight:600;color:var(--accent-lt2);">Add to calendar</span>
+        <i class="ti ti-calendar-check" aria-hidden="true" style="font-size:15px;color:var(--accent-onDark);"></i>
+        <span style="font-size:13px;font-weight:600;color:var(--accent-onDark);">Add to calendar</span>
       </button>`}
     </div>
     ${(!noAppt&&!past&&(client.studioAddress||client.studio))?`<a href="https://www.google.com/maps/dir/?api=1&destination=${encodeURIComponent((client.studioAddress||client.studio||'').trim())}" target="_blank" rel="noopener" aria-label="Get directions" style="display:flex;align-items:center;justify-content:center;gap:7px;margin-top:8px;background:rgba(255,255,255,.12);border:1px solid rgba(255,255,255,.22);border-radius:10px;padding:10px;text-decoration:none;cursor:pointer;">
-      <i class="ti ti-map-pin" aria-hidden="true" style="font-size:15px;color:var(--accent-lt2);"></i>
-      <span style="font-size:13px;font-weight:600;color:var(--accent-lt2);">Get directions</span>
+      <i class="ti ti-map-pin" aria-hidden="true" style="font-size:15px;color:var(--accent-onDark);"></i>
+      <span style="font-size:13px;font-weight:600;color:var(--accent-onDark);">Get directions</span>
     </a>`:''}
     ${(()=>{
       // With no appointment on the books yet, assigned forms are hoisted into their own labeled section
@@ -4599,6 +4599,32 @@ function rebookMonthStep(dir){
   const host=document.getElementById('rebook-cal');
   if(host)host.innerHTML=rebookCalendarHTML();
 }
+// A SERVICE NAME, SHORT ENOUGH TO READ IN A LIST.
+//
+// Ashley, 2026-10-12: "the preferred services is too long and it is not intuitive to have to scroll
+// to the side to find - how about a drop down menu instead with no description?" Her Square services
+// are named like "Acne Skin Treatment - Focus on active breakouts and acne scarring", so the chip row
+// ran off the side of the screen with the useful part cut off.
+//
+// This shortens only what is DISPLAYED. The value kept in rebookState and sent with the request stays
+// the full Square name, because that is what matchSquareService() and the availability lookup match
+// on, and trimming it there would book the wrong service or none at all.
+//
+// Only a trailing clause that reads like prose is dropped: there has to be a dash separator with
+// spaces around it, and what follows has to be several words. "Back - Chest" or "Peel - 30 min" keep
+// both halves, because those are variants, not descriptions.
+function _svcShort(name){
+  const full=String(name||'').trim();
+  const m=full.match(/^(.{3,}?)\s+[-\u2013\u2014]\s+(.+)$/);
+  if(!m)return full;
+  const tail=m[2].trim();
+  if(tail.split(/\s+/).length<3)return full;   // a variant like "30 min" or "Add on", not a description
+  return m[1].trim();
+}
+function selectRebookService(v){
+  rebookState.treatment=v;
+  refreshRebookTimes();   // her Square rules are per service, so the open times change with it
+}
 function selectRebookDate(key){
   rebookState.date=key;
   document.querySelectorAll('.cal-day').forEach(function(b){
@@ -4669,10 +4695,10 @@ function renderRebook(){
   <!-- Service picker -->
   <div class="sh"><h2>Preferred service</h2></div>
   ${!treatments.length?`<div style="margin:0 16px 4px;background:var(--c-card);border:1.5px solid var(--c-line);border-radius:12px;padding:14px 16px;"><div style="font-size:13px;color:var(--c-mut);line-height:1.55;">${_txt(client.providerFirst)} hasn't listed her services here yet. Pick a day and time below and she'll confirm what you're booked for.</div></div>`:`
-  <div style="padding:0 16px;overflow-x:auto;scrollbar-width:none;">
-    <div style="display:flex;gap:7px;padding-bottom:4px;min-width:max-content;">
-      ${treatments.map(function(s){var on=(rebookState.treatment===s);return '<button onclick="rebookState.treatment=\''+_jsAttr(s)+'\';renderRebook()" aria-pressed="'+(on?'true':'false')+'" style="flex-shrink:0;border:1.5px solid '+(on?'var(--accent)':'var(--c-line)')+';background:'+(on?'var(--accent)':'var(--c-card)')+';color:'+(on?'var(--accent-ink)':'var(--c-ink)')+';border-radius:20px;padding:9px 15px;font-size:13px;font-weight:600;cursor:pointer;font-family:inherit;white-space:nowrap;">'+_txt(s)+'</button>';}).join('')}
-    </div>
+  <div style="padding:0 16px;">
+    <select id="rebook-svc" aria-label="Preferred service" onchange="selectRebookService(this.value)" style="width:100%;border:1.5px solid var(--c-line);background:var(--c-card);color:var(--c-ink);border-radius:12px;padding:13px 38px 13px 14px;font-size:15px;font-weight:600;font-family:inherit;cursor:pointer;-webkit-appearance:none;appearance:none;background-image:url('data:image/svg+xml;utf8,<svg xmlns=\"http://www.w3.org/2000/svg\" width=\"16\" height=\"16\" viewBox=\"0 0 24 24\" fill=\"none\" stroke=\"%23808b88\" stroke-width=\"2.5\" stroke-linecap=\"round\" stroke-linejoin=\"round\"><polyline points=\"6 9 12 15 18 9\"/></svg>');background-repeat:no-repeat;background-position:right 13px center;">
+      ${treatments.map(function(s){return '<option value="'+_jsAttr(s)+'"'+(rebookState.treatment===s?' selected':'')+'>'+_txt(_svcShort(s))+'</option>';}).join('')}
+    </select>
   </div>`}
 
   <!-- Date picker -->
