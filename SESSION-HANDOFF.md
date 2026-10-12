@@ -5780,3 +5780,77 @@ in the booking event itself, the paste will now name it outright instead of hidi
 more paste after she confirms, not before.
 
 Do not mark this thread closed until she says the requests appear.
+
+### 2026-10-12: THE ACTUAL CAUSE. The roster gate had latched, and the whole ingest was dead.
+
+Her second paste, from Safari on her Mac at 3:49 PM, after the event-isolation fix:
+
+```
+events this device could not process: none recorded
+roster: 775 client(s) saved on this device, 50 loaded into memory
+client events are being read at all: NO — every poll returns early because the roster reads as unloaded
+  saved but not loaded: sq_ms7g7v4hcm, c1787532620407, … and 763 more
+events of ANY kind not yet handled on this device: 2   (both her own test bookings)
+```
+
+No throw. `syncClientEvents()` was returning on its **first line** — `if(_rosterNotReadYet())return;`
+— on every 15-second poll and every focus, permanently. So **nothing a client sends was being read
+on that device at all**: not booking requests, not messages, not forms, not check-ins, not photo
+consults. The only symptom of that is an absence, which is why it looked like a sync problem for
+three rounds.
+
+**Why it latched.** `_rosterNotReadYet()` answered "has this device read its roster" by comparing
+the on-disk `sc_clients` blob against the in-memory `CL`, and calling any id that is saved but not
+loaded proof the read had not happened. That is sound during the boot window and wrong in steady
+state: ids leave `CL` **on purpose**. `_purgeRemovedClients()` strips merged, deleted and
+hidden-sample records on every load while the on-disk blob keeps them. The function subtracted the
+merged and deleted sets, but hundreds of her ids were not covered by either, so the comparison said
+"unread" forever. No subtraction can stay complete as new reasons to drop a record are added —
+"saved but not in memory" is simply a different question from "not read yet".
+
+**The fix.** Answer the real question: `loadClients()` has either run against a hydrated roster or it
+has not. `_rosterRead` is set in every exit path of `loadClients()` (including the empty-roster one)
+and only when `_awaitingHydration('sc_clients')` is false, and `_rosterNotReadYet()` returns false
+once it is set. The `_awaitingHydration` check stays first, and the old content comparison stays as
+the fallback for the window before the flag is set — so the change can make the guard **less** sticky
+but never more. The boot-window protection it exists for is intact.
+
+**Proof.** `scratchpad/test-roster-gate.mjs` builds her shape in miniature — 41 ids on disk, 1 in
+memory — and requires a new booking event to come through AND the gate to still hold while the
+roster is hydrating:
+
+```
+  the request came through          : YES
+  still blocks while roster loading : YES (boot protection intact)
+```
+
+Negative control with one line removed reproduces her paste exactly:
+
+```
+gate says "not read"   : true
+bookings materialised  : []
+pushed to the account  : no
+```
+
+### Three fixes, three rounds, and only the third was her bug — state this plainly
+
+1. `864c456` the `sc_bookings` pull guard. Real second-device bug, proven by test. **Not hers.**
+2. `639a6ff` the unprotected event loop. Real silent single point of failure, proven by test and
+   negative control. **Not hers** — her paste said `events this device could not process: none`.
+3. This one. Hers.
+
+Both earlier fixes stay: each is a genuine defect with a regression test. But the pattern to learn
+is that rounds 1 and 2 were theories about code, and round 3 came from a NUMBER in her paste. The
+line that found it (`roster: N saved, M loaded` / `client events are being read at all`) did not
+exist until round 2 added it. **Every round that added instrumentation moved this forward; every
+round that reasoned from the source did not.**
+
+### Scope, for anything she asks
+
+Only **2** events were unhandled account-wide, both her own test requests, so nothing a client sent
+is sitting unprocessed. The event log is the server's record and nothing is deleted from it, so the
+two will be ingested on the next poll once this ships. Do not describe anything here as lost.
+
+Unknown and worth a look later: why 775 ids are on disk against 50 in memory. Most are
+Square-imported customers she merged or deleted, which is legitimate, but the on-disk blob only ever
+grows. Not urgent, and NOT to be "cleaned up" without her say-so.

@@ -1699,7 +1699,12 @@ function _slimLastCheckin(c){
   }catch(e){}
   return false;
 }
-function loadClients(){try{const raw=localStorage.getItem('sc_clients');if(!raw)return;const saved=JSON.parse(raw);if(!saved||typeof saved!=='object')return;Object.keys(CL).forEach(k=>delete CL[k]);Object.keys(saved).forEach(k=>{CL[k]=saved[k];});
+// Has loadClients() actually run, with the real roster available rather than an unhydrated hole?
+// This is the honest answer to "has this device read its roster", and it is set in EVERY exit path
+// below including the empty-roster one. See _rosterNotReadYet.
+let _rosterRead=false;
+function _markRosterRead(){try{if(typeof _awaitingHydration==='function'&&_awaitingHydration('sc_clients'))return;_rosterRead=true;}catch(e){_rosterRead=true;}}
+function loadClients(){try{const raw=localStorage.getItem('sc_clients');if(!raw){_markRosterRead();return;}const saved=JSON.parse(raw);if(!saved||typeof saved!=='object'){_markRosterRead();return;}Object.keys(CL).forEach(k=>delete CL[k]);Object.keys(saved).forEach(k=>{CL[k]=saved[k];});_markRosterRead();
   // One-time reclaim: strip any base64 check-in photos an older build wrote into the roster, then
   // rewrite the (now much smaller) blob directly so the freed space is available immediately. Done
   // before seeding the signature cache so this cleanup doesn't spuriously bump every client's _uAt.
@@ -27428,9 +27433,27 @@ function _reconcileEventAttachments(events){
 // boot order: ids this device has SAVED but has not LOADED mean the read has not happened yet.
 // Deliberately false for an account with no roster at all — a brand-new provider must still be able
 // to receive a client created elsewhere.
+// LATCHED TRUE ON ASHLEY'S MACHINE AND STARVED THE WHOLE INGEST (2026-10-12).
+//
+// Her paste: 775 clients saved on the device, 50 loaded into memory, so the comparison below found
+// hundreds of ids "saved but not loaded" and reported the roster unread on every single poll.
+// syncClientEvents() returns on its first line when that happens, so NOTHING a client sends was
+// being read on that device: no booking requests, no messages, no forms, no check-ins, no photo
+// consults. Permanent and silent, because the only symptom is an absence.
+//
+// The comparison was never wrong about the boot window; it is wrong in steady state. Ids leave CL
+// on purpose - _purgeRemovedClients strips merged, deleted and hidden-sample records every load -
+// while the on-disk blob keeps them, and no subtraction of "gone" sets can stay complete as new
+// reasons to drop a record are added. "Saved but not in memory" simply is not the same question as
+// "not read yet".
+//
+// So answer the real question directly: loadClients() either has run against a hydrated roster or
+// it has not. The content comparison stays only as a fallback for the window before that flag is
+// set, which means this change can make the guard less sticky but never more.
 function _rosterNotReadYet(){
   try{
     if(typeof _awaitingHydration==='function'&&_awaitingHydration('sc_clients'))return true;
+    if(_rosterRead)return false;   // the read happened; anything absent from CL is absent on purpose
     let raw=null;
     try{raw=(typeof _lsGet==='function')?_lsGet('sc_clients'):localStorage.getItem('sc_clients');}catch(e){}
     if(!raw)return false;
