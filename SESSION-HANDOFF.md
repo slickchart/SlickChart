@@ -5990,3 +5990,61 @@ open times change with it.
 (`getComputedStyle` reads a gradient as transparent, CLAUDE.md §2) with the button's own
 `rgba(255,255,255,.12)` overlay composited in, plus the dropdown's labels, values and that it no
 longer scrolls sideways. Negative control against `HEAD`: **1.36:1** and no dropdown.
+
+## 2az. The client Shop listed app-seeded products as if she sold them (2026-10-12)
+
+Confirmed first, same message: *"servive times are showing correctly now. the public book is fine."*
+So the Square-first ordering in `listServices()` STAYS — she was asked about `/book` and approved it.
+Do not revert that.
+
+Then: *"lets remove all demo items from the shop area. it should only be listing people's real
+product catalog."* Her client's Shop was headed **"Everything Ashley offers, shop the full range"**
+over five products she does not sell — Ingrown Hair Serum, Exfoliating Body Scrub, Soothing Aloe Gel,
+Tend Skin Solution, Foaming Lash Cleanser — each reading *"Ask Ashley about this at your next visit"*
+because there was nothing to buy.
+
+### Where they came from
+
+`_reseedShopIfDefault()` seeds `_SHOP_STARTER_BY_PROF[profession]` into `affiliateLinks` over a
+pristine catalog, and `_buildShopCatalog()` published **everything active** to `sc_shop_catalog`,
+which is what the client's Shop renders. So the app's own sample data was being advertised to a real
+client under her name.
+
+### The rule
+
+`_isUnadoptedStarter(a)`: a product whose id is in `_SAMPLE_PRODUCT_IDS` or `_SHOP_STARTER_BY_PROF`
+AND which has no `url`, `site`, `amazon`, `image`, `price`, `note` and is not `inOffice`. Those are
+kept out of the client-facing catalog. **Adopting one is what makes it hers** — give it anywhere to
+buy from, a picture, a note, or mark it as stocked, and it appears for clients immediately.
+
+**Nothing is deleted.** Her own product list still holds the starters as suggestions; only the
+client-facing publish is filtered. That was deliberate: deleting products out of a provider's library
+is destructive and hers to decide, and §2ae is explicit about starter content versus a real account.
+If she later wants them gone from her side too, that is a separate change she confirms.
+
+### The trap this would have hit
+
+The cleaned catalog is SMALLER than the copy already on her account, and `_dropBootShrinks()` holds
+back a shrink whose missing ids are not tombstoned. It does not apply here only because
+`_buildShopCatalog()` emits objects with **no `id` field**, so `_idsOf()` reads it as "not a record
+collection" and returns null. **If that shape ever gains an `id`, this fix silently stops working** —
+the upload would be held and her clients would keep seeing the demo products. The test asserts
+`_idsOf(...) === null` for exactly that reason.
+
+### Proof
+
+`scratchpad/test-shop-catalog.mjs` — seven products: two untouched starters, one untouched esty
+sample, a starter she marks in-office, a starter she linked, her own product, and an inactive one.
+
+```
+client-facing catalog: ["Tend Skin Solution","Lash Coating Sealant","Her Own Cleanser"]
+  app-seeded products she never set up : gone
+  a starter she stocks / linked       : kept
+  her own product                     : kept
+  shrink guard would block the push    : no
+```
+
+Negative control against `HEAD`: all three untouched starters still shown.
+
+Her account's existing `sc_shop_catalog` still holds the old list until her app next runs
+`_syncShopCatalog()`, which happens at boot — so this takes effect on her next launch, not retroactively.

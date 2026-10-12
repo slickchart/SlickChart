@@ -7016,9 +7016,34 @@ function _reseedShopIfDefault(){
 // (earnings, clicks, commission). Synced to a provider-level KV the client reads (api/client-data
 // → sc_shop_catalog), so the client's Shop can list the full catalog without bloating each client's
 // own data blob, same pattern as branding.
+// Is this a product the app put there, which the provider has never actually adopted?
+//
+// Ashley, 2026-10-12: "lets remove all demo items from the shop area. it should only be listing
+// people's real product catalog." Her client's Shop was headed "Everything Ashley offers, shop the
+// full range" above five products she does not sell: the starter set _reseedShopIfDefault() seeds
+// per profession, each reading "Ask Ashley about this at your next visit" because there is nothing
+// to buy. That is the app advertising its own sample data to a real client under her name.
+//
+// Adopting one is what makes it hers: giving it anywhere to buy from, a picture, or marking it as
+// something she stocks. Until then it is a suggestion for HER, not a product for them, and it stays
+// out of the client-facing catalog. Nothing is deleted — her own product list is untouched and the
+// moment she fills one in it appears for clients.
+const _STARTER_PRODUCT_IDS=(function(){
+  const out=Object.create(null);
+  try{_SAMPLE_PRODUCT_IDS.forEach(function(id){out[id]=1;});}catch(e){}
+  try{Object.keys(_SHOP_STARTER_BY_PROF).forEach(function(k){
+    (_SHOP_STARTER_BY_PROF[k]||[]).forEach(function(p){if(p&&p.id)out[p.id]=1;});
+  });}catch(e){}
+  return out;
+})();
+function _isUnadoptedStarter(a){
+  if(!a||!a.id||!_STARTER_PRODUCT_IDS[a.id])return false;       // not something the app seeded
+  const has=function(v){return !!String(v||'').trim();};
+  return !(has(a.url)||has(a.site)||has(a.amazon)||has(a.image)||a.inOffice||has(a.price)||has(a.note));
+}
 function _buildShopCatalog(){
   try{
-    return (affiliateLinks||[]).filter(a=>a&&a.active!==false&&a.name).map(a=>({
+    return (affiliateLinks||[]).filter(a=>a&&a.active!==false&&a.name&&!_isUnadoptedStarter(a)).map(a=>({
       name:a.name,brand:a.brand||'',icon:a.icon||'🛍️',inOffice:!!a.inOffice,
       // Carry the product image (Square catalog photo, or one the provider added) so the client's
       // Shop shows the real product picture instead of a generic emoji. Only http(s) URLs are
