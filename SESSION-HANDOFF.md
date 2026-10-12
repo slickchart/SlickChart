@@ -5174,3 +5174,43 @@ Two traps that cost time while building this, worth knowing:
 Calendar stays **defaulting OFF**, so a new connection sends client names and appointment notes to
 Google unless she turns it on. Asked and answered; **do not raise it again** (§1b rule 4). No code
 change was needed, the default already is OFF.
+
+---
+
+## 2at. "Invite client to app" disappeared from the client file (2026-10-12, FIXED)
+
+### What Ashley OBSERVED
+
+*"I just noticed that we lost the 'invite client to app' function. that should be in the main client
+file area."*
+
+### What was actually true — check before claiming anything is missing (§1c)
+
+**Nothing was deleted.** `inviteClientToApp(id)` and its button both still existed. Rebuilding the
+client screen with five tabs on 2026-10-10 put the button inside the **`file` tab only** (the `.ctab`
+block at the `data-tab="file"` div), so it stopped appearing on the screen a provider lands on.
+
+Verified in the running app rather than by reading: driving the demo through all five tabs showed the
+button visible on `file` and on nothing else. That is the whole bug — it was one tab away, and one
+tab away is invisible.
+
+This is the §1c rule 3 shape in a milder form: working code that nothing reachable calls. The lesson
+for the next person who restructures a screen into tabs: **enumerate what used to be on the single
+scrolling screen and decide a tab for each**, because anything not placed just quietly stops existing.
+
+### The fix
+
+A row at the TOP of the "Send to <name>" list in `_sendToClientHTML`, which renders on the **Visit**
+tab, the one the file opens on. Reasoning for the position: nothing else in that list can reach a
+client who is not in the app yet, so the invite is the gate for everything under it.
+
+- Not invited → "Invite to the app" / *Nothing below reaches them until they are in*, purple.
+- Already invited → "Resend app invite" / *Already in the app · tap to send it again*, green.
+
+It shows in both states on purpose. "Can this client receive anything at all?" is the context for
+every row beneath it, so the answer belongs there rather than being hidden once it is yes.
+
+**The button on Their file stays.** This is a second home, not a move.
+
+Verified in the browser: present on Visit and on Their file, absent from the other three, first in the
+list in both states, and clicking it calls `inviteClientToApp` with the right client id.
