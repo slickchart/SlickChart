@@ -4812,10 +4812,13 @@ async function _runSelfCheck(){
     if(Array.isArray(_bkLocal))_bkLocal.slice(0,12).forEach(function(b){
       bkDiag.push('    \u2022 '+(b&&b.id||'?')+' \u00b7 '+((b&&b.client)||'?')+' \u00b7 '+((b&&b.treatment)||'?')+' \u00b7 '+((b&&b.date)||'?')+' '+((b&&b.time)||'')+' \u00b7 status='+((b&&b.status)||'?')+(b&&b.seen?' \u00b7 cleared':''));
     });
-    var _pulled=(typeof Cloud!=='undefined'&&Cloud&&Cloud._lastPulledKeys)||null;
-    bkDiag.push('  sc_bookings came down in this session\u2019s pull: '+(_pulled?(_pulled.has('sc_bookings')?'YES':'NO'):'pull has not run yet'));
-    var _srvRaw=null;try{_srvRaw=(Cloud&&Cloud._serverSeen)?Cloud._serverSeen['sc_bookings']:null;}catch(e){}
-    if(_srvRaw==null){ bkDiag.push('  on the account: NOT PRESENT \u2014 the server has no sc_bookings for this login'); }
+    // The account copy comes from the `server` fetch above, NOT from Cloud._serverSeen. This check
+    // runs deliberately BEFORE boot, so _serverSeen is still empty here and reading it reported
+    // "the account has no bookings" for everyone, always \u2014 a confident wrong answer pointing at the
+    // wrong device. The direct GET is the only source that is true this early.
+    var _srvRaw=(server&&server['sc_bookings']!=null)?String(server['sc_bookings']):null;
+    if(!tok){ bkDiag.push('  on the account: not checked \u2014 signed out on this device'); }
+    else if(_srvRaw==null){ bkDiag.push('  on the account: NOT PRESENT \u2014 the server has no sc_bookings for this login'); }
     else{
       var _srv=[];try{_srv=JSON.parse(_srvRaw||'[]');}catch(e){_srv=null;}
       bkDiag.push('  on the account: '+(Array.isArray(_srv)?(_srv.length+' request(s), '+String(_srvRaw).length+' bytes'):('UNREADABLE \u2014 '+String(_srvRaw).slice(0,60))));
@@ -4831,9 +4834,39 @@ async function _runSelfCheck(){
         bkDiag.push('  on the account but NOT on this device: '+(_only.length?_only.join(', '):'none'));
       }
     }
-    var _ev=0;try{_ev=(JSON.parse(_lsGet('sc_seen_events')||'[]')||[]).length;}catch(e){}
+    var _seenIds={};var _ev=0;
+    try{var _sa=JSON.parse(_lsGet('sc_seen_events')||'[]')||[];_ev=_sa.length;_sa.forEach(function(x){_seenIds[String(x)]=1;});}catch(e){}
     bkDiag.push('  client events already marked seen on this device: '+_ev);
   }catch(e){bkDiag.push('  (booking diagnostic failed: '+(e&&e.message)+')');}
+  // THE EVENT LOG ITSELF. The two lists above cannot tell a request that never reached the account
+  // from one the ingest skipped: a booking event is processed only when its id is NOT in
+  // sc_seen_events, and that seen-set SYNCS, so the device that received the request marks it seen
+  // for every other device. A second device therefore depends entirely on sc_bookings syncing, and
+  // if that never happened the request is invisible with no error anywhere. Printing the raw event
+  // beside "seen here" and "materialised here" is what separates those cases.
+  try{
+    if(tok){
+      var _lids2={};try{(JSON.parse(_lsGet('sc_bookings')||'[]')||[]).forEach(function(b){if(b&&b.id)_lids2[b.id]=1;});}catch(e){}
+      var _sids={};try{(JSON.parse(_lsGet('sc_seen_events')||'[]')||[]).forEach(function(x){_sids[String(x)]=1;});}catch(e){}
+      var _re=await fetch('/api/clients',{headers:{'Authorization':'Bearer '+tok},cache:'no-store'});
+      var _je=await _re.json().catch(function(){return null;});
+      var _evs=(_je&&Array.isArray(_je.events))?_je.events.filter(function(e){return e&&e.kind==='booking';}):null;
+      if(_evs==null){ bkDiag.push('  booking events on the server: could not read the event log'); }
+      else{
+        bkDiag.push('  booking events on the server: '+_evs.length);
+        _evs.slice(0,12).forEach(function(e){
+          var pl=e.payload||{};
+          bkDiag.push('    \u2022 '+e.id+' \u00b7 '+(pl.client||'?')+' \u00b7 '+(pl.treatment||'?')+' \u00b7 '+(pl.date||'?')+' '+(pl.time||'')
+            +' \u00b7 seen on this device='+(_sids[String(e.id)]?'YES':'no')
+            +' \u00b7 in this device\u2019s request list='+(_lids2[e.id]?'YES':'NO'));
+        });
+        var _ghost=_evs.filter(function(e){return _sids[String(e.id)]&&!_lids2[e.id];}).map(function(e){return e.id;});
+        if(_ghost.length)bkDiag.push('    >>> marked seen here but NOT in this device\u2019s request list: '+_ghost.join(', ')+' \u2014 this device skipped the event as already handled and never received the request through sync');
+        var _unproc=_evs.filter(function(e){return !_sids[String(e.id)]&&!_lids2[e.id];}).map(function(e){return e.id;});
+        if(_unproc.length)bkDiag.push('    >>> not seen and not in the list: '+_unproc.join(', ')+' \u2014 the next poll on this device should pick these up');
+      }
+    }
+  }catch(e){bkDiag.push('  (event-log diagnostic failed: '+(e&&e.message)+')');}
 
   const plain=[
     'SlickChart self-check \u2014 '+new Date().toLocaleString(),

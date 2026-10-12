@@ -508,6 +508,7 @@ saved anywhere", not "does this always call that".
 | `_runClientCleanup` | `/api/clients` | via `_serverDeleteClients` |
 | `_runClientCleanup` | `/api/provider-form` | via `submitSignOnDevice` |
 | `_runInkOCR` | `/api/ai` | via `_aiComplete` |
+| `_runSelfCheck` | `/api/clients` | direct |
 | `_runSelfCheck` | `/api/google-cal` | via `_gcalStatus` |
 | `_runSelfCheck` | `/api/store` | direct |
 | `_saveAndSendNote` | `/api/beta-event` | via `_pingChart` |
@@ -650,6 +651,7 @@ saved anywhere", not "does this always call that".
 | `_vcRoutineSetVerdict` | `/api/clients` | via `_syncSpecificClientsToServer` |
 | `_vcRoutineSetVerdict` | `/api/provider-message` | via `_sendProviderMessageToClient` |
 | `_verifyFormSave` | `/api/store` | direct |
+| `_versionTap` | `/api/clients` | via `_runSelfCheck` |
 | `_versionTap` | `/api/google-cal` | via `_gcalStatus` |
 | `_versionTap` | `/api/store` | via `_runSelfCheck` |
 | `_voiceAddMore` | `/api/transcribe` | via `_probeWhisper` |

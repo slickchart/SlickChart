@@ -5593,3 +5593,81 @@ discard an unpushed edit, which is the loss the guard exists for.
 She was first told this was expected behaviour (sync timing / not signed in) and then that it was
 "working as designed". **Both were wrong.** It was a bug on any second device, and her report was the
 thing that found it.
+
+### 2026-10-12, later: the pull-guard fix shipped and changed NOTHING. New observations.
+
+Ashley, on the preview carrying the fix:
+
+5. *"the booking request still doesnt come in on the preview link"*
+6. *"but did immidiately on my phone app"* — it arrives on her phone app **immediately**.
+7. *"its not even there when i click the booking requests button"* — the Requests screen itself is
+   empty on the preview, not just the Calendar summary.
+
+**§1b rule 5 applies: a fix that ships and changes nothing means the reproduction was not her
+situation.** The pending-write guard WAS a real bug and the test proves the fix, but it is not what
+she is hitting. Do not keep defending it. The observation list above is the thing to satisfy.
+
+### What the code actually does, read end to end (not a theory — quote the lines)
+
+A second device has only ONE route to a booking request, and this is why:
+
+- `syncClientEvents()` ingests only events it has not already handled:
+  `const seen=_seenEventIds(); const fresh=j.events.filter(e=>seen.indexOf(e.id)<0)`.
+- `_markEventSeen` writes `sc_seen_events` **and pushes it immediately** (`_pushKeyNow('sc_seen_events',v)`).
+- `sc_seen_events` is a synced key and `_mergeSeenEvents` is a **union that never shrinks**.
+
+So the moment her phone ingests the request, every other device learns the event is "handled" and
+**none of them will ever ingest it**. The booking branch is additionally guarded by
+`if(_existBk)return;`. A second device therefore depends **entirely** on `sc_bookings` arriving
+through sync. If that does not happen the request is invisible there, with no error anywhere — which
+is exactly observation 7.
+
+Ruled out by reading, so nobody re-checks them:
+
+- `_pushKeyNow` has no key filter — only a hydration hold-back. `sc_bookings` is not exempted.
+- `sc_bookings` is not in `_SYNC_SKIP`, not in `_SYNC_SKIP_PREFIX`, not in `_LS_KEEP_LOCAL`.
+- `SlickBridge.read/write` use plain `localStorage`, which IS the patched getItem/setItem, so the
+  offload path is not bypassed. SlickBridge never pushes on its own, which is why the explicit
+  `_pushKeyNow('sc_bookings', …)` calls exist in the ingest flush.
+- The ingest does flush it: `if(touchedRequests&&…){flushes.push(_pushKeyNow('sc_bookings',…))}`,
+  awaited BEFORE the events are marked seen.
+
+Which still leaves exactly the two cases the diagnostic was built to separate, and nothing in the
+code reading settles which. **Stop theorising and read the paste.**
+
+### THE DIAGNOSTIC I ADDED WAS ITSELF WRONG — fixed, with proof
+
+The BOOKING REQUESTS block read the account copy from `Cloud._serverSeen['sc_bookings']`. But
+`_runSelfCheck` runs **deliberately before boot** — ahead of `Cloud.status()` and `Cloud.pull()` —
+so `_serverSeen` is still `{}` there. Measured in `/tmp` probe: at the moment the self-check
+finishes, `Cloud._serverSeen` holds **0 keys**. The block would therefore have printed
+
+```
+on the account: NOT PRESENT — the server has no sc_bookings for this login
+```
+
+for every provider, always, including when the account *does* hold the request — a confident wrong
+answer pointing at the wrong device. Exactly the §1c/§4c failure mode.
+
+It now reads `server['sc_bookings']`, the direct `/api/store` GET the self-check already performs for
+the settings rows, and says "not checked — signed out on this device" when there is no token rather
+than implying the account is empty.
+
+**And it now prints the event log itself** (§1d: if something is missing from the paste, add it in
+the same change), because the two lists alone cannot tell "never reached the account" from "the
+ingest skipped it". Per booking event: id, client, treatment, date, time, **seen on this device**,
+**in this device's request list**, plus two verdict lines:
+
+- `>>> marked seen here but NOT in this device's request list: <ids>` — this device skipped the event
+  as already handled and never got the request through sync.
+- `>>> not seen and not in the list: <ids>` — the next poll here should pick these up.
+
+Proof: `scratchpad/test-selfcheck-bookings.mjs` drives the real `slickchart.html` through three
+accounts — account-has-it/device-doesn't/event-seen (her reported shape), account-doesn't-have-it,
+and healthy — and asserts the paste tells the truth in all three. It passes. The probe above is the
+negative control for the `_serverSeen` source.
+
+### The one thing to ask her for
+
+Open the preview with `?selfcheck=1` on the end, tap **Copy this report**, paste it. That single
+paste now distinguishes every remaining case. Do NOT ask for a second run unless the data changed.
