@@ -214,7 +214,7 @@ const S=document.getElementById('S');
 // resets when I save it" and there was no way to tell whether her phone had any of them — a whole
 // day was spent debugging code she may not have been running. Shown at the bottom of Settings, so
 // the answer is a screenshot away. Bump it on every ship.
-const APP_BUILD='2026-10-10n';
+const APP_BUILD='2026-10-12a';
 
 
 /* ════════════════════════════════════════════════════════════════
@@ -28679,6 +28679,120 @@ function renderCheckinDetail(id){
 function _notifyBookingClient(b, text){
   try{const cid=b&&b.clientId;if(cid&&CL[cid]&&CL[cid]._token&&typeof _sendProviderMessageToClient==='function')_sendProviderMessageToClient(cid,text);}catch(e){}
 }
+// ── A confirmed booking request has to LEAVE the app ─────────────────────────
+// It used to do neither. addConfirmedAppt() writes to `confirmedAppts`, which is not the list
+// _gcalAppts() pushes to Google (that is `manualAppts`) and is not Square. So a provider confirmed a
+// client's request, saw it sitting on her SlickChart calendar, and it reached neither her Square nor
+// her Google. The capability was never missing, only unwired: _sqDoBook -> /api/square/book already
+// existed, reachable from exactly one place, the Book in Square sheet's button. SESSION-HANDOFF 2as.
+//
+// Exactly ONE outbound home, never both. Square first, because a seller's Google is populated by
+// SQUARE's own calendar sync, not by us — her Google events carry the studio address and SlickChart
+// never sends a location — so Square is the route that actually arrives. When Square cannot take it,
+// fall back to a `manualAppts` entry, which _saveManualAppts -> _gcalPushSoon sends to Google
+// directly. Doing both would put the appointment on her Google TWICE, once from each sender.
+function _reqStartISO(b){
+  try{const w=(typeof _apptWhen==='function')?_apptWhen(b.date,b.time):null;return (w&&!isNaN(w))?w.toISOString():'';}catch(e){return '';}
+}
+// The fallback: give the confirmed request a real appointment record so Google gets it from us.
+// _realApptsMerged() de-dupes confirmedAppts against manualAppts by client+time, so the calendar
+// still shows the visit once rather than twice.
+function _reqToLocalAppt(b){
+  try{
+    if(typeof manualAppts==='undefined'||!Array.isArray(manualAppts))return false;
+    const same=function(a){return a&&String(a.client||'')===String(b.client||'')&&a.date===b.date&&String(a.time||'')===String(b.time||'');};
+    if(manualAppts.some(same))return true;
+    manualAppts.unshift({id:'ma_'+Math.random().toString(36).slice(2,10),clientId:b.clientId||undefined,
+      client:b.client,tx:b.treatment,date:b.date,dateLabel:fmtBookingDate(b),time:b.time,
+      ic:'var(--accent-strong)',_ts:Date.now()});
+    _saveManualAppts();                       // also schedules the Google push
+    try{_rebuildCalendarFeed();}catch(e){}
+    return true;
+  }catch(e){return false;}
+}
+// Never fail silently. The whole bug was an appointment that looked confirmed and went nowhere, so
+// when Square will not take it, say so and offer the sheet that can finish the job, pre-filled.
+function _reqSquareMissed(b,why){
+  try{
+    let email='';try{if(b.clientId&&CL[b.clientId])email=CL[b.clientId].email||'';}catch(e){}
+    const msg=(why||'Square would not take it')+'. It is saved on your SlickChart calendar. Open Book in Square to add it there too?';
+    if(typeof confirmModal==='function'){
+      confirmModal({title:'Not added to Square',body:msg,action:'Book in Square'},function(){
+        try{openSquareBook({client:b.client||'',email:email,date:b.date||''});}catch(e){}
+      });
+    }else if(typeof proToast==='function')proToast('Confirmed, but not added to Square');
+  }catch(e){}
+}
+async function _reqSyncOut(b){
+  const startAt=_reqStartISO(b);
+  // No parseable date/time means nothing can be booked anywhere. Leave it as the in-app record it
+  // already is rather than inventing a time for it.
+  if(!startAt)return;
+  if(typeof _apptsLive!=='function'||!_apptsLive()){_reqToLocalAppt(b);return;}
+  let opts=null;
+  try{opts=await _sqFetch('/api/square/booking-options');}catch(e){opts=null;}
+  const svcs=(opts&&Array.isArray(opts.services))?opts.services:[];
+  const nm=function(x){return String((x&&x.name)||'').trim().toLowerCase();};
+  const want=String(b.treatment||'').trim().toLowerCase();
+  // A request carries the treatment NAME only, so match on it: exact first, then either side
+  // containing the other, because her Square service may read "Signature Facial (60 min)".
+  const svc=svcs.find(function(x){return nm(x)===want;})
+         ||(want?svcs.find(function(x){return nm(x)&&nm(x).indexOf(want)>=0;}):null)
+         ||(want?svcs.find(function(x){return nm(x)&&want.indexOf(nm(x))>=0;}):null)||null;
+  const tms=(opts&&Array.isArray(opts.teamMembers))?opts.teamMembers:[];
+  const teamMemberId=(svc&&svc.teamMemberIds&&svc.teamMemberIds[0])||(tms[0]&&tms[0].id)||'';
+  if(!svc||!teamMemberId){
+    _reqToLocalAppt(b);
+    _reqSquareMissed(b,svc?'No bookable team member in your Square':'No Square service matches "'+(b.treatment||'')+'"');
+    return;
+  }
+  let email='';try{if(b.clientId&&CL[b.clientId])email=CL[b.clientId].email||'';}catch(e){}
+  try{
+    await _sqFetch('/api/square/book',{method:'POST',body:{
+      serviceVariationId:svc.variationId,serviceVariationVersion:svc.variationVersion,
+      durationMinutes:svc.durationMinutes||60,startAt:startAt,teamMemberId:teamMemberId,
+      customerName:b.client||'',customerEmail:email,serviceName:svc.name,
+      // The client already had a confirmation from SlickChart a moment ago (_notifyBookingClient),
+      // so Square stays quiet rather than sending them a second one for the same appointment.
+      notify:false,
+      // Keyed on the REQUEST id, so a double-tap on Confirm or a retry cannot create two bookings
+      // for the same request. The server strips this to [A-Za-z0-9_-] and 45 chars.
+      idempotencyKey:'req-'+String(b.id||'')}});
+    try{_loadSquareAppts(true);}catch(e){}
+    try{if(typeof _navCur!=='undefined'&&_navCur&&_navCur.screen==='calendar'&&typeof renderCalendar==='function')renderCalendar();}catch(e){}
+    try{if(typeof proToast==='function')proToast('Added to your Square calendar');}catch(e){}
+  }catch(e){
+    // A thrown error does NOT prove Square is empty. If the connection dropped after Square created
+    // the booking, falling back here would put the appointment on her Google twice, once from Square
+    // and once from us. So ask Square what it actually has before writing a second copy.
+    const landed=await _reqInSquare(b,startAt);
+    if(landed){
+      try{if(typeof _navCur!=='undefined'&&_navCur&&_navCur.screen==='calendar'&&typeof renderCalendar==='function')renderCalendar();}catch(_e){}
+      try{if(typeof proToast==='function')proToast('Added to your Square calendar');}catch(_e){}
+      return;
+    }
+    _reqToLocalAppt(b);
+    _reqSquareMissed(b,(e&&e.message)||'Square would not take it');
+  }
+}
+// Did the booking actually land, whatever the response said? Re-reads Square rather than guessing
+// from the error, because "the request failed" and "the booking does not exist" are not the same
+// thing, and treating them as the same is how an appointment ends up on a calendar twice.
+async function _reqInSquare(b,startAt){
+  try{
+    if(typeof _loadSquareAppts!=='function')return false;
+    await _loadSquareAppts(true);
+    if(typeof squareAppts==='undefined'||!Array.isArray(squareAppts))return false;
+    const t=new Date(startAt).getTime();
+    if(isNaN(t))return false;
+    const nm=String(b.client||'').trim().toLowerCase();
+    return squareAppts.some(function(a){
+      if(!a||!a.at||isNaN(a.at))return false;
+      if(Math.abs(a.at.getTime()-t)>60000)return false;     // same minute, allowing for rounding
+      return !nm||String(a.client||'').trim().toLowerCase()===nm;
+    });
+  }catch(e){return false;}
+}
 function confirmBooking(id){
   const all=SlickBridge.getBookings();const b=all.find(x=>x.id===id);if(!b)return;
   if(b.status==='confirmed')return; // already confirmed, don't duplicate the calendar entry
@@ -28686,6 +28800,7 @@ function confirmBooking(id){
     b.status='confirmed';b.decidedAt=Date.now();b.seen=true;SlickBridge.setBookings(all);
     try{if(b.clientId&&CL[b.clientId]&&CL[b.clientId].suggestedBooking){CL[b.clientId].suggestedBooking=null;saveClients({noSync:true});if(typeof _scheduleSpecificClientSync==='function')_scheduleSpecificClientSync(b.clientId);}}catch(e){}
     addConfirmedAppt(b);
+    try{_reqSyncOut(b);}catch(e){}   // and out to Square, or failing that to Google via manualAppts
     SlickBridge.post('booking-confirmed',b);
     _notifyBookingClient(b,`Great news, your ${b.treatment} on ${fmtBookingDate(b)} at ${b.time} is confirmed! ✨`);
     pushBookingNotif({icon:'ti-calendar-check',title:'Appointment confirmed',body:`${b.client} · ${b.treatment} · ${fmtBookingDate(b)} at ${b.time}`});

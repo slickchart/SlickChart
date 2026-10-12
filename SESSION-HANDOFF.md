@@ -5132,5 +5132,45 @@ request into Square is what gets it onto Google.
   and a `manualAppts` entry, Square's sync puts it in Google and `_gcalPush` puts it in Google again.
   `_rebuildCalendarFeed` already dedupes manual/confirmed against `squareAppts` by client+start, but
   `_gcalAppts` has no such guard. Anything that writes both sides needs one.
-- Not yet decided with her: whether confirming should create the Square booking (the only route that
-  reaches her Google today), or only add a local appointment. Materially different work, so ask.
+### FIXED 2026-10-12 (`2026-10-12a`), on the branch awaiting her preview
+
+She chose: *"yes build it"*. `confirmBooking` -> `commit()` now calls `_reqSyncOut(b)` after
+`addConfirmedAppt(b)`.
+
+**The invariant, and the reason the code looks the way it does: exactly ONE outbound home, never
+both.** Square when it will take it, otherwise a `manualAppts` entry (which `_saveManualAppts` ->
+`_gcalPushSoon` sends to Google directly). Writing both would put the visit on her Google twice,
+once from Square's sync and once from ours.
+
+- `_reqSyncOut(b)` — Square live? match `b.treatment` against `/api/square/booking-options` by name
+  (exact, then either side containing the other, because her service may read "Signature Facial (60
+  min)"), take the service's first team member, POST `/api/square/book` with
+  `notify:false` (the client already had SlickChart's own confirmation a moment earlier) and
+  `idempotencyKey:'req-'+b.id` (a double-tap on Confirm cannot create two bookings).
+- `_reqToLocalAppt(b)` — the fallback. `_realApptsMerged()` already de-dupes `confirmedAppts`
+  against `manualAppts` by client+time, so the calendar still shows the visit once.
+- `_reqSquareMissed(b,why)` — never fail silently, which was the whole bug. Names the reason and
+  offers the Book in Square sheet pre-filled.
+- `_reqInSquare(b,startAt)` — **the subtle one.** A thrown error does not prove Square is empty: if
+  the connection drops AFTER Square creates the booking, falling back would double-send. So the
+  catch re-reads Square and only writes the local copy when the booking genuinely is not there.
+  A test case was added specifically for this and it did fail before the guard existed.
+
+**Verified** with `scratchpad/test-reqsync.mjs`, which drives the real `confirmBooking` in headless
+Chromium over five paths: service matches / no matching service / Square rejects / Square not
+connected / call errors but Square booked it anyway. It asserts two things on every path: the
+appointment LEFT the app, and it was never sent to Google twice.
+
+Two traps that cost time while building this, worth knowing:
+- `squareAppts` is **`null`**, not `[]`, until Square first loads, so a stub that mutates it throws.
+  `_reqInSquare` guards with `Array.isArray`.
+- `SlickBridge` is a `const` binding like `CL`/`Cloud`: mutate in place, never reassign.
+- The demo page is what the test loads, so **rebuild it after every source edit** or the test runs
+  against the previous version. That is how `_reqInSquare` read as "not defined" for a round.
+
+### Her decision on the Google privacy default (2026-10-12): KEEP IT OFF
+
+*"keep that default off please."* The "Keep client names out of Google" switch under Connect Google
+Calendar stays **defaulting OFF**, so a new connection sends client names and appointment notes to
+Google unless she turns it on. Asked and answered; **do not raise it again** (§1b rule 4). No code
+change was needed, the default already is OFF.

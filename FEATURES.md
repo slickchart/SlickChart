@@ -477,6 +477,17 @@ saved anywhere", not "does this always call that".
 | `_renderStorageBody` | `/api/guide-file` | via `_evictableFileCache` |
 | `_reorderCardHTML` | `/api/ai` | via `_aiComplete` |
 | `_reorderCardHTML` | `/api/square/inventory` | via `_syncInventoryFromSquare` |
+| `_reqInSquare` | `/api/square/appointments` | via `_loadSquareAppts` |
+| `_reqSquareMissed` | `/api/square/appointments` | via `_loadSquareAppts` |
+| `_reqSquareMissed` | `/api/square/availability` | via `_sqLoadSlots` |
+| `_reqSquareMissed` | `/api/square/book` | via `_sqDoBook` |
+| `_reqSquareMissed` | `/api/square/booking-options` | via `openSquareBook` |
+| `_reqSyncOut` | `/api/consult-slug` | via `_loadConsultLink` |
+| `_reqSyncOut` | `/api/square/appointments` | via `_loadSquareAppts` |
+| `_reqSyncOut` | `/api/square/availability` | via `_sqLoadSlots` |
+| `_reqSyncOut` | `/api/square/book` | direct |
+| `_reqSyncOut` | `/api/square/booking-options` | direct |
+| `_reqToLocalAppt` | `/api/google-cal` | via `_gcalPush` |
 | `_requestClientLink` | `/api/client-link` | direct |
 | `_restorePhotosFromCloud` | `/api/clients` | via `syncClientEvents` |
 | `_restorePhotosFromCloud` | `/api/guide-file` | via `_getGuideFile` |
@@ -963,6 +974,9 @@ saved anywhere", not "does this always call that".
 | `renderWriteNote` | `/api/square/catalog` | via `_autoSyncCatalog` |
 | `requestCard` | `/api/clients` | via `_syncSpecificClientsToServer` |
 | `requestCard` | `/api/provider-message` | via `_sendProviderMessageToClient` |
+| `requestCard` | `/api/square/appointments` | via `_loadSquareAppts` |
+| `requestCard` | `/api/square/book` | via `_reqSyncOut` |
+| `requestCard` | `/api/square/booking-options` | via `_reqSyncOut` |
 | `resendFormToClient` | `/api/clients` | via `_syncSpecificClientsToServer` |
 | `resendRoutine` | `/api/clients` | via `_syncSpecificClientsToServer` |
 | `resendRoutine` | `/api/square/catalog` | via `_autoSyncCatalog` |
