@@ -509,7 +509,6 @@ saved anywhere", not "does this always call that".
 | `_runClientCleanup` | `/api/provider-form` | via `submitSignOnDevice` |
 | `_runInkOCR` | `/api/ai` | via `_aiComplete` |
 | `_runSelfCheck` | `/api/clients` | direct |
-| `_runSelfCheck` | `/api/google-cal` | via `_gcalStatus` |
 | `_runSelfCheck` | `/api/store` | direct |
 | `_saveAndSendNote` | `/api/beta-event` | via `_pingChart` |
 | `_saveAndSendNote` | `/api/clients` | via `syncClientEvents` |
@@ -735,6 +734,10 @@ saved anywhere", not "does this always call that".
 | `finishNewClient` | `/api/provider-form` | via `submitSignOnDevice` |
 | `finishOnboarding` | `/api/clients` | via `syncClientEvents` |
 | `finishOnboarding` | `/api/provider-form` | via `submitSignOnDevice` |
+| `fmtBookingDate` | `/api/clients` | via `_syncSpecificClientsToServer` |
+| `fmtBookingDate` | `/api/square/connection` | via `_sqConnState` |
+| `fmtBookingDate` | `/api/totp-setup` | via `_beginTotpEnroll` |
+| `fmtBookingDate` | `/api/transcribe` | via `_probeWhisper` |
 | `freeUpDeviceSpace` | `/api/course-versions` | via `_cvFetchList` |
 | `freeUpDeviceSpace` | `/api/guide-file` | via `_evictableFileCache` |
 | `inviteClientToApp` | `/api/clients` | via `_syncSpecificClientsToServer` |

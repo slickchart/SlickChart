@@ -2600,7 +2600,8 @@ try{document.addEventListener('keydown',function(e){
 // ── Cloud sync (database + login). Falls back to local-only until configured. ──
 function saveProfessions(){try{(function(_v){localStorage.setItem('sc_professions',_v);if(typeof _pushKeyNow==='function')_pushKeyNow('sc_professions',_v);return _v;})(JSON.stringify(selectedProfessions));}catch(e){}}
 function loadProfessions(){try{const raw=localStorage.getItem('sc_professions');if(raw){const a=JSON.parse(raw);if(Array.isArray(a)&&a.length)selectedProfessions=a;}}catch(e){}}
-const _SYNC_SKIP={sc_staff:1,   /* retired: SlickChart is for solo providers, so there is no staff roster */
+const _SYNC_SKIP={sc_staff:1,sc_ev_fails:1,   /* device-local record of ingest failures, for the self-check */
+     /* retired: SlickChart is for solo providers, so there is no staff roster */
   sc_token:1,sc_sqkey:1,sc_bus:1,sc_chart_activity:1,sc_pulse:1,sc_cloud_seeded:1};
 // Whole FAMILIES of keys that must never leave the device. sc_room_draft_* is the crash-safety copy of
 // photos taken minutes ago — megabytes of base64 whose real backup is the photo store, not this. It was
@@ -5117,10 +5118,46 @@ async function _runSelfCheck(){
         var _ghost=_evs.filter(function(e){return _sids[String(e.id)]&&!_lids2[e.id];}).map(function(e){return e.id;});
         if(_ghost.length)bkDiag.push('    >>> marked seen here but NOT in this device\u2019s request list: '+_ghost.join(', ')+' \u2014 this device skipped the event as already handled and never received the request through sync');
         var _unproc=_evs.filter(function(e){return !_sids[String(e.id)]&&!_lids2[e.id];}).map(function(e){return e.id;});
-        if(_unproc.length)bkDiag.push('    >>> not seen and not in the list: '+_unproc.join(', ')+' \u2014 the next poll on this device should pick these up');
+        if(_unproc.length)bkDiag.push('    >>> not seen and not in the list: '+_unproc.join(', ')+' \u2014 no device has materialised these');
+      }
+      // EVERY unseen event, not just bookings. The ingest processes the list OLDEST FIRST, so one
+      // event that cannot be processed used to block every later one; the id at the top of this
+      // list is therefore the one to look at first.
+      var _allUnseen=(_je&&Array.isArray(_je.events))?_je.events.filter(function(e){return e&&!_sids[String(e.id)];}):null;
+      if(_allUnseen){
+        bkDiag.push('  events of ANY kind not yet handled on this device: '+_allUnseen.length);
+        _allUnseen.slice(-15).reverse().forEach(function(e){
+          bkDiag.push('    \u2022 '+e.id+' \u00b7 kind='+(e.kind||'?')+' \u00b7 '+(e.created_at||''));
+        });
       }
     }
   }catch(e){bkDiag.push('  (event-log diagnostic failed: '+(e&&e.message)+')');}
+  // WHY an event could not be processed. Until 2026-10-12 this was unknowable: the ingest swallowed
+  // every error with no log, so a request that reached the server and no screen looked identical to
+  // one that was never sent. Recorded to disk now, so it survives into the run that produces this.
+  try{
+    var _fails=[];try{_fails=JSON.parse(localStorage.getItem('sc_ev_fails')||'[]')||[];}catch(e){}
+    if(_fails.length){
+      bkDiag.push('  >>> EVENTS THIS DEVICE COULD NOT PROCESS: '+_fails.length+' \u2014 this is the cause, read it first');
+      _fails.slice(-12).forEach(function(f){
+        bkDiag.push('    \u2022 '+(f.id||'?')+' \u00b7 kind='+(f.kind||'?')+' \u00b7 '+(f.msg||'?'));
+      });
+    }else{
+      bkDiag.push('  events this device could not process: none recorded');
+    }
+  }catch(e){}
+  // An unconditional early return that stops the ingest dead: with the roster unread, every poll
+  // returns before it reads a single event. Printed because a device stuck here looks exactly like
+  // a device whose sync is broken, and nothing else in the paste would show it.
+  try{
+    var _rosterStuck=(typeof _rosterNotReadYet==='function')?_rosterNotReadYet():null;
+    var _diskIds=[];try{_diskIds=Object.keys(JSON.parse(_lsGet('sc_clients')||'{}')||{});}catch(e){}
+    var _memIds=[];try{_memIds=Object.keys(CL||{});}catch(e){}
+    var _onDiskOnly=_diskIds.filter(function(k){return !(CL&&CL[k]);});
+    bkDiag.push('  roster: '+_diskIds.length+' client(s) saved on this device, '+_memIds.length+' loaded into memory');
+    bkDiag.push('  client events are being read at all: '+(_rosterStuck===null?'could not tell':(_rosterStuck?'NO \u2014 every poll returns early because the roster reads as unloaded':'yes')));
+    if(_onDiskOnly.length)bkDiag.push('    saved but not loaded: '+_onDiskOnly.slice(0,12).join(', ')+(_onDiskOnly.length>12?(' \u2026 and '+(_onDiskOnly.length-12)+' more'):''));
+  }catch(e){}
 
   const plain=[
     'SlickChart self-check \u2014 '+new Date().toLocaleString(),
@@ -27440,6 +27477,33 @@ function fmtBookingDate(b){
 // ── Real client submissions (bookings & messages sent from the live client app) ──
 // The client app posts these to /api/client-submit, which logs them server-side.
 // We poll them here and feed them into the same booking/chat UI used by the demo.
+// EVERY CLIENT EVENT GETS ITS OWN WRAPPER.
+//
+// Ashley, 2026-10-12: two booking requests sat on the server for hours, unseen by EVERY device,
+// while the push notification (sent server-side) arrived on her phone each time. The ingest loop
+// was one unprotected block inside a try{}catch(e){} that logged nothing, so a throw on any single
+// event aborted the whole forEach: every later event was skipped, the flush never ran so nothing
+// reached the account, and _markEventsSeen never ran so the identical failure repeated every 15
+// seconds forever. Silent, deterministic, permanent. Same shape as _reloadAll() before _reloadStep
+// (CLAUDE.md 3): one try around a list of independent steps is a single point of failure.
+//
+// Now each event is isolated, a failure is RECORDED rather than swallowed, and a failed event is
+// NOT marked seen so it is retried rather than lost. The self-check prints these, so this class of
+// bug can never again be invisible.
+let _evIngestFails=[];
+function _evIngestFail(ev,e){
+  try{
+    const rec={id:(ev&&ev.id)||'?',kind:(ev&&ev.kind)||'?',msg:String((e&&e.message)||e||'error'),at:Date.now()};
+    _evIngestFails=_evIngestFails.filter(function(x){return x.id!==rec.id;});
+    _evIngestFails.push(rec);
+    if(_evIngestFails.length>40)_evIngestFails.splice(0,_evIngestFails.length-40);
+    // Written to disk because the self-check runs BEFORE boot and before any poll, so an in-memory
+    // list is always empty by the time the paste is produced. Device-local and never synced: it is
+    // a record of what went wrong on THIS device, and sending it to the account would mix devices.
+    try{localStorage.setItem('sc_ev_fails',JSON.stringify(_evIngestFails));}catch(_){}
+    console.warn('[SlickChart] client event '+rec.id+' ('+rec.kind+') could not be processed: '+rec.msg);
+  }catch(_){}
+}
 function _seenEventIds(){try{return JSON.parse(localStorage.getItem('sc_seen_events')||'[]');}catch(e){return [];}}
 function _markEventSeen(id){try{const a=_seenEventIds();if(a.indexOf(id)<0){a.push(id);if(a.length>1000)a.splice(0,a.length-1000);const v=JSON.stringify(a);localStorage.setItem('sc_seen_events',v);if(typeof _pushKeyNow==='function')_pushKeyNow('sc_seen_events',v);}}catch(e){}}
 // Mark many event ids seen in ONE read+write instead of re-parsing/re-writing the
@@ -27713,7 +27777,8 @@ async function syncClientEvents(){
     // through." Each branch below is written to be idempotent so a re-processed event is harmless.
     try{loadMergedInto();}catch(e){}   // pick up any merge routing synced from another device
     const _notifCountBefore=notifFeed.length;
-    fresh.forEach(ev=>{
+    const _evFailedIds=Object.create(null);
+    fresh.forEach(ev=>{ try{
       const payload=ev.payload||{};
       // Route through the merge map: if this client's duplicate was merged away, their token still
       // arrives under the OLD id — resolve it to the surviving chart so the submission isn't dropped.
@@ -27730,10 +27795,14 @@ async function syncClientEvents(){
         const b={id:ev.id,clientId:cid,client:name,treatment:payload.treatment||'Appointment',
           date:payload.date||'',dateLabel:payload.dateLabel||'',time:payload.time||'',
           note:payload.note||'',status:'pending',created:ev.created_at||Date.now()};
+        // The REQUEST LANDS FIRST, and the flag that gets it pushed to the account is set before
+        // anything cosmetic runs. The notification formats a date and touches the feed; if any of
+        // that throws, the provider must still end up with the request. Getting this order wrong is
+        // how a client's booking could exist on the server and on no screen anywhere.
         SlickBridge.upsertBooking(b);
-        pushBookingNotif({title:'New appointment request',body:`${name} requested ${b.treatment} on ${fmtBookingDate(b)} at ${b.time}.`});
-        providerSystemNotify('New appointment request',`${name} \u00b7 ${b.treatment} \u00b7 ${fmtBookingDate(b)} ${b.time}`);
         touchedRequests=true;touchedNotif=true;
+        try{pushBookingNotif({title:'New appointment request',body:`${name} requested ${b.treatment} on ${fmtBookingDate(b)} at ${b.time}.`});}catch(e){}
+        try{providerSystemNotify('New appointment request',`${name} \u00b7 ${b.treatment} \u00b7 ${fmtBookingDate(b)} ${b.time}`);}catch(e){}
       }else if(ev.kind==='message'){
         if(!msgStore[cid])msgStore[cid]=[];
         // Idempotency: if this exact event is already in the thread (a re-processed event after a
@@ -27900,7 +27969,7 @@ async function syncClientEvents(){
         if(_notifOn('photoUploaded'))providerSystemNotify('Photo consult submitted',`${name} sent photos for your review.`);
         touchedVc=true;touchedNotif=true;
       }
-    });
+    }catch(_evErr){ _evFailedIds[ev.id]=1; _evIngestFail(ev,_evErr); } });
     // SELF-HEAL (multi-device safe): the event log on the server is the source of truth for what a
     // client submitted. Concurrent SlickChart sessions (phone + tablet + computer) each push the whole
     // sc_clients blob, so a stale device can overwrite a just-attached intake/check-in back off the
@@ -27943,8 +28012,10 @@ async function syncClientEvents(){
     }catch(e){}
     _evSyncedOnce=true;
     try{if(typeof updateBadge==='function')updateBadge();}catch(e){}
-    // Only now, after the data is committed server-side, record these events as seen.
-    _markEventsSeen(fresh.map(ev=>ev.id));
+    // Only now, after the data is committed server-side, record these events as seen. An event that
+    // THREW is deliberately left unseen: marking it handled would strand the client's submission
+    // permanently, and every branch above is idempotent so retrying one costs nothing.
+    _markEventsSeen(fresh.filter(ev=>!_evFailedIds[ev.id]).map(ev=>ev.id));
     if(touchedRequests&&document.getElementById('requests-screen'))renderRequests();
     if(touchedMsgs){
       if(document.getElementById('msg-tab-inbox')&&document.getElementById('msg-tab-inbox').classList.contains('active'))showMsgTab('inbox');
@@ -27962,7 +28033,11 @@ async function syncClientEvents(){
     if((touchedRequests||touchedMsgs||touchedCheckins||touchedForms||touchedVc)&&document.getElementById('home-screen'))renderHome();
     // A push tap may be waiting on the very event this sync just attached — route to it now that it exists.
     try{_tryConsumeDeepLink();}catch(e){}
-  }catch(e){}
+  }catch(e){
+    // This used to be a bare catch with no trace at all, so a poll that died took every client
+    // submission in it down silently and nothing anywhere said so. Record it for the self-check.
+    try{_evIngestFail({id:'(the whole poll)',kind:'sync'},e);}catch(_){}
+  }
   finally{_syncingEvents=false;}   // always release the guard, even on an early return above
 }
 // ── Founder-only: "new paid provider" in-app notification ──────────────────────────────────────

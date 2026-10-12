@@ -5671,3 +5671,112 @@ negative control for the `_serverSeen` source.
 
 Open the preview with `?selfcheck=1` on the end, tap **Copy this report**, paste it. That single
 paste now distinguishes every remaining case. Do NOT ask for a second run unless the data changed.
+
+### 2026-10-12: HER PASTE. The cause, with her own numbers.
+
+The self-check from her preview, read line by line:
+
+- `on this device: 6 request(s), 1856 bytes` / `on the account: 6 request(s), 1856 bytes`
+- `on the account but NOT on this device: none`
+- every settings row `identical`, `Which account row this device saves to — p_bc6d4fe33c…`
+
+**So sync is perfect and was never the problem.** The device and the account agree byte for byte.
+Both of my earlier theories were about sync. Both were wrong.
+
+The answer was in the event log:
+
+```
+booking events on the server: 8
+  • ev_idem_p_bc6d4fe33c980b42_c1783186636402_4388590f… · Ashley Watson · New client · 2026-10-13 12:00 PM · seen on this device=no · in this device's request list=NO
+  • ev_idem_p_bc6d4fe33c980b42_c1783186636402_8625bbfa… · Ashley Watson · New client · 2026-11-05 4:00 PM · seen on this device=no · in this device's request list=NO
+```
+
+Eight booking events on the server, six in `sc_bookings`. Her two test requests are **unseen** and in
+**nobody's** list. And `sc_seen_events` syncs as a union that never shrinks, so "unseen on this
+device" means unseen on her phone too: **no device ever ingested them.** Her phone showed something
+immediately because `api/client-submit` sends the push server-side; the booking itself never
+materialised anywhere.
+
+### The bug: one unprotected loop over independent events
+
+`syncClientEvents()` was shaped like this:
+
+```js
+try{
+  const fresh=j.events.filter(e=>seen.indexOf(e.id)<0).reverse();   // OLDEST FIRST
+  fresh.forEach(ev=>{ /* ~190 lines, every kind, nothing wrapped */ });
+  …flush touched keys to the account…
+  _markEventsSeen(fresh.map(ev=>ev.id));                            // only at the very END
+}catch(e){}                                                          // swallowed, no log, no trace
+```
+
+A throw on any ONE event therefore:
+
+1. aborted the forEach, so **every later event was skipped** (oldest-first, so one stuck old event
+   blocks everything newer, forever);
+2. skipped the flush, so **nothing reached the account** — which is why no other device could ever
+   learn about it;
+3. skipped `_markEventsSeen`, so the same events were re-fetched and failed **identically on the
+   next tick**, every 15 seconds and on every focus;
+4. was swallowed by the bare `catch(e){}` with no console line, no toast, nothing in the paste.
+
+Silent, deterministic and permanent. This is the `_reloadAll()` bug again (CLAUDE.md §3: one `try`
+around a list of independent steps is a single point of failure) in the one loop that receives
+everything a client sends — bookings, messages, forms, check-ins, photo consults.
+
+### The fix
+
+- **Each event gets its own wrapper.** A failure is recorded, not swallowed.
+- **A failed event is NOT marked seen**, so the client's submission is retried rather than stranded.
+  Every branch is idempotent, so a retry costs nothing.
+- **The booking branch writes the request and sets `touchedRequests` BEFORE the notification.**
+  Formatting a date and touching the feed must never be able to stop the request from landing.
+- **The outer bare catch records the poll failure** instead of discarding it.
+- `sc_ev_fails` holds the failures **on disk**, device-local and in `_SYNC_SKIP` — the self-check
+  runs before boot and before any poll, so an in-memory list is always empty by the time the paste
+  is produced.
+
+### What the paste gained (§1d — add it in the same change as the fix)
+
+- `>>> EVENTS THIS DEVICE COULD NOT PROCESS: n — this is the cause, read it first`, with each id,
+  kind and error message.
+- every unseen event **of any kind**, not just bookings, newest 15 — because the blocker may not be
+  a booking at all.
+- `client events are being read at all: yes/NO` — `_rosterNotReadYet()` is an unconditional early
+  return that stops the ingest dead, and nothing in the paste would otherwise show it.
+- `roster: N saved on this device, M loaded into memory`, and the ids saved but not loaded.
+
+### Proof
+
+`scratchpad/test-event-isolation.mjs` — three events, the middle one throws:
+
+```
+  event BEFORE the bad one landed : YES
+  event AFTER  the bad one landed : YES
+  the bad event left UNSEEN (retryable): YES
+  the good events marked seen         : YES
+  the failure is recorded, not swallowed: YES
+  requests reached the account        : YES
+```
+
+Negative control against the pre-fix loop reproduces her data exactly — the later booking never
+materialises, nothing is marked seen, and `sc_bookings` is never pushed:
+
+```
+bookings materialised : ["ev_early"]
+events marked seen    : []
+  event AFTER the bad one landed : *** NO - one bad event blocked it ***
+  requests reached the account   : *** NO ***
+```
+
+`scratchpad/test-selfcheck-event-fails.mjs` — a failure in one page load survives into a **fresh**
+load's paste and is named there with its message.
+
+### Still unknown, and the next paste answers it
+
+**Which** event was throwing on her devices, and why. The fix means her two requests should now
+appear without knowing that, because a sibling event can no longer block them — but if the throw is
+in the booking event itself, the paste will now name it outright instead of hiding it. Ask for one
+more paste after she confirms, not before.
+
+Do not mark this thread closed until she says the requests appear.
