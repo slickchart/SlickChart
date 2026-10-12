@@ -5282,3 +5282,33 @@ Fixing it needs a **client-facing availability endpoint**, and that is a §0 cha
 - The calendar should then grey out whole days with no availability, which is the same data.
 
 Do not bolt this onto `/api/square/availability`: that one authorises a logged-in PROVIDER.
+
+### DONE 2026-10-12 — and far smaller than expected, because the engine already existed
+
+**Check before building. `lib/booking.js` already had the whole availability engine**, and
+`api/book-slots.js` already served free times to the PUBLIC booking page with isolation and rate
+limiting. The plan above assumed a new Square integration was needed. It was not. `openSlots()`
+already understands her hours, the chosen service's duration, her buffer between visits, her notice
+window, and everything already booked **in the app AND in Square** (`busyRanges` reads
+`sc_manual_appts` and queries `/v2/bookings`), and it returns `null` rather than guessing when it
+cannot read the calendar. This is §1c in its general form: the capability was not missing, it just
+had no door the client app could knock on.
+
+**`api/client-availability.js`** is that door and nothing more:
+
+- Provider from `getClientByToken(t).provider_id` — the token's own row. No provider id in the
+  request, none in the response. A token reaches its own provider or nothing.
+- Returns free times and which weekdays she opens. Never what she is booked with, who with, or how
+  many. Exactly what her public page already shows a stranger.
+- `unknown:true` when `openSlots` returns null, so the app can say "usual hours, she'll confirm"
+  instead of passing a guess off as live.
+- Rate limited per IP (120/min) and per token (90/min); a dead token and a never-existed token get
+  the same answer, so links cannot be probed.
+- **Deliberately does NOT honour `cfg.on`/`cfg.mode`**, unlike `book-slots.js`. Those gate whether
+  STRANGERS may see live times on the public page. This is her own invited client in her own app.
+  The config is still used for slot length, buffer and notice window.
+
+Client side, `refreshRebookTimes()` now fetches it, with `_rbReq` so a stale response from a
+previously tapped date can never paint over a newer one. The hours-derived grid survives only as a
+labelled fallback for the sample space (no token) and for `unknown`. Verified against a mocked route
+on four paths: live times, unknown, network failure, and a genuinely full day.

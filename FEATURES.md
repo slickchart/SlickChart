@@ -1109,6 +1109,7 @@ Plus every synced `sc_*` key below, which rides `/api/store`.
 | `/api/calendar-url` | — | provider session | GET /api/calendar-url  (Bearer session) → { url } : a private, long-lived ICS feed URL |
 | `/api/calendar` | — | provider session | GET /api/calendar?t=<token>  → an iCalendar (.ics) feed of the provider's appointments. |
 | `/api/change-password` | POST | provider session | POST /api/change-password  { token, current, next } |
+| `/api/client-availability` | GET | client link token | TOKEN-AUTHED: GET /api/client-availability?t=<client link token>&date=YYYY-MM-DD&service=<name> |
 | `/api/client-code` | POST | **public** | POST /api/client-code |
 | `/api/client-data` | — | client link token | Public (token-authed): a client opens their personal link; we return only THEIR |
 | `/api/client-delete` | POST | client link token | Token-authed: a client deletes their own data from the app (App Store account-deletion |
