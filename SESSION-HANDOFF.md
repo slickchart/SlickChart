@@ -4944,9 +4944,21 @@ has somewhere to land. [#1](https://github.com/slickchart/SlickChart/pull/1) is 
 preview carrier and a review surface, nothing more.
 
 **Her report:** *"now Im running into a problem where when I edit is messing with providers currently
-on the app."* She brought five deployment rules from ChatGPT and asked what I thought. **What the
-providers actually SAW is still unanswered** — I asked and she answered the policy question instead,
-so §1b's observation list for this one is still empty. Ask before theorising about a mechanism.
+on the app."* She brought five deployment rules from ChatGPT and asked what I thought.
+
+**CLOSED 2026-10-12: the symptom is unknown and will stay unknown.** Asked what the providers saw,
+she said *"i cant say what the providers actually saw so let that go."* So:
+
+- **Do NOT ask her again.** It is settled that she cannot answer it. §1b rule 4 applies.
+- **There is no observation list for this bug, and that means no theory may be built for it.** Do not
+  go looking for a mechanism on a hunch, and do not "fix" a candidate cause you found by reading
+  code. §1b exists because exactly that cost a day. An unreproduced, undescribed symptom is not a
+  bug report, it is a reason for the mitigation below and nothing more.
+- **The mitigation is §1a and it is already shipped on the branch.** Edits no longer reach providers
+  mid-day. That is the whole response to this report. It is a reasonable one even without a
+  diagnosis, because the complaint was about *timing*, which is the one thing §1a actually changes.
+- If a provider ever describes a concrete symptom, THAT is a new bug with its own observation list.
+  Start it fresh; do not retro-fit it onto this one.
 
 **Her decision:** adopt "never push to main, branch + preview for everything", **with the carve-out**
 that a bug she reported and is waiting on ships immediately. Then: *"can we make that at a schedule
