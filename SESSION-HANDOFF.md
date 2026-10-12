@@ -4938,6 +4938,11 @@ notes to Google. Ashley was asked once and has not said.
 
 ## 2ar. Deploys no longer land on providers mid-day — the release train (2026-10-11)
 
+**PR for previews:** she approved opening one PR per change (2026-10-12) purely so the preview link
+has somewhere to land. [#1](https://github.com/slickchart/SlickChart/pull/1) is the first.
+**Merging a PR is NOT how work ships** — `release` plus the overnight job is, per §1a. A PR here is a
+preview carrier and a review surface, nothing more.
+
 **Her report:** *"now Im running into a problem where when I edit is messing with providers currently
 on the app."* She brought five deployment rules from ChatGPT and asked what I thought. **What the
 providers actually SAW is still unanswered** — I asked and she answered the policy question instead,
@@ -4969,11 +4974,31 @@ refuses a commit with no checks, so a branch that CI never saw could never ship.
   back to `slickchart.app` to finish.
 - **Crons do not fire on previews** — Vercel runs `vercel.json` crons on production only. So a preview
   cannot double-send reminders, check-ins or nurture mail.
-- **Open: nobody has recorded the Vercel preview URL pattern.** The project is `slick-chart`; branch
-  previews are `slick-chart-git-<branch>-<scope>.vercel.app` and the `<scope>` is not written down
-  anywhere in this repo, and long branch names get truncated and hashed. Ashley has been asked to paste
-  one preview URL from the Vercel dashboard once. **Write the scope here when she does**, so the next
-  session can hand her a URL instead of asking again.
+### The preview URL: SETTLED 2026-10-12, and Ashley never has to fetch it
+
+**Do not ask her for it.** Both the Vercel team slug and the project slug are `slick-chart`, so a
+branch preview is:
+
+    https://slick-chart-git-<branch-with-slashes-and-underscores-as-dashes>-slick-chart.vercel.app
+
+e.g. branch `claude/ecstatic-mccarthy-ynt869` →
+`slick-chart-git-claude-ecstatic-mccarthy-ynt869-slick-chart.vercel.app` (confirmed live, 200).
+Vercel truncates and hashes the host when it would exceed 63 characters, so for a long branch name
+construct nothing — read it instead (next paragraph).
+
+**The reliable way to get it, with no help from her:** Vercel posts a *commit status* (context
+`Vercel`) on the PR head. `pull_request_read` with `method: "get_status"` returns it, including
+`target_url`, which is the deployment's dashboard page and carries the team and project slugs. Vercel
+did **not** post a PR comment on #1 — only the status — so do not sit waiting for a comment.
+
+**Deployment Protection (Vercel Authentication) is ON.** A preview URL redirects to
+`vercel.com/login` unless the browser is signed in to the Vercel account that owns the project.
+That is the right setting and should stay: a preview runs against the REAL database and the REAL env
+vars (above), so an open preview URL would be an open door to live provider data. Consequence for
+Ashley: the link opens fine on a browser where she is signed in to Vercel, and asks her to log in
+once on a device where she isn't. If that becomes a nuisance on her phone, Vercel can mint a
+shareable link for a single protected deployment from its dashboard — offer that rather than turning
+protection off.
 
 ### Two generic rules that were already true — don't "fix" them again
 
