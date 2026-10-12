@@ -96,6 +96,27 @@ and promote it the same way but immediately — merge to `release` and run the w
 `release`, then dispatch it). That is for *her reported bugs*, not for features, and not for anything
 touching sync, storage or a loader, which always waits for the overnight run.
 
+**Content and marketing go STRAIGHT TO `main`, no train, no asking** (her rule, 2026-10-12: *"for
+these blog/posts you can always go ahead and commit to main since it is not interfering with the
+actual app"*). A blog post, a marketing page or a doc cannot disturb a provider mid-appointment,
+because none of it is the app she is working in. So commit it to `main` and let Vercel deploy. Say
+what went live.
+
+The test is **"does this change the app a provider is using?"**, and it is answered by the file list,
+not by how the change feels:
+
+- **Straight to `main`:** `blog-src/`, `build-blog-src/`, `blog/`, `build-blog/`, `switch-src/`,
+  `switch/`, `gbp-posts/`, `sitemap.xml`, any `.md` (this file and `SESSION-HANDOFF.md` included),
+  and the hand-written marketing pages `index.html`, `build.html`, `free.html`.
+- **Through the train, always:** `slickchart.html`, `slickchart-client.html`, `api/`, `lib/`,
+  `scripts/`, `vercel.json`, `.github/`, anything native. `scripts/` is on this side because a build
+  script regenerates pages a provider loads, and `vercel.json` routes them.
+- **A diff that touches both sides is an APP change.** Split it, or run the whole thing through the
+  train. Do not wave a marketing file past the gate because most of the commit was content.
+
+Still run `node scripts/check-generated.cjs` first: a content commit that forgets the generated page
+or the sitemap is exactly what that check exists for.
+
 Still check in before anything destructive or irreversible (deleting data, dropping a column,
 cancelling a live integration) — the train does not make those safe.
 
