@@ -5058,3 +5058,79 @@ drifted from `check-generated.cjs`, which runs **five**. The missing one was `bu
 so a stale `FEATURES.md` passed CI — while `CLAUDE.md` §1c rule 4 claims that check makes staleness
 impossible, and §1c exists because a wrong answer about what the product saves nearly cost Heather 38
 photos. CI now runs `node scripts/check-generated.cjs`, the same command §3 tells a contributor to run.
+
+---
+
+## 2as. Booking request did not reach Square or Google (2026-10-12, OPEN)
+
+### What Ashley OBSERVED — recorded before any theory (§1b, §1d step 1)
+
+Two screenshots from her **phone**, both of 2026-11-05.
+
+1. She used the **"booking request" feature** to add a booking. Her words: *"when i used the
+   'booking request' feature to add in a booking it never got put onto my square or google calendar.
+   see 11/5 at 10am."*
+2. **In SlickChart's Calendar**, 2026-11-05 shows **"3 appts"**:
+   - **Callie Hernandez, 10:00 AM** — subtitle reads **"Signature Facial"**
+   - Josie Statzer, 12:00 PM — subtitle reads **"60 min · Square"**
+   - Cooper Howard, 2:00 PM — subtitle reads **"60 min · Square"**
+3. **Callie's row carries NO "Square" tag and no duration**, where the other two carry both. All
+   three rows do show an "Add to calendar" link.
+4. The month header shows both **SQUARE** and **GOOGLE** chips lit, and 11/5 has a dot.
+5. **In Google Calendar** for Thu Nov 5, the appointments present are **Josie Statzer (12–2 PM)** and
+   **Cooper Howard (2–4 PM)**, both at 1226 Contra Costa Blvd. **Callie Hernandez is absent.**
+6. 11/6 in Google shows Jackie Forrester, Elissa Lawson and Melisa Yatman, so the Google sync is
+   working in general and is not stalled.
+
+### Not yet established
+
+- Whether the booking exists in Square at all (her screenshots show SlickChart and Google, not the
+  Square dashboard). **Do not assert either way without evidence.**
+- Which screen "booking request" means to her, exactly. Do not substitute a guess.
+
+### Rules for whoever works this
+
+Observation 2 and 3 together are the load-bearing fact: SlickChart shows the appointment, with a
+DIFFERENT subtitle shape from the two that did sync. A theory that requires Callie's row to look
+identical to the others is contradicted by what she sent and is wrong. Observation 6 rules out "Google
+sync is broken".
+
+### Diagnosis (code, 2026-10-12) — consistent with every observation above
+
+**Confirming a booking request creates nothing outside SlickChart.** `confirmBooking()` calls
+`addConfirmedAppt(b)`, which only `unshift`s into the in-memory `confirmedAppts` array, stamps the
+client's `nextVisit`, and rebuilds the ICS feed. There is no Square call anywhere in either function.
+
+- **Square:** the capability EXISTS (`_sqDoBook` → `/api/square/book`, and `FEATURES.md` lists it), so
+  this is not a missing feature, it is an unwired one. `_sqDoBook` is reachable from exactly one
+  place: the `sqb-go` button in the Book in Square sheet. `confirmBooking` never reaches it. Grepped
+  both functions for `_sqDoBook` and `square/book`: zero hits.
+- **Google:** `_gcalPush()` sends `_gcalAppts()`, and `_gcalAppts()` maps over **`manualAppts` only**.
+  Not `confirmedAppts`, not `squareAppts`. So a confirmed request is in neither list Google is fed
+  from, and never reaches it.
+- **The ICS feed is the odd one out:** `_rebuildCalendarFeed()` DOES include `confirmedAppts`
+  (`manualAppts.concat(confirmedAppts)`), so a confirmed request reaches anyone subscribed to
+  `sc_calendar_feed` while never reaching the Google API push. Two "calendar sync" paths, different
+  contents. Worth remembering before trusting either as "the" sync.
+
+**How her Square appointments actually reach Google: through SQUARE, not through SlickChart.**
+Evidence rather than assumption: her Google events read `12 – 2 PM at 1226 Contra Costa Blvd`, and
+SlickChart never sends a location — `grep -i location lib/google-cal.js api/google-cal.js` returns
+nothing. `_gcalAppts` sends only id, date, start, duration, client, tx, title, notes. So an event
+carrying her studio address did not come from SlickChart. **This is the important one for the fix:**
+the pipe that actually populates her Google is Square's own calendar sync, so getting a confirmed
+request into Square is what gets it onto Google.
+
+### What the fix has to deal with
+
+- **A booking request carries no Square identifiers.** From `slickchart-client.html` the record is
+  `{id, clientId, client, providerId, treatment, date, time, note, status, created}` — `treatment` is
+  a NAME string. `/api/square/book` needs `serviceVariationId`, `serviceVariationVersion`,
+  `durationMinutes`, `startAt` and `teamMemberId`. So confirming has to match the treatment name
+  against `/api/square/booking-options` and pick a team member, and that match can fail.
+- **Duplicate risk, and it is not hypothetical.** If a confirmed request becomes BOTH a Square booking
+  and a `manualAppts` entry, Square's sync puts it in Google and `_gcalPush` puts it in Google again.
+  `_rebuildCalendarFeed` already dedupes manual/confirmed against `squareAppts` by client+start, but
+  `_gcalAppts` has no such guard. Anything that writes both sides needs one.
+- Not yet decided with her: whether confirming should create the Square booking (the only route that
+  reaches her Google today), or only add a local appointment. Materially different work, so ask.
