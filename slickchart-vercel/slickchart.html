@@ -29022,7 +29022,10 @@ async function _loadSquareAppts(force){
     const data=await _sqFetch('/api/square/appointments?days=90');
     const pal=[['var(--accent-tint)','var(--accent)'],['var(--p-blue-bg)','var(--p-blue)'],['var(--p-surf2)','var(--p-green)'],['var(--p-purple-bg)','var(--p-purple)']];
     const esc=s=>String(s||'').replace(/</g,'&lt;').replace(/>/g,'&gt;');
-    squareAppts=(data.appointments||[]).map((a,i)=>{const d=a.startAt?new Date(a.startAt):null;return {id:a.id,at:d,client:esc(a.customerName)||'Client',tx:'Appointment',dur:a.durationMinutes||60,svid:a.serviceVariationId||'',tmid:a.teamMemberId||'',col:pal[i%pal.length][0],ic:pal[i%pal.length][1]};}).filter(a=>a.at&&!isNaN(a.at));
+    // tx was hardcoded to 'Appointment', so every Square booking in her calendar read the same and none
+    // of them said what it was for. The server now resolves the service variation to its Square name
+    // (api/square/appointments.js); fall back to the generic word only when Square could not tell us.
+    squareAppts=(data.appointments||[]).map((a,i)=>{const d=a.startAt?new Date(a.startAt):null;return {id:a.id,at:d,client:esc(a.customerName)||'Client',tx:esc(a.serviceName)||'Appointment',dur:a.durationMinutes||60,svid:a.serviceVariationId||'',tmid:a.teamMemberId||'',col:pal[i%pal.length][0],ic:pal[i%pal.length][1]};}).filter(a=>a.at&&!isNaN(a.at));
     // Add anyone who booked online through Square to the client list (so the provider can send them
     // forms / their app link). Runs before _stampClientNextVisit below so a brand-new booker gets their
     // upcoming visit stamped too. Matches existing clients by Square id/name — never duplicates.
@@ -29384,7 +29387,15 @@ function _sampleCalAppts(){
 function _allApptsUnified(){
   var out=[];
   if(_apptsLive()&&Array.isArray(squareAppts)){
-    squareAppts.forEach(function(a){if(a.at&&!isNaN(a.at))out.push({when:a.at,title:a.client,sub:((a.dur||60)+' min'),ic:a.ic||'var(--accent)',source:'square',id:a.id,raw:a});});
+    // Lead the subtitle with WHAT it is, now that the server resolves the Square service name.
+    // Every Square row used to read only "60 min", so a day of appointments said nothing about what
+    // any of them were for. Falls back to the duration alone when Square could not name it.
+    squareAppts.forEach(function(a){if(a.at&&!isNaN(a.at))out.push({when:a.at,title:a.client,sub:(function(){var n=(a.tx&&a.tx!=='Appointment')?String(a.tx):'';var d=(a.dur||60)+' min';
+      // Square service names very often carry the length already ("Signature Facial — 60 min"), and
+      // appending the duration again reads as "90 min · 90 min". If the name already says minutes,
+      // the name is enough.
+      if(n&&/\b\d+\s*min/i.test(n))return n;
+      return n?(n+' \u00b7 '+d):d;})(),ic:a.ic||'var(--accent)',source:'square',id:a.id,raw:a});});
   } else if(!_sampleHidden()){
     out=out.concat(_sampleCalAppts());
   }

@@ -3,7 +3,7 @@
 // 14, max 31). Queries EVERY location on the account (a seller may have their
 // Appointments set up under a location other than the resolved default, including
 // an inactive one), then resolves each booking's customer name.
-import { squareFetch as _sqf, sqContext } from '../../lib/square.js';
+import { squareFetch as _sqf, sqContext, listBookableServices } from '../../lib/square.js';
 
 export default async function handler(req, res) {
   if (req.method !== 'GET') { res.status(405).json({ error: 'Method not allowed' }); return; }
@@ -75,6 +75,22 @@ export default async function handler(req, res) {
       } catch { /* ignore a single failed lookup */ }
     }));
 
+    // What each booking is FOR. Square puts only a service_variation_id on the segment, so every
+    // appointment arrived in the app with no idea of its service and the calendar labelled them all
+    // the same. Ashley, 2026-10-12: "I would like for my appointments in slickchart to match the
+    // service name from square". One catalog walk per request, and only when there is something to
+    // resolve; a failure just leaves the names blank and the app falls back to its generic label.
+    const svcName = {};
+    try {
+      const varIds = [...new Set(bookings
+        .map((b) => ((b.appointment_segments || [])[0] || {}).service_variation_id)
+        .filter(Boolean))];
+      if (varIds.length) {
+        const svcs = await listBookableServices(ctx.token);
+        svcs.forEach((sv) => { if (sv && sv.variationId) svcName[sv.variationId] = sv.name; });
+      }
+    } catch (e) { /* names unavailable — the app shows its generic label rather than nothing */ }
+
     const appointments = bookings
       .map((b) => {
         const seg = (b.appointment_segments || [])[0] || {};
@@ -90,6 +106,7 @@ export default async function handler(req, res) {
           customerPhone: (cust[b.customer_id] && cust[b.customer_id].phone) || '',
           durationMinutes: seg.duration_minutes || null,
           serviceVariationId: seg.service_variation_id || '',
+          serviceName: svcName[seg.service_variation_id] || '',
           teamMemberId: seg.team_member_id || ''
         };
       })

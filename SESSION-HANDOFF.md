@@ -5369,3 +5369,61 @@ including a deliberate no-match, and her stated 10 / 12 / 2 / 4 rendering assert
 the DST change** (2026-11-03 PST at UTC-8 and 2026-10-13 PDT at UTC-7). The first run of that test
 FAILED because the test itself used UTC-7 instants for a PST date — the same DST trap as the Square
 day window on 2026-10-11. The code was right; the expectation was wrong. Keep both dates in it.
+
+---
+
+## 2aw. Service options parity with Square + appointments showing the service name (2026-10-12, OPEN)
+
+### What Ashley asked for — her words
+
+*"lets make sure when people create a service within the app that it also has those same options that
+square gives (block extra time, processing time, etc.) and that those options also all two way sync
+to square for booking. i would like it to mirror all the same options and sync both ways. I would
+like for my appointments in slickchart to match the service name from square (right now it seems all
+of them say new client appointment)."*
+
+Three separate pieces, and they are NOT the same size:
+
+1. **Appointments must show the Square service name.** She observes they all read
+   "new client appointment". Concrete and contained.
+2. **Service editor should offer Square's options** — block extra time, processing time, and the
+   rest.
+3. **Those options two-way sync with Square.**
+
+### Item 1 DONE 2026-10-12 — appointments now carry the Square service name
+
+`/api/square/appointments` returned `serviceVariationId` but never a name, and `_loadSquareAppts`
+hardcoded `tx:'Appointment'`. So every Square booking in her calendar was labelled identically and a
+day of appointments said nothing about what any of them were for.
+
+- The endpoint now resolves the variation ids to names via the shared `listBookableServices`, one
+  catalog walk per request and only when there is something to resolve. A failure leaves names blank
+  and the app falls back to the generic word rather than showing nothing.
+- The calendar row leads with the service: `Signature Facial · 60 min`.
+- **It drops the duration when the name already contains one.** Square service names very often read
+  "Dermaplane — 90 min", which produced "Dermaplane — 90 min · 90 min". Verified with a case for it.
+
+**Note for whoever picks this up:** "new client appointment" is NOT a string in this codebase
+(grepped). So that text is coming from Square itself — most likely a service in her Square actually
+named that, which bookings default to. With this change the app shows whatever Square calls it, which
+is what she asked for; if the wording still reads wrong it is a rename in Square, not a code change.
+
+### Items 2 and 3 — NOT started, and there is a design question to settle first
+
+What the app's own service object holds today: `{id, name, price, _ts}`, plus `mins`/`deposit` on the
+booking-page config. That is all. `getServices()` reduces it to names alone.
+
+What Square holds per service: duration, price, **buffer before / buffer after (her "block extra
+time")**, processing/transition time, assigned team members, bookable-online, category, description.
+
+So this is a real feature, not a settings tweak, and it writes to her LIVE Square catalog, which
+deserves its own careful start rather than the tail of a long session.
+
+**The design question, and it matters more than the work:** two-way sync creates two masters. We just
+made Square authoritative for availability (§2av). If the app can also write service options back,
+then a conflict has no obviously right answer and a bug can corrupt her real Square menu. The simpler
+shape, which gets her the same outcome: **Square owns services when Square is connected** — the app
+reads them (duration, buffers, processing time) and shows them read-only with a "edit in Square"
+link, and the app's own editable service menu stays for providers with no Square. One source of
+truth, no conflict class, and it matches what availability already does. **Put this to her before
+building either.**
