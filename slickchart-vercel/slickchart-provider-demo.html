@@ -3852,7 +3852,16 @@ const Cloud={
     // every capture, so the key almost always had a queued write and the merge was skipped — a
     // photo taken on the phone was uploaded fine, and then the computer never heard it existed.
     // sc_session_summaries is the other one, and it is the key from §0.8 that lost a session summary.
-    if(_pendingLocal&&k!=='sc_clients'&&!_CLIENT_MAP_LIST[k])return;
+    // sc_bookings joins them, and for exactly the reason the paragraph above sets out. Ashley,
+    // 2026-10-12: a client's booking request reached her account and fired a push to her phone, and
+    // a SECOND signed-in device never showed it. _mergeBookings is a true union — `lv.forEach(take);
+    // sv.forEach(take);` puts every id from BOTH sides into the result, and a decided request beats
+    // a pending copy whichever side it came from — so a queued local write cannot be dropped by it.
+    // But the guard returned before the merge ever ran, so any device holding a queued sc_bookings
+    // write (clearing one, deciding one, or the demo purge at boot writing the list back) stopped
+    // learning about requests the account had. Same shape as the sc_photo_index bug named above:
+    // uploaded fine, and the other device never heard it existed.
+    if(_pendingLocal&&k!=='sc_clients'&&k!=='sc_bookings'&&!_CLIENT_MAP_LIST[k])return;
     // Boot wrote this key back from defaults before the account answered. Drop that queued write so
     // it cannot flush over the account copy we are about to store.
     if(this._bootQueued&&this._bootQueued[k]){try{delete this._queue[k];}catch(e){}}

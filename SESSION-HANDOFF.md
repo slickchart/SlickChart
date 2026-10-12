@@ -5528,3 +5528,68 @@ Which leaves two live possibilities, and they point at completely different fixe
 Verified by seeding a device with one request and an account with two: the block correctly named the
 missing id. **Note `window.__SC_SELFCHECK__` is a STRING, not an object** — a test reading
 `.plain` off it gets nothing and looks like the block is missing.
+
+### ROOT CAUSE — found 2026-10-12. It was (b), and it is a real bug, not a preview quirk.
+
+`Cloud.pull()` has a guard that skips any key with a **pending local write**, so a flush that has not
+gone up yet cannot be overwritten by the account copy. It `return`s **before the per-key merge runs**:
+
+```js
+const _pendingLocal=!!(this._queue&&Object.prototype.hasOwnProperty.call(this._queue,k)
+   &&!(this._bootQueued&&this._bootQueued[k]));
+if(_pendingLocal&&k!=='sc_clients'&&!_CLIENT_MAP_LIST[k])return;   // ← sc_bookings was not exempt
+```
+
+`sc_clients` and the `_CLIENT_MAP_LIST` keys are exempt because their merges are **unions** — a union
+cannot drop the queued write, so there is nothing to protect. `_mergeBookings` is a union too
+(`lv.forEach(take); sv.forEach(take);`, and a decided request beats a pending copy whichever side it
+came from), so `sc_bookings` belonged on that list and was not on it.
+
+Consequence: **any device holding a queued `sc_bookings` write stops learning about requests on the
+account.** Clearing a request, deciding one, or the demo purge writing the list back at boot is enough
+to put a write in the queue. This is the same shape as the `sc_photo_index` bug already recorded here:
+the data uploaded fine and the second device never heard it existed.
+
+Why the preview hit it and her real app did not: her real app is the device that RECEIVED the request,
+so it materialised it from `client_events` directly and never needed the pull. The preview is a second
+device — pull is its only route, and the guard was closing it.
+
+### The fix (shipped on `claude/ecstatic-mccarthy-ynt869`)
+
+```js
+if(_pendingLocal&&k!=='sc_clients'&&k!=='sc_bookings'&&!_CLIENT_MAP_LIST[k])return;
+```
+
+with the justification written into the comment above it, as that comment demands ("If you widen this,
+prove the merge is a union first").
+
+Proof: `scratchpad/test-bookings-pull-guard.mjs`. It serves an account holding a request this device
+already declined **and** a new one it has never seen, while the device holds a queued local write for
+`sc_bookings`. Both cases pass — the new request lands AND the device keeps its own decision:
+
+```
+No pending local write (this case always worked)
+  after pull: ["bk_old:declined","bk_new:pending"]
+WITH a pending local write (the reported bug)
+  after pull: ["bk_old:declined","bk_new:pending"]
+both pass
+```
+
+Negative control, so the test is known to actually detect it: with the one-line exemption removed the
+same run gives `after pull: ["bk_old:declined"]` — the new request is simply absent, which is exactly
+"Booking requests — None waiting" on her preview.
+
+### What is NOT yet proven, and is the obvious next sweep
+
+The same guard starves **every** other union merge that is not on the exempt list. `sc_manual_appts`,
+`sc_msgstore`, `sc_threads`, `sc_seen_events` and the tombstone keys all have dedicated merges, and
+several of them read like unions. **Do not widen the list from that impression** — the comment's rule
+is prove-the-union-first, one key at a time, each with a test like the one above. A key whose merge
+prefers one side (`sc_client_recs`, `sc_client_homecare`) must keep the skip: exempting it would
+discard an unpushed edit, which is the loss the guard exists for.
+
+### Correction to what Ashley was told
+
+She was first told this was expected behaviour (sync timing / not signed in) and then that it was
+"working as designed". **Both were wrong.** It was a bug on any second device, and her report was the
+thing that found it.
