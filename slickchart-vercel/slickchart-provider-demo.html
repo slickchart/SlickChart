@@ -5042,10 +5042,48 @@ async function _runSelfCheck(){
     });
   }catch(e){ ciDiag.push('check-in diagnosis failed: '+(e&&e.message)); }
 
+  // ── BOOKING REQUESTS, device vs account ─────────────────────────────────────────────────────
+  // Ashley, 2026-10-12: a request she sent herself shows in her live app and NOT on the preview,
+  // while signed in with Square connected and appointments visible. The first guess (sync timing)
+  // was wrong, and guessing a second time would cost her another round trip. So the paste now
+  // answers it outright: what this device holds, whether the key came down in this session's pull,
+  // and what the ACCOUNT holds. SESSION-HANDOFF 2ax.
+  const bkDiag=[];
+  try{
+    bkDiag.push('BOOKING REQUESTS');
+    var _bkLocalRaw='';try{_bkLocalRaw=_lsGet('sc_bookings')||'';}catch(e){}
+    var _bkLocal=[];try{_bkLocal=JSON.parse(_bkLocalRaw||'[]');}catch(e){_bkLocal=null;}
+    bkDiag.push('  on this device: '+(Array.isArray(_bkLocal)?(_bkLocal.length+' request(s), '+_bkLocalRaw.length+' bytes'):('UNREADABLE \u2014 '+_bkLocalRaw.slice(0,60))));
+    if(Array.isArray(_bkLocal))_bkLocal.slice(0,12).forEach(function(b){
+      bkDiag.push('    \u2022 '+(b&&b.id||'?')+' \u00b7 '+((b&&b.client)||'?')+' \u00b7 '+((b&&b.treatment)||'?')+' \u00b7 '+((b&&b.date)||'?')+' '+((b&&b.time)||'')+' \u00b7 status='+((b&&b.status)||'?')+(b&&b.seen?' \u00b7 cleared':''));
+    });
+    var _pulled=(typeof Cloud!=='undefined'&&Cloud&&Cloud._lastPulledKeys)||null;
+    bkDiag.push('  sc_bookings came down in this session\u2019s pull: '+(_pulled?(_pulled.has('sc_bookings')?'YES':'NO'):'pull has not run yet'));
+    var _srvRaw=null;try{_srvRaw=(Cloud&&Cloud._serverSeen)?Cloud._serverSeen['sc_bookings']:null;}catch(e){}
+    if(_srvRaw==null){ bkDiag.push('  on the account: NOT PRESENT \u2014 the server has no sc_bookings for this login'); }
+    else{
+      var _srv=[];try{_srv=JSON.parse(_srvRaw||'[]');}catch(e){_srv=null;}
+      bkDiag.push('  on the account: '+(Array.isArray(_srv)?(_srv.length+' request(s), '+String(_srvRaw).length+' bytes'):('UNREADABLE \u2014 '+String(_srvRaw).slice(0,60))));
+      if(Array.isArray(_srv))_srv.slice(0,12).forEach(function(b){
+        bkDiag.push('    \u2022 '+(b&&b.id||'?')+' \u00b7 '+((b&&b.client)||'?')+' \u00b7 '+((b&&b.date)||'?')+' '+((b&&b.time)||'')+' \u00b7 status='+((b&&b.status)||'?')+(b&&b.seen?' \u00b7 cleared':''));
+      });
+      // The question that decides where to look next: is the request missing from the ACCOUNT (so
+      // the device that received it never pushed), or present on the account but not here (so the
+      // pull or the merge dropped it)?
+      if(Array.isArray(_srv)&&Array.isArray(_bkLocal)){
+        var _lids={};_bkLocal.forEach(function(b){if(b&&b.id)_lids[b.id]=1;});
+        var _only=_srv.filter(function(b){return b&&b.id&&!_lids[b.id];}).map(function(b){return b.id;});
+        bkDiag.push('  on the account but NOT on this device: '+(_only.length?_only.join(', '):'none'));
+      }
+    }
+    var _ev=0;try{_ev=(JSON.parse(_lsGet('sc_seen_events')||'[]')||[]).length;}catch(e){}
+    bkDiag.push('  client events already marked seen on this device: '+_ev);
+  }catch(e){bkDiag.push('  (booking diagnostic failed: '+(e&&e.message)+')');}
+
   const plain=[
     'SlickChart self-check \u2014 '+new Date().toLocaleString(),
     'build '+APP_BUILD
-  ].concat([''],ciDiag,['']).concat(L.map(x=>(x.ok?'OK   ':'FAIL ')+x.label+(x.detail?' \u2014 '+x.detail:'')))
+  ].concat([''],bkDiag,[''],ciDiag,['']).concat(L.map(x=>(x.ok?'OK   ':'FAIL ')+x.label+(x.detail?' \u2014 '+x.detail:'')))
    .concat([''],rows.map(r=>r.k+': device '+(r.onDevice?r.deviceBytes+'B, edited '+r.deviceEdited:'MISSING')
      +' | account '+(r.onAccount?r.accountBytes+'B, edited '+r.accountEdited:'MISSING')
      +(r.onDevice&&r.onAccount?(r.same?' | identical':(r.explained?' | differs only by '+r.hiddenForms+' deleted form(s) — expected':' | DIFFERENT')):'')

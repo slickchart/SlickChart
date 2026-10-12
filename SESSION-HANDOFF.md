@@ -5485,5 +5485,46 @@ account on that domain**, and **a completed pull after her real app pushed `sc_b
 The preview is a different origin (`slick-chart-git-…vercel.app`), so it shares no browser storage
 with `slickchart.app` and starts empty. Nothing carries over until it signs in and syncs.
 
-**This is working as designed and the design is sound** — note the ordering in step 2, which exists
-precisely so a request cannot be marked seen without being saved. Do not "fix" it.
+**THAT DIAGNOSIS WAS WRONG.** She replied: *"i was already signed in on the preview and it still
+isnt showing the request"*, with a screenshot of the preview's Calendar showing **"Booking requests —
+None waiting"**, the **SQUARE and GOOGLE chips both lit**, and **appointment dots on 13, 15, 16, 17,
+20, 22, 23 and 24**. So the preview is signed in, Square is connected, and appointments ARE syncing.
+Sync timing does not explain it. §1b: discard the theory, not the observation.
+
+**Observations now on the list:**
+- Signed in on the preview, and had been before she first reported it.
+- Appointments sync to the preview fine (the dots).
+- Booking requests reads "None waiting" on the preview.
+- The same request IS visible in her real app, which runs the older build.
+
+**A trap to avoid repeating:** the appointment dots on her preview screenshot come from `squareAppts`,
+fetched LIVE from `/api/square/appointments`. They prove Square works. They say **nothing** about
+whether synced `sc_*` keys are pulling, and reading them as proof of sync is how the second wrong
+theory would have started.
+
+### Ruled out by reading the code, not by guessing
+
+- `sc_bookings` **is** syncable — it is not in `_SYNC_SKIP`.
+- The **live** build pushes it: `_pushKeyNow('sc_bookings', …)` appears 3 times in `origin/main`'s
+  `slickchart.html`, same as the branch. So "her old build never pushes bookings" is false.
+- `_mergeBookings` unions by id (`lv.forEach(take); sv.forEach(take)`), so a server-side request
+  cannot be dropped by the merge on a device that already holds others.
+
+Which leaves two live possibilities, and they point at completely different fixes:
+**(a)** the request never reached the ACCOUNT (the device that received it did not push), or
+**(b)** it is on the account and this device's pull or merge did not land it.
+
+### The diagnostic, added 2026-10-12 (§1d: add it to the paste in the same change)
+
+`_runSelfCheck` now prints a **BOOKING REQUESTS** block before the check-in block:
+
+- what this device holds, per request: id, client, treatment, date, time, status, cleared
+- whether `sc_bookings` came down in this session's pull (`Cloud._lastPulledKeys`)
+- what the ACCOUNT holds (`Cloud._serverSeen['sc_bookings']`), same per-request detail
+- **"on the account but NOT on this device"**, naming the ids — this is the line that decides
+  between (a) and (b)
+- how many client events this device has already marked seen
+
+Verified by seeding a device with one request and an account with two: the block correctly named the
+missing id. **Note `window.__SC_SELFCHECK__` is a STRING, not an object** — a test reading
+`.plain` off it gets nothing and looks like the block is missing.
