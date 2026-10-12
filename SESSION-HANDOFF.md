@@ -5008,8 +5008,14 @@ construct nothing — read it instead (next paragraph).
 
 **The reliable way to get it, with no help from her:** Vercel posts a *commit status* (context
 `Vercel`) on the PR head. `pull_request_read` with `method: "get_status"` returns it, including
-`target_url`, which is the deployment's dashboard page and carries the team and project slugs. Vercel
-did **not** post a PR comment on #1 — only the status — so do not sit waiting for a comment.
+`target_url`, which is the deployment's dashboard page and carries the team and project slugs.
+
+**It posts a PR comment too, but LATE.** An earlier version of this note said it posts no comment at
+all. Wrong: on #1 the comment arrived about 50 minutes after the PR was opened, long after several
+deployments had already finished and been reported by status. So the status is the thing to read, and
+a missing comment means "not yet", never "not coming" — but do not block on either. The comment,
+when it lands, carries the preview URL in a table and confirmed the derived host exactly:
+`slick-chart-git-claude-ecstatic-mccarthy-ynt869-slick-chart.vercel.app`.
 
 **Deployment Protection (Vercel Authentication) is ON.** A preview URL redirects to
 `vercel.com/login` unless the browser is signed in to the Vercel account that owns the project.
