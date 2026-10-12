@@ -106,9 +106,55 @@ export async function getHours(providerId) {
   } catch (e) { return null; }
 }
 
-// What she offers, always as [{name, mins, deposit}]. Her booking-page list wins; otherwise her
-// service menu; otherwise one generic option so the page is never empty.
-export async function getServices(providerId, cfg) {
+// SQUARE OWNS THE SERVICE CATALOG (Ashley's decision, 2026-10-12).
+//
+// She reported that the services offered on her client's "Request appointment" screen "do not match
+// the service catalog". They came from `sc_service_menu`, the app's own menu, which nothing keeps in
+// step with Square — so a client could request a treatment that does not exist in the catalog she
+// actually books out of. Her two test requests came through as "New client", which is a name from
+// that stale menu, not from her Square services.
+//
+// Cached per provider for a minute: the client booking screen asks for the menu once and then for
+// availability per date, and a catalog walk on every one of those would be slow for no gain. The key
+// is the PROVIDER ID, so one account's catalog can never be served to another (CLAUDE.md 0.1), and
+// the value is only service names and durations, which her own booking page already shows publicly.
+const _svcCache = new Map();
+const SVC_TTL_MS = 60000;
+export async function squareServices(providerId) {
+  if (!providerId) return null;
+  try {
+    const hit = _svcCache.get(providerId);
+    if (hit && (Date.now() - hit.at) < SVC_TTL_MS) return hit.list;
+    let list = null;
+    const conn = await getConnection(providerId);
+    if (conn && conn.token) {
+      const svc = await listBookableServices(conn.token);
+      if (Array.isArray(svc) && svc.length) {
+        list = svc.map(s => ({ name: String(s.name || '').trim(), mins: s.durationMinutes || 60 }))
+                  .filter(s => s.name);
+      }
+    }
+    if (_svcCache.size > 500) _svcCache.clear();   // bounded; it is a cache, not a store
+    _svcCache.set(providerId, { at: Date.now(), list });
+    return list;
+  } catch (e) {
+    // A Square outage must never empty her booking page. Fall through to the stored menu.
+    return null;
+  }
+}
+
+// HER REAL CATALOG, and nothing invented. [{name, mins?, deposit?}], possibly EMPTY.
+//
+// Ashley, 2026-10-12: "for providers who only use the app (no square integration) it should still be
+// reading that service catalog only as well." So there are exactly two sources of truth and no third:
+// Square's catalog when Square is connected, and the provider's own service menu when it is not. A
+// made-up list is what put "Appointment" and "New client" in front of her clients as if she offered
+// them. If a provider has listed nothing, the honest answer is an empty list and the screen says so.
+export async function listServices(providerId, cfg) {
+  const sq = await squareServices(providerId);
+  if (sq && sq.length) return sq;
+  // No Square: her own menu is the catalog. cfg.services is the same menu as curated for her public
+  // booking page, so it is read first only when she has actually curated one.
   if (cfg && cfg.services && cfg.services.length) return cfg.services;
   try {
     const raw = await getKVValue(providerId, 'sc_service_menu');
@@ -118,7 +164,15 @@ export async function getServices(providerId, cfg) {
       if (names.length) return names;
     }
   } catch (e) {}
-  return [{ name: 'Appointment' }];
+  return [];
+}
+
+// The PUBLIC booking page cannot render an empty service dropdown, so this is the one place allowed
+// to substitute a neutral label, and only when the provider has genuinely listed nothing anywhere.
+// Everything client-facing uses listServices() and shows an honest empty state instead.
+export async function getServices(providerId, cfg) {
+  const list = await listServices(providerId, cfg);
+  return list.length ? list : [{ name: 'Appointment' }];
 }
 // The one she picked, matched by name. Falls back to the first, so a stale name from a cached page
 // can never book a service that no longer exists.

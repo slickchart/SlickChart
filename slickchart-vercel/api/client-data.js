@@ -5,6 +5,7 @@
 // payloads once a provider had more than a few clients).
 import { dbEnabled, getKVValue } from '../lib/db.js';
 import { ensureClientTables, getClientByToken, markOpened } from '../lib/clients.js';
+import { getBookingConfig, listServices } from '../lib/booking.js';
 
 export default async function handler(req, res) {
   if (!dbEnabled()) { res.status(404).json({ error: 'Not found' }); return; }
@@ -51,13 +52,21 @@ export default async function handler(req, res) {
       const rawCfg = await getKVValue(c.provider_id, 'sc_checkin_cfg');
       if (rawCfg) data.checkinCfg = JSON.parse(rawCfg);
     } catch (e) { /* no saved check-in config yet, client falls back to defaults */ }
+    // THE SERVICES THIS CLIENT MAY REQUEST — her real catalog and nothing invented.
+    //
+    // This read sc_service_menu directly, so a provider on Square was offering her clients the app's
+    // own menu while booking out of a different catalog: Ashley, 2026-10-12, "the preferred services
+    // do not match the service catalog". listServices() is the one resolver — Square's catalog when
+    // she has Square, her own service menu when she does not, and an EMPTY list when she has listed
+    // nothing, which the client app shows honestly instead of offering a made-up "Appointment".
+    //
+    // The provider id comes from the token's own row (getClientByToken), never from the request, so
+    // a client can only ever be told about their own provider's services (CLAUDE.md 0.1, 0.3).
     try {
-      const rawSvc = await getKVValue(c.provider_id, 'sc_service_menu');
-      if (rawSvc) {
-        const svc = JSON.parse(rawSvc);
-        if (Array.isArray(svc)) data.services = svc.map(s => (s && s.name ? String(s.name).trim() : '')).filter(Boolean);
-      }
-    } catch (e) { /* no service menu published yet, client falls back to a generic list */ }
+      const svcCfg = await getBookingConfig(c.provider_id);
+      const svc = await listServices(c.provider_id, svcCfg);
+      data.services = (svc || []).map(s => String((s && s.name) || '').trim()).filter(Boolean);
+    } catch (e) { /* Square or the menu unreadable — the client app shows its empty state */ }
     res.setHeader('Cache-Control', 'no-store, no-cache, must-revalidate');
     res.setHeader('Pragma', 'no-cache');
     res.status(200).json({

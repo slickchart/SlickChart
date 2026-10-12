@@ -5854,3 +5854,81 @@ two will be ingested on the next poll once this ships. Do not describe anything 
 Unknown and worth a look later: why 775 ids are on disk against 50 in memory. Most are
 Square-imported customers she merged or deleted, which is legitimate, but the on-disk blob only ever
 grows. Not urgent, and NOT to be "cleaned up" without her say-so.
+
+## 2ay. The services a client may request must be HER catalog, and nothing invented (2026-10-12)
+
+Confirmed first: the roster-gate fix worked. Ashley, after `d505705`: *"great now they are showing."*
+Thread 2ax is closed.
+
+Then: *"when i was doing the booking request the preferred services do not match the service catalog
+and we need to fix that"*, clarified twice — *"for providers who only use the app (no square
+integration) it should still be reading that service catalog only as well"* and *"not everybody will
+be square users so we need to keep that in mind"*.
+
+### What was wrong
+
+Three separate places invented services the provider may not offer:
+
+1. **`api/client-data.js`** read `sc_service_menu` directly. Nothing keeps that in step with Square,
+   so a provider on Square offered her clients the app's menu while booking out of a different
+   catalog. That is her report exactly.
+2. **`lib/booking.js getServices()`** never consulted Square at all, and ended in a hardcoded
+   `[{name:'Appointment'}]`.
+3. **`slickchart-client.html`** fell back to `['Appointment','Consultation']` for a REAL client with
+   no published menu, and seeded the selected service from `activeProvider().treatment ||
+   client.treatment` — free text off an appointment, which need not exist in any catalog. Her own
+   test requests arrived labelled **"New client"**, which is a Square appointment title, not a
+   service she offers.
+
+### The rule now, one resolver, no third source
+
+`lib/booking.js listServices(providerId, cfg)`:
+
+1. **Square's catalog** when Square is connected (`squareServices()`, via `getConnection` +
+   `listBookableServices`, cached 60s **keyed on provider id** so one account's catalog can never be
+   served to another — §0.1).
+2. **Her own service menu** when she has no Square (`cfg.services`, then `sc_service_menu`). This is
+   the whole point of her second message: a non-Square provider is a first-class case, not a
+   fallback.
+3. **Empty** when she has listed nothing. No invented name.
+
+`getServices()` is now a thin wrapper that substitutes a neutral label ONLY for the public booking
+page, which cannot render an empty dropdown. It is the single documented exception.
+
+`api/client-data.js` uses `listServices`. The client app shows her catalog as chips, and when the
+list is empty shows *"<Name> hasn't listed her services here yet. Pick a day and time below and
+she'll confirm what you're booked for."* The selected service is re-checked against the catalog on
+every render, so a value seeded from an appointment's free text is replaced by a real service.
+
+**Deliberately left alone:** `_acceptSuggestedTime()` sets the service from the time SHE suggested
+and submits without rendering. That is her own wording echoed back, not an invented option, and
+forcing it into the catalog would change the service she chose to offer.
+
+### Proof
+
+`scratchpad/test-client-services.mjs`, driving the real `slickchart-client.html`:
+
+```
+Provider WITH a catalog         chips: ["Signature Facial","Dermaplane","Hydrafacial"]  selected: "Signature Facial"
+Provider with NO services       chips: []   selected: ""   and the honest empty state renders
+```
+
+Negative control against `HEAD`'s client app:
+
+```
+Provider with NO services       chips: ["Appointment","Consultation"]   selected: "Appointment"
+```
+
+**Not reproduced in the harness:** the exact route by which "New client" became the selected service
+on her device. `rebookState.treatment` is seeded at script-parse time from `client.treatment`, before
+the real data arrives, so the harness cannot recreate her ordering. The membership re-check runs on
+every render and therefore covers any seeding route, but do not claim the specific reproduction.
+
+### One consequence to tell her, not bury
+
+Square comes first for EVERY caller, so her **public booking page** now offers her Square catalog
+too, rather than the list curated in `cfg.services`. That follows directly from "Square owns
+services" and keeps one answer instead of two, but it changes what strangers see on
+`/book`, which she did not specifically ask for. Say so plainly; if she wants the public page to keep
+its own curated list, move the `cfg.services` check above `squareServices()` in `listServices()` —
+that is the only line involved.

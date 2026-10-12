@@ -4620,14 +4620,27 @@ function renderRebook(){
   const avail=normalizeAvail(rawAvail);
   rebookAvail=avail;
   const hasAvail=!!rawAvail;
-  // The provider's real service menu (synced from their app). Fall back to a generic list only
-  // if none is published yet (or in local/demo mode), never demo-specific treatments for a real client.
+  // HER REAL CATALOG ONLY — Square's when she has Square, her own service menu when she does not,
+  // resolved server-side by listServices() so there is one answer and not two. Ashley, 2026-10-12:
+  // "the preferred services do not match the service catalog", and "for providers who only use the
+  // app (no square integration) it should still be reading that service catalog only as well."
+  //
+  // So a REAL client is never shown an invented option. If nothing is published there are no chips
+  // and the screen says so, because offering "Appointment" or "Consultation" advertises services the
+  // provider may not offer and sends her a request for one of them. The demo keeps its sample list;
+  // it is the public sample and has no provider behind it.
   const _provSvc=(activeProvider().services||[]).filter(Boolean);
-  const treatments=_provSvc.length?_provSvc:(client._real?['Appointment','Consultation']:['Hydrafacial','Chemical Peel','Brightening Facial','Microneedling','Dermaplaning','Consultation']);
-  // rebookState.treatment was seeded from client.treatment at script-parse time, before applyActiveProvider()
-  // populates it — so it was undefined and the request/confirmation showed a blank service. Default it now
-  // to the provider's current treatment (or their first published service) so it's never empty.
-  if(!rebookState.treatment)rebookState.treatment=(activeProvider().treatment||client.treatment||treatments[0]||'Appointment');
+  const treatments=_provSvc.length?_provSvc:(client._real?[]:['Hydrafacial','Chemical Peel','Brightening Facial','Microneedling','Dermaplaning','Consultation']);
+  // The selected service must BE one of hers. This used to default to the provider's current
+  // treatment or the client's last one, which are free text off the appointment and need not exist
+  // in the catalog at all: that is how Ashley's own test requests arrived labelled "New client".
+  // Keep a seeded value only when the catalog actually contains it, otherwise take the first real
+  // service, otherwise leave it empty and let the request carry no service rather than a wrong one.
+  const _inCatalog=function(v){return !!v&&treatments.indexOf(v)>=0;};
+  if(!_inCatalog(rebookState.treatment)){
+    const _seed=[activeProvider().treatment,client.treatment].find(_inCatalog);
+    rebookState.treatment=_seed||treatments[0]||'';
+  }
 
   // No 14-day horizon any more. The calendar renders whole months and pages forward without limit
   // (Ashley, 2026-10-12: "it should not have any limit on how far out they can pick"); the old loop
@@ -4655,11 +4668,12 @@ function renderRebook(){
 
   <!-- Service picker -->
   <div class="sh"><h2>Preferred service</h2></div>
+  ${!treatments.length?`<div style="margin:0 16px 4px;background:var(--c-card);border:1.5px solid var(--c-line);border-radius:12px;padding:14px 16px;"><div style="font-size:13px;color:var(--c-mut);line-height:1.55;">${_txt(client.providerFirst)} hasn't listed her services here yet. Pick a day and time below and she'll confirm what you're booked for.</div></div>`:`
   <div style="padding:0 16px;overflow-x:auto;scrollbar-width:none;">
     <div style="display:flex;gap:7px;padding-bottom:4px;min-width:max-content;">
       ${treatments.map(function(s){var on=(rebookState.treatment===s);return '<button onclick="rebookState.treatment=\''+_jsAttr(s)+'\';renderRebook()" aria-pressed="'+(on?'true':'false')+'" style="flex-shrink:0;border:1.5px solid '+(on?'var(--accent)':'var(--c-line)')+';background:'+(on?'var(--accent)':'var(--c-card)')+';color:'+(on?'var(--accent-ink)':'var(--c-ink)')+';border-radius:20px;padding:9px 15px;font-size:13px;font-weight:600;cursor:pointer;font-family:inherit;white-space:nowrap;">'+_txt(s)+'</button>';}).join('')}
     </div>
-  </div>
+  </div>`}
 
   <!-- Date picker -->
   <div class="sh"><h2>Preferred date</h2></div>
