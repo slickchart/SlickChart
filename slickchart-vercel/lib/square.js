@@ -376,6 +376,62 @@ export async function enforceFounderMerchantIsolation() {
 }
 
 // Identify the requesting provider from their SlickChart session (Bearer token).
+// The bookable service variations on an account, exactly as the booking sheet needs them.
+//
+// ONE implementation, used by /api/square/booking-options AND by lib/booking.js when it asks Square
+// what is free. A second copy of a catalog walk drifts, and the copy clients depend on would be the
+// one nobody notices has gone wrong — which is the same mistake that let a CI step fall a build
+// script behind earlier the same day.
+export async function listBookableServices(token) {
+  const objects = [];
+  let cursor = '', guard = 0;
+  do {
+    const qs = new URLSearchParams({ types: 'ITEM' });
+    if (cursor) qs.set('cursor', cursor);
+    const data = await squareFetch('/v2/catalog/list?' + qs.toString(), {}, token);
+    (data.objects || []).forEach(o => objects.push(o));
+    cursor = data.cursor || '';
+    guard++;
+  } while (cursor && guard < 25);
+
+  const services = [];
+  objects
+    .filter(o => o.type === 'ITEM' && !o.is_deleted && o.item_data && o.item_data.product_type === 'APPOINTMENTS_SERVICE')
+    .forEach(o => {
+      const itemName = o.item_data.name || 'Service';
+      (o.item_data.variations || []).filter(v => !v.is_deleted).forEach(v => {
+        const vd = v.item_variation_data || {};
+        const durMs = vd.service_duration || 0; // Square stores duration in milliseconds
+        const p = vd.price_money && typeof vd.price_money.amount === 'number' ? vd.price_money.amount / 100 : null;
+        const label = vd.name && vd.name.toLowerCase() !== 'regular' ? itemName + ' \u2014 ' + vd.name : itemName;
+        services.push({
+          variationId: v.id,
+          variationVersion: (v.version != null ? v.version : null),
+          name: label,
+          durationMinutes: durMs ? Math.round(durMs / 60000) : 60,
+          price: p,
+          teamMemberIds: Array.isArray(vd.team_member_ids) ? vd.team_member_ids : []
+        });
+      });
+    });
+  services.sort((a, b) => a.name.localeCompare(b.name));
+  return services;
+}
+
+// Match a free-text service name against her Square services. A client picks a NAME from the list
+// her app published; her Square may call the same thing "Signature Facial \u2014 60 min". Exact first,
+// then either side containing the other, then nothing — never a wrong guess, because booking the
+// wrong service books the wrong duration.
+export function matchSquareService(services, name) {
+  const want = String(name || '').trim().toLowerCase();
+  if (!want) return null;
+  const nm = x => String((x && x.name) || '').trim().toLowerCase();
+  return (services || []).find(x => nm(x) === want)
+      || (services || []).find(x => nm(x) && nm(x).indexOf(want) >= 0)
+      || (services || []).find(x => nm(x) && want.indexOf(nm(x)) >= 0)
+      || null;
+}
+
 export function providerFromReq(req) {
   const secret = process.env.SESSION_SECRET || '';
   const h = req.headers['authorization'] || '';

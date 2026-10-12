@@ -19,7 +19,7 @@
 // be an enumeration oracle for her client list. Free/busy is reduced to start+end times before it
 // leaves this module; the appointments it was computed from never go over the wire.
 import { sql, getKVValue } from './db.js';
-import { getConnection, squareFetch } from './square.js';
+import { getConnection, squareFetch, listBookableServices, matchSquareService, resolveLocationId, resolveLocationTz, zonedDayRange, zonedDateKey } from './square.js';
 import { getGoogleConnection, googleBusyMinutes } from './google-cal.js';
 
 const DAY_KEYS = ['sun', 'mon', 'tue', 'wed', 'thu', 'fri', 'sat'];
@@ -238,6 +238,75 @@ export async function busyRanges(providerId, dateISO, defaultMins, bufferMins) {
 
 // The times someone can actually pick for one day. [] means nothing free; null means we could not
 // tell (see busyRanges) and the caller should take a request instead.
+// ── Her SQUARE rules win, when she has Square ───────────────────────────────────────────────────
+// Ashley, 2026-10-12: "it also follows my square booking rules such as how for every treatment it
+// auto-blocks one hour after, which means that on tues, thurs, saturday i only book facials at 10,
+// 12, 2, and 4."
+//
+// The grid in openSlots below cannot produce that, and never could. It steps by the service length
+// and pads only around appointments that ALREADY exist, so an empty Tuesday offers 10, 11, 12, 1, 2.
+// The hour she blocks after every treatment is a SQUARE setting. So are per-service buffers, team
+// member availability, and her booking notice window (the 24-hour rule that explained her "missing"
+// slot on 2026-10-11). None of it is mirrored here, and mirroring it would mean asking her to
+// configure the same rules twice and then keeping two copies in step forever.
+//
+// So: when Square is connected and the service matches one of her Square services, ASK SQUARE.
+// /v2/bookings/availability/search is the same call the provider app's own Book in Square sheet
+// uses, and it applies every one of those rules plus everything already booked. Returns null for
+// anything it cannot answer — no Square, no matching service, an API failure — and the caller falls
+// back to the computed grid, which is still the right answer for a provider with no Square at all.
+export async function squareOpenSlots(providerId, dateISO, serviceName) {
+  const day = isoDay(dateISO);
+  if (!day) return null;
+  let conn = null;
+  try { conn = await getConnection(providerId); } catch (e) { return null; }
+  if (!conn || !conn.token) return null;
+  try {
+    const services = await listBookableServices(conn.token);
+    const svc = matchSquareService(services, serviceName);
+    // No name match means we cannot be sure WHICH service's rules to apply, and guessing would book
+    // the wrong duration. Fall back rather than answer confidently and wrongly.
+    if (!svc || !svc.variationId) return null;
+
+    const locationId = await resolveLocationId(conn.token, conn.locationId);
+    if (!locationId) return null;
+    const tz = await resolveLocationTz(conn.token, locationId);
+    const { start: dayStart, end: dayEnd } = zonedDayRange(day, tz);
+    const now = new Date();
+    const startAt = (dayStart > now ? dayStart : now);
+    if (startAt >= dayEnd) return [];                       // the day is already over where she is
+
+    const body = { query: { filter: {
+      start_at_range: { start_at: startAt.toISOString(), end_at: dayEnd.toISOString() },
+      location_id: locationId,
+      segment_filters: [{ service_variation_id: svc.variationId }]
+    } } };
+    const d = await squareFetch('/v2/bookings/availability/search', { method: 'POST', body }, conn.token);
+
+    // Square answers in UTC instants. Render each one as a wall-clock time in HER timezone, in the
+    // same "10:00 AM" shape fromMins() produces, so a caller cannot tell which engine answered.
+    const fmt = new Intl.DateTimeFormat('en-US', { hour: 'numeric', minute: '2-digit', hour12: true, timeZone: tz || 'UTC' });
+    const seen = {};
+    const out = [];
+    (d && d.availabilities || [])
+      .map(a => a && a.start_at)
+      .filter(Boolean)
+      // Belt and braces, same as the provider endpoint: a slot that is not on the requested day in
+      // her timezone never shows, whatever the window did.
+      .filter(iso => zonedDateKey(iso, tz) === day)
+      .sort()
+      .forEach(iso => {
+        const label = fmt.format(new Date(iso)).replace(/\u202f/g, ' ');
+        if (seen[label]) return;
+        seen[label] = 1;
+        out.push(label);
+      });
+    return out;
+  } catch (e) {
+    return null;                                            // fall back to the computed grid
+  }
+}
+
 export async function openSlots(providerId, dateISO, cfg, hours, serviceName) {
   const day = isoDay(dateISO);
   if (!day) return [];
@@ -248,6 +317,10 @@ export async function openSlots(providerId, dateISO, cfg, hours, serviceName) {
   if (!h || !h.open) return [];
   const open = toMins(h.start), close = toMins(h.end);
   if (open == null || close == null || close <= open) return [];
+
+  // Square's answer wins when it can give one: it is the only place her real booking rules live.
+  const sq = await squareOpenSlots(providerId, day, serviceName);
+  if (sq) return sq;
 
   // How long THIS service takes. A 20-minute brow tidy and a 2-hour facial should not offer the same
   // grid, and a long one must not be offered in a gap it cannot finish inside.

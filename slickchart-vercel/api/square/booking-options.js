@@ -7,7 +7,7 @@
 // to have "Items (read)" + "Appointments (read)" permissions. If Appointments
 // isn't set up, `services`/`teamMembers` come back empty and the app falls back
 // to its own local booking instead of erroring.
-import { squareFetch as _sqf, sqContext, resolveLocationId } from '../../lib/square.js';
+import { squareFetch as _sqf, sqContext, resolveLocationId, listBookableServices } from '../../lib/square.js';
 
 export default async function handler(req, res) {
   if (req.method !== 'GET') { res.status(405).json({ error: 'Method not allowed' }); return; }
@@ -17,39 +17,11 @@ export default async function handler(req, res) {
   try {
     const locationId = await resolveLocationId(ctx.token, ctx.locationId);
 
-    // ── 1) Bookable services (APPOINTMENTS_SERVICE items → their variations) ──
-    const objects = [];
-    let cursor = '', guard = 0;
-    do {
-      const qs = new URLSearchParams({ types: 'ITEM' });
-      if (cursor) qs.set('cursor', cursor);
-      const data = await sf('/v2/catalog/list?' + qs.toString());
-      (data.objects || []).forEach(o => objects.push(o));
-      cursor = data.cursor || '';
-      guard++;
-    } while (cursor && guard < 25);
-
-    const services = [];
-    objects
-      .filter(o => o.type === 'ITEM' && !o.is_deleted && o.item_data && o.item_data.product_type === 'APPOINTMENTS_SERVICE')
-      .forEach(o => {
-        const itemName = o.item_data.name || 'Service';
-        (o.item_data.variations || []).filter(v => !v.is_deleted).forEach(v => {
-          const vd = v.item_variation_data || {};
-          const durMs = vd.service_duration || 0; // Square stores duration in milliseconds
-          const p = vd.price_money && typeof vd.price_money.amount === 'number' ? vd.price_money.amount / 100 : null;
-          const label = vd.name && vd.name.toLowerCase() !== 'regular' ? itemName + ' — ' + vd.name : itemName;
-          services.push({
-            variationId: v.id,
-            variationVersion: (v.version != null ? v.version : null),
-            name: label,
-            durationMinutes: durMs ? Math.round(durMs / 60000) : 60,
-            price: p,
-            teamMemberIds: Array.isArray(vd.team_member_ids) ? vd.team_member_ids : []
-          });
-        });
-      });
-    services.sort((a, b) => a.name.localeCompare(b.name));
+    // ── 1) Bookable services ──
+    // Shared with lib/booking.js, which needs the same list to ask Square what is free. One
+    // implementation: two catalog walks would drift, and the copy clients depend on would be the
+    // one nobody notices has gone wrong.
+    const services = await listBookableServices(ctx.token);
 
     // ── 2) Bookable team members ──
     let teamMembers = [];

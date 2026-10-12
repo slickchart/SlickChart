@@ -5312,3 +5312,60 @@ Client side, `refreshRebookTimes()` now fetches it, with `_rbReq` so a stale res
 previously tapped date can never paint over a newer one. The hours-derived grid survives only as a
 labelled fallback for the sample space (no token) and for `unknown`. Verified against a mocked route
 on four paths: live times, unknown, network failure, and a genuinely full day.
+
+---
+
+## 2av. Availability must follow her SQUARE booking rules, not a grid we compute (2026-10-12, OPEN)
+
+### What Ashley stated — her words, before any theory
+
+*"can we make it so it also follows my square booking rules such as how for every treatment it
+auto-blocks one hour after, which means that on tues, thurs, saturday i only book facials at 10, 12,
+2, and 4"*
+
+Facts to hold on to:
+- Her rule lives in **Square**, configured there, and she does not want to configure it twice.
+- Every treatment **auto-blocks one hour after it**.
+- The consequence she named: Tue / Thu / Sat facials start only at **10, 12, 2, 4**.
+
+### Why the engine cannot produce that today
+
+`openSlots()` in `lib/booking.js` builds its OWN grid: it steps from her open time by
+`serviceMins(svc,cfg)` and rejects a step only if it clashes with `busyRanges()`. The buffer
+(`cfg.bufferMins`) is padded around **appointments that already exist** — it does not widen the grid
+itself. So on an EMPTY Tuesday a 60-minute facial yields 10, 11, 12, 1, 2, 3, 4. Her answer is
+10, 12, 2, 4. The hour she blocks after every treatment is not part of the step at all.
+
+Square already computes this correctly: `/v2/bookings/availability/search` honours the seller's
+booking availability, the service's duration, its buffer-before/after, team member availability and
+existing bookings. `api/square/availability.js` (provider-facing) already calls it. `openSlots` does
+not, which is why the two can disagree.
+
+### FIXED 2026-10-12 — `openSlots` now asks Square first
+
+`squareOpenSlots(providerId, dateISO, serviceName)` in `lib/booking.js`, called at the top of
+`openSlots`. When she has Square connected AND the service name matches one of her Square services,
+Square's own answer is returned verbatim. Everything else falls back to the computed grid, which is
+still correct for a provider with no Square at all.
+
+**This fixes the public booking page and the client app at once**, because both already went through
+`openSlots`. That was the reason to put it there rather than in the new endpoint.
+
+- **Returns `null`, not `[]`, on anything it cannot answer** — no Square, no name match, an API
+  failure — so the caller falls back rather than showing an empty day. A no-match in particular must
+  not become "fully booked": guessing the wrong service books the wrong duration, so it declines to
+  answer instead.
+- **`matchSquareService`** (lib/square.js) matches exact, then either side containing the other, so
+  a client picking "Signature Facial" finds her Square's "Signature Facial — 60 min". Never a looser
+  guess than that.
+- **`listBookableServices`** was extracted to `lib/square.js` and `api/square/booking-options.js` now
+  uses it too. One catalog walk, not two drifting copies — the same lesson as the CI build-script
+  drift found earlier the same day.
+- Times are rendered in HER timezone via `Intl` and must come out byte-identical to `fromMins()`, so
+  a caller cannot tell which engine answered.
+
+**Verified** with `scratchpad/test-square-rules.mjs`: service-name matching across seven cases
+including a deliberate no-match, and her stated 10 / 12 / 2 / 4 rendering asserted on **both sides of
+the DST change** (2026-11-03 PST at UTC-8 and 2026-10-13 PDT at UTC-7). The first run of that test
+FAILED because the test itself used UTC-7 instants for a PST date — the same DST trap as the Square
+day window on 2026-10-11. The code was right; the expectation was wrong. Keep both dates in it.
