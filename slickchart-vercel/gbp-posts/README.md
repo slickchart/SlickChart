@@ -23,6 +23,16 @@ Files are `YYYY-MM-DD-slickchart.txt` and `YYYY-MM-DD-build.txt`, plain text, re
 5. **No em dashes.** Consistent with `/build`, `/free` and both blogs.
 6. **An image with every post**, made from the **real UI**, 4:3, at least 1200x900.
 
+## The business description
+
+Separate from the posts: GBP has **one** description field, **750 characters**, and it describes the
+business rather than a post. Same two rules apply, so target **720 to 749** and lead with the search
+terms. Keep both products in it, because the one listing covers both. `2026-10-12-business-description.txt`
+holds the current wording and an alternative that leads with SlickChart.
+
+Only one of them can be live at a time. When it changes, update that file so there is a record of
+what the listing actually says.
+
 ## The rules that come from elsewhere and still apply
 
 - **Never state a competitor's price or feature from memory.** Same rule as `blog-src/README.md`. If
