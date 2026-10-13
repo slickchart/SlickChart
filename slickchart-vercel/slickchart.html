@@ -3529,7 +3529,7 @@ const Cloud={
     this.enabled=false;this.statusUnknown=true;this._statusKnown=true;
     return this.enabled;
   },
-  async login(email,pw,totpCode){const r=await fetch('/api/login',{method:'POST',headers:{'Content-Type':'application/json'},body:JSON.stringify({email,password:pw,totpCode})});let j={};try{j=await r.json();}catch(e){}if(!r.ok||!j.token){const err=new Error((j&&j.error)||(j&&j.requiresTotp?'Enter your authenticator code':'Login failed'));err.requiresTotp=!!(j&&j.requiresTotp);throw err;}this.token=j.token;try{localStorage.setItem('sc_token',this.token);if(j.email)localStorage.setItem('sc_login_email',j.email);localStorage.setItem('sc_totp_enabled',j.totpEnabled?'1':'0');}catch(e){}return j;},
+  async login(email,pw,totpCode){const r=await fetch('/api/login',{method:'POST',headers:{'Content-Type':'application/json'},body:JSON.stringify({email,password:pw,totpCode})});let j={};try{j=await r.json();}catch(e){}if(!r.ok||!j.token){const err=new Error((j&&j.error)||(j&&j.requiresTotp?'Enter your authenticator code':'Login failed'));err.requiresTotp=!!(j&&j.requiresTotp);err.checkoutUrl=j&&j.checkoutUrl;throw err;}this.token=j.token;try{localStorage.setItem('sc_token',this.token);if(j.email)localStorage.setItem('sc_login_email',j.email);localStorage.setItem('sc_totp_enabled',j.totpEnabled?'1':'0');}catch(e){}return j;},
   async signup(email,pw,name,optIn){const r=await fetch('/api/signup',{method:'POST',headers:{'Content-Type':'application/json'},body:JSON.stringify({email,password:pw,name,optIn:!!optIn})});let j={};try{j=await r.json();}catch(e){}if(!r.ok){const err=new Error((j&&j.error)||'Sign up failed');err.checkoutUrl=j&&j.checkoutUrl;throw err;}this.token=j.token;try{localStorage.setItem('sc_token',this.token);if(j.email)localStorage.setItem('sc_login_email',j.email);}catch(e){}return j;},
   async requestReset(email){try{await fetch('/api/request-reset',{method:'POST',headers:{'Content-Type':'application/json'},body:JSON.stringify({email})});}catch(e){}return true;},
   async resetPw(token,pw){const r=await fetch('/api/reset',{method:'POST',headers:{'Content-Type':'application/json'},body:JSON.stringify({token,password:pw})});let j={};try{j=await r.json();}catch(e){}if(!r.ok)throw new Error((j&&j.error)||'Reset failed');return true;},
@@ -5373,6 +5373,19 @@ function renderLogin(err){
   setTimeout(()=>{const f=mode==='totp'?'login-totp':mode==='newpw'?'login-pw':(mode==='signup'?'login-name':((_prefillEmail()&&mode==='login')?'login-pw':'login-email'));const i=document.getElementById(f);if(i&&i.focus)try{i.focus();}catch(e){}},40);
 }
 function _loginVal(id){const el=document.getElementById(id);return el?el.value.trim():'';}
+// A 402 from /api/login carries a checkoutUrl so someone whose card failed can pay and get back in.
+// Only the SIGN-UP screen ever rendered it, so a provider RENEWING saw "Your subscription isn't
+// active. Please renew to continue." with nothing to click and no way to reach billing - billing
+// lives behind the login they are being refused. Reported by a provider, 2026-10-13.
+// Not in the native app: an external payment link there breaks Apple's rules (same guard as signup).
+function _loginErr(e,fallback){
+  const er=document.getElementById('login-err');if(!er)return;
+  const msg=String((e&&e.message)||fallback);
+  const url=(e&&e.checkoutUrl&&!_isNativeApp()&&typeof _safeUrl==='function')?_safeUrl(e.checkoutUrl):'';
+  if(url){er.innerHTML=msg.replace(/</g,'&lt;').replace(/>/g,'&gt;')
+    +' <a href="'+_urlAttr(url)+'" style="color:var(--accent-strong);text-decoration:underline;">Renew now &rarr;</a>';}
+  else er.textContent=msg;
+}
 function doLogin(){
   const email=_loginVal('login-email');const pw=(document.getElementById('login-pw')||{}).value||'';
   const er=document.getElementById('login-err');if(er)er.textContent='';
@@ -5382,7 +5395,7 @@ function doLogin(){
     const ov=document.getElementById('login-screen');if(ov)ov.remove();nav('home');
   }).catch(e=>{
     if(e&&e.requiresTotp){_pendingTotpEmail=email;_pendingTotpPw=pw;_setLoginMode('totp');return;}
-    const er=document.getElementById('login-err');if(er)er.textContent=(e&&e.message)||'Login failed';
+    _loginErr(e,'Login failed');
   });
 }
 function doLoginTotp(){
@@ -5392,7 +5405,7 @@ function doLoginTotp(){
     try{const n=await Cloud.pull();if(n===0)await Cloud.pushAllLocal();else try{localStorage.setItem('sc_onboarded','1');}catch(e){} _reloadAll();}catch(e){}
     _pendingTotpEmail='';_pendingTotpPw='';
     const ov=document.getElementById('login-screen');if(ov)ov.remove();nav('home');
-  }).catch(e=>{const er=document.getElementById('login-err');if(er)er.textContent=(e&&e.message)||'Invalid code';});
+  }).catch(e=>{_loginErr(e,'Invalid code');});
 }
 function doSignup(){
   const email=_loginVal('login-email');const pw=(document.getElementById('login-pw')||{}).value||'';const name=_loginVal('login-name');
