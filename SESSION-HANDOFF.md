@@ -6581,6 +6581,12 @@ the first time she ran this, "which build am I on" is answerable.
 | 1 | **COMPUTER**, Safari, the **preview** URL (`…ecstatic-mccarthy-ynt869…`), not the phone | Client "Ashley Watson" (herself as the test client): Session summaries → **1 summary**, titled "Test A", Oct 13, 2026, full text present | **PASS** |
 | 2 | **COMPUTER**, Safari, preview, client app in a second tab | Home → "After Your Visit" → "Latest summary & aftercare, Test A · from Ashley", full text shown; Journey/Homecare/Messages/Shop tabs present | **PASS** |
 
+| 4 (partial) | **COMPUTER**, Safari, preview, provider | 14:24 and 14:27: Ashley Watson still "Session summary · 1 saved", Test A present (~45 min after saving) | holding; 90-min check due ~15:10 |
+| 2 (again) | **COMPUTER**, Safari: LIVE client app `slickchart.app/space?c=rBdf…` AND the same link on the preview | both show Session Recaps, Oct 13th 2026, Test A text; 5 messages | **PASS** |
+
+A preview client tab opened another way showed "No recaps yet" and 2 messages — a different "Ashley
+Watson" record (her account has several test ones). Same link on the preview showed it. Not a bug.
+
 Note: Parts 1 and 2 ran on the computer against the preview, not on the phone as written. That
 does not weaken Part 3: the summary is now on the account, and Part 3 (phone, installed app, live
 build `2026-10-12a`, which carries `57f2624`) tests whether an offline launch on the phone wipes it.
