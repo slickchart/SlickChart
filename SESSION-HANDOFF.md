@@ -6048,3 +6048,73 @@ Negative control against `HEAD`: all three untouched starters still shown.
 
 Her account's existing `sc_shop_catalog` still holds the old list until her app next runs
 `_syncShopCatalog()`, which happens at boot — so this takes effect on her next launch, not retroactively.
+
+## 2ba. Visibility sweep — a tool, not another one-button guess (2026-10-12)
+
+Ashley: *"the request appointment button coloring is still not good. make sure to follow visibility
+compliance and sweep every button + funciton across all apps both client and provider."*
+
+**She was right and my earlier measurement was not representative.** I reported 8.41:1 for that button
+from a run with **no brand colour set**, so the tokens fell back to static defaults. Every surface
+token in these apps is computed at runtime from the provider's brand colour — measuring one colour
+proves nothing about anyone else's app. That is the lesson: for anything theme-derived, a single
+measurement is an anecdote.
+
+### `scratchpad/sweep-contrast.mjs`
+
+Drives BOTH apps headless across **2 themes × 5 brand colours × ~45 screens** and checks:
+
+- **1.4.3 text** — 4.5:1, or 3:1 for large (≥24px, or ≥18.66px bold)
+- **1.4.11 controls** — 3:1 for a control's own boundary against what surrounds it
+
+It composites translucent layers, takes **both ends of a gradient** as separate backdrops (a gradient
+reads as `transparent` to `getComputedStyle` — CLAUDE.md §2), and groups findings by colour pair so
+one token problem is one line, not forty.
+
+**Three false-positive classes it has to exclude, all learned the hard way:**
+
+1. `background-clip:text` gradient text (`.brandc`) reads as "ink equals background" — 1.00:1 that is
+   not real.
+2. A control with **no** fill and no border is identified by its label; 1.4.3 covers it. Only a box
+   that IS drawn and drawn too faintly fails 1.4.11.
+3. `borderTopColor` is black by default on a side with **zero width**, so a row with only a bottom
+   divider reported "black border on a dark card". Require all four sides before calling it a box.
+
+A finding the tool invents costs exactly as much credibility as one it misses.
+
+### Client app: 98 distinct problems → 18, and almost all of it was FOUR root causes
+
+1. **`--accent-onDark` had no static `:root` default** — the only token in the file without one, and it
+   colours every piece of text and both actions on the always-dark next-appointment card. Until
+   `_scApplyTheme()` runs (first paint, a brand payload that has not arrived, any throw inside it),
+   `color:var(--accent-onDark)` is an invalid value, the declaration is dropped, and the text inherits
+   near-black **on a dark card**: measured **1.68:1**. This is the most likely thing Ashley was
+   actually looking at.
+2. **`--accent-lt` / `--accent-lt2` invert with the theme only inside JS.** The static values are the
+   LIGHT ones, so a dark-mode screen painted pale panels and then put dark-mode muted ink on them —
+   1.72:1. Dark defaults added, matching what `_scApplyTheme` computes for the default brand.
+3. **`--c-line` is 1.09:1 against a white card.** Fine for a divider, which is decorative and exempt;
+   not fine as a button's boundary. New `--c-line-ctl` (**#7e8c86** light / **#667870** dark, both
+   measured ≥3:1) is used by `.btng`, `.pill`, `.fi`, `.check-circle`, `button.card`, and by every
+   inline-styled `<button>`, `<select>` and `role="button"` container. Dividers, the shell, the topbar
+   and the nav bar keep `--c-line`.
+4. **Text on the always-dark brand cards used `--accent-lt2`**, which now correctly goes dark in dark
+   mode — so it had to move to `--accent-onDark`. The "Private link" pill is the exception and is
+   pinned to a matched light pair (`#123a35` on `#d8efe8`), because that pill is light in both themes.
+
+Also: the Request action is now a **solid** accent button with a light hairline (brand-proof boundary;
+a solid fill alone measured 2.95:1 against that card), unavailable calendar dates moved from
+`--c-mut2` at .55 opacity (**1.73:1** — she complained about exactly this) to `--c-mut`, and a
+hardcoded `#c4b9ae` "Not set" became `--c-mut`.
+
+### Provider app
+
+**371 distinct problems, not yet fixed.** First pass showed the worst (1.00:1) only occur with a
+near-black brand, where the provider app uses the brand colour as text without the
+`_readableAccent()` deepening the client app applies. Full report pending a re-run; the first attempt
+was truncated because the command was piped through `head`, which killed the stream.
+
+### Do not regress this
+
+Run `node scratchpad/sweep-contrast.mjs` after any change to colour, a token, or a button. It is a
+hand-run sweep today; it needs a browser, which CI does not currently install.

@@ -29,11 +29,11 @@ async function run(label, services){
     nav('rebook');
     return new Promise(res=>setTimeout(()=>{
       // Scope to the service section: the date calendar also uses aria-pressed buttons.
-      const h=[...document.querySelectorAll('h2')].find(x=>x.textContent.trim()==='Preferred service');
-      const sec=h?h.closest('.sh').nextElementSibling:null;
-      const btns=sec?[...sec.querySelectorAll('button[aria-pressed]')].map(x=>x.textContent.trim()):[];
-      const on=sec?sec.querySelector('button[aria-pressed="true"]'):null;
-      res({chips:btns, selected:on?on.textContent.trim():'', body:(document.body.innerText||'')});
+      // The picker is a dropdown now (Ashley asked for one on 2026-10-12); the VALUES are what the
+      // request carries, so assert on those rather than on the shortened labels.
+      const sel=document.getElementById('rebook-svc');
+      const vals=sel?[...sel.options].map(o=>o.value):[];
+      res({chips:vals, selected:sel?sel.value:'', body:(document.body.innerText||'')});
     },600));
   });
   await p.close();
