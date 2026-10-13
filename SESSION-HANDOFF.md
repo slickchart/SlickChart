@@ -6707,6 +6707,28 @@ A summary stores products as NAMES (`productDetail.map(p=>p.name)`); `renderLate
 matching live recommendation (keeps Buy) or `{name}`. Empty homecare/products cards are now hidden.
 `scratchpad/test-client-summary-products.mjs` 6/6; three FAIL on the previous client page.
 
+### 141 copies of Cooper Howard — one-tap tidy per name, build `2026-10-13p`
+
+Her observation (COMPUTER, preview, 15:21): searching "cooper howard" shows **141 records**, all "NOT in
+their list", most "nothing stored"; one (`c1786666343193`) holds "1 chart field · 1 form". Her words:
+*"im not doing this 141 times thats crazy"*, and *"shes a newer client who has only been in 2 or 3
+times"* (her Square: first visit 2026-08-13, 3 transactions).
+
+Almost certainly the booking-toast loop: every launch `_upsertClientsFromSquare` made a NEW client
+record (`_newClientId`, `c<timestamp><rand>`) for each booker it could not match, and each reached the
+server. That loop is fixed on this branch (13h + 13k) but **live (build 12a) still runs it**, so
+copies keep accruing on every launch of the live app until the branch ships.
+
+`consolidateName(q, owner, name)` (exported, POST `consolidateName`): keeps the best live row of that
+exact name (already in her list > holds the most: chart/forms, saved work under its id, submissions,
+opened, invited > oldest by the timestamp in the id), adds it to her `sc_clients`, and soft-deletes
+(`deleted_at`) ONLY copies holding nothing; copies holding anything are left and listed. A copy of
+`sc_clients` goes to kv_history first; an unreadable list changes nothing; every statement is scoped
+to the provider. Screen: the search card offers "Keep one <name>, remove empty copies" when the
+matches are many live copies of one name; it sends the NAME, never ids.
+`scratchpad/test-consolidate.mjs` 10/10 (141 rows: keeps the chart+form one, retires 139, leaves the
+opened one, other provider untouched); `test-recover-search.mjs` 11/11.
+
 ### Cooper Howard was in the "never in their list" junk class — locked, plus search — build `2026-10-13o`
 
 Her observation (COMPUTER, preview, Recover clients on her own email, 15:15): the "148 never in their

@@ -154,6 +154,66 @@ export function clientContent(dataRaw) {
 //
 // This is ONE function on purpose. The report she approves and the delete that follows have to be
 // computed the same way, or she approves one set and a different set is taken.
+// See the comment at the call site in the handler.
+export async function consolidateName(q, owner, name) {
+  const nm = String(name || '').trim();
+  if (nm.length < 2) { return { status: 400, body: { error: 'Give a name.' } }; }
+  const rows = await q`SELECT id, name, email, phone, data, opened_at, invited_at FROM clients
+    WHERE provider_id=${owner} AND deleted_at IS NULL AND lower(trim(coalesce(name,'')))=lower(${nm})`;
+  if (rows.length < 2) { return { status: 400, body: { error: 'There is only ' + rows.length + ' record with that name, nothing to tidy.' } }; }
+  const rv = await q`SELECT v FROM kv WHERE owner=${owner} AND k='sc_clients'`;
+  let roster = {}; try { roster = rv.length ? (JSON.parse(rv[0].v) || {}) : {}; } catch (e) { roster = {}; }
+  if (!rv.length || Array.isArray(roster) || typeof roster !== 'object') { return { status: 400, body: { error: 'Their client list could not be read, so nothing was changed.' } }; }
+  const work = {};
+  for (const k of ['sc_session_summaries', 'sc_client_recs', 'sc_client_homecare', 'sc_body_maps', 'sc_note_drafts', 'sc_photo_index', 'sc_summary_drafts']) {
+    try {
+      const wr = await q`SELECT entry.key AS id FROM kv, jsonb_each(kv.v::jsonb) AS entry
+        WHERE kv.owner=${owner} AND kv.k=${k} AND jsonb_typeof(kv.v::jsonb)='object'`;
+      (wr || []).forEach(x => { work[String(x.id)] = (work[String(x.id)] || 0) + 1; });
+    } catch (e) {}
+  }
+  const ev = {};
+  try {
+    const eg = await q`SELECT client_id, count(*)::int AS n FROM client_events WHERE provider_id=${owner} GROUP BY client_id`;
+    (eg || []).forEach(r => { ev[String(r.client_id)] = Number(r.n) || 0; });
+  } catch (e) {}
+  const born = id => { const m = String(id).match(/(\d{13})/); return m ? Number(m[1]) : Number.MAX_SAFE_INTEGER; };
+  const scored = rows.map(r => {
+    const id = String(r.id), c = clientContent(r.data);
+    const holds = (c.holds || []).length + (c.unreadable ? 1 : 0);
+    const score = (roster[id] ? 1000 : 0) + holds * 10 + (work[id] || 0) * 20 + (ev[id] || 0) * 20 + (r.opened_at ? 5 : 0) + (r.invited_at ? 3 : 0);
+    return { r, id, score, empty: !holds && !work[id] && !ev[id] && !r.opened_at && !r.invited_at && !roster[id] };
+  }).sort((a, b) => (b.score - a.score) || (born(a.id) - born(b.id)));
+  const keep = scored[0];
+  const keepWasInList = !!roster[keep.id];
+  const retire = scored.slice(1).filter(x => x.empty).map(x => x.id);
+  const leftAlone = scored.slice(1).filter(x => !x.empty).map(x => ({ id: x.id, why: 'holds something' }));
+  try { await ensureHistoryTable(); } catch (e) {}
+  try {
+    await q`INSERT INTO kv_history (owner, k, v, bytes, items, reason)
+      VALUES (${owner},'sc_clients',${rv[0].v},${String(rv[0].v || '').length},${itemCount(rv[0].v)},'before-restore')`;
+  } catch (e) { return { status: 500, body: { error: 'Could not keep a copy of their list first, so nothing was changed.' } }; }
+  if (!roster[keep.id]) {
+    let d = {}; try { d = typeof keep.r.data === 'string' ? JSON.parse(keep.r.data) : (keep.r.data || {}); } catch (e) { d = {}; }
+    const pf = (d.profile && typeof d.profile === 'object') ? d.profile : {};
+    const kv2 = v => String(v == null ? '' : v).trim();
+    roster[keep.id] = { name: keep.r.name || nm, email: keep.r.email || '', phone: keep.r.phone || '',
+      skin: kv2(pf.skin), concerns: kv2(pf.concerns), allergies: kv2(pf.allergies), fitz: kv2(pf.fitz), treatment: kv2(pf.treatment),
+      lastVisit: kv2(pf.lastVisit), nextVisit: kv2(pf.nextVisit), summaries: Array.isArray(d.summaries) ? d.summaries : [] };
+    await q`INSERT INTO kv (owner,k,v,updated_at) VALUES (${owner},'sc_clients',${JSON.stringify(roster)},now())
+      ON CONFLICT (owner,k) DO UPDATE SET v=EXCLUDED.v, updated_at=now()`;
+  }
+  let retired = 0;
+  for (let i = 0; i < retire.length; i += 200) {
+    const chunk = retire.slice(i, i + 200);
+    const out = await q`UPDATE clients SET deleted_at=${Date.now()} WHERE provider_id=${owner} AND deleted_at IS NULL AND id = ANY(${chunk}) RETURNING id`;
+    retired += (out || []).length;
+  }
+  return { status: 200, body: { ok: true, kept: { id: keep.id, name: keep.r.name || nm, wasInList: keepWasInList },
+    retired, leftAlone, total: rows.length,
+    note: 'The copies are on the Removed list, so any of them can be put back.' } };
+}
+
 export async function classifyJunk(q, owner) {
   const rows = await q`SELECT id, name, deleted_at, opened_at, invited_at, data
     FROM clients WHERE provider_id=${owner} ORDER BY lower(coalesce(name,''))`;
@@ -389,6 +449,21 @@ export default async function handler(req, res) {
       // built from the clients table (name, contact, profile, and the ownerId/isAnimal links that
       // keep a horse under its owner) and carry NO _uAt, so the moment her device has a better
       // copy of one, _mergeClients prefers hers.
+      // ── ONE CLIENT, MANY COPIES: keep the real one, retire the empty copies ──────────
+      // Ashley, 2026-10-13: Cooper Howard (a real, newer client, 2–3 visits) had 141 live rows, none
+      // in her list. The "N new online bookings added" loop created a fresh row for every booker it
+      // could not match on every launch, and each one reached the server. "im not doing this 141
+      // times". So: one call per NAME. It keeps the best row (already in her list, else the one
+      // holding the most — chart, forms, saved work filed under its id, submissions, opened link —
+      // else the oldest), puts that one in her list, and SOFT-deletes only copies that hold nothing
+      // at all. Soft delete sets deleted_at, so every copy stays on the Removed list and can be put
+      // back. A copy holding anything is kept and named in the reply, never touched.
+      if (body.consolidateName) {
+        const out = await consolidateName(q, owner, body.consolidateName);
+        res.status(out.status).json(out.body);
+        return;
+      }
+
       if (body.repairRoster) {
         const rv = await q`SELECT v FROM kv WHERE owner=${owner} AND k='sc_clients'`;
         let roster = {};
