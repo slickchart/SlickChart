@@ -6532,3 +6532,99 @@ Square gets no tick at all, just a line saying so. Square failures (a customer S
 release) are reported per id and never stop the rest, and the row deletion still stands.
 
 Build `2026-10-13c`. 25 checks in `scratchpad/test-junk-square.mjs`.
+
+---
+
+## §2bc. THE DIANA TEST — Ashley runs this herself, on her own devices. NOT YET RUN.
+
+She asked for it in her own words: *"I want to run my own test on my own client and provider app
+with what diana has been experiencing to make sure it's fixed before I reply to her saying it is
+again."* It is written here rather than left in a chat because that is the whole point — a new
+session has to be able to pick it up without her retyping any of it.
+
+**Diana's observations, which are GROUND TRUTH (§1b).** A theory that contradicts one of these is
+wrong; discard the theory, not the observation.
+
+| # | her words |
+|---|---|
+| 28 | present at 4:30pm, gone by 6:00pm |
+| 31 | **"I'm only on my phone"** — her computer app was shut off |
+| 29 | without the summary, the notes and guides go too |
+| 22 | profile says "no saved summaries" and "no sessions" |
+| 14 | saved it, logged out and back in, gone |
+
+Observation 31 is the one that mattered: **one device, no second device.** Three earlier fixes were
+all device-vs-device merge fixes and none of them could ever have touched her case.
+
+**The root cause that shipped in `57f2624`:** a failing `/api/cloud-status` at launch (a 500, a
+captive-portal HTML reply, a dropped request) leaves `Cloud.enabled=false`; boot then takes an
+early-return path and never calls `_reloadAll()`; `sessionSummaries`, `clientRecs`, `recReasons`
+and `clientHomecare` are `{}` in memory while her disk still holds them; one ordinary action
+persists `{}` over the disk; the next good launch pushes the empty map up to the account. The fix
+loads those four libraries straight after `_hydrateOffloaded()` in `_cloudInit`, and `_libSafeToPersist`
+refuses to write a library that was never read.
+
+**Part 3 is the one that tests what actually changed.** Parts 1, 2, 4, 5 and 6 cover her other
+reported symptoms. The build stamp now moves with each change (it reads `2026-10-13c`), so unlike
+the first time she ran this, "which build am I on" is answerable.
+
+### Before she starts
+
+- **Run the recovery check on her own email and paste it.** That is the known-good "before", so if
+  anything does go wrong it can be seen and put back. Not optional.
+- **Delete no clients during the test.** Nothing here needs it.
+
+### Part 1 — does a summary stick at all
+On her **phone**, provider app:
+1. Force-quit SlickChart completely (swipe it out of the app switcher), then open it fresh.
+2. Pick any real client.
+3. Save a session summary, noted **`TEST A`** plus the time, e.g. `TEST A 10:42`.
+4. Open that client's profile.
+
+**Pass:** it says **1 saved summary** and the note is there. **Fail:** "no saved summaries" / "no sessions".
+
+### Part 2 — the client's side
+5. Open that client's own link in their app.
+
+**Pass:** the summary is in their journey, and notes and guides are reachable.
+**Fail:** journey empty, or the other sections vanish with it ← observation 29.
+
+### Part 3 — the actual bug
+Recreates the condition that was fixed: a launch whose first network call fails — on a phone that
+is a weak signal, a dead spot, or hotel wifi.
+
+6. Force-quit SlickChart.
+7. **Turn on Airplane Mode.**
+8. Open SlickChart while it is offline. Let it sit about 10 seconds.
+9. Move around: Clients, open a client, back to Home.
+10. Write a treatment note on any client. Anything, `test`.
+11. **Turn Airplane Mode off.** Wait 30 seconds.
+12. Force-quit and reopen.
+13. Open the Part 1 client, then **two or three other clients known to have summaries**.
+
+**Pass:** `TEST A` is still there, and the other clients still have theirs.
+**Fail:** anything missing, from any client ← before the fix, step 10 wiped **every** client's
+summaries and product plans.
+
+### Part 4 — her 90-minute window
+14. Set a timer for 90 minutes, use the app normally in between.
+15. Re-check the Part 1 client. **Pass:** still there.
+
+### Part 5 — log out and back in
+16. Log out, log back in, check the same client. **Pass:** still there ← observation 14.
+
+### Part 6 — both devices
+17. On her **computer**, open the app, let it finish loading, check the same client.
+18. Back on the **phone**, force-quit, reopen, check again.
+
+**Pass:** present in both, and still present on the phone afterwards.
+
+### If any step fails
+Stop. Screenshot it, run the recovery check again, send both. Do not carry on to the next part —
+the account wants looking at in that state.
+
+### Afterwards
+The reply to Diana follows §4c: thank her first and name what she did that helped (her
+"I'm only on my phone" is what found it), one line that it is fixed, **no mechanism and no cause**,
+no em dashes, around a 3rd-grade reading level. And **nothing about data being lost unless a
+recovery check proved it with numbers.**
