@@ -80,6 +80,162 @@ function describe(dataRaw) {
   };
 }
 
+// ── WHAT A CLIENT ROW ACTUALLY HOLDS ───────────────────────────────────────────────────────────
+// describe() above counts what the recovery screen DISPLAYS. This counts what would be LOST if the
+// row were deleted, which is a different and strictly larger question: _assembleClientData also
+// puts aftercare, a routine, pending guides and courses, a consult invite, a routine review, a
+// suggested booking, a check-in request and loyalty into the blob, and describe() reads none of
+// them. A purge that asked describe() alone would call a row carrying a homecare list "empty".
+//
+// SIZE IS NO GUIDE HERE. Every blob is stamped with the studio name, address, phone, website,
+// provider name, booking config and availability — provider-wide fields that are identical on a
+// never-touched skeleton — so a blank row is still several hundred bytes. The test is per-field and
+// counts only the fields that belong to THIS client.
+//
+// UNREADABLE COUNTS AS FULL. If this cannot parse the blob it does not know what is in it, and the
+// only safe answer to "may I delete this" is no.
+const CLIENT_FIELDS = ['summaries', 'aftercare', 'products', 'routine', 'forms', 'pendingForms',
+  'pendingGuides', 'pendingCourses', 'progressPhotos', 'animals'];
+export function clientContent(dataRaw) {
+  let d = null;
+  try { d = typeof dataRaw === 'string' ? JSON.parse(dataRaw) : dataRaw; }
+  catch (e) { return { unreadable: true, holds: ['could not be read'] }; }
+  if (d == null) return { holds: [] };
+  if (typeof d !== 'object' || Array.isArray(d)) return { unreadable: true, holds: ['could not be read'] };
+  const holds = [];
+  for (const k of CLIENT_FIELDS) {
+    const v = d[k];
+    const n = Array.isArray(v) ? v.length : (v && typeof v === 'object' ? Object.keys(v).length : 0);
+    if (n) holds.push(n + ' ' + k);
+  }
+  // The same placeholder rule the app uses (_isPlaceholderChart): the app seeds a new client with
+  // skin '—', concerns '—', allergies 'None noted', fitz '—', treatment 'New client', so an empty
+  // skeleton scored five filled fields and every row read as real. Placeholders are the app's
+  // words, not hers.
+  const p = (d.profile && typeof d.profile === 'object') ? d.profile : {};
+  const typed = ['skin', 'concerns', 'allergies', 'fitz', 'treatment', 'lastVisit', 'nextVisit']
+    .filter(k => { const v = String(p[k] || '').trim();
+      return v && !/^(—|-|–|n\/a|none|none noted|not scheduled|new client|unknown)$/i.test(v); });
+  if (typed.length) holds.push(typed.length + ' chart field' + (typed.length > 1 ? 's' : ''));
+  if (d.vcInvite && typeof d.vcInvite === 'object' && Object.keys(d.vcInvite).length) holds.push('a consult invite');
+  if (d.routineReview) holds.push('a routine review');
+  if (d.suggestedBooking) holds.push('a suggested booking');
+  if (Number(d.checkinReqAt) > 0) holds.push('a check-in request');
+  if (d.loyalty && typeof d.loyalty === 'object' && Object.keys(d.loyalty).length) holds.push('loyalty points');
+  return { holds };
+}
+
+// ── THE JUNK REPORT, and the only thing a purge is allowed to take ────────────────────────────
+// Ashley, 2026-10-13, looking at her own account in this screen: "i saw it has all the junk data
+// clients on the server still. we can get rid of all of those."
+//
+// Her account carries thousands of client rows for a one-person practice. They are not inert:
+// _syncEvents polls /api/clients every 15 seconds and on every window focus, and for any server
+// client her roster has not got it CREATES a record — so the only thing keeping them off her screen
+// is her device's delete record, and the loop runs forever. That is what the "DELETED AGAIN EVERY
+// REFRESH" lines in this report are. Clearing the rows is the cure; clearing the delete record is
+// not, because the tombstone set unions on pull and only ever grows.
+//
+// A purge is destructive and irreversible, and on this account there are NO earlier copies kept. So
+// the rule is that a row is a candidate only where there is POSITIVE EVIDENCE it holds nothing.
+// Three classes, each with exactly one reason, and everything else is listed and kept:
+//
+//   removed   — already tombstoned, so invisible to her app today. Hard-deleting it ends the
+//               ability to put it back from the REMOVED list, which is why it is its own class.
+//   deleted   — a LIVE row whose id is in her own device delete record. She deleted it; the row
+//               outlived the delete because POST /api/clients only tombstones the ids a device
+//               actually sends, and historically most were never sent.
+//   stranger  — a LIVE row her account roster has never heard of and that was never invited. The
+//               blank skeletons.
+//
+// NEVER a candidate, whatever class it would otherwise land in: a row holding any client field
+// (clientContent), a row whose blob could not be read, a row with a client_event, a row whose link
+// the client has opened, and any row that is another client's animal.
+//
+// This is ONE function on purpose. The report she approves and the delete that follows have to be
+// computed the same way, or she approves one set and a different set is taken.
+export async function classifyJunk(q, owner) {
+  const rows = await q`SELECT id, name, deleted_at, opened_at, invited_at, data
+    FROM clients WHERE provider_id=${owner} ORDER BY lower(coalesce(name,''))`;
+
+  // Which ids her account roster knows about. null when sc_clients is missing or unreadable.
+  let rosterIds = null;
+  try {
+    const rk = await q`SELECT jsonb_typeof(v::jsonb) AS kind FROM kv WHERE owner=${owner} AND k='sc_clients'`;
+    if (rk.length && rk[0].kind === 'object') {
+      const ks = await q`SELECT jsonb_object_keys(v::jsonb) AS id FROM kv WHERE owner=${owner} AND k='sc_clients'`;
+      rosterIds = (ks || []).map(x => String(x.id));
+    } else if (rk.length && rk[0].kind === 'array') {
+      const ks = await q`SELECT e->>'id' AS id FROM kv, jsonb_array_elements(v::jsonb) e
+        WHERE owner=${owner} AND k='sc_clients'`;
+      rosterIds = (ks || []).map(x => String(x.id)).filter(Boolean);
+    }
+  } catch (e) { rosterIds = null; }
+  const rosterReadable = Array.isArray(rosterIds);
+  const rosterSet = {};
+  (rosterIds || []).forEach(id => { rosterSet[String(id)] = 1; });
+
+  // Her own delete record.
+  const delSet = {};
+  try {
+    const dr = await q`SELECT jsonb_object_keys(v::jsonb) AS id FROM kv
+      WHERE owner=${owner} AND k='sc_deleted_clients'`;
+    (dr || []).forEach(x => { delSet[String(x.id)] = 1; });
+  } catch (e) {}
+
+  // Anything the client themselves ever submitted. A row with a submission has been used by a real
+  // person, so it is never purgeable even when the blob reads empty because nothing ingested it.
+  const eventIds = {};
+  try {
+    const eg = await q`SELECT client_id, count(*)::int AS n FROM client_events
+      WHERE provider_id=${owner} GROUP BY client_id`;
+    (eg || []).forEach(r => { eventIds[String(r.client_id)] = Number(r.n) || 0; });
+  } catch (e) {}
+
+  // Who is an animal under whom, read off the rows themselves.
+  const isAnimalRow = {};
+  (rows || []).forEach(r => {
+    let d = {}; try { d = typeof r.data === 'string' ? JSON.parse(r.data) : (r.data || {}); } catch (e) { d = {}; }
+    (Array.isArray(d.animals) ? d.animals : []).forEach(a => { if (a && a.id) isAnimalRow[String(a.id)] = 1; });
+  });
+
+  const junk = { removed: [], deleted: [], stranger: [], kept: [] };
+  for (const r of (rows || [])) {
+    const id = String(r.id);
+    const content = clientContent(r.data);
+    const row = { id, name: r.name || '', holds: content.holds || [] };
+    let blocker = '';
+    if (content.unreadable) blocker = 'its saved record could not be read';
+    else if ((content.holds || []).length) blocker = 'it holds ' + content.holds.join(', ');
+    else if (eventIds[id]) blocker = eventIds[id] + ' submission(s) from the client';
+    else if (r.opened_at) blocker = 'the client has opened their own link';
+    else if (isAnimalRow[id]) blocker = 'it is an animal under another client';
+
+    if (r.deleted_at) {
+      // A client who erased their OWN data had name/email/phone/data scrubbed and their token
+      // revoked by deleteClientData, so that row reads empty by design and lands here. Taking it is
+      // correct: it is the row they asked to be rid of.
+      if (blocker) junk.kept.push(Object.assign({ why: blocker, state: 'removed' }, row));
+      else junk.removed.push(row);
+      continue;
+    }
+    if (delSet[id]) {
+      if (blocker) junk.kept.push(Object.assign({ why: blocker, state: 'she deleted it' }, row));
+      else junk.deleted.push(row);
+      continue;
+    }
+    if (!rosterSet[id] && !r.invited_at) {
+      // A roster read that FAILED must not make every live row look like a stranger, so the class
+      // is withheld entirely rather than offered against an unknown roster.
+      if (!rosterReadable) junk.kept.push(Object.assign({ why: 'her account list could not be read, so nothing is assumed about this row', state: 'not in her list' }, row));
+      else if (blocker) junk.kept.push(Object.assign({ why: blocker, state: 'not in her list' }, row));
+      else junk.stranger.push(row);
+      continue;
+    }
+  }
+  return { junk, rosterReadable, counts: { rows: (rows || []).length } };
+}
+
 export default async function handler(req, res) {
   if (!dbEnabled()) { res.status(500).json({ error: 'No database configured.' }); return; }
   const founder = await requireFounder(req, res);
@@ -248,6 +404,138 @@ export default async function handler(req, res) {
         return;
       }
 
+      // ── CLEAR THE JUNK CLIENT ROWS ───────────────────────────────────────
+      // Ashley: "i saw it has all the junk data clients on the server still. we can get rid of all
+      // of those." This is the only HARD delete of a provider's client rows anywhere in the app, so
+      // every guard is here rather than in the caller:
+      //
+      //   • the classes are recomputed by classifyJunk, NEVER taken from the request. The request
+      //     says which classes, so a stale report or a crafted id list cannot widen what is taken.
+      //   • a full copy of every row about to go — id, name, email, phone and the whole data blob —
+      //     is written to kv_history FIRST, under `sc_purged_clients` with reason 'before-purge'.
+      //     pruneKey does not know that reason, so it is never pruned away. If the copy fails,
+      //     NOTHING is deleted: a recovery tool that loses the last copy is worse than no tool.
+      //   • every statement is scoped to provider_id, and the ids came from a provider-scoped read,
+      //     so no other account's row is reachable from here (§0.1).
+      //   • the delete record is deliberately NOT touched. It unions on pull and only grows, so
+      //     clearing it on the account lets a device push the same ids straight back; and if a row
+      //     delete failed, clearing the tombstone would resurrect the row. Leaving it costs a few KB
+      //     and keeps the ids suppressed on every device whatever happens here.
+      if (body.purgeClasses) {
+        const want = Array.isArray(body.purgeClasses) ? body.purgeClasses.map(String) : [];
+        const allowed = ['removed', 'deleted', 'stranger'];
+        const classes = allowed.filter(c => want.indexOf(c) >= 0);
+        if (!classes.length) { res.status(400).json({ error: 'Pass purgeClasses as some of: removed, deleted, stranger.' }); return; }
+        if (body.confirm !== true) { res.status(400).json({ error: 'Pass confirm:true to actually delete.' }); return; }
+
+        const cj = await classifyJunk(q, owner);
+        const ids = [];
+        classes.forEach(c => (cj.junk[c] || []).forEach(r => ids.push(String(r.id))));
+        if (!ids.length) { res.status(400).json({ error: 'There is nothing in those classes to clear.' }); return; }
+
+        // THE COPY, before anything goes. Chunked because a provider can have thousands of rows and
+        // one row per chunk keeps each history value a readable size.
+        try { await ensureHistoryTable(); } catch (e) {}
+        let kept = 0;
+        try {
+          for (let i = 0; i < ids.length; i += 250) {
+            const batch = ids.slice(i, i + 250);
+            const full = await q`SELECT id, name, email, phone, token, deleted_at, invited_at,
+              opened_at, created_at, updated_at, data
+              FROM clients WHERE provider_id=${owner} AND id = ANY(${batch}::text[])`;
+            if (!full || !full.length) continue;
+            const payload = JSON.stringify(full);
+            await q`INSERT INTO kv_history (owner, k, v, bytes, items, reason)
+              VALUES (${owner}, 'sc_purged_clients', ${payload}, ${payload.length}, ${full.length}, 'before-purge')`;
+            kept += full.length;
+          }
+        } catch (e) {
+          console.error('[client-recover] purge backup failed:', (e && e.message) || e);
+          res.status(500).json({ error: 'Could not keep a copy of those records first, so nothing was deleted.' });
+          return;
+        }
+        if (kept < ids.length) {
+          res.status(500).json({ error: 'Only ' + kept + ' of ' + ids.length + ' records could be copied, so nothing was deleted.' });
+          return;
+        }
+
+        let purged = 0, eventsGone = 0, pushGone = 0;
+        const failed = [];
+        for (let i = 0; i < ids.length; i += 200) {
+          const batch = ids.slice(i, i + 200);
+          try {
+            const ev = await q`DELETE FROM client_events WHERE provider_id=${owner}
+              AND client_id = ANY(${batch}::text[]) RETURNING id`;
+            eventsGone += (ev || []).length;
+          } catch (e) { /* a submission row left behind is harmless; the client row is the point */ }
+          try {
+            const ps = await q`DELETE FROM push_subscriptions WHERE provider_id=${owner}
+              AND client_id = ANY(${batch}::text[]) RETURNING id`;
+            pushGone += (ps || []).length;
+          } catch (e) { /* same */ }
+          try {
+            const dl = await q`DELETE FROM clients WHERE provider_id=${owner}
+              AND id = ANY(${batch}::text[]) RETURNING id`;
+            purged += (dl || []).length;
+          } catch (e) { failed.push(batch.length); }
+        }
+        res.status(200).json({ ok: true, purged, eventsGone, pushGone, keptCopies: kept,
+          classes, asked: ids.length, failedBatches: failed.length,
+          note: 'A full copy of every record deleted is under Earlier copies as sc_purged_clients. '
+            + 'The delete record was left alone on purpose, so nothing can come back through a sync.' });
+        return;
+      }
+
+      // PUT THE CLEARED CLIENTS BACK. The counterpart to purgeClasses, and the reason the purge is
+      // allowed to exist at all: the copy it took is a full set of clients rows, so the rows can be
+      // re-inserted exactly as they were, token included. `restorePurgedAll` does every copy from
+      // the purge; `restorePurgedId` does one history row.
+      //
+      // ON CONFLICT DO NOTHING on purpose. If a client id is live again — she re-added them, or a
+      // sync recreated them — the row that is there now is newer than this copy and must win; a
+      // restore is not a licence to overwrite current work with a snapshot.
+      if (body.restorePurgedId || body.restorePurgedAll) {
+        try { await ensureHistoryTable(); } catch (e) {}
+        let hrows = [];
+        try {
+          hrows = body.restorePurgedAll
+            ? await q`SELECT id, v FROM kv_history WHERE owner=${owner} AND k='sc_purged_clients'
+                AND reason='before-purge' ORDER BY id`
+            : await q`SELECT id, v FROM kv_history WHERE owner=${owner} AND k='sc_purged_clients'
+                AND id=${Number(body.restorePurgedId)}`;
+        } catch (e) { res.status(500).json({ error: 'Could not read the copy.' }); return; }
+        if (!hrows.length) { res.status(404).json({ error: 'There is no copy of cleared clients for this account.' }); return; }
+        let back = 0, skipped = 0, bad = 0;
+        for (const h of hrows) {
+          let list = null;
+          try { list = JSON.parse(String(h.v || '[]')); } catch (e) { bad++; continue; }
+          if (!Array.isArray(list)) { bad++; continue; }
+          for (const c of list) {
+            if (!c || !c.id) { bad++; continue; }
+            try {
+              const r = await q`INSERT INTO clients
+                (id, provider_id, token, name, email, phone, data, invited_at, opened_at, created_at, updated_at, deleted_at)
+                VALUES (${String(c.id)}, ${owner}, ${String(c.token || ('restored_' + String(c.id)))},
+                  ${c.name || ''}, ${c.email || ''}, ${c.phone || ''},
+                  ${JSON.stringify(c.data || {})}::jsonb,
+                  ${c.invited_at == null ? null : Number(c.invited_at)},
+                  ${c.opened_at == null ? null : Number(c.opened_at)},
+                  ${c.created_at == null ? null : Number(c.created_at)},
+                  ${Date.now()},
+                  ${c.deleted_at == null ? null : Number(c.deleted_at)})
+                ON CONFLICT (id) DO NOTHING RETURNING id`;
+              if (r && r.length) back++; else skipped++;
+            } catch (e) { bad++; }
+          }
+        }
+        res.status(200).json({ ok: true, restored: back, alreadyThere: skipped, unreadable: bad,
+          copies: hrows.length,
+          note: 'Rows that are live again were left as they are — whatever is on the account now is '
+            + 'newer than this copy. Her delete record still hides the ones she deleted, so use '
+            + '“Bring back” on a name to actually show one again.' });
+        return;
+      }
+
       if (exportIds.length) {
         const out = [];
         for (const id of exportIds) {
@@ -259,7 +547,7 @@ export default async function handler(req, res) {
         return;
       }
 
-      res.status(400).json({ error: 'Pass restoreIds or exportIds.' });
+      res.status(400).json({ error: 'Pass restoreIds, exportIds, purgeClasses or restorePurgedAll.' });
       return;
     }
 
@@ -267,7 +555,9 @@ export default async function handler(req, res) {
     // data is a jsonb column, so it has to be cast before coalesce/length — `coalesce(data,'')`
     // fails with "invalid input syntax for type json" and 500s the whole lookup. Caught by
     // scripts/test-client-recover.mjs against a real PostgreSQL; it would have been invisible here.
-    const rows = await q`SELECT id, name, deleted_at, updated_at, invited_at,
+    // opened_at joins the select for the junk report below: a client who has opened their own link
+    // is a real person whatever their chart holds, so that row is never a candidate for a purge.
+    const rows = await q`SELECT id, name, deleted_at, updated_at, invited_at, opened_at,
       length(coalesce(data::text,'')) AS bytes, data
       FROM clients WHERE provider_id=${owner} ORDER BY lower(coalesce(name,''))`;
 
@@ -278,6 +568,8 @@ export default async function handler(req, res) {
       deletedAt: r.deleted_at ? Number(r.deleted_at) : null,
       updatedAt: r.updated_at ? new Date(r.updated_at).getTime() : null,
       bytes: Number(r.bytes || 0),
+      invitedAt: r.invited_at ? Number(r.invited_at) : null,
+      openedAt: r.opened_at ? Number(r.opened_at) : null,
       has: describe(r.data)
     }));
 
@@ -422,6 +714,13 @@ export default async function handler(req, res) {
       .map(c => ({ id: c.id, name: c.name, has: c.has }));
 
     const live = clients.filter(c => !c.deleted);
+
+    // The purge report. Computed by the SAME function the purge itself uses, so what she approves
+    // in this paste is exactly what a purge would take — see classifyJunk.
+    let junk = { removed: [], deleted: [], stranger: [], kept: [] }, rosterReadable = false;
+    try { const cj = await classifyJunk(q, owner); junk = cj.junk; rosterReadable = cj.rosterReadable; }
+    catch (e) { console.error('[client-recover] junk report failed:', e && e.message); }
+
     // ── Photos ───────────────────────────────────────────────────────────────
     // Photos do NOT ride the kv blob. Each one is a row in `files`, keyed by owner + photo id,
     // uploaded per-photo by _backupPhotosToServer (shipped 2026-09-13). sc_photo_index maps
@@ -529,6 +828,13 @@ export default async function handler(req, res) {
       missingFromTable: rosterIds ? rosterIds.filter(id => !clients.some(c => c.id === id)) : null,
       deletedRecordIds: deletedRecord,
       ghosts,
+      // What a purge would take and what it would keep back, per class. ADDED, never changed: a
+      // build that has not relaunched reads every key above exactly as before (CLAUDE.md §1a).
+      junk: {
+        removed: junk.removed, deleted: junk.deleted, stranger: junk.stranger,
+        kept: junk.kept.slice(0, 400), keptTotal: junk.kept.length,
+        rosterReadable
+      },
       nestedUnder,
       libraries,
       typed,

@@ -232,7 +232,7 @@ const S=document.getElementById('S');
 // resets when I save it" and there was no way to tell whether her phone had any of them — a whole
 // day was spent debugging code she may not have been running. Shown at the bottom of Settings, so
 // the answer is a screenshot away. Bump it on every ship.
-const APP_BUILD='2026-10-13a';
+const APP_BUILD='2026-10-13b';
 
 
 /* ════════════════════════════════════════════════════════════════
@@ -28459,6 +28459,39 @@ function renderClientRecover(){
           return '<div style="padding:9px 12px;border-bottom:1px solid var(--p-line2);font-size:16px;color:var(--p-ink);">'+esc(x.name||'(no name)')
             +' <span style="color:var(--p-mut);font-size:14px;">'+(x.onServer||0)+' of '+(x.indexed||0)+' on the server</span></div>';}).join('')
         +'</div>'):'')):'')
+    +((j.junk)?(function(){
+      var jk=j.junk,tot=(jk.removed||[]).length+(jk.deleted||[]).length+(jk.stranger||[]).length;
+      if(!tot&&!(jk.keptTotal||0))return '';
+      // Ashley, 2026-10-13: "i saw it has all the junk data clients on the server still. we can get
+      // rid of all of those." Three classes, each with one reason, and a fourth list of everything
+      // held back WITH why. Deleting is irreversible, so the reasons are on screen beside the
+      // button rather than in a doc nobody opens.
+      var cls=function(k,label,why,rows){
+        if(!rows||!rows.length)return '';
+        return '<div style="background:var(--surf2);border:1px solid var(--p-line);border-radius:12px;padding:11px 13px;margin-bottom:8px;">'
+          +'<label style="display:flex;gap:10px;align-items:flex-start;cursor:pointer;">'
+          +'<input type="checkbox" id="pg-'+k+'" '+(k==='stranger'?'':'checked')+' style="width:20px;height:20px;margin-top:2px;flex:none;">'
+          +'<span style="font-size:16px;color:var(--p-ink);line-height:1.5;"><b>'+rows.length+' '+label+'</b><br>'
+          +'<span style="font-size:14px;color:var(--p-mut);">'+why+'</span></span></label>'
+          +'<div style="max-height:120px;overflow:auto;margin-top:8px;font-size:14px;color:var(--p-mut);line-height:1.6;">'
+          +rows.slice(0,60).map(function(x){return esc(x.name||'(no name)');}).join(' · ')
+          +(rows.length>60?(' … and '+(rows.length-60)+' more'):'')+'</div></div>';
+      };
+      return '<div class="sh" style="margin-top:16px;"><h2>Junk client rows</h2></div>'
+        +'<div style="font-size:14px;color:var(--p-mut);line-height:1.5;margin:0 0 8px;">Their app asks the server for its client list every 15 seconds and on every window focus, and it CREATES a record for any server client their list has not got. So these rows are not inert — the only thing keeping them off their screen is their device’s delete record, which is why the same names are deleted again on every refresh. Clearing the rows is what stops it.</div>'
+        +'<div style="font-size:14px;color:var(--p-red);line-height:1.5;margin:0 0 10px;"><b>This is a real delete and it cannot be undone from their device.</b> A full copy of every record goes under Earlier copies first, and “Put the cleared clients back” below reads it, so it is undoable from here — but nothing is taken that holds anything at all.</div>'
+        +cls('removed','already removed','Tombstoned, so their app does not show these today. Clearing them ends the ability to put them back from the REMOVED list above.',jk.removed)
+        +cls('deleted','deleted on their device','Their own delete record names these, but the row outlived the delete. These are the ones deleted again every refresh.',jk.deleted)
+        +cls('stranger','never in their list',(jk.rosterReadable?'Never invited, never opened, no submissions, and their account list has never heard of them. Off by default — tick it only after reading the names.':'Their account list could not be read, so this class is withheld.'),jk.stranger)
+        +((jk.keptTotal)?('<div style="background:var(--p-surf2);border:1px solid var(--p-green);border-radius:12px;padding:11px 13px;margin-bottom:8px;">'
+          +'<div style="font-size:16px;color:var(--p-ink);"><b>'+jk.keptTotal+' kept back</b></div>'
+          +'<div style="font-size:14px;color:var(--p-mut);line-height:1.5;margin:4px 0 8px;">Nothing below is ever deleted by this tool, whichever boxes are ticked.</div>'
+          +'<div style="max-height:200px;overflow:auto;font-size:14px;color:var(--p-mut);line-height:1.6;">'
+          +(jk.kept||[]).slice(0,120).map(function(x){return '· '+esc(x.name||x.id||'')+' — '+esc(x.why||'');}).join('<br>')
+          +((jk.keptTotal>120)?('<br>… and '+(jk.keptTotal-120)+' more'):'')+'</div></div>'):'')
+        +(tot?('<button onclick="_recoverPurgeJunk()" id="pg-go" class="btnp" style="width:100%;border-radius:10px;padding:12px;font-size:16px;font-weight:600;">Clear the ticked rows</button>'):'')
+        +'<button onclick="_recoverRestorePurged()" style="width:100%;margin-top:8px;background:var(--surf2);color:var(--p-ink);border:1px solid var(--p-line-ctl);border-radius:10px;padding:11px;font-size:15px;cursor:pointer;font-family:inherit;">Put the cleared clients back</button>';
+    })():'')
     +'<div style="font-size:14px;color:var(--p-mut);line-height:1.5;margin-top:14px;">Counts only — none of their notes were read, and no photo was opened.</div>'
     +'</div>'
     +(removed.length?('<div style="position:sticky;bottom:0;background:var(--surf1);border-top:1px solid var(--p-line);padding:12px 16px;">'
@@ -28547,17 +28580,43 @@ function _recoverText(){
   }
   // Earlier copies is the RECOVERY ROUTE, so it belongs in the paste too. Without it the paste says
   // what is there now and nothing about what could be put back, which is half an answer.
+  // j.history is the ARRAY listHistory returns — one row per copy, each carrying its own `k`. It was
+  // read here as an OBJECT keyed by library (Object.keys over an array yields '0','1','2', and an
+  // array ROW has no .length), so this test could never be true and the paste said "none kept for
+  // this account yet" on every account, however many copies were sitting there. The on-screen
+  // Earlier copies section above reads the same data correctly, so the screen and the paste
+  // disagreed — and the paste is the thing that gets sent. It is the one line in this report that
+  // asserts an ABSENCE, which under CLAUDE.md §4c is the one thing that must never be guessed.
   try{
-    const hk=Object.keys(j.history||{}).filter(function(k){return (j.history[k]||[]).length;});
-    if(hk.length){
+    const hrows=(j.history||[]).filter(function(x){return x&&x.k;});
+    if(hrows.length){
+      const byKey={};
+      hrows.forEach(function(x){(byKey[x.k]||(byKey[x.k]=[])).push(x);});   // listHistory orders newest first
       L.push('','EARLIER COPIES KEPT AUTOMATICALLY (what can be put back):');
-      hk.forEach(function(k){const v=j.history[k]||[];const top=v[0]||{};
-        L.push('  '+k+': '+v.length+' copy'+(v.length===1?'':'ies')+', newest '+(top.at||top.created_at||'?')+' ('+(top.items!=null?(top.items+' items'):((Math.round((top.bytes||0)/1024))+'KB'))+')');});
+      Object.keys(byKey).forEach(function(k){const v=byKey[k];const top=v[0]||{};
+        L.push('  '+k+': '+(v.length===1?'1 copy':(v.length+' copies'))+', newest '+(top.saved_at||'?')
+          +' ('+(top.items!=null?(top.items+' items'):((Math.round((top.bytes||0)/1024))+'KB'))+', '+(top.reason||'')+')');});
     }else{
       L.push('','EARLIER COPIES: none kept for this account yet.');
     }
   }catch(e){}
   L.push('Device delete record: '+((j.deletedRecordIds&&j.deletedRecordIds.length)||0)+' id(s)');
+  // JUNK ROWS. In the paste as well as on screen, because the paste is what gets read: a count of
+  // what a clear-out would take, and the reason every held-back row was held back. The held-back
+  // reasons are the useful half — they are the evidence that a row has something in it.
+  try{
+    const jk=j.junk;
+    if(jk){
+      const n=function(k){return ((jk[k]||[]).length);};
+      L.push('','JUNK CLIENT ROWS (what a clear-out would take):');
+      L.push('  already removed (tombstoned): '+n('removed'));
+      L.push('  deleted on their device, row still live: '+n('deleted')+(n('deleted')?'   <- these are the "deleted again every refresh" ones':''));
+      L.push('  never in their list, never invited or opened: '+(jk.rosterReadable?n('stranger'):'withheld, their account list could not be read'));
+      L.push('  KEPT BACK because they hold something: '+(jk.keptTotal||0));
+      (jk.kept||[]).slice(0,40).forEach(function(x){L.push('    · '+(x.name||x.id)+' ['+(x.state||'')+'] — '+(x.why||''));});
+      if((jk.keptTotal||0)>40)L.push('    … and '+((jk.keptTotal||0)-40)+' more kept back');
+    }
+  }catch(e){}
   return L.join('\n');
 }
 function _recoverCopy(){
@@ -28600,6 +28659,73 @@ async function _recoverRepairRoster(){
       confirmModal({title:'Added',body:out.addedToRoster+' client'+(out.addedToRoster===1?'':'s')+' added to their list:\n\n'
         +(out.clients||[]).map(function(x){return '\u00b7 '+(x.name||x.id);}).join('\n')
         +'\n\nAsk them to CLOSE the app completely and open it again.',action:'Got it',hideCancel:true},function(){});
+      const r2=await fetch('/api/admin/client-recover?email='+encodeURIComponent(j.provider.email),{headers:{'Authorization':'Bearer '+tok}});
+      const j2=await r2.json().catch(()=>null);
+      if(j2&&j2.ok){_recoverState=j2;_recoverPick={};renderClientRecover();}
+    }catch(e){ if(typeof proToast==='function')proToast('Could not reach the server'); }
+  });
+}
+// CLEAR THE JUNK CLIENT ROWS, and put them back.
+//
+// The one HARD delete of a provider's client rows anywhere in the app, so the confirm names the
+// count per class and says plainly that it cannot be undone from the device. The server recomputes
+// which rows are in each class and ignores any id list from here, so a stale screen cannot widen
+// what is taken: the worst a stale screen can do is ask for a class that is now empty.
+async function _recoverPurgeJunk(){
+  const j=_recoverState;if(!j||!j.junk)return;
+  const want=[],lines=[];
+  [['removed','already removed'],['deleted','deleted on their device'],['stranger','never in their list']]
+    .forEach(function(p){
+      const box=document.getElementById('pg-'+p[0]);
+      const n=((j.junk[p[0]])||[]).length;
+      if(box&&box.checked&&n){want.push(p[0]);lines.push(n+' '+p[1]);}
+    });
+  if(!want.length){if(typeof proToast==='function')proToast('Tick at least one group first');return;}
+  confirmModal({title:'Delete these rows?',
+    body:lines.join('\n')+'\n\nThis really deletes them from the server. A full copy is kept here under Earlier copies first, and "Put the cleared clients back" reads it, so it is undoable from this screen. It is NOT undoable from their device.\n\nNothing that holds a note, a summary, a form, a photo, a homecare list, a product plan or any submission is touched, whichever groups are ticked.',
+    action:'Delete '+lines.join(' + ')},async function(){
+    const btn=document.getElementById('pg-go');
+    try{
+      if(btn){btn.disabled=true;btn.textContent='Clearing…';}
+      const tok=(typeof Cloud!=='undefined'&&Cloud&&Cloud.token)||'';
+      const r=await fetch('/api/admin/client-recover',{method:'POST',headers:{'Content-Type':'application/json','Authorization':'Bearer '+tok},
+        body:JSON.stringify({email:j.provider.email,purgeClasses:want,confirm:true})});
+      const out=await r.json().catch(()=>({}));
+      if(!r.ok||!out.ok){
+        if(btn){btn.disabled=false;btn.textContent='Clear the ticked rows';}
+        confirmModal({title:'Nothing was deleted',body:(out&&out.error)||'The server could not do it.',action:'Got it',hideCancel:true},function(){});
+        return;
+      }
+      confirmModal({title:'Cleared',
+        body:out.purged+' client row'+(out.purged===1?'':'s')+' deleted'
+          +(out.eventsGone?('\n'+out.eventsGone+' client submission row'+(out.eventsGone===1?'':'s')+' deleted with them'):'')
+          +'\n'+out.keptCopies+' kept as a copy under Earlier copies'
+          +(out.failedBatches?('\n'+out.failedBatches+' batch(es) failed — run it again'):'')
+          +'\n\n'+(out.note||''),action:'Got it',hideCancel:true},function(){});
+      const r2=await fetch('/api/admin/client-recover?email='+encodeURIComponent(j.provider.email),{headers:{'Authorization':'Bearer '+tok}});
+      const j2=await r2.json().catch(()=>null);
+      if(j2&&j2.ok){_recoverState=j2;_recoverPick={};renderClientRecover();}
+    }catch(e){
+      if(btn){btn.disabled=false;btn.textContent='Clear the ticked rows';}
+      if(typeof proToast==='function')proToast('Could not reach the server');
+    }
+  });
+}
+async function _recoverRestorePurged(){
+  const j=_recoverState;if(!j)return;
+  confirmModal({title:'Put the cleared clients back?',
+    body:'This re-inserts every client row a clear-out took on this account, exactly as it was.\n\nAny client who is live again is left alone — what is on the account now is newer than the copy.\n\nTheir delete record still hides the ones they deleted, so use "Bring back" on a name to actually show one again.',
+    action:'Put them back'},async function(){
+    try{
+      const tok=(typeof Cloud!=='undefined'&&Cloud&&Cloud.token)||'';
+      const r=await fetch('/api/admin/client-recover',{method:'POST',headers:{'Content-Type':'application/json','Authorization':'Bearer '+tok},
+        body:JSON.stringify({email:j.provider.email,restorePurgedAll:true})});
+      const out=await r.json().catch(()=>({}));
+      if(!r.ok||!out.ok){confirmModal({title:'Nothing changed',body:(out&&out.error)||'Could not read a copy.',action:'Got it',hideCancel:true},function(){});return;}
+      confirmModal({title:'Put back',body:out.restored+' client row'+(out.restored===1?'':'s')+' put back'
+        +(out.alreadyThere?('\n'+out.alreadyThere+' left as they are (live again already)'):'')
+        +(out.unreadable?('\n'+out.unreadable+' could not be read'):'')
+        +'\n\n'+(out.note||''),action:'Got it',hideCancel:true},function(){});
       const r2=await fetch('/api/admin/client-recover?email='+encodeURIComponent(j.provider.email),{headers:{'Authorization':'Bearer '+tok}});
       const j2=await r2.json().catch(()=>null);
       if(j2&&j2.ok){_recoverState=j2;_recoverPick={};renderClientRecover();}

@@ -235,6 +235,11 @@ export async function restoreVersion(owner, id) {
   const rows = await q`SELECT k, v, items FROM kv_history WHERE id=${Number(id)} AND owner=${owner}`;
   if (!rows.length) return { ok: false, error: 'That version is not there any more.' };
   const { k, v } = rows[0];
+  // sc_purged_clients is not a synced key — it is the copy taken before a junk-client purge, and it
+  // holds clients TABLE rows, not a library. Writing it into kv would put a blob nothing reads into
+  // the account and would not bring a single client back. It has its own restore (purgeClasses'
+  // counterpart, restorePurgedId in api/admin/client-recover.js), which re-inserts the rows.
+  if (k === 'sc_purged_clients') return { ok: false, error: 'Use \u201cPut the cleared clients back\u201d for this one \u2014 it holds client records, not a library.' };
   const cur = await q`SELECT v FROM kv WHERE owner=${owner} AND k=${k}`;
   if (cur.length) {
     try {

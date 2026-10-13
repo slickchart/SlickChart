@@ -30,10 +30,18 @@ const ALLOW={
   'admin/kv-health.js':'founder-gated via the verified token email; query email is the lookup subject',
   'admin/provider-lookup.js':'founder-gated via the verified token email; email is the lookup subject',
   // Same gate again, and the only one of the three that WRITES. Every statement in it is scoped to
-  // the owner resolved from that email (`provider_id=${owner}`), the restore only clears deleted_at
-  // on a row that is already tombstoned AND still carries a name (so a client's own erasure is
-  // never undone), and the export is per-id and never part of the diagnosis. Re-read it if it
-  // changes — it can hand a provider's client records to whoever passes the founder gate.
+  // the owner resolved from that email (`provider_id=${owner}` / `owner=${owner}`), the restore only
+  // clears deleted_at on a row that is already tombstoned AND still carries a name (so a client's
+  // own erasure is never undone), and the export is per-id and never part of the diagnosis.
+  //
+  // RE-READ 2026-10-13: it now also HARD-DELETES client rows (purgeClasses) and re-inserts them
+  // (restorePurgedAll) — the only hard delete of a provider's clients anywhere in the app. Both
+  // were read again for §0.1 and the scoping holds: classifyJunk selects only
+  // `WHERE provider_id=${owner}`, so every id it can produce is already this provider's; the
+  // request names CLASSES and never ids, so a crafted body cannot widen what is taken; the
+  // DELETEs and the re-INSERT all carry `provider_id=${owner}`; and the copy taken first is
+  // written to kv_history under this owner. Re-read it again if it changes — it can hand a
+  // provider's client records to whoever passes the founder gate, and now delete them.
   'admin/client-recover.js':'founder-gated via the verified token email; email is the lookup subject, every query scoped to that provider',
   // Same gate. It reads a SECOND database (a point-in-time branch, from RECOVERY_DATABASE_URL —
   // an env var, never a request field) but resolves the provider id on the LIVE database first and

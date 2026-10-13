@@ -450,8 +450,12 @@ saved anywhere", not "does this always call that".
 | `_recoverAll` | `/api/admin/recover-import` | via `_recoverSetSrc` |
 | `_recoverImport` | `/api/admin/client-recover` | direct |
 | `_recoverImport` | `/api/admin/recover-import` | direct |
+| `_recoverPurgeJunk` | `/api/admin/client-recover` | direct |
+| `_recoverPurgeJunk` | `/api/admin/recover-import` | via `_recoverSetSrc` |
 | `_recoverRepairRoster` | `/api/admin/client-recover` | direct |
 | `_recoverRepairRoster` | `/api/admin/recover-import` | via `_recoverSetSrc` |
+| `_recoverRestorePurged` | `/api/admin/client-recover` | direct |
+| `_recoverRestorePurged` | `/api/admin/recover-import` | via `_recoverSetSrc` |
 | `_recoverRollback` | `/api/admin/client-recover` | direct |
 | `_recoverRollback` | `/api/admin/recover-import` | via `_recoverSetSrc` |
 | `_recoverRun` | `/api/admin/client-recover` | direct |
@@ -1267,7 +1271,9 @@ Check here before building a new one.
 | `_recoverCopy` | yes |
 | `_recoverEdits` | yes |
 | `_recoverImport` | yes |
+| `_recoverPurgeJunk` | yes |
 | `_recoverRepairRoster` | yes |
+| `_recoverRestorePurged` | yes |
 | `_recoverRisk` | yes |
 | `_recoverRollback` | yes |
 | `_recoverRun` | yes |

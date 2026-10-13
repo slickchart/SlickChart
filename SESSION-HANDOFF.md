@@ -6305,3 +6305,115 @@ border:[\d.]+px solid \$\{(COND)\?'var\(--accent\)'...\};background:\$\{\1\?'var
 Zero hits in `slickchart.html` now. `slickchart-client.html` still has six, and they are **fine**:
 they sit on white cards, and the client app's accent is darkened until it reaches 4.5:1 against white,
 so the fill alone carries the boundary. Do not "fix" those.
+
+---
+
+## §2bb. The junk client rows, and a paste line that lied about the safety net (2026-10-13)
+
+Ashley ran the founder recovery check on her OWN account and pasted it. Her words after reading it:
+*"i saw it has all the junk data clients on the server still. we can get rid of all of those."*
+
+### What her paste actually said — HER OBSERVED NUMBERS, ground truth (§1b)
+
+```
+>>> ON THE SERVER RIGHT NOW: 2534 characters of notes and chart detail across 81 clients;
+    288 photos. This is NOT lost — do not tell them it is.
+3798 showing, 1083 removed but still on the server
+Their app's list knows about 775
+ON THE SERVER BUT MISSING FROM THEIR APP'S LIST (3040)
+Device delete record: 2463 id(s)
+Session summaries: 6 clients, 6 entries, 11KB
+Homecare lists: 1488 clients, 5 entries, 31KB
+EARLIER COPIES: none kept for this account yet.
+~1000 lines of "DELETED AGAIN EVERY REFRESH: <name>"
+```
+
+### Why the rows are not inert, which is the part that makes this a fix and not housekeeping
+
+`_syncEvents` (slickchart.html, the `/api/clients` GET) runs **on a 15-second interval and on every
+window focus**, and for any server client her roster has not got it **CREATES a record**. So the
+only thing keeping 3040 rows off her screen is her device's `sc_deleted_clients`. That record is a
+tombstone set: it unions on pull and only ever grows, so it cannot be cleared on one device. The
+loop therefore runs forever, and the ~1000 `DELETED AGAIN EVERY REFRESH` lines in the report are
+exactly it — a row alive on the server whose id is also in the delete record, resurrected and
+suppressed on every poll. **Clearing the rows is the cure. Clearing the delete record is not.**
+
+### `EARLIER COPIES: none kept for this account yet` WAS A BUG IN THE PASTE, not a finding
+
+`listHistory()` returns an **array** of rows, each carrying its own `k`. `_recoverText()` read it as
+an **object keyed by library**: `Object.keys(array)` yields `'0','1','2'`, and an array *row* has no
+`.length`, so the test could never be true. **That line printed on every account, however many
+copies were sitting there.** The on-screen "Earlier copies" section a few hundred lines above reads
+the same data correctly as an array — so the screen and the paste disagreed, and the paste is the
+thing that gets sent.
+
+It is the **one line in the whole report that asserts an ABSENCE**, which under §4c is the one thing
+that must never be guessed. I read it and told Ashley the safety net did not exist for her account.
+**That was wrong.** Fixed in this change: grouped by key, with the count, the newest timestamp and
+the reason. A genuinely empty history still says "none kept", and there is a test for that case.
+
+### What shipped — `purgeClasses` on `/api/admin/client-recover`
+
+The **only hard delete of a provider's client rows anywhere in the app.** Founder-gated, and every
+guard is in the endpoint rather than the caller:
+
+- **`classifyJunk(q, owner)` is ONE function**, called by both the report and the purge, so what she
+  approves on screen is what gets taken. The request names **classes, never ids** — a stale screen
+  or a crafted body cannot widen it.
+- **Three classes, one reason each.** `removed` (already tombstoned); `deleted` (live row whose id is
+  in her own delete record — the refresh-loop ones); `stranger` (live row her roster has never heard
+  of and that was never invited). `stranger` is **off by default** in the UI; the two backed by her
+  own delete are on.
+- **A full copy goes to `kv_history` under `sc_purged_clients`, reason `before-purge`, FIRST.** If the
+  copy fails or is short, **nothing is deleted**. `pruneKey` does not know that reason, so it is never
+  pruned. `restorePurgedAll` re-inserts the rows (`ON CONFLICT (id) DO NOTHING`, so a client who is
+  live again wins over the snapshot). `restoreVersion` now refuses `sc_purged_clients` — it holds
+  `clients` TABLE rows, not a library, and writing it into `kv` would bring nothing back.
+- **The delete record is deliberately NOT touched.** It unions on pull, so clearing it on the account
+  lets a device push the same ids straight back; and if a row delete failed, clearing the tombstone
+  would resurrect the row.
+
+### The emptiness test is the whole risk, and `describe()` was NOT enough
+
+`describe()` is what the recovery screen *displays*. The purge needed what would be *lost*, which is
+strictly larger: `_assembleClientData` also puts **aftercare, routine, pendingGuides, pendingCourses,
+vcInvite, routineReview, suggestedBooking, checkinReqAt and loyalty** into the blob and `describe()`
+reads **none of them**. A purge written against `describe()` calls a row holding a homecare list
+"empty". `clientContent()` covers every per-client field; there is one test case per field.
+
+Three further traps, each a test:
+
+- **Size is no guide.** Every blob carries the studio name, address, phone, website, provider name,
+  booking config and availability, so a never-touched skeleton is still several hundred bytes.
+- **Placeholders are the app's words, not hers.** A new client is seeded `skin '—'`,
+  `allergies 'None noted'`, `treatment 'New client'`, so an untouched row scores five filled chart
+  fields unless they are excluded.
+- **Unreadable counts as FULL.** If the blob will not parse, the only safe answer is no.
+
+Never a candidate whatever class it would land in: anything `clientContent` finds, an unreadable
+blob, a row with a `client_event` (a submission can sit there while the blob is empty because nothing
+ingested it), a row whose link the client has **opened**, and any row that is another client's animal.
+Everything held back is listed **with its reason** on screen and in the paste — the reasons are the
+useful half, because they are the evidence a row holds something.
+
+### Tests (both committed, both hand-run; CI has no browser)
+
+- `scratchpad/test-junk-classify.mjs` — 40 checks against the real `classifyJunk`/`clientContent`
+  text with a stubbed Postgres (`@neondatabase/serverless` is not installed here, §3). One case per
+  per-client field, plus placeholders, provider chrome, submissions, opened links, animal links,
+  unreadable blobs, both roster shapes, a failed roster read, and §0.1 cross-provider isolation.
+- `scratchpad/test-junk-ui.mjs` — 28 checks on the screen and the paste: counts and names per class,
+  `stranger` off by default, held-back reasons shown, classes-not-ids in the request, unticking
+  actually narrows it, nothing ticked sends nothing, an older server reply with no `junk` still
+  renders, and the Earlier-copies fix.
+
+Two gotchas cost time in the UI test and will again: **modals stack** (several `#confirm-modal`
+elements can be in the DOM, and `getElementById` returns the OLDEST, so click the last one), and
+**`document.body.textContent` includes the inline `<script>` source** — so every "is it on screen"
+assertion matched the source of the function under test. Read `#S`.
+
+### NOT RUN, and it should be: nothing has been purged yet
+
+This is destructive and irreversible (§1a), so it is on the branch with the report built and the
+button wired, and **Ashley has not pressed it**. The sequence is: she opens the report, reads the
+three class counts and the held-back list, then decides. Build `2026-10-13b`.
