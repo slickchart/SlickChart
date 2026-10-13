@@ -232,7 +232,7 @@ const S=document.getElementById('S');
 // resets when I save it" and there was no way to tell whether her phone had any of them — a whole
 // day was spent debugging code she may not have been running. Shown at the bottom of Settings, so
 // the answer is a screenshot away. Bump it on every ship.
-const APP_BUILD='2026-10-13l';
+const APP_BUILD='2026-10-13m';
 
 
 /* ════════════════════════════════════════════════════════════════
@@ -11875,7 +11875,7 @@ function _commitWriteNote(id){
   // record) so this write-note save and a later client-summary send land on ONE session entry (one
   // card, two tabs) instead of two separate cards. Don't overwrite `note` once a client summary has
   // been saved onto this entry — that field holds the client-facing version.
-  const entry={date:_fmtNoteDate(dateVal),treatment:c.treatment,homecare:existing?existing.homecare:[],products:existing?existing.products:[],ts:new Date(dateVal).getTime()||Date.now(),_draftDate:dateVal,providerNotes:(typeof _providerNotesSnapshot==='function'?_providerNotesSnapshot(id):(existing&&existing.providerNotes)||{sections:[]})};
+  const entry={date:_fmtNoteDate(dateVal),treatment:_sessionNameFor(existing,id,dateVal),homecare:existing?existing.homecare:[],products:existing?existing.products:[],ts:new Date(dateVal).getTime()||Date.now(),_draftDate:dateVal,providerNotes:(typeof _providerNotesSnapshot==='function'?_providerNotesSnapshot(id):(existing&&existing.providerNotes)||{sections:[]})};
   if(existing){Object.assign(existing,entry);if(!existing._clientSaved)existing.note=primaryText;}else{entry.note=primaryText;hist.unshift(entry);}
   hist.sort((a,b)=>(b.ts||0)-(a.ts||0));
   try{persistSessionSummaries();}catch(e){}  // was missing, treatment-note summaries were kept only in memory and lost on reload
@@ -12834,6 +12834,43 @@ function _providerNotesSnapshot(id){
     return {format:tmpl.name||'Notes',sections:secs};
   }catch(e){return {format:'Notes',sections:[]};}
 }
+// The name a session gets when it is saved: the date, plus the service she booked that day when the
+// booking says what it was (Ashley, 2026-10-13: "lets have the name default to the date + service
+// booked or if no service name, just the date"). It used to be c.treatment, which on most clients is
+// the placeholder "New client". A name she typed with Rename (s._named) is never overwritten.
+function _serviceBookedOn(id,iso){
+  try{
+    const c=CL[id]||{};const nm=String(c.name||'').trim().toLowerCase();
+    const m=String(iso||'').match(/^(\d{4})-(\d{2})-(\d{2})/);if(!m)return '';
+    const sameDay=function(d){return d&&!isNaN(d)&&d.getFullYear()===+m[1]&&(d.getMonth()+1)===+m[2]&&d.getDate()===+m[3];};
+    const good=function(t){t=String(t||'').trim();return (t&&!/^(appointment|session|new client)$/i.test(t))?t:'';};
+    const unesc=function(t){return String(t||'').replace(/&lt;/g,'<').replace(/&gt;/g,'>').replace(/&amp;/g,'&').trim().toLowerCase();};
+    if(typeof squareAppts!=='undefined'&&Array.isArray(squareAppts)){
+      const a=squareAppts.find(function(a){return a&&sameDay(a.at)&&nm&&unesc(a.client)===nm&&good(a.tx);});
+      if(a)return good(String(a.tx).replace(/&lt;/g,'<').replace(/&gt;/g,'>').replace(/&amp;/g,'&'));
+    }
+    const lists=[(typeof manualAppts!=='undefined'&&manualAppts)||[],(typeof confirmedAppts!=='undefined'&&confirmedAppts)||[]];
+    for(const L of lists){
+      const a=L.find(function(a){if(!a)return false;const who=(a.clientId&&a.clientId===id)||(nm&&String(a.client||'').trim().toLowerCase()===nm);
+        const day=(a.date&&String(a.date).slice(0,10)===m[0])||(a.at&&sameDay(new Date(a.at)));return who&&day&&good(a.tx||a.treatment);});
+      if(a)return good(a.tx||a.treatment);
+    }
+  }catch(e){}
+  return '';
+}
+// Keep a name she chose. _named marks a Rename from now on; one renamed before that flag existed
+// (her "Test A") is recognised as anything that is not the client's treatment field, a placeholder,
+// or a date-led default this function would have written.
+function _sessionNameFor(existing,id,iso){
+  const t=existing&&String(existing.treatment||'').trim();
+  if(t&&(existing._named||(t!==String((CL[id]||{}).treatment||'').trim()&&!/^(session|new client)$/i.test(t)&&t.indexOf((typeof _fmtNoteDate==='function'&&iso)?_fmtNoteDate(iso):'\u0000')!==0)))return t;
+  return _sessionDefaultName(id,iso);
+}
+function _sessionDefaultName(id,iso){
+  const d=(typeof _fmtNoteDate==='function'&&iso)?_fmtNoteDate(iso):new Date().toLocaleDateString('en-US',{month:'short',day:'numeric',year:'numeric'});
+  const svc=_serviceBookedOn(id,iso);
+  return svc?(d+' \u00b7 '+svc):d;
+}
 function _storeSummary(id){
   const c=CL[id];if(!c)return;
   _flushOpenSummaryNote(id);
@@ -12853,7 +12890,9 @@ function _storeSummary(id){
   if(!sessionSummaries[id])sessionSummaries[id]=[];
   const _guides=(typeof _summaryGuideList==='function')?_summaryGuideList(id).map(g=>({id:g.id,title:g.title,icon:g.icon,tips:(g.tips||[]).slice()})):[];
   // Rich record kept on the provider side: everything done that day. Merge onto the same-day entry.
-  const _rec={date,treatment:c.treatment,note,obs,homecare,products,productDetail,providerNotes,guides:_guides,ts,_draftDate:_dd,_clientSaved:true};
+  const _exName=(_dd?sessionSummaries[id].find(h=>h._draftDate===_dd):null);
+  const _name=_sessionNameFor(_exName,id,_dd);
+  const _rec={date,treatment:_name,note,obs,homecare,products,productDetail,providerNotes,guides:_guides,ts,_draftDate:_dd,_clientSaved:true};
   const _ex=_dd?sessionSummaries[id].find(h=>h._draftDate===_dd):null;
   if(_ex)Object.assign(_ex,_rec);else sessionSummaries[id].unshift(_rec);
   sessionSummaries[id].sort((a,b)=>(b.ts||0)-(a.ts||0));
@@ -12862,7 +12901,7 @@ function _storeSummary(id){
   // Include homecare so the client's summary "Your homecare routine" section actually populates — the
   // entry used to omit it, so every real client saw an empty homecare box on every session summary
   // (it only looked right in the demo, whose seeded summaries hardcode a homecare array). Honors the toggle.
-  const entry={date,title:c.treatment||'Session',note:(note+(obs?'\n\nObservations: '+obs:'')).trim(),homecare:homecare.slice(),products:products.slice(),guides:_guides,ts,_draftDate:_dd};
+  const entry={date,title:_name,note:(note+(obs?'\n\nObservations: '+obs:'')).trim(),homecare:homecare.slice(),products:products.slice(),guides:_guides,ts,_draftDate:_dd};
   if(!Array.isArray(c.summaries))c.summaries=[];
   const _cex=_dd?c.summaries.find(h=>h._draftDate===_dd):null;
   if(_cex)Object.assign(_cex,entry);else c.summaries.unshift(entry);
@@ -13104,7 +13143,7 @@ function _commitRenameSummary(id,i){
   if(!name)return;
   const list=sessionSummaries[id]||[];const s=list[i];if(!s)return;
   const prevTreatment=s.treatment, prevDate=s.date, prevTs=s.ts;
-  s.treatment=name;
+  s.treatment=name;s._named=true;   // hers now: a later save of the same session keeps it
   // Update the matching client-facing copy (matched by ts, else by date+old title).
   try{
     const c=CL[id];

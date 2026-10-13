@@ -6707,6 +6707,18 @@ A summary stores products as NAMES (`productDetail.map(p=>p.name)`); `renderLate
 matching live recommendation (keeps Buy) or `{name}`. Empty homecare/products cards are now hidden.
 `scratchpad/test-client-summary-products.mjs` 6/6; three FAIL on the previous client page.
 
+### Booking toasts confirmed gone; session names default to date + booked service — build `2026-10-13m`
+
+Her report after 13k: *"booking toasts seem to be gone"* (COMPUTER, preview). Then: *"in treatment
+notes - lets have the name default to the date + service booked or if no service name, just the
+date."* Session entries used `c.treatment` as their name, which is "New client" on most clients.
+`_sessionDefaultName(id, iso)` = `_fmtNoteDate(iso)` + " · " + the service on her Square/manual/
+confirmed booking for that client THAT day (generic "Appointment" ignored). Applied in both save paths
+(treatment-note save and `_storeSummary`, incl. the client copy's `title`). `_sessionNameFor` keeps a
+name she chose: Rename now sets `s._named`, and an older renamed one (her "Test A") is recognised as
+anything that is not the client's treatment field, a placeholder or a date-led default. Existing
+saved sessions are not renamed. `scratchpad/test-session-name.mjs` 7/7.
+
 ### Provider Session Record mirrors the client's summary, and is editable after treatment — build `2026-10-13l`
 
 Her observations (COMPUTER, preview): 14:32 the Session Record's client tab listed the two Avène
