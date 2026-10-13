@@ -6682,6 +6682,19 @@ server deletes and waits (up to 60s) until the account confirms BOTH `sc_deleted
 `sc_clients`, shows "please don't refresh" meanwhile, and ends with three ✓/✗ lines. If any is ✗ she
 screenshots it. The failure path (✗ lines) is not covered by a test yet.
 
+### "N new online bookings added to your clients" on every launch — fixed, build `2026-10-13h`
+
+Her report (COMPUTER, Safari, preview 13g, 14:29): the tidy-up **worked** (her words: "clean up
+worked"), and *"every time i open slickchart i get x number of online bookings added from clients
+which is not a real number"* — screenshot toast "4 new online bookings added to your clients".
+
+A loop: `_upsertClientsFromSquare` (run on every Square appointments load) created a record for any
+booker it could not match; for a booker she had DELETED or MERGED, `_purgeRemovedClients` strips that
+record on the next load because its `sq_` key is in `_deletedClientIds` / `mergedSquareIds`; next
+launch, same again, same toast. The upsert now applies the purge's rule before creating.
+`scratchpad/test-booking-readd.mjs`: the previous build toasts "3 … added" then "2 … added" on the next
+run for the same two removed people; this build adds only the genuinely new booker, once.
+
 ## §2bd. How the Square bulk delete was done before, and where it went
 
 Ashley, 2026-10-13, with a screenshot of the Square Developer forum thread *"Customers created via
