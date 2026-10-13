@@ -6707,6 +6707,26 @@ A summary stores products as NAMES (`productDetail.map(p=>p.name)`); `renderLate
 matching live recommendation (keeps Buy) or `{name}`. Empty homecare/products cards are now hidden.
 `scratchpad/test-client-summary-products.mjs` 6/6; three FAIL on the previous client page.
 
+### Provider Session Record mirrors the client's summary, and is editable after treatment — build `2026-10-13l`
+
+Her observations (COMPUTER, preview): 14:32 the Session Record's client tab listed the two Avène
+products ("Retail · $20/$26"); 14:53 the same record listed none; 15:01 the CLIENT's summary still
+showed both, with Buy, price and "Available in office". Her words: *"the provider record doesn't
+visually match or show the links. it should just mirror the client's view"*, then *"make sure it is
+all editable from the provider side in case any changes need to be made after treatments too"*.
+
+- `renderSessionDetail` picks products exactly as the client's `renderLatestSummary` does (live
+  `clientRecs` first, else names saved on the summary), and shows name, brand/price, "Available in
+  office", Why, and an Open link (through `_safeUrl`).
+- Editor (`editSavedSummary`): a summary with no saved products now opens on her LIVE list instead of
+  an empty picker. The old seed set `clientRecs[id]=[]` on open, which emptied the client's live
+  recommendations. Guides on the summary can be unticked; the client's copy follows.
+- **OPEN, not explained:** why the summary's own `products`/`productDetail` were empty at 14:53 after
+  showing at 14:32. She did not say whether she edited it in between (asked; she answered with the
+  client view instead). The record no longer depends on it, but if a summary's saved products vanish
+  again, that is the thread to pull.
+`scratchpad/test-session-record-products.mjs` 10/10.
+
 ### Booking toasts: the 13h fix did NOT stop it — second cause, build `2026-10-13k`
 
 Her report after 13j (COMPUTER, preview): *"ok great that worked. the booking toasts are still coming up

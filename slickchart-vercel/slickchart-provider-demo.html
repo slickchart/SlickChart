@@ -486,7 +486,7 @@ const S=document.getElementById('S');
 // resets when I save it" and there was no way to tell whether her phone had any of them — a whole
 // day was spent debugging code she may not have been running. Shown at the bottom of Settings, so
 // the answer is a screenshot away. Bump it on every ship.
-const APP_BUILD='2026-10-13k';
+const APP_BUILD='2026-10-13l';
 
 
 /* ════════════════════════════════════════════════════════════════
@@ -13232,21 +13232,30 @@ function renderSessionDetail(arg){
   ${s.obs?sectionBlock('Observations',s.obs.replace(/</g,'&lt;').replace(/\n/g,'<br>'),'var(--p-blue)'):''}
   ${!hasProvider?`<div style="margin:16px;text-align:center;color:var(--p-mut);font-size:16px;padding:26px 20px;background:var(--surf1);border:1px solid var(--p-line3);border-radius:12px;">No provider notes were saved for this session.</div>`:''}`;
   // ── Client-summary panel (what the client saw) ──
-  const hasClient=s.note||(s.homecare&&s.homecare.length)||(s.productDetail&&s.productDetail.length)||(s.products&&s.products.length)||(s.guides&&s.guides.length);
+  // Products, chosen EXACTLY as the client's summary screen chooses them (renderLatestSummary in
+  // slickchart-client.html): her live recommendations for this client first, else the names saved on
+  // this summary. Ashley, 2026-10-13: the client showed both Avène products with Buy, "available in
+  // office" and the price while this record showed none — "it should just mirror the client's view".
+  const _live=((typeof clientRecs!=='undefined'&&clientRecs[id])||[]).map(function(rid){const a=affiliateLinks.find(function(x){return x.id===rid;});return (a&&a.active!==false)?a:null;}).filter(Boolean);
+  const _saved=((s.productDetail&&s.productDetail.length)?s.productDetail:(s.products||[])).map(function(x){
+    if(x&&typeof x==='object')return x;const n=String(x==null?'':x).trim();if(!n)return null;
+    return affiliateLinks.find(function(a){return String(a.name||'').trim().toLowerCase()===n.toLowerCase();})||{name:n};}).filter(function(x){return x&&String(x.name||'').trim();});
+  const _prods=_live.length?_live:_saved;
+  const hasClient=s.note||(s.homecare&&s.homecare.length)||_prods.length||(s.guides&&s.guides.length);
   const clientPanel=`
   ${s.note?sectionBlock('Client summary, what '+((c.name||'they').split(' ')[0])+' saw',s.note.replace(/</g,'&lt;').replace(/\n/g,'<br>'),'var(--accent)'):''}
   ${(s.homecare&&s.homecare.length)?`<div class="sh"><h2>Homecare that day</h2></div>
   <div style="margin:0 16px 12px;background:var(--surf1);border:1px solid var(--p-line3);border-radius:12px;padding:6px 14px;">
     ${s.homecare.map((h,hi)=>`<div style="display:flex;align-items:flex-start;gap:8px;padding:8px 0;${hi<s.homecare.length-1?'border-bottom:1px solid var(--p-line2);':''}"><div style="width:20px;height:20px;border-radius:50%;background:var(--p-surf2);border:1px solid var(--p-green-line);display:flex;align-items:center;justify-content:center;flex-shrink:0;margin-top:1px;"><span style="font-size:12px;color:var(--p-green);font-weight:600;">${hi+1}</span></div><span style="font-size:16px;color:var(--p-ink);line-height:1.5;">${String(h).replace(/</g,'&lt;')}</span></div>`).join('')}
   </div>`:''}
-  ${(s.productDetail&&s.productDetail.length)?`<div class="sh"><h2>Products recommended</h2></div>
-  <div style="margin:0 16px 12px;">
-    ${s.productDetail.map(p=>`<div style="background:var(--surf1);border:1px solid var(--p-line3);border-radius:12px;padding:11px 13px;margin-bottom:8px;display:flex;gap:11px;align-items:flex-start;">
-      <span style="font-size:22px;flex-shrink:0;">${_fileEsc(p.icon)||'🧴'}</span>
-      <div style="flex:1;min-width:0;"><div style="font-size:16px;font-weight:600;color:var(--p-ink);">${_fileEsc(p.name)}</div>${p.brand?`<div style="font-size:14px;color:var(--p-mut);">${_fileEsc(p.brand)}</div>`:''}${p.why?`<div style="font-size:16px;color:var(--p-mut);line-height:1.5;margin-top:6px;background:var(--p-surf);border-radius:8px;padding:7px 9px;"><span style="color:var(--p-mut);">Why:</span> ${String(p.why).replace(/</g,'&lt;')}</div>`:''}</div>
-    </div>`).join('')}
-  </div>`:(s.products&&s.products.length)?`<div class="sh"><h2>Products recommended</h2></div>
-  <div style="margin:0 16px 12px;background:var(--surf1);border:1px solid var(--p-line3);border-radius:12px;padding:12px 14px;"><div style="display:flex;flex-wrap:wrap;gap:6px;">${s.products.map(p=>`<span style="font-size:16px;background:var(--accent-tint);color:var(--accent-strong);padding:3px 10px;border-radius:8px;">${String(p).replace(/</g,'&lt;')}</span>`).join('')}</div></div>`:''}
+  ${_prods.length?`<div class="sh"><h2>Recommended for ${_fileEsc(String(c.name||'them').split(' ')[0])}</h2></div>
+  <div style="margin:0 16px 12px;background:var(--surf1);border:1px solid var(--p-line3);border-radius:12px;overflow:hidden;">
+    ${_prods.map(function(p,pi){const link=p.site||p.url||'';return `<div style="display:flex;gap:11px;align-items:flex-start;padding:11px 13px;${pi<_prods.length-1?'border-bottom:1px solid var(--p-line2);':''}">
+      <span style="font-size:22px;flex-shrink:0;">${_fileEsc(p.icon)||'🛍️'}</span>
+      <div style="flex:1;min-width:0;"><div style="font-size:16px;font-weight:600;color:var(--p-ink);">${_fileEsc(p.name)}</div>${p.brand?`<div style="font-size:14px;color:var(--p-mut);">${_fileEsc(p.brand)}</div>`:''}${p.inOffice?`<div style="font-size:14px;color:var(--accent-strong);font-weight:600;margin-top:2px;"><i class="ti ti-building-store"></i> Available in office</div>`:''}${p.why?`<div style="font-size:14px;color:var(--p-mut);line-height:1.5;margin-top:5px;"><span>Why:</span> ${String(p.why).replace(/</g,'&lt;')}</div>`:''}</div>
+      ${link?`<a href="${_urlAttr(_safeUrl(link))}" target="_blank" rel="noopener" style="flex-shrink:0;background:var(--accent);color:var(--accent-ink);border-radius:8px;padding:6px 12px;font-size:14px;font-weight:600;text-decoration:none;">Open</a>`:''}
+    </div>`;}).join('')}
+  </div>`:''}
   ${(s.guides&&s.guides.length)?`<div class="sh"><h2>Aftercare guides linked</h2></div>
   <div style="margin:0 16px 12px;">
     ${s.guides.map(g=>`<div style="background:var(--surf1);border:1px solid var(--p-line3);border-radius:12px;padding:11px 13px;margin-bottom:8px;display:flex;gap:11px;align-items:center;">
@@ -13391,7 +13400,10 @@ function editSavedSummary(id,i){
     if(a){if(!seeded.includes(a.id))seeded.push(a.id);}
     else{_esUnmatchedProducts.push(nm);}
   });
-  clientRecs[id]=seeded;
+  // A summary with nothing saved shows her LIVE recommendations (the record mirrors the client's
+  // screen), so edit those rather than opening on an empty picker — which also wiped the client's
+  // live list the moment the editor opened.
+  clientRecs[id]=(savedNames.length?seeded:(clientRecs[id]||[]).slice());
   // Provider-notes sections to edit: use whatever format this summary was saved in; if none were
   // saved, fall back to the active note format's section labels so the provider can add them here in
   // the same format — exactly mirroring the note-writing screen.
@@ -13419,6 +13431,10 @@ function editSavedSummary(id,i){
     <div style="font-size:14px;font-weight:600;color:var(--p-mut);text-transform:uppercase;letter-spacing:.06em;margin:16px 0 4px;">Homecare that day</div>
     <div style="font-size:14px;color:var(--p-mut);margin-bottom:6px;">One item per line.</div>
     <textarea id="es-homecare" rows="4" placeholder="e.g. Vitamin C serum AM&#10;SPF 50 daily" style="width:100%;background:var(--p-surf);border:1px solid var(--p-line-ctl);border-radius:12px;padding:11px;font-size:16px;color:var(--p-ink);line-height:1.7;font-family:inherit;box-sizing:border-box;resize:vertical;outline:none;">${(Array.isArray(s.homecare)?s.homecare.join('\n'):'').replace(/</g,'&lt;')}</textarea>
+
+    ${(s.guides&&s.guides.length)?`<div style="font-size:14px;font-weight:600;color:var(--p-mut);text-transform:uppercase;letter-spacing:.06em;margin:16px 0 6px;">Aftercare guides on this summary</div>
+    <div style="font-size:14px;color:var(--p-mut);margin-bottom:6px;">Untick one to take it off.</div>
+    ${s.guides.map((g,gi)=>`<label style="display:flex;align-items:center;gap:10px;padding:8px 10px;background:var(--p-surf);border:1px solid var(--p-line-ctl);border-radius:10px;margin-bottom:6px;cursor:pointer;"><input type="checkbox" id="es-guide-${gi}" checked style="width:18px;height:18px;accent-color:var(--accent);"><span style="font-size:16px;color:var(--p-ink);">${String(g&&g.title||'Guide').replace(/</g,'&lt;')}</span></label>`).join('')}`:''}
 
     <div style="display:flex;align-items:center;justify-content:space-between;margin:18px 0 6px;">
       <div style="font-size:14px;font-weight:600;color:var(--p-mut);text-transform:uppercase;letter-spacing:.06em;">Products recommended <span id="prod-count" style="color:var(--accent-strong);">${(clientRecs[id]||[]).length?'· '+(clientRecs[id]||[]).length:''}</span></div>
@@ -13484,6 +13500,9 @@ function _saveEditedSummary(id,i,thenAction){
   // products: come from the catalog picker (clientRecs[id] = array of product ids).
   // Build structured productDetail from the catalog, then append any names that had
   // no catalog match (so pre-existing free-text products aren't silently dropped).
+  if(Array.isArray(s.guides)&&s.guides.length&&document.getElementById('es-guide-0')){
+    s.guides=s.guides.filter(function(_,gi){const el=document.getElementById('es-guide-'+gi);return !el||el.checked;});
+  }
   const recIds=clientRecs[id]||[];
   const picked=recIds.map(aid=>{const a=affiliateLinks.find(x=>x.id===aid);return (a&&a.active!==false)?{name:a.name,brand:a.brand||'',icon:a.icon||'',why:(typeof _recReason==='function'?(_recReason(id,aid)||''):'')}:null;}).filter(Boolean);
   const unmatched=(_esUnmatchedProducts||[]).map(nm=>({name:nm}));
@@ -13495,7 +13514,7 @@ function _saveEditedSummary(id,i,thenAction){
   if(c&&Array.isArray(c.summaries)){
     // match by timestamp/date+treatment since the two lists mirror each other
     const cs=c.summaries.find(x=>(s.ts&&x.ts===s.ts)||(x.date===s.date&&x.title===(s.treatment||'Session')));
-    if(cs){cs.note=newNote;if(newHomecare!==null)cs.homecare=newHomecare.slice();cs.products=s.products.slice();cs.productDetail=productDetail.map(p=>({...p}));}
+    if(cs){cs.note=newNote;if(newHomecare!==null)cs.homecare=newHomecare.slice();cs.products=s.products.slice();cs.productDetail=productDetail.map(p=>({...p}));if(Array.isArray(s.guides))cs.guides=s.guides.slice();}
   }
   _esOrigRecs=null;_esUnmatchedProducts=[];
   try{persistSessionSummaries();}catch(e){}  // was missing, edits to a summary's note/homecare/products were lost on reload
