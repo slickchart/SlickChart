@@ -6643,6 +6643,27 @@ recovery check proved it with numbers.**
 
 ---
 
+### §2bd (cont.) Her Square directory, checked 2026-10-13 — Square is NOT where the junk is now
+
+She exported Square → Customers and attached it: **681 customers**, and she confirmed the Square
+dashboard total matches (her words: "yes that matches"). Ground truth (§1b).
+
+Pattern pass over all 681 (gibberish/dotted-Gmail/disposable emails, impossible/555/foreign/repeated
+phones, odd names, name-vs-email mismatch): **no generated-looking contacts.** Everything flagged was
+a real person. No-history rows are old personal emails with 925/510 numbers.
+
+What there is: **10 empty records** (no email, phone, visit or purchase) — 7 "Ashley Watson" and 1
+"Candace Tao" from source *Third-party* (app-created, almost certainly SlickChart test clients), and 2
+nameless *Marketing* rows (the only form-signup rows in the file). Plus 23 emails shared by two
+customers each (duplicates to MERGE in Square, not delete). The list went to her as a CSV; it is client
+PII and is NOT in the repo.
+
+So the bot signups are no longer in her Square (681 vs the 3798 rows on the SlickChart server). The
+tool that matters is the junk clear-out on the recovery screen (§2bb), still not pressed. The restored
+Square screen (build `2026-10-13d`) works, but caution: run against the 7 "Ashley Watson" Square records
+it would also tombstone any SlickChart client carrying that `squareId` — her Diana-test client is
+"Ashley Watson". Delete those 10 in the Square Dashboard instead, after the Diana test.
+
 ## §2bd. How the Square bulk delete was done before, and where it went
 
 Ashley, 2026-10-13, with a screenshot of the Square Developer forum thread *"Customers created via
