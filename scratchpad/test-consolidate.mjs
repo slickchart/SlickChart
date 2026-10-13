@@ -29,7 +29,7 @@ function makeQ(db) {
     if (/^SELECT id, name, email, phone, data, opened_at, invited_at FROM clients/.test(t))
       return Promise.resolve(db.clients.filter(r => r.provider_id === v[0] && r.deleted_at == null && String(r.name || '').trim().toLowerCase() === String(v[1]).toLowerCase()).map(r => ({ ...r })));
     if (/^SELECT v FROM kv WHERE owner=.* AND k='sc_clients'/.test(t)) { const x = db.kv[v[0] + '|sc_clients']; return Promise.resolve(x ? [{ v: JSON.stringify(x) }] : []); }
-    if (/entry\.key AS id FROM kv, jsonb_each/.test(t)) { const x = db.kv[v[0] + '|' + v[1]]; return Promise.resolve(x ? Object.keys(x).map(id => ({ id })) : []); }
+    if (/entry\.key AS id, md5/.test(t)) { const x = db.kv[v[0] + '|' + v[1]]; return Promise.resolve(x ? Object.keys(x).filter(id => !['[]','{}','""','null'].includes(JSON.stringify(x[id]))).map(id => ({ id, h: JSON.stringify(x[id]) })) : []); }
     if (/FROM client_events/.test(t)) return Promise.resolve([]);
     if (/^SELECT lower\(trim\(name\)\) AS n, count/.test(t)) {
       const m = {}; db.clients.filter(r => r.provider_id === v[0] && r.deleted_at == null && String(r.name || '').trim()).forEach(r => { const k = String(r.name).trim().toLowerCase(); m[k] = (m[k] || 0) + 1; });
@@ -85,6 +85,17 @@ check('one tap: link-only copies go too, the opened one stays and says why', o4.
   check('all: a name with no copy in her list is not touched', db5.clients.filter(r => /^d\d/.test(r.id)).every(r => r.deleted_at == null) && all.body.skipped.some(x => /debbi/.test(x.name)), JSON.stringify(all.body.skipped));
   check('all: other provider untouched', db5.clients.filter(r => r.provider_id === 'Q').every(r => r.deleted_at == null));
   check('all: one list backup only', db5.history.length === 1, db5.history.length);
+}
+// 2026-10-13 live, third run: 59 copies "saved work is filed under it" — empty plans and the starter
+// homecare list the app writes for any client that is opened. Neither is her work; a real summary is.
+{
+  const db6 = { clients: [{ id: 'keepme', provider_id: 'P', name: 'Cooper Howard', data: EMPTY, deleted_at: null }], kv: { 'P|sc_clients': { keepme: { name: 'Cooper Howard' } }, 'P|sc_client_recs': {}, 'P|sc_client_homecare': {}, 'P|sc_session_summaries': {} }, history: [] };
+  for (let i = 0; i < 10; i++) { const id = 'cp' + i; db6.clients.push({ id, provider_id: 'P', name: 'Cooper Howard', data: EMPTY, deleted_at: null });
+    db6.kv['P|sc_client_recs'][id] = []; db6.kv['P|sc_client_homecare'][id] = ['Gentle cleanser AM/PM', 'SPF 30+ daily']; }
+  db6.kv['P|sc_session_summaries'].cp3 = [{ note: 'real visit' }];
+  const o6 = await consolidateName(makeQ(db6), 'P', 'Cooper Howard');
+  check('empty plans and the starter homecare on many copies are not work', o6.body.retired === 9, JSON.stringify(o6.body));
+  check('a copy with a real summary is kept, naming it', o6.body.leftAlone.length === 1 && o6.body.leftAlone[0].id === 'cp3' && /session summaries/.test(o6.body.leftAlone[0].why), JSON.stringify(o6.body.leftAlone));
 }
 let bad = 0; for (const x of results) { if (!x.pass) bad++; console.log((x.pass ? 'PASS ' : 'FAIL ') + x.name + (x.detail !== '' ? '  — ' + x.detail : '')); }
 console.log(`\n${results.length - bad}/${results.length} passed`); process.exit(bad ? 1 : 0);

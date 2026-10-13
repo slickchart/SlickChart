@@ -183,12 +183,14 @@ export async function consolidateName(q, owner, name, includeInvited, opts) {
   const rv = await q`SELECT v FROM kv WHERE owner=${owner} AND k='sc_clients'`;
   let roster = {}; try { roster = rv.length ? (JSON.parse(rv[0].v) || {}) : {}; } catch (e) { roster = {}; }
   if (!rv.length || Array.isArray(roster) || typeof roster !== 'object') { return { status: 400, body: { error: 'Their client list could not be read, so nothing was changed.' } }; }
-  const work = {};
+  const work = {}, workH = {};
   for (const k of ['sc_session_summaries', 'sc_client_recs', 'sc_client_homecare', 'sc_body_maps', 'sc_note_drafts', 'sc_photo_index', 'sc_summary_drafts']) {
     try {
-      const wr = await q`SELECT entry.key AS id FROM kv, jsonb_each(kv.v::jsonb) AS entry
-        WHERE kv.owner=${owner} AND kv.k=${k} AND jsonb_typeof(kv.v::jsonb)='object'`;
-      (wr || []).forEach(x => { work[String(x.id)] = (work[String(x.id)] || 0) + 1; });
+      // Empty entries are not work: the app writes [] / {} for a client the moment a screen opens.
+      const wr = await q`SELECT entry.key AS id, md5(entry.value::text) AS h FROM kv, jsonb_each(kv.v::jsonb) AS entry
+        WHERE kv.owner=${owner} AND kv.k=${k} AND jsonb_typeof(kv.v::jsonb)='object'
+          AND entry.value::text NOT IN ('[]','{}','""','null')`;
+      (wr || []).forEach(x => { const id = String(x.id); work[id] = (work[id] || 0) + 1; (workH[id] = workH[id] || []).push(k + ':' + (x.h || '')); });
     } catch (e) {}
   }
   const ev = {};
@@ -223,10 +225,18 @@ export async function consolidateName(q, owner, name, includeInvited, opts) {
     .map(f => String((f && (f.formId || f.id || f.title)) || '').toLowerCase()).filter(Boolean));
   const kProf = Object.assign({}, kr, (kd.profile && typeof kd.profile === 'object') ? kd.profile : {});
   const PH = /^(—|-|–|n\/a|none|none noted|none on file|none known|not scheduled|new client|new patient|unknown|)$/i;
+  const keepH = workH[keep.id] || [];
+  const hashCount = {};
+  rows.forEach(r => (workH[String(r.id)] || []).forEach(t => { hashCount[t] = (hashCount[t] || 0) + 1; }));
   const covered = x => {
     if (x.empty) return '';
     const id = x.id, r = x.r;
-    if (work[id]) return 'saved work is filed under it';
+    if (work[id]) {
+      // Same entry as the kept record, or the identical value sitting on 3+ copies of this name (a
+      // default the app seeded, e.g. the starter homecare list), is not her work.
+      const mine = (workH[id] || []).filter(t => keepH.indexOf(t) < 0 && (hashCount[t] || 0) < 3);
+      if (mine.length) return 'saved work is filed under it (' + mine.map(t => t.split(':')[0].replace('sc_', '').replace(/_/g, ' ')).join(', ') + ')';
+    }
     if (ev[id]) return ev[id] + ' submission(s) from the client';
     if (r.opened_at) return 'the client opened this link';
     if (roster[id]) return 'in her list';
@@ -354,8 +364,10 @@ export async function classifyJunk(q, owner) {
   const workBy = {};
   for (const k of ['sc_session_summaries', 'sc_client_recs', 'sc_client_homecare', 'sc_body_maps', 'sc_note_drafts', 'sc_photo_index', 'sc_summary_drafts']) {
     try {
-      const wr = await q`SELECT entry.key AS id FROM kv, jsonb_each(kv.v::jsonb) AS entry
-        WHERE kv.owner=${owner} AND kv.k=${k} AND jsonb_typeof(kv.v::jsonb)='object'`;
+      // Empty entries are not work: the app writes [] / {} for a client the moment a screen opens.
+      const wr = await q`SELECT entry.key AS id, md5(entry.value::text) AS h FROM kv, jsonb_each(kv.v::jsonb) AS entry
+        WHERE kv.owner=${owner} AND kv.k=${k} AND jsonb_typeof(kv.v::jsonb)='object'
+          AND entry.value::text NOT IN ('[]','{}','""','null')`;
       (wr || []).forEach(x => { const id = String(x.id); (workBy[id] = workBy[id] || []).push(k.replace('sc_', '').replace(/_/g, ' ')); });
     } catch (e) {}
   }

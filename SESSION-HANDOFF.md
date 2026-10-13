@@ -6713,6 +6713,16 @@ A summary stores products as NAMES (`productDetail.map(p=>p.name)`); `renderLate
 matching live recommendation (keeps Buy) or `{name}`. Empty homecare/products cards are now hidden.
 `scratchpad/test-client-summary-products.mjs` 6/6; three FAIL on the previous client page.
 
+### Third Cooper run: "59 — saved work is filed under it" — build `2026-10-13t`
+
+Her run at 15:41 (COMPUTER, single-name tidy): kept `c1791493687681ygowr` (in her list), retired 67,
+left 59 "saved work is filed under it" and 1 "in her list". The work check counted ANY key in the
+per-client maps, including `[]`/`{}` the app writes the moment a client screen opens and the starter
+homecare list `getClientHomecare` seeds. Now (both in `consolidateName` and `classifyJunk`): empty
+values are ignored in SQL, and in the tidy a copy's entry only counts if it differs from the kept
+record's entry AND is not the identical value sitting on 3+ copies of that name (an app default).
+The reason now names the library. `test-consolidate.mjs` 19/19, `test-junk-square.mjs` all pass.
+
 ### Tidy ALL duplicates in one tap — live, build `2026-10-13s` (main = `68dd683`)
 
 Her second live run on Cooper (15:35, COMPUTER): kept the record in her list (`c1791493687681ygowr`),

@@ -51,9 +51,9 @@ function makeQ(db) {
       return Promise.resolve(v === undefined ? [] : [{ kind: Array.isArray(v) ? 'array' : 'object' }]);
     }
     // Saved work filed by client id in another library: kv.k is the second value.
-    if (/entry\.key AS id FROM kv, jsonb_each/.test(text)) {
+    if (/entry\.key AS id, md5/.test(text)) {
       const v = db.kv[arg + '|' + values[1]];
-      return Promise.resolve(v && !Array.isArray(v) && typeof v === 'object' ? Object.keys(v).map(id => ({ id })) : []);
+      return Promise.resolve(v && !Array.isArray(v) && typeof v === 'object' ? Object.keys(v).filter(id => !['[]','{}','""','null'].includes(JSON.stringify(v[id]))).map(id => ({ id, h: JSON.stringify(v[id]) })) : []);
     }
     // The squareId read: one row per roster entry, with its id and its Square id (or '').
     if (/jsonb_each/.test(text)) {
