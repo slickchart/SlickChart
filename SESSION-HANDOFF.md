@@ -6670,6 +6670,24 @@ Square screen (build `2026-10-13d`) works, but caution: run against the 7 "Ashle
 it would also tombstone any SlickChart client carrying that `squareId` — her Diana-test client is
 "Ashley Watson". Delete those 10 in the Square Dashboard instead, after the Diana test.
 
+## §2be. Cooper Howard missing from her client list (reported 2026-10-13 ~15:20) — OPEN
+
+**Her words, verbatim (ground truth, §1b):** *"now my client list somehow lost a real client (before
+everything we did today). her name is cooper howard. she has been in, had session summaries, etc"*
+
+Not yet known: which device; whether "(before everything we did today)" means she was missing before
+today's work or that Cooper was a client from before today. Asked.
+
+**Facts already in hand (not theories):**
+- Her Square export of 2026-10-13 holds **Cooper Howard**, source Appointments, first visit 2026-08-13,
+  last visit 2026-10-08, 3 transactions, $465.12. So Cooper is in her Square directory.
+- The tidy-up she ran today keeps any client matching her Square directory by id, email, phone or
+  name, and (from 13e) anyone with summaries. The junk purge and the restored Square-cleanup screen
+  were NOT run. None of that proves where the record went; it only says which tools were in play.
+
+Step 2 of §1d: ONE recovery paste of her own account was requested. Read its verdict line first.
+NOTHING may be said to anyone about Cooper's notes being lost until that paste says so with numbers.
+
 ## §2bd. How the Square bulk delete was done before, and where it went
 
 Ashley, 2026-10-13, with a screenshot of the Square Developer forum thread *"Customers created via
