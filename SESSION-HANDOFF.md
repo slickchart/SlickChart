@@ -6129,14 +6129,70 @@ brand gave 1.00:1 across whole screens while the buttons on those same screens w
 functions return the colour untouched when it already passes, so **#2BC7AC is unchanged** — verified
 in every smoke test.
 
-### Where this actually stands
+| **controls' own boundaries, pass by pass** | **12 → 7 → 2 → 0** | **0** | **—** |
 
-The client app is in good shape (18, worst 3.12:1). The provider app is much better but **not
-finished**: 177 remain, 97 of them touching the default brand. It is NOT compliant yet and should not
-be described as such. The tail is a long one and the tool exists to drive it down — that is the next
-session's work, not a guess.
+### Where this stands: 469 → 0
+
+Ashley asked for the sweep to fix what it found, not just report it. Both apps now come back clean:
+
+```
+auditing client ... 0 finding(s)
+auditing provider ... 0 finding(s)
+everything meets AA
+```
+
+That is 2 themes × 5 brands × ~45 screens, 1.4.3 and 1.4.11, down from 469 distinct findings
+(196 of them touching the default brand) at the start of the pass.
+
+### The gap the sweep CANNOT see, and the probe that covers it
+
+**The sweep only ever sees a control in its DEFAULT state.** It drives `nav(screen)` and audits what
+renders; it never selects anything. So a control that is only wrong when SELECTED is invisible to it —
+and the whole bug class here lives in the selected branch, because the selected branch is the one that
+fills with `var(--accent)`.
+
+The report period chip was the only one it caught, and only because `_reportKey` already defaults to
+`'this-month'`. Grepping for the pattern it caught — the same condition yielding `var(--accent)` for
+**both** `background` and `border` — found five more the sweep could not reach:
+
+| control | where |
+|---|---|
+| protocol step checkbox, checked | `_roomProtocolHTML()` |
+| photo upload angle, selected | `openPhotoUpload()` |
+| booking mode radio dot, selected | `renderBookingLink()` |
+| routine item radio dot, selected | `renderRoutineBuilder()` |
+| repeat preset chip, selected | `renderAutoForm()` + `_autoRepSetActive()` |
+
+`scratchpad/probe-selected-controls.mjs` renders each one in its selected state at the brand that
+breaks it worst (near black on dark), and measures. Before / after, same probe:
+
+```
+before:  6 FAIL, worst 1.05:1   (fill rgb(20,20,20) on rgb(6,16,15) — the raw brand on a dark card)
+after:   all selected states meet 1.4.11, worst 4.29:1
+```
+
+**Why `var(--accent)` as a border is wrong on a filled control.** `_readableAccentP('#141414')`
+returns the brand **untouched**, and correctly: white-on-near-black is 18:1, so the button's own
+*label* is fine. But the button's *boundary* is then the same near-black as its fill, on a near-black
+page — 1.05:1, which reads as a disabled control. `--btn-edge` (a white hairline at .42 on dark, black
+at .34 on light) is the token for this and is what `.btnp` already used. **An accent-filled control
+takes `var(--btn-edge)`, never `var(--accent)`, as its border.** Two JS handlers
+(`_autoRepSetActive`, the angle picker's inline `onclick`) re-apply the pair after a click, so both
+had to change too — the markup alone would have passed and the click would have undone it.
 
 ### Do not regress this
 
-Run `node scratchpad/sweep-contrast.mjs` after any change to colour, a token, or a button. It is a
-hand-run sweep today; it needs a browser, which CI does not currently install.
+Run `node scratchpad/sweep-contrast.mjs` after any change to colour, a token, or a button, and
+`node scratchpad/probe-selected-controls.mjs` after touching any of the five above. Both are hand-run;
+they need a browser, which CI does not currently install.
+
+A static guard that does NOT need a browser, and the thing to reach for first:
+
+```
+# any inline style where one condition fills AND borders with the brand colour
+border:[\d.]+px solid \$\{(COND)\?'var\(--accent\)'...\};background:\$\{\1\?'var\(--accent\)'
+```
+
+Zero hits in `slickchart.html` now. `slickchart-client.html` still has six, and they are **fine**:
+they sit on white cards, and the client app's accent is darkened until it reaches 4.5:1 against white,
+so the fill alone carries the boundary. Do not "fix" those.
