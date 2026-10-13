@@ -10,7 +10,7 @@ import { verifyToken, isSessionValid, signToken } from '../lib/auth.js';
 import { appOrigin } from '../lib/email.js';
 import {
   ensureGoogleTable, getGoogleConnection, deleteGoogleConnection, googleConfigured,
-  syncApptsToGoogle, GOOGLE_SCOPE
+  syncApptsToGoogle, GOOGLE_SCOPE, listGoogleAccounts, deleteGoogleAccount
 } from '../lib/google-cal.js';
 
 async function requireLogin(req, res, q) {
@@ -48,7 +48,8 @@ export default async function handler(req, res) {
     await ensureGoogleTable();
 
     if (req.method === 'GET') {
-      const conn = await getGoogleConnection(providerId);
+      const accounts = await listGoogleAccounts(providerId);
+      const conn = accounts[0] || null;
       let authUrl = '';
       if (googleConfigured()) {
         // The state is a SHORT-LIVED SIGNED TOKEN carrying the provider id, not the id itself —
@@ -66,7 +67,10 @@ export default async function handler(req, res) {
           scope: GOOGLE_SCOPE,
           access_type: 'offline',
           include_granted_scopes: 'true',
-          prompt: 'consent',            // without this a re-connect returns no refresh token
+          // `consent` because without it a re-connect returns no refresh token. `select_account`
+          // because without THAT, Google silently reuses whichever account is already signed in —
+          // so "Connect another calendar" would hand back the one she already has and look broken.
+          prompt: 'consent select_account',
           state: st
         });
         authUrl = 'https://accounts.google.com/o/oauth2/v2/auth?' + p.toString();
@@ -78,6 +82,20 @@ export default async function handler(req, res) {
         lastError: (conn && conn.last_error) || '',
         privateTitles: !!(conn && conn.private_titles),
         authUrl,
+        // WHICH calendars are connected. An ADDED field, never a changed one: every key above still
+        // means what it meant, so a build that has not relaunched reads this response exactly as
+        // before and shows its single "Connected" card (CLAUDE.md §1a).
+        // `label` is the calendar's own title, which for a main calendar is the account's email.
+        // It can be empty for a connection made before this shipped, and the app says "Google
+        // Calendar" for those rather than printing a blank.
+        accounts: accounts.map(a => ({
+          id: String(a.id),
+          label: String(a.label || ''),
+          lastOk: Number(a.last_ok) || 0,
+          needsReconnect: !!a.last_error,
+          lastError: String(a.last_error || ''),
+          privateTitles: !!a.private_titles
+        })),
         // The exact string that must be registered in the Google console. Surfaced so the
         // self-check can print it rather than anyone having to guess which host to use.
         redirectUri: redirectUri(req)
@@ -92,6 +110,11 @@ export default async function handler(req, res) {
       const q = sql();
       await q`UPDATE google_connections SET private_titles=${want}, updated_at=${Date.now()}
         WHERE provider_id=${providerId}`;
+      // "Keep client names out of Google" is a decision about her clients, not about one calendar,
+      // so it applies to every account she has connected. Anything else would put names into the
+      // second calendar while she believed she had turned them off.
+      await q`UPDATE google_accounts SET private_titles=${want}, updated_at=${Date.now()}
+        WHERE provider_id=${providerId}`;
       res.status(200).json({ ok: true, privateTitles: want });
       return;
     }
@@ -101,6 +124,8 @@ export default async function handler(req, res) {
       if (!Array.isArray(appts)) { res.status(400).json({ error: 'appts must be a list' }); return; }
       const conn = await getGoogleConnection(providerId);
       if (!conn) { res.status(200).json({ ok: false, reason: 'notconnected' }); return; }
+      // syncApptsToGoogle now reconciles into every connected account and reports which ones need
+      // reconnecting, rather than throwing on the first failure and skipping the rest.
       try {
         const r = await syncApptsToGoogle(providerId, appts.slice(0, 500));
         res.status(200).json({ ok: true, ...r });
@@ -112,8 +137,19 @@ export default async function handler(req, res) {
     }
 
     if (req.method === 'DELETE') {
+      // ?id=<account> removes ONE calendar; without it, everything — which is what the old single
+      // "Disconnect" button has always meant, so a build that has not relaunched keeps its
+      // behaviour exactly. deleteGoogleAccount matches on provider_id too, so an id belonging to
+      // another account matches no row (§0.1).
+      const one = String((req.query && req.query.id) || '').trim();
+      if (one) {
+        await deleteGoogleAccount(providerId, one);
+        const left = await listGoogleAccounts(providerId);
+        res.status(200).json({ ok: true, connected: left.length > 0, accounts: left.length });
+        return;
+      }
       await deleteGoogleConnection(providerId);
-      res.status(200).json({ ok: true, connected: false });
+      res.status(200).json({ ok: true, connected: false, accounts: 0 });
       return;
     }
     res.status(405).json({ error: 'Method not allowed' });

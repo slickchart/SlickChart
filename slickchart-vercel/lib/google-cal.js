@@ -54,14 +54,178 @@ export async function ensureGoogleTable() {
   // existing connection already has — changing what a provider's calendar shows underneath her
   // without being asked would be its own surprise. ALTER for rows that predate the column.
   try { await q`ALTER TABLE google_connections ADD COLUMN IF NOT EXISTS private_titles boolean DEFAULT false`; } catch (e) {}
+  // SEVERAL GOOGLE ACCOUNTS, one provider.
+  //
+  // google_connections.provider_id is the PRIMARY KEY, so that table can hold exactly one account
+  // per provider, and CLAUDE.md §3 forbids dropping or renaming anything the live code reads. So
+  // the several-accounts case gets its own table and the old one is left exactly as it is, as a
+  // fallback and a backup. Nothing here ever deletes from it.
+  await q`CREATE TABLE IF NOT EXISTS google_accounts (
+    id text PRIMARY KEY,
+    provider_id text NOT NULL,
+    label text,
+    access_token text,
+    refresh_token text,
+    expires_at bigint,
+    calendar_ids text,
+    event_map text,
+    private_titles boolean DEFAULT false,
+    last_ok bigint,
+    last_error text,
+    created_at bigint,
+    updated_at bigint
+  )`;
+  // Every read is per provider (§0.1), so the index matches how it is queried.
+  try { await q`CREATE INDEX IF NOT EXISTS google_accounts_provider ON google_accounts (provider_id)`; } catch (e) {}
   _ready = true;
 }
 
+// Which calendar a token writes to, in HER words, so the screen can say "Connected: her@email" and
+// not just "Connected". events.list hands back the calendar's own title, and for a main calendar
+// that is the account's email address.
+//
+// Deliberately NOT calendarList.list, which is the obvious call for this: that one needs
+// calendar.readonly, a scope Google has NOT approved for this app, and asking for it would mean
+// another verification round — their approval mail says exactly that. events.list is covered by the
+// calendar.events scope we already hold. Verified against Google's own reference, not from memory.
+export async function calendarLabel(accessToken) {
+  if (!accessToken) return '';
+  try {
+    const qs = new URLSearchParams({ maxResults: '1', timeMin: new Date().toISOString() });
+    const r = await fetch(EVENTS_URL + '?' + qs.toString(), { headers: { Authorization: 'Bearer ' + accessToken } });
+    const j = await r.json().catch(() => null);
+    if (!r.ok || !j) return '';
+    return String(j.summary || '').slice(0, 120);
+  } catch (e) { return ''; }
+}
+
+// Every account this provider has connected, oldest first.
+//
+// The legacy single row in google_connections is folded in the first time we look, CARRYING ITS
+// event_map — without that, every appointment it had already written would look new and be created
+// a second time, giving her a duplicate of her whole calendar.
+export async function listGoogleAccounts(providerId) {
+  if (!providerId || !dbEnabled()) return [];
+  await ensureGoogleTable();
+  const q = sql();
+  const pid = String(providerId);
+  let rows = await q`SELECT id, provider_id, label, access_token, refresh_token, expires_at,
+    calendar_ids, event_map, private_titles, last_ok, last_error, created_at
+    FROM google_accounts WHERE provider_id=${pid} ORDER BY created_at ASC`;
+  if (rows.length) return rows;
+  const legacy = await q`SELECT provider_id, access_token, refresh_token, expires_at, calendar_ids,
+    event_map, private_titles, last_ok, last_error FROM google_connections WHERE provider_id=${pid}`;
+  const L = legacy[0];
+  if (!L || !(L.access_token || L.refresh_token)) return [];
+  const now = Date.now();
+  await q`INSERT INTO google_accounts (id, provider_id, label, access_token, refresh_token, expires_at,
+      calendar_ids, event_map, private_titles, last_ok, last_error, created_at, updated_at)
+    VALUES (${pid + ':legacy'}, ${pid}, ${''}, ${L.access_token || ''},
+      ${L.refresh_token || null}, ${Number(L.expires_at) || 0}, ${L.calendar_ids || 'primary'},
+      ${L.event_map || '{}'}, ${!!L.private_titles}, ${Number(L.last_ok) || 0},
+      ${L.last_error || null}, ${now}, ${now})
+    ON CONFLICT (id) DO NOTHING`;
+  return await q`SELECT id, provider_id, label, access_token, refresh_token, expires_at,
+    calendar_ids, event_map, private_titles, last_ok, last_error, created_at
+    FROM google_accounts WHERE provider_id=${pid} ORDER BY created_at ASC`;
+}
+
+async function noteAccountError(id, msg) {
+  try {
+    const q = sql();
+    await q`UPDATE google_accounts SET last_error=${String(msg || '').slice(0, 200)}, updated_at=${Date.now()}
+      WHERE id=${String(id)}`;
+  } catch (e) {}
+}
+
+// Store the account this grant belongs to. Reconnecting the SAME account must UPDATE its row rather
+// than add a second one, or every reconnect leaves another dead entry on her screen. The calendar's
+// title is the only account identity this scope can see, so that is what we match on; if she has
+// renamed her calendar to something another of her accounts also uses, the worst case is a second
+// row she can disconnect, never a lost or crossed connection.
+export async function saveGoogleAccount(providerId, t, opts) {
+  if (!providerId || !t || !t.access_token) return null;
+  await ensureGoogleTable();
+  const q = sql();
+  const pid = String(providerId);
+  const now = Date.now();
+  const label = await calendarLabel(t.access_token);
+  const expires = now + (Math.max(60, parseInt(t.expires_in, 10) || 3600) * 1000);
+  const existing = await listGoogleAccounts(pid);
+  // A legacy row has no label yet; the first reconnect adopts it rather than orphaning its event_map.
+  const match = (label && existing.find(r => String(r.label || '') === label))
+    || existing.find(r => !String(r.label || '') && r.id === pid + ':legacy')
+    || null;
+  const id = match ? match.id : (pid + ':' + now.toString(36) + Math.random().toString(36).slice(2, 8));
+  const wantPrivate = (opts && typeof opts.privateTitles === 'boolean') ? opts.privateTitles : null;
+  await q`INSERT INTO google_accounts (id, provider_id, label, access_token, refresh_token, expires_at,
+      calendar_ids, event_map, private_titles, last_ok, last_error, created_at, updated_at)
+    VALUES (${id}, ${pid}, ${label}, ${String(t.access_token)},
+      ${t.refresh_token ? String(t.refresh_token) : null}, ${expires}, ${'primary'},
+      ${(match && match.event_map) || '{}'}, ${wantPrivate === null ? false : wantPrivate},
+      ${now}, NULL, ${now}, ${now})
+    ON CONFLICT (id) DO UPDATE SET
+      label = CASE WHEN EXCLUDED.label <> '' THEN EXCLUDED.label ELSE google_accounts.label END,
+      access_token = EXCLUDED.access_token,
+      refresh_token = COALESCE(EXCLUDED.refresh_token, google_accounts.refresh_token),
+      expires_at = EXCLUDED.expires_at,
+      last_ok = EXCLUDED.last_ok, last_error = NULL, updated_at = EXCLUDED.updated_at`;
+  if (wantPrivate !== null) {
+    await q`UPDATE google_accounts SET private_titles=${wantPrivate}, updated_at=${now} WHERE id=${id}`;
+  }
+  return id;
+}
+
+// One account, by id, and only ever one belonging to the CALLER (§0.1): the id is the only thing the
+// request supplies, so provider_id is in the WHERE as well and a crafted id matches nothing.
+export async function deleteGoogleAccount(providerId, id) {
+  if (!providerId || !id) return false;
+  await ensureGoogleTable();
+  const q = sql();
+  await q`DELETE FROM google_accounts WHERE id=${String(id)} AND provider_id=${String(providerId)}`;
+  return true;
+}
+
+// A usable access token for ONE account, refreshed if needed.
+async function accountAccessToken(acct) {
+  if (!acct) return '';
+  const now = Date.now();
+  if (acct.access_token && Number(acct.expires_at) > now + 60000) return acct.access_token;
+  if (!acct.refresh_token) {
+    await noteAccountError(acct.id, 'no refresh token — reconnect needed');
+    const e = new Error('reconnect needed'); e.code = 'reconnect'; throw e;
+  }
+  const body = new URLSearchParams({
+    refresh_token: acct.refresh_token, client_id: process.env.GOOGLE_CLIENT_ID || '',
+    client_secret: process.env.GOOGLE_CLIENT_SECRET || '', grant_type: 'refresh_token'
+  });
+  const r = await fetch(TOKEN_URL, { method: 'POST', headers: { 'Content-Type': 'application/x-www-form-urlencoded' }, body });
+  const j = await r.json().catch(() => null);
+  if (!r.ok || !j || !j.access_token) {
+    await noteAccountError(acct.id, (j && (j.error_description || j.error)) || 'refresh failed');
+    const e = new Error('reconnect needed'); e.code = 'reconnect'; throw e;
+  }
+  const expires = Date.now() + (Math.max(60, parseInt(j.expires_in, 10) || 3600) * 1000);
+  try {
+    const q = sql();
+    await q`UPDATE google_accounts SET access_token=${String(j.access_token)}, expires_at=${expires},
+      last_error=NULL, updated_at=${Date.now()} WHERE id=${String(acct.id)}`;
+  } catch (e) {}
+  acct.access_token = j.access_token; acct.expires_at = expires;
+  return j.access_token;
+}
+
+// "Is this provider connected at all", and the first account's details. Kept because lib/booking.js
+// and the existing tests ask exactly that question. Multi-account callers want listGoogleAccounts.
 export async function getGoogleConnection(providerId) {
   if (!providerId || !dbEnabled()) return null;
+  try {
+    const accounts = await listGoogleAccounts(providerId);
+    if (accounts.length) return accounts[0];
+  } catch (e) { /* fall through to the legacy row */ }
   const q = sql();
   const rows = await q`SELECT provider_id, access_token, refresh_token, expires_at, calendar_ids,
-    event_map, last_ok, last_error FROM google_connections WHERE provider_id=${String(providerId)}`;
+    event_map, private_titles, last_ok, last_error FROM google_connections WHERE provider_id=${String(providerId)}`;
   return rows[0] || null;
 }
 
@@ -72,6 +236,10 @@ export async function getGoogleConnection(providerId) {
 // Left undefined, the column default stands and a reconnect keeps whatever she chose before.
 export async function saveGoogleConnection(providerId, t, opts) {
   if (!providerId) return false;
+  // Every read now goes through google_accounts, so a grant has to land there or it is invisible.
+  // The legacy row is still written below, untouched in shape, so nothing that predates this can
+  // be left worse off than it was.
+  try { await saveGoogleAccount(providerId, t, opts); } catch (e) {}
   const q = sql();
   const now = Date.now();
   const wantPrivate = (opts && typeof opts.privateTitles === 'boolean') ? opts.privateTitles : null;
@@ -99,10 +267,13 @@ export async function saveGoogleConnection(providerId, t, opts) {
   return true;
 }
 
+// Disconnect EVERYTHING for this provider. The old single-account "Disconnect" button means this,
+// so it still does. Per-account removal is deleteGoogleAccount.
 export async function deleteGoogleConnection(providerId) {
   if (!providerId) return false;
   const q = sql();
   await q`DELETE FROM google_connections WHERE provider_id=${String(providerId)}`;
+  try { await q`DELETE FROM google_accounts WHERE provider_id=${String(providerId)}`; } catch (e) {}
   return true;
 }
 
@@ -171,8 +342,30 @@ export async function googleAccessToken(providerId) {
 //
 // Returns { start, end } as MINUTES FROM MIDNIGHT — the shape lib/booking.js already works in,
 // converted the same way its Square branch does.
+// Busy across EVERY connected account, unioned. If she is booked in either calendar she is busy,
+// so a client must not be offered that slot. One unreadable account does not hide the others'
+// commitments — the alternative is offering a time she is already taken.
 export async function googleBusyMinutes(providerId, dateISO, token) {
-  const access = token || await googleAccessToken(providerId);
+  if (token) return await busyForToken(providerId, dateISO, token, null);
+  const accounts = await listGoogleAccounts(providerId);
+  if (!accounts.length) return [];
+  const all = [];
+  let anyOk = false, lastErr = null;
+  for (const acct of accounts) {
+    try {
+      const access = await accountAccessToken(acct);
+      if (!access) continue;
+      const got = await busyForToken(providerId, dateISO, access, acct);
+      got.forEach(x => all.push(x));
+      anyOk = true;
+    } catch (e) { lastErr = e; }
+  }
+  // Only when NOTHING could be read do we raise: a half-read day would quietly offer booked slots.
+  if (!anyOk && lastErr) throw lastErr;
+  return all;
+}
+
+async function busyForToken(providerId, dateISO, access, acct) {
   if (!access) return [];
   const dayStart = new Date(dateISO + 'T00:00:00');
   const qs = new URLSearchParams({
@@ -185,7 +378,8 @@ export async function googleBusyMinutes(providerId, dateISO, token) {
   const r = await fetch(EVENTS_URL + '?' + qs.toString(), { headers: { Authorization: 'Bearer ' + access } });
   const j = await r.json().catch(() => null);
   if (!r.ok || !j) {
-    await noteGoogleError(providerId, 'events.list ' + r.status);
+    if (acct) await noteAccountError(acct.id, 'events.list ' + r.status);
+    else await noteGoogleError(providerId, 'events.list ' + r.status);
     const e = new Error('calendar unreadable'); e.code = 'calendar'; throw e;
   }
   const out = [];
@@ -211,7 +405,8 @@ export async function googleBusyMinutes(providerId, dateISO, token) {
   });
   try {
     const q = sql();
-    await q`UPDATE google_connections SET last_ok=${Date.now()}, last_error=NULL WHERE provider_id=${String(providerId)}`;
+    if (acct) await q`UPDATE google_accounts SET last_ok=${Date.now()}, last_error=NULL WHERE id=${String(acct.id)}`;
+    else await q`UPDATE google_connections SET last_ok=${Date.now()}, last_error=NULL WHERE provider_id=${String(providerId)}`;
   } catch (e) {}
   return out;
 }
@@ -225,10 +420,10 @@ export async function googleBusyMinutes(providerId, dateISO, token) {
 function eventMapOf(conn) {
   try { const m = JSON.parse((conn && conn.event_map) || '{}'); return (m && typeof m === 'object') ? m : {}; } catch (e) { return {}; }
 }
-async function saveEventMap(providerId, map) {
+async function saveEventMap(accountId, map) {
   const q = sql();
-  await q`UPDATE google_connections SET event_map=${JSON.stringify(map || {})}, updated_at=${Date.now()}
-    WHERE provider_id=${String(providerId)}`;
+  await q`UPDATE google_accounts SET event_map=${JSON.stringify(map || {})}, updated_at=${Date.now()}
+    WHERE id=${String(accountId)}`;
 }
 // The event as Google will store it. `private` is the provider's "keep client names out of Google"
 // setting, read from her connection row rather than from the request, so a device running older JS
@@ -256,11 +451,35 @@ function eventBody(a, isPrivate) {
 }
 // Reconcile one provider's appointments into Google: create what is new, PATCH what moved, delete
 // what she cancelled. Returns counts. Best-effort per appointment so one bad row cannot stop the rest.
+// Reconcile into EVERY account she has connected. Each carries its own event_map, because the same
+// appointment is a different Google event in each calendar — sharing one map would make the second
+// account PATCH an id that does not exist there and then create a duplicate on the next run.
+//
+// One account failing (a revoked grant, a refresh Google rejected) must not stop the others: she
+// reconnects that one and the rest were never interrupted.
 export async function syncApptsToGoogle(providerId, appts) {
+  const total = { created: 0, updated: 0, deleted: 0, failed: 0, accounts: 0, reconnect: [] };
+  const accounts = await listGoogleAccounts(providerId);
+  if (!accounts.length) return total;
+  for (const acct of accounts) {
+    try {
+      const r = await syncApptsToAccount(acct, appts);
+      total.created += r.created; total.updated += r.updated;
+      total.deleted += r.deleted; total.failed += r.failed;
+      total.accounts++;
+    } catch (e) {
+      if (e && e.code === 'reconnect') total.reconnect.push(String(acct.label || ''));
+      else total.failed++;
+    }
+  }
+  return total;
+}
+
+async function syncApptsToAccount(acct, appts) {
   const out = { created: 0, updated: 0, deleted: 0, failed: 0 };
-  const access = await googleAccessToken(providerId);
+  const access = await accountAccessToken(acct);
   if (!access) return out;
-  const conn = await getGoogleConnection(providerId);
+  const conn = acct;
   const isPrivate = !!(conn && conn.private_titles);
   const map = eventMapOf(conn);
   const want = new Map();
@@ -291,6 +510,11 @@ export async function syncApptsToGoogle(providerId, appts) {
       else out.failed++;
     } catch (e) { out.failed++; }
   }
-  try { await saveEventMap(providerId, map); } catch (e) {}
+  try { await saveEventMap(acct.id, map); } catch (e) {}
+  try {
+    const q = sql();
+    await q`UPDATE google_accounts SET last_ok=${Date.now()}, last_error=NULL, updated_at=${Date.now()}
+      WHERE id=${String(acct.id)}`;
+  } catch (e) {}
   return out;
 }

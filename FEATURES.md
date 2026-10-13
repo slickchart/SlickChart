@@ -256,6 +256,10 @@ saved anywhere", not "does this always call that".
 | `_gcalDisconnect` | `/api/clients` | via `syncClientEvents` |
 | `_gcalDisconnect` | `/api/google-cal` | direct |
 | `_gcalDisconnect` | `/api/provider-form` | via `submitSignOnDevice` |
+| `_gcalDisconnectOne` | `/api/google-cal` | via `_gcalDoDisconnectOne` |
+| `_gcalDoDisconnectOne` | `/api/clients` | via `syncClientEvents` |
+| `_gcalDoDisconnectOne` | `/api/google-cal` | direct |
+| `_gcalDoDisconnectOne` | `/api/provider-form` | via `submitSignOnDevice` |
 | `_gcalPreConnectPrivacyHTML` | `/api/calendar-url` | via `_loadCalFeedUrl` |
 | `_gcalPreConnectPrivacyHTML` | `/api/google-cal` | via `_gcalStatus` |
 | `_gcalPrivacyRowHTML` | `/api/google-cal` | via `_gcalSetPrivacy` |
@@ -1207,7 +1211,7 @@ Plus every synced `sc_*` key below, which rides `/api/store`.
 
 ## Server tables
 
-`announcements`, `auth_tokens`, `beta_events`, `build_purchases`, `client_events`, `client_login_codes`, `client_prefs`, `clients`, `consult_requests`, `course_versions`, `feedback`, `files`, `free_signups`, `google_connections`, `kv`, `kv_history`, `login_attempts`, `notify_log`, `nurture_optout`, `nurture_sends`, `provider_push_subscriptions`, `providers`, `push_subscriptions`, `reminder_log`, `sessions`, `square_connections`, `square_create_log`, `subscriptions`, `sync_requests`, `waitlist`.
+`announcements`, `auth_tokens`, `beta_events`, `build_purchases`, `client_events`, `client_login_codes`, `client_prefs`, `clients`, `consult_requests`, `course_versions`, `feedback`, `files`, `free_signups`, `google_accounts`, `google_connections`, `kv`, `kv_history`, `login_attempts`, `notify_log`, `nurture_optout`, `nurture_sends`, `provider_push_subscriptions`, `providers`, `push_subscriptions`, `reminder_log`, `sessions`, `square_connections`, `square_create_log`, `subscriptions`, `sync_requests`, `waitlist`.
 
 Anything in these survives a lost or wiped device. Anything only in localStorage or IndexedDB
 does not.

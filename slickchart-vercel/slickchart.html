@@ -27200,6 +27200,29 @@ async function _gcalDisconnect(){
     try{nav('connect-calendar');}catch(e){}
   }catch(e){}
 }
+// Disconnect ONE calendar and leave the others alone. Named so it reads as what she is about to
+// lose: taking the wrong calendar off would stop those appointments syncing without any error.
+async function _gcalDisconnectOne(id,label){
+  const name=String(label||'this Google calendar');
+  if(typeof _confirmSheet==='function'){
+    _confirmSheet({title:'Disconnect '+name+'?',body:'Appointments will stop appearing in that calendar, and its events will stop blocking client bookings. Your other calendars are not affected, and nothing in SlickChart is deleted.',action:'Disconnect',danger:true},function(){_gcalDoDisconnectOne(id,name);});
+    return;
+  }
+  _gcalDoDisconnectOne(id,name);
+}
+async function _gcalDoDisconnectOne(id,name){
+  try{
+    const tok=(typeof Cloud!=='undefined'&&Cloud&&Cloud.token)||'';
+    await fetch('/api/google-cal?id='+encodeURIComponent(id),{method:'DELETE',headers:{'Authorization':'Bearer '+tok}}).catch(function(){});
+    if(typeof _gcalStatus==='function')await _gcalStatus();   // re-read rather than guess what is left
+    if(typeof proToast==='function')proToast(name+' disconnected');
+    try{nav('connect-calendar');}catch(e){}
+  }catch(e){}
+}
+// What to call a connected calendar. The label is its own title, which for a main calendar is the
+// account's email. A connection made before labels existed has none, so it gets a plain name rather
+// than a blank line.
+function _gcalAcctName(a){return String((a&&a.label)||'').trim()||'Google Calendar';}
 function _gcalCardHTML(){
   const st=_gcalState;
   if(st&&st.answered===true&&st.configured===false&&!st.connected){
@@ -27210,14 +27233,33 @@ function _gcalCardHTML(){
   }
   if(st&&st.connected){
     const when=st.lastOk?new Date(st.lastOk).toLocaleString('en-US',{month:'short',day:'numeric',hour:'numeric',minute:'2-digit'}):'not yet';
-    return `<div style="background:${st.needsReconnect?'var(--p-red-bg)':'var(--p-surf2)'};border:1px solid ${st.needsReconnect?'var(--p-red-line)':'var(--p-line3)'};border-radius:12px;padding:12px 14px;margin-bottom:14px;">
-      <div style="font-size:16px;font-weight:600;color:var(--p-ink);margin-bottom:3px;">${st.needsReconnect?'Google needs reconnecting':'Two-way sync is on'}</div>
-      <div style="font-size:16px;color:var(--p-mut);line-height:1.55;margin-bottom:9px;">${st.needsReconnect
-        ?'Google stopped accepting the connection, so your own events are not blocking bookings right now. Reconnect to fix it.'
-        :'Your appointments appear in Google straight away, and your own Google events block client bookings.<br><span style="font-size:14px;">Last checked '+_fileEsc(when)+'</span>'}</div>
-      <div style="display:flex;gap:8px;flex-wrap:wrap;">
-        ${st.needsReconnect&&st.authUrl?`<a href="${_urlAttr(st.authUrl)}" class="btnp" style="display:inline-block;text-decoration:none;border-radius:8px;padding:9px 14px;font-size:16px;font-weight:600;">Reconnect Google</a>`:''}
-        <button onclick="_gcalDisconnect()" style="background:var(--surf1);border:1px solid var(--p-line-ctl);color:var(--p-mut2);border-radius:8px;padding:9px 12px;font-size:16px;cursor:pointer;font-family:inherit;">Disconnect</button>
+    // WHICH calendars, by name. `accounts` only arrives from a server that has it; an older reply
+    // has just the one connection, so fall back to a single unnamed row rather than showing nothing.
+    const accts=(st.accounts&&st.accounts.length)?st.accounts
+      :[{id:'',label:'',lastOk:st.lastOk||0,needsReconnect:!!st.needsReconnect}];
+    const anyBad=accts.some(function(a){return a.needsReconnect;});
+    const multi=accts.length>1;
+    const row=function(a){
+      const nm=_gcalAcctName(a);
+      const w=a.lastOk?new Date(a.lastOk).toLocaleString('en-US',{month:'short',day:'numeric',hour:'numeric',minute:'2-digit'}):'not yet';
+      return `<div style="display:flex;align-items:center;gap:10px;padding:9px 0;border-top:1px solid var(--p-line3);">
+        <i class="ti ${a.needsReconnect?'ti-alert-circle':'ti-calendar-check'}" aria-hidden="true" style="font-size:18px;flex-shrink:0;color:${a.needsReconnect?'var(--p-red)':'var(--p-green)'};"></i>
+        <div style="flex:1;min-width:0;">
+          <div style="font-size:16px;font-weight:500;color:var(--p-ink);overflow:hidden;text-overflow:ellipsis;white-space:nowrap;">${_fileEsc(nm)}</div>
+          <div style="font-size:14px;color:var(--p-mut);">${a.needsReconnect?'Needs reconnecting':'Last checked '+_fileEsc(w)}</div>
+        </div>
+        ${a.id?`<button onclick="_gcalDisconnectOne('${_jsAttr(a.id)}','${_jsAttr(nm)}')" aria-label="Disconnect ${_fileEsc(nm)}" style="flex-shrink:0;background:var(--surf1);border:1px solid var(--p-line-ctl);color:var(--p-mut2);border-radius:8px;padding:7px 11px;font-size:14px;cursor:pointer;font-family:inherit;">Disconnect</button>`:''}
+      </div>`;
+    };
+    return `<div style="background:${anyBad?'var(--p-red-bg)':'var(--p-surf2)'};border:1px solid ${anyBad?'var(--p-red-line)':'var(--p-line3)'};border-radius:12px;padding:12px 14px;margin-bottom:14px;">
+      <div style="font-size:16px;font-weight:600;color:var(--p-ink);margin-bottom:3px;">${anyBad?'A Google calendar needs reconnecting':(multi?('Two-way sync is on for '+accts.length+' calendars'):'Two-way sync is on')}</div>
+      <div style="font-size:16px;color:var(--p-mut);line-height:1.55;margin-bottom:4px;">${anyBad
+        ?'Google stopped accepting one of these, so its events are not blocking bookings right now. Reconnect it to fix that.'
+        :'Your appointments appear in '+(multi?'every calendar below':'Google')+' straight away, and your own Google events block client bookings.'}</div>
+      ${accts.map(row).join('')}
+      <div style="display:flex;gap:8px;flex-wrap:wrap;margin-top:11px;">
+        ${st.authUrl?`<a href="${_urlAttr(st.authUrl)}" class="btnp" style="display:inline-block;text-decoration:none;border-radius:8px;padding:9px 14px;font-size:16px;font-weight:600;"><i class="ti ti-plus" aria-hidden="true" style="font-size:16px;vertical-align:-2px;"></i> ${anyBad?'Reconnect':'Connect another calendar'}</a>`:''}
+        ${multi?`<button onclick="_gcalDisconnect()" style="background:var(--surf1);border:1px solid var(--p-line-ctl);color:var(--p-mut2);border-radius:8px;padding:9px 12px;font-size:16px;cursor:pointer;font-family:inherit;">Disconnect all</button>`:(accts[0]&&accts[0].id?'':`<button onclick="_gcalDisconnect()" style="background:var(--surf1);border:1px solid var(--p-line-ctl);color:var(--p-mut2);border-radius:8px;padding:9px 12px;font-size:16px;cursor:pointer;font-family:inherit;">Disconnect</button>`)}
       </div>
       ${_gcalPrivacyRowHTML()}
       <div style="font-size:14px;color:var(--p-mut);line-height:1.5;margin-top:9px;">An event you mark <b>Free</b> in Google does not block anything, which is how Google defines it.</div>
