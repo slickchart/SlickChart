@@ -18,7 +18,7 @@ await page.waitForTimeout(2500);
 const many = Array.from({ length: 900 }, (_, i) => ({ id: 'j' + i, name: 'Junk ' + i, deleted: false, has: {} }));
 await page.evaluate(m => {
   _recoverState = { ok: true, provider: { email: 'a@b.c' },
-    clients: m.concat([{ id: 'coop1', name: 'Cooper Howard', deleted: false, has: {} }, { id: 'coop2', name: 'Cooper Howard', deleted: false, has: {} }, { id: 'real', name: 'Real One', deleted: false, has: { summaries: 1 } }]),
+    clients: m.concat([{ id: 'coop1', name: 'Cooper Howard', deleted: false, has: {} }, { id: 'coop2', name: 'Cooper Howard', deleted: false, has: {} }, { id: 'real', name: 'Real One', deleted: false, has: { summaries: 1 } }]).concat(Array.from({ length: 10 }, (_, i) => ({ id: 'cx' + i, name: 'Cooper Howard', deleted: false, has: {} }))),
     nestedUnder: {}, counts: { rosterIds: 1 }, ghosts: [], typed: {}, history: [], kv: {}, deletedRecordIds: [],
     missingFromRoster: m.map(x => ({ id: x.id, name: x.name })).concat([{ id: 'coop1', name: 'Cooper Howard' }, { id: 'coop2', name: 'Cooper Howard' }]),
     libraries: { sc_session_summaries: { onServer: true, clients: 1, entries: 3, bytes: 900, byClient: { coop1: 3 } } },
@@ -32,7 +32,7 @@ check('the never-in-list group cannot be ticked', await page.evaluate(() => { co
 await page.fill('#rec-q', 'cooper');
 await page.waitForTimeout(700);
 const t = await page.evaluate(() => document.getElementById('S').innerText);
-check('results say 2 records named like cooper', /2 records named like “cooper”/.test(t), (t.match(/\d+ records? named[^\n]*/) || [''])[0]);
+check('results say 12 records named like cooper', /12 records named like “cooper”/.test(t), (t.match(/\d+ records? named[^\n]*/) || [''])[0]);
 check('the one with summaries says so', /saved under this id: 3 summaries/.test(t));
 check('both say NOT in their list', (t.match(/NOT in their list/g) || []).length >= 2);
 check('lists below are filtered: no junk names shown', !/Junk 5/.test(t), (t.match(/Junk \d+/) || [''])[0]);
