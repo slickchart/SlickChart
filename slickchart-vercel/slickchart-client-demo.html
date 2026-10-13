@@ -1217,6 +1217,19 @@ function _loadClientMessagesInto(p){
     if(raw){const map=JSON.parse(raw);if(map&&Array.isArray(map[p.id])&&map[p.id].length)p.thread=map[p.id];}
   }catch(e){}
 }
+// A session summary keeps its products as NAMES (plain strings: the provider app saves
+// productDetail.map(p=>p.name)), while the live recommendation list is objects. The summary screens
+// read p.name, so a string drew an empty row with only the bag icon — Ashley, 2026-10-13: "the
+// recommended products are not showing on the client". Turn a name back into the matching live
+// product when there is one (so Buy still works), else a plain {name}; drop anything with no name.
+function _prodList(list,live){
+  return (Array.isArray(list)?list:[]).map(function(x){
+    if(x&&typeof x==='object')return x;
+    var n=String(x==null?'':x).trim();if(!n)return null;
+    var hit=(Array.isArray(live)?live:[]).find(function(o){return o&&typeof o==='object'&&String(o.name||'').trim().toLowerCase()===n.toLowerCase();});
+    return hit||{name:n};
+  }).filter(function(x){return x&&String(x.name||'').trim();});
+}
 function activeProvider(){return client.providers.find(p=>p.id===client.activeProviderId)||client.providers[0]||{id:'jess',name:'',first:'',initials:'',studio:'',thread:[],summaries:[],homecare:[],products:[]};}
 function recomputeCountdown(){
   // Real clients count from the actual current date; the demo stays pinned to its
@@ -5599,7 +5612,7 @@ function renderLatestSummary(){
   // Show the provider's CURRENT recommendations (same source as the Shop's Recommended tab) so this
   // stays in sync when they update it; fall back to the products frozen on this summary if the live
   // list is empty.
-  const products=(activeProvider().products&&activeProvider().products.length)?activeProvider().products:((s&&s.products)||[]);
+  const products=_prodList((activeProvider().products&&activeProvider().products.length)?activeProvider().products:((s&&s.products)||[]),activeProvider().products);
   S.innerHTML=`
   <div id="summary-screen"></div>
   <div style="padding:12px 16px 0;display:flex;align-items:center;justify-content:flex-end;">${summaries.length>1?`<span style="font-size:12px;color:var(--c-mut);">${_summaryIdx===0?'Latest':'#'+(summaries.length-_summaryIdx)} of ${summaries.length}</span>`:''}</div>
@@ -5637,7 +5650,7 @@ function renderLatestSummary(){
   </div>`:''}
 
   <!-- Homecare -->
-  <div style="background:var(--c-card);border:1.5px solid var(--c-line);border-radius:12px;margin:0 16px 10px;overflow:hidden;">
+  ${(s.homecare&&s.homecare.length)?`<div style="background:var(--c-card);border:1.5px solid var(--c-line);border-radius:12px;margin:0 16px 10px;overflow:hidden;">
     <div style="padding:12px 16px;border-bottom:1px solid var(--c-line);">
       <div style="font-size:12px;font-weight:600;color:var(--c-mut);text-transform:uppercase;letter-spacing:.07em;">Your homecare routine</div>
     </div>
@@ -5648,21 +5661,21 @@ function renderLatestSummary(){
       </div>
       <span style="font-size:13px;color:var(--c-ink);line-height:1.6;padding-top:2px;">${_txt(step)}</span>
     </div>`).join('')}
-  </div>
+  </div>`:''}
 
   <!-- Products -->
-  <div style="background:var(--c-card);border:1.5px solid var(--c-line);border-radius:12px;margin:0 16px 10px;overflow:hidden;">
+  ${(()=>{_buyProducts=products;return'';})()}
+  ${products.length?`<div style="background:var(--c-card);border:1.5px solid var(--c-line);border-radius:12px;margin:0 16px 10px;overflow:hidden;">
     <div style="padding:12px 16px;border-bottom:1px solid var(--c-line);">
       <div style="font-size:12px;font-weight:600;color:var(--c-mut);text-transform:uppercase;letter-spacing:.07em;">Recommended for you</div>
     </div>
-    ${(()=>{_buyProducts=products;return'';})()}
     ${products.map((p,i)=>{const opts=(p.inOffice?1:0)+(p.site?1:0)+(p.url?1:0)+((p.amazon||activeProvider().amazonStore)?1:0);return`
     <div style="display:flex;align-items:flex-start;gap:12px;padding:12px 16px;border-bottom:1px solid var(--c-line);">
       ${_prodThumb(p,22)}
       <div style="flex:1;min-width:0;"><div style="font-size:13px;font-weight:600;color:var(--c-ink);">${_txt(p.name)}</div><div style="font-size:11px;color:var(--c-mut);">${_txt(p.brand)}</div>${p.inOffice?`<div style="font-size:11px;color:var(--accent-ink-lt);font-weight:600;margin-top:3px;display:flex;align-items:center;gap:3px;"><i class="ti ti-building-store" aria-hidden="true" style="font-size:12px;"></i> Available in office</div>`:''}${p.why?`<div style="font-size:12px;color:var(--c-mut);line-height:1.5;margin-top:5px;">${_txt(p.why)}</div>`:''}</div>
       ${opts>0?`<button onclick="openBuyOptions(${i})" style="background:var(--accent);color:var(--accent-ink);border:none;border-radius:8px;padding:6px 14px;font-size:12px;font-weight:600;cursor:pointer;flex-shrink:0;">Buy</button>`:''}
     </div>`;}).join('')}
-  </div>
+  </div>`:''}
 
   <!-- Next appointment -->
   <div style="background:var(--c-card);border:1.5px solid var(--c-line);border-radius:12px;margin:0 16px 10px;padding:14px 16px;">
@@ -5804,7 +5817,7 @@ function renderMagicLanding(){
   const summaries=p.summaries||[];
   const s=summaries[0];
   const routine=p.homecare||[];
-  const products=(s&&s.products&&s.products.length)?s.products:(p.products||[]);
+  const products=_prodList((s&&s.products&&s.products.length)?s.products:(p.products||[]),p.products);
   const first=client.name.split(' ')[0];
   _buyProducts=products;
   S.innerHTML=`

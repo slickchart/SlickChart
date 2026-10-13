@@ -6695,6 +6695,18 @@ launch, same again, same toast. The upsert now applies the purge's rule before c
 `scratchpad/test-booking-readd.mjs`: the previous build toasts "3 … added" then "2 … added" on the next
 run for the same two removed people; this build adds only the genuinely new booker, once.
 
+### Client summary showed product rows with no names — fixed, build `2026-10-13i`
+
+Her observation (COMPUTER, Safari, 14:32): provider Session Record for Ashley Watson lists two products
+(Avène Thermal Spring Water - 10 fl. oz.; Cicalfate+ Restorative Protective Cream 1.3 fl. oz.); the
+client app's session summary (preview, same `/space?c=` link) shows "Recommended for you" with two 🛍️
+rows and NO names, and an empty "Your homecare routine" card. The client code is the same on live.
+
+A summary stores products as NAMES (`productDetail.map(p=>p.name)`); `renderLatestSummary` and
+`renderMagicLanding` read `p.name`, so a string drew a blank row. `_prodList` turns a name back into the
+matching live recommendation (keeps Buy) or `{name}`. Empty homecare/products cards are now hidden.
+`scratchpad/test-client-summary-products.mjs` 6/6; three FAIL on the previous client page.
+
 ## §2bd. How the Square bulk delete was done before, and where it went
 
 Ashley, 2026-10-13, with a screenshot of the Square Developer forum thread *"Customers created via
