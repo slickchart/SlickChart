@@ -6707,6 +6707,18 @@ A summary stores products as NAMES (`productDetail.map(p=>p.name)`); `renderLate
 matching live recommendation (keeps Buy) or `{name}`. Empty homecare/products cards are now hidden.
 `scratchpad/test-client-summary-products.mjs` 6/6; three FAIL on the previous client page.
 
+### Booking toasts: the 13h fix did NOT stop it — second cause, build `2026-10-13k`
+
+Her report after 13j (COMPUTER, preview): *"ok great that worked. the booking toasts are still coming up
+every time"*. Per §1b.5 the 13h reproduction was not her situation. Home draws at boot and calls
+`_loadSquareAppts` before the account's roster is read back (it is offloaded to IndexedDB, so early on
+CL is empty); `_upsertClientsFromSquare` then sees every booker as new, creates and toasts them, and the
+real roster load replaces CL — every launch. Now the batch is held while `Cloud._booting` or
+`_rosterNotReadYet()` and run once both clear (gave up silently after 90s rather than guess). The toast
+now NAMES the people (first 4) so if it ever recurs she can say who. Test: the 13j build creates and
+toasts "3 new online bookings" for two existing clients at a simulated launch; 13k adds only the new
+one. NOT yet confirmed on her machine — that is the real test.
+
 ### Shoppable products, purchases → homecare, one photo-consult row — build `2026-10-13j`
 
 Her words (COMPUTER, preview, 14:34): *"all recommended products should be able to be clicked to be

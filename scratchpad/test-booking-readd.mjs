@@ -35,6 +35,25 @@ check('second run (next launch) adds nobody', r.a2 === 0, r.a2);
 check('one toast total, naming the new booker', r.toasts.length === 1 && /Brand/.test(r.toasts[0]), JSON.stringify(r.toasts));
 check('deleted and merged bookers never appear', !r.names.includes('Deleted Person') && !r.names.includes('Merged Person'), JSON.stringify(r.names));
 check('existing client matched, not duplicated', r.names.filter(n => /Megan/.test(n)).length === 1);
+// The launch case: bookings arrive while the roster is still unread (boot). Nothing may be created or
+// toasted then; once boot is over and the list is in, the same batch runs and adds only the new one.
+const r2 = await page.evaluate(async () => {
+  Object.keys(CL).forEach(k => delete CL[k]);
+  const real = { megan: { name: 'Megan LaMantia-Bishop', squareId: 'SQMEGAN000001' }, brand: { name: 'Brand New', squareId: 'SQNEW00000001' } };
+  const toasts = []; const _t = window.proToast; window.proToast = m => toasts.push(m);
+  Cloud._booting = true;
+  const appts = [{ customerId: 'SQMEGAN000001', customerName: 'Megan LaMantia-Bishop' }, { customerId: 'SQNEW00000001', customerName: 'Brand New' }, { customerId: 'SQOTHER000001', customerName: 'Truly New' }];
+  const during = _upsertClientsFromSquare(appts);
+  const namesDuring = Object.values(CL).map(c => c.name);
+  Object.assign(CL, real);             // the real roster lands
+  Cloud._booting = false;
+  await new Promise(r => setTimeout(r, 2500));
+  window.proToast = _t;
+  return { during, namesDuring, toasts, names: Object.values(CL).map(c => c.name) };
+});
+check('launch: nothing created while the roster is unread', r2.during === 0 && r2.namesDuring.length === 0, JSON.stringify(r2.namesDuring));
+check('launch: after boot, only the genuinely new booker is added', r2.names.filter(n => n === 'Truly New').length === 1 && r2.names.length === 3, JSON.stringify(r2.names));
+check('launch: one toast, for that person only', r2.toasts.length === 1 && /Truly/.test(r2.toasts[0]), JSON.stringify(r2.toasts));
 check('no page errors', errs.length === 0, errs.join(' | '));
 await browser.close();
 let bad = 0; for (const x of results) { if (!x.pass) bad++; console.log((x.pass ? 'PASS ' : 'FAIL ') + x.name + (x.detail !== '' ? '  — ' + x.detail : '')); }

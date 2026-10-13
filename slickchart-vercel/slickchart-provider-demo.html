@@ -486,7 +486,7 @@ const S=document.getElementById('S');
 // resets when I save it" and there was no way to tell whether her phone had any of them — a whole
 // day was spent debugging code she may not have been running. Shown at the bottom of Settings, so
 // the answer is a screenshot away. Bump it on every ship.
-const APP_BUILD='2026-10-13j';
+const APP_BUILD='2026-10-13k';
 
 
 /* ════════════════════════════════════════════════════════════════
@@ -30431,6 +30431,28 @@ async function _loadSquareAppts(force){
 // existing client by Square customer id first, then by name, and only creates when there's no match.
 function _upsertClientsFromSquare(appts){
   if(!Array.isArray(appts)||!appts.length)return;
+  // Not before her list is in memory. Home draws (and asks Square for bookings) before the account's
+  // roster has been read back, so at that moment EVERY booker looks new: they were created, toasted as
+  // "N new online bookings added", then wiped when the real list loaded — on every single launch.
+  // Ashley, 2026-10-13, still seeing it after the deleted/merged fix: "the booking toasts are still
+  // coming up every time". Hold the batch and run it once boot is over and the roster is read.
+  const _notYet=(typeof Cloud!=='undefined'&&Cloud&&Cloud.token&&Cloud._booting)||(typeof _rosterNotReadYet==='function'&&_rosterNotReadYet());
+  if(_notYet){
+    _upsertClientsFromSquare._pending=appts;
+    if(!_upsertClientsFromSquare._timer){
+      let tries=0;
+      _upsertClientsFromSquare._timer=setInterval(function(){
+        tries++;
+        const still=(typeof Cloud!=='undefined'&&Cloud&&Cloud.token&&Cloud._booting)||(typeof _rosterNotReadYet==='function'&&_rosterNotReadYet());
+        if(still&&tries<90)return;
+        clearInterval(_upsertClientsFromSquare._timer);_upsertClientsFromSquare._timer=0;
+        if(still)return;                                  // never settled: do nothing rather than guess
+        const p=_upsertClientsFromSquare._pending;_upsertClientsFromSquare._pending=null;
+        if(p)try{_upsertClientsFromSquare(p);}catch(e){}
+      },1000);
+    }
+    return 0;
+  }
   const palette=[['var(--p-purple-bg)','var(--p-purple)'],['var(--p-surf2)','var(--p-green)'],['var(--p-blue-bg)','var(--p-blue)'],['var(--p-red-bg)','var(--p-red)'],['var(--p-amber-bg)','var(--accent)']];
   let added=0,changed=false;const newNames=[];const _seen={};
   appts.forEach(function(a){
@@ -30474,7 +30496,7 @@ function _upsertClientsFromSquare(appts){
   });
   if(changed){try{if(typeof saveClients==='function')saveClients();}catch(e){}}
   if(added&&!(_upsertClientsFromSquare._quiet)&&typeof proToast==='function'){
-    proToast(added===1?(newNames[0]+' booked online — added to your clients'):(added+' new online bookings added to your clients'));
+    proToast(added===1?(newNames[0]+' booked online — added to your clients'):(added+' new online bookings added to your clients: '+newNames.slice(0,4).join(', ')+(added>4?'…':'')));
   }
   return added;
 }
