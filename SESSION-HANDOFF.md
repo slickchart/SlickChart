@@ -6713,6 +6713,23 @@ A summary stores products as NAMES (`productDetail.map(p=>p.name)`); `renderLate
 matching live recommendation (keeps Buy) or `{name}`. Empty homecare/products cards are now hidden.
 `scratchpad/test-client-summary-products.mjs` 6/6; three FAIL on the previous client page.
 
+### Tidy ALL duplicates in one tap — live, build `2026-10-13s` (main = `68dd683`)
+
+Her second live run on Cooper (15:35, COMPUTER): kept the record in her list (`c1791493687681ygowr`),
+retired 2, and left 127 copies that "hold 1 forms, 2 chart fields" (30), "1 forms, 1 chart field" (18),
+"1 chart field" (78), "1 pendingForms, 1 chart field, a check-in request" (1). Her words: *"this isnt
+working and im getting really tired of going back and forth so much"*.
+
+Those were the same intake form and the booked date copied onto every copy. A copy now counts as a
+DUPLICATE when everything on it is already on the kept record: forms matched by formId/title against
+the kept row and its roster entry, chart fields equal or placeholders, `lastVisit`/`nextVisit` ignored
+(stamped from bookings), pending items/check-in requests/unopened links ignored (re-sendable). Kept
+if it has saved work under its id, submissions, an opened link, summaries/aftercare/products/routine/
+photos/animals/loyalty, a form the kept one lacks, or a differing chart field — with the reason.
+`consolidateAll` runs every name with >1 live row, ONLY for names that already have a record in her
+list (a junk name with no real client is reported, never promoted); one list backup.
+"Tidy all duplicate clients" button at the top of Recover clients. `test-consolidate.mjs` 17/17.
+
 ### PROMOTED 2026-10-13 ~15:30 PT at her word ("push it right away then") — main = release = `3cdb2c5`, build `2026-10-13q`
 
 Everything on `claude/friendly-dirac-n55456` through 13q went live by `workflow_dispatch` of
