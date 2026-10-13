@@ -5010,6 +5010,31 @@ async function _cloudInit(){
   let _hy=null;
   try{_hy=await _hydrateOffloaded();}catch(e){}
   _hydrated=true;
+  // READ THE PER-CLIENT LIBRARIES OFF THIS DEVICE'S OWN DISK, ON EVERY BOOT PATH.
+  //
+  // These maps start {} and were only ever filled by _reloadAll(), which runs near the END of boot
+  // and ONLY when the cloud is reachable. Three paths above return before it: cloud-status
+  // unreachable with account signs, local-only mode, and no token. /api/cloud-status failing is
+  // ordinary on a phone — a 500, a cold start, a captive portal answering HTML, a dropped request —
+  // and Cloud.status() treats any of those as "not enabled".
+  //
+  // That left every one of these {} in memory while the disk held the real data, and persistX()
+  // serialises memory. So one ordinary action (deleting a client calls persistSessionSummaries and
+  // persistClientRecs) wrote {} over the disk copy of EVERY client's summaries and product plans,
+  // and the next good launch pushed that empty map to the account. Reproduced end to end in
+  // scratchpad/sweep-offline-boot.mjs: one device, no second device, permanent loss.
+  //
+  // Diana has been losing exactly these for weeks (SESSION-HANDOFF §2ai) on a phone, alone, through
+  // three fixes that all addressed device-vs-device merges and none of which touched this.
+  //
+  // Only the plain disk readers belong here. They are JSON.parse + assign, no defaults and no
+  // writes, so this cannot become one of the boot write-backs §3 warns about.
+  try{
+    loadSessionSummaries();loadClientRecs();loadRecReasons();loadClientHomecare();
+    try{loadBodyMaps();}catch(e){}
+    try{loadClientHealingStage();}catch(e){}
+    try{loadSummaryDrafts();}catch(e){}
+  }catch(e){}
   // Only a device that actually had something in IndexedDB paid the cost of reading defaults first,
   // and only that device needs the re-read. A small account is untouched by any of this.
   try{
@@ -6225,14 +6250,35 @@ function _birthdayPanelHTML(){
 }
 let _navStack=[],_navCur=null,_navBacking=false;
 // ── Persistence sweep: everything below was previously in-memory only and reset on refresh ──
-function persistClientRecs(){try{(function(_v){localStorage.setItem('sc_client_recs',_v);if(typeof _pushKeyNow==='function')_pushKeyNow('sc_client_recs',_v);return _v;})(JSON.stringify(clientRecs));}catch(e){}}
-function loadClientRecs(){try{const raw=localStorage.getItem('sc_client_recs');if(raw){const v=JSON.parse(raw);if(v&&typeof v==='object')clientRecs=v;}}catch(e){}}
-function persistRecReasons(){try{(function(_v){localStorage.setItem('sc_rec_reasons',_v);if(typeof _pushKeyNow==='function')_pushKeyNow('sc_rec_reasons',_v);return _v;})(JSON.stringify(recReasons));}catch(e){}}
-function loadRecReasons(){try{const raw=localStorage.getItem('sc_rec_reasons');if(raw){const v=JSON.parse(raw);if(v&&typeof v==='object')recReasons=v;}}catch(e){}}
-function persistClientHomecare(){try{(function(_v){localStorage.setItem('sc_client_homecare',_v);if(typeof _pushKeyNow==='function')_pushKeyNow('sc_client_homecare',_v);return _v;})(JSON.stringify(clientHomecare));}catch(e){}}
-function loadClientHomecare(){try{const raw=localStorage.getItem('sc_client_homecare');if(raw){const v=JSON.parse(raw);if(v&&typeof v==='object')clientHomecare=v;}}catch(e){}}
-function persistSessionSummaries(){const v=JSON.stringify(sessionSummaries);try{localStorage.setItem('sc_session_summaries',v);}catch(e){if(typeof _persistFailWarn==='function')_persistFailWarn(e);}if(typeof _pushKeyNow==='function')_pushKeyNow('sc_session_summaries',v);}
-function loadSessionSummaries(){try{const raw=localStorage.getItem('sc_session_summaries');if(raw){const v=JSON.parse(raw);if(v&&typeof v==='object')sessionSummaries=v;}}catch(e){}}
+// A library whose loader has NEVER run holds {} in memory, which is not the same thing as "empty".
+// persistX() serialises memory, so persisting in that state writes {} over whatever the disk holds
+// and the next sync carries it to the account. That is how a phone with one bad /api/cloud-status
+// call destroyed every client's summaries and product plans (scratchpad/sweep-offline-boot.mjs).
+// Boot now hydrates these before anything can render, so this should never fire — it is here so the
+// same mistake can never cost data again. SKIPPING a write cannot lose anything; doing it can.
+const _libRead={};
+function _libLoaded(k){_libRead[k]=1;}
+function _libSafeToPersist(k,obj){
+  if(_libRead[k])return true;
+  try{
+    if(obj&&Object.keys(obj).length)return true;        // memory has content — a real edit
+    const raw=_lsGet(k);if(!raw)return true;            // nothing on disk to protect
+    const cur=JSON.parse(raw);
+    if(cur&&typeof cur==='object'&&Object.keys(cur).length){
+      console.warn('[persist] refused to write an empty '+k+' over '+Object.keys(cur).length+' saved client(s) — it was never loaded');
+      return false;
+    }
+  }catch(e){}
+  return true;
+}
+function persistClientRecs(){if(!_libSafeToPersist('sc_client_recs',clientRecs))return;try{(function(_v){localStorage.setItem('sc_client_recs',_v);if(typeof _pushKeyNow==='function')_pushKeyNow('sc_client_recs',_v);return _v;})(JSON.stringify(clientRecs));}catch(e){}}
+function loadClientRecs(){_libLoaded('sc_client_recs');try{const raw=localStorage.getItem('sc_client_recs');if(raw){const v=JSON.parse(raw);if(v&&typeof v==='object')clientRecs=v;}}catch(e){}}
+function persistRecReasons(){if(!_libSafeToPersist('sc_rec_reasons',recReasons))return;try{(function(_v){localStorage.setItem('sc_rec_reasons',_v);if(typeof _pushKeyNow==='function')_pushKeyNow('sc_rec_reasons',_v);return _v;})(JSON.stringify(recReasons));}catch(e){}}
+function loadRecReasons(){_libLoaded('sc_rec_reasons');try{const raw=localStorage.getItem('sc_rec_reasons');if(raw){const v=JSON.parse(raw);if(v&&typeof v==='object')recReasons=v;}}catch(e){}}
+function persistClientHomecare(){if(!_libSafeToPersist('sc_client_homecare',clientHomecare))return;try{(function(_v){localStorage.setItem('sc_client_homecare',_v);if(typeof _pushKeyNow==='function')_pushKeyNow('sc_client_homecare',_v);return _v;})(JSON.stringify(clientHomecare));}catch(e){}}
+function loadClientHomecare(){_libLoaded('sc_client_homecare');try{const raw=localStorage.getItem('sc_client_homecare');if(raw){const v=JSON.parse(raw);if(v&&typeof v==='object')clientHomecare=v;}}catch(e){}}
+function persistSessionSummaries(){if(!_libSafeToPersist('sc_session_summaries',sessionSummaries))return;const v=JSON.stringify(sessionSummaries);try{localStorage.setItem('sc_session_summaries',v);}catch(e){if(typeof _persistFailWarn==='function')_persistFailWarn(e);}if(typeof _pushKeyNow==='function')_pushKeyNow('sc_session_summaries',v);}
+function loadSessionSummaries(){_libLoaded('sc_session_summaries');try{const raw=localStorage.getItem('sc_session_summaries');if(raw){const v=JSON.parse(raw);if(v&&typeof v==='object')sessionSummaries=v;}}catch(e){}}
 // Provider's chosen note format (default: free form). Persisted so it sticks across reloads
 // and syncs across devices, and so applyProfessionConfig doesn't reset it every boot.
 function saveNoteFmt(){try{const v=String(activeNoteTemplate||'freeform');localStorage.setItem('sc_note_fmt',v);if(typeof _pushKeyNow==='function')_pushKeyNow('sc_note_fmt',v);}catch(e){}}

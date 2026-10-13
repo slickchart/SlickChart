@@ -2976,6 +2976,115 @@ change to `lib/clients.js`:
 `initdb` refuses to run as root, so the script hands the cluster to a throwaway `pgtest` user and
 makes its socket dir world-traversable. All 21 green on 2026-10-06a.
 
+### §2ai (cont.) Diana, 2026-10-12 — STILL HAPPENING, and she is on ONE DEVICE
+
+Ashley: *"this is the last big provider bug I have standing unresolved still."*
+
+Three fixes have shipped for this and she still loses summaries: `_mergeClientMap` +
+`_CLIENT_MAP_LIST` for `sc_session_summaries`, `_unionClientForms` unioning `c.summaries`, and the
+`upsertClient` SQL guard that stops an empty incoming array replacing a stored non-empty one.
+
+**HER OBSERVATIONS, 2026-10-12. Ground truth (§1b). A theory that contradicts one of these is
+wrong — discard the theory, not the observation.**
+
+27. **"I just checked, and the summary issue is still happening."**
+28. **"Today, I tried accessing it at 4:30 PM, and by 6:00 PM it had disappeared again."**
+    ← a WINDOW: present at 16:30, gone by 18:00. About an hour and a half. Not instant.
+29. **"Without the summary, everything else disappears as well. The notes and guides remain visible
+    if the journey is still active, but if it is not, everything is gone."**
+    ← NEW. The summary is not just one missing item, it GATES the rest. "If the journey is still
+    active" is her words for a condition she can see from outside.
+30. **"That said, I really like being able to see their activity."**
+31. **"I'm only on my phone. I shut off the computer one and deleted from task tab."**
+    ← THE BIG ONE, and the first time this has been stated. She is on a SINGLE DEVICE. The computer
+    install is off and cleared from the task switcher.
+
+**What 31 costs us.** Every mechanism found so far has been device A's stale copy overwriting
+device B's good one. If there is no second device running, that class cannot be what is biting her
+NOW. Either something on her phone alone destroys it, something on the SERVER does, or the data is
+intact and the client-facing view stops rendering it.
+
+**Do not resolve by assumption:** 31 arrived at 18:09, and the disappearance in 28 is 16:30→18:00.
+It is not established whether the computer was already off DURING that window. One short question
+to Ashley settles it and nothing should be built on a guess about it. Ask: *was the computer app
+already shut off before 4:30pm today, or did she shut it off after she saw the summary go?*
+
+**29 is the most under-used fact on this list.** Everything prior treated this as "the summary row
+is missing". She is describing a dependency: no summary, no journey, and then the notes and guides
+go too. That points at a GATE, not only at a lost record. Whatever is checked to decide a journey
+is "active" is worth reading before writing any more merge code.
+
+### §2ai FOUND (2026-10-12): one failed /api/cloud-status at launch destroys the per-client libraries
+
+**Reproduced end to end, on ONE device, with no second device involved.**
+`scratchpad/sweep-offline-boot.mjs`, 12 checks, 9 of them failing before the fix.
+
+```
+1. the phone's first request, /api/cloud-status, fails
+   (a 500, a cold start, a captive portal answering HTML, a dropped request - Cloud.status()
+    requires {enabled:true} and treats ANYTHING else as "cloud off")
+2. Cloud.enabled = false  ->  boot takes an early-return path and NEVER calls _reloadAll()
+   ->  sessionSummaries, clientRecs, recReasons, clientHomecare are all {} in memory,
+       while the disk still holds every one of them
+3. one ordinary action - deleting a client calls persistSessionSummaries + persistClientRecs -
+   serialises that {} over the DISK copy for EVERY client, including ones she never touched
+4. the network comes back, the app relaunches on the damaged disk, and pushes the empty map
+   ->  "account now holds 0 summaries and 0 plan items"
+5. nothing comes back. Permanent.
+```
+
+**Why this is almost certainly Diana's bug, against her own observations:**
+
+| her words | this mechanism |
+|---|---|
+| 31. "I'm only on my phone" | needs no second device at all |
+| phone | a failing first request is ordinary on mobile data |
+| "notes, summaries, and product plans are deleted" | the whole per-client family goes together |
+| 29. "without the summary everything else disappears as well" | they are wiped in the same call |
+| 28. gone between 16:30 and 18:00 | whenever she next opened it on a bad connection |
+| survived three fixes | all three addressed device-vs-device merges; none touched this path |
+
+Three boot paths return before `_reloadAll()`: cloud-status unreachable with account signs
+(**hers**), local-only mode, and no token. `_dropBootShrinks` did not save it either.
+
+**The fix, in two parts.**
+
+1. **Hydrate on every boot path.** `_cloudInit` now reads the per-client libraries off this device's
+   own disk immediately after `_hydrateOffloaded()`, before the status call and before anything can
+   render or persist. Whether the cloud is reachable has nothing to do with reading local disk.
+   Only the plain disk readers are in there (JSON.parse + assign, no defaults, no writes), so it
+   cannot become one of the boot write-backs §3 warns about.
+2. **A library whose loader never ran may not be persisted.** `_libSafeToPersist` refuses to write
+   an empty map over a non-empty stored one and logs why. Skipping a write cannot lose data; doing
+   it can. With (1) this should never fire — it is there so this class cannot cost data again.
+
+**Still to confirm with Ashley (do not assume):** whether her computer install was already off
+during the 16:30-18:00 window. It does not change this fix, which needs no second device, but it
+decides whether anything else is still outstanding.
+
+### The sweeps CLAUDE.md tells us to run have never existed
+
+`git log --all -- '*crossdevice*'` is **empty**. So are `freshaudit` and `scaleaudit`. All three are
+named in CLAUDE.md §3 as the things to run after any change to sync, storage or a loader, and all
+three were written in earlier ephemeral containers and died with them. **Every fix for this bug
+shipped with the sweep meant to catch it never actually running.**
+
+Two are committed now and must stay committed:
+
+- `scratchpad/sweep-summaries.mjs` — a saved summary survives on one device across polls,
+  navigation, relaunch and a logout/login, and a stale second device cannot wipe the account copy.
+  13 checks.
+- `scratchpad/sweep-offline-boot.mjs` — a failing `/api/cloud-status` costs no saved work. 12 checks.
+
+`freshaudit.mjs` and `scaleaudit.mjs` are still missing and still referenced by CLAUDE.md.
+
+**A harness lesson worth more than the bug.** My first run of sweep-summaries "reproduced" a wipe
+that was not real: the mock answered `/api/cloud-status` with `{ok:true}`, which fails the
+`typeof j.enabled==='boolean'` check, so the harness itself booted cloud-disabled. Mock
+`/api/cloud-status` as `{"enabled":true}` in every provider-app harness or you are testing the
+local-only path. The false reproduction is what led to the real one, but it was nearly reported as
+a finding.
+
 ## 2aj. HEATHER (equestrian): every horse became its own client, mid-session (2026-10-07)
 
 **What she OBSERVED** (ground truth — §1b; device not yet asked, ask her):
