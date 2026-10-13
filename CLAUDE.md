@@ -371,11 +371,14 @@ page and no sitemap entry, so nothing reaches the live site until she says so.
 
 | Blog | Source | Served at | Routine | Cron |
 |---|---|---|---|---|
-| SlickChart (solo estheticians) | `blog-src/` | `/blog` | "Weekly SlickChart blog draft" `trig_01Kpq3HtFnWqgea1bUozHbbM` | `0 14 * * 1` |
-| Build Your Own App | `build-blog-src/` | `/build/blog` | "Weekly Build blog draft" `trig_01JeGumaZUvUoy6aBCSxJS38` | `0 15 * * 1` |
+| SlickChart (solo estheticians) | `blog-src/` | `/blog` | "Weekly SlickChart blog draft" `trig_0152LFs5EUR87Ttbzz3s5nHQ` | `0 14 * * 1` |
+| Build Your Own App | `build-blog-src/` | `/build/blog` | "Weekly Build blog draft" `trig_01QsyEtdmZEJrshukvQTgzi3` | `0 15 * * 1` |
 
-**Both Routines are BOUND TO ONE SESSION.** As of 2026-09-16 that is
-`session_01A4GwJis96cYnvN4yMbpBtt` for both.
+**Both Routines are BOUND TO ONE SESSION.** As of 2026-10-13 that is
+`session_015D4BCM2NAMaZ9JsmQJm88r` for both (re-pointed from `session_01A4GwJis96cYnvN4yMbpBtt`,
+whose ids were `trig_01Kpq3HtFnWqgea1bUozHbbM` / `trig_01JeGumaZUvUoy6aBCSxJS38`, now deleted).
+The two one-shot reminders moved with them: Google Calendar review `trig_014SLMEWSaQD8PHh8WSdSBji`
+(2026-11-09) and Square-owns-services `trig_019TAeznU5wedybsvaoPovUY` (2026-11-12).
 (The SlickChart one was re-pointed 2026-09-15 from `trig_01GLnvYt3jrAhjPPCQZFY9Uw` /
 `cse_014uZePRTjnrVD5MwGzq6Tde`, which fired on 2026-09-14 into a session Ashley was not reading. That
 old trigger is deleted. The Build one was created 2026-09-16.)
