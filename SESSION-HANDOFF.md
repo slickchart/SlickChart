@@ -6107,12 +6107,34 @@ a solid fill alone measured 2.95:1 against that card), unavailable calendar date
 `--c-mut2` at .55 opacity (**1.73:1** — she complained about exactly this) to `--c-mut`, and a
 hardcoded `#c4b9ae` "Not set" became `--c-mut`.
 
-### Provider app
+### Provider app — four passes, measured each time
 
-**371 distinct problems, not yet fixed.** First pass showed the worst (1.00:1) only occur with a
-near-black brand, where the provider app uses the brand colour as text without the
-`_readableAccent()` deepening the client app applies. Full report pending a re-run; the first attempt
-was truncated because the command was piped through `head`, which killed the stream.
+| after | distinct (both apps) | affecting the DEFAULT brand | worst |
+|---|---|---|---|
+| start | 469 (98 client + 371 provider) | 196 | 1.00:1 |
+| readable accent + `--p-line-ctl` | 312 provider | — | 1.00:1 |
+| inputs, clickable rows, `--btn-edge` | 292 provider | — | 1.00:1 |
+| card borders + emoji excluded | 287 | 122 | 1.00:1 |
+| **`_accentOnBgP`** | **177** | **97** | **1.07:1** |
+
+**The last one was the biggest single win and the most instructive.** The brand colour does two
+opposite jobs and the app only handled one:
+
+- as a button's **fill**, its own label must be readable on top of it → `_readableAccentP` DEEPENS it
+- as **text on the page**, it must be readable against the background → `_accentOnBgP` LIGHTENS it on
+  dark and darkens it on light
+
+`--accent-strong` (the nav labels, screen titles, "Today") was the raw brand in dark mode, so a dark
+brand gave 1.00:1 across whole screens while the buttons on those same screens were fine. Both
+functions return the colour untouched when it already passes, so **#2BC7AC is unchanged** — verified
+in every smoke test.
+
+### Where this actually stands
+
+The client app is in good shape (18, worst 3.12:1). The provider app is much better but **not
+finished**: 177 remain, 97 of them touching the default brand. It is NOT compliant yet and should not
+be described as such. The tail is a long one and the tool exists to drive it down — that is the next
+session's work, not a guess.
 
 ### Do not regress this
 
