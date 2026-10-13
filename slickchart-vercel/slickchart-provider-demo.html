@@ -486,7 +486,7 @@ const S=document.getElementById('S');
 // resets when I save it" and there was no way to tell whether her phone had any of them — a whole
 // day was spent debugging code she may not have been running. Shown at the bottom of Settings, so
 // the answer is a screenshot away. Bump it on every ship.
-const APP_BUILD='2026-10-13n';
+const APP_BUILD='2026-10-13o';
 
 
 /* ════════════════════════════════════════════════════════════════
@@ -29091,6 +29091,33 @@ function _recBox(total,html,px){
   return '<div style="max-height:'+(px||260)+'px;overflow-y:auto;-webkit-overflow-scrolling:touch;overscroll-behavior:contain;">'+html+'</div>'
     +((total>shown)?('<div style="padding:8px 2px 0;font-size:14px;color:var(--p-mut);line-height:1.45;">Showing the first '+shown+' of '+total+'. <b>Copy this as text</b> has every one.</div>'):'');
 }
+// Search across every list on this screen (Ashley, 2026-10-13: "that tool is terrible, messy, and
+// impossible to scroll ... the boxes need to have a search function instead of just scrolling").
+// One box at the top filters EVERY list below by name, and lists each matching record with where it
+// stands, so "where is Cooper?" is one word typed, not a scroll through thousands of rows.
+let _recQ='';
+function _recName(x){
+  try{
+    if(x==null)return '';
+    if(typeof x==='string'){const c=((_recoverState&&_recoverState.clients)||[]).find(function(r){return r.id===x;});
+      const ph=(_recoverState&&_recoverState.photos&&_recoverState.photos.byClient&&_recoverState.photos.byClient[x])||null;
+      return String((c&&c.name)||(ph&&ph.name)||x);}
+    return String(x.name||x.id||'');
+  }catch(e){return '';}
+}
+function _rq(arr){
+  arr=Array.isArray(arr)?arr:[];
+  const q=String(_recQ||'').trim().toLowerCase();if(!q)return arr;
+  return arr.filter(function(x){return _recName(x).toLowerCase().indexOf(q)>=0||String((x&&x.id)||x||'').toLowerCase()===q;});
+}
+let _recQTimer=0;
+function _recSearch(v){
+  _recQ=String(v||'');clearTimeout(_recQTimer);
+  _recQTimer=setTimeout(function(){
+    renderClientRecover();
+    const el=document.getElementById('rec-q');if(el){el.focus();try{el.setSelectionRange(el.value.length,el.value.length);}catch(e){}}
+  },250);
+}
 function renderClientRecover(){
   const j=_recoverState;if(!j)return;
   document.getElementById('tt').textContent='Recover clients';
@@ -29224,7 +29251,33 @@ function renderClientRecover(){
             .filter(Boolean).join(', ')+'.'
           +'<br><span style="font-size:15px;">That is good news: nothing of theirs is sitting removed on the server. The clutter is the problem, not lost work.</span>'
         : '<b>Nothing is removed on the server.</b>');
+  const _q=String(_recQ||'').trim();
+  const _found=_q?_rq(all):[];
+  const _libBy=function(k,id){try{return ((libs[k]||{}).byClient||{})[id]||0;}catch(e){return 0;}};
+  const _inList=function(id){try{return !((j.missingFromRoster||[]).some(function(x){return x&&x.id===id;}));}catch(e){return true;}};
+  const searchBox='<div style="position:sticky;top:0;z-index:5;background:var(--p-bg);padding:4px 0 10px;">'
+    +'<input id="rec-q" type="search" value="'+esc(_q)+'" oninput="_recSearch(this.value)" placeholder="Find a client \u2014 type a name" autocomplete="off" '
+    +'style="width:100%;box-sizing:border-box;background:var(--surf1);border:1px solid var(--p-line-ctl);border-radius:12px;padding:12px 14px;font-size:16px;color:var(--p-ink);font-family:inherit;">'
+    +(_q?'<div style="font-size:14px;color:var(--p-mut);margin-top:6px;">Every list below now shows only \u201c'+esc(_q)+'\u201d. <button onclick="_recQ=\'\';renderClientRecover();" style="border:none;background:none;color:var(--accent-strong);font-size:14px;cursor:pointer;font-family:inherit;padding:0;">Clear</button></div>':'')
+    +'</div>';
+  const foundPanel=!_q?'':('<div style="background:var(--surf2);border:1px solid var(--p-line);border-radius:12px;padding:12px 14px;margin-bottom:14px;">'
+    +'<div style="font-size:16px;font-weight:700;color:var(--p-ink);margin-bottom:6px;">'+(_found.length?(_found.length+' record'+(_found.length===1?'':'s')+' named like \u201c'+esc(_q)+'\u201d'):'No record named like \u201c'+esc(_q)+'\u201d')+'</div>'
+    +_found.slice(0,40).map(function(c){
+      const st=c.deleted?'Removed':(nest[c.id]?('An animal under '+esc(nest[c.id].ownerName||nest[c.id].ownerId)):(_inList(c.id)?'Showing in their list':'NOT in their list'));
+      const work=[['sc_session_summaries','summar','y','ies'],['sc_note_drafts','unfinished note','',"s"],['sc_client_recs','product plan','','s'],['sc_client_homecare','homecare item','','s'],['sc_body_maps','body map','','s']]
+        .map(function(w){const n=_libBy(w[0],c.id);return n?(n+' '+w[1]+(n===1?w[2]:w[3])):'';}).filter(Boolean);
+      const canBack=!c.deleted&&!nest[c.id]&&!_inList(c.id);
+      return '<div style="border-top:1px solid var(--p-line2);padding:9px 0;">'
+        +'<div style="font-size:16px;color:var(--p-ink);">'+esc(c.name||'(no name)')+' <span style="font-size:13px;color:var(--p-mut);">'+esc(c.id)+'</span></div>'
+        +'<div style="font-size:14px;color:'+(st==='NOT in their list'||st==='Removed'?'var(--p-amber)':'var(--p-green)')+';">'+st+'</div>'
+        +'<div style="font-size:14px;color:var(--p-mut);">On this record: '+esc(bits(c))+(work.length?(' \u00b7 saved under this id: '+esc(work.join(', '))):'')+'</div>'
+        +(canBack?'<button onclick="_recoverPutBack(\''+esc(c.id)+'\')" class="btnp" style="margin-top:7px;border-radius:8px;padding:8px 12px;font-size:15px;">Put back in their list</button>':'')
+        +(c.deleted?'<div style="font-size:14px;color:var(--p-mut);margin-top:4px;">Tick it in \u201cRemoved\u201d below to put it back.</div>':'')
+        +'</div>';
+    }).join('')
+    +'</div>');
   S.innerHTML='<div style="padding:12px 16px 90px;">'
+    +searchBox+foundPanel
     +'<div style="font-size:16px;color:var(--p-mut);line-height:1.6;margin-bottom:12px;">'
       +'<b>'+esc(j.provider.email)+'</b><br>'
       +showing.length+' showing in their app · '+removed.length+' removed but still on the server'
@@ -29238,7 +29291,7 @@ function renderClientRecover(){
       if(!g.length)return '';
       return '<div style="background:var(--p-red-bg);border:2px solid var(--p-red-line);border-radius:12px;padding:12px 14px;margin-bottom:12px;font-size:16px;color:var(--p-ink);line-height:1.6;">'
         +'<b>'+g.length+' client'+(g.length===1?' is':'s are')+' being deleted again every time they refresh.</b><br>'
-        +_recBox(g.length,g.slice(0,_REC_CAP).map(function(x){return '\u00b7 '+esc(x.name||x.id);}).join('<br>'),180)
+        +_recBox(_rq(g).length,_rq(g).slice(0,_REC_CAP).map(function(x){return '\u00b7 '+esc(x.name||x.id);}).join('<br>'),180)
         +'<div style="font-size:14px;color:var(--p-mut);margin:6px 0 10px;">These are alive on the server, but their ids are on this account\u2019s \u201cdo not bring back\u201d list, so every sync removes them again. Undoing it has to happen on the account, or their device just puts it back.</div>'
         +'<button onclick="_recoverUnDelete()" class="btnp" style="width:100%;border-radius:10px;padding:11px;font-size:16px;font-weight:600;">Bring '+(g.length===1?'this client':'these '+g.length)+' back for good</button>'
         +'</div>';
@@ -29269,7 +29322,7 @@ function renderClientRecover(){
     +'<button onclick="_recoverCopy()" style="width:100%;background:var(--surf1);border:1px solid var(--p-line-ctl);color:var(--p-mut2);border-radius:10px;padding:10px;font-size:16px;cursor:pointer;font-family:inherit;margin-bottom:16px;"><i class="ti ti-copy" style="font-size:16px;"></i> Copy this as text</button>'
     +(nestedRows.length?('<div style="background:var(--p-green-bg);border:1px solid var(--p-green);border-radius:12px;padding:11px 13px;margin-bottom:14px;font-size:16px;color:var(--p-ink);line-height:1.55;">'
       +'<b>Not lost — '+nestedRows.length+' of these are now an animal under another client.</b><br>'
-      +_recBox(nestedRows.length,nestedRows.slice(0,_REC_CAP).map(c=>esc(c.name||c.id)+' → under '+esc((nest[c.id].ownerName)||nest[c.id].ownerId)).join('<br>'),180)
+      +_recBox(_rq(nestedRows).length,_rq(nestedRows).slice(0,_REC_CAP).map(c=>esc(c.name||c.id)+' → under '+esc((nest[c.id].ownerName)||nest[c.id].ownerId)).join('<br>'),180)
       +'<br><span style="font-size:14px;color:var(--p-mut);">Their charts moved a level down. Putting rows back will not change this.</span></div>'):'')
     +((j.deletedRecordIds&&j.deletedRecordIds.length)
       ? '<div style="background:var(--p-amber-bg);border:1px solid var(--p-amber);border-radius:12px;padding:11px 13px;margin-bottom:14px;font-size:16px;color:var(--p-ink);line-height:1.55;">Their device asked to remove '+j.deletedRecordIds.length+' client(s), so the removal came <b>from the app</b>, not the server. Some of those were probably meant.</div>'
@@ -29277,14 +29330,14 @@ function renderClientRecover(){
     +(removed.length?('<div class="sh"><h2>Removed — tick what to put back</h2></div>'
       +'<div style="font-size:14px;color:var(--p-mut);line-height:1.5;margin:0 0 8px;">Only the ones that look like real clients are ticked. Blanks and duplicates are left off, because putting those back makes their list worse.</div>'
       +'<div style="background:var(--surf2);border:1px solid var(--p-line);border-radius:12px;overflow:hidden;margin-bottom:8px;">'
-      +_recBox(removed.length,removed.slice(0,_REC_CAP).map(row).join(''),340)+'</div>'
+      +_recBox(_rq(removed).length,_rq(removed).slice(0,_REC_CAP).map(row).join(''),340)+'</div>'
       +'<div style="display:flex;gap:8px;margin-bottom:18px;">'
         +'<button onclick="_recoverAll(1)" style="flex:1;background:var(--surf1);border:1px solid var(--p-line-ctl);color:var(--p-mut2);border-radius:8px;padding:9px;font-size:16px;cursor:pointer;font-family:inherit;">Tick all</button>'
         +'<button onclick="_recoverAll(0)" style="flex:1;background:var(--surf1);border:1px solid var(--p-line-ctl);color:var(--p-mut2);border-radius:8px;padding:9px;font-size:16px;cursor:pointer;font-family:inherit;">Untick all</button>'
       +'</div>'):'<div style="font-size:16px;color:var(--p-mut);margin-bottom:18px;">Nothing is removed on the server, so there is nothing to put back.</div>')
     +'<div class="sh"><h2>Still showing</h2></div>'
     +'<div style="background:var(--surf2);border:1px solid var(--p-line);border-radius:12px;overflow:hidden;">'
-    +_recBox(showing.length,showing.slice(0,_REC_CAP).map(function(c){const an=(c.has&&c.has.animals)||[];
+    +_recBox(_rq(showing).length,_rq(showing).slice(0,_REC_CAP).map(function(c){const an=(c.has&&c.has.animals)||[];
       return '<div style="padding:11px 12px;border-bottom:1px solid var(--p-line2);">'
         +'<div style="font-size:16px;color:var(--p-ink);">'+esc(c.name||'(no name)')+'</div>'
         +'<div style="font-size:14px;color:var(--p-mut);line-height:1.45;">'+esc(bits(c))+'</div>'
@@ -29321,7 +29374,7 @@ function renderClientRecover(){
     })()
     +((j.missingFromRoster&&j.missingFromRoster.length)?('<div style="background:var(--p-amber-bg);border:1px solid var(--p-amber);border-radius:12px;padding:12px 14px;margin-bottom:12px;font-size:16px;color:var(--p-ink);line-height:1.6;">'
       +'<b>'+j.missingFromRoster.length+' live client'+(j.missingFromRoster.length===1?' is':'s are')+' missing from the list their app draws.</b><br>'
-      +_recBox(j.missingFromRoster.length,j.missingFromRoster.slice(0,_REC_CAP).map(function(x){return '\u00b7 '+esc((x&&x.name)||(x&&x.id)||'');}).join('<br>'),180)
+      +_recBox(_rq(j.missingFromRoster).length,_rq(j.missingFromRoster).slice(0,_REC_CAP).map(function(x){return '\u00b7 '+esc((x&&x.name)||(x&&x.id)||'');}).join('<br>'),180)
       +'<div style="font-size:14px;color:var(--p-mut);margin:6px 0 10px;">Adding them only ADDS. Anything already in the list is left exactly as it is, because that list is where their typed notes live, and the previous version is kept under Earlier copies.</div>'
       +'<button onclick="_recoverRepairRoster()" class="btnp" style="width:100%;border-radius:10px;padding:11px;font-size:16px;font-weight:600;">Add '+j.missingFromRoster.length+' to their list</button></div>'):'')
     +((j.verdict)?('<div style="margin:12px 16px 4px;background:'+((j.verdict.safe&&j.verdict.safe.length)?'var(--p-surf2)':'var(--p-amber-bg)')+';border:1px solid '+((j.verdict.safe&&j.verdict.safe.length)?'var(--p-green)':'var(--p-amber-line)')+';border-radius:12px;padding:12px 14px;">'
@@ -29345,7 +29398,7 @@ function renderClientRecover(){
       +(j.photos.error?('<br><span style="color:var(--p-red);font-size:14px;">Could not read: '+esc(j.photos.error)+'</span>'):'')
       +'</div>'
       +((j.photos.byClient&&Object.keys(j.photos.byClient).length)?('<div style="background:var(--surf2);border:1px solid var(--p-line);border-radius:12px;overflow:hidden;margin-top:8px;">'
-        +_recBox(Object.keys(j.photos.byClient).length,Object.keys(j.photos.byClient).slice(0,_REC_CAP).map(function(cid){var x=j.photos.byClient[cid];
+        +_recBox(_rq(Object.keys(j.photos.byClient)).length,_rq(Object.keys(j.photos.byClient)).slice(0,_REC_CAP).map(function(cid){var x=j.photos.byClient[cid];
           return '<div style="padding:9px 12px;border-bottom:1px solid var(--p-line2);font-size:16px;color:var(--p-ink);">'+esc(x.name||'(no name)')
             +' <span style="color:var(--p-mut);font-size:14px;">'+(x.onServer||0)+' of '+(x.indexed||0)+' on the server</span></div>';}).join(''),260)
         +'</div>'):'')):'')
@@ -29360,11 +29413,15 @@ function renderClientRecover(){
         if(!rows||!rows.length)return '';
         return '<div style="background:var(--surf2);border:1px solid var(--p-line);border-radius:12px;padding:11px 13px;margin-bottom:8px;">'
           +'<label style="display:flex;gap:10px;align-items:flex-start;cursor:pointer;">'
-          +'<input type="checkbox" id="pg-'+k+'" '+(k==='stranger'?'':'checked')+' style="width:20px;height:20px;margin-top:2px;flex:none;">'
+          // "never in their list" is switched OFF entirely (2026-10-13): Cooper Howard, a real client,
+          // was in it three times. It cannot be ticked until it can check her Square directory.
+          +'<input type="checkbox" id="pg-'+k+'" '+(k==='stranger'?'disabled':'checked')+' style="width:20px;height:20px;margin-top:2px;flex:none;">'
           +'<span style="font-size:16px;color:var(--p-ink);line-height:1.5;"><b>'+rows.length+' '+label+'</b><br>'
-          +'<span style="font-size:14px;color:var(--p-mut);">'+why+'</span></span></label>'
+          +'<span style="font-size:14px;color:var(--p-mut);">'+why+'</span>'
+          +(k==='stranger'?'<br><span style="font-size:14px;color:var(--p-red);"><b>Can\u2019t be cleared.</b> Real clients have turned up in this group, so it is switched off. Search a name above to see or put one back.</span>':'')
+          +'</span></label>'
           +'<div style="margin-top:8px;font-size:14px;color:var(--p-mut);line-height:1.6;">'
-          +_recBox(rows.length,rows.slice(0,_REC_CAP).map(function(x){return esc(x.name||'(no name)');}).join(' · '),150)
+          +_recBox(_rq(rows).length,_rq(rows).slice(0,_REC_CAP).map(function(x){return esc(x.name||'(no name)');}).join(' · '),150)
           +'</div></div>';
       };
       return '<div class="sh" style="margin-top:16px;"><h2>Junk client rows</h2></div>'
@@ -29377,7 +29434,7 @@ function renderClientRecover(){
           +'<div style="font-size:16px;color:var(--p-ink);"><b>'+jk.keptTotal+' kept back</b></div>'
           +'<div style="font-size:14px;color:var(--p-mut);line-height:1.5;margin:4px 0 8px;">Nothing below is ever deleted by this tool, whichever boxes are ticked.</div>'
           +'<div style="font-size:14px;color:var(--p-mut);line-height:1.6;">'
-          +_recBox(jk.keptTotal||0,(jk.kept||[]).slice(0,_REC_CAP).map(function(x){return '· '+esc(x.name||x.id||'')+' — '+esc(x.why||'');}).join('<br>'),200)
+          +_recBox(_recQ?_rq(jk.kept).length:(jk.keptTotal||0),_rq(jk.kept).slice(0,_REC_CAP).map(function(x){return '· '+esc(x.name||x.id||'')+' — '+esc(x.why||'');}).join('<br>'),200)
           +'</div></div>'):'')
         +(function(){
           // ALSO CLEAR THEM OUT OF SQUARE. Ashley, 2026-10-13: "make sure they really can delete
@@ -29574,6 +29631,25 @@ async function _recoverSetSrc(){
     if(!jb||!jb.ok){if(typeof proToast==='function')proToast((jb&&jb.error)||'Could not read that backup');return;}
     _recoverBackup=jb;renderClientRecover();
   }catch(e){ if(typeof proToast==='function')proToast('Could not reach the server'); }
+}
+// Put ONE record back into the account's client list (found by the search). Same server path as
+// "Add them to their list", narrowed to this id, so it never drags the junk rows back with it.
+async function _recoverPutBack(id){
+  const j=_recoverState;if(!j||!id)return;
+  const c=(j.clients||[]).find(function(x){return x.id===id;})||{};
+  confirmModal({title:'Put '+(c.name||'this client')+' back?',body:'Adds this one record to their client list. Nothing else changes, and the list as it is now is kept so this can be undone. They need to close the app and open it again.',action:'Put back'},async function(){
+    try{
+      const tok=(typeof Cloud!=='undefined'&&Cloud&&Cloud.token)||'';
+      const r=await fetch('/api/admin/client-recover',{method:'POST',headers:{'Content-Type':'application/json','Authorization':'Bearer '+tok},
+        body:JSON.stringify({email:j.provider.email,repairRoster:true,onlyIds:[id]})});
+      const out=await r.json().catch(()=>({}));
+      if(!r.ok||!out.ok){if(typeof proToast==='function')proToast((out&&out.error)||'Could not put it back');return;}
+      if(typeof proToast==='function')proToast((c.name||'Client')+' is back in the list. Close the app and open it again.',6000);
+      const r2=await fetch('/api/admin/client-recover?email='+encodeURIComponent(j.provider.email),{headers:{'Authorization':'Bearer '+tok}});
+      const j2=await r2.json().catch(()=>null);
+      if(j2&&j2.ok){_recoverState=j2;renderClientRecover();}
+    }catch(e){if(typeof proToast==='function')proToast('Could not reach the server');}
+  });
 }
 async function _recoverRepairRoster(){
   const j=_recoverState;if(!j)return;

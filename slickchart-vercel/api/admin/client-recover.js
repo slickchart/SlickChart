@@ -225,6 +225,19 @@ export async function classifyJunk(q, owner) {
     (Array.isArray(d.animals) ? d.animals : []).forEach(a => { if (a && a.id) isAnimalRow[String(a.id)] = 1; });
   });
 
+  // Saved work filed under a client id lives in maps OUTSIDE the clients table (summaries, plans,
+  // homecare, body maps, unfinished notes, photos). 2026-10-13: Cooper Howard, a real client with
+  // summaries, sat in the "never in their list" class three times over, because the row's own blob
+  // was empty while her work, if any, would be under the id in one of these. Any id named in any of
+  // them is never a candidate.
+  const workBy = {};
+  for (const k of ['sc_session_summaries', 'sc_client_recs', 'sc_client_homecare', 'sc_body_maps', 'sc_note_drafts', 'sc_photo_index', 'sc_summary_drafts']) {
+    try {
+      const wr = await q`SELECT entry.key AS id FROM kv, jsonb_each(kv.v::jsonb) AS entry
+        WHERE kv.owner=${owner} AND kv.k=${k} AND jsonb_typeof(kv.v::jsonb)='object'`;
+      (wr || []).forEach(x => { const id = String(x.id); (workBy[id] = workBy[id] || []).push(k.replace('sc_', '').replace(/_/g, ' ')); });
+    } catch (e) {}
+  }
   const junk = { removed: [], deleted: [], stranger: [], kept: [] };
   for (const r of (rows || [])) {
     const id = String(r.id);
@@ -236,6 +249,7 @@ export async function classifyJunk(q, owner) {
     else if (eventIds[id]) blocker = eventIds[id] + ' submission(s) from the client';
     else if (r.opened_at) blocker = 'the client has opened their own link';
     else if (isAnimalRow[id]) blocker = 'it is an animal under another client';
+    else if (workBy[id]) blocker = 'saved work is filed under it (' + workBy[id].join(', ') + ')';
 
     if (r.deleted_at) {
       // A client who erased their OWN data had name/email/phone/data scrubbed and their token
@@ -403,7 +417,11 @@ export default async function handler(req, res) {
           });
         });
         const added = [];
+        // Put back only the named rows when asked (one client found by search), never the thousands
+        // of junk rows that are also missing from the list. The ids only NARROW a provider-scoped read.
+        const only = Array.isArray(body.onlyIds) ? new Set(body.onlyIds.map(String).slice(0, 50)) : null;
         for (const row0 of liveRows) {
+          if (only && !only.has(String(row0.id))) continue;
           if (roster[row0.id]) continue;
           const row = [row0];
           let d = {};
@@ -673,6 +691,19 @@ export default async function handler(req, res) {
           WHERE kv.owner=${owner} AND kv.k=${key} AND jsonb_typeof(kv.v::jsonb)='object'`;
         if (c && c[0]) { out.clients = Number(c[0].clients) || 0; out.entries = Number(c[0].entries) || 0; }
       } catch (e) { out.unreadable = true; }
+      // Per-client counts (ids and numbers only, never text) for the maps keyed by client id, so the
+      // screen's search can say "this Cooper Howard row has 3 summaries" for one record among many.
+      if (['sc_session_summaries', 'sc_client_recs', 'sc_client_homecare', 'sc_body_maps', 'sc_note_drafts'].includes(key) && !out.unreadable) {
+        try {
+          const rows = await q`SELECT entry.key AS id,
+              (CASE WHEN jsonb_typeof(entry.value)='array' THEN jsonb_array_length(entry.value) ELSE 1 END)::int AS n
+            FROM kv, jsonb_each(kv.v::jsonb) AS entry
+            WHERE kv.owner=${owner} AND kv.k=${key} AND jsonb_typeof(kv.v::jsonb)='object' LIMIT 6000`;
+          const by = {};
+          rows.forEach(r => { if (r && r.id && Number(r.n) > 0) by[String(r.id)] = Number(r.n); });
+          out.byClient = by;
+        } catch (e) {}
+      }
       libraries[key] = out;
     }
 

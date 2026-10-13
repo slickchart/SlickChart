@@ -50,6 +50,11 @@ function makeQ(db) {
       const v = db.kv[arg + '|sc_clients'];
       return Promise.resolve(v === undefined ? [] : [{ kind: Array.isArray(v) ? 'array' : 'object' }]);
     }
+    // Saved work filed by client id in another library: kv.k is the second value.
+    if (/entry\.key AS id FROM kv, jsonb_each/.test(text)) {
+      const v = db.kv[arg + '|' + values[1]];
+      return Promise.resolve(v && !Array.isArray(v) && typeof v === 'object' ? Object.keys(v).map(id => ({ id })) : []);
+    }
     // The squareId read: one row per roster entry, with its id and its Square id (or '').
     if (/jsonb_each/.test(text)) {
       const v = db.kv[arg + '|sc_clients'];
@@ -115,6 +120,18 @@ const C = (id, extra) => Object.assign({ id, provider_id: 'P', name: 'N' + id, d
     && junk.kept.some(k => k.id === 'sq_CUSTOMER_WITHWORK_XXXXXXX'), JSON.stringify(Object.keys(byId)));
   check('a client still in her list never appears as junk at all',
     !Object.prototype.hasOwnProperty.call(byId, 'local3'), JSON.stringify(Object.keys(byId)));
+  // Cooper Howard, 2026-10-13: a row whose own blob is empty but whose id has saved work in another
+  // library (here: session summaries) must never be a junk candidate.
+  {
+    const db2 = { clients: [
+        { id: 'cooper1', provider_id: 'P', name: 'Cooper Howard', deleted_at: null, opened_at: null, invited_at: null, data: EMPTY },
+        { id: 'cooper2', provider_id: 'P', name: 'Cooper Howard', deleted_at: null, opened_at: null, invited_at: null, data: EMPTY } ],
+      kv: { 'P|sc_clients': { other: { name: 'X' } }, 'P|sc_session_summaries': { cooper1: [{ note: 'x' }] } }, events: [] };
+    const { junk: j2 } = await classifyJunk(makeQ(db2), 'P');
+    check('a row with summaries filed under its id is kept, not a stranger',
+      !j2.stranger.some(r => r.id === 'cooper1') && j2.kept.some(r => r.id === 'cooper1' && /session summaries/.test(r.why)), JSON.stringify(j2.kept));
+    check('the same name with nothing filed under it is still classed normally', j2.stranger.some(r => r.id === 'cooper2'));
+  }
 }
 // The founder endpoint must not reach Square itself.
 {

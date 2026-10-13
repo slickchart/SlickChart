@@ -449,10 +449,13 @@ saved anywhere", not "does this always call that".
 | `_putFileWithRetry` | `/api/guide-file` | via `_putFileBody` |
 | `_reRenderAttn` | `/api/clients` | via `syncClientEvents` |
 | `_reRenderAttn` | `/api/square/appointments` | via `_loadSquareAppts` |
+| `_recSearch` | `/api/admin/client-recover` | via `_recoverPutBack` |
+| `_recSearch` | `/api/admin/recover-import` | via `_recoverSetSrc` |
+| `_recSearch` | `/api/square/delete-customers` | via `_recoverPurgeJunk` |
 | `_recSheet` | `/api/clients` | via `_syncSpecificClientsToServer` |
 | `_recSheetSend` | `/api/clients` | via `_syncSpecificClientsToServer` |
 | `_recheckWhisper` | `/api/transcribe` | via `_probeWhisper` |
-| `_recoverAll` | `/api/admin/client-recover` | via `_recoverUnDelete` |
+| `_recoverAll` | `/api/admin/client-recover` | via `_recoverPutBack` |
 | `_recoverAll` | `/api/admin/recover-import` | via `_recoverSetSrc` |
 | `_recoverAll` | `/api/square/delete-customers` | via `_recoverPurgeJunk` |
 | `_recoverImport` | `/api/admin/client-recover` | direct |
@@ -461,6 +464,9 @@ saved anywhere", not "does this always call that".
 | `_recoverPurgeJunk` | `/api/admin/client-recover` | direct |
 | `_recoverPurgeJunk` | `/api/admin/recover-import` | via `_recoverSetSrc` |
 | `_recoverPurgeJunk` | `/api/square/delete-customers` | direct |
+| `_recoverPutBack` | `/api/admin/client-recover` | direct |
+| `_recoverPutBack` | `/api/admin/recover-import` | via `_recoverSetSrc` |
+| `_recoverPutBack` | `/api/square/delete-customers` | via `_recoverPurgeJunk` |
 | `_recoverRepairRoster` | `/api/admin/client-recover` | direct |
 | `_recoverRepairRoster` | `/api/admin/recover-import` | via `_recoverSetSrc` |
 | `_recoverRepairRoster` | `/api/square/delete-customers` | via `_recoverPurgeJunk` |
@@ -473,10 +479,10 @@ saved anywhere", not "does this always call that".
 | `_recoverRun` | `/api/admin/client-recover` | direct |
 | `_recoverRun` | `/api/admin/recover-import` | via `_recoverSetSrc` |
 | `_recoverRun` | `/api/square/delete-customers` | via `_recoverPurgeJunk` |
-| `_recoverSetSrc` | `/api/admin/client-recover` | via `_recoverUnDelete` |
+| `_recoverSetSrc` | `/api/admin/client-recover` | via `_recoverPutBack` |
 | `_recoverSetSrc` | `/api/admin/recover-import` | direct |
 | `_recoverSetSrc` | `/api/square/delete-customers` | via `_recoverPurgeJunk` |
-| `_recoverToggle` | `/api/admin/client-recover` | via `_recoverUnDelete` |
+| `_recoverToggle` | `/api/admin/client-recover` | via `_recoverPutBack` |
 | `_recoverToggle` | `/api/admin/recover-import` | via `_recoverSetSrc` |
 | `_recoverToggle` | `/api/square/delete-customers` | via `_recoverPurgeJunk` |
 | `_recoverUnDelete` | `/api/admin/client-recover` | direct |
@@ -1314,6 +1320,7 @@ Check here before building a new one.
 | `_recoverImport` | yes |
 | `_recoverNear` | yes |
 | `_recoverPurgeJunk` | yes |
+| `_recoverPutBack` | yes |
 | `_recoverRepairRoster` | yes |
 | `_recoverRestorePurged` | yes |
 | `_recoverRisk` | yes |

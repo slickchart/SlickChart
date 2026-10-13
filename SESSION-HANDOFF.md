@@ -6707,6 +6707,25 @@ A summary stores products as NAMES (`productDetail.map(p=>p.name)`); `renderLate
 matching live recommendation (keeps Buy) or `{name}`. Empty homecare/products cards are now hidden.
 `scratchpad/test-client-summary-products.mjs` 6/6; three FAIL on the previous client page.
 
+### Cooper Howard was in the "never in their list" junk class — locked, plus search — build `2026-10-13o`
+
+Her observation (COMPUTER, preview, Recover clients on her own email, 15:15): the "148 never in their
+list" group (off by default, she did NOT tick it) lists **Cooper Howard ×3**, crystal nguyen ×12,
+Debbi Miranda ×5. Her words: *"i do see her name here though"*, and about the screen: *"that tool is
+terrible, messy, and impossible to scroll ... the boxes need to have a search function"*.
+See §2be for the report itself.
+
+- `stranger` can no longer be ticked at all (UI disabled, red line says why). Real clients are in it.
+- `classifyJunk`: any row id with saved work filed under it in `sc_session_summaries`,
+  `sc_client_recs`, `sc_client_homecare`, `sc_body_maps`, `sc_note_drafts`, `sc_photo_index`,
+  `sc_summary_drafts` is kept ("saved work is filed under it"). Before, only the row's own blob counted.
+- GET now returns `libraries[k].byClient` (id → count, no text) for the per-client maps.
+- Screen: a sticky "Find a client" box filters every client list; a results card per matching record
+  says Showing / NOT in their list / Removed / animal-under, what the row holds, and what is filed
+  under its id. "Put back in their list" calls `repairRoster` with `onlyIds:[id]` (new, narrows only;
+  scoped to the provider's rows) so the junk is never dragged back with it.
+`scratchpad/test-recover-search.mjs` 9/9; Cooper case added to `test-junk-square.mjs`.
+
 ### Demo products removed everywhere in real accounts — build `2026-10-13n`
 
 Her words: *"now we need to remove all demo products from the 'recommended product' picker. i want to
