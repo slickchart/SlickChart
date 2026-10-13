@@ -446,6 +446,24 @@ esthetician, not a status report.
 
 The long technical version belongs in this conversation and in SESSION-HANDOFF.md, not in the email.
 
+## 4d. Make it easy and automated for her — ALWAYS (her rule, 2026-10-13)
+
+Her words: *"make that a rule. i want everything to be as easy as possible and automated for me
+always."* It came after a recovery that made her tap, screenshot and come back six times; she said
+*"you are making me do way too much work here"* and *"im getting really tired of going back and forth"*.
+
+- **Do the work; don't hand her a procedure.** If a fix needs more than one or two taps from her,
+  build the button that does the rest, then give her that one button.
+- **One tap, one result.** A tool must finish the whole job in one run (every affected client, every
+  name), not one item per tap, and report everything it did and did not do in that one message.
+- **Never make her diagnose.** If a result needs explaining, the tool explains it in its own result.
+  Don't ask for a screenshot to learn something the tool could have printed.
+- **Get it right before giving it to her.** Test against a reproduction of HER numbers (her
+  screenshot, her counts) so the second run is not needed. Each extra round trip is a cost to her.
+- **Plain steps only, and as few as possible.** If she must act, at most 2–3 short numbered steps,
+  named exactly as the screen names them. No branching instructions.
+- Safety rules (§0, §4c, soft deletes, backups first) still apply — automate inside them, never around them.
+
 ## 5. Tone with the owner
 
 The owner (Ashley, a solo esthetician) runs her real business on this and has been through a stressful data

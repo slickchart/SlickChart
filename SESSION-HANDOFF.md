@@ -6713,6 +6713,19 @@ A summary stores products as NAMES (`productDetail.map(p=>p.name)`); `renderLate
 matching live recommendation (keeps Buy) or `{name}`. Empty homecare/products cards are now hidden.
 `scratchpad/test-client-summary-products.mjs` 6/6; three FAIL on the previous client page.
 
+### Fourth Cooper run (15:46): 4 real records left; "Combine into one" — build `2026-10-13u`
+
+Tidy left exactly what should be left: kept `…ygowr` (in her list), retired 56, and four real
+records: 2 in her list, 1 with 9 client submissions, 1 with 1. Her words: *"i dont understand the
+step 1 and 2 ... you are making me do way too much work here"*, then *"make that a rule. i want
+everything to be as easy as possible and automated for me always"* → CLAUDE.md §4d.
+
+`_recoverMergeName(name)`: when a search finds 2–8 live records of one name, a "Combine into one
+<name>" button puts the ones missing from her list back (one `repairRoster onlyIds` call), adds them
+to this device's CL (only when signed in as that same account, `sc_login_email`), and opens the app's
+own Merge sheet with all of them ticked and the in-list record holding the most kept. She confirms
+once. `scratchpad/test-combine.mjs` 6/6.
+
 ### Third Cooper run: "59 — saved work is filed under it" — build `2026-10-13t`
 
 Her run at 15:41 (COMPUTER, single-name tidy): kept `c1791493687681ygowr` (in her list), retired 67,

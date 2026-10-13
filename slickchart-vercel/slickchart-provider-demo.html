@@ -486,7 +486,7 @@ const S=document.getElementById('S');
 // resets when I save it" and there was no way to tell whether her phone had any of them — a whole
 // day was spent debugging code she may not have been running. Shown at the bottom of Settings, so
 // the answer is a screenshot away. Bump it on every ship.
-const APP_BUILD='2026-10-13t';
+const APP_BUILD='2026-10-13u';
 
 
 /* ════════════════════════════════════════════════════════════════
@@ -29270,6 +29270,9 @@ function renderClientRecover(){
       const names={};live.forEach(function(c){names[String(c.name||'').trim().toLowerCase()]=1;});
       const nk=Object.keys(names);
       if(live.length<2||nk.length!==1||!nk[0])return '';
+      if(live.length<=8)return '<div style="background:var(--p-green-bg);border:1px solid var(--p-green);border-radius:10px;padding:10px 12px;margin:4px 0 10px;font-size:15px;color:var(--p-ink);line-height:1.5;">'
+        +'<b>'+live.length+' records for '+esc(live[0].name)+' hold real information.</b> Combine them into one client, with everything kept.'
+        +'<button onclick="_recoverMergeName(\''+esc(String(live[0].name||'').replace(/'/g,''))+'\')" class="btnp" style="width:100%;margin-top:8px;border-radius:8px;padding:10px;font-size:16px;">Combine into one '+esc(live[0].name)+'</button></div>';
       return '<div style="background:var(--p-green-bg);border:1px solid var(--p-green);border-radius:10px;padding:10px 12px;margin:4px 0 10px;font-size:15px;color:var(--p-ink);line-height:1.5;">'
         +'<b>'+live.length+' copies of '+esc(live[0].name)+'.</b> One tap keeps the real one (the one holding the most, else the oldest), puts it in their list, and removes only the copies that hold nothing. Removed copies can still be put back.'
         +'<button onclick="_recoverConsolidate(\''+esc(String(live[0].name||'').replace(/'/g,''))+'\')" class="btnp" style="width:100%;margin-top:8px;border-radius:8px;padding:10px;font-size:16px;">Keep one '+esc(live[0].name)+', remove empty copies</button></div>';
@@ -29697,6 +29700,43 @@ async function _recoverConsolidate(name,includeInvited){
   };
   if(includeInvited){go();return;}
   confirmModal({title:'Tidy up '+name+'?',body:'Keeps one '+name+' (the record holding the most, else the oldest) and puts it in their list. Copies that hold nothing are moved to Removed, where any can be put back. Copies holding anything are left alone, and you will be told why. A copy of their list is kept first.',action:'Tidy up'},go);
+}
+// The last few records of one person, each holding something real: put the ones missing from her
+// list back into it (server, one call), add them to this device's list, then open the app's own
+// Merge sheet with all of them ticked and the one already in her list kept. She confirms once.
+// Ashley, 2026-10-13: "you are making me do way too much work here".
+async function _recoverMergeName(name){
+  const j=_recoverState;if(!j||!name)return;
+  const key=String(name).trim().toLowerCase();
+  const nest=j.nestedUnder||{};
+  const recs=(j.clients||[]).filter(function(c){return !c.deleted&&!nest[c.id]&&String(c.name||'').trim().toLowerCase()===key;});
+  if(recs.length<2){if(typeof proToast==='function')proToast('Nothing to combine');return;}
+  const missing=new Set((j.missingFromRoster||[]).map(function(x){return x&&x.id;}));
+  const toAdd=recs.filter(function(c){return missing.has(c.id);}).map(function(c){return c.id;});
+  const tok=(typeof Cloud!=='undefined'&&Cloud&&Cloud.token)||'';
+  try{
+    if(toAdd.length){
+      const r=await fetch('/api/admin/client-recover',{method:'POST',headers:{'Content-Type':'application/json','Authorization':'Bearer '+tok},
+        body:JSON.stringify({email:j.provider.email,repairRoster:true,onlyIds:toAdd})});
+      const out=await r.json().catch(()=>({}));
+      if(!r.ok||!out.ok){if(typeof proToast==='function')proToast((out&&out.error)||'Could not bring them together');return;}
+    }
+  }catch(e){if(typeof proToast==='function')proToast('Could not reach the server');return;}
+  // Only her OWN account's list lives on this device. Signed in as someone else, stop here.
+  let mine='';try{mine=String(localStorage.getItem('sc_login_email')||'').trim().toLowerCase();}catch(e){}
+  if(!mine||mine!==String(j.provider.email||'').trim().toLowerCase()){if(typeof proToast==='function')proToast('Put back in their list. They can combine them on their own Clients screen.',7000);return;}
+  recs.forEach(function(c){
+    if(CL[c.id])return;
+    try{if(typeof _deletedClientIds!=='undefined'&&_deletedClientIds[c.id])delete _deletedClientIds[c.id];}catch(e){}
+    CL[c.id]={name:c.name||name,email:c.email||'',phone:c.phone||'',skin:'—',concerns:'—',allergies:'None noted',fitz:'—',lastVisit:'—',nextVisit:'Not scheduled',treatment:'New client',sessions:0,seriesTotal:0,conditions:'',notes:''};
+  });
+  try{saveClients();}catch(e){}
+  // Keep the one already in her list that holds the most; everything else folds into it.
+  const inList=recs.filter(function(c){return !missing.has(c.id);});
+  const score=function(c){const h=c.has||{};return (h.summaries||0)*10+(h.forms||0)*5+(h.profileFilled||0);};
+  const keep=(inList.length?inList:recs).slice().sort(function(a,b){return score(b)-score(a);})[0];
+  const ids=[keep.id].concat(recs.map(function(c){return c.id;}).filter(function(x){return x!==keep.id&&CL[x];}));
+  _openMergeSheet(ids.join(','));
 }
 async function _recoverPutBack(id){
   const j=_recoverState;if(!j||!id)return;
