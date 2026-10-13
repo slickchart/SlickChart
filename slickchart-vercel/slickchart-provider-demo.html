@@ -486,7 +486,7 @@ const S=document.getElementById('S');
 // resets when I save it" and there was no way to tell whether her phone had any of them — a whole
 // day was spent debugging code she may not have been running. Shown at the bottom of Settings, so
 // the answer is a screenshot away. Bump it on every ship.
-const APP_BUILD='2026-10-13i';
+const APP_BUILD='2026-10-13j';
 
 
 /* ════════════════════════════════════════════════════════════════
@@ -1118,6 +1118,50 @@ function _hcAddPicked(id,ctx){
   const sh=document.getElementById('hc-picker');if(sh)sh.remove();
   if(!line){if(typeof proToast==='function')proToast('Give the step a name first');return;}
   addHomecareTag(id,line,ctx||'profile');
+}
+// Products a client BOUGHT go into their homecare routine on their own (Ashley, 2026-10-13: "if they
+// purchase a product or it is in the history it should automatically go into their homecare routine,
+// which the provider can edit/add notes"; "history" = purchases, her answer). Runs once per client per
+// session when their profile opens. Only line items whose name is one of HER retail products count,
+// so a facial on the same Square order never becomes a homecare step. Each name is added ONCE:
+// c._hcAuto remembers it, so a product she takes off the routine is not put back by the next visit.
+// The line is a plain string (homecare stays strings, CLAUDE.md §1a) and she edits it like any other.
+const _hcAutoChecked={};
+async function _autoHomecareFromPurchases(id){
+  try{
+    const c=CL[id];if(!c||!c.squareId||_hcAutoChecked[id])return;
+    const tok=(typeof Cloud!=='undefined'&&Cloud&&Cloud.token)||'';if(!tok)return;
+    if(typeof _rosterNotReadYet==='function'&&_rosterNotReadYet())return;
+    if(typeof _libSafeToPersist==='function'&&!_libSafeToPersist('sc_client_homecare',clientHomecare))return;
+    _hcAutoChecked[id]=1;
+    const retail={};
+    (Array.isArray(affiliateLinks)?affiliateLinks:[]).forEach(function(a){if(a&&a.name&&a.active!==false)retail[String(a.name).trim().toLowerCase()]=String(a.name).trim();});
+    if(!Object.keys(retail).length)return;
+    const r=await fetch('/api/square/orders?customerId='+encodeURIComponent(c.squareId),{headers:{'Authorization':'Bearer '+tok}});
+    if(!r.ok)return;
+    const j=await r.json().catch(function(){return null;});
+    const orders=(j&&j.ok&&Array.isArray(j.orders))?j.orders:[];
+    const cc=CL[id];if(!cc)return;
+    const done=Array.isArray(cc._hcAuto)?cc._hcAuto.slice():[];
+    const have=getClientHomecare(id);
+    const has=function(n){const k=n.toLowerCase();return have.some(function(l){const t=String(l||'').trim().toLowerCase();return t===k||t.indexOf(k+' \u2014')===0||t.indexOf(k+' -')===0||t.indexOf(k+':')===0;});};
+    const added=[];
+    orders.forEach(function(o){(o&&o.items||[]).forEach(function(li){
+      const nm=retail[String(li&&li.name||'').trim().toLowerCase()];if(!nm)return;
+      const k=nm.toLowerCase();if(done.indexOf(k)>=0)return;
+      done.push(k);
+      if(!has(nm)){have.push(nm);added.push(nm);}
+    });});
+    const changedDone=done.length!==((Array.isArray(cc._hcAuto)?cc._hcAuto:[]).length);
+    if(changedDone){cc._hcAuto=done;try{saveClients();}catch(e){}}
+    if(added.length){
+      try{persistWorkspace();}catch(e){}
+      try{if(typeof persistClientHomecare==='function')persistClientHomecare();}catch(e){}
+      _pushRoutine(id);
+      try{if(typeof _navCur!=='undefined'&&_navCur&&_navCur.screen==='client'&&_navCur.data===id)renderClient(id);}catch(e){}
+      if(typeof proToast==='function')proToast((added.length===1?added[0]:added.length+' products')+' they bought '+(added.length===1?'is':'are')+' now in '+String(cc.name||'their').split(' ')[0]+'\u2019s homecare. Edit or remove it there.',6000);
+    }
+  }catch(e){}
 }
 function _rerenderHomecare(id,ctx){
   if(ctx==='profile')renderClient(id);else renderSessionSummary(id);
@@ -9319,7 +9363,15 @@ function _sendToClientHTML(id){
   return '<div class="sh"><h2>Send to '+first+'</h2></div>'
     +'<div style="padding:0 16px 2px;"><div style="font-size:14px;color:var(--p-mut);margin:-2px 0 9px;line-height:1.5;">Everything here lands in their app. They get a notification.</div>'
     +inviteRow
-    +row('ti-camera','var(--p-purple)','Photo consult','Invite them, review their photos, send your recommendations',"inviteVirtualConsult('"+id+"')")
+    +(function(){
+      // The consult's STATE lives on this row now (Ashley, 2026-10-13: "the photo consult section at
+      // the bottom is redundant to the area at the top ... if they have an invite sent use the top
+      // section to note that"). Waiting on them: say so, tap resends. Photos in: tap opens the review.
+      const inv=(typeof vcInvites!=='undefined'&&vcInvites[id])||{};
+      if(inv.submitted)return row('ti-camera','var(--p-purple)','Photo consult','Photos are in \u00b7 tap to review',"_vcBack='client';nav('virtual-client','"+id+"')");
+      if(inv.invited)return row('ti-clock','var(--p-blue)','Photo consult','Invited \u00b7 waiting on '+first+'\u2019s photos \u00b7 tap to resend',"inviteVirtualConsult('"+id+"')");
+      return row('ti-camera','var(--p-purple)','Photo consult','Invite them, review their photos, send your recommendations',"inviteVirtualConsult('"+id+"')");
+    })()
     +row('ti-flask','var(--p-blue)','Product consult','Invite them, review what they use, send your recommendations',"_productConsult('"+id+"')")
     +row('ti-file-text','var(--accent-strong)','Forms','Intake, consent, or one you wrote'+(nOut?(' · '+nOut+' still out'):''),"openClientFormSender('"+id+"')")
     +row('ti-book','var(--p-amber)','Guides + Courses',nG+' guide'+(nG===1?'':'s')+', '+nC+' course'+(nC===1?'':'s'),"openClientFormSender('"+id+"')")
@@ -9405,6 +9457,7 @@ function renderClient(id){
   // The saved-summaries count on this screen is what a provider reads as "my notes are gone".
   try{if(typeof loadSessionSummaries==='function')loadSessionSummaries();}catch(e){}
   _recEditCtx='profile';
+  try{setTimeout(function(){_autoHomecareFromPurchases(id);},800);}catch(e){}
   const c=CL[id];
   if(!c){if(typeof renderClients==='function'){return renderClients();}S.innerHTML='<div style="padding:30px 16px;color:var(--p-mut);text-align:center;">This client is no longer available.</div>';return;}
   if(_clientTabFor!==id){_clientTab='visit';_clientTabFor=id;}
@@ -9486,7 +9539,7 @@ function renderClient(id){
   // Starting a consult lives in "Send to <name>" now, so this block is only the STATE of one
   // already in flight: waiting on them, or waiting on you. With neither, a second invite card
   // directly under the Send row was simply the same button twice.
-  if(!inv.invited&&!inv.submitted)return '';
+  if(!inv.submitted)return '';   // waiting-on-them is shown on the Send-to row above, not twice
   // Not a second heading called "Photo consult": the Send-to row above is already called that, and
   // two identical headings on one screen is what read as duplication. This one names the STATE.
   const _hd='<div class="sh"><h2>'+(inv.submitted?'Photo consult \u00b7 ready to review':'Photo consult \u00b7 waiting on '+nm)+'</h2></div>';

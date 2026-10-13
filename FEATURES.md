@@ -50,6 +50,7 @@ saved anywhere", not "does this always call that".
 | `_askBookRun` | `/api/provider-form` | via `submitSignOnDevice` |
 | `_attnTilesHTML` | `/api/clients` | via `_syncSpecificClientsToServer` |
 | `_attnTilesHTML` | `/api/provider-form` | via `submitSignOnDevice` |
+| `_autoHomecareFromPurchases` | `/api/square/orders` | direct |
 | `_autoSyncCatalog` | `/api/clients` | via `syncClientEvents` |
 | `_autoSyncCatalog` | `/api/provider-form` | via `submitSignOnDevice` |
 | `_autoSyncCatalog` | `/api/square/catalog` | direct |

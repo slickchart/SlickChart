@@ -6707,6 +6707,31 @@ A summary stores products as NAMES (`productDetail.map(p=>p.name)`); `renderLate
 matching live recommendation (keeps Buy) or `{name}`. Empty homecare/products cards are now hidden.
 `scratchpad/test-client-summary-products.mjs` 6/6; three FAIL on the previous client page.
 
+### Shoppable products, purchases → homecare, one photo-consult row — build `2026-10-13j`
+
+Her words (COMPUTER, preview, 14:34): *"all recommended products should be able to be clicked to be
+shoppable please. if they purchase a product or it is in the history it should automatically go into
+their homecare routine, which the provider can edit/add notes. then - the photo consult section at the
+bottom is redundant to the area at the top. lets consolidate that. if they have an invite sent use the
+top section to note that."* Her answers: "history" = **purchases only**; a product with no link →
+**both** "Buy in office" and her whole Shop.
+
+- Client: every product row on the summary, the magic landing and Shop has **Buy**. `_prodList` maps a
+  saved name to the live recommendation or her `catalog` entry (keeps the real link). With no link the
+  sheet offers Buy in office (`_reserveInOffice`, a prefilled message) and "See <first>'s Shop".
+- Provider: `_autoHomecareFromPurchases(id)` runs once per client per session on profile open. Reads
+  `/api/square/orders?customerId=` (her own Square via sqContext), keeps only line items whose name is
+  one of HER active products (`affiliateLinks`), adds each name once as a plain-string homecare line
+  (she edits/adds the note as with any line, `_hcCompose` "Name — note"), and records it in
+  `c._hcAuto` on the client record so a product she removes is NOT re-added. Guarded by
+  `_rosterNotReadYet` and `_libSafeToPersist('sc_client_homecare')`. Known limit: `c._hcAuto` rides the
+  client record's merge, so a removal racing on two devices could see the product come back once.
+- Provider: the "Photo consult" row in Send-to now carries the state (invited → "waiting on <name>'s
+  photos · tap to resend"; submitted → "Photos are in · tap to review"); the separate "waiting on"
+  card is gone. The "ready to review" card stays — it carries the AI read.
+
+`scratchpad/test-shop-homecare.mjs` 12/12.
+
 ## §2bd. How the Square bulk delete was done before, and where it went
 
 Ashley, 2026-10-13, with a screenshot of the Square Developer forum thread *"Customers created via
