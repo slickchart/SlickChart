@@ -534,8 +534,9 @@ saved anywhere", not "does this always call that".
 | `_rotatePhoto` | `/api/clients` | via `_syncSpecificClientsToServer` |
 | `_routeDeepLink` | `/api/clients` | via `syncClientEvents` |
 | `_routeDeepLink` | `/api/provider-form` | via `submitSignOnDevice` |
-| `_runClientCleanup` | `/api/clients` | via `_serverDeleteClients` |
+| `_runClientCleanup` | `/api/clients` | via `_tidySaveToAccount` |
 | `_runClientCleanup` | `/api/provider-form` | via `submitSignOnDevice` |
+| `_runClientCleanup` | `/api/store` | via `_pushFlushNow` |
 | `_runInkOCR` | `/api/ai` | via `_aiComplete` |
 | `_runSelfCheck` | `/api/clients` | direct |
 | `_runSelfCheck` | `/api/store` | direct |
@@ -676,6 +677,10 @@ saved anywhere", not "does this always call that".
 | `_syncSpecificClientsToServer` | `/api/provider-message` | via `_sendProviderMessageToClient` |
 | `_syncSquareClientsNow` | `/api/square/appointments` | direct |
 | `_syncSquareClientsNow` | `/api/square/customers` | direct |
+| `_tidySaveToAccount` | `/api/clients` | direct |
+| `_tidySaveToAccount` | `/api/store` | via `_pushFlushNow` |
+| `_tidyShowResult` | `/api/clients` | via `syncClientEvents` |
+| `_tidyShowResult` | `/api/provider-form` | via `submitSignOnDevice` |
 | `_todayCheckinSendHTML` | `/api/clients` | via `_syncSpecificClientsToServer` |
 | `_toggleAuto` | `/api/clients` | via `syncClientEvents` |
 | `_transcribeAndPreview` | `/api/ai` | via `_aiComplete` |
@@ -825,8 +830,9 @@ saved anywhere", not "does this always call that".
 | `onboardToggleProf` | `/api/feedback` | via `_sendBetaFeedback` |
 | `onboardToggleProf` | `/api/square/connect` | via `_sqConnect` |
 | `openBetaFeedback` | `/api/feedback` | via `_sendBetaFeedback` |
-| `openClientCleanup` | `/api/clients` | via `_serverDeleteClients` |
+| `openClientCleanup` | `/api/clients` | via `_tidySaveToAccount` |
 | `openClientCleanup` | `/api/square/customers` | via `_fetchSquareDirectory` |
+| `openClientCleanup` | `/api/store` | via `_pushFlushNow` |
 | `openClientFormSender` | `/api/clients` | via `_syncSpecificClientsToServer` |
 | `openClientFormSender` | `/api/provider-form` | via `submitSignOnDevice` |
 | `openCourseHistory` | `/api/course-versions` | via `_cvFetchList` |

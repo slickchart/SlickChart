@@ -6671,6 +6671,17 @@ roster lacks them gets them; once they are in the account roster they stop being
 tombstones on device AND server, so the poll cannot bring them back). Build `2026-10-13f` batches that:
 one delete-record push and `/api/clients` calls of 200, instead of ~670 of each.
 
+Her next report (COMPUTER, Safari, preview, build 13f), 14:19: *"i did that and it went down to 600
+something clients, and immediately on refresh went back up to this"* — screenshot shows **875 clients**,
+"14 possible duplicates" (was 30). So the removal took on the device and partly did not survive a
+refresh. The tidy-up reported done as soon as THIS device changed: the server deletes were
+fire-and-forget, and the roster (well over the 350KB immediate-push ceiling) rode the queue, so the
+account still held the old roster/delete record when she refreshed, and the pull brought them back.
+Not proven which part was short — build `2026-10-13g` makes the screen itself say: it now awaits the
+server deletes and waits (up to 60s) until the account confirms BOTH `sc_deleted_clients` and
+`sc_clients`, shows "please don't refresh" meanwhile, and ends with three ✓/✗ lines. If any is ✗ she
+screenshots it. The failure path (✗ lines) is not covered by a test yet.
+
 ## §2bd. How the Square bulk delete was done before, and where it went
 
 Ashley, 2026-10-13, with a screenshot of the Square Developer forum thread *"Customers created via

@@ -486,7 +486,7 @@ const S=document.getElementById('S');
 // resets when I save it" and there was no way to tell whether her phone had any of them — a whole
 // day was spent debugging code she may not have been running. Shown at the bottom of Settings, so
 // the answer is a screenshot away. Bump it on every ship.
-const APP_BUILD='2026-10-13f';
+const APP_BUILD='2026-10-13g';
 
 
 /* ════════════════════════════════════════════════════════════════
@@ -22479,11 +22479,68 @@ async function openClientCleanup(){
       <div style="max-height:190px;overflow:auto;">${withData.slice(0,60).map(function(x){return `<div style="display:flex;justify-content:space-between;gap:10px;font-size:16px;color:var(--p-mut);padding:4px 0;border-top:1px solid var(--p-line2);"><span style="min-width:0;overflow:hidden;text-overflow:ellipsis;white-space:nowrap;">${_fileEsc(x.name)}</span><span style="flex-shrink:0;">${x.weight} item${x.weight===1?'':'s'}</span></div>`;}).join('')}</div>
     </div>`:''}`;
 }
+// 2026-10-13, Ashley on the preview: "it went down to 600 something clients, and immediately on refresh
+// went back up". The removal said done the moment it changed THIS device, while the account still held
+// the old list and an old delete record — the roster is far over the immediate-push size, so it rode
+// the queue — and the refresh pulled the account copy straight back. So this now WAITS until the
+// account has confirmed each part, and says in words what landed. Nothing here is fire-and-forget.
+function _tidyBox(html){
+  let ov=document.getElementById('client-cleanup');
+  if(!ov){ov=document.createElement('div');ov.id='client-cleanup';
+    ov.style.cssText='position:fixed;top:0;bottom:0;left:0;right:0;margin:0 auto;width:390px;max-width:100%;z-index:99999;background:rgba(0,0,0,.72);display:flex;align-items:flex-end;justify-content:center;';
+    (document.querySelector('.shell')||document.body).appendChild(ov);}
+  ov.onclick=null;
+  ov.innerHTML='<div role="dialog" aria-modal="true" style="background:var(--surf2);border-top-left-radius:18px;border-top-right-radius:18px;width:100%;max-height:86%;overflow:auto;padding:18px 18px 26px;">'+html+'</div>';
+}
+function _tidyShowSaving(n){
+  _tidyBox('<div style="font-size:16px;font-weight:700;color:var(--p-ink);margin-bottom:8px;">Removing '+n+' clients…</div>'
+    +'<div style="font-size:16px;color:var(--p-mut);line-height:1.6;"><div class="spin" style="margin:6px auto 12px;"></div>Saving to your account. <b>Please don’t refresh or close the app</b> until this says done.</div>');
+}
+async function _tidySaveToAccount(gone){
+  const out={deleted:false,roster:false,rows:0,rowsTried:gone.length,detail:[]};
+  const tok=(typeof Cloud!=='undefined'&&Cloud&&Cloud.token)||'';
+  if(!tok){out.detail.push('not signed in to the cloud');return out;}
+  // 1) the server rows, awaited, in the same 200s the endpoint takes
+  for(let i=0;i<gone.length;i+=200){
+    const chunk=gone.slice(i,i+200);
+    try{const r=await fetch('/api/clients',{method:'POST',headers:{'Content-Type':'application/json','Authorization':'Bearer '+tok},
+      body:JSON.stringify({clients:[],deletedIds:chunk})});
+      if(r&&r.ok)out.rows+=chunk.length;else out.detail.push('server rows: HTTP '+((r&&r.status)||0));}
+    catch(e){out.detail.push('server rows: network');}
+  }
+  // 2) the delete record and the roster, confirmed by the account. A value over the immediate-push
+  // size goes to the queue, so push, kick the queue, then wait until the account holds this value.
+  const want={sc_deleted_clients:_lsGet('sc_deleted_clients')||'',sc_clients:_lsGet('sc_clients')||''};
+  try{Object.keys(want).forEach(function(k){_pushKeyNow(k,want[k]);});}catch(e){}
+  try{_pushFlushNow();}catch(e){}
+  const landed=function(k){try{return Object.prototype.hasOwnProperty.call(Cloud._serverSeen||{},k)&&_sameSyncValue(Cloud._serverSeen[k],want[k]);}catch(e){return false;}};
+  const t0=Date.now();
+  while(Date.now()-t0<60000){
+    if(landed('sc_deleted_clients')&&landed('sc_clients'))break;
+    try{if(Cloud._queue&&(('sc_clients' in Cloud._queue)||('sc_deleted_clients' in Cloud._queue))){clearTimeout(Cloud._timer);Cloud._flush(0);}}catch(e){}
+    await new Promise(function(r){setTimeout(r,700);});
+  }
+  out.deleted=landed('sc_deleted_clients');out.roster=landed('sc_clients');
+  if(!out.deleted)out.detail.push('delete record not confirmed by the account');
+  if(!out.roster)out.detail.push('client list not confirmed by the account');
+  return out;
+}
+function _tidyShowResult(n,res){
+  const ok=res.deleted&&res.roster&&res.rows===res.rowsTried;
+  const line=function(good,txt){return '<div style="display:flex;gap:8px;font-size:16px;line-height:1.5;color:'+(good?'var(--p-green)':'var(--p-red)')+';margin-bottom:6px;"><span>'+(good?'✓':'✗')+'</span><span>'+txt+'</span></div>';};
+  _tidyBox('<div style="font-size:16px;font-weight:700;color:var(--p-ink);margin-bottom:10px;">'+(ok?('Removed '+n+' clients'):'Not finished saving')+'</div>'
+    +line(res.rows===res.rowsTried,res.rows+' of '+res.rowsTried+' removed on the server')
+    +line(res.deleted,'Delete record saved to your account')
+    +line(res.roster,'Client list saved to your account')
+    +(ok?'<div style="font-size:16px;color:var(--p-mut);line-height:1.6;margin:8px 0 14px;">Safe to refresh. Nothing in Square was changed.</div>'
+       :'<div style="font-size:16px;color:var(--p-mut);line-height:1.6;margin:8px 0 14px;">Leave the app open a minute and run this again. Screenshot this for Claude: '+_fileEsc(res.detail.join('; '))+'</div>')
+    +'<button onclick="_closeCleanup();try{nav(\'clients\');}catch(e){}" class="btnp" style="width:100%;border-radius:10px;">Done</button>');
+}
 function _runClientCleanup(){
   const rep=window._cleanupRep;if(!rep)return;
   const empties=rep.extra.filter(function(x){return x.weight===0;});
   if(!empties.length)return;
-  const go=function(){
+  const go=async function(){
     let n=0;const gone=[];
     empties.forEach(function(x){
       try{if(!CL[x.id])return;if(_clientChartWeight(CL[x.id],x.id)>0)return;   // re-checked at the moment of removal
@@ -22492,13 +22549,12 @@ function _runClientCleanup(){
     // ONE delete-record push and a few /api/clients calls, not one of each per client: on her account
     // this is ~670 clients, and _markClientDeleted per id meant ~670 pushes of the whole delete record.
     // The server rows are tombstoned too, so the 15-second event poll cannot create them again.
-    try{const now=Date.now();gone.forEach(function(id){_deletedClientIds[id]=now;});_saveDeletedClients();
-      for(let i=0;i<gone.length;i+=200)_serverDeleteClients(gone.slice(i,i+200));}catch(e){}
+    try{const now=Date.now();gone.forEach(function(id){_deletedClientIds[id]=now;});_saveDeletedClients();}catch(e){}
     try{saveClients();}catch(e){}
-    try{if(typeof _pushKeyNow==='function')_pushKeyNow('sc_clients',_lsGet('sc_clients')||'');}catch(e){}
-    _closeCleanup();
-    if(typeof proToast==='function')proToast('Removed '+n+' client'+(n===1?'':'s')+' that weren’t in Square. Nothing in Square was changed.',6000);
     try{nav('clients');}catch(e){}
+    _tidyShowSaving(n);
+    const res=await _tidySaveToAccount(gone);
+    _tidyShowResult(n,res);
   };
   if(typeof confirmModal==='function')confirmModal({title:'Remove '+empties.length+' clients?',
     body:'They are not in your Square directory and have nothing on their chart — no notes, forms, photos or messages. This only affects this app; Square is untouched.',
