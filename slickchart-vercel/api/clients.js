@@ -29,7 +29,14 @@ export default async function handler(req, res) {
       // Soft-delete any clients the provider removed/merged-away, so the server row is tombstoned
       // and can't resurrect as a blank zombie on the next re-sync. Runs before the upsert.
       const del = Array.isArray(body.deletedIds) ? body.deletedIds : [];
-      if (del.length) { try { await Promise.all(del.slice(0, 500).map(id => markClientDeleted(provider, String(id)))); } catch (e) { /* best-effort */ } }
+      // Same small pool as the upsert below: a Square clean-up sends a few hundred ids in one request, and
+      // one Promise.all over them opened a connection per id at once (the EMFILE failure described below).
+      if (del.length) {
+        const ids = del.slice(0, 500).map(String);
+        let _d = 0;
+        const _delWorker = async () => { while (_d < ids.length) { const id = ids[_d++]; try { await markClientDeleted(provider, id); } catch (e) { /* best-effort */ } } };
+        await Promise.all(Array.from({ length: Math.min(4, ids.length) }, () => _delWorker()));
+      }
       const items = (Array.isArray(body.clients) ? body.clients : []).slice(0, 2000);
       // Cap DB concurrency. Neon's HTTP driver opens a fresh connection PER query, and upsertClient
       // runs ~3 queries each. Firing every client at once (Promise.all over the whole list) opened

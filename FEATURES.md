@@ -380,6 +380,10 @@ saved anywhere", not "does this always call that".
 | `_openReviewCard` | `/api/clients` | via `_syncSpecificClientsToServer` |
 | `_openSendSheet` | `/api/automation-claim` | via `_ssSend` |
 | `_openSendSheet` | `/api/provider-message` | via `_sendProviderMessageToClient` |
+| `_openSquarePurge` | `/api/admin/square-foreign` | direct |
+| `_openSquarePurge` | `/api/square/customer-map` | direct |
+| `_openSquarePurge` | `/api/square/customers` | direct |
+| `_openSquarePurge` | `/api/square/delete-customers` | via `_sqp_execute` |
 | `_ownerAnimalsHTML` | `/api/clients` | via `syncClientEvents` |
 | `_ownerAnimalsHTML` | `/api/provider-form` | via `submitSignOnDevice` |
 | `_payDelete` | `/api/square/giftcard` | via `_checkGiftCard` |
@@ -626,6 +630,25 @@ saved anywhere", not "does this always call that".
 | `_sqLoadCustomers` | `/api/square/customers` | direct |
 | `_sqLoadSlots` | `/api/square/availability` | direct |
 | `_sqRenderConnState` | `/api/square/connection` | via `_sqConnState` |
+| `_sqp_all` | `/api/square/delete-customers` | via `_sqp_execute` |
+| `_sqp_confirm` | `/api/clients` | via `_serverDeleteClients` |
+| `_sqp_confirm` | `/api/square/appointments` | via `_syncSquareClientsNow` |
+| `_sqp_confirm` | `/api/square/customers` | via `_autoSyncCustomers` |
+| `_sqp_confirm` | `/api/square/delete-customers` | via `_sqp_execute` |
+| `_sqp_execute` | `/api/clients` | via `_serverDeleteClients` |
+| `_sqp_execute` | `/api/square/appointments` | via `_syncSquareClientsNow` |
+| `_sqp_execute` | `/api/square/customers` | via `_autoSyncCustomers` |
+| `_sqp_execute` | `/api/square/delete-customers` | direct |
+| `_sqp_pickDay` | `/api/square/delete-customers` | via `_sqp_execute` |
+| `_sqp_render` | `/api/clients` | via `_serverDeleteClients` |
+| `_sqp_render` | `/api/square/delete-customers` | via `_sqp_execute` |
+| `_sqp_setAfter` | `/api/square/delete-customers` | via `_sqp_execute` |
+| `_sqp_setBefore` | `/api/square/delete-customers` | via `_sqp_execute` |
+| `_sqp_setSrc` | `/api/square/delete-customers` | via `_sqp_execute` |
+| `_sqp_toggle` | `/api/square/delete-customers` | via `_sqp_execute` |
+| `_sqp_toggleAppOnly` | `/api/square/delete-customers` | via `_sqp_execute` |
+| `_sqp_toggleForeignOnly` | `/api/square/delete-customers` | via `_sqp_execute` |
+| `_sqp_toggleReviewAll` | `/api/square/delete-customers` | via `_sqp_execute` |
 | `_ssSend` | `/api/automation-claim` | direct |
 | `_ssSend` | `/api/provider-message` | via `_sendProviderMessageToClient` |
 | `_stSave` | `/api/clients` | via `_syncSpecificClientsToServer` |

@@ -6715,5 +6715,37 @@ code.)
 | `_openSquarePurge` + `_sqp_*` | **gone** — restore from `git show 6bae816^:slickchart-vercel/slickchart.html` |
 | `_sqMineIndex`, `_sqCustIsMine`, `_sqIsAppCreated` | **gone** — same place |
 
-**Not yet restored, and she has not asked for it yet** — she asked how it worked. If she does want
-it back it is a UI-only change, and `6bae816^` has the working version to lift.
+### RESTORED 2026-10-13, build `2026-10-13d` — Admin tools → "Clean up Square customers"
+
+Her words: *"My junk is bot signups from the Square Online newsletter form, so most of it never became
+a SlickChart client and the new tick will miss it. I want that screen back."* (Do not re-investigate
+the source; she knows it.) It sits in **Admin tools**, so only `_isFounder` sees the row. The screen
+itself only ever acts on the signed-in account's OWN Square through `sqContext`; the one admin call
+is the read-only, server-gated `/api/admin/square-foreign` GET.
+
+Lifted from `6bae816^` with these changes, nothing else:
+
+- **Newsletter signups are email subscribers**, so the subscriber shield hides them by default. The
+  Review ALL toggle and the "nothing to clean up" line now say that in words, instead of implying
+  the subscriber count means "real". Booked/paid (`activeCustomerIds`) stays the one unconditional
+  shield in every mode.
+- **Creation-source chips** with counts. A hint only: picking a source does NOT unlock "select all"
+  on its own, because real people who used the same form share the source. A day, a date range or
+  a search still has to.
+- Injection-era wording removed (the hard-coded 734 area code, "the leak").
+- Confirm and result now say **Delete N from Square** and **Square has no undo**.
+- Roster removal also catches a client that carries the id in `squareId`/`sqId`, not only `sq_<id>`,
+  and tombstones the whole chunk in ONE `_saveDeletedClients` + ONE `/api/clients` call. The old
+  version called `_markClientDeleted` per customer: a 300-bot burst meant 300 pushes of the delete
+  record and 300 requests.
+- `api/clients.js`: `deletedIds` now runs through a 4-wide pool like the upsert below it. It was one
+  `Promise.all` over up to 500 ids — the same one-connection-per-id shape that caused the EMFILE
+  outage described in that file.
+
+`scratchpad/test-square-purge-ui.mjs`, 32 checks: founder-only row; paid clients never selectable by
+any mode or search; bots hidden until Review ALL; a source chip alone still says narrow first; a burst
+day selects exactly the 300 bots; exactly those 300 ids reach Square, in chunks of 200 and 100; a roster
+client carrying a bot's `squareId` is removed and tombstoned; a real roster client is untouched; two
+`/api/clients` requests for 301 ids; no other admin endpoint is called.
+
+**NOT RUN against her real Square.** It deletes from Square with no undo. She drives it.
