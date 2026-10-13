@@ -11,7 +11,7 @@ src = 'const sql=()=>{throw new Error("must take q");};const verifyToken=()=>nul
   + 'const ensureTable=async()=>{},ensureProvidersTable=async()=>{},ensureFilesTable=async()=>{},ensureClientTables=async()=>{};\n'
   + 'const listHistory=async()=>[],restoreVersion=async()=>({ok:false}),ensureHistoryTable=async()=>{},itemCount=()=>0;\n' + src;
 writeFileSync(OUT, src);
-const { consolidateName } = await import(OUT);
+const { consolidateName, consolidateAll } = await import(OUT);
 const EMPTY = JSON.stringify({ studio: 'B', profile: { skin: '—', concerns: '—', allergies: 'None noted', fitz: '—', treatment: 'New client' } });
 const REAL = JSON.stringify({ studio: 'B', profile: { skin: 'Oily', concerns: 'acne', allergies: '', fitz: '—', treatment: 'Facial' }, forms: [{ id: 'f1' }] });
 function makeDb() {
@@ -31,6 +31,10 @@ function makeQ(db) {
     if (/^SELECT v FROM kv WHERE owner=.* AND k='sc_clients'/.test(t)) { const x = db.kv[v[0] + '|sc_clients']; return Promise.resolve(x ? [{ v: JSON.stringify(x) }] : []); }
     if (/entry\.key AS id FROM kv, jsonb_each/.test(t)) { const x = db.kv[v[0] + '|' + v[1]]; return Promise.resolve(x ? Object.keys(x).map(id => ({ id })) : []); }
     if (/FROM client_events/.test(t)) return Promise.resolve([]);
+    if (/^SELECT lower\(trim\(name\)\) AS n, count/.test(t)) {
+      const m = {}; db.clients.filter(r => r.provider_id === v[0] && r.deleted_at == null && String(r.name || '').trim()).forEach(r => { const k = String(r.name).trim().toLowerCase(); m[k] = (m[k] || 0) + 1; });
+      return Promise.resolve(Object.keys(m).filter(k => m[k] > 1).map(k => ({ n: k, c: m[k] })));
+    }
     if (/^INSERT INTO kv_history/.test(t)) { db.history.push(v[0]); return Promise.resolve([]); }
     if (/^INSERT INTO kv \(owner,k,v,updated_at\)/.test(t)) { db.kv[v[0] + '|sc_clients'] = JSON.parse(v[1]); return Promise.resolve([]); }
     if (/^UPDATE clients SET deleted_at=/.test(t)) {
@@ -62,8 +66,25 @@ check('no readable list: nothing changed', out3.status === 400 && db3.clients.ev
 const db4 = makeDb(); db4.clients.forEach((r, i) => { if (r.provider_id === 'P' && r.data === EMPTY && !r.opened_at && i % 2 === 0) r.invited_at = 1; });
 const invited = db4.clients.filter(r => r.invited_at && !r.opened_at).length;
 const o4 = await consolidateName(makeQ(db4), 'P', 'Cooper Howard');
-check('reply says WHY copies were left', o4.body.leftWhy['a link was sent, never opened'] === invited && o4.body.leftWhy['the client opened this link'] === 1, JSON.stringify(o4.body.leftWhy));
-const o5 = await consolidateName(makeQ(db4), 'P', 'Cooper Howard', true);
-check('second pass removes link-only copies, never the opened one', o5.body.retired === invited && db4.clients.find(r => r.id === 'c1791000000000').deleted_at == null, JSON.stringify(o5.body.leftWhy));
+check('one tap: link-only copies go too, the opened one stays and says why', o4.body.retired === 139 && o4.body.leftWhy['the client opened this link'] === 1 && db4.clients.find(r => r.id === 'c1791000000000').deleted_at == null, JSON.stringify(o4.body.leftWhy));
+// 2026-10-13 live, second run: 127 copies each "held 1 form / 1 chart field" — the same intake and
+// the booked date on every one. Copies the kept record already covers are duplicates.
+{
+  const SAME = JSON.stringify({ forms: [{ formId: 'intake1', title: 'Intake' }], profile: { nextVisit: 'Oct 20', skin: '—', treatment: 'New client' } });
+  const DIFF = JSON.stringify({ forms: [{ formId: 'consent9', title: 'Peel consent' }], profile: {} });
+  const KEEP = JSON.stringify({ forms: [{ formId: 'intake1', title: 'Intake' }], profile: { concerns: 'acne' } });
+  const db5 = { clients: [{ id: 'c1791493687681ygowr', provider_id: 'P', name: 'Cooper Howard', data: KEEP, deleted_at: null }], kv: { 'P|sc_clients': { c1791493687681ygowr: { name: 'Cooper Howard' } } }, history: [] };
+  for (let i = 0; i < 120; i++) db5.clients.push({ id: 'c17920000' + String(10000 + i) + 'ab', provider_id: 'P', name: 'Cooper Howard', data: SAME, deleted_at: null, invited_at: i % 2 ? 1 : null });
+  db5.clients.push({ id: 'c1792999999999zz', provider_id: 'P', name: 'Cooper Howard', data: DIFF, deleted_at: null });
+  for (let i = 0; i < 5; i++) db5.clients.push({ id: 'd' + i, provider_id: 'P', name: 'Debbi Miranda', data: EMPTY, deleted_at: null });   // none in her list
+  for (let i = 0; i < 3; i++) db5.clients.push({ id: 'bot' + i, provider_id: 'Q', name: 'Cooper Howard', data: EMPTY, deleted_at: null });
+  const all = await consolidateAll(makeQ(db5), 'P');
+  check('all: the 120 covered copies (same intake, booked date) retired', all.body.retired === 120, JSON.stringify(all.body));
+  check('all: the copy with a different form is kept and says why', all.body.keptBack && Object.keys(all.body.keptBack).some(k => /Peel consent/.test(k)), JSON.stringify(all.body.keptBack));
+  check('all: the kept record is untouched', db5.clients.find(r => r.id === 'c1791493687681ygowr').deleted_at == null);
+  check('all: a name with no copy in her list is not touched', db5.clients.filter(r => /^d\d/.test(r.id)).every(r => r.deleted_at == null) && all.body.skipped.some(x => /debbi/.test(x.name)), JSON.stringify(all.body.skipped));
+  check('all: other provider untouched', db5.clients.filter(r => r.provider_id === 'Q').every(r => r.deleted_at == null));
+  check('all: one list backup only', db5.history.length === 1, db5.history.length);
+}
 let bad = 0; for (const x of results) { if (!x.pass) bad++; console.log((x.pass ? 'PASS ' : 'FAIL ') + x.name + (x.detail !== '' ? '  — ' + x.detail : '')); }
 console.log(`\n${results.length - bad}/${results.length} passed`); process.exit(bad ? 1 : 0);

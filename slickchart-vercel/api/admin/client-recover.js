@@ -154,8 +154,27 @@ export function clientContent(dataRaw) {
 //
 // This is ONE function on purpose. The report she approves and the delete that follows have to be
 // computed the same way, or she approves one set and a different set is taken.
+// Every name with more than one live row, in one go, for names that already have a record in her
+// list (so a junk name with no real client is never promoted into it). One list backup first.
+export async function consolidateAll(q, owner) {
+  const names = await q`SELECT lower(trim(name)) AS n, count(*)::int AS c FROM clients
+    WHERE provider_id=${owner} AND deleted_at IS NULL AND trim(coalesce(name,''))<>'' GROUP BY 1 HAVING count(*)>1 ORDER BY 2 DESC LIMIT 400`;
+  const done = [], skipped = [], keptBack = {};
+  let retired = 0, first = true;
+  for (const row of (names || [])) {
+    const out = await consolidateName(q, owner, row.n, true, { onlyIfInList: true, skipBackup: !first });
+    if (out.status !== 200) continue;
+    if (out.body.skipped) { skipped.push({ name: row.n, copies: row.c }); continue; }
+    first = false;
+    retired += out.body.retired || 0;
+    done.push({ name: out.body.kept.name, retired: out.body.retired, left: (out.body.leftAlone || []).length });
+    Object.keys(out.body.leftWhy || {}).forEach(k => { keptBack[k] = (keptBack[k] || 0) + out.body.leftWhy[k]; });
+  }
+  return { status: 200, body: { ok: true, names: done.length, retired, done, skipped, keptBack } };
+}
 // See the comment at the call site in the handler.
-export async function consolidateName(q, owner, name, includeInvited) {
+export async function consolidateName(q, owner, name, includeInvited, opts) {
+  opts = opts || {};
   const nm = String(name || '').trim();
   if (nm.length < 2) { return { status: 400, body: { error: 'Give a name.' } }; }
   const rows = await q`SELECT id, name, email, phone, data, opened_at, invited_at FROM clients
@@ -192,11 +211,46 @@ export async function consolidateName(q, owner, name, includeInvited) {
   }).sort((a, b) => (b.score - a.score) || (born(a.id) - born(b.id)));
   const keep = scored[0];
   const keepWasInList = !!roster[keep.id];
+  if (opts.onlyIfInList && !keepWasInList) return { status: 200, body: { ok: true, skipped: true, name: nm, total: rows.length } };
+  // A copy is a DUPLICATE when everything on it is already on the kept record (or is something the
+  // app derives or can re-send). 2026-10-13: the second live run left 127 Cooper Howard copies that
+  // each "held 1 form / 1 chart field" — the same intake and the same booked date copied onto every
+  // one. Anything the kept record lacks keeps the copy, and the reply names it.
+  const parse = v => { try { return typeof v === 'string' ? JSON.parse(v) : (v || {}); } catch (e) { return null; } };
+  const kd = parse(keep.r.data) || {};
+  const kr = roster[keep.id] || {};
+  const kForms = new Set([].concat(Array.isArray(kd.forms) ? kd.forms : [], Array.isArray(kr.submittedForms) ? kr.submittedForms : [])
+    .map(f => String((f && (f.formId || f.id || f.title)) || '').toLowerCase()).filter(Boolean));
+  const kProf = Object.assign({}, kr, (kd.profile && typeof kd.profile === 'object') ? kd.profile : {});
+  const PH = /^(—|-|–|n\/a|none|none noted|none on file|none known|not scheduled|new client|new patient|unknown|)$/i;
+  const covered = x => {
+    if (x.empty) return '';
+    const id = x.id, r = x.r;
+    if (work[id]) return 'saved work is filed under it';
+    if (ev[id]) return ev[id] + ' submission(s) from the client';
+    if (r.opened_at) return 'the client opened this link';
+    if (roster[id]) return 'in her list';
+    const d = parse(r.data);
+    if (!d) return 'its record could not be read';
+    for (const k of ['summaries', 'aftercare', 'products', 'routine', 'progressPhotos', 'animals']) {
+      const v = d[k]; if (Array.isArray(v) ? v.length : (v && typeof v === 'object' && Object.keys(v).length)) return 'holds ' + k + ' the kept one may not have';
+    }
+    if (d.loyalty && typeof d.loyalty === 'object' && Object.keys(d.loyalty).length) return 'holds loyalty points';
+    const missingForm = (Array.isArray(d.forms) ? d.forms : []).find(f => { const k = String((f && (f.formId || f.id || f.title)) || '').toLowerCase(); return k && !kForms.has(k); });
+    if (missingForm) return 'has a form the kept one does not (' + String(missingForm.title || 'form') + ')';
+    const p = (d.profile && typeof d.profile === 'object') ? d.profile : {};
+    for (const f of ['skin', 'concerns', 'allergies', 'fitz', 'treatment']) {   // lastVisit/nextVisit are stamped from bookings
+      const v = String(p[f] || '').trim();
+      if (v && !PH.test(v) && v !== String(kProf[f] || '').trim()) return 'its ' + f + ' differs from the kept one';
+    }
+    return '';
+  };
+  scored.slice(1).forEach(x => { const c = covered(x); if (!x.empty && !c) { x.empty = true; } else if (!x.empty) { x.why = c; } });
   const retire = scored.slice(1).filter(x => x.empty).map(x => x.id);
   const leftAlone = scored.slice(1).filter(x => !x.empty).map(x => ({ id: x.id, why: x.why || 'holds something' }));
   const leftWhy = {}; leftAlone.forEach(x => { leftWhy[x.why] = (leftWhy[x.why] || 0) + 1; });
   try { await ensureHistoryTable(); } catch (e) {}
-  try {
+  if (!opts.skipBackup) try {
     await q`INSERT INTO kv_history (owner, k, v, bytes, items, reason)
       VALUES (${owner},'sc_clients',${rv[0].v},${String(rv[0].v || '').length},${itemCount(rv[0].v)},'before-restore')`;
   } catch (e) { return { status: 500, body: { error: 'Could not keep a copy of their list first, so nothing was changed.' } }; }
@@ -465,6 +519,11 @@ export default async function handler(req, res) {
       // else the oldest), puts that one in her list, and SOFT-deletes only copies that hold nothing
       // at all. Soft delete sets deleted_at, so every copy stays on the Removed list and can be put
       // back. A copy holding anything is kept and named in the reply, never touched.
+      if (body.consolidateAll) {
+        const out = await consolidateAll(q, owner);
+        res.status(out.status).json(out.body);
+        return;
+      }
       if (body.consolidateName) {
         const out = await consolidateName(q, owner, body.consolidateName, body.includeInvited === true);
         res.status(out.status).json(out.body);

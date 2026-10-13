@@ -486,7 +486,7 @@ const S=document.getElementById('S');
 // resets when I save it" and there was no way to tell whether her phone had any of them — a whole
 // day was spent debugging code she may not have been running. Shown at the bottom of Settings, so
 // the answer is a screenshot away. Bump it on every ship.
-const APP_BUILD='2026-10-13r';
+const APP_BUILD='2026-10-13s';
 
 
 /* ════════════════════════════════════════════════════════════════
@@ -29288,8 +29288,9 @@ function renderClientRecover(){
         +'</div>';
     }).join('')
     +'</div>');
+  const allBtn='<button onclick="_recoverConsolidateAll()" class="btnp" style="width:100%;border-radius:10px;padding:12px;font-size:16px;font-weight:600;margin-bottom:12px;">Tidy all duplicate clients</button>';
   S.innerHTML='<div style="padding:12px 16px 90px;">'
-    +searchBox+foundPanel
+    +searchBox+allBtn+foundPanel
     +'<div style="font-size:16px;color:var(--p-mut);line-height:1.6;margin-bottom:12px;">'
       +'<b>'+esc(j.provider.email)+'</b><br>'
       +showing.length+' showing in their app · '+removed.length+' removed but still on the server'
@@ -29646,13 +29647,38 @@ async function _recoverSetSrc(){
 }
 // Put ONE record back into the account's client list (found by the search). Same server path as
 // "Add them to their list", narrowed to this id, so it never drags the junk rows back with it.
+// One tap for every duplicated client (Ashley, 2026-10-13: "this isnt working and im getting really
+// tired of going back and forth so much"). The server keeps the record in her list for each name,
+// retires copies that hold nothing it does not already have, and reports the rest in one message.
+async function _recoverConsolidateAll(){
+  const j=_recoverState;if(!j)return;
+  confirmModal({title:'Tidy all duplicate clients?',body:'For every client with more than one copy, keeps the one in their list and moves the copies that hold nothing extra to Removed, where any can be put back. A copy that has something the kept one lacks is left alone. A copy of their list is kept first.',action:'Tidy all'},async function(){
+    try{
+      if(typeof proToast==='function')proToast('Tidying\u2026 this can take a minute',8000);
+      const tok=(typeof Cloud!=='undefined'&&Cloud&&Cloud.token)||'';
+      const r=await fetch('/api/admin/client-recover',{method:'POST',headers:{'Content-Type':'application/json','Authorization':'Bearer '+tok},
+        body:JSON.stringify({email:j.provider.email,consolidateAll:true})});
+      const out=await r.json().catch(()=>({}));
+      if(!r.ok||!out.ok){if(typeof proToast==='function')proToast((out&&out.error)||'Could not tidy up');return;}
+      const kb=out.keptBack||{};const kbl=Object.keys(kb).map(function(k){return '\u00b7 '+kb[k]+' \u2014 '+k;}).join('\n');
+      const body='Tidied '+out.names+' client'+(out.names===1?'':'s')+'. Moved '+out.retired+' duplicate cop'+(out.retired===1?'y':'ies')+' to Removed.'
+        +(kbl?('\n\nKept, because they hold something the real one does not:\n'+kbl):'')
+        +((out.skipped&&out.skipped.length)?('\n\n'+out.skipped.length+' name'+(out.skipped.length===1?' has':'s have')+' copies but none in your list, so they were not touched: '+out.skipped.slice(0,8).map(function(x){return x.name+' ('+x.copies+')';}).join(', ')+(out.skipped.length>8?'\u2026':'')):'')
+        +'\n\nClose the app completely and open it again.';
+      confirmModal({title:'Done',body:body,action:'Got it',hideCancel:true},function(){});
+      const r2=await fetch('/api/admin/client-recover?email='+encodeURIComponent(j.provider.email),{headers:{'Authorization':'Bearer '+tok}});
+      const j2=await r2.json().catch(()=>null);
+      if(j2&&j2.ok){_recoverState=j2;renderClientRecover();}
+    }catch(e){if(typeof proToast==='function')proToast('Could not reach the server');}
+  });
+}
 async function _recoverConsolidate(name,includeInvited){
   const j=_recoverState;if(!j||!name)return;
   const go=async function(){
     try{
       const tok=(typeof Cloud!=='undefined'&&Cloud&&Cloud.token)||'';
       const r=await fetch('/api/admin/client-recover',{method:'POST',headers:{'Content-Type':'application/json','Authorization':'Bearer '+tok},
-        body:JSON.stringify({email:j.provider.email,consolidateName:name,includeInvited:!!includeInvited})});
+        body:JSON.stringify({email:j.provider.email,consolidateName:name,includeInvited:true})});
       const out=await r.json().catch(()=>({}));
       if(!r.ok||!out.ok){if(typeof proToast==='function')proToast((out&&out.error)||'Could not tidy up');return;}
       const why=out.leftWhy||{};

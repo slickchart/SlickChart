@@ -461,6 +461,9 @@ saved anywhere", not "does this always call that".
 | `_recoverConsolidate` | `/api/admin/client-recover` | direct |
 | `_recoverConsolidate` | `/api/admin/recover-import` | via `_recoverSetSrc` |
 | `_recoverConsolidate` | `/api/square/delete-customers` | via `_recoverPurgeJunk` |
+| `_recoverConsolidateAll` | `/api/admin/client-recover` | direct |
+| `_recoverConsolidateAll` | `/api/admin/recover-import` | via `_recoverSetSrc` |
+| `_recoverConsolidateAll` | `/api/square/delete-customers` | via `_recoverPurgeJunk` |
 | `_recoverImport` | `/api/admin/client-recover` | direct |
 | `_recoverImport` | `/api/admin/recover-import` | direct |
 | `_recoverImport` | `/api/square/delete-customers` | via `_recoverPurgeJunk` |
@@ -482,9 +485,7 @@ saved anywhere", not "does this always call that".
 | `_recoverRun` | `/api/admin/client-recover` | direct |
 | `_recoverRun` | `/api/admin/recover-import` | via `_recoverSetSrc` |
 | `_recoverRun` | `/api/square/delete-customers` | via `_recoverPurgeJunk` |
-| `_recoverSetSrc` | `/api/admin/client-recover` | via `_recoverConsolidate` |
 | `_recoverSetSrc` | `/api/admin/recover-import` | direct |
-| `_recoverSetSrc` | `/api/square/delete-customers` | via `_recoverPurgeJunk` |
 | `_recoverToggle` | `/api/admin/client-recover` | via `_recoverConsolidate` |
 | `_recoverToggle` | `/api/admin/recover-import` | via `_recoverSetSrc` |
 | `_recoverToggle` | `/api/square/delete-customers` | via `_recoverPurgeJunk` |
@@ -1319,6 +1320,7 @@ Check here before building a new one.
 | `_photoRecoveryScan` | yes |
 | `_recoverAll` | yes |
 | `_recoverConsolidate` | yes |
+| `_recoverConsolidateAll` | yes |
 | `_recoverCopy` | yes |
 | `_recoverEdits` | yes |
 | `_recoverImport` | yes |
