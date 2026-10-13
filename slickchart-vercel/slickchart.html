@@ -232,7 +232,7 @@ const S=document.getElementById('S');
 // resets when I save it" and there was no way to tell whether her phone had any of them — a whole
 // day was spent debugging code she may not have been running. Shown at the bottom of Settings, so
 // the answer is a screenshot away. Bump it on every ship.
-const APP_BUILD='2026-10-13v';
+const APP_BUILD='2026-10-13w';
 
 
 /* ════════════════════════════════════════════════════════════════
@@ -29016,17 +29016,17 @@ function renderClientRecover(){
   const foundPanel=!_q?'':('<div style="background:var(--surf2);border:1px solid var(--p-line);border-radius:12px;padding:12px 14px;margin-bottom:14px;">'
     +'<div style="font-size:16px;font-weight:700;color:var(--p-ink);margin-bottom:6px;">'+(_found.length?(_found.length+' record'+(_found.length===1?'':'s')+' named like \u201c'+esc(_q)+'\u201d'):'No record named like \u201c'+esc(_q)+'\u201d')+'</div>'
     +(function(){
-      // Many live copies of one name: one tap keeps the real one and retires the empty copies.
-      const live=_found.filter(function(c){return !c.deleted&&!nest[c.id];});
-      const names={};live.forEach(function(c){names[String(c.name||'').trim().toLowerCase()]=1;});
+      // ONE button per person (Ashley, 2026-10-13: "make that a rule ... as easy as possible and
+      // automated for me always"). It handles live copies AND ones already on the Removed list,
+      // brings back the best record, and opens the merge itself if real records are left to combine.
+      const recs=_found.filter(function(c){return !nest[c.id];});
+      const names={};recs.forEach(function(c){names[String(c.name||'').trim().toLowerCase()]=1;});
       const nk=Object.keys(names);
-      if(live.length<2||nk.length!==1||!nk[0])return '';
-      if(live.length<=8)return '<div style="background:var(--p-green-bg);border:1px solid var(--p-green);border-radius:10px;padding:10px 12px;margin:4px 0 10px;font-size:15px;color:var(--p-ink);line-height:1.5;">'
-        +'<b>'+live.length+' records for '+esc(live[0].name)+' hold real information.</b> Combine them into one client, with everything kept.'
-        +'<button onclick="_recoverMergeName(\''+esc(String(live[0].name||'').replace(/'/g,''))+'\')" class="btnp" style="width:100%;margin-top:8px;border-radius:8px;padding:10px;font-size:16px;">Combine into one '+esc(live[0].name)+'</button></div>';
+      if(!recs.length||nk.length!==1||!nk[0])return '';
+      const nm=String(recs[0].name||'').trim();
       return '<div style="background:var(--p-green-bg);border:1px solid var(--p-green);border-radius:10px;padding:10px 12px;margin:4px 0 10px;font-size:15px;color:var(--p-ink);line-height:1.5;">'
-        +'<b>'+live.length+' copies of '+esc(live[0].name)+'.</b> One tap keeps the real one (the one holding the most, else the oldest), puts it in their list, and removes only the copies that hold nothing. Removed copies can still be put back.'
-        +'<button onclick="_recoverConsolidate(\''+esc(String(live[0].name||'').replace(/'/g,''))+'\')" class="btnp" style="width:100%;margin-top:8px;border-radius:8px;padding:10px;font-size:16px;">Keep one '+esc(live[0].name)+', remove empty copies</button></div>';
+        +'One tap puts <b>'+esc(nm)+'</b> back in your list as one client, with everything kept. Empty copies are moved out of the way.'
+        +'<button onclick="_recoverFixName(\''+esc(nm.replace(/'/g,''))+'\')" class="btnp" style="width:100%;margin-top:8px;border-radius:8px;padding:11px;font-size:16px;font-weight:600;">Fix '+esc(nm)+'</button></div>';
     })()
     +_found.slice(0,40).map(function(c){
       const st=c.deleted?'Removed':(nest[c.id]?('An animal under '+esc(nest[c.id].ownerName||nest[c.id].ownerId)):(_inList(c.id)?'Showing in their list':'NOT in their list'));
@@ -29456,6 +29456,28 @@ async function _recoverConsolidate(name,includeInvited){
 // list back into it (server, one call), add them to this device's list, then open the app's own
 // Merge sheet with all of them ticked and the one already in her list kept. She confirms once.
 // Ashley, 2026-10-13: "you are making me do way too much work here".
+async function _recoverFixName(name){
+  const j=_recoverState;if(!j||!name)return;
+  const tok=(typeof Cloud!=='undefined'&&Cloud&&Cloud.token)||'';
+  if(typeof proToast==='function')proToast('Fixing '+name+'\u2026',6000);
+  let out=null;
+  try{
+    const r=await fetch('/api/admin/client-recover',{method:'POST',headers:{'Content-Type':'application/json','Authorization':'Bearer '+tok},
+      body:JSON.stringify({email:j.provider.email,consolidateName:name,includeInvited:true,includeRemoved:true})});
+    out=await r.json().catch(()=>({}));
+    if(!r.ok||!out.ok){if(typeof proToast==='function')proToast((out&&out.error)||'Could not fix '+name);return;}
+    const r2=await fetch('/api/admin/client-recover?email='+encodeURIComponent(j.provider.email),{headers:{'Authorization':'Bearer '+tok}});
+    const j2=await r2.json().catch(()=>null);
+    if(j2&&j2.ok){_recoverState=j2;renderClientRecover();}
+  }catch(e){if(typeof proToast==='function')proToast('Could not reach the server');return;}
+  // Real records still left for this person? Go straight into combining them.
+  const st=_recoverState||{};const key=name.trim().toLowerCase();const nest=st.nestedUnder||{};
+  const live=(st.clients||[]).filter(function(c){return !c.deleted&&!nest[c.id]&&String(c.name||'').trim().toLowerCase()===key;});
+  if(live.length>=2&&live.length<=8){_recoverMergeName(name);return;}
+  confirmModal({title:name+' is fixed',body:name+' is in your list'+(out.broughtBack?' again':'')+'.'
+    +(out.retired?(' '+out.retired+' empty cop'+(out.retired===1?'y was':'ies were')+' moved out of the way.'):'')
+    +'\n\nClose the app completely and open it again to see them.',action:'Got it',hideCancel:true},function(){});
+}
 async function _recoverMergeName(name){
   const j=_recoverState;if(!j||!name)return;
   const key=String(name).trim().toLowerCase();

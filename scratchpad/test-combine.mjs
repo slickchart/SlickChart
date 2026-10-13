@@ -10,7 +10,7 @@ async function run(loginEmail) {
   await page.addInitScript(e => { try { localStorage.setItem('sc_token', 'TESTTOKEN'); localStorage.setItem('sc_onboarded', '1'); localStorage.setItem('sc_login_email', e); } catch (x) {} }, loginEmail);
   let posted = null;
   await page.route('**/api/**', r => r.fulfill({ status: 200, contentType: 'application/json', body: '{"ok":true,"data":{},"clients":[],"events":[]}' }));
-  await page.route('**/api/admin/client-recover*', r => { if (r.request().method() === 'POST') { posted = JSON.parse(r.request().postData() || '{}'); return r.fulfill({ status: 200, contentType: 'application/json', body: '{"ok":true,"addedToRoster":2}' }); } return r.fulfill({ status: 200, contentType: 'application/json', body: '{"ok":false}' }); });
+  await page.route('**/api/admin/client-recover*', r => { if (r.request().method() === 'POST') { const b0 = JSON.parse(r.request().postData() || '{}'); if (b0.consolidateName) return r.fulfill({ status: 200, contentType: 'application/json', body: '{"ok":true,"retired":0,"kept":{"id":"keepme"}}' }); posted = b0; return r.fulfill({ status: 200, contentType: 'application/json', body: '{"ok":true,"addedToRoster":2}' }); } return r.fulfill({ status: 200, contentType: 'application/json', body: '{"ok":false}' }); });
   await page.goto('http://localhost:8899/slickchart.html', { waitUntil: 'load' });
   await page.waitForTimeout(2500);
   await page.evaluate(() => {
@@ -22,8 +22,8 @@ async function run(loginEmail) {
     _recQ = 'cooper howard'; nav('client-recover'); renderClientRecover();
   });
   await page.waitForTimeout(300);
-  const has = await page.evaluate(() => /Combine into one Cooper Howard/.test(document.getElementById('S').innerText));
-  await page.evaluate(() => { const b = Array.from(document.querySelectorAll('#S button')).find(x => /Combine into one/.test(x.textContent)); b.click(); });
+  const has = await page.evaluate(() => /Fix Cooper Howard/.test(document.getElementById('S').innerText));
+  await page.evaluate(() => { const b = Array.from(document.querySelectorAll('#S button')).find(x => /Fix Cooper Howard/.test(x.textContent)); b.click(); });
   await page.waitForTimeout(800);
   const st = await page.evaluate(() => ({ cl: Object.keys(CL).filter(k => /Cooper/.test((CL[k] || {}).name || '')), sheet: !!document.getElementById('merge-sheet'), keep: window._mergeKeep, group: window._mergeGroupIds }));
   await page.close();

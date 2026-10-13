@@ -6713,6 +6713,18 @@ A summary stores products as NAMES (`productDetail.map(p=>p.name)`); `renderLate
 matching live recommendation (keeps Buy) or `{name}`. Empty homecare/products cards are now hidden.
 `scratchpad/test-client-summary-products.mjs` 6/6; three FAIL on the previous client page.
 
+### One "Fix <name>" button, removed records included — build `2026-10-13w`
+
+Her screen (16:06, COMPUTER): "debbi miranda" → 123 records, every one "Removed", and NO button,
+because the name buttons only looked at live rows. Per her rule (§4d) the two buttons ("Keep one…
+remove empty copies", "Combine into one…") are now ONE: **Fix <name>** →
+`consolidateName(..., {includeRemoved:true})` picks the best record among live AND removed rows,
+un-deletes it if it was removed (row `deleted_at=NULL` + `undeleteIds`), puts it in her list,
+retires live empty copies (removed ones stay removed), then reloads; if 2–8 real live records of that
+name are still there it goes straight into `_recoverMergeName` (merge sheet opens). Otherwise one
+"<name> is fixed" message. `test-consolidate.mjs` 22/22 (all-removed case), `test-combine` 6/6,
+`test-recover-search` 11/11.
+
 ### Debbi Miranda would not stay put back — build `2026-10-13v`
 
 Her words (~15:55, COMPUTER): *"i keep trying to do it with debbi miranda and it wont put her back on

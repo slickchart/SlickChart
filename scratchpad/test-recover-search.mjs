@@ -37,18 +37,16 @@ check('the one with summaries says so', /saved under this id: 3 summaries/.test(
 check('both say NOT in their list', (t.match(/NOT in their list/g) || []).length >= 2);
 check('lists below are filtered: no junk names shown', !/Junk 5/.test(t), (t.match(/Junk \d+/) || [''])[0]);
 check('focus stays in the search box', await page.evaluate(() => document.activeElement && document.activeElement.id === 'rec-q'));
-check('many copies of one name: one-tap tidy offered', /Keep one Cooper Howard, remove empty copies/.test(t));
+check('one Fix button for the name', /Fix Cooper Howard/.test(t));
 await page.evaluate(() => { const b = Array.from(document.querySelectorAll('#S button')).find(x => /Put back in their list/.test(x.textContent)); b.click(); });
 await page.waitForTimeout(200);
 await page.evaluate(() => { const ms = document.querySelectorAll('#confirm-modal'); const m = ms[ms.length - 1]; const b = Array.from(m.querySelectorAll('button')).find(x => /Put back/.test(x.textContent)); b.click(); });
 await page.waitForTimeout(600);
 check('put back sends only that id', posted && posted.repairRoster === true && JSON.stringify(posted.onlyIds) === '["coop1"]', JSON.stringify(posted));
 posted = null;
-await page.evaluate(() => { document.querySelectorAll('#confirm-modal').forEach(m => m.remove()); const b = Array.from(document.querySelectorAll('#S button')).find(x => /remove empty copies/.test(x.textContent)); b.click(); });
-await page.waitForTimeout(200);
-await page.evaluate(() => { const ms = document.querySelectorAll('#confirm-modal'); const m = ms[ms.length - 1]; const b = Array.from(m.querySelectorAll('button')).find(x => /Tidy up/.test(x.textContent)); b.click(); });
+await page.evaluate(() => { document.querySelectorAll('#confirm-modal').forEach(m => m.remove()); const b = Array.from(document.querySelectorAll('#S button')).find(x => /Fix Cooper Howard/.test(x.textContent)); b.click(); });
 await page.waitForTimeout(600);
-check('tidy sends the name, never a list of ids', posted && posted.consolidateName === 'Cooper Howard' && !posted.onlyIds, JSON.stringify(posted));
+check('Fix sends the name with removed records included, never ids', posted && posted.consolidateName === 'Cooper Howard' && posted.includeRemoved === true && !posted.onlyIds, JSON.stringify(posted));
 check('no page errors', errs.length === 0 && !(await page.evaluate(() => window.__err)), errs.join(' | '));
 await browser.close();
 let bad = 0; for (const x of results) { if (!x.pass) bad++; console.log((x.pass ? 'PASS ' : 'FAIL ') + x.name + (x.detail !== '' ? '  — ' + x.detail : '')); }

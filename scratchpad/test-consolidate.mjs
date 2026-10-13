@@ -26,6 +26,10 @@ const norm = s => String(s).replace(/\s+/g, ' ').trim();
 function makeQ(db) {
   return function q(strings, ...v) {
     const t = norm(strings.join('\u0000'));
+    if (/^SELECT id, name, email, phone, data, opened_at, invited_at, deleted_at FROM clients/.test(t))
+      return Promise.resolve(db.clients.filter(r => r.provider_id === v[0] && String(r.name || '').trim().toLowerCase() === String(v[1]).toLowerCase()).map(r => ({ ...r })));
+    if (/^UPDATE clients SET deleted_at=NULL/.test(t)) { const r = db.clients.find(x => x.provider_id === v[0] && x.id === v[1]); if (r) r.deleted_at = null; return Promise.resolve([]); }
+    if (/^SELECT v FROM kv WHERE owner=.* AND k='sc_(un)?deleted_clients'/.test(t)) return Promise.resolve([]);
     if (/^SELECT id, name, email, phone, data, opened_at, invited_at FROM clients/.test(t))
       return Promise.resolve(db.clients.filter(r => r.provider_id === v[0] && r.deleted_at == null && String(r.name || '').trim().toLowerCase() === String(v[1]).toLowerCase()).map(r => ({ ...r })));
     if (/^SELECT v FROM kv WHERE owner=.* AND k='sc_clients'/.test(t)) { const x = db.kv[v[0] + '|sc_clients']; return Promise.resolve(x ? [{ v: JSON.stringify(x) }] : []); }
@@ -36,7 +40,7 @@ function makeQ(db) {
       return Promise.resolve(Object.keys(m).filter(k => m[k] > 1).map(k => ({ n: k, c: m[k] })));
     }
     if (/^INSERT INTO kv_history/.test(t)) { db.history.push(v[0]); return Promise.resolve([]); }
-    if (/^INSERT INTO kv \(owner,k,v,updated_at\)/.test(t)) { db.kv[v[0] + '|sc_clients'] = JSON.parse(v[1]); return Promise.resolve([]); }
+    if (/^INSERT INTO kv \(owner,k,v,updated_at\)/.test(t)) { const key = (t.match(/'(sc_[a-z_]+)'/) || [])[1] || 'sc_clients'; db.kv[v[0] + '|' + key] = JSON.parse(v[1]); return Promise.resolve([]); }
     if (/^UPDATE clients SET deleted_at=/.test(t)) {
       const [ts, owner, ids] = v; const out = [];
       db.clients.forEach(r => { if (r.provider_id === owner && r.deleted_at == null && ids.includes(r.id)) { r.deleted_at = ts; out.push({ id: r.id }); } });
@@ -96,6 +100,17 @@ check('one tap: link-only copies go too, the opened one stays and says why', o4.
   const o6 = await consolidateName(makeQ(db6), 'P', 'Cooper Howard');
   check('empty plans and the starter homecare on many copies are not work', o6.body.retired === 9, JSON.stringify(o6.body));
   check('a copy with a real summary is kept, naming it', o6.body.leftAlone.length === 1 && o6.body.leftAlone[0].id === 'cp3' && /session summaries/.test(o6.body.leftAlone[0].why), JSON.stringify(o6.body.leftAlone));
+}
+// Debbi Miranda, 2026-10-13: 123 records, ALL on the Removed list. "Fix" brings the best one back.
+{
+  const FORM = JSON.stringify({ forms: [{ formId: 'intake', title: 'Intake' }], profile: {} });
+  const db7 = { clients: [], kv: { 'P|sc_clients': { someone: { name: 'X' } } }, history: [] };
+  for (let i = 0; i < 122; i++) db7.clients.push({ id: 'c17897' + String(1000000 + i), provider_id: 'P', name: 'Debbi Miranda', data: EMPTY, deleted_at: 111 });
+  db7.clients.push({ id: 'debbiReal', provider_id: 'P', name: 'Debbi Miranda', data: FORM, deleted_at: 111 });
+  const o7 = await consolidateName(makeQ(db7), 'P', 'Debbi Miranda', true, { includeRemoved: true });
+  check('all removed: the one holding a form comes back', o7.body.kept.id === 'debbiReal' && o7.body.broughtBack === true && db7.clients.find(r => r.id === 'debbiReal').deleted_at == null, JSON.stringify(o7.body.kept));
+  check('all removed: she is in her list', !!db7.kv['P|sc_clients'].debbiReal);
+  check('all removed: the empty removed copies stay removed', db7.clients.filter(r => r.id !== 'debbiReal').every(r => r.deleted_at === 111));
 }
 let bad = 0; for (const x of results) { if (!x.pass) bad++; console.log((x.pass ? 'PASS ' : 'FAIL ') + x.name + (x.detail !== '' ? '  — ' + x.detail : '')); }
 console.log(`\n${results.length - bad}/${results.length} passed`); process.exit(bad ? 1 : 0);

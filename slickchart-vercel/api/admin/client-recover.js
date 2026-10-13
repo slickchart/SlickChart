@@ -198,9 +198,15 @@ export async function consolidateName(q, owner, name, includeInvited, opts) {
   opts = opts || {};
   const nm = String(name || '').trim();
   if (nm.length < 2) { return { status: 400, body: { error: 'Give a name.' } }; }
-  const rows = await q`SELECT id, name, email, phone, data, opened_at, invited_at FROM clients
-    WHERE provider_id=${owner} AND deleted_at IS NULL AND lower(trim(coalesce(name,'')))=lower(${nm})`;
-  if (rows.length < 2) { return { status: 400, body: { error: 'There is only ' + rows.length + ' record with that name, nothing to tidy.' } }; }
+  // includeRemoved: also consider records already on the Removed list (soft-deleted), so a client
+  // whose every copy was removed (Debbi Miranda, 2026-10-13: 123 records, all Removed) can be brought
+  // back as ONE record. Removed copies that are not chosen simply stay removed.
+  const rows = opts.includeRemoved
+    ? await q`SELECT id, name, email, phone, data, opened_at, invited_at, deleted_at FROM clients
+        WHERE provider_id=${owner} AND lower(trim(coalesce(name,'')))=lower(${nm})`
+    : await q`SELECT id, name, email, phone, data, opened_at, invited_at FROM clients
+        WHERE provider_id=${owner} AND deleted_at IS NULL AND lower(trim(coalesce(name,'')))=lower(${nm})`;
+  if (rows.length < (opts.includeRemoved ? 1 : 2)) { return { status: 400, body: { error: 'There is only ' + rows.length + ' record with that name, nothing to tidy.' } }; }
   const rv = await q`SELECT v FROM kv WHERE owner=${owner} AND k='sc_clients'`;
   let roster = {}; try { roster = rv.length ? (JSON.parse(rv[0].v) || {}) : {}; } catch (e) { roster = {}; }
   if (!rv.length || Array.isArray(roster) || typeof roster !== 'object') { return { status: 400, body: { error: 'Their client list could not be read, so nothing was changed.' } }; }
@@ -223,7 +229,7 @@ export async function consolidateName(q, owner, name, includeInvited, opts) {
   const scored = rows.map(r => {
     const id = String(r.id), c = clientContent(r.data);
     const holds = (c.holds || []).length + (c.unreadable ? 1 : 0);
-    const score = (roster[id] ? 1000 : 0) + holds * 10 + (work[id] || 0) * 20 + (ev[id] || 0) * 20 + (r.opened_at ? 5 : 0) + (r.invited_at ? 3 : 0);
+    const score = (roster[id] ? 1000 : 0) + holds * 10 + (work[id] || 0) * 20 + (ev[id] || 0) * 20 + (r.opened_at ? 5 : 0) + (r.invited_at ? 3 : 0) + (r.deleted_at ? 0 : 1);
     // Why a copy is NOT empty, in words, so the reply can say what the 129 held.
     const why = holds ? 'holds ' + (c.unreadable ? 'a record that could not be read' : c.holds.join(', '))
       : work[id] ? 'saved work is filed under it' : ev[id] ? ev[id] + ' submission(s) from the client'
@@ -277,8 +283,8 @@ export async function consolidateName(q, owner, name, includeInvited, opts) {
     return '';
   };
   scored.slice(1).forEach(x => { const c = covered(x); if (!x.empty && !c) { x.empty = true; } else if (!x.empty) { x.why = c; } });
-  const retire = scored.slice(1).filter(x => x.empty).map(x => x.id);
-  const leftAlone = scored.slice(1).filter(x => !x.empty).map(x => ({ id: x.id, why: x.why || 'holds something' }));
+  const retire = scored.slice(1).filter(x => x.empty && !x.r.deleted_at).map(x => x.id);
+  const leftAlone = scored.slice(1).filter(x => !x.empty && !x.r.deleted_at).map(x => ({ id: x.id, why: x.why || 'holds something' }));
   const leftWhy = {}; leftAlone.forEach(x => { leftWhy[x.why] = (leftWhy[x.why] || 0) + 1; });
   try { await ensureHistoryTable(); } catch (e) {}
   if (!opts.skipBackup) try {
@@ -295,6 +301,12 @@ export async function consolidateName(q, owner, name, includeInvited, opts) {
     await q`INSERT INTO kv (owner,k,v,updated_at) VALUES (${owner},'sc_clients',${JSON.stringify(roster)},now())
       ON CONFLICT (owner,k) DO UPDATE SET v=EXCLUDED.v, updated_at=now()`;
   }
+  let broughtBack = false;
+  if (keep.r.deleted_at) {
+    await q`UPDATE clients SET deleted_at=NULL WHERE provider_id=${owner} AND id=${keep.id}`;
+    broughtBack = true;
+  }
+  try { await undeleteIds(q, owner, [keep.id]); } catch (e) {}
   let retired = 0;
   for (let i = 0; i < retire.length; i += 200) {
     const chunk = retire.slice(i, i + 200);
@@ -302,7 +314,7 @@ export async function consolidateName(q, owner, name, includeInvited, opts) {
     retired += (out || []).length;
   }
   return { status: 200, body: { ok: true, kept: { id: keep.id, name: keep.r.name || nm, wasInList: keepWasInList },
-    retired, leftAlone, leftWhy, total: rows.length,
+    retired, leftAlone, leftWhy, broughtBack, total: rows.length,
     note: 'The copies are on the Removed list, so any of them can be put back.' } };
 }
 
@@ -545,7 +557,7 @@ export default async function handler(req, res) {
         return;
       }
       if (body.consolidateName) {
-        const out = await consolidateName(q, owner, body.consolidateName, body.includeInvited === true);
+        const out = await consolidateName(q, owner, body.consolidateName, body.includeInvited === true, { includeRemoved: body.includeRemoved === true });
         res.status(out.status).json(out.body);
         return;
       }
