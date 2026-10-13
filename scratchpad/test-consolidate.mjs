@@ -58,5 +58,12 @@ const db3 = makeDb(); db3.kv['P|sc_clients'] = 'broken';
 db3.kv['P|sc_clients'] = undefined;
 const out3 = await consolidateName(makeQ(db3), 'P', 'Cooper Howard');
 check('no readable list: nothing changed', out3.status === 400 && db3.clients.every(r => r.deleted_at == null), JSON.stringify(out3.body));
+// 2026-10-13 live: 129 copies were left as "holding something". Most were only sent a link.
+const db4 = makeDb(); db4.clients.forEach((r, i) => { if (r.provider_id === 'P' && r.data === EMPTY && !r.opened_at && i % 2 === 0) r.invited_at = 1; });
+const invited = db4.clients.filter(r => r.invited_at && !r.opened_at).length;
+const o4 = await consolidateName(makeQ(db4), 'P', 'Cooper Howard');
+check('reply says WHY copies were left', o4.body.leftWhy['a link was sent, never opened'] === invited && o4.body.leftWhy['the client opened this link'] === 1, JSON.stringify(o4.body.leftWhy));
+const o5 = await consolidateName(makeQ(db4), 'P', 'Cooper Howard', true);
+check('second pass removes link-only copies, never the opened one', o5.body.retired === invited && db4.clients.find(r => r.id === 'c1791000000000').deleted_at == null, JSON.stringify(o5.body.leftWhy));
 let bad = 0; for (const x of results) { if (!x.pass) bad++; console.log((x.pass ? 'PASS ' : 'FAIL ') + x.name + (x.detail !== '' ? '  — ' + x.detail : '')); }
 console.log(`\n${results.length - bad}/${results.length} passed`); process.exit(bad ? 1 : 0);

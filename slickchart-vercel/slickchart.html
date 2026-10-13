@@ -232,7 +232,7 @@ const S=document.getElementById('S');
 // resets when I save it" and there was no way to tell whether her phone had any of them — a whole
 // day was spent debugging code she may not have been running. Shown at the bottom of Settings, so
 // the answer is a screenshot away. Bump it on every ship.
-const APP_BUILD='2026-10-13q';
+const APP_BUILD='2026-10-13r';
 
 
 /* ════════════════════════════════════════════════════════════════
@@ -29392,24 +29392,31 @@ async function _recoverSetSrc(){
 }
 // Put ONE record back into the account's client list (found by the search). Same server path as
 // "Add them to their list", narrowed to this id, so it never drags the junk rows back with it.
-async function _recoverConsolidate(name){
+async function _recoverConsolidate(name,includeInvited){
   const j=_recoverState;if(!j||!name)return;
-  confirmModal({title:'Tidy up '+name+'?',body:'Keeps one '+name+' (the record holding the most, else the oldest) and puts it in their list. Copies that hold nothing are moved to Removed, where any can be put back. Copies holding anything are left alone. A copy of their list is kept first.',action:'Tidy up'},async function(){
+  const go=async function(){
     try{
       const tok=(typeof Cloud!=='undefined'&&Cloud&&Cloud.token)||'';
       const r=await fetch('/api/admin/client-recover',{method:'POST',headers:{'Content-Type':'application/json','Authorization':'Bearer '+tok},
-        body:JSON.stringify({email:j.provider.email,consolidateName:name})});
+        body:JSON.stringify({email:j.provider.email,consolidateName:name,includeInvited:!!includeInvited})});
       const out=await r.json().catch(()=>({}));
       if(!r.ok||!out.ok){if(typeof proToast==='function')proToast((out&&out.error)||'Could not tidy up');return;}
-      confirmModal({title:'Done',body:'Kept '+(out.kept&&out.kept.name)+' ('+(out.kept&&out.kept.id)+')'+(out.kept&&out.kept.wasInList?', already in their list.':', now in their list.')
+      const why=out.leftWhy||{};
+      const linkOnly=why['a link was sent, never opened']||0;
+      const lines=Object.keys(why).map(function(k){return '\u00b7 '+why[k]+' \u2014 '+k;}).join('\n');
+      const body='Kept '+(out.kept&&out.kept.name)+' ('+(out.kept&&out.kept.id)+')'+(out.kept&&out.kept.wasInList?', already in their list.':', now in their list.')
         +'\nMoved '+out.retired+' empty cop'+(out.retired===1?'y':'ies')+' to Removed.'
-        +((out.leftAlone&&out.leftAlone.length)?('\nLeft '+out.leftAlone.length+' that hold something, so you can look at them.'):'')
-        +'\n\nClose the app completely and open it again.',action:'Got it',hideCancel:true},function(){});
+        +(lines?('\n\nLeft alone, and why:\n'+lines):'')
+        +(linkOnly&&!includeInvited?('\n\n'+linkOnly+' of those only had a link sent and nobody opened it. They hold nothing. Remove them too? They go to Removed like the others and can be put back.'):'\n\nClose the app completely and open it again.');
       const r2=await fetch('/api/admin/client-recover?email='+encodeURIComponent(j.provider.email),{headers:{'Authorization':'Bearer '+tok}});
       const j2=await r2.json().catch(()=>null);
       if(j2&&j2.ok){_recoverState=j2;renderClientRecover();}
+      if(linkOnly&&!includeInvited)confirmModal({title:'Done',body:body,action:'Remove those '+linkOnly+' too'},function(){_recoverConsolidate(name,true);});
+      else confirmModal({title:'Done',body:body,action:'Got it',hideCancel:true},function(){});
     }catch(e){if(typeof proToast==='function')proToast('Could not reach the server');}
-  });
+  };
+  if(includeInvited){go();return;}
+  confirmModal({title:'Tidy up '+name+'?',body:'Keeps one '+name+' (the record holding the most, else the oldest) and puts it in their list. Copies that hold nothing are moved to Removed, where any can be put back. Copies holding anything are left alone, and you will be told why. A copy of their list is kept first.',action:'Tidy up'},go);
 }
 async function _recoverPutBack(id){
   const j=_recoverState;if(!j||!id)return;
