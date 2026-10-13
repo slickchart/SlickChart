@@ -6643,6 +6643,26 @@ recovery check proved it with numbers.**
 
 ---
 
+### §2bd (cont.) "Tidy up your client list" would have removed real clients — fixed, build `2026-10-13e`
+
+Her observation (COMPUTER, Safari, preview `…friendly-dirac…`): the Clients screen says **"1350
+clients — tidy up the ones no longer in Square"**, and the list (Aaron Kim, Aaron Morgan, Aaron
+Peterson, Aaron Ramos, Aaron Watson, Abram Gill, Adam Duran, Adelia Vega, all "Last visit — · New
+client") is, in her words, *"all junk clients"*. Square holds 681. Of those names only Adam Duran is in
+her Square export (1 purchase, $74.63, 2025-03-14); the tidy-up keeps anyone matching Square.
+
+That line opens `openClientCleanup`, which removes clients not in Square whose `_clientChartWeight` is
+0. **The weight read only forms, sessions, notes, check-ins, photos, consults and messages.** A client
+whose only data was a visit summary, product plan, homecare list, rec reasons, body map, typed chart
+detail, a manual appointment or an animal link scored 0 and "Remove these" took them. Those maps are
+keyed by client id, not on the record, so it now takes the id. Same field list as `clientContent()`
+on the server, plus the app's seed words ('None on file', 'None known', 'New patient') read as empty
+so the junk still scores 0. Also: a `sq_` key is `_sqLocalId(squareId)`, never the id itself, so the
+by-id match never fired (fell through to email/phone/name); and a truncated Square directory now
+offers nothing. `scratchpad/test-tidy-weight.mjs`, 19 checks; 13 of them FAIL on the previous build.
+
+She had NOT pressed it when this was found.
+
 ## §2bd. How the Square bulk delete was done before, and where it went
 
 Ashley, 2026-10-13, with a screenshot of the Square Developer forum thread *"Customers created via
