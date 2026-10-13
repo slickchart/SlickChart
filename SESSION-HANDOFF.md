@@ -6417,3 +6417,65 @@ assertion matched the source of the function under test. Read `#S`.
 This is destructive and irreversible (§1a), so it is on the branch with the report built and the
 button wired, and **Ashley has not pressed it**. The sequence is: she opens the report, reads the
 three class counts and the held-back list, then decides. Build `2026-10-13b`.
+
+### §2bb (cont.) The recovery screen at her scale, 2026-10-13 — and a 50-second render
+
+She opened the preview on her own account and sent a screenshot: *"the scrolls are WAY too long for
+each section. make them stay scrollable in a box so it doesnt take forever to get through."*
+
+**Her screenshot also settled the Earlier copies question.** It showed real copies — `Homecare
+lists — 1410 items`, `Product plans — 3 items`, `Consult state — 5 items`, several of them
+`a copy taken off one of their devices`. The safety net exists on her account; the paste's
+"none kept" line was the bug, exactly as the fix above said.
+
+#### 1. Every list is now its own scroll box
+
+`_recBox(total, html, px)` — one helper, used by all of them. Her screen was building roughly
+13,000 rows inline: 3798 showing, 1083 removed, 3040 missing from her list, ~1000 ghosts, 775
+roster, the same 3040 AGAIN in "what their app actually draws", plus photos per client. Reaching
+the next heading meant scrolling past all of it.
+
+Rows past `_REC_CAP` (300) are **not built at all**, and the box says "Showing the first 300 of
+3798. **Copy this as text** has every one." The counts above each list are still the REAL totals —
+only the rendering is capped. Lists that are short on every account (the backup comparison, the
+library sizes) are left alone.
+
+Measured at her numbers, in `scratchpad/test-recover-scroll.mjs`:
+
+```
+before:  13,000+ rows inline, sections many screens apart
+after:   whole screen 715px (0.8 phone screens), 3055 divs, 11 scroll boxes
+         largest gap between two headings: 1015px
+```
+
+The test asserts **distance between headings** and **total page height**, not CSS — a `max-height`
+that some later rule overrides would pass a style assertion and still fail her.
+
+#### 2. The screen took 50 SECONDS to draw, and that was most of "takes forever"
+
+`_recoverRisk` ran the near-duplicate check by walking EVERY live name for EVERY removed row and
+computing a full Levenshtein on each: **1083 × 3798 ≈ 4.1 million** edit-distance computations,
+each allocating a fresh 2-D table — and it is called twice per row (once to seed the ticks, once to
+draw it). Three fixes, none of which changes an answer:
+
+| | render at her scale |
+|---|---|
+| before | **50,715 ms** |
+| `_recoverNear`: bucket candidates by length, memoise per name | 21,503 ms |
+| `_recoverEdits`: two reused rows, `charCodeAt`, early exit once a whole row is over 2 | **32 ms** |
+
+The early exit is the big one and it is exact: the final distance can never be below the smallest
+value in any row, so a row entirely above 2 means the answer is above 2. Worst case — a provider
+whose clients are all named `Client 00001` style, where nothing can be pruned — is **2.1 s**.
+
+**`_recoverEdits` decides which removed rows arrive TICKED**, so a faster version that disagreed
+would quietly change what a restore puts back. The test checks the rewrite against a plain
+full-table Levenshtein over every pair of a 34-name pool (1156 pairs, including accents, empties
+and long near-pairs), and checks `_recoverNear` against the old full scan including that a second
+roster object rebuilds the index instead of answering from the first one's cache.
+
+#### Not a bug: the green "Nothing ticked" bar
+
+It is in her screenshot and it is the existing sticky **restore** button at the foot of the screen,
+labelled that when `_recoverPick` is empty. On a messy account every removed row is a blank or a
+near-duplicate, so none auto-tick. There is already a comment about it at that code.

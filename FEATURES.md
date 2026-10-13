@@ -1271,6 +1271,7 @@ Check here before building a new one.
 | `_recoverCopy` | yes |
 | `_recoverEdits` | yes |
 | `_recoverImport` | yes |
+| `_recoverNear` | yes |
 | `_recoverPurgeJunk` | yes |
 | `_recoverRepairRoster` | yes |
 | `_recoverRestorePurged` | yes |

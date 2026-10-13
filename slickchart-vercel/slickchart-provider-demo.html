@@ -28425,14 +28425,70 @@ let _recoverSrc='';
 //   nothing stored   — no chart, no summaries, nothing to recover
 //   a live namesake  — the same person is already showing, so this is the duplicate she removed
 // Edit distance, capped — only used to FLAG a near-miss name, never to decide anything on its own.
+// Edit distance, but the ONLY question ever asked of it is "is this 2 or less", so it stops as
+// soon as the answer is no. The old version built a full (m+1)x(n+1) table of arrays for every
+// comparison and ran it to the last cell even when the names shared nothing; with 4.1 million
+// comparisons behind it (see _recoverNear) that was most of a 50-second render.
+//
+// Exact for every distance up to 2, which is all the caller uses. Three changes and no new
+// behaviour there: two reused rows instead of allocating a table per call, charCodeAt instead of
+// building single-character strings, and the early exit — the final distance can never be lower
+// than the smallest value in any row, so once a whole row is above 2 this can only be above 2.
+// Anything larger comes back as 9, exactly as the length guard already did.
+let _recEdA=[],_recEdB=[];
 function _recoverEdits(a,b){
-  if(Math.abs(a.length-b.length)>2)return 9;
-  const m=a.length,n=b.length,d=[];
-  for(let i=0;i<=m;i++)d[i]=[i];
-  for(let jj=0;jj<=n;jj++)d[0][jj]=jj;
-  for(let i=1;i<=m;i++)for(let jj=1;jj<=n;jj++)
-    d[i][jj]=Math.min(d[i-1][jj]+1,d[i][jj-1]+1,d[i-1][jj-1]+(a[i-1]===b[jj-1]?0:1));
-  return d[m][n];
+  const m=a.length,n=b.length;
+  if(Math.abs(m-n)>2)return 9;
+  if(_recEdA.length<n+1){_recEdA=new Array(n+1);_recEdB=new Array(n+1);}
+  let prev=_recEdA,cur=_recEdB;
+  for(let j=0;j<=n;j++)prev[j]=j;
+  for(let i=1;i<=m;i++){
+    cur[0]=i;
+    let best=i;
+    for(let j=1;j<=n;j++){
+      const sub=prev[j-1]+(a.charCodeAt(i-1)===b.charCodeAt(j-1)?0:1);
+      const v=Math.min(prev[j]+1,cur[j-1]+1,sub);
+      cur[j]=v;
+      if(v<best)best=v;
+    }
+    if(best>2)return 9;
+    const t=prev;prev=cur;cur=t;
+  }
+  return prev[n];
+}
+// THE NEAR-DUPLICATE SCAN, which was taking 50 SECONDS to draw this screen.
+//
+// _recoverRisk walked EVERY live name for EVERY removed row and ran a full Levenshtein on each.
+// On Ashley's own account that is 1083 removed against 3798 showing — 4.1 MILLION edit-distance
+// computations, each allocating a fresh 2-D table — and _recoverRisk is asked twice per row (once
+// to seed the ticks, once to draw it), so twice that. The screen took the best part of a minute
+// to appear, which is most of what "it takes forever to get through" actually was.
+//
+// Two changes, and NEITHER changes an answer:
+//   • candidates are bucketed by LENGTH. An edit distance of 2 cannot bridge a length gap of 3, so
+//     only names within 2 of this one can possibly match — which is the same test _recoverEdits
+//     already did first thing, just done once per bucket instead of once per name.
+//   • the answer is cached per name. A roster whose problem IS duplicates asks the same name over
+//     and over, and the second _recoverRisk for a row asks exactly what the first one did.
+// The index is keyed on the liveNames object itself, which renderClientRecover rebuilds each time,
+// so a re-render after a restore recomputes rather than answering from a stale map.
+let _recNearSrc=null,_recNearBy=null,_recNearMemo=null;
+function _recoverNear(nm,liveNames){
+  if(_recNearSrc!==liveNames){
+    _recNearSrc=liveNames;_recNearBy={};_recNearMemo={};
+    Object.keys(liveNames).forEach(function(x){(_recNearBy[x.length]||(_recNearBy[x.length]=[])).push(x);});
+  }
+  if(Object.prototype.hasOwnProperty.call(_recNearMemo,nm))return _recNearMemo[nm];
+  let found='';
+  for(let L=Math.max(0,nm.length-2);L<=nm.length+2&&!found;L++){
+    const bucket=_recNearBy[L];if(!bucket)continue;
+    for(let i=0;i<bucket.length;i++){
+      const x=bucket[i];
+      if(x!==nm&&_recoverEdits(x,nm)<=2){found=x;break;}
+    }
+  }
+  _recNearMemo[nm]=found;
+  return found;
 }
 function _recoverRisk(c,liveNames){
   // Trim FIRST. A row whose name is whitespace is nameless, but `!c.name` reads ' ' as a real
@@ -28451,10 +28507,31 @@ function _recoverRisk(c,liveNames){
   // probably is not enough to decide for her, so it is flagged and left for her to judge.
   // Checked BEFORE the empty case: all three leave the box unticked, so this only chooses which
   // reason she is shown, and "there is already a Reiner" is the one that helps her decide.
-  const near=Object.keys(liveNames).find(function(x){return x!==nm&&_recoverEdits(x,nm)<=2;});
+  const near=_recoverNear(nm,liveNames);
   if(near)return 'near:'+near;
   if(!content)return 'empty';
   return '';
+}
+// EVERY LIST ON THIS SCREEN IS ITS OWN SCROLL BOX.
+//
+// Ashley, 2026-10-13, on her own account: "the scrolls are WAY too long for each section. make them
+// stay scrollable in a box so it doesnt take forever to get through."
+//
+// She has 3798 clients showing, 1083 removed, 3040 the app has never heard of and ~1000 deleted
+// again on every refresh. Every one of those lists rendered inline, so the screen was something
+// like 13,000 rows tall and reaching the next heading meant scrolling past all of them. Each list
+// now sits in a fixed-height box that scrolls on its own, so the HEADINGS stay close together
+// however much is in them.
+//
+// Rows past the cap are not built at all. 13,000 nodes is a slow screen as well as a long one, and
+// the footer points at Copy, which has always carried the complete list and is what gets pasted
+// anyway. Lists that are short on every account (the backup comparison, the library sizes) are
+// left alone — a box around four rows is just a smaller box.
+const _REC_CAP=300;
+function _recBox(total,html,px){
+  const shown=Math.min(total,_REC_CAP);
+  return '<div style="max-height:'+(px||260)+'px;overflow-y:auto;-webkit-overflow-scrolling:touch;overscroll-behavior:contain;">'+html+'</div>'
+    +((total>shown)?('<div style="padding:8px 2px 0;font-size:14px;color:var(--p-mut);line-height:1.45;">Showing the first '+shown+' of '+total+'. <b>Copy this as text</b> has every one.</div>'):'');
 }
 function renderClientRecover(){
   const j=_recoverState;if(!j)return;
@@ -28603,7 +28680,7 @@ function renderClientRecover(){
       if(!g.length)return '';
       return '<div style="background:var(--p-red-bg);border:2px solid var(--p-red-line);border-radius:12px;padding:12px 14px;margin-bottom:12px;font-size:16px;color:var(--p-ink);line-height:1.6;">'
         +'<b>'+g.length+' client'+(g.length===1?' is':'s are')+' being deleted again every time they refresh.</b><br>'
-        +g.map(function(x){return '\u00b7 '+esc(x.name||x.id);}).join('<br>')
+        +_recBox(g.length,g.slice(0,_REC_CAP).map(function(x){return '\u00b7 '+esc(x.name||x.id);}).join('<br>'),180)
         +'<div style="font-size:14px;color:var(--p-mut);margin:6px 0 10px;">These are alive on the server, but their ids are on this account\u2019s \u201cdo not bring back\u201d list, so every sync removes them again. Undoing it has to happen on the account, or their device just puts it back.</div>'
         +'<button onclick="_recoverUnDelete()" class="btnp" style="width:100%;border-radius:10px;padding:11px;font-size:16px;font-weight:600;">Bring '+(g.length===1?'this client':'these '+g.length)+' back for good</button>'
         +'</div>';
@@ -28634,7 +28711,7 @@ function renderClientRecover(){
     +'<button onclick="_recoverCopy()" style="width:100%;background:var(--surf1);border:1px solid var(--p-line-ctl);color:var(--p-mut2);border-radius:10px;padding:10px;font-size:16px;cursor:pointer;font-family:inherit;margin-bottom:16px;"><i class="ti ti-copy" style="font-size:16px;"></i> Copy this as text</button>'
     +(nestedRows.length?('<div style="background:var(--p-green-bg);border:1px solid var(--p-green);border-radius:12px;padding:11px 13px;margin-bottom:14px;font-size:16px;color:var(--p-ink);line-height:1.55;">'
       +'<b>Not lost — '+nestedRows.length+' of these are now an animal under another client.</b><br>'
-      +nestedRows.map(c=>esc(c.name||c.id)+' → under '+esc((nest[c.id].ownerName)||nest[c.id].ownerId)).join('<br>')
+      +_recBox(nestedRows.length,nestedRows.slice(0,_REC_CAP).map(c=>esc(c.name||c.id)+' → under '+esc((nest[c.id].ownerName)||nest[c.id].ownerId)).join('<br>'),180)
       +'<br><span style="font-size:14px;color:var(--p-mut);">Their charts moved a level down. Putting rows back will not change this.</span></div>'):'')
     +((j.deletedRecordIds&&j.deletedRecordIds.length)
       ? '<div style="background:var(--p-amber-bg);border:1px solid var(--p-amber);border-radius:12px;padding:11px 13px;margin-bottom:14px;font-size:16px;color:var(--p-ink);line-height:1.55;">Their device asked to remove '+j.deletedRecordIds.length+' client(s), so the removal came <b>from the app</b>, not the server. Some of those were probably meant.</div>'
@@ -28642,19 +28719,19 @@ function renderClientRecover(){
     +(removed.length?('<div class="sh"><h2>Removed — tick what to put back</h2></div>'
       +'<div style="font-size:14px;color:var(--p-mut);line-height:1.5;margin:0 0 8px;">Only the ones that look like real clients are ticked. Blanks and duplicates are left off, because putting those back makes their list worse.</div>'
       +'<div style="background:var(--surf2);border:1px solid var(--p-line);border-radius:12px;overflow:hidden;margin-bottom:8px;">'
-      +removed.map(row).join('')+'</div>'
+      +_recBox(removed.length,removed.slice(0,_REC_CAP).map(row).join(''),340)+'</div>'
       +'<div style="display:flex;gap:8px;margin-bottom:18px;">'
         +'<button onclick="_recoverAll(1)" style="flex:1;background:var(--surf1);border:1px solid var(--p-line-ctl);color:var(--p-mut2);border-radius:8px;padding:9px;font-size:16px;cursor:pointer;font-family:inherit;">Tick all</button>'
         +'<button onclick="_recoverAll(0)" style="flex:1;background:var(--surf1);border:1px solid var(--p-line-ctl);color:var(--p-mut2);border-radius:8px;padding:9px;font-size:16px;cursor:pointer;font-family:inherit;">Untick all</button>'
       +'</div>'):'<div style="font-size:16px;color:var(--p-mut);margin-bottom:18px;">Nothing is removed on the server, so there is nothing to put back.</div>')
     +'<div class="sh"><h2>Still showing</h2></div>'
     +'<div style="background:var(--surf2);border:1px solid var(--p-line);border-radius:12px;overflow:hidden;">'
-    +showing.map(function(c){const an=(c.has&&c.has.animals)||[];
+    +_recBox(showing.length,showing.slice(0,_REC_CAP).map(function(c){const an=(c.has&&c.has.animals)||[];
       return '<div style="padding:11px 12px;border-bottom:1px solid var(--p-line2);">'
         +'<div style="font-size:16px;color:var(--p-ink);">'+esc(c.name||'(no name)')+'</div>'
         +'<div style="font-size:14px;color:var(--p-mut);line-height:1.45;">'+esc(bits(c))+'</div>'
         +(an.length?'<div style="font-size:14px;color:var(--p-mut);margin-top:2px;">'+an.map(a=>'· '+esc(a.name||'(unnamed)')+(a.summaries?(' — '+a.summaries+' summaries'):'')).join('<br>')+'</div>':'')
-        +'</div>';}).join('')
+        +'</div>';}).join(''),340)
     +'</div>'
     +(libRows?('<div class="sh" style="margin-top:16px;"><h2>Their saved work</h2></div>'
       +'<div style="font-size:14px;color:var(--p-mut);line-height:1.5;margin:0 0 8px;">The client rows above hold what the CLIENT sees. The provider’s own summaries, plans and maps live here. Red means empty or missing.</div>'
@@ -28674,19 +28751,19 @@ function renderClientRecover(){
       return '<div class="sh" style="margin-top:16px;"><h2>Earlier copies</h2></div>'
         +'<div style="font-size:14px;color:var(--p-mut);line-height:1.5;margin:0 0 8px;">Saved automatically before anything made one of their libraries smaller. Putting one back keeps a copy of what is there now, so it can be undone.</div>'
         +'<div style="background:var(--surf2);border:1px solid var(--p-line);border-radius:12px;overflow:hidden;">'
-        +hs.slice(0,30).map(function(x){
+        +_recBox(hs.length,hs.slice(0,_REC_CAP).map(function(x){
           return '<div style="display:flex;align-items:center;gap:10px;padding:10px 12px;border-bottom:1px solid var(--p-line2);">'
             +'<div style="flex:1;min-width:0;">'
               +'<div style="font-size:16px;color:var(--p-ink);">'+esc(LBL2[x.k]||x.k)+' \u2014 '+(x.items||0)+' item'+((x.items||0)===1?'':'s')+'</div>'
               +'<div style="font-size:14px;color:var(--p-mut);">'+esc(when(x.saved_at))+' \u00b7 '+esc(WHY2[x.reason]||x.reason||'')+'</div>'
             +'</div>'
             +'<button onclick="_recoverRollback('+Number(x.id)+',\''+esc(LBL2[x.k]||x.k)+'\','+(x.items||0)+')" style="background:var(--surf1);border:1px solid var(--p-line-ctl);color:var(--p-ink);border-radius:8px;padding:8px 12px;font-size:16px;cursor:pointer;font-family:inherit;flex-shrink:0;">Put back</button>'
-            +'</div>';}).join('')
+            +'</div>';}).join(''),320)
         +'</div>';
     })()
     +((j.missingFromRoster&&j.missingFromRoster.length)?('<div style="background:var(--p-amber-bg);border:1px solid var(--p-amber);border-radius:12px;padding:12px 14px;margin-bottom:12px;font-size:16px;color:var(--p-ink);line-height:1.6;">'
       +'<b>'+j.missingFromRoster.length+' live client'+(j.missingFromRoster.length===1?' is':'s are')+' missing from the list their app draws.</b><br>'
-      +j.missingFromRoster.map(function(x){return '\u00b7 '+esc((x&&x.name)||(x&&x.id)||'');}).join('<br>')
+      +_recBox(j.missingFromRoster.length,j.missingFromRoster.slice(0,_REC_CAP).map(function(x){return '\u00b7 '+esc((x&&x.name)||(x&&x.id)||'');}).join('<br>'),180)
       +'<div style="font-size:14px;color:var(--p-mut);margin:6px 0 10px;">Adding them only ADDS. Anything already in the list is left exactly as it is, because that list is where their typed notes live, and the previous version is kept under Earlier copies.</div>'
       +'<button onclick="_recoverRepairRoster()" class="btnp" style="width:100%;border-radius:10px;padding:11px;font-size:16px;font-weight:600;">Add '+j.missingFromRoster.length+' to their list</button></div>'):'')
     +((j.verdict)?('<div style="margin:12px 16px 4px;background:'+((j.verdict.safe&&j.verdict.safe.length)?'var(--p-surf2)':'var(--p-amber-bg)')+';border:1px solid '+((j.verdict.safe&&j.verdict.safe.length)?'var(--p-green)':'var(--p-amber-line)')+';border-radius:12px;padding:12px 14px;">'
@@ -28696,8 +28773,9 @@ function renderClientRecover(){
     +((j.rosterHas&&j.rosterHas.length)?('<div class="sh" style="margin-top:16px;"><h2>What their app actually draws</h2></div>'
       +'<div style="font-size:14px;color:var(--p-mut);line-height:1.5;margin:0 0 8px;">Their app renders its own saved list, not the server\u2019s. If a client is on the server but not in here, their app has never been told about them.</div>'
       +'<div style="background:var(--surf2);border:1px solid var(--p-line);border-radius:12px;overflow:hidden;">'
-      +j.rosterHas.map(function(x){return '<div style="padding:9px 12px;border-bottom:1px solid var(--p-line2);font-size:16px;color:var(--p-ink);">'+esc(x.name||'(no name)')+(x.deleted?' <span style="color:var(--p-red);font-size:14px;">tombstoned on the server</span>':'')+'</div>';}).join('')
-      +((j.missingFromRoster&&j.missingFromRoster.length)?j.missingFromRoster.map(function(x){return '<div style="padding:9px 12px;border-bottom:1px solid var(--p-line2);font-size:16px;color:var(--p-red);">'+esc((x&&x.name)||(x&&x.id)||'')+' \u2014 on the server, NOT in their list</div>';}).join(''):'')
+      +_recBox(j.rosterHas.length+((j.missingFromRoster&&j.missingFromRoster.length)||0),
+        j.rosterHas.slice(0,_REC_CAP).map(function(x){return '<div style="padding:9px 12px;border-bottom:1px solid var(--p-line2);font-size:16px;color:var(--p-ink);">'+esc(x.name||'(no name)')+(x.deleted?' <span style="color:var(--p-red);font-size:14px;">tombstoned on the server</span>':'')+'</div>';}).join('')
+        +((j.missingFromRoster&&j.missingFromRoster.length)?j.missingFromRoster.slice(0,_REC_CAP).map(function(x){return '<div style="padding:9px 12px;border-bottom:1px solid var(--p-line2);font-size:16px;color:var(--p-red);">'+esc((x&&x.name)||(x&&x.id)||'')+' \u2014 on the server, NOT in their list</div>';}).join(''):''),340)
       +'</div>'):'')
     +((j.photos)?('<div class="sh" style="margin-top:16px;"><h2>Photos on the server</h2></div>'
       +'<div style="font-size:14px;color:var(--p-mut);line-height:1.5;margin:0 0 8px;">Photos are not in the synced blob \u2014 each one is uploaded on its own and kept per account. <b>Bytes on the server</b> is what actually survives a lost phone. <b>Nothing points at these</b> are photos that uploaded fine and only lost the entry that names them, which is the recoverable kind.</div>'
@@ -28709,9 +28787,9 @@ function renderClientRecover(){
       +(j.photos.error?('<br><span style="color:var(--p-red);font-size:14px;">Could not read: '+esc(j.photos.error)+'</span>'):'')
       +'</div>'
       +((j.photos.byClient&&Object.keys(j.photos.byClient).length)?('<div style="background:var(--surf2);border:1px solid var(--p-line);border-radius:12px;overflow:hidden;margin-top:8px;">'
-        +Object.keys(j.photos.byClient).map(function(cid){var x=j.photos.byClient[cid];
+        +_recBox(Object.keys(j.photos.byClient).length,Object.keys(j.photos.byClient).slice(0,_REC_CAP).map(function(cid){var x=j.photos.byClient[cid];
           return '<div style="padding:9px 12px;border-bottom:1px solid var(--p-line2);font-size:16px;color:var(--p-ink);">'+esc(x.name||'(no name)')
-            +' <span style="color:var(--p-mut);font-size:14px;">'+(x.onServer||0)+' of '+(x.indexed||0)+' on the server</span></div>';}).join('')
+            +' <span style="color:var(--p-mut);font-size:14px;">'+(x.onServer||0)+' of '+(x.indexed||0)+' on the server</span></div>';}).join(''),260)
         +'</div>'):'')):'')
     +((j.junk)?(function(){
       var jk=j.junk,tot=(jk.removed||[]).length+(jk.deleted||[]).length+(jk.stranger||[]).length;
@@ -28727,9 +28805,9 @@ function renderClientRecover(){
           +'<input type="checkbox" id="pg-'+k+'" '+(k==='stranger'?'':'checked')+' style="width:20px;height:20px;margin-top:2px;flex:none;">'
           +'<span style="font-size:16px;color:var(--p-ink);line-height:1.5;"><b>'+rows.length+' '+label+'</b><br>'
           +'<span style="font-size:14px;color:var(--p-mut);">'+why+'</span></span></label>'
-          +'<div style="max-height:120px;overflow:auto;margin-top:8px;font-size:14px;color:var(--p-mut);line-height:1.6;">'
-          +rows.slice(0,60).map(function(x){return esc(x.name||'(no name)');}).join(' · ')
-          +(rows.length>60?(' … and '+(rows.length-60)+' more'):'')+'</div></div>';
+          +'<div style="margin-top:8px;font-size:14px;color:var(--p-mut);line-height:1.6;">'
+          +_recBox(rows.length,rows.slice(0,_REC_CAP).map(function(x){return esc(x.name||'(no name)');}).join(' · '),150)
+          +'</div></div>';
       };
       return '<div class="sh" style="margin-top:16px;"><h2>Junk client rows</h2></div>'
         +'<div style="font-size:14px;color:var(--p-mut);line-height:1.5;margin:0 0 8px;">Their app asks the server for its client list every 15 seconds and on every window focus, and it CREATES a record for any server client their list has not got. So these rows are not inert — the only thing keeping them off their screen is their device’s delete record, which is why the same names are deleted again on every refresh. Clearing the rows is what stops it.</div>'
@@ -28740,9 +28818,9 @@ function renderClientRecover(){
         +((jk.keptTotal)?('<div style="background:var(--p-surf2);border:1px solid var(--p-green);border-radius:12px;padding:11px 13px;margin-bottom:8px;">'
           +'<div style="font-size:16px;color:var(--p-ink);"><b>'+jk.keptTotal+' kept back</b></div>'
           +'<div style="font-size:14px;color:var(--p-mut);line-height:1.5;margin:4px 0 8px;">Nothing below is ever deleted by this tool, whichever boxes are ticked.</div>'
-          +'<div style="max-height:200px;overflow:auto;font-size:14px;color:var(--p-mut);line-height:1.6;">'
-          +(jk.kept||[]).slice(0,120).map(function(x){return '· '+esc(x.name||x.id||'')+' — '+esc(x.why||'');}).join('<br>')
-          +((jk.keptTotal>120)?('<br>… and '+(jk.keptTotal-120)+' more'):'')+'</div></div>'):'')
+          +'<div style="font-size:14px;color:var(--p-mut);line-height:1.6;">'
+          +_recBox(jk.keptTotal||0,(jk.kept||[]).slice(0,_REC_CAP).map(function(x){return '· '+esc(x.name||x.id||'')+' — '+esc(x.why||'');}).join('<br>'),200)
+          +'</div></div>'):'')
         +(tot?('<button onclick="_recoverPurgeJunk()" id="pg-go" class="btnp" style="width:100%;border-radius:10px;padding:12px;font-size:16px;font-weight:600;">Clear the ticked rows</button>'):'')
         +'<button onclick="_recoverRestorePurged()" style="width:100%;margin-top:8px;background:var(--surf2);color:var(--p-ink);border:1px solid var(--p-line-ctl);border-radius:10px;padding:11px;font-size:15px;cursor:pointer;font-family:inherit;">Put the cleared clients back</button>';
     })():'')
