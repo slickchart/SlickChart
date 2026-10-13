@@ -6305,3 +6305,326 @@ border:[\d.]+px solid \$\{(COND)\?'var\(--accent\)'...\};background:\$\{\1\?'var
 Zero hits in `slickchart.html` now. `slickchart-client.html` still has six, and they are **fine**:
 they sit on white cards, and the client app's accent is darkened until it reaches 4.5:1 against white,
 so the fill alone carries the boundary. Do not "fix" those.
+
+---
+
+## §2bb. The junk client rows, and a paste line that lied about the safety net (2026-10-13)
+
+Ashley ran the founder recovery check on her OWN account and pasted it. Her words after reading it:
+*"i saw it has all the junk data clients on the server still. we can get rid of all of those."*
+
+### What her paste actually said — HER OBSERVED NUMBERS, ground truth (§1b)
+
+```
+>>> ON THE SERVER RIGHT NOW: 2534 characters of notes and chart detail across 81 clients;
+    288 photos. This is NOT lost — do not tell them it is.
+3798 showing, 1083 removed but still on the server
+Their app's list knows about 775
+ON THE SERVER BUT MISSING FROM THEIR APP'S LIST (3040)
+Device delete record: 2463 id(s)
+Session summaries: 6 clients, 6 entries, 11KB
+Homecare lists: 1488 clients, 5 entries, 31KB
+EARLIER COPIES: none kept for this account yet.
+~1000 lines of "DELETED AGAIN EVERY REFRESH: <name>"
+```
+
+### Why the rows are not inert, which is the part that makes this a fix and not housekeeping
+
+`_syncEvents` (slickchart.html, the `/api/clients` GET) runs **on a 15-second interval and on every
+window focus**, and for any server client her roster has not got it **CREATES a record**. So the
+only thing keeping 3040 rows off her screen is her device's `sc_deleted_clients`. That record is a
+tombstone set: it unions on pull and only ever grows, so it cannot be cleared on one device. The
+loop therefore runs forever, and the ~1000 `DELETED AGAIN EVERY REFRESH` lines in the report are
+exactly it — a row alive on the server whose id is also in the delete record, resurrected and
+suppressed on every poll. **Clearing the rows is the cure. Clearing the delete record is not.**
+
+### `EARLIER COPIES: none kept for this account yet` WAS A BUG IN THE PASTE, not a finding
+
+`listHistory()` returns an **array** of rows, each carrying its own `k`. `_recoverText()` read it as
+an **object keyed by library**: `Object.keys(array)` yields `'0','1','2'`, and an array *row* has no
+`.length`, so the test could never be true. **That line printed on every account, however many
+copies were sitting there.** The on-screen "Earlier copies" section a few hundred lines above reads
+the same data correctly as an array — so the screen and the paste disagreed, and the paste is the
+thing that gets sent.
+
+It is the **one line in the whole report that asserts an ABSENCE**, which under §4c is the one thing
+that must never be guessed. I read it and told Ashley the safety net did not exist for her account.
+**That was wrong.** Fixed in this change: grouped by key, with the count, the newest timestamp and
+the reason. A genuinely empty history still says "none kept", and there is a test for that case.
+
+### What shipped — `purgeClasses` on `/api/admin/client-recover`
+
+The **only hard delete of a provider's client rows anywhere in the app.** Founder-gated, and every
+guard is in the endpoint rather than the caller:
+
+- **`classifyJunk(q, owner)` is ONE function**, called by both the report and the purge, so what she
+  approves on screen is what gets taken. The request names **classes, never ids** — a stale screen
+  or a crafted body cannot widen it.
+- **Three classes, one reason each.** `removed` (already tombstoned); `deleted` (live row whose id is
+  in her own delete record — the refresh-loop ones); `stranger` (live row her roster has never heard
+  of and that was never invited). `stranger` is **off by default** in the UI; the two backed by her
+  own delete are on.
+- **A full copy goes to `kv_history` under `sc_purged_clients`, reason `before-purge`, FIRST.** If the
+  copy fails or is short, **nothing is deleted**. `pruneKey` does not know that reason, so it is never
+  pruned. `restorePurgedAll` re-inserts the rows (`ON CONFLICT (id) DO NOTHING`, so a client who is
+  live again wins over the snapshot). `restoreVersion` now refuses `sc_purged_clients` — it holds
+  `clients` TABLE rows, not a library, and writing it into `kv` would bring nothing back.
+- **The delete record is deliberately NOT touched.** It unions on pull, so clearing it on the account
+  lets a device push the same ids straight back; and if a row delete failed, clearing the tombstone
+  would resurrect the row.
+
+### The emptiness test is the whole risk, and `describe()` was NOT enough
+
+`describe()` is what the recovery screen *displays*. The purge needed what would be *lost*, which is
+strictly larger: `_assembleClientData` also puts **aftercare, routine, pendingGuides, pendingCourses,
+vcInvite, routineReview, suggestedBooking, checkinReqAt and loyalty** into the blob and `describe()`
+reads **none of them**. A purge written against `describe()` calls a row holding a homecare list
+"empty". `clientContent()` covers every per-client field; there is one test case per field.
+
+Three further traps, each a test:
+
+- **Size is no guide.** Every blob carries the studio name, address, phone, website, provider name,
+  booking config and availability, so a never-touched skeleton is still several hundred bytes.
+- **Placeholders are the app's words, not hers.** A new client is seeded `skin '—'`,
+  `allergies 'None noted'`, `treatment 'New client'`, so an untouched row scores five filled chart
+  fields unless they are excluded.
+- **Unreadable counts as FULL.** If the blob will not parse, the only safe answer is no.
+
+Never a candidate whatever class it would land in: anything `clientContent` finds, an unreadable
+blob, a row with a `client_event` (a submission can sit there while the blob is empty because nothing
+ingested it), a row whose link the client has **opened**, and any row that is another client's animal.
+Everything held back is listed **with its reason** on screen and in the paste — the reasons are the
+useful half, because they are the evidence a row holds something.
+
+### Tests (both committed, both hand-run; CI has no browser)
+
+- `scratchpad/test-junk-classify.mjs` — 40 checks against the real `classifyJunk`/`clientContent`
+  text with a stubbed Postgres (`@neondatabase/serverless` is not installed here, §3). One case per
+  per-client field, plus placeholders, provider chrome, submissions, opened links, animal links,
+  unreadable blobs, both roster shapes, a failed roster read, and §0.1 cross-provider isolation.
+- `scratchpad/test-junk-ui.mjs` — 28 checks on the screen and the paste: counts and names per class,
+  `stranger` off by default, held-back reasons shown, classes-not-ids in the request, unticking
+  actually narrows it, nothing ticked sends nothing, an older server reply with no `junk` still
+  renders, and the Earlier-copies fix.
+
+Two gotchas cost time in the UI test and will again: **modals stack** (several `#confirm-modal`
+elements can be in the DOM, and `getElementById` returns the OLDEST, so click the last one), and
+**`document.body.textContent` includes the inline `<script>` source** — so every "is it on screen"
+assertion matched the source of the function under test. Read `#S`.
+
+### NOT RUN, and it should be: nothing has been purged yet
+
+This is destructive and irreversible (§1a), so it is on the branch with the report built and the
+button wired, and **Ashley has not pressed it**. The sequence is: she opens the report, reads the
+three class counts and the held-back list, then decides. Build `2026-10-13b`.
+
+### §2bb (cont.) The recovery screen at her scale, 2026-10-13 — and a 50-second render
+
+She opened the preview on her own account and sent a screenshot: *"the scrolls are WAY too long for
+each section. make them stay scrollable in a box so it doesnt take forever to get through."*
+
+**Her screenshot also settled the Earlier copies question.** It showed real copies — `Homecare
+lists — 1410 items`, `Product plans — 3 items`, `Consult state — 5 items`, several of them
+`a copy taken off one of their devices`. The safety net exists on her account; the paste's
+"none kept" line was the bug, exactly as the fix above said.
+
+#### 1. Every list is now its own scroll box
+
+`_recBox(total, html, px)` — one helper, used by all of them. Her screen was building roughly
+13,000 rows inline: 3798 showing, 1083 removed, 3040 missing from her list, ~1000 ghosts, 775
+roster, the same 3040 AGAIN in "what their app actually draws", plus photos per client. Reaching
+the next heading meant scrolling past all of it.
+
+Rows past `_REC_CAP` (300) are **not built at all**, and the box says "Showing the first 300 of
+3798. **Copy this as text** has every one." The counts above each list are still the REAL totals —
+only the rendering is capped. Lists that are short on every account (the backup comparison, the
+library sizes) are left alone.
+
+Measured at her numbers, in `scratchpad/test-recover-scroll.mjs`:
+
+```
+before:  13,000+ rows inline, sections many screens apart
+after:   whole screen 715px (0.8 phone screens), 3055 divs, 11 scroll boxes
+         largest gap between two headings: 1015px
+```
+
+The test asserts **distance between headings** and **total page height**, not CSS — a `max-height`
+that some later rule overrides would pass a style assertion and still fail her.
+
+#### 2. The screen took 50 SECONDS to draw, and that was most of "takes forever"
+
+`_recoverRisk` ran the near-duplicate check by walking EVERY live name for EVERY removed row and
+computing a full Levenshtein on each: **1083 × 3798 ≈ 4.1 million** edit-distance computations,
+each allocating a fresh 2-D table — and it is called twice per row (once to seed the ticks, once to
+draw it). Three fixes, none of which changes an answer:
+
+| | render at her scale |
+|---|---|
+| before | **50,715 ms** |
+| `_recoverNear`: bucket candidates by length, memoise per name | 21,503 ms |
+| `_recoverEdits`: two reused rows, `charCodeAt`, early exit once a whole row is over 2 | **32 ms** |
+
+The early exit is the big one and it is exact: the final distance can never be below the smallest
+value in any row, so a row entirely above 2 means the answer is above 2. Worst case — a provider
+whose clients are all named `Client 00001` style, where nothing can be pruned — is **2.1 s**.
+
+**`_recoverEdits` decides which removed rows arrive TICKED**, so a faster version that disagreed
+would quietly change what a restore puts back. The test checks the rewrite against a plain
+full-table Levenshtein over every pair of a 34-name pool (1156 pairs, including accents, empties
+and long near-pairs), and checks `_recoverNear` against the old full scan including that a second
+roster object rebuilds the index instead of answering from the first one's cache.
+
+#### Not a bug: the green "Nothing ticked" bar
+
+It is in her screenshot and it is the existing sticky **restore** button at the foot of the screen,
+labelled that when `_recoverPick` is empty. On a messy account every removed row is a blank or a
+near-duplicate, so none auto-tick. There is already a comment about it at that code.
+
+### §2bb (cont.) Clearing the junk out of Square too, 2026-10-13
+
+Ashley: *"I have a bunch of junk data clients i need to clear out again too. can you put that tool
+back for me? and make sure they really can delete from my square account as well not just the app.
+i know the source so dont go digging i just need to remove them."*
+
+**"That tool" already existed and nothing called it.** `api/square/delete-customers.js` is a
+complete, hardened bulk-delete (Square's `POST /v2/customers/bulk-delete`, 100 ids per call, a
+per-id verdict, `NOT_FOUND` counted as done so a re-run after a partial clear is clean, falling
+back to one-at-a-time if the bulk call fails). `FEATURES.md` listed it with no caller — exactly the
+§1c rule-3 state that left `_openPhotoRecovery` unreachable for weeks. It is wired now.
+
+#### Where a client's Square id lives, and why both places are needed
+
+1. the row id itself, when the client came in from Square: `sq_<customerId>`
+2. `squareId` (or the older `sqId`) on the entry in her `sc_clients` roster blob
+
+The second only covers rows her roster still knows about, which by definition **excludes the whole
+`stranger` class** — the 3040 rows her app has never heard of. So the id prefix is the one that
+actually reaches the junk, and the roster read is what catches a local row she deleted. Both are in
+`classifyJunk`, and the roster read pulls one value per key with `jsonb_each` rather than loading
+the roster into the function (same reason `rosterIds` is read with a JSON path).
+
+An `sq_` id must be longer than 11 characters to count — `sq_SHORT` is not a customer id.
+
+#### THE FOUNDER ENDPOINT NEVER CALLS SQUARE. This is the §0.2 line and it must stay.
+
+`/api/admin/client-recover` can act on **any provider, by email**. If it deleted Square customers
+itself it would be spending whatever token the server could reach against a directory chosen by a
+request field — which is precisely the shape of the original incident. So it returns
+`squareIds` for the rows the DELETE actually removed, and the **app** spends them against
+`/api/square/delete-customers`, which resolves the signed-in provider's own OAuth connection
+through `sqContext` and has no shared fallback.
+
+`test-junk-square.mjs` asserts this structurally, not by a word search (a word search matched the
+`squareId` in the SQL that *reads* the id, which is the opposite of a Square call): the endpoint
+must not import `lib/square.js`, use `sqContext`/`squareFetch`/`_sqf`, name a Square host, read
+`SQUARE_ACCESS_TOKEN`, or contain a bare `fetch(` at all.
+
+Only rows the `DELETE ... RETURNING id` actually returned contribute an id, so a row held back
+because it holds a summary can never reach Square, and neither can one whose delete failed.
+
+#### On screen
+
+A separate amber tick, **on by default because she asked for it**, saying how many of the ticked
+groups are Square customers and that **Square has no undo** — the `sc_purged_clients` copy can put
+a client row back but it cannot put a Square customer back. The confirm names the number either
+way: ticked, it says how many will go; unticked, it says how many stay. An account with nothing in
+Square gets no tick at all, just a line saying so. Square failures (a customer Square will not
+release) are reported per id and never stop the rest, and the row deletion still stands.
+
+Build `2026-10-13c`. 25 checks in `scratchpad/test-junk-square.mjs`.
+
+---
+
+## §2bc. THE DIANA TEST — Ashley runs this herself, on her own devices. NOT YET RUN.
+
+She asked for it in her own words: *"I want to run my own test on my own client and provider app
+with what diana has been experiencing to make sure it's fixed before I reply to her saying it is
+again."* It is written here rather than left in a chat because that is the whole point — a new
+session has to be able to pick it up without her retyping any of it.
+
+**Diana's observations, which are GROUND TRUTH (§1b).** A theory that contradicts one of these is
+wrong; discard the theory, not the observation.
+
+| # | her words |
+|---|---|
+| 28 | present at 4:30pm, gone by 6:00pm |
+| 31 | **"I'm only on my phone"** — her computer app was shut off |
+| 29 | without the summary, the notes and guides go too |
+| 22 | profile says "no saved summaries" and "no sessions" |
+| 14 | saved it, logged out and back in, gone |
+
+Observation 31 is the one that mattered: **one device, no second device.** Three earlier fixes were
+all device-vs-device merge fixes and none of them could ever have touched her case.
+
+**The root cause that shipped in `57f2624`:** a failing `/api/cloud-status` at launch (a 500, a
+captive-portal HTML reply, a dropped request) leaves `Cloud.enabled=false`; boot then takes an
+early-return path and never calls `_reloadAll()`; `sessionSummaries`, `clientRecs`, `recReasons`
+and `clientHomecare` are `{}` in memory while her disk still holds them; one ordinary action
+persists `{}` over the disk; the next good launch pushes the empty map up to the account. The fix
+loads those four libraries straight after `_hydrateOffloaded()` in `_cloudInit`, and `_libSafeToPersist`
+refuses to write a library that was never read.
+
+**Part 3 is the one that tests what actually changed.** Parts 1, 2, 4, 5 and 6 cover her other
+reported symptoms. The build stamp now moves with each change (it reads `2026-10-13c`), so unlike
+the first time she ran this, "which build am I on" is answerable.
+
+### Before she starts
+
+- **Run the recovery check on her own email and paste it.** That is the known-good "before", so if
+  anything does go wrong it can be seen and put back. Not optional.
+- **Delete no clients during the test.** Nothing here needs it.
+
+### Part 1 — does a summary stick at all
+On her **phone**, provider app:
+1. Force-quit SlickChart completely (swipe it out of the app switcher), then open it fresh.
+2. Pick any real client.
+3. Save a session summary, noted **`TEST A`** plus the time, e.g. `TEST A 10:42`.
+4. Open that client's profile.
+
+**Pass:** it says **1 saved summary** and the note is there. **Fail:** "no saved summaries" / "no sessions".
+
+### Part 2 — the client's side
+5. Open that client's own link in their app.
+
+**Pass:** the summary is in their journey, and notes and guides are reachable.
+**Fail:** journey empty, or the other sections vanish with it ← observation 29.
+
+### Part 3 — the actual bug
+Recreates the condition that was fixed: a launch whose first network call fails — on a phone that
+is a weak signal, a dead spot, or hotel wifi.
+
+6. Force-quit SlickChart.
+7. **Turn on Airplane Mode.**
+8. Open SlickChart while it is offline. Let it sit about 10 seconds.
+9. Move around: Clients, open a client, back to Home.
+10. Write a treatment note on any client. Anything, `test`.
+11. **Turn Airplane Mode off.** Wait 30 seconds.
+12. Force-quit and reopen.
+13. Open the Part 1 client, then **two or three other clients known to have summaries**.
+
+**Pass:** `TEST A` is still there, and the other clients still have theirs.
+**Fail:** anything missing, from any client ← before the fix, step 10 wiped **every** client's
+summaries and product plans.
+
+### Part 4 — her 90-minute window
+14. Set a timer for 90 minutes, use the app normally in between.
+15. Re-check the Part 1 client. **Pass:** still there.
+
+### Part 5 — log out and back in
+16. Log out, log back in, check the same client. **Pass:** still there ← observation 14.
+
+### Part 6 — both devices
+17. On her **computer**, open the app, let it finish loading, check the same client.
+18. Back on the **phone**, force-quit, reopen, check again.
+
+**Pass:** present in both, and still present on the phone afterwards.
+
+### If any step fails
+Stop. Screenshot it, run the recovery check again, send both. Do not carry on to the next part —
+the account wants looking at in that state.
+
+### Afterwards
+The reply to Diana follows §4c: thank her first and name what she did that helped (her
+"I'm only on my phone" is what found it), one line that it is fixed, **no mechanism and no cause**,
+no em dashes, around a 3rd-grade reading level. And **nothing about data being lost unless a
+recovery check proved it with numbers.**
