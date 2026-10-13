@@ -6707,6 +6707,23 @@ A summary stores products as NAMES (`productDetail.map(p=>p.name)`); `renderLate
 matching live recommendation (keeps Buy) or `{name}`. Empty homecare/products cards are now hidden.
 `scratchpad/test-client-summary-products.mjs` 6/6; three FAIL on the previous client page.
 
+### Demo products removed everywhere in real accounts — build `2026-10-13n`
+
+Her words: *"now we need to remove all demo products from the 'recommended product' picker. i want to
+remove demo products from everything everywhere. there is no need for it"*.
+
+- `_reseedShopIfDefault` no longer seeds the per-profession starter products (a new account starts
+  with an empty product list). Exception: the public sample (`__SC_DEMO_SEED__`) keeps its showroom
+  shop; verified 12 products before and after on `slickchart-provider-demo.html`.
+- `_purgeDemoProducts()` removes every UNADOPTED starter/sample product (`_isUnadoptedStarter`: no
+  link, picture, price, note or in-office) from `affiliateLinks`, from every client's `clientRecs`,
+  and from the client Shop catalog; each through `_libForget` so `sc_deleted_products` explains the
+  shrink. Runs where the reseed ran and again right after `Cloud.bootDone()` (her data is read).
+  Guarded by `_libSafeToPersist`. A starter she filled in is hers and stays.
+- The recommend picker never lists an unadopted starter, whatever state the list is in.
+`scratchpad/test-no-demo-products.mjs` 7/7. The fresh/scale audit harnesses are not in this checkout,
+so they were NOT run.
+
 ### Booking toasts confirmed gone; session names default to date + booked service — build `2026-10-13m`
 
 Her report after 13k: *"booking toasts seem to be gone"* (COMPUTER, preview). Then: *"in treatment

@@ -486,7 +486,7 @@ const S=document.getElementById('S');
 // resets when I save it" and there was no way to tell whether her phone had any of them — a whole
 // day was spent debugging code she may not have been running. Shown at the bottom of Settings, so
 // the answer is a screenshot away. Bump it on every ship.
-const APP_BUILD='2026-10-13m';
+const APP_BUILD='2026-10-13n';
 
 
 /* ════════════════════════════════════════════════════════════════
@@ -5457,6 +5457,7 @@ async function _cloudInit(){
   // Boot is over. Everything the loaders wrote back has been compared against what the pull said the
   // account already holds; whatever genuinely differs goes up now, in one request instead of forty.
   try{Cloud.bootDone();}catch(e){}
+  try{_purgeDemoProducts();}catch(e){}   // after the account's product list is read
   try{_checkForNewBuild();}catch(e){}
   try{syncClientEvents();}catch(e){}
 }
@@ -6015,6 +6016,7 @@ function applyProfessionConfig(){
   if(typeof _reseedSvcMenuIfDefault==='function')_reseedSvcMenuIfDefault();
   if(typeof _reseedCoursesIfDefault==='function')_reseedCoursesIfDefault();
   if(typeof _reseedShopIfDefault==='function')_reseedShopIfDefault();
+  if(typeof _purgeDemoProducts==='function')_purgeDemoProducts();
 }
 
 
@@ -7707,6 +7709,10 @@ function _shopStarterDefaults(){
 // Seed the profession's starter products ONLY over a pristine catalog (empty, or the esty demo
 // samples a1–a4). Never over real products (sc_affiliate_custom, or any non-sample id present).
 function _reseedShopIfDefault(){
+  // Retired 2026-10-13 (Ashley: "remove demo products from everything everywhere. there is no need
+  // for it"). A new provider's product list starts empty; the starter set is never seeded again.
+  // The public sample (built with __SC_DEMO_SEED__) keeps its shop: it is a showroom, not an account.
+  if(!(typeof window!=='undefined'&&window.__SC_DEMO_SEED__))return;
   try{
     if(localStorage.getItem('sc_affiliate_custom')==='1')return;
     const starters=_shopStarterDefaults();
@@ -7746,6 +7752,28 @@ function _isUnadoptedStarter(a){
   if(!a||!a.id||!_STARTER_PRODUCT_IDS[a.id])return false;       // not something the app seeded
   const has=function(v){return !!String(v||'').trim();};
   return !(has(a.url)||has(a.site)||has(a.amazon)||has(a.image)||a.inOffice||has(a.price)||has(a.note));
+}
+// Take the app's own starter/sample products out of her product list, and off every client's
+// recommendations. Only ones she never adopted (_isUnadoptedStarter: no link, picture, price, note
+// or in-office flag) — a starter she filled in is hers and stays. Each removal goes through
+// _libForget so the account's delete record explains the shrink and no device puts them back.
+function _purgeDemoProducts(){
+  try{
+    if(typeof window!=='undefined'&&window.__SC_DEMO_SEED__)return 0;   // the public sample keeps its showroom
+    if(!Array.isArray(affiliateLinks)||!affiliateLinks.length)return 0;
+    if(typeof _libSafeToPersist==='function'&&!_libSafeToPersist('sc_affiliate_links',affiliateLinks))return 0;
+    const gone=affiliateLinks.filter(_isUnadoptedStarter);
+    if(!gone.length)return 0;
+    const ids={};gone.forEach(function(a){ids[a.id]=1;try{_libForget('sc_affiliate_links',a);}catch(e){}});
+    affiliateLinks=affiliateLinks.filter(function(a){return !ids[a&&a.id];});
+    try{persistAffiliateLinks();}catch(e){}
+    let recs=false;
+    try{Object.keys(clientRecs||{}).forEach(function(cid){const l=clientRecs[cid];if(!Array.isArray(l))return;const n=l.filter(function(x){return !ids[x];});if(n.length!==l.length){clientRecs[cid]=n;recs=true;}});}catch(e){}
+    if(recs){try{if(typeof persistClientRecs==='function')persistClientRecs();}catch(e){}}
+    try{persistWorkspace();}catch(e){}
+    try{if(typeof _syncShopCatalog==='function')_syncShopCatalog();}catch(e){}
+    return gone.length;
+  }catch(e){return 0;}
 }
 function _buildShopCatalog(){
   try{
@@ -10725,7 +10753,7 @@ function togBtn(state,onclick,label){
 function _prodPickerRows(clientId,q){
   q=(q||'').toLowerCase().trim();
   const already=clientRecs[clientId]||[];
-  const list=affiliateLinks.filter(a=>a.active&&!already.includes(a.id)&&(!q||((a.name||'')+' '+(a.brand||'')).toLowerCase().includes(q)));
+  const list=affiliateLinks.filter(a=>a.active&&!_isUnadoptedStarter(a)&&!already.includes(a.id)&&(!q||((a.name||'')+' '+(a.brand||'')).toLowerCase().includes(q)));
   if(!list.length)return `<div style="padding:16px;text-align:center;color:var(--p-mut);font-size:16px;">${q?'No products match "'+q.replace(/</g,'&lt;')+'"':'No more products to add'}</div>`;
   return list.map(a=>`<div onclick="addClientProd('${clientId}','${a.id}')" style="display:flex;align-items:center;gap:10px;padding:9px 12px;border-bottom:1px solid var(--p-line-ctl);cursor:pointer;" id="pick-${a.id}">
     <span style="font-size:18px;">${_fileEsc(a.icon)}</span>
