@@ -6479,3 +6479,56 @@ roster object rebuilds the index instead of answering from the first one's cache
 It is in her screenshot and it is the existing sticky **restore** button at the foot of the screen,
 labelled that when `_recoverPick` is empty. On a messy account every removed row is a blank or a
 near-duplicate, so none auto-tick. There is already a comment about it at that code.
+
+### §2bb (cont.) Clearing the junk out of Square too, 2026-10-13
+
+Ashley: *"I have a bunch of junk data clients i need to clear out again too. can you put that tool
+back for me? and make sure they really can delete from my square account as well not just the app.
+i know the source so dont go digging i just need to remove them."*
+
+**"That tool" already existed and nothing called it.** `api/square/delete-customers.js` is a
+complete, hardened bulk-delete (Square's `POST /v2/customers/bulk-delete`, 100 ids per call, a
+per-id verdict, `NOT_FOUND` counted as done so a re-run after a partial clear is clean, falling
+back to one-at-a-time if the bulk call fails). `FEATURES.md` listed it with no caller — exactly the
+§1c rule-3 state that left `_openPhotoRecovery` unreachable for weeks. It is wired now.
+
+#### Where a client's Square id lives, and why both places are needed
+
+1. the row id itself, when the client came in from Square: `sq_<customerId>`
+2. `squareId` (or the older `sqId`) on the entry in her `sc_clients` roster blob
+
+The second only covers rows her roster still knows about, which by definition **excludes the whole
+`stranger` class** — the 3040 rows her app has never heard of. So the id prefix is the one that
+actually reaches the junk, and the roster read is what catches a local row she deleted. Both are in
+`classifyJunk`, and the roster read pulls one value per key with `jsonb_each` rather than loading
+the roster into the function (same reason `rosterIds` is read with a JSON path).
+
+An `sq_` id must be longer than 11 characters to count — `sq_SHORT` is not a customer id.
+
+#### THE FOUNDER ENDPOINT NEVER CALLS SQUARE. This is the §0.2 line and it must stay.
+
+`/api/admin/client-recover` can act on **any provider, by email**. If it deleted Square customers
+itself it would be spending whatever token the server could reach against a directory chosen by a
+request field — which is precisely the shape of the original incident. So it returns
+`squareIds` for the rows the DELETE actually removed, and the **app** spends them against
+`/api/square/delete-customers`, which resolves the signed-in provider's own OAuth connection
+through `sqContext` and has no shared fallback.
+
+`test-junk-square.mjs` asserts this structurally, not by a word search (a word search matched the
+`squareId` in the SQL that *reads* the id, which is the opposite of a Square call): the endpoint
+must not import `lib/square.js`, use `sqContext`/`squareFetch`/`_sqf`, name a Square host, read
+`SQUARE_ACCESS_TOKEN`, or contain a bare `fetch(` at all.
+
+Only rows the `DELETE ... RETURNING id` actually returned contribute an id, so a row held back
+because it holds a summary can never reach Square, and neither can one whose delete failed.
+
+#### On screen
+
+A separate amber tick, **on by default because she asked for it**, saying how many of the ticked
+groups are Square customers and that **Square has no undo** — the `sc_purged_clients` copy can put
+a client row back but it cannot put a Square customer back. The confirm names the number either
+way: ticked, it says how many will go; unticked, it says how many stay. An account with nothing in
+Square gets no tick at all, just a line saying so. Square failures (a customer Square will not
+release) are reported per id and never stop the rest, and the row deletion still stands.
+
+Build `2026-10-13c`. 25 checks in `scratchpad/test-junk-square.mjs`.

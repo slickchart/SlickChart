@@ -175,6 +175,32 @@ export async function classifyJunk(q, owner) {
   const rosterSet = {};
   (rosterIds || []).forEach(id => { rosterSet[String(id)] = 1; });
 
+  // THE SQUARE CUSTOMER BEHIND A ROW, so clearing junk here can clear it there too.
+  //
+  // Ashley, 2026-10-13: "make sure they really can delete from my square account as well not just
+  // the app." A client's Square id lives in TWO places and neither is the clients table:
+  //   • the row id itself, when the client came in from Square — those are `sq_<customerId>`
+  //   • `squareId` (or the older `sqId`) on the entry in her sc_clients roster blob
+  // The second only covers rows her roster still knows about, which by definition excludes the
+  // whole `stranger` class, so both are needed and the id prefix is the one that reaches the junk.
+  //
+  // Read as TEXT out of the blob, one value per key, rather than pulling the whole roster into
+  // this function — the same reason rosterIds is read with a JSON path (no record text in here).
+  const sqOf = {};
+  try {
+    const sr = await q`SELECT key AS id, coalesce(value->>'squareId', value->>'sqId', '') AS sq
+      FROM kv, jsonb_each(CASE WHEN jsonb_typeof(v::jsonb)='object' THEN v::jsonb ELSE '{}'::jsonb END)
+      WHERE owner=${owner} AND k='sc_clients'`;
+    (sr || []).forEach(r2 => { const v = String(r2.sq || '').trim(); if (v) sqOf[String(r2.id)] = v; });
+  } catch (e) { /* an array-shaped or unreadable roster just contributes nothing here */ }
+  // `sq_<customerId>` as the row id is the other half, and the one that covers rows her roster has
+  // never heard of. Square customer ids are long opaque strings; anything shorter is not one.
+  function squareIdFor(id) {
+    const s2 = String(id || '');
+    if (s2.indexOf('sq_') === 0 && s2.length > 11) return s2.slice(3);
+    return sqOf[s2] || '';
+  }
+
   // Her own delete record.
   const delSet = {};
   try {
@@ -203,7 +229,7 @@ export async function classifyJunk(q, owner) {
   for (const r of (rows || [])) {
     const id = String(r.id);
     const content = clientContent(r.data);
-    const row = { id, name: r.name || '', holds: content.holds || [] };
+    const row = { id, name: r.name || '', holds: content.holds || [], sq: squareIdFor(id) };
     let blocker = '';
     if (content.unreadable) blocker = 'its saved record could not be read';
     else if ((content.holds || []).length) blocker = 'it holds ' + content.holds.join(', ');
@@ -430,7 +456,14 @@ export default async function handler(req, res) {
 
         const cj = await classifyJunk(q, owner);
         const ids = [];
-        classes.forEach(c => (cj.junk[c] || []).forEach(r => ids.push(String(r.id))));
+        // The Square customer behind each row, collected BEFORE the row goes — once it is deleted
+        // there is nothing left to derive it from. Keyed by row id so only rows that were actually
+        // deleted below contribute one; a row held back never reaches Square.
+        const sqByRow = {};
+        classes.forEach(c => (cj.junk[c] || []).forEach(r => {
+          ids.push(String(r.id));
+          if (r.sq) sqByRow[String(r.id)] = String(r.sq);
+        }));
         if (!ids.length) { res.status(400).json({ error: 'There is nothing in those classes to clear.' }); return; }
 
         // THE COPY, before anything goes. Chunked because a provider can have thousands of rows and
@@ -460,7 +493,7 @@ export default async function handler(req, res) {
         }
 
         let purged = 0, eventsGone = 0, pushGone = 0;
-        const failed = [];
+        const failed = [], squareIds = [];
         for (let i = 0; i < ids.length; i += 200) {
           const batch = ids.slice(i, i + 200);
           try {
@@ -476,11 +509,19 @@ export default async function handler(req, res) {
           try {
             const dl = await q`DELETE FROM clients WHERE provider_id=${owner}
               AND id = ANY(${batch}::text[]) RETURNING id`;
-            purged += (dl || []).length;
+            (dl || []).forEach(d => { purged++; const sq = sqByRow[String(d.id)]; if (sq) squareIds.push(sq); });
           } catch (e) { failed.push(batch.length); }
         }
+        // SQUARE IS NOT DELETED FROM HERE. These ids go back to the app, which spends them against
+        // /api/square/delete-customers — the one path that resolves the caller's OWN Square OAuth
+        // connection (sqContext, CLAUDE.md §0.2). This endpoint is founder-gated and can act on ANY
+        // provider by email, so if it called Square itself it would be doing so with whichever token
+        // the server could reach, which is exactly the cross-account shape §0 exists to prevent.
+        // Only the rows the DELETE actually returned contribute an id, so nothing held back, and
+        // nothing that failed to delete, is ever sent to Square.
         res.status(200).json({ ok: true, purged, eventsGone, pushGone, keptCopies: kept,
           classes, asked: ids.length, failedBatches: failed.length,
+          squareIds: Array.from(new Set(squareIds)),
           note: 'A full copy of every record deleted is under Earlier copies as sc_purged_clients. '
             + 'The delete record was left alone on purpose, so nothing can come back through a sync.' });
         return;
@@ -833,7 +874,14 @@ export default async function handler(req, res) {
       junk: {
         removed: junk.removed, deleted: junk.deleted, stranger: junk.stranger,
         kept: junk.kept.slice(0, 400), keptTotal: junk.kept.length,
-        rosterReadable
+        rosterReadable,
+        // How many in each class also exist as a customer in her Square directory, so the screen
+        // can say what a Square clear-out would take before she ticks it.
+        squareCounts: {
+          removed: junk.removed.filter(r => r.sq).length,
+          deleted: junk.deleted.filter(r => r.sq).length,
+          stranger: junk.stranger.filter(r => r.sq).length
+        }
       },
       nestedUnder,
       libraries,

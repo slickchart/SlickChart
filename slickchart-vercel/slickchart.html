@@ -232,7 +232,7 @@ const S=document.getElementById('S');
 // resets when I save it" and there was no way to tell whether her phone had any of them — a whole
 // day was spent debugging code she may not have been running. Shown at the bottom of Settings, so
 // the answer is a screenshot away. Bump it on every ship.
-const APP_BUILD='2026-10-13b';
+const APP_BUILD='2026-10-13c';
 
 
 /* ════════════════════════════════════════════════════════════════
@@ -28567,6 +28567,48 @@ function renderClientRecover(){
           +'<div style="font-size:14px;color:var(--p-mut);line-height:1.6;">'
           +_recBox(jk.keptTotal||0,(jk.kept||[]).slice(0,_REC_CAP).map(function(x){return '· '+esc(x.name||x.id||'')+' — '+esc(x.why||'');}).join('<br>'),200)
           +'</div></div>'):'')
+        +(function(){
+          // ALSO CLEAR THEM OUT OF SQUARE. Ashley, 2026-10-13: "make sure they really can delete
+          // from my square account as well not just the app."
+          //
+          // Only rows that carry a Square customer id can go, and only ones this clear-out actually
+          // deletes — the server hands those back after the rows are gone, and the app spends them
+          // against /api/square/delete-customers, which resolves HER OWN Square OAuth connection
+          // and no other (CLAUDE.md §0.2). The count is shown before she ticks it, because this one
+          // reaches outside SlickChart entirely and Square has no undo.
+          var sc=jk.squareCounts||{},inSq=(sc.removed||0)+(sc.deleted||0)+(sc.stranger||0);
+          if(!tot)return '';
+          if(!inSq)return '<div style="font-size:14px;color:var(--p-mut);line-height:1.5;margin-bottom:10px;">None of these came from Square, so there is nothing to remove there.</div>';
+          return '<div style="background:var(--p-amber-bg);border:1px solid var(--p-amber);border-radius:12px;padding:11px 13px;margin-bottom:10px;">'
+            +'<label style="display:flex;gap:10px;align-items:flex-start;cursor:pointer;">'
+            +'<input type="checkbox" id="pg-square" checked style="width:20px;height:20px;margin-top:2px;flex:none;">'
+            +'<span style="font-size:16px;color:var(--p-ink);line-height:1.5;"><b>Also delete them from Square</b><br>'
+            +'<span style="font-size:14px;color:var(--p-mut);">'+inSq+' of these are customers in their own Square directory'
+            +((sc.stranger||0)?(', '+(sc.stranger||0)+' of them in the “never in their list” group'):'')
+            +'. This goes out to Square itself and <b>Square has no undo</b> — the copy kept here cannot put a Square customer back. '
+            +'Square refuses any customer it will not let go of, and each one is reported on its own.</span></span></label></div>';
+        })()
+        +(function(){
+          // ALSO CLEAR THEM OUT OF SQUARE. Ashley, 2026-10-13: "make sure they really can delete
+          // from my square account as well not just the app."
+          //
+          // Only rows carrying a Square customer id can go, and only ones this clear-out actually
+          // deletes: the server hands those back AFTER the rows are gone, and the app spends them
+          // against /api/square/delete-customers, which resolves her OWN Square OAuth connection
+          // and no other (CLAUDE.md §0.2). The count is on screen before she ticks it, because this
+          // is the one thing here that reaches outside SlickChart, and Square has no undo.
+          var sc=jk.squareCounts||{},inSq=(sc.removed||0)+(sc.deleted||0)+(sc.stranger||0);
+          if(!tot)return '';
+          if(!inSq)return '<div style="font-size:14px;color:var(--p-mut);line-height:1.5;margin-bottom:10px;">None of these are Square customers, so there is nothing to remove there.</div>';
+          return '<div style="background:var(--p-amber-bg);border:1px solid var(--p-amber);border-radius:12px;padding:11px 13px;margin-bottom:10px;">'
+            +'<label style="display:flex;gap:10px;align-items:flex-start;cursor:pointer;">'
+            +'<input type="checkbox" id="pg-square" checked style="width:20px;height:20px;margin-top:2px;flex:none;">'
+            +'<span style="font-size:16px;color:var(--p-ink);line-height:1.5;"><b>Also delete them from Square</b><br>'
+            +'<span style="font-size:14px;color:var(--p-mut);">'+inSq+' of these are customers in their own Square directory'
+            +((sc.stranger||0)?(', '+(sc.stranger||0)+' of them in the “never in their list” group'):'')
+            +'. This goes out to Square itself and <b>Square has no undo</b> — the copy kept here cannot put a Square customer back. '
+            +'Square refuses any customer it will not release, and each one is reported on its own.</span></span></label></div>';
+        })()
         +(tot?('<button onclick="_recoverPurgeJunk()" id="pg-go" class="btnp" style="width:100%;border-radius:10px;padding:12px;font-size:16px;font-weight:600;">Clear the ticked rows</button>'):'')
         +'<button onclick="_recoverRestorePurged()" style="width:100%;margin-top:8px;background:var(--surf2);color:var(--p-ink);border:1px solid var(--p-line-ctl);border-radius:10px;padding:11px;font-size:15px;cursor:pointer;font-family:inherit;">Put the cleared clients back</button>';
     })():'')
@@ -28759,9 +28801,17 @@ async function _recoverPurgeJunk(){
       if(box&&box.checked&&n){want.push(p[0]);lines.push(n+' '+p[1]);}
     });
   if(!want.length){if(typeof proToast==='function')proToast('Tick at least one group first');return;}
+  // Whether Square goes too, read ONCE here so the confirm she reads and the run that follows can
+  // never disagree about it.
+  const sqBox=document.getElementById('pg-square');
+  const alsoSquare=!!(sqBox&&sqBox.checked);
+  const sqc=(j.junk&&j.junk.squareCounts)||{};
+  const sqN=want.reduce(function(t,k){return t+(sqc[k]||0);},0);
   confirmModal({title:'Delete these rows?',
-    body:lines.join('\n')+'\n\nThis really deletes them from the server. A full copy is kept here under Earlier copies first, and "Put the cleared clients back" reads it, so it is undoable from this screen. It is NOT undoable from their device.\n\nNothing that holds a note, a summary, a form, a photo, a homecare list, a product plan or any submission is touched, whichever groups are ticked.',
-    action:'Delete '+lines.join(' + ')},async function(){
+    body:lines.join('\n')+'\n\nThis really deletes them from the server. A full copy is kept here under Earlier copies first, and "Put the cleared clients back" reads it, so it is undoable from this screen. It is NOT undoable from their device.\n\nNothing that holds a note, a summary, a form, a photo, a homecare list, a product plan or any submission is touched, whichever groups are ticked.'
+      +((alsoSquare&&sqN)?('\n\nSQUARE: '+sqN+' of these will also be deleted from the Square directory. Square has no undo, and the copy kept here cannot put a Square customer back.'):'')
+      +((!alsoSquare&&sqN)?('\n\nSquare is NOT ticked, so '+sqN+' matching Square customers stay where they are.'):''),
+    action:'Delete '+lines.join(' + ')+((alsoSquare&&sqN)?' + Square':'')},async function(){
     const btn=document.getElementById('pg-go');
     try{
       if(btn){btn.disabled=true;btn.textContent='Clearing…';}
@@ -28774,11 +28824,39 @@ async function _recoverPurgeJunk(){
         confirmModal({title:'Nothing was deleted',body:(out&&out.error)||'The server could not do it.',action:'Got it',hideCancel:true},function(){});
         return;
       }
+      // SQUARE. The server never touches it — see the note in client-recover.js: it hands back the
+      // ids of the rows it actually deleted, and the app spends them here, because this is the only
+      // path that resolves the signed-in provider's OWN Square OAuth connection (CLAUDE.md §0.2).
+      // 500 per call is that endpoint's cap. Every id gets its own verdict there, so one customer
+      // Square will not release never stops the rest, and "already gone" counts as done so a re-run
+      // after a partial clear-out is clean.
+      let sqLine='';
+      const sqIds=(alsoSquare&&Array.isArray(out.squareIds))?out.squareIds:[];
+      if(sqIds.length){
+        if(btn)btn.textContent='Clearing Square…';
+        let sqGone=0;const sqFailed=[];
+        for(let i=0;i<sqIds.length;i+=500){
+          const chunk=sqIds.slice(i,i+500);
+          try{
+            const sr=await fetch('/api/square/delete-customers',{method:'POST',headers:{'Content-Type':'application/json','Authorization':'Bearer '+tok},
+              body:JSON.stringify({ids:chunk})});
+            const sj=await sr.json().catch(()=>({}));
+            if(sr.ok&&sj&&sj.ok){sqGone+=Number(sj.deletedCount)||0;(sj.failed||[]).forEach(function(f){sqFailed.push(f);});}
+            else if(sr.status===401){sqFailed.push({id:'',error:(sj&&sj.error)||'Square is not connected on this login'});break;}
+            else sqFailed.push({id:'',error:(sj&&sj.error)||('Square call failed ('+sr.status+')')});
+          }catch(e){sqFailed.push({id:'',error:'Could not reach Square'});}
+        }
+        sqLine='\\n\\nSquare: '+sqGone+' of '+sqIds.length+' customer'+(sqIds.length===1?'':'s')+' deleted'
+          +(sqFailed.length?('\\n'+sqFailed.length+' could not be deleted — '+((sqFailed[0]&&sqFailed[0].error)||'Square refused')):'');
+      }else if(alsoSquare){
+        sqLine='\\n\\nSquare: none of the rows that were deleted are Square customers, so nothing was sent there.';
+      }
       confirmModal({title:'Cleared',
         body:out.purged+' client row'+(out.purged===1?'':'s')+' deleted'
           +(out.eventsGone?('\n'+out.eventsGone+' client submission row'+(out.eventsGone===1?'':'s')+' deleted with them'):'')
           +'\n'+out.keptCopies+' kept as a copy under Earlier copies'
           +(out.failedBatches?('\n'+out.failedBatches+' batch(es) failed — run it again'):'')
+          +sqLine
           +'\n\n'+(out.note||''),action:'Got it',hideCancel:true},function(){});
       const r2=await fetch('/api/admin/client-recover?email='+encodeURIComponent(j.provider.email),{headers:{'Authorization':'Bearer '+tok}});
       const j2=await r2.json().catch(()=>null);

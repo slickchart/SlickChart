@@ -248,6 +248,7 @@ saved anywhere", not "does this always call that".
 | `_formCard` | `/api/provider-form` | via `submitSignOnDevice` |
 | `_founderClientRecover` | `/api/admin/client-recover` | direct |
 | `_founderClientRecover` | `/api/admin/recover-import` | direct |
+| `_founderClientRecover` | `/api/square/delete-customers` | via `_recoverPurgeJunk` |
 | `_founderKvHealth` | `/api/admin/kv-health` | direct |
 | `_founderStaleSubs` | `/api/admin/stale-subs` | direct |
 | `_founderTestPush` | `/api/admin/test-push` | direct |
@@ -448,24 +449,34 @@ saved anywhere", not "does this always call that".
 | `_recheckWhisper` | `/api/transcribe` | via `_probeWhisper` |
 | `_recoverAll` | `/api/admin/client-recover` | via `_recoverUnDelete` |
 | `_recoverAll` | `/api/admin/recover-import` | via `_recoverSetSrc` |
+| `_recoverAll` | `/api/square/delete-customers` | via `_recoverPurgeJunk` |
 | `_recoverImport` | `/api/admin/client-recover` | direct |
 | `_recoverImport` | `/api/admin/recover-import` | direct |
+| `_recoverImport` | `/api/square/delete-customers` | via `_recoverPurgeJunk` |
 | `_recoverPurgeJunk` | `/api/admin/client-recover` | direct |
 | `_recoverPurgeJunk` | `/api/admin/recover-import` | via `_recoverSetSrc` |
+| `_recoverPurgeJunk` | `/api/square/delete-customers` | direct |
 | `_recoverRepairRoster` | `/api/admin/client-recover` | direct |
 | `_recoverRepairRoster` | `/api/admin/recover-import` | via `_recoverSetSrc` |
+| `_recoverRepairRoster` | `/api/square/delete-customers` | via `_recoverPurgeJunk` |
 | `_recoverRestorePurged` | `/api/admin/client-recover` | direct |
 | `_recoverRestorePurged` | `/api/admin/recover-import` | via `_recoverSetSrc` |
+| `_recoverRestorePurged` | `/api/square/delete-customers` | via `_recoverPurgeJunk` |
 | `_recoverRollback` | `/api/admin/client-recover` | direct |
 | `_recoverRollback` | `/api/admin/recover-import` | via `_recoverSetSrc` |
+| `_recoverRollback` | `/api/square/delete-customers` | via `_recoverPurgeJunk` |
 | `_recoverRun` | `/api/admin/client-recover` | direct |
 | `_recoverRun` | `/api/admin/recover-import` | via `_recoverSetSrc` |
+| `_recoverRun` | `/api/square/delete-customers` | via `_recoverPurgeJunk` |
 | `_recoverSetSrc` | `/api/admin/client-recover` | via `_recoverUnDelete` |
 | `_recoverSetSrc` | `/api/admin/recover-import` | direct |
+| `_recoverSetSrc` | `/api/square/delete-customers` | via `_recoverPurgeJunk` |
 | `_recoverToggle` | `/api/admin/client-recover` | via `_recoverUnDelete` |
 | `_recoverToggle` | `/api/admin/recover-import` | via `_recoverSetSrc` |
+| `_recoverToggle` | `/api/square/delete-customers` | via `_recoverPurgeJunk` |
 | `_recoverUnDelete` | `/api/admin/client-recover` | direct |
 | `_recoverUnDelete` | `/api/admin/recover-import` | via `_recoverSetSrc` |
+| `_recoverUnDelete` | `/api/square/delete-customers` | via `_recoverPurgeJunk` |
 | `_recoverUnindexedServerPhotos` | `/api/guide-file` | direct |
 | `_redrawCurrentScreen` | `/api/clients` | via `syncClientEvents` |
 | `_redrawCurrentScreen` | `/api/provider-form` | via `submitSignOnDevice` |
