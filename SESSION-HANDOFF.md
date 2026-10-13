@@ -6713,6 +6713,15 @@ A summary stores products as NAMES (`productDetail.map(p=>p.name)`); `renderLate
 matching live recommendation (keeps Buy) or `{name}`. Empty homecare/products cards are now hidden.
 `scratchpad/test-client-summary-products.mjs` 6/6; three FAIL on the previous client page.
 
+### PROMOTED 2026-10-13 ~15:30 PT at her word ("push it right away then") — main = release = `3cdb2c5`, build `2026-10-13q`
+
+Everything on `claude/friendly-dirac-n55456` through 13q went live by `workflow_dispatch` of
+deploy-at-2am, after CI went green on the exact commit. **CI had been red on the branch from 13d to
+13p**: the restored Square cleanup screen carried the literal fake test number, which
+`check-no-demo-data.cjs` refuses. Not caught because only some CI scripts were being run locally.
+Run ALL of `.github/workflows/no-demo-data.yml`'s steps before every push. `sweep-summaries.mjs`
+(13/13) and `sweep-offline-boot.mjs` pass on 13q.
+
 ### 141 copies of Cooper Howard — one-tap tidy per name, build `2026-10-13p`
 
 Her observation (COMPUTER, preview, 15:21): searching "cooper howard" shows **141 records**, all "NOT in
