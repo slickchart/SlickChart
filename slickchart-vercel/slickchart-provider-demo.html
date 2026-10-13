@@ -3783,7 +3783,7 @@ const Cloud={
     this.enabled=false;this.statusUnknown=true;this._statusKnown=true;
     return this.enabled;
   },
-  async login(email,pw,totpCode){const r=await fetch('/api/login',{method:'POST',headers:{'Content-Type':'application/json'},body:JSON.stringify({email,password:pw,totpCode})});let j={};try{j=await r.json();}catch(e){}if(!r.ok||!j.token){const err=new Error((j&&j.error)||(j&&j.requiresTotp?'Enter your authenticator code':'Login failed'));err.requiresTotp=!!(j&&j.requiresTotp);err.checkoutUrl=j&&j.checkoutUrl;throw err;}this.token=j.token;try{localStorage.setItem('sc_token',this.token);if(j.email)localStorage.setItem('sc_login_email',j.email);localStorage.setItem('sc_totp_enabled',j.totpEnabled?'1':'0');}catch(e){}return j;},
+  async login(email,pw,totpCode){const r=await fetch('/api/login',{method:'POST',headers:{'Content-Type':'application/json'},body:JSON.stringify({email,password:pw,totpCode})});let j={};try{j=await r.json();}catch(e){}if(!r.ok||!j.token){const err=new Error((j&&j.error)||(j&&j.requiresTotp?'Enter your authenticator code':'Login failed'));err.requiresTotp=!!(j&&j.requiresTotp);err.checkoutUrl=j&&j.checkoutUrl;err.checkoutLabel=j&&j.checkoutLabel;throw err;}this.token=j.token;try{localStorage.setItem('sc_token',this.token);if(j.email)localStorage.setItem('sc_login_email',j.email);localStorage.setItem('sc_totp_enabled',j.totpEnabled?'1':'0');}catch(e){}return j;},
   async signup(email,pw,name,optIn){const r=await fetch('/api/signup',{method:'POST',headers:{'Content-Type':'application/json'},body:JSON.stringify({email,password:pw,name,optIn:!!optIn})});let j={};try{j=await r.json();}catch(e){}if(!r.ok){const err=new Error((j&&j.error)||'Sign up failed');err.checkoutUrl=j&&j.checkoutUrl;throw err;}this.token=j.token;try{localStorage.setItem('sc_token',this.token);if(j.email)localStorage.setItem('sc_login_email',j.email);}catch(e){}return j;},
   async requestReset(email){try{await fetch('/api/request-reset',{method:'POST',headers:{'Content-Type':'application/json'},body:JSON.stringify({email})});}catch(e){}return true;},
   async resetPw(token,pw){const r=await fetch('/api/reset',{method:'POST',headers:{'Content-Type':'application/json'},body:JSON.stringify({token,password:pw})});let j={};try{j=await r.json();}catch(e){}if(!r.ok)throw new Error((j&&j.error)||'Reset failed');return true;},
@@ -5636,8 +5636,11 @@ function _loginErr(e,fallback){
   const er=document.getElementById('login-err');if(!er)return;
   const msg=String((e&&e.message)||fallback);
   const url=(e&&e.checkoutUrl&&!_isNativeApp()&&typeof _safeUrl==='function')?_safeUrl(e.checkoutUrl):'';
+  // "Pay now" when the server found her open invoice, "Renew now" when it is a fresh checkout.
+  // An older server sends no label at all, so the default has to stand on its own.
+  const lbl=_fileEsc(String((e&&e.checkoutLabel)||'Renew now'));
   if(url){er.innerHTML=msg.replace(/</g,'&lt;').replace(/>/g,'&gt;')
-    +' <a href="'+_urlAttr(url)+'" style="color:var(--accent-strong);text-decoration:underline;">Renew now &rarr;</a>';}
+    +' <a href="'+_urlAttr(url)+'" style="color:var(--accent-strong);text-decoration:underline;">'+lbl+' &rarr;</a>';}
   else er.textContent=msg;
 }
 function doLogin(){

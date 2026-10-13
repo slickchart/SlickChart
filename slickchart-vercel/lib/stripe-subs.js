@@ -39,6 +39,44 @@ export async function liveSubForEmail(email, excludeSubId) {
 }
 
 /**
+ * Where someone who has been refused at login should actually be sent to pay.
+ *
+ * This matters more than it looks. A provider whose card failed has a PAST_DUE subscription and an
+ * OPEN invoice; neither `hasActiveSubscription` nor `liveSubForEmail` counts past_due as paying, so
+ * she is locked out while Stripe is still retrying her. Sending her to the generic STRIPE_PAYMENT_LINK
+ * would create a SECOND customer and a SECOND subscription on the same address — the exact double
+ * signup this file opens by warning about, where cancelling the duplicate later stamps 'canceled'
+ * over the subscription she is paying for. Paying the open invoice revives the subscription she
+ * already has, and creates nothing.
+ *
+ * Returns { url, label } for that invoice, or null when there is nothing outstanding to pay — in
+ * which case the caller falls back to the ordinary checkout link, which is right for someone whose
+ * subscription genuinely ended. Never throws.
+ */
+export async function openInvoiceForEmail(email) {
+  const em = String(email || '').trim().toLowerCase();
+  if (!em) return null;
+  const customers = await stripeGet('https://api.stripe.com/v1/customers?limit=100&email=' + encodeURIComponent(em));
+  for (const c of ((customers && customers.data) || [])) {
+    if (!c || !c.id) continue;
+    const subs = await stripeGet('https://api.stripe.com/v1/subscriptions?limit=100&status=all&customer=' + encodeURIComponent(c.id));
+    for (const sub of ((subs && subs.data) || [])) {
+      // past_due: Stripe is still retrying. unpaid: it has given up but the invoice is still payable.
+      if (!sub || (sub.status !== 'past_due' && sub.status !== 'unpaid')) continue;
+      const invId = typeof sub.latest_invoice === 'string' ? sub.latest_invoice
+                  : (sub.latest_invoice && sub.latest_invoice.id);
+      if (!invId) continue;
+      const inv = await stripeGet('https://api.stripe.com/v1/invoices/' + encodeURIComponent(invId));
+      // Only an OPEN invoice is payable — a paid/void/uncollectible one would dead-end her.
+      if (inv && inv.status === 'open' && inv.hosted_invoice_url) {
+        return { url: inv.hosted_invoice_url, label: 'Pay now' };
+      }
+    }
+  }
+  return null;
+}
+
+/**
  * Point this email's row at the subscription Stripe says is live. Best-effort: a repair that fails
  * must never be the reason someone can't sign in, since the caller has already established from
  * Stripe that they are paying.

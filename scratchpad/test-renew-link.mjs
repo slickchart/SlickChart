@@ -10,11 +10,12 @@
 import pw from '/opt/node22/lib/node_modules/playwright/index.js';
 const FILE = process.argv[2] || 'slickchart.html';
 const PAYLINK = 'https://buy.stripe.com/test_renew_link';
+const INVOICE = 'https://invoice.stripe.com/i/acct_test/test_open_invoice';
 const MSG = 'Your subscription isn’t active. Please renew to continue.';
 
 const browser = await pw.chromium.launch({executablePath:'/opt/pw-browsers/chromium-1194/chrome-linux/chrome'});
 
-async function run({native, totp}){
+async function run({native, totp, pastDue}){
   const page = await browser.newPage({viewport:{width:390,height:844}});
   await page.addInitScript(n=>{try{
     localStorage.clear();
@@ -33,8 +34,13 @@ async function run({native, totp}){
     if(totp && loginHits===1)
       return r.fulfill({status:401,contentType:'application/json',
         body:JSON.stringify({requiresTotp:true,error:'Enter your authenticator code'})});
+    // A card that failed leaves a PAST_DUE subscription with an open invoice: the server sends that
+    // invoice instead of the generic link, so she tops up the subscription she already has rather
+    // than starting a second one on the same email.
     return r.fulfill({status:402,contentType:'application/json',
-      body:JSON.stringify({error:MSG, checkoutUrl:PAYLINK})});
+      body: pastDue
+        ? JSON.stringify({error:MSG, checkoutUrl:INVOICE, checkoutLabel:'Pay now'})
+        : JSON.stringify({error:MSG, checkoutUrl:PAYLINK})});
   });
   await page.goto('http://localhost:8899/'+FILE,{waitUntil:'load'});
   await page.waitForTimeout(2400);
@@ -81,24 +87,33 @@ async function run({native, totp}){
 }
 
 const cases = [
-  {name:'password login',            opts:{native:false,totp:false}, wantLink:true},
-  {name:'login + 2FA code',          opts:{native:false,totp:true},  wantLink:true},
-  {name:'native app (no pay link)',  opts:{native:true, totp:false}, wantLink:false},
+  {name:'lapsed: password login',   opts:{native:false,totp:false}, want:PAYLINK, label:'Renew now'},
+  {name:'lapsed: login + 2FA',      opts:{native:false,totp:true},  want:PAYLINK, label:'Renew now'},
+  {name:'past due: her invoice',    opts:{native:false,totp:false,pastDue:true}, want:INVOICE, label:'Pay now'},
+  {name:'past due + 2FA',           opts:{native:false,totp:true, pastDue:true}, want:INVOICE, label:'Pay now'},
+  {name:'native app: no pay link',  opts:{native:true, totp:false}, want:null},
 ];
 
 let bad=0;
 for(const c of cases){
   const r = await run(c.opts);
   if(r.err){console.log('  ??   '+c.name.padEnd(26)+' '+r.err);bad++;continue;}
-  const hasMsg = r.text.includes('Please renew to continue');
-  const hasLink = r.href===PAYLINK;
-  const ok = hasMsg && hasLink===c.wantLink && (!c.wantLink || (r.contrast!=null && r.contrast>=4.5));
+  const hasMsg  = r.text.includes('Please renew to continue');
+  const rightUrl = c.want ? (r.href===c.want) : (r.href===null);
+  // The one that would hurt: a past-due provider sent to a NEW subscription instead of her invoice.
+  const duplicateRisk = !!c.opts.pastDue && r.href===PAYLINK;
+  // the rendered label carries the trailing arrow
+  const rightLabel = !c.label || String(r.label||'').replace(/\s*→\s*$/,'')===c.label;
+  const readable = !c.want || (r.contrast!=null && r.contrast>=4.5);
+  const ok = hasMsg && rightUrl && rightLabel && readable && !duplicateRisk;
   if(!ok)bad++;
   console.log('  '+(ok?'PASS':'FAIL')+' '+c.name.padEnd(26)
     +' message:'+(hasMsg?'yes':'NO ')
-    +'  link:'+(hasLink?('"'+r.label+'" -> '+r.href):'none')
-    +(r.contrast!=null?('  '+r.contrast.toFixed(2)+':1'):''));
+    +'  link:'+(r.href?('"'+r.label+'" -> '+(r.href===INVOICE?'her open invoice':r.href===PAYLINK?'NEW subscription':r.href)):'none')
+    +(r.contrast!=null?('  '+r.contrast.toFixed(2)+':1'):'')
+    +(duplicateRisk?'   <-- would create a SECOND subscription':''));
 }
-console.log(bad? '\n'+bad+' case(s) wrong' : '\nthe renew link is reachable from both login steps, and stays out of the native app');
+console.log(bad? '\n'+bad+' case(s) wrong'
+  : '\nboth login steps offer a way to pay; a past-due provider gets her OWN invoice,\nnot a second subscription; and the native app shows no payment link at all');
 await browser.close();
 process.exit(bad?1:0);
