@@ -98,6 +98,10 @@ window.__audit=function(){
     if(!visible(el))return;
     const txt=ownText(el);
     if(!txt||txt.length<2)return;
+    // Emoji are colour glyphs: the font paints them, the CSS color property does not apply. Measuring
+    // one reports the inherited ink against the background and calls a perfectly visible 🪴 a
+    // failure. Skip text that is only emoji and punctuation.
+    if(!/[A-Za-z0-9]/.test(txt))return;
     const cs=getComputedStyle(el);
     // Gradient text (.brandc: background-clip:text with a transparent color) reads as "fg equals bg"
     // to any naive sampler. The pixels are the gradient, not the color property. Skip it rather than
