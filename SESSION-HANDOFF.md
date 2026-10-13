@@ -6581,6 +6581,12 @@ the first time she ran this, "which build am I on" is answerable.
 | 1 | **COMPUTER**, Safari, the **preview** URL (`…ecstatic-mccarthy-ynt869…`), not the phone | Client "Ashley Watson" (herself as the test client): Session summaries → **1 summary**, titled "Test A", Oct 13, 2026, full text present | **PASS** |
 | 2 | **COMPUTER**, Safari, preview, client app in a second tab | Home → "After Your Visit" → "Latest summary & aftercare, Test A · from Ashley", full text shown; Journey/Homecare/Messages/Shop tabs present | **PASS** |
 
+| 4 (partial) | **COMPUTER**, Safari, preview, provider | 14:24 and 14:27: Ashley Watson still "Session summary · 1 saved", Test A present (~45 min after saving) | holding; 90-min check due ~15:10 |
+| 2 (again) | **COMPUTER**, Safari: LIVE client app `slickchart.app/space?c=rBdf…` AND the same link on the preview | both show Session Recaps, Oct 13th 2026, Test A text; 5 messages | **PASS** |
+
+A preview client tab opened another way showed "No recaps yet" and 2 messages — a different "Ashley
+Watson" record (her account has several test ones). Same link on the preview showed it. Not a bug.
+
 Note: Parts 1 and 2 ran on the computer against the preview, not on the phone as written. That
 does not weaken Part 3: the summary is now on the account, and Part 3 (phone, installed app, live
 build `2026-10-12a`, which carries `57f2624`) tests whether an offline launch on the phone wipes it.
@@ -6833,6 +6839,44 @@ top section to note that."* Her answers: "history" = **purchases only**; a produ
   card is gone. The "ready to review" card stays — it carries the AI read.
 
 `scratchpad/test-shop-homecare.mjs` 12/12.
+### §2bd (cont.) Her Square directory, checked 2026-10-13 — Square is NOT where the junk is now
+
+She exported Square → Customers and attached it: **681 customers**, and she confirmed the Square
+dashboard total matches (her words: "yes that matches"). Ground truth (§1b).
+
+Pattern pass over all 681 (gibberish/dotted-Gmail/disposable emails, impossible/555/foreign/repeated
+phones, odd names, name-vs-email mismatch): **no generated-looking contacts.** Everything flagged was
+a real person. No-history rows are old personal emails with 925/510 numbers.
+
+What there is: **10 empty records** (no email, phone, visit or purchase) — 7 "Ashley Watson" and 1
+"Candace Tao" from source *Third-party* (app-created, almost certainly SlickChart test clients), and 2
+nameless *Marketing* rows (the only form-signup rows in the file). Plus 23 emails shared by two
+customers each (duplicates to MERGE in Square, not delete). The list went to her as a CSV; it is client
+PII and is NOT in the repo.
+
+So the bot signups are no longer in her Square (681 vs the 3798 rows on the SlickChart server). The
+tool that matters is the junk clear-out on the recovery screen (§2bb), still not pressed. The restored
+Square screen (build `2026-10-13d`) works, but caution: run against the 7 "Ashley Watson" Square records
+it would also tombstone any SlickChart client carrying that `squareId` — her Diana-test client is
+"Ashley Watson". Delete those 10 in the Square Dashboard instead, after the Diana test.
+
+## §2be. Cooper Howard missing from her client list (reported 2026-10-13 ~15:20) — OPEN
+
+**Her words, verbatim (ground truth, §1b):** *"now my client list somehow lost a real client (before
+everything we did today). her name is cooper howard. she has been in, had session summaries, etc"*
+
+Not yet known: which device; whether "(before everything we did today)" means she was missing before
+today's work or that Cooper was a client from before today. Asked.
+
+**Facts already in hand (not theories):**
+- Her Square export of 2026-10-13 holds **Cooper Howard**, source Appointments, first visit 2026-08-13,
+  last visit 2026-10-08, 3 transactions, $465.12. So Cooper is in her Square directory.
+- The tidy-up she ran today keeps any client matching her Square directory by id, email, phone or
+  name, and (from 13e) anyone with summaries. The junk purge and the restored Square-cleanup screen
+  were NOT run. None of that proves where the record went; it only says which tools were in play.
+
+Step 2 of §1d: ONE recovery paste of her own account was requested. Read its verdict line first.
+NOTHING may be said to anyone about Cooper's notes being lost until that paste says so with numbers.
 
 ## §2bd. How the Square bulk delete was done before, and where it went
 
