@@ -232,7 +232,7 @@ const S=document.getElementById('S');
 // resets when I save it" and there was no way to tell whether her phone had any of them — a whole
 // day was spent debugging code she may not have been running. Shown at the bottom of Settings, so
 // the answer is a screenshot away. Bump it on every ship.
-const APP_BUILD='2026-10-13u';
+const APP_BUILD='2026-10-13v';
 
 
 /* ════════════════════════════════════════════════════════════════
@@ -1783,8 +1783,13 @@ function _purgeRemovedClients(){
     const hidden=(typeof _sampleHidden==='function')&&_sampleHidden();
     const sampleIds=(typeof _SAMPLE_IDS!=='undefined')?_SAMPLE_IDS:['maya','sophie','priya'];
     let changed=false;
+    // A client put back on purpose (sc_undeleted_clients) beats the delete record, here exactly as in
+    // _mergeClients. Without this the purge stripped her again on every load: Debbi Miranda,
+    // 2026-10-13, "it wont put her back on my list".
+    const undel=(typeof _unDeletedClientIds==='function')?_unDeletedClientIds():{};
     Object.keys(CL).forEach(id=>{
       const c=CL[id]||{};
+      if(undel[id])return;
       const sqKey=(c.squareId&&typeof _sqLocalId==='function')?_sqLocalId(c.squareId):'';
       const merged=(typeof mergedSquareIds!=='undefined')&&(mergedSquareIds[id]||(sqKey&&mergedSquareIds[sqKey]));
       const deleted=(typeof _deletedClientIds!=='undefined')&&(_deletedClientIds[id]||(sqKey&&_deletedClientIds[sqKey]));
@@ -29473,7 +29478,8 @@ async function _recoverMergeName(name){
   if(!mine||mine!==String(j.provider.email||'').trim().toLowerCase()){if(typeof proToast==='function')proToast('Put back in their list. They can combine them on their own Clients screen.',7000);return;}
   recs.forEach(function(c){
     if(CL[c.id])return;
-    try{if(typeof _deletedClientIds!=='undefined'&&_deletedClientIds[c.id])delete _deletedClientIds[c.id];}catch(e){}
+    try{if(typeof _deletedClientIds!=='undefined'&&_deletedClientIds[c.id]){delete _deletedClientIds[c.id];_saveDeletedClients();}}catch(e){}
+    try{const u=JSON.parse(_lsGet('sc_undeleted_clients')||'{}')||{};u[c.id]=Date.now();const v=JSON.stringify(u);localStorage.setItem('sc_undeleted_clients',v);if(typeof _pushKeyNow==='function')_pushKeyNow('sc_undeleted_clients',v);}catch(e){}
     CL[c.id]={name:c.name||name,email:c.email||'',phone:c.phone||'',skin:'—',concerns:'—',allergies:'None noted',fitz:'—',lastVisit:'—',nextVisit:'Not scheduled',treatment:'New client',sessions:0,seriesTotal:0,conditions:'',notes:''};
   });
   try{saveClients();}catch(e){}

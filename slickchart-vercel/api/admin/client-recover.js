@@ -156,6 +156,27 @@ export function clientContent(dataRaw) {
 // computed the same way, or she approves one set and a different set is taken.
 // Every name with more than one live row, in one go, for names that already have a record in her
 // list (so a junk name with no real client is never promoted into it). One list backup first.
+// Take ids off the account's delete record and stamp them un-deleted, so no device strips them again.
+// Shared by "Bring back" and by putting a client back in the list: a client put back whose id was
+// still on the delete record vanished again on the next refresh (Debbi Miranda, 2026-10-13: "it
+// wont put her back on my list").
+export async function undeleteIds(q, owner, idsIn) {
+  const ids = (idsIn || []).slice(0, 200).map(String);
+  let cleared = 0;
+  const cur = await q`SELECT v FROM kv WHERE owner=${owner} AND k='sc_deleted_clients'`;
+  const o = cur.length ? (JSON.parse(cur[0].v) || {}) : {};
+  ids.forEach(id => { if (Object.prototype.hasOwnProperty.call(o, id)) { delete o[id]; cleared++; } });
+  await q`INSERT INTO kv (owner,k,v,updated_at) VALUES (${owner},'sc_deleted_clients',${JSON.stringify(o)},now())
+    ON CONFLICT (owner,k) DO UPDATE SET v=EXCLUDED.v, updated_at=now()`;
+  const cur2 = await q`SELECT v FROM kv WHERE owner=${owner} AND k='sc_undeleted_clients'`;
+  const u = cur2.length ? (JSON.parse(cur2[0].v) || {}) : {};
+  const now2 = Date.now();
+  ids.forEach(id => { u[id] = now2; });
+  await q`INSERT INTO kv (owner,k,v,updated_at) VALUES (${owner},'sc_undeleted_clients',${JSON.stringify(u)},now())
+    ON CONFLICT (owner,k) DO UPDATE SET v=EXCLUDED.v, updated_at=now()`;
+  return cleared;
+}
+
 export async function consolidateAll(q, owner) {
   const names = await q`SELECT lower(trim(name)) AS n, count(*)::int AS c FROM clients
     WHERE provider_id=${owner} AND deleted_at IS NULL AND trim(coalesce(name,''))<>'' GROUP BY 1 HAVING count(*)>1 ORDER BY 2 DESC LIMIT 400`;
@@ -492,21 +513,8 @@ export default async function handler(req, res) {
       if (Array.isArray(body.unDeleteIds) && body.unDeleteIds.length) {
         const ids = body.unDeleteIds.slice(0, 200).map(String);
         let cleared = 0;
-        try {
-          const cur = await q`SELECT v FROM kv WHERE owner=${owner} AND k='sc_deleted_clients'`;
-          const o = cur.length ? (JSON.parse(cur[0].v) || {}) : {};
-          ids.forEach(id => { if (Object.prototype.hasOwnProperty.call(o, id)) { delete o[id]; cleared++; } });
-          await q`INSERT INTO kv (owner,k,v,updated_at) VALUES (${owner},'sc_deleted_clients',${JSON.stringify(o)},now())
-            ON CONFLICT (owner,k) DO UPDATE SET v=EXCLUDED.v, updated_at=now()`;
-        } catch (e) { res.status(500).json({ error: 'Could not update the delete record.' }); return; }
-        try {
-          const cur2 = await q`SELECT v FROM kv WHERE owner=${owner} AND k='sc_undeleted_clients'`;
-          const u = cur2.length ? (JSON.parse(cur2[0].v) || {}) : {};
-          const now2 = Date.now();
-          ids.forEach(id => { u[id] = now2; });
-          await q`INSERT INTO kv (owner,k,v,updated_at) VALUES (${owner},'sc_undeleted_clients',${JSON.stringify(u)},now())
-            ON CONFLICT (owner,k) DO UPDATE SET v=EXCLUDED.v, updated_at=now()`;
-        } catch (e) { res.status(500).json({ error: 'Could not record the undelete.' }); return; }
+        try { cleared = await undeleteIds(q, owner, ids); }
+        catch (e) { res.status(500).json({ error: 'Could not update the delete record.' }); return; }
         res.status(200).json({ ok: true, unDeleted: ids.length, clearedFromRecord: cleared });
         return;
       }
@@ -593,10 +601,17 @@ export default async function handler(req, res) {
           if (owner2) { roster[row0.id].ownerId = owner2.ownerId; roster[row0.id].isAnimal = true; }
           added.push({ id: row0.id, name: row[0].name || '' });
         }
+        if (!added.length && only) {
+          // Already in the list on the server, yet not showing: the delete record is what strips them.
+          let undeleted = 0; try { undeleted = await undeleteIds(q, owner, Array.from(only)); } catch (e) {}
+          res.status(200).json({ ok: true, addedToRoster: 0, clients: [], undeleted, note: 'Already in their list; taken off the delete record so it stops being removed.' }); return;
+        }
         if (!added.length) { res.status(400).json({ error: 'Their list already has every live client.' }); return; }
         await q`INSERT INTO kv (owner,k,v,updated_at) VALUES (${owner},'sc_clients',${JSON.stringify(roster)},now())
           ON CONFLICT (owner,k) DO UPDATE SET v=EXCLUDED.v, updated_at=now()`;
-        res.status(200).json({ ok: true, addedToRoster: added.length, clients: added,
+        let undeleted = 0;
+        if (only) { try { undeleted = await undeleteIds(q, owner, Array.from(only)); } catch (e) {} }
+        res.status(200).json({ ok: true, addedToRoster: added.length, clients: added, undeleted,
           note: 'Added to the account list only. Nothing that was already there was changed, and the previous list is kept under Earlier copies.' });
         return;
       }

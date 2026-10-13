@@ -6713,6 +6713,16 @@ A summary stores products as NAMES (`productDetail.map(p=>p.name)`); `renderLate
 matching live recommendation (keeps Buy) or `{name}`. Empty homecare/products cards are now hidden.
 `scratchpad/test-client-summary-products.mjs` 6/6; three FAIL on the previous client page.
 
+### Debbi Miranda would not stay put back — build `2026-10-13v`
+
+Her words (~15:55, COMPUTER): *"i keep trying to do it with debbi miranda and it wont put her back on
+my list"*. Put-back added her row to `sc_clients` on the server, but her id was still on the
+account's delete record, and `_purgeRemovedClients` (device) strips any client on that record
+WITHOUT checking `sc_undeleted_clients` (unlike `_mergeClients`), then pushes the list without her.
+Fixed both ends: put-back (`repairRoster` with `onlyIds`, incl. ids already in the list) now calls
+`undeleteIds()` (shared with "Bring back"), and the purge skips un-deleted ids. "Combine" also
+un-deletes locally. `scratchpad/test-putback-sticks.mjs` 5/5; sweeps pass.
+
 ### Fourth Cooper run (15:46): 4 real records left; "Combine into one" — build `2026-10-13u`
 
 Tidy left exactly what should be left: kept `…ygowr` (in her list), retired 56, and four real
