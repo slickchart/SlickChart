@@ -486,7 +486,7 @@ const S=document.getElementById('S');
 // resets when I save it" and there was no way to tell whether her phone had any of them — a whole
 // day was spent debugging code she may not have been running. Shown at the bottom of Settings, so
 // the answer is a screenshot away. Bump it on every ship.
-const APP_BUILD='2026-10-13e';
+const APP_BUILD='2026-10-13f';
 
 
 /* ════════════════════════════════════════════════════════════════
@@ -22484,11 +22484,16 @@ function _runClientCleanup(){
   const empties=rep.extra.filter(function(x){return x.weight===0;});
   if(!empties.length)return;
   const go=function(){
-    let n=0;
+    let n=0;const gone=[];
     empties.forEach(function(x){
       try{if(!CL[x.id])return;if(_clientChartWeight(CL[x.id],x.id)>0)return;   // re-checked at the moment of removal
-        _cleanupClientData(x.id);delete CL[x.id];try{_markClientDeleted(x.id);}catch(e){}n++;}catch(e){}
+        _cleanupClientData(x.id);delete CL[x.id];gone.push(x.id);n++;}catch(e){}
     });
+    // ONE delete-record push and a few /api/clients calls, not one of each per client: on her account
+    // this is ~670 clients, and _markClientDeleted per id meant ~670 pushes of the whole delete record.
+    // The server rows are tombstoned too, so the 15-second event poll cannot create them again.
+    try{const now=Date.now();gone.forEach(function(id){_deletedClientIds[id]=now;});_saveDeletedClients();
+      for(let i=0;i<gone.length;i+=200)_serverDeleteClients(gone.slice(i,i+200));}catch(e){}
     try{saveClients();}catch(e){}
     try{if(typeof _pushKeyNow==='function')_pushKeyNow('sc_clients',_lsGet('sc_clients')||'');}catch(e){}
     _closeCleanup();

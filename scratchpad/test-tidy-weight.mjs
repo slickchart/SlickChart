@@ -11,11 +11,12 @@ const browser = await pw.chromium.launch({ executablePath: '/opt/pw-browsers/chr
 const page = await browser.newPage({ viewport: { width: 390, height: 844 } });
 const errs = []; page.on('pageerror', e => errs.push(String(e && e.message || e)));
 await page.addInitScript(() => { try { localStorage.setItem('sc_token', 'TESTTOKEN'); localStorage.setItem('sc_onboarded', '1'); } catch (e) {} });
-let truncated = false;
+let truncated = false; const delPosts = [];
 await page.route('**/api/**', r => r.fulfill({ status: 200, contentType: 'application/json', body: '{"ok":true,"data":{},"clients":[],"events":[]}' }));
 await page.route('**/api/cloud-status*', r => r.fulfill({ status: 200, contentType: 'application/json', body: '{"enabled":true}' }));
 await page.route('**/api/square/customers*', r => r.fulfill({ status: 200, contentType: 'application/json', body: JSON.stringify({ truncated,
   customers: [ { id: 'ADAMDURAN0XYZ123', name: 'Adam Duran', email: 'bni@magnifiedmedia.net' }, { id: 'KEYONLYABCDEFGH', name: '', email: '' } ] }) }));
+await page.route('**/api/clients', r => { if (r.request().method() === 'POST') { try { const b = JSON.parse(r.request().postData() || '{}'); if ((b.deletedIds || []).length) delPosts.push(b.deletedIds); } catch (e) {} } return r.fulfill({ status: 200, contentType: 'application/json', body: '{"ok":true,"clients":[],"events":[]}' }); });
 await page.goto('http://localhost:8899/' + FILE, { waitUntil: 'load' });
 await page.waitForTimeout(2600);
 
@@ -52,6 +53,9 @@ const left = await page.evaluate(() => Object.keys(CL));
 check('the three empty junk clients removed', !left.includes('junk1') && !left.includes('junk2') && !left.includes('junk3'), JSON.stringify(left));
 check('every client holding something kept', ['sumOnly', 'sumOnRecord', 'planOnly', 'homecareOnly', 'reasonOnly', 'mapOnly', 'typedAllergy', 'apptOnly', 'horseOwner', 'horse', 'adam'].every(k => left.includes(k)), JSON.stringify(left));
 
+check('removed clients tombstoned on this device', await page.evaluate(() => !!(_deletedClientIds.junk1 && _deletedClientIds.junk2 && _deletedClientIds.junk3)));
+check('server rows deleted in one batch request', delPosts.length === 1 && ['junk1','junk2','junk3'].every(k => delPosts[0].includes(k)), JSON.stringify(delPosts));
+check('no kept client tombstoned', await page.evaluate(() => !['sumOnly','planOnly','adam','horse'].some(k => _deletedClientIds[k])));
 truncated = true;
 const r2 = await page.evaluate(async () => await _clientsNotInSquare());
 check('a cut-off Square list offers nothing', r2 === null);

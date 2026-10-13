@@ -6663,6 +6663,14 @@ offers nothing. `scratchpad/test-tidy-weight.mjs`, 19 checks; 13 of them FAIL on
 
 She had NOT pressed it when this was found.
 
+Her next report, 2026-10-13 ~14:15: *"my square list is fine but my slickchart list now shows all those
+junk data clients."* Device not yet stated (asked). The event poll (`syncClientEvents`, every 15s and on
+focus) CREATES a roster record for any server client not in the delete record, so any device whose
+roster lacks them gets them; once they are in the account roster they stop being `stranger` in
+`classifyJunk`, so the server purge will not see them — the tidy-up is the tool for them now (it
+tombstones on device AND server, so the poll cannot bring them back). Build `2026-10-13f` batches that:
+one delete-record push and `/api/clients` calls of 200, instead of ~670 of each.
+
 ## §2bd. How the Square bulk delete was done before, and where it went
 
 Ashley, 2026-10-13, with a screenshot of the Square Developer forum thread *"Customers created via
