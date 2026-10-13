@@ -39,21 +39,31 @@ export async function liveSubForEmail(email, excludeSubId) {
 }
 
 /**
- * Where someone who has been refused at login should actually be sent to pay.
+ * A subscription that is behind on payment, and where to go and fix it.
  *
- * This matters more than it looks. A provider whose card failed has a PAST_DUE subscription and an
- * OPEN invoice; neither `hasActiveSubscription` nor `liveSubForEmail` counts past_due as paying, so
- * she is locked out while Stripe is still retrying her. Sending her to the generic STRIPE_PAYMENT_LINK
- * would create a SECOND customer and a SECOND subscription on the same address — the exact double
- * signup this file opens by warning about, where cancelling the duplicate later stamps 'canceled'
- * over the subscription she is paying for. Paying the open invoice revives the subscription she
- * already has, and creates nothing.
+ * A provider whose card failed sits in PAST_DUE while Stripe retries for a couple of weeks. Neither
+ * `hasActiveSubscription` nor `liveSubForEmail` counts past_due as paying, so she used to be refused
+ * at login the moment one payment bounced — shut out of her own business software while she was
+ * still, by any ordinary reading, a customer. She is let in now and shown a banner instead; this is
+ * what tells the caller to do that.
  *
- * Returns { url, label } for that invoice, or null when there is nothing outstanding to pay — in
- * which case the caller falls back to the ordinary checkout link, which is right for someone whose
- * subscription genuinely ended. Never throws.
+ * `url` is her OWN open invoice, never the generic STRIPE_PAYMENT_LINK. That distinction is the
+ * whole point: the generic link creates a SECOND customer and a SECOND subscription on the same
+ * address — the exact double signup this file opens by warning about, where cancelling the duplicate
+ * later stamps 'canceled' over the one she is paying for. Her invoice takes a new card and revives
+ * the subscription she already has, and creates nothing.
+ *
+ * Returns { sub, url, label } when she is behind, or null when she is not — in which case a caller
+ * refusing the login falls back to the ordinary checkout link, which is right for someone whose
+ * subscription genuinely ended. `url` may be '' when Stripe will not give us the invoice; being
+ * behind still counts, because the grace must not hinge on a second lookup succeeding.
+ *
+ * The grace ends by itself: once Stripe gives up retrying it moves the subscription to `canceled`,
+ * this returns null, and the login is refused as before. No hand-tuned day count to get wrong.
+ *
+ * Never throws.
  */
-export async function openInvoiceForEmail(email) {
+export async function pastDueForEmail(email) {
   const em = String(email || '').trim().toLowerCase();
   if (!em) return null;
   const customers = await stripeGet('https://api.stripe.com/v1/customers?limit=100&email=' + encodeURIComponent(em));
@@ -61,16 +71,17 @@ export async function openInvoiceForEmail(email) {
     if (!c || !c.id) continue;
     const subs = await stripeGet('https://api.stripe.com/v1/subscriptions?limit=100&status=all&customer=' + encodeURIComponent(c.id));
     for (const sub of ((subs && subs.data) || [])) {
-      // past_due: Stripe is still retrying. unpaid: it has given up but the invoice is still payable.
+      // past_due: Stripe is still retrying. unpaid: it has stopped, but the invoice is still payable.
       if (!sub || (sub.status !== 'past_due' && sub.status !== 'unpaid')) continue;
       const invId = typeof sub.latest_invoice === 'string' ? sub.latest_invoice
                   : (sub.latest_invoice && sub.latest_invoice.id);
-      if (!invId) continue;
-      const inv = await stripeGet('https://api.stripe.com/v1/invoices/' + encodeURIComponent(invId));
-      // Only an OPEN invoice is payable — a paid/void/uncollectible one would dead-end her.
-      if (inv && inv.status === 'open' && inv.hosted_invoice_url) {
-        return { url: inv.hosted_invoice_url, label: 'Pay now' };
+      let url = '';
+      if (invId) {
+        const inv = await stripeGet('https://api.stripe.com/v1/invoices/' + encodeURIComponent(invId));
+        // Only an OPEN invoice is payable — a paid/void/uncollectible one would dead-end her.
+        if (inv && inv.status === 'open' && inv.hosted_invoice_url) url = inv.hosted_invoice_url;
       }
+      return { sub, url, label: url ? 'Update card' : '' };
     }
   }
   return null;

@@ -34,9 +34,6 @@ async function run({native, totp, pastDue}){
     if(totp && loginHits===1)
       return r.fulfill({status:401,contentType:'application/json',
         body:JSON.stringify({requiresTotp:true,error:'Enter your authenticator code'})});
-    // A card that failed leaves a PAST_DUE subscription with an open invoice: the server sends that
-    // invoice instead of the generic link, so she tops up the subscription she already has rather
-    // than starting a second one on the same email.
     return r.fulfill({status:402,contentType:'application/json',
       body: pastDue
         ? JSON.stringify({error:MSG, checkoutUrl:INVOICE, checkoutLabel:'Pay now'})
@@ -87,11 +84,13 @@ async function run({native, totp, pastDue}){
 }
 
 const cases = [
-  {name:'lapsed: password login',   opts:{native:false,totp:false}, want:PAYLINK, label:'Renew now'},
-  {name:'lapsed: login + 2FA',      opts:{native:false,totp:true},  want:PAYLINK, label:'Renew now'},
-  {name:'past due: her invoice',    opts:{native:false,totp:false,pastDue:true}, want:INVOICE, label:'Pay now'},
-  {name:'past due + 2FA',           opts:{native:false,totp:true, pastDue:true}, want:INVOICE, label:'Pay now'},
-  {name:'native app: no pay link',  opts:{native:true, totp:false}, want:null},
+  // A provider who is merely BEHIND is no longer refused here at all - api/login.js lets her in and
+  // the app banners her (scratchpad/test-past-due.mjs, scratchpad/test-billing-banner.mjs). The only
+  // login that still 402s is a subscription that genuinely ENDED, and for that a fresh checkout IS
+  // the right destination.
+  {name:'ended: password login',   opts:{native:false,totp:false}, want:PAYLINK, label:'Renew now'},
+  {name:'ended: login + 2FA',      opts:{native:false,totp:true},  want:PAYLINK, label:'Renew now'},
+  {name:'native app: no pay link', opts:{native:true, totp:false}, want:null},
 ];
 
 let bad=0;
@@ -100,20 +99,18 @@ for(const c of cases){
   if(r.err){console.log('  ??   '+c.name.padEnd(26)+' '+r.err);bad++;continue;}
   const hasMsg  = r.text.includes('Please renew to continue');
   const rightUrl = c.want ? (r.href===c.want) : (r.href===null);
-  // The one that would hurt: a past-due provider sent to a NEW subscription instead of her invoice.
-  const duplicateRisk = !!c.opts.pastDue && r.href===PAYLINK;
   // the rendered label carries the trailing arrow
   const rightLabel = !c.label || String(r.label||'').replace(/\s*→\s*$/,'')===c.label;
   const readable = !c.want || (r.contrast!=null && r.contrast>=4.5);
-  const ok = hasMsg && rightUrl && rightLabel && readable && !duplicateRisk;
+  const ok = hasMsg && rightUrl && rightLabel && readable;
   if(!ok)bad++;
   console.log('  '+(ok?'PASS':'FAIL')+' '+c.name.padEnd(26)
     +' message:'+(hasMsg?'yes':'NO ')
     +'  link:'+(r.href?('"'+r.label+'" -> '+(r.href===INVOICE?'her open invoice':r.href===PAYLINK?'NEW subscription':r.href)):'none')
     +(r.contrast!=null?('  '+r.contrast.toFixed(2)+':1'):'')
-    +(duplicateRisk?'   <-- would create a SECOND subscription':''));
+    );
 }
 console.log(bad? '\n'+bad+' case(s) wrong'
-  : '\nboth login steps offer a way to pay; a past-due provider gets her OWN invoice,\nnot a second subscription; and the native app shows no payment link at all');
+  : '\na provider whose subscription ENDED gets a way to pay from both login steps, and the\nnative app shows no payment link at all');
 await browser.close();
 process.exit(bad?1:0);

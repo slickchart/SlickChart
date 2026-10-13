@@ -5,7 +5,7 @@
 import { signToken, verifyPassword, tooManyAttempts, tooManyAttemptsByIp, recordAttempt, clearAttempts, createSession } from '../lib/auth.js';
 import { sql, ensureProvidersTable, dbEnabled, hasActiveSubscription } from '../lib/db.js';
 import { verifyToken as verifyTotp } from '../lib/totp.js';
-import { liveSubForEmail, repairSubscriptionRow, openInvoiceForEmail } from '../lib/stripe-subs.js';
+import { liveSubForEmail, repairSubscriptionRow, pastDueForEmail } from '../lib/stripe-subs.js';
 
 // A valid-format (salt:hash) decoy so an UNKNOWN email still runs the same slow scrypt a known one does.
 // Without it, the intentionally-generic "Email or password is incorrect" reply leaked which emails are
@@ -79,23 +79,28 @@ export default async function handler(req, res) {
                   console.log('[login] ' + email + ' looked inactive locally but Stripe has live subscription ' + live.id);
                   await repairSubscriptionRow(email, live);
                 } else {
-                  // Someone whose CARD failed has an open invoice; send her to THAT, not to a new
-                  // checkout, or she ends up with a second subscription on the same email (see
-                  // openInvoiceForEmail). Only fall back to the generic link when nothing is owed,
-                  // which is the genuinely-ended case. Best-effort: never block the 402 on it.
-                  let payUrl = '', payLabel = '';
+                  // A failed card is not a cancellation. Stripe keeps a PAST_DUE subscription and
+                  // retries it for a couple of weeks; refusing the login on day one shut a paying
+                  // provider out of her own business software over one bounced charge, with no way
+                  // back in because billing lives behind the login she was being refused.
+                  // She gets in, and the app shows her a banner (api/billing-status drives it).
+                  // The grace ends on its own: once Stripe gives up it marks the subscription
+                  // canceled, pastDueForEmail returns null, and we refuse as before.
+                  let behind = null;
+                  try { behind = await pastDueForEmail(email); } catch (e) { /* refuse below */ }
+                  if (!behind) {
+                    res.status(402).json({
+                      error: 'Your subscription isn’t active. Please renew to continue.',
+                      checkoutUrl: process.env.STRIPE_PAYMENT_LINK || ''
+                    });
+                    return;
+                  }
+                  // Keep our row saying past_due so the banner shows on every launch, not just this
+                  // one. Best-effort — she is already through, and a failed write must not undo that.
                   try {
-                    const open = await openInvoiceForEmail(email);
-                    if (open) { payUrl = open.url; payLabel = open.label; }
-                  } catch (e) { /* fall through to the ordinary checkout link */ }
-                  res.status(402).json({
-                    error: 'Your subscription isn’t active. Please renew to continue.',
-                    checkoutUrl: payUrl || process.env.STRIPE_PAYMENT_LINK || '',
-                    // Added field, not a changed one — an older build ignores it and still renders
-                    // its own wording, so this stays readable by the shipped app (§1a).
-                    checkoutLabel: payLabel || ''
-                  });
-                  return;
+                    await q`UPDATE subscriptions SET status='past_due', updated_at=now() WHERE email=${email} AND status<>'past_due'`;
+                  } catch (e) { /* the banner falls back to asking Stripe */ }
+                  console.log('[login] ' + email + ' is past_due — allowed in with a billing banner');
                 }
               }
             } catch (e) { /* fail open — don't block on a billing lookup failure */ }

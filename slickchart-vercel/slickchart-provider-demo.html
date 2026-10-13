@@ -468,6 +468,7 @@ function scResetDemo(){try{Object.keys(localStorage).filter(function(k){return k
     </button>
     <button id="prov-av" onclick="nav('account')" aria-label="Settings" title="Settings" style="background:none;border:none;cursor:pointer;width:34px;height:34px;display:flex;align-items:center;justify-content:center;flex-shrink:0;"><i class="ti ti-settings" aria-hidden="true" style="font-size:22px;color:var(--p-mut);"></i></button>
   </div>
+  <div id="billing-banner" role="status" style="display:none;"></div>
   <main class="scr" id="S" aria-label="App content"></main>
   <nav class="nav" aria-label="Main navigation">
     <button class="ni active" id="ni-home" onclick="nav('home')" aria-label="Home" aria-current="page"><i class="ti ti-home" aria-hidden="true"></i><span>Home</span></button>
@@ -3783,7 +3784,7 @@ const Cloud={
     this.enabled=false;this.statusUnknown=true;this._statusKnown=true;
     return this.enabled;
   },
-  async login(email,pw,totpCode){const r=await fetch('/api/login',{method:'POST',headers:{'Content-Type':'application/json'},body:JSON.stringify({email,password:pw,totpCode})});let j={};try{j=await r.json();}catch(e){}if(!r.ok||!j.token){const err=new Error((j&&j.error)||(j&&j.requiresTotp?'Enter your authenticator code':'Login failed'));err.requiresTotp=!!(j&&j.requiresTotp);err.checkoutUrl=j&&j.checkoutUrl;err.checkoutLabel=j&&j.checkoutLabel;throw err;}this.token=j.token;try{localStorage.setItem('sc_token',this.token);if(j.email)localStorage.setItem('sc_login_email',j.email);localStorage.setItem('sc_totp_enabled',j.totpEnabled?'1':'0');}catch(e){}return j;},
+  async login(email,pw,totpCode){const r=await fetch('/api/login',{method:'POST',headers:{'Content-Type':'application/json'},body:JSON.stringify({email,password:pw,totpCode})});let j={};try{j=await r.json();}catch(e){}if(!r.ok||!j.token){const err=new Error((j&&j.error)||(j&&j.requiresTotp?'Enter your authenticator code':'Login failed'));err.requiresTotp=!!(j&&j.requiresTotp);err.checkoutUrl=j&&j.checkoutUrl;throw err;}this.token=j.token;try{localStorage.setItem('sc_token',this.token);if(j.email)localStorage.setItem('sc_login_email',j.email);localStorage.setItem('sc_totp_enabled',j.totpEnabled?'1':'0');}catch(e){}return j;},
   async signup(email,pw,name,optIn){const r=await fetch('/api/signup',{method:'POST',headers:{'Content-Type':'application/json'},body:JSON.stringify({email,password:pw,name,optIn:!!optIn})});let j={};try{j=await r.json();}catch(e){}if(!r.ok){const err=new Error((j&&j.error)||'Sign up failed');err.checkoutUrl=j&&j.checkoutUrl;throw err;}this.token=j.token;try{localStorage.setItem('sc_token',this.token);if(j.email)localStorage.setItem('sc_login_email',j.email);}catch(e){}return j;},
   async requestReset(email){try{await fetch('/api/request-reset',{method:'POST',headers:{'Content-Type':'application/json'},body:JSON.stringify({email})});}catch(e){}return true;},
   async resetPw(token,pw){const r=await fetch('/api/reset',{method:'POST',headers:{'Content-Type':'application/json'},body:JSON.stringify({token,password:pw})});let j={};try{j=await r.json();}catch(e){}if(!r.ok)throw new Error((j&&j.error)||'Reset failed');return true;},
@@ -5636,11 +5637,8 @@ function _loginErr(e,fallback){
   const er=document.getElementById('login-err');if(!er)return;
   const msg=String((e&&e.message)||fallback);
   const url=(e&&e.checkoutUrl&&!_isNativeApp()&&typeof _safeUrl==='function')?_safeUrl(e.checkoutUrl):'';
-  // "Pay now" when the server found her open invoice, "Renew now" when it is a fresh checkout.
-  // An older server sends no label at all, so the default has to stand on its own.
-  const lbl=_fileEsc(String((e&&e.checkoutLabel)||'Renew now'));
   if(url){er.innerHTML=msg.replace(/</g,'&lt;').replace(/>/g,'&gt;')
-    +' <a href="'+_urlAttr(url)+'" style="color:var(--accent-strong);text-decoration:underline;">'+lbl+' &rarr;</a>';}
+    +' <a href="'+_urlAttr(url)+'" style="color:var(--accent-strong);text-decoration:underline;">Renew now &rarr;</a>';}
   else er.textContent=msg;
 }
 function doLogin(){
@@ -5650,6 +5648,7 @@ function doLogin(){
   Cloud.login(email,pw).then(async()=>{
     try{const n=await Cloud.pull();if(n===0)await Cloud.pushAllLocal();else try{localStorage.setItem('sc_onboarded','1');}catch(e){} _reloadAll();}catch(e){}
     const ov=document.getElementById('login-screen');if(ov)ov.remove();nav('home');
+    try{_checkBillingBanner();}catch(e){}   // she is in on grace — tell her straight away, not next launch
   }).catch(e=>{
     if(e&&e.requiresTotp){_pendingTotpEmail=email;_pendingTotpPw=pw;_setLoginMode('totp');return;}
     _loginErr(e,'Login failed');
@@ -5662,6 +5661,7 @@ function doLoginTotp(){
     try{const n=await Cloud.pull();if(n===0)await Cloud.pushAllLocal();else try{localStorage.setItem('sc_onboarded','1');}catch(e){} _reloadAll();}catch(e){}
     _pendingTotpEmail='';_pendingTotpPw='';
     const ov=document.getElementById('login-screen');if(ov)ov.remove();nav('home');
+    try{_checkBillingBanner();}catch(e){}
   }).catch(e=>{_loginErr(e,'Invalid code');});
 }
 function doSignup(){
@@ -27186,6 +27186,10 @@ try{
   loadVisionEndpoint();  // restore the configured vision analysis endpoint (if any)
 }catch(e){}
 _cloudInit();
+// Read-only, and deliberately not awaited: a provider who is behind on payment should see the banner
+// shortly after launch, but nothing about boot may wait on Stripe. It writes no sc_* key and queues
+// no upload, so it is not one of the boot write-backs §3 warns about.
+try{setTimeout(function(){try{_checkBillingBanner();}catch(e){}},1200);}catch(e){}
 
 // ── CALENDAR ──
 // ════════════════════════════════════════════════════════════════
@@ -31115,6 +31119,54 @@ function renderSubscriptionBilling(){
   S.innerHTML=`
   <div id="billing-body" style="padding:40px 16px;text-align:center;color:var(--p-mut);font-size:16px;">Loading your billing info\u2026</div>`;
   _loadBillingStatus();
+}
+// THE PAST-DUE BANNER.
+//
+// A provider whose card failed used to be refused at login outright (api/login.js), which meant she
+// lost her client list, her notes and her calendar over one bounced charge, and could not even reach
+// billing because billing is behind that login. She is let in now, and this is how she finds out:
+// one bar under the topbar, on every screen, until the payment goes through.
+//
+// It lives OUTSIDE #S on purpose. Every screen rewrites S.innerHTML, so a banner rendered into a
+// screen would vanish on the next nav() and she would see it once, on Home, and never again.
+//
+// It is deliberately not dismissible. Losing the account is worse than a bar she finds annoying.
+let _billingBanner=null;
+function _renderBillingBanner(info){
+  const el=document.getElementById('billing-banner');if(!el)return;
+  _billingBanner=info||null;
+  if(!info){el.style.display='none';el.innerHTML='';return;}
+  // In the native app an external payment link breaks Apple's rules, so point her at the browser
+  // rather than at Stripe. She still gets told, which is the part that matters.
+  const native=(typeof _isNativeApp==='function')&&_isNativeApp();
+  const url=(!native&&info.payUrl&&typeof _safeUrl==='function')?_safeUrl(info.payUrl):'';
+  const action=url
+    ? '<a href="'+_urlAttr(url)+'" target="_blank" rel="noopener" style="flex-shrink:0;background:var(--accent);color:var(--accent-ink);border:1px solid var(--btn-edge);border-radius:8px;padding:7px 12px;font-size:14px;font-weight:600;text-decoration:none;white-space:nowrap;">'+_fileEsc(info.payLabel||'Update card')+'</a>'
+    : (native
+       ? '<span style="flex-shrink:0;font-size:14px;color:var(--p-amber);white-space:nowrap;">slickchart.app</span>'
+       : '<button onclick="nav(\'account\')" style="flex-shrink:0;background:var(--accent);color:var(--accent-ink);border:1px solid var(--btn-edge);border-radius:8px;padding:7px 12px;font-size:14px;font-weight:600;cursor:pointer;font-family:inherit;white-space:nowrap;">Billing</button>');
+  const where=native?'Open slickchart.app in your browser to update your card.'
+                    :'Update your card to keep your account.';
+  el.innerHTML='<div style="display:flex;align-items:center;gap:10px;padding:9px 16px;background:var(--p-amber-bg);border-bottom:1px solid var(--p-amber-line);">'
+    +'<i class="ti ti-credit-card-off" aria-hidden="true" style="font-size:18px;color:var(--p-amber);flex-shrink:0;"></i>'
+    +'<span style="flex:1;min-width:0;font-size:14px;color:var(--p-ink);line-height:1.35;">'
+    +'<b style="color:var(--p-ink);">Your last payment didn’t go through.</b> '+where+'</span>'
+    +action+'</div>';
+  el.style.display='block';
+}
+// Asked once at boot and after a sign-in. One indexed row read for everybody who is paying normally;
+// only a provider who is actually behind costs a Stripe lookup (api/billing-status).
+async function _checkBillingBanner(){
+  try{
+    const tok=(typeof Cloud!=='undefined'&&Cloud&&Cloud.token)||'';
+    if(!tok){_renderBillingBanner(null);return;}
+    const r=await fetch('/api/billing-status',{headers:{'Authorization':'Bearer '+tok}});
+    if(!r.ok){return;}                       // leave whatever is on screen; never guess she is behind
+    const j=await r.json();
+    const sub=(j&&j.subscription)||null;
+    const behind=!!(sub&&(sub.status==='past_due'||sub.status==='unpaid'));
+    _renderBillingBanner(behind?{payUrl:(j&&j.payUrl)||'',payLabel:(j&&j.payLabel)||''}:null);
+  }catch(e){ /* offline, or the endpoint is down - say nothing rather than alarm her */ }
 }
 async function _loadBillingStatus(){
   const box=document.getElementById('billing-body');if(!box)return;

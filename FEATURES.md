@@ -127,6 +127,7 @@ saved anywhere", not "does this always call that".
 | `_chatShareSheet` | `/api/clients` | via `_syncSpecificClientsToServer` |
 | `_chatShareSheet` | `/api/provider-form` | via `submitSignOnDevice` |
 | `_chatShareSheet` | `/api/provider-message` | via `_sendProviderMessageToClient` |
+| `_checkBillingBanner` | `/api/billing-status` | direct |
 | `_checkDepositOnboarding` | `/api/client-invite` | via `_sendDepositForms` |
 | `_checkDepositOnboarding` | `/api/clients` | via `_syncSpecificClientsToServer` |
 | `_checkForNewBuild` | `/api/build-id` | direct |
@@ -215,6 +216,7 @@ saved anywhere", not "does this always call that".
 | `_doBulkInvite` | `/api/clients` | via `_syncSpecificClientsToServer` |
 | `_doCancelSquare` | `/api/square/appointments` | via `_loadSquareAppts` |
 | `_doCancelSquare` | `/api/square/cancel-booking` | direct |
+| `_doLogout` | `/api/billing-status` | via `_checkBillingBanner` |
 | `_doLogout` | `/api/client-code` | via `_clientSendCode` |
 | `_doLogout` | `/api/logout` | direct |
 | `_doMerge` | `/api/clients` | via `_serverDeleteClients` |
@@ -273,6 +275,7 @@ saved anywhere", not "does this always call that".
 | `_gettingStartedHTML` | `/api/provider-form` | via `submitSignOnDevice` |
 | `_guidesTabHTML` | `/api/clients` | via `syncClientEvents` |
 | `_guidesTabHTML` | `/api/provider-form` | via `submitSignOnDevice` |
+| `_handleAuthParams` | `/api/billing-status` | via `_checkBillingBanner` |
 | `_handleAuthParams` | `/api/client-code` | via `_clientSendCode` |
 | `_handlePushParams` | `/api/clients` | via `syncClientEvents` |
 | `_helpRowHTML` | `/api/clients` | via `syncClientEvents` |
@@ -411,6 +414,7 @@ saved anywhere", not "does this always call that".
 | `_pingChart` | `/api/beta-event` | direct |
 | `_pollFounderSignups` | `/api/admin/signups` | direct |
 | `_postAnnouncement` | `/api/announcements` | direct |
+| `_postAnnouncement` | `/api/billing-status` | via `_checkBillingBanner` |
 | `_postAnnouncement` | `/api/square/catalog` | via `_autoSyncCatalog` |
 | `_postAnnouncement` | `/api/square/customers` | via `_autoSyncCustomers` |
 | `_pr_moved` | `/api/clients` | via `syncClientEvents` |
@@ -468,6 +472,8 @@ saved anywhere", not "does this always call that".
 | `_remDone` | `/api/provider-push` | via `_pushDisable` |
 | `_remEdit` | `/api/provider-push` | via `_pushDisable` |
 | `_remSaveFromSheet` | `/api/provider-push` | via `_pushDisable` |
+| `_renderBillingBanner` | `/api/clients` | via `syncClientEvents` |
+| `_renderBillingBanner` | `/api/provider-form` | via `submitSignOnDevice` |
 | `_renderFvpClients` | `/api/clients` | via `_syncSpecificClientsToServer` |
 | `_renderLessonFile` | `/api/guide-file` | via `_getGuideFile` |
 | `_renderPhotosView` | `/api/clients` | via `_syncSpecificClientsToServer` |
@@ -562,9 +568,11 @@ saved anywhere", not "does this always call that".
 | `_setDepositMode` | `/api/square/connect` | via `_sqConnect` |
 | `_setDepositMode` | `/api/square/connection` | via `_sqCheckStatus` |
 | `_setDepositMode` | `/api/square/customers` | via `_sqLoadCustomers` |
+| `_setLang` | `/api/billing-status` | via `_checkBillingBanner` |
 | `_setLang` | `/api/client-code` | via `_clientSendCode` |
 | `_setLang` | `/api/clients` | via `syncClientEvents` |
 | `_setLang` | `/api/provider-form` | via `submitSignOnDevice` |
+| `_setLoginMode` | `/api/billing-status` | via `_checkBillingBanner` |
 | `_setLoginMode` | `/api/client-code` | via `_clientSendCode` |
 | `_setPhotoCategory` | `/api/clients` | via `_syncSpecificClientsToServer` |
 | `_setProviderMsgStatus` | `/api/provider-message` | via `_sendProviderMessageToClient` |
@@ -712,12 +720,9 @@ saved anywhere", not "does this always call that".
 | `deleteVendor` | `/api/provider-form` | via `submitSignOnDevice` |
 | `dismissCheckinNudge` | `/api/clients` | via `syncClientEvents` |
 | `dismissCheckinNudge` | `/api/square/appointments` | via `_loadSquareAppts` |
-| `doLoginTotp` | `/api/clients` | via `_syncSpecificClientsToServer` |
-| `doLoginTotp` | `/api/provider-form` | via `submitSignOnDevice` |
-| `doLoginTotp` | `/api/square/connection` | via `_sqConnState` |
-| `doLoginTotp` | `/api/totp-setup` | via `_beginTotpEnroll` |
-| `doLoginTotp` | `/api/transcribe` | via `_probeWhisper` |
+| `doRequestReset` | `/api/billing-status` | via `_checkBillingBanner` |
 | `doRequestReset` | `/api/client-code` | via `_clientSendCode` |
+| `doResetPw` | `/api/billing-status` | via `_checkBillingBanner` |
 | `doResetPw` | `/api/client-code` | via `_clientSendCode` |
 | `doSignup` | `/api/clients` | via `syncClientEvents` |
 | `doSignup` | `/api/provider-form` | via `submitSignOnDevice` |
@@ -859,6 +864,7 @@ saved anywhere", not "does this always call that".
 | `renderEditResource` | `/api/ai` | via `_aiComplete` |
 | `renderEditSuggestedForms` | `/api/clients` | via `syncClientEvents` |
 | `renderEditSuggestedForms` | `/api/provider-form` | via `submitSignOnDevice` |
+| `renderEntry` | `/api/billing-status` | via `_checkBillingBanner` |
 | `renderEntry` | `/api/client-code` | via `_clientSendCode` |
 | `renderFeedbackInbox` | `/api/feedback` | via `_loadFeedbackInbox` |
 | `renderFlaggedIntakes` | `/api/clients` | via `syncClientEvents` |
@@ -887,6 +893,7 @@ saved anywhere", not "does this always call that".
 | `renderInventory` | `/api/square/inventory` | via `_syncInventoryFromSquare` |
 | `renderInviteClients` | `/api/clients` | via `_syncSpecificClientsToServer` |
 | `renderInviteClients` | `/api/logout` | via `_doLogout` |
+| `renderLogin` | `/api/billing-status` | via `_checkBillingBanner` |
 | `renderLogin` | `/api/client-code` | via `_clientSendCode` |
 | `renderMessages` | `/api/clients` | via `syncClientEvents` |
 | `renderNCBasicStep` | `/api/square/connection` | via `_sqConnState` |
@@ -945,7 +952,9 @@ saved anywhere", not "does this always call that".
 | `renderSignOnDevice` | `/api/clients` | via `syncClientEvents` |
 | `renderSignOnDevice` | `/api/provider-form` | via `submitSignOnDevice` |
 | `renderSubscriptionBilling` | `/api/billing-status` | via `_loadBillingStatus` |
+| `renderSubscriptionBilling` | `/api/clients` | via `syncClientEvents` |
 | `renderSubscriptionBilling` | `/api/create-portal-session` | via `_openBillingPortal` |
+| `renderSubscriptionBilling` | `/api/provider-form` | via `submitSignOnDevice` |
 | `renderSummaryHistory` | `/api/clients` | via `_syncSpecificClientsToServer` |
 | `renderSummaryHistory` | `/api/provider-form` | via `submitSignOnDevice` |
 | `renderSwitchApp` | `/api/clients` | via `syncClientEvents` |
