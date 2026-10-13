@@ -10,11 +10,11 @@ break quietly if nobody touches it.
 
 `CLAUDE.md` §4 explains the mechanism. **There are TWO of them now**, one per blog:
 
-- **SlickChart blog** (`blog-src/` → `/blog`): trigger `trig_01Kpq3HtFnWqgea1bUozHbbM`,
+- **SlickChart blog** (`blog-src/` → `/blog`): trigger `trig_0152LFs5EUR87Ttbzz3s5nHQ` (re-pointed 2026-10-13),
   cron `0 14 * * 1`, next run 2026-09-21 14:04 UTC
-- **Build blog** (`build-blog-src/` → `/build/blog`): trigger `trig_01JeGumaZUvUoy6aBCSxJS38`,
+- **Build blog** (`build-blog-src/` → `/build/blog`): trigger `trig_01QsyEtdmZEJrshukvQTgzi3` (re-pointed 2026-10-13),
   cron `0 15 * * 1`, next run 2026-09-21 15:01 UTC, created 2026-09-16
-- both bound to `persistent_session_id: session_01A4GwJis96cYnvN4yMbpBtt`
+- both bound to `persistent_session_id: session_015D4BCM2NAMaZ9JsmQJm88r` since 2026-10-13
 
 **Nothing was broken about the 2026-09-14 Monday miss.** That Monday fell *before* the 2026-09-15
 re-point, so the draft went to the old session. The re-pointed Routine has not had a Monday yet.
@@ -6573,6 +6573,18 @@ the first time she ran this, "which build am I on" is answerable.
 - **Run the recovery check on her own email and paste it.** That is the known-good "before", so if
   anything does go wrong it can be seen and put back. Not optional.
 - **Delete no clients during the test.** Nothing here needs it.
+
+### RESULTS SO FAR (2026-10-13, recorded as she reports them — her observations, §1b)
+
+| Part | device | what she saw | result |
+|---|---|---|---|
+| 1 | **COMPUTER**, Safari, the **preview** URL (`…ecstatic-mccarthy-ynt869…`), not the phone | Client "Ashley Watson" (herself as the test client): Session summaries → **1 summary**, titled "Test A", Oct 13, 2026, full text present | **PASS** |
+| 2 | **COMPUTER**, Safari, preview, client app in a second tab | Home → "After Your Visit" → "Latest summary & aftercare, Test A · from Ashley", full text shown; Journey/Homecare/Messages/Shop tabs present | **PASS** |
+
+Note: Parts 1 and 2 ran on the computer against the preview, not on the phone as written. That
+does not weaken Part 3: the summary is now on the account, and Part 3 (phone, installed app, live
+build `2026-10-12a`, which carries `57f2624`) tests whether an offline launch on the phone wipes it.
+The recovery-check "before" paste had not been sent yet when Parts 1 and 2 came in.
 
 ### Part 1 — does a summary stick at all
 On her **phone**, provider app:
