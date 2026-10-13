@@ -6628,3 +6628,80 @@ The reply to Diana follows §4c: thank her first and name what she did that help
 "I'm only on my phone" is what found it), one line that it is fixed, **no mechanism and no cause**,
 no em dashes, around a 3rd-grade reading level. And **nothing about data being lost unless a
 recovery check proved it with numbers.**
+
+---
+
+## §2bd. How the Square bulk delete was done before, and where it went
+
+Ashley, 2026-10-13, with a screenshot of the Square Developer forum thread *"Customers created via
+API with creation_source: THIRD_PARTY"*: *"can you help me figure out how we did the bulk delete
+option using square developer before."* That thread is the origin of the whole thing — commit
+`5c50355` opens with "Square support pointed at BulkDeleteCustomers for clearing the injected
+profiles."
+
+### What Square themselves said (jseok, Square Employee, Sep 3)
+
+- **The source**: Square Online's newsletter signup form has **no CAPTCHA, no email verification and
+  no double-opt-in setting**. His immediate advice was to disable the signup form and watch whether
+  new profiles stopped. (Ashley already knows this; she asked not to re-investigate it.)
+- **The cleanup**: `BulkDeleteCustomers`, up to **100 customer ids per request**. Use
+  `SearchCustomers` to find candidates by **creation date**, **THIRD_PARTY creation source**,
+  **phone number**, and **Email Subscribers group membership**, then *"perform any additional
+  validation in your script before submitting the IDs in batches."*
+- **His warning, which shaped the design**: *"Customer deletion is permanent and can affect related
+  Square records, so I would not delete profiles based only on their creation source or date."*
+
+### What we built from it — `_openSquarePurge`, Settings → Your data → "Clean up Square customers"
+
+It is the opposite direction from the tick added on 2026-10-13. **That one goes junk client row →
+its Square id**, so it only reaches Square customers that have a SlickChart row. **This one goes
+Square directory → what is not provably hers**, so it reaches the bot profiles that never became
+SlickChart clients at all. For a newsletter-form burst, this is the right tool.
+
+1. Loads the whole directory from `/api/square/customers` (paginates to 10,000 and returns
+   `truncated` — the old 25-page stop silently capped it at 2,500 and could report "everything is
+   protected" with thousands unseen).
+2. Three KEEP shields, so a real client is not selectable at all —
+   `prot = paidWithMe || matched || subscribed`:
+   - **has booked or paid with her** — `activeCustomerIds` from `/api/square/customer-map`.
+     Unconditional: a client who has transacted is provably real.
+   - **matches her SlickChart roster** — `_sqCustIsMine` by Square id, email, phone or name, with
+     the name match erring toward protecting.
+   - **is an Email Subscriber** — has a real email and has not unsubscribed. This is jseok's "Email
+     Subscribers group membership": her real clients had emails, the injected ones came in
+     phone-only, so this shields hundreds of real people in one stroke.
+3. **`foreign`** — `/api/admin/square-foreign` (founder only) asks the DATABASE which customers
+   belong to a *different* provider by email/phone. That is the reliable leaked-record signal, as
+   opposed to a guess from the Square record itself.
+4. Sorted **newest first**, so an injection burst floats to the top.
+5. **Nothing pre-selected.** She drives it with a date window, a search box and a "foreign only"
+   filter — then types DELETE to confirm.
+6. Deletes in chunks of 100 against `/v2/customers/bulk-delete`, reading the per-id response map:
+   empty entry = done, `NOT_FOUND` = already gone so re-runs stay clean, anything else reported with
+   Square's own detail (that is how "this one has appointments attached" reaches her).
+
+**Creation source turned out NOT to separate the strangers** — many carried a native-looking
+source — so it was kept as a hint and never as a shield. That matches jseok's warning exactly, and
+is why the three shields above are identity-based rather than metadata-based.
+
+### Where it went
+
+`6bae816` (2026-09-09) *"Remove the founder tools and the incident-era cleanup screens"*:
+*"The Square injection is cleaned up and the leak is closed, so these have done their job. Per the
+owner: take them all out for now, git can bring any of them back."* `slickchart.html` dropped
+~120KB. (`71b2df0` a fortnight earlier had only hidden the Settings rows; `6bae816` deleted the
+code.)
+
+### What still exists today, so restoring it is a UI change only
+
+| | |
+|---|---|
+| `/api/square/customers` | present — paginates to 10,000, returns `truncated`, `creationSource`, `subscribed`, `emailUnsubscribed` |
+| `/api/square/customer-map` | present — `activeCustomerIds` |
+| `/api/admin/square-foreign` | present — founder-gated |
+| `/api/square/delete-customers` | present, and as of 2026-10-13 reachable again |
+| `_openSquarePurge` + `_sqp_*` | **gone** — restore from `git show 6bae816^:slickchart-vercel/slickchart.html` |
+| `_sqMineIndex`, `_sqCustIsMine`, `_sqIsAppCreated` | **gone** — same place |
+
+**Not yet restored, and she has not asked for it yet** — she asked how it worked. If she does want
+it back it is a UI-only change, and `6bae816^` has the working version to lift.
