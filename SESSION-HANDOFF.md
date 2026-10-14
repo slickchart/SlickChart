@@ -6713,6 +6713,15 @@ A summary stores products as NAMES (`productDetail.map(p=>p.name)`); `renderLate
 matching live recommendation (keeps Buy) or `{name}`. Empty homecare/products cards are now hidden.
 `scratchpad/test-client-summary-products.mjs` 6/6; three FAIL on the previous client page.
 
+### 2026-10-14: products on the Session Record show on BOTH tabs, tappable — build `2026-10-14a`
+
+Her report (COMPUTER, preview, 10:43): summary still on provider and client (Diana-test summary safe
+overnight). *"on the provider it still isn't showing the recommended products like the client summary
+does, and it is not clickable/editable as we discussed"* — her screenshot was the **Provider notes**
+tab; the 13l product section lived only in the Client summary tab. It now renders below both tabs
+("Recommended for <first>" + Edit/Add products), each card opens `editSavedSummary`, the Open link
+stops propagation. `test-session-record-products.mjs` 12/12. Shipped at once (her reported bug, UI only).
+
 ### One "Fix <name>" button, removed records included — build `2026-10-13w`
 
 Her screen (16:06, COMPUTER): "debbi miranda" → 123 records, every one "Removed", and NO button,
