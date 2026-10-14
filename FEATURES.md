@@ -124,6 +124,7 @@ saved anywhere", not "does this always call that".
 | `_cbDone` | `/api/provider-form` | via `submitSignOnDevice` |
 | `_cbFlushNow` | `/api/course-versions` | via `_cvSnapshot` |
 | `_cbFlushNow` | `/api/guide-file` | via `_deleteGuideFileFromServer` |
+| `_cfsSendCourse` | `/api/clients` | via `_syncSpecificClientsToServer` |
 | `_cfsSendGuide` | `/api/clients` | via `_syncSpecificClientsToServer` |
 | `_chatShareSheet` | `/api/clients` | via `_syncSpecificClientsToServer` |
 | `_chatShareSheet` | `/api/provider-form` | via `submitSignOnDevice` |

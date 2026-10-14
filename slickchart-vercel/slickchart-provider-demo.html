@@ -486,7 +486,7 @@ const S=document.getElementById('S');
 // resets when I save it" and there was no way to tell whether her phone had any of them — a whole
 // day was spent debugging code she may not have been running. Shown at the bottom of Settings, so
 // the answer is a screenshot away. Bump it on every ship.
-const APP_BUILD='2026-10-14f';
+const APP_BUILD='2026-10-14g';
 
 
 /* ════════════════════════════════════════════════════════════════
@@ -9428,7 +9428,7 @@ function _sendToClientHTML(id){
       return photoRow+prodRow;
     })()
     +row('ti-file-text','var(--accent-strong)','Forms','Intake, consent, or one you wrote'+(nOut?(' · '+nOut+' still out'):''),"openClientFormSender('"+id+"')")
-    +row('ti-book','var(--p-amber)','Guides + Courses',nG+' guide'+(nG===1?'':'s')+', '+nC+' course'+(nC===1?'':'s'),"openClientFormSender('"+id+"')")
+    +row('ti-book','var(--p-amber)','Guides + Courses',nG+' guide'+(nG===1?'':'s')+', '+nC+' course'+(nC===1?'':'s'),"openClientFormSender('"+id+"','guides')")
     +row('ti-pencil','var(--p-green)','Session summary',nSum?(nSum+' saved · they read it in Journey'):'Written when you finish a session',"nav('summary-history','"+id+"')")
     +'</div>';
 }
@@ -10056,7 +10056,7 @@ function renderClientForms(id){
 // Searchable "send to this client" sheet, mirrors the Forms / Guides / Bundles library
 // so the provider sends any of them from one place, scoped to their professions, without
 // scrolling a giant flat list.
-function openClientFormSender(id){
+function openClientFormSender(id,focus){
   const c=CL[id];if(!c)return;
   const first=_fileEsc(c.name.split(' ')[0]);
   const norm=s=>(''+s).toLowerCase().normalize('NFD').replace(/[̀-ͯ]/g,'').replace(/['‘’`"]/g,'').replace(/[^a-z0-9 ]/g,' ').replace(/\s+/g,' ').trim();
@@ -10075,6 +10075,13 @@ function openClientFormSender(id){
       <span style="font-size:22px;line-height:1;flex-shrink:0;display:inline-flex;align-items:center;">${_iconMarkup(g.icon,24)||'📚'}</span>
       <div style="flex:1;min-width:0;"><div style="font-size:16px;font-weight:500;color:var(--p-ink);overflow:hidden;text-overflow:ellipsis;white-space:nowrap;">${_fileEsc(g.title)}</div><div style="font-size:14px;color:var(--p-mut);">${_fileEsc(g.cat||'Guide')}${g.tips&&g.tips.length?' · '+g.tips.length+' tips':''}</div></div>
       <button onclick="_cfsSendGuide('${g.id}','${id}')" class="btnp" style="flex-shrink:0;width:auto;border-radius:8px;padding:8px 13px;font-size:16px;"><i class="ti ti-send" aria-hidden="true" style="font-size:16px;"></i> Send</button>
+    </div>`;
+  // Courses were promised by the "Guides + Courses" row (it counts them) but could not be sent from here.
+  const crs=(typeof courses!=='undefined'&&Array.isArray(courses))?courses:[];
+  const courseRow=k=>`<div class="cfs-item" data-search="${norm((k.title||'')+' course')}" style="display:flex;align-items:center;gap:10px;background:var(--surf2);border:1px solid var(--p-line);border-radius:12px;padding:10px 12px;margin-bottom:8px;">
+      <div style="width:34px;height:34px;border-radius:8px;background:var(--p-purple-bg);display:flex;align-items:center;justify-content:center;flex-shrink:0;"><i class="ti ${_fileEsc(k.icon||'ti-book')}" style="font-size:18px;color:var(--p-purple);"></i></div>
+      <div style="flex:1;min-width:0;"><div style="font-size:16px;font-weight:500;color:var(--p-ink);overflow:hidden;text-overflow:ellipsis;white-space:nowrap;">${_fileEsc(k.title||'Course')}</div><div style="font-size:14px;color:var(--p-mut);">Course${k.modules?' · '+k.modules+' module'+(k.modules===1?'':'s'):''}</div></div>
+      <button onclick="_cfsSendCourse('${_jsAttr(k.id)}','${id}')" class="btnp" style="flex-shrink:0;width:auto;border-radius:8px;padding:8px 13px;font-size:16px;"><i class="ti ti-send" aria-hidden="true" style="font-size:16px;"></i> Send</button>
     </div>`;
   const bndRow=b=>`<div class="cfs-item" data-search="${norm(b.name)}" style="display:flex;align-items:center;gap:10px;background:var(--surf2);border:1px solid var(--p-line);border-radius:12px;padding:10px 12px;margin-bottom:8px;">
       <div style="width:34px;height:34px;border-radius:8px;background:var(--p-purple-bg);display:flex;align-items:center;justify-content:center;flex-shrink:0;"><i class="ti ti-package" style="font-size:18px;color:var(--p-purple);"></i></div>
@@ -10100,19 +10107,34 @@ function openClientFormSender(id){
   ov.onclick=e=>{if(e.target===ov)ov.remove();};
   ov.innerHTML=`<div style="background:var(--surf1);border:1px solid var(--p-line);width:100%;border-radius:16px;padding:16px 16px 20px;max-height:88%;display:flex;flex-direction:column;">
     <div style="display:flex;align-items:center;justify-content:space-between;margin-bottom:4px;flex-shrink:0;"><div style="font-size:16px;font-weight:600;color:var(--p-ink);min-width:0;">Send to ${first}</div><button onclick="this.closest('#sendform-sheet').remove()" aria-label="Close" style="border:none;background:none;font-size:22px;color:var(--p-mut);cursor:pointer;line-height:1;flex-shrink:0;">✕</button></div>
-    <div style="font-size:16px;color:var(--p-mut);margin-bottom:10px;flex-shrink:0;">Forms, guides &amp; bundles from your workspace.</div>
-    <div style="position:relative;margin-bottom:6px;flex-shrink:0;"><i class="ti ti-search" aria-hidden="true" style="position:absolute;left:11px;top:50%;transform:translateY(-50%);font-size:16px;color:var(--p-mut);"></i><input id="cfs-q" oninput="_cfsFilter(this.value)" placeholder="Search forms, guides &amp; bundles…" style="width:100%;background:var(--p-surf);border:1px solid var(--p-line-ctl);border-radius:12px;padding:9px 11px 9px 34px;font-size:16px;color:var(--p-ink);font-family:inherit;box-sizing:border-box;outline:none;"></div>
+    <div style="font-size:16px;color:var(--p-mut);margin-bottom:10px;flex-shrink:0;">Forms, guides, courses &amp; bundles from your workspace.</div>
+    <div style="position:relative;margin-bottom:6px;flex-shrink:0;"><i class="ti ti-search" aria-hidden="true" style="position:absolute;left:11px;top:50%;transform:translateY(-50%);font-size:16px;color:var(--p-mut);"></i><input id="cfs-q" oninput="_cfsFilter(this.value)" placeholder="Search forms, guides, courses &amp; bundles…" style="width:100%;background:var(--p-surf);border:1px solid var(--p-line-ctl);border-radius:12px;padding:9px 11px 9px 34px;font-size:16px;color:var(--p-ink);font-family:inherit;box-sizing:border-box;outline:none;"></div>
     <div style="overflow:auto;margin-top:6px;">
       <div class="cfs-section">${secHead('Start here')}${quickHTML}</div>
       <div class="cfs-section">${secHead('Forms')}${forms.filter(f=>f!==_quickIntake).map(formRow).join('')}</div>
-      ${guides.length?`<div class="cfs-section">${secHead('Guides')}${guides.map(guideRow).join('')}</div>`:''}
+      ${guides.length?`<div class="cfs-section" id="cfs-guides">${secHead('Guides')}${guides.map(guideRow).join('')}</div>`:''}
+      ${crs.length?`<div class="cfs-section" id="cfs-courses">${secHead('Courses')}${crs.map(courseRow).join('')}</div>`:''}
       ${bnds.length?`<div class="cfs-section">${secHead('Bundles')}${bnds.map(bndRow).join('')}</div>`:''}
       <div id="cfs-noresults" style="display:none;padding:26px 16px;text-align:center;color:var(--p-mut);font-size:16px;">Nothing matches your search.</div>
       <div style="height:8px;"></div>
     </div>
   </div>`;
   (document.querySelector('.shell')||document.body).appendChild(ov);
+  // "Guides + Courses" opens here too; land on the guides instead of making her scroll past the forms.
+  if(focus==='guides'){const g=document.getElementById('cfs-guides')||document.getElementById('cfs-courses');if(g){try{g.parentNode.scrollTop=g.offsetTop-g.parentNode.offsetTop;}catch(e){}}return;}
   setTimeout(()=>{const i=document.getElementById('cfs-q');if(i&&i.focus)try{i.focus();}catch(e){}},30);
+}
+function _cfsSendCourse(courseId,cid){
+  const c=CL[cid];const k=(typeof courses!=='undefined'&&Array.isArray(courses))?courses.find(x=>x&&x.id===courseId):null;
+  const sh=document.getElementById('sendform-sheet');if(sh)sh.remove();
+  if(!c||!k)return;
+  if(!Array.isArray(c.pendingCourses))c.pendingCourses=[];
+  const already=c.pendingCourses.some(pc=>pc&&pc.id===courseId);
+  if(!already)c.pendingCourses.push({id:courseId,assignedAt:Date.now()});
+  try{if(typeof saveClients==='function')saveClients();}catch(e){}
+  try{if(typeof _persistAndSyncClient==='function')_persistAndSyncClient(cid);else if(typeof _scheduleSpecificClientSync==='function')_scheduleSpecificClientSync(cid);}catch(e){}
+  const first=String(c.name||'your client').split(' ')[0];
+  if(typeof proToast==='function')proToast(already?(k.title+' was already sent to '+first):(!c._token?(k.title+' is waiting for '+first+' once they are invited'):(k.title+' sent to '+first)));
 }
 function _cfsFilter(q){
   q=(typeof _normSearch==='function')?_normSearch(q):(q||'').toLowerCase().trim();

@@ -1,0 +1,20 @@
+import pw from '/opt/node22/lib/node_modules/playwright/index.js';
+const b = await pw.chromium.launch({ executablePath: '/opt/pw-browsers/chromium-1194/chrome-linux/chrome' });
+const p = await b.newPage({ viewport: { width: 390, height: 844 } }); const errs=[]; p.on('pageerror', e => errs.push(e.message));
+await p.addInitScript(() => { localStorage.setItem('sc_token', 'TESTTOKEN'); localStorage.setItem('sc_onboarded', '1'); });
+await p.route('**/api/**', r => r.fulfill({ status: 200, contentType: 'application/json', body: r.request().url().includes('cloud-status') ? '{"enabled":true}' : '{"ok":true,"data":{},"clients":[]}' }));
+await p.goto('http://localhost:8899/slickchart.html'); await p.waitForTimeout(2800);
+const out = await p.evaluate(async () => {
+  CL.c1 = { name: 'Cooper Howard', _token: 'TOKC1' }; affiliateLinks.push({ id: 'p1', name: 'A', active: true, site: 'shop.test/a' }, { id: 'p2', name: 'B', active: true }); clientRecs.c1 = ['p1', 'p2'];
+  const r = {};
+  nav('room', 'c1'); r.room = [document.getElementById('tt').textContent, document.getElementById('S').innerText.slice(0, 150)];
+  nav('client', 'c1'); _setClientTab('c1', 'homecare');
+  r.buys = Array.from(document.querySelectorAll('[onclick*=openBuyOptionsP]')).map(e => e.getAttribute('onclick') + ' | ' + e.textContent.trim());
+  const n = document.body.children.length; openBuyOptionsP('p1'); r.buyP1 = document.body.children.length - n;
+  r.buyAfterText = Array.from(document.body.children).slice(-2).map(d => (d.id || d.className) + ':' + (d.innerText || '').slice(0, 80));
+  nav('client', 'c1'); const k = document.body.children.length; inviteClientToApp('c1'); await new Promise(r => setTimeout(r, 600));
+  r.invite = Array.from(document.body.children).slice(k - 1).map(d => (d.id || d.tagName) + ':' + getComputedStyle(d).position + ':' + (d.innerText || '').slice(0, 100));
+  openClientFormSender('c1'); r.sheetHeads = Array.from(document.querySelectorAll('#sendform-sheet .cfs-section')).map(s => s.innerText.split('\n')[0]);
+  return r; });
+console.log(JSON.stringify(out, null, 1), errs);
+await b.close();

@@ -7142,3 +7142,18 @@ Ashley asked for a deep sweep of the new product consult flow. What the sweep fo
 6. Client row shows the consult state on the row for ITS kind; consults inbox says "Awaiting answers".
 Test: `scratchpad/sweep-product-consult.mjs` 37/37 (both apps, invite → answer → reload → submit
 payload → review → picks → send, plus photo-consult regression).
+
+## 2026-10-14g — Client file: every button swept (2am run)
+Ashley asked for the product-consult-style sweep on every button in the client file.
+- `scratchpad/sweep-client-file-buttons.mjs [page] [clientId] [seedJS]` taps EVERY control on all 5 tabs
+  (Visit, Journey, Photos, Homecare, File), each on a freshly drawn screen, and flags errors and taps
+  that change nothing. Demo Maya 53/53, real-app full client and a brand-new empty client 31/31: no
+  errors, no dead buttons.
+- `scratchpad/sweep-client-file-deep.mjs` checks the RIGHT outcome for each, and re-checks every edit
+  after a full app reload: 39/39.
+- Found and fixed: **Guides + Courses** opened the send sheet at the forms (Start here) and the sheet had
+  NO courses at all, although the row counts them. Added a Courses section (`_cfsSendCourse`, which puts
+  the course on `pendingCourses`, which `_assembleClientData` expands for the client app), and the row
+  now opens scrolled to Guides (`openClientFormSender(id,'guides')`).
+- Checked and fine (worth knowing): homecare routine and product picks, their order, in-office flag and
+  custom products all survive a reload and reach `sc_client_recs` / `sc_affiliate_links`.
