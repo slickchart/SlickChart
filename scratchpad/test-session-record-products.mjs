@@ -22,7 +22,7 @@ await page.evaluate(() => {
 const pv = await page.evaluate(() => { renderSessionDetail('aw:0'); switchSessionDetailTab('provider'); const t = document.getElementById('S').innerText;
   const card = Array.from(document.querySelectorAll('#S [role=button]')).find(x => /Thermal Spring Water/.test(x.textContent)); if (card) card.click();
   return { t, opened: !!document.getElementById('es-note') }; });
-check('products show on the Provider notes tab too', /Recommended for Ashley/i.test(pv.t) && /Thermal Spring Water/.test(pv.t), pv.t.slice(0, 200));
+check('products show on the Provider notes tab too', /Recommended for you/i.test(pv.t) && /Thermal Spring Water/.test(pv.t), pv.t.slice(0, 200));
 check('tapping a product opens the editor', pv.opened);
 let r = await show();
 check('live recommendations shown when the summary has none saved', /Thermal Spring Water/.test(r.t) && /Cicalfate\+/.test(r.t), r.t.slice(0, 300));

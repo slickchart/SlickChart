@@ -486,7 +486,7 @@ const S=document.getElementById('S');
 // resets when I save it" and there was no way to tell whether her phone had any of them — a whole
 // day was spent debugging code she may not have been running. Shown at the bottom of Settings, so
 // the answer is a screenshot away. Bump it on every ship.
-const APP_BUILD='2026-10-14a';
+const APP_BUILD='2026-10-14b';
 
 
 /* ════════════════════════════════════════════════════════════════
@@ -13282,7 +13282,7 @@ function _saveSummaryDate(id,i){
 }
 // ── Saved-summary actions: view/edit, resend to the client's app, send by link ──
 // Full, organized record of everything from one session.
-let _sessionDetailTab='provider';
+let _sessionDetailTab='client';   // opens on what the client sees (mirror), Provider notes one tap away
 function switchSessionDetailTab(which){_sessionDetailTab=(which==='client')?'client':'provider';const pv=document.getElementById('sd-provider'),cv=document.getElementById('sd-client'),tp=document.getElementById('sd-tab-p'),tc=document.getElementById('sd-tab-c');if(pv)pv.style.display=(_sessionDetailTab==='provider')?'block':'none';if(cv)cv.style.display=(_sessionDetailTab==='client')?'block':'none';if(tp)tp.className='tab'+(_sessionDetailTab==='provider'?' active':'');if(tc)tc.className='tab'+(_sessionDetailTab==='client'?' active':'');}
 function renderSessionDetail(arg){
   setNav('clients');
@@ -13316,13 +13316,15 @@ function renderSessionDetail(arg){
     return affiliateLinks.find(function(a){return String(a.name||'').trim().toLowerCase()===n.toLowerCase();})||{name:n};}).filter(function(x){return x&&String(x.name||'').trim();});
   const _prods=_live.length?_live:_saved;
   const hasClient=s.note||(s.homecare&&s.homecare.length)||_prods.length||(s.guides&&s.guides.length);
+  // The Client summary tab MIRRORS the client's own summary screen (renderLatestSummary in
+  // slickchart-client.html): same cards, same order, same labels. Ashley, 2026-10-14: "i would like
+  // them to mirror eachother to keep everything cohesive".
+  const _pf=(typeof _providerFirstName==='function'&&_providerFirstName())||'your provider';
+  const _card=function(label,inner){return `<div style="background:var(--surf1);border:1.5px solid var(--p-line3);border-radius:12px;margin:0 16px 10px;overflow:hidden;"><div style="padding:12px 16px;border-bottom:1px solid var(--p-line2);font-size:13px;font-weight:600;color:var(--p-mut);text-transform:uppercase;letter-spacing:.07em;">${label}</div>${inner}</div>`;};
   const clientPanel=`
-  ${s.note?sectionBlock('Client summary, what '+((c.name||'they').split(' ')[0])+' saw',s.note.replace(/</g,'&lt;').replace(/\n/g,'<br>'),'var(--accent)'):''}
-  ${(s.homecare&&s.homecare.length)?`<div class="sh"><h2>Homecare that day</h2></div>
-  <div style="margin:0 16px 12px;background:var(--surf1);border:1px solid var(--p-line3);border-radius:12px;padding:6px 14px;">
-    ${s.homecare.map((h,hi)=>`<div style="display:flex;align-items:flex-start;gap:8px;padding:8px 0;${hi<s.homecare.length-1?'border-bottom:1px solid var(--p-line2);':''}"><div style="width:20px;height:20px;border-radius:50%;background:var(--p-surf2);border:1px solid var(--p-green-line);display:flex;align-items:center;justify-content:center;flex-shrink:0;margin-top:1px;"><span style="font-size:12px;color:var(--p-green);font-weight:600;">${hi+1}</span></div><span style="font-size:16px;color:var(--p-ink);line-height:1.5;">${String(h).replace(/</g,'&lt;')}</span></div>`).join('')}
-  </div>`:''}
-  ${(s.guides&&s.guides.length)?`<div class="sh"><h2>Aftercare guides linked</h2></div>
+  ${s.note?_card('A note from '+_fileEsc(_pf),`<div style="padding:12px 16px;font-size:16px;color:var(--p-ink);line-height:1.8;">${s.note.replace(/</g,'&lt;').replace(/\n/g,'<br>')}</div>`):''}
+  ${(s.homecare&&s.homecare.length)?_card('Your homecare routine',s.homecare.map((h,hi)=>`<div style="display:flex;align-items:flex-start;gap:10px;padding:10px 16px;${hi<s.homecare.length-1?'border-bottom:1px solid var(--p-line2);':''}"><div style="width:22px;height:22px;border-radius:50%;background:var(--accent);display:flex;align-items:center;justify-content:center;flex-shrink:0;"><span style="font-size:12px;font-weight:700;color:var(--accent-ink);">${hi+1}</span></div><span style="font-size:15px;color:var(--p-ink);line-height:1.6;">${String(h).replace(/</g,'&lt;')}</span></div>`).join('')):''}
+  ${(s.guides&&s.guides.length)?`<div class="sh"><h2>Your aftercare guides</h2></div>
   <div style="margin:0 16px 12px;">
     ${s.guides.map(g=>`<div style="background:var(--surf1);border:1px solid var(--p-line3);border-radius:12px;padding:11px 13px;margin-bottom:8px;display:flex;gap:11px;align-items:center;">
       <span style="font-size:22px;flex-shrink:0;display:inline-flex;align-items:center;">${_iconMarkup(g.icon,24)||'📄'}</span>
@@ -13335,16 +13337,14 @@ function renderSessionDetail(arg){
   // change it (Ashley, 2026-10-14: "on the provider it still isn't showing the recommended products
   // like the client summary does, and it is not clickable/editable"). They had lived only in the
   // Client summary tab, and the record opens on Provider notes.
-  const prodBlock=`<div class="sh" style="display:flex;align-items:center;justify-content:space-between;"><h2>Recommended for ${_fileEsc(String(c.name||'them').split(' ')[0])}</h2><button onclick="editSavedSummary('${id}',${i})" style="border:none;background:none;color:var(--accent-strong);font-size:16px;cursor:pointer;font-family:inherit;display:flex;align-items:center;gap:4px;"><i class="ti ti-pencil" style="font-size:15px;"></i> ${_prods.length?'Edit':'Add products'}</button></div>`
-    +(_prods.length?`<div style="margin:0 16px 12px;background:var(--surf1);border:1px solid var(--p-line3);border-radius:12px;overflow:hidden;">
-    ${_prods.map(function(p,pi){const link=p.site||p.url||'';return `<div role="button" tabindex="0" onclick="editSavedSummary('${id}',${i})" style="display:flex;gap:11px;align-items:flex-start;padding:11px 13px;cursor:pointer;${pi<_prods.length-1?'border-bottom:1px solid var(--p-line2);':''}">
+  const prodBlock=_card(`<span style="display:flex;align-items:center;justify-content:space-between;">Recommended for you<button onclick="editSavedSummary('${id}',${i})" style="border:none;background:none;color:var(--accent-strong);font-size:14px;cursor:pointer;font-family:inherit;text-transform:none;letter-spacing:0;display:flex;align-items:center;gap:4px;"><i class="ti ti-pencil" style="font-size:14px;"></i> ${_prods.length?'Edit':'Add products'}</button></span>`,
+    _prods.length?_prods.map(function(p,pi){const link=p.site||p.url||'';return `<div role="button" tabindex="0" onclick="editSavedSummary('${id}',${i})" style="display:flex;align-items:flex-start;gap:12px;padding:12px 16px;cursor:pointer;${pi<_prods.length-1?'border-bottom:1px solid var(--p-line2);':''}">
       <span style="font-size:22px;flex-shrink:0;">${_fileEsc(p.icon)||'🛍️'}</span>
-      <div style="flex:1;min-width:0;"><div style="font-size:16px;font-weight:600;color:var(--p-ink);">${_fileEsc(p.name)}</div>${p.brand?`<div style="font-size:14px;color:var(--p-mut);">${_fileEsc(p.brand)}</div>`:''}${p.inOffice?`<div style="font-size:14px;color:var(--accent-strong);font-weight:600;margin-top:2px;"><i class="ti ti-building-store"></i> Available in office</div>`:''}${p.why?`<div style="font-size:14px;color:var(--p-mut);line-height:1.5;margin-top:5px;"><span>Why:</span> ${String(p.why).replace(/</g,'&lt;')}</div>`:''}</div>
-      ${link?`<a href="${_urlAttr(_safeUrl(link))}" target="_blank" rel="noopener" onclick="event.stopPropagation()" style="flex-shrink:0;background:var(--accent);color:var(--accent-ink);border-radius:8px;padding:6px 12px;font-size:14px;font-weight:600;text-decoration:none;">Open</a>`:'<i class="ti ti-chevron-right" style="font-size:16px;color:var(--p-mut);flex-shrink:0;margin-top:3px;"></i>'}
-    </div>`;}).join('')}
-  </div>`:`<div style="margin:0 16px 12px;font-size:15px;color:var(--p-mut);">None on this summary yet.</div>`);
+      <div style="flex:1;min-width:0;"><div style="font-size:15px;font-weight:600;color:var(--p-ink);">${_fileEsc(p.name)}</div>${p.brand?`<div style="font-size:13px;color:var(--p-mut);">${_fileEsc(p.brand)}</div>`:''}${p.inOffice?`<div style="font-size:13px;color:var(--accent-strong);font-weight:600;margin-top:3px;"><i class="ti ti-building-store"></i> Available in office</div>`:''}${p.why?`<div style="font-size:14px;color:var(--p-mut);line-height:1.5;margin-top:5px;">Why: ${String(p.why).replace(/</g,'&lt;')}</div>`:''}</div>
+      ${link?`<a href="${_urlAttr(_safeUrl(link))}" target="_blank" rel="noopener" onclick="event.stopPropagation()" style="flex-shrink:0;background:var(--accent);color:var(--accent-ink);border-radius:8px;padding:6px 14px;font-size:13px;font-weight:600;text-decoration:none;">Buy</a>`:'<span style="flex-shrink:0;background:var(--accent);color:var(--accent-ink);border-radius:8px;padding:6px 14px;font-size:13px;font-weight:600;">Buy</span>'}
+    </div>`;}).join(''):`<div style="padding:12px 16px;font-size:15px;color:var(--p-mut);">None on this summary yet.</div>`);
   // Default to whichever tab actually has content (provider first).
-  if(_sessionDetailTab==='client'&&!hasClient&&hasProvider)_sessionDetailTab='provider';
+  if(_sessionDetailTab==='client'&&!hasClient&&!_prods.length&&hasProvider)_sessionDetailTab='provider';
   if(_sessionDetailTab==='provider'&&!hasProvider&&hasClient)_sessionDetailTab='client';
   const showProvider=_sessionDetailTab!=='client';
   S.innerHTML=`

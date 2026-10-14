@@ -6713,6 +6713,14 @@ A summary stores products as NAMES (`productDetail.map(p=>p.name)`); `renderLate
 matching live recommendation (keeps Buy) or `{name}`. Empty homecare/products cards are now hidden.
 `scratchpad/test-client-summary-products.mjs` 6/6; three FAIL on the previous client page.
 
+### 2026-10-14: Session Record mirrors the client's summary screen — build `2026-10-14b`
+
+Her words: *"i would like them to mirror eachother to keep everything cohesive please"*. The Client
+summary tab is now the client's `renderLatestSummary` card for card: "A note from <first>", "Your
+homecare routine" (numbered), "Your aftercare guides", "Recommended for you" (icon, name, price,
+Available in office, Buy). The record opens on that tab. Products card stays visible under both tabs;
+any product opens the editor, Buy with a link opens the store. Checked by screenshot.
+
 ### 2026-10-14: products on the Session Record show on BOTH tabs, tappable — build `2026-10-14a`
 
 Her report (COMPUTER, preview, 10:43): summary still on provider and client (Diana-test summary safe
