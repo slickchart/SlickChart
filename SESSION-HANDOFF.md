@@ -7090,3 +7090,12 @@ other products, searchable product finder ... and add things that are not in the
   record and the client's latest-summary screen now show live list + saved names that are in neither the
   live list nor the catalog, so a custom one shows on both sides.
 - Test: `scratchpad/test-session-record-products.mjs` 19/19.
+
+## 2026-10-14d — client search and Session Record header (ON THE PREVIEW, NOT LIVE)
+- Ashley (computer, Safari, preview): typing in the client search left the match below the fold under
+  Ask your book / New client / Sync / tidy / Invite / Photo consults / duplicates. Those now sit in
+  `#clients-tools`, which `searchList` hides while the client search has text.
+- Session Record header card faded to a hard-coded `#141414`, unreadable in light mode; now
+  `var(--surf1)`, and the Rename button has a solid background. Test: `scratchpad/test-client-search-tools.mjs`.
+- New rule (CLAUDE.md §1a): no hand-dispatched deploys mid-day unless she says "push it live early"
+  for that change. 14c went live by hand before she set this; 14d waits on the branch.

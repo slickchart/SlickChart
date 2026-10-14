@@ -1,0 +1,31 @@
+// Searching the client list folds away the tool cards; the Session Record header is readable in light mode.
+import pw from '/opt/node22/lib/node_modules/playwright/index.js';
+const results = []; const check = (n, p, d) => results.push({ name: n, pass: !!p, detail: d || '' });
+const browser = await pw.chromium.launch({ executablePath: '/opt/pw-browsers/chromium-1194/chrome-linux/chrome' });
+const page = await browser.newPage({ viewport: { width: 390, height: 844 } });
+const errs = []; page.on('pageerror', e => errs.push(String(e && e.message || e)));
+await page.addInitScript(() => { try { localStorage.setItem('sc_token', 'TESTTOKEN'); localStorage.setItem('sc_onboarded', '1'); localStorage.setItem('sc_provider_theme', 'light'); } catch (e) {} });
+await page.route('**/api/**', r => r.fulfill({ status: 200, contentType: 'application/json', body: r.request().url().includes('cloud-status') ? '{"enabled":true}' : '{"ok":true,"data":{},"clients":[],"events":[]}' }));
+await page.goto('http://localhost:8899/slickchart.html', { waitUntil: 'load' });
+await page.waitForTimeout(2500);
+await page.evaluate(() => { for (let k = 0; k < 30; k++) CL['c' + k] = { name: 'Client ' + k }; CL.aw = { name: 'Ashley Watson' }; nav('clients'); });
+await page.waitForTimeout(300);
+const inp = page.locator('input[placeholder^="Search clients"]');
+await inp.fill('ashley wat');
+await page.waitForTimeout(200);
+const r = await page.evaluate(() => { const t = document.getElementById('clients-tools'); const card = Array.from(document.querySelectorAll('.client-card')).find(c => !c.classList.contains('srch-hide')); const b = card && card.getBoundingClientRect(); return { hidden: t && getComputedStyle(t).display === 'none', top: b ? b.top : -1, name: card && card.innerText.slice(0, 40) }; });
+check('tool cards fold away while searching', r.hidden, JSON.stringify(r));
+check('the match is visible near the top of the screen', r.top > 0 && r.top < 450 && /Ashley Watson/.test(r.name), JSON.stringify(r));
+await page.screenshot({ path: '/tmp/claude-0/-home-user-SlickChart/be0fe3b4-54df-5d41-bda7-89dbec145231/scratchpad/search.png' });
+await inp.fill('');
+await page.waitForTimeout(200);
+check('tool cards come back when the search is cleared', await page.evaluate(() => getComputedStyle(document.getElementById('clients-tools')).display !== 'none'));
+await page.evaluate(() => { sessionSummaries.aw = [{ date: 'Oct 13, 2026', treatment: 'Test A', note: 'Hi', ts: 1 }]; renderSessionDetail('aw:0'); });
+await page.waitForTimeout(200);
+await page.screenshot({ path: '/tmp/claude-0/-home-user-SlickChart/be0fe3b4-54df-5d41-bda7-89dbec145231/scratchpad/record.png', clip: { x: 0, y: 0, width: 390, height: 300 } });
+const bg = await page.evaluate(() => document.querySelector('#S > div').style.background);
+check('header card no longer fades to black', !/#141414|20, 20, 20/.test(bg), bg);
+check('no page errors', errs.length === 0, errs.join(' | '));
+await browser.close();
+let bad = 0; for (const x of results) { if (!x.pass) bad++; console.log((x.pass ? 'PASS ' : 'FAIL ') + x.name + (x.detail ? '  — ' + x.detail : '')); }
+process.exit(bad ? 1 : 0);

@@ -91,10 +91,22 @@ She asked for this after an edit disturbed providers who were using the app. **D
 **`release` IS her approval.** Nothing may be pushed to it that she has not said yes to. That is the
 whole mechanism — treat a push to `release` exactly as seriously as a push to `main` used to be.
 
-**The one carve-out she granted:** if she reports something broken and is waiting on the fix, verify it
-and promote it the same way but immediately — merge to `release` and run the workflow by hand (or push
-`release`, then dispatch it). That is for *her reported bugs*, not for features, and not for anything
-touching sync, storage or a loader, which always waits for the overnight run.
+**NO EARLY PUSHES unless she says so, for THAT change (her rule, 2026-10-14):** *"make sure we are
+building all of today's edit on the preview branch and not pushing out each edit live. the whole point
+of that is to not glitch anyones app as they are currently working during the day. they should all
+stay on the preview branch until a 2am deployment, or unless i say push it live early. make this a
+rule please."*
+
+- Every app edit during the day lands on the branch and its preview. **Never run `deploy-at-2am.yml`
+  by hand** and never push `main` for an app change, not even for a bug she reported, unless she
+  says "push it live early" (or plainly the same) **about that change, in that message**.
+- An earlier "push it right away" covers only the change it was said about. It is NOT standing
+  permission. On 2026-10-13/14 one such yes was treated as standing and several edits were
+  dispatched live mid-day; that is what this rule stops.
+- When the day's work is verified, tell her it is on the preview and will go out at 2am. Pushing
+  `release` so the overnight run carries it is what her "until a 2am deployment" asks for; still
+  never `workflow_dispatch` it.
+- Content and marketing (below) are unchanged: they never touch the app a provider is using.
 
 **Content and marketing go STRAIGHT TO `main`, no train, no asking** (her rule, 2026-10-12: *"for
 these blog/posts you can always go ahead and commit to main since it is not interfering with the
