@@ -232,7 +232,7 @@ const S=document.getElementById('S');
 // resets when I save it" and there was no way to tell whether her phone had any of them — a whole
 // day was spent debugging code she may not have been running. Shown at the bottom of Settings, so
 // the answer is a screenshot away. Bump it on every ship.
-const APP_BUILD='2026-10-14b';
+const APP_BUILD='2026-10-14c';
 
 
 /* ════════════════════════════════════════════════════════════════
@@ -10507,8 +10507,12 @@ function _prodPickerRows(clientId,q){
   q=(q||'').toLowerCase().trim();
   const already=clientRecs[clientId]||[];
   const list=affiliateLinks.filter(a=>a.active&&!_isUnadoptedStarter(a)&&!already.includes(a.id)&&(!q||((a.name||'')+' '+(a.brand||'')).toLowerCase().includes(q)));
-  if(!list.length)return `<div style="padding:16px;text-align:center;color:var(--p-mut);font-size:16px;">${q?'No products match "'+q.replace(/</g,'&lt;')+'"':'No more products to add'}</div>`;
-  return list.map(a=>`<div onclick="addClientProd('${clientId}','${a.id}')" style="display:flex;align-items:center;gap:10px;padding:9px 12px;border-bottom:1px solid var(--p-line-ctl);cursor:pointer;" id="pick-${a.id}">
+  // While editing a saved summary she can also add something that is not in her catalog (a product
+  // she sells in the office, another brand). It is kept on the summary by name.
+  const _rawQ=(document.getElementById('prod-picker-q')||{}).value||'';
+  const custom=(_esOrigRecs!==null&&q)?`<div onclick="_addCustomProd('${clientId}')" id="pick-custom" style="display:flex;align-items:center;gap:10px;padding:9px 12px;border-bottom:1px solid var(--p-line-ctl);cursor:pointer;background:var(--p-surf2);"><i class="ti ti-plus" style="font-size:16px;color:var(--accent-strong);"></i><div style="flex:1;min-width:0;font-size:16px;color:var(--p-ink);">Add “${_fileEsc(_rawQ.trim())}” <span style="color:var(--p-mut);font-size:14px;">(not in your catalog)</span></div></div>`:'';
+  if(!list.length)return custom+`<div style="padding:16px;text-align:center;color:var(--p-mut);font-size:16px;">${q?'No catalog products match "'+q.replace(/</g,'&lt;')+'"':'No more products to add'}</div>`;
+  return custom+list.map(a=>`<div onclick="addClientProd('${clientId}','${a.id}')" style="display:flex;align-items:center;gap:10px;padding:9px 12px;border-bottom:1px solid var(--p-line-ctl);cursor:pointer;" id="pick-${a.id}">
     <span style="font-size:18px;">${_fileEsc(a.icon)}</span>
     <div style="flex:1;min-width:0;"><div style="font-size:16px;color:var(--p-ink);">${_fileEsc(a.name)}</div><div style="font-size:14px;color:var(--p-mut);">${_fileEsc(a.brand||'')}</div></div>
     <i class="ti ti-plus" style="font-size:16px;color:var(--accent-strong);"></i>
@@ -10551,6 +10555,17 @@ function addClientProd(clientId,aid){
   }
   if(typeof proToast==='function'){const a=affiliateLinks.find(x=>x.id===aid);proToast((a&&a.name?a.name:'Product')+' added');}
 }
+function _addCustomProd(clientId){
+  const i=document.getElementById('prod-picker-q');const nm=((i&&i.value)||'').trim();if(!nm)return;
+  if(!(_esUnmatchedProducts||[]).some(x=>String(x).toLowerCase()===nm.toLowerCase()))_esUnmatchedProducts.push(nm);
+  if(i)i.value='';
+  renderProductRecs(clientId);_renderProdPickerList(clientId,'');
+  if(typeof proToast==='function')proToast(nm+' added');
+}
+function _removeCustomProd(clientId,k){
+  _esUnmatchedProducts=(_esUnmatchedProducts||[]).filter((_,j)=>j!==k);
+  renderProductRecs(clientId);
+}
 function removeClientProd(clientId,aid){
   clientRecs[clientId]=(clientRecs[clientId]||[]).filter(x=>x!==aid);
   if(typeof persistClientRecs==='function'){try{persistClientRecs();}catch(e){}}
@@ -10563,7 +10578,10 @@ function removeClientProd(clientId,aid){
 function renderProductRecs(clientId){
   const el=document.getElementById('prod-recs');if(!el)return;
   const recs=clientRecs[clientId]||[];
-  const cnt=document.getElementById('prod-count');if(cnt)cnt.textContent=recs.length?('· '+recs.length):'';
+  const extra=(_esOrigRecs!==null)?(_esUnmatchedProducts||[]):[];
+  const cnt=document.getElementById('prod-count');if(cnt)cnt.textContent=(recs.length+extra.length)?('· '+(recs.length+extra.length)):'';
+  const extraHtml=extra.map((nm,k)=>`<div class="custom-prod" style="background:var(--surf2);border:1px solid var(--p-line);border-radius:12px;padding:8px 10px 8px 12px;margin-bottom:6px;display:flex;align-items:center;gap:9px;"><i class="ti ti-shopping-bag" style="font-size:18px;color:var(--p-mut);flex-shrink:0;"></i><div style="flex:1;min-width:0;"><div style="font-size:16px;font-weight:500;color:var(--p-ink);">${_fileEsc(nm)}</div><div style="font-size:14px;color:var(--p-mut);">Not in your catalog</div></div><button onclick="_removeCustomProd('${clientId}',${k})" class="icon-btn" aria-label="Remove product" style="flex-shrink:0;"><i class="ti ti-x" aria-hidden="true" style="font-size:16px;"></i></button></div>`).join('');
+  if(recs.length===0&&extra.length){el.innerHTML=extraHtml;return;}
   if(recs.length===0){el.innerHTML=`<div style="background:var(--surf1);border:1px dashed var(--p-line);border-radius:12px;padding:14px;display:flex;flex-direction:column;align-items:center;gap:5px;"><i class="ti ti-shopping-bag" style="font-size:22px;color:var(--p-mut);"></i><span style="font-size:16px;color:var(--p-mut);">No products recommended yet</span></div>`;return;}
   el.innerHTML=recs.map((aid,i)=>{const a=affiliateLinks.find(x=>x.id===aid);if(!a)return'';
     const up=i>0,down=i<recs.length-1;
@@ -10581,7 +10599,7 @@ function renderProductRecs(clientId){
         <div style="font-size:12px;font-weight:600;color:var(--p-mut);text-transform:uppercase;letter-spacing:.06em;margin-bottom:4px;">Why you recommend this</div>
         <textarea oninput="_setRecReason('${clientId}','${a.id}',this.value)" placeholder="Add a note ${CL[clientId]?CL[clientId].name.split(' ')[0]:'they'} will see…" rows="2" style="width:100%;background:transparent;border:none;resize:none;color:var(--p-mut);font-size:16px;line-height:1.5;font-family:inherit;outline:none;box-sizing:border-box;padding:0;">${_recReason(clientId,a.id).replace(/&/g,'&amp;').replace(/</g,'&lt;')}</textarea>
       </div>
-    </div>`;}).join('');
+    </div>`;}).join('')+extraHtml;
 }
 function moveClientProd(clientId,i,dir){
   const recs=clientRecs[clientId];if(!recs)return;
@@ -12914,6 +12932,10 @@ function _storeSummary(id){
   const obs=(summaryObsDraft[id]||'').trim();
   const homecare=summaryToggles.homecare?getClientHomecare(id).slice():[];
   // Products captured WITH their per-client "why" reason, brand and icon.
+  if(!(clientRecs[id]||[]).length){
+    try{const _sug=_suggestProductsFor(id,{homecare:homecare,note:note,obs:obs,providerNotes:(typeof _providerNotesSnapshot==='function'?_providerNotesSnapshot(id):null)});
+      if(_sug.length){clientRecs[id]=_sug.map(a=>a.id);try{if(typeof persistClientRecs==='function')persistClientRecs();}catch(e){}}}catch(e){}
+  }
   const productDetail=(clientRecs[id]||[]).map(aid=>{const a=affiliateLinks.find(x=>x.id===aid);return (a&&a.active!==false)?{name:a.name,brand:a.brand||'',icon:a.icon||'',why:(_recReason(id,aid)||'')}:null;}).filter(Boolean);
   const products=summaryToggles.products?productDetail.map(p=>p.name):[];
   const providerNotes=_providerNotesSnapshot(id);
@@ -13030,6 +13052,42 @@ function _saveSummaryDate(id,i){
 // Full, organized record of everything from one session.
 let _sessionDetailTab='client';   // opens on what the client sees (mirror), Provider notes one tap away
 function switchSessionDetailTab(which){_sessionDetailTab=(which==='client')?'client':'provider';const pv=document.getElementById('sd-provider'),cv=document.getElementById('sd-client'),tp=document.getElementById('sd-tab-p'),tc=document.getElementById('sd-tab-c');if(pv)pv.style.display=(_sessionDetailTab==='provider')?'block':'none';if(cv)cv.style.display=(_sessionDetailTab==='client')?'block':'none';if(tp)tp.className='tab'+(_sessionDetailTab==='provider'?' active':'');if(tc)tc.className='tab'+(_sessionDetailTab==='client'?' active':'');}
+// ── Summary products: one source for the provider's record AND the client's screen ─────────────
+// Ashley, 2026-10-14: "the recommended for you lost the products. this should A - match the clients
+// record and B - be autofilling with suggestions based on the homecare recommendations". The client
+// reads its own copy of the summary (CL[id].summaries[].products) when the live list is empty; the
+// provider record read only sessionSummaries, which had been emptied — so the two disagreed.
+function _prodCore(n){
+  return String(n||'').toLowerCase().normalize('NFD').replace(/[\u0300-\u036f]/g,'')
+    .replace(/\b\d+(\.\d+)?\s*(fl\.?\s*oz|oz|ml|g|mg|ct|pk)\b\.?/g,' ')   // sizes: "10 fl. oz.", "1.3 fl. oz.", "50ml"
+    .replace(/[^a-z0-9+]+/g,' ').replace(/\s+/g,' ').trim();
+}
+function _clientCopyProducts(id,s){
+  try{const c=CL[id];if(!c||!Array.isArray(c.summaries)||!s)return [];
+    const cs=c.summaries.find(function(x){return x&&s.ts&&x.ts===s.ts;})||c.summaries.find(function(x){return x&&x.date===s.date;});
+    return (cs&&Array.isArray(cs.products))?cs.products.map(function(p){return (p&&typeof p==='object')?(p.name||''):String(p||'');}).filter(Boolean):[];
+  }catch(e){return [];}
+}
+// Catalog products named in this session's homecare plan, notes or client note, in the order they
+// appear there. "Avène Thermal Spring Water" in the plan finds "Avène Thermal Spring Water - 10 fl. oz."
+function _suggestProductsFor(id,s){
+  try{
+    const parts=[];
+    if(s){ if(Array.isArray(s.homecare))parts.push(s.homecare.join(' ')); if(s.note)parts.push(s.note); if(s.obs)parts.push(s.obs);
+      const pn=s.providerNotes;if(pn&&Array.isArray(pn.sections))pn.sections.forEach(function(x){if(x&&x.text)parts.push(x.text);}); }
+    const text=' '+_prodCore(parts.join(' '))+' ';
+    if(text.trim().length<3)return [];
+    const hits=[];
+    (Array.isArray(affiliateLinks)?affiliateLinks:[]).forEach(function(a){
+      if(!a||a.active===false||!a.name||(typeof _isUnadoptedStarter==='function'&&_isUnadoptedStarter(a)))return;
+      const core=_prodCore(a.name);if(core.length<6)return;
+      const at=text.indexOf(' '+core+' ');
+      if(at>=0)hits.push({a:a,at:at});
+    });
+    hits.sort(function(x,y){return x.at-y.at;});
+    return hits.map(function(h){return h.a;});
+  }catch(e){return [];}
+}
 function renderSessionDetail(arg){
   setNav('clients');
   const [id,idxStr]=String(arg).split(':');const i=parseInt(idxStr,10)||0;
@@ -13057,10 +13115,34 @@ function renderSessionDetail(arg){
   // this summary. Ashley, 2026-10-13: the client showed both Avène products with Buy, "available in
   // office" and the price while this record showed none — "it should just mirror the client's view".
   const _live=((typeof clientRecs!=='undefined'&&clientRecs[id])||[]).map(function(rid){const a=affiliateLinks.find(function(x){return x.id===rid;});return (a&&a.active!==false)?a:null;}).filter(Boolean);
+  // Nothing anywhere? Fill from the homecare plan and SAVE it, so her record and the client's
+  // screen show the same products (not a suggestion only she can see).
+  if(!(s.productDetail&&s.productDetail.length)&&!(s.products&&s.products.length)){
+    const _cc=_clientCopyProducts(id,s);
+    if(_cc.length){s.products=_cc.slice();}
+    else if(!((typeof clientRecs!=='undefined'&&clientRecs[id])||[]).length){
+      const _sug=_suggestProductsFor(id,s);
+      if(_sug.length&&(typeof _libSafeToPersist!=='function'||_libSafeToPersist('sc_session_summaries',sessionSummaries))){
+        s.productDetail=_sug.map(function(a){return {name:a.name,brand:a.brand||'',icon:a.icon||''};});
+        s.products=_sug.map(function(a){return a.name;});
+        s._autoProducts=true;
+        clientRecs[id]=_sug.map(function(a){return a.id;});
+        try{const c0=CL[id];if(c0&&Array.isArray(c0.summaries)){const cs=c0.summaries.find(function(x){return x&&s.ts&&x.ts===s.ts;})||c0.summaries.find(function(x){return x&&x.date===s.date;});if(cs)cs.products=s.products.slice();}}catch(e){}
+        try{persistSessionSummaries();}catch(e){}
+        try{if(typeof persistClientRecs==='function')persistClientRecs();}catch(e){}
+        try{persistWorkspace();}catch(e){}
+        try{saveClients();}catch(e){}
+        try{if(typeof _scheduleSpecificClientSync==='function')_scheduleSpecificClientSync(id);}catch(e){}
+      }
+    }
+  }
   const _saved=((s.productDetail&&s.productDetail.length)?s.productDetail:(s.products||[])).map(function(x){
     if(x&&typeof x==='object')return x;const n=String(x==null?'':x).trim();if(!n)return null;
     return affiliateLinks.find(function(a){return String(a.name||'').trim().toLowerCase()===n.toLowerCase();})||{name:n};}).filter(function(x){return x&&String(x.name||'').trim();});
-  const _prods=_live.length?_live:_saved;
+  // Same rule as the client's screen: live list first, plus any saved product that is in neither that
+  // list nor her catalog (one she typed in), so a custom product shows on both sides.
+  const _custom=_live.length?_saved.filter(function(x){const n=String(x.name||'').trim().toLowerCase();return n&&!affiliateLinks.some(function(a){return String(a.name||'').trim().toLowerCase()===n;});}):[];
+  const _prods=_live.length?_live.concat(_custom):_saved;
   const hasClient=s.note||(s.homecare&&s.homecare.length)||_prods.length||(s.guides&&s.guides.length);
   // The Client summary tab MIRRORS the client's own summary screen (renderLatestSummary in
   // slickchart-client.html): same cards, same order, same labels. Ashley, 2026-10-14: "i would like
@@ -13218,11 +13300,12 @@ function editSavedSummary(id,i){
   _esOrigRecs=(clientRecs[id]||[]).slice();
   const savedNames=(Array.isArray(s.productDetail)&&s.productDetail.length)
     ? s.productDetail.map(p=>(p&&p.name)||String(p))
-    : (Array.isArray(s.products)?s.products.slice():[]);
+    : (Array.isArray(s.products)&&s.products.length?s.products.slice():_clientCopyProducts(id,s));
   _esUnmatchedProducts=[];
   const seeded=[];
   savedNames.forEach(nm=>{
-    const a=affiliateLinks.find(x=>String(x.name||'').toLowerCase()===String(nm||'').toLowerCase());
+    const a=affiliateLinks.find(x=>String(x.name||'').toLowerCase()===String(nm||'').toLowerCase())
+      ||affiliateLinks.find(x=>x&&x.name&&_prodCore(x.name)&&_prodCore(x.name)===_prodCore(nm));
     if(a){if(!seeded.includes(a.id))seeded.push(a.id);}
     else{_esUnmatchedProducts.push(nm);}
   });

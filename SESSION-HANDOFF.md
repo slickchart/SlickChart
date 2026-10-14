@@ -7072,3 +7072,21 @@ client carrying a bot's `squareId` is removed and tombstoned; a real roster clie
 `/api/clients` requests for 301 ids; no other admin endpoint is called.
 
 **NOT RUN against her real Square.** It deletes from Square with no undo. She drives it.
+
+## 2026-10-14c — Session Record products: match the client, autofill from homecare, custom products
+
+Ashley: "the recommended for you lost the products. this should A - match the clients record and B -
+be autofilling with suggestions based on the homecare recommendations ... editable ... reorder, add
+other products, searchable product finder ... and add things that are not in the product catalog".
+
+- **A:** when the provider summary and `clientRecs[id]` are both empty, `renderSessionDetail` reads the
+  client's own copy (`CL[id].summaries[].products`, matched by ts then date) via `_clientCopyProducts`.
+- **B:** if there is still nothing, `_suggestProductsFor` finds catalog products named in the homecare
+  plan / note / provider notes (accent- and size-insensitive, `_prodCore`) and SAVES them on the summary,
+  `clientRecs`, and the client copy, so both screens agree. Guarded by `_libSafeToPersist`. `_storeSummary`
+  autofills the same way for new summaries when she picked none.
+- **Custom products:** the summary editor's picker offers `Add "<search text>" (not in your catalog)`
+  (`_addCustomProd`); they list in the editor with a remove button and save by name. Both the provider
+  record and the client's latest-summary screen now show live list + saved names that are in neither the
+  live list nor the catalog, so a custom one shows on both sides.
+- Test: `scratchpad/test-session-record-products.mjs` 19/19.
