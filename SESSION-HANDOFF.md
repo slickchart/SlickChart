@@ -7124,3 +7124,21 @@ and limited scope to /build + /free pages, the freebie emails, and the Build blo
   Master Build Roadmap artifact in her Claude account still say "make an email address just for this
   app" and "About 70 minutes" / "By tonight". Offered to her.
 - Went through the train (diff includes lib/ and scripts/), live at the 2am run.
+
+## 2026-10-14f — Product consult: deep sweep, made it work end to end (2am run)
+Ashley asked for a deep sweep of the new product consult flow. What the sweep found (all fixed):
+1. The client screen's **Product consult** row only opened a "guided questions are not built yet" box.
+   Now `_productConsult` sends the consult (her own edited product type if she has one).
+2. `_vcBaseProfile('product')` fell back to the SKIN photo profile, and `_vcTypeProfile` dropped her
+   `askQuestions` — a product consult sent from the invite sheet reached the client asking NOTHING,
+   and the review screen showed a skin analysis with empty photo slots.
+3. Invite message, toast, client home card, push, submit screen and journey all said "photo consult /
+   upload a few photos". New templates `vc_invite_product` / `vc_review_product` (editable like the others).
+4. Client: answers did not count toward Submit (needed goals or products), and answers were not saved in
+   the draft (`sc_vc_draft`), so closing the app lost them.
+5. Review screen: photo grid, "Can't read these", photo analysis, terminology helper and the empty
+   question box now hide on a photo-free consult. Product consults get a **Your product picks** picker
+   (clientRecs, so they land on the client's Recommended for you); the sent message lists the picks.
+6. Client row shows the consult state on the row for ITS kind; consults inbox says "Awaiting answers".
+Test: `scratchpad/sweep-product-consult.mjs` 37/37 (both apps, invite → answer → reload → submit
+payload → review → picks → send, plus photo-consult regression).

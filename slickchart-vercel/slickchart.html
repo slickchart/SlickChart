@@ -232,7 +232,7 @@ const S=document.getElementById('S');
 // resets when I save it" and there was no way to tell whether her phone had any of them — a whole
 // day was spent debugging code she may not have been running. Shown at the bottom of Settings, so
 // the answer is a screenshot away. Bump it on every ship.
-const APP_BUILD='2026-10-14e';
+const APP_BUILD='2026-10-14f';
 
 
 /* ════════════════════════════════════════════════════════════════
@@ -9162,28 +9162,29 @@ function _sendToClientHTML(id){
       // the bottom is redundant to the area at the top ... if they have an invite sent use the top
       // section to note that"). Waiting on them: say so, tap resends. Photos in: tap opens the review.
       const inv=(typeof vcInvites!=='undefined'&&vcInvites[id])||{};
-      if(inv.submitted)return row('ti-camera','var(--p-purple)','Photo consult','Photos are in \u00b7 tap to review',"_vcBack='client';nav('virtual-client','"+id+"')");
-      if(inv.invited)return row('ti-clock','var(--p-blue)','Photo consult','Invited \u00b7 waiting on '+first+'\u2019s photos \u00b7 tap to resend',"inviteVirtualConsult('"+id+"')");
-      return row('ti-camera','var(--p-purple)','Photo consult','Invite them, review their photos, send your recommendations',"inviteVirtualConsult('"+id+"')");
+      // One consult is out per client at a time; its state shows on the row for ITS kind.
+      const isProd=inv.kind==='product';
+      const open="_vcBack='client';nav('virtual-client','"+id+"')";
+      const photoRow=(!isProd&&inv.submitted)?row('ti-camera','var(--p-purple)','Photo consult','Photos are in \u00b7 tap to review',open)
+        :(!isProd&&inv.invited&&!inv.submitted)?row('ti-clock','var(--p-blue)','Photo consult','Invited \u00b7 waiting on '+first+'\u2019s photos \u00b7 tap to resend',"inviteVirtualConsult('"+id+"')")
+        :row('ti-camera','var(--p-purple)','Photo consult','Invite them, review their photos, send your recommendations',"inviteVirtualConsult('"+id+"')");
+      const prodRow=(isProd&&inv.submitted)?row('ti-flask','var(--p-purple)','Product consult','Answers are in \u00b7 tap to review',open)
+        :(isProd&&inv.invited&&!inv.submitted)?row('ti-clock','var(--p-blue)','Product consult','Invited \u00b7 waiting on '+first+'\u2019s answers \u00b7 tap to resend',"_productConsult('"+id+"')")
+        :row('ti-flask','var(--p-blue)','Product consult','Ask what they use, then send your product picks',"_productConsult('"+id+"')");
+      return photoRow+prodRow;
     })()
-    +row('ti-flask','var(--p-blue)','Product consult','Invite them, review what they use, send your recommendations',"_productConsult('"+id+"')")
     +row('ti-file-text','var(--accent-strong)','Forms','Intake, consent, or one you wrote'+(nOut?(' · '+nOut+' still out'):''),"openClientFormSender('"+id+"')")
     +row('ti-book','var(--p-amber)','Guides + Courses',nG+' guide'+(nG===1?'':'s')+', '+nC+' course'+(nC===1?'':'s'),"openClientFormSender('"+id+"')")
     +row('ti-pencil','var(--p-green)','Session summary',nSum?(nSum+' saved · they read it in Journey'):'Written when you finish a session',"nav('summary-history','"+id+"')")
     +'</div>';
 }
 
-// The product consult's guided questions are not built yet. Rather than a dead row or a fake one,
-// this opens the product plan it will write into and says plainly what is missing — a row that
-// quietly does nothing is how a provider stops trusting the whole screen.
+// Product consult: sends the client the product questions (no photos) plus "what are you using now".
+// Uses her own product consult type if she has edited one, so her reworded questions are what go out.
 function _productConsult(id){
-  if(typeof confirmModal==='function'){
-    confirmModal({title:'Product consult',
-      body:'The guided questions for this are the next thing being built. For now this opens their product plan, which is what the consult writes into.',
-      action:'Open their plan'},function(){try{_setClientTab(id,'homecare');}catch(e){}});
-    return;
-  }
-  try{_setClientTab(id,'homecare');}catch(e){}
+  let optId='product';
+  try{const o=(typeof _vcKindOptions==='function'?_vcKindOptions():[]).find(function(x){return x&&x.kind==='product';});if(o)optId=o.id;}catch(e){}
+  inviteVirtualConsult(id,false,optId);
 }
 
 // Photos get their own tab because she reaches for them far more often than anything in the file.
@@ -14586,14 +14587,14 @@ function inviteVirtualConsult(id,_force,_kind,_formId,_routine){
   const c=CL[id];if(!c)return;
   if(!_force && typeof _vcStatus==='function' && _vcStatus(id)==='needs-review'){
     // A submission is waiting for review, re-inviting would drop it from the "Needs review" queue.
-    if(typeof confirmModal==='function'){confirmModal({title:'Replace pending submission?',body:(c.name||'This client').split(' ')[0]+' has a virtual-consult submission awaiting your review. Sending a new invite will replace it, review that first, or continue to replace.',action:'Send new invite'},function(){inviteVirtualConsult(id,true,_kind,_formId);});return;}
+    if(typeof confirmModal==='function'){confirmModal({title:'Replace pending submission?',body:(c.name||'This client').split(' ')[0]+' has a virtual-consult submission awaiting your review. Sending a new invite will replace it, review that first, or continue to replace.',action:'Send new invite'},function(){inviteVirtualConsult(id,true,_kind,_formId,_routine);});return;}
   }
   // A fresh invite opens the "configure this consult" sheet (pick type + optionally attach a form);
   // the sheet's Send button calls back with an explicit kind (+formId) which we honor directly.
   let v;
   if(_kind){const _o=(typeof _vcKindOptions==='function'?_vcKindOptions():[]);
     const o=_o.find(x=>x.id===_kind)||_o.find(x=>x.kind===_kind);
-    v=o?o.profile:_vcProfile();}
+    v=o?o.profile:((_kind==='product'||_kind==='def:product')&&typeof _vcProductProfile==='function'?_vcProductProfile():_vcProfile());}
   else{_vcInvitePickerSheet(id,(typeof _vcKindOptions==='function')?_vcKindOptions():[]);return;}
   // Attach an intake form to the consult by assigning it through the normal pending-form flow, so the
   // client fills it with the same robust form experience and it lands in their chart.
@@ -14612,7 +14613,8 @@ function inviteVirtualConsult(id,_force,_kind,_formId,_routine){
   try{SlickBridge.post('virtual-consult-invite',{providerId:'jess',clientId:id,kind:v.kind,title:v.title,fee:vcFee,photoLabels:Array.isArray(v.photoLabels)?v.photoLabels:[],refTitle:v.refTitle||null,askQuestions:Array.isArray(v.askQuestions)?v.askQuestions.slice():[],refLabels:Array.isArray(v.refLabels)?v.refLabels:null});}catch(e){}
   // {consult} resolves to the same word this sentence used to interpolate, so an unedited template
   // sends byte-identical text to what shipped before.
-  const _inviteMsg=_msgText('vc_invite',id,{consult:(v.kind==='skin'?'skin':v.kind)},v.id||null);
+  const _photoFree=!(Array.isArray(v.photoLabels)&&v.photoLabels.length);
+  const _inviteMsg=(v.kind==='product')?_msgText('vc_invite_product',id):_msgText('vc_invite',id,{consult:(v.kind==='skin'?'skin':v.kind)},v.id||null);
   if(!msgStore[id])msgStore[id]=[];
   // Tracked bubble (_mid + status) so the invite message flushes when the client joins and shows a
   // real failed/retry state instead of an optimistic toast that can't be recovered.
@@ -14624,7 +14626,7 @@ function inviteVirtualConsult(id,_force,_kind,_formId,_routine){
   // post above only reaches a same-browser preview.
   try{_sendProviderMessageToClient(id,_inviteMsg,[],false,undefined,_imid);}catch(e){}
   try{if(typeof _persistAndSyncClient==='function')_persistAndSyncClient(id);else if(typeof _scheduleSpecificClientSync==='function')_scheduleSpecificClientSync(id);}catch(e){}
-  if(typeof proToast==='function')proToast('Photo consult'+(_formId?' + form':'')+' sent to '+c.name.split(' ')[0]);
+  if(typeof proToast==='function')proToast((v.kind==='product'?'Product consult':_photoFree?(v.title||'Consult'):'Photo consult')+(_formId?' + form':'')+' sent to '+c.name.split(' ')[0]);
   renderClient(id);
 }
 // ── Photo consult inbox (all clients, by status) ──
@@ -14647,6 +14649,8 @@ function inviteVirtualConsult(id,_force,_kind,_formId,_routine){
 const _MSG_DEFAULTS={
   vc_invite:"I'd love to do a virtual {consult} consult before your next visit, I've sent an invite to your app. Upload a few photos and I'll send my notes back. \u2728",
   vc_review:'Your photo consult review is ready \ud83d\udccb',
+  vc_invite_product:"I'd love to help you choose the right products. I've sent a few quick questions to your app. Answer what you can and I'll send my recommendations back. - {me}",
+  vc_review_product:'Your product recommendations are ready \ud83d\udccb',
   vc_retake:"I had a look at your photos and I can't see {consult} clearly enough to give you good advice. Could you send a couple more? There are tips at the top of the page. - {me}",
   vc_followup:"Hi {client}, it's been a few weeks since your consult. How is your skin getting on with the routine? Anything feeling tight, or any step you've dropped? Send me a photo in the same light as last time and I'll tell you what I can see. - {me}",
   vc_refer:"Thank you for telling me. What you described is worth having a doctor look at, rather than me. Please book in with your GP or a dermatologist. I'm not able to diagnose or treat it, and I'd rather you were seen properly. I'm still here for your skincare once you've been. - {me}"
@@ -14654,6 +14658,8 @@ const _MSG_DEFAULTS={
 const _MSG_LABELS={
   vc_invite:{name:'Consult invite',when:'Sent when you invite a client to a photo consult.'},
   vc_review:{name:'Review ready',when:'The first line when you send your notes back. Your notes follow underneath.'},
+  vc_invite_product:{name:'Product consult invite',when:'Sent when you invite a client to a product consult.'},
+  vc_review_product:{name:'Product recommendations ready',when:'The first line when you send product consult recommendations. Your notes and products follow.'},
   vc_retake:{name:'Asking for better photos',when:"Sent when you tap Ask for new photos, instead of reviewing photos you can't read."},
   vc_followup:{name:'Follow-up check-in',when:'Sent when you tap Check in now on a consult follow-up.'},
   vc_refer:{name:'Suggesting a doctor',when:'Sent when a client flags pain, bleeding, a changing mole, or something spreading.'}
@@ -14662,6 +14668,8 @@ const _MSG_LABELS={
 const _MSG_TOKENS={
   vc_invite:['client','me','business','consult','fee'],
   vc_review:['client','me','business'],
+  vc_invite_product:['client','me','business'],
+  vc_review_product:['client','me','business'],
   vc_retake:['client','me','business','consult'],
   vc_refer:['client','me','business'],
   vc_followup:['client','me','business']
@@ -14722,7 +14730,7 @@ function _msgCardHTML(){
       <div style="font-size:16px;font-weight:500;color:var(--p-ink);">What your clients get sent</div>
       <div style="font-size:14px;color:var(--p-mut);line-height:1.5;margin-top:2px;">These go out in your name. Edit them to sound like you.</div>
     </div>
-    ${row('vc_invite')}${row('vc_review')}${row('vc_retake')}${row('vc_refer')}${row('vc_followup')}
+    ${row('vc_invite')}${row('vc_review')}${row('vc_invite_product')}${row('vc_review_product')}${row('vc_retake')}${row('vc_refer')}${row('vc_followup')}
   </div>`;
 }
 let _msgEditing='';
@@ -14802,7 +14810,10 @@ function _vcPendingCount(){return Object.keys(CL).filter(id=>_vcStatus(id)==='ne
 function sendVcReview(id){
   const ta=document.getElementById('vc-review-notes');
   const notes=ta?String(ta.value||'').trim():'';
-  if(!notes){if(typeof proToast==='function')proToast('Add your review notes first');return false;}
+  const _isProd=!!(vcInvites[id]&&vcInvites[id].kind==='product');
+  // A product consult can be answered with picks alone; the picks are the recommendation.
+  const _picks=_isProd?_vcPickNames(id):[];
+  if(!notes&&!_picks.length){if(typeof proToast==='function')proToast(_isProd?'Add a product or a note first':'Add your review notes first');return false;}
   _doSendVcReview(id,notes);   // async delivery; sync true here lets the caller navigate back
   return true;
 }
@@ -14810,12 +14821,19 @@ function sendVcReview(id){
 // so that if the client hasn't opened their app yet it stays 'pending' and flushes when they join —
 // instead of silently vanishing while the provider saw "Review sent". Reviewed state is also pushed to
 // the client blob so it survives regardless of chat delivery.
+function _vcPickNames(id){
+  try{return ((typeof clientRecs!=='undefined'&&clientRecs[id])||[]).map(function(rid){const a=affiliateLinks.find(function(x){return x&&x.id===rid;});return (a&&a.active!==false&&a.name)?a.name:null;}).filter(Boolean);}catch(e){return [];}
+}
 async function _doSendVcReview(id,notes){
   const c=CL[id];
+  const _isProd=!!(vcInvites[id]&&vcInvites[id].kind==='product');
   vcInvites[id]={...(vcInvites[id]||{}),invited:true,submitted:true,reviewed:true};try{persistVcState();}catch(e){}
-  const msg=_msgText('vc_review',id)+'\n\n'+notes;
+  const _picks=_isProd?_vcPickNames(id):[];
+  const msg=_isProd
+    ?(_msgText('vc_review_product',id)+(notes?'\n\n'+notes:'')+(_picks.length?'\n\nMy picks for you:\n'+_picks.map(function(n){return '\u2022 '+n;}).join('\n')+'\n\nThey are in your Recommended for you, ready to shop.':''))
+    :(_msgText('vc_review',id)+'\n\n'+notes);
   let _mid;try{_mid=(self.crypto&&crypto.randomUUID)?crypto.randomUUID():(Date.now().toString(36)+Math.random().toString(36).slice(2));}catch(e){_mid=Date.now().toString(36)+Math.random().toString(36).slice(2);}
-  try{if(!msgStore[id])msgStore[id]=[];msgStore[id].push({from:'me',text:msg,time:'Just now',ts:Date.now(),_mid,status:'sending'});const t=threads.find(x=>x.id===id);if(t)t.preview=_msgText('vc_review',id);saveMessages();}catch(e){}
+  try{if(!msgStore[id])msgStore[id]=[];msgStore[id].push({from:'me',text:msg,time:'Just now',ts:Date.now(),_mid,status:'sending'});const t=threads.find(x=>x.id===id);if(t)t.preview=_msgText(_isProd?'vc_review_product':'vc_review',id);saveMessages();}catch(e){}
   if(id==='maya'){try{SlickBridge.post('client-message',{text:msg,imgs:[],providerId:'jess',time:'Just now',ts:Date.now()});}catch(e){}try{if(typeof _setProviderMsgStatus==='function')_setProviderMsgStatus(id,_mid,'sent');}catch(e){}}
   else{try{await _sendProviderMessageToClient(id,msg,[],false,undefined,_mid);}catch(e){}}
   try{if(typeof _pushClientNow==='function')await _pushClientNow(id);}catch(e){}
@@ -15421,7 +15439,10 @@ function renderVcInbox(){
       +'<button onclick="_vcFollowUpDone(\''+_jsAttr(d.id)+'\')" style="background:var(--surf1);border:1px solid var(--p-line-ctl);color:var(--p-mut2);border-radius:8px;padding:9px 12px;font-size:16px;cursor:pointer;font-family:inherit;">Done</button>'
       +'</div></div>';
   }).join('')):'';
-  const card=r=>{const m=meta[r.status];const kindLabel=r.sub&&r.sub.title?r.sub.title:_vcProfile().short;const date=r.sub&&r.sub.date?r.sub.date:'';const tap=r.status==='awaiting'?`nav('client','${r.id}')`:`_vcBack='inbox';nav('virtual-client','${r.id}')`;
+  const card=r=>{const _inv=vcInvites[r.id]||{};const _noPhotos=Array.isArray(_inv.photoLabels)&&_inv.photoLabels.length===0;
+    // A product consult waits on ANSWERS, and is named by its own title, not the default photo profile's.
+    const m=(r.status==='awaiting'&&_noPhotos)?Object.assign({},meta[r.status],{label:'Awaiting answers'}):meta[r.status];
+    const kindLabel=r.sub&&r.sub.title?r.sub.title:(_inv.title||_vcProfile().short);const date=r.sub&&r.sub.date?r.sub.date:'';const tap=r.status==='awaiting'?`nav('client','${r.id}')`:`_vcBack='inbox';nav('virtual-client','${r.id}')`;
     return `<button class="vc-card" data-search="${(r.c.name+' '+m.label+' '+kindLabel).toLowerCase().normalize('NFD').replace(/[̀-ͯ]/g,'').replace(/['‘’`"]/g,'').replace(/[^a-z0-9 ]/g,' ').replace(/\s+/g,' ').trim()}" onclick="${tap}" style="display:block;width:calc(100% - 32px);text-align:left;box-sizing:border-box;background:var(--surf2);border:1px solid var(--p-line-ctl);border-radius:12px;margin:0 16px 10px;padding:12px 14px;cursor:pointer;font-family:inherit;">
       <div style="display:flex;align-items:center;gap:11px;">
         ${av(r.c,40)}
@@ -16259,6 +16280,9 @@ function _vcAllTypes(){
 // The underlying profile for a kind — this is what drives the AI analysis copy, so a custom type
 // named "Brow analysis" still gets brow metrics rather than skin ones.
 function _vcBaseProfile(kind){
+  // The product consult belongs to no profession, so the lookup below never finds it and used to fall
+  // back to the SKIN photo profile: the review screen then showed a skin analysis and empty photo slots.
+  if(kind==='product'&&typeof _vcProductProfile==='function')return _vcProductProfile();
   try{
     const found=(allProfessions||[]).map(function(p){try{return _vcProfileForProf(p.id);}catch(e){return null;}})
       .find(function(v){return v&&v.kind===kind;});
@@ -16272,7 +16296,10 @@ function _vcTypeProfile(t){
     title:t.title||base.title, short:t.title||base.short, icon:t.icon||base.icon,
     photoLabels:Array.isArray(t.photoLabels)?t.photoLabels:base.photoLabels,
     refTitle:(t.refTitle!==undefined)?t.refTitle:base.refTitle,
-    refLabels:(t.refLabels!==undefined)?t.refLabels:base.refLabels});
+    refLabels:(t.refLabels!==undefined)?t.refLabels:base.refLabels,
+    // Her edited questions. Without this the invite carried the base profile's questions (none for a
+    // saved product type), so a product consult reached the client asking nothing at all.
+    askQuestions:(Array.isArray(t.askQuestions)&&t.askQuestions.length)?t.askQuestions.slice():(Array.isArray(base.askQuestions)?base.askQuestions.slice():[])});
 }
 function _vcKindOptions(){
   return _vcAllTypes().map(function(t){
@@ -16641,20 +16668,23 @@ function renderVirtualClient(id){
   const initialMetrics=cached?cached.metrics:(sub&&sub.measures?_metricsFromMeasures(v.kind,sub.measures):v.metrics);
   const initialTerm=(cached&&cached.terminology&&cached.terminology.length)?cached.terminology:v.terminology;
   const initialSummary=(cached&&cached.summary)||'';
+  // A consult that asks questions instead of photos (the product consult, coaching, nutrition): the photo
+  // grid, "ask for new photos", the photo analysis and its terminology helper have nothing to work on.
+  const _pf=!hasReal&&!(Array.isArray(v.photoLabels)&&v.photoLabels.length);
   S.innerHTML=`
   <div id="virtual-client-screen"></div>
   ${(typeof _vcFlagBannerHTML==='function')?_vcFlagBannerHTML(id,sub):''}
   ${(vcInvites[id]&&vcInvites[id].referredAt)?`<div style="margin:0 16px 12px;background:var(--p-surf2);border:1px solid var(--p-line3);border-radius:12px;padding:10px 13px;font-size:16px;color:var(--p-mut);line-height:1.5;"><i class="ti ti-stethoscope" style="font-size:16px;color:var(--p-green);"></i> You referred them to a doctor on ${_fileEsc(new Date(vcInvites[id].referredAt).toLocaleDateString('en-US',{month:'short',day:'numeric'}))}.</div>`:''}
   <div style="padding:12px 16px 0;display:flex;align-items:center;justify-content:flex-end;gap:8px;">
-    <button style="border:1px solid var(--p-line-ctl);background:var(--surf1);border-radius:8px;padding:6px 12px;font-size:16px;color:var(--p-mut2);cursor:pointer;font-weight:500;" onclick="confirmModal({title:'Ask for new photos?',body:'This sends ${_jsAttr(String((CL[id]&&CL[id].name)||'your client').split(' ')[0])} a message and reopens the photo screen on their phone, with the tips at the top. Everything they already sent is kept.',action:'Ask for new photos'},'()=>vcAskForRetake(\'${_jsAttr(id)}\')')"><i class="ti ti-camera-off" style="font-size:16px;"></i> Can't read these</button>
+    ${_pf?'':`<button style="border:1px solid var(--p-line-ctl);background:var(--surf1);border-radius:8px;padding:6px 12px;font-size:16px;color:var(--p-mut2);cursor:pointer;font-weight:500;" onclick="confirmModal({title:'Ask for new photos?',body:'This sends ${_jsAttr(String((CL[id]&&CL[id].name)||'your client').split(' ')[0])} a message and reopens the photo screen on their phone, with the tips at the top. Everything they already sent is kept.',action:'Ask for new photos'},'()=>vcAskForRetake(\'${_jsAttr(id)}\')')"><i class="ti ti-camera-off" style="font-size:16px;"></i> Can't read these</button>`}
     <button style="border:1px solid var(--btn-edge);background:var(--accent);border-radius:8px;padding:6px 14px;font-size:16px;color:var(--accent-ink);cursor:pointer;font-weight:500;" onclick="sendVcReview('${id}');${back}">Send review</button>
   </div>
   <div style="padding:10px 16px 0;display:flex;align-items:center;gap:10px;">${av(c,40)}<div><div style="font-size:16px;font-weight:500;color:var(--p-ink);">${_clientNameLink(id,c.name,{color:'var(--p-ink)'})}</div><div style="font-size:16px;color:var(--p-mut);">Submitted ${vcStamp} · ${_fileEsc(c.concerns)}</div></div></div>
   <div style="padding:10px 16px 0;">
-    <div style="font-size:14px;font-weight:500;color:var(--p-mut);text-transform:uppercase;letter-spacing:.07em;margin-bottom:8px;">${v.kind==='skin'?'Client photos':'Current photos'}${hasReal?'':' <span style="color:var(--p-mut);text-transform:none;letter-spacing:0;font-weight:400;">· sample</span>'}</div>
+    ${_pf?'':`<div style="font-size:14px;font-weight:500;color:var(--p-mut);text-transform:uppercase;letter-spacing:.07em;margin-bottom:8px;">${v.kind==='skin'?'Client photos':'Current photos'}${hasReal?'':' <span style="color:var(--p-mut);text-transform:none;letter-spacing:0;font-weight:400;">· sample</span>'}</div>
     <div style="display:grid;grid-template-columns:1fr 1fr 1fr;gap:6px;margin-bottom:14px;">
       ${photoItems.map(o=>realImg(o,'ti-user-circle','var(--p-amber-bg)','var(--accent)')).join('')}
-    </div>
+    </div>`}
     ${refItems?`<div style="font-size:14px;font-weight:500;color:var(--p-mut);text-transform:uppercase;letter-spacing:.07em;margin-bottom:8px;display:flex;align-items:center;gap:5px;"><i class="ti ti-photo-star" style="font-size:16px;color:var(--p-purple);"></i> ${v.refTitle||'Reference photos'}</div>
     <div style="display:grid;grid-template-columns:1fr 1fr 1fr;gap:6px;margin-bottom:14px;">
       ${refItems.map(o=>realImg(o,'ti-sparkles','var(--p-purple-bg)','var(--p-purple)')).join('')}
@@ -16662,7 +16692,7 @@ function renderVirtualClient(id){
     ${(sub&&Array.isArray(sub.answers)&&sub.answers.length)?`<div style="background:var(--surf2);border:1px solid var(--p-line);border-radius:12px;padding:12px 14px;margin-bottom:12px;"><div style="font-size:14px;font-weight:600;color:var(--p-mut);text-transform:uppercase;letter-spacing:.06em;margin-bottom:8px;">What ${_fileEsc(c.name.split(' ')[0])} answered</div>${sub.answers.map(qa=>`<div style="margin-bottom:10px;"><div style="font-size:14px;color:var(--p-mut);line-height:1.45;margin-bottom:2px;">${_fileEsc(qa.q)}</div><div style="font-size:16px;color:var(--p-ink);line-height:1.6;">${_fileEsc(qa.a)}</div></div>`).join('')}</div>`:''}
     ${sub&&sub.goals?`<div style="background:var(--surf2);border:1px solid var(--p-line);border-radius:12px;padding:12px 14px;margin-bottom:12px;"><div style="font-size:14px;font-weight:600;color:var(--p-mut);text-transform:uppercase;letter-spacing:.06em;margin-bottom:6px;">What ${_fileEsc(c.name.split(' ')[0])} is hoping for</div><div style="font-size:16px;color:var(--p-ink);line-height:1.6;">${_fileEsc(sub.goals)}</div></div>`:''}
     ${_vcRoutineReviewHTML(id,sub)}
-    <div style="background:var(--p-purple-bg);border:1px solid var(--p-purple-line);border-radius:12px;padding:14px;margin-bottom:12px;">
+    ${_pf?'':`<div style="background:var(--p-purple-bg);border:1px solid var(--p-purple-line);border-radius:12px;padding:14px;margin-bottom:12px;">
       <div style="display:flex;align-items:center;gap:8px;margin-bottom:10px;"><span class="aic"><i class="ti ti-sparkles" style="font-size:16px;"></i> ${v.analysisTitle}</span><span id="vc-analysis-tag" style="font-size:14px;color:${initialSrc==='sample'?'var(--p-mut)':'var(--p-green)'};">${hasReal&&initialSrc==='sample'?'Analyzing photo…':_vcSourceLabel(initialSrc)}</span></div>
       <div id="vc-analysis-body">${_metricCardsHTML(initialMetrics)}</div>
       <div id="vc-analysis-summary" style="font-size:16px;color:var(--p-mut);line-height:1.6;margin-top:4px;${initialSummary?'':'display:none;'}">${_fileEsc(initialSummary)}</div>
@@ -16676,14 +16706,27 @@ function renderVirtualClient(id){
     <div style="font-size:14px;font-weight:500;color:var(--p-mut);text-transform:uppercase;letter-spacing:.07em;margin-bottom:8px;">Client's questions</div>
     <div style="background:var(--surf2);border:1px solid var(--p-line);border-radius:12px;padding:12px;margin-bottom:12px;">
       ${v.questions.map(q=>`<div style="font-size:16px;color:var(--p-mut);padding:8px 0;border-bottom:1px solid var(--p-line2);display:flex;align-items:center;gap:6px;"><i class="ti ti-question-mark" style="font-size:16px;color:var(--accent-strong);flex-shrink:0;"></i>${q}</div>`).join('')}
-    </div>
+    </div>`}
     <div style="font-size:14px;font-weight:500;color:var(--p-mut);text-transform:uppercase;letter-spacing:.07em;margin-bottom:8px;">Your expert notes</div>
     ${(typeof _vcFollowUpPickerHTML==='function')?_vcFollowUpPickerHTML(id):''}
     ${(typeof _starterChipsHTML==='function')?_starterChipsHTML():''}
     ${(sub&&Array.isArray(sub.routine)&&sub.routine.some(function(x){return x&&x.verdict;}))?`<button onclick="_vcKeepChangeStopInsert('${_jsAttr(id)}')" style="background:var(--p-surf2);border:1px solid var(--p-line-ctl);color:var(--p-ink);border-radius:8px;padding:7px 12px;font-size:14px;cursor:pointer;font-family:inherit;margin-bottom:8px;"><i class="ti ti-list-check" style="font-size:14px;"></i> Add keep / change / stop</button>`:''}
-    <textarea id="vc-review-notes" class="fi" style="height:180px;resize:vertical;line-height:1.6;margin-bottom:8px;" placeholder="Confirm the look in pro terms, answer their questions, recommend a treatment plan and next steps..."></textarea>
+    ${v.kind==='product'?`<div style="display:flex;align-items:center;justify-content:space-between;margin:4px 0 6px;">
+      <div style="font-size:14px;font-weight:600;color:var(--p-mut);text-transform:uppercase;letter-spacing:.06em;">Your product picks <span id="prod-count" style="color:var(--accent-strong);">${(clientRecs[id]||[]).length?'· '+(clientRecs[id]||[]).length:''}</span></div>
+      <button type="button" onclick="toggleProductPicker('${id}')" id="prod-add-btn" style="border:none;background:none;font-size:16px;color:var(--accent-strong);cursor:pointer;display:flex;align-items:center;gap:3px;"><i class="ti ti-plus" style="font-size:16px;"></i> Add</button>
+    </div>
+    <div style="font-size:14px;color:var(--p-mut);margin-bottom:6px;line-height:1.5;">These go on ${_fileEsc(c.name.split(' ')[0])}'s Recommended for you, with Buy links, and are listed in your message.</div>
+    <div id="prod-recs"></div>
+    <div id="prod-picker" style="display:none;background:var(--surf1);border:1px solid var(--p-line);border-radius:12px;overflow:hidden;margin-top:8px;">
+      <div style="position:relative;padding:8px;border-bottom:1px solid var(--p-line2);"><i class="ti ti-search" aria-hidden="true" style="position:absolute;left:18px;top:50%;transform:translateY(-50%);font-size:16px;color:var(--p-mut);"></i><input id="prod-picker-q" oninput="_renderProdPickerList('${id}',this.value)" placeholder="Search products or brands…" style="width:100%;background:var(--p-bg);border:1px solid var(--p-line-ctl);border-radius:8px;padding:8px 10px 8px 30px;font-size:16px;color:var(--p-ink);font-family:inherit;box-sizing:border-box;outline:none;"></div>
+      <div id="prod-picker-list" style="max-height:172px;overflow-y:auto;">${_prodPickerRows(id,'')}</div>
+      <div style="padding:8px;border-top:1px solid var(--p-line2);"><button type="button" onclick="toggleProductPicker('${id}')" style="width:100%;background:var(--p-bg);border:1px solid var(--p-line-ctl);color:var(--p-mut);border-radius:8px;padding:8px;font-size:16px;font-weight:600;cursor:pointer;font-family:inherit;">Done adding</button></div>
+    </div>
+    <div style="height:12px;"></div>`:''}
+    <textarea id="vc-review-notes" class="fi" style="height:180px;resize:vertical;line-height:1.6;margin-bottom:8px;" placeholder="${v.kind==='product'?'Why these products, how to use them, what to stop, and what to start with first...':'Confirm the look in pro terms, answer their questions, recommend a treatment plan and next steps...'}"></textarea>
     <button class="btnp" style="border-radius:8px;margin-top:8px;margin-bottom:8px;" onclick="if(sendVcReview('${id}')){${back}}"><i class="ti ti-send"></i> Send review to ${_fileEsc(c.name.split(' ')[0])}</button>
   </div>`;
+  if(v.kind==='product'){try{renderProductRecs(id);}catch(e){}}
   // Run the analysis hook (server vision model if configured, else on-device pixel measurements),
   // then patch the card in place. Cached on the submission so re-renders don't re-run it.
   if(hasReal&&!cached){
