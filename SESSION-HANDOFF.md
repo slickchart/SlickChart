@@ -7099,3 +7099,16 @@ other products, searchable product finder ... and add things that are not in the
   `var(--surf1)`, and the Rename button has a solid background. Test: `scratchpad/test-client-search-tools.mjs`.
 - New rule (CLAUDE.md §1a): no hand-dispatched deploys mid-day unless she says "push it live early"
   for that change. 14c went live by hand before she set this; 14d waits on the branch.
+
+## 2026-10-14e — client app theme reverted to dark on refresh (ON THE PREVIEW, NOT LIVE)
+**Observed (Ashley, computer, Safari, preview, provider app open in the other tab):** set the client
+app to Light; on refresh it came back Dark.
+**Cause:** the client app (`/space`) and the provider app share one origin, so one localStorage. The
+provider's `pushAllLocal` uploads every `sc_*` key, so the client app's `sc_client_theme` (and its
+drafts, contact, seen ids...) went into her provider account, and every provider pull wrote the
+account's stale copy back over the client app's settings. Reproduced headless; fails on the old code.
+**Fix:** `_CLIENT_APP_KEYS` / `_CLIENT_APP_PREFIX` in slickchart.html, folded into `_syncPrefixSkipped`,
+so they are never pushed, never written down by a pull, and old copies are cleared from the account
+by `_dropStaleDeviceLocal`. Provider keys that merely start `sc_client_` (`sc_client_recs`,
+`sc_client_homecare`) still sync — test checks that. If the client app adds a new localStorage key,
+add it to that list. Test: `scratchpad/test-client-keys-device-local.mjs` 6/6.

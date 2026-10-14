@@ -1,0 +1,13 @@
+import pw from '/opt/node22/lib/node_modules/playwright/index.js';
+const browser = await pw.chromium.launch({ executablePath: '/opt/pw-browsers/chromium-1194/chrome-linux/chrome' });
+const ctx = await browser.newContext({ viewport: { width: 390, height: 844 }, colorScheme: 'dark' });
+const page = await ctx.newPage();
+await page.route('**/api/**', r => r.fulfill({ status: 200, contentType: 'application/json', body: '{"ok":true}' }));
+await page.goto('http://localhost:8899/slickchart-client.html', { waitUntil: 'load' });
+await page.waitForTimeout(1500);
+console.log('start', await page.evaluate(() => document.documentElement.getAttribute('data-theme')));
+await page.evaluate(() => _scSetTheme('light'));
+console.log('after set', await page.evaluate(() => [document.documentElement.getAttribute('data-theme'), localStorage.getItem('sc_client_theme')]));
+await page.reload({ waitUntil: 'load' }); await page.waitForTimeout(1500);
+console.log('after reload', await page.evaluate(() => [document.documentElement.getAttribute('data-theme'), localStorage.getItem('sc_client_theme')]));
+await browser.close();
