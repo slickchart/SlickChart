@@ -7,7 +7,7 @@ keywords: first week building an app, how long does it take to launch an app, ap
 draft: false
 ---
 
-I am an esthetician. I built my app between clients over six weeks, with no prior tech background, and got it into both app stores. The thing I would most like to go back and tell myself has nothing to do with code.
+I am an esthetician. I built my app between clients, with no prior tech background, and got it into both app stores. The thing I would most like to go back and tell myself has nothing to do with code.
 
 It is this: in week one, you are not really building. You are starting clocks.
 

@@ -60,8 +60,12 @@ cannot support. Everything that makes it credible comes from *not* sounding like
   reader to check the current policy page themselves. Never state a current fee or rule flatly from
   memory.
 - **Ground it in the real build.** The credibility here is one specific true story: an esthetician
-  with no prior tech experience, six weeks, both app stores, built between clients. Don't invent
+  with no prior tech experience, both app stores, built between clients. Don't invent
   details of it. What's on `/build` is the source of truth for that story.
+- **No timeframes, ever** (Ashley, 2026-10-14). Never say how long the build or the free starter
+  takes ("six weeks", "seventy minutes", "by tonight", "in an afternoon"). The roadmap's week labels
+  are its order, not a promise of speed. Also never say the app needs its own email address; that
+  is optional.
 - **Useful beats keyword-stuffed.** Google penalises mass-produced content made only to rank.
 - **700-1000 words.** Link to one or two sibling posts, and to `/free` once, naturally. The
   end-of-post CTA already points at `/free`, so one in-body link is plenty.

@@ -46,7 +46,7 @@ const BLOGS = [{
   indexLede: 'I built SlickChart with no coding background. These are the parts nobody explains: what to do first, what it actually costs, and where people get stuck.',
   blogName: 'Build Your Own App',
   blogDesc: 'Notes on building and shipping your own app with AI, from someone who did it without a coding background.',
-  ctaText: 'Turn your idea into a clickable demo of your own app, on your phone, in about seventy minutes. Free, no coding.',
+  ctaText: 'Turn your idea into a clickable demo of your own app, on your phone. Free, no coding.',
   ctaHref: '/free', ctaLabel: 'Get the free starter',
   headerCta: { href: '/build', label: 'Build your own app' },
   ogImage: 'og-build.jpg?v=1'

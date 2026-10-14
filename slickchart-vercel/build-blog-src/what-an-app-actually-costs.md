@@ -62,4 +62,4 @@ The second hidden cost is your own research. Before every step of my build I loo
 
 The money was never the wall. Thirty thousand dollars was the wall, and that wall is gone. What is left is an AI subscription, some optional fees that mostly only apply if you want a store listing, and a lot of decisions that are cheap if you make them in the right order and expensive if you do not.
 
-If you want to find out what the first day feels like before spending anything at all, the [free starter](/free) turns your idea into a clickable demo on your phone in about seventy minutes. And if you are wondering whether the store fees above apply to you in the first place, start with [whether you need the app stores](/build/blog/do-you-need-the-app-stores).
+If you want to find out what the first day feels like before spending anything at all, the [free starter](/free) turns your idea into a clickable demo on your phone. And if you are wondering whether the store fees above apply to you in the first place, start with [whether you need the app stores](/build/blog/do-you-need-the-app-stores).

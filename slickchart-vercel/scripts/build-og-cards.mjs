@@ -18,7 +18,7 @@ const jobs=[
   chip:'$97 · one time'},
  {file:'og-free.jpg', eyebrow:'Your free app demo',
   head1:'Turn your idea into an app you can', head2:'open and tap.',
-  sub:'A clickable demo of your own app, on your phone, in about seventy minutes.',
+  sub:'A clickable demo of your own app, on your phone. No coding.',
   chip:'Free · no card needed'},
 ];
 for(const j of jobs){

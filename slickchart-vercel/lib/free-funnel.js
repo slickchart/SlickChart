@@ -85,8 +85,7 @@ export function welcomeHtml({ email, link }) {
     <p>Two things before you start.</p>
     <p><strong>Pin it.</strong> Use the menu on the page and choose Pin. It then lives in your sidebar
     and you can find it tomorrow without digging through old chats.</p>
-    <p><strong>Do it in one sitting if you can.</strong> It takes about 70 minutes. Momentum is most
-    of this.</p>
+    <p><strong>Keep going once you start.</strong> Momentum is most of this.</p>
     <p>By the end you will have a screen of your own idea that you can tap on your phone. Not a
     template. Yours.</p>
     <p>I will check in tomorrow.</p>`, email);
@@ -101,7 +100,7 @@ Two things before you start.
 
 PIN IT. Use the menu on the page and choose Pin. It then lives in your sidebar and you can find it tomorrow without digging through old chats.
 
-DO IT IN ONE SITTING IF YOU CAN. It takes about 70 minutes. Momentum is most of this.
+KEEP GOING ONCE YOU START. Momentum is most of this.
 
 By the end you will have a screen of your own idea that you can tap on your phone. Not a template. Yours.
 
@@ -189,7 +188,7 @@ Founder, SlickChart${freeFooterText(c.email)}`,
       </p>
       <p>That is it to have a live app people can open and add to their home screen.</p>
       <p>The app stores are separate and optional. Ninety nine a year for Apple, twenty five once for Google.</p>
-      <p>So money was never the expensive part. <strong>Six weeks of figuring out what order to do things in was the expensive part.</strong> That is the part I wrote down.</p>
+      <p>So money was never the expensive part. <strong>Figuring out what order to do things in was the expensive part.</strong> That is the part I wrote down.</p>
       ${freeBtn(BUILD, 'The full system, $97')}`, c.email),
     text: (c) => `People assume building an app costs thousands. Here is my real list.
 
@@ -204,7 +203,7 @@ That is it to have a live app people can open and add to their home screen.
 
 The app stores are separate and optional. Ninety nine a year for Apple, twenty five once for Google.
 
-So money was never the expensive part. Six weeks of figuring out what order to do things in was the expensive part. That is the part I wrote down.
+So money was never the expensive part. Figuring out what order to do things in was the expensive part. That is the part I wrote down.
 
 The full system, $97: ${BUILD}
 
@@ -221,7 +220,7 @@ Founder, SlickChart${freeFooterText(c.email)}`,
       <p>So the smart move is to request it in week one, while you are still designing screens, and it is sitting there ready exactly when you need it in week six.</p>
       <p>Nobody tells you this. I found out by getting it wrong.</p>
       <p>The whole roadmap is built that way. Everything that waits on somebody else starts early, so nothing ever blocks anything else. That is what I mean when I say it is a strategy and not a list.</p>
-      ${freeBtn(BUILD, 'See the full six weeks')}`, c.email),
+      ${freeBtn(BUILD, 'See the full roadmap')}`, c.email),
     text: (c) => `Here is one specific thing that cost me a month, so it does not cost you one.
 
 There is a free number called a D-U-N-S. You request it from Dun and Bradstreet and it can take up to 28 days to come back.
@@ -234,7 +233,7 @@ Nobody tells you this. I found out by getting it wrong.
 
 The whole roadmap is built that way. Everything that waits on somebody else starts early, so nothing ever blocks anything else. That is what I mean when I say it is a strategy and not a list.
 
-See the full six weeks: ${BUILD}
+See the full roadmap: ${BUILD}
 
 Ashley
 Founder, SlickChart${freeFooterText(c.email)}`,
@@ -247,7 +246,7 @@ Founder, SlickChart${freeFooterText(c.email)}`,
       <p>The free starter was day one. The full system is the other five weeks, and I want to be straight about who it is for.</p>
       <p><strong>It is for you if</strong> you have an idea you actually want to exist, you are not technical, and you would rather follow proven steps than work out the strategy yourself.</p>
       <p><strong>It is not for you if</strong> you want somebody to build it for you, or you are shopping for a course to feel productive. This is work. It is just work that is laid out properly.</p>
-      <p>What you get: the whole six weeks as one roadmap you pin and tick off, 35 written prompts so you are never staring at a blank box, and a 22 minute video of me walking you into it.</p>
+      <p>What you get: every step as one roadmap you pin and tick off, 35 written prompts so you are never staring at a blank box, and a 22 minute video of me walking you into it.</p>
       <p>Ninety seven dollars, once, yours forever.</p>
       ${freeBtn(BUILD, 'Get the full system')}
       <p>Either way, I am glad you built something.</p>`, c.email),
@@ -259,7 +258,7 @@ IT IS FOR YOU IF you have an idea you actually want to exist, you are not techni
 
 IT IS NOT FOR YOU IF you want somebody to build it for you, or you are shopping for a course to feel productive. This is work. It is just work that is laid out properly.
 
-What you get: the whole six weeks as one roadmap you pin and tick off, 35 written prompts so you are never staring at a blank box, and a 22 minute video of me walking you into it.
+What you get: every step as one roadmap you pin and tick off, 35 written prompts so you are never staring at a blank box, and a 22 minute video of me walking you into it.
 
 Ninety seven dollars, once, yours forever.
 

@@ -38,7 +38,7 @@ Thinking out loud is free in Chat. It is not free in Code.
 
 ## The order that works
 
-Here is the loop I ran a few dozen times over six weeks, and it is always the same shape.
+Here is the loop I ran a few dozen times, and it is always the same shape.
 
 1. **Decide in Chat.** Describe what you want until you can say it in a sentence. If you cannot say it in a sentence, you are not ready to build it, and no tool fixes that.
 2. **Ask for the plan first.** Before anything gets written, have the plan read back to you in plain words. This is where you catch the misunderstanding, while it is still free to catch.

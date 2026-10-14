@@ -59,4 +59,4 @@ That is why the order matters more than the skill. You can be perfectly capable 
 
 One caveat I want to be clear about: these are platform rules, and platform rules change. The numbers above are what I planned around during my own build. Before you make a decision on them, go and read Google's current developer policy pages yourself, and check what Dun and Bradstreet currently says about turnaround for your country. Take two minutes. It is the cheapest two minutes in this whole process.
 
-If you want to see what the earliest part of a build feels like before you take any of this on, the [free starter](/free) turns your idea into a clickable demo of your app in about seventy minutes, with no coding and nothing to install.
+If you want to see what the earliest part of a build feels like before you take any of this on, the [free starter](/free) turns your idea into a clickable demo of your app, with no coding and nothing to install.

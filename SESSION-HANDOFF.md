@@ -7112,3 +7112,15 @@ so they are never pushed, never written down by a pull, and old copies are clear
 by `_dropStaleDeviceLocal`. Provider keys that merely start `sc_client_` (`sc_client_recs`,
 `sc_client_homecare`) still sync — test checks that. If the client app adds a new localStorage key,
 add it to that list. Test: `scratchpad/test-client-keys-device-local.mjs` 6/6.
+
+## 2026-10-14 — /build, /free, freebie emails, Build blog: no timeframes, app email optional (2am run)
+Ashley: remove anything saying the app must have its own email (optional), and anything saying it can
+be done in a set amount of time. She chose to KEEP the roadmap's Week 1-6 labels (they are the order)
+and limited scope to /build + /free pages, the freebie emails, and the Build blog posts.
+- build.html, free.html, index.html (free-starter promo), lib/free-funnel.js (welcome + nurture),
+  scripts/build-blog.cjs (Build blog CTA), 8 build-blog-src posts, og-free.jpg regenerated (`?v=2`).
+- build-blog-src/README.md now has a "No timeframes, ever" rule so the Monday drafts do not bring them back.
+- NOT changed (out of the scope she picked): the "Your First Screen" freebie artifact and the paid
+  Master Build Roadmap artifact in her Claude account still say "make an email address just for this
+  app" and "About 70 minutes" / "By tonight". Offered to her.
+- Went through the train (diff includes lib/ and scripts/), live at the 2am run.

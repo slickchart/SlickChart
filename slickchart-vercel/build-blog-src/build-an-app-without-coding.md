@@ -6,7 +6,7 @@ date: 2026-09-16
 keywords: build an app without coding, build an app with AI, no code app, learn to code or not, ship an app
 ---
 
-I am an esthetician. No degree in anything technical, no bootcamp, and before this I had never opened a code editor. Six weeks later my app was live in both app stores.
+I am an esthetician. No degree in anything technical, no bootcamp, and before this I had never opened a code editor. Today my app is live in both app stores.
 
 I am not telling you that to impress you. I am telling you because the thing that made it possible is not the thing most people assume.
 
@@ -57,6 +57,6 @@ Do not start by learning to code. Start by writing down, in one sentence, the si
 
 Then find out which of your steps have waiting periods, and start those today. Not when you are ready. Today.
 
-If you want to see what the first part feels like before committing to anything, I made a [free starter](/free) that turns your idea into a clickable demo of your app, on your phone, in about seventy minutes. No coding and nothing to install.
+If you want to see what the first part feels like before committing to anything, I made a [free starter](/free) that turns your idea into a clickable demo of your app, on your phone. No coding and nothing to install.
 
 And if you want the specific trap that catches the most people, it is [the Google Play rule that costs a month](/build/blog/google-play-testing-rule).

@@ -53,6 +53,6 @@ Then mark the one line that, if the app did only that, would still be worth open
 
 That is version one. Everything else on the page is version two and beyond, and it is not lost, it is just later. Keep the list, because it becomes your plan for the months after launch and you will be glad not to be starting that from scratch.
 
-If the list has nothing on it that survives that test on its own, that is worth knowing now rather than six weeks in. It usually means the idea is a collection of features rather than a job, and it can often be fixed by asking who exactly you pictured using it and what they were trying to get done.
+If the list has nothing on it that survives that test on its own, that is worth knowing now rather than halfway through the build. It usually means the idea is a collection of features rather than a job, and it can often be fixed by asking who exactly you pictured using it and what they were trying to get done.
 
 None of this requires any technical judgement, which is the point. It is judgement about the work you already understand. If you want the wider argument about why the code is not the hard part, [it is here](/build/blog/build-an-app-without-coding), and there is [a free walkthrough of the first steps](/free) when you are ready to start.

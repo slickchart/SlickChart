@@ -7,7 +7,7 @@ keywords: how to prompt ai to build an app, describe app to ai, build an app wit
 draft: false
 ---
 
-I am an esthetician. Before I built my app I had never opened a code editor, and I built the whole thing between clients over six weeks. The part everyone asks about is the code, and the code is genuinely the easy part now. You describe a screen, you get working code back.
+I am an esthetician. Before I built my app I had never opened a code editor, and I built the whole thing between clients. The part everyone asks about is the code, and the code is genuinely the easy part now. You describe a screen, you get working code back.
 
 What nobody tells you is that the quality of what comes back is almost entirely decided by how you asked. Not by clever wording. By being specific about ordinary things.
 
@@ -57,4 +57,4 @@ Somewhere outside the conversation, keep a plain description of your app. What i
 
 You will paste pieces of it constantly, every time you start fresh. It is also the thing that keeps the app coherent, because you are the only continuity it has.
 
-None of this is technical. It is describing your own work clearly, which as a solo business owner you have already been doing for years. If you want to see what the rest of the process looks like, [this is what the six weeks actually contained](/build/blog/build-an-app-without-coding), and there is [a free walkthrough of the first steps](/free) if you would rather start than read about starting.
+None of this is technical. It is describing your own work clearly, which as a solo business owner you have already been doing for years. If you want to see what the rest of the process looks like, [this is what the whole build actually contained](/build/blog/build-an-app-without-coding), and there is [a free walkthrough of the first steps](/free) if you would rather start than read about starting.
