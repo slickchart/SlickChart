@@ -37,17 +37,17 @@ const b = await launch();
 const A = await device(b, srv, 'A', null, P);
 const B = await device(b, srv, 'B', null, P);
 // A deletes the course (the deleteCourse body, minus its confirm sheet)
-await A.evaluate((FIX) => { const i = courses.findIndex(x => x.id === 'c_acne'); courses.splice(i, 1); _loadHiddenCourses(); hiddenCourses['c_acne'] = FIX ? Date.now() : 1; _saveHiddenCourses(); persistCourses(); }, FIX);
+await A.evaluate((FIX) => { const i = courses.findIndex(x => x.id === 'c_acne'); courses.splice(i, 1); _loadHiddenCourses(); hiddenCourses['c_acne'] = Date.now();   /* deleteCourse stamps the time (2026-10-15) */ _saveHiddenCourses(); persistCourses(); }, FIX);
 await flush(A);
 await resync(B);   // B learns of the delete (normal: phone foregrounds)
 await resync(B);   // a second pull: key order (library before its delete record) is a separate bug, see sweep2-lib-tomb-order
 check('B: course deleted', !(await B.evaluate(() => courses.some(x => x.id === 'c_acne'))), await B.evaluate(() => [courses.map(x => x.id), localStorage.getItem('sc_hidden_courses')]));
 // A restores it from Earlier copies (the restoreCourseVersion body after its fetch)
 await A.evaluate((FIX) => { const rec = { id: 'c_acne', title: 'Acne Bootcamp', status: 'Published', price: 'Free', lessons: [{ id: 'l1', title: 'L1', body: 'hours of work' }], _ts: Date.now() };
-  _loadHiddenCourses(); if (hiddenCourses[rec.id]) { if (FIX) hiddenCourses[rec.id] = rec._ts - 1; else delete hiddenCourses[rec.id]; _saveHiddenCourses(); } courses.push(rec); _markCoursesCustom(); persistCourses(); }, FIX);
+  _loadHiddenCourses(); if (hiddenCourses[rec.id]) { if (FIX) hiddenCourses[rec.id] = rec._ts - 1; else hiddenCourses[rec.id] = -Date.now();   /* restoreCourseVersion: a dated un-delete */ _saveHiddenCourses(); } courses.push(rec); _markCoursesCustom(); persistCourses(); }, FIX);
 await flush(A);
 check('account: course is back after restore', /c_acne/.test(srv.kv.sc_courses || ''), (srv.kv.sc_courses || '').slice(0, 120));
-if (!FIX) check('account: delete record lifted', !/c_acne/.test(srv.kv.sc_hidden_courses || ''), srv.kv.sc_hidden_courses);
+
 await resync(B);   // B foregrounds again
 check('B sees the restored course', await B.evaluate(() => courses.some(x => x.id === 'c_acne')), await B.evaluate(() => localStorage.getItem('sc_hidden_courses')));
 check('account: restored course still on the account after B\'s pull', /c_acne/.test(srv.kv.sc_courses || ''), srv.kv.sc_hidden_courses);

@@ -1315,7 +1315,7 @@ stale device can wipe newer data from another one (CLAUDE.md §0.6).
 `sc_routines`
 
 **grow-only object union (_TOMB_OBJ)**  
-`sc_ci_dismissed`, `sc_course_purchases`, `sc_deleted_appts`, `sc_deleted_autos`, `sc_deleted_bundles`, `sc_deleted_clients`, `sc_deleted_docs`, `sc_deleted_inv`, `sc_deleted_needle_presets`, `sc_deleted_note_tmpls`, `sc_deleted_partners`, `sc_deleted_payments`, `sc_deleted_products`, `sc_deleted_protocols`, `sc_deleted_routines`, `sc_deleted_shop_bundles`, `sc_deleted_vc_types`, `sc_deleted_vendors`, `sc_deposit_handled`, `sc_hidden_courses`, `sc_hidden_forms`, `sc_hidden_guides`, `sc_hidden_square`, `sc_merged_ids`, `sc_merged_into`, `sc_summary_guide_optout`, `sc_undeleted_clients`
+`sc_ci_dismissed`, `sc_course_purchases`, `sc_deleted_appts`, `sc_deleted_autos`, `sc_deleted_bundles`, `sc_deleted_clients`, `sc_deleted_docs`, `sc_deleted_inv`, `sc_deleted_msg_tmpls`, `sc_deleted_needle_presets`, `sc_deleted_note_tmpls`, `sc_deleted_partners`, `sc_deleted_payments`, `sc_deleted_products`, `sc_deleted_protocols`, `sc_deleted_reminders`, `sc_deleted_routines`, `sc_deleted_shop_bundles`, `sc_deleted_starters`, `sc_deleted_svc`, `sc_deleted_vc_types`, `sc_deleted_vendors`, `sc_deposit_handled`, `sc_hidden_courses`, `sc_hidden_forms`, `sc_hidden_guides`, `sc_hidden_square`, `sc_merged_ids`, `sc_merged_into`, `sc_summary_guide_optout`, `sc_undeleted_clients`
 
 **grow-only list union (_TOMB_ARR)**  
 `sc_ci_cleared`, `sc_ci_read`, `sc_deleted_sq`, `sc_flag_dismissed`, `sc_form_flag_dismissed`, `sc_home_dismissed`, `sc_imported_products`, `sc_notif_cleared`, `sc_notif_read`, `sc_photo_backed`

@@ -24,7 +24,7 @@ check('account: invoice paid', /"paid"/.test(srv.kv.sc_payments), srv.kv.sc_paym
 // the computer, open since this morning, records an unrelated cash payment and a gauze count
 console.log('comp inv:', await comp.evaluate(() => JSON.stringify(inv)), await comp.evaluate(() => localStorage.getItem('sc_inventory')));
 await comp.evaluate((FIX) => { _addPayment({ clientId: 'c2', amount: 60, status: 'paid', note: 'Brow', date: '2026-10-15', _ts: FIX ? Date.now() : undefined });
-  const g = inv.find(x => x.sku === 'G1'); g.qty = 45; if (FIX) g._ts = Date.now(); saveInv(); }, FIX);
+  const g = inv.find(x => x.sku === 'G1'); if (g) { g.qty = 45; if (FIX) g._ts = Date.now(); } saveInv(); }, FIX);
 await flush(comp);
 await sleep(300);
 // the phone relaunches

@@ -47,7 +47,15 @@ const OLDEST_WINS_KEYS = { sc_attn_seen: 1 };      // card key -> first-seen ms;
 // came back on the next fresh sign-in. id -> ms, the NEWER stamp wins (the app compares delete vs
 // put-back times, so both must keep their newest). Removing an entry from these is never needed:
 // a put-back is a newer sc_undeleted_clients stamp, and the founder tool edits them with direct SQL.
-const NEWEST_WINS_KEYS = { sc_deleted_clients: 1, sc_undeleted_clients: 1, sc_merged_ids: 1 };
+const NEWEST_WINS_KEYS = { sc_deleted_clients: 1, sc_undeleted_clients: 1, sc_merged_ids: 1,
+  // Every library's delete record (id -> when deleted; a negative stamp is an un-delete, e.g. a course
+  // restored from Earlier copies). A stale device used to push its smaller record and bring back an
+  // appointment she had cancelled on her phone. The larger magnitude is the more recent decision.
+  sc_deleted_appts: 1, sc_hidden_forms: 1, sc_hidden_courses: 1, sc_hidden_guides: 1, sc_hidden_square: 1,
+  sc_deleted_vc_types: 1, sc_deleted_products: 1, sc_deleted_docs: 1, sc_deleted_protocols: 1, sc_deleted_note_tmpls: 1,
+  sc_deleted_needle_presets: 1, sc_deleted_autos: 1, sc_deleted_inv: 1, sc_deleted_vendors: 1, sc_deleted_shop_bundles: 1,
+  sc_deleted_bundles: 1, sc_deleted_partners: 1, sc_deleted_payments: 1, sc_deleted_routines: 1,
+  sc_deleted_svc: 1, sc_deleted_msg_tmpls: 1, sc_deleted_starters: 1, sc_deleted_reminders: 1 };
 const UNION_OBJ_KEYS = { sc_merged_into: 1 };      // dropped id -> surviving id; the incoming write wins a collision
 function isJsonArray(v) { try { return Array.isArray(JSON.parse(v)); } catch (e) { return false; } }
 function isJsonObject(v) { try { const o = JSON.parse(v); return !!o && typeof o === 'object' && !Array.isArray(o); } catch (e) { return false; } }
@@ -178,7 +186,7 @@ export default async function handler(req, res) {
                   VALUES (${owner}, ${k}, ${val}, now())
                   ON CONFLICT (owner, k) DO UPDATE SET v = (
                     SELECT COALESCE(jsonb_object_agg(s.key, to_jsonb(s.val)), '{}'::jsonb)::text FROM (
-                      SELECT e.key, max(e.num) AS val FROM (
+                      SELECT e.key, (array_agg(e.num ORDER BY abs(e.num) DESC))[1] AS val FROM (
                         SELECT key, (CASE WHEN jsonb_typeof(value) = 'number' THEN value::text::numeric ELSE 1 END) AS num
                           FROM jsonb_each(CASE WHEN jsonb_typeof(kv.v::jsonb)       = 'object' THEN kv.v::jsonb       ELSE '{}'::jsonb END)
                         UNION ALL

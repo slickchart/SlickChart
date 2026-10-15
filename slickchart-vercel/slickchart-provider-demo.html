@@ -762,9 +762,9 @@ const vendors=[
 ];
 
 let inv=(function(){var d=(typeof window!=='undefined'&&window.__SC_DEMO_SEED__)||null;return (d&&d.inv!==undefined)?JSON.parse(JSON.stringify(d.inv)):[];})();
-function saveVendors(){try{(function(_v){localStorage.setItem('sc_vendors',_v);if(typeof _pushKeyNow==='function')_pushKeyNow('sc_vendors',_v);return _v;})(JSON.stringify(vendors));}catch(e){}}
+function saveVendors(){_stampRows('sc_vendors',vendors);try{(function(_v){localStorage.setItem('sc_vendors',_v);if(typeof _pushKeyNow==='function')_pushKeyNow('sc_vendors',_v);return _v;})(JSON.stringify(vendors));}catch(e){}}
 function loadVendors(){try{const raw=localStorage.getItem('sc_vendors');if(raw){const arr=JSON.parse(raw);if(Array.isArray(arr)){vendors.length=0;arr.forEach(x=>vendors.push(x));}}}catch(e){}}
-function saveInv(){try{(function(_v){localStorage.setItem('sc_inventory',_v);if(typeof _pushKeyNow==='function')_pushKeyNow('sc_inventory',_v);return _v;})(JSON.stringify(inv));}catch(e){}}
+function saveInv(){_stampRows('sc_inventory',inv);try{(function(_v){localStorage.setItem('sc_inventory',_v);if(typeof _pushKeyNow==='function')_pushKeyNow('sc_inventory',_v);return _v;})(JSON.stringify(inv));}catch(e){}}
 function loadInv(){try{const raw=localStorage.getItem('sc_inventory');if(raw){const arr=JSON.parse(raw);if(Array.isArray(arr)){inv.length=0;arr.forEach(x=>inv.push(x));}}}catch(e){}}
 let partners=[
   {name:'Kara Nguyen, RD',type:'Registered Dietitian',icon:'ti-salad',bg:'var(--p-surf2)',ic:'var(--p-green)',discount:'10% off initial consult',bdg:'bt',email:'kara@knutrition.com',phone:'(415) 882-9901',website:'knutrition.com',desc:'Gut-skin connection specialist. Clients who work with Kara alongside facials see dramatically faster barrier recovery.'},
@@ -1365,7 +1365,7 @@ function _coursesDefaults(){
   const profs=(typeof selectedProfessions!=='undefined'&&Array.isArray(selectedProfessions)&&selectedProfessions.length)?selectedProfessions:[];
   const seen=new Set();const out=[];
   try{_loadHiddenCourses();}catch(e){}
-  profs.forEach(pr=>{(coursesByProf[pr]||[]).forEach(c=>{if(hiddenCourses[c.id])return;if(!seen.has(c.id)){seen.add(c.id);out.push(Object.assign({},c));}});});
+  profs.forEach(pr=>{(coursesByProf[pr]||[]).forEach(c=>{if(_tombVal(hiddenCourses[c.id])>0)return;if(!seen.has(c.id)){seen.add(c.id);out.push(Object.assign({},c));}});});
   // Never fall back to esty courses — a profession with no course set (or none selected) gets an
   // empty Courses tab, not someone else's skincare courses. Equine etc. seed their own above.
   return out;
@@ -2203,10 +2203,10 @@ function _purgeSample(){
   // Strip the seeded demo inventory / vendors / partners / automations (tagged _sample) so a real
   // provider who removes the demo isn't left with fake stock, rep contacts, referral businesses, or
   // "active" automations they never created. Their own added items (no _sample) are kept.
-  try{ if(typeof inv!=='undefined'){ inv.forEach(function(x){if(x&&x._sample)_libForget('sc_inventory',x);}); inv=inv.filter(x=>!(x&&x._sample)); if(typeof saveInv==='function')saveInv(); } }catch(e){}
-  try{ if(typeof vendors!=='undefined'){ for(let i=vendors.length-1;i>=0;i--){ if(vendors[i]&&vendors[i]._sample){_libForget('sc_vendors',vendors[i]);vendors.splice(i,1);} } if(typeof saveVendors==='function')saveVendors(); } }catch(e){}
-  try{ if(typeof partners!=='undefined'){ partners.forEach(function(x){if(x&&x._sample)_libForget('sc_partners',x);}); partners=partners.filter(x=>!(x&&x._sample)); if(typeof persistPartners==='function')persistPartners(); } }catch(e){}
-  try{ if(typeof autos!=='undefined'){ autos.forEach(function(x){if(x&&x._sample)_libForget('sc_autos',x);}); autos=autos.filter(x=>!(x&&x._sample)); if(typeof persistAutos==='function')persistAutos(); } }catch(e){}
+  try{ if(typeof inv!=='undefined'){ inv.forEach(function(x){if(x&&x._sample)_libForget('sc_inventory',x);}); const _n0=inv.length; inv=inv.filter(x=>!(x&&x._sample)); if(inv.length!==_n0&&typeof saveInv==='function')saveInv(); } }catch(e){}   // save only when something was removed: an unconditional save re-uploaded this device's OLD list on every launch
+  try{ if(typeof vendors!=='undefined'){ let _rm=0; for(let i=vendors.length-1;i>=0;i--){ if(vendors[i]&&vendors[i]._sample){_libForget('sc_vendors',vendors[i]);vendors.splice(i,1);_rm++;} } if(_rm&&typeof saveVendors==='function')saveVendors(); } }catch(e){}
+  try{ if(typeof partners!=='undefined'){ partners.forEach(function(x){if(x&&x._sample)_libForget('sc_partners',x);}); const _n0=partners.length; partners=partners.filter(x=>!(x&&x._sample)); if(partners.length!==_n0&&typeof persistPartners==='function')persistPartners(); } }catch(e){}
+  try{ if(typeof autos!=='undefined'){ autos.forEach(function(x){if(x&&x._sample)_libForget('sc_autos',x);}); const _n0=autos.length; autos=autos.filter(x=>!(x&&x._sample)); if(autos.length!==_n0&&typeof persistAutos==='function')persistAutos(); } }catch(e){}
 }
 function _todayLabel(){try{return new Date().toLocaleDateString('en-US',{weekday:'long',month:'long',day:'numeric'});}catch(e){return '';}}
 function _clearSampleData(){
@@ -2982,7 +2982,7 @@ function _allDeletedIds(){
         const raw=(typeof _lsGet==='function')?_lsGet(tk):localStorage.getItem(tk);
         const v=JSON.parse(raw||'null');
         if(Array.isArray(v))v.forEach(function(x){if(x!=null)out[String(x)]=1;});
-        else if(v&&typeof v==='object')Object.keys(v).forEach(function(x){out[x]=1;});
+        else if(v&&typeof v==='object')Object.keys(v).forEach(function(x){if(_tombVal(v[x])>0)out[x]=1;});   // a negative stamp is an un-delete
       }catch(e){}
     });
   }catch(e){}
@@ -3049,8 +3049,12 @@ function _dropBootShrinks(items,where){
     for(const k in items){
       if(!Object.prototype.hasOwnProperty.call(seen,k))continue;
       const compound=_compoundIds(k,seen[k]);
-      const had=compound||_idsOf(seen[k]); if(!had||!had.length)continue;
-      const now=compound?_compoundIds(k,items[k]):_idsOf(items[k]); if(!now)continue;
+      // Vendors, inventory and partners have no ids, so _idsOf could not see them and this guard did
+      // nothing for them: a new device signing in emptied all three on the account. Read them by the
+      // same natural key their delete records use.
+      const natIds=function(v){try{if(typeof _LIB_NATURAL==='undefined'||!_LIB_NATURAL[k])return null;const a=JSON.parse(v);if(!Array.isArray(a))return null;const f=_libKeyFn(k);return a.map(f).filter(Boolean);}catch(e){return null;}};
+      const had=compound||natIds(seen[k])||_idsOf(seen[k]); if(!had||!had.length)continue;
+      const now=compound?_compoundIds(k,items[k]):(natIds(items[k])||_idsOf(items[k])); if(!now)continue;
       const have={};now.forEach(function(id){have[id]=1;});
       const lost=had.filter(function(id){return !have[id];});
       if(!lost.length)continue;
@@ -3077,7 +3081,7 @@ function _usableSyncValue(str){ const sh=_syncShape(str); return sh!=='missing'&
 // sc_hidden_guides / sc_hidden_forms are {id:1} maps of what the provider deleted. They were pushed
 // immediately but NOT registered here, so the map itself rode the plain overwrite: a stale device's
 // copy could drop ids and resurrect a deleted guide. Same class of bug as sc_courses.
-const _TOMB_OBJ={sc_deleted_vc_types:1,sc_deleted_products:1,sc_deleted_docs:1,sc_deleted_protocols:1,sc_deleted_note_tmpls:1,sc_deleted_needle_presets:1,
+const _TOMB_OBJ={sc_deleted_svc:1,sc_deleted_msg_tmpls:1,sc_deleted_starters:1,sc_deleted_reminders:1,sc_deleted_vc_types:1,sc_deleted_products:1,sc_deleted_docs:1,sc_deleted_protocols:1,sc_deleted_note_tmpls:1,sc_deleted_needle_presets:1,
   sc_deleted_autos:1,sc_deleted_inv:1,sc_deleted_vendors:1,sc_deleted_shop_bundles:1,sc_deleted_bundles:1,
   sc_deleted_partners:1,sc_deleted_payments:1,
   sc_deleted_appts:1,sc_deleted_clients:1,sc_hidden_square:1,sc_merged_ids:1,sc_merged_into:1,sc_ci_dismissed:1,sc_course_purchases:1,sc_hidden_courses:1,sc_hidden_guides:1,sc_hidden_forms:1,
@@ -3175,6 +3179,24 @@ function _libKeyFn(libKey){
   };
 }
 // Record that this record was deleted on purpose, so the merge never brings it back.
+// Give every row that CHANGED in this save a fresh _ts, by comparing with what the device last stored.
+// These lists had no stamp on most edits (an invoice marked paid, a stock count, a renamed vendor), so
+// the merge kept the account's copy and a computer left open since morning put the invoice back to
+// unpaid. Rows that did not change keep their stamp, so a stale device's untouched rows never win.
+// Not during boot or before the account is read: those saves are loaders writing back, not edits.
+function _stampRows(key,arr){
+  try{
+    if(!Array.isArray(arr))return;
+    if(typeof Cloud!=='undefined'&&Cloud&&(Cloud._booting||(Cloud.token&&!Cloud._pulledOnce)))return;
+    const kf=_libKeyFn(key);
+    let prev=[];try{prev=JSON.parse(((typeof _lsGet==='function')?_lsGet(key):localStorage.getItem(key))||'[]');}catch(e){prev=[];}
+    if(!Array.isArray(prev))return;
+    const sig=function(r){try{const o=Object.assign({},r);delete o._ts;return JSON.stringify(o);}catch(e){return '';}};
+    const before={};prev.forEach(function(r){const k=r&&kf(r);if(k)before[k]=sig(r);});
+    const now=Date.now();
+    arr.forEach(function(r){if(!r||typeof r!=='object')return;const k=kf(r);if(!k)return;if(before[k]!==sig(r))r._ts=now;});
+  }catch(e){}
+}
 function _libForget(libKey,item){
   try{
     const tk0=_LIB_TOMB[libKey]||_MAP_LIB_TOMB[libKey],tk=Array.isArray(tk0)?tk0[0]:tk0;   // write to the library's OWN record
@@ -3203,7 +3225,9 @@ function _libUnforget(libKey,id){
     const raw=(typeof _lsGet==='function')?_lsGet(tk):localStorage.getItem(tk);
     const o=JSON.parse(raw||'null');
     if(!o||typeof o!=='object'||Array.isArray(o)||!(String(id) in o))return;
-    delete o[String(id)];
+    // A dated UN-delete rather than removing the entry: delete records now merge across devices (and
+    // on the server), so a removed entry came straight back from another device and hid it again.
+    o[String(id)]=-Date.now();
     const v=JSON.stringify(o);
     localStorage.setItem(tk,v);
     if(typeof _pushKeyNow==='function')_pushKeyNow(tk,v);
@@ -3409,6 +3433,9 @@ function _mergeTombstone(k,serverStr,localStr){
     // newer decides whether a client shows. A device holding an older time cannot flip it back.
     if((k==='sc_deleted_clients'||k==='sc_undeleted_clients')&&sv&&typeof sv==='object'&&lv&&typeof lv==='object')
       Object.keys(sv).forEach(function(i){if(typeof sv[i]==='number'&&typeof lv[i]==='number'&&sv[i]>lv[i])out[i]=sv[i];});
+    // Every other dated record: the more recent decision wins (a restore is a negative stamp).
+    else if(sv&&typeof sv==='object'&&lv&&typeof lv==='object')
+      Object.keys(sv).forEach(function(i){if(typeof sv[i]==='number'&&typeof lv[i]==='number')out[i]=_tombPick(sv[i],lv[i]);});
     return JSON.stringify(out);
   }catch(e){return null;}
 }
@@ -3427,7 +3454,11 @@ function _mergeMsgStore(serverStr,localStr){
     if(!sv||typeof sv!=='object'||!lv||typeof lv!=='object')return null;
     var ids={};Object.keys(sv).forEach(function(i){ids[i]=1;});Object.keys(lv).forEach(function(i){ids[i]=1;});
     var out={};var changed=false;
+    // A REMOVED client's conversation is not brought back (it came back with an unread badge nobody
+    // could clear). A MERGED copy's is kept, so it can be folded onto the client it went into.
+    var gone={};try{gone=_goneClientIds();}catch(e){}
     Object.keys(ids).forEach(function(id){
+      if(gone[id]&&!_mergeTargetOf(id,gone)){if(sv[id])changed=true;return;}
       var s=Array.isArray(sv[id])?sv[id]:[],l=Array.isArray(lv[id])?lv[id]:[];
       var seen={},arr=[];
       l.forEach(function(m){var k=_msgKey(m);if(k&&seen[k])return;if(k)seen[k]=1;arr.push(m);});
@@ -3490,7 +3521,8 @@ function _mergeThreads(serverStr,localStr){
         if(cur.unread===false||t.unread===false)cur.unread=false;   // sticky read
       }else{byId[t.id]=Object.assign({},t);order.push(t.id);}
     });
-    var out=order.map(function(id){return byId[id];});
+    var gone={};try{gone=_goneClientIds();}catch(e){}
+    var out=order.filter(function(id){return !(gone[id]&&!_mergeTargetOf(id,gone));}).map(function(id){return byId[id];});   // removed clients' threads stay gone
     var str=JSON.stringify(out);
     // Push the merged superset back only when it actually differs from what the server sent, so two
     // devices don't ping-pong identical blobs forever.
@@ -3512,15 +3544,29 @@ function _mergeThreads(serverStr,localStr){
 // A delete record, whatever shape it is stored in. Object maps ({id:ts}) and plain arrays of ids
 // (sc_ci_cleared) both occur, and reading an array as a map made every lookup miss — which would
 // let a merge resurrect everything the provider had cleared.
+// A delete record's value for one id: the time it was deleted (1 for old undated deletes). A NEGATIVE
+// value is an UN-delete made at that time (a course restored from Earlier copies), so the one with the
+// larger magnitude is the more recent decision. 0 = no record.
+function _tombVal(v){if(typeof v==='number')return v;return v?1:0;}
+function _tombPick(a,b){const x=_tombVal(a),y=_tombVal(b);return Math.abs(y)>Math.abs(x)?y:x;}
+// Does a delete stamped `t` hide a row last saved at `ts`? Undated deletes (and rows with no stamp)
+// hide absolutely, as before. A dated delete loses to a row saved AFTER it: re-added, restored, or
+// re-saved (an item that ran out and came back used to stay hidden for good).
+function _tombHides(t,ts){t=_tombVal(t);if(t<=0)return false;const i=Number(ts)||0;if(t<=1||!i)return true;return t>=i;}
 function _tombSet(keys){
   const out={};
   [].concat(keys||[]).forEach(function(tk){
-    try{
-      const raw=(typeof _lsGet==='function')?_lsGet(tk):localStorage.getItem(tk);
-      const v=JSON.parse(raw||'null');
-      if(Array.isArray(v))v.forEach(function(x){if(x!=null)out[String(x)]=1;});
-      else if(v&&typeof v==='object')Object.keys(v).forEach(function(x){out[x]=1;});
-    }catch(e){}
+    // The account's copy arriving in THIS pull counts too: keys merge in whatever order the server
+    // lists them, so the delete record may not be stored yet when its library merges.
+    const inc=(typeof Cloud!=='undefined'&&Cloud&&Cloud._incoming)?Cloud._incoming[tk]:null;
+    [inc,(function(){try{return (typeof _lsGet==='function')?_lsGet(tk):localStorage.getItem(tk);}catch(e){return null;}})()].forEach(function(raw){
+      try{
+        if(raw==null)return;
+        const v=JSON.parse(raw||'null');
+        if(Array.isArray(v))v.forEach(function(x){if(x!=null)out[String(x)]=_tombPick(out[String(x)],1);});
+        else if(v&&typeof v==='object')Object.keys(v).forEach(function(x){out[x]=_tombPick(out[x],v[x]);});
+      }catch(e){}
+    });
   });
   return out;
 }
@@ -3540,7 +3586,7 @@ function _mergeAuthoredById(serverStr,localStr,hiddenKey,opts){
     if(!c)return;
     const cid=keyOf(c);
     if(!cid){if(keepUnkeyed)out.push(c);return;}
-    if(hidden[cid])return;                        // deleted on purpose — never bring it back
+    if(_tombHides(hidden[cid],c._ts))return;      // deleted on purpose (and not re-saved since)
     if(!(cid in idx)){idx[cid]=out.length;out.push(c);return;}
     const cur=out[idx[cid]];
     const a=Number(cur&&cur._ts)||0,b=Number(c&&c._ts)||0;
@@ -3564,7 +3610,7 @@ function _mergeAuthoredById(serverStr,localStr,hiddenKey,opts){
     if(!c)return false;
     const k=keyOf(c);
     if(!k)return keepUnkeyed;
-    return !hidden[k];
+    return !_tombHides(hidden[k],c._ts);
   }));
   return {str:str,changed:str!==srvFiltered};
 }
@@ -4018,7 +4064,22 @@ function _mergeForms(serverStr,localStr){
   });
   return {str:str,changed:str!==srvView};
 }
-function _mergeCourses(serverStr,localStr){return _mergeAuthoredById(serverStr,localStr,'sc_hidden_courses');}
+function _mergeCourses(serverStr,localStr){
+  // A new device holds the profession's STOCK courses before the account is read. On an account she has
+  // made her own (sc_courses_custom), those were unioned in and uploaded with her next edit. Leave out a
+  // stock course the account does not have and this device never edited (no _ts).
+  try{
+    const inc=(typeof Cloud!=='undefined'&&Cloud&&Cloud._incoming)?Cloud._incoming.sc_courses_custom:null;
+    const custom=String(inc!=null?inc:((typeof _lsGet==='function')?_lsGet('sc_courses_custom'):''))==='1';
+    if(custom&&typeof coursesByProf!=='undefined'){
+      const stock={};Object.keys(coursesByProf).forEach(function(pr){(coursesByProf[pr]||[]).forEach(function(c){if(c&&c.id)stock[c.id]=1;});});
+      const srvIds={};try{(JSON.parse(serverStr||'[]')||[]).forEach(function(c){if(c&&c.id)srvIds[c.id]=1;});}catch(e){}
+      let loc=[];try{loc=JSON.parse(localStr||'[]');}catch(e){loc=[];}
+      if(Array.isArray(loc)){const kept=loc.filter(function(c){return !(c&&stock[c.id]&&!srvIds[c.id]&&!c._ts);});if(kept.length!==loc.length)localStr=JSON.stringify(kept);}
+    }
+  }catch(e){}
+  return _mergeAuthoredById(serverStr,localStr,'sc_hidden_courses');
+}
 // Custom guides are the provider's own writing and were overwritten the same way courses were.
 function _mergeResources(serverStr,localStr){return _mergeAuthoredById(serverStr,localStr,'sc_hidden_guides');}
 // Appointments she typed in by hand are real bookings, and sc_manual_appts rode the plain overwrite:
@@ -4408,6 +4469,10 @@ const Cloud={
     if(!this._booting)return;
     this._booting=false;
     try{clearTimeout(this._bootFailsafe);}catch(e){}
+    // The immediate-push batch was held open through boot carrying values computed BEFORE the pull.
+    // Send what the key holds NOW (after the account was merged in), or a launch put this device's
+    // old inventory/vendors/partners/automations back over the account. Identical values then drop out.
+    try{const bt=this._pushBatch;if(bt&&bt.items)for(const k in bt.items){const cur=(typeof _lsGet==='function')?_lsGet(k):localStorage.getItem(k);if(cur!=null)bt.items[k]=String(cur);}}catch(e){}
     try{const q=this._queue,seen=this._serverSeen||{};
       for(const k in q){ if(Object.prototype.hasOwnProperty.call(seen,k)&&_sameSyncValue(seen[k],q[k]))delete q[k]; }
     }catch(e){}
@@ -7740,7 +7805,7 @@ async function _initCapturedPhotos(){
   // isn't on the server yet. Both run in the background so boot isn't blocked.
   try{setTimeout(function(){try{_restorePhotosFromCloud();}catch(e){}try{_backupPhotosToServer();}catch(e){}},1200);}catch(e){}
 }
-function persistAutos(){try{(function(_v){localStorage.setItem('sc_autos',_v);if(typeof _pushKeyNow==='function')_pushKeyNow('sc_autos',_v);return _v;})(JSON.stringify(autos));}catch(e){}}
+function persistAutos(){_stampRows('sc_autos',autos);try{(function(_v){localStorage.setItem('sc_autos',_v);if(typeof _pushKeyNow==='function')_pushKeyNow('sc_autos',_v);return _v;})(JSON.stringify(autos));}catch(e){}}
 function loadAutos(){try{const raw=localStorage.getItem('sc_autos');if(raw){const arr=JSON.parse(raw);if(Array.isArray(arr))autos=arr;}}catch(e){}}
 function persistNotifSettings(){try{const v=JSON.stringify(notifSettings);localStorage.setItem('sc_notif_settings',v);if(typeof _pushKeyNow==='function')_pushKeyNow('sc_notif_settings',v);}catch(e){}}
 function loadNotifSettings(){try{const raw=localStorage.getItem('sc_notif_settings');if(raw){const v=JSON.parse(raw);if(v&&typeof v==='object')notifSettings=v;}}catch(e){}}
@@ -7880,11 +7945,11 @@ function _dedupeCourses(arr){
 // Protocols persistence, `protocols` is a const array reset from profession defaults on
 // every applyProfessionConfig(), so like courses we mark it "custom" once the provider
 // edits it and restore the saved set over the defaults (mutating in place, since it's const).
-function persistProtocols(){try{(function(_v){localStorage.setItem('sc_protocols',_v);if(typeof _pushKeyNow==='function')_pushKeyNow('sc_protocols',_v);return _v;})(JSON.stringify(protocols));}catch(e){}}
+function persistProtocols(){_stampRows('sc_protocols',protocols);try{(function(_v){localStorage.setItem('sc_protocols',_v);if(typeof _pushKeyNow==='function')_pushKeyNow('sc_protocols',_v);return _v;})(JSON.stringify(protocols));}catch(e){}}
 function _protocolsAreCustom(){try{return localStorage.getItem('sc_protocols_custom')==='1';}catch(e){return false;}}
 function _markProtocolsCustom(){try{localStorage.setItem('sc_protocols_custom','1');}catch(e){}try{if(typeof _pushKeyNow==='function')_pushKeyNow('sc_protocols_custom','1');}catch(e){}}
 function loadProtocols(){try{const raw=localStorage.getItem('sc_protocols');if(raw){const a=JSON.parse(raw);if(Array.isArray(a)&&a.length){protocols.length=0;a.forEach(p=>protocols.push(p));return true;}}}catch(e){}return false;}
-function persistShopBundles(){try{(function(_v){localStorage.setItem('sc_shop_bundles',_v);if(typeof _pushKeyNow==='function')_pushKeyNow('sc_shop_bundles',_v);return _v;})(JSON.stringify(shopBundles));}catch(e){}}
+function persistShopBundles(){_stampRows('sc_shop_bundles',shopBundles);try{(function(_v){localStorage.setItem('sc_shop_bundles',_v);if(typeof _pushKeyNow==='function')_pushKeyNow('sc_shop_bundles',_v);return _v;})(JSON.stringify(shopBundles));}catch(e){}}
 function loadShopBundles(){try{const raw=localStorage.getItem('sc_shop_bundles');if(raw){const arr=JSON.parse(raw);if(Array.isArray(arr))shopBundles=arr;}}catch(e){}}
 function persistAffiliateLinks(){try{(function(_v){localStorage.setItem('sc_affiliate_links',_v);if(typeof _pushKeyNow==='function')_pushKeyNow('sc_affiliate_links',_v);return _v;})(JSON.stringify(affiliateLinks));}catch(e){}try{_syncShopCatalog();}catch(e){}}
 // Mark the product list as provider-customized (immediate push) so boot never reseeds demo products
@@ -19218,7 +19283,7 @@ _ensureBundledFormQs();
 // Keyed by form id → array of guide ids (see guideTemplatesByProf).
 // ── Bundles: a named group of forms + resources sent together in one action ──
 function loadBundles(){try{const s=localStorage.getItem('sc_bundles');if(s)return JSON.parse(s);}catch(e){}return [];}
-function saveBundles(){const v=JSON.stringify(bundles);try{localStorage.setItem('sc_bundles',v);}catch(e){}if(typeof _pushKeyNow==='function')_pushKeyNow('sc_bundles',v);}
+function saveBundles(){_stampRows('sc_bundles',bundles);const v=JSON.stringify(bundles);try{localStorage.setItem('sc_bundles',v);}catch(e){}if(typeof _pushKeyNow==='function')_pushKeyNow('sc_bundles',v);}
 let bundles=loadBundles();
 function _newBundle(){const id='bnd_'+Date.now().toString(36);bundles.push({id,name:'New bundle',formIds:[],resourceIds:[]});saveBundles();return id;}
 function _bundleItemCount(b){return (b.formIds||[]).length+(b.resourceIds||[]).length;}
@@ -21238,7 +21303,7 @@ function _confirmDeleteDoc(did){
     docs=docs.filter(x=>x.id!==did);saveDocs();nav('vault');
   });
 }
-function saveDocs(){try{(function(_v){localStorage.setItem('sc_docs',_v);if(typeof _pushKeyNow==='function')_pushKeyNow('sc_docs',_v);return _v;})(JSON.stringify(docs));}catch(e){if(typeof proToast==='function')proToast('Storage is full, try a smaller file');}}
+function saveDocs(){_stampRows('sc_docs',docs);try{(function(_v){localStorage.setItem('sc_docs',_v);if(typeof _pushKeyNow==='function')_pushKeyNow('sc_docs',_v);return _v;})(JSON.stringify(docs));}catch(e){if(typeof proToast==='function')proToast('Storage is full, try a smaller file');}}
 function loadDocs(){try{const raw=localStorage.getItem('sc_docs');if(raw){const a=JSON.parse(raw);if(Array.isArray(a))docs=a;}}catch(e){}}
 function _downloadDoc(id){
   const d=docs.find(x=>x.id===id);if(!d||!d.file)return;
@@ -21630,7 +21695,7 @@ function saveInventoryItem(i){
   // When editing, keep fields the form doesn't expose (Square link + retail data) \u2014 rebuilding the item
   // from just the form fields used to drop squareVarId/sku/price, so the next Square sync couldn't match
   // it and re-added a duplicate row with the price lost.
-  if(i!=null&&inv[i])inv[i]=Object.assign({},inv[i],item);else inv.push(item);
+  if(i!=null&&inv[i]){const _old=Object.assign({},inv[i]);inv[i]=Object.assign({},inv[i],item);try{if(_libKeyFn('sc_inventory')(_old)!==_libKeyFn('sc_inventory')(inv[i]))_libForget('sc_inventory',_old);}catch(e){}}else inv.push(item);   // a rename retires the old name, or another device shows both
   saveInv();
   if(typeof proToast==='function')proToast(i!=null?'Item updated \u2713':'Item added \u2713');
   nav('inventory');
@@ -21862,7 +21927,7 @@ function deleteGuideCard(id){
   const nm=(g&&g.title)||'this guide';
   const _go=function(){
   try{for(let i=customResources.length-1;i>=0;i--){if(customResources[i].id===id)customResources.splice(i,1);}}catch(e){}
-  hiddenGuides[id]=1;                                   // stays gone across refresh (template or custom)
+  hiddenGuides[id]=Date.now();                          // stays gone across refresh (template or custom); dated, so a re-added guide can show
   try{if(typeof persistCustomResources==='function')persistCustomResources();}catch(e){}
   _saveHiddenGuides();
   try{if(typeof rebuildResources==='function')rebuildResources();}catch(e){}
@@ -22490,7 +22555,7 @@ async function _cbCommit(id,opts){
   else{courses.push(Object.assign({id:courseId,icon:'ti-book',bg:'var(--p-purple-bg)',ic:'var(--p-purple)',bdg:'bp',enrolled:0,revenue:0,progress:0},base));}
   // Re-creating a course at an id that was previously deleted must clear its tombstone, or the merge
   // would filter the new one out as "deleted on purpose".
-  try{_loadHiddenCourses();if(hiddenCourses[courseId]||(existing&&hiddenCourses[existing.id])){delete hiddenCourses[courseId];if(existing)delete hiddenCourses[existing.id];_saveHiddenCourses();}}catch(e){}
+  try{_loadHiddenCourses();if(_tombVal(hiddenCourses[courseId])>0||(existing&&_tombVal(hiddenCourses[existing.id])>0)){hiddenCourses[courseId]=-Date.now();if(existing)hiddenCourses[existing.id]=-Date.now();_saveHiddenCourses();}}catch(e){}
   try{_markCoursesCustom();}catch(e){}
   let _coursePush=Promise.resolve({local:false,server:false});try{_coursePush=persistCourses()||_coursePush;}catch(e){}
   // Only the LOCAL file writes are awaited. They are fast, and they are what stops a reload losing
@@ -22751,7 +22816,7 @@ async function _cvReconcileOnBoot(){
     list.forEach(function(v){
       if(!v||!v.courseId||v.deleted)return;
       if(have[v.courseId])return;                                        // still on the shelf
-      try{if(hiddenCourses&&hiddenCourses[v.courseId])return;}catch(e){}  // deleted on purpose
+      try{if(hiddenCourses&&_tombVal(hiddenCourses[v.courseId])>0)return;}catch(e){}  // deleted on purpose
       // A file-rebuild placeholder is scaffolding, not work. Bringing a pile of "Recovered course
       // — rename me" cards back every launch is noise, and noise is how a real restore gets missed.
       if(_isPlaceholderCourseTitle(v.title))return;
@@ -22809,7 +22874,7 @@ async function _cvLostCourses(){
     list.forEach(function(v){
       if(!v||!v.courseId||v.deleted||seen[v.courseId])return;
       if(have[v.courseId])return;
-      try{if(hiddenCourses&&hiddenCourses[v.courseId])return;}catch(e){}
+      try{if(hiddenCourses&&_tombVal(hiddenCourses[v.courseId])>0)return;}catch(e){}
       if(_isPlaceholderCourseTitle(v.title))return;
       seen[v.courseId]=1;out.push(v);
     });
@@ -22887,7 +22952,7 @@ async function restoreCourseVersion(vid){
   delete rec._filesPending;
   // A deleted course carries a tombstone and the merge honours it. Lifting it is what stops the next
   // sync from quietly removing exactly what we just put back.
-  try{_loadHiddenCourses();if(hiddenCourses[rec.id]){delete hiddenCourses[rec.id];_saveHiddenCourses();}}catch(e){}
+  try{_loadHiddenCourses();if(_tombVal(hiddenCourses[rec.id])>0){hiddenCourses[rec.id]=-Date.now();_saveHiddenCourses();}}catch(e){}   // a dated un-delete, so a device still holding the delete cannot hide it again
   const i=courses.findIndex(function(x){return x&&x.id===rec.id;});
   if(i>=0)courses[i]=Object.assign({},courses[i],rec);else courses.push(rec);
   try{_markCoursesCustom();}catch(e){}
@@ -23389,7 +23454,7 @@ async function recoverLostCourses(){
     });
     // A course that was deleted carries a tombstone, and the merge honours it — so recovery has to
     // lift that too, or the next sync would quietly remove the course we just put back.
-    try{_loadHiddenCourses();if(hiddenCourses[courseId]){delete hiddenCourses[courseId];_saveHiddenCourses();}}catch(e){}
+    try{_loadHiddenCourses();if(_tombVal(hiddenCourses[courseId])>0){hiddenCourses[courseId]=-Date.now();_saveHiddenCourses();}}catch(e){}
     courses.push({id:courseId,title:'Recovered course \u2014 rename me',icon:'ti-book',bg:'var(--p-purple-bg)',
       ic:'var(--p-purple)',bdg:'bp',status:'Draft',price:'Free',enrolled:0,revenue:0,progress:0,
       desc:'',cover:'',lessons:lessons,modules:lessons.length,moduleNames:lessons.map(l=>l.title),
@@ -23422,7 +23487,7 @@ async function deleteCourse(id){
   // Vitality Reset Program. While a duplicate remains, removing the single row is the whole job.
   try{
     const _stillThere=(courses||[]).some(x=>x&&x.id===id);
-    if(!_stillThere){_loadHiddenCourses();hiddenCourses[id]=1;_saveHiddenCourses();
+    if(!_stillThere){_loadHiddenCourses();hiddenCourses[id]=Date.now();_saveHiddenCourses();
       // AWAITED below, not fired and forgotten. This is the record that survives a device whose
       // storage is too full to keep its own delete list; losing it to a fast refresh means the boot
       // restore helpfully puts back a course that was thrown away on purpose.
@@ -26137,7 +26202,7 @@ function _payDateDisp(d){
   return s;
 }
 let _payments=(function(){try{return JSON.parse(localStorage.getItem('sc_payments')||'[]');}catch(e){return [];}})();
-function _savePayments(){try{const v=JSON.stringify(_payments);localStorage.setItem('sc_payments',v);if(typeof _pushKeyNow==='function')_pushKeyNow('sc_payments',v);return true;}catch(e){return false;}}   // push NOW — money records must not ride the debounce (a fast reload/device-switch could clobber a payment)
+function _savePayments(){_stampRows('sc_payments',_payments);try{const v=JSON.stringify(_payments);localStorage.setItem('sc_payments',v);if(typeof _pushKeyNow==='function')_pushKeyNow('sc_payments',v);return true;}catch(e){return false;}}   // push NOW — money records must not ride the debounce (a fast reload/device-switch could clobber a payment)
 function _clientBalance(cid){return _payments.filter(p=>p.clientId===cid).reduce((a,p)=>a+_payOwed(p),0);}
 function _addPayment(p){p.id=p.id||('pay_'+Date.now().toString(36)+Math.random().toString(36).slice(2,6));_payments.unshift(p);_savePayments();return p;}
 // Money split for a payment. 'partial' = part-collected: amountPaid received, amount-amountPaid still
@@ -33072,6 +33137,7 @@ function renderEditPartner(i){
   </div>`;
 }
 function saveEditPartner(i){
+  const _oldP=Object.assign({},partners[i]);
   partners[i].name=document.getElementById('ep-name')?.value||partners[i].name;
   partners[i].type=document.getElementById('ep-type')?.value||partners[i].type;
   partners[i].desc=document.getElementById('ep-desc')?.value||partners[i].desc;
@@ -33079,11 +33145,12 @@ function saveEditPartner(i){
   partners[i].email=document.getElementById('ep-email')?.value||partners[i].email;
   partners[i].phone=document.getElementById('ep-phone')?.value||partners[i].phone;
   partners[i].website=document.getElementById('ep-web')?.value||partners[i].website;
+  try{if(_libKeyFn('sc_partners')(_oldP)!==_libKeyFn('sc_partners')(partners[i]))_libForget('sc_partners',_oldP);}catch(e){}
   persistPartners();
   if(typeof proToast==='function')proToast('Partner updated');
   nav('partner-detail',i);
 }
-function persistPartners(){try{(function(_v){localStorage.setItem('sc_partners',_v);if(typeof _pushKeyNow==='function')_pushKeyNow('sc_partners',_v);return _v;})(JSON.stringify(partners));}catch(e){}}
+function persistPartners(){_stampRows('sc_partners',partners);try{(function(_v){localStorage.setItem('sc_partners',_v);if(typeof _pushKeyNow==='function')_pushKeyNow('sc_partners',_v);return _v;})(JSON.stringify(partners));}catch(e){}}
 function loadPartners(){try{const raw=localStorage.getItem('sc_partners');if(raw){const arr=JSON.parse(raw);if(Array.isArray(arr))partners=arr;}}catch(e){}}
 function removePartner(i){const _go=function(){_libForget('sc_partners',partners[i]);partners.splice(i,1);persistPartners();if(typeof proToast==='function')proToast('Partner removed');nav('partners');};if(typeof confirmModal==='function')confirmModal({title:'Remove partner?',body:'This removes this partner from your network.',action:'Remove'},_go);else _go();}
 
@@ -34206,7 +34273,7 @@ function deleteResource(id){
   // can't resurrect it — the same durable delete the card trash button does. Without this, another
   // device holding a stale sc_resources would re-add it on the next sync (the "deleted guide keeps
   // coming back" bug). A non-custom guide here is a "reset to original", not a delete — never hide it.
-  if(isCustom){try{if(typeof hiddenGuides!=='undefined'){hiddenGuides[id]=1;if(typeof _saveHiddenGuides==='function')_saveHiddenGuides();}}catch(e){}}
+  if(isCustom){try{if(typeof hiddenGuides!=='undefined'){hiddenGuides[id]=Date.now();if(typeof _saveHiddenGuides==='function')_saveHiddenGuides();}}catch(e){}}
   // also detach from any forms
   Object.keys(formGuides).forEach(fid=>{const a=formGuides[fid];const j=a.indexOf(id);if(j>=0){a.splice(j,1);if(!a.length)delete formGuides[fid];}});
   persistCustomResources();persistForms();rebuildResources();
@@ -34347,7 +34414,7 @@ function saveVendor(editIdx){
   const notes=g('vn-notes')||'';
   const initials=_initials(name);
   if(editIdx!=null&&vendors[editIdx]){
-    const v=vendors[editIdx];v.name=name;v.init=initials;v.cat=cat;v.rep=rep;v.phone=phone;v.email=email;v.website=website;v.portal=portal;v.notes=notes;
+    const v=vendors[editIdx];try{if(_libKeyFn('sc_vendors')(v)!==_libKeyFn('sc_vendors')({name:name}))_libForget('sc_vendors',Object.assign({},v));}catch(e){}v.name=name;v.init=initials;v.cat=cat;v.rep=rep;v.phone=phone;v.email=email;v.website=website;v.portal=portal;v.notes=notes;
     saveVendors();
     proToast('Vendor updated \u2713');nav('vendor-detail',editIdx);
   }else{
