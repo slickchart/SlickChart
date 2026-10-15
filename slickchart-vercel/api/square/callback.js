@@ -18,7 +18,7 @@ export default async function handler(req, res) {
   const q = req.query || {};
   const code = q.code, state = q.state, error = q.error;
   if (error) { backTo(res, origin, { sq: 'error', reason: (q.error_description || error) }); return; }
-  const payload = (secret && state) ? verifyToken(state, secret) : null;
+  const payload = (secret && state) ? verifyToken(state, secret, { scope: 'sq' }) : null;
   if (!payload || payload.p !== 'sq' || !payload.u) { backTo(res, origin, { sq: 'error', reason: 'invalid_state' }); return; }
   if (!code) { backTo(res, origin, { sq: 'error', reason: 'no_code' }); return; }
   try {

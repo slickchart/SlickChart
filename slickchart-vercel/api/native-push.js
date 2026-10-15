@@ -7,7 +7,7 @@
 // APNs key uploaded to it — see PUSH-NATIVE-SETUP.md. The sender reads these tokens from
 // native_push_tokens once those credentials are configured.
 import { dbEnabled, sql } from '../lib/db.js';
-import { verifyToken } from '../lib/auth.js';
+import { verifyToken, sessionOk } from '../lib/auth.js';
 import { ensureClientTables, getClientByToken } from '../lib/clients.js';
 
 async function ensureNativeTable(q) {
@@ -23,6 +23,7 @@ async function ensureNativeTable(q) {
 }
 
 export default async function handler(req, res) {
+  if (!(await sessionOk(req))) { res.status(401).json({ error: 'This session has been signed out. Please log in again.' }); return; }
   if (!dbEnabled()) { res.status(200).json({ ok: false }); return; }
   const b = req.body || {};
   const platform = String(b.platform || '').slice(0, 16);

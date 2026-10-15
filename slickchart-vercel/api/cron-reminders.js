@@ -81,10 +81,14 @@ export default async function handler(req, res) {
     await ensureClientTables();
     const rows = await listAllClientPrefs();
     for (const row of rows) {
+      // One client's failure (a DB hiccup on a claim) must not stop everyone after them: a homecare
+      // slot is a 15-minute window, so an abort here lost it for the rest of the list.
+      try {
       const prefs = row.prefs || {};
       const notif = prefs.notif || {};
       const rem = prefs.reminders || {};
-      if (notif.enabled === false) continue;         // client turned notifications off
+      // Notifications off: no pushes — but the aftercare guidance still lands in their message thread.
+      const pushOff = notif.enabled === false;
       if (!rem.tz) continue;                          // no timezone synced yet → can't place local time
       summary.checked++;
 
@@ -128,7 +132,7 @@ export default async function handler(req, res) {
       // window, which a once-daily cron would almost always miss.
       const MORNING_LO = 7, MORNING_HI = 11;
       const inMorning = !quiet && nowL.hour >= MORNING_LO && nowL.hour <= MORNING_HI;
-      const due = [];
+      let due = [];
       for (const s of hcSlots) due.push(s);
 
       // Reminders for EVERY upcoming appointment across the client's providers. Newer clients sync an
@@ -220,7 +224,19 @@ export default async function handler(req, res) {
         }
       }
 
+      if (pushOff) due = due.filter(r => r.isHeal);
       if (!due.length) continue;
+      // Aftercare is written to the client's thread whether or not they have a device to push to; it
+      // used to be skipped entirely for a client without push, despite "lands in the real thread".
+      for (const r of due) {
+        if (!r.isHeal || !row.provider_id) continue;
+        let freshH = false;
+        try { freshH = await claimReminder(row.client_id, r.rkey); } catch (e) {}
+        if (!freshH) { r._skip = true; continue; }
+        r._claimed = true;
+        try { await logEvent(row.provider_id, row.client_id, 'provider_message', { text: r.healMsg, photos: [], auto: true }); } catch (e) {}
+      }
+      if (pushOff) continue;
       const subs = await listPushSubs(row.client_id);
       // A reminder reaches the client on EITHER channel — browser web-push and/or their native
       // app. A native-only install has no web-push subscription, so don't skip on empty `subs`
@@ -232,14 +248,10 @@ export default async function handler(req, res) {
       if (!subs.length && !hasNative) continue;
 
       for (const r of due) {
-        // Claim first so overlapping cron runs can't double-send; only then push.
-        const fresh = await claimReminder(row.client_id, r.rkey);
-        if (!fresh) continue;
-        // Aftercare drip also lands in the client's real message thread (as if the artist sent it),
-        // so the healing guidance persists in-app, not just as a transient push.
-        if (r.isHeal && row.provider_id) {
-          try { await logEvent(row.provider_id, row.client_id, 'provider_message', { text: r.healMsg, photos: [], auto: true }); } catch (e) {}
-        }
+        if (r._skip) continue;
+        // Claim first so overlapping cron runs can't double-send; only then push. Aftercare was claimed
+        // (and written to the thread) above.
+        if (!r._claimed) { const fresh = await claimReminder(row.client_id, r.rkey); if (!fresh) continue; }
         // Deep-link the tap to the relevant screen (check-in/intake for appointment reminders, the
         // homecare routine, the message thread for aftercare) instead of always dropping on Home.
         const scr = r.screen || '';
@@ -259,6 +271,7 @@ export default async function handler(req, res) {
         else if (r.isHeal) summary.aftercare++;
         else summary.homecare++;
       }
+      } catch (e) { console.error('[cron-reminders] client failed:', row && row.client_id, e && e.message); }
     }
     res.status(200).json({ ok: true, ...summary });
   } catch (e) {

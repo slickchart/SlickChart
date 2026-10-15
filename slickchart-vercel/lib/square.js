@@ -7,7 +7,7 @@
 // isn't the caller's own, and one Square merchant maps to exactly one provider (DB-enforced).
 import crypto from 'crypto';
 import { sql, ensureProvidersTable, dbEnabled, ensureSquareCreateLog } from './db.js';
-import { verifyToken } from './auth.js';
+import { verifyToken, sessionFromReq } from './auth.js';
 import { encrypt, decrypt } from './crypto.js';
 
 // Short, non-reversible fingerprint of a Square access token, so the create audit can say WHOSE token
@@ -445,8 +445,12 @@ export function providerFromReq(req) {
 // OAuth connection. There is NO shared/deployment-wide fallback of any kind — the shared
 // SQUARE_ACCESS_TOKEN + APP_SHARED_SECRET path that caused the cross-account leak has been removed
 // entirely, so no request can ever operate on a Square account that isn't the caller's own.
+// providerFromReq, plus sign-out/revocation honoured. Use this one for anything that acts.
+export async function providerFromReqChecked(req) {
+  try { const p = await sessionFromReq(req, sql()); return p ? p.u : null; } catch (e) { return null; }
+}
 export async function sqContext(req, res) {
-  const providerId = providerFromReq(req);
+  const providerId = await providerFromReqChecked(req);
   if (!providerId) {
     res.status(401).json({ error: 'Please sign in to use Square.', code: 'nosquare' });
     return null;

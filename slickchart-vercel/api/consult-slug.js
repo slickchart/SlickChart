@@ -1,6 +1,6 @@
 // Provider-authed: GET returns the provider's current consult slug (plus a suggested slug
 // derived from their business name if none is set yet); PUT { slug } claims/updates it.
-import { verifyToken } from '../lib/auth.js';
+import { verifyToken, sessionOk } from '../lib/auth.js';
 import { dbEnabled, getKVValue } from '../lib/db.js';
 import { getSlugForProvider, claimSlug, slugify } from '../lib/consult.js';
 
@@ -13,6 +13,7 @@ function providerId(req) {
 }
 
 export default async function handler(req, res) {
+  if (!(await sessionOk(req))) { res.status(401).json({ error: 'This session has been signed out. Please log in again.' }); return; }
   if (!dbEnabled()) { res.status(200).json({ ok: false }); return; }
   const provider = providerId(req);
   if (!provider) { res.status(401).json({ error: 'Not signed in' }); return; }

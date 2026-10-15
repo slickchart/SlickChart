@@ -12,7 +12,7 @@
 // automations and `sc_clients` for the client charts (which carry birthday + last-visit). Each send is
 // claimed atomically (reminder_log) so overlapping/hourly runs can't double-send.
 import { dbEnabled, sql, ensureTable } from '../lib/db.js';
-import { ensureClientTables, claimReminder, logEvent, listPushSubs, deletePushSub, spaceUrl, getClientToken } from '../lib/clients.js';
+import { ensureClientTables, claimReminder, logEvent, listPushSubs, deletePushSub, spaceUrl, wantsPush } from '../lib/clients.js';
 import { pushConfigured, sendPushToAll } from '../lib/push.js';
 import { sendNativeToClient, nativePushConfigured } from '../lib/fcm.js';
 
@@ -112,7 +112,12 @@ export default async function handler(req, res) {
       try { autos = JSON.parse(row.v || '[]'); } catch (e) { autos = []; }
       if (!Array.isArray(autos) || !autos.length) continue;
       const charts = chartsByOwner[owner] || {};
-      const clientIds = Object.keys(charts);
+      // §0.1: the ids come from the provider's own synced blob, which she can write freely. Only her
+      // OWN live client rows may be messaged — an id that collides with (or was typed to match) another
+      // account's client used to push her text, with that client's own link, to their phone.
+      const own = new Map();
+      try { for (const r of await q`SELECT id, token FROM clients WHERE provider_id = ${owner} AND deleted_at IS NULL`) own.set(String(r.id), r.token || ''); } catch (e) { continue; }
+      const clientIds = Object.keys(charts).filter(id => own.has(String(id)));
       if (!clientIds.length) continue;
 
       let providerCounted = false;
@@ -176,7 +181,9 @@ export default async function handler(req, res) {
 
           const title = ev.kind === 'birthday' ? 'A birthday note 🎂' : 'A note from your provider';
           // This client's own space, never a tokenless link (which used to fall back to the SAMPLE).
-          const dlUrl = spaceUrl(await getClientToken(cid), 'messages');
+          const dlUrl = spaceUrl(own.get(String(cid)) || '', 'messages');
+          // The thread message above always lands; a phone notification only if she has not turned them off.
+          if (!(await wantsPush(q, cid))) continue;
           if (pushConfigured()) {
             try { const subs = await listPushSubs(cid); if (subs && subs.length) summary.devices += await sendPushToAll(subs, { title, body: text.slice(0, 140), url: dlUrl, tag: rkey, renotify: true, screen: 'messages' }, deletePushSub); } catch (e) {}
           }

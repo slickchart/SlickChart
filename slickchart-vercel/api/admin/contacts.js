@@ -28,7 +28,7 @@
 // Owner gate matches build-buyers: identity comes from the VERIFIED session token, never from
 // anything in the request (CLAUDE.md §0.5).
 import { sql, ensureProvidersTable, ensureBuildPurchasesTable, dbEnabled } from '../../lib/db.js';
-import { verifyToken } from '../../lib/auth.js';
+import { verifyToken, sessionOk } from '../../lib/auth.js';
 import { ensureNurtureTables } from '../../lib/nurture.js';
 import { ensureFreeTables } from '../../lib/free-funnel.js';
 
@@ -42,6 +42,7 @@ function claims(req) {
 const LIST_LABEL = { provider: 'SlickChart', waitlist: 'SlickChart waitlist', buyer: 'Build Your Own App', freebie: 'Free starter' };
 
 export default async function handler(req, res) {
+  if (!(await sessionOk(req))) { res.status(401).json({ error: 'This session has been signed out. Please log in again.' }); return; }
   if (req.method !== 'GET') { res.status(405).json({ error: 'Method not allowed' }); return; }
   if (!dbEnabled()) { res.status(200).json({ ok: true, count: 0, items: [], note: 'Database not configured.' }); return; }
   try {

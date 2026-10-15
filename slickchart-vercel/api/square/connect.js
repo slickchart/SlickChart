@@ -1,16 +1,16 @@
 // GET /api/square/connect  (requires SlickChart session Bearer token)
 // Returns { url } — the Square authorization URL to send THIS provider to, with a
 // signed state so the callback knows which provider is connecting.
-import { squareConfig, authorizeUrl, providerFromReq, squareRedirectUri } from '../../lib/square.js';
+import { squareConfig, authorizeUrl, providerFromReqChecked, squareRedirectUri } from '../../lib/square.js';
 import { signToken } from '../../lib/auth.js';
 
 export default async function handler(req, res) {
   const secret = process.env.SESSION_SECRET || '';
   const cfg = squareConfig();
   if (!cfg.appId || !cfg.appSecret) { res.status(500).json({ error: 'Square OAuth isn\u2019t configured. Set SQUARE_APP_ID and SQUARE_APP_SECRET in Vercel.' }); return; }
-  const providerId = providerFromReq(req);
+  const providerId = await providerFromReqChecked(req);
   if (!providerId) { res.status(401).json({ error: 'Please log in first.' }); return; }
-  const state = signToken({ u: providerId, p: 'sq' }, secret, 600); // 10-minute state
+  const state = signToken({ u: providerId, p: 'sq', k: 'sq' }, secret, 600); // 10-minute state; k scopes it so it can never pass as a session
   const redirectUri = squareRedirectUri(req);
   res.status(200).json({ url: authorizeUrl(state, redirectUri) });
 }

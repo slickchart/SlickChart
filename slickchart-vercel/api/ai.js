@@ -14,7 +14,7 @@
 // A "caller" is the logged-in user (from their session token) when available,
 // otherwise their IP address.
 
-import { verifyToken } from '../lib/auth.js';
+import { verifyToken, sessionOk } from '../lib/auth.js';
 import { dbEnabled, sql, ensureTable } from '../lib/db.js';
 import { getClientByToken } from '../lib/clients.js';
 
@@ -80,6 +80,7 @@ async function bumpDaily(key, k) {
 }
 
 export default async function handler(req, res) {
+  if (!(await sessionOk(req))) { res.status(401).json({ error: 'This session has been signed out. Please log in again.' }); return; }
   if (req.method !== 'POST') { res.status(405).json({ error: 'Method not allowed' }); return; }
 
   const apiKey = process.env.ANTHROPIC_API_KEY || '';

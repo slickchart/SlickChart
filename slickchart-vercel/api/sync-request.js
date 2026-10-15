@@ -1,7 +1,7 @@
 // POST /api/sync-request { app }  → logs a provider's interest in live-sync for a booking app.
 // GET  /api/sync-request          → { counts: { "Booksy": 3, ... } } (distinct providers per app)
 import { sql, ensureProvidersTable, dbEnabled } from '../lib/db.js';
-import { verifyToken } from '../lib/auth.js';
+import { verifyToken, sessionOk } from '../lib/auth.js';
 
 function providerId(req) {
   const s = process.env.SESSION_SECRET || '';
@@ -12,6 +12,7 @@ function providerId(req) {
 }
 
 export default async function handler(req, res) {
+  if (!(await sessionOk(req))) { res.status(401).json({ error: 'This session has been signed out. Please log in again.' }); return; }
   if (!dbEnabled()) { res.status(200).json({ counts: {}, ok: true }); return; }
   try {
     await ensureProvidersTable();

@@ -11,7 +11,7 @@
 // having recently opened their app to sync anything. Each (client, booking) is claimed atomically in
 // reminder_log so it sends exactly once even though the cron runs hourly across the 24h window.
 import { dbEnabled, sql, getKVValue } from '../lib/db.js';
-import { ensureClientTables, listPushSubs, deletePushSub, claimReminder, logEvent, spaceUrl } from '../lib/clients.js';
+import { ensureClientTables, listPushSubs, deletePushSub, claimReminder, logEvent, spaceUrl, wantsPush } from '../lib/clients.js';
 import { getConnection, squareFetch } from '../lib/square.js';
 import { pushConfigured, sendPushToAll } from '../lib/push.js';
 import { sendNativeToClient, nativePushConfigured } from '../lib/fcm.js';
@@ -54,6 +54,9 @@ export default async function handler(req, res) {
     for (const row of (conns || [])) {
       const provider = row.provider_id;
       if (!provider) continue;
+      // One provider's failure (a DB hiccup, a hung Square call) must not cost every provider after it
+      // their check-ins this hour.
+      try {
       if (!(await autoSendOn(provider))) continue;
       let conn = null;
       try { conn = await getConnection(provider); } catch (e) {}
@@ -111,6 +114,11 @@ export default async function handler(req, res) {
         // Exactly-once per (client, booking).
         const fresh = await claimReminder(cl.id, 'cicron:' + b.id);
         if (!fresh) continue;
+        // And once per BOOKING for this provider, whichever client row it matched: after duplicate
+        // copies of one person are merged, the survivor's per-client key is fresh and it went twice.
+        let freshB = true;
+        try { freshB = await claimReminder('prov:' + provider, 'cicron:' + b.id); } catch (e) {}
+        if (!freshB) continue;
         summary.appts++;
 
         // 1) Send it through the app's messaging system (persists in the client's thread).
@@ -122,10 +130,12 @@ export default async function handler(req, res) {
         const dlUrl = spaceUrl(cl.token, 'previsit');
         const payload = { title: 'Pre-visit check-in', body: 'Please take 2 minutes for your check-in before your visit ✨', url: dlUrl, tag: 'checkin:' + b.id, renotify: true, screen: 'previsit' };
         let n = 0;
-        if (pushConfigured() && subs.length) { try { n += await sendPushToAll(subs, payload, deletePushSub); } catch (e) {} }
-        if (nativePushConfigured()) { try { n += await sendNativeToClient(cl.id, payload); } catch (e) {} }
+        const _wants = await wantsPush(q, cl.id);
+        if (_wants && pushConfigured() && subs.length) { try { n += await sendPushToAll(subs, payload, deletePushSub); } catch (e) {} }
+        if (_wants && nativePushConfigured()) { try { n += await sendNativeToClient(cl.id, payload); } catch (e) {} }
         summary.devices += n;
       }
+      } catch (e) { console.error('[cron-checkins] provider failed:', provider, e && e.message); }
     }
     res.status(200).json({ ok: true, ...summary });
   } catch (e) {

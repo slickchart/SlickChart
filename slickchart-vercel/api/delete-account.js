@@ -64,6 +64,10 @@ export default async function handler(req, res) {
     await del(() => q`DELETE FROM reminder_log WHERE client_id IN (SELECT id FROM clients WHERE provider_id = ${providerId})`);
     await del(() => q`DELETE FROM push_subscriptions WHERE provider_id = ${providerId}`);
     await del(() => q`DELETE FROM native_push_tokens WHERE provider_id = ${providerId}`);
+    // Her clients' phones, keyed by the CLIENT id (owner_id), and her own devices.
+    await del(() => q`DELETE FROM native_push_tokens WHERE owner_kind = 'client' AND owner_id IN (SELECT id FROM clients WHERE provider_id = ${providerId})`);
+    await del(() => q`DELETE FROM native_push_tokens WHERE owner_kind = 'provider' AND owner_id = ${providerId}`);
+    await del(() => q`DELETE FROM provider_push_subscriptions WHERE provider_id = ${providerId}`);
     await del(() => q`DELETE FROM client_events WHERE provider_id = ${providerId}`);
     await del(() => q`DELETE FROM clients WHERE provider_id = ${providerId}`);
     await del(() => q`DELETE FROM consult_requests WHERE provider_id = ${providerId}`);
@@ -73,6 +77,14 @@ export default async function handler(req, res) {
     await del(() => q`DELETE FROM auth_tokens WHERE provider_id = ${providerId}`);
     await del(() => q`DELETE FROM sessions WHERE provider_id = ${providerId}`);
     await del(() => q`DELETE FROM kv WHERE owner = ${providerId}`);
+    // Everything else keyed to her: photos and guide files, the automatic earlier copies of her data,
+    // course versions, the purged-client record, and her Google Calendar link. These were left behind.
+    await del(() => q`DELETE FROM files WHERE owner = ${providerId}`);
+    await del(() => q`DELETE FROM kv_history WHERE owner = ${providerId}`);
+    await del(() => q`DELETE FROM course_versions WHERE owner = ${providerId}`);
+    await del(() => q`DELETE FROM client_tombstones WHERE provider_id = ${providerId}`);
+    await del(() => q`DELETE FROM google_accounts WHERE provider_id = ${providerId}`);
+    await del(() => q`DELETE FROM google_connections WHERE provider_id = ${providerId}`);
     if (email) {
       await del(() => q`DELETE FROM subscriptions WHERE email = ${email}`);
       await del(() => q`DELETE FROM login_attempts WHERE email = ${email} OR email = ${'reset:' + email}`);

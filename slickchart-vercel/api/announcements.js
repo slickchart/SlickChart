@@ -1,7 +1,7 @@
 // GET  /api/announcements            → { items, canPost, you, ownerSet }
 // POST /api/announcements {title,body} → owner-only (provider email === OWNER_EMAIL) publish
 import { sql, ensureProvidersTable, dbEnabled } from '../lib/db.js';
-import { verifyToken } from '../lib/auth.js';
+import { verifyToken, sessionOk } from '../lib/auth.js';
 
 // Resolve the logged-in provider's email. Prefer the token's email claim, but
 // fall back to a DB lookup by provider id so older tokens (minted before the
@@ -20,6 +20,7 @@ async function resolveEmail(req, q) {
 }
 
 export default async function handler(req, res) {
+  if (!(await sessionOk(req))) { res.status(401).json({ error: 'This session has been signed out. Please log in again.' }); return; }
   if (!dbEnabled()) { res.status(200).json({ items: [], canPost: false, you: null, ownerSet: false }); return; }
   const owner = (process.env.OWNER_EMAIL || '').trim().toLowerCase();
   try {

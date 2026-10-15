@@ -5,7 +5,7 @@
 // is never shown on screen). Rate-limited per IP.
 import { dbEnabled, sql } from '../lib/db.js';
 import { ensureClientTables } from '../lib/clients.js';
-import { sendEmail, trustedOrigin } from '../lib/email.js';
+import { sendEmail, safeLinkOrigin, trustedOrigin } from '../lib/email.js';
 
 const _hits = new Map();
 function burstOk(key, limit, windowMs) {
@@ -42,7 +42,7 @@ export default async function handler(req, res) {
     // The app passes its own origin so the link points at the domain they use; validate it's a clean
     // http(s) origin and otherwise fall back to our controlled origin (never a request header).
     const _bodyOrigin = String(body.origin || '').trim().replace(/\/+$/, '');
-    const origin = /^https?:\/\/[^/\s]+$/i.test(_bodyOrigin) ? _bodyOrigin : trustedOrigin();
+    const origin = safeLinkOrigin(_bodyOrigin);   // only one of OUR origins, never the caller's choice
 
     const q = sql();
     // A person could be a client of more than one provider with the same email — send each their link.

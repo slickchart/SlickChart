@@ -1,5 +1,5 @@
 // Provider-authed: list the consult requests submitted through this provider's public link.
-import { verifyToken } from '../lib/auth.js';
+import { verifyToken, sessionOk } from '../lib/auth.js';
 import { dbEnabled } from '../lib/db.js';
 import { listConsultRequests } from '../lib/consult.js';
 
@@ -12,6 +12,7 @@ function providerId(req) {
 }
 
 export default async function handler(req, res) {
+  if (!(await sessionOk(req))) { res.status(401).json({ error: 'This session has been signed out. Please log in again.' }); return; }
   if (req.method !== 'GET') { res.status(405).json({ error: 'Method not allowed' }); return; }
   if (!dbEnabled()) { res.status(200).json({ ok: false, requests: [] }); return; }
   const provider = providerId(req);

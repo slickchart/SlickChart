@@ -2,7 +2,7 @@
 // yet enabled) and returns everything needed to scan it into an authenticator
 // app. Enrollment only actually turns on once /api/totp-verify confirms the
 // person can produce a correct code from it.
-import { verifyToken } from '../lib/auth.js';
+import { verifyToken, sessionOk } from '../lib/auth.js';
 import { sql, ensureProvidersTable, dbEnabled } from '../lib/db.js';
 import { generateSecret, otpauthUri } from '../lib/totp.js';
 
@@ -14,6 +14,7 @@ function claims(req) {
 }
 
 export default async function handler(req, res) {
+  if (!(await sessionOk(req))) { res.status(401).json({ error: 'This session has been signed out. Please log in again.' }); return; }
   if (req.method !== 'POST') { res.status(405).json({ error: 'Method not allowed' }); return; }
   if (!dbEnabled()) { res.status(500).json({ error: 'No database is configured.' }); return; }
   const c = claims(req);
@@ -24,10 +25,14 @@ export default async function handler(req, res) {
   try {
     await ensureProvidersTable();
     const q = sql();
+    // Never touch a working two-step setup from here. This used to overwrite the live secret and switch
+    // two-step OFF with no code at all, so anyone holding a token could strip it and enrol their own.
+    // Turning it off goes through /api/totp-verify, which needs a current code.
+    const cur = await q`SELECT totp_enabled FROM providers WHERE id = ${providerId}`;
+    if (cur[0] && cur[0].totp_enabled) { res.status(409).json({ error: 'Two-step sign-in is already on. Turn it off first with a code from your app.' }); return; }
     const secret = generateSecret();
-    // Stored but not enabled yet — /api/totp-verify flips totp_enabled on
-    // once the person proves they can actually generate a matching code.
-    await q`UPDATE providers SET totp_secret = ${secret}, totp_enabled = false WHERE id = ${providerId}`;
+    // Pending until /api/totp-verify confirms the person can produce a matching code.
+    await q`UPDATE providers SET totp_pending = ${secret} WHERE id = ${providerId}`;
     const uri = otpauthUri(secret, email || providerId);
     const qrUrl = 'https://api.qrserver.com/v1/create-qr-code/?size=220x220&data=' + encodeURIComponent(uri);
     res.status(200).json({ ok: true, secret, otpauthUri: uri, qrUrl });

@@ -1,7 +1,7 @@
 // POST /api/waitlist  { email, name?, profession? }  → join the post-250 waitlist
 // GET  /api/waitlist                                  → owner-only: { count, items }
 import { sql, ensureProvidersTable, dbEnabled } from '../lib/db.js';
-import { verifyToken } from '../lib/auth.js';
+import { verifyToken, sessionOk } from '../lib/auth.js';
 import { addToAudience } from '../lib/email.js';
 
 function claims(req){ const s=process.env.SESSION_SECRET||''; const h=req.headers['authorization']||''; const t=h.startsWith('Bearer ')?h.slice(7):''; return (s&&t?verifyToken(t,s):null)||{}; }
@@ -17,6 +17,7 @@ async function ensureWaitlist(q){
 }
 
 export default async function handler(req, res){
+  if (!(await sessionOk(req))) { res.status(401).json({ error: 'This session has been signed out. Please log in again.' }); return; }
   if(!dbEnabled()){ res.status(200).json({ ok:true, skipped:true }); return; }
   const q = sql();
   try{

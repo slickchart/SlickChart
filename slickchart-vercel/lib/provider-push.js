@@ -37,6 +37,9 @@ export async function saveProviderPushSub(providerId, sub) {
   if (!providerId || !sub || !sub.endpoint) return false;
   const q = sql();
   const endpoint = String(sub.endpoint);
+  // One browser belongs to whoever last turned notifications on in it. Without this, a device where
+  // provider A signed out and provider B signed in kept getting A's reminders (with client names).
+  await q`DELETE FROM provider_push_subscriptions WHERE endpoint = ${endpoint} AND provider_id <> ${String(providerId)}`;
   await q`INSERT INTO provider_push_subscriptions (id, provider_id, endpoint, sub, created_at)
     VALUES (${rid()}, ${String(providerId)}, ${endpoint}, ${JSON.stringify(sub)}, ${Date.now()})
     ON CONFLICT (provider_id, endpoint) DO UPDATE SET sub = EXCLUDED.sub, created_at = EXCLUDED.created_at`;

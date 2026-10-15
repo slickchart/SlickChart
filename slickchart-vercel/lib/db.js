@@ -129,6 +129,8 @@ export async function ensureProvidersTable() {
   await q`ALTER TABLE providers ADD COLUMN IF NOT EXISTS verified boolean DEFAULT false`;
   await q`ALTER TABLE providers ADD COLUMN IF NOT EXISTS totp_secret text`;
   await q`ALTER TABLE providers ADD COLUMN IF NOT EXISTS totp_enabled boolean DEFAULT false`;
+  // A secret being set up, kept apart from the live one until /api/totp-verify proves it works.
+  await q`ALTER TABLE providers ADD COLUMN IF NOT EXISTS totp_pending text`;
   // One-time tokens for email verification and password resets.
   await q`CREATE TABLE IF NOT EXISTS auth_tokens (
     token text PRIMARY KEY,

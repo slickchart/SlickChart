@@ -1,9 +1,9 @@
 // Provider-authed: email each selected client (or all with an email on file) their
 // own personal link. Uses Resend via lib/email.js. Marks who was invited.
-import { verifyToken } from '../lib/auth.js';
+import { verifyToken, sessionOk } from '../lib/auth.js';
 import { dbEnabled } from '../lib/db.js';
 import { ensureClientTables, listClients, markInvited } from '../lib/clients.js';
-import { sendEmail, trustedOrigin } from '../lib/email.js';
+import { sendEmail, safeLinkOrigin, trustedOrigin } from '../lib/email.js';
 
 function providerId(req) {
   const s = process.env.SESSION_SECRET || '';
@@ -15,6 +15,7 @@ function providerId(req) {
 function esc(s) { return String(s == null ? '' : s).replace(/[<>&]/g, m => ({ '<': '&lt;', '>': '&gt;', '&': '&amp;' }[m])); }
 
 export default async function handler(req, res) {
+  if (!(await sessionOk(req))) { res.status(401).json({ error: 'This session has been signed out. Please log in again.' }); return; }
   if (req.method !== 'POST') { res.status(405).json({ error: 'Method not allowed' }); return; }
   if (!dbEnabled()) { res.status(200).json({ ok: false }); return; }
   const provider = providerId(req);
@@ -26,7 +27,7 @@ export default async function handler(req, res) {
   // validate it's a clean http(s) origin and fall back to our controlled origin (never a request
   // header) so a client's token-bearing invite link can't be pointed at an arbitrary host.
   const _bodyOrigin = String(body.origin || '').trim().replace(/\/+$/, '');
-  const origin = /^https?:\/\/[^/\s]+$/i.test(_bodyOrigin) ? _bodyOrigin : trustedOrigin();
+  const origin = safeLinkOrigin(_bodyOrigin);   // only one of OUR origins, never the caller's choice
   const studio = String(body.studio || '').trim();
   const fromName = String(body.from || 'Your provider').trim();
   try {

@@ -5,7 +5,7 @@
 // ('auto:<owner>:<autoId>:<occ>') for each manually-sent client — claimReminder is atomic and
 // idempotent, so the cron's later claim for those clients returns false and it skips them. Clients the
 // provider did NOT send to now stay unclaimed and still receive the scheduled send at its time.
-import { verifyToken } from '../lib/auth.js';
+import { verifyToken, sessionOk } from '../lib/auth.js';
 import { dbEnabled, sql } from '../lib/db.js';
 import { ensureClientTables, claimReminder } from '../lib/clients.js';
 
@@ -18,6 +18,7 @@ function providerId(req) {
 }
 
 export default async function handler(req, res) {
+  if (!(await sessionOk(req))) { res.status(401).json({ error: 'This session has been signed out. Please log in again.' }); return; }
   if (req.method !== 'POST') { res.status(405).json({ error: 'Method not allowed' }); return; }
   if (!dbEnabled()) { res.status(200).json({ ok: false, reason: 'db disabled' }); return; }
   const provider = providerId(req);

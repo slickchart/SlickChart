@@ -225,6 +225,7 @@ saved anywhere", not "does this always call that".
 | `_doLogout` | `/api/billing-status` | via `_checkBillingBanner` |
 | `_doLogout` | `/api/client-code` | via `_clientSendCode` |
 | `_doLogout` | `/api/logout` | direct |
+| `_doLogout` | `/api/provider-push` | direct |
 | `_doMerge` | `/api/clients` | via `_serverMergeClients` |
 | `_doMerge` | `/api/provider-form` | via `submitSignOnDevice` |
 | `_doSendVcReview` | `/api/clients` | via `_syncSpecificClientsToServer` |
@@ -373,6 +374,7 @@ saved anywhere", not "does this always call that".
 | `_ncNextContinue` | `/api/clients` | via `_syncSpecificClientsToServer` |
 | `_ncNextContinue` | `/api/logout` | via `_doLogout` |
 | `_ncNextContinue` | `/api/provider-form` | via `submitSignOnDevice` |
+| `_ncNextContinue` | `/api/provider-push` | via `_doLogout` |
 | `_newMessageSheet` | `/api/clients` | via `syncClientEvents` |
 | `_newMessageSheet` | `/api/provider-form` | via `submitSignOnDevice` |
 | `_notifyBookingClient` | `/api/provider-message` | via `_sendProviderMessageToClient` |
@@ -445,6 +447,7 @@ saved anywhere", not "does this always call that".
 | `_prodPickerRows` | `/api/clients` | via `_syncSpecificClientsToServer` |
 | `_promptReSignIn` | `/api/client-code` | via `_clientSendCode` |
 | `_promptReSignIn` | `/api/logout` | via `_doLogout` |
+| `_promptReSignIn` | `/api/provider-push` | via `_doLogout` |
 | `_pushClientNow` | `/api/clients` | via `_syncSpecificClientsToServer` |
 | `_pushClientToSquare` | `/api/square/connection` | via `_sqConnState` |
 | `_pushClientToSquare` | `/api/square/customers` | direct |
@@ -588,6 +591,7 @@ saved anywhere", not "does this always call that".
 | `_sectionTabBar` | `/api/provider-form` | via `submitSignOnDevice` |
 | `_sendAdHocBundle` | `/api/clients` | via `_syncSpecificClientsToServer` |
 | `_sendAdHocBundle` | `/api/logout` | via `_doLogout` |
+| `_sendAdHocBundle` | `/api/provider-push` | via `_doLogout` |
 | `_sendAutomation` | `/api/automation-claim` | via `_ssSend` |
 | `_sendAutomationMsg` | `/api/provider-message` | via `_sendProviderMessageToClient` |
 | `_sendBetaFeedback` | `/api/feedback` | direct |
@@ -603,6 +607,7 @@ saved anywhere", not "does this always call that".
 | `_sendRebookInvite` | `/api/logout` | via `_doLogout` |
 | `_sendRebookInvite` | `/api/provider-form` | via `submitSignOnDevice` |
 | `_sendRebookInvite` | `/api/provider-message` | via `_sendProviderMessageToClient` |
+| `_sendRebookInvite` | `/api/provider-push` | via `_doLogout` |
 | `_serverDeleteClients` | `/api/clients` | direct |
 | `_serverMergeClients` | `/api/clients` | direct |
 | `_setClientFilter` | `/api/square/appointments` | via `_syncSquareClientsNow` |
@@ -630,8 +635,10 @@ saved anywhere", not "does this always call that".
 | `_setVcFee` | `/api/consult-slug` | via `_loadConsultLink` |
 | `_shareClientLinkSheet` | `/api/clients` | via `_syncSpecificClientsToServer` |
 | `_shareClientLinkSheet` | `/api/logout` | via `_doLogout` |
+| `_shareClientLinkSheet` | `/api/provider-push` | via `_doLogout` |
 | `_shareGuideLink` | `/api/clients` | via `_syncSpecificClientsToServer` |
 | `_shareGuideLink` | `/api/logout` | via `_doLogout` |
+| `_shareGuideLink` | `/api/provider-push` | via `_doLogout` |
 | `_signedOutBannerHTML` | `/api/client-code` | via `_clientSendCode` |
 | `_sqApptsErrHTML` | `/api/clients` | via `syncClientEvents` |
 | `_sqApptsErrHTML` | `/api/provider-form` | via `submitSignOnDevice` |
@@ -751,6 +758,7 @@ saved anywhere", not "does this always call that".
 | `_voiceStopFromPause` | `/api/ai` | via `_aiComplete` |
 | `_withClientToken` | `/api/clients` | via `_syncSpecificClientsToServer` |
 | `_withClientToken` | `/api/logout` | via `_doLogout` |
+| `_withClientToken` | `/api/provider-push` | via `_doLogout` |
 | `addClientProd` | `/api/clients` | via `_syncSpecificClientsToServer` |
 | `addSummaryGuide` | `/api/aftercare-drip` | via `_startAftercareDrip` |
 | `addSummaryGuide` | `/api/ai` | via `_aiComplete` |
@@ -770,6 +778,7 @@ saved anywhere", not "does this always call that".
 | `clearNotif` | `/api/clients` | via `syncClientEvents` |
 | `cloudLogout` | `/api/client-code` | via `_clientSendCode` |
 | `cloudLogout` | `/api/logout` | via `_doLogout` |
+| `cloudLogout` | `/api/provider-push` | via `_doLogout` |
 | `confirmSendCourse` | `/api/clients` | via `_syncSpecificClientsToServer` |
 | `confirmSendForm` | `/api/clients` | via `_syncSpecificClientsToServer` |
 | `confirmSendProduct` | `/api/clients` | via `_syncSpecificClientsToServer` |
@@ -809,6 +818,7 @@ saved anywhere", not "does this always call that".
 | `finishNewClient` | `/api/clients` | via `_syncSpecificClientsToServer` |
 | `finishNewClient` | `/api/logout` | via `_doLogout` |
 | `finishNewClient` | `/api/provider-form` | via `submitSignOnDevice` |
+| `finishNewClient` | `/api/provider-push` | via `_doLogout` |
 | `finishOnboarding` | `/api/clients` | via `syncClientEvents` |
 | `finishOnboarding` | `/api/provider-form` | via `submitSignOnDevice` |
 | `fmtBookingDate` | `/api/clients` | via `_syncSpecificClientsToServer` |
@@ -819,6 +829,7 @@ saved anywhere", not "does this always call that".
 | `freeUpDeviceSpace` | `/api/guide-file` | via `_evictableFileCache` |
 | `inviteClientToApp` | `/api/clients` | via `_syncSpecificClientsToServer` |
 | `inviteClientToApp` | `/api/logout` | via `_doLogout` |
+| `inviteClientToApp` | `/api/provider-push` | via `_doLogout` |
 | `linkSavedSummary` | `/api/clients` | via `_syncSpecificClientsToServer` |
 | `loadBrief` | `/api/ai` | via `_aiComplete` |
 | `loadCapturedPhotos` | `/api/guide-file` | via `_getGuideFile` |
@@ -870,6 +881,7 @@ saved anywhere", not "does this always call that".
 | `openQuickAdd` | `/api/square/booking-options` | via `openSquareBook` |
 | `openSendSheet` | `/api/clients` | via `_syncSpecificClientsToServer` |
 | `openSendSheet` | `/api/logout` | via `_doLogout` |
+| `openSendSheet` | `/api/provider-push` | via `_doLogout` |
 | `openSquareBook` | `/api/square/appointments` | via `_loadSquareAppts` |
 | `openSquareBook` | `/api/square/availability` | via `_sqLoadSlots` |
 | `openSquareBook` | `/api/square/book` | via `_sqDoBook` |
@@ -966,6 +978,7 @@ saved anywhere", not "does this always call that".
 | `renderInventory` | `/api/square/inventory` | via `_syncInventoryFromSquare` |
 | `renderInviteClients` | `/api/clients` | via `_syncSpecificClientsToServer` |
 | `renderInviteClients` | `/api/logout` | via `_doLogout` |
+| `renderInviteClients` | `/api/provider-push` | via `_doLogout` |
 | `renderLogin` | `/api/billing-status` | via `_checkBillingBanner` |
 | `renderLogin` | `/api/client-code` | via `_clientSendCode` |
 | `renderMessages` | `/api/clients` | via `syncClientEvents` |
@@ -1115,12 +1128,15 @@ saved anywhere", not "does this always call that".
 | `sendBundleToClient` | `/api/clients` | via `_syncSpecificClientsToServer` |
 | `sendCheckin` | `/api/clients` | via `_syncSpecificClientsToServer` |
 | `sendCheckin` | `/api/logout` | via `_doLogout` |
+| `sendCheckin` | `/api/provider-push` | via `_doLogout` |
 | `sendCourseToClient` | `/api/clients` | via `_syncSpecificClientsToServer` |
 | `sendFirstVisitPackage` | `/api/clients` | via `_syncSpecificClientsToServer` |
 | `sendFirstVisitPackage` | `/api/logout` | via `_doLogout` |
+| `sendFirstVisitPackage` | `/api/provider-push` | via `_doLogout` |
 | `sendFirstVisitPackagePicker` | `/api/clients` | via `_syncSpecificClientsToServer` |
 | `sendFormBundleToClient` | `/api/clients` | via `_syncSpecificClientsToServer` |
 | `sendFormBundleToClient` | `/api/logout` | via `_doLogout` |
+| `sendFormBundleToClient` | `/api/provider-push` | via `_doLogout` |
 | `sendFormToClient` | `/api/provider-form` | via `submitSignOnDevice` |
 | `sendMsg` | `/api/provider-message` | via `_sendProviderMessageToClient` |
 | `sendProductToClient` | `/api/clients` | via `_syncSpecificClientsToServer` |
@@ -1129,8 +1145,10 @@ saved anywhere", not "does this always call that".
 | `sendVcReview` | `/api/provider-message` | via `_sendProviderMessageToClient` |
 | `shareFormLink` | `/api/clients` | via `_syncSpecificClientsToServer` |
 | `shareFormLink` | `/api/logout` | via `_doLogout` |
+| `shareFormLink` | `/api/provider-push` | via `_doLogout` |
 | `shareSummaryLink` | `/api/clients` | via `_syncSpecificClientsToServer` |
 | `shareSummaryLink` | `/api/logout` | via `_doLogout` |
+| `shareSummaryLink` | `/api/provider-push` | via `_doLogout` |
 | `showOnboarding` | `/api/feedback` | via `_sendBetaFeedback` |
 | `showOnboarding` | `/api/square/connect` | via `_sqConnect` |
 | `startProductDictate` | `/api/transcribe` | via `_probeWhisper` |

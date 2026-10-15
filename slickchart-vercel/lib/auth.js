@@ -137,8 +137,44 @@ export async function createSession(q, providerId, req) {
 export async function isSessionValid(q, sid) {
   if (!sid) return true; // tokens issued before this feature existed have no sid — don't lock those users out
   const rows = await q`SELECT revoked FROM sessions WHERE id = ${sid}`;
-  if (!rows.length) return true; // unknown/legacy session id — fail open rather than break existing logins
+  // Every sid is minted by createSession, whose INSERT must succeed for the login to succeed, and the
+  // only thing that deletes rows is delete-account. So an unknown sid is a deleted account's token:
+  // failing open here let a token revoked before the deletion write data again afterwards.
+  if (!rows.length) return false;
   if (rows[0].revoked) return false;
   try { await q`UPDATE sessions SET last_seen_at = now() WHERE id = ${sid}`; } catch (e) { /* non-fatal */ }
   return true;
+}
+
+// The provider behind a request, or null — honouring sign-out/revocation, which many endpoints that
+// only called verifyToken did not (a revoked token kept working on every Square endpoint for 30 days).
+// Rejects the Square OAuth `state` token (p:'sq'): it is signed with the session secret and travels in
+// URLs, so it must never pass as a session. A DB error in the revocation check does not lock her out.
+export async function sessionFromReq(req, q, opts) {
+  const secret = process.env.SESSION_SECRET || '';
+  const h = (req && req.headers && req.headers['authorization']) || '';
+  const t = h.startsWith('Bearer ') ? h.slice(7) : '';
+  const p = secret && t ? verifyToken(t, secret, opts) : null;
+  if (!p || !p.u) return null;
+  if (p.p === 'sq' || p.k) return null;
+  try { if (!(await isSessionValid(q, p.sid))) return null; } catch (e) {}
+  return p;
+}
+
+// For endpoints that read the token themselves: false only when a token IS presented and its session
+// was signed out or revoked. No token (a public path) or a token that does not verify is left to the
+// endpoint's own checks, so this can be dropped in as the first line of any handler without changing
+// who else it serves.
+export async function sessionOk(req) {
+  try {
+    const secret = process.env.SESSION_SECRET || '';
+    const h = (req && req.headers && req.headers['authorization']) || '';
+    const t = h.startsWith('Bearer ') ? h.slice(7) : '';
+    if (!secret || !t) return true;
+    const p = verifyToken(t, secret);
+    if (!p) return true;
+    // Loaded lazily so this module stays importable without the database driver (scripts, tests).
+    const { sql } = await import('./db.js');
+    return await isSessionValid(sql(), p.sid);
+  } catch (e) { return true; }
 }

@@ -3,7 +3,7 @@
 //   feedback button sends neither and is stored as kind='adhoc'.
 // GET  /api/feedback                          → owner-only: recent feedback { items }
 import { sql, ensureProvidersTable, dbEnabled } from '../lib/db.js';
-import { verifyToken } from '../lib/auth.js';
+import { verifyToken, sessionOk } from '../lib/auth.js';
 
 function claims(req) {
   const s = process.env.SESSION_SECRET || '';
@@ -22,6 +22,7 @@ async function resolveEmail(req, q) {
 }
 
 export default async function handler(req, res) {
+  if (!(await sessionOk(req))) { res.status(401).json({ error: 'This session has been signed out. Please log in again.' }); return; }
   if (!dbEnabled()) { res.status(200).json(req.method === 'GET' ? { items: [] } : { ok: true, skipped: true }); return; }
 
   if (req.method === 'GET') {

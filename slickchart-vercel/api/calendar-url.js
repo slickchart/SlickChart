@@ -1,9 +1,10 @@
 // GET /api/calendar-url  (Bearer session) → { url } : a private, long-lived ICS feed URL
 // the provider pastes into Google/Apple Calendar to subscribe to their SlickChart appts.
-import { signToken, verifyToken } from '../lib/auth.js';
+import { signToken, verifyToken, sessionOk } from '../lib/auth.js';
 import { appOrigin } from '../lib/email.js';
 
 export default async function handler(req, res) {
+  if (!(await sessionOk(req))) { res.status(401).json({ error: 'This session has been signed out. Please log in again.' }); return; }
   const secret = process.env.SESSION_SECRET || '';
   const h = req.headers['authorization'] || '';
   const t = h.startsWith('Bearer ') ? h.slice(7) : '';

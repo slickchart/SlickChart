@@ -17,10 +17,12 @@ function page(title, body) {
     + '<p><a href="/slickchart">Back to SlickChart</a></p></div>';
 }
 
+function esc(s) { return String(s == null ? '' : s).replace(/[&<>"']/g, c => ({ '&': '&amp;', '<': '&lt;', '>': '&gt;', '"': '&quot;', "'": '&#39;' }[c])); }
+
 export default async function handler(req, res) {
   res.setHeader('Content-Type', 'text/html; charset=utf-8');
   const q = (req.query || {});
-  if (q.error) { res.status(200).end(page('Not connected', 'Google said: ' + String(q.error).slice(0, 80) + '. Nothing was changed.')); return; }
+  if (q.error) { res.status(200).end(page('Not connected', 'Google said: ' + esc(String(q.error).slice(0, 80)) + '. Nothing was changed.')); return; }
   if (!dbEnabled() || !googleConfigured()) { res.status(200).end(page('Not set up yet', 'Calendar sync is not configured on this deployment.')); return; }
   const code = String(q.code || ''), state = String(q.state || '');
   const payload = state ? verifyToken(state, process.env.SESSION_SECRET || '', { scope: 'gcal' }) : null;

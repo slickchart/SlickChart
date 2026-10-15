@@ -6,7 +6,7 @@
 // lookup, same no-login shell — so the two public pages look like one product.
 import { dbEnabled } from '../lib/db.js';
 import { getProviderBySlug } from '../lib/consult.js';
-import { readBrand, brandVars, brandRowHtml, BRAND_CSS, esc } from '../lib/public-brand.js';
+import { readBrand, brandVars, brandRowHtml, BRAND_CSS, esc, jsonForScript } from '../lib/public-brand.js';
 import { getBookingConfig, getServices, getHours, openDayKeys, toMins, DAY_KEYS, serviceMins, serviceDeposit } from '../lib/booking.js';
 
 // JSON.stringify escapes quotes but NOT `<`, so a business name containing `</script>` would break
@@ -121,10 +121,10 @@ export default async function handler(req, res) {
   <div class="foot">Powered by SlickChart · Your details are shared only with ${esc(bizName)}.</div>`;
 
     const boot = `<script>
-var SLUG=${jsStr(slug)}, MODE=${jsStr(cfg.mode)}, BIZ=${jsStr(bizName)}, OPEN=${JSON.stringify(openDays)},
+var SLUG=${jsStr(slug)}, MODE=${jsStr(cfg.mode)}, BIZ=${jsStr(bizName)}, OPEN=${jsonForScript(openDays)},
     HORIZON=${cfg.horizonDays}, ACCENT=${jsStr(accent)}, DONEIC='\\u2713';
 // name → {mins, deposit}, so the page can say what each one costs in time and money up front.
-var SVC=${JSON.stringify(services.reduce((m, sv) => { m[sv.name] = { mins: serviceMins(sv, cfg), dep: serviceDeposit(sv, cfg) }; return m; }, {}))};
+var SVC=${jsonForScript(services.reduce((m, sv) => { m[sv.name] = { mins: serviceMins(sv, cfg), dep: serviceDeposit(sv, cfg) }; return m; }, {}))};
 var DKEY=['sun','mon','tue','wed','thu','fri','sat'];
 var picked='', slotsFor='';
 function $(id){return document.getElementById(id);}

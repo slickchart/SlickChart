@@ -51,6 +51,19 @@ const ALLOW={
   // Passwordless reset: the email IS the input by nature. Non-enumerable — always 200, rate-limited
   // per email, and a request for an unknown address behaves identically to a known one (§0.4).
   'request-reset.js':'passwordless reset; always returns 200 and is rate-limited, so it reveals nothing',
+  // Found 2026-10-15 once check B started reading `q` statements. Each is account-level by nature:
+  // sign-in and sign-up look an account up by the email being signed in with; the Stripe webhook is
+  // HMAC-verified and resolves the paying email; the rest are founder-gated aggregates over all
+  // accounts (counts, the exposure scan) that never hand one account's rows to another.
+  'login.js':'looks up the account by the email being signed in with; generic failure, rate-limited',
+  'signup.js':'checks the email is free and creates the account; count is for a launch cap',
+  'stripe-webhook.js':'signature-verified webhook; resolves the paying email to its account',
+  'cron-orphan-checkout.js':'cron-secret gated; finds paid emails with no account to send the finish-signup nudge',
+  'admin-stats.js':'founder-gated aggregate counts across accounts',
+  'admin/exposure.js':'founder-gated cross-account exposure scan (the point of the tool)',
+  'admin/square-create-log.js':'founder-gated; maps provider ids to emails for the log view',
+  'admin/stale-subs.js':'founder-gated subscription report',
+  'admin/test-push.js':'founder-gated; resolves the founder\'s own account by email to test push',
 };
 const PER_PROVIDER=/\b(from|into|update|delete\s+from)\s+(clients|kv|client_events|square_connections|providers|course_versions)\b/i;
 const OWNERISH=/req\.(body|query)\s*\.\s*(provider_?id|owner|email|uid|user_?id|account)\b|(?:const|let|var)\s*\{[^}]*\b(provider_?id|owner)\b[^}]*\}\s*=\s*req\.(body|query)/;
@@ -72,11 +85,15 @@ for(const f of files){
     if(OWNERISH.test(ln))findings.push({rel,line:i+1,kind:'identity from the request',text:ln.trim().slice(0,110)});
   });
   // SQL against a per-provider table with no owner column anywhere in the statement.
-  const sqlRe=/(?:sql|query)\s*`([^`]*)`/gs;let m;
+  // Every endpoint here writes its SQL with a tag named `q` (const q = sql()). This regex used to match
+  // only `sql`/`query`, so this check had never inspected a single real statement (2026-10-15 sweep).
+  const sqlRe=/(?:\bq|\bsql\(\)|\bsql|\bquery)\s*`([^`]*)`/gs;let m;
   while((m=sqlRe.exec(src))){
     const q=m[1];
     if(!PER_PROVIDER.test(q))continue;
     if(/\b(owner|provider_id|provider)\b/i.test(q))continue;
+    // The account row itself, looked up by the id the token carries.
+    if(/\bproviders\b[\s\S]*\bwhere\s+id\s*=/i.test(q))continue;
     if(/create\s+table|alter\s+table|information_schema/i.test(q))continue;
     const line=src.slice(0,m.index).split('\n').length;
     findings.push({rel,line,kind:'SQL with no owner in it',text:q.replace(/\s+/g,' ').trim().slice(0,110)});

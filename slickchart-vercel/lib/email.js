@@ -66,6 +66,16 @@ export function appOrigin(req) {
 // would receive a genuine email whose link (carrying their live token) points at the attacker's
 // origin, leaking the token on click. Set APP_ORIGIN to your canonical domain; otherwise the
 // known production origin is used. Never falls back to request headers.
+// A link origin the app asked for, accepted ONLY if it is one of ours. /api/client-link is public:
+// anyone could post a client's email with origin "https://attacker.example" and the client then got a
+// genuine email whose link carried her live token to that site. Anything else falls back to ours.
+const _OUR_ORIGINS = ['https://slickchart.app', 'https://www.slickchart.app', 'https://slick-chart.vercel.app'];
+export function safeLinkOrigin(candidate) {
+  const c = String(candidate || '').trim().replace(/\/+$/, '').toLowerCase();
+  const ours = trustedOrigin();
+  if (c && (c === ours.toLowerCase() || _OUR_ORIGINS.indexOf(c) >= 0)) return c;
+  return ours;
+}
 export function trustedOrigin() {
   const env = String(process.env.APP_ORIGIN || '').trim().replace(/\/+$/, '');
   if (/^https?:\/\/[^/\s]+$/i.test(env)) return env;

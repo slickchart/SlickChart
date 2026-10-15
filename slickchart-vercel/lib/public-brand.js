@@ -10,6 +10,12 @@
 // read or returned.
 import { getKVValue } from './db.js';
 
+// JSON for inside an inline <script>. JSON.stringify leaves `<` alone, so a provider-typed string like
+// a service name containing `</script>` closed the script and ran whatever followed on our origin.
+export function jsonForScript(v) {
+  return JSON.stringify(v == null ? null : v).replace(/</g, '\\u003c').replace(/>/g, '\\u003e').replace(/&/g, '\\u0026')
+    .replace(/\u2028/g, '\\u2028').replace(/\u2029/g, '\\u2029');
+}
 export function esc(s) {
   return String(s == null ? '' : s).replace(/[&<>"']/g, c => ({ '&': '&amp;', '<': '&lt;', '>': '&gt;', '"': '&quot;', "'": '&#39;' }[c]));
 }

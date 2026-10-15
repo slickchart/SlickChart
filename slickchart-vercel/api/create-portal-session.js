@@ -2,7 +2,7 @@
 // billing portal for the logged-in provider, so payment method, invoice
 // history, and cancellation are all handled by Stripe directly rather than
 // rebuilt by hand in the app.
-import { verifyToken } from '../lib/auth.js';
+import { verifyToken, sessionOk } from '../lib/auth.js';
 import { safeStripeMessage } from '../lib/stripe-safe.js';
 import { dbEnabled, getSubscription } from '../lib/db.js';
 import { appOrigin } from '../lib/email.js';
@@ -15,6 +15,7 @@ function claims(req) {
 }
 
 export default async function handler(req, res) {
+  if (!(await sessionOk(req))) { res.status(401).json({ error: 'This session has been signed out. Please log in again.' }); return; }
   if (req.method !== 'POST') { res.status(405).json({ error: 'Method not allowed' }); return; }
   if (!dbEnabled()) { res.status(500).json({ error: 'No database is configured.' }); return; }
   const key = process.env.STRIPE_SECRET_KEY || '';

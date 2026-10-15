@@ -548,6 +548,14 @@ export async function mergeClientRows(providerId, fromId, toId) {
   try { await q`INSERT INTO client_prefs (client_id, prefs, updated_at)
     SELECT ${t}, prefs, updated_at FROM client_prefs WHERE client_id = ${f}
     ON CONFLICT (client_id) DO NOTHING`; } catch (e) {}
+  // What was already SENT to the copy counts as sent to the survivor, or today's reminder and the
+  // check-in went out a second time after the merge. And an aftercare series running on the copy
+  // keeps running on the survivor.
+  try { await q`INSERT INTO reminder_log (client_id, rkey, sent_at)
+    SELECT ${t}, rkey, sent_at FROM reminder_log WHERE client_id = ${f}
+    ON CONFLICT (client_id, rkey) DO NOTHING`; } catch (e) {}
+  try { await q`UPDATE clients SET heal_started_at = (SELECT heal_started_at FROM clients WHERE id = ${f} AND provider_id = ${p})
+    WHERE id = ${t} AND provider_id = ${p} AND heal_started_at IS NULL`; } catch (e) {}
   if (fr.opened_at && !to.opened_at) {
     // token is UNIQUE: park the copy's token first, then hand it to the survivor.
     const live = fr.token;
@@ -555,4 +563,14 @@ export async function mergeClientRows(providerId, fromId, toId) {
     await q`UPDATE clients SET token = ${live}, opened_at = ${fr.opened_at} WHERE id = ${t} AND provider_id = ${p}`;
   }
   return true;
+}
+
+// Has this client switched phone notifications off in their app? The thread message is always kept;
+// only the push is skipped. Same rule provider-message.js and cron-reminders already follow.
+export async function wantsPush(q, clientId) {
+  try {
+    const r = await q`SELECT prefs FROM client_prefs WHERE client_id = ${String(clientId)}`;
+    const n = r[0] && r[0].prefs && r[0].prefs.notif;
+    return !(n && n.enabled === false);
+  } catch (e) { return true; }
 }

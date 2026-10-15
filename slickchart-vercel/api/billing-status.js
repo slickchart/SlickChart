@@ -1,6 +1,6 @@
 // GET /api/billing-status — provider-authed: returns the real Stripe
 // subscription record for the logged-in provider (or null if none yet).
-import { verifyToken } from '../lib/auth.js';
+import { verifyToken, sessionOk } from '../lib/auth.js';
 import { dbEnabled, getSubscription } from '../lib/db.js';
 import { pastDueForEmail } from '../lib/stripe-subs.js';
 
@@ -12,6 +12,7 @@ function claims(req) {
 }
 
 export default async function handler(req, res) {
+  if (!(await sessionOk(req))) { res.status(401).json({ error: 'This session has been signed out. Please log in again.' }); return; }
   if (req.method !== 'GET') { res.status(405).json({ error: 'Method not allowed' }); return; }
   if (!dbEnabled()) { res.status(200).json({ ok: false, subscription: null }); return; }
   const c = claims(req);

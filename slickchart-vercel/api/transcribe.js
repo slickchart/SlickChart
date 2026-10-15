@@ -10,7 +10,7 @@
 //
 // Cost guard: same caller-keyed burst limiter as /api/ai (audio calls are pricier, so the default is
 // lower). A "caller" is the signed-in provider (session token) when available, else their IP.
-import { verifyToken } from '../lib/auth.js';
+import { verifyToken, sessionOk } from '../lib/auth.js';
 
 const _hits = new Map();
 function burstOk(key, limit, windowMs) {
@@ -33,6 +33,7 @@ function callerKey(req) {
 }
 
 export default async function handler(req, res) {
+  if (!(await sessionOk(req))) { res.status(401).json({ error: 'This session has been signed out. Please log in again.' }); return; }
   const apiKey = process.env.GROQ_API_KEY || '';
   if (req.method === 'GET') { res.status(200).json({ enabled: !!apiKey }); return; }
   if (req.method !== 'POST') { res.status(405).json({ error: 'Method not allowed' }); return; }

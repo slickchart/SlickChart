@@ -1,9 +1,9 @@
 // GET    /api/square/connection  → { connected, merchantId, env, oauth }
 // DELETE /api/square/connection  → disconnects this provider's Square
-import { getConnection, disconnect, providerFromReq, squareConfig } from '../../lib/square.js';
+import { getConnection, disconnect, providerFromReqChecked, squareConfig } from '../../lib/square.js';
 
 export default async function handler(req, res) {
-  const providerId = providerFromReq(req);
+  const providerId = await providerFromReqChecked(req);
   const cfg = squareConfig();
   const oauthConfigured = !!(cfg.appId && cfg.appSecret);
   if (req.method === 'DELETE') {

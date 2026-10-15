@@ -2,7 +2,7 @@
 // provider's own clients. Sets/clears clients.heal_started_at; the reminder cron
 // (cron-reminders.js) then sends the timed Day-1 / Day-3 / Month-1 healing messages measured
 // from that timestamp. Same credential model as /api/provider-message.
-import { verifyToken } from '../lib/auth.js';
+import { verifyToken, sessionOk } from '../lib/auth.js';
 import { dbEnabled, sql } from '../lib/db.js';
 import { ensureClientTables, setHealStart, clearHealStart } from '../lib/clients.js';
 
@@ -15,6 +15,7 @@ function providerId(req) {
 }
 
 export default async function handler(req, res) {
+  if (!(await sessionOk(req))) { res.status(401).json({ error: 'This session has been signed out. Please log in again.' }); return; }
   if (req.method !== 'POST') { res.status(405).json({ error: 'Method not allowed' }); return; }
   if (!dbEnabled()) { res.status(200).json({ ok: false }); return; }
   const provider = providerId(req);
