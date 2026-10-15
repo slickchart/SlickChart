@@ -1,0 +1,16 @@
+import pw from '/opt/node22/lib/node_modules/playwright/index.js';
+const b = await pw.chromium.launch({ executablePath: '/opt/pw-browsers/chromium-1194/chrome-linux/chrome' });
+const p = await b.newPage({ viewport: { width: 390, height: 844 } }); const errs=[]; p.on('pageerror', e => errs.push(e.message));
+await p.addInitScript(() => { localStorage.setItem('sc_token', 'TESTTOKEN'); localStorage.setItem('sc_onboarded', '1'); });
+await p.route('**/api/**', r => r.fulfill({ status: 200, contentType: 'application/json', body: r.request().url().includes('cloud-status') ? '{"enabled":true}' : '{"ok":true,"data":{},"clients":[]}' }));
+const boot = async () => { await p.goto('http://localhost:8899/slickchart.html'); await p.waitForTimeout(2800); };
+await boot();
+await p.evaluate(() => { CL.c1 = { name: 'Cooper Howard', _token: 'T' }; saveClients(); affiliateLinks.push({ id: 'p1', name: 'X', active: true }); persistAffiliateLinks(); addClientProd('c1', 'p1'); vendors.push({ id: 'v-real', name: 'My Real Vendor' }); saveVendors(); inv.push({ id: 'i-real', name: 'My Real Stock' }); saveInv(); partners.push({ id: 'pa-real', name: 'My Real Partner' }); persistPartners(); });
+await p.waitForTimeout(800); await boot();
+const s1 = await p.evaluate(() => ({ c1: !!CL.c1, recs: clientRecs.c1, sample: Object.keys(CL) }));
+await p.evaluate(() => _clearSampleData()); await p.waitForTimeout(800);
+const s2 = await p.evaluate(() => ({ c1: !!CL.c1, recs: clientRecs.c1, ls: localStorage.getItem('sc_client_recs') }));
+await boot();
+const s3 = await p.evaluate(() => ({ c1: !!CL.c1, recs: clientRecs.c1, ls: localStorage.getItem('sc_client_recs'), ws: (JSON.parse(localStorage.getItem('sc_workspace')||'{}').clientRecs||{}).c1, vendor: vendors.some(v => v.id === 'v-real'), inv: inv.some(v => v.id === 'i-real'), partner: partners.some(v => v.id === 'pa-real') }));
+console.log(JSON.stringify(s1)); console.log(JSON.stringify(s2)); console.log(JSON.stringify(s3), errs);
+await b.close();

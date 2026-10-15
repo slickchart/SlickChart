@@ -1,0 +1,15 @@
+import pw from '/opt/node22/lib/node_modules/playwright/index.js';
+const b = await pw.chromium.launch({ executablePath: '/opt/pw-browsers/chromium-1194/chrome-linux/chrome' });
+const p = await b.newPage({ viewport: { width: 390, height: 844 } }); const errs=[]; p.on('pageerror', e => errs.push(e.message));
+await p.addInitScript(() => { localStorage.setItem('sc_token', 'TESTTOKEN'); localStorage.setItem('sc_onboarded', '1'); });
+await p.route('**/api/**', r => r.fulfill({ status: 200, contentType: 'application/json', body: r.request().url().includes('cloud-status') ? '{"enabled":true}' : '{"ok":true,"data":{},"clients":[]}' }));
+const boot = async () => { await p.goto('http://localhost:8899/slickchart.html'); await p.waitForTimeout(2800); };
+await boot();
+const r1 = await p.evaluate(() => { nav('biz-info'); toggleBizDay('tue'); const mem = bizHours.tue.open; nav('home'); return { mem, ls: localStorage.getItem('sc_availability') }; });
+await p.waitForTimeout(800);
+const r1b = await p.evaluate(() => localStorage.getItem('sc_availability'));
+await boot();
+const r2 = await p.evaluate(() => ({ ls: localStorage.getItem('sc_availability'), mem: (nav('biz-info'), bizHours.tue.open) }));
+console.log(JSON.stringify(r1), '\nlater', r1b, '\nreload', JSON.stringify(r2), errs);
+const fl = await p.evaluate(() => String(_flushSettingsEdits).slice(0, 900)); console.log(fl);
+await b.close();

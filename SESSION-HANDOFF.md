@@ -7177,3 +7177,19 @@ Real bugs found and fixed:
 Checked, not bugs: Today's Refresh and Setup walkthrough (async / overlay outside the sweep's window);
 client-app "do nothing" taps were re-selecting the already-selected option, and Ask focuses the box.
 Test: `scratchpad/test-sweep-fixes.mjs` 3/3.
+
+## 2026-10-15a — Boot-time sample purge wrote defaults over real libraries (2am run)
+Found by `sweep-whole-app-persist.mjs`: "Remove Sample Data", then a restart, and a real client's
+product picks were gone. Cause: once `sc_hide_sample` is set, `_purgeSample()` runs at EVERY boot
+(top-level boot, and the "sample client" step of `_reloadAll`) BEFORE `loadWorkspace`, `loadClientRecs`,
+`loadVendors`, `loadInv`, `loadPartners`, `loadAutos`. It filtered the built-in DEFAULTS and saved them —
+`saveVendors/saveInv/persistPartners/persistAutos` unconditionally — over her real local copies.
+Reproduced on the old code: picks, vendors, inventory, partners all lost locally after a restart.
+The account copy was protected by `_dropBootShrinks` (a shrink without tombstones is held back) and the
+next pull restored the screen, which is why nobody saw it; an offline start had no such rescue.
+Fix: `_purgeSample` now reads each library it touches from storage first. Test:
+`scratchpad/test-sample-purge-boot.mjs` 7/7; sweep-summaries 13/13, sweep-offline-boot 12/12.
+(freshaudit / scaleaudit / sweep-crossdevice are not in this checkout, so they were not run.)
+Also triaged from the same sweep, NOT bugs: business-day toggles (save on Save and on leaving the
+screen), `sc_bus` (device-local cross-tab channel), and `_ts` restamps seen only on a blank test
+account (with real account data, a plain boot neither restamps nor pushes bizinfo/hours/tombstones).
