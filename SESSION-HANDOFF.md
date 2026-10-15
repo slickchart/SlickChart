@@ -7249,3 +7249,27 @@ event sync's skeleton creation and the reminder generators. Test `scratchpad/tes
 **Her account likely now holds up to 47 duplicate copies** from that preview launch (the preview uses
 the real database). Cleanup: Admin -> Recover clients -> her email -> "Tidy all duplicate clients".
 The split build itself loaded fine on the Vercel preview (her confirmation), so it ships tonight too.
+
+## 2026-10-15e — duplicate clients: prevented AND self-cleaning
+
+**Ashley observed:** duplicate clients have appeared "multiple times now"; she has had to clean them
+up by hand each time (Recover clients → Tidy). Most recently: 47 copies after the "47 bookings" toast.
+
+**Three causes, all addressed:**
+1. The booking upsert ran before the account's client list had arrived (6s boot failsafe), so every
+   booked customer looked new. Fixed in 15c/15d — `_rosterNotReadYet()` is true while signed in until
+   the first pull lands.
+2. The booking upsert gives a new client a random id, so a copy of a Square customer does not collide
+   with the `sq_` original by id. Covered by the auto-merge below.
+3. `_mergeClientRecords` purged the SURVIVOR when both records carried the same `squareId`
+   (it marked `_sqLocalId(squareId)` as merged, which is the kept record's id). Fixed with `_sameSq`.
+
+**Auto-merge (`_autoMergeSquareDuplicates`)**: groups clients by `squareId` (skips animals and owner
+links). Keeps the canonical `sq_` id, otherwise the record with most content, and folds each copy in
+with `_mergeClientRecords` — notes, forms, photos, summaries carried over. A pair whose email, phone
+(last 10 digits) or birthday disagree is LEFT ALONE for Review & merge. Two people who merely share a
+name are never merged (no shared squareId). Runs once per launch after the roster is read, and after
+every Square upsert. No toast; the result is logged and written to `sc_dupes_last` (device-only,
+in `_SYNC_SKIP`). Test: `scratchpad/test-auto-dedupe.mjs` (12/12: 47+47 folds to 47, data kept,
+conflict untouched, same-name strangers untouched, pushed to the account, survives relaunch, manual
+merge keeps the survivor).

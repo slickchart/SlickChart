@@ -493,7 +493,7 @@ const S=document.getElementById('S');
 // resets when I save it" and there was no way to tell whether her phone had any of them — a whole
 // day was spent debugging code she may not have been running. Shown at the bottom of Settings, so
 // the answer is a screenshot away. Bump it on every ship.
-const APP_BUILD='2026-10-15d';
+const APP_BUILD='2026-10-15e';
 
 
 /* ════════════════════════════════════════════════════════════════
@@ -2441,7 +2441,11 @@ function _mergeClientRecords(keepId,dropId){
   if(!keep.flaggedContra&&drop.flaggedContra)keep.flaggedContra=drop.flaggedContra;
   _mergeSideStores(keepId,dropId);
   // Don't let the background Square sync re-create a merged-away Square customer.
-  if(_isSquareClient(dropId)){const local=drop.squareId?_sqLocalId(drop.squareId):dropId;mergedSquareIds[local]=1;if(String(dropId).indexOf('sq_')===0)mergedSquareIds[dropId]=1;saveMergedIds();}
+  // ...but NOT when the survivor is that same Square customer. Marking its sq_ key "merged away" made
+  // _purgeRemovedClients strip the SURVIVOR too (it purges any record whose squareId maps to a merged
+  // key), so merging two copies of one person could make both disappear.
+  const _sameSq=!!(drop.squareId&&keep.squareId&&String(drop.squareId)===String(keep.squareId));
+  if(_isSquareClient(dropId)&&!_sameSq){const local=drop.squareId?_sqLocalId(drop.squareId):dropId;if(!(keep.squareId&&_sqLocalId(keep.squareId)===local)&&local!==keepId)mergedSquareIds[local]=1;if(String(dropId).indexOf('sq_')===0&&dropId!==keepId)mergedSquareIds[dropId]=1;saveMergedIds();}
   // Remember where this id went so a form/check-in the client later submits under it (their token is
   // still bound to dropId server-side) is routed onto the survivor instead of being silently dropped.
   try{_mergedInto[dropId]=keepId;if(drop.squareId)_mergedInto[_sqLocalId(drop.squareId)]=keepId;_saveMergedInto();}catch(e){}
@@ -2449,6 +2453,68 @@ function _mergeClientRecords(keepId,dropId){
   delete CL[dropId];
   saveClients();
 }
+// ── Duplicates clean themselves up (Ashley, 2026-10-15: "this has happened multiple times now where it
+// adds duplicate clients. lets find a way to make sure that doesnt ever happen again") ─────────────────
+// Two records carrying the SAME Square customer id are the same person — certain, not a guess (names
+// are never enough: two people can share one). So once her list has actually arrived, every such group
+// is folded into one chart with the same merge as "Review & merge", which keeps everything from both.
+// Only automatic when nothing would be overwritten: if both copies hold DIFFERENT text in the same
+// field (say two different notes), that pair is left for her to look at in Merge Duplicates.
+// Keeps the record whose id IS that Square customer's id (sq_...): the Square sync, the delete record
+// and the purge are all keyed on it, so dropping it instead would let the purge take the survivor.
+const _AUTO_MERGE_IGNORE={bg:1,tc:1,initials:1,_uAt:1,_ts:1,_nvAuto:1,lastVisit:1,nextVisit:1,treatment:1,source:1,_token:1,touchUpDate:1,sessions:1,seriesTotal:1,id:1,_demoRestoredAt:1,squareId:1,name:1,
+  submittedForms:1,signedForms:1,pendingForms:1,pendingGuides:1,pendingCourses:1,summaries:1};
+function _autoMergeConflict(keep,drop){
+  const norm=v=>String(v==null?'':(typeof v==='object'?JSON.stringify(v):v)).trim().toLowerCase().replace(/\s+/g,' ');
+  for(const k of Object.keys(drop)){
+    if(_AUTO_MERGE_IGNORE[k])continue;
+    const dv=drop[k],kv=keep[k];
+    if(typeof _isBlankVal==='function'?_isBlankVal(dv):(dv==null||dv===''))continue;
+    if(typeof _isBlankVal==='function'?_isBlankVal(kv):(kv==null||kv===''))continue;   // keeper is blank: it gets filled
+    if(k==='phone'&&String(dv).replace(/\D/g,'').slice(-10)===String(kv).replace(/\D/g,'').slice(-10))continue;
+    if(norm(dv)!==norm(kv))return k;
+  }
+  return '';
+}
+function _autoMergeSquareDuplicates(){
+  try{
+    if(typeof _rosterNotReadYet==='function'&&_rosterNotReadYet())return 0;   // list not arrived: never
+    const groups={};
+    Object.keys(CL).forEach(function(id){const c=CL[id];if(!c||!c.squareId||c.isAnimal||c.ownerId)return;(groups[c.squareId]=groups[c.squareId]||[]).push(id);});
+    let merged=0;const skipped=[];
+    Object.keys(groups).forEach(function(sqid){
+      const ids=groups[sqid];if(ids.length<2)return;
+      const canon=_sqLocalId(sqid);
+      // survivor: the canonical sq_ record if there is one, else the one with the most on it
+      const weight=function(id){const c=CL[id]||{};return (c._token?50:0)+((c.submittedForms||[]).length*10)+((c.summaries||[]).length*10)+String(c.notes||'').length/10+Object.keys(c).filter(k=>!_isBlankVal(c[k])).length;};
+      let keepId=ids.indexOf(canon)>=0?canon:ids.slice().sort(function(a,b){return weight(b)-weight(a);})[0];
+      ids.forEach(function(dropId){
+        if(dropId===keepId||!CL[dropId]||!CL[keepId])return;
+        const clash=_autoMergeConflict(CL[keepId],CL[dropId]);
+        if(clash){skipped.push((CL[keepId].name||keepId)+' ('+clash+')');return;}
+        _mergeClientRecords(keepId,dropId);merged++;
+      });
+    });
+    if(merged||skipped.length){
+      try{console.log('[dupes] merged '+merged+' duplicate cop'+(merged===1?'y':'ies')+(skipped.length?'; left for review: '+skipped.join(', '):''));}catch(e){}
+      try{localStorage.setItem('sc_dupes_last',JSON.stringify({at:Date.now(),merged:merged,skipped:skipped.slice(0,20)}));}catch(e){}
+    }
+    return merged;
+  }catch(e){return 0;}
+}
+// After every launch, once her list is in: fold any copies. Also after anything that imports from
+// Square. Waits as long as it takes for the list; does nothing if it never arrives.
+(function(){
+  try{
+    let n=0;const t=setInterval(function(){
+      n++;
+      if(typeof _rosterNotReadYet==='function'&&_rosterNotReadYet()&&n<300)return;
+      clearInterval(t);
+      if(typeof _rosterNotReadYet==='function'&&_rosterNotReadYet())return;
+      _autoMergeSquareDuplicates();
+    },2000);
+  }catch(e){}
+})();
 function renderMergeClients(){
   setNav('clients');
   document.getElementById('tt').textContent='Merge Duplicates';
@@ -2688,7 +2754,8 @@ try{document.addEventListener('keydown',function(e){
 // ── Cloud sync (database + login). Falls back to local-only until configured. ──
 function saveProfessions(){try{(function(_v){localStorage.setItem('sc_professions',_v);if(typeof _pushKeyNow==='function')_pushKeyNow('sc_professions',_v);return _v;})(JSON.stringify(selectedProfessions));}catch(e){}}
 function loadProfessions(){try{const raw=localStorage.getItem('sc_professions');if(raw){const a=JSON.parse(raw);if(Array.isArray(a)&&a.length)selectedProfessions=a;}}catch(e){}}
-const _SYNC_SKIP={sc_staff:1,sc_ev_fails:1,   /* device-local record of ingest failures, for the self-check */
+const _SYNC_SKIP={sc_staff:1,sc_ev_fails:1,sc_dupes_last:1,   /* device-local note of the last automatic duplicate merge */
+     /* device-local record of ingest failures, for the self-check */
      /* retired: SlickChart is for solo providers, so there is no staff roster */
   sc_token:1,sc_sqkey:1,sc_bus:1,sc_chart_activity:1,sc_pulse:1,sc_cloud_seeded:1};
 // Whole FAMILIES of keys that must never leave the device. sc_room_draft_* is the crash-safety copy of
@@ -31014,6 +31081,7 @@ function _upsertClientsFromSquare(appts){
     added++;changed=true;newNames.push(name.split(' ')[0]);
   });
   if(changed){try{if(typeof saveClients==='function')saveClients();}catch(e){}}
+  try{if(added)added=Math.max(0,added-_autoMergeSquareDuplicates());}catch(e){}
   if(added&&!(_upsertClientsFromSquare._quiet)&&typeof proToast==='function'){
     proToast(added===1?(newNames[0]+' booked online — added to your clients'):(added+' new online bookings added to your clients: '+newNames.slice(0,4).join(', ')+(added>4?'…':'')));
   }
