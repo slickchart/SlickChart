@@ -528,3 +528,31 @@ export async function clearClientTombstones(providerId, ids) {
   const q = sql();
   await q`DELETE FROM client_tombstones WHERE provider_id=${providerId} AND id = ANY(${list}::text[])`;
 }
+
+// The provider merged two copies of one client (fromId folded into toId). Before the copy is
+// soft-deleted, move what hangs off it server-side onto the survivor: submissions and events, web
+// and native push sign-ups, the client's app prefs, and — when only the copy's link was ever opened —
+// that link itself, so the client's app keeps working. Both rows must be THIS provider's live rows
+// (§0.1), so a forged pair can never reach another account's client.
+export async function mergeClientRows(providerId, fromId, toId) {
+  const q = sql();
+  const p = String(providerId || ''), f = String(fromId || ''), t = String(toId || '');
+  if (!p || !f || !t || f === t) return false;
+  const rows = await q`SELECT id, token, opened_at FROM clients
+    WHERE id IN (${f}, ${t}) AND provider_id = ${p} AND deleted_at IS NULL`;
+  if (rows.length !== 2) return false;
+  const fr = rows.find(r => r.id === f), to = rows.find(r => r.id === t);
+  await q`UPDATE client_events SET client_id = ${t} WHERE client_id = ${f} AND provider_id = ${p}`;
+  try { await q`UPDATE push_subscriptions SET client_id = ${t} WHERE client_id = ${f} AND provider_id = ${p}`; } catch (e) {}
+  try { await q`UPDATE native_push_tokens SET owner_id = ${t} WHERE owner_kind = 'client' AND owner_id = ${f}`; } catch (e) {}
+  try { await q`INSERT INTO client_prefs (client_id, prefs, updated_at)
+    SELECT ${t}, prefs, updated_at FROM client_prefs WHERE client_id = ${f}
+    ON CONFLICT (client_id) DO NOTHING`; } catch (e) {}
+  if (fr.opened_at && !to.opened_at) {
+    // token is UNIQUE: park the copy's token first, then hand it to the survivor.
+    const live = fr.token;
+    await q`UPDATE clients SET token = ${'merged_' + genToken()} WHERE id = ${f} AND provider_id = ${p}`;
+    await q`UPDATE clients SET token = ${live}, opened_at = ${fr.opened_at} WHERE id = ${t} AND provider_id = ${p}`;
+  }
+  return true;
+}

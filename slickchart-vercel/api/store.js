@@ -42,6 +42,13 @@ async function requireLogin(req, res, q) {
 const UNION_SET_KEYS = { sc_home_dismissed: 1 };   // array of dismissed card keys — add-only
 const OLDEST_WINS_KEYS = { sc_attn_seen: 1 };      // card key -> first-seen ms; earliest stamp wins,
                                                    // so the 24h retirement clock can never be reset
+// The client delete / put-back / merge records. A device that had not pulled yet used to push its
+// smaller map and erase another device's removal for the whole account, so a merged-away duplicate
+// came back on the next fresh sign-in. id -> ms, the NEWER stamp wins (the app compares delete vs
+// put-back times, so both must keep their newest). Removing an entry from these is never needed:
+// a put-back is a newer sc_undeleted_clients stamp, and the founder tool edits them with direct SQL.
+const NEWEST_WINS_KEYS = { sc_deleted_clients: 1, sc_undeleted_clients: 1, sc_merged_ids: 1 };
+const UNION_OBJ_KEYS = { sc_merged_into: 1 };      // dropped id -> surviving id; the incoming write wins a collision
 function isJsonArray(v) { try { return Array.isArray(JSON.parse(v)); } catch (e) { return false; } }
 function isJsonObject(v) { try { const o = JSON.parse(v); return !!o && typeof o === 'object' && !Array.isArray(o); } catch (e) { return false; } }
 
@@ -135,6 +142,32 @@ export default async function handler(req, res) {
                       ) e WHERE e.num > 0 GROUP BY e.key
                     ) s
                   ), updated_at = now()`;
+          continue;
+        }
+        if (NEWEST_WINS_KEYS[k] && isJsonObject(val)) {
+          // Keep the NEWEST stamp per id; a non-number marker (legacy `true`) counts as 1. See above.
+          await q`INSERT INTO kv (owner, k, v, updated_at)
+                  VALUES (${owner}, ${k}, ${val}, now())
+                  ON CONFLICT (owner, k) DO UPDATE SET v = (
+                    SELECT COALESCE(jsonb_object_agg(s.key, to_jsonb(s.val)), '{}'::jsonb)::text FROM (
+                      SELECT e.key, max(e.num) AS val FROM (
+                        SELECT key, (CASE WHEN jsonb_typeof(value) = 'number' THEN value::text::numeric ELSE 1 END) AS num
+                          FROM jsonb_each(CASE WHEN jsonb_typeof(kv.v::jsonb)       = 'object' THEN kv.v::jsonb       ELSE '{}'::jsonb END)
+                        UNION ALL
+                        SELECT key, (CASE WHEN jsonb_typeof(value) = 'number' THEN value::text::numeric ELSE 1 END) AS num
+                          FROM jsonb_each(CASE WHEN jsonb_typeof(EXCLUDED.v::jsonb) = 'object' THEN EXCLUDED.v::jsonb ELSE '{}'::jsonb END)
+                      ) e GROUP BY e.key
+                    ) s
+                  ), updated_at = now()`;
+          continue;
+        }
+        if (UNION_OBJ_KEYS[k] && isJsonObject(val)) {
+          await q`INSERT INTO kv (owner, k, v, updated_at)
+                  VALUES (${owner}, ${k}, ${val}, now())
+                  ON CONFLICT (owner, k) DO UPDATE SET v = (
+                    (CASE WHEN jsonb_typeof(kv.v::jsonb)       = 'object' THEN kv.v::jsonb       ELSE '{}'::jsonb END) ||
+                    (CASE WHEN jsonb_typeof(EXCLUDED.v::jsonb) = 'object' THEN EXCLUDED.v::jsonb ELSE '{}'::jsonb END)
+                  )::text, updated_at = now()`;
           continue;
         }
         await q`INSERT INTO kv (owner, k, v, updated_at)

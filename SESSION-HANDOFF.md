@@ -7273,3 +7273,68 @@ every Square upsert. No toast; the result is logged and written to `sc_dupes_las
 in `_SYNC_SKIP`). Test: `scratchpad/test-auto-dedupe.mjs` (12/12: 47+47 folds to 47, data kept,
 conflict untouched, same-name strangers untouched, pushed to the account, survives relaunch, manual
 merge keeps the survivor).
+
+## 2026-10-15f — duplicate-path bug sweep (six parallel sweeps), all fixed on the branch
+
+Ashley asked for a sweep of everything related to the duplicate-clients bug. Six sweeps ran in
+parallel; each wrote repros in `scratchpad/sweep-dup-*.mjs`. Fixes, by area:
+
+**Creating clients**
+- `_sqChartFor(sqid,email,phone,name)` is now the one "do we already have this person" lookup for
+  every Square path (`_autoSyncCustomers`, `_syncSquareClientsNow`, `_sqImportOne/All`, the booking
+  upsert): canonical sq_ id → `_mergedInto` → any chart with that squareId → one unique email match,
+  or phone + same first name. A chart tied to a different Square customer is never contact-matched.
+- `_autoSyncCustomers` / manual Square imports wait for `_rosterNotReadYet()` (the empty Square shell
+  used to beat her real chart on the merge).
+- The booking upsert creates new bookers under `sq_<id>` (devices agree) and rejects a name match whose
+  chart is already a different Square customer.
+- CSV import ids get a random tail (same id across accounts → `id_taken`; same id after Undo → silently
+  swallowed) and dedupe phone + first name.
+- Server `book-request`: trimmed-email match, phone+first-name match, deterministic `c_bk_` id for a
+  new booker (double submit → one row), and NEVER rewrites an existing client's chart from the public
+  form (it used to replace name and data blob, unauthenticated).
+
+**Merging**
+- `_mergeSideStores`: one try per store (a consult on both sides threw and skipped messages, threads,
+  payments, check-ins), consult kept as ONE object, visit summaries unioned by entry, and now also
+  moves body maps, summary guides/opt-outs, sent routines, appointments and reminders (with `_ts`),
+  and persists summary drafts. `c.summaries` on the record is unioned.
+- Auto-merge: survivor is the sq_ id, else the lowest id (devices agree — "heaviest" let two devices
+  delete each other's survivor); skips a copy open on screen, a different NAME (mom/daughter sharing a
+  Square customer via email), and two different consults. `treatment` now counts as a conflict.
+  Batched: one save and one server call for the whole run (1500 copies took 36s before).
+- Server `mergeClientRows` (`POST /api/clients {merged:[{from,to}]}`, sent with the delete): moves the
+  copy's events, push sign-ups, prefs and — if only the copy's link was opened — the link itself onto
+  the survivor. Both ids must be this provider's live rows. Old server ignores `merged`.
+- `_purgeRemovedClients` no longer strips a chart its Square twin was merged INTO, nor a chart with
+  real data when only its Square twin was removed (keeping the hand-added copy in Review & merge made
+  both vanish and jammed that device's uploads). Records the id it purged so the shrink guard passes.
+  Review & merge pre-selects the sq_ record. `deleteClient` routes to a Square sibling / tombstones
+  the sq_ key. `_commitWriteNote` resolves a merged id.
+- A put-back (`sc_undeleted_clients`) wins only over an OLDER delete; `_mergeTombstone` keeps the newer
+  stamp for both. Server `client-recover` no longer stamps every kept record as "brought back".
+
+**Server sync**
+- `api/store.js` merges `sc_deleted_clients`, `sc_undeleted_clients`, `sc_merged_ids` (newest stamp
+  per id) and `sc_merged_into` (union) instead of overwriting — a stale device used to erase another
+  device's removal for the whole account. `scratchpad/test-server-merge-pg.mjs` (real Postgres, 12/12).
+- `client_tombstones` table: a founder hard purge remembers ids so a stale device can't re-create them.
+- `api/clients.js` refuses a revoked session. Bulk roster repair skips leftover copies.
+
+**Boot**
+- `pull()` treats a non-OK / non-JSON answer as a failure (a 500 used to read as "empty account" and
+  push the whole workspace). A failed pull uploads nothing, retries with backoff and on `online`, then
+  reloads (`Cloud._retryPullSoon`). `Cloud._holdUploads()` keeps every upload queued while a pull is in
+  flight or failed — this is very likely the §2ae "5 stock courses for ~3.6s" mechanism (the 6s
+  failsafe flushed boot defaults mid-pull). Signup marks `_pulledOnce`.
+- 401 then sign-in as a DIFFERENT account in the same page: previous account's data is cleared and the
+  app reloads (`_signedInAsSomeoneElse`, §0).
+- Wait for the account (`_acctUnread()`), then re-run in `_afterAccountRead()`: `_stampClientNextVisit`
+  (stale record got a fresh `_uAt` and beat newer notes), `_rebuildCalendarFeed`, `_paySyncSquare`
+  (doubled invoices), `_gcalPush` (server deletes Google events missing from a partial list).
+
+**Known, not changed:** `_saveClientDetails` and `_saveTaxRate` call `Cloud.pushAllLocal()` (whole
+workspace, bypasses the shrink guard) — worth replacing with targeted pushes. A stale device can
+still re-upload a merged copy inside `sc_clients`; it is hidden everywhere by the (now server-merged)
+delete record. A both-devices-offline edit to a dropped id's per-client map entry is pruned rather than
+folded into the survivor (`_unionById` could follow `_mergedInto`).

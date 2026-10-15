@@ -2,7 +2,7 @@
 // the server (POST), and read them back with link tokens & invite status (GET).
 import { verifyToken, isSessionValid } from '../lib/auth.js';
 import { dbEnabled, sql } from '../lib/db.js';
-import { ensureClientTables, upsertClient, listClients, listEvents, markClientDeleted } from '../lib/clients.js';
+import { ensureClientTables, upsertClient, listClients, listEvents, markClientDeleted, mergeClientRows } from '../lib/clients.js';
 
 function providerId(req) {
   const s = process.env.SESSION_SECRET || '';
@@ -32,6 +32,13 @@ export default async function handler(req, res) {
       const body = req.body || {};
       // Soft-delete any clients the provider removed/merged-away, so the server row is tombstoned
       // and can't resurrect as a blank zombie on the next re-sync. Runs before the upsert.
+      // Merged copies first (before the delete below): move the copy's link, submissions and push
+      // sign-ups onto the survivor. mergeClientRows checks BOTH ids are this provider's own rows.
+      const merged = (Array.isArray(body.merged) ? body.merged : []).slice(0, 500);
+      for (const m of merged) {
+        if (!m || typeof m !== 'object') continue;
+        try { await mergeClientRows(provider, String(m.from || ''), String(m.to || '')); } catch (e) { /* best-effort */ }
+      }
       const del = Array.isArray(body.deletedIds) ? body.deletedIds : [];
       // Same small pool as the upsert below: a Square clean-up sends a few hundred ids in one request, and
       // one Promise.all over them opened a connection per id at once (the EMFILE failure described below).

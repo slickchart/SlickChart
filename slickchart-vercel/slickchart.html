@@ -239,7 +239,7 @@ const S=document.getElementById('S');
 // resets when I save it" and there was no way to tell whether her phone had any of them — a whole
 // day was spent debugging code she may not have been running. Shown at the bottom of Settings, so
 // the answer is a screenshot away. Bump it on every ship.
-const APP_BUILD='2026-10-15e';
+const APP_BUILD='2026-10-15f';
 
 
 /* ════════════════════════════════════════════════════════════════
@@ -1789,7 +1789,7 @@ function _purgeRemovedClients(){
   try{
     const hidden=(typeof _sampleHidden==='function')&&_sampleHidden();
     const sampleIds=(typeof _SAMPLE_IDS!=='undefined')?_SAMPLE_IDS:['maya','sophie','priya'];
-    let changed=false;
+    let changed=false,tomb=false;
     // A client put back on purpose (sc_undeleted_clients) beats the delete record, here exactly as in
     // _mergeClients. Without this the purge stripped her again on every load: Debbi Miranda,
     // 2026-10-13, "it wont put her back on my list".
@@ -1798,11 +1798,25 @@ function _purgeRemovedClients(){
       const c=CL[id]||{};
       if(undel[id])return;
       const sqKey=(c.squareId&&typeof _sqLocalId==='function')?_sqLocalId(c.squareId):'';
-      const merged=(typeof mergedSquareIds!=='undefined')&&(mergedSquareIds[id]||(sqKey&&mergedSquareIds[sqKey]));
-      const deleted=(typeof _deletedClientIds!=='undefined')&&(_deletedClientIds[id]||(sqKey&&_deletedClientIds[sqKey]));
+      // Matching through the Square key exists to strip an EMPTY re-import of a removed customer.
+      // It must never take a chart that customer was merged INTO (keeping the hand-added copy in
+      // Review & merge made the survivor vanish too), nor a chart holding real work when only its
+      // Square twin was removed.
+      const intoMe=!!(sqKey&&sqKey!==id&&typeof _mergedInto==='object'&&_mergedInto&&_mergedInto[sqKey]&&_resolveClientId(sqKey)===id);
+      const viaSq=!!(sqKey&&sqKey!==id&&!intoMe&&(typeof _clientChartWeight!=='function'||!(_clientChartWeight(c,id)>0)));
+      const mOwn=(typeof mergedSquareIds!=='undefined')&&mergedSquareIds[id];
+      const dOwn=(typeof _deletedClientIds!=='undefined')&&_deletedClientIds[id];
+      const mSq=viaSq&&(typeof mergedSquareIds!=='undefined')&&mergedSquareIds[sqKey];
+      const dSq=viaSq&&(typeof _deletedClientIds!=='undefined')&&_deletedClientIds[sqKey];
       const sample=hidden&&sampleIds.indexOf(id)>=0;
-      if(merged||deleted||sample){delete CL[id];changed=true;}
+      if(mOwn||dOwn||mSq||dSq||sample){
+        // Removed through its Square key only: record its own id too, or the upload that drops it
+        // is held back by the shrink guard forever and this device stops syncing its list.
+        if(!sample&&!dOwn&&(mSq||dSq)&&typeof _deletedClientIds!=='undefined'){_deletedClientIds[id]=Date.now();tomb=true;}
+        delete CL[id];changed=true;
+      }
     });
+    if(tomb){try{_saveDeletedClients();}catch(e){}}
     // Push the cleaned list so the server stops handing the removed records back on the next pull.
     if(changed){try{if(typeof saveClients==='function')saveClients();}catch(e){}}
   }catch(e){}
@@ -2045,7 +2059,13 @@ function _cleanupClientData(id){
   try{if(typeof saveProviderNoteDrafts==='function')saveProviderNoteDrafts();}catch(e){}
   try{if(typeof persistWorkspace==='function')persistWorkspace();}catch(e){}
 }
-function deleteClient(id){if(!CL[id])return;const nm=(CL[id].name||'this client');const _go=function(){_cleanupClientData(id);delete CL[id];try{_markClientDeleted(id);}catch(e){}saveClients();if(typeof proToast==='function')proToast(nm+' removed');nav('clients');};if(typeof confirmModal==='function')confirmModal({title:'Remove '+nm+'?',body:'This removes their chart from this app only. It does NOT affect their record in Square.'+((typeof _animalsWarning==='function')?_animalsWarning(id):''),action:'Remove'},_go);else _go();}
+function deleteClient(id){if(!CL[id])return;const nm=(CL[id].name||'this client');const _go=function(){
+  // Square-linked: removing ONE copy of a person must not take the other copy with it, and removing
+  // the person must stop the Square sync bringing them back under their sq_ key.
+  try{const _sq=CL[id]&&CL[id].squareId?String(CL[id].squareId):'';if(_sq){const _k=_sqLocalId(_sq);const _sib=Object.keys(CL).find(x=>x!==id&&CL[x]&&String(CL[x].squareId||'')===_sq);
+    if(_sib){_mergedInto[id]=_sib;if(_k!==_sib)_mergedInto[_k]=_sib;_saveMergedInto();}
+    else if(_k!==id&&typeof _deletedClientIds!=='undefined'&&!_deletedClientIds[_k]){_deletedClientIds[_k]=Date.now();_saveDeletedClients();}}}catch(e){}
+  _cleanupClientData(id);delete CL[id];try{_markClientDeleted(id);}catch(e){}saveClients();if(typeof proToast==='function')proToast(nm+' removed');nav('clients');};if(typeof confirmModal==='function')confirmModal({title:'Remove '+nm+'?',body:'This removes their chart from this app only. It does NOT affect their record in Square.'+((typeof _animalsWarning==='function')?_animalsWarning(id):''),action:'Remove'},_go);else _go();}
 
 // ══ Merge duplicate clients ══════════════════════════════════════════════════
 // Square lets you merge duplicate customers in its dashboard; this brings the same
@@ -2091,6 +2111,32 @@ let _dupDismissSig=(function(){try{return localStorage.getItem('sc_dup_dismiss')
 function _dupSig(dg){try{return (dg||[]).map(g=>g.slice().sort().join('+')).sort().join('|');}catch(e){return '';}}
 function _dismissDupBanner(){try{const dg=(typeof _findDuplicateGroups==='function')?_findDuplicateGroups():[];_dupDismissSig=_dupSig(dg);localStorage.setItem('sc_dup_dismiss',_dupDismissSig);if(typeof _pushKeyNow==='function')_pushKeyNow('sc_dup_dismiss',_dupDismissSig);}catch(e){}try{if(typeof renderClients==='function')renderClients();}catch(e){}}
 function _sqLocalId(sqid){return 'sq_'+String(sqid||'').slice(0,10).toLowerCase().replace(/[^a-z0-9]/g,'');}
+// The ONE question every Square import asks before creating a chart: "do we already have this
+// person?" Each path used to check only CL['sq_<id>'], so a client added in the app (random id, Square
+// id stamped on later) or a booker created from a booking got a SECOND chart the next time the Square
+// customer list synced. Order: the canonical sq_ id, where it was merged to, any chart carrying that
+// Square id, then one unique chart with the same email, or the same phone AND first name (families
+// share phones). A chart already tied to a DIFFERENT Square customer is never matched by contact.
+function _sqChartFor(sqid,email,phone,name){
+  try{
+    sqid=String(sqid||'');
+    if(sqid){
+      const k=_sqLocalId(sqid);if(CL[k])return k;
+      const r=(typeof _resolveClientId==='function')?_resolveClientId(k):k;if(r!==k&&CL[r])return r;
+      const bySq=Object.keys(CL).find(id=>CL[id]&&String(CL[id].squareId||'')===sqid);if(bySq)return bySq;
+    }
+    const em=String(email||'').trim().toLowerCase();
+    const dg=v=>String(v||'').replace(/\D/g,'').slice(-10);
+    const ph=dg(phone);
+    const first=v=>String(v||'').trim().toLowerCase().split(/\s+/)[0]||'';
+    const fn=first(name);
+    const hits=Object.keys(CL).filter(id=>{const c=CL[id];if(!c||c.ownerId||c.isAnimal)return false;
+      if(sqid&&c.squareId&&String(c.squareId)!==sqid)return false;
+      if(em&&String(c.email||'').trim().toLowerCase()===em)return true;
+      return !!(ph.length>=7&&fn&&dg(c.phone)===ph&&first(c.name)===fn);});
+    return hits.length===1?hits[0]:null;
+  }catch(e){return null;}
+}
 function _mergeNorm(s){return (typeof _normSearch==='function')?_normSearch(s):String(s||'').toLowerCase().replace(/[^a-z0-9]/g,'');}
 // Strip a leading "1" country code on 11-digit numbers (matching _fmtPhone) so the same person entered
 // with and without "+1" produces the same dedup key and gets grouped in Merge Duplicates.
@@ -2125,28 +2171,56 @@ function _mergeArrUnique(a,b,keyFn){
   (Array.isArray(b)?b:[]).forEach(x=>{const k=keyFn(x);if(!seen[k]){seen[k]=1;out.push(x);}});
   return out;
 }
+// While the auto-merge folds many copies at once, every save, delete record and server call is
+// collected here and done ONCE at the end. Saving the whole client list per copy froze a big
+// account for over half a minute and sent one request per copy.
+let _mergeBatch=null;
+// Tell the server which record each dropped copy went into, in the SAME request as the delete, so it
+// can move the client's link, submissions and notification sign-ups onto the survivor first. An older
+// server ignores `merged` and just soft-deletes, which is what it did before.
+function _serverMergeClients(pairs){try{const tok=(typeof Cloud!=='undefined'&&Cloud&&Cloud.token)||'';if(!tok||!pairs||!pairs.length)return;for(let i=0;i<pairs.length;i+=200){const ch=pairs.slice(i,i+200);fetch('/api/clients',{method:'POST',headers:{'Content-Type':'application/json','Authorization':'Bearer '+tok},body:JSON.stringify({clients:[],merged:ch,deletedIds:ch.map(p=>p.from)})}).catch(function(){});}}catch(e){}}
 // Move/combine every per-client side store from dropId onto keepId. Arrays are unioned or
 // concatenated; single-value drafts prefer whatever the kept record already has.
+// EACH STORE HAS ITS OWN try (CLAUDE.md §3): this used to be one try around the whole list, and the
+// consult step threw whenever both records had a consult — so messages, threads, payments and
+// check-ins after it were silently never moved, and were then pruned with the dropped id.
+// Anything still keyed by dropId after this is lost on the next sync (the id goes on the delete
+// record), so a store keyed by client id that is not moved here is a store the merge destroys.
 function _mergeSideStores(keepId,dropId){
-  const numOr0=v=>{const x=parseInt(v,10);return isNaN(x)?0:x;};
-  try{
-    if(typeof clientRecs!=='undefined'&&clientRecs[dropId]){const s={};const out=(clientRecs[keepId]||[]).slice();out.forEach(x=>s[x]=1);clientRecs[dropId].forEach(x=>{if(!s[x]){s[x]=1;out.push(x);}});clientRecs[keepId]=out;delete clientRecs[dropId];}
-    if(typeof recReasons!=='undefined'&&recReasons[dropId]){recReasons[keepId]=Object.assign({},recReasons[dropId],recReasons[keepId]||{});delete recReasons[dropId];}
-    if(typeof clientHomecare!=='undefined'&&clientHomecare[dropId]){const s={};const out=(clientHomecare[keepId]||[]).slice();out.forEach(x=>s[x]=1);clientHomecare[dropId].forEach(x=>{if(!s[x]){s[x]=1;out.push(x);}});clientHomecare[keepId]=out;delete clientHomecare[dropId];}
-    if(typeof sessionSummaries!=='undefined'&&sessionSummaries[dropId]){sessionSummaries[keepId]=(sessionSummaries[keepId]||[]).concat(sessionSummaries[dropId]);delete sessionSummaries[dropId];}
-    if(typeof capturedPhotos!=='undefined'&&capturedPhotos[dropId]){const _kp=(capturedPhotos[keepId]||[]).slice();const _seen=new Set(_kp.map(function(p){return (p&&(p.pid||p.url))||'';}));capturedPhotos[dropId].forEach(function(p){const k=(p&&(p.pid||p.url))||'';if(k&&_seen.has(k))return;_seen.add(k);_kp.push(p);});capturedPhotos[keepId]=_kp;delete capturedPhotos[dropId];}
-    if(typeof clientHealingStage!=='undefined'&&clientHealingStage[dropId]!=null){if(clientHealingStage[keepId]==null)clientHealingStage[keepId]=clientHealingStage[dropId];delete clientHealingStage[dropId];}
-    if(typeof vcInvites!=='undefined'&&vcInvites[dropId]){if(!vcInvites[keepId])vcInvites[keepId]=vcInvites[dropId];delete vcInvites[dropId];}
-    if(typeof vcSubmissions!=='undefined'&&vcSubmissions[dropId]){const d=Array.isArray(vcSubmissions[dropId])?vcSubmissions[dropId]:[vcSubmissions[dropId]];vcSubmissions[keepId]=(vcSubmissions[keepId]||[]).concat(d);delete vcSubmissions[dropId];}
-    if(typeof summaryObsDraft!=='undefined'&&summaryObsDraft[dropId]!=null){if(summaryObsDraft[keepId]==null)summaryObsDraft[keepId]=summaryObsDraft[dropId];delete summaryObsDraft[dropId];}
-    if(typeof summaryNoteDraft!=='undefined'&&summaryNoteDraft[dropId]!=null){if(summaryNoteDraft[keepId]==null)summaryNoteDraft[keepId]=summaryNoteDraft[dropId];delete summaryNoteDraft[dropId];}
-    if(typeof providerNoteDrafts!=='undefined'&&providerNoteDrafts[dropId]){if(!providerNoteDrafts[keepId])providerNoteDrafts[keepId]=providerNoteDrafts[dropId];delete providerNoteDrafts[dropId];}
-    if(typeof msgStore!=='undefined'&&msgStore[dropId]){msgStore[keepId]=(msgStore[keepId]||[]).concat(msgStore[dropId]);delete msgStore[dropId];}
-    if(typeof threads!=='undefined'&&Array.isArray(threads)){for(let i=threads.length-1;i>=0;i--){if(threads[i]&&threads[i].id===dropId){if(threads.some(t=>t&&t.id===keepId))threads.splice(i,1);else threads[i].id=keepId;}}}
-    if(typeof _payments!=='undefined'&&Array.isArray(_payments)){_payments.forEach(p=>{if(p&&p.clientId===dropId)p.clientId=keepId;});}
-    // Re-point the merged-away client's check-ins to the kept chart so they don't orphan in the inbox.
-    if(typeof checkins!=='undefined'&&Array.isArray(checkins)){checkins.forEach(ci=>{if(ci&&ci.clientId===dropId)ci.clientId=keepId;});}
-  }catch(e){}
+  const step=function(fn){try{fn();}catch(e){try{console.warn('[merge] side store',e&&e.message);}catch(_){}}};
+  const unionList=function(map){if(map&&map[dropId]){const s={};const out=(Array.isArray(map[keepId])?map[keepId]:[]).slice();out.forEach(x=>s[typeof x==='object'?JSON.stringify(x):x]=1);(Array.isArray(map[dropId])?map[dropId]:[]).forEach(x=>{const k=typeof x==='object'?JSON.stringify(x):x;if(!s[k]){s[k]=1;out.push(x);}});map[keepId]=out;delete map[dropId];}};
+  const newer=function(map){if(map&&map[dropId]){const a=map[keepId],d=map[dropId];if(!a||(Number(d&&d.ts)||0)>(Number(a&&a.ts)||0))map[keepId]=d;delete map[dropId];}};
+  step(()=>{if(typeof clientRecs!=='undefined')unionList(clientRecs);});
+  step(()=>{if(typeof recReasons!=='undefined'&&recReasons[dropId]){recReasons[keepId]=Object.assign({},recReasons[dropId],recReasons[keepId]||{});delete recReasons[dropId];}});
+  step(()=>{if(typeof clientHomecare!=='undefined')unionList(clientHomecare);});
+  // Visit summaries ACCUMULATE (§0.8): union by entry, newest wins, no duplicates.
+  step(()=>{if(typeof sessionSummaries!=='undefined'&&sessionSummaries[dropId]){const u=_unionEntryLists(_CLIENT_MAP_LIST.sc_session_summaries,Array.isArray(sessionSummaries[keepId])?sessionSummaries[keepId]:[],Array.isArray(sessionSummaries[dropId])?sessionSummaries[dropId]:[]);sessionSummaries[keepId]=u?u.value:(sessionSummaries[keepId]||[]).concat(sessionSummaries[dropId]);delete sessionSummaries[dropId];}});
+  step(()=>{if(typeof capturedPhotos!=='undefined'&&capturedPhotos[dropId]){const _kp=(capturedPhotos[keepId]||[]).slice();const _seen=new Set(_kp.map(function(p){return (p&&(p.pid||p.url))||'';}));capturedPhotos[dropId].forEach(function(p){const k=(p&&(p.pid||p.url))||'';if(k&&_seen.has(k))return;_seen.add(k);_kp.push(p);});capturedPhotos[keepId]=_kp;delete capturedPhotos[dropId];}});
+  step(()=>{if(typeof clientHealingStage!=='undefined'&&clientHealingStage[dropId]!=null){if(clientHealingStage[keepId]==null)clientHealingStage[keepId]=clientHealingStage[dropId];delete clientHealingStage[dropId];}});
+  step(()=>{if(typeof vcInvites!=='undefined'&&vcInvites[dropId]){const a=vcInvites[keepId],d=vcInvites[dropId];if(!a||(Number(d&&d.ts)||0)>(Number(a&&a.ts)||0))vcInvites[keepId]=d;delete vcInvites[dropId];}});
+  // A consult is ONE object per client ({photos,refs,goals,...}), never a list. Keep the fuller one.
+  step(()=>{if(typeof vcSubmissions!=='undefined'&&vcSubmissions[dropId]){const one=x=>Array.isArray(x)?x[0]:x;const d=one(vcSubmissions[dropId]),k=one(vcSubmissions[keepId]);const n=x=>(x&&Array.isArray(x.photos))?x.photos.length:0;vcSubmissions[keepId]=(!k||n(d)>n(k))?d:k;delete vcSubmissions[dropId];}});
+  step(()=>{if(typeof summaryObsDraft!=='undefined'&&summaryObsDraft[dropId]!=null){if(summaryObsDraft[keepId]==null)summaryObsDraft[keepId]=summaryObsDraft[dropId];delete summaryObsDraft[dropId];}});
+  step(()=>{if(typeof summaryNoteDraft!=='undefined'&&summaryNoteDraft[dropId]!=null){if(summaryNoteDraft[keepId]==null)summaryNoteDraft[keepId]=summaryNoteDraft[dropId];delete summaryNoteDraft[dropId];}});
+  step(()=>{if(typeof providerNoteDrafts!=='undefined'&&providerNoteDrafts[dropId]){if(!providerNoteDrafts[keepId])providerNoteDrafts[keepId]=providerNoteDrafts[dropId];delete providerNoteDrafts[dropId];}});
+  step(()=>{if(typeof msgStore!=='undefined'&&msgStore[dropId]){msgStore[keepId]=(msgStore[keepId]||[]).concat(msgStore[dropId]);if(msgStore[keepId].every(m=>m&&Number(m.ts)))msgStore[keepId].sort((p,q)=>Number(p.ts)-Number(q.ts));delete msgStore[dropId];}});
+  step(()=>{if(typeof threads!=='undefined'&&Array.isArray(threads)){for(let i=threads.length-1;i>=0;i--){if(threads[i]&&threads[i].id===dropId){if(threads.some(t=>t&&t.id===keepId))threads.splice(i,1);else threads[i].id=keepId;}}}});
+  step(()=>{if(typeof _payments!=='undefined'&&Array.isArray(_payments)){_payments.forEach(p=>{if(p&&p.clientId===dropId)p.clientId=keepId;});}});
+  // Re-point the merged-away client's check-ins to the kept chart so they don't orphan in the inbox.
+  step(()=>{if(typeof checkins!=='undefined'&&Array.isArray(checkins)){checkins.forEach(ci=>{if(ci&&ci.clientId===dropId)ci.clientId=keepId;});}});
+  step(()=>{if(typeof bodyMaps!=='undefined')newer(bodyMaps);});
+  step(()=>{if(typeof summaryGuides!=='undefined')unionList(summaryGuides);});
+  step(()=>{if(typeof summaryGuideOptOut!=='undefined')unionList(summaryGuideOptOut);});
+  step(()=>{if(typeof sentRoutinesByProf!=='undefined'&&sentRoutinesByProf)Object.keys(sentRoutinesByProf).forEach(pk=>newer(sentRoutinesByProf[pk]));});
+  // Appointments and reminders point at a client by id. Stamp _ts so the re-pointed copy beats the
+  // account's older one in _mergeAuthoredById.
+  let _apMoved=false,_remMoved=false;
+  step(()=>{if(typeof manualAppts!=='undefined'&&Array.isArray(manualAppts))manualAppts.forEach(a=>{if(a&&a.clientId===dropId){a.clientId=keepId;a._ts=Date.now();_apMoved=true;}});});
+  step(()=>{if(typeof reminders!=='undefined'&&Array.isArray(reminders))reminders.forEach(r=>{if(r&&r.clientId===dropId){r.clientId=keepId;r._ts=Date.now();_remMoved=true;}});});
+  if(_mergeBatch){if(_apMoved)_mergeBatch.ap=true;if(_remMoved)_mergeBatch.rem=true;return;}   // saved once at the end of the batch
+  _persistMergeSideStores(_apMoved,_remMoved);
+}
+function _persistMergeSideStores(_apMoved,_remMoved){
   try{typeof _persistCheckinsNow==='function'&&_persistCheckinsNow();}catch(e){}
   try{typeof persistClientRecs==='function'&&persistClientRecs();}catch(e){}
   try{typeof persistRecReasons==='function'&&persistRecReasons();}catch(e){}
@@ -2155,9 +2229,16 @@ function _mergeSideStores(keepId,dropId){
   try{typeof persistCapturedPhotos==='function'&&persistCapturedPhotos();}catch(e){}
   try{typeof persistVcState==='function'&&persistVcState();}catch(e){}
   try{typeof persistClientHealingStage==='function'&&persistClientHealingStage();}catch(e){}
+  try{typeof persistSummaryDrafts==='function'&&persistSummaryDrafts();}catch(e){}
   try{typeof saveMessages==='function'&&saveMessages();}catch(e){}
   try{typeof saveProviderNoteDrafts==='function'&&saveProviderNoteDrafts();}catch(e){}
   try{typeof _savePayments==='function'&&_savePayments();}catch(e){}
+  try{typeof persistBodyMaps==='function'&&persistBodyMaps();}catch(e){}
+  try{typeof _saveSummaryGuides==='function'&&_saveSummaryGuides();}catch(e){}
+  try{typeof _saveSummaryGuideOptOut==='function'&&_saveSummaryGuideOptOut();}catch(e){}
+  try{typeof persistSentRoutines==='function'&&persistSentRoutines();}catch(e){}
+  try{if(_apMoved&&typeof _saveManualAppts==='function')_saveManualAppts();}catch(e){}
+  try{if(_remMoved&&typeof saveReminders==='function')saveReminders();}catch(e){}
 }
 // Fold dropId into keepId: keep the chosen record's own fields, fill any blanks from the
 // duplicate, union all the list fields, then remove the duplicate.
@@ -2173,14 +2254,16 @@ function _mergeClientRecords(keepId,dropId){
   }
   // Re-home the dropped owner's animals onto the survivor before the record goes.
   try{ if(typeof _animalsOf==='function')_animalsOf(dropId).forEach(function(aid){ if(CL[aid])CL[aid].ownerId=keepId; }); }catch(e){}
-  const listKeys={submittedForms:1,signedForms:1,pendingForms:1,pendingGuides:1,pendingCourses:1,sessions:1,seriesTotal:1};
+  const listKeys={submittedForms:1,signedForms:1,pendingForms:1,pendingGuides:1,pendingCourses:1,sessions:1,seriesTotal:1,summaries:1};
   Object.keys(drop).forEach(k=>{if(listKeys[k])return;if(!(k in keep)||_isBlankVal(keep[k])){if(!_isBlankVal(drop[k]))keep[k]=drop[k];}});
   keep.submittedForms=_mergeArrUnique(keep.submittedForms,drop.submittedForms,sf=>(sf&&(sf.formId+'|'+(sf.date||'')+'|'+(sf.title||'')))||JSON.stringify(sf));
   keep.signedForms=_mergeArrUnique(keep.signedForms,drop.signedForms,x=>String(x));
   keep.pendingForms=_mergeArrUnique(keep.pendingForms,drop.pendingForms,pf=>(pf&&pf.formId)||JSON.stringify(pf));
   keep.pendingGuides=_mergeArrUnique(keep.pendingGuides,drop.pendingGuides,pg=>(pg&&pg.guideId)||JSON.stringify(pg));
   keep.pendingCourses=_mergeArrUnique(keep.pendingCourses,drop.pendingCourses,pc=>(pc&&pc.id)||JSON.stringify(pc));
-  ['submittedForms','signedForms','pendingForms','pendingGuides','pendingCourses'].forEach(k=>{if(Array.isArray(keep[k])&&!keep[k].length)delete keep[k];});
+  // The client-facing visit summaries live ONLY here (§0.8), so they are unioned too, newest first.
+  try{const _sk=x=>x?String(x._draftDate||x.ts||((x.date||'')+'|'+(x.title||''))):'';keep.summaries=_mergeArrUnique(keep.summaries,drop.summaries,_sk).sort((p,q)=>(Number(q&&q.ts)||0)-(Number(p&&p.ts)||0));}catch(e){}
+  ['submittedForms','signedForms','pendingForms','pendingGuides','pendingCourses','summaries'].forEach(k=>{if(Array.isArray(keep[k])&&!keep[k].length)delete keep[k];});
   const n=v=>{const x=parseInt(v,10);return isNaN(x)?0:x;};
   if(n(keep.sessions)||n(drop.sessions))keep.sessions=Math.max(n(keep.sessions),n(drop.sessions));
   if(n(keep.seriesTotal)||n(drop.seriesTotal))keep.seriesTotal=Math.max(n(keep.seriesTotal),n(drop.seriesTotal));
@@ -2191,13 +2274,16 @@ function _mergeClientRecords(keepId,dropId){
   // _purgeRemovedClients strip the SURVIVOR too (it purges any record whose squareId maps to a merged
   // key), so merging two copies of one person could make both disappear.
   const _sameSq=!!(drop.squareId&&keep.squareId&&String(drop.squareId)===String(keep.squareId));
-  if(_isSquareClient(dropId)&&!_sameSq){const local=drop.squareId?_sqLocalId(drop.squareId):dropId;if(!(keep.squareId&&_sqLocalId(keep.squareId)===local)&&local!==keepId)mergedSquareIds[local]=1;if(String(dropId).indexOf('sq_')===0&&dropId!==keepId)mergedSquareIds[dropId]=1;saveMergedIds();}
-  // Remember where this id went so a form/check-in the client later submits under it (their token is
-  // still bound to dropId server-side) is routed onto the survivor instead of being silently dropped.
-  try{_mergedInto[dropId]=keepId;if(drop.squareId)_mergedInto[_sqLocalId(drop.squareId)]=keepId;_saveMergedInto();}catch(e){}
-  try{_markClientDeleted(dropId);}catch(e){}
+  if(_isSquareClient(dropId)&&!_sameSq){const local=drop.squareId?_sqLocalId(drop.squareId):dropId;if(!(keep.squareId&&_sqLocalId(keep.squareId)===local)&&local!==keepId)mergedSquareIds[local]=1;if(String(dropId).indexOf('sq_')===0&&dropId!==keepId)mergedSquareIds[dropId]=1;if(!_mergeBatch)saveMergedIds();}
+  // Remember where this id went so anything that still arrives under it (an event logged before the
+  // merge, another device that had not heard yet) is routed onto the survivor instead of dropped.
+  // The server moves the client's link onto the survivor (_serverMergeClients).
+  try{_mergedInto[dropId]=keepId;if(drop.squareId)_mergedInto[_sqLocalId(drop.squareId)]=keepId;if(!_mergeBatch)_saveMergedInto();}catch(e){}
+  try{_deletedClientIds[dropId]=Date.now();
+    if(_mergeBatch)_mergeBatch.pairs.push({from:dropId,to:keepId});
+    else{_saveDeletedClients();_serverMergeClients([{from:dropId,to:keepId}]);}}catch(e){}
   delete CL[dropId];
-  saveClients();
+  if(!_mergeBatch)saveClients();
 }
 // ── Duplicates clean themselves up (Ashley, 2026-10-15: "this has happened multiple times now where it
 // adds duplicate clients. lets find a way to make sure that doesnt ever happen again") ─────────────────
@@ -2208,7 +2294,7 @@ function _mergeClientRecords(keepId,dropId){
 // field (say two different notes), that pair is left for her to look at in Merge Duplicates.
 // Keeps the record whose id IS that Square customer's id (sq_...): the Square sync, the delete record
 // and the purge are all keyed on it, so dropping it instead would let the purge take the survivor.
-const _AUTO_MERGE_IGNORE={bg:1,tc:1,initials:1,_uAt:1,_ts:1,_nvAuto:1,lastVisit:1,nextVisit:1,treatment:1,source:1,_token:1,touchUpDate:1,sessions:1,seriesTotal:1,id:1,_demoRestoredAt:1,squareId:1,name:1,
+const _AUTO_MERGE_IGNORE={bg:1,tc:1,initials:1,_uAt:1,_ts:1,_nvAuto:1,lastVisit:1,nextVisit:1,source:1,_token:1,touchUpDate:1,sessions:1,seriesTotal:1,id:1,_demoRestoredAt:1,squareId:1,name:1,
   submittedForms:1,signedForms:1,pendingForms:1,pendingGuides:1,pendingCourses:1,summaries:1};
 function _autoMergeConflict(keep,drop){
   const norm=v=>String(v==null?'':(typeof v==='object'?JSON.stringify(v):v)).trim().toLowerCase().replace(/\s+/g,' ');
@@ -2228,19 +2314,42 @@ function _autoMergeSquareDuplicates(){
     const groups={};
     Object.keys(CL).forEach(function(id){const c=CL[id];if(!c||!c.squareId||c.isAnimal||c.ownerId)return;(groups[c.squareId]=groups[c.squareId]||[]).push(id);});
     let merged=0;const skipped=[];
+    const _open=(typeof _navCur!=='undefined'&&_navCur&&typeof _navCur.data==='string')?_navCur.data:'';
+    _mergeBatch={pairs:[]};
+    try{
     Object.keys(groups).forEach(function(sqid){
       const ids=groups[sqid];if(ids.length<2)return;
       const canon=_sqLocalId(sqid);
       // survivor: the canonical sq_ record if there is one, else the one with the most on it
-      const weight=function(id){const c=CL[id]||{};return (c._token?50:0)+((c.submittedForms||[]).length*10)+((c.summaries||[]).length*10)+String(c.notes||'').length/10+Object.keys(c).filter(k=>!_isBlankVal(c[k])).length;};
-      let keepId=ids.indexOf(canon)>=0?canon:ids.slice().sort(function(a,b){return weight(b)-weight(a);})[0];
+      // No sq_ record: pick by id ALONE, so every device picks the same one. Picking by "most on it"
+      // let two devices each keep a different copy and delete the other's — and the person was gone.
+      // Nothing conflicts in an automatic merge, so which id survives changes no content.
+      let keepId=ids.indexOf(canon)>=0?canon:ids.slice().sort()[0];
       ids.forEach(function(dropId){
         if(dropId===keepId||!CL[dropId]||!CL[keepId])return;
-        const clash=_autoMergeConflict(CL[keepId],CL[dropId]);
+        // Never under her fingers: a copy open on screen (a note half-typed) waits for the next run.
+        if(dropId===_open||keepId===_open){skipped.push((CL[keepId].name||keepId)+' (open)');return;}
+        // One Square customer can be two people: a daughter added with mom's email is matched to mom's
+        // Square account. Booking copies carry the exact Square name, so a different name means "ask".
+        if(_mergeNorm(CL[keepId].name)!==_mergeNorm(CL[dropId].name)){skipped.push((CL[keepId].name||keepId)+' (different name)');return;}
+        let clash=_autoMergeConflict(CL[keepId],CL[dropId]);
+        // Only one photo consult fits per client: two different ones are hers to choose between.
+        try{if(!clash&&typeof vcSubmissions!=='undefined'&&vcSubmissions[keepId]&&vcSubmissions[dropId]&&JSON.stringify(vcSubmissions[keepId])!==JSON.stringify(vcSubmissions[dropId]))clash='consult';}catch(e){}
         if(clash){skipped.push((CL[keepId].name||keepId)+' ('+clash+')');return;}
         _mergeClientRecords(keepId,dropId);merged++;
       });
     });
+    }finally{
+      const b=_mergeBatch;_mergeBatch=null;
+      if(b&&b.pairs.length){
+        try{saveClients();}catch(e){}
+        try{_saveDeletedClients();}catch(e){}
+        try{saveMergedIds();}catch(e){}
+        try{_saveMergedInto();}catch(e){}
+        try{_persistMergeSideStores(!!b.ap,!!b.rem);}catch(e){}
+        try{_serverMergeClients(b.pairs);}catch(e){}
+      }
+    }
     if(merged||skipped.length){
       try{console.log('[dupes] merged '+merged+' duplicate cop'+(merged===1?'y':'ies')+(skipped.length?'; left for review: '+skipped.join(', '):''));}catch(e){}
       try{localStorage.setItem('sc_dupes_last',JSON.stringify({at:Date.now(),merged:merged,skipped:skipped.slice(0,20)}));}catch(e){}
@@ -2279,7 +2388,7 @@ function renderMergeClients(){
 function _openMergeSheet(idsCsv){
   const ids=String(idsCsv).split(',').filter(id=>CL[id]);
   if(ids.length<2){proToast('Pick at least two clients to merge');return;}
-  window._mergeGroupIds=ids;window._mergeKeep=ids[0];
+  window._mergeGroupIds=ids;window._mergeKeep=ids.find(function(x){return /^sq_/.test(x);})||ids[0];
   const row=id=>{const c=CL[id]||{};return `<div style="display:flex;align-items:center;gap:9px;padding:9px 11px;border:1px solid var(--p-line);background:var(--surf2);border-radius:12px;margin-bottom:8px;">
     <input type="checkbox" class="merge-incl" value="${id}" checked onchange="_mergeSelChanged()" title="Include in the merge" style="width:18px;height:18px;accent-color:var(--accent-strong);flex-shrink:0;cursor:pointer;">
     ${av(c,32)}
@@ -3037,7 +3146,12 @@ function _mergeTombstone(k,serverStr,localStr){
     }
     const sv=JSON.parse(serverStr||'{}'),lv=JSON.parse(localStr||'{}');
     // local wins on a key collision (its timestamp is this device's), but every id from both survives.
-    return JSON.stringify(Object.assign({},(sv&&typeof sv==='object')?sv:{},(lv&&typeof lv==='object')?lv:{}));
+    const out=Object.assign({},(sv&&typeof sv==='object')?sv:{},(lv&&typeof lv==='object')?lv:{});
+    // For the delete / put-back records the NEWER time must win on every device, since which one is
+    // newer decides whether a client shows. A device holding an older time cannot flip it back.
+    if((k==='sc_deleted_clients'||k==='sc_undeleted_clients')&&sv&&typeof sv==='object'&&lv&&typeof lv==='object')
+      Object.keys(sv).forEach(function(i){if(typeof sv[i]==='number'&&typeof lv[i]==='number'&&sv[i]>lv[i])out[i]=sv[i];});
+    return JSON.stringify(out);
   }catch(e){return null;}
 }
 // A stable identity for one chat message so the same message from two devices dedupes instead of
@@ -3264,7 +3378,10 @@ function _unDeletedClientIds(){
   try{
     const raw=(typeof _lsGet==='function')?_lsGet('sc_undeleted_clients'):localStorage.getItem('sc_undeleted_clients');
     const v=JSON.parse(raw||'null');
-    if(v&&typeof v==='object'&&!Array.isArray(v))Object.keys(v).forEach(function(x){out[x]=1;});
+    // A put-back wins only over a delete made BEFORE it. Checked by presence alone, a client put back
+    // once could never be merged away or removed again: the copy came straight back as a duplicate.
+    const del=(typeof _deletedClientIds==='object'&&_deletedClientIds)?_deletedClientIds:{};
+    if(v&&typeof v==='object'&&!Array.isArray(v))Object.keys(v).forEach(function(x){const d=+del[x]||0;if(!(d>(+v[x]||0)))out[x]=1;});
   }catch(e){}
   return out;
 }
@@ -3674,7 +3791,7 @@ const Cloud={
     return this.enabled;
   },
   async login(email,pw,totpCode){const r=await fetch('/api/login',{method:'POST',headers:{'Content-Type':'application/json'},body:JSON.stringify({email,password:pw,totpCode})});let j={};try{j=await r.json();}catch(e){}if(!r.ok||!j.token){const err=new Error((j&&j.error)||(j&&j.requiresTotp?'Enter your authenticator code':'Login failed'));err.requiresTotp=!!(j&&j.requiresTotp);err.checkoutUrl=j&&j.checkoutUrl;throw err;}this.token=j.token;try{localStorage.setItem('sc_token',this.token);if(j.email)localStorage.setItem('sc_login_email',j.email);localStorage.setItem('sc_totp_enabled',j.totpEnabled?'1':'0');}catch(e){}return j;},
-  async signup(email,pw,name,optIn){const r=await fetch('/api/signup',{method:'POST',headers:{'Content-Type':'application/json'},body:JSON.stringify({email,password:pw,name,optIn:!!optIn})});let j={};try{j=await r.json();}catch(e){}if(!r.ok){const err=new Error((j&&j.error)||'Sign up failed');err.checkoutUrl=j&&j.checkoutUrl;throw err;}this.token=j.token;try{localStorage.setItem('sc_token',this.token);if(j.email)localStorage.setItem('sc_login_email',j.email);}catch(e){}return j;},
+  async signup(email,pw,name,optIn){const r=await fetch('/api/signup',{method:'POST',headers:{'Content-Type':'application/json'},body:JSON.stringify({email,password:pw,name,optIn:!!optIn})});let j={};try{j=await r.json();}catch(e){}if(!r.ok){const err=new Error((j&&j.error)||'Sign up failed');err.checkoutUrl=j&&j.checkoutUrl;throw err;}this.token=j.token;this._pulledOnce=true;/* a brand-new account has nothing to read */try{localStorage.setItem('sc_token',this.token);if(j.email)localStorage.setItem('sc_login_email',j.email);}catch(e){}return j;},
   async requestReset(email){try{await fetch('/api/request-reset',{method:'POST',headers:{'Content-Type':'application/json'},body:JSON.stringify({email})});}catch(e){}return true;},
   async resetPw(token,pw){const r=await fetch('/api/reset',{method:'POST',headers:{'Content-Type':'application/json'},body:JSON.stringify({token,password:pw})});let j={};try{j=await r.json();}catch(e){}if(!r.ok)throw new Error((j&&j.error)||'Reset failed');return true;},
   async verifyEmail(token){try{const r=await fetch('/api/verify?token='+encodeURIComponent(token));return r.ok;}catch(e){return false;}},
@@ -3689,7 +3806,13 @@ const Cloud={
       console.log('[Cloud] cleared '+Object.keys(items).length+' device-local key(s) from the account');
     }catch(e){}
   },
-  async pull(){if(!this.token)return -1;let r;try{r=await fetch('/api/store',{headers:{'Authorization':'Bearer '+this.token}});}catch(e){this._pullFailed=true;return -1;}if(r.status===401){this._authFailed=true;this.logout();return -1;}let j={};try{j=await r.json();}catch(e){}const data=(j&&j.data)||{};const _staleDeviceLocalKeys=[];const keys=Object.keys(data);this._lastPulledKeys=new Set(keys);
+  // Uploads wait while the account is being read, or could not be read: the 6s boot failsafe used
+  // to flush boot's defaults (stock courses, an empty product list) while a slow pull was still in
+  // flight, and those keys are last-writer-wins on the server. Not held when no pull is involved at
+  // all (a brand-new signup, a local-only device), so nothing can be stuck behind this forever.
+  _holdUploads(){return !!(this.token&&!this._pulledOnce&&(this._pulling||this._pullFailed));},
+  async pull(){this._pulling=true;try{return await this._pullInner();}finally{this._pulling=false;}},
+  async _pullInner(){if(!this.token)return -1;let r;try{r=await fetch('/api/store',{headers:{'Authorization':'Bearer '+this.token}});}catch(e){this._pullFailed=true;return -1;}if(r.status===401){this._authFailed=true;try{this._prevOwner=(typeof _tokenOwner==='function')?_tokenOwner():'';}catch(e){}this.logout();return -1;}if(!r.ok){this._pullFailed=true;return -1;}let j=null;try{j=await r.json();}catch(e){}if(!j||!j.data||typeof j.data!=='object'){this._pullFailed=true;return -1;}const data=j.data;const _staleDeviceLocalKeys=[];const keys=Object.keys(data);this._lastPulledKeys=new Set(keys);
     // What the account holds, as of right now. Boot re-persists a lot of what it just read (a
     // normalised list, a re-seeded default), and each of those used to be its own upload. Knowing
     // the account's copy means an echo of the pull costs nothing instead of a round trip.
@@ -3897,7 +4020,7 @@ const Cloud={
     // exactly what must not happen on top of an edit that has not been pushed yet.
     if(_pendingLocal)return;
     setFromServer(k,data[k]);
-  }catch(e){}});if(_staleDeviceLocalKeys.length)this._dropStaleDeviceLocal(_staleDeviceLocalKeys);this._pulledOnce=true;return keys.length;},
+  }catch(e){}});if(_staleDeviceLocalKeys.length)this._dropStaleDeviceLocal(_staleDeviceLocalKeys);this._pulledOnce=true;this._pullFailed=false;return keys.length;},
   // Keys worth rescuing: the libraries she BUILDS. Mirrors TRACKED in lib/kv-history.js — if you
   // add one there, add it here, or a device can hold the only copy of it and never offer it up.
   _RESCUE_KEYS:['sc_clients','sc_session_summaries','sc_client_recs','sc_client_homecare',
@@ -3979,6 +4102,26 @@ const Cloud={
   // Nothing may sit in the queue for ever because some path out of boot was missed or threw. Worst
   // case this fires and the held writes go out as one request, which is still better than forty.
   _bootFailsafe:(function(){try{return setTimeout(function(){try{Cloud.bootDone();}catch(e){}},6000);}catch(e){return 0;}})(),
+  // A launch whose pull failed never pulled again, so the account stayed unread for the whole
+  // session: client events, the booking import and the Square sync all (rightly) waited forever.
+  _retryPullSoon(){
+    if(this._pullRetryT||this._pulledOnce||!this.token)return;
+    const n=this._pullRetries=(this._pullRetries||0)+1;
+    this._pullRetryT=setTimeout(async()=>{
+      this._pullRetryT=0;
+      try{await this.pull();}catch(e){}
+      if(this._pulledOnce){
+        this._pullFailed=false;
+        try{localStorage.setItem('sc_cloud_seeded','1');}catch(e){}
+        try{_reloadAll();}catch(e){}
+        try{if(typeof _afterAccountRead==='function')_afterAccountRead();}catch(e){}
+        try{if(typeof _navCur!=='undefined'&&_navCur&&_navCur.screen)nav(_navCur.screen,_navCur.data);}catch(e){}
+        try{this._flush(0);}catch(e){}
+        return;
+      }
+      if(!this._authFailed)this._retryPullSoon();
+    },Math.min(3000*Math.pow(2,n-1),60000));
+  },
   bootDone(){
     if(!this._booting)return;
     this._booting=false;
@@ -4013,6 +4156,7 @@ const Cloud={
     // and this device's defaults are pushed over it. That is how a library made on one device never
     // reached the other while both ends reported the same bytes: the stale side won and uploaded.
     if(this._booting){try{this._bootQueued[k]=1;}catch(e){}return;}   // held until the pull says what is actually needed
+    try{if(this._bootQueued)delete this._bootQueued[k];}catch(e){}   // written after boot: a real edit now
     clearTimeout(this._timer);this._timer=setTimeout(()=>this._flush(),700);},
   // Flush any pending queued writes immediately during page unload. A normal fetch is often
   // killed when the page navigates away, so use a keepalive fetch (which the browser is allowed
@@ -4031,6 +4175,8 @@ const Cloud={
           (b.waiters||[]).forEach(function(w){try{w({ok:false,reason:'unloading'});}catch(e){}});
         }
       }catch(e){}
+      // Account never read: boot's own write-backs are defaults, not edits. Only what she changed goes.
+      if(this._holdUploads()&&this._bootQueued){for(const k in this._bootQueued){try{delete items[k];}catch(e){}}}
       if(!items||!Object.keys(items).length)return;
       this._queue={};clearTimeout(this._timer);
       fetch('/api/store',{method:'PUT',keepalive:true,headers:{'Content-Type':'application/json','Authorization':'Bearer '+this.token},body:JSON.stringify({items})}).catch(()=>{});
@@ -4075,6 +4221,11 @@ const Cloud={
     return this._send(items,retryCount);
   },
   _send(items,retryCount){
+    if(this._holdUploads()){
+      for(const k in items){if(!(k in this._queue))this._queue[k]=items[k];}
+      clearTimeout(this._timer);this._timer=setTimeout(()=>this._flush(0),3000);
+      return Promise.resolve();
+    }
     try{items=_dropBootShrinks(items,'queue');if(!Object.keys(items).length)return Promise.resolve();}catch(e){}
     if(!this.token)return;
     fetch('/api/store',{method:'PUT',headers:{'Content-Type':'application/json','Authorization':'Bearer '+this.token},body:JSON.stringify({items})})
@@ -4506,6 +4657,7 @@ function _lsGet(k){
     // When the device comes back online, immediately retry any writes that failed while offline (instead
     // of waiting out the backoff) — this is what makes "will sync when you're back online" actually happen.
     window.addEventListener('online',function(){try{if(typeof Cloud!=='undefined'&&Cloud&&Cloud.token&&Cloud._queue&&Object.keys(Cloud._queue).length)Cloud._flush();}catch(e){}});
+    window.addEventListener('online',function(){try{if(typeof Cloud!=='undefined'&&Cloud&&Cloud.token&&Cloud._pullFailed&&!Cloud._pulledOnce){clearTimeout(Cloud._pullRetryT);Cloud._pullRetryT=0;Cloud._pullRetries=0;Cloud._retryPullSoon();}}catch(e){}});
   }catch(e){}
 })();
 // A handful of stores are read ONCE, while the script is still parsing, and never read again. That
@@ -5264,6 +5416,10 @@ async function _cloudInit(){
       if(localStorage.getItem('sc_cloud_seeded')!=='1'){
         await Cloud.pushAllLocal();
       }
+    }else if(n<0){
+      // The account could not be read (offline, a server error). Upload nothing: this device's copy
+      // is not known to be newer than anything. Keep trying, and finish the load when it answers.
+      try{Cloud._retryPullSoon();}catch(e){}
     }else{
       try{localStorage.setItem('sc_cloud_seeded','1');}catch(e){}   // remember this account has real cloud data on this device
       if(!localStorage.getItem('sc_onboarded')){
@@ -5289,6 +5445,7 @@ async function _cloudInit(){
       }catch(e){}
     }
     _reloadAll();
+    if(n>0){try{_afterAccountRead();}catch(e){}}
     // The sync has had its say. If a course is missing from this device but the account still has a
     // backup of it, put it back now rather than waiting for her to notice and go looking.
     try{_cvReconcileOnBoot();}catch(e){}
@@ -5556,12 +5713,27 @@ function _loginErr(e,fallback){
     +' <a href="'+_urlAttr(url)+'" style="color:var(--accent-strong);text-decoration:underline;">Renew now &rarr;</a>';}
   else er.textContent=msg;
 }
+// The session expired (a 401 at launch) and the person now signing in is a DIFFERENT account. The
+// previous account's clients are still on this device and in memory, and the pull below would merge
+// them into the new account and push the lot up (CLAUDE.md §0). Clear them and boot clean instead.
+// The same account signing back in keeps everything, since it may hold edits not yet uploaded.
+async function _signedInAsSomeoneElse(){
+  try{
+    const prev=Cloud._prevOwner;if(!prev)return false;
+    const now=(typeof _tokenOwner==='function')?_tokenOwner():'';
+    if(!now||now===prev)return false;
+    try{_lsAllKeys().filter(k=>k&&k.indexOf('sc_')===0&&k!=='sc_login_email'&&k!=='sc_token').forEach(k=>{try{localStorage.removeItem(k);}catch(e){}});}catch(e){}
+    try{await Promise.race([_purgeOffloaded(),new Promise(r=>setTimeout(r,2500))]);}catch(e){}
+    location.reload();return true;
+  }catch(e){return false;}
+}
 function doLogin(){
   const email=_loginVal('login-email');const pw=(document.getElementById('login-pw')||{}).value||'';
   const er=document.getElementById('login-err');if(er)er.textContent='';
   if(!email||!pw){if(er)er.textContent='Enter your email and password.';return;}
   Cloud.login(email,pw).then(async()=>{
-    try{const n=await Cloud.pull();if(n===0)await Cloud.pushAllLocal();else try{localStorage.setItem('sc_onboarded','1');}catch(e){} _reloadAll();}catch(e){}
+    if(await _signedInAsSomeoneElse())return;
+    try{const n=await Cloud.pull();if(n===0)await Cloud.pushAllLocal();else if(n>0){try{localStorage.setItem('sc_onboarded','1');}catch(e){}}else{try{Cloud._retryPullSoon();}catch(e){}} _reloadAll();}catch(e){}
     const ov=document.getElementById('login-screen');if(ov)ov.remove();nav('home');
     try{_checkBillingBanner();}catch(e){}   // she is in on grace — tell her straight away, not next launch
   }).catch(e=>{
@@ -5573,7 +5745,8 @@ function doLoginTotp(){
   const code=(document.getElementById('login-totp')||{}).value||'';
   const er=document.getElementById('login-err');if(er)er.textContent='';
   Cloud.login(_pendingTotpEmail,_pendingTotpPw,code).then(async()=>{
-    try{const n=await Cloud.pull();if(n===0)await Cloud.pushAllLocal();else try{localStorage.setItem('sc_onboarded','1');}catch(e){} _reloadAll();}catch(e){}
+    if(await _signedInAsSomeoneElse())return;
+    try{const n=await Cloud.pull();if(n===0)await Cloud.pushAllLocal();else if(n>0){try{localStorage.setItem('sc_onboarded','1');}catch(e){}}else{try{Cloud._retryPullSoon();}catch(e){}} _reloadAll();}catch(e){}
     _pendingTotpEmail='';_pendingTotpPw='';
     const ov=document.getElementById('login-screen');if(ov)ov.remove();nav('home');
     try{_checkBillingBanner();}catch(e){}
@@ -11782,6 +11955,7 @@ let _autosaveWriteNoteTimer=null;
 // Called on blur so tapping the nav bar / another field before the 600ms autosave fires can't drop
 // the last-typed sentence, and reused by the debounced autosave.
 function _snapshotWriteNoteNow(id){
+  if(!CL[id]&&typeof _resolveClientId==='function')id=_resolveClientId(id);
   try{
     const t=noteTemplates[activeNoteTemplate]||noteTemplates.soap;
     const dateEl=document.getElementById('wn-date');
@@ -12045,6 +12219,8 @@ async function _runInkOCR(id,dataUrl){
 // Save the current write-note editor into the draft + session-history/summary.
 // Returns {ok, id, idx} so callers can optionally send the just-saved summary.
 function _commitWriteNote(id){
+  // Merged away (on this device or another) while the note was open: save it onto the survivor.
+  if(!CL[id]&&typeof _resolveClientId==='function')id=_resolveClientId(id);
   const c=CL[id];if(!c)return {ok:false};
   const t=noteTemplates[activeNoteTemplate]||noteTemplates.soap;
   const dateEl=document.getElementById('wn-date');
@@ -19830,6 +20006,10 @@ function _isPlaceholderChart(c){
   if((Array.isArray(c.signedForms)&&c.signedForms.length)||(Array.isArray(c.pendingForms)&&c.pendingForms.length))return false;
   if(c.ownerId||c.isAnimal)return false;                          // a horse's link is real data
   if(Number(c.sessions)>0)return false;
+  // Typed data too: a birthday or a contraindication flag she set made the record "real", and
+  // reading it as a placeholder let an older copy win outright on the merge.
+  if(String(c.birthday||'').trim()||c.flaggedContra)return false;
+  if((Array.isArray(c.pendingGuides)&&c.pendingGuides.length)||(Array.isArray(c.pendingCourses)&&c.pendingCourses.length))return false;
   return !['skin','concerns','allergies','fitz','treatment'].some(function(k){
     return !_SKEL_WORDS.test(String(c[k]||'').trim());
   });
@@ -21445,6 +21625,12 @@ function _pushFlushNow(){
   const settle=function(r){ waiters.forEach(function(w){try{w(r);}catch(e){}}); };
   let tok='';try{tok=(typeof Cloud!=='undefined'&&Cloud&&Cloud.token)||'';}catch(e){}
   if(!tok){settle({ok:false,reason:'nocloud'});return;}
+  // Account not read yet (or unreadable): park these in the ordinary queue, which sends them once it is.
+  if(Cloud._holdUploads()){
+    for(const k in items){if(!(k in Cloud._queue))Cloud._queue[k]=items[k];}
+    clearTimeout(Cloud._timer);Cloud._timer=setTimeout(function(){Cloud._flush(0);},3000);
+    settle({ok:false,reason:'loading'});return;
+  }
   // The pull may have arrived since these were queued and proved some of them identical.
   try{const seen=_pushState()._serverSeen||{};
     for(const k in items){ if(Object.prototype.hasOwnProperty.call(seen,k)&&_sameSyncValue(seen[k],items[k]))delete items[k]; }
@@ -25168,11 +25354,18 @@ function _importClientsFromRows(rows){
       const cEmail=(c.email||'').trim().toLowerCase();
       const cName=(c.name||'').trim().toLowerCase();
       if(rEmail&&cEmail)return rEmail===cEmail;      // both have email → email is the identity
+      // Same phone and same first name is the same person, however the rest of the name is spelled.
+      const _dg=v=>String(v||'').replace(/\D/g,'').slice(-10),rp=_dg(row.phone);
+      if(rp.length>=7&&_dg(c.phone)===rp&&rName.split(/\s+/)[0]&&rName.split(/\s+/)[0]===cName.split(/\s+/)[0])return true;
       return !!rName&&rName===cName;                  // otherwise fall back to name match
     });
     if(dup)return;
+    // A random tail: an id built only from the email or name was the SAME id in every account that
+    // imported that person (the server refused the second one), and the same id again after an Undo,
+    // where the delete record then silently swallowed the re-import.
     const base=(row.email||row.name).toLowerCase().replace(/[^a-z0-9]/g,'').slice(0,14)||('row'+k);
-    let id='imp_'+base,x=1;while(CL[id]){id='imp_'+base+(x++);}
+    const _tail=()=>'_'+Math.random().toString(36).slice(2,8);
+    let id='imp_'+base+_tail();while(CL[id]||(typeof _deletedClientIds!=='undefined'&&_deletedClientIds[id])){id='imp_'+base+_tail();}
     CL[id]=_makeClientFromRow(row);ids.push(id);n++;
   });
   if(typeof saveClients==='function')saveClients();
@@ -25296,7 +25489,17 @@ function _icsStamp(dateStr,timeStr){
   const p=n=>String(n).padStart(2,'0');
   return {d,stamp:d.getFullYear()+p(d.getMonth()+1)+p(d.getDate())+'T'+p(d.getHours())+p(d.getMinutes())+'00'};
 }
+// Signed in, and the account has not been read yet: what is in memory is this device's old copy,
+// or boot's defaults. Anything that derives from it and WRITES (to the account, to Google, to a
+// client) has to wait, then run once the account is in (_afterAccountRead).
+function _acctUnread(){return !!(typeof Cloud!=='undefined'&&Cloud&&Cloud.token&&!Cloud._pulledOnce);}
+// Re-derive what was skipped while the account was unread.
+function _afterAccountRead(){
+  try{if(typeof _stampClientNextVisit==='function')_stampClientNextVisit(true);}catch(e){}
+  try{if(typeof _rebuildCalendarFeed==='function')_rebuildCalendarFeed();}catch(e){}
+}
 function _rebuildCalendarFeed(){
+  if(_acctUnread())return;   // built from the device's stale appointments, it dropped her manual ones
   try{
     const p=n=>String(n).padStart(2,'0');
     const stampOf=d=>d.getFullYear()+p(d.getMonth()+1)+p(d.getDate())+'T'+p(d.getHours())+p(d.getMinutes())+'00';
@@ -26667,6 +26870,9 @@ function _sqInstantLocalDate(ts){
   const x=new Date(t);return x.getFullYear()+'-'+String(x.getMonth()+1).padStart(2,'0')+'-'+String(x.getDate()).padStart(2,'0');
 }
 async function _paySyncSquare(auto){
+  // Before the account is read the payments list is this device's old copy: Square invoices were
+  // added twice (doubling revenue) or a manual cash payment was written over.
+  if(_acctUnread()){if(!auto&&typeof proToast==='function')proToast('Still loading your account, try again in a moment');return;}
   if(auto){
     const now=Date.now();
     if(_paySyncSquare._lastAuto&&(now-_paySyncSquare._lastAuto)<90000)return; // throttle: at most once every 90s automatically
@@ -27276,14 +27482,17 @@ function _sqImportOne(i){
   const id='sq_'+String(c.id||i).slice(0,10).toLowerCase().replace(/[^a-z0-9]/g,'');
   const btn=document.getElementById('sqimp-'+i);
   if(typeof mergedSquareIds!=='undefined'&&mergedSquareIds[id]){if(btn){btn.textContent='Merged';btn.style.color='var(--p-green)';btn.style.borderColor='var(--p-line3)';btn.disabled=true;}return;}
-  if(CL[id]){if(btn){btn.textContent='Imported';btn.style.color='var(--p-green)';btn.style.borderColor='var(--p-line3)';}return;}
+  if(typeof _rosterNotReadYet==='function'&&_rosterNotReadYet()){if(typeof proToast==='function')proToast('Your clients are still loading. Try again in a moment.');return;}
+  const _have=_sqChartFor(c.id,c.email,c.phone,c.name);
+  if(_have){if(!CL[_have].squareId&&c.id){CL[_have].squareId=c.id;if(typeof saveClients==='function')saveClients();}if(btn){btn.textContent='Imported';btn.style.color='var(--p-green)';btn.style.borderColor='var(--p-line3)';}return;}
   CL[id]=_sqMakeClient(c);
   if(typeof saveClients==='function')saveClients();
   if(btn){btn.textContent='Imported ✓';btn.style.color='var(--p-green)';btn.style.borderColor='var(--p-line3)';btn.disabled=true;}
 }
 function _sqImportAll(){
+  if(typeof _rosterNotReadYet==='function'&&_rosterNotReadYet()){if(typeof proToast==='function')proToast('Your clients are still loading. Try again in a moment.');return;}
   const list=window._sqCust||[];let n=0;
-  list.forEach((c,i)=>{const id='sq_'+String(c.id||i).slice(0,10).toLowerCase().replace(/[^a-z0-9]/g,'');if(typeof mergedSquareIds!=='undefined'&&mergedSquareIds[id])return;if(!CL[id]){CL[id]=_sqMakeClient(c);n++;}const btn=document.getElementById('sqimp-'+i);if(btn){btn.textContent='Imported ✓';btn.style.color='var(--p-green)';btn.style.borderColor='var(--p-line3)';btn.disabled=true;}});
+  list.forEach((c,i)=>{const id='sq_'+String(c.id||i).slice(0,10).toLowerCase().replace(/[^a-z0-9]/g,'');if(typeof mergedSquareIds!=='undefined'&&mergedSquareIds[id])return;const _have=_sqChartFor(c.id,c.email,c.phone,c.name);if(_have){if(!CL[_have].squareId&&c.id)CL[_have].squareId=c.id;}else{CL[id]=_sqMakeClient(c);n++;}const btn=document.getElementById('sqimp-'+i);if(btn){btn.textContent='Imported ✓';btn.style.color='var(--p-green)';btn.style.borderColor='var(--p-line3)';btn.disabled=true;}});
   if(typeof saveClients==='function')saveClients();
   proToast(n?`Imported ${n} client${n===1?'':'s'}`:'All already imported');
 }
@@ -27386,16 +27595,20 @@ async function _autoSyncCustomers(opts){
   const now=Date.now();
   // Match the catalog poll cadence: at most once every 60s automatically. `force` bypasses it.
   if(!opts.force&&_autoSyncCustomers._lastAt&&(now-_autoSyncCustomers._lastAt)<60000)return;
+  // Not before her list has arrived: at that moment every Square customer looks new, and the empty
+  // Square copy (it has an email, so it is not a placeholder) beat her real chart on the merge.
+  if(typeof _rosterNotReadYet==='function'&&_rosterNotReadYet())return;
   if(_customerSyncing)return;
   _customerSyncing=true;_autoSyncCustomers._lastAt=now;
   try{
     const data=await _sqFetch('/api/square/customers');
     const list=data.customers||[];
+    if(typeof _rosterNotReadYet==='function'&&_rosterNotReadYet()){_customerSyncing=false;return;}   // signed out/in meanwhile
     // Fingerprint the incoming customer set so we skip the add-loop entirely when nothing changed.
     const fp=JSON.stringify(list.map(c=>[c.id,c.name,c.email,c.phone]));
     if(fp===_autoSyncCustomers._lastFp){_customerSyncing=false;return;}
     _autoSyncCustomers._lastFp=fp;
-    let added=0;
+    let added=0,_linked=false;
     list.forEach((c,i)=>{
       // Same dedup key the manual import uses, so a customer already imported (manually or by an
       // earlier auto-sync) is matched and left untouched rather than duplicated.
@@ -27403,12 +27616,15 @@ async function _autoSyncCustomers(opts){
       if(!id||CL[id])return;   // already have them, don't overwrite their chart
       if(typeof mergedSquareIds!=='undefined'&&mergedSquareIds[id])return;   // was merged into another chart, don't re-add
       if(typeof _deletedClientIds!=='undefined'&&_deletedClientIds[id])return;   // provider removed them, don't resurrect
+      const _have=_sqChartFor(c.id,c.email,c.phone,c.name);
+      if(_have){if(!CL[_have].squareId&&c.id){CL[_have].squareId=c.id;_linked=true;}return;}   // already on a chart under another id
       // The app MIRRORS your Square customer directory: every customer in your own connected Square syncs
       // in. The only exclusions are the guards above — already on the chart, merged into another chart, or
       // one you explicitly removed (tombstoned). Cross-account safety is enforced at the SOURCE now (one
       // Square merchant → one provider, DB-locked), so the directory this reads is only ever YOURS.
       CL[id]=_sqMakeClient(c);added++;
     });
+    if(_linked&&!added){try{if(typeof saveClients==='function')saveClients();}catch(e){}}
     if(added){
       if(typeof saveClients==='function')saveClients();
       // If the provider is on the client list when new ones arrive, refresh it in place.
@@ -27899,6 +28115,9 @@ async function _gcalPush(){
     const tok=(typeof Cloud!=='undefined'&&Cloud&&Cloud.token)||'';
     if(!tok)return null;
     if(_gcalState&&_gcalState.connected===false)return null;     // nothing to push to
+    // The server deletes every Google event missing from this list, and before the account is read
+    // the list is only this device's partial copy.
+    if(_acctUnread()){try{_gcalPushSoon();}catch(e){}return null;}
     const r=await fetch('/api/google-cal',{method:'POST',headers:{'Content-Type':'application/json','Authorization':'Bearer '+tok},
       body:JSON.stringify({appts:_gcalAppts()})});
     const j=await r.json().catch(function(){return null;});
@@ -30795,9 +31014,13 @@ function _upsertClientsFromSquare(appts){
     const dedupeKey=sqid||('name:'+name.toLowerCase());
     if(_seen[dedupeKey])return; _seen[dedupeKey]=1;
     // Already in the list? Prefer a Square-id match, then fall back to an exact name match.
-    let cid=null;
-    if(sqid)cid=Object.keys(CL).find(function(k){return CL[k]&&CL[k].squareId===sqid;})||null;
-    if(!cid&&typeof _clientIdByName==='function')cid=_clientIdByName(name)||null;
+    let cid=_sqChartFor(sqid,a.customerEmail,a.customerPhone,name);
+    if(!cid&&typeof _clientIdByName==='function'){
+      // A name match is only good if that chart is not already a DIFFERENT Square customer:
+      // two people can share a name, and the second would otherwise never get a chart.
+      const n=_clientIdByName(name)||null;
+      if(n&&CL[n]&&!(sqid&&CL[n].squareId&&String(CL[n].squareId)!==sqid))cid=n;
+    }
     if(cid){
       // Existing client — backfill Square id + contact info if we didn't have them yet.
       const c=CL[cid];
@@ -30817,7 +31040,10 @@ function _upsertClientsFromSquare(appts){
         ||(typeof mergedSquareIds!=='undefined'&&mergedSquareIds[_k]))return;
     }
     // New online booker → create a client record.
-    const id=(typeof _newClientId==='function')?_newClientId():('c'+Date.now()+Math.random().toString(36).slice(2,5));
+    // The Square customer's own id when we have it, so two devices (and the customer sync) land on
+    // the SAME record instead of each minting a random one.
+    const _sk=sqid?_sqLocalId(sqid):'';
+    const id=(_sk&&_sk!=='sq_'&&!CL[_sk])?_sk:((typeof _newClientId==='function')?_newClientId():('c'+Date.now()+Math.random().toString(36).slice(2,5)));
     const col=palette[Object.keys(CL).length%palette.length];
     CL[id]={name:name,initials:((typeof _initials==='function'?_initials(name):'')||'NC'),bg:col[0],tc:col[1],
       phone:a.customerPhone||'',email:a.customerEmail||'',birthday:'',
@@ -30840,6 +31066,7 @@ function _upsertClientsFromSquare(appts){
 async function _syncSquareClientsNow(){
   const tok=(typeof Cloud!=='undefined'&&Cloud&&Cloud.token)||'';
   if(!tok){if(typeof proToast==='function')proToast('Sign in to your SlickChart account first');return;}
+  if(typeof _rosterNotReadYet==='function'&&_rosterNotReadYet()){if(typeof proToast==='function')proToast('Your clients are still loading. Try again in a moment.');return;}
   if(typeof proToast==='function')proToast('Checking Square for clients…',0);
   let added=0, err=null, reachedSquare=false;
   const _before=Object.keys(CL).length;
@@ -30853,6 +31080,8 @@ async function _syncSquareClientsNow(){
       if(CL[id])return;
       if(typeof mergedSquareIds!=='undefined'&&mergedSquareIds[id])return;
       if(typeof _deletedClientIds!=='undefined'&&_deletedClientIds[id])return;
+      const _have=_sqChartFor(c.id,c.email,c.phone,c.name);
+      if(_have){if(!CL[_have].squareId&&c.id)CL[_have].squareId=c.id;return;}
       CL[id]=_sqMakeClient(c);added++;
     });
   }catch(e){err=e;}
@@ -31181,6 +31410,9 @@ function _apptRowHTML(a){
 function _stampClientNextVisit(reconcile){
   try{
     if(!CL||typeof CL!=='object')return;
+    // Stamping a booked client's stale copy gave it a fresh _uAt, and that week-old record then won
+    // the merge over notes typed on another device. Runs again from _afterAccountRead.
+    if(_acctUnread())return;
     var startToday=new Date();startToday.setHours(0,0,0,0);
     var appts=[];
     if(typeof _apptsLive==='function'&&_apptsLive()&&Array.isArray(squareAppts))squareAppts.forEach(function(a){if(a.at&&!isNaN(a.at)&&a.at>=startToday)appts.push({name:a.client,clientId:'',when:a.at});});
