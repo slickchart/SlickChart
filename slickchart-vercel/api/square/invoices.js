@@ -18,7 +18,16 @@ export default async function handler(req, res) {
   const sf = (p, o) => _sqf(p, o, ctx.token);
   try {
     const locationId = await resolveLocationId(ctx.token, ctx.locationId);
-    const data = await sf('/v2/invoices/search', { method: 'POST', body: { query: { filter: { location_ids: [locationId] }, sort: { field: 'INVOICE_SORT_DATE', order: 'DESC' } }, limit: 100 } });
+    // Every page, newest first (up to 1000): only the first 100 came back, so older invoices vanished.
+    const data = { invoices: [] };
+    let cursor = null, pages = 0;
+    do {
+      const body = { query: { filter: { location_ids: [locationId] }, sort: { field: 'INVOICE_SORT_DATE', order: 'DESC' } }, limit: 100 };
+      if (cursor) body.cursor = cursor;
+      const pg = await sf('/v2/invoices/search', { method: 'POST', body });
+      (pg.invoices || []).forEach(i => data.invoices.push(i));
+      cursor = pg.cursor || null;
+    } while (cursor && ++pages < 10);
 
     // Sales tax lives on each invoice's linked ORDER (not the invoice itself). Batch-retrieve the orders so
     // the app can book tax collected vs. ex-tax revenue correctly — without it, Square-originated invoices

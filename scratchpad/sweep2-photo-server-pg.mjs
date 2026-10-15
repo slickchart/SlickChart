@@ -55,7 +55,7 @@ export async function getKVValue(owner, k) { const r = await sql()\`SELECT v FRO
 export async function ensureTable() { await sql()\`CREATE TABLE IF NOT EXISTS kv (owner text NOT NULL, k text NOT NULL, v text, updated_at timestamptz DEFAULT now(), PRIMARY KEY (owner,k))\`; }
 export async function ensureProvidersTable() { await sql()\`CREATE TABLE IF NOT EXISTS providers (id text PRIMARY KEY, email text, name text, created_at bigint)\`; }
 `;
-const AUTHSTUB = "export function verifyToken(t){ try{ return JSON.parse(Buffer.from(String(t),'base64').toString('utf8')); }catch(e){ return null; } }\nexport async function isSessionValid(){ return true; }\n";
+const AUTHSTUB = "export function verifyToken(t){ try{ return JSON.parse(Buffer.from(String(t),'base64').toString('utf8')); }catch(e){ return null; } }\nexport async function isSessionValid(){ return true; }\n\nexport async function sessionFromReq(req){ const h=(req&&req.headers&&req.headers.authorization)||''; const t=h.startsWith('Bearer ')?h.slice(7):''; try{ const p=JSON.parse(Buffer.from(String(t),'base64').toString('utf8')); return p&&p.u?p:null; }catch(e){ return null; } }\nexport async function sessionOk(){ return true; }";
 // Real ensureFilesTable/getFileRow, lifted verbatim from lib/db.js so the test runs the shipped SQL.
 const realDb = fs.readFileSync(path.join(VERCEL, 'lib', 'db.js'), 'utf8');
 const fStart = realDb.indexOf('let _filesReady'), fEnd = realDb.indexOf('// Provider accounts for multi-tenant login');

@@ -42,8 +42,15 @@ export default async function handler(req, res) {
     const seen = new Set();
     const pull = async (qs) => {
       try {
-        const d = await sf('/v2/bookings?' + qs.toString());
-        for (const b of (d.bookings || [])) { if (b && b.id && !seen.has(b.id)) { seen.add(b.id); raw.push(b); } }
+        // Follow Square's pages: a busy month has more than 100 bookings, and the missing ones also
+        // cleared those clients' next-visit dates.
+        let d = await sf('/v2/bookings?' + qs.toString()), pages = 0;
+        for (;;) {
+          for (const b of (d.bookings || [])) { if (b && b.id && !seen.has(b.id)) { seen.add(b.id); raw.push(b); } }
+          if (!d.cursor || ++pages >= 10) break;
+          const q2 = new URLSearchParams(qs); q2.set('cursor', d.cursor);
+          d = await sf('/v2/bookings?' + q2.toString());
+        }
       } catch (e) { /* skip a location/window/pass that errors */ }
     };
     for (const [wMin, wMax] of windows) {

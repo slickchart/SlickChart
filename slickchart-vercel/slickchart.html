@@ -2630,8 +2630,9 @@ const _CLIENT_APP_KEYS={sc_appnudge_dismissed:1,sc_checkin_done:1,sc_client_avat
   sc_client_contact:1,sc_client_engage:1,sc_client_hidden_summaries:1,sc_client_invite:1,sc_client_messages:1,
   sc_client_saved:1,sc_client_theme:1,sc_client_token:1,sc_client_vc:1,sc_deleted_res:1,sc_forms_done:1,
   sc_home_cleared_res:1,sc_home_intro_seen:1,sc_install_dismissed:1,sc_seen_msg_ids:1,sc_suggestion_handled:1,
-  sc_vc_draft:1,sc_vc_notified:1,sc_vc_submitted:1,sc_vc_tips_seen:1,sc_welcome_dismissed:1};
-const _CLIENT_APP_PREFIX=['sc_course_prog_','sc_ffdraft_','sc_ffidem_','sc_ciidem_','sc_bkidem_','sc_checkin_draft_'];
+  sc_vc_draft:1,sc_vc_notified:1,sc_vc_submitted:1,sc_vc_tips_seen:1,sc_welcome_dismissed:1,
+  sc_a2hs_dismissed:1,sc_client_brand_colors:1,sc_client_owner:1,sc_client_prefs_dirty:1};
+const _CLIENT_APP_PREFIX=['sc_course_prog_','sc_ffdraft_','sc_ffidem_','sc_ciidem_','sc_bkidem_','sc_checkin_draft_','sc_vcidem_'];
 function _syncPrefixSkipped(k){try{k=String(k);if(_CLIENT_APP_KEYS[k])return true;return _SYNC_SKIP_PREFIX.concat(_CLIENT_APP_PREFIX).some(function(p){return k.indexOf(p)===0;});}catch(e){return false;}}
 function _syncable(k){return typeof k==='string'&&k.indexOf('sc_')===0&&!_SYNC_SKIP[k]&&!_syncPrefixSkipped(k);}
 // What KIND of thing is this stored value? Judging a value on its own isn't enough: `123` is a
@@ -28155,10 +28156,16 @@ function _gcalAppts(){
     let h=parseInt(t[1],10),m=parseInt(t[2],10);
     if(/pm/i.test(a.time)&&h<12)h+=12;
     if(/am/i.test(a.time)&&h===12)h=0;
-    const d=new Date(a.date);
+    // 'YYYY-MM-DD' parsed by new Date() is UTC midnight, i.e. the DAY BEFORE anywhere west of London,
+    // so every appointment went to Google a day early. Read it as her local date instead, and send the
+    // exact start instant too (startISO), since the server's clock is UTC and cannot place "10:00".
+    const _ds=String(a.date);
+    const d=/^\d{4}-\d{2}-\d{2}$/.test(_ds)?new Date(_ds+'T00:00:00'):new Date(_ds);
     if(isNaN(d))return null;
     const pad=function(n){return String(n).padStart(2,'0');};
+    const _at=new Date(d.getFullYear(),d.getMonth(),d.getDate(),h,m,0,0);
     return {id:String(a.id),dateISO:d.getFullYear()+'-'+pad(d.getMonth()+1)+'-'+pad(d.getDate()),
+      startISO:_at.toISOString(),
       startMins:h*60+m,durMins:parseInt(a.dur,10)||60,
       // client and tx travel SEPARATELY as well as composed: with "keep names out of Google" on, the
       // server builds the title from tx alone, and it cannot do that from a pre-joined string.
@@ -30740,6 +30747,8 @@ async function _reqSyncOut(b){
       serviceVariationId:svc.variationId,serviceVariationVersion:svc.variationVersion,
       durationMinutes:svc.durationMinutes||60,startAt:startAt,teamMemberId:teamMemberId,
       customerName:b.client||'',customerEmail:email,serviceName:svc.name,
+      // Her Square customer when we know it (and the phone), so the booking never mints a second one.
+      customerId:(b.clientId&&CL[b.clientId]&&CL[b.clientId].squareId)||undefined,customerPhone:(b.clientId&&CL[b.clientId]&&CL[b.clientId].phone)||undefined,
       // The client already had a confirmation from SlickChart a moment ago (_notifyBookingClient),
       // so Square stays quiet rather than sending them a second one for the same appointment.
       notify:false,
@@ -31888,8 +31897,8 @@ function _sqDoBook(){
   const whenText=isNaN(_startD.getTime())?'':_startD.toLocaleString('en-US',{weekday:'long',month:'long',day:'numeric',hour:'numeric',minute:'2-digit'});
   const biz=(typeof bizInfo!=='undefined'&&bizInfo&&bizInfo.name)?bizInfo.name:'';
   // Find a matching local client's phone so we can offer a one-tap confirmation text after booking.
-  let _cliPhone='';try{const _k=(email||'').toLowerCase(),_nm=name.toLowerCase();for(const _id in CL){const _c=CL[_id];if(!_c)continue;if((email&&(_c.email||'').toLowerCase()===_k)||(!email&&(_c.name||'').trim().toLowerCase()===_nm)){_cliPhone=_c.phone||'';break;}}}catch(e){}
-  _sqFetch('/api/square/book',{method:'POST',body:{serviceVariationId:svc.variationId,serviceVariationVersion:svc.variationVersion,durationMinutes:svc.durationMinutes,startAt:startAt,teamMemberId:teamMemberId,customerName:name,customerEmail:email,notify:true,serviceName:svc.name,whenText:whenText,businessName:biz,idempotencyKey:_bkey}}).then((r)=>{
+  let _cliPhone='',_cliSq='';try{const _k=(email||'').toLowerCase(),_nm=name.toLowerCase();for(const _id in CL){const _c=CL[_id];if(!_c)continue;if((email&&(_c.email||'').toLowerCase()===_k)||(!email&&(_c.name||'').trim().toLowerCase()===_nm)){_cliPhone=_c.phone||'';_cliSq=_c.squareId||'';break;}}}catch(e){}
+  _sqFetch('/api/square/book',{method:'POST',body:{serviceVariationId:svc.variationId,serviceVariationVersion:svc.variationVersion,durationMinutes:svc.durationMinutes,startAt:startAt,teamMemberId:teamMemberId,customerName:name,customerEmail:email,customerPhone:_cliPhone||undefined,customerId:_cliSq||undefined,notify:true,serviceName:svc.name,whenText:whenText,businessName:biz,idempotencyKey:_bkey}}).then((r)=>{
     delete _coIdemKeys[_bsig]; // booked, a later identical booking should be a new, intentional one
     _loadSquareAppts(true);
     if(_navCur&&_navCur.screen==='calendar')renderCalendar();

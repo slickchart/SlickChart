@@ -57,7 +57,7 @@ export async function ensureTable() { await sql()\`CREATE TABLE IF NOT EXISTS kv
 export async function ensureProvidersTable() { await sql()\`CREATE TABLE IF NOT EXISTS providers (id text PRIMARY KEY, email text, name text, created_at bigint)\`; }
 export async function ensureFilesTable() {}
 `;
-const AUTHSTUB = "export function verifyToken(t){ try{ return JSON.parse(Buffer.from(String(t),'base64').toString('utf8')); }catch(e){ return null; } }\nexport async function isSessionValid(){ return true; }\n";
+const AUTHSTUB = "export function verifyToken(t){ try{ return JSON.parse(Buffer.from(String(t),'base64').toString('utf8')); }catch(e){ return null; } }\nexport async function isSessionValid(){ return true; }\n\nexport async function sessionFromReq(req){ const h=(req&&req.headers&&req.headers.authorization)||''; const t=h.startsWith('Bearer ')?h.slice(7):''; try{ const p=JSON.parse(Buffer.from(String(t),'base64').toString('utf8')); return p&&p.u?p:null; }catch(e){ return null; } }\nexport async function sessionOk(){ return true; }";
 const CONSULTSTUB = "export async function getProviderBySlug(s){ return s==='ashley' ? {id:'prov_A', email:'', name:'A'} : null; }\n";
 const BOOKSTUB = `export const DAY_KEYS=['sun','mon','tue','wed','thu','fri','sat'];
 export async function getBookingConfig(){ return {on:true, mode:'request', leadHours:0, horizonDays:400, emailGuest:false, emailMe:false}; }

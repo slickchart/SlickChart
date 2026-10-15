@@ -21,6 +21,7 @@
 // is almost certainly the real story behind every "it worked for a week and then stopped" complaint
 // in the research. Code cannot fix it — the app has to be published — so instead a refresh failure is
 // recorded on the row and surfaced as "reconnect needed" rather than silently returning no busy time.
+import crypto from 'crypto';
 import { sql, dbEnabled } from './db.js';
 
 export const GOOGLE_SCOPE = 'https://www.googleapis.com/auth/calendar.events';
@@ -345,8 +346,8 @@ export async function googleAccessToken(providerId) {
 // Busy across EVERY connected account, unioned. If she is booked in either calendar she is busy,
 // so a client must not be offered that slot. One unreadable account does not hide the others'
 // commitments — the alternative is offering a time she is already taken.
-export async function googleBusyMinutes(providerId, dateISO, token) {
-  if (token) return await busyForToken(providerId, dateISO, token, null);
+export async function googleBusyMinutes(providerId, dateISO, token, tz) {
+  if (token) return await busyForToken(providerId, dateISO, token, null, tz);
   const accounts = await listGoogleAccounts(providerId);
   if (!accounts.length) return [];
   const all = [];
@@ -355,7 +356,7 @@ export async function googleBusyMinutes(providerId, dateISO, token) {
     try {
       const access = await accountAccessToken(acct);
       if (!access) continue;
-      const got = await busyForToken(providerId, dateISO, access, acct);
+      const got = await busyForToken(providerId, dateISO, access, acct, tz);
       got.forEach(x => all.push(x));
       anyOk = true;
     } catch (e) { lastErr = e; }
@@ -365,12 +366,16 @@ export async function googleBusyMinutes(providerId, dateISO, token) {
   return all;
 }
 
-async function busyForToken(providerId, dateISO, access, acct) {
+async function busyForToken(providerId, dateISO, access, acct, tz) {
   if (!access) return [];
-  const dayStart = new Date(dateISO + 'T00:00:00');
+  // HER day, in her time zone. This used the server's clock (UTC), so a 10am Pacific event blocked
+  // 5pm and an evening one fell on the wrong day entirely.
+  const { zonedDayRange, zonedMinutes, zonedDateKey } = await import('./square.js');
+  const dr = zonedDayRange(dateISO, tz || null);
+  const dayStart = dr.start;
   const qs = new URLSearchParams({
     timeMin: dayStart.toISOString(),
-    timeMax: new Date(dayStart.getTime() + 86400000).toISOString(),
+    timeMax: new Date(dr.end.getTime() + 1000).toISOString(),
     singleEvents: 'true',          // expand recurring events into real instances
     orderBy: 'startTime',
     maxResults: '250'
@@ -391,15 +396,13 @@ async function busyForToken(providerId, dateISO, access, acct) {
     if (ev.start && ev.start.date && !ev.start.dateTime) { out.push({ start: 0, end: 24 * 60 }); return; }
     const s = Date.parse((ev.start && ev.start.dateTime) || ''), en = Date.parse((ev.end && ev.end.dateTime) || '');
     if (!s || !en) return;
-    const ls = new Date(s), le = new Date(en);
-    let startM = ls.getHours() * 60 + ls.getMinutes();
-    let endM = le.getHours() * 60 + le.getMinutes();
+    let startM = zonedMinutes(s, tz), endM = zonedMinutes(en, tz);
     // Clamp to the day asked about, or an overnight event produces a backwards range that blocks
     // nothing at all.
     if (en - s >= 86400000) { startM = 0; endM = 24 * 60; }
     else {
-      if (ls.toDateString() !== dayStart.toDateString()) startM = 0;
-      if (le.toDateString() !== dayStart.toDateString()) endM = 24 * 60;
+      if (zonedDateKey(s, tz) !== dateISO) startM = 0;
+      if (zonedDateKey(en, tz) !== dateISO) endM = 24 * 60;
     }
     if (endM > startM) out.push({ start: startM, end: endM });
   });
@@ -434,9 +437,14 @@ async function saveEventMap(accountId, map) {
 // would ride along, and a title scrubbed of the name is worth nothing if the description still has
 // it. Busy time still blocks the slot, which is the whole point of the sync.
 function eventBody(a, isPrivate) {
-  const start = new Date(a.dateISO + 'T00:00:00');
   const mins = Math.max(5, parseInt(a.durMins, 10) || 60);
-  start.setHours(Math.floor(a.startMins / 60), a.startMins % 60, 0, 0);
+  // The app sends the exact instant (it knows her time zone; this server runs in UTC, so building the
+  // time here put a 10am appointment at 3am Pacific). Older app builds don't, so fall back.
+  let start = a.startISO ? new Date(a.startISO) : null;
+  if (!start || isNaN(start.getTime())) {
+    start = new Date(a.dateISO + 'T00:00:00');
+    start.setHours(Math.floor(a.startMins / 60), a.startMins % 60, 0, 0);
+  }
   const end = new Date(start.getTime() + mins * 60000);
   return {
     summary: (isPrivate
@@ -495,7 +503,16 @@ async function syncApptsToAccount(acct, appts) {
         else if (!r.ok) { out.failed++; continue; }
         else { out.updated++; continue; }
       }
-      const r2 = await fetch(EVENTS_URL, { method: 'POST', headers: hdr, body: JSON.stringify(body) });
+      // A fixed event id per (calendar, appointment): two pushes a moment apart (her next booking, or
+      // a second device) used to both create the event, and the copy that lost the map write was
+      // never updated or deleted. Now the second insert gets 409 and simply takes the first's event.
+      const fixedId = 'sc' + crypto.createHash('sha256').update(String(acct.id) + '|' + id).digest('hex').slice(0, 40);
+      const r2 = await fetch(EVENTS_URL, { method: 'POST', headers: hdr, body: JSON.stringify(Object.assign({ id: fixedId }, body)) });
+      if (r2.status === 409) {
+        const r3 = await fetch(EVENTS_URL + '/' + fixedId, { method: 'PATCH', headers: hdr, body: JSON.stringify(Object.assign({ status: 'confirmed' }, body)) });
+        if (r3.ok) { map[id] = fixedId; out.updated++; } else out.failed++;
+        continue;
+      }
       const j2 = await r2.json().catch(() => null);
       if (!r2.ok || !j2 || !j2.id) { out.failed++; continue; }
       map[id] = j2.id; out.created++;

@@ -5,7 +5,7 @@
 // with, never how many. A caller learns exactly what her page already shows.
 import { dbEnabled } from '../lib/db.js';
 import { getProviderBySlug } from '../lib/consult.js';
-import { getBookingConfig, getHours, openSlots, isoDay } from '../lib/booking.js';
+import { getBookingConfig, getHours, openSlots, isoDay, getServices, pickService } from '../lib/booking.js';
 
 const _hits = new Map();
 function burstOk(key, limit, windowMs) {
@@ -31,7 +31,11 @@ export default async function handler(req, res) {
     const cfg = await getBookingConfig(prov.id);
     if (!cfg.on || cfg.mode !== 'instant') { res.status(200).json({ ok: true, mode: cfg.on ? cfg.mode : 'off', slots: [] }); return; }
     const hours = await getHours(prov.id);
-    const slots = await openSlots(prov.id, date, cfg, hours);
+    // The service the page asked about, so Square's own availability for it is used (without it the
+    // page always fell back to the generic grid, and then some offered times were refused on booking).
+    let svcName;
+    try { const want = String((req.query || {}).service || '').trim(); if (want) { const sv = pickService(await getServices(prov.id, cfg), want); if (sv && sv.name) svcName = sv.name; } } catch (e) {}
+    const slots = await openSlots(prov.id, date, cfg, hours, svcName);
     res.setHeader('Cache-Control', 'no-store');
     // null = we could not see her whole calendar. Say so, so the page asks for a request rather
     // than showing times that might already be taken.

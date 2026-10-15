@@ -447,6 +447,9 @@ export async function markInvited(providerId, ids) {
 }
 
 export async function logEvent(providerId, clientId, kind, payload, idemKey) {
+  return (await _logEventRow(providerId, clientId, kind, payload, idemKey)).id;
+}
+async function _logEventRow(providerId, clientId, kind, payload, idemKey) {
   const q = sql();
   // When the caller supplies an idempotency key (minted client-side and carried across a
   // retry), derive the row id from it so a submission that committed but lost its response
@@ -468,7 +471,13 @@ export async function logEvent(providerId, clientId, kind, payload, idemKey) {
     ON CONFLICT (id) DO NOTHING
     RETURNING id`;
   // No row back → the id already existed (a duplicate retry); collapse to the existing event.
-  return (rows && rows[0] && rows[0].id) ? rows[0].id : id;
+  const inserted = !!(rows && rows[0] && rows[0].id);
+  return { id: inserted ? rows[0].id : id, inserted };
+}
+// Same as logEvent, and also says whether this call wrote the row (false = a retry of one already
+// stored), so a caller can send its email/push only once.
+export async function logEventOnce(providerId, clientId, kind, payload, idemKey) {
+  return _logEventRow(providerId, clientId, kind, payload, idemKey);
 }
 
 // The provider GET feeds two things off this list: the notification feed AND the client-side
@@ -510,7 +519,9 @@ export async function saveClientPrefs(clientId, prefs) {
   const data = JSON.stringify((prefs && typeof prefs === 'object') ? prefs : {});
   await q`INSERT INTO client_prefs (client_id, prefs, updated_at)
     VALUES (${String(clientId)}, ${data}::jsonb, ${now})
-    ON CONFLICT (client_id) DO UPDATE SET prefs=${data}::jsonb, updated_at=${now}`;
+    ON CONFLICT (client_id) DO UPDATE SET prefs = client_prefs.prefs || ${data}::jsonb, updated_at=${now}`;
+  // Merged per setting, not replaced: a second device that only knew some settings no longer erases
+  // the rest (contact, hidden summaries, course progress). Every setting the app sends still lands.
   return true;
 }
 

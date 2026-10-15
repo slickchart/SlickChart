@@ -66,11 +66,28 @@ export default async function handler(req, res) {
           if (found.customers && found.customers[0]) customerId = found.customers[0].id;
         } catch (e) { /* fall through to create */ }
       }
+      // A client she has in Square by PHONE only used to get a brand-new Square customer on every
+      // booking (which then synced back into SlickChart as another chart).
+      const phone = String(body.customerPhone || '').replace(/[^0-9+]/g, '');
+      if (!customerId && phone.replace(/\D/g, '').length >= 7) {
+        try {
+          const e164 = phone.startsWith('+') ? phone : ('+1' + phone.replace(/\D/g, '').slice(-10));
+          const found = await sf('/v2/customers/search', {
+            method: 'POST',
+            body: { limit: 1, query: { filter: { phone_number: { exact: e164 } } } }
+          });
+          if (found.customers && found.customers[0]) customerId = found.customers[0].id;
+        } catch (e) { /* fall through to create */ }
+      }
       if (!customerId) {
         const parts = name.split(/\s+/).filter(Boolean);
+        // Keyed off the booking's own key, so a retry finds the customer the first try made instead of
+        // creating a second one (and then failing the booking with "idempotency key reused").
+        const ck = String(body.idempotencyKey || '').replace(/[^a-zA-Z0-9_-]/g, '').slice(0, 43);
         const created = await sf('/v2/customers', {
           method: 'POST',
           body: {
+            idempotency_key: ck ? (ck + '-c') : undefined,
             given_name: parts[0] || name || 'Client',
             family_name: parts.length > 1 ? parts.slice(1).join(' ') : undefined,
             email_address: email || undefined

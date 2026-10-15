@@ -57,21 +57,23 @@ export default async function handler(req, res) {
     // ── VERIFY ─────────────────────────────────────────────────────────────────
     if (code) {
       if (code.length !== 6) { res.status(200).json({ ok: false, error: 'Enter the 6-digit code.' }); return; }
-      const rows = await q`SELECT code_hash, expires_at, attempts FROM client_login_codes WHERE email = ${email}`;
+      // Count the try BEFORE checking it, in one statement: reading the count and adding to it
+      // separately let 40 guesses sent at once all be checked against a 6-try limit.
+      const rows = await q`UPDATE client_login_codes SET attempts = attempts + 1
+        WHERE email = ${email} AND attempts < ${MAX_ATTEMPTS}
+        RETURNING code_hash, expires_at, attempts`;
       const row = rows[0];
-      if (!row) { res.status(200).json({ ok: false, error: 'That code has expired — request a new one.' }); return; }
+      if (!row) {
+        const any = await q`SELECT 1 FROM client_login_codes WHERE email = ${email}`;
+        if (any.length) { try { await q`DELETE FROM client_login_codes WHERE email = ${email}`; } catch (e) {} res.status(200).json({ ok: false, error: 'Too many tries — request a new code.' }); return; }
+        res.status(200).json({ ok: false, error: 'That code has expired — request a new one.' }); return;
+      }
       if (Number(row.expires_at) < Date.now()) {
         try { await q`DELETE FROM client_login_codes WHERE email = ${email}`; } catch (e) {}
         res.status(200).json({ ok: false, error: 'That code has expired — request a new one.' });
         return;
       }
-      if (Number(row.attempts) >= MAX_ATTEMPTS) {
-        try { await q`DELETE FROM client_login_codes WHERE email = ${email}`; } catch (e) {}
-        res.status(200).json({ ok: false, error: 'Too many tries — request a new code.' });
-        return;
-      }
       if (!verifyPassword(code, row.code_hash)) {
-        try { await q`UPDATE client_login_codes SET attempts = attempts + 1 WHERE email = ${email}`; } catch (e) {}
         res.status(200).json({ ok: false, error: 'That code didn’t match. Check it and try again.' });
         return;
       }

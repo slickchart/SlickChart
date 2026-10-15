@@ -157,6 +157,17 @@ export function zonedDateKey(instant, tz) {
   } catch (e) { return new Date(instant).toISOString().slice(0, 10); }
 }
 
+// Minutes since midnight of an instant as the clock reads in `tz` (UTC when tz is unknown).
+export function zonedMinutes(instant, tz) {
+  const d = new Date(instant);
+  if (!tz) return d.getUTCHours() * 60 + d.getUTCMinutes();
+  try {
+    const p = Object.fromEntries(new Intl.DateTimeFormat('en-US', { timeZone: tz, hour12: false, hour: '2-digit', minute: '2-digit' })
+      .formatToParts(d).filter(x => x.type !== 'literal').map(x => [x.type, x.value]));
+    return ((+p.hour) % 24) * 60 + (+p.minute);
+  } catch (e) { return d.getUTCHours() * 60 + d.getUTCMinutes(); }
+}
+
 // ── OAuth ────────────────────────────────────────────────────────────────────
 // The redirect_uri MUST byte-for-byte match the Redirect URL registered in the Square
 // Developer Dashboard, or Square rejects the authorize call with "Invalid value for

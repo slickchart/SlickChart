@@ -27,7 +27,7 @@ export function sql(){ return (s, ...v) => { const t = s.join('?');
   if (/FROM google_connections/.test(t)) return Promise.resolve([]);
   const p = Promise.resolve([]); return p; }; }
 `);
-fs.writeFileSync(path.join(root, 'lib', 'auth.js'), 'export function verifyToken(){return null;}\n');
+fs.writeFileSync(path.join(root, 'lib', 'auth.js'), 'export function verifyToken(){return null;}\nexport async function sessionFromReq(){return null;}\nexport async function isSessionValid(){return true;}\nexport async function sessionOk(){return true;}\n');
 fs.writeFileSync(path.join(root, 'lib', 'crypto.js'), 'export const encrypt=x=>x; export const decrypt=x=>x;\n');
 
 const SQ_BOOKING = { id: 'b1', status: 'ACCEPTED', start_at: '2026-10-20T17:00:00Z', location_id: 'L1', appointment_segments: [{ duration_minutes: 60, service_variation_id: 'V1' }] };

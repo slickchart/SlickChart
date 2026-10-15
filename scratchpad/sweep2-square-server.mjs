@@ -24,7 +24,7 @@ export function sql(){ return (s, ...v) => { const t = s.join('?');
   if (/FROM square_connections WHERE provider_id/.test(t)) return Promise.resolve([{ provider_id:'p1', access_token:'SQTOK', refresh_token:'R', expires_at: new Date(Date.now()+90*864e5).toISOString(), merchant_id:'M1', location_id:'L1' }]);
   const p = Promise.resolve([]); return p; }; }
 `);
-fs.writeFileSync(path.join(root, 'lib', 'auth.js'), "export function verifyToken(t){ return t==='GOOD' ? {u:'p1'} : (t==='SIGNEDOUT' ? {u:'p1', sid:'s_revoked'} : null); }\nexport async function isSessionValid(q, sid){ return sid !== 's_revoked'; }\n");
+fs.writeFileSync(path.join(root, 'lib', 'auth.js'), "export function verifyToken(t){ return t==='GOOD' ? {u:'p1'} : (t==='SIGNEDOUT' ? {u:'p1', sid:'s_revoked'} : null); }\nexport async function isSessionValid(q, sid){ return sid !== 's_revoked'; }\nexport async function sessionFromReq(req){ const h=(req&&req.headers&&req.headers.authorization)||''; const t=h.startsWith('Bearer ')?h.slice(7):''; const p=verifyToken(t); if(!p||!p.u) return null; return (await isSessionValid(null,p.sid))?p:null; }\nexport async function sessionOk(){ return true; }\n");
 fs.writeFileSync(path.join(root, 'lib', 'crypto.js'), 'export const encrypt=x=>x; export const decrypt=x=>x;\n');
 fs.writeFileSync(path.join(root, 'lib', 'email.js'), 'export async function sendEmail(){ return true; }\n');
 process.env.SESSION_SECRET = 'x';

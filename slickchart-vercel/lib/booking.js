@@ -19,7 +19,7 @@
 // be an enumeration oracle for her client list. Free/busy is reduced to start+end times before it
 // leaves this module; the appointments it was computed from never go over the wire.
 import { sql, getKVValue } from './db.js';
-import { getConnection, squareFetch, listBookableServices, matchSquareService, resolveLocationId, resolveLocationTz, zonedDayRange, zonedDateKey } from './square.js';
+import { getConnection, squareFetch, listBookableServices, matchSquareService, resolveLocationId, resolveLocationTz, zonedDayRange, zonedDateKey, zonedMinutes } from './square.js';
 import { getGoogleConnection, googleBusyMinutes } from './google-cal.js';
 
 const DAY_KEYS = ['sun', 'mon', 'tue', 'wed', 'thu', 'fri', 'sat'];
@@ -224,6 +224,14 @@ function dayKeyOf(dateISO) {
 // Square call fails we do not quietly fall back to "just the SlickChart ones": that would publish
 // times she is actually booked and hand her a double booking. A caller that gets null must fall
 // back to taking a request instead of showing slots.
+// Her time zone: Square's location when she has Square, else the one her app saved (sc_bizinfo.tz),
+// else the zone her automations were set in. Null only when nothing says, and then UTC as before.
+export async function providerTz(providerId, conn) {
+  try { if (conn && conn.token) { const tz = await resolveLocationTz(conn.token, conn.locationId); if (tz) return tz; } } catch (e) {}
+  try { const raw = await getKVValue(providerId, 'sc_bizinfo'); const b = raw ? JSON.parse(raw) : null; if (b && typeof b.tz === 'string' && b.tz.includes('/')) return b.tz; } catch (e) {}
+  try { const raw = await getKVValue(providerId, 'sc_autos'); const a = raw ? JSON.parse(raw) : []; const hit = Array.isArray(a) && a.find(x => x && typeof x.tz === 'string' && x.tz.includes('/')); if (hit) return hit.tz; } catch (e) {}
+  return null;
+}
 export async function busyRanges(providerId, dateISO, defaultMins, bufferMins) {
   const out = [];
   const dur = Math.max(5, parseInt(defaultMins, 10) || 60);
@@ -249,10 +257,13 @@ export async function busyRanges(providerId, dateISO, defaultMins, bufferMins) {
   // 2. Bookings that live in Square, if she uses it.
   let conn = null;
   try { conn = await getConnection(providerId); } catch (e) { return null; }
+  const tz = await providerTz(providerId, conn);
   if (conn && conn.token) {
     try {
-      const startAt = new Date(dateISO + 'T00:00:00Z').toISOString();
-      const endAt = new Date(new Date(dateISO + 'T00:00:00Z').getTime() + 86400000).toISOString();
+      // Her day in her zone (this asked Square for the UTC day and read hours on the server's clock).
+      const dr = zonedDayRange(dateISO, tz);
+      const startAt = dr.start.toISOString();
+      const endAt = new Date(dr.end.getTime() + 1000).toISOString();
       const qs = new URLSearchParams({ start_at_min: startAt, start_at_max: endAt, limit: '200' });
       if (conn.locationId) qs.set('location_id', conn.locationId);
       const d = await squareFetch('/v2/bookings?' + qs.toString(), {}, conn.token);
@@ -261,8 +272,8 @@ export async function busyRanges(providerId, dateISO, defaultMins, bufferMins) {
         if (st === 'CANCELLED_BY_CUSTOMER' || st === 'CANCELLED_BY_SELLER' || st === 'DECLINED' || st === 'NO_SHOW') return;
         const t = Date.parse(b.start_at || '');
         if (!t) return;
-        const local = new Date(t);
-        const s = local.getHours() * 60 + local.getMinutes();
+        if (zonedDateKey(t, tz) !== dateISO) return;
+        const s = zonedMinutes(t, tz);
         let mins = 0;
         (b.appointment_segments || []).forEach(seg => { mins += parseInt(seg.duration_minutes, 10) || 0; });
         out.push({ start: s - pad, end: s + (mins > 0 ? mins : dur) + pad });
@@ -282,10 +293,24 @@ export async function busyRanges(providerId, dateISO, defaultMins, bufferMins) {
   try {
     const gconn = await getGoogleConnection(providerId);
     if (gconn) {
-      const gbusy = await googleBusyMinutes(providerId, dateISO);
+      const gbusy = await googleBusyMinutes(providerId, dateISO, null, tz);
       gbusy.forEach(b => { out.push({ start: b.start - pad, end: b.end + pad }); });
     }
   } catch (e) { return null; }
+
+  // 4. Times already given away INSTANTLY by her booking link that her app has not filed into her
+  // appointments yet. Without this the slot stayed open and a second person was told "Booked" too.
+  try {
+    const q = sql();
+    const rows = await q`SELECT payload FROM client_events WHERE provider_id = ${providerId} AND kind = 'booking'
+      AND payload->>'date' = ${dateISO} AND payload->>'autoConfirmed' = 'true'`;
+    (rows || []).forEach(r => {
+      const p = r.payload || {};
+      const st = toMins(p.time);
+      if (st == null) return;
+      out.push({ start: st - pad, end: st + (parseInt(p.dur, 10) > 0 ? parseInt(p.dur, 10) : dur) + pad });
+    });
+  } catch (e) { /* no event table yet: nothing booked through the link */ }
 
   return out;
 }
@@ -374,7 +399,18 @@ export async function openSlots(providerId, dateISO, cfg, hours, serviceName) {
 
   // Square's answer wins when it can give one: it is the only place her real booking rules live.
   const sq = await squareOpenSlots(providerId, day, serviceName);
-  if (sq) return sq;
+  if (sq) {
+    // Square knows her Square bookings and rules, but not her Google Calendar, the appointments she
+    // keeps in SlickChart, or a time her link already gave away. Take those out too.
+    try {
+      const busy = await busyRanges(providerId, day, cfg.slotMins, cfg.bufferMins);
+      if (!busy || !busy.length) return sq;
+      const svc0 = serviceName ? pickService(await getServices(providerId, cfg), serviceName) : null;
+      const len = svc0 ? serviceMins(svc0, cfg) : cfg.slotMins;
+      const m12 = lbl => { const x = /^(\d{1,2}):(\d{2})\s*([AP]M)$/i.exec(String(lbl).trim()); if (!x) return null; let h = (+x[1]) % 12; if (/p/i.test(x[3])) h += 12; return h * 60 + (+x[2]); };
+      return sq.filter(lbl => { const t = m12(lbl); if (t == null) return true; return !busy.some(b => t < b.end && (t + len) > b.start); });
+    } catch (e) { return sq; }
+  }
 
   // How long THIS service takes. A 20-minute brow tidy and a 2-hour facial should not offer the same
   // grid, and a long one must not be offered in a gap it cannot finish inside.

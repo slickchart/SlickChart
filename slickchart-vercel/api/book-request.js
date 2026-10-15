@@ -13,7 +13,7 @@
 import crypto from 'crypto';
 import { dbEnabled, sql } from '../lib/db.js';
 import { getProviderBySlug } from '../lib/consult.js';
-import { ensureClientTables, upsertClient, logEvent, genToken } from '../lib/clients.js';
+import { ensureClientTables, upsertClient, logEvent, logEventOnce, genToken } from '../lib/clients.js';
 import { getBookingConfig, getServices, getHours, openSlots, toMins, isoDay, DAY_KEYS,
          pickService, serviceMins, serviceDeposit, depositLinkFor } from '../lib/booking.js';
 import { sendEmail, trustedOrigin, bookingGuestEmailHtml, bookingGuestEmailText,
@@ -143,10 +143,14 @@ export default async function handler(req, res) {
 
     let lbl = date;
     try { lbl = new Date(date + 'T12:00:00').toLocaleDateString('en-US', { weekday: 'long', month: 'long', day: 'numeric' }); } catch (e) {}
-    await logEvent(prov.id, clientId, 'booking', {
+    // A fixed key for this person + slot, so a retry, a double tap or a second tab records ONE request
+    // and sends one set of emails.
+    const bkKey = 'bk' + crypto.createHash('sha256').update([prov.id, norm(email), date, time, treatment].join('|')).digest('hex').slice(0, 24);
+    const logged = await logEventOnce(prov.id, clientId, 'booking', {
       treatment, date, dateLabel: lbl, time, dur: mins,
       note, via: 'booking-link', autoConfirmed: confirmed
-    });
+    }, bkKey);
+    const firstTime = !!(logged && logged.inserted);
 
     const when = lbl + ' at ' + time;
 
@@ -169,7 +173,7 @@ export default async function handler(req, res) {
     try { const raw = await getKVValue(prov.id, 'sc_bizinfo'); if (raw) biz = JSON.parse(raw) || {}; } catch (e) {}
     const bizName = String(biz.name || prov.name || 'Your appointment').trim();
     const addr = [biz.address, biz.city, biz.state].filter(Boolean).join(', ');
-    if (cfg.emailGuest !== false) {
+    if (firstTime && cfg.emailGuest !== false) {
       try {
         await sendEmail({
           to: email,
@@ -180,7 +184,7 @@ export default async function handler(req, res) {
         });
       } catch (e) { console.error('[book-request] guest email failed:', e && e.message); }
     }
-    if (cfg.emailMe !== false && prov.email) {
+    if (firstTime && cfg.emailMe !== false && prov.email) {
       try {
         await sendEmail({
           to: prov.email,

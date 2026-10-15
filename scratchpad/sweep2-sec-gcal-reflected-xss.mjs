@@ -5,7 +5,7 @@ const t=fs.mkdtempSync(path.join(os.tmpdir(),'s2gc-')); fs.mkdirSync(t+'/api'); 
 fs.copyFileSync(V+'/api/google-cal-callback.js',t+'/api/google-cal-callback.js');
 fs.writeFileSync(t+'/package.json','{"type":"module"}');
 fs.writeFileSync(t+'/lib/db.js','export function dbEnabled(){return true}');
-fs.writeFileSync(t+'/lib/auth.js','export function verifyToken(){return null}');
+fs.writeFileSync(t+'/lib/auth.js','export function verifyToken(){return null}\nexport async function sessionFromReq(){return null}\nexport async function sessionOk(){return true}');
 fs.writeFileSync(t+'/lib/google-cal.js','export async function ensureGoogleTable(){} export async function exchangeGoogleCode(){} export async function saveGoogleConnection(){} export function googleConfigured(){return true}');
 fs.writeFileSync(t+'/api/google-cal.js','export function redirectUri(){return ""}');
 const { default: h } = await import(t+'/api/google-cal-callback.js');

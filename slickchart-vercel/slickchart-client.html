@@ -1411,22 +1411,43 @@ function _reminderContext(){
     return {tz,apptAt,apptLabel,treatment,hasHomecare,appts};
   }catch(e){return {};}
 }
+// Saved settings only go up once the account's copy has been READ (a fresh device used to put its empty
+// defaults over everything the client had saved, when the read was slow or failed). A change waiting to
+// go up is marked on the device, so it is sent when the page closes and is not replaced by the older
+// server copy at the next launch.
+let _prefsLoaded=false;
+function _prefsDirty(on){try{if(on)localStorage.setItem('sc_client_prefs_dirty','1');else localStorage.removeItem('sc_client_prefs_dirty');}catch(e){}}
+function _sendClientPrefs(keepalive){
+  if(!client._real||!client._token||!_prefsLoaded)return;
+  clearTimeout(_prefsSyncTimer);_prefsSyncTimer=null;
+  fetch('/api/client-prefs?t='+encodeURIComponent(client._token),{
+    method:'PUT',headers:{'Content-Type':'application/json'},keepalive:!!keepalive,
+    body:JSON.stringify({prefs:_collectClientPrefs()})
+  }).then(function(r){if(r&&r.ok)_prefsDirty(false);}).catch(e=>console.error('[client prefs] save failed:',e&&e.message));
+}
 function _syncClientPrefsToServer(){
   if(!client._real||!client._token)return; // nothing to sync in local/demo mode
+  if(!_prefsLoaded)return;   // boot sends once the account's copy is read and merged in
+  _prefsDirty(true);
   clearTimeout(_prefsSyncTimer);
-  _prefsSyncTimer=setTimeout(()=>{
-    fetch('/api/client-prefs?t='+encodeURIComponent(client._token),{
-      method:'PUT',headers:{'Content-Type':'application/json'},
-      body:JSON.stringify({prefs:_collectClientPrefs()})
-    }).catch(e=>console.error('[client prefs] save failed:',e&&e.message));
-  },900);
+  _prefsSyncTimer=setTimeout(function(){_sendClientPrefs(false);},900);
 }
+try{
+  window.addEventListener('pagehide',function(){if(_prefsSyncTimer)_sendClientPrefs(true);});
+  document.addEventListener('visibilitychange',function(){if(document.hidden&&_prefsSyncTimer)_sendClientPrefs(true);});
+}catch(e){}
 async function _loadClientPrefsFromServer(){
   if(!client._real||!client._token)return;
   try{
     const r=await fetch('/api/client-prefs?t='+encodeURIComponent(client._token));
+    if(!r.ok)throw new Error('http '+r.status);
     const j=await r.json();
-    if(!(j&&j.ok&&j.prefs&&Object.keys(j.prefs).length))return; // nothing saved server-side yet, keep local defaults
+    if(!(j&&j.ok))throw new Error('bad answer');
+    _prefsLoaded=true;
+    // A change made on this device that never reached the account is newer than the account's copy.
+    var _dirty=false;try{_dirty=localStorage.getItem('sc_client_prefs_dirty')==='1';}catch(e){}
+    if(_dirty)return;
+    if(!(j.prefs&&Object.keys(j.prefs).length))return; // nothing saved server-side yet, keep local defaults
     const p=j.prefs;
     if(p.notif)saveNotifPrefs(p.notif);
     if(p.eng){_eng=Object.assign(_eng,p.eng);try{localStorage.setItem('sc_client_engage',JSON.stringify(_eng));}catch(e){}
@@ -1468,7 +1489,10 @@ async function _loadClientPrefsFromServer(){
     if(p.contact&&typeof p.contact==='object'){try{localStorage.setItem('sc_client_contact',JSON.stringify(p.contact));}catch(e){}
       try{if(p.contact.email)client.email=p.contact.email;if(p.contact.phone)client.phone=p.contact.phone;}catch(e){}}
     if(p.avatar){try{localStorage.setItem('sc_client_avatar',String(p.avatar));}catch(e){}try{client.avatar=p.avatar;}catch(e){}}
-  }catch(e){ console.error('[client prefs] load failed:',e&&e.message); /* fall back to whatever's cached locally */ }
+  }catch(e){ console.error('[client prefs] load failed:',e&&e.message); /* fall back to whatever's cached locally */
+    // Not read: nothing goes up yet. Try again shortly.
+    if(!_prefsLoaded){_loadClientPrefsFromServer._tries=(_loadClientPrefsFromServer._tries||0)+1;if(_loadClientPrefsFromServer._tries<6)setTimeout(function(){_loadClientPrefsFromServer().then(function(){if(_prefsLoaded)_syncClientPrefsToServer();});},15000*_loadClientPrefsFromServer._tries);}
+  }
 }
 function _engStreakLive(){return _eng.lastDoneDay===_engToday()||_eng.lastDoneDay===_engYesterday();}
 function _engSteps(){return (activeProvider().homecare||[]);}
@@ -4098,7 +4122,9 @@ async function _doDeleteClientData(){
   // Unsubscribe this device from push.
   try{ if('serviceWorker'in navigator){ const reg=await navigator.serviceWorker.ready; const sub=await reg.pushManager.getSubscription(); if(sub){try{await sub.unsubscribe();}catch(_){}} } }catch(e){}
   // Wipe local data on this device.
-  try{ Object.keys(localStorage).filter(function(k){return k.indexOf('sc_')===0||k==='notif_prefs';}).forEach(function(k){localStorage.removeItem(k);}); }catch(e){}
+  // Only THIS app's keys. Every sc_ key used to go, which signed the provider app on the same site out
+  // and erased its unsent work and crash-safety photos.
+  _clearClientAppKeys(null);
   // Confirmation screen.
   try{
     document.getElementById('tt').textContent='Data Deleted';
@@ -5275,6 +5301,7 @@ function submitVirtualConsult(){
     const j=client.providers.find(p=>p.id==='jess');
     if(j){j.virtualConsults=j.virtualConsults||[];j.virtualConsults.unshift(entry);try{persistVirtualConsults();}catch(e){}}
     try{if(inv&&inv.invitedAt)localStorage.setItem('sc_vc_submitted',String(inv.invitedAt));}catch(e){}
+    try{localStorage.removeItem('sc_vcidem_'+String((inv&&inv.invitedAt)||'x'));}catch(e){}
     vcInvite=null;_vcSubmitState={photos:{},refs:{},routine:[],flags:{},answers:{}};try{persistInvite();}catch(e){}try{persistVcDraft();}catch(e){}
     if(typeof pushNotify==='function')pushNotify({type:'vcSubmitted',icon:'ti-check',col:'#e9f7f0',ic:'#4ec49a',title:'Consult submitted',body:client.providerFirst+(_vcPhotoFreeInv(inv)?' will read your answers and send recommendations back.':' will review your photos and send notes back.')});
     nav('journey');
@@ -5283,7 +5310,11 @@ function submitVirtualConsult(){
   _imgMeasures(firstSrc).catch(()=>null).then(measures=>{
     try{SlickBridge.post('virtual-consult-submitted',{providerId:'jess',clientId:'maya',kind:inv.kind,title:inv.title,date,photos,refs:entry.refs,goals,measures,routine,answers});}catch(e){}
     if(client._real){
-      return _clientSubmit('vc_submit',{kind:inv.kind,title:inv.title,date,photos,refs:entry.refs,goals,measures,routine,answers})
+      // One key per invite, kept on the device until the consult is safely in: a retry after a lost
+      // reply (or a second tap later) used to mint a new key and store the consult twice.
+      let _vk='sc_vcidem_'+String((inv&&inv.invitedAt)||'x'),_vid='';
+      try{_vid=localStorage.getItem(_vk)||'';if(!_vid){_vid=(self.crypto&&crypto.randomUUID)?crypto.randomUUID():(Date.now().toString(36)+Math.random().toString(36).slice(2));localStorage.setItem(_vk,_vid);}}catch(e){}
+      return _clientSubmit('vc_submit',{kind:inv.kind,title:inv.title,date,photos,refs:entry.refs,goals,measures,routine,answers,_idem:_vid||undefined})
         .then(res=>{if(res&&res.ok)finalize();else if(res&&res.duplicate){/* already sending, ignore double tap */}else fail();})
         .catch(fail);
     }
@@ -6317,6 +6348,9 @@ function _applyServerVcInvite(vi){
   if(!vi||!vi.kind)return;
   const iat=String(vi.invitedAt||'');
   if(iat&&iat===_vcSubmittedInviteId())return;
+  // After a refresh nothing has read the saved invite and draft back yet, so the same invite looked
+  // new and wiped the photos, goals and answers the client had already put in.
+  if(!vcInvite){try{loadInvite();}catch(e){}}
   if(!vcInvite||String(vcInvite.invitedAt||'')!==iat){
     vcInvite={kind:vi.kind,title:vi.title||'Photo consult',fee:vi.fee||'',providerFirst:client.providerFirst,invitedAt:vi.invitedAt||0,askQuestions:Array.isArray(vi.askQuestions)?vi.askQuestions:undefined,photoLabels:Array.isArray(vi.photoLabels)?vi.photoLabels:undefined,refLabels:Array.isArray(vi.refLabels)?vi.refLabels:undefined,refTitle:vi.refTitle||undefined};
     _vcSubmitState={photos:{},refs:{},routine:[],flags:{},answers:{}};
@@ -6328,7 +6362,31 @@ function _applyServerVcInvite(vi){
     if(typeof pushNotify==='function')pushNotify({type:'vcInvite',icon:'ti-camera',col:'#f3eefc',ic:'#8b6fc7',title:_vcInviteTitle(vcInvite),body:_vcInviteBody(vcInvite),onclick:()=>{client.activeProviderId='jess';applyActiveProvider();nav('virtual-submit');}});
   }
 }
+// Everything this app keeps on the device that belongs to ONE client. Kept in step with
+// _CLIENT_APP_KEYS / _CLIENT_APP_PREFIX in slickchart.html.
+var _CA_KEYS=['sc_appnudge_dismissed','sc_checkin_done','sc_client_avatar','sc_client_checkin_cfg','sc_client_contact','sc_client_engage',
+  'sc_client_hidden_summaries','sc_client_invite','sc_client_messages','sc_client_saved','sc_client_token','sc_client_vc','sc_deleted_res',
+  'sc_forms_done','sc_home_cleared_res','sc_home_intro_seen','sc_install_dismissed','sc_seen_msg_ids','sc_suggestion_handled','sc_vc_draft',
+  'sc_vc_notified','sc_vc_submitted','sc_vc_tips_seen','sc_welcome_dismissed','sc_a2hs_dismissed','sc_client_brand_colors','sc_client_owner','sc_client_prefs_dirty','notif_prefs'];
+var _CA_PREFIX=['sc_course_prog_','sc_ffdraft_','sc_ffidem_','sc_ciidem_','sc_bkidem_','sc_checkin_draft_','sc_vcidem_'];
+function _isClientAppKey(k){k=String(k||'');return _CA_KEYS.indexOf(k)>=0||_CA_PREFIX.some(function(p){return k.indexOf(p)===0;});}
+function _clearClientAppKeys(keep){try{Object.keys(localStorage).forEach(function(k){if(_isClientAppKey(k)&&!(keep&&keep[k]))localStorage.removeItem(k);});}catch(e){}}
+// A second client's link opened in the same browser (a family iPad, a client of two providers, Ashley
+// opening real links on her phone) used to see the FIRST client's contact, face photos, saved products
+// and unsent messages, and then pushed them into the second client's server prefs (CLAUDE.md §0.3).
+// The device's client data is stamped with whose it is; a different link starts clean.
+function _clientOwnerSwitch(token){
+  try{
+    var owner=localStorage.getItem('sc_client_owner');
+    if(!owner){var prev=localStorage.getItem('sc_client_token');owner=prev||token;}   // before the stamp existed
+    if(owner===token){localStorage.setItem('sc_client_owner',token);return false;}
+    _clearClientAppKeys({sc_client_theme:1});
+    localStorage.setItem('sc_client_owner',token);localStorage.setItem('sc_client_token',token);
+    location.reload();return true;
+  }catch(e){return false;}
+}
 function _bootRealClient(token){
+  if(_clientOwnerSwitch(token))return;
   client._token=token;
   // Remember this real link token so a later home-screen launch (which opens "/client" with no
   // token in the URL) can recover it in _getClientToken instead of dropping to the demo client.
@@ -6382,43 +6440,14 @@ function _brandStamp(brand){
   return l.length+':'+l.slice(0,16)+l.slice(-24);
 }
 function _clientDataFingerprint(j){
+  // The WHOLE record, not a hand-picked list of fields: the list kept missing things (a suggested new
+  // booking time, a consult invite, a re-sent form, allergies, an edit to an older summary), so an
+  // open client app never showed them until it was closed. The logo is stamped, not hashed byte by byte.
   try{
-    const d=(j&&j.client&&j.client.data)||{};const prof=d.profile||{};
-    return JSON.stringify([
-      prof.nextVisit||'',prof.treatment||'',
-      (Array.isArray(d.summaries)?d.summaries.length:0),
-      (Array.isArray(d.summaries)&&d.summaries[0]&&d.summaries[0].note)||'',
-      (Array.isArray(d.pendingForms)?d.pendingForms.map(f=>f.formId).join(','):''),
-      (Array.isArray(d.pendingGuides)?d.pendingGuides.length:0),
-      // Courses: id + lesson count, so a course sent (or edited) while the app is open appears
-      // without a full reload — the one moment a client is most likely to be looking at it.
-      (Array.isArray(d.pendingCourses)?d.pendingCourses.map(function(c){return (c&&c.id||'')+'~'+((c&&c.lessons||[]).length);}).join('|'):''),
-      // Animals: id + counts, so a horse added, a session note written, or a photo newly shared
-      // appears without the owner having to close and reopen the app.
-      (Array.isArray(d.animals)?d.animals.map(function(a){return (a&&a.id||'')+'~'+((a&&a.summaries||[]).length)+'~'+((a&&a.progressPhotos||[]).length)+'~'+((a&&a.name)||'');}).join('|'):''),
-      // Detect an actual logo/brand CHANGE, not just presence, otherwise swapping one logo for
-      // another (both non-empty) left this token identical and the poll never applied the new logo.
-      _brandStamp(d.brand),(d.brand&&d.brand.primary)||'',(d.brand&&d.brand.secondary)||'',
-      // Products: stamp name + reason ("why") + ORDER, not just the count — otherwise editing a
-      // recommendation's note, or reordering the list, left the token identical and the open client
-      // never saw the change until a full reload.
-      (Array.isArray(d.products)?d.products.map(function(p){return (p&&(p.name||p.id||''))+'~'+(p&&(p.why||p.reason||''))+'~'+(p&&(p.site||p.url||''));}).join('|'):''),
-      // Homecare routine (aftercare steps + their order) — was omitted entirely, so a live routine
-      // edit didn't re-apply on an already-open client.
-      (Array.isArray(d.aftercare)?d.aftercare.join('|'):''),
-      (function(){try{const r=d.routineReview;if(!r)return '';return String(r.note||'')+'~'+((r.items||[]).map(function(x){return (x.name||'')+':'+(x.feedback||'');}).join('|'));}catch(e){return '';}})(),
-      // Named routine + provider's "why" note — so re-sending/renaming a routine re-renders live.
-      (d.routine&&((d.routine.name||'')+'~'+(d.routine.note||'')))||'',
-      // Loyalty balance — so a freshly-checked points balance appears without a reload.
-      (d.loyalty&&(d.loyalty.points+'~'+(d.loyalty.lifetime||0)))||'',
-      // Progress photos the provider shares — count + latest ref, so newly shared/removed photos poll in.
-      (Array.isArray(d.progressPhotos)?d.progressPhotos.length:0),
-      (Array.isArray(d.progressPhotos)&&d.progressPhotos[0]&&(d.progressPhotos[0].id||d.progressPhotos[0].url||''))||'',
-      // Stamp catalog CONTENT (name + image + buy link), not just the count — otherwise product
-      // photos or store links that get added to existing products never re-apply on an open client
-      // (the product count is unchanged), and they only appear after a full reload.
-      (Array.isArray(d.catalog)?d.catalog.map(function(p){return (p&&(p.name||''))+'~'+(p&&(p.image||''))+'~'+(p&&(p.site||''));}).join('|'):'')
-    ]);
+    const d=(j&&j.client&&j.client.data)||{};
+    const txt=JSON.stringify(d,function(k,v){return (k==='brand'&&v&&typeof v==='object')?[_brandStamp(v),v.primary||'',v.secondary||'',v.name||'']:v;});
+    let h=0;for(let i=0;i<txt.length;i++){h=((h<<5)-h+txt.charCodeAt(i))|0;}
+    return txt.length+':'+h+':'+String((j&&j.client&&j.client.name)||'');
   }catch(e){return '';}
 }
 // Screens where a surprise re-render would interrupt the client mid-task. We skip

@@ -26,7 +26,7 @@ globalThis.fetch = async (url, opts = {}) => {
   await new Promise(r => setTimeout(r, 150));                 // one Google round trip
   const m = (opts.method || 'GET').toUpperCase(); const u = String(url);
   const R = (o, st = 200) => ({ ok: st < 400, status: st, json: async () => o, text: async () => JSON.stringify(o) });
-  if (m === 'POST' && /\/events$/.test(u)) { const id = 'ev' + (++n); events[id] = JSON.parse(opts.body); return R({ id }); }
+  if (m === 'POST' && /\/events$/.test(u)) { const b = JSON.parse(opts.body); if (b.id && events[b.id]) return { ok: false, status: 409, json: async () => ({}) }; const id = b.id || ('ev' + (++n)); events[id] = b; return R({ id }); }  // Google honours a supplied id and answers 409 for a taken one
   if (m === 'PATCH') { const id = decodeURIComponent(u.split('/').pop()); if (!events[id]) return R({}, 404); events[id] = JSON.parse(opts.body); return R({ id }); }
   if (m === 'DELETE') { const id = decodeURIComponent(u.split('/').pop()); delete events[id]; return R({}); }
   return R({});

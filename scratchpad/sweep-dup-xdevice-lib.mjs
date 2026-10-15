@@ -20,7 +20,7 @@ export async function launch() {
 }
 
 // Boot one device. localSeed: localStorage to set BEFORE the app boots (the device's own stale copy).
-export async function device(browser, srv, name, localSeed) {
+export async function device(browser, srv, name, localSeed, patchJs) {
   const ctx = await browser.newContext();
   const p = await ctx.newPage();
   p._errs = []; p.on('pageerror', e => p._errs.push(e.message));
@@ -41,7 +41,7 @@ export async function device(browser, srv, name, localSeed) {
       if (body.rescue) return ok({ ok: true, rescued: 0 });
       const items = body.items || (body.key !== undefined ? { [body.key]: body.value } : {});
       // Mirrors api/store.js (2026-10-15f): the delete / put-back / merge records MERGE on the server.
-      const NEWEST = { sc_deleted_clients: 1, sc_undeleted_clients: 1, sc_merged_ids: 1 }, UNION = { sc_merged_into: 1 };
+      const NEWEST = Object.assign({ sc_deleted_clients: 1, sc_undeleted_clients: 1, sc_merged_ids: 1 }, srv.newest || {}), UNION = { sc_merged_into: 1 };
       Object.entries(items).forEach(([k, v]) => {
         if ((NEWEST[k] || UNION[k]) && v != null) { try { const o = JSON.parse(srv.kv[k] || '{}') || {}, n = JSON.parse(String(v)) || {};
           if (UNION[k]) Object.assign(o, n); else Object.keys(n).forEach(i => { const a = typeof o[i] === 'number' ? o[i] : (i in o ? 1 : 0), b = typeof n[i] === 'number' ? n[i] : 1; o[i] = Math.max(a, b); });
@@ -67,6 +67,14 @@ export async function device(browser, srv, name, localSeed) {
       return ok({ ok: true, saved: out.length, clients: out, failed: [] });
     }
     return ok({ ok: true, data: {}, clients: [], events: [], customers: [], bookings: [] });
+  });
+  // patchJs (optional, sweep2): a script injected right AFTER the app's own scripts, before boot's
+  // first network answer — lets a repro run the app with a proposed fix applied.
+  if (patchJs) await p.route('**/slickchart.html', async r => {
+    const res = await r.fetch(); let html = await res.text();
+    const i = html.lastIndexOf('</body>');
+    html = html.slice(0, i) + '<script>' + patchJs + '</script>' + html.slice(i);
+    return r.fulfill({ response: res, body: html, headers: Object.assign({}, res.headers(), { 'content-type': 'text/html' }) });
   });
   await p.goto('http://localhost:' + PORT + '/slickchart.html');
   await p.waitForFunction(() => typeof Cloud !== 'undefined' && Cloud._pulledOnce && !Cloud._booting, null, { timeout: 30000 }).catch(() => {});
