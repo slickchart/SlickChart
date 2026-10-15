@@ -10,7 +10,7 @@ const PAGE = process.argv[3] || 'slickchart.html';
 const SEED = process.argv[4] || '';
 const APP = process.argv[5] || 'provider';
 const SKIP = /logout|_doLogout|signOut|sign out|deleteAccount|delete-account|_doDelete|wipe|purge|_resetApp|resetAll|clearAll|_doDeleteClientData|location\.reload|_reloadApp|window\.location|location\.href=|_hardRefresh|_forceUpdate|removeDemoClients|_setShotMode\(true|replayOnboarding/i;
-const NOISE = /^(sc_last|sc_seen|sc_.*_seen|sc_.*_at$|sc_nav|sc_boot|sc_build|sc_ev_fails|sc_pulse|sc_chart_activity|sc_.*tips|sc_.*_dismiss|sc_reload_log|sc_selfcheck|sc_queue|sc_pending|sc_sync)/;
+const NOISE = /^(sc_bus$|sc_last|sc_seen|sc_.*_seen|sc_.*_at$|sc_nav|sc_boot|sc_build|sc_ev_fails|sc_pulse|sc_chart_activity|sc_.*tips|sc_.*_dismiss|sc_reload_log|sc_selfcheck|sc_queue|sc_pending|sc_sync)/;
 const browser = await pw.chromium.launch({ executablePath: '/opt/pw-browsers/chromium-1194/chrome-linux/chrome' });
 const ctx = await browser.newContext({ viewport: { width: 390, height: 844 } });
 const page = await ctx.newPage();
@@ -22,7 +22,7 @@ await page.route(/^(?!http:\/\/localhost:8899).*/, r => { const u = r.request().
 const boot = async () => { await page.goto('http://localhost:8899/' + PAGE, { waitUntil: 'load' }); await page.waitForTimeout(2600); };
 await boot(); if (SEED) { await page.evaluate(SEED); await page.evaluate(() => { try { saveClients(); } catch (e) {} try { persistWorkspace(); } catch (e) {} try { persistAffiliateLinks(); } catch (e) {} try { persistSessionSummaries(); } catch (e) {} }); await page.waitForTimeout(600); await boot(); }
 const snapAll = () => page.evaluate(() => { const o = {}; const ks = (typeof _lsAllKeys === 'function') ? _lsAllKeys() : Object.keys(localStorage); ks.forEach(k => { if (/^sc_/.test(k)) { try { o[k] = (typeof _lsGet === 'function') ? _lsGet(k) : localStorage.getItem(k); } catch (e) {} } }); return o; });
-const norm = v => { try { const j = JSON.parse(v); const s = x => Array.isArray(x) ? x.map(s) : (x && typeof x === 'object') ? Object.keys(x).sort().reduce((a, k) => (a[k] = s(x[k]), a), {}) : x; return JSON.stringify(s(j)); } catch (e) { return String(v); } };
+const norm = v => { try { const j = JSON.parse(v); if (j && typeof j === 'object' && !Array.isArray(j)) delete j._ts; const s = x => Array.isArray(x) ? x.map(s) : (x && typeof x === 'object') ? Object.keys(x).sort().reduce((a, k) => (a[k] = s(x[k]), a), {}) : x; return JSON.stringify(s(j)); } catch (e) { return String(v); } };
 const screens = CRAWL.screens.filter(x => !x.renderErr && !(x.errs && x.errs.length) && !/\$\{|"\+/.test(JSON.stringify(x.d)));
 const findings = []; let writes = 0, taps = 0;
 for (const scr of screens) {
