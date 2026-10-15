@@ -46,6 +46,9 @@ export async function device(browser, srv, name, localSeed) {
         if ((NEWEST[k] || UNION[k]) && v != null) { try { const o = JSON.parse(srv.kv[k] || '{}') || {}, n = JSON.parse(String(v)) || {};
           if (UNION[k]) Object.assign(o, n); else Object.keys(n).forEach(i => { const a = typeof o[i] === 'number' ? o[i] : (i in o ? 1 : 0), b = typeof n[i] === 'number' ? n[i] : 1; o[i] = Math.max(a, b); });
           srv.kv[k] = JSON.stringify(o); return; } catch (e) {} }
+        if (k === 'sc_clients' && v != null) { try { const ro = JSON.parse(String(v)), del = JSON.parse(srv.kv.sc_deleted_clients || '{}') || {}, und = JSON.parse(srv.kv.sc_undeleted_clients || '{}') || {};
+          Object.keys(ro).forEach(i => { if (!(i in del)) return; const dd = typeof del[i] === 'number' ? del[i] : 1, uu = typeof und[i] === 'number' ? und[i] : (i in und ? 1 : 0); if (dd > uu) delete ro[i]; });
+          srv.kv[k] = JSON.stringify(ro); return; } catch (e) {} }
         srv.kv[k] = v == null ? null : String(v); });
       srv.puts.push({ dev: name, keys: Object.keys(items), items });
       return ok({ ok: true, saved: Object.keys(items).length });

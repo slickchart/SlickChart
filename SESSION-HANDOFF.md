@@ -7333,8 +7333,14 @@ parallel; each wrote repros in `scratchpad/sweep-dup-*.mjs`. Fixes, by area:
   (stale record got a fresh `_uAt` and beat newer notes), `_rebuildCalendarFeed`, `_paySyncSquare`
   (doubled invoices), `_gcalPush` (server deletes Google events missing from a partial list).
 
-**Known, not changed:** `_saveClientDetails` and `_saveTaxRate` call `Cloud.pushAllLocal()` (whole
-workspace, bypasses the shrink guard) — worth replacing with targeted pushes. A stale device can
-still re-upload a merged copy inside `sc_clients`; it is hidden everywhere by the (now server-merged)
-delete record. A both-devices-offline edit to a dropped id's per-client map entry is pruned rather than
-folded into the survivor (`_unionById` could follow `_mergedInto`).
+**Known, not changed** — all three FIXED in 2026-10-15g:
+- `_saveClientDetails` now flushes the guarded queue (`Cloud._flush(0)`); `_saveTaxRate` relies on its
+  own `_pushKeyNow`. Neither calls `pushAllLocal()` any more (sign-in/sign-up seeding still does).
+- `api/store.js` strips from an uploaded `sc_clients` any id whose delete is newer than its put-back
+  (account records merged with any in the same request). Mirrors `_purgeRemovedClients`. Tested in
+  `scratchpad/test-server-merge-pg.mjs` (16/16, real Postgres).
+- Entries saved under a merged-away copy follow `sc_merged_into` to the survivor: during the pull in
+  `_unionById` (`_mergeTargetOf` also reads the merge/delete records arriving in that pull via
+  `Cloud._incoming`, since key order is not guaranteed), and after it for device-only stores in
+  `_foldMergedLeftovers()` (run from `_afterAccountRead`). `scratchpad/test-merge-fold-xdevice.mjs` 6/6.
+  Maps without a value merge (product plan, homecare) keep the survivor's entry when it has one (§0.8).

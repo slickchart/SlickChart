@@ -239,7 +239,7 @@ const S=document.getElementById('S');
 // resets when I save it" and there was no way to tell whether her phone had any of them — a whole
 // day was spent debugging code she may not have been running. Shown at the bottom of Settings, so
 // the answer is a screenshot away. Bump it on every ship.
-const APP_BUILD='2026-10-15f';
+const APP_BUILD='2026-10-15g';
 
 
 /* ════════════════════════════════════════════════════════════════
@@ -1745,7 +1745,10 @@ function _saveClientDetails(id){
   // an empty field clears the DOB.
   const _dobEl=document.getElementById('cd-dob'); if(_dobEl){const _raw=String(_dobEl.value||'').trim();c.birthday=_raw?(_normBirthday(_raw)||_raw):'';}
   saveClients();
-  if(typeof Cloud!=='undefined'&&Cloud&&Cloud.pushAllLocal){try{Cloud.pushAllLocal();}catch(e){}}
+  // Send the client list now, through the normal guarded queue. This used to be pushAllLocal(): the
+  // WHOLE workspace, last-writer-wins, past the shrink guard, so a device with stale libraries put
+  // all of them over the account every time a phone number was corrected.
+  if(typeof Cloud!=='undefined'&&Cloud&&Cloud._flush){try{Cloud._flush(0);}catch(e){}}
   const m=document.getElementById('cl-edit'); if(m)m.remove();
   if(typeof proToast==='function')proToast('Details saved');
   if(typeof document.getElementById('tt')!=='undefined'){}
@@ -3389,6 +3392,10 @@ function _goneClientIds(){
   const out={};
   try{if(typeof _deletedClientIds==='object'&&_deletedClientIds)Object.keys(_deletedClientIds).forEach(function(x){out[x]=1;});}catch(e){}
   ['sc_deleted_clients','sc_merged_ids'].forEach(function(tk){
+    // The account's copy arriving in THIS pull counts too: keys are merged one by one in whatever order
+    // the server lists them, so the delete record may not be stored yet when a per-client map merges.
+    try{const inc=(typeof Cloud!=='undefined'&&Cloud&&Cloud._incoming)?Cloud._incoming[tk]:null;const v=JSON.parse(inc||'null');
+      if(v&&typeof v==='object'&&!Array.isArray(v))Object.keys(v).forEach(function(x){out[x]=1;});}catch(e){}
     try{
       const raw=(typeof _lsGet==='function')?_lsGet(tk):localStorage.getItem(tk);
       const v=JSON.parse(raw||'null');
@@ -3402,11 +3409,24 @@ function _goneClientIds(){
 function _isPlainObj(o){return !!o&&typeof o==='object'&&!Array.isArray(o);}
 // Union two { id: value } maps. The account's value wins where both have the id; ids only the device
 // has are added. Returns null when there is nothing sane to merge.
+// Where a removed client id was MERGED to, if it was (following a chain), else ''. Lets the per-client
+// maps fold a dropped copy's entry into the survivor instead of pruning it: another device that saved
+// a note draft or a summary under the copy before hearing about the merge used to lose it on its pull.
+function _mergeTargetOf(id,gone){
+  try{
+    // In memory, on disk, and arriving in this pull: another device's merge is only known from the latter.
+    const mi=Object.assign({},(typeof _mergedInto==='object'&&_mergedInto)||{});
+    try{const v=JSON.parse(((typeof _lsGet==='function')?_lsGet('sc_merged_into'):localStorage.getItem('sc_merged_into'))||'null');if(_isPlainObj(v))Object.keys(v).forEach(k=>{if(!mi[k])mi[k]=v[k];});}catch(e){}
+    try{const v=JSON.parse((typeof Cloud!=='undefined'&&Cloud&&Cloud._incoming&&Cloud._incoming.sc_merged_into)||'null');if(_isPlainObj(v))Object.keys(v).forEach(k=>{if(!mi[k])mi[k]=v[k];});}catch(e){}
+    let cur=id,g=0;
+    while(cur&&gone[cur]&&mi[cur]&&mi[cur]!==cur&&g++<25)cur=mi[cur];
+    return (cur&&cur!==id&&!gone[cur])?cur:'';}catch(e){return '';}
+}
 function _unionById(a,b,gone,onAdd,mergeVal){
-  const out={};
-  Object.keys(a).forEach(function(id){if(!gone[id])out[id]=a[id];});
+  const out={};const folds=[];
+  Object.keys(a).forEach(function(id){if(!gone[id])out[id]=a[id];else folds.push([id,a[id]]);});
   Object.keys(b).forEach(function(id){
-    if(gone[id])return;
+    if(gone[id]){folds.push([id,b[id]]);return;}
     if(Object.prototype.hasOwnProperty.call(out,id)){
       // BOTH sides hold this client. Keeping the account's copy and dropping the device's is what
       // lost a summary saved minutes earlier: the account simply had not received it yet.
@@ -3417,6 +3437,13 @@ function _unionById(a,b,gone,onAdd,mergeVal){
       return;
     }
     out[id]=b[id];if(onAdd)onAdd(id);
+  });
+  folds.forEach(function(f){
+    const t=_mergeTargetOf(f[0],gone);if(!t||f[1]==null)return;
+    if(!Object.prototype.hasOwnProperty.call(out,t)){out[t]=f[1];if(onAdd)onAdd(t);return;}
+    if(!mergeVal)return;   // the survivor's own entry stands (a plan she edited there is not overridden)
+    const m=mergeVal(out[t],f[1]);
+    if(m){out[t]=m.value;if(m.changed&&onAdd)onAdd(t);}
   });
   return out;
 }
@@ -3812,7 +3839,7 @@ const Cloud={
   // all (a brand-new signup, a local-only device), so nothing can be stuck behind this forever.
   _holdUploads(){return !!(this.token&&!this._pulledOnce&&(this._pulling||this._pullFailed));},
   async pull(){this._pulling=true;try{return await this._pullInner();}finally{this._pulling=false;}},
-  async _pullInner(){if(!this.token)return -1;let r;try{r=await fetch('/api/store',{headers:{'Authorization':'Bearer '+this.token}});}catch(e){this._pullFailed=true;return -1;}if(r.status===401){this._authFailed=true;try{this._prevOwner=(typeof _tokenOwner==='function')?_tokenOwner():'';}catch(e){}this.logout();return -1;}if(!r.ok){this._pullFailed=true;return -1;}let j=null;try{j=await r.json();}catch(e){}if(!j||!j.data||typeof j.data!=='object'){this._pullFailed=true;return -1;}const data=j.data;const _staleDeviceLocalKeys=[];const keys=Object.keys(data);this._lastPulledKeys=new Set(keys);
+  async _pullInner(){if(!this.token)return -1;let r;try{r=await fetch('/api/store',{headers:{'Authorization':'Bearer '+this.token}});}catch(e){this._pullFailed=true;return -1;}if(r.status===401){this._authFailed=true;try{this._prevOwner=(typeof _tokenOwner==='function')?_tokenOwner():'';}catch(e){}this.logout();return -1;}if(!r.ok){this._pullFailed=true;return -1;}let j=null;try{j=await r.json();}catch(e){}if(!j||!j.data||typeof j.data!=='object'){this._pullFailed=true;return -1;}const data=j.data;this._incoming=data;const _staleDeviceLocalKeys=[];const keys=Object.keys(data);this._lastPulledKeys=new Set(keys);
     // What the account holds, as of right now. Boot re-persists a lot of what it just read (a
     // normalised list, a re-seeded default), and each of those used to be its own upload. Knowing
     // the account's copy means an echo of the pull costs nothing instead of a round trip.
@@ -4020,7 +4047,7 @@ const Cloud={
     // exactly what must not happen on top of an edit that has not been pushed yet.
     if(_pendingLocal)return;
     setFromServer(k,data[k]);
-  }catch(e){}});if(_staleDeviceLocalKeys.length)this._dropStaleDeviceLocal(_staleDeviceLocalKeys);this._pulledOnce=true;this._pullFailed=false;return keys.length;},
+  }catch(e){}});this._incoming=null;if(_staleDeviceLocalKeys.length)this._dropStaleDeviceLocal(_staleDeviceLocalKeys);this._pulledOnce=true;this._pullFailed=false;return keys.length;},
   // Keys worth rescuing: the libraries she BUILDS. Mirrors TRACKED in lib/kv-history.js — if you
   // add one there, add it here, or a device can hold the only copy of it and never offer it up.
   _RESCUE_KEYS:['sc_clients','sc_session_summaries','sc_client_recs','sc_client_homecare',
@@ -25494,7 +25521,31 @@ function _icsStamp(dateStr,timeStr){
 // client) has to wait, then run once the account is in (_afterAccountRead).
 function _acctUnread(){return !!(typeof Cloud!=='undefined'&&Cloud&&Cloud.token&&!Cloud._pulledOnce);}
 // Re-derive what was skipped while the account was unread.
+// Anything this device still holds under a client id that was merged away (on another device, before
+// this one heard) is moved onto the survivor, with the same carry as a merge. Keys the account also
+// holds are folded during the pull itself (_unionById); this covers what lives only on this device.
+function _foldMergedLeftovers(){
+  try{
+    const gone=_goneClientIds();
+    const maps=[typeof clientRecs!=='undefined'&&clientRecs,typeof clientHomecare!=='undefined'&&clientHomecare,typeof sessionSummaries!=='undefined'&&sessionSummaries,
+      typeof recReasons!=='undefined'&&recReasons,typeof bodyMaps!=='undefined'&&bodyMaps,typeof capturedPhotos!=='undefined'&&capturedPhotos,
+      typeof providerNoteDrafts!=='undefined'&&providerNoteDrafts,typeof summaryObsDraft!=='undefined'&&summaryObsDraft,typeof summaryNoteDraft!=='undefined'&&summaryNoteDraft,
+      typeof msgStore!=='undefined'&&msgStore,typeof vcSubmissions!=='undefined'&&vcSubmissions,typeof vcInvites!=='undefined'&&vcInvites,
+      typeof clientHealingStage!=='undefined'&&clientHealingStage,typeof summaryGuides!=='undefined'&&summaryGuides,typeof summaryGuideOptOut!=='undefined'&&summaryGuideOptOut];
+    const cand={};
+    maps.forEach(m=>{if(m&&typeof m==='object')Object.keys(m).forEach(id=>{if(!CL[id])cand[id]=1;});});
+    const pairs=[];
+    Object.keys(cand).forEach(id=>{const t=_mergeTargetOf(id,gone);if(t&&CL[t])pairs.push([t,id]);});
+    if(!pairs.length)return 0;
+    _mergeBatch={pairs:[]};
+    try{pairs.forEach(p=>{try{_mergeSideStores(p[0],p[1]);}catch(e){}});}
+    finally{const b=_mergeBatch;_mergeBatch=null;try{_persistMergeSideStores(!!(b&&b.ap),!!(b&&b.rem));}catch(e){}}
+    try{console.log('[dupes] moved leftovers of '+pairs.length+' merged cop'+(pairs.length===1?'y':'ies')+' onto the kept chart');}catch(e){}
+    return pairs.length;
+  }catch(e){return 0;}
+}
 function _afterAccountRead(){
+  try{_foldMergedLeftovers();}catch(e){}
   try{if(typeof _stampClientNextVisit==='function')_stampClientNextVisit(true);}catch(e){}
   try{if(typeof _rebuildCalendarFeed==='function')_rebuildCalendarFeed();}catch(e){}
 }
@@ -25914,7 +25965,7 @@ function _fmtMoney(n){return _money(n).toLocaleString('en-US',{minimumFractionDi
 function _price(v){const n=parseFloat(String(v==null?'':v).replace(/[$\s,]/g,''));return (isFinite(n)&&n>0)?Math.round(n*100)/100:0;}
 function _coSubtotal(){return _money(_coItems.reduce((a,it)=>a+((+it.price||0)*(it.qty||1)),0));}
 let _taxRate=(function(){try{const r=parseFloat(localStorage.getItem('sc_tax_rate'));return isFinite(r)?r:0;}catch(e){return 0;}})();
-function _saveTaxRate(v){_taxRate=Math.min(100,Math.max(0,parseFloat(v)||0));try{(function(_v){localStorage.setItem('sc_tax_rate',_v);if(typeof _pushKeyNow==='function')_pushKeyNow('sc_tax_rate',_v);})(String(_taxRate));}catch(e){}if(typeof Cloud!=='undefined'&&Cloud&&Cloud.pushAllLocal){try{Cloud.pushAllLocal();}catch(e){}}}
+function _saveTaxRate(v){_taxRate=Math.min(100,Math.max(0,parseFloat(v)||0));try{(function(_v){localStorage.setItem('sc_tax_rate',_v);if(typeof _pushKeyNow==='function')_pushKeyNow('sc_tax_rate',_v);})(String(_taxRate));}catch(e){}}   /* _pushKeyNow sends it; the old pushAllLocal here re-sent the whole workspace */
 function _coTaxAmt(){const rate=_effTaxRate();if(rate<=0)return 0;const t=_coItems.reduce((a,it)=>a+((it.taxable===false)?0:((+it.price||0)*(it.qty||1))),0);return _money(t*rate/100);}
 function _coTotal(){return _money(_coSubtotal()+_coTaxAmt());}
 // The amount to charge/invoice: line-item total when there are items, otherwise the

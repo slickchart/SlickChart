@@ -112,8 +112,36 @@ export default async function handler(req, res) {
       try { await snapshotBeforeWrite(owner, items); }
       catch (e) { console.error('[store] history snapshot failed (save continues):', e && e.message); }
 
+      // A device that had not heard about a delete or a merge still carries that client in its list,
+      // and its next upload put the copy back into the account's list (hidden by the delete record on
+      // every device, but there). Strip ids whose delete is newer than any put-back, using the
+      // account's delete records merged with any arriving in this same request. Same rule the app
+      // applies on load (_purgeRemovedClients / _unDeletedClientIds), so nothing the app would show
+      // is removed. kv_history already holds the copy from before this write.
+      const _ids = async (key) => {
+        const out = {};
+        try { const r = await q`SELECT v FROM kv WHERE owner=${owner} AND k=${key}`; const o = r[0] ? JSON.parse(r[0].v) : null; if (o && typeof o === 'object' && !Array.isArray(o)) Object.assign(out, o); } catch (e) {}
+        try { const inc = items && items[key] != null ? JSON.parse(String(items[key])) : null; if (inc && typeof inc === 'object' && !Array.isArray(inc)) for (const i of Object.keys(inc)) { const a = typeof out[i] === 'number' ? out[i] : (i in out ? 1 : 0), b = typeof inc[i] === 'number' ? inc[i] : 1; out[i] = Math.max(a, b); } } catch (e) {}
+        return out;
+      };
+      const stripRemoved = async (val) => {
+        try {
+          const roster = JSON.parse(val);
+          if (!roster || typeof roster !== 'object' || Array.isArray(roster)) return val;
+          const del = await _ids('sc_deleted_clients'), und = await _ids('sc_undeleted_clients');
+          let n = 0;
+          for (const id of Object.keys(roster)) {
+            if (!(id in del)) continue;
+            const d = typeof del[id] === 'number' ? del[id] : 1, u = typeof und[id] === 'number' ? und[id] : (id in und ? 1 : 0);
+            if (d > u) { delete roster[id]; n++; }
+          }
+          return n ? JSON.stringify(roster) : val;
+        } catch (e) { return val; }
+      };
+
       for (const [k, v] of entries) {
-        const val = v == null ? null : String(v);
+        let val = v == null ? null : String(v);
+        if (k === 'sc_clients' && val) val = await stripRemoved(val);
         if (UNION_SET_KEYS[k] && isJsonArray(val)) {
           // Union, never replace. See UNION_SET_KEYS above.
           await q`INSERT INTO kv (owner, k, v, updated_at)

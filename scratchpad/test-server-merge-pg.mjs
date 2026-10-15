@@ -57,6 +57,18 @@ await call(store, M, 'A', { items: { sc_settings: JSON.stringify({ a: 1 }) } });
 await call(store, M, 'A', { items: { sc_settings: JSON.stringify({ b: 2 }) } });
 d = await get('A', 'sc_settings');
 check('ordinary keys still overwrite', d && !d.a && d.b === 2, JSON.stringify(d));
+// a stale device's roster upload cannot put a removed client back into the account's list
+await call(store, M, 'A', { items: { sc_deleted_clients: JSON.stringify({ gone1: 5000, back1: 5000 }), sc_undeleted_clients: JSON.stringify({ back1: 6000 }) } });
+await call(store, M, 'A', { items: { sc_clients: JSON.stringify({ gone1: { name: 'Merged copy' }, back1: { name: 'Put back' }, live: { name: 'Live' } }) } });
+d = await get('A', 'sc_clients');
+check('removed client stripped from an uploaded roster', d && !d.gone1, JSON.stringify(d));
+check('a put-back newer than its delete is kept', d && d.back1 && d.live, JSON.stringify(d));
+await call(store, M, 'A', { items: { sc_deleted_clients: JSON.stringify({ inreq: 9 }), sc_clients: JSON.stringify({ inreq: { name: 'x' }, live: { name: 'Live' } }) } });
+d = await get('A', 'sc_clients');
+check('a delete arriving in the same request also counts', d && !d.inreq && d.live, JSON.stringify(d));
+await call(store, M, 'B', { items: { sc_clients: JSON.stringify({ gone1: { name: 'B own client with same id' } }) } });
+d = await get('B', 'sc_clients');
+check('another account\'s delete record never strips this account', d && d.gone1, JSON.stringify(d));
 // mergeClientRows
 await C.ensureClientTables();
 await C.upsertClient('A', { id: 'keep', name: 'Pat', data: {} });
