@@ -290,6 +290,16 @@ The proxy blocks live `slickchart.app`, so test against the local file with rout
   person actually followed its export path in the live product. Never set that flag from docs, a
   search, or memory, and never generate those pages by swapping a name into a template (scaled
   content abuse). See `switch-src/README.md`.
+- **Deploy-time split (2026-10-15):** `vercel.json` runs `scripts/build-app-split.cjs` as the build
+  command. ON VERCEL ONLY (`VERCEL=1`) it moves the big inline `<script>` of `slickchart.html` into
+  `assets/app-<hash>.js` (served `immutable`), because phones code-cache external scripts but recompile
+  3 MB of inline JS on every launch (measured: repeat-launch Home 1.1-2.6s -> 0.5-0.6s). The repo file
+  is never changed, so keep editing `slickchart.html` and testing it as one file. Any error in the
+  script leaves the deploy unsplit. `sw.js` serves `assets/app-*` cache-first and opens the page from
+  the saved copy after 3s on a weak signal, but only if that copy's code file is also saved. To test
+  the split locally: copy the folder, run `VERCEL=1 node scripts/build-app-split.cjs` in the copy, serve
+  it with `scratchpad/vercel-like-server.mjs <dir> <port>`; `scratchpad/test-sw-shell.mjs` covers the
+  service worker, `scratchpad/perf-boot.mjs` the timings.
 - **Deploy:** Vercel auto-deploys from `main`, but **you do not push `main`** — §1a does, overnight,
   from `release`. JS runs live from the server, so JS fixes reach the native app without an app-store
   resubmit; native *plugin* changes need a rebuild. Because the JS is live, the previous build stays

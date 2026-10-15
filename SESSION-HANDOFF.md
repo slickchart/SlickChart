@@ -7216,3 +7216,22 @@ Changed:
 Not changed (recommendations, see report): 44-48px targets throughout (339 still between 24 and 44),
 11px text in the client app could go to 12-13px for older clients, sync-conflict messaging, Capacitor
 storage (treat device storage as reclaimable; server is the source of truth, already the design).
+
+## 2026-10-15c — Faster launch: deploy-time script split + service worker (PREVIEW FIRST, then release)
+Ashley: "is there anything we can do to make the load times faster? it still feels pretty slow" ->
+"do deep research and make changes based on that". Report: `reports/Faster app load times.md`.
+Measured (4x CPU, 4G, 300-client account, Vercel-like brotli/ETag server): a CPU profile showed ~2.0s of
+native time compiling the 3 MB inline script vs ~0.5s for ALL the app's own functions.
+Changed (see CLAUDE.md "Deploy-time split"): `scripts/build-app-split.cjs` + `vercel.json`
+buildCommand/outputDirectory/immutable header for `/assets/app-*`; `sw.js` v84 (code file cache-first,
+3s cap on opening, never a saved page whose code file is missing).
+Before -> after: repeat launch Home 1.1-2.6s -> 0.5-0.6s, all data 2.1-3.6s -> 1.4-1.6s; first launch
+after a deploy Home 2.4s -> 1.7s; longest freeze ~0.35-0.8s -> 0.12-0.26s; 6s network stall -> opens
+in 3.3s from the saved copy; offline opens.
+All suites pass against the SPLIT build (split served by the Vercel-like server); test-sw-shell 5/5.
+NOT verifiable here: Vercel's own build step (preview needs Vercel sign-in). Ashley opens the branch
+preview once; if it loads, push release. iOS native shell: no service worker there (no
+WKAppBoundDomains), so it gets the code-file caching but not the 3s cap; JSC code-cache gain unmeasured.
+Recommended next (not done): subset + self-host the 865 KB Tabler icon font; boot timing marks in the
+self-check; native launch-screen colour to remove the white flash; client page (`api/client-page.js`
+sends no-store, 551 KB each open).
