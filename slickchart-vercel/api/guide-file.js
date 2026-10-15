@@ -53,19 +53,28 @@ export default async function handler(req, res) {
         if (chunk.length > 1200000) { res.status(413).json({ error: 'Chunk too large.' }); return; }
         if (index >= total) { res.status(400).json({ error: 'Bad chunk index.' }); return; }
         const last = (index === total - 1);
+        // Pieces gather in `staging`; the file people can fetch (`data`) is only replaced, whole, when
+        // the last piece arrives. A brand-new file is simply not served until then (complete=false).
         if (index === 0) {
-          await q`INSERT INTO files (owner, id, name, type, data, complete, updated_at)
-                  VALUES (${owner}, ${id}, ${name}, ${type}, ${chunk}, ${last}, now())
-                  ON CONFLICT (owner, id) DO UPDATE SET name = EXCLUDED.name, type = EXCLUDED.type,
-                    data = EXCLUDED.data, complete = EXCLUDED.complete, updated_at = now()`;
+          if (last) {
+            await q`INSERT INTO files (owner, id, name, type, data, complete, staging, updated_at)
+                    VALUES (${owner}, ${id}, ${name}, ${type}, ${chunk}, true, NULL, now())
+                    ON CONFLICT (owner, id) DO UPDATE SET name = EXCLUDED.name, type = EXCLUDED.type,
+                      data = EXCLUDED.data, complete = true, staging = NULL, updated_at = now()`;
+          } else {
+            await q`INSERT INTO files (owner, id, name, type, data, complete, staging, updated_at)
+                    VALUES (${owner}, ${id}, ${name}, ${type}, NULL, false, ${chunk}, now())
+                    ON CONFLICT (owner, id) DO UPDATE SET staging = EXCLUDED.staging, updated_at = now()`;
+          }
         } else {
-          // Append only onto a row that is mid-upload. If piece 0 never landed, or the row was
-          // already completed by another attempt, this writes nothing and the client restarts —
-          // far better than silently building a corrupt file out of two interleaved attempts.
-          const r = await q`UPDATE files SET data = COALESCE(data, '') || ${chunk},
-                                   complete = ${last}, updated_at = now()
-                             WHERE owner = ${owner} AND id = ${id} AND complete = false
-                             RETURNING id`;
+          // Append only onto an upload in progress. If piece 0 never landed, this writes nothing and
+          // the client restarts, rather than building a corrupt file out of two interleaved attempts.
+          const r = last
+            ? await q`UPDATE files SET data = staging || ${chunk}, staging = NULL, complete = true,
+                              name = ${name}, type = ${type}, updated_at = now()
+                        WHERE owner = ${owner} AND id = ${id} AND staging IS NOT NULL RETURNING id`
+            : await q`UPDATE files SET staging = staging || ${chunk}, updated_at = now()
+                        WHERE owner = ${owner} AND id = ${id} AND staging IS NOT NULL RETURNING id`;
           if (!r.length) { res.status(409).json({ error: 'Upload out of sync. Start this file again.' }); return; }
         }
         res.status(200).json({ ok: true, part: index, complete: last });
@@ -104,7 +113,7 @@ export default async function handler(req, res) {
         if (!owner) { res.status(401).json({ error: 'Not logged in.' }); return; }
         const q = sql();
         const rows = await q`SELECT id, type, updated_at, length(coalesce(data, '')) AS size
-          FROM files WHERE owner = ${owner} AND left(id, 3) = 'ph_' AND data IS NOT NULL
+          FROM files WHERE owner = ${owner} AND left(id, 3) = 'ph_' AND data IS NOT NULL AND complete IS NOT FALSE
           ORDER BY updated_at DESC LIMIT 5000`;
         res.setHeader('Cache-Control', 'no-store');
         res.status(200).json({ ok: true, photos: (rows || []).map(r => ({ id: r.id, type: r.type || '', size: Number(r.size) || 0, updated_at: r.updated_at })) });
@@ -141,6 +150,8 @@ export default async function handler(req, res) {
         // blob (that's the only place they learn an id). Without this, any of a provider's clients
         // could read any of that provider's files by id (intra-tenant access).
         let cdata = c.data; if (typeof cdata === 'string') { try { cdata = JSON.parse(cdata); } catch (e) { cdata = {}; } }
+        // Sharing turned off: her progress photos are no longer fetchable by the client.
+        if (cdata && cdata.photosShared === false && cdata.progressPhotos) { cdata = Object.assign({}, cdata); delete cdata.progressPhotos; }
         const allowed = new Set();
         (function walk(o) {
           if (!o || typeof o !== 'object') return;

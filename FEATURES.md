@@ -297,6 +297,7 @@ saved anywhere", not "does this always call that".
 | `_hydrateOffloaded` | `/api/square/connection` | via `_sqConnState` |
 | `_hydrateOffloaded` | `/api/totp-setup` | via `_beginTotpEnroll` |
 | `_hydrateOffloaded` | `/api/transcribe` | via `_probeWhisper` |
+| `_hydrateVcSubs` | `/api/guide-file` | via `_getGuideFile` |
 | `_impUndo` | `/api/clients` | via `_serverDeleteClients` |
 | `_impUndoGo` | `/api/clients` | via `_serverDeleteClients` |
 | `_impUndoTap` | `/api/clients` | via `_serverDeleteClients` |
@@ -456,6 +457,7 @@ saved anywhere", not "does this always call that".
 | `_pushEnable` | `/api/provider-push` | direct |
 | `_pushFlushNow` | `/api/store` | direct |
 | `_pushStatus` | `/api/provider-push` | direct |
+| `_pushVcSubsSlim` | `/api/guide-file` | via `_putFileBody` |
 | `_putFileBody` | `/api/guide-file` | direct |
 | `_putFileWithRetry` | `/api/guide-file` | via `_putFileBody` |
 | `_reRenderAttn` | `/api/clients` | via `syncClientEvents` |
@@ -733,6 +735,7 @@ saved anywhere", not "does this always call that".
 | `_uploadCourseFilesInBackground` | `/api/provider-form` | via `submitSignOnDevice` |
 | `_uploadGuideFileToServer` | `/api/guide-file` | via `_putFileBody` |
 | `_upsertClientsFromSquare` | `/api/clients` | via `_serverMergeClients` |
+| `_vcFillRefs` | `/api/guide-file` | via `_getGuideFile` |
 | `_vcFlagBannerHTML` | `/api/clients` | via `_syncSpecificClientsToServer` |
 | `_vcFlagBannerHTML` | `/api/provider-message` | via `_sendProviderMessageToClient` |
 | `_vcFollowUpDone` | `/api/clients` | via `syncClientEvents` |
@@ -847,6 +850,7 @@ saved anywhere", not "does this always call that".
 | `loadCustomResources` | `/api/provider-form` | via `submitSignOnDevice` |
 | `loadRoutineTemplate` | `/api/square/catalog` | via `_autoSyncCatalog` |
 | `loadVcState` | `/api/clients` | via `syncClientEvents` |
+| `loadVcState` | `/api/guide-file` | via `_getGuideFile` |
 | `loadVcState` | `/api/square/appointments` | via `_loadSquareAppts` |
 | `markAllNotifsRead` | `/api/clients` | via `syncClientEvents` |
 | `moveClientProd` | `/api/clients` | via `_syncSpecificClientsToServer` |

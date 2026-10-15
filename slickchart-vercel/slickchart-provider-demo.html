@@ -493,7 +493,7 @@ const S=document.getElementById('S');
 // resets when I save it" and there was no way to tell whether her phone had any of them — a whole
 // day was spent debugging code she may not have been running. Shown at the bottom of Settings, so
 // the answer is a screenshot away. Bump it on every ship.
-const APP_BUILD='2026-10-15g';
+const APP_BUILD='2026-10-15h';
 
 
 /* ════════════════════════════════════════════════════════════════
@@ -6165,6 +6165,8 @@ async function _doLogout(){
     if(_tp&&'serviceWorker' in navigator){await Promise.race([(async function(){const reg=await navigator.serviceWorker.getRegistration();const sub=reg&&reg.pushManager?await reg.pushManager.getSubscription():null;
       if(sub){try{await fetch('/api/provider-push',{method:'DELETE',headers:{'Content-Type':'application/json','Authorization':'Bearer '+_tp},body:JSON.stringify({endpoint:sub.endpoint})});}catch(e){}try{await sub.unsubscribe();}catch(e){}}})(),new Promise(r=>setTimeout(r,2000))]);}}catch(e){}
   try{var _t=(typeof Cloud!=='undefined'&&Cloud&&Cloud.token)||localStorage.getItem('sc_token')||'';if(_t)fetch('/api/logout',{method:'POST',keepalive:true,headers:{'Authorization':'Bearer '+_t}}).catch(function(){});}catch(e){}
+  // Stamp the photo store with the account that is leaving, so the next account on this device never reads it.
+  try{const _me=(typeof _tokenOwner==='function')?_tokenOwner():'';if(_me&&typeof _idb!=='undefined'&&_idb.available&&_idb.available())await Promise.race([_idb.set('captured_photos_owner',_me),new Promise(r=>setTimeout(r,1500))]);}catch(e){}
   try{Cloud.logout();}catch(e){}
   try{localStorage.removeItem('sc_token');}catch(e){}
   // Clear this account's synced data from local storage. It's safe in the cloud, and
@@ -7121,6 +7123,7 @@ function _markPhotoBackedUp(pid){
   try{if(typeof _pushKeyNow==='function')_pushKeyNow('sc_photo_backed',v);}catch(e){}   // this must run regardless
 }
 let _photoBackupRunning=false;
+try{window.addEventListener('online',function(){try{_backupPhotosToServer._waitUntil=0;_backupPhotosToServer._backoff=0;_backupPhotosToServer();}catch(e){}});}catch(e){}
 function _backupPhotosToServer(){
   try{
     if(typeof Cloud==='undefined'||!Cloud||!Cloud.token)return;
@@ -7135,12 +7138,26 @@ function _backupPhotosToServer(){
       });
     });
     if(!jobs.length)return;
+    if(typeof navigator!=='undefined'&&navigator.onLine===false)return;   // resumes on 'online'
+    if(_backupPhotosToServer._waitUntil&&Date.now()<_backupPhotosToServer._waitUntil)return;
+    // Photos that keep failing go to the BACK, so one bad photo can never block every photo after it.
+    const fails=_backupPhotosToServer._fails||(_backupPhotosToServer._fails={});
+    jobs.sort(function(a,b){return (fails[a.pid]||0)-(fails[b.pid]||0);});
     _photoBackupRunning=true;
     // Upload a batch; each success is remembered so we never re-send. Remaining jobs go on the next
     // persist pass, so a big backlog drains over time without blocking or hammering the server.
+    let okN=0,authBad=false;
     Promise.all(jobs.slice(0,6).map(function(j){
-      return _uploadGuideFileToServer(j.pid,{name:'',type:j.type,data:j.data}).then(function(r){if(r&&r.ok)_markPhotoBackedUp(j.pid);}).catch(function(){});
-    })).then(function(){_photoBackupRunning=false;if(jobs.length>6){try{setTimeout(_backupPhotosToServer,1500);}catch(e){_photoBackupRunning=false;}}}).catch(function(){_photoBackupRunning=false;});
+      return _uploadGuideFileToServer(j.pid,{name:'',type:j.type,data:j.data}).then(function(r){if(r&&r.ok){okN++;_markPhotoBackedUp(j.pid);delete fails[j.pid];}else{fails[j.pid]=(fails[j.pid]||0)+1;if(r&&(r.status===401||r.reason==='signedout'))authBad=true;}}).catch(function(){fails[j.pid]=(fails[j.pid]||0)+1;});
+    })).then(function(){
+      _photoBackupRunning=false;
+      if(authBad)return;                                     // signed out: nothing will succeed until she signs in
+      // A batch that got nothing through backs off (30s, doubling to 5 min) instead of retrying every
+      // 1.5s forever while offline.
+      if(!okN){const n=_backupPhotosToServer._backoff=Math.min(300000,(_backupPhotosToServer._backoff||15000)*2);_backupPhotosToServer._waitUntil=Date.now()+n;setTimeout(_backupPhotosToServer,n+50);return;}
+      _backupPhotosToServer._backoff=0;_backupPhotosToServer._waitUntil=0;
+      if(jobs.length>6){try{setTimeout(_backupPhotosToServer,1500);}catch(e){_photoBackupRunning=false;}}
+    }).catch(function(){_photoBackupRunning=false;});
   }catch(e){_photoBackupRunning=false;}
 }
 async function _restorePhotosFromCloud(){
@@ -7338,7 +7355,7 @@ async function _recoverUnindexedServerPhotos(){
     for(var i=0;i<missing.length&&i<300;i++){
       var f=missing[i];if(!f||have.has(f.id))continue;
       var file=null;try{file=await _getGuideFile(f.id);}catch(e){}
-      if(file&&file.data){var _t=0;try{_t=f.updated_at?Date.parse(f.updated_at):0;}catch(e){}capturedPhotos.__recovered__.push({url:file.data,ts:_t||0,phase:'',angle:'',pid:f.id,source:'cloud-recovered'});have.add(f.id);got++;}
+      if(file&&file.data){var _t=0;try{_t=f.updated_at?Date.parse(f.updated_at):0;}catch(e){}capturedPhotos.__recovered__.push({url:file.data,ts:_t||0,phase:'',angle:'',pid:f.id,source:'cloud-recovered'});try{_markPhotoBackedUp(f.id);}catch(e){}have.add(f.id);got++;}
     }
     return got;
   }catch(e){return 0;}
@@ -7836,6 +7853,27 @@ async function _initCapturedPhotos(){
       if(ok){try{localStorage.removeItem('sc_captured_photos');}catch(e){}}
       return;
     }
+    // WHOSE photos are these (CLAUDE.md §0)? The photo store survived sign-out with no owner, so the next
+    // account to sign in on this device loaded the previous account's client photos, uploaded them into
+    // its own account and offered them to "assign". It is not simply deleted at sign-out because it can
+    // hold photos taken offline that never uploaded — so it is set aside under its owner, and given back
+    // only to that same account.
+    try{
+      const me=(typeof _tokenOwner==='function')?_tokenOwner():'';
+      if(me){
+        const stamp=(await _idb.get('captured_photos_owner'))||'';
+        if(!stamp){await _idb.set('captured_photos_owner',me);}
+        else if(stamp!==me){
+          const theirs=await _idb.get('captured_photos');
+          if(theirs&&typeof theirs==='object'&&Object.keys(theirs).length){const prev=await _idb.get('captured_photos__'+stamp);if(!prev)await _idb.set('captured_photos__'+stamp,theirs);}
+          const mine=await _idb.get('captured_photos__'+me);
+          await _idb.set('captured_photos',(mine&&typeof mine==='object')?mine:{});
+          if(mine){try{await _idb.del('captured_photos__'+me);}catch(e){}}
+          await _idb.set('captured_photos_owner',me);
+          capturedPhotos=(mine&&typeof mine==='object')?mine:{};
+        }
+      }
+    }catch(e){}
     // Already migrated (or brand new): pull photos from IndexedDB into memory, then refresh the
     // current screen so they show (skip if the user is typing, to avoid stealing focus).
     const v=await _idb.get('captured_photos');
@@ -7862,10 +7900,38 @@ function persistAutos(){_stampRows('sc_autos',autos);try{(function(_v){localStor
 function loadAutos(){try{const raw=localStorage.getItem('sc_autos');if(raw){const arr=JSON.parse(raw);if(Array.isArray(arr))autos=arr;}}catch(e){}}
 function persistNotifSettings(){try{const v=JSON.stringify(notifSettings);localStorage.setItem('sc_notif_settings',v);if(typeof _pushKeyNow==='function')_pushKeyNow('sc_notif_settings',v);}catch(e){}}
 function loadNotifSettings(){try{const raw=localStorage.getItem('sc_notif_settings');if(raw){const v=JSON.parse(raw);if(v&&typeof v==='object')notifSettings=v;}}catch(e){}}
-function persistCheckins(){try{localStorage.setItem('sc_checkins',JSON.stringify(checkins));}catch(e){}}
+// Check-in photos are already filed on the client's photo chart (and backed up to the server one by one),
+// so the check-in log refers to them by photo id instead of carrying a second base64 copy. With the copy,
+// a busy practice's log passed the 4.5 MB request limit and stopped syncing at all: every new check-in
+// after that never reached her other devices. Only photos actually found on the chart are swapped.
+function _slimCheckins(arr){
+  try{
+    if(!Array.isArray(arr)||typeof capturedPhotos==='undefined')return arr;
+    arr.forEach(function(ci){
+      if(!ci||!Array.isArray(ci.photos)||!ci.photos.length||!ci.clientId)return;
+      const onChart=(capturedPhotos[ci.clientId]||[]);
+      const pids=ci.photos.map(function(u){if(typeof u!=='string'||!/^data:/i.test(u))return null;const p=onChart.find(function(x){return x&&x.url===u&&x.pid;});return p?p.pid:null;});
+      if(pids.some(function(x){return !x;}))return;          // not all filed yet: keep the bytes for now
+      ci.photoPids=pids;ci.photoCount=pids.length;ci.photos=[];
+    });
+  }catch(e){}
+  return arr;
+}
+// The photos of one check-in, from its own bytes, or from the chart by photo id.
+function _checkinPhotos(ci){
+  try{
+    if(ci&&Array.isArray(ci.photos)&&ci.photos.length)return ci.photos;
+    if(ci&&Array.isArray(ci.photoPids)&&ci.photoPids.length&&typeof capturedPhotos!=='undefined'){
+      const onChart=capturedPhotos[ci.clientId]||[];
+      return ci.photoPids.map(function(pid){const p=onChart.find(function(x){return x&&x.pid===pid;});return p&&p.url;}).filter(Boolean);
+    }
+  }catch(e){}
+  return (ci&&ci.photos)||[];
+}
+function persistCheckins(){try{_slimCheckins(checkins);localStorage.setItem('sc_checkins',JSON.stringify(checkins));}catch(e){}}
 // Push the check-in log to the server RIGHT NOW (not on the 700ms debounce), so a "cleared" or
 // "marked read" state can't be undone by a quick refresh's cloud pull restoring the old copy.
-function _persistCheckinsNow(){try{const v=JSON.stringify(checkins);localStorage.setItem('sc_checkins',v);if(typeof _pushKeyNow==='function')_pushKeyNow('sc_checkins',v);}catch(e){}}
+function _persistCheckinsNow(){try{_slimCheckins(checkins);const v=JSON.stringify(checkins);localStorage.setItem('sc_checkins',v);if(typeof _pushKeyNow==='function')_pushKeyNow('sc_checkins',v);}catch(e){}}
 // Durable record of check-ins the provider has cleared from the log, so a re-processed check-in
 // event can never re-add one they already dealt with (the "cleared check-ins keep coming back" bug).
 function _clearedCheckinsLog(){try{return JSON.parse(localStorage.getItem('sc_ci_cleared')||'[]');}catch(e){return [];}}
@@ -15278,7 +15344,41 @@ function persistVcState(){
   if(!stored){try{localStorage.setItem('sc_pro_vc_subs',v);}catch(e){}}
   // The account copy is what makes a consult survive a new phone. Pushed directly rather than via the
   // setItem shim, because the local write no longer goes through localStorage at all.
+  // Once the consults outgrow one upload (4.5 MB; a handful of consults with photos did), the account
+  // copy carries each photo as a reference to a file uploaded on its own; this device keeps the bytes.
+  // Small accounts are unchanged, so a device on the previous build still reads them as before.
+  if(v.length>3000000){try{_pushVcSubsSlim();}catch(e){}return;}
   try{if(typeof _pushKeyNow==='function')_pushKeyNow('sc_pro_vc_subs',v);}catch(e){}
+}
+function _vcPhotoPid(src){let h=5381;const t=String(src);for(let i=0;i<t.length;i+=7)h=((h<<5)+h+t.charCodeAt(i))|0;return 'ph_vc_'+(h>>>0).toString(36)+'_'+t.length.toString(36);}
+async function _pushVcSubsSlim(){
+  if(_pushVcSubsSlim._busy){_pushVcSubsSlim._again=true;return;}
+  _pushVcSubsSlim._busy=true;
+  try{
+    const slim=JSON.parse(JSON.stringify(vcSubmissions||{}));const ups=[];const done=_loadPhotoBackedUp();
+    Object.keys(slim).forEach(function(cid){const sub=slim[cid];if(!sub)return;
+      ['photos','refs'].forEach(function(f){(Array.isArray(sub[f])?sub[f]:[]).forEach(function(ph){
+        if(!ph||typeof ph.src!=='string'||!/^data:/i.test(ph.src))return;
+        const pid=_vcPhotoPid(ph.src);
+        if(!done.has(pid)){let type='image/jpeg';try{type=ph.src.slice(5,ph.src.indexOf(';'))||type;}catch(e){}ups.push(_uploadGuideFileToServer(pid,{name:'',type:type,data:ph.src}).then(function(r){if(r&&r.ok){_markPhotoBackedUp(pid);return true;}return false;}).catch(function(){return false;}));}
+        ph.src='fileref:'+pid;
+      });});
+    });
+    const res=await Promise.all(ups);
+    if(res.every(Boolean)&&typeof _pushKeyNow==='function')_pushKeyNow('sc_pro_vc_subs',JSON.stringify(slim));   // only once every photo it points at is really there
+  }catch(e){}
+  finally{_pushVcSubsSlim._busy=false;if(_pushVcSubsSlim._again){_pushVcSubsSlim._again=false;setTimeout(_pushVcSubsSlim,2000);}}
+}
+// A consult arriving with photo REFERENCES: keep this device's own bytes where it has them, and fetch the
+// rest in the background.
+function _vcFillRefs(cid){
+  try{const sub=vcSubmissions[cid];if(!sub)return;
+    ['photos','refs'].forEach(function(f){(Array.isArray(sub[f])?sub[f]:[]).forEach(function(ph){
+      if(!ph||typeof ph.src!=='string'||ph.src.indexOf('fileref:')!==0)return;
+      const pid=ph.src.slice(8);
+      _getGuideFile(pid).then(function(file){if(file&&file.data&&ph.src==='fileref:'+pid){ph.src=file.data;try{if(typeof _idb!=='undefined'&&_idb.available())_idb.set('vc_subs',JSON.stringify(vcSubmissions));}catch(e){}}}).catch(function(){});
+    });});
+  }catch(e){}
 }
 // Take a consult blob (from IndexedDB, from the legacy localStorage copy, or straight off the sync)
 // and fold it into memory without ever putting the photos back in localStorage.
@@ -15294,7 +15394,12 @@ function _hydrateVcSubs(raw){
       const nPhotos=function(x){return (x&&Array.isArray(x.photos))?x.photos.length:0;};
       // Never let a copy with FEWER photos replace one that has more — that is how a consult loses
       // the pictures it was submitted with.
-      if(!have||nPhotos(incoming)>=nPhotos(have)){vcSubmissions[cid]=incoming;added=true;}
+      if(!have||nPhotos(incoming)>=nPhotos(have)){
+        // Keep bytes this device already has for a photo the account now carries by reference.
+        try{if(have)['photos','refs'].forEach(function(f){(Array.isArray(incoming[f])?incoming[f]:[]).forEach(function(ph,i){const old=Array.isArray(have[f])?have[f][i]:null;if(ph&&typeof ph.src==='string'&&ph.src.indexOf('fileref:')===0&&old&&typeof old.src==='string'&&/^data:/i.test(old.src)&&_vcPhotoPid(old.src)===ph.src.slice(8))ph.src=old.src;});});}catch(e){}
+        vcSubmissions[cid]=incoming;added=true;
+        try{_vcFillRefs(cid);}catch(e){}
+      }
     });
     return added;
   }catch(e){return false;}
@@ -20353,7 +20458,9 @@ function _assembleClientData(id){
   // device-side merge, but it never reached the SERVER — so upsertClient could not tell a fresh
   // write from a stale device replaying an older copy, and the client-facing summaries (which live
   // only in this blob) were replaced by whichever device posted last. See lib/clients.js.
-  return {_uAt:(Number(c._uAt)||0),animals,studio,studioAddress,studioPhone,website,providerName,profile:{skin:c.skin||'',concerns:c.concerns||'',allergies:c.allergies||'',fitz:c.fitz||'',treatment:c.treatment||'',lastVisit:c.lastVisit||'',nextVisit:c.nextVisit||'',email:c.email||'',phone:c.phone||''},summaries,aftercare,products,routine,forms,pendingForms,pendingGuides,pendingCourses,progressPhotos,booking:{canRequest:true},suggestedBooking,availability,vcInvite,routineReview,checkinCfg:checkinCfgOut,checkinReqAt:c.checkinReqAt||0,loyalty:loyaltyOut};
+  // photosShared travels with the list so the server lets an emptied list through (sharing turned off)
+  // instead of protecting the old photos, which kept them visible to the client.
+  return {_uAt:(Number(c._uAt)||0),photosShared:_photosShared(c),animals,studio,studioAddress,studioPhone,website,providerName,profile:{skin:c.skin||'',concerns:c.concerns||'',allergies:c.allergies||'',fitz:c.fitz||'',treatment:c.treatment||'',lastVisit:c.lastVisit||'',nextVisit:c.nextVisit||'',email:c.email||'',phone:c.phone||''},summaries,aftercare,products,routine,forms,pendingForms,pendingGuides,pendingCourses,progressPhotos,booking:{canRequest:true},suggestedBooking,availability,vcInvite,routineReview,checkinCfg:checkinCfgOut,checkinReqAt:c.checkinReqAt||0,loyalty:loyaltyOut};
 }
 let _syncingClients=false,_clientSyncTimer=null;
 // Sync bookkeeping: have we pushed the whole roster at least once this session, is the next flush
@@ -24278,21 +24385,32 @@ function _autoWhenLabel(a){
 }
 // The next occurrence timestamp the scheduled cron will fire for this automation — mirrors the server's
 // dueOccurrence advance logic so a manual "Send now" can claim the SAME key and prevent a double-send.
+
+// Step a scheduled time by its repeat in the automation's OWN time zone, on the wall clock: 9:00 stays
+// 9:00 across a daylight-saving change, and the 31st does not roll into the next month for good. The app
+// and the cron run this same code, so "Send now" claims exactly the occurrence the cron would send.
+function _autoWall(t,tz){try{const p=Object.fromEntries(new Intl.DateTimeFormat('en-US',{timeZone:tz||'UTC',hour12:false,year:'numeric',month:'2-digit',day:'2-digit',hour:'2-digit',minute:'2-digit',second:'2-digit'}).formatToParts(new Date(t)).filter(x=>x.type!=='literal').map(x=>[x.type,+x.value]));return {Y:p.year,M:p.month,D:p.day,h:p.hour%24,mi:p.minute,s:p.second};}catch(e){const d=new Date(t);return {Y:d.getUTCFullYear(),M:d.getUTCMonth()+1,D:d.getUTCDate(),h:d.getUTCHours(),mi:d.getUTCMinutes(),s:d.getUTCSeconds()};}}
+function _autoFromWall(w,tz){const naive=Date.UTC(w.Y,w.M-1,w.D,w.h,w.mi,w.s);let g=naive;for(let i=0;i<2;i++){const o=_autoWall(g,tz);g=naive-(Date.UTC(o.Y,o.M-1,o.D,o.h,o.mi,o.s)-g);}return g;}
+function _autoOccAt(base,rep,tz,k){
+  const nn=Math.max(1,parseInt(rep,10)||1);const w=_autoWall(base,tz);
+  let Y=w.Y,M=w.M,D=w.D;
+  if(rep.includes('month')){M+=nn*k;Y+=Math.floor((M-1)/12);M=((M-1)%12+12)%12+1;const dim=new Date(Date.UTC(Y,M,0)).getUTCDate();D=Math.min(w.D,dim);}
+  else if(rep.includes('year')||rep.includes('annual')){Y+=nn*k;const dim=new Date(Date.UTC(Y,M,0)).getUTCDate();D=Math.min(w.D,dim);}
+  else{const days=(rep.includes('day')&&!rep.includes('week'))?nn*k:nn*7*k;const x=new Date(Date.UTC(Y,M-1,D+days));Y=x.getUTCFullYear();M=x.getUTCMonth()+1;D=x.getUTCDate();}
+  return _autoFromWall({Y,M,D,h:w.h,mi:w.mi,s:w.s},tz);
+}
 function _autoNextOcc(a){
   const base=Number(a&&a.sendAt)||0;if(!base)return 0;
   const rep=String((a&&a.repeatEvery)||'').toLowerCase();
   if(!rep||rep==='once')return base;                 // one-shot: the scheduled moment itself
-  const HOUR=3600000,now=Date.now();
-  const nn=Math.max(1,parseInt(rep,10)||1);   // custom "N days/weeks/months" → step by N
-  const advance=(t)=>{
-    if(rep.includes('week'))return t+nn*7*24*HOUR;
-    if(rep.includes('month')){const d=new Date(t);d.setMonth(d.getMonth()+nn);return d.getTime();}
-    if(rep.includes('year')||rep.includes('annual')){const d=new Date(t);d.setFullYear(d.getFullYear()+nn);return d.getTime();}
-    if(rep.includes('day'))return t+nn*24*HOUR;
-    return t+nn*7*24*HOUR;
-  };
-  let occ=base,guard=0;while(occ<now&&guard++<6000){const n=advance(occ);if(n<=occ)break;occ=n;}
-  return occ;
+  let tz='UTC';try{tz=(a&&a.tz)||Intl.DateTimeFormat().resolvedOptions().timeZone||'UTC';}catch(e){}
+  const now=Date.now(),GRACE=48*3600000;
+  // The occurrence the cron would still send (scheduled, at or before now, inside its 48h window) is
+  // the one to claim; only when there is none is it the next one. Pressing "Send now" at 9:05 for a
+  // 9:00 weekly used to claim NEXT week, and the cron sent this week's copy too.
+  let last=0,k=0;
+  for(;k<6000;k++){const t=_autoOccAt(base,rep,tz,k);if(t>now)return (last&&now-last<GRACE)?last:t;last=t;}
+  return last;
 }
 // Automation card "Send now" → opens the multi-select sheet pre-filled with the automation's message.
 // The sheet carries the automation so a manual send can pre-claim its scheduled occurrence (see _ssSend):
@@ -25990,7 +26108,8 @@ function _afterAccountRead(){
   try{if(typeof _rebuildCalendarFeed==='function')_rebuildCalendarFeed();}catch(e){}
 }
 function _rebuildCalendarFeed(){
-  if(_acctUnread())return;   // built from the device's stale appointments, it dropped her manual ones
+  if(_acctUnread())return;
+  if(typeof _sqApptsState!=='undefined'&&_sqApptsState==='error')return;   // a feed built now would be missing every Square booking   // built from the device's stale appointments, it dropped her manual ones
   try{
     const p=n=>String(n).padStart(2,'0');
     const stampOf=d=>d.getFullYear()+p(d.getMonth()+1)+p(d.getDate())+'T'+p(d.getHours())+p(d.getMinutes())+'00';
@@ -27392,9 +27511,23 @@ async function _paySyncSquare(auto){
         const svDay=Date.parse((sv.createdAt||'').slice(0,10)||_todayISO())||0;
         const dup=svName?_payments.find(p=>p&&!p.squareInvoiceId&&Math.round((+p.amount||0)*100)===svAmt&&String(p.clientName||'').trim().toLowerCase()===svName&&(function(){const pd=Date.parse((p.date||'').slice(0,10))||0;return svDay&&pd&&Math.abs(pd-svDay)<=3*86400000;})()):null;
         if(dup){dup.squareInvoiceId=sv.id;if(!(dup.status==='paid'&&(st==='unpaid'||st==='partial')))dup.status=st;if(sv.total!=null)dup.amount=sv.total;if(sv.amountPaid!=null)dup.amountPaid=sv.amountPaid;if(sv.tax!=null&&dup.taxAmount==null)dup.taxAmount=sv.tax;if(svPaidDate&&(!dup.paidDate||st==='paid'))dup.paidDate=svPaidDate;if(sv.publicUrl)dup.publicUrl=sv.publicUrl;}
-        else _addPayment({clientId:'',clientName:sv.client||'Client',amount:sv.total||0,amountPaid:sv.amountPaid,taxAmount:(sv.tax!=null?sv.tax:undefined),method:'Square',status:st,date:(sv.createdAt||'').slice(0,10)||_todayISO(),paidDate:svPaidDate||undefined,note:'Square invoice',source:'square',squareInvoiceId:sv.id,publicUrl:sv.publicUrl});
+        else _addPayment({id:'pay_sq_'+String(sv.id).replace(/[^A-Za-z0-9_-]/g,''),clientId:'',clientName:sv.client||'Client',amount:sv.total||0,amountPaid:sv.amountPaid,taxAmount:(sv.tax!=null?sv.tax:undefined),method:'Square',status:st,date:(sv.createdAt||'').slice(0,10)||_todayISO(),paidDate:svPaidDate||undefined,note:'Square invoice',source:'square',squareInvoiceId:sv.id,publicUrl:sv.publicUrl});
       }
     });
+    // One Square invoice is one payment. Two devices each importing the same new invoice used to keep
+    // both (random ids), doubling revenue. Keep the most complete record per invoice; retire the rest
+    // through the payments delete record so every device drops them.
+    try{
+      const byInv={};
+      _payments.forEach(function(p){if(p&&p.squareInvoiceId)(byInv[p.squareInvoiceId]=byInv[p.squareInvoiceId]||[]).push(p);});
+      const drop=new Set();
+      Object.keys(byInv).forEach(function(inv){const g=byInv[inv];if(g.length<2)return;
+        const score=function(p){return (String(p.id||'').indexOf('pay_sq_')===0?4:0)+(p.clientId?2:0)+(p.status==='paid'?1:0);};
+        g.sort(function(a,b){return score(b)-score(a)||String(a.id).localeCompare(String(b.id));});
+        g.slice(1).forEach(function(p){drop.add(p);try{_libForget('sc_payments',p);}catch(e){}});
+      });
+      if(drop.size)_payments=_payments.filter(function(p){return !drop.has(p);});
+    }catch(e){}
     _savePayments();
     if(typeof _navCur!=='undefined'&&_navCur&&_navCur.screen==='payments')renderPayments();
     try{_checkDepositOnboarding(d.invoices||[]);}catch(e){}
@@ -29322,14 +29455,20 @@ async function syncClientEvents(){
         const b={id:ev.id,clientId:cid,client:name,treatment:payload.treatment||'Appointment',
           date:payload.date||'',dateLabel:payload.dateLabel||'',time:payload.time||'',
           note:payload.note||'',status:'pending',created:ev.created_at||Date.now()};
+        // Booked INSTANTLY by her booking link: the person was already told "Booked", so it is a
+        // confirmed visit on her calendar, not a request waiting on her (it used to sit as pending).
+        const _instant=!!(payload.autoConfirmed===true);
+        if(_instant){b.status='confirmed';b.decidedAt=Date.now();}
         // The REQUEST LANDS FIRST, and the flag that gets it pushed to the account is set before
         // anything cosmetic runs. The notification formats a date and touches the feed; if any of
         // that throws, the provider must still end up with the request. Getting this order wrong is
         // how a client's booking could exist on the server and on no screen anywhere.
         SlickBridge.upsertBooking(b);
         touchedRequests=true;touchedNotif=true;
-        try{pushBookingNotif({title:'New appointment request',body:`${name} requested ${b.treatment} on ${fmtBookingDate(b)} at ${b.time}.`});}catch(e){}
-        try{providerSystemNotify('New appointment request',`${name} \u00b7 ${b.treatment} \u00b7 ${fmtBookingDate(b)} ${b.time}`);}catch(e){}
+        if(_instant){try{addConfirmedAppt(b);}catch(e){}}
+        const _bt=_instant?'New booking':'New appointment request';
+        try{pushBookingNotif({title:_bt,body:_instant?`${name} booked ${b.treatment} on ${fmtBookingDate(b)} at ${b.time}.`:`${name} requested ${b.treatment} on ${fmtBookingDate(b)} at ${b.time}.`});}catch(e){}
+        try{providerSystemNotify(_bt,`${name} \u00b7 ${b.treatment} \u00b7 ${fmtBookingDate(b)} ${b.time}`);}catch(e){}
       }else if(ev.kind==='message'){
         if(!msgStore[cid])msgStore[cid]=[];
         // Idempotency: if this exact event is already in the thread (a re-processed event after a
@@ -29343,7 +29482,10 @@ async function syncClientEvents(){
         if(mImgs.length&&c){
           if(!capturedPhotos[cid])capturedPhotos[cid]=[];
           const baseTs=(ev.created_at?(new Date(ev.created_at).getTime()||Date.now()):Date.now());
-          mImgs.forEach((url,i)=>capturedPhotos[cid].push({url,ts:baseTs+i,phase:'reference',angle:'',source:'message'}));
+          // A fixed photo id per (event, photo): two open devices each filed the same message's photos under
+          // random ids, so the account ended up with every photo twice.
+          const _hv=new Set(capturedPhotos[cid].map(p=>p&&p.pid).filter(Boolean));
+          mImgs.forEach((url,i)=>{const pid=ev&&ev.id?('ph_ev_'+String(ev.id).replace(/[^A-Za-z0-9_-]/g,'').slice(0,60)+'_'+i):undefined;if(pid&&_hv.has(pid))return;capturedPhotos[cid].push({url,ts:baseTs+i,phase:'reference',angle:'',source:'message',pid});});
           try{if(typeof persistCapturedPhotos==='function')persistCapturedPhotos();}catch(e){}
           touchedPhotos=true;
         }
@@ -29395,7 +29537,8 @@ async function syncClientEvents(){
           if(ciPhotos.length&&!_ciDup&&!_ciCleared){
             if(!capturedPhotos[cid])capturedPhotos[cid]=[];
             const baseTs=ci.at||Date.now();
-            ciPhotos.forEach((url,i)=>capturedPhotos[cid].push({url,ts:baseTs+i,phase:'reference',angle:'',source:'checkin'}));
+            const _hv=new Set(capturedPhotos[cid].map(p=>p&&p.pid).filter(Boolean));
+            ciPhotos.forEach((url,i)=>{const pid=ev&&ev.id?('ph_ev_'+String(ev.id).replace(/[^A-Za-z0-9_-]/g,'').slice(0,60)+'_'+i):undefined;if(pid&&_hv.has(pid))return;capturedPhotos[cid].push({url,ts:baseTs+i,phase:'reference',angle:'',source:'checkin',pid});});
             try{if(typeof persistCapturedPhotos==='function')persistCapturedPhotos();}catch(e){}
             touchedPhotos=true;
           }
@@ -31007,7 +31150,7 @@ function _checkinCard(ci){
         <div style="font-size:16px;color:var(--p-mut);margin-top:1px;">${_fileEsc(ci.treatment)} · ${_fileEsc(ci.dateLabel)} at ${_fileEsc(ci.time)}</div>
         <div style="margin-top:6px;display:flex;flex-wrap:wrap;gap:6px;">
           ${n?`<span style="display:inline-flex;align-items:center;gap:5px;background:var(--p-amber-bg);border:1px solid #5c2a1a;border-radius:24px;padding:2px 9px;"><i class="ti ti-alert-circle" style="font-size:16px;color:var(--p-amber);"></i><span style="font-size:14px;color:var(--p-amber);font-weight:600;">${n} flagged</span></span>`:`<span style="font-size:14px;color:var(--p-green);">No changes flagged</span>`}
-          ${(ci.photos&&ci.photos.length)?`<span style="display:inline-flex;align-items:center;gap:4px;background:var(--p-blue-bg);border:1px solid var(--p-blue-line);border-radius:24px;padding:2px 9px;"><i class="ti ti-camera" style="font-size:16px;color:var(--p-blue);"></i><span style="font-size:14px;color:var(--p-blue);font-weight:600;">${ci.photos.length} photo${ci.photos.length>1?'s':''}</span></span>`:''}
+          ${((ci.photos&&((ci.photos&&ci.photos.length)||ci.photoCount||0))||ci.photoCount)?`<span style="display:inline-flex;align-items:center;gap:4px;background:var(--p-blue-bg);border:1px solid var(--p-blue-line);border-radius:24px;padding:2px 9px;"><i class="ti ti-camera" style="font-size:16px;color:var(--p-blue);"></i><span style="font-size:14px;color:var(--p-blue);font-weight:600;">${((ci.photos&&ci.photos.length)||ci.photoCount||0)} photo${((ci.photos&&ci.photos.length)||ci.photoCount||0)>1?'s':''}</span></span>`:''}
         </div>
       </div>
       <i class="ti ti-chevron-right" style="font-size:18px;color:var(--p-mut2);flex-shrink:0;margin-top:2px;"></i>
@@ -31071,6 +31214,7 @@ function renderCheckinDetail(id){
   document.getElementById('tt').textContent='Check-in';
   if(!ci){S.innerHTML=`<div id="checkin-detail-screen"></div><div style="padding:30px 16px;color:var(--p-mut);">Check-in not found.</div>`;return;}
   markCheckinRead(id);
+  if((!ci.photos||!ci.photos.length)&&ci.photoPids){ci=Object.assign({},ci,{photos:_checkinPhotos(ci)});}
   const first=String(ci.client||'Client').split(' ')[0];
   S.innerHTML=`<div id="checkin-detail-screen"></div>
   
@@ -31447,7 +31591,7 @@ async function _loadSquareAppts(force){
     // tx was hardcoded to 'Appointment', so every Square booking in her calendar read the same and none
     // of them said what it was for. The server now resolves the service variation to its Square name
     // (api/square/appointments.js); fall back to the generic word only when Square could not tell us.
-    squareAppts=(data.appointments||[]).map((a,i)=>{const d=a.startAt?new Date(a.startAt):null;return {id:a.id,at:d,client:esc(a.customerName)||'Client',tx:esc(a.serviceName)||'Appointment',dur:a.durationMinutes||60,svid:a.serviceVariationId||'',tmid:a.teamMemberId||'',col:pal[i%pal.length][0],ic:pal[i%pal.length][1]};}).filter(a=>a.at&&!isNaN(a.at));
+    squareAppts=(data.appointments||[]).map((a,i)=>{const d=a.startAt?new Date(a.startAt):null;return {id:a.id,at:d,sqcid:a.customerId||'',client:esc(a.customerName)||'Client',tx:esc(a.serviceName)||'Appointment',dur:a.durationMinutes||60,svid:a.serviceVariationId||'',tmid:a.teamMemberId||'',col:pal[i%pal.length][0],ic:pal[i%pal.length][1]};}).filter(a=>a.at&&!isNaN(a.at));
     // Add anyone who booked online through Square to the client list (so the provider can send them
     // forms / their app link). Runs before _stampClientNextVisit below so a brand-new booker gets their
     // upcoming visit stamped too. Matches existing clients by Square id/name — never duplicates.
@@ -31467,6 +31611,9 @@ async function _loadSquareAppts(force){
     // so the check-in nudges stopped, and nothing anywhere said Square was unreachable. A stale
     // schedule that looks live is worse than an error, so record it and show it.
     _sqApptsState='error';squareAppts=null;_sqApptsErrAt=Date.now();
+    // Forget the last fingerprint, so the next good load rebuilds the calendar feed (a feed rebuilt
+    // during the outage dropped every Square booking and an unchanged fingerprint never put them back).
+    _loadSquareAppts._lastFp=null;
     _sqApptsErr=(e&&e.code==='nosquare')?'nosquare':((e&&e.code==='auth')?'auth':((e&&e.code==='network')?'network':'other'));
     try{console.error('[square] appointments load failed:',_sqApptsErr,e&&e.message);}catch(_){}
   }
@@ -31645,7 +31792,9 @@ function _realApptsMerged(){
   // appointments the calendar already uses, so Today's appts, Up next, and This week look alive for
   // screenshots and brand-new accounts instead of an empty schedule that reads as broken.
   else if(typeof _sampleHidden==='function'&&!_sampleHidden()){try{_sampleCalAppts().forEach(function(a){if(a.when&&!isNaN(a.when))out.push({at:a.when,client:a.title,tx:a.sub||'Appointment',dur:60,ic:a.ic||'var(--accent)',source:'sample'});});}catch(e){}}
-  (typeof manualAppts!=='undefined'?manualAppts:[]).forEach(a=>{let w=null;try{w=_apptWhen(a.date,a.time);}catch(e){}if(w&&!isNaN(w))out.push({id:a.id,at:w,client:a.client,tx:a.tx||'Appointment',dur:a.dur||60,ic:a.ic||'var(--accent)',clientId:a.clientId||'',source:'manual'});});
+  // A visit that is in Square AND kept here (the "Book in Square" stand-in) is one visit, not two.
+  const _sqSeen={};out.forEach(a=>{if(a.at)_sqSeen[String(a.client||'').toLowerCase().trim()+'@'+a.at.getTime()]=1;});
+  (typeof manualAppts!=='undefined'?manualAppts:[]).forEach(a=>{let w=null;try{w=_apptWhen(a.date,a.time);}catch(e){}if(w&&!isNaN(w)&&_sqSeen[String(a.client||'').toLowerCase().trim()+'@'+w.getTime()])return;if(w&&!isNaN(w))out.push({id:a.id,at:w,client:a.client,tx:a.tx||'Appointment',dur:a.dur||60,ic:a.ic||'var(--accent)',clientId:a.clientId||'',source:'manual'});});
   // Bookings confirmed from client requests live in confirmedAppts (re-seeded from bookings on boot).
   // They show on the calendar via _allApptsUnified, so Today's/This-week's must include them too or a
   // provider who confirmed a request would see an empty schedule here. De-dupe against manual entries
@@ -31914,9 +32063,13 @@ function _stampClientNextVisit(reconcile){
     if(_acctUnread())return;
     var startToday=new Date();startToday.setHours(0,0,0,0);
     var appts=[];
-    if(typeof _apptsLive==='function'&&_apptsLive()&&Array.isArray(squareAppts))squareAppts.forEach(function(a){if(a.at&&!isNaN(a.at)&&a.at>=startToday)appts.push({name:a.client,clientId:'',when:a.at});});
-    (typeof manualAppts!=='undefined'?manualAppts:[]).forEach(function(a){var w=_apptWhen(a.date,a.time);if(w&&w>=startToday)appts.push({name:a.client,clientId:a.clientId||'',when:w});});
-    (typeof confirmedAppts!=='undefined'?confirmedAppts:[]).forEach(function(a){var w=_apptWhen(a.date,a.time);if(w&&w>=startToday)appts.push({name:a.client,clientId:a.clientId||'',when:w});});
+    if(typeof _apptsLive==='function'&&_apptsLive()&&Array.isArray(squareAppts))squareAppts.forEach(function(a){if(a.at&&!isNaN(a.at)&&a.at>=startToday)appts.push({name:a.client,clientId:'',sqcid:a.sqcid||'',when:a.at});});
+    // A local stand-in for a visit that IS in Square adds nothing, and matched by name only it handed the
+    // visit to every client with that name. The Square booking (matched by customer id) decides.
+    var _sqK={};appts.forEach(function(a){_sqK[String(a.name||'').trim().toLowerCase()+'@'+a.when.getTime()]=1;});
+    var _dupSq=function(a,w){return !a.clientId&&_sqK[String(a.client||'').trim().toLowerCase()+'@'+w.getTime()];};
+    (typeof manualAppts!=='undefined'?manualAppts:[]).forEach(function(a){var w=_apptWhen(a.date,a.time);if(w&&w>=startToday&&!_dupSq(a,w))appts.push({name:a.client,clientId:a.clientId||'',when:w});});
+    (typeof confirmedAppts!=='undefined'?confirmedAppts:[]).forEach(function(a){var w=_apptWhen(a.date,a.time);if(w&&w>=startToday&&!_dupSq(a,w))appts.push({name:a.client,clientId:a.clientId||'',when:w});});
     // Only run the "clear phantom" pass when the appointment picture is complete: Square finished
     // loading ('ok') or Square isn't connected ('off'). During a load/error we can't tell an absent
     // appointment from an unloaded one, so we never clear then (avoids wiping a real upcoming visit).
@@ -31926,7 +32079,9 @@ function _stampClientNextVisit(reconcile){
     var changed=[];
     Object.keys(CL).forEach(function(cid){
       var c=CL[cid];if(!c)return;var nm=(c.name||'').trim().toLowerCase();if(!nm)return;
-      var mine=appts.filter(function(a){return a.clientId?(a.clientId===cid):(String(a.name||'').trim().toLowerCase()===nm);}).sort(function(x,y){return x.when-y.when;});
+      // Square bookings match by the Square customer first: by name alone, a same-name stranger got the
+      // visit and a "Jen" whose Square name is "Jennifer" got none. Name only when the chart has no Square id.
+      var mine=appts.filter(function(a){if(a.clientId)return a.clientId===cid;if(a.sqcid&&c.squareId)return String(a.sqcid)===String(c.squareId);return String(a.name||'').trim().toLowerCase()===nm;}).sort(function(x,y){return x.when-y.when;});
       if(mine.length){
         var w=mine[0].when;
         var label=w.toLocaleDateString('en-US',{weekday:'long',month:'long',day:'numeric'})+' · '+w.toLocaleTimeString('en-US',{hour:'numeric',minute:'2-digit'});
@@ -34098,7 +34253,7 @@ async function _getGuideFile(id){
   try{
     if(typeof Cloud!=='undefined'&&Cloud&&Cloud.token){
       const r=await fetch('/api/guide-file?id='+encodeURIComponent(id),{headers:{'Authorization':'Bearer '+Cloud.token}});
-      if(r.ok){const j=await r.json();if(j&&j.file&&j.file.data){try{if(typeof _idb!=='undefined'&&_idb.available())_idb.set('gfile_'+id,j.file);}catch(e){}return j.file;}}
+      if(r.ok){const j=await r.json();if(j&&j.file&&j.file.data){try{if(String(id).indexOf('ph_')!==0&&typeof _idb!=='undefined'&&_idb.available())_idb.set('gfile_'+id,j.file);}catch(e){}return j.file;}}   // photos already live in the photo store: not cached twice
     }
   }catch(e){}
   return null;

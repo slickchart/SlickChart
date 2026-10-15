@@ -342,6 +342,8 @@ export async function upsertClient(providerId, c) {
             FROM (VALUES ('summaries'),('pendingForms'),('animals'),('forms'),('progressPhotos'),('pendingGuides')) AS t(k)
            WHERE COALESCE(CASE WHEN jsonb_typeof(clients.data->k) = 'array'
                                THEN jsonb_array_length(clients.data->k) END, 0) > 0
+             -- She switched photo sharing OFF: an empty progressPhotos is her decision, not damage.
+             AND NOT (k = 'progressPhotos' AND EXCLUDED.data->>'photosShared' = 'false')
              AND (COALESCE(CASE WHEN jsonb_typeof(EXCLUDED.data->k) = 'array'
                                 THEN jsonb_array_length(EXCLUDED.data->k) END, 0) = 0
                   OR COALESCE(CASE WHEN jsonb_typeof(EXCLUDED.data->'_uAt') = 'number'
@@ -377,6 +379,7 @@ export async function upsertClient(providerId, c) {
             FROM (VALUES ('summaries'),('pendingForms'),('animals'),('forms'),('progressPhotos'),('pendingGuides')) AS t(k)
            WHERE COALESCE(CASE WHEN jsonb_typeof(clients.data->k) = 'array'
                                THEN jsonb_array_length(clients.data->k) END, 0) > 0
+             AND NOT (k = 'progressPhotos' AND inc.d->>'photosShared' = 'false')
              AND (COALESCE(CASE WHEN jsonb_typeof(inc.d->k) = 'array'
                                 THEN jsonb_array_length(inc.d->k) END, 0) = 0
                   OR COALESCE(CASE WHEN jsonb_typeof(inc.d->'_uAt') = 'number'

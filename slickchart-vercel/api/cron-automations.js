@@ -39,29 +39,31 @@ function authorized(req) {
 
 // The occurrence timestamp that should fire right now (within GRACE), or null. Handles one-shot and
 // week/month/year recurrence. `base` is the first scheduled moment (epoch ms).
+
+// Step a scheduled time by its repeat in the automation's OWN time zone, on the wall clock: 9:00 stays
+// 9:00 across a daylight-saving change, and the 31st does not roll into the next month for good. The app
+// and the cron run this same code, so "Send now" claims exactly the occurrence the cron would send.
+function _autoWall(t,tz){try{const p=Object.fromEntries(new Intl.DateTimeFormat('en-US',{timeZone:tz||'UTC',hour12:false,year:'numeric',month:'2-digit',day:'2-digit',hour:'2-digit',minute:'2-digit',second:'2-digit'}).formatToParts(new Date(t)).filter(x=>x.type!=='literal').map(x=>[x.type,+x.value]));return {Y:p.year,M:p.month,D:p.day,h:p.hour%24,mi:p.minute,s:p.second};}catch(e){const d=new Date(t);return {Y:d.getUTCFullYear(),M:d.getUTCMonth()+1,D:d.getUTCDate(),h:d.getUTCHours(),mi:d.getUTCMinutes(),s:d.getUTCSeconds()};}}
+function _autoFromWall(w,tz){const naive=Date.UTC(w.Y,w.M-1,w.D,w.h,w.mi,w.s);let g=naive;for(let i=0;i<2;i++){const o=_autoWall(g,tz);g=naive-(Date.UTC(o.Y,o.M-1,o.D,o.h,o.mi,o.s)-g);}return g;}
+function _autoOccAt(base,rep,tz,k){
+  const nn=Math.max(1,parseInt(rep,10)||1);const w=_autoWall(base,tz);
+  let Y=w.Y,M=w.M,D=w.D;
+  if(rep.includes('month')){M+=nn*k;Y+=Math.floor((M-1)/12);M=((M-1)%12+12)%12+1;const dim=new Date(Date.UTC(Y,M,0)).getUTCDate();D=Math.min(w.D,dim);}
+  else if(rep.includes('year')||rep.includes('annual')){Y+=nn*k;const dim=new Date(Date.UTC(Y,M,0)).getUTCDate();D=Math.min(w.D,dim);}
+  else{const days=(rep.includes('day')&&!rep.includes('week'))?nn*k:nn*7*k;const x=new Date(Date.UTC(Y,M-1,D+days));Y=x.getUTCFullYear();M=x.getUTCMonth()+1;D=x.getUTCDate();}
+  return _autoFromWall({Y,M,D,h:w.h,mi:w.mi,s:w.s},tz);
+}
 function dueOccurrence(auto, now) {
   const base = Number(auto.sendAt) || 0;
   if (!base) return null;
   const rep = String(auto.repeatEvery || '').toLowerCase();
   // 'once' / '' → one-shot. (The editor's repeat values are once/weekly/monthly/annually.)
   if (!rep || rep === 'once') return (now >= base && now < base + GRACE) ? base : null;
-  // Custom repeats are stored as "<n> days|weeks|months" (e.g. "3 weeks"); step by that n. The named
-  // presets (weekly/monthly/annually) have no leading number, so n falls back to 1.
-  const nn = Math.max(1, parseInt(rep, 10) || 1);
-  const advance = (t) => {
-    if (rep.includes('week')) return t + nn * 7 * 24 * HOUR;
-    if (rep.includes('month')) { const d = new Date(t); d.setMonth(d.getMonth() + nn); return d.getTime(); }
-    if (rep.includes('year') || rep.includes('annual')) { const d = new Date(t); d.setFullYear(d.getFullYear() + nn); return d.getTime(); }
-    if (rep.includes('day')) return t + nn * 24 * HOUR;
-    return t + nn * 7 * 24 * HOUR;
-  };
-  let occ = base, guard = 0;
-  while (occ < now && guard++ < 6000) {
-    const next = advance(occ);
-    if (next <= occ || next > now) break;
-    occ = next;
-  }
-  return (now >= occ && now < occ + GRACE) ? occ : null;
+  // Stepped on HER wall clock in her zone (auto.tz), the same way the app does (see _autoOccAt).
+  const tz = auto.tz || 'UTC';
+  let occ = null;
+  for (let k = 0; k < 6000; k++) { const t = _autoOccAt(base, rep, tz, k); if (t > now) break; occ = t; }
+  return (occ != null && now >= occ && now < occ + GRACE) ? occ : null;
 }
 
 export default async function handler(req, res) {

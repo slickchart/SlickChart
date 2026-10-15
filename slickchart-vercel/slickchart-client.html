@@ -383,6 +383,9 @@ async function _initNativePush(){
     let perm=await PN.checkPermissions();
     if(perm.receive!=='granted'){perm=await PN.requestPermissions();}
     if(perm.receive!=='granted')return;   // client declined OS notifications
+    // Allowed at the OS prompt = notifications on. The setting stayed at its default (off) unless she
+    // also opened Settings, so the cron skipped her reminders and messages arrived with no alert.
+    try{const _p=loadNotifPrefs();if(!_p.enabled&&!_p.offAt){_p.enabled=true;saveNotifPrefs(_p);}}catch(e){}
     PN.addListener('registration',function(tok){
       try{
         if(!client._real||!client._token||!tok||!tok.value)return;
@@ -2414,9 +2417,9 @@ async function enableNotifs(){
   const p=loadNotifPrefs();
   if(result==='denied'||result==='blocked'){
     // OS blocked it, keep app-level prefs on so in-app banners still work, but flag the block
-    p.enabled=true;p.osBlocked=true;
+    p.enabled=true;p.osBlocked=true;delete p.offAt;
   }else{
-    p.enabled=true;p.osBlocked=false;
+    p.enabled=true;p.osBlocked=false;delete p.offAt;
   }
   saveNotifPrefs(p);
   renderNotifSettings();
@@ -2431,7 +2434,7 @@ async function enableNotifs(){
 // off → disable. Everything (reminders, messages, summaries) rides this one toggle now.
 function toggleAllNotifs(){
   const p=loadNotifPrefs();
-  if(p.enabled){p.enabled=false;saveNotifPrefs(p);renderNotifSettings();}
+  if(p.enabled){p.enabled=false;p.offAt=Date.now();saveNotifPrefs(p);renderNotifSettings();}   // offAt: she chose OFF, so the app never turns it back on by itself
   else{enableNotifs();}
 }
 function setQuietStart(val){

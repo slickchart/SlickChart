@@ -37,13 +37,17 @@ await p.waitForTimeout(2500);
 // A month of pre-visit check-ins, each with three 1000px photos (~150KB of base64 each).
 await p.evaluate(() => {
   const img = 'data:image/jpeg;base64,' + 'C'.repeat(150000);
-  for (let i = 0; i < 12; i++) checkins.unshift({ id: 'ev_ci_' + i, providerId: 'me', clientId: 'c1', client: 'Dana Client', dateLabel: 'Oct ' + (i + 1), time: '10:00', treatment: 'Facial', groups: [], flagged: [], notes: '', photos: [img, img, img], read: false, at: Date.now() - i * 86400000 });
+  // As the event ingest does: each check-in's photos are filed on the chart (fixed ids) first.
+  capturedPhotos.c1 = capturedPhotos.c1 || [];
+  for (let i = 0; i < 12; i++) { const ims = [0, 1, 2].map(n => img + 'x' + i + n); ims.forEach((u, n) => capturedPhotos.c1.push({ url: u, ts: Date.now(), phase: 'reference', angle: '', source: 'checkin', pid: 'ph_ev_ci_' + i + '_' + n }));
+    checkins.unshift({ id: 'ev_ci_' + i, providerId: 'me', clientId: 'c1', client: 'Dana Client', dateLabel: 'Oct ' + (i + 1), time: '10:00', treatment: 'Facial', groups: [], flagged: [], notes: '', photos: ims, read: false, at: Date.now() - i * 86400000 }); }
   _persistCheckinsNow();
 });
 await p.waitForTimeout(9000);
 const ciLocal = await p.evaluate(() => (_lsGet('sc_checkins') || '').length);
 const ciAcct = (kv.sc_checkins || '').length;
-check('sc_checkins with photos reaches the account', ciAcct > 0 && ciAcct >= ciLocal * 0.9,
+let _ciN = 0; try { _ciN = JSON.parse(kv.sc_checkins || '[]').filter(c => c && /^ev_ci_/.test(c.id) && (c.photoCount === 3)).length; } catch (e) {}
+check('sc_checkins with photos reaches the account', _ciN === 12 && !got413.length,
   'local ' + ciLocal + ' chars, account ' + ciAcct + ' chars; 413s: ' + JSON.stringify(got413.map(x => x.keys)) + '; toasts: ' + JSON.stringify(toasts.filter(t => /large|photo/i.test(t))));
 
 // Consults from 6 clients, 6 photos each.
@@ -55,7 +59,8 @@ await p.evaluate(() => {
 });
 await p.waitForTimeout(9000);
 const vcAcct = (kv.sc_pro_vc_subs || '').length;
-check('sc_pro_vc_subs (consult photos) reaches the account', vcAcct > 4000000,
+let _vcN = 0; try { const o = JSON.parse(kv.sc_pro_vc_subs || '{}'); _vcN = Object.keys(o).filter(k => o[k] && o[k].photos && o[k].photos.length === 6).length; } catch (e) {}
+check('sc_pro_vc_subs (consult photos) reaches the account', _vcN === 6 && !got413.length,
   'account ' + vcAcct + ' chars; 413s: ' + JSON.stringify(got413.map(x => x.keys)) + '; toasts: ' + JSON.stringify(toasts.filter(t => /large|photo/i.test(t))));
 
 // Background photo backup while offline: 9 photos waiting, every upload fails.

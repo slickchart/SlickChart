@@ -7344,3 +7344,73 @@ parallel; each wrote repros in `scratchpad/sweep-dup-*.mjs`. Fixes, by area:
   `Cloud._incoming`, since key order is not guaranteed), and after it for device-only stores in
   `_foldMergedLeftovers()` (run from `_afterAccountRead`). `scratchpad/test-merge-fold-xdevice.mjs` 6/6.
   Maps without a value merge (product plan, homecare) keep the survivor's entry when it has one (§0.8).
+
+## 2026-10-15h — sweep 2: seven parallel sweeps across both apps and the server
+
+Repros for everything below are `scratchpad/sweep2-*.mjs` (Playwright, real Postgres where noted).
+
+**Security / §0**
+- Stored XSS on `/book/<slug>` (service names in an inline script) → `jsonForScript` (lib/public-brand.js).
+  Reflected XSS in `/api/google-cal-callback?error=` → escaped.
+- `client-link` / `client-invite` put a caller-chosen origin in the emailed token link → `safeLinkOrigin`
+  (our origins only).
+- Revoked sessions were honoured only by a few endpoints → `sessionOk(req)` guard on 21 endpoints,
+  `sessionFromReq` / `providerFromReqChecked` for Square (`sqContext`). `isSessionValid` now FAILS
+  CLOSED on an unknown sid (only delete-account removes rows). Square OAuth state carries `k:'sq'`.
+- `totp-setup` could switch two-step off / replace it with no code → refuses when enabled; new
+  `totp_pending` column, promoted by `totp-verify`.
+- `cron-events` messaged ids from the provider's own kv blob → only her live `clients` rows.
+- Delete-account now also removes files, kv_history, course_versions, client_tombstones, google_*,
+  provider push subs and native tokens (by owner_id).
+- A browser's provider push subscription belongs to the last account to enable it; sign-out
+  unsubscribes. Device photo store is owner-stamped (`captured_photos_owner`); another account's
+  photos are set aside (`captured_photos__<owner>`), never shown or uploaded.
+- Client app: a second client's link in one browser clears the first client's keys
+  (`sc_client_owner`, `_CA_KEYS`); "Delete my data" only removes client-app keys.
+- `check-tenant-isolation.cjs` now reads `q\`` statements (it had inspected none); 9 reviewed ALLOWs.
+
+**Sends**: per-provider/per-client try in cron-checkins/cron-reminders; aftercare thread message without
+push; `wantsPush` gate (client turned notifications off) in automations/events/checkins; merge carries
+`reminder_log` + `heal_started_at`; provider-scoped check-in claim; automations step on the wall clock
+in `a.tz` and "Send now" claims the in-grace occurrence (`_autoOccAt`, identical in app and cron);
+native client app turns notifications on when allowed at the OS prompt (`offAt` marks a deliberate off).
+
+**Sync (provider app)**
+- Boot sends each held batch item's CURRENT value (`bootDone`) — a launch no longer re-uploads old
+  inventory/vendors/partners/autos; sample purge saves only on change; shrink guard reads natural keys.
+- Delete records are DATED: `_tombVal/_tombPick/_tombHides` — a delete hides a row saved before it;
+  a NEGATIVE stamp is an un-delete (course restore, `_libUnforget`). Merged newest-magnitude-wins on
+  device (`_mergeTombstone`) and server (`NEWEST_WINS_KEYS` in api/store.js, all delete records).
+  `_tombSet` also reads `Cloud._incoming` (key order of a pull is not guaranteed).
+- `_stampRows(key,arr)` stamps `_ts` on rows that changed in a save (payments, inventory, vendors,
+  partners, autos, protocols, docs, bundles, shop bundles); renames retire the old natural key.
+- Server strips removed clients from uploaded `sc_clients`; entries under a merged-away id fold to
+  the survivor (`_mergeTargetOf`, `_foldMergedLeftovers`).
+- `_resumePull()`: a device left open re-reads the account on focus/visibility/online (15s throttle)
+  and every 5 min — never while typing, in an editor, or with a sheet open.
+- `pull()` treats non-OK / non-JSON as failure; `_retryPullSoon`; `Cloud._holdUploads()` keeps uploads
+  queued while a pull is in flight or failed (likely the §2ae stock-courses mechanism).
+- Visit records: `_ts` edit stamp separate from `ts` (visit date); saved drafts for an earlier visit
+  retire after 12h (`_expireCommittedDraft`).
+- Expired (not revoked) session keeps unsent work (`sc_unsent_keys`, `sc_prev_owner`); sign-out
+  flushes first (`_signOutSafely`).
+- Check-in log refers to chart photos by id (`photoPids`); consults over 3 MB sync photos as
+  `fileref:<pid>` with bytes uploaded separately (`_pushVcSubsSlim`, `_vcFillRefs`).
+
+**Booking / Square / Google**: public booking dedupes by trimmed email / phone+first name, never
+rewrites a chart, one request + one email set per person+slot (`logEventOnce`); slots in her zone
+(`providerTz`), Square answers minus Google/manual/instant bookings, instant bookings counted and filed
+as confirmed; Square bookings/invoices paginate; booking reuses her Square customer; invoices have
+`pay_sq_<id>` ids and copies collapse; Google events get the exact start (`startISO`) and fixed ids;
+feed not rebuilt while Square errors; next visit matched by Square customer id.
+
+**Client app**: settings written only after the account copy is read, flushed on close, merged per
+setting server-side; consult draft survives refresh; open app refreshes on any change; consult retry
+has a stable key; sign-in code tries counted atomically; book-slots passes the service.
+
+**Not done (low / config / design):** founder gates don't require `providers.verified` (only matters
+if a FOUNDER_EMAILS address has no account); legacy `APP_PASSWORD` login has no rate limit (only if
+set); client-link/code timing differs for known emails; signup 409 enumerates; client-submit re-pushes
+on retry; form-question photos aren't in the client draft; reconnecting a DIFFERENT Square merchant
+duplicates clients; Google outbound deletes events missing from a stale device's list; photo store is
+one IndexedDB value (slow past ~500 photos).

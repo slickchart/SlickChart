@@ -17,6 +17,8 @@ export default async function handler(req, res) {
     if (!c) { res.status(404).json({ error: 'This link is not valid or has been removed.' }); return; }
     markOpened(String(token)).catch(() => {});
     const data = Object.assign({}, c.data || {});
+    // Sharing turned off: never hand the client the photo list, whatever an older write left stored.
+    if (data.photosShared === false) data.progressPhotos = [];
     try {
       const raw = await getKVValue(c.provider_id, 'sc_brand_colors');
       if (raw) data.brand = JSON.parse(raw);

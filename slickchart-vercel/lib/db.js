@@ -101,6 +101,9 @@ export async function ensureFilesTable() {
   // a TRUNCATED file. `complete` marks that window. Existing rows default to true, and a whole-file
   // upload sets it true in the same statement, so nothing changes for the non-chunked path.
   try { await q`ALTER TABLE files ADD COLUMN IF NOT EXISTS complete boolean NOT NULL DEFAULT true`; } catch (e) {}
+  // A re-upload in pieces builds up here, so a COMPLETE file keeps being served until the last piece
+  // lands (piece 0 used to overwrite it, and an interrupted re-send left her only copy unfetchable).
+  try { await q`ALTER TABLE files ADD COLUMN IF NOT EXISTS staging text`; } catch (e) {}
   _filesReady = true;
 }
 export async function getFileRow(owner, id) {
