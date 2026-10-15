@@ -452,13 +452,13 @@ saved anywhere", not "does this always call that".
 | `_putFileWithRetry` | `/api/guide-file` | via `_putFileBody` |
 | `_reRenderAttn` | `/api/clients` | via `syncClientEvents` |
 | `_reRenderAttn` | `/api/square/appointments` | via `_loadSquareAppts` |
-| `_recSearch` | `/api/admin/client-recover` | via `_recoverFixName` |
+| `_recSearch` | `/api/admin/client-recover` | via `_recoverConsolidateAll` |
 | `_recSearch` | `/api/admin/recover-import` | via `_recoverSetSrc` |
 | `_recSearch` | `/api/square/delete-customers` | via `_recoverPurgeJunk` |
 | `_recSheet` | `/api/clients` | via `_syncSpecificClientsToServer` |
 | `_recSheetSend` | `/api/clients` | via `_syncSpecificClientsToServer` |
 | `_recheckWhisper` | `/api/transcribe` | via `_probeWhisper` |
-| `_recoverAll` | `/api/admin/client-recover` | via `_recoverFixName` |
+| `_recoverAll` | `/api/admin/client-recover` | via `_recoverConsolidateAll` |
 | `_recoverAll` | `/api/admin/recover-import` | via `_recoverSetSrc` |
 | `_recoverAll` | `/api/square/delete-customers` | via `_recoverPurgeJunk` |
 | `_recoverConsolidate` | `/api/admin/client-recover` | direct |
@@ -493,7 +493,7 @@ saved anywhere", not "does this always call that".
 | `_recoverRun` | `/api/admin/recover-import` | via `_recoverSetSrc` |
 | `_recoverRun` | `/api/square/delete-customers` | via `_recoverPurgeJunk` |
 | `_recoverSetSrc` | `/api/admin/recover-import` | direct |
-| `_recoverToggle` | `/api/admin/client-recover` | via `_recoverFixName` |
+| `_recoverToggle` | `/api/admin/client-recover` | via `_recoverConsolidateAll` |
 | `_recoverToggle` | `/api/admin/recover-import` | via `_recoverSetSrc` |
 | `_recoverToggle` | `/api/square/delete-customers` | via `_recoverPurgeJunk` |
 | `_recoverUnDelete` | `/api/admin/client-recover` | direct |

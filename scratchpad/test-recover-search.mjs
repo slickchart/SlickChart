@@ -27,6 +27,10 @@ await page.evaluate(m => {
   try { renderClientRecover(); } catch (e) { window.__err = String(e); }
 }, many);
 await page.waitForTimeout(300);
+const pinned = await page.evaluate(async () => { const sc = document.getElementById('S'); sc.scrollTop = 4000; window.scrollTo(0, 4000); await new Promise(r => setTimeout(r, 150));
+  const b = Array.from(document.querySelectorAll('#S button')).find(x => /Tidy all duplicate clients/.test(x.textContent)); if (!b) return 'missing'; const r = b.getBoundingClientRect(); return (r.top >= 0 && r.bottom <= innerHeight) ? 'visible' : 'off screen ' + Math.round(r.top); });
+check('Tidy all duplicate clients stays on screen after scrolling down', pinned === 'visible', pinned);
+await page.evaluate(() => { document.getElementById('S').scrollTop = 0; window.scrollTo(0, 0); });
 check('search box is on the screen', await page.evaluate(() => !!document.getElementById('rec-q')));
 check('the never-in-list group cannot be ticked', await page.evaluate(() => { const b = document.getElementById('pg-stranger'); return !!b && b.disabled && !b.checked; }));
 await page.fill('#rec-q', 'cooper');
