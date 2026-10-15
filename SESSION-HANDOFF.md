@@ -7193,3 +7193,26 @@ Fix: `_purgeSample` now reads each library it touches from storage first. Test:
 Also triaged from the same sweep, NOT bugs: business-day toggles (save on Save and on leaving the
 screen), `sc_bus` (device-local cross-tab channel), and `_ts` restamps seen only on a blank test
 account (with real account data, a plain boot neither restamps nor pushes bizinfo/hours/tombstones).
+
+## 2026-10-15b — UI/UX research + audit sweep (2am run)
+Research report: `reports/Mobile app UI UX best practices.md` (notes in `research_notes/Mobile app UI UX
+best practices/`). Audit harness: `scratchpad/audit-ui.mjs <crawl.json> <page> <out.json> [theme] [app]`
+(tap targets vs 24/44px, WCAG contrast, input font <16px, unlabeled fields/buttons, img alt, reflow).
+NOTE: it measures synchronously after nav, so it reports fields as unlabeled before the EXISTING
+post-render labeller (~line 2350, `fl-lbl` lookup) runs — field-no-label counts are a timing artifact.
+Passed already: viewport (zoom allowed, viewport-fit=cover), every input >=16px (no iOS zoom), no
+horizontal overflow at 390px, provider honours reduced motion, no ad/analytics trackers (Plausible only).
+Changed:
+- **"No clients yet" while the account is still loading** (new device / after sign-in): now "Loading your
+  clients…" and Home hides "0 of 4 done" until the first pull (`_accountStillLoading`, `Cloud._pulledOnce`
+  / `_pullFailed`). Test `scratchpad/test-empty-while-loading.mjs` 3/3.
+- Provider theme-color meta was `var(--p-bg2)` (invalid, ignored); now a solid colour set per theme.
+- Undo import used native confirm(); now confirmModal with "Remove N clients".
+- Both apps: icon-only (aria-label) buttons min 28x28; inputs/role=button get a visible focus ring even
+  where inline `outline:none` was set; business-day switches 42x26 (were 38x23).
+- Client: text under 11px raised to 11px (Apple floor; 34 places); honours prefers-reduced-motion;
+  "Mark all read" tap area; photo-compare Before/date chips darkened to pass 4.5:1.
+- Existing labeller: a label row that holds a title + small button now names the field below it.
+Not changed (recommendations, see report): 44-48px targets throughout (339 still between 24 and 44),
+11px text in the client app could go to 12-13px for older clients, sync-conflict messaging, Capacitor
+storage (treat device storage as reclaimable; server is the source of truth, already the design).

@@ -293,8 +293,8 @@ saved anywhere", not "does this always call that".
 | `_hydrateOffloaded` | `/api/square/connection` | via `_sqConnState` |
 | `_hydrateOffloaded` | `/api/totp-setup` | via `_beginTotpEnroll` |
 | `_hydrateOffloaded` | `/api/transcribe` | via `_probeWhisper` |
-| `_impRecentHTML` | `/api/clients` | via `_serverDeleteClients` |
 | `_impUndo` | `/api/clients` | via `_serverDeleteClients` |
+| `_impUndoGo` | `/api/clients` | via `_serverDeleteClients` |
 | `_impUndoTap` | `/api/clients` | via `_serverDeleteClients` |
 | `_initCapturedPhotos` | `/api/clients` | via `syncClientEvents` |
 | `_initCapturedPhotos` | `/api/guide-file` | via `_getGuideFile` |

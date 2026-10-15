@@ -3,7 +3,7 @@
 <head>
 <meta charset="UTF-8">
 <meta name="viewport" content="width=device-width, initial-scale=1, viewport-fit=cover">
-<meta name="theme-color" content="var(--p-bg2)">
+<meta name="theme-color" content="#050d0c">
 <link rel="manifest" href="/manifest.webmanifest">
 <meta name="apple-mobile-web-app-capable" content="yes">
 <meta name="mobile-web-app-capable" content="yes">
@@ -198,11 +198,18 @@ details[open]>summary .sh-chev{transform:rotate(180deg);}
 button[style*="border:none"][style*="background:none"]{
   min-height:44px; display:inline-flex; align-items:center; justify-content:center;
 }
+
+/* ── UI/UX sweep 2026-10-15 (WCAG 2.2 AA + Apple HIG) ───────────────────────────────────────────
+   Tap targets: an icon-only button (it carries aria-label) is at least 28x28, above the 24x24 WCAG 2.5.8
+   floor and Apple's 28pt minimum. Focus: ~80 fields set outline:none inline, which beat the
+   :focus-visible rule, so a keyboard user could not see where they were (2.4.7). */
+button[aria-label]{min-width:28px;min-height:28px;}
+input:focus-visible,textarea:focus-visible,select:focus-visible,[role=button]:focus-visible{outline:2px solid var(--accent)!important;outline-offset:1px;}
 </style>
 </head>
 <body>
 <script>/* Set theme before first paint — no flash. Provider default is dark; light is opt-in. */
-(function(){try{var p=localStorage.getItem('sc_provider_theme')||'dark';var t=(p==='light'||p==='dark')?p:((window.matchMedia&&window.matchMedia('(prefers-color-scheme: dark)').matches)?'dark':'light');document.documentElement.setAttribute('data-theme',t);}catch(e){document.documentElement.setAttribute('data-theme','dark');}})();</script>
+(function(){try{var p=localStorage.getItem('sc_provider_theme')||'dark';var t=(p==='light'||p==='dark')?p:((window.matchMedia&&window.matchMedia('(prefers-color-scheme: dark)').matches)?'dark':'light');document.documentElement.setAttribute('data-theme',t);try{var m=document.querySelector('meta[name="theme-color"]');if(m)m.setAttribute('content',t==='light'?'#e6efeb':'#050d0c');}catch(_){}}catch(e){document.documentElement.setAttribute('data-theme','dark');}})();</script>
 <div class="shell">
   <div class="topbar">
     <button id="topbar-back" onclick="navBack()" aria-label="Go back" title="Back" style="display:none;align-items:center;justify-content:center;background:none;border:none;cursor:pointer;width:34px;height:34px;flex-shrink:0;margin-left:-4px;font-family:inherit;"><i class="ti ti-chevron-left" aria-hidden="true" style="font-size:22px;color:var(--p-mut);"></i></button>
@@ -232,7 +239,7 @@ const S=document.getElementById('S');
 // resets when I save it" and there was no way to tell whether her phone had any of them — a whole
 // day was spent debugging code she may not have been running. Shown at the bottom of Settings, so
 // the answer is a screenshot away. Bump it on every ship.
-const APP_BUILD='2026-10-15a';
+const APP_BUILD='2026-10-15b';
 
 
 /* ════════════════════════════════════════════════════════════════
@@ -2352,6 +2359,8 @@ function _a11yLabelFields(root){
       var sib=node.previousElementSibling;
       while(sib){
         if(sib.classList&&sib.classList.contains('fl-lbl')){lbl=sib;break;}
+        // A label row (title + a small action button, e.g. "Care tips" + AI draft) holds the label inside.
+        if(sib.querySelector&&!sib.querySelector('input,select,textarea')){var _in=sib.querySelector('.fl-lbl');if(_in){lbl=_in;break;}}
         var tn=sib.tagName;
         // Field boundary: an earlier control (or a wrapper containing one) owns any label before
         // it, so don't borrow that label for this field, fall back to the placeholder instead.
@@ -3613,7 +3622,7 @@ const Cloud={
       console.log('[Cloud] cleared '+Object.keys(items).length+' device-local key(s) from the account');
     }catch(e){}
   },
-  async pull(){if(!this.token)return -1;let r;try{r=await fetch('/api/store',{headers:{'Authorization':'Bearer '+this.token}});}catch(e){return -1;}if(r.status===401){this._authFailed=true;this.logout();return -1;}let j={};try{j=await r.json();}catch(e){}const data=(j&&j.data)||{};const _staleDeviceLocalKeys=[];const keys=Object.keys(data);this._lastPulledKeys=new Set(keys);
+  async pull(){if(!this.token)return -1;let r;try{r=await fetch('/api/store',{headers:{'Authorization':'Bearer '+this.token}});}catch(e){this._pullFailed=true;return -1;}if(r.status===401){this._authFailed=true;this.logout();return -1;}let j={};try{j=await r.json();}catch(e){}const data=(j&&j.data)||{};const _staleDeviceLocalKeys=[];const keys=Object.keys(data);this._lastPulledKeys=new Set(keys);
     // What the account holds, as of right now. Boot re-persists a lot of what it just read (a
     // normalised list, a re-seeded default), and each of those used to be its own upload. Knowing
     // the account's copy means an echo of the pull costs nothing instead of a round trip.
@@ -3821,7 +3830,7 @@ const Cloud={
     // exactly what must not happen on top of an edit that has not been pushed yet.
     if(_pendingLocal)return;
     setFromServer(k,data[k]);
-  }catch(e){}});if(_staleDeviceLocalKeys.length)this._dropStaleDeviceLocal(_staleDeviceLocalKeys);return keys.length;},
+  }catch(e){}});if(_staleDeviceLocalKeys.length)this._dropStaleDeviceLocal(_staleDeviceLocalKeys);this._pulledOnce=true;return keys.length;},
   // Keys worth rescuing: the libraries she BUILDS. Mirrors TRACKED in lib/kv-history.js — if you
   // add one there, add it here, or a device can hold the only copy of it and never offer it up.
   _RESCUE_KEYS:['sc_clients','sc_session_summaries','sc_client_recs','sc_client_homecare',
@@ -6198,6 +6207,8 @@ function _scResolveTheme(p){if(p==='light'||p==='dark')return p;try{return (wind
 function _scApplyTheme(){
   var t=_scResolveTheme(_scThemePref());
   document.documentElement.setAttribute('data-theme',t);
+  // The phone's status bar / browser chrome: a solid colour per theme (a CSS variable here is ignored).
+  try{const m=document.querySelector('meta[name="theme-color"]');if(m)m.setAttribute('content',t==='light'?'#e6efeb':'#050d0c');}catch(e){}
   try{if(typeof applyTheme==='function')applyTheme();}catch(e){}   // re-derive brand tints for the new ground
   try{_syncHeaderLogo();}catch(e){}                                // re-back the logo for the new bar luminance
 }
@@ -8128,8 +8139,15 @@ function _gsState(){
   let hours=false;try{hours=!!(typeof SlickBridge!=='undefined'&&SlickBridge.getAvailability&&SlickBridge.getAvailability());}catch(e){}
   return {realCount:realCount,hours:hours,anyInvited:anyInvited,anyForms:anyForms};
 }
+// Signed in, this device holds no clients yet, and the account's first answer has not arrived: the
+// account is still LOADING, not empty. Saying "No clients yet" there is how a provider on a new phone
+// decides her clients are gone (research rule E1, 2026-10-15). Ends on the first pull, or if it fails.
+function _accountStillLoading(){
+  try{return !!(typeof Cloud!=='undefined'&&Cloud&&Cloud.token&&!Cloud._pulledOnce&&!Cloud._pullFailed&&!Object.keys(CL).length);}catch(e){return false;}
+}
 function _gettingStartedHTML(){
   if(_gsDismissed())return '';
+  if(_accountStillLoading())return '';
   const st=_gsState();
   // Once the provider has a few real clients they're clearly up and running — get out of the way for good.
   if(st.realCount>=3)return '';
@@ -8711,6 +8729,7 @@ function renderClients(){
     // the data so a real client with a matching email/phone surfaces as a possible duplicate
     // to merge — they're just not shown as their own empty rows.
     _ent=_ent.filter(([id,c])=>{const nm=String((c&&c.name)||'').trim().toLowerCase();return nm && nm!=='(no name)' && nm!=='no name';});
+    if(_ent.length===0&&_accountStillLoading())return `<div style="margin:24px 16px;text-align:center;color:var(--p-mut);font-size:16px;"><i class="ti ti-loader-2" aria-hidden="true" style="font-size:22px;display:block;margin:0 auto 8px;"></i><span role="status">Loading your clients…</span></div>`;
     if(_ent.length===0)return emptyState({icon:'ti-users',title:'No clients yet',body:'Add your first client to get started. Their chart, notes, and session history will live here.',action:'Add first client',screen:'new-client'});
     const f=_clientFilter;
     if(f==='attention')_ent=_ent.filter(([id,c])=>_clientNeedsAttention(id,c));
@@ -23962,8 +23981,8 @@ function renderOnboard(){
       <div style="background:var(--surf2);border:1px solid var(--p-line);border-radius:12px;overflow:hidden;">
         ${DAY_DEFS.map(([k,label])=>{const d=onboardData.avail[k];return`
         <div style="display:flex;align-items:center;gap:9px;padding:9px 12px;border-bottom:1px solid var(--p-line2);">
-          <button onclick="onboardToggleDay('${k}')" role="switch" aria-checked="${d.open}" aria-label="${label} open" style="width:38px;height:23px;border-radius:12px;border:1px solid var(--p-line-ctl);-webkit-appearance:none;appearance:none;padding:0;margin:0;box-sizing:border-box;background:${d.open?'var(--accent)':'var(--p-chip)'};position:relative;cursor:pointer;flex-shrink:0;">
-            <span aria-hidden="true" style="position:absolute;top:3px;left:${d.open?'18':'3'}px;width:17px;height:17px;border-radius:50%;background:#fff;transition:left .15s;"></span>
+          <button onclick="onboardToggleDay('${k}')" role="switch" aria-checked="${d.open}" aria-label="${label} open" style="width:42px;height:26px;border-radius:12px;border:1px solid var(--p-line-ctl);-webkit-appearance:none;appearance:none;padding:0;margin:0;box-sizing:border-box;background:${d.open?'var(--accent)':'var(--p-chip)'};position:relative;cursor:pointer;flex-shrink:0;">
+            <span aria-hidden="true" style="position:absolute;top:3.5px;left:${d.open?'21':'3'}px;width:17px;height:17px;border-radius:50%;background:#fff;transition:left .15s;"></span>
           </button>
           <span style="width:34px;font-size:16px;font-weight:600;color:${d.open?'var(--p-ink)':'var(--p-mut)'};flex-shrink:0;">${label.slice(0,3)}</span>
           ${d.open?`
@@ -24627,8 +24646,8 @@ function bizHoursRows(){
   const opts=(sel)=>halfHourOptions().map(o=>`<option value="${o.v}"${o.v===sel?' selected':''}>${o.l}</option>`).join('');
   return DAY_DEFS.map(([k,label])=>{const d=bizHours[k];return`
   <div style="display:flex;align-items:center;gap:9px;padding:9px 12px;border-bottom:1px solid var(--p-line2);">
-    <button onclick="toggleBizDay('${k}')" role="switch" aria-checked="${d.open}" aria-label="${label} open" style="width:38px;height:23px;border-radius:12px;border:1px solid var(--p-line-ctl);-webkit-appearance:none;appearance:none;padding:0;margin:0;box-sizing:border-box;background:${d.open?'var(--accent)':'var(--p-chip)'};position:relative;cursor:pointer;flex-shrink:0;">
-      <span aria-hidden="true" style="position:absolute;top:3px;left:${d.open?'18':'3'}px;width:17px;height:17px;border-radius:50%;background:#fff;transition:left .15s;"></span>
+    <button onclick="toggleBizDay('${k}')" role="switch" aria-checked="${d.open}" aria-label="${label} open" style="width:42px;height:26px;border-radius:12px;border:1px solid var(--p-line-ctl);-webkit-appearance:none;appearance:none;padding:0;margin:0;box-sizing:border-box;background:${d.open?'var(--accent)':'var(--p-chip)'};position:relative;cursor:pointer;flex-shrink:0;">
+      <span aria-hidden="true" style="position:absolute;top:3.5px;left:${d.open?'21':'3'}px;width:17px;height:17px;border-radius:50%;background:#fff;transition:left .15s;"></span>
     </button>
     <span style="width:34px;font-size:16px;font-weight:600;color:${d.open?'var(--p-ink)':'var(--p-mut)'};flex-shrink:0;">${label.slice(0,3)}</span>
     ${d.open?`
@@ -25028,7 +25047,10 @@ function _impUndoTap(id){
   _loadImpBatches();
   const b=_impBatches.find(x=>x&&x.id===id);
   if(!b)return;
-  if(!confirm('Remove the '+b.imported.length+' client'+(b.imported.length===1?'':'s')+' this import added? Anything you’ve edited since will go with them.'))return;
+  const _n=b.imported.length;
+  confirmModal({title:'Undo this import?',body:'This removes the '+_n+' client'+(_n===1?'':'s')+' this import added. Anything you’ve edited since will go with them.',action:'Remove '+_n+' client'+(_n===1?'':'s')},function(){_impUndoGo(id);});
+}
+function _impUndoGo(id){
   const n=_impUndo(id);
   proToast(n?('Removed '+n+' imported client'+(n===1?'':'s')):'Those clients were already gone');
   _csvImportScreen('clients');
