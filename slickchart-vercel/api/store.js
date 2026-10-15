@@ -13,10 +13,10 @@ async function requireLogin(req, res, q) {
   const h = req.headers['authorization'] || '';
   const token = h.startsWith('Bearer ') ? h.slice(7) : '';
   const payload = secret ? verifyToken(token, secret) : null;
-  if (!payload) { res.status(401).json({ error: 'Not logged in.' }); return null; }
+  if (!payload) { res.status(401).json({ error: 'Not logged in.', reason: 'expired' }); return null; }
   try {
     if (!(await isSessionValid(q, payload.sid))) {
-      res.status(401).json({ error: 'This session has been signed out. Please log in again.' });
+      res.status(401).json({ error: 'This session has been signed out. Please log in again.', reason: 'revoked' });
       return null;
     }
   } catch (e) { /* if the check itself fails, don't lock people out over it */ }

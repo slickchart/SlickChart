@@ -9,6 +9,8 @@ const B = await page(ctx, server); await B.p.goto('http://localhost:8899/slickch
 const A = await page(ctx, server); await A.p.goto('http://localhost:8899/slickchart.html'); await A.p.waitForTimeout(6000);
 await A.p.evaluate(() => { CL.c2 = { name: 'Added In Tab A', _uAt: Date.now() }; CL.c1.notes = 'Tab A: allergic to latex'; saveClients(); });
 await A.p.waitForTimeout(2000);
+await B.p.evaluate(() => { try{Cloud._lastPullAt=0;}catch(e){} document.dispatchEvent(new Event('visibilitychange')); });   // she switches to tab B
+await B.p.waitForTimeout(2500);
 await B.p.evaluate(() => { CL.c3.phone = '555 999 0000'; saveClients(); });
 await B.p.waitForTimeout(2500);
 const disk = await A.p.evaluate(() => { const c = JSON.parse(localStorage.getItem('sc_clients') || '{}'); return { c2: !!c.c2, latex: /latex/.test((c.c1 || {}).notes || '') }; });

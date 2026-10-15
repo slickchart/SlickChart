@@ -6,12 +6,12 @@ import { launch, page, mk } from './sweep2-ui-lib.mjs';
 const T = mk(); const { b, ctx } = await launch();
 const server = { sc_clients: JSON.stringify({ c1: { name: 'Cooper Howard', treatment: 'Facial' } }) };
 let expired = false;
-const { p, errs, toasts } = await page(ctx, server, { handler: async (r, u, m) => { if (expired && u.includes('/api/')) { await r.fulfill({ status: 401, contentType: 'application/json', body: '{"error":"Not logged in."}' }); return true; } } });
+const { p, errs, toasts } = await page(ctx, server, { handler: async (r, u, m) => { if (expired && u.includes('/api/')) { await r.fulfill({ status: 401, contentType: 'application/json', body: '{"error":"Not logged in.","reason":"expired"}' }); return true; } } });
 // handler runs after the store mock, so put the 401 in front:
 await p.unrouteAll(); 
 await p.route('**/api/**', async r => { const u = r.request().url(); const m = r.request().method();
   if (u.includes('cloud-status')) return r.fulfill({ status: 200, contentType: 'application/json', body: '{"enabled":true}' });
-  if (expired) return r.fulfill({ status: 401, contentType: 'application/json', body: '{"error":"Not logged in."}' });
+  if (expired) return r.fulfill({ status: 401, contentType: 'application/json', body: '{"error":"Not logged in.","reason":"expired"}' });
   if (u.includes('/api/store') && m === 'GET') return r.fulfill({ status: 200, contentType: 'application/json', body: JSON.stringify({ data: Object.assign({ sc_hide_sample: '1' }, server) }) });
   if (u.includes('/api/store')) { try { Object.assign(server, JSON.parse(r.request().postData() || '{}').items || {}); } catch (e) {} }
   return r.fulfill({ status: 200, contentType: 'application/json', body: '{"ok":true,"data":{},"clients":[],"events":[]}' }); });

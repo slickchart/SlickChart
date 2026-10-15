@@ -15,7 +15,7 @@ await P.p.evaluate(() => { CL.c2 = { name: 'New Phone Client', treatment: 'Peel'
 await P.p.waitForTimeout(3000);
 const mid = { c2: /New Phone Client/.test(server.sc_clients), note: /Phone note today/.test(server.sc_session_summaries || '') };
 // laptop, still open: resume (focus) and make an ordinary edit
-await L.p.evaluate(() => { document.dispatchEvent(new Event('visibilitychange')); window.dispatchEvent(new Event('focus')); });
+await L.p.evaluate(() => { try{Cloud._lastPullAt=0;}catch(e){} /* left open for hours */ document.dispatchEvent(new Event('visibilitychange')); window.dispatchEvent(new Event('focus')); });
 await L.p.waitForTimeout(2000);
 const sees = await L.p.evaluate(() => ({ c2: !!CL.c2, note: JSON.stringify(sessionSummaries.c1 || []).includes('Phone note today') }));
 await L.p.evaluate(() => { CL.c1.phone = '555 222 3333'; saveClients(); activeNoteTemplate = 'soap'; nav('write-note', 'c1'); document.getElementById('wn-sec-s2').value = 'Laptop objective'; _saveWriteNote('c1'); });

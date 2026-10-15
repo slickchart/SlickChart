@@ -2866,7 +2866,7 @@ try{document.addEventListener('keydown',function(e){
 // ── Cloud sync (database + login). Falls back to local-only until configured. ──
 function saveProfessions(){try{(function(_v){localStorage.setItem('sc_professions',_v);if(typeof _pushKeyNow==='function')_pushKeyNow('sc_professions',_v);return _v;})(JSON.stringify(selectedProfessions));}catch(e){}}
 function loadProfessions(){try{const raw=localStorage.getItem('sc_professions');if(raw){const a=JSON.parse(raw);if(Array.isArray(a)&&a.length)selectedProfessions=a;}}catch(e){}}
-const _SYNC_SKIP={sc_staff:1,sc_ev_fails:1,sc_dupes_last:1,   /* device-local note of the last automatic duplicate merge */
+const _SYNC_SKIP={sc_unsent_keys:1,sc_prev_owner:1,sc_staff:1,sc_ev_fails:1,sc_dupes_last:1,   /* device-local note of the last automatic duplicate merge */
      /* device-local record of ingest failures, for the self-check */
      /* retired: SlickChart is for solo providers, so there is no staff roster */
   sc_token:1,sc_sqkey:1,sc_bus:1,sc_chart_activity:1,sc_pulse:1,sc_cloud_seeded:1};
@@ -3802,7 +3802,9 @@ function _unionEntryLists(keyFn,aArr,bArr){
     if(!k){out.push(x);if(fromLocal)changed=true;return;}
     if(!(k in idx)){idx[k]=out.length;out.push(x);if(fromLocal)changed=true;return;}
     const cur=out[idx[k]];
-    const ca=Number(cur&&cur.ts)||0,cb=Number(x&&x.ts)||0;
+    // The EDIT stamp decides, not ts: ts is also the visit's sort date, and editing a note after its
+    // summary was sent gave the edit a LOWER ts, so the older copy won on every other device.
+    const ca=Number(cur&&(cur._ts||cur.ts))||0,cb=Number(x&&(x._ts||x.ts))||0;
     if(cb>ca){out[idx[k]]=x;if(fromLocal)changed=true;}
   };
   aArr.forEach(function(x){take(x,false);});
@@ -4155,7 +4157,7 @@ const Cloud={
   // all (a brand-new signup, a local-only device), so nothing can be stuck behind this forever.
   _holdUploads(){return !!(this.token&&!this._pulledOnce&&(this._pulling||this._pullFailed));},
   async pull(){this._pulling=true;try{return await this._pullInner();}finally{this._pulling=false;}},
-  async _pullInner(){if(!this.token)return -1;let r;try{r=await fetch('/api/store',{headers:{'Authorization':'Bearer '+this.token}});}catch(e){this._pullFailed=true;return -1;}if(r.status===401){this._authFailed=true;try{this._prevOwner=(typeof _tokenOwner==='function')?_tokenOwner():'';}catch(e){}this.logout();return -1;}if(!r.ok){this._pullFailed=true;return -1;}let j=null;try{j=await r.json();}catch(e){}if(!j||!j.data||typeof j.data!=='object'){this._pullFailed=true;return -1;}const data=j.data;this._incoming=data;const _staleDeviceLocalKeys=[];const keys=Object.keys(data);this._lastPulledKeys=new Set(keys);
+  async _pullInner(){if(!this.token)return -1;let r;try{r=await fetch('/api/store',{headers:{'Authorization':'Bearer '+this.token}});}catch(e){this._pullFailed=true;return -1;}if(r.status===401){this._authFailed=true;try{this._prevOwner=(typeof _tokenOwner==='function')?_tokenOwner():'';localStorage.setItem('sc_prev_owner',this._prevOwner||'');}catch(e){}this.logout();return -1;}if(!r.ok){this._pullFailed=true;return -1;}let j=null;try{j=await r.json();}catch(e){}if(!j||!j.data||typeof j.data!=='object'){this._pullFailed=true;return -1;}const data=j.data;this._incoming=data;const _staleDeviceLocalKeys=[];const keys=Object.keys(data);this._lastPulledKeys=new Set(keys);
     // What the account holds, as of right now. Boot re-persists a lot of what it just read (a
     // normalised list, a re-seeded default), and each of those used to be its own upload. Knowing
     // the account's copy means an echo of the pull costs nothing instead of a round trip.
@@ -4363,7 +4365,7 @@ const Cloud={
     // exactly what must not happen on top of an edit that has not been pushed yet.
     if(_pendingLocal)return;
     setFromServer(k,data[k]);
-  }catch(e){}});this._incoming=null;if(_staleDeviceLocalKeys.length)this._dropStaleDeviceLocal(_staleDeviceLocalKeys);this._pulledOnce=true;this._pullFailed=false;return keys.length;},
+  }catch(e){}});this._incoming=null;this._lastPullAt=Date.now();if(_staleDeviceLocalKeys.length)this._dropStaleDeviceLocal(_staleDeviceLocalKeys);this._pulledOnce=true;this._pullFailed=false;return keys.length;},
   // Keys worth rescuing: the libraries she BUILDS. Mirrors TRACKED in lib/kv-history.js — if you
   // add one there, add it here, or a device can hold the only copy of it and never offer it up.
   _RESCUE_KEYS:['sc_clients','sc_session_summaries','sc_client_recs','sc_client_homecare',
@@ -4583,9 +4585,24 @@ const Cloud={
         // "sign out all other devices" elsewhere). Don't mislabel it as a connection
         // problem and keep retrying against a dead token, sign this device out cleanly.
         if(r.status===401){
-          if(typeof proToast==='function')proToast('You\u2019ve been signed out on this device. Please sign in again.',0);
-          try{this.logout();}catch(e){}
-          setTimeout(()=>{try{if(typeof _doLogout==='function')_doLogout();}catch(e){}},1200);
+          // EXPIRED (30 days old) is not REVOKED. Wiping the device on an expired token erased the very
+          // note that had just failed to upload, then said nothing was lost. Keep everything, ask her to
+          // sign in, and send it once she has (same account: _signedInAsSomeoneElse clears only for a
+          // different one). A revoked session ("sign out other devices", a lost phone) still wipes.
+          r.clone().json().catch(()=>({})).then(j=>{
+            if(j&&j.reason==='expired'){
+              for(const k in items){if(!(k in this._queue))this._queue[k]=items[k];}
+              try{this._prevOwner=(typeof _tokenOwner==='function')?_tokenOwner():'';localStorage.setItem('sc_prev_owner',this._prevOwner||'');}catch(e){}
+              try{localStorage.setItem('sc_unsent_keys',JSON.stringify(Object.keys(this._queue)));}catch(e){}   // survives closing the app before signing in
+              try{this.logout();}catch(e){}
+              if(typeof proToast==='function')proToast('Please sign in again to keep saving. Your latest changes are kept on this device and will save once you do.',0);
+              try{if(typeof renderLogin==='function')renderLogin();}catch(e){}
+              return;
+            }
+            if(typeof proToast==='function')proToast('You\u2019ve been signed out on this device. Please sign in again.',0);
+            try{this.logout();}catch(e){}
+            setTimeout(()=>{try{if(typeof _doLogout==='function')_doLogout();}catch(e){}},1200);
+          });
           return;
         }
         if(!r.ok){
@@ -6064,11 +6081,20 @@ function _loginErr(e,fallback){
 // previous account's clients are still on this device and in memory, and the pull below would merge
 // them into the new account and push the lot up (CLAUDE.md §0). Clear them and boot clean instead.
 // The same account signing back in keeps everything, since it may hold edits not yet uploaded.
+// Changes that could not upload when the session expired are put back in the queue before the pull,
+// so the pull keeps them (a pending local write is never overwritten) and sends them.
+function _restoreUnsent(){
+  try{const ks=JSON.parse(localStorage.getItem('sc_unsent_keys')||'[]');localStorage.removeItem('sc_unsent_keys');
+    if(Array.isArray(ks))ks.forEach(function(k){const v=_lsGet(k);if(v!=null&&!(k in Cloud._queue))Cloud._queue[k]=v;});}catch(e){}
+}
 async function _signedInAsSomeoneElse(){
   try{
-    const prev=Cloud._prevOwner;if(!prev)return false;
+    // Remembered across a relaunch too: closing the app on the sign-in screen used to forget whose data this was.
+    let prev=Cloud._prevOwner;try{if(!prev)prev=localStorage.getItem('sc_prev_owner')||'';}catch(e){}
+    if(!prev)return false;
     const now=(typeof _tokenOwner==='function')?_tokenOwner():'';
-    if(!now||now===prev)return false;
+    if(!now)return false;
+    if(now===prev){try{localStorage.removeItem('sc_prev_owner');}catch(e){}return false;}
     try{_lsAllKeys().filter(k=>k&&k.indexOf('sc_')===0&&k!=='sc_login_email'&&k!=='sc_token').forEach(k=>{try{localStorage.removeItem(k);}catch(e){}});}catch(e){}
     try{await Promise.race([_purgeOffloaded(),new Promise(r=>setTimeout(r,2500))]);}catch(e){}
     location.reload();return true;
@@ -6080,6 +6106,7 @@ function doLogin(){
   if(!email||!pw){if(er)er.textContent='Enter your email and password.';return;}
   Cloud.login(email,pw).then(async()=>{
     if(await _signedInAsSomeoneElse())return;
+    _restoreUnsent();
     try{const n=await Cloud.pull();if(n===0)await Cloud.pushAllLocal();else if(n>0){try{localStorage.setItem('sc_onboarded','1');}catch(e){}}else{try{Cloud._retryPullSoon();}catch(e){}} _reloadAll();}catch(e){}
     const ov=document.getElementById('login-screen');if(ov)ov.remove();nav('home');
     try{_checkBillingBanner();}catch(e){}   // she is in on grace — tell her straight away, not next launch
@@ -6093,6 +6120,7 @@ function doLoginTotp(){
   const er=document.getElementById('login-err');if(er)er.textContent='';
   Cloud.login(_pendingTotpEmail,_pendingTotpPw,code).then(async()=>{
     if(await _signedInAsSomeoneElse())return;
+    _restoreUnsent();
     try{const n=await Cloud.pull();if(n===0)await Cloud.pushAllLocal();else if(n>0){try{localStorage.setItem('sc_onboarded','1');}catch(e){}}else{try{Cloud._retryPullSoon();}catch(e){}} _reloadAll();}catch(e){}
     _pendingTotpEmail='';_pendingTotpPw='';
     const ov=document.getElementById('login-screen');if(ov)ov.remove();nav('home');
@@ -6162,7 +6190,32 @@ async function _doLogout(){
   try{location.reload();}catch(e){}
   setTimeout(()=>{try{renderLogin();}catch(e){}},60);
 }
-function cloudLogout(){if(typeof confirmModal==='function'){confirmModal({title:'Sign out?',body:'Log out of SlickChart on this device? Your data stays saved in the cloud.',action:'Sign out'},_doLogout);}else{_doLogout();}}
+// Signing out clears this device, so anything not yet uploaded would be lost while the confirm box said
+// "your data stays saved". Send it first; if that cannot happen (no signal), say so plainly and let her
+// choose. A forced sign-out (revoked session) does not come through here.
+async function _flushBeforeSignOut(){
+  try{
+    if(typeof Cloud==='undefined'||!Cloud||!Cloud.token)return true;
+    try{_flushWorkspacePersist();}catch(e){}
+    const items={};
+    try{Object.assign(items,Cloud._queue||{});if(Cloud._pushBatch&&Cloud._pushBatch.items)Object.keys(Cloud._pushBatch.items).forEach(function(k){if(!(k in items))items[k]=Cloud._pushBatch.items[k];});}catch(e){}
+    if(!Object.keys(items).length)return true;
+    if(Cloud._holdUploads&&Cloud._holdUploads())return false;
+    if(typeof navigator!=='undefined'&&navigator.onLine===false)return false;
+    try{_dropBootShrinks(items,'signout');}catch(e){}
+    if(!Object.keys(items).length)return true;
+    const r=await Promise.race([fetch('/api/store',{method:'PUT',headers:{'Content-Type':'application/json','Authorization':'Bearer '+Cloud.token},body:JSON.stringify({items})}),new Promise(function(res){setTimeout(function(){res(null);},8000);})]);
+    if(r&&r.ok){try{Object.keys(items).forEach(function(k){delete Cloud._queue[k];});}catch(e){}return true;}
+  }catch(e){}
+  return false;
+}
+async function _signOutSafely(){
+  if(typeof proToast==='function')proToast('Saving your latest changes\u2026');
+  const ok=await _flushBeforeSignOut();
+  if(ok){if(typeof confirmModal==='function'){confirmModal({title:'Sign out?',body:'Log out of SlickChart on this device? Everything is saved to your account.',action:'Sign out'},_doLogout);}else{_doLogout();}return;}
+  if(typeof confirmModal==='function'){confirmModal({title:'Some changes haven\u2019t saved yet',body:'Your newest changes are only on this device right now. Stay signed in until you have signal and they will save on their own. Signing out now loses them.',action:'Sign out anyway'},_doLogout);}
+}
+function cloudLogout(){_signOutSafely();}
 function applyProfessionConfig(){
   const profs=getActiveProfessions();
   const hasHair=profs.some(p=>p.id==='hair');
@@ -11602,7 +11655,8 @@ function _voiceCancel(){
 }
 function _voiceSave(text,toastMsg){
   text=String(text||'').trim();if(!text){_voiceClose();return;}
-  text=text.replace(/</g,'&lt;').replace(/>/g,'&gt;');
+  // Plain text: the note editor is a textarea and every renderer escapes, so escaping here showed her
+  // literal "&lt;" and "<br>" inside her own notes.
   const id=_voiceClientId;
   const tmpl=noteTemplates[activeNoteTemplate]||noteTemplates.soap;
   const secId=(tmpl.sections[0]||{}).id||'s1';
@@ -11613,7 +11667,8 @@ function _voiceSave(text,toastMsg){
   const draft=providerNoteDrafts[id]&&providerNoteDrafts[id].templateId===activeNoteTemplate?providerNoteDrafts[id]:{date:(typeof _isoToday==='function'?_isoToday():''),sections:{},templateId:activeNoteTemplate};
   if(!draft.sections)draft.sections={};
   const prev=draft.sections[secId];
-  draft.sections[secId]=(prev&&prev.trim()&&prev.trim()!=='No notes yet.')?(prev+'<br>'+text):text;
+  draft.sections[secId]=(prev&&prev.trim()&&prev.trim()!=='No notes yet.')?(prev+'\n'+text):text;
+  draft.ts=Date.now();
   providerNoteDrafts[id]=draft;
   if(typeof saveProviderNoteDrafts==='function'){try{saveProviderNoteDrafts();}catch(e){}}
   _voiceAfterSave(id,toastMsg||'Voice note saved to your notes',text);
@@ -11684,10 +11739,11 @@ async function _voiceSmartSave(){
   const draft=(providerNoteDrafts[id]&&providerNoteDrafts[id].templateId===activeNoteTemplate)?providerNoteDrafts[id]:{date:(typeof _isoToday==='function'?_isoToday():''),sections:{},templateId:activeNoteTemplate};
   if(!draft.sections)draft.sections={};
   secs.forEach(s=>{
-    let v=mapping[s.id];if(v==null)return;v=String(v).trim().replace(/</g,'&lt;').replace(/>/g,'&gt;');if(!v)return;
+    let v=mapping[s.id];if(v==null)return;v=String(v).trim();if(!v)return;
     const prev=String(draft.sections[s.id]||'').trim();
-    draft.sections[s.id]=(prev&&prev!=='No notes yet.')?(prev+'<br>'+v):v;
+    draft.sections[s.id]=(prev&&prev!=='No notes yet.')?(prev+'\n'+v):v;
   });
+  draft.ts=Date.now();   // stamped, or another device's older draft won the merge over the dictation
   providerNoteDrafts[id]=draft;
   try{if(typeof saveProviderNoteDrafts==='function')saveProviderNoteDrafts();}catch(e){}
   _voiceAfterSave(id,'Filed into '+filled.length+' section'+(filled.length===1?'':'s')+' ✨',secs.map(x=>String(mapping[x.id]||'').trim()).filter(Boolean).join('\n'));
@@ -12270,7 +12326,22 @@ function renderNoteFormats(id){
   </div>`;
 }
 let _writeNoteClientId='';
+// A note that was SAVED for an earlier visit is finished. Opening the editor (or the summary) for a new
+// visit used to reopen it with its old date, so "Just save" and the summary went onto LAST visit's record
+// and replaced it. A saved note older than 12 hours from another day is retired; an unsaved draft, or one
+// saved last night that she is finishing this morning, stays.
+function _expireCommittedDraft(id){
+  try{const d=providerNoteDrafts[id];if(!d)return;
+    // Drafts saved before the flag existed: saved = that visit already has a record in her history.
+    const saved=d.committed||((typeof sessionSummaries!=='undefined'&&Array.isArray(sessionSummaries[id]))&&sessionSummaries[id].some(function(h){return h&&h._draftDate===d.date;}));
+    if(!saved)return;
+    if(d.date===(typeof _isoToday==='function'?_isoToday():''))return;
+    if(Date.now()-(Number(d.committedAt||d.ts)||0)<12*3600000)return;
+    delete providerNoteDrafts[id];if(typeof saveProviderNoteDrafts==='function')saveProviderNoteDrafts();
+  }catch(e){}
+}
 function renderWriteNote(id){
+  _expireCommittedDraft(id);
   setNav('clients');
   _writeNoteClientId=id;   // whose editor is currently on screen — guards the async autosave below
   const c=CL[id];const t=noteTemplates[activeNoteTemplate]||noteTemplates.soap;
@@ -12579,7 +12650,7 @@ function _commitWriteNote(id){
   const dateVal=(dateEl&&dateEl.value)||_isoToday();
   const sections={};
   t.sections.forEach(s=>{const el=document.getElementById('wn-sec-'+s.id);sections[s.id]=el?el.value:'';});
-  providerNoteDrafts[id]={date:dateVal,sections,templateId:activeNoteTemplate,ts:Date.now()};
+  providerNoteDrafts[id]={date:dateVal,sections,templateId:activeNoteTemplate,ts:Date.now(),committed:true,committedAt:Date.now()};
   saveProviderNoteDrafts();
   // Reflect this note in the client's real session history too, so it shows
   // under Previous sessions and stays sorted correctly by the date chosen.
@@ -12592,7 +12663,7 @@ function _commitWriteNote(id){
   // record) so this write-note save and a later client-summary send land on ONE session entry (one
   // card, two tabs) instead of two separate cards. Don't overwrite `note` once a client summary has
   // been saved onto this entry — that field holds the client-facing version.
-  const entry={date:_fmtNoteDate(dateVal),treatment:_sessionNameFor(existing,id,dateVal),homecare:existing?existing.homecare:[],products:existing?existing.products:[],ts:new Date(dateVal).getTime()||Date.now(),_draftDate:dateVal,providerNotes:(typeof _providerNotesSnapshot==='function'?_providerNotesSnapshot(id):(existing&&existing.providerNotes)||{sections:[]})};
+  const entry={date:_fmtNoteDate(dateVal),treatment:_sessionNameFor(existing,id,dateVal),homecare:existing?existing.homecare:[],products:existing?existing.products:[],ts:(dateVal===(typeof _isoToday==='function'?_isoToday():'')?Date.now():new Date(dateVal+'T12:00:00').getTime()),_ts:Date.now(),_draftDate:dateVal,providerNotes:(typeof _providerNotesSnapshot==='function'?_providerNotesSnapshot(id):(existing&&existing.providerNotes)||{sections:[]})};
   if(existing){Object.assign(existing,entry);if(!existing._clientSaved)existing.note=primaryText;}else{entry.note=primaryText;hist.unshift(entry);}
   hist.sort((a,b)=>(b.ts||0)-(a.ts||0));
   try{persistSessionSummaries();}catch(e){}  // was missing, treatment-note summaries were kept only in memory and lost on reload
@@ -13094,6 +13165,7 @@ function _summaryGuard(id){
 }
 
 function renderSessionSummary(id){
+  _expireCommittedDraft(id);
   setNav('clients');
   _recEditCtx='summary';
   if(summarySendOn[id]===undefined)summarySendOn[id]=true;
@@ -13616,7 +13688,7 @@ function _storeSummary(id){
   // Rich record kept on the provider side: everything done that day. Merge onto the same-day entry.
   const _exName=(_dd?sessionSummaries[id].find(h=>h._draftDate===_dd):null);
   const _name=_sessionNameFor(_exName,id,_dd);
-  const _rec={date,treatment:_name,note,obs,homecare,products,productDetail,providerNotes,guides:_guides,ts,_draftDate:_dd,_clientSaved:true};
+  const _rec={date,treatment:_name,note,obs,homecare,products,productDetail,providerNotes,guides:_guides,ts,_ts:Date.now(),_draftDate:_dd,_clientSaved:true};
   const _ex=_dd?sessionSummaries[id].find(h=>h._draftDate===_dd):null;
   if(_ex)Object.assign(_ex,_rec);else sessionSummaries[id].unshift(_rec);
   sessionSummaries[id].sort((a,b)=>(b.ts||0)-(a.ts||0));
@@ -13703,7 +13775,7 @@ function _saveSummaryDate(id,i){
   if(!s||!v){const ov=document.getElementById('sum-date-ov');if(ov)ov.remove();return;}
   const old=s._draftDate;
   const d=new Date(v+'T12:00:00');
-  s._draftDate=v;
+  s._draftDate=v;s._ts=Date.now();
   s.date=(typeof _fmtNoteDate==='function')?_fmtNoteDate(v):d.toLocaleDateString('en-US',{month:'short',day:'numeric',year:'numeric'});
   s.ts=d.getTime()||Date.now();
   // Keep the client-facing copy's date in sync.
@@ -14185,14 +14257,21 @@ async function sendSummary(id){
   if(!msgStore[id])msgStore[id]=[];
   const parts=['homecare routine','recommended products','next appointment'].filter((_,i)=>[summaryToggles.homecare,summaryToggles.products,summaryToggles.appointment][i]);
   const _msg=`Hi ${c.name.split(' ')[0]}! Your session summary ${_visitDatePhrase(providerNoteDrafts[id]&&providerNoteDrafts[id].date)} is ready, including your ${parts.join(', ')}. See you next time! ✨\n\n${_providerFirstName()}`;
-  msgStore[id].push({from:'me',text:_msg,time:'Just now',ts:Date.now()});
+  // Tracked like any other message (id + status), so if it fails the bubble shows it and can be tapped
+  // to resend with the SAME key; it used to look delivered while the toast said "tap it to resend".
+  // Sending the same summary again (after a failure) retries THAT bubble with its key, rather than
+  // adding a second bubble and a second message.
+  const _prevS=msgStore[id].find(function(m){return m&&m.from==='me'&&m.text===_msg&&m._mid&&m.status&&m.status!=='sent'&&m.status!=='delivered';});
+  const _sMid=_prevS?_prevS._mid:_genMid();
+  if(_prevS){_prevS.status=(CL[id]&&CL[id]._token)?'sending':'pending';_prevS.ts=Date.now();}
+  else msgStore[id].push({from:'me',text:_msg,time:'Just now',ts:Date.now(),_mid:_sMid,status:(CL[id]&&CL[id]._token)?'sending':'pending'});
   try{saveMessages();}catch(e){}
   // Send the actual summary content to the connected client's app so it replaces their summary screen
   _postSummaryData(id);
   _storeSummary(id);
   // Notify the client through the tracked, pushed message path — a summary used to arrive with NO
   // notification (blob only), so a real client never knew it was there until they happened to open the app.
-  try{_sendProviderMessageToClient(id,_msg);}catch(e){}
+  try{_sendProviderMessageToClient(id,_msg,[],false,null,_sMid);}catch(e){}
   // Tattoo: a sent session summary means the session is done — auto-start the healing check-in
   // drip (Day 1 / 3 / 30). Only for tattoo providers + real synced clients; restart is fine.
   try{if(c&&c._token&&_isTattooSession(c)){_startAftercareDrip(id);}}catch(e){}
@@ -19597,6 +19676,8 @@ function saveFormBuilder(tid,thenPreview,quiet){
   if(tid==='new'){
     id=_newCustomFormId();
     customForms.push({id,name,_ts:Date.now()});
+    // Back from Preview must reopen THIS form, not a blank "new" one (which then saved a duplicate).
+    try{if(typeof _navCur!=='undefined'&&_navCur&&_navCur.screen==='form-builder'&&_navCur.data==='new')_navCur.data=id;}catch(e){}
   }
   else{const _cf=customForms.find(f=>f&&f.id===id);if(_cf)_cf._ts=Date.now();}   // lets _mergeForms keep the newer edit
   // Stamp the edit here rather than relying on a diff against a snapshot that may not exist: this is
@@ -21196,7 +21277,7 @@ function _setProviderMsgStatus(id,mid,status){
 // we may have a delivery token. Called when a chat opens and after a sync that can bring a new token.
 function _flushPendingProviderMsgs(id,onlyPending){
   try{const c=CL[id];if(!c||!c._token||id==='maya')return;const arr=msgStore[id]||[];
-    arr.forEach(m=>{if(m&&m.from==='me'&&(m.status==='pending'||(!onlyPending&&m.status==='failed'))){m.status='sending';if(!m._mid)m._mid=_genMid();
+    arr.forEach(m=>{if(m&&m.from==='me'&&(m.status==='pending'||(!onlyPending&&m.status==='failed')||(m.status==='sending'&&Date.now()-(Number(m.ts)||0)>60000))){   // 'sending' a minute later never finished (app closed mid-send); its key is stable, so a resend cannot doublem.status='sending';if(!m._mid)m._mid=_genMid();
       // Pass null idem so the delivery uses the SAME stable 'pm-'+_mid key as the initial send and the
       // manual resend. Minting a fresh random key here meant a lost-response flush + later manual resend
       // sent two different keys, so the client received the message twice.
@@ -23827,7 +23908,7 @@ function renderAccount(){
       ['ti-lock','var(--accent-tint)','var(--accent)',_isNativeApp()?'Security':'Security & Billing',_isNativeApp()?'Password & two-factor authentication':'Password, 2FA, plan, invoices &amp; cancelling','security-billing'],
     ].map(([icon,bg,ic,name,desc,screen])=>`<div class="nr" style="padding:11px 14px;" ${screen?`onclick="nav('${screen}')"`:''}><div style="width:38px;height:38px;border-radius:12px;background:${bg};display:flex;align-items:center;justify-content:center;flex-shrink:0;"><i class="ti ${icon}" style="font-size:18px;color:${ic};"></i></div><div style="flex:1;"><div style="font-size:16px;font-weight:500;color:var(--p-ink);">${name}</div><div style="font-size:16px;color:var(--p-mut);">${desc}</div></div><i aria-hidden="true" class="ti ti-chevron-right" style="font-size:16px;color:var(--p-mut);"></i></div>`).join('')}
   </div>
-  <button onclick="_doLogout()" style="width:100%;border:1px solid var(--p-line-ctl);background:none;border-radius:12px;padding:11px;font-size:16px;color:var(--p-mut);cursor:pointer;margin-top:10px;font-family:inherit;">Sign out</button>
+  <button onclick="_signOutSafely()" style="width:100%;border:1px solid var(--p-line-ctl);background:none;border-radius:12px;padding:11px;font-size:16px;color:var(--p-mut);cursor:pointer;margin-top:10px;font-family:inherit;">Sign out</button>
   <div class="sh" style="margin-top:14px;"><h2>Your data</h2></div>
   <div style="padding:0 16px;margin-bottom:20px;"><div style="background:var(--surf2);border:1px solid var(--p-line);border-radius:12px;overflow:hidden;">
     ${_sampleHidden()
@@ -25869,6 +25950,40 @@ function _foldMergedLeftovers(){
     return pairs.length;
   }catch(e){return 0;}
 }
+// A device left open (a laptop since morning, a front-desk iPad, a second tab) never read the account
+// again after launch, so its next ordinary save put its stale clients and visit notes over newer work
+// from her phone. Catch up when she comes back to it: on focus / visibility / reconnect, and every 5
+// minutes while visible, at most once a minute. Never while she is in an editor (what is on screen
+// stays exactly as she left it) — it waits until she leaves it.
+const _RESUME_EDITORS=/^(write-note|session-summary|form-builder|course-builder|routine-builder|guide-builder|chat|sign-form|new-|edit-|add-)/;
+async function _resumePull(){
+  try{
+    if(typeof Cloud==='undefined'||!Cloud||!Cloud.token||Cloud._booting||!Cloud._pulledOnce||_resumePull._busy)return;
+    if(Date.now()-(Cloud._lastPullAt||0)<15000)return;   // switching back to a tab is exactly when it matters
+    const scr=(typeof _navCur!=='undefined'&&_navCur&&_navCur.screen)||'';
+    if(_RESUME_EDITORS.test(scr))return;
+    // Typing somewhere, or a sheet/dialog open over the screen: not now.
+    const ae=document.activeElement;if(ae&&(/^(INPUT|TEXTAREA|SELECT)$/.test(ae.tagName)||ae.isContentEditable))return;
+    try{if(Array.from(document.body.children).some(function(el){const cs=getComputedStyle(el);return cs.position==='fixed'&&el.offsetHeight>window.innerHeight*0.5&&cs.display!=='none'&&el.id!=='app';}))return;}catch(e){}
+    _resumePull._busy=true;
+    try{_flushWorkspacePersist();}catch(e){}
+    const n=await Cloud.pull();
+    if(n>=0){
+      try{_reloadAll();}catch(e){}
+      try{_afterAccountRead();}catch(e){}
+      const scr2=(typeof _navCur!=='undefined'&&_navCur&&_navCur.screen)||'';
+      if(scr2&&scr2===scr&&!_RESUME_EDITORS.test(scr2))try{nav(scr2,_navCur.data);}catch(e){}
+      try{Cloud._flush(0);}catch(e){}
+    }
+  }catch(e){}
+  finally{_resumePull._busy=false;}
+}
+try{
+  document.addEventListener('visibilitychange',function(){if(!document.hidden)_resumePull();});
+  window.addEventListener('focus',function(){_resumePull();});
+  window.addEventListener('online',function(){_resumePull();});
+  setInterval(function(){if(!document.hidden)_resumePull();},5*60000);
+}catch(e){}
 function _afterAccountRead(){
   try{_foldMergedLeftovers();}catch(e){}
   try{if(typeof _stampClientNextVisit==='function')_stampClientNextVisit(true);}catch(e){}

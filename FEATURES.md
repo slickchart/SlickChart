@@ -246,6 +246,7 @@ saved anywhere", not "does this always call that".
 | `_flagAckHome` | `/api/square/appointments` | via `_loadSquareAppts` |
 | `_flipPhoto` | `/api/clients` | via `_syncSpecificClientsToServer` |
 | `_flushAllPendingProviderMsgs` | `/api/provider-message` | via `_sendProviderMessageToClient` |
+| `_flushBeforeSignOut` | `/api/store` | direct |
 | `_flushClientSync` | `/api/clients` | via `_syncClientsToServer` |
 | `_flushNativePushTok` | `/api/native-push` | direct |
 | `_flushPendingProviderMsgs` | `/api/provider-message` | via `_sendProviderMessageToClient` |
@@ -548,6 +549,11 @@ saved anywhere", not "does this always call that".
 | `_restorePhotosFromCloud` | `/api/provider-form` | via `submitSignOnDevice` |
 | `_restoreSampleData` | `/api/clients` | via `syncClientEvents` |
 | `_restoreSampleData` | `/api/provider-form` | via `submitSignOnDevice` |
+| `_resumePull` | `/api/clients` | via `_syncSpecificClientsToServer` |
+| `_resumePull` | `/api/provider-form` | via `submitSignOnDevice` |
+| `_resumePull` | `/api/square/connection` | via `_sqConnState` |
+| `_resumePull` | `/api/totp-setup` | via `_beginTotpEnroll` |
+| `_resumePull` | `/api/transcribe` | via `_probeWhisper` |
 | `_retryProviderMsg` | `/api/provider-message` | via `_sendProviderMessageToClient` |
 | `_reviewAckHome` | `/api/clients` | via `syncClientEvents` |
 | `_reviewAckHome` | `/api/square/appointments` | via `_loadSquareAppts` |
@@ -639,6 +645,10 @@ saved anywhere", not "does this always call that".
 | `_shareGuideLink` | `/api/clients` | via `_syncSpecificClientsToServer` |
 | `_shareGuideLink` | `/api/logout` | via `_doLogout` |
 | `_shareGuideLink` | `/api/provider-push` | via `_doLogout` |
+| `_signOutSafely` | `/api/client-code` | via `_clientSendCode` |
+| `_signOutSafely` | `/api/logout` | via `_doLogout` |
+| `_signOutSafely` | `/api/provider-push` | via `_doLogout` |
+| `_signOutSafely` | `/api/store` | via `_flushBeforeSignOut` |
 | `_signedOutBannerHTML` | `/api/client-code` | via `_clientSendCode` |
 | `_sqApptsErrHTML` | `/api/clients` | via `syncClientEvents` |
 | `_sqApptsErrHTML` | `/api/provider-form` | via `submitSignOnDevice` |
@@ -776,9 +786,9 @@ saved anywhere", not "does this always call that".
 | `buildSummaryCustomPanel` | `/api/provider-message` | via `_sendProviderMessageToClient` |
 | `buildSummaryCustomPanel` | `/api/square/catalog` | via `_autoSyncCatalog` |
 | `clearNotif` | `/api/clients` | via `syncClientEvents` |
-| `cloudLogout` | `/api/client-code` | via `_clientSendCode` |
 | `cloudLogout` | `/api/logout` | via `_doLogout` |
 | `cloudLogout` | `/api/provider-push` | via `_doLogout` |
+| `cloudLogout` | `/api/store` | via `_flushBeforeSignOut` |
 | `confirmSendCourse` | `/api/clients` | via `_syncSpecificClientsToServer` |
 | `confirmSendForm` | `/api/clients` | via `_syncSpecificClientsToServer` |
 | `confirmSendProduct` | `/api/clients` | via `_syncSpecificClientsToServer` |
@@ -1374,6 +1384,7 @@ Check here before building a new one.
 | `_restorePhotosFromCloud` | yes |
 | `_restoreRoomDraftPhotos` | yes |
 | `_restoreSampleData` | yes |
+| `_restoreUnsent` | yes |
 | `loadClientHealingStage` | yes |
 | `persistClientHealingStage` | yes |
 | `renderClientRecover` | yes |
