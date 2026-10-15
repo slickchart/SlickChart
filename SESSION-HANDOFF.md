@@ -7157,3 +7157,23 @@ Ashley asked for the product-consult-style sweep on every button in the client f
   now opens scrolled to Guides (`openClientFormSender(id,'guides')`).
 - Checked and fine (worth knowing): homecare routine and product picks, their order, in-office flag and
   custom products all survive a reload and reach `sc_client_recs` / `sc_affiliate_links`.
+
+## 2026-10-14h — Whole-app sweep (provider + client), first fixes (2am run)
+Harnesses (all in `scratchpad/`, run by hand):
+- `sweep-whole-app.mjs provider|client <page> [out.json] [seedJS]`: crawls every screen reachable by
+  `nav(...)` from Home, then taps every control on each screen on a fresh copy. Destructive controls
+  (log out, delete account, wipes) are listed, not tapped. NOTE: rows whose data is `${id}` / `"+id+"`
+  are the crawler reading code samples out of inline script text, not real bugs.
+- `sweep-whole-app-persist.mjs <crawl.json> <page>`: for every tap that changes a saved `sc_*` value,
+  reloads the app and checks the change survived.
+First run: provider demo 141 screens / 1270 controls, provider real 133 / 1163, client demo 22 / 172.
+Real bugs found and fixed:
+1. **Session summary "Customize card"** read `isHairBarberSummary` from another function's scope: it
+   threw, and the summary screen (End session included) failed to draw while the panel stayed open.
+2. **Vault document Delete**: the inline handler's "can't" ended the JS string; the button threw before
+   the confirm opened. Now `_confirmDeleteDoc`.
+3. Hardening: a client-scoped screen opened for a client no longer in `CL` (merged/removed, then Back)
+   crashed to a blank page; `nav` now lands on Clients (`_NAV_CLIENT_SCREENS`).
+Checked, not bugs: Today's Refresh and Setup walkthrough (async / overlay outside the sweep's window);
+client-app "do nothing" taps were re-selecting the already-selected option, and Ask focuses the box.
+Test: `scratchpad/test-sweep-fixes.mjs` 3/3.

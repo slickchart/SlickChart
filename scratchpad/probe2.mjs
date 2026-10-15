@@ -1,0 +1,12 @@
+import pw from '/opt/node22/lib/node_modules/playwright/index.js';
+const b = await pw.chromium.launch({ executablePath: '/opt/pw-browsers/chromium-1194/chrome-linux/chrome' });
+const p = await b.newPage({ viewport: { width: 390, height: 844 } }); const errs=[]; p.on('pageerror', e => errs.push(e.message));
+await p.addInitScript(() => { localStorage.setItem('sc_token', 'TESTTOKEN'); localStorage.setItem('sc_onboarded', '1'); });
+await p.route('**/api/**', r => r.fulfill({ status: 200, contentType: 'application/json', body: r.request().url().includes('cloud-status') ? '{"enabled":true}' : '{"ok":true,"data":{},"clients":[],"appointments":[]}' }));
+await p.goto('http://localhost:8899/slickchart.html'); await p.waitForTimeout(2800);
+const r = await p.evaluate(async () => { nav('more'); replayOnboarding(); const o = document.getElementById('onboard-overlay');
+  const res = { onboard: !!o, onboardText: o ? o.innerText.slice(0, 80) : '' , vis: o ? getComputedStyle(o).display : ''};
+  closeOnboard(); localStorage.setItem('sc_onboarded','1');
+  nav('today-appts'); const t0 = document.getElementById('S').innerHTML; let rendered = 0; const orig = window.renderTodayAppts; window.renderTodayAppts = function(){ rendered++; return orig.apply(this, arguments); };
+  await _loadSquareAppts(true); res.refreshRendered = rendered; res.state = _sqApptsState; return res; });
+console.log(JSON.stringify(r), errs); await b.close();

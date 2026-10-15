@@ -171,6 +171,8 @@ saved anywhere", not "does this always call that".
 | `_composeBroadcast` | `/api/automation-claim` | via `_ssSend` |
 | `_confirmDeleteAccount` | `/api/delete-account` | direct |
 | `_confirmDeleteAccount` | `/api/store` | direct |
+| `_confirmDeleteDoc` | `/api/clients` | via `syncClientEvents` |
+| `_confirmDeleteDoc` | `/api/provider-form` | via `submitSignOnDevice` |
 | `_confirmDisableTotp` | `/api/totp-setup` | via `_beginTotpEnroll` |
 | `_confirmDisableTotp` | `/api/totp-verify` | direct |
 | `_confirmSentToApp` | `/api/clients` | via `_syncSpecificClientsToServer` |

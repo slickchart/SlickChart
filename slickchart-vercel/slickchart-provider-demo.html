@@ -486,7 +486,7 @@ const S=document.getElementById('S');
 // resets when I save it" and there was no way to tell whether her phone had any of them — a whole
 // day was spent debugging code she may not have been running. Shown at the bottom of Settings, so
 // the answer is a screenshot away. Bump it on every ship.
-const APP_BUILD='2026-10-14g';
+const APP_BUILD='2026-10-14h';
 
 
 /* ════════════════════════════════════════════════════════════════
@@ -7896,7 +7896,14 @@ function navBack(){if(_navStack.length){const prev=_navStack.pop();_navBacking=t
 // top of the fields instead of wherever the previous step was scrolled to.
 function _provScrollTop(){try{S.scrollTop=0;}catch(e){}try{window.scrollTo(0,0);}catch(e){}}
 let _ncLastStep=-1;
+const _NAV_CLIENT_SCREENS={client:1,notes:1,photos:1,'write-note':1,'virtual-client':1,brief:1,room:1,rebook:1,'summary-history':1,'session-summary':1,'client-forms':1,checkout:1};
 function nav(screen,data){
+  // A client screen opened for a client who is no longer on the list (merged or removed while you were
+  // in their file, then Back) crashed to a blank page. Land on the client list instead.
+  if(typeof data==='string'&&data&&_NAV_CLIENT_SCREENS[screen]&&typeof CL!=='undefined'&&!CL[data]){
+    try{if(typeof proToast==='function')proToast('That client is no longer on your list');}catch(e){}
+    screen='clients';data=undefined;
+  }
   try{if(typeof _flushSettingsEdits==='function')_flushSettingsEdits();}catch(e){}
   try{if(typeof _savePersistenceSweep==='function')_savePersistenceSweep();}catch(e){}
   const titles={home:'Home',clients:'Clients',forms:'Forms, Guides & Courses',messages:'Messages',pro:'Pro',more:'More',account:'Account',branding:'Branding',shop:'Shop',partners:'Partners',learn:'Courses',virtual:'Photo consults',protocols:'Protocols',vault:'My Docs',inventory:'Inventory',vendors:'Vendors',calendar:'Calendar','today-appts':"Today's appointments",'week-appts':"This week's appointments",'week-clients':"This week's clients",room:'Session','data-setup':'Get set up','import-clients':'Import clients','import-products':'Import products','switch-app':'Switch apps','connect-calendar':'Sync calendar','checkout':'Take payment','whats-new':"What’s new",'feedback-inbox':'Feedback inbox','beta-stats':'Growth stats','payments':'Payments','build-invoice':'Build invoice','service-menu':'Service menu','export-data':'Export Data','reports':'Reports','booking-link':'Booking link','reminders':'Reminders'};
@@ -12587,6 +12594,9 @@ function _renderPhotosView(id,c,_passed){
 }
 
 function buildSummaryCustomPanel(id){
+  // Was reading isHairBarberSummary, which only exists inside renderSessionSummary: opening "Customize
+  // card" threw, and the summary screen (End session included) failed to draw while it stayed open.
+  const isHairBarberSummary=(selectedProfessions.includes('hair')||selectedProfessions.includes('barber'))&&!selectedProfessions.includes('esty')&&!selectedProfessions.includes('brow');
   const rows=[
     ['note','Personal note','Your message to the client'],
     ['homecare',isHairBarberSummary?'Aftercare instructions':'Homecare routine','Step-by-step instructions'],
@@ -20914,6 +20924,14 @@ async function _sendProviderMessageToClient(id,text,photos,_retried,_idem,_mid){
 // unreachable duplicate that had drifted out of sync, so the 'pro' route points at renderMore instead.
 
 // ── VAULT ──
+// The Delete button used to build this inline: an apostrophe in "can't" ended the string and the button
+// threw before the confirm box could open, and the delete itself was passed as text, not a function.
+function _confirmDeleteDoc(did){
+  confirmModal({title:'Delete document',body:'This will permanently remove this document from your vault. This can\u2019t be undone.',action:'Delete'},function(){
+    try{_libForget('sc_docs',did);}catch(e){}
+    docs=docs.filter(x=>x.id!==did);saveDocs();nav('vault');
+  });
+}
 function saveDocs(){try{(function(_v){localStorage.setItem('sc_docs',_v);if(typeof _pushKeyNow==='function')_pushKeyNow('sc_docs',_v);return _v;})(JSON.stringify(docs));}catch(e){if(typeof proToast==='function')proToast('Storage is full, try a smaller file');}}
 function loadDocs(){try{const raw=localStorage.getItem('sc_docs');if(raw){const a=JSON.parse(raw);if(Array.isArray(a))docs=a;}}catch(e){}}
 function _downloadDoc(id){
@@ -21065,7 +21083,7 @@ function renderDocDetail(id){
     </div>
     <div style="font-size:14px;font-weight:500;color:var(--p-mut);text-transform:uppercase;letter-spacing:.07em;margin-bottom:8px;">Renewal reminders</div>
     <div style="background:var(--surf2);border:1px solid var(--p-line);border-radius:12px;margin-bottom:14px;">${(()=>{const rem=d.reminders||{d90:true,d30:true,d0:false};return [['90 days before','d90'],['30 days before','d30'],['On expiry day','d0']].map(([l,k])=>`<div style="display:flex;justify-content:space-between;align-items:center;padding:8px 14px;border-bottom:1px solid var(--p-line2);"><span style="font-size:16px;color:var(--p-ink);">${l}</span>${togBtn(rem[k]!==false,"toggleDocReminder('"+d.id+"','"+k+"')",'Reminder '+l)}</div>`).join('');})()}</div>
-    <div style="display:flex;gap:8px;margin-bottom:20px;"><button class="btng" style="flex:1;" onclick="nav('edit-doc','${d.id}')"><i class="ti ti-pencil"></i> Edit</button><button onclick="confirmModal({title:'Delete document',body:'This will permanently remove this document from your vault. This can\'t be undone.',action:'Delete'},'()=>{_libForget(\'sc_docs\',\'${d.id}\');docs=docs.filter(x=>x.id!==\'${d.id}\');saveDocs();nav(\'vault\')}')" style="flex:1;background:var(--p-red-bg);border:1px solid var(--p-red-line);border-radius:12px;padding:9px;font-size:16px;color:var(--p-red);cursor:pointer;"><i class="ti ti-trash"></i> Delete</button></div>
+    <div style="display:flex;gap:8px;margin-bottom:20px;"><button class="btng" style="flex:1;" onclick="nav('edit-doc','${d.id}')"><i class="ti ti-pencil"></i> Edit</button><button onclick="_confirmDeleteDoc('${_jsAttr(d.id)}')" style="flex:1;background:var(--p-red-bg);border:1px solid var(--p-red-line);border-radius:12px;padding:9px;font-size:16px;color:var(--p-red);cursor:pointer;"><i class="ti ti-trash"></i> Delete</button></div>
   </div>`;
 }
 function renderEditDoc(id){
