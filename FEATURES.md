@@ -51,6 +51,7 @@ saved anywhere", not "does this always call that".
 | `_attnTilesHTML` | `/api/clients` | via `_syncSpecificClientsToServer` |
 | `_attnTilesHTML` | `/api/provider-form` | via `submitSignOnDevice` |
 | `_autoHomecareFromPurchases` | `/api/square/orders` | direct |
+| `_autoMergeSquareDuplicates` | `/api/clients` | via `_serverDeleteClients` |
 | `_autoSyncCatalog` | `/api/clients` | via `syncClientEvents` |
 | `_autoSyncCatalog` | `/api/provider-form` | via `submitSignOnDevice` |
 | `_autoSyncCatalog` | `/api/square/catalog` | direct |
