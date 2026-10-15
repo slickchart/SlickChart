@@ -7235,3 +7235,17 @@ WKAppBoundDomains), so it gets the code-file caching but not the 3s cap; JSC cod
 Recommended next (not done): subset + self-host the 865 KB Tabler icon font; boot timing marks in the
 self-check; native launch-screen colour to remove the white flash; client page (`api/client-page.js`
 sends no-store, 551 KB each open).
+
+## 2026-10-15d — "47 bookings added" on the preview: booking import ran before the account answered
+**Observed (Ashley, preview, right after opening it to check the speed build):** "it loaded but I'm
+getting the booking toasts again - i just had one say 47 bookings added to my client which is not right".
+**Cause (reproduced on the CURRENT code, not caused by the split):** the 6s boot failsafe clears
+`Cloud._booting`; if the account's first answer takes longer, `_rosterNotReadYet()` returned false
+(nothing or an old list on this device) and `_upsertClientsFromSquare` ran against an empty/short `CL`:
+every booker looked new, 47 were CREATED (duplicates, pushed to the account) and toasted.
+**Fix:** `_rosterNotReadYet()` is true while signed in and `!Cloud._pulledOnce`, which also guards the
+event sync's skeleton creation and the reminder generators. Test `scratchpad/test-booking-toast-boot.mjs`
+10/10 (normal / 8s answer / stale device list / both, plus a genuinely new booker still added).
+**Her account likely now holds up to 47 duplicate copies** from that preview launch (the preview uses
+the real database). Cleanup: Admin -> Recover clients -> her email -> "Tidy all duplicate clients".
+The split build itself loaded fine on the Vercel preview (her confirmation), so it ships tonight too.

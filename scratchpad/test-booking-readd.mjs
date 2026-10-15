@@ -9,7 +9,7 @@ const browser = await pw.chromium.launch({ executablePath: '/opt/pw-browsers/chr
 const page = await browser.newPage();
 const errs = []; page.on('pageerror', e => errs.push(String(e && e.message || e)));
 await page.addInitScript(() => { try { localStorage.setItem('sc_token', 'TESTTOKEN'); localStorage.setItem('sc_onboarded', '1'); } catch (e) {} });
-await page.route('**/api/**', r => r.fulfill({ status: 200, contentType: 'application/json', body: '{"ok":true,"data":{},"clients":[],"events":[]}' }));
+await page.route('**/api/**', r => r.fulfill({ status: 200, contentType: 'application/json', body: r.request().url().includes('cloud-status') ? '{"enabled":true}' : '{"ok":true,"data":{},"clients":[],"events":[]}' }));
 await page.goto('http://localhost:8899/' + FILE, { waitUntil: 'load' });
 await page.waitForTimeout(2500);
 const r = await page.evaluate(() => {
