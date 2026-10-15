@@ -9,6 +9,7 @@
 // Gated to emails listed in FOUNDER_EMAILS (Vercel env). Add your login email there to use it.
 import { dbEnabled, sql } from '../../lib/db.js';
 import { verifyToken, isSessionValid } from '../../lib/auth.js';
+import { ensureClientTables, tombstoneClients } from '../../lib/clients.js';
 
 function norm(s) { return String(s || '').trim().toLowerCase(); }
 function digits(s) { let d = String(s || '').replace(/\D/g, ''); if (d.length === 11 && d[0] === '1') d = d.slice(1); return d; }
@@ -57,12 +58,16 @@ export default async function handler(req, res) {
       let body = {};
       try { body = (req.body && typeof req.body === 'object') ? req.body : JSON.parse(req.body || '{}'); } catch (e) {}
       if (body.action !== 'purge' || body.confirm !== true) { res.status(400).json({ error: 'Pass {action:"purge", confirm:true} to scrub.' }); return; }
+      try { await ensureClientTables(); } catch (e) {}
       let purged = 0; const touched = new Set();
       for (const pid of Object.keys(per)) {
         const ids = per[pid].ids; if (!ids.length) continue;
         for (let i = 0; i < ids.length; i += 200) {
           const batch = ids.slice(i, i + 200);
           try { await q`DELETE FROM clients WHERE provider_id = ${pid} AND id = ANY(${batch}::text[])`; purged += batch.length; touched.add(pid); } catch (e) { /* skip a bad batch */ }
+          // No row is left for the soft-delete guard to see, so remember the ids or that account's
+          // device re-creates them on its next roster push.
+          try { await tombstoneClients(pid, batch); } catch (e) {}
         }
       }
       // Scrub the owner's clients out of each touched account's synced roster blob (kv sc_clients).

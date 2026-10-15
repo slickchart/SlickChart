@@ -10,6 +10,7 @@
 // is the same whether or not that email was already on file — a public form that said "welcome back"
 // would let anyone test whether a given person is one of her clients, one address at a time. Nothing
 // about her, her clients or her calendar is returned beyond what the page already showed.
+import crypto from 'crypto';
 import { dbEnabled, sql } from '../lib/db.js';
 import { getProviderBySlug } from '../lib/consult.js';
 import { ensureClientTables, upsertClient, logEvent, genToken } from '../lib/clients.js';
@@ -103,18 +104,42 @@ export default async function handler(req, res) {
 
     await ensureClientTables();
     const q = sql();
-    // Find-or-create, scoped to THIS provider. Matching on email keeps a returning person on their
-    // own chart instead of creating a duplicate every time they book.
+    // Find-or-create, scoped to THIS provider. Matching keeps a returning person on their own chart
+    // instead of creating a duplicate every time they book. Email is compared trimmed on BOTH sides
+    // (a stored "pat@ex.com " never matched), and a client she has on file by phone only is found by
+    // phone + first name — a family sharing one phone books as separate people, by name.
+    const digits = s => String(s || '').replace(/\D/g, '');
+    const ph = digits(phone).slice(-10);
+    const first = norm(name).split(/\s+/)[0] || '';
     let clientId = '';
     try {
-      const rows = await q`SELECT id FROM clients WHERE provider_id = ${prov.id} AND lower(email) = ${norm(email)} AND deleted_at IS NULL LIMIT 1`;
+      const rows = await q`SELECT id FROM clients WHERE provider_id = ${prov.id} AND deleted_at IS NULL
+        AND lower(trim(coalesce(email,''))) = ${norm(email)}
+        ORDER BY (opened_at IS NOT NULL) DESC, updated_at DESC NULLS LAST LIMIT 1`;
       if (rows[0] && rows[0].id) clientId = rows[0].id;
+      if (!clientId && ph.length >= 7 && first) {
+        const r2 = await q`SELECT id FROM clients WHERE provider_id = ${prov.id} AND deleted_at IS NULL
+          AND right(regexp_replace(coalesce(phone,''),'[^0-9]','','g'),10) = ${ph}
+          AND split_part(lower(trim(coalesce(name,''))),' ',1) = ${first}
+          ORDER BY (opened_at IS NOT NULL) DESC, updated_at DESC NULLS LAST LIMIT 1`;
+        if (r2[0] && r2[0].id) clientId = r2[0].id;
+      }
     } catch (e) {}
-    if (!clientId) clientId = 'c_' + genToken().slice(0, 10);
-    await upsertClient(prov.id, {
-      id: clientId, name, email, phone,
-      data: { profile: { email, phone }, initials: initialsOf(name), source: 'booking-link' }
-    });
+    if (clientId) {
+      // An existing client: a PUBLIC form never rewrites her chart (name, notes, profile). Anyone
+      // who knows a client's email could otherwise rename them and blank their app. Only fill a
+      // phone the record does not have yet.
+      if (phone) { try { await q`UPDATE clients SET phone = ${phone} WHERE id = ${clientId} AND provider_id = ${prov.id} AND coalesce(phone,'') = ''`; } catch (e) {} }
+    } else {
+      // A deterministic id, so a double-submit (or two tabs) collapses onto ONE row through
+      // upsertClient's ON CONFLICT path instead of minting a random copy each time.
+      const newRec = id => ({ id, name, email, phone,
+        data: { profile: { email, phone }, initials: initialsOf(name), source: 'booking-link' } });
+      clientId = 'c_bk_' + crypto.createHash('sha256').update(prov.id + '|' + norm(email)).digest('hex').slice(0, 16);
+      const r = await upsertClient(prov.id, newRec(clientId));
+      // She deleted the earlier booking-link record for this email: start a fresh one, never revive it.
+      if (r && r.deleted) { clientId = 'c_' + genToken().slice(0, 10); await upsertClient(prov.id, newRec(clientId)); }
+    }
 
     let lbl = date;
     try { lbl = new Date(date + 'T12:00:00').toLocaleDateString('en-US', { weekday: 'long', month: 'long', day: 'numeric' }); } catch (e) {}

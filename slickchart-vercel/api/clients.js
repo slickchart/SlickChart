@@ -1,7 +1,7 @@
 // Provider-authed: sync the provider's client list + per-client data blobs up to
 // the server (POST), and read them back with link tokens & invite status (GET).
-import { verifyToken } from '../lib/auth.js';
-import { dbEnabled } from '../lib/db.js';
+import { verifyToken, isSessionValid } from '../lib/auth.js';
+import { dbEnabled, sql } from '../lib/db.js';
 import { ensureClientTables, upsertClient, listClients, listEvents, markClientDeleted } from '../lib/clients.js';
 
 function providerId(req) {
@@ -9,13 +9,17 @@ function providerId(req) {
   const h = req.headers['authorization'] || '';
   const t = h.startsWith('Bearer ') ? h.slice(7) : '';
   const c = (s && t) ? verifyToken(t, s) : null;
-  return c && c.u;
+  return c && c.u ? c : null;
 }
 
 export default async function handler(req, res) {
   if (!dbEnabled()) { res.status(200).json({ ok: false, clients: [] }); return; }
-  const provider = providerId(req);
-  if (!provider) { res.status(401).json({ error: 'Not signed in' }); return; }
+  const claim = providerId(req);
+  if (!claim) { res.status(401).json({ error: 'Not signed in' }); return; }
+  // A signed-out (revoked) session must not keep pushing a stale roster and delete list, same rule
+  // as api/store.js. If the check itself fails, don't lock her out over it.
+  try { if (!(await isSessionValid(sql(), claim.sid))) { res.status(401).json({ error: 'This session has been signed out. Please log in again.' }); return; } } catch (e) {}
+  const provider = claim.u;
   await ensureClientTables();
   try {
     if (req.method === 'GET') {

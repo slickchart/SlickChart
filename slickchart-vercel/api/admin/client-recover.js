@@ -25,7 +25,7 @@
 // Owner-only, resolved from the VERIFIED token's email — never from anything in the request (§0.5).
 import { dbEnabled, sql, ensureTable, ensureProvidersTable, ensureFilesTable } from '../../lib/db.js';
 import { verifyToken, isSessionValid } from '../../lib/auth.js';
-import { ensureClientTables } from '../../lib/clients.js';
+import { ensureClientTables, tombstoneClients, clearClientTombstones } from '../../lib/clients.js';
 import { listHistory, restoreVersion, ensureHistoryTable, itemCount } from '../../lib/kv-history.js';
 
 function norm(s) { return String(s || '').trim().toLowerCase(); }
@@ -306,7 +306,12 @@ export async function consolidateName(q, owner, name, includeInvited, opts) {
     await q`UPDATE clients SET deleted_at=NULL WHERE provider_id=${owner} AND id=${keep.id}`;
     broughtBack = true;
   }
-  try { await undeleteIds(q, owner, [keep.id]); } catch (e) {}
+  // Only stamp "brought back" when there was a delete to undo. Stamping every KEPT record made it
+  // immune to any later delete or merge (the app drops a deleted id that also has an undelete
+  // stamp), so a copy kept here could never be merged away and kept coming back as a duplicate.
+  let wasDeleted = !!keep.r.deleted_at;
+  if (!wasDeleted) { try { const dc = await q`SELECT v FROM kv WHERE owner=${owner} AND k='sc_deleted_clients'`; const o = dc.length ? (JSON.parse(dc[0].v) || {}) : {}; wasDeleted = Object.prototype.hasOwnProperty.call(o, keep.id); } catch (e) {} }
+  if (wasDeleted) { try { await undeleteIds(q, owner, [keep.id]); } catch (e) {} }
   let retired = 0;
   for (let i = 0; i < retire.length; i += 200) {
     const chunk = retire.slice(i, i + 200);
@@ -593,9 +598,23 @@ export default async function handler(req, res) {
         // Put back only the named rows when asked (one client found by search), never the thousands
         // of junk rows that are also missing from the list. The ids only NARROW a provider-scoped read.
         const only = Array.isArray(body.onlyIds) ? new Set(body.onlyIds.map(String).slice(0, 50)) : null;
+        // Without a named id, a bulk repair must not put back every leftover COPY of a client the
+        // list already has (one account had 141). A missing row is skipped only when it is plainly
+        // the same person as one already listed: same name, and no email or phone that disagrees.
+        // Two different people who share a name differ on contact details, so they still come back.
+        const nm = v => String(v == null ? '' : v).trim().toLowerCase();
+        const dg = v => String(v == null ? '' : v).replace(/[^0-9]/g, '').slice(-10);
+        const byName = {};
+        const listName = (id, r) => { const k = nm(r && r.name); if (k) (byName[k] = byName[k] || []).push(r); };
+        Object.keys(roster).forEach(id => listName(id, roster[id]));
+        const sameAsListed = row => (byName[nm(row.name)] || []).some(r =>
+          !(nm(r.email) && nm(row.email) && nm(r.email) !== nm(row.email)) &&
+          !(dg(r.phone) && dg(row.phone) && dg(r.phone) !== dg(row.phone)));
+        let skippedCopies = 0;
         for (const row0 of liveRows) {
           if (only && !only.has(String(row0.id))) continue;
           if (roster[row0.id]) continue;
+          if (!only && !nested[row0.id] && sameAsListed(row0)) { skippedCopies++; continue; }
           const row = [row0];
           let d = {};
           try { d = typeof row[0].data === 'string' ? JSON.parse(row[0].data) : (row[0].data || {}); } catch (e) { d = {}; }
@@ -612,19 +631,20 @@ export default async function handler(req, res) {
           const owner2 = nested[row0.id];
           if (owner2) { roster[row0.id].ownerId = owner2.ownerId; roster[row0.id].isAnimal = true; }
           added.push({ id: row0.id, name: row[0].name || '' });
+          listName(row0.id, roster[row0.id]);
         }
         if (!added.length && only) {
           // Already in the list on the server, yet not showing: the delete record is what strips them.
           let undeleted = 0; try { undeleted = await undeleteIds(q, owner, Array.from(only)); } catch (e) {}
           res.status(200).json({ ok: true, addedToRoster: 0, clients: [], undeleted, note: 'Already in their list; taken off the delete record so it stops being removed.' }); return;
         }
-        if (!added.length) { res.status(400).json({ error: 'Their list already has every live client.' }); return; }
+        if (!added.length) { res.status(400).json({ error: 'Their list already has every live client.' + (skippedCopies ? ' ' + skippedCopies + ' leftover copies of listed clients were left out.' : '') }); return; }
         await q`INSERT INTO kv (owner,k,v,updated_at) VALUES (${owner},'sc_clients',${JSON.stringify(roster)},now())
           ON CONFLICT (owner,k) DO UPDATE SET v=EXCLUDED.v, updated_at=now()`;
         let undeleted = 0;
         if (only) { try { undeleted = await undeleteIds(q, owner, Array.from(only)); } catch (e) {} }
-        res.status(200).json({ ok: true, addedToRoster: added.length, clients: added, undeleted,
-          note: 'Added to the account list only. Nothing that was already there was changed, and the previous list is kept under Earlier copies.' });
+        res.status(200).json({ ok: true, addedToRoster: added.length, clients: added, undeleted, skippedCopies,
+          note: (skippedCopies ? skippedCopies + ' leftover copies of clients already in the list were left out. ' : '') + 'Added to the account list only. Nothing that was already there was changed, and the previous list is kept under Earlier copies.' });
         return;
       }
 
@@ -708,6 +728,7 @@ export default async function handler(req, res) {
             const dl = await q`DELETE FROM clients WHERE provider_id=${owner}
               AND id = ANY(${batch}::text[]) RETURNING id`;
             (dl || []).forEach(d => { purged++; const sq = sqByRow[String(d.id)]; if (sq) squareIds.push(sq); });
+            try { await tombstoneClients(owner, (dl || []).map(d => String(d.id))); } catch (e) { /* the device delete record still hides them */ }
           } catch (e) { failed.push(batch.length); }
         }
         // SQUARE IS NOT DELETED FROM HERE. These ids go back to the app, which spends them against
@@ -763,7 +784,7 @@ export default async function handler(req, res) {
                   ${Date.now()},
                   ${c.deleted_at == null ? null : Number(c.deleted_at)})
                 ON CONFLICT (id) DO NOTHING RETURNING id`;
-              if (r && r.length) back++; else skipped++;
+              if (r && r.length) { back++; try { await clearClientTombstones(owner, [String(c.id)]); } catch (e) {} } else skipped++;
             } catch (e) { bad++; }
           }
         }

@@ -45,6 +45,15 @@ export async function ensureClientTables() {
     prefs jsonb DEFAULT '{}'::jsonb,
     updated_at bigint
   )`;
+  // A HARD-deleted client (founder purge) leaves no row, so the soft-delete guard in upsertClient
+  // could not see it and a stale device's next roster push re-created it live. This remembers the
+  // id per owner. Only the purge writes it, only "put the cleared clients back" removes it.
+  await q`CREATE TABLE IF NOT EXISTS client_tombstones (
+    provider_id text NOT NULL,
+    id text NOT NULL,
+    deleted_at bigint,
+    PRIMARY KEY (provider_id, id)
+  )`;
   // Web-push subscriptions — one row per device a client enables notifications on.
   // Keyed by a hash of the endpoint so re-subscribing the same device updates in place.
   await q`CREATE TABLE IF NOT EXISTS push_subscriptions (
@@ -264,6 +273,11 @@ export async function upsertClient(providerId, c) {
     return { id, token: rows[0].token, name: '', email: '', deleted: true };
   }
   let token = rows[0] && rows[0].token;
+  if (!rows[0]) {
+    let gone = false;
+    try { const t = await q`SELECT 1 FROM client_tombstones WHERE provider_id=${providerId} AND id=${id}`; gone = !!(t && t.length); } catch (e) {}
+    if (gone) return { id, token: '', name: '', email: '', deleted: true };
+  }
   if (!token) {
     token = genToken();
     // Two syncs can fire for the SAME brand-new client at once — e.g. the add-path sync (empty
@@ -498,4 +512,19 @@ export async function saveClientPrefs(clientId, prefs) {
     VALUES (${String(clientId)}, ${data}::jsonb, ${now})
     ON CONFLICT (client_id) DO UPDATE SET prefs=${data}::jsonb, updated_at=${now}`;
   return true;
+}
+
+// Record (or clear) a purged client id for this owner. See client_tombstones in ensureClientTables.
+export async function tombstoneClients(providerId, ids) {
+  const list = (ids || []).map(String).filter(Boolean);
+  if (!providerId || !list.length) return;
+  const q = sql();
+  await q`INSERT INTO client_tombstones (provider_id, id, deleted_at)
+    SELECT ${providerId}, x, ${Date.now()} FROM unnest(${list}::text[]) AS x ON CONFLICT DO NOTHING`;
+}
+export async function clearClientTombstones(providerId, ids) {
+  const list = (ids || []).map(String).filter(Boolean);
+  if (!providerId || !list.length) return;
+  const q = sql();
+  await q`DELETE FROM client_tombstones WHERE provider_id=${providerId} AND id = ANY(${list}::text[])`;
 }
