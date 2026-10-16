@@ -30,7 +30,7 @@ const cnt = await prov.evaluate(() => {
 check('"Your product picks · N" counts a product she deleted (count > picks shown)', /2/.test(cnt.count || '') && cnt.rendered === 1, cnt);
 // top Send review with nothing to send: does it still leave the screen?
 const top = await prov.evaluate(() => {
-  clientRecs.aw = []; delete _vcNotesDraft.aw; nav('virtual-client', 'aw');
+  clientRecs.aw = []; delete _vcNotesDraft.aw; { const t0 = document.getElementById('vc-review-notes'); if (t0) t0.value = ''; } nav('virtual-client', 'aw');
   const b = Array.from(document.querySelectorAll('#S button')).find(x => x.textContent.trim() === 'Send review');
   b.click();
   return { still: !!document.getElementById('virtual-client-screen'), title: document.getElementById('tt').textContent };
