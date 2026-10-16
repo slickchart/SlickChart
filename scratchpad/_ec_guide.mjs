@@ -1,0 +1,18 @@
+import pw from '/opt/node22/lib/node_modules/playwright/index.js';
+const b=await pw.chromium.launch({executablePath:'/opt/pw-browsers/chromium-1194/chrome-linux/chrome'});
+const ctx=await b.newContext({viewport:{width:390,height:844}});
+await ctx.route('**/api/**',r=>r.fulfill({status:200,contentType:'application/json',body:r.request().url().includes('cloud-status')?'{"enabled":true}':'{"ok":true,"data":{},"clients":[],"events":[]}'}));
+const p=await ctx.newPage();const errs=[];p.on('pageerror',e=>errs.push(e.message));
+await p.goto('http://localhost:8899/slickchart.html');
+await p.evaluate(()=>{localStorage.setItem('sc_token','eyJ1IjoicDEifQ.sig');localStorage.setItem('sc_onboarded','1');localStorage.setItem('sc_professions',JSON.stringify(['esty']));});
+await p.reload();await p.waitForTimeout(3500);
+const gid=await p.evaluate(()=>resources.find(g=>/^g-esty-ec-/.test(g.id)).id);
+await p.evaluate(i=>nav('edit-resource',i),gid);await p.waitForTimeout(500);
+await p.evaluate(i=>{document.getElementById('res-title').value='My peel aftercare';const t=document.getElementById('res-tips');t.value=t.value+'\nQuestions? Text {business} at {phone}.';saveEditResource(i);},gid);
+await p.waitForTimeout(800);await p.reload();await p.waitForTimeout(3500);
+const r=await p.evaluate(i=>{const g=resources.find(x=>x.id===i);bizInfo.name='Glow';bizInfo.phone='555-0100';
+  CL['cG']={id:'cG',name:'G',pendingForms:[],pendingGuides:[{guideId:i,assignedAt:1}],_token:'t'};
+  const pg=(_assembleClientData('cG').pendingGuides||[])[0];
+  return {title:g&&g.title,last:g&&g.tips[g.tips.length-1],count:resources.filter(x=>/^g-esty-ec-/.test(x.id)).length,sent:pg&&pg.title,sentTip:pg&&pg.tips[pg.tips.length-1]};},gid);
+console.log(gid,JSON.stringify(r),'errors',errs.length);
+await b.close();
