@@ -181,7 +181,7 @@ Founder, SlickChart${freeFooterText(c.email)}`,
       <p style="margin:16px 0;line-height:1.9;">
         Claude, paid plan. Twenty to a hundred a month depending on how hard you go.<br>
         GitHub. Free.<br>
-        Vercel, which is where the app actually lives. Free, and it gives you a real web address people can use.<br>
+        Vercel, which is where the app actually lives. Free while you build, about twenty a month once real customers use it.<br>
         Database. Free to start, and only if your app needs to remember things.<br>
         Stripe. A percentage when money moves. Nothing up front.<br>
         Domain name. Twelve to twenty a year, and optional.
@@ -194,7 +194,7 @@ Founder, SlickChart${freeFooterText(c.email)}`,
 
 Claude, paid plan. Twenty to a hundred a month depending on how hard you go.
 GitHub. Free.
-Vercel, which is where the app actually lives. Free, and it gives you a real web address people can use.
+Vercel, which is where the app actually lives. Free while you build, about twenty a month once real customers use it.
 Database. Free to start, and only if your app needs to remember things.
 Stripe. A percentage when money moves. Nothing up front.
 Domain name. Twelve to twenty a year, and optional.
