@@ -493,7 +493,7 @@ const S=document.getElementById('S');
 // resets when I save it" and there was no way to tell whether her phone had any of them — a whole
 // day was spent debugging code she may not have been running. Shown at the bottom of Settings, so
 // the answer is a screenshot away. Bump it on every ship.
-const APP_BUILD='2026-10-16c';
+const APP_BUILD='2026-10-16d';
 
 
 /* ════════════════════════════════════════════════════════════════
@@ -18080,7 +18080,9 @@ function _guidesTabHTML(){
 }
 function switchFgTab(tab){
   _fgTab=tab;
-  ['forms','guides','courses'].forEach(t=>{const el=document.getElementById('fg-'+t);if(el)el.classList.toggle('active',t===tab);});
+  ['forms','guides','courses','library'].forEach(t=>{const el=document.getElementById('fg-'+t);if(el)el.classList.toggle('active',t===tab);});
+  const lc=document.getElementById('fg-library-content');
+  if(lc){lc.style.display=tab==='library'?'':'none';if(tab==='library'&&!lc.getAttribute('data-built')){lc.innerHTML=_practiceLibraryTabHTML();lc.setAttribute('data-built','1');}}
   const fc=document.getElementById('fg-forms-content');const gc=document.getElementById('fg-guides-content');const cc=document.getElementById('fg-courses-content');
   if(fc)fc.style.display=tab==='forms'?'':'none';
   if(gc){gc.style.display=tab==='guides'?'':'none';if(tab==='guides'&&!gc.getAttribute('data-built')){gc.innerHTML=_guidesTabHTML();gc.setAttribute('data-built','1');}}
@@ -18091,6 +18093,25 @@ function switchFgTab(tab){
 // Built-in form definitions per profession (label + card metadata). Module-level so the
 // forms library, the "send to client" sheet, and the bundle editor all draw from one list.
 const _FORM_DEFS_BY_PROF={
+  // Ashley's Esthetician Collection: its own section, shown to esthetics, waxing, brow and lash pros.
+  ecoll:['The Esthetician Collection',[
+    {icon:'ti-clipboard-text',bg:'var(--p-blue-bg)',ic:'var(--p-blue)',name:'Client intake & health history',sub:'Health history, skin, lifestyle & agreement',id:'ec-intake'},
+    {icon:'ti-file-description',bg:'var(--p-red-bg)',ic:'var(--p-red)',name:'General treatment consent',sub:'Renew every 12 months',id:'ec-general-consent'},
+    {icon:'ti-camera',bg:'var(--p-surf2)',ic:'var(--p-green)',name:'Photo & media release',sub:'Their choice, every time',id:'ec-photo'},
+    {icon:'ti-receipt',bg:'var(--accent-tint)',ic:'var(--accent-strong)',name:'Deposit, cancellation & no-show policy',sub:'Deposit, cancellation & no-show',id:'ec-policies'},
+    {icon:'ti-video',bg:'var(--p-blue-bg)',ic:'var(--p-blue)',name:'Virtual skin consultation',sub:'Complete before the call',id:'ec-virtual'},
+    {icon:'ti-users',bg:'var(--p-purple-bg)',ic:'var(--p-purple)',name:'Parent or guardian consent (clients under 18)',sub:'Clients under 18',id:'ec-minor'},
+    {icon:'ti-flask',bg:'var(--p-red-bg)',ic:'var(--p-red)',name:'Chemical peel consent',sub:'Risks, health check & agreement',id:'ec-peel'},
+    {icon:'ti-razor',bg:'var(--p-red-bg)',ic:'var(--p-red)',name:'Dermaplaning consent',sub:'Risks, health check & agreement',id:'ec-derma'},
+    {icon:'ti-needle',bg:'var(--p-red-bg)',ic:'var(--p-red)',name:'Microneedling consent',sub:'Risks, health check & agreement',id:'ec-micro'},
+    {icon:'ti-file-description',bg:'var(--p-red-bg)',ic:'var(--p-red)',name:'Waxing consent',sub:'Risks, health check & agreement',id:'ec-wax'},
+    {icon:'ti-sparkles',bg:'var(--p-red-bg)',ic:'var(--p-red)',name:'Facial & extractions consent',sub:'Risks, health check & agreement',id:'ec-facial'},
+    {icon:'ti-file-description',bg:'var(--p-red-bg)',ic:'var(--p-red)',name:'Acne facial consent',sub:'Risks, health check & agreement',id:'ec-acne'},
+    {icon:'ti-droplet',bg:'var(--p-red-bg)',ic:'var(--p-red)',name:'Hydrodermabrasion facial consent',sub:'Risks, health check & agreement',id:'ec-hydro'},
+    {icon:'ti-bulb',bg:'var(--p-red-bg)',ic:'var(--p-red)',name:'LED light therapy consent',sub:'Risks, health check & agreement',id:'ec-led'},
+    {icon:'ti-bolt',bg:'var(--p-red-bg)',ic:'var(--p-red)',name:'Microcurrent facial consent',sub:'Risks, health check & agreement',id:'ec-microcurrent'},
+    {icon:'ti-eye',bg:'var(--p-red-bg)',ic:'var(--p-red)',name:'Lash & brow tint consent',sub:'Risks, health check & agreement',id:'ec-tint'},
+  ]],
   tattoo:['Tattoo',[
     {icon:'ti-clipboard-text',bg:'var(--p-purple-bg)',ic:'var(--p-purple)',name:'Tattoo intake & medical history',sub:'Health history + high-risk flags',id:'tattoo-intake'},
     {icon:'ti-file-description',bg:'var(--p-red-bg)',ic:'var(--p-red)',name:'Tattoo consent & release',sub:'Permanency, touch-up policy & risks',id:'tattoo-consent'},
@@ -18190,6 +18211,7 @@ function _profFormDefs(){
   const has=p=>selectedProfessions.includes(p);
   let profs=['tattoo','movement','equine','spraytan','headspa','esty','wax','brow','pmu','lash','hair','barber','makeup','massage','nail','nutrition','contour','coach'].filter(p=>has(p)&&_FORM_DEFS_BY_PROF[p]);
   if(!profs.length)profs=['esty'];
+  if(['esty','wax','brow','lash'].some(p=>profs.includes(p)))profs.push('ecoll');
   const out=[],seen={};
   // Honor a provider's renamed built-in form: the edit is saved to formTmpls[id].name, so surface
   // that name here too (Forms list already does) — otherwise the send/first-visit flows show the
@@ -18304,9 +18326,11 @@ function renderForms(){
   const F=_FORM_DEFS_BY_PROF;
   let sections=['tattoo','movement','equine','spraytan','headspa','esty','wax','brow','pmu','lash','hair','barber','makeup','massage','nail','nutrition','contour','coach'].filter(p=>has(p)&&F[p]);
   if(!sections.length)sections=['esty'];
+  if(['esty','wax','brow','lash'].some(p=>sections.includes(p)))sections.push('ecoll');
   // Photo release is bundled into every intake (asked once, auto-captured to the client's file),
   // so it's no longer offered as a separate sendable card here, that duplicated the consent.
-  const checkinSub=sections.length>1?`Sends on its own before every visit · Covers all ${sections.length} kinds of work you do`:'Auto-sends before every appointment · Fully customizable';
+  const _workKinds=sections.filter(p=>p!=='ecoll').length;
+  const checkinSub=_workKinds>1?`Sends on its own before every visit · Covers all ${_workKinds} kinds of work you do`:'Auto-sends before every appointment · Fully customizable';
 
   S.innerHTML=`
   ${_sectionTabBar('forms')}
@@ -18314,6 +18338,7 @@ function renderForms(){
     <button class="tab ${_fgTab==='forms'?'active':''}" id="fg-forms" onclick="switchFgTab('forms')">Forms</button>
     <button class="tab ${_fgTab==='guides'?'active':''}" id="fg-guides" onclick="switchFgTab('guides')">Guides</button>
     <button class="tab ${_fgTab==='courses'?'active':''}" id="fg-courses" onclick="switchFgTab('courses')">Courses</button>
+    ${_plShown()?`<button class="tab ${_fgTab==='library'?'active':''}" id="fg-library" onclick="switchFgTab('library')">Library</button>`:''}
   </div>
   <div id="fg-forms-content" style="display:${_fgTab==='forms'?'':'none'};">
   <div style="padding:12px 16px 8px;display:flex;justify-content:space-between;align-items:center;"><span style="font-size:16px;color:var(--p-mut);">Your saved forms</span><button onclick="nav('form-builder','new')" style="background:var(--accent);color:var(--accent-ink);border:1px solid var(--btn-edge);border-radius:8px;padding:7px 12px;font-size:16px;font-weight:500;cursor:pointer;display:flex;align-items:center;gap:4px;"><i class="ti ti-plus" style="font-size:16px;"></i> New form</button></div>
@@ -18345,7 +18370,8 @@ function renderForms(){
   <div style="height:16px;"></div>
   </div>
   <div id="fg-guides-content" style="display:${_fgTab==='guides'?'':'none'};" ${_fgTab==='guides'?'data-built="1"':''}>${_fgTab==='guides'?_guidesTabHTML():''}</div>
-  <div id="fg-courses-content" style="display:${_fgTab==='courses'?'':'none'};" ${_fgTab==='courses'?'data-built="1"':''}>${_fgTab==='courses'?_coursesTabHTML():''}</div>`;
+  <div id="fg-courses-content" style="display:${_fgTab==='courses'?'':'none'};" ${_fgTab==='courses'?'data-built="1"':''}>${_fgTab==='courses'?_coursesTabHTML():''}</div>
+  <div id="fg-library-content" style="display:${_fgTab==='library'?'':'none'};">${_fgTab==='library'&&_plShown()?_practiceLibraryTabHTML():''}</div>`;
   if(_fgTab==='courses'){try{setTimeout(_offerCourseRecovery,0);}catch(e){}try{setTimeout(_autoRetryPendingCourseFiles,2500);}catch(e){}}
 }
 function filterForms(q){
@@ -19733,6 +19759,284 @@ const formTmpls={
   ]},
   new:{name:'',qs:[]},
 };
+// ── THE ESTHETICIAN COLLECTION (Ashley's forms, 2026-10-16) ─────────────────────────────────────────
+// Built in for every subscriber. These are ADDED under new 'ec-*' ids: the stock forms are untouched,
+// and a form already sent or signed can never change, because the client's copy is a snapshot taken
+// when it was sent (_assembleClientData). Added here, beside the other built-ins, so _snapshotBundled()
+// counts them as bundled: like every built-in they are only stored on an account if she edits one.
+const EC_FORMS={
+ 'ec-intake':{name:'Client intake & health history',qs:[
+  {id:'ec-intake-1',label:'Full name',type:'Short text',required:true},
+  {id:'ec-intake-2',label:'Pronouns',type:'Short text',required:false},
+  {id:'ec-intake-3',label:'Mobile phone',type:'Short text',required:false},
+  {id:'ec-intake-4',label:'Date of birth',type:'Date',required:false},
+  {id:'ec-intake-5',label:'Email',type:'Short text',required:false},
+  {id:'ec-intake-6',label:'Address',type:'Short text',required:false},
+  {id:'ec-intake-7',label:'Emergency contact & relationship',type:'Short text',required:false},
+  {id:'ec-intake-8',label:'Their phone',type:'Short text',required:false},
+  {id:'ec-intake-9',label:'Occupation · time outdoors',type:'Short text',required:false},
+  {id:'ec-intake-10',label:'How did you hear about us?',type:'Short text',required:false},
+  {id:'ec-intake-11',label:'Best way to reach you',type:'Single select',required:false,options:['Text','Email','Call']},
+  {id:'ec-intake-12',label:'OK to text reminders?',type:'Yes / No',required:false},
+  {id:'ec-intake-13',label:'Health history: Some treatments aren’t safe with certain medications or conditions. Please answer every line; your answers stay confidential. Tick anything that applies to you.',type:'Contraindications',required:false,items:['Pregnant, trying to conceive, or nursing','Accutane (isotretinoin) now or in the past 6 months','Prescription retinoid (tretinoin, adapalene, tazarotene)','Retinol, acids (AHA/BHA), benzoyl peroxide or at-home peels','Blood thinners, daily aspirin or fish oil','Antibiotics or other sun-sensitizing medication','History of cold sores or fever blisters','Pacemaker, heart condition, or metal implants in the face','Epilepsy or seizures','Diabetes','Skin cancer, or a mole that has changed','Keloids or raised scarring','Autoimmune condition (lupus, psoriasis, vitiligo)','Eczema, rosacea, or another skin condition','Hormone therapy, birth control, or thyroid condition','Botox or filler in the past 2 weeks','Laser, peel, microneedling or dermaplaning in the past 2 weeks','Facial waxing, threading or hair-removal cream this week','Sunburn, tanning bed or sun vacation in the past 2 weeks','A rash, infection, cold sore or open wound right now']},
+  {id:'ec-intake-14',label:'Allergies',type:'Multiple choice',required:false,options:['Aspirin / salicylates','Latex','Nuts or nut oils','Fragrance','Lidocaine / numbing','Adhesives','Bee products','Other']},
+  {id:'ec-intake-15',label:'List all medications, supplements & prescription skin products',type:'Long text',required:false},
+  {id:'ec-intake-16',label:'Anything else we should know? (Surgeries, cancer treatment, other conditions)',type:'Long text',required:false},
+  {id:'ec-intake-17',label:'What would you like to work on? Check all that apply',type:'Multiple choice',required:false,options:['Breakouts or acne','Fine lines or firmness','Dark spots or uneven tone','Redness or sensitivity','Dryness or dehydration','Oiliness or shine','Texture or large pores','Acne scarring','Dark circles or puffiness']},
+  {id:'ec-intake-18',label:'Your #1 goal for today',type:'Short text',required:false},
+  {id:'ec-intake-19',label:'First facial?',type:'Yes / No',required:false},
+  {id:'ec-intake-20',label:'Past professional treatments, and any reactions to products or treatments',type:'Long text',required:false},
+  {id:'ec-intake-21',label:'Morning routine (products you use)',type:'Long text',required:false},
+  {id:'ec-intake-22',label:'Evening routine (products you use)',type:'Long text',required:false},
+  {id:'ec-intake-23',label:'Sunscreen daily?',type:'Single select',required:false,options:['Every day','Sometimes','Rarely']},
+  {id:'ec-intake-24',label:'Exfoliate how often?',type:'Short text',required:false},
+  {id:'ec-intake-25',label:'Sun exposure',type:'Single select',required:false,options:['Low','Moderate','High']},
+  {id:'ec-intake-26',label:'Smoke or vape?',type:'Yes / No',required:false},
+  {id:'ec-intake-27',label:'Water per day (glasses)',type:'Short text',required:false},
+  {id:'ec-intake-28',label:'Sleep per night (hours)',type:'Short text',required:false},
+  {id:'ec-intake-29',label:'Stress level',type:'Single select',required:false,options:['Low','High']},
+  {id:'ec-intake-30',label:'Workouts / week',type:'Short text',required:false},
+  {id:'ec-intake-31',label:'Cycle breakouts?',type:'Yes / No',required:false},
+  {id:'ec-intake-32',label:'My answers are true and complete. I’ll tell you before each visit if my health, medications or skincare change.',type:'Yes / No',required:true},
+  {id:'ec-intake-33',label:'Esthetic services are not medical treatment. My esthetician does not diagnose and may refer me to a physician.',type:'Yes / No',required:true},
+  {id:'ec-intake-34',label:'Results vary and aren’t guaranteed. Temporary redness, tingling or flaking can happen.',type:'Yes / No',required:true},
+  {id:'ec-intake-35',label:'I won’t hold the provider responsible for reactions caused by information I didn’t share.',type:'Yes / No',required:true},
+  {id:'ec-intake-36',label:'I’ll follow my aftercare instructions, including broad-spectrum SPF every day.',type:'Yes / No',required:true},
+  {id:'ec-intake-37',label:'I can ask questions or stop a treatment at any time.',type:'Yes / No',required:true},
+  {id:'ec-intake-38',label:'I’ve read the deposit and cancellation policy. Changes need 24 hours’ notice.',type:'Yes / No',required:true},
+  {id:'ec-intake-39',label:'YOUR PRIVACY. Your information is kept confidential, stored securely, and used only to provide your services. It is never shared without your written consent except as required by law. Records are kept for as long as the law requires. Specialized treatments need their own consent form. I have read this.',type:'Yes / No',required:true},
+  {id:'ec-intake-40',label:'Parent or guardian name (if under 18)',type:'Short text',required:false},
+  {id:'ec-intake-41',label:'I confirm the information above is accurate',type:'Signature',required:true},
+ ]},
+ 'ec-general-consent':{name:'General treatment consent',qs:[
+  {id:'ec-general-consent-1',label:'Client name',type:'Short text',required:true},
+  {id:'ec-general-consent-2',label:'Date of birth',type:'Date',required:false},
+  {id:'ec-general-consent-3',label:'Services I’m consenting to',type:'Long text',required:false},
+  {id:'ec-general-consent-4',label:'ABOUT YOUR SERVICES. What this covers: Facials, extractions, exfoliation, masks, massage, skin devices and waxing. What you may feel: Warmth, tingling, pressure with extractions and a quick sting as wax comes off. It fades fast. Your right to stop: You can ask questions, or pause or stop any service at any time. Just tell me. I have read this.',type:'Yes / No',required:true},
+  {id:'ec-general-consent-5',label:'POSSIBLE RISKS. Facials & extractions: common, temporary: redness for a few hours; a few breakouts. Less common: allergic reaction; marks or bruising. Exfoliation: common, temporary: pinkness or light flaking for 1 to 3 days. Less common: irritation, sun sensitivity, darker patches. Waxing & tweezing: common, temporary: brief pain, redness and bumps for 1 to 2 days. Less common: ingrown hairs, folliculitis, burns, skin lifting. Massage & devices: common, temporary: mild redness or warmth. Less common: not used with some implants, pregnancy or seizures. Isotretinoin (now or in the past 6 months), prescription retinoids and some antibiotics thin the skin, so waxing could lift or tear it. I understand these risks.',type:'Yes / No',required:true},
+  {id:'ec-general-consent-6',label:'My answers are true. I’ll tell you about any health, medication or skincare change before each visit.',type:'Yes / No',required:true},
+  {id:'ec-general-consent-7',label:'These services are cosmetic. You don’t diagnose or treat conditions and may refer me to a physician.',type:'Yes / No',required:true},
+  {id:'ec-general-consent-8',label:'I’ve read the possible risks above. Results vary, and no specific result has been promised to me.',type:'Yes / No',required:true},
+  {id:'ec-general-consent-9',label:'I’ll speak up if anything is too hot or painful. You may skip a service that isn’t right for my skin.',type:'Yes / No',required:true},
+  {id:'ec-general-consent-10',label:'I’ll follow aftercare. If a reaction lasts or worsens, I’ll contact you and see a healthcare provider.',type:'Yes / No',required:true},
+  {id:'ec-general-consent-11',label:'I release this business from reactions caused by details I didn’t share or aftercare I skipped, as far as state law allows.',type:'Yes / No',required:true},
+  {id:'ec-general-consent-12',label:'This consent lasts 12 months. Specialized treatments, such as peels, need their own consent.',type:'Yes / No',required:true},
+  {id:'ec-general-consent-13',label:'Parent or guardian name (if under 18): a parent or legal guardian must sign here and complete the Minor Consent form before any service. State rules may also require them to stay during the visit.',type:'Short text',required:false},
+  {id:'ec-general-consent-14',label:'I confirm the information above is accurate',type:'Signature',required:true},
+ ]},
+ 'ec-photo':{name:'Photo & media release',qs:[
+  {id:'ec-photo-1',label:'Client name',type:'Short text',required:true},
+  {id:'ec-photo-2',label:'Phone',type:'Short text',required:false},
+  {id:'ec-photo-email',label:'Email',type:'Short text',required:false},
+  {id:'ec-photo-3',label:'ABOUT YOUR PHOTOS. Photos help me track how your skin responds over time. Sharing them is a separate choice. Saying no never affects your care, and you can change your answers at any time. I have read this.',type:'Yes / No',required:true},
+  {id:'ec-photo-4',label:'1. My private chart only: Before, during and after photos used only to plan and track my treatments. Never shared.',type:'Yes / No',required:true},
+  {id:'ec-photo-5',label:'2. Marketing, face hidden: Cropped close-ups on social media, website or print. Eyes, tattoos and other identifying marks are hidden.',type:'Yes / No',required:true},
+  {id:'ec-photo-6',label:'3. Marketing, face visible: Full-face photos or video on social media, website or print. I’ll show you any image before it’s posted.',type:'Yes / No',required:true},
+  {id:'ec-photo-7',label:'4. My name, tag or review with photos: You may use my first name or social handle, tag me, or quote my review alongside my photos.',type:'Yes / No',required:true},
+  {id:'ec-photo-8',label:'Name or handle to use (if 4 is yes)',type:'Short text',required:false},
+  {id:'ec-photo-9',label:'Limits (areas, platforms, dates)',type:'Long text',required:false},
+  {id:'ec-photo-10',label:'HOW YOUR PHOTOS ARE HANDLED. Storage: Taken on a business device and kept in our secure app, not a personal camera roll. Chart photos are kept with your records for as long as the law requires. Changing your mind: Tell me in writing (email or text is fine). I’ll stop new use and remove posts I control within 7 days. Printed items and shares by others may be out of my reach. No payment: This release is voluntary. You won’t receive payment, royalties or free services for photos or reviews. Honest images: Photos aren’t filtered or retouched to change results. Same lighting and angle for before and after. I have read this.',type:'Yes / No',required:true},
+  {id:'ec-photo-11',label:'Parent or guardian name (if under 18)',type:'Short text',required:false},
+  {id:'ec-photo-12',label:'By signing, I confirm my choices above. This release stays in effect until I change or withdraw it in writing.',type:'Signature',required:true},
+ ]},
+ 'ec-policies':{name:'Deposit, cancellation & no-show policy',qs:[
+  {id:'ec-policies-1',label:'Printed name',type:'Short text',required:true},
+  {id:'ec-policies-2',label:'APPOINTMENT POLICIES. Your appointment time is reserved just for you. These policies keep the schedule fair for every client. Thank you for respecting them. Deposit: $25 or 25%. Due at booking. It goes toward your service total. Notice to change: 24 hours. To cancel or reschedule with your deposit kept on file. Grace period: 10 minutes. After that, your service may be shortened. Rescheduling: With 24 hours’ notice, your deposit moves to your new time. You can reschedule up to 2 times per booking. Late cancellation: Less than 24 hours’ notice: your deposit is kept, or a fee of 50% of the service is charged. No-show: No notice at all: 100% of the service is charged. After 2 no-shows, future visits must be prepaid. Late arrival: After 10 minutes, your service is shortened at full price. After 15 minutes, it counts as a late cancellation. Feeling unwell? Fever, cold or flu, or an active cold sore, rash, infection or sunburn in the treatment area? Tell me before your visit and I’ll reschedule you with no fee. The same applies if I find your skin isn’t ready that day. Service refunds: Services can’t be refunded once performed. If you’re unhappy, contact me within 72 hours so I can check your skin. Product returns: Unopened, within 14 days with receipt: refund or exchange. Opened and irritating your skin: store credit within 14 days. Packages & gift cards: Packages expire after 12 months. Gift cards follow state law. Clients under 18: A parent or guardian must sign a minor consent form before the first visit, and stay for the full service. A calm space: Please silence your phone. Children and guests can’t wait in the treatment room unless arranged ahead. I have read this.',type:'Yes / No',required:true},
+  {id:'ec-policies-3',label:'Card on file for deposits and fees, charged only as described above: Never write card numbers on this form.',type:'Single select',required:false,options:['Card saved in our booking system','I prefer to prepay']},
+  {id:'ec-policies-4',label:'Parent or guardian name (if under 18)',type:'Short text',required:false},
+  {id:'ec-policies-5',label:'By signing, I confirm I’ve read and agree to these policies, and that fees may be charged as described.',type:'Signature',required:true},
+ ]},
+ 'ec-virtual':{name:'Virtual skin consultation',qs:[
+  {id:'ec-virtual-1',label:'Full name',type:'Short text',required:true},
+  {id:'ec-virtual-2',label:'Age',type:'Short text',required:false},
+  {id:'ec-virtual-3',label:'Email',type:'Short text',required:false},
+  {id:'ec-virtual-4',label:'Phone',type:'Short text',required:false},
+  {id:'ec-virtual-5',label:'Call date & time',type:'Short text',required:false},
+  {id:'ec-virtual-6',label:'State',type:'Short text',required:false},
+  {id:'ec-virtual-7',label:'Your goals',type:'Multiple choice',required:false,options:['Breakouts','Dark spots','Fine lines','Redness','Dryness','Oiliness','Texture or pores','A simpler routine']},
+  {id:'ec-virtual-8',label:'In your words: what would you most like to change, and how long has it bothered you?',type:'Long text',required:false},
+  {id:'ec-virtual-9',label:'Morning products (brand & name)',type:'Long text',required:false},
+  {id:'ec-virtual-10',label:'Evening products (brand & name)',type:'Long text',required:false},
+  {id:'ec-virtual-11',label:'Prescription or acne medications',type:'Long text',required:false},
+  {id:'ec-virtual-12',label:'Allergies or products that irritated you',type:'Long text',required:false},
+  {id:'ec-virtual-13',label:'Pregnant or nursing?',type:'Yes / No',required:false},
+  {id:'ec-virtual-14',label:'Under a doctor’s care for your skin?',type:'Yes / No',required:false},
+  {id:'ec-virtual-15',label:'Monthly skincare budget',type:'Single select',required:false,options:['Under $50','$50–100','$100–200','$200+','Use what I have']},
+  {id:'ec-virtual-16',label:'YOUR PHOTOS. Send this form and your photos 24 hours ahead, the way I asked you to. Send these three: Front, Left side, Right side. Plus one close-up of your main concern. Hair pulled back, face filling most of the frame. How to take them: Clean skin, no makeup. Face a bright window in daylight; no flash, filters or beauty mode. Plain background. Check each one is sharp before sending. I have read this.',type:'Yes / No',required:true},
+  {id:'ec-virtual-17',label:'A virtual consult gives skincare guidance only. It isn’t a medical exam or diagnosis, and photos can miss things an in-person visit would catch.',type:'Yes / No',required:true},
+  {id:'ec-virtual-18',label:'You may recommend an in-person visit or refer me to a physician, especially for a changing mole, sudden rash or a concern that isn’t improving.',type:'Yes / No',required:true},
+  {id:'ec-virtual-19',label:'My answers are complete. I’ll patch test new products and stop any that irritate my skin. Results vary and aren’t guaranteed.',type:'Yes / No',required:true},
+  {id:'ec-virtual-20',label:'My photos are kept privately in my file and won’t be shared without a separate photo release.',type:'Yes / No',required:true},
+  {id:'ec-virtual-21',label:'I confirm the information above is accurate',type:'Signature',required:true},
+ ]},
+ 'ec-minor':{name:'Parent or guardian consent (clients under 18)',qs:[
+  {id:'ec-minor-1',label:'Minor’s full name',type:'Short text',required:true},
+  {id:'ec-minor-2',label:'Date of birth',type:'Date',required:false},
+  {id:'ec-minor-3',label:'Age',type:'Short text',required:false},
+  {id:'ec-minor-4',label:'Parent or legal guardian full name',type:'Short text',required:true},
+  {id:'ec-minor-5',label:'Relationship',type:'Single select',required:false,options:['Parent','Legal guardian','Other']},
+  {id:'ec-minor-6',label:'Mobile phone',type:'Short text',required:false},
+  {id:'ec-minor-7',label:'Email',type:'Short text',required:false},
+  {id:'ec-minor-8',label:'Second contact & phone',type:'Short text',required:false},
+  {id:'ec-minor-9',label:'Services I authorize: Peels, microneedling, dermaplaning, intimate waxing and other advanced services: not offered to minors separate consent, parent present.',type:'Multiple choice',required:true,options:['Facial, basic or teen','Extractions','Acne-focused facial','Brow wax or tweeze','Lip or face wax','Body wax (area)','Gentle exfoliation','Brow or lash tint','Other']},
+  {id:'ec-minor-10',label:'Body wax area or other service',type:'Short text',required:false},
+  {id:'ec-minor-11',label:'Valid for',type:'Single select',required:true,options:['Today only','12 months or until age 18']},
+  {id:'ec-minor-12',label:'Health notes for today: medications, allergies, recent changes',type:'Long text',required:false},
+  {id:'ec-minor-13',label:'I’m the parent or legal guardian of this minor and have the legal right to consent to their care.',type:'Yes / No',required:true},
+  {id:'ec-minor-14',label:'I’ve completed my child’s intake truthfully, including acne medications, allergies and skin conditions.',type:'Yes / No',required:true},
+  {id:'ec-minor-15',label:'I’ve read the General Treatment Consent and its risks. Results aren’t guaranteed.',type:'Yes / No',required:true},
+  {id:'ec-minor-16',label:'A parent or guardian will stay on site be in the treatment room for the full service.',type:'Yes / No',required:true},
+  {id:'ec-minor-17',label:'My child may stop any service at any time. I’ll help them follow aftercare.',type:'Yes / No',required:true},
+  {id:'ec-minor-18',label:'I can withdraw consent in writing. Photos of my child need a separate signed release.',type:'Yes / No',required:true},
+  {id:'ec-minor-19',label:'Minor’s agreement: I agree to these services.',type:'Yes / No',required:true},
+  {id:'ec-minor-20',label:'Parent or guardian signature: I confirm the information above is accurate',type:'Signature',required:true},
+ ]},
+ 'ec-peel':{name:'Chemical peel consent',qs:[
+  {id:'ec-peel-1',label:'Client name',type:'Short text',required:true},
+  {id:'ec-peel-2',label:'Date of birth',type:'Date',required:false},
+  {id:'ec-peel-3',label:'ABOUT YOUR PEEL. What it is: A professional acid solution removes the outermost layer of dead skin cells to improve tone, texture, breakouts or fine lines. This is a superficial peel; it works on the surface layer only. What you’ll feel: Tingling, stinging, warmth or itching for a few minutes. Tell me right away if it feels too strong; I can remove or neutralize the peel at any time. What to expect: Redness for a few hours to 2 days, then possible flaking for 3 to 7 days. Most people need a series of peels 2 to 4 weeks apart. Results build gradually and aren’t permanent. Other options: No treatment, homecare products, gentler exfoliation such as enzymes, or a referral to a physician for stronger peels, laser or prescription care. I have read this.',type:'Yes / No',required:true},
+  {id:'ec-peel-4',label:'POSSIBLE RISKS AND SIDE EFFECTS. Darker patches (post-inflammatory hyperpigmentation), more likely in deeper skin tones; Lighter patches (hypopigmentation); Redness that lasts longer than expected; A cold sore outbreak if you’ve had them before; Allergic or irritant reaction; Blistering, crusting or, rarely, infection; Uneven results or a visible line where the peel ends; A temporary breakout or milia; Melasma that gets worse; Scarring, which is rare. Sun exposure, picking at flaking skin and skipping aftercare all raise these risks. I understand these risks.',type:'Yes / No',required:true},
+  {id:'ec-peel-5',label:'Before your peel: tick anything that applies to you. A yes doesn’t always mean no peel. We’ll talk it through, and I may adjust the treatment, reschedule, or ask for your physician’s OK.',type:'Contraindications',required:false,items:['Pregnant or nursing','Accutane (isotretinoin) in the past 6 months','Prescription retinoid in the past 7 days','Retinol, acids, scrubs or benzoyl peroxide in the past 3 days','Waxing, hair-removal cream or electrolysis on the area in the past 7 days','Botox, filler, laser or microdermabrasion in the past 2 weeks','Tanning bed or long sun exposure in the past 2 weeks, or a sunburn now','A cold sore now, or a history of cold sores','Allergy to aspirin or salicylates','Antibiotics or other sun-sensitizing medication','Keloids, autoimmune condition, diabetes or slow healing','A rash, wound or infection in the area']},
+  {id:'ec-peel-6',label:'I’ve shared my full health and medication history honestly. I’ll tell my esthetician about any change before each peel.',type:'Yes / No',required:true},
+  {id:'ec-peel-7',label:'I’ve read and understand the possible risks on page 1, including pigment changes. Scarring is rare but possible.',type:'Yes / No',required:true},
+  {id:'ec-peel-8',label:'I’ll follow my pre-care and aftercare, wear SPF 30+ every day, avoid tanning, and won’t pick or peel flaking skin.',type:'Yes / No',required:true},
+  {id:'ec-peel-9',label:'Results vary and aren’t guaranteed. A series of 3–6 peels about 2–4 weeks apart is usually needed.',type:'Yes / No',required:true},
+  {id:'ec-peel-10',label:'I’ll speak up right away if the peel burns or itches too strongly, and I can stop the treatment at any time.',type:'Yes / No',required:true},
+  {id:'ec-peel-11',label:'This consent covers my peel series. I’ll re-confirm my health history at each visit.',type:'Yes / No',required:true},
+  {id:'ec-peel-12',label:'Services can’t be refunded once performed.',type:'Yes / No',required:true},
+  {id:'ec-peel-13',label:'I’ve had the chance to ask questions, and they were answered to my satisfaction.',type:'Yes / No',required:true},
+  {id:'ec-peel-14',label:'Photos: You can withdraw photo permission at any time, in writing.',type:'Single select',required:true,options:['Before and after photos for my private chart only','Social media or website, with my face hidden','Social media or website, face visible','No photos, please']},
+  {id:'ec-peel-15',label:'Parent or guardian name (if under 18)',type:'Short text',required:false},
+  {id:'ec-peel-16',label:'By signing, I confirm I’ve read both pages of this form, understand them, and consent to a chemical peel and any follow-up peels in my plan.',type:'Signature',required:true},
+ ]},
+ 'ec-derma':{name:'Dermaplaning consent',qs:[
+  {id:'ec-derma-1',label:'Client name',type:'Short text',required:true},
+  {id:'ec-derma-2',label:'Date of birth',type:'Date',required:false},
+  {id:'ec-derma-3',label:'ABOUT DERMAPLANING. What it is: A sterile, single-use blade gently lifts dead surface skin and fine ‘peach fuzz’ hair. What you’ll feel: Light, feathery strokes. It shouldn’t hurt; tell me if anything stings. What to expect: Smooth skin, pink for a few hours. Hair grows back soft and fine, not thicker or darker. Other options: No treatment, an enzyme or gentle peel, or a doctor visit for coarse or fast-growing hair. I have read this.',type:'Yes / No',required:true},
+  {id:'ec-derma-4',label:'POSSIBLE RISKS AND SIDE EFFECTS. Small nicks or cuts, which are uncommon; Redness, dryness or stinging for a day or two; Breakouts, or spread of bacteria over active acne; Darker patches, more likely in deeper skin tones; A cold sore flare or, rarely, infection; More sun sensitivity for about a week. I understand these risks.',type:'Yes / No',required:true},
+  {id:'ec-derma-5',label:'Before your treatment: tick anything that applies to you. I never dermaplane over active breakouts; I’ll work around them or reschedule. A yes may mean a doctor’s OK first.',type:'Contraindications',required:false,items:['Accutane (isotretinoin) in the past 6 months','Prescription retinoid in the past 14 days','Retinol, acids or scrubs in the past 3 days','Active acne, cold sore or rash on the face now','Sunburn now, or tanning in the past 2 weeks','Peel, laser or facial waxing in the past 2 weeks','Botox or filler in the past 2 weeks','Blood thinners or a bleeding disorder','Rosacea, eczema or psoriasis on the face','Diabetes, keloids or slow healing']},
+  {id:'ec-derma-6',label:'My health and medication history is complete. I’ll share any changes before each visit.',type:'Yes / No',required:true},
+  {id:'ec-derma-7',label:'I understand the risks above. Results vary, aren’t guaranteed, and hair will grow back.',type:'Yes / No',required:true},
+  {id:'ec-derma-8',label:'I’ll follow my aftercare and wear SPF 30+ daily. I can ask to stop at any time.',type:'Yes / No',required:true},
+  {id:'ec-derma-9',label:'My questions were answered. Services can’t be refunded once performed.',type:'Yes / No',required:true},
+  {id:'ec-derma-10',label:'Photos',type:'Single select',required:true,options:['Private chart only','Social, face hidden','Social, face visible','No photos']},
+  {id:'ec-derma-11',label:'Parent or guardian name (if under 18)',type:'Short text',required:false},
+  {id:'ec-derma-12',label:'By signing, I consent to dermaplaning today and at future visits in my plan.',type:'Signature',required:true},
+ ]},
+ 'ec-micro':{name:'Microneedling consent',qs:[
+  {id:'ec-micro-1',label:'Client name',type:'Short text',required:true},
+  {id:'ec-micro-2',label:'Date of birth',type:'Date',required:false},
+  {id:'ec-micro-3',label:'ABOUT MICRONEEDLING. What it is: An FDA-cleared pen with a sterile, single-use needle cartridge makes tiny channels at a cosmetic depth to improve texture and tone. What you’ll feel: Light pressure, vibration or a sandpaper feel. Bony areas are more tender. Tell me if you need a break. What to expect: Redness like a sunburn for 1–3 days, then dryness. Results build slowly over a series of visits and aren’t permanent. Other options: No treatment, peels or homecare, or a physician for deeper scars, laser or prescription care. I have read this.',type:'Yes / No',required:true},
+  {id:'ec-micro-4',label:'POSSIBLE RISKS AND SIDE EFFECTS. Redness, swelling, pinpoint bleeding, bruising; Darker or lighter patches, more likely in deeper skin tones; Dryness, peeling, itching, milia or breakouts; A cold sore flare if you’ve had them before; Infection, or a reaction to products or metal; Track-like marks or scarring, which are rare. I understand these risks.',type:'Yes / No',required:true},
+  {id:'ec-micro-5',label:'Before your treatment: tick anything that applies to you.',type:'Contraindications',required:false,items:['Pregnant or nursing','Accutane (isotretinoin) in the past 6 months','Retinoid, acids or scrubs in the past 5 days','Active acne, cold sore, warts or rash in the area','Eczema, psoriasis or rosacea in the area','Sunburn now, or tanning in the past 2 weeks','Blood thinners or a bleeding disorder','Diabetes, weak immune system or chemotherapy','Keloids or raised scarring','Allergy to numbing cream, metals or nickel','Botox, filler, peel or laser in the past 2 weeks','Under 22 years old']},
+  {id:'ec-micro-6',label:'My health history is complete and true. I’ll share any changes before each visit.',type:'Yes / No',required:true},
+  {id:'ec-micro-7',label:'I understand the risks. Results vary and aren’t guaranteed; a series of 3–6 visits is typical.',type:'Yes / No',required:true},
+  {id:'ec-micro-8',label:'A new sealed, sterile cartridge is opened for me each visit. Depth stays within cosmetic limits.',type:'Yes / No',required:true},
+  {id:'ec-micro-9',label:'I’ll follow aftercare, wear SPF 30+ daily, and can stop at any time. No refunds once performed.',type:'Yes / No',required:true},
+  {id:'ec-micro-10',label:'Photos',type:'Single select',required:true,options:['Private chart only','Social, face hidden','Social, face visible','No photos']},
+  {id:'ec-micro-11',label:'Parent or guardian name (if under 18)',type:'Short text',required:false},
+  {id:'ec-micro-12',label:'I confirm the information above is accurate',type:'Signature',required:true},
+ ]},
+ 'ec-wax':{name:'Waxing consent',qs:[
+  {id:'ec-wax-1',label:'Client name',type:'Short text',required:true},
+  {id:'ec-wax-2',label:'Date of birth',type:'Date',required:false},
+  {id:'ec-wax-3',label:'Areas',type:'Multiple choice',required:true,options:['Brows','Lip / chin','Underarm','Arms','Legs','Bikini','Brazilian','Other']},
+  {id:'ec-wax-4',label:'ABOUT WAXING. What it is: Warm wax lifts hair from the root. I use hard wax for delicate areas and soft wax with strips for larger ones. What you’ll feel: Warmth, then a quick sting as each strip comes off. It usually gets easier with regular visits. What to expect: Redness or small bumps for a few hours to a day. Smooth for about 3–6 weeks. Hair about 1/4 inch long works best. Other options: Shaving, trimming, sugaring, threading, or laser or electrolysis from a qualified provider. I have read this.',type:'Yes / No',required:true},
+  {id:'ec-wax-5',label:'POSSIBLE RISKS AND SIDE EFFECTS. Redness, swelling, small bumps or pinpoint bleeding; Skin lifting or tearing, mostly with thin or treated skin; Ingrown hairs or infected hair follicles; Burns, which are rare when wax is tested; Bruising, or darker patches in deeper skin tones; A cold sore flare (lip waxing) or allergic reaction. I understand these risks.',type:'Yes / No',required:true},
+  {id:'ec-wax-6',label:'Before your wax: tick anything that applies to you.',type:'Contraindications',required:false,items:['Accutane (isotretinoin) in the past 6 months','Retinoid on the area in the past 7 days','Acids, scrubs or peel there in the past 3 days','Antibiotics or steroids right now','Laser or microneedling there in 2 weeks','Sunburn, rash, cut or cold sore on the area now','Blood thinners or a bleeding disorder','Diabetes or poor circulation','Varicose veins, moles or skin tags in the area','Pregnant, or allergy to rosin, pine or latex']},
+  {id:'ec-wax-7',label:'My health and medication history is complete. I’ll tell you about changes, including new skin products.',type:'Yes / No',required:true},
+  {id:'ec-wax-8',label:'I understand the risks above. Results vary and hair grows back.',type:'Yes / No',required:true},
+  {id:'ec-wax-9',label:'For intimate waxing, I know what will be uncovered and that I can ask to pause or stop at any time.',type:'Yes / No',required:true},
+  {id:'ec-wax-10',label:'I’ll follow my aftercare. Services can’t be refunded once performed.',type:'Yes / No',required:true},
+  {id:'ec-wax-11',label:'Photos: Intimate areas are never photographed.',type:'Single select',required:true,options:['Brow or face photos for my chart','Social, face hidden','No photos']},
+  {id:'ec-wax-12',label:'Parent or guardian name (if under 18)',type:'Short text',required:false},
+  {id:'ec-wax-13',label:'By signing, I consent to waxing of the areas checked above, today and at future visits.',type:'Signature',required:true},
+ ]},
+ 'ec-facial':{name:'Facial & extractions consent',qs:[
+  {id:'ec-facial-1',label:'Client name',type:'Short text',required:true},
+  {id:'ec-facial-2',label:'Date of birth',type:'Date',required:false},
+  {id:'ec-facial-3',label:'ABOUT YOUR FACIAL. What it is: A custom facial: cleanse, exfoliate, optional steam, extraction of clogged pores, massage and a mask. What you’ll feel: Mostly relaxing. Extractions feel like firm pressure and may sting. Tell me any time to ease up or stop. What to expect: Pinkness for a few hours; small marks for 1 to 2 days. Stubborn pores may take several visits. Other options: A facial without extractions or steam, homecare only, or a dermatologist referral. I have read this.',type:'Yes / No',required:true},
+  {id:'ec-facial-4',label:'POSSIBLE RISKS AND SIDE EFFECTS. Redness, swelling or tenderness for a day or two; Dark marks, more likely in deeper skin tones; Allergic or irritant reaction to a product; Small scabs, bruising or broken capillaries; A few new breakouts over the next week; Infection or scarring, which is rare. I understand these risks.',type:'Yes / No',required:true},
+  {id:'ec-facial-5',label:'Before your facial: tick anything that applies to you. A yes doesn’t always mean no facial. I may skip steam or extractions, change products, or reschedule.',type:'Contraindications',required:false,items:['Isotretinoin now or in the past 6 months','Prescription retinoid in the past 7 days','Peel, laser, Botox or filler in the past 2 weeks','Facial waxing or depilatory in the past 3 days','Blood thinners or bruise easily','Rosacea, broken capillaries or heat sensitivity','Asthma or trouble breathing in steam','Sunburn, rash, cold sore or open wound now','Pregnant or nursing','Allergies to skincare, latex, nuts or fragrance']},
+  {id:'ec-facial-6',label:'My health and medication history is complete and honest. I’ll tell you about any change before each visit.',type:'Yes / No',required:true},
+  {id:'ec-facial-7',label:'Only clogged pores are extracted. Inflamed or deep blemishes are left alone or referred.',type:'Yes / No',required:true},
+  {id:'ec-facial-8',label:'Results vary and aren’t guaranteed. I’ll follow my aftercare and won’t pick at my skin.',type:'Yes / No',required:true},
+  {id:'ec-facial-9',label:'I can ask questions, and I can stop any part of the treatment at any time.',type:'Yes / No',required:true},
+  {id:'ec-facial-10',label:'Photos',type:'Single select',required:true,options:['Private chart only','Social, face hidden','Social, face visible','No photos']},
+  {id:'ec-facial-11',label:'Parent or guardian name (if under 18)',type:'Short text',required:false},
+  {id:'ec-facial-12',label:'I confirm the information above is accurate',type:'Signature',required:true},
+ ]},
+ 'ec-acne':{name:'Acne facial consent',qs:[
+  {id:'ec-acne-1',label:'Client name',type:'Short text',required:true},
+  {id:'ec-acne-2',label:'Date of birth',type:'Date',required:false},
+  {id:'ec-acne-3',label:'ABOUT YOUR ACNE FACIAL. What it is: A facial for mild to moderate breakouts: cleanse, acne exfoliant, extraction of clogged pores, calming mask and optional blue LED. What you’ll feel: Tingling from the exfoliant and firm pressure during extractions. Tell me any time to ease up or stop. What to expect: Redness for a few hours. Acne improves slowly: plan on a series of facials plus daily homecare for 6 to 12 weeks. Other options: Over-the-counter homecare only, or a dermatologist for prescription care. Deep, painful or cystic acne needs a doctor. I have read this.',type:'Yes / No',required:true},
+  {id:'ec-acne-4',label:'POSSIBLE RISKS AND SIDE EFFECTS. Redness, dryness or peeling; A temporary flare of breakouts; Small scabs or bruising after extractions; Dark marks, more likely in deeper skin tones; Irritation or allergy to a product; Infection or scarring, which is rare. I understand these risks.',type:'Yes / No',required:true},
+  {id:'ec-acne-5',label:'Before your facial: tick anything that applies to you. A yes doesn’t always mean no facial. I may adjust the treatment, skip LED, or refer you to a dermatologist.',type:'Contraindications',required:false,items:['Isotretinoin now or in the past 6 months','Prescription retinoid in the past 7 days','Antibiotics or sun-sensitizing medicine','Allergy to aspirin or salicylates','Pregnant, trying or nursing','Deep, painful lumps or cysts','Light sensitivity or light-triggered seizures','Waxing, peel or laser in the past 7 days','Sunburn, rash, cold sore or open wound now','Dark marks that linger after breakouts']},
+  {id:'ec-acne-6',label:'My health and medication history is complete. I’ll tell you about changes before each visit.',type:'Yes / No',required:true},
+  {id:'ec-acne-7',label:'I understand an esthetician doesn’t diagnose or treat medical acne, and I may be referred to a doctor.',type:'Yes / No',required:true},
+  {id:'ec-acne-8',label:'Results depend on daily homecare and aren’t guaranteed. Clearing usually takes 6 to 12 weeks or more.',type:'Yes / No',required:true},
+  {id:'ec-acne-9',label:'I’ll wear SPF daily, won’t pick, and can stop any part of the treatment at any time.',type:'Yes / No',required:true},
+  {id:'ec-acne-10',label:'Photos',type:'Single select',required:true,options:['Private chart only','Social, face hidden','Social, face visible','No photos']},
+  {id:'ec-acne-11',label:'Parent or guardian name (if under 18)',type:'Short text',required:false},
+  {id:'ec-acne-12',label:'I confirm the information above is accurate',type:'Signature',required:true},
+ ]},
+ 'ec-hydro':{name:'Hydrodermabrasion facial consent',qs:[
+  {id:'ec-hydro-1',label:'Client name',type:'Short text',required:true},
+  {id:'ec-hydro-2',label:'Date of birth',type:'Date',required:false},
+  {id:'ec-hydro-3',label:'ABOUT HYDRODERMABRASION. What it is: A device facial that cleanses and exfoliates, applies a mild acid solution, gently suctions out pores, then infuses hydrating serums. What you’ll feel: A cool, wet tip gliding with light suction, and brief tingling from the acid step. Tell me if anything feels too strong. What to expect: Little or no downtime. Some pinkness for a few hours. Results are temporary; regular visits keep them going. Other options: A classic facial, a light peel, homecare products only, or a referral to a dermatologist. I have read this.',type:'Yes / No',required:true},
+  {id:'ec-hydro-4',label:'POSSIBLE RISKS AND SIDE EFFECTS. Redness, mild swelling, stinging or itching; Suction marks, bruising or broken capillaries; Reaction to an acid or serum; Dryness or light flaking for a day or two; A few breakouts afterward; Dark marks, more likely in deeper skin tones. I understand these risks.',type:'Yes / No',required:true},
+  {id:'ec-hydro-5',label:'Before your facial: tick anything that applies to you. A yes doesn’t always mean no treatment. I may skip the acid step, lower suction, or reschedule.',type:'Contraindications',required:false,items:['Isotretinoin now or in the past 6 months','Prescription retinoid in the past 7 days','Peel, laser, Botox or filler in the past 2 weeks','Waxing or hair-removal cream in the past 5 days','Allergy to aspirin, salicylates or shellfish','Rosacea flare, broken capillaries or easy bruising','Cystic acne, or a cold sore now or often','Sunburn, rash, eczema or open wound in the area','Pregnant or nursing','Autoimmune condition, diabetes or slow healing']},
+  {id:'ec-hydro-6',label:'My health and medication history is complete. I’ll tell you about changes before each visit.',type:'Yes / No',required:true},
+  {id:'ec-hydro-7',label:'I understand this is a cosmetic treatment. Results vary, are temporary and aren’t guaranteed.',type:'Yes / No',required:true},
+  {id:'ec-hydro-8',label:'I’ll follow my aftercare and wear SPF 30+ every day.',type:'Yes / No',required:true},
+  {id:'ec-hydro-9',label:'I can ask questions, and I can stop any part of the treatment at any time.',type:'Yes / No',required:true},
+  {id:'ec-hydro-10',label:'Photos',type:'Single select',required:true,options:['Private chart only','Social, face hidden','Social, face visible','No photos']},
+  {id:'ec-hydro-11',label:'Parent or guardian name (if under 18)',type:'Short text',required:false},
+  {id:'ec-hydro-12',label:'I confirm the information above is accurate',type:'Signature',required:true},
+ ]},
+ 'ec-led':{name:'LED light therapy consent',qs:[
+  {id:'ec-led-1',label:'Client name',type:'Short text',required:true},
+  {id:'ec-led-2',label:'Date of birth',type:'Date',required:false},
+  {id:'ec-led-3',label:'ABOUT LED LIGHT THERAPY. What it is: Low-level light from LEDs, with no UV. Blue light works near the surface and is used for breakouts. Red and invisible near-infrared reach deeper and are used for calming and the look of fine lines. What you’ll feel: Usually nothing, or gentle warmth. You’ll wear eye protection the whole time. Tell me if you feel hot, dizzy, get a headache or want to stop. What to expect: No downtime. Changes are gradual and need a series of 8–12 sessions, then maintenance. Results vary, aren’t permanent and aren’t guaranteed. Other options: No treatment, homecare products, other facials, or a referral to a physician for medical light treatments or prescription care. I have read this.',type:'Yes / No',required:true},
+  {id:'ec-led-4',label:'POSSIBLE RISKS AND SIDE EFFECTS (UNCOMMON). Temporary redness, warmth, dryness or tightness; Eye strain, glare or a headache; Rash or irritation if you take a light-sensitizing medicine; Darker patches in some skin tones, or a flare of rosacea. I understand these risks.',type:'Yes / No',required:true},
+  {id:'ec-led-5',label:'Before your session: tick anything that applies to you. A yes doesn’t always mean no treatment. I follow the device maker’s guidance and may adjust, reschedule or ask for your physician’s OK.',type:'Contraindications',required:false,items:['Epilepsy, or seizures or migraines set off by light','Light-sensitizing medicine (e.g. some antibiotics, isotretinoin, lithium)','Lupus or another light-sensitive condition','A retinal or inherited eye condition, or recent eye surgery','Pregnant or nursing','Cancer now, or skin cancer in the area','Botox, filler, peel, laser or a new tattoo in the area in the past 2 weeks','Rash, wound, cold sore or infection in the area']},
+  {id:'ec-led-6',label:'I’ve shared my health history honestly and will tell you about any change, including new medicines.',type:'Yes / No',required:true},
+  {id:'ec-led-7',label:'I’ll keep the eye protection on and my eyes closed, and I won’t look into the lights.',type:'Yes / No',required:true},
+  {id:'ec-led-8',label:'LED is a cosmetic service, not medical treatment. Results vary and aren’t guaranteed. I can stop at any time.',type:'Yes / No',required:true},
+  {id:'ec-led-9',label:'This covers my LED series. My questions were answered. Services can’t be refunded.',type:'Yes / No',required:true},
+  {id:'ec-led-10',label:'Parent or guardian name (if under 18)',type:'Short text',required:false},
+  {id:'ec-led-11',label:'I confirm the information above is accurate',type:'Signature',required:true},
+ ]},
+ 'ec-microcurrent':{name:'Microcurrent facial consent',qs:[
+  {id:'ec-microcurrent-1',label:'Client name',type:'Short text',required:true},
+  {id:'ec-microcurrent-2',label:'Date of birth',type:'Date',required:false},
+  {id:'ec-microcurrent-3',label:'ABOUT MICROCURRENT. What it is: A very low-level electrical current, delivered through probes or tips over a conductive gel, used to temporarily tone and lift the look of facial muscles and skin. What you’ll feel: Mostly nothing, or a light tingle. Some people notice a metallic taste or brief flashes of light near the eyes. Tell me and I’ll lower the setting. What to expect: No downtime. Effects are temporary and build with a series of 6–12 sessions, then regular maintenance. Results vary and aren’t guaranteed. Other options: No treatment, facial massage, homecare products, or a referral to a physician for injectables or other medical treatments. I have read this.',type:'Yes / No',required:true},
+  {id:'ec-microcurrent-4',label:'POSSIBLE RISKS AND SIDE EFFECTS (UNCOMMON). Brief redness, tingling or mild muscle twitching; Headache or tiredness after treatment; Skin irritation from the conductive gel; Temporary metallic taste or light flashes. I understand these risks.',type:'Yes / No',required:true},
+  {id:'ec-microcurrent-5',label:'Before your session: tick anything that applies to you. An implanted electrical device, epilepsy, pregnancy or active cancer means no microcurrent. For other yes answers I follow the device maker’s guidance and may ask for your physician’s or injector’s OK.',type:'Contraindications',required:false,items:['Pacemaker, defibrillator or other implanted electrical device','Epilepsy or a history of seizures','Pregnant or possibly pregnant','Active cancer, or a suspicious spot in the area','Heart condition, or blood clots or thrombosis','Metal plates, pins or threads in the face','Botox or filler recently','Facial surgery or laser recently','Bell’s palsy, or numb areas on the face','Broken skin, rash or infection in the area']},
+  {id:'ec-microcurrent-6',label:'I’ve shared my health history honestly and will tell you about any change, new implant or injectable before each session.',type:'Yes / No',required:true},
+  {id:'ec-microcurrent-7',label:'I’ll remove jewelry from the area and speak up if I feel discomfort. I can stop at any time.',type:'Yes / No',required:true},
+  {id:'ec-microcurrent-8',label:'Microcurrent is a cosmetic service. Effects are temporary, need maintenance and aren’t guaranteed.',type:'Yes / No',required:true},
+  {id:'ec-microcurrent-9',label:'This covers my series. My questions were answered. Services can’t be refunded.',type:'Yes / No',required:true},
+  {id:'ec-microcurrent-10',label:'Parent or guardian name (if under 18)',type:'Short text',required:false},
+  {id:'ec-microcurrent-11',label:'I confirm the information above is accurate',type:'Signature',required:true},
+ ]},
+ 'ec-tint':{name:'Lash & brow tint consent',qs:[
+  {id:'ec-tint-1',label:'Client name',type:'Short text',required:true},
+  {id:'ec-tint-2',label:'Date of birth',type:'Date',required:false},
+  {id:'ec-tint-3',label:'Service',type:'Multiple choice',required:true,options:['Lashes','Brows']},
+  {id:'ec-tint-4',label:'ABOUT YOUR TINT. What it is & what you’ll feel: A professional tint darkens your lashes or brows. Your eyes stay closed with pads under them. Most people feel nothing; tell me right away if anything stings. Expect & options: Color usually fades over about 3–6 weeks. Shade can vary. Alternatives: mascara, brow pencil or powder, or no treatment. I have read this.',type:'Yes / No',required:true},
+  {id:'ec-tint-5',label:'PLEASE READ: FDA AND STATE RULES. The FDA warns that permanent lash and brow tints and dyes have been known to cause serious eye injuries, including blindness. The only color additive the FDA allows for coloring lashes and brows is silver nitrate, in professional-use products, for ages 16 and up. Other tints are not FDA-approved for this use. State rules on tinting vary. The product I use today is noted in your record. I have read this.',type:'Yes / No',required:true},
+  {id:'ec-tint-6',label:'POSSIBLE RISKS. Allergic reaction: itching, redness or swelling of the lids; Stinging or irritation if tint touches the eye; Rarely, serious eye injury or loss of vision; Skin staining, or a shade darker or lighter than hoped. I understand these risks.',type:'Yes / No',required:true},
+  {id:'ec-tint-7',label:'Before your tint: tick anything that applies to you.',type:'Contraindications',required:false,items:['Past reaction to hair dye, tint or henna','Eye infection, stye, pinkeye or sore eyes now','Under 16 years old','Eye surgery recently, or an eye condition','Eczema, psoriasis or broken skin near the eyes or brows','Contact lenses (they come out first)','Lash lift, extensions or brow lamination recently','Pregnant, nursing, or in chemotherapy']},
+  {id:'ec-tint-8',label:'I’ve read the FDA and state note above and choose to go ahead with the product named.',type:'Yes / No',required:true},
+  {id:'ec-tint-9',label:'I had a patch test. I know a reaction can still happen, even after past tints without one.',type:'Yes / No',required:true},
+  {id:'ec-tint-10',label:'I’ll keep my eyes closed and tell you right away if anything stings. I can stop at any time.',type:'Yes / No',required:true},
+  {id:'ec-tint-11',label:'Results vary and aren’t guaranteed. My questions were answered. Services can’t be refunded.',type:'Yes / No',required:true},
+  {id:'ec-tint-12',label:'Parent or guardian name (if under 18)',type:'Short text',required:false},
+  {id:'ec-tint-13',label:'I confirm the information above is accurate',type:'Signature',required:true},
+ ]},
+};
+Object.keys(EC_FORMS).forEach(function(k){ if(!formTmpls[k])formTmpls[k]=EC_FORMS[k]; });
 // ── Photo release is bundled into every "intake & consent" form automatically ──
 // (renamed from "Portfolio photo release"). Both consents are required, and they
 // slot in just before the signature so the client signs everything at once.
@@ -19744,6 +20048,7 @@ function _bundlePhotoRelease(){
     ];
     Object.keys(formTmpls).forEach(k=>{
       if(k==='photo'||/-photo$/.test(k))return;                 // skip the standalone photo-release forms
+      if(/^ec-/.test(k))return;                                  // the Esthetician Collection forms ask their own photo questions
       const t=formTmpls[k];
       if(!t||!Array.isArray(t.qs)||!/intake/i.test(t.name||''))return;
       if(t.qs.some(q=>q.id==='pr-taken'||q.id==='pr-share'))return; // never double-add
@@ -22392,6 +22697,722 @@ const guideTemplatesByProf={
     {id:'g-coach-start',icon:'🚀',title:'Getting started checklist',cat:'Prep',url:'',shared:0,tips:['Define one clear, meaningful goal','Pick 2\u20133 habits to focus on first','Set up simple tracking','Plan for the obstacles you can predict','Schedule your check-ins','Remember your "why"']},
   ],
 };
+// ── THE ESTHETICIAN COLLECTION: Ashley's aftercare, prep and homecare guides (2026-10-16). Added beside
+// the stock guides (new ids), so nothing a provider already sent or edited changes.
+const EC_GUIDES=[
+  {id:'g-esty-ec-peel', icon:'🧪', title:'Caring for your skin after a peel', cat:'Aftercare', url:'', shared:0, tips:[
+    'Fresh skin is delicate for about a week. Here’s what to expect day by day, and how to protect your results.',
+    'Day 0 (today) – what’s normal: Pinkness for a few hours, tightness, a little warmth.',
+    'Day 0 (today) – do: Wash tonight with lukewarm water and the gentle cleanser we chose. Moisturize. SPF if you go outside.',
+    'Day 0 (today) – avoid: Makeup until I say it’s OK, heat and sweating.',
+    'Days 1–2 – what’s normal: Tight, dry, slightly pink skin. Flaking may begin around day 2.',
+    'Days 1–2 – do: Moisturize at least twice a day. SPF 30+ every morning, and reapply outdoors.',
+    'Days 1–2 – avoid: Hot showers on your face, sauna, steam, hot tubs, swimming, hard workouts and scrubs.',
+    'Days 3–5 (peak peeling) – what’s normal: The most flaking and peeling, and some mild itching.',
+    'Days 3–5 (peak peeling) – do: Keep moisturizing. Snip loose flakes with clean, small scissors if they bother you.',
+    'Days 3–5 (peak peeling) – avoid: Picking or pulling skin (it can leave dark marks), retinol, acids, waxing and hair-removal cream.',
+    'Days 6–7 – what’s normal: Peeling winds down and your new skin looks fresh and smooth.',
+    'Days 6–7 – do: Stay gentle and keep up your SPF.',
+    'Days 6–7 – avoid: Exfoliants, active serums and facial waxing for one more day or two.',
+    'Week 2+ – what’s normal: Healed. Tone keeps evening out over the next few weeks.',
+    'Week 2+ – do: Once flaking has fully stopped, restart your retinol and actives as planned. SPF every day.',
+    'Week 2+ – avoid: Tanning for 2 weeks, and other treatments until I’ve checked your skin.',
+    'SPF daily: Broad-spectrum 30+, rain or shine.',
+    'Hands off: Let flakes fall on their own.',
+    'Stay cool: Lukewarm water, no heat or sweat for 48 hours.',
+    'Keep it simple: Cleanser, moisturizer, SPF. That’s it for a week.',
+    'Call me right away if you notice: blisters, oozing, yellow crusts or pimples that look infected; pain or swelling that gets worse instead of better; burning or itching that doesn’t stop; a cold sore or a cluster of small blisters; dark patches, or redness lasting more than 1–2 weeks; hives or any sign of an allergic reaction.',
+    'Trouble breathing, or swelling of the face or throat: call 911.'
+  ]},
+  {id:'g-esty-ec-derma', icon:'🪒', title:'After your dermaplaning', cat:'Aftercare', url:'', shared:0, tips:[
+    'Your skin is freshly exfoliated and extra open to products and sun for about a week. Here’s how to keep that glow.',
+    'Day 0 (today) – what’s normal: Smooth, soft skin. Light pinkness or warmth for a few hours.',
+    'Day 0 (today) – do: Leave on what I applied. Tonight, rinse with lukewarm water and moisturize.',
+    'Day 0 (today) – avoid: Makeup until the time I gave you, touching your face, heat, sweat and pools.',
+    'Days 1–2 – what’s normal: Slight dryness or sensitivity. Products may tingle more than usual.',
+    'Days 1–2 – do: Gentle cleanser, moisturizer, SPF 30+ every morning. Clean pillowcase.',
+    'Days 1–2 – avoid: Sauna, steam, hot tubs, swimming, hard workouts, scrubs and facial waxing.',
+    'Days 3–7 – what’s normal: Skin looks bright and even. A small breakout can happen.',
+    'Days 3–7 – do: Keep it simple and hydrated. Restart retinol and acids once nothing stings, usually by day 3–5.',
+    'Days 3–7 – avoid: Picking at bumps, tanning, and other exfoliating treatments.',
+    'Weeks 2–4 – what’s normal: Fine hair grows back soft, the same as before. Glow fades as skin renews.',
+    'Weeks 2–4 – do: SPF daily. Book your next visit about 3–4 weeks out.',
+    'Weeks 2–4 – avoid: Home blades or razors on your face between visits unless we’ve talked about it.',
+    'Will my hair grow back thicker? No. The blade cuts fine hair at the surface and doesn’t touch the root, so it can’t change how thick, dark or fast it grows. Regrowth can feel blunt for a few days because the tip is cut straight. If you notice coarse or fast-growing facial hair, mention it; it can be worth a visit to your doctor.',
+    'SPF daily: Broad-spectrum 30+. New skin burns faster.',
+    'Hands off: Clean hands only, and no picking.',
+    'Stay cool: No heat, sweat or pools for 24–48 hours.',
+    'Go gentle: Skip actives until nothing stings.',
+    'Call me right away if you notice: a nick that is red, warm, swollen or oozing; burning or stinging that lasts past day 2; bumps that look infected or keep spreading; a cold sore or a cluster of small blisters; dark patches that appear in the next few weeks; hives or any sign of an allergic reaction.',
+    'Trouble breathing, or swelling of the face or throat: call 911.'
+  ]},
+  {id:'g-esty-ec-micro', icon:'💉', title:'After your microneedling', cat:'Aftercare', url:'', shared:0, tips:[
+    'Tiny channels close within a day or two, and your skin keeps rebuilding for months. Clean and gentle is the whole plan.',
+    'Day 0 (today) – what’s normal: Red, warm and tight like a sunburn. Mild swelling or a little clear fluid.',
+    'Day 0 (today) – do: Clean hands only. Tonight, rinse with lukewarm water and apply only the soothing product I gave you.',
+    'Day 0 (today) – avoid: Makeup, sunscreen, touching, sweating, alcohol-based or scented products.',
+    'Days 1–2 – what’s normal: Pinkness fading. Tight, dry, sensitive. Products may sting.',
+    'Days 1–2 – do: Gentle cleanser, plain moisturizer, mineral SPF 30+. Clean pillowcase. Mineral makeup after the time I gave you, if needed.',
+    'Days 1–2 – avoid: Workouts, sauna, steam, pools, hot tubs, the beach and direct sun.',
+    'Days 3–7 – what’s normal: Dryness, light flaking or rough patches. A few small bumps are possible.',
+    'Days 3–7 – do: Keep moisturizing and use SPF every day. Let flakes fall on their own.',
+    'Days 3–7 – avoid: Retinol, acids, vitamin C, scrubs, waxing and picking for 7 days.',
+    'Week 2+ – what’s normal: Healed on the surface. Texture keeps improving over 3–6 months.',
+    'Week 2+ – do: Restart your routine slowly once nothing stings. Book your next visit 4–6 weeks out.',
+    'Week 2+ – avoid: Tanning, and other facial treatments until I’ve checked your skin.',
+    'Why so few products? For the first day or two, the tiny channels let products sink in far deeper than usual. Strong actives, fragrance or anything not sterile can sting, irritate or trigger a reaction. Use only what I’ve approved until your skin feels normal again, and ask me before trying anything new.',
+    'Keep it clean: Wash hands first. Fresh towel and pillowcase.',
+    'SPF daily: Mineral 30+ from day 1. Hat outdoors.',
+    'No sweat: No workouts, heat or pools for 48 hours.',
+    'Go gentle: No actives for a full week.',
+    'Call me right away if you notice: pus, yellow crusts, or bumps that keep spreading; redness, heat or pain that gets worse after day 2; fever, chills or swollen glands; a cold sore or a cluster of small blisters; lines, tracks or dark patches that don’t fade; hives, itching or any sign of an allergic reaction.',
+    'Trouble breathing, or swelling of the face or throat: call 911.'
+  ]},
+  {id:'g-esty-ec-wax', icon:'🍯', title:'After your wax', cat:'Aftercare', url:'', shared:0, tips:[
+    'Freshly waxed follicles are open and easily irritated for a day or two. A little care now means smoother skin and fewer ingrown hairs.',
+    'Day 0 (today) – what’s normal: Redness, tenderness and small raised bumps around follicles. Tiny dots of blood can happen.',
+    'Day 0 (today) – do: Wear loose, breathable cotton. Use a cool compress if it feels warm. Keep the area clean.',
+    'Day 0 (today) – avoid: Hot showers and baths, sauna, steam, hot tubs, workouts, sex, tanning and scented products.',
+    'Days 1–2 – what’s normal: Bumps settle. Skin is smooth but still a bit sensitive.',
+    'Days 1–2 – do: Lukewarm water, gentle fragrance-free soap, light moisturizer. Wash hands before touching.',
+    'Days 1–2 – avoid: Heat, friction and tight clothing for 24–48 hours. Pools, the beach, deodorant on fresh underarms.',
+    'Day 3 on – what’s normal: Back to normal. New hair starts to grow in.',
+    'Day 3 on – do: Gently exfoliate 2–3 times a week and moisturize daily to help prevent ingrown hairs.',
+    'Day 3 on – avoid: Picking or squeezing bumps, and digging out ingrowns.',
+    'Weeks 3–6 – what’s normal: Regrowth, often finer and sparser over regular visits.',
+    'Weeks 3–6 – do: Let it grow to about 1/4 inch. Rebook on schedule to keep hair in one cycle.',
+    'Weeks 3–6 – avoid: Shaving or tweezing between visits, which resets your growth.',
+    'Keeping ingrown hairs away: An ingrown hair curls back into the skin instead of growing out, leaving a small, sometimes itchy bump. They’re most common on the bikini line and legs. Gentle exfoliation and daily moisturizer keep the surface soft so new hairs can break through. If one gets red, sore or full of pus, don’t dig at it; let me take a look.',
+    'Stay cool: No heat or sweat for 24–48 hours.',
+    'Go loose: Soft, breathable fabric to cut friction.',
+    'Exfoliate later: Start gently after 48 hours, not before.',
+    'Hands off: No picking bumps or ingrowns.',
+    'Call me right away if you notice: pus-filled bumps, spreading redness or warmth; bumps that last more than a few days or keep growing; a blister, raw patch, or skin that looks lifted; a painful lump, or a fever; a cold sore after lip waxing; hives or any sign of an allergic reaction.',
+    'Trouble breathing, or swelling of the face or throat: call 911.'
+  ]},
+  {id:'g-esty-ec-facial', icon:'🧖', title:'After your facial', cat:'Aftercare', url:'', shared:0, tips:[
+    'Your skin is freshly cleared and a little sensitive. A few easy habits over the next few days protect your glow.',
+    'Day 0 (first 24 hours) – what’s normal: Pinkness for a few hours. Small red dots or tiny scabs where pores were cleared.',
+    'Day 0 (first 24 hours) – do: Wash tonight with lukewarm water and a gentle cleanser. Moisturize. SPF 30+ if you go outside.',
+    'Day 0 (first 24 hours) – avoid: Makeup for 12–24 hours, touching or picking, workouts, sauna, steam rooms and swimming pools.',
+    'Days 2–3 – what’s normal: Marks fade. Skin may feel a bit dry or tight.',
+    'Days 2–3 – do: Moisturize morning and night. Use a clean pillowcase. Keep your phone screen clean.',
+    'Days 2–3 – avoid: Retinol, acids, scrubs, waxing and hair-removal cream for 48 hours.',
+    'Days 4–7 (possible purging) – what’s normal: A few small whiteheads in your usual spots as loosened clogs surface. This settles within a week or so.',
+    'Days 4–7 (possible purging) – do: Let them come up and calm down on their own. Restart your normal routine once skin feels comfortable.',
+    'Days 4–7 (possible purging) – avoid: Squeezing anything at home. It can push debris deeper and leave dark marks or scars.',
+    'Week 2+ – what’s normal: Smoother, brighter skin. Pores look clearer.',
+    'Week 2+ – do: Keep up your homecare plan and daily SPF. Book your next facial.',
+    'Week 2+ – avoid: Ignoring breakouts that are new, painful, spreading or lasting longer than 2 weeks. Tell me about them.',
+    'Hands off: No picking or squeezing. Leave that to me.',
+    'SPF daily: Broad-spectrum 30+, even on cloudy days.',
+    'Keep it clean: Fresh towel, pillowcase and makeup brushes.',
+    'Go gentle: No actives or heat for 48 hours.',
+    'Purging usually looks like: small whiteheads or blackheads in the places you normally break out, showing up within a few days and clearing within about a week.',
+    'A reaction or breakout looks like: red, itchy, burning or painful bumps, or spots in new areas, that keep coming or last longer than 2 weeks. Let me know.',
+    'Call me right away if you notice: swelling, warmth or pain that gets worse; yellow crusts, oozing or a red streak; redness that lasts more than 2–3 days; a rash, hives or itching after new products; a painful, deep bump where a pore was cleared; a cold sore or a cluster of small blisters.',
+    'Trouble breathing, or swelling of the face or throat: call 911.'
+  ]},
+  {id:'g-esty-ec-acne', icon:'🫧', title:'After your acne facial', cat:'Aftercare', url:'', shared:0, tips:[
+    'Clear skin is built at home between visits. Be gentle, be consistent, and give your routine time to work.',
+    'Day 0 (first 24 hours) – what’s normal: Pinkness, mild tingling, and small red marks where pores were cleared.',
+    'Day 0 (first 24 hours) – do: Wash tonight with lukewarm water and a gentle cleanser. Oil-free moisturizer. SPF 30+ outdoors.',
+    'Day 0 (first 24 hours) – avoid: Makeup for 12–24 hours, picking, sweaty workouts, sauna and pools.',
+    'Days 2–3 – what’s normal: Some dryness. A few small whiteheads may surface.',
+    'Days 2–3 – do: Restart your acne products on the night I told you. Moisturize if you feel dry.',
+    'Days 2–3 – avoid: Scrubs, extra acids or new products. Don’t layer actives we didn’t plan.',
+    'Weeks 1–4 – what’s normal: Breakouts come and go. Dryness or peeling while skin adjusts to your products.',
+    'Weeks 1–4 – do: Use your routine every day, as directed. Benzoyl peroxide can bleach towels and pillowcases: use white ones.',
+    'Weeks 1–4 – avoid: Stopping and starting products, or switching every week. Give each one time.',
+    'Weeks 6–12 – what’s normal: Fewer new breakouts. Dark marks fade slowly; that can take months.',
+    'Weeks 6–12 – do: Keep going and keep your facial visits. SPF every day, tinted if you get dark marks.',
+    'Weeks 6–12 – avoid: Tanning, which deepens marks. Squeezing, which can scar.',
+    'Hands off: Picking leaves dark marks and scars.',
+    'Every day: Consistency beats strength. Give it 6–12 weeks.',
+    'SPF daily: Broad-spectrum 30+ keeps marks from darkening.',
+    'Keep it clean: Fresh pillowcase, phone and makeup brushes.',
+    'Call me, or see a dermatologist, if you notice: deep, painful lumps or cysts; burning, swelling or a rash from products; acne that leaves scars or keeps getting worse; no improvement after about 3 months; signs of infection: warmth, oozing, crusts; you become pregnant or plan to.',
+    'Trouble breathing, or swelling of the face or throat: call 911.'
+  ]},
+  {id:'g-esty-ec-hydro', icon:'💧', title:'After your hydrodermabrasion', cat:'Aftercare', url:'', shared:0, tips:[
+    'Freshly exfoliated skin absorbs everything and burns more easily. Keep it simple for a couple of days.',
+    'Day 0 (first 24 hours) – what’s normal: A glow, light pinkness or slight tightness for a few hours.',
+    'Day 0 (first 24 hours) – do: Leave the serums on tonight if you can. Wash gently with lukewarm water. Moisturize. SPF if outside.',
+    'Day 0 (first 24 hours) – avoid: Makeup for 6–12 hours, hot showers on your face, sauna, steam rooms, hard workouts and pools.',
+    'Days 2–3 – what’s normal: Skin feels smooth. A little dryness or light flaking is possible.',
+    'Days 2–3 – do: Gentle cleanser, moisturizer, SPF 30+ every morning.',
+    'Days 2–3 – avoid: Retinol, acids, scrubs, waxing, hair-removal cream and other facial treatments for 48–72 hours.',
+    'Day 4+ – what’s normal: Back to normal. A few small breakouts can surface and settle within a week.',
+    'Day 4+ – do: Restart your usual routine and actives. Keep up SPF and drink water.',
+    'Day 4+ – avoid: Tanning or long sun exposure for a week. Picking at any spots.',
+    'Weeks 2–4 – what’s normal: The glow fades gradually as skin renews.',
+    'Weeks 2–4 – do: Book your next visit. Regular treatments keep results going.',
+    'Weeks 2–4 – avoid: Booking a peel, laser or microneedling without telling me first.',
+    'SPF daily: Fresh skin burns faster. Broad-spectrum 30+.',
+    'Stay cool: No heat, steam or heavy sweat for 24 hours.',
+    'Pause actives: No retinol or acids for 48–72 hours.',
+    'Hydrate: Moisturize morning and night.',
+    'How often: Most clients come every 4 weeks, about one skin cycle. For breakouts or dullness, I may suggest a short series 2–4 weeks apart.',
+    'Before your next visit: Stop retinoids 5–7 days before and avoid waxing or sunburn the week before. Tell me about any new medication.',
+    'Call me right away if you notice: redness or burning lasting more than 24–48 hours; bruising or suction marks that don’t fade; blisters, oozing or yellow crusts; a rash, hives or itching; dark patches developing; a cold sore or a cluster of small blisters.',
+    'Trouble breathing, or swelling of the face or throat: call 911.'
+  ]},
+  {id:'g-esty-ec-led', icon:'💡', title:'After your LED session', cat:'Aftercare', url:'', shared:0, tips:[
+    'There’s no downtime, and you can go right back to your day. Results build with each visit, so consistency matters most.',
+    'Right after – what’s normal: A healthy glow, or slight pinkness or warmth that fades within an hour or so.',
+    'Right after – do: Keep the moisturizer and SPF I applied. Makeup is fine if your skin isn’t red.',
+    'Right after – avoid: Rubbing your face or eyes. Long, direct sun exposure.',
+    'First 24 hours – what’s normal: Skin may feel a little dry. A breakout may surface as blemishes come to a head.',
+    'First 24 hours – do: Gentle cleanser, moisturizer and drink water. SPF 30+ in the morning.',
+    'First 24 hours – avoid: Strong exfoliants, scrubs, tanning, and hot tubs or saunas if you feel warm or pink.',
+    'Between sessions – what’s normal: Gradual, subtle change. Most people notice more after several visits.',
+    'Between sessions – do: Keep your homecare routine. Tell me about any new medicine or supplement.',
+    'Between sessions – avoid: Picking at breakouts. Skipping sessions, which slows results.',
+    'After the series – what’s normal: Results fade slowly over time without upkeep.',
+    'After the series – do: Book maintenance about every 2–4 weeks. SPF every day.',
+    'After the series – avoid: Using a home LED device without asking me first, so we don’t overdo it.',
+    'Be consistent: Results come from the full series, not one visit.',
+    'SPF daily: Broad-spectrum 30+, rain or shine.',
+    'Share med changes: Some medicines make skin and eyes light-sensitive.',
+    'Come clean: Arrive makeup-free if you can, so the light reaches your skin.',
+    'Call me right away if you notice: redness, warmth or a rash lasting more than a day; blisters, burning or skin that feels sunburned; eye pain, spots, blurry vision or headaches after treatment; new dark patches on your skin.',
+    'A seizure, trouble breathing, or swelling of the face or throat: call 911.'
+  ]},
+  {id:'g-esty-ec-microcurrent', icon:'⚡', title:'After your microcurrent facial', cat:'Aftercare', url:'', shared:0, tips:[
+    'No downtime. The lifted, toned look is temporary and builds with regular sessions, so here’s how to get the most from each one.',
+    'Right after – what’s normal: A lifted, refreshed look. Light pinkness or a faint tingle that fades quickly.',
+    'Right after – do: Keep the products I applied. Makeup is fine. Drink plenty of water.',
+    'Right after – avoid: Heavy rubbing or massage tools on your face for the rest of the day.',
+    'First 24 hours – what’s normal: Some people feel mildly tired or have a light headache.',
+    'First 24 hours – do: Stay hydrated and rest if you need to. Gentle cleanser, moisturizer, SPF 30+.',
+    'First 24 hours – avoid: Strong exfoliants or new active products. Booking injectables before asking me.',
+    'Between sessions – what’s normal: The effect softens over a few days; each session tends to hold a little longer.',
+    'Between sessions – do: Keep your series on schedule. Tell me about new implants, injectables or pregnancy.',
+    'Between sessions – avoid: Long gaps early in the series, which slow your progress.',
+    'After the series – what’s normal: Results gradually fade without upkeep.',
+    'After the series – do: Maintenance about every 2–4 weeks. SPF every day.',
+    'After the series – avoid: Using a home microcurrent device without asking me first.',
+    'Hydrate: Water before and after helps you feel your best.',
+    'Stay on schedule: Results build with steady sessions.',
+    'Keep me posted: New implants, injectables or pregnancy change your plan.',
+    'SPF daily: Broad-spectrum 30+, rain or shine.',
+    'Call me right away if you notice: redness, a rash or itching that lasts more than a day; a headache that lasts or keeps coming back; twitching, numbness or weakness in your face; any change near a filler or injectable area.',
+    'Chest pain, a seizure, trouble breathing, or swelling of the face or throat: call 911.'
+  ]},
+  {id:'g-esty-ec-tint', icon:'👁️', title:'After your lash & brow tint', cat:'Aftercare', url:'', shared:0, tips:[
+    'The first day sets your color. A little care now keeps it rich for weeks, and protects your eyes.',
+    'Right after – what’s normal: Darker, fuller-looking lashes or brows. Brows may look boldest today. Faint skin stain fades fast.',
+    'Right after – do: Put contacts back in only once your eyes feel completely normal.',
+    'Right after – avoid: Rubbing your eyes or brows.',
+    'First 24 hours – what’s normal: Color settles and softens slightly.',
+    'First 24 hours – do: Keep the area dry if you can. Pat gently if it gets wet.',
+    'First 24 hours – avoid: Oil-based removers, steam, sauna, swimming, mascara and brow products.',
+    'Between visits – what’s normal: Gradual fading over 3–6 weeks; brows usually fade faster than lashes.',
+    'Between visits – do: Use gentle, oil-free cleansers around the eyes. SPF on brow skin.',
+    'Between visits – avoid: Scrubs, peels or retinoids on the brows, which fade color faster.',
+    'Next tint – what’s normal: Ready for a refresh at about 4–6 weeks.',
+    'Next tint – do: Tell me about any reaction, new medicine or eye problem.',
+    'Next tint – avoid: Home tint kits or salon tints elsewhere between visits.',
+    'Hands off: No rubbing your eyes or brows.',
+    'Dry for a day: Skip steam, swimming and makeup for 24 hours.',
+    'Go oil-free: Oils lift tint. Choose oil-free removers.',
+    'Speak up: Any itch or swelling means we re-test first.',
+    'Call me right away if you notice: itchy, red or swollen eyelids or brows, even a day or two later; eye pain, redness, watering or discharge that doesn’t settle; blurry vision or sensitivity to light; rash, blisters or crusting on the skin.',
+    'If tint gets in your eye: rinse with clean, lukewarm water for at least 15 minutes, then see an eye doctor or urgent care the same day.',
+    'Trouble breathing, or swelling of the face or throat: call 911.'
+  ]},
+  {id:'g-esty-ec-homecare', icon:'🧴', title:'Your homecare plan', cat:'Education', url:'', shared:0, tips:[
+    'Morning: apply thinnest to thickest. Let each layer settle.',
+    'Morning steps: 1 · Cleanse, 2 · Tone or essence, 3 · Treatment serum, 4 · Eye, 5 · Moisturize, 6 · SPF 30+.',
+    'SPF 30+: generously; reapply every 2 hrs outside. Every day.',
+    'Evening: double cleanse if you wore SPF or makeup.',
+    'Evening steps: 1 · Cleanse, 2 · Treatment, 3 · Eye, 4 · Moisturize. Plus a weekly extra.',
+    'Starting your retinoid – Weeks 1–2: 2 nights a week.',
+    'Starting your retinoid – Weeks 3–4: every other night.',
+    'Starting your retinoid – Week 5 on: nightly, if your skin is happy.',
+    'Retinoid: a pea-sized amount for the whole face. Skip eyelids, lip corners and nose creases.',
+    'Don’t layer these together – Vitamin C + benzoyl peroxide: one AM, one PM.',
+    'Don’t layer these together – Retinoid + exfoliating acids: alternate nights.',
+    'Don’t layer these together – Two products with the same active.',
+    'Add one new product at a time, about a week apart.',
+    'Stinging, swelling or a rash? Stop the new product and text me.'
+  ]},
+  {id:'g-esty-ec-prep', icon:'📋', title:'Before your appointment', cat:'Prep', url:'', shared:0, tips:[
+    'A little prep keeps your skin calm and your results even. Find your treatment and follow the timeline.',
+    'Peels & microneedling – 2 weeks before: No tanning, tanning beds or self-tanner. SPF 30+ every day. Keep Botox, filler and laser at least 2 weeks away.',
+    'Peels & microneedling – 1 week before: Pause retinoids: tretinoin, adapalene, tazarotene and retinol. No waxing, threading or hair-removal cream on the area.',
+    'Peels & microneedling – 3–5 days before: Pause exfoliating acids (AHA/BHA), scrubs, benzoyl peroxide and at-home peels.',
+    'Peels & microneedling – 48 hours before: Stay out of strong sun. Don’t shave the area. Prone to cold sores? If your doctor prescribed an antiviral, start it as directed.',
+    'Peels & microneedling – day of your visit: Come with clean skin and no makeup if you can. Plan no workouts or sauna afterward.',
+    'Facials & dermaplaning – 2 weeks before: Protect your skin from sunburn. SPF 30+ every day. Keep Botox and filler at least 2 weeks away.',
+    'Facials & dermaplaning – 1 week before: Pause retinoids and retinol. No waxing or hair-removal cream on your face.',
+    'Facials & dermaplaning – 3–5 days before: Pause scrubs, exfoliating acids and at-home peels.',
+    'Facials & dermaplaning – 48 hours before: Stay out of strong sun. Skip cleansing brushes and other harsh tools.',
+    'Facials & dermaplaning – day of your visit: Come with clean skin and no makeup if you can. Wear glasses, not contacts, for eye-area work.',
+    'Waxing – 2 weeks before: Stop shaving and let hair grow to about 1/4 inch, the size of a grain of rice.',
+    'Waxing – 1 week before: Pause retinoids and retinol on the area we’re waxing.',
+    'Waxing – 3–5 days before: Pause acids and scrubs on the area.',
+    'Waxing – 48 hours before: Stay out of strong sun and tanning beds.',
+    'Waxing – day of your visit: Clean, dry skin with no lotion or oil. Loose, comfy clothes for body areas.',
+    'Please tell us if you: started any new medicine, including antibiotics or acne pills; took isotretinoin (Accutane) in the past 12 months; take blood thinners or daily aspirin; are pregnant, trying, or nursing; had Botox, filler, laser or a peel recently.',
+    'Never stop a prescribed medicine for a facial. Ask your doctor first.',
+    'Please bring: your current products, or photos of the labels; glasses or a contact case, and a hair tie; a hat and SPF for the drive home; a list of your medicines and supplements; any questions. Arrive a few minutes early.',
+    'Please call to reschedule if you have: a sunburn, or skin that is peeling; a cold sore or a cluster of small blisters; a rash, cut, infection or irritated skin in the area; a new medication you haven’t told us about; pink eye or a stye (for lash and brow services); a fever, or you’re feeling unwell.',
+    'We ask for the notice in our booking policy. If it’s about your skin’s safety, just call. We’ll find a new time together.'
+  ]},
+  {id:'g-esty-ec-spf', icon:'☀️', title:'Your daily SPF guide', cat:'Education', url:'', shared:0, tips:[
+    'Sunscreen is the one step that protects every result we work on together. Here’s how to make it count.',
+    'SPF 30+: broad spectrum, so it guards against both burning and aging rays.',
+    '1 tsp for face & neck: about two finger-lengths. For your body, about a shot glass.',
+    '15 min before you go: apply to dry skin before heading outdoors.',
+    'Reapply every 2 hrs: every 2 hours outside, and right after swimming or sweating.',
+    'Why every day? UV rays cause most visible aging: dark spots, uneven tone, fine lines and loss of firmness. They also raise your risk of skin cancer, whatever your skin tone. Up to 80% of UV gets through clouds, and aging UVA rays pass through windows. Peels, retinoids and exfoliation make fresh skin even more sensitive, so daily SPF protects your results.',
+    'Mineral (physical): zinc oxide and/or titanium dioxide. Gentle, so it’s our pick for sensitive or just-treated skin. Can look a little white; tinted versions blend better and help with visible light, which can darken spots.',
+    'Chemical: filters such as avobenzone or octisalate. Light, sheer and easy under makeup. Some sensitive skin stings with them. Hybrids mix both types.',
+    'The best sunscreen is the one you’ll wear every day. Any broad-spectrum SPF 30+ protects you.',
+    'Myth: “My makeup has SPF.” Most of us apply far too little for the label SPF. Wear sunscreen underneath.',
+    'Myth: “Darker skin doesn’t need it.” Everyone can burn, get spots or get skin cancer.',
+    'Myth: “SPF 100 lasts all day.” Higher SPF doesn’t buy more time. Reapply.',
+    'Myth: “Waterproof.” No sunscreen is. Water resistant lasts 40 or 80 minutes.',
+    'Myth: “I’ll miss my vitamin D.” Food and supplements are the safer source. Ask your doctor.',
+    'After a treatment: mineral SPF 30+ every morning, even if you stay in; no tanning or tanning beds for at least 2 weeks; hat and shade for the first week, skip midday sun; skip self-tanner until you’ve fully stopped peeling.',
+    'Fresh skin darkens easily. Sun now can mean spots later.',
+    'My SPF checklist: broad spectrum, SPF 30 or higher; last step of my morning routine; a travel size in my bag to reapply; ears, neck, chest and backs of hands; lip balm with SPF 30+; sunglasses and a wide-brim hat.'
+  ]},
+];
+(function(){
+  const add=(prof,list)=>{ if(!guideTemplatesByProf[prof])return; list.forEach(g=>{ if(!guideTemplatesByProf[prof].some(x=>x.id===g.id))guideTemplatesByProf[prof].push(g); }); };
+  add('esty',EC_GUIDES);
+  add('wax',EC_GUIDES.filter(g=>g.id==='g-esty-ec-wax'||g.id==='g-esty-ec-prep'));
+  add('brow',EC_GUIDES.filter(g=>g.id==='g-esty-ec-tint'));
+  add('lash',EC_GUIDES.filter(g=>g.id==='g-esty-ec-tint'));
+})();
+const EC_LIBRARY=[
+{id:'pl-start',cat:'Start here',title:'Before you use these',icon:'ti-info-circle',
+lead:'These templates are a professional starting point, not legal advice.',
+sections:[
+{h:'Before you use these',text:'These templates are a professional starting point, not legal advice. Scope of practice differs by state: some states cap peel strength, and some don’t allow estheticians to microneedle at all. Check your state board’s rules, set the waiting periods marked in each form to your own policy, and have a local attorney review your consent forms.'},
+{h:'How to make them yours',items:['In a free Canva account, click Create, then Upload, and choose this PDF.','Canva turns every page into an editable design.','Add your logo, business name and colors.','Download as PDF to print, or fill in on a tablet.']}
+]},
+
+{id:'pl-peel',cat:'Protocols',title:'Superficial chemical peel',icon:'ti-flask',
+lead:'The manufacturer’s directions for your peel always come first. Times are typical.',
+sections:[
+{h:'Consult',text:'Intake, Fitzpatrick type and skin analysis done. Consent signed. Product and strength within your state’s scope.'},
+{h:'Patch test',text:'Behind the ear or along the jaw a few days before the first peel. Check at 24–48 hours.'},
+{h:'Prime 2–4 weeks',text:'Daily SPF 30+. For Fitzpatrick IV–VI or pigment, add a brightener such as azelaic or kojic acid.'},
+{h:'Set up first',items:['Neutralizer & cool water','Saline eyewash','Eye pads','Petrolatum','Fan & timer','Gauze or fan brush']},
+{h:'Steps',table:{head:['#','Step','Time','How'],rows:[
+['1','Review & inspect','3–5 min','Confirm health changes. Look under magnification. Stop for an active cold sore, open lesions or sunburn.'],
+['2','Cleanse','2 min','Cover hair. Gentle, non-exfoliating cleanser. Rinse and pat dry.'],
+['3','Degrease','1–2 min','Prep solution or 70% isopropyl until skin looks matte. Even prep gives even penetration.'],
+['4','Protect','1 min','Petrolatum on eye corners, nostril creases, lip corners and lip line. Eye pads on.'],
+['5','Apply','Per label','Forehead, cheeks, nose, around the mouth and chin, then feather the jawline. Note the time of each layer.'],
+['6','Monitor','Throughout','Never leave the client. Ask for sensation 0–10. Fan for comfort, but not with salicylic acid.'],
+['7','Watch the endpoint','—','AHAs: stop at even redness; any white or gray means neutralize now. Salicylic: a white crystal film that wipes off is normal. Superficial peels: no frost, or pinpoint Level I at most.'],
+['8','Neutralize or remove','1–2 min','AHAs (glycolic, lactic, mandelic): neutralizer until fizzing and itching stop, then cool water. Salicylic and Jessner’s self-limit: rinse with cool water.'],
+['9','Cool','3–5 min','Cool compresses.'],
+['10','Calm & protect','2 min','Soothing or occlusive product, then mineral SPF (zinc oxide or titanium dioxide).'],
+['11','Educate & rebook','3 min','Walk through the aftercare handout. Book the next peel 2–4 weeks out.']]}},
+{h:'If something goes wrong',items:['Too hot or frosting: neutralize or rinse right away, then cool.','In the eye: flush with saline; same-day physician visit.','Hives or swelling: remove product. Call 911 if breathing is affected.','Blisters, oozing or pustules later: refer to a physician.','Always write an incident report and check in with the client within 24–48 hours.']},
+{h:'Record for this peel',items:['Product · lot','Strength % · pH','Layers · time each','Total contact time','Endpoint · redness 0–3 · frost','Neutralizer · when','Client sensation 0–10','Reaction · initials']},
+{h:'Before use',text:'Check your state board’s peel rules before use.'}
+]},
+
+{id:'pl-derma',cat:'Protocols',title:'Dermaplaning',icon:'ti-razor',
+lead:'The blade maker’s directions and your state board’s rules always come first. Times are typical.',
+sections:[
+{h:'Scope',text:'Some states limit or bar blade services for estheticians. Confirm with your board in writing.'},
+{h:'Consult',text:'Intake and consent signed. No Accutane in 6 months. No active acne, cold sore or sunburn.'},
+{h:'Interval',text:'Every 3–4 weeks, about one skin cycle. Pair with a peel only if your state and the peel allow it.'},
+{h:'Set up first',items:['Sealed sterile blade & handle','Sharps container in reach','Gloves','Prep solution','Gauze & first-aid kit','Mag lamp']},
+{h:'Steps',table:{head:['#','Step','Time','How'],rows:[
+['1','Review & inspect','3 min','Confirm health changes. Under the mag lamp, map breakouts, raised moles, skin tags and broken skin to skip.'],
+['2','Cleanse','2 min','Hair back. Gentle cleanser, rinse. Gloves on.'],
+['3','Prep dry','1–2 min','Prep solution or 70% isopropyl, then let skin dry fully. Blade work is done on clean, dry skin.'],
+['4','Open the blade','1 min','Open the sealed blade in front of the client. Attach to the handle pointing away from you and the client.'],
+['5','Hold taut, set angle','—','Stretch skin firmly with your free hand. Blade at about 45°. Too flat or too upright raises the risk of nicks.'],
+['6','Plane','15–20 min','Short, light, feathering strokes, one section at a time. Skip the eyelids, the eyebrows unless shaping is in scope, the nostrils and lips, and anything you mapped.'],
+['7','Dispose at once','1 min','Remove the blade with a one-handed method straight into the sharps container. Never recap, set down loose or reuse.'],
+['8','Calm','5–10 min','Wipe away debris. Hydrating, fragrance-free mask or serum. No acids or retinol today.'],
+['9','Protect','1 min','Moisturizer, then mineral SPF 30+.'],
+['10','Educate & rebook','3 min','Aftercare handout. Remind them hair grows back the same soft texture. Book 3–4 weeks out.']]}},
+{h:'If something goes wrong',items:['Nick: stop, press with clean gauze, skip that area.','Blood on the blade: discard it and open a new one.','Burning or welts: stop and cool. No more product.','Sharps injury to you: wash, follow your exposure plan.','Always write an incident report and check in with the client within 24–48 hours.']},
+{h:'Record for this treatment',items:['Blade type · lot','Blades used','Areas treated','Areas skipped','Products after','Skin response','Nicks · none / where','Next visit · initials']},
+{h:'Before use',text:'Check your state board’s blade rules before use.'}
+]},
+
+{id:'pl-micro',cat:'Protocols',title:'Cosmetic microneedling',icon:'ti-needle',
+lead:'The device maker’s directions always come first. Times are typical.',
+sections:[
+{h:'Check your state first',text:'Many states, including California, bar estheticians from microneedling; others cap depth or require a medical director. Get it in writing from your board. Stay at or under [__ mm, per your state & device].'},
+{h:'Device',text:'FDA-cleared pen only. Sealed, sterile, single-use cartridge for every client and every visit.'},
+{h:'Consult',text:'Intake, consent and Fitzpatrick done. No Accutane in 6 months. Retinoids off 5 days.'},
+{h:'Interval',text:'4–6 weeks apart, never under 3. Series of 3–6. Prime deeper skin tones with daily SPF.'},
+{h:'Set up first',items:['Pen in a fresh barrier sleeve','Sealed cartridge','Sharps container','Gloves & sterile gauze','Antiseptic & saline','Approved glide']},
+{h:'Steps',table:{head:['#','Step','Time','How'],rows:[
+['1','Review & photo','3–5 min','Confirm health changes. Stop for active acne, cold sore, infection or sunburn. Before photos.'],
+['2','Cleanse & numb','2–30 min','Cleanse. Topical numbing only if your state allows it for estheticians; remove it completely.'],
+['3','Antiseptic prep','2 min','Fresh gloves. Antiseptic over the whole area; let it dry. Hair covered.'],
+['4','Open & set depth','1 min','Open the cartridge in front of the client. Set depth for each zone: shallower on the forehead and around the eyes.'],
+['5','Treat','15–20 min','Thin layer of glide the device maker allows. Skin taut, pen upright, light pressure. Small sections, 2–3 crosshatch passes. Ease off over bone.'],
+['6','Watch the endpoint','—','Even pink to red. Cosmetic depth gives little or no pinpoint bleeding. Don’t chase bleeding.'],
+['7','Dispose','1 min','Cartridge straight into sharps. Never reuse. Discard the sleeve; disinfect the pen per the maker.'],
+['8','Cleanse & calm','5 min','Saline gauze. Cool compress. Simple, sterile, fragrance-free soothing product only.'],
+['9','Educate & rebook','3 min','Aftercare handout. Mineral SPF from tomorrow. Book 4–6 weeks out.']]}},
+{h:'If something goes wrong',items:['Heavy bleeding: stop, press with gauze.','Hives or swelling: stop. 911 if breathing is affected.','Pustules, oozing, fever later: refer to a physician.','Needlestick to you: wash, follow your exposure plan.','Always write an incident report and check in with the client within 24–48 hours.']},
+{h:'Record for this treatment',items:['Device · cartridge lot','Depth by zone (mm)','Speed · passes','Glide · numbing used','Endpoint · redness 0–3','Products after','Client comfort 0–10','Reaction · initials']},
+{h:'Before use',text:'Check your state board’s microneedling rules before use.'}
+]},
+
+{id:'pl-wax',cat:'Protocols',title:'Face & body waxing',icon:'ti-droplet',
+lead:'The wax maker’s directions and heater settings always come first. Times are typical.',
+sections:[
+{h:'Consult',text:'Consent signed. No Accutane in 6 months; retinoids paused 7 days; no antibiotics or steroids now.'},
+{h:'Pick the wax',text:'Hard wax: face, underarm, bikini, Brazilian, sensitive skin. Soft wax and strips: arms, legs, back.'},
+{h:'Hair length',text:'About 1/4 inch, or 2–3 weeks of growth. Trim longer hair first. Rebook every 3–6 weeks.'},
+{h:'Set up first',items:['Clean pot, no drips on the rim','Plenty of single-use sticks','Fresh table paper','Gloves','Pre- & post-wax products','Tweezers, scissors, cold pack']},
+{h:'Steps',table:{head:['#','Step','Time','How'],rows:[
+['1','Review & inspect','2 min','Confirm meds and products. Skip moles, skin tags, varicose veins, broken or sunburned skin.'],
+['2','Cleanse & dry','1–2 min','Gloves on. Pre-wax cleanser; skin must be fully dry. Hard wax: thin layer of pre-wax oil. Soft wax: light dusting of powder.'],
+['3','Test the heat','Every time','Test on the inside of your own wrist, then a small patch on the client. Warm, never hot. Don’t trust the dial alone.'],
+['4','Apply','—','New stick for every dip; never double-dip. Apply in the direction of growth. Small sections. Never wax the same spot more than twice.'],
+['5','Remove','—','Hold skin taut. Pull fast, low and parallel to the skin, against growth. Press right away with a gloved hand.'],
+['6','Brazilian care','20–30 min','Explain each step and drape. Client helps hold skin taut. Hard wax only. Never apply wax to mucous membrane.'],
+['7','Tidy','2–5 min','Tweeze strays. Remove residue with post-wax oil.'],
+['8','Soothe','1 min','Calming, fragrance-free post-wax product. Cold pack if needed.'],
+['9','Clean & rebook','3 min','Bin sticks, strips, gloves and paper. Disinfect the station and wipe the pot. Aftercare handout. Book 3–6 weeks out.']]}},
+{h:'Sanitation, every client',items:['Heated wax doesn’t kill germs. One stick, one dip.','Wooden sticks only; never put metal in the pot.','Fresh gloves for each client, and new ones if torn.','Wax that touched skin is never returned to the pot.']},
+{h:'If something goes wrong',items:['Burn: cool running water 10–20 minutes.','Skin lifts: stop there. Cool, cover, no more wax.','Blisters or a large burn: refer to a physician.','Hives or swelling: stop. 911 if breathing is affected.','Always write an incident report and check in with the client within 24–48 hours.']},
+{h:'Record for this treatment',items:['Areas waxed','Wax type · brand','Heat test · OK','Pre / post products','Hair length · growth','Skin response','Lifting · bruising','Next visit · initials']},
+{h:'Before use',text:'Check your state board’s sanitation rules before use.'}
+]},
+
+{id:'pl-facial',cat:'Protocols',title:'Signature facial & extractions',icon:'ti-sparkles',
+lead:'Follow your product directions and your state board’s rules. Times are typical for a 60-minute facial.',
+sections:[
+{h:'Consult',text:'Intake and consent signed. Note Fitzpatrick type, retinoid or isotretinoin use, and any rosacea.'},
+{h:'Steam or not',text:'Skip steam for rosacea, visible capillaries, sensitivity, asthma, sunburn or a recent peel. Use warm towels or an enzyme.'},
+{h:'Lancet rules',text:'Some states ban lancets entirely. Where allowed: sterile, single-use, surface only, straight to sharps.'},
+{h:'Set up first',items:['Nitrile gloves','Mag lamp','Cotton or swabs','Antiseptic','Sharps container','Steamer filled, preheated','Disinfected tools']},
+{h:'Steps',table:{head:['#','Step','Time','How'],rows:[
+['1','Review & cleanse','5 min','Confirm changes. Remove makeup, double cleanse, pat dry.'],
+['2','Analyze','3 min','Under magnification. Map open and closed comedones and milia. Mark inflamed lesions as no-touch.'],
+['3','Exfoliate & soften','8–10 min','Enzyme or gentle AHA/BHA. Steam 12–18 in. away for 5–8 min if cleared; check comfort often. Or warm towels.'],
+['4','Extract','10 min max','Fresh gloves, cotton-wrapped fingertips or swabs. Press down, then in and up from both sides. Never use nails.'],
+['5','Know the limits','—','Two or three tries per pore, then leave it for next visit. Never extract papules, pustules, nodules or cysts. Stop if skin bruises or bleeds freely.'],
+['6','Disinfect','2 min','Antiseptic toner on extracted areas. Optional high frequency per device directions.'],
+['7','Massage','10 min','Avoid freshly extracted areas. Light pressure over capillaries.'],
+['8','Mask','10 min','Calming or clay mask for skin type. Remove with cool, damp mitts.'],
+['9','Finish','3 min','Serum, moisturizer, broad-spectrum SPF 30+.'],
+['10','Educate & rebook','3 min','Aftercare handout. Explain purging vs breakout. Rebook in 4–6 weeks.']]}},
+{h:'If something goes wrong',items:['Dizzy or flushed under steam: stop, sit up, cool cloth, water.','Bleeding: clean gauze and light pressure; stop extracting there.','Hives or swelling: remove product. Call 911 if breathing is affected.','Signs of infection later: refer to a physician.','Lancet stick or blood exposure: wash, follow your exposure plan, and write an incident report.']},
+{h:'Record for this treatment',items:['Skin type · Fitzpatrick','Exfoliant · time','Steam · minutes or none','Areas extracted','Lancet used · Y/N','Mask · products','Skin after · redness 0–3','Reaction · initials']},
+{h:'Before use',text:'Check your state board’s extraction rules before use.'}
+]},
+
+{id:'pl-acne',cat:'Protocols',title:'Acne facial',icon:'ti-droplet-half-2',
+lead:'Mild to moderate, non-cystic acne only. Product and device directions come first. Times are typical.',
+sections:[
+{h:'Refer out',text:'Grade III–IV, nodules or cysts, scarring, on isotretinoin, or no change after 3 months. Facial only with physician OK.'},
+{h:'Deeper skin tones',text:'Fitzpatrick IV–VI: PIH risk. Lower strengths, no aggressive extraction, no steam on inflamed skin, tinted SPF.'},
+{h:'Acids & BPO',text:'No salicylic with aspirin allergy or pregnancy without a doctor’s OK. BPO bleaches towels and fabric; warn the client.'},
+{h:'Set up first',items:['Nitrile gloves','Mag lamp','Cotton or swabs','Acne exfoliant','LED & opaque goggles','Sharps container','Timer']},
+{h:'Steps',table:{head:['#','Step','Time','How'],rows:[
+['1','Review & grade','5 min','Confirm meds and homecare. Map lesions: comedones, papules, pustules, nodules. Photo with consent.'],
+['2','Cleanse','3 min','Gentle or salicylic cleanser. No scrubbing over active breakouts.'],
+['3','Exfoliate','Per label','Salicylic or mandelic solution to loosen clogs; mandelic or lower strength for deeper tones. Use in place of steam.'],
+['4','Extract','10 min max','Fresh gloves. Open and closed comedones only, cotton-wrapped fingertips or swabs. Two or three tries, then move on.'],
+['5','Leave alone','—','Never press papules, nodules or cysts. Surface pustules only if your state and training allow; never lance.'],
+['6','Calm','10 min','Antiseptic toner, then a sulfur, clay or calming mask. Cool to remove.'],
+['7','Blue LED, optional','Per device','Clean, dry skin. Opaque goggles. Skip for photosensitizing meds or light-triggered seizures. Helps red bumps, not cysts.'],
+['8','Finish','2 min','Oil-free moisturizer, broad-spectrum SPF 30+; tinted with iron oxides for PIH-prone skin.'],
+['9','Homecare plan','5 min','One acne active at a time; BPO start at 2.5%. Commit 6–12 weeks. Rebook every 2–4 weeks.']]}},
+{h:'If something goes wrong',items:['Strong burning: remove exfoliant with cool water right away.','Bleeding: clean gauze and pressure; stop extracting there.','Hives or swelling: remove product. Call 911 if breathing is affected.','Worsening, painful or spreading acne: refer to a physician.','Always write an incident report and check in with the client within 24–48 hours.']},
+{h:'Record for this treatment',items:['Grade · Fitzpatrick','Lesion count / map','Exfoliant · % · time','Areas extracted','LED · minutes','Homecare given','Referral · Y/N · to','Reaction · initials']},
+{h:'Before use',text:'Check your state board’s scope rules before use.'}
+]},
+
+{id:'pl-hydro',cat:'Protocols',title:'Hydrodermabrasion facial',icon:'ti-droplets',
+lead:'Your device manufacturer’s settings, solutions and training always come first. Times are typical.',
+sections:[
+{h:'Consult',text:'Intake and consent signed. Device use within your state’s esthetics scope and your training.'},
+{h:'Choose solutions',text:'Skip the acid step for salicylate allergy, sensitivity, rosacea flare or recent retinoid; use a gentle solution.'},
+{h:'Tip hygiene',text:'New single-use tip per client, or clean and disinfect reusable parts exactly per the manual. Never reuse disposables.'},
+{h:'Set up first',items:['Gloves','New tips','Solutions in date','Waste jar empty','Suction tested on forearm','Eye pads']},
+{h:'Steps',table:{head:['#','Step','Time','How'],rows:[
+['1','Review & inspect','3 min','Confirm changes. Look under magnification. Stop for cold sore, open lesions, sunburn or cystic acne.'],
+['2','Cleanse','2 min','Remove makeup and SPF. Pat dry. Eye pads on.'],
+['3','Cleanse & exfoliate','5–7 min','Exfoliating tip with cleansing solution. Short overlapping passes, skin held taut, one to two passes per zone.'],
+['4','Acid step','3–5 min','Mild AHA/BHA solution per manufacturer. Watch for even pinkness; stop at hot spots or blanching.'],
+['5','Vortex extraction','5–7 min','Suction with extraction solution. Keep the tip moving; never park it. Lowest setting over capillaries, thin or bony areas.'],
+['6','Infuse','5 min','Hydrating or antioxidant serum through the infusion tip.'],
+['7','LED, optional','Per device','Blue for breakouts, red for calming. Opaque goggles.'],
+['8','Finish','2 min','Moisturizer and mineral SPF 30+. Show the client the waste jar if they’d like.'],
+['9','Clean down','5 min','Discard tips. Empty and clean the waste jar. Flush lines and disinfect handpiece per the manual.']]}},
+{h:'If something goes wrong',items:['Burning: stop the acid, rinse with cool water, cool compress.','Suction mark or bruise: lower suction, skip the area.','Hives or swelling: remove product. Call 911 if breathing is affected.','Solution in the eye: flush with saline; see a doctor if irritation lasts.','Device fault: stop, log it, and contact the manufacturer. Always write an incident report.']},
+{h:'Record for this treatment',items:['Device · tip type','Suction setting','Acid solution · lot','Infusion serum','LED · color · minutes','Skin after · redness 0–3','Tips replaced · Y/N','Reaction · initials']},
+{h:'Before use',text:'Check your state board’s device rules before use.'}
+]},
+
+{id:'pl-led',cat:'Protocols',title:'LED light therapy',icon:'ti-bulb',
+lead:'Your device maker’s directions for distance, time and settings always come first. Times are typical.',
+sections:[
+{h:'Consult',text:'Intake and consent signed. Screen for seizures, light-sensitizing meds, eye conditions, pregnancy and cancer.'},
+{h:'Choose the light',text:'Blue: surface, for breakouts. Red: calming, tone. Near-infrared (invisible): deepest. Combine per device.'},
+{h:'Plan the series',text:'Typically [1–3] sessions a week for [4–6] weeks, then every [2–4] weeks. Use the device’s cleared settings.'},
+{h:'Set up first',items:['Opaque eye shields for client','Goggles for you','Panel cleaned','Cords and arm checked','Timer']},
+{h:'Steps',table:{head:['#','Step','Time','How'],rows:[
+['1','Review & inspect','2–3 min','Ask about new medicines and supplements since last visit. Stop for open lesions, active cold sore or sunburn.'],
+['2','Cleanse','2–3 min','Remove all makeup and SPF so nothing blocks or reflects the light. Pat dry.'],
+['3','Prep (optional)','Varies','Any facial steps before the light. No acids, retinoids or fragranced products under the light unless the maker allows them.'],
+['4','Protect eyes','1 min','Opaque shields on the client, eyes closed. Put your own goggles on before switching on.'],
+['5','Position','1 min','Set the panel at the maker’s distance, evenly over the area. Don’t touch the skin unless designed to.'],
+['6','Treat','Per device','Usually [10–20] min. Use the preset program. Don’t stack extra cycles to speed results.'],
+['7','Monitor','Throughout','Stay in the room. Check comfort and warmth. Stop for heat, dizziness, headache or any seizure sign.'],
+['8','Finish','2 min','Switch off before removing eye shields. Check the skin for redness.'],
+['9','Calm & protect','2 min','Hydrating serum and moisturizer, then broad-spectrum SPF 30+.'],
+['10','Clean & rebook','3 min','Disinfect panel and shields per maker. Give aftercare. Book the next session in the series.']]}},
+{h:'If something goes wrong',items:['Too warm or red: stop, cool compress, note it.','Eye pain or vision change: stop; refer to an eye doctor.','Seizure: switch off, keep the client safe on their side, call 911.','Rash or hives: stop. Call 911 if breathing is affected.','Always write an incident report and check in with the client within 24–48 hours.']},
+{h:'Record for this treatment',items:['Device · program','Light color(s)','Distance · minutes','Session # of series','Eye protection used','Meds changed? Y / N','Skin after · redness 0–3','Reaction · initials']},
+{h:'Before use',text:'Check your state board’s device rules.'}
+]},
+
+{id:'pl-microcurrent',cat:'Protocols',title:'Microcurrent facial',icon:'ti-bolt',
+lead:'Your device maker’s directions for settings, tips and timing always come first. Times are typical.',
+sections:[
+{h:'Hard stops',text:'Pacemaker or implanted device, epilepsy, pregnancy, active cancer. Metal in the face: follow device maker.'},
+{h:'Injectables',text:'Wait [__] weeks after neurotoxin and [__] weeks after filler, or as the client’s injector advises.'},
+{h:'Series',text:'Typically [1–2] a week for [6–12] sessions, then maintenance every [2–4] weeks.'},
+{h:'Set up first',items:['Conductive gel (plenty)','Clean probes or tips','Device charged, cords checked','Jewelry off','Mirror for before/after']},
+{h:'Steps',table:{head:['#','Step','Time','How'],rows:[
+['1','Review & photo','3 min','Confirm no new implants, injectables or pregnancy. Take a before photo if consented.'],
+['2','Cleanse','2–3 min','Remove all makeup and oils, which block current. Light exfoliation only if planned.'],
+['3','Apply gel','1 min','Even, generous layer on one section at a time. Re-wet as it dries; dry skin stings.'],
+['4','Set & test','1 min','Start at the lowest setting. Test on the jaw and adjust to comfort; more isn’t better.'],
+['5','Work the face','20–40 min','Both probes on the skin. Glide or hold per maker, moving upward and outward, one side then match the other.'],
+['6','Keep clear of','Throughout','Eyes and eyelids, temples, front of the neck and thyroid, over the heart. Stay off broken skin.'],
+['7','Monitor','Throughout','Ask about tingling, taste or flashes. Lower the setting or add gel as needed.'],
+['8','Remove & finish','3 min','Wipe off gel. Serum, moisturizer, broad-spectrum SPF. After photo if consented.'],
+['9','Clean & rebook','3 min','Clean and disinfect probes per maker. Give aftercare. Book the next session in the series.']]}},
+{h:'If something goes wrong',items:['Stinging or a hot spot: lift probes, add gel, lower setting.','Dizziness, faintness or palpitations: stop, recline, monitor.','Seizure: stop, keep the client safe on their side, call 911.','Rash or welts from gel: remove, cool compress, note product.','Always write an incident report and check in with the client within 24–48 hours.']},
+{h:'Record for this treatment',items:['Device · program','Intensity setting(s)','Areas · minutes','Session # of series','Gel used','Last injectable · date','Photos taken Y / N','Reaction · initials']},
+{h:'Before use',text:'Check your state board’s device rules.'}
+]},
+
+{id:'pl-tint',cat:'Protocols',title:'Lash & brow tint',icon:'ti-eye',
+lead:'The product label’s directions, timing and age limits always come first. Times are typical.',
+sections:[
+{h:'Check your state',text:'Tinting isn’t in every state’s esthetics scope, and some boards allow only FDA-compliant silver nitrate tints. Confirm before offering.'},
+{h:'Patch test',text:'Required 24–48 hours before the first tint and after any product change. Behind the ear or inner elbow. Record it.'},
+{h:'Silver nitrate rules',text:'FDA limits: professional use, clients 16+, no more than 1 minute on, then remove at once.'},
+{h:'Set up first',items:['Sterile saline eyewash','Under-eye pads','Barrier cream','Non-metal dish','Disposable applicators','Damp cotton','Timer']},
+{h:'Steps',table:{head:['#','Step','Time','How'],rows:[
+['1','Review & inspect','2–3 min','Check patch test result and consent. Stop for any eye redness, infection, stye or broken skin.'],
+['2','Prep','2–3 min','Contacts out. Remove makeup and oil from lashes and brows with an oil-free cleanser. Dry well.'],
+['3','Protect','2 min','Barrier cream on the skin around the area, off the lash line. Pads under lower lashes, eyes closed.'],
+['4','Mix','1 min','Per label, just before use, in a non-metal dish. Discard leftovers; never reuse mixed tint.'],
+['5','Apply','1–2 min','Thin coat with a fresh applicator, base to tip, away from the waterline. Brows: shape first, then tint.'],
+['6','Process','Per label','Start the timer. Stay with the client; eyes closed. Silver nitrate: 1 minute maximum.'],
+['7','Remove','2–3 min','Damp cotton, wiping down and outward until clear. Eyes stay closed until no tint is left.'],
+['8','Check & clean up','2 min','Ask about stinging. Check the eyes. Lift skin stain with the maker’s remover.'],
+['9','Educate & rebook','2 min','Give aftercare. Rebook in about [4–6] weeks; patch test again if the product changes.']]}},
+{h:'If something goes wrong',items:['Stinging under the pad: remove tint at once.','Tint in the eye: flush with saline 15+ min, lids open.','Then: same-day eye doctor. Send the product label.','Hives or swollen lids: remove, refer. 911 if breathing is affected.','Always write an incident report, stop using that product on the client, and check in within 24–48 hours.']},
+{h:'Record for this treatment',items:['Product · shade · lot','Developer · ratio','Patch test date · result','Lashes · brows · time','Client 16 or older Y / N','Eye protection used','Eyes after: clear Y / N','Reaction · initials']},
+{h:'Before use',text:'Check your state board’s tinting rules.'}
+]},
+
+{id:'pl-contra',cat:'Business tools',title:'Contraindication cheat sheet',icon:'ti-alert-triangle',
+lead:'A quick screen, not a diagnosis. When in doubt, don’t treat and ask for written medical clearance.',
+sections:[
+{h:'Key',items:['No: do not treat','Wait [time]: postpone','Caution: modify or get clearance','OK: fine after screening']},
+{h:'Medications',table:{head:['If client has','Facial','Extractions','Peel','Dermaplane','Microneedle','Wax','LED','Microcurrent','Lash / brow tint'],rows:[
+['Isotretinoin [1]','Caution','Caution','Wait 6 mo','Wait 6 mo','Wait 6 mo','Wait 6 mo','OK','OK','Caution'],
+['Rx retinoids [2]','Caution','Caution','Wait 1 wk','Wait 1 wk','Wait 1 wk','Wait 1 wk','OK','OK','OK'],
+['Retinol, AHA/BHA [2]','OK','OK','Wait 1 wk','Wait 1 wk','Wait 1 wk','Wait 1 wk','OK','OK','OK'],
+['Blood thinners [3]','OK','Caution','Caution','No','No','Caution','OK','OK','OK'],
+['Photosensitizers [11]','OK','OK','Caution','Caution','Caution','Caution','Caution','OK','OK']]}},
+{h:'Health & conditions',table:{head:['If client has','Facial','Extractions','Peel','Dermaplane','Microneedle','Wax','LED','Microcurrent','Lash / brow tint'],rows:[
+['Pregnant or nursing [4]','OK','OK','Caution','OK','No','Caution','Caution','No','Caution'],
+['Cold sore, active','No','No','No','No','No','No','No','No','No'],
+['Cold sore history [5]','OK','OK','Caution','Caution','Caution','Caution','OK','OK','OK'],
+['Pacemaker, implants [6]','Caution','OK','OK','OK','Caution','OK','OK','No','OK'],
+['Epilepsy, seizures [6]','Caution','OK','OK','OK','OK','OK','Caution','No','OK'],
+['Diabetes [7]','OK','Caution','Caution','Caution','Caution','Caution','OK','OK','OK'],
+['Autoimmune, skin flare','Caution','Caution','Caution','Caution','No','Caution','Caution','OK','Caution'],
+['Keloid scarring','OK','Caution','Caution','Caution','No','Caution','OK','OK','OK'],
+['Skin cancer, mole [8]','Caution','No','No','No','No','No','Caution','Caution','Caution']]}},
+{h:'Recent treatments & skin state',table:{head:['If client has','Facial','Extractions','Peel','Dermaplane','Microneedle','Wax','LED','Microcurrent','Lash / brow tint'],rows:[
+['Botox, past 2 wk [9]','Wait 2 wk','Wait 2 wk','Wait 2 wk','Wait 2 wk','Wait 2 wk','Wait 2 wk','Caution','Wait 2 wk','OK'],
+['Filler, past 2 wk [9]','Wait 2 wk','Wait 2 wk','Wait 2 wk','Wait 2 wk','Wait 2 wk','Wait 2 wk','Caution','Wait 2 wk','OK'],
+['Laser or peel, past 2 wk','Wait 2 wk','Wait 2 wk','Wait 2 wk','Wait 2 wk','Wait 2 wk','Wait 2 wk','OK','Caution','OK'],
+['Sunburn, fresh tan','Caution','Caution','Wait 2 wk','Wait 2 wk','Wait 2 wk','No','Caution','Caution','OK'],
+['Infection, rash [10]','No','No','No','No','No','No','No','No','No']]}},
+{h:'Notes',items:[
+'[1] Taking now or in the past 6 months. Some brands ask 12; a 2017 expert panel found little evidence to delay superficial peels.',
+'[2] Stop 5–7 days before; restart once skin is fully calm. Skin lifting risk with wax.',
+'[3] Incl. daily aspirin. Never advise stopping a prescribed medicine.',
+'[4] No retinoid or salicylic peels and no electrical currents.',
+'[5] Suggest asking their doctor about an antiviral first.',
+'[6] No galvanic, high frequency or microcurrent. No flashing or pulsed LED modes.',
+'[7] Slow healing. Treat only if well controlled.',
+'[8] Never treat over a lesion. Refer changing moles.',
+'[9] No pressure or devices over injected areas, or follow the injector.',
+'[10] Reschedule; refer to a physician if it looks infected.',
+'[11] e.g. doxycycline and other tetracyclines, some diuretics, St. John’s wort. Lower intensity, patch test, strict SPF.']},
+{h:'Conservative defaults',text:'Sources disagree on many windows, so this sheet uses the more cautious one. Your state board’s scope, the product or device maker’s instructions and the client’s physician always come first. Review it yearly.'}
+]},
+
+{id:'pl-patch',cat:'Business tools',title:'Patch test record',icon:'ti-test-pipe',
+lead:'Test a small area behind the ear, inner arm or along the jaw. Check at 24 and 48 hours. Follow the product maker’s directions.',
+sections:[
+{h:'Client',items:['Client name','Birth date','Phone','Known allergies or sensitivities','Planned service']},
+{h:'For each test (the sheet holds three)',items:['Product','Batch · lot #','Area','Applied: date · time','Applied by']},
+{h:'Checks',table:{head:['Check','None','Redness','Itching','Swelling','Other','Notes · date · time','Initials'],rows:[
+['24 hrs','','','','','','',''],
+['48 hrs','','','','','','','']]}},
+{h:'Result',items:['Clear to proceed','Proceed with changes','Do not use this product']},
+{h:'Client instructions',text:'Client: If the test spot burns, blisters, swells or itches badly, wash it off with cool water and call us at [Phone]. Trouble breathing or swelling of the face or throat: call 911. A clear patch test lowers the risk of a reaction but can’t rule one out.'},
+{h:'Sign-off',items:['Client signature: I understand the above','Date','Esthetician initials']}
+]},
+
+{id:'pl-incident',cat:'Business tools',title:'Adverse reaction & incident report',icon:'ti-first-aid-kit',
+lead:'Complete the same day. Record facts, not opinions.',
+sections:[
+{h:'Details',items:['Date','Time','Client name','Client phone','Service','Esthetician · license #','Witness, if any','Products · strength · lot # · device & settings','Contact time · area']},
+{h:'What happened',items:['Burning, stinging','Redness, hives','Swelling','Frosting, blister','Skin lifting','Cut, nick','Product in eye','Fainting, dizziness','Fall or injury','Blood exposure']},
+{h:'Describe',text:'Describe in order: what you saw, where on the body, size, and when it started.'},
+{h:'Immediate actions · time',items:['Stopped the service','Removed, neutralized or rinsed product','Cool compresses','Eye flush with saline or clean water, 15 min','First aid: pressure, clean dressing','Called 911','Kept product, label and lot for review']},
+{h:'Referral',items:['None needed','Own doctor','Dermatologist','Urgent care, ER']},
+{h:'Photos',items:['Taken with consent','Declined','How many · stored where']},
+{h:'Aftercare given',items:['Verbal','Written','Insurer notified']},
+{h:'Client statement',text:'Client statement, in their words.'},
+{h:'Follow-up checks',table:{head:['Check','Date','How the skin looks · what the client reports · next step','Initials'],rows:[
+['24 hours','','',''],
+['48 hours','','',''],
+['1 week','','','']]}},
+{h:'Sign-off',items:['Esthetician signature · date','Client signature, optional · date','Incident report · keep [__] years']}
+]},
+
+{id:'pl-sanitation',cat:'Business tools',title:'Sanitation & disinfection log',icon:'ti-spray',
+lead:'Your state board’s rules come first. Keep completed logs for [__] years.',
+sections:[
+{h:'Weekly log · initial each box',items:['Week of','Treatment room','Reviewed by','Disinfectant name · EPA reg. no.','Dilution','Label contact time (minutes)','Surface wipe · EPA reg. no.','Wipe contact time (minutes)']},
+{h:'Daily tasks',table:{head:['Task','Mon','Tue','Wed','Thu','Fri','Sat','Sun'],rows:[
+['Clients today','','','','','','',''],
+['Bed & surfaces between clients · Clean, then disinfect. Fresh table cover.','','','','','','',''],
+['Tools cleaned, then disinfected · Immersed for full contact time.','','','','','','',''],
+['Single-use items discarded · Wax sticks, applicators, gloves, blades.','','','','','','',''],
+['Linens changed · Fresh set; used into closed bin.','','','','','','',''],
+['Disinfectant solution fresh · Per label; daily or if cloudy.','','','','','','',''],
+['Sharps container checked · Closed, upright, under the fill line.','','','','','','',''],
+['Steamer & devices cleaned · Per maker; distilled water in steamer.','','','','','','',''],
+['Hand hygiene supplies · Soap, towels, 60%+ sanitizer.','','','','','','',''],
+['End-of-day full clean · Counters, sinks, floors, trash.','','','','','','','']]}},
+{h:'Clean, then disinfect',items:['Remove debris, wash with soap and water, dry.','Use an EPA-registered disinfectant per its label.','Keep visibly wet for the full contact time.','Store in a covered container labeled Clean.']},
+{h:'If blood is present',items:['Glove up and clean the area before disinfecting.','Use a product labeled for bloodborne pathogens.','Bag soiled items. Sharps go straight in the container.','Wash hands after removing gloves. Note it below.']},
+{h:'Notes',items:['Notes','Supplies to reorder','Sharps container replaced (date)','Incidents']}
+]},
+
+{id:'pl-skin-analysis',cat:'Records',title:'Skin analysis & treatment plan',icon:'ti-clipboard-list',
+lead:'Practitioner record for each visit’s skin analysis and treatment plan.',
+sections:[
+{h:'Visit',items:['Client','Date','Visit #','Esthetician']},
+{h:'Checks',items:['Intake reviewed','Contraindications noted','Photo release on file','Before photos taken','Treatment consent signed']},
+{h:'Fitzpatrick',table:{head:['Type','Description'],rows:[
+['I','Always burns, never tans'],
+['II','Burns easily, tans a little'],
+['III','Sometimes burns, tans gradually'],
+['IV','Rarely burns, tans easily · PIH risk'],
+['V','Very rarely burns · higher PIH risk'],
+['VI','Never burns · highest PIH & keloid risk']]}},
+{h:'Skin type',items:['Normal','Dry','Oily','Combination','Sensitive']},
+{h:'Glogau',items:['I · no wrinkles','II · lines in motion','III · lines at rest','IV · lines throughout']},
+{h:'Assessment (score 0 · 1 · 2 · 3, with where · notes)',items:['Dehydration','Oil production','Congestion · comedones, milia','Active acne · grade I–IV ___','Pigmentation · PIH, melasma, sun','Redness · rosacea, capillaries','Texture · pore size','Fine lines & wrinkles','Loss of firmness','Sensitivity · barrier damage']},
+{h:'Face map key',text:'C comedone · P papule · Pu pustule · M milia · H pigment · T capillaries · D dehydration · S scar'},
+{h:'Refer to a physician',text:'Changing mole (ABCDE), grade IV or cystic acne, suspected infection, eye involvement.'},
+{h:'Treatment plan',items:['Top concerns, in order · client goal','Today’s treatment · products, strengths, device settings, extractions','Skin response during & after','Series: ___ sessions, every ___ weeks','Next visit · date & service','Aftercare given','Homecare plan given','Esthetician initials']}
+]},
+
+{id:'pl-treatment-record',cat:'Records',title:'Treatment record & progress log',icon:'ti-notes',
+lead:'At each visit, ask about changes in health, medications and skincare before you start.',
+sections:[
+{h:'Client chart',items:['Client name','Birth date','Fitzpatrick','Skin type · main concerns','Goals','Alerts: allergies, meds, cautions','Consent renew by']},
+{h:'On file',items:['Intake','General consent','Service consent','Policies','Photo release']},
+{h:'Progress log',table:{head:['Date','Service','Products · strength · settings','Skin response','Homecare changes','Next visit','Init.'],rows:[
+['','','','','','','']]}},
+{h:'At each visit',text:'At each visit, ask about changes in health, medications and skincare before you start. Note patch tests, reactions and any referral. Write in ink; correct with a single line, then initial and date.'}
+]}
+];
+// ── Practice library (The Esthetician Collection, provider-only) ─────────────────────────────────────
+// Ashley's protocols, business tools and record sheets, readable in the app, plus the printable PDFs.
+// Nothing here is ever sent to a client and nothing here is stored: it is read-only reference.
+function _plShown(){
+  try{ const has=p=>(typeof selectedProfessions!=='undefined')&&selectedProfessions.includes(p);
+    return !selectedProfessions||!selectedProfessions.length||['esty','wax','brow','lash'].some(has); }catch(e){ return true; }
+}
+function _practiceLibraryTabHTML(){
+  const cats=[];EC_LIBRARY.forEach(e=>{if(cats.indexOf(e.cat)<0)cats.push(e.cat);});
+  const card=e=>`<div class="pl-card" data-search="${_fileEsc((e.title+' '+e.cat).toLowerCase())}" onclick="_openPracticeEntry('${e.id}')" style="display:flex;align-items:center;gap:12px;padding:12px 14px;border:1px solid var(--p-line);border-radius:12px;background:var(--p-surf);margin-bottom:8px;cursor:pointer;">
+      <div style="width:38px;height:38px;border-radius:10px;background:var(--accent-tint);display:flex;align-items:center;justify-content:center;flex-shrink:0;"><i class="ti ${_fileEsc(e.icon||'ti-notes')}" aria-hidden="true" style="font-size:18px;color:var(--accent-strong);"></i></div>
+      <div style="flex:1;min-width:0;"><div style="font-size:16px;font-weight:500;color:var(--p-ink);">${_fileEsc(e.title)}</div>${e.lead?`<div style="font-size:14px;color:var(--p-mut);line-height:1.4;">${_fileEsc(e.lead)}</div>`:''}</div>
+      <i class="ti ti-chevron-right" aria-hidden="true" style="font-size:16px;color:var(--p-mut);"></i></div>`;
+  return `<div style="padding:12px 16px 0;">
+    <div style="font-size:16px;color:var(--p-mut);margin-bottom:12px;">Your protocols, business tools and record sheets from <b style="color:var(--p-ink);">The Esthetician Collection</b>, written by a licensed esthetician. Only you see these.</div>
+    <div style="border:1px solid var(--p-line);border-radius:14px;background:var(--p-surf2);padding:14px;margin-bottom:16px;">
+      <div style="font-size:16px;font-weight:600;color:var(--p-ink);margin-bottom:4px;"><i class="ti ti-printer" aria-hidden="true"></i> Printable PDFs</div>
+      <div style="font-size:14px;color:var(--p-mut);line-height:1.5;margin-bottom:10px;">All 54 pages, in three styles. Add your logo and business name in a free Canva account, or print as is.</div>
+      <div id="pl-pdf-status" role="status" style="font-size:14px;color:var(--p-mut);margin-bottom:8px;display:none;"></div>
+      <div style="display:flex;gap:8px;flex-wrap:wrap;">
+        <button class="btng" style="flex:1;min-width:90px;" onclick="_downloadCollectionPdf('neutral')">Neutral</button>
+        <button class="btng" style="flex:1;min-width:90px;" onclick="_downloadCollectionPdf('blush')">Blush</button>
+        <button class="btng" style="flex:1;min-width:90px;" onclick="_downloadCollectionPdf('luxe')">Luxe</button>
+      </div>
+    </div>
+    ${cats.map(c=>`<div style="font-size:14px;font-weight:600;color:var(--p-mut);text-transform:uppercase;letter-spacing:.06em;margin:6px 0 8px;">${_fileEsc(c)}</div>${EC_LIBRARY.filter(e=>e.cat===c).map(card).join('')}`).join('')}
+    <div style="font-size:13px;color:var(--p-mut);line-height:1.5;margin:10px 0 18px;">A professional starting point, not legal advice. Scope of practice differs by state. Check your state board's rules and set the waiting periods to your own policy.</div>
+  </div>`;
+}
+function _plSectionHTML(s){
+  const h=s.h?`<div style="font-size:15px;font-weight:600;color:var(--p-ink);margin:14px 0 6px;">${_fileEsc(s.h)}</div>`:'';
+  if(s.items)return h+`<ul style="margin:0;padding-left:20px;font-size:15px;line-height:1.55;color:var(--p-ink);">${s.items.map(it=>`<li style="margin-bottom:5px;">${_fileEsc(it)}</li>`).join('')}</ul>`;
+  if(s.table){const t=s.table;return h+`<div style="overflow-x:auto;border:1px solid var(--p-line);border-radius:10px;"><table style="border-collapse:collapse;width:100%;font-size:14px;color:var(--p-ink);"><thead><tr>${(t.head||[]).map(c=>`<th style="text-align:left;padding:7px 9px;background:var(--p-surf2);border-bottom:1px solid var(--p-line);white-space:nowrap;">${_fileEsc(c)}</th>`).join('')}</tr></thead><tbody>${(t.rows||[]).map(r=>`<tr>${r.map(c=>`<td style="padding:7px 9px;border-top:1px solid var(--p-line);vertical-align:top;">${_fileEsc(c)}</td>`).join('')}</tr>`).join('')}</tbody></table></div>`;}
+  return h+`<div style="font-size:15px;line-height:1.6;color:var(--p-ink);white-space:pre-line;">${_fileEsc(s.text||'')}</div>`;
+}
+function _openPracticeEntry(id){
+  const e=EC_LIBRARY.find(x=>x.id===id);if(!e)return;
+  let ov=document.getElementById('pl-entry');if(ov)ov.remove();
+  ov=document.createElement('div');ov.id='pl-entry';
+  ov.style.cssText='position:fixed;inset:0;margin:0 auto;width:390px;max-width:100%;z-index:10000;background:rgba(0,0,0,.6);display:flex;flex-direction:column;justify-content:flex-end;';
+  ov.onclick=function(ev){if(ev.target===ov)ov.remove();};
+  ov.innerHTML='<div role="dialog" aria-label="'+_fileEsc(e.title)+'" style="background:var(--surf1);border-top:1px solid var(--p-line);border-radius:16px 16px 0 0;padding:18px;max-height:92%;overflow:auto;">'
+    +_sheetBar()
+    +'<div style="font-size:13px;font-weight:600;color:var(--accent-strong);text-transform:uppercase;letter-spacing:.06em;">'+_fileEsc(e.cat)+'</div>'
+    +'<div style="font-size:19px;font-weight:600;color:var(--p-ink);margin:4px 0 6px;">'+_fileEsc(e.title)+'</div>'
+    +(e.lead?'<div style="font-size:15px;color:var(--p-mut);line-height:1.5;">'+_fileEsc(e.lead)+'</div>':'')
+    +e.sections.map(_plSectionHTML).join('')
+    +'<button onclick="var o=document.getElementById(\'pl-entry\');if(o)o.remove();" style="width:100%;margin-top:18px;background:none;border:1px solid var(--p-line-ctl);color:var(--p-mut);border-radius:12px;padding:10px;font-size:16px;cursor:pointer;font-family:inherit;">Close</button>'
+    +'</div>';
+  (document.querySelector('.shell')||document.body).appendChild(ov);
+}
+async function _downloadCollectionPdf(style){
+  const st=document.getElementById('pl-pdf-status');
+  const say=m=>{if(st){st.style.display='';st.textContent=m;}};
+  // Open the window first, inside the tap, so a phone's popup blocker allows it; point it at the
+  // file once the server says this account may have it.
+  let w=null;try{w=window.open('','_blank');}catch(e){w=null;}
+  say('Getting your PDF…');
+  try{
+    const tok=(typeof Cloud!=='undefined'&&Cloud&&Cloud.token)||'';
+    const r=await fetch('/api/collection-pdf',{headers:{'Authorization':'Bearer '+tok}});
+    const j=await r.json().catch(()=>({}));
+    if(!r.ok||!j.ok){try{if(w)w.close();}catch(e){}say(j.error||'Could not get the PDF. Please try again.');return;}
+    const f=(j.files||[]).find(x=>x.style===style)||(j.files||[])[0];
+    const url=location.origin+f.url;
+    if(w){try{w.location.href=url;}catch(e){location.href=url;}}else{location.href=url;}
+    say(f.label+' PDF opened. Save or share it from there.');
+  }catch(e){try{if(w)w.close();}catch(e2){}say('Could not reach the server. Check your connection and try again.');}
+}
 let customResources=[];   // provider-added guides (persisted)
 let resources=[];         // active library, rebuilt from selected professions + custom
 function rebuildResources(){

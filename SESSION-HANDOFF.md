@@ -7533,3 +7533,25 @@ No reply to Diana says anything is lost until that paste says so with numbers (�
 - Pre-existing, NOT from this change: `sweep2-photo-xaccount.mjs` 5/6 on both 16b and 16c — "logout
   clears A's photo store from IndexedDB" (`captured_photos` key `cA` left after logout). The recover
   screen does not offer them to account B (that check passes).
+
+## 2026-10-16 — The Esthetician Collection built into the provider app (build `2026-10-16d`, preview)
+Ashley's Etsy collection (54-page PDF, "Esthetician Complete Collection", 3 styles) built in for every
+subscriber. All ADDED, nothing existing changed:
+- **16 forms** `ec-*` in `formTmpls` (right after it, so `_snapshotBundled` counts them as built-ins and
+  `persistForms` never stores them unless edited). Own catalog section `_FORM_DEFS_BY_PROF.ecoll`
+  ("The Esthetician Collection"), shown when esty/wax/brow/lash is selected (`_profFormDefs` + the
+  Forms screen `sections`). `_bundlePhotoRelease` skips `ec-*` (they ask their own photo questions).
+  Sent forms reach the client as a snapshot (`_assembleClientData`), so already-sent/signed forms are
+  untouched. Placeholders like [24] / [Your Business Name] were resolved so clients never see brackets.
+- **13 guides** `g-esty-ec-*` pushed onto `guideTemplatesByProf.esty` (+ wax/brow/lash get the relevant ones).
+- **Practice library** (provider-only, read-only): `EC_LIBRARY` (17 entries: protocols, business tools,
+  record sheets), a "Library" tab in Forms & Guides (`_practiceLibraryTabHTML`, `_openPracticeEntry`).
+- **Printable PDFs**: `assets/ec-<random>/{neutral,blush,luxe}.pdf`, address handed out only by
+  `api/collection-pdf.js` after session + subscription check (same rule as login, past_due allowed),
+  `X-Robots-Tag: noindex` in vercel.json. Not DRM: the folder is static; the name is the protection.
+- The form/guide/library TEXT is in slickchart.html, which (like every built-in form) is public JS.
+- Tests: `scratchpad/test-esthetician-collection.mjs` 14/14, `scratchpad/test-ec-client-form.mjs`
+  16/16 (a client fills, signs and submits every collection form in the real client page). Found and
+  fixed on the way: a "Phone or email" field failed the client app's email check for a phone number.
+- Pre-existing, not from this: `sweep3-forms-provider-sign-again.mjs` still shows signing the same
+  form twice on the provider's device files nothing on the second sign (same result on 16c).
