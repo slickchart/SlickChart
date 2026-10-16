@@ -7464,5 +7464,16 @@ key; re-sending a check-in stamps `checkinReqAt` once the link goes out.
 
 **Not done**: `sc_workspace.codes` keeps a cleared discount code in the account copy (no screen shows
 it; fixing means changing that key's shape); client
-prefs merge is top-level only (two client devices can overwrite course progress); no way to withdraw
-a form/guide sent by mistake; `cron-events` hour-bucket dedupe could double an "after service" send.
+prefs merge is top-level only (two client devices can overwrite course progress); `cron-events` hour-bucket dedupe could double an "after service" send.
+
+## 2026-10-16b — take back a form, guide or course sent by mistake
+
+Client chart → Visit → "Still open in <name>'s app": every pending form, guide and course with
+**Take back** (confirm, then a 7s Undo). Taking one back removes it from the chart AND stamps
+`c.withdrawn['f:'|'g:'|'c:' + id] = ms`, sent to the client as `withdrawn` (entries over a year old
+dropped). The stamp is needed because `upsertClient` (lib/clients.js) keeps a stored
+`pendingForms`/`pendingGuides` when a write would empty it — the guard against stale devices — so
+removing the LAST one never reaches the server by itself. The client app hides anything whose
+`assignedAt` is at or before its stamp; a re-send (newer `assignedAt`) shows again. Merging two
+duplicate charts keeps the newer stamp and drops taken-back items. Old client builds (open tabs) keep
+showing a taken-back item until they reload. Repro: `scratchpad/sweep3-takeback.mjs`.

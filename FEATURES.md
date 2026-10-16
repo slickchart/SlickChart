@@ -633,6 +633,7 @@ saved anywhere", not "does this always call that".
 | `_runInkOCR` | `/api/ai` | via `_aiComplete` |
 | `_runSelfCheck` | `/api/clients` | direct |
 | `_runSelfCheck` | `/api/store` | direct |
+| `_runTakeBackUndo` | `/api/clients` | via `_syncSpecificClientsToServer` |
 | `_saveAndSendNote` | `/api/beta-event` | via `_pingChart` |
 | `_saveAndSendNote` | `/api/clients` | via `syncClientEvents` |
 | `_saveAndSendNote` | `/api/provider-form` | via `submitSignOnDevice` |
@@ -781,6 +782,9 @@ saved anywhere", not "does this always call that".
 | `_syncSquareClientsNow` | `/api/clients` | via `_serverMergeClients` |
 | `_syncSquareClientsNow` | `/api/square/appointments` | direct |
 | `_syncSquareClientsNow` | `/api/square/customers` | direct |
+| `_takeBackSave` | `/api/clients` | via `_syncSpecificClientsToServer` |
+| `_takeBackSave` | `/api/provider-form` | via `submitSignOnDevice` |
+| `_takeBackSent` | `/api/clients` | via `_syncSpecificClientsToServer` |
 | `_tidySaveToAccount` | `/api/clients` | direct |
 | `_tidySaveToAccount` | `/api/store` | via `_pushFlushNow` |
 | `_tidyShowResult` | `/api/clients` | via `syncClientEvents` |

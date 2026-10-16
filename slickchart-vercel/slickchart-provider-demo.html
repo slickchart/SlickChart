@@ -493,7 +493,7 @@ const S=document.getElementById('S');
 // resets when I save it" and there was no way to tell whether her phone had any of them — a whole
 // day was spent debugging code she may not have been running. Shown at the bottom of Settings, so
 // the answer is a screenshot away. Bump it on every ship.
-const APP_BUILD='2026-10-16a';
+const APP_BUILD='2026-10-16b';
 
 
 /* ════════════════════════════════════════════════════════════════
@@ -2518,6 +2518,11 @@ function _mergeClientRecords(keepId,dropId){
   keep.pendingForms=_mergeArrUnique(keep.pendingForms,drop.pendingForms,pf=>(pf&&pf.formId)||JSON.stringify(pf));
   keep.pendingGuides=_mergeArrUnique(keep.pendingGuides,drop.pendingGuides,pg=>(pg&&pg.guideId)||JSON.stringify(pg));
   keep.pendingCourses=_mergeArrUnique(keep.pendingCourses,drop.pendingCourses,pc=>(pc&&pc.id)||JSON.stringify(pc));
+  // Something taken back on either record stays taken back (unless re-sent after).
+  try{
+    if(drop.withdrawn&&typeof drop.withdrawn==='object'){keep.withdrawn=Object.assign({},keep.withdrawn||{});Object.keys(drop.withdrawn).forEach(k=>{if((Number(drop.withdrawn[k])||0)>(Number(keep.withdrawn[k])||0))keep.withdrawn[k]=drop.withdrawn[k];});}
+    if(keep.withdrawn)Object.keys(_SENT_KINDS).forEach(kind=>{const d=_SENT_KINDS[kind];if(Array.isArray(keep[d.list]))keep[d.list]=keep[d.list].filter(x=>!(x&&(Number(keep.withdrawn[kind+':'+x[d.key]])||0)>=(Number(x.assignedAt)||0)&&keep.withdrawn[kind+':'+x[d.key]]));});
+  }catch(e){}
   // The client-facing visit summaries live ONLY here (§0.8), so they are unioned too, newest first.
   try{const _sk=x=>x?String(x._draftDate||x.ts||((x.date||'')+'|'+(x.title||''))):'';keep.summaries=_mergeArrUnique(keep.summaries,drop.summaries,_sk).sort((p,q)=>(Number(q&&q.ts)||0)-(Number(p&&p.ts)||0));}catch(e){}
   ['submittedForms','signedForms','pendingForms','pendingGuides','pendingCourses','summaries'].forEach(k=>{if(Array.isArray(keep[k])&&!keep[k].length)delete keep[k];});
@@ -2552,7 +2557,7 @@ function _mergeClientRecords(keepId,dropId){
 // Keeps the record whose id IS that Square customer's id (sq_...): the Square sync, the delete record
 // and the purge are all keyed on it, so dropping it instead would let the purge take the survivor.
 const _AUTO_MERGE_IGNORE={bg:1,tc:1,initials:1,_uAt:1,_ts:1,_nvAuto:1,lastVisit:1,nextVisit:1,source:1,_token:1,touchUpDate:1,sessions:1,seriesTotal:1,id:1,_demoRestoredAt:1,squareId:1,name:1,
-  submittedForms:1,signedForms:1,pendingForms:1,pendingGuides:1,pendingCourses:1,summaries:1};
+  submittedForms:1,signedForms:1,pendingForms:1,pendingGuides:1,pendingCourses:1,summaries:1,withdrawn:1};
 function _autoMergeConflict(keep,drop){
   const norm=v=>String(v==null?'':(typeof v==='object'?JSON.stringify(v):v)).trim().toLowerCase().replace(/\s+/g,' ');
   for(const k of Object.keys(drop)){
@@ -9943,7 +9948,99 @@ function _sendToClientHTML(id){
     +row('ti-file-text','var(--accent-strong)','Forms','Intake, consent, or one you wrote'+(nOut?(' · '+nOut+' still out'):''),"openClientFormSender('"+id+"')")
     +row('ti-book','var(--p-amber)','Guides + Courses',nG+' guide'+(nG===1?'':'s')+', '+nC+' course'+(nC===1?'':'s'),"openClientFormSender('"+id+"','guides')")
     +row('ti-pencil','var(--p-green)','Session summary',nSum?(nSum+' saved · they read it in Journey'):'Written when you finish a session',"nav('summary-history','"+id+"')")
-    +'</div>';
+    +'</div>'
+    +_stillOutHTML(id);
+}
+// ── Take back something sent by mistake (Ashley, 2026-10-16: "fix the form/guide take back") ──
+// Every form, guide and course still sitting in the client's app, each with Take back. Taking one back
+// removes it from the chart AND records WHEN (c.withdrawn{'f:'|'g:'|'c:'+id: ms}): the server keeps a
+// client's last pending form or guide when a write would empty the list (lib/clients.js upsertClient,
+// the guard against stale devices), so the client app hides anything sent at or before that time. A
+// re-send stamps a newer assignedAt, so it shows again.
+const _SENT_KINDS={f:{list:'pendingForms',key:'formId',label:'Form'},g:{list:'pendingGuides',key:'guideId',label:'Guide'},c:{list:'pendingCourses',key:'id',label:'Course'}};
+function _sentName(kind,key){
+  try{
+    if(kind==='f')return (formTmpls[key]&&formTmpls[key].name)||'Form';
+    if(kind==='g'){const g=(typeof _findGuide==='function')?_findGuide(key):null;return (g&&g.title)||'Guide';}
+    if(kind==='c'){const co=(typeof courses!=='undefined'&&Array.isArray(courses))?courses.find(x=>x&&x.id===key):null;return (co&&co.title)||'Course';}
+  }catch(e){}
+  return 'Item';
+}
+function _sentItems(c){
+  const out=[];
+  Object.keys(_SENT_KINDS).forEach(function(kind){
+    const d=_SENT_KINDS[kind];
+    (Array.isArray(c[d.list])?c[d.list]:[]).forEach(function(x){const key=x&&x[d.key];if(key!=null&&key!=='')out.push({kind:kind,key:String(key),at:Number(x.assignedAt)||0,item:x});});
+  });
+  return out.sort(function(a,b){return b.at-a.at;});
+}
+function _stillOutHTML(id){
+  const c=CL[id];if(!c)return '';
+  const items=_sentItems(c);if(!items.length)return '';
+  const esc=_fileEsc;
+  const first=esc(String(c.name||'').split(' ')[0]||'them');
+  return '<div class="sh"><h2>Still open in '+first+'\u2019s app</h2></div><div style="padding:0 16px 2px;">'
+    +'<div style="font-size:14px;color:var(--p-mut);margin:-2px 0 9px;line-height:1.5;">Sent something by mistake? Take it back and it leaves their app.</div>'
+    +items.map(function(it){
+      const when=it.at?new Date(it.at).toLocaleDateString('en-US',{month:'short',day:'numeric'}):'';
+      return '<div style="display:flex;align-items:center;gap:10px;background:var(--surf2);border:1px solid var(--p-line-ctl);border-radius:12px;padding:10px 12px;margin-bottom:8px;">'
+        +'<span style="flex:1;min-width:0;"><span style="display:block;font-size:16px;font-weight:600;color:var(--p-ink);overflow-wrap:anywhere;">'+esc(_sentName(it.kind,it.key))+'</span>'
+        +'<span style="display:block;font-size:14px;color:var(--p-mut);">'+_SENT_KINDS[it.kind].label+(when?' \u00b7 sent '+esc(when):'')+'</span></span>'
+        +'<button onclick="_takeBackSent(\''+id+'\',\''+it.kind+'\',\''+encodeURIComponent(it.key)+'\')" style="flex-shrink:0;background:none;border:1px solid var(--p-line-ctl);color:var(--p-red);border-radius:8px;padding:7px 12px;font-size:15px;font-weight:600;cursor:pointer;font-family:inherit;min-height:40px;">Take back</button>'
+        +'</div>';
+    }).join('')+'</div>';
+}
+let _takeBackUndo=null;
+function _takeBackSent(id,kind,key){
+  try{key=decodeURIComponent(key);}catch(e){}
+  const c=CL[id],d=_SENT_KINDS[kind];if(!c||!d)return;
+  const find=function(){const list=Array.isArray(c[d.list])?c[d.list]:[];return list.findIndex(x=>x&&String(x[d.key])===String(key));};
+  if(find()<0)return;
+  const name=_sentName(kind,key),first=String(c.name||'them').split(' ')[0];
+  const go=function(){
+    const idx=find();if(idx<0)return;
+    const removed=c[d.list].splice(idx,1)[0];
+    if(!c.withdrawn||typeof c.withdrawn!=='object')c.withdrawn={};
+    const wk=kind+':'+key,prevW=c.withdrawn[wk];
+    c.withdrawn[wk]=Math.max(Date.now(),(Number(removed&&removed.assignedAt)||0)+1);
+    _takeBackUndo={id:id,kind:kind,idx:idx,item:removed,wk:wk,prevW:prevW};
+    _takeBackSave(id);
+    _takeBackToast(name+' taken back from '+first+'\u2019s app');
+  };
+  if(typeof confirmModal==='function')confirmModal({title:'Take back '+name+'?',body:'It leaves '+first+'\u2019s app. Anything they already sent you stays on their file.',action:'Take back',danger:true},go);
+  else go();
+}
+function _takeBackSave(id){
+  try{saveClients();}catch(e){}
+  try{if(typeof _pushClientNow==='function')_pushClientNow(id);}catch(e){}
+  try{if(typeof nav==='function'&&_navCur&&_navCur.screen==='client'&&String(_navCur.data)===String(id))nav('client',id);}catch(e){}
+}
+function _takeBackToast(msg){
+  const old=document.getElementById('takeback-toast');if(old)old.remove();
+  const t=document.createElement('div');t.id='takeback-toast';
+  t.setAttribute('role','status');t.setAttribute('aria-live','polite');
+  t.style.cssText='position:fixed;bottom:88px;left:0;right:0;margin:0 auto;width:max-content;max-width:90%;background:var(--surf1);border:1px solid var(--p-line-ctl);color:var(--p-ink);border-radius:12px;padding:9px 12px 9px 14px;font-size:16px;z-index:600;display:flex;align-items:center;gap:14px;box-shadow:0 4px 18px rgba(0,0,0,.35);';
+  t.innerHTML='<span></span><button onclick="_runTakeBackUndo()" style="background:none;border:none;color:var(--accent-strong);font-weight:700;font-size:16px;cursor:pointer;font-family:inherit;padding:0;min-height:40px;">Undo</button>';
+  t.querySelector('span').textContent=String(msg||'');
+  (document.querySelector('.shell')||document.body).appendChild(t);
+  setTimeout(function(){if(t&&t.parentNode)t.remove();},7000);
+}
+function _runTakeBackUndo(){
+  const u=_takeBackUndo;_takeBackUndo=null;
+  const t=document.getElementById('takeback-toast');if(t)t.remove();
+  if(!u)return;const c=CL[u.id],d=_SENT_KINDS[u.kind];if(!c||!d)return;
+  if(!Array.isArray(c[d.list]))c[d.list]=[];
+  if(!c[d.list].some(x=>x&&String(x[d.key])===String(u.item&&u.item[d.key])))c[d.list].splice(Math.min(u.idx,c[d.list].length),0,u.item);
+  if(c.withdrawn){if(u.prevW!=null)c.withdrawn[u.wk]=u.prevW;else delete c.withdrawn[u.wk];}
+  _takeBackSave(u.id);
+  if(typeof proToast==='function')proToast('Back in their app');
+}
+// What the client app hides: taken back, and not re-sent since. Old entries are dropped after a year.
+function _withdrawnOut(c){
+  const w=(c&&c.withdrawn&&typeof c.withdrawn==='object')?c.withdrawn:null;if(!w)return undefined;
+  const cut=Date.now()-365*86400000,out={};
+  Object.keys(w).forEach(function(k){const t=Number(w[k])||0;if(t>cut)out[k]=t;});
+  return Object.keys(out).length?out:undefined;
 }
 
 // Product consult: sends the client the product questions (no photos) plus "what are you using now".
@@ -20641,7 +20738,7 @@ function _assembleClientData(id){
   // only in this blob) were replaced by whichever device posted last. See lib/clients.js.
   // photosShared travels with the list so the server lets an emptied list through (sharing turned off)
   // instead of protecting the old photos, which kept them visible to the client.
-  return {_uAt:(Number(c._uAt)||0),photosShared:_photosShared(c),animals,studio,studioAddress,studioPhone,website,providerName,profile:{skin:c.skin||'',concerns:c.concerns||'',allergies:c.allergies||'',fitz:c.fitz||'',treatment:c.treatment||'',lastVisit:c.lastVisit||'',nextVisit:c.nextVisit||'',email:c.email||'',phone:c.phone||''},summaries,aftercare,products,routine,forms,pendingForms,pendingGuides,pendingCourses,progressPhotos,booking:{canRequest:true},suggestedBooking,availability,vcInvite,routineReview,checkinCfg:checkinCfgOut,checkinReqAt:c.checkinReqAt||0,loyalty:loyaltyOut};
+  return {_uAt:(Number(c._uAt)||0),photosShared:_photosShared(c),animals,studio,studioAddress,studioPhone,website,providerName,profile:{skin:c.skin||'',concerns:c.concerns||'',allergies:c.allergies||'',fitz:c.fitz||'',treatment:c.treatment||'',lastVisit:c.lastVisit||'',nextVisit:c.nextVisit||'',email:c.email||'',phone:c.phone||''},summaries,aftercare,products,routine,forms,pendingForms,pendingGuides,pendingCourses,progressPhotos,booking:{canRequest:true},suggestedBooking,availability,vcInvite,routineReview,withdrawn:_withdrawnOut(c),checkinCfg:checkinCfgOut,checkinReqAt:c.checkinReqAt||0,loyalty:loyaltyOut};
 }
 let _syncingClients=false,_clientSyncTimer=null;
 // Sync bookkeeping: have we pushed the whole roster at least once this session, is the next flush
