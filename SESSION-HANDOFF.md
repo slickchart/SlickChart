@@ -7493,3 +7493,25 @@ showing a taken-back item until they reload. Repro: `scratchpad/sweep3-takeback.
   free-funnel email in lib/free-funnel.js (train).
 - Not claimed anywhere: that the new beauty prompts were each tested. They are built from the steps
   Ashley used on SlickChart; the page says exactly that.
+
+## §2be. OPEN — DIANA, 2026-10-16: phone alone loses summaries and journeys; computer is fine
+**Her observations, from her email "Re: Not saving clients" (2026-10-15 21:33) — GROUND TRUTH (§1b).
+Recorded before any theory.**
+
+| # | device | her words / what she saw |
+|---|---|---|
+| 40 | COMPUTER | "all of my clients, summaries, and client journeys in SlickChart are now saved and visible, including some of the summaries that had previously disappeared" |
+| 41 | PHONE, used alone | client summaries and journeys are missing |
+| 42 | PHONE | "sometimes even it reboots to me having no client and first time use messages pop up" |
+| 43 | PHONE | saved notes, pictures and home care ARE still there when the clients are there |
+| 44 | PHONE | "It also appears to delete them after about 20 minutes" |
+| 45 | COMPUTER then PHONE | log into the computer first, then open/log into the phone app: the phone "reboots and populates all the missing client data and summaries" |
+| 46 | PHONE | Settings shows "SlickChart · Version 1.0.3 · build 2026-10-16a" (her screenshot, dark theme). Live is now 2026-10-16b. |
+
+Asked, not yet answered: is the phone the installed App Store / Play app, or the home-screen web
+app? (The version line is the same text in both, so the screenshot cannot tell. One tell: on the
+More screen the section is titled "Security" in the native app and "Security & Billing" in a browser.)
+Her question: can her clients see their summaries on their own phones, or do they need the desktop?
+
+Next (§1d): Ashley runs Admin → Recover clients → esthieguild@gmail.com → Copy, once, and pastes it.
+No reply to Diana says anything is lost until that paste says so with numbers (§4c).
