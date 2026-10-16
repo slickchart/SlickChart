@@ -194,9 +194,14 @@ export async function markClientDeleted(providerId, id) {
 // heal_started_at (to time the healing drip). Excludes deleted clients.
 export async function listAllClientPrefs() {
   const q = sql();
-  return await q`SELECT cp.client_id, cp.prefs, c.provider_id, c.heal_started_at
+  // hc_count: the routine as the SERVER holds it. The client's own `reminders.hasHomecare` flag is
+  // only uploaded when it saves prefs, so it went stale both ways (a routine sent later never got a
+  // reminder; a removed routine kept getting one).
+  return await q`SELECT cp.client_id, cp.prefs, c.provider_id, c.heal_started_at,
+    COALESCE(CASE WHEN jsonb_typeof(c.data->'aftercare') = 'array'
+                  THEN jsonb_array_length(c.data->'aftercare') END, 0) AS hc_count
     FROM client_prefs cp JOIN clients c ON c.id = cp.client_id
-    WHERE c.deleted_at IS NULL LIMIT 5000`;
+    WHERE c.deleted_at IS NULL ORDER BY cp.client_id LIMIT 20000`;
 }
 
 // Aftercare drip: start (or restart) the healing clock for one of a provider's own clients.

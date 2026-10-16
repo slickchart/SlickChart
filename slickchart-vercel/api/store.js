@@ -53,7 +53,7 @@ const NEWEST_WINS_KEYS = { sc_deleted_clients: 1, sc_undeleted_clients: 1, sc_me
   // appointment she had cancelled on her phone. The larger magnitude is the more recent decision.
   sc_deleted_appts: 1, sc_hidden_forms: 1, sc_hidden_courses: 1, sc_hidden_guides: 1, sc_hidden_square: 1,
   sc_deleted_vc_types: 1, sc_deleted_products: 1, sc_deleted_docs: 1, sc_deleted_protocols: 1, sc_deleted_note_tmpls: 1,
-  sc_deleted_needle_presets: 1, sc_deleted_autos: 1, sc_deleted_inv: 1, sc_deleted_vendors: 1, sc_deleted_shop_bundles: 1,
+  sc_deleted_note_drafts: 1, sc_deleted_needle_presets: 1, sc_deleted_autos: 1, sc_deleted_inv: 1, sc_deleted_vendors: 1, sc_deleted_shop_bundles: 1,
   sc_deleted_bundles: 1, sc_deleted_partners: 1, sc_deleted_payments: 1, sc_deleted_routines: 1,
   sc_deleted_svc: 1, sc_deleted_msg_tmpls: 1, sc_deleted_starters: 1, sc_deleted_reminders: 1 };
 const UNION_OBJ_KEYS = { sc_merged_into: 1 };      // dropped id -> surviving id; the incoming write wins a collision
@@ -150,6 +150,9 @@ export default async function handler(req, res) {
       for (const [k, v] of entries) {
         let val = v == null ? null : String(v);
         if (k === 'sc_clients' && val) val = await stripRemoved(val);
+        // A library is never legitimately the empty string. One code path pushed '' for the consults
+        // (their bytes live in IndexedDB, not localStorage) and wiped every consult on the account.
+        if ((k === 'sc_pro_vc_subs' || k === 'sc_clients' || k === 'sc_session_summaries') && val === '') continue;
         if (UNION_SET_KEYS[k] && isJsonArray(val)) {
           // Union, never replace. See UNION_SET_KEYS above.
           await q`INSERT INTO kv (owner, k, v, updated_at)

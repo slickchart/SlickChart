@@ -34,6 +34,8 @@ export default async function handler(req, res) {
   const signed = !!body.signed;
   const qs = Array.isArray(body.qs) ? body.qs : null;
   const idem = body.idem;
+  // The signature drawn in person, as a small image. Only an image data URL, and capped.
+  const sigImg = (typeof body.sigImg === 'string' && /^data:image\/(png|jpeg);base64,/.test(body.sigImg) && body.sigImg.length <= 150000) ? body.sigImg : undefined;
   if (!clientId || !formId) { res.status(400).json({ error: 'Missing clientId or formId' }); return; }
 
   // Size guard, mirroring /api/client-submit and /api/provider-message.
@@ -48,7 +50,7 @@ export default async function handler(req, res) {
     const q = sql();
     const rows = await q`SELECT id FROM clients WHERE id=${clientId} AND provider_id=${provider}`;
     if (!rows.length) { res.status(404).json({ error: 'Client not found' }); return; }
-    const id = await logEvent(provider, clientId, 'form', { title, formId, answers, flagged, signed, qs }, idem);
+    const id = await logEvent(provider, clientId, 'form', { title, formId, answers, flagged, signed, qs, ...(sigImg ? { sigImg } : {}) }, idem);
     res.status(200).json({ ok: true, id });
   } catch (e) {
     console.error('[provider-form] failed:', e && e.stack || e);

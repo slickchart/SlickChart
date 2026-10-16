@@ -45,7 +45,7 @@ export async function ensureHistoryTable() {
 export const TRACKED = {
   sc_clients: 1, sc_session_summaries: 1, sc_client_recs: 1, sc_client_homecare: 1,
   sc_body_maps: 1, sc_note_drafts: 1, sc_summary_drafts: 1, sc_rec_reasons: 1,
-  sc_pro_vc_invites: 1, sc_summary_guides: 1, sc_workspace: 1, sc_forms: 1,
+  sc_pro_vc_invites: 1, sc_pro_vc_subs: 1, sc_summary_guides: 1, sc_workspace: 1, sc_forms: 1,
   sc_courses: 1, sc_resources: 1, sc_protocols: 1, sc_docs: 1, sc_msgstore: 1,
   sc_affiliate_links: 1, sc_service_menu: 1, sc_reminders: 1, sc_msg_templates: 1,
   sc_routines: 1, sc_sent_routines: 1, sc_photo_index: 1, sc_inventory: 1

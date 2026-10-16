@@ -104,8 +104,11 @@ export default async function handler(req, res) {
       // This job runs every 15 minutes (see vercel.json), so a slot fires on the first run at or after
       // its chosen minute. A time on the quarter hour lands exactly; anything else lands within the
       // same 15-minute window rather than being missed entirely.
+      // The routine as the server holds it (see listAllClientPrefs); the client's flag only as a
+      // fallback for a row that somehow lacks the count.
+      const hasRoutine = row.hc_count != null ? Number(row.hc_count) > 0 : !!rem.hasHomecare;
       const hcSlots = [];
-      if (notif.homecareReminder !== false && rem.hasHomecare) {
+      if (notif.homecareReminder !== false && hasRoutine) {
         const nowMin = nowL.hour * 60 + nowL.min;
         for (const slot of ['AM', 'PM']) {
           const cfg = notif['homecare' + slot];
@@ -182,7 +185,7 @@ export default async function handler(req, res) {
       // "stop reminding me" rather than silently reverting to the old behaviour.
       const hcConfigured = !!((notif.homecareAM && notif.homecareAM.on) || (notif.homecarePM && notif.homecarePM.on)
         || (notif.homecareAM && notif.homecareAM.set) || (notif.homecarePM && notif.homecarePM.set));
-      if (notif.homecareReminder !== false && rem.hasHomecare && inMorning && !hcConfigured) {
+      if (notif.homecareReminder !== false && hasRoutine && inMorning && !hcConfigured) {
         due.push({
           rkey: 'homecare:' + nowL.date,
           title: 'Homecare reminder',

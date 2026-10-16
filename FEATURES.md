@@ -49,10 +49,25 @@ saved anywhere", not "does this always call that".
 | `_askBookRun` | `/api/ai` | via `_aiComplete` |
 | `_askBookRun` | `/api/clients` | via `syncClientEvents` |
 | `_askBookRun` | `/api/provider-form` | via `submitSignOnDevice` |
+| `_assembleClientData` | `/api/square/charge-card` | via `_loadClientCards` |
+| `_assembleClientData` | `/api/square/loyalty` | via `_loadClientLoyalty` |
+| `_assembleClientData` | `/api/square/orders` | via `_autoHomecareFromPurchases` |
+| `_assembleClientData` | `/api/square/pay-config` | via `_addCardOnFile` |
+| `_assembleClientData` | `/api/square/save-card` | via `_addCardOnFile` |
 | `_attnTilesHTML` | `/api/clients` | via `_syncSpecificClientsToServer` |
 | `_attnTilesHTML` | `/api/provider-form` | via `submitSignOnDevice` |
 | `_autoHomecareFromPurchases` | `/api/square/orders` | direct |
 | `_autoMergeSquareDuplicates` | `/api/clients` | via `_serverMergeClients` |
+| `_autoRecipHTML` | `/api/square/charge-card` | via `_loadClientCards` |
+| `_autoRecipHTML` | `/api/square/loyalty` | via `_loadClientLoyalty` |
+| `_autoRecipHTML` | `/api/square/orders` | via `_autoHomecareFromPurchases` |
+| `_autoRecipHTML` | `/api/square/pay-config` | via `_addCardOnFile` |
+| `_autoRecipHTML` | `/api/square/save-card` | via `_addCardOnFile` |
+| `_autoRecipRefreshChips` | `/api/square/charge-card` | via `_loadClientCards` |
+| `_autoRecipRefreshChips` | `/api/square/loyalty` | via `_loadClientLoyalty` |
+| `_autoRecipRefreshChips` | `/api/square/orders` | via `_autoHomecareFromPurchases` |
+| `_autoRecipRefreshChips` | `/api/square/pay-config` | via `_addCardOnFile` |
+| `_autoRecipRefreshChips` | `/api/square/save-card` | via `_addCardOnFile` |
 | `_autoSyncCatalog` | `/api/clients` | via `syncClientEvents` |
 | `_autoSyncCatalog` | `/api/provider-form` | via `submitSignOnDevice` |
 | `_autoSyncCatalog` | `/api/square/catalog` | direct |
@@ -126,6 +141,11 @@ saved anywhere", not "does this always call that".
 | `_cbDone` | `/api/provider-form` | via `submitSignOnDevice` |
 | `_cbFlushNow` | `/api/course-versions` | via `_cvSnapshot` |
 | `_cbFlushNow` | `/api/guide-file` | via `_deleteGuideFileFromServer` |
+| `_cfsFilter` | `/api/square/charge-card` | via `_loadClientCards` |
+| `_cfsFilter` | `/api/square/loyalty` | via `_loadClientLoyalty` |
+| `_cfsFilter` | `/api/square/orders` | via `_autoHomecareFromPurchases` |
+| `_cfsFilter` | `/api/square/pay-config` | via `_addCardOnFile` |
+| `_cfsFilter` | `/api/square/save-card` | via `_addCardOnFile` |
 | `_cfsSendCourse` | `/api/clients` | via `_syncSpecificClientsToServer` |
 | `_cfsSendGuide` | `/api/clients` | via `_syncSpecificClientsToServer` |
 | `_chatShareSheet` | `/api/clients` | via `_syncSpecificClientsToServer` |
@@ -139,11 +159,21 @@ saved anywhere", not "does this always call that".
 | `_checkNews` | `/api/announcements` | direct |
 | `_checkinCard` | `/api/clients` | via `syncClientEvents` |
 | `_checkinCard` | `/api/provider-form` | via `submitSignOnDevice` |
+| `_checkinDone` | `/api/square/charge-card` | via `_loadClientCards` |
+| `_checkinDone` | `/api/square/loyalty` | via `_loadClientLoyalty` |
+| `_checkinDone` | `/api/square/orders` | via `_autoHomecareFromPurchases` |
+| `_checkinDone` | `/api/square/pay-config` | via `_addCardOnFile` |
+| `_checkinDone` | `/api/square/save-card` | via `_addCardOnFile` |
 | `_ciSendClientRows` | `/api/clients` | via `_syncSpecificClientsToServer` |
 | `_clearAllAttn` | `/api/clients` | via `syncClientEvents` |
 | `_clearAllAttn` | `/api/square/appointments` | via `_loadSquareAppts` |
 | `_clearSampleData` | `/api/clients` | via `syncClientEvents` |
 | `_clearSampleData` | `/api/provider-form` | via `submitSignOnDevice` |
+| `_clientIdByName` | `/api/square/charge-card` | via `_loadClientCards` |
+| `_clientIdByName` | `/api/square/loyalty` | via `_loadClientLoyalty` |
+| `_clientIdByName` | `/api/square/orders` | via `_autoHomecareFromPurchases` |
+| `_clientIdByName` | `/api/square/pay-config` | via `_addCardOnFile` |
+| `_clientIdByName` | `/api/square/save-card` | via `_addCardOnFile` |
 | `_clientNameLink` | `/api/clients` | via `syncClientEvents` |
 | `_clientNameLink` | `/api/provider-form` | via `submitSignOnDevice` |
 | `_clientPhotosTabHTML` | `/api/clients` | via `syncClientEvents` |
@@ -201,6 +231,11 @@ saved anywhere", not "does this always call that".
 | `_deleteBundle` | `/api/clients` | via `syncClientEvents` |
 | `_deleteBundle` | `/api/provider-form` | via `submitSignOnDevice` |
 | `_deleteGuideFileFromServer` | `/api/guide-file` | direct |
+| `_demoPaymentSeed` | `/api/square/charge-card` | via `_loadClientCards` |
+| `_demoPaymentSeed` | `/api/square/loyalty` | via `_loadClientLoyalty` |
+| `_demoPaymentSeed` | `/api/square/orders` | via `_autoHomecareFromPurchases` |
+| `_demoPaymentSeed` | `/api/square/pay-config` | via `_addCardOnFile` |
+| `_demoPaymentSeed` | `/api/square/save-card` | via `_addCardOnFile` |
 | `_depositSettingCard` | `/api/square/appointments` | via `_sqLoadAppointments` |
 | `_depositSettingCard` | `/api/square/catalog` | via `_sqLoadCatalog` |
 | `_depositSettingCard` | `/api/square/connect` | via `_sqConnect` |
@@ -234,6 +269,11 @@ saved anywhere", not "does this always call that".
 | `_downloadEmailListCSV` | `/api/admin/contacts` | direct |
 | `_downloadGuideFileP` | `/api/guide-file` | via `_getGuideFile` |
 | `_downloadWaitlistCSV` | `/api/waitlist` | direct |
+| `_editClientDetails` | `/api/square/charge-card` | via `_loadClientCards` |
+| `_editClientDetails` | `/api/square/loyalty` | via `_loadClientLoyalty` |
+| `_editClientDetails` | `/api/square/orders` | via `_autoHomecareFromPurchases` |
+| `_editClientDetails` | `/api/square/pay-config` | via `_addCardOnFile` |
+| `_editClientDetails` | `/api/square/save-card` | via `_addCardOnFile` |
 | `_evictableFileCache` | `/api/guide-file` | direct |
 | `_fcOpenAction` | `/api/clients` | via `syncClientEvents` |
 | `_fcOpenAction` | `/api/provider-form` | via `submitSignOnDevice` |
@@ -304,9 +344,19 @@ saved anywhere", not "does this always call that".
 | `_initCapturedPhotos` | `/api/clients` | via `syncClientEvents` |
 | `_initCapturedPhotos` | `/api/guide-file` | via `_getGuideFile` |
 | `_initCapturedPhotos` | `/api/provider-form` | via `submitSignOnDevice` |
+| `_initDeepLinks` | `/api/square/charge-card` | via `_loadClientCards` |
+| `_initDeepLinks` | `/api/square/loyalty` | via `_loadClientLoyalty` |
+| `_initDeepLinks` | `/api/square/orders` | via `_autoHomecareFromPurchases` |
+| `_initDeepLinks` | `/api/square/pay-config` | via `_addCardOnFile` |
+| `_initDeepLinks` | `/api/square/save-card` | via `_addCardOnFile` |
 | `_initNativeProvider` | `/api/clients` | via `syncClientEvents` |
 | `_initNativeProvider` | `/api/native-push` | via `_flushNativePushTok` |
 | `_inkScanField` | `/api/ai` | via `_aiComplete` |
+| `_libSafeToPersist` | `/api/square/charge-card` | via `_loadClientCards` |
+| `_libSafeToPersist` | `/api/square/loyalty` | via `_loadClientLoyalty` |
+| `_libSafeToPersist` | `/api/square/orders` | via `_autoHomecareFromPurchases` |
+| `_libSafeToPersist` | `/api/square/pay-config` | via `_addCardOnFile` |
+| `_libSafeToPersist` | `/api/square/save-card` | via `_addCardOnFile` |
 | `_linkOwnerSave` | `/api/clients` | via `syncClientEvents` |
 | `_linkOwnerSave` | `/api/provider-form` | via `submitSignOnDevice` |
 | `_loadBetaStats` | `/api/admin-stats` | direct |
@@ -366,6 +416,11 @@ saved anywhere", not "does this always call that".
 | `_mergeSeenEvents` | `/api/signup` | direct |
 | `_mergeSeenEvents` | `/api/store` | direct |
 | `_mergeSeenEvents` | `/api/verify` | direct |
+| `_mergeSideStores` | `/api/square/charge-card` | via `_loadClientCards` |
+| `_mergeSideStores` | `/api/square/loyalty` | via `_loadClientLoyalty` |
+| `_mergeSideStores` | `/api/square/orders` | via `_autoHomecareFromPurchases` |
+| `_mergeSideStores` | `/api/square/pay-config` | via `_addCardOnFile` |
+| `_mergeSideStores` | `/api/square/save-card` | via `_addCardOnFile` |
 | `_migrateGuideFiles` | `/api/guide-file` | via `_deleteGuideFileFromServer` |
 | `_msgEditSheet` | `/api/consult-requests` | via `_loadConsultRequests` |
 | `_msgEditSheet` | `/api/consult-slug` | via `_loadConsultLink` |
@@ -379,6 +434,9 @@ saved anywhere", not "does this always call that".
 | `_ncNextContinue` | `/api/provider-push` | via `_doLogout` |
 | `_newMessageSheet` | `/api/clients` | via `syncClientEvents` |
 | `_newMessageSheet` | `/api/provider-form` | via `submitSignOnDevice` |
+| `_noteEditCancel` | `/api/ai` | via `_aiComplete` |
+| `_noteEditCancel` | `/api/provider-message` | via `_sendProviderMessageToClient` |
+| `_noteEditCancel` | `/api/square/catalog` | via `_autoSyncCatalog` |
 | `_notifyBookingClient` | `/api/provider-message` | via `_sendProviderMessageToClient` |
 | `_offerCourseRecovery` | `/api/course-versions` | via `_cvFetchList` |
 | `_openBillingPortal` | `/api/create-portal-session` | direct |
@@ -434,6 +492,8 @@ saved anywhere", not "does this always call that".
 | `_pgvStep` | `/api/guide-file` | via `_getGuideFile` |
 | `_pingChart` | `/api/beta-event` | direct |
 | `_pollFounderSignups` | `/api/admin/signups` | direct |
+| `_postAftercareDrip` | `/api/aftercare-drip` | direct |
+| `_postAftercareDrip` | `/api/clients` | via `_syncSpecificClientsToServer` |
 | `_postAnnouncement` | `/api/announcements` | direct |
 | `_postAnnouncement` | `/api/billing-status` | via `_checkBillingBanner` |
 | `_postAnnouncement` | `/api/square/catalog` | via `_autoSyncCatalog` |
@@ -696,7 +756,8 @@ saved anywhere", not "does this always call that".
 | `_ssSend` | `/api/provider-message` | via `_sendProviderMessageToClient` |
 | `_stSave` | `/api/clients` | via `_syncSpecificClientsToServer` |
 | `_stampClientNextVisit` | `/api/clients` | via `_syncSpecificClientsToServer` |
-| `_startAftercareDrip` | `/api/aftercare-drip` | direct |
+| `_startAftercareDrip` | `/api/aftercare-drip` | via `_postAftercareDrip` |
+| `_startAftercareDrip` | `/api/clients` | via `_syncSpecificClientsToServer` |
 | `_startVoiceNoteRecorded` | `/api/transcribe` | via `_transcribeAndPreview` |
 | `_starterChipsHTML` | `/api/clients` | via `syncClientEvents` |
 | `_starterChipsHTML` | `/api/consult-requests` | via `_loadConsultRequests` |
@@ -708,8 +769,8 @@ saved anywhere", not "does this always call that".
 | `_starterEdit` | `/api/consult-slug` | via `_loadConsultLink` |
 | `_starterSave` | `/api/consult-requests` | via `_loadConsultRequests` |
 | `_starterSave` | `/api/consult-slug` | via `_loadConsultLink` |
-| `_stopAftercareDrip` | `/api/aftercare-drip` | direct |
-| `_stopAftercareDrip` | `/api/clients` | via `syncClientEvents` |
+| `_stopAftercareDrip` | `/api/aftercare-drip` | via `_postAftercareDrip` |
+| `_stopAftercareDrip` | `/api/clients` | via `_syncSpecificClientsToServer` |
 | `_stopAftercareDrip` | `/api/provider-form` | via `submitSignOnDevice` |
 | `_storeSummary` | `/api/clients` | via `_syncSpecificClientsToServer` |
 | `_syncClientsToServer` | `/api/clients` | direct |
@@ -730,6 +791,7 @@ saved anywhere", not "does this always call that".
 | `_transcribeAndPreview` | `/api/transcribe` | direct |
 | `_tryConsumeDeepLink` | `/api/clients` | via `syncClientEvents` |
 | `_tryConsumeDeepLink` | `/api/provider-form` | via `submitSignOnDevice` |
+| `_uSendDone` | `/api/clients` | via `_syncSpecificClientsToServer` |
 | `_updatePassword` | `/api/change-password` | direct |
 | `_uploadCourseFilesInBackground` | `/api/clients` | via `syncClientEvents` |
 | `_uploadCourseFilesInBackground` | `/api/provider-form` | via `submitSignOnDevice` |
@@ -773,7 +835,6 @@ saved anywhere", not "does this always call that".
 | `_withClientToken` | `/api/logout` | via `_doLogout` |
 | `_withClientToken` | `/api/provider-push` | via `_doLogout` |
 | `addClientProd` | `/api/clients` | via `_syncSpecificClientsToServer` |
-| `addSummaryGuide` | `/api/aftercare-drip` | via `_startAftercareDrip` |
 | `addSummaryGuide` | `/api/ai` | via `_aiComplete` |
 | `addSummaryGuide` | `/api/provider-message` | via `_sendProviderMessageToClient` |
 | `addSummaryGuide` | `/api/square/catalog` | via `_autoSyncCatalog` |
@@ -784,7 +845,6 @@ saved anywhere", not "does this always call that".
 | `applyProfessions` | `/api/provider-form` | via `submitSignOnDevice` |
 | `attachProviderLink` | `/api/provider-message` | via `_sendProviderMessageToClient` |
 | `attachProviderPhoto` | `/api/provider-message` | via `_sendProviderMessageToClient` |
-| `buildSummaryCustomPanel` | `/api/aftercare-drip` | via `_startAftercareDrip` |
 | `buildSummaryCustomPanel` | `/api/ai` | via `_aiComplete` |
 | `buildSummaryCustomPanel` | `/api/provider-message` | via `_sendProviderMessageToClient` |
 | `buildSummaryCustomPanel` | `/api/square/catalog` | via `_autoSyncCatalog` |
@@ -814,6 +874,11 @@ saved anywhere", not "does this always call that".
 | `deleteVendor` | `/api/provider-form` | via `submitSignOnDevice` |
 | `dismissCheckinNudge` | `/api/clients` | via `syncClientEvents` |
 | `dismissCheckinNudge` | `/api/square/appointments` | via `_loadSquareAppts` |
+| `dismissFlag` | `/api/square/charge-card` | via `_loadClientCards` |
+| `dismissFlag` | `/api/square/loyalty` | via `_loadClientLoyalty` |
+| `dismissFlag` | `/api/square/orders` | via `_autoHomecareFromPurchases` |
+| `dismissFlag` | `/api/square/pay-config` | via `_addCardOnFile` |
+| `dismissFlag` | `/api/square/save-card` | via `_addCardOnFile` |
 | `doRequestReset` | `/api/billing-status` | via `_checkBillingBanner` |
 | `doRequestReset` | `/api/client-code` | via `_clientSendCode` |
 | `doResetPw` | `/api/billing-status` | via `_checkBillingBanner` |
@@ -822,10 +887,14 @@ saved anywhere", not "does this always call that".
 | `doSignup` | `/api/provider-form` | via `submitSignOnDevice` |
 | `editSavedSummary` | `/api/clients` | via `_syncSpecificClientsToServer` |
 | `editSentRoutine` | `/api/square/catalog` | via `_autoSyncCatalog` |
-| `editSummaryNote` | `/api/aftercare-drip` | via `_startAftercareDrip` |
 | `editSummaryNote` | `/api/ai` | via `_aiComplete` |
 | `editSummaryNote` | `/api/provider-message` | via `_sendProviderMessageToClient` |
 | `editSummaryNote` | `/api/square/catalog` | via `_autoSyncCatalog` |
+| `editVitals` | `/api/square/charge-card` | via `_loadClientCards` |
+| `editVitals` | `/api/square/loyalty` | via `_loadClientLoyalty` |
+| `editVitals` | `/api/square/orders` | via `_autoHomecareFromPurchases` |
+| `editVitals` | `/api/square/pay-config` | via `_addCardOnFile` |
+| `editVitals` | `/api/square/save-card` | via `_addCardOnFile` |
 | `emptyState` | `/api/clients` | via `syncClientEvents` |
 | `emptyState` | `/api/provider-form` | via `submitSignOnDevice` |
 | `finishNewClient` | `/api/clients` | via `_syncSpecificClientsToServer` |
@@ -868,6 +937,7 @@ saved anywhere", not "does this always call that".
 | `notifCard` | `/api/clients` | via `syncClientEvents` |
 | `notifCard` | `/api/provider-form` | via `submitSignOnDevice` |
 | `notifRow` | `/api/clients` | via `syncClientEvents` |
+| `onSend` | `/api/clients` | via `_syncSpecificClientsToServer` |
 | `onboardBack` | `/api/feedback` | via `_sendBetaFeedback` |
 | `onboardBack` | `/api/square/connect` | via `_sqConnect` |
 | `onboardConnectSquare` | `/api/square/connect` | via `_sqConnect` |
@@ -904,6 +974,11 @@ saved anywhere", not "does this always call that".
 | `openStoragePanel` | `/api/guide-file` | via `_evictableFileCache` |
 | `providerSystemNotify` | `/api/clients` | via `syncClientEvents` |
 | `providerSystemNotify` | `/api/provider-form` | via `submitSignOnDevice` |
+| `rebook` | `/api/ai` | via `_aiComplete` |
+| `rebook` | `/api/clients` | via `_syncSpecificClientsToServer` |
+| `rebook` | `/api/provider-message` | via `_sendProviderMessageToClient` |
+| `rebook` | `/api/square/catalog` | via `_autoSyncCatalog` |
+| `rebook` | `/api/transcribe` | via `_probeWhisper` |
 | `recoverLostCourses` | `/api/clients` | via `syncClientEvents` |
 | `recoverLostCourses` | `/api/course-versions` | via `_cvSnapshot` |
 | `recoverLostCourses` | `/api/provider-form` | via `submitSignOnDevice` |
@@ -912,7 +987,6 @@ saved anywhere", not "does this always call that".
 | `removeDemoClients` | `/api/provider-form` | via `submitSignOnDevice` |
 | `removePartner` | `/api/clients` | via `syncClientEvents` |
 | `removePartner` | `/api/provider-form` | via `submitSignOnDevice` |
-| `removeSummaryGuide` | `/api/aftercare-drip` | via `_startAftercareDrip` |
 | `removeSummaryGuide` | `/api/ai` | via `_aiComplete` |
 | `removeSummaryGuide` | `/api/provider-message` | via `_sendProviderMessageToClient` |
 | `removeSummaryGuide` | `/api/square/catalog` | via `_autoSyncCatalog` |
@@ -1033,7 +1107,8 @@ saved anywhere", not "does this always call that".
 | `renderProtocols` | `/api/provider-form` | via `submitSignOnDevice` |
 | `renderProviderFillIntake` | `/api/clients` | via `syncClientEvents` |
 | `renderProviderFillIntake` | `/api/provider-form` | via `submitSignOnDevice` |
-| `renderRebook` | `/api/clients` | via `_syncSpecificClientsToServer` |
+| `renderRebook` | `/api/clients` | via `syncClientEvents` |
+| `renderRebook` | `/api/provider-form` | via `submitSignOnDevice` |
 | `renderRebook` | `/api/provider-message` | via `_sendProviderMessageToClient` |
 | `renderReminders` | `/api/clients` | via `syncClientEvents` |
 | `renderReminders` | `/api/provider-form` | via `submitSignOnDevice` |
@@ -1163,6 +1238,11 @@ saved anywhere", not "does this always call that".
 | `shareSummaryLink` | `/api/clients` | via `_syncSpecificClientsToServer` |
 | `shareSummaryLink` | `/api/logout` | via `_doLogout` |
 | `shareSummaryLink` | `/api/provider-push` | via `_doLogout` |
+| `showDemoInfo` | `/api/square/charge-card` | via `_loadClientCards` |
+| `showDemoInfo` | `/api/square/loyalty` | via `_loadClientLoyalty` |
+| `showDemoInfo` | `/api/square/orders` | via `_autoHomecareFromPurchases` |
+| `showDemoInfo` | `/api/square/pay-config` | via `_addCardOnFile` |
+| `showDemoInfo` | `/api/square/save-card` | via `_addCardOnFile` |
 | `showOnboarding` | `/api/feedback` | via `_sendBetaFeedback` |
 | `showOnboarding` | `/api/square/connect` | via `_sqConnect` |
 | `startProductDictate` | `/api/transcribe` | via `_probeWhisper` |
@@ -1180,6 +1260,11 @@ saved anywhere", not "does this always call that".
 | `toggleRoutineItem` | `/api/square/catalog` | via `_autoSyncCatalog` |
 | `toggleSharePhotos` | `/api/clients` | via `_syncSpecificClientsToServer` |
 | `toggleSharePhotos` | `/api/provider-form` | via `submitSignOnDevice` |
+| `toggleSummaryGuidePicker` | `/api/square/charge-card` | via `_loadClientCards` |
+| `toggleSummaryGuidePicker` | `/api/square/loyalty` | via `_loadClientLoyalty` |
+| `toggleSummaryGuidePicker` | `/api/square/orders` | via `_autoHomecareFromPurchases` |
+| `toggleSummaryGuidePicker` | `/api/square/pay-config` | via `_addCardOnFile` |
+| `toggleSummaryGuidePicker` | `/api/square/save-card` | via `_addCardOnFile` |
 | `undoLastCheckinDismiss` | `/api/clients` | via `syncClientEvents` |
 | `undoLastCheckinDismiss` | `/api/square/appointments` | via `_loadSquareAppts` |
 | `vcAskForRetake` | `/api/clients` | via `_syncSpecificClientsToServer` |
@@ -1329,7 +1414,7 @@ stale device can wipe newer data from another one (CLAUDE.md §0.6).
 `sc_routines`
 
 **grow-only object union (_TOMB_OBJ)**  
-`sc_ci_dismissed`, `sc_course_purchases`, `sc_deleted_appts`, `sc_deleted_autos`, `sc_deleted_bundles`, `sc_deleted_clients`, `sc_deleted_docs`, `sc_deleted_inv`, `sc_deleted_msg_tmpls`, `sc_deleted_needle_presets`, `sc_deleted_note_tmpls`, `sc_deleted_partners`, `sc_deleted_payments`, `sc_deleted_products`, `sc_deleted_protocols`, `sc_deleted_reminders`, `sc_deleted_routines`, `sc_deleted_shop_bundles`, `sc_deleted_starters`, `sc_deleted_svc`, `sc_deleted_vc_types`, `sc_deleted_vendors`, `sc_deposit_handled`, `sc_hidden_courses`, `sc_hidden_forms`, `sc_hidden_guides`, `sc_hidden_square`, `sc_merged_ids`, `sc_merged_into`, `sc_summary_guide_optout`, `sc_undeleted_clients`
+`sc_ci_dismissed`, `sc_course_purchases`, `sc_deleted_appts`, `sc_deleted_autos`, `sc_deleted_bundles`, `sc_deleted_clients`, `sc_deleted_docs`, `sc_deleted_inv`, `sc_deleted_msg_tmpls`, `sc_deleted_needle_presets`, `sc_deleted_note_drafts`, `sc_deleted_note_tmpls`, `sc_deleted_partners`, `sc_deleted_payments`, `sc_deleted_products`, `sc_deleted_protocols`, `sc_deleted_reminders`, `sc_deleted_routines`, `sc_deleted_shop_bundles`, `sc_deleted_starters`, `sc_deleted_svc`, `sc_deleted_vc_types`, `sc_deleted_vendors`, `sc_deposit_handled`, `sc_hidden_courses`, `sc_hidden_forms`, `sc_hidden_guides`, `sc_hidden_square`, `sc_merged_ids`, `sc_merged_into`, `sc_summary_guide_optout`, `sc_undeleted_clients`
 
 **grow-only list union (_TOMB_ARR)**  
 `sc_ci_cleared`, `sc_ci_read`, `sc_deleted_sq`, `sc_flag_dismissed`, `sc_form_flag_dismissed`, `sc_home_dismissed`, `sc_imported_products`, `sc_notif_cleared`, `sc_notif_read`, `sc_photo_backed`

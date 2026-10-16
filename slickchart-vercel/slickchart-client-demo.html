@@ -1509,6 +1509,19 @@ function loadEng(){
   if(!_eng.guides)_eng.guides={};
   if(!_eng.care)_eng.care={};
 }
+// A new day while the app stayed open: start today's checklist fresh. Only a relaunch did this, so a
+// phone left open overnight still said "all done" and two taps counted as today's routine.
+function _engRollover(){
+  try{
+    if(_eng.day===_engToday())return false;
+    _eng.steps={};_eng.day=_engToday();
+    try{Object.keys(homecareChecked).forEach(function(k){homecareChecked[k]=false;});}catch(e){}
+    try{(client.providers||[]).forEach(function(p){if(p&&p.checked&&typeof p.checked==='object')Object.keys(p.checked).forEach(function(k){p.checked[k]=false;});});}catch(e){}
+    try{localStorage.setItem('sc_client_engage',JSON.stringify(_eng));}catch(e){}
+    return true;
+  }catch(e){return false;}
+}
+try{document.addEventListener('visibilitychange',function(){if(!document.hidden&&_engRollover()){try{const n=(typeof currentScreen!=='undefined'?currentScreen:'');if(n==='homecare')renderHomecare();else if(n==='home'&&typeof renderHome==='function')renderHome();}catch(e){}}});}catch(e){}
 function saveEng(){try{localStorage.setItem('sc_client_engage',JSON.stringify(_eng));}catch(e){}_syncClientPrefsToServer();}
 
 // ── Real database persistence for client-owned settings ──
@@ -1533,6 +1546,7 @@ function _markCheckinDone(prov){
   prov=prov||activeProvider();
   if(!prov)return;
   prov.checkinDone=true;
+  try{const m=_ciPendingMap();if(m[prov.id]){delete m[prov.id];localStorage.setItem('sc_checkin_pending',JSON.stringify(m));}}catch(e){}
   _ciDoneMap[prov.id]=_ciSig(prov);
   try{localStorage.setItem('sc_checkin_done',JSON.stringify(_ciDoneMap));}catch(e){}
   try{if(typeof _ciClearDraft==='function')_ciClearDraft();}catch(e){}   // check-in submitted — drop the resume draft
@@ -1542,9 +1556,22 @@ function _markCheckinDone(prov){
 // into the next pre-visit step (the intake) while the submit is still in flight. If that background
 // submit later fails we revert cleanly with _unmarkCheckinDone, and because the draft (typed answers +
 // photos) is still here the client can re-open and resubmit without re-entering everything.
+// It is only PENDING until the send succeeds: kept on this device, never synced, and trusted for 12 hours.
+// It used to be the real "done" mark, synced at once, so a client who closed the app while it was still
+// sending read as checked in forever, on every device, though the provider never got it.
+var _CI_PENDING_TRUST_MS=12*60*60*1000;
+function _ciPendingMap(){try{return JSON.parse(localStorage.getItem('sc_checkin_pending')||'{}')||{};}catch(e){return {};}}
 function _markCheckinDoneKeepDraft(prov){
   prov=prov||activeProvider();
   if(!prov)return;
+  prov.checkinDone=true;
+  try{const m=_ciPendingMap();m[prov.id]={sig:_ciSig(prov),t:Date.now()};localStorage.setItem('sc_checkin_pending',JSON.stringify(m));}catch(e){}
+}
+// The background send succeeded: now it is really done, and synced.
+function _confirmCheckinDone(prov){
+  prov=prov||activeProvider();
+  if(!prov)return;
+  try{const m=_ciPendingMap();delete m[prov.id];localStorage.setItem('sc_checkin_pending',JSON.stringify(m));}catch(e){}
   prov.checkinDone=true;
   _ciDoneMap[prov.id]=_ciSig(prov);
   try{localStorage.setItem('sc_checkin_done',JSON.stringify(_ciDoneMap));}catch(e){}
@@ -1556,6 +1583,7 @@ function _unmarkCheckinDone(prov){
   prov=prov||activeProvider();
   if(!prov)return;
   prov.checkinDone=false;
+  try{const m=_ciPendingMap();delete m[prov.id];localStorage.setItem('sc_checkin_pending',JSON.stringify(m));}catch(e){}
   try{delete _ciDoneMap[prov.id];}catch(e){_ciDoneMap[prov.id]=undefined;}
   try{localStorage.setItem('sc_checkin_done',JSON.stringify(_ciDoneMap));}catch(e){}
   _syncClientPrefsToServer();
@@ -1566,6 +1594,7 @@ function _unmarkCheckinDone(prov){
 function _applyCheckinDoneFromMap(){
   try{(client.providers||[]).forEach(function(p){
     if(p&&_ciDoneMap[p.id]!==undefined&&_ciDoneMap[p.id]===_ciSig(p))p.checkinDone=true;
+    else if(p){const pe=_ciPendingMap()[p.id];if(pe&&pe.sig===_ciSig(p)&&(Date.now()-(Number(pe.t)||0))<_CI_PENDING_TRUST_MS)p.checkinDone=true;}
   });}catch(e){}
 }
 
@@ -1608,13 +1637,17 @@ function _unmarkFormDone(provId,pf){
 // way loses the form silently, which is what happened.
 const _FORM_DONE_TRUST_MS=12*60*60*1000;
 // Did the provider actually receive this form? Their copy of submittedForms is the proof.
-function _providerHasSubmission(p,formId,title){
+function _providerHasSubmission(p,formId,title,assignedAt){
   try{
+    // A submission from BEFORE this copy was sent (last year's intake) is no proof the new one
+    // arrived. Only when both times are known; older payloads carry no `at`.
+    const since=Number(assignedAt)||0;
     // `forms` is the provider's list of what they have RECEIVED from this client. Older payloads
     // carry no formId, so fall back to the title for those.
     // A real client's received forms arrive in client._forms; p.forms is the demo list. Check both.
     return (client._forms||[]).concat(p.forms||[]).some(function(f){
       if(!f)return false;
+      if(since&&Number(f.at)&&Number(f.at)<since)return false;
       if(f.formId)return f.formId===formId;
       return !!title&&String(f.title||'')===String(title);
     });
@@ -1633,7 +1666,7 @@ function _applyFormsDoneFromMap(){
       const markedAt=(m&&typeof m==='object')?Number(m.t||0):0;
       const instance=(m&&typeof m==='object')?m.a:m;
       if(instance!==(pf.assignedAt||''))return true;          // a re-send: a new instance, show it
-      if(_providerHasSubmission(p,pf.formId,pf.title))return false;   // genuinely received: stay hidden
+      if(_providerHasSubmission(p,pf.formId,pf.title,pf.assignedAt))return false;   // genuinely received: stay hidden
       // No proof it arrived. Trust the mark only briefly, then let the form come back.
       if(markedAt&&(Date.now()-markedAt)>_FORM_DONE_TRUST_MS){
         try{delete _formsDoneMap[k];localStorage.setItem('sc_forms_done',JSON.stringify(_formsDoneMap));}catch(e){}
@@ -1652,12 +1685,13 @@ function _collectClientPrefs(){
   // phone/avatar, dismissed banners) follow them to any device.
   const _j=(k,d)=>{try{const v=localStorage.getItem(k);return v==null?d:JSON.parse(v);}catch(e){return d;}};
   const _s=(k)=>{try{return localStorage.getItem(k)||'';}catch(e){return '';}};
-  return {notif:loadNotifPrefs(),eng:_eng,welcomeDismissed,installDismissed,checkinDone:_ciDoneMap,formsDone:_formsDoneMap,reminders:_reminderContext(),saved,
+  return {notif:loadNotifPrefs(),eng:_eng,welcomeDismissed,installDismissed,checkinDone:_ciDoneMap,formsDone:_formsDoneMap,reminders:(function(){const r=_reminderContext();try{_lastReminderCtx=JSON.stringify(r);}catch(e){}return r;})(),saved,
     hiddenSummaries:_j('sc_client_hidden_summaries',{}),
     a2hsDismissed:(_s('sc_a2hs_dismissed')==='1'),
     courseProg:_j('sc_course_prog_jess',{}),
     clearedRes:_j('sc_home_cleared_res',[]),
-    deletedRes:_j('sc_deleted_res',[]),
+    deletedRes:_j('sc_deleted_res','sc_res_removed_at',[]),
+    resRemovedAt:_j('sc_res_removed_at',{}),
     contact:_j('sc_client_contact',null),
     avatar:_s('sc_client_avatar'),
     vcSubmitted:_s('sc_vc_submitted')};
@@ -1764,6 +1798,8 @@ async function _loadClientPrefsFromServer(){
     // Sets the home/library filters actually read.
     if(Array.isArray(p.clearedRes)){try{const s=_resSetLoad('sc_home_cleared_res');p.clearedRes.forEach(x=>s.add(x));_homeClearedRes.forEach(x=>s.add(x));_homeClearedRes=s;localStorage.setItem('sc_home_cleared_res',JSON.stringify(Array.from(s)));}catch(e){}}
     if(Array.isArray(p.deletedRes)){try{const s=_resSetLoad('sc_deleted_res');p.deletedRes.forEach(x=>s.add(x));_deletedRes.forEach(x=>s.add(x));_deletedRes=s;localStorage.setItem('sc_deleted_res',JSON.stringify(Array.from(s)));}catch(e){}}
+    if(p.resRemovedAt&&typeof p.resRemovedAt==='object'){try{Object.keys(p.resRemovedAt).forEach(function(k){const t=Number(p.resRemovedAt[k])||0;if(t>(Number(_resRemovedAt[k])||0))_resRemovedAt[k]=t;});localStorage.setItem('sc_res_removed_at',JSON.stringify(_resRemovedAt));}catch(e){}}
+    try{_resStampLegacy();}catch(e){}
     if(p.vcSubmitted)try{localStorage.setItem('sc_vc_submitted',String(p.vcSubmitted));}catch(e){}
     // Contact + avatar: the client's own correction. Restore it AND apply to the live view so a fresh
     // device shows their edit immediately, not the provider's older on-file value.
@@ -1779,6 +1815,7 @@ function _engStreakLive(){return _eng.lastDoneDay===_engToday()||_eng.lastDoneDa
 function _engSteps(){return (activeProvider().homecare||[]);}
 function _engProgress(){const s=_engSteps();const total=s.length;const done=s.filter(x=>homecareChecked[x.key]).length;return {total,done,pct:total?Math.round(done/total*100):0};}
 function toggleHomecareStep(key,where){
+  _engRollover();
   homecareChecked[key]=!homecareChecked[key];
   _eng.steps=Object.assign({},homecareChecked);_eng.day=_engToday();
   try{_eng.stepsProvider=(typeof activeProvider==='function')?activeProvider().id:(client&&client.activeProviderId);}catch(e){}
@@ -1976,14 +2013,22 @@ let _deletedRes=_resSetLoad('sc_deleted_res');
 function _resSetSave(k,set){try{localStorage.setItem(k,JSON.stringify(Array.from(set)));}catch(e){}try{if(typeof _syncClientPrefsToServer==='function')_syncClientPrefsToServer();}catch(e){}}
 function _resGK(id){return 'g:'+id;}
 function _resCK(id){return 'c:'+id;}
-function _homeGuides(){return (activeProvider().pendingGuides||[]).filter(pg=>pg&&!_deletedRes.has(_resGK(pg.guideId))&&!_homeClearedRes.has(_resGK(pg.guideId)));}
-function _homeCourses(){return (activeProvider().pendingCourses||[]).filter(co=>co&&!_deletedRes.has(_resCK(co.id))&&!_homeClearedRes.has(_resCK(co.id)));}
-function _libGuides(){return (activeProvider().pendingGuides||[]).filter(pg=>pg&&!_deletedRes.has(_resGK(pg.guideId)));}
-function _libCourses(){return (activeProvider().pendingCourses||[]).filter(co=>co&&!_deletedRes.has(_resCK(co.id)));}
-function clearGuideFromHome(id,ev){if(ev&&ev.stopPropagation)ev.stopPropagation();_homeClearedRes.add(_resGK(id));_resSetSave('sc_home_cleared_res',_homeClearedRes);try{if(typeof showToast==='function')showToast('Moved to your library');}catch(e){}renderHome();}
-function clearCourseFromHome(id,ev){if(ev&&ev.stopPropagation)ev.stopPropagation();_homeClearedRes.add(_resCK(id));_resSetSave('sc_home_cleared_res',_homeClearedRes);try{if(typeof showToast==='function')showToast('Moved to your library');}catch(e){}renderHome();}
-function deleteGuideFromLib(id,ev){if(ev&&ev.stopPropagation)ev.stopPropagation();_confirmSheet({title:'Remove from your library?',body:'You can always ask your provider to resend it.',action:'Remove',danger:true},function(){_deletedRes.add(_resGK(id));_resSetSave('sc_deleted_res',_deletedRes);renderLibrary();});}
-function deleteCourseFromLib(id,ev){if(ev&&ev.stopPropagation)ev.stopPropagation();_confirmSheet({title:'Remove from your library?',body:'You can always ask your provider to resend it.',action:'Remove',danger:true},function(){_deletedRes.add(_resCK(id));_resSetSave('sc_deleted_res',_deletedRes);renderLibrary();});}
+// WHEN each was removed, so a provider's re-send (a newer assignedAt) brings it back, as the removal
+// sheet promises. Before this, a removed guide or course stayed hidden for good. A removal recorded
+// before the time existed is stamped "now" once, so nothing already removed reappears.
+let _resRemovedAt=(function(){try{return JSON.parse(localStorage.getItem('sc_res_removed_at')||'{}')||{};}catch(e){return {};}})();
+function _resStampLegacy(){let ch=false;[_homeClearedRes,_deletedRes].forEach(function(set){set.forEach(function(k){if(!_resRemovedAt[k]){_resRemovedAt[k]=Date.now();ch=true;}});});if(ch){try{localStorage.setItem('sc_res_removed_at',JSON.stringify(_resRemovedAt));}catch(e){}}}
+try{_resStampLegacy();}catch(e){}
+function _resMarkRemoved(k){_resRemovedAt[k]=Date.now();try{localStorage.setItem('sc_res_removed_at',JSON.stringify(_resRemovedAt));}catch(e){}}
+function _resHidden(set,k,assignedAt){return set.has(k)&&!(Number(assignedAt)>(Number(_resRemovedAt[k])||0));}
+function _homeGuides(){return (activeProvider().pendingGuides||[]).filter(pg=>pg&&!_resHidden(_deletedRes,_resGK(pg.guideId),pg.assignedAt)&&!_resHidden(_homeClearedRes,_resGK(pg.guideId),pg.assignedAt));}
+function _homeCourses(){return (activeProvider().pendingCourses||[]).filter(co=>co&&!_resHidden(_deletedRes,_resCK(co.id),co.assignedAt)&&!_resHidden(_homeClearedRes,_resCK(co.id),co.assignedAt));}
+function _libGuides(){return (activeProvider().pendingGuides||[]).filter(pg=>pg&&!_resHidden(_deletedRes,_resGK(pg.guideId),pg.assignedAt));}
+function _libCourses(){return (activeProvider().pendingCourses||[]).filter(co=>co&&!_resHidden(_deletedRes,_resCK(co.id),co.assignedAt));}
+function clearGuideFromHome(id,ev){if(ev&&ev.stopPropagation)ev.stopPropagation();_resMarkRemoved(_resGK(id));_homeClearedRes.add(_resGK(id));_resSetSave('sc_home_cleared_res',_homeClearedRes);try{if(typeof showToast==='function')showToast('Moved to your library');}catch(e){}renderHome();}
+function clearCourseFromHome(id,ev){if(ev&&ev.stopPropagation)ev.stopPropagation();_resMarkRemoved(_resCK(id));_homeClearedRes.add(_resCK(id));_resSetSave('sc_home_cleared_res',_homeClearedRes);try{if(typeof showToast==='function')showToast('Moved to your library');}catch(e){}renderHome();}
+function deleteGuideFromLib(id,ev){if(ev&&ev.stopPropagation)ev.stopPropagation();_confirmSheet({title:'Remove from your library?',body:'You can always ask your provider to resend it.',action:'Remove',danger:true},function(){_resMarkRemoved(_resGK(id));_deletedRes.add(_resGK(id));_resSetSave('sc_deleted_res',_deletedRes);renderLibrary();});}
+function deleteCourseFromLib(id,ev){if(ev&&ev.stopPropagation)ev.stopPropagation();_confirmSheet({title:'Remove from your library?',body:'You can always ask your provider to resend it.',action:'Remove',danger:true},function(){_resMarkRemoved(_resCK(id));_deletedRes.add(_resCK(id));_resSetSave('sc_deleted_res',_deletedRes);renderLibrary();});}
 // ── Viewing a real guide/resource a provider shared ──
 let _viewGuideId='';
 function renderViewGuide(){
@@ -3254,6 +3299,7 @@ function _routineReviewHTML(){
   }catch(e){return '';}
 }
 function renderHomecare(){
+  _engRollover();
   setNav('homecare');
   document.getElementById('tt').textContent='Your Routine';
   const steps=activeProvider().homecare||[];
@@ -3296,14 +3342,14 @@ function renderHomecare(){
 
   <!-- Steps -->
   ${steps.length?steps.map(step=>`
-  <div role="button" tabindex="0" onclick="toggleHomecareStep('${_jsAttr(step.key||'')}')" onkeydown="if(event.key==='Enter'||event.key===' '){event.preventDefault();toggleHomecareStep('${_jsAttr(step.key||'')}')}" aria-label="${homecareChecked[step.key]?'Mark '+_txt(step.key)+' as not done':'Mark '+_txt(step.key)+' as done'}" style="background:var(--c-card);border:1.5px solid var(--c-line-ctl);border-radius:12px;margin:0 16px 8px;overflow:hidden;cursor:pointer;">
+  <div role="button" tabindex="0" onclick="toggleHomecareStep('${_jsAttr(step.key||'')}')" onkeydown="if(event.key==='Enter'||event.key===' '){event.preventDefault();toggleHomecareStep('${_jsAttr(step.key||'')}')}" aria-label="${homecareChecked[step.key]?'Mark '+_txt(step.label||step.key)+' as not done':'Mark '+_txt(step.label||step.key)+' as done'}" style="background:var(--c-card);border:1.5px solid var(--c-line-ctl);border-radius:12px;margin:0 16px 8px;overflow:hidden;cursor:pointer;">
     <div style="padding:12px 14px;display:flex;align-items:center;gap:12px;">
       <span class="check-circle ${homecareChecked[step.key]?'done':''}" aria-hidden="true">
         ${homecareChecked[step.key]?'<i class="ti ti-check" aria-hidden="true" style="font-size:13px;"></i>':''}
       </span>
       <span aria-hidden="true" style="font-size:22px;">${_txt(step.icon)}</span>
       <div style="flex:1;">
-        <div style="font-size:13px;font-weight:600;color:${homecareChecked[step.key]?'var(--c-mut)':'var(--c-ink)'};${homecareChecked[step.key]?'text-decoration:line-through;':''};">${_txt(step.key)}</div>
+        <div style="font-size:13px;font-weight:600;color:${homecareChecked[step.key]?'var(--c-mut)':'var(--c-ink)'};${homecareChecked[step.key]?'text-decoration:line-through;':''};">${_txt(step.label||step.key)}</div>
         <div style="font-size:11px;color:var(--c-mut);font-weight:500;">${_txt(step.time)}</div>
       </div>
     </div>
@@ -3325,7 +3371,7 @@ function renderHomecare(){
     </div>
   </div>`:''}
   ${steps.length?_hcRemindersHTML():''}
-  ${(steps.length||activeProvider().homecareNote)?_askCareCardHTML({provider:client.providerFirst||'your provider',studio:client.studio||'',treatment:client.treatment||'',note:activeProvider().homecareNote||'',guides:[],homecare:(activeProvider().homecare||[]).map(s=>String(s.key||'')+(s.tip?(' — '+s.tip):'')).concat((activeProvider().avoid||[]).map(a=>'Avoid: '+a)),products:(typeof products!=='undefined'?products:[]).map(p=>p.name).filter(Boolean)}):''}`;
+  ${(steps.length||activeProvider().homecareNote)?_askCareCardHTML({provider:client.providerFirst||'your provider',studio:client.studio||'',treatment:client.treatment||'',note:activeProvider().homecareNote||'',guides:[],homecare:(activeProvider().homecare||[]).map(s=>String(s.label||s.key||'')+(s.tip?(' — '+s.tip):'')).concat((activeProvider().avoid||[]).map(a=>'Avoid: '+a)),products:(typeof products!=='undefined'?products:[]).map(p=>p.name).filter(Boolean)}):''}`;
   try{_hcRemindHint();}catch(e){}
 }
 
@@ -3582,7 +3628,9 @@ function _prodThumb(p,size){
   return `<span aria-hidden="true" style="font-size:${s}px;line-height:1;">${_txt((p&&p.icon)||'🛍️')}</span>`;
 }
 function _shopProdCard(p,idx){
-  const opts=(p.inOffice?1:0)+(p.site?1:0)+(p.url?1:0)+((p.amazon||activeProvider().amazonStore)?1:0);
+  // Only links that will actually open count (an unsafe one is blocked and rendered empty).
+  const _ok=function(u){try{return !!(typeof _safeUrl==='function'?_safeUrl(u):u);}catch(e){return false;}};
+  const opts=(p.inOffice?1:0)+(p.site&&_ok(p.site)?1:0)+(p.url&&_ok(p.url)?1:0)+((p.amazon&&_ok(p.amazon))||activeProvider().amazonStore?1:0);
   return `<div style="background:var(--c-card);border:1.5px solid var(--c-line);border-radius:14px;margin:0 16px 10px;overflow:hidden;">
     <div style="padding:14px 16px;">
       <div style="display:flex;align-items:flex-start;gap:12px;margin-bottom:10px;">
@@ -3595,7 +3643,7 @@ function _shopProdCard(p,idx){
         ${_heartBtn(p)}
       </div>
       ${p.why?`<div style="background:var(--c-surf);border-radius:9px;padding:10px 12px;margin-bottom:12px;"><div style="font-size:11px;font-weight:600;color:var(--c-mut);text-transform:uppercase;letter-spacing:.06em;margin-bottom:4px;">Why ${_txt(client.providerFirst)} recommends this</div><div style="font-size:13px;color:var(--c-mut);line-height:1.6;">${_txt(p.why)}</div></div>`:''}
-      ${true?`<button onclick="openBuyOptions(${idx})" style="width:100%;display:flex;align-items:center;justify-content:center;gap:7px;background:var(--accent);color:#fff;border:none;border-radius:10px;padding:11px;font-size:14px;font-weight:600;cursor:pointer;"><i class="ti ti-shopping-bag" aria-hidden="true" style="font-size:15px;"></i> Buy · ${opts} way${opts>1?'s':''} to get it</button>`:`<div style="font-size:12px;color:var(--c-mut);text-align:center;padding:4px;">Ask ${_txt(client.providerFirst)} about this at your next visit</div>`}
+      ${true?`<button onclick="openBuyOptions(${idx})" style="width:100%;display:flex;align-items:center;justify-content:center;gap:7px;background:var(--accent);color:#fff;border:none;border-radius:10px;padding:11px;font-size:14px;font-weight:600;cursor:pointer;"><i class="ti ti-shopping-bag" aria-hidden="true" style="font-size:15px;"></i> Buy · ${opts} way${opts!==1?'s':''} to get it</button>`:`<div style="font-size:12px;color:var(--c-mut);text-align:center;padding:4px;">Ask ${_txt(client.providerFirst)} about this at your next visit</div>`}
     </div>
   </div>`;
 }
@@ -3633,7 +3681,11 @@ function renderShop(){
     _buyProducts=saved;
     body=saved.length?(`<div style="padding:0 16px 6px;font-size:12px;color:var(--c-mut);">${saved.length} product${saved.length===1?'':'s'} you've saved for later.</div>`+saved.map((p,i)=>_shopProdCard(p,i)).join('')):empty('ti-heart','Tap the heart on any product to save it here for later.');
   }else{
-    const log=prov.recLog||[];
+    // A real client's history is her visit summaries: each carries the products recommended that day.
+    // (recLog is only filled by the demo bridge, so this tab was always empty for a real client.)
+    const log=(client._real&&!(prov.recLog||[]).length)
+      ?(prov.summaries||[]).map(function(su){const pr=_prodList(su&&su.products,prov.products);return pr.length?{date:su.date||'',label:su.label||su.treatment||'Visit',products:pr}:null;}).filter(Boolean)
+      :(prov.recLog||[]);
     const flat=[];log.forEach(g=>(g.products||[]).forEach(p=>flat.push(p)));
     _buyProducts=flat;
     if(!log.length){body=empty('ti-history','Your recommendation history will appear here after your visits.');}
@@ -3851,18 +3903,44 @@ let _ffDraft={};
 // the provider re-sends (fresh assignedAt) would inherit the previous instance's saved answers, which
 // combined with an edited question order could prefill the wrong fields. A new instance starts clean.
 function _ffDraftStorageKey(){var pf=(typeof _pendingForm==='function')?_pendingForm():null;var aa=(pf&&pf.assignedAt)||'';return 'sc_ffdraft_'+((typeof _fillFormId!=='undefined'&&_fillFormId)||'form')+(aa?('_'+aa):'');}
+// Answers are keyed by question POSITION, and the provider can edit the form (add or move a question)
+// while a half-filled draft is saved. The draft therefore also records which question id sat at each
+// position (`_qids`); on load, a changed list moves each answer to wherever its question is now, and
+// drops answers whose question is gone. Without this, an allergy answer reloaded under "Pregnant or
+// nursing?" and was submitted that way.
+function _ffCurQids(){try{const pf=_pendingForm();return pf?_orderedFormQs(pf.qs).map(function(q){return (q&&q.id!=null)?String(q.id):'';}):null;}catch(e){return null;}}
 function _ffLoadDraft(){
   try{const raw=localStorage.getItem(_ffDraftStorageKey());_ffDraft=raw?(JSON.parse(raw)||{}):{};}catch(e){_ffDraft={};}
+  try{
+    const was=Array.isArray(_ffDraft._qids)?_ffDraft._qids:null,now=_ffCurQids();
+    if(was&&now&&was.join('\u0001')!==now.join('\u0001')){
+      const out={};
+      Object.keys(_ffDraft).forEach(function(k){
+        const m=/^q(\d+)(_.*)?$/.exec(k);if(!m)return;
+        const id=was[+m[1]];if(!id)return;
+        const ni=now.indexOf(id);if(ni<0)return;
+        out['q'+ni+(m[2]||'')]=_ffDraft[k];
+      });
+      _ffDraft=out;
+    }
+    delete _ffDraft._qids;
+  }catch(e){}
 }
 let _ffDraftTimer=null;
 function _ffSetDraft(key,val){
   _ffDraft[key]=val;
   clearTimeout(_ffDraftTimer);
-  _ffDraftTimer=setTimeout(()=>{try{localStorage.setItem(_ffDraftStorageKey(),JSON.stringify(_ffDraft));}catch(e){}},400);
+  // Bind the save to THIS form's key now: by the time the timer fires the client may be on the next form.
+  const sk=_ffDraftStorageKey(),qids=_ffCurQids(),snap=_ffDraft;
+  _ffDraftTimer=setTimeout(()=>{try{localStorage.setItem(sk,JSON.stringify(Object.assign({},snap,qids?{_qids:qids}:{})));}catch(e){}},400);
 }
-function _ffClearDraft(){
-  _ffDraft={};
-  try{localStorage.removeItem(_ffDraftStorageKey());}catch(e){}
+// Clears ONE form's draft. Pass the storage key captured while that form was current: a background
+// submit finishes after the client has moved on, and reading the current form then wiped the NEXT
+// form's draft and left this one's (medical answers) on the device.
+function _ffClearDraft(sk){
+  const key=sk||_ffDraftStorageKey();
+  if(!sk||key===_ffDraftStorageKey()){_ffDraft={};clearTimeout(_ffDraftTimer);}
+  try{localStorage.removeItem(key);}catch(e){}
 }
 // A stable idempotency key per form INSTANCE, persisted so a manual re-submit (after a rare double
 // response-loss where _clientSubmit's own retry also lost its reply) reuses the SAME key. The server
@@ -3975,6 +4053,7 @@ function _submitFillForm(){
   const _c=_collectFillForm(pf);
   if(!_c.ok)return;   // validation failed — toast + focus already shown by _collectFillForm
   const qs=_c.qs,answers=_c.answers,flagged=_c.flagged,signed=_c.signed,dateLabel=_c.dateLabel;
+  const _ffSK=_ffDraftStorageKey();   // THIS form's draft key, taken while it is still the pending one
   const _finishFormSent=()=>{
     // Remove it from the pending list only once we know it's been sent, so a failed
     // submit doesn't make the form vanish while the provider never received it.
@@ -3982,7 +4061,7 @@ function _submitFillForm(){
     p.pendingForms=(p.pendingForms||[]).filter(x=>x.formId!==pf.formId);
     try{_markFormDone(p.id,pf);}catch(e){}   // persist so it doesn't reappear on reload before the provider syncs
     _ffPhotos={};
-    _ffClearDraft();   // typed answers are now sent, drop the saved draft
+    _ffClearDraft(_ffSK);   // typed answers are now sent, drop the saved draft
     try{_ffClearIdem(pf);}catch(e){}   // submission confirmed — retire its idempotency key
     if(_advancePrevisitFlow(''))return;
     showToast('Sent \u2713');
@@ -4007,7 +4086,7 @@ function _submitFillForm(){
     if(_nextPrevisitItem()){
       _clientSubmit('form',_ffPayload).then(function(res){
         if(res&&res.duplicate)return;
-        if(res&&res.ok!==false){ try{_ffClearIdem(pf);}catch(e){} try{_ffClearDraft();}catch(e){} }
+        if(res&&res.ok!==false){ try{_ffClearIdem(pf);}catch(e){} try{_ffClearDraft(_ffSK);}catch(e){} }
         else{ _ffRestore(); showToast("Your intake didn't send \u2014 reopen it from your to-do list to try again",false); }
       });
       _advancePrevisitFlow('');   // no "Sent \u2713" \u2014 just flow into the check-in
@@ -4017,7 +4096,7 @@ function _submitFillForm(){
     showToast('Sending\u2026');
     _clientSubmit('form',_ffPayload).then(function(res){
       if(res&&res.duplicate)return;
-      if(res&&res.ok!==false){ try{_ffClearIdem(pf);}catch(e){} try{_ffClearDraft();}catch(e){} showToast('Sent \u2713'); nav('home'); }
+      if(res&&res.ok!==false){ try{_ffClearIdem(pf);}catch(e){} try{_ffClearDraft(_ffSK);}catch(e){} showToast('Sent \u2713'); nav('home'); }
       else{ _ffRestore(); showToast("Couldn't send \u2014 check your connection and tap Submit again",false); }
     });
     return;
@@ -4607,11 +4686,11 @@ function submitCheckin(){
       });
     }
     const _ciPayload={client:client.name,treatment:client.treatment,dateLabel:client.nextDate,time:client.nextTime,groups:pay.groups,flagged:pay.flagged,notes:pay.notes,photos:pay.photos||[],_idem:_ciStableIdem(prov)};
-    _markCheckinDoneKeepDraft(prov);
+    _markCheckinDoneKeepDraft(prov);   // pending only, so the next step can open
     if(_nextPrevisitItem()){
       _clientSubmit('checkin',_ciPayload).then(function(res){
         if(res&&res.duplicate)return;
-        if(res&&res.ok!==false){ try{_ciClearIdem(prov);}catch(e){} try{if(typeof _ciClearDraft==='function')_ciClearDraft();}catch(e){} }
+        if(res&&res.ok!==false){ _confirmCheckinDone(prov); try{_ciClearIdem(prov);}catch(e){} try{if(typeof _ciClearDraft==='function')_ciClearDraft();}catch(e){} }
         else{ _unmarkCheckinDone(prov); showToast("Your check-in didn't send — reopen it from your to-do list to try again",false); }
       });
       _advancePrevisitFlow('Check-in sent');
@@ -4619,11 +4698,14 @@ function submitCheckin(){
     }
     // Nothing follows — this is the last step, so confirm it actually reached the server before showing
     // the all-set screen (a dropped FINAL check-in could hide a contraindication with nothing after it).
+    // Nor is it marked done, even pending, until it lands: closing the app mid-send must leave it on her list.
+    try{const m=_ciPendingMap();delete m[prov.id];localStorage.setItem('sc_checkin_pending',JSON.stringify(m));}catch(e){}
+    prov.checkinDone=false;
     S.innerHTML=_sendingHTML('Sending your check-in…');
     _clientSubmit('checkin',_ciPayload)
       .then(function(res){
         if(res&&res.duplicate)return;
-        if(res&&res.ok!==false){ try{_ciClearIdem(prov);}catch(e){} try{if(typeof _ciClearDraft==='function')_ciClearDraft();}catch(e){} S.innerHTML=_checkinSuccessHTML(flagged); }
+        if(res&&res.ok!==false){ _confirmCheckinDone(prov); try{_ciClearIdem(prov);}catch(e){} try{if(typeof _ciClearDraft==='function')_ciClearDraft();}catch(e){} S.innerHTML=_checkinSuccessHTML(flagged); }
         else{ _unmarkCheckinDone(prov); S.innerHTML=_submitFailedHTML('submitCheckin()',"Couldn't send your check-in"); }
       });
     return;
@@ -5190,7 +5272,7 @@ let _buyProducts=[];
 function openBuyOptions(i){
   const p=_buyProducts[i];if(!p)return;
   const rows=[];
-  const cline=code=>code?`<div style="display:flex;align-items:center;gap:8px;margin-top:5px;padding:8px 11px;background:var(--accent-a20);border:1px dashed var(--accent);border-radius:10px;"><i class="ti ti-discount-2" aria-hidden="true" style="font-size:15px;color:var(--accent-ink-lt);flex-shrink:0;"></i><div style="flex:1;min-width:0;font-size:12px;color:var(--c-mut);">Use <b style="color:var(--accent-ink-lt);letter-spacing:.03em;">${_txt(code)}</b> at checkout</div><button onclick="event.preventDefault();event.stopPropagation();copyCode('${_jsAttr(code||'')}')" style="border:1.5px solid var(--accent);background:none;color:var(--accent-ink-lt);border-radius:7px;padding:5px 11px;font-size:11px;font-weight:700;cursor:pointer;flex-shrink:0;">Copy</button></div>`:'';
+  const cline=code=>code?`<div style="display:flex;align-items:center;gap:8px;margin-top:5px;padding:8px 11px;background:var(--accent-a20);border:1px dashed var(--accent);border-radius:10px;"><i class="ti ti-discount-2" aria-hidden="true" style="font-size:15px;color:var(--accent-ink-lt);flex-shrink:0;"></i><div style="flex:1;min-width:0;font-size:12px;color:var(--c-mut);overflow-wrap:anywhere;">Use <b style="color:var(--accent-ink-lt);letter-spacing:.03em;">${_txt(code)}</b> at checkout</div><button onclick="event.preventDefault();event.stopPropagation();copyCode('${_jsAttr(code||'')}')" style="border:1.5px solid var(--accent);background:none;color:var(--accent-ink-lt);border-radius:7px;padding:5px 11px;font-size:11px;font-weight:700;cursor:pointer;flex-shrink:0;">Copy</button></div>`:'';
   const blk=(html,code)=>`<div style="margin-bottom:8px;">${html}${cline(code)}</div>`;
   if(p.inOffice)rows.push(blk(`<button onclick="_reserveInOffice('${_jsAttr(p.name||'this product')}')" style="display:flex;width:100%;text-align:left;align-items:center;gap:12px;padding:12px 14px;border:1.5px solid var(--accent);background:var(--accent-a20);border-radius:12px;cursor:pointer;font-family:inherit;">
     <i class="ti ti-building-store" aria-hidden="true" style="font-size:18px;color:var(--accent-ink-lt);"></i><div style="flex:1;"><div style="font-size:13px;font-weight:600;color:var(--c-ink);">Buy in office</div><div style="font-size:11px;color:var(--c-mut);">Reserve it with ${_txt(client.providerFirst)} to pick up at your next visit</div></div><i class="ti ti-chevron-right" aria-hidden="true" style="color:var(--c-mut);"></i></button>`,''));
@@ -5214,7 +5296,7 @@ function openBuyOptions(i){
   ov.style.cssText='position:fixed;top:0;bottom:0;left:0;right:0;margin:0 auto;width:390px;max-width:100%;z-index:9999;background:rgba(0,0,0,.4);display:flex;align-items:center;justify-content:center;padding:24px 16px;box-sizing:border-box;';
   ov.onclick=e=>{if(e.target===ov)closeBuySheet();};
   ov.innerHTML=`<div style="background:var(--c-card);width:100%;border-radius:16px;padding:16px;box-shadow:0 -8px 30px rgba(0,0,0,.18);">
-    <div style="display:flex;align-items:center;gap:10px;margin-bottom:12px;">${_prodThumb(p,22)}<div style="flex:1;"><div style="font-size:15px;font-weight:700;color:var(--c-ink);">${_txt(p.name)}</div><div style="font-size:12px;color:var(--c-mut);">${_txt(p.brand||'')}</div></div><button onclick="closeBuySheet()" aria-label="Close" style="border:none;background:none;font-size:20px;color:var(--c-mut);cursor:pointer;line-height:1;">✕</button></div>
+    <div style="display:flex;align-items:center;gap:10px;margin-bottom:12px;">${_prodThumb(p,22)}<div style="flex:1;min-width:0;overflow-wrap:anywhere;"><div style="font-size:15px;font-weight:700;color:var(--c-ink);">${_txt(p.name)}</div><div style="font-size:12px;color:var(--c-mut);">${_txt(p.brand||'')}</div></div><button onclick="closeBuySheet()" aria-label="Close" style="border:none;background:none;font-size:20px;color:var(--c-mut);cursor:pointer;line-height:1;">✕</button></div>
     <div style="font-size:11px;color:var(--c-mut);text-transform:uppercase;letter-spacing:.06em;font-weight:600;margin-bottom:8px;">Where to buy</div>
     ${rows.join('')}
   </div>`;
@@ -5595,7 +5677,7 @@ function submitVirtualConsult(){
       // reply (or a second tap later) used to mint a new key and store the consult twice.
       let _vk='sc_vcidem_'+String((inv&&inv.invitedAt)||'x'),_vid='';
       try{_vid=localStorage.getItem(_vk)||'';if(!_vid){_vid=(self.crypto&&crypto.randomUUID)?crypto.randomUUID():(Date.now().toString(36)+Math.random().toString(36).slice(2));localStorage.setItem(_vk,_vid);}}catch(e){}
-      return _clientSubmit('vc_submit',{kind:inv.kind,title:inv.title,date,photos,refs:entry.refs,goals,measures,routine,answers,_idem:_vid||undefined})
+      return _clientSubmit('vc_submit',{kind:inv.kind,title:inv.title,date,photos,refs:entry.refs,goals,measures,routine,answers,invitedAt:(inv&&inv.invitedAt)||undefined,_idem:_vid||undefined})
         .then(res=>{if(res&&res.ok)finalize();else if(res&&res.duplicate){/* already sending, ignore double tap */}else fail();})
         .catch(fail);
     }
@@ -5685,8 +5767,12 @@ function renderLatestSummary(){
   // Session Record builds exactly the same list.
   const _lp=(activeProvider().products&&activeProvider().products.length)?activeProvider().products:null;
   const _known=(_lp||[]).concat(Array.isArray(activeProvider().catalog)?activeProvider().catalog:[]).map(function(o){return String((o&&o.name)||'').trim().toLowerCase();});
-  const _custom=_lp?((s&&s.products)||[]).filter(function(x){var n=String((x&&typeof x==='object')?(x.name||''):(x||'')).trim().toLowerCase();return n&&_known.indexOf(n)<0;}):[];
-  const products=_prodList(_lp?_lp.concat(_custom):((s&&s.products)||[]),activeProvider().products);
+  // A summary marked prodV 2 holds only catalog products, so a name the live list no longer has is a
+  // product she RENAMED or DELETED, not a typed-in extra: it showed twice, or came back after deletion.
+  const _custom=(_lp&&!(s&&s.prodV>=2))?((s&&s.products)||[]).filter(function(x){var n=String((x&&typeof x==='object')?(x.name||''):(x||'')).trim().toLowerCase();return n&&_known.indexOf(n)<0;}):[];
+  // The sections the provider switched off for this card ("Customize card" on her side).
+  const _hide=(s&&s.hide&&typeof s.hide==='object')?s.hide:{};
+  const products=_hide.products?[]:_prodList(_lp?_lp.concat(_custom):((s&&s.products)||[]),activeProvider().products);
   S.innerHTML=`
   <div id="summary-screen"></div>
   <div style="padding:12px 16px 0;display:flex;align-items:center;justify-content:flex-end;">${summaries.length>1?`<span style="font-size:12px;color:var(--c-mut);">${_summaryIdx===0?'Latest':'#'+(summaries.length-_summaryIdx)} of ${summaries.length}</span>`:''}</div>
@@ -5697,15 +5783,15 @@ function renderLatestSummary(){
       <div style="width:34px;height:34px;background:var(--accent);border-radius:8px;display:flex;align-items:center;justify-content:center;"><i class="ti ti-file-text" aria-hidden="true" style="font-size:15px;color:var(--accent-ink);"></i></div>
       <div><div style="font-size:13px;font-weight:600;color:var(--accent-onDark);">${_txt(client.studio)}</div><div style="font-size:11px;color:var(--accent-onDark);opacity:.72;">${_txt(client.provider)}</div></div>
     </div>
-    <div style="font-size:18px;font-weight:600;color:var(--accent-onDark);margin-bottom:2px;">Your session summary</div>
+    <div id="page-heading" tabindex="-1" style="font-size:18px;font-weight:600;color:var(--accent-onDark);margin-bottom:2px;outline:none;">Your session summary</div>
     <div style="font-size:12px;color:var(--accent-onDark);opacity:.72;">${_dt(s.date)}</div>
   </div>
 
   <!-- Note from ${_txt(client.providerFirst)} -->
-  <div style="background:var(--c-card);border:1.5px solid var(--c-line);border-radius:12px;margin:0 16px 10px;padding:14px 16px;">
+  ${(!_hide.note&&String(s.note||'').trim())?`<div style="background:var(--c-card);border:1.5px solid var(--c-line);border-radius:12px;margin:0 16px 10px;padding:14px 16px;">
     <div style="font-size:12px;font-weight:600;color:var(--c-mut);text-transform:uppercase;letter-spacing:.07em;margin-bottom:8px;">A note from ${_txt(client.providerFirst)}</div>
-    <div style="font-size:14px;color:var(--c-ink);line-height:1.8;">${_txt(s.note)}</div>
-  </div>
+    <div style="font-size:14px;color:var(--c-ink);line-height:1.8;white-space:pre-line;overflow-wrap:anywhere;">${_txt(s.note)}</div>
+  </div>`:''}
 
   <!-- Aftercare guides (placed right below the note) -->
   ${(s.guides&&s.guides.length)?`<div style="background:var(--c-card);border:1.5px solid var(--c-line);border-radius:12px;margin:0 16px 10px;overflow:hidden;">
@@ -5724,7 +5810,7 @@ function renderLatestSummary(){
   </div>`:''}
 
   <!-- Homecare -->
-  ${(s.homecare&&s.homecare.length)?`<div style="background:var(--c-card);border:1.5px solid var(--c-line);border-radius:12px;margin:0 16px 10px;overflow:hidden;">
+  ${(!_hide.homecare&&s.homecare&&s.homecare.length)?`<div style="background:var(--c-card);border:1.5px solid var(--c-line);border-radius:12px;margin:0 16px 10px;overflow:hidden;">
     <div style="padding:12px 16px;border-bottom:1px solid var(--c-line);">
       <div style="font-size:12px;font-weight:600;color:var(--c-mut);text-transform:uppercase;letter-spacing:.07em;">Your homecare routine</div>
     </div>
@@ -5752,17 +5838,17 @@ function renderLatestSummary(){
   </div>`:''}
 
   <!-- Next appointment -->
-  <div style="background:var(--c-card);border:1.5px solid var(--c-line);border-radius:12px;margin:0 16px 10px;padding:14px 16px;">
+  ${_hide.appointment?'':`<div style="background:var(--c-card);border:1.5px solid var(--c-line);border-radius:12px;margin:0 16px 10px;padding:14px 16px;">
     <div style="font-size:12px;font-weight:600;color:var(--c-mut);text-transform:uppercase;letter-spacing:.07em;margin-bottom:10px;">Next appointment</div>
-    <div style="display:flex;align-items:center;gap:12px;padding:12px 14px;background:var(--c-surf);border-radius:10px;margin-bottom:10px;">
+    ${_hide.appointment?'':`<div style="display:flex;align-items:center;gap:12px;padding:12px 14px;background:var(--c-surf);border-radius:10px;margin-bottom:10px;">
       <div style="width:36px;height:36px;background:var(--accent-lt);border-radius:9px;display:flex;align-items:center;justify-content:center;"><i class="ti ti-calendar" aria-hidden="true" style="font-size:18px;color:var(--accent-ink-lt);"></i></div>
-      <div><div style="font-size:14px;font-weight:600;color:var(--c-ink);">${_dt(client.nextDate)}</div><div style="font-size:12px;color:var(--c-mut);">${_txt(client.nextTime)} · ${_txt(client.treatment)}</div></div>
-    </div>
+      <div><div style="font-size:14px;font-weight:600;color:var(--c-ink);">${(client.nextDate&&_dt(client.nextDate))?_dt(client.nextDate):'Not scheduled yet'}</div><div style="font-size:12px;color:var(--c-mut);">${[_txt(client.nextTime),_txt(client.treatment)].filter(Boolean).join(' · ')}</div></div>
+    </div>`}
     <div style="display:flex;gap:8px;">
       <button class="btng" onclick="openCalModal()" style="flex:1;"><i class="ti ti-calendar-plus" aria-hidden="true"></i> Add to calendar</button>
       <button class="btng" style="flex:1;" onclick="nav('messages')"><i class="ti ti-message-circle" aria-hidden="true"></i> Message ${_txt(client.providerFirst)}</button>
     </div>
-  </div>
+  </div>`}
 
   <!-- Ask about your aftercare (AI, grounded in this summary) -->
   ${(s.note||(s.guides&&s.guides.length)||(s.homecare&&s.homecare.length))?_askCareCardHTML({provider:client.providerFirst||'your provider',studio:client.studio||'',treatment:client.treatment||'',note:s.note||'',guides:(s.guides||[]).map(g=>({title:g.title,tips:g.tips||[]})),homecare:s.homecare||[],products:(products||[]).map(p=>p.name).filter(Boolean)}):''}
@@ -5883,6 +5969,7 @@ function submitClientForm(fid){
   _finishSigned();
 }
 function renderMagicLanding(){
+  try{_engRollover();}catch(e){}
   // Keep the bottom tab bar visible (Home tab active) so a client who lands here from a magic link
   // can still reach Journey, Homecare, Messages & Shop — previously the nav was hidden and trapped them.
   setNav('home');
@@ -5891,7 +5978,9 @@ function renderMagicLanding(){
   const summaries=p.summaries||[];
   const s=summaries[0];
   const routine=p.homecare||[];
-  const products=_prodList((s&&s.products&&s.products.length)?s.products:(p.products||[]),p.products);
+  // Same rule as the summary screen: her LIVE plan first (a product she took off the plan, or renamed,
+  // showed here with no buy links), the summary's own list only when she has no live plan.
+  const products=_prodList((p.products&&p.products.length)?p.products:((s&&s.products)||[]),p.products);
   const first=client.name.split(' ')[0];
   _buyProducts=products;
   S.innerHTML=`
@@ -5922,9 +6011,9 @@ function renderMagicLanding(){
     </div>
     ${routine.length?routine.map(step=>`
     <div style="display:flex;align-items:flex-start;gap:11px;padding:11px 16px;border-bottom:1px solid #eef6f3;">
-      <button onclick="toggleHomecareStep('${_jsAttr(step.key||'')}','home')" aria-label="Toggle ${_txt(step.key)}" style="width:24px;height:24px;border-radius:50%;border:2px solid ${homecareChecked[step.key]?'var(--accent)':'#e0d5c8'};background:${homecareChecked[step.key]?'var(--accent)':'#fff'};display:flex;align-items:center;justify-content:center;cursor:pointer;flex-shrink:0;margin-top:1px;">${homecareChecked[step.key]?'<i class="ti ti-check" aria-hidden="true" style="font-size:13px;color:#fff;"></i>':''}</button>
+      <button onclick="toggleHomecareStep('${_jsAttr(step.key||'')}','home')" aria-label="Toggle ${_txt(step.label||step.key)}" style="width:24px;height:24px;border-radius:50%;border:2px solid ${homecareChecked[step.key]?'var(--accent)':'#e0d5c8'};background:${homecareChecked[step.key]?'var(--accent)':'#fff'};display:flex;align-items:center;justify-content:center;cursor:pointer;flex-shrink:0;margin-top:1px;">${homecareChecked[step.key]?'<i class="ti ti-check" aria-hidden="true" style="font-size:13px;color:#fff;"></i>':''}</button>
       <div style="flex:1;min-width:0;">
-        <div style="font-size:13px;font-weight:600;color:${homecareChecked[step.key]?'var(--c-mut)':'var(--c-ink)'};${homecareChecked[step.key]?'text-decoration:line-through;':''}">${step.icon&&step.icon!=='🌿'?_txt(step.icon)+' ':''}${_txt(step.key)}</div>
+        <div style="font-size:13px;font-weight:600;color:${homecareChecked[step.key]?'var(--c-mut)':'var(--c-ink)'};${homecareChecked[step.key]?'text-decoration:line-through;':''}">${step.icon&&step.icon!=='🌿'?_txt(step.icon)+' ':''}${_txt(step.label||step.key)}</div>
         ${step.time||step.tip?`<div style="font-size:11px;color:var(--c-mut);margin-top:2px;">${_txt([step.time,step.tip].filter(Boolean).join(' · '))}</div>`:''}
       </div>
     </div>`).join(''):'<div style="padding:16px;font-size:13px;color:var(--c-mut);">Your routine will appear here.</div>'}
@@ -6057,7 +6146,7 @@ function _buildMyRecordsHTML(){
     careHTML=p.aftercare.map(blk=>`<div class="care"><div class="care-h">${_myEsc(blk.when)}</div><ul>${(blk.items||[]).map(it=>`<li>${_myEsc(it)}</li>`).join('')}</ul></div>`).join('');
   } else if(Array.isArray(p.homecare)&&p.homecare.length){
     // Real clients: the provider's recommended routine lives in p.homecare (aftercare[] is demo-only).
-    careHTML=`<div class="care"><div class="care-h">Your homecare routine</div><ul>${p.homecare.map(s=>`<li>${_myEsc((s&&(s.key||s.step||s.label))||String(s))}</li>`).join('')}</ul></div>`;
+    careHTML=`<div class="care"><div class="care-h">Your homecare routine</div><ul>${p.homecare.map(s=>`<li>${_myEsc((s&&(s.label||s.key||s.step))||String(s))}</li>`).join('')}</ul></div>`;
   }
   const avoidHTML=(p.avoid&&p.avoid.length)?`<div class="care"><div class="care-h">Things to avoid</div><ul>${p.avoid.map(it=>`<li>${_myEsc(it)}</li>`).join('')}</ul></div>`:'';
 
@@ -6528,7 +6617,11 @@ function _applyRealClientData(j){
   try{_loadClientContact(prof);}catch(e){}
   p.treatment=prof.treatment||'';
   p.summaryNote=(Array.isArray(d.summaries)&&d.summaries[0]&&d.summaries[0].note)||'';
-  p.homecare=(Array.isArray(d.aftercare)?d.aftercare:[]).map(function(s){return {key:s,icon:'',time:'',tip:'',done:false};});
+  // A step is ticked by its key. Two identical lines (a morning and an evening "Cleanse") used to share
+  // one key and tick together, so a repeat gets "#2", "#3"; the first keeps the plain text, so ticks
+  // already saved for it still match. `label` is what the screen shows.
+  var _seenStep={};
+  p.homecare=(Array.isArray(d.aftercare)?d.aftercare:[]).filter(function(s){return typeof s==='string'&&s.trim();}).map(function(s){var n=(_seenStep[s]=(_seenStep[s]||0)+1);return {key:n>1?s+'#'+n:s,label:s,icon:'',time:'',tip:'',done:false};});
   p.routineReview=(d.routineReview&&typeof d.routineReview==='object')?d.routineReview:null;
   p.products=Array.isArray(d.products)?d.products:[];
   // Named routine + provider's "why" note (shown as the routine card on Shop). Real clients used to
@@ -6626,16 +6719,34 @@ function _vcSubmittedInviteId(){try{return localStorage.getItem('sc_vc_submitted
 // by the provider's invitedAt nonce, which stops it re-appearing in the window before the
 // provider's app has processed the submission (same idea as the pending-form fix).
 function _applyServerVcInvite(vi){
-  if(!vi||!vi.kind)return;
+  if(!vi||!vi.kind){
+    // The provider no longer has a consult out for this client (it was sent from another of the
+    // client's devices, or she cancelled it). A device left open kept showing the card, and sending
+    // from it replaced the consult the provider already had.
+    if(!vcInvite){try{loadInvite();}catch(e){}}
+    if(vcInvite&&vcInvite.invitedAt){
+      vcInvite=null;_vcSubmitState={photos:{},refs:{},routine:[],flags:{},answers:{}};
+      try{persistInvite();}catch(e){}try{persistVcDraft();}catch(e){}
+      try{if(typeof currentScreen!=='undefined'&&currentScreen==='home'&&typeof nav==='function')nav('home');}catch(e){}
+    }
+    return;
+  }
   const iat=String(vi.invitedAt||'');
   if(iat&&iat===_vcSubmittedInviteId())return;
   // After a refresh nothing has read the saved invite and draft back yet, so the same invite looked
   // new and wiped the photos, goals and answers the client had already put in.
   if(!vcInvite){try{loadInvite();}catch(e){}}
   if(!vcInvite||String(vcInvite.invitedAt||'')!==iat){
-    vcInvite={kind:vi.kind,title:vi.title||'Photo consult',fee:vi.fee||'',providerFirst:client.providerFirst,invitedAt:vi.invitedAt||0,askQuestions:Array.isArray(vi.askQuestions)?vi.askQuestions:undefined,photoLabels:Array.isArray(vi.photoLabels)?vi.photoLabels:undefined,refLabels:Array.isArray(vi.refLabels)?vi.refLabels:undefined,refTitle:vi.refTitle||undefined};
+    vcInvite={kind:vi.kind,title:vi.title||'Photo consult',fee:vi.fee||'',providerFirst:client.providerFirst,invitedAt:vi.invitedAt||0,askQuestions:Array.isArray(vi.askQuestions)?vi.askQuestions:undefined,routine:vi.routine!==false,photoLabels:Array.isArray(vi.photoLabels)?vi.photoLabels:undefined,refLabels:Array.isArray(vi.refLabels)?vi.refLabels:undefined,refTitle:vi.refTitle||undefined};
     _vcSubmitState={photos:{},refs:{},routine:[],flags:{},answers:{}};
     try{persistInvite();}catch(e){}try{persistVcDraft();}catch(e){}   // a new invite starts a fresh draft
+  } else {
+    // Same invite, saved before the blob carried its questions / routine switch: fill those in
+    // without touching the draft.
+    let ch=false;
+    if(Array.isArray(vi.askQuestions)&&JSON.stringify(vi.askQuestions)!==JSON.stringify(vcInvite.askQuestions||null)){vcInvite.askQuestions=vi.askQuestions;ch=true;}
+    if((vi.routine!==false)!==(vcInvite.routine!==false)){vcInvite.routine=vi.routine!==false;ch=true;}
+    if(ch){try{persistInvite();}catch(e){}}
   }
   let notified='';try{notified=localStorage.getItem('sc_vc_notified')||'';}catch(e){}
   if(iat!==notified){
@@ -6645,7 +6756,7 @@ function _applyServerVcInvite(vi){
 }
 // Everything this app keeps on the device that belongs to ONE client. Kept in step with
 // _CLIENT_APP_KEYS / _CLIENT_APP_PREFIX in slickchart.html.
-var _CA_KEYS=['sc_appnudge_dismissed','sc_checkin_done','sc_client_avatar','sc_client_checkin_cfg','sc_client_contact','sc_client_engage',
+var _CA_KEYS=['sc_appnudge_dismissed','sc_checkin_done','sc_checkin_pending','sc_client_avatar','sc_client_checkin_cfg','sc_client_contact','sc_client_engage',
   'sc_client_hidden_summaries','sc_client_invite','sc_client_messages','sc_client_saved','sc_client_token','sc_client_vc','sc_deleted_res',
   'sc_forms_done','sc_home_cleared_res','sc_home_intro_seen','sc_install_dismissed','sc_seen_msg_ids','sc_suggestion_handled','sc_vc_draft',
   'sc_vc_notified','sc_vc_submitted','sc_vc_tips_seen','sc_welcome_dismissed','sc_a2hs_dismissed','sc_client_brand_colors','sc_client_owner','sc_client_prefs_dirty','notif_prefs'];
@@ -6759,6 +6870,7 @@ function _refreshProviderDataOnce(){
       .catch(function(){finish(false);});
   });
 }
+var _lastReminderCtx=null;
 function _pollRealClient(){
   if(!client._real||!client._token)return;
   if(document.hidden)return; // don't poll a backgrounded tab
@@ -6793,8 +6905,13 @@ function _pollRealClient(){
         _lastDataFingerprint=fp;
         _applyRealClientData(j);
         try{applyActiveProvider();}catch(e){}
+        // The reminder job reads what the client last uploaded about her routine and visit. A routine
+        // sent (or removed) while the app was open never reached it, so re-upload when that changes.
+        try{const rc=JSON.stringify(_reminderContext());if(rc!==_lastReminderCtx)_syncClientPrefsToServer();}catch(e){}
         // only refresh the view if they're not mid-task and are on a passive screen
-        if(!_isBusyScreen()&&document.getElementById('page-heading')){
+        // Not while she is typing in something on the screen (a question about her aftercare).
+        const _typing=(function(){try{const a=document.activeElement;const S0=document.getElementById('S');return !!(a&&S0&&S0.contains(a)&&/^(INPUT|TEXTAREA|SELECT)$/.test(a.tagName));}catch(e){return false;}})();
+        if(!_isBusyScreen()&&!_typing&&document.getElementById('page-heading')){
           const n=(typeof currentScreen!=='undefined'?currentScreen:'home');
           try{if(n==='home')renderHome();else if(typeof nav==='function')nav(n||'home');}catch(e){}
         }

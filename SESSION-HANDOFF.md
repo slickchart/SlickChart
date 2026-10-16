@@ -7414,3 +7414,55 @@ set); client-link/code timing differs for known emails; signup 409 enumerates; c
 on retry; form-question photos aren't in the client draft; reconnecting a DIFFERENT Square merchant
 duplicates clients; Google outbound deletes events missing from a stale device's list; photo store is
 one IndexedDB value (slow past ~500 photos).
+
+## 2026-10-16a — sweep 3: start session, consults, product recs, homecare, forms (both apps)
+
+Six parallel sweeps of the visit flows, provider and client side. Repros are
+`scratchpad/sweep3-*.mjs` (some simulate the OLD provider payload on purpose; the `v-*.mjs` copies
+drive the new path). Build `2026-10-16a`, on the branch and `release`, out at 2am.
+
+**Sync / data safety**
+- Processing a consult no longer pushes `sc_pro_vc_subs = ''` (it lived in IndexedDB; the flush read
+  localStorage). `api/store.js` refuses `''` for that key, `sc_clients`, `sc_session_summaries`.
+- Consults: newest SUBMISSION wins across devices (`at`), not most photos; the replaced one is kept as
+  `prev` (shown as "Earlier photos", slimmed/filled like the current photos). `vc_submit` is
+  idempotent (`evId` on the submission, `subEvId` on the invite, older events ignored); a submission
+  for an older invite (`payload.invitedAt`) cannot close a newer one. Seen-event cap 1000 -> 5000.
+- `persistWorkspace()` also persists the dedicated recs / reasons / homecare keys.
+- Note drafts: an expired draft is recorded in `sc_deleted_note_drafts` (ids `nd:<clientId>`, scoped
+  via `_SHRINK_SCOPED` so it never reads as a deleted CLIENT to the shrink guard), so the smaller
+  upload is accepted and no device restores it. Summary drafts are cleared to `null`, not deleted.
+- Healing stage picker persists; healing check-ins actually reach `/api/aftercare-drip` (token
+  minted first, failure said out loud).
+- Cron decides homecare reminders from the server's `aftercare` length (`hc_count`), not the
+  client's possibly stale flag; client also re-uploads its reminder context when it changes.
+
+**Start session**: dictation never appends to a past visit's saved draft or replaces today's notes
+in another format; changing note format no longer empties the visit's clinical notes; the client
+never receives "Tap Edit to write a note"; Personal note / Skin metrics / Products / Next
+appointment switches are honoured on the client (`entry.hide`, additive) and products-off builds no
+plan; typed summary note survives redraws, Cancel restores; summary "+ Add" product went to the
+wrong client; late AI rewrite no longer takes over the next client's screen; horse summaries notify
+the OWNER; room checklist resets however the summary went out; open client summary refreshes on poll
+(not while typing).
+
+**Consults**: client sees the questions and the "routine" switch; stale invite clears on other
+client devices; review notes survive redraws; top Send review guarded; replace-an-open-consult asks
+first; retake carries goals/answers/routine; routine review survives a re-invite (`reviewedAt`);
+invite sheet heading/questions follow the chosen type.
+
+**Recs / homecare**: deleted products leave every plan; Shop all de-duped with the Associates tag;
+client buy sheet fits 390px; client History tab built from visit summaries; dropped routine products
+leave the client list; blank homecare lines filtered; identical lines tick separately (`#2` keys,
+first keeps the plain text).
+
+**Forms**: in-person signing always files a new record and keeps the drawn signature (`sigImg`, also
+on the server event); check-in "done" is pending (device only, 12h) until the send succeeds;
+re-sent forms/guides/courses come back (submission `at` vs `assignedAt`; client removal times in
+`sc_res_removed_at` / prefs `resRemovedAt`); form drafts follow question ids and clear the right
+key; re-sending a check-in stamps `checkinReqAt` once the link goes out.
+
+**Not done**: `sc_workspace.codes` keeps a cleared discount code in the account copy (no screen shows
+it; fixing means changing that key's shape); client
+prefs merge is top-level only (two client devices can overwrite course progress); no way to withdraw
+a form/guide sent by mistake; `cron-events` hour-bucket dedupe could double an "after service" send.

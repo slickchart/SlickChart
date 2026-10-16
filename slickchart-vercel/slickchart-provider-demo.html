@@ -493,7 +493,7 @@ const S=document.getElementById('S');
 // resets when I save it" and there was no way to tell whether her phone had any of them — a whole
 // day was spent debugging code she may not have been running. Shown at the bottom of Settings, so
 // the answer is a screenshot away. Bump it on every ship.
-const APP_BUILD='2026-10-15h';
+const APP_BUILD='2026-10-16a';
 
 
 /* ════════════════════════════════════════════════════════════════
@@ -2880,7 +2880,7 @@ const _SYNC_SKIP_PREFIX=['sc_room_draft_'];
 // her practice data. They were syncing into the provider's account and every pull wrote the account's
 // stale copy back over them: Ashley, 2026-10-14, "when i change the client app to light mode it
 // reverts back to dark mode on refresh". Device-local, both ways; pull also clears old copies.
-const _CLIENT_APP_KEYS={sc_appnudge_dismissed:1,sc_checkin_done:1,sc_client_avatar:1,sc_client_checkin_cfg:1,
+const _CLIENT_APP_KEYS={sc_appnudge_dismissed:1,sc_checkin_done:1,sc_checkin_pending:1,sc_res_removed_at:1,sc_client_avatar:1,sc_client_checkin_cfg:1,
   sc_client_contact:1,sc_client_engage:1,sc_client_hidden_summaries:1,sc_client_invite:1,sc_client_messages:1,
   sc_client_saved:1,sc_client_theme:1,sc_client_token:1,sc_client_vc:1,sc_deleted_res:1,sc_forms_done:1,
   sc_home_cleared_res:1,sc_home_intro_seen:1,sc_install_dismissed:1,sc_seen_msg_ids:1,sc_suggestion_handled:1,
@@ -3041,6 +3041,8 @@ function _compoundIds(k,str){
   }catch(e){}
   return null;
 }
+// Keys whose delete record is scoped by a prefix (see sc_deleted_note_drafts).
+const _SHRINK_SCOPED={sc_note_drafts:'nd:'};
 function _dropBootShrinks(items,where){
   try{
     const seen=(typeof Cloud!=='undefined'&&Cloud&&Cloud._serverSeen)||null;
@@ -3059,8 +3061,10 @@ function _dropBootShrinks(items,where){
       const lost=had.filter(function(id){return !have[id];});
       if(!lost.length)continue;
       if(gone===null)gone=_allDeletedIds();
+      const _pre=_SHRINK_SCOPED[k]||'';
       const unexplained=lost.filter(function(id){
         // compound ids are "field:id" — the delete lists hold the bare id
+        if(_pre&&gone[_pre+id])return false;   // a delete record scoped to this one key
         return !gone[compound?id.slice(id.indexOf(':')+1):id];
       });
       if(unexplained.length){
@@ -3101,7 +3105,12 @@ const _TOMB_OBJ={sc_deleted_svc:1,sc_deleted_msg_tmpls:1,sc_deleted_starters:1,s
   // delete record resurrects every routine she ever deleted. This is that record. It is NOT in
   // _LIB_TOMB because the library is a MAP of lists rather than one list, so the dispatch routes it
   // to _mergeAuthoredMap instead of _mergeAuthoredById.
-  sc_deleted_routines:1};
+  sc_deleted_routines:1,
+  // A note draft that EXPIRED (its visit was saved over 12 hours ago) is deleted from sc_note_drafts.
+  // Without a record of that, the shrunk upload was refused for the rest of the session, so no other
+  // note draft from that device reached the account either. Ids are "nd:<clientId>" so that a client
+  // id here never reads as "this client was deleted" to the guard on every other per-client key.
+  sc_deleted_note_drafts:1};
 const _TOMB_ARR={sc_photo_backed:1,sc_flag_dismissed:1,sc_form_flag_dismissed:1,sc_ci_cleared:1,sc_ci_read:1,sc_home_dismissed:1,sc_notif_cleared:1,sc_notif_read:1,
   // Added 2026-10-08 in the thread-16 pass. Both are append-only id lists where an overwrite undoes
   // an action: sc_deleted_sq is the Square products she DELETED (lose it and they come back — the
@@ -3824,6 +3833,10 @@ function _mergeClientMap(serverStr,localStr,mapKey){
   const out=_unionById(srv,loc,gone,function(){changed=true;},_clientMapInner(mapKey));
   // The account was still carrying entries for clients that have since been deleted. Dropping them
   // is a real change and worth pushing, so every device stops carrying them too.
+  if(mapKey==='sc_note_drafts'){
+    // An expired draft stays expired: a device that still held it must not put it back.
+    try{const tomb=_tombSet('sc_deleted_note_drafts');Object.keys(out).forEach(function(id){const d=out[id];if(d&&_tombHides(tomb['nd:'+id],Number(d.ts)||Number(d.committedAt)||0)){delete out[id];changed=true;}});}catch(e){}
+  }
   if(!changed&&Object.keys(out).length!==Object.keys(srv).length)changed=true;
   return {str:JSON.stringify(out),changed:changed};
 }
@@ -8074,7 +8087,7 @@ function _markProtocolsCustom(){try{localStorage.setItem('sc_protocols_custom','
 function loadProtocols(){try{const raw=localStorage.getItem('sc_protocols');if(raw){const a=JSON.parse(raw);if(Array.isArray(a)&&a.length){protocols.length=0;a.forEach(p=>protocols.push(p));return true;}}}catch(e){}return false;}
 function persistShopBundles(){_stampRows('sc_shop_bundles',shopBundles);try{(function(_v){localStorage.setItem('sc_shop_bundles',_v);if(typeof _pushKeyNow==='function')_pushKeyNow('sc_shop_bundles',_v);return _v;})(JSON.stringify(shopBundles));}catch(e){}}
 function loadShopBundles(){try{const raw=localStorage.getItem('sc_shop_bundles');if(raw){const arr=JSON.parse(raw);if(Array.isArray(arr))shopBundles=arr;}}catch(e){}}
-function persistAffiliateLinks(){try{(function(_v){localStorage.setItem('sc_affiliate_links',_v);if(typeof _pushKeyNow==='function')_pushKeyNow('sc_affiliate_links',_v);return _v;})(JSON.stringify(affiliateLinks));}catch(e){}try{_syncShopCatalog();}catch(e){}}
+function persistAffiliateLinks(){_stampRows('sc_affiliate_links',affiliateLinks);try{(function(_v){localStorage.setItem('sc_affiliate_links',_v);if(typeof _pushKeyNow==='function')_pushKeyNow('sc_affiliate_links',_v);return _v;})(JSON.stringify(affiliateLinks));}catch(e){}try{_syncShopCatalog();}catch(e){}}
 // Mark the product list as provider-customized (immediate push) so boot never reseeds demo products
 // over their real shop. Set on every add/edit/delete of a product.
 function _markAffiliateCustom(){try{localStorage.setItem('sc_affiliate_custom','1');if(typeof _pushKeyNow==='function')_pushKeyNow('sc_affiliate_custom','1');}catch(e){}}
@@ -8274,14 +8287,20 @@ function _purgeDemoProducts(){
 }
 function _buildShopCatalog(){
   try{
-    return (affiliateLinks||[]).filter(a=>a&&a.active!==false&&a.name&&!_isUnadoptedStarter(a)).map(a=>({
+    // One card per product: the same product from Square and added by hand showed twice (and the
+    // client's Saved heart, keyed by name, toggled both). Keep the one with the most ways to buy.
+    const _ways=a=>(a.site?1:0)+(a.url?1:0)+(a.amazon?1:0)+(a.inOffice?1:0)+(a.image?1:0);
+    const _best={};(affiliateLinks||[]).forEach(a=>{if(!a||a.active===false||!a.name||_isUnadoptedStarter(a))return;const k=(typeof _prodCore==='function'&&_prodCore(a.name))||String(a.name).trim().toLowerCase();if(!_best[k]||_ways(a)>_ways(_best[k]))_best[k]=a;});
+    const _keep=new Set(Object.values(_best));
+    return (affiliateLinks||[]).filter(a=>_keep.has(a)).map(a=>({
       name:a.name,brand:a.brand||'',icon:a.icon||'🛍️',inOffice:!!a.inOffice,
       // Carry the product image (Square catalog photo, or one the provider added) so the client's
       // Shop shows the real product picture instead of a generic emoji. Only http(s) URLs are
       // synced — a heavy data: URL would bloat this shared catalog blob.
       image:(/^https?:\/\//i.test(String(a.image||'')))?a.image:'',
       site:a.site||'',siteCode:a.siteCode||'',url:a.url||'',urlCode:a.urlCode||'',
-      amazon:a.amazon||'',amazonCode:a.amazonCode||''
+      // With her Associates tag, as on the recommended list; the raw link earned her nothing.
+      amazon:(a.amazon&&typeof amazonBuyUrl==='function')?(amazonBuyUrl(a)||a.amazon):(a.amazon||''),amazonCode:a.amazonCode||''
     }));
   }catch(e){return [];}
 }
@@ -8377,6 +8396,7 @@ function _provScrollTop(){try{S.scrollTop=0;}catch(e){}try{window.scrollTo(0,0);
 let _ncLastStep=-1;
 const _NAV_CLIENT_SCREENS={client:1,notes:1,photos:1,'write-note':1,'virtual-client':1,brief:1,room:1,rebook:1,'summary-history':1,'session-summary':1,'client-forms':1,checkout:1};
 function nav(screen,data){
+  if(typeof _esOrigRecs!=='undefined'&&_esOrigRecs!==null){try{_esAbandon();}catch(e){}}
   // A client screen opened for a client who is no longer on the list (merged or removed while you were
   // in their file, then Back) crashed to a blank page. Land on the client list instead.
   if(typeof data==='string'&&data&&_NAV_CLIENT_SCREENS[screen]&&typeof CL!=='undefined'&&!CL[data]){
@@ -8600,7 +8620,7 @@ function _isCheckinDismissed(cid){return !!cid&&_dismissedCheckins().indexOf(cid
 // rebuilt it and the intake kept returning to the Flagged Intakes area after being marked reviewed. This
 // is the guard _fcActive checks so a reviewed intake flag stays gone across every rebuild path.
 function _dismissedFormFlags(){try{return JSON.parse(localStorage.getItem('sc_form_flag_dismissed')||'[]');}catch(e){return [];}}
-function _markFormFlagDismissed(k){if(!k)return;try{var a=_dismissedFormFlags();if(a.indexOf(k)<0){a.push(k);if(a.length>1000)a.splice(0,a.length-1000);var v=JSON.stringify(a);localStorage.setItem('sc_form_flag_dismissed',v);if(typeof _pushKeyNow==='function')_pushKeyNow('sc_form_flag_dismissed',v);}}catch(e){}}
+function _markFormFlagDismissed(k){if(!k)return;try{var a=_dismissedFormFlags();if(a.indexOf(k)<0){a.push(k);if(a.length>5000)a.splice(0,a.length-5000);var v=JSON.stringify(a);localStorage.setItem('sc_form_flag_dismissed',v);if(typeof _pushKeyNow==='function')_pushKeyNow('sc_form_flag_dismissed',v);}}catch(e){}}
 function _isFormFlagDismissed(k){return !!k&&_dismissedFormFlags().indexOf(k)>=0;}
 // Mark every flagged submitted form on a client as reviewed — called when the provider clears the flag
 // (from the chart or from Home) so no rebuild path can pull the intake contraindication back into review.
@@ -9604,8 +9624,7 @@ function _buildClientFileHTML(id){
 // print dialog lets the provider "Save as PDF".
 function _printSummary(id){
   const c=CL[id];if(!c)return;
-  const noteEl=document.getElementById('summary-note');
-  const note=((summaryNoteDraft[id]!=null?summaryNoteDraft[id]:(noteEl?noteEl.innerText:''))||'').trim();
+  const note=_summaryNoteText(id).trim();
   const homecare=(typeof getClientHomecare==='function'?getClientHomecare(id):[])||[];
   const prods=(clientRecs[id]||[]).map(aid=>{const a=affiliateLinks.find(x=>x.id===aid);return (a&&a.active!==false)?{name:a.name,brand:a.brand||'',why:(_recReason(id,aid)||'')}:null;}).filter(Boolean);
   const guides=(typeof _summaryGuideList==='function')?_summaryGuideList(id):[];
@@ -10293,7 +10312,7 @@ function viewSubmittedForm(id,i){
     ${sf.signed?`<div style="margin-top:2px;background:var(--p-surf);border:1px solid var(--p-line);border-radius:12px;padding:13px 14px 11px;">
       <div style="font-size:12px;color:var(--p-mut);text-transform:uppercase;letter-spacing:.06em;margin-bottom:9px;">Client signature</div>
       <div style="border:1px solid var(--p-line-ctl);border-radius:8px;background:var(--p-surf);padding:12px 14px 9px;">
-        <div style="font-family:'Snell Roundhand','Segoe Script','Bradley Hand','Brush Script MT',cursive;font-size:31px;color:var(--p-amber);line-height:1.05;transform:rotate(-3deg);white-space:nowrap;overflow:hidden;text-overflow:ellipsis;">${_fileEsc(signerName)}</div>
+        ${(typeof sf.sigImg==='string'&&/^data:image\/(png|jpeg);base64,[A-Za-z0-9+/=]+$/.test(sf.sigImg))?`<img src="${sf.sigImg}" alt="Signature drawn by ${_fileEsc(signerName)}" style="display:block;width:100%;max-height:120px;object-fit:contain;background:#fff;border-radius:6px;">`:`<div style="font-family:'Snell Roundhand','Segoe Script','Bradley Hand','Brush Script MT',cursive;font-size:31px;color:var(--p-amber);line-height:1.05;transform:rotate(-3deg);white-space:nowrap;overflow:hidden;text-overflow:ellipsis;">${_fileEsc(signerName)}</div>`}
         <div style="display:flex;align-items:center;justify-content:space-between;border-top:1px solid var(--p-line);margin-top:10px;padding-top:7px;">
           <span style="font-size:14px;color:var(--p-mut);">Signature on file</span>
           <span style="display:inline-flex;align-items:center;gap:5px;background:var(--p-surf2);border:1px solid var(--p-line3);color:var(--p-green);font-size:14px;font-weight:700;padding:3px 9px;border-radius:24px;"><i class="ti ti-circle-check" style="font-size:16px;"></i> Signed · ${_fileEsc(sf.date)}</span>
@@ -10623,12 +10642,13 @@ function _cfsSendCourse(courseId,cid){
   const sh=document.getElementById('sendform-sheet');if(sh)sh.remove();
   if(!c||!k)return;
   if(!Array.isArray(c.pendingCourses))c.pendingCourses=[];
+  // A re-send is a new instance (new assignedAt), so a client who removed it from her library gets it back.
   const already=c.pendingCourses.some(pc=>pc&&pc.id===courseId);
-  if(!already)c.pendingCourses.push({id:courseId,assignedAt:Date.now()});
+  _assignPending(c.pendingCourses,'id',courseId);
   try{if(typeof saveClients==='function')saveClients();}catch(e){}
   try{if(typeof _persistAndSyncClient==='function')_persistAndSyncClient(cid);else if(typeof _scheduleSpecificClientSync==='function')_scheduleSpecificClientSync(cid);}catch(e){}
   const first=String(c.name||'your client').split(' ')[0];
-  if(typeof proToast==='function')proToast(already?(k.title+' was already sent to '+first):(!c._token?(k.title+' is waiting for '+first+' once they are invited'):(k.title+' sent to '+first)));
+  if(typeof proToast==='function')proToast(already?(k.title+' sent to '+first+' again'):(!c._token?(k.title+' is waiting for '+first+' once they are invited'):(k.title+' sent to '+first)));
 }
 function _cfsFilter(q){
   q=(typeof _normSearch==='function')?_normSearch(q):(q||'').toLowerCase().trim();
@@ -10866,6 +10886,8 @@ ${clientContext}`;
 }
 
 function renderRoom(id){
+  if(!(id!=null&&CL[id])){if(typeof nav==='function')nav('clients');return;}   // never fall back to another client's screen
+  try{_expireCommittedDraft(id);}catch(e){}   // last visit's saved notes are not today's
   setNav('room');
   // Protocols default to OFF; honor whatever the provider last chose (persisted).
   try{roomProtocolOff=localStorage.getItem('sc_room_protocol_off')!=='false';}catch(e){roomProtocolOff=true;}
@@ -11361,13 +11383,16 @@ function removeClientProd(clientId,aid){
 }
 function renderProductRecs(clientId){
   const el=document.getElementById('prod-recs');if(!el)return;
+  // Only products that still exist and are active: a deleted or switched-off product stayed counted
+  // ("· 2" with one listed) while the client's copy already left it out.
   const recs=clientRecs[clientId]||[];
+  const _live=recs.filter(function(aid){const a=affiliateLinks.find(x=>x&&x.id===aid);return a&&a.active!==false;}).length;   // the list keeps its indexes (move up/down use them)
   const extra=(_esOrigRecs!==null)?(_esUnmatchedProducts||[]):[];
-  const cnt=document.getElementById('prod-count');if(cnt)cnt.textContent=(recs.length+extra.length)?('· '+(recs.length+extra.length)):'';
+  const cnt=document.getElementById('prod-count');if(cnt)cnt.textContent=(_live+extra.length)?('· '+(_live+extra.length)):'';
   const extraHtml=extra.map((nm,k)=>`<div class="custom-prod" style="background:var(--surf2);border:1px solid var(--p-line);border-radius:12px;padding:8px 10px 8px 12px;margin-bottom:6px;display:flex;align-items:center;gap:9px;"><i class="ti ti-shopping-bag" style="font-size:18px;color:var(--p-mut);flex-shrink:0;"></i><div style="flex:1;min-width:0;"><div style="font-size:16px;font-weight:500;color:var(--p-ink);">${_fileEsc(nm)}</div><div style="font-size:14px;color:var(--p-mut);">Not in your catalog</div></div><button onclick="_removeCustomProd('${clientId}',${k})" class="icon-btn" aria-label="Remove product" style="flex-shrink:0;"><i class="ti ti-x" aria-hidden="true" style="font-size:16px;"></i></button></div>`).join('');
   if(recs.length===0&&extra.length){el.innerHTML=extraHtml;return;}
   if(recs.length===0){el.innerHTML=`<div style="background:var(--surf1);border:1px dashed var(--p-line);border-radius:12px;padding:14px;display:flex;flex-direction:column;align-items:center;gap:5px;"><i class="ti ti-shopping-bag" style="font-size:22px;color:var(--p-mut);"></i><span style="font-size:16px;color:var(--p-mut);">No products recommended yet</span></div>`;return;}
-  el.innerHTML=recs.map((aid,i)=>{const a=affiliateLinks.find(x=>x.id===aid);if(!a)return'';
+  el.innerHTML=recs.map((aid,i)=>{const a=affiliateLinks.find(x=>x.id===aid);if(!a||a.active===false)return'';   // switched-off products: not shown (the client never sees them)
     const up=i>0,down=i<recs.length-1;
     return `<div style="background:var(--surf2);border:1px solid var(--p-line);border-radius:12px;padding:8px 10px 10px 12px;margin-bottom:6px;">
       <div style="display:flex;align-items:center;gap:9px;">
@@ -11734,7 +11759,7 @@ function _voiceSave(text,toastMsg){
   // The old code wrote to the global per-template savedNotes store, which feeds the CLIENT
   // summary and is pre-seeded with demo content, so the transcript never appeared in the
   // provider notes and instead surfaced on the client-summary side, mixed with sample data.
-  const draft=providerNoteDrafts[id]&&providerNoteDrafts[id].templateId===activeNoteTemplate?providerNoteDrafts[id]:{date:(typeof _isoToday==='function'?_isoToday():''),sections:{},templateId:activeNoteTemplate};
+  const draft=_draftForDictation(id,tmpl);
   if(!draft.sections)draft.sections={};
   const prev=draft.sections[secId];
   draft.sections[secId]=(prev&&prev.trim()&&prev.trim()!=='No notes yet.')?(prev+'\n'+text):text;
@@ -11806,7 +11831,7 @@ async function _voiceSmartSave(){
     _voiceSave(raw,'Saved your note (couldn’t auto-file it this time)');
     return;
   }
-  const draft=(providerNoteDrafts[id]&&providerNoteDrafts[id].templateId===activeNoteTemplate)?providerNoteDrafts[id]:{date:(typeof _isoToday==='function'?_isoToday():''),sections:{},templateId:activeNoteTemplate};
+  const draft=_draftForDictation(id,tmpl);
   if(!draft.sections)draft.sections={};
   secs.forEach(s=>{
     let v=mapping[s.id];if(v==null)return;v=String(v).trim();if(!v)return;
@@ -12234,9 +12259,12 @@ function _recSheetSend(clientId){
 // per-template store only for the demo/preview path where no per-client draft exists.
 function _activeNotesText(id){
   const tmpl=noteTemplates[activeNoteTemplate]||noteTemplates.soap;
-  const draft=(id!=null&&providerNoteDrafts[id]&&providerNoteDrafts[id].templateId===activeNoteTemplate)?providerNoteDrafts[id]:null;
+  // Today's notes typed under another format still count (carried over by _noteSectionsFor), or the
+  // room and summary acted as if she had written nothing.
+  const draft=(id!=null&&providerNoteDrafts[id])?providerNoteDrafts[id]:null;
   if(draft&&draft.sections){
-    return (tmpl.sections||[]).map(sec=>{const v=String(draft.sections[sec.id]||'').trim();return (v&&v!=='No notes yet.')?v:'';}).filter(Boolean).join('<br>');
+    const secMap=_noteSectionsFor(id,tmpl);
+    return (tmpl.sections||[]).map(sec=>{const v=String(secMap[sec.id]||'').trim();return (v&&v!=='No notes yet.')?v:'';}).filter(Boolean).join('<br>');
   }
   // A REAL client with no notes yet in this format returns empty — never fall through to the
   // global per-template store below, which is demo-seeded (Maya) and would otherwise bleed another
@@ -12287,6 +12315,18 @@ function _noteSummaryPreview(id){
 // written under a different format, fold its non-empty sections into this format's first field so the
 // carried-over notes are visible everywhere the notes render (the preview AND the editor) rather than
 // only appearing once you tap Edit, which made people think their notes had vanished.
+// The draft a dictation adds to. A past visit's SAVED draft is not today's: appending to it kept the
+// old date and its saved flag, and the next End session expired it with today's dictation inside.
+// Notes typed today under another note format are carried into this one, not replaced.
+function _draftForDictation(id,tmpl){
+  try{_expireCommittedDraft(id);}catch(e){}
+  const today=(typeof _isoToday==='function'?_isoToday():'');
+  let b=providerNoteDrafts[id];
+  if(b&&b.committed&&b.date&&b.date!==today)b=null;
+  if(b&&b.templateId===activeNoteTemplate)return b;
+  const t=tmpl||noteTemplates[activeNoteTemplate]||noteTemplates.soap;
+  return {date:(b&&b.date)||today,sections:b?Object.assign({},_noteSectionsFor(id,t)):{},templateId:activeNoteTemplate};
+}
 function _noteSectionsFor(id,tmpl){
   const draft=providerNoteDrafts[id];
   if(!draft)return {};
@@ -12299,6 +12339,7 @@ function _noteSectionsFor(id,tmpl){
   return draft.sections||{};
 }
 function renderNotes(id){
+  try{_expireCommittedDraft(id);}catch(e){}
   setNav('clients');
   const c=CL[id];
   const tmpl=noteTemplates[activeNoteTemplate]||noteTemplates.soap;
@@ -12407,6 +12448,9 @@ function _expireCommittedDraft(id){
     if(!saved)return;
     if(d.date===(typeof _isoToday==='function'?_isoToday():''))return;
     if(Date.now()-(Number(d.committedAt||d.ts)||0)<12*3600000)return;
+    // Record the expiry first, dated, so the smaller upload is accepted and no other device puts the
+    // old draft back. A draft written after this moment (a newer ts) still wins.
+    try{const tk='sc_deleted_note_drafts';const t=JSON.parse(_lsGet(tk)||'{}')||{};t['nd:'+id]=Date.now();const v=JSON.stringify(t);localStorage.setItem(tk,v);if(typeof _pushKeyNow==='function')_pushKeyNow(tk,v);}catch(e){}
     delete providerNoteDrafts[id];if(typeof saveProviderNoteDrafts==='function')saveProviderNoteDrafts();
   }catch(e){}
 }
@@ -12947,7 +12991,7 @@ function _renderPhotosView(id,c,_passed){
   <div style="margin:0 16px 12px;background:var(--p-purple-bg);border:1px solid #3d1a66;border-radius:12px;padding:12px 14px;">
     <div style="font-size:14px;font-weight:600;color:var(--p-purple);text-transform:uppercase;letter-spacing:.07em;margin-bottom:10px;">Healing stage</div>
     <div style="display:grid;grid-template-columns:1fr 1fr;gap:6px;">
-      ${healingStages.map((s,i)=>`<button onclick="clientHealingStage['${id}']=${i};_renderPhotosView('${id}',CL['${id}'],photoSessions['${id}']||[])" style="border:1px solid ${clientHealingStage[id]===i?'var(--p-purple)':'#2a1a44'};background:${clientHealingStage[id]===i?'#2a0d4a':'var(--p-surf)'};border-radius:8px;padding:8px 10px;cursor:pointer;text-align:left;">
+      ${healingStages.map((s,i)=>`<button onclick="clientHealingStage['${id}']=${i};try{persistClientHealingStage();}catch(e){};_renderPhotosView('${id}',CL['${id}'],photoSessions['${id}']||[])" style="border:1px solid ${clientHealingStage[id]===i?'var(--p-purple)':'#2a1a44'};background:${clientHealingStage[id]===i?'#2a0d4a':'var(--p-surf)'};border-radius:8px;padding:8px 10px;cursor:pointer;text-align:left;">
         <div style="display:flex;align-items:center;gap:6px;">
           <div style="width:8px;height:8px;border-radius:50%;background:${['var(--p-red)','var(--accent)','var(--p-green)','var(--p-purple)'][i]};flex-shrink:0;"></div>
           <span style="font-size:16px;color:${clientHealingStage[id]===i?'#e0d0ff':'#888'};font-weight:${clientHealingStage[id]===i?600:400};">${s}</span>
@@ -13235,6 +13279,11 @@ function _summaryGuard(id){
 }
 
 function renderSessionSummary(id){
+  if(!(id!=null&&CL[id])){if(typeof nav==='function')nav('clients');return;}   // never fall back to another client's screen
+  // Anything else on this screen redraws it; keep what is in an open note editor first (typing saves
+  // as it goes, but dictation or autofill may not fire an input event).
+  try{if(_noteEditFor===id&&document.getElementById('note-edit-ta'))_flushOpenSummaryNote(id);}catch(e){}
+  _noteEditFor=null;
   _expireCommittedDraft(id);
   setNav('clients');
   _recEditCtx='summary';
@@ -13260,6 +13309,7 @@ function renderSessionSummary(id){
   // clients, the scripted copy; then a client-FRIENDLY auto-rewrite of the real
   // provider notes; else a prompt. We never dump raw clinical shorthand on the
   // client, and we never fabricate content that wasn't in the notes.
+  const _notePrompt=(summaryNoteDraft[id]==null)&&!_isDemoClient&&!friendly;
   let _rawNote=(summaryNoteDraft[id]!=null)
     ? summaryNoteDraft[id]
     : (_isDemoClient
@@ -13299,7 +13349,7 @@ function renderSessionSummary(id){
       <div style="display:flex;align-items:center;gap:8px;">
         <i class="ti ti-adjustments-horizontal" aria-hidden="true" style="font-size:16px;color:var(--accent-strong);"></i>
         <span style="font-size:16px;font-weight:500;color:var(--p-ink);">Customize card</span>
-        <span style="font-size:16px;color:var(--p-mut);">${Object.values(summaryToggles).filter(Boolean).length} of ${Object.keys(summaryToggles).length} sections on</span>
+        <span style="font-size:16px;color:var(--p-mut);">${Object.keys(summaryToggles).filter(k=>k!=='guides'&&summaryToggles[k]).length} of ${Object.keys(summaryToggles).filter(k=>k!=='guides').length} sections on</span>
       </div>
       <i class="ti ti-chevron-${summaryCustomOpen?'up':'down'}" aria-hidden="true" style="font-size:16px;color:var(--p-mut);"></i>
     </button>
@@ -13335,7 +13385,7 @@ function renderSessionSummary(id){
           <button onclick="editSummaryNote('${id}')" style="border:none;background:none;color:var(--accent-strong);font-size:16px;cursor:pointer;display:flex;align-items:center;gap:4px;"><i class="ti ti-pencil" aria-hidden="true" style="font-size:16px;"></i> Edit</button>
         </div>
       </div>
-      <div id="summary-note" style="font-size:16px;color:var(--p-mut);line-height:1.8;">${_noteContent.replace(/</g,'&lt;').replace(/\n/g,'<br>')}</div>
+      <div id="summary-note" data-prompt="${_notePrompt?'1':''}" style="font-size:16px;color:var(--p-mut);line-height:1.8;${_notePrompt?'font-style:italic;':''}">${_noteContent.replace(/</g,'&lt;').replace(/\n/g,'<br>')}</div>
     </div>`:''}
 
     ${summaryToggles.metrics?`<div style="padding:14px 16px;border-bottom:1px solid var(--p-line);">
@@ -13372,7 +13422,7 @@ function renderSessionSummary(id){
     ${summaryToggles.products?`<div style="padding:14px 16px;border-bottom:1px solid var(--p-line);">
       <div style="display:flex;align-items:center;justify-content:space-between;margin-bottom:10px;">
         <div style="font-size:16px;color:var(--p-mut);text-transform:uppercase;letter-spacing:.07em;font-weight:500;">Recommended for you</div>
-        <button onclick="toggleSummaryProdPicker()" style="border:none;background:none;color:var(--accent-strong);font-size:16px;cursor:pointer;display:flex;align-items:center;gap:3px;"><i class="ti ti-plus" aria-hidden="true" style="font-size:16px;"></i> Add</button>
+        <button onclick="toggleSummaryProdPicker('${id}')" style="border:none;background:none;color:var(--accent-strong);font-size:16px;cursor:pointer;display:flex;align-items:center;gap:3px;"><i class="ti ti-plus" aria-hidden="true" style="font-size:16px;"></i> Add</button>
       </div>
       ${_recPickerHTML(id)}
       ${(clientRecs[id]||[]).length===0?`<div style="background:var(--surf1);border:1px dashed var(--p-line);border-radius:12px;padding:14px;display:flex;flex-direction:column;align-items:center;gap:5px;"><i class="ti ti-shopping-bag" aria-hidden="true" style="font-size:22px;color:var(--p-mut);"></i><span style="font-size:16px;color:var(--p-mut);">No products yet, tap Add to recommend one</span></div>`:''}
@@ -13450,16 +13500,36 @@ function renderSessionSummary(id){
 // mid-edit read a STALE draft and silently sent the old/empty note. Called at every point that reads
 // the note so the provider's in-progress text is never dropped. (Cancel still discards — it never
 // flushes.)
+// The note as typed, or as shown on the summary card — never the "Tap Edit to write a note" prompt,
+// which a client with no notes yet used to receive as her visit note.
+function _summaryNoteText(id){
+  try{
+    const ta=document.getElementById('note-edit-ta');if(ta)return String(ta.value||'');
+    if(summaryNoteDraft[id]!=null)return String(summaryNoteDraft[id]);
+    const el=document.getElementById('summary-note');
+    if(el&&el.getAttribute('data-prompt')!=='1')return el.innerText||'';
+  }catch(e){}
+  return '';
+}
 function _flushOpenSummaryNote(id){try{const ta=document.getElementById('note-edit-ta');if(ta){summaryNoteDraft[id]=ta.value;if(typeof persistSummaryDrafts==='function')persistSummaryDrafts();}}catch(e){}}
+// What the note was when the editor opened, so Cancel can put it back: typing now saves as it goes
+// (anything else on this screen redraws it, and that used to throw the typed note away).
+let _noteEditOrig={};let _noteEditTimer=null;
+function _noteEditInput(id,v){summaryNoteDraft[id]=v;clearTimeout(_noteEditTimer);_noteEditTimer=setTimeout(function(){try{persistSummaryDrafts();}catch(e){}},600);}
+let _noteEditFor=null;
+function _noteEditCancel(id){clearTimeout(_noteEditTimer);_noteEditFor=null;try{const ed=document.getElementById('summary-note-edit');if(ed)ed.remove();}catch(e){}const o=_noteEditOrig[id];if(o&&o.had)summaryNoteDraft[id]=o.v;else delete summaryNoteDraft[id];try{persistSummaryDrafts();}catch(e){}renderSessionSummary(id);}
 function editSummaryNote(id){
   const el=document.getElementById('summary-note');
   if(!el)return;
-  const current=el.innerText.trim();
+  const current=(el.getAttribute('data-prompt')==='1')?'':el.innerText.trim();
+  _noteEditFor=id;
+  _noteEditOrig[id]={had:Object.prototype.hasOwnProperty.call(summaryNoteDraft,id),v:summaryNoteDraft[id]};
+  const _escT=String(current).replace(/&/g,'&amp;').replace(/</g,'&lt;').replace(/>/g,'&gt;');
   el.outerHTML=`<div id="summary-note-edit">
-    <textarea id="note-edit-ta" aria-label="Edit summary note" style="width:100%;background:var(--p-surf);border:1px solid var(--accent);border-radius:8px;padding:9px;font-size:16px;color:var(--p-mut);line-height:1.8;resize:none;height:120px;font-family:inherit;">${current}</textarea>
+    <textarea id="note-edit-ta" aria-label="Edit summary note" placeholder="Write a note about today\u2019s visit" oninput="_noteEditInput('${id}',this.value)" style="width:100%;background:var(--p-surf);border:1px solid var(--accent);border-radius:8px;padding:9px;font-size:16px;color:var(--p-mut);line-height:1.8;resize:none;height:120px;font-family:inherit;">${_escT}</textarea>
     <div style="display:flex;gap:8px;margin-top:8px;">
       <button onclick="summaryNoteDraft['${id}']=document.getElementById('note-edit-ta').value;if(typeof persistSummaryDrafts==='function')persistSummaryDrafts();renderSessionSummary('${id}')" style="background:var(--accent);color:var(--accent-ink);border:1px solid var(--btn-edge);border-radius:8px;padding:6px 14px;font-size:16px;font-weight:500;cursor:pointer;">Done</button>
-      <button onclick="renderSessionSummary('${id}')" style="background:none;border:1px solid var(--p-line-ctl);color:var(--p-mut);border-radius:8px;padding:6px 14px;font-size:16px;cursor:pointer;">Cancel</button>
+      <button onclick="_noteEditCancel('${id}')" style="background:none;border:1px solid var(--p-line-ctl);color:var(--p-mut);border-radius:8px;padding:6px 14px;font-size:16px;cursor:pointer;">Cancel</button>
     </div>
   </div>`;
   document.getElementById('note-edit-ta')?.focus();
@@ -13481,7 +13551,7 @@ async function aiClientFriendly(id,btn){
     summaryNoteDraft[id]=out;
     if(typeof persistSummaryDrafts==='function')persistSummaryDrafts();
     if(typeof proToast==='function')proToast('Rewritten for your client, edit if you like');
-    renderSessionSummary(id);
+    if(_onSummaryOf(id))renderSessionSummary(id);
   }catch(e){
     btn.disabled=false;btn.style.opacity='1';btn.innerHTML=old;
     if(typeof proToast==='function')proToast('Could not reach AI just now, try again, or edit manually');
@@ -13490,13 +13560,16 @@ async function aiClientFriendly(id,btn){
 // Auto-draft the CLIENT-facing summary note from the provider's own session notes (typed or dictated
 // in the Room). Closes the gap where the provider had to write the client note from scratch even though
 // they'd just captured detailed notes — now it seeds a warm first draft they can refine.
+// Is this client's summary still the screen on show? An AI rewrite finishing late used to draw the
+// previous client's summary over the next client's room.
+function _onSummaryOf(id){try{return !!(_navCur&&_navCur.screen==='session-summary'&&String(_navCur.data)===String(id));}catch(e){return false;}}
 async function _aiDraftSummaryFromNotes(id,btn){
   if(!aiEnabled){if(typeof proToast==='function')proToast('AI features are off — turn them on in Settings → AI features');return;}
   const snap=(typeof _providerNotesSnapshot==='function')?_providerNotesSnapshot(id):{sections:[]};
   const secs=(snap&&snap.sections)||[];
   if(!secs.length){if(typeof proToast==='function')proToast('No session notes yet — jot or dictate your notes in the Room first.');return;}
   _flushOpenSummaryNote(id);
-  const existing=((summaryNoteDraft[id]!=null?summaryNoteDraft[id]:((document.getElementById('summary-note')||{}).innerText||''))||'').trim();
+  const existing=_summaryNoteText(id).trim();   // the "Tap Edit" prompt is not a note to replace
   const run=async function(){
     const c=CL[id]||{};const first=(c.name||'').split(' ')[0]||'your client';
     const old=btn?btn.innerHTML:'';if(btn){btn.disabled=true;btn.style.opacity='.6';btn.innerHTML='<i class="ti ti-loader-2"></i> Drafting…';}
@@ -13507,7 +13580,7 @@ async function _aiDraftSummaryFromNotes(id,btn){
       if(!out)throw new Error('empty');
       summaryNoteDraft[id]=out;if(typeof persistSummaryDrafts==='function')persistSummaryDrafts();
       if(typeof proToast==='function')proToast('Drafted from your notes — edit if you like');
-      renderSessionSummary(id);
+      if(_onSummaryOf(id))renderSessionSummary(id);   // she may have moved on to the next client while it ran
     }catch(e){if(btn){btn.disabled=false;btn.style.opacity='1';btn.innerHTML=old;}if(typeof proToast==='function')proToast('Could not reach AI just now — try again, or edit manually');}
   };
   if(existing&&typeof confirmModal==='function'){confirmModal({title:'Replace the note?',body:'This replaces the current client note with a fresh draft from your session notes.',action:'Draft'},run);return;}
@@ -13593,7 +13666,7 @@ function createCustomProd(id){
   clientRecs[id].push(aid);
   _rerenderRecs(id);
 }
-function toggleProdInOffice(id,aid){const a=affiliateLinks.find(x=>x.id===aid);if(a)a.inOffice=!a.inOffice;_rerenderRecs(id);}
+function toggleProdInOffice(id,aid){const a=affiliateLinks.find(x=>x.id===aid);if(a){a.inOffice=!a.inOffice;a._ts=Date.now();try{persistAffiliateLinks();}catch(e){}}_rerenderRecs(id);}
 function _amazonIsStore(u){return /\/(shop|stores)\//i.test(u||'');}
 function _codeLine(code){const c=(code||'').replace(/'/g,"\\'");return `<div style="display:flex;align-items:center;gap:8px;margin-top:4px;padding:7px 11px;background:var(--accent-tint);border:1px dashed var(--accent);border-radius:8px;"><i class="ti ti-discount-2" aria-hidden="true" style="font-size:16px;color:var(--accent-strong);flex-shrink:0;"></i><div style="flex:1;min-width:0;font-size:16px;color:var(--p-mut);">Code <b style="color:var(--accent-strong);letter-spacing:.03em;">${code}</b> at checkout</div><button onclick="event.preventDefault();event.stopPropagation();copyCode('${c}')" style="border:1px solid var(--accent);background:none;color:var(--accent-strong);border-radius:8px;padding:4px 10px;font-size:12px;font-weight:600;cursor:pointer;flex-shrink:0;">Copy</button></div>`;}
 function copyCode(code){_copyToClipboard(code,`Code "${code}" copied`);}
@@ -13687,8 +13760,10 @@ let sessionSummaries=(function(){var d=(typeof window!=='undefined'&&window.__SC
 // active note format, so a saved session can reproduce the full clinical record.
 function _providerNotesSnapshot(id){
   try{
-    const tmpl=noteTemplates[activeNoteTemplate]||noteTemplates.soap;
     const draft=providerNoteDrafts[id];
+    // The draft's OWN format: after she switched format (on this or another device) the active one's
+    // section ids matched nothing, and the empty snapshot replaced the visit's saved clinical notes.
+    const tmpl=(draft&&draft.templateId&&noteTemplates[draft.templateId])||noteTemplates[activeNoteTemplate]||noteTemplates.soap;
     const secs=(tmpl.sections||[]).map(sec=>{
       const v=(draft&&draft.sections&&draft.sections[sec.id])?String(draft.sections[sec.id]).trim():'';
       return (v&&v!=='No notes yet.')?{label:sec.label,text:v}:null;
@@ -13736,12 +13811,12 @@ function _sessionDefaultName(id,iso){
 function _storeSummary(id){
   const c=CL[id];if(!c)return;
   _flushOpenSummaryNote(id);
-  const noteEl=document.getElementById('summary-note');
-  const note=((summaryNoteDraft[id]!=null?summaryNoteDraft[id]:(noteEl?noteEl.innerText:''))||'').trim();
-  const obs=(summaryObsDraft[id]||'').trim();
+  // What the card preview says the client gets: the note and the observations only when switched on.
+  const note=summaryToggles.note?_summaryNoteText(id).trim():'';
+  const obs=summaryToggles.metrics?(summaryObsDraft[id]||'').trim():'';
   const homecare=summaryToggles.homecare?getClientHomecare(id).slice():[];
   // Products captured WITH their per-client "why" reason, brand and icon.
-  if(!(clientRecs[id]||[]).length){
+  if(summaryToggles.products&&!(clientRecs[id]||[]).length){   // products switched off: build no plan behind her back
     try{const _sug=_suggestProductsFor(id,{homecare:homecare,note:note,obs:obs,providerNotes:(typeof _providerNotesSnapshot==='function'?_providerNotesSnapshot(id):null)});
       if(_sug.length){clientRecs[id]=_sug.map(a=>a.id);try{if(typeof persistClientRecs==='function')persistClientRecs();}catch(e){}}}catch(e){}
   }
@@ -13767,7 +13842,10 @@ function _storeSummary(id){
   // Include homecare so the client's summary "Your homecare routine" section actually populates — the
   // entry used to omit it, so every real client saw an empty homecare box on every session summary
   // (it only looked right in the demo, whose seeded summaries hardcode a homecare array). Honors the toggle.
-  const entry={date,title:_name,note:(note+(obs?'\n\nObservations: '+obs:'')).trim(),homecare:homecare.slice(),products:products.slice(),guides:_guides,ts,_draftDate:_dd};
+  const entry={date,title:_name,note:(note+(obs?'\n\nObservations: '+obs:'')).trim(),homecare:homecare.slice(),products:products.slice(),guides:_guides,ts,_draftDate:_dd,
+    prodV:2,   // every product here came from her catalog: the client app shows no 'typed-in' extras for it
+    // The sections she switched off on "Customize card". Additive: an older client app ignores it.
+    hide:{note:!summaryToggles.note,products:!summaryToggles.products,appointment:!summaryToggles.appointment,homecare:!summaryToggles.homecare}};
   if(!Array.isArray(c.summaries))c.summaries=[];
   const _cex=_dd?c.summaries.find(h=>h._draftDate===_dd):null;
   if(_cex)Object.assign(_cex,entry);else c.summaries.unshift(entry);
@@ -13785,7 +13863,13 @@ function _storeSummary(id){
   // right after tapping Send meant the summary never reached them until the next client sync.
   try{if(typeof _syncSpecificClientsToServer==='function')_syncSpecificClientsToServer([id]);else if(typeof _scheduleClientSync==='function')_scheduleClientSync();}catch(e){}
   // Clear the per-client summary drafts now that they're committed into the sent summary.
-  try{if(summaryNoteDraft)delete summaryNoteDraft[id];if(summaryObsDraft)delete summaryObsDraft[id];if(typeof persistSummaryDrafts==='function')persistSummaryDrafts();}catch(e){}
+  // Cleared to null, not deleted: a deleted entry made the upload SMALLER, which the shrink guard
+  // refused for the rest of the session, and a device still holding the draft put it back, so the
+  // client's next visit opened pre-filled with this one's note. A dated null wins the merge.
+  try{if(summaryNoteDraft)summaryNoteDraft[id]=null;if(summaryObsDraft)summaryObsDraft[id]=null;if(typeof persistSummaryDrafts==='function')persistSummaryDrafts();}catch(e){}
+  // The visit is done whichever way the summary went out (Send, or Send & save as link): reset the
+  // room's protocol checklist, or the next visit opened with this one's steps already ticked.
+  try{if(_roomClientId===id)roomStepsDone={};localStorage.removeItem('sc_room_state_'+id);if(_roomClientId===id)_roomClientId='';}catch(e){}
 }
 function renderSummaryHistory(id){
   setNav('clients');
@@ -14106,7 +14190,7 @@ function editSavedSummary(id,i){
   // catalog picker shows exactly what's on this summary. Match saved product names
   // back to catalog IDs where possible; names with no catalog match are ignored by
   // the picker but preserved on save so nothing is silently dropped.
-  _esOrigRecs=(clientRecs[id]||[]).slice();
+  _esOrigRecs=(clientRecs[id]||[]).slice();_esEditId=id;
   const savedNames=(Array.isArray(s.productDetail)&&s.productDetail.length)
     ? s.productDetail.map(p=>(p&&p.name)||String(p))
     : (Array.isArray(s.products)&&s.products.length?s.products.slice():_clientCopyProducts(id,s));
@@ -14176,7 +14260,10 @@ function editSavedSummary(id,i){
   </div>`;
   try{renderProductRecs(id);}catch(e){}
 }
-let _esOrigRecs=null, _esUnmatchedProducts=[];
+let _esOrigRecs=null, _esUnmatchedProducts=[], _esEditId=null;
+// Leaving Edit summary any way other than Save/Cancel (the top Back button, a tab) kept that old
+// summary's products as the client's LIVE plan, and its leftovers showed up in other clients' reviews.
+function _esAbandon(){try{if(_esOrigRecs!==null&&_esEditId){clientRecs[_esEditId]=_esOrigRecs.slice();try{persistClientRecs();}catch(e){}}}catch(e){}_esOrigRecs=null;_esUnmatchedProducts=[];_esEditId=null;}
 // Edit-summary is a two-tab editor that MIRRORS the note-writing screen: a "Provider notes" tab
 // (the clinical sections, in the format they were saved) and a "Client summary" tab (the friendly
 // note + homecare + products). Same layout, same format — so editing a past session feels identical
@@ -14298,50 +14385,64 @@ function _isTattooSession(c){
     return false;
   }catch(e){return false;}
 }
+// Posts the healing-drip start/stop. The cron reads heal_started_at on the SERVER, so a chart flag
+// alone sends nothing: a client without a token yet is synced first (that mints it), and a failure is
+// said out loud instead of leaving the button reading "on" over a drip that never started.
+function _postAftercareDrip(id,body,silent,okMsg){
+  const c=CL[id];if(!c)return;
+  const tok=(typeof Cloud!=='undefined'&&Cloud&&Cloud.token)||'';
+  if(!tok){ if(!silent&&typeof proToast==='function')proToast(okMsg); return; }
+  const fail=function(){ if(typeof proToast==='function')proToast('Couldn’t reach the server to update healing check-ins. Check your connection and try again.',0); };
+  const send=function(){
+    fetch('/api/aftercare-drip',{method:'POST',headers:{'Content-Type':'application/json','Authorization':'Bearer '+tok},body:JSON.stringify(body)})
+      .then(function(r){ if(!r.ok)throw new Error('http '+r.status); if(!silent&&typeof proToast==='function')proToast(okMsg); })
+      .catch(fail);
+  };
+  if(c._token){ send(); return; }
+  Promise.resolve(_syncSpecificClientsToServer([id],{})).then(function(){ if(CL[id]&&CL[id]._token)send(); else fail(); }).catch(fail);
+}
 function _startAftercareDrip(id,silent){
   const c=CL[id];if(!c)return;
   c.aftercareDripAt=Date.now();
   try{saveClients();}catch(e){}
-  const tok=(typeof Cloud!=='undefined'&&Cloud&&Cloud.token)||'';
-  if(c._token&&tok){
-    fetch('/api/aftercare-drip',{method:'POST',headers:{'Content-Type':'application/json','Authorization':'Bearer '+tok},body:JSON.stringify({clientId:id,startedAt:c.aftercareDripAt})}).catch(function(){});
-  }
-  if(!silent&&typeof proToast==='function')proToast('Healing check-ins on — Day 1, 3 & 30 auto-send');
+  _postAftercareDrip(id,{clientId:id,startedAt:c.aftercareDripAt},silent,'Healing check-ins on — Day 1, 3 & 30 auto-send');
 }
 function _stopAftercareDrip(id){
   const c=CL[id];if(!c)return;
   delete c.aftercareDripAt;
   try{saveClients();}catch(e){}
-  const tok=(typeof Cloud!=='undefined'&&Cloud&&Cloud.token)||'';
-  if(c._token&&tok){
-    fetch('/api/aftercare-drip',{method:'POST',headers:{'Content-Type':'application/json','Authorization':'Bearer '+tok},body:JSON.stringify({clientId:id,cancel:true})}).catch(function(){});
-  }
-  if(typeof proToast==='function')proToast('Healing check-ins stopped');
+  _postAftercareDrip(id,{clientId:id,cancel:true},false,'Healing check-ins stopped');
   if(typeof nav==='function')nav('client',id);
 }
 async function sendSummary(id){
   if(!summarySendOn[id])return;
   const c=CL[id];
-  const t=threads.find(x=>x.id===id);
+  // An animal's summary is read by its OWNER: the notice goes to the owner's thread and app, greeting
+  // the owner, not "Hi Thunder!" into the horse's own thread, which no one opens.
+  const mid=(typeof _contactClientId==='function'?_contactClientId(id):id)||id;
+  const mc=CL[mid]||c;
+  const t=threads.find(x=>x.id===mid);
   if(t){t.preview='Your session summary is ready ✨';t.unread=false;}
-  if(!msgStore[id])msgStore[id]=[];
+  if(!msgStore[mid])msgStore[mid]=[];
   const parts=['homecare routine','recommended products','next appointment'].filter((_,i)=>[summaryToggles.homecare,summaryToggles.products,summaryToggles.appointment][i]);
-  const _msg=`Hi ${c.name.split(' ')[0]}! Your session summary ${_visitDatePhrase(providerNoteDrafts[id]&&providerNoteDrafts[id].date)} is ready, including your ${parts.join(', ')}. See you next time! ✨\n\n${_providerFirstName()}`;
+  const _first=String((mc&&mc.name)||'').split(' ')[0];
+  const _whose=(mid!==id)?(String(c.name||'').split(' ')[0]+'\u2019s session summary'):'Your session summary';
+  const _msg=`Hi ${_first}! ${_whose} ${_visitDatePhrase(providerNoteDrafts[id]&&providerNoteDrafts[id].date)} is ready${parts.length?', including '+(mid!==id?'the ':'your ')+parts.join(', '):''}. See you next time! ✨\n\n${_providerFirstName()}`;
   // Tracked like any other message (id + status), so if it fails the bubble shows it and can be tapped
   // to resend with the SAME key; it used to look delivered while the toast said "tap it to resend".
   // Sending the same summary again (after a failure) retries THAT bubble with its key, rather than
   // adding a second bubble and a second message.
-  const _prevS=msgStore[id].find(function(m){return m&&m.from==='me'&&m.text===_msg&&m._mid&&m.status&&m.status!=='sent'&&m.status!=='delivered';});
+  const _prevS=msgStore[mid].find(function(m){return m&&m.from==='me'&&m.text===_msg&&m._mid&&m.status&&m.status!=='sent'&&m.status!=='delivered';});
   const _sMid=_prevS?_prevS._mid:_genMid();
-  if(_prevS){_prevS.status=(CL[id]&&CL[id]._token)?'sending':'pending';_prevS.ts=Date.now();}
-  else msgStore[id].push({from:'me',text:_msg,time:'Just now',ts:Date.now(),_mid:_sMid,status:(CL[id]&&CL[id]._token)?'sending':'pending'});
+  if(_prevS){_prevS.status=(mc&&mc._token)?'sending':'pending';_prevS.ts=Date.now();}
+  else msgStore[mid].push({from:'me',text:_msg,time:'Just now',ts:Date.now(),_mid:_sMid,status:(mc&&mc._token)?'sending':'pending'});
   try{saveMessages();}catch(e){}
   // Send the actual summary content to the connected client's app so it replaces their summary screen
   _postSummaryData(id);
   _storeSummary(id);
   // Notify the client through the tracked, pushed message path — a summary used to arrive with NO
   // notification (blob only), so a real client never knew it was there until they happened to open the app.
-  try{_sendProviderMessageToClient(id,_msg,[],false,null,_sMid);}catch(e){}
+  try{_sendProviderMessageToClient(mid,_msg,[],false,null,_sMid);}catch(e){}
   // Tattoo: a sent session summary means the session is done — auto-start the healing check-in
   // drip (Day 1 / 3 / 30). Only for tattoo providers + real synced clients; restart is fine.
   try{if(c&&c._token&&_isTattooSession(c)){_startAftercareDrip(id);}}catch(e){}
@@ -14370,8 +14471,7 @@ function _postSummaryData(id){
   if(id!=='maya')return;
   const c=CL[id];
   _flushOpenSummaryNote(id);
-  const noteEl=document.getElementById('summary-note');
-  const note=((summaryNoteDraft[id]!=null?summaryNoteDraft[id]:(noteEl?noteEl.innerText:''))||'').trim();
+  const note=_summaryNoteText(id).trim();
   const homecare=summaryToggles.homecare?getClientHomecare(id).slice():[];
   const products=summaryToggles.products?(clientRecs[id]||[]).map(aid=>{const a=affiliateLinks.find(x=>x.id===aid);return a?{name:a.name,brand:a.brand,icon:a.icon,url:a.url,amazon:amazonBuyUrl(a),site:a.site||'',inOffice:!!a.inOffice,siteCode:a.siteCode||'',urlCode:a.urlCode||'',amazonCode:a.amazonCode||'',why:_recReason(id,aid)}:null;}).filter(Boolean):[];
   const short=(note.split('\n')[0]||'').slice(0,120);
@@ -15284,6 +15384,7 @@ function _sendRebookInvite(id,date){
   nav('chat',id);
 }
 function renderRebook(id){
+  if(!(id!=null&&CL[id])){if(typeof nav==='function')nav('clients');return;}   // never fall back to another client's screen
   setNav('clients');const c=CL[id]||Object.values(CL)[0]||{};
   document.getElementById('tt').textContent='Smart Rebook';
   const _fmtWeeksOut=(wk)=>{const d=new Date();d.setDate(d.getDate()+wk*7);return d.toLocaleDateString('en-US',{month:'short',day:'numeric',year:'numeric'});};
@@ -15360,13 +15461,15 @@ async function _pushVcSubsSlim(){
   _pushVcSubsSlim._busy=true;
   try{
     const slim=JSON.parse(JSON.stringify(vcSubmissions||{}));const ups=[];const done=_loadPhotoBackedUp();
-    Object.keys(slim).forEach(function(cid){const sub=slim[cid];if(!sub)return;
+    Object.keys(slim).forEach(function(cid){const top=slim[cid];if(!top)return;
+      [top,top.prev].forEach(function(sub){if(!sub)return;   // the kept earlier consult carries photos too
       ['photos','refs'].forEach(function(f){(Array.isArray(sub[f])?sub[f]:[]).forEach(function(ph){
         if(!ph||typeof ph.src!=='string'||!/^data:/i.test(ph.src))return;
         const pid=_vcPhotoPid(ph.src);
         if(!done.has(pid)){let type='image/jpeg';try{type=ph.src.slice(5,ph.src.indexOf(';'))||type;}catch(e){}ups.push(_uploadGuideFileToServer(pid,{name:'',type:type,data:ph.src}).then(function(r){if(r&&r.ok){_markPhotoBackedUp(pid);return true;}return false;}).catch(function(){return false;}));}
         ph.src='fileref:'+pid;
       });});
+      });
     });
     const res=await Promise.all(ups);
     if(res.every(Boolean)&&typeof _pushKeyNow==='function')_pushKeyNow('sc_pro_vc_subs',JSON.stringify(slim));   // only once every photo it points at is really there
@@ -15376,16 +15479,24 @@ async function _pushVcSubsSlim(){
 // A consult arriving with photo REFERENCES: keep this device's own bytes where it has them, and fetch the
 // rest in the background.
 function _vcFillRefs(cid){
-  try{const sub=vcSubmissions[cid];if(!sub)return;
+  try{const top=vcSubmissions[cid];if(!top)return;
+    [top,top.prev].forEach(function(sub){if(!sub)return;
     ['photos','refs'].forEach(function(f){(Array.isArray(sub[f])?sub[f]:[]).forEach(function(ph){
       if(!ph||typeof ph.src!=='string'||ph.src.indexOf('fileref:')!==0)return;
       const pid=ph.src.slice(8);
       _getGuideFile(pid).then(function(file){if(file&&file.data&&ph.src==='fileref:'+pid){ph.src=file.data;try{if(typeof _idb!=='undefined'&&_idb.available())_idb.set('vc_subs',JSON.stringify(vcSubmissions));}catch(e){}}}).catch(function(){});
-    });});
+    });});});
   }catch(e){}
 }
 // Take a consult blob (from IndexedDB, from the legacy localStorage copy, or straight off the sync)
 // and fold it into memory without ever putting the photos back in localStorage.
+// A new consult for a client replaces the previous one on the review screen; the previous one is kept
+// alongside it (one level, `prev`) so its photos are not simply discarded.
+function _keepPrevConsult(cid,prev){
+  try{const cur=vcSubmissions[cid];if(!cur||!prev||prev===cur)return;
+    const hasStuff=(Array.isArray(prev.photos)&&prev.photos.length)||(Array.isArray(prev.refs)&&prev.refs.length);
+    if(!hasStuff)return;const p=Object.assign({},prev);delete p.prev;cur.prev=p;}catch(e){}
+}
 function _hydrateVcSubs(raw){
   try{
     if(!raw)return false;
@@ -15398,7 +15509,11 @@ function _hydrateVcSubs(raw){
       const nPhotos=function(x){return (x&&Array.isArray(x.photos))?x.photos.length:0;};
       // Never let a copy with FEWER photos replace one that has more — that is how a consult loses
       // the pictures it was submitted with.
-      if(!have||nPhotos(incoming)>=nPhotos(have)){
+      // The NEWER submission wins (a product consult has no photos, and the old rule let an older photo
+      // consult beat it on every other device and then push back over it). Photo count only decides
+      // between two copies of the SAME submission.
+      const ta=Number(incoming.at)||0,tb=Number(have&&have.at)||0;
+      if(!have||ta>tb||(ta===tb&&nPhotos(incoming)>=nPhotos(have))){
         // Keep bytes this device already has for a photo the account now carries by reference.
         try{if(have)['photos','refs'].forEach(function(f){(Array.isArray(incoming[f])?incoming[f]:[]).forEach(function(ph,i){const old=Array.isArray(have[f])?have[f][i]:null;if(ph&&typeof ph.src==='string'&&ph.src.indexOf('fileref:')===0&&old&&typeof old.src==='string'&&/^data:/i.test(old.src)&&_vcPhotoPid(old.src)===ph.src.slice(8))ph.src=old.src;});});}catch(e){}
         vcSubmissions[cid]=incoming;added=true;
@@ -15444,7 +15559,22 @@ function inviteVirtualConsult(id,_force,_kind,_formId,_routine){
   // already submitted for (mirrors the pending-form assignedAt fix). Capture the profile's photo
   // labels ON the invite so the client asks for the RIGHT shots per profession (and none at all for
   // photo-free consults like nutrition/coaching) instead of re-deriving a skin-face grid.
-  vcInvites[id]={...(vcInvites[id]||{}),invited:true,submitted:false,reviewed:false,invitedAt:Date.now(),
+  // One still out with the client (sent, not yet submitted):
+  //  - a DIFFERENT kind replaces it, and her draft photos/answers with it, so ask first;
+  //  - the SAME kind is a resend: keep its invitedAt, or the client app treats it as a new invite and
+  //    wipes everything she had already put in.
+  const _prevInv=vcInvites[id];
+  const _awaiting=!!(_prevInv&&_prevInv.invited&&!_prevInv.submitted&&_prevInv.invitedAt);
+  if(_awaiting&&!_force&&_prevInv.kind&&_prevInv.kind!==v.kind&&typeof confirmModal==='function'){
+    confirmModal({title:'Replace the consult she hasn\u2019t sent yet?',body:(c.name||'This client').split(' ')[0]+' has a '+(_prevInv.title||'consult')+' open that she hasn\u2019t sent back. Sending a '+(v.title||'new consult')+' replaces it, along with anything she had started.',action:'Replace it'},function(){inviteVirtualConsult(id,true,_kind,_formId,_routine);});
+    return;
+  }
+  const _keepAt=(_awaiting&&_prevInv.kind===v.kind)?_prevInv.invitedAt:0;
+  // The review she already sent stays the client's: a consult reviewed before reviewedAt existed is
+  // dated now, or the new invite's reviewed:false would hide it from her app.
+  try{if(_prevInv&&_prevInv.reviewed&&vcSubmissions[id]&&!vcSubmissions[id].reviewedAt)vcSubmissions[id].reviewedAt=Date.now();}catch(e){}
+  vcInvites[id]={...(vcInvites[id]||{}),invited:true,submitted:false,reviewed:false,invitedAt:_keepAt||Date.now(),
+    retakeAsked:_keepAt?(_prevInv.retakeAsked||undefined):undefined,   // a NEW consult is not a retake
     kind:v.kind,title:v.title,photoLabels:Array.isArray(v.photoLabels)?v.photoLabels:[],refTitle:v.refTitle||null,refLabels:Array.isArray(v.refLabels)?v.refLabels:null,
     // The questions travel ON the invite, exactly like photoLabels, so the client is asked the set
     // as it stood when she sent it. Editing the type later cannot rewrite a consult already out.
@@ -15656,6 +15786,7 @@ function sendVcReview(id){
   const _picks=_isProd?_vcPickNames(id):[];
   if(!notes&&!_picks.length){if(typeof proToast==='function')proToast(_isProd?'Add a product or a note first':'Add your review notes first');return false;}
   _doSendVcReview(id,notes);   // async delivery; sync true here lets the caller navigate back
+  try{delete _vcNotesDraft[id];}catch(e){}
   return true;
 }
 // This is a paid service ($25). The review is delivered as a TRACKED message (with a _mid + status)
@@ -15668,6 +15799,7 @@ function _vcPickNames(id){
 async function _doSendVcReview(id,notes){
   const c=CL[id];
   const _isProd=!!(vcInvites[id]&&vcInvites[id].kind==='product');
+  if(vcSubmissions[id])vcSubmissions[id].reviewedAt=Date.now();   // the review the client got stays hers after a re-invite
   vcInvites[id]={...(vcInvites[id]||{}),invited:true,submitted:true,reviewed:true};try{persistVcState();}catch(e){}
   const _picks=_isProd?_vcPickNames(id):[];
   const msg=_isProd
@@ -17160,7 +17292,7 @@ function _vcInvitePickerSheet(id,opts){
   ov.style.cssText='position:fixed;inset:0;margin:0 auto;width:390px;max-width:100%;z-index:99999;background:rgba(0,0,0,.65);display:flex;align-items:flex-end;justify-content:center;';
   ov.onclick=e=>{if(e.target===ov)ov.remove();};
   const typeRows=opts.map((o,i)=>`<label style="display:flex;align-items:center;gap:10px;padding:11px 12px;border:1px solid var(--p-line);border-radius:12px;margin-bottom:7px;cursor:pointer;background:var(--surf1);">
-    <input type="radio" name="vc-type" value="${esc(o.id)}" data-photos="${(o.profile&&Array.isArray(o.profile.photoLabels))?o.profile.photoLabels.length:0}" ${i===0?'checked':''} onchange="_vcAsksSync()" style="accent-color:var(--accent-strong);width:16px;height:16px;flex-shrink:0;">
+    <input type="radio" name="vc-type" value="${esc(o.id)}" data-photos="${(o.profile&&Array.isArray(o.profile.photoLabels))?o.profile.photoLabels.length:0}" data-qs="${(o.profile&&Array.isArray(o.profile.askQuestions))?o.profile.askQuestions.length:0}" data-title="${esc(o.title)}" ${i===0?'checked':''} onchange="_vcAsksSync()" style="accent-color:var(--accent-strong);width:16px;height:16px;flex-shrink:0;">
     <i class="ti ${o.icon}" style="font-size:16px;color:var(--accent-strong);flex-shrink:0;"></i>
     <span style="flex:1;font-size:16px;color:var(--p-ink);">${esc(o.title)}</span>
     <button onclick="event.preventDefault();event.stopPropagation();_vcEditType('${esc(id)}','${esc(o.id)}')" aria-label="Edit ${esc(o.title)}" style="background:none;border:none;color:var(--p-mut);cursor:pointer;padding:3px 2px;flex-shrink:0;"><i class="ti ti-pencil" style="font-size:15px;"></i></button>
@@ -17168,17 +17300,19 @@ function _vcInvitePickerSheet(id,opts){
   const formOpts=`<option value="">No extra form</option>`+forms.map(f=>`<option value="${esc(f.id)}">${esc(f.name||'Form')}</option>`).join('');
   const firstKind=(opts&&opts[0])||null;
   const photoN=(firstKind&&firstKind.profile&&Array.isArray(firstKind.profile.photoLabels))?firstKind.profile.photoLabels.length:0;
+  const qN=(firstKind&&firstKind.profile&&Array.isArray(firstKind.profile.askQuestions))?firstKind.profile.askQuestions.length:0;
   const asksHTML=`<div style="background:var(--surf1);border:1px solid var(--p-line3);border-radius:12px;padding:11px 13px;margin-bottom:14px;">
     <div style="font-size:14px;font-weight:600;color:var(--p-mut);text-transform:uppercase;letter-spacing:.05em;margin-bottom:7px;">${esc(first)} will be asked for</div>
     <div id="vc-asks" style="font-size:16px;color:var(--p-ink);line-height:1.9;">
       <div id="vc-ask-photo-row" style="${photoN?'':'display:none;'}"><i class="ti ti-camera" style="color:var(--accent-strong);width:18px;"></i> <span id="vc-ask-photo-n">${photoN} photo${photoN===1?'':'s'}</span></div>
       <div id="vc-ask-routine-row"><i class="ti ti-list-check" style="color:var(--accent-strong);width:18px;"></i> The products they use at home</div>
+      <div id="vc-ask-q-row" style="${qN?'':'display:none;'}"><i class="ti ti-help-circle" style="color:var(--accent-strong);width:18px;"></i> <span id="vc-ask-q-n">${qN} question${qN===1?'':'s'}</span></div>
       <div><i class="ti ti-message-circle" style="color:var(--accent-strong);width:18px;"></i> What they are hoping for</div>
       <div id="vc-ask-form-row" style="display:none;"><i class="ti ti-file-text" style="color:var(--accent-strong);width:18px;"></i> <span id="vc-ask-form-name">Your form</span></div>
     </div>
   </div>`;
   ov.innerHTML=`<div style="background:var(--surf2);border:1px solid var(--p-line);border-radius:16px 16px 0 0;width:100%;padding:18px 16px calc(18px + env(safe-area-inset-bottom,0px));max-height:82%;overflow-y:auto;">
-    <div style="font-size:16px;font-weight:600;color:var(--p-ink);margin-bottom:4px;">Photo consult for ${esc(first)}</div>
+    <div id="vc-sheet-h" data-first="${esc(first)}" style="font-size:16px;font-weight:600;color:var(--p-ink);margin-bottom:4px;">${esc((firstKind&&firstKind.title)||'Photo consult')} for ${esc(first)}</div>
     <div style="font-size:16px;color:var(--p-mut);margin-bottom:14px;">Here is exactly what they will see.</div>
     ${asksHTML}
     <div style="font-size:14px;font-weight:600;color:var(--p-mut);text-transform:uppercase;letter-spacing:.05em;margin-bottom:8px;">Consult type</div>
@@ -17207,6 +17341,12 @@ function _vcAsksSync(){
     const pRow=document.getElementById('vc-ask-photo-row'),pN=document.getElementById('vc-ask-photo-n');
     if(pRow)pRow.style.display=n?'':'none';
     if(pN)pN.textContent=n+' photo'+(n===1?'':'s');
+    const q=sel?(parseInt(sel.getAttribute('data-qs'),10)||0):0;
+    const qRow=document.getElementById('vc-ask-q-row'),qN=document.getElementById('vc-ask-q-n');
+    if(qRow)qRow.style.display=q?'':'none';
+    if(qN)qN.textContent=q+' question'+(q===1?'':'s');
+    const h=document.getElementById('vc-sheet-h');
+    if(h&&sel){const t=sel.getAttribute('data-title')||'Photo consult';h.textContent=t+' for '+(h.getAttribute('data-first')||'');}
   }catch(e){}
   try{
     const rt=document.getElementById('vc-ask-routine'),rtRow=document.getElementById('vc-ask-routine-row');
@@ -17491,7 +17631,16 @@ function _vcSendInvite(id){
   const routine=rtEl?!!rtEl.checked:true;
   inviteVirtualConsult(id,true,kind||undefined,formId||undefined,routine);
 }
+// What she has typed in the review notes, kept across a re-render (choosing "Check back in" or
+// Keep/Change/Stop on a routine step redraws the screen and used to clear the box).
+const _vcNotesDraft={};
+let _vcCurrentId=null;
+try{document.addEventListener('input',function(e){const t=e.target;if(t&&t.id==='vc-review-notes'&&_vcCurrentId)_vcNotesDraft[_vcCurrentId]=t.value;},true);}catch(e){}
 function renderVirtualClient(id){
+  // Keep what is in the notes box before it is redrawn, even if no input event fired (dictation,
+  // autofill): the follow-up pills and Keep/Change/Stop all redraw this screen.
+  try{const ta=document.getElementById('vc-review-notes');if(ta&&_vcCurrentId===id)_vcNotesDraft[id]=ta.value;}catch(e){}
+  _vcCurrentId=id;
   setNav('clients');
   const c=CL[id];
   const v=_vcProfileFor(id);   // resolve by the consult kind actually invited/submitted, not the default
@@ -17518,7 +17667,7 @@ function renderVirtualClient(id){
   ${(vcInvites[id]&&vcInvites[id].referredAt)?`<div style="margin:0 16px 12px;background:var(--p-surf2);border:1px solid var(--p-line3);border-radius:12px;padding:10px 13px;font-size:16px;color:var(--p-mut);line-height:1.5;"><i class="ti ti-stethoscope" style="font-size:16px;color:var(--p-green);"></i> You referred them to a doctor on ${_fileEsc(new Date(vcInvites[id].referredAt).toLocaleDateString('en-US',{month:'short',day:'numeric'}))}.</div>`:''}
   <div style="padding:12px 16px 0;display:flex;align-items:center;justify-content:flex-end;gap:8px;">
     ${_pf?'':`<button style="border:1px solid var(--p-line-ctl);background:var(--surf1);border-radius:8px;padding:6px 12px;font-size:16px;color:var(--p-mut2);cursor:pointer;font-weight:500;" onclick="confirmModal({title:'Ask for new photos?',body:'This sends ${_jsAttr(String((CL[id]&&CL[id].name)||'your client').split(' ')[0])} a message and reopens the photo screen on their phone, with the tips at the top. Everything they already sent is kept.',action:'Ask for new photos'},'()=>vcAskForRetake(\'${_jsAttr(id)}\')')"><i class="ti ti-camera-off" style="font-size:16px;"></i> Can't read these</button>`}
-    <button style="border:1px solid var(--btn-edge);background:var(--accent);border-radius:8px;padding:6px 14px;font-size:16px;color:var(--accent-ink);cursor:pointer;font-weight:500;" onclick="sendVcReview('${id}');${back}">Send review</button>
+    <button style="border:1px solid var(--btn-edge);background:var(--accent);border-radius:8px;padding:6px 14px;font-size:16px;color:var(--accent-ink);cursor:pointer;font-weight:500;" onclick="if(sendVcReview('${id}')){${back}}">Send review</button>
   </div>
   <div style="padding:10px 16px 0;display:flex;align-items:center;gap:10px;">${av(c,40)}<div><div style="font-size:16px;font-weight:500;color:var(--p-ink);">${_clientNameLink(id,c.name,{color:'var(--p-ink)'})}</div><div style="font-size:16px;color:var(--p-mut);">Submitted ${vcStamp} · ${_fileEsc(c.concerns)}</div></div></div>
   <div style="padding:10px 16px 0;">
@@ -17526,6 +17675,10 @@ function renderVirtualClient(id){
     <div style="display:grid;grid-template-columns:1fr 1fr 1fr;gap:6px;margin-bottom:14px;">
       ${photoItems.map(o=>realImg(o,'ti-user-circle','var(--p-amber-bg)','var(--accent)')).join('')}
     </div>`}
+    ${(sub&&sub.prev&&Array.isArray(sub.prev.photos)&&sub.prev.photos.length)?`<div style="font-size:14px;font-weight:500;color:var(--p-mut);text-transform:uppercase;letter-spacing:.07em;margin-bottom:8px;">Earlier photos${sub.prev.date?' · '+_fileEsc(sub.prev.date):''}</div>
+    <div style="display:grid;grid-template-columns:1fr 1fr 1fr;gap:6px;margin-bottom:14px;opacity:.85;">
+      ${sub.prev.photos.map(o=>realImg(o,'ti-user-circle','var(--p-amber-bg)','var(--accent)')).join('')}
+    </div>`:''}
     ${refItems?`<div style="font-size:14px;font-weight:500;color:var(--p-mut);text-transform:uppercase;letter-spacing:.07em;margin-bottom:8px;display:flex;align-items:center;gap:5px;"><i class="ti ti-photo-star" style="font-size:16px;color:var(--p-purple);"></i> ${v.refTitle||'Reference photos'}</div>
     <div style="display:grid;grid-template-columns:1fr 1fr 1fr;gap:6px;margin-bottom:14px;">
       ${refItems.map(o=>realImg(o,'ti-sparkles','var(--p-purple-bg)','var(--p-purple)')).join('')}
@@ -17564,7 +17717,7 @@ function renderVirtualClient(id){
       <div style="padding:8px;border-top:1px solid var(--p-line2);"><button type="button" onclick="toggleProductPicker('${id}')" style="width:100%;background:var(--p-bg);border:1px solid var(--p-line-ctl);color:var(--p-mut);border-radius:8px;padding:8px;font-size:16px;font-weight:600;cursor:pointer;font-family:inherit;">Done adding</button></div>
     </div>
     <div style="height:12px;"></div>`:''}
-    <textarea id="vc-review-notes" class="fi" style="height:180px;resize:vertical;line-height:1.6;margin-bottom:8px;" placeholder="${v.kind==='product'?'Why these products, how to use them, what to stop, and what to start with first...':'Confirm the look in pro terms, answer their questions, recommend a treatment plan and next steps...'}"></textarea>
+    <textarea id="vc-review-notes" class="fi" style="height:180px;resize:vertical;line-height:1.6;margin-bottom:8px;" placeholder="${v.kind==='product'?'Why these products, how to use them, what to stop, and what to start with first...':'Confirm the look in pro terms, answer their questions, recommend a treatment plan and next steps...'}">${String(_vcNotesDraft[id]||'').replace(/&/g,'&amp;').replace(/</g,'&lt;')}</textarea>
     <button class="btnp" style="border-radius:8px;margin-top:8px;margin-bottom:8px;" onclick="if(sendVcReview('${id}')){${back}}"><i class="ti ti-send"></i> Send review to ${_fileEsc(c.name.split(' ')[0])}</button>
   </div>`;
   if(v.kind==='product'){try{renderProductRecs(id);}catch(e){}}
@@ -18552,6 +18705,12 @@ function persistWorkspace(){
     localStorage.setItem('sc_workspace',_wv);
     if(typeof _pushKeyNow==='function')_pushKeyNow('sc_workspace',_wv);   // push now — recs/homecare/products must not ride the debounce
   }catch(e){}
+  // The dedicated keys too. The client-file plan editor, Shop > Send, the homecare editors and the
+  // "why I picked this" box saved ONLY the workspace, and every reload reads the dedicated keys after it
+  // — so the next pull put the old plan back on every device. Each is guarded (_libSafeToPersist).
+  try{persistClientRecs();}catch(e){}
+  try{persistRecReasons();}catch(e){}
+  try{persistClientHomecare();}catch(e){}
 }
 function loadWorkspace(){
   try{
@@ -19914,8 +20073,18 @@ function submitSignOnDevice(fid,cid){
     _applyIntakeVitals(CL[cid],fid,q=>ans[q.id]);
     // store the signed form on the client's file so it lives in Forms & documents
     CL[cid].submittedForms=CL[cid].submittedForms||[];
+    // EVERY signing is its own record. This used to skip when the client had signed the same form
+    // before, so a per-visit consent signed in person today saved no answers at all behind a
+    // "signed" toast. A double tap inside a couple of seconds is the only thing de-duplicated.
     var _sodForm=null;
-    if(!CL[cid].submittedForms.some(sf=>sf.formId===fid&&sf.signed)){_sodForm={formId:fid,title:tmpl.name,answers:ans,flagged:[],date:'Today',at:Date.now(),signed:true,qs:(tmpl&&Array.isArray(tmpl.qs))?tmpl.qs:null};CL[cid].submittedForms.unshift(_sodForm);}
+    const _sodRecent=CL[cid].submittedForms.find(sf=>sf.formId===fid&&sf.signed&&sf.sod&&(Date.now()-(Number(sf.at)||0))<3000);
+    if(!_sodRecent){
+      // Keep the drawn signature itself, scaled down, not just the fact that one was drawn.
+      let _sig='';try{const pad=document.getElementById('sign-pad');if(pad&&pad.toDataURL){const w=Math.min(480,pad.width||480),h=Math.round(w*((pad.height||160)/(pad.width||480)));const cv=document.createElement('canvas');cv.width=w;cv.height=h;const cx=cv.getContext('2d');cx.fillStyle='#fff';cx.fillRect(0,0,w,h);cx.drawImage(pad,0,0,w,h);_sig=cv.toDataURL('image/jpeg',0.7);if(_sig.length>150000)_sig='';}}catch(e){_sig='';}
+      _sodForm={formId:fid,title:tmpl.name,answers:ans,flagged:[],date:'Today',at:Date.now(),signed:true,sod:1,qs:(tmpl&&Array.isArray(tmpl.qs))?tmpl.qs:null};
+      if(_sig)_sodForm.sigImg=_sig;
+      CL[cid].submittedForms.unshift(_sodForm);
+    }
     _captureBirthday(CL[cid],fid,ans);_capturePhotoConsent(CL[cid],fid,ans);_captureRefPhoto(cid,fid,ans);
     try{if(typeof saveClients==='function')saveClients();}catch(e){}
     try{if(typeof _pushKeyNow==='function')_pushKeyNow('sc_clients',_lsGet('sc_clients')||'');}catch(e){}   // push now so an in-person signed form can't be lost to the debounce
@@ -19929,7 +20098,7 @@ function submitSignOnDevice(fid,cid){
       if(_sodTok&&_sodForm){
         var _sodIdem='sod'+Date.now().toString(36)+Math.random().toString(36).slice(2,6);
         fetch('/api/provider-form',{method:'POST',headers:{'Content-Type':'application/json','Authorization':'Bearer '+_sodTok},
-          body:JSON.stringify({clientId:cid,formId:fid,title:tmpl.name,answers:ans,flagged:[],signed:true,qs:_sodForm.qs,idem:_sodIdem})})
+          body:JSON.stringify({clientId:cid,formId:fid,title:tmpl.name,answers:ans,flagged:[],signed:true,qs:_sodForm.qs,sigImg:_sodForm.sigImg||undefined,idem:_sodIdem})})
           .then(function(r){return r&&r.ok?r.json():null;}).then(function(j){
             if(j&&j.ok&&j.id){try{_sodForm.evId=j.id;if(typeof _markEventSeen==='function')_markEventSeen(j.id);if(typeof saveClients==='function')saveClients();if(typeof _pushKeyNow==='function')_pushKeyNow('sc_clients',_lsGet('sc_clients')||'');}catch(e){}}
           }).catch(function(){});
@@ -20315,7 +20484,11 @@ function sendCheckin(id){
     icon:'ti-clipboard-heart', iconBg:'var(--accent-tint)', iconColor:'var(--accent-strong)',
     message:msg,
     subject:'Your pre-visit check-in'+((typeof bizInfo!=='undefined'&&bizInfo&&bizInfo.name)?(' · '+bizInfo.name):''),
-    appOption:false
+    appOption:false,
+    // A check-in sent again (no visit booked, or a second ask for the same visit) must open fresh: the
+    // client keys "done" on the visit date plus this stamp, so without a new one her link just said
+    // "Check-in complete". Stamped only once the link actually goes out.
+    onSend:function(cid){const cc=CL[cid];if(!cc)return;cc.checkinReqAt=Date.now();try{saveClients();}catch(e){}try{if(typeof _pushClientNow==='function')_pushClientNow(cid);}catch(e){}}
   });
 }
 // ===== Client app sync + invites (Stage 2) =====
@@ -20344,7 +20517,8 @@ function _assembleClientData(id){
   // provider had more than a few clients (this caused real 413 errors). The
   // client app now fetches branding directly from the provider's shared store
   // (see api/client-data.js), so it only ever needs to be sent once, not N times.
-  const aftercare=((typeof getClientHomecare==='function'?getClientHomecare(id):[])||[]);
+  // A line she blanked out in place would reach the client as an empty, tickable step.
+  const aftercare=((typeof getClientHomecare==='function'?getClientHomecare(id):[])||[]).filter(s=>typeof s==='string'&&s.trim());
   let availability=null;
   try{availability=(typeof SlickBridge!=='undefined'&&SlickBridge.getAvailability)?SlickBridge.getAvailability():null;}catch(e){}
   let products=[];
@@ -20362,7 +20536,7 @@ function _assembleClientData(id){
   try{
     const sub=(typeof vcSubmissions!=='undefined')?vcSubmissions[id]:null;
     const inv=(typeof vcInvites!=='undefined')?vcInvites[id]:null;
-    if(sub&&Array.isArray(sub.routine)&&sub.routine.length&&inv&&inv.reviewed){
+    if(sub&&Array.isArray(sub.routine)&&sub.routine.length&&((inv&&inv.reviewed)||sub.reviewedAt)){
       const items=sub.routine.map(function(x){return {name:x.name||'',when:x.when||'',note:x.note||'',feedback:x.feedback||'',verdict:x.verdict||''};});
       if(items.some(function(x){return x.feedback||x.verdict;})||String(sub.routineNote||'').trim()){
         routineReview={date:sub.date||'',note:String(sub.routineNote||''),items:items};
@@ -20377,7 +20551,7 @@ function _assembleClientData(id){
   // formId travels too: the client app needs it to tell whether a form it marked done optimistically
   // ACTUALLY reached the provider. Without that proof it cannot safely expire a stale "done" mark,
   // and a submission that never landed hides the form on that device for good.
-  const forms=(Array.isArray(c.submittedForms)?c.submittedForms.map(f=>({formId:f.formId||'',title:f.title||'Form',status:f.signed?'signed':'submitted',date:f.date||''})):[]);
+  const forms=(Array.isArray(c.submittedForms)?c.submittedForms.map(f=>({formId:f.formId||'',title:f.title||'Form',status:f.signed?'signed':'submitted',date:f.date||'',at:Number(f.at)||0})):[]);
   // "Sent = permanent": resolve each assigned form/guide/course from the live library and keep a
   // snapshot on the pending entry. If the provider later deletes it from their library, we serve the
   // last snapshot so a client never loses something they were already given. (Files are fetched by
@@ -20393,8 +20567,8 @@ function _assembleClientData(id){
   const pendingGuides=(Array.isArray(c.pendingGuides)?c.pendingGuides:[]).map(pg=>{
     const g=(typeof _findGuide==='function')?_findGuide(pg.guideId):null;
     if(g){const out={guideId:pg.guideId,title:g.title||'Guide',icon:g.icon||'📄',cat:g.cat||'',url:g.url||'',tips:Array.isArray(g.tips)?g.tips:[],
-      files:_guideFileList(g),fileName:g.fileName||'',fileType:g.fileType||'',hasFile:!!(g.hasFile||g.fileData)};pg.snapshot=out;return out;}
-    return pg.snapshot?Object.assign({},pg.snapshot,{guideId:pg.guideId}):null;
+      files:_guideFileList(g),fileName:g.fileName||'',fileType:g.fileType||'',hasFile:!!(g.hasFile||g.fileData)};pg.snapshot=out;return Object.assign({},out,{assignedAt:Number(pg.assignedAt)||0});}
+    return pg.snapshot?Object.assign({},pg.snapshot,{guideId:pg.guideId,assignedAt:Number(pg.assignedAt)||0}):null;
   }).filter(Boolean);
   // Full courses the provider assigned, rendered by the client's in-app course player.
   const pendingCourses=(Array.isArray(c.pendingCourses)?c.pendingCourses:[]).map(pc=>{
@@ -20403,7 +20577,7 @@ function _assembleClientData(id){
     if(co){out=(typeof _coursePayload==='function')?_coursePayload(co):null;if(out)pc.snapshot=out;}
     if(!out)out=pc.snapshot||null;
     if(!out)return null;
-    return Object.assign({},out,{why:pc.why||''});
+    return Object.assign({},out,{why:pc.why||'',assignedAt:Number(pc.assignedAt)||0});
   }).filter(Boolean);
   // Active virtual-consult invite for this client (if any), so the invite reaches them
   // cross-device, not just via the same-browser SlickBridge. Dropped once they submit.
@@ -20414,7 +20588,10 @@ function _assembleClientData(id){
       const vp=(vi&&vi.kind)?vi:((typeof _vcProfile==='function')?_vcProfile():{});
       vcInvite={kind:vp.kind||'skin',title:vp.title||'Photo consult',fee:(typeof vcFee!=='undefined'?vcFee:'')||'',invitedAt:vi.invitedAt||0,
         photoLabels:Array.isArray(vp.photoLabels)?vp.photoLabels:null,refTitle:vp.refTitle||null,refLabels:Array.isArray(vp.refLabels)?vp.refLabels:null,
-        routine:(vi.routine!==false)};}
+        routine:(vi.routine!==false),
+        // The questions the provider chose. A real client gets the invite only through here, so without
+        // this a product consult reached her phone with none of its questions.
+        askQuestions:Array.isArray(vi.askQuestions)?vi.askQuestions.slice():(Array.isArray(vp.askQuestions)?vp.askQuestions.slice():undefined)};}
   }catch(e){}
   // Before/after progress photos for the client's OWN app view — only when the provider turned on
   // sharing for this client. Sends lightweight refs (pid + meta), not bytes; the client app fetches
@@ -20451,7 +20628,7 @@ function _assembleClientData(id){
           treatment:a.treatment||'',lastVisit:a.lastVisit||'',nextVisit:a.nextVisit||'',
           sessions:a.sessions||0,seriesTotal:a.seriesTotal||0,
           summaries:(Array.isArray(a.summaries)?a.summaries:[]).slice(0,8),
-          aftercare:((typeof getClientHomecare==='function'?getClientHomecare(aid):[])||[]),
+          aftercare:((typeof getClientHomecare==='function'?getClientHomecare(aid):[])||[]).filter(s=>typeof s==='string'&&s.trim()),
           progressPhotos:_progressPhotoRefs(aid)};
       }).filter(function(x){return x.name;});
     }
@@ -23887,6 +24064,10 @@ async function confirmSendRoutine(cid){
   const note=(routineDraft.note||'').trim();
   if(!routineDraft.items.length)return;
   if(!clientRecs[cid])clientRecs[cid]=[];
+  // Editing a sent routine: a product she DROPPED from it comes off the client's list too. Only the
+  // ids the previous routine itself put there, so a product recommended on its own stays.
+  const _prevItems=((currentSentRoutines()[cid]||{}).items)||[];
+  _prevItems.forEach(aid=>{if(!routineDraft.items.includes(aid)){const k=clientRecs[cid].indexOf(aid);if(k>=0)clientRecs[cid].splice(k,1);}});
   const products=[];
   routineDraft.items.forEach(aid=>{
     if(!clientRecs[cid].includes(aid))clientRecs[cid].push(aid);
@@ -23897,6 +24078,7 @@ async function confirmSendRoutine(cid){
   // `date` is a label for the screen ('Just now'), which cannot order two devices' copies. ts can.
   currentSentRoutines()[cid]={name,note,items:routineDraft.items.slice(),products,date:'Just now',ts:Date.now()};
   persistSentRoutines();
+  try{persistClientRecs();}catch(e){}
   _persistAndSyncClient(cid);
   closeSendProd();
   const c=CL[cid];
@@ -23929,7 +24111,7 @@ async function confirmSendCourse(courseId,cid){
     // Real client: assign the full course so it lands in their in-app course player via
     // /api/client-data (files are fetched on demand by id). saveClients() triggers the sync.
     if(!Array.isArray(c.pendingCourses))c.pendingCourses=[];
-    if(!c.pendingCourses.some(x=>x.id===co.id))c.pendingCourses.push({id:co.id,assignedAt:Date.now()});
+    _assignPending(c.pendingCourses,'id',co.id);   // a re-send is a new instance
     try{saveClients();}catch(e){}
     try{if(typeof _pushKeyNow==='function')_pushKeyNow('sc_clients',_lsGet('sc_clients')||'');}catch(e){}
     if(!c._token){closeSendProd();if(typeof proToast==='function')proToast(`${c.name.split(' ')[0]} hasn't been invited to the app yet, invite them first, then this course will be waiting for them`);return;}
@@ -29144,7 +29326,7 @@ function _evIngestFail(ev,e){
   }catch(_){}
 }
 function _seenEventIds(){try{return JSON.parse(localStorage.getItem('sc_seen_events')||'[]');}catch(e){return [];}}
-function _markEventSeen(id){try{const a=_seenEventIds();if(a.indexOf(id)<0){a.push(id);if(a.length>1000)a.splice(0,a.length-1000);const v=JSON.stringify(a);localStorage.setItem('sc_seen_events',v);if(typeof _pushKeyNow==='function')_pushKeyNow('sc_seen_events',v);}}catch(e){}}
+function _markEventSeen(id){try{const a=_seenEventIds();if(a.indexOf(id)<0){a.push(id);if(a.length>5000)a.splice(0,a.length-5000);const v=JSON.stringify(a);localStorage.setItem('sc_seen_events',v);if(typeof _pushKeyNow==='function')_pushKeyNow('sc_seen_events',v);}}catch(e){}}
 // Mark many event ids seen in ONE read+write instead of re-parsing/re-writing the
 // whole (up-to-1000-element) array once per event, matters when a provider returns
 // after being offline and a burst of client submissions all arrive at once.
@@ -29154,7 +29336,7 @@ function _markEventsSeen(ids){
     const a=_seenEventIds();const have=new Set(a);let added=false;
     ids.forEach(id=>{if(!have.has(id)){a.push(id);have.add(id);added=true;}});
     if(!added)return;
-    if(a.length>1000)a.splice(0,a.length-1000);
+    if(a.length>5000)a.splice(0,a.length-5000);
     const v=JSON.stringify(a);
     localStorage.setItem('sc_seen_events',v);
     // Push the seen-event set to the server NOW, not on the 700ms debounce. Otherwise a quick
@@ -29271,7 +29453,11 @@ function _reconcileEventAttachments(events){
       if(c.submittedForms.some(f=>f&&f.evId===ev.id))continue;   // already on the chart — nothing to heal
       // Adopt a locally-created in-person (sign-on-device) form not yet linked to its server event:
       // stamp the evId onto it rather than adding a duplicate. Matches on formId + signed flag.
-      const _adopt=c.submittedForms.find(f=>f&&!f.evId&&f.formId===payload.formId&&(!!f.signed===!!payload.signed));
+      // A form signed in person more than once has several candidates: take the one signed closest
+      // to this event, so today's signing is not stamped onto last month's record.
+      const _evMs=_eventAtMs(ev)||0;
+      const _adopt=c.submittedForms.filter(f=>f&&!f.evId&&f.formId===payload.formId&&(!!f.signed===!!payload.signed))
+        .sort((a,b)=>Math.abs((Number(a.at)||0)-_evMs)-Math.abs((Number(b.at)||0)-_evMs))[0];
       if(_adopt){_adopt.evId=ev.id;touched=true;continue;}
       const title=payload.title||'Form';
       const formDate=_eventDateLabel(ev,payload.date||'Recent');
@@ -29633,14 +29819,34 @@ async function syncClientEvents(){
         providerSystemNotify('Data deletion request',`${name} requested deletion of their data.`);
         touchedNotif=true;
       }else if(ev.kind==='vc_submit'){
+        const _prevSub=vcSubmissions[cid];
+        const _invNow=vcInvites[cid]||{};
+        const _evAt=_eventAtMs(ev)||0;
+        // Idempotent. An event re-read after the seen list rolled over (or by a device that woke with
+        // a stale one) used to flip a REVIEWED consult back to Needs review and put an older
+        // submission over the newer one, dropping her verdicts and notes.
+        if(_prevSub&&((_prevSub.evId!=null&&String(_prevSub.evId)===String(ev.id))||(_invNow.subEvId!=null&&String(_invNow.subEvId)===String(ev.id)))){return;}
+        if(_prevSub&&_evAt&&Number(_prevSub.at)>_evAt){return;}
+        // Sent for an EARLIER invite than the one now out (a late or retried send): keep it, but it
+        // must not close the consult she has just sent.
+        const _forOld=!!(payload.invitedAt&&_invNow.invitedAt&&Number(payload.invitedAt)<Number(_invNow.invitedAt)&&_invNow.submitted===false);
         vcSubmissions[cid]={photos:_sanVcPhotos(payload.photos),refs:(Array.isArray(payload.refs)&&payload.refs.length)?_sanVcPhotos(payload.refs):null,goals:payload.goals||'',answers:_sanVcAnswers(payload.answers),measures:payload.measures||null,
           routine:_sanRoutine(payload.routine),flags:_sanVcFlags(payload.flags),
-          date:_eventDateLabel(ev,payload.date||'Today'),kind:payload.kind||'skin',title:payload.title||'Photo consult'};
-        vcInvites[cid]={...(vcInvites[cid]||{}),invited:true,submitted:true,reviewed:false};   // a fresh submission must return to "needs review", even if a prior one was reviewed
+          date:_eventDateLabel(ev,payload.date||'Today'),kind:payload.kind||'skin',title:payload.title||'Photo consult',
+          at:_eventAtMs(ev)||Date.now(),   // when it was SUBMITTED: the newer consult wins on every device, whatever its photo count
+          evId:ev.id};
+        // "Can't read these" promises the client that what she already sent is kept: a retake that
+        // only re-sends photos carries the goals, answers and routine over from the first send.
+        if(_invNow.retakeAsked&&_prevSub){const n=vcSubmissions[cid];
+          if(!n.goals&&_prevSub.goals)n.goals=_prevSub.goals;
+          if((!n.answers||!Object.keys(n.answers).length)&&_prevSub.answers)n.answers=_prevSub.answers;
+          if((!Array.isArray(n.routine)||!n.routine.length)&&Array.isArray(_prevSub.routine)&&_prevSub.routine.length)n.routine=_prevSub.routine;}
+        try{_keepPrevConsult(cid,_prevSub);}catch(e){}
+        if(!_forOld)vcInvites[cid]={...(vcInvites[cid]||{}),invited:true,submitted:true,reviewed:false,subEvId:ev.id};   // a fresh submission must return to "needs review", even if a prior one was reviewed
         try{if(typeof persistVcState==='function')persistVcState();}catch(e){}
         notifFeed.unshift({id:'evv'+ev.id,type:'vc',icon:'ti-sparkles',col:'var(--p-purple-bg)',ic:'var(--p-purple)',
-          title:'Photo consult submitted',body:`${name} sent photos for review.`,time:'Just now',ts:Date.now(),read:false,action:'client',data:cid});
-        if(_notifOn('photoUploaded'))providerSystemNotify('Photo consult submitted',`${name} sent photos for your review.`);
+          title:(payload.kind==='product'?'Product consult answered':'Photo consult submitted'),body:(payload.kind==='product'?`${name} answered your product questions.`:`${name} sent photos for review.`),time:'Just now',ts:Date.now(),read:false,action:'client',data:cid});
+        if(_notifOn('photoUploaded'))providerSystemNotify(payload.kind==='product'?'Product consult answered':'Photo consult submitted',payload.kind==='product'?`${name} answered your product questions.`:`${name} sent photos for your review.`);
         touchedVc=true;touchedNotif=true;
       }
     }catch(_evErr){ _evFailedIds[ev.id]=1; _evIngestFail(ev,_evErr); } });
@@ -29670,7 +29876,7 @@ async function syncClientEvents(){
       // (per-photo, called from persistCapturedPhotos). Do NOT push the sc_captured_photos KV here — it's
       // empty on IDB devices and would overwrite any real server copy with '' (silent photo wipe).
       if(touchedPhotos){try{if(typeof _backupPhotosToServer==='function')_backupPhotosToServer();}catch(e){}}
-      if(touchedVc&&typeof _pushKeyNow==='function'){try{if(typeof persistVcState==='function')persistVcState();}catch(e){}flushes.push(_pushKeyNow('sc_pro_vc_subs',_lsGet('sc_pro_vc_subs')||''));flushes.push(_pushKeyNow('sc_pro_vc_invites',_lsGet('sc_pro_vc_invites')||''));}
+      if(touchedVc&&typeof _pushKeyNow==='function'){try{if(typeof persistVcState==='function')persistVcState();}catch(e){}/* sc_pro_vc_subs is pushed by persistVcState itself (its bytes live in IndexedDB, so reading localStorage here pushed an EMPTY string over every consult on the account) */flushes.push(_pushKeyNow('sc_pro_vc_invites',_lsGet('sc_pro_vc_invites')||''));}
       await Promise.all(flushes.map(p=>p&&p.catch?p.catch(()=>{}):p));
     }catch(e){}
     // Foreground cue: if genuinely new client activity arrived this pass (not the initial backlog),
@@ -31559,7 +31765,7 @@ SlickBridge.on('form-completed',d=>{
 
 SlickBridge.on('virtual-consult-submitted',d=>{
   const cid=d.clientId||'maya';
-  vcSubmissions[cid]={photos:_sanVcPhotos(d.photos),refs:(Array.isArray(d.refs)&&d.refs.length)?_sanVcPhotos(d.refs):null,goals:d.goals||'',answers:_sanVcAnswers(d.answers),measures:d.measures||null,flags:_sanVcFlags(d.flags),date:d.date||'Today',kind:d.kind||'skin',title:d.title||'Photo consult'};
+  vcSubmissions[cid]={photos:_sanVcPhotos(d.photos),refs:(Array.isArray(d.refs)&&d.refs.length)?_sanVcPhotos(d.refs):null,goals:d.goals||'',answers:_sanVcAnswers(d.answers),measures:d.measures||null,flags:_sanVcFlags(d.flags),date:d.date||'Today',kind:d.kind||'skin',title:d.title||'Photo consult',at:Date.now()};
   vcInvites[cid]={...(vcInvites[cid]||{}),invited:true,submitted:true,reviewed:false};   // a fresh submission must return to "needs review", even if a prior one was reviewed
   try{persistVcState();}catch(e){}
   const nm=(CL[cid]&&CL[cid].name.split(' ')[0])||'A client';
@@ -33835,6 +34041,9 @@ function deleteAffiliate(ei){
     try{_libForget('sc_affiliate_links',_a);}catch(e){}   // her OWN products had no delete record at all
     try{_markAffiliateCustom();}catch(e){}   // deleting even a demo product is a customization — don't reseed it back
     affiliateLinks.splice(ei,1);
+    // Off every client's plan too, or it lingered as an invisible row (Move up did nothing, a plan of
+    // only that product showed a header and no products).
+    try{let _ch=false;Object.keys(clientRecs||{}).forEach(function(cid){const l=clientRecs[cid];if(!Array.isArray(l))return;const n=l.filter(function(x){return x!==_a.id;});if(n.length!==l.length){clientRecs[cid]=n;_ch=true;}if(recReasons[cid]&&recReasons[cid][_a.id]!=null){delete recReasons[cid][_a.id];_ch=true;}});if(_ch){persistClientRecs();persistRecReasons();}}catch(e){}
     persistWorkspace();
     try{if(typeof persistAffiliateLinks==='function')persistAffiliateLinks();}catch(e){}   // persist the removal + refresh the client shop catalog
     try{if(typeof _scheduleClientSync==='function')_scheduleClientSync();}catch(e){}   // push updated per-client blobs so a deleted product drops from clients' recs promptly
