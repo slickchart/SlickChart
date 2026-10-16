@@ -5324,12 +5324,16 @@ async function _runSelfCheck(){
   // returns before it reads a single event. Printed because a device stuck here looks exactly like
   // a device whose sync is broken, and nothing else in the paste would show it.
   try{
-    var _rosterStuck=(typeof _rosterNotReadYet==='function')?_rosterNotReadYet():null;
+    // This check runs BEFORE the account is read on purpose, and until then the ingest waits for the
+    // account by design. Judge the other reasons it could be stuck, and say which it is.
+    var _preRead=!!(typeof Cloud!=='undefined'&&Cloud&&Cloud.token&&!Cloud._pulledOnce);
+    var _rosterStuck=null;
+    try{if(typeof _rosterNotReadYet==='function'){if(_preRead)Cloud._pulledOnce=true;try{_rosterStuck=_rosterNotReadYet();}finally{if(_preRead)Cloud._pulledOnce=false;}}}catch(e){_rosterStuck=null;}
     var _diskIds=[];try{_diskIds=Object.keys(JSON.parse(_lsGet('sc_clients')||'{}')||{});}catch(e){}
     var _memIds=[];try{_memIds=Object.keys(CL||{});}catch(e){}
     var _onDiskOnly=_diskIds.filter(function(k){return !(CL&&CL[k]);});
     bkDiag.push('  roster: '+_diskIds.length+' client(s) saved on this device, '+_memIds.length+' loaded into memory');
-    bkDiag.push('  client events are being read at all: '+(_rosterStuck===null?'could not tell':(_rosterStuck?'NO \u2014 every poll returns early because the roster reads as unloaded':'yes')));
+    bkDiag.push('  client events are being read at all: '+(_rosterStuck===null?'could not tell':(_rosterStuck?'NO \u2014 every poll returns early because the roster reads as unloaded':(_preRead?'yes, once this launch has read the account (this check runs just before that)':'yes'))));
     if(_onDiskOnly.length)bkDiag.push('    saved but not loaded: '+_onDiskOnly.slice(0,12).join(', ')+(_onDiskOnly.length>12?(' \u2026 and '+(_onDiskOnly.length-12)+' more'):''));
   }catch(e){}
 

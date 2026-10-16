@@ -28,6 +28,7 @@ await page.route('**/api/store*', async r=>{
 await page.route('**/api/clients*', async r=>{
   await r.fulfill({status:200,contentType:'application/json',body:JSON.stringify({ok:true,clients:[],events:EVENTS})});
 });
+await page.route('**/api/cloud-status*', r=>r.fulfill({status:200,contentType:'application/json',body:'{"enabled":true}'}));   // as production answers
 await page.goto('http://localhost:8899/slickchart.html',{waitUntil:'load'});
 await page.waitForTimeout(4000);
 

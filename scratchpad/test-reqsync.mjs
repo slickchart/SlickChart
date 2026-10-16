@@ -4,6 +4,7 @@ const b=await chromium.launch({executablePath:'/opt/pw-browsers/chromium-1194/ch
 
 async function run(label, cfg){
   const p=await b.newPage({viewport:{width:390,height:844}});
+  await p.route('**/api/cloud-status*', r=>r.fulfill({status:200,contentType:'application/json',body:'{"enabled":true}'}));   // as production answers
   await p.goto('http://localhost:8899/slickchart-provider-demo.html',{waitUntil:'load'});
   await p.waitForTimeout(3500);
   const r=await p.evaluate(async (cfg)=>{

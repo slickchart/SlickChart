@@ -33,6 +33,7 @@ process.env.SESSION_SECRET = 'x';
 const BOOKINGS = []; const base = Date.now() + 2 * 864e5;
 for (let i = 0; i < 130; i++) BOOKINGS.push({ id: 'bk' + i, status: 'ACCEPTED', location_id: 'L1', customer_id: 'C1', start_at: new Date(base + i * 4 * 3600e3).toISOString(), appointment_segments: [{ duration_minutes: 60, service_variation_id: 'V1' }] });
 const INVOICES = []; for (let i = 0; i < 140; i++) INVOICES.push({ id: 'inv' + i, status: 'PAID', location_id: 'L1', payment_requests: [], primary_recipient: {} });
+const custKeys = {};
 const customers = [{ id: 'C1', given_name: 'Pat', family_name: 'Lee', phone_number: '+15555550100' }];
 let customerCreates = 0; const bookingKeys = {};
 globalThis.fetch = async (url, opts = {}) => {
@@ -54,10 +55,12 @@ globalThis.fetch = async (url, opts = {}) => {
   }
   if (u.pathname.startsWith('/v2/customers/search')) {
     const em = body.query && body.query.filter && body.query.filter.email_address && body.query.filter.email_address.exact;
-    return R({ customers: customers.filter(c => em && c.email_address === em) });
+    const ph = body.query && body.query.filter && body.query.filter.phone_number && body.query.filter.phone_number.exact;   // Square searches phone too
+    return R({ customers: customers.filter(c => (em && c.email_address === em) || (ph && c.phone_number === ph)) });
   }
   if (u.pathname.startsWith('/v2/customers/') && m === 'GET') { const c = customers.find(x => x.id === u.pathname.split('/').pop()); return R({ customer: c }); }
-  if (u.pathname === '/v2/customers' && m === 'POST') { customerCreates++; const c = { id: 'CN' + customerCreates, ...body }; customers.push(c); return R({ customer: c }); }
+  if (u.pathname === '/v2/customers' && m === 'POST' && body.idempotency_key && custKeys[body.idempotency_key]) return R({ customer: custKeys[body.idempotency_key] });   // Square honours the key
+  if (u.pathname === '/v2/customers' && m === 'POST') { customerCreates++; if (body.idempotency_key) custKeys[body.idempotency_key] = { id: 'CN' + customerCreates, ...body }; const c = { id: 'CN' + customerCreates, ...body }; customers.push(c); return R({ customer: c }); }
   if (u.pathname === '/v2/catalog/list') return R({ objects: [] });
   if (u.pathname === '/v2/invoices/search') { const pg = page(INVOICES, body.cursor, Math.min(body.limit || 100, 200)); return R({ invoices: pg.items, cursor: pg.cursor }); }
   if (u.pathname === '/v2/orders/batch-retrieve') return R({ orders: [] });
@@ -79,7 +82,7 @@ check('A appointments: every booking in the window is returned', a.out && a.out.
 
 // B
 customerCreates = 0;
-for (let i = 0; i < 2; i++) await call('book.js', { method: 'POST', body: { serviceVariationId: 'V1', teamMemberId: 'T1', startAt: new Date(base + (200 + i) * 3600e3).toISOString(), durationMinutes: 60, customerName: 'Pat Lee', customerEmail: '', idempotencyKey: 'k' + i } });
+for (let i = 0; i < 2; i++) await call('book.js', { method: 'POST', body: { serviceVariationId: 'V1', teamMemberId: 'T1', startAt: new Date(base + (200 + i) * 3600e3).toISOString(), durationMinutes: 60, customerName: 'Pat Lee', customerEmail: '', customerPhone: '(555) 555-0100', idempotencyKey: 'k' + i } });
 check('B book: booking an existing phone-only Square customer twice creates no new customer', customerCreates === 0, `Square customers created: ${customerCreates} (her Square already has Pat Lee as C1)`);
 
 // C

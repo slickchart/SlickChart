@@ -13,6 +13,7 @@ await ctx.route('**/api/clients*', async r=>{
 });
 // 1. a poll that hits a bad event
 const p1=await ctx.newPage();
+await p1.route('**/api/cloud-status*', r=>r.fulfill({status:200,contentType:'application/json',body:'{"enabled":true}'}));   // as production answers
 await p1.goto('http://localhost:8899/slickchart.html',{waitUntil:'load'});
 await p1.waitForTimeout(4000);
 await p1.evaluate(async ()=>{
@@ -23,6 +24,7 @@ await p1.evaluate(async ()=>{
 await p1.close();
 // 2. a FRESH page load running the self-check - the failure must survive into the paste
 const p2=await ctx.newPage();
+await p2.route('**/api/cloud-status*', r=>r.fulfill({status:200,contentType:'application/json',body:'{"enabled":true}'}));
 await p2.goto('http://localhost:8899/slickchart.html?selfcheck=1',{waitUntil:'load'});
 await p2.waitForFunction(()=>typeof window.__SC_SELFCHECK__==='string'&&window.__SC_SELFCHECK__.length>0,null,{timeout:20000});
 const txt=await p2.evaluate(()=>window.__SC_SELFCHECK__);
