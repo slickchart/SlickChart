@@ -798,6 +798,7 @@ saved anywhere", not "does this always call that".
 | `_tryConsumeDeepLink` | `/api/clients` | via `syncClientEvents` |
 | `_tryConsumeDeepLink` | `/api/provider-form` | via `submitSignOnDevice` |
 | `_uSendDone` | `/api/clients` | via `_syncSpecificClientsToServer` |
+| `_updateNoteFromNotes` | `/api/ai` | via `_aiComplete` |
 | `_updatePassword` | `/api/change-password` | direct |
 | `_uploadCourseFilesInBackground` | `/api/clients` | via `syncClientEvents` |
 | `_uploadCourseFilesInBackground` | `/api/provider-form` | via `submitSignOnDevice` |
