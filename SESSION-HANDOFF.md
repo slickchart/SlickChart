@@ -7303,6 +7303,17 @@ parallel; each wrote repros in `scratchpad/sweep-dup-*.mjs`. Fixes, by area:
   delete each other's survivor); skips a copy open on screen, a different NAME (mom/daughter sharing a
   Square customer via email), and two different consults. `treatment` now counts as a conflict.
   Batched: one save and one server call for the whole run (1500 copies took 36s before).
+- **2026-10-16: the two-consult skip is DELIBERATE, and the merge now refreshes `sc_workspace`.**
+  `sweep-dup-carry-stores.mjs` was written before the skip and still expected the auto-merge to fold a
+  pair where both copies hold a different consult; it now checks the decision instead (pair left for
+  Review & merge, both records live, consult, messages and check-in untouched on the copy) and drives
+  the both-consult carry through `_mergeClientRecords` directly. That run surfaced a real §0.7 gap:
+  `_persistMergeSideStores` saved `sc_client_recs` / `sc_client_homecare` but never `sc_workspace`, so
+  the device AND the account kept the copy's product plan and homecare under the DROPPED id, where
+  `loadWorkspace()` reads it back. It now calls `persistWorkspace()`. Sweep 20/20. Still open, failing
+  identically before and after: `sweep-dup-xdevice-stale` (11/12), `sweep-dup-edge-manual` (5/6, note
+  being typed on the copy), `sweep-dup-edge-boot` (9/10, opened-link copy tombstoned on the server).
+  Manual Review & merge with two consults keeps the one with more photos and drops the other one.
 - Server `mergeClientRows` (`POST /api/clients {merged:[{from,to}]}`, sent with the delete): moves the
   copy's events, push sign-ups, prefs and — if only the copy's link was opened — the link itself onto
   the survivor. Both ids must be this provider's live rows. Old server ignores `merged`.
