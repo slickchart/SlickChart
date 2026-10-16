@@ -239,7 +239,7 @@ const S=document.getElementById('S');
 // resets when I save it" and there was no way to tell whether her phone had any of them — a whole
 // day was spent debugging code she may not have been running. Shown at the bottom of Settings, so
 // the answer is a screenshot away. Bump it on every ship.
-const APP_BUILD='2026-10-16b';
+const APP_BUILD='2026-10-16c';
 
 
 /* ════════════════════════════════════════════════════════════════
@@ -4479,6 +4479,19 @@ function _offIndexRead(){
     const m=Object.create(null); a.forEach(function(k){if(typeof k==='string')m[k]=true;}); return m;
   }catch(e){return Object.create(null);}
 }
+// Keys whose small-box copy is NEWER than anything in IndexedDB: an IndexedDB write failed and the
+// value went to localStorage instead. Synchronous on purpose, so it survives the app being killed
+// before an async delete of the stale big-box copy could land. Device-local, never synced.
+const _OFF_NEWER_KEY='sc_off_lsnewer';
+_SYNC_SKIP[_OFF_NEWER_KEY]=1; _LS_KEEP_LOCAL[_OFF_NEWER_KEY]=1;
+function _offNewerRead(){
+  try{const raw=(Cloud._origGet||localStorage.getItem.bind(localStorage))(_OFF_NEWER_KEY);
+    const a=raw?JSON.parse(raw):null;return Array.isArray(a)?a.filter(function(k){return typeof k==='string';}):[];}catch(e){return [];}
+}
+function _offMarkSmallNewer(k,on){
+  try{const a=_offNewerRead().filter(function(x){return x!==k;});if(on)a.push(k);
+    (Cloud._origSet||localStorage.setItem.bind(localStorage))(_OFF_NEWER_KEY,JSON.stringify(a));}catch(e){}
+}
 // The index as it stood when this page loaded. Frozen on purpose: it is the answer to "was this key
 // in IndexedDB before we had a chance to look?", which cannot change mid-boot.
 let _offAtBoot=Object.create(null);
@@ -4590,12 +4603,17 @@ async function _hydrateOffloaded(){
     if(stamped&&stamped!==me){await _purgeOffloaded();return done();}
     if(stamped!==me){try{await d.set(_OFF_OWNER_KEY,me);}catch(e){}}
   }catch(e){}
+  const newer=Object.create(null);_offNewerRead().forEach(function(k){newer[k]=true;});
   try{
     const keys=await d.keys();
     for(const raw of keys){
       const kk=String(raw||'');
       if(kk.indexOf(_OFF_PREFIX)!==0)continue;
       const k=kk.slice(_OFF_PREFIX.length);
+      // An IndexedDB write failed after this copy was stored, and the newer value went to the small
+      // box. Keep that one; the big-box copy is stale and must never be read back over it (§2be).
+      if(newer[k]){let sv=null;try{sv=Cloud._origGet(k);}catch(e){}
+        if(sv!=null){try{await d.del(kk);}catch(e){}out.staleDropped=(out.staleDropped||0)+1;continue;}}
       let v;try{v=await d.get(kk);}catch(e){continue;}
       if(typeof v!=='string')continue;
       Cloud._mem[k]=v;Cloud._offloaded[k]=true;out.loaded++;_offIndexWrite();
@@ -4619,7 +4637,7 @@ async function _hydrateOffloaded(){
       if(v==null)continue;
       let ok=false;try{ok=await d.set(_OFF_PREFIX+k,v);}catch(e){ok=false;}
       if(!ok){Cloud._offBad[k]=1;continue;}       // leave it where it is rather than risk losing it
-      Cloud._mem[k]=v;Cloud._offloaded[k]=true;_offIndexWrite();
+      Cloud._mem[k]=v;Cloud._offloaded[k]=true;_offIndexWrite();_offMarkSmallNewer(k,false);
       try{Cloud._origRemove(k);}catch(e){}
       out.moved++;out.freed+=v.length*2;
     }
@@ -4698,9 +4716,14 @@ function _lsPersist(k,v,_noOffload){
       if(pr&&pr.then)pr.then(function(ok){
         // IndexedDB refused it. Fall back to the small box rather than leave the value in memory
         // alone, where a refresh would lose it. (The account copy is pushed either way.)
-        if(!ok){Cloud._offBad[k]=1;try{delete Cloud._offloaded[k];}catch(e){}try{_lsPersist(k,str,true);}catch(e){}}
+        // Leave Cloud._offloaded[k] set: _lsPersist's retire branch needs it to delete the big-box
+        // copy. Clearing it first (as this used to) left the OLD copy in IndexedDB, and the next cold
+        // start read that back and deleted this newer one (§2be). The marker covers a delete that
+        // cannot land either, because the connection is the thing that failed.
+        if(!ok){Cloud._offBad[k]=1;_offMarkSmallNewer(k,true);try{_lsPersist(k,str,true);}catch(e){}}
+        else _offMarkSmallNewer(k,false);         // IndexedDB holds the newest copy again
       });
-    }catch(e){Cloud._offBad[k]=1;try{delete Cloud._offloaded[k];}catch(e2){}return _lsPersist(k,str,true);}
+    }catch(e){Cloud._offBad[k]=1;_offMarkSmallNewer(k,true);return _lsPersist(k,str,true);}
     return null;
   }
   // This value is small enough for the small box. If this key USED to be in the big one, the copy
@@ -6784,6 +6807,11 @@ function loadNoteFmt(){try{const v=localStorage.getItem('sc_note_fmt');if(v&&not
 // it's unavailable (private mode / very old browsers).
 const _idb=(function(){
   let _p=null,_bad=false;
+  // iOS closes a backgrounded app's IndexedDB connection and never tells the page in a way the old
+  // code listened for. The cached connection then threw on every transaction, every op resolved to
+  // undefined/false, and the app quietly ran on whatever was in memory — then on the next cold start
+  // read an OLD copy back (Diana, 2026-10-16, §2be). So: drop the cached connection when the browser
+  // closes it, and on any failed op reopen once and retry before giving up.
   function _db(){
     if(_bad)return Promise.reject();
     if(_p)return _p;
@@ -6792,20 +6820,41 @@ const _idb=(function(){
         if(typeof indexedDB==='undefined'||!indexedDB){_bad=true;return rej();}
         const rq=indexedDB.open('slickchart',1);
         rq.onupgradeneeded=function(){try{if(!rq.result.objectStoreNames.contains('kv'))rq.result.createObjectStore('kv');}catch(e){}};
-        rq.onsuccess=function(){res(rq.result);};
+        rq.onsuccess=function(){const d=rq.result;
+          try{d.onclose=function(){_p=null;};d.onversionchange=function(){try{d.close();}catch(e){}_p=null;};}catch(e){}
+          res(d);};
         rq.onerror=function(){_bad=true;rej();};
+        rq.onblocked=function(){_p=null;rej();};
       }catch(e){_bad=true;rej();}
     });
     return _p;
   }
+  // One transaction. A stuck transaction (seen on iOS after a resume) must not hang boot forever, so
+  // it gives up after a few seconds like any other failure.
+  function _once(mode,body){
+    return _db().then(function(d){return new Promise(function(res,rej){
+      let doneT=false;const fin=function(f,v){if(doneT)return;doneT=true;clearTimeout(tm);f(v);};
+      const tm=setTimeout(function(){fin(rej);},5000);
+      try{const t=d.transaction('kv',mode);t.onabort=function(){fin(rej);};t.onerror=function(){fin(rej);};
+        body(t.objectStore('kv'),function(v){fin(res,v);},function(){fin(rej);},t);
+      }catch(e){fin(rej);}
+    });});
+  }
+  function _op(mode,body,fallback){
+    return _once(mode,body).catch(function(){
+      if(_bad)return fallback;
+      _p=null;                                   // the connection may be dead: reopen and try once more
+      return _once(mode,body).catch(function(){return fallback;});
+    });
+  }
   return {
     available:function(){return !_bad && typeof indexedDB!=='undefined' && !!indexedDB;},
-    get:function(k){return _db().then(function(d){return new Promise(function(res,rej){try{const t=d.transaction('kv','readonly');const rq=t.objectStore('kv').get(k);rq.onsuccess=function(){res(rq.result);};rq.onerror=function(){rej();};}catch(e){rej();}});}).catch(function(){return undefined;});},
-    set:function(k,v){return _db().then(function(d){return new Promise(function(res,rej){try{const t=d.transaction('kv','readwrite');t.objectStore('kv').put(v,k);t.oncomplete=function(){res(true);};t.onerror=function(){rej();};}catch(e){rej();}});}).catch(function(){return false;});},
+    get:function(k){return _op('readonly',function(st,ok,bad){const rq=st.get(k);rq.onsuccess=function(){ok(rq.result);};rq.onerror=bad;},undefined);},
+    set:function(k,v){return _op('readwrite',function(st,ok,bad,t){st.put(v,k);t.oncomplete=function(){ok(true);};},false);},
     // Enumerate stored keys. Needed to find lesson files whose course record is gone, which is the
     // only thing left to rebuild from after a course is lost.
-    keys:function(){return _db().then(function(d){return new Promise(function(res,rej){try{const t=d.transaction('kv','readonly');const rq=t.objectStore('kv').getAllKeys();rq.onsuccess=function(){res(rq.result||[]);};rq.onerror=function(){rej();};}catch(e){rej();}});}).catch(function(){return [];});},
-    del:function(k){return _db().then(function(d){return new Promise(function(res,rej){try{const t=d.transaction('kv','readwrite');t.objectStore('kv').delete(k);t.oncomplete=function(){res(true);};t.onerror=function(){rej();};}catch(e){rej();}});}).catch(function(){return false;});}
+    keys:function(){return _op('readonly',function(st,ok,bad){const rq=st.getAllKeys();rq.onsuccess=function(){ok(rq.result||[]);};rq.onerror=bad;},[]);},
+    del:function(k){return _op('readwrite',function(st,ok,bad,t){st.delete(k);t.oncomplete=function(){ok(true);};},false);}
   };
 })();
 function persistCapturedPhotos(){

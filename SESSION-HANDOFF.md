@@ -7515,3 +7515,21 @@ Her question: can her clients see their summaries on their own phones, or do the
 
 Next (§1d): Ashley runs Admin → Recover clients → esthieguild@gmail.com → Copy, once, and pastes it.
 No reply to Diana says anything is lost until that paste says so with numbers (§4c).
+
+**§2be diagnosis + fix, build `2026-10-16c` (on the preview branch until Ashley ships it):**
+- §1d paste (2026-10-16): `>>> ON THE SERVER RIGHT NOW: 699 characters of notes and chart detail across
+  13 clients; 16540 characters in unfinished note drafts; 5 saved visit summaries; 102 photos. This is
+  NOT lost`. Session summaries on the account: 9 clients, 10 entries, 31KB (newest earlier copy has 8
+  clients), so the account is fuller than its last backup. Nothing to restore. The phone is showing
+  less than the account holds.
+- Cause found and reproduced (`scratchpad/test-offload-stale.mjs`, 3 of 4 FAIL on 16b, 4/4 on 16c):
+  when an IndexedDB write fails, `_lsPersist` fell back to localStorage but cleared `Cloud._offloaded[k]`
+  FIRST, so its own retire branch never deleted the old IndexedDB copy; the next cold start
+  (`_hydrateOffloaded`) read that OLD copy and deleted the newer localStorage one. iOS drops a
+  backgrounded app's IndexedDB connection, and `_idb` cached the dead connection forever, so after that
+  every write failed for the rest of the session. Fixes: a synchronous `sc_off_lsnewer` marker that
+  hydration honours; `_idb` reopens on close/versionchange and retries a failed op once; 5s timeout
+  per transaction so a stuck one cannot hang boot.
+- Pre-existing, NOT from this change: `sweep2-photo-xaccount.mjs` 5/6 on both 16b and 16c — "logout
+  clears A's photo store from IndexedDB" (`captured_photos` key `cA` left after logout). The recover
+  screen does not offer them to account B (that check passes).
