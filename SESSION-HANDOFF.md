@@ -7477,3 +7477,19 @@ removing the LAST one never reaches the server by itself. The client app hides a
 `assignedAt` is at or before its stamp; a re-send (newer `assignedAt`) shows again. Merging two
 duplicate charts keeps the newer stamp and drops taken-back items. Old client builds (open tabs) keep
 showing a taken-back item until they reload. Repro: `scratchpad/sweep3-takeback.mjs`.
+
+## 2026-10-16 — /build rewritten for beauty pros; Beauty Biz Master Build Roadmap; Vercel paid plan
+- `/build` (build.html) now sells the **Beauty Biz Master Build Roadmap**, a separate artifact:
+  https://claude.ai/artifact/MLh3Sf9qvGLr1a92DHDtR8 (source assembled in the session scratchpad from
+  shell/data1-4/feats2/plan/engine; 16 trades, 128 prompts, features filtered by trade + "see every
+  other feature", own ideas with a generated prompt). The page went live via main (content).
+- **Which roadmap a buyer gets** is per purchase: `build-checkout.js` tags new sessions
+  `metadata[roadmap]=beauty`; `lib/build-sales.js roadmapUrlFor()` sends tagged sales the beauty link
+  (env `BUILD_BEAUTY_ARTIFACT_URL` overrides the built-in one) and untagged (earlier) sales keep
+  `BUILD_ARTIFACT_URL`, so /build/access never swaps a buyer's product. That is api/lib, so it rides the
+  release train; purchases made before it deploys get the original roadmap link.
+- Vercel's Hobby plan is non-commercial. Fixed everywhere it said hosting is free for real customers:
+  the new /build page, the original Master Build Roadmap artifact (v9), the cost blog post, and the
+  free-funnel email in lib/free-funnel.js (train).
+- Not claimed anywhere: that the new beauty prompts were each tested. They are built from the steps
+  Ashley used on SlickChart; the page says exactly that.
