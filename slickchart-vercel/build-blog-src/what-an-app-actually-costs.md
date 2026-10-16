@@ -18,13 +18,13 @@ This is your real cost, and it is the only line here that is not optional. You a
 
 Two things worth knowing before you budget it. First, this is a monthly cost while you are building, not forever at the same level. Once your app exists and you are only changing things occasionally, your usage drops. Second, how you work affects the bill enormously. Asking for one clear change at a time is cheaper than asking for a vague rewrite and then undoing it.
 
-That is the whole mandatory list. One line.
+That is the whole mandatory list while you build. One line.
 
 ## The things that are free and that people assume are not
 
 **Code storage. Free.** Your code lives in a repository. For a single person building one app, the free tier is not a trial or a teaser, it is just free.
 
-**Hosting. Free.** This is the one that surprises people most. You can put a real, working app on the internet at a real web address, that real customers can use, without paying anyone. The free tier of a modern hosting platform is sized for far more traffic than a new app gets.
+**Hosting. Free while you build.** This is the one that surprises people most. You can put a real, working app on the internet at a real web address and build and test it for as long as you like without paying anyone. One catch worth knowing up front: the free tier on Vercel, the host I use, is for personal, non-commercial use. Once real customers use your app, or it makes you money, you move to the paid plan, about twenty dollars a month. Check the current price on their pricing page when you get there.
 
 **A database. Free to start.** You only need one once your app has to remember things between visits. When you do, the free tiers are generous, and you will know when you outgrow one because something will tell you.
 
@@ -32,7 +32,7 @@ That is the whole mandatory list. One line.
 
 ## The optional ones
 
-**A domain name. Roughly twelve to twenty dollars a year.** Optional, genuinely. Your free hosting address works. A domain is worth buying when you want the thing to look like a business, which is usually not on day one.
+**A domain name. Roughly twelve to twenty dollars a year.** Optional, genuinely. The address your host gives you works. A domain is worth buying when you want the thing to look like a business, which is usually not on day one.
 
 **Apple Developer Program. Ninety nine dollars a year.** Only if you want to be in the App Store. It renews annually, which means it is a subscription, not a purchase.
 
@@ -44,7 +44,7 @@ That is the whole mandatory list. One line.
 
 ## What that adds up to
 
-If you never go to the app stores, never buy a domain, and never form an entity, your total cost to have a real working app live on the internet is the price of your AI plan. That is it.
+If you never go to the app stores, never buy a domain, and never form an entity, your total cost to build and test a real working app on the internet is the price of your AI plan. Once real customers use it, add your host's paid plan, about twenty dollars a month. That is it.
 
 If you do all of it, add roughly a hundred and twenty five dollars in the first year for both stores, twenty for a domain, and whatever your state charges.
 
