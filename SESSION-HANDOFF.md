@@ -7572,3 +7572,18 @@ subscriber. All ADDED, nothing existing changed:
   `scratchpad/test-esthetician-collection.mjs` (25/25).
 - "Signing the same form twice files nothing" was a STALE repro, not a live bug: it signed twice
   inside `submitSignOnDevice`'s 3s double-tap window. Repro now waits 3.5s: both records file.
+
+### 2026-10-16f — client summary note follows her provider notes (preview)
+**Observed (Ashley, her own use):** during a session summary she wrote provider notes, tapped "Make
+client-friendly", then had to fix something in her provider notes. The client summary kept the old
+wording; she expected it to update. (Device not stated.)
+**Cause:** both AI buttons write a fixed copy into `summaryNoteDraft[id]`; nothing tied it back to
+the notes. **Fix:** `summaryNoteSrc[id]={n:_notesPrint(id),t:text}` recorded when the AI writes the
+note (stored as a third field `src` in `sc_summary_drafts`, merged per client like note/obs; an older
+build drops it, which only costs the auto-update). On opening the summary, `_noteSrcState`:
+untouched since the AI wrote it -> rewritten from the current notes (`_refreshNoteFromNotes`); she
+re-worded it -> never overwritten, an "Update from my notes" button instead. AI off -> the plain
+clean-up of her notes, which always follows them. Test: `scratchpad/test-summary-follows-notes.mjs`
+(11/11; step 2 FAILS on the old build, so it reproduces her report).
+Pre-existing, unrelated: `scratchpad/sweep-dup-carry-stores.mjs` 12/16 on live main too (duplicate
+merge skips a consult pair).

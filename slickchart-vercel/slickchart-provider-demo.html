@@ -493,7 +493,7 @@ const S=document.getElementById('S');
 // resets when I save it" and there was no way to tell whether her phone had any of them — a whole
 // day was spent debugging code she may not have been running. Shown at the bottom of Settings, so
 // the answer is a screenshot away. Bump it on every ship.
-const APP_BUILD='2026-10-16e';
+const APP_BUILD='2026-10-16f';
 
 
 /* ════════════════════════════════════════════════════════════════
@@ -3964,9 +3964,9 @@ function _mergeSummaryDrafts(serverStr,localStr){
   const tsOf=function(o,f,id){
     try{const t=o&&o._ts;const m=t&&t[f];return (m&&Number(m[id]))||0;}catch(e){return 0;}
   };
-  const out={note:{},obs:{},_ts:{note:{},obs:{}}};
+  const out={note:{},obs:{},src:{},_ts:{note:{},obs:{},src:{}}};
   let changed=false;
-  ['note','obs'].forEach(function(f){
+  ['note','obs','src'].forEach(function(f){
     const a=_isPlainObj(srv[f])?srv[f]:{},d=_isPlainObj(loc[f])?loc[f]:{};
     const ids={};
     Object.keys(a).forEach(function(id){ids[id]=1;});
@@ -13382,6 +13382,12 @@ function toggleSummaryGuidePicker(){const el=document.getElementById('summary-gu
 let summaryCustomOpen=false;
 let summaryNoteDraft={};   // provider's edited wording per client (overrides the default note)
 let summaryObsDraft={};     // provider's optional client-facing observation per client (starts empty for real clients)
+// Where an AI-written client note came from: {n: fingerprint of her provider notes at the time, t: the
+// note exactly as written}. Ashley, 2026-10-16: she made the summary client-friendly, then fixed
+// something in her provider notes, and the client's note still said the old thing. With this, a note
+// she has not touched since follows her notes; one she has re-worded is never overwritten, she gets
+// an "Update from my notes" button instead.
+let summaryNoteSrc={};
 let _skipSummaryStore=false;  // set true when re-sharing an already-saved summary, to avoid duplicating it
 let summarySendOn={};      // per-session: off by default, provider opts in before anything actually sends
 // The edited/AI summary note and the client-facing observation are CLIENT-FACING drafts that were
@@ -13389,34 +13395,38 @@ let summarySendOn={};      // per-session: off by default, provider opts in befo
 // which never stored them). Persist them immediately to their own synced key so they survive.
 // WHEN this device last changed each client's draft, per field. _mergeSummaryDrafts compares these,
 // so without them a draft typed on the phone cannot prove it is newer than the account's copy.
-let _summaryDraftTs={note:{},obs:{}};
+let _summaryDraftTs={note:{},obs:{},src:{}};
 // What was last written to disk, so persist can stamp ONLY the clients that actually changed.
 // Stamping every client on every save would make this device win conflicts over drafts it never
 // touched — which is the bug, wearing the fix's clothes.
-let _summaryDraftLast={note:{},obs:{}};
+let _summaryDraftLast={note:{},obs:{},src:{}};
 function persistSummaryDrafts(){try{
   const now=Date.now();
-  [['note',summaryNoteDraft],['obs',summaryObsDraft]].forEach(function(pair){
+  [['note',summaryNoteDraft],['obs',summaryObsDraft],['src',summaryNoteSrc]].forEach(function(pair){
     const f=pair[0],cur=(pair[1]&&typeof pair[1]==='object')?pair[1]:{},last=_summaryDraftLast[f]||{};
-    Object.keys(cur).forEach(function(id){if(last[id]!==cur[id])_summaryDraftTs[f][id]=now;});
+    if(!_summaryDraftTs[f])_summaryDraftTs[f]={};
+    const same=function(a,b){return f==='src'?JSON.stringify(a)===JSON.stringify(b):a===b;};
+    Object.keys(cur).forEach(function(id){if(!same(last[id],cur[id]))_summaryDraftTs[f][id]=now;});
     _summaryDraftLast[f]=Object.assign({},cur);
   });
-  const v=JSON.stringify({note:summaryNoteDraft,obs:summaryObsDraft,_ts:_summaryDraftTs});
+  const v=JSON.stringify({note:summaryNoteDraft,obs:summaryObsDraft,src:summaryNoteSrc,_ts:_summaryDraftTs});
   localStorage.setItem('sc_summary_drafts',v);if(typeof _pushKeyNow==='function')_pushKeyNow('sc_summary_drafts',v);
 }catch(e){}}
 function loadSummaryDrafts(){
   try{const raw=localStorage.getItem('sc_summary_drafts');if(raw){const v=JSON.parse(raw);if(v&&typeof v==='object'){
     if(v.note&&typeof v.note==='object')summaryNoteDraft=v.note;
     if(v.obs&&typeof v.obs==='object')summaryObsDraft=v.obs;
+    summaryNoteSrc=(v.src&&typeof v.src==='object')?v.src:{};
     if(v._ts&&typeof v._ts==='object'){
       if(v._ts.note&&typeof v._ts.note==='object')_summaryDraftTs.note=v._ts.note;
       if(v._ts.obs&&typeof v._ts.obs==='object')_summaryDraftTs.obs=v._ts.obs;
+      if(v._ts.src&&typeof v._ts.src==='object')_summaryDraftTs.src=v._ts.src;
     }
   }}}catch(e){}
   // Seed the snapshot from what was just READ. Reading is not editing: without this the first save
   // after a load stamps every draft on the device as edited-just-now.
   try{
-    _summaryDraftLast={note:Object.assign({},summaryNoteDraft),obs:Object.assign({},summaryObsDraft)};
+    _summaryDraftLast={note:Object.assign({},summaryNoteDraft),obs:Object.assign({},summaryObsDraft),src:Object.assign({},summaryNoteSrc)};
   }catch(e){}
 }
 function _summaryGuard(id){
@@ -13444,6 +13454,13 @@ function renderSessionSummary(id){
   const nextTime=_isDemoClient?(id==='maya'?'10:00 AM':id==='sophie'?'12:30 PM':'11:00 AM'):(_nextAppt?_nextAppt.time:'');
   const notes=_activeNotesText(id);
   const friendly=(typeof _clientFriendlyFromNotes==='function')?_clientFriendlyFromNotes(id,c):'';
+  const _srcState=_noteSrcState(id);
+  if(_srcState==='auto'&&aiEnabled&&!_noteRefreshing[id])setTimeout(function(){_refreshNoteFromNotes(id);},0);
+  const _srcBanner=_noteRefreshing[id]===1
+    ? `<div role="status" style="margin-bottom:8px;font-size:14px;color:var(--accent-strong);display:flex;align-items:center;gap:6px;"><i class="ti ti-loader-2" aria-hidden="true"></i> Updating to match your provider notes…</div>`
+    : ((_srcState==='ask'||(_srcState==='auto'&&(!aiEnabled||_noteRefreshing[id]==='failed')))
+      ? `<div style="margin-bottom:10px;background:var(--accent-tint);border:1px solid var(--accent);border-radius:10px;padding:9px 11px;display:flex;align-items:center;gap:10px;flex-wrap:wrap;"><span style="flex:1;min-width:160px;font-size:14px;color:var(--p-ink);line-height:1.4;">${_srcState==='ask'?'You changed your provider notes after this note was written.':'Your provider notes changed. This note could not update just now.'}</span><button onclick="_updateNoteFromNotes('${id}')" style="background:var(--accent);color:var(--accent-ink);border:1px solid var(--btn-edge);border-radius:8px;padding:6px 12px;font-size:14px;font-weight:600;cursor:pointer;">Update from my notes</button></div>`
+      : '');
   const improvement=_isDemoClient?(isHairBarberSummary
     ?(id==='maya'?'Colour is vibrant and the balayage placement looks perfect, great lift without brassiness.'
       :id==='sophie'?'Keratin treatment took beautifully. Frizz completely eliminated and shine is incredible.'
@@ -13531,6 +13548,7 @@ function renderSessionSummary(id){
           <button onclick="editSummaryNote('${id}')" style="border:none;background:none;color:var(--accent-strong);font-size:16px;cursor:pointer;display:flex;align-items:center;gap:4px;"><i class="ti ti-pencil" aria-hidden="true" style="font-size:16px;"></i> Edit</button>
         </div>
       </div>
+      ${_srcBanner}
       <div id="summary-note" data-prompt="${_notePrompt?'1':''}" style="font-size:16px;color:var(--p-mut);line-height:1.8;${_notePrompt?'font-style:italic;':''}">${_noteContent.replace(/</g,'&lt;').replace(/\n/g,'<br>')}</div>
     </div>`:''}
 
@@ -13682,6 +13700,53 @@ function editSummaryNote(id){
 }
 // AI: rewrite the provider's session notes into a warm, plain-language note the client reads.
 // Provider can still tap Edit afterwards to tweak it.
+// ── The client note follows her provider notes (see summaryNoteSrc) ──────────────────────────────────
+function _notesPrint(id){try{const t=String(_activeNotesText(id)||'').replace(/<br\s*\/?>/gi,'\n').replace(/\s+/g,' ').trim();let h=0;for(let i=0;i<t.length;i++){h=((h<<5)-h+t.charCodeAt(i))|0;}return t.length+':'+h;}catch(e){return '';}}
+function _noteSrcMark(id,text){try{summaryNoteSrc[id]={n:_notesPrint(id),t:String(text||'')};}catch(e){}}
+// 'fresh' nothing to do | 'auto' untouched since the AI wrote it, so rewrite it | 'ask' she re-worded it
+function _noteSrcState(id){
+  try{
+    const src=summaryNoteSrc[id];
+    if(!src||summaryNoteDraft[id]==null||!src.n)return 'fresh';
+    if(src.n===_notesPrint(id))return 'fresh';
+    if(!String(_activeNotesText(id)||'').trim())return 'fresh';     // notes cleared: never wipe her note for nothing
+    return String(summaryNoteDraft[id])===String(src.t)?'auto':'ask';
+  }catch(e){return 'fresh';}
+}
+let _noteRefreshing={};
+async function _refreshNoteFromNotes(id){
+  if(_noteRefreshing[id]===1)return;
+  // Without AI the note she would get is the plain clean-up of her notes, which always follows them.
+  if(!aiEnabled){delete summaryNoteDraft[id];delete summaryNoteSrc[id];try{persistSummaryDrafts();}catch(e){}if(_onSummaryOf(id))renderSessionSummary(id);return;}
+  const c=CL[id]||{};const first=(c.name||'').split(' ')[0]||'your client';
+  const notesText=String(_activeNotesText(id)||'').replace(/<br\s*\/?>/gi,'\n').trim();
+  if(!notesText)return;
+  const want=_notesPrint(id);
+  _noteRefreshing[id]=1;
+  try{if(_onSummaryOf(id)&&!document.getElementById('note-edit-ta'))renderSessionSummary(id);}catch(e){}
+  try{
+    const prompt=`You are helping a ${typeof _profName==='function'?_profName():'wellness provider'} write the short note their client reads in a post-appointment summary. From the provider's own session notes below, write a warm, encouraging, plain-language message written directly to the client (address them as "you"). Remove clinical jargon and abbreviations, keep it accurate to the notes, do not invent treatments or outcomes, and keep it to 2–4 short sentences. Return ONLY the note, no preamble and no quotation marks.\n\nClient first name: ${first}\nTreatment: ${c.treatment||''}\n\nSession notes:\n${notesText}`;
+    const out=((await _aiComplete([{role:'user',content:prompt}],400))||'').trim().replace(/^["']+|["']+$/g,'');
+    if(!out)throw new Error('empty');
+    // She may have typed in the note, or changed her notes again, while this ran: only land it if not.
+    const st=_noteSrcState(id);
+    if(st==='ask'){delete _noteRefreshing[id];if(_onSummaryOf(id)&&!document.getElementById('note-edit-ta'))renderSessionSummary(id);return;}
+    summaryNoteDraft[id]=out;summaryNoteSrc[id]={n:want,t:out};
+    if(typeof persistSummaryDrafts==='function')persistSummaryDrafts();
+    delete _noteRefreshing[id];
+    if(_notesPrint(id)!==want){_refreshNoteFromNotes(id);return;}
+    if(typeof proToast==='function')proToast('Client note updated to match your notes');
+  }catch(e){
+    _noteRefreshing[id]='failed';
+  }
+  if(_noteRefreshing[id]!=='failed')delete _noteRefreshing[id];
+  try{if(_onSummaryOf(id)&&!document.getElementById('note-edit-ta'))renderSessionSummary(id);}catch(e){}
+}
+function _updateNoteFromNotes(id){
+  const go=function(){_flushOpenSummaryNote(id);delete _noteRefreshing[id];const src=summaryNoteSrc[id]||{};src.t=String(summaryNoteDraft[id]||'');summaryNoteSrc[id]=src;_refreshNoteFromNotes(id);};
+  if(typeof confirmModal==='function'){confirmModal({title:'Update the client note?',body:'This rewrites the client note from your provider notes. Your own edits to it will be replaced.',action:'Update'},go);return;}
+  go();
+}
 async function aiClientFriendly(id,btn){
   if(!aiEnabled){if(typeof proToast==='function')proToast('AI features are off, turn them on in Settings → AI features');return;}
   _flushOpenSummaryNote(id);
@@ -13694,7 +13759,7 @@ async function aiClientFriendly(id,btn){
     const prompt=`You are helping a ${typeof _profName==='function'?_profName():'skincare provider'} write the short note their client reads in a post-appointment summary. Rewrite the notes below into a warm, encouraging, plain-language message written directly to the client (address them as "you"). Remove clinical jargon and abbreviations, keep it accurate to the notes, and keep it to 2-4 short sentences. Do not invent treatments or outcomes that are not in the notes. Return ONLY the rewritten note, no preamble and no quotation marks.\n\nClient first name: ${first}\nTreatment: ${c.treatment||''}\n\nNotes:\n${raw}`;
     const out=((await _aiComplete([{role:'user',content:prompt}],400))||'').trim().replace(/^["']+|["']+$/g,'');
     if(!out)throw new Error('empty');
-    summaryNoteDraft[id]=out;
+    summaryNoteDraft[id]=out;_noteSrcMark(id,out);
     if(typeof persistSummaryDrafts==='function')persistSummaryDrafts();
     if(typeof proToast==='function')proToast('Rewritten for your client, edit if you like');
     if(_onSummaryOf(id))renderSessionSummary(id);
@@ -13724,7 +13789,7 @@ async function _aiDraftSummaryFromNotes(id,btn){
       const prompt=`You are helping a ${typeof _profName==='function'?_profName():'wellness provider'} write the short note their client reads in a post-appointment summary. From the provider's own session notes below, write a warm, encouraging, plain-language message written directly to the client (address them as "you"). Remove clinical jargon and abbreviations, keep it accurate to the notes, do not invent treatments or outcomes, and keep it to 2–4 short sentences. Return ONLY the note, no preamble and no quotation marks.\n\nClient first name: ${first}\nTreatment: ${c.treatment||''}\n\nSession notes:\n${notesText}`;
       const out=((await _aiComplete([{role:'user',content:prompt}],400))||'').trim().replace(/^["']+|["']+$/g,'');
       if(!out)throw new Error('empty');
-      summaryNoteDraft[id]=out;if(typeof persistSummaryDrafts==='function')persistSummaryDrafts();
+      summaryNoteDraft[id]=out;_noteSrcMark(id,out);if(typeof persistSummaryDrafts==='function')persistSummaryDrafts();
       if(typeof proToast==='function')proToast('Drafted from your notes — edit if you like');
       if(_onSummaryOf(id))renderSessionSummary(id);   // she may have moved on to the next client while it ran
     }catch(e){if(btn){btn.disabled=false;btn.style.opacity='1';btn.innerHTML=old;}if(typeof proToast==='function')proToast('Could not reach AI just now — try again, or edit manually');}
