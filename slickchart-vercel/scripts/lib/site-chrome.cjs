@@ -51,6 +51,18 @@ footer .wrap{display:flex;flex-wrap:wrap;gap:10px 20px;align-items:center;justif
 footer a{color:var(--muted);font-size:14px;text-decoration:none}
 footer a:hover{color:var(--gold)}
 .tiny{width:100%;text-align:center;color:var(--muted2);font-size:12.5px;margin-top:6px}
+.bbanner{display:block;text-decoration:none;color:var(--ink);border-bottom:1px solid rgba(43,199,172,.4);
+background:radial-gradient(120% 140% at 0% 0%,rgba(30,143,206,.28),transparent 60%),radial-gradient(120% 140% at 100% 100%,rgba(127,227,162,.22),transparent 60%),#0b1d1b}
+.bbanner .in{max-width:1080px;margin:0 auto;padding:20px 22px;display:flex;align-items:center;gap:14px 26px;flex-wrap:wrap;justify-content:space-between}
+.bbanner .txt{flex:1 1 380px;min-width:0}
+.bbanner .ey{font:650 12px/1.4 Inter,sans-serif;letter-spacing:.14em;text-transform:uppercase;color:var(--gold)}
+.bbanner .h{font:600 clamp(20px,3vw,27px)/1.25 Fraunces,Georgia,serif;margin:6px 0}
+.bbanner .p{color:var(--muted);font-size:15px;line-height:1.6;margin:0;max-width:62ch}
+.bbanner .act{display:flex;flex-direction:column;align-items:flex-start;gap:6px}
+.bbanner .go{display:inline-flex;align-items:center;border-radius:999px;padding:12px 22px;font-weight:650;font-size:15px;background:var(--opal-btn);color:#03201e;white-space:nowrap}
+.bbanner .note{font-size:12.5px;color:var(--muted2)}
+.bbanner:hover .go{filter:brightness(1.06)}
+@media(max-width:560px){.bbanner .in{padding:16px 18px}.bbanner .txt{flex-basis:100%}.bbanner .p{font-size:14px}.bbanner .act{width:100%}.bbanner .go{width:100%;justify-content:center}}
 `.trim();
 
 const HEAD_FONTS = '<link rel="preconnect" href="https://fonts.googleapis.com"><link rel="preconnect" href="https://fonts.gstatic.com" crossorigin>'
@@ -64,6 +76,17 @@ const headerWith = (ctaHref, ctaLabel) => `<header class="site"><div class="wrap
 </div></header>`;
 const chromeHeader = headerWith('/slickchart', 'Open the app');
 
+// The Beauty Biz App Build Roadmap banner (Ashley, 2026-10-16), the same one as the top of
+// index.html. Blog pages only: build-blog.cjs passes banner:true. Above the header, so it scrolls away.
+const buildBanner = `<a class="bbanner" href="/build"><div class="in">
+  <div class="txt">
+    <div class="ey">New &middot; The Beauty Biz App Build Roadmap</div>
+    <div class="h">Want a booking app that is all yours? Build it, the way I built SlickChart.</div>
+    <p class="p">I built SlickChart myself with Claude, between clients, with no coding background. The step by step roadmap is now written for beauty pros: your services, your forms, your rules, in an app you own and can change any time.</p>
+  </div>
+  <div class="act"><span class="go">See the roadmap &rarr;</span><span class="note">$97 once. Works for every beauty trade.</span></div>
+</div></a>`;
+
 const chromeFooter = `<footer><div class="wrap">
   <a href="/">Home</a><a href="/blog">Blog</a><a href="/build/blog">Build blog</a><a href="/switch">Switching</a><a href="/privacy">Privacy</a><a href="/terms">Terms</a>
   <a href="mailto:support@slickchart.app">Contact</a>
@@ -73,7 +96,7 @@ const chromeFooter = `<footer><div class="wrap">
 // ogImage: the picture that shows when a link is shared. Defaults to the SlickChart one; the Build
 // blog passes its own, because a Build page previewing as a SlickChart client-engagement graphic
 // tells whoever sees it the wrong thing about what they are about to open.
-function head({ title, description, canonical, keywords, jsonld, ogType, headerCta, ogImage }) {
+function head({ title, description, canonical, keywords, jsonld, ogType, headerCta, ogImage, banner }) {
   const share = `${SITE}/assets/${ogImage || 'og-image-marine.jpg?v=4'}`;
   return `<!doctype html>
 <html lang="en">
@@ -106,7 +129,7 @@ ${HEAD_FONTS}
 <script type="application/ld+json">${JSON.stringify(jsonld)}</script>
 </head>
 <body>
-${headerCta ? headerWith(headerCta.href, headerCta.label) : chromeHeader}`;
+${banner ? buildBanner + '\n' : ''}${headerCta ? headerWith(headerCta.href, headerCta.label) : chromeHeader}`;
 }
 
 module.exports = { SITE, TITLE_SUFFIX, esc, CSS, HEAD_FONTS, headerWith, chromeHeader, chromeFooter, head };
