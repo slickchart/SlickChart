@@ -12,7 +12,7 @@
 // checkout sessions this email paid for rather than trusting a local table. That also means this
 // works for purchases made before build_purchases existed. Anything it finds is backfilled into that
 // table (silently — see recordBuildSale's notify flag) so the stats catch up too.
-import { recordBuildSale, sendAccessEmail } from '../lib/build-sales.js';
+import { recordBuildSale, sendAccessEmail, roadmapUrlFor } from '../lib/build-sales.js';
 
 const _hits = new Map();
 function burstOk(key, limit, windowMs) {
@@ -72,10 +72,9 @@ export default async function handler(req, res) {
 
     const key = process.env.STRIPE_SECRET_KEY || '';
     const videoUrl = String(process.env.BUILD_VIDEO_URL || '').trim();
-    const artifactUrl = String(process.env.BUILD_ARTIFACT_URL || '').trim();
     // Missing config is our problem, not theirs, and saying so here would leak whether they bought.
-    if (!key || !videoUrl || !artifactUrl) {
-      console.error('[build-access] not configured: stripe=' + !!key + ' video=' + !!videoUrl + ' artifact=' + !!artifactUrl);
+    if (!key || !videoUrl) {
+      console.error('[build-access] not configured: stripe=' + !!key + ' video=' + !!videoUrl);
       res.status(200).json(generic);
       return;
     }
@@ -90,7 +89,10 @@ export default async function handler(req, res) {
       // can never be used to have someone else's links delivered to it.
       const onFile = String((s.customer_details && s.customer_details.email) || s.customer_email || '').trim();
       const to = onFile || email;
-      try { await sendAccessEmail(to, s.id, { videoUrl, artifactUrl }); }
+      // The roadmap THIS purchase paid for: the original for a sale from the earlier page.
+      const artifactUrl = roadmapUrlFor(s);
+      if (!artifactUrl) console.error('[build-access] no roadmap link for ' + s.id + ' (BUILD_ARTIFACT_URL not set?)');
+      else try { await sendAccessEmail(to, s.id, { videoUrl, artifactUrl }); }
       catch (e) { console.error('[build-access] resend failed:', e && e.message || e); }
       // Backfill every purchase we found, silently — this is an old sale, not a new one.
       for (const found of sessions) {

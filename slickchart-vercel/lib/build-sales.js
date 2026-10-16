@@ -164,6 +164,19 @@ export async function recordBuildSale(sale) {
   await recordNotify({ kind: 'build-sale', subject: (sale && sale.email) || '', skipped, devices, sent: sentCount, detail });
 }
 
+// ── Which roadmap a purchase unlocks ─────────────────────────────────────────────────────────────
+// The /build page sells the Beauty Biz Master Build Roadmap from 2026-10, and build-checkout.js tags
+// those sessions metadata[roadmap]=beauty. A purchase WITHOUT that tag was made on the earlier page
+// and paid for the original roadmap, so it keeps getting BUILD_ARTIFACT_URL — someone re-requesting
+// their links from /build/access must never be handed a different product than the one they bought.
+// BUILD_BEAUTY_ARTIFACT_URL overrides the built-in link without a deploy.
+export const BEAUTY_ROADMAP_URL = 'https://claude.ai/artifact/MLh3Sf9qvGLr1a92DHDtR8';
+export function roadmapUrlFor(session) {
+  const tag = String((session && session.metadata && session.metadata.roadmap) || '');
+  if (tag === 'beauty') return String(process.env.BUILD_BEAUTY_ARTIFACT_URL || BEAUTY_ROADMAP_URL).trim();
+  return String(process.env.BUILD_ARTIFACT_URL || '').trim();
+}
+
 // ── The buyer's own access email ─────────────────────────────────────────────────────────────────
 // Lives here rather than in build-unlock.js because two paths send it: the success redirect right
 // after paying, and /api/build-access when someone asks for it again because they lost the first one.

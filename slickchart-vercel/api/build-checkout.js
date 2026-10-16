@@ -43,6 +43,8 @@ export default async function handler(req, res) {
   // session as a roadmap sale, so the guard holds even for a session created before this line shipped.)
   form.set('metadata[product]', 'build');
   form.set('payment_intent_data[metadata][product]', 'build');
+  // Which roadmap this sale unlocks (lib/build-sales.js roadmapUrlFor). Untagged = the original.
+  form.set('metadata[roadmap]', 'beauty');
   // Stripe shows a marketing opt-in tickbox on the checkout page and reports the answer back as
   // session.consent.promotions. That is how the buyer list gets built with real, recorded consent
   // rather than by assuming a purchase is permission to market to someone later.

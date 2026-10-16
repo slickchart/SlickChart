@@ -9,7 +9,7 @@
 //
 // The links themselves are env vars so Ashley can change the video or the Artifact URL in Vercel
 // without a deploy.
-import { recordBuildSale, sendAccessEmailOnce } from '../lib/build-sales.js';
+import { recordBuildSale, sendAccessEmailOnce, roadmapUrlFor } from '../lib/build-sales.js';
 
 export default async function handler(req, res) {
   const sessionId = String((req.query && req.query.session_id) || '').trim();
@@ -18,9 +18,8 @@ export default async function handler(req, res) {
 
   const key = process.env.STRIPE_SECRET_KEY || '';
   const videoUrl = String(process.env.BUILD_VIDEO_URL || '').trim();
-  const artifactUrl = String(process.env.BUILD_ARTIFACT_URL || '').trim();
   if (!key) { res.status(500).json({ ok: false, error: 'Not set up yet.' }); return; }
-  if (!videoUrl || !artifactUrl) {
+  if (!videoUrl) {
     // Never tell a paying customer "not found" because WE haven't finished configuring it.
     console.error('[build-unlock] BUILD_VIDEO_URL / BUILD_ARTIFACT_URL not set');
     res.status(503).json({ ok: false, error: 'Your purchase went through — the materials are being finalised. Email hello@slickchart.app and we’ll send them straight over.' });
@@ -40,6 +39,13 @@ export default async function handler(req, res) {
     // paid | unpaid | no_payment_required. Only the first two exist here, and only 'paid' unlocks.
     if (String(j.payment_status || '') !== 'paid') {
       res.status(402).json({ ok: false, error: 'That payment hasn’t completed. If your card was charged, email hello@slickchart.app and we’ll get you in.' });
+      return;
+    }
+    // Which roadmap depends on which page they bought from (see roadmapUrlFor).
+    const artifactUrl = roadmapUrlFor(j);
+    if (!artifactUrl) {
+      console.error('[build-unlock] no roadmap link for this purchase (BUILD_ARTIFACT_URL not set?)');
+      res.status(503).json({ ok: false, error: 'Your purchase went through — the materials are being finalised. Email hello@slickchart.app and we’ll send them straight over.' });
       return;
     }
     const email = String((j.customer_details && j.customer_details.email) || j.customer_email || '').trim();
