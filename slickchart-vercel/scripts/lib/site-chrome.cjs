@@ -77,7 +77,7 @@ const headerWith = (ctaHref, ctaLabel) => `<header class="site"><div class="wrap
 const chromeHeader = headerWith('/slickchart', 'Open the app');
 
 // The Beauty Biz App Build Roadmap banner (Ashley, 2026-10-16), the same one as the top of
-// index.html. Blog pages only: build-blog.cjs passes banner:true. Above the header, so it scrolls away.
+// index.html. Blog and switching pages pass banner:true. Above the header, so it scrolls away.
 const buildBanner = `<a class="bbanner" href="/build"><div class="in">
   <div class="txt">
     <div class="ey">New &middot; The Beauty Biz App Build Roadmap</div>
