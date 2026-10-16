@@ -68,6 +68,53 @@ check('a sent collection form reaches the client with every question',r6.has&&r6
 await p.evaluate(()=>{try{persistForms();}catch(e){}});await p.waitForTimeout(800);
 const stored=await p.evaluate(()=>_lsGet('sc_forms')||'');
 check('saving her forms does not copy the 16 collection forms into her account',!/ec-intake|ec-derma/.test(stored),stored.length+' chars');
+
+// Her business details fill themselves in: the client's copy carries the real name, the editor keeps the token
+const r7=await p.evaluate(()=>{
+  const send=fid=>{CL['cB']={id:'cB',name:'B',pendingForms:[],_token:'t2'};_assignPending(CL['cB'].pendingForms,'formId',fid);const d=_assembleClientData('cB');return (d.pendingForms||[]).find(x=>x.formId===fid);};
+  const keep={n:bizInfo.name,e:bizInfo.email,p:bizInfo.phone,w:workspace.name};
+  bizInfo.name='';bizInfo.email='';bizInfo.phone='';workspace.name='';
+  const blank=send('ec-general-consent').qs.find(q=>q.id==='ec-general-consent-11').label;
+  const vBlank=send('ec-virtual').qs.find(q=>q.id==='ec-virtual-16').label;
+  bizInfo.name='Glow Skin Studio';bizInfo.email='hello@glow.test';bizInfo.phone='555-0100';
+  const named=send('ec-general-consent').qs.find(q=>q.id==='ec-general-consent-11').label;
+  const vNamed=send('ec-virtual').qs.find(q=>q.id==='ec-virtual-16').label;
+  const lib=_plSectionHTML({text:'call us at {phone|the number on your booking}.'});
+  bizInfo.name=keep.n;bizInfo.email=keep.e;bizInfo.phone=keep.p;workspace.name=keep.w;
+  return {blank,named,vBlank:/ahead to me, the way I asked you to/.test(vBlank),vNamed:/ahead to hello@glow\.test\./.test(vNamed),lib:/555-0100/.test(lib),stillToken:formTmpls['ec-general-consent'].qs.find(q=>q.id==='ec-general-consent-11').label.includes('{business}')};
+});
+check('with no business name set, the form says "this business"',/I release this business from/.test(r7.blank),r7.blank);
+check('with a business name set, the client sees HER business name',/I release Glow Skin Studio from/.test(r7.named),r7.named);
+check('the virtual consult points to her email, or reads naturally without one',r7.vBlank&&r7.vNamed);
+check('the library fills in her phone number',r7.lib);
+check('the form itself keeps {business}, so a later name change still reaches it',r7.stillToken);
+
+// Every collection form is fully editable: rename, edit a question, delete one, add one, save, relaunch
+await p.evaluate(()=>nav('form-builder','ec-peel'));await p.waitForTimeout(600);
+const r8a=await p.evaluate(()=>({rows:document.querySelectorAll('#qlist .qrow').length,want:formTmpls['ec-peel'].qs.length,tip:document.body.innerText.includes('{business}')}));
+check('the editor opens a collection form with every question',r8a.rows===r8a.want&&r8a.rows>5,JSON.stringify(r8a));
+check('the editor explains {business}, {phone}, {email}',r8a.tip);
+const delId=await p.evaluate(()=>{
+  document.getElementById('form-name-input').value='My peel consent';
+  const rows=[...document.querySelectorAll('#qlist .qrow')];
+  const l=rows[0].querySelector('.q-label');l.value='Your full legal name';l.dispatchEvent(new Event('input'));
+  const del=rows[1].dataset.qid;rows[1].querySelector('[aria-label="Delete question"]').click();
+  addFormQ('Short text');
+  const nl=[...document.querySelectorAll('#qlist .qrow .q-label')].find(x=>!x.value);nl.value='Who referred you to {business}?';
+  saveFormBuilder('ec-peel');return del;
+});
+await p.waitForTimeout(1000);
+const r8b=await p.evaluate(d=>{const t=formTmpls['ec-peel'];return {name:t.name,first:(t.qs[0]||{}).label,gone:!t.qs.some(q=>q.id===d),added:t.qs.some(q=>q.label==='Who referred you to {business}?'),stored:/My peel consent/.test(_lsGet('sc_forms')||'')};},delId);
+check('saving keeps the new name, the edited, deleted and added questions',r8b.name==='My peel consent'&&r8b.first==='Your full legal name'&&r8b.gone&&r8b.added,JSON.stringify(r8b));
+check('the edited collection form is saved to her account',r8b.stored);
+await p.reload();await p.waitForTimeout(3500);
+const r8c=await p.evaluate(d=>{const t=formTmpls['ec-peel'];
+  bizInfo.name='Glow Skin Studio';
+  CL['cE']={id:'cE',name:'E',pendingForms:[],_token:'t3'};_assignPending(CL['cE'].pendingForms,'formId','ec-peel');
+  const pf=(_assembleClientData('cE').pendingForms||[]).find(x=>x.formId==='ec-peel');
+  return {name:t.name,gone:!t.qs.some(q=>q.id===d),sentTitle:pf.title,sentAdded:pf.qs.some(q=>q.label==='Who referred you to Glow Skin Studio?'),sentFirst:pf.qs[0].label,otherUntouched:formTmpls['ec-derma'].name==='Dermaplaning consent'||!!formTmpls['ec-derma'].name};},delId);
+check('after a relaunch the edits are still there',r8c.name==='My peel consent'&&r8c.gone,JSON.stringify(r8c));
+check('a client is sent HER edited version, with her name filled in',r8c.sentTitle==='My peel consent'&&r8c.sentAdded&&r8c.sentFirst==='Your full legal name',JSON.stringify(r8c));
 check('no page errors',errs.length===0,errs.join(' | '));
 await b.close();
 const f=res.filter(x=>!x).length;console.log('\n'+(res.length-f)+' passed, '+f+' failed');process.exit(f?1:0);

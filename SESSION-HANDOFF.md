@@ -7555,3 +7555,20 @@ subscriber. All ADDED, nothing existing changed:
   fixed on the way: a "Phone or email" field failed the client app's email check for a phone number.
 - Pre-existing, not from this: `sweep3-forms-provider-sign-again.mjs` still shows signing the same
   form twice on the provider's device files nothing on the second sign (same result on 16c).
+
+### 2026-10-16e — business details fill in; every collection form and guide verified editable (preview)
+- `_bizFill(s)` / `_bizFillQs(qs)`: `{business}`, `{phone}`, `{email}` (optional `{phone|fallback}`) fill
+  from `bizInfo` (`workspace.name` fallback, then "this business"). Resolved where a form is SHOWN
+  or SENT (`_assembleClientData` form + guide-tip snapshots, sign-on-device snapshot, signed-record
+  renders, provider form renders, the practice library). The editor keeps the token, so a later
+  name change reaches every unsent form. The editor has a one-line tip about the tokens.
+- Collection uses: `ec-general-consent-11` ("I release {business}…"), `ec-virtual-16`
+  ("…24 hours ahead to {email|me, the way I asked you to}"), library patch-test line
+  ("call us at {phone|the number on your booking}").
+- Editability verified headless: all 16 `ec-*` forms round-trip through the editor with no loss
+  (labels, types, required, options, checklist items); rename + edit + delete + add question,
+  save, relaunch, send = the client gets HER version with her name filled in. Guides: edit a
+  `g-esty-ec-*` guide, relaunch, the edit stays and is what is sent. Tests:
+  `scratchpad/test-esthetician-collection.mjs` (25/25).
+- "Signing the same form twice files nothing" was a STALE repro, not a live bug: it signed twice
+  inside `submitSignOnDevice`'s 3s double-tap window. Repro now waits 3.5s: both records file.

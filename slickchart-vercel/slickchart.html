@@ -239,7 +239,7 @@ const S=document.getElementById('S');
 // resets when I save it" and there was no way to tell whether her phone had any of them — a whole
 // day was spent debugging code she may not have been running. Shown at the bottom of Settings, so
 // the answer is a screenshot away. Bump it on every ship.
-const APP_BUILD='2026-10-16d';
+const APP_BUILD='2026-10-16e';
 
 
 /* ════════════════════════════════════════════════════════════════
@@ -9362,7 +9362,7 @@ function _buildClientFileHTML(id){
       const qa=[];
       // Prefer the at-submission question snapshot so an edited form template can't mislabel or drop a
       // client's answers on this printable summary (matches viewSubmittedForm).
-      const _qsrc=(Array.isArray(sf.qs)&&sf.qs.length)?sf.qs:(tmpl&&tmpl.qs);
+      const _qsrc=_bizFillQs((Array.isArray(sf.qs)&&sf.qs.length)?sf.qs:(tmpl&&tmpl.qs));
       if(_qsrc){_qsrc.forEach(q=>{if(q.type==='Signature'||q.type==='Contraindications')return;const a=sf.answers&&sf.answers[q.id];if(_isPhotoType(q.type)&&Array.isArray(a)){if(a.length)qa.push([q.label,a.length+' photo'+(a.length===1?'':'s')+' attached']);return;}if(a!=null&&String(a).trim())qa.push([q.label,String(a)]);});}
       else{Object.keys(sf.answers||{}).forEach(k=>{const a=sf.answers[k];if(Array.isArray(a)&&a.length&&typeof a[0]==='string'&&a[0].slice(0,5)==='data:'){qa.push([k,a.length+' photo'+(a.length===1?'':'s')+' attached']);return;}qa.push([k,String(a)]);});}
       const qaHTML=qa.length?`<table class="qa">${qa.map(([l,v])=>`<tr><td class="l">${_fileEsc(l)}</td><td class="v">${_fileEsc(v)}</td></tr>`).join('')}</table>`:'<div class="muted">No written answers recorded.</div>';
@@ -10184,7 +10184,7 @@ function viewSubmittedForm(id,i){
   // form later (renaming/deleting/reordering questions) mislabels a client's answers or drops them from
   // view (e.g. an allergy answer shown under a renamed "Skin concerns" label). Falls back to the current
   // template for older submissions saved before the snapshot was stored.
-  const _qsrc=(Array.isArray(sf.qs)&&sf.qs.length)?sf.qs:(tmpl&&tmpl.qs);
+  const _qsrc=_bizFillQs((Array.isArray(sf.qs)&&sf.qs.length)?sf.qs:(tmpl&&tmpl.qs));
   if(_qsrc){_qsrc.forEach(q=>{if(q.type==='Signature'||q.type==='Contraindications')return;const a=sf.answers&&sf.answers[q.id];if(_isPhotoAns(q,a)){photoGroups.push([q.label,a]);return;}if(a!=null&&String(a).trim())rows.push([q.label,q.type==='Date'?_fmtDOB(String(a)):String(a),q.type||'']);});}
   else{Object.keys(sf.answers||{}).forEach(k=>{const a=sf.answers[k];if(Array.isArray(a)&&a.length&&typeof a[0]==='string'&&a[0].slice(0,5)==='data:'){photoGroups.push([k,a]);return;}rows.push([k,String(a),'']);});}
   const signerName=c.name||'Client';
@@ -18220,7 +18220,7 @@ async function confirmSendForm(fid,cid){
   const c=CL[cid];
   const sendIds=_isIntakeForm(fid)?_withPhotoRelease(fid):[fid];
   if(cid==='maya'){
-    try{SlickBridge.post('form-shared',{providerId:'jess',clientId:'maya',form:{id:fid,title:tmpl.name,docs:guides.map(g=>({title:g.title,kind:g.cat})),qs:(tmpl.qs||[]).map(q=>({id:q.id,label:q.label,type:q.type,required:q.required,options:q.options,items:q.items})),contra:ci?ci.items:[],consent:sig?sig.label:''}});}catch(e){}
+    try{SlickBridge.post('form-shared',{providerId:'jess',clientId:'maya',form:{id:fid,title:tmpl.name,docs:guides.map(g=>({title:g.title,kind:g.cat})),qs:(tmpl.qs||[]).map(q=>({id:q.id,label:_bizFill(q.label),type:q.type,required:q.required,options:q.options,items:q.items})),contra:ci?ci.items:[],consent:sig?sig.label:''}});}catch(e){}
     guides.forEach(g=>{try{SlickBridge.post('resource-shared',{providerId:'jess',clientId:'maya',resource:{guideId:g.id,title:g.title,icon:g.icon,cat:g.cat,url:g.url||'',tips:g.tips||[],files:_guideFileList(g),fileName:g.fileName||'',fileType:g.fileType||'',hasFile:!!(g.hasFile||g.fileData),fileData:g.fileData||''}});}catch(e){}});
   }else if(c){
     // Real client: actually assign the form(s) to them so they appear the next
@@ -18722,7 +18722,7 @@ function renderCheckinSettings(){
   <div class="sh"><h2>Health & skin questions</h2></div>
   <div style="background:var(--surf2);border:1px solid var(--p-line);border-radius:12px;margin:0 16px 10px;overflow:hidden;">
     ${checkinCfg.skinQ.map((q,i)=>`<div style="display:flex;align-items:center;gap:8px;padding:10px 12px;border-bottom:1px solid var(--p-line2);">
-      <span style="flex:1;font-size:16px;color:var(--p-ink);">${_fileEsc(q.label)}</span>
+      <span style="flex:1;font-size:16px;color:var(--p-ink);">${_fileEsc(_bizFill(q.label))}</span>
       ${togBtn(q.on,'checkinCfg.skinQ['+i+'].on=!checkinCfg.skinQ['+i+'].on;renderCheckinSettings()','Toggle question')}
       <button onclick="checkinCfg.skinQ.splice(${i},1);renderCheckinSettings()" class="icon-btn" aria-label="Remove question" style="color:var(--p-mut);min-width:36px;min-height:36px;"><i class="ti ti-trash" aria-hidden="true" style="font-size:16px;"></i></button>
     </div>`).join('')}
@@ -19505,6 +19505,19 @@ const formTmpls={
   ]},
   new:{name:'',qs:[]},
 };
+// ── Business details that fill themselves in ────────────────────────────────────────────────────────
+// A form label or library line can say {business}, {phone} or {email}; it shows her own details from
+// Settings > Business info. {phone|words} shows "words" when that detail is blank. Filled in wherever a
+// form is shown or sent, so the client's copy carries the real name. The editor keeps the token, which
+// is what lets a later change to her business name reach every form she has not sent yet.
+function _bizFill(s){
+  if(typeof s!=='string'||s.indexOf('{')<0)return s;
+  let b={};try{b=(typeof bizInfo!=='undefined'&&bizInfo)||{};}catch(e){}
+  const v={business:String(b.name||((typeof workspace!=='undefined'&&workspace&&workspace.name)||'')).trim(),phone:String(b.phone||'').trim(),email:String(b.email||'').trim()};
+  const dflt={business:'this business',phone:'us',email:'me'};
+  return s.replace(/\{(business|phone|email)(?:\|([^}]*))?\}/g,function(m,k,fb){return v[k]||(fb!=null?fb:dflt[k]);});
+}
+function _bizFillQs(qs){return Array.isArray(qs)?qs.map(function(q){return (q&&typeof q.label==='string'&&q.label.indexOf('{')>=0)?Object.assign({},q,{label:_bizFill(q.label)}):q;}):qs;}
 // ── THE ESTHETICIAN COLLECTION (Ashley's forms, 2026-10-16) ─────────────────────────────────────────
 // Built in for every subscriber. These are ADDED under new 'ec-*' ids: the stock forms are untouched,
 // and a form already sent or signed can never change, because the client's copy is a snapshot taken
@@ -19565,7 +19578,7 @@ const EC_FORMS={
   {id:'ec-general-consent-8',label:'I’ve read the possible risks above. Results vary, and no specific result has been promised to me.',type:'Yes / No',required:true},
   {id:'ec-general-consent-9',label:'I’ll speak up if anything is too hot or painful. You may skip a service that isn’t right for my skin.',type:'Yes / No',required:true},
   {id:'ec-general-consent-10',label:'I’ll follow aftercare. If a reaction lasts or worsens, I’ll contact you and see a healthcare provider.',type:'Yes / No',required:true},
-  {id:'ec-general-consent-11',label:'I release this business from reactions caused by details I didn’t share or aftercare I skipped, as far as state law allows.',type:'Yes / No',required:true},
+  {id:'ec-general-consent-11',label:'I release {business} from reactions caused by details I didn’t share or aftercare I skipped, as far as state law allows.',type:'Yes / No',required:true},
   {id:'ec-general-consent-12',label:'This consent lasts 12 months. Specialized treatments, such as peels, need their own consent.',type:'Yes / No',required:true},
   {id:'ec-general-consent-13',label:'Parent or guardian name (if under 18): a parent or legal guardian must sign here and complete the Minor Consent form before any service. State rules may also require them to stay during the visit.',type:'Short text',required:false},
   {id:'ec-general-consent-14',label:'I confirm the information above is accurate',type:'Signature',required:true},
@@ -19608,7 +19621,7 @@ const EC_FORMS={
   {id:'ec-virtual-13',label:'Pregnant or nursing?',type:'Yes / No',required:false},
   {id:'ec-virtual-14',label:'Under a doctor’s care for your skin?',type:'Yes / No',required:false},
   {id:'ec-virtual-15',label:'Monthly skincare budget',type:'Single select',required:false,options:['Under $50','$50–100','$100–200','$200+','Use what I have']},
-  {id:'ec-virtual-16',label:'YOUR PHOTOS. Send this form and your photos 24 hours ahead, the way I asked you to. Send these three: Front, Left side, Right side. Plus one close-up of your main concern. Hair pulled back, face filling most of the frame. How to take them: Clean skin, no makeup. Face a bright window in daylight; no flash, filters or beauty mode. Plain background. Check each one is sharp before sending. I have read this.',type:'Yes / No',required:true},
+  {id:'ec-virtual-16',label:'YOUR PHOTOS. Send this form and your photos 24 hours ahead to {email|me, the way I asked you to}. Send these three: Front, Left side, Right side. Plus one close-up of your main concern. Hair pulled back, face filling most of the frame. How to take them: Clean skin, no makeup. Face a bright window in daylight; no flash, filters or beauty mode. Plain background. Check each one is sharp before sending. I have read this.',type:'Yes / No',required:true},
   {id:'ec-virtual-17',label:'A virtual consult gives skincare guidance only. It isn’t a medical exam or diagnosis, and photos can miss things an in-person visit would catch.',type:'Yes / No',required:true},
   {id:'ec-virtual-18',label:'You may recommend an in-person visit or refer me to a physician, especially for a changing mole, sudden rash or a concern that isn’t improving.',type:'Yes / No',required:true},
   {id:'ec-virtual-19',label:'My answers are complete. I’ll patch test new products and stop any that irritate my skin. Results vary and aren’t guaranteed.',type:'Yes / No',required:true},
@@ -20042,6 +20055,7 @@ function renderFormBuilder(tid){
     <div style="flex:1;min-width:0;"><div style="font-size:16px;font-weight:600;color:var(--p-ink);">AI Form Assist</div><div style="font-size:14px;color:var(--p-mut);line-height:1.4;">Suggest contraindications + consent language for this service.</div></div>
     <button id="ai-form-btn" onclick="aiSuggestForm('${tid}',this)" style="background:var(--accent);color:var(--accent-ink);border:1px solid var(--btn-edge);border-radius:8px;padding:7px 12px;font-size:16px;font-weight:600;cursor:pointer;white-space:nowrap;flex-shrink:0;">Suggest</button>
   </div>`:''}
+  <div style="margin:0 16px 10px;font-size:14px;color:var(--p-mut);line-height:1.45;">Tip: type <b style="color:var(--p-ink);">{business}</b>, <b style="color:var(--p-ink);">{phone}</b> or <b style="color:var(--p-ink);">{email}</b> in any question and it fills in from Settings &gt; Business info.</div>
   <div id="qlist" style="padding:0 16px;">
     ${_orderedFormQs(tmpl.qs).map(q=>_qRowHTML(q)).join('')}
   </div>
@@ -20167,12 +20181,12 @@ function saveFormBuilder(tid,thenPreview,quiet){
 }
 function _formQHTML(q){
   if(q.type==='Contraindications'){return `<div style="margin-bottom:14px;background:var(--p-red-bg);border:1px solid var(--p-red-line);border-radius:12px;padding:13px 14px;">
-      <div style="display:flex;align-items:center;gap:7px;margin-bottom:7px;"><i class="ti ti-alert-triangle" style="font-size:16px;color:var(--p-red);"></i><span style="font-size:16px;font-weight:600;color:var(--p-red);">${_fileEsc(q.label||'Contraindications')}</span></div>
+      <div style="display:flex;align-items:center;gap:7px;margin-bottom:7px;"><i class="ti ti-alert-triangle" style="font-size:16px;color:var(--p-red);"></i><span style="font-size:16px;font-weight:600;color:var(--p-red);">${_fileEsc(_bizFill(q.label||'Contraindications'))}</span></div>
       <div style="font-size:16px;color:#d6a8a8;line-height:1.5;margin-bottom:8px;">Please tell your provider before we begin if any of these apply to you:</div>
       <ul style="margin:0;padding-left:18px;">${(q.items||[]).map(it=>`<li style="font-size:16px;color:var(--p-red);line-height:1.75;">${_fileEsc(it)}</li>`).join('')}</ul>
       <div style="font-size:16px;color:#d6a8a8;line-height:1.5;margin-top:9px;border-top:1px solid #4a1c1c;padding-top:8px;">By signing below, you confirm you've read and understood the above.</div>
     </div>`;}
-  return `<div style="margin-bottom:14px;padding-bottom:14px;border-bottom:1px solid var(--p-line2);"><div style="font-size:16px;font-weight:500;color:var(--p-ink);margin-bottom:6px;">${_fileEsc(q.label)} <span style="font-size:16px;color:${q.required?'var(--p-red)':'#315249'};">${q.required?'Required':'Optional'}</span></div>${q.type==='Short text'?'<input class="fi" placeholder="Your answer...">'  :''}${q.type==='Long text'?'<textarea class="fi" style="height:64px;resize:none;" placeholder="Your answer..."></textarea>':''} ${q.type==='Yes / No'?'<div style="display:flex;gap:8px;"><button class="btng" style="flex:1;">Yes</button><button class="btng" style="flex:1;">No</button></div>':''} ${q.type==='Date'?'<input type="date" class="fi" aria-label="Date">':''} ${(q.type==='Multiple choice'||q.type==='Single select')&&q.options?`<div style="display:flex;flex-wrap:wrap;gap:6px;">${q.options.map(o=>`<button class="btng" style="padding:6px 12px;font-size:16px;">${_fileEsc(o)}</button>`).join('')}</div>`:''} ${q.type==='Signature'?`<div style="border:1px dashed var(--p-line);border-radius:8px;padding:20px;text-align:center;background:var(--surf1);"><i class="ti ti-writing" style="font-size:22px;color:var(--p-mut);display:block;margin-bottom:6px;"></i><span style="font-size:16px;color:var(--p-mut);">Tap to sign</span></div>`:''} ${_isPhotoType(q.type)?`<div style="border:1px dashed var(--p-line);border-radius:8px;padding:20px;text-align:center;background:var(--surf1);"><i class="ti ti-camera" style="font-size:22px;color:var(--p-mut);display:block;margin-bottom:6px;"></i><span style="font-size:16px;color:var(--p-mut);">Client attaches photos</span></div>`:''}</div>`;
+  return `<div style="margin-bottom:14px;padding-bottom:14px;border-bottom:1px solid var(--p-line2);"><div style="font-size:16px;font-weight:500;color:var(--p-ink);margin-bottom:6px;">${_fileEsc(_bizFill(q.label))} <span style="font-size:16px;color:${q.required?'var(--p-red)':'#315249'};">${q.required?'Required':'Optional'}</span></div>${q.type==='Short text'?'<input class="fi" placeholder="Your answer...">'  :''}${q.type==='Long text'?'<textarea class="fi" style="height:64px;resize:none;" placeholder="Your answer..."></textarea>':''} ${q.type==='Yes / No'?'<div style="display:flex;gap:8px;"><button class="btng" style="flex:1;">Yes</button><button class="btng" style="flex:1;">No</button></div>':''} ${q.type==='Date'?'<input type="date" class="fi" aria-label="Date">':''} ${(q.type==='Multiple choice'||q.type==='Single select')&&q.options?`<div style="display:flex;flex-wrap:wrap;gap:6px;">${q.options.map(o=>`<button class="btng" style="padding:6px 12px;font-size:16px;">${_fileEsc(o)}</button>`).join('')}</div>`:''} ${q.type==='Signature'?`<div style="border:1px dashed var(--p-line);border-radius:8px;padding:20px;text-align:center;background:var(--surf1);"><i class="ti ti-writing" style="font-size:22px;color:var(--p-mut);display:block;margin-bottom:6px;"></i><span style="font-size:16px;color:var(--p-mut);">Tap to sign</span></div>`:''} ${_isPhotoType(q.type)?`<div style="border:1px dashed var(--p-line);border-radius:8px;padding:20px;text-align:center;background:var(--surf1);"><i class="ti ti-camera" style="font-size:22px;color:var(--p-mut);display:block;margin-bottom:6px;"></i><span style="font-size:16px;color:var(--p-mut);">Client attaches photos</span></div>`:''}</div>`;
 }
 function _formHasSignature(fid){const t=formTmpls[fid];return !!(t&&t.qs&&t.qs.some(q=>q.type==='Signature'));}
 // Single source of truth for question order: signatures ALWAYS render last, on every
@@ -20198,7 +20212,7 @@ function _sdPick(btn,id,val){window._sdAns=window._sdAns||{};window._sdAns[id]=v
 function _sdQHTML(q){
   if(q.type==='Contraindications')return _formQHTML(q);
   const id='sd-'+(q.id!=null?q.id:Math.random().toString(36).slice(2));
-  const lab=`<div style="font-size:16px;font-weight:500;color:var(--p-ink);margin-bottom:6px;">${_fileEsc(q.label)} <span style="font-size:16px;color:${q.required?'var(--p-red)':'#315249'};">${q.required?'Required':'Optional'}</span></div>`;
+  const lab=`<div style="font-size:16px;font-weight:500;color:var(--p-ink);margin-bottom:6px;">${_fileEsc(_bizFill(q.label))} <span style="font-size:16px;color:${q.required?'var(--p-red)':'#315249'};">${q.required?'Required':'Optional'}</span></div>`;
   let field='';
   if(q.type==='Long text')field=`<textarea class="fi" id="${id}" style="height:60px;resize:none;line-height:1.5;" placeholder="Your answer…"></textarea>`;
   else if(q.type==='Date')field=_looksDOB(q.label)?_pDOBFieldHTML(id,'','',q.label):`<input class="fi" type="date" id="${id}">`;
@@ -20278,7 +20292,7 @@ function submitSignOnDevice(fid,cid){
     if(!_sodRecent){
       // Keep the drawn signature itself, scaled down, not just the fact that one was drawn.
       let _sig='';try{const pad=document.getElementById('sign-pad');if(pad&&pad.toDataURL){const w=Math.min(480,pad.width||480),h=Math.round(w*((pad.height||160)/(pad.width||480)));const cv=document.createElement('canvas');cv.width=w;cv.height=h;const cx=cv.getContext('2d');cx.fillStyle='#fff';cx.fillRect(0,0,w,h);cx.drawImage(pad,0,0,w,h);_sig=cv.toDataURL('image/jpeg',0.7);if(_sig.length>150000)_sig='';}}catch(e){_sig='';}
-      _sodForm={formId:fid,title:tmpl.name,answers:ans,flagged:[],date:'Today',at:Date.now(),signed:true,sod:1,qs:(tmpl&&Array.isArray(tmpl.qs))?tmpl.qs:null};
+      _sodForm={formId:fid,title:tmpl.name,answers:ans,flagged:[],date:'Today',at:Date.now(),signed:true,sod:1,qs:(tmpl&&Array.isArray(tmpl.qs))?_bizFillQs(tmpl.qs):null};
       if(_sig)_sodForm.sigImg=_sig;
       CL[cid].submittedForms.unshift(_sodForm);
     }
@@ -20758,12 +20772,12 @@ function _assembleClientData(id){
     // assignedAt MUST travel to the client: its "already submitted" dedup keys on (formId+assignedAt),
     // so a form the provider RE-sends (fresh assignedAt) is meant to reappear. Dropping it here made
     // both sides compare '' === '' forever, permanently hiding every re-requested form.
-    if(tmpl){const out={formId:pf.formId,title:tmpl.name,assignedAt:pf.assignedAt||0,qs:(tmpl.qs||[]).map(q=>({id:q.id,label:q.label,type:q.type,required:!!q.required,options:q.options||null,items:q.items||null}))};pf.snapshot=out;return out;}
+    if(tmpl){const out={formId:pf.formId,title:tmpl.name,assignedAt:pf.assignedAt||0,qs:(tmpl.qs||[]).map(q=>({id:q.id,label:_bizFill(q.label),type:q.type,required:!!q.required,options:q.options||null,items:q.items||null}))};pf.snapshot=out;return out;}
     return pf.snapshot?Object.assign({},pf.snapshot,{assignedAt:pf.assignedAt||pf.snapshot.assignedAt||0}):null;
   }).filter(Boolean);
   const pendingGuides=(Array.isArray(c.pendingGuides)?c.pendingGuides:[]).map(pg=>{
     const g=(typeof _findGuide==='function')?_findGuide(pg.guideId):null;
-    if(g){const out={guideId:pg.guideId,title:g.title||'Guide',icon:g.icon||'📄',cat:g.cat||'',url:g.url||'',tips:Array.isArray(g.tips)?g.tips:[],
+    if(g){const out={guideId:pg.guideId,title:g.title||'Guide',icon:g.icon||'📄',cat:g.cat||'',url:g.url||'',tips:Array.isArray(g.tips)?g.tips.map(_bizFill):[],
       files:_guideFileList(g),fileName:g.fileName||'',fileType:g.fileType||'',hasFile:!!(g.hasFile||g.fileData)};pg.snapshot=out;return Object.assign({},out,{assignedAt:Number(pg.assignedAt)||0});}
     return pg.snapshot?Object.assign({},pg.snapshot,{guideId:pg.guideId,assignedAt:Number(pg.assignedAt)||0}):null;
   }).filter(Boolean);
@@ -23018,7 +23032,7 @@ sections:[
 ['24 hrs','','','','','','',''],
 ['48 hrs','','','','','','','']]}},
 {h:'Result',items:['Clear to proceed','Proceed with changes','Do not use this product']},
-{h:'Client instructions',text:'Client: If the test spot burns, blisters, swells or itches badly, wash it off with cool water and call us at [Phone]. Trouble breathing or swelling of the face or throat: call 911. A clear patch test lowers the risk of a reaction but can’t rule one out.'},
+{h:'Client instructions',text:'Client: If the test spot burns, blisters, swells or itches badly, wash it off with cool water and call us at {phone|the number on your booking}. Trouble breathing or swelling of the face or throat: call 911. A clear patch test lowers the risk of a reaction but can’t rule one out.'},
 {h:'Sign-off',items:['Client signature: I understand the above','Date','Esthetician initials']}
 ]},
 
@@ -23121,9 +23135,9 @@ function _practiceLibraryTabHTML(){
 }
 function _plSectionHTML(s){
   const h=s.h?`<div style="font-size:15px;font-weight:600;color:var(--p-ink);margin:14px 0 6px;">${_fileEsc(s.h)}</div>`:'';
-  if(s.items)return h+`<ul style="margin:0;padding-left:20px;font-size:15px;line-height:1.55;color:var(--p-ink);">${s.items.map(it=>`<li style="margin-bottom:5px;">${_fileEsc(it)}</li>`).join('')}</ul>`;
+  if(s.items)return h+`<ul style="margin:0;padding-left:20px;font-size:15px;line-height:1.55;color:var(--p-ink);">${s.items.map(it=>`<li style="margin-bottom:5px;">${_fileEsc(_bizFill(it))}</li>`).join('')}</ul>`;
   if(s.table){const t=s.table;return h+`<div style="overflow-x:auto;border:1px solid var(--p-line);border-radius:10px;"><table style="border-collapse:collapse;width:100%;font-size:14px;color:var(--p-ink);"><thead><tr>${(t.head||[]).map(c=>`<th style="text-align:left;padding:7px 9px;background:var(--p-surf2);border-bottom:1px solid var(--p-line);white-space:nowrap;">${_fileEsc(c)}</th>`).join('')}</tr></thead><tbody>${(t.rows||[]).map(r=>`<tr>${r.map(c=>`<td style="padding:7px 9px;border-top:1px solid var(--p-line);vertical-align:top;">${_fileEsc(c)}</td>`).join('')}</tr>`).join('')}</tbody></table></div>`;}
-  return h+`<div style="font-size:15px;line-height:1.6;color:var(--p-ink);white-space:pre-line;">${_fileEsc(s.text||'')}</div>`;
+  return h+`<div style="font-size:15px;line-height:1.6;color:var(--p-ink);white-space:pre-line;">${_fileEsc(_bizFill(s.text||''))}</div>`;
 }
 function _openPracticeEntry(id){
   const e=EC_LIBRARY.find(x=>x.id===id);if(!e)return;
@@ -33661,21 +33675,21 @@ function _ncIntakeFormId(){const id=_ncProf().id;const fid=id+'-intake';if(formT
 function _ncIntakeQs(){const fid=_ncIntakeFormId();const t=fid&&formTmpls[fid];if(!t)return [];return t.qs.filter(q=>{if(q.type==='Signature'||q.type==='Contraindications')return false;const l=(q.label||'').toLowerCase();if(/full name|^name$/.test(l))return false;if(/date of birth|^dob$/.test(l))return false;if(/phone|mobile number/.test(l))return false;if(/e-?mail/.test(l))return false;if(/how did you hear|referred by|referral|hear about us/.test(l))return false;return true;});}
 function _ncQHTML(q,i){
   const id='nc-iq-'+(q.id!=null?q.id:i);const val=newClientData[id]||'';
-  const lab=`<div style="font-size:16px;font-weight:500;color:var(--p-ink);margin-bottom:6px;">${_fileEsc(q.label)} ${q.required?'<span style="font-size:14px;color:var(--p-red);">Required</span>':'<span style="font-size:14px;color:var(--p-mut2);">Optional</span>'}</div>`;
+  const lab=`<div style="font-size:16px;font-weight:500;color:var(--p-ink);margin-bottom:6px;">${_fileEsc(_bizFill(q.label))} ${q.required?'<span style="font-size:14px;color:var(--p-red);">Required</span>':'<span style="font-size:14px;color:var(--p-mut2);">Optional</span>'}</div>`;
   const esc=String(val).replace(/"/g,'&quot;');const escT=String(val).replace(/</g,'&lt;');
   let field='';
-  if(q.type==='Long text')field=`<textarea class="fi" id="${id}" aria-label="${_fileEsc(q.label)}" oninput="newClientData['${id}']=this.value" style="height:60px;resize:none;line-height:1.5;" placeholder="Answer…">${escT}</textarea>`;
+  if(q.type==='Long text')field=`<textarea class="fi" id="${id}" aria-label="${_fileEsc(_bizFill(q.label))}" oninput="newClientData['${id}']=this.value" style="height:60px;resize:none;line-height:1.5;" placeholder="Answer…">${escT}</textarea>`;
   else if(q.type==='Date')field=_looksDOB(q.label)
     ?_pDOBFieldHTML(id,_fmtDOB(val),`newClientData['${id}']=this.value`,q.label)
-    :`<input class="fi" type="date" id="${id}" aria-label="${_fileEsc(q.label)}" value="${esc}" onchange="newClientData['${id}']=this.value">`;
+    :`<input class="fi" type="date" id="${id}" aria-label="${_fileEsc(_bizFill(q.label))}" value="${esc}" onchange="newClientData['${id}']=this.value">`;
   else if(q.type==='Yes / No')field=`<div style="display:flex;gap:8px;">${['Yes','No'].map(o=>`<button onclick="newClientData['${id}']='${o}';renderNCStep()" class="btng" style="flex:1;${val===o?'border-color:var(--accent-strong);color:var(--accent-strong);background:var(--accent-a08);':''}">${o}</button>`).join('')}</div>`;
   else if((q.type==='Multiple choice'||q.type==='Single select')&&q.options){
     const isCustom=val&&q.options.indexOf(val)<0;
     field=`<div style="display:flex;flex-wrap:wrap;gap:6px;">${q.options.map(o=>`<button onclick="newClientData['${_jsAttr(id)}']='${_jsAttr(o)}';renderNCStep()" class="btng" style="padding:6px 12px;font-size:16px;${val===o?'border-color:var(--accent-strong);color:var(--accent-strong);background:var(--accent-a08);':''}">${_fileEsc(o)}</button>`).join('')}</div>
-    <input class="fi" id="${id}-other" aria-label="${_fileEsc(q.label)}, type your own" oninput="newClientData['${_jsAttr(id)}']=this.value" value="${isCustom?esc:''}" placeholder="Or type your own…" style="margin-top:8px;font-size:16px;">`;
+    <input class="fi" id="${id}-other" aria-label="${_fileEsc(_bizFill(q.label))}, type your own" oninput="newClientData['${_jsAttr(id)}']=this.value" value="${isCustom?esc:''}" placeholder="Or type your own…" style="margin-top:8px;font-size:16px;">`;
   }
   else if(q.type==='Photo upload'||q.type==='File upload')field=`<div style="background:var(--p-surf);border:1.5px dashed var(--p-line);border-radius:8px;padding:12px;text-align:center;color:var(--p-mut);font-size:16px;display:flex;align-items:center;justify-content:center;gap:7px;"><i class="ti ti-camera" style="font-size:16px;"></i> Client adds this from their app or in-person link</div>`;
-  else field=`<input class="fi" id="${id}" aria-label="${_fileEsc(q.label)}" value="${esc}" oninput="newClientData['${id}']=this.value" placeholder="Answer…">`;
+  else field=`<input class="fi" id="${id}" aria-label="${_fileEsc(_bizFill(q.label))}" value="${esc}" oninput="newClientData['${id}']=this.value" placeholder="Answer…">`;
   return `<div style="margin-bottom:14px;">${lab}${field}</div>`;
 }
 function renderNewClient(){setNav('clients');newClientData={};renderNCBasicStep();}
@@ -33996,19 +34010,19 @@ function _pfiQHTML(q,i){
   const id='pfi-'+i;
   if(q.type==='Contraindications'){
     return `<div style="margin-bottom:14px;background:var(--surf2);border:1px solid var(--p-line);border-radius:12px;padding:12px 13px;">
-      <div style="font-size:16px;font-weight:600;color:var(--p-amber);text-transform:uppercase;letter-spacing:.04em;margin-bottom:8px;">${_fileEsc(q.label)}</div>
+      <div style="font-size:16px;font-weight:600;color:var(--p-amber);text-transform:uppercase;letter-spacing:.04em;margin-bottom:8px;">${_fileEsc(_bizFill(q.label))}</div>
       ${(q.items||[]).map((it,ii)=>`<label style="display:flex;align-items:flex-start;gap:8px;padding:6px 0;cursor:pointer;"><input type="checkbox" id="${id}-${ii}" ${((_pfiData[id]||[]).indexOf(ii)>=0)?'checked':''} onchange="_pfiData['${id}']=_pfiCollectChecked('${id}',${(q.items||[]).length})" style="margin-top:3px;width:16px;height:16px;accent-color:var(--accent-strong);flex-shrink:0;"><span style="font-size:16px;color:var(--p-ink);line-height:1.5;">${_fileEsc(it)}</span></label>`).join('')}
     </div>`;
   }
   const val=_pfiData[id]||'';
-  const lab=`<div style="font-size:16px;font-weight:500;color:var(--p-ink);margin-bottom:6px;">${_fileEsc(q.label)} ${q.required?'<span style="font-size:14px;color:var(--p-red);">Required</span>':'<span style="font-size:14px;color:var(--p-mut2);">Optional</span>'}</div>`;
+  const lab=`<div style="font-size:16px;font-weight:500;color:var(--p-ink);margin-bottom:6px;">${_fileEsc(_bizFill(q.label))} ${q.required?'<span style="font-size:14px;color:var(--p-red);">Required</span>':'<span style="font-size:14px;color:var(--p-mut2);">Optional</span>'}</div>`;
   const esc=String(val).replace(/"/g,'&quot;');const escT=String(val).replace(/</g,'&lt;');
   let field='';
-  if(q.type==='Long text')field=`<textarea class="fi" id="${id}" aria-label="${_fileEsc(q.label)}" oninput="_pfiData['${id}']=this.value" style="height:60px;resize:none;line-height:1.5;" placeholder="Answer…">${escT}</textarea>`;
-  else if(q.type==='Date')field=`<input class="fi" type="date" id="${id}" aria-label="${_fileEsc(q.label)}" value="${esc}" onchange="_pfiData['${id}']=this.value">`;
+  if(q.type==='Long text')field=`<textarea class="fi" id="${id}" aria-label="${_fileEsc(_bizFill(q.label))}" oninput="_pfiData['${id}']=this.value" style="height:60px;resize:none;line-height:1.5;" placeholder="Answer…">${escT}</textarea>`;
+  else if(q.type==='Date')field=`<input class="fi" type="date" id="${id}" aria-label="${_fileEsc(_bizFill(q.label))}" value="${esc}" onchange="_pfiData['${id}']=this.value">`;
   else if(q.type==='Yes / No')field=`<div style="display:flex;gap:8px;">${['Yes','No'].map(o=>`<button onclick="_pfiData['${id}']='${o}';_renderPfiQs()" class="btng" style="flex:1;${val===o?'border-color:var(--accent-strong);color:var(--accent-strong);background:var(--accent-a08);':''}">${o}</button>`).join('')}</div>`;
   else if(q.type==='Photo upload'||q.type==='File upload')field=`<div style="background:var(--p-surf);border:1.5px dashed var(--p-line);border-radius:8px;padding:14px;text-align:center;color:var(--p-mut);font-size:16px;display:flex;align-items:center;justify-content:center;gap:7px;"><i class="ti ti-camera" style="font-size:16px;"></i> The client can upload this from their app or in-person link</div>`;
-  else field=`<input class="fi" id="${id}" aria-label="${_fileEsc(q.label)}" value="${esc}" oninput="_pfiData['${id}']=this.value" placeholder="Answer…">`;
+  else field=`<input class="fi" id="${id}" aria-label="${_fileEsc(_bizFill(q.label))}" value="${esc}" oninput="_pfiData['${id}']=this.value" placeholder="Answer…">`;
   return `<div style="margin-bottom:14px;">${lab}${field}</div>`;
 }
 function _pfiCollectChecked(id,n){
