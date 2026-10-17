@@ -2,7 +2,7 @@
 // using the exact snapshot the provider app sends (formTmpls -> _assembleClientData shape).
 import { BASE, launch, clientRecord, mockApi } from './sweep2-client-lib.mjs';
 import fs from 'fs';
-const src=fs.readFileSync(new URL('./lb/lb-data.js',import.meta.url),'utf8');
+const src=fs.readFileSync('/home/user/SlickChart/scratchpad/lb/lb-data.js','utf8');
 const F=new Function(src+';return LB_FORMS')();
 const res=[];const check=(n,p,d)=>{res.push(p);console.log((p?'  ok   ':'  FAIL ')+n+(d?'  :: '+d:''));};
 for (const fid of Object.keys(F)) {
