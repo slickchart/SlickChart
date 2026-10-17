@@ -537,7 +537,7 @@ const S=document.getElementById('S');
 // resets when I save it" and there was no way to tell whether her phone had any of them — a whole
 // day was spent debugging code she may not have been running. Shown at the bottom of Settings, so
 // the answer is a screenshot away. Bump it on every ship.
-const APP_BUILD='2026-10-17f';
+const APP_BUILD='2026-10-17g';
 
 
 /* ════════════════════════════════════════════════════════════════
@@ -5464,6 +5464,44 @@ async function _runSelfCheck(){
     }
     return r;
   });
+
+  // 4b. Diana, 2026-10-17: on her PHONE a client showed "0 saved summaries" and the default logo, while
+  //     her COMPUTER showed that client's Sep 25 summary and her own logo. These lines put both sides of
+  //     that in one report: what kind of app this is, which email it is signed in as, whether the phone's
+  //     own storage (IndexedDB) works, and summaries / logo / homecare / clients on this device vs the
+  //     account. Run it on both devices and compare.
+  try{
+    line('Kind of app', true, (typeof _isNativeApp==='function'&&_isNativeApp())?'the installed app (App Store / Play)':(((window.matchMedia&&window.matchMedia('(display-mode: standalone)').matches)||navigator.standalone)?'home-screen web app':'a web browser'));
+    let em='';try{const t=(Cloud&&Cloud.token)||Cloud._origGet('sc_token')||'';const pl=JSON.parse(atob(String(t).split('.')[0].replace(/-/g,'+').replace(/_/g,'/')));em=String(pl.e||'');}catch(e){}
+    line('Signed in as', !!em, em||'(no email in the sign-in)');
+  }catch(e){}
+  try{
+    let idbOk=false,idbWhy='';
+    if(typeof _idb!=='undefined'&&_idb&&_idb.set){
+      const k='selfcheck_idb_'+Date.now();
+      try{const w=await _idb.set(k,'1');const g=await _idb.get(k);idbOk=(w!==false&&g==='1');idbWhy=idbOk?'works':('wrote '+w+', read back '+JSON.stringify(g));try{await _idb.del(k);}catch(e){}}catch(e){idbWhy='error: '+(e&&e.name||e);}
+    }else idbWhy='not available';
+    line('This device’s big-file storage (IndexedDB)', idbOk, idbWhy);
+    const off=(Cloud&&Cloud._offloaded)?Object.keys(Cloud._offloaded):[];
+    line('Big lists kept in that storage', true, off.length?off.join(', '):'none');
+  }catch(e){}
+  try{
+    const cnt=function(k,str){
+      try{
+        const o=JSON.parse(str||'null');if(o==null)return 'nothing';
+        if(k==='sc_session_summaries'){let n=0;Object.keys(o).forEach(function(c){n+=Array.isArray(o[c])?o[c].length:0;});return Object.keys(o).length+' clients, '+n+' summaries';}
+        if(k==='sc_client_homecare')return Object.keys(o).length+' clients';
+        if(k==='sc_clients')return (Array.isArray(o)?o.length:Object.keys(o).length)+' clients';
+        if(k==='sc_brand_colors')return o.logoDataUrl?'your logo is set':'no logo';
+        return String(str).length+' bytes';
+      }catch(e){return 'unreadable';}
+    };
+    ['sc_session_summaries','sc_brand_colors','sc_client_homecare','sc_clients'].forEach(function(k){
+      const dev=cnt(k,_lsGet(k));const acc=(k in server)?cnt(k,server[k]):'nothing';
+      line(({sc_session_summaries:'Session summaries',sc_brand_colors:'Your logo',sc_client_homecare:'Homecare plans',sc_clients:'Client list (saved copy)'})[k], dev===acc, 'this device: '+dev+' · your account: '+acc);
+    });
+    try{const inMem=(typeof sessionSummaries!=='undefined'&&sessionSummaries)?Object.keys(sessionSummaries).length:0;line('Summaries the app has open right now', true, inMem+' clients');}catch(e){}
+  }catch(e){}
 
   // 5. room to store things (the theory that was wrong the first time — kept so it is ruled out, fast)
   let quota='unknown';

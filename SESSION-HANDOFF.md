@@ -7534,6 +7534,20 @@ No reply to Diana says anything is lost until that paste says so with numbers (�
   clears A's photo store from IndexedDB" (`captured_photos` key `cA` left after logout). The recover
   screen does not offer them to account B (that check passes).
 
+### §2be (cont.) Diana, 2026-10-17 08:58 — still happening AFTER 16c went live. Observations first.
+From her email "Re: Not saving clients" (2026-10-17 08:58) and her screenshots — GROUND TRUTH (§1b):
+
+| # | device | her words / what she saw |
+|---|---|---|
+| 47 | — | "I think it is something with the iPhone. On the computer everything is saved but on my phone nothing is saved." |
+| 48 | PHONE, 8:55 AM, dark theme | Client Bonnie Prince, Journey tab: "Session Summaries · 0 saved summaries · Finish a session to save one here". Contact shows (626) 945-3301, no email, no DOB, "Nothing flagged". |
+| 49 | COMPUTER (Windows laptop, photo of the screen) | Session summaries for Bonnie Prince: "1 summary" — "New client · Sep 25, 2026", text "Your first reset facial is complete, Bonnie — it was so great to get started with you! Because of your skin's history, we're taking a carefu..." |
+| 50 | PHONE vs COMPUTER | the header logo differs: phone shows the default SlickChart lotus; computer shows her own gold logo. (Observed in the screenshots; not something she said.) |
+| 51 | — | "I assume most of my clients want to use their phones and maybe that's why it's not showing up." |
+
+The summary is dated Sep 25 — weeks old, so this is not "saved a minute ago on the other device".
+Still unknown: phone build number today; native app vs home-screen web app (asked 10-16, unanswered).
+
 ## 2026-10-16 — The Esthetician Collection built into the provider app (build `2026-10-16d`, preview)
 Ashley's Etsy collection (54-page PDF, "Esthetician Complete Collection", 3 styles) built in for every
 subscriber. All ADDED, nothing existing changed:
@@ -7661,3 +7675,12 @@ entries showed a simplified text version instead of the PDF; the only PDF option
 - Verified: sweep-all-forms 90 forms 0 problems, mirror 6/6, contra 9/9, ec client 16/16,
   collection 30/30, client small-screen/layout sweeps clean. (`sweep3-forms-client-resend.mjs` shows 2
   on live main too; its verified successor `v-forms-client-resend.mjs` passes.)
+
+### §2be (cont.) 2026-10-17g — self-check now compares the libraries (preview)
+`_runSelfCheck` adds: kind of app (installed / home-screen / browser), signed-in email, an IndexedDB
+write/read probe, which keys are offloaded, and device vs account for session summaries (clients +
+entries), logo set or not, homecare, saved client list, plus summaries open in memory. Diana runs it
+once on the PHONE and once on the COMPUTER (Settings → tap the version line 5 times → Copy this report).
+Compare "Which account row" and "Signed in as" first: a different row = two accounts (obs 42/45/50 fit
+that); same row + device 0 vs account 1 = the phone is not reading the account in (IndexedDB line says
+whether storage works). `scratchpad/test-selfcheck-libraries.mjs` 6/6.
