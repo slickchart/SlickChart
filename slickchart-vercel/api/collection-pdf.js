@@ -1,5 +1,5 @@
 // GET /api/collection-pdf  — provider-authed. Hands a signed-in provider with a live subscription the
-// links to the printable Esthetician Collection and Lash & Brow Collection PDFs (the same files sold on Etsy), in three styles.
+// links to the printable Esthetician, Lash & Brow and Hair Stylist Collection PDFs (the same files sold on Etsy), in three styles.
 //
 // The files sit under an unguessable folder name that appears nowhere but here: the page never links
 // to it, robots are told not to index it (vercel.json), and the app only learns the address from this
@@ -27,6 +27,14 @@ const LB_FILES = [
   { style: 'luxe', label: 'Luxe', url: LB_DIR + 'luxe.pdf' }
 ];
 const LB_DOC_IDS = new Set(["lb-intake", "lb-lash-map", "lb-brow-design", "lb-service-consent", "lb-patch-test", "lb-photo-release", "lb-policy", "lb-ext-consent", "lb-lift-consent", "lb-lam-consent", "lb-tint-consent", "lb-wax-consent", "lb-removal-consent", "lb-ext-protocol", "lb-lift-protocol", "lb-lam-protocol", "lb-tint-protocol", "lb-wax-protocol", "lb-removal-protocol", "lb-ext-aftercare", "lb-lift-aftercare", "lb-lam-aftercare", "lb-tint-aftercare", "lb-wax-aftercare", "lb-removal-aftercare", "lb-before-visit", "lb-retention", "lb-aftercare-cards", "lb-service-record", "lb-styling", "lb-contra-chart", "lb-incident", "lb-hygiene-log", "lb-cover"]);
+// The Hair Stylist Collection (2026-10-17), split by scratchpad/hs-split-docs.py; ids carry an hs- prefix.
+const HS_DIR = '/assets/hs-cd08c7917b34626fe2a21967/';
+const HS_FILES = [
+  { style: 'neutral', label: 'Neutral', url: HS_DIR + 'neutral.pdf' },
+  { style: 'blush', label: 'Blush', url: HS_DIR + 'blush.pdf' },
+  { style: 'luxe', label: 'Luxe', url: HS_DIR + 'luxe.pdf' }
+];
+const HS_DOC_IDS = new Set(["hs-intake", "hs-consult", "hs-chem-consent", "hs-allergy-test", "hs-photo-release", "hs-policy", "hs-color-consent", "hs-lightening-consent", "hs-keratin-consent", "hs-perm-consent", "hs-relaxer-consent", "hs-ext-consent", "hs-color-protocol", "hs-lightening-protocol", "hs-keratin-protocol", "hs-perm-protocol", "hs-relaxer-protocol", "hs-ext-protocol", "hs-color-aftercare", "hs-lightening-aftercare", "hs-keratin-aftercare", "hs-perm-aftercare", "hs-relaxer-aftercare", "hs-ext-aftercare", "hs-before-visit", "hs-hair-care", "hs-aftercare-cards", "hs-service-record", "hs-color-theory", "hs-contra-chart", "hs-incident", "hs-sanitation", "hs-cover"]);
 const STYLES = new Set(['neutral', 'blush', 'luxe']);
 
 export default async function handler(req, res) {
@@ -49,12 +57,17 @@ export default async function handler(req, res) {
       if (!ok) { res.status(402).json({ error: 'The printable collection comes with an active SlickChart subscription.' }); return; }
     }
   }
-  // ?collection=lb picks the Lash & Brow files; anything else is the Esthetician Collection, as before.
-  const lb = String((req.query && req.query.collection) || '') === 'lb';
+  // ?collection=lb picks the Lash & Brow files, ?collection=hs the Hair Stylist ones; anything else is the Esthetician Collection, as before.
+  const collection = String((req.query && req.query.collection) || '');
+  const lb = collection === 'lb';
   const doc = String((req.query && req.query.doc) || '');
   if (doc) {
     const style = String((req.query && req.query.style) || 'neutral');
     if (!STYLES.has(style)) { res.status(404).json({ error: 'That page is not in the collection.' }); return; }
+    if (HS_DOC_IDS.has(doc)) {
+      res.status(200).json({ ok: true, files: HS_FILES, doc: { id: doc, style, url: HS_DIR + style + '/' + doc.slice(3) + '.pdf' } });
+      return;
+    }
     if (LB_DOC_IDS.has(doc)) {
       res.status(200).json({ ok: true, files: LB_FILES, doc: { id: doc, style, url: LB_DIR + style + '/' + doc.slice(3) + '.pdf' } });
       return;
@@ -63,5 +76,5 @@ export default async function handler(req, res) {
     res.status(200).json({ ok: true, files: FILES, doc: { id: doc, style, url: DIR + style + '/' + doc + '.pdf' } });
     return;
   }
-  res.status(200).json({ ok: true, files: lb ? LB_FILES : FILES });
+  res.status(200).json({ ok: true, files: collection === 'hs' ? HS_FILES : (lb ? LB_FILES : FILES) });
 }
