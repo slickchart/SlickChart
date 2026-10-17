@@ -7726,3 +7726,7 @@ stale 4/4, device report 10/10, self-check 6/6, summary follows notes 11/11, col
 contra 9/9, mirror 6/6, retired courses 7/7, draft resurrect 7/7 + 4/4, all 90 forms 0 problems.
 This is the most likely explanation of Diana's whole thread (§2ai, §2ao, §2be): the computer is fine
 because Chrome/Edge on her Windows laptop always ran the layer.
+- **LIVE 2026-10-17 (Ashley: "push it live early")**: the Safari storage fix alone, applied onto main
+  (`0c3b8ad`, build `2026-10-17j`), release fast-forwarded, deploy dispatched, live build-id
+  confirmed. Tested on that exact code in Chrome AND WebKit (storage hook 6/6, upgrade-from-live 5/5,
+  offload stale, device report, self-check, draft resurrect). Preview merged it back: `2026-10-17k`.
