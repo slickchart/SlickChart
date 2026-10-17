@@ -389,7 +389,7 @@ saved anywhere", not "does this always call that".
 | `_loadSquareAppts` | `/api/square/booking-options` | via `openSquareBook` |
 | `_loadTotpState` | `/api/totp-setup` | via `_beginTotpEnroll` |
 | `_loadTotpState` | `/api/totp-verify` | via `_confirmDisableTotp` |
-| `_lsGet` | `/api/store` | via `_verifyFormSave` |
+| `_lsSetItem` | `/api/store` | via `_verifyFormSave` |
 | `_lvShowFile` | `/api/guide-file` | via `_getGuideFile` |
 | `_lvStep` | `/api/guide-file` | via `_getGuideFile` |
 | `_manualApptDelete` | `/api/clients` | via `_syncSpecificClientsToServer` |

@@ -493,7 +493,7 @@ const S=document.getElementById('S');
 // resets when I save it" and there was no way to tell whether her phone had any of them — a whole
 // day was spent debugging code she may not have been running. Shown at the bottom of Settings, so
 // the answer is a screenshot away. Bump it on every ship.
-const APP_BUILD='2026-10-17h';
+const APP_BUILD='2026-10-17j';
 
 
 /* ════════════════════════════════════════════════════════════════
@@ -5005,24 +5005,46 @@ function _lsGet(k){
   try{if(Cloud&&Cloud._mem&&Object.prototype.hasOwnProperty.call(Cloud._mem,k))return Cloud._mem[k];}catch(e){}
   try{return localStorage.getItem(k);}catch(e){return null;}
 }
-(function(){try{const _set=localStorage.setItem.bind(localStorage);Cloud._origSet=_set;
-  const _get=localStorage.getItem.bind(localStorage);Cloud._origGet=_get;
-  const _rm=localStorage.removeItem.bind(localStorage);Cloud._origRemove=_rm;
+// SAFARI (2026-10-17, found in WebKit while chasing Diana's iPhone): assigning localStorage.setItem =
+// fn does NOT replace the method in Safari. Storage has a named-property setter, so WebKit (correctly,
+// per the spec) stores an ITEM called "setItem" holding the function's source, and every later call
+// still reaches the built-in. Chrome happens to honour the assignment, which is why every test passed.
+// So on every iPhone, iPad and Mac Safari this whole layer (offload to IndexedDB, mirroring each save
+// to the account, the null and boot-hydration guards) never ran. The methods are now installed on
+// Storage.prototype, which every engine honours, and only act for localStorage itself.
+(function(){try{
+  // The public demo replaces localStorage with a plain in-memory object; there, assigning works and
+  // the prototype is not involved, so it keeps the old way.
+  const _real=(typeof Storage!=='undefined')&&(localStorage instanceof Storage);
+  const _SP=_real?Storage.prototype:localStorage;
+  const _pSet=_SP.setItem,_pGet=_SP.getItem,_pRm=_SP.removeItem;
+  const _set=function(k,v){return _pSet.call(localStorage,k,v);};Cloud._origSet=_set;
+  const _get=function(k){return _pGet.call(localStorage,k);};Cloud._origGet=_get;
+  const _rm=function(k){return _pRm.call(localStorage,k);};Cloud._origRemove=_rm;
+  // Junk the old assignment left behind on Safari: items literally named setItem/getItem/removeItem
+  // holding source code (a few KB of the 5MB box, and they would sync nowhere and help nothing).
+  try{['setItem','getItem','removeItem'].forEach(function(n){const v=_get(n);if(v&&/^function\s*\(/.test(String(v)))_rm(n);});}catch(e){}
+  const _install=function(name,fn){
+    if(!_real){localStorage[name]=fn;return;}
+    const orig=_SP[name];
+    _SP[name]=function(){return this===localStorage?fn.apply(this,arguments):orig.apply(this,arguments);};
+  };
+  let _lsGetItem,_lsRemoveItem,_lsSetItem;
   // Reads come from memory whenever memory is the authority for that key: a big value that now lives
   // in IndexedDB, or a value this device was too full to store. Patching the one read path keeps all
   // ~155 existing localStorage.getItem call sites correct without touching any of them.
-  localStorage.getItem=function(k){
+  _lsGetItem=function(k){
     try{if(Cloud._mem&&Object.prototype.hasOwnProperty.call(Cloud._mem,k))return Cloud._mem[k];}catch(e){}
     return _get(k);
   };
   // Removing an offloaded key has to clear IndexedDB and memory too, or it would come straight back
   // on the next boot. Keys that are not offloaded behave exactly as before.
-  localStorage.removeItem=function(k){
+  _lsRemoveItem=function(k){
     try{if(Cloud._offloaded[k]){delete Cloud._offloaded[k];try{delete Cloud._mem[k];}catch(e2){}const d=_idbOK();if(d)d.del(_OFF_PREFIX+k);try{_offIndexWrite();}catch(e3){}}}catch(e){}
     try{delete _offAtBoot[k];}catch(e){}
     return _rm(k);
   };
-  localStorage.setItem=function(k,v){
+  _lsSetItem=function(k,v){
   // Never let the word `null` become a saved value. JSON.stringify(undefinedYet) produces the four
   // characters "null", which then push to the account and come back down over every device forever
   // — that is precisely how one provider's business hours were destroyed for three days. Clearing a
@@ -5048,7 +5070,9 @@ function _lsGet(k){
   var _lsErr=_lsPersist(k,v);
   try{if(_syncable(k))Cloud.push(k,v);}catch(e){}
   if(_lsErr)throw _lsErr;   // still surface quota errors to callers that check for them
-};}catch(e){}})();
+};
+  _install('getItem',_lsGetItem);_install('removeItem',_lsRemoveItem);_install('setItem',_lsSetItem);
+}catch(e){}})();
 // Make sure pending cloud writes reach the server before the page goes away (refresh, close,
 // or navigate). Without this, a save whose 700ms debounce hadn't fired was lost on reload and
 // then clobbered by the older server copy on the next pull. pagehide + visibilitychange cover
