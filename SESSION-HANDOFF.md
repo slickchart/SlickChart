@@ -7795,3 +7795,40 @@ Stylist-only result boxes (test readings, office use) stay on the printable. New
 "Consultation" (service plan) and "Client record" (allergy alert / strand test).
 Tests: `test-hair-stylist-collection` 17/17, `test-hs-client-form` (every form signed in the client
 app), plus the form suites, in Chrome and Safari.
+
+### §2be (cont.) 2026-10-17p — iPhone sweep + research (PREVIEW ONLY). Three fixes, each reproduced first
+Ashley: "try any other sweeps on diana's issue ... make sure we have this fixed for iphones ... do deep
+research". Diana's observations (47–51) unchanged: phone shows 0 summaries for Bonnie Prince and the
+default logo; the computer shows the summary (Sep 25) and her logo. Both are LARGE values.
+**Research** (WebKit bugs/blog, Capacitor docs/issues; full report in the session): home-screen web
+app, Safari tab and the Capacitor app are THREE separate storage containers on one iPhone (WebKit bug
+181849); iOS kills IndexedDB's backing process for backgrounded apps ("Connection to Indexed Database
+server lost", bugs 197050/235579/273827); keepalive/sendBeacon are capped at 64KB in flight;
+`navigator.storage.persist()` usually answers false on Safari 17 (bug 271401); Capacitor reloads the
+page silently when iOS kills the web process; beforeunload does not fire on iOS.
+**New harness** `scratchpad/test-iphone-account-scale.mjs [small|heavy]` — Chromium AND WebKit, one
+context per device (IndexedDB survives relaunch), service workers blocked (Playwright cannot see a
+SW-controlled page's requests in WebKit — that produced a false alarm first). Diana-shaped account.
+**Found and fixed:**
+1. `_lsEvictForSpace` dropped the biggest pulled key (usually `sc_clients`) from the 5MB box WITHOUT
+   keeping it in `Cloud._mem`, so on a full device the client list read as empty for the session.
+   Repro: heavy + IndexedDB broken, "clients: 0" with 400 on the account, both engines. Now kept in memory.
+2. One failed `indexedDB.open` set `_bad` for the whole session; now only three in a row (iOS reports
+   transient "connection lost" after a resume).
+3. THE OUTBOX (`sc_outbox`, device-local, owner-stamped, 24h): keys with an edit the account has not
+   confirmed. `_restoreOutbox()` runs after hydration, before the pull, so the pull keeps them and boot
+   sends them. Repro (test G): edit check-in questions (`sc_checkin_cfg`, plain-overwrite), upload cut
+   off, app closed -> OLD CODE lost the edit on the next open in all 4 runs (both engines, IDB ok/broken);
+   new code keeps it and it reaches the account. Test H: another account's outbox is dropped, never sent.
+   Stamped keys (brand, bizinfo) were already safe by `_ts`; union-merged maps heal by merge.
+   `flushBeacon` now sends keepalive chunks under 60KB (one big value used to sink the whole beacon).
+Also: `navigator.storage.persist()` requested at boot (harmless); device report gains `unsent` and
+`memOnly` ("phone storage FULL") lines on the founder Recover screen.
+**Residual, not fixed:** IndexedDB broken AND summaries alone over the 5MB box (heavy, WebKit): a save
+lives only in memory until the upload lands, so closing the app within ~150ms of saving can lose it.
+**Still the first thing to look at for Diana:** Recover clients -> esthieguild@gmail.com -> Their
+devices: her phone's kind (home-screen / app / Safari), build, IndexedDB works, summaries on the device
+vs the account, logo yes/no. A home-screen app and the Safari tab do not share storage or sign-in.
+Pre-existing (identical on the previous build): sweep-dup-boot-pullfail 3/4 (its 26 uploads happen
+AFTER the retried pull succeeds, so they seed absent keys, not overwrite), sweep-dup-boot-401-switch
+2/3, sweep-dup-edge-boot 9/10, sweep2-client-settings-persist 1 confirmed. No sweep differs by engine.
