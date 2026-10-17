@@ -281,6 +281,15 @@ bindings — mutate in place (`Object.keys(CL).forEach(k=>delete CL[k])`), don't
 Top-level `function` declarations ARE overridable window props (handy for stubbing `_sqFetch` in tests).
 The proxy blocks live `slickchart.app`, so test against the local file with routed/mocked `/api/**`.
 
+**Test in Safari's engine too, not only Chrome (2026-10-17).** Every iPhone runs WebKit, and Chromium
+behaves differently in ways that matter here: `localStorage.setItem = fn` silently did nothing in
+Safari, so the entire storage layer (offload to IndexedDB, mirroring saves to the account, the
+guards) never ran on any iPhone, while every Chromium test passed. WebKit is installed for Playwright
+(see `scratchpad/run-in-safari.sh`); `bash scratchpad/run-in-safari.sh scratchpad/<test>.mjs` runs any
+existing test in it unchanged (it also blocks the service worker, which in WebKit answers `/api/**`
+itself). Run anything touching storage, sync, boot or the native app in BOTH engines.
+`scratchpad/test-safari-storage-hook.mjs` is the regression test for the hook itself.
+
 ## 3. Architecture & build
 
 - **Single-file apps:** `slickchart.html` (provider app, ~2MB+), `slickchart-client.html` (client PWA),

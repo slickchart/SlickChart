@@ -19,7 +19,7 @@ await p.goto('http://localhost:8899/slickchart.html');
 await p.waitForTimeout(12000);
 const r=reports[0]||{};const rep=r.report||{};
 check('the device sends a report by itself after the app opens',reports.length===1,reports.length+' sent');
-check('it carries the device and the counts',rep.platform==='iPhone'&&rep.build==='2026-10-17i'&&rep.summaryEntries===2&&rep.summaryClients===2&&typeof rep.idbWorks==='boolean'&&rep.kind==='browser',JSON.stringify(rep));
+check('it carries the device and the counts',rep.platform==='iPhone'&&rep.build==='2026-10-17j'&&rep.summaryEntries===2&&rep.summaryClients===2&&typeof rep.idbWorks==='boolean'&&rep.kind==='browser',JSON.stringify(rep));
 check('it carries no client names or notes',!/Bonnie|reset facial|Amy/.test(JSON.stringify(r)));
 check('it has a device key that is not synced',/^d[a-z0-9]+$/.test(r.device||'')&&!(await p.evaluate(()=>_syncable('scdev_key'))));
 // does not repeat on every focus

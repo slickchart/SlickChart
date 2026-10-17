@@ -7705,3 +7705,24 @@ possible — and make that a rule (CLAUDE.md §4d, providers bullet).
   slickchart.app/api/build-id = 2026-10-17h. The rest of the preview (collection, paper forms, summary
   follows notes, mirror, Library PDFs) did NOT go out and still waits for her OK. Preview branch merged
   main back in and is now `2026-10-17i`.
+
+### §2be (cont.) 2026-10-17j — ROOT CAUSE FOR IPHONES: the storage layer never ran in Safari
+Found by running the tests in WebKit (installed at Ashley's request; `scratchpad/run-in-safari.sh`).
+`localStorage.setItem = fn` (and getItem/removeItem) does NOT replace the method in WebKit: Storage
+has a named-property setter, so Safari stores ITEMS called "setItem"/"getItem"/"removeItem" holding
+the functions' source, and every call still reaches the built-in. Chromium honours the assignment,
+so every test passed. On every iPhone/iPad/Mac Safari, therefore, since this layer was written:
+- saves were NOT mirrored to the account by the setItem patch (only call sites that also call
+  `_pushKeyNow` reached it) — fits obs 47 "on my phone nothing is saved";
+- big lists were never offloaded to IndexedDB, so the 5MB box filled;
+- the `null` guard and the boot-hydration guard never ran;
+- offloaded keys were not readable through getItem (moot, since nothing was offloaded).
+Fix: methods installed on `Storage.prototype`, acting only when `this===localStorage`; the public
+demo's plain-object shim keeps the old assignment; the junk items are removed at boot.
+Proof: `test-safari-storage-hook.mjs` — live code in WebKit 2/6 (4 FAIL), live in Chromium 6/6, fixed
+6/6 in both. Upgrade path `test-safari-upgrade.mjs` (old build's data on the phone, fixed build opens
+offline): 5/5, nothing lost, junk gone, next save offloads. Both engines: storage hook 6/6, offload
+stale 4/4, device report 10/10, self-check 6/6, summary follows notes 11/11, collection 30/30,
+contra 9/9, mirror 6/6, retired courses 7/7, draft resurrect 7/7 + 4/4, all 90 forms 0 problems.
+This is the most likely explanation of Diana's whole thread (§2ai, §2ao, §2be): the computer is fine
+because Chrome/Edge on her Windows laptop always ran the layer.
