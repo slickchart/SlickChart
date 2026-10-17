@@ -7778,3 +7778,6 @@ control records, submit carries flags + picks, package, provider preview). Pre-e
 this change (same on the previous build): `sweep3-forms-checkin-resend` 2/2 and
 `v-forms-checkin-resend` 1/2; the latter's client half needs the provider-side bug its own part 1
 now reports SOUND, so it is a stale repro.
+- **LIVE 2026-10-17 (Ashley: "yes push it")**: the roadmap sale alert wording alone (server only, no
+  build bump), `2e23cab` on release, CI green, deploy dispatched, main = `2e23cab`. Preview merged it
+  back (both preview branches). The rest of `2026-10-17n` still waits for 2am.
