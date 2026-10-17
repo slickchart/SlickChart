@@ -1,0 +1,12 @@
+import { recordBuildSale } from './build-sales.mjs';
+import { sent, pushes } from './stubs.mjs';
+const ok=(n,c,d)=>{console.log((c?'  ok   ':'  FAIL ')+n+(d?'  :: '+d:''));if(!c)process.exitCode=1;};
+await recordBuildSale({sessionId:'cs_1',email:'buyer@ex.com',amountCents:9700,currency:'usd',roadmap:'beauty'});
+ok('a roadmap sale emails her, naming the roadmap and price',sent.length===1&&sent[0].subject==='🚀 Beauty Biz App Build Roadmap sold — $97'&&sent[0].to==='botanicalaestheticsbyashley@gmail.com',sent[0]&&sent[0].subject);
+ok('and pushes to her phone',pushes.length===1&&pushes[0].title==='🚀 Beauty Biz App Build Roadmap sold!'&&/buyer@ex.com/.test(pushes[0].body)&&/3 sold/.test(pushes[0].body),JSON.stringify(pushes[0]));
+await recordBuildSale({sessionId:'cs_1',email:'buyer@ex.com',amountCents:9700,currency:'usd',roadmap:'beauty'});
+ok('the second path reporting the same sale does not ping twice',sent.length===1&&pushes.length===1);
+await recordBuildSale({sessionId:'cs_2',email:'old@ex.com',amountCents:9700,currency:'usd'});
+ok('an older untagged sale still announces, under the original name',sent.length===2&&/^🚀 Build Your Own App sold/.test(sent[1].subject),sent[1]&&sent[1].subject);
+await recordBuildSale({sessionId:'cs_3',email:'x@ex.com',roadmap:'beauty',notify:false});
+ok('a silent backfill does not ping',sent.length===2&&pushes.length===2);
