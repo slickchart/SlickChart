@@ -1,0 +1,12 @@
+import pw from '/opt/node22/lib/node_modules/playwright/index.js';
+const b=await pw.chromium.launch({executablePath:'/opt/pw-browsers/chromium-1194/chrome-linux/chrome'});
+const p=await b.newPage({viewport:{width:390,height:844},deviceScaleFactor:2});const errs=[];p.on('pageerror',e=>errs.push(e.message));
+await p.route('**/api/**',r=>r.fulfill({status:200,contentType:'application/json',body:r.request().url().includes('cloud-status')?'{"enabled":true}':'{"ok":true,"data":{}}'}));
+await p.goto('http://localhost:8899/slickchart.html');
+await p.evaluate(()=>{localStorage.setItem('sc_token','eyJ1IjoicDEifQ.sig');localStorage.setItem('sc_onboarded','1');localStorage.setItem('sc_professions','["esty"]');localStorage.setItem('sc_bizinfo',JSON.stringify({name:'Glow Skin Studio'}));});
+await p.reload();await p.waitForTimeout(3000);
+await p.evaluate(()=>nav('checkin-preview'));await p.waitForTimeout(600);
+const r=await p.evaluate(()=>({scf:document.querySelectorAll('.scf').length,style:(document.querySelector('.scf')||{}).getAttribute&&document.querySelector('.scf').getAttribute('data-style'),qs:document.querySelectorAll('.scf-q').length,ov:document.documentElement.scrollWidth-document.documentElement.clientWidth}));
+console.log(r,errs);
+await p.screenshot({path:process.argv[2]+'/ciprev.png'});
+await b.close();

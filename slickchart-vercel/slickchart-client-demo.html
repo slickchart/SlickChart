@@ -219,6 +219,12 @@ textarea.scf-in,.scf textarea.fi{border:1px solid var(--scf-line) !important;bor
 .scf-sig{font-family:'Brush Script MT','Segoe Script',cursive !important;font-size:22px !important;}
 .scf-sig-lab{font-size:10px;letter-spacing:.18em;text-transform:uppercase;color:var(--scf-mut);margin-top:5px;}
 .scf-photo{width:100%;font:inherit;font-size:15px;font-weight:600;cursor:pointer;background:#fff;border:1px dashed var(--scf-acc);border-radius:4px;padding:14px;color:var(--scf-acc);display:flex;align-items:center;justify-content:center;gap:7px;}
+.scf-grid{display:grid;gap:7px;}
+.scf-grid .scf-opt{text-align:center;padding:12px 8px;font-size:14px;}
+.scf-emo{font-size:22px;display:block;margin-bottom:4px;line-height:1.2;}
+.scf-opt small{display:block;font-size:12px;color:var(--scf-mut);margin-top:2px;}
+.scf-tile{font:inherit;font-size:12px;border-radius:4px;border:1px dashed var(--scf-acc);background:#fff;color:var(--scf-acc);display:flex;flex-direction:column;align-items:center;justify-content:center;gap:3px;cursor:pointer;}
+.scf-thumb{border:1px solid var(--scf-line);border-radius:4px;}
 .scf-foot{display:flex;justify-content:space-between;gap:10px;flex-wrap:wrap;font-size:12px;color:var(--scf-mut);padding:12px 18px 14px;border-top:1px solid var(--scf-line);}
 .scf-pad{width:100%;height:150px;background:#fff;border:none;border-bottom:1px solid #8f877c;touch-action:none;display:block;}
 #sc-demo-banner{position:fixed;top:0;left:0;right:0;z-index:99999;background:linear-gradient(90deg,#2a231b,#1a1208);border-bottom:1px solid #3c3227;color:#f3ecdf;font-family:-apple-system,BlinkMacSystemFont,'Segoe UI',sans-serif;font-size:12.5px;display:flex;align-items:center;justify-content:center;gap:12px;padding:9px 14px;flex-wrap:wrap;text-align:center;}#sc-demo-banner b{color:#C8A882;}#sc-demo-banner button{background:none;border:1px solid #6b5d45;color:#C8A882;border-radius:20px;padding:4px 12px;font-size:11.5px;font-weight:600;cursor:pointer;font-family:inherit;}#sc-demo-banner button:hover{border-color:#C8A882;}html,body{height:100%;margin:0;}.shell{height:100vh !important;max-height:100vh !important;min-height:0 !important;}
@@ -3840,15 +3846,11 @@ function renderFillForm(){
     : `Submit to ${_txt(client.providerFirst)}`;
   const _submitIcon=_nextItem?'ti-arrow-right':'ti-send';
   const _anyReq=qs.some(q=>q&&q.required);
-  const _st=['neutral','blush','luxe'].indexOf(client.formStyle)>=0?client.formStyle:'luxe';
-  const _br=(function(){try{const p=activeProvider();return (p&&p.brand)||{};}catch(e){return {};}})();
   const _foot=[client.studio,client.studioPhone,client.website].filter(Boolean).map(_txt).join(' · ');
   S.innerHTML=`
   ${_previsitProgressHTML('form',pf.formId)}
   <div style="padding:12px 12px 20px;">
-  <div class="scf" data-style="${_st}"${_scfAccentStyle(_br.primary)}>
-    <div class="scf-head"><div style="min-width:0;"><div class="scf-kick">${_txt(_scfKicker(pf.title))}</div><div id="page-heading" tabindex="-1" class="scf-title">${_txt(pf.title)}</div>${_anyReq?`<div class="scf-sub">Questions marked <b>Required</b> need an answer.</div>`:''}</div>${_scfLogoHTML(_br.logoDataUrl,client.studio)}</div>
-    <div class="scf-body">
+  ${_scfPaperOpen(_scfKicker(pf.title),pf.title,_anyReq?'Questions marked <b>Required</b> need an answer.':'','page-heading')}
     ${qs.map((q,i)=>_fillFormFieldHTML(q,i)).join('')}
     </div>
     ${_foot?`<div class="scf-foot"><span>${_foot}</span><span>${_txt(pf.title)}</span></div>`:''}
@@ -3868,6 +3870,21 @@ function _scfLogoHTML(logo,name){
   const src=_imgSrc(logo);
   if(src)return `<div class="scf-logo has-img"><img src="${src}" alt="${_txt(name||'Logo')}"></div>`;
   return name?`<div class="scf-logo">${_txt(name)}</div>`:'';
+}
+// Under the check-in title: the visit it is for (only when one is booked) and who sees it.
+function _ciSubline(){
+  const d=String(client.nextDate||'').trim();
+  const who=`${_txt(client.providerFirst)} sees this before you arrive.`;
+  return (d&&!/not scheduled/i.test(d))?`For your ${_dt(d)} appointment · ${who}`:who;
+}
+// The top of every paper form in this app: style, brand color, kicker, title, her logo. `sub` is
+// markup (callers escape); `headId` makes the title the page heading that focus moves to.
+function _scfPaperOpen(kicker,title,sub,headId){
+  const st=['neutral','blush','luxe'].indexOf(client.formStyle)>=0?client.formStyle:'luxe';
+  const br=(function(){try{const p=activeProvider();return (p&&p.brand)||{};}catch(e){return {};}})();
+  return `<div class="scf" data-style="${st}"${_scfAccentStyle(br.primary)}>
+    <div class="scf-head"><div style="min-width:0;"><div class="scf-kick">${_txt(kicker)}</div><div ${headId?`id="${headId}" tabindex="-1" `:''}class="scf-title">${_txt(title)}</div>${sub?`<div class="scf-sub">${sub}</div>`:''}</div>${_scfLogoHTML(br.logoDataUrl,client.studio)}</div>
+    <div class="scf-body">`;
 }
 // The small spaced-out line above a form's title, the way the printed forms carry it.
 function _scfKicker(t){t=String(t||'').toLowerCase();
@@ -4234,21 +4251,19 @@ function _renderCheckinStep(){
     <span style="font-size:12px;color:var(--c-mut);font-weight:500;">${checkinStep+1} of ${steps.length}</span>
   </div>
   ${_previsitProgressHTML('checkin')}
-  <div style="padding:10px 16px 0;">
-    <div style="display:flex;gap:4px;margin-bottom:10px;">
+  <div style="padding:10px 12px 0;">
+    <div style="display:flex;gap:4px;margin:0 4px 10px;">
       ${steps.map((_,i)=>`<div style="flex:1;height:4px;border-radius:2px;background:${i<=checkinStep?'var(--accent)':'#e7f0ec'};"></div>`).join('')}
     </div>
-    <div style="font-size:18px;font-weight:600;color:var(--c-ink);margin-bottom:2px;">${_txt(step.title)}</div>
-    <div style="font-size:13px;color:var(--c-mut);">For your ${_dt(client.nextDate)} appointment · ${_txt(client.providerFirst)} sees this before you arrive.</div>
-    ${step.firstVisitToggle?`<button onclick="_ciToggleFirstVisit()" aria-pressed="${_ciFirstVisit()?'true':'false'}" style="margin-top:12px;display:inline-flex;align-items:center;gap:8px;border:1.5px solid ${_ciFirstVisit()?'var(--accent)':'#d9e7e1'};background:${_ciFirstVisit()?'var(--accent-lt)':'#fff'};color:${_ciFirstVisit()?'var(--accent)':'#54645e'};border-radius:999px;padding:8px 14px;font-size:12.5px;font-weight:600;cursor:pointer;">
+    ${_scfPaperOpen('Pre-visit check-in',step.title,_ciSubline())}
+    ${step.firstVisitToggle?`<div class="scf-q"><button type="button" class="scf-opt" onclick="_ciToggleFirstVisit()" aria-pressed="${_ciFirstVisit()?'true':'false'}" style="display:inline-flex;align-items:center;gap:8px;">
       <i class="ti ti-${_ciFirstVisit()?'circle-check-filled':'sparkles'}" aria-hidden="true"></i>${_ciFirstVisit()?'First visit — nothing to update yet':'This is my first visit'}
-    </button>`:''}
-    ${step.note?`<div style="margin-top:12px;background:var(--accent-lt);border:1px solid #f0e6d8;border-radius:11px;padding:11px 13px;font-size:13px;color:var(--c-mut);line-height:1.55;">${_txt(step.note)}</div>`:''}
-  </div>
-  <div id="checkin-body">
-    <div style="padding:10px 16px 0;">
+    </button></div>`:''}
+    ${step.note?`<div class="scf-panel scf-note" style="margin:14px 0 0;padding:11px 13px;">${_txt(step.note)}</div>`:''}
+    <div id="checkin-body">
       ${(step.questions||[]).map(_renderCIQuestion).join('')}
     </div>
+    </div></div>
   </div>
   <div style="padding:12px 16px 20px;">
     ${(function(){
@@ -4291,70 +4306,66 @@ function _ciRerender(){
   _renderCheckinStep();
 }
 
+// Every check-in question is one row of the paper form (.scf-q), the same look as the intake forms.
 function _renderCIQuestion(q){
-  if(q.type==='boolean')return _ciBoolean(q);
-  if(q.type==='iconChoice')return _ciIconChoice(q);
-  if(q.type==='levelChoice')return _ciLevel(q);
-  if(q.type==='notes')return _ciNotes(q);
-  if(q.type==='photo')return _ciPhoto(q);
-  return '';
+  let h='';
+  if(q.type==='boolean')h=_ciBoolean(q);
+  else if(q.type==='iconChoice')h=_ciIconChoice(q);
+  else if(q.type==='levelChoice')h=_ciLevel(q);
+  else if(q.type==='notes')h=_ciNotes(q);
+  else if(q.type==='photo')h=_ciPhoto(q);
+  return h?`<div class="scf-q">${h}</div>`:'';
 }
 function _ciPhoto(q){
   const photos=checkinAnswers[q.id+'Photos']||[];
-  return`<div style="font-size:12px;font-weight:600;color:var(--c-mut);text-transform:uppercase;letter-spacing:.07em;margin-bottom:8px;">${_txt(q.label||'Reference photo')}</div>
-    ${q.hint?`<div style="font-size:13px;color:var(--c-mut);line-height:1.5;margin-bottom:12px;">${_txt(q.hint)}</div>`:''}
+  return`<div class="scf-h">${_txt(q.label||'Reference photo')}</div>
+    ${q.hint?`<div class="scf-note" style="margin:0 0 10px;">${_txt(q.hint)}</div>`:''}
     <div style="display:flex;flex-wrap:wrap;gap:8px;margin-bottom:10px;">
-      ${photos.map((src,i)=>`<div style="position:relative;width:88px;height:88px;border-radius:10px;overflow:hidden;border:1.5px solid var(--c-line);">
+      ${photos.map((src,i)=>`<div class="scf-thumb" style="position:relative;width:88px;height:88px;overflow:hidden;">
         <img src="${_imgSrc(src)}" alt="reference ${i+1}" style="width:100%;height:100%;object-fit:cover;display:block;">
         <button onclick="ciRemovePhoto('${q.id}',${i})" aria-label="Remove photo" style="position:absolute;top:2px;right:2px;width:20px;height:20px;border-radius:50%;background:rgba(0,0,0,.6);border:none;color:#fff;font-size:11px;cursor:pointer;display:flex;align-items:center;justify-content:center;">✕</button>
         ${String(src).slice(0,5)==='data:'?`<button onclick="ciRotatePhoto('${q.id}',${i})" aria-label="Rotate photo" title="Rotate" style="position:absolute;top:2px;left:2px;width:20px;height:20px;border-radius:50%;background:rgba(0,0,0,.6);border:none;color:#fff;cursor:pointer;display:flex;align-items:center;justify-content:center;"><i class="ti ti-rotate-clockwise" style="font-size:11px;"></i></button><button onclick="ciFlipPhoto('${q.id}',${i})" aria-label="Flip photo" title="Flip" style="position:absolute;bottom:2px;left:2px;width:20px;height:20px;border-radius:50%;background:rgba(0,0,0,.6);border:none;color:#fff;cursor:pointer;display:flex;align-items:center;justify-content:center;"><i class="ti ti-flip-horizontal" style="font-size:11px;"></i></button>`:''}
       </div>`).join('')}
-      <button onclick="ciAddPhoto('${q.id}')" aria-label="Upload photos" style="width:88px;height:88px;border-radius:10px;border:1.5px dashed #d4c4b0;background:var(--c-surf);display:flex;flex-direction:column;align-items:center;justify-content:center;gap:3px;cursor:pointer;color:var(--c-mut);">
-        <i class="ti ti-camera-plus" aria-hidden="true" style="font-size:20px;"></i><span style="font-size:11px;">Upload</span>
+      <button class="scf-tile" onclick="ciAddPhoto('${q.id}')" aria-label="Upload photos" style="width:88px;height:88px;">
+        <i class="ti ti-camera-plus" aria-hidden="true" style="font-size:20px;"></i><span>Upload</span>
       </button>
-      <button onclick="ciAddLink('${q.id}')" aria-label="Add a photo link" style="width:88px;height:88px;border-radius:10px;border:1.5px dashed #d4c4b0;background:var(--c-surf);display:flex;flex-direction:column;align-items:center;justify-content:center;gap:3px;cursor:pointer;color:var(--c-mut);">
-        <i class="ti ti-link" aria-hidden="true" style="font-size:20px;"></i><span style="font-size:11px;">Link</span>
+      <button class="scf-tile" onclick="ciAddLink('${q.id}')" aria-label="Add a photo link" style="width:88px;height:88px;">
+        <i class="ti ti-link" aria-hidden="true" style="font-size:20px;"></i><span>Link</span>
       </button>
     </div>
-    <div style="font-size:11px;color:var(--c-mut);">You can select several at once.</div>`;
+    <div class="scf-note">You can select several at once.</div>`;
 }
 
 function _ciLevel(q){
   const opts=q.options||['Off','Low','Med','High'];
   const v=checkinAnswers[q.id]||opts[0];   // defaults to first (e.g. "Off")
-  return`<div style="font-size:12px;font-weight:600;color:var(--c-mut);text-transform:uppercase;letter-spacing:.07em;margin-bottom:8px;">${_txt(q.label)}</div>
-  <div style="display:flex;gap:6px;margin-bottom:14px;">
-    ${opts.map(o=>`<button onclick="checkinAnswers['${_jsAttr(q.id)}']='${_jsAttr(o)}';_ciRerender()" style="flex:1;border:1.5px solid ${v===o?'var(--accent)':'#d9e7e1'};background:${v===o?'var(--accent)':'#fff'};color:${v===o?'#fff':'#54645e'};border-radius:9px;padding:11px 4px;font-size:13px;font-weight:600;cursor:pointer;">${_txt(o)}</button>`).join('')}
+  return`<div class="scf-lab">${_txt(q.label)}</div>
+  <div class="scf-yn" role="group" aria-label="${_txt(q.label)}">
+    ${opts.map(o=>`<button type="button" class="scf-opt" aria-pressed="${v===o}" onclick="checkinAnswers['${_jsAttr(q.id)}']='${_jsAttr(o)}';_ciRerender()">${_txt(o)}</button>`).join('')}
   </div>`;
 }
 
 function _ciBoolean(q){
   const v=checkinAnswers[q.id];
-  return`<div style="background:var(--c-card);border:1.5px solid ${v==='yes'?'var(--accent)':'#e7f0ec'};border-radius:12px;margin-bottom:10px;overflow:hidden;">
-    <div style="padding:12px 14px;">
-      <div style="font-size:13px;font-weight:600;color:var(--c-ink);margin-bottom:4px;">${_txt(q.label)}</div>
-      ${q.hint?`<div style="font-size:12px;color:var(--c-mut);margin-bottom:10px;">${_txt(q.hint)}</div>`:''}
-      <div style="display:flex;gap:8px;">
-        <button onclick="checkinAnswers['${_jsAttr(q.id)}']='yes';_ciRerender()" style="flex:1;border:1.5px solid ${v==='yes'?'var(--accent)':'#d9e7e1'};background:${v==='yes'?'var(--accent)':'#fff'};color:${v==='yes'?'#fff':'#54645e'};border-radius:8px;padding:10px;font-size:13px;cursor:pointer;font-weight:600;">${_txt(q.yesLabel||'Yes')}</button>
-        <button onclick="checkinAnswers['${_jsAttr(q.id)}']='no';_ciRerender()" style="flex:1;border:1.5px solid ${v==='no'?'var(--accent)':'#d9e7e1'};background:${v==='no'?'var(--accent)':'#fff'};color:${v==='no'?'#fff':'#54645e'};border-radius:8px;padding:10px;font-size:13px;cursor:pointer;font-weight:600;">${_txt(q.noLabel||'No changes')}</button>
-      </div>
+  return`<div class="scf-lab">${_txt(q.label)}</div>
+    ${q.hint?`<div class="scf-note" style="margin:-4px 0 9px;">${_txt(q.hint)}</div>`:''}
+    <div class="scf-yn" role="group" aria-label="${_txt(q.label)}">
+      <button type="button" class="scf-opt" aria-pressed="${v==='yes'}" onclick="checkinAnswers['${_jsAttr(q.id)}']='yes';_ciRerender()">${_txt(q.yesLabel||'Yes')}</button>
+      <button type="button" class="scf-opt" aria-pressed="${v==='no'}" onclick="checkinAnswers['${_jsAttr(q.id)}']='no';_ciRerender()">${_txt(q.noLabel||'No changes')}</button>
     </div>
-    ${v==='yes'?`<div style="border-top:1px solid var(--c-line);padding:10px 14px;"><textarea aria-label="Details" placeholder="${_txt(q.detailPh||'Add any details...')}" style="width:100%;background:var(--c-surf);border:1.5px solid var(--c-line);border-radius:8px;padding:9px 12px;font-size:13px;color:var(--c-ink);font-family:inherit;resize:none;height:70px;line-height:1.5;" oninput="checkinAnswers['${_jsAttr(q.id)}Detail']=this.value;_ciSaveDraftSoon()">${_txt(checkinAnswers[q.id+'Detail']||'')}</textarea></div>`:''}
-  </div>`;
+    ${v==='yes'?`<textarea class="scf-in" aria-label="Details" placeholder="${_txt(q.detailPh||'Add any details...')}" style="margin-top:10px;" oninput="checkinAnswers['${_jsAttr(q.id)}Detail']=this.value;_ciSaveDraftSoon()">${_txt(checkinAnswers[q.id+'Detail']||'')}</textarea>`:''}`;
 }
 
 function _ciIconChoice(q){
   const v=checkinAnswers[q.id];
   const cols=q.columns||2;
   const opts=q.options||[];
-  return`<div style="font-size:12px;font-weight:600;color:var(--c-mut);text-transform:uppercase;letter-spacing:.07em;margin-bottom:8px;">${_txt(q.label)}</div>
-  <div style="background:var(--c-card);border:1.5px solid ${(v!==undefined&&v!=='')?'var(--accent)':'#e7f0ec'};border-radius:12px;overflow:hidden;margin-bottom:14px;">
-    <div style="display:grid;grid-template-columns:repeat(${cols},1fr);gap:1px;background:var(--c-surf2);">
-      ${opts.map((o,i)=>`<button onclick="checkinAnswers['${q.id}']=${i};${q.allowCustom?`checkinAnswers['${q.id}Custom']='';`:''}_ciRerender()" style="background:${v===i?'var(--accent-lt)':'#fff'};border:none;padding:12px 8px;cursor:pointer;text-align:center;"><span aria-hidden="true" style="font-size:22px;display:block;margin-bottom:4px;">${_txt(o[0])}</span><div style="font-size:12px;font-weight:${v===i?700:500};color:${v===i?'#4f6f66':'var(--c-ink)'};">${_txt(o[1])}</div>${o[2]?`<div style="font-size:11px;color:var(--c-mut);">${_txt(o[2])}</div>`:''}${v===i?`<div style="width:20px;height:3px;background:var(--accent);border-radius:2px;margin:4px auto 0;"></div>`:''}</button>`).join('')}
-      ${q.allowCustom?`<button onclick="checkinAnswers['${q.id}']=-1;_ciRerender()" style="background:${v===-1?'var(--accent-lt)':'#fff'};border:none;padding:12px 8px;cursor:pointer;text-align:center;grid-column:1/-1;"><span aria-hidden="true" style="font-size:20px;display:block;margin-bottom:4px;">✏️</span><div style="font-size:12px;font-weight:${v===-1?700:500};color:${v===-1?'#4f6f66':'var(--c-ink)'};">${_txt(q.customLabel||'Something else…')}</div>${v===-1?`<div style="width:20px;height:3px;background:var(--accent);border-radius:2px;margin:4px auto 0;"></div>`:''}</button>`:''}
+  return`<div class="scf-h">${_txt(q.label)}</div>
+    <div class="scf-grid" role="group" aria-label="${_txt(q.label)}" style="grid-template-columns:repeat(${cols},1fr);">
+      ${opts.map((o,i)=>`<button type="button" class="scf-opt" aria-pressed="${v===i}" onclick="checkinAnswers['${q.id}']=${i};${q.allowCustom?`checkinAnswers['${q.id}Custom']='';`:''}_ciRerender()"><span aria-hidden="true" class="scf-emo">${_txt(o[0])}</span>${_txt(o[1])}${o[2]?`<small>${_txt(o[2])}</small>`:''}</button>`).join('')}
+      ${q.allowCustom?`<button type="button" class="scf-opt" aria-pressed="${v===-1}" onclick="checkinAnswers['${q.id}']=-1;_ciRerender()" style="grid-column:1/-1;"><span aria-hidden="true" class="scf-emo">✏️</span>${_txt(q.customLabel||'Something else…')}</button>`:''}
     </div>
-    ${q.allowCustom&&v===-1?`<div style="padding:10px 14px;border-top:1px solid var(--c-line);"><input class="fi" aria-label="Custom request" placeholder="${_txt(q.customPh||'Tell us...')}" value="${_txt(checkinAnswers[q.id+'Custom']||'')}" oninput="checkinAnswers['${q.id}Custom']=this.value;_ciSaveDraftSoon()" style="font-size:13px;"></div>`:''}
-  </div>`;
+    ${q.allowCustom&&v===-1?`<input class="fi" aria-label="Custom request" placeholder="${_txt(q.customPh||'Tell us...')}" value="${_txt(checkinAnswers[q.id+'Custom']||'')}" oninput="checkinAnswers['${q.id}Custom']=this.value;_ciSaveDraftSoon()" style="margin-top:8px;">`:''}`;
 }
 
 function _ciFlagged(){
@@ -4363,9 +4374,9 @@ function _ciFlagged(){
     if(q.type==='boolean'&&checkinAnswers[q.id]==='yes')flagged.push({label:q.flagLabel||q.label,detail:checkinAnswers[q.id+'Detail']});
   }));
   if(!flagged.length)return '';
-  return`<div style="background:var(--c-card);border:1.5px solid var(--c-line);border-radius:12px;padding:14px;margin-bottom:12px;">
-    <div style="font-size:12px;font-weight:600;color:var(--c-mut);text-transform:uppercase;letter-spacing:.07em;margin-bottom:8px;display:flex;align-items:center;gap:6px;">What you flagged <i class="ti ti-flag" aria-hidden="true" style="font-size:13px;color:#c8956a;"></i></div>
-    ${flagged.map((f,i)=>`<div style="padding:7px 0;${i<flagged.length-1?'border-bottom:1px solid var(--c-line);':''}"><div style="font-size:13px;font-weight:600;color:var(--c-ink);">${_txt(f.label)}</div>${f.detail?`<div style="font-size:12px;color:var(--c-mut);margin-top:2px;">${_txt(f.detail)}</div>`:''}</div>`).join('')}
+  return`<div class="scf-panel" style="margin:0 0 14px;padding-bottom:10px;">
+    <div class="scf-h" style="display:flex;align-items:center;gap:6px;">What you flagged <i class="ti ti-flag" aria-hidden="true" style="font-size:13px;"></i></div>
+    ${flagged.map((f,i)=>`<div style="padding:7px 0;${i<flagged.length-1?'border-bottom:1px solid var(--scf-line);':''}"><div style="font-size:15px;font-weight:600;">${_txt(f.label)}</div>${f.detail?`<div class="scf-note" style="margin-top:2px;">${_txt(f.detail)}</div>`:''}</div>`).join('')}
   </div>`;
 }
 
@@ -4626,23 +4637,23 @@ function ciPtrUp(ev){
 function _ciNotes(q){
   const photos=checkinAnswers[q.id+'Photos']||[];
   return`${_ciFlagged()}
-    <div style="font-size:12px;font-weight:600;color:var(--c-mut);text-transform:uppercase;letter-spacing:.07em;margin-bottom:8px;">${_txt(q.label)||('Anything else for '+_txt(client.providerFirst)+'?')}</div>
-    <textarea class="fi" aria-label="Additional notes for ${_txt(client.providerFirst)}" placeholder="${_txt(q.ph||'Questions, requests, anything on your mind...')}" style="height:90px;resize:none;line-height:1.6;margin-bottom:12px;" oninput="checkinAnswers['${_jsAttr(q.id)}']=this.value;_ciSaveDraftSoon()">${_txt(checkinAnswers[q.id]||'')}</textarea>
-    <div style="font-size:12px;font-weight:600;color:var(--c-mut);text-transform:uppercase;letter-spacing:.07em;margin-bottom:8px;">Reference photos</div>
+    <div class="scf-lab">${_txt(q.label)||('Anything else for '+_txt(client.providerFirst)+'?')}</div>
+    <textarea class="fi" aria-label="Additional notes for ${_txt(client.providerFirst)}" placeholder="${_txt(q.ph||'Questions, requests, anything on your mind...')}" style="height:90px;resize:none;margin-bottom:12px;" oninput="checkinAnswers['${_jsAttr(q.id)}']=this.value;_ciSaveDraftSoon()">${_txt(checkinAnswers[q.id]||'')}</textarea>
+    <div class="scf-h">Reference photos</div>
     <div style="display:flex;flex-wrap:wrap;gap:8px;margin-bottom:10px;">
-      ${photos.map((src,i)=>`<div data-ci-photo="${q.id}" data-idx="${i}" ${photos.length>1?`onpointerdown="ciPtrDown('${q.id}',${i},event)" onpointermove="ciPtrMove(event)" onpointerup="ciPtrUp(event)" onpointercancel="ciPtrUp(event)"`:''} style="position:relative;width:78px;height:78px;border-radius:10px;overflow:hidden;border:1.5px solid var(--c-line);${photos.length>1?'cursor:grab;touch-action:none;':''}">
+      ${photos.map((src,i)=>`<div data-ci-photo="${q.id}" data-idx="${i}" ${photos.length>1?`onpointerdown="ciPtrDown('${q.id}',${i},event)" onpointermove="ciPtrMove(event)" onpointerup="ciPtrUp(event)" onpointercancel="ciPtrUp(event)"`:''} class="scf-thumb" style="position:relative;width:78px;height:78px;overflow:hidden;${photos.length>1?'cursor:grab;touch-action:none;':''}">
         <img src="${_imgSrc(src)}" alt="reference ${i+1}" draggable="false" style="width:100%;height:100%;object-fit:cover;display:block;pointer-events:none;">
         <button onpointerdown="event.stopPropagation()" onclick="ciRemovePhoto('${q.id}',${i})" aria-label="Remove photo" style="position:absolute;top:2px;right:2px;width:20px;height:20px;border-radius:50%;background:rgba(0,0,0,.6);border:none;color:#fff;font-size:11px;cursor:pointer;display:flex;align-items:center;justify-content:center;">✕</button>
         ${String(src).slice(0,5)==='data:'?`<button onpointerdown="event.stopPropagation()" onclick="ciRotatePhoto('${q.id}',${i})" aria-label="Rotate photo" title="Rotate" style="position:absolute;top:2px;left:2px;width:20px;height:20px;border-radius:50%;background:rgba(0,0,0,.6);border:none;color:#fff;cursor:pointer;display:flex;align-items:center;justify-content:center;"><i class="ti ti-rotate-clockwise" style="font-size:11px;"></i></button><button onpointerdown="event.stopPropagation()" onclick="ciFlipPhoto('${q.id}',${i})" aria-label="Flip photo" title="Flip" style="position:absolute;bottom:2px;left:2px;width:20px;height:20px;border-radius:50%;background:rgba(0,0,0,.6);border:none;color:#fff;cursor:pointer;display:flex;align-items:center;justify-content:center;"><i class="ti ti-flip-horizontal" style="font-size:11px;"></i></button>`:''}
       </div>`).join('')}
-      <button onclick="ciAddPhoto('${q.id}')" aria-label="Upload photos" style="width:78px;height:78px;border-radius:10px;border:1.5px dashed #d4c4b0;background:var(--c-surf);display:flex;flex-direction:column;align-items:center;justify-content:center;gap:3px;cursor:pointer;color:var(--c-mut);">
-        <i class="ti ti-camera-plus" aria-hidden="true" style="font-size:18px;"></i><span style="font-size:11px;">Upload</span>
+      <button class="scf-tile" onclick="ciAddPhoto('${q.id}')" aria-label="Upload photos" style="width:78px;height:78px;">
+        <i class="ti ti-camera-plus" aria-hidden="true" style="font-size:18px;"></i><span>Upload</span>
       </button>
-      <button onclick="ciAddLink('${q.id}')" aria-label="Add a photo link" style="width:78px;height:78px;border-radius:10px;border:1.5px dashed #d4c4b0;background:var(--c-surf);display:flex;flex-direction:column;align-items:center;justify-content:center;gap:3px;cursor:pointer;color:var(--c-mut);">
-        <i class="ti ti-link" aria-hidden="true" style="font-size:18px;"></i><span style="font-size:11px;">Link</span>
+      <button class="scf-tile" onclick="ciAddLink('${q.id}')" aria-label="Add a photo link" style="width:78px;height:78px;">
+        <i class="ti ti-link" aria-hidden="true" style="font-size:18px;"></i><span>Link</span>
       </button>
     </div>
-    <div style="font-size:11px;color:var(--c-mut);margin-bottom:6px;">Add inspo or reference photos for ${_txt(client.providerFirst)} to see before your visit.${photos.length>1?' Drag a photo to reorder.':' You can select several at once.'}</div>`;
+    <div class="scf-note">Add inspo or reference photos for ${_txt(client.providerFirst)} to see before your visit.${photos.length>1?' Drag a photo to reorder.':' You can select several at once.'}</div>`;
 }
 
 function _ciBuildPayload(){
@@ -4825,13 +4836,11 @@ function _previsitUsePackage(){
 function _previsitCheckinBlockHTML(){
   const steps=_ciSteps();
   return steps.map(function(step){
-    const fvToggle=step.firstVisitToggle?`<button onclick="_ciToggleFirstVisit()" aria-pressed="${_ciFirstVisit()?'true':'false'}" style="margin-top:10px;display:inline-flex;align-items:center;gap:8px;border:1.5px solid ${_ciFirstVisit()?'var(--accent)':'#d9e7e1'};background:${_ciFirstVisit()?'var(--accent-lt)':'#fff'};color:${_ciFirstVisit()?'var(--accent)':'#54645e'};border-radius:999px;padding:8px 14px;font-size:12.5px;font-weight:600;cursor:pointer;"><i class="ti ti-${_ciFirstVisit()?'circle-check-filled':'sparkles'}" aria-hidden="true"></i>${_ciFirstVisit()?'First visit — nothing to update yet':'This is my first visit'}</button>`:'';
-    const note=step.note?`<div style="margin-top:10px;background:var(--accent-lt);border:1px solid #f0e6d8;border-radius:11px;padding:11px 13px;font-size:13px;color:var(--c-mut);line-height:1.55;">${_txt(step.note)}</div>`:'';
-    return `<div style="margin-top:24px;">
-      <div style="font-size:16px;font-weight:600;color:var(--c-ink);margin-bottom:2px;">${_txt(step.title)}</div>
+    const fvToggle=step.firstVisitToggle?`<div class="scf-q"><button type="button" class="scf-opt" onclick="_ciToggleFirstVisit()" aria-pressed="${_ciFirstVisit()?'true':'false'}" style="display:inline-flex;align-items:center;gap:8px;"><i class="ti ti-${_ciFirstVisit()?'circle-check-filled':'sparkles'}" aria-hidden="true"></i>${_ciFirstVisit()?'First visit — nothing to update yet':'This is my first visit'}</button></div>`:'';
+    const note=step.note?`<div class="scf-panel scf-note" style="margin:10px 0 0;padding:11px 13px;">${_txt(step.note)}</div>`:'';
+    return `<div class="scf-sec">${_txt(step.title)}</div>
       ${fvToggle}${note}
-      <div style="margin-top:12px;">${(step.questions||[]).map(_renderCIQuestion).join('')}</div>
-    </div>`;
+      ${(step.questions||[]).map(_renderCIQuestion).join('')}`;
   }).join('');
 }
 function renderPrevisitPackage(){
@@ -4859,12 +4868,16 @@ function renderPrevisitPackage(){
       <div style="font-size:12px;font-weight:700;color:var(--accent-ink,#7a5a2a);text-transform:uppercase;letter-spacing:.04em;">Before your visit</div>
       <div style="font-size:12.5px;color:#8a6a42;margin-top:3px;line-height:1.5;">Everything's on this one page — your intake and a quick check-in. Scroll all the way down and tap Submit at the end.</div>
     </div>
-    <div style="padding:14px 16px 4px;"><div id="page-heading" tabindex="-1" style="font-size:20px;font-weight:600;color:var(--c-ink);">${_txt(pf.title)}</div>${anyReq?`<div style="font-size:12px;color:var(--c-mut);margin-top:4px;"><span style="color:var(--accent-ink-lt);font-weight:700;">*</span> = required</div>`:''}</div>
-    <div style="padding:6px 16px 0;">
+    <div style="padding:14px 12px 0;">
+      ${_scfPaperOpen(_scfKicker(pf.title),pf.title,anyReq?'Questions marked <b>Required</b> need an answer.':'','page-heading')}
       ${qs.map((q,i)=>_fillFormFieldHTML(q,i)).join('')}
+      </div></div>
     </div>
-    <div style="margin:6px 16px 0;border-top:1px solid var(--c-line);"></div>
-    <div id="ci-package-body" style="padding:0 16px 0;">${_previsitCheckinBlockHTML()}</div>
+    <div style="padding:16px 12px 0;">
+      ${_scfPaperOpen('Pre-visit check-in','Your check-in',_ciSubline())}
+      <div id="ci-package-body">${_previsitCheckinBlockHTML()}</div>
+      </div></div>
+    </div>
     <div style="padding:20px 16px 26px;">
       <button onclick="_submitPrevisitPackage()" class="btnp" style="width:100%;border-radius:12px;padding:13px;"><i class="ti ti-send" aria-hidden="true" style="margin-right:5px;"></i>Submit to ${_txt(client.providerFirst)}</button>
     </div>`;
