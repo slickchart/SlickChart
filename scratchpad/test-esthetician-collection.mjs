@@ -81,11 +81,11 @@ const r7=await p.evaluate(()=>{
   const vNamed=send('ec-virtual').qs.find(q=>q.id==='ec-virtual-16').label;
   const lib=_plSectionHTML({text:'call us at {phone|the number on your booking}.'});
   bizInfo.name=keep.n;bizInfo.email=keep.e;bizInfo.phone=keep.p;workspace.name=keep.w;
-  return {blank,named,vBlank:/ahead to me, the way I asked you to/.test(vBlank),vNamed:/ahead to hello@glow\.test\./.test(vNamed),lib:/555-0100/.test(lib),stillToken:formTmpls['ec-general-consent'].qs.find(q=>q.id==='ec-general-consent-11').label.includes('{business}')};
+  return {blank,named,vBlank:/Photo consult in this app/.test(vBlank)&&!/@|email/i.test(vBlank),vNamed:/Photo consult in this app/.test(vNamed)&&!/@/.test(vNamed),lib:/555-0100/.test(lib),stillToken:formTmpls['ec-general-consent'].qs.find(q=>q.id==='ec-general-consent-11').label.includes('{business}')};
 });
 check('with no business name set, the form says "this business"',/I release this business from/.test(r7.blank),r7.blank);
 check('with a business name set, the client sees HER business name',/I release Glow Skin Studio from/.test(r7.named),r7.named);
-check('the virtual consult points to her email, or reads naturally without one',r7.vBlank&&r7.vNamed);
+check('the virtual consult sends photos to the in-app Photo consult, never to an email',r7.vBlank&&r7.vNamed);
 check('the library fills in her phone number',r7.lib);
 check('the form itself keeps {business}, so a later name change still reaches it',r7.stillToken);
 
