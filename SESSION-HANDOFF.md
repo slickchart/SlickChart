@@ -7628,3 +7628,18 @@ policies form's card-on-file question (`ec-policies-3`), removed.
   label naming both gets a plain text box and accepts either (`slickchart-client.html`, embed rebuilt).
 - **Ashley asked (2026-10-17):** remove the "email your photos" part of `ec-virtual-16`; clients use
   the in-app Photo consult. Label now says to add them in the Photo consult in this app.
+
+### 2026-10-17e — Library: real PDF pages per document, per style, with Print (preview)
+**Observed (Ashley, Safari on her computer, preview):** the X on a Library entry did nothing; the
+entries showed a simplified text version instead of the PDF; the only PDF option opened all 54 pages.
+- X: `_sheetCloseFrom` only knew `#photo-recover,#sqp`; `#pl-entry` added.
+- The three 54-page PDFs are split per document (47 docs x 3 styles) into
+  `assets/ec-9308d13917a6f75f4f385060/<style>/<doc>.pdf` by `scratchpad/ec-split-docs.py` (page map
+  from pdftotext; asserts every page used once). `EC_PRINT_DOCS` lists them; `EC_LIBRARY` (the text
+  versions) is gone. `/api/collection-pdf?doc=&style=` returns one file's address, same session +
+  subscription gate, doc and style allow-listed.
+- Viewer: style chips (per-device `ec_pdf_style`, not synced), pdf.js 3.11.174 from cdnjs (loaded on
+  first open) draws the real pages, Print prints exactly those pages via a hidden frame, Save PDF
+  opens the file. Whole 54-page PDF still offered.
+- Test: `scratchpad/test-esthetician-collection.mjs` 30/30 (real pages drawn, style switch, 2-page
+  doc, print, X).

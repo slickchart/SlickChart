@@ -445,6 +445,7 @@ saved anywhere", not "does this always call that".
 | `_openLessonView` | `/api/guide-file` | via `_getGuideFile` |
 | `_openLessonView` | `/api/provider-form` | via `submitSignOnDevice` |
 | `_openMergeSheet` | `/api/clients` | via `_serverMergeClients` |
+| `_openPracticeDoc` | `/api/collection-pdf` | via `_plDocUrl` |
 | `_openPulse` | `/api/beta-event` | direct |
 | `_openPulse` | `/api/feedback` | via `_sendPulse` |
 | `_openReviewCard` | `/api/clients` | via `_syncSpecificClientsToServer` |
@@ -492,6 +493,10 @@ saved anywhere", not "does this always call that".
 | `_pgvShowFile` | `/api/guide-file` | via `_getGuideFile` |
 | `_pgvStep` | `/api/guide-file` | via `_getGuideFile` |
 | `_pingChart` | `/api/beta-event` | direct |
+| `_plDocUrl` | `/api/collection-pdf` | direct |
+| `_plRender` | `/api/collection-pdf` | via `_plDocUrl` |
+| `_plSetStyle` | `/api/collection-pdf` | via `_plDocUrl` |
+| `_plStyleChipsHTML` | `/api/collection-pdf` | via `_plDocUrl` |
 | `_pollFounderSignups` | `/api/admin/signups` | direct |
 | `_postAftercareDrip` | `/api/aftercare-drip` | direct |
 | `_postAftercareDrip` | `/api/clients` | via `_syncSpecificClientsToServer` |

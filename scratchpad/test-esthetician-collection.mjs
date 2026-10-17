@@ -12,7 +12,8 @@ const pushed={};
 await ctx.route('**/api/**',async r=>{
   const u=r.request().url();
   if(u.includes('/api/cloud-status'))return r.fulfill({status:200,contentType:'application/json',body:'{"enabled":true}'});
-  if(u.includes('/api/collection-pdf'))return r.fulfill({status:200,contentType:'application/json',body:JSON.stringify({ok:true,files:[{style:'neutral',label:'Neutral',url:'/assets/x/neutral.pdf'}]})});
+  if(u.includes('/api/collection-pdf')){const q=new URL(u).searchParams;const D='/assets/ec-9308d13917a6f75f4f385060/';
+    return r.fulfill({status:200,contentType:'application/json',body:JSON.stringify(Object.assign({ok:true,files:[{style:'neutral',label:'Neutral',url:D+'neutral.pdf'}]},q.get('doc')?{doc:{id:q.get('doc'),style:q.get('style'),url:D+q.get('style')+'/'+q.get('doc')+'.pdf'}}:{}))});}
   if(u.includes('/api/store')&&r.request().method()!=='GET'){try{const x=JSON.parse(r.request().postData()||'{}');Object.assign(pushed,x.items||{});}catch(e){}}
   return r.fulfill({status:200,contentType:'application/json',body:'{"ok":true,"data":{},"clients":[],"events":[]}'});
 });
@@ -29,7 +30,7 @@ const r1=await p.evaluate(()=>({
   defs:_profFormDefs().filter(f=>/^ec-/.test(f.id)).length,
   guides:resources.filter(g=>/^g-esty-ec-/.test(g.id)).length,
   oldGuides:resources.filter(g=>/^g-esty-(peel|micro|derma|spf|prep)$/.test(g.id)).length,
-  lib:EC_LIBRARY.length,
+  lib:EC_PRINT_DOCS.length,
 }));
 check('the stock forms are all still there, unchanged in kind',r1.stock);
 check('16 collection forms are added',r1.ec===16,r1.ec);
@@ -45,12 +46,27 @@ const r2=await p.evaluate(()=>{const t=document.body.innerText;return {sec:t.inc
 check('the Forms screen shows "The Esthetician Collection" section',r2.sec&&r2.peel);
 // Library tab
 await p.evaluate(()=>switchFgTab('library'));await p.waitForTimeout(300);
-const r3=await p.evaluate(()=>{const c=document.getElementById('fg-library-content');return {shown:!!c&&c.style.display==='',cards:c?c.querySelectorAll('.pl-card').length:0,ov:document.documentElement.scrollWidth-document.documentElement.clientWidth};});
-check('the Library tab lists the 17 practice entries',r3.shown&&r3.cards===17,JSON.stringify(r3));
-await p.evaluate(()=>_openPracticeEntry('pl-contra'));await p.waitForTimeout(200);
-const r4=await p.evaluate(()=>{const o=document.getElementById('pl-entry');return {open:!!o,tables:o?o.querySelectorAll('table').length:0};});
-check('a library entry opens, with its tables',r4.open&&r4.tables>=1,JSON.stringify(r4));
-await p.evaluate(()=>{const o=document.getElementById('pl-entry');if(o)o.remove();});
+const r3=await p.evaluate(()=>{const c=document.getElementById('fg-library-content');return {shown:!!c&&c.style.display==='',cards:c?c.querySelectorAll('.pl-card').length:0,styles:c?c.querySelectorAll('.pl-style').length:0,ov:document.documentElement.scrollWidth-document.documentElement.clientWidth};});
+check('the Library tab lists every document in the collection (47), with the 3 styles',r3.shown&&r3.cards===47&&r3.styles===3&&r3.ov===0,JSON.stringify(r3));
+// Open one document: the REAL pages of the PDF are drawn, in the chosen style
+await p.evaluate(()=>_openPracticeDoc('contra-cheat'));
+await p.waitForFunction(()=>document.querySelectorAll('#pl-pages canvas.pl-page').length>0,null,{timeout:20000}).catch(()=>{});
+await p.waitForTimeout(800);
+const r4=await p.evaluate(()=>{const cv=document.querySelector('#pl-pages canvas.pl-page');let ink=0;if(cv){const d=cv.getContext('2d').getImageData(0,0,cv.width,cv.height).data;for(let i=0;i<d.length;i+=4*97){if(d[i]<200)ink++;}}
+  return {pages:document.querySelectorAll('#pl-pages canvas.pl-page').length,ink,url:document.getElementById('pl-entry').getAttribute('data-url'),print:!document.getElementById('pl-print').disabled};});
+check('a document opens showing its real PDF page, drawn (not a text summary)',r4.pages===1&&r4.ink>200&&/neutral\/contra-cheat\.pdf$/.test(r4.url),JSON.stringify(r4));
+check('Print is ready once the page is drawn',r4.print);
+await p.evaluate(()=>_plSetStyle('luxe'));
+await p.waitForFunction(()=>/luxe\/contra-cheat\.pdf$/.test(document.getElementById('pl-entry').getAttribute('data-url')||'')&&document.querySelectorAll('#pl-pages canvas.pl-page').length>0,null,{timeout:20000}).catch(()=>{});
+check('switching to Luxe redraws it from the Luxe file',await p.evaluate(()=>/luxe\/contra-cheat\.pdf$/.test(document.getElementById('pl-entry').getAttribute('data-url')||'')));
+await p.evaluate(()=>_openPracticeDoc('intake'));
+await p.waitForFunction(()=>document.querySelectorAll('#pl-pages canvas.pl-page').length===2,null,{timeout:20000}).catch(()=>{});
+check('a two-page document shows both pages, in the style she picked',await p.evaluate(()=>document.querySelectorAll('#pl-pages canvas.pl-page').length===2&&/luxe\/intake\.pdf$/.test(document.getElementById('pl-entry').getAttribute('data-url'))));
+const pf=await p.evaluate(()=>new Promise(res=>{let printed=0;const H=HTMLIFrameElement.prototype;_plPrint();const fr=document.getElementById('pl-print-frame');fr.contentWindow.print=()=>{printed++;};setTimeout(()=>res({imgs:fr.contentWindow.document.images.length,printed}),1500);}));
+check('Print sends exactly those pages to the printer',pf.imgs===2&&pf.printed===1,JSON.stringify(pf));
+await p.evaluate(()=>{const x=document.querySelector('#pl-entry button[aria-label="Close"]');x.click();});
+check('the X closes it',await p.evaluate(()=>!document.getElementById('pl-entry')));
+await p.evaluate(()=>_plSetStyle('neutral'));
 await p.evaluate(()=>_downloadCollectionPdf('neutral'));await p.waitForTimeout(500);
 const r5=await p.evaluate(()=>document.getElementById('pl-pdf-status').textContent);
 check('the PDF button asks the server and opens the file',/opened/.test(r5),r5);
@@ -79,14 +95,14 @@ const r7=await p.evaluate(()=>{
   bizInfo.name='Glow Skin Studio';bizInfo.email='hello@glow.test';bizInfo.phone='555-0100';
   const named=send('ec-general-consent').qs.find(q=>q.id==='ec-general-consent-11').label;
   const vNamed=send('ec-virtual').qs.find(q=>q.id==='ec-virtual-16').label;
-  const lib=_plSectionHTML({text:'call us at {phone|the number on your booking}.'});
+  const lib=_bizFill('call us at {phone|the number on your booking}.');
   bizInfo.name=keep.n;bizInfo.email=keep.e;bizInfo.phone=keep.p;workspace.name=keep.w;
   return {blank,named,vBlank:/Photo consult in this app/.test(vBlank)&&!/@|email/i.test(vBlank),vNamed:/Photo consult in this app/.test(vNamed)&&!/@/.test(vNamed),lib:/555-0100/.test(lib),stillToken:formTmpls['ec-general-consent'].qs.find(q=>q.id==='ec-general-consent-11').label.includes('{business}')};
 });
 check('with no business name set, the form says "this business"',/I release this business from/.test(r7.blank),r7.blank);
 check('with a business name set, the client sees HER business name',/I release Glow Skin Studio from/.test(r7.named),r7.named);
 check('the virtual consult sends photos to the in-app Photo consult, never to an email',r7.vBlank&&r7.vNamed);
-check('the library fills in her phone number',r7.lib);
+check('{phone} fills in her phone number',r7.lib);
 check('the form itself keeps {business}, so a later name change still reaches it',r7.stillToken);
 
 // Every collection form is fully editable: rename, edit a question, delete one, add one, save, relaunch

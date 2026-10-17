@@ -15,6 +15,10 @@ const FILES = [
   { style: 'blush', label: 'Blush', url: DIR + 'blush.pdf' },
   { style: 'luxe', label: 'Luxe', url: DIR + 'luxe.pdf' }
 ];
+// One file per document, per style (scratchpad/ec-split-docs.py), so a provider can view and print a
+// single form or handout. ?doc=<id>&style=<style> answers with that one file's address.
+const DOC_IDS = new Set(["intake", "general-consent", "photo-release", "policies", "virtual", "minor", "peel-consent", "derma-consent", "micro-consent", "wax-consent", "facial-consent", "acne-consent", "hydro-consent", "led-consent", "microcurrent-consent", "tint-consent", "peel-protocol", "derma-protocol", "micro-protocol", "wax-protocol", "facial-protocol", "acne-protocol", "hydro-protocol", "led-protocol", "microcurrent-protocol", "tint-protocol", "peel-aftercare", "derma-aftercare", "micro-aftercare", "wax-aftercare", "facial-aftercare", "acne-aftercare", "hydro-aftercare", "led-aftercare", "microcurrent-aftercare", "tint-aftercare", "before-appointment", "spf-guide", "homecare-plan", "aftercare-cards", "skin-analysis", "treatment-record", "contra-cheat", "patch-test", "incident", "sanitation", "cover"]);
+const STYLES = new Set(['neutral', 'blush', 'luxe']);
 
 export default async function handler(req, res) {
   if (req.method !== 'GET') { res.status(405).json({ error: 'Method not allowed' }); return; }
@@ -35,6 +39,13 @@ export default async function handler(req, res) {
       const ok = !!(sub && ['active', 'trialing', 'past_due'].includes(sub.status));
       if (!ok) { res.status(402).json({ error: 'The printable collection comes with an active SlickChart subscription.' }); return; }
     }
+  }
+  const doc = String((req.query && req.query.doc) || '');
+  if (doc) {
+    const style = String((req.query && req.query.style) || 'neutral');
+    if (!DOC_IDS.has(doc) || !STYLES.has(style)) { res.status(404).json({ error: 'That page is not in the collection.' }); return; }
+    res.status(200).json({ ok: true, files: FILES, doc: { id: doc, style, url: DIR + style + '/' + doc + '.pdf' } });
+    return;
   }
   res.status(200).json({ ok: true, files: FILES });
 }
