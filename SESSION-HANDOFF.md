@@ -7763,3 +7763,18 @@ Rule written as CLAUDE.md §1e.
 - Tests: `test-lash-brow-collection` 25/25, `test-lb-client-form` 13/13 (every form signed in the
   real client page), `test-client-form-branding` 5/5, `test-esthetician-collection` 30/30 (now
   expects Luxe by default), contra 9/9, mirror 6/6, all forms swept; both engines (see commit).
+
+### 2026-10-17 — build `2026-10-17m` (PREVIEW ONLY): the check-in matches the forms
+Ashley: "yes make it match please" (the pre-visit check-in was the one client screen not on the paper
+form). Client: `_renderCheckinStep` draws each step as a Luxe paper (`_scfPaperOpen`, kicker
+"Pre-visit check-in", her logo + brand color); every question is a `.scf-q` row; Yes/No, levels and
+the drink/music/covering grids are `.scf-opt` buttons with `aria-pressed`; photo tiles `.scf-tile`;
+"What you flagged" is a `.scf-panel`. The one-page "Before your visit" package now draws the intake
+AND the check-in as two papers (the intake fields there had the paper classes with no paper around
+them). With nothing booked the subline no longer says "For your Not scheduled appointment"
+(`_ciSubline`). Provider: `renderCheckinPreview` is the same paper with every step on one page.
+Handlers, ids and payloads unchanged. `test-checkin-paper` 12/12 in Chrome and Safari (look, every
+control records, submit carries flags + picks, package, provider preview). Pre-existing, NOT from
+this change (same on the previous build): `sweep3-forms-checkin-resend` 2/2 and
+`v-forms-checkin-resend` 1/2; the latter's client half needs the provider-side bug its own part 1
+now reports SOUND, so it is a stale repro.

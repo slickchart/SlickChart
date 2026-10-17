@@ -280,7 +280,9 @@ pick, `bizInfo.formStyle`, always wins), her logo (`brandColors.logoDataUrl`, se
 `brand`) in the header corner, her business name there when she has no logo, and her brand color on
 the accents only when it reads at 4.5:1 on white (`_scfAccentStyle`). `_scfStyle`, `_scfAccentStyle`
 and `_scfLogoHTML` exist in both HTML files and must stay the same. A new form screen uses
-`_scfOpen`/`_scfClose` (provider) or the same `.scf` markup (client); never a second look.
+`_scfOpen`/`_scfClose` (provider) or `_scfPaperOpen` (client); never a second look. That
+includes the pre-visit check-in (wizard, the one-page "Before your visit" package, and the provider's
+check-in Preview), which moved onto the paper form in `2026-10-17m` (`test-checkin-paper`).
 
 **A new collection upload (Ashley's PDFs) follows the Esthetician Collection's rules, all of them**
 (*"be sure to follow all the other rules we discussed from the first esty collection upload"*).
