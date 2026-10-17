@@ -7781,3 +7781,17 @@ now reports SOUND, so it is a stale repro.
 - **LIVE 2026-10-17 (Ashley: "yes push it")**: the roadmap sale alert wording alone (server only, no
   build bump), `2e23cab` on release, CI green, deploy dispatched, main = `2e23cab`. Preview merged it
   back (both preview branches). The rest of `2026-10-17n` still waits for 2am.
+
+### 2026-10-17 — build `2026-10-17o` (PREVIEW ONLY): the Hair Stylist Collection
+Ashley: "now we have hair stylist forms to add also" (3 PDFs, 37 pages each). Done by the CLAUDE.md
+§1e rules, same as Lash & Brow: 12 forms `hs-*` (204 questions) and 8 guides `g-hs-*` from
+`scratchpad/hs/gen-hs.cjs` (fails on any `[bracket]` or card-on-file text); `hscoll` "The Hair
+Stylist Collection" shown to `hair` only (not barber); guides added to `hair`, stock hair forms
+untouched. Library: `HS_PRINT_DOCS` (33 docs, ids `hs-…`), split by `scratchpad/hs-split-docs.py`
+into `assets/hs-cd08c7917b34626fe2a21967/`, noindex in vercel.json, `/api/collection-pdf` allow-lists
+the `hs-` ids and takes `?collection=hs`. Bracketed defaults resolved to the PDF's own numbers ($50 or
+25% deposit, 48 hours, 7 days, 7 years); `[product name]` -> "the product named in your record".
+Stylist-only result boxes (test readings, office use) stay on the printable. New header labels:
+"Consultation" (service plan) and "Client record" (allergy alert / strand test).
+Tests: `test-hair-stylist-collection` 17/17, `test-hs-client-form` (every form signed in the client
+app), plus the form suites, in Chrome and Safari.
