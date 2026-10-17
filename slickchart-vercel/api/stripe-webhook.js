@@ -197,6 +197,7 @@ export default async function handler(req, res) {
           email,
           amountCents: Number.isFinite(session.amount_total) ? session.amount_total : null,
           currency: session.currency || null,
+          roadmap: String((session.metadata && session.metadata.roadmap) || ''),
           marketingOptIn: promo === 'opt_in' ? true : (promo === 'opt_out' ? false : undefined)
         });
       } else if (email) {

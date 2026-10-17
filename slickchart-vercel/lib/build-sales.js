@@ -65,6 +65,9 @@ export async function recordBuildSale(sale) {
   const currency = String((sale && sale.currency) || '').toLowerCase() || null;
   // true / false / null — null means this buyer was never shown the box (see the column comment).
   const optIn = (sale && typeof sale.marketingOptIn === 'boolean') ? sale.marketingOptIn : null;
+  // What she sees in the alert: the product's own name, so a sale is recognisable at a glance.
+  // Callers pass the Stripe session's metadata.roadmap ('beauty' for the /build page since 2026-10).
+  const product = String((sale && sale.roadmap) || '') === 'beauty' ? 'Beauty Biz App Build Roadmap' : 'Build Your Own App';
 
   let q;
   try {
@@ -126,13 +129,13 @@ export async function recordBuildSale(sale) {
     const to = founderNotifyEmail();
     if (to) await sendEmail({
       to,
-      subject: `🚀 Build Your Own App sold${price ? ' — ' + price : ''}`,
-      text: `Someone just bought Build Your Own App.\n\nEmail: ${who}\n`
+      subject: `🚀 ${product} sold${price ? ' — ' + price : ''}`,
+      text: `Someone just bought the ${product}.\n\nEmail: ${who}\n`
         + (price ? `Paid: ${price}\n` : '')
         + (runningTotal ? `\n${runningTotal}\n` : '')
         + `\nTheir access links went out automatically.`,
       html: '<div style="font-family:-apple-system,Segoe UI,Roboto,sans-serif;max-width:440px;margin:0 auto;padding:8px;">'
-        + '<div style="font-size:22px;margin-bottom:6px;">🚀 Build Your Own App sold</div>'
+        + `<div style="font-size:22px;margin-bottom:6px;">🚀 ${escHtml(product)} sold</div>`
         + `<div style="font-size:14px;color:#333;line-height:1.9;"><b>Email:</b> ${escHtml(who)}`
         + (price ? `<br><b>Paid:</b> ${escHtml(price)}` : '') + '</div>'
         + (runningTotal ? `<div style="font-size:13px;color:#2a7;margin-top:10px;">${escHtml(runningTotal)}</div>` : '')
@@ -150,7 +153,7 @@ export async function recordBuildSale(sale) {
     } else {
       const body = (price ? price + ' — ' : '') + who
         + (total ? ` · that's ${total} sold 🎉` : ' 🎉');
-      const r = await pushFoundersReport({ title: '🚀 Build Your Own App sold!', body, url: '/slickchart', tag: 'build-sale:' + sid });
+      const r = await pushFoundersReport({ title: `🚀 ${product} sold!`, body, url: '/slickchart', tag: 'build-sale:' + sid });
       devices = r.devices || 0; sentCount = r.sent || 0;
       if (!r.providerIds || !r.providerIds.length) detail = 'no provider row matches FOUNDER_EMAILS (' + (r.emails || []).join('|') + ')';
       else if (!devices) detail = 'founder provider row found, but no phone registered under it';
