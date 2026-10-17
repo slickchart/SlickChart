@@ -86,6 +86,14 @@ She asked for this after an edit disturbed providers who were using the app. **D
    change, and never give her a different preview link. (On 2026-10-16 the Esthetician Collection
    went to its own branch; she opened her usual link and reported "none of the forms are anywhere
    on the preview".) After a 2am promotion, keep building on that same branch.
+   **The two preview links are ONE (2026-10-17):** she also keeps
+   `https://slick-chart-git-claude-build-beauty-preview-slick-chart.vercel.app/build` open, and on
+   2026-10-17 it still showed the "Do the math" section removed a day earlier, because that branch
+   was never updated. Her words: *"this should be the only link we ever use."* So
+   `claude/build-beauty-preview` and `claude/friendly-dirac-n55456` now point at the SAME commit:
+   **every push goes to both** (`git push origin HEAD:claude/friendly-dirac-n55456
+   HEAD:claude/build-beauty-preview`). Whichever link she has open is then current; never let them
+   drift.
 2. **Verify it yourself first** (§2, plus the sweeps in §3 if you touched sync, storage or a loader).
    The gate below is hers, not a substitute for yours.
 3. **Push the branch** and give her its Vercel preview URL so she can click it. CI runs on every
