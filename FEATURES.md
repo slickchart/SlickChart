@@ -675,6 +675,7 @@ saved anywhere", not "does this always call that".
 | `_sendCheckedSuggestions` | `/api/clients` | via `_syncSpecificClientsToServer` |
 | `_sendDepositForms` | `/api/client-invite` | direct |
 | `_sendDepositForms` | `/api/clients` | via `_syncSpecificClientsToServer` |
+| `_sendDeviceReport` | `/api/device-report` | direct |
 | `_sendFormClientRows` | `/api/clients` | via `_syncSpecificClientsToServer` |
 | `_sendFormClientRows` | `/api/provider-form` | via `submitSignOnDevice` |
 | `_sendProviderMessageToClient` | `/api/provider-message` | direct |
@@ -1359,6 +1360,7 @@ Plus every synced `sc_*` key below, which rides `/api/store`.
 | `/api/cron-provider-reminders` | — | cron | Scheduled sender for PROVIDER reminders — the thing that makes her reminder arrive when the app is |
 | `/api/cron-reminders` | — | cron | Scheduled reminder sender — invoked by Vercel Cron (see vercel.json). Walks every |
 | `/api/delete-account` | POST | provider session | POST /api/delete-account  (provider session Bearer token) |
+| `/api/device-report` | POST | **public** | POST /api/device-report — provider-authed. The app sends a small health report about the device it is |
 | `/api/feedback` | GET, POST | provider session | POST /api/feedback  { message, rating?, kind?, timeSaved? }  → logs a provider's beta feedback |
 | `/api/free-signup` | POST | **public** | POST /api/free-signup  { email }  → join the free starter list and get the link emailed now. |
 | `/api/google-cal-callback` | — | provider session | GET /api/google-cal-callback?code=…&state=… |
@@ -1416,7 +1418,7 @@ Plus every synced `sc_*` key below, which rides `/api/store`.
 
 ## Server tables
 
-`announcements`, `auth_tokens`, `beta_events`, `build_purchases`, `client_events`, `client_login_codes`, `client_prefs`, `client_tombstones`, `clients`, `consult_requests`, `course_versions`, `feedback`, `files`, `free_signups`, `google_accounts`, `google_connections`, `kv`, `kv_history`, `login_attempts`, `notify_log`, `nurture_optout`, `nurture_sends`, `provider_push_subscriptions`, `providers`, `push_subscriptions`, `reminder_log`, `sessions`, `square_connections`, `square_create_log`, `subscriptions`, `sync_requests`, `waitlist`.
+`announcements`, `auth_tokens`, `beta_events`, `build_purchases`, `client_events`, `client_login_codes`, `client_prefs`, `client_tombstones`, `clients`, `consult_requests`, `course_versions`, `device_reports`, `feedback`, `files`, `free_signups`, `google_accounts`, `google_connections`, `kv`, `kv_history`, `login_attempts`, `notify_log`, `nurture_optout`, `nurture_sends`, `provider_push_subscriptions`, `providers`, `push_subscriptions`, `reminder_log`, `sessions`, `square_connections`, `square_create_log`, `subscriptions`, `sync_requests`, `waitlist`.
 
 Anything in these survives a lost or wiped device. Anything only in localStorage or IndexedDB
 does not.
@@ -1472,6 +1474,7 @@ Check here before building a new one.
 | `_recoverConsolidate` | yes |
 | `_recoverConsolidateAll` | yes |
 | `_recoverCopy` | yes |
+| `_recoverDeviceLines` | yes |
 | `_recoverEdits` | yes |
 | `_recoverFixName` | yes |
 | `_recoverImport` | yes |

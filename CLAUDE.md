@@ -493,6 +493,16 @@ always."* It came after a recovery that made her tap, screenshot and come back s
 - **Plain steps only, and as few as possible.** If she must act, at most 2–3 short numbered steps,
   named exactly as the screen names them. No branching instructions.
 - Safety rules (§0, §4c, soft deletes, backups first) still apply — automate inside them, never around them.
+- **The same goes for PROVIDERS who report bugs — even more so (her rule, 2026-10-17):** *"I want to ask
+  her to do as least as possible since she is helping so much. this should be rule just like for me
+  wanting everything to be automated as much as possible."* Never draft a message asking a provider to
+  run a check, copy a report, tap through Settings or take screenshots when the app could have sent
+  that itself. Collect it automatically instead: each device already sends a counts-only health report
+  on its own (`_sendDeviceReport` → `/api/device-report`, shown under **Their devices** on the founder
+  Recover clients screen with the account's signed-in devices and any other account on the same
+  network). If what you need is not in that report, ADD IT to the report rather than asking the
+  provider. Ask a provider only for what no device can know (what they saw, what they expected), and
+  in one short question.
 
 ## 5. Tone with the owner
 

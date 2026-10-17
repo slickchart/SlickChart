@@ -7684,3 +7684,19 @@ once on the PHONE and once on the COMPUTER (Settings → tap the version line 5 
 Compare "Which account row" and "Signed in as" first: a different row = two accounts (obs 42/45/50 fit
 that); same row + device 0 vs account 1 = the phone is not reading the account in (IndexedDB line says
 whether storage works). `scratchpad/test-selfcheck-libraries.mjs` 6/6.
+
+### §2be (cont.) 2026-10-17h — devices report themselves; no more asking Diana to run checks
+**Ashley (2026-10-17):** do not make Diana run the self-check; she is helping, ask her for as little as
+possible — and make that a rule (CLAUDE.md §4d, providers bullet).
+- `_sendDeviceReport()` (8s after boot, and on return to the front, at most every 20 min) POSTs a
+  counts-only report to `/api/device-report` (`lib/device-report.js`, table `device_reports`, one row
+  per provider per device key `scdev_key` — not an `sc_` key, never synced). Whitelisted fields only
+  (`cleanReport`): build, kind, platform, idbWorks, summary/homecare/client counts, logo yes/no,
+  offloaded keys, reload failures; the account email is added server-side from the token.
+- `/api/admin/client-recover` GET adds `devices`, `sessions` (device, location, signed in, last seen,
+  signed out; no IP) and `sameNetwork` (other accounts with sessions from the same IPs in 60 days).
+  The screen shows them as **Their devices** right under the verdict, and the Copy paste includes them.
+- For Diana: once her phone opens build 17h or later, Recover clients → esthieguild@gmail.com shows
+  whether the phone is a second account (sameNetwork / Signed in as), or the same account showing
+  fewer summaries than the account (and whether its IndexedDB works). Nothing for her to do.
+- `scratchpad/test-device-report.mjs` 10/10.
