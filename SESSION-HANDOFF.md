@@ -7599,3 +7599,20 @@ merge skips a consult pair).
   untouched sample (same title/price/desc, Draft, no lessons/cover/_ts, nobody enrolled), with a
   `sc_hidden_courses` delete record so the other device follows. `_mergeCourses` counts the retired
   ids as stock. Test: `scratchpad/test-retired-starter-courses.mjs` (7/7).
+
+### 2026-10-17b/c — provider form screens MIRROR the client app (preview)
+**Observed (Ashley, Safari on her computer, provider Preview of the collection forms):** the
+contraindication list had "no way to tick anything"; she wants the provider side to make the clicks
+obvious and "as many things as possible to mirror" the client app. She also asked to drop the
+policies form's card-on-file question (`ec-policies-3`), removed.
+- `_mcControlHTML(q,key)` / `_mcPick`: Yes / No and Single select = pick-one buttons (Single select
+  stacked, like the client), Multiple choice = check boxes. Used by Preview (`_formQHTML`) and Sign in
+  person (`_sdQHTML`). Contraindications are check boxes (`input.ci-tick`) with the client's wording.
+- Real bugs fixed on the way: Sign in person saved `flagged:[]` always (ticks now become answer +
+  form flags + `_setFormFlag` alert + the `/api/provider-form` event), and treated Multiple choice as
+  pick-one (only the last tap kept; now a list). Fill intake (`_pfiQHTML`) showed a blank text box for
+  Single select / Multiple choice; now buttons / check boxes.
+- Preview signature shows the client's "Type your full name to sign"; photo questions show the
+  client's "Add photos" button. Collection wording says "check", never "tick".
+- Sweep: `scratchpad/sweep-form-mirror.mjs` (every form, 387 questions, both provider screens) 6/6;
+  `scratchpad/test-contra-ticks.mjs` 9/9.
