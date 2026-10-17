@@ -239,7 +239,7 @@ const S=document.getElementById('S');
 // resets when I save it" and there was no way to tell whether her phone had any of them — a whole
 // day was spent debugging code she may not have been running. Shown at the bottom of Settings, so
 // the answer is a screenshot away. Bump it on every ship.
-const APP_BUILD='2026-10-16c';
+const APP_BUILD='2026-10-17h';
 
 
 /* ════════════════════════════════════════════════════════════════
@@ -5170,6 +5170,44 @@ async function _runSelfCheck(){
     return r;
   });
 
+  // 4b. Diana, 2026-10-17: on her PHONE a client showed "0 saved summaries" and the default logo, while
+  //     her COMPUTER showed that client's Sep 25 summary and her own logo. These lines put both sides of
+  //     that in one report: what kind of app this is, which email it is signed in as, whether the phone's
+  //     own storage (IndexedDB) works, and summaries / logo / homecare / clients on this device vs the
+  //     account. Run it on both devices and compare.
+  try{
+    line('Kind of app', true, (typeof _isNativeApp==='function'&&_isNativeApp())?'the installed app (App Store / Play)':(((window.matchMedia&&window.matchMedia('(display-mode: standalone)').matches)||navigator.standalone)?'home-screen web app':'a web browser'));
+    let em='';try{const t=(Cloud&&Cloud.token)||Cloud._origGet('sc_token')||'';const pl=JSON.parse(atob(String(t).split('.')[0].replace(/-/g,'+').replace(/_/g,'/')));em=String(pl.e||'');}catch(e){}
+    line('Signed in as', !!em, em||'(no email in the sign-in)');
+  }catch(e){}
+  try{
+    let idbOk=false,idbWhy='';
+    if(typeof _idb!=='undefined'&&_idb&&_idb.set){
+      const k='selfcheck_idb_'+Date.now();
+      try{const w=await _idb.set(k,'1');const g=await _idb.get(k);idbOk=(w!==false&&g==='1');idbWhy=idbOk?'works':('wrote '+w+', read back '+JSON.stringify(g));try{await _idb.del(k);}catch(e){}}catch(e){idbWhy='error: '+(e&&e.name||e);}
+    }else idbWhy='not available';
+    line('This device’s big-file storage (IndexedDB)', idbOk, idbWhy);
+    const off=(Cloud&&Cloud._offloaded)?Object.keys(Cloud._offloaded):[];
+    line('Big lists kept in that storage', true, off.length?off.join(', '):'none');
+  }catch(e){}
+  try{
+    const cnt=function(k,str){
+      try{
+        const o=JSON.parse(str||'null');if(o==null)return 'nothing';
+        if(k==='sc_session_summaries'){let n=0;Object.keys(o).forEach(function(c){n+=Array.isArray(o[c])?o[c].length:0;});return Object.keys(o).length+' clients, '+n+' summaries';}
+        if(k==='sc_client_homecare')return Object.keys(o).length+' clients';
+        if(k==='sc_clients')return (Array.isArray(o)?o.length:Object.keys(o).length)+' clients';
+        if(k==='sc_brand_colors')return o.logoDataUrl?'your logo is set':'no logo';
+        return String(str).length+' bytes';
+      }catch(e){return 'unreadable';}
+    };
+    ['sc_session_summaries','sc_brand_colors','sc_client_homecare','sc_clients'].forEach(function(k){
+      const dev=cnt(k,_lsGet(k));const acc=(k in server)?cnt(k,server[k]):'nothing';
+      line(({sc_session_summaries:'Session summaries',sc_brand_colors:'Your logo',sc_client_homecare:'Homecare plans',sc_clients:'Client list (saved copy)'})[k], dev===acc, 'this device: '+dev+' · your account: '+acc);
+    });
+    try{const inMem=(typeof sessionSummaries!=='undefined'&&sessionSummaries)?Object.keys(sessionSummaries).length:0;line('Summaries the app has open right now', true, inMem+' clients');}catch(e){}
+  }catch(e){}
+
   // 5. room to store things (the theory that was wrong the first time — kept so it is ruled out, fast)
   let quota='unknown';
   try{ if(navigator.storage&&navigator.storage.estimate){ const e=await navigator.storage.estimate(); quota=Math.round((e.usage||0)/1048576)+'MB used of '+Math.round((e.quota||0)/1048576)+'MB'; } }catch(e){}
@@ -5617,7 +5655,44 @@ async function _cloudInit(){
   try{_purgeDemoProducts();}catch(e){}   // after the account's product list is read
   try{_checkForNewBuild();}catch(e){}
   try{syncClientEvents();}catch(e){}
+  try{setTimeout(_sendDeviceReport,8000);}catch(e){}
 }
+// ── Device report (2026-10-17) ──────────────────────────────────────────────────────────────────────
+// Ashley: a provider who is helping should never be asked to run a check by hand. So each device tells
+// the account, on its own, how IT is doing: build, kind of app, whether its storage works, and COUNTS of
+// what it holds. No names, no notes, nothing a client wrote. Read only on the founder recovery screen.
+// Once at launch and again when the app comes back to the front (at most every 20 minutes).
+let _devRepAt=0;
+function _devKey(){try{let k=localStorage.getItem('scdev_key');if(!k){k='d'+Date.now().toString(36)+Math.random().toString(36).slice(2,8);localStorage.setItem('scdev_key',k);}return k;}catch(e){return 'unknown';}}
+async function _sendDeviceReport(){
+  try{
+    const tok=(typeof Cloud!=='undefined'&&Cloud&&Cloud.token)||'';
+    if(!tok||Date.now()-_devRepAt<20*60*1000)return;
+    _devRepAt=Date.now();
+    const js=function(k){try{return JSON.parse(_lsGet(k)||'null');}catch(e){return null;}};
+    const ss=js('sc_session_summaries')||{};let ent=0;Object.keys(ss).forEach(function(c){if(Array.isArray(ss[c]))ent+=ss[c].length;});
+    const hc=js('sc_client_homecare')||{};const cl=js('sc_clients');const br=js('sc_brand_colors')||{};
+    let idbWorks=false;
+    try{if(typeof _idb!=='undefined'&&_idb&&_idb.set){const k='devrep_'+Date.now();const w=await _idb.set(k,'1');const g=await _idb.get(k);idbWorks=(w!==false&&g==='1');try{await _idb.del(k);}catch(e){}}}catch(e){}
+    let lsBytes=0;try{for(let i=0;i<localStorage.length;i++){const k=localStorage.key(i);lsBytes+=(k.length+String(localStorage.getItem(k)||'').length)*2;}}catch(e){}
+    const native=(typeof _isNativeApp==='function'&&_isNativeApp());
+    const standalone=!!((window.matchMedia&&window.matchMedia('(display-mode: standalone)').matches)||navigator.standalone);
+    const ua=navigator.userAgent||'';
+    const report={build:APP_BUILD,kind:native?'installed app':(standalone?'home-screen app':'browser'),
+      platform:/iPhone/.test(ua)?'iPhone':/iPad/.test(ua)?'iPad':/Android/.test(ua)?'Android':/Windows/.test(ua)?'Windows':/Mac/.test(ua)?'Mac':'other',
+      native:!!native,standalone:standalone,idbWorks:idbWorks,
+      summaryClients:Object.keys(ss).length,summaryEntries:ent,
+      summariesOpen:(typeof sessionSummaries!=='undefined'&&sessionSummaries)?Object.keys(sessionSummaries).length:0,
+      homecareClients:Object.keys(hc).length,
+      clientsSaved:cl?(Array.isArray(cl)?cl.length:Object.keys(cl).length):0,
+      clientsOpen:(typeof CL!=='undefined'&&CL)?Object.keys(CL).length:0,
+      logo:!!br.logoDataUrl,storageKB:Math.round(lsBytes/1024),
+      offloaded:Object.keys((Cloud&&Cloud._offloaded)||{}).join(','),
+      reloadFails:(typeof _reloadFails!=='undefined'&&Array.isArray(_reloadFails))?_reloadFails.join(' | '):''};
+    await fetch('/api/device-report',{method:'POST',headers:{'Content-Type':'application/json','Authorization':'Bearer '+tok},body:JSON.stringify({device:_devKey(),report:report})});
+  }catch(e){}
+}
+try{document.addEventListener('visibilitychange',function(){if(document.visibilityState==='visible')setTimeout(_sendDeviceReport,4000);});}catch(e){}
 // Is this device running the build that is actually live?
 //
 // It kept not being. Three fixes shipped while a provider's phone and computer both sat on an older
@@ -30123,6 +30198,28 @@ function _recSearch(v){
     const el=document.getElementById('rec-q');if(el){el.focus();try{el.setSelectionRange(el.value.length,el.value.length);}catch(e){}}
   },250);
 }
+// What each of the provider's devices says about ITSELF (sent on its own when the app opens, counts
+// only), the devices signed in to the account, and any other account seen on the same network. Ashley,
+// 2026-10-17: the provider who is helping must not be asked to run anything; this answers it instead.
+function _recoverDeviceLines(j){
+  const L=[];const ago=function(t){const m=Math.round((Date.now()-new Date(t).getTime())/60000);return isNaN(m)?'?':(m<60?m+' min ago':(m<2880?Math.round(m/60)+'h ago':Math.round(m/1440)+' days ago'));};
+  const lib=(j.libraries&&j.libraries.sc_session_summaries)||{};const acctEntries=Number(lib.entries)||0,acctClients=Number(lib.clients)||0;
+  const devs=j.devices||[];
+  L.push('DEVICES (each one reports by itself when the app opens):');
+  if(!devs.length)L.push('  none yet — a device reports once it opens build 2026-10-17h or later');
+  devs.forEach(function(d){const r=d.report||{};
+    L.push('  '+(r.platform||'device')+' · '+(r.kind||'?')+' · build '+(r.build||'?')+' · '+ago(d.at)+(r.email?(' · '+r.email):''));
+    const short=(r.summaryEntries||0)<acctEntries;
+    L.push('    summaries: '+(r.summaryEntries||0)+' on this device ('+(r.summaryClients||0)+' clients), '+acctEntries+' on the account ('+acctClients+' clients)'+(short?'  <<< THIS DEVICE IS SHOWING LESS THAN THE ACCOUNT':''));
+    L.push('    logo: '+(r.logo?'yes':'no')+' · clients open: '+(r.clientsOpen||0)+' · homecare: '+(r.homecareClients||0)+' clients · phone storage (IndexedDB): '+(r.idbWorks?'works':'NOT WORKING'));
+    if(r.reloadFails)L.push('    failed to reload: '+r.reloadFails);
+  });
+  const ses=j.sessions||[];
+  if(ses.length){L.push('SIGNED IN TO THIS ACCOUNT:');ses.forEach(function(x){L.push('  '+(x.device||'device')+(x.location?(' · '+x.location):'')+' · last seen '+ago(x.lastSeen)+(x.signedOut?' · signed out':''));});}
+  const sn=j.sameNetwork||[];
+  if(sn.length){L.push('>>> OTHER ACCOUNTS SIGNED IN FROM THE SAME NETWORK (a phone on one of these would show less):');sn.forEach(function(x){L.push('  '+x.email+(x.name?(' ('+x.name+')'):'')+' · '+(x.device||'device')+' · last seen '+ago(x.lastSeen));});}
+  return L;
+}
 function renderClientRecover(){
   const j=_recoverState;if(!j)return;
   document.getElementById('tt').textContent='Recover clients';
@@ -30319,6 +30416,7 @@ function renderClientRecover(){
     +typedBox
     +notesVerdict
     +'<div style="background:var(--p-surf2);border:1px solid var(--p-line3);border-radius:12px;padding:11px 13px;margin-bottom:12px;font-size:16px;color:var(--p-ink);line-height:1.55;">'+verdict+'</div>'
+    +(function(){try{const dl=_recoverDeviceLines(_recoverState||{});return '<div style="background:var(--p-surf);border:1px solid var(--p-line);border-radius:12px;padding:11px 13px;margin-bottom:12px;"><div style="font-size:14px;font-weight:600;color:var(--p-mut);text-transform:uppercase;letter-spacing:.05em;margin-bottom:6px;">Their devices</div><pre style="margin:0;white-space:pre-wrap;font-size:13px;line-height:1.5;color:var(--p-ink);font-family:inherit;">'+_fileEsc(dl.join('\n'))+'</pre></div>';}catch(e){return '';}})()
     +(function(){
       // FROM THE BACKUP. Shown first, because it is the only thing on this screen that can reach
       // work the live account no longer holds at all.
@@ -30545,6 +30643,7 @@ function _recoverText(){
   // the day a provider was nearly told her notes were gone. A paste that leads with this cannot be
   // skim-read into the wrong answer.
   try{if(j.verdict&&j.verdict.line){L.push('>>> '+j.verdict.line);L.push('');}}catch(e){}
+  try{_recoverDeviceLines(j).forEach(function(x){L.push(x);});L.push('');}catch(e){}
   if(nd.length){L.push('NOT LOST — now an animal under another client:');
     nd.forEach(c=>L.push('  '+(c.name||c.id)+' -> under '+((nest[c.id].ownerName)||nest[c.id].ownerId)));L.push('');}
   L.push('REMOVED ('+all.filter(c=>c.deleted).length+'):');
