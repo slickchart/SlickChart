@@ -3881,7 +3881,10 @@ function _fillFormFieldHTML(q,i){
   }
   // Short text (default), pick email/tel input mode from the label for a better
   // mobile keyboard (the field type is generic "Short text").
-  const _it=/e-?mail/i.test(q.label||'')?'email':(/phone|mobile|cell/i.test(q.label||'')?'tel':'text');
+  // "Phone / email" asks for EITHER, so it gets a plain text box: an email-only box made iPhones offer
+  // no digits, and the old check rejected whichever one the client typed.
+  const _em=/e-?mail/i.test(q.label||''),_ph=/phone|mobile|cell/i.test(q.label||'');
+  const _it=(_em&&_ph)?'text':(_em?'email':(_ph?'tel':'text'));
   const _im=_it==='email'?' inputmode="email" autocomplete="email"':(_it==='tel'?' inputmode="tel" autocomplete="tel"':'');
   return `<div style="${wrapStyle}">${label}<input id="ff-${i}" ${aria} type="${_it}"${_im} value="${_txt(_ffDraft['q'+i]||'').replace(/"/g,'&quot;')}" oninput="_ffSetDraft('q${i}',this.value)" style="width:100%;background:var(--c-surf);border:1px solid var(--c-line);border-radius:10px;padding:11px;font-size:14px;color:var(--c-ink);box-sizing:border-box;"></div>`;
 }
@@ -4037,8 +4040,10 @@ function _collectFillForm(pf){
       if(q.required&&!val){missingRequired=true;_markBad(i);}
       // Format-check email/phone short-text fields when the person entered something.
       if(val&&(q.type==='Short text'||!q.type)){
-        if(_looksEmail(q.label)&&!_validEmail(val)){badFormat=badFormat||'Please enter a valid email address.';_markBad(i);}
-        else if(_looksPhone(q.label)&&!_validPhone(val)){badFormat=badFormat||'Please enter a valid phone number.';_markBad(i);}
+        const _e=_looksEmail(q.label),_p=_looksPhone(q.label);
+        if(_e&&_p){if(!_validEmail(val)&&!_validPhone(val)){badFormat=badFormat||'Please enter a valid phone number or email address.';_markBad(i);}}
+        else if(_e&&!_validEmail(val)){badFormat=badFormat||'Please enter a valid email address.';_markBad(i);}
+        else if(_p&&!_validPhone(val)){badFormat=badFormat||'Please enter a valid phone number.';_markBad(i);}
       }
       // Typed birthday must be a real MM/DD/YYYY date.
       if(val&&q.type==='Date'&&_looksDOB(q.label)&&!_validDOB(val)){badFormat=badFormat||'Please enter your date of birth as MM/DD/YYYY.';_markBad(i);}

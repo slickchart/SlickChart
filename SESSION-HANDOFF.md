@@ -7616,3 +7616,15 @@ policies form's card-on-file question (`ec-policies-3`), removed.
   client's "Add photos" button. Collection wording says "check", never "tick".
 - Sweep: `scratchpad/sweep-form-mirror.mjs` (every form, 387 questions, both provider screens) 6/6;
   `scratchpad/test-contra-ticks.mjs` 9/9.
+
+### 2026-10-17d — full forms bug sweep; "Phone / email" fix; virtual consult photos go in-app (preview)
+- `scratchpad/sweep-all-forms.mjs`: EVERY form (90) — build checks (ids, labels, options, items,
+  signatures, leftover placeholders/tokens, snapshot completeness), Sign in person by tapping every
+  control + the client file shows the answers, and the REAL client page filling and submitting the
+  exact snapshot. Now 0 problems.
+- **Found, LIVE on main:** stock `spraytan-intake` and `headspa-intake` have an optional "Phone /
+  email" short text. The client page validated it as email AND phone, so ANY value blocked the
+  submit (email -> "valid phone", phone -> "valid email"), and it rendered as `type=email`. Now a
+  label naming both gets a plain text box and accepts either (`slickchart-client.html`, embed rebuilt).
+- **Ashley asked (2026-10-17):** remove the "email your photos" part of `ec-virtual-16`; clients use
+  the in-app Photo consult. Label now says to add them in the Photo consult in this app.
