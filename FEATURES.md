@@ -1492,6 +1492,7 @@ Check here before building a new one.
 | `_recoverToggle` | yes |
 | `_recoverUnDelete` | yes |
 | `_recoverUnindexedServerPhotos` | yes |
+| `_restoreOutbox` | yes |
 | `_restorePhotosFromCloud` | yes |
 | `_restoreRoomDraftPhotos` | yes |
 | `_restoreSampleData` | yes |

@@ -20,7 +20,7 @@ export async function ensureDeviceReportsTable() {
 }
 
 // Only these fields, only these shapes. Anything else is dropped, so a report can never carry text.
-const NUM = ['summaryClients', 'summaryEntries', 'summariesOpen', 'homecareClients', 'clientsSaved', 'clientsOpen', 'storageKB'];
+const NUM = ['summaryClients', 'summaryEntries', 'summariesOpen', 'homecareClients', 'clientsSaved', 'clientsOpen', 'storageKB', 'unsent', 'memOnly'];
 const BOOL = ['logo', 'idbWorks', 'standalone', 'native'];
 const STR = { build: 24, kind: 24, platform: 24, offloaded: 300, reloadFails: 300, email: 120 };
 export function cleanReport(r) {

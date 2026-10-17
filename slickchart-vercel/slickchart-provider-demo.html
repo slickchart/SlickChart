@@ -546,7 +546,7 @@ const S=document.getElementById('S');
 // resets when I save it" and there was no way to tell whether her phone had any of them — a whole
 // day was spent debugging code she may not have been running. Shown at the bottom of Settings, so
 // the answer is a screenshot away. Bump it on every ship.
-const APP_BUILD='2026-10-17o';
+const APP_BUILD='2026-10-17p';
 
 
 /* ════════════════════════════════════════════════════════════════
@@ -4556,6 +4556,7 @@ const Cloud={
       }
     }catch(e){}
     try{if(typeof _pushFlushNow==='function')_pushFlushNow();}catch(e){}
+    try{_outboxSettle();}catch(e){}
   },
   push(k,v){
     if(!this.token)return;
@@ -4574,6 +4575,7 @@ const Cloud={
     // reached the other while both ends reported the same bytes: the stale side won and uploaded.
     if(this._booting){try{this._bootQueued[k]=1;}catch(e){}return;}   // held until the pull says what is actually needed
     try{if(this._bootQueued)delete this._bootQueued[k];}catch(e){}   // written after boot: a real edit now
+    try{_outboxAdd(k);}catch(e){}
     clearTimeout(this._timer);this._timer=setTimeout(()=>this._flush(),700);},
   // Flush any pending queued writes immediately during page unload. A normal fetch is often
   // killed when the page navigates away, so use a keepalive fetch (which the browser is allowed
@@ -4596,7 +4598,19 @@ const Cloud={
       if(this._holdUploads()&&this._bootQueued){for(const k in this._bootQueued){try{delete items[k];}catch(e){}}}
       if(!items||!Object.keys(items).length)return;
       this._queue={};clearTimeout(this._timer);
-      fetch('/api/store',{method:'PUT',keepalive:true,headers:{'Content-Type':'application/json','Authorization':'Bearer '+this.token},body:JSON.stringify({items})}).catch(()=>{});
+      // Every browser caps keepalive requests at 64KB in flight, and Safari refuses the whole request
+      // when it is over, so one big value used to sink the small ones riding with it. Small values go
+      // in keepalive chunks; a value too big for any chunk goes by an ordinary request, which may or
+      // may not finish as the app closes, and the outbox sends it again at the next launch.
+      const hdr={'Content-Type':'application/json','Authorization':'Bearer '+this.token};
+      const LIM=60000;let chunk={},used=0;const send=(o,ka)=>{try{fetch('/api/store',{method:'PUT',keepalive:ka,headers:hdr,body:JSON.stringify({items:o})}).catch(()=>{});}catch(e){}};
+      for(const k in items){
+        const len=String(items[k]==null?'':items[k]).length+k.length+16;
+        if(len>LIM){const one={};one[k]=items[k];send(one,false);continue;}
+        if(used+len>LIM){send(chunk,true);chunk={};used=0;}
+        chunk[k]=items[k];used+=len;
+      }
+      if(Object.keys(chunk).length)send(chunk,true);
     }catch(e){}
   },
   // Re-queue failed items (without clobbering any newer edit made while the request was in flight) and
@@ -4648,7 +4662,7 @@ const Cloud={
     fetch('/api/store',{method:'PUT',headers:{'Content-Type':'application/json','Authorization':'Bearer '+this.token},body:JSON.stringify({items})})
       .then(r=>{
         // Confirmed on the account, so an identical push later is a no-op rather than a round trip.
-        if(r&&r.ok){try{if(!this._serverSeen)this._serverSeen=Object.create(null);for(const k in items)this._serverSeen[k]=items[k];}catch(e){}}
+        if(r&&r.ok){try{if(!this._serverSeen)this._serverSeen=Object.create(null);for(const k in items)this._serverSeen[k]=items[k];}catch(e){}try{_outboxSettle();}catch(e){}}
         // A 401 here means this device's session was revoked (e.g. the provider used
         // "sign out all other devices" elsewhere). Don't mislabel it as a connection
         // problem and keep retrying against a dead token, sign this device out cleanly.
@@ -4737,7 +4751,13 @@ function _lsEvictForSpace(need,writingKey){
     }
     cand.sort(function(a,b){return b.n-a.n;});    // biggest first, so one drop usually does it
     for(const c of cand){
+      // Keep what is dropped in memory for the rest of this session. Removing it from the box without
+      // that made the app read the key as MISSING until the next launch: on a full phone the biggest
+      // pulled value is usually the client list, so the client list went blank (found 2026-10-17 by
+      // scratchpad/test-iphone-account-scale.mjs heavy: "0 clients" while the account held 400).
+      let v=null;try{v=(Cloud._origGet||localStorage.getItem.bind(localStorage))(c.k);}catch(e){}
       try{localStorage.removeItem(c.k);}catch(e){continue;}
+      if(v!=null){try{Cloud._mem[c.k]=v;}catch(e){}}
       freed+=c.n;
       if(freed>=need)break;
     }
@@ -4795,6 +4815,61 @@ function _offNewerRead(){
 function _offMarkSmallNewer(k,on){
   try{const a=_offNewerRead().filter(function(x){return x!==k;});if(on)a.push(k);
     (Cloud._origSet||localStorage.setItem.bind(localStorage))(_OFF_NEWER_KEY,JSON.stringify(a));}catch(e){}
+}
+// THE OUTBOX. Changes this device has made that the account has not confirmed yet, by key, with when
+// they were made. Device-local and tiny (key names only; the values are already on this device).
+// iOS can freeze or kill the app the moment it leaves the screen, taking an upload that was already
+// on its way with it, and the last-chance beacon is capped at 64KB by every browser, so a summaries
+// map or a logo cannot ride it. Before this list, the next launch's pull then put the account's OLDER
+// copy over the change. Now the next launch queues these first, so the pull keeps them and they are
+// sent. Stamped with the account it belongs to: another account signing in on this device never
+// sends them (CLAUDE.md §0). Entries older than a day are dropped, not sent over newer work elsewhere.
+const _OUTBOX_KEY='sc_outbox',_OUTBOX_MAX_AGE=24*3600*1000;
+_SYNC_SKIP[_OUTBOX_KEY]=1; _LS_KEEP_LOCAL[_OUTBOX_KEY]=1;
+function _outboxRead(){
+  try{const raw=(Cloud._origGet||localStorage.getItem.bind(localStorage))(_OUTBOX_KEY);const o=raw?JSON.parse(raw):null;
+    return (o&&typeof o==='object'&&o.keys&&typeof o.keys==='object')?o:{owner:'',keys:{}};}catch(e){return {owner:'',keys:{}};}
+}
+function _outboxWrite(o){try{(Cloud._origSet||localStorage.setItem.bind(localStorage))(_OUTBOX_KEY,JSON.stringify(o));}catch(e){}}
+function _outboxAdd(k){
+  try{
+    if(!_syncable(k)||_SYNC_SKIP[k])return;
+    const me=(typeof _tokenOwner==='function')?_tokenOwner():'';if(!me)return;
+    let o=_outboxRead();if(o.owner!==me)o={owner:me,keys:{}};
+    if(!o.keys[k]){o.keys[k]=Date.now();_outboxWrite(o);}
+  }catch(e){}
+}
+// Drop every key the account now holds exactly as this device does.
+function _outboxSettle(){
+  try{
+    const o=_outboxRead();const ks=Object.keys(o.keys);if(!ks.length)return;
+    const seen=(Cloud&&Cloud._serverSeen)||{};let ch=false;
+    ks.forEach(function(k){
+      if(!Object.prototype.hasOwnProperty.call(seen,k))return;
+      const cur=_lsGet(k);
+      if(cur==null||_sameSyncValue(seen[k],cur)){delete o.keys[k];ch=true;}
+    });
+    if(ch)_outboxWrite(o);
+  }catch(e){}
+}
+// At launch, before the pull: put this account's unconfirmed changes back in the queue.
+function _restoreOutbox(){
+  const out={restored:0,dropped:0};
+  try{
+    const o=_outboxRead();const me=(typeof _tokenOwner==='function')?_tokenOwner():'';
+    if(!Object.keys(o.keys).length)return out;
+    if(!me||o.owner!==me){_outboxWrite({owner:me||'',keys:{}});out.dropped=Object.keys(o.keys).length;return out;}
+    const now=Date.now();
+    Object.keys(o.keys).forEach(function(k){
+      const v=_lsGet(k);
+      if(v==null||now-Number(o.keys[k]||0)>_OUTBOX_MAX_AGE){delete o.keys[k];out.dropped++;return;}
+      if(!(k in Cloud._queue))Cloud._queue[k]=v;
+      try{if(Cloud._bootQueued)delete Cloud._bootQueued[k];}catch(e){}
+      out.restored++;
+    });
+    _outboxWrite(o);
+  }catch(e){}
+  return out;
 }
 // The index as it stood when this page loaded. Frozen on purpose: it is the answer to "was this key
 // in IndexedDB before we had a chance to look?", which cannot change mid-boot.
@@ -5826,6 +5901,13 @@ async function _cloudInit(){
   let _hy=null;
   try{_hy=await _hydrateOffloaded();}catch(e){}
   _hydrated=true;
+  // Changes the last session made that the account never confirmed (the app was closed or killed
+  // first). Queued before the pull, so the pull keeps them and boot sends them. See _restoreOutbox.
+  try{Cloud._outboxAtBoot=_restoreOutbox();}catch(e){}
+  // Ask the browser to keep this site's storage rather than clear it under pressure. WebKit grants it
+  // by its own heuristics (home-screen apps first) and Safari 17 often answers no (WebKit bug
+  // 271401), so nothing depends on the answer; the account stays the source of truth either way.
+  try{if(navigator.storage&&navigator.storage.persist&&Cloud.token)navigator.storage.persist().catch(function(){});}catch(e){}
   // READ THE PER-CLIENT LIBRARIES OFF THIS DEVICE'S OWN DISK, ON EVERY BOOT PATH.
   //
   // These maps start {} and were only ever filled by _reloadAll(), which runs near the END of boot
@@ -6016,6 +6098,10 @@ async function _sendDeviceReport(){
       clientsOpen:(typeof CL!=='undefined'&&CL)?Object.keys(CL).length:0,
       logo:!!br.logoDataUrl,storageKB:Math.round(lsBytes/1024),
       offloaded:Object.keys((Cloud&&Cloud._offloaded)||{}).join(','),
+      // Changes not yet confirmed by the account, and values this device was too full to store
+      // (held in memory only, so they are gone from the phone at the next launch until re-pulled).
+      unsent:(function(){try{return Object.keys(_outboxRead().keys).length;}catch(e){return 0;}})(),
+      memOnly:(function(){try{return Object.keys(Cloud._mem||{}).filter(function(k){return !(Cloud._offloaded&&Cloud._offloaded[k]);}).length;}catch(e){return 0;}})(),
       reloadFails:(typeof _reloadFails!=='undefined'&&Array.isArray(_reloadFails))?_reloadFails.join(' | '):''};
     await fetch('/api/device-report',{method:'POST',headers:{'Content-Type':'application/json','Authorization':'Bearer '+tok},body:JSON.stringify({device:_devKey(),report:report})});
   }catch(e){}
@@ -7209,7 +7295,7 @@ function loadNoteFmt(){try{const v=localStorage.getItem('sc_note_fmt');if(v&&not
 // undefined/false), so callers treat IndexedDB as best-effort and fall back to localStorage when
 // it's unavailable (private mode / very old browsers).
 const _idb=(function(){
-  let _p=null,_bad=false;
+  let _p=null,_bad=false,_openFails=0;
   // iOS closes a backgrounded app's IndexedDB connection and never tells the page in a way the old
   // code listened for. The cached connection then threw on every transaction, every op resolved to
   // undefined/false, and the app quietly ran on whatever was in memory — then on the next cold start
@@ -7223,10 +7309,14 @@ const _idb=(function(){
         if(typeof indexedDB==='undefined'||!indexedDB){_bad=true;return rej();}
         const rq=indexedDB.open('slickchart',1);
         rq.onupgradeneeded=function(){try{if(!rq.result.objectStoreNames.contains('kv'))rq.result.createObjectStore('kv');}catch(e){}};
-        rq.onsuccess=function(){const d=rq.result;
+        rq.onsuccess=function(){const d=rq.result;_openFails=0;
           try{d.onclose=function(){_p=null;};d.onversionchange=function(){try{d.close();}catch(e){}_p=null;};}catch(e){}
           res(d);};
-        rq.onerror=function(){_bad=true;rej();};
+        // iOS reports "Connection to Indexed Database server lost" when it has killed the storage
+        // process behind a backgrounded app (WebKit bugs 197050, 235579, 273827). That is passing, not
+        // permanent, so one failed open no longer switches IndexedDB off for the whole session (which
+        // pushed every big value into the 5MB box). Three in a row still does.
+        rq.onerror=function(){_p=null;if(++_openFails>=3)_bad=true;rej();};
         rq.onblocked=function(){_p=null;rej();};
       }catch(e){_bad=true;rej();}
     });
@@ -23711,7 +23801,7 @@ function _pushFlushNow(){
       const ok=!!(r&&r.ok);
       // Only remember what the account holds once the account has confirmed it. Recording it
       // optimistically would let a failed push suppress the retry that follows.
-      if(ok){try{_pushState();Object.keys(items).forEach(function(k){Cloud._serverSeen[k]=items[k];});}catch(e){}}
+      if(ok){try{_pushState();Object.keys(items).forEach(function(k){Cloud._serverSeen[k]=items[k];});}catch(e){}try{_outboxSettle();}catch(e){}}
       else requeue();
       settle({ok:ok,status:(r&&r.status)||0});
     },function(){ requeue(); settle({ok:false,reason:'network'}); });
@@ -23739,6 +23829,7 @@ function _pushKeyNow(k,v){
         timer:Cloud._booting?0:setTimeout(_pushFlushNow,_PUSH_COALESCE_MS)};
     }
     Cloud._pushBatch.items[k]=val;
+    if(!Cloud._booting){try{_outboxAdd(k);}catch(e){}}
     return new Promise(function(res){Cloud._pushBatch.waiters.push(res);});
   }catch(e){return Promise.resolve({ok:false,reason:'error'});}
 }
@@ -31595,6 +31686,8 @@ function _recoverDeviceLines(j){
     const short=(r.summaryEntries||0)<acctEntries;
     L.push('    summaries: '+(r.summaryEntries||0)+' on this device ('+(r.summaryClients||0)+' clients), '+acctEntries+' on the account ('+acctClients+' clients)'+(short?'  <<< THIS DEVICE IS SHOWING LESS THAN THE ACCOUNT':''));
     L.push('    logo: '+(r.logo?'yes':'no')+' · clients open: '+(r.clientsOpen||0)+' · homecare: '+(r.homecareClients||0)+' clients · phone storage (IndexedDB): '+(r.idbWorks?'works':'NOT WORKING'));
+    if(r.unsent)L.push('    changes waiting to reach the account: '+r.unsent+' (sent automatically next time it opens with signal)');
+    if(r.memOnly)L.push('    >>> phone storage FULL: '+r.memOnly+' saved items could not be kept on this device (they reload from the account each launch)');
     if(r.reloadFails)L.push('    failed to reload: '+r.reloadFails);
   });
   const ses=j.sessions||[];
