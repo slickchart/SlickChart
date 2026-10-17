@@ -271,6 +271,48 @@ feature that existed was reported as absent.
 If something is missing from that paste, ADD IT TO THE PASTE in the same change as the fix, so the
 next provider costs one round trip. That is the whole point of it being one screen.
 
+## 1e. How every form looks, and how a new form collection goes in (her rules, 2026-10-17)
+
+**Every form defaults to Luxe with the provider's own branding** (*"can we have all forms across the
+app default to luxe style + providers branding + logo? make that a rule"*). In BOTH apps a form is
+drawn as a `.scf` paper form: Luxe unless the provider picked Neutral or Blush in the Library (her
+pick, `bizInfo.formStyle`, always wins), her logo (`brandColors.logoDataUrl`, sent to clients as
+`brand`) in the header corner, her business name there when she has no logo, and her brand color on
+the accents only when it reads at 4.5:1 on white (`_scfAccentStyle`). `_scfStyle`, `_scfAccentStyle`
+and `_scfLogoHTML` exist in both HTML files and must stay the same. A new form screen uses
+`_scfOpen`/`_scfClose` (provider) or the same `.scf` markup (client); never a second look.
+
+**A new collection upload (Ashley's PDFs) follows the Esthetician Collection's rules, all of them**
+(*"be sure to follow all the other rules we discussed from the first esty collection upload"*).
+The Esthetician Collection (`ec-*`) and the Lash & Brow Collection (`lb-*`) are the worked examples:
+
+1. **Transcribe, do not invent.** Every question, consent line and guide tip comes from her PDF.
+   No `[bracket]` placeholder survives (the generator exits on one; the test checks again). Her
+   business name, phone and email are `{business}` / `{phone}` / `{email}` tokens (`_bizFill`).
+2. **Bundled, never stored unedited.** `XX_FORMS` merges into `formTmpls` only where absent;
+   `persistForms()` stores only her changes; a send snapshots the form. Fully editable like any form.
+3. **Its own section, shown to the right professions** (`_FORM_DEFS_BY_PROF.<x>coll` via
+   `_collectionSections`, excluded from `_workKinds`). Never take a collection away from a provider
+   who already uses it (`_ecInUse` keeps the Esthetician Collection for a lash/brow pro who edited,
+   bundled, connected or sent one). Guides go into `guideTemplatesByProf` by profession, deduped,
+   ADDED to the stock ones, never replacing them.
+4. **No card-on-file question** (SlickChart cannot store a card). **A virtual consult uses the
+   in-app Photo consult**, never "email photos". Artist-only office boxes stay on the printable.
+5. **Provider controls mirror the client's**: Yes/No and single select are pick-one buttons,
+   multiple choice and contraindications are tick boxes (`input.ci-tick`), and a ticked
+   contraindication is flagged on both sides. "Check", not "tick", in client wording.
+6. **The Library**: split each style's PDF per document (`scratchpad/ec-split-docs.py`,
+   `lb-split-docs.py`, page map asserting every page used once) into a NEW unguessable
+   `assets/<x>-<random hex>/` folder with the `vercel.json` noindex header; the addresses come only
+   from `/api/collection-pdf` (allow-listed ids, session + subscription gate). The Library shows
+   only the collections that match her professions, one "Get all N pages" per collection.
+7. **Test it the same way**: a provider test (`test-esthetician-collection`,
+   `test-lash-brow-collection`), every form filled and signed in the real client page
+   (`test-ec-client-form`, `test-lb-client-form`), and `sweep-all-forms`, `sweep-form-mirror`,
+   `test-contra-ticks`, `test-client-form-branding` in BOTH Chrome and Safari (`run-in-safari.sh`).
+8. **Release train as always**: the one preview branch, out at 2am unless she says "push it live
+   early" for that change.
+
 ## 2. Verify before claiming "fixed"
 
 Never tell the owner something is fixed without proof. For JS/UI changes, drive the app headless with the
