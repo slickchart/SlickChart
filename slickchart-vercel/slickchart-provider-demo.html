@@ -493,7 +493,7 @@ const S=document.getElementById('S');
 // resets when I save it" and there was no way to tell whether her phone had any of them — a whole
 // day was spent debugging code she may not have been running. Shown at the bottom of Settings, so
 // the answer is a screenshot away. Bump it on every ship.
-const APP_BUILD='2026-10-16f';
+const APP_BUILD='2026-10-17a';
 
 
 /* ════════════════════════════════════════════════════════════════
@@ -1293,18 +1293,14 @@ const coursesByProf={
     {id:'cb1',title:'Fade Maintenance 101',icon:'ti-scissors',bg:'var(--p-surf2)',ic:'var(--p-green)',bdg:'bg',status:'Draft',price:'Free',modules:3,duration:'18 min',enrolled:0,revenue:0,progress:0,desc:'Keeping a fresh cut sharp between appointments, edges, washing, and product.'},
     {id:'cb2',title:'Beard Care Essentials',icon:'ti-mustache',bg:'var(--p-purple-bg)',ic:'var(--p-purple)',bdg:'bp',status:'Draft',price:'$19',modules:4,duration:'22 min',enrolled:0,revenue:0,progress:0,desc:'Oils, brushing, and shaping to train a healthy, well-kept beard.'},
   ],
-  brow:[
-    {id:'cbr1',title:'Brow Care Between Visits',icon:'ti-eye',bg:'var(--p-purple-bg)',ic:'var(--p-purple)',bdg:'bp',status:'Draft',price:'Free',modules:3,duration:'15 min',enrolled:0,revenue:0,progress:0,desc:'Aftercare and maintenance for laminated, tinted, and shaped brows.'},
-  ],
+  brow:[],
   pmu:[
     {id:'cpm1',title:'PMU Healing & Aftercare',icon:'ti-brush',bg:'var(--p-purple-bg)',ic:'var(--p-purple)',bdg:'bp',status:'Draft',price:'$29',modules:5,duration:'30 min',enrolled:0,revenue:0,progress:0,desc:'What to expect through the healing stages, plus how to protect long-term results.'},
   ],
   makeup:[
     {id:'cmk1',title:'Everyday Makeup Confidence',icon:'ti-brush',bg:'var(--p-red-bg)',ic:'var(--p-red)',bdg:'br',status:'Draft',price:'$29',modules:5,duration:'40 min',enrolled:0,revenue:0,progress:0,desc:'Teach clients to recreate their look at home, base, eyes, and finishing.'},
   ],
-  lash:[
-    {id:'cls1',title:'Lash Care & Retention',icon:'ti-eye',bg:'var(--p-surf2)',ic:'var(--p-green)',bdg:'bg',status:'Draft',price:'Free',modules:3,duration:'15 min',enrolled:0,revenue:0,progress:0,desc:'Cleansing, brushing, and habits that make a full set last longer.'},
-  ],
+  lash:[],
   massage:[
     {id:'cms1',title:'Stretch & Recovery at Home',icon:'ti-yoga',bg:'var(--p-surf2)',ic:'var(--p-green)',bdg:'bg',status:'Draft',price:'$19',modules:4,duration:'30 min',enrolled:0,revenue:0,progress:0,desc:'Simple self-care between sessions, stretches, hydration, and posture.'},
   ],
@@ -4093,6 +4089,7 @@ function _mergeCourses(serverStr,localStr){
     const custom=String(inc!=null?inc:((typeof _lsGet==='function')?_lsGet('sc_courses_custom'):''))==='1';
     if(custom&&typeof coursesByProf!=='undefined'){
       const stock={};Object.keys(coursesByProf).forEach(function(pr){(coursesByProf[pr]||[]).forEach(function(c){if(c&&c.id)stock[c.id]=1;});});
+      try{Object.keys(_RETIRED_STARTER_COURSES).forEach(function(id){stock[id]=1;});}catch(e){}   // retired samples count as stock too
       const srvIds={};try{(JSON.parse(serverStr||'[]')||[]).forEach(function(c){if(c&&c.id)srvIds[c.id]=1;});}catch(e){}
       let loc=[];try{loc=JSON.parse(localStr||'[]');}catch(e){loc=[];}
       if(Array.isArray(loc)){const kept=loc.filter(function(c){return !(c&&stock[c.id]&&!srvIds[c.id]&&!c._ts);});if(kept.length!==loc.length)localStr=JSON.stringify(kept);}
@@ -23670,7 +23667,32 @@ function loadCustomResources(){try{const raw=localStorage.getItem('sc_resources'
 // renderLearn (and any nav('learn')) redirects there so there's a single home for all three.
 function renderLearn(){ _fgTab='courses'; renderForms(); }
 function switchLearnTab(){ _fgTab='courses'; renderForms(); }
+// Sample courses Ashley retired (2026-10-17: "please remove these demo courses (lash and brow)").
+// No new account gets them. An account that already holds one gets it removed when the course list
+// is shown, but ONLY if it is still the untouched sample: no lessons, no cover, not published, nobody
+// enrolled, same title, price and description. Anything she changed is hers and stays.
+const _RETIRED_STARTER_COURSES={cbr1:{title:'Brow Care Between Visits',price:'Free',desc:'Aftercare and maintenance for laminated, tinted, and shaped brows.'},
+  cls1:{title:'Lash Care & Retention',price:'Free',desc:'Cleansing, brushing, and habits that make a full set last longer.'}};
+function _isUntouchedRetiredStarter(c){
+  const r=c&&_RETIRED_STARTER_COURSES[c.id];if(!r)return false;
+  return String(c.title||'')===r.title&&String(c.price||'')===r.price&&String(c.desc||'')===r.desc
+    &&String(c.status||'Draft')==='Draft'&&!(Number(c.enrolled)>0)&&!(Number(c.revenue)>0)
+    &&!(Array.isArray(c.lessons)&&c.lessons.length)&&!c.cover&&!c._ts;
+}
+function _dropRetiredStarterCourses(){
+  try{
+    // Never during boot: the list in memory is the defaults until her account's copy is read in.
+    if(typeof Cloud!=='undefined'&&Cloud&&(Cloud._booting||(typeof _awaitingHydration==='function'&&_awaitingHydration('sc_courses'))))return false;
+    const drop=(courses||[]).filter(_isUntouchedRetiredStarter).map(c=>c.id);
+    if(!drop.length)return false;
+    for(let i=courses.length-1;i>=0;i--){if(drop.indexOf(courses[i]&&courses[i].id)>=0)courses.splice(i,1);}
+    _loadHiddenCourses();drop.forEach(id=>{if(!(_tombVal(hiddenCourses[id])>0))hiddenCourses[id]=Date.now();});_saveHiddenCourses();
+    try{persistCourses();}catch(e){}
+    return true;
+  }catch(e){return false;}
+}
 function _coursesTabHTML(){
+  try{_dropRetiredStarterCourses();}catch(e){}
   return `
     <div style="padding:12px 16px 8px;display:flex;justify-content:space-between;align-items:center;"><span style="font-size:16px;color:var(--p-mut);">Your courses</span><button onclick="nav('course-builder','new')" style="background:var(--accent);color:var(--accent-ink);border:1px solid var(--btn-edge);border-radius:8px;padding:7px 12px;font-size:16px;font-weight:500;cursor:pointer;display:flex;align-items:center;gap:4px;"><i class="ti ti-plus" style="font-size:16px;"></i> New course</button></div>
     ${_searchBar('Search courses…','.course-card','courses-noresults').replace('padding:14px 16px 6px;','padding:2px 16px 6px;')}

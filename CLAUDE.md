@@ -77,7 +77,15 @@ don't go back to pushing `main` directly.
 
 She asked for this after an edit disturbed providers who were using the app. **Do not push to `main`.**
 
-1. **Develop on a branch.** One branch per change, as the session is set up to do anyway.
+1. **Develop on THE preview branch — one, always the same (her rule, 2026-10-17):** *"we should only
+   ever have one branch preview so i dont need a new link every time."* All app work goes on the
+   session's designated branch (currently `claude/friendly-dirac-n55456`), whose Vercel preview she
+   keeps open: provider app
+   `https://slick-chart-git-claude-friendly-dirac-n55456-slick-chart.vercel.app/slickchart.html`,
+   client app `.../space?c=<client token>` on the same host. Never start a second branch for a
+   change, and never give her a different preview link. (On 2026-10-16 the Esthetician Collection
+   went to its own branch; she opened her usual link and reported "none of the forms are anywhere
+   on the preview".) After a 2am promotion, keep building on that same branch.
 2. **Verify it yourself first** (§2, plus the sweeps in §3 if you touched sync, storage or a loader).
    The gate below is hers, not a substitute for yours.
 3. **Push the branch** and give her its Vercel preview URL so she can click it. CI runs on every

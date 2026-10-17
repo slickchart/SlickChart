@@ -7587,3 +7587,15 @@ clean-up of her notes, which always follows them. Test: `scratchpad/test-summary
 (11/11; step 2 FAILS on the old build, so it reproduces her report).
 Pre-existing, unrelated: `scratchpad/sweep-dup-carry-stores.mjs` 12/16 on live main too (duplicate
 merge skips a consult pair).
+
+### 2026-10-17a — lash & brow sample courses retired; ONE preview branch from now on
+- **Observed (Ashley, Safari on her computer, preview `claude-friendly-dirac-n55456`):** Courses showed
+  "Lash Care & Retention" and "Brow Care Between Visits" (Draft, 3 modules, Free); she asked for them
+  removed. On the same preview "none of the forms we were supposed to incorporate are anywhere":
+  the collection had been pushed to `claude/esthetician-collection`, a different preview. Fixed by
+  fast-forwarding `claude/friendly-dirac-n55456` to it; CLAUDE.md §1a step 1 now says one branch.
+- `coursesByProf.lash`/`.brow` are empty. `_RETIRED_STARTER_COURSES` + `_dropRetiredStarterCourses()`
+  (run from `_coursesTabHTML`, never during boot) remove an account's copy only when it is the
+  untouched sample (same title/price/desc, Draft, no lessons/cover/_ts, nobody enrolled), with a
+  `sc_hidden_courses` delete record so the other device follows. `_mergeCourses` counts the retired
+  ids as stock. Test: `scratchpad/test-retired-starter-courses.mjs` (7/7).
