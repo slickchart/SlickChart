@@ -177,7 +177,8 @@ input:focus-visible,textarea:focus-visible,select:focus-visible,[role=button]:fo
 @media (prefers-reduced-motion:reduce){*,*::before,*::after{animation-duration:.01ms!important;animation-iteration-count:1!important;transition-duration:.01ms!important;scroll-behavior:auto!important;}}
 /* ── Paper forms (2026-10-17): the app's forms in the look of The Esthetician Collection PDFs ──
    Same block in slickchart.html and slickchart-client.html. Style follows the provider's choice
-   (Neutral / Blush / Luxe), sent to the client as formStyle. */
+   (Neutral / Blush / Luxe), sent to the client as formStyle. Luxe unless she picks another, with her
+   logo in the corner and her brand color on the accents (Ashley, 2026-10-17). */
 .scf{--scf-band:#f4f1ec;--scf-band-ink:#2a2622;--scf-kick:#6e6350;--scf-acc:#6e6350;--scf-line:#ddd5ca;--scf-panel:#f4f1ec;--scf-ink:#2a2622;--scf-mut:#6f675e;--scf-paper:#fffefc;
   background:var(--scf-paper);color:var(--scf-ink);border-radius:14px;overflow:hidden;font-family:'DM Sans',system-ui,-apple-system,sans-serif;box-shadow:0 1px 3px rgba(0,0,0,.10),0 8px 24px rgba(0,0,0,.06);text-align:left;}
 .scf[data-style="blush"]{--scf-band:#f3e2df;--scf-band-ink:#2e2322;--scf-kick:#94524a;--scf-acc:#94524a;--scf-line:#ead3cf;--scf-panel:#f8edeb;}
@@ -189,6 +190,8 @@ input:focus-visible,textarea:focus-visible,select:focus-visible,[role=button]:fo
 .scf-title:focus{outline:none;}
 .scf-sub{font-size:13px;color:var(--scf-band-ink);opacity:.75;margin-top:6px;line-height:1.45;}
 .scf-logo{border:1px dashed var(--scf-kick);color:var(--scf-kick);font-family:'Cormorant Garamond',Georgia,serif;font-size:15px;font-weight:600;line-height:1.15;padding:9px 11px;text-align:center;max-width:40%;flex-shrink:0;word-break:break-word;}
+.scf-logo.has-img{border:none;padding:6px 8px;background:#fff;border-radius:6px;display:flex;align-items:center;justify-content:center;}
+.scf-logo img{display:block;max-width:100%;max-height:60px;object-fit:contain;}
 .scf-body{padding:4px 18px 18px;}
 .scf-q{padding:15px 0 14px;border-bottom:1px solid var(--scf-line);}
 .scf-q:last-child{border-bottom:none;}
@@ -3559,13 +3562,14 @@ function renderFillForm(){
     : `Submit to ${_txt(client.providerFirst)}`;
   const _submitIcon=_nextItem?'ti-arrow-right':'ti-send';
   const _anyReq=qs.some(q=>q&&q.required);
-  const _st=['neutral','blush','luxe'].indexOf(client.formStyle)>=0?client.formStyle:'neutral';
+  const _st=['neutral','blush','luxe'].indexOf(client.formStyle)>=0?client.formStyle:'luxe';
+  const _br=(function(){try{const p=activeProvider();return (p&&p.brand)||{};}catch(e){return {};}})();
   const _foot=[client.studio,client.studioPhone,client.website].filter(Boolean).map(_txt).join(' · ');
   S.innerHTML=`
   ${_previsitProgressHTML('form',pf.formId)}
   <div style="padding:12px 12px 20px;">
-  <div class="scf" data-style="${_st}">
-    <div class="scf-head"><div style="min-width:0;"><div class="scf-kick">${_txt(_scfKicker(pf.title))}</div><div id="page-heading" tabindex="-1" class="scf-title">${_txt(pf.title)}</div>${_anyReq?`<div class="scf-sub">Questions marked <b>Required</b> need an answer.</div>`:''}</div>${client.studio?`<div class="scf-logo">${_txt(client.studio)}</div>`:''}</div>
+  <div class="scf" data-style="${_st}"${_scfAccentStyle(_br.primary)}>
+    <div class="scf-head"><div style="min-width:0;"><div class="scf-kick">${_txt(_scfKicker(pf.title))}</div><div id="page-heading" tabindex="-1" class="scf-title">${_txt(pf.title)}</div>${_anyReq?`<div class="scf-sub">Questions marked <b>Required</b> need an answer.</div>`:''}</div>${_scfLogoHTML(_br.logoDataUrl,client.studio)}</div>
     <div class="scf-body">
     ${qs.map((q,i)=>_fillFormFieldHTML(q,i)).join('')}
     </div>
@@ -3574,9 +3578,24 @@ function renderFillForm(){
   <button onclick="_submitFillForm()" class="btnp" style="width:100%;border-radius:12px;padding:13px;margin-top:14px;"><i class="ti ${_submitIcon}" aria-hidden="true" style="margin-right:5px;"></i>${_submitLabel}</button>
   </div>`;
 }
+// Every form is Luxe unless the provider picked another style, with her logo (her business name when
+// she has none) and her brand color on the accents. Same helpers as slickchart.html.
+function _scfAccentStyle(hex){
+  const m=/^#?([0-9a-f]{6})$/i.exec(String(hex||'').trim());if(!m)return '';
+  const n=parseInt(m[1],16),ch=[n>>16&255,n>>8&255,n&255].map(v=>{v/=255;return v<=0.03928?v/12.92:Math.pow((v+0.055)/1.055,2.4);});
+  const L=0.2126*ch[0]+0.7152*ch[1]+0.0722*ch[2];
+  return (1.05/(L+0.05))>=4.5?` style="--scf-acc:#${m[1]}"`:'';
+}
+function _scfLogoHTML(logo,name){
+  const src=_imgSrc(logo);
+  if(src)return `<div class="scf-logo has-img"><img src="${src}" alt="${_txt(name||'Logo')}"></div>`;
+  return name?`<div class="scf-logo">${_txt(name)}</div>`:'';
+}
 // The small spaced-out line above a form's title, the way the printed forms carry it.
 function _scfKicker(t){t=String(t||'').toLowerCase();
   if(/minor|guardian|under 18/.test(t))return 'Clients under 18';
+  if(/design approval/.test(t))return 'Design approval';
+  if(/patch test/.test(t))return 'Client record';
   if(/consent/.test(t))return 'Informed consent';
   if(/intake|health history|new client/.test(t))return 'New client';
   if(/polic/.test(t))return 'Appointment policies';

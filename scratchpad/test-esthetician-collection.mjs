@@ -54,14 +54,14 @@ await p.waitForFunction(()=>document.querySelectorAll('#pl-pages canvas.pl-page'
 await p.waitForTimeout(800);
 const r4=await p.evaluate(()=>{const cv=document.querySelector('#pl-pages canvas.pl-page');let ink=0;if(cv){const d=cv.getContext('2d').getImageData(0,0,cv.width,cv.height).data;for(let i=0;i<d.length;i+=4*97){if(d[i]<200)ink++;}}
   return {pages:document.querySelectorAll('#pl-pages canvas.pl-page').length,ink,url:document.getElementById('pl-entry').getAttribute('data-url'),print:!document.getElementById('pl-print').disabled};});
-check('a document opens showing its real PDF page, drawn (not a text summary)',r4.pages===1&&r4.ink>200&&/neutral\/contra-cheat\.pdf$/.test(r4.url),JSON.stringify(r4));
+check('a document opens in Luxe by default, showing its real PDF page, drawn',r4.pages===1&&r4.ink>200&&/luxe\/contra-cheat\.pdf$/.test(r4.url),JSON.stringify(r4));
 check('Print is ready once the page is drawn',r4.print);
-await p.evaluate(()=>_plSetStyle('luxe'));
-await p.waitForFunction(()=>/luxe\/contra-cheat\.pdf$/.test(document.getElementById('pl-entry').getAttribute('data-url')||'')&&document.querySelectorAll('#pl-pages canvas.pl-page').length>0,null,{timeout:20000}).catch(()=>{});
-check('switching to Luxe redraws it from the Luxe file',await p.evaluate(()=>/luxe\/contra-cheat\.pdf$/.test(document.getElementById('pl-entry').getAttribute('data-url')||'')));
+await p.evaluate(()=>_plSetStyle('blush'));
+await p.waitForFunction(()=>/blush\/contra-cheat\.pdf$/.test(document.getElementById('pl-entry').getAttribute('data-url')||'')&&document.querySelectorAll('#pl-pages canvas.pl-page').length>0,null,{timeout:20000}).catch(()=>{});
+check('switching to Blush redraws it from the Blush file',await p.evaluate(()=>/blush\/contra-cheat\.pdf$/.test(document.getElementById('pl-entry').getAttribute('data-url')||'')));
 await p.evaluate(()=>_openPracticeDoc('intake'));
 await p.waitForFunction(()=>document.querySelectorAll('#pl-pages canvas.pl-page').length===2,null,{timeout:20000}).catch(()=>{});
-check('a two-page document shows both pages, in the style she picked',await p.evaluate(()=>document.querySelectorAll('#pl-pages canvas.pl-page').length===2&&/luxe\/intake\.pdf$/.test(document.getElementById('pl-entry').getAttribute('data-url'))));
+check('a two-page document shows both pages, in the style she picked',await p.evaluate(()=>document.querySelectorAll('#pl-pages canvas.pl-page').length===2&&/blush\/intake\.pdf$/.test(document.getElementById('pl-entry').getAttribute('data-url'))));
 const pf=await p.evaluate(()=>new Promise(res=>{let printed=0;const H=HTMLIFrameElement.prototype;_plPrint();const fr=document.getElementById('pl-print-frame');fr.contentWindow.print=()=>{printed++;};setTimeout(()=>res({imgs:fr.contentWindow.document.images.length,printed}),1500);}));
 check('Print sends exactly those pages to the printer',pf.imgs===2&&pf.printed===1,JSON.stringify(pf));
 await p.evaluate(()=>{const x=document.querySelector('#pl-entry button[aria-label="Close"]');x.click();});
