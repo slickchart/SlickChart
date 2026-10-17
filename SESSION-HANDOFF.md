@@ -7700,3 +7700,8 @@ possible — and make that a rule (CLAUDE.md §4d, providers bullet).
   whether the phone is a second account (sameNetwork / Signed in as), or the same account showing
   fewer summaries than the account (and whether its IndexedDB works). Nothing for her to do.
 - `scratchpad/test-device-report.mjs` 10/10.
+- **LIVE 2026-10-17 (Ashley: "push it live early")**: ONLY the 17g self-check + 17h device report went
+  out, applied onto main (`3fb2af6`, build `2026-10-17h`), release fast-forwarded, deploy dispatched,
+  slickchart.app/api/build-id = 2026-10-17h. The rest of the preview (collection, paper forms, summary
+  follows notes, mirror, Library PDFs) did NOT go out and still waits for her OK. Preview branch merged
+  main back in and is now `2026-10-17i`.
