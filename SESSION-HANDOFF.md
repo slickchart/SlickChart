@@ -7643,3 +7643,21 @@ entries showed a simplified text version instead of the PDF; the only PDF option
   opens the file. Whole 54-page PDF still offered.
 - Test: `scratchpad/test-esthetician-collection.mjs` 30/30 (real pages drawn, style switch, 2-page
   doc, print, X).
+
+### 2026-10-17f — app forms in the look of the PDFs ("paper forms"), provider + client (preview)
+**Ashley asked:** the app's forms look basic next to the luxe PDFs; make them match, in both apps.
+- Shared stylesheet `.scf*` (same block in both HTML files; source copy `scratchpad/scf.css`), with
+  Cormorant Garamond + DM Sans (the PDFs' fonts, Google Fonts, Georgia/system fallback). Header band +
+  spaced kicker (`_scfKicker` from the title) + serif title + her business name in the dashed "logo"
+  box; underline answer lines, square check boxes, panels, uppercase "HEADING. text" labels split into
+  a small heading (`_scfSplit`); footer with business · phone · website.
+- Three palettes = the PDF styles. One choice: Library > Style now sets `bizInfo.formStyle` (synced,
+  pushed, `_scheduleClientSync`), sent to clients as `formStyle` (additive field; client reads it in
+  `applyActiveProvider` via `p.formStyle`). Older builds ignore it.
+- Client: `renderFillForm` + `_fillFormFieldHTML` rewritten with classes; every id/handler kept;
+  `_ffSetChoice` toggles `.on`/aria-pressed. Provider: `_formQHTML`, `_sdQHTML`, `_mcControlHTML`,
+  Preview and Sign in person (signature pad on the paper).
+- The Google Fonts `<link>` sits BEFORE the first `<style>`: `build-demo.cjs` needs `</style></head><body>`.
+- Verified: sweep-all-forms 90 forms 0 problems, mirror 6/6, contra 9/9, ec client 16/16,
+  collection 30/30, client small-screen/layout sweeps clean. (`sweep3-forms-client-resend.mjs` shows 2
+  on live main too; its verified successor `v-forms-client-resend.mjs` passes.)
