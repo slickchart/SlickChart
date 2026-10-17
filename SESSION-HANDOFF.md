@@ -7737,3 +7737,29 @@ Live now: Esthetician Collection (16 forms, 13 guides, Library with per-document
 Print), paper-form look in both apps, business details fill in, contraindication ticks + flags,
 provider screens mirror the client app, Phone/email fix, summary follows provider notes, retired
 lash/brow sample courses, device reports + self-check, the Safari storage fix. Diana reply drafted.
+
+### 2026-10-17 — build `2026-10-17l` (PREVIEW ONLY): Lash & Brow Collection + Luxe/branding default
+Ashley: "ok i have new ones for lash and brow professions now" (3 PDFs, 38 pages each), then "can we
+have all forms across the app default to luxe style + providers branding + logo?" and "make that a
+rule and be sure to follow all the other rules we discussed from the first esty collection upload".
+Rule written as CLAUDE.md §1e.
+- **13 forms `lb-*`, 8 guides `g-lb-*`**, generated from her PDFs by `scratchpad/lb/gen-lb.cjs` ->
+  `lb-data.js` (fails on any `[bracket]` left; `{business}`/`{phone}` tokens; no card-on-file; artist
+  office boxes left to the printable). Bundled like `EC_FORMS` (never stored unedited).
+- **Who sees what** (`_collectionSections`): lash/brow -> `lbcoll` "The Lash & Brow Collection".
+  `ecoll` is now esty/wax, PLUS a lash/brow pro who already uses an `ec-*` form (`_ecInUse`: found in
+  `sc_forms`, `sc_bundles`, `sc_clients` or `sc_checkin_cfg`), so nobody loses a form she relies on.
+  Guides by `profs` (lash: ext, lift, removal, retention, prep; brow: lam, tint, shape, prep). The
+  `g-esty-ec-tint` guide was LEFT on lash/brow on purpose: removing a template hides her edits to it.
+- **Library**: `LB_PRINT_DOCS` (34 docs, ids `lb-…`), split by `scratchpad/lb-split-docs.py` into
+  `assets/lb-a5025eda48748f3494bcacd7/<style>/<doc>.pdf` + the 3 full PDFs; noindex header in
+  vercel.json; `/api/collection-pdf` allow-lists the `lb-` ids and takes `?collection=lb` for the
+  whole file. The tab shows only the collections that match her professions, one "Get all N pages"
+  each.
+- **Every form Luxe + her branding** (both apps): default `luxe` in `_scfStyle`/`_plStyle`/client
+  `_st` (her pick still wins); her logo on a white tile in the header (`_scfLogoHTML`, name when no
+  logo); her brand color on accents only at 4.5:1 on white (`_scfAccentStyle`). New kickers "Design
+  approval" and "Client record".
+- Tests: `test-lash-brow-collection` 25/25, `test-lb-client-form` 13/13 (every form signed in the
+  real client page), `test-client-form-branding` 5/5, `test-esthetician-collection` 30/30 (now
+  expects Luxe by default), contra 9/9, mirror 6/6, all forms swept; both engines (see commit).
