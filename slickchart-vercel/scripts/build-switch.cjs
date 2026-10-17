@@ -99,7 +99,7 @@ for (const g of list) {
   const others = list.filter(o => o.slug !== g.slug && !o.hub);
   const html = head({
     title: meta.title + TITLE_SUFFIX, description: meta.description, canonical: g.url,
-    keywords: meta.keywords, jsonld, ogType: 'article'
+    keywords: meta.keywords, jsonld, ogType: 'article', banner: true
   }).replace('</style>', EXTRA_CSS + '</style>')
     + `\n<main><div class="wrap">
 ${g.hub ? '' : '<a class="back" href="/switch">&larr; Switching to SlickChart</a>\n'}<article>

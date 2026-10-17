@@ -29,6 +29,9 @@ async function signOnce(answer) {
   await sleep(800);
 }
 await signOnce('First visit answer');
+// A real second signing is a later visit, not a double tap: submitSignOnDevice deliberately folds two
+// signings inside 3 seconds into one (accidental double tap), so wait past that window.
+await sleep(3500);
 await signOnce('Today: started Accutane last week');
 const r = await p.evaluate(([fid]) => (CL.c1.submittedForms || []).filter(f => f.formId === fid).map(f => ({ evId: f.evId, at: f.at, answers: f.answers })), [fid]);
 check('signing the same form a second time files NOTHING (no record, no server event) but toasts "signed"',

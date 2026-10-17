@@ -7464,5 +7464,317 @@ key; re-sending a check-in stamps `checkinReqAt` once the link goes out.
 
 **Not done**: `sc_workspace.codes` keeps a cleared discount code in the account copy (no screen shows
 it; fixing means changing that key's shape); client
-prefs merge is top-level only (two client devices can overwrite course progress); no way to withdraw
-a form/guide sent by mistake; `cron-events` hour-bucket dedupe could double an "after service" send.
+prefs merge is top-level only (two client devices can overwrite course progress); `cron-events` hour-bucket dedupe could double an "after service" send.
+
+## 2026-10-16b — take back a form, guide or course sent by mistake
+
+Client chart → Visit → "Still open in <name>'s app": every pending form, guide and course with
+**Take back** (confirm, then a 7s Undo). Taking one back removes it from the chart AND stamps
+`c.withdrawn['f:'|'g:'|'c:' + id] = ms`, sent to the client as `withdrawn` (entries over a year old
+dropped). The stamp is needed because `upsertClient` (lib/clients.js) keeps a stored
+`pendingForms`/`pendingGuides` when a write would empty it — the guard against stale devices — so
+removing the LAST one never reaches the server by itself. The client app hides anything whose
+`assignedAt` is at or before its stamp; a re-send (newer `assignedAt`) shows again. Merging two
+duplicate charts keeps the newer stamp and drops taken-back items. Old client builds (open tabs) keep
+showing a taken-back item until they reload. Repro: `scratchpad/sweep3-takeback.mjs`.
+
+## 2026-10-16 — /build rewritten for beauty pros; Beauty Biz Master Build Roadmap; Vercel paid plan
+- `/build` (build.html) now sells the **Beauty Biz Master Build Roadmap**, a separate artifact:
+  https://claude.ai/artifact/MLh3Sf9qvGLr1a92DHDtR8 (source assembled in the session scratchpad from
+  shell/data1-4/feats2/plan/engine; 16 trades, 128 prompts, features filtered by trade + "see every
+  other feature", own ideas with a generated prompt). The page went live via main (content).
+- **Which roadmap a buyer gets** is per purchase: `build-checkout.js` tags new sessions
+  `metadata[roadmap]=beauty`; `lib/build-sales.js roadmapUrlFor()` sends tagged sales the beauty link
+  (env `BUILD_BEAUTY_ARTIFACT_URL` overrides the built-in one) and untagged (earlier) sales keep
+  `BUILD_ARTIFACT_URL`, so /build/access never swaps a buyer's product. That is api/lib, so it rides the
+  release train; purchases made before it deploys get the original roadmap link.
+- Vercel's Hobby plan is non-commercial. Fixed everywhere it said hosting is free for real customers:
+  the new /build page, the original Master Build Roadmap artifact (v9), the cost blog post, and the
+  free-funnel email in lib/free-funnel.js (train).
+- Not claimed anywhere: that the new beauty prompts were each tested. They are built from the steps
+  Ashley used on SlickChart; the page says exactly that.
+
+## §2be. OPEN — DIANA, 2026-10-16: phone alone loses summaries and journeys; computer is fine
+**Her observations, from her email "Re: Not saving clients" (2026-10-15 21:33) — GROUND TRUTH (§1b).
+Recorded before any theory.**
+
+| # | device | her words / what she saw |
+|---|---|---|
+| 40 | COMPUTER | "all of my clients, summaries, and client journeys in SlickChart are now saved and visible, including some of the summaries that had previously disappeared" |
+| 41 | PHONE, used alone | client summaries and journeys are missing |
+| 42 | PHONE | "sometimes even it reboots to me having no client and first time use messages pop up" |
+| 43 | PHONE | saved notes, pictures and home care ARE still there when the clients are there |
+| 44 | PHONE | "It also appears to delete them after about 20 minutes" |
+| 45 | COMPUTER then PHONE | log into the computer first, then open/log into the phone app: the phone "reboots and populates all the missing client data and summaries" |
+| 46 | PHONE | Settings shows "SlickChart · Version 1.0.3 · build 2026-10-16a" (her screenshot, dark theme). Live is now 2026-10-16b. |
+
+Asked, not yet answered: is the phone the installed App Store / Play app, or the home-screen web
+app? (The version line is the same text in both, so the screenshot cannot tell. One tell: on the
+More screen the section is titled "Security" in the native app and "Security & Billing" in a browser.)
+Her question: can her clients see their summaries on their own phones, or do they need the desktop?
+
+Next (§1d): Ashley runs Admin → Recover clients → esthieguild@gmail.com → Copy, once, and pastes it.
+No reply to Diana says anything is lost until that paste says so with numbers (§4c).
+
+**§2be diagnosis + fix, build `2026-10-16c` (on the preview branch until Ashley ships it):**
+- §1d paste (2026-10-16): `>>> ON THE SERVER RIGHT NOW: 699 characters of notes and chart detail across
+  13 clients; 16540 characters in unfinished note drafts; 5 saved visit summaries; 102 photos. This is
+  NOT lost`. Session summaries on the account: 9 clients, 10 entries, 31KB (newest earlier copy has 8
+  clients), so the account is fuller than its last backup. Nothing to restore. The phone is showing
+  less than the account holds.
+- Cause found and reproduced (`scratchpad/test-offload-stale.mjs`, 3 of 4 FAIL on 16b, 4/4 on 16c):
+  when an IndexedDB write fails, `_lsPersist` fell back to localStorage but cleared `Cloud._offloaded[k]`
+  FIRST, so its own retire branch never deleted the old IndexedDB copy; the next cold start
+  (`_hydrateOffloaded`) read that OLD copy and deleted the newer localStorage one. iOS drops a
+  backgrounded app's IndexedDB connection, and `_idb` cached the dead connection forever, so after that
+  every write failed for the rest of the session. Fixes: a synchronous `sc_off_lsnewer` marker that
+  hydration honours; `_idb` reopens on close/versionchange and retries a failed op once; 5s timeout
+  per transaction so a stuck one cannot hang boot.
+- Pre-existing, NOT from this change: `sweep2-photo-xaccount.mjs` 5/6 on both 16b and 16c — "logout
+  clears A's photo store from IndexedDB" (`captured_photos` key `cA` left after logout). The recover
+  screen does not offer them to account B (that check passes).
+
+### §2be (cont.) Diana, 2026-10-17 08:58 — still happening AFTER 16c went live. Observations first.
+From her email "Re: Not saving clients" (2026-10-17 08:58) and her screenshots — GROUND TRUTH (§1b):
+
+| # | device | her words / what she saw |
+|---|---|---|
+| 47 | — | "I think it is something with the iPhone. On the computer everything is saved but on my phone nothing is saved." |
+| 48 | PHONE, 8:55 AM, dark theme | Client Bonnie Prince, Journey tab: "Session Summaries · 0 saved summaries · Finish a session to save one here". Contact shows (626) 945-3301, no email, no DOB, "Nothing flagged". |
+| 49 | COMPUTER (Windows laptop, photo of the screen) | Session summaries for Bonnie Prince: "1 summary" — "New client · Sep 25, 2026", text "Your first reset facial is complete, Bonnie — it was so great to get started with you! Because of your skin's history, we're taking a carefu..." |
+| 50 | PHONE vs COMPUTER | the header logo differs: phone shows the default SlickChart lotus; computer shows her own gold logo. (Observed in the screenshots; not something she said.) |
+| 51 | — | "I assume most of my clients want to use their phones and maybe that's why it's not showing up." |
+
+The summary is dated Sep 25 — weeks old, so this is not "saved a minute ago on the other device".
+Still unknown: phone build number today; native app vs home-screen web app (asked 10-16, unanswered).
+
+## 2026-10-16 — The Esthetician Collection built into the provider app (build `2026-10-16d`, preview)
+Ashley's Etsy collection (54-page PDF, "Esthetician Complete Collection", 3 styles) built in for every
+subscriber. All ADDED, nothing existing changed:
+- **16 forms** `ec-*` in `formTmpls` (right after it, so `_snapshotBundled` counts them as built-ins and
+  `persistForms` never stores them unless edited). Own catalog section `_FORM_DEFS_BY_PROF.ecoll`
+  ("The Esthetician Collection"), shown when esty/wax/brow/lash is selected (`_profFormDefs` + the
+  Forms screen `sections`). `_bundlePhotoRelease` skips `ec-*` (they ask their own photo questions).
+  Sent forms reach the client as a snapshot (`_assembleClientData`), so already-sent/signed forms are
+  untouched. Placeholders like [24] / [Your Business Name] were resolved so clients never see brackets.
+- **13 guides** `g-esty-ec-*` pushed onto `guideTemplatesByProf.esty` (+ wax/brow/lash get the relevant ones).
+- **Practice library** (provider-only, read-only): `EC_LIBRARY` (17 entries: protocols, business tools,
+  record sheets), a "Library" tab in Forms & Guides (`_practiceLibraryTabHTML`, `_openPracticeEntry`).
+- **Printable PDFs**: `assets/ec-<random>/{neutral,blush,luxe}.pdf`, address handed out only by
+  `api/collection-pdf.js` after session + subscription check (same rule as login, past_due allowed),
+  `X-Robots-Tag: noindex` in vercel.json. Not DRM: the folder is static; the name is the protection.
+- The form/guide/library TEXT is in slickchart.html, which (like every built-in form) is public JS.
+- Tests: `scratchpad/test-esthetician-collection.mjs` 14/14, `scratchpad/test-ec-client-form.mjs`
+  16/16 (a client fills, signs and submits every collection form in the real client page). Found and
+  fixed on the way: a "Phone or email" field failed the client app's email check for a phone number.
+- Pre-existing, not from this: `sweep3-forms-provider-sign-again.mjs` still shows signing the same
+  form twice on the provider's device files nothing on the second sign (same result on 16c).
+
+### 2026-10-16e — business details fill in; every collection form and guide verified editable (preview)
+- `_bizFill(s)` / `_bizFillQs(qs)`: `{business}`, `{phone}`, `{email}` (optional `{phone|fallback}`) fill
+  from `bizInfo` (`workspace.name` fallback, then "this business"). Resolved where a form is SHOWN
+  or SENT (`_assembleClientData` form + guide-tip snapshots, sign-on-device snapshot, signed-record
+  renders, provider form renders, the practice library). The editor keeps the token, so a later
+  name change reaches every unsent form. The editor has a one-line tip about the tokens.
+- Collection uses: `ec-general-consent-11` ("I release {business}…"), `ec-virtual-16`
+  ("…24 hours ahead to {email|me, the way I asked you to}"), library patch-test line
+  ("call us at {phone|the number on your booking}").
+- Editability verified headless: all 16 `ec-*` forms round-trip through the editor with no loss
+  (labels, types, required, options, checklist items); rename + edit + delete + add question,
+  save, relaunch, send = the client gets HER version with her name filled in. Guides: edit a
+  `g-esty-ec-*` guide, relaunch, the edit stays and is what is sent. Tests:
+  `scratchpad/test-esthetician-collection.mjs` (25/25).
+- "Signing the same form twice files nothing" was a STALE repro, not a live bug: it signed twice
+  inside `submitSignOnDevice`'s 3s double-tap window. Repro now waits 3.5s: both records file.
+
+### 2026-10-16f — client summary note follows her provider notes (preview)
+**Observed (Ashley, her own use):** during a session summary she wrote provider notes, tapped "Make
+client-friendly", then had to fix something in her provider notes. The client summary kept the old
+wording; she expected it to update. (Device not stated.)
+**Cause:** both AI buttons write a fixed copy into `summaryNoteDraft[id]`; nothing tied it back to
+the notes. **Fix:** `summaryNoteSrc[id]={n:_notesPrint(id),t:text}` recorded when the AI writes the
+note (stored as a third field `src` in `sc_summary_drafts`, merged per client like note/obs; an older
+build drops it, which only costs the auto-update). On opening the summary, `_noteSrcState`:
+untouched since the AI wrote it -> rewritten from the current notes (`_refreshNoteFromNotes`); she
+re-worded it -> never overwritten, an "Update from my notes" button instead. AI off -> the plain
+clean-up of her notes, which always follows them. Test: `scratchpad/test-summary-follows-notes.mjs`
+(11/11; step 2 FAILS on the old build, so it reproduces her report).
+Pre-existing, unrelated: `scratchpad/sweep-dup-carry-stores.mjs` 12/16 on live main too (duplicate
+merge skips a consult pair).
+
+### 2026-10-17a — lash & brow sample courses retired; ONE preview branch from now on
+- **Observed (Ashley, Safari on her computer, preview `claude-friendly-dirac-n55456`):** Courses showed
+  "Lash Care & Retention" and "Brow Care Between Visits" (Draft, 3 modules, Free); she asked for them
+  removed. On the same preview "none of the forms we were supposed to incorporate are anywhere":
+  the collection had been pushed to `claude/esthetician-collection`, a different preview. Fixed by
+  fast-forwarding `claude/friendly-dirac-n55456` to it; CLAUDE.md §1a step 1 now says one branch.
+- `coursesByProf.lash`/`.brow` are empty. `_RETIRED_STARTER_COURSES` + `_dropRetiredStarterCourses()`
+  (run from `_coursesTabHTML`, never during boot) remove an account's copy only when it is the
+  untouched sample (same title/price/desc, Draft, no lessons/cover/_ts, nobody enrolled), with a
+  `sc_hidden_courses` delete record so the other device follows. `_mergeCourses` counts the retired
+  ids as stock. Test: `scratchpad/test-retired-starter-courses.mjs` (7/7).
+
+### 2026-10-17b/c — provider form screens MIRROR the client app (preview)
+**Observed (Ashley, Safari on her computer, provider Preview of the collection forms):** the
+contraindication list had "no way to tick anything"; she wants the provider side to make the clicks
+obvious and "as many things as possible to mirror" the client app. She also asked to drop the
+policies form's card-on-file question (`ec-policies-3`), removed.
+- `_mcControlHTML(q,key)` / `_mcPick`: Yes / No and Single select = pick-one buttons (Single select
+  stacked, like the client), Multiple choice = check boxes. Used by Preview (`_formQHTML`) and Sign in
+  person (`_sdQHTML`). Contraindications are check boxes (`input.ci-tick`) with the client's wording.
+- Real bugs fixed on the way: Sign in person saved `flagged:[]` always (ticks now become answer +
+  form flags + `_setFormFlag` alert + the `/api/provider-form` event), and treated Multiple choice as
+  pick-one (only the last tap kept; now a list). Fill intake (`_pfiQHTML`) showed a blank text box for
+  Single select / Multiple choice; now buttons / check boxes.
+- Preview signature shows the client's "Type your full name to sign"; photo questions show the
+  client's "Add photos" button. Collection wording says "check", never "tick".
+- Sweep: `scratchpad/sweep-form-mirror.mjs` (every form, 387 questions, both provider screens) 6/6;
+  `scratchpad/test-contra-ticks.mjs` 9/9.
+
+### 2026-10-17d — full forms bug sweep; "Phone / email" fix; virtual consult photos go in-app (preview)
+- `scratchpad/sweep-all-forms.mjs`: EVERY form (90) — build checks (ids, labels, options, items,
+  signatures, leftover placeholders/tokens, snapshot completeness), Sign in person by tapping every
+  control + the client file shows the answers, and the REAL client page filling and submitting the
+  exact snapshot. Now 0 problems.
+- **Found, LIVE on main:** stock `spraytan-intake` and `headspa-intake` have an optional "Phone /
+  email" short text. The client page validated it as email AND phone, so ANY value blocked the
+  submit (email -> "valid phone", phone -> "valid email"), and it rendered as `type=email`. Now a
+  label naming both gets a plain text box and accepts either (`slickchart-client.html`, embed rebuilt).
+- **Ashley asked (2026-10-17):** remove the "email your photos" part of `ec-virtual-16`; clients use
+  the in-app Photo consult. Label now says to add them in the Photo consult in this app.
+
+### 2026-10-17e — Library: real PDF pages per document, per style, with Print (preview)
+**Observed (Ashley, Safari on her computer, preview):** the X on a Library entry did nothing; the
+entries showed a simplified text version instead of the PDF; the only PDF option opened all 54 pages.
+- X: `_sheetCloseFrom` only knew `#photo-recover,#sqp`; `#pl-entry` added.
+- The three 54-page PDFs are split per document (47 docs x 3 styles) into
+  `assets/ec-9308d13917a6f75f4f385060/<style>/<doc>.pdf` by `scratchpad/ec-split-docs.py` (page map
+  from pdftotext; asserts every page used once). `EC_PRINT_DOCS` lists them; `EC_LIBRARY` (the text
+  versions) is gone. `/api/collection-pdf?doc=&style=` returns one file's address, same session +
+  subscription gate, doc and style allow-listed.
+- Viewer: style chips (per-device `ec_pdf_style`, not synced), pdf.js 3.11.174 from cdnjs (loaded on
+  first open) draws the real pages, Print prints exactly those pages via a hidden frame, Save PDF
+  opens the file. Whole 54-page PDF still offered.
+- Test: `scratchpad/test-esthetician-collection.mjs` 30/30 (real pages drawn, style switch, 2-page
+  doc, print, X).
+
+### 2026-10-17f — app forms in the look of the PDFs ("paper forms"), provider + client (preview)
+**Ashley asked:** the app's forms look basic next to the luxe PDFs; make them match, in both apps.
+- Shared stylesheet `.scf*` (same block in both HTML files; source copy `scratchpad/scf.css`), with
+  Cormorant Garamond + DM Sans (the PDFs' fonts, Google Fonts, Georgia/system fallback). Header band +
+  spaced kicker (`_scfKicker` from the title) + serif title + her business name in the dashed "logo"
+  box; underline answer lines, square check boxes, panels, uppercase "HEADING. text" labels split into
+  a small heading (`_scfSplit`); footer with business · phone · website.
+- Three palettes = the PDF styles. One choice: Library > Style now sets `bizInfo.formStyle` (synced,
+  pushed, `_scheduleClientSync`), sent to clients as `formStyle` (additive field; client reads it in
+  `applyActiveProvider` via `p.formStyle`). Older builds ignore it.
+- Client: `renderFillForm` + `_fillFormFieldHTML` rewritten with classes; every id/handler kept;
+  `_ffSetChoice` toggles `.on`/aria-pressed. Provider: `_formQHTML`, `_sdQHTML`, `_mcControlHTML`,
+  Preview and Sign in person (signature pad on the paper).
+- The Google Fonts `<link>` sits BEFORE the first `<style>`: `build-demo.cjs` needs `</style></head><body>`.
+- Verified: sweep-all-forms 90 forms 0 problems, mirror 6/6, contra 9/9, ec client 16/16,
+  collection 30/30, client small-screen/layout sweeps clean. (`sweep3-forms-client-resend.mjs` shows 2
+  on live main too; its verified successor `v-forms-client-resend.mjs` passes.)
+
+### §2be (cont.) 2026-10-17g — self-check now compares the libraries (preview)
+`_runSelfCheck` adds: kind of app (installed / home-screen / browser), signed-in email, an IndexedDB
+write/read probe, which keys are offloaded, and device vs account for session summaries (clients +
+entries), logo set or not, homecare, saved client list, plus summaries open in memory. Diana runs it
+once on the PHONE and once on the COMPUTER (Settings → tap the version line 5 times → Copy this report).
+Compare "Which account row" and "Signed in as" first: a different row = two accounts (obs 42/45/50 fit
+that); same row + device 0 vs account 1 = the phone is not reading the account in (IndexedDB line says
+whether storage works). `scratchpad/test-selfcheck-libraries.mjs` 6/6.
+
+### §2be (cont.) 2026-10-17h — devices report themselves; no more asking Diana to run checks
+**Ashley (2026-10-17):** do not make Diana run the self-check; she is helping, ask her for as little as
+possible — and make that a rule (CLAUDE.md §4d, providers bullet).
+- `_sendDeviceReport()` (8s after boot, and on return to the front, at most every 20 min) POSTs a
+  counts-only report to `/api/device-report` (`lib/device-report.js`, table `device_reports`, one row
+  per provider per device key `scdev_key` — not an `sc_` key, never synced). Whitelisted fields only
+  (`cleanReport`): build, kind, platform, idbWorks, summary/homecare/client counts, logo yes/no,
+  offloaded keys, reload failures; the account email is added server-side from the token.
+- `/api/admin/client-recover` GET adds `devices`, `sessions` (device, location, signed in, last seen,
+  signed out; no IP) and `sameNetwork` (other accounts with sessions from the same IPs in 60 days).
+  The screen shows them as **Their devices** right under the verdict, and the Copy paste includes them.
+- For Diana: once her phone opens build 17h or later, Recover clients → esthieguild@gmail.com shows
+  whether the phone is a second account (sameNetwork / Signed in as), or the same account showing
+  fewer summaries than the account (and whether its IndexedDB works). Nothing for her to do.
+- `scratchpad/test-device-report.mjs` 10/10.
+- **LIVE 2026-10-17 (Ashley: "push it live early")**: ONLY the 17g self-check + 17h device report went
+  out, applied onto main (`3fb2af6`, build `2026-10-17h`), release fast-forwarded, deploy dispatched,
+  slickchart.app/api/build-id = 2026-10-17h. The rest of the preview (collection, paper forms, summary
+  follows notes, mirror, Library PDFs) did NOT go out and still waits for her OK. Preview branch merged
+  main back in and is now `2026-10-17i`.
+
+### §2be (cont.) 2026-10-17j — ROOT CAUSE FOR IPHONES: the storage layer never ran in Safari
+Found by running the tests in WebKit (installed at Ashley's request; `scratchpad/run-in-safari.sh`).
+`localStorage.setItem = fn` (and getItem/removeItem) does NOT replace the method in WebKit: Storage
+has a named-property setter, so Safari stores ITEMS called "setItem"/"getItem"/"removeItem" holding
+the functions' source, and every call still reaches the built-in. Chromium honours the assignment,
+so every test passed. On every iPhone/iPad/Mac Safari, therefore, since this layer was written:
+- saves were NOT mirrored to the account by the setItem patch (only call sites that also call
+  `_pushKeyNow` reached it) — fits obs 47 "on my phone nothing is saved";
+- big lists were never offloaded to IndexedDB, so the 5MB box filled;
+- the `null` guard and the boot-hydration guard never ran;
+- offloaded keys were not readable through getItem (moot, since nothing was offloaded).
+Fix: methods installed on `Storage.prototype`, acting only when `this===localStorage`; the public
+demo's plain-object shim keeps the old assignment; the junk items are removed at boot.
+Proof: `test-safari-storage-hook.mjs` — live code in WebKit 2/6 (4 FAIL), live in Chromium 6/6, fixed
+6/6 in both. Upgrade path `test-safari-upgrade.mjs` (old build's data on the phone, fixed build opens
+offline): 5/5, nothing lost, junk gone, next save offloads. Both engines: storage hook 6/6, offload
+stale 4/4, device report 10/10, self-check 6/6, summary follows notes 11/11, collection 30/30,
+contra 9/9, mirror 6/6, retired courses 7/7, draft resurrect 7/7 + 4/4, all 90 forms 0 problems.
+This is the most likely explanation of Diana's whole thread (§2ai, §2ao, §2be): the computer is fine
+because Chrome/Edge on her Windows laptop always ran the layer.
+- **LIVE 2026-10-17 (Ashley: "push it live early")**: the Safari storage fix alone, applied onto main
+  (`0c3b8ad`, build `2026-10-17j`), release fast-forwarded, deploy dispatched, live build-id
+  confirmed. Tested on that exact code in Chrome AND WebKit (storage hook 6/6, upgrade-from-live 5/5,
+  offload stale, device report, self-check, draft resurrect). Preview merged it back: `2026-10-17k`.
+
+### 2026-10-17 — WHOLE PREVIEW SHIPPED (Ashley: "go ahead and push out the whole update")
+release fast-forwarded to `12b12a9` (CI green), deploy dispatched, live build-id `2026-10-17k`.
+Live now: Esthetician Collection (16 forms, 13 guides, Library with per-document PDFs in 3 styles +
+Print), paper-form look in both apps, business details fill in, contraindication ticks + flags,
+provider screens mirror the client app, Phone/email fix, summary follows provider notes, retired
+lash/brow sample courses, device reports + self-check, the Safari storage fix. Diana reply drafted.
+
+### 2026-10-17 — build `2026-10-17l` (PREVIEW ONLY): Lash & Brow Collection + Luxe/branding default
+Ashley: "ok i have new ones for lash and brow professions now" (3 PDFs, 38 pages each), then "can we
+have all forms across the app default to luxe style + providers branding + logo?" and "make that a
+rule and be sure to follow all the other rules we discussed from the first esty collection upload".
+Rule written as CLAUDE.md §1e.
+- **13 forms `lb-*`, 8 guides `g-lb-*`**, generated from her PDFs by `scratchpad/lb/gen-lb.cjs` ->
+  `lb-data.js` (fails on any `[bracket]` left; `{business}`/`{phone}` tokens; no card-on-file; artist
+  office boxes left to the printable). Bundled like `EC_FORMS` (never stored unedited).
+- **Who sees what** (`_collectionSections`): lash/brow -> `lbcoll` "The Lash & Brow Collection".
+  `ecoll` is now esty/wax, PLUS a lash/brow pro who already uses an `ec-*` form (`_ecInUse`: found in
+  `sc_forms`, `sc_bundles`, `sc_clients` or `sc_checkin_cfg`), so nobody loses a form she relies on.
+  Guides by `profs` (lash: ext, lift, removal, retention, prep; brow: lam, tint, shape, prep). The
+  `g-esty-ec-tint` guide was LEFT on lash/brow on purpose: removing a template hides her edits to it.
+- **Library**: `LB_PRINT_DOCS` (34 docs, ids `lb-…`), split by `scratchpad/lb-split-docs.py` into
+  `assets/lb-a5025eda48748f3494bcacd7/<style>/<doc>.pdf` + the 3 full PDFs; noindex header in
+  vercel.json; `/api/collection-pdf` allow-lists the `lb-` ids and takes `?collection=lb` for the
+  whole file. The tab shows only the collections that match her professions, one "Get all N pages"
+  each.
+- **Every form Luxe + her branding** (both apps): default `luxe` in `_scfStyle`/`_plStyle`/client
+  `_st` (her pick still wins); her logo on a white tile in the header (`_scfLogoHTML`, name when no
+  logo); her brand color on accents only at 4.5:1 on white (`_scfAccentStyle`). New kickers "Design
+  approval" and "Client record".
+- Tests: `test-lash-brow-collection` 25/25, `test-lb-client-form` 13/13 (every form signed in the
+  real client page), `test-client-form-branding` 5/5, `test-esthetician-collection` 30/30 (now
+  expects Luxe by default), contra 9/9, mirror 6/6, all forms swept; both engines (see commit).
+
+### 2026-10-17 — build `2026-10-17m` (PREVIEW ONLY): the check-in matches the forms
+Ashley: "yes make it match please" (the pre-visit check-in was the one client screen not on the paper
+form). Client: `_renderCheckinStep` draws each step as a Luxe paper (`_scfPaperOpen`, kicker
+"Pre-visit check-in", her logo + brand color); every question is a `.scf-q` row; Yes/No, levels and
+the drink/music/covering grids are `.scf-opt` buttons with `aria-pressed`; photo tiles `.scf-tile`;
+"What you flagged" is a `.scf-panel`. The one-page "Before your visit" package now draws the intake
+AND the check-in as two papers (the intake fields there had the paper classes with no paper around
+them). With nothing booked the subline no longer says "For your Not scheduled appointment"
+(`_ciSubline`). Provider: `renderCheckinPreview` is the same paper with every step on one page.
+Handlers, ids and payloads unchanged. `test-checkin-paper` 12/12 in Chrome and Safari (look, every
+control records, submit carries flags + picks, package, provider preview). Pre-existing, NOT from
+this change (same on the previous build): `sweep3-forms-checkin-resend` 2/2 and
+`v-forms-checkin-resend` 1/2; the latter's client half needs the provider-side bug its own part 1
+now reports SOUND, so it is a stale repro.

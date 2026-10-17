@@ -23,6 +23,7 @@
 // not needed to decide what to restore. The export DOES return content, because recovering it is
 // the point, and it is therefore an explicit, per-id action and never part of the diagnosis.
 // Owner-only, resolved from the VERIFIED token's email — never from anything in the request (§0.5).
+import { listDeviceReports } from '../../lib/device-report.js';
 import { dbEnabled, sql, ensureTable, ensureProvidersTable, ensureFilesTable } from '../../lib/db.js';
 import { verifyToken, isSessionValid } from '../../lib/auth.js';
 import { ensureClientTables, tombstoneClients, clearClientTombstones } from '../../lib/clients.js';
@@ -1072,9 +1073,34 @@ export default async function handler(req, res) {
       };
     })();
 
+    // DEVICES (2026-10-17, Diana): what each of her devices says it holds (counts it sends on its own
+    // when the app opens), every device signed in to this account, and any OTHER account signed in from
+    // the same network lately: a phone on a second account looks exactly like "my phone loses things".
+    // The provider does nothing for any of this. Founder-only like the rest of this endpoint.
+    let devices = [], sessions = [], sameNetwork = [];
+    try { devices = (await listDeviceReports(owner)).map(d => ({ device: d.device_key, at: d.updated_at, report: d.report })); } catch (e) { devices = []; }
+    try {
+      sessions = (await q`SELECT device, location, created_at, last_seen_at, revoked FROM sessions
+                          WHERE provider_id = ${owner} ORDER BY last_seen_at DESC LIMIT 15`)
+        .map(r => ({ device: r.device || '', location: r.location || '', signedIn: r.created_at, lastSeen: r.last_seen_at, signedOut: !!r.revoked }));
+      const ips = (await q`SELECT DISTINCT ip FROM sessions WHERE provider_id = ${owner} AND ip IS NOT NULL AND ip <> ''
+                           AND last_seen_at > now() - interval '60 days'`).map(r => r.ip);
+      if (ips.length) {
+        sameNetwork = (await q`SELECT p.email, p.name, s.device, max(s.last_seen_at) AS last_seen
+                               FROM sessions s JOIN providers p ON p.id = s.provider_id
+                               WHERE s.ip = ANY(${ips}) AND s.provider_id <> ${owner}
+                                 AND s.last_seen_at > now() - interval '60 days'
+                               GROUP BY p.email, p.name, s.device ORDER BY max(s.last_seen_at) DESC LIMIT 10`)
+          .map(r => ({ email: r.email, name: r.name || '', device: r.device || '', lastSeen: r.last_seen }));
+      }
+    } catch (e) { /* sessions are a diagnostic extra; never fail the lookup over them */ }
+
     res.status(200).json({
       ok: true,
       verdict,
+      devices,
+      sessions,
+      sameNetwork,
       provider: { id: owner, email: pr[0].email, name: pr[0].name || '' },
       counts: {
         rowsTotal: clients.length,

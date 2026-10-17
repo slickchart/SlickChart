@@ -65,6 +65,9 @@ export async function recordBuildSale(sale) {
   const currency = String((sale && sale.currency) || '').toLowerCase() || null;
   // true / false / null — null means this buyer was never shown the box (see the column comment).
   const optIn = (sale && typeof sale.marketingOptIn === 'boolean') ? sale.marketingOptIn : null;
+  // What she sees in the alert: the product's own name, so a sale is recognisable at a glance.
+  // Callers pass the Stripe session's metadata.roadmap ('beauty' for the /build page since 2026-10).
+  const product = String((sale && sale.roadmap) || '') === 'beauty' ? 'Beauty Biz App Build Roadmap' : 'Build Your Own App';
 
   let q;
   try {
@@ -126,13 +129,13 @@ export async function recordBuildSale(sale) {
     const to = founderNotifyEmail();
     if (to) await sendEmail({
       to,
-      subject: `🚀 Build Your Own App sold${price ? ' — ' + price : ''}`,
-      text: `Someone just bought Build Your Own App.\n\nEmail: ${who}\n`
+      subject: `🚀 ${product} sold${price ? ' — ' + price : ''}`,
+      text: `Someone just bought the ${product}.\n\nEmail: ${who}\n`
         + (price ? `Paid: ${price}\n` : '')
         + (runningTotal ? `\n${runningTotal}\n` : '')
         + `\nTheir access links went out automatically.`,
       html: '<div style="font-family:-apple-system,Segoe UI,Roboto,sans-serif;max-width:440px;margin:0 auto;padding:8px;">'
-        + '<div style="font-size:22px;margin-bottom:6px;">🚀 Build Your Own App sold</div>'
+        + `<div style="font-size:22px;margin-bottom:6px;">🚀 ${escHtml(product)} sold</div>`
         + `<div style="font-size:14px;color:#333;line-height:1.9;"><b>Email:</b> ${escHtml(who)}`
         + (price ? `<br><b>Paid:</b> ${escHtml(price)}` : '') + '</div>'
         + (runningTotal ? `<div style="font-size:13px;color:#2a7;margin-top:10px;">${escHtml(runningTotal)}</div>` : '')
@@ -150,7 +153,7 @@ export async function recordBuildSale(sale) {
     } else {
       const body = (price ? price + ' — ' : '') + who
         + (total ? ` · that's ${total} sold 🎉` : ' 🎉');
-      const r = await pushFoundersReport({ title: '🚀 Build Your Own App sold!', body, url: '/slickchart', tag: 'build-sale:' + sid });
+      const r = await pushFoundersReport({ title: `🚀 ${product} sold!`, body, url: '/slickchart', tag: 'build-sale:' + sid });
       devices = r.devices || 0; sentCount = r.sent || 0;
       if (!r.providerIds || !r.providerIds.length) detail = 'no provider row matches FOUNDER_EMAILS (' + (r.emails || []).join('|') + ')';
       else if (!devices) detail = 'founder provider row found, but no phone registered under it';
@@ -189,6 +192,9 @@ export function accessEmailBody(sessionId, links) {
     subject: 'Your Build Your Own App access',
     text: 'You\'re in. Here\'s everything:\n\n'
       + 'Start here (watch this first): ' + links.videoUrl + '\n\n'
+      + 'You need a Claude account to open it. A free one is fine to open and read it:\n'
+      + 'sign up at https://claude.ai and sign in first. You will want a paid Claude plan\n'
+      + 'when you start building, in week 1. If the link says "Page not found", sign in.\n\n'
       + 'The system itself: ' + links.artifactUrl + '\n'
       + '(Pin it in Claude as soon as it opens - it then lives in your sidebar.)\n\n'
       + 'Using the Claude desktop app? Pinning is saved to your Claude account, not to a browser, so\n'
@@ -230,7 +236,9 @@ export function accessEmailBody(sessionId, links) {
       + '<table role="presentation" cellpadding="0" cellspacing="0" style="width:100%;border-collapse:collapse;"><tr>'
       + '<td width="34" valign="top" style="padding:0 0 4px;"><div style="width:26px;height:26px;border-radius:50%;background:#2bc7a2;color:#03201e;font-size:13px;font-weight:700;text-align:center;line-height:26px;">2</div></td>'
       + '<td valign="top" style="padding:0 0 4px;"><div style="font-family:Georgia,\'Times New Roman\',serif;font-size:19px;color:#0a1719;line-height:1.3;">Open the system</div>'
-      + '<p style="font-size:14.5px;line-height:1.65;color:#5D5149;margin:5px 0 12px;">The Master Build Roadmap — every step, every prompt, in order.</p>'
+      + '<p style="font-size:14.5px;line-height:1.65;color:#5D5149;margin:5px 0 12px;">Your roadmap. Every step, every prompt, in order.</p>'
+      // The roadmap is a Claude page; signed out, Claude says "Page not found". Ashley wants this said on purchase.
+      + '<p style="font-size:14px;line-height:1.65;color:#1a2a28;background:#fff6e5;border-radius:10px;padding:11px 14px;margin:0 0 14px;"><b>You need a Claude account to open it.</b> A free one is fine to open and read it. <a href="https://claude.ai" style="color:#1e9e88;">Sign up free at claude.ai</a> and sign in first. You will want a paid plan when you start building, in week 1. If the link says “Page not found”, sign in.</p>'
       + '<a href="' + links.artifactUrl + '" style="background:#2bc7a2;background-image:linear-gradient(135deg,#19b8bf 0%,#2bc7a2 52%,#6fdca6 100%);color:#03201e;text-decoration:none;font-weight:700;padding:13px 26px;border-radius:999px;display:inline-block;font-size:15px;">Open the roadmap &rarr;</a>'
       + '</td></tr></table>'
 

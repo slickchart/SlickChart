@@ -266,6 +266,7 @@ saved anywhere", not "does this always call that".
 | `_doSendVcReview` | `/api/clients` | via `_syncSpecificClientsToServer` |
 | `_doSendVcReview` | `/api/provider-message` | via `_sendProviderMessageToClient` |
 | `_downloadBuildBuyersCSV` | `/api/admin/build-buyers` | direct |
+| `_downloadCollectionPdf` | `/api/collection-pdf` | direct |
 | `_downloadEmailListCSV` | `/api/admin/contacts` | direct |
 | `_downloadGuideFileP` | `/api/guide-file` | via `_getGuideFile` |
 | `_downloadWaitlistCSV` | `/api/waitlist` | direct |
@@ -389,7 +390,7 @@ saved anywhere", not "does this always call that".
 | `_loadSquareAppts` | `/api/square/booking-options` | via `openSquareBook` |
 | `_loadTotpState` | `/api/totp-setup` | via `_beginTotpEnroll` |
 | `_loadTotpState` | `/api/totp-verify` | via `_confirmDisableTotp` |
-| `_lsGet` | `/api/store` | via `_verifyFormSave` |
+| `_lsSetItem` | `/api/store` | via `_verifyFormSave` |
 | `_lvShowFile` | `/api/guide-file` | via `_getGuideFile` |
 | `_lvStep` | `/api/guide-file` | via `_getGuideFile` |
 | `_manualApptDelete` | `/api/clients` | via `_syncSpecificClientsToServer` |
@@ -444,6 +445,7 @@ saved anywhere", not "does this always call that".
 | `_openLessonView` | `/api/guide-file` | via `_getGuideFile` |
 | `_openLessonView` | `/api/provider-form` | via `submitSignOnDevice` |
 | `_openMergeSheet` | `/api/clients` | via `_serverMergeClients` |
+| `_openPracticeDoc` | `/api/collection-pdf` | via `_plDocUrl` |
 | `_openPulse` | `/api/beta-event` | direct |
 | `_openPulse` | `/api/feedback` | via `_sendPulse` |
 | `_openReviewCard` | `/api/clients` | via `_syncSpecificClientsToServer` |
@@ -491,6 +493,10 @@ saved anywhere", not "does this always call that".
 | `_pgvShowFile` | `/api/guide-file` | via `_getGuideFile` |
 | `_pgvStep` | `/api/guide-file` | via `_getGuideFile` |
 | `_pingChart` | `/api/beta-event` | direct |
+| `_plDocUrl` | `/api/collection-pdf` | direct |
+| `_plRender` | `/api/collection-pdf` | via `_plDocUrl` |
+| `_plSetStyle` | `/api/collection-pdf` | via `_plDocUrl` |
+| `_plStyleChipsHTML` | `/api/collection-pdf` | via `_plDocUrl` |
 | `_pollFounderSignups` | `/api/admin/signups` | direct |
 | `_postAftercareDrip` | `/api/aftercare-drip` | direct |
 | `_postAftercareDrip` | `/api/clients` | via `_syncSpecificClientsToServer` |
@@ -504,6 +510,7 @@ saved anywhere", not "does this always call that".
 | `_pr_open` | `/api/provider-form` | via `submitSignOnDevice` |
 | `_pr_render` | `/api/guide-file` | via `_recoverUnindexedServerPhotos` |
 | `_pr_run` | `/api/guide-file` | via `_recoverUnindexedServerPhotos` |
+| `_practiceLibraryTabHTML` | `/api/collection-pdf` | via `_downloadCollectionPdf` |
 | `_previewGuideFileInFrameP` | `/api/guide-file` | via `_getGuideFile` |
 | `_probeWhisper` | `/api/transcribe` | direct |
 | `_prodPickerRows` | `/api/clients` | via `_syncSpecificClientsToServer` |
@@ -633,6 +640,7 @@ saved anywhere", not "does this always call that".
 | `_runInkOCR` | `/api/ai` | via `_aiComplete` |
 | `_runSelfCheck` | `/api/clients` | direct |
 | `_runSelfCheck` | `/api/store` | direct |
+| `_runTakeBackUndo` | `/api/clients` | via `_syncSpecificClientsToServer` |
 | `_saveAndSendNote` | `/api/beta-event` | via `_pingChart` |
 | `_saveAndSendNote` | `/api/clients` | via `syncClientEvents` |
 | `_saveAndSendNote` | `/api/provider-form` | via `submitSignOnDevice` |
@@ -667,6 +675,7 @@ saved anywhere", not "does this always call that".
 | `_sendCheckedSuggestions` | `/api/clients` | via `_syncSpecificClientsToServer` |
 | `_sendDepositForms` | `/api/client-invite` | direct |
 | `_sendDepositForms` | `/api/clients` | via `_syncSpecificClientsToServer` |
+| `_sendDeviceReport` | `/api/device-report` | direct |
 | `_sendFormClientRows` | `/api/clients` | via `_syncSpecificClientsToServer` |
 | `_sendFormClientRows` | `/api/provider-form` | via `submitSignOnDevice` |
 | `_sendProviderMessageToClient` | `/api/provider-message` | direct |
@@ -781,6 +790,9 @@ saved anywhere", not "does this always call that".
 | `_syncSquareClientsNow` | `/api/clients` | via `_serverMergeClients` |
 | `_syncSquareClientsNow` | `/api/square/appointments` | direct |
 | `_syncSquareClientsNow` | `/api/square/customers` | direct |
+| `_takeBackSave` | `/api/clients` | via `_syncSpecificClientsToServer` |
+| `_takeBackSave` | `/api/provider-form` | via `submitSignOnDevice` |
+| `_takeBackSent` | `/api/clients` | via `_syncSpecificClientsToServer` |
 | `_tidySaveToAccount` | `/api/clients` | direct |
 | `_tidySaveToAccount` | `/api/store` | via `_pushFlushNow` |
 | `_tidyShowResult` | `/api/clients` | via `syncClientEvents` |
@@ -792,6 +804,7 @@ saved anywhere", not "does this always call that".
 | `_tryConsumeDeepLink` | `/api/clients` | via `syncClientEvents` |
 | `_tryConsumeDeepLink` | `/api/provider-form` | via `submitSignOnDevice` |
 | `_uSendDone` | `/api/clients` | via `_syncSpecificClientsToServer` |
+| `_updateNoteFromNotes` | `/api/ai` | via `_aiComplete` |
 | `_updatePassword` | `/api/change-password` | direct |
 | `_uploadCourseFilesInBackground` | `/api/clients` | via `syncClientEvents` |
 | `_uploadCourseFilesInBackground` | `/api/provider-form` | via `submitSignOnDevice` |
@@ -865,6 +878,8 @@ saved anywhere", not "does this always call that".
 | `deleteCourse` | `/api/clients` | via `syncClientEvents` |
 | `deleteCourse` | `/api/course-versions` | via `_cvMarkDeleted` |
 | `deleteCourse` | `/api/provider-form` | via `submitSignOnDevice` |
+| `deleteFormCard` | `/api/collection-pdf` | via `_downloadCollectionPdf` |
+| `deleteGuideCard` | `/api/collection-pdf` | via `_downloadCollectionPdf` |
 | `deleteInventoryItem` | `/api/clients` | via `syncClientEvents` |
 | `deleteInventoryItem` | `/api/provider-form` | via `submitSignOnDevice` |
 | `deleteResource` | `/api/clients` | via `syncClientEvents` |
@@ -1047,6 +1062,7 @@ saved anywhere", not "does this always call that".
 | `renderFormDocs` | `/api/clients` | via `syncClientEvents` |
 | `renderFormDocs` | `/api/provider-form` | via `submitSignOnDevice` |
 | `renderForms` | `/api/clients` | via `syncClientEvents` |
+| `renderForms` | `/api/collection-pdf` | via `_downloadCollectionPdf` |
 | `renderForms` | `/api/course-versions` | via `_cvMarkDeleted` |
 | `renderForms` | `/api/provider-form` | via `submitSignOnDevice` |
 | `renderGuidePreview` | `/api/clients` | via `syncClientEvents` |
@@ -1067,6 +1083,7 @@ saved anywhere", not "does this always call that".
 | `renderInviteClients` | `/api/clients` | via `_syncSpecificClientsToServer` |
 | `renderInviteClients` | `/api/logout` | via `_doLogout` |
 | `renderInviteClients` | `/api/provider-push` | via `_doLogout` |
+| `renderLearn` | `/api/collection-pdf` | via `_downloadCollectionPdf` |
 | `renderLogin` | `/api/billing-status` | via `_checkBillingBanner` |
 | `renderLogin` | `/api/client-code` | via `_clientSendCode` |
 | `renderMessages` | `/api/clients` | via `syncClientEvents` |
@@ -1249,7 +1266,9 @@ saved anywhere", not "does this always call that".
 | `startVoiceNote` | `/api/transcribe` | via `_probeWhisper` |
 | `submitSignOnDevice` | `/api/clients` | via `syncClientEvents` |
 | `submitSignOnDevice` | `/api/provider-form` | direct |
+| `switchFgTab` | `/api/collection-pdf` | via `_downloadCollectionPdf` |
 | `switchFgTab` | `/api/course-versions` | via `_cvMarkDeleted` |
+| `switchLearnTab` | `/api/collection-pdf` | via `_downloadCollectionPdf` |
 | `switchShopTab` | `/api/clients` | via `syncClientEvents` |
 | `switchShopTab` | `/api/provider-form` | via `submitSignOnDevice` |
 | `switchVTab` | `/api/clients` | via `syncClientEvents` |
@@ -1326,6 +1345,7 @@ Plus every synced `sc_*` key below, which rides `/api/store`.
 | `/api/client-submit` | POST | client link token | Token-authed (the client's link token): a client submits a form, a booking |
 | `/api/clients` | GET, POST | provider session | Provider-authed: sync the provider's client list + per-client data blobs up to |
 | `/api/cloud-status` | — | **public** | GET /api/cloud-status |
+| `/api/collection-pdf` | GET | founder | GET /api/collection-pdf  — provider-authed. Hands a signed-in provider with a live subscription the |
 | `/api/consult-page` | — | **public** | PUBLIC: serves slickchart.app/consult/<slug> — a branded page where a prospect can request a |
 | `/api/consult-request` | POST | **public** | PUBLIC (no auth): a prospect submits a consult request through a provider's public link |
 | `/api/consult-requests` | GET | provider session | Provider-authed: list the consult requests submitted through this provider's public link. |
@@ -1340,6 +1360,7 @@ Plus every synced `sc_*` key below, which rides `/api/store`.
 | `/api/cron-provider-reminders` | — | cron | Scheduled sender for PROVIDER reminders — the thing that makes her reminder arrive when the app is |
 | `/api/cron-reminders` | — | cron | Scheduled reminder sender — invoked by Vercel Cron (see vercel.json). Walks every |
 | `/api/delete-account` | POST | provider session | POST /api/delete-account  (provider session Bearer token) |
+| `/api/device-report` | POST | **public** | POST /api/device-report — provider-authed. The app sends a small health report about the device it is |
 | `/api/feedback` | GET, POST | provider session | POST /api/feedback  { message, rating?, kind?, timeSaved? }  → logs a provider's beta feedback |
 | `/api/free-signup` | POST | **public** | POST /api/free-signup  { email }  → join the free starter list and get the link emailed now. |
 | `/api/google-cal-callback` | — | provider session | GET /api/google-cal-callback?code=…&state=… |
@@ -1397,7 +1418,7 @@ Plus every synced `sc_*` key below, which rides `/api/store`.
 
 ## Server tables
 
-`announcements`, `auth_tokens`, `beta_events`, `build_purchases`, `client_events`, `client_login_codes`, `client_prefs`, `client_tombstones`, `clients`, `consult_requests`, `course_versions`, `feedback`, `files`, `free_signups`, `google_accounts`, `google_connections`, `kv`, `kv_history`, `login_attempts`, `notify_log`, `nurture_optout`, `nurture_sends`, `provider_push_subscriptions`, `providers`, `push_subscriptions`, `reminder_log`, `sessions`, `square_connections`, `square_create_log`, `subscriptions`, `sync_requests`, `waitlist`.
+`announcements`, `auth_tokens`, `beta_events`, `build_purchases`, `client_events`, `client_login_codes`, `client_prefs`, `client_tombstones`, `clients`, `consult_requests`, `course_versions`, `device_reports`, `feedback`, `files`, `free_signups`, `google_accounts`, `google_connections`, `kv`, `kv_history`, `login_attempts`, `notify_log`, `nurture_optout`, `nurture_sends`, `provider_push_subscriptions`, `providers`, `push_subscriptions`, `reminder_log`, `sessions`, `square_connections`, `square_create_log`, `subscriptions`, `sync_requests`, `waitlist`.
 
 Anything in these survives a lost or wiped device. Anything only in localStorage or IndexedDB
 does not.
@@ -1453,6 +1474,7 @@ Check here before building a new one.
 | `_recoverConsolidate` | yes |
 | `_recoverConsolidateAll` | yes |
 | `_recoverCopy` | yes |
+| `_recoverDeviceLines` | yes |
 | `_recoverEdits` | yes |
 | `_recoverFixName` | yes |
 | `_recoverImport` | yes |

@@ -151,7 +151,7 @@ for (const B of BLOGS) {
     };
     const html = head({
       title: p.meta.title + TITLE_SUFFIX, description: p.meta.description, canonical: p.url,
-      keywords: p.meta.keywords, jsonld, ogType: 'article', headerCta: B.headerCta, ogImage: B.ogImage
+      keywords: p.meta.keywords, jsonld, ogType: 'article', headerCta: B.headerCta, ogImage: B.ogImage, banner: true
     })
       + `\n<main><div class="wrap">
 <a class="back" href="${B.base}">&larr; All posts</a>
@@ -182,7 +182,7 @@ ${related.length ? `<h2>Keep reading</h2>\n` + related.map(r =>
   };
   fs.writeFileSync(path.join(OUT, 'index.html'), head({
     title: B.indexTitle, description: B.indexDesc, canonical: SITE + B.base,
-    keywords: B.indexKeywords, jsonld: indexJsonld, ogType: 'website', headerCta: B.headerCta, ogImage: B.ogImage
+    keywords: B.indexKeywords, jsonld: indexJsonld, ogType: 'website', headerCta: B.headerCta, ogImage: B.ogImage, banner: true
   })
     + `\n<main><div class="wrap">
 <h1>${B.indexH1}</h1>

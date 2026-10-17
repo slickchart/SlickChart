@@ -77,7 +77,15 @@ don't go back to pushing `main` directly.
 
 She asked for this after an edit disturbed providers who were using the app. **Do not push to `main`.**
 
-1. **Develop on a branch.** One branch per change, as the session is set up to do anyway.
+1. **Develop on THE preview branch — one, always the same (her rule, 2026-10-17):** *"we should only
+   ever have one branch preview so i dont need a new link every time."* All app work goes on the
+   session's designated branch (currently `claude/friendly-dirac-n55456`), whose Vercel preview she
+   keeps open: provider app
+   `https://slick-chart-git-claude-friendly-dirac-n55456-slick-chart.vercel.app/slickchart.html`,
+   client app `.../space?c=<client token>` on the same host. Never start a second branch for a
+   change, and never give her a different preview link. (On 2026-10-16 the Esthetician Collection
+   went to its own branch; she opened her usual link and reported "none of the forms are anywhere
+   on the preview".) After a 2am promotion, keep building on that same branch.
 2. **Verify it yourself first** (§2, plus the sweeps in §3 if you touched sync, storage or a loader).
    The gate below is hers, not a substitute for yours.
 3. **Push the branch** and give her its Vercel preview URL so she can click it. CI runs on every
@@ -263,6 +271,50 @@ feature that existed was reported as absent.
 If something is missing from that paste, ADD IT TO THE PASTE in the same change as the fix, so the
 next provider costs one round trip. That is the whole point of it being one screen.
 
+## 1e. How every form looks, and how a new form collection goes in (her rules, 2026-10-17)
+
+**Every form defaults to Luxe with the provider's own branding** (*"can we have all forms across the
+app default to luxe style + providers branding + logo? make that a rule"*). In BOTH apps a form is
+drawn as a `.scf` paper form: Luxe unless the provider picked Neutral or Blush in the Library (her
+pick, `bizInfo.formStyle`, always wins), her logo (`brandColors.logoDataUrl`, sent to clients as
+`brand`) in the header corner, her business name there when she has no logo, and her brand color on
+the accents only when it reads at 4.5:1 on white (`_scfAccentStyle`). `_scfStyle`, `_scfAccentStyle`
+and `_scfLogoHTML` exist in both HTML files and must stay the same. A new form screen uses
+`_scfOpen`/`_scfClose` (provider) or `_scfPaperOpen` (client); never a second look. That
+includes the pre-visit check-in (wizard, the one-page "Before your visit" package, and the provider's
+check-in Preview), which moved onto the paper form in `2026-10-17m` (`test-checkin-paper`).
+
+**A new collection upload (Ashley's PDFs) follows the Esthetician Collection's rules, all of them**
+(*"be sure to follow all the other rules we discussed from the first esty collection upload"*).
+The Esthetician Collection (`ec-*`) and the Lash & Brow Collection (`lb-*`) are the worked examples:
+
+1. **Transcribe, do not invent.** Every question, consent line and guide tip comes from her PDF.
+   No `[bracket]` placeholder survives (the generator exits on one; the test checks again). Her
+   business name, phone and email are `{business}` / `{phone}` / `{email}` tokens (`_bizFill`).
+2. **Bundled, never stored unedited.** `XX_FORMS` merges into `formTmpls` only where absent;
+   `persistForms()` stores only her changes; a send snapshots the form. Fully editable like any form.
+3. **Its own section, shown to the right professions** (`_FORM_DEFS_BY_PROF.<x>coll` via
+   `_collectionSections`, excluded from `_workKinds`). Never take a collection away from a provider
+   who already uses it (`_ecInUse` keeps the Esthetician Collection for a lash/brow pro who edited,
+   bundled, connected or sent one). Guides go into `guideTemplatesByProf` by profession, deduped,
+   ADDED to the stock ones, never replacing them.
+4. **No card-on-file question** (SlickChart cannot store a card). **A virtual consult uses the
+   in-app Photo consult**, never "email photos". Artist-only office boxes stay on the printable.
+5. **Provider controls mirror the client's**: Yes/No and single select are pick-one buttons,
+   multiple choice and contraindications are tick boxes (`input.ci-tick`), and a ticked
+   contraindication is flagged on both sides. "Check", not "tick", in client wording.
+6. **The Library**: split each style's PDF per document (`scratchpad/ec-split-docs.py`,
+   `lb-split-docs.py`, page map asserting every page used once) into a NEW unguessable
+   `assets/<x>-<random hex>/` folder with the `vercel.json` noindex header; the addresses come only
+   from `/api/collection-pdf` (allow-listed ids, session + subscription gate). The Library shows
+   only the collections that match her professions, one "Get all N pages" per collection.
+7. **Test it the same way**: a provider test (`test-esthetician-collection`,
+   `test-lash-brow-collection`), every form filled and signed in the real client page
+   (`test-ec-client-form`, `test-lb-client-form`), and `sweep-all-forms`, `sweep-form-mirror`,
+   `test-contra-ticks`, `test-client-form-branding` in BOTH Chrome and Safari (`run-in-safari.sh`).
+8. **Release train as always**: the one preview branch, out at 2am unless she says "push it live
+   early" for that change.
+
 ## 2. Verify before claiming "fixed"
 
 Never tell the owner something is fixed without proof. For JS/UI changes, drive the app headless with the
@@ -272,6 +324,15 @@ executablePath `/opt/pw-browsers/chromium-1194/chrome-linux/chrome`. Note: `CL` 
 bindings — mutate in place (`Object.keys(CL).forEach(k=>delete CL[k])`), don't reassign `window.CL`.
 Top-level `function` declarations ARE overridable window props (handy for stubbing `_sqFetch` in tests).
 The proxy blocks live `slickchart.app`, so test against the local file with routed/mocked `/api/**`.
+
+**Test in Safari's engine too, not only Chrome (2026-10-17).** Every iPhone runs WebKit, and Chromium
+behaves differently in ways that matter here: `localStorage.setItem = fn` silently did nothing in
+Safari, so the entire storage layer (offload to IndexedDB, mirroring saves to the account, the
+guards) never ran on any iPhone, while every Chromium test passed. WebKit is installed for Playwright
+(see `scratchpad/run-in-safari.sh`); `bash scratchpad/run-in-safari.sh scratchpad/<test>.mjs` runs any
+existing test in it unchanged (it also blocks the service worker, which in WebKit answers `/api/**`
+itself). Run anything touching storage, sync, boot or the native app in BOTH engines.
+`scratchpad/test-safari-storage-hook.mjs` is the regression test for the hook itself.
 
 ## 3. Architecture & build
 
@@ -485,6 +546,16 @@ always."* It came after a recovery that made her tap, screenshot and come back s
 - **Plain steps only, and as few as possible.** If she must act, at most 2–3 short numbered steps,
   named exactly as the screen names them. No branching instructions.
 - Safety rules (§0, §4c, soft deletes, backups first) still apply — automate inside them, never around them.
+- **The same goes for PROVIDERS who report bugs — even more so (her rule, 2026-10-17):** *"I want to ask
+  her to do as least as possible since she is helping so much. this should be rule just like for me
+  wanting everything to be automated as much as possible."* Never draft a message asking a provider to
+  run a check, copy a report, tap through Settings or take screenshots when the app could have sent
+  that itself. Collect it automatically instead: each device already sends a counts-only health report
+  on its own (`_sendDeviceReport` → `/api/device-report`, shown under **Their devices** on the founder
+  Recover clients screen with the account's signed-in devices and any other account on the same
+  network). If what you need is not in that report, ADD IT to the report rather than asking the
+  provider. Ask a provider only for what no device can know (what they saw, what they expected), and
+  in one short question.
 
 ## 5. Tone with the owner
 
