@@ -7730,3 +7730,10 @@ because Chrome/Edge on her Windows laptop always ran the layer.
   (`0c3b8ad`, build `2026-10-17j`), release fast-forwarded, deploy dispatched, live build-id
   confirmed. Tested on that exact code in Chrome AND WebKit (storage hook 6/6, upgrade-from-live 5/5,
   offload stale, device report, self-check, draft resurrect). Preview merged it back: `2026-10-17k`.
+
+### 2026-10-17 — WHOLE PREVIEW SHIPPED (Ashley: "go ahead and push out the whole update")
+release fast-forwarded to `12b12a9` (CI green), deploy dispatched, live build-id `2026-10-17k`.
+Live now: Esthetician Collection (16 forms, 13 guides, Library with per-document PDFs in 3 styles +
+Print), paper-form look in both apps, business details fill in, contraindication ticks + flags,
+provider screens mirror the client app, Phone/email fix, summary follows provider notes, retired
+lash/brow sample courses, device reports + self-check, the Safari storage fix. Diana reply drafted.
