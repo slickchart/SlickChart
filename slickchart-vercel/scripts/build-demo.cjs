@@ -49,6 +49,15 @@ const DEMO_SEED = '<scr' + 'ipt>\n' + fs.readFileSync(path.join(__dirname, 'demo
 // when there is no token; inlining it here keeps the public demo self-contained.
 const CLIENT_SEED = '<scr' + 'ipt>\n' + fs.readFileSync(path.join(dir, 'demo-seed-client.js'), 'utf8') + '\n</scr' + 'ipt>';
 
+// The landing page is dark, so the provider demo opens in Light to stand out against it (Ashley,
+// 2026-10-18). Only the demo: the real app's default stays Dark. The head's theme script has already
+// run by this point, so set the attribute as well as the in-memory preference; a visitor can still
+// switch in Settings, and Reset demo goes back to Light.
+const PROVIDER_LIGHT = `<script>
+(function(){try{localStorage.setItem('sc_provider_theme','light');document.documentElement.setAttribute('data-theme','light');
+  var m=document.querySelector('meta[name="theme-color"]');if(m)m.setAttribute('content','#e6efeb');}catch(e){}})();
+</script>`;
+
 const RESET = `<script>
 function scResetDemo(){try{Object.keys(localStorage).filter(function(k){return k.indexOf("sc_")===0;}).forEach(function(k){localStorage.removeItem(k);});}catch(e){}location.reload();}
 </script>`;
@@ -80,7 +89,7 @@ function build(srcFile, outFile, bannerText, withSeed, withClientSeed) {
   const replacement =
     BANNER_CSS + '\n' + ANCHOR + '\n' +
     ISOLATION + '\n' +
-    (withSeed ? DEMO_SEED + '\n' : '') +
+    (withSeed ? PROVIDER_LIGHT + '\n' + DEMO_SEED + '\n' : '') +
     (withClientSeed ? CLIENT_SEED + '\n' : '') +
     bannerDiv(bannerText) + '\n' +
     RESET + '\n';
