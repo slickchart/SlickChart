@@ -142,6 +142,13 @@ not by how the change feels:
 - **A diff that touches both sides is an APP change.** Split it, or run the whole thing through the
   train. Do not wave a marketing file past the gate because most of the commit was content.
 
+**After a content push to `main`, fast-forward `release` to `main`** when `release` is behind it
+(`git merge-base --is-ancestor origin/release origin/main` then `git push origin origin/main:release`).
+Everything on `main` is already live, so this approves nothing new, and it keeps the 2am run from
+reading "main moved on its own" as a divergence: on 2026-10-18 it failed and emailed Ashley a false
+alarm after a landing-page push. (The workflow itself now treats "main ahead of release" as nothing
+waiting, from the preview commit `27324dc` once it ships.)
+
 Still run `node scripts/check-generated.cjs` first: a content commit that forgets the generated page
 or the sitemap is exactly what that check exists for.
 
