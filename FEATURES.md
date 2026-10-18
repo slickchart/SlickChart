@@ -134,6 +134,7 @@ saved anywhere", not "does this always call that".
 | `_cbAutosaveNow` | `/api/guide-file` | via `_deleteGuideFileFromServer` |
 | `_cbAutosaveStart` | `/api/course-versions` | via `_cvSnapshot` |
 | `_cbAutosaveTick` | `/api/course-versions` | via `_cvSnapshot` |
+| `_cbAutosaveVis` | `/api/course-versions` | via `_cvSnapshot` |
 | `_cbCommit` | `/api/course-versions` | via `_cvSnapshot` |
 | `_cbCommit` | `/api/guide-file` | via `_deleteGuideFileFromServer` |
 | `_cbDone` | `/api/clients` | via `syncClientEvents` |
