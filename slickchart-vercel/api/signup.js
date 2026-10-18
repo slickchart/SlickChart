@@ -7,6 +7,7 @@ import { sendEmail, trustedOrigin, addToAudience, welcomeEmailHtml, welcomeEmail
 import { pushFoundersReport, nativePushConfigured } from '../lib/fcm.js';
 import { recordNotify } from '../lib/notify-log.js';
 import crypto from 'crypto';
+import { YEARLY_LINK } from '../lib/stripe-subs.js';
 
 // Escape user-supplied text before dropping it into the founder-notification HTML email.
 function escHtml(s) { return String(s == null ? '' : s).replace(/[&<>"']/g, c => ({ '&': '&amp;', '<': '&lt;', '>': '&gt;', '"': '&quot;', "'": '&#39;' }[c])); }
@@ -33,7 +34,8 @@ export default async function handler(req, res) {
       if (!paid) {
         res.status(402).json({
           error: 'This email hasn\u2019t completed checkout yet. Please subscribe first, then come back and create your account with the same email.',
-          checkoutUrl: process.env.STRIPE_PAYMENT_LINK || ''
+          checkoutUrl: process.env.STRIPE_PAYMENT_LINK || '',
+          checkoutUrlYear: process.env.STRIPE_PAYMENT_LINK_YEARLY || YEARLY_LINK
         });
         return;
       }

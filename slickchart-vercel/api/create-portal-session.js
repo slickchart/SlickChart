@@ -41,8 +41,15 @@ export default async function handler(req, res) {
     } catch (e) {}
 
     const origin = appOrigin(req);
-    const mk = (withCancelFlow) => {
+    const mk = (withCancelFlow, withUpdateFlow) => {
       const body = new URLSearchParams({ customer: sub.stripe_customer_id, return_url: origin + '/slickchart' });
+      // "Switch to yearly": straight to Stripe's change-plan screen. Needs plan switching turned on
+      // in the portal settings with the yearly price listed; if it is not, the fallback below opens
+      // the ordinary portal instead of an error.
+      if (withUpdateFlow) {
+        body.set('flow_data[type]', 'subscription_update');
+        body.set('flow_data[subscription_update][subscription]', sub.stripe_subscription_id);
+      }
       if (withCancelFlow) {
         body.set('flow_data[type]', 'subscription_cancel');
         body.set('flow_data[subscription_cancel][subscription]', sub.stripe_subscription_id);
@@ -57,8 +64,14 @@ export default async function handler(req, res) {
     };
 
     const wantsCancel = intent === 'cancel' && !!sub.stripe_subscription_id;
-    let r = await mk(wantsCancel);
+    const wantsUpdate = intent === 'yearly' && !!sub.stripe_subscription_id;
+    let r = await mk(wantsCancel, wantsUpdate);
     let j = await r.json().catch(() => ({}));
+    if (!r.ok && wantsUpdate) {
+      console.error('[create-portal-session] plan-switch flow refused:', (j && j.error && j.error.message) || r.status);
+      r = await mk(false, false);
+      j = await r.json().catch(() => ({}));
+    }
     // The cancel deep-link needs cancellation enabled in the portal configuration. If it isn't, do
     // NOT leave them staring at an error — open the ordinary portal so they still get somewhere,
     // and log loudly, because a provider unable to cancel is a support ticket and a trust problem.

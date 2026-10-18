@@ -5,7 +5,7 @@
 import { signToken, verifyPassword, tooManyAttempts, tooManyAttemptsByIp, recordAttempt, clearAttempts, createSession } from '../lib/auth.js';
 import { sql, ensureProvidersTable, dbEnabled, hasActiveSubscription } from '../lib/db.js';
 import { verifyToken as verifyTotp } from '../lib/totp.js';
-import { liveSubForEmail, repairSubscriptionRow, pastDueForEmail } from '../lib/stripe-subs.js';
+import { liveSubForEmail, repairSubscriptionRow, pastDueForEmail, YEARLY_LINK } from '../lib/stripe-subs.js';
 
 // A valid-format (salt:hash) decoy so an UNKNOWN email still runs the same slow scrypt a known one does.
 // Without it, the intentionally-generic "Email or password is incorrect" reply leaked which emails are
@@ -91,7 +91,8 @@ export default async function handler(req, res) {
                   if (!behind) {
                     res.status(402).json({
                       error: 'Your subscription isn’t active. Please renew to continue.',
-                      checkoutUrl: process.env.STRIPE_PAYMENT_LINK || ''
+                      checkoutUrl: process.env.STRIPE_PAYMENT_LINK || '',
+          checkoutUrlYear: process.env.STRIPE_PAYMENT_LINK_YEARLY || YEARLY_LINK
                     });
                     return;
                   }

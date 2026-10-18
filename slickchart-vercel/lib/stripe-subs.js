@@ -115,3 +115,7 @@ export async function repairSubscriptionRow(email, sub) {
     return false;
   }
 }
+
+// The $100/year plan's Stripe Payment Link (2 months free), offered next to the monthly link wherever
+// someone is asked to subscribe or renew. STRIPE_PAYMENT_LINK_YEARLY overrides it, like the monthly one.
+export const YEARLY_LINK = 'https://buy.stripe.com/4gM28q8r91Qd92c7WJ4wM01';

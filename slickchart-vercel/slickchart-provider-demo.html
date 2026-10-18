@@ -550,7 +550,7 @@ const S=document.getElementById('S');
 // resets when I save it" and there was no way to tell whether her phone had any of them — a whole
 // day was spent debugging code she may not have been running. Shown at the bottom of Settings, so
 // the answer is a screenshot away. Bump it on every ship.
-const APP_BUILD='2026-10-18a';
+const APP_BUILD='2026-10-18b';
 
 
 /* ════════════════════════════════════════════════════════════════
@@ -4207,8 +4207,8 @@ const Cloud={
     this.enabled=false;this.statusUnknown=true;this._statusKnown=true;
     return this.enabled;
   },
-  async login(email,pw,totpCode){const r=await fetch('/api/login',{method:'POST',headers:{'Content-Type':'application/json'},body:JSON.stringify({email,password:pw,totpCode})});let j={};try{j=await r.json();}catch(e){}if(!r.ok||!j.token){const err=new Error((j&&j.error)||(j&&j.requiresTotp?'Enter your authenticator code':'Login failed'));err.requiresTotp=!!(j&&j.requiresTotp);err.checkoutUrl=j&&j.checkoutUrl;throw err;}this.token=j.token;try{localStorage.setItem('sc_token',this.token);if(j.email)localStorage.setItem('sc_login_email',j.email);localStorage.setItem('sc_totp_enabled',j.totpEnabled?'1':'0');}catch(e){}return j;},
-  async signup(email,pw,name,optIn){const r=await fetch('/api/signup',{method:'POST',headers:{'Content-Type':'application/json'},body:JSON.stringify({email,password:pw,name,optIn:!!optIn})});let j={};try{j=await r.json();}catch(e){}if(!r.ok){const err=new Error((j&&j.error)||'Sign up failed');err.checkoutUrl=j&&j.checkoutUrl;throw err;}this.token=j.token;this._pulledOnce=true;/* a brand-new account has nothing to read */try{localStorage.setItem('sc_token',this.token);if(j.email)localStorage.setItem('sc_login_email',j.email);}catch(e){}return j;},
+  async login(email,pw,totpCode){const r=await fetch('/api/login',{method:'POST',headers:{'Content-Type':'application/json'},body:JSON.stringify({email,password:pw,totpCode})});let j={};try{j=await r.json();}catch(e){}if(!r.ok||!j.token){const err=new Error((j&&j.error)||(j&&j.requiresTotp?'Enter your authenticator code':'Login failed'));err.requiresTotp=!!(j&&j.requiresTotp);err.checkoutUrl=j&&j.checkoutUrl;err.checkoutUrlYear=j&&j.checkoutUrlYear;throw err;}this.token=j.token;try{localStorage.setItem('sc_token',this.token);if(j.email)localStorage.setItem('sc_login_email',j.email);localStorage.setItem('sc_totp_enabled',j.totpEnabled?'1':'0');}catch(e){}return j;},
+  async signup(email,pw,name,optIn){const r=await fetch('/api/signup',{method:'POST',headers:{'Content-Type':'application/json'},body:JSON.stringify({email,password:pw,name,optIn:!!optIn})});let j={};try{j=await r.json();}catch(e){}if(!r.ok){const err=new Error((j&&j.error)||'Sign up failed');err.checkoutUrl=j&&j.checkoutUrl;err.checkoutUrlYear=j&&j.checkoutUrlYear;throw err;}this.token=j.token;this._pulledOnce=true;/* a brand-new account has nothing to read */try{localStorage.setItem('sc_token',this.token);if(j.email)localStorage.setItem('sc_login_email',j.email);}catch(e){}return j;},
   async requestReset(email){try{await fetch('/api/request-reset',{method:'POST',headers:{'Content-Type':'application/json'},body:JSON.stringify({email})});}catch(e){}return true;},
   async resetPw(token,pw){const r=await fetch('/api/reset',{method:'POST',headers:{'Content-Type':'application/json'},body:JSON.stringify({token,password:pw})});let j={};try{j=await r.json();}catch(e){}if(!r.ok)throw new Error((j&&j.error)||'Reset failed');return true;},
   async verifyEmail(token){try{const r=await fetch('/api/verify?token='+encodeURIComponent(token));return r.ok;}catch(e){return false;}},
@@ -6353,12 +6353,18 @@ function _loginVal(id){const el=document.getElementById(id);return el?el.value.t
 // active. Please renew to continue." with nothing to click and no way to reach billing - billing
 // lives behind the login they are being refused. Reported by a provider, 2026-10-13.
 // Not in the native app: an external payment link there breaks Apple's rules (same guard as signup).
+// The yearly plan ($100/year, 2 months free) sits next to every renew / subscribe link. Older
+// servers send no checkoutUrlYear, and then this adds nothing.
+function _yearLinkHTML(e){
+  const y=(e&&e.checkoutUrlYear&&!_isNativeApp()&&typeof _safeUrl==='function')?_safeUrl(e.checkoutUrlYear):'';
+  return y?(' <span style="white-space:nowrap;">or <a href="'+_urlAttr(y)+'" style="color:var(--accent-strong);text-decoration:underline;">pay yearly, $100 (2 months free)</a></span>'):'';
+}
 function _loginErr(e,fallback){
   const er=document.getElementById('login-err');if(!er)return;
   const msg=String((e&&e.message)||fallback);
   const url=(e&&e.checkoutUrl&&!_isNativeApp()&&typeof _safeUrl==='function')?_safeUrl(e.checkoutUrl):'';
   if(url){er.innerHTML=msg.replace(/</g,'&lt;').replace(/>/g,'&gt;')
-    +' <a href="'+_urlAttr(url)+'" style="color:var(--accent-strong);text-decoration:underline;">Renew now &rarr;</a>';}
+    +' <a href="'+_urlAttr(url)+'" style="color:var(--accent-strong);text-decoration:underline;">Renew now &rarr;</a>'+_yearLinkHTML(e);}
   else er.textContent=msg;
 }
 // The session expired (a 401 at launch) and the person now signing in is a DIFFERENT account. The
@@ -6424,7 +6430,7 @@ function doSignup(){
   }).catch(e=>{
     const er=document.getElementById('login-err');
     if(er){
-      if(e&&e.checkoutUrl&&!_isNativeApp()){const _u=(typeof _safeUrl==='function')?_safeUrl(e.checkoutUrl):'';const _m=String(e.message||'Sign up failed').replace(/</g,'&lt;').replace(/>/g,'&gt;');er.innerHTML=_m+(_u?(' <a href="'+_urlAttr(_u)+'" style="color:var(--accent-strong);text-decoration:underline;">Subscribe now &rarr;</a>'):'');}
+      if(e&&e.checkoutUrl&&!_isNativeApp()){const _u=(typeof _safeUrl==='function')?_safeUrl(e.checkoutUrl):'';const _m=String(e.message||'Sign up failed').replace(/</g,'&lt;').replace(/>/g,'&gt;');er.innerHTML=_m+(_u?(' <a href="'+_urlAttr(_u)+'" style="color:var(--accent-strong);text-decoration:underline;">Subscribe now &rarr;</a>'+_yearLinkHTML(e)):'');}
       else{er.textContent=(e&&e.message)||'Sign up failed';}
     }
   });
@@ -34997,6 +35003,7 @@ function _billingHTML(sub){
     <button class="btng" style="width:100%;margin-bottom:10px;" onclick="_openBillingPortal('resume')"><i class="ti ti-rotate" style="color:var(--accent-strong);"></i> Keep my subscription</button>
     <div style="font-size:14px;color:var(--p-mut);line-height:1.6;text-align:center;padding:0 6px;">You\u2019ve cancelled. Nothing more will be charged, and you keep everything until ${nextDate}. Change your mind before then and this puts it back.</div>
     `:`
+    ${(active&&sub.plan_interval!=='year'&&!_isNativeApp())?`<button class="btng" style="width:100%;margin-bottom:10px;" onclick="_openBillingPortal('yearly')"><i class="ti ti-calendar-check" style="color:var(--accent-strong);"></i> Switch to yearly &middot; $100/year, 2 months free</button>`:''}
     <button onclick="_openBillingPortal('cancel')" style="width:100%;background:none;border:1px solid var(--p-red-line);color:var(--p-red);border-radius:12px;padding:12px;font-size:16px;font-weight:600;cursor:pointer;font-family:inherit;margin-bottom:10px;">Cancel subscription</button>
     <div style="font-size:14px;color:var(--p-mut);line-height:1.6;padding:0 2px;">
       Cancelling takes one confirmation and stops any further charges. You keep full access until ${nextDate}, the end of the time you\u2019ve already paid for \u2014 and your clients, notes and photos stay exactly where they are.
@@ -35011,7 +35018,8 @@ function _billingHTML(sub){
   </div>`;
 }
 // intent 'cancel' deep-links straight to Stripe's cancel screen, so "Cancel subscription" means one
-// confirmation rather than a hunt through a portal menu. 'resume' and no intent open the portal.
+// confirmation rather than a hunt through a portal menu. 'yearly' lands on Stripe's change-plan
+// screen. 'resume' and no intent open the portal.
 async function _openBillingPortal(intent){
   if(_isNativeApp())return; // payment-silent: never open an external checkout/billing portal in-app
   const tok=(typeof Cloud!=='undefined'&&Cloud&&Cloud.token)||'';
