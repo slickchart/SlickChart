@@ -210,6 +210,9 @@ export async function ensureProvidersTable() {
   // Active with a Next billing date — so they cancelled again, or wrote in asking why it hadn't
   // worked. It had. We just weren't saying so.
   try { await q`ALTER TABLE subscriptions ADD COLUMN IF NOT EXISTS cancel_at_period_end boolean NOT NULL DEFAULT false`; } catch (e) {}
+  // 'month' or 'year' from the Stripe price, so the billing screen does not call a yearly plan
+  // "$100.00/month". NULL on rows written before this existed reads as monthly, which they all were.
+  try { await q`ALTER TABLE subscriptions ADD COLUMN IF NOT EXISTS plan_interval text`; } catch (e) {}
   // When the founder was told this provider started paying. It is the once-ever claim behind the
   // "💰 New PAID provider" ping: a RENEWAL is just another `customer.subscription.updated` with
   // status=active, indistinguishable from the first payment without a stamp like this, which is why

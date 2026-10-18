@@ -100,11 +100,13 @@ export async function repairSubscriptionRow(email, sub) {
     const periodEnd = sub.current_period_end ? new Date(sub.current_period_end * 1000).toISOString() : null;
     const planAmount = sub.items && sub.items.data && sub.items.data[0] && sub.items.data[0].price
       ? sub.items.data[0].price.unit_amount : null;
-    await q`INSERT INTO subscriptions (email, stripe_customer_id, stripe_subscription_id, status, current_period_end, plan_amount, cancel_at_period_end, updated_at)
-      VALUES (${em}, ${sub.customer || null}, ${sub.id}, 'active', ${periodEnd}, ${planAmount}, ${!!sub.cancel_at_period_end}, now())
+    const planInterval = sub.items && sub.items.data && sub.items.data[0] && sub.items.data[0].price
+      && sub.items.data[0].price.recurring ? sub.items.data[0].price.recurring.interval || null : null;
+    await q`INSERT INTO subscriptions (email, stripe_customer_id, stripe_subscription_id, status, current_period_end, plan_amount, plan_interval, cancel_at_period_end, updated_at)
+      VALUES (${em}, ${sub.customer || null}, ${sub.id}, 'active', ${periodEnd}, ${planAmount}, ${planInterval}, ${!!sub.cancel_at_period_end}, now())
       ON CONFLICT (email) DO UPDATE SET stripe_customer_id=EXCLUDED.stripe_customer_id,
         stripe_subscription_id=EXCLUDED.stripe_subscription_id, status='active',
-        current_period_end=EXCLUDED.current_period_end, plan_amount=EXCLUDED.plan_amount,
+        current_period_end=EXCLUDED.current_period_end, plan_amount=EXCLUDED.plan_amount, plan_interval=EXCLUDED.plan_interval,
         cancel_at_period_end=EXCLUDED.cancel_at_period_end, updated_at=now()`;
     console.log('[stripe-subs] repaired ' + em + ' from Stripe — live subscription ' + sub.id);
     return true;

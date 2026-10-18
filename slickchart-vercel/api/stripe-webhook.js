@@ -246,13 +246,15 @@ export default async function handler(req, res) {
       const effPeriodEnd = effSub.current_period_end ? new Date(effSub.current_period_end * 1000).toISOString() : null;
       const effPlanAmount = effSub.items && effSub.items.data && effSub.items.data[0] && effSub.items.data[0].price
         ? effSub.items.data[0].price.unit_amount : null;
+      const effPlanInterval = effSub.items && effSub.items.data && effSub.items.data[0] && effSub.items.data[0].price
+        && effSub.items.data[0].price.recurring ? effSub.items.data[0].price.recurring.interval || null : null;
 
       if (existing[0]) {
         // Point the row at whichever subscription is actually live, so a later event for the
         // cancelled one can be recognised as being about a different subscription.
         await q`UPDATE subscriptions SET status=${effStatus}, stripe_subscription_id=${effSub.id},
           stripe_customer_id=${effCustomer}, current_period_end=${effPeriodEnd}, plan_amount=${effPlanAmount},
-          cancel_at_period_end=${!!effSub.cancel_at_period_end}, updated_at=now()
+          plan_interval=${effPlanInterval}, cancel_at_period_end=${!!effSub.cancel_at_period_end}, updated_at=now()
           WHERE stripe_customer_id=${customerId}`;
       } else {
         subEmail = await lookupCustomerEmail(customerId);
@@ -261,10 +263,10 @@ export default async function handler(req, res) {
           // subscription.updated with status still 'active'. Record the flag or the app cannot tell
           // a live plan from one that is already on its way out.
           const cancelAtEnd = !!(effSub && effSub.cancel_at_period_end);
-          await q`INSERT INTO subscriptions (email, stripe_customer_id, stripe_subscription_id, status, current_period_end, plan_amount, cancel_at_period_end, updated_at)
-            VALUES (${subEmail}, ${effCustomer}, ${effSub.id}, ${effStatus}, ${effPeriodEnd}, ${effPlanAmount}, ${cancelAtEnd}, now())
+          await q`INSERT INTO subscriptions (email, stripe_customer_id, stripe_subscription_id, status, current_period_end, plan_amount, plan_interval, cancel_at_period_end, updated_at)
+            VALUES (${subEmail}, ${effCustomer}, ${effSub.id}, ${effStatus}, ${effPeriodEnd}, ${effPlanAmount}, ${effPlanInterval}, ${cancelAtEnd}, now())
             ON CONFLICT (email) DO UPDATE SET status=EXCLUDED.status, stripe_subscription_id=EXCLUDED.stripe_subscription_id,
-              current_period_end=EXCLUDED.current_period_end, plan_amount=EXCLUDED.plan_amount,
+              current_period_end=EXCLUDED.current_period_end, plan_amount=EXCLUDED.plan_amount, plan_interval=EXCLUDED.plan_interval,
               cancel_at_period_end=EXCLUDED.cancel_at_period_end, updated_at=now()`;
         }
       }
