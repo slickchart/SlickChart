@@ -10,3 +10,6 @@ Rebuilt 2026-10-18 from the current demo apps. To refresh it after UI changes:
    see the ffmpeg `xfade` chain in the 2026-10-18 commit message, libx264 crf 24, yuv420p, faststart.
 5. Copy the mp4 and a 540x960 poster of slide 0 into `slickchart-vercel/assets/`, and bump the `?v=`
    on both URLs in `index.html` so phones do not keep the cached copy.
+
+The provider demo opens in Light (`PROVIDER_LIGHT` in `scripts/build-demo.cjs`, 2026-10-18) so the
+phone screens stand out on the dark landing page; captures pick that up automatically.
