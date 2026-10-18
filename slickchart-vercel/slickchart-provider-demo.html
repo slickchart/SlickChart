@@ -89,7 +89,7 @@ body{font-family:-apple-system,BlinkMacSystemFont,'Segoe UI',sans-serif;backgrou
 html{overflow-x:hidden;}
 .shell{width:390px;max-width:100%;background:linear-gradient(180deg,#0e211d 0%,#0a1614 100%);border-radius:24px;border:1px solid var(--p-line);overflow:hidden;height:calc(100vh - 72px);max-height:900px;min-height:560px;display:flex;flex-direction:column;position:relative;box-shadow:inset 0 1px 0 rgba(255,255,255,.04);}
 :root[data-theme="light"] .shell{background:linear-gradient(180deg,#ffffff,#f6faf8);}
-  @media(max-width:480px){body{padding:0;}.shell{height:100dvh;max-height:none;min-height:0;border-radius:0;border:none;}}
+  @media(max-width:480px){body{padding:0;}.shell{height:100vh;height:100dvh;max-height:none;min-height:0;border-radius:0;border:none;}}
 /* Real iOS status bar (black-translucent) overlays the top of the webview, so the topbar pads
    down by the top safe-area inset to clear the notch/Dynamic Island. In the desktop preview the
    inset is 0, so this renders identically to before. Matches the client app's approach. */
@@ -553,7 +553,7 @@ const S=document.getElementById('S');
 // resets when I save it" and there was no way to tell whether her phone had any of them — a whole
 // day was spent debugging code she may not have been running. Shown at the bottom of Settings, so
 // the answer is a screenshot away. Bump it on every ship.
-const APP_BUILD='2026-10-18c';
+const APP_BUILD='2026-10-18d';
 
 
 /* ════════════════════════════════════════════════════════════════
@@ -4499,9 +4499,12 @@ const Cloud={
     });
     if(!Object.keys(out).length)return;
     try{
-      fetch('/api/store',{method:'PUT',keepalive:true,
+      // keepalive only while the body fits its 64KB cap: past that, every browser refuses the request
+      // outright and the rescue (a real client list is far bigger) never reached the account at all.
+      const _rb=JSON.stringify({rescue:out});
+      fetch('/api/store',{method:'PUT',keepalive:_rb.length<60000,
         headers:{'Content-Type':'application/json','Authorization':'Bearer '+this.token},
-        body:JSON.stringify({rescue:out})}).catch(function(){});
+        body:_rb}).catch(function(){});
       try{console.warn('[SlickChart] this device held more than the account for: '+Object.keys(out).join(', ')+' \u2014 sent a copy to the account history before merging');}catch(e){}
     }catch(e){}
   },
@@ -13457,7 +13460,7 @@ function _renderPhotosView(id,c,_passed){
         <div style="background:${_fileEsc(left.col)};aspect-ratio:3/4;display:flex;align-items:center;justify-content:center;position:relative;">
           <i class="ti ti-user-circle" aria-hidden="true" style="font-size:52px;color:${left.ic};opacity:.35;"></i>
           <div style="position:absolute;inset:0;background:linear-gradient(to bottom,transparent 60%,rgba(0,0,0,.7));border-radius:12px;"></div>
-          <div style="position:absolute;top:8px;left:8px;background:rgba(0,0,0,.65);backdrop-filter:blur(4px);border-radius:4px;padding:3px 8px;">
+          <div style="position:absolute;top:8px;left:8px;background:rgba(0,0,0,.65);-webkit-backdrop-filter:blur(4px);backdrop-filter:blur(4px);border-radius:4px;padding:3px 8px;">
             <span style="font-size:14px;color:var(--p-ink);font-weight:500;">Before</span>
           </div>
           <div style="position:absolute;bottom:8px;left:8px;right:8px;">
@@ -13470,7 +13473,7 @@ function _renderPhotosView(id,c,_passed){
         <div style="background:${_fileEsc(right.col)};aspect-ratio:3/4;display:flex;align-items:center;justify-content:center;position:relative;">
           <i class="ti ti-user-circle" aria-hidden="true" style="font-size:52px;color:${right.ic};opacity:.55;"></i>
           <div style="position:absolute;inset:0;background:linear-gradient(to bottom,transparent 60%,rgba(0,0,0,.7));border-radius:12px;"></div>
-          <div style="position:absolute;top:8px;left:8px;background:rgba(0,0,0,.65);backdrop-filter:blur(4px);border-radius:4px;padding:3px 8px;">
+          <div style="position:absolute;top:8px;left:8px;background:rgba(0,0,0,.65);-webkit-backdrop-filter:blur(4px);backdrop-filter:blur(4px);border-radius:4px;padding:3px 8px;">
             <span style="font-size:14px;color:var(--accent-strong);font-weight:500;">After</span>
           </div>
           <div style="position:absolute;bottom:8px;left:8px;right:8px;">
@@ -15000,8 +15003,9 @@ function _copyToClipboard(text,okMsg){
 }
 function _copyFallback(text,done,fail){
   try{
-    const ta=document.createElement('textarea');ta.value=text;ta.style.cssText='position:fixed;top:-1000px;left:-1000px;';
-    document.body.appendChild(ta);ta.focus();ta.select();
+    // iOS copies nothing from select() alone: it needs readonly + an explicit selection range.
+    const ta=document.createElement('textarea');ta.value=text;ta.setAttribute('readonly','');ta.style.cssText='position:fixed;top:-1000px;left:-1000px;font-size:16px;';
+    document.body.appendChild(ta);ta.focus();ta.select();try{ta.setSelectionRange(0,text.length);}catch(e){}
     const okd=document.execCommand('copy');document.body.removeChild(ta);
     if(okd){done&&done();}
     else if(fail){fail();}
@@ -20982,7 +20986,7 @@ function initSignPad(){
   const ctx=c.getContext('2d');if(!ctx)return;
   const rect=c.getBoundingClientRect?c.getBoundingClientRect():{width:300,height:160};
   c.width=rect.width||300;c.height=rect.height||160;
-  ctx.strokeStyle='var(--p-ink)';ctx.lineWidth=2.4;ctx.lineCap='round';ctx.lineJoin='round';
+  ctx.strokeStyle='#1a1a1a';ctx.lineWidth=2.4;ctx.lineCap='round';ctx.lineJoin='round';
   let drawing=false,last=null;_signPadInk=false;
   const pos=e=>{const r=c.getBoundingClientRect();const t=(e.touches&&e.touches[0])||e;return {x:t.clientX-r.left,y:t.clientY-r.top};};
   const start=e=>{drawing=true;last=pos(e);if(e.cancelable)e.preventDefault();};
@@ -24597,9 +24601,12 @@ function _cbAutosaveStart(id){
     _cbAutosaveTick();
   },_CV_AUTOSAVE_MS);}catch(e){}
   // Closing the tab mid-build is exactly when the autosave matters most.
-  try{window.addEventListener('pagehide',_cbAutosaveFlush);}catch(e){}
+  // iOS often never fires pagehide when an app is swiped away; going to the background does fire
+  // visibilitychange, so save on that too.
+  try{window.addEventListener('pagehide',_cbAutosaveFlush);document.addEventListener('visibilitychange',_cbAutosaveVis);}catch(e){}
 }
-function _cbAutosaveStop(){try{if(_cvTimer)clearInterval(_cvTimer);}catch(e){}_cvTimer=null;try{window.removeEventListener('pagehide',_cbAutosaveFlush);}catch(e){}}
+function _cbAutosaveVis(){if(document.visibilityState==='hidden')_cbAutosaveFlush();}
+function _cbAutosaveStop(){try{if(_cvTimer)clearInterval(_cvTimer);}catch(e){}_cvTimer=null;try{window.removeEventListener('pagehide',_cbAutosaveFlush);document.removeEventListener('visibilitychange',_cbAutosaveVis);}catch(e){}}
 
 // Tell the server this course was thrown away on purpose. The device's own delete list lives in
 // localStorage, which is exactly the thing that stops working when the device is full — so without
@@ -27673,10 +27680,15 @@ function _icsStamp(dateStr,timeStr){
   const isISO=/^\d{4}-\d{2}-\d{2}$/.test(raw);
   const looksDate=isISO||/^(jan|feb|mar|apr|may|jun|jul|aug|sep|oct|nov|dec)/i.test(raw)||/^\d{1,2}[\s\/.-]/.test(raw)||/^(today|tomorrow)$/i.test(raw);
   if(!looksDate)return null;
-  let base=isISO?raw:(raw+' '+new Date().getFullYear());
-  let d=new Date(base+' '+(timeStr||'9:00 AM'));
-  if(isNaN(d))d=new Date(raw+' '+(timeStr||'9:00 AM'));
+  // Parse the DAY on its own, then set the time by hand. Safari reads "2026-10-20 10:00 AM" as an
+  // Invalid Date (Chrome is lenient), which dropped every manual and confirmed appointment from the
+  // synced calendar feed whenever an iPhone rebuilt it, and made "Add to calendar" refuse them.
+  let d=isISO?new Date(raw+'T00:00:00'):new Date(raw+' '+new Date().getFullYear());
+  if(isNaN(d))d=new Date(raw);
   if(isNaN(d))return null;
+  const tm=String(timeStr||'9:00 AM').trim().match(/^(\d{1,2}):(\d{2})\s*([AaPp][Mm])?$/);
+  if(tm){let h=parseInt(tm[1],10);const mi=parseInt(tm[2],10),ap=(tm[3]||'').toUpperCase();if(ap==='PM'&&h!==12)h+=12;if(ap==='AM'&&h===12)h=0;d.setHours(h,mi,0,0);}
+  else{const t2=new Date(d.toDateString()+' '+timeStr);if(isNaN(t2))return null;d=t2;}
   const p=n=>String(n).padStart(2,'0');
   return {d,stamp:d.getFullYear()+p(d.getMonth()+1)+p(d.getDate())+'T'+p(d.getHours())+p(d.getMinutes())+'00'};
 }
@@ -28737,7 +28749,8 @@ async function _confirmDeleteAccount(){
     if(!serverGone){
       try{
         const items={};
-        for(let i=0;i<localStorage.length;i++){const k=localStorage.key(i);if(typeof k==='string'&&k.indexOf('sc_')===0&&k!=='sc_token'&&k!=='sc_sqkey'&&k!=='sc_bus')items[k]='';}
+        // _lsAllKeys, not localStorage: big libraries (the client list) live in IndexedDB and were skipped.
+        (typeof _lsAllKeys==='function'?_lsAllKeys():Object.keys(localStorage)).forEach(function(k){if(typeof k==='string'&&k.indexOf('sc_')===0&&k!=='sc_token'&&k!=='sc_sqkey'&&k!=='sc_bus')items[k]='';});
         if(Object.keys(items).length)serverGone=await fetch('/api/store',{method:'PUT',headers:{'Content-Type':'application/json','Authorization':'Bearer '+tok},body:JSON.stringify({items})}).then(r=>r.ok).catch(()=>false);
       }catch(e){}
     }
@@ -34636,11 +34649,11 @@ function renderPasswordSecurity(){
     <div class="sh" style="padding:0 0 7px;"><h2>Change password</h2></div>
     <div style="background:var(--surf2);border:1px solid var(--p-line);border-radius:12px;padding:14px;margin-bottom:16px;">
       <span class="fl-lbl">Current password</span>
-      <div style="position:relative;margin-bottom:12px;"><input id="pw-current" class="fi" type="password" placeholder="••••••••" style="margin-bottom:0;padding-right:44px;"><button type="button" onclick="_togglePw('pw-current',this)" aria-label="Show password" style="position:absolute;right:4px;top:0;height:46px;background:none;border:none;color:var(--p-mut);cursor:pointer;padding:0 10px;display:flex;align-items:center;"><i class="ti ti-eye" style="font-size:18px;"></i></button></div>
+      <div style="position:relative;margin-bottom:12px;"><input id="pw-current" class="fi" type="password" autocomplete="current-password" placeholder="••••••••" style="margin-bottom:0;padding-right:44px;"><button type="button" onclick="_togglePw('pw-current',this)" aria-label="Show password" style="position:absolute;right:4px;top:0;height:46px;background:none;border:none;color:var(--p-mut);cursor:pointer;padding:0 10px;display:flex;align-items:center;"><i class="ti ti-eye" style="font-size:18px;"></i></button></div>
       <span class="fl-lbl">New password</span>
       <div style="position:relative;margin-bottom:12px;"><input class="fi" type="password" placeholder="••••••••" style="margin-bottom:0;padding-right:44px;" id="pw-new"><button type="button" onclick="_togglePw('pw-new',this)" aria-label="Show password" style="position:absolute;right:4px;top:0;height:46px;background:none;border:none;color:var(--p-mut);cursor:pointer;padding:0 10px;display:flex;align-items:center;"><i class="ti ti-eye" style="font-size:18px;"></i></button></div>
       <span class="fl-lbl">Confirm new password</span>
-      <div style="position:relative;margin-bottom:14px;"><input id="pw-confirm" class="fi" type="password" placeholder="••••••••" style="margin-bottom:0;padding-right:44px;"><button type="button" onclick="_togglePw('pw-confirm',this)" aria-label="Show password" style="position:absolute;right:4px;top:0;height:46px;background:none;border:none;color:var(--p-mut);cursor:pointer;padding:0 10px;display:flex;align-items:center;"><i class="ti ti-eye" style="font-size:18px;"></i></button></div>
+      <div style="position:relative;margin-bottom:14px;"><input id="pw-confirm" class="fi" type="password" autocomplete="new-password" placeholder="••••••••" style="margin-bottom:0;padding-right:44px;"><button type="button" onclick="_togglePw('pw-confirm',this)" aria-label="Show password" style="position:absolute;right:4px;top:0;height:46px;background:none;border:none;color:var(--p-mut);cursor:pointer;padding:0 10px;display:flex;align-items:center;"><i class="ti ti-eye" style="font-size:18px;"></i></button></div>
       <div style="display:flex;flex-direction:column;gap:5px;margin-bottom:14px;">
         ${['At least 8 characters','One uppercase letter','One number or symbol'].map(r=>`<div style="display:flex;align-items:center;gap:6px;"><i class="ti ti-circle-check" style="font-size:16px;color:var(--p-mut);"></i><span style="font-size:16px;color:var(--p-mut);">${r}</span></div>`).join('')}
       </div>

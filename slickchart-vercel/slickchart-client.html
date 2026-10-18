@@ -1166,10 +1166,22 @@ function buildICS(){
 }
 
 function downloadICS(){
-  const blob=new Blob([buildICS()],{type:'text/calendar;charset=utf-8'});
+  const ics=buildICS();
+  const ua=navigator.userAgent||'';
+  const isIOS=/iphone|ipad|ipod/i.test(ua)||(/Macintosh/.test(ua)&&navigator.maxTouchPoints>1);
+  // On iPhone a downloaded .ics just lands in Files and never reaches Calendar (and a link revoked
+  // right after the click often downloads nothing). Opening it as a calendar URL brings up iOS's own
+  // "Add to Calendar" screen instead.
+  if(isIOS){
+    closeCalModal();
+    try{window.location.href='data:text/calendar;charset=utf-8,'+encodeURIComponent(ics);}catch(e){}
+    return;
+  }
+  const blob=new Blob([ics],{type:'text/calendar;charset=utf-8'});
   const url=URL.createObjectURL(blob);
   const a=document.createElement('a');a.href=url;a.download='slickchart-appointment.ics';
-  document.body.appendChild(a);a.click();document.body.removeChild(a);URL.revokeObjectURL(url);
+  document.body.appendChild(a);a.click();document.body.removeChild(a);
+  setTimeout(function(){try{URL.revokeObjectURL(url);}catch(e){}},30000);
   closeCalModal();
   showToast('Appointment file downloaded! Open it to add to your calendar.');
 }
@@ -1513,9 +1525,11 @@ function _prefsDirty(on){try{if(on)localStorage.setItem('sc_client_prefs_dirty',
 function _sendClientPrefs(keepalive){
   if(!client._real||!client._token||!_prefsLoaded)return;
   clearTimeout(_prefsSyncTimer);_prefsSyncTimer=null;
+  const _pb=JSON.stringify({prefs:_collectClientPrefs()});
+  // keepalive is capped at 64KB: a bigger body with it set is refused outright, so send it normally.
   fetch('/api/client-prefs?t='+encodeURIComponent(client._token),{
-    method:'PUT',headers:{'Content-Type':'application/json'},keepalive:!!keepalive,
-    body:JSON.stringify({prefs:_collectClientPrefs()})
+    method:'PUT',headers:{'Content-Type':'application/json'},keepalive:!!keepalive&&_pb.length<60000,
+    body:_pb
   }).then(function(r){if(r&&r.ok)_prefsDirty(false);}).catch(e=>console.error('[client prefs] save failed:',e&&e.message));
 }
 function _syncClientPrefsToServer(){
