@@ -7832,3 +7832,12 @@ vs the account, logo yes/no. A home-screen app and the Safari tab do not share s
 Pre-existing (identical on the previous build): sweep-dup-boot-pullfail 3/4 (its 26 uploads happen
 AFTER the retried pull succeeds, so they seed absent keys, not overwrite), sweep-dup-boot-401-switch
 2/3, sweep-dup-edge-boot 9/10, sweep2-client-settings-persist 1 confirmed. No sweep differs by engine.
+
+### 2026-10-18 — WHOLE PREVIEW LIVE (Ashley: "push everything now"), build `2026-10-17p`
+release fast-forwarded to `de69d34` (CI green on that commit), deploy dispatched, main = `de69d34`.
+Live now: Lash & Brow Collection, Hair Stylist Collection, every form Luxe + her logo/brand color,
+check-in on the paper form, the three iPhone storage fixes (evicted values kept, IndexedDB retry,
+outbox), roadmap alert wording. **Lesson:** on 10-17 the work was reported as "goes out at 2am" but
+`release` was never fast-forwarded, so the 2am run had nothing to promote and nothing went out.
+When a day's work is verified, push `release` to the preview commit (CLAUDE.md §1a) — that IS the
+2am delivery; saying it is not.
