@@ -87,10 +87,10 @@ export const LEAD_SEQUENCE = [
       <p>Hard truth I learned the hard way: most solo pros are one client dispute or one lapsed license away from a very bad day — and don’t realize it.</p>
       <p>Three things worth having on file for every client:</p>
       <p style="margin:0 0 4px;">1. A signed consent for every service<br>2. Timestamped before-and-after photos<br>3. Current, valid liability insurance (with a reminder before it lapses)</p>
-      <p>I built SlickChart to do all three automatically — signed forms stored, a photo vault, and reminders 90 and 30 days before your license or insurance expires. Peace of mind, for $10/month.</p>
+      <p>I built SlickChart to do all three automatically — signed forms stored, a photo vault, and reminders 90 and 30 days before your license or insurance expires. Peace of mind, for $10/month (or $100 a year).</p>
       ${btn(SITE, 'See how it protects you')}
       <p>More tomorrow on the part everyone likes better — the money. Reply anytime; I read every one.</p>`, c.email),
-    text: (c) => `Hi ${c.first},\n\nMost solo pros are one client dispute or one lapsed license away from a very bad day — and don't realize it.\n\nThree things worth having on file for every client:\n1. A signed consent for every service\n2. Timestamped before-and-after photos\n3. Current, valid liability insurance (with a reminder before it lapses)\n\nSlickChart does all three automatically — signed forms stored, a photo vault, and reminders before your license or insurance expires. Peace of mind, for $10/month.\n\n${SITE}\n\nWith love,\nAshley${footerText(c.email)}`,
+    text: (c) => `Hi ${c.first},\n\nMost solo pros are one client dispute or one lapsed license away from a very bad day — and don't realize it.\n\nThree things worth having on file for every client:\n1. A signed consent for every service\n2. Timestamped before-and-after photos\n3. Current, valid liability insurance (with a reminder before it lapses)\n\nSlickChart does all three automatically — signed forms stored, a photo vault, and reminders before your license or insurance expires. Peace of mind, for $10/month (or $100 a year).\n\n${SITE}\n\nWith love,\nAshley${footerText(c.email)}`,
   },
   {
     day: 4,
@@ -99,9 +99,9 @@ export const LEAD_SEQUENCE = [
       <p>Hi ${esc(c.first)},</p>
       <p>Most apps just cost you money every month. I wanted mine to make you some.</p>
       <p>Inside SlickChart you can sell your retail in your own shop, add affiliate and Amazon links so you earn on the products you already recommend, and build a course or paid guide — with no extra fee and no cut taken from your sales.</p>
-      <p>It’s the only tool I know of designed to put money back in your pocket. And it’s $10/month.</p>
+      <p>It’s the only tool I know of designed to put money back in your pocket. And it’s $10/month, or $100 a year.</p>
       ${btn(SITE, 'See the income tools')}`, c.email),
-    text: (c) => `Hi ${c.first},\n\nMost apps just cost you money every month. I wanted mine to make you some.\n\nInside SlickChart you can sell your retail in your own shop, add affiliate and Amazon links so you earn on products you already recommend, and build a course or paid guide — no extra fee, no cut taken.\n\nThe only tool I know of designed to put money back in your pocket. $10/month.\n\n${SITE}\n\nWith love,\nAshley${footerText(c.email)}`,
+    text: (c) => `Hi ${c.first},\n\nMost apps just cost you money every month. I wanted mine to make you some.\n\nInside SlickChart you can sell your retail in your own shop, add affiliate and Amazon links so you earn on products you already recommend, and build a course or paid guide — no extra fee, no cut taken.\n\nThe only tool I know of designed to put money back in your pocket. $10/month, or $100 a year.\n\n${SITE}\n\nWith love,\nAshley${footerText(c.email)}`,
   },
   {
     day: 6,
@@ -109,10 +109,11 @@ export const LEAD_SEQUENCE = [
     html: (c) => wrap(`
       <p>Hi ${esc(c.first)},</p>
       <p>Quick and honest: SlickChart is <strong>$10/month</strong> with every feature unlocked — no higher tier, no setup fee, nothing held back.</p>
+      <p>Or pay <strong>$100 for the year</strong> and get 2 months free.</p>
       <p>Cancel anytime, no contracts, and I never take a cut of your sales. Your clients use the app free.</p>
       ${btn(SITE, 'Start now')}
       <p>So glad you’re here — whatever you decide.</p>`, c.email),
-    text: (c) => `Hi ${c.first},\n\nSlickChart is $10/month with every feature unlocked — no higher tier, no setup fee, nothing held back.\n\nCancel anytime, no contracts, no cut of your sales. Clients use the app free.\n\nStart now: ${SITE}\n\nWith love,\nAshley${footerText(c.email)}`,
+    text: (c) => `Hi ${c.first},\n\nSlickChart is $10/month with every feature unlocked — no higher tier, no setup fee, nothing held back.\n\nOr pay $100 for the year and get 2 months free.\n\nCancel anytime, no contracts, no cut of your sales. Clients use the app free.\n\nStart now: ${SITE}\n\nWith love,\nAshley${footerText(c.email)}`,
   },
 ];
 
