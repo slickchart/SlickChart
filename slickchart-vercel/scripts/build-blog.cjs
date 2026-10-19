@@ -65,7 +65,8 @@ const STATIC_PAGES = [
   { loc: '/free', priority: '0.9', changefreq: 'monthly' },
   // Hand-written forms hubs (Ashley's collections, linking her Etsy shop and SlickChart signup).
   { loc: '/esthetician-forms', priority: '0.8', changefreq: 'monthly' },
-  { loc: '/lash-brow-forms', priority: '0.8', changefreq: 'monthly' }
+  { loc: '/lash-brow-forms', priority: '0.8', changefreq: 'monthly' },
+  { loc: '/hair-salon-forms', priority: '0.8', changefreq: 'monthly' }
 ];
 
 // ── frontmatter ────────────────────────────────────────────────────────────
