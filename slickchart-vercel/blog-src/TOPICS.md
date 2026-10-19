@@ -33,7 +33,7 @@ rates that weren't obvious up front; and fear of migration.
 
 ### High-intent — people comparing or shopping right now
 
-- [ ] What to look for in waxing studio software when you're a one-person shop
+- [x] What to look for in waxing studio software when you're a one-person shop — drafted 2026-10-19 (`waxing-software-one-person-studio.md`)
 - [ ] PMU software: booking, consent forms, and healed-result photos without three subscriptions
 - [ ] Makeup artist client records: what to track for bridal trials, parties and repeat clients
 - [ ] Switching beauty software without losing your client history: a migration checklist
