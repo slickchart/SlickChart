@@ -4,7 +4,7 @@ h1: Your booking app was built for every salon. Yours can be built for you.
 description: Fill windows, patch tests, processing time, formula cards. Why beauty pros work around their booking app, and what changes when the app is yours.
 date: 2026-10-19
 keywords: build your own booking app, beauty business app, esthetician app, lash artist booking app, salon software alternative, build an app with ai
-draft: true
+draft: false
 ---
 
 I am an esthetician. For years I paid every month for software that did most things fine and almost nothing exactly the way my room works. If you do lashes, nails, hair, brows, massage or tattoo, I would bet you know the feeling.
