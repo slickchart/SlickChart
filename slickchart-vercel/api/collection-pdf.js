@@ -58,7 +58,7 @@ const MT_FILES = [
   { style: 'blush', label: 'Blush', url: MT_DIR + 'blush.pdf' },
   { style: 'luxe', label: 'Luxe', url: MT_DIR + 'luxe.pdf' }
 ];
-const MT_DOC_IDS = new Set([]);
+const MT_DOC_IDS = new Set(["mt-intake", "mt-treatment-plan", "mt-consent", "mt-draping", "mt-clearance", "mt-policy", "mt-swedish-consent", "mt-deep-consent", "mt-prenatal-consent", "mt-hot-stone-consent", "mt-cupping-consent", "mt-lymphatic-consent", "mt-swedish-protocol", "mt-deep-protocol", "mt-prenatal-protocol", "mt-hot-stone-protocol", "mt-cupping-protocol", "mt-lymphatic-protocol", "mt-swedish-aftercare", "mt-deep-aftercare", "mt-prenatal-aftercare", "mt-hot-stone-aftercare", "mt-cupping-aftercare", "mt-lymphatic-aftercare", "mt-before-visit", "mt-self-care", "mt-aftercare-cards", "mt-soap-notes", "mt-pressure-guide", "mt-contra-chart", "mt-incident", "mt-sanitation", "mt-cover"]);
 // The Head Spa Collection (2026-10-19), split by scratchpad/hd-split-docs.py; ids carry an hd- prefix.
 const HD_DIR = '/assets/hd-d5b1a5175d2a99be58ea00a7/';
 const HD_FILES = [
@@ -66,7 +66,7 @@ const HD_FILES = [
   { style: 'blush', label: 'Blush', url: HD_DIR + 'blush.pdf' },
   { style: 'luxe', label: 'Luxe', url: HD_DIR + 'luxe.pdf' }
 ];
-const HD_DOC_IDS = new Set([]);
+const HD_DOC_IDS = new Set(["hd-intake", "hd-analysis", "hd-service-consent", "hd-sensitivity", "hd-photo-release", "hd-policy", "hd-ritual-consent", "hd-exfoliation-consent", "hd-steam-consent", "hd-hot-oil-consent", "hd-hf-consent", "hd-led-consent", "hd-ritual-protocol", "hd-exfoliation-protocol", "hd-steam-protocol", "hd-hot-oil-protocol", "hd-hf-protocol", "hd-led-protocol", "hd-ritual-aftercare", "hd-exfoliation-aftercare", "hd-steam-aftercare", "hd-hot-oil-aftercare", "hd-hf-aftercare", "hd-led-aftercare", "hd-before-visit", "hd-scalp-care", "hd-aftercare-cards", "hd-progress-record", "hd-conditions", "hd-contra-chart", "hd-incident", "hd-sanitation", "hd-cover"]);
 const STYLES = new Set(['neutral', 'blush', 'luxe']);
 
 export default async function handler(req, res) {

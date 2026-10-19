@@ -68,7 +68,9 @@ const STATIC_PAGES = [
   { loc: '/lash-brow-forms', priority: '0.8', changefreq: 'monthly' },
   { loc: '/hair-salon-forms', priority: '0.8', changefreq: 'monthly' },
   { loc: '/pmu-forms', priority: '0.8', changefreq: 'monthly' },
-  { loc: '/nail-tech-forms', priority: '0.8', changefreq: 'monthly' }
+  { loc: '/nail-tech-forms', priority: '0.8', changefreq: 'monthly' },
+  { loc: '/massage-therapist-forms', priority: '0.8', changefreq: 'monthly' },
+  { loc: '/head-spa-forms', priority: '0.8', changefreq: 'monthly' }
 ];
 
 // ── frontmatter ────────────────────────────────────────────────────────────

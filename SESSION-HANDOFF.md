@@ -7942,3 +7942,18 @@ dip's "poured / single-use" tech tick, tech signatures, protocols, service recor
 "Consultation" now also for a design plan, "Client record" for the allergy & reaction record (both apps).
 Tests: `test-nail-artist-collection` 18/18, `test-na-client-form` 12/12, sweep-all-forms (142 forms, 0
 problems) and the rest of the form suites, Chrome and Safari.
+
+### 2026-10-19 — build `2026-10-19k` (PREVIEW ONLY): Massage Therapist + Head Spa Collections
+Same rules as every collection (CLAUDE.md §1e). Massage: 12 forms `mt-*` (229 questions), 8 guides
+`g-mt-*`, `mtcoll` shown to `massage`, 33 docs in `assets/mt-22356de748488743d57612cf`. Head Spa: 12
+forms `hd-*` (190 questions), 8 guides `g-hd-*`, `hdcoll` shown to `headspa`, 33 docs in
+`assets/hd-d5b1a5175d2a99be58ea00a7`. Both via `/api/collection-pdf` (`?collection=mt|hd`), noindexed.
+New form headers: "treatment plan" reads "Consultation", "clearance" reads "Medical clearance" (both apps).
+Tests: test-massage-collection / test-head-spa-collection 18/18, test-mt/hd-client-form 12/12,
+sweep-all-forms 166 forms 0 problems, mirror/contra/branding green, Chrome AND Safari.
+Waiting on Ashley: Head Spa policy says gift cards "valid for 12 months" (US federal law generally
+bars gift card expiry under 5 years); the Head Spa LED consent/aftercare carries a "2022 review ...
+raised hair density" claim to clients; both kept as she wrote them until she decides.
+SEO: 7 massage + 7 head spa posts in blog-src, hubs /massage-therapist-forms and /head-spa-forms
+(head spa hub has no video yet; re-run scratchpad gen-hub-headspa.py once
+`assets/head-spa-forms-flip.mp4` exists). All on preview until she says publish.
