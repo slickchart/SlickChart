@@ -70,7 +70,8 @@ const STATIC_PAGES = [
   { loc: '/pmu-forms', priority: '0.8', changefreq: 'monthly' },
   { loc: '/nail-tech-forms', priority: '0.8', changefreq: 'monthly' },
   { loc: '/massage-therapist-forms', priority: '0.8', changefreq: 'monthly' },
-  { loc: '/head-spa-forms', priority: '0.8', changefreq: 'monthly' }
+  { loc: '/head-spa-forms', priority: '0.8', changefreq: 'monthly' },
+  { loc: '/tattoo-artist-forms', priority: '0.8', changefreq: 'monthly' }
 ];
 
 // ── frontmatter ────────────────────────────────────────────────────────────

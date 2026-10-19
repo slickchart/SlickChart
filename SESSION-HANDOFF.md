@@ -7957,3 +7957,13 @@ raised hair density" claim to clients; both kept as she wrote them until she dec
 SEO: 7 massage + 7 head spa posts in blog-src, hubs /massage-therapist-forms and /head-spa-forms
 (head spa hub has no video yet; re-run scratchpad gen-hub-headspa.py once
 `assets/head-spa-forms-flip.mp4` exists). All on preview until she says publish.
+
+### 2026-10-19 — builds `2026-10-19l` / `2026-10-19m` (PREVIEW ONLY)
+- `l`: the photo consult fee setting is gone (Ashley: providers handle payment themselves, no suggested
+  prices). Nothing ever charged it. `{fee}` still fills in an old message that used it.
+- `m`: the Tattoo Artist Collection, same rules: 12 forms `tt-*` (215 questions), 8 guides `g-tt-*`,
+  `ttcoll` shown to `tattoo`, 33 docs in `assets/tt-fb05b651380857fa70db4e8c`, `?collection=tt`.
+  Headers: "sensitivity record" reads "Client record", "design consultation" reads "Consultation".
+  test-tattoo-collection 18/18, test-tt-client-form 12/12, sweep-all-forms 178 forms 0 problems, Chrome + Safari.
+- SEO: 7 tattoo posts + /tattoo-artist-forms (with video); head spa hub now has its video. All 8 hubs
+  cross-link. Everything waits on her "publish them" (content) and "ship it" (app).

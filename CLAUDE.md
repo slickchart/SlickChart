@@ -312,8 +312,8 @@ check-in Preview), which moved onto the paper form in `2026-10-17m` (`test-check
 **A new collection upload (Ashley's PDFs) follows the Esthetician Collection's rules, all of them**
 (*"be sure to follow all the other rules we discussed from the first esty collection upload"*).
 The Esthetician (`ec-*`), Lash & Brow (`lb-*`), Hair Stylist (`hs-*`), PMU (`pm-*`), Nail Artist
-(`na-*`), Massage Therapist (`mt-*`) and Head Spa (`hd-*`) Collections are the worked examples (generators: `scratchpad/lb/gen-lb.cjs`,
-`scratchpad/hs/gen-hs.cjs`, `scratchpad/pm/gen-pm.cjs`, `scratchpad/na/gen-na.cjs`, `scratchpad/mt/gen-mt.cjs`, `scratchpad/hd/gen-hd.cjs`; `scratchpad/wire-collection.cjs` puts a generated one into the app):
+(`na-*`), Massage Therapist (`mt-*`), Head Spa (`hd-*`) and Tattoo Artist (`tt-*`) Collections are the worked examples (generators: `scratchpad/lb/gen-lb.cjs`,
+`scratchpad/hs/gen-hs.cjs`, `scratchpad/pm/gen-pm.cjs`, `scratchpad/na/gen-na.cjs`, `scratchpad/mt/gen-mt.cjs`, `scratchpad/hd/gen-hd.cjs`, `scratchpad/tt/gen-tt.cjs`; `scratchpad/wire-collection.cjs` puts a generated one into the app):
 
 1. **Transcribe, do not invent.** Every question, consent line and guide tip comes from her PDF.
    No `[bracket]` placeholder survives (the generator exits on one; the test checks again). Her
@@ -331,14 +331,14 @@ The Esthetician (`ec-*`), Lash & Brow (`lb-*`), Hair Stylist (`hs-*`), PMU (`pm-
    multiple choice and contraindications are tick boxes (`input.ci-tick`), and a ticked
    contraindication is flagged on both sides. "Check", not "tick", in client wording.
 6. **The Library**: split each style's PDF per document (`scratchpad/ec-split-docs.py`,
-   `lb-split-docs.py`, `hs-split-docs.py`, `pm-split-docs.py`, `na-split-docs.py`, `mt-split-docs.py`, `hd-split-docs.py`, page map asserting every page used once) into a NEW unguessable
+   `lb-split-docs.py`, `hs-split-docs.py`, `pm-split-docs.py`, `na-split-docs.py`, `mt-split-docs.py`, `hd-split-docs.py`, `tt-split-docs.py`, page map asserting every page used once) into a NEW unguessable
    `assets/<x>-<random hex>/` folder with the `vercel.json` noindex header; the addresses come only
    from `/api/collection-pdf` (allow-listed ids, session + subscription gate). The Library shows
    only the collections that match her professions, one "Get all N pages" per collection.
 7. **Test it the same way**: a provider test (`test-esthetician-collection`,
-   `test-lash-brow-collection`, `test-hair-stylist-collection`, `test-pmu-collection`, `test-nail-artist-collection`, `test-massage-collection`, `test-head-spa-collection`), every form filled
+   `test-lash-brow-collection`, `test-hair-stylist-collection`, `test-pmu-collection`, `test-nail-artist-collection`, `test-massage-collection`, `test-head-spa-collection`, `test-tattoo-collection`), every form filled
    and signed in the real client page (`test-ec-client-form`, `test-lb-client-form`, `test-hs-client-form`,
-   `test-pm-client-form`, `test-na-client-form`, `test-mt-client-form`, `test-hd-client-form`), and `sweep-all-forms`, `sweep-form-mirror`,
+   `test-pm-client-form`, `test-na-client-form`, `test-mt-client-form`, `test-hd-client-form`, `test-tt-client-form`), and `sweep-all-forms`, `sweep-form-mirror`,
    `test-contra-ticks`, `test-client-form-branding` in BOTH Chrome and Safari (`run-in-safari.sh`).
 8. **Release train as always**: the one preview branch, out at 2am unless she says "push it live
    early" for that change.

@@ -74,7 +74,7 @@ const TT_FILES = [
   { style: 'blush', label: 'Blush', url: TT_DIR + 'blush.pdf' },
   { style: 'luxe', label: 'Luxe', url: TT_DIR + 'luxe.pdf' }
 ];
-const TT_DOC_IDS = new Set([]);
+const TT_DOC_IDS = new Set(["tt-intake", "tt-consult", "tt-consent-release", "tt-sensitivity", "tt-photo-release", "tt-policy", "tt-standard-consent", "tt-coverup-consent", "tt-fineline-consent", "tt-large-consent", "tt-touchup-consent", "tt-second-skin-consent", "tt-standard-protocol", "tt-coverup-protocol", "tt-fineline-protocol", "tt-large-protocol", "tt-touchup-protocol", "tt-second-skin-protocol", "tt-standard-aftercare", "tt-coverup-aftercare", "tt-fineline-aftercare", "tt-large-aftercare", "tt-touchup-aftercare", "tt-second-skin-aftercare", "tt-before-visit", "tt-healing-guide", "tt-aftercare-cards", "tt-session-record", "tt-cheat-sheet", "tt-contra-chart", "tt-incident", "tt-sanitation", "tt-cover"]);
 const STYLES = new Set(['neutral', 'blush', 'luxe']);
 
 export default async function handler(req, res) {
