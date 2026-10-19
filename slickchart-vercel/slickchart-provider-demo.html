@@ -553,7 +553,7 @@ const S=document.getElementById('S');
 // resets when I save it" and there was no way to tell whether her phone had any of them — a whole
 // day was spent debugging code she may not have been running. Shown at the bottom of Settings, so
 // the answer is a screenshot away. Bump it on every ship.
-const APP_BUILD='2026-10-18d';
+const APP_BUILD='2026-10-19a';
 
 
 /* ════════════════════════════════════════════════════════════════
@@ -1976,6 +1976,13 @@ const movementAffiliateLinks=[
 // overlay): a photo that will not store IS lost, right then, and she has to know.
 function _persistFailWarn(e){
   try{console.warn('[SlickChart] localStorage refused a record write (account copy still pushed)',e);}catch(_){}
+  // Online, the account copy is the save. OFFLINE, the change now lives only in memory: closing the app
+  // before the signal returns loses it, and until now nothing on screen said so (iPhone sweep, B3).
+  try{
+    if(navigator.onLine!==false)return;
+    const now=Date.now();if(_persistFailWarn._at&&now-_persistFailWarn._at<120000)return;_persistFailWarn._at=now;
+    if(typeof proToast==='function')proToast('This phone is out of space, so this change is not saved on it yet. Keep SlickChart open until you are back online and it will save to your account.',0);
+  }catch(_){}
 }
 // Plain-language name for whatever is filling localStorage, so the warning points somewhere instead
 // of just saying "full".
@@ -8705,6 +8712,10 @@ function _provScrollTop(){try{S.scrollTop=0;}catch(e){}try{window.scrollTo(0,0);
 let _ncLastStep=-1;
 const _NAV_CLIENT_SCREENS={client:1,notes:1,photos:1,'write-note':1,'virtual-client':1,brief:1,room:1,rebook:1,'summary-history':1,'session-summary':1,'client-forms':1,checkout:1};
 function nav(screen,data){
+  // Safari does not fire blur/change on a focused field that is simply removed from the page, so a
+  // note typed less than a debounce ago was lost when the screen changed without a tap (a timer, a
+  // notification). Blurring it first runs its own save, the same as tapping away does.
+  try{const _ae=document.activeElement;if(_ae&&_ae!==document.body&&/^(INPUT|TEXTAREA|SELECT)$/.test(_ae.tagName)&&_ae.blur)_ae.blur();}catch(e){}
   if(typeof _esOrigRecs!=='undefined'&&_esOrigRecs!==null){try{_esAbandon();}catch(e){}}
   // A client screen opened for a client who is no longer on the list (merged or removed while you were
   // in their file, then Back) crashed to a blank page. Land on the client list instead.
@@ -10473,11 +10484,11 @@ function renderClient(id){
   ${(typeof _clientStickyHTML==='function')?_clientStickyHTML(id):''}
   <div class="ctab" data-tab="visit"${_clientTab==='visit'?'':' hidden'}>
   <div class="sh" style="padding-top:6px;"><h2>Today’s visit</h2></div>
-  <div style="display:grid;grid-template-columns:1fr 1fr;gap:8px;padding:0 16px 8px;">
+  <div style="display:grid;grid-template-columns:repeat(2,minmax(0,1fr));gap:8px;padding:0 16px 8px;">
     <button class="btnp" style="border-radius:12px;padding:9px;" onclick="nav('brief','${id}')"><i class="ti ${aiEnabled?'ti-brain':'ti-file-text'}"></i> ${aiEnabled?'AI Brief':'Visit Brief'}</button>
     <button class="btnp" style="border-radius:12px;padding:9px;background:var(--p-surf2);color:var(--p-green);" onclick="nav('room','${id}')"><i class="ti ti-armchair"></i> Start Session</button>
   </div>
-  <div style="display:grid;grid-template-columns:1fr 1fr 1fr;gap:8px;padding:0 16px 12px;">
+  <div style="display:grid;grid-template-columns:repeat(3,minmax(0,1fr));gap:8px;padding:0 16px 12px;">
     <button class="btng" onclick="_notesFrom='profile';nav('notes','${id}')"><i class="ti ti-notes" style="color:var(--accent-strong);"></i> Notes</button>
     <button class="btng" onclick="nav('photos','${id}')"><i class="ti ti-camera" style="color:var(--accent-strong);"></i> Photos</button>
     <button class="btng" onclick="nav('rebook','${id}')"><i class="ti ti-calendar-plus" style="color:var(--p-purple);"></i> Rebook</button>
@@ -11112,7 +11123,12 @@ function _upcomingVisit(id){
   try{const n=(typeof _nextApptForClient==='function')?_nextApptForClient(id):null;if(n&&n.dateLabel)return n.dateLabel;}catch(e){}
   const s=String(c.nextVisit||'').trim();
   if(!s)return '';
-  const d=new Date(s);
+  // Labels look like "Jun 26 · 10:00 AM" or "Saturday, October 24 · 10:00 AM": no engine parses
+  // those whole, so a past visit was never filtered out. Read the day part, with this year added.
+  const dp=s.split('\u00b7')[0].trim(),yr=new Date().getFullYear();
+  let d=new Date(dp+' '+yr);
+  if(isNaN(d.getTime()))d=new Date(dp);
+  else if((d-Date.now())/86400000<-300)d=new Date(dp+' '+(yr+1));   // "Jan 3" seen in late December
   if(!isNaN(d.getTime())){const t=new Date();t.setHours(0,0,0,0);if(d.getTime()<t.getTime())return '';}
   return s;
 }
@@ -13391,7 +13407,7 @@ function _renderPhotosView(id,c,_passed){
   <!-- Healing stage tracker -->
   <div style="margin:0 16px 12px;background:var(--p-purple-bg);border:1px solid #3d1a66;border-radius:12px;padding:12px 14px;">
     <div style="font-size:14px;font-weight:600;color:var(--p-purple);text-transform:uppercase;letter-spacing:.07em;margin-bottom:10px;">Healing stage</div>
-    <div style="display:grid;grid-template-columns:1fr 1fr;gap:6px;">
+    <div style="display:grid;grid-template-columns:repeat(2,minmax(0,1fr));gap:6px;">
       ${healingStages.map((s,i)=>`<button onclick="clientHealingStage['${id}']=${i};try{persistClientHealingStage();}catch(e){};_renderPhotosView('${id}',CL['${id}'],photoSessions['${id}']||[])" style="border:1px solid ${clientHealingStage[id]===i?'var(--p-purple)':'#2a1a44'};background:${clientHealingStage[id]===i?'#2a0d4a':'var(--p-surf)'};border-radius:8px;padding:8px 10px;cursor:pointer;text-align:left;">
         <div style="display:flex;align-items:center;gap:6px;">
           <div style="width:8px;height:8px;border-radius:50%;background:${['var(--p-red)','var(--accent)','var(--p-green)','var(--p-purple)'][i]};flex-shrink:0;"></div>
@@ -13408,7 +13424,7 @@ function _renderPhotosView(id,c,_passed){
   <!-- Hair / brow inspiration board -->
   <div style="padding:0 16px 8px;">
     <div style="font-size:16px;color:var(--p-mut);margin-bottom:10px;line-height:1.5;">Photos saved from consultations, client uploads, or reference images for this client's look goals.</div>
-    <div style="display:grid;grid-template-columns:1fr 1fr;gap:8px;margin-bottom:12px;">
+    <div style="display:grid;grid-template-columns:repeat(2,minmax(0,1fr));gap:8px;margin-bottom:12px;">
       ${inspirationPhotos.map(p=>`
       <div style="background:var(--surf2);border:1px solid var(--p-line);border-radius:12px;overflow:hidden;">
         <div style="background:var(--p-amber-bg);aspect-ratio:1/1;display:flex;flex-direction:column;align-items:center;justify-content:center;gap:6px;">
@@ -13436,16 +13452,16 @@ function _renderPhotosView(id,c,_passed){
     <div style="background:var(--surf1);border:1px solid var(--p-line);border-radius:12px;padding:10px 12px;">
       <div style="font-size:14px;color:var(--p-mut);text-transform:uppercase;letter-spacing:.07em;margin-bottom:8px;font-weight:500;">Compare sessions</div>
       <div style="display:flex;align-items:center;gap:8px;">
-        <div style="flex:1;">
+        <div style="flex:1;min-width:0;overflow:hidden;">
           <div style="font-size:12px;color:var(--p-mut);margin-bottom:4px;">Before</div>
-          <select aria-label="Choose before photo" onchange="compareLeft=parseInt(this.value);_renderPhotosView('${id}',CL['${id}'],photoSessions['${id}']||[])" style="width:100%;background:var(--surf2);border:1px solid var(--p-line-ctl);border-radius:8px;padding:7px 9px;font-size:16px;color:var(--p-ink);cursor:pointer;">
+          <select aria-label="Choose before photo" onchange="compareLeft=parseInt(this.value);_renderPhotosView('${id}',CL['${id}'],photoSessions['${id}']||[])" style="width:100%;min-width:0;max-width:100%;text-overflow:ellipsis;background:var(--surf2);border:1px solid var(--p-line-ctl);border-radius:8px;padding:7px 9px;font-size:16px;color:var(--p-ink);cursor:pointer;">
             ${sessions.map((s,i)=>`<option value="${i}" ${i===compareLeft?'selected':''}>${_fileEsc(s.date)}${s.virtual?' · Photo consult':''}</option>`).join('')}
           </select>
         </div>
         <div style="color:var(--p-mut2);font-size:16px;flex-shrink:0;padding-top:16px;">→</div>
-        <div style="flex:1;">
+        <div style="flex:1;min-width:0;overflow:hidden;">
           <div style="font-size:12px;color:var(--p-mut);margin-bottom:4px;">After</div>
-          <select aria-label="Choose after photo" onchange="compareRight=parseInt(this.value);_renderPhotosView('${id}',CL['${id}'],photoSessions['${id}']||[])" style="width:100%;background:var(--surf2);border:1px solid var(--p-line-ctl);border-radius:8px;padding:7px 9px;font-size:16px;color:var(--p-ink);cursor:pointer;">
+          <select aria-label="Choose after photo" onchange="compareRight=parseInt(this.value);_renderPhotosView('${id}',CL['${id}'],photoSessions['${id}']||[])" style="width:100%;min-width:0;max-width:100%;text-overflow:ellipsis;background:var(--surf2);border:1px solid var(--p-line-ctl);border-radius:8px;padding:7px 9px;font-size:16px;color:var(--p-ink);cursor:pointer;">
             ${sessions.map((s,i)=>`<option value="${i}" ${i===compareRight?'selected':''}>${_fileEsc(s.date)}${s.virtual?' · Photo consult':''}</option>`).join('')}
           </select>
         </div>
@@ -13455,7 +13471,7 @@ function _renderPhotosView(id,c,_passed){
 
   <!-- Side-by-side comparison -->
   <div style="padding:0 16px;margin-bottom:14px;">
-    <div style="display:grid;grid-template-columns:1fr 1fr;gap:8px;">
+    <div style="display:grid;grid-template-columns:repeat(2,minmax(0,1fr));gap:8px;">
       <div style="border-radius:12px;overflow:hidden;position:relative;">
         <div style="background:${_fileEsc(left.col)};aspect-ratio:3/4;display:flex;align-items:center;justify-content:center;position:relative;">
           <i class="ti ti-user-circle" aria-hidden="true" style="font-size:52px;color:${left.ic};opacity:.35;"></i>
@@ -13512,10 +13528,10 @@ function _renderPhotosView(id,c,_passed){
         <div style="flex:1;min-width:0;"><div style="font-size:16px;font-weight:500;color:var(--p-ink);">${v.short} · ${hasReal?'submitted '+(sub.date||'today'):'sample'}</div><div style="font-size:14px;color:var(--p-mut);">Client-uploaded ${v.kind==='skin'?'photos':'current'+(rItems?' + reference':'')+' photos'}</div></div>
         <button onclick="_vcBack='client';nav('virtual-client','${id}')" style="border:none;background:none;color:var(--accent-strong);font-size:16px;cursor:pointer;display:flex;align-items:center;gap:3px;">Review <i class="ti ti-chevron-right" style="font-size:16px;"></i></button>
       </div>
-      <div style="padding:10px 14px;display:grid;grid-template-columns:1fr 1fr 1fr;gap:6px;">
+      <div style="padding:10px 14px;display:grid;grid-template-columns:repeat(3,minmax(0,1fr));gap:6px;">
         ${pItems.map((o,i)=>`<div style="border-radius:8px;background:${o.src?'#000':['var(--p-amber-bg)','var(--p-surf2)','var(--p-blue-bg)'][i%3]};aspect-ratio:3/4;display:flex;align-items:center;justify-content:center;position:relative;overflow:hidden;">${o.src?`<img src="${_imgSrc(o.src)}" alt="${_fileEsc(o.label)}" loading="lazy" decoding="async" style="width:100%;height:100%;object-fit:cover;">`:`<i class="ti ti-user-circle" style="font-size:26px;color:${['var(--accent)','var(--p-green)','var(--p-blue)'][i%3]};opacity:.4;"></i>`}<span style="position:absolute;top:4px;right:4px;font-size:12px;background:rgba(0,0,0,.62);color:#fff;font-weight:600;padding:1px 4px;border-radius:2px;">${stamp}</span><span style="position:absolute;bottom:4px;left:4px;font-size:12px;background:rgba(0,0,0,.6);color:var(--p-mut);padding:1px 5px;border-radius:2px;">${_fileEsc(o.label)}</span></div>`).join('')}
       </div>
-      ${rItems?`<div style="padding:0 14px 10px;display:grid;grid-template-columns:1fr 1fr 1fr;gap:6px;">${rItems.map(o=>`<div style="border-radius:8px;background:${o.src?'#000':'var(--p-purple-bg)'};border:1px solid var(--p-purple-line);aspect-ratio:3/4;display:flex;align-items:center;justify-content:center;position:relative;overflow:hidden;">${o.src?`<img src="${_imgSrc(o.src)}" alt="${_fileEsc(o.label)}" loading="lazy" decoding="async" style="width:100%;height:100%;object-fit:cover;">`:`<i class="ti ti-sparkles" style="font-size:18px;color:var(--p-purple);opacity:.5;"></i>`}<span style="position:absolute;bottom:4px;left:4px;font-size:12px;background:rgba(0,0,0,.6);color:var(--p-mut);padding:1px 5px;border-radius:2px;">${_fileEsc(o.label)}</span></div>`).join('')}</div>`:''}
+      ${rItems?`<div style="padding:0 14px 10px;display:grid;grid-template-columns:repeat(3,minmax(0,1fr));gap:6px;">${rItems.map(o=>`<div style="border-radius:8px;background:${o.src?'#000':'var(--p-purple-bg)'};border:1px solid var(--p-purple-line);aspect-ratio:3/4;display:flex;align-items:center;justify-content:center;position:relative;overflow:hidden;">${o.src?`<img src="${_imgSrc(o.src)}" alt="${_fileEsc(o.label)}" loading="lazy" decoding="async" style="width:100%;height:100%;object-fit:cover;">`:`<i class="ti ti-sparkles" style="font-size:18px;color:var(--p-purple);opacity:.5;"></i>`}<span style="position:absolute;bottom:4px;left:4px;font-size:12px;background:rgba(0,0,0,.6);color:var(--p-mut);padding:1px 5px;border-radius:2px;">${_fileEsc(o.label)}</span></div>`).join('')}</div>`:''}
     </div>
   </div>`})()}
 
@@ -13813,7 +13829,7 @@ function renderSessionSummary(id){
         ${_isDemoClient?`<span style="font-size:12px;background:var(--accent-tint);color:var(--accent-strong);padding:2px 7px;border-radius:4px;font-weight:500;">Provider estimates</span>`:''}
       </div>
       ${_isDemoClient&&id==='maya'
-        ?`<div style="display:grid;grid-template-columns:1fr 1fr;gap:8px;">${[['Hydration','74%','var(--p-blue)','↑ from last visit'],['Barrier','82%','var(--p-green)','↑ improving'],['Radiance','Good','var(--accent)','↑ visibly brighter'],['PIH','Fading','var(--p-purple)','↓ ~40%']].map(([lbl,val,col,change])=>`<div style="background:var(--surf1);border-radius:12px;padding:10px 12px;"><div style="font-size:14px;color:var(--p-mut);margin-bottom:3px;">${lbl}</div><div style="font-size:16px;font-weight:500;color:${col};">${val}</div><div style="font-size:14px;color:var(--p-mut);margin-top:2px;">${change}</div></div>`).join('')}</div><div style="margin-top:8px;font-size:14px;color:var(--p-mut);line-height:1.5;">These are provider observations, not clinical measurements.</div>`
+        ?`<div style="display:grid;grid-template-columns:repeat(2,minmax(0,1fr));gap:8px;">${[['Hydration','74%','var(--p-blue)','↑ from last visit'],['Barrier','82%','var(--p-green)','↑ improving'],['Radiance','Good','var(--accent)','↑ visibly brighter'],['PIH','Fading','var(--p-purple)','↓ ~40%']].map(([lbl,val,col,change])=>`<div style="background:var(--surf1);border-radius:12px;padding:10px 12px;"><div style="font-size:14px;color:var(--p-mut);margin-bottom:3px;">${lbl}</div><div style="font-size:16px;font-weight:500;color:${col};">${val}</div><div style="font-size:14px;color:var(--p-mut);margin-top:2px;">${change}</div></div>`).join('')}</div><div style="margin-top:8px;font-size:14px;color:var(--p-mut);line-height:1.5;">These are provider observations, not clinical measurements.</div>`
         :_isDemoClient
           ?`<div style="background:var(--surf1);border-radius:12px;padding:12px;font-size:16px;color:var(--p-mut);line-height:1.7;">Your skin is progressing well. We'll track observations more closely over your next few sessions.</div>`
           :`<textarea id="summary-obs" oninput="summaryObsDraft['${id}']=this.value;if(typeof persistSummaryDrafts==='function')persistSummaryDrafts();" placeholder="Optional, a short observation ${c.name.split(' ')[0]} will see (e.g. 'Skin looked calmer today, less redness than last time'). Leave blank to hide this section." rows="2" style="width:100%;background:var(--surf1);border:1px solid var(--p-line-ctl);border-radius:12px;padding:11px;font-size:16px;color:var(--p-mut);line-height:1.6;font-family:inherit;box-sizing:border-box;resize:none;outline:none;">${(summaryObsDraft[id]||'').replace(/</g,'&lt;')}</textarea>`}
@@ -15061,7 +15077,7 @@ function renderOnboarding(){
       if(!profs.length)return '';
       return `<div class="prof-cat-group" data-cat="${_fileEsc(cat)}">
         <div style="font-size:14px;font-weight:700;letter-spacing:.08em;text-transform:uppercase;color:var(--p-mut);margin:15px 2px 9px;">${_fileEsc(cat)}</div>
-        <div style="display:grid;grid-template-columns:1fr 1fr;gap:8px;">
+        <div style="display:grid;grid-template-columns:repeat(2,minmax(0,1fr));gap:8px;">
         ${profs.map(p=>{const on=selectedProfessions.includes(p.id);return `<button onclick="toggleProfSelection('${p.id}',this)" id="prof-pick-${p.id}" class="prof-pick" data-search="${_fileEsc((p.name+' '+(p.sub||'')+' '+cat).toLowerCase())}" style="border:1px solid ${on?'var(--accent)':'var(--p-line-ctl)'};border-radius:12px;padding:14px 10px;display:flex;flex-direction:column;align-items:center;gap:6px;cursor:pointer;background:${on?'var(--accent-tint)':'var(--p-surf3)'};text-align:center;position:relative;">
           ${on?`<div style="position:absolute;top:6px;right:6px;width:16px;height:16px;background:var(--accent);border-radius:50%;display:flex;align-items:center;justify-content:center;"><i class="ti ti-check" aria-hidden="true" style="font-size:12px;color:var(--accent-ink);"></i></div>`:''}
           <span aria-hidden="true" style="font-size:26px;">${p.icon}</span>
@@ -18139,15 +18155,15 @@ function renderVirtualClient(id){
   <div style="padding:10px 16px 0;display:flex;align-items:center;gap:10px;">${av(c,40)}<div><div style="font-size:16px;font-weight:500;color:var(--p-ink);">${_clientNameLink(id,c.name,{color:'var(--p-ink)'})}</div><div style="font-size:16px;color:var(--p-mut);">Submitted ${vcStamp} · ${_fileEsc(c.concerns)}</div></div></div>
   <div style="padding:10px 16px 0;">
     ${_pf?'':`<div style="font-size:14px;font-weight:500;color:var(--p-mut);text-transform:uppercase;letter-spacing:.07em;margin-bottom:8px;">${v.kind==='skin'?'Client photos':'Current photos'}${hasReal?'':' <span style="color:var(--p-mut);text-transform:none;letter-spacing:0;font-weight:400;">· sample</span>'}</div>
-    <div style="display:grid;grid-template-columns:1fr 1fr 1fr;gap:6px;margin-bottom:14px;">
+    <div style="display:grid;grid-template-columns:repeat(3,minmax(0,1fr));gap:6px;margin-bottom:14px;">
       ${photoItems.map(o=>realImg(o,'ti-user-circle','var(--p-amber-bg)','var(--accent)')).join('')}
     </div>`}
     ${(sub&&sub.prev&&Array.isArray(sub.prev.photos)&&sub.prev.photos.length)?`<div style="font-size:14px;font-weight:500;color:var(--p-mut);text-transform:uppercase;letter-spacing:.07em;margin-bottom:8px;">Earlier photos${sub.prev.date?' · '+_fileEsc(sub.prev.date):''}</div>
-    <div style="display:grid;grid-template-columns:1fr 1fr 1fr;gap:6px;margin-bottom:14px;opacity:.85;">
+    <div style="display:grid;grid-template-columns:repeat(3,minmax(0,1fr));gap:6px;margin-bottom:14px;opacity:.85;">
       ${sub.prev.photos.map(o=>realImg(o,'ti-user-circle','var(--p-amber-bg)','var(--accent)')).join('')}
     </div>`:''}
     ${refItems?`<div style="font-size:14px;font-weight:500;color:var(--p-mut);text-transform:uppercase;letter-spacing:.07em;margin-bottom:8px;display:flex;align-items:center;gap:5px;"><i class="ti ti-photo-star" style="font-size:16px;color:var(--p-purple);"></i> ${v.refTitle||'Reference photos'}</div>
-    <div style="display:grid;grid-template-columns:1fr 1fr 1fr;gap:6px;margin-bottom:14px;">
+    <div style="display:grid;grid-template-columns:repeat(3,minmax(0,1fr));gap:6px;margin-bottom:14px;">
       ${refItems.map(o=>realImg(o,'ti-sparkles','var(--p-purple-bg)','var(--p-purple)')).join('')}
     </div>`:''}
     ${(sub&&Array.isArray(sub.answers)&&sub.answers.length)?`<div style="background:var(--surf2);border:1px solid var(--p-line);border-radius:12px;padding:12px 14px;margin-bottom:12px;"><div style="font-size:14px;font-weight:600;color:var(--p-mut);text-transform:uppercase;letter-spacing:.06em;margin-bottom:8px;">What ${_fileEsc(c.name.split(' ')[0])} answered</div>${sub.answers.map(qa=>`<div style="margin-bottom:10px;"><div style="font-size:14px;color:var(--p-mut);line-height:1.45;margin-bottom:2px;">${_fileEsc(qa.q)}</div><div style="font-size:16px;color:var(--p-ink);line-height:1.6;">${_fileEsc(qa.a)}</div></div>`).join('')}</div>`:''}
@@ -18257,7 +18273,7 @@ function renderPartnerDetail(i){
       <div class="fr" style="padding:8px 14px;"><span class="fl">Phone</span><span class="fv">${_fileEsc(p.phone)}</span></div>
       <div class="fr" style="padding:8px 14px;border:none;"><span class="fl">Website</span><span style="font-size:16px;color:var(--accent-strong);">${_fileEsc(p.website)}</span></div>
     </div>
-    <div style="display:grid;grid-template-columns:1fr 1fr;gap:8px;margin-bottom:16px;">
+    <div style="display:grid;grid-template-columns:repeat(2,minmax(0,1fr));gap:8px;margin-bottom:16px;">
       <button class="btng" onclick="_openExternal('tel:'+String('${_jsAttr(p.phone||'')}').replace(/[^0-9+]/g,''))"><i class="ti ti-phone" style="color:var(--accent-strong);"></i> Call</button>
       <button class="btng" onclick="_openExternal('mailto:${_jsAttr(p.email||'')}')"><i class="ti ti-mail" style="color:var(--accent-strong);"></i> Email</button>
       <button class="btng" onclick="_openExternal('${_jsAttr(p.website||'')}')"><i class="ti ti-world" style="color:var(--accent-strong);"></i> Website</button>
@@ -22158,7 +22174,7 @@ function inviteClientToApp(id){
     <textarea id="invite-msg-text" rows="6" style="width:100%;box-sizing:border-box;background:var(--p-surf);border:1px solid var(--p-line-ctl);border-radius:12px;padding:11px 12px;margin-bottom:6px;font-size:16px;color:var(--p-ink);line-height:1.55;font-family:inherit;resize:vertical;outline:none;">${msg.replace(/</g,'&lt;')}</textarea>
     <div style="font-size:14px;color:var(--p-mut);margin-bottom:12px;line-height:1.45;">Edit anything you like — just keep the link so ${_fileEsc(first)} can open their app.</div>
     <div style="display:flex;gap:7px;align-items:flex-start;background:var(--p-blue-bg);border:1px solid var(--p-blue-line);border-radius:8px;padding:8px 11px;margin-bottom:12px;"><i class="ti ti-info-circle" style="font-size:16px;color:var(--p-blue);flex-shrink:0;margin-top:1px;"></i><span style="font-size:14px;color:#8fbce8;line-height:1.5;">On an iPhone, the link may not be tappable until they save your number to their Contacts — that’s Apple blocking links from unknown senders, not a broken link.</span></div>
-    <div style="display:grid;grid-template-columns:1fr 1fr;gap:8px;margin-bottom:8px;">
+    <div style="display:grid;grid-template-columns:repeat(2,minmax(0,1fr));gap:8px;margin-bottom:8px;">
       <button onclick="_copyInviteMsgAndConfirm('${id}',this)" class="btnp" style="border-radius:8px;padding:11px;"><i class="ti ti-copy"></i> Copy message</button>
       <button onclick="_inviteSendText('${id}')" class="btng" style="border-radius:8px;padding:11px;"><i class="ti ti-message"></i> Text it</button>
     </div>
@@ -22218,7 +22234,7 @@ function openSendSheet(opts){
     ${appOption?`<button onclick="_confirmSentToApp('${id}');closeSendSheet();" style="width:100%;border-radius:8px;padding:12px;margin-bottom:8px;display:flex;align-items:center;justify-content:center;gap:7px;background:var(--p-surf2);border:1px solid var(--p-green-line);color:var(--p-green);font-size:16px;font-weight:600;cursor:pointer;font-family:inherit;"><i class="ti ti-device-mobile-check"></i> Send to their app now</button>
     <div style="font-size:14px;color:var(--p-mut);text-align:center;margin-bottom:10px;line-height:1.4;">It syncs straight to their app, no link needed. Or share below.</div>`:''}
     ${iphoneNote?`<div style="display:flex;gap:7px;align-items:flex-start;background:var(--p-blue-bg);border:1px solid var(--p-blue-line);border-radius:8px;padding:8px 11px;margin-bottom:12px;"><i class="ti ti-info-circle" style="font-size:16px;color:var(--p-blue);flex-shrink:0;margin-top:1px;"></i><span style="font-size:14px;color:#8fbce8;line-height:1.5;">On an iPhone, the link may not be tappable until they save your number to their Contacts — that’s Apple blocking links from unknown senders, not a broken link.</span></div>`:''}
-    <div style="display:grid;grid-template-columns:1fr 1fr;gap:8px;margin-bottom:8px;">
+    <div style="display:grid;grid-template-columns:repeat(2,minmax(0,1fr));gap:8px;margin-bottom:8px;">
       <button onclick="_uSendCopy(this)" class="btnp" style="border-radius:8px;padding:11px;"><i class="ti ti-copy"></i> Copy message</button>
       <button onclick="_uSendText()" class="btng" style="border-radius:8px;padding:11px;"><i class="ti ti-message"></i> Text it</button>
     </div>
@@ -23072,7 +23088,7 @@ function renderVendorDetail(i){
   S.innerHTML=`
   <div style="padding:12px 16px 0;display:flex;align-items:center;justify-content:flex-end;gap:8px;"><button onclick="nav('edit-vendor',${i})" style="background:var(--accent-tint);border:1px solid var(--accent-a30,var(--p-line-ctl));color:var(--accent-strong);border-radius:8px;padding:6px 12px;font-size:16px;font-weight:600;cursor:pointer;font-family:inherit;display:inline-flex;align-items:center;gap:5px;"><i class="ti ti-pencil" style="font-size:16px;"></i> Edit</button><button onclick="deleteVendor(${i})" style="background:none;border:1px solid var(--p-red-line);color:var(--p-red);border-radius:8px;padding:6px 12px;font-size:16px;font-weight:600;cursor:pointer;font-family:inherit;display:inline-flex;align-items:center;gap:5px;"><i class="ti ti-trash" style="font-size:16px;"></i> Delete</button></div>
   <div style="padding:14px 16px;display:flex;flex-direction:column;align-items:center;gap:8px;"><div style="width:64px;height:64px;border-radius:16px;background:${v.bg};border:1px solid var(--p-line);display:flex;align-items:center;justify-content:center;font-size:22px;font-weight:500;color:${v.tc};">${_fileEsc(v.init)}</div><div style="text-align:center;"><div style="font-size:18px;font-weight:500;color:var(--p-ink);">${_fileEsc(v.name)}</div><div style="font-size:16px;color:var(--p-mut);">${_fileEsc(v.cat)}</div></div></div>
-  <div style="display:grid;grid-template-columns:1fr 1fr;gap:8px;padding:0 16px 14px;">
+  <div style="display:grid;grid-template-columns:repeat(2,minmax(0,1fr));gap:8px;padding:0 16px 14px;">
     ${btn('ti-phone','Call',null,v.phone)}
     ${btn('ti-mail','Email',null,v.email)}
     ${btn('ti-world','Website',websiteUrl)}
@@ -26392,7 +26408,7 @@ function renderOnboard(){
         if(!profs.length)return '';
         return `<div class="prof-cat-group" data-cat="${_fileEsc(cat)}">
           <div style="font-size:14px;font-weight:700;letter-spacing:.08em;text-transform:uppercase;color:var(--p-mut);margin:15px 2px 9px;">${_fileEsc(cat)}</div>
-          <div style="display:grid;grid-template-columns:1fr 1fr;gap:9px;">
+          <div style="display:grid;grid-template-columns:repeat(2,minmax(0,1fr));gap:9px;">
           ${profs.map(p=>{const on=selectedProfessions.includes(p.id);return `<button onclick="onboardToggleProf('${p.id}')" class="prof-pick" data-search="${_fileEsc((p.name+' '+(p.sub||'')+' '+cat).toLowerCase())}" style="border:1.5px solid ${on?'var(--accent)':'var(--p-line-ctl)'};background:${on?'var(--accent-tint)':'var(--p-surf3)'};border-radius:12px;padding:14px 10px;display:flex;flex-direction:column;align-items:center;gap:7px;cursor:pointer;text-align:center;position:relative;">
             ${on?`<span style="position:absolute;top:8px;right:8px;width:18px;height:18px;border-radius:50%;background:var(--accent);display:flex;align-items:center;justify-content:center;"><i class="ti ti-check" style="font-size:16px;color:var(--accent-ink);"></i></span>`:''}
             <span style="font-size:26px;line-height:1;">${p.icon}</span>
@@ -27960,7 +27976,7 @@ async function _loadBetaStats(){
     const usd=c=>'$'+Math.round((c||0)/100).toLocaleString();
     const card=(label,val,sub,col)=>`<div style="background:var(--surf1);border:1px solid var(--p-line3);border-radius:16px;padding:16px;"><div style="font-size:26px;font-weight:700;color:${col||'var(--p-ink)'};line-height:1;">${val}</div><div style="font-size:16px;color:var(--p-mut);margin-top:6px;">${label}</div>${sub?`<div style="font-size:14px;color:var(--p-mut);margin-top:3px;">${sub}</div>`:''}</div>`;
     el.innerHTML=`
-    <div style="display:grid;grid-template-columns:1fr 1fr;gap:10px;">
+    <div style="display:grid;grid-template-columns:repeat(2,minmax(0,1fr));gap:10px;">
       ${card('Providers',(p.total||0),'+'+(p.new30||0)+' in 30 days')}
       ${card('Paid providers',(subs.active!=null?subs.active:'\u2014'),(subs.active!=null?('+'+(subs.new30||0)+' in 30 days'+(p.total?' \u00b7 '+Math.round(100*subs.active/p.total)+'% of providers':'')):'active subscriptions'),'var(--p-green)')}
       ${card('Square connected',(s.connected||0),(s.merchants||0)+' unique seller'+((s.merchants===1)?'':'s')+' · '+(s.connectRate||0)+'% of providers','var(--p-green)')}
@@ -28004,7 +28020,7 @@ async function _loadBetaStats(){
     })()}
     ${(function(){var ch=j.charting||{},pu=j.pulse||{};var have=(ch&&(ch.activeProviders7!=null||ch.charts7!=null))||(pu&&pu.shown!=null);return have?`
     <div class="sh" style="margin-top:14px;"><h2>Charting activity</h2></div>
-    <div style="display:grid;grid-template-columns:1fr 1fr;gap:10px;">
+    <div style="display:grid;grid-template-columns:repeat(2,minmax(0,1fr));gap:10px;">
       ${card('Charting this week',(ch.activeProviders7!=null?ch.activeProviders7:'\u2014'),(p.total?Math.round(100*(ch.activeProviders7||0)/p.total)+'% of providers':'providers who charted'),'var(--p-green)')}
       ${card('Charts saved (7d)',(ch.charts7!=null?ch.charts7:'\u2014'),(ch.charts30!=null?ch.charts30+' in 30 days':'new + edits'))}
     </div>
@@ -28268,7 +28284,7 @@ async function _coLink(id){
     if(!d.url)throw new Error('No link was returned.');
     _addPayment({clientId:id,clientName:c.name,amount:amt,taxAmount:_coTaxAmt(),method:'Square',status:'unpaid',date:_todayISO(),note:'Payment link',source:'square',publicUrl:d.url});
     const msg='Hi '+c.name.split(' ')[0]+'! Your payment link for '+name+' ($'+(+amt).toFixed(2)+'): '+d.url;
-    document.getElementById('co-result').innerHTML='<div style="background:var(--p-surf2);border:1px solid var(--p-line3);border-radius:12px;padding:12px 14px;"><div style="font-size:16px;color:var(--p-green);font-weight:600;margin-bottom:8px;">Payment link ready \u00b7 logged in Payments</div><div style="font-size:14px;color:var(--p-mut);word-break:break-all;font-family:monospace;margin-bottom:10px;">'+d.url+'</div><div style="display:grid;grid-template-columns:1fr 1fr;gap:8px;"><button onclick="_copyText(\''+d.url+'\',this)" class="btnp" style="border-radius:8px;padding:9px;">Copy link</button><button onclick="location.href=\'sms:?&body='+encodeURIComponent(msg)+'\'" class="btng" style="border-radius:8px;padding:9px;">Text it</button></div></div>';
+    document.getElementById('co-result').innerHTML='<div style="background:var(--p-surf2);border:1px solid var(--p-line3);border-radius:12px;padding:12px 14px;"><div style="font-size:16px;color:var(--p-green);font-weight:600;margin-bottom:8px;">Payment link ready \u00b7 logged in Payments</div><div style="font-size:14px;color:var(--p-mut);word-break:break-all;font-family:monospace;margin-bottom:10px;">'+d.url+'</div><div style="display:grid;grid-template-columns:repeat(2,minmax(0,1fr));gap:8px;"><button onclick="_copyText(\''+d.url+'\',this)" class="btnp" style="border-radius:8px;padding:9px;">Copy link</button><button onclick="location.href=\'sms:?&body='+encodeURIComponent(msg)+'\'" class="btng" style="border-radius:8px;padding:9px;">Text it</button></div></div>';
   }catch(e){_coErr(e.message||'Could not create the link.',_coRecon(e));}finally{_coActionLock=false;}
 }
 async function _coInvoice(id){
@@ -34838,7 +34854,7 @@ function _renderRevenueLegacy(){
   </div>
 
   <!-- Top stat cards -->
-  <div style="display:grid;grid-template-columns:1fr 1fr;gap:8px;padding:12px 16px 0;">
+  <div style="display:grid;grid-template-columns:repeat(2,minmax(0,1fr));gap:8px;padding:12px 16px 0;">
     ${[['Total revenue','$4,480','↑ 16% vs May','var(--p-green)'],['Sessions','24','↑ 3 vs May','var(--p-green)'],['Avg per session','$201','↑ $12 vs May','var(--p-green)'],['Tips earned','$312','This month','var(--accent)']].map(([l,v,sub,c])=>`
     <div style="background:var(--surf2);border:1px solid var(--p-line);border-radius:12px;padding:12px 14px;">
       <div style="font-size:14px;color:var(--p-mut);margin-bottom:4px;">${l}</div>
@@ -36015,7 +36031,7 @@ function renderAddResource(){
   </div>
   <div style="padding:14px 16px 0;">
     <span class="fl-lbl">Guide type</span>
-    <div style="display:grid;grid-template-columns:1fr 1fr;gap:8px;margin-bottom:14px;">
+    <div style="display:grid;grid-template-columns:repeat(2,minmax(0,1fr));gap:8px;margin-bottom:14px;">
       ${types.map(([e,lbl,bg,ic,cat],i)=>`<button id="res-type-${i}" onclick="_newResType={icon:'${e}',cat:'${cat}'};document.querySelectorAll('[id^=res-type-]').forEach(b=>{b.style.borderColor='var(--p-line)';b.style.background='var(--p-surf)'});this.style.borderColor='${ic}';this.style.background='${bg}';" style="border:1px solid ${i===0?ic:'var(--p-chip)'};background:${i===0?bg:'var(--p-surf)'};border-radius:12px;padding:12px;cursor:pointer;display:flex;flex-direction:column;align-items:center;gap:5px;"><span style="font-size:26px;">${e}</span><span style="font-size:16px;color:var(--p-mut);">${lbl}</span></button>`).join('')}
     </div>
     ${_guideIconRow(_guideIconDraft)}
@@ -36208,7 +36224,7 @@ function renderEditResource(id){
   </div>
   <div style="padding:14px 16px 0;">
     <span class="fl-lbl">Guide type</span>
-    <div style="display:grid;grid-template-columns:1fr 1fr;gap:8px;margin-bottom:14px;">
+    <div style="display:grid;grid-template-columns:repeat(2,minmax(0,1fr));gap:8px;margin-bottom:14px;">
       ${types.map(([e,lbl,bg,ic,cat],i)=>{const sel=cat===_newResType.cat;return `<button id="res-type-${i}" onclick="_newResType={icon:'${e}',cat:'${cat}'};document.querySelectorAll('[id^=res-type-]').forEach(b=>{b.style.borderColor='var(--p-line)';b.style.background='var(--p-surf)'});this.style.borderColor='${ic}';this.style.background='${bg}';" style="border:1px solid ${sel?ic:'var(--p-chip)'};background:${sel?bg:'var(--p-surf)'};border-radius:12px;padding:12px;cursor:pointer;display:flex;flex-direction:column;align-items:center;gap:5px;"><span style="font-size:26px;">${e}</span><span style="font-size:16px;color:var(--p-mut);">${lbl}</span></button>`;}).join('')}
     </div>
     ${_guideIconRow(_guideIconDraft)}
@@ -36490,14 +36506,14 @@ function deleteVendor(i){const v=vendors[i];if(!v)return;confirmModal({title:'De
     function banner(kind){
       if(document.getElementById('sc-install')) return;
       var b=document.createElement('div'); b.id='sc-install';
-      b.style.cssText='position:fixed;left:0;right:0;bottom:calc(env(safe-area-inset-bottom,0px) + 14px);margin:0 auto;width:360px;max-width:92%;background:var(--surf1);border:1px solid var(--p-line);border-radius:16px;padding:12px 14px;z-index:100000;box-shadow:0 10px 34px rgba(0,0,0,.55);display:flex;align-items:center;gap:11px;font-family:-apple-system,BlinkMacSystemFont,Segoe UI,sans-serif;';
+      b.style.cssText='position:fixed;left:0;right:0;bottom:calc(env(safe-area-inset-bottom,0px) + 84px);margin:0 auto;width:360px;max-width:92%;background:var(--surf1);border:1px solid var(--p-line);border-radius:16px;padding:12px 14px;z-index:100000;box-shadow:0 10px 34px rgba(0,0,0,.55);display:flex;align-items:center;gap:11px;font-family:-apple-system,BlinkMacSystemFont,Segoe UI,sans-serif;';
       var msg = kind==='ios'
         ? 'Install SlickChart \u2014 tap <b>Share</b> then <b>Add to Home Screen</b>.'
         : 'Add SlickChart to your home screen for one-tap access.';
       b.innerHTML='<div style="width:38px;height:38px;border-radius:12px;background:#2BC7AC;display:flex;align-items:center;justify-content:center;flex-shrink:0;color:#1a1408;font-weight:800;font-size:18px;">S</div>'
         +'<div style="flex:1;font-size:16px;color:var(--p-ink);line-height:1.45;">'+msg+'</div>'
         +(kind==='android' ? '<button id="sc-inst-go" style="background:#2BC7AC;border:none;color:#1a1408;border-radius:8px;padding:8px 13px;font-size:16px;font-weight:700;cursor:pointer;font-family:inherit;">Install</button>' : '')
-        +'<button id="sc-inst-x" aria-label="Dismiss" style="background:none;border:none;color:var(--p-mut);font-size:22px;line-height:1;cursor:pointer;padding:2px 4px;">\u00d7</button>';
+        +'<button id="sc-inst-x" aria-label="Dismiss" style="background:none;border:none;color:var(--p-mut);font-size:22px;line-height:1;cursor:pointer;padding:8px 10px;min-width:40px;min-height:40px;">\u00d7</button>';
       document.body.appendChild(b);
       var x=document.getElementById('sc-inst-x'); if(x)x.onclick=dismiss;
       var go=document.getElementById('sc-inst-go');
