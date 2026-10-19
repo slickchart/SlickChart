@@ -1,4 +1,4 @@
-// Wires a generated collection (PM_ / NA_ / MT_ / HD_) into slickchart.html exactly the way the Hair Stylist
+// Wires a generated collection (PM_ / NA_ / MT_ / HD_ / TT_) into slickchart.html exactly the way the Hair Stylist
 // Collection is wired (CLAUDE.md §1e). Idempotent guard: refuses if the collection is already in.
 //   node scratchpad/wire-collection.cjs <pm|na>
 const fs=require('fs');
@@ -16,8 +16,11 @@ const C={
   hd:{P:'HD',sec:'hdcoll',prof:'headspa',title:'The Head Spa Collection',who:'head spa practitioners',
       data:'/home/user/SlickChart/scratchpad/hd/hd-data.js',docs:process.env.DOCS_JSON,pages:37,date:'2026-10-19',
       defs:(()=>{try{return require('/home/user/SlickChart/scratchpad/hd/hd-defs.cjs');}catch(e){return null;}})()},
+  tt:{P:'TT',sec:'ttcoll',prof:'tattoo',title:'The Tattoo Artist Collection',who:'tattoo artists',
+      data:'/home/user/SlickChart/scratchpad/tt/tt-data.js',docs:process.env.DOCS_JSON,pages:37,date:'2026-10-19',
+      defs:(()=>{try{return require('/home/user/SlickChart/scratchpad/tt/tt-defs.cjs');}catch(e){return null;}})()},
 }[key];
-if(!C)throw new Error('pm, na, mt or hd');
+if(!C)throw new Error('pm, na, mt, hd or tt');
 const FILE='/home/user/SlickChart/slickchart-vercel/slickchart.html';
 let s=fs.readFileSync(FILE,'utf8');
 if(s.includes('const '+C.P+'_FORMS='))throw new Error('already wired');

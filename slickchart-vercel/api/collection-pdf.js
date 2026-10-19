@@ -1,5 +1,5 @@
 // GET /api/collection-pdf  — provider-authed. Hands a signed-in provider with a live subscription the
-// links to the printable Esthetician, Lash & Brow, Hair Stylist, PMU, Nail Artist, Massage Therapist and Head Spa Collection PDFs (the same files sold on Etsy), in three styles.
+// links to the printable Esthetician, Lash & Brow, Hair Stylist, PMU, Nail Artist, Massage Therapist, Head Spa and Tattoo Artist Collection PDFs (the same files sold on Etsy), in three styles.
 //
 // The files sit under an unguessable folder name that appears nowhere but here: the page never links
 // to it, robots are told not to index it (vercel.json), and the app only learns the address from this
@@ -67,6 +67,14 @@ const HD_FILES = [
   { style: 'luxe', label: 'Luxe', url: HD_DIR + 'luxe.pdf' }
 ];
 const HD_DOC_IDS = new Set(["hd-intake", "hd-analysis", "hd-service-consent", "hd-sensitivity", "hd-photo-release", "hd-policy", "hd-ritual-consent", "hd-exfoliation-consent", "hd-steam-consent", "hd-hot-oil-consent", "hd-hf-consent", "hd-led-consent", "hd-ritual-protocol", "hd-exfoliation-protocol", "hd-steam-protocol", "hd-hot-oil-protocol", "hd-hf-protocol", "hd-led-protocol", "hd-ritual-aftercare", "hd-exfoliation-aftercare", "hd-steam-aftercare", "hd-hot-oil-aftercare", "hd-hf-aftercare", "hd-led-aftercare", "hd-before-visit", "hd-scalp-care", "hd-aftercare-cards", "hd-progress-record", "hd-conditions", "hd-contra-chart", "hd-incident", "hd-sanitation", "hd-cover"]);
+// The Tattoo Artist Collection (2026-10-19), split by scratchpad/tt-split-docs.py; ids carry a tt- prefix.
+const TT_DIR = '/assets/tt-fb05b651380857fa70db4e8c/';
+const TT_FILES = [
+  { style: 'neutral', label: 'Neutral', url: TT_DIR + 'neutral.pdf' },
+  { style: 'blush', label: 'Blush', url: TT_DIR + 'blush.pdf' },
+  { style: 'luxe', label: 'Luxe', url: TT_DIR + 'luxe.pdf' }
+];
+const TT_DOC_IDS = new Set([]);
 const STYLES = new Set(['neutral', 'blush', 'luxe']);
 
 export default async function handler(req, res) {
@@ -89,13 +97,17 @@ export default async function handler(req, res) {
       if (!ok) { res.status(402).json({ error: 'The printable collection comes with an active SlickChart subscription.' }); return; }
     }
   }
-  // ?collection=lb picks the Lash & Brow files, ?collection=hs the Hair Stylist ones, ?collection=pm the PMU ones, ?collection=na the Nail Artist ones, ?collection=mt the Massage Therapist ones, ?collection=hd the Head Spa ones; anything else is the Esthetician Collection, as before.
+  // ?collection=lb picks the Lash & Brow files, ?collection=hs the Hair Stylist ones, ?collection=pm the PMU ones, ?collection=na the Nail Artist ones, ?collection=mt the Massage Therapist ones, ?collection=hd the Head Spa ones, ?collection=tt the Tattoo Artist ones; anything else is the Esthetician Collection, as before.
   const collection = String((req.query && req.query.collection) || '');
   const lb = collection === 'lb';
   const doc = String((req.query && req.query.doc) || '');
   if (doc) {
     const style = String((req.query && req.query.style) || 'neutral');
     if (!STYLES.has(style)) { res.status(404).json({ error: 'That page is not in the collection.' }); return; }
+    if (TT_DOC_IDS.has(doc)) {
+      res.status(200).json({ ok: true, files: TT_FILES, doc: { id: doc, style, url: TT_DIR + style + '/' + doc.slice(3) + '.pdf' } });
+      return;
+    }
     if (MT_DOC_IDS.has(doc)) {
       res.status(200).json({ ok: true, files: MT_FILES, doc: { id: doc, style, url: MT_DIR + style + '/' + doc.slice(3) + '.pdf' } });
       return;
@@ -124,5 +136,5 @@ export default async function handler(req, res) {
     res.status(200).json({ ok: true, files: FILES, doc: { id: doc, style, url: DIR + style + '/' + doc + '.pdf' } });
     return;
   }
-  res.status(200).json({ ok: true, files: collection === 'mt' ? MT_FILES : collection === 'hd' ? HD_FILES : collection === 'na' ? NA_FILES : collection === 'pm' ? PM_FILES : (collection === 'hs' ? HS_FILES : (lb ? LB_FILES : FILES)) });
+  res.status(200).json({ ok: true, files: collection === 'tt' ? TT_FILES : collection === 'mt' ? MT_FILES : collection === 'hd' ? HD_FILES : collection === 'na' ? NA_FILES : collection === 'pm' ? PM_FILES : (collection === 'hs' ? HS_FILES : (lb ? LB_FILES : FILES)) });
 }
