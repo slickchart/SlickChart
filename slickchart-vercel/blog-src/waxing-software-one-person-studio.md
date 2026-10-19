@@ -4,7 +4,7 @@ h1: What to look for in waxing software when you're a one-person shop
 description: A solo waxer's guide to software: intake that catches contraindications, a check before every visit, notes per area, aftercare and rebooking.
 date: 2026-10-19
 keywords: waxing software, waxing studio software, solo waxer, waxing intake form, waxing contraindications, esthetician waxing app
-draft: true
+draft: false
 ---
 
 Most waxing software is sold on booking. Online scheduling, deposits, reminders. Those matter, but they are not what goes wrong in a waxing room.
