@@ -1,4 +1,4 @@
-name: Deploy at 2am (promote release → main)
+name: Deploy overnight (promote release → main, after midnight Pacific)
 
 # Ashley's rule, 2026-10-11: an edit must not land on providers while they are using the app.
 #
@@ -21,9 +21,19 @@ name: Deploy at 2am (promote release → main)
 # is this job's. If you are reading this and `main` has the file, the bootstrap is done; do not push
 # `main` again.
 
+# CHANGED 2026-10-19 (Ashley): ship as soon as the date turns over in Pacific time (12:00am), not 2am.
+# Two facts shape the schedule below:
+#   - GitHub's cron is UTC with no daylight saving: Pacific midnight is 07:00 UTC in summer, 08:00 in
+#     winter.
+#   - GitHub runs scheduled jobs LATE, often by hours (on 2026-10-16..18 the "09:00" run started at
+#     12:38-13:42 UTC, i.e. 5:38-6:42am Pacific, and on 10-19 it never ran at all). Minute :00 is the
+#     busiest and the most delayed, so these use :07.
+# So it is asked to run every hour from 07:07 to 12:07 UTC, and the first step below lets a SCHEDULED
+# run ship only inside 12:00am-5:59am Pacific. The first run that lands in that window promotes; the
+# rest find release == main and do nothing. "Ship it now" (workflow_dispatch) skips the window check.
 on:
   schedule:
-    - cron: '0 9 * * *'
+    - cron: '7 7-12 * * *'
   workflow_dispatch:        # "ship it now" — Actions tab → Run workflow
 
 permissions:
@@ -43,8 +53,19 @@ jobs:
 
       - name: Is there anything approved waiting to ship?
         id: queue
+        env:
+          EVENT: ${{ github.event_name }}
         run: |
           set -euo pipefail
+          if [ "$EVENT" = "schedule" ]; then
+            hr=$(TZ=America/Los_Angeles date +%-H)
+            echo "Pacific time now: $(TZ=America/Los_Angeles date '+%Y-%m-%d %H:%M %Z')"
+            if [ "$hr" -ge 6 ]; then
+              echo "Outside the overnight window (12:00am-5:59am Pacific). Not shipping on a schedule now."
+              echo "go=no" >> "$GITHUB_OUTPUT"
+              exit 0
+            fi
+          fi
           if ! git rev-parse --verify "origin/$RELEASE_BRANCH" >/dev/null 2>&1; then
             echo "No '$RELEASE_BRANCH' branch exists, so nothing has been approved. Nothing to do."
             echo "go=no" >> "$GITHUB_OUTPUT"

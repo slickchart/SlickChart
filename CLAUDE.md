@@ -99,8 +99,12 @@ She asked for this after an edit disturbed providers who were using the app. **D
 3. **Push the branch** and give her its Vercel preview URL so she can click it. CI runs on every
    branch push, so the sweeps have reported before she looks.
 4. **She says ship it.** Then fast-forward `release` to that commit and push `release`.
-5. **`.github/workflows/deploy-at-2am.yml`** promotes `release` to `main` at 09:00 UTC (2am Pacific in
-   summer, 1am in winter) and Vercel deploys. It is fast-forward only, it refuses a commit whose
+5. **`.github/workflows/deploy-at-2am.yml`** promotes `release` to `main` overnight and Vercel deploys.
+   **Since 2026-10-19 that means as soon as the date turns over in Pacific time** (Ashley: "whenever
+   the date shifts to the next day, e.g. 12:00am"). The file keeps its old name; "2am" anywhere in
+   these notes now means "overnight, after midnight Pacific". GitHub runs scheduled jobs hours late
+   and sometimes not at all, so it is scheduled hourly 07:07-12:07 UTC and a scheduled run only ships
+   between 12:00am and 5:59am Pacific; the first one in that window promotes, the rest do nothing. It is fast-forward only, it refuses a commit whose
    checks are not green, and it does nothing at all when `release` and `main` already match.
    `workflow_dispatch` on that workflow is the "ship it now" button.
 
