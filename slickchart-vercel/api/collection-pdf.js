@@ -1,5 +1,5 @@
 // GET /api/collection-pdf  — provider-authed. Hands a signed-in provider with a live subscription the
-// links to the printable Esthetician, Lash & Brow and Hair Stylist Collection PDFs (the same files sold on Etsy), in three styles.
+// links to the printable Esthetician, Lash & Brow, Hair Stylist and PMU Collection PDFs (the same files sold on Etsy), in three styles.
 //
 // The files sit under an unguessable folder name that appears nowhere but here: the page never links
 // to it, robots are told not to index it (vercel.json), and the app only learns the address from this
@@ -35,6 +35,14 @@ const HS_FILES = [
   { style: 'luxe', label: 'Luxe', url: HS_DIR + 'luxe.pdf' }
 ];
 const HS_DOC_IDS = new Set(["hs-intake", "hs-consult", "hs-chem-consent", "hs-allergy-test", "hs-photo-release", "hs-policy", "hs-color-consent", "hs-lightening-consent", "hs-keratin-consent", "hs-perm-consent", "hs-relaxer-consent", "hs-ext-consent", "hs-color-protocol", "hs-lightening-protocol", "hs-keratin-protocol", "hs-perm-protocol", "hs-relaxer-protocol", "hs-ext-protocol", "hs-color-aftercare", "hs-lightening-aftercare", "hs-keratin-aftercare", "hs-perm-aftercare", "hs-relaxer-aftercare", "hs-ext-aftercare", "hs-before-visit", "hs-hair-care", "hs-aftercare-cards", "hs-service-record", "hs-color-theory", "hs-contra-chart", "hs-incident", "hs-sanitation", "hs-cover"]);
+// The PMU Collection (2026-10-19), split by scratchpad/pm-split-docs.py; ids carry a pm- prefix.
+const PM_DIR = '/assets/pm-8881ba4d736d7954ddb1e516/';
+const PM_FILES = [
+  { style: 'neutral', label: 'Neutral', url: PM_DIR + 'neutral.pdf' },
+  { style: 'blush', label: 'Blush', url: PM_DIR + 'blush.pdf' },
+  { style: 'luxe', label: 'Luxe', url: PM_DIR + 'luxe.pdf' }
+];
+const PM_DOC_IDS = new Set(["pm-intake", "pm-brow-design", "pm-consent", "pm-patch-test", "pm-photo-release", "pm-policy", "pm-touchup", "pm-microblading-consent", "pm-powder-consent", "pm-lip-consent", "pm-eyeliner-consent", "pm-saline-consent", "pm-smp-consent", "pm-areola-consent", "pm-freckles-consent", "pm-microblading-protocol", "pm-powder-protocol", "pm-lip-protocol", "pm-eyeliner-protocol", "pm-saline-protocol", "pm-smp-protocol", "pm-areola-protocol", "pm-freckles-protocol", "pm-microblading-aftercare", "pm-powder-aftercare", "pm-lip-aftercare", "pm-eyeliner-aftercare", "pm-saline-aftercare", "pm-smp-aftercare", "pm-areola-aftercare", "pm-freckles-aftercare", "pm-before-visit", "pm-healing-guide", "pm-aftercare-cards", "pm-pigment-record", "pm-color-theory", "pm-contra-chart", "pm-incident", "pm-sanitation", "pm-cover"]);
 const STYLES = new Set(['neutral', 'blush', 'luxe']);
 
 export default async function handler(req, res) {
@@ -57,13 +65,17 @@ export default async function handler(req, res) {
       if (!ok) { res.status(402).json({ error: 'The printable collection comes with an active SlickChart subscription.' }); return; }
     }
   }
-  // ?collection=lb picks the Lash & Brow files, ?collection=hs the Hair Stylist ones; anything else is the Esthetician Collection, as before.
+  // ?collection=lb picks the Lash & Brow files, ?collection=hs the Hair Stylist ones, ?collection=pm the PMU ones; anything else is the Esthetician Collection, as before.
   const collection = String((req.query && req.query.collection) || '');
   const lb = collection === 'lb';
   const doc = String((req.query && req.query.doc) || '');
   if (doc) {
     const style = String((req.query && req.query.style) || 'neutral');
     if (!STYLES.has(style)) { res.status(404).json({ error: 'That page is not in the collection.' }); return; }
+    if (PM_DOC_IDS.has(doc)) {
+      res.status(200).json({ ok: true, files: PM_FILES, doc: { id: doc, style, url: PM_DIR + style + '/' + doc.slice(3) + '.pdf' } });
+      return;
+    }
     if (HS_DOC_IDS.has(doc)) {
       res.status(200).json({ ok: true, files: HS_FILES, doc: { id: doc, style, url: HS_DIR + style + '/' + doc.slice(3) + '.pdf' } });
       return;
@@ -76,5 +88,5 @@ export default async function handler(req, res) {
     res.status(200).json({ ok: true, files: FILES, doc: { id: doc, style, url: DIR + style + '/' + doc + '.pdf' } });
     return;
   }
-  res.status(200).json({ ok: true, files: collection === 'hs' ? HS_FILES : (lb ? LB_FILES : FILES) });
+  res.status(200).json({ ok: true, files: collection === 'pm' ? PM_FILES : (collection === 'hs' ? HS_FILES : (lb ? LB_FILES : FILES)) });
 }

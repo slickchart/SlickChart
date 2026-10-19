@@ -54,7 +54,7 @@ const pfi=await p.evaluate(async()=>{const qs=[{id:'x1',label:'Skin type',type:'
   return {btn:d.querySelectorAll('button').length,box:d.querySelectorAll('input[type=checkbox]').length,text:d.querySelectorAll('input.fi').length};});
 check('Fill intake shows tap-to-pick choices and check boxes, not a blank text box',pfi.btn===2&&pfi.box===2&&pfi.text===0,JSON.stringify(pfi));
 // The collection says "check", like the client app, never "tick"
-check('the collection\'s wording says "check", like the client app',await p.evaluate(()=>!Object.keys(formTmpls).filter(k=>/^ec-/.test(k)).some(k=>formTmpls[k].qs.some(q=>/\btick/i.test(q.label)))));
+check('the collection\'s wording says "check", like the client app',await p.evaluate(()=>!Object.keys(formTmpls).filter(k=>/^(ec|lb|hs|pm|na)-/.test(k)).some(k=>formTmpls[k].qs.some(q=>/\btick/i.test(q.label)))));
 check('no page errors',errs.length===0,errs.join(' | '));
 await b.close();
 const f=res.filter(x=>!x).length;console.log('\n'+(res.length-f)+' passed, '+f+' failed');process.exit(f?1:0);

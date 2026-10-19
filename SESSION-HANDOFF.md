@@ -7906,3 +7906,23 @@ windowSoftInputMode set), renderer-crash handling in MainActivity, real download
 (@capacitor/filesystem + share), Square/Google OAuth return into the app (deep link), tablets get
 the 390px frame (no pointer:coarse rule in the provider app), composer bars leave a small strip above
 the nav, Chrome 130% zoom overflows on a few screens.
+
+### 2026-10-19 — build `2026-10-19i` (PREVIEW ONLY): the PMU Collection
+Ashley's PMU PDFs (3 styles, 45 pages each). Done by the CLAUDE.md §1e rules, same as Hair Stylist:
+15 forms `pm-*` (245 questions) and 10 guides `g-pm-*` from `scratchpad/pm/gen-pm.cjs` (fails on any
+`[bracket]`, card-on-file or "email photos" text); `pmcoll` "The PMU Collection" shown to `pmu` only;
+guides ADDED to `pmu`, stock PMU forms (`pmu-intake`, `consent-pmu`) and guides untouched. Wired by
+`scratchpad/wire-collection.cjs pm`. Library: `PM_PRINT_DOCS` (40 docs, ids `pm-…`), split by
+`scratchpad/pm-split-docs.py` into `assets/pm-8881ba4d736d7954ddb1e516/`, noindex in vercel.json,
+`/api/collection-pdf` allow-lists the `pm-` ids and takes `?collection=pm`. Judgement calls: the
+policy's "card on file" box is gone; "[$___]" later touch-up rate -> "at our touch-up rate"; the
+prep sheet's "[__] hours' notice" -> 48–72 hours (the policy's own number); bracketed defaults kept
+as printed (deposit $100, 48–72 hours, 15 minutes, 7 years, 6–10 weeks); "[Your terms.]" tails on
+three consent lines dropped. Print-only: intake office box, photo ID checked, patch test products and
+24h/7d readings and result, artist signatures and licence, pigment record, protocols, incident log.
+Touch-up session form keeps the artist's healed-result assessment and plan (done together, like the
+hair consult). New header label: "Perfecting session" (touch-up form), both apps.
+Tests: `test-pmu-collection` 18/18, `test-pm-client-form` 15/15, plus sweep-all-forms (130 forms, 0
+problems), sweep-form-mirror, test-contra-ticks, test-client-form-branding and the hs/lb/ec suites,
+in Chrome and Safari. `test-esthetician-collection` crashes WebKit at its reload step on the
+pre-change file too (WebKit "Page crashed"), so it is not from this change; it passes in Chrome.
