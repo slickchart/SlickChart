@@ -7926,3 +7926,19 @@ Tests: `test-pmu-collection` 18/18, `test-pm-client-form` 15/15, plus sweep-all-
 problems), sweep-form-mirror, test-contra-ticks, test-client-form-branding and the hs/lb/ec suites,
 in Chrome and Safari. `test-esthetician-collection` crashes WebKit at its reload step on the
 pre-change file too (WebKit "Page crashed"), so it is not from this change; it passes in Chrome.
+
+### 2026-10-19 — build `2026-10-19j` (PREVIEW ONLY): the Nail Artist Collection
+Ashley's Nail Artist PDFs (3 styles, 37 pages each), same rules: 12 forms `na-*` (206 questions) and
+8 guides `g-na-*` from `scratchpad/na/gen-na.cjs`; `nacoll` "The Nail Artist Collection" shown to
+`nail` only (a nail tech who also waxes gets the Esthetician Collection too, as before); guides ADDED
+to `nail`, stock `nail-intake` / `nail-consent` untouched. Library: `NA_PRINT_DOCS` (33 docs), split by
+`scratchpad/na-split-docs.py` into `assets/na-97315595add70d4ee045ac48/`, noindex, `/api/collection-pdf`
+allow-lists `na-` ids and takes `?collection=na`. Judgement calls: policy "card on file" box gone;
+"I [do / do not] agree to photos" became a pick-one (I agree / I do not agree); "[$ fee]" for removing
+another salon's work -> $15 (the policy's own number); "[product name]" -> "the product named in my
+record"; "per [your policy]" -> "per our policy"; "Other: [ ]" pedicure option -> "Other". Print-only:
+intake office box, allergy record's products-used table, reaction record and plan going forward,
+dip's "poured / single-use" tech tick, tech signatures, protocols, service record. Header labels:
+"Consultation" now also for a design plan, "Client record" for the allergy & reaction record (both apps).
+Tests: `test-nail-artist-collection` 18/18, `test-na-client-form` 12/12, sweep-all-forms (142 forms, 0
+problems) and the rest of the form suites, Chrome and Safari.

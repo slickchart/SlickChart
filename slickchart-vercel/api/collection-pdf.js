@@ -1,5 +1,5 @@
 // GET /api/collection-pdf  — provider-authed. Hands a signed-in provider with a live subscription the
-// links to the printable Esthetician, Lash & Brow, Hair Stylist and PMU Collection PDFs (the same files sold on Etsy), in three styles.
+// links to the printable Esthetician, Lash & Brow, Hair Stylist, PMU and Nail Artist Collection PDFs (the same files sold on Etsy), in three styles.
 //
 // The files sit under an unguessable folder name that appears nowhere but here: the page never links
 // to it, robots are told not to index it (vercel.json), and the app only learns the address from this
@@ -43,6 +43,14 @@ const PM_FILES = [
   { style: 'luxe', label: 'Luxe', url: PM_DIR + 'luxe.pdf' }
 ];
 const PM_DOC_IDS = new Set(["pm-intake", "pm-brow-design", "pm-consent", "pm-patch-test", "pm-photo-release", "pm-policy", "pm-touchup", "pm-microblading-consent", "pm-powder-consent", "pm-lip-consent", "pm-eyeliner-consent", "pm-saline-consent", "pm-smp-consent", "pm-areola-consent", "pm-freckles-consent", "pm-microblading-protocol", "pm-powder-protocol", "pm-lip-protocol", "pm-eyeliner-protocol", "pm-saline-protocol", "pm-smp-protocol", "pm-areola-protocol", "pm-freckles-protocol", "pm-microblading-aftercare", "pm-powder-aftercare", "pm-lip-aftercare", "pm-eyeliner-aftercare", "pm-saline-aftercare", "pm-smp-aftercare", "pm-areola-aftercare", "pm-freckles-aftercare", "pm-before-visit", "pm-healing-guide", "pm-aftercare-cards", "pm-pigment-record", "pm-color-theory", "pm-contra-chart", "pm-incident", "pm-sanitation", "pm-cover"]);
+// The Nail Artist Collection (2026-10-19), split by scratchpad/na-split-docs.py; ids carry an na- prefix.
+const NA_DIR = '/assets/na-97315595add70d4ee045ac48/';
+const NA_FILES = [
+  { style: 'neutral', label: 'Neutral', url: NA_DIR + 'neutral.pdf' },
+  { style: 'blush', label: 'Blush', url: NA_DIR + 'blush.pdf' },
+  { style: 'luxe', label: 'Luxe', url: NA_DIR + 'luxe.pdf' }
+];
+const NA_DOC_IDS = new Set(["na-intake", "na-consult", "na-service-consent", "na-allergy", "na-photo-release", "na-policy", "na-gel-consent", "na-acrylic-consent", "na-gel-ext-consent", "na-dip-consent", "na-pedicure-consent", "na-manicure-consent", "na-gel-protocol", "na-acrylic-protocol", "na-gel-ext-protocol", "na-dip-protocol", "na-pedicure-protocol", "na-manicure-protocol", "na-gel-aftercare", "na-acrylic-aftercare", "na-gel-ext-aftercare", "na-dip-aftercare", "na-pedicure-aftercare", "na-manicure-aftercare", "na-before-visit", "na-nail-care", "na-aftercare-cards", "na-service-record", "na-systems", "na-contra-chart", "na-incident", "na-sanitation", "na-cover"]);
 const STYLES = new Set(['neutral', 'blush', 'luxe']);
 
 export default async function handler(req, res) {
@@ -65,13 +73,17 @@ export default async function handler(req, res) {
       if (!ok) { res.status(402).json({ error: 'The printable collection comes with an active SlickChart subscription.' }); return; }
     }
   }
-  // ?collection=lb picks the Lash & Brow files, ?collection=hs the Hair Stylist ones, ?collection=pm the PMU ones; anything else is the Esthetician Collection, as before.
+  // ?collection=lb picks the Lash & Brow files, ?collection=hs the Hair Stylist ones, ?collection=pm the PMU ones, ?collection=na the Nail Artist ones; anything else is the Esthetician Collection, as before.
   const collection = String((req.query && req.query.collection) || '');
   const lb = collection === 'lb';
   const doc = String((req.query && req.query.doc) || '');
   if (doc) {
     const style = String((req.query && req.query.style) || 'neutral');
     if (!STYLES.has(style)) { res.status(404).json({ error: 'That page is not in the collection.' }); return; }
+    if (NA_DOC_IDS.has(doc)) {
+      res.status(200).json({ ok: true, files: NA_FILES, doc: { id: doc, style, url: NA_DIR + style + '/' + doc.slice(3) + '.pdf' } });
+      return;
+    }
     if (PM_DOC_IDS.has(doc)) {
       res.status(200).json({ ok: true, files: PM_FILES, doc: { id: doc, style, url: PM_DIR + style + '/' + doc.slice(3) + '.pdf' } });
       return;
@@ -88,5 +100,5 @@ export default async function handler(req, res) {
     res.status(200).json({ ok: true, files: FILES, doc: { id: doc, style, url: DIR + style + '/' + doc + '.pdf' } });
     return;
   }
-  res.status(200).json({ ok: true, files: collection === 'pm' ? PM_FILES : (collection === 'hs' ? HS_FILES : (lb ? LB_FILES : FILES)) });
+  res.status(200).json({ ok: true, files: collection === 'na' ? NA_FILES : collection === 'pm' ? PM_FILES : (collection === 'hs' ? HS_FILES : (lb ? LB_FILES : FILES)) });
 }
