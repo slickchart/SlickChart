@@ -17,6 +17,22 @@ committed to anything, the later ones are for people mid-build.
 
 ## Queue
 
+### Beauty Biz angle (Ashley, 2026-10-19: "focus it on the new beauty biz build angle")
+
+- [x] **Your booking app was built for every salon. Yours can be built for you.** Fill windows,
+      patch tests, processing time, formula cards: the workarounds, and what owning the app changes.
+      Drafted 2026-10-19 (`booking-app-built-for-your-trade.md`).
+- [ ] **Patch tests, consent and the booking that should not happen.** Why "checks before you start"
+      belong in the app itself, per trade (lash lift, color, PMU, tattoo). No medical or legal advice.
+- [ ] **Lash fills, color touch-ups and the pricing your app cannot do.** Time-since-last-visit pricing
+      as the clearest example of a trade rule generic software skips.
+- [ ] **Doing two trades at once: skin and lashes, hair and nails.** Booking services clients take
+      together, and which forms and rules belong to which service.
+- [ ] **Moving your clients onto your own app without losing anyone.** Respectful, no competitor
+      claims; what to export, what to tell clients.
+- [ ] **Your board changed a rule. How fast can your software follow?** Owning the change, with the
+      honest trade-off that you are the one who checks it.
+
 - [ ] **The four safety mistakes that cover most of the risk.** Written for someone who is about to
       charge money and store other people's information. No scaremongering.
 - [ ] **Why your app needs a privacy policy and terms before you submit anywhere.** Real URLs, real
