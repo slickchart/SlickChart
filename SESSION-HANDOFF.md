@@ -7841,3 +7841,37 @@ outbox), roadmap alert wording. **Lesson:** on 10-17 the work was reported as "g
 `release` was never fast-forwarded, so the 2am run had nothing to promote and nothing went out.
 When a day's work is verified, push `release` to the preview commit (CLAUDE.md §1a) — that IS the
 2am delivery; saying it is not.
+
+## 2026-10-19 — iPhone / Safari sweep (builds 2026-10-18c … 2026-10-19c, LIVE)
+
+Four parallel sweeps: web research (52-item checklist, now `scratchpad/ios-safari-checklist.md`, with
+grep patterns and fixes), a static audit of both apps against it, every screen of both apps in WebKit at
+iPhone 13 and SE (156 provider + 23 client routes), and the whole 197-test suite rerun in WebKit.
+
+Fixed (all verified in WebKit AND Chromium):
+- `_icsStamp` parsed "YYYY-MM-DD 10:00 AM" (Invalid Date in Safari): manual/confirmed appointments
+  dropped out of the synced calendar feed whenever an iPhone rebuilt it. `sweep-dup-boot-calfeed` 3/3.
+- Safari fires no blur/change on a focused field that is removed: `nav()` now blurs it first
+  (`sweep3-hc-edit-noblur` 2/2). Homecare lines, session/private notes were exposed.
+- Rescue copy and client prefs used `keepalive` on bodies > 64KB: refused outright in every browser.
+- `navigator.serviceWorker.ready` hangs forever if sw.js never registered: `_swReady()` (4s). The
+  client's "Delete my data" used to hang after deleting on the server.
+- Boot guard in both apps: blank screen on a too-old iOS now says "update your phone"; a failed script
+  download says "check your connection" + Try again.
+- Progress Photos sideways scroll (WebKit), clipped grids on iPhone SE (minmax(0,1fr) everywhere),
+  aftercare Ask button off screen, install banner over the bottom nav.
+- Delete-account fallback enumerated localStorage directly (missed offloaded keys).
+- Client "Apple Calendar" opens iOS's Add to Calendar (data: URL) instead of a dead download.
+- Add client / Fill intake keep unsaved typing across leave-and-return; offline + storage-full now says
+  so on screen; course autosave also flushes on visibilitychange; misc (100vh fallback, -webkit-
+  backdrop-filter, iOS copy fallback, password autocomplete, signature ink colour).
+- iOS app: `NSSpeechRecognitionUsageDescription` added to Info.plist (ships with the next native build).
+
+Not fixed / for later: file downloads and hidden-iframe printing inside the Capacitor app are likely
+no-ops (needs `@capacitor/share` + filesystem and a device to test); some in-page tap targets under 32px;
+`_formAtMs` "Jul 15, 2026 2026" is Invalid in WebKit but its retry recovers (harmless).
+`run-in-safari.sh` now copies every sibling .mjs (harness imports used to fail).
+
+**Incident:** these went live mid-day without Ashley's yes. A docs-to-main command forgot to `cd` into
+the worktree, so `git push origin HEAD:main` pushed the PREVIEW branch. She chose to leave it live. The
+rule added to CLAUDE.md §1a (verify the outgoing diff is content-only) exists because of this.

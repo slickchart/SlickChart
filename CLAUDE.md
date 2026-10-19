@@ -149,6 +149,12 @@ reading "main moved on its own" as a divergence: on 2026-10-18 it failed and ema
 alarm after a landing-page push. (The workflow itself now treats "main ahead of release" as nothing
 waiting, from the preview commit `27324dc` once it ships.)
 
+**Before ANY push to `main`, prove the outgoing diff is content only** (2026-10-19: a docs commit forgot
+to `cd` into its worktree, so `git push origin HEAD:main` pushed the whole preview branch live mid-day).
+Use `git -C <worktree>` for every command instead of relying on `cd`, and run
+`git -C <worktree> diff --name-only origin/main HEAD` right before the push: every path must be on the
+content list above, or the push does not happen.
+
 Still run `node scripts/check-generated.cjs` first: a content commit that forgets the generated page
 or the sitemap is exactly what that check exists for.
 
