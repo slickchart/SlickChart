@@ -684,12 +684,16 @@ function _urlB64ToUint8(base64){
 // Subscribe this device for push and register it with the server. Safe to call repeatedly:
 // it reuses an existing subscription and only runs for a real, signed-in client with
 // notification permission already granted.
+// navigator.serviceWorker.ready never settles when sw.js failed to register (that error is swallowed),
+// so anything awaiting it hung forever: "Delete my data" deleted on the server and then never wiped the
+// phone or showed it was done. Give up after a few seconds instead (null = no worker).
+function _swReady(ms){try{if(!('serviceWorker' in navigator))return Promise.resolve(null);return Promise.race([navigator.serviceWorker.ready,new Promise(function(r){setTimeout(function(){r(null);},ms||4000);})]);}catch(e){return Promise.resolve(null);}}
 async function _subscribePush(){
   try{
     if(!client._real||!client._token)return;
     if(!('serviceWorker'in navigator)||!('PushManager'in window))return;
     if(typeof Notification==='undefined'||Notification.permission!=='granted')return;
-    const reg=await navigator.serviceWorker.ready;
+    const reg=await _swReady();if(!reg)return;
     let sub=await reg.pushManager.getSubscription();
     if(!sub){
       sub=await reg.pushManager.subscribe({userVisibleOnly:true,applicationServerKey:_urlB64ToUint8(VAPID_PUBLIC_KEY)});
@@ -4597,7 +4601,7 @@ async function _doDeleteClientData(){
     if(!ok){if(typeof showToast==='function')showToast('Couldn’t reach the server to delete your data, please check your connection and try again',false);return;}
   }
   // Unsubscribe this device from push.
-  try{ if('serviceWorker'in navigator){ const reg=await navigator.serviceWorker.ready; const sub=await reg.pushManager.getSubscription(); if(sub){try{await sub.unsubscribe();}catch(_){}} } }catch(e){}
+  try{ if('serviceWorker'in navigator){ const reg=await _swReady(); const sub=reg&&reg.pushManager?await reg.pushManager.getSubscription():null; if(sub){try{await sub.unsubscribe();}catch(_){}} } }catch(e){}
   // Wipe local data on this device.
   // Only THIS app's keys. Every sc_ key used to go, which signed the provider app on the same site out
   // and erased its unsent work and crash-safety photos.
@@ -6581,9 +6585,11 @@ SlickBridge.on('booking-confirmed',b=>{
   // Refresh the Home countdown ring immediately — it used to update nextDate/nextTime but never rebuild
   // APPT, so the "next appointment" ring stayed stale (or "—") until a manual reload.
   try{
+    // Day and time parsed separately: Safari reads "2026-10-22 10:00 AM" as an Invalid Date.
     var _t=(b.time||'').trim();
-    var dd=new Date((b.date||'')+' '+_t);
-    if(isNaN(dd))dd=new Date(fmtNiceDate(b.date)+' '+new Date().getFullYear()+' '+_t);
+    var dd=/^\d{4}-\d{2}-\d{2}$/.test(String(b.date||''))?new Date(b.date+'T00:00:00'):new Date(fmtNiceDate(b.date)+' '+new Date().getFullYear());
+    var _tm=_t.match(/^(\d{1,2}):(\d{2})\s*([AaPp][Mm])?$/);
+    if(!isNaN(dd)&&_tm){var _h=parseInt(_tm[1],10),_ap2=(_tm[3]||'').toUpperCase();if(_ap2==='PM'&&_h!==12)_h+=12;if(_ap2==='AM'&&_h===12)_h=0;dd.setHours(_h,parseInt(_tm[2],10),0,0);}
     if(!isNaN(dd)&&dd.getFullYear()>=2000){APPT=dd;try{var _ap=activeProvider();if(_ap)_ap.apptISO=dd.toISOString();}catch(e){}}
   }catch(e){}
   try{if(typeof recomputeCountdown==='function')recomputeCountdown();}catch(e){}

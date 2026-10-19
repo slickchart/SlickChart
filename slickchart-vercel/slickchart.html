@@ -295,7 +295,7 @@ const S=document.getElementById('S');
 // resets when I save it" and there was no way to tell whether her phone had any of them — a whole
 // day was spent debugging code she may not have been running. Shown at the bottom of Settings, so
 // the answer is a screenshot away. Bump it on every ship.
-const APP_BUILD='2026-10-19a';
+const APP_BUILD='2026-10-19b';
 
 
 /* ════════════════════════════════════════════════════════════════
@@ -16157,7 +16157,7 @@ async function _pushEnable(){
     if(perm!=='granted'){proToast('Notifications are blocked \u2014 turn them on for SlickChart in your browser or phone settings',0);return false;}
     const tok=(typeof Cloud!=='undefined'&&Cloud&&Cloud.token)||'';
     if(!tok){proToast('Sign in first');return false;}
-    const reg=await navigator.serviceWorker.ready;
+    const reg=await _swReady();if(!reg){proToast('Could not turn notifications on. Close SlickChart, open it again and try once more.');return false;}
     let sub=await reg.pushManager.getSubscription();
     if(!sub)sub=await reg.pushManager.subscribe({userVisibleOnly:true,applicationServerKey:_urlB64ToUint8(VAPID_PUBLIC_KEY)});
     if(!sub){proToast('Could not turn notifications on');return false;}
@@ -16170,11 +16170,15 @@ async function _pushEnable(){
     return true;
   }catch(e){proToast('Could not turn notifications on');return false;}
 }
+// navigator.serviceWorker.ready never settles when sw.js failed to register (that error is swallowed),
+// so anything awaiting it hung forever: "Delete my data" deleted on the server and then never wiped the
+// phone or showed it was done. Give up after a few seconds instead (null = no worker).
+function _swReady(ms){try{if(!('serviceWorker' in navigator))return Promise.resolve(null);return Promise.race([navigator.serviceWorker.ready,new Promise(function(r){setTimeout(function(){r(null);},ms||4000);})]);}catch(e){return Promise.resolve(null);}}
 async function _pushDisable(){
   try{
     const tok=(typeof Cloud!=='undefined'&&Cloud&&Cloud.token)||'';
-    const reg=await navigator.serviceWorker.ready;
-    const sub=await reg.pushManager.getSubscription();
+    const reg=await _swReady();
+    const sub=reg&&reg.pushManager?await reg.pushManager.getSubscription():null;
     if(sub){
       await fetch('/api/provider-push',{method:'DELETE',headers:{'Content-Type':'application/json','Authorization':'Bearer '+tok},body:JSON.stringify({endpoint:sub.endpoint})}).catch(function(){});
       try{await sub.unsubscribe();}catch(e){}

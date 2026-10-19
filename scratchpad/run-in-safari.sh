@@ -11,7 +11,7 @@ here="$(cd "$(dirname "$0")" && pwd)"
 export PLAYWRIGHT_BROWSERS_PATH="${SC_WEBKIT:-/tmp/claude-0/-home-user-SlickChart/be0fe3b4-54df-5d41-bda7-89dbec145231/scratchpad/pw-webkit}"
 src="$1"; shift
 tmpdir="$here/.safari-run"; mkdir -p "$tmpdir"
-for f in "$src" "$here"/*-lib.mjs; do
+for f in "$src" "$here"/*.mjs; do
   sed -E "s#newContext\(\{#newContext({serviceWorkers:'block',#g; s#newContext\(\)#newContext({serviceWorkers:'block'})#g; s#\.newPage\(\{#.newPage({serviceWorkers:'block',#g; s#pw\.chromium\.launch\(\{ ?executablePath: ?'[^']*' ?\}\)#pw.webkit.launch()#g; s#chromium\.launch\(\{ ?executablePath: ?'[^']*' ?\}\)#pw.webkit.launch()#g" "$f" > "$tmpdir/$(basename "$f")"
 done
 node "$tmpdir/$(basename "$src")" "$@"
