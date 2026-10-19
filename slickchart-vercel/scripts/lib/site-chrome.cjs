@@ -88,7 +88,7 @@ const buildBanner = `<a class="bbanner" href="/build"><div class="in">
 </div></a>`;
 
 const chromeFooter = `<footer><div class="wrap">
-  <a href="/">Home</a><a href="/blog">Blog</a><a href="/build/blog">Build blog</a><a href="/switch">Switching</a><a href="/privacy">Privacy</a><a href="/terms">Terms</a>
+  <a href="/">Home</a><a href="/blog">Blog</a><a href="/esthetician-forms">Forms</a><a href="/build/blog">Build blog</a><a href="/switch">Switching</a><a href="/privacy">Privacy</a><a href="/terms">Terms</a>
   <a href="mailto:support@slickchart.app">Contact</a>
   <div class="tiny">SlickChart &middot; Made for solo beauty &amp; wellness pros &middot; Pleasant Hill, CA</div>
 </div></footer>`;

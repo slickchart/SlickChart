@@ -62,7 +62,9 @@ const STATIC_PAGES = [
   { loc: '/support', priority: '0.4', changefreq: 'monthly' },
   // The free starter opt-in. /build is deliberately NOT here — a sales page doesn't need to be
   // crawled — but /free is meant to spread, and every copy of the freebie links back to it.
-  { loc: '/free', priority: '0.9', changefreq: 'monthly' }
+  { loc: '/free', priority: '0.9', changefreq: 'monthly' },
+  // Hand-written forms hubs (Ashley's collections, linking her Etsy shop and SlickChart signup).
+  { loc: '/esthetician-forms', priority: '0.8', changefreq: 'monthly' }
 ];
 
 // ── frontmatter ────────────────────────────────────────────────────────────
