@@ -553,7 +553,7 @@ const S=document.getElementById('S');
 // resets when I save it" and there was no way to tell whether her phone had any of them — a whole
 // day was spent debugging code she may not have been running. Shown at the bottom of Settings, so
 // the answer is a screenshot away. Bump it on every ship.
-const APP_BUILD='2026-10-19b';
+const APP_BUILD='2026-10-19c';
 
 
 /* ════════════════════════════════════════════════════════════════
@@ -34278,7 +34278,10 @@ function _ncQHTML(q,i){
   else field=`<input class="fi" id="${id}" aria-label="${_fileEsc(_bizFill(q.label))}" value="${esc}" oninput="newClientData['${id}']=this.value" placeholder="Answer…">`;
   return `<div style="margin-bottom:14px;">${lab}${field}</div>`;
 }
-function renderNewClient(){setNav('clients');newClientData={};renderNCBasicStep();}
+// What she typed on "Add a client" before leaving the screen without saving (a call, a quick look at
+// the calendar). Kept in memory until the client is saved, so coming back does not mean retyping it.
+let _ncDraft={};
+function renderNewClient(){setNav('clients');newClientData=Object.assign({},_ncDraft);renderNCBasicStep();}
 function renderNCBasicStep(){
   setNav('clients');
   document.getElementById('tt').textContent='Add Client';
@@ -34293,6 +34296,7 @@ function renderNCBasicStep(){
     <span class="fl-lbl">How did you hear about us?</span><input class="fi" id="nc-ref" placeholder="Instagram, Google, word of mouth…" value="${v('nc-ref')}" style="margin-bottom:8px;">
     <button class="btnp" style="border-radius:8px;margin:8px 0 20px;" onclick="ncSaveBasic()"><i class="ti ti-check"></i> Save client</button>
   </div>`;
+  try{['nc-name','nc-phone','nc-email','nc-dob','nc-ref'].forEach(function(k){const el=document.getElementById(k);if(el)el.addEventListener('input',function(){_ncDraft[k]=el.value;});});}catch(e){}
 }
 function _newClientId(){
   // Timestamp for ordering, plus a RANDOM tail, plus the local uniqueness loop.
@@ -34365,6 +34369,7 @@ function ncSaveBasic(){
     // block adding someone because of a sync hiccup.
     _pushClientToSquare(id);
   }
+  _ncDraft={};
   nav('nc-next-step',id);
 }
 async function _pushClientToSquare(id){
@@ -34579,6 +34584,8 @@ function finishNewClient(){
 
 // ── Provider fills the intake themselves, on behalf of the client ──
 let _pfiData={};
+// Unsaved intake answers per client, so leaving the screen and coming back keeps them (memory only).
+const _pfiDrafts={};
 function _pfiQs(fid){
   const t=formTmpls[fid];if(!t)return [];
   return t.qs.filter(q=>{
@@ -34622,7 +34629,7 @@ function renderProviderFillIntake(id){
   const c=CL[id];if(!c){nav('clients');return;}
   const fid=(typeof _ncIntakeFormId==='function')?_ncIntakeFormId():null;
   if(!fid){proToast('No intake form is set up for your profession yet');nav('client',id);return;}
-  _pfiData={};
+  _pfiData=_pfiDrafts[id]||(_pfiDrafts[id]={});
   document.getElementById('tt').textContent='Fill Intake';
   S.innerHTML=`
   <div style="padding:12px 16px 0;">
@@ -34657,6 +34664,7 @@ function _pfiSave(id,fid){
   if(flagged.length)c.flaggedContra={form:t.name,items:flagged.slice(),date:'Today'};
   try{saveClients();}catch(e){}
   try{if(typeof _pushKeyNow==='function')_pushKeyNow('sc_clients',_lsGet('sc_clients')||'');}catch(e){}
+  delete _pfiDrafts[id];
   proToast('Intake saved \u2713');
   nav('client',id);
 }
@@ -34671,7 +34679,7 @@ function renderPasswordSecurity(){
       <span class="fl-lbl">Current password</span>
       <div style="position:relative;margin-bottom:12px;"><input id="pw-current" class="fi" type="password" autocomplete="current-password" placeholder="••••••••" style="margin-bottom:0;padding-right:44px;"><button type="button" onclick="_togglePw('pw-current',this)" aria-label="Show password" style="position:absolute;right:4px;top:0;height:46px;background:none;border:none;color:var(--p-mut);cursor:pointer;padding:0 10px;display:flex;align-items:center;"><i class="ti ti-eye" style="font-size:18px;"></i></button></div>
       <span class="fl-lbl">New password</span>
-      <div style="position:relative;margin-bottom:12px;"><input class="fi" type="password" placeholder="••••••••" style="margin-bottom:0;padding-right:44px;" id="pw-new"><button type="button" onclick="_togglePw('pw-new',this)" aria-label="Show password" style="position:absolute;right:4px;top:0;height:46px;background:none;border:none;color:var(--p-mut);cursor:pointer;padding:0 10px;display:flex;align-items:center;"><i class="ti ti-eye" style="font-size:18px;"></i></button></div>
+      <div style="position:relative;margin-bottom:12px;"><input class="fi" type="password" autocomplete="new-password" placeholder="••••••••" style="margin-bottom:0;padding-right:44px;" id="pw-new"><button type="button" onclick="_togglePw('pw-new',this)" aria-label="Show password" style="position:absolute;right:4px;top:0;height:46px;background:none;border:none;color:var(--p-mut);cursor:pointer;padding:0 10px;display:flex;align-items:center;"><i class="ti ti-eye" style="font-size:18px;"></i></button></div>
       <span class="fl-lbl">Confirm new password</span>
       <div style="position:relative;margin-bottom:14px;"><input id="pw-confirm" class="fi" type="password" autocomplete="new-password" placeholder="••••••••" style="margin-bottom:0;padding-right:44px;"><button type="button" onclick="_togglePw('pw-confirm',this)" aria-label="Show password" style="position:absolute;right:4px;top:0;height:46px;background:none;border:none;color:var(--p-mut);cursor:pointer;padding:0 10px;display:flex;align-items:center;"><i class="ti ti-eye" style="font-size:18px;"></i></button></div>
       <div style="display:flex;flex-direction:column;gap:5px;margin-bottom:14px;">
