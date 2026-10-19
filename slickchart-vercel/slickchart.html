@@ -304,7 +304,7 @@ const S=document.getElementById('S');
 // resets when I save it" and there was no way to tell whether her phone had any of them — a whole
 // day was spent debugging code she may not have been running. Shown at the bottom of Settings, so
 // the answer is a screenshot away. Bump it on every ship.
-const APP_BUILD='2026-10-19k';
+const APP_BUILD='2026-10-19l';
 
 
 /* ════════════════════════════════════════════════════════════════
@@ -15885,7 +15885,7 @@ function inviteVirtualConsult(id,_force,_kind,_formId,_routine){
     askQuestions:Array.isArray(v.askQuestions)?v.askQuestions.slice():[],
     routine:(_routine!==false)};   // ON unless she turned it off for this invite
   try{persistVcState();}catch(e){}
-  try{SlickBridge.post('virtual-consult-invite',{providerId:'jess',clientId:id,kind:v.kind,title:v.title,fee:vcFee,photoLabels:Array.isArray(v.photoLabels)?v.photoLabels:[],refTitle:v.refTitle||null,askQuestions:Array.isArray(v.askQuestions)?v.askQuestions.slice():[],refLabels:Array.isArray(v.refLabels)?v.refLabels:null});}catch(e){}
+  try{SlickBridge.post('virtual-consult-invite',{providerId:'jess',clientId:id,kind:v.kind,title:v.title,fee:'',photoLabels:Array.isArray(v.photoLabels)?v.photoLabels:[],refTitle:v.refTitle||null,askQuestions:Array.isArray(v.askQuestions)?v.askQuestions.slice():[],refLabels:Array.isArray(v.refLabels)?v.refLabels:null});}catch(e){}
   // {consult} resolves to the same word this sentence used to interpolate, so an unedited template
   // sends byte-identical text to what shipped before.
   const _photoFree=!(Array.isArray(v.photoLabels)&&v.photoLabels.length);
@@ -15941,7 +15941,7 @@ const _MSG_LABELS={
 };
 // {consult} only means anything on the invite, so it is offered only there.
 const _MSG_TOKENS={
-  vc_invite:['client','me','business','consult','fee'],
+  vc_invite:['client','me','business','consult'],
   vc_review:['client','me','business'],
   vc_invite_product:['client','me','business'],
   vc_review_product:['client','me','business'],
@@ -15979,6 +15979,8 @@ function _msgCtx(clientId,extra){
     client:String((c&&c.name)||'').trim().split(' ')[0]||'there',
     me:((typeof _providerFirstName==='function'&&_providerFirstName())||'')||'your esthetician',
     business:((typeof bizInfo!=='undefined'&&bizInfo&&bizInfo.name)||'')||'the studio',
+    // No consult fee setting any more (Ashley, 2026-10-19): providers handle payment themselves.
+    // {fee} stays readable so a message she wrote with it still fills in.
     fee:((typeof vcFee!=='undefined'&&vcFee)||'free')
   };
   if(extra)Object.keys(extra).forEach(function(k){ctx[k]=extra[k];});
@@ -15986,7 +15988,7 @@ function _msgCtx(clientId,extra){
 }
 function _msgText(id,clientId,extra,typeId){return _msgFill(_msgRaw(id,typeId),_msgCtx(clientId,extra));}
 // The editor. Reached from the Photo consults screen, not buried in Settings, because that is
-// where she is already setting the fee and the consult types.
+// where she is already setting up the consult types.
 function _msgCardHTML(){
   const row=function(id){
     const L=_MSG_LABELS[id]||{name:id,when:''};
@@ -16787,22 +16789,6 @@ function renderVirtual(){
   <div id="vtab-content"></div>`;
   switchVTab(activeVirtualTab);
 }
-// Consultation fee is provider-set and defaults to Free (no price). Persisted locally; the client
-// app never displays it, it's the provider's own note of what they charge, if anything. Not every
-// provider makes this a paid service, so nothing is pre-selected as a price.
-function _setVcFee(val,btn){
-  const _persist=()=>{try{(function(_v){localStorage.setItem('sc_vc_fee',_v);if(typeof _pushKeyNow==='function')_pushKeyNow('sc_vc_fee',_v);return _v;})(vcFee);}catch(e){}switchVTab('upload');};
-  if(val==='__custom__'){
-    _inputSheet({title:'Set your consultation fee',body:'Just the number — leave blank for free.',placeholder:'e.g. 25',inputmode:'decimal',value:(vcFee&&vcFee.charAt(0)==='$')?vcFee.slice(1):'',action:'Save'},function(raw){
-      raw=String(raw||'').replace(/[^0-9.]/g,'');
-      vcFee=raw?('$'+raw):'';
-      _persist();
-    });
-    return;
-  }
-  vcFee=val;                                    // '' for Free, or a preset like '$25'
-  _persist();                                    // re-render so the right pill shows active
-}
 // ── PUBLIC BOOKING LINK ──────────────────────────────────────────────────────────────────────────
 // One link she can put on her website and in her Instagram bio, so someone who is not a client yet
 // can book her. It shares the SAME handle as her consult link (/book/<slug> and /consult/<slug>), so
@@ -17172,11 +17158,6 @@ function switchVTab(tab){
       <div style="font-size:14px;font-weight:500;color:var(--p-mut);text-transform:uppercase;letter-spacing:.07em;margin-bottom:10px;">What clients see</div>
       <div style="background:var(--surf2);border:1px solid var(--p-line);border-radius:12px;overflow:hidden;margin-bottom:14px;">
         ${[['ti-send','Send you a request','Their name, contact, and goals'],['ti-clock','You follow up','Collect photos or book them in'],['ti-message-circle','Receive your expert notes','Personalized, delivered in-app']].map(([icon,title,sub])=>`<div style="padding:10px 12px;border-bottom:1px solid var(--p-line2);display:flex;align-items:center;gap:10px;"><div style="width:32px;height:32px;border-radius:8px;background:var(--accent-tint);display:flex;align-items:center;justify-content:center;flex-shrink:0;"><i class="ti ${icon}" style="font-size:16px;color:var(--accent-strong);"></i></div><div><div style="font-size:16px;font-weight:500;color:var(--p-ink);">${title}</div><div style="font-size:16px;color:var(--p-mut);">${sub}</div></div></div>`).join('')}
-      </div>
-      <div style="background:var(--surf2);border:1px solid var(--p-line);border-radius:12px;padding:12px;margin-bottom:16px;">
-        <div style="font-size:16px;font-weight:500;color:var(--p-ink);margin-bottom:8px;">Consultation fee</div>
-        <div style="display:flex;gap:8px;margin-bottom:8px;">${(function(){const preset=[['Free',''],['$15','$15'],['$25','$25'],['$49','$49']];const isPreset=preset.some(pr=>pr[1]===vcFee);const pills=preset.map(pr=>`<button class="pill ${pr[1]===vcFee?'active':''}" onclick="_setVcFee('${pr[1]}',this)">${pr[0]}</button>`);pills.push(`<button class="pill ${(!isPreset&&vcFee)?'active':''}" onclick="_setVcFee('__custom__',this)">${(!isPreset&&vcFee)?_fileEsc(vcFee):'Custom'}</button>`);return pills.join('');})()}</div>
-        <div style="font-size:14px;color:var(--p-mut);">${vcFee?'Charged before clients submit their photos':'This consult is free, tap a price above only if you charge for it.'}</div>
       </div>
       ${(typeof _msgCardHTML==='function')?_msgCardHTML():''}
       ${(typeof _starterCardHTML==='function')?_starterCardHTML():''}
@@ -21524,7 +21505,7 @@ function _assembleClientData(id){
     if(vi&&vi.invited&&!vi.submitted){
       // Prefer the labels captured on the invite; fall back to the current profile for older invites.
       const vp=(vi&&vi.kind)?vi:((typeof _vcProfile==='function')?_vcProfile():{});
-      vcInvite={kind:vp.kind||'skin',title:vp.title||'Photo consult',fee:(typeof vcFee!=='undefined'?vcFee:'')||'',invitedAt:vi.invitedAt||0,
+      vcInvite={kind:vp.kind||'skin',title:vp.title||'Photo consult',fee:'',invitedAt:vi.invitedAt||0,
         photoLabels:Array.isArray(vp.photoLabels)?vp.photoLabels:null,refTitle:vp.refTitle||null,refLabels:Array.isArray(vp.refLabels)?vp.refLabels:null,
         routine:(vi.routine!==false),
         // The questions the provider chose. A real client gets the invite only through here, so without

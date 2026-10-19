@@ -711,8 +711,6 @@ saved anywhere", not "does this always call that".
 | `_setRecReason` | `/api/clients` | via `_syncSpecificClientsToServer` |
 | `_setShotMode` | `/api/clients` | via `syncClientEvents` |
 | `_setShotMode` | `/api/provider-form` | via `submitSignOnDevice` |
-| `_setVcFee` | `/api/consult-requests` | via `_loadConsultRequests` |
-| `_setVcFee` | `/api/consult-slug` | via `_loadConsultLink` |
 | `_shareClientLinkSheet` | `/api/clients` | via `_syncSpecificClientsToServer` |
 | `_shareClientLinkSheet` | `/api/logout` | via `_doLogout` |
 | `_shareClientLinkSheet` | `/api/provider-push` | via `_doLogout` |
