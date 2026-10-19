@@ -2535,6 +2535,8 @@ function _showAppDownloadNudge(){
         +'<button onclick="_dismissAppNudge()" aria-label="Not now" style="flex-shrink:0;background:none;border:none;color:var(--c-mut);cursor:pointer;padding:2px 4px;line-height:0;font-size:16px;">✕</button>'
       +'</div>'
       +'<div style="display:flex;gap:8px;">'+btns+'</div>';
+    // Only on Home: arriving from a notification on Messages or a form, it sat over the message box.
+    try{if(typeof currentScreen!=='undefined'&&currentScreen!=='home')el.style.display='none';}catch(e){}
     document.body.appendChild(el);
   }catch(e){}
 }
@@ -3820,8 +3822,15 @@ function _ffSetDraft(key,val){
   clearTimeout(_ffDraftTimer);
   // Bind the save to THIS form's key now: by the time the timer fires the client may be on the next form.
   const sk=_ffDraftStorageKey(),qids=_ffCurQids(),snap=_ffDraft;
-  _ffDraftTimer=setTimeout(()=>{try{localStorage.setItem(sk,JSON.stringify(Object.assign({},snap,qids?{_qids:qids}:{})));}catch(e){}},400);
+  _ffDraftPending=()=>{_ffDraftPending=null;try{localStorage.setItem(sk,JSON.stringify(Object.assign({},snap,qids?{_qids:qids}:{})));}catch(e){}};
+  _ffDraftTimer=setTimeout(()=>{if(_ffDraftPending)_ffDraftPending();},400);
 }
+// Android reloads a discarded background tab: write the waiting draft the moment the page is hidden.
+let _ffDraftPending=null;
+try{
+  window.addEventListener('pagehide',function(){if(_ffDraftPending){clearTimeout(_ffDraftTimer);_ffDraftPending();}});
+  document.addEventListener('visibilitychange',function(){if(document.hidden&&_ffDraftPending){clearTimeout(_ffDraftTimer);_ffDraftPending();}});
+}catch(e){}
 // Clears ONE form's draft. Pass the storage key captured while that form was current: a background
 // submit finishes after the client has moved on, and reading the current form then wiped the NEXT
 // form's draft and left this one's (medical answers) on the device.

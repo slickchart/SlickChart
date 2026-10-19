@@ -562,7 +562,7 @@ const S=document.getElementById('S');
 // resets when I save it" and there was no way to tell whether her phone had any of them — a whole
 // day was spent debugging code she may not have been running. Shown at the bottom of Settings, so
 // the answer is a screenshot away. Bump it on every ship.
-const APP_BUILD='2026-10-19g';
+const APP_BUILD='2026-10-19h';
 
 
 /* ════════════════════════════════════════════════════════════════
@@ -7417,6 +7417,8 @@ function persistCapturedPhotos(){
     try{if(typeof _writeNoteClientId!=='undefined'&&_writeNoteClientId&&typeof _snapshotWriteNoteNow==='function')_snapshotWriteNoteNow(_writeNoteClientId);}catch(e){}
     try{if(typeof saveProviderNoteDrafts==='function')saveProviderNoteDrafts();}catch(e){}
     try{if(typeof _savePersistenceSweep==='function')_savePersistenceSweep();}catch(e){}
+    // The private note on an open client file saves 800ms after typing stops; save it now.
+    try{document.querySelectorAll('textarea[id^="gpnote-"]').forEach(function(t){_gpNoteSave(t.id.slice(7));});}catch(e){}
   }
   try{window.addEventListener('pagehide',_flushSession);}catch(e){}
   try{window.addEventListener('visibilitychange',function(){if(document.visibilityState==='hidden')_flushSession();});}catch(e){}
@@ -8730,7 +8732,12 @@ function _scBack(){
     const cf=document.getElementById('confirm-modal');
     if(cf){const c=cf.querySelector('#_cf-cancel,#_is-cancel');if(c)c.click();else cf.remove();return true;}
     const ov=_topOverlay();
-    if(ov){try{ov.dispatchEvent(new MouseEvent('click',{bubbles:true}));}catch(_){} if(document.body.contains(ov)){try{ov.remove();}catch(_){}} return true;}
+    if(ov){
+      // Overlays that own something live (a recording, the camera) close through their own function.
+      if(ov.id==='voice-overlay'){_voiceSafeClose();return true;}
+      if(ov.id==='ghost-cam'){try{_ghostClose();}catch(_){}return true;}
+      try{ov.dispatchEvent(new MouseEvent('click',{bubbles:true}));}catch(_){} if(document.body.contains(ov)){try{ov.remove();}catch(_){}} return true;
+    }
     if(_navStack.length){navBack();return true;}
     const cur=(_navCur&&_navCur.screen)||'';
     if(cur&&cur!=='home'){nav('home');return true;}
@@ -11891,7 +11898,7 @@ let _voiceSeed='';   // text to continue FROM when resuming after a pause+edit
 function _voiceKeyframes(){if(!document.getElementById('voice-kf')){const st=document.createElement('style');st.id='voice-kf';st.textContent='@keyframes vpulse{0%,100%{opacity:1;transform:scale(1)}50%{opacity:.35;transform:scale(.7)}}.voice-pulse{animation:vpulse 1s infinite;}';document.head.appendChild(st);}}
 function _voiceOverlay(html){
   let ov=document.getElementById('voice-overlay');
-  if(!ov){ov=document.createElement('div');ov.id='voice-overlay';ov.style.cssText='position:fixed;inset:0;background:rgba(0,0,0,.72);z-index:9999;display:flex;align-items:center;justify-content:center;padding:24px 16px;box-sizing:border-box;';document.body.appendChild(ov);ov.addEventListener('click',e=>{if(e.target===ov)_voiceClose();});}
+  if(!ov){ov=document.createElement('div');ov.id='voice-overlay';ov.style.cssText='position:fixed;inset:0;background:rgba(0,0,0,.72);z-index:9999;display:flex;align-items:center;justify-content:center;padding:24px 16px;box-sizing:border-box;';document.body.appendChild(ov);ov.addEventListener('click',e=>{if(e.target===ov)_voiceSafeClose();});}
   ov.innerHTML=`<div style="width:100%;max-width:440px;background:var(--surf1);border:1px solid var(--p-line);border-radius:16px;padding:18px 18px 26px;box-sizing:border-box;">${html}</div>`;
 }
 function _voiceClose(){_voiceStopping=true;_voiceMode='note';_recUnmatched=[];const ov=document.getElementById('voice-overlay');if(ov)ov.remove();try{if(_voiceRec)_voiceRec.stop();}catch(e){}_voiceRec=null;try{if(_voiceRecorder){if(_voiceRecorder.rec&&_voiceRecorder.rec.state&&_voiceRecorder.rec.state!=='inactive'){_voiceRecCancel=true;_voiceRecorder.rec.stop();}_stopStream(_voiceRecorder.stream);_voiceRecorder=null;}}catch(e){}}
@@ -11970,7 +11977,10 @@ function startVoiceNote(id){
   if(!_recordSupported())return _startVoiceNoteLive(id);
   if(_whisperOn)return _startVoiceNoteRecorded(id);
   Promise.race([_probeWhisper(),new Promise(res=>setTimeout(res,2500))])
-    .then(function(){ if(_whisperOn)_startVoiceNoteRecorded(id); else _startVoiceNoteLive(id); })
+    // No live dictation on this device (Android's app browser has none): record anyway. If the check
+    // only failed on a weak signal, the upload still works; if transcription is really off, the
+    // server says so and this falls back to typing, as before.
+    .then(function(){ if(_whisperOn||!(window.SpeechRecognition||window.webkitSpeechRecognition))_startVoiceNoteRecorded(id); else _startVoiceNoteLive(id); })
     .catch(function(){ _startVoiceNoteLive(id); });
 }
 async function _startVoiceNoteRecorded(id){
@@ -12003,8 +12013,27 @@ async function _startVoiceNoteRecorded(id){
   <button onclick="_voiceRecStop()" style="width:100%;background:var(--accent);color:var(--accent-ink);border:1px solid var(--btn-edge);border-radius:12px;padding:13px;font-size:16px;font-weight:700;cursor:pointer;font-family:inherit;display:flex;align-items:center;justify-content:center;gap:7px;"><i class="ti ti-player-stop"></i> Stop &amp; transcribe</button>
   <button onclick="_voiceClose()" style="width:100%;margin-top:8px;background:none;border:none;color:var(--p-mut);font-size:16px;cursor:pointer;font-family:inherit;padding:6px;">Cancel</button>`);
 }
+// A tap outside the voice sheet, Escape, or the Android back gesture used to call _voiceClose(), which
+// throws away a recording in progress, a transcript waiting to be filed, or audio still uploading
+// (Android sweep, 2026-10-19: an edge swipe lost the whole note). Stop-and-keep instead; ask before
+// discarding text.
+let _voiceTranscribing=false;
+function _voiceSafeClose(){
+  try{
+    if(_voiceTranscribing){if(typeof proToast==='function')proToast('Still turning your recording into text\u2026');return;}
+    if(_voiceRecorder&&_voiceRecorder.rec&&_voiceRecorder.rec.state==='recording'){_voiceRecStop();return;}
+    if(_voiceRec&&!_voiceStopping){_voiceStop();return;}
+    const ta=document.getElementById('voice-ta');
+    const txt=String((ta&&ta.value)||_voiceText||'').trim();
+    if(txt&&!document.getElementById('confirm-modal')){confirmModal({title:'Discard this voice note?',body:'What you recorded will not be saved.',action:'Discard'},function(){_voiceClose();});return;}
+    if(txt)return;
+  }catch(e){}
+  _voiceClose();
+}
 function _voiceRecStop(){try{if(_voiceRecorder&&_voiceRecorder.rec&&_voiceRecorder.rec.state!=='inactive')_voiceRecorder.rec.stop();}catch(e){}}
+let _voiceLastBlob=null,_voiceLastSeed='';
 async function _transcribeAndPreview(id,blob,seed){
+  _voiceLastBlob=blob;_voiceLastSeed=seed||'';_voiceTranscribing=true;
   _voiceOverlay(`<div style="display:flex;align-items:center;gap:11px;padding:22px 2px;"><div class="spin"></div><div><div style="font-size:16px;font-weight:600;color:var(--p-ink);">Transcribing your note…</div><div style="font-size:16px;color:var(--p-mut);margin-top:3px;">High-accuracy AI transcription</div></div></div>`);
   try{
     const b64=await _blobToB64(blob);
@@ -12016,14 +12045,19 @@ async function _transcribeAndPreview(id,blob,seed){
     if(data&&data.enabled===false){_whisperOn=false;if(typeof proToast==='function')proToast('High-accuracy transcription isn’t set up — using live dictation');_startVoiceNoteLive(id);return;}
     if(!r.ok||data.error||typeof data.text!=='string'){throw new Error((data&&data.error)||'transcribe-failed');}
     _voiceText=((seed?seed+' ':'')+String(data.text||'').trim()).trim();
+    _voiceTranscribing=false;_voiceLastBlob=null;
     _voicePreview();
   }catch(e){
+    _voiceTranscribing=false;
+    // Keep the recording: "Try again" re-sends THIS audio (a weak signal used to cost the whole note,
+    // because Try again started a brand-new recording).
+    const _canRetry=!!(_voiceLastBlob&&!(e&&e.message==='too-long'));
     const t=(e&&e.message==='too-long')?'That recording was too long to upload. Please record a shorter note.':'Couldn’t transcribe that recording. Try again, or type your note below.';
     _voiceOverlay(`<div style="display:flex;align-items:center;gap:8px;margin-bottom:8px;"><i class="ti ti-microphone-off" style="font-size:16px;color:var(--p-amber);"></i><span style="font-size:16px;font-weight:600;color:var(--p-ink);">Transcription didn’t work</span></div>
     <div style="font-size:16px;color:var(--p-amber);line-height:1.5;margin-bottom:10px;">${t}</div>
     <textarea id="voice-ta" placeholder="Type your note…" style="width:100%;height:120px;background:var(--p-bg);border:1px solid var(--p-line-ctl);border-radius:12px;padding:11px;font-size:16px;color:var(--p-ink);font-family:inherit;line-height:1.6;resize:none;outline:none;box-sizing:border-box;">${(_voiceText||'').replace(/</g,'&lt;')}</textarea>
     <div style="display:flex;gap:8px;margin-top:12px;">
-      <button onclick="startVoiceNote('${_jsAttr(id)}')" style="flex:1;background:var(--surf2);border:1px solid var(--accent);color:var(--accent-strong);border-radius:12px;padding:12px;font-size:16px;font-weight:600;cursor:pointer;font-family:inherit;"><i class="ti ti-refresh"></i> Try again</button>
+      ${_canRetry?`<button onclick="_transcribeAndPreview('${_jsAttr(id)}',_voiceLastBlob,_voiceLastSeed)" style="flex:1;background:var(--surf2);border:1px solid var(--accent);color:var(--accent-strong);border-radius:12px;padding:12px;font-size:16px;font-weight:600;cursor:pointer;font-family:inherit;"><i class="ti ti-refresh"></i> Try again</button>`:`<button onclick="startVoiceNote('${_jsAttr(id)}')" style="flex:1;background:var(--surf2);border:1px solid var(--accent);color:var(--accent-strong);border-radius:12px;padding:12px;font-size:16px;font-weight:600;cursor:pointer;font-family:inherit;"><i class="ti ti-refresh"></i> Try again</button>`}
       <button onclick="_voiceText=document.getElementById('voice-ta').value;_voicePreview()" style="flex:1;background:var(--accent);color:var(--accent-ink);border:1px solid var(--btn-edge);border-radius:12px;padding:12px;font-size:16px;font-weight:600;cursor:pointer;font-family:inherit;">Use this</button>
     </div>
     <button onclick="_voiceClose()" style="width:100%;margin-top:8px;background:none;border:none;color:var(--p-mut);font-size:16px;cursor:pointer;font-family:inherit;padding:6px;">Cancel</button>`);
@@ -34350,7 +34384,11 @@ function _ncQHTML(q,i){
 }
 // What she typed on "Add a client" before leaving the screen without saving (a call, a quick look at
 // the calendar). Kept in memory until the client is saved, so coming back does not mean retyping it.
-let _ncDraft={};
+let _ncDraft=(function(){try{return JSON.parse(sessionStorage.getItem('slickchart-nc-draft')||'{}')||{};}catch(e){return {};}})();
+// sessionStorage, not just memory: Android discards a background tab (she switched to Contacts to copy
+// a number) and reloads it on return. sessionStorage survives that reload and nothing else, and the
+// storage layer only patches localStorage, so this never syncs anywhere.
+function _ncDraftSave(){try{sessionStorage.setItem('slickchart-nc-draft',JSON.stringify(_ncDraft));}catch(e){}}
 function renderNewClient(){setNav('clients');newClientData=Object.assign({},_ncDraft);renderNCBasicStep();}
 function renderNCBasicStep(){
   setNav('clients');
@@ -34366,7 +34404,7 @@ function renderNCBasicStep(){
     <span class="fl-lbl">How did you hear about us?</span><input class="fi" id="nc-ref" placeholder="Instagram, Google, word of mouth…" value="${v('nc-ref')}" style="margin-bottom:8px;">
     <button class="btnp" style="border-radius:8px;margin:8px 0 20px;" onclick="ncSaveBasic()"><i class="ti ti-check"></i> Save client</button>
   </div>`;
-  try{['nc-name','nc-phone','nc-email','nc-dob','nc-ref'].forEach(function(k){const el=document.getElementById(k);if(el)el.addEventListener('input',function(){_ncDraft[k]=el.value;});});}catch(e){}
+  try{['nc-name','nc-phone','nc-email','nc-dob','nc-ref'].forEach(function(k){const el=document.getElementById(k);if(el)el.addEventListener('input',function(){_ncDraft[k]=el.value;_ncDraftSave();});});}catch(e){}
 }
 function _newClientId(){
   // Timestamp for ordering, plus a RANDOM tail, plus the local uniqueness loop.
@@ -34439,7 +34477,7 @@ function ncSaveBasic(){
     // block adding someone because of a sync hiccup.
     _pushClientToSquare(id);
   }
-  _ncDraft={};
+  _ncDraft={};_ncDraftSave();
   nav('nc-next-step',id);
 }
 async function _pushClientToSquare(id){
