@@ -304,7 +304,7 @@ const S=document.getElementById('S');
 // resets when I save it" and there was no way to tell whether her phone had any of them — a whole
 // day was spent debugging code she may not have been running. Shown at the bottom of Settings, so
 // the answer is a screenshot away. Bump it on every ship.
-const APP_BUILD='2026-10-19e';
+const APP_BUILD='2026-10-19f';
 
 
 /* ════════════════════════════════════════════════════════════════
@@ -357,8 +357,10 @@ const SlickBridge=(function(){
 function providerSystemNotify(title,body){
   try{
     if('Notification'in window&&Notification.permission==='granted'&&document.hidden){
-      const n=new Notification(title,{body,tag:'slickchart-pro'});
-      n.onclick=()=>{window.focus();nav('requests');n.close();};
+      // Chrome on Android throws on new Notification() (only a service worker may show one there).
+      let n=null;try{n=new Notification(title,{body,tag:'slickchart-pro'});}catch(_){n=null;}
+      if(n){n.onclick=()=>{window.focus();nav('requests');n.close();};}
+      else if(navigator.serviceWorker&&navigator.serviceWorker.getRegistration){navigator.serviceWorker.getRegistration().then(function(reg){if(reg&&reg.showNotification)reg.showNotification(title,{body,tag:'slickchart-pro',data:{url:'/slickchart?n=requests'}});}).catch(function(){});}
     }
   }catch(e){}
 }
@@ -6911,6 +6913,8 @@ function _scApplyTheme(){
   // The phone's status bar / browser chrome: a solid colour per theme (a CSS variable here is ignored).
   try{const m=document.querySelector('meta[name="theme-color"]');if(m)m.setAttribute('content',t==='light'?'#e6efeb':'#050d0c');}catch(e){}
   try{if(typeof applyTheme==='function')applyTheme();}catch(e){}   // re-derive brand tints for the new ground
+  // In the app, the phone's status bar icons follow the theme (dark icons were invisible on light).
+  try{const SB=_isNativeApp()&&window.Capacitor.Plugins.StatusBar;if(SB&&SB.setStyle)SB.setStyle({style:t==='light'?'LIGHT':'DARK'});}catch(e){}
   try{_syncHeaderLogo();}catch(e){}                                // re-back the logo for the new bar luminance
 }
 function _scSetTheme(p){try{localStorage.setItem('sc_provider_theme',p);}catch(e){}_scApplyTheme();if(typeof renderNotifSettings==='function'&&document.querySelector('[data-theme-seg]'))renderNotifSettings();}
@@ -11774,7 +11778,7 @@ function _startVoiceNoteLive(id){
   const _seed=(_voiceSeed||'').trim();_voiceSeed='';_voiceText=_seed;
   const SR=window.SpeechRecognition||window.webkitSpeechRecognition;
   if(!SR){
-    _voiceOverlay(`<div style="font-size:16px;font-weight:600;color:var(--p-ink);margin-bottom:4px;">Voice note</div><div style="font-size:16px;color:var(--p-amber);line-height:1.5;margin-bottom:10px;">Live dictation isn't supported in this browser. You can type or paste your note here instead, it saves to your notes the same way.</div><textarea id="voice-ta" style="width:100%;height:120px;background:var(--p-bg);border:1px solid var(--p-line-ctl);border-radius:12px;padding:11px;font-size:16px;color:var(--p-ink);font-family:inherit;line-height:1.6;resize:none;outline:none;box-sizing:border-box;"></textarea><div style="display:flex;gap:8px;margin-top:12px;"><button onclick="_voiceSave(document.getElementById('voice-ta').value)" style="flex:1;background:var(--accent);color:var(--accent-ink);border:1px solid var(--btn-edge);border-radius:12px;padding:12px;font-size:16px;font-weight:600;cursor:pointer;font-family:inherit;">Save to notes</button><button onclick="_voiceClose()" style="background:var(--surf2);border:1px solid var(--p-line-ctl);color:var(--p-mut);border-radius:12px;padding:12px 16px;font-size:16px;cursor:pointer;font-family:inherit;">Cancel</button></div>`);
+    _voiceOverlay(`<div style="font-size:16px;font-weight:600;color:var(--p-ink);margin-bottom:4px;">Voice note</div><div style="font-size:16px;color:var(--p-amber);line-height:1.5;margin-bottom:10px;">Live dictation isn't available here. You can type or paste your note here instead, it saves to your notes the same way.</div><textarea id="voice-ta" style="width:100%;height:120px;background:var(--p-bg);border:1px solid var(--p-line-ctl);border-radius:12px;padding:11px;font-size:16px;color:var(--p-ink);font-family:inherit;line-height:1.6;resize:none;outline:none;box-sizing:border-box;"></textarea><div style="display:flex;gap:8px;margin-top:12px;"><button onclick="_voiceSave(document.getElementById('voice-ta').value)" style="flex:1;background:var(--accent);color:var(--accent-ink);border:1px solid var(--btn-edge);border-radius:12px;padding:12px;font-size:16px;font-weight:600;cursor:pointer;font-family:inherit;">Save to notes</button><button onclick="_voiceClose()" style="background:var(--surf2);border:1px solid var(--p-line-ctl);color:var(--p-mut);border-radius:12px;padding:12px 16px;font-size:16px;cursor:pointer;font-family:inherit;">Cancel</button></div>`);
     return;
   }
   _voiceStopping=false;
@@ -15055,7 +15059,7 @@ async function _initNativeProvider(){
     if(_nativeProviderInit)return; _nativeProviderInit=true;
     if(!_isNativeApp())return;
     try{_initDeepLinks();}catch(e){}   // handle a tapped client Universal/App Link → open their space
-    try{const SB=window.Capacitor.Plugins.StatusBar;if(SB){if(SB.setStyle)SB.setStyle({style:'DARK'});if(SB.setBackgroundColor){var _sbc='';try{_sbc=getComputedStyle(document.documentElement).getPropertyValue('--p-bg2').trim();}catch(e){}if(/^#?[0-9a-fA-F]{3,8}$/.test(_sbc)){if(_sbc[0]!=='#')_sbc='#'+_sbc;Promise.resolve(SB.setBackgroundColor({color:_sbc})).catch(function(){});}}}}catch(e){}
+    try{const SB=window.Capacitor.Plugins.StatusBar;if(SB){if(SB.setStyle)SB.setStyle({style:_scThemeIsDark()?'DARK':'LIGHT'});if(SB.setBackgroundColor){var _sbc='';try{_sbc=getComputedStyle(document.documentElement).getPropertyValue('--p-bg2').trim();}catch(e){}if(/^#?[0-9a-fA-F]{3,8}$/.test(_sbc)){if(_sbc[0]!=='#')_sbc='#'+_sbc;Promise.resolve(SB.setBackgroundColor({color:_sbc})).catch(function(){});}}}}catch(e){}
     const PN=window.Capacitor.Plugins&&window.Capacitor.Plugins.PushNotifications;
     if(!PN)return;
     let perm=await PN.checkPermissions();
@@ -22776,7 +22780,7 @@ function renderAddInventoryItem(i){
       <div style="flex:1;"><span class="fl-lbl">Max / full</span><input class="fi" id="ii-max" type="number" min="1" value="${item.max}"></div>
     </div>
     <span class="fl-lbl">Cost per unit ($, optional)</span>
-    <input class="fi" id="ii-cost" type="number" min="0" step="0.01" value="${item.cost||''}" placeholder="0.00" style="margin-bottom:16px;">
+    <input class="fi" id="ii-cost" type="number" inputmode="decimal" min="0" step="0.01" value="${item.cost||''}" placeholder="0.00" style="margin-bottom:16px;">
 
     <div class="sh" style="padding-left:0;"><h2>Where to reorder</h2></div>
     <span class="fl-lbl">Pick one of your vendors (optional)</span>
@@ -29525,6 +29529,9 @@ function _depositSettingCard(){
     <div style="display:flex;gap:6px;">${opt('auto','Auto-send','Sends the link the moment a deposit is paid')}${opt('notify','Ask first','Prompts you before sending')}${opt('off','Off','Do nothing')}</div>
   </div>`;
 }
+// Connecting Square from the installed app finishes in the phone's browser, not here, so the screen kept
+// saying "Not connected yet" until a relaunch. Look again whenever SlickChart comes back to the front.
+try{document.addEventListener('visibilitychange',function(){if(document.visibilityState==='visible'&&document.getElementById('sq-status')){try{_sqCheckStatus();}catch(e){}}});}catch(e){}
 async function _sqCheckStatus(){
   const el=document.getElementById('sq-status');if(!el)return;
   try{
@@ -36306,7 +36313,7 @@ function deleteVendor(i){const v=vendors[i];if(!v)return;confirmModal({title:'De
   }
   d.style.cssText='position:fixed;top:0;left:0;right:0;bottom:0;z-index:2147483647;background:#0a1719;color:#eef4f2;display:flex;align-items:center;justify-content:center;padding:24px;font-family:-apple-system,BlinkMacSystemFont,Helvetica,Arial,sans-serif;text-align:center;';
   d.innerHTML='<div style="max-width:340px;"><div style="font-size:22px;font-weight:700;margin-bottom:12px;">SlickChart needs an update on this phone</div>'
-    +'<div style="font-size:17px;line-height:1.5;color:#b9cbc6;">Go to <b>Settings</b> &rarr; <b>General</b> &rarr; <b>Software Update</b> and install the latest update, then open SlickChart again.<br><br>Your clients and notes are safe on your account.<br><br>Need help? Email <a href="mailto:support@slickchart.app" style="color:#2bc7ac;">support@slickchart.app</a></div></div>';
+    +'<div style="font-size:17px;line-height:1.5;color:#b9cbc6;">'+(/Android/i.test(navigator.userAgent||'')?'Open the <b>Play Store</b>, search <b>Android System WebView</b> and <b>Chrome</b>, and tap <b>Update</b> on each, then open ':'Go to <b>Settings</b> &rarr; <b>General</b> &rarr; <b>Software Update</b> and install the latest update, then open ')+'SlickChart again.<br><br>Your clients and notes are safe on your account.<br><br>Need help? Email <a href="mailto:support@slickchart.app" style="color:#2bc7ac;">support@slickchart.app</a></div></div>';
   document.body.appendChild(d);
 },1500);});}catch(e){}})();
 </script>
