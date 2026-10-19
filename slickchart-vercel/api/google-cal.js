@@ -59,7 +59,10 @@ export default async function handler(req, res) {
         // handed a different one by a crafted URL. The `private` query param is safe to read here
         // because this endpoint is already behind requireLogin and only ever acts on that caller.
         const wantPrivate = String((req.query && req.query.private) || '') === '1';
-        const st = signToken({ u: providerId, k: 'gcal', p: wantPrivate ? 1 : 0 }, process.env.SESSION_SECRET || '', 600);
+        // ?app=1: started from the installed app's in-app browser; the callback sends the phone back to
+        // the app. Inside the signed state, like the privacy choice.
+        const fromApp = String((req.query && req.query.app) || '') === '1';
+        const st = signToken(Object.assign({ u: providerId, k: 'gcal', p: wantPrivate ? 1 : 0 }, fromApp ? { a: 1 } : {}), process.env.SESSION_SECRET || '', 600);
         const p = new URLSearchParams({
           client_id: process.env.GOOGLE_CLIENT_ID || '',
           redirect_uri: redirectUri(req),

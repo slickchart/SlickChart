@@ -13,6 +13,24 @@ no build; this is only what the store shells themselves must carry.
 | "Can't open SlickChart right now" screen instead of a browser error (`server.errorPath`) | ✅ | ✅ |
 | Minimum Android browser version (`minWebViewVersion: 88`) | n/a | ✅ |
 
+## Status (2026-10-19 evening): Claude's part is DONE, on the preview
+Everything below "Morning" is built and tested (`scratchpad/test-native-files.mjs` 14/14,
+`scratchpad/test-native-connect.mjs` 8/8, Chrome and Safari's engine; `MainActivity.java` compiled
+against stand-ins, no Android SDK here). What it added:
+- `@capacitor/filesystem`, `@capacitor/share`, `@capacitor/browser` (package.json + `npx cap sync`
+  already run, so the Android gradle files and iOS `Package.swift` list them).
+- Web: `_nativeFiles` / `_nativeSaveBlob` (every download, print and Library PDF goes to the share
+  sheet), `_nativeBrowser` (Square / Google Connect in the in-app browser, back via
+  `slickchart://oauth`). Old builds keep today's behaviour; the browser is unchanged.
+- Server: `?app=1` rides in the SIGNED OAuth state; the callbacks then show a "Back to SlickChart"
+  page that opens `slickchart://oauth?...` (`appReturnPage` in api/square/callback.js).
+- iOS: `slickchart` URL scheme in Info.plist; version 1.0.3 (5).
+- Android: `slickchart://oauth` intent filter, `adjustResize`, renderer-crash recovery in
+  `MainActivity`, version 1.0.5 (6).
+- Store text: top of APP-STORE-WHATS-NEW.md (What's new + Apple review note).
+The new app needs the server half live first, so this ships through the overnight train before
+Ashley builds; her Mac then builds from `main`.
+
 ## Morning — Claude does (cloud session, no action from Ashley)
 1. **Saving files inside the apps** (exports, client files, photos, documents, PDFs, printing).
    Add `@capacitor/filesystem` + `@capacitor/share`; the web code saves the file and opens the phone's

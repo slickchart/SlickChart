@@ -562,7 +562,7 @@ const S=document.getElementById('S');
 // resets when I save it" and there was no way to tell whether her phone had any of them — a whole
 // day was spent debugging code she may not have been running. Shown at the bottom of Settings, so
 // the answer is a screenshot away. Bump it on every ship.
-const APP_BUILD='2026-10-19m';
+const APP_BUILD='2026-10-19n';
 
 
 /* ════════════════════════════════════════════════════════════════
@@ -6216,6 +6216,7 @@ function _handleAuthParams(){
       try{const u=new URL(location.href);u.searchParams.delete('signup');u.searchParams.delete('email');history.replaceState({},'',u);}catch(e){}
       renderLogin();return true;
     }
+    if(p.get('gcal')==='connected'){setTimeout(()=>{if(typeof proToast==='function')proToast('Google Calendar connected \u2713');},500);try{const u=new URL(location.href);u.searchParams.delete('gcal');history.replaceState({},'',u);}catch(e){}}
     const sq=p.get('sq');
     if(sq){const reason=p.get('reason');setTimeout(()=>{if(typeof proToast==='function')proToast(sq==='connected'?'Square connected \u2713':'Square connection failed'+(reason?': '+reason:''));},500);try{const u=new URL(location.href);u.searchParams.delete('sq');u.searchParams.delete('reason');history.replaceState({},'',u);}catch(e){}}
   }catch(e){}
@@ -8744,6 +8745,31 @@ function _scBack(){
   }catch(e){}
   return false;
 }
+// Square / Google "Connect" inside the installed app (builds from 2026-10-20, which carry the Browser
+// plugin). The sign-in opens in the phone's in-app browser (Google refuses sign-in inside an app's own
+// web view), and when it finishes the server sends the phone to slickchart://oauth?..., which the app
+// catches here: close that browser and reload into the same ?sq= / ?gcal= return the web app handles.
+// Older builds have no Browser plugin and keep today's behaviour.
+function _nativeBrowser(){try{const C=window.Capacitor;return (_isNativeApp()&&C.isPluginAvailable&&C.isPluginAvailable('Browser')&&C.Plugins.Browser)||null;}catch(e){return null;}}
+try{if(_nativeBrowser()){
+  document.addEventListener('click',function(e){
+    const a=e.target&&e.target.closest&&e.target.closest('a[href]');if(!a)return;
+    const h=String(a.getAttribute('href')||'');
+    if(/^https:\/\/(accounts\.google\.com|connect\.squareup(sandbox)?\.com)\//i.test(h)){e.preventDefault();_nativeBrowser().open({url:h,presentationStyle:'popover'});}
+  },true);
+  const A0=window.Capacitor.Plugins.App;
+  const back=function(raw){
+    const u=String(raw||'');if(u.indexOf('slickchart://oauth')!==0)return;
+    try{_nativeBrowser().close();}catch(e){}
+    const qs=(u.split('?')[1]||'').replace(/[^\w=&%.:+\- ]/g,'');
+    location.replace('/slickchart'+(qs?'?'+qs:''));
+  };
+  if(A0&&A0.addListener)A0.addListener('appUrlOpen',function(ev){back(ev&&ev.url);});
+  // Cold start: the phone closed the app while she was signing in, and the return link relaunched it.
+  // Once per launch link, so the reload it causes cannot loop.
+  if(A0&&A0.getLaunchUrl)A0.getLaunchUrl().then(function(r){const u=r&&r.url;if(!u)return;
+    try{if(sessionStorage.getItem('sc_oauth_launch')===u)return;sessionStorage.setItem('sc_oauth_launch',u);}catch(e){}back(u);}).catch(function(){});
+}}catch(e){}
 (function(){try{
   const A=(typeof _isNativeApp==='function'&&_isNativeApp()&&window.Capacitor&&window.Capacitor.Plugins)?window.Capacitor.Plugins.App:null;
   if(A&&A.addListener){
@@ -10023,7 +10049,7 @@ function _printSummary(id){
   document.body.appendChild(f);
   try{
     const doc=f.contentWindow.document;doc.open();doc.write(html);doc.close();
-    setTimeout(()=>{try{f.contentWindow.focus();f.contentWindow.print();}catch(e){}setTimeout(()=>{try{f.remove();}catch(e){}},2000);},350);
+    setTimeout(()=>{try{if(_nativePrintFrame(f))return;f.contentWindow.focus();f.contentWindow.print();}catch(e){}setTimeout(()=>{try{f.remove();}catch(e){}},2000);},350);
     if(typeof proToast==='function')proToast('Opening print \u2014 choose \u201cSave as PDF\u201d');
   }catch(e){try{f.remove();}catch(_){}if(typeof proToast==='function')proToast('Could not open print on this device');}
 }
@@ -10036,7 +10062,7 @@ function _printClientFile(id){
   try{
     const doc=f.contentWindow.document;
     doc.open();doc.write(html);doc.close();
-    setTimeout(()=>{try{f.contentWindow.focus();f.contentWindow.print();}catch(e){}setTimeout(()=>{try{f.remove();}catch(e){}},2000);},350);
+    setTimeout(()=>{try{if(_nativePrintFrame(f))return;f.contentWindow.focus();f.contentWindow.print();}catch(e){}setTimeout(()=>{try{f.remove();}catch(e){}},2000);},350);
   }catch(e){try{f.remove();}catch(_){}if(typeof proToast==='function')proToast('Could not open print \u2014 try Download instead');}
 }
 // Download the file as a standalone .html the provider can open, print, or keep.
@@ -23979,12 +24005,15 @@ function _plPrint(){
   doc.open();doc.write('<!doctype html><html><head><title>'+_fileEsc((_plDoc(document.getElementById('pl-entry').getAttribute('data-doc'))||[,,'Print'])[2])+'</title><style>@page{size:letter;margin:0}html,body{margin:0;padding:0}img{display:block;width:100%;height:auto;page-break-after:always;break-after:page}img:last-child{page-break-after:auto;break-after:auto}</style></head><body>'
     +pages.map(c=>'<img src="'+c.toDataURL('image/png')+'">').join('')+'</body></html>');
   doc.close();
-  const go=()=>{try{fr.contentWindow.focus();fr.contentWindow.print();}catch(e){if(typeof proToast==='function')proToast('Could not open printing. Use Save PDF and print from there.');}};
+  const go=()=>{try{if(_nativePrintFrame(fr))return;fr.contentWindow.focus();fr.contentWindow.print();}catch(e){if(typeof proToast==='function')proToast('Could not open printing. Use Save PDF and print from there.');}};
   const imgs=[...doc.images];let left=imgs.length;if(!left){go();return;}
   imgs.forEach(im=>{if(im.complete){if(--left===0)go();}else im.onload=im.onerror=()=>{if(--left===0)go();};});
 }
 function _plOpenFile(){
   const ov=document.getElementById('pl-entry');const url=ov&&ov.getAttribute('data-url');if(!url)return;
+  // In the installed app (new builds) the PDF goes to the share sheet instead of navigating the app away.
+  if(_nativeFiles()){const t=(_plDoc(ov.getAttribute('data-doc'))||[,,'SlickChart'])[2];
+    fetch(url).then(r=>{if(!r.ok)throw 0;return r.blob();}).then(b=>_nativeSaveBlob(b,t+'.pdf')).catch(()=>{try{proToast('Could not get the PDF. Please try again.',0);}catch(e){}});return;}
   let w=null;try{w=window.open(url,'_blank');}catch(e){w=null;}
   if(!w)location.href=url;
 }
@@ -23993,7 +24022,8 @@ async function _downloadCollectionPdf(style,coll){
   const say=m=>{if(st){st.style.display='';st.textContent=m;}};
   // Open the window first, inside the tap, so a phone's popup blocker allows it; point it at the
   // file once the server says this account may have it.
-  let w=null;try{w=window.open('','_blank');}catch(e){w=null;}
+  const _nf=_nativeFiles();   // installed app (new builds): share sheet, never navigate the app away
+  let w=null;if(!_nf){try{w=window.open('','_blank');}catch(e){w=null;}}
   say('Getting your PDF…');
   try{
     const tok=(typeof Cloud!=='undefined'&&Cloud&&Cloud.token)||'';
@@ -24002,6 +24032,7 @@ async function _downloadCollectionPdf(style,coll){
     if(!r.ok||!j.ok){try{if(w)w.close();}catch(e){}say(j.error||'Could not get the PDF. Please try again.');return;}
     const f=(j.files||[]).find(x=>x.style===style)||(j.files||[])[0];
     const url=location.origin+f.url;
+    if(_nf){const pr=await fetch(url);if(!pr.ok)throw new Error('pdf');await _nativeSaveBlob(await pr.blob(),(((typeof _plCollections==='function'&&(_plCollections().find(c=>c.key===(coll||'ec'))||{}).name)||'SlickChart collection')+' ('+(f.label||style)+').pdf'));say('');return;}
     if(w){try{w.location.href=url;}catch(e){location.href=url;}}else{location.href=url;}
     say(f.label+' PDF opened. Save or share it from there.');
   }catch(e){try{if(w)w.close();}catch(e2){}say('Could not reach the server. Check your connection and try again.');}
@@ -28919,7 +28950,7 @@ function _reportPDF(){
     f=document.createElement('iframe');f.id='_pdfframe';f.style.cssText='position:fixed;right:0;bottom:0;width:0;height:0;border:0;opacity:0;';
     document.body.appendChild(f);
     const doc=f.contentWindow.document;doc.open();doc.write(html);doc.close();
-    setTimeout(function(){try{f.contentWindow.focus();f.contentWindow.print();}catch(e){const w=window.open('','_blank');if(w){w.document.write(html);w.document.close();}}},350);
+    setTimeout(function(){try{if(_nativePrintFrame(f))return;f.contentWindow.focus();f.contentWindow.print();}catch(e){const w=window.open('','_blank');if(w){w.document.write(html);w.document.close();}}},350);
   }catch(e){const w=window.open('','_blank');if(w){w.document.write(html);w.document.close();}}
   if(typeof proToast==='function')proToast('Opening print \u2014 choose \u201cSave as PDF\u201d');
 }
@@ -29121,19 +29152,58 @@ function _downloadFile(fname,text,mime){
     return true;
   }catch(e){return false;}
 }
-// Inside the Android app nothing can save a file (the app has no download handler), so every "saved"
-// toast was untrue. Say so, and say where it does work. The browser and iPhone paths are unchanged.
+// Saving a file inside the installed app. A WebView has no download handler, so an <a download> or a
+// blob: link does nothing there (Android said so with the toast below; iPhone just did nothing). Builds
+// from 2026-10-20 carry the Filesystem + Share plugins: the file is written to the app's cache and the
+// phone's own share sheet opens (Save to Files / Drive, Print, AirDrop, email). Older builds have no
+// plugins, so they keep the honest toast; the browser path is untouched.
 function _isAndroidApp(){try{return _isNativeApp()&&window.Capacitor.getPlatform&&window.Capacitor.getPlatform()==='android';}catch(e){return false;}}
+function _nativeFiles(){
+  try{const C=window.Capacitor;if(!_isNativeApp()||!C.isPluginAvailable||!C.isPluginAvailable('Filesystem')||!C.isPluginAvailable('Share'))return null;
+    return C.Plugins.Filesystem&&C.Plugins.Share?C.Plugins:null;}catch(e){return null;}
+}
+async function _nativeSaveBlob(blob,name){
+  const P=_nativeFiles();if(!P||!blob)return false;
+  name=String(name||'SlickChart-file').replace(/[\/:*?"<>|]+/g,'-').slice(0,120)||'SlickChart-file';
+  try{
+    const b64=await new Promise(function(res,rej){const fr=new FileReader();fr.onload=function(){res(String(fr.result).split(',')[1]||'');};fr.onerror=rej;fr.readAsDataURL(blob);});
+    const w=await P.Filesystem.writeFile({path:'saved/'+Date.now()+'/'+name,data:b64,directory:'CACHE',recursive:true});
+    try{await P.Share.share({title:name,files:[w.uri]});}
+    catch(e){if(!/cancel/i.test(String((e&&e.message)||e)))throw e;}   // she closed the sheet: not an error
+    return true;
+  }catch(e){try{proToast('Could not save that file. Please try again.',0);}catch(_){}return true;}
+}
+// Printing from a hidden frame does nothing inside the app (neither WebView has a print dialog for
+// it). With the new plugins, hand the page over as a file instead: the share sheet's Print, Save to
+// Files or Drive all work from there. Returns true when it took the job.
+function _nativePrintFrame(f){
+  if(!_nativeFiles()||!f||!f.contentWindow)return false;
+  try{const d=f.contentWindow.document;const t=String(d.title||'SlickChart').replace(/\s+/g,' ').trim()||'SlickChart';
+    _nativeSaveBlob(new Blob(['<!doctype html>'+d.documentElement.outerHTML],{type:'text/html'}),t+'.html');
+    setTimeout(function(){try{f.remove();}catch(e){}},2000);return true;}catch(e){return false;}
+}
 function _nativeNoDownload(){
-  if(!_isAndroidApp())return false;
+  if(!_isAndroidApp()||_nativeFiles())return false;
   try{proToast('Saving files does not work inside the Android app yet. Open slickchart.app in Chrome on your phone or computer to save this.',0);}catch(e){}
   return true;
 }
-try{if(_isAndroidApp()){
-  // Every other save path builds an <a download> or a blob: link and clicks it: catch them all here.
+try{if(_isNativeApp()){
+  // Every save path builds an <a download> or a blob:/data: link and clicks it: catch them all here.
   const _ac=HTMLAnchorElement.prototype.click;
-  HTMLAnchorElement.prototype.click=function(){try{const h=String(this.getAttribute('href')||'');if(this.hasAttribute('download')||/^(blob|data):/i.test(h)){_nativeNoDownload();return;}}catch(e){}return _ac.apply(this,arguments);};
-  window.print=function(){_nativeNoDownload();};
+  HTMLAnchorElement.prototype.click=function(){
+    try{const h=String(this.getAttribute('href')||'');
+      if(this.hasAttribute('download')||/^(blob|data):/i.test(h)){
+        if(_nativeFiles()){
+          const name=this.getAttribute('download')||'SlickChart-file';
+          const got=/^data:/i.test(h)?Promise.resolve(_dataURLtoBlob(h)):fetch(h).then(function(r){return r.blob();});
+          got.then(function(b){return _nativeSaveBlob(b,name);}).catch(function(){try{proToast('Could not save that file. Please try again.',0);}catch(_){}});
+          return;
+        }
+        if(_nativeNoDownload())return;
+      }
+    }catch(e){}
+    return _ac.apply(this,arguments);};
+  if(_isAndroidApp()&&!_nativeFiles())window.print=function(){_nativeNoDownload();};
 }}catch(e){}
 // ── Self-serve full data export (privacy / portability) ──
 // Produces one JSON file containing every piece of data the app stores for this account.
@@ -29860,9 +29930,11 @@ async function _sqConnect(){
   const tok=(typeof Cloud!=='undefined'&&Cloud&&Cloud.token)||'';
   if(!tok){proToast('Please log in first');return;}
   try{
-    const r=await fetch('/api/square/connect',{headers:{'Authorization':'Bearer '+tok}});
+    const B=_nativeBrowser();
+    const r=await fetch('/api/square/connect'+(B?'?app=1':''),{headers:{'Authorization':'Bearer '+tok}});
     const j=await r.json();
     if(!r.ok||!j.url){proToast((j&&j.error)||'Could not start Square connection');return;}
+    if(B){await B.open({url:j.url,presentationStyle:'popover'});return;}
     location.href=j.url;
   }catch(e){proToast('Could not reach Square');}
 }
@@ -30772,7 +30844,8 @@ async function _gcalStatus(){
   try{
     const tok=(typeof Cloud!=='undefined'&&Cloud&&Cloud.token)||'';
     if(!tok){_gcalState=unknown();return _gcalState;}
-    const r=await fetch('/api/google-cal'+(_gcalPrivateWanted?'?private=1':''),{headers:{'Authorization':'Bearer '+tok}});
+    const _gq=[];if(_gcalPrivateWanted)_gq.push('private=1');if(_nativeBrowser())_gq.push('app=1');
+    const r=await fetch('/api/google-cal'+(_gq.length?'?'+_gq.join('&'):''),{headers:{'Authorization':'Bearer '+tok}});
     if(!r.ok){_gcalState=unknown();return _gcalState;}
     const j=await r.json();
     _gcalState=j?Object.assign({answered:true},j):unknown();

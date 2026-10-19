@@ -7,6 +7,31 @@ or bump to 1.0.1 and use the **Update** copy.)
 
 ---
 
+## iPhone 1.0.3 / Android 1.0.5 (October 2026), paste this one
+
+```
+• Save and share files right from the app: exports, client files, forms and
+  PDFs open your phone's share sheet, so you can save to Files or Drive, print,
+  AirDrop or email them
+• Connecting Square or Google Calendar now brings you straight back into the
+  app when you're done
+• Android: the keyboard no longer covers what you're typing
+• Steadier on older phones, plus lots of small fixes
+
+As always, your clients use SlickChart free, with no app to download and no login.
+```
+
+### Apple review note for this version (App Review Information, Notes)
+
+```
+This update adds the system share sheet for saving files (exports, client files,
+PDF forms) and opens Square / Google sign-in in an in-app Safari view, returning to
+the app via the slickchart:// URL scheme when sign-in finishes. No purchases or
+payment screens exist in the app. Demo account details are unchanged.
+```
+
+---
+
 ## Update copy (for 1.0.1 and later) — ~My recommendation
 
 ```

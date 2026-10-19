@@ -7,6 +7,7 @@ import { dbEnabled } from '../lib/db.js';
 import { verifyToken } from '../lib/auth.js';
 import { ensureGoogleTable, exchangeGoogleCode, saveGoogleConnection, googleConfigured } from '../lib/google-cal.js';
 import { redirectUri } from './google-cal.js';
+import { appReturnPage } from './square/callback.js';
 
 function page(title, body) {
   return '<!doctype html><meta name="viewport" content="width=device-width,initial-scale=1">'
@@ -41,6 +42,7 @@ export default async function handler(req, res) {
       return;
     }
     await saveGoogleConnection(String(payload.u), tokens, { privateTitles: payload.p === 1 });
+    if (payload.a === 1) { appReturnPage(res, 'slickchart://oauth?gcal=connected', 'Calendar connected'); return; }
     res.status(200).end(page('Calendar connected',
       'Your Google Calendar is linked. Your SlickChart appointments will appear there, and your own events will block client bookings.'));
   } catch (e) {
