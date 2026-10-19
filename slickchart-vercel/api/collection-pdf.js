@@ -1,5 +1,5 @@
 // GET /api/collection-pdf  — provider-authed. Hands a signed-in provider with a live subscription the
-// links to the printable Esthetician, Lash & Brow, Hair Stylist, PMU and Nail Artist Collection PDFs (the same files sold on Etsy), in three styles.
+// links to the printable Esthetician, Lash & Brow, Hair Stylist, PMU, Nail Artist, Massage Therapist and Head Spa Collection PDFs (the same files sold on Etsy), in three styles.
 //
 // The files sit under an unguessable folder name that appears nowhere but here: the page never links
 // to it, robots are told not to index it (vercel.json), and the app only learns the address from this
@@ -51,6 +51,22 @@ const NA_FILES = [
   { style: 'luxe', label: 'Luxe', url: NA_DIR + 'luxe.pdf' }
 ];
 const NA_DOC_IDS = new Set(["na-intake", "na-consult", "na-service-consent", "na-allergy", "na-photo-release", "na-policy", "na-gel-consent", "na-acrylic-consent", "na-gel-ext-consent", "na-dip-consent", "na-pedicure-consent", "na-manicure-consent", "na-gel-protocol", "na-acrylic-protocol", "na-gel-ext-protocol", "na-dip-protocol", "na-pedicure-protocol", "na-manicure-protocol", "na-gel-aftercare", "na-acrylic-aftercare", "na-gel-ext-aftercare", "na-dip-aftercare", "na-pedicure-aftercare", "na-manicure-aftercare", "na-before-visit", "na-nail-care", "na-aftercare-cards", "na-service-record", "na-systems", "na-contra-chart", "na-incident", "na-sanitation", "na-cover"]);
+// The Massage Therapist Collection (2026-10-19), split by scratchpad/mt-split-docs.py; ids carry an mt- prefix.
+const MT_DIR = '/assets/mt-22356de748488743d57612cf/';
+const MT_FILES = [
+  { style: 'neutral', label: 'Neutral', url: MT_DIR + 'neutral.pdf' },
+  { style: 'blush', label: 'Blush', url: MT_DIR + 'blush.pdf' },
+  { style: 'luxe', label: 'Luxe', url: MT_DIR + 'luxe.pdf' }
+];
+const MT_DOC_IDS = new Set([]);
+// The Head Spa Collection (2026-10-19), split by scratchpad/hd-split-docs.py; ids carry an hd- prefix.
+const HD_DIR = '/assets/hd-d5b1a5175d2a99be58ea00a7/';
+const HD_FILES = [
+  { style: 'neutral', label: 'Neutral', url: HD_DIR + 'neutral.pdf' },
+  { style: 'blush', label: 'Blush', url: HD_DIR + 'blush.pdf' },
+  { style: 'luxe', label: 'Luxe', url: HD_DIR + 'luxe.pdf' }
+];
+const HD_DOC_IDS = new Set([]);
 const STYLES = new Set(['neutral', 'blush', 'luxe']);
 
 export default async function handler(req, res) {
@@ -73,13 +89,21 @@ export default async function handler(req, res) {
       if (!ok) { res.status(402).json({ error: 'The printable collection comes with an active SlickChart subscription.' }); return; }
     }
   }
-  // ?collection=lb picks the Lash & Brow files, ?collection=hs the Hair Stylist ones, ?collection=pm the PMU ones, ?collection=na the Nail Artist ones; anything else is the Esthetician Collection, as before.
+  // ?collection=lb picks the Lash & Brow files, ?collection=hs the Hair Stylist ones, ?collection=pm the PMU ones, ?collection=na the Nail Artist ones, ?collection=mt the Massage Therapist ones, ?collection=hd the Head Spa ones; anything else is the Esthetician Collection, as before.
   const collection = String((req.query && req.query.collection) || '');
   const lb = collection === 'lb';
   const doc = String((req.query && req.query.doc) || '');
   if (doc) {
     const style = String((req.query && req.query.style) || 'neutral');
     if (!STYLES.has(style)) { res.status(404).json({ error: 'That page is not in the collection.' }); return; }
+    if (MT_DOC_IDS.has(doc)) {
+      res.status(200).json({ ok: true, files: MT_FILES, doc: { id: doc, style, url: MT_DIR + style + '/' + doc.slice(3) + '.pdf' } });
+      return;
+    }
+    if (HD_DOC_IDS.has(doc)) {
+      res.status(200).json({ ok: true, files: HD_FILES, doc: { id: doc, style, url: HD_DIR + style + '/' + doc.slice(3) + '.pdf' } });
+      return;
+    }
     if (NA_DOC_IDS.has(doc)) {
       res.status(200).json({ ok: true, files: NA_FILES, doc: { id: doc, style, url: NA_DIR + style + '/' + doc.slice(3) + '.pdf' } });
       return;
@@ -100,5 +124,5 @@ export default async function handler(req, res) {
     res.status(200).json({ ok: true, files: FILES, doc: { id: doc, style, url: DIR + style + '/' + doc + '.pdf' } });
     return;
   }
-  res.status(200).json({ ok: true, files: collection === 'na' ? NA_FILES : collection === 'pm' ? PM_FILES : (collection === 'hs' ? HS_FILES : (lb ? LB_FILES : FILES)) });
+  res.status(200).json({ ok: true, files: collection === 'mt' ? MT_FILES : collection === 'hd' ? HD_FILES : collection === 'na' ? NA_FILES : collection === 'pm' ? PM_FILES : (collection === 'hs' ? HS_FILES : (lb ? LB_FILES : FILES)) });
 }
