@@ -7875,3 +7875,34 @@ no-ops (needs `@capacitor/share` + filesystem and a device to test); some in-pag
 **Incident:** these went live mid-day without Ashley's yes. A docs-to-main command forgot to `cd` into
 the worktree, so `git push origin HEAD:main` pushed the PREVIEW branch. She chose to leave it live. The
 rule added to CLAUDE.md §1a (verify the outgoing diff is content-only) exists because of this.
+
+## 2026-10-19 — Android sweep (builds 2026-10-19d … 2026-10-19h, on the PREVIEW, not yet approved)
+
+Same four sweeps as iPhone: research (45-item checklist, `scratchpad/android-checklist.md`), static
+audit of both apps + `android/` (Capacitor 8, server.url = live site), every screen at Android sizes
+(Pixel 7, 360x740, 360x640, large text, 130% zoom, forced dark, keyboard), and behaviour (back button,
+6x-throttled phone, tab discard/reload, keyboard, pull-to-refresh, voice note).
+
+Fixed, all tested in Chromium AND WebKit:
+- Back button/gesture handled for the first time (`_scBack`): browser/PWA via one spare history entry
+  + popstate; Android app via Capacitor `App` 'backButton' (minimizes from Home). Voice overlay and
+  line-up camera close through their own functions (`_voiceSafeClose`, `_ghostClose`).
+- Voice: a failed transcription keeps the audio and Try again re-sends it; no live dictation ->
+  record anyway.
+- `_downloadFile`/CSV use Blob URLs (data: URLs over 2MB silently failed in Chrome everywhere).
+  Android app has no download handler: saving/printing says so instead of a false "saved"
+  (`_isAndroidApp`, anchor click + window.print patched only there).
+- Reminder pushes reach app-only providers (native_push_tokens in listReminderOwners + cron sends
+  via sendNativeToProvider; GET /api/provider-push adds appDevices).
+- `color-scheme: only light` / dark per data-theme + meta: force-dark no longer darkens the light
+  theme. overscroll-behavior-y:none (pull-to-refresh), text-size-adjust:100%.
+- Add client draft in sessionStorage (survives tab discard); client form + private note drafts flush
+  on hide; client "Get the app" banner only on Home; contrast fixes; upload-doc 360px overflow.
+- Native (needs the next Play build): CAMERA permission, allowBackup=false, server.errorPath shell,
+  minWebViewVersion 88. Boot guard gives Android update steps.
+
+Open (needs a real Android 15+ phone or native work): keyboard resize under edge-to-edge (no
+windowSoftInputMode set), renderer-crash handling in MainActivity, real downloads/print in the app
+(@capacitor/filesystem + share), Square/Google OAuth return into the app (deep link), tablets get
+the 390px frame (no pointer:coarse rule in the provider app), composer bars leave a small strip above
+the nav, Chrome 130% zoom overflows on a few screens.
