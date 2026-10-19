@@ -73,3 +73,5 @@ Close with when to call: pus or spreading bumps, redness, heat or pain getting w
 ## Use this form with your clients
 
 SlickChart has this exact microneedling consent and aftercare built in for esthetician subscribers. The client signs on their phone before the visit, or on your device in the room, and any contraindication they check is flagged for you. The aftercare goes to the client's own app, styled with your logo, and it all works alongside the Square account you already have. If you would rather not chase paper forms, [try SlickChart](/slickchart).
+
+Prefer paper? The printable microneedling set, with the consent form, protocol and aftercare, is in my [Etsy shop](https://slickchart.etsy.com), ready to print or edit in free Canva.

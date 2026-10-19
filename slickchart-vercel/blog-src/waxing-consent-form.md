@@ -76,3 +76,5 @@ Explain ingrown hairs too: they curl back into the skin instead of growing out, 
 ## Use this form with your clients
 
 SlickChart has this exact waxing consent and aftercare built in for esthetician subscribers. Clients sign on their phone before the visit, or on your device in the room, and any contraindication they check is flagged for you. The aftercare goes to the client's own app, styled with your logo, and it works alongside the Square account you already have. If that fits how you work, [try SlickChart](/slickchart).
+
+Prefer paper? The printable waxing set, with the consent form, protocol and aftercare, is in my [Etsy shop](https://slickchart.etsy.com), ready to print or edit in free Canva.

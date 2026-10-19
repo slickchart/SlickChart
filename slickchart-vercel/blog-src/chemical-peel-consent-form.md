@@ -67,3 +67,5 @@ Close with a "call me right away if" list (blisters, oozing, worsening pain, a c
 ## Use this form with your clients
 
 SlickChart has this exact peel consent and aftercare built in for esthetician subscribers. The form goes to the client's phone to sign before the visit, or they sign on your device in the room, and any contraindication they check is flagged for you. The aftercare lands in the client's own app, styled with your logo, and it all works alongside the Square account you already have. If that would save you paperwork, [try SlickChart](/slickchart).
+
+Prefer paper? The printable chemical peel set, with the consent form, protocol and aftercare, is in my [Etsy shop](https://slickchart.etsy.com), ready to print or edit in free Canva.

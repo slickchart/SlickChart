@@ -65,3 +65,5 @@ Finish with the "call me if" list: a nick that turns red, warm, swollen or oozin
 ## Use this form with your clients
 
 SlickChart has this exact dermaplaning consent and aftercare built in for esthetician subscribers. Clients sign on their phone before the visit, or on your device in the room, and any contraindication they check is flagged for you. The aftercare goes to the client's own app, styled with your logo, and it works alongside the Square account you already have. If that sounds easier than paper, [try SlickChart](/slickchart).
+
+Prefer paper? The printable dermaplaning set, with the consent form, protocol and aftercare, is in my [Etsy shop](https://slickchart.etsy.com), ready to print or edit in free Canva.
