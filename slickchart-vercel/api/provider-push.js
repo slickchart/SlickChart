@@ -9,7 +9,7 @@ import { sql, dbEnabled } from '../lib/db.js';
 import { verifyToken, isSessionValid } from '../lib/auth.js';
 import { validPushEndpoint, pushConfigured } from '../lib/push.js';
 import {
-  ensureProviderPushTable, saveProviderPushSub, deleteProviderPushSubByEndpoint, countProviderPushSubs
+  ensureProviderPushTable, saveProviderPushSub, deleteProviderPushSubByEndpoint, countProviderPushSubs, countProviderNativeTokens
 } from '../lib/provider-push.js';
 
 async function requireLogin(req, res, q) {
@@ -35,7 +35,7 @@ export default async function handler(req, res) {
   try {
     await ensureProviderPushTable();
     if (req.method === 'GET') {
-      res.status(200).json({ ok: true, configured: pushConfigured(), devices: await countProviderPushSubs(providerId) });
+      res.status(200).json({ ok: true, configured: pushConfigured(), devices: await countProviderPushSubs(providerId), appDevices: await countProviderNativeTokens(providerId) });
       return;
     }
     if (req.method === 'POST') {

@@ -76,16 +76,39 @@ export async function countProviderPushSubs(providerId) {
   return (rows[0] && rows[0].n) || 0;
 }
 
+// This provider's devices in the iPhone/Android app (scoped by her own id, like everything here).
+export async function countProviderNativeTokens(providerId) {
+  if (!providerId) return 0;
+  try {
+    const q = sql();
+    const rows = await q`SELECT count(*)::int AS n FROM native_push_tokens WHERE owner_kind = 'provider' AND owner_id = ${String(providerId)}`;
+    return (rows[0] && rows[0].n) || 0;
+  } catch (e) { return 0; }
+}
+
 // CRON ONLY. Every owner that has at least one push subscription, with the reminder keys the cron
 // needs, in one pass — so the job does not run a query per provider. Grouped by owner on the way out
 // and never merged, so one provider's reminders cannot be sent to another's device.
 export async function listReminderOwners() {
   if (!dbEnabled()) return [];
   const q = sql();
-  const rows = await q`SELECT k.owner, k.k, k.v
-    FROM kv k
-    WHERE k.k IN ('sc_reminders', 'sc_pro_vc_invites', 'sc_clients', 'sc_notif_settings')
-      AND EXISTS (SELECT 1 FROM provider_push_subscriptions p WHERE p.provider_id = k.owner)`;
+  // Owners with a web-push subscription OR a device in the iPhone/Android app (native_push_tokens,
+  // owner_kind 'provider', owner_id = the same provider id the session carries). App-only providers
+  // were never on this list, so their reminders never fired. The native table may not exist on a
+  // fresh database; fall back to web-push owners only.
+  let rows;
+  try {
+    rows = await q`SELECT k.owner, k.k, k.v
+      FROM kv k
+      WHERE k.k IN ('sc_reminders', 'sc_pro_vc_invites', 'sc_clients', 'sc_notif_settings')
+        AND (EXISTS (SELECT 1 FROM provider_push_subscriptions p WHERE p.provider_id = k.owner)
+          OR EXISTS (SELECT 1 FROM native_push_tokens n WHERE n.owner_kind = 'provider' AND n.owner_id = k.owner))`;
+  } catch (e) {
+    rows = await q`SELECT k.owner, k.k, k.v
+      FROM kv k
+      WHERE k.k IN ('sc_reminders', 'sc_pro_vc_invites', 'sc_clients', 'sc_notif_settings')
+        AND EXISTS (SELECT 1 FROM provider_push_subscriptions p WHERE p.provider_id = k.owner)`;
+  }
   const byOwner = new Map();
   rows.forEach(r => {
     const o = String(r.owner);

@@ -562,7 +562,7 @@ const S=document.getElementById('S');
 // resets when I save it" and there was no way to tell whether her phone had any of them — a whole
 // day was spent debugging code she may not have been running. Shown at the bottom of Settings, so
 // the answer is a screenshot away. Bump it on every ship.
-const APP_BUILD='2026-10-19d';
+const APP_BUILD='2026-10-19e';
 
 
 /* ════════════════════════════════════════════════════════════════
@@ -8715,6 +8715,38 @@ function _flushSettingsEdits(){
   }catch(e){}
 }
 function navBack(){if(_navStack.length){const prev=_navStack.pop();_navBacking=true;nav(prev.screen,prev.data);_navBacking=false;}}
+
+// ── The Android back button / back gesture (2026-10-19) ──────────────────────────────────────────
+// Nothing handled it: in a browser tab or the installed web app, back LEFT SlickChart from any screen,
+// even with a sheet open; in the Android app it did nothing at all. Now back closes what is on top
+// (a confirm, then any sheet), then steps back a screen, then goes Home, and only leaves from Home.
+function _scBack(){
+  try{
+    if(document.getElementById('login-screen')||document.getElementById('sc-boot-fail'))return false;
+    const cf=document.getElementById('confirm-modal');
+    if(cf){const c=cf.querySelector('#_cf-cancel,#_is-cancel');if(c)c.click();else cf.remove();return true;}
+    const ov=_topOverlay();
+    if(ov){try{ov.dispatchEvent(new MouseEvent('click',{bubbles:true}));}catch(_){} if(document.body.contains(ov)){try{ov.remove();}catch(_){}} return true;}
+    if(_navStack.length){navBack();return true;}
+    const cur=(_navCur&&_navCur.screen)||'';
+    if(cur&&cur!=='home'){nav('home');return true;}
+  }catch(e){}
+  return false;
+}
+(function(){try{
+  const A=(typeof _isNativeApp==='function'&&_isNativeApp()&&window.Capacitor&&window.Capacitor.Plugins)?window.Capacitor.Plugins.App:null;
+  if(A&&A.addListener){
+    A.addListener('backButton',function(){if(!_scBack()){try{if(A.minimizeApp)A.minimizeApp();else if(A.exitApp)A.exitApp();}catch(e){}}});
+    return;
+  }
+  // Browser tab / installed web app: keep one spare history entry for back to land on, handle it,
+  // and put it back. When there is nothing left to close, let back leave as it always did.
+  window.addEventListener('load',function(){setTimeout(function(){try{history.pushState({scBack:1},'');}catch(e){}},0);});
+  window.addEventListener('popstate',function(){
+    if(_scBack()){try{history.pushState({scBack:1},'');}catch(e){}}
+    else{try{history.back();}catch(e){}}
+  });
+}catch(e){}})();
 // Reset the screen to the top, used by multi-step flows when advancing so each step starts at the
 // top of the fields instead of wherever the previous step was scrolled to.
 function _provScrollTop(){try{S.scrollTop=0;}catch(e){}try{window.scrollTo(0,0);}catch(e){}}
@@ -16412,6 +16444,9 @@ async function _pushStatus(){
     if(!r.ok){_pushDevices=0;return null;}
     const j=await r.json();
     _pushDevices=(j&&typeof j.devices==='number')?j.devices:0;
+    // Inside the iPhone/Android app, reminders arrive through the app's own notifications (web push
+    // does not exist in the app's browser), so count her app devices there.
+    if(_isNativeApp()&&j&&typeof j.appDevices==='number')_pushDevices=j.appDevices;
     return j;
   }catch(e){if(_pushDevices===null)_pushDevices=0;return null;}
 }
@@ -16493,11 +16528,11 @@ function renderReminders(){
       <div style="font-size:16px;color:var(--p-mut);line-height:1.5;margin-bottom:${pushOn?'9':'10'}px;">${pushOn
         ?'This device will buzz when a reminder is due, even with the app closed. Turn it on once on every device you use.'
         :'Right now reminders only show when you open the app. Turn notifications on and SlickChart can reach you when it\u2019s closed.'}</div>
-      <div style="display:flex;gap:8px;">
+      ${_isNativeApp()?(pushOn?'':'<div style="font-size:16px;color:var(--p-ink);line-height:1.5;">In your phone\u2019s <b>Settings</b>, open <b>SlickChart</b> \u2192 <b>Notifications</b> and turn them on, then open SlickChart again.</div>'):`<div style="display:flex;gap:8px;">
         ${pushOn
           ?'<button onclick="_pushDisable()" style="background:var(--surf1);border:1px solid var(--p-line-ctl);color:var(--p-mut2);border-radius:8px;padding:8px 12px;font-size:16px;cursor:pointer;font-family:inherit;">Turn off here</button>'
           :'<button onclick="_pushEnable()" class="btnp" style="border-radius:8px;padding:9px 14px;font-size:16px;font-weight:600;"><i class="ti ti-bell" style="font-size:16px;"></i> Turn on notifications</button>'}
-      </div>
+      </div>`}
     </div>
     <button onclick="_remEdit('')" class="btnp" style="width:100%;border-radius:12px;padding:12px;font-size:16px;font-weight:700;margin-bottom:16px;"><i class="ti ti-plus" style="font-size:16px;"></i> New reminder</button>
   </div>
@@ -28625,10 +28660,10 @@ function _reportPDF(){
   if(typeof proToast==='function')proToast('Opening print \u2014 choose \u201cSave as PDF\u201d');
 }
 
-function _reportExportSummary(){const r=_reportRange(_reportKey);const d=_reportData(r.from,r.to);const f=n=>(Math.round((n||0)*100)/100).toFixed(2);const rows=[['SlickChart \u2014 Income Summary'],['Period',r.label],['From',d.from],['To',d.to],['Basis','Cash (paid transactions)'],[''],['Category','Amount'],['Services revenue',f(d.services)],['Retail revenue',f(d.retail)],['Other revenue',f(d.other)],['Total revenue',f(d.revenue)],[''],['Sales tax collected (liability)',f(d.tax)],['Total collected',f(d.total)],[''],['Outstanding (A/R)',f(d.ar)],['Paid transactions',String(d.count)],['Average ticket',f(d.avg)]];_downloadCSV('slickchart-income-summary-'+d.from+'.csv',rows);if(typeof proToast==='function')proToast('Income summary exported');}
-function _reportExportTax(){const r=_reportRange(_reportKey);const d=_reportData(r.from,r.to);const f=n=>(Math.round((n||0)*100)/100).toFixed(2);const rows=[['SlickChart \u2014 Sales Tax Report'],['Period',r.label],['From',d.from],['To',d.to],[''],['Revenue (ex-tax)',f(d.revenue)],['Sales tax collected',f(d.tax)],['Total collected',f(d.total)]];_downloadCSV('slickchart-sales-tax-'+d.from+'.csv',rows);if(typeof proToast==='function')proToast('Sales tax report exported');}
-function _reportExportMethods(){const r=_reportRange(_reportKey);const d=_reportData(r.from,r.to);const f=n=>(Math.round((n||0)*100)/100).toFixed(2);const rows=[['SlickChart \u2014 Payment Reconciliation'],['Period',r.label+' ('+d.from+' to '+d.to+')'],[''],['Method','Amount collected']].concat(Object.entries(d.byMethod).sort((a,b)=>b[1]-a[1]).map(([m,v])=>[m,f(v)])).concat([['Total',f(d.total)]]);_downloadCSV('slickchart-reconciliation-'+d.from+'.csv',rows);if(typeof proToast==='function')proToast('Reconciliation exported');}
-function _reportExportDetail(){const r=_reportRange(_reportKey);const rows=[['Date','Client','Description','Category','Subtotal','Tax','Collected','Method','Status']];const inRange=p=>{const dd=_dateToISO(_payEffDate(p));return dd&&dd>=r.from&&dd<=r.to;};(_payments||[]).filter(inRange).slice().sort((a,b)=>_dateToTime(_payEffDate(a))-_dateToTime(_payEffDate(b))).forEach(p=>{const coll=_payCollected(p);const tax=_payCollectedTax(p);const sub=coll-tax;let cat='';if(p.items&&p.items.length){cat=[...new Set(p.items.map(it=>it.kind==='product'?'Retail':(it.kind==='service'?'Service':'Other')))].join('+');}else cat=p.category||'';rows.push([_payEffDate(p)||'',p.clientName||'',p.note||'',cat,sub.toFixed(2),tax.toFixed(2),coll.toFixed(2),p.method||'',p.status||'']);});_downloadCSV('slickchart-transactions-'+r.from+'.csv',rows);if(typeof proToast==='function')proToast('Transaction detail exported');}
+function _reportExportSummary(){const r=_reportRange(_reportKey);const d=_reportData(r.from,r.to);const f=n=>(Math.round((n||0)*100)/100).toFixed(2);const rows=[['SlickChart \u2014 Income Summary'],['Period',r.label],['From',d.from],['To',d.to],['Basis','Cash (paid transactions)'],[''],['Category','Amount'],['Services revenue',f(d.services)],['Retail revenue',f(d.retail)],['Other revenue',f(d.other)],['Total revenue',f(d.revenue)],[''],['Sales tax collected (liability)',f(d.tax)],['Total collected',f(d.total)],[''],['Outstanding (A/R)',f(d.ar)],['Paid transactions',String(d.count)],['Average ticket',f(d.avg)]];if(_downloadCSV('slickchart-income-summary-'+d.from+'.csv',rows)==='native')return;if(typeof proToast==='function')proToast('Income summary exported');}
+function _reportExportTax(){const r=_reportRange(_reportKey);const d=_reportData(r.from,r.to);const f=n=>(Math.round((n||0)*100)/100).toFixed(2);const rows=[['SlickChart \u2014 Sales Tax Report'],['Period',r.label],['From',d.from],['To',d.to],[''],['Revenue (ex-tax)',f(d.revenue)],['Sales tax collected',f(d.tax)],['Total collected',f(d.total)]];if(_downloadCSV('slickchart-sales-tax-'+d.from+'.csv',rows)==='native')return;if(typeof proToast==='function')proToast('Sales tax report exported');}
+function _reportExportMethods(){const r=_reportRange(_reportKey);const d=_reportData(r.from,r.to);const f=n=>(Math.round((n||0)*100)/100).toFixed(2);const rows=[['SlickChart \u2014 Payment Reconciliation'],['Period',r.label+' ('+d.from+' to '+d.to+')'],[''],['Method','Amount collected']].concat(Object.entries(d.byMethod).sort((a,b)=>b[1]-a[1]).map(([m,v])=>[m,f(v)])).concat([['Total',f(d.total)]]);if(_downloadCSV('slickchart-reconciliation-'+d.from+'.csv',rows)==='native')return;if(typeof proToast==='function')proToast('Reconciliation exported');}
+function _reportExportDetail(){const r=_reportRange(_reportKey);const rows=[['Date','Client','Description','Category','Subtotal','Tax','Collected','Method','Status']];const inRange=p=>{const dd=_dateToISO(_payEffDate(p));return dd&&dd>=r.from&&dd<=r.to;};(_payments||[]).filter(inRange).slice().sort((a,b)=>_dateToTime(_payEffDate(a))-_dateToTime(_payEffDate(b))).forEach(p=>{const coll=_payCollected(p);const tax=_payCollectedTax(p);const sub=coll-tax;let cat='';if(p.items&&p.items.length){cat=[...new Set(p.items.map(it=>it.kind==='product'?'Retail':(it.kind==='service'?'Service':'Other')))].join('+');}else cat=p.category||'';rows.push([_payEffDate(p)||'',p.clientName||'',p.note||'',cat,sub.toFixed(2),tax.toFixed(2),coll.toFixed(2),p.method||'',p.status||'']);});if(_downloadCSV('slickchart-transactions-'+r.from+'.csv',rows)==='native')return;if(typeof proToast==='function')proToast('Transaction detail exported');}
 
 // ── Invoice preview (Build invoice → Preview) ──
 async function _biPreview(){
@@ -28673,10 +28708,10 @@ function _downloadCSV(fname,rows){const csv=rows.map(r=>r.map(c=>{c=String(c==nu
   // "=cmd|'/c calc'!A1" could execute on export. Prefix such cells with an apostrophe
   // so spreadsheets render them as plain text.
   if(/^[=+\-@\t\r]/.test(c))c="'"+c;
-  return /[",\n\r]/.test(c)?'"'+c.replace(/"/g,'""')+'"':c;}).join(',')).join('\r\n');try{const a=document.createElement('a');a.href='data:text/csv;charset=utf-8,'+encodeURIComponent(csv);a.download=fname;(document.querySelector('.shell')||document.body).appendChild(a);a.click();a.remove();}catch(e){}}
-function _exportServicesCSV(){const rows=[['Service','Price']].concat((_svcMenu||[]).map(s=>[s.name||'',(+s.price||0).toFixed(2)]));_downloadCSV('slickchart-services.csv',rows);if(typeof proToast==='function')proToast('Exported '+((_svcMenu||[]).length)+' services');}
-function _exportClientsCSV(){const rows=[['Name','Email','Phone','Date of birth','Current treatment','Last visit','Next visit','Concerns','Allergies']].concat(Object.values(CL).map(c=>[c.name||'',c.email||'',c.phone||'',c.birthday||'',c.treatment||'',c.lastVisit||'',c.nextVisit||'',c.concerns||'',c.allergies||'']));_downloadCSV('slickchart-clients.csv',rows);if(typeof proToast==='function')proToast('Exported '+Object.keys(CL).length+' clients');}
-function _exportPaymentsCSV(){const rows=[['Date','Client','Subtotal','Tax','Total','Method','Status','Note']].concat((_payments||[]).map(p=>{const total=parseFloat(p.amount)||0;const tax=parseFloat(p.taxAmount)||0;return [p.date||'',p.clientName||'',(total-tax).toFixed(2),tax.toFixed(2),total.toFixed(2),p.method||'',p.status||'',p.note||''];}));_downloadCSV('slickchart-sales.csv',rows);if(typeof proToast==='function')proToast('Exported '+((_payments||[]).length)+' payments');}
+  return /[",\n\r]/.test(c)?'"'+c.replace(/"/g,'""')+'"':c;}).join(',')).join('\r\n');return _downloadFile(fname,csv,'text/csv');}
+function _exportServicesCSV(){const rows=[['Service','Price']].concat((_svcMenu||[]).map(s=>[s.name||'',(+s.price||0).toFixed(2)]));if(_downloadCSV('slickchart-services.csv',rows)==='native')return;if(typeof proToast==='function')proToast('Exported '+((_svcMenu||[]).length)+' services');}
+function _exportClientsCSV(){const rows=[['Name','Email','Phone','Date of birth','Current treatment','Last visit','Next visit','Concerns','Allergies']].concat(Object.values(CL).map(c=>[c.name||'',c.email||'',c.phone||'',c.birthday||'',c.treatment||'',c.lastVisit||'',c.nextVisit||'',c.concerns||'',c.allergies||'']));if(_downloadCSV('slickchart-clients.csv',rows)==='native')return;if(typeof proToast==='function')proToast('Exported '+Object.keys(CL).length+' clients');}
+function _exportPaymentsCSV(){const rows=[['Date','Client','Subtotal','Tax','Total','Method','Status','Note']].concat((_payments||[]).map(p=>{const total=parseFloat(p.amount)||0;const tax=parseFloat(p.taxAmount)||0;return [p.date||'',p.clientName||'',(total-tax).toFixed(2),tax.toFixed(2),total.toFixed(2),p.method||'',p.status||'',p.note||''];}));if(_downloadCSV('slickchart-sales.csv',rows)==='native')return;if(typeof proToast==='function')proToast('Exported '+((_payments||[]).length)+' payments');}
 function renderExportCenter(){
   setNav('pro');document.getElementById('tt').textContent='Export Data';
   const card=(icon,bg,ic,title,desc,onclick)=>`<div onclick="${onclick}" style="display:flex;align-items:center;gap:12px;background:var(--surf1);border:1px solid var(--p-line-ctl);border-radius:12px;padding:14px;margin:0 16px 10px;cursor:pointer;"><div style="width:40px;height:40px;border-radius:12px;background:${bg};display:flex;align-items:center;justify-content:center;flex-shrink:0;"><i class="ti ${icon}" style="font-size:18px;color:${ic};"></i></div><div style="flex:1;"><div style="font-size:16px;font-weight:600;color:var(--p-ink);">${title}</div><div style="font-size:16px;color:var(--p-mut);">${desc}</div></div><i class="ti ti-download" style="color:var(--p-mut);font-size:18px;"></i></div>`;
@@ -28807,17 +28842,35 @@ async function _confirmDeleteAccount(){
   setTimeout(()=>{try{location.reload();}catch(e){}},900);
 }
 // Generic download for non-CSV files (JSON exports, etc.). Mirrors _downloadCSV's anchor pattern.
+// A Blob link, not a data: URL. Chrome caps a URL at 2MB, so a busy account's full export (and a long
+// client CSV) silently downloaded nothing while the toast said it worked.
 function _downloadFile(fname,text,mime){
+  if(_nativeNoDownload())return 'native';
   try{
+    const blob=new Blob([String(text==null?'':text)],{type:(mime||'application/octet-stream')+';charset=utf-8'});
+    const url=URL.createObjectURL(blob);
     const a=document.createElement('a');
-    a.href='data:'+(mime||'application/octet-stream')+';charset=utf-8,'+encodeURIComponent(String(text==null?'':text));
-    a.download=fname;
+    a.href=url;a.download=fname;
     (document.querySelector('.shell')||document.body).appendChild(a);
     a.click();
-    setTimeout(()=>{try{a.remove();}catch(e){}},0);
+    setTimeout(()=>{try{a.remove();}catch(e){}try{URL.revokeObjectURL(url);}catch(e){}},30000);
     return true;
   }catch(e){return false;}
 }
+// Inside the Android app nothing can save a file (the app has no download handler), so every "saved"
+// toast was untrue. Say so, and say where it does work. The browser and iPhone paths are unchanged.
+function _isAndroidApp(){try{return _isNativeApp()&&window.Capacitor.getPlatform&&window.Capacitor.getPlatform()==='android';}catch(e){return false;}}
+function _nativeNoDownload(){
+  if(!_isAndroidApp())return false;
+  try{proToast('Saving files does not work inside the Android app yet. Open slickchart.app in Chrome on your phone or computer to save this.',0);}catch(e){}
+  return true;
+}
+try{if(_isAndroidApp()){
+  // Every other save path builds an <a download> or a blob: link and clicks it: catch them all here.
+  const _ac=HTMLAnchorElement.prototype.click;
+  HTMLAnchorElement.prototype.click=function(){try{const h=String(this.getAttribute('href')||'');if(this.hasAttribute('download')||/^(blob|data):/i.test(h)){_nativeNoDownload();return;}}catch(e){}return _ac.apply(this,arguments);};
+  window.print=function(){_nativeNoDownload();};
+}}catch(e){}
 // ── Self-serve full data export (privacy / portability) ──
 // Produces one JSON file containing every piece of data the app stores for this account.
 // This is the same set the cloud sync backs up: all sc_* localStorage keys, minus the three
@@ -28852,6 +28905,7 @@ function _exportAllData(){
   };
   const stamp=new Date().toISOString().slice(0,10);
   const ok=_downloadFile('slickchart-full-export-'+stamp+'.json',JSON.stringify(payload,null,2),'application/json');
+  if(ok==='native')return;
   if(typeof proToast==='function')proToast(ok?('Exported everything \u2014 '+count+' data set'+(count===1?'':'s')+' \u2713'):'Could not build the export \u2014 try again');
 }
 
@@ -29103,7 +29157,7 @@ function _payExportCSV(){
   // Route through _downloadCSV so this export gets the same formula-injection guard as the
   // others, the old inline builder here escaped quotes/commas but NOT a leading = + - @,
   // so a client name or note starting with '=' could execute as a formula in Excel/Sheets.
-  _downloadCSV('slickchart-payments.csv',rows);
+  if(_downloadCSV('slickchart-payments.csv',rows)==='native')return;
   if(typeof proToast==='function')proToast('Exported '+_payments.length+' payments');
 }
 function _payLogOpen(){

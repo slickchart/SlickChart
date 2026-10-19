@@ -662,6 +662,8 @@ saved anywhere", not "does this always call that".
 | `_saveWriteNote` | `/api/clients` | via `syncClientEvents` |
 | `_saveWriteNote` | `/api/feedback` | via `_sendPulse` |
 | `_saveWriteNote` | `/api/provider-form` | via `submitSignOnDevice` |
+| `_scBack` | `/api/clients` | via `syncClientEvents` |
+| `_scBack` | `/api/provider-form` | via `submitSignOnDevice` |
 | `_scanInkLabel` | `/api/ai` | via `_aiComplete` |
 | `_scheduleSpecificClientSync` | `/api/clients` | via `_syncSpecificClientsToServer` |
 | `_sectionTabBar` | `/api/clients` | via `syncClientEvents` |

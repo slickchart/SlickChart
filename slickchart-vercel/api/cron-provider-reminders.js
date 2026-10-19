@@ -23,6 +23,7 @@
 import { dbEnabled, sql } from '../lib/db.js';
 import { claimReminder, releaseReminder, ensureClientTables } from '../lib/clients.js';
 import { pushConfigured, sendPushToAll } from '../lib/push.js';
+import { nativePushConfigured, sendNativeToProvider } from '../lib/fcm.js';
 import {
   ensureProviderPushTable, listReminderOwners, listProviderPushSubs,
   deleteProviderPushSubById, providerClaimKey
@@ -91,7 +92,8 @@ function firstName(clients, cid) {
 export default async function handler(req, res) {
   if (!authorized(req)) { res.status(401).json({ error: 'Unauthorized' }); return; }
   if (!dbEnabled()) { res.status(200).json({ ok: false, reason: 'db disabled' }); return; }
-  if (!pushConfigured()) { res.status(200).json({ ok: false, reason: 'push not configured' }); return; }
+  const webOn = pushConfigured(), nativeOn = nativePushConfigured();
+  if (!webOn && !nativeOn) { res.status(200).json({ ok: false, reason: 'push not configured' }); return; }
   const out = { owners: 0, sent: 0, claimed: 0, released: 0, errors: [] };
   try {
     await ensureClientTables();
@@ -139,8 +141,7 @@ export default async function handler(req, res) {
         }
 
         if (!due.length) continue;
-        const subs = await listProviderPushSubs(o.owner);
-        if (!subs.length) continue;
+        const subs = webOn ? await listProviderPushSubs(o.owner) : [];
         const claimOwner = providerClaimKey(o.owner);
         for (const d of due) {
           let claimed = false;
@@ -148,10 +149,16 @@ export default async function handler(req, res) {
           if (!claimed) continue;
           out.claimed++;
           let delivered = 0;
-          try {
-            delivered = await sendPushToAll(subs, { title: d.title, body: d.body, url: d.url },
-              (id) => deleteProviderPushSubById(id));
-          } catch (e) { delivered = 0; }
+          if (subs.length) {
+            try {
+              delivered += (await sendPushToAll(subs, { title: d.title, body: d.body, url: d.url },
+                (id) => deleteProviderPushSubById(id))) || 0;
+            } catch (e) {}
+          }
+          // Her phones in the iPhone/Android app. sendNativeToProvider looks up only this owner's tokens.
+          if (nativeOn) {
+            try { delivered += (await sendNativeToProvider(o.owner, { title: d.title, body: d.body, url: d.url, tag: d.rkey })) || 0; } catch (e) {}
+          }
           if (delivered > 0) out.sent += delivered;
           else { try { await releaseReminder(claimOwner, d.rkey); out.released++; } catch (e) {} }
         }

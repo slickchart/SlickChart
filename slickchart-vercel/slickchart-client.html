@@ -1809,6 +1809,38 @@ function navBack(){
   if(_navCur==='notifications'||_navCur==='notif-settings'){_navStack.length=0;nav('home');return;}
   if(_navStack.length){const prev=_navStack.pop();_navBacking=true;nav(prev);_navBacking=false;}
 }
+
+// ── The Android back button / back gesture (2026-10-19) ──────────────────────────────────────────
+// Nothing handled it: in a browser tab or the installed web app, back LEFT SlickChart from any screen,
+// even with a sheet open; in the Android app it did nothing at all. Now back closes what is on top
+// (a confirm, then any sheet), then steps back a screen, then goes Home, and only leaves from Home.
+function _scBack(){
+  try{
+    if(document.getElementById('login-screen')||document.getElementById('sc-boot-fail'))return false;
+    const cf=document.getElementById('confirm-modal');
+    if(cf){const c=cf.querySelector('#_cf-cancel,#_is-cancel');if(c)c.click();else cf.remove();return true;}
+    const ov=_topOverlay();
+    if(ov){try{ov.dispatchEvent(new MouseEvent('click',{bubbles:true}));}catch(_){} if(document.body.contains(ov)){try{ov.remove();}catch(_){}} return true;}
+    if(_navStack.length){navBack();return true;}
+    const cur=_navCur||currentScreen||'';
+    if(cur&&cur!=='home'){nav('home');return true;}
+  }catch(e){}
+  return false;
+}
+(function(){try{
+  const A=(typeof _isNativeApp==='function'&&_isNativeApp()&&window.Capacitor&&window.Capacitor.Plugins)?window.Capacitor.Plugins.App:null;
+  if(A&&A.addListener){
+    A.addListener('backButton',function(){if(!_scBack()){try{if(A.minimizeApp)A.minimizeApp();else if(A.exitApp)A.exitApp();}catch(e){}}});
+    return;
+  }
+  // Browser tab / installed web app: keep one spare history entry for back to land on, handle it,
+  // and put it back. When there is nothing left to close, let back leave as it always did.
+  window.addEventListener('load',function(){setTimeout(function(){try{history.pushState({scBack:1},'');}catch(e){}},0);});
+  window.addEventListener('popstate',function(){
+    if(_scBack()){try{history.pushState({scBack:1},'');}catch(e){}}
+    else{try{history.back();}catch(e){}}
+  });
+}catch(e){}})();
 // ── Resource library state ──────────────────────────────────────────────────────────────────
 // Guides/courses can be CLEARED from Home (they stay saved in the library) or DELETED from the
 // library entirely so they don't pile up forever. Kept on-device; keys 'g:<id>' / 'c:<id>'.
