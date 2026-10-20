@@ -305,7 +305,7 @@ const S=document.getElementById('S');
 // resets when I save it" and there was no way to tell whether her phone had any of them — a whole
 // day was spent debugging code she may not have been running. Shown at the bottom of Settings, so
 // the answer is a screenshot away. Bump it on every ship.
-const APP_BUILD='2026-10-20i';
+const APP_BUILD='2026-10-20j';
 
 
 /* ════════════════════════════════════════════════════════════════
@@ -32562,7 +32562,9 @@ function renderClientRecover(){
       if(!g.length)return '';
       return '<div style="background:var(--p-red-bg);border:2px solid var(--p-red-line);border-radius:12px;padding:12px 14px;margin-bottom:12px;font-size:16px;color:var(--p-ink);line-height:1.6;">'
         +'<b>'+g.length+' client'+(g.length===1?' is':'s are')+' being deleted again every time they refresh.</b><br>'
-        +_recBox(_rq(g).length,_rq(g).slice(0,_REC_CAP).map(function(x){return '\u00b7 '+esc(x.name||x.id);}).join('<br>'),180)
+        // One button per client as well as the all-at-once one: the list can hold sample clients and
+        // ones she meant to delete next to a real client (Ashley, 2026-10-20: Cooper Howard).
+        +_recBox(_rq(g).length,_rq(g).slice(0,_REC_CAP).map(function(x){return '<div style="display:flex;align-items:center;gap:8px;padding:3px 0;"><span style="flex:1;">\u00b7 '+esc(x.name||x.id)+'</span><button class="rec-unghost" onclick="_recoverUnDelete(\''+esc(x.id)+'\')" style="background:var(--accent);color:var(--accent-ink);border:1px solid var(--btn-edge);border-radius:8px;padding:5px 10px;font-size:14px;font-weight:600;cursor:pointer;font-family:inherit;">Bring back</button></div>';}).join(''),260)
         +'<div style="font-size:14px;color:var(--p-mut);margin:6px 0 10px;">These are alive on the server, but their ids are on this account\u2019s \u201cdo not bring back\u201d list, so every sync removes them again. Undoing it has to happen on the account, or their device just puts it back.</div>'
         +'<button onclick="_recoverUnDelete()" class="btnp" style="width:100%;border-radius:10px;padding:11px;font-size:16px;font-weight:600;">Bring '+(g.length===1?'this client':'these '+g.length)+' back for good</button>'
         +'</div>';
@@ -33160,9 +33162,9 @@ async function _recoverRestorePurged(){
     }catch(e){ if(typeof proToast==='function')proToast('Could not reach the server'); }
   });
 }
-async function _recoverUnDelete(){
+async function _recoverUnDelete(onlyId){
   const j=_recoverState;if(!j)return;
-  const g=j.ghosts||[];if(!g.length)return;
+  const g=(j.ghosts||[]).filter(function(x){return !onlyId||x.id===onlyId;});if(!g.length)return;
   confirmModal({title:'Bring them back?',
     body:g.map(function(x){return '\u00b7 '+(x.name||x.id);}).join('\n')
       +'\n\nThese are on the server already. This takes their ids off the account\u2019s do-not-restore list so the next sync stops removing them.\n\nThey will need to close the app and open it again.',
@@ -33173,6 +33175,16 @@ async function _recoverUnDelete(){
         body:JSON.stringify({email:j.provider.email,unDeleteIds:g.map(function(x){return x.id;})})});
       const out=await r.json().catch(()=>({}));
       if(!r.ok||!out.ok){if(typeof proToast==='function')proToast((out&&out.error)||'Could not bring them back');return;}
+      // Off the delete list is not enough when the account's own list never had them (Cooper Howard
+      // was live on the server and absent from her list): add them to it too. This only adds.
+      try{await fetch('/api/admin/client-recover',{method:'POST',headers:{'Content-Type':'application/json','Authorization':'Bearer '+tok},
+        body:JSON.stringify({email:j.provider.email,repairRoster:true,onlyIds:g.map(function(x){return x.id;})})});}catch(e){}
+      // Her own account on this device: take them off this device's delete record now as well.
+      try{let mine=String(localStorage.getItem('sc_login_email')||'').trim().toLowerCase();
+        if(mine&&mine===String(j.provider.email||'').trim().toLowerCase()&&typeof _deletedClientIds!=='undefined'){
+          let ch=false;g.forEach(function(x){if(_deletedClientIds[x.id]){delete _deletedClientIds[x.id];ch=true;}});if(ch)_saveDeletedClients();
+          const u=JSON.parse(_lsGet('sc_undeleted_clients')||'{}')||{};g.forEach(function(x){u[x.id]=Date.now();});const v=JSON.stringify(u);localStorage.setItem('sc_undeleted_clients',v);if(typeof _pushKeyNow==='function')_pushKeyNow('sc_undeleted_clients',v);
+        }}catch(e){}
       confirmModal({title:'Done',body:out.unDeleted+' client'+(out.unDeleted===1?'':'s')+' will stop being removed.\n\nAsk them to CLOSE the app completely and open it again \u2014 a pull-to-refresh alone may not be enough.',
         action:'Got it',hideCancel:true},function(){});
       const r2=await fetch('/api/admin/client-recover?email='+encodeURIComponent(j.provider.email),{headers:{'Authorization':'Bearer '+tok}});
