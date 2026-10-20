@@ -8103,3 +8103,14 @@ sweeps still clean.
 
 **Suggested to Ashley, not built:** a default "how to use" saved on each product in the catalogue, so a
 picked or auto-added purchase lands as a full step instead of a bare name.
+
+### Follow-up: bought products ask for THIS client's how-to (build `2026-10-20g`, PREVIEW)
+
+Ashley (2026-10-20): liked purchases arriving as full steps, *"but would like to keep the 'how to use'
+as a per client line"*. So no catalogue default. A routine line that is only a catalogue product name
+(how `_autoHomecareFromPurchases` adds a purchase) shows **"Add how {first} should use it"** under it,
+on the Homecare tab and the session summary (`_hcNeedsHowHTML`). It opens the how-to step for that
+client, prefilled with her plan reason if any, and **Save** replaces that line in place
+(`_hcAddPicked(id,ctx,idx,was)`; if a sync moved the line it finds it by text, otherwise adds a new
+line, never overwrites another). The auto-add toast now says to add how they should use it.
+Test: `test-hc-product-picker.mjs` 36/36 Chrome + WebKit.
