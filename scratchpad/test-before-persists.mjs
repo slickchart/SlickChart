@@ -87,6 +87,24 @@ if (process.env.MODE === 'serverstale') T.check("the account's old copy only ADD
   await q.evaluate(() => { const o = document.getElementById('photo-recover'); if (o) o.remove(); nav('room', 'c1'); });
   const room2 = await q.evaluate(() => (document.getElementById('room-photos') || {}).innerText || '');
   T.check('one tap puts it back in her session as the before', /Before ✓/.test(room2), room2.slice(0, 120));
+  // "for all of these I did the sessions already... sorted (and dated) into their files and clear this
+  // part out": old unassigned photos go to the client whose visit they were taken at, in one tap.
+  const sortRes = await q.evaluate(() => {
+    const day = Date.now() - 30 * 864e5;
+    sessionSummaries.c2 = [{ date: 'x', ts: day + 3600e3, treatment: 'Peel' }];
+    sessionSummaries.c1 = (sessionSummaries.c1 || []).concat([{ date: 'y', ts: day - 20 * 864e5 }]);
+    const px = 'data:image/png;base64,QUJD';
+    capturedPhotos.__recovered__ = [
+      { url: px + 'MQ', ts: day, pid: 'ph_j1' }, { url: px + 'Mg', ts: day + 50 * 60e3, pid: 'ph_j2' },   // Janice's visit: before, after
+      { url: px + 'Mw', ts: day - 10 * 864e5, pid: 'ph_none' } ];                                          // no visit near it
+    _openPhotoRecovery(); _pr_render();
+    const btn = document.getElementById('pr-sortall-main'); const label = btn ? btn.textContent : '';
+    if (btn) btn.click();
+    const j = (capturedPhotos.c2 || []).map(p => p.pid + ':' + p.phase + ':' + p.ts);
+    return { label, j, left: (capturedPhotos.__recovered__ || []).map(p => p.pid), txt: document.getElementById('photo-recover').innerText };
+  });
+  T.check('Sort puts old photos on the client whose visit they were taken at, before then after, dated', /Sort 2 unassigned/.test(sortRes.label) && sortRes.j.some(x => /^ph_j1:before:/.test(x)) && sortRes.j.some(x => /^ph_j2:after:/.test(x)) && JSON.stringify(sortRes.left) === '["ph_none"]', JSON.stringify(sortRes).slice(0, 400));
+  T.check('clients with photos collapse to one line, nothing to clear by hand', /Photos are in \d+ client/.test(sortRes.txt) && !/Open session/.test(sortRes.txt), sortRes.txt.slice(0, 300));
   // Her screenshot: the "which client?" list is hundreds of rows, many "(no name)". It must search.
   await q.evaluate(() => { CL.cjunk = { name: '(no name)' }; capturedPhotos.__recovered__ = [{ url: 'data:image/png;base64,AA', ts: Date.now(), pid: 'ph_x' }]; _openPhotoRecovery(); _prSel = new Set(['ph_x']); _pr_reassign('__recovered__', 0); });
   const rows0 = await q.locator('#photo-recover .pr-cl').count();

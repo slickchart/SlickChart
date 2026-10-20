@@ -305,7 +305,7 @@ const S=document.getElementById('S');
 // resets when I save it" and there was no way to tell whether her phone had any of them — a whole
 // day was spent debugging code she may not have been running. Shown at the bottom of Settings, so
 // the answer is a screenshot away. Bump it on every ship.
-const APP_BUILD='2026-10-20j';
+const APP_BUILD='2026-10-20k';
 
 
 /* ════════════════════════════════════════════════════════════════
@@ -7696,6 +7696,7 @@ function _openPhotoRecovery(){
   (document.querySelector('.shell')||document.body).appendChild(ov);
   _pr_render();
 }
+let _prShowFiled=false;
 function _pr_render(msg){
   var ov=document.getElementById('photo-recover');if(!ov)return;
   var rep=_photoRecoveryScan();
@@ -7709,7 +7710,14 @@ function _pr_render(msg){
       :('<button onclick="_pr_open(\''+r.id+'\')" style="background:var(--accent);border:1px solid var(--btn-edge);color:var(--accent-ink);border-radius:8px;padding:7px 12px;font-size:16px;font-weight:600;cursor:pointer;font-family:inherit;flex-shrink:0;">Open session</button>');
     return '<div style="display:flex;align-items:center;gap:10px;padding:11px 12px;border:1px solid var(--p-line);border-radius:12px;margin-bottom:8px;background:var(--p-surf);"><div style="flex:1;min-width:0;"><div style="font-size:16px;font-weight:600;color:var(--p-ink);">'+title+' · '+total+' photo'+(total===1?'':'s')+'</div><div style="font-size:14px;color:var(--p-mut);">'+(bits.join(' · ')||'—')+'</div></div>'+action+'</div>';
   };
-  var body=ids.map(function(r){return row(r,false);}).join('')+rep.orphans.map(function(r){return row(r,true);}).join('');
+  // Photos already on a client are in that client's file: one line, not a row each (Ashley,
+  // 2026-10-20: "clear this part out"). What still needs her is what stays on screen.
+  var filed=ids.length?('<div style="font-size:16px;color:var(--p-mut);line-height:1.5;padding:10px 12px;border:1px solid var(--p-line);border-radius:12px;margin-bottom:8px;background:var(--p-surf);">'
+      +'<i class="ti ti-circle-check" style="color:var(--p-green);"></i> Photos are in '+ids.length+' client'+(ids.length===1?'\u2019s file':'s\u2019 files')+', dated when they were taken.'
+      +' <button onclick="_prShowFiled=!_prShowFiled;_pr_render()" style="background:none;border:0;color:var(--accent-strong);text-decoration:underline;font-size:16px;cursor:pointer;font-family:inherit;padding:0;">'+(_prShowFiled?'Hide list':'Show list')+'</button></div>'
+      +(_prShowFiled?ids.map(function(r){return row(r,false);}).join(''):'')):'';
+  var sortBtn='';try{var _rb=capturedPhotos.__recovered__;if(_rb&&_rb.length){var _sg=_pr_suggest('__recovered__');var _st=_sg.reduce(function(n,x){return n+x.items.length;},0);if(_st)sortBtn='<button id="pr-sortall-main" onclick="_pr_sortAll(\'__recovered__\')" class="btnp" style="width:100%;border-radius:12px;margin-bottom:10px;"><i class="ti ti-folders"></i> Sort '+_st+' unassigned photo'+(_st===1?'':'s')+' into their clients\u2019 files</button>';}}catch(e){}
+  var body=sortBtn+rep.orphans.map(function(r){return row(r,true);}).join('')+filed;
   if(!body)body='<div style="font-size:16px;color:var(--p-mut);line-height:1.6;padding:8px 2px;">No before/after photos were found on this device or in your cloud backup. If you just tapped “Find & restore,” they truly aren’t in any saved copy — reply to your SlickChart support thread and we’ll dig into the server logs.</div>';
   ov.innerHTML='<div style="background:var(--surf1);border-top:1px solid var(--p-line);border-radius:16px 16px 0 0;padding:18px;max-height:92%;overflow:auto;">'
     +_sheetBar()
@@ -7765,50 +7773,81 @@ function _pr_gallery(bucketId){
     +'<button onclick="_pr_render()" style="width:100%;background:none;border:1px solid var(--p-line-ctl);color:var(--p-mut);border-radius:12px;padding:10px;font-size:16px;cursor:pointer;font-family:inherit;">Back</button>'
     +'</div>';
 }
-// One tap per client for photos that came back with no client on them: a photo taken during a booked
-// appointment goes on that client, as a BEFORE in the first half of it and an AFTER in the second.
-// Only the last 3 days, and only an offer: she sees the photos and taps. Ashley, 2026-10-20: today's
-// befores for Sina Prom and Janice Albers were on the server with nothing saying whose they were.
+// Sorting photos that came back with no client on them. A photo goes on the client whose VISIT it was
+// taken during: a booked appointment, a visit summary she wrote, a check-in, or a payment, within 4
+// hours, and only when no other client's visit is about as close (then it is left for her). Photos
+// of one client on one day split into before (first half of the day's shots) and after.
+// Ashley, 2026-10-20: "for all of these I did the sessions already. I would like the photos to just be
+// sorted (and dated) into their files". The photo keeps the moment it was taken, which dates it.
+function _pr_visitTimes(){
+  const ev=[];const add=function(cid,t){t=Number(t)||0;if(cid&&CL[cid]&&t>1.6e12)ev.push({cid:cid,t:t});};
+  try{(typeof _allApptsUnified==='function'?_allApptsUnified():[]).forEach(function(a){const t=a&&a.when&&a.when.getTime?a.when.getTime():0;const cid=(typeof _clientIdByName==='function')?_clientIdByName(a.title):null;add(cid,t);});}catch(e){}
+  try{Object.keys(sessionSummaries||{}).forEach(function(cid){(sessionSummaries[cid]||[]).forEach(function(x){add(cid,x&&(x.ts||Date.parse(x.date||'')));});});}catch(e){}
+  try{(checkins||[]).forEach(function(ci){if(ci)add(ci.clientId,ci.at);});}catch(e){}
+  try{(_payments||[]).forEach(function(p){if(p&&p.status!=='failed')add(p.clientId,p.ts||p.at||Date.parse(p.date||''));});}catch(e){}
+  return ev;
+}
 function _pr_suggest(bucketId){
   const out=[];
   try{
-    const appts=(typeof _allApptsUnified==='function')?_allApptsUnified():[];
-    const cut=Date.now()-3*86400000;
+    const ev=_pr_visitTimes();
+    const W=4*3600000,AMBIG=30*60000;
     const by={};
     (capturedPhotos[bucketId]||[]).forEach(function(p,i){
-      const ts=Number(p&&p.ts)||0;if(!ts||ts<cut)return;
-      let best=null;
-      appts.forEach(function(a){
-        const st=a&&a.when&&a.when.getTime?a.when.getTime():0;if(!st)return;
-        const dur=(Number(a.raw&&a.raw.dur)||60)*60000;
-        if(ts<st-30*60000||ts>st+dur+60*60000)return;
-        const cid=(typeof _clientIdByName==='function')?_clientIdByName(a.title):null;if(!cid||!CL[cid])return;
-        const d=Math.abs(ts-st);if(!best||d<best.d)best={d:d,cid:cid,st:st,dur:dur};
-      });
-      if(!best)return;
-      const k=best.cid+'@'+best.st;
-      const g=by[k]||(by[k]={cid:best.cid,st:best.st,items:[]});
-      g.items.push({key:_pr_photoKey(p,i),phase:(ts<best.st+best.dur/2)?'before':'after'});
+      const ts=Number(p&&p.ts)||0;if(!ts)return;
+      const best={};
+      ev.forEach(function(e){const d=Math.abs(ts-e.t);if(d>W)return;if(best[e.cid]==null||d<best[e.cid])best[e.cid]=d;});
+      const ranked=Object.keys(best).sort(function(a,b){return best[a]-best[b];});
+      if(!ranked.length)return;
+      if(ranked.length>1&&best[ranked[1]]-best[ranked[0]]<AMBIG)return;   // two clients that close: hers to say
+      const cid=ranked[0];
+      const day=new Date(ts);day.setHours(0,0,0,0);
+      const k=cid+'@'+day.getTime();
+      const g=by[k]||(by[k]={cid:cid,st:day.getTime(),items:[]});
+      g.items.push({key:_pr_photoKey(p,i),ts:ts});
     });
-    Object.keys(by).forEach(function(k){out.push(by[k]);});
-    out.sort(function(a,b){return b.st-a.st;});
+    Object.keys(by).forEach(function(k){
+      const g=by[k];g.items.sort(function(a,b){return a.ts-b.ts;});
+      const a=g.items[0].ts,z=g.items[g.items.length-1].ts,mid=a+(z-a)/2;
+      g.items.forEach(function(it){it.phase=(z-a<20*60000||it.ts<=mid)?'before':'after';});
+      g.at=a;out.push(g);
+    });
+    out.sort(function(a,b){return b.at-a.at;});
   }catch(e){}
   return out;
 }
 function _pr_suggestHTML(bucketId){
   const g=_pr_suggest(bucketId);if(!g.length)return '';
-  return g.map(function(x,gi){
+  const tot=g.reduce(function(n,x){return n+x.items.length;},0);
+  return '<button id="pr-sortall" onclick="_pr_sortAll(\''+bucketId+'\')" class="btnp" style="width:100%;border-radius:12px;margin-bottom:10px;"><i class="ti ti-folders"></i> Sort all '+tot+' into their clients\u2019 files</button>'
+    +g.slice(0,30).map(function(x,gi){
     const nm=(CL[x.cid]&&CL[x.cid].name)||'';
-    const d=new Date(x.st);
-    const when=(typeof _apptTimeStr==='function')?_apptTimeStr(d):d.toLocaleTimeString([],{hour:'numeric',minute:'2-digit'});
-    const day=d.toDateString()===new Date().toDateString()?'today':d.toLocaleDateString([],{weekday:'short',month:'short',day:'numeric'});
+    const d=new Date(x.at||x.st);
+    const day=d.toDateString()===new Date().toDateString()?'today':d.toLocaleDateString([],{weekday:'short',month:'short',day:'numeric',year:(d.getFullYear()===new Date().getFullYear()?undefined:'numeric')});
     const nb=x.items.filter(function(i){return i.phase==='before';}).length,na=x.items.length-nb;
     const what=[nb?(nb+' before'):'',na?(na+' after'):''].filter(Boolean).join(' and ');
     return '<div style="border:1px solid var(--accent);background:var(--accent-a08);border-radius:12px;padding:11px 12px;margin-bottom:10px;">'
-      +'<div style="font-size:16px;color:var(--p-ink);line-height:1.45;margin-bottom:8px;"><b>'+_fileEsc(nm)+'</b>: '+x.items.length+' photo'+(x.items.length===1?'':'s')+' taken during the '+_fileEsc(when)+' appointment '+day+'.</div>'
+      +'<div style="font-size:16px;color:var(--p-ink);line-height:1.45;margin-bottom:8px;"><b>'+_fileEsc(nm)+'</b>: '+x.items.length+' photo'+(x.items.length===1?'':'s')+' from her visit '+day+'.</div>'
       +'<button class="pr-sug" onclick="_pr_takeSuggestion(\''+bucketId+'\','+gi+')" style="width:100%;background:var(--accent);border:1px solid var(--btn-edge);color:var(--accent-ink);border-radius:8px;padding:9px 12px;font-size:16px;font-weight:600;cursor:pointer;font-family:inherit;">Put them on '+_fileEsc(nm.split(' ')[0])+' as '+what+'</button>'
       +'</div>';
   }).join('');
+}
+function _pr_sortAll(bucketId){
+  try{
+    const groups=_pr_suggest(bucketId);if(!groups.length)return;
+    const want={};groups.forEach(function(g){g.items.forEach(function(i){want[i.key]={cid:g.cid,phase:i.phase};});});
+    const src=capturedPhotos[bucketId]||[];const keep=[];let moved=0;const who={};
+    src.forEach(function(p,i){
+      const w=want[_pr_photoKey(p,i)];if(!w||!CL[w.cid]){keep.push(p);return;}
+      if(!capturedPhotos[w.cid])capturedPhotos[w.cid]=[];
+      const kk=(p&&(p.pid||p.url))||'';
+      if(!capturedPhotos[w.cid].some(function(q){return ((q&&(q.pid||q.url))||'')===kk;})){p.phase=w.phase;capturedPhotos[w.cid].push(p);moved++;who[w.cid]=1;}
+    });
+    if(keep.length)capturedPhotos[bucketId]=keep;else delete capturedPhotos[bucketId];
+    try{if(typeof persistCapturedPhotos==='function')persistCapturedPhotos();}catch(e){}
+    const nc=Object.keys(who).length;
+    _pr_render('Sorted '+moved+' photo'+(moved===1?'':'s')+' into '+(nc===1?'1 client\u2019s file':(nc+' clients\u2019 files'))+', dated when they were taken.'+(keep.length?(' '+keep.length+' could not be matched to a visit and are still under Unassigned.'):''));
+  }catch(e){_pr_render('Couldn\u2019t sort those photos.');}
 }
 function _pr_takeSuggestion(bucketId,gi){
   try{
