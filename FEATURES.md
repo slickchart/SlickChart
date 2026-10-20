@@ -276,6 +276,7 @@ saved anywhere", not "does this always call that".
 | `_editClientDetails` | `/api/square/orders` | via `_autoHomecareFromPurchases` |
 | `_editClientDetails` | `/api/square/pay-config` | via `_addCardOnFile` |
 | `_editClientDetails` | `/api/square/save-card` | via `_addCardOnFile` |
+| `_editPhoto` | `/api/clients` | via `_syncSpecificClientsToServer` |
 | `_evictableFileCache` | `/api/guide-file` | direct |
 | `_fcOpenAction` | `/api/clients` | via `syncClientEvents` |
 | `_fcOpenAction` | `/api/provider-form` | via `submitSignOnDevice` |
@@ -286,7 +287,6 @@ saved anywhere", not "does this always call that".
 | `_firstVisitNudgeHTML` | `/api/clients` | via `_syncSpecificClientsToServer` |
 | `_flagAckHome` | `/api/clients` | via `syncClientEvents` |
 | `_flagAckHome` | `/api/square/appointments` | via `_loadSquareAppts` |
-| `_flipPhoto` | `/api/clients` | via `_syncSpecificClientsToServer` |
 | `_flushAllPendingProviderMsgs` | `/api/provider-message` | via `_sendProviderMessageToClient` |
 | `_flushBeforeSignOut` | `/api/store` | direct |
 | `_flushClientSync` | `/api/clients` | via `_syncClientsToServer` |
@@ -632,7 +632,6 @@ saved anywhere", not "does this always call that".
 | `_roomMarkComplete` | `/api/clients` | via `_syncSpecificClientsToServer` |
 | `_roomMarkComplete` | `/api/square/catalog` | via `_autoSyncCatalog` |
 | `_roomMarkComplete` | `/api/transcribe` | via `_probeWhisper` |
-| `_rotatePhoto` | `/api/clients` | via `_syncSpecificClientsToServer` |
 | `_routeDeepLink` | `/api/clients` | via `syncClientEvents` |
 | `_routeDeepLink` | `/api/provider-form` | via `submitSignOnDevice` |
 | `_runClientCleanup` | `/api/clients` | via `_tidySaveToAccount` |

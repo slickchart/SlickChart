@@ -7979,3 +7979,26 @@ SEO: 7 massage + 7 head spa posts in blog-src, hubs /massage-therapist-forms and
   Providers can edit any form, so do NOT raise these again or change them.
 - She already posted the Google Business posts for the forms pages. Forms-related blog/post ideas are
   parked for NEXT WEEK's Monday drafts (see blog-src/TOPICS.md), not before.
+
+## 2026-10-20 — Session photos lock upright, with a turn arrow (build `2026-10-20a`, PREVIEW)
+**Observed (Ashley):** taking before/after photos in Start session, the photos "often flip sideways".
+She asked for them to lock upright, with an arrow to turn one after it is taken.
+- **Cause:** not a missing EXIF fix. `_downscaleImg` already applies the orientation tag, and both
+  Chromium and WebKit honour it (probed with tagged fixtures). The phone's own guess is the problem:
+  held flat over a client on the bed, it cannot tell which way is up and tags the shot landscape (1/3)
+  or upside down (8). "Often, not always" fits that and not a missing-tag bug.
+- **Fix:** `_lockUpright` on fresh captures only (`takePhoto`, not From library, touch devices only so a
+  computer's file pick is never turned): reads the tag (`_exifOrientation`, or the native camera
+  plugin's `exif.Orientation` via `_ncLastOrient`) and turns the photo back to portrait the way the
+  phone was really held. No tag + landscape gets a quarter turn clockwise. The ghost line-up camera is
+  unchanged.
+- **Turn arrow:** under every before/after in the room (`button.room-rot` → `_rotatePhoto(id,i,'room')`).
+  The Photos tab already had rotate/flip. Both go through `_editPhoto`, which now also fixes a real
+  gap: a turned photo kept its pid and was already marked backed up, so the account, her other devices
+  and the client's app kept the SIDEWAYS copy. It now sets `p.reup` (re-sent over the same pid, then
+  cleared) and `p.ets`; `sc_photo_index` entries carry `_ts` once the new bytes are on the account,
+  and `_restorePhotosFromCloud` refetches a photo whose `_ts` is newer than the device's copy.
+- Test: `scratchpad/test-upright-photos.mjs` 18/18 in Chrome and Safari engines. Also re-ran
+  `sweep3-session-photos` 6/6, `sweep2-photo-recover-reupload` 4/4. `sweep2-photo-xaccount` has one
+  FAIL that is identical on main (it expects logout to empty `captured_photos`; the design since sets
+  it aside under its owner instead), so that test is stale, not a leak.

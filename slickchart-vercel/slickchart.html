@@ -304,7 +304,7 @@ const S=document.getElementById('S');
 // resets when I save it" and there was no way to tell whether her phone had any of them — a whole
 // day was spent debugging code she may not have been running. Shown at the bottom of Settings, so
 // the answer is a screenshot away. Bump it on every ship.
-const APP_BUILD='2026-10-19n';
+const APP_BUILD='2026-10-20a';
 
 
 /* ════════════════════════════════════════════════════════════════
@@ -7189,7 +7189,9 @@ function _buildPhotoIndex(){
   const idx={};
   try{Object.keys(capturedPhotos||{}).forEach(function(cid){
     const arr=capturedPhotos[cid]||[];if(!arr.length)return;
-    idx[cid]=arr.map(function(p){return {pid:_photoPid(p),ts:p.ts||0,phase:p.phase||'',angle:p.angle||'',source:p.source||'',fileType:p.fileType||''};});
+    // _ts = when the photo was last turned, and only once the turned bytes are on the account (no
+    // `reup` left), so another device that refetches on seeing it gets the new bytes, not the old.
+    idx[cid]=arr.map(function(p){const m={pid:_photoPid(p),ts:p.ts||0,phase:p.phase||'',angle:p.angle||'',source:p.source||'',fileType:p.fileType||''};if(p.ets&&!p.reup)m._ts=p.ets;return m;});
   });}catch(e){}
   return idx;
 }
@@ -7223,9 +7225,9 @@ function _backupPhotosToServer(){
     Object.keys(capturedPhotos||{}).forEach(function(cid){
       (capturedPhotos[cid]||[]).forEach(function(p){
         if(!p||!p.url||!/^data:/i.test(String(p.url)))return;   // only inline (data:) bytes need uploading
-        const pid=_photoPid(p);if(done.has(pid))return;
+        const pid=_photoPid(p);if(done.has(pid)&&!p.reup)return;
         let type='image/jpeg';try{type=String(p.url).slice(5,String(p.url).indexOf(';'))||type;}catch(e){}
-        jobs.push({pid:pid,data:p.url,type:type});
+        jobs.push({pid:pid,data:p.url,type:type,p:p});
       });
     });
     if(!jobs.length)return;
@@ -7237,11 +7239,13 @@ function _backupPhotosToServer(){
     _photoBackupRunning=true;
     // Upload a batch; each success is remembered so we never re-send. Remaining jobs go on the next
     // persist pass, so a big backlog drains over time without blocking or hammering the server.
-    let okN=0,authBad=false;
+    let okN=0,authBad=false,reupDone=false;
     Promise.all(jobs.slice(0,6).map(function(j){
-      return _uploadGuideFileToServer(j.pid,{name:'',type:j.type,data:j.data}).then(function(r){if(r&&r.ok){okN++;_markPhotoBackedUp(j.pid);delete fails[j.pid];}else{fails[j.pid]=(fails[j.pid]||0)+1;if(r&&(r.status===401||r.reason==='signedout'))authBad=true;}}).catch(function(){fails[j.pid]=(fails[j.pid]||0)+1;});
+      return _uploadGuideFileToServer(j.pid,{name:'',type:j.type,data:j.data}).then(function(r){if(r&&r.ok){okN++;_markPhotoBackedUp(j.pid);delete fails[j.pid];if(j.p&&j.p.reup&&j.p.url===j.data){delete j.p.reup;reupDone=true;}}else{fails[j.pid]=(fails[j.pid]||0)+1;if(r&&(r.status===401||r.reason==='signedout'))authBad=true;}}).catch(function(){fails[j.pid]=(fails[j.pid]||0)+1;});
     })).then(function(){
       _photoBackupRunning=false;
+      // A turned photo is on the account now: write its cleared flag down so it is not sent again.
+      if(reupDone){try{if(_idb.available())_idb.set('captured_photos',capturedPhotos);}catch(e){}try{_persistPhotoIndex();}catch(e){}}
       if(authBad)return;                                     // signed out: nothing will succeed until she signs in
       // A batch that got nothing through backs off (30s, doubling to 5 min) instead of retrying every
       // 1.5s forever while offline.
@@ -7262,7 +7266,16 @@ async function _restorePhotosFromCloud(){
       const have=new Set((capturedPhotos[cid]||[]).map(function(p){return (p&&p.pid)||'';}));
       const metas=idx[cid]||[];
       for(let mi=0;mi<metas.length;mi++){
-        const meta=metas[mi];if(!meta||!meta.pid||have.has(meta.pid))continue;
+        const meta=metas[mi];if(!meta||!meta.pid)continue;
+        if(have.has(meta.pid)){
+          // Turned on another device since this one got it: fetch the turned bytes.
+          const mine=(capturedPhotos[cid]||[]).find(function(p){return p&&p.pid===meta.pid;});
+          if(mine&&meta._ts&&!mine.reup&&(Number(mine.ets)||0)<Number(meta._ts)){
+            let g=null;try{g=await _getGuideFile(meta.pid);}catch(e){}
+            if(g&&g.data){mine.url=g.data;mine.ets=Number(meta._ts);restored++;}
+          }
+          continue;
+        }
         let f=null;try{f=await _getGuideFile(meta.pid);}catch(e){}
         if(f&&f.data){
           if(!capturedPhotos[cid])capturedPhotos[cid]=[];
@@ -11299,7 +11312,7 @@ function _roomPhotosHTML(id){
     <div style="flex:1;">${capBtn('before',hasB)}</div>
     <div style="flex:1;">${capBtn('after',hasA)}</div>
   </div>
-  ${(before.length||after.length)?`<div style="display:flex;gap:7px;overflow-x:auto;scrollbar-width:none;margin-top:10px;padding-bottom:2px;">${before.concat(after).map(p=>_capturedThumb(p,62)).join('')}</div>
+  ${(before.length||after.length)?`<div style="display:flex;gap:7px;overflow-x:auto;scrollbar-width:none;margin-top:10px;padding-bottom:2px;">${before.concat(after).map(p=>{const i=(capturedPhotos[id]||[]).indexOf(p);return `<div style="flex-shrink:0;width:62px;">${_capturedThumb(p,62)}${(i>=0&&/^data:/i.test(String(p.url||'')))?`<button class="room-rot" onclick="_rotatePhoto('${id}',${i},'room')" title="Turn photo" aria-label="Turn ${p.phase||''} photo" style="width:100%;margin-top:4px;padding:5px 0;border-radius:8px;border:1px solid var(--p-line-ctl);background:var(--p-surf);color:var(--p-mut);cursor:pointer;display:flex;align-items:center;justify-content:center;"><i class="ti ti-rotate-clockwise" aria-hidden="true" style="font-size:18px;"></i></button>`:''}</div>`;}).join('')}</div>
   <div style="display:flex;align-items:center;gap:5px;margin-top:8px;font-size:14px;color:var(--p-green);"><i class="ti ti-lock-check" aria-hidden="true" style="font-size:16px;"></i> Saved automatically — safe to step away and come back.</div>`:''}`;
 }
 function _rerenderRoomPhotos(id){const el=document.getElementById('room-photos');if(el)el.innerHTML=_roomPhotosHTML(id);}
@@ -15232,12 +15245,16 @@ function _tryConsumeDeepLink(){
     try{if(cid&&CL[cid])nav('client',cid);}catch(e){}
   }
 }
+let _ncLastOrient=0;
 async function _ncPhotoDataUrl(fromCamera,maxW){
   try{
     if(!_isNativeApp())return null;
     const Camera=window.Capacitor.Plugins&&window.Capacitor.Plugins.Camera;
     if(!Camera||!Camera.getPhoto)return null;
     const photo=await Camera.getPhoto({quality:82,width:(maxW||1600),resultType:'dataUrl',correctOrientation:true,source:fromCamera?'CAMERA':'PHOTOS',saveToGallery:false});
+    // The orientation the camera guessed, if the plugin reports it, so _lockUpright can undo a
+    // sideways guess in the right direction. Absent is fine: it falls back to a quarter turn.
+    try{const ex=photo&&photo.exif;_ncLastOrient=ex?(parseInt(ex.Orientation||ex.orientation,10)||0):0;}catch(e){_ncLastOrient=0;}
     return (photo&&photo.dataUrl)||null;
   }catch(e){return null;}
 }
@@ -15280,14 +15297,66 @@ function _commitPhoto(clientId,phase,url,after,angle){
 }
 function takePhoto(clientId,phase,after,fromLibrary){
   const save=url=>_commitPhoto(clientId,phase,url,after);
+  // A fresh capture is locked upright (_lockUpright); a library pick is left exactly as it was shot,
+  // because a landscape photo chosen from the camera roll is meant to be landscape.
+  const lock=(url,orient)=>{if(!url||fromLibrary||!_isTouchDevice()){save(url);return;}_lockUpright(url,orient,save);};
   // Native app: a fresh capture goes through the OS camera plugin; "From library" keeps the web picker.
-  if(!fromLibrary&&_isNativeApp()){ _ncPhotoDataUrl(true,1600).then(function(d){ if(d)save(d); else if(after)after(); }); return; }
+  if(!fromLibrary&&_isNativeApp()){ _ncLastOrient=0;_ncPhotoDataUrl(true,1600).then(function(d){ if(d)lock(d,_ncLastOrient); else if(after)after(); }); return; }
   const inp=_ensureCamInput(fromLibrary);inp.value='';inp.multiple=false;
   inp.onchange=()=>{
     const f=inp.files&&inp.files[0];
-    if(f){_downscaleImg(f,function(url){save(url);},1600);}else save('');
+    if(f){_exifOrientation(f).then(function(o){_downscaleImg(f,function(url){lock(url,o);},1600);});}else save('');
   };
   inp.click();
+}
+function _isTouchDevice(){try{return (navigator.maxTouchPoints>0)||!!(window.matchMedia&&matchMedia('(pointer:coarse)').matches);}catch(e){return false;}}
+// The EXIF "which way is up" tag (1-8) of a JPEG, or 0 when there is none. Reads only the head of
+// the file. Never rejects.
+function _exifOrientation(file){
+  try{
+    if(!file||!file.slice)return Promise.resolve(0);
+    const head=file.slice(0,131072);
+    const read=head.arrayBuffer?head.arrayBuffer():new Promise(function(res,rej){const r=new FileReader();r.onload=function(){res(r.result);};r.onerror=rej;r.readAsArrayBuffer(head);});
+    return Promise.resolve(read).then(function(buf){
+      const v=new DataView(buf);
+      if(v.byteLength<4||v.getUint16(0)!==0xFFD8)return 0;
+      let off=2;
+      while(off+4<=v.byteLength){
+        const mk=v.getUint16(off);if((mk&0xFF00)!==0xFF00)return 0;
+        const len=v.getUint16(off+2);
+        if(mk===0xFFE1&&off+10<=v.byteLength&&v.getUint32(off+4)===0x45786966){   // "Exif"
+          const t=off+10;if(t+8>v.byteLength)return 0;
+          const le=v.getUint16(t)===0x4949;
+          const ifd=t+v.getUint32(t+4,le);if(ifd+2>v.byteLength)return 0;
+          const n=v.getUint16(ifd,le);
+          for(let i=0;i<n;i++){const e=ifd+2+i*12;if(e+10>v.byteLength)return 0;if(v.getUint16(e,le)===0x0112){const o=v.getUint16(e+8,le);return (o>=1&&o<=8)?o:0;}}
+          return 0;
+        }
+        if(mk===0xFFDA)return 0;   // image data starts: no EXIF block before it
+        off+=2+len;
+      }
+      return 0;
+    }).catch(function(){return 0;});
+  }catch(e){return Promise.resolve(0);}
+}
+// "Lock upright" for a fresh capture. The orientation tag IS applied (_downscaleImg), so a photo
+// still comes out sideways when the phone guessed its own orientation wrong: held flat over a client
+// on the treatment bed, it cannot tell which way is up and tags the shot landscape (1 or 3) or upside
+// down (8). A before/after is shot portrait, so put it back the way the phone was really held. A
+// phone's camera sensor is landscape and "held upright" is a quarter turn clockwise of it (tag 6), so
+// tag 1 needs a quarter turn clockwise, 3 a quarter turn back and 8 a half turn. Unknown direction
+// (no tag, or the camera plugin baked the turn in) gets a quarter turn clockwise; the rotate arrow
+// under the photo fixes the rare one that lands wrong.
+function _lockUpright(url,orient,cb){
+  const img=new Image();
+  img.onload=function(){
+    const land=img.width>img.height;
+    const mode=land?(orient===3?'rot270':'rot'):(orient===8?'rot180':'');
+    if(!mode){cb(url);return;}
+    _imgTransform(url,mode,cb);
+  };
+  img.onerror=function(){cb(url);};
+  img.src=url;
 }
 // ── Ghost overlay camera ─────────────────────────────────────────────────────────────────────────
 // A before/after only reads as progress if the two frames line up. Matching an old angle from memory
@@ -15434,6 +15503,8 @@ function _imgTransform(src,mode,cb){
   img.onload=function(){
     const w=img.width,h=img.height,c=document.createElement('canvas'),x=c.getContext('2d');
     if(mode==='rot'){c.width=h;c.height=w;x.translate(h,0);x.rotate(Math.PI/2);x.drawImage(img,0,0);}
+    else if(mode==='rot270'){c.width=h;c.height=w;x.translate(0,w);x.rotate(-Math.PI/2);x.drawImage(img,0,0);}
+    else if(mode==='rot180'){c.width=w;c.height=h;x.translate(w,h);x.rotate(Math.PI);x.drawImage(img,0,0);}
     else{c.width=w;c.height=h;x.translate(w,0);x.scale(-1,1);x.drawImage(img,0,0);}
     let out;try{out=c.toDataURL('image/jpeg',0.82);}catch(e){out=src;}
     cb(out);
@@ -15441,8 +15512,24 @@ function _imgTransform(src,mode,cb){
   img.onerror=function(){cb(src);};
   img.src=src;
 }
-function _rotatePhoto(clientId,idx){const list=capturedPhotos[clientId];if(!list||!list[idx]||!list[idx].url)return;_imgTransform(list[idx].url,'rot',function(u){list[idx].url=u;try{if(typeof persistCapturedPhotos==='function')persistCapturedPhotos();}catch(e){}_renderPhotosView(clientId,CL[clientId],photoSessions[clientId]||[]);});}
-function _flipPhoto(clientId,idx){const list=capturedPhotos[clientId];if(!list||!list[idx]||!list[idx].url)return;_imgTransform(list[idx].url,'flip',function(u){list[idx].url=u;try{if(typeof persistCapturedPhotos==='function')persistCapturedPhotos();}catch(e){}_renderPhotosView(clientId,CL[clientId],photoSessions[clientId]||[]);});}
+// The turned photo keeps its pid (the client's app fetches it by that name) and is flagged `reup`, so
+// _backupPhotosToServer sends the new bytes over the old server copy. Without that, a photo already
+// backed up stayed sideways on the account, on her other devices and in the client's app.
+function _editPhoto(clientId,idx,mode,where){
+  const list=capturedPhotos[clientId];if(!list||!list[idx]||!list[idx].url)return;
+  const p=list[idx];
+  if(!/^data:/i.test(String(p.url))){if(typeof proToast==='function')proToast('This photo can\u2019t be turned here.');return;}
+  _imgTransform(p.url,mode,function(u){
+    if(!u||u===p.url)return;
+    p.url=u;p.reup=1;p.ets=Date.now();
+    if(p.phase==='before'||p.phase==='after'){try{_syncRoomDraftPhotos(clientId);}catch(e){}}
+    try{if(typeof persistCapturedPhotos==='function')persistCapturedPhotos();}catch(e){}
+    if(where==='room')_rerenderRoomPhotos(clientId);
+    else _renderPhotosView(clientId,CL[clientId],photoSessions[clientId]||[]);
+  });
+}
+function _rotatePhoto(clientId,idx,where){_editPhoto(clientId,idx,'rot',where);}
+function _flipPhoto(clientId,idx,where){_editPhoto(clientId,idx,'flip',where);}
 // Thumbnail with a baked-in date + time stamp and optional before/after badge
 function _capturedThumb(p,size){size=size||72;const d=new Date(p.ts);const dateShort=d.toLocaleDateString('en-US',{month:'short',day:'numeric'});const time=d.toLocaleTimeString('en-US',{hour:'numeric',minute:'2-digit'});const badgeBg=p.phase==='before'?'rgba(0,0,0,.72)':p.phase==='after'?'var(--accent)':'var(--p-blue-bg)';const badgeColor=p.phase==='before'?'#fff':p.phase==='after'?'var(--accent-ink)':'var(--p-blue)';return `<div style="width:${size}px;height:${Math.round(size*1.25)}px;border-radius:8px;overflow:hidden;flex-shrink:0;position:relative;background:${p.url?'#000':'var(--p-amber-bg)'};">${p.url?`<img src="${_imgSrc(p.url)}" alt="Captured ${dateShort}" loading="lazy" decoding="async" style="width:100%;height:100%;object-fit:cover;">`:`<div style="width:100%;height:100%;display:flex;align-items:center;justify-content:center;"><i class="ti ti-photo" aria-hidden="true" style="font-size:22px;color:var(--accent-strong);opacity:.5;"></i></div>`}<div style="position:absolute;bottom:0;left:0;right:0;background:linear-gradient(transparent,rgba(0,0,0,.82));padding:9px 5px 4px;"><div style="font-size:12px;color:#fff;font-weight:600;line-height:1.2;">${dateShort}</div><div style="font-size:12px;color:rgba(255,255,255,.72);">${time}</div></div>${p.phase?`<div style="position:absolute;top:4px;left:4px;background:${badgeBg};color:${badgeColor};font-size:12px;font-weight:700;padding:1px 5px;border-radius:4px;text-transform:uppercase;letter-spacing:.03em;">${p.phase}</div>`:''}</div>`;}
 // ── Photo viewer + Save ── open a captured before/after photo full-size and download/save a copy.
