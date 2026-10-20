@@ -8071,3 +8071,35 @@ Tests: `test-before-persists.mjs` in MODE normal / brokenidb / serverstale (Chro
 serverstale (WebKit) all pass; upright, session-photos, recover-reupload, checkin-dup, bigkeys pass;
 sweep2-photo-xaccount still has its one pre-existing failure. `sweep-crossdevice.mjs` is not in this
 checkout, so it was not run.
+
+## 2026-10-20 — Homecare product picker: what they bought on top (build `2026-10-20e`, PREVIEW)
+
+**Ask (Ashley):** "homecare builder should have a product picker that is searchable from the product
+catalog to build their routine from. have their purchased retail at the top as suggestions. make sure
+there is still a space to add in custom fields for things that are not from product catalog."
+
+**Already there before this:** a searchable picker on the client's Homecare tab (`_hcPickerSheet`, plan
+products first) and the auto-add of Square purchases (`_autoHomecareFromPurchases`, 2026-10-13j). The
+session summary's homecare had only a free-text box.
+
+**Built:**
+- `_hcBought(id)`: this client's purchases matched to her catalogue (`affiliateLinks`, plus Square's own
+  name for a renamed Square product), newest first. Sources: in-app checkouts (`_payments`, `clientId`
+  match, items of kind `product`, not `failed`) and her Square orders for the client. The orders live in
+  memory only (`_hcOrdersCache`, filled by the auto-add, the Purchases card, or the picker itself via
+  `_hcFetchBought`), never stored or synced, so no new `sc_*` key and no merge question.
+- Picker sections: **They bought** (with "Bought Oct 15"), **On their plan**, **Your products**. Search
+  covers name, brand and category. A typed search with no match offers "Add “…” as your own step";
+  "Type your own step" is always at the bottom. Both go through the same how-to-use step
+  (`_hcStepSheet`). The free-text box under the list stays.
+- Suggestion chips now include bought products not in the routine (marked "· bought"). A Square
+  purchase already put in once (`c._hcAuto`) is not suggested again, since its absence means she took it out.
+- The session summary's homecare gets the same chips and picker (`ctx 'summary'`).
+- Homecare lines stay plain strings (§1a shape rule).
+
+**Test:** `scratchpad/test-hc-product-picker.mjs` 29/29 Chrome and WebKit (`PW_ENGINE=webkit`,
+`PLAYWRIGHT_BROWSERS_PATH` pointing at a webkit install). `test-shop-homecare` 12/12 and the sweep3 hc
+sweeps still clean.
+
+**Suggested to Ashley, not built:** a default "how to use" saved on each product in the catalogue, so a
+picked or auto-added purchase lands as a full step instead of a bare name.
