@@ -563,7 +563,7 @@ const S=document.getElementById('S');
 // resets when I save it" and there was no way to tell whether her phone had any of them — a whole
 // day was spent debugging code she may not have been running. Shown at the bottom of Settings, so
 // the answer is a screenshot away. Bump it on every ship.
-const APP_BUILD='2026-10-20h';
+const APP_BUILD='2026-10-20i';
 
 
 /* ════════════════════════════════════════════════════════════════
@@ -7622,14 +7622,19 @@ function _buildPhotoIndex(){
     const mine=new Set();Object.keys(capturedPhotos||{}).forEach(function(cid){(capturedPhotos[cid]||[]).forEach(function(p){if(p&&p.pid)mine.add(p.pid);});});
     const raw=(typeof _lsGet==='function')?_lsGet('sc_photo_index'):localStorage.getItem('sc_photo_index');
     const prev=raw?JSON.parse(raw):null;
+    const gone=(typeof _prDismissed==='function')?_prDismissed():new Set();
     if(prev&&typeof prev==='object'&&!Array.isArray(prev))Object.keys(prev).forEach(function(cid){
+      if(cid==='__recovered__')return;
       // A removed client's photos are not carried (their delete record says so); the bytes stay on the server.
       if(typeof _deletedClientIds!=='undefined'&&_deletedClientIds&&_deletedClientIds[cid])return;
-      const keep=(Array.isArray(prev[cid])?prev[cid]:[]).filter(function(m){return m&&m.pid&&!mine.has(m.pid);});
+      const keep=(Array.isArray(prev[cid])?prev[cid]:[]).filter(function(m){return m&&m.pid&&!mine.has(m.pid)&&!gone.has(m.pid);});
       if(keep.length)idx[cid]=keep;
     });
   }catch(e){}
+  // Unassigned recovered photos stay off the index: it would send every one of them to every device,
+  // and keep counting ones she removed (Ashley, 2026-10-20: "it says 295 ... never going down").
   try{Object.keys(capturedPhotos||{}).forEach(function(cid){
+    if(cid==='__recovered__')return;
     const arr=capturedPhotos[cid]||[];if(!arr.length)return;
     // _ts = when the photo was last turned, and only once the turned bytes are on the account (no
     // `reup` left), so another device that refetches on seeing it gets the new bytes, not the old.
@@ -7713,13 +7718,14 @@ async function _restorePhotosFromCloud(){
     if(typeof Cloud==='undefined'||!Cloud||!Cloud.token)return;
     let idx={};try{const raw=localStorage.getItem('sc_photo_index');if(raw)idx=JSON.parse(raw)||{};}catch(e){}
     let restored=0;
-    const cids=Object.keys(idx);
+    const gone=(typeof _prDismissed==='function')?_prDismissed():new Set();
+    const cids=Object.keys(idx).filter(function(c){return c!=='__recovered__';});
     for(let ci=0;ci<cids.length;ci++){
       const cid=cids[ci];
       const have=new Set((capturedPhotos[cid]||[]).map(function(p){return (p&&p.pid)||'';}));
       const metas=idx[cid]||[];
       for(let mi=0;mi<metas.length;mi++){
-        const meta=metas[mi];if(!meta||!meta.pid)continue;
+        const meta=metas[mi];if(!meta||!meta.pid||gone.has(meta.pid))continue;
         if(have.has(meta.pid)){
           // Turned on another device since this one got it: fetch the turned bytes.
           const mine=(capturedPhotos[cid]||[]).find(function(p){return p&&p.pid===meta.pid;});
@@ -7878,7 +7884,7 @@ function _photoRecoveryScan(){
   var add=function(cid,field,n){if(!n)return;var name=(CL[cid]&&CL[cid].name)||null;if(!name){var o=rep.orphans.find(function(x){return x.id===cid;});if(o){o[field]=(o[field]||0)+n;}else{var e={id:cid};e[field]=n;rep.orphans.push(e);}return;}var r=rep.byId[cid]||(rep.byId[cid]={id:cid,name:name});r[field]=(r[field]||0)+n;};
   try{Object.keys(capturedPhotos||{}).forEach(function(cid){add(cid,'mem',(capturedPhotos[cid]||[]).length);});}catch(e){}
   try{_roomDraftKeys().forEach(function(k){var cid=k.slice('sc_room_draft_'.length);var d=_roomDraftGet(cid);add(cid,'draft',(d&&d.photos)?d.photos.length:0);});}catch(e){}
-  try{var raw=localStorage.getItem('sc_photo_index');if(raw){var idx=JSON.parse(raw)||{};Object.keys(idx).forEach(function(cid){add(cid,'cloud',(idx[cid]||[]).length);});}}catch(e){}
+  try{var raw=localStorage.getItem('sc_photo_index');if(raw){var idx=JSON.parse(raw)||{};Object.keys(idx).forEach(function(cid){if(cid==='__recovered__')return;add(cid,'cloud',(idx[cid]||[]).length);});}}catch(e){}
   return rep;
 }
 async function _forcePhotoRecovery(){

@@ -97,11 +97,16 @@ if (process.env.MODE === 'serverstale') T.check("the account's old copy only ADD
   const cat = 'data:image/png;base64,' + 'Q0FU'.repeat(20);
   ['ph_cat1', 'ph_cat2', 'ph_cat3'].forEach(id => { files[id] = cat; names[id] = ''; });
   await q.evaluate(() => { const o = document.getElementById('photo-recover'); if (o) o.remove(); delete capturedPhotos.__recovered__; });
-  await q.evaluate(async () => { await _recoverUnindexedServerPhotos(); _openPhotoRecovery(); _prSel = new Set(); _pr_gallery('__recovered__'); });
+  await q.evaluate(async () => { await _recoverUnindexedServerPhotos();
+    // As on her account: an earlier build put the unassigned bucket into the synced index.
+    const ix = JSON.parse(localStorage.getItem('sc_photo_index') || '{}'); ix.__recovered__ = ['ph_cat1', 'ph_cat2', 'ph_cat3', 'ph_old9'].map(pid => ({ pid, ts: 1 })); localStorage.setItem('sc_photo_index', JSON.stringify(ix));
+    _openPhotoRecovery(); _prSel = new Set(); _pr_gallery('__recovered__'); });
   const badge = await q.locator('#photo-recover').innerText();
   await q.locator('#photo-recover img[src^="data:image/png;base64,Q0FU"]').locator('xpath=..').locator('button').click();
   await q.locator('#pr-remove').click();
   const after = await q.evaluate(async () => { const left = (capturedPhotos.__recovered__ || []).filter(p => /^ph_cat/.test(p.pid)).length; await _recoverUnindexedServerPhotos(); return { left, back: (capturedPhotos.__recovered__ || []).filter(p => /^ph_cat/.test(p.pid)).length }; });
+  const listAfter = await q.evaluate(() => { _pr_render(); return document.getElementById('photo-recover').innerText; });
+  T.check('after removing, the Unassigned count goes down (no stale index count)', !/Unassigned photos · [1-9]/.test(listAfter), listAfter.slice(0, 400));
   T.check('the same photo 3 times shows once as ×3; Remove clears all 3 and they stay cleared', /×3/.test(badge) && after.left === 0 && after.back === 0 && !!files.ph_cat1, JSON.stringify(after));
   await c2.close(); }
 console.log('server keys:', Object.keys(server).join(','), 'files:', Object.keys(files).join(','));
