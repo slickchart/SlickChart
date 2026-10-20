@@ -112,11 +112,13 @@ export default async function handler(req, res) {
         const owner = await providerOwner(req);
         if (!owner) { res.status(401).json({ error: 'Not logged in.' }); return; }
         const q = sql();
-        const rows = await q`SELECT id, type, updated_at, length(coalesce(data, '')) AS size
+        const rows = await q`SELECT id, name, type, updated_at, length(coalesce(data, '')) AS size
           FROM files WHERE owner = ${owner} AND left(id, 3) = 'ph_' AND data IS NOT NULL AND complete IS NOT FALSE
           ORDER BY updated_at DESC LIMIT 5000`;
+        // name: since 2026-10-20 a photo is uploaded with 'scph|<client id>|<phase>|<angle>|<taken at>',
+        // so a photo whose index entry was lost can still be put back on the right client by itself.
         res.setHeader('Cache-Control', 'no-store');
-        res.status(200).json({ ok: true, photos: (rows || []).map(r => ({ id: r.id, type: r.type || '', size: Number(r.size) || 0, updated_at: r.updated_at })) });
+        res.status(200).json({ ok: true, photos: (rows || []).map(r => ({ id: r.id, name: r.name || '', type: r.type || '', size: Number(r.size) || 0, updated_at: r.updated_at })) });
         return;
       }
       // Which file ids this provider has ON THE SERVER, with sizes and no bytes. The device keeps a

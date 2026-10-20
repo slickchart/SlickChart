@@ -305,7 +305,7 @@ const S=document.getElementById('S');
 // resets when I save it" and there was no way to tell whether her phone had any of them — a whole
 // day was spent debugging code she may not have been running. Shown at the bottom of Settings, so
 // the answer is a screenshot away. Bump it on every ship.
-const APP_BUILD='2026-10-20c';
+const APP_BUILD='2026-10-20d';
 
 
 /* ════════════════════════════════════════════════════════════════
@@ -2691,7 +2691,13 @@ function loadProfessions(){try{const raw=localStorage.getItem('sc_professions');
 const _SYNC_SKIP={sc_unsent_keys:1,sc_prev_owner:1,sc_staff:1,sc_ev_fails:1,sc_dupes_last:1,   /* device-local note of the last automatic duplicate merge */
      /* device-local record of ingest failures, for the self-check */
      /* retired: SlickChart is for solo providers, so there is no staff roster */
-  sc_token:1,sc_sqkey:1,sc_bus:1,sc_chart_activity:1,sc_pulse:1,sc_cloud_seeded:1};
+  sc_token:1,sc_sqkey:1,sc_bus:1,sc_chart_activity:1,sc_pulse:1,sc_cloud_seeded:1,
+  /* The device's own photo store (the fallback copy written when IndexedDB fails). Comments said it was
+     excluded from sync; it never was. A phone whose IndexedDB failed pushed its copy (one client's
+     photos) to the account, every other device pulled it, and loadCapturedPhotos put it in place of
+     its own photos: Ashley, 2026-10-20, "every before picture i am taking disappears from the start
+     session area before I am done". Photos reach the account one by one (_backupPhotosToServer). */
+  sc_captured_photos:1};
 // Whole FAMILIES of keys that must never leave the device. sc_room_draft_* is the crash-safety copy of
 // photos taken minutes ago — megabytes of base64 whose real backup is the photo store, not this. It was
 // syncing: every draft pushed ~1MB into the account, and every pull wrote them all back onto every
@@ -4085,6 +4091,10 @@ const Cloud={
     // Never write down a key we would never push up. Device-local keys the account still holds from
     // before this rule would otherwise be restored onto this device on every single pull.
     if(_syncPrefixSkipped(k)){_staleDeviceLocalKeys.push(k);return;}
+    // A photo store some device pushed before it was excluded. Never stored over this device's own
+    // copy (that is what wiped the session's before); any photo in it this device lacks is ADDED.
+    // The account row is left alone: it may hold a photo that exists nowhere else.
+    if(k==='sc_captured_photos'){try{_absorbPhotoCopy(data[k]);}catch(e){}return;}
     // Consult photos: keep the account copy (it is what survives a new phone) but land it in
     // IndexedDB rather than in the 5MB localStorage allowance it used to dominate.
     if(k==='sc_pro_vc_subs'){
@@ -7188,11 +7198,27 @@ function _photoPid(p){
 }
 function _buildPhotoIndex(){
   const idx={};
+  // Entries for photos this device does not hold are KEPT. The index was rebuilt from memory alone,
+  // so a device that had lost its photos (or never downloaded them) pushed an index without them and
+  // the account forgot they existed: 412 of Ashley's 415 server photos were named by nothing on
+  // 2026-10-20. Photos are never deleted one at a time, so nothing here can bring back a removed one;
+  // a photo this device holds is listed where this device has it (a moved photo moves).
+  try{
+    const mine=new Set();Object.keys(capturedPhotos||{}).forEach(function(cid){(capturedPhotos[cid]||[]).forEach(function(p){if(p&&p.pid)mine.add(p.pid);});});
+    const raw=(typeof _lsGet==='function')?_lsGet('sc_photo_index'):localStorage.getItem('sc_photo_index');
+    const prev=raw?JSON.parse(raw):null;
+    if(prev&&typeof prev==='object'&&!Array.isArray(prev))Object.keys(prev).forEach(function(cid){
+      // A removed client's photos are not carried (their delete record says so); the bytes stay on the server.
+      if(typeof _deletedClientIds!=='undefined'&&_deletedClientIds&&_deletedClientIds[cid])return;
+      const keep=(Array.isArray(prev[cid])?prev[cid]:[]).filter(function(m){return m&&m.pid&&!mine.has(m.pid);});
+      if(keep.length)idx[cid]=keep;
+    });
+  }catch(e){}
   try{Object.keys(capturedPhotos||{}).forEach(function(cid){
     const arr=capturedPhotos[cid]||[];if(!arr.length)return;
     // _ts = when the photo was last turned, and only once the turned bytes are on the account (no
     // `reup` left), so another device that refetches on seeing it gets the new bytes, not the old.
-    idx[cid]=arr.map(function(p){const m={pid:_photoPid(p),ts:p.ts||0,phase:p.phase||'',angle:p.angle||'',source:p.source||'',fileType:p.fileType||''};if(p.ets&&!p.reup)m._ts=p.ets;return m;});
+    idx[cid]=(idx[cid]||[]).concat(arr.map(function(p){const m={pid:_photoPid(p),ts:p.ts||0,phase:p.phase||'',angle:p.angle||'',source:p.source||'',fileType:p.fileType||''};if(p.ets&&!p.reup)m._ts=p.ets;return m;}));
   });}catch(e){}
   return idx;
 }
@@ -7218,6 +7244,17 @@ function _markPhotoBackedUp(pid){
 }
 let _photoBackupRunning=false;
 try{window.addEventListener('online',function(){try{_backupPhotosToServer._waitUntil=0;_backupPhotosToServer._backoff=0;_backupPhotosToServer();}catch(e){}});}catch(e){}
+// What the server keeps with a photo's bytes, so that if every index entry for it is lost the photo can
+// still go back on the right client by itself (_recoverUnindexedServerPhotos). Only her own account
+// can read it (the files table is keyed by owner).
+function _photoLabel(cid,p){
+  try{const f=function(x){return String(x==null?'':x).replace(/\|/g,' ').slice(0,80);};
+    return ['scph',f(cid),f(p&&p.phase),f(p&&p.angle),String(Number(p&&p.ts)||0)].join('|');}catch(e){return '';}
+}
+function _parsePhotoLabel(name){
+  const a=String(name||'').split('|');if(a[0]!=='scph'||a.length<5||!a[1])return null;
+  return {cid:a[1],phase:a[2]||'',angle:a[3]||'',ts:Number(a[4])||0};
+}
 function _backupPhotosToServer(){
   try{
     if(typeof Cloud==='undefined'||!Cloud||!Cloud.token)return;
@@ -7228,7 +7265,7 @@ function _backupPhotosToServer(){
         if(!p||!p.url||!/^data:/i.test(String(p.url)))return;   // only inline (data:) bytes need uploading
         const pid=_photoPid(p);if(done.has(pid)&&!p.reup)return;
         let type='image/jpeg';try{type=String(p.url).slice(5,String(p.url).indexOf(';'))||type;}catch(e){}
-        jobs.push({pid:pid,data:p.url,type:type,p:p});
+        jobs.push({pid:pid,data:p.url,type:type,p:p,cid:cid});
       });
     });
     if(!jobs.length)return;
@@ -7242,7 +7279,7 @@ function _backupPhotosToServer(){
     // persist pass, so a big backlog drains over time without blocking or hammering the server.
     let okN=0,authBad=false,reupDone=false;
     Promise.all(jobs.slice(0,6).map(function(j){
-      return _uploadGuideFileToServer(j.pid,{name:'',type:j.type,data:j.data}).then(function(r){if(r&&r.ok){okN++;_markPhotoBackedUp(j.pid);delete fails[j.pid];if(j.p&&j.p.reup&&j.p.url===j.data){delete j.p.reup;reupDone=true;}}else{fails[j.pid]=(fails[j.pid]||0)+1;if(r&&(r.status===401||r.reason==='signedout'))authBad=true;}}).catch(function(){fails[j.pid]=(fails[j.pid]||0)+1;});
+      return _uploadGuideFileToServer(j.pid,{name:_photoLabel(j.cid,j.p),type:j.type,data:j.data}).then(function(r){if(r&&r.ok){okN++;_markPhotoBackedUp(j.pid);delete fails[j.pid];if(j.p&&j.p.reup&&j.p.url===j.data){delete j.p.reup;reupDone=true;}}else{fails[j.pid]=(fails[j.pid]||0)+1;if(r&&(r.status===401||r.reason==='signedout'))authBad=true;}}).catch(function(){fails[j.pid]=(fails[j.pid]||0)+1;});
     })).then(function(){
       _photoBackupRunning=false;
       // A turned photo is on the account now: write its cleared flag down so it is not sent again.
@@ -7460,7 +7497,17 @@ async function _recoverUnindexedServerPhotos(){
     for(var i=0;i<missing.length&&i<300;i++){
       var f=missing[i];if(!f||have.has(f.id))continue;
       var file=null;try{file=await _getGuideFile(f.id);}catch(e){}
-      if(file&&file.data){var _t=0;try{_t=f.updated_at?Date.parse(f.updated_at):0;}catch(e){}capturedPhotos.__recovered__.push({url:file.data,ts:_t||0,phase:'',angle:'',pid:f.id,source:'cloud-recovered'});try{_markPhotoBackedUp(f.id);}catch(e){}have.add(f.id);got++;}
+      if(file&&file.data){var _t=0;try{_t=f.updated_at?Date.parse(f.updated_at):0;}catch(e){}
+        // Labelled with its client (uploads since 2026-10-20): straight back onto that client, filed
+        // as the before/after it was. Otherwise it waits in Unassigned for her to place.
+        var lab=_parsePhotoLabel(f.name||file.name);
+        if(lab&&CL[lab.cid]){if(!capturedPhotos[lab.cid])capturedPhotos[lab.cid]=[];capturedPhotos[lab.cid].push({url:file.data,ts:lab.ts||_t||0,phase:lab.phase,angle:lab.angle,pid:f.id,source:'cloud-recovered'});}
+        else{
+          // No label: a pid minted here starts with the moment it was taken (ph_ + Date.now() in base 36),
+          // which outlasts updated_at (a turned photo is uploaded again later).
+          var _pt=0;try{var _m=/^ph_([0-9a-z]{8})/.exec(String(f.id));if(_m){_pt=parseInt(_m[1],36);if(!(_pt>1.6e12&&_pt<Date.now()+864e5))_pt=0;}}catch(e){}
+          capturedPhotos.__recovered__.push({url:file.data,ts:(lab&&lab.ts)||_pt||_t||0,phase:'',angle:'',pid:f.id,source:'cloud-recovered'});}
+        try{_markPhotoBackedUp(f.id);}catch(e){}have.add(f.id);got++;}
     }
     return got;
   }catch(e){return 0;}
@@ -7524,6 +7571,7 @@ function _pr_gallery(bucketId){
     +_sheetBar()
     +'<div style="font-size:16px;font-weight:600;color:var(--p-ink);margin-bottom:4px;">Recovered photos · '+n+'</div>'
     +'<div style="font-size:16px;color:var(--p-mut);line-height:1.55;margin-bottom:12px;">Newest first — your most recent session is at the top. Tap a photo to see it full-size; tap the circle to select the ones that belong to a client, then assign just those.</div>'
+    +_pr_suggestHTML(bucketId)
     +'<div style="position:sticky;top:0;z-index:2;background:var(--surf1);padding:6px 0 10px;display:flex;gap:8px;">'
       +'<button onclick="_pr_assignSelected()" class="btnp" style="flex:1;border-radius:8px;'+(selCount?'':'opacity:.55;')+'"><i class="ti ti-user-check"></i> Assign '+(selCount?(selCount+' selected'):'selected')+'…</button>'
       +'<button onclick="_prSel=new Set();_pr_gallery(\''+bucketId+'\')" style="flex:0 0 auto;background:none;border:1px solid var(--p-line-ctl);color:var(--p-mut);border-radius:8px;padding:0 12px;font-size:16px;cursor:pointer;font-family:inherit;">Clear</button>'
@@ -7532,6 +7580,73 @@ function _pr_gallery(bucketId){
     +'<button onclick="_pr_reassign(\''+bucketId+'\',1)" style="width:100%;background:none;border:1px solid var(--p-line-ctl);color:var(--p-mut);border-radius:12px;padding:10px;font-size:16px;cursor:pointer;font-family:inherit;margin-bottom:8px;">Or assign ALL '+n+' to one client…</button>'
     +'<button onclick="_pr_render()" style="width:100%;background:none;border:1px solid var(--p-line-ctl);color:var(--p-mut);border-radius:12px;padding:10px;font-size:16px;cursor:pointer;font-family:inherit;">Back</button>'
     +'</div>';
+}
+// One tap per client for photos that came back with no client on them: a photo taken during a booked
+// appointment goes on that client, as a BEFORE in the first half of it and an AFTER in the second.
+// Only the last 3 days, and only an offer: she sees the photos and taps. Ashley, 2026-10-20: today's
+// befores for Sina Prom and Janice Albers were on the server with nothing saying whose they were.
+function _pr_suggest(bucketId){
+  const out=[];
+  try{
+    const appts=(typeof _allApptsUnified==='function')?_allApptsUnified():[];
+    const cut=Date.now()-3*86400000;
+    const by={};
+    (capturedPhotos[bucketId]||[]).forEach(function(p,i){
+      const ts=Number(p&&p.ts)||0;if(!ts||ts<cut)return;
+      let best=null;
+      appts.forEach(function(a){
+        const st=a&&a.when&&a.when.getTime?a.when.getTime():0;if(!st)return;
+        const dur=(Number(a.raw&&a.raw.dur)||60)*60000;
+        if(ts<st-30*60000||ts>st+dur+60*60000)return;
+        const cid=(typeof _clientIdByName==='function')?_clientIdByName(a.title):null;if(!cid||!CL[cid])return;
+        const d=Math.abs(ts-st);if(!best||d<best.d)best={d:d,cid:cid,st:st,dur:dur};
+      });
+      if(!best)return;
+      const k=best.cid+'@'+best.st;
+      const g=by[k]||(by[k]={cid:best.cid,st:best.st,items:[]});
+      g.items.push({key:_pr_photoKey(p,i),phase:(ts<best.st+best.dur/2)?'before':'after'});
+    });
+    Object.keys(by).forEach(function(k){out.push(by[k]);});
+    out.sort(function(a,b){return b.st-a.st;});
+  }catch(e){}
+  return out;
+}
+function _pr_suggestHTML(bucketId){
+  const g=_pr_suggest(bucketId);if(!g.length)return '';
+  return g.map(function(x,gi){
+    const nm=(CL[x.cid]&&CL[x.cid].name)||'';
+    const d=new Date(x.st);
+    const when=(typeof _apptTimeStr==='function')?_apptTimeStr(d):d.toLocaleTimeString([],{hour:'numeric',minute:'2-digit'});
+    const day=d.toDateString()===new Date().toDateString()?'today':d.toLocaleDateString([],{weekday:'short',month:'short',day:'numeric'});
+    const nb=x.items.filter(function(i){return i.phase==='before';}).length,na=x.items.length-nb;
+    const what=[nb?(nb+' before'):'',na?(na+' after'):''].filter(Boolean).join(' and ');
+    return '<div style="border:1px solid var(--accent);background:var(--accent-a08);border-radius:12px;padding:11px 12px;margin-bottom:10px;">'
+      +'<div style="font-size:16px;color:var(--p-ink);line-height:1.45;margin-bottom:8px;"><b>'+_fileEsc(nm)+'</b>: '+x.items.length+' photo'+(x.items.length===1?'':'s')+' taken during the '+_fileEsc(when)+' appointment '+day+'.</div>'
+      +'<button class="pr-sug" onclick="_pr_takeSuggestion(\''+bucketId+'\','+gi+')" style="width:100%;background:var(--accent);border:1px solid var(--btn-edge);color:var(--accent-ink);border-radius:8px;padding:9px 12px;font-size:16px;font-weight:600;cursor:pointer;font-family:inherit;">Put them on '+_fileEsc(nm.split(' ')[0])+' as '+what+'</button>'
+      +'</div>';
+  }).join('');
+}
+function _pr_takeSuggestion(bucketId,gi){
+  try{
+    const g=_pr_suggest(bucketId)[gi];if(!g||!CL[g.cid])return;
+    const want={};g.items.forEach(function(i){want[i.key]=i.phase;});
+    const src=capturedPhotos[bucketId]||[];
+    if(!capturedPhotos[g.cid])capturedPhotos[g.cid]=[];
+    const have=new Set(capturedPhotos[g.cid].map(function(p){return (p&&(p.pid||p.url))||'';}));
+    const keep=[];let moved=0;
+    src.forEach(function(p,i){
+      const k=_pr_photoKey(p,i);
+      if(!want[k]){keep.push(p);return;}
+      p.phase=want[k];
+      const kk=(p&&(p.pid||p.url))||'';
+      if(kk&&!have.has(kk)){capturedPhotos[g.cid].push(p);have.add(kk);moved++;}
+    });
+    if(keep.length)capturedPhotos[bucketId]=keep;else delete capturedPhotos[bucketId];
+    try{if(typeof persistCapturedPhotos==='function')persistCapturedPhotos();}catch(e){}
+    const nm=CL[g.cid].name||'';
+    if(keep.length)_pr_gallery(bucketId);else _pr_render('Moved '+moved+' photo'+(moved===1?'':'s')+' to '+nm+'.');
+    try{if(typeof proToast==='function')proToast(moved+' photo'+(moved===1?'':'s')+' back on '+nm);}catch(e){}
+  }catch(e){}
 }
 function _pr_toggleSel(key){if(!_prSel)_prSel=new Set();if(_prSel.has(key))_prSel.delete(key);else _prSel.add(key);_pr_gallery(_prGalleryBucket);}
 function _pr_view(key){
@@ -7947,16 +8062,45 @@ let _cpMigrateLegacy=false;
 function loadCapturedPhotos(){
   // Legacy: older builds stored photos in localStorage. Load them synchronously (immediately
   // available) and flag them to migrate into IndexedDB in _initCapturedPhotos().
-  try{const raw=localStorage.getItem('sc_captured_photos');if(raw){const v=JSON.parse(raw);if(v&&typeof v==='object'){capturedPhotos=v;_cpMigrateLegacy=true;}}}catch(e){}
+  // It runs again after every sync (_loadPersistenceSweep), and it used to put this copy IN PLACE of
+  // the photos in memory, so a stale copy erased every photo taken since it was written. It adds.
+  try{const raw=localStorage.getItem('sc_captured_photos');if(raw){if(_absorbPhotoCopy(raw,true)!==null)_cpMigrateLegacy=true;}}catch(e){}
+}
+// Add every photo in a stored copy of the photo store that memory does not already hold (by pid, else
+// by its bytes). Never removes or replaces one. Returns how many it added, or null for an unusable copy.
+function _absorbPhotoCopy(raw,quiet){
+  let v=null;try{v=typeof raw==='string'?JSON.parse(raw):raw;}catch(e){return null;}
+  if(!v||typeof v!=='object'||Array.isArray(v))return null;
+  if(typeof capturedPhotos==='undefined'||!capturedPhotos)return null;
+  const all=new Set();
+  try{Object.keys(capturedPhotos).forEach(function(cid){(capturedPhotos[cid]||[]).forEach(function(p){const k=(p&&(p.pid||p.url))||'';if(k)all.add(k);});});}catch(e){}
+  let added=0;
+  Object.keys(v).forEach(function(cid){
+    const arr=Array.isArray(v[cid])?v[cid]:[];
+    arr.forEach(function(p){
+      const k=(p&&(p.pid||p.url))||'';if(!k||!p.url||all.has(k))return;
+      if(!capturedPhotos[cid])capturedPhotos[cid]=[];
+      capturedPhotos[cid].push(p);all.add(k);added++;
+    });
+  });
+  if(added&&!quiet){try{persistCapturedPhotos();}catch(e){}}
+  return added;
 }
 async function _initCapturedPhotos(){
   try{
-    if(!_idb.available())return;                 // no IndexedDB -> stay on the localStorage fallback
+    // No IndexedDB: stay on the localStorage fallback, but still restore from and back up to the
+    // account below. This used to return here, so a phone whose IndexedDB failed never got a photo
+    // back from the server after a reload.
+    if(!_idb.available())throw 0;
     if(_cpMigrateLegacy){
-      // Move the legacy localStorage copy into IndexedDB, then free the localStorage key.
+      _cpMigrateLegacy=false;
+      // Fold the fallback copy into IndexedDB, then free the localStorage key. It is ADDED to what
+      // IndexedDB holds: writing it in place of that replaced every photo on the device with the
+      // handful in the fallback copy.
+      try{const cur=await _idb.get('captured_photos');if(cur&&typeof cur==='object')_absorbPhotoCopy(cur,true);}catch(e){}
       const ok=await _idb.set('captured_photos',capturedPhotos);
       if(ok){try{localStorage.removeItem('sc_captured_photos');}catch(e){}}
-      return;
+      throw 0;
     }
     // WHOSE photos are these (CLAUDE.md §0)? The photo store survived sign-out with no owner, so the next
     // account to sign in on this device loaded the previous account's client photos, uploaded them into

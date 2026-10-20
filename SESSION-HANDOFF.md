@@ -8032,3 +8032,42 @@ unread check-in card and the top of the check-in detail page showed the client's
   `sweep-contrast.mjs` (both apps, both themes, 5 brands): everything meets AA, Chrome and Safari.
   `THEMES=light` / `BRANDS=navy` env vars narrow a run.
 - Test: `scratchpad/test-checkin-light.mjs` 27/27 Chrome + Safari (fails 13 on the old code).
+
+## 2026-10-20 — Every before photo vanished from Start session mid-appointment (build `2026-10-20d`, PREVIEW)
+
+**What Ashley observed (§1b, settled):** today, on her phone/tablet (Android), every before photo she
+took disappeared from the Start session area before she was done, so the after had no before beside it.
+Clients named: Sina Prom and Janice Albers.
+
+**What her recovery paste showed:** 415 photos on the server, only 3 named by the photo index (Dez
+Schrader), 412 orphans. The photo index on the account held ONE client all day: 24 device snapshots
+today, every one 1 client. Her Android on 2026-10-20c reported "phone storage (IndexedDB): NOT WORKING".
+
+**Cause (reproduced, `scratchpad/test-before-persists.mjs MODE=serverstale`):** `sc_captured_photos`
+(the localStorage fallback copy of the photo store, written only when IndexedDB fails) was never in
+`_SYNC_SKIP`, despite three comments saying it was excluded. A device whose IndexedDB failed pushed its
+copy to the account. Every other device pulled it, and `_reloadAll` → `_loadPersistenceSweep` →
+`loadCapturedPhotos()` did `capturedPhotos = v`, REPLACING the photos in memory with it, then
+`_initCapturedPhotos` "migrated" that copy into IndexedDB with a plain set, overwriting the device's
+whole store. So the before went at the next sync, and stayed gone after a relaunch. The bytes had
+already been uploaded (`_backupPhotosToServer` runs on capture), which is why they are orphans on the
+server, not lost. `_persistPhotoIndex` then rebuilt the index from the wiped memory and pushed it, so
+the account forgot them too.
+
+**Fixed:** `sc_captured_photos` is in `_SYNC_SKIP`; the pull ADDS any photo in an account copy and
+never stores it (the account row is left alone; it may hold a photo that exists nowhere else; clearing
+it is Ashley's call). `loadCapturedPhotos` and the migration add, never replace (`_absorbPhotoCopy`).
+Restore from the server runs even without IndexedDB. `_buildPhotoIndex` keeps entries for photos this
+device does not hold (skipping removed clients). Uploads now carry `scph|<client>|<phase>|<angle>|<ts>`
+in the file name and `?list=photos` returns it, so an orphan goes back on its client by itself in
+Recover lost photos. Unlabelled orphans from the last 3 days are offered on the client whose appointment
+they were taken during, before/after by which half of the appointment (`_pr_suggest`), one tap each.
+
+**Recovering Sina's and Janice's befores:** Account settings → Recover lost photos → Find & restore →
+Unassigned photos → View & assign → the "Put them on Sina / Janice" buttons. Best on the Mac (its
+IndexedDB works; Find & restore downloads up to 300 orphans). Not done for her: it needs her app.
+
+Tests: `test-before-persists.mjs` in MODE normal / brokenidb / serverstale (Chrome) and normal /
+serverstale (WebKit) all pass; upright, session-photos, recover-reupload, checkin-dup, bigkeys pass;
+sweep2-photo-xaccount still has its one pre-existing failure. `sweep-crossdevice.mjs` is not in this
+checkout, so it was not run.
