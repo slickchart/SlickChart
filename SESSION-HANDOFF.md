@@ -7967,3 +7967,10 @@ SEO: 7 massage + 7 head spa posts in blog-src, hubs /massage-therapist-forms and
   test-tattoo-collection 18/18, test-tt-client-form 12/12, sweep-all-forms 178 forms 0 problems, Chrome + Safari.
 - SEO: 7 tattoo posts + /tattoo-artist-forms (with video); head spa hub now has its video. All 8 hubs
   cross-link. Everything waits on her "publish them" (content) and "ship it" (app).
+
+### 2026-10-19 evening — native builds SUBMITTED
+- iPhone 1.0.3 (5) submitted to App Review; Android 1.0.5 (6) sent for Play review (Ashley, from her Mac).
+- Android was signed with `Desktop/SlickChart/Android - Google Play/slickchart-upload-NEW.jks` and Play
+  accepted it. Her Mac checkout had been on an old branch (`build-your-own-app-import`); it is on `main` now.
+- After approval, the 5-minute phone check in NATIVE-BUILD-PLAN-2026-10-20.md is still to do (export
+  share sheet, Library PDF, Square/Google Connect return, Android keyboard).
