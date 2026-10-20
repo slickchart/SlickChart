@@ -7752,9 +7752,18 @@ async function _recoverUnindexedServerPhotos(){
     if(!capturedPhotos.__recovered__)capturedPhotos.__recovered__=[];
     var have=new Set(capturedPhotos.__recovered__.map(function(p){return (p&&p.pid)||'';}));
     var got=0;
-    for(var i=0;i<missing.length&&i<300;i++){
-      var f=missing[i];if(!f||have.has(f.id))continue;
+    // Newest taken first, so today's photos come back before last year's. Six downloads at a time,
+    // with a count on the button: one at a time, 300 photos sat on "Searching every backup…" for
+    // minutes with nothing moving (Ashley, 2026-10-20, "i dont know if its slow or frozen").
+    var _pidTs=function(id){try{var m=/^ph_([0-9a-z]{8})/.exec(String(id));var t=m?parseInt(m[1],36):0;return (t>1.6e12&&t<Date.now()+864e5)?t:0;}catch(e){return 0;}};
+    missing.sort(function(a,b){return (_pidTs(b.id)||Date.parse(b.updated_at)||0)-(_pidTs(a.id)||Date.parse(a.updated_at)||0);});
+    var todo=missing.filter(function(f){return f&&!have.has(f.id);}).slice(0,300);
+    var _prog=function(n){try{var bt=document.getElementById('pr-run');if(bt)bt.innerHTML='<i class="ti ti-loader"></i> Bringing back photos… '+n+' of '+todo.length;}catch(e){}};
+    _prog(0);
+    var backed=[],done=0;
+    var one=async function(f){
       var file=null;try{file=await _getGuideFile(f.id);}catch(e){}
+      done++;_prog(done);
       if(file&&file.data){var _t=0;try{_t=f.updated_at?Date.parse(f.updated_at):0;}catch(e){}
         // Labelled with its client (uploads since 2026-10-20): straight back onto that client, filed
         // as the before/after it was. Otherwise it waits in Unassigned for her to place.
@@ -7765,8 +7774,11 @@ async function _recoverUnindexedServerPhotos(){
           // which outlasts updated_at (a turned photo is uploaded again later).
           var _pt=0;try{var _m=/^ph_([0-9a-z]{8})/.exec(String(f.id));if(_m){_pt=parseInt(_m[1],36);if(!(_pt>1.6e12&&_pt<Date.now()+864e5))_pt=0;}}catch(e){}
           capturedPhotos.__recovered__.push({url:file.data,ts:(lab&&lab.ts)||_pt||_t||0,phase:'',angle:'',pid:f.id,source:'cloud-recovered'});}
-        try{_markPhotoBackedUp(f.id);}catch(e){}have.add(f.id);got++;}
-    }
+        backed.push(f.id);have.add(f.id);got++;}
+    };
+    for(var i=0;i<todo.length;i+=6){await Promise.all(todo.slice(i,i+6).map(one));}
+    // One write of the backed-up list, not one upload of it per photo.
+    try{if(backed.length){var bs=_loadPhotoBackedUp();var last=backed.pop();backed.forEach(function(x){bs.add(x);});_markPhotoBackedUp(last);}}catch(e){}
     return got;
   }catch(e){return 0;}
 }
