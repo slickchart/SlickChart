@@ -93,6 +93,16 @@ if (process.env.MODE === 'serverstale') T.check("the account's old copy only ADD
   await q.fill('#pr-cl-search', 'janice');
   const vis = await q.locator('#photo-recover .pr-cl:visible').allInnerTexts();
   T.check('assign list: a search box, no "(no name)" rows, typing finds Janice', rows0 === 3 && vis.length === 1 && /Janice Albers/.test(vis[0]), JSON.stringify({ rows0, vis }));
+  // Her screenshot: rows of the same cat photo. They show once (×3), and one tap clears them for good.
+  const cat = 'data:image/png;base64,' + 'Q0FU'.repeat(20);
+  ['ph_cat1', 'ph_cat2', 'ph_cat3'].forEach(id => { files[id] = cat; names[id] = ''; });
+  await q.evaluate(() => { const o = document.getElementById('photo-recover'); if (o) o.remove(); delete capturedPhotos.__recovered__; });
+  await q.evaluate(async () => { await _recoverUnindexedServerPhotos(); _openPhotoRecovery(); _prSel = new Set(); _pr_gallery('__recovered__'); });
+  const badge = await q.locator('#photo-recover').innerText();
+  await q.locator('#photo-recover img[src^="data:image/png;base64,Q0FU"]').locator('xpath=..').locator('button').click();
+  await q.locator('#pr-remove').click();
+  const after = await q.evaluate(async () => { const left = (capturedPhotos.__recovered__ || []).filter(p => /^ph_cat/.test(p.pid)).length; await _recoverUnindexedServerPhotos(); return { left, back: (capturedPhotos.__recovered__ || []).filter(p => /^ph_cat/.test(p.pid)).length }; });
+  T.check('the same photo 3 times shows once as ×3; Remove clears all 3 and they stay cleared', /×3/.test(badge) && after.left === 0 && after.back === 0 && !!files.ph_cat1, JSON.stringify(after));
   await c2.close(); }
 console.log('server keys:', Object.keys(server).join(','), 'files:', Object.keys(files).join(','));
 T.check('no page errors', !errs.length, errs.join(' | '));

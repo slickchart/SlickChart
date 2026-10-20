@@ -305,7 +305,7 @@ const S=document.getElementById('S');
 // resets when I save it" and there was no way to tell whether her phone had any of them — a whole
 // day was spent debugging code she may not have been running. Shown at the bottom of Settings, so
 // the answer is a screenshot away. Bump it on every ship.
-const APP_BUILD='2026-10-20f';
+const APP_BUILD='2026-10-20g';
 
 
 /* ════════════════════════════════════════════════════════════════
@@ -7606,7 +7606,8 @@ async function _recoverUnindexedServerPhotos(){
     try{Object.keys(capturedPhotos||{}).forEach(function(cid){(capturedPhotos[cid]||[]).forEach(function(p){if(p&&p.pid)known.add(p.pid);});});}catch(e){}
     var list=[];
     try{var r=await fetch('/api/guide-file?list=photos',{headers:{'Authorization':'Bearer '+Cloud.token}});if(r&&r.ok){var j=await r.json();if(j&&Array.isArray(j.photos))list=j.photos;}}catch(e){return 0;}
-    var missing=list.filter(function(f){return f&&f.id&&(f.size>0)&&!known.has(f.id);});
+    var _dis=_prDismissed();
+    var missing=list.filter(function(f){return f&&f.id&&(f.size>0)&&!known.has(f.id)&&!_dis.has(f.id);});
     if(!missing.length)return 0;
     if(!capturedPhotos.__recovered__)capturedPhotos.__recovered__=[];
     var have=new Set(capturedPhotos.__recovered__.map(function(p){return (p&&p.pid)||'';}));
@@ -7687,12 +7688,16 @@ function _pr_photoKey(p,i){return (p&&p.pid)||(p&&p.url)||('#'+i);}
 function _pr_gallery(bucketId){
   var ov=document.getElementById('photo-recover');if(!ov)return;
   _prGalleryBucket=bucketId;if(!_prSel)_prSel=new Set();
-  var arr=(capturedPhotos[bucketId]||[]).map(function(p,i){return {p:p,key:_pr_photoKey(p,i)};}).sort(function(a,b){return (b.p.ts||0)-(a.p.ts||0);});
+  var all=(capturedPhotos[bucketId]||[]).map(function(p,i){return {p:p,key:_pr_photoKey(p,i)};}).sort(function(a,b){return (b.p.ts||0)-(a.p.ts||0);});
+  // The same picture uploaded many times shows ONCE, with how many copies (Ashley, 2026-10-20: rows
+  // of the same cat photo). Selecting it selects every copy (_pr_expandSel).
+  var cnt={},arr=[];all.forEach(function(o){var u=String(o.p.url||'');if(cnt[u]){cnt[u]++;return;}cnt[u]=1;arr.push(o);});
   var thumbs=arr.map(function(o){
-    var sel=_prSel.has(o.key);
+    var sel=_prSel.has(o.key);var copies=cnt[String(o.p.url||'')]||1;
     return '<div style="position:relative;padding-top:100%;border-radius:8px;overflow:hidden;border:2px solid '+(sel?'var(--accent-strong)':'transparent')+';background:#000;">'
       +'<img src="'+_urlAttr(o.p.url)+'" loading="lazy" onclick="_pr_view(\''+_jsAttr(o.key)+'\')" style="position:absolute;inset:0;width:100%;height:100%;object-fit:cover;cursor:pointer;display:block;">'
       +'<button onclick="_pr_toggleSel(\''+_jsAttr(o.key)+'\')" aria-label="Select photo" style="position:absolute;top:5px;right:5px;width:28px;height:28px;border-radius:50%;border:2px solid #fff;background:'+(sel?'var(--accent-strong)':'rgba(0,0,0,.45)')+';color:#fff;font-size:16px;font-weight:700;cursor:pointer;display:flex;align-items:center;justify-content:center;line-height:1;padding:0;">'+(sel?'✓':'+')+'</button>'
+      +(copies>1?'<div style="position:absolute;left:5px;bottom:5px;background:rgba(0,0,0,.65);color:#fff;font-size:13px;font-weight:700;border-radius:8px;padding:2px 7px;">×'+copies+'</div>':'')
       +'</div>';
   }).join('');
   var n=arr.length,selCount=_prSel.size;
@@ -7704,6 +7709,10 @@ function _pr_gallery(bucketId){
     +'<div style="position:sticky;top:0;z-index:2;background:var(--surf1);padding:6px 0 10px;display:flex;gap:8px;">'
       +'<button onclick="_pr_assignSelected()" class="btnp" style="flex:1;border-radius:8px;'+(selCount?'':'opacity:.55;')+'"><i class="ti ti-user-check"></i> Assign '+(selCount?(selCount+' selected'):'selected')+'…</button>'
       +'<button onclick="_prSel=new Set();_pr_gallery(\''+bucketId+'\')" style="flex:0 0 auto;background:none;border:1px solid var(--p-line-ctl);color:var(--p-mut);border-radius:8px;padding:0 12px;font-size:16px;cursor:pointer;font-family:inherit;">Clear</button>'
+    +'</div>'
+    +'<div style="display:flex;gap:8px;margin:-2px 0 12px;">'
+      +'<button id="pr-remove" onclick="_pr_removeSelected()" style="flex:1;background:none;border:1px solid var(--p-line-ctl);color:var(--p-ink);border-radius:8px;padding:9px 10px;font-size:16px;cursor:pointer;font-family:inherit;'+(selCount?'':'opacity:.55;')+'"><i class="ti ti-eye-off"></i> Not client photos, remove '+(selCount?selCount:'')+'</button>'
+      +'<button onclick="_pr_selectAll()" style="flex:0 0 auto;background:none;border:1px solid var(--p-line-ctl);color:var(--p-mut);border-radius:8px;padding:9px 12px;font-size:16px;cursor:pointer;font-family:inherit;">Select all</button>'
     +'</div>'
     +'<div style="display:grid;grid-template-columns:repeat(3,1fr);gap:6px;margin-bottom:14px;">'+thumbs+'</div>'
     +'<button onclick="_pr_reassign(\''+bucketId+'\',1)" style="width:100%;background:none;border:1px solid var(--p-line-ctl);color:var(--p-mut);border-radius:12px;padding:10px;font-size:16px;cursor:pointer;font-family:inherit;margin-bottom:8px;">Or assign ALL '+n+' to one client…</button>'
@@ -7792,8 +7801,35 @@ function _pr_view(key){
     +'</div>';
   (document.querySelector('.shell')||document.body).appendChild(v);
 }
+// Photos she said are not client photos. Kept OFF this list for good, on this device; nothing is
+// deleted from her account, so it can always be undone (clear scl_photo_dismissed). Not an sc_ key,
+// so it never syncs.
+function _prDismissed(){try{return new Set(JSON.parse(localStorage.getItem('scl_photo_dismissed')||'[]'));}catch(e){return new Set();}}
+function _pr_expandSel(bucketId){
+  try{const src=capturedPhotos[bucketId]||[];const urls=new Set();
+    src.forEach(function(p,i){if(_prSel.has(_pr_photoKey(p,i)))urls.add(String(p.url||''));});
+    src.forEach(function(p,i){if(urls.has(String(p.url||'')))_prSel.add(_pr_photoKey(p,i));});}catch(e){}
+}
+function _pr_selectAll(){
+  if(!_prSel)_prSel=new Set();
+  (capturedPhotos[_prGalleryBucket]||[]).forEach(function(p,i){_prSel.add(_pr_photoKey(p,i));});
+  _pr_gallery(_prGalleryBucket);
+}
+function _pr_removeSelected(){
+  if(!_prSel||!_prSel.size){_pr_gallery(_prGalleryBucket);return;}
+  const bucketId=_prGalleryBucket;_pr_expandSel(bucketId);
+  const src=capturedPhotos[bucketId]||[];const keep=[];const gone=_prDismissed();let n=0;
+  src.forEach(function(p,i){if(_prSel.has(_pr_photoKey(p,i))){if(p&&p.pid)gone.add(p.pid);n++;}else keep.push(p);});
+  try{localStorage.setItem('scl_photo_dismissed',JSON.stringify([...gone].slice(-20000)));}catch(e){}
+  if(keep.length)capturedPhotos[bucketId]=keep;else delete capturedPhotos[bucketId];
+  _prSel=new Set();
+  try{if(typeof persistCapturedPhotos==='function')persistCapturedPhotos();}catch(e){}
+  try{if(typeof proToast==='function')proToast('Removed '+n+' photo'+(n===1?'':'s')+' from this list');}catch(e){}
+  if(keep.length)_pr_gallery(bucketId);else _pr_render('Removed '+n+' photo'+(n===1?'':'s')+'.');
+}
 function _pr_assignSelected(){
   if(!_prSel||!_prSel.size){_pr_gallery(_prGalleryBucket);return;}
+  _pr_expandSel(_prGalleryBucket);
   _pr_reassign(_prGalleryBucket,0);
 }
 // pickClient: show the client list, then assign either the SELECTED photos (all=0) or ALL (all=1).
