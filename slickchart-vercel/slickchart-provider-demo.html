@@ -563,7 +563,7 @@ const S=document.getElementById('S');
 // resets when I save it" and there was no way to tell whether her phone had any of them — a whole
 // day was spent debugging code she may not have been running. Shown at the bottom of Settings, so
 // the answer is a screenshot away. Bump it on every ship.
-const APP_BUILD='2026-10-20e';
+const APP_BUILD='2026-10-20g';
 
 
 /* ════════════════════════════════════════════════════════════════
@@ -1289,29 +1289,69 @@ function _hcPickProduct(id,aid,ctx){
 function _hcCustomStep(id,ctx,name){
   _hcStepSheet(id,ctx,String(name==null?'':name).trim(),'',true);
 }
-function _hcStepSheet(id,ctx,name,instr,custom){
+// A routine line that is ONLY a product name from her catalogue, with nothing on how to use it.
+// That is how a purchase lands when it is added on its own (_autoHomecareFromPurchases), and a bare
+// name tells the client nothing. Ashley (2026-10-20): the "how to use" stays a PER CLIENT line, never
+// a catalogue default, so the line asks her for it, for this client, right where it sits.
+function _hcBareProduct(line){
+  const k=String(line==null?'':line).trim().toLowerCase();
+  if(!k)return null;
+  try{return _hcCatalogIndex()[k]||null;}catch(e){return null;}
+}
+function _hcNeedsHowHTML(id,i,line,ctx){
+  const a=_hcBareProduct(line);if(!a)return '';
+  const first=String((CL[id]&&CL[id].name)||'').split(' ')[0]||'they';
+  return '<button data-hc-howto="'+i+'" onclick="_hcAddHowTo(\''+_jsAttr(id)+'\','+i+',\''+_jsAttr(ctx||'profile')+'\')" '
+    +'style="display:flex;align-items:center;gap:6px;margin:-2px 0 8px 30px;background:var(--accent-tint);border:1px dashed var(--accent-a30,var(--p-line-ctl));color:var(--accent-strong);border-radius:8px;padding:6px 10px;font-size:14px;font-weight:600;cursor:pointer;font-family:inherit;max-width:calc(100% - 30px);box-sizing:border-box;text-align:left;">'
+    +'<i class="ti ti-pencil" style="font-size:14px;flex-shrink:0;"></i><span>Add how '+_fileEsc(first)+' should use it</span></button>';
+}
+function _hcAddHowTo(id,idx,ctx){
+  const line=getClientHomecare(id)[idx];
+  const a=_hcBareProduct(line);if(!a)return;
+  let why='';
+  try{ why=(typeof _recReason==='function')?(_recReason(id,a.id)||''):''; }catch(e){}
+  _hcStepSheet(id,ctx,String(line).trim(),why,false,idx);
+}
+function _hcStepSheet(id,ctx,name,instr,custom,replaceIdx){
+  const rep=(typeof replaceIdx==='number'&&replaceIdx>=0)?replaceIdx:-1;
   const old=document.getElementById('hc-picker');if(old)old.remove();
   const ov=document.createElement('div');ov.id='hc-picker';
   ov.style.cssText='position:fixed;inset:0;margin:0 auto;width:390px;max-width:100%;z-index:100000;background:rgba(0,0,0,.65);display:flex;align-items:flex-end;justify-content:center;';
   ov.onclick=function(e){if(e.target===ov)ov.remove();};
   ov.innerHTML='<div style="background:var(--surf1);border:1px solid var(--p-line);border-radius:16px 16px 0 0;width:100%;padding:16px 14px calc(16px + env(safe-area-inset-bottom,0px));max-height:86%;overflow-y:auto;">'
-    +'<div style="font-size:16px;font-weight:600;color:var(--p-ink);margin-bottom:12px;">'+(custom?'Your own step':'Add to the routine')+'</div>'
+    +'<div style="font-size:16px;font-weight:600;color:var(--p-ink);margin-bottom:12px;">'+(custom?'Your own step':(rep>=0?'How should '+_fileEsc(String((CL[id]&&CL[id].name)||'').split(' ')[0]||'they')+' use it?':'Add to the routine'))+'</div>'
     +'<div style="font-size:14px;font-weight:600;color:var(--p-mut);text-transform:uppercase;letter-spacing:.05em;margin-bottom:6px;">'+(custom?'Step or product':'Product')+'</div>'
     +'<input id="hc-name" value="'+_jsAttr(name||'')+'" placeholder="'+(custom?'e.g. Ice roller, or a product from another brand':'')+'" style="width:100%;box-sizing:border-box;background:var(--p-surf);border:1px solid var(--p-line-ctl);border-radius:8px;padding:9px 11px;font-size:16px;color:var(--p-ink);font-family:inherit;margin-bottom:14px;">'
     +'<div style="font-size:14px;font-weight:600;color:var(--p-mut);text-transform:uppercase;letter-spacing:.05em;margin-bottom:6px;">How to use it</div>'
     +'<div style="font-size:14px;color:var(--p-mut);line-height:1.5;margin-bottom:6px;">This is what they read at home. Morning, night, how often, not clock times.</div>'
     +'<textarea id="hc-instr" rows="2" placeholder="e.g. Night, leave on as a mask" style="width:100%;box-sizing:border-box;background:var(--p-surf);border:1px solid var(--p-line-ctl);border-radius:8px;padding:9px 11px;font-size:16px;color:var(--p-ink);font-family:inherit;line-height:1.5;resize:none;margin-bottom:14px;">'+_fileEsc(instr||'')+'</textarea>'
-    +'<button onclick="_hcAddPicked(\''+_jsAttr(id)+'\',\''+_jsAttr(ctx||'profile')+'\')" class="btnp" style="border-radius:12px;padding:12px;margin-bottom:8px;"><i class="ti ti-plus"></i> Add to routine</button>'
-    +'<button onclick="_hcPickerSheet(\''+_jsAttr(id)+'\',\''+_jsAttr(ctx||'profile')+'\')" style="width:100%;background:none;border:none;color:var(--p-mut);font-size:16px;cursor:pointer;font-family:inherit;padding:8px;">Back to the list</button>'
+    +'<button onclick="_hcAddPicked(\''+_jsAttr(id)+'\',\''+_jsAttr(ctx||'profile')+'\','+rep+',\''+_jsAttr(rep>=0?name:'')+'\')" class="btnp" style="border-radius:12px;padding:12px;margin-bottom:8px;"><i class="ti '+(rep>=0?'ti-check':'ti-plus')+'"></i> '+(rep>=0?'Save':'Add to routine')+'</button>'
+    +(rep>=0
+      ?'<button onclick="document.getElementById(\'hc-picker\').remove();" style="width:100%;background:none;border:none;color:var(--p-mut);font-size:16px;cursor:pointer;font-family:inherit;padding:8px;">Cancel</button>'
+      :'<button onclick="_hcPickerSheet(\''+_jsAttr(id)+'\',\''+_jsAttr(ctx||'profile')+'\')" style="width:100%;background:none;border:none;color:var(--p-mut);font-size:16px;cursor:pointer;font-family:inherit;padding:8px;">Back to the list</button>')
     +'</div>';
   (document.querySelector('.shell')||document.body).appendChild(ov);
   try{document.getElementById(custom&&!name?'hc-name':'hc-instr').focus();}catch(e){}
 }
-function _hcAddPicked(id,ctx){
+function _hcAddPicked(id,ctx,replaceIdx,was){
   const nEl=document.getElementById('hc-name'), iEl=document.getElementById('hc-instr');
   const line=_hcCompose(nEl?nEl.value:'', iEl?iEl.value:'');
   const sh=document.getElementById('hc-picker');if(sh)sh.remove();
   if(!line){if(typeof proToast==='function')proToast('Give the step a name first');return;}
+  // Filling in the how-to for a bare product line: replace THAT line where it sits, so its place in
+  // the routine is kept. Only if it is still the same line (a sync may have moved things meanwhile);
+  // otherwise it goes in as a new line and nothing she wrote is overwritten.
+  if(typeof replaceIdx==='number'&&replaceIdx>=0){
+    const tags=getClientHomecare(id);
+    let k=replaceIdx;
+    if(String(tags[k]==null?'':tags[k]).trim()!==String(was==null?'':was).trim())k=tags.findIndex(function(x){return String(x==null?'':x).trim()===String(was==null?'':was).trim();});
+    if(k>=0){
+      tags[k]=line;
+      try{persistWorkspace();}catch(e){}
+      _pushRoutine(id);_rerenderHomecare(id,ctx||'profile');
+      return;
+    }
+  }
   addHomecareTag(id,line,ctx||'profile');
 }
 // Products a client BOUGHT go into their homecare routine on their own (Ashley, 2026-10-13: "if they
@@ -1355,7 +1395,7 @@ async function _autoHomecareFromPurchases(id){
       try{if(typeof persistClientHomecare==='function')persistClientHomecare();}catch(e){}
       _pushRoutine(id);
       try{if(typeof _navCur!=='undefined'&&_navCur&&_navCur.screen==='client'&&_navCur.data===id)renderClient(id);}catch(e){}
-      if(typeof proToast==='function')proToast((added.length===1?added[0]:added.length+' products')+' they bought '+(added.length===1?'is':'are')+' now in '+String(cc.name||'their').split(' ')[0]+'\u2019s homecare. Edit or remove it there.',6000);
+      if(typeof proToast==='function')proToast((added.length===1?added[0]:added.length+' products')+' they bought '+(added.length===1?'is':'are')+' now in '+String(cc.name||'their').split(' ')[0]+'\u2019s homecare. Add how they should use it there.',6000);
     }
   }catch(e){}
 }
@@ -10783,7 +10823,7 @@ function renderClient(id){
         </div>
         <input value="${_jsAttr(t)}" aria-label="Routine step ${i+1}" oninput="editHomecareItem('${id}',${i},this.value)" onblur="_pushRoutine('${id}')" style="flex:1;min-width:0;background:var(--surf1);border:1px solid var(--p-line-ctl);border-radius:8px;padding:8px 10px;font-size:16px;color:var(--p-ink);font-family:inherit;outline:none;">
         <button onclick="removeHomecareTag('${id}',${i},'profile')" aria-label="Remove routine step" style="border:none;background:none;color:var(--p-mut);cursor:pointer;font-size:18px;line-height:1;padding:2px 6px;flex-shrink:0;">×</button>
-      </div>`).join('')||'<div style="font-size:16px;color:var(--p-mut);">No routine steps yet, add one below.</div>'}
+      </div>${(typeof _hcNeedsHowHTML==='function')?_hcNeedsHowHTML(id,i,t,'profile'):''}`).join('')||'<div style="font-size:16px;color:var(--p-mut);">No routine steps yet, add one below.</div>'}
     </div>
     ${(typeof _hcSuggestHTML==='function')?_hcSuggestHTML(id,'profile'):''}
     ${(typeof _hcPickerButtonHTML==='function')?_hcPickerButtonHTML(id,'profile'):''}
@@ -14084,7 +14124,7 @@ function renderSessionSummary(id){
         </div>
         <input value="${_jsAttr(step)}" aria-label="Homecare step ${i+1}" oninput="editHomecareItem('${id}',${i},this.value)" onblur="_pushRoutine('${id}')" style="flex:1;min-width:0;background:var(--p-surf);border:1px solid var(--p-line-ctl);border-radius:8px;padding:7px 10px;font-size:16px;color:var(--p-mut);font-family:inherit;outline:none;">
         <button onclick="removeHomecareTag('${id}',${i})" aria-label="Remove" style="border:none;background:none;color:var(--p-mut2);cursor:pointer;font-size:16px;padding:2px 4px;flex-shrink:0;">×</button>
-      </div>`).join('')}
+      </div>${(typeof _hcNeedsHowHTML==='function')?_hcNeedsHowHTML(id,i,step,'summary'):''}`).join('')}
       <div style="margin-top:10px;">
         ${(typeof _hcSuggestHTML==='function')?_hcSuggestHTML(id,'summary'):''}
         ${(typeof _hcPickerButtonHTML==='function')?_hcPickerButtonHTML(id,'summary'):''}

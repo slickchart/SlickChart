@@ -105,6 +105,31 @@ await page.evaluate(() => _hcAddPicked('aw', 'summary')); await page.waitForTime
 st = await page.evaluate(() => ({ hc: clientHomecare.aw.slice(), stillSummary: !!document.getElementById('homecare-new-tag') }));
 check('summary: picked product added and the summary redrawn', st.hc.includes('Clay Mask — Twice a week') && st.stillSummary, JSON.stringify(st));
 
+// a bare bought product line asks for THIS client's how-to and fills it in place
+await page.evaluate(() => { clientRecs.aw = ['p_mask']; recReasons.aw = Object.assign(recReasons.aw || {}, {}); _clientTab = 'homecare'; nav('client', 'aw'); });
+await page.waitForTimeout(800);
+st = await page.evaluate(() => Array.from(document.querySelectorAll('#S [data-hc-howto]')).map(b => b.getAttribute('data-hc-howto') + ':' + b.textContent.trim()));
+check('how-to: a bare product line asks how this client should use it', st.length === 1 && /^0:Add how Amber should use it/.test(st[0]), JSON.stringify(st));
+await page.evaluate(() => _hcAddHowTo('aw', 0, 'profile')); await page.waitForTimeout(200);
+st = await page.evaluate(() => ({ name: document.getElementById('hc-name').value, title: document.getElementById('hc-picker').innerText.split('\n')[0] }));
+check('how-to: sheet opens on that product for this client', st.name === 'Thermal Spring Water' && /How should Amber use it/.test(st.title), JSON.stringify(st));
+await page.fill('#hc-instr', 'Mist after cleansing, morning and night');
+await page.click('#hc-picker .btnp'); await page.waitForTimeout(500);
+st = await page.evaluate(() => ({ hc: clientHomecare.aw.slice(), prompts: document.querySelectorAll('#S [data-hc-howto]').length }));
+check('how-to: replaces the line in place, nothing added', st.hc[0] === 'Thermal Spring Water — Mist after cleansing, morning and night' && st.hc.length === 5, JSON.stringify(st.hc));
+check('how-to: prompt gone once written', st.prompts === 0, st.prompts);
+check('how-to: another client is untouched', await page.evaluate(() => !(clientHomecare.bo || []).some(x => /Mist/.test(x))));
+// moved meanwhile: still lands on the right line
+await page.evaluate(() => { clientHomecare.aw.unshift('Daily SPF'); });
+await page.evaluate(() => _hcStepSheet('aw', 'profile', 'Daily SPF', '', false, 3)); await page.fill('#hc-instr', 'Every morning');
+await page.click('#hc-picker .btnp'); await page.waitForTimeout(400);
+st = await page.evaluate(() => clientHomecare.aw.slice());
+check('how-to: a stale position finds the same line instead of overwriting another', st[0] === 'Daily SPF — Every morning' && st[3] === 'Ice roller — Morning, 2 minutes', JSON.stringify(st));
+await page.evaluate(() => { summaryToggles.homecare = true; clientHomecare.aw.push('Clay Mask'); nav('session-summary', 'aw'); });
+await page.waitForTimeout(800);
+st = await page.evaluate(() => document.querySelectorAll('#S [data-hc-howto]').length);
+check('how-to: the summary asks too', st === 1, st);
+
 // 390px overflow of the picker
 await page.evaluate(() => _hcPickerSheet('aw', 'profile')); await page.waitForTimeout(300);
 st = await page.evaluate(() => { const w = document.documentElement.clientWidth; const bad = []; document.querySelectorAll('#hc-picker *').forEach(el => { const b = el.getBoundingClientRect(); if (b.width && b.right > w + 1) bad.push(el.tagName + ':' + Math.round(b.right)); }); return bad; });

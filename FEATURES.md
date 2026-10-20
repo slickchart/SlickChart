@@ -333,6 +333,7 @@ saved anywhere", not "does this always call that".
 | `_handleAuthParams` | `/api/billing-status` | via `_checkBillingBanner` |
 | `_handleAuthParams` | `/api/client-code` | via `_clientSendCode` |
 | `_handlePushParams` | `/api/clients` | via `syncClientEvents` |
+| `_hcAddHowTo` | `/api/square/orders` | via `_hcFetchBought` |
 | `_hcCustomStep` | `/api/square/orders` | via `_hcFetchBought` |
 | `_hcFetchBought` | `/api/square/orders` | direct |
 | `_hcPickProduct` | `/api/square/orders` | via `_hcFetchBought` |
