@@ -305,7 +305,7 @@ const S=document.getElementById('S');
 // resets when I save it" and there was no way to tell whether her phone had any of them — a whole
 // day was spent debugging code she may not have been running. Shown at the bottom of Settings, so
 // the answer is a screenshot away. Bump it on every ship.
-const APP_BUILD='2026-10-20c';
+const APP_BUILD='2026-10-20e';
 
 
 /* ════════════════════════════════════════════════════════════════
@@ -840,12 +840,82 @@ function _hcMentions(id,name){
   try{ return getClientHomecare(id).some(function(x){return String(x==null?'':x).toLowerCase().indexOf(n)>=0;}); }
   catch(e){ return false; }
 }
-// Her catalogue, with the ones already on THIS client's product plan first — those are the ones
-// she is most likely to want, and she has usually already written a reason for them.
+// What THIS client bought from her, as products in her catalogue, newest first (Ashley, 2026-10-20:
+// "have their purchased retail at the top as suggestions"). Two sources, both her own: checkouts
+// recorded in the app (_payments, line items of kind 'product') and her Square orders for this
+// client. The Square orders are held in memory for this session only, never stored or synced, and
+// come from /api/square/orders, which answers with HER Square connection only (sqContext). A line
+// counts only when its name is one of her catalogue products (or Square's own name for a Square
+// product she renamed), so a facial on the same order is never offered as a homecare product.
+const _hcOrdersCache={}, _hcOrdersPending={};
+function _hcCacheOrders(id,orders){
+  if(!id||!Array.isArray(orders))return;
+  const out=[];
+  orders.forEach(function(o){
+    const at=Date.parse((o&&o.createdAt)||'')||0;
+    ((o&&o.items)||[]).forEach(function(li){if(li&&li.name)out.push({name:String(li.name),at:at});});
+  });
+  _hcOrdersCache[id]=out;
+}
+function _hcCatalogIndex(){
+  const by={};
+  const all=(typeof affiliateLinks!=='undefined'&&Array.isArray(affiliateLinks))?affiliateLinks:[];
+  all.forEach(function(a){if(a&&a.name&&a.active!==false)by[String(a.name).trim().toLowerCase()]=a;});
+  try{
+    const sqRetail=(typeof squareCatalog!=='undefined'&&squareCatalog&&Array.isArray(squareCatalog.retail))?squareCatalog.retail:[];
+    sqRetail.forEach(function(p){
+      if(!p||!p.name||p.id==null)return;
+      const k=String(p.name).trim().toLowerCase();if(by[k])return;
+      const a=all.find(function(x){return x&&x.active!==false&&x.squareId!=null&&String(x.squareId)===String(p.id);});
+      if(a)by[k]=a;
+    });
+  }catch(e){}
+  return by;
+}
+function _hcBought(id){
+  const by=_hcCatalogIndex(), best={};
+  const note=function(name,at){
+    const a=by[String(name==null?'':name).trim().toLowerCase()];if(!a)return;
+    if(!best[a.id]||at>best[a.id].at)best[a.id]={a:a,at:at};
+  };
+  try{
+    ((typeof _payments!=='undefined'&&Array.isArray(_payments))?_payments:[]).forEach(function(p){
+      if(!p||p.clientId!==id||p.status==='failed'||!Array.isArray(p.items))return;
+      const at=Date.parse(p.date||'')||0;
+      p.items.forEach(function(it){if(it&&it.kind==='product')note(it.name,at);});
+    });
+  }catch(e){}
+  (_hcOrdersCache[id]||[]).forEach(function(x){note(x.name,x.at);});
+  return Object.keys(best).map(function(k){return best[k];}).sort(function(x,y){return y.at-x.at;});
+}
+// Reads this client's Square orders once per session when the picker opens and nothing has read
+// them yet, then calls back so the list can put them on top. Quiet on any failure.
+async function _hcFetchBought(id,cb){
+  try{
+    const c=CL[id];
+    if(!c||!c.squareId||_hcOrdersCache[id]||_hcOrdersPending[id])return;
+    const tok=(typeof Cloud!=='undefined'&&Cloud&&Cloud.token)||'';if(!tok)return;
+    _hcOrdersPending[id]=1;
+    const r=await fetch('/api/square/orders?customerId='+encodeURIComponent(c.squareId),{headers:{'Authorization':'Bearer '+tok}});
+    const j=r.ok?await r.json().catch(function(){return null;}):null;
+    _hcCacheOrders(id,(j&&j.ok&&Array.isArray(j.orders))?j.orders:[]);
+    if(typeof cb==='function')cb();
+  }catch(e){}
+  finally{delete _hcOrdersPending[id];}
+}
+function _hcBoughtLabel(at){
+  if(!at)return 'They bought this';
+  try{return 'Bought '+new Date(at).toLocaleDateString('en-US',{month:'short',day:'numeric'});}catch(e){return 'They bought this';}
+}
+// Her catalogue in the order she is most likely to want it: what they BOUGHT first, then what is
+// on this client's product plan (she has usually written a reason for those), then the rest.
 function _hcProducts(id){
   const out=[],seen={};
   const all=(typeof affiliateLinks!=='undefined'&&Array.isArray(affiliateLinks))?affiliateLinks:[];
   const recs=(typeof clientRecs!=='undefined'&&clientRecs&&Array.isArray(clientRecs[id]))?clientRecs[id]:[];
+  const isRec={};recs.forEach(function(aid){isRec[aid]=1;});
+  let bought=[];try{bought=_hcBought(id);}catch(e){bought=[];}
+  bought.forEach(function(b){if(!seen[b.a.id]){seen[b.a.id]=1;out.push({a:b.a,bought:true,at:b.at,rec:!!isRec[b.a.id]});}});
   recs.forEach(function(aid){
     const a=all.find(function(x){return x&&x.id===aid;});
     if(a&&a.active!==false&&!seen[a.id]){seen[a.id]=1;out.push({a:a,rec:true});}
@@ -855,58 +925,97 @@ function _hcProducts(id){
   });
   return out;
 }
-// Chips above the add box: products on their plan that the routine does not mention yet. This is
-// the "suggest my recommended products" part — it only ever offers what she already chose for
-// this client, so it cannot invent a recommendation.
+// Chips above the add box: products they bought, or that are on their plan, that the routine does
+// not mention yet. It only ever offers what they bought or she already chose for this client, so
+// it cannot invent a recommendation. A Square purchase that was already put in once on its own
+// (c._hcAuto) is not offered again: if it is missing now, she took it out.
 function _hcSuggestHTML(id,ctx){
   let list=[];
-  try{ list=_hcProducts(id).filter(function(x){return x.rec&&!_hcMentions(id,x.a.name);}); }catch(e){ return ''; }
+  try{
+    const c=CL[id]||{};
+    const autoDone=Array.isArray(c._hcAuto)?c._hcAuto:[];
+    list=_hcProducts(id).filter(function(x){
+      if(!(x.rec||x.bought)||_hcMentions(id,x.a.name))return false;
+      if(x.bought&&!x.rec&&autoDone.indexOf(String(x.a.name).trim().toLowerCase())>=0)return false;
+      return true;
+    });
+  }catch(e){ return ''; }
   if(!list.length)return '';
   return '<div style="margin-bottom:10px;">'
-    +'<div style="font-size:14px;color:var(--p-mut);margin-bottom:6px;">On their product plan, not in the routine yet:</div>'
+    +'<div style="font-size:14px;color:var(--p-mut);margin-bottom:6px;">Suggested, not in the routine yet:</div>'
     +'<div style="display:flex;flex-wrap:wrap;gap:6px;">'
     +list.slice(0,8).map(function(x){
       return '<button onclick="_hcPickProduct(\''+_jsAttr(id)+'\',\''+_jsAttr(x.a.id)+'\',\''+_jsAttr(ctx||'profile')+'\')" '
         +'style="background:var(--accent-tint);border:1px solid var(--accent-a30,var(--p-line-ctl));color:var(--accent-strong);border-radius:24px;padding:6px 12px;font-size:14px;font-weight:600;cursor:pointer;font-family:inherit;">'
-        +'+ '+_fileEsc(x.a.name)+'</button>';
+        +'+ '+_fileEsc(x.a.name)+(x.bought?' <span style="font-weight:400;">· bought</span>':'')+'</button>';
     }).join('')
     +'</div></div>';
 }
-// The picker. Lists her plan first, then the rest of the catalogue, with a search box.
-function _hcPickerSheet(id,ctx,q){
+// The one button both homecare builders use (the client's Homecare tab and the session summary).
+function _hcPickerButtonHTML(id,ctx){
+  return '<button onclick="_hcPickerSheet(\''+_jsAttr(id)+'\',\''+_jsAttr(ctx||'profile')+'\')" style="width:100%;background:var(--surf1);border:1px dashed var(--p-line-ctl);color:var(--accent-strong);border-radius:8px;padding:9px;font-size:16px;font-weight:600;cursor:pointer;font-family:inherit;margin-bottom:8px;display:flex;align-items:center;justify-content:center;gap:7px;"><i class="ti ti-search" style="font-size:16px;"></i> Add from your products</button>';
+}
+// The picker. What they bought on top, then their plan, then the rest of the catalogue, with a
+// search box over all of it. Anything not in the catalogue goes in as their own step from here too.
+function _hcPickerSheet(id,ctx,q,noFocus){
   const old=document.getElementById('hc-picker');if(old)old.remove();
+  const cx=_jsAttr(ctx||'profile'), ix=_jsAttr(id);
   let items=[];
   try{ items=_hcProducts(id); }catch(e){ items=[]; }
-  const needle=String(q==null?'':q).trim().toLowerCase();
+  const raw=String(q==null?'':q).trim(), needle=raw.toLowerCase();
   const shown=needle?items.filter(function(x){
-    return ((x.a.name||'')+' '+(x.a.brand||'')).toLowerCase().indexOf(needle)>=0;
+    return ((x.a.name||'')+' '+(x.a.brand||'')+' '+(x.a.category||'')).toLowerCase().indexOf(needle)>=0;
   }):items;
   const ov=document.createElement('div');ov.id='hc-picker';
   ov.style.cssText='position:fixed;inset:0;margin:0 auto;width:390px;max-width:100%;z-index:100000;background:rgba(0,0,0,.65);display:flex;align-items:flex-end;justify-content:center;';
   ov.onclick=function(e){if(e.target===ov)ov.remove();};
   const row=function(x){
-    const a=x.a;
-    return '<button onclick="_hcPickProduct(\''+_jsAttr(id)+'\',\''+_jsAttr(a.id)+'\',\''+_jsAttr(ctx||'profile')+'\')" '
-      +'style="width:100%;text-align:left;display:flex;align-items:center;gap:10px;background:var(--surf2);border:1px solid var(--p-line-ctl);border-radius:12px;padding:10px 12px;margin-bottom:7px;cursor:pointer;font-family:inherit;min-height:52px;">'
-      +'<i class="ti ti-flask" style="font-size:17px;color:var(--p-mut);flex-shrink:0;"></i>'
+    const a=x.a, inAlready=_hcMentions(id,a.name);
+    const tag=x.rec?'On their plan':'';
+    const sub=[a.brand||'',x.bought?_hcBoughtLabel(x.at):''].filter(Boolean).join(' \u00b7 ');
+    return '<button data-hc-aid="'+_fileEsc(a.id)+'" onclick="_hcPickProduct(\''+ix+'\',\''+_jsAttr(a.id)+'\',\''+cx+'\')" '
+      +'style="width:100%;text-align:left;display:flex;align-items:center;gap:10px;background:var(--surf2);border:1px solid '+(x.bought?'var(--accent-a30,var(--p-line-ctl))':'var(--p-line-ctl)')+';border-radius:12px;padding:10px 12px;margin-bottom:7px;cursor:pointer;font-family:inherit;min-height:52px;">'
+      +'<i class="ti '+(x.bought?'ti-shopping-bag':'ti-flask')+'" style="font-size:17px;color:'+(x.bought?'var(--accent-strong)':'var(--p-mut)')+';flex-shrink:0;"></i>'
       +'<span style="flex:1;min-width:0;"><span style="display:block;font-size:16px;font-weight:600;color:var(--p-ink);overflow:hidden;text-overflow:ellipsis;white-space:nowrap;">'+_fileEsc(a.name)+'</span>'
-      +(a.brand?('<span style="display:block;font-size:14px;color:var(--p-mut);">'+_fileEsc(a.brand)+'</span>'):'')+'</span>'
-      +(x.rec?'<span style="flex-shrink:0;font-size:12px;font-weight:700;color:var(--accent-strong);background:var(--accent-tint);border-radius:24px;padding:3px 9px;">On their plan</span>':'')
-      +(_hcMentions(id,a.name)?'<span style="flex-shrink:0;font-size:12px;color:var(--p-mut);">already in</span>':'')
+      +(sub?('<span style="display:block;font-size:14px;color:'+(x.bought?'var(--accent-strong)':'var(--p-mut)')+';overflow:hidden;text-overflow:ellipsis;white-space:nowrap;">'+_fileEsc(sub)+'</span>'):'')+'</span>'
+      +(inAlready?'<span style="flex-shrink:0;font-size:12px;color:var(--p-mut);">already in</span>'
+        :(tag?'<span style="flex-shrink:0;font-size:12px;font-weight:700;color:var(--accent-strong);background:var(--accent-tint);border-radius:24px;padding:3px 9px;">'+_fileEsc(tag)+'</span>':''))
       +'</button>';
   };
+  const head=function(t){return '<div style="font-size:14px;font-weight:600;color:var(--p-mut);text-transform:uppercase;letter-spacing:.05em;margin:6px 2px 7px;">'+t+'</div>';};
+  let listHTML='';
+  if(!shown.length){
+    listHTML='<div style="font-size:16px;color:var(--p-mut);padding:6px 2px 12px;line-height:1.6;">'
+      +(items.length?'Nothing in your products matches that.':'No products in your catalogue yet.')+'</div>';
+  }else if(needle){
+    listHTML=shown.slice(0,60).map(row).join('');
+  }else{
+    const bought=shown.filter(function(x){return x.bought;}), plan=shown.filter(function(x){return !x.bought&&x.rec;}), rest=shown.filter(function(x){return !x.bought&&!x.rec;});
+    if(bought.length)listHTML+=head('They bought')+bought.map(row).join('');
+    if(plan.length)listHTML+=head('On their plan')+plan.map(row).join('');
+    if(rest.length)listHTML+=((bought.length||plan.length)?head('Your products'):'')+rest.slice(0,60).map(row).join('');
+  }
+  // Their own step: the typed words when there are some, otherwise an empty one to fill in.
+  const custom='<button id="hc-pick-custom" onclick="_hcCustomStep(\''+ix+'\',\''+cx+'\',(document.getElementById(\'hc-pick-q\')||{}).value||\'\')" '
+    +'style="width:100%;text-align:left;display:flex;align-items:center;gap:10px;background:var(--surf1);border:1px dashed var(--p-line-ctl);border-radius:12px;padding:10px 12px;margin:2px 0 8px;cursor:pointer;font-family:inherit;min-height:48px;color:var(--accent-strong);font-size:16px;font-weight:600;">'
+    +'<i class="ti ti-pencil" style="font-size:17px;flex-shrink:0;"></i><span style="flex:1;min-width:0;overflow:hidden;text-overflow:ellipsis;white-space:nowrap;">'
+    +(raw?('Add “'+_fileEsc(raw)+'” as your own step'):'Type your own step')+'</span></button>';
   ov.innerHTML='<div style="background:var(--surf1);border:1px solid var(--p-line);border-radius:16px 16px 0 0;width:100%;padding:16px 14px calc(16px + env(safe-area-inset-bottom,0px));max-height:86%;overflow-y:auto;">'
-    +'<div style="font-size:16px;font-weight:600;color:var(--p-ink);margin-bottom:3px;">Add a product to the routine</div>'
-    +'<div style="font-size:14px;color:var(--p-mut);margin-bottom:12px;line-height:1.5;">Pick one of yours, then add the instructions in their words.</div>'
-    +'<input id="hc-pick-q" value="'+_jsAttr(q||'')+'" placeholder="Search your products…" oninput="_hcPickerSheet(\''+_jsAttr(id)+'\',\''+_jsAttr(ctx||'profile')+'\',this.value)" '
+    +'<div style="font-size:16px;font-weight:600;color:var(--p-ink);margin-bottom:3px;">Add to the routine</div>'
+    +'<div style="font-size:14px;color:var(--p-mut);margin-bottom:12px;line-height:1.5;">Pick a product, then add how to use it in your words.</div>'
+    +'<input id="hc-pick-q" value="'+_jsAttr(q||'')+'" placeholder="Search your products…" aria-label="Search your products" oninput="_hcPickerSheet(\''+ix+'\',\''+cx+'\',this.value)" '
     +'style="width:100%;box-sizing:border-box;background:var(--p-surf);border:1px solid var(--p-line-ctl);border-radius:8px;padding:9px 11px;font-size:16px;color:var(--p-ink);font-family:inherit;margin-bottom:12px;">'
-    +(shown.length?shown.slice(0,60).map(row).join('')
-      :'<div style="font-size:16px;color:var(--p-mut);padding:14px 2px;line-height:1.6;">'
-        +(items.length?'Nothing matches that.':'No products in your catalogue yet. You can still type any step by hand below.')+'</div>')
+    +(raw&&!shown.length?custom+listHTML:listHTML+custom)
     +'<button onclick="document.getElementById(\'hc-picker\').remove();" style="width:100%;background:none;border:none;color:var(--p-mut);font-size:16px;cursor:pointer;font-family:inherit;padding:10px;">Cancel</button>'
     +'</div>';
   (document.querySelector('.shell')||document.body).appendChild(ov);
-  try{const qi=document.getElementById('hc-pick-q');if(qi&&q!=null){qi.focus();qi.setSelectionRange(qi.value.length,qi.value.length);}}catch(e){}
+  try{const qi=document.getElementById('hc-pick-q');if(qi&&q!=null&&!noFocus){qi.focus();qi.setSelectionRange(qi.value.length,qi.value.length);}}catch(e){}
+  // Their Square purchases, when nothing has read them yet this session: read once, then redraw
+  // with them on top, keeping whatever she has typed in the search.
+  try{_hcFetchBought(id,function(){
+    const qi=document.getElementById('hc-pick-q');
+    if(qi&&document.getElementById('hc-picker'))_hcPickerSheet(id,ctx,qi.value,document.activeElement!==qi);
+  });}catch(e){}
 }
 // Second step: the product is chosen, now the instructions. Prefilled with the reason she already
 // wrote for this product on this client's plan, because that is usually most of the sentence.
@@ -916,22 +1025,29 @@ function _hcPickProduct(id,aid,ctx){
   if(!a)return;
   let why='';
   try{ why=(typeof _recReason==='function')?(_recReason(id,aid)||''):''; }catch(e){}
+  _hcStepSheet(id,ctx,a.name||'',why,false);
+}
+// The same second step for something that is not in her catalogue.
+function _hcCustomStep(id,ctx,name){
+  _hcStepSheet(id,ctx,String(name==null?'':name).trim(),'',true);
+}
+function _hcStepSheet(id,ctx,name,instr,custom){
   const old=document.getElementById('hc-picker');if(old)old.remove();
   const ov=document.createElement('div');ov.id='hc-picker';
   ov.style.cssText='position:fixed;inset:0;margin:0 auto;width:390px;max-width:100%;z-index:100000;background:rgba(0,0,0,.65);display:flex;align-items:flex-end;justify-content:center;';
   ov.onclick=function(e){if(e.target===ov)ov.remove();};
   ov.innerHTML='<div style="background:var(--surf1);border:1px solid var(--p-line);border-radius:16px 16px 0 0;width:100%;padding:16px 14px calc(16px + env(safe-area-inset-bottom,0px));max-height:86%;overflow-y:auto;">'
-    +'<div style="font-size:16px;font-weight:600;color:var(--p-ink);margin-bottom:12px;">Add to the routine</div>'
-    +'<div style="font-size:14px;font-weight:600;color:var(--p-mut);text-transform:uppercase;letter-spacing:.05em;margin-bottom:6px;">Product</div>'
-    +'<input id="hc-name" value="'+_jsAttr(a.name||'')+'" style="width:100%;box-sizing:border-box;background:var(--p-surf);border:1px solid var(--p-line-ctl);border-radius:8px;padding:9px 11px;font-size:16px;color:var(--p-ink);font-family:inherit;margin-bottom:14px;">'
+    +'<div style="font-size:16px;font-weight:600;color:var(--p-ink);margin-bottom:12px;">'+(custom?'Your own step':'Add to the routine')+'</div>'
+    +'<div style="font-size:14px;font-weight:600;color:var(--p-mut);text-transform:uppercase;letter-spacing:.05em;margin-bottom:6px;">'+(custom?'Step or product':'Product')+'</div>'
+    +'<input id="hc-name" value="'+_jsAttr(name||'')+'" placeholder="'+(custom?'e.g. Ice roller, or a product from another brand':'')+'" style="width:100%;box-sizing:border-box;background:var(--p-surf);border:1px solid var(--p-line-ctl);border-radius:8px;padding:9px 11px;font-size:16px;color:var(--p-ink);font-family:inherit;margin-bottom:14px;">'
     +'<div style="font-size:14px;font-weight:600;color:var(--p-mut);text-transform:uppercase;letter-spacing:.05em;margin-bottom:6px;">How to use it</div>'
-    +'<div style="font-size:14px;color:var(--p-mut);line-height:1.5;margin-bottom:6px;">This is what they read at home. Morning, night, how often — not clock times.</div>'
-    +'<textarea id="hc-instr" rows="2" placeholder="e.g. Night, leave on as a mask" style="width:100%;box-sizing:border-box;background:var(--p-surf);border:1px solid var(--p-line-ctl);border-radius:8px;padding:9px 11px;font-size:16px;color:var(--p-ink);font-family:inherit;line-height:1.5;resize:none;margin-bottom:14px;">'+_fileEsc(why)+'</textarea>'
+    +'<div style="font-size:14px;color:var(--p-mut);line-height:1.5;margin-bottom:6px;">This is what they read at home. Morning, night, how often, not clock times.</div>'
+    +'<textarea id="hc-instr" rows="2" placeholder="e.g. Night, leave on as a mask" style="width:100%;box-sizing:border-box;background:var(--p-surf);border:1px solid var(--p-line-ctl);border-radius:8px;padding:9px 11px;font-size:16px;color:var(--p-ink);font-family:inherit;line-height:1.5;resize:none;margin-bottom:14px;">'+_fileEsc(instr||'')+'</textarea>'
     +'<button onclick="_hcAddPicked(\''+_jsAttr(id)+'\',\''+_jsAttr(ctx||'profile')+'\')" class="btnp" style="border-radius:12px;padding:12px;margin-bottom:8px;"><i class="ti ti-plus"></i> Add to routine</button>'
     +'<button onclick="_hcPickerSheet(\''+_jsAttr(id)+'\',\''+_jsAttr(ctx||'profile')+'\')" style="width:100%;background:none;border:none;color:var(--p-mut);font-size:16px;cursor:pointer;font-family:inherit;padding:8px;">Back to the list</button>'
     +'</div>';
   (document.querySelector('.shell')||document.body).appendChild(ov);
-  try{document.getElementById('hc-instr').focus();}catch(e){}
+  try{document.getElementById(custom&&!name?'hc-name':'hc-instr').focus();}catch(e){}
 }
 function _hcAddPicked(id,ctx){
   const nEl=document.getElementById('hc-name'), iEl=document.getElementById('hc-instr');
@@ -962,6 +1078,7 @@ async function _autoHomecareFromPurchases(id){
     if(!r.ok)return;
     const j=await r.json().catch(function(){return null;});
     const orders=(j&&j.ok&&Array.isArray(j.orders))?j.orders:[];
+    try{if(j&&j.ok)_hcCacheOrders(id,orders);}catch(e){}
     const cc=CL[id];if(!cc)return;
     const done=Array.isArray(cc._hcAuto)?cc._hcAuto.slice():[];
     const have=getClientHomecare(id);
@@ -9867,6 +9984,7 @@ async function _loadClientPurchases(id){
       return;
     }
     const orders=Array.isArray(j.orders)?j.orders:[];
+    try{if(typeof _hcCacheOrders==='function')_hcCacheOrders(id,orders);}catch(e){}
     if(!orders.length){body.innerHTML='No Square purchases on record yet.';return;}
     const money=v=>(v==null?'':('$'+(Math.round(v*100)/100).toFixed(2)));
     const fmtDate=s=>{try{return new Date(s).toLocaleDateString('en-US',{month:'short',day:'numeric',year:'numeric'});}catch(e){return '';}};
@@ -10410,9 +10528,9 @@ function renderClient(id){
       </div>`).join('')||'<div style="font-size:16px;color:var(--p-mut);">No routine steps yet, add one below.</div>'}
     </div>
     ${(typeof _hcSuggestHTML==='function')?_hcSuggestHTML(id,'profile'):''}
-    <button onclick="_hcPickerSheet('${id}','profile')" style="width:100%;background:var(--surf1);border:1px dashed var(--p-line-ctl);color:var(--accent-strong);border-radius:8px;padding:9px;font-size:16px;font-weight:600;cursor:pointer;font-family:inherit;margin-bottom:8px;display:flex;align-items:center;justify-content:center;gap:7px;"><i class="ti ti-flask" style="font-size:16px;"></i> Add one of your products</button>
+    ${(typeof _hcPickerButtonHTML==='function')?_hcPickerButtonHTML(id,'profile'):''}
     <div style="display:flex;gap:8px;">
-      <input id="routine-add-${id}" aria-label="Add a routine step" placeholder="Or type anything…" style="flex:1;background:var(--p-surf);border:1px solid var(--p-line-ctl);border-radius:8px;padding:8px 11px;font-size:16px;color:var(--p-ink);font-family:inherit;" onkeydown="if(event.key==='Enter')_addRoutineFromProfile('${id}','profile')">
+      <input id="routine-add-${id}" aria-label="Add a routine step" placeholder="Or type your own step…" style="flex:1;background:var(--p-surf);border:1px solid var(--p-line-ctl);border-radius:8px;padding:8px 11px;font-size:16px;color:var(--p-ink);font-family:inherit;" onkeydown="if(event.key==='Enter')_addRoutineFromProfile('${id}','profile')">
       <button onclick="_addRoutineFromProfile('${id}','profile')" style="border:1px solid var(--btn-edge);background:var(--accent);color:var(--accent-ink);border-radius:8px;padding:8px 14px;font-size:16px;font-weight:600;cursor:pointer;white-space:nowrap;">+ Add</button>
     </div>
   </div>
@@ -13709,8 +13827,12 @@ function renderSessionSummary(id){
         <input value="${_jsAttr(step)}" aria-label="Homecare step ${i+1}" oninput="editHomecareItem('${id}',${i},this.value)" onblur="_pushRoutine('${id}')" style="flex:1;min-width:0;background:var(--p-surf);border:1px solid var(--p-line-ctl);border-radius:8px;padding:7px 10px;font-size:16px;color:var(--p-mut);font-family:inherit;outline:none;">
         <button onclick="removeHomecareTag('${id}',${i})" aria-label="Remove" style="border:none;background:none;color:var(--p-mut2);cursor:pointer;font-size:16px;padding:2px 4px;flex-shrink:0;">×</button>
       </div>`).join('')}
-      <div style="display:flex;gap:6px;margin-top:10px;">
-        <input id="homecare-new-tag" placeholder="Add instruction..." style="flex:1;background:var(--p-surf);border:1px solid var(--p-line-ctl);border-radius:8px;padding:7px 10px;font-size:16px;color:var(--p-mut);font-family:inherit;" onkeydown="if(event.key==='Enter'){addHomecareTag('${id}',this.value.trim());this.value='';}">
+      <div style="margin-top:10px;">
+        ${(typeof _hcSuggestHTML==='function')?_hcSuggestHTML(id,'summary'):''}
+        ${(typeof _hcPickerButtonHTML==='function')?_hcPickerButtonHTML(id,'summary'):''}
+      </div>
+      <div style="display:flex;gap:6px;">
+        <input id="homecare-new-tag" aria-label="Add your own step" placeholder="Or type your own step..." style="flex:1;background:var(--p-surf);border:1px solid var(--p-line-ctl);border-radius:8px;padding:7px 10px;font-size:16px;color:var(--p-mut);font-family:inherit;" onkeydown="if(event.key==='Enter'){addHomecareTag('${id}',this.value.trim());this.value='';}">
         <button onclick="const inp=document.getElementById('homecare-new-tag');addHomecareTag('${id}',inp.value.trim());inp.value='';" style="border:1px solid var(--btn-edge);background:var(--accent);color:var(--accent-ink);border-radius:8px;padding:7px 12px;font-size:16px;font-weight:600;cursor:pointer;">+ Add</button>
       </div>
     </div>`:''}

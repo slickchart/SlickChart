@@ -8032,3 +8032,74 @@ unread check-in card and the top of the check-in detail page showed the client's
   `sweep-contrast.mjs` (both apps, both themes, 5 brands): everything meets AA, Chrome and Safari.
   `THEMES=light` / `BRANDS=navy` env vars narrow a run.
 - Test: `scratchpad/test-checkin-light.mjs` 27/27 Chrome + Safari (fails 13 on the old code).
+
+## 2026-10-20 — Every before photo vanished from Start session mid-appointment (build `2026-10-20d`, PREVIEW)
+
+**What Ashley observed (§1b, settled):** today, on her phone/tablet (Android), every before photo she
+took disappeared from the Start session area before she was done, so the after had no before beside it.
+Clients named: Sina Prom and Janice Albers.
+
+**What her recovery paste showed:** 415 photos on the server, only 3 named by the photo index (Dez
+Schrader), 412 orphans. The photo index on the account held ONE client all day: 24 device snapshots
+today, every one 1 client. Her Android on 2026-10-20c reported "phone storage (IndexedDB): NOT WORKING".
+
+**Cause (reproduced, `scratchpad/test-before-persists.mjs MODE=serverstale`):** `sc_captured_photos`
+(the localStorage fallback copy of the photo store, written only when IndexedDB fails) was never in
+`_SYNC_SKIP`, despite three comments saying it was excluded. A device whose IndexedDB failed pushed its
+copy to the account. Every other device pulled it, and `_reloadAll` → `_loadPersistenceSweep` →
+`loadCapturedPhotos()` did `capturedPhotos = v`, REPLACING the photos in memory with it, then
+`_initCapturedPhotos` "migrated" that copy into IndexedDB with a plain set, overwriting the device's
+whole store. So the before went at the next sync, and stayed gone after a relaunch. The bytes had
+already been uploaded (`_backupPhotosToServer` runs on capture), which is why they are orphans on the
+server, not lost. `_persistPhotoIndex` then rebuilt the index from the wiped memory and pushed it, so
+the account forgot them too.
+
+**Fixed:** `sc_captured_photos` is in `_SYNC_SKIP`; the pull ADDS any photo in an account copy and
+never stores it (the account row is left alone; it may hold a photo that exists nowhere else; clearing
+it is Ashley's call). `loadCapturedPhotos` and the migration add, never replace (`_absorbPhotoCopy`).
+Restore from the server runs even without IndexedDB. `_buildPhotoIndex` keeps entries for photos this
+device does not hold (skipping removed clients). Uploads now carry `scph|<client>|<phase>|<angle>|<ts>`
+in the file name and `?list=photos` returns it, so an orphan goes back on its client by itself in
+Recover lost photos. Unlabelled orphans from the last 3 days are offered on the client whose appointment
+they were taken during, before/after by which half of the appointment (`_pr_suggest`), one tap each.
+
+**Recovering Sina's and Janice's befores:** Account settings → Recover lost photos → Find & restore →
+Unassigned photos → View & assign → the "Put them on Sina / Janice" buttons. Best on the Mac (its
+IndexedDB works; Find & restore downloads up to 300 orphans). Not done for her: it needs her app.
+
+Tests: `test-before-persists.mjs` in MODE normal / brokenidb / serverstale (Chrome) and normal /
+serverstale (WebKit) all pass; upright, session-photos, recover-reupload, checkin-dup, bigkeys pass;
+sweep2-photo-xaccount still has its one pre-existing failure. `sweep-crossdevice.mjs` is not in this
+checkout, so it was not run.
+
+## 2026-10-20 — Homecare product picker: what they bought on top (build `2026-10-20e`, PREVIEW)
+
+**Ask (Ashley):** "homecare builder should have a product picker that is searchable from the product
+catalog to build their routine from. have their purchased retail at the top as suggestions. make sure
+there is still a space to add in custom fields for things that are not from product catalog."
+
+**Already there before this:** a searchable picker on the client's Homecare tab (`_hcPickerSheet`, plan
+products first) and the auto-add of Square purchases (`_autoHomecareFromPurchases`, 2026-10-13j). The
+session summary's homecare had only a free-text box.
+
+**Built:**
+- `_hcBought(id)`: this client's purchases matched to her catalogue (`affiliateLinks`, plus Square's own
+  name for a renamed Square product), newest first. Sources: in-app checkouts (`_payments`, `clientId`
+  match, items of kind `product`, not `failed`) and her Square orders for the client. The orders live in
+  memory only (`_hcOrdersCache`, filled by the auto-add, the Purchases card, or the picker itself via
+  `_hcFetchBought`), never stored or synced, so no new `sc_*` key and no merge question.
+- Picker sections: **They bought** (with "Bought Oct 15"), **On their plan**, **Your products**. Search
+  covers name, brand and category. A typed search with no match offers "Add “…” as your own step";
+  "Type your own step" is always at the bottom. Both go through the same how-to-use step
+  (`_hcStepSheet`). The free-text box under the list stays.
+- Suggestion chips now include bought products not in the routine (marked "· bought"). A Square
+  purchase already put in once (`c._hcAuto`) is not suggested again, since its absence means she took it out.
+- The session summary's homecare gets the same chips and picker (`ctx 'summary'`).
+- Homecare lines stay plain strings (§1a shape rule).
+
+**Test:** `scratchpad/test-hc-product-picker.mjs` 29/29 Chrome and WebKit (`PW_ENGINE=webkit`,
+`PLAYWRIGHT_BROWSERS_PATH` pointing at a webkit install). `test-shop-homecare` 12/12 and the sweep3 hc
+sweeps still clean.
+
+**Suggested to Ashley, not built:** a default "how to use" saved on each product in the catalogue, so a
+picked or auto-added purchase lands as a full step instead of a bare name.

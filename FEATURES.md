@@ -333,6 +333,12 @@ saved anywhere", not "does this always call that".
 | `_handleAuthParams` | `/api/billing-status` | via `_checkBillingBanner` |
 | `_handleAuthParams` | `/api/client-code` | via `_clientSendCode` |
 | `_handlePushParams` | `/api/clients` | via `syncClientEvents` |
+| `_hcCustomStep` | `/api/square/orders` | via `_hcFetchBought` |
+| `_hcFetchBought` | `/api/square/orders` | direct |
+| `_hcPickProduct` | `/api/square/orders` | via `_hcFetchBought` |
+| `_hcPickerButtonHTML` | `/api/square/orders` | via `_hcFetchBought` |
+| `_hcPickerSheet` | `/api/square/orders` | via `_hcFetchBought` |
+| `_hcStepSheet` | `/api/square/orders` | via `_hcFetchBought` |
 | `_helpRowHTML` | `/api/clients` | via `syncClientEvents` |
 | `_helpRowHTML` | `/api/provider-form` | via `submitSignOnDevice` |
 | `_hydrateOffloaded` | `/api/clients` | via `_syncSpecificClientsToServer` |
