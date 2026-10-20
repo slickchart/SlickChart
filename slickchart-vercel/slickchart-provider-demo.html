@@ -562,7 +562,7 @@ const S=document.getElementById('S');
 // resets when I save it" and there was no way to tell whether her phone had any of them — a whole
 // day was spent debugging code she may not have been running. Shown at the bottom of Settings, so
 // the answer is a screenshot away. Bump it on every ship.
-const APP_BUILD='2026-10-20a';
+const APP_BUILD='2026-10-20b';
 
 
 /* ════════════════════════════════════════════════════════════════
@@ -22572,6 +22572,13 @@ function openSendSheet(opts){
   // Never open a send sheet whose link would be a tokenless "/client" demo link — mint the real token first.
   if(!c._token){ _withClientToken(id,function(){ openSendSheet(opts); }); return; }
   _sendSheetOpts=opts;
+  // The link only works if the client's copy on the SERVER already holds what was just assigned to
+  // them: their app reads that copy, not her device. The assignment saved locally and synced on a
+  // 2.5s timer, and "Text it" hands straight to Messages, which puts the app in the background and
+  // stops that timer. So the client opened the text and found nothing (Ashley, 2026-10-20: a spicule
+  // consent form "did not come through"). Push now, while she reads the message; the channel buttons
+  // wait for it (_uSendReady).
+  opts._push=_pushClientNow(id).then(function(r){opts._pushed=r;return r;});
   const first=_fileEsc((c.name||'there').split(' ')[0]);
   const appOption=(opts.appOption!==false)&&!!c._token;
   const iphoneNote=!!opts.iphoneNote;
@@ -22600,24 +22607,46 @@ function closeSendSheet(){const e=document.getElementById('usend-sheet');if(e)e.
 // The message is editable, so each channel reads the LIVE textarea at tap time (falling back to the seed).
 function _uSendVal(){const t=document.getElementById('usend-msg');const v=t?String(t.value||'').trim():'';return v||String((_sendSheetOpts&&_sendSheetOpts.message)||'');}
 function _uSendDone(){try{const o=_sendSheetOpts;if(o&&typeof o.onSend==='function')o.onSend(o.id);}catch(e){}}
+// Opens Messages/Mail only once the client's server copy is confirmed (see openSendSheet). Already
+// confirmed while she read the message (the usual case): go at once, still inside her tap. Not yet:
+// wait for it, a few seconds at most, and if it failed, say so plainly before the text goes, because
+// the client will open the link to an empty screen.
+function _uSendReady(o,go){
+  if(o&&o._pushed&&o._pushed.ok){go();return;}
+  if(typeof proToast==='function')proToast('Getting it ready on their app…',0);
+  const p=(o&&o._pushed&&!o._pushed.ok)||!(o&&o._push)?_pushClientNow(o.id):o._push;
+  let done=false;
+  const fire=function(r){
+    if(done)return;done=true;
+    if(r&&r.ok===false&&typeof proToast==='function')proToast('It didn’t reach their app yet: '+(r.msg||'check your connection')+' The link will show it once it does.',0);
+    go();
+  };
+  Promise.resolve(p).then(function(r){if(r&&!r.ok&&o)o._pushed=null;fire(r);}).catch(function(){fire({ok:false});});
+  setTimeout(function(){fire(null);},6000);
+}
 function _uSendText(){
   const o=_sendSheetOpts||{};const c=CL[o.id]||{};const msg=_uSendVal();
   _uSendDone();closeSendSheet();
-  if(typeof proToast==='function')proToast('Opening your messages…');
-  location.href=_smsHref(c.phone,msg);
+  _uSendReady(o,function(){
+    if(typeof proToast==='function')proToast('Opening your messages…');
+    location.href=_smsHref(c.phone,msg);
+  });
 }
 function _uSendEmail(){
   const o=_sendSheetOpts||{};const c=CL[o.id]||{};const msg=_uSendVal();
   const href='mailto:'+encodeURIComponent(c.email||'').replace(/%40/g,'@')+'?subject='+encodeURIComponent(o.subject||'A message from your provider')+'&body='+encodeURIComponent(msg);
   _uSendDone();closeSendSheet();
-  if(typeof proToast==='function')proToast('Opening your email…');
-  location.href=href;
+  _uSendReady(o,function(){
+    if(typeof proToast==='function')proToast('Opening your email…');
+    location.href=href;
+  });
 }
 function _uSendCopy(btn){
   const msg=_uSendVal();
   const done=function(){ if(btn){const o=btn.innerHTML;btn.innerHTML='<i class="ti ti-check"></i> Copied';setTimeout(function(){try{btn.innerHTML=o;}catch(e){}},1200);} if(typeof proToast==='function')proToast('Message copied'); };
   const fail=function(){ if(typeof proToast==='function')proToast('Couldn’t copy — long-press the message to copy it'); };
   _uSendDone();
+  try{const o=_sendSheetOpts;if(o&&o.id&&!(o._pushed&&o._pushed.ok))o._push=_pushClientNow(o.id).then(function(r){o._pushed=r;return r;});}catch(e){}
   try{ if(navigator.clipboard&&navigator.clipboard.writeText){ navigator.clipboard.writeText(msg).then(done).catch(function(){_copyFallback(msg,done,fail);}); return; } }catch(e){}
   _copyFallback(msg,done,fail);
 }

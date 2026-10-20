@@ -8002,3 +8002,17 @@ She asked for them to lock upright, with an arrow to turn one after it is taken.
   `sweep3-session-photos` 6/6, `sweep2-photo-recover-reupload` 4/4. `sweep2-photo-xaccount` has one
   FAIL that is identical on main (it expects logout to empty `captured_photos`; the design since sets
   it aside under its owner instead), so that test is stale, not a leak.
+
+## 2026-10-20 — A texted form opened to nothing on the client's app (build `2026-10-20b`, PREVIEW)
+**Observed (Ashley):** she sent a client the Spicule consent form by text this morning. The client got
+the text, but when she opened it the form was not there to sign. Ashley had her sign on her own device.
+- **Cause (reproduced):** sending assigns the form on her device and saves it, but the client's app
+  reads the client's copy on the SERVER, and that was only pushed on a 2.5s timer. "Text it" hands
+  straight to Messages, which backgrounds the app and stops the timer, so the text arrived before the
+  form did. `scratchpad/test-text-form-reaches-client.mjs` fails 3/6 on the old code.
+- **Fix:** `openSendSheet` pushes the client's copy (`_pushClientNow`) as soon as the sheet opens, while
+  she reads the message. Text it / Email it (`_uSendReady`) open Messages/Mail immediately when that
+  push has confirmed, otherwise wait for it (6s cap) and say plainly if it did not land. Copy pushes too.
+  Covers every send that uses the universal sheet (forms, bundles, guides, invites).
+- Tests: the new test 6/6 in Chrome and Safari. Form resend sweeps give the same results as main;
+  `test-client-form-branding` 5/5.
