@@ -3,6 +3,13 @@
 The weekly scheduled run takes the **first unchecked topic**, writes it as a draft, and ticks it off.
 Reorder freely — moving something to the top makes it next week's post.
 
+## Next week (2026-10-26): a forms post (Ashley, 2026-10-19)
+She parked forms ideas for next week. 49 per-treatment consent-form pages and 8 collection hubs
+(/esthetician-forms ... /tattoo-artist-forms) already exist, so next week's draft should NOT be another
+single-treatment form page. Good angles: "paper forms vs digital forms for a solo studio" or "what a
+pre-visit check-in catches that an intake form misses", linking the hubs and /slickchart. She already
+posted the Google Business posts for the hubs.
+
 ## Strategy behind this list
 
 Researched against how GlossGenius, Vagaro, Mangomint, Square, Fresha, Boulevard and Comb win traffic,

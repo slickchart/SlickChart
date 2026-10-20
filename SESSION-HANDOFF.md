@@ -7974,3 +7974,8 @@ SEO: 7 massage + 7 head spa posts in blog-src, hubs /massage-therapist-forms and
   accepted it. Her Mac checkout had been on an old branch (`build-your-own-app-import`); it is on `main` now.
 - After approval, the 5-minute phone check in NATIVE-BUILD-PLAN-2026-10-20.md is still to do (export
   share sheet, Library PDF, Square/Google Connect return, Android keyboard).
+- DECIDED (Ashley, 2026-10-19): the collection form wording stays exactly as transcribed (gift card
+  line, LED density line, tint/FDA wording, Accutane windows, mismatched numbers between documents).
+  Providers can edit any form, so do NOT raise these again or change them.
+- She already posted the Google Business posts for the forms pages. Forms-related blog/post ideas are
+  parked for NEXT WEEK's Monday drafts (see blog-src/TOPICS.md), not before.
