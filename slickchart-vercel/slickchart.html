@@ -305,7 +305,7 @@ const S=document.getElementById('S');
 // resets when I save it" and there was no way to tell whether her phone had any of them — a whole
 // day was spent debugging code she may not have been running. Shown at the bottom of Settings, so
 // the answer is a screenshot away. Bump it on every ship.
-const APP_BUILD='2026-10-20e';
+const APP_BUILD='2026-10-20f';
 
 
 /* ════════════════════════════════════════════════════════════════
@@ -7799,16 +7799,24 @@ function _pr_assignSelected(){
 // pickClient: show the client list, then assign either the SELECTED photos (all=0) or ALL (all=1).
 function _pr_reassign(bucketId,all){
   var ov=document.getElementById('photo-recover');if(!ov)return;
-  var names=Object.keys(CL).filter(function(k){return CL[k]&&CL[k].name;}).sort(function(a,b){return String(CL[a].name).localeCompare(String(CL[b].name));});
+  // Real names only: rows named "(no name)" are junk copies, and a blank list of them is what she saw.
+  var names=Object.keys(CL).filter(function(k){var n=CL[k]&&String(CL[k].name||'').trim();return n&&!/^\(no name\)$/i.test(n)&&!CL[k].isAnimal;}).sort(function(a,b){return String(CL[a].name).localeCompare(String(CL[b].name));});
   var count=all?((capturedPhotos[bucketId]||[]).length):(_prSel?_prSel.size:0);
-  var list=names.map(function(k){return '<div onclick="_pr_doReassign(\''+bucketId+'\',\''+k+'\','+(all?1:0)+')" style="padding:11px 12px;border:1px solid var(--p-line-ctl);border-radius:12px;margin-bottom:6px;cursor:pointer;font-size:16px;color:var(--p-ink);background:var(--p-surf);">'+_fileEsc(CL[k].name)+'</div>';}).join('');
+  var list=names.map(function(k){var sub=(typeof _clientSubtitle==='function')?_clientSubtitle(CL[k]):'';return '<div class="pr-cl" data-q="'+_fileEsc(String(CL[k].name+' '+(CL[k].email||'')+' '+(CL[k].phone||'')).toLowerCase())+'" onclick="_pr_doReassign(\''+bucketId+'\',\''+k+'\','+(all?1:0)+')" style="padding:11px 12px;border:1px solid var(--p-line-ctl);border-radius:12px;margin-bottom:6px;cursor:pointer;font-size:16px;color:var(--p-ink);background:var(--p-surf);">'+_fileEsc(CL[k].name)+(sub&&sub!=='No contact on file'?'<div style="font-size:14px;color:var(--p-mut);overflow:hidden;text-overflow:ellipsis;white-space:nowrap;">'+_fileEsc(sub)+'</div>':'')+'</div>';}).join('');
   ov.innerHTML='<div style="background:var(--surf1);border-top:1px solid var(--p-line);border-radius:16px 16px 0 0;padding:18px;max-height:92%;overflow:auto;">'
     +_sheetBar()
     +'<div style="font-size:16px;font-weight:600;color:var(--p-ink);margin-bottom:4px;">Assign '+count+' photo'+(count===1?'':'s')+' to which client?</div>'
     +'<div style="font-size:16px;color:var(--p-mut);margin-bottom:14px;">They’ll be attached to the client you pick. You can re-tag each as Before/After afterward from their photos.</div>'
+    +'<input id="pr-cl-search" type="search" placeholder="Search clients" autocomplete="off" oninput="_pr_filterClients(this.value)" style="width:100%;box-sizing:border-box;padding:11px 12px;border:1px solid var(--p-line-ctl);border-radius:12px;font-size:16px;margin-bottom:10px;background:var(--p-surf);color:var(--p-ink);font-family:inherit;">'
     +(list||'<div style="font-size:16px;color:var(--p-mut);">No clients yet.</div>')
+    +'<div id="pr-cl-none" style="display:none;font-size:16px;color:var(--p-mut);padding:6px 2px;">No client matches that.</div>'
     +'<button onclick="_pr_gallery(\''+bucketId+'\')" style="width:100%;margin-top:6px;background:none;border:1px solid var(--p-line-ctl);color:var(--p-mut);border-radius:12px;padding:10px;font-size:16px;cursor:pointer;font-family:inherit;">Back</button>'
     +'</div>';
+}
+function _pr_filterClients(q){
+  q=String(q||'').toLowerCase().trim();let shown=0;
+  document.querySelectorAll('#photo-recover .pr-cl').forEach(function(el){const ok=!q||String(el.getAttribute('data-q')||'').indexOf(q)>=0;el.style.display=ok?'':'none';if(ok)shown++;});
+  const n=document.getElementById('pr-cl-none');if(n)n.style.display=shown?'none':'';
 }
 function _pr_doReassign(bucketId,targetId,all){
   try{

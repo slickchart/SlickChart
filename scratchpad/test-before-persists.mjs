@@ -87,6 +87,12 @@ if (process.env.MODE === 'serverstale') T.check("the account's old copy only ADD
   await q.evaluate(() => { const o = document.getElementById('photo-recover'); if (o) o.remove(); nav('room', 'c1'); });
   const room2 = await q.evaluate(() => (document.getElementById('room-photos') || {}).innerText || '');
   T.check('one tap puts it back in her session as the before', /Before ✓/.test(room2), room2.slice(0, 120));
+  // Her screenshot: the "which client?" list is hundreds of rows, many "(no name)". It must search.
+  await q.evaluate(() => { CL.cjunk = { name: '(no name)' }; capturedPhotos.__recovered__ = [{ url: 'data:image/png;base64,AA', ts: Date.now(), pid: 'ph_x' }]; _openPhotoRecovery(); _prSel = new Set(['ph_x']); _pr_reassign('__recovered__', 0); });
+  const rows0 = await q.locator('#photo-recover .pr-cl').count();
+  await q.fill('#pr-cl-search', 'janice');
+  const vis = await q.locator('#photo-recover .pr-cl:visible').allInnerTexts();
+  T.check('assign list: a search box, no "(no name)" rows, typing finds Janice', rows0 === 3 && vis.length === 1 && /Janice Albers/.test(vis[0]), JSON.stringify({ rows0, vis }));
   await c2.close(); }
 console.log('server keys:', Object.keys(server).join(','), 'files:', Object.keys(files).join(','));
 T.check('no page errors', !errs.length, errs.join(' | '));
