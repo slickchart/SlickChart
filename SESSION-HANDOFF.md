@@ -8016,3 +8016,19 @@ the text, but when she opened it the form was not there to sign. Ashley had her 
   Covers every send that uses the universal sheet (forms, bundles, guides, invites).
 - Tests: the new test 6/6 in Chrome and Safari. Form resend sweeps give the same results as main;
   `test-client-form-branding` 5/5.
+
+## 2026-10-20 — Provider app defaults to LIGHT; light mode made readable (build `2026-10-20c`, PREVIEW)
+**Asked (Ashley):** default the provider app to light, and fix the check-in screens in light, where an
+unread check-in card and the top of the check-in detail page showed the client's name nearly invisible.
+- Default: `sc_provider_theme` unset now means light (first-paint script + `_scThemePref`). A provider
+  who chose Dark or Auto in Settings keeps it.
+- Check-ins: unread card background was a hard-coded dark brown (`#1e1a10`, 1.0:1 behind dark ink);
+  the detail name was near-white `#e8fff5` (1.01:1). Both now use theme tokens, plus the flagged text.
+- **The contrast sweep had never measured the provider app in light.** It set `sc_theme`/
+  `sc_client_theme`, never `sc_provider_theme`, so both passes ran in the provider default (dark).
+  Fixed; first true light run found 115 problems. All fixed: light `--p-mut2` #5a6a64, `--p-green`
+  #127451, `--p-amber` #9a5a12, `--btn-edge` .52, `_accentOnBgP` measures light accent against
+  `--p-bg2`, and the hard-coded `#999/#bbb/#ddd/#e8b060` text on More and Reports. Now
+  `sweep-contrast.mjs` (both apps, both themes, 5 brands): everything meets AA, Chrome and Safari.
+  `THEMES=light` / `BRANDS=navy` env vars narrow a run.
+- Test: `scratchpad/test-checkin-light.mjs` 27/27 Chrome + Safari (fails 13 on the old code).

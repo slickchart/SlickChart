@@ -168,14 +168,15 @@ window.__audit=function(){
 
 async function auditApp(browser, name, cfg){
   const findings=[];
-  for(const theme of ['dark','light']){
-    for(const [bname,brand] of BRANDS){
+  for(const theme of (process.env.THEMES||'dark,light').split(',')){
+    for(const [bname,brand] of BRANDS.filter(([n])=>!process.env.BRANDS||process.env.BRANDS.split(',').includes(n))){
       const page=await browser.newPage({viewport:{width:390,height:844}});
       await page.emulateMedia({colorScheme:theme});
       await page.addInitScript(([t,b])=>{
         try{
           localStorage.setItem('sc_client_theme',t);
           localStorage.setItem('sc_theme',t);
+          localStorage.setItem('sc_provider_theme',t);   // the provider app's own key: without it every provider pass ran in its default theme
           localStorage.setItem('sc_token','TESTTOKEN');
           localStorage.setItem('sc_onboarded','1');
           localStorage.setItem('sc_brand_colors',JSON.stringify({primary:b,secondary:'#1E7FB0'}));
