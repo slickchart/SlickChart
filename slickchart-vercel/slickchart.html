@@ -311,7 +311,7 @@ const S=document.getElementById('S');
 // resets when I save it" and there was no way to tell whether her phone had any of them — a whole
 // day was spent debugging code she may not have been running. Shown at the bottom of Settings, so
 // the answer is a screenshot away. Bump it on every ship.
-const APP_BUILD='2026-10-21f';
+const APP_BUILD='2026-10-21g';
 
 
 /* ════════════════════════════════════════════════════════════════
@@ -15569,6 +15569,10 @@ function _initDeepLinks(){
 // these still needs Firebase/APNs — see PUSH-NATIVE-SETUP.md.
 // Registers the OS push token once a session exists. Waits through sign-in (up to ~2min) and
 // retries a few times on a failed POST, because a silently dropped token means no push at all.
+// What THIS phone's push registration did, in words, for the founder test popup: a phone with no token
+// row reaches nobody and nothing anywhere said so (2026-10-21: her main phone was missing while an old
+// work phone took every sign-up alert).
+window._nativePushState={perm:'',registered:false,regError:'',post:''};
 function _flushNativePushTok(tries){
   tries=tries||0;
   var d=window._nativePushTok; if(!d||!d.value)return;
@@ -15577,10 +15581,10 @@ function _flushNativePushTok(tries){
   fetch('/api/native-push',{method:'POST',headers:{'Content-Type':'application/json','Authorization':'Bearer '+t},
     body:JSON.stringify({platform:d.platform,token:d.value})})
     .then(function(r){
-      if(r&&r.ok){ window._nativePushTok=null; console.log('[push] device token registered'); }
-      else { console.warn('[push] token POST failed',r&&r.status); if(tries<6)setTimeout(function(){_flushNativePushTok(tries+1);},5000); }
+      if(r&&r.ok){ window._nativePushTok=null; window._nativePushState.post='ok'; console.log('[push] device token registered'); }
+      else { window._nativePushState.post='failed ('+(r&&r.status)+')'; console.warn('[push] token POST failed',r&&r.status); if(tries<6)setTimeout(function(){_flushNativePushTok(tries+1);},5000); }
     })
-    .catch(function(e){ console.warn('[push] token POST error',e&&e.message); if(tries<6)setTimeout(function(){_flushNativePushTok(tries+1);},5000); });
+    .catch(function(e){ window._nativePushState.post='failed (no connection)'; console.warn('[push] token POST error',e&&e.message); if(tries<6)setTimeout(function(){_flushNativePushTok(tries+1);},5000); });
 }
 let _nativeProviderInit=false;
 async function _initNativeProvider(){
@@ -15593,6 +15597,7 @@ async function _initNativeProvider(){
     if(!PN)return;
     let perm=await PN.checkPermissions();
     if(perm.receive!=='granted')perm=await PN.requestPermissions();
+    window._nativePushState.perm=perm.receive;
     if(perm.receive!=='granted')return;
     PN.addListener('registration',function(tok){
       // The OS can hand back the device token BEFORE sign-in finishes. This used to just
@@ -15601,11 +15606,12 @@ async function _initNativeProvider(){
       // reaches 0 devices. Hold the token and keep trying until there's a session.
       try{
         if(!tok||!tok.value)return;
+        window._nativePushState.registered=true;
         window._nativePushTok={platform:(window.Capacitor.getPlatform&&window.Capacitor.getPlatform())||'',value:tok.value};
         _flushNativePushTok(0);
       }catch(e){}
     });
-    PN.addListener('registrationError',function(){});
+    PN.addListener('registrationError',function(e){try{window._nativePushState.regError=String((e&&(e.error||e.message))||'unknown');}catch(_){}});
     // Foreground pushes: when a push arrives while the app is OPEN, iOS/Android hand it to this listener
     // and DON'T show an OS banner on their own (and LocalNotifications isn't bundled to post one). Without
     // this handler a push that lands while the founder is using the app is completely silent — which is
@@ -33446,6 +33452,30 @@ async function _founderTestPush(rowEl,delaySec){
   const orig=(delaySec?'Sends after a few seconds so you can close the app & see the real banner':'Send a test push to your phone to confirm paid-signup alerts will arrive');
   const setSub=t=>{try{if(sub)sub.textContent=t;}catch(e){}};
   const tok=(typeof Cloud!=='undefined'&&Cloud&&Cloud.token)||'';
+  // In the phone app, re-register THIS phone before testing, so the test also repairs a phone whose
+  // token never reached the server, and the popup can say what this phone did.
+  let phoneLine='';
+  if(_isNativeApp()){
+    try{
+      setSub('Linking this phone…');
+      const PN=window.Capacitor.Plugins&&window.Capacitor.Plugins.PushNotifications;
+      const st=window._nativePushState;
+      if(PN){
+        let perm=await PN.checkPermissions();
+        if(perm.receive!=='granted')perm=await PN.requestPermissions();
+        st.perm=perm.receive;
+        if(perm.receive==='granted'){
+          if(!_nativeProviderInit){await _initNativeProvider();}else{st.post='';await PN.register();}
+          for(let i=0;i<24&&st.post!=='ok'&&!/^failed/.test(st.post)&&!st.regError;i++)await new Promise(r=>setTimeout(r,250));
+        }
+      }
+      phoneLine=st.perm!=='granted'?'This phone has notifications turned OFF for SlickChart. Open Settings → Apps → SlickChart → Notifications, turn them on, then test again.'
+        :st.regError?('This phone could not get a push address from Google ('+st.regError+').')
+        :st.post==='ok'?'This phone is linked for alerts.'
+        :st.post?('This phone could not save its push address: '+st.post+'.')
+        :'This phone did not answer in time while linking.';
+    }catch(e){phoneLine='This phone could not be checked ('+((e&&e.message)||'error')+').';}
+  }
   if(delaySec){
     // Count down visibly so she knows to close the app NOW. The request is already in flight on the
     // server side; backgrounding the app doesn't stop the server from sending.
@@ -33465,7 +33495,7 @@ async function _founderTestPush(rowEl,delaySec){
     if(r.status===403){setSub('Owner-only.');_show('⚠️ Not a founder account',(j&&j.error)||'This device is signed in with an account that does not get sign-up alerts.');}
     else if(!r.ok||!j.ok){const em=(j&&j.error)||('The server answered '+r.status+'.');setSub(em);_show('⚠️ The test didn’t run',em+' Tell Claude exactly what this says.');}
     else{
-      const msg=j.message||'Done.';
+      const msg=(phoneLine?phoneLine+' ':'')+(j.message||'Done.');
       _show((j.sent>0?'✅ Test push sent':(j.devices===0?'📱 No phone registered yet':'⚠️ Couldn’t deliver')),msg);
       setSub(j.devices===0?'No phone registered — install the app on your phone & allow notifications':((j.sent>0?'✓ Sent to '+j.sent+' device'+(j.sent===1?'':'s'):orig)));
     }
