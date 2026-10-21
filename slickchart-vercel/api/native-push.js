@@ -61,6 +61,16 @@ export default async function handler(req, res) {
       return;
     }
     if (req.method === 'POST') {
+      // A provider's own phone opening a client's link (App Links open client spaces INSIDE the app)
+      // must not hand that phone's alerts to the client: one install has one address, and this used
+      // to re-key it to the client, so the provider's sign-up and form alerts went to nobody until she
+      // next relaunched (2026-10-21). A provider binding always beats a client one.
+      if (ownerKind === 'client') {
+        try {
+          const cur = await q`SELECT owner_kind FROM native_push_tokens WHERE token = ${token}`;
+          if (cur.length && cur[0].owner_kind === 'provider') { res.status(200).json({ ok: true, kept: 'provider' }); return; }
+        } catch (e) {}
+      }
       // Re-key the token to THIS owner (a device that switches accounts must not keep the old binding).
       await q`INSERT INTO native_push_tokens (token, platform, owner_kind, owner_id, provider_id, created_at, updated_at)
         VALUES (${token}, ${platform}, ${ownerKind}, ${ownerId}, ${providerId}, ${now}, ${now})

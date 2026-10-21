@@ -242,28 +242,41 @@ async function seenFounderAccounts(emails) {
   } catch (e) { return []; }
 }
 
+// The founder's accounts, resolved ONE way for everything that alerts her or reports on it: provider
+// rows whose email is a founder email, plus accounts a verified founder session was seen in (120 days).
+// Every input is the environment, never a request.
+export function founderEmails() {
+  return String(process.env.FOUNDER_EMAILS || process.env.OWNER_EMAIL || process.env.FOUNDER_NOTIFY_EMAIL || 'botanicalaestheticsbyashley@gmail.com')
+    .toLowerCase().split(',').map(s => s.trim()).filter(Boolean);
+}
+export async function founderAccounts() {
+  const out = { emails: founderEmails(), byEmail: [], bySession: [] };
+  for (const fe of out.emails) {
+    try {
+      const q = sql();
+      const provs = await q`SELECT id FROM providers WHERE lower(email) = ${fe}`;
+      for (const pr of (provs || [])) if (!out.byEmail.includes(String(pr.id))) out.byEmail.push(String(pr.id));
+    } catch (e) { out.error = 'db'; }
+  }
+  if (out.emails.length) for (const id of await seenFounderAccounts(out.emails)) if (!out.byEmail.includes(id) && !out.bySession.includes(id)) out.bySession.push(id);
+  return out;
+}
+
 export function founderPushConfigured() { return nativePushConfigured() || webPushConfigured(); }
 
 export async function pushFoundersReport(payload) {
   const out = { sent: 0, devices: 0, emails: [], providerIds: [], results: [], webDevices: 0, webSent: 0 };
   const nativeOn = nativePushConfigured(), webOn = webPushConfigured();
   if (!nativeOn && !webOn) { out.error = 'no push transport configured'; return out; }
-  out.emails = String(process.env.FOUNDER_EMAILS || process.env.OWNER_EMAIL || process.env.FOUNDER_NOTIFY_EMAIL || 'botanicalaestheticsbyashley@gmail.com')
-    .toLowerCase().split(',').map(s => s.trim()).filter(Boolean);
+  const fa = await founderAccounts();
+  out.emails = fa.emails;
   if (!out.emails.length) { out.error = 'no founder email configured'; return out; }
   // Resolve every founder provider id first, then send to all of their PHONES before any browser.
   // A browser endpoint is the slow, flaky transport (a dead one can sit until the function times
   // out); the phone app is the one she relies on, so it must never wait behind a browser send or
   // behind another founder record's devices (2026-10-21).
-  for (const fe of out.emails) {
-    try {
-      const q = sql();
-      const provs = await q`SELECT id FROM providers WHERE lower(email) = ${fe}`;
-      for (const pr of (provs || [])) out.providerIds.push(String(pr.id));
-    } catch (e) { out.error = 'db'; }
-  }
-  // Plus every account a founder has actually been signed in to (still only founder emails).
-  for (const id of await seenFounderAccounts(out.emails)) if (!out.providerIds.includes(id)) out.providerIds.push(id);
+  if (fa.error) out.error = fa.error;
+  out.providerIds = fa.byEmail.concat(fa.bySession);
   if (nativeOn) {
     for (const pid of out.providerIds) {
       try {

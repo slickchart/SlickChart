@@ -95,7 +95,7 @@ async function resolveEmail(req, q) {
 async function ensureMonitorTable(q) {
   await q`CREATE TABLE IF NOT EXISTS feedback_monitor (owner_email text PRIMARY KEY, nonce text NOT NULL, created_at timestamptz DEFAULT now(), last_used timestamptz)`;
 }
-async function monitorKeyOk(req, q, owner) {
+export async function monitorKeyOk(req, q, owner) {
   const s = process.env.SESSION_SECRET || '';
   const h = req.headers['authorization'] || '';
   const t = h.startsWith('Monitor ') ? h.slice(8) : '';
