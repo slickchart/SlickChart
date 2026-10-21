@@ -150,7 +150,7 @@ export async function sendFcm(token, payload) {
     // treat a generic 400 as dead (that could be our own bad message shape) to avoid nuking good
     // tokens over a code bug.
     if (r.status === 404 || (r.status === 400 && /UNREGISTERED|registration token|not a valid FCM|InvalidRegistration/i.test(t))) {
-      return { ok: false, gone: true };
+      return { ok: false, gone: true, error: 'Google rejected this device address (' + r.status + ' ' + (t.match(/"status":\s*"([A-Z_]+)"/) || [])[1] + ': ' + ((t.match(/"message":\s*"([^"]{0,160})/) || [])[1] || '') + ')' };
     }
     console.error('[fcm] send failed', r.status, t.slice(0, 300));
     return { ok: false, error: 'send ' + r.status };
@@ -171,7 +171,7 @@ export async function pushReport(ownerKind, ownerId, payload) {
   let rows;
   try {
     const q = sql();
-    rows = await q`SELECT token, platform FROM native_push_tokens WHERE owner_kind=${ownerKind} AND owner_id=${String(ownerId)}`;
+    rows = await q`SELECT token, platform, updated_at FROM native_push_tokens WHERE owner_kind=${ownerKind} AND owner_id=${String(ownerId)}`;
   } catch (e) { return { ...empty, error: 'db' }; }
   let sent = 0;
   const results = [];
@@ -182,7 +182,7 @@ export async function pushReport(ownerKind, ownerId, payload) {
     const r = shape === 'apns' ? await sendApns(row.token, payload) : await sendFcm(row.token, payload);
     if (r.ok) sent++;
     else if (r.gone) { try { const q = sql(); await q`DELETE FROM native_push_tokens WHERE token=${row.token}`; } catch (e) {} }
-    results.push({ platform: row.platform || '', shape, ok: !!r.ok, gone: !!r.gone, error: r.error || '' });
+    results.push({ platform: row.platform || '', shape, ok: !!r.ok, gone: !!r.gone, error: r.error || '', updatedAt: Number(row.updated_at) || 0 });
   }
   return { sent, devices: (rows || []).length, results };
 }

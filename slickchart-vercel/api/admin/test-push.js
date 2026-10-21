@@ -153,6 +153,18 @@ export default async function handler(req, res) {
       const n = (w[0] && w[0].n) || 0;
       for (let i = 0; i < n; i++) deviceList.push({ name: 'browser / home-screen app', lastOpened: '' });
     } catch (e) {}
+    // What happened to EACH device on this send, including any Google rejected (those rows are removed
+    // right after, so the device list below no longer shows them; without this line a rejected phone
+    // simply vanished and the popup still read "sent").
+    const _fmtTs = (ms) => { const n = Number(ms) || 0; if (!n) return ''; try { return new Date(n).toLocaleString('en-US', { timeZone: process.env.FOUNDER_TZ || 'America/Los_Angeles', month: 'short', day: 'numeric', hour: 'numeric', minute: '2-digit' }); } catch (e) { return ''; } };
+    if (results.length) {
+      message += ' What happened on this send: ' + results.map((r, i) => {
+        const nm = r.platform === 'web' ? 'browser' : (String(r.platform || '').toLowerCase() === 'ios' ? 'iPhone app' : 'Android app');
+        const when = _fmtTs(r.updatedAt);
+        return (i + 1) + ') ' + nm + (when ? ' (last opened ' + when + ')' : '') + ': '
+          + (r.ok ? 'delivered to Google' : r.gone ? (r.error || 'Google rejected it') + ', so it was removed' : 'failed' + (r.error ? ' (' + r.error + ')' : ''));
+      }).join('; ') + '.';
+    }
     if (deviceList.length) {
       message += ' Your devices: ' + deviceList.map((d, i) => (i + 1) + ') ' + d.name + (d.lastOpened ? ', last opened ' + d.lastOpened : '')).join('; ')
         + '. If your phone is not on this list, or its "last opened" time is older than the last time you opened the app on it, that row is an old install: open SlickChart on your phone and test again.';
