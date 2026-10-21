@@ -9,7 +9,7 @@
 import { dbEnabled, sql } from '../lib/db.js';
 import { verifyToken, sessionOk } from '../lib/auth.js';
 import { ensureClientTables, getClientByToken } from '../lib/clients.js';
-import { validateFcmToken } from '../lib/fcm.js';
+import { validateFcmToken, logNativePush } from '../lib/fcm.js';
 
 async function ensureNativeTable(q) {
   await q`CREATE TABLE IF NOT EXISTS native_push_tokens (
@@ -57,6 +57,7 @@ export default async function handler(req, res) {
     const now = Date.now();
     if (req.method === 'DELETE') {
       await q`DELETE FROM native_push_tokens WHERE token = ${token} AND owner_id = ${ownerId}`;
+      if (ownerKind === 'provider') await logNativePush(ownerId, platform, token, 'unlinked: signed out', '');
       res.status(200).json({ ok: true });
       return;
     }
@@ -84,9 +85,11 @@ export default async function handler(req, res) {
       try { check = await validateFcmToken(token); } catch (e) { check = { ok: true }; }
       if (!check.ok && check.gone) {
         try { await q`DELETE FROM native_push_tokens WHERE token = ${token} AND owner_id = ${ownerId}`; } catch (e) {}
+        if (ownerKind === 'provider') await logNativePush(ownerId, platform, token, 'removed: refused when linking', check.error);
         res.status(200).json({ ok: true, invalid: true, reason: check.error || 'Google refused this device address' });
         return;
       }
+      if (ownerKind === 'provider') await logNativePush(ownerId, platform, token, check.skipped ? 'linked (not checked)' : (check.ok ? 'linked, Google accepted' : 'linked, check failed'), check.ok ? '' : check.error);
       res.status(200).json({ ok: true, checked: !check.skipped, checkError: (!check.ok && check.error) ? check.error : '' });
       return;
     }

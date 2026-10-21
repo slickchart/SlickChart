@@ -16,7 +16,7 @@
 //   • send=1 sends the founder a test notification on her own devices.
 import { dbEnabled, sql } from '../../lib/db.js';
 import { monitorKeyOk } from '../feedback.js';
-import { pushFoundersReport, founderPushConfigured, nativePushConfigured, founderAccounts } from '../../lib/fcm.js';
+import { pushFoundersReport, founderPushConfigured, nativePushConfigured, founderAccounts, nativePushLog } from '../../lib/fcm.js';
 import { recentNotifies } from '../../lib/notify-log.js';
 import { listDeviceReports } from '../../lib/device-report.js';
 
@@ -81,6 +81,9 @@ export default async function handler(req, res) {
       }
     }
     if (out.nativeConfigured && !(out.phoneApps || []).length) out.problems.push('no phone app is linked for alerts at all');
+    // Every link attempt and failed send for her phones, newest first: this is where a phone that
+    // linked and was then refused shows up, with Google's own words.
+    out.phoneHistory = (await nativePushLog(idList, 40)).map(r => ({ at: fmt(new Date(r.at).getTime()), account: String(r.owner_id).slice(-4), platform: r.platform || '', addressEnds: r.ends || '', shape: r.shape || '', outcome: r.outcome || '', reason: r.reason || '' }));
     try { out.recentAlerts = await recentNotifies(20); } catch (err) { out.recentAlerts = []; }
     res.status(200).json(out);
   } catch (e) {

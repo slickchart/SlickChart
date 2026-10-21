@@ -165,6 +165,34 @@ export async function validateFcmToken(token) {
   return sendFcm(token, { title: 'SlickChart' }, { validateOnly: true });
 }
 
+// What happened each time a provider's phone tried to link for alerts, and each time a send to one
+// failed: when, which phone (last 6 characters of its address only), and Google's answer. A phone
+// that links, gets refused and is quietly removed used to leave NO trace anywhere, which is why the
+// founder's sign-up push could stop four times with nobody able to say why (2026-10-21). Read only by
+// /api/admin/push-state, for the founder's own accounts. Kept 30 days.
+let _nplReady = false;
+export async function logNativePush(ownerId, platform, token, outcome, reason) {
+  if (!ownerId) return;
+  try {
+    const q = sql();
+    if (!_nplReady) {
+      await q`CREATE TABLE IF NOT EXISTS native_push_log (owner_id text NOT NULL, at timestamptz NOT NULL DEFAULT now(), platform text, ends text, shape text, outcome text, reason text)`;
+      _nplReady = true;
+    }
+    const t = String(token || '');
+    await q`INSERT INTO native_push_log (owner_id, platform, ends, shape, outcome, reason)
+      VALUES (${String(ownerId)}, ${String(platform || '').slice(0, 16)}, ${t.slice(-6)}, ${tokenShape(t)}, ${String(outcome || '').slice(0, 60)}, ${String(reason || '').slice(0, 300)})`;
+    if (Math.random() < 0.05) await q`DELETE FROM native_push_log WHERE at < now() - interval '30 days'`;
+  } catch (e) {}
+}
+export async function nativePushLog(ownerIds, limit) {
+  try {
+    const q = sql();
+    return await q`SELECT owner_id, at, platform, ends, shape, outcome, reason FROM native_push_log
+      WHERE owner_id = ANY(${ownerIds}::text[]) ORDER BY at DESC LIMIT ${Number(limit) || 30}`;
+  } catch (e) { return []; }
+}
+
 // Look up one subject's device tokens and push to all of them, pruning any that come back dead.
 // Returns { sent, devices, results:[{platform, shape, ok, error}] } so a diagnostic caller can say
 // WHY nothing landed. Best-effort and self-contained: a DB hiccup just yields zeros.
@@ -190,6 +218,7 @@ export async function pushReport(ownerKind, ownerId, payload) {
     const r = shape === 'apns' ? await sendApns(row.token, payload) : await sendFcm(row.token, payload);
     if (r.ok) sent++;
     else if (r.gone) { try { const q = sql(); await q`DELETE FROM native_push_tokens WHERE token=${row.token}`; } catch (e) {} }
+    if (ownerKind === 'provider' && !r.ok) await logNativePush(ownerId, row.platform, row.token, r.gone ? 'removed: refused on send' : 'send failed', r.error);
     results.push({ platform: row.platform || '', shape, ok: !!r.ok, gone: !!r.gone, error: r.error || '', updatedAt: Number(row.updated_at) || 0 });
   }
   return { sent, devices: (rows || []).length, results };
