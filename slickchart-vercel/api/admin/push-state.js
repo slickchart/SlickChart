@@ -73,9 +73,10 @@ export default async function handler(req, res) {
         const at = new Date(r.updated_at).getTime() || 0;
         const d = { account: id.slice(-4), platform: rep.platform || '', kind: rep.kind || '', build: rep.build || '', lastSeen: fmt(at),
           pushPerm: rep.pushPerm || '', pushPost: rep.pushPost || '', pushEnds: rep.pushEnds || '',
-          onAlertList: rep.native ? (rep.pushEnds ? linkedEnds.has(rep.pushEnds) : false) : null };
+          // Builds before 2026-10-21i do not report their push state at all, so for them this is unknown.
+          onAlertList: rep.native ? (rep.pushEnds ? linkedEnds.has(rep.pushEnds) : ('pushPerm' in rep ? false : 'unknown (older build)')) : null };
         out.devices.push(d);
-        if (rep.native && Date.now() - at < 3 * 86400000 && !d.onAlertList) {
+        if (rep.native && Date.now() - at < 3 * 86400000 && d.onAlertList === false) {
           out.problems.push(d.platform + ' app used ' + d.lastSeen + ' is NOT on the alert list (permission ' + (d.pushPerm || '?') + ', last save ' + (d.pushPost || 'none') + ', build ' + d.build + ')');
         }
       }
