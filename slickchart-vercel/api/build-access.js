@@ -11,7 +11,7 @@
 // Stripe stays the source of truth, exactly as it is for the success redirect — we ask it which
 // checkout sessions this email paid for rather than trusting a local table. That also means this
 // works for purchases made before build_purchases existed. Anything it finds is backfilled into that
-// table (silently — see recordBuildSale's notify flag) so the stats catch up too.
+// table so the stats catch up too: silently for an old sale, announced for a recent one nobody was told about.
 import { recordBuildSale, sendAccessEmail, roadmapUrlFor } from '../lib/build-sales.js';
 
 const _hits = new Map();
@@ -94,8 +94,15 @@ export default async function handler(req, res) {
       if (!artifactUrl) console.error('[build-access] no roadmap link for ' + s.id + ' (BUILD_ARTIFACT_URL not set?)');
       else try { await sendAccessEmail(to, s.id, { videoUrl, artifactUrl }); }
       catch (e) { console.error('[build-access] resend failed:', e && e.message || e); }
-      // Backfill every purchase we found, silently — this is an old sale, not a new one.
+      // Backfill every purchase we found. An OLD sale (from before build_purchases existed) stays
+      // silent. A RECENT one is announced if nothing else has yet: this used to be silent too, and
+      // since recordBuildSale stamps notified_at even when it does not announce, a buyer who paid,
+      // closed the tab before the redirect and asked for their links before the webhook landed had
+      // their sale claimed here and Ashley was never told about it (2026-10-21). A sale the webhook
+      // or the redirect already announced is skipped by the same once-only claim, so no doubles.
+      const RECENT_SECS = 3 * 24 * 3600;
       for (const found of sessions) {
+        const recent = Number(found.created || 0) > 0 && (Date.now() / 1000 - Number(found.created)) < RECENT_SECS;
         try {
           await recordBuildSale({
             sessionId: found.id,
@@ -104,7 +111,8 @@ export default async function handler(req, res) {
             currency: found.currency || null,
             marketingOptIn: (found.consent && found.consent.promotions) === 'opt_in' ? true
               : (found.consent && found.consent.promotions) === 'opt_out' ? false : undefined,
-            notify: false
+            roadmap: String((found.metadata && found.metadata.roadmap) || ''),
+            notify: recent ? undefined : false
           });
         } catch (e) {}
       }

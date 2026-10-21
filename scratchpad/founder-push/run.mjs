@@ -1,6 +1,6 @@
 import { register } from 'node:module';
 register('./hooks.mjs', import.meta.url);
-const APP = '/home/user/SlickChart/slickchart-vercel';
+const APP = new URL('../../slickchart-vercel', import.meta.url).pathname;
 process.env.DATABASE_URL = 'postgres://x'; process.env.VAPID_PUBLIC_KEY = 'pub'; process.env.VAPID_PRIVATE_KEY = 'priv';
 process.env.FOUNDER_EMAILS = 'ashley@x.com'; process.env.STRIPE_WEBHOOK_SECRET = 'whsec_test';
 delete process.env.FIREBASE_SERVICE_ACCOUNT; delete process.env.APNS_KEY_P8;
