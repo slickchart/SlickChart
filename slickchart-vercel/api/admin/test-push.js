@@ -29,7 +29,7 @@ export default async function handler(req, res) {
   const email = norm(payload.e);
   const founders = String(process.env.FOUNDER_EMAILS || process.env.OWNER_EMAIL || '')
     .toLowerCase().split(',').map(s => s.trim()).filter(Boolean);
-  if (!email || !founders.includes(email)) { res.status(403).json({ error: 'Owner-only.', code: 'notowner' }); return; }
+  if (!email || !founders.includes(email)) { res.status(403).json({ error: 'This device is signed in as ' + (email || 'an unknown account') + ', which is not one of your founder emails, so it does not get sign-up alerts. Tell Claude this email.', code: 'notowner' }); return; }
 
   // The account she is testing from is a founder account: its devices get founder alerts from now on.
   if (payload.u) await rememberFounderAccount(payload.u, email);
