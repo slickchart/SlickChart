@@ -542,6 +542,14 @@ to both, the webhook uses it and records `paid-signup` in `notify_log`, test-pus
 longer flags "already announced"). Regression: `scratchpad/founder-push/run.mjs`. The exact link that
 failed on 10-20 is NOT known: that send left no record. Her next test push / next signup will say.
 
+**Paid signup, no push, 2026-10-21 (Haley Krish). Ashley's OBSERVATIONS (ground truth):** Android
+phone, Play Store app. The founder email arrived; the in-app bell + toast showed it; NO push. Form
+alerts and other pushes DO reach that phone. The test push (from the preview on her Mac) said
+"Sent to 1 of your device" and "the last 5 real alerts all reached your phone", but nothing showed on
+the phone. So Google accepted every send, to a device that is not her phone. Fix `f07f200`: founder
+alerts also go to every account a verified founder session was seen on (`founder_accounts`), and
+the test popup lists each device with when it last opened the app.
+
 **Free-starter signups deliberately do NOT push.** Ashley wants her phone to buzz for provider
 signups and roadmap sales only. A push was added and then removed at her request; the `free_signups`
 row is the record. Don't add it back.
