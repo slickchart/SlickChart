@@ -148,6 +148,7 @@ async function notifyFounderPaid(q, email) {
       if (!r.providerIds || !r.providerIds.length) detail = 'no provider row matches FOUNDER_EMAILS (' + (r.emails || []).join('|') + ')';
       else if (!devices) detail = 'founder provider row found, but no phone or browser registered under it';
       else if (!sentCount) detail = ((r.results || []).find(x => x.error) || {}).error || 'device found but the send failed';
+      if (r.failedLine) detail = (detail ? detail + ' | ' : '') + 'not delivered: ' + r.failedLine;
       console.log('[stripe-webhook] paid-signup push: devices=' + devices + ' sent=' + sentCount + ' for=' + em + (detail ? ' — ' + detail : ''));
     }
   } catch (e) {

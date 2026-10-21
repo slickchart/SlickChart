@@ -141,6 +141,7 @@ export default async function handler(req, res) {
         if (!r.providerIds || !r.providerIds.length) _pushDetail = 'no provider row matches FOUNDER_EMAILS (' + (r.emails || []).join('|') + ')';
         else if (!_pushDevices) _pushDetail = 'founder provider row found, but no phone or browser registered under it';
         else if (!_pushSent) _pushDetail = ((r.results || [])[0] || {}).error || 'device found but the send failed';
+        if (r.failedLine) _pushDetail = (_pushDetail ? _pushDetail + ' | ' : '') + 'not delivered: ' + r.failedLine;
         console.log('[signup] new-signup push: devices=' + _pushDevices + ' sent=' + _pushSent + ' for=' + email + (_pushDetail ? ' — ' + _pushDetail : ''));
       }
     } catch (e) {

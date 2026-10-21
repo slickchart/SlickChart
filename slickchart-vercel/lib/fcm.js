@@ -107,7 +107,7 @@ export function tokenShape(t) {
 // Send one notification to one device token. Never throws — returns a small result the caller
 // can act on. `gone:true` means the token is dead (app uninstalled / token rotated) and should be
 // deleted so we stop trying it.
-export async function sendFcm(token, payload) {
+export async function sendFcm(token, payload, opts) {
   const sa = serviceAccount();
   if (!sa) return { ok: false, skipped: true };
   if (!token) return { ok: false, error: 'no token' };
@@ -142,7 +142,7 @@ export async function sendFcm(token, payload) {
     const r = await fetch('https://fcm.googleapis.com/v1/projects/' + sa.project_id + '/messages:send', {
       method: 'POST',
       headers: { 'Authorization': 'Bearer ' + at, 'Content-Type': 'application/json' },
-      body: JSON.stringify({ message })
+      body: JSON.stringify(opts && opts.validateOnly ? { validate_only: true, message } : { message })
     });
     if (r.ok) return { ok: true };
     const t = await r.text().catch(() => '');
@@ -155,6 +155,14 @@ export async function sendFcm(token, payload) {
     console.error('[fcm] send failed', r.status, t.slice(0, 300));
     return { ok: false, error: 'send ' + r.status };
   } catch (e) { return { ok: false, error: (e && e.message) || 'send failed' }; }
+}
+
+// Ask Google whether a device address is deliverable WITHOUT showing anything on the device
+// (validate_only). Used the moment a phone links, so an address Google refuses is caught there and
+// the phone can fetch a fresh one by itself, instead of the founder finding out from a missed alert.
+export async function validateFcmToken(token) {
+  if (!serviceAccount() || tokenShape(token) !== 'fcm') return { ok: true, skipped: true };
+  return sendFcm(token, { title: 'SlickChart' }, { validateOnly: true });
 }
 
 // Look up one subject's device tokens and push to all of them, pruning any that come back dead.
@@ -282,6 +290,9 @@ export async function pushFoundersReport(payload) {
     }
     await Promise.all(sends);
   }
+  // One line naming every device that did NOT take the alert, for notify_log: a phone Google rejects
+  // is deleted right after, so this line is the only trace it was ever there.
+  out.failedLine = out.results.filter(x => !x.ok).map(x => (x.platform || x.shape || 'device') + ': ' + (x.error || 'failed')).join('; ');
   return out;
 }
 

@@ -569,7 +569,7 @@ const S=document.getElementById('S');
 // resets when I save it" and there was no way to tell whether her phone had any of them — a whole
 // day was spent debugging code she may not have been running. Shown at the bottom of Settings, so
 // the answer is a screenshot away. Bump it on every ship.
-const APP_BUILD='2026-10-21g';
+const APP_BUILD='2026-10-21h';
 
 
 /* ════════════════════════════════════════════════════════════════
@@ -15847,7 +15847,18 @@ function _flushNativePushTok(tries){
   if(!t){ setTimeout(function(){_flushNativePushTok(tries+1);},tries<40?3000:15000); return; }
   fetch('/api/native-push',{method:'POST',headers:{'Content-Type':'application/json','Authorization':'Bearer '+t},
     body:JSON.stringify({platform:d.platform,token:d.value})})
-    .then(function(r){
+    .then(async function(r){
+      // The server checks the address with Google as it saves it. A refused one is thrown away there,
+      // so get a FRESH address from Google once, by ourselves (2026-10-21). The phone does this on its
+      // own; nobody has to notice, test or screenshot anything.
+      var j={};try{j=await r.clone().json();}catch(_){}
+      if(r&&r.ok&&j&&j.invalid){
+        window._nativePushTok=null;window._nativePushState.post='rejected: '+(j.reason||'Google refused it');
+        if(!window._nativePushRetried){window._nativePushRetried=true;
+          try{var PN=window.Capacitor&&window.Capacitor.Plugins&&window.Capacitor.Plugins.PushNotifications;
+            if(PN){if(PN.unregister)await PN.unregister();window._nativePushState.post='';await PN.register();}}catch(_){}}
+        return;
+      }
       if(r&&r.ok){ window._nativePushTok=null; window._nativePushState.post='ok'; console.log('[push] device token registered'); }
       else { window._nativePushState.post='failed ('+(r&&r.status)+')'; console.warn('[push] token POST failed',r&&r.status); if(tries<6)setTimeout(function(){_flushNativePushTok(tries+1);},5000); }
     })
@@ -33742,13 +33753,15 @@ async function _founderTestPush(rowEl,delaySec){
         if(perm.receive!=='granted')perm=await PN.requestPermissions();
         st.perm=perm.receive;
         if(perm.receive==='granted'){
+          window._nativePushRetried=false;   // a test always gets one fresh-address retry
           if(!_nativeProviderInit){await _initNativeProvider();}else{st.post='';await PN.register();}
-          for(let i=0;i<24&&st.post!=='ok'&&!/^failed/.test(st.post)&&!st.regError;i++)await new Promise(r=>setTimeout(r,250));
+          for(let i=0;i<48&&st.post!=='ok'&&!/^failed/.test(st.post)&&!(/^rejected/.test(st.post)&&window._nativePushRetried&&i>8)&&!st.regError;i++)await new Promise(r=>setTimeout(r,250));
         }
       }
       phoneLine=st.perm!=='granted'?'This phone has notifications turned OFF for SlickChart. Open Settings → Apps → SlickChart → Notifications, turn them on, then test again.'
         :st.regError?('This phone could not get a push address from Google ('+st.regError+').')
         :st.post==='ok'?'This phone is linked for alerts.'
+        :/^rejected/.test(st.post)?('Google refused this phone’s notification address, even after the phone asked for a new one ('+st.post.replace(/^rejected: /,'')+').')
         :st.post?('This phone could not save its push address: '+st.post+'.')
         :'This phone did not answer in time while linking.';
     }catch(e){phoneLine='This phone could not be checked ('+((e&&e.message)||'error')+').';}

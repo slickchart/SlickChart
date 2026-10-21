@@ -9,6 +9,7 @@
 import { dbEnabled, sql } from '../lib/db.js';
 import { verifyToken, sessionOk } from '../lib/auth.js';
 import { ensureClientTables, getClientByToken } from '../lib/clients.js';
+import { validateFcmToken } from '../lib/fcm.js';
 
 async function ensureNativeTable(q) {
   await q`CREATE TABLE IF NOT EXISTS native_push_tokens (
@@ -65,7 +66,18 @@ export default async function handler(req, res) {
         VALUES (${token}, ${platform}, ${ownerKind}, ${ownerId}, ${providerId}, ${now}, ${now})
         ON CONFLICT (token) DO UPDATE SET platform = EXCLUDED.platform, owner_kind = EXCLUDED.owner_kind,
           owner_id = EXCLUDED.owner_id, provider_id = EXCLUDED.provider_id, updated_at = EXCLUDED.updated_at`;
-      res.status(200).json({ ok: true });
+      // Check with Google right away that this address can actually be delivered to (nothing is shown
+      // on the phone). A refused one is removed and the app is told, so it can fetch a fresh address
+      // by itself (2026-10-21: a phone "linked" fine, then Google refused it on the first real alert,
+      // it was deleted, and every alert after that went nowhere with no sign on the phone).
+      let check = { ok: true };
+      try { check = await validateFcmToken(token); } catch (e) { check = { ok: true }; }
+      if (!check.ok && check.gone) {
+        try { await q`DELETE FROM native_push_tokens WHERE token = ${token} AND owner_id = ${ownerId}`; } catch (e) {}
+        res.status(200).json({ ok: true, invalid: true, reason: check.error || 'Google refused this device address' });
+        return;
+      }
+      res.status(200).json({ ok: true, checked: !check.skipped, checkError: (!check.ok && check.error) ? check.error : '' });
       return;
     }
     res.status(405).json({ error: 'Method not allowed' });

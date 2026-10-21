@@ -158,6 +158,7 @@ export async function recordBuildSale(sale) {
       if (!r.providerIds || !r.providerIds.length) detail = 'no provider row matches FOUNDER_EMAILS (' + (r.emails || []).join('|') + ')';
       else if (!devices) detail = 'founder provider row found, but no phone or browser registered under it';
       else if (!sentCount) detail = ((r.results || [])[0] || {}).error || 'device found but the send failed';
+      if (r.failedLine) detail = (detail ? detail + ' | ' : '') + 'not delivered: ' + r.failedLine;
       console.log('[build-sales] sale push: devices=' + devices + ' sent=' + sentCount + ' session=' + sid + (detail ? ' — ' + detail : ''));
     }
   } catch (e) {
