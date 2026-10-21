@@ -8143,3 +8143,27 @@ client, prefilled with her plan reason if any, and **Save** replaces that line i
 (`_hcAddPicked(id,ctx,idx,was)`; if a sync moved the line it finds it by text, otherwise adds a new
 line, never overwrites another). The auto-add toast now says to add how they should use it.
 Test: `test-hc-product-picker.mjs` 36/36 Chrome + WebKit.
+
+## 2026-10-21 — Feedback inbox: emailed to Ashley now, plus Jessica's and Jaimie's reports (build `2026-10-21c`, PREVIEW)
+
+**What Ashley OBSERVED (ground truth, §1b):** she found the founder Feedback Inbox full of provider
+reports from Aug 27 to Oct 5 that she had never been told about. Nothing alerted her.
+
+- **Feedback now emails and pushes the founder** (`api/feedback.js`, `notifyFounder`): every message
+  with words in it, Reply-To the provider, awaited, `notify_log` kind `feedback` either way. Pulse
+  answers with no words do not email. Same words from the same account within 10 minutes are kept once
+  (the inbox held doubles from double taps); a failed save is now a 500, not `200 {ok:false}`.
+- **Check-in editor** (Jessica, Sep 22): questions, drinks, snacks and music are text boxes now.
+  `test-checkin-edit`.
+- **New-client bundle** (Jessica, Oct 5): `bundle.newClient` marks the bundle the first-visit package
+  sends instead of the stock intake (`_newClientBundle`). Rides `sc_bundles`, no new key.
+  `test-newclient-bundle`.
+- **Stock services kept coming back** (Jessica, Sep 22 / Oct 5): a new device's seeded
+  `svc_seed*` menu was unioned into the account's real menu on the first pull and pushed back.
+  `_dropStockSvcSeeds` drops untouched seeds when the account already has the key; an empty menu now
+  reloads as empty; the appointment picker fallback is "Appointment", not "Consultation".
+  `test-svc-delete` fails 6 of 10 on the old build.
+- Checked and already working today: My Docs delete (`test-doc-delete`), business name save
+  (`test-bizname`), forms Edit/Delete on every card, deleted products leaving clients' shop, Square
+  customers auto-importing (Jaimie's search report; Ashley believes the iPhone storage fixes covered it).
+- `sweep-crossdevice.mjs` / `freshaudit.mjs` are not in this repo's scratchpad, so they were not run.
