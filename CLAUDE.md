@@ -453,14 +453,15 @@ itself). Run anything touching storage, sync, boot or the native app in BOTH eng
 - **`scripts/check-tenant-isolation.cjs` (CI)** reads every endpoint for §0.1: identity from a
   request field, and SQL on a per-provider table with no owner in it. Its ALLOW list holds three
   reviewed exceptions — re-read those files if they change rather than trusting the entry.
-- **Scale harnesses** (`scratchpad/`, run by hand): `freshaudit.mjs` boots a BRAND-NEW account and
-  reports every key it stores and byte it uploads — none of it is her data, so anything it finds is
-  the app seeding itself into her account (a fresh profile is 7.8KB; it was 82KB before slim forms).
-  `scaleaudit.mjs` seeds a busy practice (~3MB) and reports boot timing, every upload with its
-  largest keys, per-screen render time and DOM nodes, and device storage by key. Run both after any
-  change to sync, storage or a loader. **Open, serious, unfixed: on a busy account boot uploads 5
-  stock courses over her 60 and the account holds only those for ~3.6s until a second pull merges
-  them back — SESSION-HANDOFF §2ae has the evidence and what is already ruled out.**
+- **Scale harnesses** (`scratchpad/`, run by hand): `freshaudit.mjs` and `scaleaudit.mjs` (§2ae) were
+  never committed and are gone. What exists: `test-busy-courses-boot.mjs` boots a busy practice (800
+  clients, 60 of her own courses) in four boot conditions plus a forced save of the starter list while
+  the account is still loading, and fails if any upload shrinks her courses or adds a starter one.
+  `CONTROL=1` switches off `_dropBootShrinks` and `_holdUploads` and MUST fail (60 became 3), which
+  proves the test can see the bug. `test-iphone-account-scale.mjs` covers big summaries and the logo.
+  Run them after any change to sync, storage or a loader, in both engines. The §2ae "5 stock courses
+  over her 60" loss is CLOSED: re-measured 2026-10-21 on build `2026-10-21d`, 16/16 in Chromium AND
+  WebKit (SESSION-HANDOFF, 2026-10-21 entry).
 - **Compare sync values by MEANING, not bytes** (`_sameSyncValue`). Loaders normalise as they read,
   so identical data comes back with its keys reordered and an exact string compare calls it an edit.
 - **Before every commit: `node scripts/check-generated.cjs`** (from `slickchart-vercel/`). It runs all

@@ -8187,3 +8187,20 @@ it read **straight from the app**, not her Gmail.
   UI-only change, no storage or sync touched).
 - The scheduled run's instructions live in `/mnt/project-files/feedback-monitor/routine-prompt.md`. It
   needs `slickchart.app` allowed in the cloud environment's network settings (the proxy blocked it).
+
+### 2026-10-21 — §2ae re-checked: CLOSED (starter courses over a busy account's own)
+CLAUDE.md still called it "open, serious, unfixed"; `_dropBootShrinks` (09-19q) and `_holdUploads`
+(10-15) had both landed since, but nobody re-measured because `scaleaudit.mjs` was never committed.
+New `scratchpad/test-busy-courses-boot.mjs` (busy practice: 800 clients, 60 own courses, 900-item
+catalog, 300 message threads), every `sc_courses` upload recorded, on build `2026-10-21d`:
+A new device, B account answers in 7s (past the old 6s failsafe), C first read 500 then retry,
+D same device reopened, E an edit uploads all 60 (proves the harness sees uploads), F the starter
+list force-saved while the account is still loading. **16/16 in Chromium and 16/16 in WebKit**: no
+upload ever went below 60 or carried a starter course; the account and the screen both ended with her 60.
+Negative control `CONTROL=1` (both guards off): F uploads 3 starter courses and the account AND the
+screen drop to 3. So the guards are what stops it, and the test catches it. Without the forced save
+(A-D) nothing writes courses during boot at all, even with the guards off.
+Side note, not investigated: on a new device boot seeds ~15 keys the account lacks (service menu,
+shop catalog, partners, autos...) in its first upload; that is the 2ae "seed absent keys" family,
+bloat not loss.
+
