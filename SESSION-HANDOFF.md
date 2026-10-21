@@ -8204,3 +8204,23 @@ Side note, not investigated: on a new device boot seeds ~15 keys the account lac
 shop catalog, partners, autos...) in its first upload; that is the 2ae "seed absent keys" family,
 bloat not loss.
 
+
+### 2026-10-21 — build `2026-10-21e`: Android layout (tablets, wide phones, 130% zoom, message bar)
+The three web-side leftovers from the 2026-10-19 Android sweep. New `scratchpad/sweep-android-layout.mjs`
+(tablet / zoom / composer / sheets / all), 13/13 in Chromium AND WebKit.
+- **Tablets** (any `pointer:coarse` screen over 480px) get the whole screen instead of a 390px card, as
+  the client app already did. A desktop with a mouse keeps the phone frame.
+- **Phones 391-480px wide** (Pixel 7 412, iPhone Pro Max 430) showed a strip at each side: the ≤480
+  query never set `width:100%`. It does now.
+- **Pop-ups**: all 62 were hard-coded `width:390px`; now `var(--ov-w,390px)`, which is 100% on phones
+  and touch tablets, so the dimmed backdrop covers the screen. On a tablet the sheets run full width.
+- **Message bar / `.modal-bg`** sat at an assumed `60px` above the menu (real height varies with font,
+  zoom, safe area; Android showed a 7px strip). `--nav-h` now tracks the menu's real height
+  (`_trackNavHeight`, ResizeObserver).
+- **130% zoom** (Chrome Android page zoom: 412px -> ~317 CSS px, 360px -> ~277): six screens slid
+  sideways at 277: Home "This week" tiles, write-note session date, vault counts (2x2 under 300px),
+  security & billing badge, invite clients (long emails now wrap), forms tab row (WebKit; tab rows
+  scroll on their own under 300px).
+Also green: the seven CI checks, test-native-files 14/14 and test-safari-storage-hook 6/6 in both
+engines. Ashley approved it for tonight's overnight release ("make sure tonight ships all things we
+didn't already push").
