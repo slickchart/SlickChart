@@ -129,6 +129,31 @@ export default async function handler(req, res) {
       message += ' No real signups have come through since this logging went live, so the next one will be recorded either way.';
     }
 
+    // Which devices these are, in words: platform plus the last time that device opened the app (the
+    // app re-registers its token on every launch, which is what refreshes updated_at). A phone that
+    // Google accepts the push for but never shows it is usually an OLD install still holding a valid
+    // token, and "last opened 3 weeks ago" on the only device says so at a glance (2026-10-21).
+    let deviceList = [];
+    try {
+      const rows = await q`SELECT platform, updated_at, created_at FROM native_push_tokens
+        WHERE owner_kind = 'provider' AND owner_id = ANY(${providerIds}::text[]) ORDER BY updated_at DESC NULLS LAST LIMIT 10`;
+      const fmt = (ms) => { const n = Number(ms) || 0; if (!n) return 'unknown'; try { return new Date(n).toLocaleString('en-US', { timeZone: process.env.FOUNDER_TZ || 'America/Los_Angeles', month: 'short', day: 'numeric', hour: 'numeric', minute: '2-digit' }); } catch (e) { return 'unknown'; } };
+      deviceList = (rows || []).map(r => {
+        const pl = String(r.platform || '').toLowerCase();
+        const name = pl === 'android' ? 'Android app' : pl === 'ios' ? 'iPhone app' : (pl || 'phone app');
+        return { name, lastOpened: fmt(r.updated_at || r.created_at) };
+      });
+    } catch (e) {}
+    try {
+      const w = await q`SELECT count(*)::int AS n FROM provider_push_subscriptions WHERE provider_id = ANY(${providerIds}::text[])`;
+      const n = (w[0] && w[0].n) || 0;
+      for (let i = 0; i < n; i++) deviceList.push({ name: 'browser / home-screen app', lastOpened: '' });
+    } catch (e) {}
+    if (deviceList.length) {
+      message += ' Your devices: ' + deviceList.map((d, i) => (i + 1) + ') ' + d.name + (d.lastOpened ? ', last opened ' + d.lastOpened : '')).join('; ')
+        + '. If your phone is not on this list, or its "last opened" time is older than the last time you opened the app on it, that row is an old install: open SlickChart on your phone and test again.';
+    }
+
     // `results` is the diagnostic payload: platform, token shape and the real error per device.
     // founderDevices vs devices is the one comparison that matters: the first is what a real signup
     // push can reach, the second is what this session can reach. They should be equal.
@@ -136,7 +161,7 @@ export default async function handler(req, res) {
       ok: true, fcm: true, devices, devicesSession, sent, providers: providerIds.length, results, message,
       founderDevices, founderSent: founder.sent || 0, founderEmails: founder.emails || [],
       founderProviders: (founder.providerIds || []).length, viaFallback,
-      apns: apnsTarget(),
+      apns: apnsTarget(), deviceList,
       recent: recent.map(r => ({ at: r.at, kind: r.kind, subject: r.subject, skipped: r.skipped, devices: r.devices, sent: r.sent, detail: r.detail }))
     });
   } catch (e) {
