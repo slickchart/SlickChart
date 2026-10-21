@@ -550,6 +550,17 @@ the phone. So Google accepted every send, to a device that is not her phone. Fix
 alerts also go to every account a verified founder session was seen on (`founder_accounts`), and
 the test popup lists each device with when it last opened the app.
 
+Later the same day (her observations): her MAIN phone (SlickChart open all day) ran the test and said
+"This phone is linked for alerts", yet the device list showed only her powered-off work phone (last
+opened Oct 20, 11:32). She wants every signed-in device alerted, never one picked. Follow-ups:
+`82d0779` (an address Google refuses is checked on save with validate_only and the phone fetches a fresh
+one by itself; re-register on resume and every 6h; sign-out unlinks), `cc11bd9` (a client link opened
+inside the app can no longer re-key a provider's address to the client; `/api/admin/push-state` lets
+Claude read HER OWN push setup with the monitor key in `/mnt/project-files/feedback-monitor/monitor.key`,
+which she authorized: "if you want to read my own provider app notification directly you can").
+The preview is behind Vercel login, so push-state is readable only on slickchart.app. Tests:
+`scratchpad/founder-push/*.mjs` (server + Chromium UI, incl. `ui-native-coldlaunch`).
+
 **Free-starter signups deliberately do NOT push.** Ashley wants her phone to buzz for provider
 signups and roadmap sales only. A push was added and then removed at her request; the `free_signups`
 row is the record. Don't add it back.
