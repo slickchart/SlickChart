@@ -11,7 +11,7 @@
 // report both counts so a mismatch is visible instead of mysterious.
 import { dbEnabled, sql } from '../../lib/db.js';
 import { verifyToken, isSessionValid } from '../../lib/auth.js';
-import { pushReport, pushFoundersReport, nativePushConfigured } from '../../lib/fcm.js';
+import { pushReport, pushFoundersReport, founderPushConfigured } from '../../lib/fcm.js';
 import { apnsConfigured, apnsTarget } from '../../lib/apns.js';
 import { recentNotifies } from '../../lib/notify-log.js';
 
@@ -46,7 +46,11 @@ export default async function handler(req, res) {
     try { const r = await q`SELECT count(*)::int AS n FROM native_push_tokens WHERE owner_kind = 'provider' AND owner_id = ANY(${providerIds}::text[])`; devices = (r[0] && r[0].n) || 0; } catch (e) {}
     try { const r = await q`SELECT count(*)::int AS n FROM native_push_tokens WHERE owner_kind = 'provider' AND owner_id = ${String(payload.u)}`; devicesSession = (r[0] && r[0].n) || 0; } catch (e) {}
 
-    if (!nativePushConfigured()) {
+    // Browsers / home-screen apps where she turned notifications on count too: founder alerts reach them.
+    try { const r = await q`SELECT count(*)::int AS n FROM provider_push_subscriptions WHERE provider_id = ANY(${providerIds}::text[])`; devices += (r[0] && r[0].n) || 0; } catch (e) {}
+    try { const r = await q`SELECT count(*)::int AS n FROM provider_push_subscriptions WHERE provider_id = ${String(payload.u)}`; devicesSession += (r[0] && r[0].n) || 0; } catch (e) {}
+
+    if (!founderPushConfigured()) {
       res.status(200).json({ ok: true, fcm: false, devices, devicesSession, sent: 0, message: 'Push notifications aren’t configured on the server yet. That’s a one-time server setup — tell Claude and it’ll walk you through it.' });
       return;
     }
@@ -115,10 +119,12 @@ export default async function handler(req, res) {
     let recent = [];
     try { recent = await recentNotifies(5); } catch (e) {}
     if (recent.length) {
-      const bad = recent.filter(r => !r.sent);
+      // A free signup that the paid-provider ping already announced is skipped on purpose; it is not a
+      // missed alert, so it must not be reported as one (that row is what follows every paid signup).
+      const bad = recent.filter(r => !r.sent && !/already announced|already covered/i.test(String(r.skipped || '') + ' ' + String(r.detail || '')));
       message += bad.length
-        ? ' — but ' + bad.length + ' of the last ' + recent.length + ' real signups reached nobody: ' + (bad[0].skipped || bad[0].detail || 'reason not recorded') + '. Tell Claude that line.'
-        : ' The last ' + recent.length + ' real signups all reached your phone too.';
+        ? ' — but ' + bad.length + ' of the last ' + recent.length + ' real alerts reached nobody: ' + (bad[0].skipped || bad[0].detail || 'reason not recorded') + '. Tell Claude that line.'
+        : ' The last ' + recent.length + ' real alerts all reached your phone too.';
     } else {
       message += ' No real signups have come through since this logging went live, so the next one will be recorded either way.';
     }

@@ -15,7 +15,7 @@
 // waiting on the unlock response.
 import { sql, dbEnabled, ensureTable, ensureBuildPurchasesTable } from './db.js';
 import { sendEmail, trustedOrigin, addToAudience } from './email.js';
-import { pushFoundersReport, nativePushConfigured } from './fcm.js';
+import { pushFoundersReport, founderPushConfigured } from './fcm.js';
 import { recordNotify } from './notify-log.js';
 
 function escHtml(s) {
@@ -148,15 +148,15 @@ export async function recordBuildSale(sale) {
   // leaves the same readable trace instead of nothing. A sale is the one alert worth least guessing.
   let skipped = '', devices = 0, sentCount = 0, detail = '';
   try {
-    if (!nativePushConfigured()) {
-      skipped = 'no push transport configured (FIREBASE_SERVICE_ACCOUNT for Android, APNS_KEY_P8 for iPhone)';
+    if (!founderPushConfigured()) {
+      skipped = 'no push transport configured (FIREBASE_SERVICE_ACCOUNT, APNS_KEY_P8 or VAPID keys)';
     } else {
       const body = (price ? price + ' — ' : '') + who
         + (total ? ` · that's ${total} sold 🎉` : ' 🎉');
       const r = await pushFoundersReport({ title: `🚀 ${product} sold!`, body, url: '/slickchart', tag: 'build-sale:' + sid });
       devices = r.devices || 0; sentCount = r.sent || 0;
       if (!r.providerIds || !r.providerIds.length) detail = 'no provider row matches FOUNDER_EMAILS (' + (r.emails || []).join('|') + ')';
-      else if (!devices) detail = 'founder provider row found, but no phone registered under it';
+      else if (!devices) detail = 'founder provider row found, but no phone or browser registered under it';
       else if (!sentCount) detail = ((r.results || [])[0] || {}).error || 'device found but the send failed';
       console.log('[build-sales] sale push: devices=' + devices + ' sent=' + sentCount + ' session=' + sid + (detail ? ' — ' + detail : ''));
     }

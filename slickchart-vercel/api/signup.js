@@ -4,7 +4,7 @@
 import { sql, ensureProvidersTable, dbEnabled, hasActiveSubscription } from '../lib/db.js';
 import { signToken, hashPassword, makeToken, createSession } from '../lib/auth.js';
 import { sendEmail, trustedOrigin, addToAudience, welcomeEmailHtml, welcomeEmailText } from '../lib/email.js';
-import { pushFoundersReport, nativePushConfigured } from '../lib/fcm.js';
+import { pushFoundersReport, founderPushConfigured } from '../lib/fcm.js';
 import { recordNotify } from '../lib/notify-log.js';
 import crypto from 'crypto';
 import { YEARLY_LINK } from '../lib/stripe-subs.js';
@@ -128,8 +128,8 @@ export default async function handler(req, res) {
     try {
       if (_alreadyAnnounced) {
         _pushSkipped = 'already announced by the paid-provider ping';
-      } else if (!nativePushConfigured()) {
-        _pushSkipped = 'no push transport configured (FIREBASE_SERVICE_ACCOUNT for Android, APNS_KEY_P8 for iPhone)';
+      } else if (!founderPushConfigured()) {
+        _pushSkipped = 'no push transport configured (FIREBASE_SERVICE_ACCOUNT, APNS_KEY_P8 or VAPID keys)';
       } else {
         const r = await pushFoundersReport({
           title: _alreadyPaid ? '🎉 New signup (already subscribed)' : '🎉 New provider signup!',
@@ -139,7 +139,7 @@ export default async function handler(req, res) {
         _pushDevices = r.devices || 0;
         _pushSent = r.sent || 0;
         if (!r.providerIds || !r.providerIds.length) _pushDetail = 'no provider row matches FOUNDER_EMAILS (' + (r.emails || []).join('|') + ')';
-        else if (!_pushDevices) _pushDetail = 'founder provider row found, but no phone registered under it';
+        else if (!_pushDevices) _pushDetail = 'founder provider row found, but no phone or browser registered under it';
         else if (!_pushSent) _pushDetail = ((r.results || [])[0] || {}).error || 'device found but the send failed';
         console.log('[signup] new-signup push: devices=' + _pushDevices + ' sent=' + _pushSent + ' for=' + email + (_pushDetail ? ' — ' + _pushDetail : ''));
       }
